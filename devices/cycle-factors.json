@@ -1,16 +1,16 @@
 {
-  "_comment": "Real-chip cycle factors, the one copy. Read by tools/patchkit/pk_dsp_budget.py and packages/emulator/control/src/load.rs (embedded at build time). Derived from the public manuals' cycle tables and our own instruction counts, not from firmware bytes. dsp: real cycles per block / emulator busy instructions per block, stock firmware, held note (dn2-trig1-hold, dt2-sample-trig); nominal and high bound of the assumed latencies; finding at the end of docs/findings/06-sharc-engine-and-startup.md, tools/sharc_dev/sharc_cpi (out/clock/sharc.json). cf: ColdFire busy CPI (non-idle instructions, zero wait states, Bcc/stall tables of the MCF5441x manual), nominal = median over the scenarios, high = accelerated jumps and calls at 3, RTS at 9, every taken Bcc at 8; section 'ColdFire instruction rate' of docs/findings/07-emulator.md, tools/coldfire/cf_cpi.py (out/clock/cpi.json, CPI-REPORT.md). The ColdFire core runs at core_hz = 264 MHz; the emulator's model clock is 132 M instructions per emulated second.",
+  "_comment": "Real-chip cycle factors, the one copy. Read by tools/patchkit/pk_dsp_budget.py and packages/emulator/control/src/load.rs (embedded at build time). Derived from the public manuals' cycle tables and our own instruction counts, not from firmware bytes. dsp: real cycles per block / emulator busy instructions per block, stock firmware, held note (dn2-trig1-hold, dt2-sample-trig); nominal and high bound of the assumed latencies; stock_busy: DSP instructions per block of the stock firmware with no module (emulator count, 1.16 / 1.11; re-measure on 1.17 / 1.12); finding at the end of docs/findings/06-sharc-engine-and-startup.md, tools/sharc_dev/sharc_cpi (out/clock/sharc.json). cf: ColdFire busy CPI (non-idle instructions, zero wait states, Bcc/stall tables of the MCF5441x manual), nominal = median over the scenarios, high = accelerated jumps and calls at 3, RTS at 9, every taken Bcc at 8; section 'ColdFire instruction rate' of docs/findings/07-emulator.md, tools/coldfire/cf_cpi.py (out/clock/cpi.json, CPI-REPORT.md). The ColdFire core runs at core_hz = 264 MHz; the emulator's model clock is 132 M instructions per emulated second.",
   "cf_core_hz": 264000000,
   "cf_model_hz": 132000000,
   "dsp_block_rate": 1500,
   "dsp_clock_hz": 1000000000,
   "devices": {
     "dn2": {
-      "dsp": { "nominal": 1.138261, "high": 1.326075 },
+      "dsp": { "nominal": 1.138261, "high": 1.326075, "stock_busy": 334529 },
       "cf_busy_cpi": { "nominal": 1.39, "high": 1.97 }
     },
     "dt2": {
-      "dsp": { "nominal": 1.134327, "high": 1.406521 },
+      "dsp": { "nominal": 1.134327, "high": 1.406521, "stock_busy": 208640 },
       "cf_busy_cpi": { "nominal": 1.37, "high": 1.96 }
     }
   }

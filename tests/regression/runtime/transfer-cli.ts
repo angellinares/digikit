@@ -57,24 +57,25 @@ export async function transferCommand(
   );
 }
 
-/** Python owns module preparation and install; use the already-running daemon. */
+/** Python owns module preparation and install; use the already-running daemon. `alongside` modules are installed and selected with it (the debug module, for a test that reads the log). */
 export async function cliInstall(
   session: Session,
   moduleId: string,
   artifactDirectory: string,
   timeout = 90_000,
+  alongside: string[] = [],
 ): Promise<void> {
   await timePhase(
     'cli.install-restart',
     async () => {
       const events = await transferCommand(
         session,
-        ['install', moduleId, '--restart'],
+        ['install', moduleId, ...alongside, '--restart'],
         path.join(artifactDirectory, 'install.log'),
         timeout,
       );
       const result = events.find((event) => event.event === 'result');
-      if (!result?.loaded?.includes(moduleId)) {
+      if (![moduleId, ...alongside].every((id) => result?.loaded?.includes(id))) {
         throw new Error(`install --restart did not load ${moduleId}: ${JSON.stringify(events)}`);
       }
     },

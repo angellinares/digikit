@@ -1,0 +1,6147 @@
+{
+ "arch": "sharc",
+ "format": 1,
+ "relocs": [
+  {
+   "addend": 0,
+   "offset": 8,
+   "section": "seg_pmco",
+   "symbol": "_lp_boot_refuse_simd",
+   "type": "sharc.abs24"
+  },
+  {
+   "addend": 0,
+   "offset": 11,
+   "section": "seg_pmco",
+   "symbol": "_lp_boot_save",
+   "type": "sharc.abs32"
+  },
+  {
+   "addend": 4,
+   "offset": 14,
+   "section": "seg_pmco",
+   "symbol": "_lp_boot_save",
+   "type": "sharc.abs32"
+  },
+  {
+   "addend": 8,
+   "offset": 17,
+   "section": "seg_pmco",
+   "symbol": "_lp_boot_save",
+   "type": "sharc.abs32"
+  },
+  {
+   "addend": 12,
+   "offset": 20,
+   "section": "seg_pmco",
+   "symbol": "_lp_boot_save",
+   "type": "sharc.abs32"
+  },
+  {
+   "addend": 16,
+   "offset": 23,
+   "section": "seg_pmco",
+   "symbol": "_lp_boot_save",
+   "type": "sharc.abs32"
+  },
+  {
+   "addend": 20,
+   "offset": 26,
+   "section": "seg_pmco",
+   "symbol": "_lp_boot_save",
+   "type": "sharc.abs32"
+  },
+  {
+   "addend": 24,
+   "offset": 29,
+   "section": "seg_pmco",
+   "symbol": "_lp_boot_save",
+   "type": "sharc.abs32"
+  },
+  {
+   "addend": 28,
+   "offset": 32,
+   "section": "seg_pmco",
+   "symbol": "_lp_boot_save",
+   "type": "sharc.abs32"
+  },
+  {
+   "addend": 32,
+   "offset": 35,
+   "section": "seg_pmco",
+   "symbol": "_lp_boot_save",
+   "type": "sharc.abs32"
+  },
+  {
+   "addend": 36,
+   "offset": 38,
+   "section": "seg_pmco",
+   "symbol": "_lp_boot_save",
+   "type": "sharc.abs32"
+  },
+  {
+   "addend": 40,
+   "offset": 41,
+   "section": "seg_pmco",
+   "symbol": "_lp_boot_save",
+   "type": "sharc.abs32"
+  },
+  {
+   "addend": 44,
+   "offset": 44,
+   "section": "seg_pmco",
+   "symbol": "_lp_boot_save",
+   "type": "sharc.abs32"
+  },
+  {
+   "addend": 48,
+   "offset": 47,
+   "section": "seg_pmco",
+   "symbol": "_lp_boot_save",
+   "type": "sharc.abs32"
+  },
+  {
+   "addend": 52,
+   "offset": 50,
+   "section": "seg_pmco",
+   "symbol": "_lp_boot_save",
+   "type": "sharc.abs32"
+  },
+  {
+   "addend": 56,
+   "offset": 53,
+   "section": "seg_pmco",
+   "symbol": "_lp_boot_save",
+   "type": "sharc.abs32"
+  },
+  {
+   "addend": 60,
+   "offset": 56,
+   "section": "seg_pmco",
+   "symbol": "_lp_boot_save",
+   "type": "sharc.abs32"
+  },
+  {
+   "addend": 64,
+   "offset": 61,
+   "section": "seg_pmco",
+   "symbol": "_lp_boot_save",
+   "type": "sharc.abs32"
+  },
+  {
+   "addend": 68,
+   "offset": 66,
+   "section": "seg_pmco",
+   "symbol": "_lp_boot_save",
+   "type": "sharc.abs32"
+  },
+  {
+   "addend": 72,
+   "offset": 71,
+   "section": "seg_pmco",
+   "symbol": "_lp_boot_save",
+   "type": "sharc.abs32"
+  },
+  {
+   "addend": 76,
+   "offset": 76,
+   "section": "seg_pmco",
+   "symbol": "_lp_boot_save",
+   "type": "sharc.abs32"
+  },
+  {
+   "addend": 80,
+   "offset": 81,
+   "section": "seg_pmco",
+   "symbol": "_lp_boot_save",
+   "type": "sharc.abs32"
+  },
+  {
+   "addend": 84,
+   "offset": 86,
+   "section": "seg_pmco",
+   "symbol": "_lp_boot_save",
+   "type": "sharc.abs32"
+  },
+  {
+   "addend": 88,
+   "offset": 91,
+   "section": "seg_pmco",
+   "symbol": "_lp_boot_save",
+   "type": "sharc.abs32"
+  },
+  {
+   "addend": 92,
+   "offset": 96,
+   "section": "seg_pmco",
+   "symbol": "_lp_boot_save",
+   "type": "sharc.abs32"
+  },
+  {
+   "addend": 96,
+   "offset": 101,
+   "section": "seg_pmco",
+   "symbol": "_lp_boot_save",
+   "type": "sharc.abs32"
+  },
+  {
+   "addend": 100,
+   "offset": 106,
+   "section": "seg_pmco",
+   "symbol": "_lp_boot_save",
+   "type": "sharc.abs32"
+  },
+  {
+   "addend": 104,
+   "offset": 111,
+   "section": "seg_pmco",
+   "symbol": "_lp_boot_save",
+   "type": "sharc.abs32"
+  },
+  {
+   "addend": 108,
+   "offset": 116,
+   "section": "seg_pmco",
+   "symbol": "_lp_boot_save",
+   "type": "sharc.abs32"
+  },
+  {
+   "addend": 112,
+   "offset": 121,
+   "section": "seg_pmco",
+   "symbol": "_lp_boot_save",
+   "type": "sharc.abs32"
+  },
+  {
+   "addend": 116,
+   "offset": 126,
+   "section": "seg_pmco",
+   "symbol": "_lp_boot_save",
+   "type": "sharc.abs32"
+  },
+  {
+   "addend": 120,
+   "offset": 131,
+   "section": "seg_pmco",
+   "symbol": "_lp_boot_save",
+   "type": "sharc.abs32"
+  },
+  {
+   "addend": 124,
+   "offset": 136,
+   "section": "seg_pmco",
+   "symbol": "_lp_boot_save",
+   "type": "sharc.abs32"
+  },
+  {
+   "addend": 128,
+   "offset": 141,
+   "section": "seg_pmco",
+   "symbol": "_lp_boot_save",
+   "type": "sharc.abs32"
+  },
+  {
+   "addend": 132,
+   "offset": 146,
+   "section": "seg_pmco",
+   "symbol": "_lp_boot_save",
+   "type": "sharc.abs32"
+  },
+  {
+   "addend": 136,
+   "offset": 151,
+   "section": "seg_pmco",
+   "symbol": "_lp_boot_save",
+   "type": "sharc.abs32"
+  },
+  {
+   "addend": 140,
+   "offset": 156,
+   "section": "seg_pmco",
+   "symbol": "_lp_boot_save",
+   "type": "sharc.abs32"
+  },
+  {
+   "addend": 144,
+   "offset": 161,
+   "section": "seg_pmco",
+   "symbol": "_lp_boot_save",
+   "type": "sharc.abs32"
+  },
+  {
+   "addend": 148,
+   "offset": 166,
+   "section": "seg_pmco",
+   "symbol": "_lp_boot_save",
+   "type": "sharc.abs32"
+  },
+  {
+   "addend": 152,
+   "offset": 171,
+   "section": "seg_pmco",
+   "symbol": "_lp_boot_save",
+   "type": "sharc.abs32"
+  },
+  {
+   "addend": 156,
+   "offset": 176,
+   "section": "seg_pmco",
+   "symbol": "_lp_boot_save",
+   "type": "sharc.abs32"
+  },
+  {
+   "addend": 160,
+   "offset": 181,
+   "section": "seg_pmco",
+   "symbol": "_lp_boot_save",
+   "type": "sharc.abs32"
+  },
+  {
+   "addend": 164,
+   "offset": 186,
+   "section": "seg_pmco",
+   "symbol": "_lp_boot_save",
+   "type": "sharc.abs32"
+  },
+  {
+   "addend": 168,
+   "offset": 191,
+   "section": "seg_pmco",
+   "symbol": "_lp_boot_save",
+   "type": "sharc.abs32"
+  },
+  {
+   "addend": 172,
+   "offset": 196,
+   "section": "seg_pmco",
+   "symbol": "_lp_boot_save",
+   "type": "sharc.abs32"
+  },
+  {
+   "addend": 176,
+   "offset": 201,
+   "section": "seg_pmco",
+   "symbol": "_lp_boot_save",
+   "type": "sharc.abs32"
+  },
+  {
+   "addend": 180,
+   "offset": 206,
+   "section": "seg_pmco",
+   "symbol": "_lp_boot_save",
+   "type": "sharc.abs32"
+  },
+  {
+   "addend": 184,
+   "offset": 211,
+   "section": "seg_pmco",
+   "symbol": "_lp_boot_save",
+   "type": "sharc.abs32"
+  },
+  {
+   "addend": 188,
+   "offset": 216,
+   "section": "seg_pmco",
+   "symbol": "_lp_boot_save",
+   "type": "sharc.abs32"
+  },
+  {
+   "addend": 192,
+   "offset": 221,
+   "section": "seg_pmco",
+   "symbol": "_lp_boot_save",
+   "type": "sharc.abs32"
+  },
+  {
+   "addend": 196,
+   "offset": 226,
+   "section": "seg_pmco",
+   "symbol": "_lp_boot_save",
+   "type": "sharc.abs32"
+  },
+  {
+   "addend": 200,
+   "offset": 231,
+   "section": "seg_pmco",
+   "symbol": "_lp_boot_save",
+   "type": "sharc.abs32"
+  },
+  {
+   "addend": 204,
+   "offset": 236,
+   "section": "seg_pmco",
+   "symbol": "_lp_boot_save",
+   "type": "sharc.abs32"
+  },
+  {
+   "addend": 208,
+   "offset": 241,
+   "section": "seg_pmco",
+   "symbol": "_lp_boot_save",
+   "type": "sharc.abs32"
+  },
+  {
+   "addend": 212,
+   "offset": 246,
+   "section": "seg_pmco",
+   "symbol": "_lp_boot_save",
+   "type": "sharc.abs32"
+  },
+  {
+   "addend": 216,
+   "offset": 251,
+   "section": "seg_pmco",
+   "symbol": "_lp_boot_save",
+   "type": "sharc.abs32"
+  },
+  {
+   "addend": 220,
+   "offset": 256,
+   "section": "seg_pmco",
+   "symbol": "_lp_boot_save",
+   "type": "sharc.abs32"
+  },
+  {
+   "addend": 224,
+   "offset": 261,
+   "section": "seg_pmco",
+   "symbol": "_lp_boot_save",
+   "type": "sharc.abs32"
+  },
+  {
+   "addend": 228,
+   "offset": 266,
+   "section": "seg_pmco",
+   "symbol": "_lp_boot_save",
+   "type": "sharc.abs32"
+  },
+  {
+   "addend": 232,
+   "offset": 271,
+   "section": "seg_pmco",
+   "symbol": "_lp_boot_save",
+   "type": "sharc.abs32"
+  },
+  {
+   "addend": 236,
+   "offset": 276,
+   "section": "seg_pmco",
+   "symbol": "_lp_boot_save",
+   "type": "sharc.abs32"
+  },
+  {
+   "addend": 240,
+   "offset": 281,
+   "section": "seg_pmco",
+   "symbol": "_lp_boot_save",
+   "type": "sharc.abs32"
+  },
+  {
+   "addend": 244,
+   "offset": 286,
+   "section": "seg_pmco",
+   "symbol": "_lp_boot_save",
+   "type": "sharc.abs32"
+  },
+  {
+   "addend": 248,
+   "offset": 291,
+   "section": "seg_pmco",
+   "symbol": "_lp_boot_save",
+   "type": "sharc.abs32"
+  },
+  {
+   "addend": 252,
+   "offset": 296,
+   "section": "seg_pmco",
+   "symbol": "_lp_boot_save",
+   "type": "sharc.abs32"
+  },
+  {
+   "addend": 256,
+   "offset": 301,
+   "section": "seg_pmco",
+   "symbol": "_lp_boot_save",
+   "type": "sharc.abs32"
+  },
+  {
+   "addend": 260,
+   "offset": 306,
+   "section": "seg_pmco",
+   "symbol": "_lp_boot_save",
+   "type": "sharc.abs32"
+  },
+  {
+   "addend": 264,
+   "offset": 311,
+   "section": "seg_pmco",
+   "symbol": "_lp_boot_save",
+   "type": "sharc.abs32"
+  },
+  {
+   "addend": 268,
+   "offset": 316,
+   "section": "seg_pmco",
+   "symbol": "_lp_boot_save",
+   "type": "sharc.abs32"
+  },
+  {
+   "addend": 272,
+   "offset": 321,
+   "section": "seg_pmco",
+   "symbol": "_lp_boot_save",
+   "type": "sharc.abs32"
+  },
+  {
+   "addend": 276,
+   "offset": 326,
+   "section": "seg_pmco",
+   "symbol": "_lp_boot_save",
+   "type": "sharc.abs32"
+  },
+  {
+   "addend": 280,
+   "offset": 331,
+   "section": "seg_pmco",
+   "symbol": "_lp_boot_save",
+   "type": "sharc.abs32"
+  },
+  {
+   "addend": 284,
+   "offset": 336,
+   "section": "seg_pmco",
+   "symbol": "_lp_boot_save",
+   "type": "sharc.abs32"
+  },
+  {
+   "addend": 288,
+   "offset": 341,
+   "section": "seg_pmco",
+   "symbol": "_lp_boot_save",
+   "type": "sharc.abs32"
+  },
+  {
+   "addend": 0,
+   "offset": 349,
+   "section": "seg_pmco",
+   "symbol": "_lp_dma_storage",
+   "type": "sharc.abs32"
+  },
+  {
+   "addend": 0,
+   "offset": 358,
+   "section": "seg_pmco",
+   "symbol": "_lp_dma_base",
+   "type": "sharc.abs32"
+  },
+  {
+   "addend": 0,
+   "offset": 361,
+   "section": "seg_pmco",
+   "symbol": "_lp_descriptor",
+   "type": "sharc.abs32"
+  },
+  {
+   "addend": 0,
+   "offset": 368,
+   "section": "seg_pmco",
+   "symbol": "_lp_state",
+   "type": "sharc.abs32"
+  },
+  {
+   "addend": 0,
+   "offset": 375,
+   "section": "seg_pmco",
+   "symbol": "_lp_rx",
+   "type": "sharc.abs32"
+  },
+  {
+   "addend": 0,
+   "offset": 382,
+   "section": "seg_pmco",
+   "symbol": "_lp_dma_limit",
+   "type": "sharc.abs32"
+  },
+  {
+   "addend": 0,
+   "offset": 388,
+   "section": "seg_pmco",
+   "symbol": "_lp_boot_context_error",
+   "type": "sharc.abs24"
+  },
+  {
+   "addend": 0,
+   "offset": 394,
+   "section": "seg_pmco",
+   "symbol": "_lp_boot_context_error",
+   "type": "sharc.abs24"
+  },
+  {
+   "addend": 0,
+   "offset": 400,
+   "section": "seg_pmco",
+   "symbol": "_lp_boot_context_error",
+   "type": "sharc.abs24"
+  },
+  {
+   "addend": 0,
+   "offset": 408,
+   "section": "seg_pmco",
+   "symbol": "_lp_boot_context_error",
+   "type": "sharc.abs24"
+  },
+  {
+   "addend": 0,
+   "offset": 416,
+   "section": "seg_pmco",
+   "symbol": "_lp_boot_context_error",
+   "type": "sharc.abs24"
+  },
+  {
+   "addend": 0,
+   "offset": 424,
+   "section": "seg_pmco",
+   "symbol": "_lp_boot_context_error",
+   "type": "sharc.abs24"
+  },
+  {
+   "addend": 0,
+   "offset": 427,
+   "section": "seg_pmco",
+   "symbol": "_lp_dma_base",
+   "type": "sharc.abs32"
+  },
+  {
+   "addend": 0,
+   "offset": 430,
+   "section": "seg_pmco",
+   "symbol": "_lp_dma_limit",
+   "type": "sharc.abs32"
+  },
+  {
+   "addend": 0,
+   "offset": 439,
+   "section": "seg_pmco",
+   "symbol": "_lp_cache_range",
+   "type": "sharc.abs24"
+  },
+  {
+   "addend": -1,
+   "offset": 443,
+   "section": "seg_pmco",
+   "symbol": "_lp_boot_after_range",
+   "type": "sharc.abs32"
+  },
+  {
+   "addend": 0,
+   "offset": 449,
+   "section": "seg_pmco",
+   "symbol": "_lp_boot_error",
+   "type": "sharc.abs32"
+  },
+  {
+   "addend": 0,
+   "offset": 453,
+   "section": "seg_pmco",
+   "symbol": "_lp_boot_failed",
+   "type": "sharc.abs24"
+  },
+  {
+   "addend": 0,
+   "offset": 458,
+   "section": "seg_pmco",
+   "symbol": "_lp_boot_status",
+   "type": "sharc.abs32"
+  },
+  {
+   "addend": 0,
+   "offset": 461,
+   "section": "seg_pmco",
+   "symbol": "_lp_boot_restore",
+   "type": "sharc.abs24"
+  },
+  {
+   "addend": 0,
+   "offset": 466,
+   "section": "seg_pmco",
+   "symbol": "_lp_boot_record_error",
+   "type": "sharc.abs24"
+  },
+  {
+   "addend": 0,
+   "offset": 469,
+   "section": "seg_pmco",
+   "symbol": "_lp_boot_error",
+   "type": "sharc.abs32"
+  },
+  {
+   "addend": 0,
+   "offset": 474,
+   "section": "seg_pmco",
+   "symbol": "_lp_boot_status",
+   "type": "sharc.abs32"
+  },
+  {
+   "addend": 128,
+   "offset": 477,
+   "section": "seg_pmco",
+   "symbol": "_lp_boot_save",
+   "type": "sharc.abs32"
+  },
+  {
+   "addend": 132,
+   "offset": 482,
+   "section": "seg_pmco",
+   "symbol": "_lp_boot_save",
+   "type": "sharc.abs32"
+  },
+  {
+   "addend": 136,
+   "offset": 487,
+   "section": "seg_pmco",
+   "symbol": "_lp_boot_save",
+   "type": "sharc.abs32"
+  },
+  {
+   "addend": 140,
+   "offset": 492,
+   "section": "seg_pmco",
+   "symbol": "_lp_boot_save",
+   "type": "sharc.abs32"
+  },
+  {
+   "addend": 144,
+   "offset": 497,
+   "section": "seg_pmco",
+   "symbol": "_lp_boot_save",
+   "type": "sharc.abs32"
+  },
+  {
+   "addend": 148,
+   "offset": 502,
+   "section": "seg_pmco",
+   "symbol": "_lp_boot_save",
+   "type": "sharc.abs32"
+  },
+  {
+   "addend": 152,
+   "offset": 507,
+   "section": "seg_pmco",
+   "symbol": "_lp_boot_save",
+   "type": "sharc.abs32"
+  },
+  {
+   "addend": 156,
+   "offset": 512,
+   "section": "seg_pmco",
+   "symbol": "_lp_boot_save",
+   "type": "sharc.abs32"
+  },
+  {
+   "addend": 160,
+   "offset": 517,
+   "section": "seg_pmco",
+   "symbol": "_lp_boot_save",
+   "type": "sharc.abs32"
+  },
+  {
+   "addend": 164,
+   "offset": 522,
+   "section": "seg_pmco",
+   "symbol": "_lp_boot_save",
+   "type": "sharc.abs32"
+  },
+  {
+   "addend": 168,
+   "offset": 527,
+   "section": "seg_pmco",
+   "symbol": "_lp_boot_save",
+   "type": "sharc.abs32"
+  },
+  {
+   "addend": 172,
+   "offset": 532,
+   "section": "seg_pmco",
+   "symbol": "_lp_boot_save",
+   "type": "sharc.abs32"
+  },
+  {
+   "addend": 176,
+   "offset": 537,
+   "section": "seg_pmco",
+   "symbol": "_lp_boot_save",
+   "type": "sharc.abs32"
+  },
+  {
+   "addend": 180,
+   "offset": 542,
+   "section": "seg_pmco",
+   "symbol": "_lp_boot_save",
+   "type": "sharc.abs32"
+  },
+  {
+   "addend": 184,
+   "offset": 547,
+   "section": "seg_pmco",
+   "symbol": "_lp_boot_save",
+   "type": "sharc.abs32"
+  },
+  {
+   "addend": 188,
+   "offset": 552,
+   "section": "seg_pmco",
+   "symbol": "_lp_boot_save",
+   "type": "sharc.abs32"
+  },
+  {
+   "addend": 192,
+   "offset": 557,
+   "section": "seg_pmco",
+   "symbol": "_lp_boot_save",
+   "type": "sharc.abs32"
+  },
+  {
+   "addend": 196,
+   "offset": 562,
+   "section": "seg_pmco",
+   "symbol": "_lp_boot_save",
+   "type": "sharc.abs32"
+  },
+  {
+   "addend": 200,
+   "offset": 567,
+   "section": "seg_pmco",
+   "symbol": "_lp_boot_save",
+   "type": "sharc.abs32"
+  },
+  {
+   "addend": 204,
+   "offset": 572,
+   "section": "seg_pmco",
+   "symbol": "_lp_boot_save",
+   "type": "sharc.abs32"
+  },
+  {
+   "addend": 208,
+   "offset": 577,
+   "section": "seg_pmco",
+   "symbol": "_lp_boot_save",
+   "type": "sharc.abs32"
+  },
+  {
+   "addend": 212,
+   "offset": 582,
+   "section": "seg_pmco",
+   "symbol": "_lp_boot_save",
+   "type": "sharc.abs32"
+  },
+  {
+   "addend": 216,
+   "offset": 587,
+   "section": "seg_pmco",
+   "symbol": "_lp_boot_save",
+   "type": "sharc.abs32"
+  },
+  {
+   "addend": 220,
+   "offset": 592,
+   "section": "seg_pmco",
+   "symbol": "_lp_boot_save",
+   "type": "sharc.abs32"
+  },
+  {
+   "addend": 224,
+   "offset": 597,
+   "section": "seg_pmco",
+   "symbol": "_lp_boot_save",
+   "type": "sharc.abs32"
+  },
+  {
+   "addend": 228,
+   "offset": 602,
+   "section": "seg_pmco",
+   "symbol": "_lp_boot_save",
+   "type": "sharc.abs32"
+  },
+  {
+   "addend": 232,
+   "offset": 607,
+   "section": "seg_pmco",
+   "symbol": "_lp_boot_save",
+   "type": "sharc.abs32"
+  },
+  {
+   "addend": 236,
+   "offset": 612,
+   "section": "seg_pmco",
+   "symbol": "_lp_boot_save",
+   "type": "sharc.abs32"
+  },
+  {
+   "addend": 240,
+   "offset": 617,
+   "section": "seg_pmco",
+   "symbol": "_lp_boot_save",
+   "type": "sharc.abs32"
+  },
+  {
+   "addend": 244,
+   "offset": 622,
+   "section": "seg_pmco",
+   "symbol": "_lp_boot_save",
+   "type": "sharc.abs32"
+  },
+  {
+   "addend": 248,
+   "offset": 627,
+   "section": "seg_pmco",
+   "symbol": "_lp_boot_save",
+   "type": "sharc.abs32"
+  },
+  {
+   "addend": 252,
+   "offset": 632,
+   "section": "seg_pmco",
+   "symbol": "_lp_boot_save",
+   "type": "sharc.abs32"
+  },
+  {
+   "addend": 256,
+   "offset": 637,
+   "section": "seg_pmco",
+   "symbol": "_lp_boot_save",
+   "type": "sharc.abs32"
+  },
+  {
+   "addend": 260,
+   "offset": 642,
+   "section": "seg_pmco",
+   "symbol": "_lp_boot_save",
+   "type": "sharc.abs32"
+  },
+  {
+   "addend": 264,
+   "offset": 647,
+   "section": "seg_pmco",
+   "symbol": "_lp_boot_save",
+   "type": "sharc.abs32"
+  },
+  {
+   "addend": 268,
+   "offset": 652,
+   "section": "seg_pmco",
+   "symbol": "_lp_boot_save",
+   "type": "sharc.abs32"
+  },
+  {
+   "addend": 272,
+   "offset": 657,
+   "section": "seg_pmco",
+   "symbol": "_lp_boot_save",
+   "type": "sharc.abs32"
+  },
+  {
+   "addend": 276,
+   "offset": 662,
+   "section": "seg_pmco",
+   "symbol": "_lp_boot_save",
+   "type": "sharc.abs32"
+  },
+  {
+   "addend": 288,
+   "offset": 667,
+   "section": "seg_pmco",
+   "symbol": "_lp_boot_save",
+   "type": "sharc.abs32"
+  },
+  {
+   "addend": 284,
+   "offset": 672,
+   "section": "seg_pmco",
+   "symbol": "_lp_boot_save",
+   "type": "sharc.abs32"
+  },
+  {
+   "addend": 64,
+   "offset": 677,
+   "section": "seg_pmco",
+   "symbol": "_lp_boot_save",
+   "type": "sharc.abs32"
+  },
+  {
+   "addend": 68,
+   "offset": 682,
+   "section": "seg_pmco",
+   "symbol": "_lp_boot_save",
+   "type": "sharc.abs32"
+  },
+  {
+   "addend": 72,
+   "offset": 687,
+   "section": "seg_pmco",
+   "symbol": "_lp_boot_save",
+   "type": "sharc.abs32"
+  },
+  {
+   "addend": 76,
+   "offset": 692,
+   "section": "seg_pmco",
+   "symbol": "_lp_boot_save",
+   "type": "sharc.abs32"
+  },
+  {
+   "addend": 80,
+   "offset": 697,
+   "section": "seg_pmco",
+   "symbol": "_lp_boot_save",
+   "type": "sharc.abs32"
+  },
+  {
+   "addend": 84,
+   "offset": 702,
+   "section": "seg_pmco",
+   "symbol": "_lp_boot_save",
+   "type": "sharc.abs32"
+  },
+  {
+   "addend": 96,
+   "offset": 707,
+   "section": "seg_pmco",
+   "symbol": "_lp_boot_save",
+   "type": "sharc.abs32"
+  },
+  {
+   "addend": 100,
+   "offset": 712,
+   "section": "seg_pmco",
+   "symbol": "_lp_boot_save",
+   "type": "sharc.abs32"
+  },
+  {
+   "addend": 104,
+   "offset": 717,
+   "section": "seg_pmco",
+   "symbol": "_lp_boot_save",
+   "type": "sharc.abs32"
+  },
+  {
+   "addend": 108,
+   "offset": 722,
+   "section": "seg_pmco",
+   "symbol": "_lp_boot_save",
+   "type": "sharc.abs32"
+  },
+  {
+   "addend": 112,
+   "offset": 727,
+   "section": "seg_pmco",
+   "symbol": "_lp_boot_save",
+   "type": "sharc.abs32"
+  },
+  {
+   "addend": 116,
+   "offset": 732,
+   "section": "seg_pmco",
+   "symbol": "_lp_boot_save",
+   "type": "sharc.abs32"
+  },
+  {
+   "addend": 120,
+   "offset": 737,
+   "section": "seg_pmco",
+   "symbol": "_lp_boot_save",
+   "type": "sharc.abs32"
+  },
+  {
+   "addend": 124,
+   "offset": 742,
+   "section": "seg_pmco",
+   "symbol": "_lp_boot_save",
+   "type": "sharc.abs32"
+  },
+  {
+   "addend": 88,
+   "offset": 747,
+   "section": "seg_pmco",
+   "symbol": "_lp_boot_save",
+   "type": "sharc.abs32"
+  },
+  {
+   "addend": 92,
+   "offset": 752,
+   "section": "seg_pmco",
+   "symbol": "_lp_boot_save",
+   "type": "sharc.abs32"
+  },
+  {
+   "addend": 280,
+   "offset": 757,
+   "section": "seg_pmco",
+   "symbol": "_lp_boot_save",
+   "type": "sharc.abs32"
+  },
+  {
+   "addend": 0,
+   "offset": 764,
+   "section": "seg_pmco",
+   "symbol": "_lp_boot_save",
+   "type": "sharc.abs32"
+  },
+  {
+   "addend": 4,
+   "offset": 767,
+   "section": "seg_pmco",
+   "symbol": "_lp_boot_save",
+   "type": "sharc.abs32"
+  },
+  {
+   "addend": 8,
+   "offset": 770,
+   "section": "seg_pmco",
+   "symbol": "_lp_boot_save",
+   "type": "sharc.abs32"
+  },
+  {
+   "addend": 12,
+   "offset": 773,
+   "section": "seg_pmco",
+   "symbol": "_lp_boot_save",
+   "type": "sharc.abs32"
+  },
+  {
+   "addend": 16,
+   "offset": 776,
+   "section": "seg_pmco",
+   "symbol": "_lp_boot_save",
+   "type": "sharc.abs32"
+  },
+  {
+   "addend": 20,
+   "offset": 779,
+   "section": "seg_pmco",
+   "symbol": "_lp_boot_save",
+   "type": "sharc.abs32"
+  },
+  {
+   "addend": 24,
+   "offset": 782,
+   "section": "seg_pmco",
+   "symbol": "_lp_boot_save",
+   "type": "sharc.abs32"
+  },
+  {
+   "addend": 28,
+   "offset": 785,
+   "section": "seg_pmco",
+   "symbol": "_lp_boot_save",
+   "type": "sharc.abs32"
+  },
+  {
+   "addend": 32,
+   "offset": 788,
+   "section": "seg_pmco",
+   "symbol": "_lp_boot_save",
+   "type": "sharc.abs32"
+  },
+  {
+   "addend": 36,
+   "offset": 791,
+   "section": "seg_pmco",
+   "symbol": "_lp_boot_save",
+   "type": "sharc.abs32"
+  },
+  {
+   "addend": 40,
+   "offset": 794,
+   "section": "seg_pmco",
+   "symbol": "_lp_boot_save",
+   "type": "sharc.abs32"
+  },
+  {
+   "addend": 44,
+   "offset": 797,
+   "section": "seg_pmco",
+   "symbol": "_lp_boot_save",
+   "type": "sharc.abs32"
+  },
+  {
+   "addend": 48,
+   "offset": 800,
+   "section": "seg_pmco",
+   "symbol": "_lp_boot_save",
+   "type": "sharc.abs32"
+  },
+  {
+   "addend": 52,
+   "offset": 803,
+   "section": "seg_pmco",
+   "symbol": "_lp_boot_save",
+   "type": "sharc.abs32"
+  },
+  {
+   "addend": 56,
+   "offset": 806,
+   "section": "seg_pmco",
+   "symbol": "_lp_boot_save",
+   "type": "sharc.abs32"
+  },
+  {
+   "addend": 60,
+   "offset": 809,
+   "section": "seg_pmco",
+   "symbol": "_lp_boot_save",
+   "type": "sharc.abs32"
+  },
+  {
+   "addend": 0,
+   "offset": 815,
+   "section": "seg_pmco",
+   "symbol": "_lp_boot_back",
+   "type": "sharc.abs24"
+  },
+  {
+   "addend": 0,
+   "offset": 826,
+   "section": "seg_pmco",
+   "symbol": "_lp_boot_back",
+   "type": "sharc.abs24"
+  },
+  {
+   "addend": 0,
+   "offset": 829,
+   "section": "seg_pmco",
+   "symbol": "_lp_save",
+   "type": "sharc.abs32"
+  },
+  {
+   "addend": 4,
+   "offset": 832,
+   "section": "seg_pmco",
+   "symbol": "_lp_save",
+   "type": "sharc.abs32"
+  },
+  {
+   "addend": 8,
+   "offset": 835,
+   "section": "seg_pmco",
+   "symbol": "_lp_save",
+   "type": "sharc.abs32"
+  },
+  {
+   "addend": 12,
+   "offset": 838,
+   "section": "seg_pmco",
+   "symbol": "_lp_save",
+   "type": "sharc.abs32"
+  },
+  {
+   "addend": 16,
+   "offset": 841,
+   "section": "seg_pmco",
+   "symbol": "_lp_save",
+   "type": "sharc.abs32"
+  },
+  {
+   "addend": 20,
+   "offset": 844,
+   "section": "seg_pmco",
+   "symbol": "_lp_save",
+   "type": "sharc.abs32"
+  },
+  {
+   "addend": 24,
+   "offset": 847,
+   "section": "seg_pmco",
+   "symbol": "_lp_save",
+   "type": "sharc.abs32"
+  },
+  {
+   "addend": 28,
+   "offset": 850,
+   "section": "seg_pmco",
+   "symbol": "_lp_save",
+   "type": "sharc.abs32"
+  },
+  {
+   "addend": 32,
+   "offset": 853,
+   "section": "seg_pmco",
+   "symbol": "_lp_save",
+   "type": "sharc.abs32"
+  },
+  {
+   "addend": 36,
+   "offset": 856,
+   "section": "seg_pmco",
+   "symbol": "_lp_save",
+   "type": "sharc.abs32"
+  },
+  {
+   "addend": 40,
+   "offset": 859,
+   "section": "seg_pmco",
+   "symbol": "_lp_save",
+   "type": "sharc.abs32"
+  },
+  {
+   "addend": 44,
+   "offset": 862,
+   "section": "seg_pmco",
+   "symbol": "_lp_save",
+   "type": "sharc.abs32"
+  },
+  {
+   "addend": 48,
+   "offset": 865,
+   "section": "seg_pmco",
+   "symbol": "_lp_save",
+   "type": "sharc.abs32"
+  },
+  {
+   "addend": 52,
+   "offset": 868,
+   "section": "seg_pmco",
+   "symbol": "_lp_save",
+   "type": "sharc.abs32"
+  },
+  {
+   "addend": 56,
+   "offset": 871,
+   "section": "seg_pmco",
+   "symbol": "_lp_save",
+   "type": "sharc.abs32"
+  },
+  {
+   "addend": 60,
+   "offset": 874,
+   "section": "seg_pmco",
+   "symbol": "_lp_save",
+   "type": "sharc.abs32"
+  },
+  {
+   "addend": 64,
+   "offset": 879,
+   "section": "seg_pmco",
+   "symbol": "_lp_save",
+   "type": "sharc.abs32"
+  },
+  {
+   "addend": 68,
+   "offset": 884,
+   "section": "seg_pmco",
+   "symbol": "_lp_save",
+   "type": "sharc.abs32"
+  },
+  {
+   "addend": 72,
+   "offset": 889,
+   "section": "seg_pmco",
+   "symbol": "_lp_save",
+   "type": "sharc.abs32"
+  },
+  {
+   "addend": 76,
+   "offset": 894,
+   "section": "seg_pmco",
+   "symbol": "_lp_save",
+   "type": "sharc.abs32"
+  },
+  {
+   "addend": 80,
+   "offset": 899,
+   "section": "seg_pmco",
+   "symbol": "_lp_save",
+   "type": "sharc.abs32"
+  },
+  {
+   "addend": 84,
+   "offset": 904,
+   "section": "seg_pmco",
+   "symbol": "_lp_save",
+   "type": "sharc.abs32"
+  },
+  {
+   "addend": 88,
+   "offset": 909,
+   "section": "seg_pmco",
+   "symbol": "_lp_save",
+   "type": "sharc.abs32"
+  },
+  {
+   "addend": 92,
+   "offset": 914,
+   "section": "seg_pmco",
+   "symbol": "_lp_save",
+   "type": "sharc.abs32"
+  },
+  {
+   "addend": 96,
+   "offset": 919,
+   "section": "seg_pmco",
+   "symbol": "_lp_save",
+   "type": "sharc.abs32"
+  },
+  {
+   "addend": 100,
+   "offset": 924,
+   "section": "seg_pmco",
+   "symbol": "_lp_save",
+   "type": "sharc.abs32"
+  },
+  {
+   "addend": 104,
+   "offset": 929,
+   "section": "seg_pmco",
+   "symbol": "_lp_save",
+   "type": "sharc.abs32"
+  },
+  {
+   "addend": 108,
+   "offset": 934,
+   "section": "seg_pmco",
+   "symbol": "_lp_save",
+   "type": "sharc.abs32"
+  },
+  {
+   "addend": 112,
+   "offset": 939,
+   "section": "seg_pmco",
+   "symbol": "_lp_save",
+   "type": "sharc.abs32"
+  },
+  {
+   "addend": 116,
+   "offset": 944,
+   "section": "seg_pmco",
+   "symbol": "_lp_save",
+   "type": "sharc.abs32"
+  },
+  {
+   "addend": 120,
+   "offset": 949,
+   "section": "seg_pmco",
+   "symbol": "_lp_save",
+   "type": "sharc.abs32"
+  },
+  {
+   "addend": 124,
+   "offset": 954,
+   "section": "seg_pmco",
+   "symbol": "_lp_save",
+   "type": "sharc.abs32"
+  },
+  {
+   "addend": 128,
+   "offset": 959,
+   "section": "seg_pmco",
+   "symbol": "_lp_save",
+   "type": "sharc.abs32"
+  },
+  {
+   "addend": 132,
+   "offset": 964,
+   "section": "seg_pmco",
+   "symbol": "_lp_save",
+   "type": "sharc.abs32"
+  },
+  {
+   "addend": 136,
+   "offset": 969,
+   "section": "seg_pmco",
+   "symbol": "_lp_save",
+   "type": "sharc.abs32"
+  },
+  {
+   "addend": 140,
+   "offset": 974,
+   "section": "seg_pmco",
+   "symbol": "_lp_save",
+   "type": "sharc.abs32"
+  },
+  {
+   "addend": 144,
+   "offset": 979,
+   "section": "seg_pmco",
+   "symbol": "_lp_save",
+   "type": "sharc.abs32"
+  },
+  {
+   "addend": 148,
+   "offset": 984,
+   "section": "seg_pmco",
+   "symbol": "_lp_save",
+   "type": "sharc.abs32"
+  },
+  {
+   "addend": 152,
+   "offset": 989,
+   "section": "seg_pmco",
+   "symbol": "_lp_save",
+   "type": "sharc.abs32"
+  },
+  {
+   "addend": 156,
+   "offset": 994,
+   "section": "seg_pmco",
+   "symbol": "_lp_save",
+   "type": "sharc.abs32"
+  },
+  {
+   "addend": 160,
+   "offset": 999,
+   "section": "seg_pmco",
+   "symbol": "_lp_save",
+   "type": "sharc.abs32"
+  },
+  {
+   "addend": 164,
+   "offset": 1004,
+   "section": "seg_pmco",
+   "symbol": "_lp_save",
+   "type": "sharc.abs32"
+  },
+  {
+   "addend": 168,
+   "offset": 1009,
+   "section": "seg_pmco",
+   "symbol": "_lp_save",
+   "type": "sharc.abs32"
+  },
+  {
+   "addend": 172,
+   "offset": 1014,
+   "section": "seg_pmco",
+   "symbol": "_lp_save",
+   "type": "sharc.abs32"
+  },
+  {
+   "addend": 176,
+   "offset": 1019,
+   "section": "seg_pmco",
+   "symbol": "_lp_save",
+   "type": "sharc.abs32"
+  },
+  {
+   "addend": 180,
+   "offset": 1024,
+   "section": "seg_pmco",
+   "symbol": "_lp_save",
+   "type": "sharc.abs32"
+  },
+  {
+   "addend": 184,
+   "offset": 1029,
+   "section": "seg_pmco",
+   "symbol": "_lp_save",
+   "type": "sharc.abs32"
+  },
+  {
+   "addend": 188,
+   "offset": 1034,
+   "section": "seg_pmco",
+   "symbol": "_lp_save",
+   "type": "sharc.abs32"
+  },
+  {
+   "addend": 192,
+   "offset": 1039,
+   "section": "seg_pmco",
+   "symbol": "_lp_save",
+   "type": "sharc.abs32"
+  },
+  {
+   "addend": 196,
+   "offset": 1044,
+   "section": "seg_pmco",
+   "symbol": "_lp_save",
+   "type": "sharc.abs32"
+  },
+  {
+   "addend": 200,
+   "offset": 1049,
+   "section": "seg_pmco",
+   "symbol": "_lp_save",
+   "type": "sharc.abs32"
+  },
+  {
+   "addend": 204,
+   "offset": 1054,
+   "section": "seg_pmco",
+   "symbol": "_lp_save",
+   "type": "sharc.abs32"
+  },
+  {
+   "addend": 208,
+   "offset": 1059,
+   "section": "seg_pmco",
+   "symbol": "_lp_save",
+   "type": "sharc.abs32"
+  },
+  {
+   "addend": 212,
+   "offset": 1064,
+   "section": "seg_pmco",
+   "symbol": "_lp_save",
+   "type": "sharc.abs32"
+  },
+  {
+   "addend": 216,
+   "offset": 1069,
+   "section": "seg_pmco",
+   "symbol": "_lp_save",
+   "type": "sharc.abs32"
+  },
+  {
+   "addend": 220,
+   "offset": 1074,
+   "section": "seg_pmco",
+   "symbol": "_lp_save",
+   "type": "sharc.abs32"
+  },
+  {
+   "addend": 224,
+   "offset": 1079,
+   "section": "seg_pmco",
+   "symbol": "_lp_save",
+   "type": "sharc.abs32"
+  },
+  {
+   "addend": 228,
+   "offset": 1084,
+   "section": "seg_pmco",
+   "symbol": "_lp_save",
+   "type": "sharc.abs32"
+  },
+  {
+   "addend": 232,
+   "offset": 1089,
+   "section": "seg_pmco",
+   "symbol": "_lp_save",
+   "type": "sharc.abs32"
+  },
+  {
+   "addend": 236,
+   "offset": 1094,
+   "section": "seg_pmco",
+   "symbol": "_lp_save",
+   "type": "sharc.abs32"
+  },
+  {
+   "addend": 240,
+   "offset": 1099,
+   "section": "seg_pmco",
+   "symbol": "_lp_save",
+   "type": "sharc.abs32"
+  },
+  {
+   "addend": 244,
+   "offset": 1104,
+   "section": "seg_pmco",
+   "symbol": "_lp_save",
+   "type": "sharc.abs32"
+  },
+  {
+   "addend": 248,
+   "offset": 1109,
+   "section": "seg_pmco",
+   "symbol": "_lp_save",
+   "type": "sharc.abs32"
+  },
+  {
+   "addend": 252,
+   "offset": 1114,
+   "section": "seg_pmco",
+   "symbol": "_lp_save",
+   "type": "sharc.abs32"
+  },
+  {
+   "addend": 256,
+   "offset": 1119,
+   "section": "seg_pmco",
+   "symbol": "_lp_save",
+   "type": "sharc.abs32"
+  },
+  {
+   "addend": 260,
+   "offset": 1124,
+   "section": "seg_pmco",
+   "symbol": "_lp_save",
+   "type": "sharc.abs32"
+  },
+  {
+   "addend": 264,
+   "offset": 1129,
+   "section": "seg_pmco",
+   "symbol": "_lp_save",
+   "type": "sharc.abs32"
+  },
+  {
+   "addend": 268,
+   "offset": 1134,
+   "section": "seg_pmco",
+   "symbol": "_lp_save",
+   "type": "sharc.abs32"
+  },
+  {
+   "addend": 272,
+   "offset": 1139,
+   "section": "seg_pmco",
+   "symbol": "_lp_save",
+   "type": "sharc.abs32"
+  },
+  {
+   "addend": 276,
+   "offset": 1144,
+   "section": "seg_pmco",
+   "symbol": "_lp_save",
+   "type": "sharc.abs32"
+  },
+  {
+   "addend": 280,
+   "offset": 1149,
+   "section": "seg_pmco",
+   "symbol": "_lp_save",
+   "type": "sharc.abs32"
+  },
+  {
+   "addend": 284,
+   "offset": 1154,
+   "section": "seg_pmco",
+   "symbol": "_lp_save",
+   "type": "sharc.abs32"
+  },
+  {
+   "addend": 288,
+   "offset": 1159,
+   "section": "seg_pmco",
+   "symbol": "_lp_save",
+   "type": "sharc.abs32"
+  },
+  {
+   "addend": 0,
+   "offset": 1167,
+   "section": "seg_pmco",
+   "symbol": "_lp_status",
+   "type": "sharc.abs32"
+  },
+  {
+   "addend": 0,
+   "offset": 1171,
+   "section": "seg_pmco",
+   "symbol": "_lp_restore",
+   "type": "sharc.abs24"
+  },
+  {
+   "addend": 0,
+   "offset": 1174,
+   "section": "seg_pmco",
+   "symbol": "_lp_boot_status",
+   "type": "sharc.abs32"
+  },
+  {
+   "addend": 0,
+   "offset": 1180,
+   "section": "seg_pmco",
+   "symbol": "_lp_bad_boot",
+   "type": "sharc.abs24"
+  },
+  {
+   "addend": 0,
+   "offset": 1186,
+   "section": "seg_pmco",
+   "symbol": "_lp_bad_context",
+   "type": "sharc.abs24"
+  },
+  {
+   "addend": 0,
+   "offset": 1225,
+   "section": "seg_pmco",
+   "symbol": "_lp_port_record",
+   "type": "sharc.abs32"
+  },
+  {
+   "addend": 0,
+   "offset": 1233,
+   "section": "seg_pmco",
+   "symbol": "_lp_bad_owned",
+   "type": "sharc.abs24"
+  },
+  {
+   "addend": 0,
+   "offset": 1242,
+   "section": "seg_pmco",
+   "symbol": "_lp_bad_owned",
+   "type": "sharc.abs24"
+  },
+  {
+   "addend": 0,
+   "offset": 1251,
+   "section": "seg_pmco",
+   "symbol": "_lp_bad_owned",
+   "type": "sharc.abs24"
+  },
+  {
+   "addend": 0,
+   "offset": 1256,
+   "section": "seg_pmco",
+   "symbol": "_lp_status",
+   "type": "sharc.abs32"
+  },
+  {
+   "addend": 0,
+   "offset": 1259,
+   "section": "seg_pmco",
+   "symbol": "_lp_state",
+   "type": "sharc.abs32"
+  },
+  {
+   "addend": 0,
+   "offset": 1266,
+   "section": "seg_pmco",
+   "symbol": "_lp_handle",
+   "type": "sharc.abs32"
+  },
+  {
+   "addend": 0,
+   "offset": 1273,
+   "section": "seg_pmco",
+   "symbol": "_lp_open",
+   "type": "sharc.abs24"
+  },
+  {
+   "addend": -1,
+   "offset": 1277,
+   "section": "seg_pmco",
+   "symbol": "_lp_after_open",
+   "type": "sharc.abs32"
+  },
+  {
+   "addend": 0,
+   "offset": 1284,
+   "section": "seg_pmco",
+   "symbol": "_lp_bad_driver",
+   "type": "sharc.abs24"
+  },
+  {
+   "addend": 0,
+   "offset": 1287,
+   "section": "seg_pmco",
+   "symbol": "_lp_handle",
+   "type": "sharc.abs32"
+  },
+  {
+   "addend": 0,
+   "offset": 1290,
+   "section": "seg_pmco",
+   "symbol": "_lp_port_record",
+   "type": "sharc.abs32"
+  },
+  {
+   "addend": 0,
+   "offset": 1294,
+   "section": "seg_pmco",
+   "symbol": "_lp_bad_driver",
+   "type": "sharc.abs24"
+  },
+  {
+   "addend": 0,
+   "offset": 1297,
+   "section": "seg_pmco",
+   "symbol": "_lp_callback",
+   "type": "sharc.abs32"
+  },
+  {
+   "addend": 0,
+   "offset": 1300,
+   "section": "seg_pmco",
+   "symbol": "_lp_status",
+   "type": "sharc.abs32"
+  },
+  {
+   "addend": 0,
+   "offset": 1303,
+   "section": "seg_pmco",
+   "symbol": "_lp_set_callback",
+   "type": "sharc.abs24"
+  },
+  {
+   "addend": -1,
+   "offset": 1307,
+   "section": "seg_pmco",
+   "symbol": "_lp_after_callback",
+   "type": "sharc.abs32"
+  },
+  {
+   "addend": 0,
+   "offset": 1330,
+   "section": "seg_pmco",
+   "symbol": "_lp_close_a_epoch",
+   "type": "sharc.abs32"
+  },
+  {
+   "addend": 0,
+   "offset": 1333,
+   "section": "seg_pmco",
+   "symbol": "_lp_close_b_epoch",
+   "type": "sharc.abs32"
+  },
+  {
+   "addend": 0,
+   "offset": 1336,
+   "section": "seg_pmco",
+   "symbol": "_lp_b_storage",
+   "type": "sharc.abs32"
+  },
+  {
+   "addend": 0,
+   "offset": 1342,
+   "section": "seg_pmco",
+   "symbol": "_lp_b_lower",
+   "type": "sharc.abs32"
+  },
+  {
+   "addend": 0,
+   "offset": 1351,
+   "section": "seg_pmco",
+   "symbol": "_lp_b_upper",
+   "type": "sharc.abs32"
+  },
+  {
+   "addend": 0,
+   "offset": 1365,
+   "section": "seg_pmco",
+   "symbol": "_lp_b_guard_init",
+   "type": "sharc.abs24"
+  },
+  {
+   "addend": 0,
+   "offset": 1396,
+   "section": "seg_pmco",
+   "symbol": "_lp_b_init",
+   "type": "sharc.abs24"
+  },
+  {
+   "addend": 0,
+   "offset": 1399,
+   "section": "seg_pmco",
+   "symbol": "_lp_reader_b_source",
+   "type": "sharc.abs32"
+  },
+  {
+   "addend": 0,
+   "offset": 1404,
+   "section": "seg_pmco",
+   "symbol": "_lp_reader_b_frames",
+   "type": "sharc.abs32"
+  },
+  {
+   "addend": 0,
+   "offset": 1409,
+   "section": "seg_pmco",
+   "symbol": "_lp_close_b_open",
+   "type": "sharc.abs32"
+  },
+  {
+   "addend": 0,
+   "offset": 1412,
+   "section": "seg_pmco",
+   "symbol": "_lp_close_b_ready",
+   "type": "sharc.abs32"
+  },
+  {
+   "addend": 0,
+   "offset": 1417,
+   "section": "seg_pmco",
+   "symbol": "_lp_status",
+   "type": "sharc.abs32"
+  },
+  {
+   "addend": 0,
+   "offset": 1420,
+   "section": "seg_pmco",
+   "symbol": "_lp_arm",
+   "type": "sharc.abs24"
+  },
+  {
+   "addend": -1,
+   "offset": 1424,
+   "section": "seg_pmco",
+   "symbol": "_lp_after_arm",
+   "type": "sharc.abs32"
+  },
+  {
+   "addend": 0,
+   "offset": 1427,
+   "section": "seg_pmco",
+   "symbol": "_lp_restore",
+   "type": "sharc.abs24"
+  },
+  {
+   "addend": 0,
+   "offset": 1432,
+   "section": "seg_pmco",
+   "symbol": "_lp_init_error",
+   "type": "sharc.abs24"
+  },
+  {
+   "addend": 0,
+   "offset": 1437,
+   "section": "seg_pmco",
+   "symbol": "_lp_init_error",
+   "type": "sharc.abs24"
+  },
+  {
+   "addend": 0,
+   "offset": 1442,
+   "section": "seg_pmco",
+   "symbol": "_lp_init_error",
+   "type": "sharc.abs24"
+  },
+  {
+   "addend": 0,
+   "offset": 1447,
+   "section": "seg_pmco",
+   "symbol": "_lp_error",
+   "type": "sharc.abs32"
+  },
+  {
+   "addend": 0,
+   "offset": 1452,
+   "section": "seg_pmco",
+   "symbol": "_lp_status",
+   "type": "sharc.abs32"
+  },
+  {
+   "addend": 0,
+   "offset": 1473,
+   "section": "seg_pmco",
+   "symbol": "_lp_status",
+   "type": "sharc.abs32"
+  },
+  {
+   "addend": 0,
+   "offset": 1479,
+   "section": "seg_pmco",
+   "symbol": "_lp_progress_reply",
+   "type": "sharc.abs24"
+  },
+  {
+   "addend": 0,
+   "offset": 1482,
+   "section": "seg_pmco",
+   "symbol": "_lp_close_rearming",
+   "type": "sharc.abs32"
+  },
+  {
+   "addend": 0,
+   "offset": 1486,
+   "section": "seg_pmco",
+   "symbol": "_lp_progress_reply",
+   "type": "sharc.abs24"
+  },
+  {
+   "addend": 0,
+   "offset": 1489,
+   "section": "seg_pmco",
+   "symbol": "_lp_close_last_id",
+   "type": "sharc.abs32"
+  },
+  {
+   "addend": 0,
+   "offset": 1493,
+   "section": "seg_pmco",
+   "symbol": "_lp_choose_reply",
+   "type": "sharc.abs24"
+  },
+  {
+   "addend": 0,
+   "offset": 1496,
+   "section": "seg_pmco",
+   "symbol": "_lp_close_last_drained",
+   "type": "sharc.abs32"
+  },
+  {
+   "addend": 0,
+   "offset": 1500,
+   "section": "seg_pmco",
+   "symbol": "_lp_choose_reply",
+   "type": "sharc.abs24"
+  },
+  {
+   "addend": 0,
+   "offset": 1503,
+   "section": "seg_pmco",
+   "symbol": "_lp_close_last_track",
+   "type": "sharc.abs32"
+  },
+  {
+   "addend": 0,
+   "offset": 1507,
+   "section": "seg_pmco",
+   "symbol": "_lp_poll_b",
+   "type": "sharc.abs24"
+  },
+  {
+   "addend": 0,
+   "offset": 1510,
+   "section": "seg_pmco",
+   "symbol": "_lp_close_a_open",
+   "type": "sharc.abs32"
+  },
+  {
+   "addend": 0,
+   "offset": 1513,
+   "section": "seg_pmco",
+   "symbol": "_lp_poll_control",
+   "type": "sharc.abs24"
+  },
+  {
+   "addend": 0,
+   "offset": 1516,
+   "section": "seg_pmco",
+   "symbol": "_lp_close_b_open",
+   "type": "sharc.abs32"
+  },
+  {
+   "addend": 0,
+   "offset": 1524,
+   "section": "seg_pmco",
+   "symbol": "_lp_close_last_epoch",
+   "type": "sharc.abs32"
+  },
+  {
+   "addend": 0,
+   "offset": 1528,
+   "section": "seg_pmco",
+   "symbol": "_lp_poll_rejected",
+   "type": "sharc.abs24"
+  },
+  {
+   "addend": 0,
+   "offset": 1534,
+   "section": "seg_pmco",
+   "symbol": "_lp_choose_reply",
+   "type": "sharc.abs24"
+  },
+  {
+   "addend": 0,
+   "offset": 1540,
+   "section": "seg_pmco",
+   "symbol": "_lp_choose_reply",
+   "type": "sharc.abs24"
+  },
+  {
+   "addend": 0,
+   "offset": 1548,
+   "section": "seg_pmco",
+   "symbol": "_lp_choose_reply",
+   "type": "sharc.abs24"
+  },
+  {
+   "addend": 0,
+   "offset": 1554,
+   "section": "seg_pmco",
+   "symbol": "_lp_choose_reply",
+   "type": "sharc.abs24"
+  },
+  {
+   "addend": 0,
+   "offset": 1560,
+   "section": "seg_pmco",
+   "symbol": "_lp_choose_reply",
+   "type": "sharc.abs24"
+  },
+  {
+   "addend": 0,
+   "offset": 1565,
+   "section": "seg_pmco",
+   "symbol": "_lp_close_last_drained",
+   "type": "sharc.abs32"
+  },
+  {
+   "addend": 0,
+   "offset": 1570,
+   "section": "seg_pmco",
+   "symbol": "_lp_poll_publish",
+   "type": "sharc.abs24"
+  },
+  {
+   "addend": 0,
+   "offset": 1575,
+   "section": "seg_pmco",
+   "symbol": "_lp_close_status",
+   "type": "sharc.abs32"
+  },
+  {
+   "addend": 0,
+   "offset": 1578,
+   "section": "seg_pmco",
+   "symbol": "_lp_close_last_id",
+   "type": "sharc.abs32"
+  },
+  {
+   "addend": 0,
+   "offset": 1581,
+   "section": "seg_pmco",
+   "symbol": "_lp_close_id",
+   "type": "sharc.abs32"
+  },
+  {
+   "addend": 0,
+   "offset": 1584,
+   "section": "seg_pmco",
+   "symbol": "_lp_close_last_track",
+   "type": "sharc.abs32"
+  },
+  {
+   "addend": 0,
+   "offset": 1587,
+   "section": "seg_pmco",
+   "symbol": "_lp_close_track",
+   "type": "sharc.abs32"
+  },
+  {
+   "addend": 0,
+   "offset": 1590,
+   "section": "seg_pmco",
+   "symbol": "_lp_close_last_epoch",
+   "type": "sharc.abs32"
+  },
+  {
+   "addend": 0,
+   "offset": 1593,
+   "section": "seg_pmco",
+   "symbol": "_lp_close_epoch",
+   "type": "sharc.abs32"
+  },
+  {
+   "addend": 0,
+   "offset": 1598,
+   "section": "seg_pmco",
+   "symbol": "_lp_reply_kind",
+   "type": "sharc.abs32"
+  },
+  {
+   "addend": 0,
+   "offset": 1601,
+   "section": "seg_pmco",
+   "symbol": "_lp_reply_kind",
+   "type": "sharc.abs32"
+  },
+  {
+   "addend": 0,
+   "offset": 1605,
+   "section": "seg_pmco",
+   "symbol": "_lp_control_reply",
+   "type": "sharc.abs24"
+  },
+  {
+   "addend": 0,
+   "offset": 1611,
+   "section": "seg_pmco",
+   "symbol": "_lp_status",
+   "type": "sharc.abs32"
+  },
+  {
+   "addend": 0,
+   "offset": 1614,
+   "section": "seg_pmco",
+   "symbol": "_lp_error",
+   "type": "sharc.abs32"
+  },
+  {
+   "addend": 0,
+   "offset": 1621,
+   "section": "seg_pmco",
+   "symbol": "_lp_pages",
+   "type": "sharc.abs32"
+  },
+  {
+   "addend": 0,
+   "offset": 1624,
+   "section": "seg_pmco",
+   "symbol": "_lp_bytes",
+   "type": "sharc.abs32"
+  },
+  {
+   "addend": 0,
+   "offset": 1627,
+   "section": "seg_pmco",
+   "symbol": "_lp_write_reply",
+   "type": "sharc.abs24"
+  },
+  {
+   "addend": 0,
+   "offset": 1630,
+   "section": "seg_pmco",
+   "symbol": "_lp_close_status",
+   "type": "sharc.abs32"
+  },
+  {
+   "addend": 0,
+   "offset": 1640,
+   "section": "seg_pmco",
+   "symbol": "_lp_close_id",
+   "type": "sharc.abs32"
+  },
+  {
+   "addend": 0,
+   "offset": 1643,
+   "section": "seg_pmco",
+   "symbol": "_lp_close_track",
+   "type": "sharc.abs32"
+  },
+  {
+   "addend": 0,
+   "offset": 1646,
+   "section": "seg_pmco",
+   "symbol": "_lp_close_epoch",
+   "type": "sharc.abs32"
+  },
+  {
+   "addend": 80,
+   "offset": 1649,
+   "section": "seg_pmco",
+   "symbol": "_lp_save",
+   "type": "sharc.abs32"
+  },
+  {
+   "addend": 128,
+   "offset": 1668,
+   "section": "seg_pmco",
+   "symbol": "_lp_save",
+   "type": "sharc.abs32"
+  },
+  {
+   "addend": 132,
+   "offset": 1673,
+   "section": "seg_pmco",
+   "symbol": "_lp_save",
+   "type": "sharc.abs32"
+  },
+  {
+   "addend": 136,
+   "offset": 1678,
+   "section": "seg_pmco",
+   "symbol": "_lp_save",
+   "type": "sharc.abs32"
+  },
+  {
+   "addend": 140,
+   "offset": 1683,
+   "section": "seg_pmco",
+   "symbol": "_lp_save",
+   "type": "sharc.abs32"
+  },
+  {
+   "addend": 144,
+   "offset": 1688,
+   "section": "seg_pmco",
+   "symbol": "_lp_save",
+   "type": "sharc.abs32"
+  },
+  {
+   "addend": 148,
+   "offset": 1693,
+   "section": "seg_pmco",
+   "symbol": "_lp_save",
+   "type": "sharc.abs32"
+  },
+  {
+   "addend": 152,
+   "offset": 1698,
+   "section": "seg_pmco",
+   "symbol": "_lp_save",
+   "type": "sharc.abs32"
+  },
+  {
+   "addend": 156,
+   "offset": 1703,
+   "section": "seg_pmco",
+   "symbol": "_lp_save",
+   "type": "sharc.abs32"
+  },
+  {
+   "addend": 160,
+   "offset": 1708,
+   "section": "seg_pmco",
+   "symbol": "_lp_save",
+   "type": "sharc.abs32"
+  },
+  {
+   "addend": 164,
+   "offset": 1713,
+   "section": "seg_pmco",
+   "symbol": "_lp_save",
+   "type": "sharc.abs32"
+  },
+  {
+   "addend": 168,
+   "offset": 1718,
+   "section": "seg_pmco",
+   "symbol": "_lp_save",
+   "type": "sharc.abs32"
+  },
+  {
+   "addend": 172,
+   "offset": 1723,
+   "section": "seg_pmco",
+   "symbol": "_lp_save",
+   "type": "sharc.abs32"
+  },
+  {
+   "addend": 176,
+   "offset": 1728,
+   "section": "seg_pmco",
+   "symbol": "_lp_save",
+   "type": "sharc.abs32"
+  },
+  {
+   "addend": 180,
+   "offset": 1733,
+   "section": "seg_pmco",
+   "symbol": "_lp_save",
+   "type": "sharc.abs32"
+  },
+  {
+   "addend": 184,
+   "offset": 1738,
+   "section": "seg_pmco",
+   "symbol": "_lp_save",
+   "type": "sharc.abs32"
+  },
+  {
+   "addend": 188,
+   "offset": 1743,
+   "section": "seg_pmco",
+   "symbol": "_lp_save",
+   "type": "sharc.abs32"
+  },
+  {
+   "addend": 192,
+   "offset": 1748,
+   "section": "seg_pmco",
+   "symbol": "_lp_save",
+   "type": "sharc.abs32"
+  },
+  {
+   "addend": 196,
+   "offset": 1753,
+   "section": "seg_pmco",
+   "symbol": "_lp_save",
+   "type": "sharc.abs32"
+  },
+  {
+   "addend": 200,
+   "offset": 1758,
+   "section": "seg_pmco",
+   "symbol": "_lp_save",
+   "type": "sharc.abs32"
+  },
+  {
+   "addend": 204,
+   "offset": 1763,
+   "section": "seg_pmco",
+   "symbol": "_lp_save",
+   "type": "sharc.abs32"
+  },
+  {
+   "addend": 208,
+   "offset": 1768,
+   "section": "seg_pmco",
+   "symbol": "_lp_save",
+   "type": "sharc.abs32"
+  },
+  {
+   "addend": 212,
+   "offset": 1773,
+   "section": "seg_pmco",
+   "symbol": "_lp_save",
+   "type": "sharc.abs32"
+  },
+  {
+   "addend": 216,
+   "offset": 1778,
+   "section": "seg_pmco",
+   "symbol": "_lp_save",
+   "type": "sharc.abs32"
+  },
+  {
+   "addend": 220,
+   "offset": 1783,
+   "section": "seg_pmco",
+   "symbol": "_lp_save",
+   "type": "sharc.abs32"
+  },
+  {
+   "addend": 224,
+   "offset": 1788,
+   "section": "seg_pmco",
+   "symbol": "_lp_save",
+   "type": "sharc.abs32"
+  },
+  {
+   "addend": 228,
+   "offset": 1793,
+   "section": "seg_pmco",
+   "symbol": "_lp_save",
+   "type": "sharc.abs32"
+  },
+  {
+   "addend": 232,
+   "offset": 1798,
+   "section": "seg_pmco",
+   "symbol": "_lp_save",
+   "type": "sharc.abs32"
+  },
+  {
+   "addend": 236,
+   "offset": 1803,
+   "section": "seg_pmco",
+   "symbol": "_lp_save",
+   "type": "sharc.abs32"
+  },
+  {
+   "addend": 240,
+   "offset": 1808,
+   "section": "seg_pmco",
+   "symbol": "_lp_save",
+   "type": "sharc.abs32"
+  },
+  {
+   "addend": 244,
+   "offset": 1813,
+   "section": "seg_pmco",
+   "symbol": "_lp_save",
+   "type": "sharc.abs32"
+  },
+  {
+   "addend": 248,
+   "offset": 1818,
+   "section": "seg_pmco",
+   "symbol": "_lp_save",
+   "type": "sharc.abs32"
+  },
+  {
+   "addend": 252,
+   "offset": 1823,
+   "section": "seg_pmco",
+   "symbol": "_lp_save",
+   "type": "sharc.abs32"
+  },
+  {
+   "addend": 256,
+   "offset": 1828,
+   "section": "seg_pmco",
+   "symbol": "_lp_save",
+   "type": "sharc.abs32"
+  },
+  {
+   "addend": 260,
+   "offset": 1833,
+   "section": "seg_pmco",
+   "symbol": "_lp_save",
+   "type": "sharc.abs32"
+  },
+  {
+   "addend": 264,
+   "offset": 1838,
+   "section": "seg_pmco",
+   "symbol": "_lp_save",
+   "type": "sharc.abs32"
+  },
+  {
+   "addend": 268,
+   "offset": 1843,
+   "section": "seg_pmco",
+   "symbol": "_lp_save",
+   "type": "sharc.abs32"
+  },
+  {
+   "addend": 272,
+   "offset": 1848,
+   "section": "seg_pmco",
+   "symbol": "_lp_save",
+   "type": "sharc.abs32"
+  },
+  {
+   "addend": 276,
+   "offset": 1853,
+   "section": "seg_pmco",
+   "symbol": "_lp_save",
+   "type": "sharc.abs32"
+  },
+  {
+   "addend": 288,
+   "offset": 1858,
+   "section": "seg_pmco",
+   "symbol": "_lp_save",
+   "type": "sharc.abs32"
+  },
+  {
+   "addend": 284,
+   "offset": 1863,
+   "section": "seg_pmco",
+   "symbol": "_lp_save",
+   "type": "sharc.abs32"
+  },
+  {
+   "addend": 64,
+   "offset": 1868,
+   "section": "seg_pmco",
+   "symbol": "_lp_save",
+   "type": "sharc.abs32"
+  },
+  {
+   "addend": 68,
+   "offset": 1873,
+   "section": "seg_pmco",
+   "symbol": "_lp_save",
+   "type": "sharc.abs32"
+  },
+  {
+   "addend": 72,
+   "offset": 1878,
+   "section": "seg_pmco",
+   "symbol": "_lp_save",
+   "type": "sharc.abs32"
+  },
+  {
+   "addend": 76,
+   "offset": 1883,
+   "section": "seg_pmco",
+   "symbol": "_lp_save",
+   "type": "sharc.abs32"
+  },
+  {
+   "addend": 80,
+   "offset": 1888,
+   "section": "seg_pmco",
+   "symbol": "_lp_save",
+   "type": "sharc.abs32"
+  },
+  {
+   "addend": 84,
+   "offset": 1893,
+   "section": "seg_pmco",
+   "symbol": "_lp_save",
+   "type": "sharc.abs32"
+  },
+  {
+   "addend": 96,
+   "offset": 1898,
+   "section": "seg_pmco",
+   "symbol": "_lp_save",
+   "type": "sharc.abs32"
+  },
+  {
+   "addend": 100,
+   "offset": 1903,
+   "section": "seg_pmco",
+   "symbol": "_lp_save",
+   "type": "sharc.abs32"
+  },
+  {
+   "addend": 104,
+   "offset": 1908,
+   "section": "seg_pmco",
+   "symbol": "_lp_save",
+   "type": "sharc.abs32"
+  },
+  {
+   "addend": 108,
+   "offset": 1913,
+   "section": "seg_pmco",
+   "symbol": "_lp_save",
+   "type": "sharc.abs32"
+  },
+  {
+   "addend": 112,
+   "offset": 1918,
+   "section": "seg_pmco",
+   "symbol": "_lp_save",
+   "type": "sharc.abs32"
+  },
+  {
+   "addend": 116,
+   "offset": 1923,
+   "section": "seg_pmco",
+   "symbol": "_lp_save",
+   "type": "sharc.abs32"
+  },
+  {
+   "addend": 120,
+   "offset": 1928,
+   "section": "seg_pmco",
+   "symbol": "_lp_save",
+   "type": "sharc.abs32"
+  },
+  {
+   "addend": 124,
+   "offset": 1933,
+   "section": "seg_pmco",
+   "symbol": "_lp_save",
+   "type": "sharc.abs32"
+  },
+  {
+   "addend": 88,
+   "offset": 1938,
+   "section": "seg_pmco",
+   "symbol": "_lp_save",
+   "type": "sharc.abs32"
+  },
+  {
+   "addend": 92,
+   "offset": 1943,
+   "section": "seg_pmco",
+   "symbol": "_lp_save",
+   "type": "sharc.abs32"
+  },
+  {
+   "addend": 280,
+   "offset": 1948,
+   "section": "seg_pmco",
+   "symbol": "_lp_save",
+   "type": "sharc.abs32"
+  },
+  {
+   "addend": 0,
+   "offset": 1955,
+   "section": "seg_pmco",
+   "symbol": "_lp_save",
+   "type": "sharc.abs32"
+  },
+  {
+   "addend": 4,
+   "offset": 1958,
+   "section": "seg_pmco",
+   "symbol": "_lp_save",
+   "type": "sharc.abs32"
+  },
+  {
+   "addend": 8,
+   "offset": 1961,
+   "section": "seg_pmco",
+   "symbol": "_lp_save",
+   "type": "sharc.abs32"
+  },
+  {
+   "addend": 12,
+   "offset": 1964,
+   "section": "seg_pmco",
+   "symbol": "_lp_save",
+   "type": "sharc.abs32"
+  },
+  {
+   "addend": 16,
+   "offset": 1967,
+   "section": "seg_pmco",
+   "symbol": "_lp_save",
+   "type": "sharc.abs32"
+  },
+  {
+   "addend": 20,
+   "offset": 1970,
+   "section": "seg_pmco",
+   "symbol": "_lp_save",
+   "type": "sharc.abs32"
+  },
+  {
+   "addend": 24,
+   "offset": 1973,
+   "section": "seg_pmco",
+   "symbol": "_lp_save",
+   "type": "sharc.abs32"
+  },
+  {
+   "addend": 28,
+   "offset": 1976,
+   "section": "seg_pmco",
+   "symbol": "_lp_save",
+   "type": "sharc.abs32"
+  },
+  {
+   "addend": 32,
+   "offset": 1979,
+   "section": "seg_pmco",
+   "symbol": "_lp_save",
+   "type": "sharc.abs32"
+  },
+  {
+   "addend": 36,
+   "offset": 1982,
+   "section": "seg_pmco",
+   "symbol": "_lp_save",
+   "type": "sharc.abs32"
+  },
+  {
+   "addend": 40,
+   "offset": 1985,
+   "section": "seg_pmco",
+   "symbol": "_lp_save",
+   "type": "sharc.abs32"
+  },
+  {
+   "addend": 44,
+   "offset": 1988,
+   "section": "seg_pmco",
+   "symbol": "_lp_save",
+   "type": "sharc.abs32"
+  },
+  {
+   "addend": 48,
+   "offset": 1991,
+   "section": "seg_pmco",
+   "symbol": "_lp_save",
+   "type": "sharc.abs32"
+  },
+  {
+   "addend": 52,
+   "offset": 1994,
+   "section": "seg_pmco",
+   "symbol": "_lp_save",
+   "type": "sharc.abs32"
+  },
+  {
+   "addend": 56,
+   "offset": 1997,
+   "section": "seg_pmco",
+   "symbol": "_lp_save",
+   "type": "sharc.abs32"
+  },
+  {
+   "addend": 60,
+   "offset": 2000,
+   "section": "seg_pmco",
+   "symbol": "_lp_save",
+   "type": "sharc.abs32"
+  },
+  {
+   "addend": 0,
+   "offset": 2003,
+   "section": "seg_pmco",
+   "symbol": "_lp_back",
+   "type": "sharc.abs24"
+  },
+  {
+   "addend": 0,
+   "offset": 2011,
+   "section": "seg_pmco",
+   "symbol": "_lp_descriptor",
+   "type": "sharc.abs32"
+  },
+  {
+   "addend": 0,
+   "offset": 2018,
+   "section": "seg_pmco",
+   "symbol": "_lp_rx",
+   "type": "sharc.abs32"
+  },
+  {
+   "addend": 0,
+   "offset": 2042,
+   "section": "seg_pmco",
+   "symbol": "_lp_handle",
+   "type": "sharc.abs32"
+  },
+  {
+   "addend": 0,
+   "offset": 2045,
+   "section": "seg_pmco",
+   "symbol": "_lp_descriptor",
+   "type": "sharc.abs32"
+  },
+  {
+   "addend": 0,
+   "offset": 2051,
+   "section": "seg_pmco",
+   "symbol": "_lp_submit",
+   "type": "sharc.abs24"
+  },
+  {
+   "addend": -1,
+   "offset": 2055,
+   "section": "seg_pmco",
+   "symbol": "_lp_after_submit",
+   "type": "sharc.abs32"
+  },
+  {
+   "addend": 0,
+   "offset": 2062,
+   "section": "seg_pmco",
+   "symbol": "_lp_arm_done",
+   "type": "sharc.abs24"
+  },
+  {
+   "addend": 0,
+   "offset": 2067,
+   "section": "seg_pmco",
+   "symbol": "_lp_error",
+   "type": "sharc.abs32"
+  },
+  {
+   "addend": 0,
+   "offset": 2072,
+   "section": "seg_pmco",
+   "symbol": "_lp_status",
+   "type": "sharc.abs32"
+  },
+  {
+   "addend": 0,
+   "offset": 2130,
+   "section": "seg_pmco",
+   "symbol": "_lp_status",
+   "type": "sharc.abs32"
+  },
+  {
+   "addend": 0,
+   "offset": 2136,
+   "section": "seg_pmco",
+   "symbol": "_lp_cb_active",
+   "type": "sharc.abs24"
+  },
+  {
+   "addend": 0,
+   "offset": 2142,
+   "section": "seg_pmco",
+   "symbol": "_lp_cb_active",
+   "type": "sharc.abs24"
+  },
+  {
+   "addend": 0,
+   "offset": 2148,
+   "section": "seg_pmco",
+   "symbol": "_lp_cb_done",
+   "type": "sharc.abs24"
+  },
+  {
+   "addend": 0,
+   "offset": 2151,
+   "section": "seg_pmco",
+   "symbol": "_lp_cb_bad",
+   "type": "sharc.abs24"
+  },
+  {
+   "addend": 0,
+   "offset": 2154,
+   "section": "seg_pmco",
+   "symbol": "_lp_status",
+   "type": "sharc.abs32"
+  },
+  {
+   "addend": 0,
+   "offset": 2158,
+   "section": "seg_pmco",
+   "symbol": "_lp_cb_bad",
+   "type": "sharc.abs24"
+  },
+  {
+   "addend": 0,
+   "offset": 2164,
+   "section": "seg_pmco",
+   "symbol": "_lp_cb_bad",
+   "type": "sharc.abs24"
+  },
+  {
+   "addend": 0,
+   "offset": 2167,
+   "section": "seg_pmco",
+   "symbol": "_lp_rx",
+   "type": "sharc.abs32"
+  },
+  {
+   "addend": 0,
+   "offset": 2171,
+   "section": "seg_pmco",
+   "symbol": "_lp_cb_bad",
+   "type": "sharc.abs24"
+  },
+  {
+   "addend": 0,
+   "offset": 2182,
+   "section": "seg_pmco",
+   "symbol": "_lp_cb_close",
+   "type": "sharc.abs24"
+  },
+  {
+   "addend": 0,
+   "offset": 2185,
+   "section": "seg_pmco",
+   "symbol": "_lp_status",
+   "type": "sharc.abs32"
+  },
+  {
+   "addend": 0,
+   "offset": 2191,
+   "section": "seg_pmco",
+   "symbol": "_lp_cb_bad",
+   "type": "sharc.abs24"
+  },
+  {
+   "addend": 0,
+   "offset": 2196,
+   "section": "seg_pmco",
+   "symbol": "_lp_reply_kind",
+   "type": "sharc.abs32"
+  },
+  {
+   "addend": 0,
+   "offset": 2199,
+   "section": "seg_pmco",
+   "symbol": "_lp_pages",
+   "type": "sharc.abs32"
+  },
+  {
+   "addend": 0,
+   "offset": 2203,
+   "section": "seg_pmco",
+   "symbol": "_lp_cb_bad",
+   "type": "sharc.abs24"
+  },
+  {
+   "addend": 0,
+   "offset": 2207,
+   "section": "seg_pmco",
+   "symbol": "_lp_cb_bad",
+   "type": "sharc.abs24"
+  },
+  {
+   "addend": 0,
+   "offset": 2213,
+   "section": "seg_pmco",
+   "symbol": "_lp_cb_bad",
+   "type": "sharc.abs24"
+  },
+  {
+   "addend": 0,
+   "offset": 2216,
+   "section": "seg_pmco",
+   "symbol": "_lp_bytes",
+   "type": "sharc.abs32"
+  },
+  {
+   "addend": 0,
+   "offset": 2223,
+   "section": "seg_pmco",
+   "symbol": "_lp_cb_bad",
+   "type": "sharc.abs24"
+  },
+  {
+   "addend": 0,
+   "offset": 2259,
+   "section": "seg_pmco",
+   "symbol": "_lp_bytes",
+   "type": "sharc.abs32"
+  },
+  {
+   "addend": 0,
+   "offset": 2263,
+   "section": "seg_pmco",
+   "symbol": "_lp_pages",
+   "type": "sharc.abs32"
+  },
+  {
+   "addend": 0,
+   "offset": 2269,
+   "section": "seg_pmco",
+   "symbol": "_lp_complete",
+   "type": "sharc.abs24"
+  },
+  {
+   "addend": 0,
+   "offset": 2272,
+   "section": "seg_pmco",
+   "symbol": "_lp_arm",
+   "type": "sharc.abs24"
+  },
+  {
+   "addend": -1,
+   "offset": 2276,
+   "section": "seg_pmco",
+   "symbol": "_lp_after_rearm",
+   "type": "sharc.abs32"
+  },
+  {
+   "addend": 0,
+   "offset": 2279,
+   "section": "seg_pmco",
+   "symbol": "_lp_cb_done",
+   "type": "sharc.abs24"
+  },
+  {
+   "addend": 0,
+   "offset": 2295,
+   "section": "seg_pmco",
+   "symbol": "_lp_cb_bad",
+   "type": "sharc.abs24"
+  },
+  {
+   "addend": 0,
+   "offset": 2300,
+   "section": "seg_pmco",
+   "symbol": "_lp_cb_bad",
+   "type": "sharc.abs24"
+  },
+  {
+   "addend": 0,
+   "offset": 2304,
+   "section": "seg_pmco",
+   "symbol": "_lp_guard_check",
+   "type": "sharc.abs24"
+  },
+  {
+   "addend": 0,
+   "offset": 2309,
+   "section": "seg_pmco",
+   "symbol": "_lp_status",
+   "type": "sharc.abs32"
+  },
+  {
+   "addend": 0,
+   "offset": 2312,
+   "section": "seg_pmco",
+   "symbol": "_lp_arm",
+   "type": "sharc.abs24"
+  },
+  {
+   "addend": -1,
+   "offset": 2316,
+   "section": "seg_pmco",
+   "symbol": "_lp_after_terminal_rearm",
+   "type": "sharc.abs32"
+  },
+  {
+   "addend": 0,
+   "offset": 2319,
+   "section": "seg_pmco",
+   "symbol": "_lp_status",
+   "type": "sharc.abs32"
+  },
+  {
+   "addend": 0,
+   "offset": 2325,
+   "section": "seg_pmco",
+   "symbol": "_lp_cb_done",
+   "type": "sharc.abs24"
+  },
+  {
+   "addend": 0,
+   "offset": 2328,
+   "section": "seg_pmco",
+   "symbol": "_lp_close_a_closed",
+   "type": "sharc.abs32"
+  },
+  {
+   "addend": 0,
+   "offset": 2332,
+   "section": "seg_pmco",
+   "symbol": "_lp_cb_done",
+   "type": "sharc.abs24"
+  },
+  {
+   "addend": 0,
+   "offset": 2335,
+   "section": "seg_pmco",
+   "symbol": "_lp_close_a_count",
+   "type": "sharc.abs32"
+  },
+  {
+   "addend": 0,
+   "offset": 2338,
+   "section": "seg_pmco",
+   "symbol": "_lp_close_a_fault",
+   "type": "sharc.abs32"
+  },
+  {
+   "addend": 0,
+   "offset": 2342,
+   "section": "seg_pmco",
+   "symbol": "_lp_cb_bad",
+   "type": "sharc.abs24"
+  },
+  {
+   "addend": 0,
+   "offset": 2348,
+   "section": "seg_pmco",
+   "symbol": "_lp_reader_a_source",
+   "type": "sharc.abs32"
+  },
+  {
+   "addend": 0,
+   "offset": 2354,
+   "section": "seg_pmco",
+   "symbol": "_lp_reader_a_frames",
+   "type": "sharc.abs32"
+  },
+  {
+   "addend": 0,
+   "offset": 2359,
+   "section": "seg_pmco",
+   "symbol": "_lp_close_a_open",
+   "type": "sharc.abs32"
+  },
+  {
+   "addend": 0,
+   "offset": 2362,
+   "section": "seg_pmco",
+   "symbol": "_lp_close_a_ready",
+   "type": "sharc.abs32"
+  },
+  {
+   "addend": 0,
+   "offset": 2365,
+   "section": "seg_pmco",
+   "symbol": "_lp_cb_done",
+   "type": "sharc.abs24"
+  },
+  {
+   "addend": 0,
+   "offset": 2370,
+   "section": "seg_pmco",
+   "symbol": "_lp_close_rearming",
+   "type": "sharc.abs32"
+  },
+  {
+   "addend": 0,
+   "offset": 2379,
+   "section": "seg_pmco",
+   "symbol": "_lp_close_id",
+   "type": "sharc.abs32"
+  },
+  {
+   "addend": 0,
+   "offset": 2382,
+   "section": "seg_pmco",
+   "symbol": "_lp_close_track",
+   "type": "sharc.abs32"
+  },
+  {
+   "addend": 0,
+   "offset": 2385,
+   "section": "seg_pmco",
+   "symbol": "_lp_close_epoch",
+   "type": "sharc.abs32"
+  },
+  {
+   "addend": 0,
+   "offset": 2389,
+   "section": "seg_pmco",
+   "symbol": "_lp_close_rejected",
+   "type": "sharc.abs24"
+  },
+  {
+   "addend": 0,
+   "offset": 2393,
+   "section": "seg_pmco",
+   "symbol": "_lp_close_rejected",
+   "type": "sharc.abs24"
+  },
+  {
+   "addend": 0,
+   "offset": 2399,
+   "section": "seg_pmco",
+   "symbol": "_lp_close_rejected",
+   "type": "sharc.abs24"
+  },
+  {
+   "addend": 0,
+   "offset": 2405,
+   "section": "seg_pmco",
+   "symbol": "_lp_close_rejected",
+   "type": "sharc.abs24"
+  },
+  {
+   "addend": 0,
+   "offset": 2408,
+   "section": "seg_pmco",
+   "symbol": "_lp_close_last_id",
+   "type": "sharc.abs32"
+  },
+  {
+   "addend": 0,
+   "offset": 2412,
+   "section": "seg_pmco",
+   "symbol": "_lp_close_rejected",
+   "type": "sharc.abs24"
+  },
+  {
+   "addend": 0,
+   "offset": 2415,
+   "section": "seg_pmco",
+   "symbol": "_lp_close_retry",
+   "type": "sharc.abs24"
+  },
+  {
+   "addend": 0,
+   "offset": 2419,
+   "section": "seg_pmco",
+   "symbol": "_lp_close_identity",
+   "type": "sharc.abs24"
+  },
+  {
+   "addend": 0,
+   "offset": 2422,
+   "section": "seg_pmco",
+   "symbol": "_lp_close_last_drained",
+   "type": "sharc.abs32"
+  },
+  {
+   "addend": 0,
+   "offset": 2426,
+   "section": "seg_pmco",
+   "symbol": "_lp_close_rejected",
+   "type": "sharc.abs24"
+  },
+  {
+   "addend": 0,
+   "offset": 2429,
+   "section": "seg_pmco",
+   "symbol": "_lp_close_identity",
+   "type": "sharc.abs24"
+  },
+  {
+   "addend": 0,
+   "offset": 2432,
+   "section": "seg_pmco",
+   "symbol": "_lp_close_last_track",
+   "type": "sharc.abs32"
+  },
+  {
+   "addend": 0,
+   "offset": 2436,
+   "section": "seg_pmco",
+   "symbol": "_lp_close_rejected",
+   "type": "sharc.abs24"
+  },
+  {
+   "addend": 0,
+   "offset": 2439,
+   "section": "seg_pmco",
+   "symbol": "_lp_close_last_epoch",
+   "type": "sharc.abs32"
+  },
+  {
+   "addend": 0,
+   "offset": 2443,
+   "section": "seg_pmco",
+   "symbol": "_lp_close_rejected",
+   "type": "sharc.abs24"
+  },
+  {
+   "addend": 0,
+   "offset": 2447,
+   "section": "seg_pmco",
+   "symbol": "_lp_close_b",
+   "type": "sharc.abs24"
+  },
+  {
+   "addend": 0,
+   "offset": 2450,
+   "section": "seg_pmco",
+   "symbol": "_lp_close_a_open",
+   "type": "sharc.abs32"
+  },
+  {
+   "addend": 0,
+   "offset": 2453,
+   "section": "seg_pmco",
+   "symbol": "_lp_close_check",
+   "type": "sharc.abs24"
+  },
+  {
+   "addend": 0,
+   "offset": 2456,
+   "section": "seg_pmco",
+   "symbol": "_lp_close_b_open",
+   "type": "sharc.abs32"
+  },
+  {
+   "addend": 0,
+   "offset": 2465,
+   "section": "seg_pmco",
+   "symbol": "_lp_close_rejected",
+   "type": "sharc.abs24"
+  },
+  {
+   "addend": 0,
+   "offset": 2468,
+   "section": "seg_pmco",
+   "symbol": "_lp_close_last_id",
+   "type": "sharc.abs32"
+  },
+  {
+   "addend": 0,
+   "offset": 2472,
+   "section": "seg_pmco",
+   "symbol": "_lp_close_adopt",
+   "type": "sharc.abs24"
+  },
+  {
+   "addend": 0,
+   "offset": 2477,
+   "section": "seg_pmco",
+   "symbol": "_lp_close_last_drained",
+   "type": "sharc.abs32"
+  },
+  {
+   "addend": 0,
+   "offset": 2480,
+   "section": "seg_pmco",
+   "symbol": "_lp_close_last_id",
+   "type": "sharc.abs32"
+  },
+  {
+   "addend": 0,
+   "offset": 2483,
+   "section": "seg_pmco",
+   "symbol": "_lp_close_last_track",
+   "type": "sharc.abs32"
+  },
+  {
+   "addend": 0,
+   "offset": 2486,
+   "section": "seg_pmco",
+   "symbol": "_lp_close_last_epoch",
+   "type": "sharc.abs32"
+  },
+  {
+   "addend": 0,
+   "offset": 2490,
+   "section": "seg_pmco",
+   "symbol": "_lp_close_b_admission",
+   "type": "sharc.abs24"
+  },
+  {
+   "addend": 0,
+   "offset": 2495,
+   "section": "seg_pmco",
+   "symbol": "_lp_close_a_open",
+   "type": "sharc.abs32"
+  },
+  {
+   "addend": 0,
+   "offset": 2498,
+   "section": "seg_pmco",
+   "symbol": "_lp_close_a_ready",
+   "type": "sharc.abs32"
+  },
+  {
+   "addend": 0,
+   "offset": 2503,
+   "section": "seg_pmco",
+   "symbol": "_lp_close_a_closed",
+   "type": "sharc.abs32"
+  },
+  {
+   "addend": 0,
+   "offset": 2506,
+   "section": "seg_pmco",
+   "symbol": "_lp_close_a_count",
+   "type": "sharc.abs32"
+  },
+  {
+   "addend": 0,
+   "offset": 2509,
+   "section": "seg_pmco",
+   "symbol": "_lp_close_a_fault",
+   "type": "sharc.abs32"
+  },
+  {
+   "addend": 0,
+   "offset": 2513,
+   "section": "seg_pmco",
+   "symbol": "_lp_close_pending",
+   "type": "sharc.abs24"
+  },
+  {
+   "addend": 0,
+   "offset": 2516,
+   "section": "seg_pmco",
+   "symbol": "_lp_close_drained",
+   "type": "sharc.abs24"
+  },
+  {
+   "addend": 0,
+   "offset": 2521,
+   "section": "seg_pmco",
+   "symbol": "_lp_close_b_open",
+   "type": "sharc.abs32"
+  },
+  {
+   "addend": 0,
+   "offset": 2524,
+   "section": "seg_pmco",
+   "symbol": "_lp_close_b_ready",
+   "type": "sharc.abs32"
+  },
+  {
+   "addend": 0,
+   "offset": 2529,
+   "section": "seg_pmco",
+   "symbol": "_lp_close_b_closed",
+   "type": "sharc.abs32"
+  },
+  {
+   "addend": 0,
+   "offset": 2532,
+   "section": "seg_pmco",
+   "symbol": "_lp_close_b_count",
+   "type": "sharc.abs32"
+  },
+  {
+   "addend": 0,
+   "offset": 2535,
+   "section": "seg_pmco",
+   "symbol": "_lp_close_b_fault",
+   "type": "sharc.abs32"
+  },
+  {
+   "addend": 0,
+   "offset": 2539,
+   "section": "seg_pmco",
+   "symbol": "_lp_close_pending",
+   "type": "sharc.abs24"
+  },
+  {
+   "addend": 0,
+   "offset": 2544,
+   "section": "seg_pmco",
+   "symbol": "_lp_close_last_drained",
+   "type": "sharc.abs32"
+  },
+  {
+   "addend": 0,
+   "offset": 2549,
+   "section": "seg_pmco",
+   "symbol": "_lp_close_result",
+   "type": "sharc.abs24"
+  },
+  {
+   "addend": 0,
+   "offset": 2554,
+   "section": "seg_pmco",
+   "symbol": "_lp_close_result",
+   "type": "sharc.abs24"
+  },
+  {
+   "addend": 0,
+   "offset": 2559,
+   "section": "seg_pmco",
+   "symbol": "_lp_close_status",
+   "type": "sharc.abs32"
+  },
+  {
+   "addend": 0,
+   "offset": 2562,
+   "section": "seg_pmco",
+   "symbol": "_lp_arm",
+   "type": "sharc.abs24"
+  },
+  {
+   "addend": -1,
+   "offset": 2566,
+   "section": "seg_pmco",
+   "symbol": "_lp_after_close_rearm",
+   "type": "sharc.abs32"
+  },
+  {
+   "addend": 0,
+   "offset": 2569,
+   "section": "seg_pmco",
+   "symbol": "_lp_status",
+   "type": "sharc.abs32"
+  },
+  {
+   "addend": 0,
+   "offset": 2575,
+   "section": "seg_pmco",
+   "symbol": "_lp_cb_done",
+   "type": "sharc.abs24"
+  },
+  {
+   "addend": 0,
+   "offset": 2580,
+   "section": "seg_pmco",
+   "symbol": "_lp_close_rearming",
+   "type": "sharc.abs32"
+  },
+  {
+   "addend": 0,
+   "offset": 2585,
+   "section": "seg_pmco",
+   "symbol": "_lp_reply_kind",
+   "type": "sharc.abs32"
+  },
+  {
+   "addend": 0,
+   "offset": 2588,
+   "section": "seg_pmco",
+   "symbol": "_lp_cb_done",
+   "type": "sharc.abs24"
+  },
+  {
+   "addend": 0,
+   "offset": 2593,
+   "section": "seg_pmco",
+   "symbol": "_lp_error",
+   "type": "sharc.abs32"
+  },
+  {
+   "addend": 0,
+   "offset": 2596,
+   "section": "seg_pmco",
+   "symbol": "_lp_status",
+   "type": "sharc.abs32"
+  },
+  {
+   "addend": 0,
+   "offset": 2698,
+   "section": "seg_pmco",
+   "symbol": "_dk_sample_finish",
+   "type": "sharc.abs24"
+  },
+  {
+   "addend": 0,
+   "offset": 2702,
+   "section": "seg_pmco",
+   "symbol": "_dk_sample_finish",
+   "type": "sharc.abs24"
+  },
+  {
+   "addend": 0,
+   "offset": 2706,
+   "section": "seg_pmco",
+   "symbol": "_dk_sample_finish",
+   "type": "sharc.abs24"
+  },
+  {
+   "addend": 0,
+   "offset": 2710,
+   "section": "seg_pmco",
+   "symbol": "_dk_sample_zero",
+   "type": "sharc.abs24"
+  },
+  {
+   "addend": 0,
+   "offset": 2719,
+   "section": "seg_pmco",
+   "symbol": "_dk_sample_neighbor",
+   "type": "sharc.abs24"
+  },
+  {
+   "addend": 0,
+   "offset": 2755,
+   "section": "seg_pmco",
+   "symbol": "_dk_sample_crossed",
+   "type": "sharc.abs24"
+  },
+  {
+   "addend": 0,
+   "offset": 2759,
+   "section": "seg_pmco",
+   "symbol": "_dk_sample_crossed",
+   "type": "sharc.abs24"
+  },
+  {
+   "addend": 0,
+   "offset": 2762,
+   "section": "seg_pmco",
+   "symbol": "_dk_sample_store",
+   "type": "sharc.abs24"
+  },
+  {
+   "addend": 0,
+   "offset": 2767,
+   "section": "seg_pmco",
+   "symbol": "_dk_sample_store",
+   "type": "sharc.abs24"
+  },
+  {
+   "addend": 0,
+   "offset": 2777,
+   "section": "seg_pmco",
+   "symbol": "_dk_sample_loop",
+   "type": "sharc.abs24"
+  },
+  {
+   "addend": 0,
+   "offset": 2878,
+   "section": "seg_pmco",
+   "symbol": "_dk_sample_pcm16_finish",
+   "type": "sharc.abs24"
+  },
+  {
+   "addend": 0,
+   "offset": 2882,
+   "section": "seg_pmco",
+   "symbol": "_dk_sample_pcm16_finish",
+   "type": "sharc.abs24"
+  },
+  {
+   "addend": 0,
+   "offset": 2886,
+   "section": "seg_pmco",
+   "symbol": "_dk_sample_pcm16_finish",
+   "type": "sharc.abs24"
+  },
+  {
+   "addend": 0,
+   "offset": 2890,
+   "section": "seg_pmco",
+   "symbol": "_dk_sample_pcm16_zero",
+   "type": "sharc.abs24"
+  },
+  {
+   "addend": 0,
+   "offset": 2925,
+   "section": "seg_pmco",
+   "symbol": "_dk_sample_pcm16_neighbor",
+   "type": "sharc.abs24"
+  },
+  {
+   "addend": 0,
+   "offset": 2934,
+   "section": "seg_pmco",
+   "symbol": "_dk_sample_pcm16_neighbor",
+   "type": "sharc.abs24"
+  },
+  {
+   "addend": 0,
+   "offset": 2938,
+   "section": "seg_pmco",
+   "symbol": "_dk_sample_pcm16_neighbor",
+   "type": "sharc.abs24"
+  },
+  {
+   "addend": 0,
+   "offset": 2992,
+   "section": "seg_pmco",
+   "symbol": "_dk_sample_pcm16_crossed",
+   "type": "sharc.abs24"
+  },
+  {
+   "addend": 0,
+   "offset": 2996,
+   "section": "seg_pmco",
+   "symbol": "_dk_sample_pcm16_crossed",
+   "type": "sharc.abs24"
+  },
+  {
+   "addend": 0,
+   "offset": 2999,
+   "section": "seg_pmco",
+   "symbol": "_dk_sample_pcm16_store",
+   "type": "sharc.abs24"
+  },
+  {
+   "addend": 0,
+   "offset": 3007,
+   "section": "seg_pmco",
+   "symbol": "_dk_sample_pcm16_end",
+   "type": "sharc.abs24"
+  },
+  {
+   "addend": 0,
+   "offset": 3015,
+   "section": "seg_pmco",
+   "symbol": "_dk_sample_pcm16_end",
+   "type": "sharc.abs24"
+  },
+  {
+   "addend": 0,
+   "offset": 3019,
+   "section": "seg_pmco",
+   "symbol": "_dk_sample_pcm16_wrap_up",
+   "type": "sharc.abs24"
+  },
+  {
+   "addend": 0,
+   "offset": 3023,
+   "section": "seg_pmco",
+   "symbol": "_dk_sample_pcm16_wrapped",
+   "type": "sharc.abs24"
+  },
+  {
+   "addend": 0,
+   "offset": 3028,
+   "section": "seg_pmco",
+   "symbol": "_dk_sample_pcm16_end",
+   "type": "sharc.abs24"
+  },
+  {
+   "addend": 0,
+   "offset": 3032,
+   "section": "seg_pmco",
+   "symbol": "_dk_sample_pcm16_store",
+   "type": "sharc.abs24"
+  },
+  {
+   "addend": 0,
+   "offset": 3037,
+   "section": "seg_pmco",
+   "symbol": "_dk_sample_pcm16_store",
+   "type": "sharc.abs24"
+  },
+  {
+   "addend": 0,
+   "offset": 3047,
+   "section": "seg_pmco",
+   "symbol": "_dk_sample_pcm16_loop",
+   "type": "sharc.abs24"
+  },
+  {
+   "addend": 0,
+   "offset": 3122,
+   "section": "seg_pmco",
+   "symbol": "_lp_reader_a_note",
+   "type": "sharc.abs24"
+  },
+  {
+   "addend": 0,
+   "offset": 3128,
+   "section": "seg_pmco",
+   "symbol": "_lp_reader_b_note",
+   "type": "sharc.abs24"
+  },
+  {
+   "addend": 0,
+   "offset": 3131,
+   "section": "seg_pmco",
+   "symbol": "_lp_reader_note_denied",
+   "type": "sharc.abs24"
+  },
+  {
+   "addend": 0,
+   "offset": 3146,
+   "section": "seg_pmco",
+   "symbol": "_lp_reader_a_render",
+   "type": "sharc.abs24"
+  },
+  {
+   "addend": 0,
+   "offset": 3152,
+   "section": "seg_pmco",
+   "symbol": "_lp_reader_b_render",
+   "type": "sharc.abs24"
+  },
+  {
+   "addend": 0,
+   "offset": 3155,
+   "section": "seg_pmco",
+   "symbol": "_lp_reader_silent",
+   "type": "sharc.abs24"
+  },
+  {
+   "addend": 0,
+   "offset": 3178,
+   "section": "seg_pmco",
+   "symbol": "_lp_reader_zero",
+   "type": "sharc.abs24"
+  },
+  {
+   "addend": 0,
+   "offset": 3188,
+   "section": "seg_pmco",
+   "symbol": "_lp_reader_a_snapshot_silent",
+   "type": "sharc.abs24"
+  },
+  {
+   "addend": 0,
+   "offset": 3194,
+   "section": "seg_pmco",
+   "symbol": "_lp_reader_b_snapshot_silent",
+   "type": "sharc.abs24"
+  },
+  {
+   "addend": 0,
+   "offset": 3197,
+   "section": "seg_pmco",
+   "symbol": "_lp_reader_silent_return",
+   "type": "sharc.abs24"
+  },
+  {
+   "addend": 0,
+   "offset": 3200,
+   "section": "seg_pmco",
+   "symbol": "_lp_reader_a_snapshot_seq",
+   "type": "sharc.abs32"
+  },
+  {
+   "addend": 0,
+   "offset": 3204,
+   "section": "seg_pmco",
+   "symbol": "_lp_reader_a_snapshot_seq",
+   "type": "sharc.abs32"
+  },
+  {
+   "addend": 0,
+   "offset": 3207,
+   "section": "seg_pmco",
+   "symbol": "_lp_reader_a_snapshot",
+   "type": "sharc.abs32"
+  },
+  {
+   "addend": 0,
+   "offset": 3219,
+   "section": "seg_pmco",
+   "symbol": "_lp_reader_a_snapshot_silent_copy",
+   "type": "sharc.abs24"
+  },
+  {
+   "addend": 0,
+   "offset": 3222,
+   "section": "seg_pmco",
+   "symbol": "_lp_reader_a_snapshot_seq",
+   "type": "sharc.abs32"
+  },
+  {
+   "addend": 0,
+   "offset": 3226,
+   "section": "seg_pmco",
+   "symbol": "_lp_reader_a_snapshot_seq",
+   "type": "sharc.abs32"
+  },
+  {
+   "addend": 0,
+   "offset": 3229,
+   "section": "seg_pmco",
+   "symbol": "_lp_reader_silent_return",
+   "type": "sharc.abs24"
+  },
+  {
+   "addend": 0,
+   "offset": 3232,
+   "section": "seg_pmco",
+   "symbol": "_lp_reader_b_snapshot_seq",
+   "type": "sharc.abs32"
+  },
+  {
+   "addend": 0,
+   "offset": 3236,
+   "section": "seg_pmco",
+   "symbol": "_lp_reader_b_snapshot_seq",
+   "type": "sharc.abs32"
+  },
+  {
+   "addend": 0,
+   "offset": 3239,
+   "section": "seg_pmco",
+   "symbol": "_lp_reader_b_snapshot",
+   "type": "sharc.abs32"
+  },
+  {
+   "addend": 0,
+   "offset": 3251,
+   "section": "seg_pmco",
+   "symbol": "_lp_reader_b_snapshot_silent_copy",
+   "type": "sharc.abs24"
+  },
+  {
+   "addend": 0,
+   "offset": 3254,
+   "section": "seg_pmco",
+   "symbol": "_lp_reader_b_snapshot_seq",
+   "type": "sharc.abs32"
+  },
+  {
+   "addend": 0,
+   "offset": 3258,
+   "section": "seg_pmco",
+   "symbol": "_lp_reader_b_snapshot_seq",
+   "type": "sharc.abs32"
+  },
+  {
+   "addend": 0,
+   "offset": 3267,
+   "section": "seg_pmco",
+   "symbol": "_lp_reader_a_state",
+   "type": "sharc.abs32"
+  },
+  {
+   "addend": 0,
+   "offset": 3270,
+   "section": "seg_pmco",
+   "symbol": "_lp_reader_a_notes",
+   "type": "sharc.abs32"
+  },
+  {
+   "addend": 0,
+   "offset": 3274,
+   "section": "seg_pmco",
+   "symbol": "_lp_reader_a_notes",
+   "type": "sharc.abs32"
+  },
+  {
+   "addend": 0,
+   "offset": 3284,
+   "section": "seg_pmco",
+   "symbol": "_lp_close_a_open",
+   "type": "sharc.abs32"
+  },
+  {
+   "addend": 0,
+   "offset": 3288,
+   "section": "seg_pmco",
+   "symbol": "_lp_reader_a_note_denied",
+   "type": "sharc.abs24"
+  },
+  {
+   "addend": 0,
+   "offset": 3291,
+   "section": "seg_pmco",
+   "symbol": "_lp_close_a_closed",
+   "type": "sharc.abs32"
+  },
+  {
+   "addend": 0,
+   "offset": 3295,
+   "section": "seg_pmco",
+   "symbol": "_lp_reader_a_note_denied",
+   "type": "sharc.abs24"
+  },
+  {
+   "addend": 0,
+   "offset": 3298,
+   "section": "seg_pmco",
+   "symbol": "_lp_close_a_count",
+   "type": "sharc.abs32"
+  },
+  {
+   "addend": 0,
+   "offset": 3302,
+   "section": "seg_pmco",
+   "symbol": "_lp_reader_a_note_fault",
+   "type": "sharc.abs24"
+  },
+  {
+   "addend": 0,
+   "offset": 3309,
+   "section": "seg_pmco",
+   "symbol": "_lp_reader_a_note_fault",
+   "type": "sharc.abs24"
+  },
+  {
+   "addend": 0,
+   "offset": 3312,
+   "section": "seg_pmco",
+   "symbol": "_lp_close_a_ready",
+   "type": "sharc.abs32"
+  },
+  {
+   "addend": 0,
+   "offset": 3318,
+   "section": "seg_pmco",
+   "symbol": "_lp_reader_a_note_denied",
+   "type": "sharc.abs24"
+  },
+  {
+   "addend": 0,
+   "offset": 3321,
+   "section": "seg_pmco",
+   "symbol": "_lp_close_a_epoch",
+   "type": "sharc.abs32"
+  },
+  {
+   "addend": 0,
+   "offset": 3325,
+   "section": "seg_pmco",
+   "symbol": "_lp_reader_a_note_denied",
+   "type": "sharc.abs24"
+  },
+  {
+   "addend": 0,
+   "offset": 3330,
+   "section": "seg_pmco",
+   "symbol": "_lp_close_a_count",
+   "type": "sharc.abs32"
+  },
+  {
+   "addend": 0,
+   "offset": 3334,
+   "section": "seg_pmco",
+   "symbol": "_lp_close_a_count",
+   "type": "sharc.abs32"
+  },
+  {
+   "addend": 0,
+   "offset": 3341,
+   "section": "seg_pmco",
+   "symbol": "_lp_reader_a_source",
+   "type": "sharc.abs32"
+  },
+  {
+   "addend": 0,
+   "offset": 3346,
+   "section": "seg_pmco",
+   "symbol": "_lp_reader_a_frames",
+   "type": "sharc.abs32"
+  },
+  {
+   "addend": 0,
+   "offset": 3366,
+   "section": "seg_pmco",
+   "symbol": "_lp_reader_a_forward",
+   "type": "sharc.abs24"
+  },
+  {
+   "addend": 0,
+   "offset": 3388,
+   "section": "seg_pmco",
+   "symbol": "_lp_close_a_count",
+   "type": "sharc.abs32"
+  },
+  {
+   "addend": 0,
+   "offset": 3392,
+   "section": "seg_pmco",
+   "symbol": "_lp_reader_a_note_release_fault",
+   "type": "sharc.abs24"
+  },
+  {
+   "addend": 0,
+   "offset": 3396,
+   "section": "seg_pmco",
+   "symbol": "_lp_close_a_count",
+   "type": "sharc.abs32"
+  },
+  {
+   "addend": 0,
+   "offset": 3399,
+   "section": "seg_pmco",
+   "symbol": "_lp_reader_a_note_released",
+   "type": "sharc.abs24"
+  },
+  {
+   "addend": 0,
+   "offset": 3404,
+   "section": "seg_pmco",
+   "symbol": "_lp_close_a_fault",
+   "type": "sharc.abs32"
+  },
+  {
+   "addend": 0,
+   "offset": 3407,
+   "section": "seg_pmco",
+   "symbol": "_lp_close_a_closed",
+   "type": "sharc.abs32"
+  },
+  {
+   "addend": 0,
+   "offset": 3412,
+   "section": "seg_pmco",
+   "symbol": "_lp_close_a_open",
+   "type": "sharc.abs32"
+  },
+  {
+   "addend": 0,
+   "offset": 3415,
+   "section": "seg_pmco",
+   "symbol": "_lp_close_a_ready",
+   "type": "sharc.abs32"
+  },
+  {
+   "addend": 0,
+   "offset": 3421,
+   "section": "seg_pmco",
+   "symbol": "_lp_close_a_count",
+   "type": "sharc.abs32"
+  },
+  {
+   "addend": 0,
+   "offset": 3434,
+   "section": "seg_pmco",
+   "symbol": "_lp_close_a_fault",
+   "type": "sharc.abs32"
+  },
+  {
+   "addend": 0,
+   "offset": 3437,
+   "section": "seg_pmco",
+   "symbol": "_lp_close_a_closed",
+   "type": "sharc.abs32"
+  },
+  {
+   "addend": 0,
+   "offset": 3442,
+   "section": "seg_pmco",
+   "symbol": "_lp_close_a_open",
+   "type": "sharc.abs32"
+  },
+  {
+   "addend": 0,
+   "offset": 3445,
+   "section": "seg_pmco",
+   "symbol": "_lp_close_a_ready",
+   "type": "sharc.abs32"
+  },
+  {
+   "addend": 0,
+   "offset": 3451,
+   "section": "seg_pmco",
+   "symbol": "_lp_close_a_count",
+   "type": "sharc.abs32"
+  },
+  {
+   "addend": 0,
+   "offset": 3458,
+   "section": "seg_pmco",
+   "symbol": "_lp_reader_note_denied",
+   "type": "sharc.abs24"
+  },
+  {
+   "addend": 0,
+   "offset": 3463,
+   "section": "seg_pmco",
+   "symbol": "_lp_reader_a_state",
+   "type": "sharc.abs32"
+  },
+  {
+   "addend": 0,
+   "offset": 3466,
+   "section": "seg_pmco",
+   "symbol": "_lp_reader_a_blocks",
+   "type": "sharc.abs32"
+  },
+  {
+   "addend": 0,
+   "offset": 3470,
+   "section": "seg_pmco",
+   "symbol": "_lp_reader_a_blocks",
+   "type": "sharc.abs32"
+  },
+  {
+   "addend": 0,
+   "offset": 3483,
+   "section": "seg_pmco",
+   "symbol": "_lp_reader_a_render_denied",
+   "type": "sharc.abs24"
+  },
+  {
+   "addend": 0,
+   "offset": 3486,
+   "section": "seg_pmco",
+   "symbol": "_lp_close_a_open",
+   "type": "sharc.abs32"
+  },
+  {
+   "addend": 0,
+   "offset": 3490,
+   "section": "seg_pmco",
+   "symbol": "_lp_reader_a_render_denied",
+   "type": "sharc.abs24"
+  },
+  {
+   "addend": 0,
+   "offset": 3493,
+   "section": "seg_pmco",
+   "symbol": "_lp_close_a_closed",
+   "type": "sharc.abs32"
+  },
+  {
+   "addend": 0,
+   "offset": 3497,
+   "section": "seg_pmco",
+   "symbol": "_lp_reader_a_render_denied",
+   "type": "sharc.abs24"
+  },
+  {
+   "addend": 0,
+   "offset": 3500,
+   "section": "seg_pmco",
+   "symbol": "_lp_close_a_count",
+   "type": "sharc.abs32"
+  },
+  {
+   "addend": 0,
+   "offset": 3504,
+   "section": "seg_pmco",
+   "symbol": "_lp_reader_a_render_fault",
+   "type": "sharc.abs24"
+  },
+  {
+   "addend": 0,
+   "offset": 3511,
+   "section": "seg_pmco",
+   "symbol": "_lp_reader_a_render_fault",
+   "type": "sharc.abs24"
+  },
+  {
+   "addend": 0,
+   "offset": 3514,
+   "section": "seg_pmco",
+   "symbol": "_lp_close_a_ready",
+   "type": "sharc.abs32"
+  },
+  {
+   "addend": 0,
+   "offset": 3520,
+   "section": "seg_pmco",
+   "symbol": "_lp_reader_a_render_denied",
+   "type": "sharc.abs24"
+  },
+  {
+   "addend": 0,
+   "offset": 3526,
+   "section": "seg_pmco",
+   "symbol": "_lp_reader_a_render_denied",
+   "type": "sharc.abs24"
+  },
+  {
+   "addend": 0,
+   "offset": 3529,
+   "section": "seg_pmco",
+   "symbol": "_lp_close_a_epoch",
+   "type": "sharc.abs32"
+  },
+  {
+   "addend": 0,
+   "offset": 3533,
+   "section": "seg_pmco",
+   "symbol": "_lp_reader_a_render_denied",
+   "type": "sharc.abs24"
+  },
+  {
+   "addend": 0,
+   "offset": 3536,
+   "section": "seg_pmco",
+   "symbol": "_lp_close_a_count",
+   "type": "sharc.abs32"
+  },
+  {
+   "addend": 0,
+   "offset": 3540,
+   "section": "seg_pmco",
+   "symbol": "_lp_close_a_count",
+   "type": "sharc.abs32"
+  },
+  {
+   "addend": 0,
+   "offset": 3547,
+   "section": "seg_pmco",
+   "symbol": "_lp_reader_a_reads",
+   "type": "sharc.abs32"
+  },
+  {
+   "addend": 0,
+   "offset": 3551,
+   "section": "seg_pmco",
+   "symbol": "_lp_reader_a_reads",
+   "type": "sharc.abs32"
+  },
+  {
+   "addend": 0,
+   "offset": 3556,
+   "section": "seg_pmco",
+   "symbol": "_lp_reader_a_output",
+   "type": "sharc.abs32"
+  },
+  {
+   "addend": 0,
+   "offset": 3572,
+   "section": "seg_pmco",
+   "symbol": "_dk_sample_pcm16_linear",
+   "type": "sharc.abs24"
+  },
+  {
+   "addend": -1,
+   "offset": 3576,
+   "section": "seg_pmco",
+   "symbol": "_lp_reader_a_after_reader",
+   "type": "sharc.abs32"
+  },
+  {
+   "addend": 0,
+   "offset": 3583,
+   "section": "seg_pmco",
+   "symbol": "_lp_reader_a_snapshot_seq",
+   "type": "sharc.abs32"
+  },
+  {
+   "addend": 0,
+   "offset": 3587,
+   "section": "seg_pmco",
+   "symbol": "_lp_reader_a_snapshot_seq",
+   "type": "sharc.abs32"
+  },
+  {
+   "addend": 0,
+   "offset": 3590,
+   "section": "seg_pmco",
+   "symbol": "_lp_reader_a_snapshot",
+   "type": "sharc.abs32"
+  },
+  {
+   "addend": 0,
+   "offset": 3602,
+   "section": "seg_pmco",
+   "symbol": "_lp_reader_a_snapshot_read_copy",
+   "type": "sharc.abs24"
+  },
+  {
+   "addend": 0,
+   "offset": 3605,
+   "section": "seg_pmco",
+   "symbol": "_lp_reader_a_snapshot_seq",
+   "type": "sharc.abs32"
+  },
+  {
+   "addend": 0,
+   "offset": 3609,
+   "section": "seg_pmco",
+   "symbol": "_lp_reader_a_snapshot_seq",
+   "type": "sharc.abs32"
+  },
+  {
+   "addend": 0,
+   "offset": 3626,
+   "section": "seg_pmco",
+   "symbol": "_lp_close_a_count",
+   "type": "sharc.abs32"
+  },
+  {
+   "addend": 0,
+   "offset": 3630,
+   "section": "seg_pmco",
+   "symbol": "_lp_reader_a_render_release_fault",
+   "type": "sharc.abs24"
+  },
+  {
+   "addend": 0,
+   "offset": 3634,
+   "section": "seg_pmco",
+   "symbol": "_lp_close_a_count",
+   "type": "sharc.abs32"
+  },
+  {
+   "addend": 0,
+   "offset": 3637,
+   "section": "seg_pmco",
+   "symbol": "_lp_reader_a_render_released",
+   "type": "sharc.abs24"
+  },
+  {
+   "addend": 0,
+   "offset": 3642,
+   "section": "seg_pmco",
+   "symbol": "_lp_close_a_fault",
+   "type": "sharc.abs32"
+  },
+  {
+   "addend": 0,
+   "offset": 3645,
+   "section": "seg_pmco",
+   "symbol": "_lp_close_a_closed",
+   "type": "sharc.abs32"
+  },
+  {
+   "addend": 0,
+   "offset": 3650,
+   "section": "seg_pmco",
+   "symbol": "_lp_close_a_open",
+   "type": "sharc.abs32"
+  },
+  {
+   "addend": 0,
+   "offset": 3653,
+   "section": "seg_pmco",
+   "symbol": "_lp_close_a_ready",
+   "type": "sharc.abs32"
+  },
+  {
+   "addend": 0,
+   "offset": 3659,
+   "section": "seg_pmco",
+   "symbol": "_lp_close_a_count",
+   "type": "sharc.abs32"
+  },
+  {
+   "addend": 0,
+   "offset": 3672,
+   "section": "seg_pmco",
+   "symbol": "_lp_close_a_fault",
+   "type": "sharc.abs32"
+  },
+  {
+   "addend": 0,
+   "offset": 3675,
+   "section": "seg_pmco",
+   "symbol": "_lp_close_a_closed",
+   "type": "sharc.abs32"
+  },
+  {
+   "addend": 0,
+   "offset": 3680,
+   "section": "seg_pmco",
+   "symbol": "_lp_close_a_open",
+   "type": "sharc.abs32"
+  },
+  {
+   "addend": 0,
+   "offset": 3683,
+   "section": "seg_pmco",
+   "symbol": "_lp_close_a_ready",
+   "type": "sharc.abs32"
+  },
+  {
+   "addend": 0,
+   "offset": 3689,
+   "section": "seg_pmco",
+   "symbol": "_lp_close_a_count",
+   "type": "sharc.abs32"
+  },
+  {
+   "addend": 0,
+   "offset": 3696,
+   "section": "seg_pmco",
+   "symbol": "_lp_reader_silent",
+   "type": "sharc.abs24"
+  },
+  {
+   "addend": 0,
+   "offset": 3701,
+   "section": "seg_pmco",
+   "symbol": "_lp_reader_b_state",
+   "type": "sharc.abs32"
+  },
+  {
+   "addend": 0,
+   "offset": 3704,
+   "section": "seg_pmco",
+   "symbol": "_lp_reader_b_notes",
+   "type": "sharc.abs32"
+  },
+  {
+   "addend": 0,
+   "offset": 3708,
+   "section": "seg_pmco",
+   "symbol": "_lp_reader_b_notes",
+   "type": "sharc.abs32"
+  },
+  {
+   "addend": 0,
+   "offset": 3718,
+   "section": "seg_pmco",
+   "symbol": "_lp_close_b_open",
+   "type": "sharc.abs32"
+  },
+  {
+   "addend": 0,
+   "offset": 3722,
+   "section": "seg_pmco",
+   "symbol": "_lp_reader_b_note_denied",
+   "type": "sharc.abs24"
+  },
+  {
+   "addend": 0,
+   "offset": 3725,
+   "section": "seg_pmco",
+   "symbol": "_lp_close_b_closed",
+   "type": "sharc.abs32"
+  },
+  {
+   "addend": 0,
+   "offset": 3729,
+   "section": "seg_pmco",
+   "symbol": "_lp_reader_b_note_denied",
+   "type": "sharc.abs24"
+  },
+  {
+   "addend": 0,
+   "offset": 3732,
+   "section": "seg_pmco",
+   "symbol": "_lp_close_b_count",
+   "type": "sharc.abs32"
+  },
+  {
+   "addend": 0,
+   "offset": 3736,
+   "section": "seg_pmco",
+   "symbol": "_lp_reader_b_note_fault",
+   "type": "sharc.abs24"
+  },
+  {
+   "addend": 0,
+   "offset": 3743,
+   "section": "seg_pmco",
+   "symbol": "_lp_reader_b_note_fault",
+   "type": "sharc.abs24"
+  },
+  {
+   "addend": 0,
+   "offset": 3746,
+   "section": "seg_pmco",
+   "symbol": "_lp_close_b_ready",
+   "type": "sharc.abs32"
+  },
+  {
+   "addend": 0,
+   "offset": 3752,
+   "section": "seg_pmco",
+   "symbol": "_lp_reader_b_note_denied",
+   "type": "sharc.abs24"
+  },
+  {
+   "addend": 0,
+   "offset": 3755,
+   "section": "seg_pmco",
+   "symbol": "_lp_close_b_epoch",
+   "type": "sharc.abs32"
+  },
+  {
+   "addend": 0,
+   "offset": 3759,
+   "section": "seg_pmco",
+   "symbol": "_lp_reader_b_note_denied",
+   "type": "sharc.abs24"
+  },
+  {
+   "addend": 0,
+   "offset": 3764,
+   "section": "seg_pmco",
+   "symbol": "_lp_close_b_count",
+   "type": "sharc.abs32"
+  },
+  {
+   "addend": 0,
+   "offset": 3768,
+   "section": "seg_pmco",
+   "symbol": "_lp_close_b_count",
+   "type": "sharc.abs32"
+  },
+  {
+   "addend": 0,
+   "offset": 3775,
+   "section": "seg_pmco",
+   "symbol": "_lp_reader_b_source",
+   "type": "sharc.abs32"
+  },
+  {
+   "addend": 0,
+   "offset": 3780,
+   "section": "seg_pmco",
+   "symbol": "_lp_reader_b_frames",
+   "type": "sharc.abs32"
+  },
+  {
+   "addend": 0,
+   "offset": 3799,
+   "section": "seg_pmco",
+   "symbol": "_lp_reader_b_forward",
+   "type": "sharc.abs24"
+  },
+  {
+   "addend": 0,
+   "offset": 3820,
+   "section": "seg_pmco",
+   "symbol": "_lp_close_b_count",
+   "type": "sharc.abs32"
+  },
+  {
+   "addend": 0,
+   "offset": 3824,
+   "section": "seg_pmco",
+   "symbol": "_lp_reader_b_note_release_fault",
+   "type": "sharc.abs24"
+  },
+  {
+   "addend": 0,
+   "offset": 3828,
+   "section": "seg_pmco",
+   "symbol": "_lp_close_b_count",
+   "type": "sharc.abs32"
+  },
+  {
+   "addend": 0,
+   "offset": 3831,
+   "section": "seg_pmco",
+   "symbol": "_lp_reader_b_note_released",
+   "type": "sharc.abs24"
+  },
+  {
+   "addend": 0,
+   "offset": 3836,
+   "section": "seg_pmco",
+   "symbol": "_lp_close_b_fault",
+   "type": "sharc.abs32"
+  },
+  {
+   "addend": 0,
+   "offset": 3839,
+   "section": "seg_pmco",
+   "symbol": "_lp_close_b_closed",
+   "type": "sharc.abs32"
+  },
+  {
+   "addend": 0,
+   "offset": 3844,
+   "section": "seg_pmco",
+   "symbol": "_lp_close_b_open",
+   "type": "sharc.abs32"
+  },
+  {
+   "addend": 0,
+   "offset": 3847,
+   "section": "seg_pmco",
+   "symbol": "_lp_close_b_ready",
+   "type": "sharc.abs32"
+  },
+  {
+   "addend": 0,
+   "offset": 3853,
+   "section": "seg_pmco",
+   "symbol": "_lp_close_b_count",
+   "type": "sharc.abs32"
+  },
+  {
+   "addend": 0,
+   "offset": 3866,
+   "section": "seg_pmco",
+   "symbol": "_lp_close_b_fault",
+   "type": "sharc.abs32"
+  },
+  {
+   "addend": 0,
+   "offset": 3869,
+   "section": "seg_pmco",
+   "symbol": "_lp_close_b_closed",
+   "type": "sharc.abs32"
+  },
+  {
+   "addend": 0,
+   "offset": 3874,
+   "section": "seg_pmco",
+   "symbol": "_lp_close_b_open",
+   "type": "sharc.abs32"
+  },
+  {
+   "addend": 0,
+   "offset": 3877,
+   "section": "seg_pmco",
+   "symbol": "_lp_close_b_ready",
+   "type": "sharc.abs32"
+  },
+  {
+   "addend": 0,
+   "offset": 3883,
+   "section": "seg_pmco",
+   "symbol": "_lp_close_b_count",
+   "type": "sharc.abs32"
+  },
+  {
+   "addend": 0,
+   "offset": 3890,
+   "section": "seg_pmco",
+   "symbol": "_lp_reader_note_denied",
+   "type": "sharc.abs24"
+  },
+  {
+   "addend": 0,
+   "offset": 3895,
+   "section": "seg_pmco",
+   "symbol": "_lp_reader_b_state",
+   "type": "sharc.abs32"
+  },
+  {
+   "addend": 0,
+   "offset": 3898,
+   "section": "seg_pmco",
+   "symbol": "_lp_reader_b_blocks",
+   "type": "sharc.abs32"
+  },
+  {
+   "addend": 0,
+   "offset": 3902,
+   "section": "seg_pmco",
+   "symbol": "_lp_reader_b_blocks",
+   "type": "sharc.abs32"
+  },
+  {
+   "addend": 0,
+   "offset": 3915,
+   "section": "seg_pmco",
+   "symbol": "_lp_reader_b_render_denied",
+   "type": "sharc.abs24"
+  },
+  {
+   "addend": 0,
+   "offset": 3918,
+   "section": "seg_pmco",
+   "symbol": "_lp_close_b_open",
+   "type": "sharc.abs32"
+  },
+  {
+   "addend": 0,
+   "offset": 3922,
+   "section": "seg_pmco",
+   "symbol": "_lp_reader_b_render_denied",
+   "type": "sharc.abs24"
+  },
+  {
+   "addend": 0,
+   "offset": 3925,
+   "section": "seg_pmco",
+   "symbol": "_lp_close_b_closed",
+   "type": "sharc.abs32"
+  },
+  {
+   "addend": 0,
+   "offset": 3929,
+   "section": "seg_pmco",
+   "symbol": "_lp_reader_b_render_denied",
+   "type": "sharc.abs24"
+  },
+  {
+   "addend": 0,
+   "offset": 3932,
+   "section": "seg_pmco",
+   "symbol": "_lp_close_b_count",
+   "type": "sharc.abs32"
+  },
+  {
+   "addend": 0,
+   "offset": 3936,
+   "section": "seg_pmco",
+   "symbol": "_lp_reader_b_render_fault",
+   "type": "sharc.abs24"
+  },
+  {
+   "addend": 0,
+   "offset": 3943,
+   "section": "seg_pmco",
+   "symbol": "_lp_reader_b_render_fault",
+   "type": "sharc.abs24"
+  },
+  {
+   "addend": 0,
+   "offset": 3946,
+   "section": "seg_pmco",
+   "symbol": "_lp_close_b_ready",
+   "type": "sharc.abs32"
+  },
+  {
+   "addend": 0,
+   "offset": 3952,
+   "section": "seg_pmco",
+   "symbol": "_lp_reader_b_render_denied",
+   "type": "sharc.abs24"
+  },
+  {
+   "addend": 0,
+   "offset": 3958,
+   "section": "seg_pmco",
+   "symbol": "_lp_reader_b_render_denied",
+   "type": "sharc.abs24"
+  },
+  {
+   "addend": 0,
+   "offset": 3961,
+   "section": "seg_pmco",
+   "symbol": "_lp_close_b_epoch",
+   "type": "sharc.abs32"
+  },
+  {
+   "addend": 0,
+   "offset": 3965,
+   "section": "seg_pmco",
+   "symbol": "_lp_reader_b_render_denied",
+   "type": "sharc.abs24"
+  },
+  {
+   "addend": 0,
+   "offset": 3968,
+   "section": "seg_pmco",
+   "symbol": "_lp_close_b_count",
+   "type": "sharc.abs32"
+  },
+  {
+   "addend": 0,
+   "offset": 3972,
+   "section": "seg_pmco",
+   "symbol": "_lp_close_b_count",
+   "type": "sharc.abs32"
+  },
+  {
+   "addend": 0,
+   "offset": 3979,
+   "section": "seg_pmco",
+   "symbol": "_lp_reader_b_reads",
+   "type": "sharc.abs32"
+  },
+  {
+   "addend": 0,
+   "offset": 3983,
+   "section": "seg_pmco",
+   "symbol": "_lp_reader_b_reads",
+   "type": "sharc.abs32"
+  },
+  {
+   "addend": 0,
+   "offset": 3988,
+   "section": "seg_pmco",
+   "symbol": "_lp_reader_b_output",
+   "type": "sharc.abs32"
+  },
+  {
+   "addend": 0,
+   "offset": 4004,
+   "section": "seg_pmco",
+   "symbol": "_dk_sample_pcm16_linear",
+   "type": "sharc.abs24"
+  },
+  {
+   "addend": -1,
+   "offset": 4008,
+   "section": "seg_pmco",
+   "symbol": "_lp_reader_b_after_reader",
+   "type": "sharc.abs32"
+  },
+  {
+   "addend": 0,
+   "offset": 4015,
+   "section": "seg_pmco",
+   "symbol": "_lp_reader_b_snapshot_seq",
+   "type": "sharc.abs32"
+  },
+  {
+   "addend": 0,
+   "offset": 4019,
+   "section": "seg_pmco",
+   "symbol": "_lp_reader_b_snapshot_seq",
+   "type": "sharc.abs32"
+  },
+  {
+   "addend": 0,
+   "offset": 4022,
+   "section": "seg_pmco",
+   "symbol": "_lp_reader_b_snapshot",
+   "type": "sharc.abs32"
+  },
+  {
+   "addend": 0,
+   "offset": 4034,
+   "section": "seg_pmco",
+   "symbol": "_lp_reader_b_snapshot_read_copy",
+   "type": "sharc.abs24"
+  },
+  {
+   "addend": 0,
+   "offset": 4037,
+   "section": "seg_pmco",
+   "symbol": "_lp_reader_b_snapshot_seq",
+   "type": "sharc.abs32"
+  },
+  {
+   "addend": 0,
+   "offset": 4041,
+   "section": "seg_pmco",
+   "symbol": "_lp_reader_b_snapshot_seq",
+   "type": "sharc.abs32"
+  },
+  {
+   "addend": 0,
+   "offset": 4058,
+   "section": "seg_pmco",
+   "symbol": "_lp_close_b_count",
+   "type": "sharc.abs32"
+  },
+  {
+   "addend": 0,
+   "offset": 4062,
+   "section": "seg_pmco",
+   "symbol": "_lp_reader_b_render_release_fault",
+   "type": "sharc.abs24"
+  },
+  {
+   "addend": 0,
+   "offset": 4066,
+   "section": "seg_pmco",
+   "symbol": "_lp_close_b_count",
+   "type": "sharc.abs32"
+  },
+  {
+   "addend": 0,
+   "offset": 4069,
+   "section": "seg_pmco",
+   "symbol": "_lp_reader_b_render_released",
+   "type": "sharc.abs24"
+  },
+  {
+   "addend": 0,
+   "offset": 4074,
+   "section": "seg_pmco",
+   "symbol": "_lp_close_b_fault",
+   "type": "sharc.abs32"
+  },
+  {
+   "addend": 0,
+   "offset": 4077,
+   "section": "seg_pmco",
+   "symbol": "_lp_close_b_closed",
+   "type": "sharc.abs32"
+  },
+  {
+   "addend": 0,
+   "offset": 4082,
+   "section": "seg_pmco",
+   "symbol": "_lp_close_b_open",
+   "type": "sharc.abs32"
+  },
+  {
+   "addend": 0,
+   "offset": 4085,
+   "section": "seg_pmco",
+   "symbol": "_lp_close_b_ready",
+   "type": "sharc.abs32"
+  },
+  {
+   "addend": 0,
+   "offset": 4091,
+   "section": "seg_pmco",
+   "symbol": "_lp_close_b_count",
+   "type": "sharc.abs32"
+  },
+  {
+   "addend": 0,
+   "offset": 4104,
+   "section": "seg_pmco",
+   "symbol": "_lp_close_b_fault",
+   "type": "sharc.abs32"
+  },
+  {
+   "addend": 0,
+   "offset": 4107,
+   "section": "seg_pmco",
+   "symbol": "_lp_close_b_closed",
+   "type": "sharc.abs32"
+  },
+  {
+   "addend": 0,
+   "offset": 4112,
+   "section": "seg_pmco",
+   "symbol": "_lp_close_b_open",
+   "type": "sharc.abs32"
+  },
+  {
+   "addend": 0,
+   "offset": 4115,
+   "section": "seg_pmco",
+   "symbol": "_lp_close_b_ready",
+   "type": "sharc.abs32"
+  },
+  {
+   "addend": 0,
+   "offset": 4121,
+   "section": "seg_pmco",
+   "symbol": "_lp_close_b_count",
+   "type": "sharc.abs32"
+  },
+  {
+   "addend": 0,
+   "offset": 4128,
+   "section": "seg_pmco",
+   "symbol": "_lp_reader_silent",
+   "type": "sharc.abs24"
+  }
+ ],
+ "sections": [
+  {
+   "align": 8,
+   "hex": "821420000000221420000000010001001a06000000000011000000000111000000000211000000000311000000000411000000000511000000000611000000000711000000000811000000000911000000000a11000000000b11000000000c11000000000d11000000000e11000000000f11000000003e713f000011000000003e713f800011000000003f713f000011000000003f713f800011000000007e713f000011000000007e713f800011000000007f713f000011000000007f713f80001100000000be713f00001100000000be713f80001100000000bf713f00001100000000bf713f80001100000000fe713f00001100000000fe713f80001100000000ff713f00001100000000ff713f800011000000003e723f000011000000003e723f800011000000003f723f000011000000003f723f800011000000007e723f000011000000007e723f800011000000007f723f000011000000007f723f80001100000000be723f00001100000000be723f80001100000000bf723f00001100000000bf723f80001100000000fe723f00001100000000fe723f80001100000000ff723f00001100000000ff723f800011000000003e733f000011000000003e733f800011000000003f733f000011000000003f733f800011000000007e733f000011000000007e733f800011000000007f733f000011000000007f733f800011000000003e743f000011000000003e743f800011000000003f743f000011000000003f743f800011000000007e743f000011000000007e743f800011000000007f743f000011000000007f743f80001100000000c0010000001100000000c0010010001100000000c0010020001100000000c0010040001100000000c0010050001100000000c00100600011000000003f773f00001100000000be763f00001100000000be773f0000110000000022142000000001000100000f00000000810f3f0001c0810fc0ff01cc001100000000001100000000810f400080010111011100000000810fc00080010111011100000000810f0011800101110111000000007e733f0000c22006000000007e733f8000c22006000000007e723f8000c22006000000007f723f00810f010001c32006000000007f723f80810fffff01c3200600000000ff723f00810f010001c320060000000004100000000008100000000088c68c0f0406800f0100f09f041800000000f29fc09fffffffff87150000010000110000000000c2200600000000800f01000011000000003e0600000000800f00013e0600000000001100000000800f02000011000000000010000000003e703f100010000000003e70bf100010000000003e703f110010000000003e70bf110010000000003e703f120010000000003e70bf120010000000003e703f130010000000003e70bf130010000000003e703f140010000000003e70bf140010000000003e703f150010000000003e70bf150010000000003e703f160010000000003e70bf160010000000003e703f170010000000003e70bf170010000000003e703f180010000000003e70bf180010000000003e703f190010000000003e70bf190010000000003e703f1a0010000000003e70bf1a0010000000003e703f1b0010000000003e70bf1b0010000000003e703f200010000000003e70bf200010000000003e703f210010000000003e70bf210010000000003e703f220010000000003e70bf220010000000003e703f230010000000003e70bf23001000000000c1010000001000000000c1010010001000000000c1010020001000000000c1010040001000000000c1010050001000000000c10100600010000000003e703f3c0010000000003e703f340010000000003e703f080010000000003e70bf080010000000003e703f090010000000003e70bf090010000000003e703f0a0010000000003e70bf0a0010000000003e703f0c0010000000003e70bf0c0010000000003e703f0d0010000000003e70bf0d0010000000003e703f0e0010000000003e70bf0e0010000000003e703f0f0010000000003e70bf0f0010000000003e703f0b0010000000003e70bf0b0010000000003e703f39010001000010000000000110000000000210000000000310000000000410000000000510000000000610000000000710000000000810000000000910000000000a10000000000b10000000000c10000000000d10000000000e10000000000f10000000000210030000e03e0600000000021420000000010001000210030000e03e06000000000011000000000111000000000211000000000311000000000411000000000511000000000611000000000711000000000811000000000911000000000a11000000000b11000000000c11000000000d11000000000e11000000000f11000000003e713f000011000000003e713f800011000000003f713f000011000000003f713f800011000000007e713f000011000000007e713f800011000000007f713f000011000000007f713f80001100000000be713f00001100000000be713f80001100000000bf713f00001100000000bf713f80001100000000fe713f00001100000000fe713f80001100000000ff713f00001100000000ff713f800011000000003e723f000011000000003e723f800011000000003f723f000011000000003f723f800011000000007e723f000011000000007e723f800011000000007f723f000011000000007f723f80001100000000be723f00001100000000be723f80001100000000bf723f00001100000000bf723f80001100000000fe723f00001100000000fe723f80001100000000ff723f00001100000000ff723f800011000000003e733f000011000000003e733f800011000000003f733f000011000000003f733f800011000000007e733f000011000000007e733f800011000000007f733f000011000000007f733f800011000000003e743f000011000000003e743f800011000000003f743f000011000000003f743f800011000000007e743f000011000000007e743f800011000000007f743f000011000000007f743f80001100000000c0010000001100000000c0010010001100000000c0010020001100000000c0010040001100000000c0010050001100000000c00100600011000000003f773f00001100000000be763f00001100000000be773f000011000000002214200000000100010000100000000000c2200600000000001000000000810f010001c3200600000000fe773f0000c2200600000000a50f0000a60f0100a70fffffad0f0000ae0f0100af0fffffb00f0000b10f0000b20f0000b30f0000b40f0000b50f0000b60f0000b70f00002214200000a002140100000001000100000f000000003e703f0a0898050000c2200600000000140fff3000e00898000000c2200600000000140fff3008f00898000000c2200600000000800f01000011000000000c1000000000840f0000880f0100000f00000000f09f800f8000f09f041800000000f29fc09fffffffff87150000020000c2200600000000041000000000000f0000000040c3200600000000080f000000000c0f00000000041800000000f29fc09fffffffff100f1f1000fc110f231080a9000f5aa5c33c040c00000600be5100800000be5300800000800f0100001100000000001100000000000f000000003e02007800fe0011000000003e703f08810f1010800101110111000000003e70bf88020f5aa5c33c850f1000b291b29355c655c2240600000000810f100001c03e703f08010001000100040f00f000e0080f001000000c0f00100020030f00f00000850f0004b491b891bc91b39155c655c2240600000000001100000000800f0020001100000000800f0100001100000000001100000000800f0200001100000000041800000000f29fc09fffffffff3e0600000000800f08003e0600000000800f01003e0600000000800f02003e0600000000800f0300001100000000800f04000011000000003f773f042214000000100100010022142000000001000100a60f0100b40f0000b00f0000001000000000810f040001c300060000000000100000000000c220060000000000100000000000c200060000000000100000000000c220060000000000100000000000c2200600000000100f000000003e0600000000100f000000000100010001000890050001100000000001c32006000000000890000000c22006000000000890010000c220060000000008900200810f010001c32006000000000890030000c22006000000000890040000c2200600000000800f0100001100000000800f02003e0600000000800f0300001100000000001000000000001100000000001000000000001100000000001000000000001100000000800f010000110000000000100000000000c2200600000000030f0100504c0410000000000510000000003e020000551045cd0510000000000610000000003e06000000000310000000003e0200003318000f0100414230cd041000000000051000000000061000000000001000000000810fbc0a01c03e703f0a010001000100b399b499b599b699be703f39010001000010000000003e703f100010000000003e70bf100010000000003e703f110010000000003e70bf110010000000003e703f120010000000003e70bf120010000000003e703f130010000000003e70bf130010000000003e703f140010000000003e70bf140010000000003e703f150010000000003e70bf150010000000003e703f160010000000003e70bf160010000000003e703f170010000000003e70bf170010000000003e703f180010000000003e70bf180010000000003e703f190010000000003e70bf190010000000003e703f1a0010000000003e70bf1a0010000000003e703f1b0010000000003e70bf1b0010000000003e703f200010000000003e70bf200010000000003e703f210010000000003e70bf210010000000003e703f220010000000003e70bf220010000000003e703f230010000000003e70bf23001000000000c1010000001000000000c1010010001000000000c1010020001000000000c1010040001000000000c1010050001000000000c10100600010000000003e703f3c0010000000003e703f340010000000003e703f080010000000003e70bf080010000000003e703f090010000000003e70bf090010000000003e703f0a0010000000003e70bf0a0010000000003e703f0c0010000000003e70bf0c0010000000003e703f0d0010000000003e70bf0d0010000000003e703f0e0010000000003e70bf0e0010000000003e703f0f0010000000003e70bf0f0010000000003e703f0b0010000000003e70bf0b0010000000003e703f39010001000010000000000110000000000210000000000310000000000410000000000510000000000610000000000710000000000810000000000910000000000a10000000000b10000000000c10000000000d10000000000e10000000000f10000000003e06000000008715ffffffff089dfe01141000000000800f00000899000000100000000008990100000f1000000008990200800f010408990300800f040008990400800f000008990500089906000410000000000810000000008c0f0100f09f041800000000f29fc09fffffffff87150000010000c2000600000000800f0300001100000000800f0400001100000000089c7f0e0100010001003f083f34089cfe0101198715fffff6ff089dfe01089dfd02089d7c03089dfb033e713f00089d7a003e713f80089d79003f713f00089d78003f713f80089d77007e713f80089d76003f773f0022140000001001000100089d750022142000000001000100001000000000810f020001c3000600000000810f030001c3000600000000810f040001c30006000000003e0600000000000f0000000040c3200600000000800f040080c3200600000000001000000000c0c32006000000003e703f0808900002000f0101434240c3000600000000001000000000810f020001c3200600000000800f000000110000000005100000000045c320060000000055c2020600000000800feb0050c32206000000000610000000003e020000150c61c3200600000000000f0e0000a606c1810f001086010117000f201000003e02007816fe01c03e70bf080016000004003e02007807fe000d00000600be5100000000be530080000067c006110000000055c5051100000000800feb0050c3000600000000041800000000f29fc09fffffffff3e0600000000100f1f1000fc110f231080a9030f5aa5c33c850f0004909103c3200600000000909303c320060000000055c6200600000000800f0300001100000000041800000000f29fc09fffffffff001000000000810f040001c300060000000000100000000000c220060000000000100000000001100000000001cd200600000000000f20100000001100000000000f07000053001100000000800f01000011000000000011000000003e0600000000800f010000110000000008908102089002030890830305110000000006110000000007110000000055c204060000000077c2040600000000800f000060c3020600000000800f010060c324060000000000100000000050c302060000000000060000000000c200060000000000100000000000c20006000000003e060000000000100000000060c320060000000000100000000070c320060000000006c2200600000000110f000000003e0600000000110f000000000100010001000892050070c320060000000000100000000050c3000600000000800f000000110000000005110000000006110000000007110000000006c2200600000000800f0000001100000000001100000000800f010000110000000000100000000001100000000001cd2006000000003e0600000000800f0000001100000000001100000000800f010000110000000000100000000001100000000001cd200600000000800f0100001100000000800f02003e0600000000800f01003e0600000000800f0300001100000000041800000000f29fc09fffffffff001000000000810f040001c3000600000000800f0000001100000000800f01000011000000003e0600000000800f0400001100000000001100000000089c7f0e089cfd02089c7c03089cfb03089c7a003e703f08089c79003e70bf08089c78003e703f09089c77003e70bf09089c76003e70bf0a089c75003e703f39010001003f083f34089cfe0101198715fffff4ff089dfe01089dfd02089d7c03089dfb03089dfa04089d7905089df805089df706089d7607089df5073e713f00089d74003e713f80089d7300fe70bf08be703f0834c20d0f0000ffff8f0f2000089280020892010308928203089283040892040008920507820ff0ffa001024a84010d0b56c322060000000075c302060000000076c32206000000000ec2200600000000800137103e703f0a07c506c302060000000007c280013011089800003e703f8a820ff0ff8d0192a4010001000898800088011022930142018801011880019b103e02007810f084010d0980017a108001011775c302060000000076c32206000000003e06000000008e0f01003e06000000008e0f0100880f0000b8910fc6f0c2240600000000089382030893830408930507089c7f0e089cfe01089cfd02089c7c03089cfb03089cfa04089c7905089cf805089cf706089c7607089cf507089c74083f083f34089cf30801198715fffff4ff089dfe01089dfd02089d7c03089dfb03089dfa04089d7905089df805089df706089d7607089df5073e713f00089d74003e713f80089d7300fe70bf08be703f0834c20d0f0000ffff8f0f2000089280020892010308928203089283040892040008920507820f0100e2cc820ff0ffa001024a84010d0b56c322060000000075c302060000000076c32206000000000ec22006000000003e02007807ff800130103e703f0a820f0100840172013e0200001104820f10008001212108980000a0010100820ff0ffa0010240820ff1ff8d0102a047c546c302060000000047c208928500820f020012cc0006000000001ac202060000000045c23e02007814ff800131113e703f8a820f0100840142013e0200001104820f10008001212108980002a0014101820ff0ffa00112418d0192a4820ff1ff8d0112a188011022930142018801011880019b103e02007810f084010d0980017a108001011775c302060000000076c32206000000003e060000000008920500810f020001cc00060000000080016521800f020010c302060000000075c302060000000071c13e060000000071c075c302060000000076c30206000000008e0f01003e06000000008e0f0100880f0000b8910fc6f0c2240600000000089382030893830408930507089c7f0e089cfe01089cfd02089c7c03089cfb03089cfa04089c7905089cf805089cf706089c7607089cf507089c74083f083f34089cf30801197e70bf09be703f090100010001000894040308970803800f0000089700000897010008970200089703000897060008970700000f0100000008970400800f010008970500800f000060c3000600000000800f010060c30006000000003e06000000007e70bf09be703f0901000100010008940403800f000060c3000600000000800f010060c30006000000003e0600000000800f01003f083f68089483003e703f893e703f8a800f0000820f2000010001000100b09522c622c2240600000000800f010008970500800f000060c3000600000000800f010060c30006000000003e060000000000100000000000c5001100000000100f00000000820f20000100010001009199b19122c622c224060000000000100000000000c50011000000003e060000000000100000000000c5001100000000100f00000000820f20000100010001009199b19122c622c224060000000000100000000000c5001100000000800f01003f083f683f713f8000110000000000100000000000c50011000000003f773f012214000000100100010000100000000000c200060000000000100000000000c220060000000000100000000000c2020600000000010fff7fffff01c3220600000000011000000000800f010010c320060000000001100000000011c20006000000000897860000100000000000c50011000000003f703f39010001000010000000000897070000100000000008970100010f0100000008978400fe70bf0a010001000100089a8000870f800017c302060000000000c608970200010fffff000008978400800f0000089705003f773f012214000000100100010000100000000000c204060000000000c60011000000003e0600000000800f0100001100000000001100000000800f0000001100000000001100000000000fff7fffff0011000000003f703f3901000100800f00003f083f68800f0100001100000000001100000000800f0000001100000000001100000000000fff7fffff0011000000003f703f39010001003e06000000003f713f8000110000000000100000000000c50011000000003f773f01221400000010010001000896080006c320060000000000100000000000c200060000000000100000000000c220060000000000100000000000c2020600000000010fff7fffff01c3220600000000001000000000810f010001c32006000000000896060000c200060000000001100000000001c320060000000000100000000000c50011000000003f703f390100010000100000000000c500110000000008940300001100000000fe71bf01fe71bf828715ffffffff08960702089403043f713f86041800000000f29fc09fffffffff089403003e703f0a00100000000000c5001100000000100f00000000820f20000100010001009199b19122c622c224060000000000100000000000c50011000000008715000001003f703f8e7e70bf8e3f773f012214000000100100010000100000000000c204060000000000c60011000000003e0600000000800f0100001100000000001100000000800f0000001100000000001100000000000fff7fffff0011000000003f703f3901000100089605003f083f68800f0100001100000000001100000000800f0000001100000000001100000000000fff7fffff0011000000003f703f39010001003e06000000003f713f8000110000000000100000000000c50011000000003f773f012214000000100100010000100000000000c200060000000000100000000000c220060000000000100000000000c2020600000000010fff7fffff01c3220600000000011000000000800f010010c320060000000001100000000011c20006000000000897860000100000000000c50011000000003f703f39010001000010000000000897070000100000000008970100810f000408978400fe70bf0a010001000100089a8000870f800017c302060000000000c608970200810f00fc08978400800f0000089705003f773f012214000000100100010000100000000000c204060000000000c60011000000003e0600000000800f0100001100000000001100000000800f0000001100000000001100000000000fff7fffff0011000000003f703f3901000100800f00003f083f68800f0100001100000000001100000000800f0000001100000000001100000000000fff7fffff0011000000003f703f39010001003e06000000003f713f8000110000000000100000000000c50011000000003f773f01221400000010010001000896080006c320060000000000100000000000c200060000000000100000000000c220060000000000100000000000c2020600000000010fff7fffff01c3220600000000001000000000810f010001c32006000000000896060000c200060000000001100000000001c320060000000000100000000000c50011000000003f703f390100010000100000000000c500110000000008940300001100000000fe71bf01fe71bf828715ffffffff08960702089403043f713f86041800000000f29fc09fffffffff089403003e703f0a00100000000000c5001100000000100f00000000820f20000100010001009199b19122c622c224060000000000100000000000c50011000000008715000001003f703f8e7e70bf8e3f773f012214000000100100010000100000000000c204060000000000c60011000000003e0600000000800f0100001100000000001100000000800f0000001100000000001100000000000fff7fffff0011000000003f703f3901000100089605003f083f68800f0100001100000000001100000000800f0000001100000000001100000000000fff7fffff0011000000003f703f39010001003e0600000000",
+   "kind": "text",
+   "name": "seg_pmco",
+   "size": 8262
+  },
+  {
+   "align": 8,
+   "hex": "00000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000414d4b440100000001000000100000002400000024000000c40900002c010000020000008000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000",
+   "kind": "data",
+   "name": "seg_dmda",
+   "size": 504
+  },
+  {
+   "align": 4,
+   "hex": "00000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000",
+   "kind": "data",
+   "name": "pkdata__lp_save",
+   "size": 292
+  },
+  {
+   "align": 4,
+   "hex": "00000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000",
+   "kind": "data",
+   "name": "pkdata__lp_boot_save",
+   "size": 292
+  },
+  {
+   "align": 4,
+   "hex": "000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000",
+   "kind": "data",
+   "name": "pkdata__lp_dma_storage",
+   "size": 4416
+  },
+  {
+   "align": 4,
+   "hex": "000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000",
+   "kind": "data",
+   "name": "pkdata__lp_b_storage",
+   "size": 16512
+  }
+ ],
+ "source_sha256": "62d0178e4c68e65a83d3a767b855299e61a1ce21f39c11061bd4d0f6b6abac3d",
+ "symbols": [
+  {
+   "global": false,
+   "name": "_dk_sample_crossed",
+   "section": "seg_pmco",
+   "value": 2765
+  },
+  {
+   "global": false,
+   "name": "_dk_sample_finish",
+   "section": "seg_pmco",
+   "value": 2770
+  },
+  {
+   "global": true,
+   "name": "_dk_sample_linear",
+   "section": "seg_pmco",
+   "value": 2638
+  },
+  {
+   "global": false,
+   "name": "_dk_sample_loop",
+   "section": "seg_pmco",
+   "value": 2709
+  },
+  {
+   "global": false,
+   "name": "_dk_sample_neighbor",
+   "section": "seg_pmco",
+   "value": 2723
+  },
+  {
+   "global": false,
+   "name": "_dk_sample_pcm16_crossed",
+   "section": "seg_pmco",
+   "value": 3002
+  },
+  {
+   "global": false,
+   "name": "_dk_sample_pcm16_end",
+   "section": "seg_pmco",
+   "value": 3035
+  },
+  {
+   "global": false,
+   "name": "_dk_sample_pcm16_finish",
+   "section": "seg_pmco",
+   "value": 3040
+  },
+  {
+   "global": true,
+   "name": "_dk_sample_pcm16_linear",
+   "section": "seg_pmco",
+   "value": 2815
+  },
+  {
+   "global": false,
+   "name": "_dk_sample_pcm16_loop",
+   "section": "seg_pmco",
+   "value": 2889
+  },
+  {
+   "global": false,
+   "name": "_dk_sample_pcm16_neighbor",
+   "section": "seg_pmco",
+   "value": 2942
+  },
+  {
+   "global": false,
+   "name": "_dk_sample_pcm16_store",
+   "section": "seg_pmco",
+   "value": 3044
+  },
+  {
+   "global": false,
+   "name": "_dk_sample_pcm16_wrap_up",
+   "section": "seg_pmco",
+   "value": 3026
+  },
+  {
+   "global": false,
+   "name": "_dk_sample_pcm16_wrapped",
+   "section": "seg_pmco",
+   "value": 3027
+  },
+  {
+   "global": false,
+   "name": "_dk_sample_pcm16_zero",
+   "section": "seg_pmco",
+   "value": 3042
+  },
+  {
+   "global": false,
+   "name": "_dk_sample_store",
+   "section": "seg_pmco",
+   "value": 2774
+  },
+  {
+   "global": false,
+   "name": "_dk_sample_zero",
+   "section": "seg_pmco",
+   "value": 2772
+  },
+  {
+   "global": false,
+   "name": "_lp_after_arm",
+   "section": "seg_pmco",
+   "value": 1427
+  },
+  {
+   "global": false,
+   "name": "_lp_after_callback",
+   "section": "seg_pmco",
+   "value": 1310
+  },
+  {
+   "global": false,
+   "name": "_lp_after_close_rearm",
+   "section": "seg_pmco",
+   "value": 2569
+  },
+  {
+   "global": false,
+   "name": "_lp_after_open",
+   "section": "seg_pmco",
+   "value": 1280
+  },
+  {
+   "global": false,
+   "name": "_lp_after_rearm",
+   "section": "seg_pmco",
+   "value": 2279
+  },
+  {
+   "global": false,
+   "name": "_lp_after_submit",
+   "section": "seg_pmco",
+   "value": 2058
+  },
+  {
+   "global": false,
+   "name": "_lp_after_terminal_rearm",
+   "section": "seg_pmco",
+   "value": 2319
+  },
+  {
+   "global": false,
+   "name": "_lp_arm",
+   "section": "seg_pmco",
+   "value": 2006
+  },
+  {
+   "global": false,
+   "name": "_lp_arm_done",
+   "section": "seg_pmco",
+   "value": 2075
+  },
+  {
+   "global": false,
+   "name": "_lp_b_guard_init",
+   "section": "seg_pmco",
+   "value": 1361
+  },
+  {
+   "global": false,
+   "name": "_lp_b_init",
+   "section": "seg_pmco",
+   "value": 1390
+  },
+  {
+   "global": false,
+   "name": "_lp_bad_boot",
+   "section": "seg_pmco",
+   "value": 1430
+  },
+  {
+   "global": false,
+   "name": "_lp_bad_context",
+   "section": "seg_pmco",
+   "value": 1435
+  },
+  {
+   "global": false,
+   "name": "_lp_bad_driver",
+   "section": "seg_pmco",
+   "value": 1445
+  },
+  {
+   "global": false,
+   "name": "_lp_bad_owned",
+   "section": "seg_pmco",
+   "value": 1440
+  },
+  {
+   "global": false,
+   "name": "_lp_boot_after_range",
+   "section": "seg_pmco",
+   "value": 446
+  },
+  {
+   "global": false,
+   "name": "_lp_boot_context_error",
+   "section": "seg_pmco",
+   "value": 464
+  },
+  {
+   "global": false,
+   "name": "_lp_boot_failed",
+   "section": "seg_pmco",
+   "value": 472
+  },
+  {
+   "global": true,
+   "name": "_lp_boot_hook",
+   "section": "seg_pmco",
+   "value": 0
+  },
+  {
+   "global": false,
+   "name": "_lp_boot_record_error",
+   "section": "seg_pmco",
+   "value": 469
+  },
+  {
+   "global": false,
+   "name": "_lp_boot_refuse_simd",
+   "section": "seg_pmco",
+   "value": 818
+  },
+  {
+   "global": false,
+   "name": "_lp_boot_restore",
+   "section": "seg_pmco",
+   "value": 477
+  },
+  {
+   "global": true,
+   "name": "_lp_callback",
+   "section": "seg_pmco",
+   "value": 2085
+  },
+  {
+   "global": false,
+   "name": "_lp_cb_active",
+   "section": "seg_pmco",
+   "value": 2154
+  },
+  {
+   "global": false,
+   "name": "_lp_cb_bad",
+   "section": "seg_pmco",
+   "value": 2591
+  },
+  {
+   "global": false,
+   "name": "_lp_cb_close",
+   "section": "seg_pmco",
+   "value": 2368
+  },
+  {
+   "global": false,
+   "name": "_lp_cb_done",
+   "section": "seg_pmco",
+   "value": 2599
+  },
+  {
+   "global": false,
+   "name": "_lp_choose_reply",
+   "section": "seg_pmco",
+   "value": 1601
+  },
+  {
+   "global": false,
+   "name": "_lp_close_adopt",
+   "section": "seg_pmco",
+   "value": 2480
+  },
+  {
+   "global": false,
+   "name": "_lp_close_b",
+   "section": "seg_pmco",
+   "value": 2456
+  },
+  {
+   "global": false,
+   "name": "_lp_close_b_admission",
+   "section": "seg_pmco",
+   "value": 2519
+  },
+  {
+   "global": false,
+   "name": "_lp_close_check",
+   "section": "seg_pmco",
+   "value": 2459
+  },
+  {
+   "global": false,
+   "name": "_lp_close_drained",
+   "section": "seg_pmco",
+   "value": 2542
+  },
+  {
+   "global": false,
+   "name": "_lp_close_identity",
+   "section": "seg_pmco",
+   "value": 2446
+  },
+  {
+   "global": false,
+   "name": "_lp_close_pending",
+   "section": "seg_pmco",
+   "value": 2552
+  },
+  {
+   "global": false,
+   "name": "_lp_close_rejected",
+   "section": "seg_pmco",
+   "value": 2557
+  },
+  {
+   "global": false,
+   "name": "_lp_close_result",
+   "section": "seg_pmco",
+   "value": 2559
+  },
+  {
+   "global": false,
+   "name": "_lp_close_retry",
+   "section": "seg_pmco",
+   "value": 2432
+  },
+  {
+   "global": false,
+   "name": "_lp_complete",
+   "section": "seg_pmco",
+   "value": 2282
+  },
+  {
+   "global": false,
+   "name": "_lp_control_reply",
+   "section": "seg_pmco",
+   "value": 1630
+  },
+  {
+   "global": false,
+   "name": "_lp_guard_check",
+   "section": "seg_pmco",
+   "value": 2293
+  },
+  {
+   "global": true,
+   "name": "_lp_hook",
+   "section": "seg_pmco",
+   "value": 829
+  },
+  {
+   "global": false,
+   "name": "_lp_init_error",
+   "section": "seg_pmco",
+   "value": 1447
+  },
+  {
+   "global": true,
+   "name": "_lp_play_note_on",
+   "section": "seg_pmco",
+   "value": 3085
+  },
+  {
+   "global": true,
+   "name": "_lp_play_render",
+   "section": "seg_pmco",
+   "value": 3134
+  },
+  {
+   "global": false,
+   "name": "_lp_poll_b",
+   "section": "seg_pmco",
+   "value": 1516
+  },
+  {
+   "global": false,
+   "name": "_lp_poll_control",
+   "section": "seg_pmco",
+   "value": 1519
+  },
+  {
+   "global": false,
+   "name": "_lp_poll_publish",
+   "section": "seg_pmco",
+   "value": 1575
+  },
+  {
+   "global": false,
+   "name": "_lp_poll_rejected",
+   "section": "seg_pmco",
+   "value": 1573
+  },
+  {
+   "global": false,
+   "name": "_lp_progress_reply",
+   "section": "seg_pmco",
+   "value": 1608
+  },
+  {
+   "global": false,
+   "name": "_lp_reader_a_after_reader",
+   "section": "seg_pmco",
+   "value": 3579
+  },
+  {
+   "global": false,
+   "name": "_lp_reader_a_forward",
+   "section": "seg_pmco",
+   "value": 3377
+  },
+  {
+   "global": false,
+   "name": "_lp_reader_a_note",
+   "section": "seg_pmco",
+   "value": 3265
+  },
+  {
+   "global": true,
+   "name": "_lp_reader_a_note_acquired",
+   "section": "seg_pmco",
+   "value": 3341
+  },
+  {
+   "global": false,
+   "name": "_lp_reader_a_note_denied",
+   "section": "seg_pmco",
+   "value": 3454
+  },
+  {
+   "global": false,
+   "name": "_lp_reader_a_note_fault",
+   "section": "seg_pmco",
+   "value": 3432
+  },
+  {
+   "global": false,
+   "name": "_lp_reader_a_note_release_fault",
+   "section": "seg_pmco",
+   "value": 3402
+  },
+  {
+   "global": false,
+   "name": "_lp_reader_a_note_released",
+   "section": "seg_pmco",
+   "value": 3424
+  },
+  {
+   "global": false,
+   "name": "_lp_reader_a_render",
+   "section": "seg_pmco",
+   "value": 3461
+  },
+  {
+   "global": true,
+   "name": "_lp_reader_a_render_acquired",
+   "section": "seg_pmco",
+   "value": 3547
+  },
+  {
+   "global": false,
+   "name": "_lp_reader_a_render_denied",
+   "section": "seg_pmco",
+   "value": 3692
+  },
+  {
+   "global": false,
+   "name": "_lp_reader_a_render_fault",
+   "section": "seg_pmco",
+   "value": 3670
+  },
+  {
+   "global": false,
+   "name": "_lp_reader_a_render_release_fault",
+   "section": "seg_pmco",
+   "value": 3640
+  },
+  {
+   "global": false,
+   "name": "_lp_reader_a_render_released",
+   "section": "seg_pmco",
+   "value": 3662
+  },
+  {
+   "global": false,
+   "name": "_lp_reader_a_snapshot_read_copy",
+   "section": "seg_pmco",
+   "value": 3598
+  },
+  {
+   "global": false,
+   "name": "_lp_reader_a_snapshot_silent",
+   "section": "seg_pmco",
+   "value": 3200
+  },
+  {
+   "global": false,
+   "name": "_lp_reader_a_snapshot_silent_copy",
+   "section": "seg_pmco",
+   "value": 3215
+  },
+  {
+   "global": false,
+   "name": "_lp_reader_b_after_reader",
+   "section": "seg_pmco",
+   "value": 4011
+  },
+  {
+   "global": false,
+   "name": "_lp_reader_b_forward",
+   "section": "seg_pmco",
+   "value": 3809
+  },
+  {
+   "global": false,
+   "name": "_lp_reader_b_note",
+   "section": "seg_pmco",
+   "value": 3699
+  },
+  {
+   "global": true,
+   "name": "_lp_reader_b_note_acquired",
+   "section": "seg_pmco",
+   "value": 3775
+  },
+  {
+   "global": false,
+   "name": "_lp_reader_b_note_denied",
+   "section": "seg_pmco",
+   "value": 3886
+  },
+  {
+   "global": false,
+   "name": "_lp_reader_b_note_fault",
+   "section": "seg_pmco",
+   "value": 3864
+  },
+  {
+   "global": false,
+   "name": "_lp_reader_b_note_release_fault",
+   "section": "seg_pmco",
+   "value": 3834
+  },
+  {
+   "global": false,
+   "name": "_lp_reader_b_note_released",
+   "section": "seg_pmco",
+   "value": 3856
+  },
+  {
+   "global": false,
+   "name": "_lp_reader_b_render",
+   "section": "seg_pmco",
+   "value": 3893
+  },
+  {
+   "global": true,
+   "name": "_lp_reader_b_render_acquired",
+   "section": "seg_pmco",
+   "value": 3979
+  },
+  {
+   "global": false,
+   "name": "_lp_reader_b_render_denied",
+   "section": "seg_pmco",
+   "value": 4124
+  },
+  {
+   "global": false,
+   "name": "_lp_reader_b_render_fault",
+   "section": "seg_pmco",
+   "value": 4102
+  },
+  {
+   "global": false,
+   "name": "_lp_reader_b_render_release_fault",
+   "section": "seg_pmco",
+   "value": 4072
+  },
+  {
+   "global": false,
+   "name": "_lp_reader_b_render_released",
+   "section": "seg_pmco",
+   "value": 4094
+  },
+  {
+   "global": false,
+   "name": "_lp_reader_b_snapshot_read_copy",
+   "section": "seg_pmco",
+   "value": 4030
+  },
+  {
+   "global": false,
+   "name": "_lp_reader_b_snapshot_silent",
+   "section": "seg_pmco",
+   "value": 3232
+  },
+  {
+   "global": false,
+   "name": "_lp_reader_b_snapshot_silent_copy",
+   "section": "seg_pmco",
+   "value": 3247
+  },
+  {
+   "global": false,
+   "name": "_lp_reader_note_denied",
+   "section": "seg_pmco",
+   "value": 3158
+  },
+  {
+   "global": false,
+   "name": "_lp_reader_silent",
+   "section": "seg_pmco",
+   "value": 3162
+  },
+  {
+   "global": false,
+   "name": "_lp_reader_silent_return",
+   "section": "seg_pmco",
+   "value": 3261
+  },
+  {
+   "global": false,
+   "name": "_lp_reader_zero",
+   "section": "seg_pmco",
+   "value": 3175
+  },
+  {
+   "global": false,
+   "name": "_lp_restore",
+   "section": "seg_pmco",
+   "value": 1455
+  },
+  {
+   "global": false,
+   "name": "_lp_write_reply",
+   "section": "seg_pmco",
+   "value": 1649
+  },
+  {
+   "global": true,
+   "name": "dk_sample_linear.",
+   "section": "seg_pmco",
+   "value": 2638
+  },
+  {
+   "global": true,
+   "name": "dk_sample_pcm16_linear.",
+   "section": "seg_pmco",
+   "value": 2815
+  },
+  {
+   "global": true,
+   "name": "_lp_b_lower",
+   "section": "seg_dmda",
+   "value": 152
+  },
+  {
+   "global": true,
+   "name": "_lp_b_storage",
+   "section": "pkdata__lp_b_storage",
+   "value": 0
+  },
+  {
+   "global": true,
+   "name": "_lp_b_upper",
+   "section": "seg_dmda",
+   "value": 156
+  },
+  {
+   "global": true,
+   "name": "_lp_boot_error",
+   "section": "seg_dmda",
+   "value": 16
+  },
+  {
+   "global": true,
+   "name": "_lp_boot_save",
+   "section": "pkdata__lp_boot_save",
+   "value": 0
+  },
+  {
+   "global": true,
+   "name": "_lp_boot_status",
+   "section": "seg_dmda",
+   "value": 12
+  },
+  {
+   "global": true,
+   "name": "_lp_bytes",
+   "section": "seg_dmda",
+   "value": 32
+  },
+  {
+   "global": true,
+   "name": "_lp_close_a_closed",
+   "section": "seg_dmda",
+   "value": 56
+  },
+  {
+   "global": true,
+   "name": "_lp_close_a_count",
+   "section": "seg_dmda",
+   "value": 60
+  },
+  {
+   "global": true,
+   "name": "_lp_close_a_epoch",
+   "section": "seg_dmda",
+   "value": 68
+  },
+  {
+   "global": true,
+   "name": "_lp_close_a_fault",
+   "section": "seg_dmda",
+   "value": 64
+  },
+  {
+   "global": true,
+   "name": "_lp_close_a_open",
+   "section": "seg_dmda",
+   "value": 48
+  },
+  {
+   "global": true,
+   "name": "_lp_close_a_ready",
+   "section": "seg_dmda",
+   "value": 52
+  },
+  {
+   "global": true,
+   "name": "_lp_close_b_closed",
+   "section": "seg_dmda",
+   "value": 80
+  },
+  {
+   "global": true,
+   "name": "_lp_close_b_count",
+   "section": "seg_dmda",
+   "value": 84
+  },
+  {
+   "global": true,
+   "name": "_lp_close_b_epoch",
+   "section": "seg_dmda",
+   "value": 92
+  },
+  {
+   "global": true,
+   "name": "_lp_close_b_fault",
+   "section": "seg_dmda",
+   "value": 88
+  },
+  {
+   "global": true,
+   "name": "_lp_close_b_open",
+   "section": "seg_dmda",
+   "value": 72
+  },
+  {
+   "global": true,
+   "name": "_lp_close_b_ready",
+   "section": "seg_dmda",
+   "value": 76
+  },
+  {
+   "global": false,
+   "name": "_lp_close_epoch",
+   "section": "seg_dmda",
+   "value": 132
+  },
+  {
+   "global": false,
+   "name": "_lp_close_id",
+   "section": "seg_dmda",
+   "value": 124
+  },
+  {
+   "global": false,
+   "name": "_lp_close_last_drained",
+   "section": "seg_dmda",
+   "value": 108
+  },
+  {
+   "global": false,
+   "name": "_lp_close_last_epoch",
+   "section": "seg_dmda",
+   "value": 104
+  },
+  {
+   "global": false,
+   "name": "_lp_close_last_id",
+   "section": "seg_dmda",
+   "value": 96
+  },
+  {
+   "global": false,
+   "name": "_lp_close_last_track",
+   "section": "seg_dmda",
+   "value": 100
+  },
+  {
+   "global": false,
+   "name": "_lp_close_rearming",
+   "section": "seg_dmda",
+   "value": 112
+  },
+  {
+   "global": false,
+   "name": "_lp_close_status",
+   "section": "seg_dmda",
+   "value": 120
+  },
+  {
+   "global": false,
+   "name": "_lp_close_track",
+   "section": "seg_dmda",
+   "value": 128
+  },
+  {
+   "global": true,
+   "name": "_lp_descriptor",
+   "section": "seg_dmda",
+   "value": 8
+  },
+  {
+   "global": true,
+   "name": "_lp_dma_base",
+   "section": "seg_dmda",
+   "value": 0
+  },
+  {
+   "global": true,
+   "name": "_lp_dma_limit",
+   "section": "seg_dmda",
+   "value": 4
+  },
+  {
+   "global": true,
+   "name": "_lp_dma_storage",
+   "section": "pkdata__lp_dma_storage",
+   "value": 0
+  },
+  {
+   "global": true,
+   "name": "_lp_error",
+   "section": "seg_dmda",
+   "value": 24
+  },
+  {
+   "global": true,
+   "name": "_lp_handle",
+   "section": "seg_dmda",
+   "value": 44
+  },
+  {
+   "global": true,
+   "name": "_lp_pages",
+   "section": "seg_dmda",
+   "value": 28
+  },
+  {
+   "global": true,
+   "name": "_lp_play_desc",
+   "section": "seg_dmda",
+   "value": 160
+  },
+  {
+   "global": true,
+   "name": "_lp_reader_a_blocks",
+   "section": "seg_dmda",
+   "value": 204
+  },
+  {
+   "global": true,
+   "name": "_lp_reader_a_frames",
+   "section": "seg_dmda",
+   "value": 140
+  },
+  {
+   "global": true,
+   "name": "_lp_reader_a_notes",
+   "section": "seg_dmda",
+   "value": 200
+  },
+  {
+   "global": true,
+   "name": "_lp_reader_a_output",
+   "section": "seg_dmda",
+   "value": 216
+  },
+  {
+   "global": true,
+   "name": "_lp_reader_a_reads",
+   "section": "seg_dmda",
+   "value": 208
+  },
+  {
+   "global": true,
+   "name": "_lp_reader_a_snapshot",
+   "section": "seg_dmda",
+   "value": 244
+  },
+  {
+   "global": true,
+   "name": "_lp_reader_a_snapshot_seq",
+   "section": "seg_dmda",
+   "value": 240
+  },
+  {
+   "global": true,
+   "name": "_lp_reader_a_source",
+   "section": "seg_dmda",
+   "value": 136
+  },
+  {
+   "global": true,
+   "name": "_lp_reader_a_state",
+   "section": "seg_dmda",
+   "value": 212
+  },
+  {
+   "global": true,
+   "name": "_lp_reader_b_blocks",
+   "section": "seg_dmda",
+   "value": 224
+  },
+  {
+   "global": true,
+   "name": "_lp_reader_b_frames",
+   "section": "seg_dmda",
+   "value": 148
+  },
+  {
+   "global": true,
+   "name": "_lp_reader_b_notes",
+   "section": "seg_dmda",
+   "value": 220
+  },
+  {
+   "global": true,
+   "name": "_lp_reader_b_output",
+   "section": "seg_dmda",
+   "value": 236
+  },
+  {
+   "global": true,
+   "name": "_lp_reader_b_reads",
+   "section": "seg_dmda",
+   "value": 228
+  },
+  {
+   "global": true,
+   "name": "_lp_reader_b_snapshot",
+   "section": "seg_dmda",
+   "value": 376
+  },
+  {
+   "global": true,
+   "name": "_lp_reader_b_snapshot_seq",
+   "section": "seg_dmda",
+   "value": 372
+  },
+  {
+   "global": true,
+   "name": "_lp_reader_b_source",
+   "section": "seg_dmda",
+   "value": 144
+  },
+  {
+   "global": true,
+   "name": "_lp_reader_b_state",
+   "section": "seg_dmda",
+   "value": 232
+  },
+  {
+   "global": false,
+   "name": "_lp_reply_kind",
+   "section": "seg_dmda",
+   "value": 116
+  },
+  {
+   "global": true,
+   "name": "_lp_rx",
+   "section": "seg_dmda",
+   "value": 40
+  },
+  {
+   "global": true,
+   "name": "_lp_save",
+   "section": "pkdata__lp_save",
+   "value": 0
+  },
+  {
+   "global": true,
+   "name": "_lp_state",
+   "section": "seg_dmda",
+   "value": 36
+  },
+  {
+   "global": true,
+   "name": "_lp_status",
+   "section": "seg_dmda",
+   "value": 20
+  },
+  {
+   "global": true,
+   "name": "_lp_back",
+   "section": null,
+   "value": 0
+  },
+  {
+   "global": true,
+   "name": "_lp_boot_back",
+   "section": null,
+   "value": 0
+  },
+  {
+   "global": true,
+   "name": "_lp_cache_range",
+   "section": null,
+   "value": 0
+  },
+  {
+   "global": true,
+   "name": "_lp_open",
+   "section": null,
+   "value": 0
+  },
+  {
+   "global": true,
+   "name": "_lp_port_record",
+   "section": null,
+   "value": 0
+  },
+  {
+   "global": true,
+   "name": "_lp_set_callback",
+   "section": null,
+   "value": 0
+  },
+  {
+   "global": true,
+   "name": "_lp_submit",
+   "section": null,
+   "value": 0
+  }
+ ],
+ "toolchain": {
+  "instructions_redecoded": "1830",
+  "selache_rev": "02d6d785b8e3a125ab237a00bb89503aff835f5d"
+ }
+}

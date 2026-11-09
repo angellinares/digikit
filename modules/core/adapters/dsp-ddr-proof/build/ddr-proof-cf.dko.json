@@ -1,0 +1,669 @@
+{
+ "arch": "cf",
+ "format": 1,
+ "relocs": [
+  {
+   "addend": 0,
+   "offset": 6,
+   "section": ".text.frame_word",
+   "symbol": ".sec..bss.dd_frame",
+   "type": "cf.32"
+  },
+  {
+   "addend": 0,
+   "offset": 8,
+   "section": ".text.fail",
+   "symbol": ".sec..bss.dd_failed",
+   "type": "cf.32"
+  },
+  {
+   "addend": 4,
+   "offset": 16,
+   "section": ".text.fail",
+   "symbol": ".sec..bss.dd_mail",
+   "type": "cf.32"
+  },
+  {
+   "addend": 0,
+   "offset": 22,
+   "section": ".text.fail",
+   "symbol": ".sec..bss.dd_op",
+   "type": "cf.32"
+  },
+  {
+   "addend": 0,
+   "offset": 28,
+   "section": ".text.fail",
+   "symbol": ".sec..bss.dd_mail",
+   "type": "cf.32"
+  },
+  {
+   "addend": 0,
+   "offset": 108,
+   "section": ".text.dd_frame_hook",
+   "symbol": ".sec..bss.dd_previous_quiet",
+   "type": "cf.32"
+  },
+  {
+   "addend": 0,
+   "offset": 124,
+   "section": ".text.dd_frame_hook",
+   "symbol": ".sec..bss.dd_mail",
+   "type": "cf.32"
+  },
+  {
+   "addend": 0,
+   "offset": 130,
+   "section": ".text.dd_frame_hook",
+   "symbol": ".sec..bss.dd_op",
+   "type": "cf.32"
+  },
+  {
+   "addend": 0,
+   "offset": 136,
+   "section": ".text.dd_frame_hook",
+   "symbol": ".sec..bss.dd_previous_quiet",
+   "type": "cf.32"
+  },
+  {
+   "addend": 0,
+   "offset": 142,
+   "section": ".text.dd_frame_hook",
+   "symbol": ".sec..bss.dd_failed",
+   "type": "cf.32"
+  },
+  {
+   "addend": 0,
+   "offset": 152,
+   "section": ".text.dd_frame_hook",
+   "symbol": ".sec..bss.dd_mail",
+   "type": "cf.32"
+  },
+  {
+   "addend": 0,
+   "offset": 200,
+   "section": ".text.dd_frame_hook",
+   "symbol": ".sec..bss.dd_failed",
+   "type": "cf.32"
+  },
+  {
+   "addend": 12,
+   "offset": 210,
+   "section": ".text.dd_frame_hook",
+   "symbol": ".sec..bss.dd_mail",
+   "type": "cf.32"
+  },
+  {
+   "addend": 0,
+   "offset": 256,
+   "section": ".text.dd_frame_hook",
+   "symbol": ".sec..text.frame_word",
+   "type": "cf.32"
+  },
+  {
+   "addend": 0,
+   "offset": 346,
+   "section": ".text.dd_frame_hook",
+   "symbol": ".sec..rodata.CSWTCH.33",
+   "type": "cf.32"
+  },
+  {
+   "addend": 0,
+   "offset": 364,
+   "section": ".text.dd_frame_hook",
+   "symbol": ".sec..text.frame_word",
+   "type": "cf.32"
+  },
+  {
+   "addend": 4,
+   "offset": 562,
+   "section": ".text.dd_frame_hook",
+   "symbol": ".sec..bss.dd_mail",
+   "type": "cf.32"
+  },
+  {
+   "addend": 8,
+   "offset": 570,
+   "section": ".text.dd_frame_hook",
+   "symbol": ".sec..bss.dd_mail",
+   "type": "cf.32"
+  },
+  {
+   "addend": 12,
+   "offset": 576,
+   "section": ".text.dd_frame_hook",
+   "symbol": ".sec..bss.dd_mail",
+   "type": "cf.32"
+  },
+  {
+   "addend": 0,
+   "offset": 582,
+   "section": ".text.dd_frame_hook",
+   "symbol": ".sec..bss.dd_op",
+   "type": "cf.32"
+  },
+  {
+   "addend": 0,
+   "offset": 588,
+   "section": ".text.dd_frame_hook",
+   "symbol": ".sec..bss.dd_mail",
+   "type": "cf.32"
+  },
+  {
+   "addend": 0,
+   "offset": 604,
+   "section": ".text.dd_frame_hook",
+   "symbol": ".sec..text.fail",
+   "type": "cf.32"
+  },
+  {
+   "addend": 0,
+   "offset": 744,
+   "section": ".text.dd_frame_hook",
+   "symbol": ".sec..bss.dd_retired_token",
+   "type": "cf.32"
+  },
+  {
+   "addend": 0,
+   "offset": 750,
+   "section": ".text.dd_frame_hook",
+   "symbol": ".sec..bss.dd_opened_token",
+   "type": "cf.32"
+  },
+  {
+   "addend": 0,
+   "offset": 756,
+   "section": ".text.dd_frame_hook",
+   "symbol": ".sec..bss.dd_sealed_token",
+   "type": "cf.32"
+  },
+  {
+   "addend": 0,
+   "offset": 762,
+   "section": ".text.dd_frame_hook",
+   "symbol": ".sec..bss.dd_loading_token",
+   "type": "cf.32"
+  },
+  {
+   "addend": 4,
+   "offset": 768,
+   "section": ".text.dd_frame_hook",
+   "symbol": ".sec..bss.dd_mail",
+   "type": "cf.32"
+  },
+  {
+   "addend": 0,
+   "offset": 776,
+   "section": ".text.dd_frame_hook",
+   "symbol": ".sec..bss.dd_mail",
+   "type": "cf.32"
+  },
+  {
+   "addend": 0,
+   "offset": 784,
+   "section": ".text.dd_frame_hook",
+   "symbol": ".sec..bss.dd_mail",
+   "type": "cf.32"
+  },
+  {
+   "addend": 8,
+   "offset": 794,
+   "section": ".text.dd_frame_hook",
+   "symbol": ".sec..bss.dd_mail",
+   "type": "cf.32"
+  },
+  {
+   "addend": 8,
+   "offset": 802,
+   "section": ".text.dd_frame_hook",
+   "symbol": ".sec..bss.dd_mail",
+   "type": "cf.32"
+  },
+  {
+   "addend": 0,
+   "offset": 822,
+   "section": ".text.dd_frame_hook",
+   "symbol": ".sec..text.fail",
+   "type": "cf.32"
+  },
+  {
+   "addend": 0,
+   "offset": 840,
+   "section": ".text.dd_frame_hook",
+   "symbol": ".sec..bss.dd_loading_token",
+   "type": "cf.32"
+  },
+  {
+   "addend": 0,
+   "offset": 846,
+   "section": ".text.dd_frame_hook",
+   "symbol": ".sec..bss.dd_opened_token",
+   "type": "cf.32"
+  },
+  {
+   "addend": 0,
+   "offset": 852,
+   "section": ".text.dd_frame_hook",
+   "symbol": ".sec..bss.dd_sealed_token",
+   "type": "cf.32"
+  },
+  {
+   "addend": 0,
+   "offset": 858,
+   "section": ".text.dd_frame_hook",
+   "symbol": ".sec..bss.dd_retired_token",
+   "type": "cf.32"
+  },
+  {
+   "addend": 0,
+   "offset": 872,
+   "section": ".text.dd_frame_hook",
+   "symbol": ".sec..bss.dd_sealed_token",
+   "type": "cf.32"
+  },
+  {
+   "addend": 0,
+   "offset": 878,
+   "section": ".text.dd_frame_hook",
+   "symbol": ".sec..bss.dd_retired_token",
+   "type": "cf.32"
+  },
+  {
+   "addend": 0,
+   "offset": 892,
+   "section": ".text.dd_frame_hook",
+   "symbol": ".sec..bss.dd_opened_token",
+   "type": "cf.32"
+  },
+  {
+   "addend": 0,
+   "offset": 898,
+   "section": ".text.dd_frame_hook",
+   "symbol": ".sec..bss.dd_sealed_token",
+   "type": "cf.32"
+  },
+  {
+   "addend": 0,
+   "offset": 904,
+   "section": ".text.dd_frame_hook",
+   "symbol": ".sec..bss.dd_loading_token",
+   "type": "cf.32"
+  },
+  {
+   "addend": 0,
+   "offset": 916,
+   "section": ".text.dd_frame_hook",
+   "symbol": ".sec..text.fail",
+   "type": "cf.32"
+  },
+  {
+   "addend": 0,
+   "offset": 934,
+   "section": ".text.dd_frame_hook",
+   "symbol": ".sec..bss.dd_failed",
+   "type": "cf.32"
+  },
+  {
+   "addend": 0,
+   "offset": 974,
+   "section": ".text.dd_frame_hook",
+   "symbol": ".sec..text.frame_word",
+   "type": "cf.32"
+  },
+  {
+   "addend": 0,
+   "offset": 998,
+   "section": ".text.dd_frame_hook",
+   "symbol": ".sec..bss.dd_loading_token",
+   "type": "cf.32"
+  },
+  {
+   "addend": 0,
+   "offset": 1006,
+   "section": ".text.dd_frame_hook",
+   "symbol": ".sec..bss.dd_retired_token",
+   "type": "cf.32"
+  },
+  {
+   "addend": 0,
+   "offset": 1032,
+   "section": ".text.dd_frame_hook",
+   "symbol": ".sec..bss.dd_frame",
+   "type": "cf.32"
+  },
+  {
+   "addend": 12,
+   "offset": 1044,
+   "section": ".text.dd_frame_hook",
+   "symbol": ".sec..bss.dd_mail",
+   "type": "cf.32"
+  },
+  {
+   "addend": 0,
+   "offset": 1076,
+   "section": ".text.dd_frame_hook",
+   "symbol": "dd_stock_send",
+   "type": "cf.32"
+  },
+  {
+   "addend": 0,
+   "offset": 1096,
+   "section": ".text.dd_frame_hook",
+   "symbol": ".sec..bss.dd_sealed_token",
+   "type": "cf.32"
+  },
+  {
+   "addend": 0,
+   "offset": 1104,
+   "section": ".text.dd_frame_hook",
+   "symbol": ".sec..bss.dd_opened_token",
+   "type": "cf.32"
+  },
+  {
+   "addend": 0,
+   "offset": 1116,
+   "section": ".text.dd_frame_hook",
+   "symbol": ".sec..bss.dd_loading_token",
+   "type": "cf.32"
+  },
+  {
+   "addend": 0,
+   "offset": 1128,
+   "section": ".text.dd_frame_hook",
+   "symbol": ".sec..bss.dd_loading_token",
+   "type": "cf.32"
+  },
+  {
+   "addend": 0,
+   "offset": 1136,
+   "section": ".text.dd_frame_hook",
+   "symbol": ".sec..bss.dd_sealed_token",
+   "type": "cf.32"
+  }
+ ],
+ "sections": [
+  {
+   "align": 2,
+   "hex": "71ef000641f90000000032300c0030300c0273c14840424080814e75",
+   "kind": "text",
+   "name": ".text.frame_word",
+   "size": 28
+  },
+  {
+   "align": 2,
+   "hex": "700141ef000423c000000000700323d00000000042b90000000023c0000000004e75",
+   "kind": "text",
+   "name": ".text.fail",
+   "size": 34
+  },
+  {
+   "align": 2,
+   "hex": "4fefffcc48d77cfc2a6f0038266f003c286f00442f6f0040002ebbfc000008026708bbfc00000a806610242f002e0c8200000abc66044a8b6608428042874284603871d357804a8066f04a6b00026662322b0024302b00228081322b00268081322b002880814a4066484ab90000000056c470017e017904448422390000000024390000000023c0000000004ab9000000006724700323c0000000002f4c00442f6f002e00402f4b003c2f4d00386000037a42807e0160867004b081670000a853814a8166d62a39000000004a8566cc4ab900000000670002344a8c6700022e71ec00600c800000a6dd66000220322c00603c2c0062302c0064362c006645f9000000003f4100324878000271c04843424386804e92588fb680660001f04846424671ef0032487800038c804e92588f2206424148410281000001ffb081660001cc70197204e0aeb2826600017a7006b086670001b8700141f9000000007bb008006000016e4878000445f9000000004e924878000324004e92487800052c004e924878000626004e9242a72a004e924fef001459804a806706428260000092487800014e92588f0c80ddf4a60166ea487800024e92588f4a8067de0c850000028062d60c830003a98062ce203c0003a9809083b08565c27001b082660c8686868566b69dce4286601a7202b282667653860c860000017662a04a85679c9dce428642832f034e925283588f7207dc80ddc6b28366ee4283b68566000096487800074e92588f220eb386bc806600ff6c42b900000000700142b90000000042b90000000023c20000000023c0000000004a826600fe72487800654eb900000000588f6000fe627003b082661e0c86000001786600ff260c830003a9806600ff1c4a856700ff7a6000ff1220025980e2886600ff087004b0826610203c00000179b0866600fef66000ff38203c0000017a60ee20435283486800204e92588fdc80ddc66000ff54200272025780b2806400fe88bc85660000b8487800024e92588f7204b282665a23c00000000042b90000000042b90000000042b90000000023c600000000700223c0000000007001b0b9000000006600fd86203900000000528023c0000000000c80000003846300008a487800644eb900000000588f6000fd5e7201b282661a23c00000000042b90000000042b90000000042b900000000609e7203b282660e23c00000000042b90000000060847205b282668423c00000000042b90000000042b90000000060ca2006720241f9000000005580b28065142f064e90588f4ab9000000006700ff606000fcec4878006660e84a84664a4a876700fcdc4a826700fcd6487800024eb900000000588f7203b2826700008c655a53824a826676b0b900000000671a22390000000074fd20415388b4886500fca05281b2806600fc98203c00000000223c00000a8052b9000000002f4c00442f6f002e00402f40003c2f4100384cd77cfc4fef00344ef9000000007204b28267c85b824a826600fc58b0b90000000067b8b0b9000000006600fc4660acb0b9000000006600fc3a60a0b0b9000000006798b0b9000000006600fc26608c",
+   "kind": "text",
+   "name": ".text.dd_frame_hook",
+   "size": 1146
+  },
+  {
+   "align": 1,
+   "hex": "010507",
+   "kind": "data",
+   "name": ".rodata.CSWTCH.33",
+   "size": 3
+  },
+  {
+   "align": 2,
+   "hex": "",
+   "kind": "bss",
+   "name": ".bss.dd_opened_token",
+   "size": 4
+  },
+  {
+   "align": 2,
+   "hex": "",
+   "kind": "bss",
+   "name": ".bss.dd_sealed_token",
+   "size": 4
+  },
+  {
+   "align": 2,
+   "hex": "",
+   "kind": "bss",
+   "name": ".bss.dd_loading_token",
+   "size": 4
+  },
+  {
+   "align": 2,
+   "hex": "",
+   "kind": "bss",
+   "name": ".bss.dd_retired_token",
+   "size": 4
+  },
+  {
+   "align": 2,
+   "hex": "",
+   "kind": "bss",
+   "name": ".bss.dd_op",
+   "size": 4
+  },
+  {
+   "align": 2,
+   "hex": "",
+   "kind": "bss",
+   "name": ".bss.dd_failed",
+   "size": 4
+  },
+  {
+   "align": 2,
+   "hex": "",
+   "kind": "bss",
+   "name": ".bss.dd_previous_quiet",
+   "size": 4
+  },
+  {
+   "align": 16,
+   "hex": "",
+   "kind": "bss",
+   "name": ".bss.dd_frame",
+   "size": 2688
+  },
+  {
+   "align": 16,
+   "hex": "",
+   "kind": "bss",
+   "name": ".bss.dd_mail",
+   "size": 16
+  },
+  {
+   "align": 4,
+   "hex": "00000004000000a86464725f70726f6f660000000000000044445250524f4f46000000000000000000000000000000004444522070726f6f660000000000000000000000000000000000000100000000000000ff00000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000003000000706464725f70726f6f660000000000000064645f7265766572736500000000000000000000000000000000000000000000000001000000000052657665727365000000000000000000000000000000000000000000000000005245560000000000000000000000000000000002000000ac6464725f70726f6f66000000000000004444522070726f6f660000000000000000000000000000004444520000000000000000000000000000000000000000005f64645f706c61795f72656e64657200000000000000000000000000000000005f64645f706c61795f6e6f74655f6f6e000000000000000000000000000000005f64645f706c61795f646573630000000000000000000000000000000000000000000000",
+   "kind": "data",
+   "name": ".dk.desc",
+   "size": 452
+  }
+ ],
+ "source_sha256": "110adb89e62a2ddf9fbaa2ccb819343fb2bbef22389f00dad76a62aa780ac526",
+ "symbols": [
+  {
+   "global": false,
+   "name": ".sec..bss.dd_failed",
+   "section": ".bss.dd_failed",
+   "value": 0
+  },
+  {
+   "global": false,
+   "name": ".sec..bss.dd_frame",
+   "section": ".bss.dd_frame",
+   "value": 0
+  },
+  {
+   "global": false,
+   "name": ".sec..bss.dd_loading_token",
+   "section": ".bss.dd_loading_token",
+   "value": 0
+  },
+  {
+   "global": false,
+   "name": ".sec..bss.dd_mail",
+   "section": ".bss.dd_mail",
+   "value": 0
+  },
+  {
+   "global": false,
+   "name": ".sec..bss.dd_op",
+   "section": ".bss.dd_op",
+   "value": 0
+  },
+  {
+   "global": false,
+   "name": ".sec..bss.dd_opened_token",
+   "section": ".bss.dd_opened_token",
+   "value": 0
+  },
+  {
+   "global": false,
+   "name": ".sec..bss.dd_previous_quiet",
+   "section": ".bss.dd_previous_quiet",
+   "value": 0
+  },
+  {
+   "global": false,
+   "name": ".sec..bss.dd_retired_token",
+   "section": ".bss.dd_retired_token",
+   "value": 0
+  },
+  {
+   "global": false,
+   "name": ".sec..bss.dd_sealed_token",
+   "section": ".bss.dd_sealed_token",
+   "value": 0
+  },
+  {
+   "global": false,
+   "name": ".sec..rodata.CSWTCH.33",
+   "section": ".rodata.CSWTCH.33",
+   "value": 0
+  },
+  {
+   "global": false,
+   "name": ".sec..text.fail",
+   "section": ".text.fail",
+   "value": 0
+  },
+  {
+   "global": false,
+   "name": ".sec..text.frame_word",
+   "section": ".text.frame_word",
+   "value": 0
+  },
+  {
+   "global": false,
+   "name": "CSWTCH.33",
+   "section": ".rodata.CSWTCH.33",
+   "value": 0
+  },
+  {
+   "global": false,
+   "name": "dd_failed",
+   "section": ".bss.dd_failed",
+   "value": 0
+  },
+  {
+   "global": true,
+   "name": "dd_frame",
+   "section": ".bss.dd_frame",
+   "value": 0
+  },
+  {
+   "global": true,
+   "name": "dd_frame_hook",
+   "section": ".text.dd_frame_hook",
+   "value": 0
+  },
+  {
+   "global": false,
+   "name": "dd_loading_token",
+   "section": ".bss.dd_loading_token",
+   "value": 0
+  },
+  {
+   "global": true,
+   "name": "dd_mail",
+   "section": ".bss.dd_mail",
+   "value": 0
+  },
+  {
+   "global": false,
+   "name": "dd_op",
+   "section": ".bss.dd_op",
+   "value": 0
+  },
+  {
+   "global": false,
+   "name": "dd_opened_token",
+   "section": ".bss.dd_opened_token",
+   "value": 0
+  },
+  {
+   "global": false,
+   "name": "dd_previous_quiet",
+   "section": ".bss.dd_previous_quiet",
+   "value": 0
+  },
+  {
+   "global": false,
+   "name": "dd_retired_token",
+   "section": ".bss.dd_retired_token",
+   "value": 0
+  },
+  {
+   "global": false,
+   "name": "dd_sealed_token",
+   "section": ".bss.dd_sealed_token",
+   "value": 0
+  },
+  {
+   "global": true,
+   "name": "dd_stock_send",
+   "section": null,
+   "value": 0
+  },
+  {
+   "global": false,
+   "name": "dk_desc_machine_ddr_proof",
+   "section": ".dk.desc",
+   "value": 280
+  },
+  {
+   "global": false,
+   "name": "dk_desc_page_ddr_proof_8",
+   "section": ".dk.desc",
+   "value": 0
+  },
+  {
+   "global": false,
+   "name": "dk_desc_param_ddr_proof_0",
+   "section": ".dk.desc",
+   "value": 168
+  },
+  {
+   "global": false,
+   "name": "fail",
+   "section": ".text.fail",
+   "value": 0
+  },
+  {
+   "global": false,
+   "name": "frame_word",
+   "section": ".text.frame_word",
+   "value": 0
+  }
+ ],
+ "toolchain": {
+  "as": "GNU assembler (GNU Binutils) 2.47.20260726",
+  "cflags": "-mcpu=54418 -Os -ffreestanding -fno-builtin -nostdlib -fno-pic -fno-pie -ffunction-sections -fdata-sections -fno-asynchronous-unwind-tables -fno-unwind-tables -fno-stack-protector -Wall -Wextra -Werror",
+  "gcc": "m68k-elf-gcc (GCC) 16.2.0",
+  "instructions_redecoded": "372",
+  "isa_check": "843cbf5a639a4d1fe9fca0adb5bdda6c7214132d1b6a980019469fb34763630a",
+  "ld": "GNU ld (GNU Binutils) 2.47.20260726"
+ }
+}

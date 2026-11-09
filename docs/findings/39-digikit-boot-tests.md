@@ -1,7 +1,7 @@
 # 39. Boot-time scenarios of the digikit runtime kept in the suite (Phase 6, tests)
 
 Plan: `docs/plans/digikit-runtime.md` (Phase 6). Boot path: finding 37. Code: `tools/patchkit/pk_digikit_scen.py` (runner), `tools/patchkit/pk_digikit_project.py`
-(the project round trip), `tests/digikit/` (scenario files `scenarios/*.toml`, pytest entries), twin fixtures `tests/fixtures/modules/twin-xslice` and `tests/fixtures/modules/twin-dn2`,
+(project and card-slot helpers; the project round trip is `tests/regression/runtime/roundtrip.test.ts`), `tests/digikit/` (scenario files `scenarios/*.toml`, pytest entries), twin fixtures `tests/fixtures/modules/twin-xslice` and `tests/fixtures/modules/twin-dn2`,
 verify suite `digikit-boot` (`tools/devtools/verify.py`), `docs/TESTING.md` ("Digikit boot scenarios"). Lane r2b, 2026-10-17, native emulator, Digitakt II 1.16/1.17 and
 Digitone II 1.11/1.12 (stock images; nothing ran on a device). Everything is **[D]** (measured here once; no second agent has checked it against the image bytes).
 

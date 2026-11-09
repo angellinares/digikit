@@ -1,5 +1,7 @@
 # digikit
 
+> 🧪 **digikit is experimental.** It will be released as stable once it reaches 1.0.0.
+
 digikit adds new machines and effects to the Elektron **Digitakt II** and **Digitone II**. It patches your own copy of
 the stock firmware with a small runtime. The runtime loads modules from its own area on the device's card, so you can add or change
 a machine without flashing again. An emulator runs the real firmware on your computer, so you can test everything
@@ -25,7 +27,7 @@ before it goes near the device.
 - **Emulator:** the real firmware (ColdFire and SHARC DSP) runs on your computer, with the front panel, display and audio.
 - **Module tests:** every machine is checked against a standard set of tests (parameter limits, modulation, long
   notes), in seconds, before it reaches a device.
-- **Browser patcher:** patch your firmware in the browser (`mise run web`, page `/patch`); nothing is uploaded.
+- **Browser patcher:** patch your firmware in the browser (`pnpm dev`, page `/patch`); nothing is uploaded.
 
 ## Modules
 
@@ -104,9 +106,9 @@ FUNC while powering on to reach the STARTUP menu, and send the stock OS over MID
 - [Module reference](modules/README.md): manifest fields, the typed sections, generated files
 - [Patching, flashing and the device steps in detail](docs/PATCHING.md)
 - [Architecture](docs/ARCHITECTURE.md): the layers (module, SDK, runtime, adapters, firmware), what each may depend on, how a new device fits
-- [Developing digikit](docs/DEVELOPMENT.md): the emulator's options, [fast iteration](docs/DEVELOPMENT.md#fast-iteration-runtime-ui-and-modules) (`dk:dev`, Reload modules), tests, analysis tools, repository layout
-- Run `mise run test:changed` before committing
-- [Testing](docs/TESTING.md): test levels and commands
+- [Developing digikit](docs/DEVELOPMENT.md): [open a module, the DIGIKIT menu or UI demo](docs/DEVELOPMENT.md#visible-preview) (`mise run dk:module ID` for zero-DSP machine UI preview, add `--dsp` for audio; `mise run dk:menu`, `mise run dk:ui-demo`), [fast iteration](docs/DEVELOPMENT.md#fast-iteration-runtime-ui-and-modules), tests, analysis tools, repository layout
+- [Testing](docs/TESTING.md): `mise run test` verifies affected work; `mise run test:plan` explains selection first. `test:changed` is cheap preflight.
+- [Releasing](docs/RELEASING.md): independent module/runtime versions, previewing and applying version metadata
 - [Results of the research](docs/FINDINGS.md)
 - [Contributing](CONTRIBUTING.md)
 
@@ -122,7 +124,7 @@ The licence covers the code here only; it gives no rights to Elektron's software
 firmware. digikit is not affiliated with or endorsed by Elektron. Digitakt, Digitone and
 Syntakt are trademarks of Elektron Music Machines. Container format knowledge comes from
 `mischa85/elektron-firmware-tool` (MIT); some architecture facts from
-`lalzart/digitakt-ii-firmware-research-public`. The public SHARC+ assembler `js216/selache`
+`lalzart/digitakt-ii-firmware-research-public`. The public SHARC+ assembler `ElekLabs/selache` (a fork of `js216/selache`)
 is used only as a read-only cross-check. `tools/coldfire/ghidra/ColdfireEMAC` contains files from
 Ghidra under the Apache License 2.0.
 

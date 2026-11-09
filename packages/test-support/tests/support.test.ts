@@ -4,7 +4,21 @@ import fs from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
 import { test, vi } from 'vitest';
-import { BUTTONS, button, encoder, golden, validateRuntimeInputs, coupledEnv } from '../src/index.ts';
+import { BUTTONS, button, encoder, golden, validateRuntimeInputs, coupledEnv, Session } from '../src/index.ts';
+
+test('empty startup rejects sessions that cannot defer a reusable coupled baseline', async () => {
+  for (const options of [
+    { dsp: 'cold' as const, runtime: { reuse: true } },
+    { dsp: 'zero' as const, runtime: { reuse: true } },
+    { dsp: 'sharc' as const },
+    { dsp: 'sharc' as const, runtime: {} },
+  ]) {
+    await assert.rejects(
+      Session.start({ device: 'dn2', firmware: '1.12', ...options, startEmpty: true }),
+      /empty startup requires a reusable coupled session/,
+    );
+  }
+});
 
 test('key names follow the Python harness table', () => {
   assert.equal(button('trig_1'), 25);

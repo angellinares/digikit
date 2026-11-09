@@ -17,7 +17,7 @@ while the emulator runs, a Card panel on the Emulator page.
 - **One way, card to folder.** A new or different store file replaces the folder's file (the old one goes to `out/plusdrive/backup/mirror-<stamp>/`). A file the
   card no longer has is removed from the folder (to the same backup), so the next DT2 startup build does not bring it back. The mirror removes only paths it
   has seen on the card in this session (the store as the session started, then every file it read): a DN2 session that starts on an empty card leaves the files
-  an earlier session mirrored. Nothing is read from the folder into the card. The selection record is not mirrored.
+  an earlier session mirrored. Nothing is read from the folder into the card. The selection record is not a store file, but its paths go to `digikit/selection.txt` when they change, so the card built from the folder at the next start boots with the same modules (the default modules then need no restart).
 - **Where:** all of it runs in the emulator (`packages/emulator/plusdrive/src/mirror.rs`, `packages/emulator/control/src/cardmirror.rs` and the controller).
   The app starts no process. The store's place on the card comes from the device profile (`[card.store]`).
 - **Front door:** `card.folder` (`{folder, continuous, files, last_sync, behind, error}`) and `card.sync` over `emu_call` or the control socket (docs/CONTROL.md).
@@ -61,7 +61,7 @@ build; the mirror removes it.
 ## Tests
 
 `plusdrive_format::mirror` (a store image written, mirrored, replaced, deleted, emptied; a blank start removes nothing; a torn store is an error to retry; the
-folder listing), `cardmirror` (the quiet period and its restart), `apps/desktop/ui/tests/card.test.ts` (the panel's texts), `tests/regression/runtime/transfer-live.ts` on DT2 and
+folder listing), `cardmirror` (the quiet period and its restart), `apps/desktop/ui/tests/card.test.ts` (the panel's texts), `modules/core/runtime/tests/transfer-live.device.test.ts` on DT2 and
 DN2 (explicit/full-only runtime acceptance) (a free-running daemon with `--mirror-dir`: install through `dktransfer`, the file appears in the folder with the card's sha256, `card.folder` lists it,
 delete and `card.sync` remove it).
 

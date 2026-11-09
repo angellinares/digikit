@@ -1,7 +1,7 @@
 // The fault record the runtime keeps on the card as the settings key `dk/fault` (core/runtime sdk `fault.rs`): reading the settings record over
 // SETTINGS, decoding the 40 bytes, and the ABOUT rows of the menu. The same rows are in `dkrt_sdk::fault::rows` and `tools/device/dklog.py`.
-import { CMD } from './gen_proto.ts';
-import type { DkSession } from './dkupload-core.ts';
+import { CMD, READ_MAX } from './gen_proto.ts';
+import { deviceError, DkError, type DkSession } from './dkupload-core.ts';
 
 /** The settings key of the last fault. */
 export const FAULT_KEY = 'dk/fault';
@@ -35,14 +35,25 @@ export async function readSettingsRecord(dk: Pick<DkSession, 'request'>): Promis
     const body = new Uint8Array(6);
     const view = new DataView(body.buffer);
     view.setUint32(0, out.length);
-    view.setUint16(4, 768);
+    view.setUint16(4, READ_MAX);
     const reply = await dk.request(CMD.SETTINGS, body);
-    if (reply.status !== 0 || reply.body.length <= 10) throw new Error(`SETTINGS: status ${reply.status}`);
+    if (reply.status !== 0) throw deviceError('SETTINGS', reply.status, reply.body);
+    if (reply.body.length <= 10) throw new Error('SETTINGS: short record reply');
     const head = new DataView(reply.body.buffer, reply.body.byteOffset, reply.body.byteLength);
     total ??= head.getUint32(6);
     out.push(...reply.body.subarray(10));
   }
   return Uint8Array.from(out);
+}
+
+/** A pristine store may have no settings record. Only the explicit device status denotes absence. */
+export async function readSettingsRecordIfPresent(dk: Pick<DkSession, 'request'>): Promise<Uint8Array | null> {
+  try {
+    return await readSettingsRecord(dk);
+  } catch (error) {
+    if (error instanceof DkError && error.kind === 'device' && error.status === 'E_SET_NOKEY') return null;
+    throw error;
+  }
 }
 
 export interface Fault {

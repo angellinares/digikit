@@ -21,6 +21,17 @@
   border-radius: 6px;
   background: var(--panel-3, #23262b);
 }
+.memory-panel .bar.over {
+  outline: 1px solid var(--bad, #e5736b);
+}
+.memory-panel .mem-note {
+  font-family: var(--font-mono);
+  font-size: 11px;
+  color: var(--ink-3, #868b94);
+}
+.memory-panel .mem-note.over {
+  color: var(--bad, #e5736b);
+}
 .memory-panel .seg {
   flex: 0 0 auto;
   min-width: 2px;

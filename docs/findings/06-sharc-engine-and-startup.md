@@ -3178,28 +3178,18 @@ identical extraction records hash to
 
 The public references give L2 SRAM as 1 MB at byte `0x20000000..0x20100000`
 (eight 128 KB banks), and allow code and data in external DDR, more slowly.
-The sizes of the four L1 blocks are in the datasheet, which is not under
-`out/refs/`, so L1 space past each loaded window is of unknown extent, not
-free. The L1 blocks are not contiguous, so the gaps between them, such as
-`0x26f000..0x2c0000`, are probably not memory at all. **[D]**
+Current free L2 and L1 ranges: [finding 100](100-module-limits.md). The range 0x200fa000-0x200fe000 is a cache range set at start-up, not data.
 
-L2 past the loader, `0x2001ab7c..0x20100000` (939,140 bytes), is the only
-large candidate. `0x200fa000..0x200fe000` (16 KB) is occupied: two called
-functions load those addresses as literals. The remaining ~922,756 bytes have
-no literal reference, but `tools/sharc_dev/sharcwriters.py` leaves 59% of stores
-unresolved for any probe address and the SHARC has no runtime leg, so this is
-weaker evidence than the ColdFire cave map. The external-DDR FILL spans
-(about 4.35 MB, 1.05 MB and 33.5 MB) showed live references wherever
-sampled, one of them read by the render orchestrator `FUN_001c642a`; treat
-them as occupied. The L2 code block's short-word base is `0xb80000`,
-confirmed by byte comparison. **[D][O]**
+The external-DDR FILL spans (about 4.35 MB, 1.05 MB and 33.5 MB) showed live references wherever sampled, one of them read by the render orchestrator `FUN_001c642a`; treat them as occupied. The L2 code block's short-word base is `0xb80000`, confirmed by byte comparison. **[D]**
 
 **DN2 1.11 has less free L2, and its loader never touches the DT2 DDR
 command block.** The L2 is 1 MB at `0x20000000` (ADSP-2156x HWR, chapter 8,
 `out/refs/adsp-2156x-hwr/pages/p0243.txt`). `LoadedMemory.ranges()` puts
 DN2 1.11's last L2 write at `0x2008823c` (with an 8-byte unwritten gap at
-`0x2001e880..0x2001e888`), leaving 490,948 free bytes past its loader; DT2's
-939,140 above reproduces with the same method. A raw 32-bit literal scan of
+`0x2001e880..0x2001e888`). Free L2 above the loaded end is
+`0x2001ab7c..0x200fa000` = 914,564 bytes on DT2 and `0x2008823c..0x200fa000` =
+466,372 bytes on DN2, plus 8,192 bytes at `0x200fe000` after boot;
+`0x200fa000..0x200fe000` is a cache range. A raw 32-bit literal scan of
 `0x82a00000..0x82a00200` (the candidate DDR command block in
 `docs/sharc/structure-1.16.md` §4a) finds every field address that document
 cites in DT2 1.16 and none in DN2 1.11, and DN2's loader writes nothing in
@@ -5239,7 +5229,7 @@ statuses were not run. The sender constants are **[V]**; the failure statuses st
 and one 16-byte header); DN2 1.11/1.12 is `0xcc55c`: room for 211,600. The stored (packed) size counts too: an
 incompressible 727,540-byte block gave a stored section of `0xf56da` bytes on DT2 and `0xd0725` on DN2 (both under
 `0x100000`); the container then is 2.92 MB (DT2) and 2.71 MB (DN2), under the 3 MiB flash cap. Hence the usable
-appended payload is bounded by the stream, not by free L2: DT2 727,540 of 939,140 free bytes, DN2 211,600 of 491,972.
+appended payload is bounded by the stream, not by free L2: DT2 727,540 of 914,564 free bytes, DN2 211,600 of 466,372.
 Section sizes, payload limits, the loaded L2 ends (`0x2001ab7c`, `0x2008823c`) and the free ranges are **[V]**; the
 stored-size runs are **[D]**.
 
@@ -5274,9 +5264,10 @@ the pin). The first attempt, with the ColdFire booted from the canary .syx, chan
 the one-frame ready shift described in finding 17, not the block. **[D]**
 
 **Free L2, runtime evidence.** Static map of what the boot stream writes: DT2 1.16/1.17 loads L2 up to `0x2001ab7c`,
-leaving `0x2001ab7c..0x20100000` = 939,140 bytes (`0xe5484`); DN2 1.11/1.12 loads up to `0x2008823c` with an
-8-byte gap at `0x2001e880`, leaving `0x2008823c..0x20100000` = **491,972** bytes (`0x77dc4`; the text above says 490,948,
-which is 1,024 short: **[C]**). Canary pattern laid over the whole range after the ready state is restored
+leaving `0x2001ab7c..0x200fa000` = 914,564 bytes on DT2; DN2 1.11/1.12 loads up to `0x2008823c` with an
+8-byte gap at `0x2001e880`, leaving `0x2008823c..0x200fa000` = 466,372 bytes. The canary runs below laid the
+pattern over `0x2001ab7c..0x20100000` (939,140 bytes) on DT2 and `0x2008823c..0x20100000` (491,972 bytes) on DN2.
+Canary pattern laid over the whole range after the ready state is restored
 (`coupled-run --dsp-patch` from `l2canary.py patchfile`), read back by block hash after every scenario
 (`--dsp-peek canary=ADDR:LEN:4096`), and the PCM compared with the run without the patch: **[D]**
 
@@ -5291,8 +5282,10 @@ including the DT2 16 KB at `0x200fa000..0x200fe000` that two functions reference
 run (or did not matter) in 66 DT2 and 162 DN2 scenario runs with the canary (this table plus the table above). The control run is positive: a canary over
 `0x2825c000..0x28260000` (loaded L1 data of DN2) was damaged in ranges `0x2825c000..0x2825d300` and `0x2825d600..0x2825d700`
 by one `trig1-taps` run, and the PCM changed. Conclusion: the unloaded L2 is free for the code paths these suites
-exercise; keep `0x200fa000..0x200fe000` out of the allocator on DT2 until a path that uses it is found, which leaves
-922,756 bytes (DT2) and 491,972 bytes (DN2), of which the stream can carry 727,540 and 211,600. Static references and
+exercise. `0x200fa000..0x200fe000` is a cache range set at start-up and stays out of the allocator on both devices.
+Free L2 is 914,564 bytes (DT2) and 466,372 bytes (DN2) below it, plus 8,192 bytes at `0x200fe000` after boot. The boot
+stream can carry 727,540 bytes (DT2) and 211,600 bytes (DN2) of appended code (this limit applies only to code appended
+at patch time, not to `.dkm` modules, which are sent after boot over core/dsp-link). Static references and
 the unexercised paths (sample recording to RAM, sample load beyond one file, MIDI) remain **[O]**.
 
 **Open.** (1) Whether the real SHARC boot ROM accepts the extra block: partly closed by the rule check in "Boot ROM conformance" below, which also corrects this section (**[C]**: the free range up to `0x20100000` includes the ROM's own 8 KB workspace, which a boot block may not target, and the append did not update the FIRST blocks' next-application pointer); the rest is hardware **[O]**. (2) L1: the sizes of the L1 blocks are
@@ -5404,8 +5397,12 @@ not `FUN_1c24e9`; the hook itself works there).
 
 ## Headroom **[D]**
 
-Instruction counts of the coupled runner (the DSP is stepped 666,667 instructions per 1500 Hz block, i.e. an
-assumed 1 GHz core with one instruction per cycle; the idle loop is skipped exactly and counted):
+Emulator instruction counts of the stock firmware with no module, on DT2 1.16 and DN2 1.11, at one instruction per
+cycle and without cycle factors. The stock busy counts the tools use are in `devices/cycle-factors.json`
+(`stock_busy`). Free cycles per block on 1.17 / 1.12 are not measured (finding 100).
+
+Instruction counts of the coupled runner (the DSP is stepped 666,667 instructions per 1500 Hz block, i.e. a
+1 GHz core with one instruction per cycle; the idle loop is skipped exactly and counted):
 
 | device | scenario | idle share | busy per block |
 |---|---|---|---|
@@ -5414,12 +5411,9 @@ assumed 1 GHz core with one instruction per cycle; the idle loop is skipped exac
 | DT2 1.16 | one voice (`dt2-sample-trig`) | 68.3 % | 211,000 |
 | DT2 1.16 | all 16 trig keys down in keyboard mode (`dt2-chord16` probe, rms unchanged) | 68.5 % | 210,047 |
 
-The cost is a constant background; 16 voices do not show on DN2 (rms 0.10 vs 0.0065). A master effect has
-roughly 330,000 (DN2) and 450,000 (DT2) instructions per 32-sample block at the assumed clock, i.e. about
-10,000 and 14,000 per output sample. The constant-gain hook costs 192.0 (DN2) and 195.6 (DT2) instructions
-per block (idle-skip difference over 12,750 and 4,500 blocks): 0.03 % of the period. Real hardware has cache
-and memory stalls that this count ignores, and the clock is assumed, so these are upper bounds **[O]**; an
-effect that needs 5,000 instructions per block (a compressor or a drive with a smoothed gain) is under 1 %.
+The cost is a constant background; 16 voices do not show on DN2 (rms 0.10 vs 0.0065). The constant-gain hook
+costs 192.0 (DN2) and 195.6 (DT2) instructions per block (idle-skip difference over 12,750 and 4,500 blocks):
+0.03 % of the period. The count ignores the cache and memory stalls of real hardware.
 
 ## Per-voice render hook: proposal for a new machine type (built and corrected in the next section) **[C]**
 
@@ -5598,8 +5592,8 @@ The TUNE slot is 0x4000 (64.0) at rest.
 (`tools/patchkit/pk_proof_voice.py`, emulator tier counters): stock sample voice 214,279; stock voice through the wrapper
 215,399 (+1,120); sine voice 210,300; Pluck voice 210,405. The module code is 728 bytes (core) and 632 bytes
 (sine); Pluck is 3,500 bytes of code and data plus a reserved 262,144-byte delay area (16 tracks x 4096 samples); on
-DT2 the three modules use 267,148 of 922,756 free L2 bytes, of which 4,276 are loaded by the boot stream (patchkit
-now leaves a module's bss out of the stream: the container grew by 928 bytes, not 262 KB). DN2: 267,148 of 491,972.
+DT2 the three modules use 267,148 of 914,564 free L2 bytes, of which 4,276 are loaded by the boot stream (patchkit
+now leaves a module's bss out of the stream: the container grew by 928 bytes, not 262 KB). DN2: 267,148 of 466,372.
 
 **Open** [O]. (1) Hardware: the unloaded L2 area is written before it is read, so a device that traps on an
 uninitialised ECC word would not trap; nothing is known about L2 ECC. (2) A DT2 1.16 run (the anchors resolve there,
@@ -5637,7 +5631,7 @@ Same session; DN2 1.11 and 1.12 share one DSP blob. What is known, from the shar
   frame to find the type word as was done for `0x94` on DT2); 1 day to build `core/dsp-voice` for DN2 (new
   anchors by `reloc_hash` of `FUN_1c8ef1`, the DN2 frame words of Pluck's parameters at the DN2 stride `0x92`), the
   same `jump`/`register` ops; the Pluck routine ports with new frame offsets (stride `0x92` instead of `0x60`, track
-  block starts and mirror indices to be re-derived from finding 04's DN2 section) and a smaller line (DN2 has 491,972
+  block starts and mirror indices to be re-derived from finding 04's DN2 section) and a smaller line (DN2 has 466,372
   free L2 bytes and a 211,600-byte stream limit, both fine for 262 KB of reserved delay line now that bss is not
   loaded). Confidence of a sounding DN2 string: about 30 %; of finding the type test and a safe skip: about 60 %.
   Recommendation: finish `core.machines` DT2 first; DN2 is a 3 to 5 day item; its payoff is the same module on a second device,
@@ -5671,7 +5665,7 @@ instruction (48 bits, `1587 ffff ffee`, `I7 = MODIFY(I7, -18)`) with `JUMP _dv_e
 saves everything it touches in a DM area (the function's callers keep live registers), runs the registered routine
 for the slot's type and continues in the stock helper at its second instruction. A patched image with no registered type
 is **bit-identical** to stock (FM TONE, 62,176 active samples; the boot lands a DSP block away as on every patched
-image). Cost: 16 calls per block, about 70 instructions each when no type is registered, by count.
+image). Cost: 16 calls per block, about 10 instructions each when no type is registered (voice 0 about 90, with the mask build), by count.
 Anchors (rules in `modules/core/adapters/dsp-voice/module.toml`): `dsp.voice.render_entry` / `render_next` (`reloc_hash` of
 `FUN_b8251b`, offsets 0 and 3), `dsp.voice.frame_base` (the literal `I5 = 0x25c48c` at `0x1c2877` of `FUN_1c2712`, offset `0x165`; the second literal, at `0x1c301a`, is `I4` **[C]**).
 

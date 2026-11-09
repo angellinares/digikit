@@ -732,7 +732,6 @@ class FnT:
                 "max_call_depth",
                 "assume_nw32",
                 "explicit_memory_model",
-                "approx_recips",
                 "data_memory_tainted",
                 "dossier_bytes",
                 "provisional_forms",

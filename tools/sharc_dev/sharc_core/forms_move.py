@@ -320,7 +320,6 @@ def _type_3a(
             False,
             old,
             state.special,
-            approx_recips=state.approx_recips,
         )
     except ValueError as error:
         return [_stop(state, insn, str(error))]
@@ -592,9 +591,7 @@ def _type_5a_move(
     compute = compute_y = None
     if name == "5a_move":
         try:
-            compute, compute_y = _compute_simd(
-                state, f, False, old, state.special, approx_recips=state.approx_recips
-            )
+            compute, compute_y = _compute_simd(state, f, False, old, state.special)
         except ValueError as error:
             return [_stop(state, insn, str(error))]
     src = (
@@ -911,9 +908,7 @@ def _type_4a_access(
     """Execute the transfer and optional compute after predicate selection."""
     old = _snapshot_uregs(state.uregs)
     try:
-        compute, compute_y = _compute_simd(
-            state, f, False, old, state.special, approx_recips=state.approx_recips
-        )
+        compute, compute_y = _compute_simd(state, f, False, old, state.special)
     except ValueError as error:
         return [_stop(state, insn, str(error))]
     index = _field(f, "i") + (8 if _field(f, "g") else 0)
@@ -1946,9 +1941,7 @@ def _type_1a(
     # companion, the next word (_type_1a_access, on both buses).
     old = _snapshot_uregs(state.uregs)
     try:
-        compute, compute_y = _compute_simd(
-            state, f, False, old, state.special, approx_recips=state.approx_recips
-        )
+        compute, compute_y = _compute_simd(state, f, False, old, state.special)
     except ValueError as error:
         return [_stop(state, insn, str(error))]
     scale = _access_modifier_scale("normal-word", state.assume_nw32)
@@ -2001,9 +1994,7 @@ def _type_5a_swap(
     cond = _field(f, "cond")
     old = _snapshot_uregs(state.uregs)
     try:
-        compute, compute_y = _compute_simd(
-            state, f, False, old, state.special, approx_recips=state.approx_recips
-        )
+        compute, compute_y = _compute_simd(state, f, False, old, state.special)
     except ValueError as error:
         return [_stop(state, insn, str(error))]
     dreg = _field(f, "dreg")

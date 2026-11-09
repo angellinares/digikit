@@ -2,11 +2,16 @@
 // device answers. The state can be set from the address (`?dev=empty&folder=files&speed=1.5`, see PARAMS) and while the page runs
 // (`window.__sim.set({ dev: 'noreply' })`), so a screenshot script (tools/devtools/ui_shots.mjs) reaches each state without clicking.
 import type { SampleEntry } from '@digi/dk-session/samples';
-import type { Caps, Needs } from '@web/modules/dkfit';
+import { DkNeeds } from '@web/modules/dkneeds';
+import { setFitReader, type Caps, type Needs } from '@web/modules/fit';
+import wasmUrl from '../../../web/public/patchkit.wasm?url';
 import { fitWarnings } from '@web/modules/dktransfer';
 import { noteActivity } from '@web/transfer/activity';
 import type { LocalEntry } from '../src/samples-core';
 import type { TransferRow, TransferView } from '@web/transfer/transfer-core';
+
+// the rows' fit verdicts come from the Rust rule in patchkit.wasm, as in the app
+setFitReader(await DkNeeds.create(await (await fetch(wasmUrl)).arrayBuffer()));
 
 /** dev: ok (answers), empty (nothing stored), noreply (never answers: the wait notice), error (every read fails), slow (2.5 s per read).
  *  folder: files (the samples folder of ~20 WAVs), empty, none (no folder chosen yet). speed: MiB/s of an upload. */
@@ -18,9 +23,13 @@ export interface SimState {
   mode: 'modules' | 'samples';
   /** The device storage can make folders (mkdir=0: it cannot). */
   mkdir: boolean;
+  /** The second file of an upload cannot be sent (putfail=1). */
+  putfail: boolean;
+  /** Names (comma separated) of files that the fake device holds already with the same bytes: an upload skips them (skip=kick,snare). */
+  skip: string;
 }
 
-export const PARAMS = ['dev', 'folder', 'speed', 'paused', 'mode', 'mkdir'] as const;
+export const PARAMS = ['dev', 'folder', 'speed', 'paused', 'mode', 'mkdir', 'putfail', 'skip'] as const;
 
 const query = new URLSearchParams(location.search);
 export const sim: SimState = {
@@ -30,6 +39,8 @@ export const sim: SimState = {
   paused: query.get('paused') === '1',
   mode: (query.get('mode') as SimState['mode']) ?? 'modules',
   mkdir: query.get('mkdir') !== '0',
+  putfail: query.get('putfail') === '1',
+  skip: query.get('skip') ?? '',
 };
 
 export const delay = (ms: number) => new Promise<void>((r) => setTimeout(r, ms));
@@ -116,6 +127,14 @@ export const LIBRARY: LibModule[] = [
     needs: need(61 * KiB, 600 * KiB),
   },
   { id: 'chorus', label: 'Chorus', group: 'Effects', version: '0.4.0', size: 26 * KiB, needs: need(26 * KiB) },
+  {
+    id: 'tools/bootscreen',
+    label: 'Boot screens',
+    group: 'Tools',
+    version: '0.1.0',
+    size: 3 * KiB,
+    needs: need(3 * KiB),
+  },
   { id: 'tuner', label: 'Tuner', group: 'Tools', version: '0.1.0', size: 9 * KiB, needs: need(9 * KiB) },
   { id: 'remote', label: 'Remote control', group: 'Tools', version: '0.1.0', size: 1032, needs: need(1032) },
   {

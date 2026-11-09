@@ -1,15 +1,12 @@
-//! A SHARC+ object from an expanded source text, in this process: the public Selache assembler as a library (`selas`), the encoding-bug
-//! guards and fix-ups around it, and a re-decode of every instruction with the decoder of the runtime (`sharc-rt`, the public ISA table).
+//! A SHARC+ object from an expanded source text, in this process: the public Selache assembler as a library (`selas`), the checks
+//! around it, and a re-decode of every instruction with the decoder of the runtime (`sharc-rt`, the public ISA table).
 //!
 //! The assembler writes a relocatable ELF whose 16-bit parcels are big endian. Steps, in order:
 //!
-//! 1. [`hazards`] refuses the source forms Selache assembles to another instruction (`ENCODE_HAZARDS`).
-//! 2. [`bss_prepare`] takes `.PKBSS` / `.PKDATA name, size;` out (Selache drops `.VAR name[N];`); the object gets a section for each.
-//!    [`sw_prepare`] marks every `Rn = DM(symbol) (SW|SWSE);` (Selache ignores the suffix); [`sw_apply`] rewrites those words.
-//! 3. `selas::assemble_text` writes the ELF; [`read_object`] reads the section, symbols, data sections and relocations.
-//! 4. [`native_rows`] finds the instruction extents with our decoder and cross-checks Selache's own; [`fix_shift_counts`] repairs the one
-//!    shift encoding that can be repaired.
-//! 5. [`link`] places the section at a placeholder base with placeholder externs; [`verify`] re-decodes every instruction and reads the
+//! 1. [`bss_prepare`] takes `.PKBSS` / `.PKDATA name, size;` out (Selache drops `.VAR name[N];`); the object gets a section for each.
+//! 2. `selas::assemble_text` writes the ELF; [`read_object`] reads the section, symbols, data sections and relocations.
+//! 3. [`native_rows`] finds the instruction extents with our decoder and cross-checks Selache's own.
+//! 4. [`link`] places the section at a placeholder base with placeholder externs; [`verify`] re-decodes every instruction and reads the
 //!    relocated fields back.
 //!
 //! Relocations Selache emits (offsets and symbol values are in 16-bit parcels, the PC unit): type 11 is the absolute 24-bit target of a
@@ -26,7 +23,7 @@ use std::sync::OnceLock;
 
 /// The Selache commit this build links (`selas`, `selelf` and `selinstr` in Cargo.toml). `tools/patchkit/pk_toolchains.py` pins the same
 /// one for the command-line tools (`SELACHE_REV`); a test keeps the two equal.
-pub const SELACHE_REV: &str = "2b26d3b75c53063575bc5c820fa0d38879335187";
+pub const SELACHE_REV: &str = "02d6d785b8e3a125ab237a00bb89503aff835f5d";
 const SECTION: &str = "seg_pmco";
 const PROCESSOR: &str = "ADSP-21569";
 const R_ABS24: u32 = 11;
@@ -66,104 +63,7 @@ fn decode_row(raw: &[u8], max_bytes: u8) -> Decoded {
     decode::decode_parcels(&parcels(&swap_parcels(raw)), max_bytes)
 }
 
-// ------------------------------------------------------------------------------------------------------------- guards and fix-ups
-
-/// Selache encode bugs found against the firmware image and PRM Table 17-9 (docs/findings/05-sharc-isa-and-decoding.md, "Selache
-/// shift-immediate encodings"): each form assembles to another instruction or to an undefined opcode, and the bytes still decode to a
-/// valid-looking form, so the source form is refused. A shift count in a register (`R0 = ASHIFT R1 BY R2;`) assembles correctly. LSHIFT
-/// by a negative count is repaired instead ([`fix_shift_counts`]).
-const IMM: &str = r"\bby\s+[-+]?\s*\d";
-
-fn hazard_patterns() -> &'static [(Regex, &'static str)] {
-    static P: OnceLock<Vec<(Regex, &'static str)>> = OnceLock::new();
-    P.get_or_init(|| {
-        let mk = |p: String| {
-            RegexBuilder::new(&p)
-                .case_insensitive(true)
-                .build()
-                .expect("hazard pattern")
-        };
-        vec![
-            (
-                mk(format!(r"\bashift\b[^;]*{IMM}")),
-                "ASHIFT ... BY <count> gets an undefined ShiftImm opcode (100000, PRM: 000001)",
-            ),
-            (
-                mk(format!(r"\bor\s+lshift\b[^;]*{IMM}")),
-                "Rn = Rn OR LSHIFT ... BY <count> assembles as a plain LSHIFT",
-            ),
-            (
-                mk(format!(r"\bfdep\b[^;]*{IMM}")),
-                "FDEP ... BY <pos:len> gets the (SE) or the plain FDEP opcode",
-            ),
-            (
-                mk(format!(r"\bfext\b[^;]*{IMM}[^;]*\(\s*se\s*\)")),
-                "FEXT ... BY <pos:len> (SE) assembles to an unrelated word",
-            ),
-        ]
-    })
-}
-
-/// Refuse a source that uses a known Selache encode bug (comments are not looked at).
-pub fn hazards(source: &str) -> Result<()> {
-    static C: OnceLock<Regex> = OnceLock::new();
-    let comments = rx(&C, r"/\*.*?\*/|//[^\n]*", "s");
-    let code = comments.replace_all(source, "");
-    for (pat, why) in hazard_patterns() {
-        if let Some(m) = pat.find(&code) {
-            return Err(err!("known Selache encode bug ({why}): '{}'", m.as_str()));
-        }
-    }
-    Ok(())
-}
-
-/// `Rn = DM(symbol) (SW|SWSE);`: Selache ignores the suffix and emits the normal-word form.
-fn sw_load() -> &'static Regex {
-    static C: OnceLock<Regex> = OnceLock::new();
-    rx(
-        &C,
-        r"^(\s*)R(\d{1,2})\s*=\s*DM\(\s*([A-Za-z_.$][\w.$]*)\s*\)\s*\((SWSE|SW)\)\s*;",
-        "im",
-    )
-}
-
-/// Each such load gets a global label before it; [`sw_apply`] finds the word by the label and rewrites it to the short-word Type 14d
-/// word (opcode 0x1a, bit 38 short word, bit 36 sign extension). `verify` then sees the short-word form and its relocated address.
-fn sw_prepare(source: &str) -> (String, Vec<(String, bool)>) {
-    let mut marks: Vec<(String, bool)> = vec![];
-    let out = sw_load().replace_all(source, |c: &regex_lite::Captures| {
-        let label = format!("_pk_sw{}", marks.len());
-        marks.push((label.clone(), c[4].eq_ignore_ascii_case("SWSE")));
-        let g = &c[1];
-        format!(
-            "{g}.GLOBAL {label};\n{g}{label}:\n{g}R{} = DM({});",
-            &c[2], &c[3]
-        )
-    });
-    (out.into_owned(), marks)
-}
-
-fn sw_apply(obj: &mut Obj, marks: &[(String, bool)]) -> Result<()> {
-    for (label, signed) in marks {
-        let parcel = obj
-            .symbols
-            .remove(label)
-            .ok_or_else(|| err!("{label}: the assembler dropped the label"))?
-            .0;
-        let at = parcel as usize * 2;
-        let reloc = obj.relocs.iter().find(|r| r.parcel == parcel);
-        if !reloc.is_some_and(|r| r.rtype == R_ABS32) {
-            return Err(err!("{label}: expected a 32-bit relocated load"));
-        }
-        let b = obj.section.get(at..at + 2).unwrap_or(&[]);
-        if b.len() != 2 || b[0] != 0x10 || b[1] & 0xF0 != 0 {
-            return Err(err!("{label}: not a normal-word direct load ({})", hex(b)));
-        }
-        obj.section[at] = 0x1A;
-        obj.section[at + 1] |= 0x40 | if *signed { 0x10 } else { 0 };
-    }
-    Ok(())
-}
+// ------------------------------------------------------------------------------------------------------------------------ checks
 
 /// `.PKDATA name, bytes;` (loaded zeros, part of the boot-stream block) or `.PKBSS name, bytes;` (reserved memory the stream does not
 /// load: the program must write it before it reads it): the line is replaced by `.EXTERN name;`, and the object gets a data or bss
@@ -505,10 +405,9 @@ fn read_object(blob: &[u8], source_sha256: String) -> Result<Obj> {
         }
     }
     let rows = native_rows(&selache_rows, &relocs, &sec.data)?;
-    let (code, rows) = fix_shift_counts(&sec.data, &rows);
     Ok(Obj {
         source_sha256,
-        section: code,
+        section: sec.data.clone(),
         symbols,
         relocs,
         rows,
@@ -621,8 +520,8 @@ const SHIFT_IMM_OPCODES: [i64; 18] = [
     0x32, 0x33,
 ];
 // LSHIFT, ASHIFT, OR LSHIFT, OR ASHIFT take a signed 8-bit count in shiftimm[15:8]; dataex[3:0] holds its sign extension (0xF for a
-// negative count, else 0) in every such instruction of the stock images (finding 05, "Selache shift-immediate encodings"). Selache writes
-// 0, and the silicon raises ILOPI on a negative count without it.
+// negative count, else 0) in every such instruction of the stock images (finding 05, "Selache shift-immediate encodings"). The silicon
+// raises ILOPI on a negative count without it. The assembler writes it; this checks the object, as the check against PRM Table 17-9 above.
 const SIGNED_SHIFT_OPCODES: [i64; 4] = [0x00, 0x01, 0x08, 0x09];
 
 fn shift_imm_problem(d: &Decoded) -> Option<String> {
@@ -644,29 +543,6 @@ fn shift_imm_problem(d: &Decoded) -> Option<String> {
         }
     }
     None
-}
-
-/// Set dataex of each signed shift count to its sign extension (the one Selache shift encoding that is repaired; the others are refused,
-/// [`hazards`]). `code` and `rows` are in Selache parcel order; dataex is bits 6-3 of byte 2 of the 48-bit word.
-fn fix_shift_counts(code: &[u8], rows: &[Row]) -> (Vec<u8>, Vec<Row>) {
-    let mut out = code.to_vec();
-    let mut fixed = rows.to_vec();
-    for (k, (p, raw)) in rows.iter().enumerate() {
-        let d = decode_row(raw, 6);
-        if !SHIFT_IMM_FORMS.contains(&d.type_name) {
-            continue;
-        }
-        let op = field(&d, "shiftimm[22:16]");
-        if !op.is_some_and(|o| SIGNED_SHIFT_OPCODES.contains(&o)) {
-            continue;
-        }
-        let negative = (field(&d, "shiftimm[15:0]").unwrap_or(0) >> 8) & 0x80 != 0;
-        let at = *p as usize * 2 + 2;
-        out[at] = (out[at] & !0x78) | if negative { 0x78 } else { 0 };
-        let s = *p as usize * 2;
-        fixed[k] = (*p, out[s..s + raw.len()].to_vec());
-    }
-    (out, fixed)
 }
 
 // ---------------------------------------------------------------------------------------------------------- link and verify
@@ -862,13 +738,10 @@ fn verify(
 
 /// Assemble `source` and read the object (no link).
 pub fn assemble(source: &str) -> Result<Obj> {
-    hazards(source)?;
     let (text, bss_decls) = bss_prepare(source)?;
-    let (text, sw_marks) = sw_prepare(&text);
     let elf = selas::assemble_text(&text, Some(PROCESSOR), &[], &[], true)
         .map_err(|e| err!("selas failed:\nselas: {e}"))?;
     let mut obj = read_object(&elf, sha256_hex(source.as_bytes()))?;
-    sw_apply(&mut obj, &sw_marks)?;
     for (name, size, is_bss) in bss_decls {
         if size == 0 || !size.is_multiple_of(4) {
             return Err(err!(
@@ -920,7 +793,7 @@ pub fn object_from_text(source: &str) -> Result<Dko> {
     if !linked.loop_end.is_empty() {
         // a VISA instruction at the end of a hardware loop (sharc_legal, finding 91)
         return Err(err!(
-            "{} hardware loop(s) end in instructions that are not 48-bit (finding 91; the last 11 instructions of a DO loop must be ISA, put .NOCOMPRESS; .COMPRESS; around a nested loop): {}",
+            "{} hardware loop(s) end in instructions that are not 48-bit (finding 91; the last 11 instructions of a DO loop must be ISA, the assembler keeps a symbolic loop end 48-bit; any other end needs .NOCOMPRESS;): {}",
             linked.loop_end.len(),
             linked.loop_end.join("; ")
         ));
@@ -1031,11 +904,8 @@ pub fn object_json(o: &Obj) -> serde_json::Value {
     })
 }
 
-/// An ELF object another Selache tool wrote (the C compiler), read the same way; `asm` is its assembly text, which gets the guards.
-pub fn object_from_elf(blob: &[u8], source: &str, asm: Option<&str>) -> Result<Obj> {
-    if let Some(a) = asm {
-        hazards(a)?;
-    }
+/// An ELF object another Selache tool wrote (the C compiler), read the same way.
+pub fn object_from_elf(blob: &[u8], source: &str) -> Result<Obj> {
     read_object(blob, sha256_hex(source.as_bytes()))
 }
 
@@ -1089,31 +959,27 @@ mod tests {
     }
 
     #[test]
-    fn a_negative_lshift_count_gets_its_sign_extension() {
-        // Selache writes 023e0000f00b for the first line; stock has 023e7800f00b (dataex 0xF), as for `R2 = lshift(R15, -1)`
-        let o = asm("R0 = LSHIFT R11 BY -16;\nR0 = LSHIFT R11 BY 16;\nR2 = LSHIFT R15 BY -1;\n")
+    fn shift_immediates_are_assembled_to_the_table_17_9_opcodes() {
+        // The words are the stock forms (finding 05, "Selache shift-immediate encodings"): `R2 = lshift(R15, -1)` is 023e7800ff2f. The
+        // fork's selas writes the opcode of PRM Table 17-9 and dataex 0xF for a negative LSHIFT/ASHIFT count itself.
+        let o = asm("R0 = LSHIFT R11 BY -16;\nR0 = LSHIFT R11 BY 16;\nR2 = LSHIFT R15 BY -1;\nR0 = ASHIFT R11 BY -3;\nR0 = R0 OR LSHIFT R11 BY 3;\nR0 = R0 OR ASHIFT R11 BY -3;\nR0 = FDEP R11 BY 4:8;\nR0 = R0 OR FDEP R11 BY 4:8;\nR0 = FEXT R11 BY 4:8 (SE);\n")
             .unwrap();
         assert_eq!(
             rows_hex(&o),
-            ["023e7800f00b", "023e0000100b", "023e7800ff2f"]
+            [
+                "023e7800f00b",
+                "023e0000100b",
+                "023e7800ff2f",
+                "023e7801fd0b",
+                "023e0008030b",
+                "023e7809fd0b",
+                "023e1011040b",
+                "023e101b040b",
+                "023e1012040b"
+            ]
         );
         assert_eq!(hex(&o.section), rows_hex(&o).concat());
-    }
-
-    #[test]
-    fn misencoded_shift_immediates_are_refused() {
-        for line in [
-            "R0 = ASHIFT R11 BY -3;",
-            "R0 = ASHIFT R11 BY 3;",
-            "R0 = R0 OR LSHIFT R11 BY 3;",
-            "R0 = R0 OR ASHIFT R11 BY -3;",
-            "R0 = FDEP R11 BY 4:8;",
-            "R0 = R0 OR FDEP R11 BY 4:8;",
-            "R0 = FEXT R11 BY 4:8 (SE);",
-        ] {
-            let e = asm(line).err().unwrap_or_else(|| panic!("{line} accepted"));
-            assert!(e.0.contains("known Selache encode bug"), "{line}: {e}");
-        }
+        link(&o, BASE, &HashMap::new()).unwrap();
     }
 
     #[test]
@@ -1276,7 +1142,7 @@ mod tests {
     }
 
     #[test]
-    fn short_word_loads_are_rewritten_to_the_short_word_form() {
+    fn short_word_loads_are_assembled_to_the_short_word_form() {
         let o =
             asm(".EXTERN _t;\n    R1 = DM(_t) (SW);\n    R2 = DM(_t) (SWSE);\n    R3 = DM(_t);\n")
                 .unwrap();
@@ -1289,6 +1155,15 @@ mod tests {
         assert!(o.symbols.is_empty(), "the marking labels do not stay");
         let l = link(&o, BASE, &HashMap::from([("_t".into(), 0x2009_0000)])).unwrap();
         assert_eq!(l.checked, 3);
+    }
+
+    #[test]
+    fn modify_with_an_m_register_is_the_32_bit_type_7b() {
+        // PRM Figure 14-20: frame bits 22-16 are 0111111; without them our decoder reads a 48-bit Type 7a
+        let o = asm("MODIFY(I5, M2);\nIF EQ MODIFY(I12, M13);\n").unwrap();
+        assert_eq!(rows_hex(&o), ["043f503f", "0441283f"]);
+        let l = link(&o, BASE, &HashMap::new()).unwrap();
+        assert_eq!(l.checked, 2);
     }
 
     #[test]

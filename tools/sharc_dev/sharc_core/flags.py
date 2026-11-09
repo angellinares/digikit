@@ -17,6 +17,7 @@ from .encoding import (
     AF_BIT,
     AI_BIT,
     ALU_FLAGS_MASK,
+    ALUSAT_BIT,
     AN_BIT,
     AS_BIT,
     AV_BIT,
@@ -47,6 +48,7 @@ from .values import (
     _astatx_known_bit,
     _flags_define,
     _flags_forget,
+    _flags_from_pairs,
     _flags_or,
     _flags_put,
     _flags_then,
@@ -65,6 +67,7 @@ __all__ = [
     "_apply_flag_update",
     "_arith_flag_bits",
     "_arith_flag_bits_ci",
+    "_saturate_alu_result",
     "_astatx_abs",
     "_astatx_alu_arith",
     "_astatx_alu_arith_ci",
@@ -175,9 +178,17 @@ def _float_alu_updates(
     an_zero: bool = False,
     as_source: Value | None = None,
     ai: bool | None = None,
+    integer_result: bool = False,
 ) -> FlagUpdate:
     """ASTATX update shared by the float ALU ops (PRM Table 3-3,
     pp.3-8/3-9; per-op PGR pages cited at each call site).
+
+    AN stays clear when AI is set: the all-ones result of an invalid operation
+    is not a negative number (Digitakt II: every float ALU op with a NaN input
+    and FIX of a NaN, an infinity or an overflow without ALUSAT; finding 103).
+    INTEGER_RESULT is for FIX and TRUNC, whose result is a fixed-point word:
+    AZ is "all zeros" (a float result of 0x80000000 is -0, an integer one is
+    not zero) and AN is the sign bit.
 
     AC is always 0 and AF is always 1 for a float ALU result. AZ/AN come
     from RESULT's bit pattern (both +0.0 and -0.0 count as AZ) unless the
@@ -212,9 +223,10 @@ def _float_alu_updates(
             bits |= 1 << AS_BIT
     if isinstance(result, Const):
         define |= (1 << AZ_BIT) | (1 << AN_BIT)
-        if (result.value & 0x7FFFFFFF) == 0:
+        mask = 0xFFFFFFFF if integer_result else 0x7FFFFFFF
+        if (result.value & mask) == 0:
             bits |= 1 << AZ_BIT
-        if not an_zero and result.value & 0x80000000:
+        if not an_zero and ai is not True and result.value & 0x80000000:
             bits |= 1 << AN_BIT
     else:
         forget |= 1 << AZ_BIT
@@ -336,6 +348,46 @@ def _arith_flag_bits(a: Const, b: Const, subtract: bool) -> int:
     if result == 0:
         bits |= 1 << AZ_BIT
     return bits
+
+
+def _saturate_alu_result(
+    value: Value, bits: int, input_sign: bool, mode1: Value
+) -> tuple[Value, FlagUpdate]:
+    """The result and ASTATX update of a fixed-point ALU adder operation (add,
+    subtract, with carry, increment, decrement, negate, abs) whose wrapped
+    result is VALUE (a Const) and whose AC/AV/AN/AZ bits are BITS
+    (``_arith_flag_bits``); INPUT_SIGN is the AS bit (abs only).
+
+    With MODE1.ALUSAT set, an overflow (AV) returns 0x7FFFFFFF when the wrapped
+    result is negative (a positive overflow) and 0x80000000 when it is not,
+    and AN and AZ describe that returned word; AC and AV stay those of the
+    adder (PRM: "AN: set if the most significant output bit is 1"; measured on
+    a Digitakt II for add, subtract, negate and abs, finding 103). With ALUSAT
+    unknown, an overflowing result and its AN and AZ are unknown."""
+    adder = (1 << AC_BIT) | (1 << AV_BIT)
+    sign = (1 << AS_BIT) if input_sign else 0
+    if not isinstance(value, Const) or not bits & (1 << AV_BIT):
+        return value, _flags_define(ALU_FLAGS_MASK, bits | sign)
+    saturating = _astatx_known_bit(mode1, ALUSAT_BIT)
+    if saturating is None:
+        return Unknown("alusat"), _flags_from_pairs(
+            (
+                (AC_BIT, bool(bits & (1 << AC_BIT))),
+                (AV_BIT, True),
+                (AS_BIT, input_sign),
+                (AI_BIT, False),
+                (AF_BIT, False),
+                (AN_BIT, None),
+                (AZ_BIT, None),
+            )
+        )
+    if not saturating:
+        return value, _flags_define(ALU_FLAGS_MASK, bits | sign)
+    if value.value & 0x80000000:
+        return Const(0x7FFFFFFF), _flags_define(ALU_FLAGS_MASK, (bits & adder) | sign)
+    return Const(0x80000000), _flags_define(
+        ALU_FLAGS_MASK, (bits & adder) | sign | (1 << AN_BIT)
+    )
 
 
 def _astatx_alu_logical(value: Value) -> FlagUpdate:

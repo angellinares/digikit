@@ -38,8 +38,8 @@ fn positional(rest: &[String], valued: &[&str]) -> Vec<String> {
 }
 
 pub fn build(root: &Path, rest: &[String]) -> Result<()> {
-    const KNOWN: [&str; 8] = [
-        "--check", "--force", "--define", "--out", "--status", "--tree", "--all", "--",
+    const KNOWN: [&str; 9] = [
+        "--check", "--force", "--define", "--out", "--status", "--paths", "--tree", "--all", "--",
     ];
     if let Some(f) = rest
         .iter()
@@ -76,6 +76,18 @@ pub fn build(root: &Path, rest: &[String]) -> Result<()> {
         println!("{}", serde_json::Value::Object(m));
         return Ok(());
     }
+    if has("--paths") {
+        let mut m = serde_json::Map::new();
+        for (name, d) in &dirs {
+            let files: serde_json::Map<String, serde_json::Value> = build::object_files(root, d)?
+                .into_iter()
+                .map(|(p, f)| (p, f.display().to_string().into()))
+                .collect();
+            m.insert(name.clone(), files.into());
+        }
+        println!("{}", serde_json::Value::Object(m));
+        return Ok(());
+    }
     let opts = BuildOptions {
         root: root.to_path_buf(),
         check: has("--check"),
@@ -102,9 +114,8 @@ fn isa_check_file(file: &str) -> Result<Option<u32>> {
         .map(|n| n.to_string_lossy().into_owned())
         .unwrap_or_default();
     if file.ends_with(".json") {
-        let o = Dko::parse(
-            &std::fs::read_to_string(file).map_err(|e| Error(format!("{file}: {e}")))?,
-        )?;
+        let o =
+            Dko::parse(&std::fs::read_to_string(file).map_err(|e| Error(format!("{file}: {e}")))?)?;
         if o.arch != "cf" {
             return Ok(None);
         }
@@ -127,7 +138,10 @@ fn isa_check_file(file: &str) -> Result<Option<u32>> {
             .and_then(|secs| cf::check_text(&secs, &format!("{name}: {member}:")));
         match checked {
             Ok(h) => total += h.values().sum::<u32>(),
-            Err(e) => bad.push(e.0.split_once('\n').map_or(e.0.clone(), |x| x.1.trim().to_string())),
+            Err(e) => bad.push(
+                e.0.split_once('\n')
+                    .map_or(e.0.clone(), |x| x.1.trim().to_string()),
+            ),
         }
     }
     if !bad.is_empty() {
@@ -235,12 +249,12 @@ pub fn cf_link(root: &Path, rest: &[String]) -> Result<()> {
 /// * `link INPUT --base N [--extern NAME=ADDR]...`: the object placed at the short-word address, verified; JSON.
 /// * `shift-check FILE`: for each line of hex 48-bit instruction words, the shift-immediate problem or `ok`.
 ///
-/// INPUT is `--text FILE` (an expanded source; `-` is stdin) or `--elf FILE.doj --source FILE [--asm FILE]` (an object another Selache
+/// INPUT is `--text FILE` (an expanded source; `-` is stdin) or `--elf FILE.doj --source FILE` (an object another Selache
 /// tool wrote, with its source for the hash and the assembly it was made from for the encoding-bug guards).
 pub fn sharc(root: &Path, rest: &[String]) -> Result<()> {
     use build::sharc as bs;
     use build::sharc_obj as so;
-    const U: &str = "usage: patchkit sharc text [--module DIR] [-I DIR]... [--define NAME]... SRC... | cond [--define NAME]... | inc [-I DIR]... | object INPUT | asm INPUT | link INPUT --base N [--extern NAME=ADDR]... | shift-check FILE\n  INPUT: --text FILE | --elf FILE.doj --source FILE [--asm FILE]";
+    const U: &str = "usage: patchkit sharc text [--module DIR] [-I DIR]... [--define NAME]... SRC... | cond [--define NAME]... | inc [-I DIR]... | object INPUT | asm INPUT | link INPUT --base N [--extern NAME=ADDR]... | shift-check FILE\n  INPUT: --text FILE | --elf FILE.doj --source FILE";
     let cmd = rest.first().map(String::as_str).unwrap_or("");
     let rest = rest.get(1..).unwrap_or(&[]);
     let read = |p: &str| -> Result<String> {
@@ -266,9 +280,8 @@ pub fn sharc(root: &Path, rest: &[String]) -> Result<()> {
         }
         let elf = flag(rest, "--elf").ok_or_else(|| Error(U.into()))?;
         let src = read(&flag(rest, "--source").ok_or_else(|| Error(U.into()))?)?;
-        let asm = flag(rest, "--asm").map(|p| read(&p)).transpose()?;
         let blob = std::fs::read(&elf).map_err(|e| Error(format!("{elf}: {e}")))?;
-        so::object_from_elf(&blob, &src, asm.as_deref())
+        so::object_from_elf(&blob, &src)
     };
     match cmd {
         "text" => {
@@ -284,7 +297,10 @@ pub fn sharc(root: &Path, rest: &[String]) -> Result<()> {
             let defines = flags(rest, "--define");
             print!("{}", bs::source_text_in(dirs, &srcs, &defines)?);
         }
-        "cond" => print!("{}", bs::apply_conditionals(&read("-")?, &flags(rest, "--define"))?),
+        "cond" => print!(
+            "{}",
+            bs::apply_conditionals(&read("-")?, &flags(rest, "--define"))?
+        ),
         "inc" => {
             let dirs: Vec<PathBuf> = flags(rest, "-I").into_iter().map(PathBuf::from).collect();
             print!("{}", bs::expand_includes(&read("-")?, &dirs, 0)?);
@@ -313,7 +329,10 @@ pub fn sharc(root: &Path, rest: &[String]) -> Result<()> {
             for line in text.lines().filter(|l| !l.trim().is_empty()) {
                 let w = u64::from_str_radix(line.trim(), 16)
                     .map_err(|_| Error(format!("bad hex word {line:?}")))?;
-                println!("{}", so::shift_problem_of_word(w).unwrap_or_else(|| "ok".into()));
+                println!(
+                    "{}",
+                    so::shift_problem_of_word(w).unwrap_or_else(|| "ok".into())
+                );
             }
         }
         _ => return Err(Error(U.into())),

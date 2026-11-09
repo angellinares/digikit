@@ -147,7 +147,9 @@ fn define_directive(line: &str) -> Option<(bool, &str)> {
         Some(a) => (true, a),
         None => (false, rest.strip_prefix("undef")?),
     };
-    let name = after.strip_prefix([' ', '\t'])?.trim_start_matches([' ', '\t']);
+    let name = after
+        .strip_prefix([' ', '\t'])?
+        .trim_start_matches([' ', '\t']);
     let end = name
         .find(|c: char| !(c.is_alphanumeric() || c == '_'))
         .unwrap_or(name.len());

@@ -4,6 +4,7 @@
 import { invoke } from '@tauri-apps/api/core';
 import { setFirmwareEnv, type FirmwareEnv } from '../../../web/src/firmware/env';
 import { PatchKit, preparedFromSummary, type FlashSummary } from '../../../web/src/patch/patchkit-core';
+import { desktopDefaultModules } from './default-modules';
 import { flashEntry } from './log-core';
 import { logInput } from './log-state';
 
@@ -29,9 +30,11 @@ export function unpack(buf: Uint8Array): { summary: FlashSummary; image: Uint8Ar
 }
 
 export const desktopFirmwareEnv: FirmwareEnv = {
-  async prepare(stock, restore) {
+  async prepare(stock, restore, set = '') {
     const raw = new Uint8Array(
-      await invoke<ArrayBuffer>('firmware_prepare', stock, { headers: { 'x-restore': restore ? '1' : '0' } }),
+      await invoke<ArrayBuffer>('firmware_prepare', stock, {
+        headers: { 'x-restore': restore ? '1' : '0', 'x-set': set },
+      }),
     );
     const { summary, image } = unpack(raw);
     return preparedFromSummary(summary, image);
@@ -50,6 +53,7 @@ export const desktopFirmwareEnv: FirmwareEnv = {
     );
   },
   log: (run) => logInput(flashEntry(run)),
+  defaultModules: desktopDefaultModules,
 };
 
 setFirmwareEnv(desktopFirmwareEnv);

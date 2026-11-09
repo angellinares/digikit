@@ -1,0 +1,50 @@
+[module]
+id = "core/storage-fault-proof"
+version = "0.1.0"
+name = "Private storage fault observer"
+category = "core"
+role = "adapter"
+type = "framework"
+author = "digikit"
+status = "experimental"
+summary = "Opt-in DT2 1.17 boot-scoped latch of three audited storage IRQSTAT error bits; not a sample-load gate"
+ports = ["dt2-1.17"]
+requires = ["core/expansion"]
+conflicts = []
+
+[targets]
+"dt2-1.17" = "experimental"
+
+[[object]]
+path = "build/storage-fault.dko.json"
+sources = ["src/cf/storage-fault.s"]
+place = "cf.expansion"
+
+[object.externs]
+storage_fault_site_a = "cf.storage.site.fault_irqstat_a"
+storage_fault_site_b = "cf.storage.site.fault_irqstat_b"
+storage_fault_site_c = "cf.storage.site.fault_irqstat_c"
+
+[[op]]
+op = "hook"
+hook = "cf.storage.hook.fault_irqstat_a"
+to = "storage_fault_hook_a"
+
+[[claim]]
+resource = "cf.storage.site.fault_irqstat_a"
+
+[[op]]
+op = "hook"
+hook = "cf.storage.hook.fault_irqstat_b"
+to = "storage_fault_hook_b"
+
+[[claim]]
+resource = "cf.storage.site.fault_irqstat_b"
+
+[[op]]
+op = "hook"
+hook = "cf.storage.hook.fault_irqstat_c"
+to = "storage_fault_hook_c"
+
+[[claim]]
+resource = "cf.storage.site.fault_irqstat_c"

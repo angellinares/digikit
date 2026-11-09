@@ -7,7 +7,7 @@ export type PatchRequest =
   | { type: 'init'; wasmUrl: string; bundleUrl: string }
   | { type: 'check'; id: number; firmware: ArrayBuffer }
   | { type: 'apply'; id: number; firmware: ArrayBuffer; modules: string[] }
-  | { type: 'prepare'; id: number; firmware: ArrayBuffer; restore: boolean };
+  | { type: 'prepare'; id: number; firmware: ArrayBuffer; restore: boolean; set?: string };
 
 let kit: Promise<PatchKit> | undefined;
 const post = (message: unknown, transfer: Transferable[] = []) =>
@@ -29,7 +29,7 @@ self.onmessage = async ({ data }: MessageEvent<PatchRequest>) => {
     if (!k) throw new Error('patch worker is not initialised');
     const firmware = new Uint8Array(data.firmware);
     if (data.type === 'prepare') {
-      const p = k.prepare(firmware, data.restore);
+      const p = k.prepare(firmware, data.restore, data.set ?? '');
       post({ type: 'prepared', id: data.id, prepared: { ...p, image: p.image.buffer } }, [p.image.buffer]);
     } else if (data.type === 'check') {
       post({ type: 'checked', id: data.id, result: k.check(firmware) });

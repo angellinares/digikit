@@ -69,6 +69,11 @@ pub struct Region {
     /// (`Req::CaccUnknown`): `PSEUDO_CACC` starts as the sentinel 1 and the
     /// compares' history is not tracked (`glue::apply_cacc`).
     pub cacc_unknown: bool,
+    /// The kernel keeps MRF in `PSEUDO_MR` (`Req::MrFull`), and writes it.
+    pub mr: bool,
+    pub mr_written: bool,
+    /// The kernel collects overflows in `PSEUDO_AOS`.
+    pub aos: bool,
     /// Registers the kernel reads (straight from the engine state) and the
     /// ones it writes through the context, with the instruction of the first
     /// write: the caller stores those a run wrote. (The kernel stores the
@@ -132,7 +137,9 @@ static VOLATILE: std::sync::Mutex<Option<std::collections::HashMap<u32, u64>>> =
 
 pub fn mark_volatile(pc: u32, mask: u64) {
     let mut g = VOLATILE.lock().unwrap_or_else(|e| e.into_inner());
-    *g.get_or_insert_with(Default::default).entry(pc >> 7).or_default() |= mask;
+    *g.get_or_insert_with(Default::default)
+        .entry(pc >> 7)
+        .or_default() |= mask;
 }
 
 fn apply_volatile(env: &mut Env, pc: u32) {
@@ -172,7 +179,6 @@ fn env_of(s: &St, flag_v: bool) -> Env {
         assume_nw32: s.cfg.assume_nw32,
         mode1: s.r[MODE1].b,
         flag_v,
-        approx_recips: s.cfg.approx_recips,
         guarded_dyn: false,
         bank_model: s.cfg.bank_model,
         cacc_known: s.r[118].m & 0xff00_0000 == 0xff00_0000,
@@ -260,7 +266,9 @@ fn build(s: &St, pc: u32, lp: Option<LoopSpec>, decs: Vec<(u32, Dec)>) -> Result
     }
     let out = last.unwrap();
     if out.retry {
-        return Err(Refuse("a circular index is written outside its buffer".into()));
+        return Err(Refuse(
+            "a circular index is written outside its buffer".into(),
+        ));
     }
     out.kernel
         .validate()
@@ -339,13 +347,21 @@ fn build(s: &St, pc: u32, lp: Option<LoopSpec>, decs: Vec<(u32, Dec)>) -> Result
         bank_sync: reqs.contains(&Req::BankSync),
         misc: reqs
             .iter()
-            .filter(|q| matches!(q, Req::Mode1 { .. } | Req::FlagsKnown(_) | Req::CaccUnknown))
+            .filter(|q| {
+                matches!(
+                    q,
+                    Req::Mode1 { .. } | Req::FlagsKnown(_) | Req::CaccUnknown | Req::MrFull
+                )
+            })
             .copied()
             .collect(),
         flag_v: out.flag_v,
         flag_groups: out.flag_groups,
         cacc: out.cacc,
         cacc_unknown: out.cacc_unknown,
+        mr: out.mr,
+        mr_written: out.mr_written,
+        aos: out.aos,
         inputs: regs.iter().map(|m| m.code).collect(),
         outputs: regs
             .iter()
@@ -372,13 +388,20 @@ fn build(s: &St, pc: u32, lp: Option<LoopSpec>, decs: Vec<(u32, Dec)>) -> Result
 /// A CFG region entered at PC: the code reachable from there, as far as the
 /// lowering goes (see `cfg`).
 pub fn build_cfg(s: &St, pc: u32) -> Result<Region, Refuse> {
-    build_cfg_opts(s, pc, false)
+    build_cfg_opts(s, pc, false, &Default::default())
 }
 
 /// `build_cfg` for a block-translator cluster root (`SHARC_BLOCKTRANS`):
 /// `cluster` lowers dynamic-modifier pre-modify transfers with guarded
 /// windows (`Env::guarded_dyn`).
-pub fn build_cfg_opts(s: &St, pc: u32, cluster: bool) -> Result<Region, Refuse> {
+/// `barrier` PCs start as denied: the region stops there (an auto region hands
+/// over to a hand-picked entry).
+pub fn build_cfg_opts(
+    s: &St,
+    pc: u32,
+    cluster: bool,
+    barrier: &std::collections::BTreeSet<u32>,
+) -> Result<Region, Refuse> {
     if !cfg!(sharc_gen) {
         return Err(Refuse("no generated core (SHARC_GEN_DIR)".into()));
     }
@@ -391,7 +414,7 @@ pub fn build_cfg_opts(s: &St, pc: u32, cluster: bool) -> Result<Region, Refuse> 
     env.guarded_dyn = cluster;
     // An instruction that cannot be lowered where it stands (an address that
     // has no range, too many windows) becomes the end of the region.
-    let mut deny = std::collections::BTreeSet::new();
+    let mut deny = barrier.clone();
     let mut helpers = std::collections::BTreeSet::new();
     for _ in 0..80 {
         match build_cfg_with(s, pc, &env, &deny, &helpers) {
@@ -643,13 +666,21 @@ fn assemble_cfg(
         bank_sync: reqs.contains(&Req::BankSync),
         misc: reqs
             .iter()
-            .filter(|q| matches!(q, Req::Mode1 { .. } | Req::FlagsKnown(_) | Req::CaccUnknown))
+            .filter(|q| {
+                matches!(
+                    q,
+                    Req::Mode1 { .. } | Req::FlagsKnown(_) | Req::CaccUnknown | Req::MrFull
+                )
+            })
             .copied()
             .collect(),
         flag_v: true,
         flag_groups: out.flag_groups,
         cacc: out.cacc,
         cacc_unknown: out.cacc_unknown,
+        mr: out.mr,
+        mr_written: out.mr_written,
+        aos: out.aos,
         inputs: regs.iter().map(|m| m.code).collect(),
         outputs: regs
             .iter()

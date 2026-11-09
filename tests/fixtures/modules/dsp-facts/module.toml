@@ -1,0 +1,30 @@
+[module]
+id = "test/dsp-facts"
+version = "0.1.0"
+name = "DSP facts"
+category = "test"
+type = "fx"
+author = "digikit"
+status = "experimental"
+summary = "Test effect that measures cycle counts, instruction semantics and core register values on the real SHARC+ core and sends one framed result word per block; the audio passes unchanged."
+dynamic = true
+ports = ["dt2-1.17", "dn2-1.12"]
+requires = []
+conflicts = []
+
+[targets]
+"dt2-1.17" = "experimental"
+"dn2-1.12" = "experimental"
+
+# The effect declaration (DK_FX in src/module.c). It holds only the .dk.desc record; patchkit pack reads it and leaves it out of the .dkm.
+[[object]]
+path = "build/dsp-facts-cf.dko.json"
+sources = ["src/module.c"]
+place = "cf.expansion"
+
+# src/facts_seq.inc is generated from tools/device/dkprobe_facts.py (`uv run python -m tools.device.dkprobe_facts --write PATH`); the host tool reads the same lists.
+[[object]]
+path = "build/dsp-facts-dsp.dko.json"
+sources = ["src/dsp/dsp_facts.s"]
+place = "dsp.l2"
+devices = ["dt2", "dn2"]

@@ -3,6 +3,11 @@
 #![allow(dead_code)]
 
 pub const VERSION: u8 = 1;
+pub const MAX_CHUNK: usize = 32768;
+pub const READ_MAX: usize = 768;
+pub const PEEK_MAX: usize = 512;
+pub const MAX_REQUEST_WIRE: usize = 40960;
+pub const MAX_REPLY_WIRE: usize = 1024;
 pub const CMD_INFO: u8 = 0x01;
 pub const CMD_LIST: u8 = 0x02;
 pub const CMD_MODULES: u8 = 0x03;
@@ -18,12 +23,12 @@ pub const CMD_VERIFY: u8 = 0x17;
 pub const CMD_MKDIR: u8 = 0x18;
 pub const CMD_SETTINGS: u8 = 0x19;
 pub const CMD_RENAME: u8 = 0x1a;
-pub const CMD_LOG: u8 = 0x20;
-pub const CMD_PEEK: u8 = 0x21;
-pub const CMD_LOGCFG: u8 = 0x22;
 pub const CMD_FAULT: u8 = 0x23;
 pub const CMD_SELECT: u8 = 0x30;
 pub const CMD_RESTART: u8 = 0x31;
+pub const SVC_LOG: u8 = 0x20;
+pub const SVC_PEEK: u8 = 0x21;
+pub const SVC_LOGCFG: u8 = 0x22;
 pub const SVC_REMOTE_KEY: u8 = 0x38;
 pub const SVC_REMOTE_TURN: u8 = 0x39;
 pub const SVC_REMOTE_RELEASE: u8 = 0x3a;
@@ -60,7 +65,8 @@ pub const CAP_VERIFY: u32 = 1 << 8;
 pub const CAP_SERVICE_CMDS: u32 = 1 << 9;
 pub const CAP_FOLDERS: u32 = 1 << 10;
 pub const CAP_SETTINGS: u32 = 1 << 11;
-pub const CAP_RENAME: u32 = 1 << 12;
+pub const CAP_FILEHASH: u32 = 1 << 12;
+pub const CAP_RENAME: u32 = 1 << 13;
 pub const CAPK_MODULES: u8 = 1;
 pub const CAPK_SELECTION: u8 = 2;
 pub const CAPK_ARENA: u8 = 3;
@@ -76,9 +82,13 @@ pub const CAPK_STORE: u8 = 12;
 pub const CAPK_SETTINGS: u8 = 13;
 pub const CAPK_SEND_SLOTS: u8 = 14;
 /// The command ranges a module may register, as (first, last).
-pub const RANGES: [(u8, u8); 2] = [
+pub const RANGES: [(u8, u8); 4] = [
+    (0x20, 0x22), // debug
+    (0x32, 0x35), // probe
     (0x38, 0x3d), // remote
     (0x3e, 0x3f), // remote_state
 ];
+pub const RANGE_DEBUG: (u8, u8) = (0x20, 0x22);
+pub const RANGE_PROBE: (u8, u8) = (0x32, 0x35);
 pub const RANGE_REMOTE: (u8, u8) = (0x38, 0x3d);
 pub const RANGE_REMOTE_STATE: (u8, u8) = (0x3e, 0x3f);

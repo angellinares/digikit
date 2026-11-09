@@ -42,7 +42,6 @@ The record layout is in docs/design/digikit-store.md; the runtime's own view of 
 from __future__ import annotations
 
 import argparse
-import contextlib
 import hashlib
 import json
 import os
@@ -78,42 +77,13 @@ RUNTIME_VERSION = (
 SEL_MAGIC, SEL_VERSION = 0x444B534C, 1
 SEL_MAX, SEL_PATH = pk_device.contract_max()["sel_max"], 56
 # The store area differs per device (devices/*.toml [card.store]): `pk_device.store_of(device)` has first, sectors, sel_a, sel_b and header_b (all absolute).
-CMD_CARD_PROBE, CMD_DEBUG = 7, 8
+CMD_CARD_PROBE = 7
 CMD_SETTINGS_PUT, CMD_SETTINGS_GET, CMD_SETTINGS_REMOVE, CMD_SETTINGS_FLUSH = (
     9,
     10,
     11,
     12,
 )
-CARD_FIELDS = [
-    "state",
-    "first_nonblank",
-    "hash",
-    "refused",
-    "refused_range",
-    "read_errors",
-    "checked",
-    "claims",
-    "writes",
-]  # DKRT_CARD of core/runtime (card.rs CardInfo)
-CARD_NAMES = {
-    0: "unknown",
-    1: "ours",
-    2: "blank",
-    3: "foreign",
-    4: "unreadable",
-    5: "too small",
-}
-CRASH_FIELDS = [
-    "found",
-    "pc",
-    "vec",
-    "module",
-    "stable",
-    "ram_kept",
-    "installed",
-    "bad",
-]  # DKRT_CRASH (crash.rs CrashSeen)
 E_RANGE, E_CARD_RO = -46, -47
 CMD_LOAD, CMD_SELECT, CMD_RESTART, CMD_SELECT_ONE = (
     1,
@@ -478,20 +448,6 @@ class BootRig(M.Rig):
     def voice_rows(self) -> list[tuple[int, int]]:
         return [self.voice_row(k) for k in range(8)]
 
-    def _words(self, symbol: str, fields: list[str]) -> dict[str, int]:
-        base = M.sym(self.plan, "core/runtime", symbol)
-        return {k: self.w(base + 4 * i) for i, k in enumerate(fields)}
-
-    def card_info(self) -> dict[str, Any]:
-        """The runtime's card check (`DKRT_CARD`): state, the first non-blank sector, its crc32, writes refused and done."""
-        d: dict[str, Any] = self._words("DKRT_CARD", CARD_FIELDS)
-        d["state_name"] = CARD_NAMES.get(d["state"], "?")
-        return d
-
-    def crash_info(self) -> dict[str, Any]:
-        """What the boot found of a crash record (`DKRT_CRASH`)."""
-        return self._words("DKRT_CRASH", CRASH_FIELDS)
-
     def post_raw(self, cmd: int, data: bytes) -> int:
         """A mailbox command with binary arguments (big-endian words); returns its result."""
         b = data + bytes(-len(data) % 4)
@@ -512,49 +468,6 @@ class BootRig(M.Rig):
         """Ask the runtime's one card-write function to write NBYTES at SECTOR (`CMD_CARD_PROBE`): 0, `E_RANGE` or `E_CARD_RO`.
         Only used with sectors outside the store range or on a card that is not ours: it would write the staging buffer."""
         return self.post_raw(CMD_CARD_PROBE, struct.pack(">II", sector, nbytes))
-
-    def set_debug(self, on: bool) -> int:
-        """`dkrt_debug_set` through the mailbox (the menu's DEBUG row calls the same function)."""
-        return self.post_raw(CMD_DEBUG, bytes([1 if on else 0]))
-
-    def deliver_exceptions(self, on: bool = True) -> None:
-        """A CPU exception runs the guest's handler instead of stopping the emulated run (the crash capture needs it; the controller keeps it
-        for the runtimes a soft reset boots)."""
-        self.emu.cpu_exceptions(on)
-
-    def wait_reset(self, timeout_s: float = 900.0, settle_ms: int = 300) -> None:
-        """Run until the guest soft-resets (a crash that the runtime's hook turned into a reset) and the controller's cold boot is ready, as
-        `restart` does after it posts the command. No step is issued once the reset is seen: a step submitted while the cold boot runs on its
-        worker waits and then runs against the new machine with a budget counted from the old one, hundreds of millions of instructions
-        (a second crash before the rig has looked). SETTLE_MS: emulated time to run after the new boot is ready."""
-        self.emu.drain_events()
-        reset_seen = False
-        t0 = time.monotonic()
-        while time.monotonic() - t0 < timeout_s:
-            if reset_seen:
-                # the controller notices that its worker has finished only when a command wakes it: a status request is one
-                time.sleep(0.2)
-                with contextlib.suppress(Exception):
-                    self.emu.status()
-            else:
-                try:
-                    self.emu.step(400_000)
-                except Exception:  # noqa: BLE001  a cold boot runs on its worker: steps are refused until it is done
-                    time.sleep(0.5)
-            for ev in self.emu.drain_events():
-                if ev.get("kind") == "cpu.reset":
-                    if ev.get("restart") == "unsupported":
-                        raise Fail("the emulator cannot restart this build")
-                    reset_seen = True
-                if ev.get("kind") == "firmware.loaded":
-                    if not ev.get("ok"):
-                        raise Fail(f"reset: the cold boot failed {ev}")
-                    self.s.emu.watchdog(self.s.cell.stall_ms)
-                    if settle_ms:
-                        self.s.run_ms(settle_ms)
-                    self.wait_dsp()
-                    return
-        raise Fail(f"no reset within {timeout_s:.0f} s")
 
     def sel_records(self) -> list[dict[str, Any] | None]:
         """The two copies as the card holds them now (the overlay of the running daemon over the image)."""

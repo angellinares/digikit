@@ -116,7 +116,6 @@ class FreshCallStateTest(unittest.TestCase):
         source = self._halted_state()
         fresh = sr.fresh_call_state(source, 0x1000)
         self.assertEqual(fresh.explicit_memory_model, source.explicit_memory_model)
-        self.assertEqual(fresh.approx_recips, source.approx_recips)
         self.assertEqual(fresh.uregs[T.UREG_CODES["R0"]], T.Const(5))
 
     def test_regs_override_applied_after_clone(self):
@@ -826,7 +825,7 @@ class InitSnapshotFirmwareTest(unittest.TestCase):
     restores byte-for-byte into a fresh Runner. Slow (~15s): run with
     --slow. Talks to sharc_run.py only (not tools/sharc_dev/sharc_harness/, edited
     by another lane concurrently), duplicating its _make_runner() options
-    (explicit_memory_model/approx_recips) and the documented init address
+    (explicit_memory_model) and the documented init address
     directly.
     """
 
@@ -841,7 +840,6 @@ class InitSnapshotFirmwareTest(unittest.TestCase):
             self.INIT_SW,
             regs={"I6": 0x300000},
             explicit_memory_model=True,
-            approx_recips=True,
         )
         result = runner.run(max_steps=2_000_000)
         self.assertEqual(result.halt.reason, "return without followed call")

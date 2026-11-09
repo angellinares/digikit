@@ -47,8 +47,8 @@ coexist and a range is freed on unload. This was cheap (about 200 lines of Rust 
 fixed per-type slots were not needed. The format is in `docs/design/digikit-dkm.md`.
 
 **The area had to grow.** `pluck` reserves 256 KiB of delay lines (`.PKBSS`, 16 tracks of 4096 samples), which does not fit the 128 KiB `_dl_area` of
-finding 31. The area is now 512 KiB on the Digitakt II (DSP L2 free: 922 756 bytes in the region, 525 836 used with the area, runtime and
-`core/dyndsp`) and 320 KiB on the Digitone II (490 948 bytes in the region; `pluck_dn2` needs 262 144 + 3.6 KB). That needed a wider
+finding 31. The area is now 512 KiB on the Digitakt II (DSP L2 free: 914,564 B below 0x200fa000, 525 836 used with the area, runtime and
+`core/dyndsp`) and 320 KiB on the Digitone II (466,372 B below 0x200fa000, [finding 100](100-module-limits.md); `pluck_dn2` needs 262 144 + 3.6 KB). That needed a wider
 offset field in the chunk header: **[C]** the wire format of finding 31 changed. w0: magic 16 bits, `idx` 14 bits, `win` 2 bits; w1: `off` 17 bits (words),
 `n` 8 bits, LAST, END, `xid` 5 bits. The sender (`dl_send`) is unchanged for callers; `dl_send_win(win, dst_word, buf, len)` is new. Chunk counts
 stay under the 14-bit `idx` (512 KiB at the DN2 48-byte payload is 10 923 chunks). The DSP stub checks `n`, then the window: window 0 is the

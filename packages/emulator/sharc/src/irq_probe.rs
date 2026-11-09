@@ -39,7 +39,11 @@ impl IrqProbe {
             eprintln!("SHARC_IRQ_PROBE: want LO-HI[,LO-HI...]:MASK[:EVERY] in hex; probe disabled");
             return None;
         };
-        let every = it.next().and_then(|s| s.trim().parse::<u64>().ok()).unwrap_or(1).max(1);
+        let every = it
+            .next()
+            .and_then(|s| s.trim().parse::<u64>().ok())
+            .unwrap_or(1)
+            .max(1);
         Some(IrqProbe {
             windows,
             mask,

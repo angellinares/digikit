@@ -3,6 +3,8 @@
 The details behind the [README](../README.md): firmware files, the emulator and its options, tests, analysis tools and the repository
 layout. For modules see [MODULE-AUTHORING.md](MODULE-AUTHORING.md) and [PATCHING.md](PATCHING.md); for tests [TESTING.md](TESTING.md).
 
+For version ownership and preview/apply commands, see [Releasing digikit](RELEASING.md).
+
 ## Firmware files
 
 Modules and patchkit target Digitakt II 1.17 and Digitone II 1.12. The emulator runs
@@ -98,8 +100,8 @@ disabled ("desktop only for now"). Headless: the control socket's `card.load {di
 ## Web panel
 
 ```sh
-mise run web                       # build the browser core (WASM) and serve the panel
-mise run web:build                 # static build; it fails if firmware-derived files would ship
+pnpm dev                           # build the browser core (WASM) and serve the panel
+pnpm build                         # static build; it fails if firmware-derived files would ship
 mise run web:wasm                  # only the browser core
 mise run web:parity trig1-tap-release   # browser PCM equals native PCM
 ```
@@ -131,10 +133,10 @@ mise run scenario trig1-taps --wav
 Test levels, layout and all commands are in [docs/TESTING.md](TESTING.md). The most used:
 
 ```sh
-mise run test:changed         # checks for the changed files; no builds or devices (--explain shows the selection)
-mise run test:host            # host Vitest projects; no device
-mise run verify:host          # host lint, format, tests and types
-mise run verify               # the gate: the steps your changed files need
+mise run test:changed         # lint, format, types, host tests and Python checks of the affected projects; no builds or devices
+pnpm test:host                # host Vitest projects; no device
+pnpm verify:host              # host lint, format, tests and types
+mise run test                 # the gate: Nx targets of the affected projects
 mise run module:check ID      # one module: conformance and its own tests
 ```
 
@@ -161,6 +163,23 @@ Ghidra project, `tools/coldfire/cfdb.py build` makes a database from the dump, a
 queries it. Decoding uses only public manuals ([docs/sharc/SOURCES.md](sharc/SOURCES.md)).
 All tools are indexed in [docs/TOOLS.md](TOOLS.md).
 
+### ColdFire UI candidate review
+
+After building both atlases and their catalogues, generate the complete inventories:
+
+```sh
+uv run python -m tools.firmware.catalog_page dt2-1.17 --all
+uv run python -m tools.firmware.catalog_page dn2-1.12 --all
+```
+
+Open `out/atlas/dt2-1.17-review.html` or `out/atlas/dn2-1.12-review.html` in a browser. Keep both files together with these names for paired-device links. `--all` includes every catalogue row, including anchored functions, small groups and the ungrouped bucket. The page renders only the active group's filtered rows; search also covers tags, existing anchors and labelled SDK uses. An address links directly to its row (`#r-0x...`), revealing it through active filters. Pairs outside the other candidate inventory retain their address and matching evidence without a broken row link.
+
+Each command also writes `out/atlas/<image>-review.tsv`, containing the **complete** catalogue, original evidence columns, flattened row/group labels and links to both review pages. This TSV is complete even without `--all`; omitting that option retains the curated visible selection. Curated pages keep omitted rows as lookup data so TSV and paired-device deep links can reveal any catalogue row on demand. `--labels FILE ...` replaces the discovered labels. Labels remain guesses [O] until checked against image bytes; stability, hash uniqueness, pair matches and rule agreement are shown separately.
+
+Without Claude's database, Keep/Later/Skip uses local browser storage per firmware image. **Export decisions (JSONL)** saves `dt2-1.17-decisions.jsonl` or `dn2-1.12-decisions.jsonl`; **Import local decisions** merges a previous export for that image. Export before closing if browser storage is unavailable, and before moving or regenerating review files: storage for local files varies by browser. On a published Claude page, the existing database path remains in use; local imports are disabled there.
+
+The **Bitmap candidates** and **Parameter candidates** shortcuts search the existing function names, callees and anchor tags. The catalogue does not contain glyph IDs, glyph previews or bitmap asset metadata, so these are entry points for investigation rather than an asset gallery.
+
 ## Patching
 
 patchkit applies modules (new machines, parameters, master-bus effects) to your own stock `.syx` and writes a new
@@ -170,7 +189,7 @@ patchkit applies modules (new machines, parameters, master-bus effects) to your 
 mise run patch:toolchains   # once: pinned ColdFire and SHARC+ toolchains for building modules
 mise run patch -- --firmware firmware/Digitakt_II_OS1.17.syx --modules core/fx -o out/patch/fx.syx
 mise run patch:inject -- out/patch/fx.syx   # into a running emulator (mise run workbench, or emu:serve)
-mise run web                            # the gallery at /patch: patch in the browser, nothing is uploaded
+pnpm dev                                # the gallery at /patch: patch in the browser, nothing is uploaded
 ```
 
 **Writing a module** (create, build, patch, inject into the running emulator, test, and what modules can do):
@@ -182,7 +201,7 @@ mise run web                            # the gallery at /patch: patch in the br
 
 1. Create the module: `mise run module:new -- KIND AUTHOR/NAME [--dir DIR]` (`KIND` is `machine`, `fx` or `service`). Guide: docs/MODULE-AUTHORING.md.
 2. Build it: `mise run module:build -- AUTHOR/NAME [--check]` (`patchkit build`: ColdFire C, assembly and Rust, and SHARC+ with Selache as a library, all in the `patchkit` binary; an object whose sources did not change is skipped). The objects of a content module are build output in the cache `out/cache/dko/<module id>/` (not committed; `core/*` objects stay in their module); `mise run module:pack` and `dk:run` build what is stale themselves, so a module goes from source to `.dkm` in one command. `patchkit dko show FILE` prints what an object holds. `module:check` fails on a stale object.
-3. Check it without an emulator: `mise run module:check -- AUTHOR/NAME [--device dt2|dn2]` (machine modules run the conformance suite, then the module's own tests; it prints the packed size by section per device).
+3. Check it with the module owner's tests: `mise run module:check -- AUTHOR/NAME [--device dt2|dn2]` (machine modules run the conformance suite, then the module's own tests; it prints the packed size by section per device).
 4. Run it in the emulator: `mise run dk:run -- fx/NAME --emu`. An emulator must already run (`mise run workbench` or `mise run emu:serve`). It builds, packs, uploads, selects the module, restarts the guest and follows the log.
 5. Run it on the device: `mise run dk:run -- fx/NAME --port Digitakt`. The device needs the digikit runtime (version 0.1.0 or newer for the log levels): `mise run patch`, then `mise run patch:preflight` on the image before you flash it.
 
@@ -192,17 +211,55 @@ After a change to `devices/*.toml` or `sdk/sdk.toml`, run `mise run gen:modules`
 
 Each task takes `-- --help`.
 
+## Boot screens
+
+A boot screen is a script `x.mjs` that exports `ticks` and `draw(ctx, t)` and draws with Canvas 2D (128x64). The agent skill `.agents/skills/digikit-bootscreen/SKILL.md` has the rules.
+
+0. `mise run bootscreen` (no arguments): opens a gallery of `modules/tools/bootscreen/examples/*.mjs` in a browser. Click a tile to zoom it in; Esc closes. Tiles update when any file in the folder changes; `--no-open` skips the browser.
+1. `mise run bootscreen -- dev x.mjs`: packs the script and opens a browser preview that reloads when the file changes.
+2. `mise run bootscreen -- sheet x.mjs`: writes a contact sheet PNG of up to 24 ticks to `out/bootscreens/` (a way to see the result without a browser).
+3. `mise run bootscreen -- put x.mjs [--port Digitakt]`: packs the script and uploads it to `data/tools/bootscreen/x.dkbs` on the device (`wb store put`, verified after the upload).
+4. Or open Workbench, Transfer, Modules, tick `bootscreen`: the "Boot screens" area chooses or takes `.dkbs` files, previews them without a device, and sends them (the module too, when it is not on the device).
+
+The device applies a file only after you choose it in the module's settings on the device and restart.
+
 ## Fast iteration: runtime, UI and modules
 
-One edit and one look take seconds, not a boot. Iterate on the Digitone II (its boot is about half as long), check the Digitakt II at the end, and finish with the owner's check (`module:check`, the scenarios, the harness).
+One edit and one look take seconds, not a boot. Iterate on the Digitone II (its boot is about half as long), check the Digitakt II at the end, and finish with the owner's check (`module:check` for a content module, the named Nx device target for a fixture).
+
+### Visible preview
+
+From the repository root after [setup](#setup), with the [DN2 firmware](#firmware-files) available:
 
 ```sh
+mise run dk:menu       # the real SETTINGS > DIGIKIT menu
+mise run dk:ui-demo    # the SDK UI controls fixture
+mise run dk:module pluck  # zero-DSP machine UI preview, selected on its card
+mise run dk:module pluck --dsp  # full module with SHARC audio
+```
+
+Each command starts or reloads a kept DN2 emulator, navigates to SETTINGS > DIGIKIT, and opens a local browser faceplate with its live display and controls. The command prints the exact panel URL. `dk:menu` uses the `emulator` patch set, including `core/digikit-menu`; `dk:ui-demo` uses the separate `test/ui-demo` fixture, which requires `core/ui` and conflicts with the real menu. These two previews automatically use zero DSP, so they have no audio.
+
+`dk:module` accepts a full module id or a unique leaf alias (for example, `pluck`). It packs a card `.dkm`, saves its selection for boot, and uses the `emulator` runtime patch set. By default, a declarative machine (including pluck) uses a data-only UI preview pack and zero DSP, with no audio. Machines declaring a sample bank or sample tracks automatically use the full module with DSP, preserving sample loading and picker callbacks. The UI preview pack rejects actions, samples and hooks. ColdFire-only services use normal packing and zero DSP. Effects and DSP-backed services require `--dsp`, which packs the full module and selects SHARC when needed. Its dependencies must already be provided by that patch set. It opens the DIGIKIT MODULES list; use the panel controls to reach the module's machine or effect page. Add `--device dt2` for Digitakt II (with its firmware available); DN2 is the default.
+
+On each invocation, `dk:module` delegates to the generic `dk:dev --store` path. It stages content and compares the exact store request and initial selection with the kept daemon. Unchanged content keeps the daemon and overlay, including any selection the user changed while it was running; changed content rebuilds the card and restarts that exact daemon. To restore the initial selected card after changing selection live, stop and restart the daemon. `mise run dk:module ID --stop` stops only that module's kept daemon for the chosen device, without packing or opening the browser.
+
+Keep the command running while using the panel. Ctrl-C stops the Vite browser server; the emulator stays alive for the next reload. Stop it with `mise run dk:dev -- emulator --stop` or `mise run dk:dev -- test/ui-demo --stop`, respectively. For the controls and acceptance test, see the [UI demo README](../tests/fixtures/modules/ui-demo/README.md).
+
+### A module or fixture of your own
+
+`dk:dev` accepts a module ID (including a test fixture) or a device patch set such as `emulator`. It builds and reloads that target, runs a key script and writes screenshots; it does not open a browser. Choose `--device dn2` or `--device dt2`, or both as below:
+
+```sh
+mise run dk:dev -- AUTHOR/NAME --device dn2 --keys 'shot:main' # your module
 mise run dk:dev -- test/ui-demo --device dn2 --keys 'tap:NO,tap:SETTINGS,wait:400,tap:DOWN*8,tap:YES,wait:600,shot:menu'
 mise run dk:dev -- emulator --device dn2,dt2 --keys FILE.json   # the workbench's module set of devices/*.toml
 mise run dk:dev -- core/digikit-menu --store 'test/dyn-demo*,synth:HUGE:8000000'  # a card with these modules (* = selected)
 mise run dk:dev -- test/ui-demo --stop                          # end the kept daemon
 cargo test --offline -p dkui-host                               # menu and UI logic on the host, about 1 s
 ```
+
+For an interactive content module in an already running workbench or emulator, use `mise run dk:run -- AUTHOR/NAME --emu` ([module loop](#module-loop)). Finish with `mise run module:check AUTHOR/NAME`; for the UI fixture, use `pnpm nx:pilot run sdk-ui-zero-tests:test-device`. A preview or screenshot is not an acceptance check.
 
 `dk:dev` builds what changed, reloads a daemon it keeps per device and module set, runs the keys from the main screen and writes `out/runs/devreload/<device>/sheet.png`. The reload (daemon method `dev.reload`) compares the new patched image with the running one:
 

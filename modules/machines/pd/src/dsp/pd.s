@@ -25,6 +25,7 @@
 //  The curve's three numbers live in state words 3, 4 and 5 so the loop does not need three more registers.
 // =====================================================================
 #include "dk_machine.inc"
+#include "dsp/oscillator.inc"
 
 .SECTION/PM seg_pmco;
 .GLOBAL _pd_render;
@@ -259,22 +260,7 @@ _pd_slewed:
     F2 = F2 + F2;
     F0 = F2 - F1;
     NOP;
-    F1 = F0 * F0;                         // y
-    R2 = 0x42283c1a;                      // a9
-    F2 = F2 * F1;
-    R3 = 0xc2996966;                      // a7
-    F2 = F2 + F3;
-    F2 = F2 * F1;
-    R3 = 0x42a335e3;                      // a5
-    F2 = F2 + F3;
-    F2 = F2 * F1;
-    R3 = 0xc2255de7;                      // a3
-    F2 = F2 + F3;
-    F2 = F2 * F1;
-    R3 = 0x40c90fdb;                      // a1
-    F2 = F2 + F3;
-    F2 = F2 * F0;                         // sin(2 pi p')
-    F2 = -F2;
+    DK_SINE_POLY_STEP(F2, F0, F1, F3, R2, R3);
     F5 = F2;                              // keep oscillator 1
 
     // ---- oscillator 2 (same warp, phase 2) ----
@@ -311,22 +297,7 @@ _pd_slewed:
     F2 = F2 + F2;
     F0 = F2 - F1;
     NOP;
-    F1 = F0 * F0;
-    R2 = 0x42283c1a;
-    F2 = F2 * F1;
-    R3 = 0xc2996966;
-    F2 = F2 + F3;
-    F2 = F2 * F1;
-    R3 = 0x42a335e3;
-    F2 = F2 + F3;
-    F2 = F2 * F1;
-    R3 = 0xc2255de7;
-    F2 = F2 + F3;
-    F2 = F2 * F1;
-    R3 = 0x40c90fdb;
-    F2 = F2 + F3;
-    F2 = F2 * F0;
-    F2 = -F2;
+    DK_SINE_POLY_STEP(F2, F0, F1, F3, R2, R3);
 
     // ---- mix the pair and take the level ----
     F3 = F5 + F2;

@@ -53,6 +53,8 @@
 #define DKRT_SAFE_DSP 4
 /* DkrtBootInfo.reason: the boot before left a panic record (the runtime's Rust code panicked). */
 #define DKRT_SAFE_PANIC 5
+/* DkrtBootInfo.reason: no selection copy is valid and a copy could not be read; no modules load and the selection is not written during this boot. */
+#define DKRT_SAFE_READ 6
 /* Rows of DkrtDiag.fault_text. */
 #define DKRT_FAULT_ROWS 4
 /* Boots in a row that did not stay up for STABLE_BLOCKS after which the next one is safe mode. */
@@ -100,7 +102,7 @@
 #define DKRT_E_NOT_FOUND (-1)            /* no store, or no such file or module */
 #define DKRT_E_BAD_STORE (-2)            /* store header or table check failed */
 #define DKRT_E_READ (-3)                 /* the firmware's block read failed */
-#define DKRT_E_SHA (-4)                  /* store or .dkm sha256 does not match */
+#define DKRT_E_SHA (-4)                  /* store file hash or .dkm sha256 does not match */
 #define DKRT_E_FORMAT (-5)               /* bad magic, version, bounds or alignment of the .dkm */
 #define DKRT_E_RUNTIME (-6)              /* the module needs a newer runtime */
 #define DKRT_E_IMPORT (-7)               /* an import name is not in the runtime's table */
@@ -111,6 +113,9 @@
 #define DKRT_E_BUSY (-12)                /* a task is still inside the module */
 #define DKRT_E_TOO_BIG (-13)             /* larger than the staging buffer */
 #define DKRT_E_TABLE_FULL (-14)          /* no free module record */
+#define DKRT_E_LOST (-15)                /* the sample backing was lost and the reload failed */
+#define DKRT_E_POOL (-16)                /* the sample pool is full */
+#define DKRT_E_CHANGED (-17)             /* the sample file differs from the selection snapshot */
 #define DKRT_E_NO_REGISTRY (-20)         /* register records, but the image has no registry */
 #define DKRT_E_REG_DEVICE (-21)          /* the records are for another device */
 #define DKRT_E_TYPE_RANGE (-22)          /* machine type outside the range, or bad clone_of */
@@ -188,13 +193,13 @@ typedef struct DkrtHealth {
     uint32_t flags;                              /* HEALTH_* */
     uint32_t blocks;                             /* DSP blocks seen since boot (1500 per second) */
     uint32_t windows;                            /* windows (one second each) closed */
-    uint32_t cpu_x10;                            /* CPU load of the last window, tenths of a percent (HEALTH_CPU) */
+    uint32_t cpu_x10;                            /* CPU load of the last window, tenths of a percent, relative to the quietest window since boot (HEALTH_CPU) */
     uint32_t idle_win;                           /* the idle-loop iterations in the last window */
     uint32_t idle_ref;                           /* the best window so far (100 % idle) */
     uint32_t dsp_avg;                            /* DSP block handler, cycles per block, average of the last window (the DSP's own EMUCLK difference) */
     uint32_t dsp_max;                            /* maximum of the last window */
     uint32_t dsp_period;                         /* the cycles a block has (DSP_BLOCK_CYCLES) */
-    uint32_t dsp_avg_x10;                        /* dsp_avg as tenths of a percent of dsp_period (HEALTH_DSP) */
+    uint32_t dsp_avg_x10;                        /* dsp_avg as tenths of a percent of dsp_period, an assumed 1 GHz block (finding 100) (HEALTH_DSP) */
     uint32_t dsp_max_x10;                        /* dsp_max as tenths of a percent of dsp_period */
     uint32_t heap_total;                         /* the firmware heap (HEALTH_HEAP): bytes in all */
     uint32_t heap_free;
@@ -218,6 +223,13 @@ typedef struct DkrtStoreEntry {
     uint32_t first;
     uint32_t size;
 } DkrtStoreEntry;
+
+/* A store file as dkrt_store_stat found it, for an adapter that streams it (dkrt_store_read): the first sector (relative to the store), the size in bytes and the file hash slot of the table entry (the content hash, 4 bytes big-endian, then 28 zeros). The file's sectors are contiguous: sector n of the file is store sector first + n. */
+typedef struct DkrtStoreFile {
+    uint32_t first;
+    uint32_t size;
+    uint8_t sha[32];
+} DkrtStoreFile;
 
 /* dkrt_module result: one loaded module. */
 typedef struct DkrtModule {
@@ -276,9 +288,9 @@ typedef struct DkrtDiag {
     uint32_t card_hash;                          /* a crc32 of it */
     uint32_t card_refused;                       /* card writes refused (range or read-only) */
     uint32_t card_read_errors;                   /* reads that failed in the check */
-    uint32_t debug_on;                           /* 1 when the debug log keeps every event (SETTINGS > DIGIKIT > DEBUG), 0 when it keeps errors only */
-    uint32_t log_oldest;                         /* sequence number of the oldest event in the log ring (0, 0: empty) */
-    uint32_t log_newest;                         /* sequence number of the newest event */
+    uint32_t debug_on;                           /* 1 while a debug module (the log sink) is loaded */
+    uint32_t log_oldest;                         /* 0 (the log ring is the debug module's; its LOG command has the range) */
+    uint32_t log_newest;                         /* 0 */
     uint32_t dsp_diag_ok;                        /* 1 when dl_diag is in the image and answered */
     uint32_t dsp_stopped;                        /* 1 when the heartbeat watch decided the DSP stopped */
     uint32_t dsp_heartbeat;                      /* the last heartbeat word */
@@ -386,6 +398,10 @@ _Static_assert(sizeof(DkrtStoreEntry) == 72, "DkrtStoreEntry size");
 _Static_assert(offsetof(DkrtStoreEntry, path) == 0, "DkrtStoreEntry.path");
 _Static_assert(offsetof(DkrtStoreEntry, first) == 64, "DkrtStoreEntry.first");
 _Static_assert(offsetof(DkrtStoreEntry, size) == 68, "DkrtStoreEntry.size");
+_Static_assert(sizeof(DkrtStoreFile) == 40, "DkrtStoreFile size");
+_Static_assert(offsetof(DkrtStoreFile, first) == 0, "DkrtStoreFile.first");
+_Static_assert(offsetof(DkrtStoreFile, size) == 4, "DkrtStoreFile.size");
+_Static_assert(offsetof(DkrtStoreFile, sha) == 8, "DkrtStoreFile.sha");
 _Static_assert(sizeof(DkrtModule) == 124, "DkrtModule size");
 _Static_assert(offsetof(DkrtModule, name) == 0, "DkrtModule.name");
 _Static_assert(offsetof(DkrtModule, version) == 32, "DkrtModule.version");
@@ -502,19 +518,28 @@ void dkrt_poll_set(uintptr_t f);
 /* The card check, the debug log, the DSP watch and the crash record (finding 46). */
 void dkrt_diag(DkrtDiag *out);
 
-/* The debug log keeps every event (1) or errors only (0), now, and saved in the selection record. OK or an E_* code (E_CARD_RO: held until the next boot). */
-int32_t dkrt_debug_set(uint32_t on);
-
 /* The files of the module store whose path starts with prefix (NUL-terminated), sorted by path, at most max into out: the count, or a negative code (E_NOT_FOUND: no store). */
 int32_t dkrt_store_list(const uint8_t *prefix, DkrtStoreEntry *out, uint32_t max);
+
+/* Add a function that the UI loop calls once per pass, in the UI task, next to the one of dkrt_poll_set (room for 4). Adding a function that is in the table is OK. E_NOMEM when the table is full. core/ui uses it for dk_ui_tick. */
+int32_t dkrt_poll_add(uintptr_t f);
+
+/* Remove a function added with dkrt_poll_add; no effect when it is not in the table. */
+void dkrt_poll_remove(uintptr_t f);
+
+/* Look a store file up by path (NUL-terminated) and fill out: OK, E_NOT_FOUND (no store, no such file, a folder), or a card error. It reads the store headers and scans the table through the runtime's staging buffer, so call it only at the start of a load, not while a staged module read is in progress. A file of size 0 is found. */
+int32_t dkrt_store_stat(const uint8_t *path, DkrtStoreFile *out);
+
+/* Read count sectors of the file f, starting at its sector `sector`, into dst (512 bytes per sector). dst must be 16-byte aligned (E_CONTRACT otherwise). count is 1 to 128 and the range lies inside the file, rounded up to whole sectors (E_RANGE otherwise). No sha check, no staging buffer: the caller owns dst. OK or E_READ. */
+int32_t dkrt_store_read(const DkrtStoreFile *f, uint32_t sector, uint32_t count, uint8_t *dst);
 
 /* The header fields of the .dkm that starts at store sector first (DkrtScan.first) into out: OK, E_FORMAT when the file is not a .dkm, or E_READ / E_NOT_FOUND when its first sector cannot be read. The runtime does the card read itself. */
 int32_t dkrt_module_header(uint32_t first, DkrtModuleHeader *out);
 
-/* The saved selection (what the next boot loads): count store paths. Always OK. */
+/* The saved selection (what the next boot loads): count store paths. OK, or E_READ without touching out when no copy is valid and a copy had a read error. */
 int32_t dkrt_selection_get(DkrtSelection *out);
 
-/* Save a selection (two copies in the card's store range); OK or an E_SEL_* code. No effect until the next boot. */
+/* Save a selection (two copies in the card's store range); OK, an E_SEL_* code, or E_READ without writes when no copy is valid and a copy had a read error. No effect until the next boot. */
 int32_t dkrt_selection_set(const DkrtSelection *sel);
 
 /* This boot: safe mode and why, the modules selected and each one's result. */
@@ -537,5 +562,20 @@ uint32_t dkrt_scan_reads(void);
 
 /* Which modules fit. The ticked set loads at the next boot into an empty runtime: start from the limits (nothing used) and take in the ticked entries (ticked[i] != 0) in list order; a ticked one that does not fit is flagged and not taken. Then each unticked entry is checked against what the ticked ones leave. An entry without SCAN_COMPAT or without SCAN_NEEDS has no verdict (wont 0). n is at most SCAN_MAX. OK. */
 int32_t dkrt_fit(const DkrtScan *entries, uint32_t n, const uint8_t *ticked, DkrtFitOut *out);
+
+/* Adapter to runtime: the load `req` of dkpool_load finished. result is OK (the handle `out` is filled), E_POOL, E_READ or E_FORMAT. Only from dkpool_tick. */
+void dkrt_pool_done(uint32_t req, int32_t result);
+
+/* Adapter to runtime: queue a job on the background worker (owner 0). step is the address of i32 step(u8 *ctx), run in the worker task: it returns 1 to be called again, 0 when finished, or a negative error. done is the address of void done(u8 *ctx, i32 status) (or 0), called once in the UI task with the final status, or -80 after a cancel. Returns a job id > 0, E_BUSY when the queue is full or E_CONTRACT for a null step. */
+int32_t dkrt_job_post(uintptr_t step, uintptr_t done, uint8_t *ctx);
+
+/* Adapter to runtime: cancel the job id of dkrt_job_post. A queued job gets done with -80 at the next tick; a running one stops after its current step. OK or E_NOT_FOUND. */
+int32_t dkrt_job_cancel(uint32_t id);
+
+/* Adapter to runtime: the backing was lost (a stock reset), every handle is invalid. Only from dkpool_tick. */
+void dkrt_pool_lost(void);
+
+/* Adapter to runtime: the current project slot changed. The runtime never reads the byte. */
+void dkrt_project_changed(uint32_t slot);
 
 #endif /* DKRT_H */

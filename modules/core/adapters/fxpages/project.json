@@ -1,0 +1,48 @@
+{
+  "$schema": "../../../../node_modules/nx/schemas/project-schema.json",
+  "name": "core/fxpages",
+  "metadata": {
+    "runtimeAcceptance": [
+      {
+        "files": ["tests/fx-kit-persist.device.test.ts"],
+        "modules": ["test/dyn-fx-gain", "test/dyn-fx-gain-b", "test/sine"],
+        "sources": [
+          "tools/patchkit/hook_ab.py",
+          "tools/patchkit/pk_digikit_fxpage.py",
+          "tools/patchkit/pk_digikit_fxroute.py",
+          "tools/patchkit/pk_digikit_fxroutes.py"
+        ],
+        "pythonTools": true,
+        "plusdrive": true
+      },
+      {
+        "files": ["tests/fx-pages.device.test.ts"],
+        "modules": ["test/dyn-fx-gain", "test/sine"],
+        "sources": [
+          "tools/patchkit/hook_ab.py",
+          "tools/patchkit/pk_digikit_fxpage.py",
+          "tools/patchkit/pk_digikit_fxroute.py",
+          "tools/patchkit/pk_digikit_fxroutes.py"
+        ],
+        "pythonTools": true,
+        "plusdrive": true
+      },
+      {
+        "files": ["tests/fx-track-route.device.test.ts"],
+        "modules": ["test/dyn-fx-gain-both", "test/sine"],
+        "aliases": {
+          "test/dyn-fx-gain-both-2": "test/dyn-fx-gain-both",
+          "test/dyn-fx-gain-both-3": "test/dyn-fx-gain-both"
+        },
+        "sources": [
+          "tools/patchkit/hook_ab.py",
+          "tools/patchkit/pk_digikit_fxroute.py",
+          "tools/patchkit/pk_digikit_fxroutes.py",
+          "tools/patchkit/pk_digikit_fxsend.py"
+        ],
+        "pythonTools": true,
+        "plusdrive": true
+      }
+    ]
+  }
+}

@@ -52,8 +52,7 @@ counts one tick per instruction. So **no DSP patch is needed**: a `hook` at the 
 `link.w; movem.l`, the same hashes core/dsp-link uses) calls `health_block`, which reads that word once per block and keeps the window's sum and
 maximum. **[D]** The word is the DSP's: the module's window average and a direct read of the record agree (DT2 208 422 and 208 423, DN2 333 850
 and 334 069 cycles), and they match the headroom counts of finding 06 (DT2 208 600, DN2 334 500 busy instructions per block). A percentage divides by
-`DSP_BLOCK_CYCLES` = 666 667, one block at the emulator's 1 GHz model; the real core clock is not known here **[O]** (finding 06 reckons 800 MHz too;
-at 800 MHz the period is 533 333 and every percentage is 1.25 times larger). The handler is the whole of the DSP's per-block work in the emulator
+`DSP_BLOCK_CYCLES` = 666 667, one block at 1 GHz. The clock word in the start-up code decodes to 1 GHz **[D]** ([finding 100](100-module-limits.md); the write of the control register is not traced). The handler is the whole of the DSP's per-block work in the emulator
 (the average equals the whole-DSP busy count); whether that holds on a device is **[O]**.
 
 **RAM: the buddy allocator's free lists.** The C++ heap is a 32 MiB buddy allocator with 16-byte blocks and order 21 (finding 01; `operator new` =

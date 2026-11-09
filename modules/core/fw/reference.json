@@ -4,6 +4,56 @@
       "at": {
         "dn2-1.11": [
           {
+            "addr": "0x40114d94",
+            "len": 4
+          }
+        ],
+        "dn2-1.12": [
+          {
+            "addr": "0x40115074",
+            "len": 4
+          }
+        ],
+        "dt2-1.17": [
+          {
+            "addr": "0x40113700",
+            "len": 4
+          }
+        ]
+      },
+      "bindings": {
+        "c": "dk_fw_draw_bitmap_clear",
+        "rust": "dkfw::draw::bitmap_clear"
+      },
+      "cpu": "cf",
+      "doc": "Clears the 32-bit row bands of a Bitmap to `value` (0: black); the intro's frame callbacks of the stock scene tables call it as (bitmap, 0, 1) before they draw.",
+      "file": "devices/fw/draw.toml",
+      "kind": "fn",
+      "mark": "D",
+      "name": "cf.draw.fn.bitmap_clear",
+      "rule": {
+        "dn2": {
+          "kind": "cf_func",
+          "len": 4,
+          "offset": 0
+        },
+        "dt2": {
+          "kind": "cf_func",
+          "len": 4,
+          "offset": 0
+        }
+      },
+      "sig": "void (u8 *bitmap, u32 value, u32 flags)",
+      "subsystem": "draw",
+      "users": [
+        "core/introblank"
+      ],
+      "was": []
+    },
+    {
+      "at": {
+        "dn2-1.11": [
+          {
             "addr": "0x401157fc",
             "len": 4
           }
@@ -26,7 +76,7 @@
         "rust": "dkfw::draw::blit"
       },
       "cpu": "cf",
-      "doc": "Copies a 1 bpp Bitmap `src` onto `dst` at x, y, clipped; when `centre` is not 0, x, y is the centre of `src`. Bitmap: +4 width, +8 height, +0xc 32-bit row bands, data pointer at +0x14.",
+      "doc": "Copies a 1 bpp Bitmap `src` onto `dst` at x, y, clipped; when `centre` is not 0, x, y is the centre of `src`. Bitmap: +4 width, +8 height, +0xc 32-bit row bands, +0x10 pixel pointer, +0x14 mask pointer.",
       "file": "devices/fw/draw.toml",
       "kind": "fn",
       "mark": "D",
@@ -306,6 +356,56 @@
       "at": {
         "dn2-1.11": [
           {
+            "addr": "0x4011f7e4",
+            "len": 4
+          }
+        ],
+        "dn2-1.12": [
+          {
+            "addr": "0x4011fac4",
+            "len": 4
+          }
+        ],
+        "dt2-1.17": [
+          {
+            "addr": "0x4011e150",
+            "len": 4
+          }
+        ]
+      },
+      "bindings": {
+        "c": "dk_fw_input_key_down",
+        "rust": "dkfw::input::key_down"
+      },
+      "cpu": "cf",
+      "doc": "Key state by logical key index: 1 while the key is held, else 0. The stock parameter page tests 0x10, 0x11 and 0x16 (turn modes that change what a parameter write does). DT2 0x4011e150, DN2 0x4011fac4.",
+      "file": "devices/fw/input.toml",
+      "kind": "fn",
+      "mark": "D",
+      "name": "cf.input.fn.key_down",
+      "rule": {
+        "dn2": {
+          "kind": "cf_func",
+          "len": 4,
+          "offset": 0
+        },
+        "dt2": {
+          "kind": "cf_func",
+          "len": 4,
+          "offset": 0
+        }
+      },
+      "sig": "u32 (u32 key)",
+      "subsystem": "input",
+      "users": [
+        "core/runtime"
+      ],
+      "was": []
+    },
+    {
+      "at": {
+        "dn2-1.11": [
+          {
             "addr": "0x4011f9bc",
             "len": 4
           }
@@ -403,6 +503,42 @@
     },
     {
       "at": {
+        "dn2-1.12": [
+          {
+            "addr": "0x400cfb0e",
+            "len": 4
+          }
+        ]
+      },
+      "bindings": {
+        "c": "dk_fw_link_bulk_send",
+        "rust": "dkfw::link::bulk_send"
+      },
+      "cpu": "cf",
+      "devices": [
+        "dn2"
+      ],
+      "doc": "DN2 1.12 native LP0 tag plus 1024-word sender (finding 92). Locks the boot-initialized mutex; unbounded hardware-readiness wait. Emulator-only diagnostic use, format 1 sends numeric source words least-significant byte first.",
+      "file": "devices/fw/link.toml",
+      "kind": "fn",
+      "mark": "D",
+      "name": "cf.link.fn.bulk_send",
+      "rule": {
+        "dn2": {
+          "kind": "cf_func",
+          "len": 4,
+          "offset": 0
+        }
+      },
+      "sig": "void (u32 tag, const u32 *source, u32 format)",
+      "subsystem": "link",
+      "users": [
+        "core/dsp-lp0-proof"
+      ],
+      "was": []
+    },
+    {
+      "at": {
         "dn2-1.11": [
           {
             "addr": "0x400cf7be",
@@ -451,6 +587,43 @@
       "was": [
         "dl.cf.frame_fn"
       ]
+    },
+    {
+      "at": {
+        "dn2-1.12": [
+          {
+            "addr": "0x40134770",
+            "len": 2
+          }
+        ]
+      },
+      "bindings": {
+        "c": "dk_fw_link_reply_copy",
+        "rust": "dkfw::link::reply_copy"
+      },
+      "cpu": "cf",
+      "devices": [
+        "dn2"
+      ],
+      "doc": "Original DN2 reply memcpy, returning destination in D0; retained by the private extension wrapper.",
+      "file": "devices/fw/link.toml",
+      "kind": "fn",
+      "mark": "D",
+      "name": "cf.link.fn.reply_copy",
+      "rule": {
+        "dn2": {
+          "kind": "cf_func",
+          "len": 2,
+          "offset": 0
+        }
+      },
+      "sig": "u8 *(u8 *destination, const u8 *source, u32 length)",
+      "subsystem": "link",
+      "users": [
+        "core/dsp-lp0-proof",
+        "core/sample-pool"
+      ],
+      "was": []
     },
     {
       "at": {
@@ -563,6 +736,94 @@
     },
     {
       "at": {
+        "dn2-1.12": [
+          {
+            "addr": "0x400cf08c"
+          }
+        ]
+      },
+      "bindings": {
+        "c": "dk_fw_link_boot_wire_size_hook",
+        "gas": "dk_fw_link_boot_wire_size_hook",
+        "rust": "dkfw::link::BootWireSizeHook"
+      },
+      "cpu": "cf",
+      "devices": [
+        "dn2"
+      ],
+      "doc": "Private boot-only replacement for the wire-length getter call.",
+      "file": "devices/fw/link.toml",
+      "handler": {
+        "args": [],
+        "sig": "u32 ()"
+      },
+      "kind": "hook",
+      "mark": "D",
+      "mode": "retarget",
+      "name": "cf.link.hook.boot_wire_size",
+      "regs": {
+        "clobbers": [
+          "ccr"
+        ],
+        "in": []
+      },
+      "sig": "u32 ()",
+      "site": "cf.link.site.boot_wire_size",
+      "subsystem": "link",
+      "users": [
+        "core/dsp-lp0-proof",
+        "core/sample-pool"
+      ],
+      "was": []
+    },
+    {
+      "at": {
+        "dn2-1.12": [
+          {
+            "addr": "0x400cf956"
+          }
+        ]
+      },
+      "bindings": {
+        "c": "dk_fw_link_reply_copy_hook",
+        "gas": "dk_fw_link_reply_copy_hook",
+        "rust": "dkfw::link::ReplyCopyHook"
+      },
+      "cpu": "cf",
+      "devices": [
+        "dn2"
+      ],
+      "doc": "Private wrapper preserves the original copy and return value, then copies the isolated extension before DMA rearming.",
+      "file": "devices/fw/link.toml",
+      "handler": {
+        "args": [
+          "sp+4",
+          "sp+8",
+          "sp+12"
+        ],
+        "sig": "u8 *(u8 *destination, const u8 *source, u32 length)"
+      },
+      "kind": "hook",
+      "mark": "D",
+      "mode": "retarget",
+      "name": "cf.link.hook.reply_copy",
+      "regs": {
+        "clobbers": [
+          "ccr"
+        ],
+        "in": []
+      },
+      "sig": "u8 *(u8 *destination, const u8 *source, u32 length)",
+      "site": "cf.link.site.reply_copy",
+      "subsystem": "link",
+      "users": [
+        "core/dsp-lp0-proof",
+        "core/sample-pool"
+      ],
+      "was": []
+    },
+    {
+      "at": {
         "dn2-1.11": [
           {
             "addr": "0x40027b84",
@@ -661,6 +922,70 @@
         "cf.link.site.frame_call",
         "dl.cf.frame_call"
       ]
+    },
+    {
+      "at": {
+        "dn2-1.12": [
+          {
+            "addr": "0x400cf08c",
+            "len": 6
+          }
+        ]
+      },
+      "cpu": "cf",
+      "devices": [
+        "dn2"
+      ],
+      "doc": "DN2 1.12 boot-only size getter CALL, before the transfer size setter and DMA arming. Retargeting this call leaves the original getter and stock 0xabc reply copy unchanged. Private diagnostic only.",
+      "file": "devices/fw/link.toml",
+      "kind": "site",
+      "mark": "D",
+      "name": "cf.link.site.boot_wire_size",
+      "rule": {
+        "dn2": {
+          "kind": "cf_func",
+          "len": 6,
+          "offset": 656
+        }
+      },
+      "subsystem": "link",
+      "users": [
+        "core/dsp-lp0-proof",
+        "core/sample-pool"
+      ],
+      "was": []
+    },
+    {
+      "at": {
+        "dn2-1.12": [
+          {
+            "addr": "0x400cf956",
+            "len": 6
+          }
+        ]
+      },
+      "cpu": "cf",
+      "devices": [
+        "dn2"
+      ],
+      "doc": "DN2 1.12 stock reply memcpy CALL inside the frame driver, before DMA rearming. Keep its 0xabc length: destination+0xabc is the stock TX buffer.",
+      "file": "devices/fw/link.toml",
+      "kind": "site",
+      "mark": "D",
+      "name": "cf.link.site.reply_copy",
+      "rule": {
+        "dn2": {
+          "kind": "cf_func",
+          "len": 6,
+          "offset": 52
+        }
+      },
+      "subsystem": "link",
+      "users": [
+        "core/dsp-lp0-proof",
+        "core/sample-pool"
+      ],
+      "was": []
     },
     {
       "at": {
@@ -6015,6 +6340,157 @@
     },
     {
       "at": {
+        "dn2-1.12": [
+          {
+            "addr": "0x40065ae8",
+            "len": 4
+          }
+        ],
+        "dt2-1.17": [
+          {
+            "addr": "0x4006b18c",
+            "len": 4
+          }
+        ]
+      },
+      "bindings": {
+        "c": "dk_fw_page_native_font_operand",
+        "rust": "dkfw::page::NATIVE_FONT_OPERAND"
+      },
+      "cpu": "cf",
+      "doc": "Address operand of pea at ParameterPageView generic knob draw+0xda; the operand points to the live RAM font object. Hash the code operand, not mutable RAM. Used only through bounded canvas text.",
+      "file": "devices/fw/page.toml",
+      "kind": "data",
+      "mark": "D",
+      "name": "cf.page.data.native_font_operand",
+      "rule": {
+        "dn2": {
+          "kind": "cf_func",
+          "len": 4,
+          "offset": 220
+        },
+        "dt2": {
+          "kind": "cf_func",
+          "len": 4,
+          "offset": 220
+        }
+      },
+      "subsystem": "page",
+      "users": [
+        "core/machines"
+      ],
+      "was": []
+    },
+    {
+      "at": {
+        "dn2-1.12": [
+          {
+            "addr": "0x4003e426",
+            "len": 4
+          }
+        ]
+      },
+      "bindings": {
+        "c": "dk_fw_page_native_library_sound",
+        "rust": "dkfw::page::native_library_sound"
+      },
+      "cpu": "cf",
+      "devices": [
+        "dn2"
+      ],
+      "doc": "DN2 browser-selected sound from view+0x68 and the selected-sound index, as used by its draw and parameter mapper.",
+      "file": "devices/fw/page.toml",
+      "kind": "fn",
+      "mark": "D",
+      "name": "cf.page.fn.native_library_sound",
+      "rule": {
+        "dn2": {
+          "kind": "cf_func",
+          "len": 4,
+          "offset": 0
+        }
+      },
+      "sig": "u8 *(u8 *sounds, u32 index)",
+      "subsystem": "page",
+      "users": [
+        "core/machines"
+      ],
+      "was": []
+    },
+    {
+      "at": {
+        "dn2-1.12": [
+          {
+            "addr": "0x400167a4",
+            "len": 4
+          }
+        ]
+      },
+      "bindings": {
+        "c": "dk_fw_page_native_sound_index",
+        "rust": "dkfw::page::native_sound_index"
+      },
+      "cpu": "cf",
+      "devices": [
+        "dn2"
+      ],
+      "doc": "DN2 selected-sound/browser index of MultiSourcePageView (not page index); values below 0x80 select the browser sound instead of the current track sound.",
+      "file": "devices/fw/page.toml",
+      "kind": "fn",
+      "mark": "D",
+      "name": "cf.page.fn.native_sound_index",
+      "rule": {
+        "dn2": {
+          "kind": "cf_func",
+          "len": 4,
+          "offset": 0
+        }
+      },
+      "sig": "u32 (u8 *view)",
+      "subsystem": "page",
+      "users": [
+        "core/machines"
+      ],
+      "was": []
+    },
+    {
+      "at": {
+        "dn2-1.12": [
+          {
+            "addr": "0x40030e66",
+            "len": 4
+          }
+        ]
+      },
+      "bindings": {
+        "c": "dk_fw_page_native_track_sound",
+        "rust": "dkfw::page::native_track_sound"
+      },
+      "cpu": "cf",
+      "devices": [
+        "dn2"
+      ],
+      "doc": "DN2 track sound from the source view's sounds reference (view+0x78) and track, as used by its draw and parameter mapper.",
+      "file": "devices/fw/page.toml",
+      "kind": "fn",
+      "mark": "D",
+      "name": "cf.page.fn.native_track_sound",
+      "rule": {
+        "dn2": {
+          "kind": "cf_func",
+          "len": 4,
+          "offset": 0
+        }
+      },
+      "sig": "u8 *(u8 *sounds, u32 track)",
+      "subsystem": "page",
+      "users": [
+        "core/machines"
+      ],
+      "was": []
+    },
+    {
+      "at": {
         "dn2-1.11": [
           {
             "addr": "0x400c2474",
@@ -6064,6 +6540,240 @@
         "cf.fxpages.acc",
         "cf.page.fn.acc"
       ]
+    },
+    {
+      "at": {
+        "dn2-1.12": [
+          {
+            "addr": "0x4001683a",
+            "len": 8
+          }
+        ],
+        "dt2-1.17": [
+          {
+            "addr": "0x40017cd4",
+            "len": 8
+          }
+        ]
+      },
+      "bindings": {
+        "c": "dk_fw_page_source_code",
+        "rust": "dkfw::page::source_code"
+      },
+      "cpu": "cf",
+      "doc": "Native source-page encoder-to-parameter-code entry (vtable slot 47), stack (view, encoder). Callback page PARAM bindings return an existing code; page zero and stock mappings resume unchanged.",
+      "file": "devices/fw/page.toml",
+      "kind": "fn",
+      "mark": "D",
+      "name": "cf.page.fn.source_code",
+      "rule": {
+        "dn2": {
+          "kind": "cf_func",
+          "len": 8,
+          "offset": 0
+        },
+        "dt2": {
+          "kind": "cf_func",
+          "len": 8,
+          "offset": 0
+        }
+      },
+      "subsystem": "page",
+      "users": [
+        "core/machines"
+      ],
+      "was": []
+    },
+    {
+      "at": {
+        "dn2-1.12": [
+          {
+            "addr": "0x40018118",
+            "len": 8
+          }
+        ],
+        "dt2-1.17": [
+          {
+            "addr": "0x40016eac",
+            "len": 8
+          }
+        ]
+      },
+      "bindings": {
+        "c": "dk_fw_page_source_draw",
+        "rust": "dkfw::page::source_draw"
+      },
+      "cpu": "cf",
+      "doc": "Native source-page draw entry, stack (view, Bitmap*). A callback page may draw and return before the displaced prologue; ordinary pages resume unchanged.",
+      "file": "devices/fw/page.toml",
+      "kind": "fn",
+      "mark": "D",
+      "name": "cf.page.fn.source_draw",
+      "rule": {
+        "dn2": {
+          "kind": "cf_func",
+          "len": 8,
+          "offset": 0
+        },
+        "dt2": {
+          "kind": "cf_func",
+          "len": 8,
+          "offset": 0
+        }
+      },
+      "subsystem": "page",
+      "users": [
+        "core/machines"
+      ],
+      "was": []
+    },
+    {
+      "at": {
+        "dn2-1.11": [
+          {
+            "addr": "0x40016480",
+            "len": 8
+          }
+        ],
+        "dn2-1.12": [
+          {
+            "addr": "0x40016480",
+            "len": 8
+          }
+        ],
+        "dt2-1.17": [
+          {
+            "addr": "0x400181fe",
+            "len": 8
+          }
+        ]
+      },
+      "bindings": {
+        "c": "dk_fw_page_source_key",
+        "rust": "dkfw::page::source_key"
+      },
+      "cpu": "cf",
+      "doc": "Key handler (vfunc_2) of the machine's parameter page: `SourcePageView::vfunc_2` on the Digitakt II, `MultiSourcePageView::vfunc_2` on the Digitone II. Stack: 4(sp) = the view, 8(sp) = the key event (code at +0xc, flags at +0x10: 0x01 press, 0x02 chord, 0x08 repeat, 0x10 release; encoder clicks are codes 0x29 to 0x30). Entry: `link.w A6,-0x34; movem.l ...` (DT2) or `lea -0x24(SP),SP; movem.l ...` (DN2), 8 bytes (the hook displaces both instructions).",
+      "file": "devices/fw/page.toml",
+      "kind": "fn",
+      "mark": "D",
+      "name": "cf.page.fn.source_key",
+      "rule": {
+        "dn2": {
+          "kind": "cf_func",
+          "len": 8,
+          "offset": 0
+        },
+        "dt2": {
+          "kind": "cf_func",
+          "len": 8,
+          "offset": 0
+        }
+      },
+      "subsystem": "page",
+      "users": [
+        "core/runtime"
+      ],
+      "was": []
+    },
+    {
+      "at": {
+        "dn2-1.11": [
+          {
+            "addr": "0x4001704e",
+            "len": 8
+          }
+        ],
+        "dn2-1.12": [
+          {
+            "addr": "0x4001704e",
+            "len": 8
+          }
+        ],
+        "dt2-1.17": [
+          {
+            "addr": "0x400184ea",
+            "len": 8
+          }
+        ]
+      },
+      "bindings": {
+        "c": "dk_fw_page_source_turn",
+        "rust": "dkfw::page::source_turn"
+      },
+      "cpu": "cf",
+      "doc": "Encoder turn handler (vfunc_17) of the machine's parameter page (`SourcePageView` on the Digitakt II, `MultiSourcePageView` on the Digitone II). Stack: 4(sp) = the view, 8(sp) = the event; the encoder is `event[3] - 1` (0 to 7). Entry: `link.w A6,-0x34; movem.l ...` (DT2) or `lea -0x30(SP),SP; movem.l ...` (DN2), 8 bytes (the hook displaces both instructions).",
+      "file": "devices/fw/page.toml",
+      "kind": "fn",
+      "mark": "D",
+      "name": "cf.page.fn.source_turn",
+      "rule": {
+        "dn2": {
+          "kind": "cf_func",
+          "len": 8,
+          "offset": 0
+        },
+        "dt2": {
+          "kind": "cf_func",
+          "len": 8,
+          "offset": 0
+        }
+      },
+      "subsystem": "page",
+      "users": [
+        "core/runtime"
+      ],
+      "was": []
+    },
+    {
+      "at": {
+        "dn2-1.11": [
+          {
+            "addr": "0x40046bfe",
+            "len": 4
+          }
+        ],
+        "dn2-1.12": [
+          {
+            "addr": "0x40046bfe",
+            "len": 4
+          }
+        ],
+        "dt2-1.17": [
+          {
+            "addr": "0x4004abb8",
+            "len": 4
+          }
+        ]
+      },
+      "bindings": {
+        "c": "dk_fw_page_view_track",
+        "rust": "dkfw::page::view_track"
+      },
+      "cpu": "cf",
+      "doc": "The track of a parameter page: called with the page's reference at view+0x74, it returns the track number (the stock code clamps it to 0 to 15 and uses it as the track index into the project's sound array, FUN_40035cca on the Digitakt II). Same function body on both devices (DT2 0x4004abb8, DN2 0x40046bfe).",
+      "file": "devices/fw/page.toml",
+      "kind": "fn",
+      "mark": "D",
+      "name": "cf.page.fn.view_track",
+      "rule": {
+        "dn2": {
+          "kind": "cf_func",
+          "len": 4,
+          "offset": 0
+        },
+        "dt2": {
+          "kind": "cf_func",
+          "len": 4,
+          "offset": 0
+        }
+      },
+      "sig": "u32 (const u8 *track_ref)",
+      "subsystem": "page",
+      "users": [
+        "core/runtime"
+      ],
+      "was": []
     },
     {
       "at": {
@@ -6430,6 +7140,180 @@
       "subsystem": "page",
       "users": [
         "core/fxpages"
+      ],
+      "was": []
+    },
+    {
+      "at": {
+        "dn2-1.12": [
+          {
+            "addr": "0x4001683a"
+          }
+        ],
+        "dt2-1.17": [
+          {
+            "addr": "0x40017cd4"
+          }
+        ]
+      },
+      "cpu": "cf",
+      "devices": [
+        "dt2",
+        "dn2"
+      ],
+      "doc": "Encoder code entry: opt-in page returns its declarative code (zero for LOCAL/unused); other mappings resume unchanged.",
+      "file": "devices/fw/page.toml",
+      "kind": "hook",
+      "mark": "D",
+      "mode": "before",
+      "name": "cf.page.hook.source_code",
+      "regs": {
+        "clobbers": [
+          "d0",
+          "d1",
+          "a0",
+          "a1",
+          "ccr"
+        ],
+        "in": []
+      },
+      "site": "cf.page.fn.source_code",
+      "subsystem": "page",
+      "users": [
+        "core/machines"
+      ],
+      "was": []
+    },
+    {
+      "at": {
+        "dn2-1.12": [
+          {
+            "addr": "0x40018118"
+          }
+        ],
+        "dt2-1.17": [
+          {
+            "addr": "0x40016eac"
+          }
+        ]
+      },
+      "cpu": "cf",
+      "devices": [
+        "dt2",
+        "dn2"
+      ],
+      "doc": "Draw entry: opt-in page returns directly after bounded callback rendering; every other page resumes its prologue.",
+      "file": "devices/fw/page.toml",
+      "kind": "hook",
+      "mark": "D",
+      "mode": "before",
+      "name": "cf.page.hook.source_draw",
+      "regs": {
+        "clobbers": [
+          "d0",
+          "d1",
+          "a0",
+          "a1",
+          "ccr"
+        ],
+        "in": []
+      },
+      "site": "cf.page.fn.source_draw",
+      "subsystem": "page",
+      "users": [
+        "core/machines"
+      ],
+      "was": []
+    },
+    {
+      "at": {
+        "dn2-1.11": [
+          {
+            "addr": "0x40016480"
+          }
+        ],
+        "dn2-1.12": [
+          {
+            "addr": "0x40016480"
+          }
+        ],
+        "dt2-1.17": [
+          {
+            "addr": "0x400181fe"
+          }
+        ]
+      },
+      "cpu": "cf",
+      "devices": [
+        "dt2",
+        "dn2"
+      ],
+      "doc": "Entry of the machine page's key handler; the hook sees every key event of the page and never consumes one.",
+      "file": "devices/fw/page.toml",
+      "kind": "hook",
+      "mark": "D",
+      "mode": "before",
+      "name": "cf.page.hook.source_key",
+      "regs": {
+        "clobbers": [
+          "d0",
+          "d1",
+          "a0",
+          "a1",
+          "ccr"
+        ],
+        "in": []
+      },
+      "site": "cf.page.fn.source_key",
+      "subsystem": "page",
+      "users": [
+        "core/runtime"
+      ],
+      "was": []
+    },
+    {
+      "at": {
+        "dn2-1.11": [
+          {
+            "addr": "0x4001704e"
+          }
+        ],
+        "dn2-1.12": [
+          {
+            "addr": "0x4001704e"
+          }
+        ],
+        "dt2-1.17": [
+          {
+            "addr": "0x400184ea"
+          }
+        ]
+      },
+      "cpu": "cf",
+      "devices": [
+        "dt2",
+        "dn2"
+      ],
+      "doc": "Entry of the machine page's encoder turn handler; ordinary PARAM turns continue natively, while opt-in native-page LOCAL/unused turns return one to consume.",
+      "file": "devices/fw/page.toml",
+      "kind": "hook",
+      "mark": "D",
+      "mode": "before",
+      "name": "cf.page.hook.source_turn",
+      "regs": {
+        "clobbers": [
+          "d0",
+          "d1",
+          "a0",
+          "a1",
+          "ccr"
+        ],
+        "in": []
+      },
+      "site": "cf.page.fn.source_turn",
+      "subsystem": "page",
+      "users": [
+        "core/runtime"
       ],
       "was": []
     },
@@ -7009,6 +7893,56 @@
         "cf.param.data.master_sidechain_filter",
         "cf.param.master_sidechain_filter"
       ]
+    },
+    {
+      "at": {
+        "dn2-1.11": [
+          {
+            "addr": "0x40037326",
+            "len": 4
+          }
+        ],
+        "dn2-1.12": [
+          {
+            "addr": "0x40037326",
+            "len": 4
+          }
+        ],
+        "dt2-1.17": [
+          {
+            "addr": "0x4003b570",
+            "len": 4
+          }
+        ]
+      },
+      "bindings": {
+        "c": "dk_fw_param_set_value",
+        "rust": "dkfw::param::set_value"
+      },
+      "cpu": "cf",
+      "doc": "The absolute parameter setter the stock page uses after a turn and the sample list uses after a pick: (obj, code, raw, track, 1, 1, 1). Clamps raw to the row range, stores it in the sound, notifies the project and the observers. obj is the parameter object of the page (view vtable 0xc4 (view, code, track)). DT2 0x4003b570, DN2 0x40037326.",
+      "file": "devices/fw/param.toml",
+      "kind": "fn",
+      "mark": "D",
+      "name": "cf.param.fn.set_value",
+      "rule": {
+        "dn2": {
+          "kind": "cf_func",
+          "len": 4,
+          "offset": 0
+        },
+        "dt2": {
+          "kind": "cf_func",
+          "len": 4,
+          "offset": 0
+        }
+      },
+      "sig": "u32 (const u8 *obj, u32 code, i32 raw, u32 track, u32 notify, u32 record, u32 redraw)",
+      "subsystem": "param",
+      "users": [
+        "core/runtime"
+      ],
+      "was": []
     },
     {
       "at": {
@@ -8865,6 +9799,42 @@
     },
     {
       "at": {
+        "dn2-1.12": [
+          {
+            "addr": "0x4013492c",
+            "len": 4
+          }
+        ]
+      },
+      "bindings": {
+        "c": "dk_fw_rtos_sleep_us",
+        "rust": "dkfw::rtos::sleep_us"
+      },
+      "cpu": "cf",
+      "devices": [
+        "dn2"
+      ],
+      "doc": "DN2 1.12 stock short sleep (DT2 pair 0x40136544): locks its own mutex, loads timer DTIM1 (prescaler 0x84, about 1 MHz) with `us` and blocks the task on a semaphore until the timer interrupt. Task context only. Eight stock callers; the LP0 sender waits 100 after each page with it.",
+      "file": "devices/fw/rtos.toml",
+      "kind": "fn",
+      "mark": "D",
+      "name": "cf.rtos.fn.sleep_us",
+      "rule": {
+        "dn2": {
+          "kind": "cf_func",
+          "len": 4,
+          "offset": 0
+        }
+      },
+      "sig": "void (u32 us)",
+      "subsystem": "rtos",
+      "users": [
+        "core/sample-pool"
+      ],
+      "was": []
+    },
+    {
+      "at": {
         "dn2-1.11": [
           {
             "addr": "0x400cf0ea"
@@ -8900,6 +9870,50 @@
       "subsystem": "rtos",
       "users": [
         "core/health"
+      ],
+      "was": []
+    },
+    {
+      "at": {
+        "dn2-1.11": [
+          {
+            "addr": "0x400d3bae"
+          }
+        ],
+        "dn2-1.12": [
+          {
+            "addr": "0x400d3d12"
+          }
+        ],
+        "dt2-1.17": [
+          {
+            "addr": "0x400d183a"
+          }
+        ]
+      },
+      "cpu": "cf",
+      "devices": [
+        "dt2",
+        "dn2"
+      ],
+      "doc": "The intro setup function, before it reads its scene table argument from (0x24,sp); a hook that writes another table pointer there changes the whole intro.",
+      "file": "devices/fw/rtos.toml",
+      "kind": "hook",
+      "mark": "D",
+      "mode": "before",
+      "name": "cf.rtos.hook.intro_setup.table_arg",
+      "regs": {
+        "clobbers": [
+          "d0",
+          "a0",
+          "ccr"
+        ],
+        "in": []
+      },
+      "site": "cf.rtos.site.intro_setup.table_arg",
+      "subsystem": "rtos",
+      "users": [
+        "core/introblank"
       ],
       "was": []
     },
@@ -9058,6 +10072,51 @@
       "at": {
         "dn2-1.11": [
           {
+            "addr": "0x400d3bae",
+            "len": 6
+          }
+        ],
+        "dn2-1.12": [
+          {
+            "addr": "0x400d3d12",
+            "len": 6
+          }
+        ],
+        "dt2-1.17": [
+          {
+            "addr": "0x400d183a",
+            "len": 6
+          }
+        ]
+      },
+      "cpu": "cf",
+      "doc": "The load of the scene table argument in the intro setup function (`move.l (0x24,sp),d0; movea.l d0,a0`, 6 bytes); the hook may change the argument on the stack.",
+      "file": "devices/fw/rtos.toml",
+      "kind": "site",
+      "mark": "D",
+      "name": "cf.rtos.site.intro_setup.table_arg",
+      "rule": {
+        "dn2": {
+          "kind": "cf_func",
+          "len": 6,
+          "offset": 8
+        },
+        "dt2": {
+          "kind": "cf_func",
+          "len": 6,
+          "offset": 8
+        }
+      },
+      "subsystem": "rtos",
+      "users": [
+        "core/introblank"
+      ],
+      "was": []
+    },
+    {
+      "at": {
+        "dn2-1.11": [
+          {
             "addr": "0x4002ed34",
             "len": 8
           }
@@ -9101,6 +10160,55 @@
         "cf.rtos.site.boot",
         "dkrt.hook.boot"
       ]
+    },
+    {
+      "at": {
+        "dn2-1.11": [
+          {
+            "addr": "0x42c4bacc",
+            "len": 4
+          }
+        ],
+        "dn2-1.12": [
+          {
+            "addr": "0x42c4cacc",
+            "len": 4
+          }
+        ],
+        "dt2-1.17": [
+          {
+            "addr": "0x43153a00",
+            "len": 4
+          }
+        ]
+      },
+      "bindings": {
+        "c": "dk_fw_rtos_intro_entry",
+        "rust": "dkfw::rtos::INTRO_ENTRY"
+      },
+      "cpu": "cf",
+      "doc": "The intro's current-entry pointer: {callback, frame count} in the scene table, NULL when no intro runs (DT2 0x43153a00, DN2 0x42c4cacc).",
+      "file": "devices/fw/rtos.toml",
+      "kind": "value",
+      "mark": "D",
+      "name": "cf.rtos.value.intro_entry",
+      "rule": {
+        "dn2": {
+          "kind": "cf_literal",
+          "len": 4,
+          "offset": 116
+        },
+        "dt2": {
+          "kind": "cf_literal",
+          "len": 4,
+          "offset": 116
+        }
+      },
+      "subsystem": "rtos",
+      "users": [
+        "core/runtime"
+      ],
+      "was": []
     },
     {
       "at": {
@@ -9197,6 +10305,318 @@
         "cf.reset.copy_helper",
         "cf.rtos.value.reset_copy_helper"
       ]
+    },
+    {
+      "at": {
+        "dt2-1.17": [
+          {
+            "addr": "0x4015481c",
+            "len": 4
+          }
+        ]
+      },
+      "bindings": {
+        "c": "dk_fw_samples_loader_load",
+        "rust": "dkfw::samples::loader_load"
+      },
+      "cpu": "cf",
+      "devices": [
+        "dt2"
+      ],
+      "doc": "The stock sample loader (finding 109 section 2): slot <= 0x3ff and (slot & 0x7f) != 0; releases the slot's old block, deduplicates by the 16-byte key, appends to the pool, 0 = ok, -1 = pool full. Writes RAM tables only; never the project settings. Call it on the SampleLoaderBgWorker.",
+      "file": "devices/fw/samples.toml",
+      "kind": "fn",
+      "mark": "D",
+      "name": "cf.samples.fn.loader.load",
+      "rule": {
+        "dt2": {
+          "kind": "cf_func",
+          "len": 4,
+          "offset": 0
+        }
+      },
+      "sig": "i32 (const u32 *key, u32 slot)",
+      "subsystem": "samples",
+      "users": [
+        "core/sample-pool"
+      ],
+      "was": []
+    },
+    {
+      "at": {
+        "dt2-1.17": [
+          {
+            "addr": "0x401543a2",
+            "len": 4
+          }
+        ]
+      },
+      "bindings": {
+        "c": "dk_fw_samples_slot_release",
+        "rust": "dkfw::samples::slot_release"
+      },
+      "cpu": "cf",
+      "devices": [
+        "dt2"
+      ],
+      "doc": "Release one slot (finding 109 section 2; the loader calls it first): drops the slot from its record, frees the record when no slot shares it, rebuilds the slot map, resets the slot's key to -1. Moves only 0x34-byte records, never PCM. Same locking as the loader: call it on the SampleLoaderBgWorker.",
+      "file": "devices/fw/samples.toml",
+      "kind": "fn",
+      "mark": "D",
+      "name": "cf.samples.fn.slot.release",
+      "rule": {
+        "dt2": {
+          "kind": "cf_func",
+          "len": 4,
+          "offset": 0
+        }
+      },
+      "sig": "void (u32 slot)",
+      "subsystem": "samples",
+      "users": [
+        "core/sample-pool"
+      ],
+      "was": []
+    },
+    {
+      "at": {
+        "dn2-1.12": [
+          {
+            "addr": "0x4019eb1a",
+            "len": 4
+          }
+        ],
+        "dt2-1.17": [
+          {
+            "addr": "0x4019e65c",
+            "len": 4
+          }
+        ]
+      },
+      "bindings": {
+        "c": "dk_fw_samples_worker_get",
+        "rust": "dkfw::samples::worker_get"
+      },
+      "cpu": "cf",
+      "devices": [
+        "dt2",
+        "dn2"
+      ],
+      "doc": "Getter of the SampleLoaderBgWorker singleton (finding 109 section 3); its task id is the word at +0x20.",
+      "file": "devices/fw/samples.toml",
+      "kind": "fn",
+      "mark": "D",
+      "name": "cf.samples.fn.worker.get",
+      "rule": {
+        "dn2": {
+          "kind": "cf_func",
+          "len": 4,
+          "offset": 0
+        },
+        "dt2": {
+          "kind": "cf_func",
+          "len": 4,
+          "offset": 0
+        }
+      },
+      "sig": "u32 ()",
+      "subsystem": "samples",
+      "users": [
+        "core/sample-pool"
+      ],
+      "was": []
+    },
+    {
+      "at": {
+        "dn2-1.12": [
+          {
+            "addr": "0x400f25f8",
+            "len": 4
+          }
+        ],
+        "dt2-1.17": [
+          {
+            "addr": "0x400f0c1c",
+            "len": 4
+          }
+        ]
+      },
+      "bindings": {
+        "c": "dk_fw_samples_worker_queue",
+        "rust": "dkfw::samples::worker_queue"
+      },
+      "cpu": "cf",
+      "devices": [
+        "dt2",
+        "dn2"
+      ],
+      "doc": "Queue a job on a worker: `job` and `done` are std::function objects (storage, manager, invoker), as ReloadAllSamples passes them. The job runs in the worker task.",
+      "file": "devices/fw/samples.toml",
+      "kind": "fn",
+      "mark": "D",
+      "name": "cf.samples.fn.worker.queue",
+      "rule": {
+        "dn2": {
+          "kind": "cf_func",
+          "len": 4,
+          "offset": 0
+        },
+        "dt2": {
+          "kind": "cf_func",
+          "len": 4,
+          "offset": 0
+        }
+      },
+      "sig": "u32 (u32 worker, const char *name, void *job, void *done)",
+      "subsystem": "samples",
+      "users": [
+        "core/sample-pool"
+      ],
+      "was": []
+    },
+    {
+      "at": {
+        "dt2-1.17": [
+          {
+            "addr": "0x40153b44",
+            "len": 4
+          }
+        ]
+      },
+      "bind": "static",
+      "bindings": {
+        "c": "dk_fw_samples_record_vector",
+        "rust": "dkfw::samples::RECORD_VECTOR"
+      },
+      "cpu": "cf",
+      "devices": [
+        "dt2"
+      ],
+      "doc": "The 4-byte address literal of the record vector (the pointer pair: begin and end); record stride 0x34: +0x10 pool block offset, +0x14 rounded extent, +0x30 count of sharing slots (finding 109 section 1).",
+      "file": "devices/fw/samples.toml",
+      "kind": "site",
+      "mark": "D",
+      "name": "cf.samples.site.record.vector",
+      "rule": {
+        "dt2": {
+          "kind": "cf_func",
+          "len": 4,
+          "offset": 36
+        }
+      },
+      "subsystem": "samples",
+      "users": [
+        "core/sample-pool"
+      ],
+      "was": []
+    },
+    {
+      "at": {
+        "dt2-1.17": [
+          {
+            "addr": "0x40153f04",
+            "len": 4
+          }
+        ]
+      },
+      "bind": "static",
+      "bindings": {
+        "c": "dk_fw_samples_slot_keys",
+        "rust": "dkfw::samples::SLOT_KEYS"
+      },
+      "cpu": "cf",
+      "devices": [
+        "dt2"
+      ],
+      "doc": "The 4-byte address literal of the key array of the loader, 16 bytes per slot (0x400 slots). Word 0 is 0xffffffff after a slot is released or the pool is reset (finding 109 section 3).",
+      "file": "devices/fw/samples.toml",
+      "kind": "site",
+      "mark": "D",
+      "name": "cf.samples.site.slot.keys",
+      "rule": {
+        "dt2": {
+          "kind": "cf_func",
+          "len": 4,
+          "offset": 62
+        }
+      },
+      "subsystem": "samples",
+      "users": [
+        "core/sample-pool"
+      ],
+      "was": []
+    },
+    {
+      "at": {
+        "dt2-1.17": [
+          {
+            "addr": "0x40153b2e",
+            "len": 4
+          }
+        ]
+      },
+      "bind": "static",
+      "bindings": {
+        "c": "dk_fw_samples_slot_map",
+        "rust": "dkfw::samples::SLOT_MAP"
+      },
+      "cpu": "cf",
+      "devices": [
+        "dt2"
+      ],
+      "doc": "The 4-byte address literal of the slot to record index map, one i32 per slot. Valid only while the slot is loaded: it reads 0 (not -1) after a reset, so loss is not detected with it.",
+      "file": "devices/fw/samples.toml",
+      "kind": "site",
+      "mark": "D",
+      "name": "cf.samples.site.slot.map",
+      "rule": {
+        "dt2": {
+          "kind": "cf_func",
+          "len": 4,
+          "offset": 14
+        }
+      },
+      "subsystem": "samples",
+      "users": [
+        "core/sample-pool"
+      ],
+      "was": []
+    },
+    {
+      "at": {
+        "dt2-1.17": [
+          {
+            "addr": "0x40153ab2",
+            "len": 4
+          }
+        ]
+      },
+      "bind": "static",
+      "bindings": {
+        "c": "dk_fw_samples_slot_stereo",
+        "rust": "dkfw::samples::SLOT_STEREO"
+      },
+      "cpu": "cf",
+      "devices": [
+        "dt2"
+      ],
+      "doc": "The 4-byte address literal of the stereo flags of loaded slots, one byte per slot (the stock accessor reads it).",
+      "file": "devices/fw/samples.toml",
+      "kind": "site",
+      "mark": "D",
+      "name": "cf.samples.site.slot.stereo",
+      "rule": {
+        "dt2": {
+          "kind": "cf_func",
+          "len": 4,
+          "offset": 6
+        }
+      },
+      "subsystem": "samples",
+      "users": [
+        "core/sample-pool"
+      ],
+      "was": []
     },
     {
       "at": {
@@ -9357,6 +10777,452 @@
       "was": [
         "dkrt.fw.boot_record_write"
       ]
+    },
+    {
+      "at": {
+        "dt2-1.17": [
+          {
+            "addr": "0x4015aec2",
+            "len": 4
+          }
+        ]
+      },
+      "bindings": {
+        "c": "dk_fw_storage_directory_metadata",
+        "rust": "dkfw::storage::directory_metadata"
+      },
+      "cpu": "cf",
+      "devices": [
+        "dt2"
+      ],
+      "doc": "DT2 1.17 locked stored metadata getter: 0 success/-1 failure, output unchanged on failure. Four words: id, stored odd hash, physical byte size, node word. No hash recomputation or source lease (finding 93).",
+      "file": "devices/fw/storage.toml",
+      "kind": "fn",
+      "mark": "D",
+      "name": "cf.storage.fn.directory.metadata",
+      "rule": {
+        "dt2": {
+          "kind": "cf_func",
+          "len": 4,
+          "offset": 0
+        }
+      },
+      "sig": "i32 (u32 entry_id, u32 *output)",
+      "subsystem": "storage",
+      "users": [
+        "core/runtime",
+        "core/sample-pool"
+      ],
+      "was": []
+    },
+    {
+      "at": {
+        "dt2-1.17": [
+          {
+            "addr": "0x4015734e",
+            "len": 4
+          }
+        ]
+      },
+      "bindings": {
+        "c": "dk_fw_storage_directory_next",
+        "rust": "dkfw::storage::directory_next"
+      },
+      "cpu": "cf",
+      "devices": [
+        "dt2"
+      ],
+      "doc": "DT2 1.17 read-only directory next, 1 entry/0 EOF/-1 failure. Caller zeros private 0x114-byte output; ID +0, u16 type +4, directory ID +8, page/offset +12/+16, NUL name[256] +20. Task context; no latency bound (finding 93).",
+      "file": "devices/fw/storage.toml",
+      "kind": "fn",
+      "mark": "D",
+      "name": "cf.storage.fn.directory.next",
+      "rule": {
+        "dt2": {
+          "kind": "cf_func",
+          "len": 4,
+          "offset": 0
+        }
+      },
+      "sig": "i32 (u32 *state, u8 *output)",
+      "subsystem": "storage",
+      "users": [
+        "core/file-catalog-proof",
+        "core/runtime"
+      ],
+      "was": []
+    },
+    {
+      "at": {
+        "dt2-1.17": [
+          {
+            "addr": "0x401572a0",
+            "len": 4
+          }
+        ]
+      },
+      "bindings": {
+        "c": "dk_fw_storage_directory_open",
+        "rust": "dkfw::storage::directory_open"
+      },
+      "cpu": "cf",
+      "devices": [
+        "dt2"
+      ],
+      "doc": "DT2 1.17 read-only path directory open, 0 success/-1 failure; caller-owned four-word state. Task context; may block under filesystem locking (finding 93).",
+      "file": "devices/fw/storage.toml",
+      "kind": "fn",
+      "mark": "D",
+      "name": "cf.storage.fn.directory.open",
+      "rule": {
+        "dt2": {
+          "kind": "cf_func",
+          "len": 4,
+          "offset": 0
+        }
+      },
+      "sig": "i32 (const u8 *path, u32 *state)",
+      "subsystem": "storage",
+      "users": [
+        "core/file-catalog-proof",
+        "core/runtime"
+      ],
+      "was": []
+    },
+    {
+      "at": {
+        "dt2-1.17": [
+          {
+            "addr": "0x401588c0",
+            "len": 4
+          }
+        ]
+      },
+      "bindings": {
+        "c": "dk_fw_storage_path_close",
+        "rust": "dkfw::storage::path_close"
+      },
+      "cpu": "cf",
+      "devices": [
+        "dt2"
+      ],
+      "doc": "Close a successfully opened four-word handle; 0 succeeds. Takes the filesystem mutex internally (finding 105).",
+      "file": "devices/fw/storage.toml",
+      "kind": "fn",
+      "mark": "D",
+      "name": "cf.storage.fn.path.close",
+      "rule": {
+        "dt2": {
+          "kind": "cf_func",
+          "len": 4,
+          "offset": 0
+        }
+      },
+      "sig": "i32 (u32 *handle)",
+      "subsystem": "storage",
+      "users": [
+        "core/runtime",
+        "core/sample-pool"
+      ],
+      "was": []
+    },
+    {
+      "at": {
+        "dt2-1.17": [
+          {
+            "addr": "0x40158902",
+            "len": 4
+          }
+        ]
+      },
+      "bindings": {
+        "c": "dk_fw_storage_path_open",
+        "rust": "dkfw::storage::path_open"
+      },
+      "cpu": "cf",
+      "devices": [
+        "dt2"
+      ],
+      "doc": "Path open; 0 succeeds. Handle is four words (entry id, position, write mode, open). The sample adapter passes only mode r; task context, internal filesystem locking (finding 105).",
+      "file": "devices/fw/storage.toml",
+      "kind": "fn",
+      "mark": "D",
+      "name": "cf.storage.fn.path.open",
+      "rule": {
+        "dt2": {
+          "kind": "cf_func",
+          "len": 4,
+          "offset": 0
+        }
+      },
+      "sig": "i32 (const u8 *path, const u8 *mode, u32 *handle)",
+      "subsystem": "storage",
+      "users": [
+        "core/runtime",
+        "core/sample-pool"
+      ],
+      "was": []
+    },
+    {
+      "at": {
+        "dt2-1.17": [
+          {
+            "addr": "0x4015860a",
+            "len": 4
+          }
+        ]
+      },
+      "bindings": {
+        "c": "dk_fw_storage_path_read",
+        "rust": "dkfw::storage::path_read"
+      },
+      "cpu": "cf",
+      "devices": [
+        "dt2"
+      ],
+      "doc": "Read at the handle position and advance it; byte count, zero at EOF, negative on failure. Task context; takes the filesystem mutex internally (finding 105).",
+      "file": "devices/fw/storage.toml",
+      "kind": "fn",
+      "mark": "D",
+      "name": "cf.storage.fn.path.read",
+      "rule": {
+        "dt2": {
+          "kind": "cf_func",
+          "len": 4,
+          "offset": 0
+        }
+      },
+      "sig": "i32 (u8 *buf, u32 bytes, u32 *handle)",
+      "subsystem": "storage",
+      "users": [
+        "core/runtime"
+      ],
+      "was": []
+    },
+    {
+      "at": {
+        "dt2-1.17": [
+          {
+            "addr": "0x4015bcfe",
+            "len": 4
+          }
+        ]
+      },
+      "bindings": {
+        "c": "dk_fw_storage_path_size",
+        "rust": "dkfw::storage::path_size"
+      },
+      "cpu": "cf",
+      "devices": [
+        "dt2"
+      ],
+      "doc": "File byte length by internal entry id (handle word 0), NOT by handle pointer; 0xffffffff on error (finding 105).",
+      "file": "devices/fw/storage.toml",
+      "kind": "fn",
+      "mark": "D",
+      "name": "cf.storage.fn.path.size",
+      "rule": {
+        "dt2": {
+          "kind": "cf_func",
+          "len": 4,
+          "offset": 0
+        }
+      },
+      "sig": "u32 (u32 entry_id)",
+      "subsystem": "storage",
+      "users": [
+        "core/runtime"
+      ],
+      "was": []
+    },
+    {
+      "at": {
+        "dt2-1.17": [
+          {
+            "addr": "0x4012d5c2"
+          }
+        ]
+      },
+      "cpu": "cf",
+      "devices": [
+        "dt2"
+      ],
+      "doc": "Replay one original IRQSTAT load; retain its D0/CCR result while latching audited error bits. Jump site+6, never the displaced-code tail; no complete storage-fault coverage claim.",
+      "file": "devices/fw/storage.toml",
+      "kind": "hook",
+      "mark": "D",
+      "mode": "replace",
+      "name": "cf.storage.hook.fault_irqstat_a",
+      "regs": {
+        "clobbers": [
+          "d0",
+          "ccr"
+        ],
+        "in": []
+      },
+      "site": "cf.storage.site.fault_irqstat_a",
+      "subsystem": "storage",
+      "users": [
+        "core/storage-fault-proof"
+      ],
+      "was": []
+    },
+    {
+      "at": {
+        "dt2-1.17": [
+          {
+            "addr": "0x4012d616"
+          }
+        ]
+      },
+      "cpu": "cf",
+      "devices": [
+        "dt2"
+      ],
+      "doc": "Replay one original IRQSTAT load; retain its D0/CCR result while latching audited error bits. Jump site+6, never the displaced-code tail; no complete storage-fault coverage claim.",
+      "file": "devices/fw/storage.toml",
+      "kind": "hook",
+      "mark": "D",
+      "mode": "replace",
+      "name": "cf.storage.hook.fault_irqstat_b",
+      "regs": {
+        "clobbers": [
+          "d0",
+          "ccr"
+        ],
+        "in": []
+      },
+      "site": "cf.storage.site.fault_irqstat_b",
+      "subsystem": "storage",
+      "users": [
+        "core/storage-fault-proof"
+      ],
+      "was": []
+    },
+    {
+      "at": {
+        "dt2-1.17": [
+          {
+            "addr": "0x4012d642"
+          }
+        ]
+      },
+      "cpu": "cf",
+      "devices": [
+        "dt2"
+      ],
+      "doc": "Replay one original IRQSTAT load; retain its D0/CCR result while latching audited error bits. Jump site+6, never the displaced-code tail; no complete storage-fault coverage claim.",
+      "file": "devices/fw/storage.toml",
+      "kind": "hook",
+      "mark": "D",
+      "mode": "replace",
+      "name": "cf.storage.hook.fault_irqstat_c",
+      "regs": {
+        "clobbers": [
+          "d0",
+          "ccr"
+        ],
+        "in": []
+      },
+      "site": "cf.storage.site.fault_irqstat_c",
+      "subsystem": "storage",
+      "users": [
+        "core/storage-fault-proof"
+      ],
+      "was": []
+    },
+    {
+      "at": {
+        "dt2-1.17": [
+          {
+            "addr": "0x4012d5c2",
+            "len": 6
+          }
+        ]
+      },
+      "cpu": "cf",
+      "devices": [
+        "dt2"
+      ],
+      "doc": "DT2 1.17 storage ISR IRQSTAT-to-D0 six-byte MOVE.L; private observer replaces exactly this read and resumes at site+6.",
+      "file": "devices/fw/storage.toml",
+      "kind": "site",
+      "mark": "D",
+      "name": "cf.storage.site.fault_irqstat_a",
+      "rule": {
+        "dt2": {
+          "kind": "cf_func",
+          "len": 6,
+          "offset": 8
+        }
+      },
+      "subsystem": "storage",
+      "users": [
+        "core/storage-fault-proof"
+      ],
+      "was": []
+    },
+    {
+      "at": {
+        "dt2-1.17": [
+          {
+            "addr": "0x4012d616",
+            "len": 6
+          }
+        ]
+      },
+      "cpu": "cf",
+      "devices": [
+        "dt2"
+      ],
+      "doc": "DT2 1.17 storage ISR IRQSTAT-to-D0 six-byte MOVE.L; private observer replaces exactly this read and resumes at site+6.",
+      "file": "devices/fw/storage.toml",
+      "kind": "site",
+      "mark": "D",
+      "name": "cf.storage.site.fault_irqstat_b",
+      "rule": {
+        "dt2": {
+          "kind": "cf_func",
+          "len": 6,
+          "offset": 92
+        }
+      },
+      "subsystem": "storage",
+      "users": [
+        "core/storage-fault-proof"
+      ],
+      "was": []
+    },
+    {
+      "at": {
+        "dt2-1.17": [
+          {
+            "addr": "0x4012d642",
+            "len": 6
+          }
+        ]
+      },
+      "cpu": "cf",
+      "devices": [
+        "dt2"
+      ],
+      "doc": "DT2 1.17 storage ISR IRQSTAT-to-D0 six-byte MOVE.L; private observer replaces exactly this read and resumes at site+6.",
+      "file": "devices/fw/storage.toml",
+      "kind": "site",
+      "mark": "D",
+      "name": "cf.storage.site.fault_irqstat_c",
+      "rule": {
+        "dt2": {
+          "kind": "cf_func",
+          "len": 6,
+          "offset": 136
+        }
+      },
+      "subsystem": "storage",
+      "users": [
+        "core/storage-fault-proof"
+      ],
+      "was": []
     },
     {
       "at": {
@@ -11051,6 +12917,112 @@
     },
     {
       "at": {
+        "dn2-1.12": [
+          {
+            "addr": "0x283801b4",
+            "len": 6,
+            "pm": true
+          }
+        ]
+      },
+      "cpu": "sharc",
+      "devices": [
+        "dn2"
+      ],
+      "doc": "DN2 1.12 L1 cache-range helper: R4=start, R8=end argument, R12=selector, DM(I6,M6)=mode; 0x604 and mode 1 select noncacheable RR4. Guard stock modifier constants, L4/L5 zero and scalar mode; zero R0 means success. Finding 95.",
+      "file": "devices/fw/dsp/cache.toml",
+      "kind": "fn",
+      "mark": "D",
+      "name": "dsp.cache.fn.cache_range",
+      "rule": {
+        "dn2": {
+          "kind": "sharc_func",
+          "len": 6,
+          "offset": 8
+        }
+      },
+      "subsystem": "cache",
+      "users": [
+        "core/dsp-lp0-proof",
+        "core/sample-pool"
+      ],
+      "was": []
+    },
+    {
+      "at": {
+        "dn2-1.12": [
+          {
+            "addr": "0x20017358",
+            "pm": true
+          }
+        ]
+      },
+      "cpu": "sharc",
+      "devices": [
+        "dn2"
+      ],
+      "doc": "Private boot hook, preserving startup context and re-executing the displaced CFG load before resume.",
+      "file": "devices/fw/dsp/cache.toml",
+      "kind": "hook",
+      "mark": "D",
+      "mode": "replace",
+      "name": "dsp.cache.hook.cache_enable",
+      "regs": {
+        "clobbers": [
+          "astat"
+        ],
+        "in": [
+          "r10-r11",
+          "r13-r15",
+          "i5-i7",
+          "m5-m7",
+          "m14",
+          "mode1"
+        ]
+      },
+      "site": "dsp.cache.site.cache_enable",
+      "subsystem": "cache",
+      "users": [
+        "core/dsp-lp0-proof",
+        "core/sample-pool"
+      ],
+      "was": []
+    },
+    {
+      "at": {
+        "dn2-1.12": [
+          {
+            "addr": "0x20017358",
+            "len": 6,
+            "pm": true
+          }
+        ]
+      },
+      "cpu": "sharc",
+      "devices": [
+        "dn2"
+      ],
+      "doc": "DN2 1.12 boot cache configuration after RR3 argument cleanup, before final CFG enable/invalidate. Displaced R2=DM(CFG); live startup registers, stack, DAG and MODE1 must survive. Finding 95.",
+      "file": "devices/fw/dsp/cache.toml",
+      "kind": "site",
+      "mark": "D",
+      "name": "dsp.cache.site.cache_enable",
+      "rule": {
+        "dn2": {
+          "kind": "sharc_func",
+          "len": 6,
+          "offset": 114
+        }
+      },
+      "subsystem": "cache",
+      "users": [
+        "core/dsp-lp0-proof",
+        "core/sample-pool"
+      ],
+      "was": []
+    },
+    {
+      "at": {
         "dn2-1.11": [
           {
             "addr": "0x2838489a",
@@ -11480,6 +13452,105 @@
     },
     {
       "at": {
+        "dn2-1.12": [
+          {
+            "addr": "0x28395ff6",
+            "len": 6,
+            "pm": true
+          }
+        ]
+      },
+      "cpu": "sharc",
+      "devices": [
+        "dn2"
+      ],
+      "doc": "DN2 1.12 generic link-port open (finding 92): R4=0, R8=1, R12=aligned private state (128 bytes); stack state size and handle output. Requires task context and an unowned, inactive port before invocation.",
+      "file": "devices/fw/dsp/link.toml",
+      "kind": "fn",
+      "mark": "D",
+      "name": "dsp.link.fn.lp0_open",
+      "rule": {
+        "dn2": {
+          "kind": "sharc_func",
+          "len": 6,
+          "offset": 0
+        }
+      },
+      "subsystem": "link",
+      "users": [
+        "core/dsp-lp0-proof",
+        "core/sample-pool"
+      ],
+      "was": []
+    },
+    {
+      "at": {
+        "dn2-1.12": [
+          {
+            "addr": "0x283956c0",
+            "len": 6,
+            "pm": true
+          }
+        ]
+      },
+      "cpu": "sharc",
+      "devices": [
+        "dn2"
+      ],
+      "doc": "DN2 1.12 link-port callback setter: R4=handle, R8=callback, R12=context (finding 92).",
+      "file": "devices/fw/dsp/link.toml",
+      "kind": "fn",
+      "mark": "D",
+      "name": "dsp.link.fn.lp0_set_callback",
+      "rule": {
+        "dn2": {
+          "kind": "sharc_func",
+          "len": 6,
+          "offset": 0
+        }
+      },
+      "subsystem": "link",
+      "users": [
+        "core/dsp-lp0-proof",
+        "core/sample-pool"
+      ],
+      "was": []
+    },
+    {
+      "at": {
+        "dn2-1.12": [
+          {
+            "addr": "0x2839554c",
+            "len": 6,
+            "pm": true
+          }
+        ]
+      },
+      "cpu": "sharc",
+      "devices": [
+        "dn2"
+      ],
+      "doc": "DN2 1.12 nonblocking descriptor submit: R4=handle, R8=descriptor, R12=1, stack extra configuration 0. Descriptor is mutable; zero return is success (finding 92).",
+      "file": "devices/fw/dsp/link.toml",
+      "kind": "fn",
+      "mark": "D",
+      "name": "dsp.link.fn.lp0_submit",
+      "rule": {
+        "dn2": {
+          "kind": "sharc_func",
+          "len": 6,
+          "offset": 0
+        }
+      },
+      "subsystem": "link",
+      "users": [
+        "core/dsp-lp0-proof",
+        "core/sample-pool"
+      ],
+      "was": []
+    },
+    {
+      "at": {
         "dn2-1.11": [
           {
             "addr": "0x28393cbe",
@@ -11579,6 +13650,70 @@
       "was": [
         "dl.dsp.block_tail"
       ]
+    },
+    {
+      "at": {
+        "dn2-1.12": [
+          {
+            "addr": "0x28395024",
+            "len": 4,
+            "pm": true
+          }
+        ]
+      },
+      "cpu": "sharc",
+      "devices": [
+        "dn2"
+      ],
+      "doc": "DN2 1.12 R4=0xabc before SPI2 descriptor construction. Private boot-only wire-size change; never resize armed descriptors.",
+      "file": "devices/fw/dsp/link.toml",
+      "kind": "site",
+      "mark": "D",
+      "name": "dsp.link.site.boot_wire_size",
+      "rule": {
+        "dn2": {
+          "kind": "sharc_func",
+          "len": 4,
+          "offset": 167
+        }
+      },
+      "subsystem": "link",
+      "users": [
+        "core/dsp-lp0-proof",
+        "core/sample-pool"
+      ],
+      "was": []
+    },
+    {
+      "at": {
+        "dn2-1.12": [
+          {
+            "addr": "0x268ca8",
+            "len": 6
+          }
+        ]
+      },
+      "cpu": "sharc",
+      "devices": [
+        "dn2"
+      ],
+      "doc": "DN2 1.12 LP0 record literal in open. Owner pointer is byte offset 0x14 and must be zero before open; live LP0_CTL and DMA30_CFG must also be inactive (finding 92).",
+      "file": "devices/fw/dsp/link.toml",
+      "kind": "value",
+      "mark": "D",
+      "name": "dsp.link.value.lp0_record",
+      "rule": {
+        "dn2": {
+          "kind": "sharc_literal",
+          "offset": 33
+        }
+      },
+      "subsystem": "link",
+      "users": [
+        "core/dsp-lp0-proof",
+        "core/sample-pool"
+      ],
+      "was": []
     },
     {
       "at": {
@@ -11842,6 +13977,424 @@
     },
     {
       "at": {
+        "dn2-1.12": [
+          {
+            "addr": "0x20003ada",
+            "len": 6,
+            "pm": true
+          }
+        ]
+      },
+      "cpu": "sharc",
+      "devices": [
+        "dn2"
+      ],
+      "doc": "DN2 1.12 dispatch case 1 reset 0xb81d6d (zeroes histories 3 and 4, re-initialises coefficients; R4 = record).",
+      "file": "devices/fw/dsp/voice.toml",
+      "kind": "fn",
+      "mark": "D",
+      "name": "dsp.voice.fn.case1_reset",
+      "rule": {
+        "dn2": {
+          "kind": "sharc_func",
+          "len": 6,
+          "offset": 0
+        }
+      },
+      "subsystem": "voice",
+      "users": [
+        "core/dsp-voice"
+      ],
+      "was": []
+    },
+    {
+      "at": {
+        "dn2-1.12": [
+          {
+            "addr": "0x2000391a",
+            "len": 6,
+            "pm": true
+          }
+        ]
+      },
+      "cpu": "sharc",
+      "devices": [
+        "dn2"
+      ],
+      "doc": "DN2 1.12 dispatch case 2 reset 0xb81c8d (zeroes histories 10 and 11, re-initialises coefficients; R4 = record).",
+      "file": "devices/fw/dsp/voice.toml",
+      "kind": "fn",
+      "mark": "D",
+      "name": "dsp.voice.fn.case2_reset",
+      "rule": {
+        "dn2": {
+          "kind": "sharc_func",
+          "len": 6,
+          "offset": 0
+        }
+      },
+      "subsystem": "voice",
+      "users": [
+        "core/dsp-voice"
+      ],
+      "was": []
+    },
+    {
+      "at": {
+        "dn2-1.12": [
+          {
+            "addr": "0x200023e2",
+            "len": 6,
+            "pm": true
+          }
+        ]
+      },
+      "cpu": "sharc",
+      "devices": [
+        "dn2"
+      ],
+      "doc": "DN2 1.12 dispatch case 3 reset 0xb811f1 (clears words 5 to 12, re-initialises coefficients; R4 = record).",
+      "file": "devices/fw/dsp/voice.toml",
+      "kind": "fn",
+      "mark": "D",
+      "name": "dsp.voice.fn.case3_reset",
+      "rule": {
+        "dn2": {
+          "kind": "sharc_func",
+          "len": 6,
+          "offset": 0
+        }
+      },
+      "subsystem": "voice",
+      "users": [
+        "core/dsp-voice"
+      ],
+      "was": []
+    },
+    {
+      "at": {
+        "dn2-1.12": [
+          {
+            "addr": "0x20002a4c",
+            "len": 6,
+            "pm": true
+          }
+        ]
+      },
+      "cpu": "sharc",
+      "devices": [
+        "dn2"
+      ],
+      "doc": "DN2 1.12 dispatch case 5 stage 0xb81526: filter with coefficient ramps (record words 9, 10 histories, 11 + 7k and 13 + 7k ramps); writes the scratch block R12; the blend of scratch and buffer follows at 0x1c9c12.",
+      "file": "devices/fw/dsp/voice.toml",
+      "kind": "fn",
+      "mark": "D",
+      "name": "dsp.voice.fn.case5_filter",
+      "rule": {
+        "dn2": {
+          "kind": "sharc_func",
+          "len": 6,
+          "offset": 0
+        }
+      },
+      "subsystem": "voice",
+      "users": [
+        "core/dsp-voice"
+      ],
+      "was": []
+    },
+    {
+      "at": {
+        "dn2-1.12": [
+          {
+            "addr": "0x2000318e",
+            "len": 6,
+            "pm": true
+          }
+        ]
+      },
+      "cpu": "sharc",
+      "devices": [
+        "dn2"
+      ],
+      "doc": "DN2 1.12 dispatch case 5 reset 0xb818c7 (zeroes histories 9 and 10, re-initialises coefficients; R4 = record).",
+      "file": "devices/fw/dsp/voice.toml",
+      "kind": "fn",
+      "mark": "D",
+      "name": "dsp.voice.fn.case5_reset",
+      "rule": {
+        "dn2": {
+          "kind": "sharc_func",
+          "len": 6,
+          "offset": 0
+        }
+      },
+      "subsystem": "voice",
+      "users": [
+        "core/dsp-voice"
+      ],
+      "was": []
+    },
+    {
+      "at": {
+        "dn2-1.12": [
+          {
+            "addr": "0x20004684",
+            "len": 6,
+            "pm": true
+          }
+        ]
+      },
+      "cpu": "sharc",
+      "devices": [
+        "dn2"
+      ],
+      "doc": "DN2 1.12 dispatch case 1 stage 0xb82342 (record 0x2505a0 + 0xcc v); R twin in core/dsp-voice.",
+      "file": "devices/fw/dsp/voice.toml",
+      "kind": "fn",
+      "mark": "D",
+      "name": "dsp.voice.fn.filter_case1",
+      "rule": {
+        "dn2": {
+          "kind": "sharc_func",
+          "len": 6,
+          "offset": 0
+        }
+      },
+      "subsystem": "voice",
+      "users": [
+        "core/dsp-voice"
+      ],
+      "was": []
+    },
+    {
+      "at": {
+        "dn2-1.12": [
+          {
+            "addr": "0x2000342c",
+            "len": 6,
+            "pm": true
+          }
+        ]
+      },
+      "cpu": "sharc",
+      "devices": [
+        "dn2"
+      ],
+      "doc": "DN2 1.12 dispatch case 2 stage 0xb81a16 (record 0x251260 + 0x12c v); R twin in core/dsp-voice.",
+      "file": "devices/fw/dsp/voice.toml",
+      "kind": "fn",
+      "mark": "D",
+      "name": "dsp.voice.fn.filter_case2",
+      "rule": {
+        "dn2": {
+          "kind": "sharc_func",
+          "len": 6,
+          "offset": 0
+        }
+      },
+      "subsystem": "voice",
+      "users": [
+        "core/dsp-voice"
+      ],
+      "was": []
+    },
+    {
+      "at": {
+        "dn2-1.12": [
+          {
+            "addr": "0x20001e5c",
+            "len": 6,
+            "pm": true
+          }
+        ]
+      },
+      "cpu": "sharc",
+      "devices": [
+        "dn2"
+      ],
+      "doc": "DN2 1.12 dispatch case 3 stage 0xb80f2e (record 0x252520 + 0xec v); R twin in core/dsp-voice.",
+      "file": "devices/fw/dsp/voice.toml",
+      "kind": "fn",
+      "mark": "D",
+      "name": "dsp.voice.fn.filter_case3",
+      "rule": {
+        "dn2": {
+          "kind": "sharc_func",
+          "len": 6,
+          "offset": 0
+        }
+      },
+      "subsystem": "voice",
+      "users": [
+        "core/dsp-voice"
+      ],
+      "was": []
+    },
+    {
+      "at": {
+        "dn2-1.12": [
+          {
+            "addr": "0x20001872",
+            "len": 6,
+            "pm": true
+          }
+        ]
+      },
+      "cpu": "sharc",
+      "devices": [
+        "dn2"
+      ],
+      "doc": "DN2 1.12 block recurrence wrapper; linked C frame, R4=record, R8=input, R12=output, DM(I6+1)=count.",
+      "file": "devices/fw/dsp/voice.toml",
+      "kind": "fn",
+      "mark": "D",
+      "name": "dsp.voice.fn.first_order_process",
+      "rule": {
+        "dn2": {
+          "kind": "sharc_func",
+          "len": 6,
+          "offset": 0
+        }
+      },
+      "subsystem": "voice",
+      "users": [
+        "core/dsp-stereo-proof",
+        "core/dsp-voice"
+      ],
+      "was": []
+    },
+    {
+      "at": {
+        "dn2-1.12": [
+          {
+            "addr": "0x20001726",
+            "len": 6,
+            "pm": true
+          }
+        ]
+      },
+      "cpu": "sharc",
+      "devices": [
+        "dn2"
+      ],
+      "doc": "DN2 1.12 reset of words24..27, including return-delay behavior; R4=record.",
+      "file": "devices/fw/dsp/voice.toml",
+      "kind": "fn",
+      "mark": "D",
+      "name": "dsp.voice.fn.first_order_reset",
+      "rule": {
+        "dn2": {
+          "kind": "sharc_func",
+          "len": 6,
+          "offset": 0
+        }
+      },
+      "subsystem": "voice",
+      "users": [
+        "core/dsp-stereo-proof",
+        "core/dsp-voice"
+      ],
+      "was": []
+    },
+    {
+      "at": {
+        "dn2-1.12": [
+          {
+            "addr": "0x2000068a",
+            "len": 6,
+            "pm": true
+          }
+        ]
+      },
+      "cpu": "sharc",
+      "devices": [
+        "dn2"
+      ],
+      "doc": "DN2 1.12 stage 0xb80345 (R4 = 11-word record, R8 = input, R12 = output; stack: control, byte control, count): segments with rates from tables, in place. Its call at 0x1c99cc follows the dispatch.",
+      "file": "devices/fw/dsp/voice.toml",
+      "kind": "fn",
+      "mark": "D",
+      "name": "dsp.voice.fn.gain_stage",
+      "rule": {
+        "dn2": {
+          "kind": "sharc_func",
+          "len": 6,
+          "offset": 0
+        }
+      },
+      "subsystem": "voice",
+      "users": [
+        "core/dsp-voice"
+      ],
+      "was": []
+    },
+    {
+      "at": {
+        "dn2-1.12": [
+          {
+            "addr": "0x20004880",
+            "len": 6,
+            "pm": true
+          }
+        ]
+      },
+      "cpu": "sharc",
+      "devices": [
+        "dn2"
+      ],
+      "doc": "DN2 1.12 held-sample reset 0xb82440 (zeroes the five words of the record; R4 = record). Also called by another function; only the engine's call sites are retargeted.",
+      "file": "devices/fw/dsp/voice.toml",
+      "kind": "fn",
+      "mark": "D",
+      "name": "dsp.voice.fn.held_reset",
+      "rule": {
+        "dn2": {
+          "kind": "sharc_func",
+          "len": 6,
+          "offset": 0
+        }
+      },
+      "subsystem": "voice",
+      "users": [
+        "core/dsp-voice"
+      ],
+      "was": []
+    },
+    {
+      "at": {
+        "dn2-1.12": [
+          {
+            "addr": "0x20004cb6",
+            "len": 6,
+            "pm": true
+          }
+        ]
+      },
+      "cpu": "sharc",
+      "devices": [
+        "dn2"
+      ],
+      "doc": "DN2 1.12 held-sample stage 0xb8265b (entry inside the function that starts at 0xb8258f); R twin in core/dsp-voice.",
+      "file": "devices/fw/dsp/voice.toml",
+      "kind": "fn",
+      "mark": "D",
+      "name": "dsp.voice.fn.held_sample",
+      "rule": {
+        "dn2": {
+          "kind": "sharc_func",
+          "len": 6,
+          "offset": 204
+        }
+      },
+      "subsystem": "voice",
+      "users": [
+        "core/dsp-voice"
+      ],
+      "was": []
+    },
+    {
+      "at": {
         "dn2-1.11": [
           {
             "addr": "0x20004a36",
@@ -11889,6 +14442,877 @@
       "was": [
         "dsp.voice.render_entry"
       ]
+    },
+    {
+      "at": {
+        "dn2-1.12": [
+          {
+            "addr": "0x20000bb0",
+            "len": 6,
+            "pm": true
+          }
+        ]
+      },
+      "cpu": "sharc",
+      "devices": [
+        "dn2"
+      ],
+      "doc": "DN2 1.12 ring stage reset 0xb805d8 (history and cursor 0, fill status M14, no clear of the backing; R4 = record).",
+      "file": "devices/fw/dsp/voice.toml",
+      "kind": "fn",
+      "mark": "D",
+      "name": "dsp.voice.fn.ring_reset",
+      "rule": {
+        "dn2": {
+          "kind": "sharc_func",
+          "len": 6,
+          "offset": 0
+        }
+      },
+      "subsystem": "voice",
+      "users": [
+        "core/dsp-voice"
+      ],
+      "was": []
+    },
+    {
+      "at": {
+        "dn2-1.12": [
+          {
+            "addr": "0x20000dea",
+            "len": 6,
+            "pm": true
+          }
+        ]
+      },
+      "cpu": "sharc",
+      "devices": [
+        "dn2"
+      ],
+      "doc": "DN2 1.12 ring stage 0xb806f5 (dispatch cases 4 and 6; 32 KiB ring per slot behind record word 16); R twin in core/dsp-voice with its own ring.",
+      "file": "devices/fw/dsp/voice.toml",
+      "kind": "fn",
+      "mark": "D",
+      "name": "dsp.voice.fn.ring_stage",
+      "rule": {
+        "dn2": {
+          "kind": "sharc_func",
+          "len": 6,
+          "offset": 0
+        }
+      },
+      "subsystem": "voice",
+      "users": [
+        "core/dsp-voice"
+      ],
+      "was": []
+    },
+    {
+      "at": {
+        "dn2-1.12": [
+          {
+            "addr": "0x2839b6ac",
+            "len": 6,
+            "pm": true
+          }
+        ]
+      },
+      "cpu": "sharc",
+      "devices": [
+        "dn2"
+      ],
+      "doc": "DN2 1.12 conditional shaper 0x1cdb56 (record 0x24fa20 + 0x60 v, two control groups, no audio history); R twin in core/dsp-voice.",
+      "file": "devices/fw/dsp/voice.toml",
+      "kind": "fn",
+      "mark": "D",
+      "name": "dsp.voice.fn.shaper",
+      "rule": {
+        "dn2": {
+          "kind": "sharc_func",
+          "len": 6,
+          "offset": 0
+        }
+      },
+      "subsystem": "voice",
+      "users": [
+        "core/dsp-voice"
+      ],
+      "was": []
+    },
+    {
+      "at": {
+        "dn2-1.12": [
+          {
+            "addr": "0x200026d0",
+            "len": 6,
+            "pm": true
+          }
+        ]
+      },
+      "cpu": "sharc",
+      "devices": [
+        "dn2"
+      ],
+      "doc": "DN2 1.12 private observer binding. Finite U/Y recurrence, R4=8-word record, R8=input, R12=output, DM(I6+1)=count.",
+      "file": "devices/fw/dsp/voice.toml",
+      "kind": "fn",
+      "mark": "D",
+      "name": "dsp.voice.fn.uy_process",
+      "rule": {
+        "dn2": {
+          "kind": "sharc_func",
+          "len": 6,
+          "offset": 0
+        }
+      },
+      "subsystem": "voice",
+      "users": [
+        "core/dsp-stereo-proof",
+        "core/dsp-voice"
+      ],
+      "was": []
+    },
+    {
+      "at": {
+        "dn2-1.12": [
+          {
+            "addr": "0x200026b4",
+            "len": 6,
+            "pm": true
+          }
+        ]
+      },
+      "cpu": "sharc",
+      "devices": [
+        "dn2"
+      ],
+      "doc": "DN2 1.12 private observer binding. U/Y reset clears live history words6/7; R4=record.",
+      "file": "devices/fw/dsp/voice.toml",
+      "kind": "fn",
+      "mark": "D",
+      "name": "dsp.voice.fn.uy_reset",
+      "rule": {
+        "dn2": {
+          "kind": "sharc_func",
+          "len": 6,
+          "offset": 0
+        }
+      },
+      "subsystem": "voice",
+      "users": [
+        "core/dsp-stereo-proof",
+        "core/dsp-voice"
+      ],
+      "was": []
+    },
+    {
+      "at": {
+        "dn2-1.12": [
+          {
+            "addr": "0x28393810",
+            "pm": true
+          }
+        ]
+      },
+      "cpu": "sharc",
+      "devices": [
+        "dn2"
+      ],
+      "doc": "R twin of the case 5 stage and of the blend that follows it (core/dsp-voice).",
+      "file": "devices/fw/dsp/voice.toml",
+      "kind": "hook",
+      "mark": "D",
+      "mode": "retarget",
+      "name": "dsp.voice.hook.case5.call",
+      "regs": {
+        "clobbers": [
+          "r0-r2",
+          "i4",
+          "i12",
+          "astat"
+        ],
+        "in": [
+          "r4",
+          "r8",
+          "r12",
+          "i6-i7",
+          "m5-m7",
+          "m14"
+        ]
+      },
+      "site": "dsp.voice.site.case5.call",
+      "subsystem": "voice",
+      "users": [
+        "core/dsp-voice"
+      ],
+      "was": []
+    },
+    {
+      "at": {
+        "dn2-1.12": [
+          {
+            "addr": "0x28393084",
+            "pm": true
+          }
+        ]
+      },
+      "cpu": "sharc",
+      "devices": [
+        "dn2"
+      ],
+      "doc": "Reset mirror: sets the private words of the R record of the slot as the stock reset does for L, then jumps to the stock reset.",
+      "file": "devices/fw/dsp/voice.toml",
+      "kind": "hook",
+      "mark": "D",
+      "mode": "retarget",
+      "name": "dsp.voice.hook.case5.reset.call",
+      "regs": {
+        "clobbers": [
+          "r0-r2",
+          "i4",
+          "astat"
+        ],
+        "in": [
+          "r4",
+          "r8",
+          "r12",
+          "i6-i7",
+          "m6-m7",
+          "m14",
+          "mode1"
+        ]
+      },
+      "site": "dsp.voice.site.case5.reset.call",
+      "subsystem": "voice",
+      "users": [
+        "core/dsp-voice"
+      ],
+      "was": []
+    },
+    {
+      "at": {
+        "dn2-1.12": [
+          {
+            "addr": "0x2839315e",
+            "pm": true
+          }
+        ]
+      },
+      "cpu": "sharc",
+      "devices": [
+        "dn2"
+      ],
+      "doc": "R twin of dispatch case 1: the audio histories are private to R, the words the stage reads are copied before the L call; a stereo slot in an unsupported context is counted and plays R = L.",
+      "file": "devices/fw/dsp/voice.toml",
+      "kind": "hook",
+      "mark": "D",
+      "mode": "retarget",
+      "name": "dsp.voice.hook.filter_case1.call",
+      "regs": {
+        "clobbers": [
+          "r0-r2",
+          "r4",
+          "r8",
+          "r12",
+          "i4",
+          "i12",
+          "astat"
+        ],
+        "in": [
+          "r4",
+          "r8",
+          "r12",
+          "i6-i7",
+          "m6-m7",
+          "m14",
+          "mode1"
+        ]
+      },
+      "site": "dsp.voice.site.filter_case1.call",
+      "subsystem": "voice",
+      "users": [
+        "core/dsp-voice"
+      ],
+      "was": []
+    },
+    {
+      "at": {
+        "dn2-1.12": [
+          {
+            "addr": "0x28392e2c",
+            "pm": true
+          }
+        ]
+      },
+      "cpu": "sharc",
+      "devices": [
+        "dn2"
+      ],
+      "doc": "Reset mirror: sets the private words of the R record of the slot as the stock reset does for L, then jumps to the stock reset.",
+      "file": "devices/fw/dsp/voice.toml",
+      "kind": "hook",
+      "mark": "D",
+      "mode": "retarget",
+      "name": "dsp.voice.hook.filter_case1.reset.call",
+      "regs": {
+        "clobbers": [
+          "r0-r2",
+          "i4",
+          "astat"
+        ],
+        "in": [
+          "r4",
+          "r8",
+          "r12",
+          "i6-i7",
+          "m6-m7",
+          "m14",
+          "mode1"
+        ]
+      },
+      "site": "dsp.voice.site.filter_case1.reset.call",
+      "subsystem": "voice",
+      "users": [
+        "core/dsp-voice"
+      ],
+      "was": []
+    },
+    {
+      "at": {
+        "dn2-1.12": [
+          {
+            "addr": "0x2839376c",
+            "pm": true
+          }
+        ]
+      },
+      "cpu": "sharc",
+      "devices": [
+        "dn2"
+      ],
+      "doc": "R twin of dispatch case 2: the audio histories are private to R, the words the stage reads are copied before the L call; a stereo slot in an unsupported context is counted and plays R = L.",
+      "file": "devices/fw/dsp/voice.toml",
+      "kind": "hook",
+      "mark": "D",
+      "mode": "retarget",
+      "name": "dsp.voice.hook.filter_case2.call",
+      "regs": {
+        "clobbers": [
+          "r0-r2",
+          "r4",
+          "r8",
+          "r12",
+          "i4",
+          "i12",
+          "astat"
+        ],
+        "in": [
+          "r4",
+          "r8",
+          "r12",
+          "i6-i7",
+          "m6-m7",
+          "m14",
+          "mode1"
+        ]
+      },
+      "site": "dsp.voice.site.filter_case2.call",
+      "subsystem": "voice",
+      "users": [
+        "core/dsp-voice"
+      ],
+      "was": []
+    },
+    {
+      "at": {
+        "dn2-1.12": [
+          {
+            "addr": "0x28392e8e",
+            "pm": true
+          }
+        ]
+      },
+      "cpu": "sharc",
+      "devices": [
+        "dn2"
+      ],
+      "doc": "Reset mirror: sets the private words of the R record of the slot as the stock reset does for L, then jumps to the stock reset.",
+      "file": "devices/fw/dsp/voice.toml",
+      "kind": "hook",
+      "mark": "D",
+      "mode": "retarget",
+      "name": "dsp.voice.hook.filter_case2.reset.call",
+      "regs": {
+        "clobbers": [
+          "r0-r2",
+          "i4",
+          "astat"
+        ],
+        "in": [
+          "r4",
+          "r8",
+          "r12",
+          "i6-i7",
+          "m6-m7",
+          "m14",
+          "mode1"
+        ]
+      },
+      "site": "dsp.voice.site.filter_case2.reset.call",
+      "subsystem": "voice",
+      "users": [
+        "core/dsp-voice"
+      ],
+      "was": []
+    },
+    {
+      "at": {
+        "dn2-1.12": [
+          {
+            "addr": "0x283937a2",
+            "pm": true
+          }
+        ]
+      },
+      "cpu": "sharc",
+      "devices": [
+        "dn2"
+      ],
+      "doc": "R twin of dispatch case 3: the audio histories are private to R, the words the stage reads are copied before the L call; a stereo slot in an unsupported context is counted and plays R = L.",
+      "file": "devices/fw/dsp/voice.toml",
+      "kind": "hook",
+      "mark": "D",
+      "mode": "retarget",
+      "name": "dsp.voice.hook.filter_case3.call",
+      "regs": {
+        "clobbers": [
+          "r0-r2",
+          "r4",
+          "r8",
+          "r12",
+          "i4",
+          "i12",
+          "astat"
+        ],
+        "in": [
+          "r4",
+          "r8",
+          "r12",
+          "i6-i7",
+          "m6-m7",
+          "m14",
+          "mode1"
+        ]
+      },
+      "site": "dsp.voice.site.filter_case3.call",
+      "subsystem": "voice",
+      "users": [
+        "core/dsp-voice"
+      ],
+      "was": []
+    },
+    {
+      "at": {
+        "dn2-1.12": [
+          {
+            "addr": "0x28392ede",
+            "pm": true
+          }
+        ]
+      },
+      "cpu": "sharc",
+      "devices": [
+        "dn2"
+      ],
+      "doc": "Reset mirror: sets the private words of the R record of the slot as the stock reset does for L, then jumps to the stock reset.",
+      "file": "devices/fw/dsp/voice.toml",
+      "kind": "hook",
+      "mark": "D",
+      "mode": "retarget",
+      "name": "dsp.voice.hook.filter_case3.reset.call",
+      "regs": {
+        "clobbers": [
+          "r0-r2",
+          "i4",
+          "astat"
+        ],
+        "in": [
+          "r4",
+          "r8",
+          "r12",
+          "i6-i7",
+          "m6-m7",
+          "m14",
+          "mode1"
+        ]
+      },
+      "site": "dsp.voice.site.filter_case3.reset.call",
+      "subsystem": "voice",
+      "users": [
+        "core/dsp-voice"
+      ],
+      "was": []
+    },
+    {
+      "at": {
+        "dn2-1.12": [
+          {
+            "addr": "0x283929fa",
+            "pm": true
+          }
+        ]
+      },
+      "cpu": "sharc",
+      "devices": [
+        "dn2"
+      ],
+      "doc": "Private identity observer; stock left call/output remains authoritative; no IRQ-mask policy.",
+      "file": "devices/fw/dsp/voice.toml",
+      "kind": "hook",
+      "mark": "D",
+      "mode": "retarget",
+      "name": "dsp.voice.hook.first_order_process.call",
+      "regs": {
+        "clobbers": [
+          "r0-r2",
+          "r4",
+          "r8",
+          "r12",
+          "i4",
+          "i12",
+          "astat"
+        ],
+        "in": [
+          "r4",
+          "r8",
+          "r12",
+          "i6-i7",
+          "m6-m7",
+          "m14",
+          "mode1"
+        ]
+      },
+      "site": "dsp.voice.site.first_order_process.call",
+      "subsystem": "voice",
+      "users": [
+        "core/dsp-stereo-proof",
+        "core/dsp-voice"
+      ],
+      "was": []
+    },
+    {
+      "at": {
+        "dn2-1.12": [
+          {
+            "addr": "0x28392d96",
+            "pm": true
+          }
+        ]
+      },
+      "cpu": "sharc",
+      "devices": [
+        "dn2"
+      ],
+      "doc": "Private identity observer; stock left call/output remains authoritative; no IRQ-mask policy.",
+      "file": "devices/fw/dsp/voice.toml",
+      "kind": "hook",
+      "mark": "D",
+      "mode": "retarget",
+      "name": "dsp.voice.hook.first_order_reset.call",
+      "regs": {
+        "clobbers": [
+          "r0-r2",
+          "r4",
+          "r8",
+          "r12",
+          "i4",
+          "i12",
+          "astat"
+        ],
+        "in": [
+          "r4",
+          "r8",
+          "r12",
+          "i6-i7",
+          "m6-m7",
+          "m14",
+          "mode1"
+        ]
+      },
+      "site": "dsp.voice.site.first_order_reset.call",
+      "subsystem": "voice",
+      "users": [
+        "core/dsp-stereo-proof",
+        "core/dsp-voice"
+      ],
+      "was": []
+    },
+    {
+      "at": {
+        "dn2-1.12": [
+          {
+            "addr": "0x28393398",
+            "pm": true
+          }
+        ]
+      },
+      "cpu": "sharc",
+      "devices": [
+        "dn2"
+      ],
+      "doc": "R twin of the gain stage (core/dsp-voice).",
+      "file": "devices/fw/dsp/voice.toml",
+      "kind": "hook",
+      "mark": "D",
+      "mode": "retarget",
+      "name": "dsp.voice.hook.gain_stage.call",
+      "regs": {
+        "clobbers": [
+          "r0-r2",
+          "i4",
+          "i12",
+          "astat"
+        ],
+        "in": [
+          "r4",
+          "r8",
+          "r12",
+          "i6-i7",
+          "m5-m7",
+          "m14"
+        ]
+      },
+      "site": "dsp.voice.site.gain_stage.call",
+      "subsystem": "voice",
+      "users": [
+        "core/dsp-voice"
+      ],
+      "was": []
+    },
+    {
+      "at": {
+        "dn2-1.12": [
+          {
+            "addr": "0x28392b68",
+            "pm": true
+          }
+        ]
+      },
+      "cpu": "sharc",
+      "devices": [
+        "dn2"
+      ],
+      "doc": "R twin of the held-sample stage (early call): shared counters, private held audio; a stereo slot in an unsupported context is counted and plays R = L.",
+      "file": "devices/fw/dsp/voice.toml",
+      "kind": "hook",
+      "mark": "D",
+      "mode": "retarget",
+      "name": "dsp.voice.hook.held_sample.early.call",
+      "regs": {
+        "clobbers": [
+          "r0-r2",
+          "r4",
+          "r8",
+          "r12",
+          "i4",
+          "i12",
+          "astat"
+        ],
+        "in": [
+          "r4",
+          "r8",
+          "r12",
+          "i6-i7",
+          "m6-m7",
+          "m14",
+          "mode1"
+        ]
+      },
+      "site": "dsp.voice.site.held_sample.early.call",
+      "subsystem": "voice",
+      "users": [
+        "core/dsp-voice"
+      ],
+      "was": []
+    },
+    {
+      "at": {
+        "dn2-1.12": [
+          {
+            "addr": "0x2839371e",
+            "pm": true
+          }
+        ]
+      },
+      "cpu": "sharc",
+      "devices": [
+        "dn2"
+      ],
+      "doc": "R twin of the held-sample stage (late call): shared counters, private held audio; a stereo slot in an unsupported context is counted and plays R = L.",
+      "file": "devices/fw/dsp/voice.toml",
+      "kind": "hook",
+      "mark": "D",
+      "mode": "retarget",
+      "name": "dsp.voice.hook.held_sample.late.call",
+      "regs": {
+        "clobbers": [
+          "r0-r2",
+          "r4",
+          "r8",
+          "r12",
+          "i4",
+          "i12",
+          "astat"
+        ],
+        "in": [
+          "r4",
+          "r8",
+          "r12",
+          "i6-i7",
+          "m6-m7",
+          "m14",
+          "mode1"
+        ]
+      },
+      "site": "dsp.voice.site.held_sample.late.call",
+      "subsystem": "voice",
+      "users": [
+        "core/dsp-voice"
+      ],
+      "was": []
+    },
+    {
+      "at": {
+        "dn2-1.12": [
+          {
+            "addr": "0x2839238a",
+            "pm": true
+          }
+        ]
+      },
+      "cpu": "sharc",
+      "devices": [
+        "dn2"
+      ],
+      "doc": "Reset mirror: sets the private words of the R record of the slot as the stock reset does for L, then jumps to the stock reset.",
+      "file": "devices/fw/dsp/voice.toml",
+      "kind": "hook",
+      "mark": "D",
+      "mode": "retarget",
+      "name": "dsp.voice.hook.held_sample.reset.call",
+      "regs": {
+        "clobbers": [
+          "r0-r2",
+          "i4",
+          "astat"
+        ],
+        "in": [
+          "r4",
+          "r8",
+          "r12",
+          "i6-i7",
+          "m6-m7",
+          "m14",
+          "mode1"
+        ]
+      },
+      "site": "dsp.voice.site.held_sample.reset.call",
+      "subsystem": "voice",
+      "users": [
+        "core/dsp-voice"
+      ],
+      "was": []
+    },
+    {
+      "at": {
+        "dn2-1.12": [
+          {
+            "addr": "0x2839355e",
+            "pm": true
+          }
+        ]
+      },
+      "cpu": "sharc",
+      "devices": [
+        "dn2"
+      ],
+      "doc": "R of each stamped slot through the engine's block ramp and fade; every other slot is untouched.",
+      "file": "devices/fw/dsp/voice.toml",
+      "kind": "hook",
+      "mark": "D",
+      "mode": "replace",
+      "name": "dsp.voice.hook.pan_pre",
+      "regs": {
+        "clobbers": [
+          "r0-r8",
+          "r10",
+          "r12-r15",
+          "i1-i5",
+          "astat"
+        ],
+        "in": [
+          "r9",
+          "r11",
+          "i0",
+          "i6",
+          "m5",
+          "m7",
+          "m13"
+        ]
+      },
+      "site": "dsp.voice.site.pan_pre",
+      "subsystem": "voice",
+      "users": [
+        "core/dsp-voice"
+      ],
+      "was": []
+    },
+    {
+      "at": {
+        "dn2-1.12": [
+          {
+            "addr": "0x283935ec",
+            "pm": true
+          }
+        ]
+      },
+      "cpu": "sharc",
+      "devices": [
+        "dn2"
+      ],
+      "doc": "A stamped slot: plane B from the slot's R buffer; every other slot runs the displaced instruction and the stock loop.",
+      "file": "devices/fw/dsp/voice.toml",
+      "kind": "hook",
+      "mark": "D",
+      "mode": "replace",
+      "name": "dsp.voice.hook.pan_slot",
+      "regs": {
+        "clobbers": [
+          "r1",
+          "r3-r7",
+          "r10-r11",
+          "r13-r15",
+          "i0-i1",
+          "i3",
+          "i8-i11",
+          "astat"
+        ],
+        "in": [
+          "r0",
+          "r2",
+          "r8",
+          "r9",
+          "i2-i5",
+          "i6",
+          "m4"
+        ]
+      },
+      "site": "dsp.voice.site.pan_slot",
+      "subsystem": "voice",
+      "users": [
+        "core/dsp-voice"
+      ],
+      "was": []
     },
     {
       "at": {
@@ -11948,6 +15372,1025 @@
     },
     {
       "at": {
+        "dn2-1.12": [
+          {
+            "addr": "0x283937d2",
+            "pm": true
+          }
+        ]
+      },
+      "cpu": "sharc",
+      "devices": [
+        "dn2"
+      ],
+      "doc": "R twin of the ring stage (dispatch case 4): the R pass runs on a private record and the R ring at ring_r_base + 0x8000 v; a stereo slot in an unsupported context is counted and plays R = L.",
+      "file": "devices/fw/dsp/voice.toml",
+      "kind": "hook",
+      "mark": "D",
+      "mode": "retarget",
+      "name": "dsp.voice.hook.ring_stage.case4.call",
+      "regs": {
+        "clobbers": [
+          "r0-r2",
+          "r4",
+          "r8",
+          "r12",
+          "i4",
+          "i12",
+          "astat"
+        ],
+        "in": [
+          "r4",
+          "r8",
+          "r12",
+          "i6-i7",
+          "m6-m7",
+          "m14",
+          "mode1"
+        ]
+      },
+      "site": "dsp.voice.site.ring_stage.case4.call",
+      "subsystem": "voice",
+      "users": [
+        "core/dsp-voice"
+      ],
+      "was": []
+    },
+    {
+      "at": {
+        "dn2-1.12": [
+          {
+            "addr": "0x2839389e",
+            "pm": true
+          }
+        ]
+      },
+      "cpu": "sharc",
+      "devices": [
+        "dn2"
+      ],
+      "doc": "R twin of the ring stage (dispatch case 6): the R pass runs on a private record and the R ring at ring_r_base + 0x8000 v; a stereo slot in an unsupported context is counted and plays R = L.",
+      "file": "devices/fw/dsp/voice.toml",
+      "kind": "hook",
+      "mark": "D",
+      "mode": "retarget",
+      "name": "dsp.voice.hook.ring_stage.case6.call",
+      "regs": {
+        "clobbers": [
+          "r0-r2",
+          "r4",
+          "r8",
+          "r12",
+          "i4",
+          "i12",
+          "astat"
+        ],
+        "in": [
+          "r4",
+          "r8",
+          "r12",
+          "i6-i7",
+          "m6-m7",
+          "m14",
+          "mode1"
+        ]
+      },
+      "site": "dsp.voice.site.ring_stage.case6.call",
+      "subsystem": "voice",
+      "users": [
+        "core/dsp-voice"
+      ],
+      "was": []
+    },
+    {
+      "at": {
+        "dn2-1.12": [
+          {
+            "addr": "0x28392f9a",
+            "pm": true
+          }
+        ]
+      },
+      "cpu": "sharc",
+      "devices": [
+        "dn2"
+      ],
+      "doc": "Reset mirror: sets the private words of the R record of the slot as the stock reset does for L, then jumps to the stock reset.",
+      "file": "devices/fw/dsp/voice.toml",
+      "kind": "hook",
+      "mark": "D",
+      "mode": "retarget",
+      "name": "dsp.voice.hook.ring_stage.reset.case4.call",
+      "regs": {
+        "clobbers": [
+          "r0-r2",
+          "i4",
+          "astat"
+        ],
+        "in": [
+          "r4",
+          "r8",
+          "r12",
+          "i6-i7",
+          "m6-m7",
+          "m14",
+          "mode1"
+        ]
+      },
+      "site": "dsp.voice.site.ring_stage.reset.case4.call",
+      "subsystem": "voice",
+      "users": [
+        "core/dsp-voice"
+      ],
+      "was": []
+    },
+    {
+      "at": {
+        "dn2-1.12": [
+          {
+            "addr": "0x2839313e",
+            "pm": true
+          }
+        ]
+      },
+      "cpu": "sharc",
+      "devices": [
+        "dn2"
+      ],
+      "doc": "Reset mirror: sets the private words of the R record of the slot as the stock reset does for L, then jumps to the stock reset.",
+      "file": "devices/fw/dsp/voice.toml",
+      "kind": "hook",
+      "mark": "D",
+      "mode": "retarget",
+      "name": "dsp.voice.hook.ring_stage.reset.case6.call",
+      "regs": {
+        "clobbers": [
+          "r0-r2",
+          "i4",
+          "astat"
+        ],
+        "in": [
+          "r4",
+          "r8",
+          "r12",
+          "i6-i7",
+          "m6-m7",
+          "m14",
+          "mode1"
+        ]
+      },
+      "site": "dsp.voice.site.ring_stage.reset.case6.call",
+      "subsystem": "voice",
+      "users": [
+        "core/dsp-voice"
+      ],
+      "was": []
+    },
+    {
+      "at": {
+        "dn2-1.12": [
+          {
+            "addr": "0x28392b92",
+            "pm": true
+          }
+        ]
+      },
+      "cpu": "sharc",
+      "devices": [
+        "dn2"
+      ],
+      "doc": "R twin of the shaper (early call): the R pass runs on a copy of the control words; a stereo slot in an unsupported context is counted and plays R = L.",
+      "file": "devices/fw/dsp/voice.toml",
+      "kind": "hook",
+      "mark": "D",
+      "mode": "retarget",
+      "name": "dsp.voice.hook.shaper.early.call",
+      "regs": {
+        "clobbers": [
+          "r0-r2",
+          "r4",
+          "r8",
+          "r12",
+          "i4",
+          "i12",
+          "astat"
+        ],
+        "in": [
+          "r4",
+          "r8",
+          "r12",
+          "i6-i7",
+          "m6-m7",
+          "m14",
+          "mode1"
+        ]
+      },
+      "site": "dsp.voice.site.shaper.early.call",
+      "subsystem": "voice",
+      "users": [
+        "core/dsp-voice"
+      ],
+      "was": []
+    },
+    {
+      "at": {
+        "dn2-1.12": [
+          {
+            "addr": "0x2839326a",
+            "pm": true
+          }
+        ]
+      },
+      "cpu": "sharc",
+      "devices": [
+        "dn2"
+      ],
+      "doc": "R twin of the shaper (late call): the R pass runs between the engine's two scalings (x16, x1/16) applied to R as to L; a stereo slot in an unsupported context is counted and plays R = L.",
+      "file": "devices/fw/dsp/voice.toml",
+      "kind": "hook",
+      "mark": "D",
+      "mode": "retarget",
+      "name": "dsp.voice.hook.shaper.late.call",
+      "regs": {
+        "clobbers": [
+          "r0-r2",
+          "r4",
+          "r8",
+          "r12",
+          "i4",
+          "i12",
+          "astat"
+        ],
+        "in": [
+          "r4",
+          "r8",
+          "r12",
+          "i6-i7",
+          "m6-m7",
+          "m14",
+          "mode1"
+        ]
+      },
+      "site": "dsp.voice.site.shaper.late.call",
+      "subsystem": "voice",
+      "users": [
+        "core/dsp-voice"
+      ],
+      "was": []
+    },
+    {
+      "at": {
+        "dn2-1.12": [
+          {
+            "addr": "0x28392b3e",
+            "pm": true
+          }
+        ]
+      },
+      "cpu": "sharc",
+      "devices": [
+        "dn2"
+      ],
+      "doc": "Private finite U/Y observer; original left state/output remains authoritative, no IRQ-mask policy.",
+      "file": "devices/fw/dsp/voice.toml",
+      "kind": "hook",
+      "mark": "D",
+      "mode": "retarget",
+      "name": "dsp.voice.hook.uy_process.early.call",
+      "regs": {
+        "clobbers": [
+          "r0-r2",
+          "r4",
+          "r8",
+          "r12",
+          "i4",
+          "i12",
+          "astat"
+        ],
+        "in": [
+          "r4",
+          "r8",
+          "r12",
+          "i6-i7",
+          "m6-m7",
+          "m14",
+          "mode1"
+        ]
+      },
+      "site": "dsp.voice.site.uy_process.early.call",
+      "subsystem": "voice",
+      "users": [
+        "core/dsp-stereo-proof",
+        "core/dsp-voice"
+      ],
+      "was": []
+    },
+    {
+      "at": {
+        "dn2-1.12": [
+          {
+            "addr": "0x283936f4",
+            "pm": true
+          }
+        ]
+      },
+      "cpu": "sharc",
+      "devices": [
+        "dn2"
+      ],
+      "doc": "Private finite U/Y observer; original left state/output remains authoritative, no IRQ-mask policy.",
+      "file": "devices/fw/dsp/voice.toml",
+      "kind": "hook",
+      "mark": "D",
+      "mode": "retarget",
+      "name": "dsp.voice.hook.uy_process.late.call",
+      "regs": {
+        "clobbers": [
+          "r0-r2",
+          "r4",
+          "r8",
+          "r12",
+          "i4",
+          "i12",
+          "astat"
+        ],
+        "in": [
+          "r4",
+          "r8",
+          "r12",
+          "i6-i7",
+          "m6-m7",
+          "m14",
+          "mode1"
+        ]
+      },
+      "site": "dsp.voice.site.uy_process.late.call",
+      "subsystem": "voice",
+      "users": [
+        "core/dsp-stereo-proof",
+        "core/dsp-voice"
+      ],
+      "was": []
+    },
+    {
+      "at": {
+        "dn2-1.12": [
+          {
+            "addr": "0x28392d54",
+            "pm": true
+          }
+        ]
+      },
+      "cpu": "sharc",
+      "devices": [
+        "dn2"
+      ],
+      "doc": "Private finite U/Y observer; original left state/output remains authoritative, no IRQ-mask policy.",
+      "file": "devices/fw/dsp/voice.toml",
+      "kind": "hook",
+      "mark": "D",
+      "mode": "retarget",
+      "name": "dsp.voice.hook.uy_reset.call",
+      "regs": {
+        "clobbers": [
+          "r0-r2",
+          "r4",
+          "r8",
+          "r12",
+          "i4",
+          "i12",
+          "astat"
+        ],
+        "in": [
+          "r4",
+          "r8",
+          "r12",
+          "i6-i7",
+          "m6-m7",
+          "m14",
+          "mode1"
+        ]
+      },
+      "site": "dsp.voice.site.uy_reset.call",
+      "subsystem": "voice",
+      "users": [
+        "core/dsp-stereo-proof",
+        "core/dsp-voice"
+      ],
+      "was": []
+    },
+    {
+      "at": {
+        "dn2-1.12": [
+          {
+            "addr": "0x28393810",
+            "len": 6,
+            "pm": true
+          }
+        ]
+      },
+      "cpu": "sharc",
+      "devices": [
+        "dn2"
+      ],
+      "doc": "DN2 1.12 call at 0x1c9c08: dispatch case 5 (the stage that writes the scratch block, then the blend). Retarget only this call; both delay slots of the linked call stay.",
+      "file": "devices/fw/dsp/voice.toml",
+      "kind": "site",
+      "mark": "D",
+      "name": "dsp.voice.site.case5.call",
+      "rule": {
+        "dn2": {
+          "kind": "sharc_func",
+          "len": 6,
+          "offset": 149
+        }
+      },
+      "subsystem": "voice",
+      "users": [
+        "core/dsp-voice"
+      ],
+      "was": []
+    },
+    {
+      "at": {
+        "dn2-1.12": [
+          {
+            "addr": "0x28393084",
+            "len": 6,
+            "pm": true
+          }
+        ]
+      },
+      "cpu": "sharc",
+      "devices": [
+        "dn2"
+      ],
+      "doc": "DN2 1.12 call at 0x1c9842: reset of the stage after a filter change in the middle of a note. Retarget only this call; both delay slots of the linked call stay.",
+      "file": "devices/fw/dsp/voice.toml",
+      "kind": "site",
+      "mark": "D",
+      "name": "dsp.voice.site.case5.reset.call",
+      "rule": {
+        "dn2": {
+          "kind": "sharc_func",
+          "len": 6,
+          "offset": 2385
+        }
+      },
+      "subsystem": "voice",
+      "users": [
+        "core/dsp-voice"
+      ],
+      "was": []
+    },
+    {
+      "at": {
+        "dn2-1.12": [
+          {
+            "addr": "0x2839315e",
+            "len": 6,
+            "pm": true
+          }
+        ]
+      },
+      "cpu": "sharc",
+      "devices": [
+        "dn2"
+      ],
+      "doc": "DN2 1.12 call at 0x1c98af: dispatch case 1. Retarget only this call; both delay slots of the linked call stay.",
+      "file": "devices/fw/dsp/voice.toml",
+      "kind": "site",
+      "mark": "D",
+      "name": "dsp.voice.site.filter_case1.call",
+      "rule": {
+        "dn2": {
+          "kind": "sharc_func",
+          "len": 6,
+          "offset": 2494
+        }
+      },
+      "subsystem": "voice",
+      "users": [
+        "core/dsp-voice"
+      ],
+      "was": []
+    },
+    {
+      "at": {
+        "dn2-1.12": [
+          {
+            "addr": "0x28392e2c",
+            "len": 6,
+            "pm": true
+          }
+        ]
+      },
+      "cpu": "sharc",
+      "devices": [
+        "dn2"
+      ],
+      "doc": "DN2 1.12 call at 0x1c9716: reset of the stage after a filter change in the middle of a note. Retarget only this call; both delay slots of the linked call stay.",
+      "file": "devices/fw/dsp/voice.toml",
+      "kind": "site",
+      "mark": "D",
+      "name": "dsp.voice.site.filter_case1.reset.call",
+      "rule": {
+        "dn2": {
+          "kind": "sharc_func",
+          "len": 6,
+          "offset": 2085
+        }
+      },
+      "subsystem": "voice",
+      "users": [
+        "core/dsp-voice"
+      ],
+      "was": []
+    },
+    {
+      "at": {
+        "dn2-1.12": [
+          {
+            "addr": "0x2839376c",
+            "len": 6,
+            "pm": true
+          }
+        ]
+      },
+      "cpu": "sharc",
+      "devices": [
+        "dn2"
+      ],
+      "doc": "DN2 1.12 call at 0x1c9bb6: dispatch case 2. Retarget only this call; both delay slots of the linked call stay.",
+      "file": "devices/fw/dsp/voice.toml",
+      "kind": "site",
+      "mark": "D",
+      "name": "dsp.voice.site.filter_case2.call",
+      "rule": {
+        "dn2": {
+          "kind": "sharc_func",
+          "len": 6,
+          "offset": 67
+        }
+      },
+      "subsystem": "voice",
+      "users": [
+        "core/dsp-voice"
+      ],
+      "was": []
+    },
+    {
+      "at": {
+        "dn2-1.12": [
+          {
+            "addr": "0x28392e8e",
+            "len": 6,
+            "pm": true
+          }
+        ]
+      },
+      "cpu": "sharc",
+      "devices": [
+        "dn2"
+      ],
+      "doc": "DN2 1.12 call at 0x1c9747: reset of the stage after a filter change in the middle of a note. Retarget only this call; both delay slots of the linked call stay.",
+      "file": "devices/fw/dsp/voice.toml",
+      "kind": "site",
+      "mark": "D",
+      "name": "dsp.voice.site.filter_case2.reset.call",
+      "rule": {
+        "dn2": {
+          "kind": "sharc_func",
+          "len": 6,
+          "offset": 2134
+        }
+      },
+      "subsystem": "voice",
+      "users": [
+        "core/dsp-voice"
+      ],
+      "was": []
+    },
+    {
+      "at": {
+        "dn2-1.12": [
+          {
+            "addr": "0x283937a2",
+            "len": 6,
+            "pm": true
+          }
+        ]
+      },
+      "cpu": "sharc",
+      "devices": [
+        "dn2"
+      ],
+      "doc": "DN2 1.12 call at 0x1c9bd1: dispatch case 3. Retarget only this call; both delay slots of the linked call stay.",
+      "file": "devices/fw/dsp/voice.toml",
+      "kind": "site",
+      "mark": "D",
+      "name": "dsp.voice.site.filter_case3.call",
+      "rule": {
+        "dn2": {
+          "kind": "sharc_func",
+          "len": 6,
+          "offset": 94
+        }
+      },
+      "subsystem": "voice",
+      "users": [
+        "core/dsp-voice"
+      ],
+      "was": []
+    },
+    {
+      "at": {
+        "dn2-1.12": [
+          {
+            "addr": "0x28392ede",
+            "len": 6,
+            "pm": true
+          }
+        ]
+      },
+      "cpu": "sharc",
+      "devices": [
+        "dn2"
+      ],
+      "doc": "DN2 1.12 call at 0x1c976f: reset of the stage after a filter change in the middle of a note. Retarget only this call; both delay slots of the linked call stay.",
+      "file": "devices/fw/dsp/voice.toml",
+      "kind": "site",
+      "mark": "D",
+      "name": "dsp.voice.site.filter_case3.reset.call",
+      "rule": {
+        "dn2": {
+          "kind": "sharc_func",
+          "len": 6,
+          "offset": 2174
+        }
+      },
+      "subsystem": "voice",
+      "users": [
+        "core/dsp-voice"
+      ],
+      "was": []
+    },
+    {
+      "at": {
+        "dn2-1.12": [
+          {
+            "addr": "0x283929fa",
+            "len": 6,
+            "pm": true
+          }
+        ]
+      },
+      "cpu": "sharc",
+      "devices": [
+        "dn2"
+      ],
+      "doc": "DN2 1.12 engine's one first_order_process call; retarget only this call, preserve both original frame/continuation delay slots.",
+      "file": "devices/fw/dsp/voice.toml",
+      "kind": "site",
+      "mark": "D",
+      "name": "dsp.voice.site.first_order_process.call",
+      "rule": {
+        "dn2": {
+          "kind": "sharc_func",
+          "len": 6,
+          "offset": 1548
+        }
+      },
+      "subsystem": "voice",
+      "users": [
+        "core/dsp-stereo-proof",
+        "core/dsp-voice"
+      ],
+      "was": []
+    },
+    {
+      "at": {
+        "dn2-1.12": [
+          {
+            "addr": "0x28392d96",
+            "len": 6,
+            "pm": true
+          }
+        ]
+      },
+      "cpu": "sharc",
+      "devices": [
+        "dn2"
+      ],
+      "doc": "DN2 1.12 engine's one first_order_reset call; retarget only this call, preserve both original frame/continuation delay slots.",
+      "file": "devices/fw/dsp/voice.toml",
+      "kind": "site",
+      "mark": "D",
+      "name": "dsp.voice.site.first_order_reset.call",
+      "rule": {
+        "dn2": {
+          "kind": "sharc_func",
+          "len": 6,
+          "offset": 2010
+        }
+      },
+      "subsystem": "voice",
+      "users": [
+        "core/dsp-stereo-proof",
+        "core/dsp-voice"
+      ],
+      "was": []
+    },
+    {
+      "at": {
+        "dn2-1.12": [
+          {
+            "addr": "0x28393398",
+            "len": 6,
+            "pm": true
+          }
+        ]
+      },
+      "cpu": "sharc",
+      "devices": [
+        "dn2"
+      ],
+      "doc": "DN2 1.12 call at 0x1c99cc: the gain stage 0xb80345. Retarget only this call; both delay slots of the linked call stay.",
+      "file": "devices/fw/dsp/voice.toml",
+      "kind": "site",
+      "mark": "D",
+      "name": "dsp.voice.site.gain_stage.call",
+      "rule": {
+        "dn2": {
+          "kind": "sharc_func",
+          "len": 6,
+          "offset": 2779
+        }
+      },
+      "subsystem": "voice",
+      "users": [
+        "core/dsp-voice"
+      ],
+      "was": []
+    },
+    {
+      "at": {
+        "dn2-1.12": [
+          {
+            "addr": "0x28392b68",
+            "len": 6,
+            "pm": true
+          }
+        ]
+      },
+      "cpu": "sharc",
+      "devices": [
+        "dn2"
+      ],
+      "doc": "DN2 1.12 call at 0x1c95b4: held-sample stage, early placement. Retarget only this call; both delay slots of the linked call stay.",
+      "file": "devices/fw/dsp/voice.toml",
+      "kind": "site",
+      "mark": "D",
+      "name": "dsp.voice.site.held_sample.early.call",
+      "rule": {
+        "dn2": {
+          "kind": "sharc_func",
+          "len": 6,
+          "offset": 1731
+        }
+      },
+      "subsystem": "voice",
+      "users": [
+        "core/dsp-voice"
+      ],
+      "was": []
+    },
+    {
+      "at": {
+        "dn2-1.12": [
+          {
+            "addr": "0x2839371e",
+            "len": 6,
+            "pm": true
+          }
+        ]
+      },
+      "cpu": "sharc",
+      "devices": [
+        "dn2"
+      ],
+      "doc": "DN2 1.12 call at 0x1c9b8f: held-sample stage, late placement. Retarget only this call; both delay slots of the linked call stay.",
+      "file": "devices/fw/dsp/voice.toml",
+      "kind": "site",
+      "mark": "D",
+      "name": "dsp.voice.site.held_sample.late.call",
+      "rule": {
+        "dn2": {
+          "kind": "sharc_func",
+          "len": 6,
+          "offset": 28
+        }
+      },
+      "subsystem": "voice",
+      "users": [
+        "core/dsp-voice"
+      ],
+      "was": []
+    },
+    {
+      "at": {
+        "dn2-1.12": [
+          {
+            "addr": "0x2839238a",
+            "len": 6,
+            "pm": true
+          }
+        ]
+      },
+      "cpu": "sharc",
+      "devices": [
+        "dn2"
+      ],
+      "doc": "DN2 1.12 call at 0x1c91c5: reset of the stage after a SRR routing byte change in the middle of a note. Retarget only this call; both delay slots of the linked call stay.",
+      "file": "devices/fw/dsp/voice.toml",
+      "kind": "site",
+      "mark": "D",
+      "name": "dsp.voice.site.held_sample.reset.call",
+      "rule": {
+        "dn2": {
+          "kind": "sharc_func",
+          "len": 6,
+          "offset": 724
+        }
+      },
+      "subsystem": "voice",
+      "users": [
+        "core/dsp-voice"
+      ],
+      "was": []
+    },
+    {
+      "at": {
+        "dn2-1.12": [
+          {
+            "addr": "0x2839355e",
+            "len": 6,
+            "pm": true
+          }
+        ]
+      },
+      "cpu": "sharc",
+      "devices": [
+        "dn2"
+      ],
+      "doc": "DN2 1.12 0x1c9aaf, `BIT SET MODE1 0x200000`: the first instruction after the conditional fade loop 0x1c9a59 to 0x1c9aac, before the metadata clear (which zeroes the fade's flags) and the pan loop.",
+      "file": "devices/fw/dsp/voice.toml",
+      "kind": "site",
+      "mark": "D",
+      "name": "dsp.voice.site.pan_pre",
+      "rule": {
+        "dn2": {
+          "kind": "sharc_func",
+          "len": 6,
+          "offset": 3006
+        }
+      },
+      "subsystem": "voice",
+      "users": [
+        "core/dsp-voice"
+      ],
+      "was": []
+    },
+    {
+      "at": {
+        "dn2-1.12": [
+          {
+            "addr": "0x28393564",
+            "len": 4,
+            "pm": true
+          }
+        ]
+      },
+      "cpu": "sharc",
+      "devices": [
+        "dn2"
+      ],
+      "doc": "DN2 1.12 0x1c9ab2, `M4 = 0x20`: the instruction after the hook site above; the hook runs the displaced MODE1 write and jumps here.",
+      "file": "devices/fw/dsp/voice.toml",
+      "kind": "site",
+      "mark": "D",
+      "name": "dsp.voice.site.pan_pre.next",
+      "rule": {
+        "dn2": {
+          "kind": "sharc_func",
+          "len": 4,
+          "offset": 3009
+        }
+      },
+      "subsystem": "voice",
+      "users": [
+        "core/dsp-voice"
+      ],
+      "was": []
+    },
+    {
+      "at": {
+        "dn2-1.12": [
+          {
+            "addr": "0x283935ec",
+            "len": 6,
+            "pm": true
+          }
+        ]
+      },
+      "cpu": "sharc",
+      "devices": [
+        "dn2"
+      ],
+      "doc": "DN2 1.12 0x1c9af6, the multiply `F4 = F2 * F8; modify(I1, M4)` of plane A's first sample in the pan loop 0x1c9aea to 0x1c9b30 (outer loop of 16 slots, 7th instruction; the loop's restrictions on branches concern its last instructions, docs/design/dn2-stereo.md 1.1).",
+      "file": "devices/fw/dsp/voice.toml",
+      "kind": "site",
+      "mark": "D",
+      "name": "dsp.voice.site.pan_slot",
+      "rule": {
+        "dn2": {
+          "kind": "sharc_func",
+          "len": 6,
+          "offset": 3077
+        }
+      },
+      "subsystem": "voice",
+      "users": [
+        "core/dsp-voice"
+      ],
+      "was": []
+    },
+    {
+      "at": {
+        "dn2-1.12": [
+          {
+            "addr": "0x28393660",
+            "len": 6,
+            "pm": true
+          }
+        ]
+      },
+      "cpu": "sharc",
+      "devices": [
+        "dn2"
+      ],
+      "doc": "DN2 1.12 0x1c9b30, the last instruction of the pan loop (`I5 = modify(I5, 8)`); a stereo slot jumps here as the stock loop does at 0x1c9b07.",
+      "file": "devices/fw/dsp/voice.toml",
+      "kind": "site",
+      "mark": "D",
+      "name": "dsp.voice.site.pan_slot.end",
+      "rule": {
+        "dn2": {
+          "kind": "sharc_func",
+          "len": 6,
+          "offset": 3135
+        }
+      },
+      "subsystem": "voice",
+      "users": [
+        "core/dsp-voice"
+      ],
+      "was": []
+    },
+    {
+      "at": {
+        "dn2-1.12": [
+          {
+            "addr": "0x283935f2",
+            "len": 2,
+            "pm": true
+          }
+        ]
+      },
+      "cpu": "sharc",
+      "devices": [
+        "dn2"
+      ],
+      "doc": "DN2 1.12 0x1c9af9: the instruction after the pan loop's hook site (the store of plane A's first sample); the hook runs the displaced multiply and jumps here.",
+      "file": "devices/fw/dsp/voice.toml",
+      "kind": "site",
+      "mark": "D",
+      "name": "dsp.voice.site.pan_slot.next",
+      "rule": {
+        "dn2": {
+          "kind": "sharc_func",
+          "len": 2,
+          "offset": 3080
+        }
+      },
+      "subsystem": "voice",
+      "users": [
+        "core/dsp-voice"
+      ],
+      "was": []
+    },
+    {
+      "at": {
         "dn2-1.11": [
           {
             "addr": "0x20004a3c",
@@ -11999,6 +16442,328 @@
     },
     {
       "at": {
+        "dn2-1.12": [
+          {
+            "addr": "0x283937d2",
+            "len": 6,
+            "pm": true
+          }
+        ]
+      },
+      "cpu": "sharc",
+      "devices": [
+        "dn2"
+      ],
+      "doc": "DN2 1.12 call at 0x1c9be9: dispatch case 4. Retarget only this call; both delay slots of the linked call stay.",
+      "file": "devices/fw/dsp/voice.toml",
+      "kind": "site",
+      "mark": "D",
+      "name": "dsp.voice.site.ring_stage.case4.call",
+      "rule": {
+        "dn2": {
+          "kind": "sharc_func",
+          "len": 6,
+          "offset": 118
+        }
+      },
+      "subsystem": "voice",
+      "users": [
+        "core/dsp-voice"
+      ],
+      "was": []
+    },
+    {
+      "at": {
+        "dn2-1.12": [
+          {
+            "addr": "0x2839389e",
+            "len": 6,
+            "pm": true
+          }
+        ]
+      },
+      "cpu": "sharc",
+      "devices": [
+        "dn2"
+      ],
+      "doc": "DN2 1.12 call at 0x1c9c4f: dispatch case 6. Retarget only this call; both delay slots of the linked call stay.",
+      "file": "devices/fw/dsp/voice.toml",
+      "kind": "site",
+      "mark": "D",
+      "name": "dsp.voice.site.ring_stage.case6.call",
+      "rule": {
+        "dn2": {
+          "kind": "sharc_func",
+          "len": 6,
+          "offset": 220
+        }
+      },
+      "subsystem": "voice",
+      "users": [
+        "core/dsp-voice"
+      ],
+      "was": []
+    },
+    {
+      "at": {
+        "dn2-1.12": [
+          {
+            "addr": "0x28392f9a",
+            "len": 6,
+            "pm": true
+          }
+        ]
+      },
+      "cpu": "sharc",
+      "devices": [
+        "dn2"
+      ],
+      "doc": "DN2 1.12 call at 0x1c97cd: reset of the stage after a ring delay change (case 4) in the middle of a note. Retarget only this call; both delay slots of the linked call stay.",
+      "file": "devices/fw/dsp/voice.toml",
+      "kind": "site",
+      "mark": "D",
+      "name": "dsp.voice.site.ring_stage.reset.case4.call",
+      "rule": {
+        "dn2": {
+          "kind": "sharc_func",
+          "len": 6,
+          "offset": 2268
+        }
+      },
+      "subsystem": "voice",
+      "users": [
+        "core/dsp-voice"
+      ],
+      "was": []
+    },
+    {
+      "at": {
+        "dn2-1.12": [
+          {
+            "addr": "0x2839313e",
+            "len": 6,
+            "pm": true
+          }
+        ]
+      },
+      "cpu": "sharc",
+      "devices": [
+        "dn2"
+      ],
+      "doc": "DN2 1.12 call at 0x1c989f: reset of the stage after a ring delay change (case 6) in the middle of a note. Retarget only this call; both delay slots of the linked call stay.",
+      "file": "devices/fw/dsp/voice.toml",
+      "kind": "site",
+      "mark": "D",
+      "name": "dsp.voice.site.ring_stage.reset.case6.call",
+      "rule": {
+        "dn2": {
+          "kind": "sharc_func",
+          "len": 6,
+          "offset": 2478
+        }
+      },
+      "subsystem": "voice",
+      "users": [
+        "core/dsp-voice"
+      ],
+      "was": []
+    },
+    {
+      "at": {
+        "dn2-1.12": [
+          {
+            "addr": "0x28392b92",
+            "len": 6,
+            "pm": true
+          }
+        ]
+      },
+      "cpu": "sharc",
+      "devices": [
+        "dn2"
+      ],
+      "doc": "DN2 1.12 call at 0x1c95c9: conditional shaper, early placement. Retarget only this call; both delay slots of the linked call stay.",
+      "file": "devices/fw/dsp/voice.toml",
+      "kind": "site",
+      "mark": "D",
+      "name": "dsp.voice.site.shaper.early.call",
+      "rule": {
+        "dn2": {
+          "kind": "sharc_func",
+          "len": 6,
+          "offset": 1752
+        }
+      },
+      "subsystem": "voice",
+      "users": [
+        "core/dsp-voice"
+      ],
+      "was": []
+    },
+    {
+      "at": {
+        "dn2-1.12": [
+          {
+            "addr": "0x2839326a",
+            "len": 6,
+            "pm": true
+          }
+        ]
+      },
+      "cpu": "sharc",
+      "devices": [
+        "dn2"
+      ],
+      "doc": "DN2 1.12 call at 0x1c9935: conditional shaper, scaled placement. Retarget only this call; both delay slots of the linked call stay.",
+      "file": "devices/fw/dsp/voice.toml",
+      "kind": "site",
+      "mark": "D",
+      "name": "dsp.voice.site.shaper.late.call",
+      "rule": {
+        "dn2": {
+          "kind": "sharc_func",
+          "len": 6,
+          "offset": 2628
+        }
+      },
+      "subsystem": "voice",
+      "users": [
+        "core/dsp-voice"
+      ],
+      "was": []
+    },
+    {
+      "at": {
+        "dn2-1.12": [
+          {
+            "addr": "0x28392b3e",
+            "len": 6,
+            "pm": true
+          }
+        ]
+      },
+      "cpu": "sharc",
+      "devices": [
+        "dn2"
+      ],
+      "doc": "Private U/Y observer callsite only; retain original delay instructions and other callers.",
+      "file": "devices/fw/dsp/voice.toml",
+      "kind": "site",
+      "mark": "D",
+      "name": "dsp.voice.site.uy_process.early.call",
+      "rule": {
+        "dn2": {
+          "kind": "sharc_func",
+          "len": 6,
+          "offset": 1710
+        }
+      },
+      "subsystem": "voice",
+      "users": [
+        "core/dsp-stereo-proof",
+        "core/dsp-voice"
+      ],
+      "was": []
+    },
+    {
+      "at": {
+        "dn2-1.12": [
+          {
+            "addr": "0x283936f4",
+            "len": 6,
+            "pm": true
+          }
+        ]
+      },
+      "cpu": "sharc",
+      "devices": [
+        "dn2"
+      ],
+      "doc": "Private U/Y observer callsite only; retain original delay instructions and other callers.",
+      "file": "devices/fw/dsp/voice.toml",
+      "kind": "site",
+      "mark": "D",
+      "name": "dsp.voice.site.uy_process.late.call",
+      "rule": {
+        "dn2": {
+          "kind": "sharc_func",
+          "len": 6,
+          "offset": 7
+        }
+      },
+      "subsystem": "voice",
+      "users": [
+        "core/dsp-stereo-proof",
+        "core/dsp-voice"
+      ],
+      "was": []
+    },
+    {
+      "at": {
+        "dn2-1.12": [
+          {
+            "addr": "0x28392d54",
+            "len": 6,
+            "pm": true
+          }
+        ]
+      },
+      "cpu": "sharc",
+      "devices": [
+        "dn2"
+      ],
+      "doc": "Private U/Y observer callsite only; retain original delay instructions and other callers.",
+      "file": "devices/fw/dsp/voice.toml",
+      "kind": "site",
+      "mark": "D",
+      "name": "dsp.voice.site.uy_reset.call",
+      "rule": {
+        "dn2": {
+          "kind": "sharc_func",
+          "len": 6,
+          "offset": 1977
+        }
+      },
+      "subsystem": "voice",
+      "users": [
+        "core/dsp-stereo-proof",
+        "core/dsp-voice"
+      ],
+      "was": []
+    },
+    {
+      "at": {
+        "dn2-1.12": [
+          {
+            "addr": "0x241298",
+            "len": 6
+          }
+        ]
+      },
+      "cpu": "sharc",
+      "devices": [
+        "dn2"
+      ],
+      "doc": "DN2 1.12 engine argument from the builder; first-order records start at this base plus byte offset0xe088 with0x70 stride, sixteen records.",
+      "file": "devices/fw/dsp/voice.toml",
+      "kind": "value",
+      "mark": "D",
+      "name": "dsp.voice.value.engine_base",
+      "rule": {
+        "dn2": {
+          "kind": "sharc_literal",
+          "offset": 2348
+        }
+      },
+      "subsystem": "voice",
+      "users": [
+        "core/dsp-stereo-proof",
+        "core/dsp-voice"
+      ],
+      "was": []
+    },
+    {
+      "at": {
         "dn2-1.11": [
           {
             "addr": "0x25c48c",
@@ -12041,6 +16806,96 @@
       "was": [
         "dsp.voice.frame_base"
       ]
+    },
+    {
+      "at": {
+        "dt2-1.17": [
+          {
+            "addr": "0x2506ec",
+            "len": 6
+          }
+        ]
+      },
+      "cpu": "sharc",
+      "devices": [
+        "dt2"
+      ],
+      "doc": "DT2 1.17 base of the 0xdc-byte per-voice param records (0x2506ec): the literal `I5 = 0x2506ec` of the per-voice loop in FUN_1c2b24. Word +0xd8 of the even voice's record is the pair gate of the pan stage (finding 112).",
+      "file": "devices/fw/dsp/voice.toml",
+      "kind": "value",
+      "mark": "D",
+      "name": "dsp.voice.value.param_record_base",
+      "rule": {
+        "dt2": {
+          "kind": "sharc_literal",
+          "offset": 447
+        }
+      },
+      "subsystem": "voice",
+      "users": [
+        "core/dsp-voice"
+      ],
+      "was": []
+    },
+    {
+      "at": {
+        "dt2-1.17": [
+          {
+            "addr": "0x8422b9c8",
+            "len": 6
+          }
+        ]
+      },
+      "cpu": "sharc",
+      "devices": [
+        "dt2"
+      ],
+      "doc": "DT2 1.17 base of the sample pool in the DSP's view (0x8422b9c8): the literal added to a slot record's start fields in the slot lookup. PCM address = base + pool block offset.",
+      "file": "devices/fw/dsp/voice.toml",
+      "kind": "value",
+      "mark": "D",
+      "name": "dsp.voice.value.sample.pool_base",
+      "rule": {
+        "dt2": {
+          "kind": "sharc_literal",
+          "offset": 30
+        }
+      },
+      "subsystem": "voice",
+      "users": [
+        "core/sample-pool"
+      ],
+      "was": []
+    },
+    {
+      "at": {
+        "dt2-1.17": [
+          {
+            "addr": "0x257810",
+            "len": 6
+          }
+        ]
+      },
+      "cpu": "sharc",
+      "devices": [
+        "dt2"
+      ],
+      "doc": "DT2 1.17 DSP slot record table (0x257810, stride 0x14: startL, startR, length bytes per channel, rate, stereo byte at +16): the literal of the slot lookup. The ColdFire cannot read it; a test reads it to check the borrowed slot.",
+      "file": "devices/fw/dsp/voice.toml",
+      "kind": "value",
+      "mark": "D",
+      "name": "dsp.voice.value.sample.slot_table",
+      "rule": {
+        "dt2": {
+          "kind": "sharc_literal",
+          "offset": 16
+        }
+      },
+      "subsystem": "voice",
+      "users": [
+        "core/sample-pool"
+      ],
+      "was": []
     },
     {
       "at": {
@@ -12095,21 +16950,21 @@
   ],
   "subsystems": [
     {
-      "count": 4,
+      "count": 5,
       "cpu": "cf",
       "file": "devices/fw/draw.toml",
       "meaning": "pixels, rectangles, bitmaps, the screen",
       "name": "draw"
     },
     {
-      "count": 3,
+      "count": 4,
       "cpu": "cf",
       "file": "devices/fw/input.toml",
       "meaning": "key and encoder decoding",
       "name": "input"
     },
     {
-      "count": 8,
+      "count": 14,
       "cpu": "cf",
       "file": "devices/fw/link.toml",
       "meaning": "the ColdFire side of the DSP link: block interrupt, frame call, records",
@@ -12144,14 +16999,14 @@
       "name": "midi"
     },
     {
-      "count": 21,
+      "count": 34,
       "cpu": "cf",
       "file": "devices/fw/page.toml",
       "meaning": "parameter and FX pages",
       "name": "page"
     },
     {
-      "count": 6,
+      "count": 7,
       "cpu": "cf",
       "file": "devices/fw/param.toml",
       "meaning": "parameter tables, references and bounds",
@@ -12165,14 +17020,21 @@
       "name": "project"
     },
     {
-      "count": 10,
+      "count": 14,
       "cpu": "cf",
       "file": "devices/fw/rtos.toml",
       "meaning": "tasks, queues, mutexes, idle, interrupts, the reset and boot path",
       "name": "rtos"
     },
     {
-      "count": 3,
+      "count": 8,
+      "cpu": "cf",
+      "file": "devices/fw/samples.toml",
+      "meaning": "the stock sample pool: loader, worker queue, slot tables and records",
+      "name": "samples"
+    },
+    {
+      "count": 16,
       "cpu": "cf",
       "file": "devices/fw/storage.toml",
       "meaning": "block device reads and writes, the boot record",
@@ -12214,6 +17076,13 @@
       "name": "window"
     },
     {
+      "count": 3,
+      "cpu": "sharc",
+      "file": "devices/fw/dsp/cache.toml",
+      "meaning": "cache configuration and startup ranges",
+      "name": "cache"
+    },
+    {
       "count": 10,
       "cpu": "sharc",
       "file": "devices/fw/dsp/fx.toml",
@@ -12221,7 +17090,7 @@
       "name": "fx"
     },
     {
-      "count": 2,
+      "count": 7,
       "cpu": "sharc",
       "file": "devices/fw/dsp/link.toml",
       "meaning": "the DSP side of the link",
@@ -12242,7 +17111,7 @@
       "name": "master"
     },
     {
-      "count": 5,
+      "count": 80,
       "cpu": "sharc",
       "file": "devices/fw/dsp/voice.toml",
       "meaning": "voice rendering",

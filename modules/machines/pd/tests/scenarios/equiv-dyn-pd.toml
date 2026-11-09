@@ -15,14 +15,14 @@ play_machine = "pd"
 hint = 7
 voices = 1
 ignore_run_machines = ["Phase Dist"]
-pcm_sha256 = "0e0c6778ad7684ae018ecc87755aeb8bf5ec8b3237121f015f95713fdfe3dd33"   # onset 258, 24000 samples (DT2 1.17, note 60); approved by Em 2026-10-29
+pcm_sha256 = "eed2bf269be58b6bac0ba329007f1221c2f0920fd46eac60aa43d300cedb97e0"   # onset 258, 24000 samples (DT2 1.17, note 60); approved by Em 2026-11-01 (exact RECIPS, finding 102)
 
 # the voice state is uninitialised L2 (a run-time module gets no zeroed state): read the model of the device, not zeros
 [equiv.env_run]
 SHARC_UNINIT = "5eed1234"
 
 [equiv.dn2]
-pcm_sha256 = "1c5cc2f1712f861e989cd0f335cbfb6e6c094183145e13634b4f20bdd2a8a5bc"   # onset 208, 24000 samples (DN2 1.12, note 60)
+pcm_sha256 = "a8143de5a6e1235c2fd1cfb2389a8cc05dd3824d0551d01b63f57927671d485c"   # onset 272, 24000 samples (DN2 1.12, note 60); approved by Em 2026-11-01 (exact RECIPS, finding 102)
 hint = 4
 hint_run = 5    # the run-time machine follows MIDI
 trig_frame = 7000

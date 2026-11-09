@@ -374,7 +374,6 @@ STATE_ATTRS: dict[str, tuple[T, str, bool]] = {
     "bank_model": (BOOL, "s.cfg.bank_model", False),
     "core_timer": (BOOL, "s.cfg.core_timer", False),
     "timer_written": (BOOL, "s.timer_written", True),
-    "approx_recips": (BOOL, "s.cfg.approx_recips", False),
     "data_memory_tainted": (BOOL, "s.cfg.data_memory_tainted", False),
     "dossier_bytes": (INT, "s.cfg.dossier_bytes", False),
     "at_loaded_entry": (BOOL, "s.at_loaded_entry", True),
@@ -389,7 +388,6 @@ BLK_RF_ATTRS = {"pc_sw": "rf.pc", "pending": "rf.pending"}
 # block code does not keep them (the one-instruction interpreter still does).
 BLK_ERASED_WRITES = {"steps", "at_loaded_entry"}
 STATE_ERASED_WRITES = {
-    "approx_recips_used",
     "provisional_interpreted",
     "provisional_used",
     "trace",
@@ -405,7 +403,6 @@ GEN_CFG_DEFAULT: dict[str, Any] = {
     "max_call_depth": 64,
     "assume_nw32": True,
     "explicit_memory_model": True,
-    "approx_recips": True,
     "data_memory_tainted": False,
     "dossier_bytes": 0,
     "provisional_forms": (),

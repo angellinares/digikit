@@ -23,7 +23,7 @@ use sharc_native::fast::ir::{CompiledKernel, KernelBackend};
 use sharc_native::fast::region::{Region, build_straight};
 use sharc_native::fast::{FastEngine, FastTier};
 use sharc_native::mem::Mem;
-use sharc_native::rt::{Int, Loop, NUREG, Pending, Spec, St, V};
+use sharc_native::rt::{Int, Loop, MR, MR_MASK, NUREG, Pending, Spec, St, V};
 use sharc_native::{Engine, exec_insn};
 use std::cell::RefCell;
 use std::collections::BTreeMap;
@@ -68,7 +68,6 @@ fn open(image: &[u8], state: &[u8], clock_base: u64) -> Engine {
         (6, clock_base as i64),
         (9, 1),
         (10, 0),
-        (11, 1),
         (12, 1),
         (21, 1),
         (22, 1),
@@ -86,7 +85,10 @@ fn open(image: &[u8], state: &[u8], clock_base: u64) -> Engine {
     }
     if std::env::var_os("FD_CFG").is_some() {
         let c = &e.s.cfg;
-        eprintln!("cfg: bank_model {} stack_model {}", c.bank_model, c.stack_model);
+        eprintln!(
+            "cfg: bank_model {} stack_model {}",
+            c.bank_model, c.stack_model
+        );
     }
     e
 }
@@ -336,6 +338,8 @@ fn form_base(form: &str) -> (u64, u64) {
         "15a" => (0xe00000000000, 0xa00000000000),
         "15b" => (0xf01c00000000, 0x900800000000),
         "14a" => (0xfc0000000000, 0x100000000000),
+        "14d" => (0xfe0000000000, 0x1a0000000000),
+        "16b" => (0xf01c00000000, 0x900400000000),
         "19a" => (0xff8000000000, 0x160000000000),
         "19a_scaled" => (0xff0000000000, 0x150000000000),
         "7b" => (0xff00007f0000, 0x0400003f0000),
@@ -378,12 +382,29 @@ enum Check {
     /// fmax / fmin: only a NaN operand declines.
     FMinMax(u32, u32),
     Logb(u32),
+    /// mant: only a NaN or an infinity declines.
+    Mant(u32),
     Scalb(u32, u32),
     Recips(u32),
+    Rsqrts(u32),
     /// fix / trunc, optionally by a scale register.
-    Fix(u32, Option<u32>),
+    Fix(u32, Option<u32>, bool),
     FloatBy(u32, u32),
     MulSsi(u32, u32),
+    /// MRF = RX * RY (SSF) and MRF = MRF + RX * RY (SSF): a result that does not
+    /// fit 64 signed bits sets MV, which leaves the kernel.
+    MrMul(u32, u32),
+    MrMac(u32, u32),
+    /// Fixed-point add, subtract, increment, decrement, negate, abs: an add,
+    /// subtract, increment, decrement or negate overflow leaves the kernel only
+    /// when built with ALUSAT set; abs always does (the interpreter latches AOS
+    /// and saturates with ALUSAT).
+    IAdd(u32, u32),
+    ISub(u32, u32),
+    IInc(u32),
+    IDec(u32),
+    INeg(u32),
+    IAbs(u32),
 }
 
 struct Unit {
@@ -397,6 +418,12 @@ struct Unit {
 fn compute_check(cu: u32, opcode: u32, rn: u32, rx: u32, ry: u32) -> Check {
     let _ = rn;
     match (cu, opcode) {
+        (0, 0x01) => Check::IAdd(rx, ry),
+        (0, 0x02) => Check::ISub(rx, ry),
+        (0, 0x22) => Check::INeg(rx),
+        (0, 0x29) => Check::IInc(rx),
+        (0, 0x2a) => Check::IDec(rx),
+        (0, 0x30) => Check::IAbs(rx),
         (0, 0x81) => Check::FAdd(rx, ry),
         (0, 0x82) => Check::FSub(rx, ry),
         (0, 0xa2) => Check::FNeg(rx),
@@ -408,12 +435,17 @@ fn compute_check(cu: u32, opcode: u32, rn: u32, rx: u32, ry: u32) -> Check {
         (0, 0x8a) => Check::FComp(rx, ry),
         (0, 0xe1 | 0xe2) => Check::FMinMax(rx, ry),
         (0, 0xc1) => Check::Logb(rx),
+        (0, 0xad) => Check::Mant(rx),
         (0, 0xbd) => Check::Scalb(rx, ry),
         (0, 0xc4) => Check::Recips(rx),
-        (0, 0xc9) => Check::Fix(rx, None),
-        (0, 0xd9 | 0xdd) => Check::Fix(rx, Some(ry)),
+        (0, 0xc5) => Check::Rsqrts(rx),
+        (0, 0xc9) => Check::Fix(rx, None, false),
+        (0, 0xd9) => Check::Fix(rx, Some(ry), false),
+        (0, 0xdd) => Check::Fix(rx, Some(ry), true),
         (0, 0xda) => Check::FloatBy(rx, ry),
         (1, 0x70) => Check::MulSsi(rx, ry),
+        (1, 0x7c) => Check::MrMul(rx, ry),
+        (1, 0xbc) => Check::MrMac(rx, ry),
         _ => Check::None,
     }
 }
@@ -447,13 +479,18 @@ const FULL_OPS: &[(&str, u32, u32)] = &[
     ("fmin", 0, 0xe1),
     ("fmax", 0, 0xe2),
     ("logb", 0, 0xc1),
+    ("mant", 0, 0xad),
     ("scalb", 0, 0xbd),
     ("recips", 0, 0xc4),
+    ("rsqrts", 0, 0xc5),
     ("fix", 0, 0xc9),
     ("fix_by", 0, 0xd9),
     ("trunc_by", 0, 0xdd),
     ("float_by", 0, 0xda),
     ("mul_ssi", 1, 0x70),
+    ("mrf=mul ssf", 1, 0x7c),
+    ("mrf+=mul ssf", 1, 0xbc),
+    ("sat mrf sf", 1, 0x09),
     ("lshift_r", 2, 0x00),
     ("ashift_r", 2, 0x04),
     ("lshift_or_r", 2, 0x20),
@@ -636,6 +673,10 @@ fn units() -> Vec<Unit> {
                 let mut raw = Raw((r.next() & 0xffff_ffff_ffff & !mask) | base);
                 raw.set(43, 32, ((opc << 8) | (rn << 4) | rx) as u64);
                 let check = match opc {
+                    0x0 => Check::IAdd(rn, rx),
+                    0x1 => Check::ISub(rn, rx),
+                    0x5 => Check::IInc(rx),
+                    0x6 => Check::IDec(rx),
                     0x8 => Check::FAdd(rn, rx),
                     0x9 => Check::FSub(rn, rx),
                     0xf => Check::FMul(rn, rx),
@@ -803,12 +844,20 @@ fn units_sys() -> Vec<Unit> {
             let (mask, base) = form_base("17b");
             let mut raw = Raw((r.next() & 0xffff_ffff_ffff & !mask) | base);
             // Mostly R, I and M; sometimes another register (refused).
-            let code = if r.chance(12) { r.below(128) } else { r.below(48) };
+            let code = if r.chance(12) {
+                r.below(128)
+            } else {
+                r.below(48)
+            };
             raw.set(38, 32, code as u64);
             raw.set(15, 0, 0);
             if r.chance(3) {
                 // Edge immediates: sign bit and its neighbours.
-                raw.set(31, 16, [0, 1, 0x7fff, 0x8000, 0xffff, 0xfff8][r.below(6) as usize]);
+                raw.set(
+                    31,
+                    16,
+                    [0, 1, 0x7fff, 0x8000, 0xffff, 0xfff8][r.below(6) as usize],
+                );
             }
             (raw.0, Check::None)
         }),
@@ -830,7 +879,11 @@ fn units_sys() -> Vec<Unit> {
         make: Box::new(|r| {
             let (mask, base) = form_base("18a");
             let mut raw = Raw((r.next() & 0xffff_ffff_ffff & !mask) | base);
-            let bop = if r.chance(2) { r.below(3) } else { 4 + r.below(2) } as u64;
+            let bop = if r.chance(2) {
+                r.below(3)
+            } else {
+                4 + r.below(2)
+            } as u64;
             let sreg = if r.chance(4) { r.below(16) } else { 2 } as u64;
             raw.set(39, 37, bop);
             raw.set(35, 32, sreg);
@@ -1006,6 +1059,79 @@ fn units_mem() -> Vec<Unit> {
             }),
         });
     }
+    // 14d: an absolute byte or short-word access. Variants: load/store, byte
+    // or short word, zero- or sign-extended (loads only); plus rows the
+    // lowering refuses (ex=1, w=1, sign-extended store).
+    for (kind, store, l, x) in [
+        ("load-byte", 0u64, 0u64, 0u64),
+        ("load-short", 0, 1, 0),
+        ("load-byte-se", 0, 0, 1),
+        ("load-short-se", 0, 1, 1),
+        ("store-byte", 1, 0, 0),
+        ("store-short", 1, 1, 0),
+        ("store-se", 1, 1, 1),
+    ] {
+        v.push(Unit {
+            form: "14d",
+            name: format!("14d/xfer/{kind}"),
+            check: Check::None,
+            make: Box::new(move |r| {
+                let (mask, base) = form_base("14d");
+                let mut raw = Raw((r.next() & 0xffff_ffff_ffff & !mask) | base);
+                raw.set(40, 40, store);
+                raw.set(
+                    39,
+                    39,
+                    if kind == "store-se" {
+                        r.below(2) as u64
+                    } else {
+                        0
+                    },
+                );
+                raw.set(38, 38, l);
+                raw.set(
+                    37,
+                    37,
+                    if kind == "store-se" {
+                        r.below(2) as u64
+                    } else {
+                        0
+                    },
+                );
+                raw.set(36, 36, x);
+                raw.set(35, 32, r.below(16) as u64);
+                // A byte address in the data window, odd ones included.
+                let mut a = DATA_LO + r.below(0x1000);
+                if r.chance(32) {
+                    a = r.u32();
+                }
+                raw.set(31, 0, a as u64);
+                (raw.0, Check::None)
+            }),
+        });
+    }
+    // 16b: `DM(Ii, Mj) = imm16` with a post-modify.
+    v.push(Unit {
+        form: "16b",
+        name: "16b/store-imm".to_string(),
+        check: Check::None,
+        make: Box::new(move |r| {
+            let (mask, base) = form_base("16b");
+            let mut raw = Raw((r.next() & 0xffff_ffff_ffff & !mask) | base);
+            raw.set(43, 41, r.below(8) as u64);
+            raw.set(40, 38, r.below(8) as u64);
+            raw.set(37, 37, r.chance(16) as u64);
+            raw.set(33, 32, 0);
+            let data = if r.chance(4) {
+                [0, 1, 0x7fff, 0x8000, 0xffff][r.below(5) as usize]
+            } else {
+                r.below(0x1_0000)
+            };
+            raw.set(31, 16, data as u64);
+            raw.set(15, 0, 0);
+            (raw.0, Check::None)
+        }),
+    });
     // Immediate modifies.
     for hform in ["19a", "19a_scaled", "7b"] {
         v.push(Unit {
@@ -1078,6 +1204,9 @@ fn rand_int(r: &mut Rng) -> u32 {
 /// ASTATX bits) unknown, so the unknown-CACC kernel variants are exercised.
 static ASTAT_MIX: std::sync::atomic::AtomicBool = std::sync::atomic::AtomicBool::new(false);
 static KNOWN_FLAGS: std::sync::atomic::AtomicBool = std::sync::atomic::AtomicBool::new(false);
+/// `forms` only: STKYX.AOS may also start unknown. The `cfg` mode keeps it
+/// known: a fully unknown STKYX differs in bit 26 between the tiers.
+static STKY_UNKNOWN: std::sync::atomic::AtomicBool = std::sync::atomic::AtomicBool::new(false);
 /// Mostly ordinary float values (long kernel runs), a few special ones.
 static CALM: std::sync::atomic::AtomicBool = std::sync::atomic::AtomicBool::new(false);
 /// `--circ`: the circular-buffer configuration of `randomise` (below).
@@ -1200,6 +1329,28 @@ fn randomise(s: &mut St, r: &mut Rng, ms: &[u32; 16]) {
         m
     };
     s.r[118] = V { b: r.u32() & m, m };
+    // STKYX.AOS clear or set, and in `forms` also unknown: the kernel's latch is
+    // compared in each.
+    let arms = if STKY_UNKNOWN.load(std::sync::atomic::Ordering::Relaxed) {
+        3
+    } else {
+        2
+    };
+    let stky = s.r[120];
+    s.r[120] = match r.below(arms) {
+        0 => V {
+            b: stky.b & !4,
+            m: stky.m | 4,
+        },
+        1 => V {
+            b: stky.b | 4,
+            m: stky.m | 4,
+        },
+        _ => V {
+            b: stky.b & !4,
+            m: stky.m & !4,
+        },
+    };
     // Data window contents: floats and ints.
     for k in 0..DATA_LEN / 4 {
         let w = if calm && !r.chance(24) {
@@ -1242,13 +1393,33 @@ fn mul_leaves(x: f32, y: f32) -> bool {
     is_special(p.to_bits()) || (p == 0.0 && x != 0.0 && y != 0.0)
 }
 
-fn expect_special(c: Check, s: &St) -> bool {
+fn reg(s: &St, code: u32) -> i32 {
+    s.r[code as usize].b as i32
+}
+
+fn expect_special(c: Check, s: &St, built_alusat: bool) -> bool {
     let f = |code: u32| f32::from_bits(s.r[code as usize].b);
     let dn = |code: u32| is_denormal(s.r[code as usize].b);
     match c {
         Check::None => false,
-        Check::FAdd(x, y) => dn(x) || dn(y) || not_finite((f(x) + f(y)).to_bits()),
-        Check::FSub(x, y) => dn(x) || dn(y) || not_finite((f(x) - f(y)).to_bits()),
+        // A denormal result is a flushed underflow: the interpreter latches AUS.
+        Check::FAdd(x, y) => {
+            let r = (f(x) + f(y)).to_bits();
+            dn(x) || dn(y) || not_finite(r) || is_denormal(r)
+        }
+        Check::FSub(x, y) => {
+            let r = (f(x) - f(y)).to_bits();
+            dn(x) || dn(y) || not_finite(r) || is_denormal(r)
+        }
+        Check::IAdd(x, y) => {
+            let r = reg(s, x).checked_add(reg(s, y));
+            built_alusat && r.is_none()
+        }
+        Check::ISub(x, y) => built_alusat && reg(s, x).checked_sub(reg(s, y)).is_none(),
+        Check::IInc(x) => built_alusat && reg(s, x).checked_add(1).is_none(),
+        Check::IDec(x) => built_alusat && reg(s, x).checked_sub(1).is_none(),
+        Check::INeg(x) => built_alusat && reg(s, x).checked_neg().is_none(),
+        Check::IAbs(x) => reg(s, x).checked_abs().is_none(),
         Check::FMul(x, y) => dn(x) || dn(y) || mul_leaves(f(x), f(y)),
         Check::FNeg(x) => dn(x) || not_finite((-f(x)).to_bits()),
         Check::Trunc(x) => s.r[x as usize].b & 0x7fff_ffff >= 0x4f00_0000,
@@ -1265,7 +1436,10 @@ fn expect_special(c: Check, s: &St) -> bool {
                 || not_finite((f(xa) - f(ya)).to_bits())
         }
         Check::DualF(x, y) => {
-            dn(x) || dn(y) || not_finite((f(x) + f(y)).to_bits()) || not_finite((f(x) - f(y)).to_bits())
+            dn(x)
+                || dn(y)
+                || not_finite((f(x) + f(y)).to_bits())
+                || not_finite((f(x) - f(y)).to_bits())
         }
         Check::FAbs(x) => dn(x) || f(x).is_nan(),
         Check::FPass(x) => dn(x) || not_finite(s.r[x as usize].b),
@@ -1286,6 +1460,7 @@ fn expect_special(c: Check, s: &St) -> bool {
             dn(x) || dn(y) || f(x).is_nan() || f(y).is_nan()
         }
         Check::Logb(x) => !(1..=254).contains(&((s.r[x as usize].b >> 23) & 0xff)),
+        Check::Mant(x) => (s.r[x as usize].b >> 23) & 0xff == 0xff,
         Check::Scalb(x, y) => {
             let sh = s.r[y as usize].b as i32 as i64;
             let bits = s.r[x as usize].b;
@@ -1299,7 +1474,11 @@ fn expect_special(c: Check, s: &St) -> bool {
             }
         }
         Check::Recips(x) => !(1..=252).contains(&((s.r[x as usize].b >> 23) & 0xff)),
-        Check::Fix(x, by) => {
+        Check::Rsqrts(x) => {
+            let b = s.r[x as usize].b;
+            b >> 31 != 0 || !(1..=254).contains(&((b >> 23) & 0xff))
+        }
+        Check::Fix(x, by, trunc) => {
             let sh = by.map_or(0, |y| s.r[y as usize].b as i32 as i64);
             let bits = s.r[x as usize].b;
             let e = ((bits >> 23) & 0xff) as i64;
@@ -1308,7 +1487,19 @@ fn expect_special(c: Check, s: &St) -> bool {
             } else if bits & 0x7fff_ffff == 0 {
                 false
             } else {
-                !(1..=254).contains(&e) || e + sh >= 158
+                // A FIX (not a TRUNC) of a nonzero scaled value that returns zero
+                // latches AUS, so the kernel leaves. The scaled exponent below 1
+                // is flushed to zero (no AUS). To nearest: zero for a value up to
+                // one half; toward zero (MODE1.TRUNCATE): below one.
+                let ne = e + sh;
+                let toward_zero = s.r[114].b & (1 << 15) != 0;
+                let zero_result = if toward_zero {
+                    ne < 127
+                } else {
+                    ne < 126 || (ne == 126 && bits & 0x7f_ffff == 0)
+                };
+                let latches = !trunc && ne >= 1 && zero_result;
+                !(1..=254).contains(&e) || ne >= 158 || latches
             }
         }
         Check::FloatBy(x, y) => {
@@ -1327,7 +1518,73 @@ fn expect_special(c: Check, s: &St) -> bool {
             let p = (s.r[x as usize].b as i32 as i64) * (s.r[y as usize].b as i32 as i64);
             p != p as i32 as i64
         }
+        Check::MrMul(x, y) => mr_leaves(s, None, x, y),
+        Check::MrMac(x, y) => match mr_signed(s) {
+            Some(acc) => mr_leaves(s, Some(acc), x, y),
+            None => false,
+        },
     }
+}
+
+/// MRF as a signed 80-bit value, when it is present and fully known.
+fn mr_signed(s: &St) -> Option<i128> {
+    if !s.special_present[0] {
+        return None;
+    }
+    match s.special[0] {
+        Spec::M(m) => m.signed(),
+        _ => None,
+    }
+}
+
+/// `acc + 2 * x * y` (acc 0 for a plain multiply) wrapped to 80 bits is outside
+/// the signed 64-bit range: MV is set.
+fn mr_leaves(s: &St, acc: Option<i128>, x: u32, y: u32) -> bool {
+    let p = (s.r[x as usize].b as i32 as i128) * (s.r[y as usize].b as i32 as i128);
+    let raw = (acc.unwrap_or(0) + 2 * p) & MR_MASK;
+    let v = if raw >> 79 & 1 == 1 {
+        raw - (1 << 80)
+    } else {
+        raw
+    };
+    !(-(1i128 << 63)..(1i128 << 63)).contains(&v)
+}
+
+/// MRF for a trial of an MRF unit: edge values, random values, and now and
+/// then an accumulator that is not fully known or absent (a requirement fails).
+fn randomise_mr(s: &mut St, r: &mut Rng) {
+    let edge: [i128; 12] = [
+        0,
+        1,
+        -1,
+        (1 << 63) - 1,
+        -(1 << 63),
+        1 << 63,
+        1 << 79,
+        -(1 << 79),
+        0xffff_ffff,
+        0xffff_ffff << 32,
+        0x7fff << 64,
+        -(1 << 63) - 1,
+    ];
+    let v: i128 = match r.below(3) {
+        0 => edge[r.below(edge.len() as u32) as usize],
+        1 => (r.u32() as i128) | ((r.u32() as i128) << 32) | ((r.u32() as i128) << 64),
+        _ => {
+            let k = edge[r.below(edge.len() as u32) as usize];
+            k.wrapping_add(r.below(5) as i128 - 2)
+        }
+    };
+    let bits = v & MR_MASK;
+    s.special_present[0] = true;
+    s.special[0] = match r.below(16) {
+        0 => Spec::M(MR::new(MR_MASK & !(1 << r.below(80)), bits)),
+        1 => {
+            s.special_present[0] = false;
+            Spec::V(V::UNK)
+        }
+        _ => Spec::M(MR::new(MR_MASK, bits)),
+    };
 }
 
 // -- conditions ---------------------------------------------------------------------
@@ -1430,6 +1687,7 @@ fn forms(args: &[String]) {
     let truncate_mode = args.iter().any(|a| a == "--truncate");
     CIRC.store(circ_mode, std::sync::atomic::Ordering::Relaxed);
     KNOWN_FLAGS.store(cond_mode, std::sync::atomic::Ordering::Relaxed);
+    STKY_UNKNOWN.store(true, std::sync::atomic::Ordering::Relaxed);
     let mut be = backend(flag(args, "--backend").unwrap_or("cl"));
     let mut e = open(&image, &state, CLOCK_BASE);
     e.enable_runtime_decode(Mem::read_sw);
@@ -1495,10 +1753,14 @@ fn forms(args: &[String]) {
             if circ_mode && rng.chance(4) {
                 mode_build &= !(1 << 24);
             }
+            // ALUSAT set in a quarter of the instances: overflows leave the kernel.
+            if rng.chance(4) {
+                mode_build |= 1 << 13;
+            }
             s.r[114] = V::c(mode_build as Int);
             let nwords = match unit.form {
                 "2c" | "3c" | "21c" => 1,
-                "2a_short" | "3b" | "5b_move" | "4b" | "15b" | "7b" | "17b" => 2,
+                "2a_short" | "3b" | "5b_move" | "4b" | "15b" | "7b" | "16b" | "17b" => 2,
                 _ => 3,
             };
             write_code(s, raw, nwords);
@@ -1537,6 +1799,9 @@ fn forms(args: &[String]) {
                     flip = Some(32 + k as u8);
                 }
                 randomise(s, &mut rng, &st_ms);
+                if unit.name.contains("mrf") {
+                    randomise_mr(s, &mut rng);
+                }
                 let mut lflip = None;
                 if trial % 50 == 24 {
                     // A circular buffer is set up on a random index register.
@@ -1553,8 +1818,13 @@ fn forms(args: &[String]) {
                 // With --circ CBUFEN flips as well.
                 let mode_flip = trial % 37 == 36;
                 let cb_flip = circ_mode && trial % 11 == 10;
+                // ALUSAT flipping must fail a kernel that ran through overflows.
+                let sat_flip = trial % 41 == 40;
                 s.r[114] = V::c(
-                    (mode_build ^ ((mode_flip as u32) << 15) ^ ((cb_flip as u32) << 24)) as Int,
+                    (mode_build
+                        ^ ((mode_flip as u32) << 15)
+                        ^ ((cb_flip as u32) << 24)
+                        ^ ((sat_flip as u32) << 13)) as Int,
                 );
                 let mut bflip = None;
                 if circ_mode && trial % 29 == 28 {
@@ -1575,7 +1845,8 @@ fn forms(args: &[String]) {
                 s.limit = s.icount + 1000;
                 let s0 = Snap::take(s);
                 let executes = pred(cond, s.r[118], s.r[114].b);
-                let special = expect_special(check, s) && executes != Some(false);
+                let special = expect_special(check, s, mode_build & (1 << 13) != 0)
+                    && executes != Some(false);
                 let insn = sharc_native::rt::bnd::decode_at(s, (), None, CODE_PC as Int)
                     .expect("decode of the assembled instruction");
                 let res = exec_insn(s, insn);
@@ -1605,6 +1876,7 @@ fn forms(args: &[String]) {
                         Req::Mode1 { mask, value } => s.r[114].b & mask != value,
                         // Built for unknown CACC history: declines when it is known.
                         Req::CaccUnknown => s.r[118].m & 0xff00_0000 == 0xff00_0000,
+                        Req::MrFull => mr_signed(s).is_none(),
                         Req::Within { c, lo, hi } => {
                             Some(c) == unknown || !(lo..=hi).contains(&s.r[c as usize].b)
                         }
@@ -1672,7 +1944,9 @@ fn forms(args: &[String]) {
                                 unit.name, raw, region.reqs, region.wins
                             );
                         }
-                        if !req_fail {
+                        // A load at a wild address has no plain window: a
+                        // legitimate decline.
+                        if !req_fail && !matches!(d, Decline::Window) {
                             bad.push(format!("declined {d:?} with the requirements met"));
                         }
                         bad.extend(diff(&s0, &fastsnap));
@@ -1725,7 +1999,9 @@ fn forms(args: &[String]) {
             // Conditional index updates (post-modify) have no address range.
             // MODIFY forms are refused when L != 0 (--circ).
             let modify = matches!(unit.form, "7a" | "7b" | "19a" | "19a_scaled");
-            if !cond_mode && !(circ_mode && modify) {
+            // A sign-extended 14d store is always refused: the core stops on it too.
+            let never_lowers = unit.name == "14d/xfer/store-se";
+            if !never_lowers && !cond_mode && !(circ_mode && modify) {
                 total_mismatch += 1;
             }
         }
@@ -2471,11 +2747,13 @@ fn mem_imm_insn(r: &mut Rng) -> Vec<u16> {
             r64.set(38, 32, r.below(13) as u64);
         }
         "14a" => r64.set(38, 32, r.below(13) as u64),
+        "14d" => r64.set(35, 32, r.below(13) as u64),
+        "16b" => r64.set(43, 41, r.below(6) as u64),
         _ => {}
     }
     raw = r64.0;
     let n = match u.form {
-        "4b" | "15b" | "7b" => 2,
+        "4b" | "15b" | "7b" | "16b" => 2,
         _ => 3,
     };
     words_of(raw, n)
@@ -2488,9 +2766,17 @@ fn sys_insn(r: &mut Rng) -> Vec<u16> {
     match r.below(6) {
         0 | 1 => {
             let mut raw = Raw(form_base("17b").1);
-            let code = if r.chance(4) { 32 + r.below(16) } else { r.below(13) };
+            let code = if r.chance(4) {
+                32 + r.below(16)
+            } else {
+                r.below(13)
+            };
             raw.set(38, 32, code as u64);
-            raw.set(31, 16, [0, 1, 0x7fff, 0x8000, 0xffff, r.below(65536)][r.below(6) as usize] as u64);
+            raw.set(
+                31,
+                16,
+                [0, 1, 0x7fff, 0x8000, 0xffff, r.below(65536)][r.below(6) as usize] as u64,
+            );
             words_of(raw.0, 2)
         }
         2 => words_of(form_base("21a").1, 3),
@@ -2501,7 +2787,11 @@ fn sys_insn(r: &mut Rng) -> Vec<u16> {
             raw.set(35, 32, 2);
             // The MODE1 of the cfg runs has SIMD clear: a clear of it, or a
             // random mask now and then.
-            let data = if r.chance(3) { r.next() as u32 } else { 0x20_0000 };
+            let data = if r.chance(3) {
+                r.next() as u32
+            } else {
+                0x20_0000
+            };
             raw.set(31, 0, data as u64);
             words_of(raw.0, 3)
         }
@@ -3096,7 +3386,7 @@ fn cfgprog(args: &[String]) {
                 let (_, pc_lo) = pair(&mut ei, &mut ef, st_seed, mode1, lo);
                 println!(
                     "      state before it: interp ASTATx {:?} STKYx {:?}, fast ASTATx {:?} STKYx {:?}",
-                    ei.s.r[118], ei.s.r[119], ef.s.r[118], ef.s.r[119]
+                    ei.s.r[118], ei.s.r[120], ef.s.r[118], ef.s.r[120]
                 );
                 println!(
                     "      at budget {lo}: pc interp {:#x} fast {:#x}, icount {} {}",
@@ -3105,15 +3395,22 @@ fn cfgprog(args: &[String]) {
                 if std::env::var_os("FD_REQS").is_some() {
                     for pc in &entries {
                         if let Some(r) = fe.borrow().region(*pc) {
-                            println!("      region {pc:#x}: forms {:?} reqs {:?}", r.forms, r.reqs);
+                            println!(
+                                "      region {pc:#x}: forms {:?} reqs {:?}",
+                                r.forms, r.reqs
+                            );
                         }
                     }
                 }
                 let _ = pair(&mut ei, &mut ef, st_seed, mode1, hi);
                 println!(
                     "      after it: MODE1 interp {:#x} fast {:#x}, ASTATx {:#x} {:#x}, ASTATy {:#x} {:#x}",
-                    ei.s.r[114].b, ef.s.r[114].b, ei.s.r[118].b, ef.s.r[118].b,
-                    ei.s.r[119].b, ef.s.r[119].b
+                    ei.s.r[114].b,
+                    ef.s.r[114].b,
+                    ei.s.r[118].b,
+                    ef.s.r[118].b,
+                    ei.s.r[119].b,
+                    ef.s.r[119].b
                 );
                 println!(
                     "      at budget {hi}: pc interp {:#x} fast {:#x}, icount {} {}, fast pending {:?} loops {:?}",
@@ -3169,7 +3466,9 @@ fn cfgprog(args: &[String]) {
         built
     );
     println!("declined shape/req/window/budget/exit0 = {declined:?}");
-    println!("final regions with compares: {cacc_total}, of them for unknown CACC: {cacc_unknown_total}");
+    println!(
+        "final regions with compares: {cacc_total}, of them for unknown CACC: {cacc_unknown_total}"
+    );
     println!("final regions with a register trip count: {regn_total}");
     for (why, n) in &refusals {
         println!("{n:>5} x refused: {why}");

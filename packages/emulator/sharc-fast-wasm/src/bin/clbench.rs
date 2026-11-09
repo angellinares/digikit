@@ -82,13 +82,19 @@ fn main() {
         .collect();
     files.sort();
     for n in &files {
-        if let Some(h) = n.strip_prefix("kernel-").and_then(|x| x.strip_suffix(".bin")) {
+        if let Some(h) = n
+            .strip_prefix("kernel-")
+            .and_then(|x| x.strip_suffix(".bin"))
+        {
             let b = std::fs::read(format!("{dir}/{n}")).unwrap();
             let w: Vec<u32> = b
                 .chunks_exact(4)
                 .map(|c| u32::from_le_bytes(c.try_into().unwrap()))
                 .collect();
-            kernels.insert(u64::from_str_radix(h, 16).unwrap(), Kernel::decode(&w).unwrap());
+            kernels.insert(
+                u64::from_str_radix(h, 16).unwrap(),
+                Kernel::decode(&w).unwrap(),
+            );
         }
     }
     let mut be = sharc_fast_cl::ClBackend::default();
@@ -131,7 +137,9 @@ fn main() {
         }
         let wins = arenas; // restored never; the slots below point into it
         let setup = |ctx: &mut Vec<u64>, st: &mut Vec<u64>, wins: &Vec<(u64, Vec<u8>)>| {
-            let cb = unsafe { std::slice::from_raw_parts_mut(ctx.as_mut_ptr().cast::<u8>(), c.ctx_pre.len()) };
+            let cb = unsafe {
+                std::slice::from_raw_parts_mut(ctx.as_mut_ptr().cast::<u8>(), c.ctx_pre.len())
+            };
             cb.copy_from_slice(&c.ctx_pre);
             for (i, w) in c.wins.iter().enumerate() {
                 let (ai, off) = place[i];
@@ -140,7 +148,8 @@ fn main() {
                 let at = CTX_WIN as usize + 8 * w.0 as usize;
                 cb[at..at + 8].copy_from_slice(&slot.to_le_bytes());
             }
-            let sb = unsafe { std::slice::from_raw_parts_mut(st.as_mut_ptr().cast::<u8>(), st_len) };
+            let sb =
+                unsafe { std::slice::from_raw_parts_mut(st.as_mut_ptr().cast::<u8>(), st_len) };
             sb[c.st_off as usize..].copy_from_slice(&c.st_pre);
         };
         setup(&mut ctx, &mut st, &wins);
@@ -177,7 +186,14 @@ fn main() {
                 diff(&cb[..win_lo], &c.ctx_post[..win_lo]),
                 diff(&cb[win_hi..], &c.ctx_post[win_hi..]).map(|x| x + win_hi),
                 diff(&sb[c.st_off as usize..], &c.st_post),
-                c.wins.iter().enumerate().map(|(i, w)| { let (ai, off) = place[i]; diff(&wins[ai].1[off..off + w.3.len()], &w.3) }).collect::<Vec<_>>()
+                c.wins
+                    .iter()
+                    .enumerate()
+                    .map(|(i, w)| {
+                        let (ai, off) = place[i];
+                        diff(&wins[ai].1[off..off + w.3.len()], &w.3)
+                    })
+                    .collect::<Vec<_>>()
             );
         }
         // Timing: restore the context and register words, not the windows.
@@ -196,7 +212,14 @@ fn main() {
             setup(&mut ctx, &mut st, &wins);
         }
         let ns = (total - t1.elapsed().as_nanos() as f64) / reps as f64;
-        println!("{:016x}\t{}\t{:.0}\t{:.3}\t{}", c.kid, c.insns, ns, ns / c.insns as f64, ok);
+        println!(
+            "{:016x}\t{}\t{:.0}\t{:.3}\t{}",
+            c.kid,
+            c.insns,
+            ns,
+            ns / c.insns as f64,
+            ok
+        );
         tot_ns += ns;
         tot_insns += c.insns;
     }
@@ -205,6 +228,12 @@ fn main() {
         tot_insns,
         tot_ns / tot_insns as f64,
         bad,
-        compile_ns / 1e3 / files.iter().filter(|n| n.starts_with("call-")).count().max(1) as f64
+        compile_ns
+            / 1e3
+            / files
+                .iter()
+                .filter(|n| n.starts_with("call-"))
+                .count()
+                .max(1) as f64
     );
 }

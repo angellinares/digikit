@@ -12,8 +12,9 @@ The binary is built into the prod generated-core target dir
     uv run python -m tools.emulator.coupled replay FILE [--wav] [--out JSON]
     uv run python -m tools.emulator.coupled bisect NAME [--seconds S]
     uv run python -m tools.emulator.coupled test-quick
+    uv run python -m tools.emulator.coupled gates [-- TEST_ARGS...]
 
-Every command except ``build`` and ``test-quick`` builds first (a no-op when
+Every command except ``build``, ``test-quick`` and ``gates`` builds first (a no-op when
 current) unless ``--no-build`` is given. ``bisect`` finds which DSP tier changes
 a scenario's PCM: the interpreter-only reference (cached under
 ``out/native/bisect/<name>/``) against the default tiers, then single changes
@@ -40,7 +41,7 @@ import tempfile
 ROOT = pathlib.Path(__file__).resolve().parents[2]
 
 from tools.devtools import render_cache  # noqa: E402
-from tools.emulator import digi_env, native_target  # noqa: E402
+from tools.emulator import digi_env, native_pgo, native_target  # noqa: E402
 
 TOOLCHAIN = digi_env.TOOLCHAIN
 DEFAULT_FEATURES = "coupled-audio"
@@ -199,8 +200,30 @@ def feature_variant(features: str | None = None) -> str:
     return "feat-" + "+".join(names)
 
 
-def binary_path(device: str = "dn2", image=None) -> pathlib.Path:
-    target = native_target.target_dir(generated(device, image), feature_variant())
+def pgo_dir(gen, device):
+    """The target dir of the PGO coupled-run: the same one `native_pgo coupled-build` uses."""
+    return native_target.target_dir(gen, "pgo-cr-" + device)
+
+
+def pgo_profile(device, gen):
+    """The usable profile, state and message. Only the default feature set gets a profile."""
+    if feature_variant() or os.environ.get("SHARC_GEN_DIR_2"):
+        return None, "off", ""
+    return native_pgo.profile_for_tests(device, gen)
+
+
+def binary_path(device: str = "dn2", image=None, pgo: bool = False) -> pathlib.Path:
+    gen = generated(device, image)
+    if pgo and pgo_profile(device, gen)[0]:
+        found = (
+            pgo_dir(gen, device)
+            / digi_env.TRIPLE
+            / "release"
+            / digi_env.exe_name(BINARY_NAME)
+        )
+        if found.is_file():
+            return found
+    target = native_target.target_dir(gen, feature_variant())
     return target / "release" / digi_env.exe_name(BINARY_NAME)
 
 
@@ -208,9 +231,21 @@ def cargo(args: list[str]) -> list[str]:
     return ["rustup", "run", TOOLCHAIN, "cargo", *args]
 
 
-def build(device: str = "dn2", image=None) -> pathlib.Path:
+def build(device: str = "dn2", image=None, pgo: bool = False) -> pathlib.Path:
     gen = generated(device, image)
     digi_env.check_generated(gen)
+    if pgo:
+        profile, state, message = pgo_profile(device, gen)
+        native_pgo.report_profile(device, state, message, applied=False)
+        if profile:
+            pgo_target = pgo_dir(gen, device)
+            pgo_target.mkdir(parents=True, exist_ok=True)
+            return native_pgo.build_coupled(
+                pgo_target,
+                native_pgo.profile_use_flags(profile),
+                gen,
+                pgo_target / "build.log",
+            )
     target = native_target.target_dir(gen, feature_variant())
     env = {**digi_env.rust_env(), "SHARC_GEN_DIR": str(gen)}
     command = cargo(
@@ -232,10 +267,15 @@ def build(device: str = "dn2", image=None) -> pathlib.Path:
     return binary
 
 
-def ensure_binary(no_build: bool, device: str = "dn2", image=None) -> pathlib.Path:
+def ensure_binary(
+    no_build: bool, device: str = "dn2", image=None, pgo: bool = False
+) -> pathlib.Path:
     if not no_build:
-        return build(device, image)
-    binary = binary_path(device, image)
+        return build(device, image, pgo)
+    if pgo:
+        profile, state, message = pgo_profile(device, generated(device, image))
+        native_pgo.report_profile(device, state, message, applied=False)
+    binary = binary_path(device, image, pgo)
     if not binary.is_file():
         raise SystemExit(f"coupled: no binary at {binary} (drop --no-build)")
     return binary
@@ -330,7 +370,7 @@ def scenario_document(scenarios_file: pathlib.Path | str) -> dict:
     """Read JSON or execute an erasable TypeScript scenario source with Node >=24.
 
     Always evaluate source afresh; callers may retain this document for their batch.
-    Enumeration does not write generated files (including in verify --explain).
+    Enumeration does not write generated files (including in an explain-only run).
     """
     path = pathlib.Path(scenarios_file).resolve()
     if path.suffix == ".ts":
@@ -486,7 +526,7 @@ def run_batch(
     ``binary`` skips the build step."""
     parsed = digi_env.parse_diag(diag or "")
     if binary is None:
-        binary = ensure_binary(no_build, device)
+        binary = ensure_binary(no_build, device, pgo=True)
     run_dir = pathlib.Path(run_dir)
     (run_dir / "logs").mkdir(parents=True, exist_ok=True)
     scn = str(scenario_path(scenarios_file))
@@ -670,7 +710,7 @@ def run_parallel(binary: pathlib.Path, args) -> int:
 
 
 def cmd_build(args) -> int:
-    binary = build(getattr(args, "device", "dn2"))
+    binary = build(getattr(args, "device", "dn2"), pgo=True)
     print(binary)
     return 0
 
@@ -686,7 +726,7 @@ def cmd_scenario(args) -> int:
     want_dump(args)
     if getattr(args, "check_generated", False):
         digi_env.check_generated(generated(getattr(args, "device", "dn2")))
-    binary = ensure_binary(args.no_build, getattr(args, "device", "dn2"))
+    binary = ensure_binary(args.no_build, getattr(args, "device", "dn2"), pgo=True)
     if not args.names and not args.all:
         raise SystemExit("coupled: give scenario names or --all")
     # No --scenario means every scenario of the file; coupled-run exits 2 on
@@ -712,7 +752,7 @@ def cmd_cache(args) -> int:
 
 def cmd_replay(args) -> int:
     want_dump(args)
-    binary = ensure_binary(args.no_build, getattr(args, "device", "dn2"))
+    binary = ensure_binary(args.no_build, getattr(args, "device", "dn2"), pgo=True)
     return run_and_report(binary, ["--replay", args.file], args)
 
 
@@ -848,6 +888,29 @@ def cmd_test_quick(args) -> int:
     return 0
 
 
+def cmd_gates(args) -> int:
+    """The ignored coupled gate tests (coupled_ready_exactness: restores the ready
+    session, 100M instructions). Needs the private DN2 ready inputs."""
+    gen = generated()
+    digi_env.check_generated(gen)
+    env = {
+        **digi_env.rust_env(),
+        "SHARC_GEN_DIR": str(gen),
+        "DIGI_COUPLED_FIXTURES": str(digi_env.READY),
+        "DIGI_COUPLED_SYX": str(digi_env.firmware()),
+    }
+    command = cargo(
+        [
+            "test", "--release", "-p", "digi-coupled",
+            "--features", "coupled-audio", "--lib",
+            "--target-dir", str(native_target.target_dir(gen)), "--locked",
+            "gate_tests", "--", "--ignored", *args.extra,
+        ]
+    )  # fmt: skip
+    with benchlock("shared", "coupled gates"):
+        return subprocess.run(command, cwd=ROOT, env=env, check=False).returncode
+
+
 def parser() -> argparse.ArgumentParser:
     top = argparse.ArgumentParser(description=(__doc__ or "").splitlines()[0])
     sub = top.add_subparsers(dest="command", required=True)
@@ -928,6 +991,7 @@ def parser() -> argparse.ArgumentParser:
     p = add("cache", cmd_cache, "render cache: stats or clear")
     p.add_argument("action", choices=["stats", "clear"])
     add("test-quick", cmd_test_quick, "fast cargo tests with the pinned toolchain")
+    add("gates", cmd_gates, "the ignored coupled gate tests (private DN2 ready inputs)")
     return top
 
 
@@ -941,9 +1005,9 @@ def main(argv: list[str] | None = None) -> int:
     args.extra = extra
     if getattr(args, "dt2_card", False) or os.environ.get("DIGI_DT2_CARD"):
         enable_dt2_card()
-    if extra and args.command not in ("scenario", "replay"):
+    if extra and args.command not in ("scenario", "replay", "gates"):
         raise SystemExit(
-            "coupled: extra arguments after -- only apply to scenario/replay"
+            "coupled: extra arguments after -- only apply to scenario/replay/gates"
         )
     return args.func(args)
 

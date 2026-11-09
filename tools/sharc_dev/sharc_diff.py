@@ -379,7 +379,6 @@ def import_state(
     *,
     data: LoadedMemory | None = None,
     explicit_memory_model: bool = True,
-    approx_recips: bool = True,
     assume_nw32: bool = True,
 ) -> st.State:
     """The inverse of ``export_state``: a fresh, concrete ``State`` seeded
@@ -388,8 +387,8 @@ def import_state(
     DATA (a ``LoadedMemory``) backs ``State.concrete``; ``None`` is fine for
     a synthetic, memory-free instruction-level case (the compute corpus:
     see ``generate_compute_corpus``) as long as the instruction(s) run never
-    touch DM/PM. ``explicit_memory_model``/``approx_recips``/``assume_nw32``
-    default True/True/True, matching ``sharc_harness._make_runner``'s own
+    touch DM/PM. ``explicit_memory_model``/``assume_nw32``
+    default True/True, matching ``sharc_harness._make_runner``'s own
     always-on options (not ``sharc_run.make_state``'s bare defaults) since
     this harness's callers -- the self-test and the corpus generator -- both
     want a fully-concrete, non-forking run.
@@ -439,7 +438,6 @@ def import_state(
         concrete=data,
         record_events=False,
         explicit_memory_model=explicit_memory_model,
-        approx_recips=approx_recips,
         assume_nw32=assume_nw32,
         follow_loaded_calls=data is not None,
         max_call_depth=64,
@@ -1325,7 +1323,6 @@ def _random_state(rng: random.Random, *, seed_special: bool) -> st.State:
         concrete=None,
         record_events=False,
         explicit_memory_model=True,
-        approx_recips=True,
         assume_nw32=True,
     )
 

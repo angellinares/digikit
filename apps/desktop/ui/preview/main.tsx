@@ -8,7 +8,11 @@ import '@web/styles/site.css';
 import '../src/console.css';
 import '../src/native.css';
 import '../src/desktop-env';
+import { desktopDefaultModules } from '../src/default-modules';
 import { installNativeFeel } from '../src/native';
+import DefaultModules from '@web/firmware/DefaultModules';
+import { DefaultModuleError } from '@web/firmware/default-modules-core';
+import { firmwareEnv, setFirmwareEnv } from '@web/firmware/env';
 import LivePanel from '@web/components/LivePanel';
 import { panels } from '@web/data/faceplates';
 import FirmwarePage from '@web/firmware/FirmwarePage';
@@ -17,6 +21,7 @@ import SidePanels from '../src/SidePanels';
 import { setLocalFolder } from '../src/samples-state';
 import TransferPage from '@web/transfer/TransferPage';
 import { setMode } from '@web/transfer/transfer-state';
+import { deviceFromName, bootingStatus, booting as startBoot, loadFailure } from '../src/boot-core';
 import { cardDevice, reloadCard } from './card-mock';
 import { installRemoteMock, testPattern } from './remote-mock';
 import { createLogFollow } from '../src/log-follow';
@@ -29,27 +34,46 @@ import { SAMPLES_ROOT, control, sim } from './sim';
 // markup as ../src/Console.tsx, to put its screen next to the Remote page's.
 const page = new URLSearchParams(location.search).get('page') ?? 'transfer';
 if (page === 'remote') installRemoteMock();
-const emulatorFaceplate = () => (
-  <div class="emu-row">
-    <main class="stage" aria-label="front panel">
-      <div class="surface">
-        <LivePanel
-          panel={panels[cardDevice]}
-          runtime={() => undefined}
-          onError={() => {}}
-          ref={(api) => queueMicrotask(() => api.showFrame(testPattern()))}
-        />
-      </div>
-    </main>
-    <SidePanels
-      visible
-      card
-      reload={reloadCard}
-      session={() => Promise.resolve({} as never)}
-      where={() => 'the emulator'}
-    />
-  </div>
-);
+// ?boot=loading | failed: the Emulator page while a firmware starts (the old device information is gone), or after a failed load
+// (the name of the file is `bootfile`, default Digitakt_II_OS1.17.syx). The texts are the app's (../src/boot-core.ts).
+const bootState = new URLSearchParams(location.search).get('boot');
+const bootFile = new URLSearchParams(location.search).get('bootfile') ?? 'Digitakt_II_OS1.17.syx';
+const bootError = 'the emulator did not answer within 120 s';
+const emulatorFaceplate = () =>
+  bootState ? (
+    <div class="emu-row">
+      <main class="stage" aria-label="front panel">
+        <div class="surface">
+          <LivePanel
+            panel={panels[deviceFromName(bootFile) ?? 'dn2']}
+            runtime={() => undefined}
+            onError={() => {}}
+            ref={() => {}}
+          />
+        </div>
+      </main>
+    </div>
+  ) : (
+    <div class="emu-row">
+      <main class="stage" aria-label="front panel">
+        <div class="surface">
+          <LivePanel
+            panel={panels[cardDevice]}
+            runtime={() => undefined}
+            onError={() => {}}
+            ref={(api) => queueMicrotask(() => api.showFrame(testPattern()))}
+          />
+        </div>
+      </main>
+      <SidePanels
+        visible
+        card
+        reload={reloadCard}
+        session={() => Promise.resolve({} as never)}
+        where={() => 'the emulator'}
+      />
+    </div>
+  );
 
 /** The Log drawer under an empty page, as in the app: the same panel, fed by the fake runtime logs. */
 function LogPage() {
@@ -76,6 +100,32 @@ function LogPage() {
   );
 }
 
+// The default modules install on a fake device: ?defmods=ok (default) | slow (each step takes 3 s) | fail (the module cannot be uploaded)
+const defmods = new URLSearchParams(location.search).get('defmods') ?? 'ok';
+setFirmwareEnv({
+  ...firmwareEnv(),
+  defaultModules: {
+    entries: desktopDefaultModules.entries,
+    async install(where, _device, ids, progress) {
+      const wait = (ms: number) => new Promise((r) => setTimeout(r, defmods === 'slow' ? ms * 4 : ms));
+      progress({ text: 'Waiting for the runtime to answer', done: 0, total: ids.length + 2 });
+      await wait(700);
+      for (const [i, id] of ids.entries()) {
+        progress({ text: `Installing ${id} (${i + 1} of ${ids.length})`, done: i + 1, total: ids.length + 2 });
+        await wait(900);
+        if (defmods === 'fail') throw new DefaultModuleError(id, 'E_NO_SPACE: the card has no room for it');
+      }
+      progress({
+        text: `Enabling ${ids.join(', ')}: restarting the runtime`,
+        done: ids.length + 1,
+        total: ids.length + 2,
+      });
+      await wait(1200);
+      return [...ids.map((id) => `${id}: uploaded`), `enabled ${ids.join(', ')} (restarted once, ${where})`];
+    },
+  },
+});
+
 installNativeFeel();
 setMode(sim.mode);
 setLocalFolder(sim.folder === 'none' ? '' : SAMPLES_ROOT);
@@ -85,10 +135,31 @@ render(
   () => (
     <div class="console" style={{ '--accent': panels.dn2.accent, '--func-legend': panels.dn2.func_legend }}>
       <header class="topbar">
-        <span class="path">
-          UI preview: fake device (state in the address: ?dev=ok|empty|noreply|error|slow &amp; folder=files|empty|none
-          &amp; speed=MiB/s &amp; mode=modules|samples &amp; mkdir=0|1)
-        </span>
+        {page === 'emulator' ? (
+          // the toolbar of ../src/Console.tsx around the firmware file: the file, the runtime option, Open…, and the Default modules list
+          <>
+            <span class="path">{bootState ? bootFile : 'Digitone_II_OS1.12.syx'}</span>
+            {bootState ? null : <span class="tag device">dn2 1.12</span>}
+            {bootState ? null : <span class="tag">runtime core/dynreg …</span>}
+            <span class="sp" />
+            <label class="tag opt">
+              <input type="checkbox" checked />
+              <span class="long">Boot with digikit runtime</span>
+            </label>
+            <button type="button" class="tb">
+              <span class="lbl">Open…</span>
+            </button>
+            <DefaultModules device="dn2" note="Uploaded and enabled in the emulator after the firmware loads." />
+            <button type="button" class="tb">
+              <span class="lbl">Reload</span>
+            </button>
+          </>
+        ) : (
+          <span class="path">
+            UI preview: fake device (state in the address: ?dev=ok|empty|noreply|error|slow &amp;
+            folder=files|empty|none &amp; speed=MiB/s &amp; mode=modules|samples &amp; mkdir=0|1)
+          </span>
+        )}
       </header>
       <div class="shell">
         <nav class="sidebar" aria-label="Pages">
@@ -125,6 +196,29 @@ render(
         </div>
       </div>
       {page === 'log' ? <LogPage /> : null}
+      {page === 'emulator' && bootState ? (
+        <>
+          {bootState === 'failed' ? (
+            <p class="alert" role="alert">
+              {bootError}
+            </p>
+          ) : null}
+          <footer class="statusbar">
+            <span>
+              <i class="dot paused" />
+              {bootState === 'loading' ? bootingStatus(startBoot(bootFile)) : 'no firmware'}
+            </span>
+            <span class="sp" />
+            {bootState === 'failed' ? <span class="muted">{loadFailure(bootFile, bootError)}</span> : null}
+            <button type="button" class="sb">
+              Log
+            </button>
+            <button type="button" class="sb">
+              Metrics
+            </button>
+          </footer>
+        </>
+      ) : null}
     </div>
   ),
   document.getElementById('app')!,

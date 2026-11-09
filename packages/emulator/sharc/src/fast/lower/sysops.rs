@@ -64,7 +64,6 @@ impl Lower {
         Ok(())
     }
 
-
     /// A MODE1 write with the bank model on (`state._bank_request`): it
     /// latches MODE1's bank bits and applies them after the next instruction.
     /// With the applied selection equal to MODE1's (`Req::BankSync`) and the

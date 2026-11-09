@@ -1,0 +1,87 @@
+{
+  "machines": [
+    {
+      "devices": {
+        "dn2": {
+          "clone_of": 0,
+          "knobs": [
+            null,
+            {
+              "param": "lp_reverse",
+              "slot": 26
+            }
+          ],
+          "level": 10,
+          "name": "LP0 sampler",
+          "own_dsp": true,
+          "page": {
+            "name": "LP0PROOF",
+            "title": "LP0 sampler"
+          },
+          "position": null,
+          "short": "LP0",
+          "type": 12
+        },
+        "dt2": {
+          "clone_of": 0,
+          "knobs": [
+            {
+              "slot": 0,
+              "stock": 202
+            },
+            {
+              "param": "lp_reverse",
+              "slot": 1
+            },
+            null,
+            null,
+            null,
+            null,
+            null,
+            {
+              "slot": 7,
+              "stock": 209
+            }
+          ],
+          "level": 10,
+          "name": "LP0 sampler",
+          "own_dsp": false,
+          "page": null,
+          "position": null,
+          "short": "LP0",
+          "type": null
+        }
+      },
+      "id": "lp_sampler",
+      "name": "LP0 sampler",
+      "short": "LP0"
+    }
+  ],
+  "module": "core/dsp-lp0-proof",
+  "params": {
+    "dn2": [
+      {
+        "default": 0,
+        "id": "lp_reverse",
+        "max": 256,
+        "min": 0,
+        "name": "Reverse",
+        "short": "REV",
+        "slot": 26,
+        "template": 213
+      }
+    ],
+    "dt2": [
+      {
+        "default": 0,
+        "id": "lp_reverse",
+        "max": 256,
+        "min": 0,
+        "name": "Reverse",
+        "short": "REV",
+        "slot": 1,
+        "template": 204
+      }
+    ]
+  }
+}

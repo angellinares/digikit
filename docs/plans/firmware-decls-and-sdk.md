@@ -235,9 +235,8 @@ Proof: `module:check` for pluck and freqshift; a new C module built in under a s
       `fast::lower::tests::flat_access_*` (a Cranelift "fill your block before switching" panic, also on the commit
       before step 7); the fast-vs-core differential vectors never set `assume_nw32`, so the (nw) 19a guard is covered
       by the Python tests only.
-      Two assembler/decoder points from the delay and half-band kernels, open: `MODIFY(Ix, My)` (register modifier)
-      comes out of `selas` in a 32-bit form that our decode table does not list, so our decoder reads it as a 48-bit
-      Type 7a (a gap in our table or a `selas` mis-encoding: check against the PRM); and Selache lists short
+      Two assembler/decoder points from the delay and half-band kernels: `MODIFY(Ix, My)` (register modifier) was a `selas`
+      mis-encoding (missing Type 7b fixed bits; fixed in the Selache fork, finding 20); open: Selache lists short
       load/store forms with M0-M3 outside a DO loop as 4-byte rows, which the verify step rejects (kernels use M4).
 - [ ] Own SHARC+ assembler (follow-up after the kernels): replace Selache `selas` with an assembler built from our
       encoding table (`tools/sharc_dev/sharcspec/decode_table.json`, `compute_table.json`, from the manuals in

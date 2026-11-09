@@ -119,7 +119,7 @@ def tables():
 def unit():
     return pk_cfunit.CfUnit(
         SYX,
-        [SRC],
+        [SRC, ROOT / "tests/fixtures/native-page-absent.s"],
         STUBS,
         {
             "_mf_first": FIRST,
@@ -250,7 +250,7 @@ def gap_unit():
     # rows: XSlice (7), a gap (8: nobody selected it), Pluck (9)
     return pk_cfunit.CfUnit(
         SYX,
-        [SRC],
+        [SRC, ROOT / "tests/fixtures/native-page-absent.s"],
         STUBS,
         {
             "_mf_first": FIRST,

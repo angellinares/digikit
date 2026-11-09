@@ -10,6 +10,8 @@
 //! - DSP, model: busy instructions per block / 666,667 cycles. Real: the same times the device's cycle factor,
 //!   nominal and high.
 //!
+//! The DSP also keeps `peak`: the largest unsmoothed `real` of any window since the last reset.
+//!
 //! A window is at least [`WINDOW_S`] of emulated time (a poll closes it once it is long enough); each closed
 //! window is blended into the shown value with weight [`SMOOTHING`].
 
@@ -95,6 +97,8 @@ pub struct DspLoad {
     pub model: f64,
     pub real: f64,
     pub real_high: f64,
+    /// The largest `real` of any single window since the meter was reset (unsmoothed).
+    pub peak: f64,
 }
 
 /// Window arithmetic: counters at the window start and now -> one window's loads (None: window too short, or a
@@ -121,6 +125,7 @@ pub fn window(f: &Factors, start: &Counters, now: &Counters) -> Option<Load> {
                     model: pct(1.0),
                     real: pct(f.dsp_nominal),
                     real_high: pct(f.dsp_high),
+                    peak: pct(f.dsp_nominal),
                 })
             } else {
                 None
@@ -152,6 +157,7 @@ fn smooth(old: Load, new: Load) -> Load {
                 model: blend(a.model, b.model),
                 real: blend(a.real, b.real),
                 real_high: blend(a.real_high, b.real_high),
+                peak: a.peak.max(b.peak),
             }),
             (_, b) => b,
         },
@@ -201,6 +207,7 @@ impl Load {
                 "model_pct": round(d.model),
                 "real_pct": round(d.real),
                 "real_high_pct": round(d.real_high),
+                "peak_pct": round(d.peak),
             })
         });
         json!({
@@ -302,5 +309,32 @@ mod tests {
         assert!((second.cf_model - 75.0).abs() < 1e-9);
         // counters restart: value cleared until the next window closes
         assert!(m.poll(&f, at(0, 1_000, None)).is_none());
+    }
+
+    #[test]
+    fn dsp_peak_keeps_a_spike_and_resets() {
+        let f = dn2();
+        let mut m = Meter::default();
+        // windows of 1 s; busy instructions per block: 100k, 400k, 100k busy instructions per block
+        let blocks = f.dsp_block_rate as u64;
+        m.poll(&f, at(0, 0, Some((0.0, 0, 0))));
+        let mut instr = 0u64;
+        let mut peak_in = Vec::new();
+        for (i, per_block) in [100_000u64, 400_000, 100_000].into_iter().enumerate() {
+            instr += per_block * blocks;
+            let s = i as u64 + 1;
+            let counters = at(1, 132_000_000 * s, Some((s as f64, instr, 0)));
+            let shown = m.poll(&f, counters).unwrap().dsp.unwrap();
+            peak_in.push((shown.real, shown.peak));
+        }
+        let spike = 100.0 * 400_000.0 * f.dsp_nominal / (f.dsp_clock_hz / f.dsp_block_rate);
+        assert!((peak_in[1].1 - spike).abs() < 1e-9, "the spike window");
+        assert!(
+            (peak_in[2].1 - spike).abs() < 1e-9,
+            "kept after quiet windows"
+        );
+        assert!(peak_in[2].0 < spike, "while the shown value falls");
+        m.reset();
+        assert!(m.poll(&f, at(0, 0, None)).is_none());
     }
 }

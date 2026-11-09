@@ -1,6 +1,7 @@
 //! A session over a `Transport`: one request at a time, and uploads through `PutMachine`.
 
 use crate::codec::*;
+use crate::gen_proto::CAP_FILEHASH;
 use crate::proto::*;
 use crate::put::{Phase, PutMachine};
 use std::time::{Duration, Instant};
@@ -24,6 +25,8 @@ pub struct Session<T: Transport> {
     pub timeout: Duration,
     pub retries: u32,
     pub chunk: usize,
+    /// The runtime said it has `CAP_FILEHASH` (asked once, before the first command that carries a file hash).
+    file_hash_ok: bool,
 }
 
 impl<T: Transport> Session<T> {
@@ -34,6 +37,7 @@ impl<T: Transport> Session<T> {
             timeout: Duration::from_secs(2),
             retries: 2,
             chunk: MAX_CHUNK,
+            file_hash_ok: false,
         }
     }
 
@@ -74,6 +78,17 @@ impl<T: Transport> Session<T> {
         parse_info(&self.request(CMD_INFO, &[])?)
     }
 
+    /// Fail at once, with `OLD_STORE`, for a runtime whose store keeps SHA-256.
+    fn need_file_hash(&mut self) -> Result<(), Error> {
+        if !self.file_hash_ok {
+            if !self.info()?.has_cap(CAP_FILEHASH) {
+                return Err(Error::Request(OLD_STORE.into()));
+            }
+            self.file_hash_ok = true;
+        }
+        Ok(())
+    }
+
     /// All entries, paged.
     pub fn list(&mut self) -> Result<Vec<Entry>, Error> {
         self.list_under(None)
@@ -85,6 +100,7 @@ impl<T: Transport> Session<T> {
     }
 
     fn list_under(&mut self, prefix: Option<&str>) -> Result<Vec<Entry>, Error> {
+        self.need_file_hash()?;
         let mut out: Vec<Entry> = Vec::new();
         loop {
             let body = list_body(out.len() as u32, prefix)?;
@@ -102,7 +118,7 @@ impl<T: Transport> Session<T> {
         self.request(CMD_MKDIR, &path_body(path)?).map(drop)
     }
 
-    /// RENAME (runtime 0.5.4, capability `CAP_RENAME`): rename or move a file or an empty folder. The data and the sha256 stay; the
+    /// RENAME (runtime 0.5.6, capability `CAP_RENAME`): rename or move a file or an empty folder. The data and its hash stay; the
     /// folder it leaves stays. `NoFile`: no such entry; `Path`: `to` is taken, inside a file or inside `from`, or a path breaks the rules.
     pub fn rename(&mut self, from: &str, to: &str) -> Result<(), Error> {
         let mut body = path_body(from)?;
@@ -117,15 +133,16 @@ impl<T: Transport> Session<T> {
         parse_read(&self.request(CMD_READ, &read_body(path, offset, length)?)?)
     }
 
-    /// VERIFY (runtime 0.2.4, capability `CAP_VERIFY`): the sha256 the device computes from a fresh read of the file on the card.
+    /// VERIFY (runtime 0.2.4, capability `CAP_VERIFY`): the file hash slot the device computes from a fresh read of the file on the card.
     /// Errors: `NoFile`, `Read`.
     pub fn verify(&mut self, path: &str) -> Result<[u8; 32], Error> {
+        self.need_file_hash()?;
         let body = self.request(CMD_VERIFY, &path_body(path)?)?;
         body.try_into()
             .map_err(|_| Error::Protocol("verify: the reply is not 32 bytes".into()))
     }
 
-    /// VERIFY of a range (runtime 0.3.0): the sha256 of `length` bytes from `offset` (a multiple of 512), so a large file is checked in pieces.
+    /// VERIFY of a range (runtime 0.3.0): the hash slot of `length` bytes from `offset` (a multiple of 512), so a large file is checked in pieces.
     /// Errors: `NoFile`, `Read`, `Offset`, `Length`.
     pub fn verify_range(
         &mut self,
@@ -133,6 +150,7 @@ impl<T: Transport> Session<T> {
         offset: u32,
         length: u32,
     ) -> Result<[u8; 32], Error> {
+        self.need_file_hash()?;
         let mut b = path_body(path)?;
         b.extend(offset.to_be_bytes());
         b.extend(length.to_be_bytes());
@@ -165,6 +183,7 @@ impl<T: Transport> Session<T> {
         data: Vec<u8>,
         progress: &mut dyn FnMut(Progress) -> bool,
     ) -> Result<(), Error> {
+        self.need_file_hash()?;
         let mut m = PutMachine::new(path, data, self.chunk, self.seq)?;
         let result = self.drive(&mut m, progress);
         self.seq = m.seq();
@@ -175,11 +194,11 @@ impl<T: Transport> Session<T> {
                 status: Status::State,
                 ..
             }) if m.phase() == Phase::End && m.end_retried() => {
-                let sha = m.sha256();
+                let hash = m.hash();
                 if self
                     .list()?
                     .iter()
-                    .any(|e| e.path == path && e.sha256 == sha)
+                    .any(|e| e.path == path && e.hash == hash)
                 {
                     Ok(())
                 } else {
@@ -249,11 +268,11 @@ impl<T: Transport> Session<T> {
     }
 }
 
-/// The store entries that no file in `library` (path, sha256) matches: a repack would lose them.
+/// The store entries that no file in `library` (path, hash) matches: a repack would lose them.
 pub fn repack_missing(listing: &[Entry], library: &[(String, [u8; 32])]) -> Vec<String> {
     listing
         .iter()
-        .filter(|e| !library.iter().any(|(p, s)| *p == e.path && *s == e.sha256))
+        .filter(|e| !library.iter().any(|(p, s)| *p == e.path && *s == e.hash))
         .map(|e| e.path.clone())
         .collect()
 }

@@ -97,7 +97,6 @@ from tools.sharc_dev.sharc_core.flags import (  # noqa: E402, F401
 )
 from tools.sharc_dev.sharc_core.floats import (  # noqa: E402, F401
     _FLOAT_ALL_ONES,
-    _approx_recips,
     _fixed_to_float,
     _fixed_to_float_scaled,
     _float32,
@@ -262,7 +261,6 @@ def trace(
     breakpoints: Sequence[int] = (),
     provisional_forms: Sequence[str] = (),
     pokes: Mapping[int, int] | None = None,
-    approx_recips: bool = False,
 ) -> list[State]:
     uregs: dict[int, Value] = (
         {
@@ -312,7 +310,6 @@ def trace(
         core_reset_state=core_reset_state,
         mmrs=mmrs,
         provisional_forms=tuple(provisional_forms),
-        approx_recips=approx_recips,
     )
     # Seed the per-path write overlay before the first instruction executes,
     # through the same _dm_write() a real store instruction uses, so a poked
@@ -436,8 +433,6 @@ def summarize(
             summary["watched_dm"] = _watched_dm_snapshot(state, watch_dm)
         if state.provisional_used:
             summary["provisional_forms_used"] = list(state.provisional_used)
-        if state.approx_recips_used:
-            summary["approx_recips_used"] = True
         summaries.append(summary)
     return {"start_sw": start_sw, "states": summaries}
 
@@ -519,14 +514,6 @@ def main(argv=None) -> int:
         metavar="NAME",
         help="execute this form (e.g. 14d) although the table marks it "
         "unconfirmed; any run that uses one is calibration, not qualification",
-    )
-    p.add_argument(
-        "--approx-recips",
-        action="store_true",
-        help="opt in to a documented-formula, undocumented-ROM approximation "
-        "of recips's seed (PRM p.19-16/19-17); every value it produces is "
-        "tagged with an 'approximate-recips' event and is calibration, not "
-        "qualification",
     )
     output = p.add_mutually_exclusive_group()
     output.add_argument("--json", action="store_true")
@@ -636,7 +623,6 @@ def main(argv=None) -> int:
             breakpoints=a.break_pc,
             provisional_forms=tuple(a.allow_provisional_form),
             pokes=poke_values,
-            approx_recips=a.approx_recips,
         )
     except ValueError as error:
         p.error(str(error))
@@ -647,7 +633,6 @@ def main(argv=None) -> int:
             "assumptions": (
                 (["32-bit internal normal words"] if s.assume_nw32 else [])
                 + (["documented core/MMR reset values"] if s.core_reset_state else [])
-                + (["approximate RECIPS seed"] if s.approx_recips_used else [])
             ),
             "trace": s.trace,
             "registers": _register_snapshot(s),

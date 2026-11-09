@@ -20,7 +20,7 @@
 //   --scenarios PATH   tests/scenarios/dn2.json
 //   --scenario NAME    scenario to play (required)
 //   --fast T,M,F       turn the DSP fast tier on (wasm kernels; needs a `fast-wasm` core): threshold, min insns, follow;
-//                      `desktop` = the shipped regions and cluster roots of tools/emulator/fast_regions.json, `desktop+auto` adds run-time selection
+//                      `desktop` = the shipped regions and cluster roots of config/emulator.json, `desktop+auto` adds run-time selection
 //   --split 1          two core instances in two threads (ColdFire here, DSP in a worker_threads worker); PCM must equal the single instance's
 //   --seconds S        override the scenario length in audio seconds (like coupled-run)
 //   --out PATH         write the raw f32le PCM (compare with coupled-run --wav x.f32)
@@ -67,13 +67,13 @@ if (!scenario) throw new Error(`no scenario ${args.scenario} in ${paths.scenario
 // The fast tier of the browser core (`--fast threshold,min_insns,follow`, a core
 // built with the `fast-wasm` feature): its kernels are wasm modules the core
 // emits and this host compiles over the core's own memory.
-// `--fast desktop[+auto]`: the desktop configuration (tools/emulator/fast_regions.json for this firmware's SHA-256), with run-time selection on top for `+auto`.
+// `--fast desktop[+auto]`: the desktop configuration (config/emulator.json for this firmware's SHA-256), with run-time selection on top for `+auto`.
 const fastConfig = (() => {
   if (!args.fast) return undefined;
   if (!args.fast.startsWith('desktop')) return args.fast.split(',').map(Number).concat([0, 0, 0]).slice(0, 3);
-  const table = JSON.parse(fs.readFileSync(path.join(root, 'tools/emulator/fast_regions.json'), 'utf8'));
+  const table = JSON.parse(fs.readFileSync(path.join(root, 'config/emulator.json'), 'utf8'));
   const entry = table[crypto.createHash('sha256').update(fs.readFileSync(paths.syx)).digest('hex')];
-  if (!entry) throw new Error('no entry in tools/emulator/fast_regions.json for this firmware');
+  if (!entry) throw new Error('no entry in config/emulator.json for this firmware');
   const pcs = (t) =>
     (t ?? '')
       .split(',')

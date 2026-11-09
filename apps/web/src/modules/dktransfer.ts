@@ -1,11 +1,11 @@
 // The Transfer logic in TypeScript (the port of tools/device/dktransfer.py, which stays as the command line for scripts and the
-// scenarios): the merged list of the built modules in a folder and what the device holds, install (upload, skip the same sha256,
+// scenarios): the merged list of the built modules in a folder and what the device holds, install (upload, skip the same file hash,
 // VERIFY), delete (DELETE, confirmed by LIST) and restart (RESTART, wait for the boot, report what loaded). The events have the shapes
 // the Python tool prints with --json. Written without TS-only runtime syntax so node can import it for the tests.
 //
 // The app does not build: its modules are built `.dkm` files of a folder (`mise run module:pack-all`).
-import { DkError, DkSession, HEADER_BYTES, fmtVersion, hasCap, hexOf, storeFree } from '@digi/dk-session';
-import { describeShortBy, emptyCaps, fitsNow, type Caps, type Needs } from './dkfit.ts';
+import { DkError, DkSession, HEADER_BYTES, fileHashHex, fmtVersion, hasCap, storeFree } from '@digi/dk-session';
+import { fitsNow, type Caps, type Needs } from './fit.ts';
 import type { DkEntry, DkInfoFull } from '@digi/dk-session';
 
 export type Group = 'Machines' | 'Effects' | 'Tools';
@@ -66,7 +66,8 @@ export interface LibraryModule extends HeaderInfo {
   test: boolean;
   /** The store path the file is uploaded to: `modules/<last part of the id>.dkm`. */
   path: string;
-  sha256: string;
+  /** `fileHashHex` of the file: what the store's LIST and VERIFY say of it. */
+  hash: string;
   file_size: number;
   bytes: Uint8Array;
 }
@@ -84,10 +85,10 @@ export function groupOf(c: HeaderInfo['contracts']): Group {
 export function headerInfo(h: Uint8Array): HeaderInfo | null {
   if (h.length < HEADER_BYTES || MAGIC.some((b, i) => h[i] !== b)) return null;
   const v = new DataView(h.buffer, h.byteOffset, h.length);
-  const pair = (at: number): [number, number] => [h[at], h[at + 1]];
+  const pair = (at: number): [number, number] => [h[at]!, h[at + 1]!];
   const contracts = { api: pair(0x38), machine: pair(0x3a), fx: pair(0x3c), service: pair(0x3e) };
   return {
-    name: new TextDecoder().decode(h.subarray(0x40, 0x60)).split('\0')[0],
+    name: new TextDecoder().decode(h.subarray(0x40, 0x60)).split('\0')[0]!,
     version: fmtVersion(v.getUint32(0x34)),
     contracts,
     group: groupOf(contracts),
@@ -106,7 +107,6 @@ export async function libraryModule(
 ): Promise<LibraryModule | null> {
   const h = headerInfo(bytes.subarray(0, HEADER_BYTES));
   if (!h) return null;
-  const sha = new Uint8Array(await crypto.subtle.digest('SHA-256', bytes as BufferSource));
   return {
     ...h,
     needs: needsOf?.(bytes) ?? null,
@@ -114,7 +114,7 @@ export async function libraryModule(
     label: h.name.split('/').pop() ?? h.name,
     test: h.name.startsWith('test/'),
     path: modulePath(h.name),
-    sha256: hexOf(sha),
+    hash: fileHashHex(bytes),
     file_size: bytes.length,
     bytes,
   };
@@ -123,7 +123,7 @@ export async function libraryModule(
 export const GROUP_ORDER: Group[] = ['Machines', 'Effects', 'Tools'];
 
 /**
- * What would not fit on the target (CAPACITY): `[]` when it fits next to what is loaded now (the fit rule, dkfit.ts), else one line that says what is
+ * What would not fit on the target (CAPACITY): `[]` when it fits next to what is loaded now (the fit rule, fit.ts), else one line that says what is
  * short and whether the module fits the device when the loaded ones are left out (the next boot loads the selection into an empty runtime).
  * Only a warning: the device refuses a load that does not fit.
  */
@@ -131,16 +131,16 @@ export function fitWarnings(row: { loaded: boolean; needs?: Needs }, cap: Caps |
   if (!cap || row.loaded || !row.needs) return [];
   const now = fitsNow(row.needs, cap);
   if (!now) return [];
-  const alone = fitsNow(row.needs, emptyCaps(cap)) === null;
+  const alone = fitsNow(row.needs, cap, true) === null;
   return [
-    `${describeShortBy(now)}${alone ? '; fits when the modules loaded now are not selected' : '; more than this device has'}`,
+    `${now.describe_by}${alone ? '; fits when the modules loaded now are not selected' : '; more than this device has'}`,
   ];
 }
 
 /** The list from its parts: the library, the card's LIST, the names MODULES reports loaded, CAPACITY (or null), and the header bytes of the card files. */
 export function mergeView(
   library: LibraryModule[],
-  card: { path: string; size: number; sha256: string }[],
+  card: { path: string; size: number; hash: string }[],
   loaded: string[],
   cap: Caps | null,
   headers: Record<string, Uint8Array | null>,
@@ -162,7 +162,7 @@ export function mergeView(
       arena: m.needs?.ARENA,
       dsp: m.needs?.DSP_AREA,
       needs: m.needs ?? undefined,
-      on_card: !have ? 'no' : have.size === m.file_size && have.sha256 === m.sha256 ? 'yes' : 'other version',
+      on_card: !have ? 'no' : have.size === m.file_size && have.hash === m.hash ? 'yes' : 'other version',
       loaded: loaded.includes(m.name),
     };
     row.warnings = fitWarnings(row, cap);
@@ -219,6 +219,76 @@ export async function listModules(s: DkSession, info: DkInfoFull): Promise<DkEnt
   return (await s.list()).filter((e) => e.path.startsWith(MODULES_FOLDER));
 }
 
+/** The store folder of a module's own files (sdk/include/dk/data.h): `data/<module id>/`. */
+export const moduleFilesFolder = (moduleId: string): string => `data/${moduleId}/`;
+
+/** The module chooser keeps a file name in 48 bytes, NUL included (modules/tools/bootscreen/src/module.c, NAME_MAX_BYTES). */
+export const MODULE_FILE_NAME_LIMIT = 48;
+
+/**
+ * The store path of a file of a module: `data/<module id>/<name>`. The rule of `dk_data_path` (sdk/include/dk/data.h): `name` is not empty
+ * and holds neither '/' nor "..". Throws otherwise.
+ */
+export function moduleFilePath(moduleId: string, name: string): string {
+  if (name.length >= MODULE_FILE_NAME_LIMIT)
+    throw new DkError({
+      error: `"${name}" is ${name.length} characters; a module file name must be shorter than ${MODULE_FILE_NAME_LIMIT}`,
+      kind: 'request',
+    });
+  if (!name || name.includes('/') || name.includes('..'))
+    throw new DkError({ error: `"${name}" is not a name for a module file (empty, '/' or '..')`, kind: 'request' });
+  return `${moduleFilesFolder(moduleId)}${name}`;
+}
+
+/** The files of a module under `data/<module id>/`: by prefix when the runtime has FOLDERS, else all entries, filtered here. */
+export async function listModuleFiles(s: DkSession, moduleId: string): Promise<DkEntry[]> {
+  const folder = moduleFilesFolder(moduleId);
+  const info = await s.info();
+  requireRuntime(info);
+  const all = hasCap(info, 'FOLDERS') ? await s.list(folder) : await s.list();
+  return all.filter((e) => e.path.startsWith(folder) && e.path.length > folder.length);
+}
+
+/** Upload one file of a module and VERIFY it against the bytes sent (a mismatch is an error). */
+export async function putModuleFile(
+  s: DkSession,
+  moduleId: string,
+  name: string,
+  bytes: Uint8Array,
+  progress: (sent: number, total: number) => void = () => {},
+): Promise<void> {
+  const path = moduleFilePath(moduleId, name);
+  requireRuntime(await s.info());
+  await s.put(path, bytes, progress);
+  if (!(await s.verifyFile(path, bytes)))
+    throw new DkError({
+      error: `${path}: the device reads back other bytes: the card did not keep the file`,
+      kind: 'verify',
+    });
+}
+
+/** DELETE one file of a module. */
+export async function removeModuleFile(s: DkSession, moduleId: string, name: string): Promise<void> {
+  const path = moduleFilePath(moduleId, name);
+  requireRuntime(await s.info());
+  await s.delete(path);
+}
+
+/** The whole file at `path` of the store, read in pieces of READ (runtime 0.2.4, capability READ). */
+export async function readStoreFile(s: DkSession, path: string, piece = 768): Promise<Uint8Array> {
+  const first = await s.read(path, 0, piece);
+  const out = new Uint8Array(first.size);
+  out.set(first.bytes.subarray(0, first.size));
+  let at = first.bytes.length;
+  while (at < first.size) {
+    const part = await s.read(path, at, Math.min(piece, first.size - at));
+    if (part.bytes.length === 0) throw new DkError({ error: `${path}: short read at ${at}`, kind: 'protocol' });
+    out.set(part.bytes, at);
+    at += part.bytes.length;
+  }
+  return out;
+}
+
 /** The merged view for the device behind `s`. */
 export async function buildView(s: DkSession, library: LibraryModule[]): Promise<TransferView> {
   const info = await s.info();
@@ -263,7 +333,7 @@ export function uploadProgress(emit: Emit, id: string, total: number): (sent: nu
 }
 
 /**
- * For each of `ids`, in order: upload unless the card has the same sha256 (a `skip` event), then VERIFY (the device hashes the file from a
+ * For each of `ids`, in order: upload unless the card has the same file hash (a `skip` event), then VERIFY (the device hashes the file from a
  * fresh read of the card; a mismatch is an error). Nothing else: the device's selection is not touched.
  */
 export async function install(
@@ -289,8 +359,8 @@ export async function install(
     const m = by.get(id)!;
     emit({ event: 'upload', id, path: m.path, bytes: m.file_size });
     const there = have.get(m.path);
-    if (there && there.size === m.file_size && there.sha256 === m.sha256) {
-      emit({ event: 'skip', id, reason: 'same sha256 on the card' });
+    if (there && there.size === m.file_size && there.hash === m.hash) {
+      emit({ event: 'skip', id, reason: 'same hash on the card' });
     } else {
       const progress = uploadProgress(emit, id, m.file_size);
       await s.put(m.path, m.bytes, progress);
@@ -298,11 +368,11 @@ export async function install(
     }
     if (canVerify) {
       const got = await s.verify(m.path);
-      const ok = got === m.sha256;
+      const ok = got === m.hash;
       emit({ event: 'verify', id, path: m.path, ok });
       if (!ok)
         throw new DkError({
-          error: `${m.path}: the device reads back sha256 ${got.slice(0, 12)}, expected ${m.sha256.slice(0, 12)}: the card did not keep the file`,
+          error: `${m.path}: the device reads back hash ${got.slice(0, 8)}, expected ${m.hash.slice(0, 8)}: the card did not keep the file`,
           kind: 'verify',
         });
     }

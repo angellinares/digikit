@@ -6,9 +6,10 @@ import type { FlashSender, PreparedFlash, RpcMachine } from '../patch/patchkit-c
 import {
   CANCEL_TEXT,
   NO_ANSWER_TEXT,
-  NO_RESTART_TEXT,
-  NO_RETURN_TEXT,
+  STOPPED_WAITING_TEXT,
   judge,
+  noReturnText,
+  samePortName,
   sendFailedText,
   type Answer,
   type FlashState,
@@ -24,14 +25,20 @@ export interface FlowOps {
   sleep(ms: number): Promise<void>;
   /** Let go of the port: the device is about to restart. */
   release(): Promise<void>;
-  /** Is the device's port in the list now? */
-  portPresent(): Promise<boolean>;
+  /** The name of the device's port when the run started. */
+  port: string;
+  /** The names of the MIDI ports now. */
+  ports(): Promise<string[]>;
+  /** The device came back on a port with another name (CoreMIDI numbers a second port of one name): use this port from now on. */
+  moved?(name: string): Promise<void> | void;
+  /** One line for the app's log. */
+  log?(text: string): void;
   /** Ask the device after the restart; throws while it does not answer. INFO that does not answer is `runtime: undefined`. */
   ask(): Promise<Answer>;
 }
 
 export interface FlowLimits {
-  /** How long the port may take to go away after the last message. */
+  /** How long to wait for the port to go away after the last message; then the device is asked anyway (the restart may have been faster than a poll). */
   leaveMs: number;
   /** How long it may take to come back. */
   returnMs: number;
@@ -39,9 +46,22 @@ export interface FlowLimits {
   askMs: number;
   pollMs: number;
   askEveryMs: number;
+  /** Real-time limits of one `release`, one `ports` and one `ask` (a call that hangs must not stop the run). */
+  releaseMs: number;
+  portsMs: number;
+  askTryMs: number;
 }
 
-export const LIMITS: FlowLimits = { leaveMs: 240_000, returnMs: 240_000, askMs: 90_000, pollMs: 400, askEveryMs: 2000 };
+export const LIMITS: FlowLimits = {
+  leaveMs: 10_000,
+  returnMs: 240_000,
+  askMs: 90_000,
+  pollMs: 400,
+  askEveryMs: 2000,
+  releaseMs: 5000,
+  portsMs: 5000,
+  askTryMs: 10_000,
+};
 
 const messageOf = (p: PreparedFlash, i: number): Uint8Array => p.image.subarray(i === 0 ? 0 : p.ends[i - 1], p.ends[i]);
 
@@ -109,12 +129,32 @@ export async function runFlash(
   return afterSend(ops, p, signal, set, limits, false);
 }
 
+/** Reject-free timeout: the promise's value, or `undefined` when `ms` real milliseconds pass or the run is aborted. */
+async function within<T>(p: Promise<T>, ms: number, signal: AbortSignal): Promise<{ value: T } | undefined> {
+  let off = (): void => {};
+  const out = new Promise<undefined>((resolve) => {
+    const timer = setTimeout(() => resolve(undefined), ms);
+    const abort = () => resolve(undefined);
+    signal.addEventListener('abort', abort, { once: true });
+    off = () => {
+      clearTimeout(timer);
+      signal.removeEventListener('abort', abort);
+    };
+  });
+  try {
+    return await Promise.race([p.then((value) => ({ value })), out]);
+  } finally {
+    off();
+  }
+}
+
 /**
  * The device checks and writes by itself; its port goes away and comes back, then the device is asked. Shared by both routes (`rpc`: the
- * device accepted End with commit 1; menu: the last message was sent).
+ * device accepted End with commit 1; menu: the last message was sent). No step can hang the run: `release`, `ports` and `ask` have a time
+ * limit each, and the restart need not be seen (a restart faster than one poll is only asked for).
  */
 async function afterSend(
-  ops: Pick<FlowOps, 'now' | 'sleep' | 'release' | 'portPresent' | 'ask'>,
+  ops: Pick<FlowOps, 'now' | 'sleep' | 'release' | 'ports' | 'ask' | 'port' | 'moved' | 'log'>,
   p: PreparedFlash,
   signal: AbortSignal,
   set: (s: FlashState) => void,
@@ -125,34 +165,78 @@ async function afterSend(
     set(s);
     return s;
   };
-  // The device checks and writes by itself; its port goes away and comes back.
   const since = ops.now();
+  let shown: string | undefined;
+  let names: string[] | undefined;
   const stage = (s: 'leaving' | 'returning' | 'asking') =>
     set({ phase: 'rebooting', stage: s, sinceMs: since, nowMs: ops.now(), ...(rpc ? { rpc: true as const } : {}) });
-  stage('leaving');
-  await ops.release();
-  const wait = async (present: boolean, within: number, s: 'leaving' | 'returning'): Promise<boolean> => {
-    const end = ops.now() + within;
-    while (ops.now() < end) {
-      if (signal.aborted) return false;
-      if ((await ops.portPresent()) === present) return true;
-      await ops.sleep(limits.pollMs);
-      stage(s);
-    }
-    return false;
+  /** The ports now, or undefined when the list did not come in time ("unknown"). */
+  const listPorts = async (): Promise<string[] | undefined> => {
+    const r = await within(
+      ops.ports().catch(() => undefined),
+      limits.portsMs,
+      signal,
+    );
+    if (r?.value) names = r.value;
+    return r?.value;
   };
-  if (!(await wait(false, limits.leaveMs, 'leaving'))) {
-    return signal.aborted
-      ? done({ phase: 'failed', code: 'no-restart', message: 'You stopped waiting. The device carries on by itself.' })
-      : done({ phase: 'failed', code: 'no-restart', message: NO_RESTART_TEXT });
+  const enter = async (s: 'leaving' | 'returning' | 'asking') => {
+    stage(s);
+    if (shown === s) return;
+    shown = s;
+    await listPorts();
+    ops.log?.(`rebooting: ${s} · ports: ${names ? names.join(', ') || 'none' : 'unknown'}`);
+  };
+  stage('leaving');
+  await within(
+    ops.release().catch(() => undefined),
+    limits.releaseMs,
+    signal,
+  );
+  await enter('leaving');
+  const mine = (list: string[]) => list.filter((n) => samePortName(ops.port, n));
+  // wait for the port to go; a restart faster than a poll is not seen, so after `leaveMs` the device is asked anyway
+  let left = false;
+  const leaveEnd = ops.now() + limits.leaveMs;
+  while (ops.now() < leaveEnd && !signal.aborted) {
+    const list = await listPorts();
+    if (list && mine(list).length === 0) {
+      left = true;
+      break;
+    }
+    await ops.sleep(limits.pollMs);
+    stage('leaving');
   }
-  stage('returning');
-  if (!(await wait(true, limits.returnMs, 'returning'))) {
-    return signal.aborted
-      ? done({ phase: 'failed', code: 'no-return', message: 'You stopped waiting. The device carries on by itself.' })
-      : done({ phase: 'failed', code: 'no-return', message: NO_RETURN_TEXT });
+  if (signal.aborted) return done({ phase: 'failed', code: 'no-restart', message: STOPPED_WAITING_TEXT });
+  if (left) {
+    await enter('returning');
+    const returnEnd = ops.now() + limits.returnMs;
+    let back: string | undefined;
+    while (!back && ops.now() < returnEnd && !signal.aborted) {
+      const list = await listPorts();
+      const found = list ? mine(list) : [];
+      if (found.length) back = found.includes(ops.port) ? ops.port : found[0];
+      else {
+        await ops.sleep(limits.pollMs);
+        stage('returning');
+      }
+    }
+    if (!back)
+      return done(
+        signal.aborted
+          ? { phase: 'failed', code: 'no-return', message: STOPPED_WAITING_TEXT }
+          : { phase: 'failed', code: 'no-return', message: noReturnText(ops.port) },
+      );
+    if (back !== ops.port) {
+      ops.log?.(`the device came back as ${back} (it was ${ops.port})`);
+      try {
+        await ops.moved?.(back);
+      } catch (e) {
+        ops.log?.(`could not switch to ${back}: ${text(e)}`);
+      }
+    }
   }
-  stage('asking');
+  await enter('asking');
   const end = ops.now() + limits.askMs;
   let stockSeen = 0;
   let last: Answer | undefined;
@@ -164,10 +248,13 @@ async function afterSend(
   };
   while (ops.now() < end && !signal.aborted) {
     await ops.sleep(limits.askEveryMs);
-    let a: Answer;
-    try {
-      a = await ops.ask();
-    } catch {
+    const r = await within(
+      ops.ask().catch(() => undefined),
+      limits.askTryMs,
+      signal,
+    );
+    const a = r?.value;
+    if (!a) {
       stage('asking');
       continue;
     }
@@ -177,6 +264,9 @@ async function afterSend(
     if (p.restore && !a.runtime && a.os === p.os && ++stockSeen < 2) continue;
     // a patched image answers SoftwareVersion before its runtime answers INFO: wait for the runtime
     if (!p.restore && !a.runtime) continue;
+    // The old image can still answer for a moment (also when the port never seemed to leave): keep asking while the answer is not
+    // the patch's, and judge the last answer when the time is up.
+    if (!p.restore && (a.runtime !== p.runtime || (a.imageId ?? null) !== p.imageId)) continue;
     return done(verdict(a));
   }
   if (last && !signal.aborted) return done(verdict(last));
@@ -190,7 +280,10 @@ async function afterSend(
 // ---- the RPC route ---------------------------------------------------------------------------------------------------------------
 
 /** The operations of the RPC route: the state machine (Rust, `flash_rpc::RpcFlash`) and a port that sends one message and reads the next. */
-export interface RpcOps extends Pick<FlowOps, 'send' | 'now' | 'sleep' | 'release' | 'portPresent' | 'ask'> {
+export interface RpcOps extends Pick<
+  FlowOps,
+  'send' | 'now' | 'sleep' | 'release' | 'ports' | 'ask' | 'port' | 'moved' | 'log'
+> {
   machine(image: Uint8Array, chunk: number): Promise<RpcMachine>;
   /** The next message the device sent within `timeoutMs`, or null; ends early (null) when `signal` aborts. */
   recv(timeoutMs: number, signal?: AbortSignal): Promise<Uint8Array | null>;

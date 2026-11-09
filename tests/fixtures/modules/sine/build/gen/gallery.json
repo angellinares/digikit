@@ -5,9 +5,10 @@
         "dn2": {
           "clone_of": 0,
           "knobs": [
+            null,
             {
               "param": "sine_level",
-              "slot": 25
+              "slot": 26
             }
           ],
           "level": 10,
@@ -66,7 +67,7 @@
         "min": 0,
         "name": "Level",
         "short": "LEVEL",
-        "slot": 25,
+        "slot": 26,
         "template": 213
       }
     ],
@@ -79,7 +80,7 @@
         "name": "Level",
         "short": "LEVEL",
         "slot": 1,
-        "template": 209
+        "template": 204
       }
     ]
   }

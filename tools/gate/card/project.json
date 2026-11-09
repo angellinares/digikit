@@ -1,0 +1,68 @@
+{
+  "$schema": "../../../node_modules/nx/schemas/project-schema.json",
+  "name": "gate-card",
+  "targets": {
+    "card": {
+      "executor": "nx:run-commands",
+      "cache": false,
+      "parallelism": false,
+      "dependsOn": ["digi-control:daemons"],
+      "inputs": [
+        "{workspaceRoot}/tools/__init__.py",
+        "{workspaceRoot}/tools/patchkit/pk_harness.py",
+        "{workspaceRoot}/tools/patchkit/patchkit.py",
+        "{workspaceRoot}/tools/patchkit/modroots.py",
+        "{workspaceRoot}/tools/patchkit/pk_emud_pgo.py",
+        "{workspaceRoot}/tools/patchkit/pk_dsp_budget.py",
+        "{workspaceRoot}/tools/patchkit/pk_mem.py",
+        "{workspaceRoot}/tools/patchkit/pk_device.py",
+        "{workspaceRoot}/tools/control/digi_client.py",
+        "{workspaceRoot}/tools/emulator/card_check.py",
+        "{workspaceRoot}/tools/emulator/digi_env.py",
+        "{workspaceRoot}/tools/emulator/native_target.py",
+        "{workspaceRoot}/tools/emulator/native_pgo.py",
+        "{workspaceRoot}/tools/emulator/native_emu.py",
+        "{workspaceRoot}/config/emulator.json",
+        "{workspaceRoot}/tools/emulator/ready_inputs.json",
+        "{workspaceRoot}/tools/firmware/config.py",
+        "{workspaceRoot}/tools/firmware/device.py",
+        "{workspaceRoot}/tools/device/dklog_kinds.py",
+        "{workspaceRoot}/tools/devtools/benchlock.py",
+        "{workspaceRoot}/tools/devtools/portable_flock.py",
+        "{workspaceRoot}/tools/devtools/stablebin.py",
+        "{workspaceRoot}/tools/devtools/emud_key.py",
+        "{workspaceRoot}/tools/devtools/verify_build.py",
+        "{workspaceRoot}/tools/sharc_dev/sharc_core/**/*.py",
+        "{workspaceRoot}/tools/sharc_dev/sharc_transpile/**/*.py",
+        "{workspaceRoot}/tools/sharc_dev/sharc_transpile_infer.py",
+        "{workspaceRoot}/tools/sharc_dev/sharc_rsgen.py",
+        "{workspaceRoot}/Cargo.toml",
+        "{workspaceRoot}/Cargo.lock",
+        "{workspaceRoot}/packages/emulator/**/*",
+        "{workspaceRoot}/packages/dkneeds/**/*",
+        "{workspaceRoot}/packages/dksample/**/*",
+        "{workspaceRoot}/packages/dkupload/**/*",
+        "{workspaceRoot}/packages/patchkit/**/*",
+        "{workspaceRoot}/modules/core/runtime/fit/Cargo.toml",
+        "{workspaceRoot}/modules/core/runtime/fit/src/**/*",
+        "{workspaceRoot}/modules/core/runtime/sdk/Cargo.toml",
+        "{workspaceRoot}/modules/core/runtime/sdk/src/**/*",
+        "{workspaceRoot}/devices/**/*",
+        "{workspaceRoot}/tests/scenarios/dn2.json",
+        "{workspaceRoot}/sdk/sdk.toml",
+        "{workspaceRoot}/tools/patchkit/toolchain/**/*",
+        "{workspaceRoot}/tools/nx/daemon-env.mjs",
+        "{workspaceRoot}/tools/firmware/plusdrive_check.py"
+      ],
+      "options": {
+        "commands": [
+          "node tools/nx/daemon-env.mjs -- uv run python -m tools.emulator.card_check",
+          "uv run python -m tools.firmware.plusdrive_check",
+          "uv run python -m tools.firmware.plusdrive_check --dn2"
+        ],
+        "parallel": false,
+        "cwd": "."
+      }
+    }
+  }
+}

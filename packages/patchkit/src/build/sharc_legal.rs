@@ -207,29 +207,21 @@ mod tests {
         assert!(loop_end_problems(&counted_loop(5, None), "").is_empty());
     }
 
-    /// The outer loop of a nested loop with its last instruction compressed: Selache keeps one loop end, so the inner `DO` ends the
-    /// 48-bit mode of the outer loop early (finding 91).
-    const NESTED: &str = ".SECTION/PM seg_pmco;
-_x:
-    LCNTR = 4, DO _w UNTIL LCE;
-        R0 = DM(I1, M6);
-        LCNTR = 4, DO _b UNTIL LCE;
-            R1 = R0 AND R6;
-_b:         DM(I0, M6) = R1;
-_w: NOP;
-    RTS;
-";
+    /// A loop whose end is a numeric offset (`DO (PC, n)`), which the assembler does not track, so it compresses the body. The
+    /// body is two NOPs of 2 bytes each (end at 4 short words) or, with `.NOCOMPRESS;`, of 6 bytes each (end at 6).
+    fn numeric_loop(body: &str, end: u32) -> String {
+        format!(
+            ".SECTION/PM seg_pmco;\n_x:\n    {body}LCNTR = 4, DO (PC, {end}) UNTIL LCE;\n        NOP;\n        NOP;\n    RTS;\n"
+        )
+    }
 
     #[test]
-    fn a_nested_loop_whose_outer_end_is_compressed_is_refused_and_the_nocompress_form_passes() {
-        let e = object_from_text(NESTED).err().expect("accepted").0;
-        assert!(
-            e.contains("DO loop at") && e.contains("finding 91"),
-            "{e}"
-        );
-        let fixed = NESTED
-            .replace("    LCNTR = 4, DO _w", "    .NOCOMPRESS;\n    LCNTR = 4, DO _w")
-            .replace("_w: NOP;", "_w: NOP;\n    .COMPRESS;");
-        object_from_text(&fixed).unwrap();
+    fn a_loop_whose_end_is_compressed_is_refused_and_the_48_bit_form_passes() {
+        let e = object_from_text(&numeric_loop("", 4))
+            .err()
+            .expect("accepted")
+            .0;
+        assert!(e.contains("DO loop at") && e.contains("finding 91"), "{e}");
+        object_from_text(&numeric_loop(".NOCOMPRESS;\n    ", 6)).unwrap();
     }
 }

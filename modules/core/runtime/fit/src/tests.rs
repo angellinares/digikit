@@ -5,161 +5,10 @@ use std::format;
 use std::string::String;
 use std::{vec, vec::Vec};
 
-/// A minimal JSON reader (the crate has no JSON dependency): objects, arrays, strings, unsigned numbers, null.
-#[derive(Debug)]
-enum Value {
-    Null,
-    Num(u64),
-    Str(String),
-    Arr(Vec<Value>),
-    Obj(Vec<(String, Value)>),
-}
-
-static NULL: Value = Value::Null;
-
-impl Value {
-    fn get(&self, k: &str) -> Option<&Value> {
-        match self {
-            Value::Obj(o) => o.iter().find(|(n, _)| n == k).map(|(_, v)| v),
-            _ => None,
-        }
-    }
-    fn as_u64(&self) -> Option<u64> {
-        match self {
-            Value::Num(n) => Some(*n),
-            _ => None,
-        }
-    }
-    fn as_str(&self) -> Option<&str> {
-        match self {
-            Value::Str(s) => Some(s),
-            _ => None,
-        }
-    }
-    fn as_array(&self) -> Option<&Vec<Value>> {
-        match self {
-            Value::Arr(a) => Some(a),
-            _ => None,
-        }
-    }
-    fn as_object(&self) -> Option<&Vec<(String, Value)>> {
-        match self {
-            Value::Obj(o) => Some(o),
-            _ => None,
-        }
-    }
-    fn is_null(&self) -> bool {
-        matches!(self, Value::Null)
-    }
-}
-
-impl core::ops::Index<&str> for Value {
-    type Output = Value;
-    fn index(&self, k: &str) -> &Value {
-        self.get(k).unwrap_or(&NULL)
-    }
-}
-
-impl core::fmt::Display for Value {
-    fn fmt(&self, f: &mut core::fmt::Formatter) -> core::fmt::Result {
-        write!(f, "{self:?}")
-    }
-}
-
-struct Parser<'a> {
-    b: &'a [u8],
-    at: usize,
-}
-
-impl Parser<'_> {
-    fn ws(&mut self) {
-        while self.at < self.b.len() && self.b[self.at].is_ascii_whitespace() {
-            self.at += 1;
-        }
-    }
-    fn eat(&mut self, c: u8) {
-        self.ws();
-        assert_eq!(
-            self.b[self.at], c,
-            "json: expected {} at {}",
-            c as char, self.at
-        );
-        self.at += 1;
-    }
-    fn string(&mut self) -> String {
-        self.eat(b'"');
-        let start = self.at;
-        while self.b[self.at] != b'"' {
-            assert_ne!(self.b[self.at], b'\\', "json: escapes are not read");
-            self.at += 1;
-        }
-        let s = String::from_utf8(self.b[start..self.at].to_vec()).unwrap();
-        self.at += 1;
-        s
-    }
-    fn value(&mut self) -> Value {
-        self.ws();
-        match self.b[self.at] {
-            b'{' => {
-                self.at += 1;
-                let mut o = vec![];
-                loop {
-                    self.ws();
-                    if self.b[self.at] == b'}' {
-                        self.at += 1;
-                        return Value::Obj(o);
-                    }
-                    if !o.is_empty() {
-                        self.eat(b',');
-                    }
-                    let k = self.string();
-                    self.eat(b':');
-                    o.push((k, self.value()));
-                }
-            }
-            b'[' => {
-                self.at += 1;
-                let mut a = vec![];
-                loop {
-                    self.ws();
-                    if self.b[self.at] == b']' {
-                        self.at += 1;
-                        return Value::Arr(a);
-                    }
-                    if !a.is_empty() {
-                        self.eat(b',');
-                    }
-                    a.push(self.value());
-                }
-            }
-            b'"' => Value::Str(self.string()),
-            b'n' => {
-                self.at += 4;
-                Value::Null
-            }
-            _ => {
-                let start = self.at;
-                while self.at < self.b.len() && self.b[self.at].is_ascii_digit() {
-                    self.at += 1;
-                }
-                Value::Num(
-                    core::str::from_utf8(&self.b[start..self.at])
-                        .unwrap()
-                        .parse()
-                        .unwrap(),
-                )
-            }
-        }
-    }
-}
+use serde_json::Value;
 
 fn vectors() -> Value {
-    let text = include_str!("../../../../../sdk/vectors/fit-vectors.json");
-    Parser {
-        b: text.as_bytes(),
-        at: 0,
-    }
-    .value()
+    serde_json::from_str(include_str!("../../../../../sdk/vectors/fit-vectors.json")).unwrap()
 }
 
 /// kind name of `[capacity.kinds]` -> CAPK number
@@ -271,23 +120,20 @@ fn a_set_loads_its_modules_in_turn() {
             }
         }
         let mut left = caps(&v["caps_base"], s.get("caps"));
-        let mut got = None;
-        for (i, nd) in set.iter().enumerate() {
-            if let Some(short) = fits_now(nd, &left) {
-                got = Some((i as u64, short));
-                break;
-            }
-            take(nd, &mut left);
-        }
         let want = &s["want"];
-        match got {
+        match fits_set(&set, &mut left) {
             None => assert!(want.is_null(), "{}", s["name"]),
             Some((i, short)) => {
                 let w = want
                     .as_array()
                     .unwrap_or_else(|| panic!("{}: short {short:?}", s["name"]));
                 assert_eq!(
-                    (i, short_name(&short), short.need as u64, short.free as u64),
+                    (
+                        i as u64,
+                        short_name(&short),
+                        short.need as u64,
+                        short.free as u64
+                    ),
                     (
                         w[0].as_u64().unwrap(),
                         w[1].as_str().unwrap(),
@@ -300,6 +146,29 @@ fn a_set_loads_its_modules_in_turn() {
             }
         }
     }
+}
+
+#[test]
+fn the_short_texts_on_the_vectors() {
+    // the popup form and the compact list form; the host wordings (describe, describe_by) are tested in patchkit
+    let v = vectors();
+    for case in v["shorts"].as_array().unwrap() {
+        let s = Short {
+            kind: kind(case["resource"].as_str().unwrap()),
+            need: case["need"].as_u64().unwrap() as u32,
+            free: case["free"].as_u64().unwrap() as u32,
+        };
+        let mut buf = [0u8; 40];
+        short_text(&mut buf, &s, false);
+        assert_eq!(text(&buf), case["text"].as_str().unwrap());
+        short_text(&mut buf, &s, true);
+        assert_eq!(text(&buf), case["brief"].as_str().unwrap());
+    }
+}
+
+fn text(b: &[u8]) -> &str {
+    let n = b.iter().position(|&c| c == 0).unwrap_or(b.len());
+    core::str::from_utf8(&b[..n]).unwrap()
 }
 
 #[test]
@@ -337,19 +206,6 @@ fn empty_is_the_capacity_of_a_runtime_that_has_loaded_nothing() {
             (b.kind, b.limit, b.used, b.largest)
         );
     }
-}
-
-/// A capacity from (kind, limit, used) triples.
-fn cap_of(entries: &[(u8, u32, u32)]) -> Vec<DkrtCap> {
-    entries
-        .iter()
-        .map(|&(k, limit, used)| DkrtCap {
-            kind: k as u32,
-            limit,
-            used,
-            largest: limit.saturating_sub(used),
-        })
-        .collect()
 }
 
 fn line(caps: &[DkrtCap]) -> String {

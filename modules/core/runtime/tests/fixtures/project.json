@@ -1,0 +1,14 @@
+{
+  "$schema": "../../../../../node_modules/nx/schemas/project-schema.json",
+  "name": "core/runtime-fixture-tests",
+  "tags": ["test-only"],
+  "implicitDependencies": ["core/runtime"],
+  "metadata": {
+    "runtimeAcceptance": [
+      {
+        "files": ["module-load.device.test.ts"],
+        "modules": ["digikit/debug", "test/sine", "test/dyn-fx-gain"]
+      }
+    ]
+  }
+}

@@ -342,8 +342,7 @@ pub fn export_state(s: &St, ranges: bool) -> Vec<u8> {
     out
 }
 
-/// Run configuration: 10 explicit_memory_model, 11 approx_recips, 12
-/// assume_nw32, 13 follow_loaded_calls, 14 max_call_depth, 15
+/// Run configuration: 10 explicit_memory_model, 12 assume_nw32, 13 follow_loaded_calls, 14 max_call_depth, 15
 /// continue_external_calls, 16 data_memory_tainted, 17 has_concrete (a
 /// State with concrete=None), 18 dossier_bytes, 19 bank_model, 20
 /// stack_model, 21 core_timer, 22 peripheral_model.
@@ -351,7 +350,6 @@ pub fn set_option(s: &mut St, key: u32, value: i64) -> i32 {
     let b = value != 0;
     match key {
         10 => s.cfg.explicit_memory_model = b,
-        11 => s.cfg.approx_recips = b,
         12 => s.cfg.assume_nw32 = b,
         13 => s.cfg.follow_loaded_calls = b,
         14 => s.cfg.max_call_depth = value as Int,

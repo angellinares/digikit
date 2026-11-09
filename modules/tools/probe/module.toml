@@ -1,0 +1,25 @@
+[module]
+id = "digikit/probe"
+version = "0.1.0"
+name = "Probe collector"
+category = "tools"
+type = "service"
+author = "digikit"
+status = "experimental"
+summary = "Collects the words a DSP probe module sends each block and hands them to a computer over USB MIDI."
+# tools/device/dkprobe.py speaks its protocol (host = true: it names the module's commands)
+host = true
+ports = ["dt2-1.17", "dn2-1.12"]
+requires = ["core/dsp-link"]
+conflicts = []
+
+[targets]
+"dt2-1.17" = "experimental"
+"dn2-1.12" = "experimental"
+
+# A run-time module (`.dkm`, `patchkit pack digikit/probe --device dt2`), built from C. dkm_init sets the per-block callback of core/dsp-link
+# (`dl_set_tick_cb`) and registers the probe range of sdk/sdk.toml with Api.register_cmds.
+[[object]]
+path = "build/probe.dko.json"
+sources = ["src/c/probe.c"]
+place = "cf.expansion"

@@ -1,0 +1,58 @@
+{
+  "$schema": "../../node_modules/nx/schemas/project-schema.json",
+  "name": "@digi/desktop",
+  "implicitDependencies": ["@digi/web", "@digi/dk-session", "digiemu-desktop", "dkui-host"],
+  "targets": {
+    "build:ui": {
+      "cache": true,
+      "inputs": [
+        "default",
+        "^production",
+        "jsToolchain",
+        "{workspaceRoot}/modules/*/*/module.toml",
+        "{workspaceRoot}/config/emulator.json",
+        "{workspaceRoot}/devices/*.toml"
+      ],
+      "outputs": ["{projectRoot}/ui/dist"]
+    },
+    "check:ui": {
+      "cache": true,
+      "inputs": [
+        "default",
+        "^production",
+        "jsToolchain",
+        "{workspaceRoot}/modules/*/*/module.toml",
+        "{workspaceRoot}/config/emulator.json",
+        "{workspaceRoot}/apps/web/tests/fakeflash.mjs",
+        "{workspaceRoot}/devices/*.toml",
+        "{workspaceRoot}/apps/web/tests/fakeflash.d.mts"
+      ],
+      "outputs": []
+    },
+    "rust-tests": {
+      "executor": "nx:run-commands",
+      "cache": false,
+      "parallelism": false,
+      "options": {
+        "command": "node tools/nx/rust-env.mjs --gen -- cargo test --manifest-path apps/desktop/src-tauri/Cargo.toml --target-dir .nx/target/check-desktop-clean",
+        "cwd": "."
+      }
+    },
+    "test-host": {
+      "executor": "nx:run-commands",
+      "cache": true,
+      "inputs": [
+        "hostTests",
+        "^hostTests",
+        "{workspaceRoot}/devices/**/*.toml",
+        "{workspaceRoot}/modules/*/*/module.toml"
+      ],
+      "outputs": [],
+      "options": {
+        "forwardAllArgs": false,
+        "command": "pnpm exec vitest run --config vitest.host.config.ts --project desktop-host",
+        "cwd": "."
+      }
+    }
+  }
+}

@@ -1,0 +1,28 @@
+{
+  "$schema": "../../../../../../node_modules/nx/schemas/project-schema.json",
+  "name": "core/runtime-inferred-needs-tests",
+  "tags": ["test-only", "tier:full"],
+  "implicitDependencies": ["core/runtime"],
+  "metadata": {
+    "runtimeAcceptance": [
+      {
+        "files": ["inferred-needs.device.test.ts"],
+        "modules": [
+          "digikit/debug",
+          "digikit/freqshift",
+          "digikit/pluck",
+          "digikit/probe",
+          "digikit/remote",
+          "fadedlimes/analog",
+          "fadedlimes/bd",
+          "fadedlimes/pd",
+          "test/c-demo",
+          "test/dyn-fx-gain",
+          "test/dyn-params",
+          "test/sine"
+        ],
+        "plusdrive": true
+      }
+    ]
+  }
+}

@@ -494,7 +494,7 @@ debug console dispatch       0x400cae8c ; #WRITE name table 0x400cab40
 
 ## 12. The FsSample file commands on the DT2 1.17 (the +Drive over MidiRpc) **[D]**
 
-Decoded statically on DT2 1.17 (2026-10-22, lane tasks-images, plan `docs/plans/storage.md`, finding 59) and cross-read with earlier write logs. Run once in the emulator (original scenario `samples-live`; current managed acceptance `tests/regression/runtime/samples-live.test.ts`, client `packages/dk-session/src/rpcfiles.ts` exported as `@digi/dk-session/rpcfiles`): the corrections below are marked **[C]**, the runs **[D]**. Not run on a real device **[O]**; nothing here is **[V]**.
+Decoded statically on DT2 1.17 (2026-10-22, lane tasks-images, plan `docs/plans/storage.md`, finding 59) and cross-read with earlier write logs. Run once in the emulator (original scenario `samples-live`; current managed acceptance `modules/core/runtime/tests/samples-live.device.test.ts`, client `packages/dk-session/src/rpcfiles.ts` exported as `@digi/dk-session/rpcfiles`): the corrections below are marked **[C]**, the runs **[D]**. Not run on a real device **[O]**; nothing here is **[V]**.
 These are the commands the Transfer app uses to put samples into the +Drive (the ekFS path filesystem on the card, `0x5D8000..0x2DF017F`). Framing is section 11: `F0 00 20 3C 10 00 <8-in-7 body> F7`, body
 `seq16 00 00 type payload`; the reply type is `type | 0x80`. All integers are big-endian. **In every FsSample reply the status byte 1 means OK.** A path is a C-string of under 256 bytes.
 

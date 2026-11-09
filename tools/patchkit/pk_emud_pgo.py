@@ -56,12 +56,12 @@ def binary_path(device: str) -> Path:
 
 
 def build(device: str) -> Path:
-    profile = native_pgo.current_profile(device)
+    gen = generated_core(device)
+    profile = native_pgo.current_profile(device, gen)
     if profile is None:
         raise SystemExit(
             f"no PGO profile for {device}: `uv run python -m tools.emulator.native_pgo train --device {device}`"
         )
-    gen = generated_core(device)
     digi_env.check_generated(gen)
     env = native_pgo.base_env(gen)
     env["RUSTFLAGS"] = native_pgo.profile_use_flags(profile)

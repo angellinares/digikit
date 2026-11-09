@@ -111,9 +111,7 @@ def report(request):
                 if hasattr(i, "callspec") and "spec" in i.callspec.params
             }
             todo = [s for s in SPECS if s.label in labels]
-            jobs = int(
-                os.environ.get("DIGI_CONFORM_JOBS", max(1, (os.cpu_count() or 4) // 4))
-            )
+            jobs = int(os.environ.get("DIGI_JOBS", max(1, (os.cpu_count() or 4) // 4)))
             with ThreadPoolExecutor(
                 max_workers=max(1, min(jobs, len(todo) or 1))
             ) as pool:

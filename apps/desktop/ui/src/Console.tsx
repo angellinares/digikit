@@ -13,6 +13,7 @@ import {
   type RuntimeSnapshot,
   type RuntimeUpdate,
 } from '@web/runtime/runtime';
+import { booting as startBoot, bootingScreen, bootingStatus, loadFailure, type Booting } from './boot-core';
 import { bumpCardRefresh } from './card-state';
 import { DOCK_KEY_STEP, clampDock, dockAt, parseDock, startDock } from './dock-core';
 import {
@@ -25,7 +26,10 @@ import {
   reloadFailureEntry,
   unseenErrors,
 } from './log-core';
+import { desktopDefaultModules, shouldInstallAtStart } from './default-modules';
+import { pgoWarning, type BuildInfo } from './pgo-warning';
 import { createLogFollow, followSession } from './log-follow';
+import { windowShown } from './log-follow-core';
 import { followOn, logEvent, logInput, logOpen, logState, setLogOpen } from './log-state';
 import LogPanel from './LogPanel';
 import SidePanels from './SidePanels';
@@ -35,6 +39,9 @@ import { transferEnv } from '@web/transfer/env';
 import { run as flashRun } from '@web/firmware/firmware-state';
 import { running as flashRunning } from '@web/firmware/firmware-core';
 import FirmwarePage from '@web/firmware/FirmwarePage';
+import DefaultModules from '@web/firmware/DefaultModules';
+import { DefaultModuleError } from '@web/firmware/default-modules-core';
+import { tickedFor } from '@web/firmware/default-modules-state';
 import TransferPage from '@web/transfer/TransferPage';
 import { cardLine, folderFiles, startCard, type CardStatus } from '@web/runtime/cards';
 import { reloadError, reloadLine } from '@web/runtime/reload';
@@ -117,6 +124,7 @@ const PLAY = 'M4.5 2.5L12.5 8L4.5 13.5Z';
 const RESTART = 'M3 2.5V6H6.5M3 6A5.2 5.2 0 1 1 2.8 9.8';
 const CHART = 'M2 12.5L5.5 7.5L8.5 10L13.5 3.5M10.5 3.5H13.5V6.5';
 const SPEAKER = 'M2.5 6H5L8.5 3V13L5 10H2.5ZM11 5.5a3.5 3.5 0 0 1 0 5';
+const WARNING = 'M8 2.5L14.5 13.5H1.5ZM8 6.5V9.5M8 11.5V11.6';
 const UP = 'M4 10L8 6L12 10';
 const REMOTE = 'M2.5 3.5H13.5V10.5H2.5ZM6 13H10M8 10.5V13';
 // a chip with pins
@@ -145,10 +153,17 @@ export default function Console() {
   const [paused, setPaused] = createSignal(false);
   const [source, setSource] = createSignal<Source>();
   const [opened, setOpened] = createSignal('');
+  /** A firmware is starting: the old device information is gone until its first status. */
+  const [booting, setBooting] = createSignal<Booting>();
+  /** The last load failed: its file, so the faceplate is the file's device, or none when the name does not tell. */
+  /** The device that was showing: a file whose name does not tell its device keeps that faceplate. */
+  const [lastDevice, setLastDevice] = createSignal<string>();
+  const [failed, setFailed] = createSignal<Booting>();
   const [watching, setWatching] = createSignal(true);
   const [reloadNote, setReloadNote] = createSignal('');
   const [modulesBusy, setModulesBusy] = createSignal(false);
   const [audio, setAudio] = createSignal<NativeAudioStatus>();
+  const [buildInfo, setBuildInfo] = createSignal<BuildInfo>();
   const [rate, setRate] = createSignal<number>();
   const [drawer, setDrawer] = createSignal(false);
   // the Log drawer: the last entry seen (the badge counts the errors after it); the filter and the list are in LogPanel.tsx
@@ -176,11 +191,29 @@ export default function Console() {
   // a memo: `status` is set once per display frame, and the panels must hear of a change of this value only
   const sidePanelsShown = createMemo(() => page() === 'emulator' && !!status());
   const device = () => {
-    const d = status()?.device;
+    const d = status()?.device ?? booting()?.device ?? failed()?.device ?? lastDevice();
     return d === 'dt2' || d === 'dn2' ? d : 'dn2';
   };
   const panel = () => panels[device()];
 
+  /** Set when a default-modules install has started since the app opened (boot() or the first status of a startup with the runtime). */
+  let defaultsStarted = false;
+  /** The app can start the firmware with the runtime itself (boot() does not run): install once the status and the runtime info are both known. */
+  const startDefaultsAtLaunch = () => {
+    const s = status();
+    if (
+      s &&
+      shouldInstallAtStart({
+        runtimeOn: bootRuntime(),
+        runtimeSet: !!info()?.runtime?.set,
+        started: defaultsStarted,
+        hasStatus: true,
+      })
+    ) {
+      defaultsStarted = true;
+      void installDefaultModules(s.device);
+    }
+  };
   const update = (event: RuntimeUpdate) => {
     if (event.type === 'error') {
       setError(event.error);
@@ -188,6 +221,8 @@ export default function Console() {
     }
     live?.show(event.snapshot);
     setStatus(event.snapshot.status);
+    setLastDevice(event.snapshot.status.device);
+    startDefaultsAtLaunch();
     setError(event.snapshot.status.error ?? '');
     watchHealth({ error: event.snapshot.status.error });
   };
@@ -206,6 +241,31 @@ export default function Console() {
       setInfo(undefined);
     }
   };
+  /**
+   * The ticked default modules of the device (devices/*.toml `[digikit] default_modules`) go on the emulator's card and are enabled, so the
+   * emulator has what a flashed device has. The card keeps them: a later load finds them there and only checks the files.
+   */
+  const installDefaultModules = async (deviceId: string) => {
+    const ids = tickedFor(deviceId);
+    if (ids.length === 0) return;
+    try {
+      const lines = await desktopDefaultModules.install('emulator', deviceId, ids, (p) =>
+        setReloadNote(`Default modules: ${p.text}`),
+      );
+      setReloadNote(`Default modules ready: ${ids.join(', ')}`);
+      logInput({
+        source: 'firmware',
+        level: 'info',
+        text: `default modules in the emulator: ${ids.join(', ')}`,
+        detail: lines.join('\n'),
+      });
+    } catch (e) {
+      const what = e instanceof DefaultModuleError ? `default module ${e.id}` : 'default modules';
+      setReloadNote(`${what} failed`);
+      logInput(failureEntry('firmware', what, e instanceof DefaultModuleError ? e.message : message(e)));
+    }
+    bumpCardRefresh();
+  };
   /** Start a new firmware session with `start` (every load goes through the controller's `firmware.load`). */
   const boot = async (start: (r: EmulatorRuntime) => Promise<RuntimeSnapshot>, name: string) => {
     const r = runtime();
@@ -213,6 +273,12 @@ export default function Console() {
     live?.releaseAll();
     live?.clear();
     setError('');
+    setStatus(undefined);
+    setInfo(undefined);
+    setReloadNote('');
+    setBooting(startBoot(name));
+    logInput({ source: 'firmware', level: 'info', text: bootingScreen(startBoot(name)) });
+    setFailed(undefined);
     health = healthStart();
     const began = performance.now();
     try {
@@ -234,9 +300,17 @@ export default function Console() {
       // another firmware may be another device: its card folder and its memory (the runtime needs a moment to load its modules)
       bumpCardRefresh();
       window.setTimeout(bumpCardRefresh, 2500);
+      if (s && bootRuntime()) {
+        defaultsStarted = true;
+        void installDefaultModules(s.device);
+      }
     } catch (e) {
       setError(message(e));
+      setFailed(startBoot(name));
+      setReloadNote(loadFailure(name, message(e)));
       logInput(failureEntry('firmware', `loading ${name}`, message(e)));
+    } finally {
+      setBooting(undefined);
     }
   };
   const load = (bytes: Uint8Array, name: string) => boot((r) => r.load(bytes, name, { runtime: bootRuntime() }), name);
@@ -353,9 +427,14 @@ export default function Console() {
         return;
       }
       setRuntime(r);
+      void invoke<BuildInfo>('emu_build_info')
+        .then(setBuildInfo)
+        .catch(() => setBuildInfo(undefined));
       void (async () => {
         await pollSource();
         await refreshInfo();
+        // the pump may deliver no later snapshot (a hidden window): check once here, now that the runtime info is known
+        startDefaultsAtLaunch();
         // The app starts with the runtime patched in; a user who turned that off gets the startup file as it is.
         if (!bootRuntime() && info()?.runtime?.set) await reload('Started without the runtime at');
       })();
@@ -459,6 +538,8 @@ export default function Console() {
   const logFollow = createLogFollow({
     follow: followOn,
     flashing: () => flashRunning(flashRun()),
+    shown: windowShown,
+    drawerOpen: logOpen,
     emulator: {
       running: () => !!status() && !paused(),
       session: async () => followSession(await emulatorSession()),
@@ -583,6 +664,11 @@ export default function Console() {
           <Icon d={FOLDER} />
           <span class="lbl">Open…</span>
         </button>
+        <DefaultModules
+          device={device()}
+          off={bootRuntime() ? '' : 'Boot with digikit runtime is off: no module can be installed'}
+          note="Uploaded and enabled in the emulator after the firmware loads."
+        />
         <button
           type="button"
           class="tb"
@@ -803,12 +889,16 @@ export default function Console() {
             <dd>{audio() ? `${audio()!.source_audio_seconds.toFixed(2)} s` : '—'}</dd>
             <dt>CF load</dt>
             <dd>{load_() ? `${Math.round(load_()!.cf.real_pct)} %` : '—'}</dd>
-            <dt>DSP load</dt>
+            <dt title="Estimate for the real chip. The model figure counts one cycle per instruction, as the on-device HEALTH page does in the emulator.">
+              DSP load (est.)
+            </dt>
             <dd>
               {load_()?.dsp
-                ? `${Math.round(load_()!.dsp!.real_pct)} % (worst ${Math.round(load_()!.dsp!.real_high_pct)} %)`
+                ? `${Math.round(load_()!.dsp!.real_pct)} % est. (worst ${Math.round(load_()!.dsp!.real_high_pct)} %), model ${Math.round(load_()!.dsp!.model_pct)} %`
                 : '—'}
             </dd>
+            <dt title="Largest estimated DSP load of any window since the meter was reset">DSP window peak</dt>
+            <dd>{load_()?.dsp?.peak_pct !== undefined ? `${Math.round(load_()!.dsp!.peak_pct!)} % est.` : '—'}</dd>
           </dl>
           <Show when={reloadNote()}>
             <p class="note">{reloadNote()}</p>
@@ -856,8 +946,14 @@ export default function Console() {
 
       <footer class="statusbar">
         <span>
-          <i class="dot" classList={{ paused: paused() || !status() }} />
-          {!status() ? 'no firmware' : paused() ? 'paused' : phase() || 'running'}
+          <i class="dot" classList={{ paused: paused() || !status() || !!booting() }} />
+          {booting()
+            ? bootingStatus(booting()!)
+            : !status()
+              ? 'no firmware'
+              : paused()
+                ? 'paused'
+                : phase() || 'running'}
         </span>
         <Show when={audio()?.output_device}>
           <span>
@@ -871,6 +967,14 @@ export default function Console() {
             <Meter value={rate()! * 100} tone="amber" />
           </span>
         </Show>
+        <Show when={pgoWarning(buildInfo())}>
+          {(w) => (
+            <span class="warn pgo" title={w().title}>
+              <Icon d={WARNING} />
+              {w().label}
+            </span>
+          )}
+        </Show>
         <Show when={sink()}>
           <span classList={{ warn: (sink()?.underrun_events ?? 0) > 0 }}>underruns {sink()!.underrun_events}</span>
         </Show>
@@ -880,8 +984,8 @@ export default function Console() {
             <Meter value={load_()!.cf.real_pct} />
           </span>
           <Show when={load_()!.dsp}>
-            <span>
-              DSP {Math.round(load_()!.dsp!.real_pct)}%
+            <span title="Estimated DSP load of the real chip. Model figure (as the HEALTH page shows in the emulator) and window peak are in the drawer">
+              DSP est. {Math.round(load_()!.dsp!.real_pct)}%
               <Meter value={load_()!.dsp!.real_pct} worst={load_()!.dsp!.real_high_pct} />
             </span>
           </Show>

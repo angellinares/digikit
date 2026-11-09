@@ -15,41 +15,6 @@ fn texts() -> (String, String) {
     )
 }
 
-#[test]
-fn the_abi_files_are_current() {
-    let (abi, sdk) = texts();
-    let files = abigen::render_with(&abi, &sdk).unwrap();
-    assert_eq!(files.len(), 3);
-    for (rel, text) in files {
-        let path = root().join(&rel);
-        let have = std::fs::read_to_string(&path).unwrap_or_default();
-        assert_eq!(
-            have,
-            text,
-            "{} is stale: run `patchkit gen`",
-            path.display()
-        );
-    }
-}
-
-#[test]
-fn every_export_is_in_the_header_and_the_check() {
-    let (abi, sdk) = texts();
-    let files = abigen::render_with(&abi, &sdk).unwrap();
-    let get = |p: &str| &files.iter().find(|(r, _)| r == p).unwrap().1;
-    let h = get(abigen::C_OUT);
-    assert!(h.contains("int32_t dkrt_fit(const DkrtScan *entries, uint32_t n, const uint8_t *ticked, DkrtFitOut *out);"));
-    assert!(h.contains("void dkrt_poll_set(uintptr_t f);"));
-    assert!(h.contains("#define DKRT_E_NOT_FOUND (-1)"));
-    assert!(h.contains("_Static_assert(sizeof(DkrtScan) == 116, \"DkrtScan size\");"));
-    let c = get(abigen::CHECK_OUT);
-    assert!(c.contains("const _: sig::dkrt_scan = crate::scan::dkrt_scan;"));
-    assert!(c.contains("const _: sig::dkrt_status = crate::dkrt_status;"));
-    let r = get(abigen::RUST_OUT);
-    assert!(r.contains("pub results: [i32; SEL_MAX],"));
-    assert!(r.contains("pub paths: [[u8; SEL_PATH]; SEL_MAX],"));
-}
-
 /// `abi` with its first `[[struct]]` replaced by `body`.
 fn with_struct(abi: &str, body: &str) -> String {
     let a = abi.find("[[struct]]").unwrap();

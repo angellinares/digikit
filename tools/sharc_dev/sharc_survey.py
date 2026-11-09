@@ -540,7 +540,6 @@ def collect_all(
     max_steps: int = DEFAULT_MAX_STEPS,
     max_call_depth: int = 64,
     explicit_memory_model: bool = True,
-    approx_recips: bool = True,
     follow_loaded_calls: bool = True,
     slice_depth: int = DEFAULT_SLICE_DEPTH,
     verbose: bool = False,
@@ -558,7 +557,6 @@ def collect_all(
         return_address=return_address,
         max_call_depth=max_call_depth,
         explicit_memory_model=explicit_memory_model,
-        approx_recips=approx_recips,
         follow_loaded_calls=follow_loaded_calls,
     )
     t0 = time.perf_counter()
@@ -782,7 +780,6 @@ def _start_runner(
     return_address: int | None = None,
     max_call_depth: int = 64,
     explicit_memory_model: bool = True,
-    approx_recips: bool = True,
     follow_loaded_calls: bool = True,
 ) -> tuple[sr.Runner, sharc.Image]:
     """The Runner/Image pair every entry point in this module starts from:
@@ -819,7 +816,6 @@ def _start_runner(
             follow_loaded_calls=follow_loaded_calls,
             max_call_depth=max_call_depth,
             explicit_memory_model=explicit_memory_model,
-            approx_recips=approx_recips,
             diagnose_unknown=True,
         )
         if return_address is not None:
@@ -839,7 +835,6 @@ def survey(
     max_steps: int = DEFAULT_MAX_STEPS,
     max_call_depth: int = 64,
     explicit_memory_model: bool = True,
-    approx_recips: bool = True,
     follow_loaded_calls: bool = True,
     verbose: bool = False,
 ) -> SurveyStop:
@@ -857,7 +852,6 @@ def survey(
         return_address=return_address,
         max_call_depth=max_call_depth,
         explicit_memory_model=explicit_memory_model,
-        approx_recips=approx_recips,
         follow_loaded_calls=follow_loaded_calls,
     )
     patch_table = patch_table or {}
@@ -916,13 +910,6 @@ def main(argv: Sequence[str] | None = None) -> int:
         default=True,
         help="bare-Runner mode only: do not assume unwritten internal RAM reads as 0",
     )
-    p.add_argument(
-        "--no-approx-recips",
-        dest="approx_recips",
-        action="store_false",
-        default=True,
-        help="bare-Runner mode only: do not substitute recips's approximate seed",
-    )
     p.add_argument("--verbose", action="store_true", help="log every applied patch")
     p.add_argument("--json", action="store_true")
     p.add_argument(
@@ -952,7 +939,6 @@ def main(argv: Sequence[str] | None = None) -> int:
             max_steps=a.max_steps,
             max_call_depth=a.max_call_depth,
             explicit_memory_model=a.explicit_memory_model,
-            approx_recips=a.approx_recips,
             slice_depth=a.slice_depth,
             verbose=a.verbose,
         )
@@ -983,7 +969,6 @@ def main(argv: Sequence[str] | None = None) -> int:
         max_steps=a.max_steps,
         max_call_depth=a.max_call_depth,
         explicit_memory_model=a.explicit_memory_model,
-        approx_recips=a.approx_recips,
         verbose=a.verbose,
     )
 

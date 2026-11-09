@@ -11,504 +11,511 @@
   },
   {
    "addend": 0,
-   "offset": 5,
+   "offset": 6,
    "section": "seg_pmco",
-   "symbol": "_dv_s_i4",
-   "type": "sharc.abs32"
-  },
-  {
-   "addend": 0,
-   "offset": 10,
-   "section": "seg_pmco",
-   "symbol": "_dv_s_l4",
-   "type": "sharc.abs32"
-  },
-  {
-   "addend": 0,
-   "offset": 15,
-   "section": "seg_pmco",
-   "symbol": "_dv_save",
-   "type": "sharc.abs32"
-  },
-  {
-   "addend": 0,
-   "offset": 89,
-   "section": "seg_pmco",
-   "symbol": "_dv_done",
+   "symbol": "_dv_full",
    "type": "sharc.abs24"
   },
   {
    "addend": 0,
-   "offset": 99,
+   "offset": 9,
    "section": "seg_pmco",
-   "symbol": "_dv_done",
-   "type": "sharc.abs24"
-  },
-  {
-   "addend": 0,
-   "offset": 106,
-   "section": "seg_pmco",
-   "symbol": "_dv_done",
-   "type": "sharc.abs24"
-  },
-  {
-   "addend": 0,
-   "offset": 112,
-   "section": "seg_pmco",
-   "symbol": "_dv_done",
-   "type": "sharc.abs24"
-  },
-  {
-   "addend": 0,
-   "offset": 115,
-   "section": "seg_pmco",
-   "symbol": "_dv_t",
+   "symbol": "_dv_mask",
    "type": "sharc.abs32"
   },
   {
    "addend": 0,
-   "offset": 118,
+   "offset": 13,
    "section": "seg_pmco",
-   "symbol": "_dv_buf",
-   "type": "sharc.abs32"
-  },
-  {
-   "addend": 0,
-   "offset": 122,
-   "section": "seg_pmco",
-   "symbol": "_dv_nodiag",
+   "symbol": "_dv_out",
    "type": "sharc.abs24"
   },
   {
    "addend": 0,
-   "offset": 125,
+   "offset": 16,
    "section": "seg_pmco",
-   "symbol": "_dv_diag",
+   "symbol": "_dv_q1",
    "type": "sharc.abs32"
   },
   {
    "addend": 0,
-   "offset": 177,
+   "offset": 19,
    "section": "seg_pmco",
-   "symbol": "_dv_t",
+   "symbol": "_dv_q2",
    "type": "sharc.abs32"
   },
   {
    "addend": 0,
-   "offset": 191,
+   "offset": 24,
+   "section": "seg_pmco",
+   "symbol": "_dv_q4",
+   "type": "sharc.abs32"
+  },
+  {
+   "addend": 0,
+   "offset": 29,
+   "section": "seg_pmco",
+   "symbol": "_dv_ql4",
+   "type": "sharc.abs32"
+  },
+  {
+   "addend": 0,
+   "offset": 44,
    "section": "seg_pmco",
    "symbol": "_fw_frame",
    "type": "sharc.abs32"
   },
   {
    "addend": 0,
-   "offset": 211,
+   "offset": 74,
    "section": "seg_pmco",
-   "symbol": "_dv_table",
+   "symbol": "_dv_mask",
    "type": "sharc.abs32"
   },
   {
    "addend": 0,
-   "offset": 222,
+   "offset": 82,
    "section": "seg_pmco",
-   "symbol": "_dv_done",
+   "symbol": "_dv_ql4",
+   "type": "sharc.abs32"
+  },
+  {
+   "addend": 0,
+   "offset": 87,
+   "section": "seg_pmco",
+   "symbol": "_dv_q4",
+   "type": "sharc.abs32"
+  },
+  {
+   "addend": 0,
+   "offset": 92,
+   "section": "seg_pmco",
+   "symbol": "_dv_q1",
+   "type": "sharc.abs32"
+  },
+  {
+   "addend": 0,
+   "offset": 95,
+   "section": "seg_pmco",
+   "symbol": "_dv_q2",
+   "type": "sharc.abs32"
+  },
+  {
+   "addend": 0,
+   "offset": 98,
+   "section": "seg_pmco",
+   "symbol": "_dv_full",
    "type": "sharc.abs24"
   },
   {
    "addend": 0,
-   "offset": 226,
-   "section": "seg_pmco",
-   "symbol": "_dv_scan",
-   "type": "sharc.abs24"
-  },
-  {
-   "addend": 0,
-   "offset": 231,
-   "section": "seg_pmco",
-   "symbol": "_dv_row",
-   "type": "sharc.abs32"
-  },
-  {
-   "addend": 0,
-   "offset": 237,
-   "section": "seg_pmco",
-   "symbol": "_dv_contract",
-   "type": "sharc.abs32"
-  },
-  {
-   "addend": 0,
-   "offset": 246,
-   "section": "seg_pmco",
-   "symbol": "_dv_t",
-   "type": "sharc.abs32"
-  },
-  {
-   "addend": 0,
-   "offset": 249,
-   "section": "seg_pmco",
-   "symbol": "_dv_buf",
-   "type": "sharc.abs32"
-  },
-  {
-   "addend": 0,
-   "offset": 254,
-   "section": "seg_pmco",
-   "symbol": "_dv_ctx",
-   "type": "sharc.abs32"
-  },
-  {
-   "addend": 0,
-   "offset": 328,
-   "section": "seg_pmco",
-   "symbol": "_dv_typ",
-   "type": "sharc.abs32"
-  },
-  {
-   "addend": 0,
-   "offset": 335,
-   "section": "seg_pmco",
-   "symbol": "_dv_mark",
-   "type": "sharc.abs24"
-  },
-  {
-   "addend": 0,
-   "offset": 338,
-   "section": "seg_pmco",
-   "symbol": "_dv_back",
-   "type": "sharc.abs32"
-  },
-  {
-   "addend": 0,
-   "offset": 347,
-   "section": "seg_pmco",
-   "symbol": "_dv_mark",
-   "type": "sharc.abs24"
-  },
-  {
-   "addend": 0,
-   "offset": 350,
-   "section": "seg_pmco",
-   "symbol": "_dv_ctx",
-   "type": "sharc.abs32"
-  },
-  {
-   "addend": 0,
-   "offset": 380,
-   "section": "seg_pmco",
-   "symbol": "_dv_save",
-   "type": "sharc.abs32"
-  },
-  {
-   "addend": 0,
-   "offset": 435,
-   "section": "seg_pmco",
-   "symbol": "_dv_s_l4",
-   "type": "sharc.abs32"
-  },
-  {
-   "addend": 0,
-   "offset": 440,
-   "section": "seg_pmco",
-   "symbol": "_dv_s_i4",
-   "type": "sharc.abs32"
-  },
-  {
-   "addend": 0,
-   "offset": 445,
+   "offset": 101,
    "section": "seg_pmco",
    "symbol": "_dv_s_r0",
    "type": "sharc.abs32"
   },
   {
    "addend": 0,
-   "offset": 451,
+   "offset": 107,
    "section": "seg_pmco",
    "symbol": "_fw_render_next",
    "type": "sharc.abs24"
   },
   {
    "addend": 0,
-   "offset": 454,
+   "offset": 112,
+   "section": "seg_pmco",
+   "symbol": "_dv_s_i4",
+   "type": "sharc.abs32"
+  },
+  {
+   "addend": 0,
+   "offset": 117,
+   "section": "seg_pmco",
+   "symbol": "_dv_s_l4",
+   "type": "sharc.abs32"
+  },
+  {
+   "addend": 0,
+   "offset": 122,
+   "section": "seg_pmco",
+   "symbol": "_dv_save",
+   "type": "sharc.abs32"
+  },
+  {
+   "addend": 0,
+   "offset": 196,
+   "section": "seg_pmco",
+   "symbol": "_dv_done",
+   "type": "sharc.abs24"
+  },
+  {
+   "addend": 0,
+   "offset": 206,
+   "section": "seg_pmco",
+   "symbol": "_dv_done",
+   "type": "sharc.abs24"
+  },
+  {
+   "addend": 0,
+   "offset": 213,
+   "section": "seg_pmco",
+   "symbol": "_dv_done",
+   "type": "sharc.abs24"
+  },
+  {
+   "addend": 0,
+   "offset": 219,
+   "section": "seg_pmco",
+   "symbol": "_dv_done",
+   "type": "sharc.abs24"
+  },
+  {
+   "addend": 0,
+   "offset": 222,
    "section": "seg_pmco",
    "symbol": "_dv_t",
    "type": "sharc.abs32"
   },
   {
    "addend": 0,
-   "offset": 460,
+   "offset": 225,
    "section": "seg_pmco",
-   "symbol": "_dv_typ",
+   "symbol": "_dv_buf",
    "type": "sharc.abs32"
   },
   {
-   "addend": 48,
-   "offset": 468,
+   "addend": 0,
+   "offset": 229,
+   "section": "seg_pmco",
+   "symbol": "_dv_nodiag",
+   "type": "sharc.abs24"
+  },
+  {
+   "addend": 0,
+   "offset": 232,
    "section": "seg_pmco",
    "symbol": "_dv_diag",
    "type": "sharc.abs32"
   },
   {
    "addend": 0,
-   "offset": 471,
+   "offset": 284,
+   "section": "seg_pmco",
+   "symbol": "_gs_block",
+   "type": "sharc.abs24"
+  },
+  {
+   "addend": 0,
+   "offset": 287,
+   "section": "seg_pmco",
+   "symbol": "_dv_table",
+   "type": "sharc.abs32"
+  },
+  {
+   "addend": 0,
+   "offset": 298,
+   "section": "seg_pmco",
+   "symbol": "_dv_mke",
+   "type": "sharc.abs24"
+  },
+  {
+   "addend": 0,
+   "offset": 301,
+   "section": "seg_pmco",
+   "symbol": "_dv_mkl",
+   "type": "sharc.abs24"
+  },
+  {
+   "addend": 0,
+   "offset": 315,
+   "section": "seg_pmco",
+   "symbol": "_dv_mkl",
+   "type": "sharc.abs24"
+  },
+  {
+   "addend": 0,
+   "offset": 318,
+   "section": "seg_pmco",
+   "symbol": "_dv_mask",
+   "type": "sharc.abs32"
+  },
+  {
+   "addend": 0,
+   "offset": 321,
+   "section": "seg_pmco",
+   "symbol": "_dv_t",
+   "type": "sharc.abs32"
+  },
+  {
+   "addend": 0,
+   "offset": 335,
+   "section": "seg_pmco",
+   "symbol": "_fw_frame",
+   "type": "sharc.abs32"
+  },
+  {
+   "addend": 0,
+   "offset": 355,
+   "section": "seg_pmco",
+   "symbol": "_dv_table",
+   "type": "sharc.abs32"
+  },
+  {
+   "addend": 0,
+   "offset": 366,
+   "section": "seg_pmco",
+   "symbol": "_dv_done",
+   "type": "sharc.abs24"
+  },
+  {
+   "addend": 0,
+   "offset": 370,
+   "section": "seg_pmco",
+   "symbol": "_dv_scan",
+   "type": "sharc.abs24"
+  },
+  {
+   "addend": 0,
+   "offset": 375,
+   "section": "seg_pmco",
+   "symbol": "_dv_row",
+   "type": "sharc.abs32"
+  },
+  {
+   "addend": 0,
+   "offset": 381,
+   "section": "seg_pmco",
+   "symbol": "_dv_contract",
+   "type": "sharc.abs32"
+  },
+  {
+   "addend": 0,
+   "offset": 390,
+   "section": "seg_pmco",
+   "symbol": "_dv_t",
+   "type": "sharc.abs32"
+  },
+  {
+   "addend": 0,
+   "offset": 393,
+   "section": "seg_pmco",
+   "symbol": "_dv_buf",
+   "type": "sharc.abs32"
+  },
+  {
+   "addend": 0,
+   "offset": 398,
+   "section": "seg_pmco",
+   "symbol": "_dv_ctx",
+   "type": "sharc.abs32"
+  },
+  {
+   "addend": 0,
+   "offset": 472,
+   "section": "seg_pmco",
+   "symbol": "_dv_typ",
+   "type": "sharc.abs32"
+  },
+  {
+   "addend": 0,
+   "offset": 479,
+   "section": "seg_pmco",
+   "symbol": "_dv_mark",
+   "type": "sharc.abs24"
+  },
+  {
+   "addend": 0,
+   "offset": 482,
+   "section": "seg_pmco",
+   "symbol": "_dv_back",
+   "type": "sharc.abs32"
+  },
+  {
+   "addend": 0,
+   "offset": 491,
+   "section": "seg_pmco",
+   "symbol": "_dv_mark",
+   "type": "sharc.abs24"
+  },
+  {
+   "addend": 0,
+   "offset": 494,
+   "section": "seg_pmco",
+   "symbol": "_dv_ctx",
+   "type": "sharc.abs32"
+  },
+  {
+   "addend": 0,
+   "offset": 524,
+   "section": "seg_pmco",
+   "symbol": "_dv_save",
+   "type": "sharc.abs32"
+  },
+  {
+   "addend": 0,
+   "offset": 579,
+   "section": "seg_pmco",
+   "symbol": "_dv_s_l4",
+   "type": "sharc.abs32"
+  },
+  {
+   "addend": 0,
+   "offset": 584,
+   "section": "seg_pmco",
+   "symbol": "_dv_s_i4",
+   "type": "sharc.abs32"
+  },
+  {
+   "addend": 0,
+   "offset": 589,
+   "section": "seg_pmco",
+   "symbol": "_dv_s_r0",
+   "type": "sharc.abs32"
+  },
+  {
+   "addend": 0,
+   "offset": 595,
+   "section": "seg_pmco",
+   "symbol": "_fw_render_next",
+   "type": "sharc.abs24"
+  },
+  {
+   "addend": 0,
+   "offset": 598,
+   "section": "seg_pmco",
+   "symbol": "_dv_t",
+   "type": "sharc.abs32"
+  },
+  {
+   "addend": 0,
+   "offset": 604,
+   "section": "seg_pmco",
+   "symbol": "_dv_typ",
+   "type": "sharc.abs32"
+  },
+  {
+   "addend": 48,
+   "offset": 612,
+   "section": "seg_pmco",
+   "symbol": "_dv_diag",
+   "type": "sharc.abs32"
+  },
+  {
+   "addend": 0,
+   "offset": 615,
    "section": "seg_pmco",
    "symbol": "_dv_rec",
    "type": "sharc.abs32"
   },
   {
    "addend": 0,
-   "offset": 477,
+   "offset": 621,
+   "section": "seg_pmco",
+   "symbol": "_dv_mk0",
+   "type": "sharc.abs24"
+  },
+  {
+   "addend": 0,
+   "offset": 631,
+   "section": "seg_pmco",
+   "symbol": "_dv_rec",
+   "type": "sharc.abs32"
+  },
+  {
+   "addend": 0,
+   "offset": 637,
    "section": "seg_pmco",
    "symbol": "_dv_mk1",
    "type": "sharc.abs24"
   },
   {
    "addend": 0,
-   "offset": 497,
+   "offset": 650,
    "section": "seg_pmco",
    "symbol": "_dv_rec",
    "type": "sharc.abs32"
   },
   {
    "addend": 0,
-   "offset": 526,
+   "offset": 672,
    "section": "seg_pmco",
    "symbol": "_dv_c",
    "type": "sharc.abs32"
   },
   {
    "addend": 4,
-   "offset": 529,
+   "offset": 675,
    "section": "seg_pmco",
    "symbol": "_dv_c",
    "type": "sharc.abs32"
   },
   {
    "addend": 8,
-   "offset": 532,
+   "offset": 678,
    "section": "seg_pmco",
    "symbol": "_dv_c",
    "type": "sharc.abs32"
   },
   {
    "addend": 0,
-   "offset": 535,
+   "offset": 681,
    "section": "seg_pmco",
    "symbol": "_dv_row",
    "type": "sharc.abs32"
   },
   {
    "addend": 0,
-   "offset": 543,
+   "offset": 689,
    "section": "seg_pmco",
    "symbol": "_dv_cz",
    "type": "sharc.abs24"
   },
   {
    "addend": 0,
-   "offset": 549,
+   "offset": 695,
    "section": "seg_pmco",
    "symbol": "_dv_cst",
    "type": "sharc.abs32"
   },
   {
    "addend": 12,
-   "offset": 553,
+   "offset": 699,
    "section": "seg_pmco",
    "symbol": "_dv_c",
    "type": "sharc.abs32"
   },
   {
    "addend": 0,
-   "offset": 560,
+   "offset": 706,
    "section": "seg_pmco",
    "symbol": "_dv_frame_hw",
    "type": "sharc.abs24"
   },
   {
    "addend": 4,
-   "offset": 563,
+   "offset": 709,
    "section": "seg_pmco",
    "symbol": "_dv_c",
    "type": "sharc.abs32"
   },
   {
    "addend": 0,
-   "offset": 582,
+   "offset": 728,
    "section": "seg_pmco",
    "symbol": "_dv_cedge",
    "type": "sharc.abs24"
   },
   {
    "addend": 0,
-   "offset": 586,
+   "offset": 732,
    "section": "seg_pmco",
    "symbol": "_dv_cz",
    "type": "sharc.abs24"
   },
   {
    "addend": 16,
-   "offset": 601,
-   "section": "seg_pmco",
-   "symbol": "_dv_c",
-   "type": "sharc.abs32"
-  },
-  {
-   "addend": 8,
-   "offset": 612,
-   "section": "seg_pmco",
-   "symbol": "_dv_in",
-   "type": "sharc.abs32"
-  },
-  {
-   "addend": 4,
-   "offset": 618,
-   "section": "seg_pmco",
-   "symbol": "_dv_c",
-   "type": "sharc.abs32"
-  },
-  {
-   "addend": 0,
-   "offset": 624,
-   "section": "seg_pmco",
-   "symbol": "_dv_frame_hw",
-   "type": "sharc.abs24"
-  },
-  {
-   "addend": 0,
-   "offset": 627,
-   "section": "seg_pmco",
-   "symbol": "_dv_in",
-   "type": "sharc.abs32"
-  },
-  {
-   "addend": 4,
-   "offset": 630,
-   "section": "seg_pmco",
-   "symbol": "_dv_c",
-   "type": "sharc.abs32"
-  },
-  {
-   "addend": 0,
-   "offset": 636,
-   "section": "seg_pmco",
-   "symbol": "_dv_frame_hw",
-   "type": "sharc.abs24"
-  },
-  {
-   "addend": 4,
-   "offset": 639,
-   "section": "seg_pmco",
-   "symbol": "_dv_in",
-   "type": "sharc.abs32"
-  },
-  {
-   "addend": 8,
-   "offset": 642,
-   "section": "seg_pmco",
-   "symbol": "_dv_c",
-   "type": "sharc.abs32"
-  },
-  {
-   "addend": 12,
-   "offset": 645,
-   "section": "seg_pmco",
-   "symbol": "_dv_in",
-   "type": "sharc.abs32"
-  },
-  {
-   "addend": 20,
-   "offset": 650,
-   "section": "seg_pmco",
-   "symbol": "_dv_c",
-   "type": "sharc.abs32"
-  },
-  {
-   "addend": 20,
-   "offset": 653,
-   "section": "seg_pmco",
-   "symbol": "_dv_c",
-   "type": "sharc.abs32"
-  },
-  {
-   "addend": 0,
-   "offset": 659,
-   "section": "seg_pmco",
-   "symbol": "_dv_slots",
-   "type": "sharc.abs32"
-  },
-  {
-   "addend": 0,
-   "offset": 670,
-   "section": "seg_pmco",
-   "symbol": "_dv_cpe",
-   "type": "sharc.abs24"
-  },
-  {
-   "addend": 24,
-   "offset": 673,
-   "section": "seg_pmco",
-   "symbol": "_dv_c",
-   "type": "sharc.abs32"
-  },
-  {
-   "addend": 4,
-   "offset": 676,
-   "section": "seg_pmco",
-   "symbol": "_dv_c",
-   "type": "sharc.abs32"
-  },
-  {
-   "addend": 0,
-   "offset": 687,
-   "section": "seg_pmco",
-   "symbol": "_dv_frame_hw",
-   "type": "sharc.abs24"
-  },
-  {
-   "addend": 24,
-   "offset": 690,
-   "section": "seg_pmco",
-   "symbol": "_dv_c",
-   "type": "sharc.abs32"
-  },
-  {
-   "addend": 0,
-   "offset": 693,
-   "section": "seg_pmco",
-   "symbol": "_dv_row",
-   "type": "sharc.abs32"
-  },
-  {
-   "addend": 20,
-   "offset": 724,
-   "section": "seg_pmco",
-   "symbol": "_dv_c",
-   "type": "sharc.abs32"
-  },
-  {
-   "addend": 0,
-   "offset": 730,
-   "section": "seg_pmco",
-   "symbol": "_dv_params",
-   "type": "sharc.abs32"
-  },
-  {
-   "addend": 20,
-   "offset": 739,
-   "section": "seg_pmco",
-   "symbol": "_dv_c",
-   "type": "sharc.abs32"
-  },
-  {
-   "addend": 0,
-   "offset": 745,
-   "section": "seg_pmco",
-   "symbol": "_dv_cpl",
-   "type": "sharc.abs24"
-  },
-  {
-   "addend": 4,
-   "offset": 748,
+   "offset": 747,
    "section": "seg_pmco",
    "symbol": "_dv_c",
    "type": "sharc.abs32"
@@ -517,357 +524,3262 @@
    "addend": 0,
    "offset": 751,
    "section": "seg_pmco",
-   "symbol": "_dv_row",
+   "symbol": "_dv_cowner",
+   "type": "sharc.abs24"
+  },
+  {
+   "addend": 4,
+   "offset": 754,
+   "section": "seg_pmco",
+   "symbol": "_dv_c",
    "type": "sharc.abs32"
   },
   {
-   "addend": 28,
-   "offset": 764,
+   "addend": 0,
+   "offset": 760,
    "section": "seg_pmco",
-   "symbol": "_dv_c",
+   "symbol": "_dv_frame_hw",
+   "type": "sharc.abs24"
+  },
+  {
+   "addend": 0,
+   "offset": 766,
+   "section": "seg_pmco",
+   "symbol": "_dv_cbadowner",
+   "type": "sharc.abs24"
+  },
+  {
+   "addend": 16,
+   "offset": 773,
+   "section": "seg_pmco",
+   "symbol": "_dv_in",
    "type": "sharc.abs32"
   },
   {
    "addend": 16,
-   "offset": 767,
-   "section": "seg_pmco",
-   "symbol": "_dv_c",
-   "type": "sharc.abs32"
-  },
-  {
-   "addend": 0,
-   "offset": 771,
-   "section": "seg_pmco",
-   "symbol": "_dv_crender",
-   "type": "sharc.abs24"
-  },
-  {
-   "addend": 0,
-   "offset": 781,
-   "section": "seg_pmco",
-   "symbol": "_dv_cnoclr",
-   "type": "sharc.abs24"
-  },
-  {
-   "addend": 0,
-   "offset": 798,
-   "section": "seg_pmco",
-   "symbol": "_dv_in",
-   "type": "sharc.abs32"
-  },
-  {
-   "addend": 0,
-   "offset": 801,
-   "section": "seg_pmco",
-   "symbol": "_dv_params",
-   "type": "sharc.abs32"
-  },
-  {
-   "addend": 0,
-   "offset": 804,
-   "section": "seg_pmco",
-   "symbol": "_dv_nback",
-   "type": "sharc.abs32"
-  },
-  {
-   "addend": 0,
-   "offset": 810,
-   "section": "seg_pmco",
-   "symbol": "_dv_nfault",
-   "type": "sharc.abs24"
-  },
-  {
-   "addend": 0,
-   "offset": 813,
-   "section": "seg_pmco",
-   "symbol": "_dv_row",
-   "type": "sharc.abs32"
-  },
-  {
-   "addend": 28,
-   "offset": 822,
-   "section": "seg_pmco",
-   "symbol": "_dv_c",
-   "type": "sharc.abs32"
-  },
-  {
-   "addend": 0,
-   "offset": 825,
-   "section": "seg_pmco",
-   "symbol": "_dv_in",
-   "type": "sharc.abs32"
-  },
-  {
-   "addend": 0,
-   "offset": 828,
-   "section": "seg_pmco",
-   "symbol": "_dv_params",
-   "type": "sharc.abs32"
-  },
-  {
-   "addend": 0,
-   "offset": 831,
-   "section": "seg_pmco",
-   "symbol": "_dv_rback",
-   "type": "sharc.abs32"
-  },
-  {
-   "addend": 32,
-   "offset": 836,
+   "offset": 776,
    "section": "seg_pmco",
    "symbol": "_dv_c",
    "type": "sharc.abs32"
   },
   {
    "addend": 8,
-   "offset": 839,
+   "offset": 787,
+   "section": "seg_pmco",
+   "symbol": "_dv_in",
+   "type": "sharc.abs32"
+  },
+  {
+   "addend": 4,
+   "offset": 793,
    "section": "seg_pmco",
    "symbol": "_dv_c",
    "type": "sharc.abs32"
   },
   {
    "addend": 0,
-   "offset": 865,
+   "offset": 799,
    "section": "seg_pmco",
-   "symbol": "_dv_gfault",
-   "type": "sharc.abs24"
-  },
-  {
-   "addend": 32,
-   "offset": 870,
-   "section": "seg_pmco",
-   "symbol": "_dv_c",
-   "type": "sharc.abs32"
-  },
-  {
-   "addend": 0,
-   "offset": 874,
-   "section": "seg_pmco",
-   "symbol": "_dv_back",
-   "type": "sharc.abs24"
-  },
-  {
-   "addend": 12,
-   "offset": 877,
-   "section": "seg_pmco",
-   "symbol": "_dv_c",
-   "type": "sharc.abs32"
-  },
-  {
-   "addend": 0,
-   "offset": 886,
-   "section": "seg_pmco",
-   "symbol": "_dv_back",
+   "symbol": "_dv_frame_hw",
    "type": "sharc.abs24"
   },
   {
    "addend": 0,
-   "offset": 891,
+   "offset": 802,
    "section": "seg_pmco",
-   "symbol": "_dv_gfaultk",
+   "symbol": "_dv_in",
+   "type": "sharc.abs32"
+  },
+  {
+   "addend": 4,
+   "offset": 805,
+   "section": "seg_pmco",
+   "symbol": "_dv_c",
+   "type": "sharc.abs32"
+  },
+  {
+   "addend": 0,
+   "offset": 811,
+   "section": "seg_pmco",
+   "symbol": "_dv_frame_hw",
    "type": "sharc.abs24"
   },
   {
-   "addend": 36,
-   "offset": 905,
+   "addend": 4,
+   "offset": 814,
    "section": "seg_pmco",
-   "symbol": "_dv_c",
-   "type": "sharc.abs32"
-  },
-  {
-   "addend": 0,
-   "offset": 908,
-   "section": "seg_pmco",
-   "symbol": "_dv_params",
-   "type": "sharc.abs32"
-  },
-  {
-   "addend": 0,
-   "offset": 911,
-   "section": "seg_pmco",
-   "symbol": "_dv_diag",
-   "type": "sharc.abs32"
-  },
-  {
-   "addend": 12,
-   "offset": 935,
-   "section": "seg_pmco",
-   "symbol": "_dv_c",
+   "symbol": "_dv_in",
    "type": "sharc.abs32"
   },
   {
    "addend": 8,
-   "offset": 944,
+   "offset": 817,
+   "section": "seg_pmco",
+   "symbol": "_dv_c",
+   "type": "sharc.abs32"
+  },
+  {
+   "addend": 12,
+   "offset": 820,
+   "section": "seg_pmco",
+   "symbol": "_dv_in",
+   "type": "sharc.abs32"
+  },
+  {
+   "addend": 4,
+   "offset": 823,
    "section": "seg_pmco",
    "symbol": "_dv_c",
    "type": "sharc.abs32"
   },
   {
    "addend": 0,
-   "offset": 957,
+   "offset": 829,
    "section": "seg_pmco",
-   "symbol": "_dv_row",
+   "symbol": "_gs_rbuf",
+   "type": "sharc.abs32"
+  },
+  {
+   "addend": 20,
+   "offset": 833,
+   "section": "seg_pmco",
+   "symbol": "_dv_in",
+   "type": "sharc.abs32"
+  },
+  {
+   "addend": 20,
+   "offset": 838,
+   "section": "seg_pmco",
+   "symbol": "_dv_c",
+   "type": "sharc.abs32"
+  },
+  {
+   "addend": 20,
+   "offset": 841,
+   "section": "seg_pmco",
+   "symbol": "_dv_c",
    "type": "sharc.abs32"
   },
   {
    "addend": 0,
-   "offset": 962,
+   "offset": 847,
    "section": "seg_pmco",
-   "symbol": "_dv_diag",
+   "symbol": "_dv_slots",
    "type": "sharc.abs32"
   },
   {
    "addend": 0,
-   "offset": 972,
+   "offset": 858,
    "section": "seg_pmco",
-   "symbol": "_dv_gwin",
+   "symbol": "_dv_cpe",
    "type": "sharc.abs24"
   },
   {
-   "addend": 0,
-   "offset": 994,
-   "section": "seg_pmco",
-   "symbol": "_dv_gnd",
-   "type": "sharc.abs24"
-  },
-  {
-   "addend": 0,
-   "offset": 997,
-   "section": "seg_pmco",
-   "symbol": "_dv_c",
-   "type": "sharc.abs32"
-  },
-  {
-   "addend": 0,
-   "offset": 1003,
-   "section": "seg_pmco",
-   "symbol": "_dv_gnd",
-   "type": "sharc.abs24"
-  },
-  {
-   "addend": 84,
-   "offset": 1008,
-   "section": "seg_pmco",
-   "symbol": "_dv_diag",
-   "type": "sharc.abs32"
-  },
-  {
-   "addend": 44,
-   "offset": 1011,
-   "section": "seg_pmco",
-   "symbol": "_dv_c",
-   "type": "sharc.abs32"
-  },
-  {
-   "addend": 44,
-   "offset": 1015,
-   "section": "seg_pmco",
-   "symbol": "_dv_c",
-   "type": "sharc.abs32"
-  },
-  {
-   "addend": 40,
-   "offset": 1018,
-   "section": "seg_pmco",
-   "symbol": "_dv_c",
-   "type": "sharc.abs32"
-  },
-  {
-   "addend": 40,
-   "offset": 1022,
-   "section": "seg_pmco",
-   "symbol": "_dv_c",
-   "type": "sharc.abs32"
-  },
-  {
-   "addend": 36,
-   "offset": 1029,
-   "section": "seg_pmco",
-   "symbol": "_dv_c",
-   "type": "sharc.abs32"
-  },
-  {
-   "addend": 44,
-   "offset": 1036,
-   "section": "seg_pmco",
-   "symbol": "_dv_c",
-   "type": "sharc.abs32"
-  },
-  {
-   "addend": 60,
-   "offset": 1043,
-   "section": "seg_pmco",
-   "symbol": "_dv_diag",
-   "type": "sharc.abs32"
-  },
-  {
-   "addend": 0,
-   "offset": 1046,
+   "addend": 24,
+   "offset": 861,
    "section": "seg_pmco",
    "symbol": "_dv_c",
    "type": "sharc.abs32"
   },
   {
    "addend": 4,
-   "offset": 1049,
+   "offset": 864,
    "section": "seg_pmco",
    "symbol": "_dv_c",
    "type": "sharc.abs32"
   },
   {
-   "addend": 64,
-   "offset": 1056,
+   "addend": 0,
+   "offset": 875,
    "section": "seg_pmco",
-   "symbol": "_dv_diag",
+   "symbol": "_dv_frame_hw",
+   "type": "sharc.abs24"
+  },
+  {
+   "addend": 24,
+   "offset": 878,
+   "section": "seg_pmco",
+   "symbol": "_dv_c",
    "type": "sharc.abs32"
   },
   {
    "addend": 0,
-   "offset": 1059,
+   "offset": 881,
    "section": "seg_pmco",
-   "symbol": "_dv_back",
+   "symbol": "_dv_row",
+   "type": "sharc.abs32"
+  },
+  {
+   "addend": 20,
+   "offset": 912,
+   "section": "seg_pmco",
+   "symbol": "_dv_c",
+   "type": "sharc.abs32"
+  },
+  {
+   "addend": 0,
+   "offset": 918,
+   "section": "seg_pmco",
+   "symbol": "_dv_params",
+   "type": "sharc.abs32"
+  },
+  {
+   "addend": 0,
+   "offset": 926,
+   "section": "seg_pmco",
+   "symbol": "_dv_row",
+   "type": "sharc.abs32"
+  },
+  {
+   "addend": 0,
+   "offset": 939,
+   "section": "seg_pmco",
+   "symbol": "_dv_cplive",
    "type": "sharc.abs24"
+  },
+  {
+   "addend": 4,
+   "offset": 942,
+   "section": "seg_pmco",
+   "symbol": "_dv_c",
+   "type": "sharc.abs32"
+  },
+  {
+   "addend": 0,
+   "offset": 948,
+   "section": "seg_pmco",
+   "symbol": "_dv_trig_params",
+   "type": "sharc.abs32"
+  },
+  {
+   "addend": 16,
+   "offset": 958,
+   "section": "seg_pmco",
+   "symbol": "_dv_c",
+   "type": "sharc.abs32"
+  },
+  {
+   "addend": 0,
+   "offset": 962,
+   "section": "seg_pmco",
+   "symbol": "_dv_cpread",
+   "type": "sharc.abs24"
+  },
+  {
+   "addend": 0,
+   "offset": 967,
+   "section": "seg_pmco",
+   "symbol": "_dv_cplive",
+   "type": "sharc.abs24"
+  },
+  {
+   "addend": 0,
+   "offset": 975,
+   "section": "seg_pmco",
+   "symbol": "_dv_call_params",
+   "type": "sharc.abs32"
+  },
+  {
+   "addend": 20,
+   "offset": 984,
+   "section": "seg_pmco",
+   "symbol": "_dv_c",
+   "type": "sharc.abs32"
+  },
+  {
+   "addend": 0,
+   "offset": 990,
+   "section": "seg_pmco",
+   "symbol": "_dv_cpl",
+   "type": "sharc.abs24"
+  },
+  {
+   "addend": 4,
+   "offset": 993,
+   "section": "seg_pmco",
+   "symbol": "_dv_c",
+   "type": "sharc.abs32"
+  },
+  {
+   "addend": 0,
+   "offset": 996,
+   "section": "seg_pmco",
+   "symbol": "_dv_row",
+   "type": "sharc.abs32"
+  },
+  {
+   "addend": 28,
+   "offset": 1009,
+   "section": "seg_pmco",
+   "symbol": "_dv_c",
+   "type": "sharc.abs32"
+  },
+  {
+   "addend": 16,
+   "offset": 1012,
+   "section": "seg_pmco",
+   "symbol": "_dv_c",
+   "type": "sharc.abs32"
+  },
+  {
+   "addend": 0,
+   "offset": 1016,
+   "section": "seg_pmco",
+   "symbol": "_dv_crender",
+   "type": "sharc.abs24"
+  },
+  {
+   "addend": 0,
+   "offset": 1026,
+   "section": "seg_pmco",
+   "symbol": "_dv_cnoclr",
+   "type": "sharc.abs24"
+  },
+  {
+   "addend": 0,
+   "offset": 1043,
+   "section": "seg_pmco",
+   "symbol": "_dv_in",
+   "type": "sharc.abs32"
+  },
+  {
+   "addend": 0,
+   "offset": 1046,
+   "section": "seg_pmco",
+   "symbol": "_dv_call_params",
+   "type": "sharc.abs32"
+  },
+  {
+   "addend": 0,
+   "offset": 1049,
+   "section": "seg_pmco",
+   "symbol": "_dv_nback",
+   "type": "sharc.abs32"
+  },
+  {
+   "addend": 0,
+   "offset": 1055,
+   "section": "seg_pmco",
+   "symbol": "_dv_nfault",
+   "type": "sharc.abs24"
+  },
+  {
+   "addend": 0,
+   "offset": 1058,
+   "section": "seg_pmco",
+   "symbol": "_dv_row",
+   "type": "sharc.abs32"
+  },
+  {
+   "addend": 28,
+   "offset": 1067,
+   "section": "seg_pmco",
+   "symbol": "_dv_c",
+   "type": "sharc.abs32"
+  },
+  {
+   "addend": 0,
+   "offset": 1070,
+   "section": "seg_pmco",
+   "symbol": "_dv_in",
+   "type": "sharc.abs32"
+  },
+  {
+   "addend": 0,
+   "offset": 1073,
+   "section": "seg_pmco",
+   "symbol": "_dv_call_params",
+   "type": "sharc.abs32"
+  },
+  {
+   "addend": 0,
+   "offset": 1076,
+   "section": "seg_pmco",
+   "symbol": "_dv_rback",
+   "type": "sharc.abs32"
+  },
+  {
+   "addend": 48,
+   "offset": 1085,
+   "section": "seg_pmco",
+   "symbol": "_dv_c",
+   "type": "sharc.abs32"
+  },
+  {
+   "addend": 32,
+   "offset": 1090,
+   "section": "seg_pmco",
+   "symbol": "_dv_c",
+   "type": "sharc.abs32"
   },
   {
    "addend": 8,
-   "offset": 1066,
+   "offset": 1093,
    "section": "seg_pmco",
    "symbol": "_dv_c",
    "type": "sharc.abs32"
   },
   {
    "addend": 0,
-   "offset": 1079,
+   "offset": 1119,
+   "section": "seg_pmco",
+   "symbol": "_dv_gfault",
+   "type": "sharc.abs24"
+  },
+  {
+   "addend": 0,
+   "offset": 1122,
+   "section": "seg_pmco",
+   "symbol": "_gs_post",
+   "type": "sharc.abs24"
+  },
+  {
+   "addend": 32,
+   "offset": 1127,
+   "section": "seg_pmco",
+   "symbol": "_dv_c",
+   "type": "sharc.abs32"
+  },
+  {
+   "addend": 0,
+   "offset": 1131,
+   "section": "seg_pmco",
+   "symbol": "_dv_back",
+   "type": "sharc.abs24"
+  },
+  {
+   "addend": 12,
+   "offset": 1134,
+   "section": "seg_pmco",
+   "symbol": "_dv_c",
+   "type": "sharc.abs32"
+  },
+  {
+   "addend": 0,
+   "offset": 1143,
    "section": "seg_pmco",
    "symbol": "_dv_back",
    "type": "sharc.abs24"
   },
   {
    "addend": 0,
-   "offset": 1135,
+   "offset": 1148,
    "section": "seg_pmco",
-   "symbol": "_fw_frame",
+   "symbol": "_dv_gfaultk",
+   "type": "sharc.abs24"
+  },
+  {
+   "addend": 36,
+   "offset": 1162,
+   "section": "seg_pmco",
+   "symbol": "_dv_c",
    "type": "sharc.abs32"
   },
   {
    "addend": 0,
    "offset": 1165,
    "section": "seg_pmco",
+   "symbol": "_dv_call_params",
+   "type": "sharc.abs32"
+  },
+  {
+   "addend": 0,
+   "offset": 1168,
+   "section": "seg_pmco",
+   "symbol": "_dv_diag",
+   "type": "sharc.abs32"
+  },
+  {
+   "addend": 12,
+   "offset": 1192,
+   "section": "seg_pmco",
+   "symbol": "_dv_c",
+   "type": "sharc.abs32"
+  },
+  {
+   "addend": 8,
+   "offset": 1201,
+   "section": "seg_pmco",
+   "symbol": "_dv_c",
+   "type": "sharc.abs32"
+  },
+  {
+   "addend": 0,
+   "offset": 1214,
+   "section": "seg_pmco",
+   "symbol": "_dv_row",
+   "type": "sharc.abs32"
+  },
+  {
+   "addend": 0,
+   "offset": 1219,
+   "section": "seg_pmco",
+   "symbol": "_dv_diag",
+   "type": "sharc.abs32"
+  },
+  {
+   "addend": 0,
+   "offset": 1229,
+   "section": "seg_pmco",
+   "symbol": "_dv_gwin",
+   "type": "sharc.abs24"
+  },
+  {
+   "addend": 0,
+   "offset": 1251,
+   "section": "seg_pmco",
+   "symbol": "_dv_gnd",
+   "type": "sharc.abs24"
+  },
+  {
+   "addend": 0,
+   "offset": 1254,
+   "section": "seg_pmco",
+   "symbol": "_dv_c",
+   "type": "sharc.abs32"
+  },
+  {
+   "addend": 0,
+   "offset": 1260,
+   "section": "seg_pmco",
+   "symbol": "_dv_gnd",
+   "type": "sharc.abs24"
+  },
+  {
+   "addend": 84,
+   "offset": 1265,
+   "section": "seg_pmco",
+   "symbol": "_dv_diag",
+   "type": "sharc.abs32"
+  },
+  {
+   "addend": 44,
+   "offset": 1268,
+   "section": "seg_pmco",
+   "symbol": "_dv_c",
+   "type": "sharc.abs32"
+  },
+  {
+   "addend": 44,
+   "offset": 1272,
+   "section": "seg_pmco",
+   "symbol": "_dv_c",
+   "type": "sharc.abs32"
+  },
+  {
+   "addend": 40,
+   "offset": 1275,
+   "section": "seg_pmco",
+   "symbol": "_dv_c",
+   "type": "sharc.abs32"
+  },
+  {
+   "addend": 40,
+   "offset": 1279,
+   "section": "seg_pmco",
+   "symbol": "_dv_c",
+   "type": "sharc.abs32"
+  },
+  {
+   "addend": 36,
+   "offset": 1286,
+   "section": "seg_pmco",
+   "symbol": "_dv_c",
+   "type": "sharc.abs32"
+  },
+  {
+   "addend": 44,
+   "offset": 1293,
+   "section": "seg_pmco",
+   "symbol": "_dv_c",
+   "type": "sharc.abs32"
+  },
+  {
+   "addend": 60,
+   "offset": 1300,
+   "section": "seg_pmco",
+   "symbol": "_dv_diag",
+   "type": "sharc.abs32"
+  },
+  {
+   "addend": 0,
+   "offset": 1303,
+   "section": "seg_pmco",
+   "symbol": "_dv_c",
+   "type": "sharc.abs32"
+  },
+  {
+   "addend": 4,
+   "offset": 1306,
+   "section": "seg_pmco",
+   "symbol": "_dv_c",
+   "type": "sharc.abs32"
+  },
+  {
+   "addend": 64,
+   "offset": 1313,
+   "section": "seg_pmco",
+   "symbol": "_dv_diag",
+   "type": "sharc.abs32"
+  },
+  {
+   "addend": 0,
+   "offset": 1316,
+   "section": "seg_pmco",
+   "symbol": "_dv_back",
+   "type": "sharc.abs24"
+  },
+  {
+   "addend": 0,
+   "offset": 1323,
+   "section": "seg_pmco",
+   "symbol": "_dv_cz",
+   "type": "sharc.abs24"
+  },
+  {
+   "addend": 8,
+   "offset": 1330,
+   "section": "seg_pmco",
+   "symbol": "_dv_c",
+   "type": "sharc.abs32"
+  },
+  {
+   "addend": 0,
+   "offset": 1343,
+   "section": "seg_pmco",
+   "symbol": "_dv_back",
+   "type": "sharc.abs24"
+  },
+  {
+   "addend": 0,
+   "offset": 1399,
+   "section": "seg_pmco",
    "symbol": "_fw_frame",
+   "type": "sharc.abs32"
+  },
+  {
+   "addend": 0,
+   "offset": 1429,
+   "section": "seg_pmco",
+   "symbol": "_fw_frame",
+   "type": "sharc.abs32"
+  },
+  {
+   "addend": 0,
+   "offset": 1472,
+   "section": "seg_pmco",
+   "symbol": "_gs_stamp",
+   "type": "sharc.abs32"
+  },
+  {
+   "addend": 0,
+   "offset": 1480,
+   "section": "seg_pmco",
+   "symbol": "_dv_diag",
+   "type": "sharc.abs32"
+  },
+  {
+   "addend": 0,
+   "offset": 1484,
+   "section": "seg_pmco",
+   "symbol": "_gs_fo_stock",
+   "type": "sharc.abs24"
+  },
+  {
+   "addend": 0,
+   "offset": 1496,
+   "section": "seg_pmco",
+   "symbol": "_gs_fo_bad",
+   "type": "sharc.abs24"
+  },
+  {
+   "addend": 0,
+   "offset": 1504,
+   "section": "seg_pmco",
+   "symbol": "_gs_fo_bad",
+   "type": "sharc.abs24"
+  },
+  {
+   "addend": 0,
+   "offset": 1516,
+   "section": "seg_pmco",
+   "symbol": "_gs_stamp",
+   "type": "sharc.abs32"
+  },
+  {
+   "addend": 0,
+   "offset": 1527,
+   "section": "seg_pmco",
+   "symbol": "_gs_fo_rec",
+   "type": "sharc.abs32"
+  },
+  {
+   "addend": 0,
+   "offset": 1536,
+   "section": "seg_pmco",
+   "symbol": "_gs_rbuf",
+   "type": "sharc.abs32"
+  },
+  {
+   "addend": 0,
+   "offset": 1561,
+   "section": "seg_pmco",
+   "symbol": "_gs_fo_stock",
+   "type": "sharc.abs24"
+  },
+  {
+   "addend": -1,
+   "offset": 1565,
+   "section": "seg_pmco",
+   "symbol": "_gs_fo_l",
+   "type": "sharc.abs32"
+  },
+  {
+   "addend": 0,
+   "offset": 1579,
+   "section": "seg_pmco",
+   "symbol": "_gs_fo_stock",
+   "type": "sharc.abs24"
+  },
+  {
+   "addend": -1,
+   "offset": 1583,
+   "section": "seg_pmco",
+   "symbol": "_gs_fo_r",
+   "type": "sharc.abs32"
+  },
+  {
+   "addend": 0,
+   "offset": 1591,
+   "section": "seg_pmco",
+   "symbol": "_gs_leave",
+   "type": "sharc.abs24"
+  },
+  {
+   "addend": 36,
+   "offset": 1598,
+   "section": "seg_pmco",
+   "symbol": "_gs_cnt",
+   "type": "sharc.abs32"
+  },
+  {
+   "addend": 36,
+   "offset": 1602,
+   "section": "seg_pmco",
+   "symbol": "_gs_cnt",
+   "type": "sharc.abs32"
+  },
+  {
+   "addend": 0,
+   "offset": 1605,
+   "section": "seg_pmco",
+   "symbol": "_gs_nbad",
+   "type": "sharc.abs32"
+  },
+  {
+   "addend": 0,
+   "offset": 1609,
+   "section": "seg_pmco",
+   "symbol": "_gs_nbad",
+   "type": "sharc.abs32"
+  },
+  {
+   "addend": 0,
+   "offset": 1612,
+   "section": "seg_pmco",
+   "symbol": "_gs_hacc",
+   "type": "sharc.abs32"
+  },
+  {
+   "addend": 0,
+   "offset": 1618,
+   "section": "seg_pmco",
+   "symbol": "_gs_hacc",
+   "type": "sharc.abs32"
+  },
+  {
+   "addend": 0,
+   "offset": 1621,
+   "section": "seg_pmco",
+   "symbol": "_gs_fo_stock",
+   "type": "sharc.abs24"
+  },
+  {
+   "addend": 0,
+   "offset": 1637,
+   "section": "seg_pmco",
+   "symbol": "_gs_stamp",
+   "type": "sharc.abs32"
+  },
+  {
+   "addend": 0,
+   "offset": 1645,
+   "section": "seg_pmco",
+   "symbol": "_dv_diag",
+   "type": "sharc.abs32"
+  },
+  {
+   "addend": 0,
+   "offset": 1649,
+   "section": "seg_pmco",
+   "symbol": "_gs_uy_stock",
+   "type": "sharc.abs24"
+  },
+  {
+   "addend": 0,
+   "offset": 1661,
+   "section": "seg_pmco",
+   "symbol": "_gs_uy_bad",
+   "type": "sharc.abs24"
+  },
+  {
+   "addend": 0,
+   "offset": 1669,
+   "section": "seg_pmco",
+   "symbol": "_gs_uy_bad",
+   "type": "sharc.abs24"
+  },
+  {
+   "addend": 0,
+   "offset": 1681,
+   "section": "seg_pmco",
+   "symbol": "_gs_stamp",
+   "type": "sharc.abs32"
+  },
+  {
+   "addend": 0,
+   "offset": 1688,
+   "section": "seg_pmco",
+   "symbol": "_gs_uy_rec",
+   "type": "sharc.abs32"
+  },
+  {
+   "addend": 0,
+   "offset": 1697,
+   "section": "seg_pmco",
+   "symbol": "_gs_rbuf",
+   "type": "sharc.abs32"
+  },
+  {
+   "addend": 0,
+   "offset": 1726,
+   "section": "seg_pmco",
+   "symbol": "_gs_uy_stock",
+   "type": "sharc.abs24"
+  },
+  {
+   "addend": -1,
+   "offset": 1730,
+   "section": "seg_pmco",
+   "symbol": "_gs_uy_l",
+   "type": "sharc.abs32"
+  },
+  {
+   "addend": 0,
+   "offset": 1744,
+   "section": "seg_pmco",
+   "symbol": "_gs_uy_stock",
+   "type": "sharc.abs24"
+  },
+  {
+   "addend": -1,
+   "offset": 1748,
+   "section": "seg_pmco",
+   "symbol": "_gs_uy_r",
+   "type": "sharc.abs32"
+  },
+  {
+   "addend": 0,
+   "offset": 1756,
+   "section": "seg_pmco",
+   "symbol": "_gs_leave",
+   "type": "sharc.abs24"
+  },
+  {
+   "addend": 40,
+   "offset": 1763,
+   "section": "seg_pmco",
+   "symbol": "_gs_cnt",
+   "type": "sharc.abs32"
+  },
+  {
+   "addend": 40,
+   "offset": 1767,
+   "section": "seg_pmco",
+   "symbol": "_gs_cnt",
+   "type": "sharc.abs32"
+  },
+  {
+   "addend": 0,
+   "offset": 1770,
+   "section": "seg_pmco",
+   "symbol": "_gs_nbad",
+   "type": "sharc.abs32"
+  },
+  {
+   "addend": 0,
+   "offset": 1774,
+   "section": "seg_pmco",
+   "symbol": "_gs_nbad",
+   "type": "sharc.abs32"
+  },
+  {
+   "addend": 0,
+   "offset": 1777,
+   "section": "seg_pmco",
+   "symbol": "_gs_hacc",
+   "type": "sharc.abs32"
+  },
+  {
+   "addend": 0,
+   "offset": 1783,
+   "section": "seg_pmco",
+   "symbol": "_gs_hacc",
+   "type": "sharc.abs32"
+  },
+  {
+   "addend": 0,
+   "offset": 1786,
+   "section": "seg_pmco",
+   "symbol": "_gs_uy_stock",
+   "type": "sharc.abs24"
+  },
+  {
+   "addend": 0,
+   "offset": 1802,
+   "section": "seg_pmco",
+   "symbol": "_gs_stamp",
+   "type": "sharc.abs32"
+  },
+  {
+   "addend": 0,
+   "offset": 1810,
+   "section": "seg_pmco",
+   "symbol": "_dv_diag",
+   "type": "sharc.abs32"
+  },
+  {
+   "addend": 0,
+   "offset": 1814,
+   "section": "seg_pmco",
+   "symbol": "_gs_gain_stock",
+   "type": "sharc.abs24"
+  },
+  {
+   "addend": 0,
+   "offset": 1826,
+   "section": "seg_pmco",
+   "symbol": "_gs_gain_bad",
+   "type": "sharc.abs24"
+  },
+  {
+   "addend": 0,
+   "offset": 1834,
+   "section": "seg_pmco",
+   "symbol": "_gs_gain_bad",
+   "type": "sharc.abs24"
+  },
+  {
+   "addend": 0,
+   "offset": 1846,
+   "section": "seg_pmco",
+   "symbol": "_gs_stamp",
+   "type": "sharc.abs32"
+  },
+  {
+   "addend": 0,
+   "offset": 1858,
+   "section": "seg_pmco",
+   "symbol": "_gs_gain_rec",
+   "type": "sharc.abs32"
+  },
+  {
+   "addend": 0,
+   "offset": 1867,
+   "section": "seg_pmco",
+   "symbol": "_gs_rbuf",
+   "type": "sharc.abs32"
+  },
+  {
+   "addend": 0,
+   "offset": 1890,
+   "section": "seg_pmco",
+   "symbol": "_gs_gain_cap",
+   "type": "sharc.abs24"
+  },
+  {
+   "addend": 0,
+   "offset": 1902,
+   "section": "seg_pmco",
+   "symbol": "_gs_gain_stock",
+   "type": "sharc.abs24"
+  },
+  {
+   "addend": -1,
+   "offset": 1906,
+   "section": "seg_pmco",
+   "symbol": "_gs_gain_l",
+   "type": "sharc.abs32"
+  },
+  {
+   "addend": 0,
+   "offset": 1926,
+   "section": "seg_pmco",
+   "symbol": "_gs_gain_stock",
+   "type": "sharc.abs24"
+  },
+  {
+   "addend": -1,
+   "offset": 1930,
+   "section": "seg_pmco",
+   "symbol": "_gs_gain_r",
+   "type": "sharc.abs32"
+  },
+  {
+   "addend": 0,
+   "offset": 1938,
+   "section": "seg_pmco",
+   "symbol": "_gs_leave",
+   "type": "sharc.abs24"
+  },
+  {
+   "addend": 44,
+   "offset": 1945,
+   "section": "seg_pmco",
+   "symbol": "_gs_cnt",
+   "type": "sharc.abs32"
+  },
+  {
+   "addend": 44,
+   "offset": 1949,
+   "section": "seg_pmco",
+   "symbol": "_gs_cnt",
+   "type": "sharc.abs32"
+  },
+  {
+   "addend": 0,
+   "offset": 1952,
+   "section": "seg_pmco",
+   "symbol": "_gs_nbad",
+   "type": "sharc.abs32"
+  },
+  {
+   "addend": 0,
+   "offset": 1956,
+   "section": "seg_pmco",
+   "symbol": "_gs_nbad",
+   "type": "sharc.abs32"
+  },
+  {
+   "addend": 0,
+   "offset": 1959,
+   "section": "seg_pmco",
+   "symbol": "_gs_hacc",
+   "type": "sharc.abs32"
+  },
+  {
+   "addend": 0,
+   "offset": 1965,
+   "section": "seg_pmco",
+   "symbol": "_gs_hacc",
+   "type": "sharc.abs32"
+  },
+  {
+   "addend": 0,
+   "offset": 1968,
+   "section": "seg_pmco",
+   "symbol": "_gs_gain_stock",
+   "type": "sharc.abs24"
+  },
+  {
+   "addend": 0,
+   "offset": 1984,
+   "section": "seg_pmco",
+   "symbol": "_gs_stamp",
+   "type": "sharc.abs32"
+  },
+  {
+   "addend": 0,
+   "offset": 1992,
+   "section": "seg_pmco",
+   "symbol": "_dv_diag",
+   "type": "sharc.abs32"
+  },
+  {
+   "addend": 0,
+   "offset": 1996,
+   "section": "seg_pmco",
+   "symbol": "_gs_c5_stock",
+   "type": "sharc.abs24"
+  },
+  {
+   "addend": 0,
+   "offset": 2008,
+   "section": "seg_pmco",
+   "symbol": "_gs_c5_bad",
+   "type": "sharc.abs24"
+  },
+  {
+   "addend": 0,
+   "offset": 2016,
+   "section": "seg_pmco",
+   "symbol": "_gs_c5_bad",
+   "type": "sharc.abs24"
+  },
+  {
+   "addend": 0,
+   "offset": 2040,
+   "section": "seg_pmco",
+   "symbol": "_gs_stamp",
+   "type": "sharc.abs32"
+  },
+  {
+   "addend": 0,
+   "offset": 2048,
+   "section": "seg_pmco",
+   "symbol": "_gs_c5_rec",
+   "type": "sharc.abs32"
+  },
+  {
+   "addend": 0,
+   "offset": 2057,
+   "section": "seg_pmco",
+   "symbol": "_gs_rbuf",
+   "type": "sharc.abs32"
+  },
+  {
+   "addend": 0,
+   "offset": 2066,
+   "section": "seg_pmco",
+   "symbol": "_gs_c5_scr",
+   "type": "sharc.abs32"
+  },
+  {
+   "addend": 0,
+   "offset": 2095,
+   "section": "seg_pmco",
+   "symbol": "_gs_c5_cap",
+   "type": "sharc.abs24"
+  },
+  {
+   "addend": 0,
+   "offset": 2101,
+   "section": "seg_pmco",
+   "symbol": "_gs_c5_stock",
+   "type": "sharc.abs24"
+  },
+  {
+   "addend": -1,
+   "offset": 2105,
+   "section": "seg_pmco",
+   "symbol": "_gs_c5_l",
+   "type": "sharc.abs32"
+  },
+  {
+   "addend": 0,
+   "offset": 2120,
+   "section": "seg_pmco",
+   "symbol": "_gs_c5_stock",
+   "type": "sharc.abs24"
+  },
+  {
+   "addend": -1,
+   "offset": 2124,
+   "section": "seg_pmco",
+   "symbol": "_gs_c5_r",
+   "type": "sharc.abs32"
+  },
+  {
+   "addend": 0,
+   "offset": 2183,
+   "section": "seg_pmco",
+   "symbol": "_gs_leave",
+   "type": "sharc.abs24"
+  },
+  {
+   "addend": 48,
+   "offset": 2190,
+   "section": "seg_pmco",
+   "symbol": "_gs_cnt",
+   "type": "sharc.abs32"
+  },
+  {
+   "addend": 48,
+   "offset": 2194,
+   "section": "seg_pmco",
+   "symbol": "_gs_cnt",
+   "type": "sharc.abs32"
+  },
+  {
+   "addend": 0,
+   "offset": 2197,
+   "section": "seg_pmco",
+   "symbol": "_gs_nbad",
+   "type": "sharc.abs32"
+  },
+  {
+   "addend": 0,
+   "offset": 2201,
+   "section": "seg_pmco",
+   "symbol": "_gs_nbad",
+   "type": "sharc.abs32"
+  },
+  {
+   "addend": 0,
+   "offset": 2204,
+   "section": "seg_pmco",
+   "symbol": "_gs_hacc",
+   "type": "sharc.abs32"
+  },
+  {
+   "addend": 0,
+   "offset": 2210,
+   "section": "seg_pmco",
+   "symbol": "_gs_hacc",
+   "type": "sharc.abs32"
+  },
+  {
+   "addend": 0,
+   "offset": 2213,
+   "section": "seg_pmco",
+   "symbol": "_gs_c5_stock",
+   "type": "sharc.abs24"
+  },
+  {
+   "addend": 0,
+   "offset": 2229,
+   "section": "seg_pmco",
+   "symbol": "_gs_stamp",
+   "type": "sharc.abs32"
+  },
+  {
+   "addend": 0,
+   "offset": 2237,
+   "section": "seg_pmco",
+   "symbol": "_dv_diag",
+   "type": "sharc.abs32"
+  },
+  {
+   "addend": 0,
+   "offset": 2241,
+   "section": "seg_pmco",
+   "symbol": "_gs_shaper_stock",
+   "type": "sharc.abs24"
+  },
+  {
+   "addend": 0,
+   "offset": 2253,
+   "section": "seg_pmco",
+   "symbol": "_gs_shaper_early_bad",
+   "type": "sharc.abs24"
+  },
+  {
+   "addend": 0,
+   "offset": 2261,
+   "section": "seg_pmco",
+   "symbol": "_gs_shaper_early_bad",
+   "type": "sharc.abs24"
+  },
+  {
+   "addend": 0,
+   "offset": 2273,
+   "section": "seg_pmco",
+   "symbol": "_gs_stamp",
+   "type": "sharc.abs32"
+  },
+  {
+   "addend": 0,
+   "offset": 2281,
+   "section": "seg_pmco",
+   "symbol": "_gs_sh_rec",
+   "type": "sharc.abs32"
+  },
+  {
+   "addend": 0,
+   "offset": 2290,
+   "section": "seg_pmco",
+   "symbol": "_gs_rbuf",
+   "type": "sharc.abs32"
+  },
+  {
+   "addend": 0,
+   "offset": 2323,
+   "section": "seg_pmco",
+   "symbol": "_gs_shaper_stock",
+   "type": "sharc.abs24"
+  },
+  {
+   "addend": -1,
+   "offset": 2327,
+   "section": "seg_pmco",
+   "symbol": "_gs_shaper_early_l",
+   "type": "sharc.abs32"
+  },
+  {
+   "addend": 0,
+   "offset": 2341,
+   "section": "seg_pmco",
+   "symbol": "_gs_shaper_stock",
+   "type": "sharc.abs24"
+  },
+  {
+   "addend": -1,
+   "offset": 2345,
+   "section": "seg_pmco",
+   "symbol": "_gs_shaper_early_r",
+   "type": "sharc.abs32"
+  },
+  {
+   "addend": 0,
+   "offset": 2353,
+   "section": "seg_pmco",
+   "symbol": "_gs_leave",
+   "type": "sharc.abs24"
+  },
+  {
+   "addend": 8,
+   "offset": 2360,
+   "section": "seg_pmco",
+   "symbol": "_gs_cnt",
+   "type": "sharc.abs32"
+  },
+  {
+   "addend": 8,
+   "offset": 2364,
+   "section": "seg_pmco",
+   "symbol": "_gs_cnt",
+   "type": "sharc.abs32"
+  },
+  {
+   "addend": 0,
+   "offset": 2367,
+   "section": "seg_pmco",
+   "symbol": "_gs_nbad",
+   "type": "sharc.abs32"
+  },
+  {
+   "addend": 0,
+   "offset": 2371,
+   "section": "seg_pmco",
+   "symbol": "_gs_nbad",
+   "type": "sharc.abs32"
+  },
+  {
+   "addend": 0,
+   "offset": 2374,
+   "section": "seg_pmco",
+   "symbol": "_gs_hacc",
+   "type": "sharc.abs32"
+  },
+  {
+   "addend": 0,
+   "offset": 2380,
+   "section": "seg_pmco",
+   "symbol": "_gs_hacc",
+   "type": "sharc.abs32"
+  },
+  {
+   "addend": 0,
+   "offset": 2383,
+   "section": "seg_pmco",
+   "symbol": "_gs_shaper_stock",
+   "type": "sharc.abs24"
+  },
+  {
+   "addend": 0,
+   "offset": 2399,
+   "section": "seg_pmco",
+   "symbol": "_gs_stamp",
+   "type": "sharc.abs32"
+  },
+  {
+   "addend": 0,
+   "offset": 2407,
+   "section": "seg_pmco",
+   "symbol": "_dv_diag",
+   "type": "sharc.abs32"
+  },
+  {
+   "addend": 0,
+   "offset": 2411,
+   "section": "seg_pmco",
+   "symbol": "_gs_shaper_stock",
+   "type": "sharc.abs24"
+  },
+  {
+   "addend": 0,
+   "offset": 2423,
+   "section": "seg_pmco",
+   "symbol": "_gs_shaper_late_bad",
+   "type": "sharc.abs24"
+  },
+  {
+   "addend": 0,
+   "offset": 2431,
+   "section": "seg_pmco",
+   "symbol": "_gs_shaper_late_bad",
+   "type": "sharc.abs24"
+  },
+  {
+   "addend": 0,
+   "offset": 2443,
+   "section": "seg_pmco",
+   "symbol": "_gs_stamp",
+   "type": "sharc.abs32"
+  },
+  {
+   "addend": 0,
+   "offset": 2451,
+   "section": "seg_pmco",
+   "symbol": "_gs_sh_rec",
+   "type": "sharc.abs32"
+  },
+  {
+   "addend": 0,
+   "offset": 2460,
+   "section": "seg_pmco",
+   "symbol": "_gs_rbuf",
+   "type": "sharc.abs32"
+  },
+  {
+   "addend": 0,
+   "offset": 2493,
+   "section": "seg_pmco",
+   "symbol": "_gs_shaper_stock",
+   "type": "sharc.abs24"
+  },
+  {
+   "addend": -1,
+   "offset": 2497,
+   "section": "seg_pmco",
+   "symbol": "_gs_shaper_late_l",
+   "type": "sharc.abs32"
+  },
+  {
+   "addend": 0,
+   "offset": 2530,
+   "section": "seg_pmco",
+   "symbol": "_gs_shaper_stock",
+   "type": "sharc.abs24"
+  },
+  {
+   "addend": -1,
+   "offset": 2534,
+   "section": "seg_pmco",
+   "symbol": "_gs_shaper_late_r",
+   "type": "sharc.abs32"
+  },
+  {
+   "addend": 0,
+   "offset": 2561,
+   "section": "seg_pmco",
+   "symbol": "_gs_leave",
+   "type": "sharc.abs24"
+  },
+  {
+   "addend": 12,
+   "offset": 2568,
+   "section": "seg_pmco",
+   "symbol": "_gs_cnt",
+   "type": "sharc.abs32"
+  },
+  {
+   "addend": 12,
+   "offset": 2572,
+   "section": "seg_pmco",
+   "symbol": "_gs_cnt",
+   "type": "sharc.abs32"
+  },
+  {
+   "addend": 0,
+   "offset": 2575,
+   "section": "seg_pmco",
+   "symbol": "_gs_nbad",
+   "type": "sharc.abs32"
+  },
+  {
+   "addend": 0,
+   "offset": 2579,
+   "section": "seg_pmco",
+   "symbol": "_gs_nbad",
+   "type": "sharc.abs32"
+  },
+  {
+   "addend": 0,
+   "offset": 2582,
+   "section": "seg_pmco",
+   "symbol": "_gs_hacc",
+   "type": "sharc.abs32"
+  },
+  {
+   "addend": 0,
+   "offset": 2588,
+   "section": "seg_pmco",
+   "symbol": "_gs_hacc",
+   "type": "sharc.abs32"
+  },
+  {
+   "addend": 0,
+   "offset": 2591,
+   "section": "seg_pmco",
+   "symbol": "_gs_shaper_stock",
+   "type": "sharc.abs24"
+  },
+  {
+   "addend": 0,
+   "offset": 2607,
+   "section": "seg_pmco",
+   "symbol": "_gs_stamp",
+   "type": "sharc.abs32"
+  },
+  {
+   "addend": 0,
+   "offset": 2615,
+   "section": "seg_pmco",
+   "symbol": "_dv_diag",
+   "type": "sharc.abs32"
+  },
+  {
+   "addend": 0,
+   "offset": 2619,
+   "section": "seg_pmco",
+   "symbol": "_gs_held_stock",
+   "type": "sharc.abs24"
+  },
+  {
+   "addend": 0,
+   "offset": 2631,
+   "section": "seg_pmco",
+   "symbol": "_gs_held_early_bad",
+   "type": "sharc.abs24"
+  },
+  {
+   "addend": 0,
+   "offset": 2639,
+   "section": "seg_pmco",
+   "symbol": "_gs_held_early_bad",
+   "type": "sharc.abs24"
+  },
+  {
+   "addend": 0,
+   "offset": 2651,
+   "section": "seg_pmco",
+   "symbol": "_gs_stamp",
+   "type": "sharc.abs32"
+  },
+  {
+   "addend": 0,
+   "offset": 2659,
+   "section": "seg_pmco",
+   "symbol": "_gs_hd_rec",
+   "type": "sharc.abs32"
+  },
+  {
+   "addend": 0,
+   "offset": 2668,
+   "section": "seg_pmco",
+   "symbol": "_gs_rbuf",
+   "type": "sharc.abs32"
+  },
+  {
+   "addend": 0,
+   "offset": 2693,
+   "section": "seg_pmco",
+   "symbol": "_gs_held_stock",
+   "type": "sharc.abs24"
+  },
+  {
+   "addend": -1,
+   "offset": 2697,
+   "section": "seg_pmco",
+   "symbol": "_gs_held_early_l",
+   "type": "sharc.abs32"
+  },
+  {
+   "addend": 0,
+   "offset": 2711,
+   "section": "seg_pmco",
+   "symbol": "_gs_held_stock",
+   "type": "sharc.abs24"
+  },
+  {
+   "addend": -1,
+   "offset": 2715,
+   "section": "seg_pmco",
+   "symbol": "_gs_held_early_r",
+   "type": "sharc.abs32"
+  },
+  {
+   "addend": 0,
+   "offset": 2723,
+   "section": "seg_pmco",
+   "symbol": "_gs_leave",
+   "type": "sharc.abs24"
+  },
+  {
+   "addend": 0,
+   "offset": 2730,
+   "section": "seg_pmco",
+   "symbol": "_gs_cnt",
+   "type": "sharc.abs32"
+  },
+  {
+   "addend": 0,
+   "offset": 2734,
+   "section": "seg_pmco",
+   "symbol": "_gs_cnt",
+   "type": "sharc.abs32"
+  },
+  {
+   "addend": 0,
+   "offset": 2737,
+   "section": "seg_pmco",
+   "symbol": "_gs_nbad",
+   "type": "sharc.abs32"
+  },
+  {
+   "addend": 0,
+   "offset": 2741,
+   "section": "seg_pmco",
+   "symbol": "_gs_nbad",
+   "type": "sharc.abs32"
+  },
+  {
+   "addend": 0,
+   "offset": 2744,
+   "section": "seg_pmco",
+   "symbol": "_gs_hacc",
+   "type": "sharc.abs32"
+  },
+  {
+   "addend": 0,
+   "offset": 2750,
+   "section": "seg_pmco",
+   "symbol": "_gs_hacc",
+   "type": "sharc.abs32"
+  },
+  {
+   "addend": 0,
+   "offset": 2753,
+   "section": "seg_pmco",
+   "symbol": "_gs_held_stock",
+   "type": "sharc.abs24"
+  },
+  {
+   "addend": 0,
+   "offset": 2769,
+   "section": "seg_pmco",
+   "symbol": "_gs_stamp",
+   "type": "sharc.abs32"
+  },
+  {
+   "addend": 0,
+   "offset": 2777,
+   "section": "seg_pmco",
+   "symbol": "_dv_diag",
+   "type": "sharc.abs32"
+  },
+  {
+   "addend": 0,
+   "offset": 2781,
+   "section": "seg_pmco",
+   "symbol": "_gs_held_stock",
+   "type": "sharc.abs24"
+  },
+  {
+   "addend": 0,
+   "offset": 2793,
+   "section": "seg_pmco",
+   "symbol": "_gs_held_late_bad",
+   "type": "sharc.abs24"
+  },
+  {
+   "addend": 0,
+   "offset": 2801,
+   "section": "seg_pmco",
+   "symbol": "_gs_held_late_bad",
+   "type": "sharc.abs24"
+  },
+  {
+   "addend": 0,
+   "offset": 2813,
+   "section": "seg_pmco",
+   "symbol": "_gs_stamp",
+   "type": "sharc.abs32"
+  },
+  {
+   "addend": 0,
+   "offset": 2821,
+   "section": "seg_pmco",
+   "symbol": "_gs_hd_rec",
+   "type": "sharc.abs32"
+  },
+  {
+   "addend": 0,
+   "offset": 2830,
+   "section": "seg_pmco",
+   "symbol": "_gs_rbuf",
+   "type": "sharc.abs32"
+  },
+  {
+   "addend": 0,
+   "offset": 2855,
+   "section": "seg_pmco",
+   "symbol": "_gs_held_stock",
+   "type": "sharc.abs24"
+  },
+  {
+   "addend": -1,
+   "offset": 2859,
+   "section": "seg_pmco",
+   "symbol": "_gs_held_late_l",
+   "type": "sharc.abs32"
+  },
+  {
+   "addend": 0,
+   "offset": 2873,
+   "section": "seg_pmco",
+   "symbol": "_gs_held_stock",
+   "type": "sharc.abs24"
+  },
+  {
+   "addend": -1,
+   "offset": 2877,
+   "section": "seg_pmco",
+   "symbol": "_gs_held_late_r",
+   "type": "sharc.abs32"
+  },
+  {
+   "addend": 0,
+   "offset": 2885,
+   "section": "seg_pmco",
+   "symbol": "_gs_leave",
+   "type": "sharc.abs24"
+  },
+  {
+   "addend": 4,
+   "offset": 2892,
+   "section": "seg_pmco",
+   "symbol": "_gs_cnt",
+   "type": "sharc.abs32"
+  },
+  {
+   "addend": 4,
+   "offset": 2896,
+   "section": "seg_pmco",
+   "symbol": "_gs_cnt",
+   "type": "sharc.abs32"
+  },
+  {
+   "addend": 0,
+   "offset": 2899,
+   "section": "seg_pmco",
+   "symbol": "_gs_nbad",
+   "type": "sharc.abs32"
+  },
+  {
+   "addend": 0,
+   "offset": 2903,
+   "section": "seg_pmco",
+   "symbol": "_gs_nbad",
+   "type": "sharc.abs32"
+  },
+  {
+   "addend": 0,
+   "offset": 2906,
+   "section": "seg_pmco",
+   "symbol": "_gs_hacc",
+   "type": "sharc.abs32"
+  },
+  {
+   "addend": 0,
+   "offset": 2912,
+   "section": "seg_pmco",
+   "symbol": "_gs_hacc",
+   "type": "sharc.abs32"
+  },
+  {
+   "addend": 0,
+   "offset": 2915,
+   "section": "seg_pmco",
+   "symbol": "_gs_held_stock",
+   "type": "sharc.abs24"
+  },
+  {
+   "addend": 0,
+   "offset": 2931,
+   "section": "seg_pmco",
+   "symbol": "_gs_stamp",
+   "type": "sharc.abs32"
+  },
+  {
+   "addend": 0,
+   "offset": 2939,
+   "section": "seg_pmco",
+   "symbol": "_dv_diag",
+   "type": "sharc.abs32"
+  },
+  {
+   "addend": 0,
+   "offset": 2943,
+   "section": "seg_pmco",
+   "symbol": "_gs_case1_stock",
+   "type": "sharc.abs24"
+  },
+  {
+   "addend": 0,
+   "offset": 2955,
+   "section": "seg_pmco",
+   "symbol": "_gs_case1_bad",
+   "type": "sharc.abs24"
+  },
+  {
+   "addend": 0,
+   "offset": 2963,
+   "section": "seg_pmco",
+   "symbol": "_gs_case1_bad",
+   "type": "sharc.abs24"
+  },
+  {
+   "addend": 0,
+   "offset": 2975,
+   "section": "seg_pmco",
+   "symbol": "_gs_stamp",
+   "type": "sharc.abs32"
+  },
+  {
+   "addend": 0,
+   "offset": 2983,
+   "section": "seg_pmco",
+   "symbol": "_gs_c1_rec",
+   "type": "sharc.abs32"
+  },
+  {
+   "addend": 0,
+   "offset": 2992,
+   "section": "seg_pmco",
+   "symbol": "_gs_rbuf",
+   "type": "sharc.abs32"
+  },
+  {
+   "addend": 0,
+   "offset": 3049,
+   "section": "seg_pmco",
+   "symbol": "_gs_case1_stock",
+   "type": "sharc.abs24"
+  },
+  {
+   "addend": -1,
+   "offset": 3053,
+   "section": "seg_pmco",
+   "symbol": "_gs_case1_l",
+   "type": "sharc.abs32"
+  },
+  {
+   "addend": 0,
+   "offset": 3067,
+   "section": "seg_pmco",
+   "symbol": "_gs_case1_stock",
+   "type": "sharc.abs24"
+  },
+  {
+   "addend": -1,
+   "offset": 3071,
+   "section": "seg_pmco",
+   "symbol": "_gs_case1_r",
+   "type": "sharc.abs32"
+  },
+  {
+   "addend": 0,
+   "offset": 3079,
+   "section": "seg_pmco",
+   "symbol": "_gs_leave",
+   "type": "sharc.abs24"
+  },
+  {
+   "addend": 16,
+   "offset": 3086,
+   "section": "seg_pmco",
+   "symbol": "_gs_cnt",
+   "type": "sharc.abs32"
+  },
+  {
+   "addend": 16,
+   "offset": 3090,
+   "section": "seg_pmco",
+   "symbol": "_gs_cnt",
+   "type": "sharc.abs32"
+  },
+  {
+   "addend": 0,
+   "offset": 3093,
+   "section": "seg_pmco",
+   "symbol": "_gs_nbad",
+   "type": "sharc.abs32"
+  },
+  {
+   "addend": 0,
+   "offset": 3097,
+   "section": "seg_pmco",
+   "symbol": "_gs_nbad",
+   "type": "sharc.abs32"
+  },
+  {
+   "addend": 0,
+   "offset": 3100,
+   "section": "seg_pmco",
+   "symbol": "_gs_hacc",
+   "type": "sharc.abs32"
+  },
+  {
+   "addend": 0,
+   "offset": 3106,
+   "section": "seg_pmco",
+   "symbol": "_gs_hacc",
+   "type": "sharc.abs32"
+  },
+  {
+   "addend": 0,
+   "offset": 3109,
+   "section": "seg_pmco",
+   "symbol": "_gs_case1_stock",
+   "type": "sharc.abs24"
+  },
+  {
+   "addend": 0,
+   "offset": 3125,
+   "section": "seg_pmco",
+   "symbol": "_gs_stamp",
+   "type": "sharc.abs32"
+  },
+  {
+   "addend": 0,
+   "offset": 3133,
+   "section": "seg_pmco",
+   "symbol": "_dv_diag",
+   "type": "sharc.abs32"
+  },
+  {
+   "addend": 0,
+   "offset": 3137,
+   "section": "seg_pmco",
+   "symbol": "_gs_case2_stock",
+   "type": "sharc.abs24"
+  },
+  {
+   "addend": 0,
+   "offset": 3149,
+   "section": "seg_pmco",
+   "symbol": "_gs_case2_bad",
+   "type": "sharc.abs24"
+  },
+  {
+   "addend": 0,
+   "offset": 3157,
+   "section": "seg_pmco",
+   "symbol": "_gs_case2_bad",
+   "type": "sharc.abs24"
+  },
+  {
+   "addend": 0,
+   "offset": 3169,
+   "section": "seg_pmco",
+   "symbol": "_gs_stamp",
+   "type": "sharc.abs32"
+  },
+  {
+   "addend": 0,
+   "offset": 3177,
+   "section": "seg_pmco",
+   "symbol": "_gs_c2_rec",
+   "type": "sharc.abs32"
+  },
+  {
+   "addend": 0,
+   "offset": 3186,
+   "section": "seg_pmco",
+   "symbol": "_gs_rbuf",
+   "type": "sharc.abs32"
+  },
+  {
+   "addend": 0,
+   "offset": 3219,
+   "section": "seg_pmco",
+   "symbol": "_gs_case2_cap",
+   "type": "sharc.abs24"
+  },
+  {
+   "addend": 0,
+   "offset": 3225,
+   "section": "seg_pmco",
+   "symbol": "_gs_case2_stock",
+   "type": "sharc.abs24"
+  },
+  {
+   "addend": -1,
+   "offset": 3229,
+   "section": "seg_pmco",
+   "symbol": "_gs_case2_l",
+   "type": "sharc.abs32"
+  },
+  {
+   "addend": 0,
+   "offset": 3243,
+   "section": "seg_pmco",
+   "symbol": "_gs_case2_stock",
+   "type": "sharc.abs24"
+  },
+  {
+   "addend": -1,
+   "offset": 3247,
+   "section": "seg_pmco",
+   "symbol": "_gs_case2_r",
+   "type": "sharc.abs32"
+  },
+  {
+   "addend": 0,
+   "offset": 3255,
+   "section": "seg_pmco",
+   "symbol": "_gs_leave",
+   "type": "sharc.abs24"
+  },
+  {
+   "addend": 20,
+   "offset": 3262,
+   "section": "seg_pmco",
+   "symbol": "_gs_cnt",
+   "type": "sharc.abs32"
+  },
+  {
+   "addend": 20,
+   "offset": 3266,
+   "section": "seg_pmco",
+   "symbol": "_gs_cnt",
+   "type": "sharc.abs32"
+  },
+  {
+   "addend": 0,
+   "offset": 3269,
+   "section": "seg_pmco",
+   "symbol": "_gs_nbad",
+   "type": "sharc.abs32"
+  },
+  {
+   "addend": 0,
+   "offset": 3273,
+   "section": "seg_pmco",
+   "symbol": "_gs_nbad",
+   "type": "sharc.abs32"
+  },
+  {
+   "addend": 0,
+   "offset": 3276,
+   "section": "seg_pmco",
+   "symbol": "_gs_hacc",
+   "type": "sharc.abs32"
+  },
+  {
+   "addend": 0,
+   "offset": 3282,
+   "section": "seg_pmco",
+   "symbol": "_gs_hacc",
+   "type": "sharc.abs32"
+  },
+  {
+   "addend": 0,
+   "offset": 3285,
+   "section": "seg_pmco",
+   "symbol": "_gs_case2_stock",
+   "type": "sharc.abs24"
+  },
+  {
+   "addend": 0,
+   "offset": 3301,
+   "section": "seg_pmco",
+   "symbol": "_gs_stamp",
+   "type": "sharc.abs32"
+  },
+  {
+   "addend": 0,
+   "offset": 3309,
+   "section": "seg_pmco",
+   "symbol": "_dv_diag",
+   "type": "sharc.abs32"
+  },
+  {
+   "addend": 0,
+   "offset": 3313,
+   "section": "seg_pmco",
+   "symbol": "_gs_case3_stock",
+   "type": "sharc.abs24"
+  },
+  {
+   "addend": 0,
+   "offset": 3325,
+   "section": "seg_pmco",
+   "symbol": "_gs_case3_bad",
+   "type": "sharc.abs24"
+  },
+  {
+   "addend": 0,
+   "offset": 3333,
+   "section": "seg_pmco",
+   "symbol": "_gs_case3_bad",
+   "type": "sharc.abs24"
+  },
+  {
+   "addend": 0,
+   "offset": 3345,
+   "section": "seg_pmco",
+   "symbol": "_gs_stamp",
+   "type": "sharc.abs32"
+  },
+  {
+   "addend": 0,
+   "offset": 3353,
+   "section": "seg_pmco",
+   "symbol": "_gs_c3_rec",
+   "type": "sharc.abs32"
+  },
+  {
+   "addend": 0,
+   "offset": 3362,
+   "section": "seg_pmco",
+   "symbol": "_gs_rbuf",
+   "type": "sharc.abs32"
+  },
+  {
+   "addend": 0,
+   "offset": 3423,
+   "section": "seg_pmco",
+   "symbol": "_gs_case3_stock",
+   "type": "sharc.abs24"
+  },
+  {
+   "addend": -1,
+   "offset": 3427,
+   "section": "seg_pmco",
+   "symbol": "_gs_case3_l",
+   "type": "sharc.abs32"
+  },
+  {
+   "addend": 0,
+   "offset": 3441,
+   "section": "seg_pmco",
+   "symbol": "_gs_case3_stock",
+   "type": "sharc.abs24"
+  },
+  {
+   "addend": -1,
+   "offset": 3445,
+   "section": "seg_pmco",
+   "symbol": "_gs_case3_r",
+   "type": "sharc.abs32"
+  },
+  {
+   "addend": 0,
+   "offset": 3453,
+   "section": "seg_pmco",
+   "symbol": "_gs_leave",
+   "type": "sharc.abs24"
+  },
+  {
+   "addend": 24,
+   "offset": 3460,
+   "section": "seg_pmco",
+   "symbol": "_gs_cnt",
+   "type": "sharc.abs32"
+  },
+  {
+   "addend": 24,
+   "offset": 3464,
+   "section": "seg_pmco",
+   "symbol": "_gs_cnt",
+   "type": "sharc.abs32"
+  },
+  {
+   "addend": 0,
+   "offset": 3467,
+   "section": "seg_pmco",
+   "symbol": "_gs_nbad",
+   "type": "sharc.abs32"
+  },
+  {
+   "addend": 0,
+   "offset": 3471,
+   "section": "seg_pmco",
+   "symbol": "_gs_nbad",
+   "type": "sharc.abs32"
+  },
+  {
+   "addend": 0,
+   "offset": 3474,
+   "section": "seg_pmco",
+   "symbol": "_gs_hacc",
+   "type": "sharc.abs32"
+  },
+  {
+   "addend": 0,
+   "offset": 3480,
+   "section": "seg_pmco",
+   "symbol": "_gs_hacc",
+   "type": "sharc.abs32"
+  },
+  {
+   "addend": 0,
+   "offset": 3483,
+   "section": "seg_pmco",
+   "symbol": "_gs_case3_stock",
+   "type": "sharc.abs24"
+  },
+  {
+   "addend": 0,
+   "offset": 3499,
+   "section": "seg_pmco",
+   "symbol": "_gs_stamp",
+   "type": "sharc.abs32"
+  },
+  {
+   "addend": 0,
+   "offset": 3507,
+   "section": "seg_pmco",
+   "symbol": "_dv_diag",
+   "type": "sharc.abs32"
+  },
+  {
+   "addend": 0,
+   "offset": 3511,
+   "section": "seg_pmco",
+   "symbol": "_gs_ring_stock",
+   "type": "sharc.abs24"
+  },
+  {
+   "addend": 0,
+   "offset": 3523,
+   "section": "seg_pmco",
+   "symbol": "_gs_ring4_bad",
+   "type": "sharc.abs24"
+  },
+  {
+   "addend": 0,
+   "offset": 3531,
+   "section": "seg_pmco",
+   "symbol": "_gs_ring4_bad",
+   "type": "sharc.abs24"
+  },
+  {
+   "addend": 0,
+   "offset": 3543,
+   "section": "seg_pmco",
+   "symbol": "_gs_stamp",
+   "type": "sharc.abs32"
+  },
+  {
+   "addend": 0,
+   "offset": 3551,
+   "section": "seg_pmco",
+   "symbol": "_gs_rg_rec",
+   "type": "sharc.abs32"
+  },
+  {
+   "addend": 0,
+   "offset": 3560,
+   "section": "seg_pmco",
+   "symbol": "_gs_rbuf",
+   "type": "sharc.abs32"
+  },
+  {
+   "addend": 0,
+   "offset": 3606,
+   "section": "seg_pmco",
+   "symbol": "_gs_ring_stock",
+   "type": "sharc.abs24"
+  },
+  {
+   "addend": -1,
+   "offset": 3610,
+   "section": "seg_pmco",
+   "symbol": "_gs_ring4_l",
+   "type": "sharc.abs32"
+  },
+  {
+   "addend": 0,
+   "offset": 3624,
+   "section": "seg_pmco",
+   "symbol": "_gs_ring_stock",
+   "type": "sharc.abs24"
+  },
+  {
+   "addend": -1,
+   "offset": 3628,
+   "section": "seg_pmco",
+   "symbol": "_gs_ring4_r",
+   "type": "sharc.abs32"
+  },
+  {
+   "addend": 0,
+   "offset": 3636,
+   "section": "seg_pmco",
+   "symbol": "_gs_leave",
+   "type": "sharc.abs24"
+  },
+  {
+   "addend": 28,
+   "offset": 3643,
+   "section": "seg_pmco",
+   "symbol": "_gs_cnt",
+   "type": "sharc.abs32"
+  },
+  {
+   "addend": 28,
+   "offset": 3647,
+   "section": "seg_pmco",
+   "symbol": "_gs_cnt",
+   "type": "sharc.abs32"
+  },
+  {
+   "addend": 0,
+   "offset": 3650,
+   "section": "seg_pmco",
+   "symbol": "_gs_nbad",
+   "type": "sharc.abs32"
+  },
+  {
+   "addend": 0,
+   "offset": 3654,
+   "section": "seg_pmco",
+   "symbol": "_gs_nbad",
+   "type": "sharc.abs32"
+  },
+  {
+   "addend": 0,
+   "offset": 3657,
+   "section": "seg_pmco",
+   "symbol": "_gs_hacc",
+   "type": "sharc.abs32"
+  },
+  {
+   "addend": 0,
+   "offset": 3663,
+   "section": "seg_pmco",
+   "symbol": "_gs_hacc",
+   "type": "sharc.abs32"
+  },
+  {
+   "addend": 0,
+   "offset": 3666,
+   "section": "seg_pmco",
+   "symbol": "_gs_ring_stock",
+   "type": "sharc.abs24"
+  },
+  {
+   "addend": 0,
+   "offset": 3682,
+   "section": "seg_pmco",
+   "symbol": "_gs_stamp",
+   "type": "sharc.abs32"
+  },
+  {
+   "addend": 0,
+   "offset": 3690,
+   "section": "seg_pmco",
+   "symbol": "_dv_diag",
+   "type": "sharc.abs32"
+  },
+  {
+   "addend": 0,
+   "offset": 3694,
+   "section": "seg_pmco",
+   "symbol": "_gs_ring_stock",
+   "type": "sharc.abs24"
+  },
+  {
+   "addend": 0,
+   "offset": 3706,
+   "section": "seg_pmco",
+   "symbol": "_gs_ring6_bad",
+   "type": "sharc.abs24"
+  },
+  {
+   "addend": 0,
+   "offset": 3714,
+   "section": "seg_pmco",
+   "symbol": "_gs_ring6_bad",
+   "type": "sharc.abs24"
+  },
+  {
+   "addend": 0,
+   "offset": 3726,
+   "section": "seg_pmco",
+   "symbol": "_gs_stamp",
+   "type": "sharc.abs32"
+  },
+  {
+   "addend": 0,
+   "offset": 3734,
+   "section": "seg_pmco",
+   "symbol": "_gs_rg_rec",
+   "type": "sharc.abs32"
+  },
+  {
+   "addend": 0,
+   "offset": 3743,
+   "section": "seg_pmco",
+   "symbol": "_gs_rbuf",
+   "type": "sharc.abs32"
+  },
+  {
+   "addend": 0,
+   "offset": 3789,
+   "section": "seg_pmco",
+   "symbol": "_gs_ring_stock",
+   "type": "sharc.abs24"
+  },
+  {
+   "addend": -1,
+   "offset": 3793,
+   "section": "seg_pmco",
+   "symbol": "_gs_ring6_l",
+   "type": "sharc.abs32"
+  },
+  {
+   "addend": 0,
+   "offset": 3807,
+   "section": "seg_pmco",
+   "symbol": "_gs_ring_stock",
+   "type": "sharc.abs24"
+  },
+  {
+   "addend": -1,
+   "offset": 3811,
+   "section": "seg_pmco",
+   "symbol": "_gs_ring6_r",
+   "type": "sharc.abs32"
+  },
+  {
+   "addend": 0,
+   "offset": 3819,
+   "section": "seg_pmco",
+   "symbol": "_gs_leave",
+   "type": "sharc.abs24"
+  },
+  {
+   "addend": 32,
+   "offset": 3826,
+   "section": "seg_pmco",
+   "symbol": "_gs_cnt",
+   "type": "sharc.abs32"
+  },
+  {
+   "addend": 32,
+   "offset": 3830,
+   "section": "seg_pmco",
+   "symbol": "_gs_cnt",
+   "type": "sharc.abs32"
+  },
+  {
+   "addend": 0,
+   "offset": 3833,
+   "section": "seg_pmco",
+   "symbol": "_gs_nbad",
+   "type": "sharc.abs32"
+  },
+  {
+   "addend": 0,
+   "offset": 3837,
+   "section": "seg_pmco",
+   "symbol": "_gs_nbad",
+   "type": "sharc.abs32"
+  },
+  {
+   "addend": 0,
+   "offset": 3840,
+   "section": "seg_pmco",
+   "symbol": "_gs_hacc",
+   "type": "sharc.abs32"
+  },
+  {
+   "addend": 0,
+   "offset": 3846,
+   "section": "seg_pmco",
+   "symbol": "_gs_hacc",
+   "type": "sharc.abs32"
+  },
+  {
+   "addend": 0,
+   "offset": 3849,
+   "section": "seg_pmco",
+   "symbol": "_gs_ring_stock",
+   "type": "sharc.abs24"
+  },
+  {
+   "addend": 0,
+   "offset": 3861,
+   "section": "seg_pmco",
+   "symbol": "_gs_engine_base",
+   "type": "sharc.abs32"
+  },
+  {
+   "addend": 0,
+   "offset": 3870,
+   "section": "seg_pmco",
+   "symbol": "_gs_fo_reset_stock",
+   "type": "sharc.abs24"
+  },
+  {
+   "addend": 0,
+   "offset": 3887,
+   "section": "seg_pmco",
+   "symbol": "_gs_fo_reset_stock",
+   "type": "sharc.abs24"
+  },
+  {
+   "addend": 0,
+   "offset": 3895,
+   "section": "seg_pmco",
+   "symbol": "_gs_fo_reset_stock",
+   "type": "sharc.abs24"
+  },
+  {
+   "addend": 0,
+   "offset": 3898,
+   "section": "seg_pmco",
+   "symbol": "_gs_fo_rec",
+   "type": "sharc.abs32"
+  },
+  {
+   "addend": 0,
+   "offset": 3914,
+   "section": "seg_pmco",
+   "symbol": "_gs_fo_reset_stock",
+   "type": "sharc.abs24"
+  },
+  {
+   "addend": 0,
+   "offset": 3917,
+   "section": "seg_pmco",
+   "symbol": "_gs_engine_base",
+   "type": "sharc.abs32"
+  },
+  {
+   "addend": 0,
+   "offset": 3926,
+   "section": "seg_pmco",
+   "symbol": "_gs_uy_reset_stock",
+   "type": "sharc.abs24"
+  },
+  {
+   "addend": 0,
+   "offset": 3936,
+   "section": "seg_pmco",
+   "symbol": "_gs_uy_reset_stock",
+   "type": "sharc.abs24"
+  },
+  {
+   "addend": 0,
+   "offset": 3943,
+   "section": "seg_pmco",
+   "symbol": "_gs_uy_reset_stock",
+   "type": "sharc.abs24"
+  },
+  {
+   "addend": 0,
+   "offset": 3946,
+   "section": "seg_pmco",
+   "symbol": "_gs_uy_rec",
+   "type": "sharc.abs32"
+  },
+  {
+   "addend": 0,
+   "offset": 3958,
+   "section": "seg_pmco",
+   "symbol": "_gs_uy_reset_stock",
+   "type": "sharc.abs24"
+  },
+  {
+   "addend": 0,
+   "offset": 3961,
+   "section": "seg_pmco",
+   "symbol": "_gs_engine_base",
+   "type": "sharc.abs32"
+  },
+  {
+   "addend": 0,
+   "offset": 3970,
+   "section": "seg_pmco",
+   "symbol": "_gs_held_reset_stock",
+   "type": "sharc.abs24"
+  },
+  {
+   "addend": 0,
+   "offset": 3984,
+   "section": "seg_pmco",
+   "symbol": "_gs_held_reset_stock",
+   "type": "sharc.abs24"
+  },
+  {
+   "addend": 0,
+   "offset": 3992,
+   "section": "seg_pmco",
+   "symbol": "_gs_held_reset_stock",
+   "type": "sharc.abs24"
+  },
+  {
+   "addend": 0,
+   "offset": 3995,
+   "section": "seg_pmco",
+   "symbol": "_gs_hd_rec",
+   "type": "sharc.abs32"
+  },
+  {
+   "addend": 0,
+   "offset": 4013,
+   "section": "seg_pmco",
+   "symbol": "_gs_held_reset_stock",
+   "type": "sharc.abs24"
+  },
+  {
+   "addend": 0,
+   "offset": 4016,
+   "section": "seg_pmco",
+   "symbol": "_gs_engine_base",
+   "type": "sharc.abs32"
+  },
+  {
+   "addend": 0,
+   "offset": 4025,
+   "section": "seg_pmco",
+   "symbol": "_gs_case1_reset_stock",
+   "type": "sharc.abs24"
+  },
+  {
+   "addend": 0,
+   "offset": 4039,
+   "section": "seg_pmco",
+   "symbol": "_gs_case1_reset_stock",
+   "type": "sharc.abs24"
+  },
+  {
+   "addend": 0,
+   "offset": 4047,
+   "section": "seg_pmco",
+   "symbol": "_gs_case1_reset_stock",
+   "type": "sharc.abs24"
+  },
+  {
+   "addend": 0,
+   "offset": 4050,
+   "section": "seg_pmco",
+   "symbol": "_gs_c1_rec",
+   "type": "sharc.abs32"
+  },
+  {
+   "addend": 0,
+   "offset": 4062,
+   "section": "seg_pmco",
+   "symbol": "_gs_case1_reset_stock",
+   "type": "sharc.abs24"
+  },
+  {
+   "addend": 0,
+   "offset": 4065,
+   "section": "seg_pmco",
+   "symbol": "_gs_engine_base",
+   "type": "sharc.abs32"
+  },
+  {
+   "addend": 0,
+   "offset": 4074,
+   "section": "seg_pmco",
+   "symbol": "_gs_case2_reset_stock",
+   "type": "sharc.abs24"
+  },
+  {
+   "addend": 0,
+   "offset": 4088,
+   "section": "seg_pmco",
+   "symbol": "_gs_case2_reset_stock",
+   "type": "sharc.abs24"
+  },
+  {
+   "addend": 0,
+   "offset": 4096,
+   "section": "seg_pmco",
+   "symbol": "_gs_case2_reset_stock",
+   "type": "sharc.abs24"
+  },
+  {
+   "addend": 0,
+   "offset": 4099,
+   "section": "seg_pmco",
+   "symbol": "_gs_c2_rec",
+   "type": "sharc.abs32"
+  },
+  {
+   "addend": 0,
+   "offset": 4111,
+   "section": "seg_pmco",
+   "symbol": "_gs_case2_reset_stock",
+   "type": "sharc.abs24"
+  },
+  {
+   "addend": 0,
+   "offset": 4114,
+   "section": "seg_pmco",
+   "symbol": "_gs_engine_base",
+   "type": "sharc.abs32"
+  },
+  {
+   "addend": 0,
+   "offset": 4123,
+   "section": "seg_pmco",
+   "symbol": "_gs_case3_reset_stock",
+   "type": "sharc.abs24"
+  },
+  {
+   "addend": 0,
+   "offset": 4137,
+   "section": "seg_pmco",
+   "symbol": "_gs_case3_reset_stock",
+   "type": "sharc.abs24"
+  },
+  {
+   "addend": 0,
+   "offset": 4145,
+   "section": "seg_pmco",
+   "symbol": "_gs_case3_reset_stock",
+   "type": "sharc.abs24"
+  },
+  {
+   "addend": 0,
+   "offset": 4148,
+   "section": "seg_pmco",
+   "symbol": "_gs_c3_rec",
+   "type": "sharc.abs32"
+  },
+  {
+   "addend": 0,
+   "offset": 4166,
+   "section": "seg_pmco",
+   "symbol": "_gs_case3_reset_stock",
+   "type": "sharc.abs24"
+  },
+  {
+   "addend": 0,
+   "offset": 4169,
+   "section": "seg_pmco",
+   "symbol": "_gs_engine_base",
+   "type": "sharc.abs32"
+  },
+  {
+   "addend": 0,
+   "offset": 4178,
+   "section": "seg_pmco",
+   "symbol": "_gs_case5_reset_stock",
+   "type": "sharc.abs24"
+  },
+  {
+   "addend": 0,
+   "offset": 4192,
+   "section": "seg_pmco",
+   "symbol": "_gs_case5_reset_stock",
+   "type": "sharc.abs24"
+  },
+  {
+   "addend": 0,
+   "offset": 4200,
+   "section": "seg_pmco",
+   "symbol": "_gs_case5_reset_stock",
+   "type": "sharc.abs24"
+  },
+  {
+   "addend": 0,
+   "offset": 4203,
+   "section": "seg_pmco",
+   "symbol": "_gs_c5_rec",
+   "type": "sharc.abs32"
+  },
+  {
+   "addend": 0,
+   "offset": 4215,
+   "section": "seg_pmco",
+   "symbol": "_gs_case5_reset_stock",
+   "type": "sharc.abs24"
+  },
+  {
+   "addend": 0,
+   "offset": 4218,
+   "section": "seg_pmco",
+   "symbol": "_gs_engine_base",
+   "type": "sharc.abs32"
+  },
+  {
+   "addend": 0,
+   "offset": 4227,
+   "section": "seg_pmco",
+   "symbol": "_gs_ring_reset_stock",
+   "type": "sharc.abs24"
+  },
+  {
+   "addend": 0,
+   "offset": 4241,
+   "section": "seg_pmco",
+   "symbol": "_gs_ring_reset_stock",
+   "type": "sharc.abs24"
+  },
+  {
+   "addend": 0,
+   "offset": 4249,
+   "section": "seg_pmco",
+   "symbol": "_gs_ring_reset_stock",
+   "type": "sharc.abs24"
+  },
+  {
+   "addend": 0,
+   "offset": 4252,
+   "section": "seg_pmco",
+   "symbol": "_gs_rg_rec",
+   "type": "sharc.abs32"
+  },
+  {
+   "addend": 0,
+   "offset": 4268,
+   "section": "seg_pmco",
+   "symbol": "_gs_ring_reset_stock",
+   "type": "sharc.abs24"
+  },
+  {
+   "addend": 0,
+   "offset": 4271,
+   "section": "seg_pmco",
+   "symbol": "_gs_hacc",
+   "type": "sharc.abs32"
+  },
+  {
+   "addend": 0,
+   "offset": 4274,
+   "section": "seg_pmco",
+   "symbol": "_gs_health",
+   "type": "sharc.abs32"
+  },
+  {
+   "addend": 0,
+   "offset": 4279,
+   "section": "seg_pmco",
+   "symbol": "_gs_hacc",
+   "type": "sharc.abs32"
+  },
+  {
+   "addend": 0,
+   "offset": 4288,
+   "section": "seg_pmco",
+   "symbol": "_gs_pp_done",
+   "type": "sharc.abs24"
+  },
+  {
+   "addend": 0,
+   "offset": 4291,
+   "section": "seg_pmco",
+   "symbol": "_dv_diag",
+   "type": "sharc.abs32"
+  },
+  {
+   "addend": 0,
+   "offset": 4296,
+   "section": "seg_pmco",
+   "symbol": "_gs_stamp",
+   "type": "sharc.abs32"
+  },
+  {
+   "addend": 0,
+   "offset": 4305,
+   "section": "seg_pmco",
+   "symbol": "_gs_pp_next",
+   "type": "sharc.abs24"
+  },
+  {
+   "addend": 0,
+   "offset": 4311,
+   "section": "seg_pmco",
+   "symbol": "_gs_rbuf",
+   "type": "sharc.abs32"
+  },
+  {
+   "addend": 0,
+   "offset": 4315,
+   "section": "seg_pmco",
+   "symbol": "_gs_engine_base",
+   "type": "sharc.abs32"
+  },
+  {
+   "addend": 0,
+   "offset": 4357,
+   "section": "seg_pmco",
+   "symbol": "_gs_engine_base",
+   "type": "sharc.abs32"
+  },
+  {
+   "addend": 0,
+   "offset": 4386,
+   "section": "seg_pmco",
+   "symbol": "_gs_pp_next",
+   "type": "sharc.abs24"
+  },
+  {
+   "addend": 0,
+   "offset": 4389,
+   "section": "seg_pmco",
+   "symbol": "_gs_engine_base",
+   "type": "sharc.abs32"
+  },
+  {
+   "addend": 0,
+   "offset": 4411,
+   "section": "seg_pmco",
+   "symbol": "_gs_pp_next",
+   "type": "sharc.abs24"
+  },
+  {
+   "addend": 0,
+   "offset": 4443,
+   "section": "seg_pmco",
+   "symbol": "_gs_pp_slot",
+   "type": "sharc.abs24"
+  },
+  {
+   "addend": 0,
+   "offset": 4449,
+   "section": "seg_pmco",
+   "symbol": "_gs_pre_cont",
+   "type": "sharc.abs24"
+  },
+  {
+   "addend": 0,
+   "offset": 4457,
+   "section": "seg_pmco",
+   "symbol": "_gs_stamp",
+   "type": "sharc.abs32"
+  },
+  {
+   "addend": 0,
+   "offset": 4465,
+   "section": "seg_pmco",
+   "symbol": "_dv_diag",
+   "type": "sharc.abs32"
+  },
+  {
+   "addend": 0,
+   "offset": 4469,
+   "section": "seg_pmco",
+   "symbol": "_gs_mono",
+   "type": "sharc.abs24"
+  },
+  {
+   "addend": 0,
+   "offset": 4475,
+   "section": "seg_pmco",
+   "symbol": "_gs_mono",
+   "type": "sharc.abs24"
+  },
+  {
+   "addend": 0,
+   "offset": 4482,
+   "section": "seg_pmco",
+   "symbol": "_gs_rbuf",
+   "type": "sharc.abs32"
+  },
+  {
+   "addend": 0,
+   "offset": 4535,
+   "section": "seg_pmco",
+   "symbol": "_gs_pan_end",
+   "type": "sharc.abs24"
+  },
+  {
+   "addend": 0,
+   "offset": 4545,
+   "section": "seg_pmco",
+   "symbol": "_gs_pan_cont",
+   "type": "sharc.abs24"
+  },
+  {
+   "addend": 48,
+   "offset": 4548,
+   "section": "seg_pmco",
+   "symbol": "_dv_c",
+   "type": "sharc.abs32"
+  },
+  {
+   "addend": 4,
+   "offset": 4555,
+   "section": "seg_pmco",
+   "symbol": "_dv_c",
+   "type": "sharc.abs32"
+  },
+  {
+   "addend": 0,
+   "offset": 4561,
+   "section": "seg_pmco",
+   "symbol": "_gs_seen",
+   "type": "sharc.abs32"
+  },
+  {
+   "addend": 0,
+   "offset": 4567,
+   "section": "seg_pmco",
+   "symbol": "_dv_diag",
+   "type": "sharc.abs32"
+  },
+  {
+   "addend": 0,
+   "offset": 4575,
+   "section": "seg_pmco",
+   "symbol": "_gs_rbuf",
+   "type": "sharc.abs32"
+  },
+  {
+   "addend": 0,
+   "offset": 4602,
+   "section": "seg_pmco",
+   "symbol": "_gs_badr",
+   "type": "sharc.abs24"
+  },
+  {
+   "addend": 0,
+   "offset": 4605,
+   "section": "seg_pmco",
+   "symbol": "_dv_diag",
+   "type": "sharc.abs32"
+  },
+  {
+   "addend": 0,
+   "offset": 4608,
+   "section": "seg_pmco",
+   "symbol": "_gs_nhb",
+   "type": "sharc.abs32"
+  },
+  {
+   "addend": 0,
+   "offset": 4612,
+   "section": "seg_pmco",
+   "symbol": "_gs_samehb",
+   "type": "sharc.abs24"
+  },
+  {
+   "addend": 0,
+   "offset": 4615,
+   "section": "seg_pmco",
+   "symbol": "_gs_nhb",
+   "type": "sharc.abs32"
+  },
+  {
+   "addend": 0,
+   "offset": 4620,
+   "section": "seg_pmco",
+   "symbol": "_gs_ns",
+   "type": "sharc.abs32"
+  },
+  {
+   "addend": 0,
+   "offset": 4623,
+   "section": "seg_pmco",
+   "symbol": "_gs_ns",
+   "type": "sharc.abs32"
+  },
+  {
+   "addend": 0,
+   "offset": 4629,
+   "section": "seg_pmco",
+   "symbol": "_gs_capped",
+   "type": "sharc.abs24"
+  },
+  {
+   "addend": 0,
+   "offset": 4633,
+   "section": "seg_pmco",
+   "symbol": "_gs_ns",
+   "type": "sharc.abs32"
+  },
+  {
+   "addend": 0,
+   "offset": 4658,
+   "section": "seg_pmco",
+   "symbol": "_gs_stamp",
+   "type": "sharc.abs32"
+  },
+  {
+   "addend": 0,
+   "offset": 4666,
+   "section": "seg_pmco",
+   "symbol": "_dv_diag",
+   "type": "sharc.abs32"
+  },
+  {
+   "addend": 8,
+   "offset": 4669,
+   "section": "seg_pmco",
+   "symbol": "_dv_in",
+   "type": "sharc.abs32"
+  },
+  {
+   "addend": 0,
+   "offset": 4673,
+   "section": "seg_pmco",
+   "symbol": "_gs_clear",
+   "type": "sharc.abs24"
+  },
+  {
+   "addend": 0,
+   "offset": 4678,
+   "section": "seg_pmco",
+   "symbol": "_gs_stamped",
+   "type": "sharc.abs24"
+  },
+  {
+   "addend": 72,
+   "offset": 4681,
+   "section": "seg_pmco",
+   "symbol": "_gs_cnt",
+   "type": "sharc.abs32"
+  },
+  {
+   "addend": 72,
+   "offset": 4685,
+   "section": "seg_pmco",
+   "symbol": "_gs_cnt",
+   "type": "sharc.abs32"
+  },
+  {
+   "addend": 0,
+   "offset": 4694,
+   "section": "seg_pmco",
+   "symbol": "_gs_fo_rec",
+   "type": "sharc.abs32"
+  },
+  {
+   "addend": 0,
+   "offset": 4710,
+   "section": "seg_pmco",
+   "symbol": "_gs_uy_rec",
+   "type": "sharc.abs32"
+  },
+  {
+   "addend": 0,
+   "offset": 4726,
+   "section": "seg_pmco",
+   "symbol": "_gs_gain_rec",
+   "type": "sharc.abs32"
+  },
+  {
+   "addend": 0,
+   "offset": 4742,
+   "section": "seg_pmco",
+   "symbol": "_gs_c5_rec",
+   "type": "sharc.abs32"
+  },
+  {
+   "addend": 0,
+   "offset": 4758,
+   "section": "seg_pmco",
+   "symbol": "_gs_hd_rec",
+   "type": "sharc.abs32"
+  },
+  {
+   "addend": 0,
+   "offset": 4774,
+   "section": "seg_pmco",
+   "symbol": "_gs_c1_rec",
+   "type": "sharc.abs32"
+  },
+  {
+   "addend": 0,
+   "offset": 4790,
+   "section": "seg_pmco",
+   "symbol": "_gs_c2_rec",
+   "type": "sharc.abs32"
+  },
+  {
+   "addend": 0,
+   "offset": 4806,
+   "section": "seg_pmco",
+   "symbol": "_gs_c3_rec",
+   "type": "sharc.abs32"
+  },
+  {
+   "addend": 0,
+   "offset": 4822,
+   "section": "seg_pmco",
+   "symbol": "_gs_rg_rec",
+   "type": "sharc.abs32"
+  },
+  {
+   "addend": 0,
+   "offset": 4838,
+   "section": "seg_pmco",
+   "symbol": "_dv_diag",
+   "type": "sharc.abs32"
+  },
+  {
+   "addend": 64,
+   "offset": 4846,
+   "section": "seg_pmco",
+   "symbol": "_gs_cnt",
+   "type": "sharc.abs32"
+  },
+  {
+   "addend": 64,
+   "offset": 4850,
+   "section": "seg_pmco",
+   "symbol": "_gs_cnt",
+   "type": "sharc.abs32"
+  },
+  {
+   "addend": 0,
+   "offset": 4855,
+   "section": "seg_pmco",
+   "symbol": "_gs_raise",
+   "type": "sharc.abs24"
+  },
+  {
+   "addend": 68,
+   "offset": 4858,
+   "section": "seg_pmco",
+   "symbol": "_gs_cnt",
+   "type": "sharc.abs32"
+  },
+  {
+   "addend": 68,
+   "offset": 4862,
+   "section": "seg_pmco",
+   "symbol": "_gs_cnt",
+   "type": "sharc.abs32"
+  },
+  {
+   "addend": 0,
+   "offset": 4867,
+   "section": "seg_pmco",
+   "symbol": "_gs_hacc",
+   "type": "sharc.abs32"
+  },
+  {
+   "addend": 0,
+   "offset": 4871,
+   "section": "seg_pmco",
+   "symbol": "_gs_hacc",
    "type": "sharc.abs32"
   }
  ],
  "sections": [
   {
    "align": 8,
-   "hex": "0011000000007e713f000011000000007e733f00001100000000b40f0000140f000000000899800008990101089982010899030208998402089905030899860308990704089988040899090508998a0508990b0608998c0608990d0708998e073e713f0008990f003e713f80089910003f713f00089911003f713f80089912007e713f80089913000899140e0899950e3e723f80089916003f723f00089917003f723f80089918007e723f00089919008cc3200600000000800f7f008401c001800f100010c3200600000000800f100080010f21020600000000800f0f0010c32406000000000111000000000c110000000011c2200600000000140f000000000898800011c5089980007e72bf80089981007f72bf00089982007f72bf8008998300fe72bf8008998400ff72bf0008998500ff72bf80089986007f71bf00089987007f71bf80089988007f74bf80089989007f73bf8008998a003f77bf0008998b00011000000000800f4a0080011010810ffe0f840101013e0200001101020f00000000800121113e703f8a089880003e02100020403e0200002204800f000420cda4011201140f00000000089800000898010184150000180000c200060000000001c32006000000007e713f000011000000000898f80133c2000f000000002001020000123f703f0e01c20210000000000410000000008c0f2000140f000000007e72bf81089980017f72bf01089981017f72bf81089982010899831608990417089985173e73bf01089986013e73bf81089987013f73bf01089988013f73bf81089989017e73bf8108998a013f77bf0108998b01a50f0000a60f0100a70fffffad0f0000ae0f0100af0fffffb00f0000b10f0000b20f0000b30f0000b50f00002214200000a00214010000000100001100000000860f0400870f0000be06000000001d0f000000003f083f28860f0500870fffffbe0600000000140f0000000008980b003e703f3901000898801208980113089882130898831608980417089885170898061808988718089808190898891908988a1a140f000000000898800008980101089882010898030208988402089805030898860308980704089888040898090508988a0508980b0608988c0608980d0708988e0708980f080898900808981109089892090898930a0898140e0898950e089896100898171108989811089819120010000000003e703f1a0010000000003e703f0a0010000000008715ffffeeff3e06000000000110000000003e02000011080310000000003e020000331013cd16cd011100000000110f000000000892800133c20006000000003f70bf8801a30000c00003a200002a0137cc03a300002a01030f2000a6d10893ad01110f000000000892810133c2000a000000003f70bf8801a30000c00003a200002a0137cc03a300002a01030f2000a6d10893ad013e0a000000000011000000000211000000000411000000000310000000003f703f8a0898f20130c30006000000003e0200003204050f0000000053c00511000000007e70bf89800f1100be0600000000021000000000810f000012c1a0010100810f0100840101090896000608968106089781049dc3240600000000ccc20006000000008b0f0000810f0100c1c300010200101b810f0200089780000b110000000008960200810f0000bbc220010200101000110000000000c508970200021000000000800f010002c0be0600000000001100000000021000000000800f1a0002c0be0600000000001100000000041000000000041100000000800f00000011000000000010000000003e0200001002020f0000000021c03f70bf0808920003820fff0062c3000600000000061100000000021000000000830f490097013203800f6d0003c006c0be06000000000610000000000d10000000003e020000e602dec08e0f5800dec1fe70bf89089680060e0f007f0000ddc200010200e01d3e021020ed103e021020dd0086010e1086010d200110000000003e0200002102030f0000000032c03f70bf880893000011c5011100000000820f080012c30206000000000210000000000310000000003f703f8a0898f9000898fa0197013203800113140411000000000b1000000000bbc20006000000000898fb02860ffeffa001560555c20006000000007e703f09800f0000050d00000300be5500800000089878003e703f0e080f000000000c0f000000001d0f000000003f083f2800c20206000000000310000000003f703f8a089869003e703f0e041000000000080f000000000c0f000000001d0f000000003f083f28001100000000081000000000be703f088d0f0000090fff7fffff000c00200900be51000000003e01040009003e010600d02d000f00410000d0c3240600000000810f010000100000000001c32006000000000510000000007e70bf89800f0000089700003e06000000008c0f03003e06000000008c0f0100000f807f0000d0c3830f020002010200301c0c1100000000110f00000000120f00000000021600004400000c00040f00be5380010000be53800400003e02000099103e0104003913be55808100000510000000007e70bf89800f000008970000081000000000be703f08830f0000000c00200300be51808100000310000000003f703f8a0510000000000898730380015627830fdc0573c30206000000000899f302870f00000899f4030898f40377c50899f4030898f50499c50899f504830f080073c30206000000000010000000000898f20130c30006000000000899720000110000000003100000000033c503110000000003100000000033c5031100000000000f0000ffff30cc0010000000003e020000001030cd0010000000003e020000001830cd0311000000000010000000000310000000003e020000331003cd0011000000003e0600000000810f010008978000081000000000be703f08830f0000000c00200300be51808100003e0600000000010f8042000001c88c0100d18c0110a202c9020ff63a421920cf030f133cf44723c820cf030f643d27aa23c820cf030f753ed4ea23c820cf030f313f7b7223c820cf030f7f3fffff23c8830fc0ff800131118b0121d03e0a00000000810ffe0f840101013e0200001101020f00000000800121113e703f8a089880003e02100020403e0200002204800f000420cda40112003e0a00000000810ffe0f840101013e0200001101020f00000000800121113e703f8a089880003e02100020403e0200002204800f000420cda40112003e0200000010810ff0ffa00101403e0a00000000",
+   "hex": "001100000000800f10000fc300060000000000100000000000c20006000000000111000000000211000000007e713f000011000000007e733f00001100000000b40f0000800f5a000fc1810ffe0f840101013e0200001101020f00000000800121113e703f8a089880003e02100020403e0200002204800f000420cda4011201820f1f0012c3240102002011820f000080012121021000000000a0012102810f010021cc0010000000003e703f1a0010000000003e703f0a0110000000000210000000002006000000000010000000008715ffffeeff3e06000000007e713f000011000000007e733f00001100000000b40f0000140f000000000899800008990101089982010899030208998402089905030899860308990704089988040899090508998a0508990b0608998c0608990d0708998e073e713f0008990f003e713f80089910003f713f00089911003f713f80089912007e713f80089913000899140e0899950e3e723f80089916003f723f00089917003f723f80089918007e723f00089919008cc3200600000000800f7f008401c001800f100010c3200600000000800f100080010f21020600000000800f0f0010c32406000000000111000000000c110000000011c2200600000000140f000000000898800011c5089980007e72bf80089981007f72bf00089982007f72bf8008998300fe72bf8008998400ff72bf0008998500ff72bf80089986007f71bf00089987007f71bf80089988007f74bf80089989007f73bf8008998a003f77bf0008998b00be0600000000140f00000000830f00000898000084150000180000c2000600000000020600000000820f1f0002c3240102002010810f0100a001100131cd3e0600000000031100000000011000000000800f4a0080011010810ffe0f840101013e0200001101020f00000000800121113e703f8a089880003e02100020403e0200002204800f000420cda4011201140f00000000089800000898010184150000180000c200060000000001c32006000000007e713f000011000000000898f80133c2000f000000002001020000123f703f0e01c20210000000000410000000008c0f2000140f000000007e72bf81089980017f72bf01089981017f72bf81089982010899831608990417089985173e73bf01089986013e73bf81089987013f73bf01089988013f73bf81089989017e73bf8108998a013f77bf0108998b01a50f0000a60f0100a70fffffad0f0000ae0f0100af0fffffb00f0000b10f0000b20f0000b30f0000b50f00002214200000a00214010000000100001100000000860f0400870f0000be06000000001d0f000000003f083f28860f0500870fffffbe0600000000140f0000000008980b003e703f3901000898801208980113089882130898831608980417089885170898061808988718089808190898891908988a1a140f000000000898800008980101089882010898030208988402089805030898860308980704089888040898090508988a0508980b0608988c0608980d0708988e0708980f080898900808981109089892090898930a0898140e0898950e089896100898171108989811089819120010000000003e703f1a0010000000003e703f0a0010000000008715ffffeeff3e06000000000110000000003e02000011080310000000003e020000331013cd16cd011100000000110f000000000892820133c20006000000003f70bf880892800137cc08938001110f000000000892800133c20006000000003f70bf8801a30000c000030f2000a6d10893ad01110f000000000892810133c2000a000000003f70bf8801a30000c000030f2000a6d10893ad013e0a000000000011000000000211000000000411000000000310000000003f703f8a0898f20130c30006000000003e0200003204050f0000000053c00511000000007e70bf89800f1100be0600000000021000000000810f000012c1a0010100810f0100840101090896000608968106089781049dc3240600000000ccc20006000000008b0f0000810f0100c1c300010200101b810f0200089780000b1100000000bbc2000600000000021000000000800f2d0502c0be0600000000810f100001c322060000000008970300089603000011000000000b100000000008960200810f0000bbc220010200101000110000000000c508970200021000000000800f010002c0be0600000000001100000000021000000000800f1a0002c0be06000000000011000000000410000000000411000000000210000000003e0200000207010f0000000001c0001100000000800f00000011000000000010000000003e0200001002020f0000000021c03f70bf0808920003820fff0062c3000600000000061100000000021000000000830f490097013203800f6d0003c006c0be06000000000610000000000d10000000003e020000e602dec08e0f5800dec1fe70bf89089680060e0f007f0000ddc200010200e01d3e021020ed103e021020dd0086010e1086010d200110000000003e0200002102030f0000000032c03f70bf88089300000210000000003f70bf0808927e01830f0100a001310323cc22c20006000000000210000000003e0200002205030f0000000032c03e020000210232c03f703f8905100000000055c2000600000000089500003e0600000000089400003e0200002102030f0000000032c03f70bf880893000011c5011100000000820f080012c30206000000000210000000000310000000003f703f8a0898f9000898fa0197013203800113140411000000000b1000000000bbc20006000000000898fb02860ffeffa001560555c20006000000007e703f09800f0000050d00000300be5500800000089878003e703f0e080f000000000c0f000000001d0f000000003f083f2800c20206000000000310000000003f703f8a089869003e703f0e041000000000080f000000000c0f000000001d0f000000003f083f28810f02008401010202110000000011c401cc001100000000081000000000be703f088d0f0000090fff7fffff000c00200900be51000000003e01040009003e010600d02d000f00410000d0c3240600000000be0600000000810f010000100000000001c32006000000000510000000007e70bf89800f0000089700003e06000000008c0f03003e06000000008c0f0100000f807f0000d0c3830f020002010200301c0c1100000000110f00000000120f00000000021600004400000c00040f00be5380010000be53800400003e02000099103e0104003913be55808100000510000000007e70bf89800f000008970000081000000000be703f08830f0000000c00200300be51808100000310000000003f703f8a0510000000000898730380015627830fdc0573c30206000000000899f302870f00000899f4030898f40377c50899f4030898f50499c50899f504830f080073c30206000000000010000000000898f20130c30006000000000899720000110000000003100000000033c503110000000003100000000033c5031100000000000f0000ffff30cc0010000000003e020000001030cd0010000000003e020000001830cd0311000000000010000000000310000000003e020000331003cd0011000000003e0600000000800f0000089700003e0600000000810f010008978000081000000000be703f08830f0000000c00200300be51808100003e0600000000010f8042000001c88c0100d18c0110a202c9020ff63a421920cf030f133cf44723c820cf030f643d27aa23c820cf030f753ed4ea23c820cf030f313f7b7223c820cf030f7f3fffff23c8830fc0ff800131118b0121d03e0a00000000810ffe0f840101013e0200001101020f00000000800121113e703f8a089880003e02100020403e0200002204800f000420cda40112003e0a00000000810ffe0f840101013e0200001101020f00000000800121113e703f8a089880003e02100020403e0200002204800f000420cda40112003e0200000010810ff0ffa00101403e0a000000003f703f0a089868003e703f0a08980000800180203e02007800fb010f0000000001c03e703f0a0898800000100000000001c32006000000003f73bf807e733f0010cd7e733f8010cd11c2200600000000089c0100810f200001c32006000000008715fffff8ff3e713f00089d7c007e713f00010f0000000001c13e02000010053e020000200212c1020f0000000012c0089dfe003e0200001005020f0000000012c0089dfd007e703f0a089c7e08089815000891150008981600089116000898170008911700089c0100f09f041800000000f29fc09fffffffff871500000100089c7e02089c7d04c8c2089c0100f09f041800000000f29fc09fffffffff871500000100089c7c083e0600000000810f00000899800001100000000011c501110000000001100000000011c5011100000000011000000000820f030012cd0111000000003e06000000003f703f0a089868003e703f0a08980000800180203e02007800fb010f0000000001c03e703f0a0898800000100000000001c32006000000003f73bf807e733f0010cd7e733f8010cd11c2200600000000089c0100810f200001c32006000000008715fffff8ff3e713f00089d7c007e713f00010f0000000001c13e0200001003020f0000000012c0089dfe003e0200001005020f0000000012c0089dfd007e703f0a089c7e080898020008910200089803000891030008980400089104000898050008910500089c0100f09f041800000000f29fc09fffffffff871500000100089c7e02089c7d04c8c2089c0100f09f041800000000f29fc09fffffffff871500000100089c7c083e0600000000810f00000899800001100000000011c501110000000001100000000011c5011100000000011000000000820f030012cd0111000000003e06000000003f703f0a089868003e703f0a08980000800180203e02007800fb010f0000000001c03e703f0a0898800000100000000001c32006000000003f73bf807e733f0010cd7e733f8010cd11c2200600000000089c0300810f200001c32006000000008715fffff8ff3e713f00089d7c007e713f00010f0000000001c13e02000010033e020000200112c010c0020f0000000012c0089dfe003e0200001005020f0000000012c0089dfd007e703f0a089c7e08810f0b00089800000891000004160000040000160000040011c6200600000000089c0300f09f089c0200f09f089c0100f09f041800000000f29fc09fffffffff871500000300089c7e02089c7d04c8c2089c0300f09f089c0200f09f089c0100f09f041800000000f29fc09fffffffff871500000300089c7c083e0600000000810f00000899800001100000000011c501110000000001100000000011c5011100000000011000000000820f030012cd0111000000003e06000000003f703f0a089868003e703f0a08980000800180203e02007800fb010f0000000001c03e703f0a0898800000100000000001c32006000000003f73bf807e733f0010cd7e733f8010cd11c2200600000000089c0100810f200001c32006000000008715fffff0ff3e713f00089d7c003e713f80089d7b007e713f80089d7a00089df901089d78037e713f00010f0000000001c1810f350097011001020f0000000012c0089dfe003e0200001005020f0000000012c0089dfd003e0200001005020f0000000012c0089df7007e703f0a089c7e08041600002c00001600002c00810f2600089800000891000004160000040000160000040011c6200600000000089c0100f09f041800000000f29fc09fffffffff871500000100089c7e02089c7d04089c7706089c0100f09f041800000000f29fc09fffffffff871500000100089c7c08089c7d0a089cf70a089cfd0808900001089002060890070408900900000c00201800be5b00020000be59800100003e01130024043e01130083033e01080043163e0108002c123e0108008018be5300830000089c7c08089cfb08089cfa0a089cf901089c78033e0600000000810f00000899800001100000000011c501110000000001100000000011c5011100000000011000000000820f030012cd0111000000003e06000000003f703f0a089868003e703f0a08980000800180203e02007800fb010f0000000001c03e703f0a0898800000100000000001c32006000000003f73bf807e733f0010cd7e733f8010cd11c2200600000000089c0100810f200001c32006000000008715fffff8ff3e713f00089d7c007e713f00010f0000000001c1810f180097011001020f0000000012c0089dfe003e0200001005020f0000000012c0089dfd007e703f0a089c7e08089800000891000008980100089101000898020008910200089805000891050008980c0008910c00089c0100f09f041800000000f29fc09fffffffff871500000100089c7e02089c7d04c8c2089c0100f09f041800000000f29fc09fffffffff871500000100089c7c083e0600000000810f00000899800001100000000011c501110000000001100000000011c5011100000000011000000000820f030012cd0111000000003e06000000003f703f0a089868003e703f0a08980000800180203e02007800fb010f0000000001c03e703f0a0898800000100000000001c32006000000003f73bf807e733f0010cd7e733f8010cd11c2200600000000089c0100810f200001c32006000000008715fffff8ff3e713f00089d7c007e713f00010f0000000001c1810f180097011001020f0000000012c0089dfe003e0200001005020f0000000012c0089dfd007e703f0a089c7e08089800000891000008980100089101000898020008910200089805000891050008980c0008910c00089c0100f09f041800000000f29fc09fffffffff871500000100089c7d0a089c7d08020f80410000000c00200900be59000000003e0113000200be5100800000089c7e02089c7d04c8c2089c0100f09f041800000000f29fc09fffffffff871500000100089c7d0a089c7d08020f803d0000000c00200900be59000000003e0113000200be5100800000089c7c083e0600000000810f00000899800001100000000011c501110000000001100000000011c5011100000000011000000000820f030012cd0111000000003e06000000003f703f0a089868003e703f0a08980000800180203e02007800fb010f0000000001c03e703f0a0898800000100000000001c32006000000003f73bf807e733f0010cd7e733f8010cd11c2200600000000089c0100810f200001c32006000000008715fffff8ff3e713f00089d7c007e713f00010f0000000001c1810f050097011001020f0000000012c0089dfe003e0200001005020f0000000012c0089dfd007e703f0a089c7e08089800000891000008980300089103000898040008910400089c0100f09f041800000000f29fc09fffffffff871500000100089c7e02089c7d04c8c2089c0100f09f041800000000f29fc09fffffffff871500000100089c7c083e0600000000810f00000899800001100000000011c501110000000001100000000011c5011100000000011000000000820f030012cd0111000000003e06000000003f703f0a089868003e703f0a08980000800180203e02007800fb010f0000000001c03e703f0a0898800000100000000001c32006000000003f73bf807e733f0010cd7e733f8010cd11c2200600000000089c0100810f200001c32006000000008715fffff8ff3e713f00089d7c007e713f00010f0000000001c1810f050097011001020f0000000012c0089dfe003e0200001005020f0000000012c0089dfd007e703f0a089c7e08089800000891000008980300089103000898040008910400089c0100f09f041800000000f29fc09fffffffff871500000100089c7e02089c7d04c8c2089c0100f09f041800000000f29fc09fffffffff871500000100089c7c083e0600000000810f00000899800001100000000011c501110000000001100000000011c5011100000000011000000000820f030012cd0111000000003e06000000003f703f0a089868003e703f0a08980000800180203e02007800fb010f0000000001c03e703f0a0898800000100000000001c32006000000003f73bf807e733f0010cd7e733f8010cd11c2200600000000089c0100810f200001c32006000000008715fffff8ff3e713f00089d7c007e713f00010f0000000001c1810f330097011001020f0000000012c0089dfe003e0200001005020f0000000012c0089dfd007e703f0a089c7e0808980500089105000898060008910600089807000891070008980c0008910c0008980e0008910e0008981a0008911a0008981c0008911c0008982100089121000898230008912300089828000891280008982a0008912a00089c0100f09f041800000000f29fc09fffffffff871500000100089c7e02089c7d04c8c2089c0100f09f041800000000f29fc09fffffffff871500000100089c7c083e0600000000810f00000899800001100000000011c501110000000001100000000011c5011100000000011000000000820f030012cd0111000000003e06000000003f703f0a089868003e703f0a08980000800180203e02007800fb010f0000000001c03e703f0a0898800000100000000001c32006000000003f73bf807e733f0010cd7e733f8010cd11c2200600000000089c0100810f200001c32006000000008715fffff8ff3e713f00089d7c007e713f00010f0000000001c1810f4b0097011001020f0000000012c0089dfe003e0200001005020f0000000012c0089dfd007e703f0a089c7e08041600003000001600003000810f090008980000089100000898020008910200041600001c00001600001c0011c6200600000000089c0100f09f041800000000f29fc09fffffffff871500000100089c7e02089c7d04c8c2089c0100f09f041800000000f29fc09fffffffff871500000100089c7c083e0600000000810f00000899800001100000000011c501110000000001100000000011c5011100000000011000000000820f030012cd0111000000003e06000000003f703f0a089868003e703f0a08980000800180203e02007800fb010f0000000001c03e703f0a0898800000100000000001c32006000000003f73bf807e733f0010cd7e733f8010cd11c2200600000000089c0100810f200001c32006000000008715fffff8ff3e713f00089d7c007e713f00010f0000000001c1810f3b0097011001020f0000000012c0089dfe003e0200001005020f0000000012c0089dfd007e703f0a089c7e080898000008910000089801000891010008980200089102000898030008910300089804000891040008980e0008910e00089812000891120008981900089119000898200008912000089827000891270008982e0008912e000898350008913500089c0100f09f041800000000f29fc09fffffffff871500000100089c7e02089c7d04c8c2089c0100f09f041800000000f29fc09fffffffff871500000100089c7c083e0600000000810f00000899800001100000000011c501110000000001100000000011c5011100000000011000000000820f030012cd0111000000003e06000000003f703f0a089868003e703f0a08980000800180203e02007800fb010f0000000001c03e703f0a0898800000100000000001c32006000000003f73bf807e733f0010cd7e733f8010cd11c2200600000000089c0100810f200001c32006000000008715fffff8ff3e713f00089d7c007e713f00010f0000000001c1810f120097011001020f0000000012c0089dfe003e0200001005020f0000000012c0089dfd007e703f0a089c7e083e020000100d020f4b90001012c008919000089802000891020008980300089103000898040008910400089805000891050008980a0008910a0008980f0008910f00089c0100f09f041800000000f29fc09fffffffff871500000100089c7e02089c7d04c8c2089c0100f09f041800000000f29fc09fffffffff871500000100089c7c083e0600000000810f00000899800001100000000011c501110000000001100000000011c5011100000000011000000000820f030012cd0111000000003e06000000003f703f0a089868003e703f0a08980000800180203e02007800fb010f0000000001c03e703f0a0898800000100000000001c32006000000003f73bf807e733f0010cd7e733f8010cd11c2200600000000089c0100810f200001c32006000000008715fffff8ff3e713f00089d7c007e713f00010f0000000001c1810f120097011001020f0000000012c0089dfe003e0200001005020f0000000012c0089dfd007e703f0a089c7e083e020000100d020f4b90001012c008919000089802000891020008980300089103000898040008910400089805000891050008980a0008910a0008980f0008910f00089c0100f09f041800000000f29fc09fffffffff871500000100089c7e02089c7d04c8c2089c0100f09f041800000000f29fc09fffffffff871500000100089c7c083e0600000000810f00000899800001100000000011c501110000000001100000000011c5011100000000011000000000820f030012cd0111000000003e0600000000089c7f0e0100010001003f083f3401000119000f00000000010f000088e001c08001402002060000000020c23e02007800fc810f2500970101003e02007800f8810f100001c3220600000000810f70009701010002c3200600000000010f0000000001c03e703f0a810f0000089998000899990008999a0008999b003e0600000000000f00000000010f0100482101c08001402002060000000020c23e02007800fb810f100001c32206000000003e020000000502c3200600000000010f0000000001c03e703f0a810f000008998600089987003e0600000000000f00000000010f0000c8ee01c08001402002060000000020c2810fcd0c970101003e02007800f0810f100001c3220600000000810f14009701010002c3200600000000010f0000000001c03e703f0a810f000008998000089981000899820008998300089984003e0600000000000f00000000010f000008f301c08001402002060000000020c2810f4201970101003e02007800f0810f100001c3220600000000810fcc009701010002c3200600000000010f0000000001c03e703f0a810f000008998300089984003e0600000000000f00000000010f0000c8ff01c08001402002060000000020c2810fdb00970101003e02007800f0810f100001c3220600000000810f2c019701010002c3200600000000010f0000000001c03e703f0a810f000008998a0008998b003e0600000000000f00000000010f0100881201c08001402002060000000020c2810f1601970101003e02007800f0810f100001c3220600000000810fec009701010002c3200600000000010f0000000001c03e703f0a810f0000089985000899890008998a0008998b0008998c003e0600000000000f00000000010f0100c82701c08001402002060000000020c2810f3601970101003e02007800f0810f100001c3220600000000810fd4009701010002c3200600000000010f0000000001c03e703f0a810f00000899890008998a003e0600000000000f00000000010f0100482301c08001402002060000000020c2810f8f03970101003e02007800f0810f100001c3220600000000810f48009701010002c3200600000000010f0000000001c03e703f0a810f00000899800008998e00ff72bf00089991003e0600000000001000000000001100000000800f00000011000000003e0a00000000850f200095c32006000000000810000000008f0f0000050f000000005fc07e70bf880892000368c32006000000003e020000ef05050f00000000e5c0060f000000003e0200007f037fc167c0070f01005c3967c07f70bf080892000508928205ff703f09000c00200c0004a4000000003e011300a4043e010800ab1abe55008200003e0200787ffe860f0c0084017606050f0000000056c0060f0100fc3856c07e70bf8808920002850f0300840175053e0200005503860f000080016525a0014504850fff0045cc44c2000600000000060f000000003e0200007f033e0200005f0175c07fc067c0070f01001c3567c07f70bf0808920002a80140840e0600000000ff703f090a0f803f00000b0f04bd0821000c00200c0004a4000000003e011300a4043e010800ab1abe5500820000850f0400f5c0850f4000f5c30206000000000214200000003e06000000003f71bf81089ce80235c1050f0000000053c07e70bf880892000307100000000067c3200600000000870f1f0007c3200600000000a3c23e020000e305050f00000000e5c0ff70bf09089a81067e723f08fe70bf8808987b060da800006b0001a8000069009797930128049301170fb491bf93000c001f0f00be5588012c12be5788021d113e0113002306be5113831507be5380830000089ce8013ac03f70bf890316000004003e0600000000910f000009c6930128043e043f603e060000000002100000000022c2000a000000000410000000003e0200001402000f0000000001c03e70bf09001000000000089700003e0200005407060f0000000056c07e703f888d0f0000090fff7fffff000c00200900be51000000003e01040009003e010600d02d000f00410000d0c324060000000000100000000001100000000001c3000600000000001100000000810f0000011100000000011000000000820f080012c322060000000011c50111000000007e703f887e70bf88020fca3f01de000c00200900be51000000003e0113000200be53008000003e0200001402020f0000000021c03f703f090894800100100000000007100000000077c200060000000000c630c300060000000001100000000011c5011100000000800f0000810f700097011401020f0000000012c03e70bf89000c001c0300be5700800000810f200097011401020f0000000012c03e70bf89000c00080300be5700800000810f2c0097011401020f0000000012c03e70bf89000c000b0300be5700800000810fd40097011401020f0000000012c03e70bf89000c00350300be5700800000810f140097011401020f0000000012c03e70bf89000c00050300be5700800000810fcc0097011401020f0000000012c03e70bf89000c00330300be5700800000810f2c0197011401020f0000000012c03e70bf89000c004b0300be5700800000810fec0097011401020f0000000012c03e70bf89000c003b0300be5700800000810f480097011401020f0000000012c03e70bf89000c00120300be5700800000800f010008977f00001000000000089500003e0a0000000001100000000011c5011100000000820f05003e060000000001100000000011c5011100000000820f090001100000000012cd0111000000003e0a00000000",
    "kind": "text",
    "name": "seg_pmco",
-   "size": 2390
+   "size": 9754
   },
   {
    "align": 8,
-   "hex": "00000000010000000200000003000000ff000000ff000000ff000000ff000000",
+   "hex": "0100000002000000040000000500000006000000000000000300000007000000",
    "kind": "data",
    "name": "seg_dmda",
    "size": 32
@@ -902,6 +3814,41 @@
   },
   {
    "align": 4,
+   "hex": "00000000",
+   "kind": "data",
+   "name": "pkdata__dv_mask",
+   "size": 4
+  },
+  {
+   "align": 4,
+   "hex": "00000000",
+   "kind": "data",
+   "name": "pkdata__dv_q1",
+   "size": 4
+  },
+  {
+   "align": 4,
+   "hex": "00000000",
+   "kind": "data",
+   "name": "pkdata__dv_q2",
+   "size": 4
+  },
+  {
+   "align": 4,
+   "hex": "00000000",
+   "kind": "data",
+   "name": "pkdata__dv_q4",
+   "size": 4
+  },
+  {
+   "align": 4,
+   "hex": "00000000",
+   "kind": "data",
+   "name": "pkdata__dv_ql4",
+   "size": 4
+  },
+  {
+   "align": 4,
    "hex": "000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000",
    "kind": "data",
    "name": "pkdata__dv_ctx",
@@ -916,10 +3863,10 @@
   },
   {
    "align": 4,
-   "hex": "0000000000000000",
+   "hex": "000000000000000000000000",
    "kind": "data",
    "name": "pkdata__dv_rec",
-   "size": 8
+   "size": 12
   },
   {
    "align": 4,
@@ -951,10 +3898,10 @@
   },
   {
    "align": 4,
-   "hex": "00000000000000000000000000000000",
+   "hex": "000000000000000000000000000000000000000000000000",
    "kind": "data",
    "name": "pkdata__dv_in",
-   "size": 16
+   "size": 24
   },
   {
    "align": 4,
@@ -962,6 +3909,20 @@
    "kind": "data",
    "name": "pkdata__dv_params",
    "size": 32
+  },
+  {
+   "align": 4,
+   "hex": "0000000000000000000000000000000000000000000000000000000000000000",
+   "kind": "data",
+   "name": "pkdata__dv_call_params",
+   "size": 32
+  },
+  {
+   "align": 4,
+   "hex": "0000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000",
+   "kind": "data",
+   "name": "pkdata__dv_trig_params",
+   "size": 512
   },
   {
    "align": 4,
@@ -976,63 +3937,227 @@
    "kind": "data",
    "name": "pkdata__dv_cst",
    "size": 256
+  },
+  {
+   "align": 4,
+   "hex": "00000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000",
+   "kind": "data",
+   "name": "pkdata__gs_stamp",
+   "size": 64
+  },
+  {
+   "align": 4,
+   "hex": "0000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000",
+   "kind": "data",
+   "name": "pkdata__gs_rbuf",
+   "size": 2048
+  },
+  {
+   "align": 4,
+   "hex": "00000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000",
+   "kind": "data",
+   "name": "pkdata__gs_fo_rec",
+   "size": 1792
+  },
+  {
+   "align": 4,
+   "hex": "0000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000",
+   "kind": "data",
+   "name": "pkdata__gs_uy_rec",
+   "size": 512
+  },
+  {
+   "align": 4,
+   "hex": "0000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000",
+   "kind": "data",
+   "name": "pkdata__gs_gain_rec",
+   "size": 704
+  },
+  {
+   "align": 4,
+   "hex": "0000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000",
+   "kind": "data",
+   "name": "pkdata__gs_c5_rec",
+   "size": 3392
+  },
+  {
+   "align": 4,
+   "hex": "0000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000",
+   "kind": "data",
+   "name": "pkdata__gs_c5_scr",
+   "size": 2048
+  },
+  {
+   "align": 4,
+   "hex": "000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000",
+   "kind": "data",
+   "name": "pkdata__gs_sh_rec",
+   "size": 1536
+  },
+  {
+   "align": 4,
+   "hex": "0000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000",
+   "kind": "data",
+   "name": "pkdata__gs_hd_rec",
+   "size": 320
+  },
+  {
+   "align": 4,
+   "hex": "000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000",
+   "kind": "data",
+   "name": "pkdata__gs_c1_rec",
+   "size": 3264
+  },
+  {
+   "align": 4,
+   "hex": "000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000",
+   "kind": "data",
+   "name": "pkdata__gs_c2_rec",
+   "size": 4800
+  },
+  {
+   "align": 4,
+   "hex": "0000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000",
+   "kind": "data",
+   "name": "pkdata__gs_c3_rec",
+   "size": 3776
+  },
+  {
+   "align": 4,
+   "hex": "000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000",
+   "kind": "data",
+   "name": "pkdata__gs_rg_rec",
+   "size": 1152
+  },
+  {
+   "align": 4,
+   "hex": "00000000",
+   "kind": "data",
+   "name": "pkdata__gs_ns",
+   "size": 4
+  },
+  {
+   "align": 4,
+   "hex": "00000000",
+   "kind": "data",
+   "name": "pkdata__gs_nhb",
+   "size": 4
+  },
+  {
+   "align": 4,
+   "hex": "00000000",
+   "kind": "data",
+   "name": "pkdata__gs_nbad",
+   "size": 4
+  },
+  {
+   "align": 4,
+   "hex": "00000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000",
+   "kind": "data",
+   "name": "pkdata__gs_seen",
+   "size": 64
+  },
+  {
+   "align": 4,
+   "hex": "0000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000",
+   "kind": "data",
+   "name": "pkdata__gs_cnt",
+   "size": 128
+  },
+  {
+   "align": 4,
+   "hex": "00000000",
+   "kind": "data",
+   "name": "pkdata__gs_hacc",
+   "size": 4
+  },
+  {
+   "align": 4,
+   "hex": "00000000",
+   "kind": "data",
+   "name": "pkdata__gs_health",
+   "size": 4
   }
  ],
- "source_sha256": "5080bbdf9eb87b99de54a1fc19fa986d3189ee1a93e23edcdcbc6e81ecc53cb7",
+ "source_sha256": "8710ce6e78a11965353a9f1ffb606c736bd79041ff5f0f2738ba4f31282080e7",
  "symbols": [
   {
    "global": false,
    "name": "_dv_back",
    "section": "seg_pmco",
-   "value": 343
+   "value": 487
+  },
+  {
+   "global": false,
+   "name": "_dv_cbadowner",
+   "section": "seg_pmco",
+   "value": 1319
   },
   {
    "global": false,
    "name": "_dv_cedge",
    "section": "seg_pmco",
-   "value": 1062
+   "value": 1326
   },
   {
    "global": false,
    "name": "_dv_cnoclr",
    "section": "seg_pmco",
-   "value": 794
+   "value": 1039
   },
   {
    "global": false,
    "name": "_dv_contract",
    "section": "seg_pmco",
-   "value": 526
+   "value": 672
+  },
+  {
+   "global": false,
+   "name": "_dv_cowner",
+   "section": "seg_pmco",
+   "value": 771
   },
   {
    "global": false,
    "name": "_dv_cpe",
    "section": "seg_pmco",
-   "value": 748
+   "value": 993
   },
   {
    "global": false,
    "name": "_dv_cpl",
    "section": "seg_pmco",
-   "value": 653
+   "value": 841
+  },
+  {
+   "global": false,
+   "name": "_dv_cplive",
+   "section": "seg_pmco",
+   "value": 972
+  },
+  {
+   "global": false,
+   "name": "_dv_cpread",
+   "section": "seg_pmco",
+   "value": 970
   },
   {
    "global": false,
    "name": "_dv_crender",
    "section": "seg_pmco",
-   "value": 813
+   "value": 1058
   },
   {
    "global": false,
    "name": "_dv_cz",
    "section": "seg_pmco",
-   "value": 1066
+   "value": 1330
   },
   {
    "global": false,
    "name": "_dv_done",
    "section": "seg_pmco",
-   "value": 380
+   "value": 524
   },
   {
    "global": true,
@@ -1044,85 +4169,583 @@
    "global": true,
    "name": "_dv_exp2",
    "section": "seg_pmco",
-   "value": 1082
+   "value": 1346
   },
   {
    "global": true,
    "name": "_dv_frame_hw",
    "section": "seg_pmco",
-   "value": 1128
+   "value": 1392
   },
   {
    "global": true,
    "name": "_dv_frame_sw",
    "section": "seg_pmco",
-   "value": 1158
+   "value": 1422
+  },
+  {
+   "global": false,
+   "name": "_dv_full",
+   "section": "seg_pmco",
+   "value": 110
   },
   {
    "global": false,
    "name": "_dv_gfault",
    "section": "seg_pmco",
-   "value": 894
+   "value": 1151
   },
   {
    "global": false,
    "name": "_dv_gfaultk",
    "section": "seg_pmco",
-   "value": 905
+   "value": 1162
   },
   {
    "global": false,
    "name": "_dv_gnd",
    "section": "seg_pmco",
-   "value": 1018
+   "value": 1275
   },
   {
    "global": false,
    "name": "_dv_gwin",
    "section": "seg_pmco",
-   "value": 981
+   "value": 1238
   },
   {
    "global": false,
    "name": "_dv_mark",
    "section": "seg_pmco",
-   "value": 454
+   "value": 598
+  },
+  {
+   "global": false,
+   "name": "_dv_mk0",
+   "section": "seg_pmco",
+   "value": 634
   },
   {
    "global": false,
    "name": "_dv_mk1",
    "section": "seg_pmco",
-   "value": 500
+   "value": 653
+  },
+  {
+   "global": false,
+   "name": "_dv_mke",
+   "section": "seg_pmco",
+   "value": 318
+  },
+  {
+   "global": false,
+   "name": "_dv_mkl",
+   "section": "seg_pmco",
+   "value": 292
   },
   {
    "global": false,
    "name": "_dv_nback",
    "section": "seg_pmco",
-   "value": 809
+   "value": 1054
   },
   {
    "global": false,
    "name": "_dv_nfault",
    "section": "seg_pmco",
-   "value": 889
+   "value": 1146
   },
   {
    "global": false,
    "name": "_dv_nodiag",
    "section": "seg_pmco",
-   "value": 180
+   "value": 324
+  },
+  {
+   "global": false,
+   "name": "_dv_out",
+   "section": "seg_pmco",
+   "value": 101
   },
   {
    "global": false,
    "name": "_dv_rback",
    "section": "seg_pmco",
-   "value": 836
+   "value": 1081
   },
   {
    "global": false,
    "name": "_dv_scan",
    "section": "seg_pmco",
-   "value": 214
+   "value": 358
+  },
+  {
+   "global": false,
+   "name": "_gs_badr",
+   "section": "seg_pmco",
+   "value": 4846
+  },
+  {
+   "global": true,
+   "name": "_gs_block",
+   "section": "seg_pmco",
+   "value": 4271
+  },
+  {
+   "global": true,
+   "name": "_gs_c5",
+   "section": "seg_pmco",
+   "value": 1971
+  },
+  {
+   "global": false,
+   "name": "_gs_c5_bad",
+   "section": "seg_pmco",
+   "value": 2186
+  },
+  {
+   "global": false,
+   "name": "_gs_c5_cap",
+   "section": "seg_pmco",
+   "value": 2084
+  },
+  {
+   "global": false,
+   "name": "_gs_c5_l",
+   "section": "seg_pmco",
+   "value": 2108
+  },
+  {
+   "global": false,
+   "name": "_gs_c5_r",
+   "section": "seg_pmco",
+   "value": 2127
+  },
+  {
+   "global": false,
+   "name": "_gs_capped",
+   "section": "seg_pmco",
+   "value": 4858
+  },
+  {
+   "global": true,
+   "name": "_gs_case1",
+   "section": "seg_pmco",
+   "value": 2918
+  },
+  {
+   "global": false,
+   "name": "_gs_case1_bad",
+   "section": "seg_pmco",
+   "value": 3082
+  },
+  {
+   "global": false,
+   "name": "_gs_case1_l",
+   "section": "seg_pmco",
+   "value": 3056
+  },
+  {
+   "global": false,
+   "name": "_gs_case1_r",
+   "section": "seg_pmco",
+   "value": 3074
+  },
+  {
+   "global": true,
+   "name": "_gs_case1_reset",
+   "section": "seg_pmco",
+   "value": 4016
+  },
+  {
+   "global": true,
+   "name": "_gs_case2",
+   "section": "seg_pmco",
+   "value": 3112
+  },
+  {
+   "global": false,
+   "name": "_gs_case2_bad",
+   "section": "seg_pmco",
+   "value": 3258
+  },
+  {
+   "global": false,
+   "name": "_gs_case2_cap",
+   "section": "seg_pmco",
+   "value": 3204
+  },
+  {
+   "global": false,
+   "name": "_gs_case2_l",
+   "section": "seg_pmco",
+   "value": 3232
+  },
+  {
+   "global": false,
+   "name": "_gs_case2_r",
+   "section": "seg_pmco",
+   "value": 3250
+  },
+  {
+   "global": true,
+   "name": "_gs_case2_reset",
+   "section": "seg_pmco",
+   "value": 4065
+  },
+  {
+   "global": true,
+   "name": "_gs_case3",
+   "section": "seg_pmco",
+   "value": 3288
+  },
+  {
+   "global": false,
+   "name": "_gs_case3_bad",
+   "section": "seg_pmco",
+   "value": 3456
+  },
+  {
+   "global": false,
+   "name": "_gs_case3_l",
+   "section": "seg_pmco",
+   "value": 3430
+  },
+  {
+   "global": false,
+   "name": "_gs_case3_r",
+   "section": "seg_pmco",
+   "value": 3448
+  },
+  {
+   "global": true,
+   "name": "_gs_case3_reset",
+   "section": "seg_pmco",
+   "value": 4114
+  },
+  {
+   "global": true,
+   "name": "_gs_case5_reset",
+   "section": "seg_pmco",
+   "value": 4169
+  },
+  {
+   "global": false,
+   "name": "_gs_clear",
+   "section": "seg_pmco",
+   "value": 4688
+  },
+  {
+   "global": true,
+   "name": "_gs_fo",
+   "section": "seg_pmco",
+   "value": 1459
+  },
+  {
+   "global": false,
+   "name": "_gs_fo_bad",
+   "section": "seg_pmco",
+   "value": 1594
+  },
+  {
+   "global": false,
+   "name": "_gs_fo_l",
+   "section": "seg_pmco",
+   "value": 1568
+  },
+  {
+   "global": false,
+   "name": "_gs_fo_r",
+   "section": "seg_pmco",
+   "value": 1586
+  },
+  {
+   "global": true,
+   "name": "_gs_fo_reset",
+   "section": "seg_pmco",
+   "value": 3861
+  },
+  {
+   "global": true,
+   "name": "_gs_gain",
+   "section": "seg_pmco",
+   "value": 1789
+  },
+  {
+   "global": false,
+   "name": "_gs_gain_bad",
+   "section": "seg_pmco",
+   "value": 1941
+  },
+  {
+   "global": false,
+   "name": "_gs_gain_cap",
+   "section": "seg_pmco",
+   "value": 1879
+  },
+  {
+   "global": false,
+   "name": "_gs_gain_l",
+   "section": "seg_pmco",
+   "value": 1909
+  },
+  {
+   "global": false,
+   "name": "_gs_gain_r",
+   "section": "seg_pmco",
+   "value": 1933
+  },
+  {
+   "global": true,
+   "name": "_gs_held_early",
+   "section": "seg_pmco",
+   "value": 2594
+  },
+  {
+   "global": false,
+   "name": "_gs_held_early_bad",
+   "section": "seg_pmco",
+   "value": 2726
+  },
+  {
+   "global": false,
+   "name": "_gs_held_early_l",
+   "section": "seg_pmco",
+   "value": 2700
+  },
+  {
+   "global": false,
+   "name": "_gs_held_early_r",
+   "section": "seg_pmco",
+   "value": 2718
+  },
+  {
+   "global": true,
+   "name": "_gs_held_late",
+   "section": "seg_pmco",
+   "value": 2756
+  },
+  {
+   "global": false,
+   "name": "_gs_held_late_bad",
+   "section": "seg_pmco",
+   "value": 2888
+  },
+  {
+   "global": false,
+   "name": "_gs_held_late_l",
+   "section": "seg_pmco",
+   "value": 2862
+  },
+  {
+   "global": false,
+   "name": "_gs_held_late_r",
+   "section": "seg_pmco",
+   "value": 2880
+  },
+  {
+   "global": true,
+   "name": "_gs_held_reset",
+   "section": "seg_pmco",
+   "value": 3961
+  },
+  {
+   "global": false,
+   "name": "_gs_leave",
+   "section": "seg_pmco",
+   "value": 3852
+  },
+  {
+   "global": false,
+   "name": "_gs_mono",
+   "section": "seg_pmco",
+   "value": 4538
+  },
+  {
+   "global": true,
+   "name": "_gs_post",
+   "section": "seg_pmco",
+   "value": 4548
+  },
+  {
+   "global": false,
+   "name": "_gs_pp_done",
+   "section": "seg_pmco",
+   "value": 4446
+  },
+  {
+   "global": false,
+   "name": "_gs_pp_next",
+   "section": "seg_pmco",
+   "value": 4437
+  },
+  {
+   "global": false,
+   "name": "_gs_pp_slot",
+   "section": "seg_pmco",
+   "value": 4296
+  },
+  {
+   "global": true,
+   "name": "_gs_prepan",
+   "section": "seg_pmco",
+   "value": 4285
+  },
+  {
+   "global": false,
+   "name": "_gs_raise",
+   "section": "seg_pmco",
+   "value": 4867
+  },
+  {
+   "global": true,
+   "name": "_gs_ring4",
+   "section": "seg_pmco",
+   "value": 3486
+  },
+  {
+   "global": false,
+   "name": "_gs_ring4_bad",
+   "section": "seg_pmco",
+   "value": 3639
+  },
+  {
+   "global": false,
+   "name": "_gs_ring4_l",
+   "section": "seg_pmco",
+   "value": 3613
+  },
+  {
+   "global": false,
+   "name": "_gs_ring4_r",
+   "section": "seg_pmco",
+   "value": 3631
+  },
+  {
+   "global": true,
+   "name": "_gs_ring6",
+   "section": "seg_pmco",
+   "value": 3669
+  },
+  {
+   "global": false,
+   "name": "_gs_ring6_bad",
+   "section": "seg_pmco",
+   "value": 3822
+  },
+  {
+   "global": false,
+   "name": "_gs_ring6_l",
+   "section": "seg_pmco",
+   "value": 3796
+  },
+  {
+   "global": false,
+   "name": "_gs_ring6_r",
+   "section": "seg_pmco",
+   "value": 3814
+  },
+  {
+   "global": true,
+   "name": "_gs_ring_reset",
+   "section": "seg_pmco",
+   "value": 4218
+  },
+  {
+   "global": false,
+   "name": "_gs_samehb",
+   "section": "seg_pmco",
+   "value": 4623
+  },
+  {
+   "global": true,
+   "name": "_gs_shaper_early",
+   "section": "seg_pmco",
+   "value": 2216
+  },
+  {
+   "global": false,
+   "name": "_gs_shaper_early_bad",
+   "section": "seg_pmco",
+   "value": 2356
+  },
+  {
+   "global": false,
+   "name": "_gs_shaper_early_l",
+   "section": "seg_pmco",
+   "value": 2330
+  },
+  {
+   "global": false,
+   "name": "_gs_shaper_early_r",
+   "section": "seg_pmco",
+   "value": 2348
+  },
+  {
+   "global": true,
+   "name": "_gs_shaper_late",
+   "section": "seg_pmco",
+   "value": 2386
+  },
+  {
+   "global": false,
+   "name": "_gs_shaper_late_bad",
+   "section": "seg_pmco",
+   "value": 2564
+  },
+  {
+   "global": false,
+   "name": "_gs_shaper_late_l",
+   "section": "seg_pmco",
+   "value": 2500
+  },
+  {
+   "global": false,
+   "name": "_gs_shaper_late_r",
+   "section": "seg_pmco",
+   "value": 2537
+  },
+  {
+   "global": true,
+   "name": "_gs_slot",
+   "section": "seg_pmco",
+   "value": 4452
+  },
+  {
+   "global": false,
+   "name": "_gs_stamped",
+   "section": "seg_pmco",
+   "value": 4838
+  },
+  {
+   "global": true,
+   "name": "_gs_uy",
+   "section": "seg_pmco",
+   "value": 1624
+  },
+  {
+   "global": false,
+   "name": "_gs_uy_bad",
+   "section": "seg_pmco",
+   "value": 1759
+  },
+  {
+   "global": false,
+   "name": "_gs_uy_l",
+   "section": "seg_pmco",
+   "value": 1733
+  },
+  {
+   "global": false,
+   "name": "_gs_uy_r",
+   "section": "seg_pmco",
+   "value": 1751
+  },
+  {
+   "global": true,
+   "name": "_gs_uy_reset",
+   "section": "seg_pmco",
+   "value": 3917
   },
   {
    "global": true,
@@ -1134,6 +4757,12 @@
    "global": true,
    "name": "_dv_c",
    "section": "pkdata__dv_c",
+   "value": 0
+  },
+  {
+   "global": true,
+   "name": "_dv_call_params",
+   "section": "pkdata__dv_call_params",
    "value": 0
   },
   {
@@ -1162,8 +4791,38 @@
   },
   {
    "global": true,
+   "name": "_dv_mask",
+   "section": "pkdata__dv_mask",
+   "value": 0
+  },
+  {
+   "global": true,
    "name": "_dv_params",
    "section": "pkdata__dv_params",
+   "value": 0
+  },
+  {
+   "global": true,
+   "name": "_dv_q1",
+   "section": "pkdata__dv_q1",
+   "value": 0
+  },
+  {
+   "global": true,
+   "name": "_dv_q2",
+   "section": "pkdata__dv_q2",
+   "value": 0
+  },
+  {
+   "global": true,
+   "name": "_dv_q4",
+   "section": "pkdata__dv_q4",
+   "value": 0
+  },
+  {
+   "global": true,
+   "name": "_dv_ql4",
+   "section": "pkdata__dv_ql4",
    "value": 0
   },
   {
@@ -1216,8 +4875,134 @@
   },
   {
    "global": true,
+   "name": "_dv_trig_params",
+   "section": "pkdata__dv_trig_params",
+   "value": 0
+  },
+  {
+   "global": true,
    "name": "_dv_typ",
    "section": "pkdata__dv_typ",
+   "value": 0
+  },
+  {
+   "global": true,
+   "name": "_gs_c1_rec",
+   "section": "pkdata__gs_c1_rec",
+   "value": 0
+  },
+  {
+   "global": true,
+   "name": "_gs_c2_rec",
+   "section": "pkdata__gs_c2_rec",
+   "value": 0
+  },
+  {
+   "global": true,
+   "name": "_gs_c3_rec",
+   "section": "pkdata__gs_c3_rec",
+   "value": 0
+  },
+  {
+   "global": true,
+   "name": "_gs_c5_rec",
+   "section": "pkdata__gs_c5_rec",
+   "value": 0
+  },
+  {
+   "global": true,
+   "name": "_gs_c5_scr",
+   "section": "pkdata__gs_c5_scr",
+   "value": 0
+  },
+  {
+   "global": true,
+   "name": "_gs_cnt",
+   "section": "pkdata__gs_cnt",
+   "value": 0
+  },
+  {
+   "global": true,
+   "name": "_gs_fo_rec",
+   "section": "pkdata__gs_fo_rec",
+   "value": 0
+  },
+  {
+   "global": true,
+   "name": "_gs_gain_rec",
+   "section": "pkdata__gs_gain_rec",
+   "value": 0
+  },
+  {
+   "global": true,
+   "name": "_gs_hacc",
+   "section": "pkdata__gs_hacc",
+   "value": 0
+  },
+  {
+   "global": true,
+   "name": "_gs_hd_rec",
+   "section": "pkdata__gs_hd_rec",
+   "value": 0
+  },
+  {
+   "global": true,
+   "name": "_gs_health",
+   "section": "pkdata__gs_health",
+   "value": 0
+  },
+  {
+   "global": true,
+   "name": "_gs_nbad",
+   "section": "pkdata__gs_nbad",
+   "value": 0
+  },
+  {
+   "global": true,
+   "name": "_gs_nhb",
+   "section": "pkdata__gs_nhb",
+   "value": 0
+  },
+  {
+   "global": true,
+   "name": "_gs_ns",
+   "section": "pkdata__gs_ns",
+   "value": 0
+  },
+  {
+   "global": true,
+   "name": "_gs_rbuf",
+   "section": "pkdata__gs_rbuf",
+   "value": 0
+  },
+  {
+   "global": true,
+   "name": "_gs_rg_rec",
+   "section": "pkdata__gs_rg_rec",
+   "value": 0
+  },
+  {
+   "global": true,
+   "name": "_gs_seen",
+   "section": "pkdata__gs_seen",
+   "value": 0
+  },
+  {
+   "global": true,
+   "name": "_gs_sh_rec",
+   "section": "pkdata__gs_sh_rec",
+   "value": 0
+  },
+  {
+   "global": true,
+   "name": "_gs_stamp",
+   "section": "pkdata__gs_stamp",
+   "value": 0
+  },
+  {
+   "global": true,
+   "name": "_gs_uy_rec",
+   "section": "pkdata__gs_uy_rec",
    "value": 0
   },
   {
@@ -1237,10 +5022,142 @@
    "name": "_fw_render_next",
    "section": null,
    "value": 0
+  },
+  {
+   "global": true,
+   "name": "_gs_c5_stock",
+   "section": null,
+   "value": 0
+  },
+  {
+   "global": true,
+   "name": "_gs_case1_reset_stock",
+   "section": null,
+   "value": 0
+  },
+  {
+   "global": true,
+   "name": "_gs_case1_stock",
+   "section": null,
+   "value": 0
+  },
+  {
+   "global": true,
+   "name": "_gs_case2_reset_stock",
+   "section": null,
+   "value": 0
+  },
+  {
+   "global": true,
+   "name": "_gs_case2_stock",
+   "section": null,
+   "value": 0
+  },
+  {
+   "global": true,
+   "name": "_gs_case3_reset_stock",
+   "section": null,
+   "value": 0
+  },
+  {
+   "global": true,
+   "name": "_gs_case3_stock",
+   "section": null,
+   "value": 0
+  },
+  {
+   "global": true,
+   "name": "_gs_case5_reset_stock",
+   "section": null,
+   "value": 0
+  },
+  {
+   "global": true,
+   "name": "_gs_engine_base",
+   "section": null,
+   "value": 0
+  },
+  {
+   "global": true,
+   "name": "_gs_fo_reset_stock",
+   "section": null,
+   "value": 0
+  },
+  {
+   "global": true,
+   "name": "_gs_fo_stock",
+   "section": null,
+   "value": 0
+  },
+  {
+   "global": true,
+   "name": "_gs_gain_stock",
+   "section": null,
+   "value": 0
+  },
+  {
+   "global": true,
+   "name": "_gs_held_reset_stock",
+   "section": null,
+   "value": 0
+  },
+  {
+   "global": true,
+   "name": "_gs_held_stock",
+   "section": null,
+   "value": 0
+  },
+  {
+   "global": true,
+   "name": "_gs_pan_cont",
+   "section": null,
+   "value": 0
+  },
+  {
+   "global": true,
+   "name": "_gs_pan_end",
+   "section": null,
+   "value": 0
+  },
+  {
+   "global": true,
+   "name": "_gs_pre_cont",
+   "section": null,
+   "value": 0
+  },
+  {
+   "global": true,
+   "name": "_gs_ring_reset_stock",
+   "section": null,
+   "value": 0
+  },
+  {
+   "global": true,
+   "name": "_gs_ring_stock",
+   "section": null,
+   "value": 0
+  },
+  {
+   "global": true,
+   "name": "_gs_shaper_stock",
+   "section": null,
+   "value": 0
+  },
+  {
+   "global": true,
+   "name": "_gs_uy_reset_stock",
+   "section": null,
+   "value": 0
+  },
+  {
+   "global": true,
+   "name": "_gs_uy_stock",
+   "section": null,
+   "value": 0
   }
  ],
  "toolchain": {
-  "instructions_redecoded": "535",
-  "selache_rev": "2b26d3b75c53063575bc5c820fa0d38879335187"
+  "instructions_redecoded": "2245",
+  "selache_rev": "02d6d785b8e3a125ab237a00bb89503aff835f5d"
  }
 }

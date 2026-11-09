@@ -45,6 +45,7 @@ A module never reaches past the layer under it. Everything that depends on the d
 2. **Sources.** Content modules and apps include only their own files and the SDK (`<dk/...>`, `sdk/asm`). An app may also include `dkrt.h` and `dk_ui_core.h`. Only runtime, installer and adapters include `dk_fw_*` headers or depend on the `dkfw` crate. C, ColdFire and SHARC assembly (`#include`, `.include`) and Rust (`dkfw`, path dependencies) are checked.
 3. **Objects.** The undefined symbols of the built objects of apps and content modules are SDK imports (`sdk/sdk.toml` `[[import]]`), `dkrt_*`, `dk_ui_*`, `dk_app_*` or the SHARC externs the SDK documents. They never name a firmware anchor (`cf.*`, `dsp.*`, `hook.*`, `pk.*`), and `[object.externs]` never maps a symbol to one.
 4. **Apps do not patch.** An app has no `[[op]]` and no `[[claim]]`. If an app needs a firmware hook, the adapter that owns that plug-in point installs the hook and calls the app through an optional symbol (`dk_app_*`).
+5. **Capabilities cost nothing unused.** A module asks for capabilities; adapters implement them per device. Prefer data (a field an adapter already passes) to a new firmware hook. A hook must cost at most one flag check on a hot path when no loaded module asks for its capability ([capabilities plan](plans/capabilities.md)).
 
 Exceptions are listed in `layercheck.py` with a reason: `test/registry-demo` patches the firmware itself (it is patchkit's example of a hook), and `test/ui-demo` stands in for an app.
 
@@ -54,7 +55,7 @@ Run it:
 mise run check:layers          # or: uv run python -m tools.devtools.layercheck
 ```
 
-Each violation prints `file:line: rule: what is wrong. Instead: what to do.` The gate runs it in `python-tests` (with ruff, mypy and pathcheck) whenever modules, the SDK or the firmware declarations change; `mise run test:changed` runs it too.
+Each violation prints `file:line: rule: what is wrong. Instead: what to do.` The gate runs it in `python-checks` (with ruff and mypy) whenever modules, the SDK or the firmware declarations change; `mise run test:changed` runs it too.
 
 ## How a new device or firmware version fits
 
@@ -101,4 +102,4 @@ The same holds for card reads: the INFO page of the menu gets the module header 
 
 - [Repository layout](LAYOUT.md), [testing](TESTING.md)
 - [Module reference](../modules/README.md), [SDK](../sdk/README.md)
-- [Firmware declarations](design/firmware-decls.md), [device data](design/device-data.md), [runtime](design/digikit-runtime.md)
+- [Firmware declarations](design/firmware-decls.md), [device data](design/device-data.md), [runtime](design/digikit-runtime.md), [boot screen format](design/dkbs.md)

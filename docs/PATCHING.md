@@ -234,7 +234,7 @@ that is how a new firmware shows which rules need work. A firmware without a por
 ### Web gallery
 
 ```sh
-mise run web          # builds the browser core and patchkit.wasm, generates the module bundle, serves http://localhost:4321 (home; the emulator is /emulator/, patching and flashing /firmware/, modules /transfer/)
+pnpm dev              # builds the browser core and patchkit.wasm, generates the module bundle, serves http://localhost:4321 (home; the emulator is /emulator/, patching and flashing /firmware/, modules /transfer/)
 ```
 
 Open `/firmware/`. Choose your own stock `.syx` (it is read in the browser and never uploaded): the page patches the runtime set
@@ -243,7 +243,7 @@ starts the patched image in the browser core (screen and controls, no DSP audio 
 `/transfer/`. The page reads module.toml at build time. `patchkit.wasm` reads
 `public/modules/bundle.json`, which `apps/web/scripts/gen-modules.mjs` generates from the committed `modules/` and
 `devices/ports/` (never from `out/`). `patchkit.wasm` produces the same bytes as the command line (`apps/web/tests/patchkit.test.mjs`). The
-first `mise run web` in a fresh tree compiles the browser cores and takes several minutes.
+first `pnpm dev` in a fresh tree compiles the browser cores and takes several minutes.
 
 ## How it works
 
@@ -323,7 +323,7 @@ The manifest has `[module]`, `[targets]`, `[[object]]`, `[[op]]`, `[[claim]]`, `
 |---|---|---|---|
 | `cf.flash_cave` | zero padding at the end of the MAIN OS image | about 2 KB | the 54-byte expansion loader only |
 | `cf.expansion` | RAM above the DMA arena: DT2 `0x47e8b000-0x47fe0000`, DN2 1.12 `0x4671a000-0x47fe0000` | 1.33 MiB (DT2), 24.8 MiB (DN2) | module ColdFire code, data, bss, registry tables |
-| `dsp.l2` | free SHARC+ L2 behind the loaded stream | 922,756 B (DT2), 491,972 B (DN2) | module DSP code and data |
+| `dsp.l2` | free SHARC+ L2 behind the loaded stream | 914,564 B (DT2), 466,372 B (DN2), below the cache range at 0x200fa000 (finding 100) | module DSP code and data |
 
 **Expansion segment and loader.** ColdFire code does not fit in the image, so patchkit appends the module payloads
 to the MAIN OS image as a chain `[len][dest][bss][payload] ... [0xffffffff]` and adds the built-in `core/expansion`

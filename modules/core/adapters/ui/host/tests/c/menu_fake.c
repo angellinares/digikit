@@ -19,7 +19,8 @@ static struct {
     DkrtScan e[DKRT_SCAN_MAX];
     uint32_t arena[DKRT_SCAN_MAX]; /* bytes the entry takes in the arena */
     DkrtSelection sel;
-    int scan_result;
+    int scan_result, get_result;
+    DkrtBootInfo boot;
     int fx_n;
     DkrtFx fx[MAX_FXR];
     uint32_t send_slots;
@@ -32,7 +33,6 @@ static struct {
     char put_key[2][48];
     uint8_t put_val[2];
     int flushes;
-    int debug;
     uint32_t blocks;
 } fk;
 static int settings_runs, settings_acts;
@@ -49,6 +49,8 @@ void dk_ui_stock_row(uint8_t *stock_menu, const char *text, dk_ui_act_fn *fn, vo
 
 int32_t dkrt_selection_get(DkrtSelection *out)
 {
+    if (fk.get_result != DKRT_OK)
+        return fk.get_result;
     memcpy(out, &fk.sel, sizeof *out);
     return DKRT_OK;
 }
@@ -68,7 +70,7 @@ int32_t dkrt_restart(void)
 
 void dkrt_boot_info(DkrtBootInfo *out)
 {
-    memset(out, 0, sizeof *out);
+    memcpy(out, &fk.boot, sizeof *out);
 }
 
 void dkrt_status(DkrtStatus *out)
@@ -107,13 +109,6 @@ void dkrt_poll_set(uintptr_t f)
 void dkrt_diag(DkrtDiag *out)
 {
     memset(out, 0, sizeof *out);
-    out->debug_on = (uint32_t)fk.debug;
-}
-
-int32_t dkrt_debug_set(uint32_t on)
-{
-    fk.debug = (int)on;
-    return DKRT_OK;
 }
 
 int32_t dkrt_scan(DkrtScan *out, uint32_t max)
@@ -222,7 +217,9 @@ void fk_reset(void)
     g_main = g_about = DK_HEALTH_MENU = g_mem = g_modules = g_info = 0;
     memset(g_set, 0, sizeof g_set);
     g_safe_shown = 0;
+    g_hdr = g_lead = 0;
     STORE = 0;
+    g_selection_error = 0;
     NENT = 0;
     memset(TICK, 0, sizeof TICK);
 }
@@ -328,5 +325,11 @@ int fk_puts(void) { return fk.puts; }
 const char *fk_put_key(int i) { return fk.put_key[i]; }
 int fk_put_val(int i) { return fk.put_val[i]; }
 int fk_flushes(void) { return fk.flushes; }
-int fk_debug(void) { return fk.debug; }
 int fk_tick(int i) { return TICK[i]; }
+
+void fk_get_result(int r) { fk.get_result = r; }
+void fk_apply(void) { apply(); }
+void fk_boot_safe(void) { fk.boot.safe = 1; fk.boot.reason = DKRT_SAFE_COUNTER; }
+void fk_boot_read_failure(void) { fk.boot.safe = 1; fk.boot.reason = DKRT_SAFE_READ; fk.boot.count = 1; }
+
+void fk_set_tick(int row, int on) { set_tick(row, on); }

@@ -29,6 +29,53 @@
 //! `--dsp-peek NAME=ADDR:LEN[:BLOCK]` (repeatable) puts the SHA-256 of a DSP memory range into each
 //! scenario's report (`dsp_peek`), read after the scenario ends; `tools/firmware/l2canary.py` uses it.
 //!
+//! `--cold-base SHA256` runs `--syx`, a patched build of the stock firmware SHA256, that has no
+//! ready snapshot of its own. With `--dsp zero` each scenario boots it from reset to the ready
+//! state instead of loading `--cf-snapshot`. Without `--card-image` the runtime gives the
+//! firmware an empty +Drive.
+//!
+//! With `--dsp sharc`, `--cold-base` takes `--dsp-image IMAGE --dsp-cold-idle FILE`: the packed
+//! image and the DSP's first idle rest (`dsp_cold`), both made from the build's own section 7
+//! (steps 1 to 3 of `tools/emulator/ready.py`). The run boots the build once from reset with the
+//! SHARC on the DSPI2 link (`cold::boot_patched_to_ready`), and each scenario restores that ready
+//! pair. `--cold-save DIR` keeps the pair (and `boot-fault.json` of a boot that faults). A later
+//! run gives the pair as `--cf-snapshot DIR/digi-audio-m5.snap --dsp-state
+//! DIR/digi-audio-m5.snap.dsp` with the same `--cold-base` and `--dsp-image`, and does not boot.
+//! The report's `cold_boot` gives the boot's instructions, DSP frames and wall time.
+//!
+//! `--span-log PATH` writes every span pass as a JSON line `{"span", "at", "len"}` (`at` is the
+//! instruction count at the entry), with `-<name>` before the extension. Each span's report
+//! also gives `worst`: the index and the entry count of its longest pass.
+//!
+//! `--call PC:ARG[,ARG...]` (repeatable) calls a guest function at the ready point, before the
+//! scenario, in the given order (`Emulator::call_function`, gcc m68k ABI, interrupts masked, a
+//! scratch stack 1 KiB below the guest's). ARG is a number, or `*ADDR+OFF`: the long at ADDR,
+//! read at the call, plus OFF. The report lists each call's arguments, D0 and instructions.
+//!
+//! `--span-baseline STOCK.json` gates each scenario's spans against the same scenario and spans
+//! in an earlier stock report (`--out` of a stock run with the same options). A span fails when
+//! its `p50` or its `max` is more than its limit above stock: `--span-max NAME=N` (repeatable),
+//! else 1,000 instructions. A span also fails when its longest gap is more than its limit above
+//! stock's, or when it has more passes over its period than stock. The result is `gates.span_gate`, and a failure fails the run (exit 2).
+//! It also fails when it has more passes over the period at the unit's speed than stock
+//! (`length.over_unit_period`: length x `--unit-scale`, default 1.21, above the period).
+//! `tests/scenarios/dn2-load.json` holds the load scenarios for the gate. `--scenarios` is
+//! repeatable, so one run can take `dn2.json` and `dn2-load.json`.
+//!
+//! `--late-send-window LO,HI` times each DSPI2 exchange, when a frame goes to the DSP side, and
+//! flags each frame whose gap from the previous exchange is LO to HI ms of emulated time (at
+//! `DIGI_CF_IPS`: 0.667 ms is one period). The report gives `late_send`: the frames, the flagged
+//! ones and their counts. `--drop-late-sends` also drops each flagged frame: the DSP side gets the
+//! previous frame again (a model of the loss on a unit, finding 04). `--drop-sends N[,N...]` drops
+//! the chosen exchanges by number (1 is the first of the run), whatever their gap. The report's
+//! `late_send.dropped_at` gives each dropped exchange with its instruction count.
+//!
+//! `--span NAME=ENTRY:EXIT` (repeatable) records the ColdFire instructions from ENTRY to EXIT on each
+//! pass and between two entries, from the start of the sample phase (`spans` in the report: count,
+//! min, mean, p50, p99, max and `over_period`, a period being one DSPI2 frame at `DIGI_CF_IPS`). On
+//! DN2 1.11 and 1.12 the vector-191 handler is `isr=0x40025e36:0x40027bc6` (its only `rte`), and
+//! evaluator A is `evala=0x400272d4:0x400272da` (finding 04).
+//!
 //! `--replay FILE` runs only the scenario in FILE (a scenario object, or a desktop
 //! diagnostics export carrying a `recorded_scenario`); it ignores `--scenario` and
 //! the scenarios file. `--wav PATH` writes the emulator's own PCM to PATH (a float
@@ -50,11 +97,12 @@
 
 use digi_coupled::{
     AudioMode, AudioOptions, CoupledRuntime, ExecutionProfile, STEP_CHUNK, TierCounters,
-    WorkerReport, common,
+    WorkerReport, cold, common,
     scenario::{
-        DEFAULT_SCENARIOS, Event, FRAMES_PER_SECOND, Scenario, When,
-        cf_instructions_per_second, find_scenario, fire, parse_scenario, parse_scenarios,
+        DEFAULT_SCENARIOS, Event, FRAMES_PER_SECOND, Scenario, When, cf_instructions_per_second,
+        find_scenario, fire, parse_scenario, parse_scenarios,
     },
+    span_gate::{self, Limits},
 };
 #[cfg(feature = "region-profile")]
 use digi_coupled::{RegionCost, RegionProfile};
@@ -77,7 +125,8 @@ struct Args {
     image: PathBuf,
     state: PathBuf,
     snapshot: PathBuf,
-    scenarios: Option<PathBuf>,
+    /// `--scenarios FILE` (repeatable): scenario files, read in order. None: the embedded `dn2.json`.
+    scenarios: Vec<PathBuf>,
     names: Vec<String>,
     seconds: Option<f64>,
     playback: bool,
@@ -97,6 +146,33 @@ struct Args {
     peeks: Vec<(String, Peek)>,
     /// `--dsp-peek NAME=ADDR:LEN`: DSP memory ranges hashed at the end of each scenario.
     dsp_peeks: Vec<(String, u32, usize, usize)>,
+    /// `--span NAME=ENTRY:EXIT`: ColdFire instruction spans between two PCs.
+    spans: Vec<(String, u32, u32)>,
+    /// `--cold-base SHA256`: `--syx` is a patched build of the stock firmware SHA256. With
+    /// `--dsp zero` each scenario boots it from reset. With `--dsp sharc` the run boots it once
+    /// from reset with the DSP of `--dsp-cold-idle`, or restores a pair saved by an earlier run.
+    cold_base: Option<String>,
+    /// `--dsp-cold-idle FILE`: the DSP's state at its first idle rest (`dsp_cold`'s output) for
+    /// the `--cold-base` boot with `--dsp sharc`.
+    cold_idle: Option<PathBuf>,
+    /// `--cold-save DIR`: where the `--cold-base` boot with `--dsp sharc` keeps its ready pair.
+    cold_save: Option<PathBuf>,
+    /// `--call PC:ARG[,ARG...]`: guest functions called at the ready point, before the scenario.
+    calls: Vec<(u32, Vec<CallArg>)>,
+    /// `--span-log PATH`: every span pass as a JSON line, `-<scenario>` before the extension.
+    span_log: Option<PathBuf>,
+    /// `--late-send-window LO,HI`: the gap window in ms.
+    late_send: Option<(f64, f64)>,
+    /// `--drop-late-sends`: the DSP side does not receive a flagged frame.
+    drop_late_sends: bool,
+    /// `--drop-sends N[,N...]`: exchange numbers to drop whatever their gap.
+    drop_sends: Vec<u64>,
+    /// `--unit-scale X`: the unit's DTCN0 ticks per emulator instruction in a heavy handler pass.
+    unit_scale: f64,
+    /// `--span-baseline STOCK.json`: the stock report the spans are gated against.
+    span_baseline: Option<Value>,
+    /// `--span-max NAME=N`: the extra instructions over stock a span may add.
+    span_limits: Limits,
     /// `--dsp zero`: the DSP side answers zeros (no SHARC engine, no PCM).
     zero: bool,
     /// `--trace`: one entry per chunk in each scenario's `trace`.
@@ -132,6 +208,191 @@ fn parse_num(t: &str) -> Result<u32, String> {
         None => t.parse(),
     };
     r.map_err(|_| format!("bad number {t:?}"))
+}
+
+/// One `--call` argument: a number, or the long at an address plus an offset.
+#[derive(Clone, Copy, Debug)]
+enum CallArg {
+    Value(u32),
+    Pointer { addr: u32, off: u32 },
+}
+
+/// `PC:ARG[,ARG...]`, ARG a number or `*ADDR+OFF` (the long at ADDR, read at the call, plus OFF).
+fn parse_call(spec: &str) -> Result<(u32, Vec<CallArg>), String> {
+    let (pc, rest) = spec.split_once(':').unwrap_or((spec, ""));
+    let args = rest
+        .split(',')
+        .filter(|a| !a.is_empty())
+        .map(|a| match a.strip_prefix('*') {
+            Some(p) => {
+                let (addr, off) = p.split_once('+').unwrap_or((p, "0"));
+                Ok(CallArg::Pointer {
+                    addr: parse_num(addr)?,
+                    off: parse_num(off)?,
+                })
+            }
+            None => parse_num(a).map(CallArg::Value),
+        })
+        .collect::<Result<Vec<_>, String>>()?;
+    Ok((parse_num(pc)?, args))
+}
+
+/// The address a call returns to: compared with the PC, never executed (as in `cf_call`).
+const CALL_RETURN: u32 = 0x47fd_f000;
+/// Bytes between the guest's stack pointer and the call's scratch stack.
+const CALL_STACK_GAP: u32 = 0x400;
+
+/// Run `--call`s in order with interrupts masked, on a scratch stack below the guest's.
+fn do_calls(rt: &mut CoupledRuntime, calls: &[(u32, Vec<CallArg>)]) -> Result<Value, String> {
+    let mut out = Vec::new();
+    for (pc, args) in calls {
+        let values = args
+            .iter()
+            .map(|arg| match *arg {
+                CallArg::Value(v) => Ok(v),
+                CallArg::Pointer { addr, off } => rt
+                    .peek32(addr)
+                    .map(|v| v.wrapping_add(off))
+                    .ok_or(format!("--call: cannot read {addr:#010x}")),
+            })
+            .collect::<Result<Vec<u32>, String>>()?;
+        let (_, a, _, _) = rt.cpu_regs();
+        let spec = elektron_native_boot::CallSpec {
+            pc: *pc,
+            args: values.clone(),
+            sp: (a[7] - CALL_STACK_GAP) & !3,
+            ret_pc: CALL_RETURN,
+            sr: 0x2700,
+            max_insns: 5_000_000,
+        };
+        let r = rt.call_function(&spec)?;
+        if !r.finished {
+            return Err(format!(
+                "--call {pc:#010x} did not return: pc {:#010x}, {:?}",
+                r.pc, r.error
+            ));
+        }
+        out.push(json!({
+            "pc": format!("{pc:#010x}"),
+            "args": values.iter().map(|v| format!("{v:#x}")).collect::<Vec<_>>(),
+            "d0": format!("{:#x}", r.d[0]),
+            "instructions": r.insns,
+        }));
+    }
+    Ok(Value::Array(out))
+}
+
+/// `NAME=ENTRY:EXIT`: two ColdFire PCs.
+/// One DIN byte on the wire in instructions (320 us at `DIGI_CF_IPS`).
+fn wire_period() -> u64 {
+    elektron_native_boot::clock::scale_instr(
+        elektron_native_boot::midi::WIRE_PERIOD,
+        elektron_native_boot::clock::cf_ips(),
+    )
+}
+
+/// Most channel messages `out_events` lists.
+const MIDI_EVENTS_MAX: usize = 2000;
+
+/// The channel messages (status 0x80 to 0xEF, with their data bytes) in the DIN output. Each gets
+/// `at`: the instruction count (from ready) at the end of the chunk that moved its bytes, plus one
+/// wire period for each byte before it in that chunk. The model moves a transfer's bytes at once, so
+/// `at` is when the status byte is on the wire, within one chunk. A message the sender put inside a
+/// SysEx message gets `in_sysex`: a receiver ends the SysEx at its status byte.
+fn midi_out_events(log: &[(u64, Vec<u8>)], wire: u64) -> Value {
+    let mut events = Vec::new();
+    let mut in_sysex = false;
+    // The message being read: its time, its bytes, the data bytes still due, and whether a SysEx was open.
+    let mut current: Option<(u64, Vec<u8>, usize, bool)> = None;
+    for (end, bytes) in log {
+        for (i, &b) in bytes.iter().enumerate() {
+            let at = end + i as u64 * wire;
+            if b >= 0xf8 {
+                continue; // real-time bytes may come anywhere
+            }
+            if let Some((_, msg, due, _)) = current.as_mut()
+                && *due > 0
+                && b < 0x80
+            {
+                msg.push(b);
+                *due -= 1;
+                if *due == 0 {
+                    let (at, msg, _, sysex) = current.take().expect("message");
+                    if events.len() < MIDI_EVENTS_MAX {
+                        let hex: Vec<String> = msg.iter().map(|b| format!("{b:02x}")).collect();
+                        events.push(json!({"at": at, "bytes": hex.join(" "), "in_sysex": sysex}));
+                    }
+                }
+                continue;
+            }
+            current = None;
+            match b {
+                0xf0 => in_sysex = true,
+                0xf7 => in_sysex = false,
+                0x80..=0xef => {
+                    let due = if matches!(b & 0xf0, 0xc0 | 0xd0) {
+                        1
+                    } else {
+                        2
+                    };
+                    current = Some((at, vec![b], due, in_sysex));
+                }
+                _ => {}
+            }
+        }
+    }
+    Value::Array(events)
+}
+
+/// The unit's DTCN0 ticks per emulator instruction in a heavy pass of the DN2 1.11 audio handler.
+/// Measured on one unit with stock 1.11 and a 16-track pattern at 120 BPM: the step passes take
+/// 91 to 100 % of a frame on the unit and 68,000 to 70,000 instructions here (`INSTRUMENTATION.md`).
+const UNIT_SCALE: f64 = 1.21;
+
+/// `X`: a positive scale.
+fn parse_unit_scale(spec: &str) -> Result<f64, String> {
+    match spec.trim().parse::<f64>() {
+        Ok(x) if x.is_finite() && x > 0.0 => Ok(x),
+        _ => Err(format!("--unit-scale: {spec} is not a positive number")),
+    }
+}
+
+/// `N[,N...]`: exchange numbers, 1 or more.
+fn parse_drop_sends(spec: &str) -> Result<Vec<u64>, String> {
+    spec.split(',')
+        .map(|v| match v.trim().parse::<u64>() {
+            Ok(n) if n >= 1 => Ok(n),
+            _ => Err(format!(
+                "--drop-sends: {v} is not an exchange number (1 or more)"
+            )),
+        })
+        .collect()
+}
+
+fn parse_late_send(spec: &str) -> Result<(f64, f64), String> {
+    let (lo, hi) = spec
+        .split_once(',')
+        .ok_or("--late-send-window needs LO,HI in ms")?;
+    let ms = |v: &str| {
+        v.parse::<f64>()
+            .ok()
+            .filter(|v| v.is_finite() && *v >= 0.0)
+            .ok_or(format!("--late-send-window: {v} is not a time in ms"))
+    };
+    let (lo, hi) = (ms(lo)?, ms(hi)?);
+    if lo > hi {
+        return Err("--late-send-window needs LO <= HI".into());
+    }
+    Ok((lo, hi))
+}
+
+fn parse_span(spec: &str) -> Result<(String, u32, u32), String> {
+    let (name, rest) = spec.split_once('=').ok_or("--span needs NAME=ENTRY:EXIT")?;
+    let (entry, exit) = rest.split_once(':').ok_or("--span needs ENTRY:EXIT")?;
+    if name.is_empty() {
+        return Err("--span needs a NAME".into());
+    }
+    Ok((name.to_owned(), parse_num(entry)?, parse_num(exit)?))
 }
 
 /// `NAME=ADDR:LEN[:BLOCK]`: BLOCK (a power of two, at most LEN) also lists a hash of every
@@ -206,7 +467,15 @@ fn parse_peek(spec: &str) -> Result<(String, Peek), String> {
         Some(_) => return Err("+OFF needs a leading *".into()),
         None => (parse_num(loc)?, 0),
     };
-    Ok((name.to_string(), Peek { addr, hop, off, len }))
+    Ok((
+        name.to_string(),
+        Peek {
+            addr,
+            hop,
+            off,
+            len,
+        },
+    ))
 }
 
 fn read_bytes(rt: &mut CoupledRuntime, addr: u32, len: usize) -> Option<Vec<u8>> {
@@ -238,12 +507,16 @@ fn do_peeks(rt: &mut CoupledRuntime, peeks: &[(String, Peek)]) -> Value {
 }
 
 fn parse_args() -> Result<Args, String> {
+    parse_args_from(std::env::args().skip(1))
+}
+
+fn parse_args_from(args: impl IntoIterator<Item = String>) -> Result<Args, String> {
     let mut a = Args {
         syx: "firmware/Digitone_II_OS1.12.syx".into(),
         image: PathBuf::new(),
         state: PathBuf::new(),
         snapshot: PathBuf::new(),
-        scenarios: None,
+        scenarios: Vec::new(),
         names: Vec::new(),
         seconds: None,
         playback: false,
@@ -262,11 +535,23 @@ fn parse_args() -> Result<Args, String> {
         card: None,
         peeks: Vec::new(),
         dsp_peeks: Vec::new(),
+        spans: Vec::new(),
+        cold_base: None,
+        cold_idle: None,
+        cold_save: None,
+        calls: Vec::new(),
+        span_log: None,
+        late_send: None,
+        drop_late_sends: false,
+        drop_sends: Vec::new(),
+        unit_scale: UNIT_SCALE,
+        span_baseline: None,
+        span_limits: Limits::default(),
         zero: false,
         trace: false,
         guard: None,
     };
-    let mut it = std::env::args().skip(1);
+    let mut it = args.into_iter();
     while let Some(flag) = it.next() {
         let mut value = |what: &str| it.next().ok_or(format!("{what} needs a value"));
         match flag.as_str() {
@@ -276,7 +561,7 @@ fn parse_args() -> Result<Args, String> {
             "--cf-snapshot" => a.snapshot = value("--cf-snapshot")?.into(),
             "--dsp-patch" => a.dsp_patch = Some(value("--dsp-patch")?.into()),
             "--card-image" => a.card = Some(value("--card-image")?.into()),
-            "--scenarios" => a.scenarios = Some(value("--scenarios")?.into()),
+            "--scenarios" => a.scenarios.push(value("--scenarios")?.into()),
             "--scenario" => a.names.push(value("--scenario")?),
             "--seconds" => {
                 a.seconds = Some(value("--seconds")?.parse().map_err(|_| "bad --seconds")?)
@@ -296,6 +581,30 @@ fn parse_args() -> Result<Args, String> {
             "--replay" => a.replay = Some(value("--replay")?.into()),
             "--peek" => a.peeks.push(parse_peek(&value("--peek")?)?),
             "--dsp-peek" => a.dsp_peeks.push(parse_dsp_peek(&value("--dsp-peek")?)?),
+            "--span" => a.spans.push(parse_span(&value("--span")?)?),
+            "--cold-base" => a.cold_base = Some(value("--cold-base")?),
+            "--dsp-cold-idle" => a.cold_idle = Some(value("--dsp-cold-idle")?.into()),
+            "--cold-save" => a.cold_save = Some(value("--cold-save")?.into()),
+            "--call" => a.calls.push(parse_call(&value("--call")?)?),
+            "--span-log" => a.span_log = Some(value("--span-log")?.into()),
+            "--late-send-window" => {
+                a.late_send = Some(parse_late_send(&value("--late-send-window")?)?)
+            }
+            "--drop-late-sends" => a.drop_late_sends = true,
+            "--unit-scale" => a.unit_scale = parse_unit_scale(&value("--unit-scale")?)?,
+            "--drop-sends" => a
+                .drop_sends
+                .extend(parse_drop_sends(&value("--drop-sends")?)?),
+            "--span-baseline" => {
+                let path = value("--span-baseline")?;
+                let text = fs::read_to_string(&path).map_err(|e| format!("{path}: {e}"))?;
+                a.span_baseline =
+                    Some(serde_json::from_str(&text).map_err(|e| format!("{path}: {e}"))?);
+            }
+            "--span-max" => a
+                .span_limits
+                .per_span
+                .push(span_gate::parse_limit(&value("--span-max")?)?),
             "--wav" => a.wav = Some(value("--wav")?.into()),
             "--dump-dsp" => a.dump_dsp = Some(value("--dump-dsp")?.into()),
             "--audio-mode" => a.audio_mode = AudioMode::parse(&value("--audio-mode")?)?,
@@ -312,11 +621,21 @@ fn parse_args() -> Result<Args, String> {
                 let text = std::fs::read_to_string(&path).map_err(|e| format!("{path}: {e}"))?;
                 let spec: Value =
                     serde_json::from_str(&text).map_err(|e| format!("{path}: {e}"))?;
-                elektron_native_boot::parse_guard_spec(&spec).map_err(|e| format!("{path}: {e}"))?;
+                elektron_native_boot::parse_guard_spec(&spec)
+                    .map_err(|e| format!("{path}: {e}"))?;
                 a.guard = Some(spec);
             }
             other => return Err(format!("unknown option {other}")),
         }
+    }
+    if a.drop_late_sends && a.late_send.is_none() {
+        return Err("--drop-late-sends needs --late-send-window".into());
+    }
+    if a.span_baseline.is_some() && a.spans.is_empty() {
+        return Err("--span-baseline needs at least one --span".into());
+    }
+    if !a.span_limits.per_span.is_empty() && a.span_baseline.is_none() {
+        return Err("--span-max needs --span-baseline".into());
     }
     if a.zero {
         if a.playback || a.profile_regions || a.profile_execution {
@@ -325,17 +644,50 @@ fn parse_args() -> Result<Args, String> {
                     .into(),
             );
         }
-        if !a.list && a.snapshot.as_os_str().is_empty() {
-            return Err("--cf-snapshot is required".into());
+        if !a.list && a.snapshot.as_os_str().is_empty() && a.cold_base.is_none() {
+            return Err("--cf-snapshot or --cold-base is required".into());
         }
-    } else if !a.list
-        && (a.image.as_os_str().is_empty()
-            || a.state.as_os_str().is_empty()
-            || a.snapshot.as_os_str().is_empty())
-    {
-        return Err("--dsp-image, --dsp-state and --cf-snapshot are required".into());
+    }
+    if (a.cold_idle.is_some() || a.cold_save.is_some()) && (a.zero || a.cold_base.is_none()) {
+        return Err("--dsp-cold-idle and --cold-save need --cold-base with --dsp sharc".into());
+    }
+    if !a.zero && !a.list {
+        check_sharc_inputs(&a)?;
     }
     Ok(a)
+}
+
+/// The DSP inputs of a `--dsp sharc` run. A stock build restores `--cf-snapshot` and
+/// `--dsp-state`. A `--cold-base` build boots once with `--dsp-cold-idle`, or restores the pair
+/// that such a boot saved.
+fn check_sharc_inputs(a: &Args) -> Result<(), String> {
+    let set = |p: &Path| !p.as_os_str().is_empty();
+    if a.cold_base.is_none() {
+        if set(&a.image) && set(&a.state) && set(&a.snapshot) {
+            return Ok(());
+        }
+        return Err("--dsp-image, --dsp-state and --cf-snapshot are required".into());
+    }
+    if a.dsp_patch.is_some() {
+        return Err("--cold-base with --dsp sharc takes the DSP from --dsp-image: make the image from the build's own section 7, not with --dsp-patch".into());
+    }
+    if !set(&a.image) {
+        return Err("--cold-base with --dsp sharc needs --dsp-image".into());
+    }
+    if a.cold_save.is_some() && a.cold_idle.is_none() {
+        return Err("--cold-save needs --dsp-cold-idle".into());
+    }
+    match (a.cold_idle.is_some(), set(&a.snapshot), set(&a.state)) {
+        (true, false, false) | (false, true, true) => Ok(()),
+        (true, _, _) => Err(
+            "--dsp-cold-idle boots the build: leave out --cf-snapshot and --dsp-state".into(),
+        ),
+        (false, false, false) => Err(
+            "--cold-base with --dsp sharc needs --dsp-cold-idle, or --cf-snapshot and --dsp-state of a saved pair"
+                .into(),
+        ),
+        _ => Err("a saved pair needs both --cf-snapshot and --dsp-state".into()),
+    }
 }
 
 fn percentile(sorted: &[u32], p: f64) -> u32 {
@@ -682,6 +1034,101 @@ fn probe(rt: &mut CoupledRuntime) -> Result<Probe, String> {
     })
 }
 
+/// Most ColdFire instructions a `--cold-base` boot may take to reach the ready state.
+const COLD_BOOT_LIMIT: u64 = 4_000_000_000;
+
+/// `--cold-base`: a patched build booted from reset with the zero DSP peer, stepped to the
+/// ready state. Its scenario clock starts there, as after a snapshot restore.
+fn cold_zero_runtime(
+    syx: &[u8],
+    card: Option<emmc_card::Card>,
+    base: &str,
+) -> Result<CoupledRuntime, String> {
+    let started = Instant::now();
+    let mut rt = CoupledRuntime::new_patched(syx, card, base)?;
+    rt.enable_zero_dsp_timing()?;
+    loop {
+        let status = rt.step_chunk(STEP_CHUNK).status;
+        if let Some(error) = status.error {
+            return Err(format!("cold boot stopped at {:#010x}: {error}", status.pc));
+        }
+        if status.ready {
+            break;
+        }
+        if status.icount > COLD_BOOT_LIMIT {
+            return Err(format!(
+                "cold boot: not ready after {} instructions (phase {})",
+                status.icount, status.phase
+            ));
+        }
+    }
+    rt.rebase_clock();
+    eprintln!(
+        "cold boot ready at {} instructions in {:.1}s",
+        rt.icount(),
+        started.elapsed().as_secs_f64()
+    );
+    Ok(rt)
+}
+
+/// `--cold-base` with `--dsp sharc` and `--dsp-cold-idle`: boot the patched build once from
+/// reset with the SHARC on the DSPI2 link, and save the ready pair in `dir`. Each scenario then
+/// restores the pair (`CoupledRuntime::new_patched_audio`).
+fn cold_sharc_boot(
+    args: &Args,
+    syx: &[u8],
+    base: &str,
+    cold_idle: &Path,
+    dir: &Path,
+) -> Result<cold::ColdReport, String> {
+    let card = args
+        .card
+        .as_deref()
+        .map(elektron_native_boot::card_file::card_from_image)
+        .transpose()?;
+    let inputs = cold::ColdInputs {
+        initial_buttons: Vec::new(),
+        deliver_exceptions: false,
+        image: args.image.clone(),
+        cold_idle: cold_idle.to_path_buf(),
+        cold_state: None,
+        dsp_patch: None,
+        relax_fs_check: false,
+        reset_out: None,
+        keep_ram: None,
+    };
+    let cancel = std::sync::atomic::AtomicBool::new(false);
+    let mut next = 0;
+    let report = cold::boot_patched_to_ready(syx, card, base, &inputs, dir, &cancel, |p| {
+        if p.icount >= next {
+            eprintln!(
+                "cold boot: {} M instructions, {} DSP frames, {:.0} s",
+                p.icount / 1_000_000,
+                p.frames,
+                p.wall_seconds
+            );
+            next = p.icount + 200_000_000;
+        }
+    })?;
+    eprintln!(
+        "cold boot ready at {} instructions, {} DSP frames, in {:.1}s (pair in {})",
+        report.icount,
+        report.frames,
+        report.wall_seconds,
+        dir.display()
+    );
+    Ok(report)
+}
+
+/// A directory removed when dropped: the ready pair of a run without `--cold-save`.
+struct TempDir(PathBuf);
+
+impl Drop for TempDir {
+    fn drop(&mut self) {
+        let _ = fs::remove_dir_all(&self.0);
+    }
+}
+
 /// `base` with `-<name>` before its extension.
 fn wav_path_for(base: &Path, name: &str) -> PathBuf {
     let stem = base.file_stem().and_then(|s| s.to_str()).unwrap_or("out");
@@ -717,7 +1164,12 @@ fn run_scenario(
         .as_deref()
         .map(elektron_native_boot::card_file::card_from_image)
         .transpose()?;
-    let mut rt = CoupledRuntime::new(syx, card, Some(&options))?;
+    let mut rt = match (&args.cold_base, args.zero) {
+        (Some(base), true) => cold_zero_runtime(syx, card, base)?,
+        // The pair of `cold_sharc_boot` or of an earlier `--cold-save`.
+        (Some(base), false) => CoupledRuntime::new_patched_audio(syx, card, base, &options)?,
+        (None, _) => CoupledRuntime::new(syx, card, Some(&options))?,
+    };
     if let Some(spec) = &args.guard {
         let (protect, allow_pc) = elektron_native_boot::parse_guard_spec(spec)?;
         rt.set_write_guards(protect, allow_pc);
@@ -758,8 +1210,20 @@ fn run_scenario(
         sc.instructions
     };
 
+    let calls = do_calls(&mut rt, &args.calls)?;
     #[cfg(feature = "cf-mix")]
     rt.cf_mix_reset();
+    for (name, entry, exit) in &args.spans {
+        rt.add_span(name, *entry, *exit);
+    }
+    if args.late_send.is_some() || !args.drop_sends.is_empty() {
+        let instr = |ms: f64| (ms / 1000.0 * cf_instructions_per_second()).round() as u64;
+        // No window: an empty one (LO > HI) flags nothing, and only the chosen sends drop.
+        let (lo, hi) = args
+            .late_send
+            .map_or((1, 0), |(lo, hi)| (instr(lo), instr(hi)));
+        rt.set_late_send(lo, hi, args.drop_late_sends, args.drop_sends.clone());
+    }
     let start = probe(&mut rt)?;
     let initial_audio_health = rt.audio_report().unwrap_or(Value::Null);
     let start_health = json!({
@@ -784,6 +1248,8 @@ fn run_scenario(
         When::Frames(n) => (1, n),
     });
     let mut chunks = 0u64;
+    // DIN output bytes and the instruction count (from ready) at the end of the chunk that moved them.
+    let mut midi_out_log: Vec<(u64, Vec<u8>)> = Vec::new();
     let mut trace = Vec::new();
     let (mut last_fb, mut last_leds, mut last_rgb) = (String::new(), String::new(), String::new());
     loop {
@@ -818,6 +1284,10 @@ fn run_scenario(
             budget = budget.min((n - elapsed).min(u64::from(u32::MAX)) as u32);
         }
         let snap = rt.step_chunk(budget);
+        let out = rt.take_midi_out();
+        if !out.is_empty() {
+            midi_out_log.push((rt.elapsed_instructions(), out));
+        }
         let status = snap.status;
         chunks += 1;
         if args.trace {
@@ -883,7 +1353,37 @@ fn run_scenario(
             .map_err(|e| format!("{}: {e}", path.display()))?;
     }
     let peek = do_peeks(&mut rt, &args.peeks);
+    let tail = rt.take_midi_out();
+    if !tail.is_empty() {
+        midi_out_log.push((rt.elapsed_instructions(), tail));
+    }
+    let midi_out: Vec<u8> = midi_out_log
+        .iter()
+        .flat_map(|(_, b)| b.iter().copied())
+        .collect();
+    let midi = {
+        let status = rt.midi_status();
+        json!({
+            "in_bytes": status.rx_bytes, "in_irqs": status.rx_irqs, "in_queued": status.queued,
+            "out_bytes": midi_out.len(), "out_transfers": status.tx_dma, "out_irqs": status.tx_irqs,
+            "out_head": midi_out.iter().take(48).map(|b| format!("{b:02x}")).collect::<Vec<_>>().join(" "),
+            "out_events": midi_out_events(&midi_out_log, wire_period()),
+        })
+    };
     let dsp_peek = do_dsp_peeks(&mut rt, &args.dsp_peeks);
+    let spans = rt.spans_report(
+        (cf_instructions_per_second() / FRAMES_PER_SECOND).round() as u64,
+        args.unit_scale,
+    );
+    if let Some(base) = &args.span_log {
+        let path = wav_path_for(base, &sc.name);
+        let mut text = String::new();
+        for (name, at, len) in rt.span_passes() {
+            text.push_str(&json!({"span": name, "at": at, "len": len}).to_string());
+            text.push('\n');
+        }
+        std::fs::write(&path, text).map_err(|e| format!("{}: {e}", path.display()))?;
+    }
     let dsp_dump = match &args.dump_dsp {
         Some(base) => {
             let path = wav_path_for(base, &sc.name);
@@ -914,6 +1414,8 @@ fn run_scenario(
     let wall = end.wall.duration_since(start.wall).as_secs_f64();
     let cf_cpu = (end.cf_cpu_ns - start.cf_cpu_ns) as f64 / 1e9;
     let dsp_cpu = (end.worker.cpu_ns - start.worker.cpu_ns) as f64 / 1e9;
+    let dsp_cycles = end.worker.cycles.saturating_sub(start.worker.cycles);
+    let dsp_insns = end.worker.insns.saturating_sub(start.worker.insns);
     let tap = rt.pcm_tap();
     let audio_s = match tap {
         Some(t) => t.seconds(),
@@ -993,6 +1495,8 @@ fn run_scenario(
         "cpu": {
             "dsp_thread_s": dsp_cpu, "cf_thread_s": cf_cpu,
             "dsp_thread_per_audio_s": per(dsp_cpu), "cf_thread_per_audio_s": per(cf_cpu),
+            "dsp_thread_cycles_per_audio_s": per(dsp_cycles as f64),
+            "dsp_thread_insns_per_audio_s": per(dsp_insns as f64),
             "dsp_thread_busy_of_wall": dsp_cpu / wall.max(1e-9),
             "cf_thread_busy_of_wall": cf_cpu / wall.max(1e-9),
             "clock": "CLOCK_THREAD_CPUTIME_ID",
@@ -1014,9 +1518,13 @@ fn run_scenario(
         "pcm": pcm,
         "peek": peek,
         "dsp_peek": dsp_peek,
+        "spans": spans,
+        "late_send": rt.late_send_report(),
+        "calls": calls,
         "dsp_dump": dsp_dump,
         "gates": gates,
         "guard": guard,
+        "midi": midi,
         "trace": if args.trace { Value::Array(trace) } else { Value::Null },
     }))
 }
@@ -1038,7 +1546,7 @@ fn summary_line(r: &Value) -> String {
 }
 
 fn real_main() -> Result<bool, String> {
-    let args = parse_args()?;
+    let mut args = parse_args()?;
     if args.profile_regions && !cfg!(feature = "region-profile") {
         return Err(
             "--profile-regions needs a diagnostic rebuild with --features coupled-audio,region-profile"
@@ -1056,13 +1564,25 @@ fn real_main() -> Result<bool, String> {
             find_scenario(&root).ok_or_else(|| format!("{}: no scenario found", path.display()))?;
         vec![parse_scenario(found)?]
     } else {
-        let text = match &args.scenarios {
-            Some(path) => {
-                std::fs::read_to_string(path).map_err(|e| format!("{}: {e}", path.display()))?
+        let mut all: Vec<Scenario> = Vec::new();
+        if args.scenarios.is_empty() {
+            all = parse_scenarios(DEFAULT_SCENARIOS)?;
+        }
+        for path in &args.scenarios {
+            let text =
+                std::fs::read_to_string(path).map_err(|e| format!("{}: {e}", path.display()))?;
+            for sc in parse_scenarios(&text)? {
+                if all.iter().any(|s| s.name == sc.name) {
+                    return Err(format!(
+                        "{}: scenario {} is named twice",
+                        path.display(),
+                        sc.name
+                    ));
+                }
+                all.push(sc);
             }
-            None => DEFAULT_SCENARIOS.to_string(),
-        };
-        parse_scenarios(&text)?
+        }
+        all
     };
     if args.list {
         for s in &all {
@@ -1082,6 +1602,29 @@ fn real_main() -> Result<bool, String> {
         .filter(|s| args.replay.is_some() || args.names.is_empty() || args.names.contains(&s.name))
         .collect();
     let syx = std::fs::read(&args.syx).map_err(|e| format!("{}: {e}", args.syx.display()))?;
+    let mut cold_boot = Value::Null;
+    let mut _temp = None;
+    if let (Some(base), false, Some(idle)) =
+        (args.cold_base.clone(), args.zero, args.cold_idle.clone())
+    {
+        let dir = match &args.cold_save {
+            Some(dir) => dir.clone(),
+            None => {
+                let dir = std::env::temp_dir().join(format!("coupled-run-{}", std::process::id()));
+                _temp = Some(TempDir(dir.clone()));
+                dir
+            }
+        };
+        let r = cold_sharc_boot(&args, &syx, &base, &idle, &dir)?;
+        cold_boot = json!({
+            "icount": r.icount,
+            "dsp_frames": r.frames,
+            "wall_seconds": r.wall_seconds,
+            "saved": args.cold_save.as_ref().map(|_| dir.display().to_string()),
+        });
+        args.snapshot = r.snapshot;
+        args.state = r.dsp;
+    }
     let mut results = Vec::new();
     let several = chosen.len() > 1;
     for sc in chosen {
@@ -1093,8 +1636,18 @@ fn real_main() -> Result<bool, String> {
                 base.to_path_buf()
             }
         });
-        let r = run_scenario(&args, &syx, sc, wav.as_deref())?;
+        let mut r = run_scenario(&args, &syx, sc, wav.as_deref())?;
+        if let Some(stock) = &args.span_baseline {
+            let dsp = if args.zero { "zero" } else { "sharc" };
+            let gate = span_gate::check(&r, dsp, stock, &args.span_limits);
+            let ok = r["gates"]["ok"] == true && gate["ok"] == true;
+            r["gates"]["span_gate"] = gate;
+            r["gates"]["ok"] = json!(ok);
+        }
         println!("{}", summary_line(&r));
+        for line in span_gate::summary(&r["gates"]["span_gate"]) {
+            println!("{line}");
+        }
         results.push(r);
     }
     let ok = results.iter().all(|r| r["gates"]["ok"] == true);
@@ -1108,6 +1661,7 @@ fn real_main() -> Result<bool, String> {
             "DSP_IDLE_SKIP": std::env::var("DSP_IDLE_SKIP").ok(),
         },
         "dsp": if args.zero { "zero" } else { "sharc" },
+        "cold_boot": cold_boot,
         "audio_mode": args.audio_mode.name(),
         "pcm_tap": args.pcm_tap,
         "link_timing": args.link_timing,
@@ -1165,6 +1719,32 @@ mod tests {
     }
 
     #[test]
+    fn load_scenarios_parse_and_have_the_documented_names() {
+        let all =
+            parse_scenarios(include_str!("../../../../../tests/scenarios/dn2-load.json")).unwrap();
+        let names: Vec<_> = all.iter().map(|s| s.name.as_str()).collect();
+        assert_eq!(
+            names,
+            [
+                "load-seq16",
+                "load-turns",
+                "load-ptn-switch",
+                "load-kb-roll",
+                "load-midi-flood",
+                "load-lfo3",
+                "load-midi-out",
+                "load-sysex-send",
+                "load-sysex-keys"
+            ]
+        );
+        let defaults = parse_scenarios(DEFAULT_SCENARIOS).unwrap();
+        assert!(
+            all.iter()
+                .all(|s| defaults.iter().all(|d| d.name != s.name))
+        );
+    }
+
+    #[test]
     fn scenarios_need_exactly_one_end_and_a_valid_event() {
         let bad = |text: &str| parse_scenarios(text).unwrap_err();
         assert!(bad(r#"{"scenarios":[{"name":"x"}]}"#).contains("exactly one"));
@@ -1195,15 +1775,64 @@ mod tests {
     }
 
     #[test]
+    fn midi_out_events_skip_sysex_and_time_each_status() {
+        let log = vec![
+            (1000, vec![0xf0, 0x00, 0x20, 0x3c, 0xf7, 0x99, 60, 100]),
+            (
+                5000,
+                vec![0xb9, 48, 7, 0xf0, 0x10, 0x89, 60, 0, 0x10, 0x00, 0xf7],
+            ),
+        ];
+        let e = midi_out_events(&log, 10);
+        assert_eq!(e.as_array().unwrap().len(), 3);
+        assert_eq!(e[0]["at"], 1050);
+        assert_eq!(e[0]["bytes"], "99 3c 64");
+        assert_eq!(e[0]["in_sysex"], false);
+        assert_eq!(e[1]["at"], 5000);
+        assert_eq!(e[1]["bytes"], "b9 30 07");
+        // A note off the sender put inside a SysEx message: its data bytes end it, the SysEx bytes after it are skipped.
+        assert_eq!(e[2]["at"], 5050);
+        assert_eq!(e[2]["bytes"], "89 3c 00");
+        assert_eq!(e[2]["in_sysex"], true);
+    }
+
+    #[test]
+    fn late_send_windows_parse() {
+        assert_eq!(parse_late_send("0.739,0.772").unwrap(), (0.739, 0.772));
+        assert!(parse_late_send("0.8").is_err());
+        assert!(parse_late_send("0.8,0.7").is_err());
+        assert!(parse_late_send("-1,0.7").is_err());
+        assert_eq!(parse_drop_sends("120,7").unwrap(), [120, 7]);
+        assert!(parse_drop_sends("0").is_err());
+        assert!(parse_drop_sends("x").is_err());
+        assert_eq!(parse_unit_scale("1.21").unwrap(), 1.21);
+        assert!(parse_unit_scale("0").is_err());
+        assert!(parse_unit_scale("-1").is_err());
+    }
+
+    #[test]
     fn peek_specs_parse() {
         let (n, p) = parse_peek("br=*0x800052a0+0x106:2").unwrap();
         assert_eq!(n, "br");
         assert_eq!(
             p,
-            Peek { addr: 0x8000_52a0, hop: true, off: 0x106, len: 2 }
+            Peek {
+                addr: 0x8000_52a0,
+                hop: true,
+                off: 0x106,
+                len: 2
+            }
         );
         let (_, p) = parse_peek("x=2147500000:16").unwrap();
-        assert_eq!(p, Peek { addr: 2_147_500_000, hop: false, off: 0, len: 16 });
+        assert_eq!(
+            p,
+            Peek {
+                addr: 2_147_500_000,
+                hop: false,
+                off: 0,
+                len: 16
+            }
+        );
         assert!(parse_peek("x=0x10+4:2").is_err());
         assert!(parse_peek("x=0x10").is_err());
         assert!(parse_peek("x=0x10:0").is_err());
@@ -1238,5 +1867,80 @@ mod tests {
         assert_eq!(split["fast_tier"], 200);
         assert_eq!(split["other"], 0);
         assert_eq!(split["idle_skip"], 400);
+    }
+
+    fn parse(args: &[&str]) -> Result<Args, String> {
+        parse_args_from(args.iter().map(|s| s.to_string()))
+    }
+
+    #[test]
+    fn cold_base_with_the_sharc_boots_once_or_restores_a_saved_pair() {
+        let base = [
+            "--dsp",
+            "sharc",
+            "--cold-base",
+            "ab12",
+            "--dsp-image",
+            "i.bin",
+        ];
+        let with = |more: &[&str]| parse(&[&base[..], more].concat());
+        let boot = with(&["--dsp-cold-idle", "c.dsp", "--cold-save", "pair"]).unwrap();
+        assert_eq!(boot.cold_idle, Some("c.dsp".into()));
+        assert_eq!(boot.cold_save, Some("pair".into()));
+        assert!(with(&["--cf-snapshot", "p.snap", "--dsp-state", "p.snap.dsp"]).is_ok());
+
+        let err = |more: &[&str]| with(more).err().unwrap();
+        assert!(err(&[]).contains("needs --dsp-cold-idle, or --cf-snapshot"));
+        assert!(err(&["--dsp-cold-idle", "c", "--cf-snapshot", "p"]).contains("leave out"));
+        assert!(err(&["--cf-snapshot", "p.snap"]).contains("both --cf-snapshot and --dsp-state"));
+        assert!(
+            err(&["--cf-snapshot", "p", "--dsp-state", "d", "--cold-save", "x"])
+                .contains("--cold-save needs --dsp-cold-idle")
+        );
+        assert!(err(&["--dsp-cold-idle", "c", "--dsp-patch", "p.json"]).contains("--dsp-patch"));
+        let no_image = parse(&[
+            "--dsp",
+            "sharc",
+            "--cold-base",
+            "ab12",
+            "--dsp-cold-idle",
+            "c",
+        ]);
+        assert!(no_image.err().unwrap().contains("needs --dsp-image"));
+    }
+
+    #[test]
+    fn the_cold_boot_inputs_need_cold_base_with_the_sharc() {
+        let zero = parse(&[
+            "--dsp",
+            "zero",
+            "--cold-base",
+            "ab12",
+            "--dsp-cold-idle",
+            "c",
+        ]);
+        assert!(
+            zero.err()
+                .unwrap()
+                .contains("need --cold-base with --dsp sharc")
+        );
+        let stock = parse(&[
+            "--dsp-image",
+            "i",
+            "--dsp-state",
+            "s",
+            "--cf-snapshot",
+            "p",
+            "--cold-save",
+            "d",
+        ]);
+        assert!(
+            stock
+                .err()
+                .unwrap()
+                .contains("need --cold-base with --dsp sharc")
+        );
+        assert!(parse(&["--dsp", "zero", "--cold-base", "ab12"]).is_ok());
+        assert!(parse(&["--dsp-image", "i", "--dsp-state", "s", "--cf-snapshot", "p"]).is_ok());
     }
 }

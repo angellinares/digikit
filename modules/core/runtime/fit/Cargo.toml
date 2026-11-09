@@ -3,7 +3,7 @@ name = "dkrt-fit"
 version = "0.1.0"
 edition = "2021"
 publish = false
-description = "The fit rule of the digikit runtime: do a module's needs (dkneeds) fit the device's CAPACITY? Used by the DIGIKIT menu; sdk/vectors/fit-vectors.json keeps it equal to the host copies"
+description = "The fit rule of the digikit runtime: do a module's needs (dkneeds) fit the device's CAPACITY? Used by the DIGIKIT menu, the web app (patchkit.wasm) and the device tools (patchkit fit)"
 
 [lib]
 path = "src/lib.rs"
@@ -11,3 +11,6 @@ path = "src/lib.rs"
 [dependencies]
 dkrt-sdk = { path = "../sdk" }
 dkneeds = { path = "../../../../packages/dkneeds" }
+
+[dev-dependencies]
+serde_json = "1"

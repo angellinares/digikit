@@ -1,0 +1,12 @@
+{
+  "$schema": "../../../node_modules/nx/schemas/project-schema.json",
+  "name": "digikit/debug",
+  "metadata": {
+    "runtimeAcceptance": [
+      {
+        "files": ["tests/debug-module.device.test.ts"],
+        "modules": ["digikit/probe", "digikit/remote", "test/dyn-params"]
+      }
+    ]
+  }
+}

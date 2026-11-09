@@ -694,48 +694,5 @@ class PokeDmTest(unittest.TestCase):
             os.unlink(poke_file.name)
 
 
-class ApproxRecipsCliTest(unittest.TestCase):
-    """--approx-recips wiring: flag -> trace() -> State, end to end via the CLI."""
-
-    def test_approx_recips_flag_parses_and_is_visible_only_when_requested(self):
-        data = b"\x00\x00"  # a single Type21c NOP; nothing here executes recips
-        with tempfile.NamedTemporaryFile("wb", delete=False) as f:
-            f.write(data)
-            path = f.name
-        try:
-            base_command = [
-                sys.executable,
-                "-m",
-                "tools.sharc_dev.sharc_trace",
-                path,
-                "--base-sw",
-                "0",
-                "--start",
-                "0",
-                "--json",
-            ]
-            without_flag = subprocess.run(
-                base_command, env=python_env(), capture_output=True, text=True
-            )
-            with_flag = subprocess.run(
-                base_command + ["--approx-recips"],
-                env=python_env(),
-                capture_output=True,
-                text=True,
-            )
-            self.assertEqual(without_flag.returncode, 0, without_flag.stderr)
-            self.assertEqual(with_flag.returncode, 0, with_flag.stderr)
-            without_state = json.loads(without_flag.stdout)[0]
-            with_state = json.loads(with_flag.stdout)[0]
-            # --approx-recips is usage-gated (state.approx_recips_used), not
-            # request-gated: neither run executes recips, so neither JSON
-            # carries the assumption, even the one that passed the flag.
-            self.assertNotIn("approximate RECIPS seed", without_state["assumptions"])
-            self.assertNotIn("approximate RECIPS seed", with_state["assumptions"])
-            self.assertNotIn("Traceback", with_flag.stderr)
-        finally:
-            os.unlink(path)
-
-
 if __name__ == "__main__":
     unittest.main()

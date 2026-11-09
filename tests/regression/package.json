@@ -8,7 +8,7 @@
     "typecheck": "tsc -p tsconfig.json",
     "test:stock": "vitest run --project stock",
     "test:update": "UPDATE_GOLDENS=1 vitest run --project stock",
-    "test:modules": "vitest run --project modules",
+    "test:conformance": "vitest run --project conformance",
     "test:runtime": "vitest run --project runtime",
     "test:fx": "vitest run --project fx-dn2",
     "test:fx:dt2": "vitest run --project fx-dt2"

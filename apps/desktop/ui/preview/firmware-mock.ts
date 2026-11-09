@@ -3,7 +3,7 @@
 // a fake device that speaks the two protocols the page uses (SoftwareVersion of the stock firmware, INFO of the runtime), takes the OS UPGRADE
 // stream and the RPC flash route (Start, Write, End; apps/web/tests/fakeflash.mjs), and restarts after the last message: its port goes away and comes back with the runtime and the image id of the stream.
 // State from the address: fwdev=dt2|dn2 (the device; default dn2), fwstate=stock|runtime|noreply|none, fwos=1.12; the RPC route: fwwrite=ms per Write
-// (default 0), fwerror=0..1 (the Write at this fraction of the image gets a device error).
+// (default 0), fwforce=1 (all checks pass), fwerror=0..1 (the Write at this fraction of the image gets a device error).
 import { decode8in7, encode8in7 } from '@digi/dk-session';
 import { CMD } from '@digi/dk-session/gen_proto';
 import { PatchKit } from '../../../web/src/patch/patchkit-core';
@@ -40,6 +40,11 @@ let queue: Uint8Array[] = [];
 let waiter: (() => void) | undefined;
 let wake: number | undefined;
 
+/** `0.5.3` as the runtime's packed version word. */
+const packed = (v: string) => {
+  const [a = 0, b = 0, c = 0] = v.split('.').map(Number);
+  return (a << 16) | (b << 8) | c;
+};
 const concat = (...p: ArrayLike<number>[]) => Uint8Array.from(p.flatMap((x) => Array.from(x)));
 const cs = (s: string) => concat(new TextEncoder().encode(s), [0]);
 const be32 = (n: number) => Uint8Array.of((n >>> 24) & 255, (n >>> 16) & 255, (n >>> 8) & 255, n & 255);
@@ -99,7 +104,7 @@ function onMessage(msg: Uint8Array) {
         [0],
         be32(1),
         be32(1),
-        be32(0x000502),
+        be32(packed(runtime.version)),
         be32(0xffff),
         id,
       ),
@@ -111,11 +116,13 @@ function onMessage(msg: Uint8Array) {
 function restart() {
   setTimeout(() => {
     offlineUntil = Date.now() + fw.goneMs;
-    runtime = isRestore ? null : { version: '0.5.2', imageId: fw.lastImageId };
+    runtime = isRestore ? null : { version: patchedRuntime, imageId: fw.lastImageId };
   }, fw.flashMs);
 }
 
 let isRestore = false;
+/** The runtime version the patched image carries (from the checks), so the fake device reports what the page expects. */
+let patchedRuntime = '0.5.2';
 /** The page asked for this image: what the device will report after it. */
 export function expect(imageId: string | null, restore: boolean) {
   fw.lastImageId = imageId;
@@ -158,10 +165,16 @@ async function patchKit(): Promise<PatchKit> {
 export const patchkitWasm = async (): Promise<ArrayBuffer> => (await fetch(wasmUrl)).arrayBuffer();
 
 /** `firmware_prepare`: the real checks, packed as the Tauri command packs them. */
-export async function prepare(stock: Uint8Array, restore: boolean): Promise<ArrayBuffer> {
+export async function prepare(stock: Uint8Array, restore: boolean, set = ''): Promise<ArrayBuffer> {
   const k = await patchKit();
-  const p = k.prepare(stock, restore);
+  const p = k.prepare(stock, restore, set);
   expect(p.imageId, restore);
+  if (p.runtime) patchedRuntime = String(p.runtime);
+  if (q.get('fwforce') === '1') {
+    // every check green: for the screenshots of the steps after the checks when the module bundle and patchkit.wasm of this tree do not match
+    for (const c of p.checks) c.ok = true;
+    p.ok = true;
+  }
   if (q.get('fwfail') === '1') {
     // a failed check cannot be made from a real stock file: the screenshot of one changes the answer
     const c = p.checks.find((x) => x.name === 'DSP scan')!;

@@ -584,3 +584,47 @@ def test_dl_diag_reads_the_words_from_the_record_copy(machine, built):
         machine, built, {RECLIT: ptr, REC: bytes(0xABC), out: bytes(0x80)}, [diag(24)]
     )
     assert r[0].d0 & 0xFFFFFFFF == 0xFFFFFFFE
+
+
+@needs_gcc
+def test_tick_callback_gets_the_reply_record_and_can_be_cleared(machine, built):
+    stub, seen = DATA + 0x7000, DATA + 0x7100
+    # move.l 4(sp),d0 ; move.l d0,seen ; rts: the callback stores its argument (the record copy)
+    code = struct.pack(">HHHIH", 0x202F, 4, 0x23C0, seen, 0x4E75)
+    rec = DATA + 0x8000
+    tick = call(built, "dl_tick", [0x802, 0, 0xABC, rec], [(seen, 4)])
+    r = run(
+        machine,
+        built,
+        {stub: code, seen: bytes(4)},
+        [
+            tick,  # no callback: nothing stored
+            call(built, "dl_set_tick_cb", [stub]),
+            tick,  # the callback sees the record
+            call(
+                built, "dl_tick_cb_drop", [stub + 0x100, stub + 0x200]
+            ),  # not in range: kept
+            call(
+                built, "dl_tick_cb_drop", [stub, stub + 4]
+            ),  # the callback's first byte is in range: dropped
+            call(built, "dl_set_tick_cb", [stub]),
+            call(
+                built, "dl_tick_cb_drop", [stub - 0x100, stub]
+            ),  # [lo, hi): the end is excluded
+            tick,
+        ],
+    )
+    assert r[0].reads[0] == bytes(4)
+    assert struct.unpack(">I", r[2].reads[0])[0] == rec
+    # a dropped callback is not called any more: fresh memory, set, drop, tick
+    r = run(
+        machine,
+        built,
+        {stub: code, seen: bytes(4)},
+        [
+            call(built, "dl_set_tick_cb", [stub]),
+            call(built, "dl_tick_cb_drop", [stub, stub + 4]),
+            tick,
+        ],
+    )
+    assert r[2].reads[0] == bytes(4)

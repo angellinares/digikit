@@ -59,6 +59,7 @@ typedef void dk_ui_act_fn(void *ctx, int arg);
 enum {
     DK_UI_TEXT_PAGE = 1, /* rows are text to read: no highlighted row, the keys scroll */
     DK_UI_LIST = 2,      /* a dense list with a title bar, a check column and a side panel */
+    DK_UI_WIDE = 4,      /* a menu page with a full-width title bar and full-width rows (a list without check marks or side panel) */
 };
 
 typedef struct dk_ui_menu_desc {
@@ -84,6 +85,7 @@ enum {
     DK_UI_CAP_CONFIRM,
     DK_UI_CAP_CHOICE,
     DK_UI_CAP_TOAST,
+    DK_UI_CAP_TICK,
 };
 
 /* 1 when this device has the capability. A missing one makes its calls do nothing and return -1. */
@@ -94,6 +96,9 @@ dk_ui_menu *dk_ui_menu_new(const dk_ui_menu_desc *d); /* 0 when out of memory; d
 int dk_ui_open(dk_ui_menu *m); /* fill, then show on top of the current view; if open, refresh. A menu or list keeps its selected row
                                   from the last time; a text page opens at its first row. */
 void dk_ui_close(dk_ui_menu *m);
+/* Puts the cursor of a list or menu on row `row` (counted as the rows are added; clamped to the rows). Call it before dk_ui_open to start a
+   list on its current choice: dk_ui_open keeps the cursor row. On an open list the cursor moves at once. */
+void dk_ui_select(dk_ui_menu *m, int row);
 int dk_ui_is_open(const dk_ui_menu *m);
 void dk_ui_refresh(dk_ui_menu *m); /* fill again; the selection stays on the same row when it can */
 
@@ -121,6 +126,20 @@ int dk_ui_choice(const char *title, const char *const *items, int n, void (*done
                  void *ctx);
 /* A short message on the main screen that goes away by itself. */
 int dk_ui_toast(const char *text);
+
+/* A timer in the UI task (DK_UI_CAP_TICK). fn(ctx) runs about every period_ms, in the same task as the fill and action callbacks, so it
+   may call dk_ui_refresh and read module state without a lock. Use it to redraw a screen that shows a change nobody triggers with a key
+   (a load that is still running). Rules:
+   - The accuracy is the UI loop (about 8 ms) at best; a callback runs late when the task is busy. Do not count calls: read the state.
+   - Keep fn short. It runs between key events and delays them. It must not wait.
+   - fn and ctx stay in use: static module code and memory, never the stack.
+   - A timer is identified by (fn, ctx). Calling again with the same pair changes its period (the next call is one period away).
+     period_ms 0 stops it, also from inside fn; stopping a timer that does not run is not an error. Stop the timer when its screen
+     closes: a running timer costs a call per period.
+   - Room for 4 timers in the image, shared by all modules. A longer period than 1,000,000 ms is cut.
+   Returns 0 when set or stopped, -1 when it could not be (no core/ui or no DK_UI_CAP_TICK, fn 0, or the table is full). */
+typedef void dk_ui_tick_fn(void *ctx);
+int dk_ui_tick(dk_ui_tick_fn *fn, void *ctx, uint32_t period_ms);
 
 /* The module settings entry point: defines dkm_menu (docs/design/digikit-dkm.md) with fill as its body. The DIGIKIT
    menu passes the menu to fill and 0 as ctx. */

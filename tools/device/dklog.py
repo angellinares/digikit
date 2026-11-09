@@ -16,7 +16,9 @@ module, and the events before the crash. A record of a stopped DSP (a hang recor
 effect row, the module, the core step and the module step. The last fault is also kept on the card as the settings key `dk/fault` (it survives power
 cycles); `crash` prints it too (`fault_value`). `peek ADDR LEN` hex-dumps RAM inside the ranges the device file lists (`[digikit] peek`).
 
-The log is a ring of 512 events: a host that polls once a second loses nothing in normal use (about 1 to 3 events a second with DEBUG on).
+The log belongs to the module `digikit/debug`: LOG, PEEK and the levels exist only while it is loaded (INFO then reports the capabilities LOG, PEEK and
+LOGCFG). Without it `crash` prints the kept fault record only. The module's ring holds 512 events: a host that polls once a second loses nothing in normal use
+(about 1 to 3 events a second at the info level).
 The transports are those of `tools.device.dkupload`: `--emu` for the emulator, `--port` for a device through python-rtmidi (not a repository
 dependency).
 """
@@ -849,7 +851,7 @@ def level_config(
 
     lines = [
         f"default: {lv(cfg['default'])}",
-        f"debug: {'on' if cfg['debug'] else 'off'}",
+        f"debug module: {'loaded' if cfg['debug'] else 'not loaded'}",
     ]
     for i, v in enumerate(cfg["modules"]):
         if v != 0xFF:
@@ -926,6 +928,10 @@ def main(argv: list[str] | None = None) -> int:
     )
     up = D.Uploader(t)
     try:
+        if args.cmd in ("follow", "peek") and not D.has_cap(up.info(), "LOG"):
+            raise ValueError(
+                "the debug module (digikit/debug) is not loaded: no log, no peek"
+            )
         if args.cmd == "follow":
             out = (
                 args.out
@@ -949,11 +955,12 @@ def main(argv: list[str] | None = None) -> int:
             )
         elif args.cmd == "level":
             if not D.has_cap(up.info(), "LOGCFG"):
-                raise ValueError("LOGCFG needs runtime 0.1.0 or newer")
+                raise ValueError("the debug module (digikit/debug) is not loaded")
             names = module_names(read_all(up)[2]) if args.module else {}
             print(level_config(up, args.level, args.module, names))
         elif args.cmd == "crash":
-            _, _, evs = read_all(up)
+            has_log = D.has_cap(up.info(), "LOG")
+            evs = read_all(up)[2] if has_log else []
             rec = crash_record(evs)
             hang = hang_record(evs)
             panic = panic_record(evs)
@@ -968,6 +975,8 @@ def main(argv: list[str] | None = None) -> int:
                     crash_text(rec)
                     if rec
                     else "no crash record in the log (the last boot did not follow a crash, or the ring has overwritten it)"
+                    if has_log
+                    else "the debug module (digikit/debug) is not loaded: only the kept fault record is available"
                 )
             try:
                 from tools.device import dksettings

@@ -1,7 +1,7 @@
 # DSP link
 
 `core/dsp-link` is a framework module: it lets the digikit runtime send bytes (DSP code and data) to the DSP while
-the device runs. Nothing changes for the player. Emulator only.
+the device runs. Nothing changes for the player. It ran on a Digitakt II (OS 1.17), where `fx/freqshift` loaded through it and ran (2026-10-30, finding 91); the Digitone II has run it in the emulator only.
 
 - Firmware: Digitakt II 1.17 and Digitone II 1.12 (the same anchor rules on both).
 - What it adds: a hook on the ColdFire's per-block frame sender (to put a chunk in the unused end of the frame) and a hook
@@ -34,7 +34,7 @@ the device runs. Nothing changes for the player. Emulator only.
   | 19-22 | the eight machine parameter words of that call (clamped, as the routine saw them), knob 2k in the low half, knob 2k + 1 in the high half of word 19 + k |
   | 23 | the machine type the guard disabled last |
   | 24 | the effect site's `last` (`core/fx`): stage (4 the core is about to call the module, 5 it returned), site << 8 (2 master route, 3 send route), the row's byte offset in the effect table << 16 |
-  | 25 | the module step: what the module stored into `_dk_step` (`DK_STEP`); the core clears it right before each call into a module |
+  | 25 | the module step: what the last module call of the block stored into `_dk_step` (`DK_STEP`); the sites clear `_dk_step` right before each call into a module, the tail copies it |
   | 26-27 | module calls of the master route and of the send route |
   | 28 | effect faults (low 16 bits) \| the row of the last fault (byte offset + 1) << 16 |
   | 29-30 | the addresses of this block's reply record and of the one before |
@@ -45,13 +45,32 @@ the device runs. Nothing changes for the player. Emulator only.
   the field is 0), 2 type registered, 3 stock path taken for a type of 7 or more that no module registered, 4 routine about to be called, 5 routine returned,
   6 the odd voice's copy done, 7 epilogue done. The wrapper writes it into the reply record at once (both reply records, header and dispatch count with it),
   not only at the end of the block, so that it is there when the core stops inside a routine and never reaches the block's end: the DMA that sends the record
-  does not need the core (finding 48). The effect site (word 24) and the module step (word 25) are written the same way. On the Digitone II the voice wrapper
+  does not need the core (finding 48). The effect site (word 24) is written the same way. On the Digitone II the voice wrapper
   writes only the stages 4 and 5 (the slot is the voice) and words 15 to 23 are 0 (the dispatch counts and the guard belong to the Digitakt II wrapper; the
   Digitone II wrapper only scans rows of the new size).
-  The module step needs a place the ColdFire can read after the core has stopped. `core/dyndsp` exports `_dk_step` (a 32-bit DM word of this module, the
-  static fallback, copied into word 25 at the block tail). The runtime points the stores of a module's DSP image at word 25 of the older reply record
-  instead (the record addresses are words 29 and 30), so that a step stored just before the DSP stops is still in the record. The core clears word 25 in both
-  records before each call; the module writes into one, so the ColdFire takes the non-zero value of the two replies. Finding 77 has the design.
+  The module step (word 25): `core/dyndsp` exports `_dk_step`, a 32-bit DM word of this module. A module stores its step there. The sites that call modules
+  (`core/fx`, `core/dsp-voice`) clear `_dk_step` right before each call into a module, so a step belongs to the call that stored it. The block tail (`src/dsp/dsp-link.inc`)
+  copies `_dk_step` into word 25 of the record of the block, after all module calls of the block, and clears it again. So every record carries the step of its block
+  (the last module call that stored one; 0 when the last module stored nothing or no module ran), 1500 words a second. The tail also gives each site the address
+  of `_dk_step` (`_fx_rec[2]`, `_dv_rec[2]`; 0 until the first block with the link), because the sites do not depend on this module.
+  A step stored in a call that stops the DSP is lost with the core: the record of a stopped DSP carries the step of the last block that ended (finding 77).
+  **[D]** Why the first design lost the word (emulator, DN2 1.12, 2026-10-31, `test/step-beacon` with `digikit/probe`, `docs/findings/101-module-step-word-on-hardware.md`).
+  The two reply records alternate, one per block, and the ColdFire reads a record while the next block runs: the record that the tail filled at the end of block B is
+  read after the hooks of block B + 1 have run. The sites cleared word 25 in both records before each module call (`_fx_rec`, `_dv_rec` hold the record of block B and
+  the one before), so the clear in block B + 1 removed the step that the tail had just copied into the record of block B. The old scheme (the runtime pointed the module's stores at
+  word 25 of one fixed record, the older of the two, `patch_steps`) worked only because the module stored after the clear, into that record, and only every second record has that
+  address. With the clear taken out of the records (the experiment: the mark did not clear, the tail copied the static word) the module's words arrived in every block, so the static
+  word, the relocation of the import (the store in the module image held the address of `_dk_step`) and the tail copy were right all along. On a Digitakt II (OS 1.17) the clear also
+  ran while the reply DMA was sending the record, and 3995 of 4000 words were 0 there.
+  Order of events in one block **[D]** (read in the images): the effect hooks run before the tail in the same block. DT2 1.17: the handler `0x1c75d8` calls the orchestrator
+  `0x1c2b24` at `0x1c771e` and the function `0x1c74cd` (hook site `0x1c75c1`) at `0x1c7756`; the orchestrator calls the master hook site `0x1c80f2` at `0x1c311f` and the send hook
+  site `0x1c207b` at `0x1c3099`. DN2 1.12: handler `0x1c9e76`, orchestrator `0x1c2712` at `0x1c9fbc`, tail function `0x1c9d6b` at `0x1c9ff4`; effect sites `0x1c244d` (call
+  `0x1c307b`) and `0x1c1f1e` (call `0x1c305d`).
+- Per-block callback: `dl_set_tick_cb(cb)` (a runtime import for modules, `requires core/dsp-link`; a no-op stub when the module is absent) sets one
+  function, `void cb(const volatile u16 *rec)`, that `dl_tick` calls every block in the block interrupt, before the transfer code, with the copy of the
+  previous reply record (diagnostic word j: see `dl_diag`). NULL is off and costs one pointer test per block. The callback must be a short C function with
+  no allocation and no logging, and its module clears it in `fini`; the runtime also clears it after a `fini` when it points into the module
+  (`dl_tick_cb_drop`).
 - Limits: the destination must lie in the module's area (`_dl_area`); the DSP code that runs from it must be linked for
   that address or relocated by the runtime (`docs/design/digikit-dkm.md`, "DSP section"). The emulator does not model the DSP caches, so the cache invalidate after the last chunk has not run on
   a device.

@@ -3,8 +3,8 @@
 
 One place for the pinned Rust toolchain (read from mise.toml), the default
 paths of the private inputs, the firmware file, and the per-firmware fast-tier
-tables (tools/emulator/fast_regions.json). tools/emulator/native_emu.py, native_pgo.py,
-native_target.py, native_wasm.py and coupled.py import it.
+tables (config/emulator.json). tools/emulator/native_emu.py, native_pgo.py,
+native_target.py and coupled.py import it.
 
     uv run python -m tools.emulator.digi_env        # print the resolved settings
 """
@@ -23,6 +23,7 @@ import sys
 import tomllib
 from collections.abc import Callable
 
+from tools.emulator import emulator_config
 from tools.firmware import config
 
 ROOT = pathlib.Path(__file__).resolve().parents[2]
@@ -43,7 +44,7 @@ READY_DIRS = {
 }
 DEFAULT_GENERATED = ROOT / "out" / "native" / "dn2-audio" / "gen"
 DEFAULT_SYX = config.stock("Digitone_II_OS1.12.syx")
-FAST_TABLE = ROOT / "tools" / "emulator" / "fast_regions.json"
+FAST_TABLE = ROOT / "config" / "emulator.json"
 TOOLCHAIN: str = tomllib.loads((ROOT / "mise.toml").read_text())["tools"]["rust"]
 TRIPLE = "aarch64-apple-darwin"
 
@@ -290,8 +291,7 @@ def _syx_digest(path: str) -> str:
 
 
 def fast_table() -> dict[str, dict[str, str]]:
-    table = json.loads(FAST_TABLE.read_text())
-    return {k: v for k, v in table.items() if not k.startswith("_")}
+    return emulator_config.firmware_table(tier_config())
 
 
 def _entry(syx: pathlib.Path) -> dict[str, str]:
@@ -313,38 +313,61 @@ def blocktrans_roots_for(syx: pathlib.Path) -> str:
     return _entry(syx).get("blocktrans", "")
 
 
+def tier_config() -> dict[str, object]:
+    """config/emulator.json (read from FAST_TABLE)."""
+    return emulator_config.load(FAST_TABLE)
+
+
+def resolve_tiers(
+    context: str | None,
+    syx: pathlib.Path,
+    slot: str = "",
+    environ: Environ | None = None,
+    **options: bool,
+) -> emulator_config.Resolution:
+    """`emulator_config.resolve` for a firmware file and the current config file."""
+    return emulator_config.resolve(
+        context,
+        _syx_digest(str(syx)),
+        slot,
+        os.environ if environ is None else environ,
+        config=tier_config(),
+        **options,
+    )
+
+
 def fast_env(
-    environ: Environ | None = None, *, syx: pathlib.Path | None = None
+    environ: Environ | None = None,
+    *,
+    syx: pathlib.Path | None = None,
+    context: str = "tests",
 ) -> dict[str, str]:
     """Fast regions, fallback regions and cluster roots for a coupled run.
 
-    User-set values win; DIGI_EMU_FAST=0 suppresses defaults; otherwise use
-    the firmware table. Explicit regular regions or auto selection suppress
-    fallback defaults. Keys with nothing to set are left out.
+    The rules are in `emulator_config.resolve`: explicit values win and are returned as set;
+    DIGI_EMU_FAST=0 returns nothing. Keys with nothing to set are left out.
     """
     environ = os.environ if environ is None else environ
-    out: dict[str, str] = {}
-    if environ.get("DIGI_EMU_FAST") == "0":
-        return out
     syx = firmware(environ) if syx is None else syx
-    if "SHARC_FAST_FALLBACK_REGIONS" in environ:
-        out["SHARC_FAST_FALLBACK_REGIONS"] = environ["SHARC_FAST_FALLBACK_REGIONS"]
-    # Explicit auto selection must still be able to arm these as ordinary roots.
-    elif (
-        "SHARC_FAST_REGIONS" not in environ
-        and "SHARC_FAST_AUTO" not in environ
-        and (fallback := fallback_regions_for(syx))
-    ):
-        out["SHARC_FAST_FALLBACK_REGIONS"] = fallback
-    for name, lookup in (
-        ("SHARC_FAST_REGIONS", fast_regions_for),
-        ("SHARC_BLOCKTRANS", blocktrans_roots_for),
-    ):
-        if name in environ:
-            out[name] = environ[name]
-        elif value := lookup(syx):
-            out[name] = value
-    return out
+    res = resolve_tiers(context, syx, "", environ)
+    return {} if res.off else {**res.explicit, **res.add}
+
+
+# Engine slots of a two-core build. Slot 1 (SHARC_GEN_DIR, unsuffixed region lists) is always the DN2 core and
+# slot 2 (SHARC_GEN_DIR_2, `_2` lists) always the DT2 core, whichever firmware boots. The region lists are
+# addresses in one device's DSP image and each engine instance reads the list of its own slot.
+SLOT_DEVICES = ("dn2", "dt2")
+SLOT_SUFFIX = {"dn2": "", "dt2": "_2"}
+SLOT_LISTS = ("SHARC_FAST_REGIONS", "SHARC_FAST_FALLBACK_REGIONS", "SHARC_BLOCKTRANS")
+
+
+def slot_env(device: str, env: dict[str, str]) -> dict[str, str]:
+    """ENV (a device's `fast_env`) with its region lists renamed for the device's engine slot of a two-core build."""
+    suffix = SLOT_SUFFIX[device]
+    return {
+        (key + suffix if key in SLOT_LISTS else key): value
+        for key, value in env.items()
+    }
 
 
 @functools.cache
@@ -430,7 +453,7 @@ _STAMP_RE = re.compile(r"\d{8}-\d{6}(-\d+)?")
 def _prune_runs(base: pathlib.Path, current: pathlib.Path) -> None:
     """Keep the newest KEEP_RUNS stamped run dirs of one kind.
 
-    verify_times reads the newest 12 verify runs. Symlinks (`latest`), the new
+    Symlinks (`latest`), the new
     dir and the latest target are never removed.
     """
     try:
@@ -566,6 +589,9 @@ def diag_stderr(names: str | list[tuple[str, str]]) -> bool:
 
 
 def main() -> int:
+    if sys.argv[1:2] == ["exec"] and len(sys.argv) > 3 and sys.argv[2] == "--":
+        cmd = sys.argv[3:]
+        os.execvpe(cmd[0], cmd, {**rust_env(), "SHARC_GEN_DIR": str(generated_dir())})
     print(f"toolchain   {TOOLCHAIN} ({toolchain_rustc() or 'not installed'})")
     print(f"generated   {generated_dir()}")
     for label, path in ready_inputs().items():

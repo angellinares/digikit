@@ -5,8 +5,7 @@
     uv run python -m tools.device.dkrun <author/name> --emu            # the running emulator (desktop app or `mise run emu:serve`)
     mise run dk:run -- <author/name> --port Digitakt --seconds 30
 
-Steps, one line each: INFO (the runtime must be 4 or newer; its device id picks the pack target), build and pack (`patchkit pack` builds the objects that are stale, in memory), upload to `modules/<name>.dkm` (skipped when LIST shows the same sha256), SELECT (the selection becomes this module
-only), RESTART, wait for the new boot, then the boot's MOD_LOAD / MOD_DSP results, then the log for `--seconds`.
+Steps, one line each: INFO (the runtime must be 4 or newer; its device id picks the pack target), build and pack (`patchkit pack` builds the objects that are stale, in memory), upload to `modules/<name>.dkm` (skipped when LIST shows the same file hash), SELECT (the selection becomes the debug module `digikit/debug`, which the log needs, and this module), RESTART, wait for the new boot, then the boot's MOD_LOAD / MOD_DSP results, then the log for `--seconds`.
 
 It changes only the module store and the selection record (the menu's own code writes it). `--no-restart` stops after SELECT. Time on the emulator is stepped, not real: `--seconds` is emulated time, approximately.
 """
@@ -14,7 +13,6 @@ It changes only the module store and the selection record (the menu's own code w
 from __future__ import annotations
 
 import argparse
-import hashlib
 import subprocess
 import sys
 import time
@@ -23,7 +21,6 @@ from pathlib import Path
 from typing import Any
 
 from tools import python_env
-from tools.device import dkfit as F
 from tools.device import dklog as L
 from tools.device import dkneeds as N
 from tools.device import dkupload as D
@@ -31,6 +28,7 @@ from tools.patchkit import modroots
 
 ROOT = Path(__file__).resolve().parents[2]
 MIN_RUNTIME = 4
+DEBUG_MODULE = "digikit/debug"  # the log exists only while it is loaded
 EMU_IPS = 100_000_000  # emulated instructions counted as one second of `--seconds` on the emulator
 CMD_RESTART_KIND = L.K["UPLOAD"]
 
@@ -110,18 +108,18 @@ def upload_if_changed(
     log: Callable[[str], None] = say,
     progress: Callable[[int, int], None] | None = None,
 ) -> bool:
-    """PUT `data` at `path` unless LIST shows the same size and sha256 there (`have`: that listing, else asked for). True: uploaded.
+    """PUT `data` at `path` unless LIST shows the same size and file hash there (`have`: that listing, else asked for). True: uploaded.
     `progress(sent, total)` is called after each DATA chunk the device acknowledged (not for a skipped upload)."""
     if have is None:
         have = {p: (n, h) for p, n, h in up.ls()}
-    sha = hashlib.sha256(data).hexdigest()
+    sha = D.file_hash(data).hex()
     if path in have and have[path] == (len(data), sha):
-        log(f"{path} is on the device ({len(data)} bytes, same sha256): not uploaded")
+        log(f"{path} is on the device ({len(data)} bytes, same hash): not uploaded")
         return False
     t0 = time.monotonic()
     up.put(path, data, progress)
     log(
-        f"uploaded {path}: {len(data)} bytes ({time.monotonic() - t0:.1f} s, sha256 checked on the device)"
+        f"uploaded {path}: {len(data)} bytes ({time.monotonic() - t0:.1f} s, hash checked on the device)"
     )
     return True
 
@@ -141,7 +139,11 @@ def restart_and_wait(
         wait_boot()
     old = up
     up = wait_new_boot(
-        connect or (lambda: old), sleep, now=now, connect_closes=connect is not None
+        connect or (lambda: old),
+        sleep,
+        now=now,
+        connect_closes=connect is not None,
+        booted=wait_boot is not None,
     )
     if connect is not None:
         _close(old)
@@ -189,20 +191,30 @@ def wait_new_boot(
     timeout_s: float = 90.0,
     now: Callable[[], float] = time.monotonic,
     connect_closes: bool = True,
+    booted: bool = False,
 ) -> D.Uploader:
-    """Poll until the log of the device is the log of a new boot. The port may vanish and return (USB re-enumerates): every failure is
-    a reason to wait and connect again."""
+    """Poll until the device has booted again. With the debug module (which `run` selects) the log tells a new boot from the old one.
+    Without it there is no log (INFO has no LOG capability), so the device counts as booted when it answers again after a failed read
+    (the port is silent while it resets), or when the caller already stepped past the reset (`booted`). The TypeScript `waitForBoot`
+    (packages/dk-session/src/dkupload-core.ts) uses the same rule. The port may vanish and return (USB re-enumerates): every failure
+    is a reason to wait and connect again."""
     end = now() + timeout_s
     last: Exception | None = None
+    silent = False
     while now() < end:
         up = None
         try:
             up = connect()
-            _, _, evs = L.read_all(up)
-            if restarted(evs):
+            info = up.info()
+            if D.has_cap(info, "LOG"):
+                _, _, evs = L.read_all(up)
+                if restarted(evs):
+                    return up
+            elif silent or booted:
                 return up
         except (TimeoutError, OSError, SystemExit, D.UploadError) as e:
             last = e
+            silent = True
         if connect_closes:
             _close(up)
         sleep(0.5)
@@ -238,7 +250,7 @@ def module_results(
 def check_fit(up: D.Uploader, info: dict[str, Any], data: bytes) -> str | None:
     """Why the packed module DATA will not load on the device, or None. `run` selects it as the only module of the next boot, which loads it into
     an empty runtime: its needs, inferred from the file (`patchkit needs`, docs/design/digikit-dkm.md), against the device's limits (CAPACITY; the
-    fit rule, dkfit.py). A file that has no needs is one the loader refuses. A device without CAPACITY, or one that does not answer it, gets no
+    fit rule, `dkneeds.fit`). A file that has no needs is one the loader refuses. A device without CAPACITY, or one that does not answer it, gets no
     verdict on the limits."""
     try:
         needs = N.needs_of(data)
@@ -250,8 +262,25 @@ def check_fit(up: D.Uploader, info: dict[str, Any], data: bytes) -> str | None:
         caps = up.capacity()
     except D.UploadError:
         return None
-    short = F.fits_now(needs, F.empty_caps(caps))
-    return F.describe(short) if short else None
+    short = N.fit(caps, [needs], empty=True)["each"][0]
+    return short["describe"] if short else None
+
+
+def check_results(res: list[dict[str, Any]]) -> None:
+    """Raise RunError unless the boot's MOD_LOAD and MOD_DSP events (as `module_results` returns them) show every module loaded."""
+    for d in res:
+        if d["kind"] == "MOD_LOAD" and d["args"][1] not in (0, 1):
+            raise RunError(
+                f"MOD_LOAD result {d['fields'].get('result')}: the module did not load"
+            )
+        if d["kind"] == "MOD_DSP" and d["args"][1] != 0:
+            raise RunError(
+                f"MOD_DSP result {d['fields'].get('result')}: the DSP part did not load"
+            )
+    if not any(d["kind"] == "MOD_LOAD" for d in res):
+        raise RunError(
+            "no MOD_LOAD event: the boot did not load the module (safe mode? see the log)"
+        )
 
 
 def run(
@@ -296,8 +325,14 @@ def run(
     path = module_path(module)
     out["path"] = path
     out["uploaded"] = upload_if_changed(up, path, data)
-    up.select([path])
-    say(f"selected {path} (the only module of the next boot)")
+    # the log (LOG, which this tool reads) exists only while the debug module is loaded: it is selected first, next to the module
+    selection = [path]
+    if module != DEBUG_MODULE:
+        debug_path = module_path(DEBUG_MODULE)
+        upload_if_changed(up, debug_path, build_pack(DEBUG_MODULE, dev).read_bytes())
+        selection = [debug_path, path]
+    up.select(selection)
+    say(f"selected {', '.join(selection)} (the modules of the next boot)")
     if not restart:
         return out
     up = restart_and_wait(up, connect, wait_boot, sleep, now)
@@ -307,19 +342,7 @@ def run(
         say(L.text_of(d).strip())
         if emit:
             emit(L.text_of(d), d)
-    for d in res:
-        if d["kind"] == "MOD_LOAD" and d["args"][1] not in (0, 1):
-            raise RunError(
-                f"MOD_LOAD result {d['fields'].get('result')}: the module did not load"
-            )
-        if d["kind"] == "MOD_DSP" and d["args"][1] != 0:
-            raise RunError(
-                f"MOD_DSP result {d['fields'].get('result')}: the DSP part did not load"
-            )
-    if not any(d["kind"] == "MOD_LOAD" for d in res):
-        raise RunError(
-            "no MOD_LOAD event: the boot did not load the module (safe mode? see the log)"
-        )
+    check_results(res)
     if seconds > 0:
         say(f"following the log for {seconds:g} s")
         fol = L.Follower(

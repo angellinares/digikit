@@ -176,7 +176,7 @@ A machine needs DSP routines. A machine with no DSP code (a data-only clone of a
 
 | Argument | Meaning |
 | --- | --- |
-| `WORD` | The index of the word in the DSP `params`, 0 to 3. Words come in order, without gaps. |
+| `WORD` | The index of the word in the DSP `params`: 0 to 4 on the Digitakt II, 0 to 7 on the Digitone II (one word per entry of the device's `param_slots`, section 5.3). Words come in order, without gaps. |
 | `ID` | A C identifier, unique in the module. Do not rename it after a release. |
 | `NAME` | Name shown while the knob turns, 31 characters at most. |
 | `SHORT` | Label under the knob, 15 characters at most. |
@@ -193,8 +193,31 @@ Names are printable ASCII. Text longer than its field is a compile error. The ki
 | enum | step x 256 | step number | step 0 | a switch or a mode with n steps |
 | pitch | 0 .. 0x7f00 | semitone offset | 0x4000 | a pitch offset the adapter adds to `pitch` |
 
-Every parameter shows as a plain 0 to 127 value. For an enum, set `MAX` to n-1 (the word is (n-1) x 256). No module uses an enum yet.
+By default a parameter shows as a plain 0 to 127 value. For an enum, set `MAX` to n-1 (the word is (n-1) x 256). No module uses an enum yet.
 A signed or named display is not available for a machine.
+
+`DK_PARAM_GLYPH(MACHINE, WORD, GLYPH)` sets the look, the value text and the step of the knob of that parameter. A parameter has at most one
+glyph and its `MIN` .. `MAX` must fit the range of the glyph, or `pack` refuses the module. Without a record the glyph is `DK_GLYPH_ENCODER`.
+Glyphs on effect parameters are not supported yet.
+
+| Glyph | Range | Notes |
+| --- | --- | --- |
+| `DK_GLYPH_ENCODER` (default) | 0 .. 127 | plain encoder |
+| `DK_GLYPH_FADER` | 0 .. 127 | fader |
+| `DK_GLYPH_PAN` | 0 .. 127 | centre 64, shows L/R |
+| `DK_GLYPH_ONOFF` | 0 .. 1 | on/off switch |
+| `DK_GLYPH_TUNE` | 4 .. 124 | centre 64, one unit = one semitone |
+| `DK_GLYPH_PLAY` | 0 .. 3 | REV, REV.L, FWD.L, FWD; the Digitone II has no PLAY row and shows 0 .. 3 |
+
+`DK_PARAM_LATCHED(MACHINE, WORD)` snapshots that parameter's effective, clamped value at actual `note_on`. The existing `params` array
+passed to `render` retains it until the next trigger; other words remain live. Snapshots are per adapter voice/slot, including overlapping DN2
+notes from the same source track. At most one declaration per parameter; the owner and word must already be declared. A packed module with
+this feature requires machine contract 1.3 and is refused by older runtimes. SHOT uses it for SMP only. See [parameter views](design/param-views.md)
+for the callback boundary and validation limits.
+
+`DK_PARAM_ACTION(MACHINE, WORD, FN)` makes a click on the knob of that parameter (press and release of the encoder, no turn between) call
+`void FN(uint32_t track)`, a global function of the module, in the UI task. It may open a `<dk/ui.h>` menu over the page. A parameter has at most
+one action; a knob without one keeps the stock click. Only a `dynamic` module can declare it. Details: `docs/design/machine-page-click.md`.
 
 Scaling the word: the stock DSP converts a word to a float with the scale 1/32512 (0x7f00 = 1.0). Your routine may use any scale. Document
 it in the source header, as `modules/machines/pluck/src/dsp/pluck.s` does.
@@ -220,12 +243,12 @@ knobs. `clone_of` is fixed by the profile (`[modules.knobs] clone_of = 0`, the S
 | --- | --- | --- |
 | Where knobs live | Fields of the machine row. Engine slots 0 to 7. | Columns of a page. Sound-array slots 25 to 32. |
 | Fixed knobs | TUNE on knob 0. Sample slot on knob 3. LEV on knob 7. | None. |
-| Knobs for your words | 1, 2, 4, 5 (`param_slots`). Word w goes to the w-th of them. | 0, 1, 2, 3. |
+| Knobs for your words | 1, 2, 4, 5, 6 (letters B C E F G; `param_slots`). Word w goes to the w-th of them. 5 words. | 1, 2, 4, 5, 6, 0, 3, 7 (B C E F G A D H). 8 words. |
 | Page | The machine has its SRC page. `DK_PAGE` is not used. | The `DK_PAGE` name and title. Without a `DK_PAGE`, a page named after the machine. |
 
 Rules that follow:
 
-- A machine has at most 4 parameters (words 0 to 3), at most one page, and the words are in order. Free placement of knobs (`DK_KNOB_AT`) and
+- A machine has at most as many parameters as the device has `param_slots` (Digitakt II 5, Digitone II 8), at most one page, and the words are in order. Free placement of knobs (`DK_KNOB_AT`) and
   several pages for a machine need adapter work. They are planned.
 - A parameter's position is its slot. Projects store values by slot. After a release, do not move a parameter to another word.
   Removing a parameter is allowed.
@@ -294,23 +317,23 @@ service template does not set `dynamic`.
 ### 5.6 Examples
 
 For a machine, see `modules/machines/pluck` (section 5.2). The profile turns its declaration into this layout. On the Digitakt II, DECAY is on
-knob 1, PICK on knob 2, BRIGHT on knob 4 and COLOR on knob 5. TUNE and LEV are on knobs 0 and 7. On the Digitone II the four parameters sit on
-page columns 0 to 3, on the page PLUCK.
+knob 1, PICK on knob 2, BRIGHT on knob 4 and COLOR on knob 5 (letters B C E F). TUNE and LEV are on knobs 0 and 7. On the Digitone II the same
+words sit on the same letters, page columns 1, 2, 4 and 5, on the page PLUCK. Words 0 to 4 use the letters B C E F G on both devices.
 
 For an effect, see `modules/fx/freqshift` (section 5.4). It has one bipolar knob, `.route = DK_ROUTE_SEND` and both routes.
 
 ### 5.7 Persistence and limits
 
-`patchkit pack` refuses a declaration that breaks a rule above: more than 4 machine parameters, words out of order, a second page for a
+`patchkit pack` refuses a declaration that breaks a rule above: more machine parameters than the device's `param_slots`, words out of order, a second page for a
 machine, `DK_KNOB_AT` on a machine, a machine without DSP symbols, and a manifest with the removed sections.
 
 Not refused today: a `DEF` outside `MIN` .. `MAX`.
 
 Layout facts:
 
-- Digitakt II: the machine row holds the knobs as `f0..f7` and the level as `f8`. A page shows 8 of the 10 engine slots. An added machine has one
+- Digitakt II: the machine row holds the knobs as `f0..f7` and the level as `f8`. A page shows 8 of the 10 engine slots ([finding 100](findings/100-module-limits.md)). An added machine has one
   SRC page: TUNE on knob 0, sample slot on knob 3, level on knob 7.
-- Digitone II: a stock page holds eight knobs and the track level. A machine gets one page, from its `DK_PAGE` or named after the machine.
+- Digitone II: a stock page holds eight knobs and the track level. A machine gets one page for now (a patchkit rule; the firmware allows several, [finding 100](findings/100-module-limits.md)), from its `DK_PAGE` or named after the machine.
 - Limits per module (run-time pack): 16 parameters, 8 machines, 8 pages, 32 records in a register section.
 
 Persistence and modulation:
@@ -323,6 +346,38 @@ Persistence and modulation:
 - MIDI CC and NRPN are ignored for added parameters. Effect knobs cannot be locked or modulated either.
 
 Patching a stock machine will become a separate module type. It is not part of the content modules.
+
+### 5.8 Module settings
+
+A run-time module keeps its own values with the settings API of `<dk/settings.h>` (API 1.9): `dk_settings_client` (only in `dkm_init`, gives the handle),
+`dk_settings_get`, `dk_settings_put` and `dk_settings_remove`. A module on a runtime older than API 1.9 must check `api->size` before it calls them.
+
+- The runtime stores the key as `<module name>/<key>`. A module reaches its own keys only; the prefix stops mistakes, not hostile code.
+- The module name and the key together are at most 47 printable ASCII characters (no space). A key may not be empty, hold `/` or hold `..`: such a key
+  returns `E_SET_KEY` and nothing is written.
+- A value is 0 to 1024 bytes. All modules and the runtime share one 8 KiB record; a full record returns `E_SET_FULL`, an off settings store `E_SET_OFF`.
+- Writes reach the card 2 s after the last change, and before a restart.
+- `get` works in `dkm_init` and in the UI task. `put` and `remove` are for the UI task only (a `DK_MENU` row, slot 0): not from a service command handler.
+- The module owns the layout and the version of its values: write a version byte first and read older values or reset them. The runtime never interprets them.
+- The settings popup is the module's `DK_MENU` with the `dk_ui_*` rows: a row changes a value and its callback calls `dk_settings_put`; `dkm_init` reads it at the next boot.
+
+### 5.9 Module files and `intro_take`
+
+A module's own files live under `data/<module id>/` in the store, not next to the `.dkm`: the `modules/` list holds at most 32 entries. `dk_data_path` (`<dk/data.h>`)
+builds the path and refuses a name that is empty or holds `/` or `..`. Read a file with `store_read` in `dkm_init`, or list the folder with the `files_*` calls (root
+`DK_FILES_STORE`). Only the host writes these files for now. `store_read` runs one at a time and in `dkm_init` only.
+
+`dk_intro_take` (`<dk/intro.h>`, API 1.9) replaces the boot animation. It runs after the REC, safe-mode and boot-counter checks and does no storage I/O: read the frames
+in `dkm_init`, then call it.
+
+- `frame(tick, ctx)` returns the 1024-byte native bitmap of tick 0 .. `ticks`-1 (30 a second), or NULL to end the animation. It runs on the intro task (priority 7, more urgent than the main-OS task, priority 6): it must return quickly, because it blocks every lower-priority task, and a callback that never returns starves the main OS until power-off. It must not block and
+  must not call any `dk_api` function. The last frame stays on the screen.
+- `done(ctx)` (may be NULL) runs once in the UI task at the first UI pass. Free the buffer there, never in `frame`.
+- `ticks` is 1 to 300. Errors: `E_NOT_FOUND` (outside `dkm_init`), `E_CONTRACT` (no frame, bad ticks), `E_BUSY` (taken already), `E_BOOT_ONLY` (the intro is over). After an error the stock intro runs.
+- A fault in `frame` reaches the firmware's handler. The boot counter stays raised, so repeated failed boots end in safe mode.
+- In a safe boot no module loads, so `dk_intro_take` is never called. The runtime itself replaces the stock intro with a fixed safe-mode screen for 4 s: `SAFE MODE`, the reason (`REC HELD`, `2 FAILED BOOTS`, `SAFE ONCE`, `DSP FAULT`, `CRASH` or `SELECTION UNREADABLE`) and `NO MODULES LOADED`.
+
+See `modules/tools/bootscreen`.
 
 ## 6. Generated files
 
@@ -344,6 +399,7 @@ The generated files are in `sdk/include/dk/gen/` and `sdk/asm/`.
 | `sdk/asm/dk_machine.inc` | The machine constants and field offsets for assembly. | The machine's `.s`. |
 | `sdk/include/dk/gen/fx_consts.h` | The effect constants as C `#define`s. | `<dk/fx.h>`. |
 | `sdk/asm/dk_fx.inc` | The effect constants and field offsets for assembly. | The effect's `.s`. |
+| `sdk/include/dk/gen/limits.h` | The `.dkm` format limits (`[limits.format]`) as C `#define`s, such as `DK_ARENA_HDR`. | Core apps in C. |
 
 Do not include `dk_fx.inc` and `dk_machine.inc` in one assembly file. `DK_BLOCK` and `DK_LEVEL_BOUND_BITS` are in both.
 
@@ -356,6 +412,9 @@ uv run python -m tools.patchkit.patchkit gen --modules AUTHOR/NAME    # one modu
 ```
 
 Run `gen:modules` after you change `module.toml`, `src/module.c`, `devices/*.toml` or `sdk/sdk.toml`.
+Generation reads existing cached content objects and never builds them. After changing a C declaration, run
+`mise run module:build -- AUTHOR/NAME` before `gen:modules` to refresh the declarations in the cache.
+For a new module with no cached objects, generation skips its gallery until that first build; run generation again afterward.
 
 ## 7. Contracts
 
@@ -369,12 +428,26 @@ The headers are the reference. This section lists what you need to know before y
 | `render(state, in, params)` | Once per block of `DK_BLOCK` (32) samples while the voice runs. | `DK_OK`, or `DK_DONE` when the voice has ended. |
 | `desc` | A `dk_machine_desc` in read-only data: magic, contract version, parameter count, voices, state bytes, bytes cleared at note-on, cycle budgets. | Read by the adapter. |
 
-`render` writes `DK_BLOCK` floats to `in->out`. `in` also holds `pitch` (semitones shifted left by 8, the tune included), `velocity` and `block`.
+`render` writes `DK_BLOCK` floats to `in->out`. `in` also holds `pitch` (semitones shifted left by 8, the tune included), `velocity`, `block` and the source `track`.
 `params` holds `DK_MAX_PARAMS` words. The words after your parameters are 0.
 
 The adapter enters your routine with `I13` = return address and `JUMP (M13, I12)`. The arguments are `R4` = state, `R8` = `dk_voice_in`,
 `R12` = `params`. The result is in `R0`. In `dk_voice_in` the words are: 0 `pitch`, 1 `velocity` (0 to 127, shifted left by 8), 2 `block`
-(blocks since the note-on), 3 `out` (pointer to 32 floats). `render` also runs on the note-on block, after `note_on`.
+(blocks since the note-on), 3 `out` (pointer to 32 floats), 4 `track` (0 to 15, latched at note-on).
+`track` requires machine contract 1.1; the first four offsets and the V1 descriptor are unchanged. On Digitone II it identifies the source
+track independently of the physical voice slot, and stays latched until retrigger. The first trigger-edge block remains silent; the owner is
+latched on the following note-on block. An invalid owner ends only that slot without calling the module.
+`render` also runs on the note-on block, after `note_on`.
+
+Stereo machines (machine contract 1.2, additive). A machine that has two output channels declares `.stereo = 1` in `DK_MACHINE`, sets
+`DK_MACHINE_STEREO` in the contract word of its `dk_machine_desc` (`DK_MACHINE_V1 | DK_MACHINE_STEREO`, 257; `pack` refuses a mismatch), writes
+`DK_BLOCK` floats of the right channel to `in->out_r` (word 5 of `dk_voice_in`) and returns `DK_STEREO` or-ed into the status (`DK_OK | DK_STEREO`,
+`DK_DONE | DK_STEREO`) on every block. A mono 1.1 machine is unchanged: it never touches `out_r` and the adapter copies L to R. On the Digitakt II
+the adapter writes R into the odd voice of the stock voice pair (the stock engine pans the two buffers independently); the guard checks both
+blocks. On the Digitone II `out_r` is a per-slot R buffer. The adapter checks R, scales it as the engine scales L, and runs each stock stage
+between the machine and the pan a second time on R ([DN2 stereo](design/dn2-stereo.md)). At most 8 slots play stereo in a block. The other
+slots play R = L. A stereo slot costs about 2,900 to 5,500 more DSP instructions per block than a mono slot (design section 3). The DN2
+emulator test of design section 8 is open. `digikit/shot` is the example.
 Do not place `note_on` at offset 0 of the image: an offset of 0 reads as "no note_on".
 
 The `dk_machine_desc` has 10 words: magic, contract, parameter count, voices (1 to 16), state bytes per voice (a multiple of 4), bytes cleared at
@@ -468,11 +541,74 @@ The `dk_api` table that `dkm_init` receives. Fields are only appended, each is 4
 | `version`, `size`, `device`, `runtime` | Table layout version, table size, the device id, the packed runtime version. |
 | `import(name)` | Address of a firmware function or runtime helper by name. 0 when the image has none. |
 | `alloc(size)`, `free(p)` | A 16-byte aligned block from the module arena, and its release. `alloc` returns null when full. |
-| `store_read(path, dst, cap)` | Read a store file. Returns its size, or a negative code. |
+| `store_read(path, dst, cap)` | Read a store file. Returns its size, or a negative code. One call at a time, in `dkm_init` only. |
 | `log(msg, value)` | Append to the runtime log. API 1.0. |
 | `log_lv(level, msg, value)` | The same with a level. API 1.1. |
 | `register_cmds(first, count, handler)` | Register SysEx commands. API 1.2. |
+| `sample_bank(local_id)`, `sample_load(handle, path)`, `sample_status(handle)` | Resolve, load and query a module-owned sample bank. API 1.3; see the bounded proof contract below. |
+| `files_client()`, `files_list(client, root, path, notify, context)`, `files_poll(client, ticket, out, capacity)`, `files_cancel(client, ticket)` | Read-only file/directory listing. API 1.4, runtime 0.5.4; see below. |
 | `memcpy_addr`, `memset_addr`, `memcmp_addr`, `muldi3_addr`, `udivdi3_addr`, `umoddi3_addr` | Addresses of the runtime's helpers. The compiler calls the 64-bit ones by itself. |
+
+For the bounded sample-bank proof, include `<dk/sample.h>` and declare
+`DK_SAMPLE_BANK(LOCAL_ID, BANK, DESCRIPTOR, CAPACITY)` in the module's C declaration. Exactly one bank is supported:
+reserve 1–8,192 mono float32 frames in the module's own DSP BSS and a four-word initialized zero descriptor
+(READY, normal-word source pointer, frame count, sample rate). Check the API 1.3 table `size` covers the appended
+sample functions before calling them. Resolve the positive opaque handle with `sample_bank(local_id)` during init.
+
+Call `sample_load(handle, path)` from init or a service callback. It copies the NUL-terminated path and queues work
+for the UI task; the callback performs no file I/O. `sample_status(handle)` returns UNUSED=0, QUEUED=1, LOADING=2,
+READY=3, or a negative `DK_SAMPLE_E_*` error. Only an unused bank accepts a load. Input must be a complete canonical
+mono 48 kHz PCM16 native sample, nonempty and at most 8,192 frames. DT2 uses an absolute +Drive path (`/...`), opens
+read-only and requires no concurrent Transfer writes during acquisition. DN2 uses `samples/...` in the digikit store
+and validates a private snapshot before delivery.
+
+Once delivery starts, the bank stays pinned until restart, including on failure; no replacement or eviction is
+supported. Runtime publishes the immutable descriptor's READY word last, after payload and view acknowledgements.
+The [sample-proof fixture](../tests/fixtures/modules/sample-proof/README.md) demonstrates the declarations, service
+calls and tested DSP bridge. Transferred-file playback acceptance passes in the emulator on DT2 OS 1.17 and
+DN2 OS 1.12. Hardware behavior and product capacity/replacement/selection remain unproved; this is not a product sampler.
+
+A stereo or mono sample pool (API 1.5, [design](design/sample-api-1.5.md)) uses `<dk/sample_track.h>` and
+`DK_SAMPLE_TRACKS(LOCAL_ID, RECORDS, CONTROL)` instead of a bank (a module has one family): 16 `dk_strack` records (512 bytes), one for each
+pool entry, and 16 control sets (256 bytes) in the DSP data (`.PKDATA`, zero, no relocations in them). `pack` writes them as the kind 2 record of
+the DSP section and declares API 1.5; a module without a table declares 1.4. `sample_tracks(local_id)` gives the handle in init;
+`sample_pool_add(handle, path)` queues a PCM16 native file (mono or stereo, 48 kHz) from a service or UI callback and returns its pool index
+0 to 15: the first free entry, or the entry that already holds the path (`DK_SAMPLE_E_POOL` when all 16 are in use). The path is the
+root-relative path of a `DK_FILES_SAMPLES` listing row (`KICKS/K1`); the runtime adds the device root (DT2 `/`, DN2 `samples/`), and a DT2 path
+that already starts with `/` stays as it is. `sample_pool_set(handle, index, path)` (API 1.6) loads a file into that entry and replaces what was there (the old file is released; a file another entry holds is shared). `sample_pool_clear(handle, index)` leaves a hole: indexes are stable, nothing moves. A machine picks
+the entry of a note in its DSP, usually from a parameter (SHOT: SMP, word 0, `word >> 8`); an entry that is not READY is silent.
+`sample_pool_path(handle, index, buf, cap)` (API 1.6) gives the path back in the same form, in every state but UNUSED. The pool list is kept per
+project. The runtime closes an entry's old generation before it publishes a new record. A module that only calls these entries has no table and
+must check the table `size` before it calls them. `pack` declares the lowest Api minor that has what a module needs; a module that calls a newer
+entry without checking `size` lists it in `[module] uses_api = ["sample_pool_path"]` and is then refused by a runtime that lacks it.
+
+A sampler machine can add the on-device sample picker with `<dk/sample_picker.h>`: list `../../../sdk/src/sample_picker.c` and
+`../../../sdk/src/picker_logic.c` in the `[[object]]` sources, call `dk_picker_init(api, handle)` in `dkm_init` and `dk_picker_fini()` in
+`dkm_fini`, and call `dk_picker_open_pool(current, pick, ctx)` from the click action of the SMP parameter. The picker shows the 16
+slots; YES on a slot opens the file browser for that slot, and YES on a file loads it there (`sample_pool_set`). `pick(ctx, index)` runs after a file was loaded, and the machine sets its SMP value to `index`.
+`modules/machines/shot` is the example (design: [sample picker](design/sample-picker.md)). The picker needs no manifest field: it checks the Api
+`size` before it calls `sample_pool_path`, and without `core/ui` it does nothing.
+
+For reusable browsing, include `<dk/files.h>` and acquire a positive `files_client()` handle during init.
+`files_list` copies a canonical root-relative NUL-terminated path and returns a positive request ticket;
+empty path lists the root. `DK_FILES_SAMPLES` maps to DT2 +Drive or DN2 store `samples/`, and
+`DK_FILES_STORE` lists the runtime store on either device. A new request supersedes the previous one.
+The public path holds at most 255 bytes; provider limits are smaller (DT2 sample paths 254 bytes,
+store paths 159 bytes, DN2 nonempty sample paths 151 bytes after the virtual prefix).
+
+`files_poll` performs no storage I/O: it returns pending (0), a copied `dk_file_entry` (1), end (2),
+or a negative error. Pass space for the whole 304-byte record; only return 1 changes the output.
+Rows retain the full path and file/directory kind. Check validity flags before using size or hash.
+Size is physical source bytes: DT2 includes the 16-byte trailer omitted by stock ReadDir.
+Hashes are typed stored metadata: SHA-256 or DT2's odd 32-bit hash in the first four bytes, big endian.
+Listing neither pins contents nor validates a sample; revalidate the selected source when loading it.
+
+An optional callback receives `(client, ticket, state, context)` in the UI task without owning slot 0.
+It is a deferred, coalesced readiness hint: poll the supplied ticket and tolerate a stale-ticket error.
+Keep callback context in module memory, never on the stack. Cancel or request another folder without
+waiting for old work; late results are discarded. Fill/action callbacks should queue or poll, not read
+storage. See the [listing design](design/sdk-files.md) and
+the [public boundary fixture](../tests/fixtures/modules/files-proof/src/files-proof.c).
 
 Names a module may import (from `[[import]]` in `sdk/sdk.toml`):
 
@@ -481,18 +617,20 @@ Names a module may import (from `[[import]]` in `sdk/sdk.toml`):
 | `fw_block_read`, `fw_alloc`, `fw_free` | The firmware's eMMC block read and allocator. |
 | `memcpy`, `memset`, `memcmp`, `__muldi3`, `__udivdi3`, `__umoddi3` | Runtime helpers. |
 | `input_key`, `input_turn` | Press a key or turn an encoder. They need `core/input`. Without it the import is not found. |
-| `dk_ui_*` | The calls of `<dk/ui.h>`: menus, lists, rows and dialogs. They need `core/ui`. Without it the module still loads and each call returns its failure value (`dk_ui_menu_new` 0, the int calls -1, `dk_ui_has`, `dk_ui_is_open` and `dk_ui_checked` 0, the void calls nothing). |
+| `dk_ui_*` | The calls of `<dk/ui.h>`: menus, lists, rows and dialogs. They need `core/ui`. Without it the module still loads and each call returns its failure value (`dk_ui_menu_new` 0, the int calls -1, `dk_ui_has`, `dk_ui_is_open` and `dk_ui_checked` 0, the void calls nothing). `dk_ui_tick(fn, ctx, period_ms)` is a timer in the UI task (`DK_UI_CAP_TICK`): redraw a screen while a load runs; 0 stops it. |
 | `dkrt_blocks` | The 1500 Hz block clock. |
+| `dl_set_tick_cb` | Sets one per-block callback in the block interrupt (`core/dsp-link`; a stub without it): `void cb(const volatile u16 *rec)` gets the previous DSP reply record. Short C only; clear it in `dkm_fini`. |
 
 A load fails with `E_IMPORT` when a name is not in the runtime's table.
 
 `register_cmds` adds SysEx commands. Call it from `dkm_init`. The range is released after `dkm_fini`. The range must lie inside a range reserved in
-`sdk/sdk.toml` under `[protocol.ranges]`. Two ranges exist today, and `digikit/remote` uses both:
+`sdk/sdk.toml` under `[protocol.ranges]`. Three ranges exist today; `digikit/remote` uses the first two and the probe module (`digikit/probe`) the third:
 
 | Range | Numbers |
 | --- | --- |
 | `remote` | `0x38` to `0x3d` |
 | `remote_state` | `0x3e` to `0x3f` |
+| `probe` | `0x32` to `0x35` |
 
 Another range is a change to `sdk/sdk.toml`. Run `mise run gen:modules` after it. A handler runs in the firmware's MIDI task. Keep it short and never
 wait. The request body is at most 160 bytes. The reply body is at most 879 bytes. Return the reply length, or a negative status.
@@ -503,7 +641,7 @@ wait. The request body is at most 160 bytes. The reply body is at most 879 bytes
 | --- | --- | --- |
 | Build | `mise run module:build -- PATH [--check]` | Compiles the sources to objects in `out/cache/dko/<id>/` (`patchkit build`). `PATH` is the module folder or the module id; no path builds every module. An object whose sources did not change is skipped. `--check` fails when the objects are stale; `--force` compiles anyway. `patchkit dko show FILE` prints what an object holds. |
 | Check | `mise run module:check -- ID [--device dt2\|dn2]` | See below. |
-| Memory audit | `mise run module:audit -- NAME [--device dt2\|dn2]` | Loads the module on a ColdFire-only emulator, drives the UI and reports ColdFire stores outside the module's blocks. About 10 to 30 s per device. |
+| Memory audit | `mise run module:audit -- NAME [--device dt2\|dn2]` | Packs the module and the run-time modules it requires, loads them on a ColdFire-only emulator, drives the UI and reports ColdFire stores outside the module's blocks (pc, address, the code it belongs to). It runs the Vitest device test `modules/core/runtime/tests/memaudit-module.device.test.ts` through `tools/devtools/module_audit.sh`, which first builds the patchkit CLI and the daemons when they are stale. About 1 to 2 minutes per device. |
 | Pack | `mise run module:pack -- ID --device dt2\|dn2 [-o FILE]` | Builds the objects that are stale and makes the `.dkm` from them in one command (no separate build step). Default: `out/patch/NAME-DEVICE.dkm`. It refuses a bad declaration, a bad route and a send without a page. |
 | Pack all | `mise run module:pack-all [-- --force]` | Packs every run-time module for every device into `out/modules/<device>/<id>.dkm`. |
 | Emulator | `mise run workbench` | Starts the emulator. Run it in another shell. |
@@ -527,8 +665,8 @@ A module owns its tests. They live in the module folder and nothing else lists t
 
 | File | Found by |
 | --- | --- |
-| `tests/test_*.py` (also in subfolders) | `module:check`, `verify`, `test:changed`, `python-tests --full`. The basename must be unique in the repository (no `__init__.py`): start it with the module name, for example `test_hello_range.py`. A helper next to the test is imported by its name. The repository root and `tests/` are on `sys.path` (`tools.*`, `support.*`). Use `Path(__file__).parents[1]` for the module folder. |
-| `tests/*.test.ts` | The Vitest project `module-tests` (`mise run test:host`). |
+| `tests/test_*.py` (also in subfolders) | `module:check`, `gate`, `test:changed`. The basename must be unique in the repository (no `__init__.py`): start it with the module name, for example `test_hello_range.py`. A helper next to the test is imported by its name. The repository root and `tests/` are on `sys.path` (`tools.*`, `support.*`). Use `Path(__file__).parents[1]` for the module folder. |
+| `tests/*.test.ts` | The Vitest project `module-tests` (`pnpm test:host`). |
 | `tests/scenarios/*.toml` | The digikit scenario runner (`pk_digikit_scen list\|run NAME`) and the tiers, next to `tests/digikit/scenarios/`. Scenario names are unique across both places. |
 
 A change in a module selects the module's own tests and those of the modules that depend on it. A change only in `tests/` runs the tests and no
@@ -566,8 +704,8 @@ Trace marks (`DK_TRACE_LOG`, `DK_STEP`) are switched on with `--trace` on `modul
 
   | Contract | Version | Covers |
   | --- | --- | --- |
-  | `api` | `[1, 2]` | The `dk_api` table. Every module has it, `raw` included. |
-  | `machine` | `[1, 0]` | `<dk/machine.h>` |
+  | `api` | `[1, 5]` | The `dk_api` table. Every module has it, `raw` included. `pack` declares 1.5 only for a module with a pool table, else 1.4. |
+  | `machine` | `[1, 2]` | `<dk/machine.h>`; minor 1: `track`; minor 2: stereo machines |
   | `fx` | `[1, 0]` | `<dk/fx.h>` |
   | `service` | `[1, 0]` | Service modules |
 
@@ -628,3 +766,67 @@ allows a known id. Without `--dir` it uses the first folder of `PATCHKIT_MODULES
 
 The firmware reference (`mise run fw:reference`, which writes `out/reference/fw.html`) is for `core/*` adapters. Content modules do not use
 firmware declarations or anchors.
+
+A machine can opt into one additional native callback page with
+`DK_NATIVE_PAGE_V1` (machine contract 1.4). Declare existing parameter bindings
+with `DK_PAGE_PARAM(word, encoder)` and UI-only controls with
+`DK_PAGE_LOCAL(id, encoder)`; draw through the bounded SDK canvas. PARAM turns
+continue through native editing rather than calling `param_set`. See
+[the native page contract](design/native-machine-pages.md) and the neutral
+`tests/fixtures/modules/native-page` fixture. This is an experimental proof API;
+complete both current-device acceptance checks before using it in a product page.
+
+
+For two replacement pages, use `DK_NATIVE_PAGE_V2` (machine contract 1.5),
+declaring exactly indexes 0 and 1. The ordinary `DK_PAGE` still defines parameter
+storage. Existing V1 pages and default V2 pages retain their draw behavior.
+
+
+Page zero may use genuine native widgets plus a clipped overlay:
+
+```c
+DK_NATIVE_PAGE_V2_FLAGS(voice, 0, DK_PAGE_STOCK_OVERLAY, "VOICE",
+    controls_draw, controls_event, DK_PAGE_PARAM(0, 0), DK_PAGE_PARAM(1, 4));
+DK_NATIVE_PAGE_V2(voice, 1, "DETAIL", detail_draw, controls_event,
+    DK_PAGE_PARAM(1, 4));
+```
+
+Native widgets draw first, then the callback. The unchanged frame supplies the
+same 99×53 local canvas. Clear intended overlay rectangles with
+`fill_rect(..., 0)` before drawing text or glyphs; only explicitly filled
+rectangles are composited. Text outside that mask is invisible. Other native
+pixels, including the LEVEL fader and page dots, remain intact. The flag is
+supported only on V2 page zero; unknown flags are rejected. LEVEL remains the
+native physical control, independently of parameter bindings. Draw order,
+clipping and explicit opaque rectangles are the SDK contract. Firmware calls,
+Bitmap layout and scratch buffers are internal adapter details that may change.
+
+
+Replacement page one can opt into `DK_PAGE_WIDE_CANVAS` with
+`DK_NATIVE_PAGE_V2_FLAGS`. Its canvas is 107×53 pixels (global x17..123),
+leaving the track badge and page dots outside it. Ordinary pages and
+`DK_PAGE_STOCK_OVERLAY` retain the 99×53 canvas (global x25..123).
+The wide flag is rejected on page zero and cannot combine with the overlay.
+`dk_sample_region_rect_q8` in `<dk/sample_region.h>` accepts an inclusive
+`dk_sample_region_rect` to place and clip the waveform, rail and handles within
+a smaller plot; `dk_sample_region_q8` remains the full-width helper.
+
+`<dk/widgets.h>` provides code-native display helpers for custom pages:
+`dk_page_encoder(&frame->canvas, x, y, value)` draws a 17×17 circle/needle,
+and `dk_page_level(...)` draws a 9×17 vertical fader. Coordinates are top-left
+canvas pixels; drawing clips to the reported canvas bounds. Values clamp to
+0..127; normalize a smaller parameter range before drawing. The helpers neither
+clear their backgrounds nor edit parameters. LEVEL may be displayed from
+`frame->level` without binding any A–H encoder; physical LEVEL keeps its normal
+behavior. Encoder/level use fewer than 100 small drawing calls and no allocation.
+These are our own code-drawn shapes, with no firmware assets. The helper API and
+value/geometry contract are stable; internal rasterization may be refactored.
+
+`dk_page_tune(canvas, x, y, eighths)` is a 22×17 box for signed 1/8-semitone
+values (clamped to ±24 semitones). It shows whole semitones in the canvas font
+and exact nonzero fractions in a small code-native 3×5 row; it never changes a
+parameter's scale. Shot passes `(pitch_unit-64)*3`, preserving its 3/8-semitone
+step. `dk_page_sample(canvas, x, y, slot, state)` is a 22×17 local slot display:
+`DK_WIDGET_SAMPLE_EMPTY` is dotted, `READY` shows an index 0..99, `LOADING` uses
+dots and `MISSING` a cross. These helpers have no stock sample-bank semantics.
+Tune uses fewer than 130 drawing calls; sample fewer than 100; neither allocates.

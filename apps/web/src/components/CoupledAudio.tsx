@@ -31,7 +31,7 @@ export async function startCoupled(opts: {
  * user-supplied and stays in the page: firmware (.syx), the packed DSP
  * image, the DSP state (`.dsp` beside a coupled snapshot) and, to skip the
  * boot, the ColdFire snapshot taken at ready. Needs a core built with
- * `tools/emulator/native_wasm.py --sharc`.
+ * `node tools/nx/wasm.mjs --sharc`.
  */
 export default function CoupledAudio(props: {
   runtime: () => Promise<EmulatorRuntime | undefined>;

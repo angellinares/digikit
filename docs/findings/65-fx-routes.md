@@ -3,7 +3,7 @@
 A run-time effect is a master insert or a send effect (finding 62), and the amounts of a send are the framework's (finding 64). Step 4 gives the effect's author a way to say where the effect starts and which routes make sense, and gives the user a page to choose
 (DIGIKIT > FX ROUTES). Marks: **[D]** measured or read once by the author (no second agent has checked it), **[O]** open. Pieces: `packages/patchkit` (`typed.rs` `FxDef`, `register.rs` `fx_routes`, `dkmdsp.rs` effect flags), `modules/core/runtime` (`dsp.rs` `fx_flags`,
 `fxsend.rs` `routes_of`, `saved_route`, `fx_entry`; `fxpage.rs` `rebuild_list`; exports `dkrt_fx`, `dkrt_settings_flush`), `modules/core/apps/digikit-menu` (the page), the fixtures `tests/fixtures/modules/dyn-fx-gain-send` and `dyn-fx-gain-sendonly`, the scenario
-`tests/digikit/scenarios/fx-routes-dt2.toml` (`tools/patchkit/pk_digikit_fxroutes.py`).
+`REF:tests/digikit/scenarios/fx-routes-dt2.toml` (`tools/patchkit/pk_digikit_fxroutes.py`).
 
 ## The manifest rule **[D]**
 

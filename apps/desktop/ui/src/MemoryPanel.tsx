@@ -14,7 +14,7 @@ import type { DkSession } from '@digi/dk-session';
 import { cardRefresh } from './card-state';
 import { memoryOpen as open, setMemoryOpen } from './panel-open';
 import { deviceOfPort } from './remote-core';
-import { freeTitle, segmentTitle, usedText, widthPct } from './memory-core';
+import { freeTitle, noteText, segmentTitle, usedText, widthPct } from './memory-core';
 import { readMemory, type MemoryReading } from './memory-backend';
 import { createReadGate } from './read-gate-core';
 import { focusReadDue } from '@web/transfer/refresh-core';
@@ -134,7 +134,12 @@ export default function MemoryPanel(props: {
                         <span>{bar.label}</span>
                         <span class="used">{usedText(bar)}</span>
                       </div>
-                      <div class="bar" role="img" aria-label={`${bar.label}: ${usedText(bar)}`}>
+                      <div
+                        class="bar"
+                        classList={{ over: bar.over }}
+                        role="img"
+                        aria-label={`${bar.label}: ${usedText(bar)}`}
+                      >
                         <For each={bar.segments}>
                           {(s) => (
                             <span
@@ -146,6 +151,13 @@ export default function MemoryPanel(props: {
                         </For>
                         <span class="seg free" title={freeTitle(bar)} />
                       </div>
+                      <Show when={noteText(bar)}>
+                        {(note) => (
+                          <span class="mem-note" classList={{ over: bar.over }}>
+                            {note()}
+                          </span>
+                        )}
+                      </Show>
                     </div>
                   )}
                 </For>

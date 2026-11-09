@@ -1,0 +1,21 @@
+{
+  "$schema": "../../../node_modules/nx/schemas/project-schema.json",
+  "name": "digikit/freqshift",
+  "metadata": {
+    "runtimeAcceptance": [
+      {
+        "files": ["tests/freqshift.device.test.ts"],
+        "modules": ["test/sine", "digikit/freqshift"],
+        "sources": [
+          "tools/patchkit/pk_digikit_fxshift.py",
+          "tools/patchkit/pk_digikit_fxsend.py",
+          "tools/patchkit/pk_digikit_fxroutes.py",
+          "tools/patchkit/pk_digikit_fxroute.py",
+          "tools/patchkit/hook_ab.py"
+        ],
+        "pythonTools": true,
+        "plusdrive": true
+      }
+    ]
+  }
+}

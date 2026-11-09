@@ -4,7 +4,7 @@ comparison of the two renders (spike 0.7).
 
     uv run python -m tools.patchkit.hook_ab run LABEL --device dn2|dt2 --scenario NAME
         [--patch FILE] [--seconds S] [--dt2-card] [-- EXTRA coupled-run args]
-    uv run python -m tools.patchkit.hook_ab compare BASE.wav TEST.wav [--gain G]
+    uv run python -m tools.patchkit.hook_ab compare BASE.wav TEST.wav [--gain G] [--align-onset] [--json]
 
 `run` renders into out/runs/hook/LABEL/ (report.json, audio.wav) through
 tools/emulator/coupled.py, so the benchlock and the ready inputs are the usual ones.
@@ -12,12 +12,14 @@ tools/emulator/coupled.py, so the benchlock and the ready inputs are the usual o
 ratio in dB, the largest |test - G * base| (for a pure gain G), and the peak
 ratio. With --gain it exits 1 unless the error is within one float32 step of
 the scaled sample (the hook multiplies in float32 and the converter rounds to
-Q31, so a 2**-23 relative error is the floor).
+Q31, so a 2**-23 relative error is the floor). --align-onset compares the
+common signal length from each onset, and --json prints only the metrics.
 """
 
 from __future__ import annotations
 
 import argparse
+import json
 import math
 import subprocess
 import sys
@@ -78,15 +80,42 @@ def compare(base: np.ndarray, test: np.ndarray, gain: float | None) -> dict:
     return out
 
 
+def compare_aligned(ref: np.ndarray, run: np.ndarray, gain: float) -> dict:
+    """RUN against REF times GAIN from the note's onset on (the boots reach the note up to a few blocks apart): `hook_ab.compare`'s figures over the
+    common length, and the onset shift in samples."""
+
+    def onset(x: np.ndarray, thr: float) -> int:
+        nz = np.flatnonzero(np.abs(x) > thr)
+        return int(nz[0]) if len(nz) else -1
+
+    # the threshold scales with the gain, so that a quieter run is not found later on the same attack ramp
+    a, b = onset(ref, 1e-6), onset(run, 1e-6 * max(abs(gain), 1e-3))
+    if a < 0 or b < 0:
+        return {"shift": None, "max_err_ulps": 1e9, "rms_db": None}
+    n = min(len(ref) - a, len(run) - b)
+    r = compare(ref[a : a + n], run[b : b + n], gain)
+    r["shift"] = b - a
+    return r
+
+
 def cmd_compare(args: argparse.Namespace) -> int:
-    res = compare(read_wav(args.base), read_wav(args.test), args.gain)
-    for k, v in res.items():
-        print(f"{k:16} {v}")
+    base, test = read_wav(args.base), read_wav(args.test)
+    res = (
+        compare_aligned(base, test, args.gain)
+        if args.align_onset
+        else compare(base, test, args.gain)
+    )
+    ok = True
     if args.gain is not None:
-        ok = res["length_equal"] and res["max_err_ulps"] <= 2.0
-        print("PASS" if ok else "FAIL", f"(gain {args.gain}: error within 2 ulps)")
-        return 0 if ok else 1
-    return 0
+        ok = res.get("length_equal", False) and res["max_err_ulps"] <= 2.0
+    if args.json:
+        print(json.dumps(res, allow_nan=False))
+    else:
+        for k, v in res.items():
+            print(f"{k:16} {v}")
+        if args.gain is not None:
+            print("PASS" if ok else "FAIL", f"(gain {args.gain}: error within 2 ulps)")
+    return 0 if ok else 1
 
 
 def cmd_run(args: argparse.Namespace) -> int:
@@ -125,8 +154,18 @@ def main(argv: list[str] | None = None) -> int:
     c.add_argument("base", type=Path)
     c.add_argument("test", type=Path)
     c.add_argument("--gain", type=float)
+    c.add_argument(
+        "--align-onset",
+        action="store_true",
+        help="compare from each signal's onset (requires --gain)",
+    )
+    c.add_argument(
+        "--json", action="store_true", help="print only comparison metrics as JSON"
+    )
     c.set_defaults(fn=cmd_compare)
     args = p.parse_args(argv)
+    if args.cmd == "compare" and args.align_onset and args.gain is None:
+        c.error("--align-onset requires --gain")
     return args.fn(args)
 
 

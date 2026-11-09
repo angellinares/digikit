@@ -5,6 +5,7 @@
 rtos = "tasks, queues, mutexes, idle, interrupts, the reset and boot path"
 mem = "heap, operator new and free"
 storage = "block device reads and writes, the boot record"
+samples = "the stock sample pool: loader, worker queue, slot tables and records"
 project = "the project object, kits, tracks, serialisation"
 midi = "MIDI send and receive"
 input = "key and encoder decoding"
@@ -23,6 +24,7 @@ test = "anchors used only by test fixtures"
 util = "anything that fits nowhere else"
 
 [dsp]
+cache = "cache configuration and startup ranges"
 frame = "the frame orchestrator"
 voice = "voice rendering"
 fx = "the effect chain: sends, returns, buses"

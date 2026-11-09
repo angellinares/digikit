@@ -12,6 +12,7 @@ const wasm = fileURLToPath(new URL('../public/patchkit.wasm', import.meta.url));
 const have = existsSync(wasm);
 const kit = have ? await PatchKit.create(new Uint8Array(readFileSync(wasm)), '{"ports":[],"modules":[]}') : undefined;
 
+const NAME = 'Digitakt II';
 const TOTAL = 40;
 function prepared(over: Partial<PreparedFlash> = {}): PreparedFlash {
   const image = Uint8Array.from({ length: TOTAL * 8 }, (_, i) => i & 0xff);
@@ -32,7 +33,16 @@ function prepared(over: Partial<PreparedFlash> = {}): PreparedFlash {
   };
 }
 
-const SHORT: FlowLimits = { leaveMs: 3000, returnMs: 3000, askMs: 6000, pollMs: 100, askEveryMs: 500 };
+const SHORT: FlowLimits = {
+  leaveMs: 3000,
+  returnMs: 3000,
+  askMs: 6000,
+  pollMs: 100,
+  askEveryMs: 500,
+  releaseMs: 30,
+  portsMs: 30,
+  askTryMs: 30,
+};
 const GOOD: Answer = { os: '1.12', runtime: '0.5.2', imageId: 'c5d8ccb27e139cbc' };
 
 /** A device on a virtual clock: its port goes away `goneAfter` ms after the last message and is back `backAfter` ms later. */
@@ -47,6 +57,16 @@ function fake(opts: {
   let lastSend = 0;
   let released = false;
   let asks = 0;
+  const present = async (): Promise<boolean> => {
+    if (!released) return true;
+    const gone = opts.goneAfter === undefined ? 500 : opts.goneAfter;
+    const back = opts.backAfter === undefined ? 1500 : opts.backAfter;
+    if (gone === null) return true;
+    const since = t.ms - lastSend;
+    if (since < gone) return true;
+    if (back === null) return false;
+    return since >= gone + back;
+  };
   const ops: FlowOps = {
     sender: async (total) => kit!.sender(total),
     send(m) {
@@ -61,16 +81,8 @@ function fake(opts: {
     release: async () => {
       released = true;
     },
-    portPresent: async () => {
-      if (!released) return true;
-      const gone = opts.goneAfter === undefined ? 500 : opts.goneAfter;
-      const back = opts.backAfter === undefined ? 1500 : opts.backAfter;
-      if (gone === null) return true;
-      const since = t.ms - lastSend;
-      if (since < gone) return true;
-      if (back === null) return false;
-      return since >= gone + back;
-    },
+    port: NAME,
+    ports: async () => ((await present()) ? [NAME] : []),
     async ask() {
       const a = (opts.answers ?? (() => GOOD))(asks++);
       if (a instanceof Error) throw a;
@@ -142,15 +154,16 @@ test('a port that fails mid-send stops the run, and the sender does not go on', 
 });
 
 test(
-  'a device that does not restart, or does not come back, is told apart with a clear message',
+  'a device that does not come back is a clear failure; one that never leaves is asked after leaveMs',
   { skip: !have },
   async () => {
-    const never = await run(fake({ goneAfter: null }), prepared());
-    assert.equal(code(never), 'no-restart');
-    assert.match(message(never), /did not restart in time.*press NO and send again/s);
     const gone = await run(fake({ backAfter: null }), prepared());
     assert.equal(code(gone), 'no-return');
-    assert.match(message(gone), /did not come back in time/);
+    assert.match(message(gone), /did not answer on any port named Digitakt II\./);
+    // the restart was not seen (faster than a poll): the device is asked, and its answer is the verdict
+    const never = fake({ goneAfter: null });
+    assert.equal((await run(never, prepared())).phase, 'done');
+    assert.ok(never.asks() >= 1);
   },
 );
 
@@ -160,6 +173,19 @@ test('the runtime or the image id of another image is a failure', { skip: !have 
     code(await run(fake({ answers: () => ({ ...GOOD, imageId: 'ffffffffffffffff' }) }), prepared())),
     'image-id',
   );
+});
+
+test('a stale answer of the old image is not the verdict while time remains', { skip: !have }, async () => {
+  const OLD = { ...GOOD, imageId: 'a6b3d7b4a110ccb5' };
+  // the port never seemed to leave and the old image answers first
+  const stale = fake({ goneAfter: null, answers: (n) => (n < 2 ? OLD : GOOD) });
+  assert.equal((await run(stale, prepared())).phase, 'done');
+  assert.equal(stale.asks(), 3);
+  // a real mismatch is judged on the last answer, after askMs
+  const wrong = fake({ goneAfter: null, answers: () => OLD });
+  const end = await run(wrong, prepared());
+  assert.equal(code(end), 'image-id');
+  assert.ok(wrong.t.ms - 1000 >= SHORT.leaveMs + SHORT.askMs - SHORT.askEveryMs);
 });
 
 test('a device that answers late is waited for; one that never does is a failure', { skip: !have }, async () => {
@@ -192,5 +218,110 @@ test('the user can stop waiting for the restart', { skip: !have }, async () => {
   };
   const end = await run(f, prepared(), ctl.signal);
   assert.equal(code(end), 'no-restart');
+  assert.match(message(end), /You stopped waiting/);
+});
+
+// ---- faults of the port itself (a fake sender: these do not need the wasm) -------------------------------------------------------------
+
+/** A device whose port list is `ports(ms since the last message)`; each fault replaces one operation. */
+function faulty(
+  ports: (since: number) => string[],
+  over: Partial<FlowOps> = {},
+  signal: AbortSignal = new AbortController().signal,
+): { run: () => Promise<FlashState>; t: { ms: number }; moved: string[]; log: string[]; states: FlashState[] } {
+  const t = { ms: 1000 };
+  const moved: string[] = [];
+  const log: string[] = [];
+  const states: FlashState[] = [];
+  const ops: FlowOps = {
+    sender: async () => ({ next: () => ({ kind: 'done' }), sent: () => 1, fail() {}, free() {} }) as never,
+    send() {},
+    now: () => t.ms,
+    sleep: async (ms) => {
+      t.ms += ms;
+    },
+    release: async () => {},
+    port: NAME,
+    ports: async () => ports(t.ms - 1000),
+    moved: (name) => void moved.push(name),
+    log: (line) => void log.push(line),
+    ask: async () => GOOD,
+    ...over,
+  };
+  const p = prepared({ ends: [8], image: new Uint8Array(8) });
+  const run = () => runFlash(ops, p, signal, (s) => states.push(s), SHORT);
+  return { run, t, moved, log, states };
+}
+const within15s = (t: { ms: number }) => assert.ok(t.ms - 1000 <= 15_000, `took ${t.ms - 1000} ms of virtual time`);
+
+test('the normal restart: the port goes, comes back, the device answers; the log has one line per stage', async () => {
+  const f = faulty((s) => (s < 2000 || s >= 4000 ? [NAME] : []));
+  assert.equal((await f.run()).phase, 'done');
+  within15s(f.t);
+  assert.deepEqual(f.moved, []);
+  assert.deepEqual(f.log, [
+    'rebooting: leaving · ports: Digitakt II',
+    'rebooting: returning · ports: none',
+    'rebooting: asking · ports: Digitakt II',
+  ]);
+});
+
+test('a restart no poll saw (the port is never missing from the list) goes on to asking after leaveMs', async () => {
+  const f = faulty(() => [NAME]);
+  assert.equal((await f.run()).phase, 'done');
+  within15s(f.t);
+  assert.ok(f.log.some((l) => l.startsWith('rebooting: asking')));
+  assert.ok(!f.log.some((l) => l.startsWith('rebooting: returning')));
+});
+
+test('a device that comes back as "Digitakt II 2" is used on that port', async () => {
+  const f = faulty((s) => (s < 2000 ? [NAME] : s < 4000 ? [] : ['Digitakt II 2', 'Other 2']));
+  const end = await f.run();
+  assert.equal(end.phase, 'done');
+  within15s(f.t);
+  assert.deepEqual(f.moved, ['Digitakt II 2']);
+  assert.ok(f.log.some((l) => l.includes('came back as Digitakt II 2')));
+});
+
+test('a port of another name does not count as the device', async () => {
+  const f = faulty((s) => (s < 2000 ? [NAME] : ['Digitakt II Pro', 'Digitakt', 'Digitakt II 2x']));
+  const end = await f.run();
+  assert.equal(code(end), 'no-return');
+  assert.deepEqual(f.moved, []);
+});
+
+test('release() that hangs does not stop the run', async () => {
+  const f = faulty((s) => (s < 2000 || s >= 4000 ? [NAME] : []), { release: () => new Promise(() => {}) });
+  assert.equal((await f.run()).phase, 'done');
+  within15s(f.t);
+});
+
+test('ports() that hangs is "unknown": the run polls again', async () => {
+  let calls = 0;
+  // calls 1-2 (log, first poll): present; call 3 hangs; then the port is gone (calls 4-8), then back
+  const f = faulty(() => [], {
+    ports: () => (++calls === 3 ? new Promise(() => {}) : Promise.resolve(calls < 4 || calls > 8 ? [NAME] : [])),
+  });
+  assert.equal((await f.run()).phase, 'done');
+  assert.ok(calls > 8, 'the polling went on after the hung call');
+  within15s(f.t);
+});
+
+test('an ask() that hangs is tried again; the run ends in a clear failure when none answers', async () => {
+  let n = 0;
+  const late = faulty((s) => (s < 2000 || s >= 4000 ? [NAME] : []), {
+    ask: () => (++n < 3 ? new Promise(() => {}) : Promise.resolve(GOOD)),
+  });
+  assert.equal((await late.run()).phase, 'done');
+  const never = faulty((s) => (s < 2000 || s >= 4000 ? [NAME] : []), { ask: () => new Promise(() => {}) });
+  assert.equal(code(await never.run()), 'no-answer');
+  within15s(never.t);
+});
+
+test('stopping the run ends a hung release()', async () => {
+  const ctl = new AbortController();
+  const f = faulty(() => [NAME], { release: () => new Promise(() => {}) }, ctl.signal);
+  setTimeout(() => ctl.abort(), 5);
+  const end = await f.run();
   assert.match(message(end), /You stopped waiting/);
 });

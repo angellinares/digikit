@@ -150,14 +150,22 @@ static int32_t state(u32 cmd, u32 seq, const u8 *body, u32 len, u8 *out)
     return 3;
 }
 
+/* One handler for the range 0x38 to 0x3a, so that the module uses two of the runtime's registration slots, not four. */
+static int32_t panel(u32 cmd, u32 seq, const u8 *body, u32 len, u8 *out)
+{
+    if (cmd == 0x38u)
+        return key(cmd, seq, body, len, out);
+    if (cmd == 0x39u)
+        return turn(cmd, seq, body, len, out);
+    return release(cmd, seq, body, len, out);
+}
+
 int32_t dkm_init(const dk_api *api)
 {
-    int a = api->register_cmds(0x38, 1, key);
-    int b = api->register_cmds(0x39, 1, turn);
-    int c = api->register_cmds(0x3a, 1, release);
+    int a = api->register_cmds(0x38, 3, panel);
     int d = api->register_cmds(0x3e, 1, state);
-    api->log((const u8 *)"remote registered", (u32)(a | b | c | d));
-    return (a | b | c | d) ? -1 : 0;
+    api->log((const u8 *)"remote registered", (u32)(a | d));
+    return (a | d) ? -1 : 0;
 }
 
 /* ---- settings ------------------------------------------------------------------------------------------------------------ */

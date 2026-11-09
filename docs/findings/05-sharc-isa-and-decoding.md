@@ -1517,6 +1517,12 @@ in a register assembles correctly: in the 16-bit compute (`2a_short`), selas wri
 selcc uses that form. None of the 35 tracked assembly files uses a
 refused form or a negative count.
 
+**Fixed in the fork [D]** (2026-10-30, ElekLabs/selache branch `fix/encodings`, commit "selas: encode immediate shifts per PRM Table 17-9"):
+the parser now passes the Table 17-9 opcode (ASHIFT 0x01, ROT 0x02, OR LSHIFT 0x08, OR ASHIFT 0x09, FDEP 0x11, FEXT/FDEP (SE) 0x12/0x13,
+OR FDEP 0x1B, OR FDEP (SE) 0x1D), the encoder sets `dataex` 0xF for a negative LSHIFT/ASHIFT/OR count, and `(SE)` is no longer taken for a
+label. patchkit dropped `fix_shift_counts` and the `ENCODE_HAZARDS` refusals; its `verify` still checks every object against Table 17-9.
+The 35 tracked sources assemble to the same bytes as before (none uses a refused form), so only the unit tests exercise the new words.
+
 **Open [O].** The other Selache forms with an immediate have not been compared byte for byte with stock. The external
 project's rule fits: "decodes the same" is not proof of an encoding; compare the exact bytes with stock for every instruction
 form that carries an immediate.

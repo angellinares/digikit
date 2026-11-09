@@ -103,7 +103,7 @@ impl Compute {
                 let f = if matches!(self.kind, Kind::Mul) {
                     bnd::_astatx_mult_float(s, v, overflow, underflow, invalid)
                 } else {
-                    core::flags::_float_alu_updates(s, v, overflow, false, None, invalid)
+                    core::flags::_float_alu_updates(s, v, overflow, false, None, invalid, false)
                         .map_err(err)?
                 };
                 (v, f)
@@ -118,7 +118,6 @@ impl Compute {
                     b,
                     RegView::CUR,
                     SpecView::CUR,
-                    s.cfg.approx_recips,
                 )
                 .map_err(err)?;
                 (v, f)
@@ -512,8 +511,7 @@ impl Op {
             let astat = bnd::_apply_flag_update(s, s.r[118], flags);
             s.set_r(118, astat).map_err(err)?;
             if matches!(descriptor.compute.kind, Kind::Mul) {
-                core::compute::_apply_mult_sticky(s, S_STKYX, astat, S_FLOAT_MULTIPLY)
-                    .map_err(err)?;
+                core::compute::_apply_sticky(s, S_STKYX, astat, S_FLOAT_MULTIPLY).map_err(err)?;
             }
         }
         if FULL_ADVANCE {

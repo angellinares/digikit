@@ -106,6 +106,43 @@ Artifacts: `out/native/runs/20261027-runtime-input-timing/` contains
 October 26 gate binaries. This is an attribution run, not a paired claim of
 test-speed improvement.
 
+## Bounded readiness replacement (2026-11-01)
+
+**[D]** A bounded batch now replaces selected waits in remote-input and input-adapter. Readiness
+requires valid normal boot fields and the actual runtime UI hook, plus free-running daemon/main-UI
+state; post-install observations require a newer epoch. Fresh empty boots explicitly assert zero
+selected modules and a zero counter snapshot, allowing one controlled install restart without a
+stability wait. No persisted counter update is inferred from the in-memory stability flag. Remote
+command readiness and complete ABOUT rows replace only their corresponding fixed waits. ABOUT must
+start with an empty buffer and finish with the runtime, BOOT and final RAM row. Individual awaited
+readiness reads use the same absolute observation deadline, so an unanswered RPC cannot hang the
+poll or prevent diagnostic output. Input holds and release behavior retain their existing contract.
+
+The first DT2 remote-UI proof failed on `cf.ready=false`, with a newer epoch, valid normal boot/UI
+fields and `filesystem_verified=null`. Review confirmed that restart preserves the card and relaxes
+the DT2 filesystem-worker check. Initial readiness still requires `cf.ready`; after restart the
+current epoch/boot/UI guards suffice unless filesystem verification explicitly reports failure.
+Null means unobserved, not verified. With that correction, all three selected cases passed on each
+device: DN2 OS 1.12 in 203.62 s, DT2 OS 1.17 in 278.20 s. Each run passed two files and skipped the
+other device's three cases. Local logs: `/private/tmp/runtime-readiness-dn2.log` and
+`/private/tmp/runtime-readiness-dt2-retry.log`.
+
+The earlier host preflight passed 49 cases and static/type checks; after the DT2 correction the
+25 helper tests and regression types passed. Independent review reported no issues. The static
+removed-wait ceiling is 269 s across eight sessions: 171 s startup, 80 s post-install and 18 s ABOUT.
+These focused invocation durations are observations, not a paired speedup measurement. The October
+profile above is historical evidence, not an A/B baseline for this batch.
+
+Protocol-only startup, intermediate navigation settles, key holds, remote TURN refill pacing,
+faulttrace waits and global settle helpers remain unchanged. The broad gate, including host,
+runtime-fixture across all ten runtime files and smoke, has not run. Runtime merge acceptance remains
+pending; prior routing-only exceptions do not apply.
+
+**[O]** Consider extending the existing input-probe/debug facility to subscribe to proper completion
+hooks and buffer events tagged with boot ID and sequence. Scenarios could wait for completion, then
+assert the outcome, while retaining uninstrumented coverage. This is a future design consideration;
+no hook/event implementation is authorized or included in this batch.
+
 ## Gate-selection fan-out (2026-10-27)
 
 **[D]** The SHARC/workbench branch's merge gate selected the long Python debug,

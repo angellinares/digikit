@@ -11,8 +11,8 @@
 //! in free space, on every commit (`dkrt_sdk::store`, docs/design/digikit-store.md). Rules: no `match` on integers (a dense one becomes a jump
 //! table, which is not ColdFire code), no `core::fmt`, no slice indexing (a bounds panic hangs the task).
 
-use crate::sha256::Sha;
-use crate::{block_read, block_write, boot, card, dlog, midi_send, rd32, tx_in_flight, wr32};
+use crate::hash32::{self, Hash32};
+use crate::{block_read, block_write, boot, card, dlog, midi_send, rd32, tx_in_flight, watch, wr32};
 use core::ptr::{addr_of, addr_of_mut};
 use dkrt_sdk::store::{self, Edit, Entry, Hdr, Io, Layout, Table, KIND_DIR, KIND_FILE};
 use dkrt_sdk::proto::*;
@@ -23,7 +23,7 @@ use dkrt_sdk::{logk, DkrtCap, CARD_TOO_SMALL, CAP_MAX, E_NOT_FOUND, OK, RUNTIME_
 // (finding 46). E_PEEK: the range is not inside a range the device file lists, or the length is 0 or over 512.
 
 /// Largest DATA chunk (INFO says so) and the unpacked body we accept: offset (4) + chunk.
-pub const MAX_CHUNK: u32 = 32768;
+pub const MAX_CHUNK: u32 = dkrt_sdk::proto::MAX_CHUNK as u32;
 /// The unpacked request body starts here in the buffer, so that a DATA chunk (after its 4-byte offset) is 16-byte aligned.
 const BODY_AT: usize = 12;
 const BODY_MAX: usize = 4 + MAX_CHUNK as usize;
@@ -44,7 +44,7 @@ const IN_AT: usize = 1024;
 const OUT_AT: usize = IN_AT + TBL_CAP;
 /// Wire bytes of a reply are at most 1 KiB: the unpacked body at most this.
 const REPLY_BODY_MAX: usize = 880;
-const REQ_WIRE_MAX: u32 = 40 * 1024;
+const REQ_WIRE_MAX: u32 = dkrt_sdk::proto::MAX_REQUEST_WIRE as u32;
 const CLEAR_MAGIC: u32 = 0x434c_5221;
 
 #[repr(C)]
@@ -54,8 +54,8 @@ struct Up {
     path: [u8; 160],
     size: u32,
     sha: [u8; 32],
-    /// The sha256 of the bytes received so far (DATA feeds it, END compares it with `sha`: a large file is not read back from the card).
-    run: Sha,
+    /// The hash of the bytes received so far (DATA feeds it, END compares its slot with `sha`: a large file is not read back from the card).
+    run: Hash32,
     /// Next expected byte offset.
     next: u32,
     last_off: u32,
@@ -70,7 +70,7 @@ static mut UP: Up = Up {
     path: [0; 160],
     size: 0,
     sha: [0; 32],
-    run: Sha::new(),
+    run: Hash32::new(),
     next: 0,
     last_off: 0,
     last_len: 0,
@@ -279,9 +279,9 @@ unsafe fn state(buf: *mut u8) -> Result<Table, i32> {
         Ok(t) => Ok(t),
         Err(e) => {
             if e == E_NOT_FOUND {
-                // "No store" is an empty area (or one with only a selection record, which also makes the card ours). Bytes in a header sector that are
-                // not a store header are somebody's data: a write would overwrite them, so refuse (finding 46, card safety).
-                if !header_sectors_blank(buf.add(SCRATCH_AT)) {
+                // "No store" is an empty area (or one with only a selection record, which also makes the card ours), or a store of another version.
+                // Bytes in a header sector that are not a store header are somebody's data: a write would overwrite them, so refuse (finding 46).
+                if !header_sectors_free(buf.add(SCRATCH_AT)) {
                     return Err(E_NOSTORE);
                 }
                 Ok(Table { h: Hdr::empty(&lay()), copy: 0, agree: true })
@@ -292,13 +292,13 @@ unsafe fn state(buf: *mut u8) -> Result<Table, i32> {
     }
 }
 
-/// Do both header sectors (A, B) read all 0x00 or all 0xFF? A sector that cannot be read does not count as blank.
-unsafe fn header_sectors_blank(scratch: *mut u8) -> bool {
+/// Does each header sector (A, B) read all 0x00 or all 0xFF, or hold a store header of another version? A sector that cannot be read is not free.
+unsafe fn header_sectors_free(scratch: *mut u8) -> bool {
     let l = lay();
     let mut k = 0;
     while k < 2 {
         let rel = if k == 0 { 0 } else { l.header_b() };
-        if block_read(l.first + rel, 512, scratch) != 0 || !card::blank(scratch) {
+        if block_read(l.first + rel, 512, scratch) != 0 || !(card::blank(scratch) || dkrt_sdk::store::old_header(scratch)) {
             return false;
         }
         k += 1;
@@ -420,15 +420,16 @@ unsafe fn cmd_info(seq: u32, buf: *mut u8) -> i32 {
     let flags = (boot::info().safe & 1)
         | if up().open { 2 } else { 0 }
         | if card::writable() { 0 } else { 4 }
-        | if dlog::debug_on() { 8 } else { 0 }
+        | if dlog::sink_present() { 8 } else { 0 }
         | if crate::crash::seen().found != 0 { 16 } else { 0 };
     *rb.add(16) = flags as u8;
-    let (oldest, newest) = dlog::range();
-    wr32(rb.add(17), oldest);
-    wr32(rb.add(21), newest);
+    // the log range (bytes 17 to 24) stays zero: the log is the debug module's, whose LOG command has the range
+    wr32(rb.add(17), 0);
+    wr32(rb.add(21), 0);
     // appended after the log range: the whole packed runtime version (bytes 2-3 keep its low 16 bits) and the capability bits
     wr32(rb.add(25), RUNTIME_VERSION);
-    wr32(rb.add(29), CAP_LOG | CAP_PEEK | CAP_LOGCFG | CAP_SELECT | CAP_RESTART | CAP_MODULES | CAP_CAPACITY | CAP_READ | CAP_VERIFY | CAP_SERVICE_CMDS | CAP_FOLDERS | CAP_SETTINGS | CAP_RENAME);
+    let log_caps = if dlog::sink_present() { CAP_LOG | CAP_PEEK | CAP_LOGCFG } else { 0 };
+    wr32(rb.add(29), log_caps | CAP_SELECT | CAP_RESTART | CAP_MODULES | CAP_CAPACITY | CAP_READ | CAP_VERIFY | CAP_SERVICE_CMDS | CAP_FOLDERS | CAP_SETTINGS | CAP_FILEHASH | CAP_RENAME);
     // appended after the capability bits: the id of the flashed image (patchkit stamps it; zeros when there is none)
     let id = crate::image_id();
     let mut i = 0;
@@ -514,8 +515,8 @@ unsafe fn cmd_modules(seq: u32, body: *const u8, blen: usize) -> i32 {
         let mut j = 0;
         while j < nt {
             *rb.add(at + 66 + j) = types[j];
-            faults = faults.wrapping_add(dlog::guard_faults(types[j] as u32));
-            off |= dlog::guard_disabled(types[j] as u32);
+            faults = faults.wrapping_add(watch::guard_faults(types[j] as u32));
+            off |= watch::guard_disabled(types[j] as u32);
             j += 1;
         }
         wr32(rb.add(at + 66 + nt), faults);
@@ -558,8 +559,8 @@ unsafe fn path_ok(p: *const u8, max: usize) -> Option<usize> {
 
 /// LIST: body `u32 first`, then optionally `prefix NUL` (1 to 159 bytes, e.g. `samples/`). Without a prefix: `first` is an entry index, `count` all
 /// entries. With one: only the entries whose path starts with it (files, and folders with nothing in them), `first` indexes those and `count` is how many
-/// there are. Reply: `u32 count`, `u8 n`, then per entry `path NUL, u32 size, sha256[32]`, as many as fit, in table order (by first sector: a host sorts
-/// for display). A folder with no file in it has size 0 and a zero sha256.
+/// there are. Reply: `u32 count`, `u8 n`, then per entry `path NUL, u32 size, hash[32]`, as many as fit, in table order (by first sector: a host sorts
+/// for display). A folder with no file in it has size 0 and a zero hash slot.
 unsafe fn cmd_list(seq: u32, buf: *mut u8, body: *const u8, blen: usize) -> i32 {
     if blen < 4 || (blen > 4 && (blen < 6 || blen > 4 + 160 || *body.add(blen - 1) != 0)) {
         return reply(CMD_LIST, seq, E_MSG, 0);
@@ -768,7 +769,7 @@ unsafe fn cmd_begin(seq: u32, buf: *mut u8, body: *const u8, blen: usize) -> i32
     copy(u.path.as_mut_ptr(), body, pl);
     u.size = size;
     copy(u.sha.as_mut_ptr(), body.add(pl + 5), 32);
-    u.run = Sha::new();
+    u.run = Hash32::new();
     u.next = 0;
     u.have_last = false;
     u.last_off = 0;
@@ -816,10 +817,10 @@ unsafe fn cmd_data(seq: u32, buf: *mut u8, blen: usize) -> i32 {
     reply(CMD_DATA, seq, OK, 0)
 }
 
-/// The sha256 of `size` bytes of the card from store sector `first`, read in chunks through `buf`.
+/// The hash slot of `size` bytes of the card from store sector `first`, read in chunks through `buf`.
 unsafe fn sha_of(buf: *mut u8, first: u32, size: u32, out: *mut u8) -> bool {
     let l = lay();
-    let mut sha = Sha::new();
+    let mut h = Hash32::new();
     let mut left = size;
     let mut sector = first;
     while left > 0 {
@@ -828,11 +829,11 @@ unsafe fn sha_of(buf: *mut u8, first: u32, size: u32, out: *mut u8) -> bool {
         if block_read(l.first + sector, secs * 512, buf.add(16)) != 0 {
             return false;
         }
-        sha.update(buf.add(16), n);
+        h.update(buf.add(16), n);
         left -= n;
         sector += secs;
     }
-    sha.finish(out);
+    core::ptr::copy_nonoverlapping(hash32::slot(h.finish()).as_ptr(), out, 32);
     true
 }
 
@@ -847,8 +848,7 @@ unsafe fn cmd_end(seq: u32, buf: *mut u8) -> i32 {
         return reply(CMD_END, seq, E_LENGTH, 0);
     }
     // the hash of the bytes received (DATA fed it as they came: END does not read a large file back from the card; VERIFY does)
-    let mut got = [0u8; 32];
-    core::mem::replace(&mut u.run, Sha::new()).finish(got.as_mut_ptr());
+    let got = hash32::slot(core::mem::replace(&mut u.run, Hash32::new()).finish());
     let mut i = 0;
     while i < 32 {
         if got[i] != u.sha[i] {
@@ -896,7 +896,7 @@ unsafe fn cmd_delete(seq: u32, buf: *mut u8, body: *const u8, blen: usize) -> i3
 }
 
 /// Most bytes one READ returns: the reply body is a status, the u32 file size and the bytes, in at most `REPLY_BODY_MAX`.
-const READ_MAX: u32 = 768;
+const READ_MAX: u32 = dkrt_sdk::proto::READ_MAX as u32;
 
 /// The file `path` (NUL-terminated) of the store, or the status to reply.
 unsafe fn file_of(buf: *mut u8, path: *const u8) -> Result<Entry, i32> {
@@ -985,8 +985,8 @@ unsafe fn cmd_settings(seq: u32, body: *const u8, blen: usize) -> i32 {
 }
 
 /// VERIFY: `path NUL`, optionally then `u32 offset, u32 length`. Reads the file (or that range of it) back from the card, in chunks, and replies its
-/// sha256 (32 bytes): what a host compares with its own hash to know that the bytes on the card are the bytes it sent. The cost is about 120 ColdFire
-/// instructions a byte, so a large file is checked in ranges (the offset is a multiple of 512). Errors: E_NOFILE, E_READ, E_OFFSET (not a multiple of
+/// hash slot (32 bytes): what a host compares with its own hash to know that the bytes on the card are the bytes it sent. The cost is about 7 ColdFire
+/// instructions a byte, and a large file is still checked in ranges (the offset is a multiple of 512). Errors: E_NOFILE, E_READ, E_OFFSET (not a multiple of
 /// 512, or at or past the end), E_LENGTH (0, or past the end of the file), E_MSG, E_PATH.
 unsafe fn cmd_verify(seq: u32, buf: *mut u8, body: *const u8, blen: usize) -> i32 {
     let pl = match path_ok(body, blen) {
@@ -1049,126 +1049,6 @@ unsafe fn highest_seq(buf: *mut u8) -> u32 {
         k += 1;
     }
     best
-}
-
-extern "C" {
-    /// Per-device data from the device file (`[digikit] peek`), defined by `src/cf/<dev>/device.s`: the number of ranges and `lo, hi` pairs.
-    static dkrt_peek_n: u32;
-    static dkrt_peek_ranges: [u32; 8];
-}
-
-/// Events in one LOG reply: the reply body holds a status byte, `oldest`, `newest`, a count and 32 bytes each, in at most `REPLY_BODY_MAX`.
-const LOG_PER_REPLY: u32 = ((REPLY_BODY_MAX - 1 - 9) / 32) as u32;
-
-/// LOG: body `u32 from_seq`. Reply: `u32 oldest, u32 newest, u8 n`, then `n` events of 32 bytes (`seq, time, kind u16, flags u16, a0..a4`, all
-/// big endian) from `from_seq` (or from the oldest kept, when `from_seq` is older), as many as fit one reply. Nothing is sent unless a host asks.
-unsafe fn cmd_log(seq: u32, body: *const u8, blen: usize) -> i32 {
-    if blen < 4 {
-        return reply(CMD_LOG, seq, E_MSG, 0);
-    }
-    let from = rd32(body);
-    let (oldest, newest) = dlog::range();
-    let rb = (addr_of_mut!(RBODY) as *mut u8).add(1);
-    wr32(rb, oldest);
-    wr32(rb.add(4), newest);
-    let mut n = 0u32;
-    if newest != 0 {
-        let mut s = if from < oldest { oldest } else { from };
-        while s <= newest && n < LOG_PER_REPLY {
-            if dlog::copy_event(s, rb.add(9 + 32 * n as usize)) {
-                n += 1;
-            }
-            s += 1;
-        }
-    }
-    *rb.add(8) = n as u8;
-    reply(CMD_LOG, seq, OK, 9 + 32 * n as usize)
-}
-
-/// Is `[addr, addr + len)` inside one of the ranges of the device file?
-unsafe fn peek_allowed(addr: u32, len: u32) -> bool {
-    let n = core::ptr::read_volatile(addr_of!(dkrt_peek_n)) as usize;
-    let t = addr_of!(dkrt_peek_ranges) as *const u32;
-    let end = match addr.checked_add(len) {
-        Some(e) => e,
-        None => return false,
-    };
-    let mut i = 0;
-    while i < n && i < 4 {
-        let lo = core::ptr::read_volatile(t.add(2 * i));
-        let hi = core::ptr::read_volatile(t.add(2 * i + 1));
-        if addr >= lo && end <= hi {
-            return true;
-        }
-        i += 1;
-    }
-    false
-}
-
-/// PEEK: body `u32 addr, u16 len` (1 to 512). Reply: `u32 addr, u16 len`, then the bytes. Reads RAM only, inside the ranges the device file lists
-/// (`[digikit] peek`): no peripheral registers.
-unsafe fn cmd_peek(seq: u32, body: *const u8, blen: usize) -> i32 {
-    if blen != 6 {
-        return reply(CMD_PEEK, seq, E_MSG, 0);
-    }
-    let addr = rd32(body);
-    let len = ((*body.add(4) as u32) << 8) | *body.add(5) as u32;
-    if len == 0 || len > 512 || !peek_allowed(addr, len) {
-        return reply(CMD_PEEK, seq, E_PEEK, 0);
-    }
-    let rb = (addr_of_mut!(RBODY) as *mut u8).add(1);
-    wr32(rb, addr);
-    *rb.add(4) = (len >> 8) as u8;
-    *rb.add(5) = len as u8;
-    let mut i = 0;
-    while i < len as usize {
-        *rb.add(6 + i) = core::ptr::read_volatile((addr as usize + i) as *const u8);
-        i += 1;
-    }
-    reply(CMD_PEEK, seq, OK, 6 + len as usize)
-}
-
-/// LOGCFG: body `u8 op` (0 get, 1 set); a set adds `u8 default` and 8 bytes, the level of module record 0 to 7 (0xff: use the default). Levels are 0 to 4.
-/// Reply (both ops): `u8 default`, 8 module levels, `u8 debug_on`.
-unsafe fn cmd_logcfg(seq: u32, body: *const u8, blen: usize) -> i32 {
-    if blen < 1 {
-        return reply(CMD_LOGCFG,seq, E_MSG, 0);
-    }
-    let op = *body;
-    if op == 1 {
-        if blen != 10 {
-            return reply(CMD_LOGCFG,seq, E_MSG, 0);
-        }
-        let mut i = 0;
-        while i < 9 {
-            let v = *body.add(1 + i);
-            if i == 0 {
-                if v > 4 {
-                    return reply(CMD_LOGCFG,seq, E_PROTO, 0);
-                }
-            } else if v > 4 && v != 0xff {
-                return reply(CMD_LOGCFG,seq, E_PROTO, 0);
-            }
-            i += 1;
-        }
-        dlog::set_level_default(*body.add(1));
-        i = 0;
-        while i < 8 {
-            dlog::set_level_module(i, *body.add(2 + i));
-            i += 1;
-        }
-    } else if op != 0 {
-        return reply(CMD_LOGCFG,seq, E_PROTO, 0);
-    }
-    let rb = (addr_of_mut!(RBODY) as *mut u8).add(1);
-    *rb = dlog::level_default();
-    let mut i = 0;
-    while i < 8 {
-        *rb.add(1 + i) = dlog::level_module(i);
-        i += 1;
-    }
-    *rb.add(9) = if dlog::debug_on() { 1 } else { 0 };
-    reply(CMD_LOGCFG,seq, OK, 10)
 }
 
 /// FAULT (dev): body `u8 what`; 1 makes the runtime panic with a failed bounds check, to test the fault path. It does not reply: the device resets.
@@ -1389,15 +1269,6 @@ unsafe fn h_abort(seq: u32, _buf: *mut u8, _body: *const u8, _blen: usize) -> i3
     up().open = false;
     reply(CMD_ABORT, seq, OK, 0)
 }
-unsafe fn h_log(seq: u32, _buf: *mut u8, body: *const u8, blen: usize) -> i32 {
-    cmd_log(seq, body, blen)
-}
-unsafe fn h_peek(seq: u32, _buf: *mut u8, body: *const u8, blen: usize) -> i32 {
-    cmd_peek(seq, body, blen)
-}
-unsafe fn h_logcfg(seq: u32, _buf: *mut u8, body: *const u8, blen: usize) -> i32 {
-    cmd_logcfg(seq, body, blen)
-}
 unsafe fn h_fault(seq: u32, _buf: *mut u8, body: *const u8, blen: usize) -> i32 {
     cmd_fault(seq, body, blen)
 }
@@ -1409,7 +1280,7 @@ unsafe fn h_restart(seq: u32, _buf: *mut u8, _body: *const u8, _blen: usize) -> 
 }
 
 /// The built-in commands, looked up one after the other (a jump table is not ColdFire code).
-static CMDS: [Cmd; 21] = [
+static CMDS: [Cmd; 18] = [
     Cmd { cmd: CMD_INFO, flags: NOLOG, h: h_info },
     Cmd { cmd: CMD_LIST, flags: 0, h: h_list },
     Cmd { cmd: CMD_MODULES, flags: NOLOG, h: h_modules },
@@ -1425,9 +1296,6 @@ static CMDS: [Cmd; 21] = [
     Cmd { cmd: CMD_SETTINGS, flags: NOLOG, h: h_settings },
     Cmd { cmd: CMD_CLEAR, flags: 0, h: h_clear },
     Cmd { cmd: CMD_ABORT, flags: 0, h: h_abort },
-    Cmd { cmd: CMD_LOG, flags: NOLOG, h: h_log },
-    Cmd { cmd: CMD_PEEK, flags: NOLOG, h: h_peek },
-    Cmd { cmd: CMD_LOGCFG, flags: NOLOG, h: h_logcfg },
     Cmd { cmd: CMD_FAULT, flags: 0, h: h_fault },
     Cmd { cmd: CMD_SELECT, flags: BIG, h: h_select },
     Cmd { cmd: CMD_RESTART, flags: 0, h: h_restart },
@@ -1455,7 +1323,8 @@ fn logged(cmd: u8, status: i32) -> bool {
 
 // ---- commands that modules register (Api::register_cmds) ------------------------------------------------------------------
 
-const SVC_MAX: usize = 4;
+/// Registered ranges at most (a module takes one per command group: digikit/remote 2, digikit/probe 1).
+const SVC_MAX: usize = 8;
 
 #[derive(Clone, Copy)]
 struct Svc {

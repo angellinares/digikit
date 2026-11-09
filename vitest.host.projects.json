@@ -1,9 +1,11 @@
 [
+  { "name": "dkbs", "dir": "packages/dkbs", "include": "tests/*.test.ts" },
   { "name": "control-client", "dir": "packages/control-client", "include": "tests/*.test.ts" },
   { "name": "test-support", "dir": "packages/test-support", "include": "tests/*.test.ts" },
   { "name": "dk-session", "dir": "packages/dk-session", "include": "tests/*.test.ts" },
   { "name": "web-transfer", "dir": "apps/web", "include": "tests/*.test.ts" },
   { "name": "desktop-host", "dir": "apps/desktop", "include": "ui/tests/*.test.ts", "conditions": ["browser"] },
   { "name": "regression-host", "dir": "tests/regression", "include": "host/**/*.test.ts" },
-  { "name": "module-tests", "dir": "modules", "include": "*/*/tests/**/*.test.ts" }
+  { "name": "module-tests", "dir": "modules", "include": "**/tests/**/*.test.ts" },
+  { "name": "nx-host", "dir": "tools", "include": "nx/tests/*.test.ts" }
 ]

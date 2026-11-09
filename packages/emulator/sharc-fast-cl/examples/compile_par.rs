@@ -96,7 +96,11 @@ fn main() {
     );
     // Is the machine code the same when compiled twice (a stable cache key)?
     let mut be = ClBackend::default();
-    let a = be.compile_blob(&kernels[0], &EntryChecks::default()).unwrap();
-    let b = be.compile_blob(&kernels[0], &EntryChecks::default()).unwrap();
+    let a = be
+        .compile_blob(&kernels[0], &EntryChecks::default())
+        .unwrap();
+    let b = be
+        .compile_blob(&kernels[0], &EntryChecks::default())
+        .unwrap();
     println!("deterministic bytes: {}", a.bytes == b.bytes);
 }

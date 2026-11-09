@@ -158,3 +158,203 @@ fn nonbyte_serq_does_not_arm_ssi() {
         assert_eq!(board.ssi_deadline(0), None);
     }
 }
+
+fn device_board() -> Board {
+    Board::new(
+        Card::new(CardIdentity::Mlc4G).unwrap(),
+        SemaphoreAddresses::default(),
+        CompletionPolicy::Device,
+    )
+}
+
+fn arm_device_tx(board: &mut Board, csr: u16) -> u64 {
+    board.map_ram_page(RAM).unwrap();
+    tcd(board, ssi::TX_CHAN, RAM + 0x200, 0, csr, 0);
+    board.enable_ssi_diagnostic(ssi::AUDIO_SSI0_REQUEST_HZ, 132_000_000);
+    board.write8(edma::SERQ, ssi::TX_CHAN as u8).unwrap();
+    board.ssi_deadline(0).unwrap()
+}
+
+#[test]
+fn device_ssi_major_completion_latches_once_until_guest_acknowledgement() {
+    for interrupt in [false, true] {
+        let mut board = device_board();
+        let due = arm_device_tx(&mut board, if interrupt { edma::CSR_INT_MAJOR } else { 0 });
+        assert!(board.service_ssi(due).is_empty());
+        assert_eq!(board.device_ssi50_pending(), interrupt);
+        let next = board.ssi_deadline(due).unwrap();
+        board.service_ssi(next);
+        assert_eq!(board.dma.ssi.as_ref().unwrap().major_loops_tx, 2);
+        assert_eq!(
+            board.read32(edma::INTH).unwrap(),
+            if interrupt { 1 << 18 } else { 0 }
+        );
+        assert!(board.take_completion_events().is_empty()); // no per-major IRQ queue
+        board.write8(edma::CINT, 50).unwrap();
+        assert!(!board.device_ssi50_pending());
+        assert!(!board.dma.ssi.as_ref().unwrap().int50_asserted);
+        board.write8(edma::CERQ, 50).unwrap();
+        assert_eq!(board.ssi_batch_limit(), Some(u64::MAX));
+    }
+}
+
+#[test]
+fn device_ssi_acknowledgements_keep_register_and_diagnostic_flags_in_sync() {
+    for (addr, size, value, remains, other) in [
+        (edma::CINT, 1, 50, false, (1 << 27) | (1 << 28)),
+        (edma::CINT, 1, 0x40, false, 0),
+        (edma::CINT, 1, 0x80 | 50, true, (1 << 27) | (1 << 28)),
+        (edma::CINT, 1, 0xc0 | 50, true, (1 << 27) | (1 << 28)),
+        (edma::CINT, 1, 59, true, 1 << 28),
+        (edma::INTH, 4, 1 << 18, false, (1 << 27) | (1 << 28)),
+        (edma::INTH, 2, 4, false, (1 << 27) | (1 << 28)),
+        (edma::INTH + 1, 1, 4, false, (1 << 27) | (1 << 28)),
+        (edma::INTH, 4, 1 << 27, true, 1 << 28),
+    ] {
+        let mut board = device_board();
+        let due = arm_device_tx(&mut board, edma::CSR_INT_MAJOR);
+        board.service_ssi(due);
+        board
+            .dma
+            .edma_regs
+            .write(edma::INTH, 4, (1 << 18) | (1 << 27) | (1 << 28));
+        board.dma.edma_regs.write(edma::INTL, 4, 3);
+        board.dma.ssi.as_mut().unwrap().mark_vector170_delivered();
+        // Seed an existing DSPI completion through its own exchange helper.
+        // Device NOP must return before the legacy callback (which lacks NOP).
+        let tx = board.dma.dspi2.tx_chan;
+        let rx = board.dma.dspi2.rx_chan;
+        tcd(&mut board, tx, RAM + 0x500, 0, edma::CSR_INT_MAJOR, 0);
+        tcd(&mut board, rx, 0, RAM + 0x600, 0, 0);
+        let rx_tcd = edma::TCD_BASE + (rx * 0x20) as u32;
+        board.write16(rx_tcd + edma::ATTR as u32, 0x0101).unwrap();
+        board.write32(rx_tcd + edma::NBYTES as u32, 2).unwrap();
+        board.dma.dspi2.capture(&mut board.dma.edma_regs, &[0; 4]);
+        board
+            .dma
+            .dspi2
+            .arm_rx(&mut board.dma.edma_regs, &mut periph::dspi::ZeroPeer);
+        let dspi_pending = board.dma.dspi2.take_pending();
+        assert!(!dspi_pending.is_empty());
+        board.write_guest(addr, size, value).unwrap();
+        assert_eq!(
+            board.dma.dspi2.take_pending(),
+            if addr == edma::CINT && value == 0x40 {
+                vec![]
+            } else {
+                dspi_pending
+            }
+        );
+        assert_eq!(board.device_ssi50_pending(), remains);
+        assert_eq!(
+            board.read32(edma::INTH).unwrap(),
+            other | if remains { 1 << 18 } else { 0 }
+        );
+        let ssi = board.dma.ssi.as_ref().unwrap();
+        assert_eq!(ssi.int50_asserted, remains);
+        assert_eq!(ssi.int50_delivered, remains);
+        assert_eq!(
+            board.read32(edma::INTL).unwrap(),
+            if addr == edma::CINT && value == 0x40 {
+                0
+            } else {
+                3
+            }
+        );
+    }
+}
+
+#[test]
+fn device_ssi_preflight_rejects_before_rx_write_tcd_changes_or_irq_latch() {
+    let mut board = device_board();
+    let due = arm_device_tx(&mut board, edma::CSR_INT_MAJOR);
+    let rx = RAM + 0x100;
+    tcd(&mut board, ssi::RX_CHAN, 0, rx, 0, 0);
+    board.write32(rx, 0xfeed_beef).unwrap();
+    board.write8(edma::SERQ, ssi::RX_CHAN as u8).unwrap();
+    board
+        .write16(
+            edma::TCD_BASE + (ssi::TX_CHAN * 0x20 + edma::SOFF) as u32,
+            2,
+        )
+        .unwrap();
+    assert!(board.service_ssi(due).is_empty());
+    assert_eq!(board.read32(rx).unwrap(), 0xfeed_beef);
+    assert_eq!(
+        board
+            .read32(edma::TCD_BASE + (ssi::RX_CHAN * 0x20 + edma::DADDR) as u32)
+            .unwrap(),
+        rx
+    );
+    assert!(!board.device_ssi50_pending());
+    assert!(!board.dma.ssi.as_ref().unwrap().int50_asserted);
+    assert!(board.take_dma_written_ranges().is_empty());
+    assert_eq!(board.dma.ssi.as_ref().unwrap().rejected_requests, 1);
+}
+
+#[test]
+fn only_device_ssi_rx_also_queues_external_write_invalidation_ranges() {
+    for policy in [CompletionPolicy::Oracle, CompletionPolicy::Device] {
+        let mut board = Board::new(
+            Card::new(CardIdentity::Mlc4G).unwrap(),
+            SemaphoreAddresses::default(),
+            policy,
+        );
+        board.map_ram_page(RAM).unwrap();
+        let rx = RAM + 0x100;
+        tcd(&mut board, ssi::RX_CHAN, 0, rx, 0, 0);
+        board.enable_ssi_diagnostic(ssi::AUDIO_SSI0_REQUEST_HZ, 132_000_000);
+        board.write8(edma::SERQ, ssi::RX_CHAN as u8).unwrap();
+        let due = board.ssi_deadline(0).unwrap();
+        assert_eq!(board.service_ssi(due), vec![(rx, 4)]);
+        assert_eq!(board.read32(rx).unwrap(), RxHandoverPeer::MARKER);
+        let queued = board.take_dma_written_ranges();
+        assert_eq!(
+            queued,
+            if policy == CompletionPolicy::Device {
+                vec![(rx, 4)]
+            } else {
+                vec![]
+            }
+        );
+        assert_eq!(
+            board.take_dma_sources(),
+            if policy == CompletionPolicy::Device {
+                vec!["ssi0-rx"]
+            } else {
+                vec![]
+            }
+        );
+    }
+}
+
+#[test]
+fn device_ssi_minor_does_not_latch_and_major_uses_original_csr_before_sg_reload() {
+    let mut board = device_board();
+    let due = arm_device_tx(&mut board, edma::CSR_INT_MAJOR);
+    let base = edma::TCD_BASE + (ssi::TX_CHAN * 0x20) as u32;
+    board.write16(base + edma::CITER as u32, 2).unwrap();
+    board.write16(base + edma::BITER as u32, 2).unwrap();
+    board.service_ssi(due);
+    assert!(!board.device_ssi50_pending());
+    let next = board.ssi_deadline(due).unwrap();
+    board.service_ssi(next);
+    assert!(board.device_ssi50_pending());
+    board.write8(edma::CINT, 50).unwrap();
+    // The completed descriptor requests INT_MAJOR; the SG successor does not.
+    let descriptor = RAM + 0x300;
+    board
+        .write32(base + edma::DLAST as u32, descriptor)
+        .unwrap();
+    board.write16(base + edma::CITER as u32, 1).unwrap();
+    board
+        .write16(
+            base + edma::CSR as u32,
+            edma::CSR_INT_MAJOR | edma::CSR_E_SG,
+        )
+        .unwrap();
+    let next = board.ssi_deadline(next).unwrap();
+    board.service_ssi(next);
+    assert_eq!(board.read16(base + edma::CSR as u32).unwrap(), 0);
+    assert!(board.device_ssi50_pending());
+}

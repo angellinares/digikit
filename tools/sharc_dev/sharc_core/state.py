@@ -210,11 +210,6 @@ class State:
     # hardware behaviour.
     provisional_interpretations: Mapping[str, str] = field(default_factory=dict)
     provisional_interpreted: tuple[str, ...] = ()
-    # Opt-in --approx-recips: whether this path may substitute a documented-
-    # but-unverified numeric model for recips's undocumented ROM seed, and
-    # whether it actually did so at least once (calibration, like above).
-    approx_recips: bool = False
-    approx_recips_used: bool = False
     # Concrete single-path execution (tools/sharc_dev/sharc_run.py) sets this False to
     # skip the per-step trace log. _event() still appends a minimal dict so
     # the few call sites that immediately do trace[-1].update(...)/[...] =

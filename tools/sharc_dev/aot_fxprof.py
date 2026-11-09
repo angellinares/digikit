@@ -3,7 +3,7 @@
 
     uv run python -m tools.sharc_dev.aot_fxprof --out DIR \
         tests/regression/scenarios/dn2-trackfx.ts:tf-br-127 tests/regression/scenarios/dn2-sendfx.ts:sf-mst-thr0 \
-        [--base-cov F --base-entries F --base-trans F]
+        [--base-cov F --base-entries F --base-trans F] [--live PREFIX]
 
 The AOT cores are generated from interpreter profiles (coverage, entries,
 transitions, the inputs of tools/sharc_dev/sharc_rsgen.py). A plain trig run never
@@ -75,7 +75,15 @@ def digi_env_fast() -> dict[str, str]:
 
 def main(argv: list[str] | None = None) -> int:
     p = argparse.ArgumentParser(description=__doc__.splitlines()[0])
-    p.add_argument("names", nargs="+", metavar="FILE:SCENARIO")
+    p.add_argument("names", nargs="*", metavar="FILE:SCENARIO")
+    p.add_argument(
+        "--live",
+        action="append",
+        default=[],
+        metavar="PREFIX",
+        help="also merge the files a live daemon wrote with SHARC_PROFILE_PREFIX=PREFIX "
+        "(PREFIX.e<pid>-<n>[.entries|.trans], docs/INSTRUMENTATION.md)",
+    )
     p.add_argument("--out", type=pathlib.Path, required=True)
     p.add_argument("--device", default="dn2", choices=["dn2", "dt2"])
     p.add_argument(
@@ -107,6 +115,16 @@ def main(argv: list[str] | None = None) -> int:
     ):
         if base:
             texts[suffix].append(base.read_text())
+    for prefix in a.live:
+        for suffix in texts:
+            for f in sorted(
+                pathlib.Path(prefix).parent.glob(
+                    f"{pathlib.Path(prefix).name}.e*-*{suffix}"
+                )
+            ):
+                # the bare coverage glob also matches .entries/.trans files
+                if suffix or not f.name.endswith((".entries", ".trans")):
+                    texts[suffix].append(f.read_text())
     for spec in a.names:
         file, _, name = spec.rpartition(":")
         for cycle in (0, 1) if a.interp_cycle else (1,):

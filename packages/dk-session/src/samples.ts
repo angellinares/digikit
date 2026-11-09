@@ -3,19 +3,21 @@
 //   "digikit"    the `samples/` folder of the digikit store, the runtime's SysEx commands (`DkSession`; the Digitone II)
 // Both take the file `prepareUpload` (dksample.ts) makes, the same native sample file, so a sampling engine reads one format. The result of a verify has one
 // shape on both: what the device keeps against what the host sent. Written without TS-only runtime syntax so node can import it.
-import { DkError, hasCap, hexSha256, storeSpace } from './dkupload-core.ts';
+import { DkError, concat, fileHashHex, hasCap, storeSpace } from './dkupload-core.ts';
 import type { DkEntry, DkInfoFull, DkSession } from './dkupload-core.ts';
 import type { Prepared } from './dksample.ts';
-import { RpcFiles, verifyWritten } from './rpcfiles.ts';
+import { RpcFiles, TRAILER, verifyWritten } from './rpcfiles.ts';
 import type { RpcPort } from './rpcfiles.ts';
 
 export type SamplesKind = 'stock-rpc' | 'digikit';
 
-/** A file or a folder of the listing; `size` is what the device reports. */
+/** A file or a folder of the listing; `size` is what the device reports. `hash` is the device's content hash of a file as the backend lists it
+ * (opaque: only `sameOnDevice` of the same backend reads it); absent for a folder. */
 export interface SampleEntry {
   name: string;
   kind: 'file' | 'folder';
   size: number;
+  hash?: string;
 }
 export interface SampleSpace {
   free: number;
@@ -33,9 +35,22 @@ export interface SampleVerified {
   sent: number;
   /** Offset of the first range that differs (digikit), else null. */
   mismatchAt: number | null;
-  /** What was compared, and a line for the page: "device sha256 matches", "device content hash matches", or why not. */
+  /** What was compared, and a line for the page: "device hash matches", "device content hash matches", or why not. */
   compared: string;
   message: string;
+}
+
+export interface RemoveTreeOptions {
+  /** Called with (files removed, files to remove) before the first file and after each one. */
+  onProgress?: (done: number, total: number) => void;
+  /** Asked before each file; true stops the delete there (the folders stay). */
+  shouldStop?: () => boolean;
+}
+export interface RemoveTreeResult {
+  removed: number;
+  total: number;
+  /** `shouldStop` ended the delete before all files were removed. */
+  stopped: boolean;
 }
 
 export interface SamplesBackend {
@@ -48,6 +63,13 @@ export interface SamplesBackend {
   mkdir(folder: string): Promise<void>;
   /** Remove an empty folder. */
   rmdir(folder: string): Promise<void>;
+  /** Remove a folder and everything in it, file by file, then the folders. A failure names the file; a cancelled request is rethrown as it is. */
+  removeTree(folder: string, o?: RemoveTreeOptions): Promise<RemoveTreeResult>;
+  /**
+   * Whether `listing` (what `list` returned for the folder the file goes into) holds a file of this name with exactly the bytes `file` will store:
+   * the same size and the same content hash. No request: the listing carries the device's hash. A listing cut short only makes this false.
+   */
+  sameOnDevice(file: Prepared, listing: readonly SampleEntry[]): boolean;
   put(folder: string, file: Prepared, onProgress?: (sent: number, total: number) => void): Promise<void>;
   /** Compare the stored file with `file` (a device that does not have it, or has other bytes, reports `ok` false). */
   verify(folder: string, file: Prepared): Promise<SampleVerified>;
@@ -59,7 +81,10 @@ export interface SamplesBackend {
 }
 
 /** What the digikit backend needs of the store session (`DkSession`). */
-export type StorePort = Pick<DkSession, 'info' | 'list' | 'mkdir' | 'rename' | 'put' | 'delete' | 'verify' | 'capacity'>;
+export type StorePort = Pick<
+  DkSession,
+  'info' | 'list' | 'mkdir' | 'rename' | 'put' | 'delete' | 'verify' | 'capacity'
+>;
 
 export interface SamplesOptions {
   /** The transport of the commands: one `DkSession` serves both backends. */
@@ -85,6 +110,18 @@ const join = (folder: string, name: string) => {
   const f = clean(folder);
   return f ? `${f}/${name}` : name;
 };
+/** A failure of one file names the file; the user's cancel passes as it is (`isCancelled` reads its kind). */
+function namedFailure(path: string, e: unknown): unknown {
+  if ((e as { kind?: string } | null)?.kind === 'cancelled') return e;
+  const msg = e instanceof Error ? e.message : String(e);
+  return new Error(`${path}: ${msg}`, { cause: e });
+}
+/** The top of the device is not a folder to delete. */
+function treeRoot(folder: string): string {
+  const f = clean(folder);
+  if (!f) throw new DkError({ error: 'removeTree needs a folder, not the top', kind: 'usage' });
+  return f;
+}
 const hex8 = (n: number) => (n >>> 0).toString(16).padStart(8, '0');
 
 // ---- the +Drive over MidiRpc ----------------------------------------------------------------------------------------------------
@@ -99,11 +136,16 @@ class RpcSamples implements SamplesBackend {
   }
   async list(folder = '') {
     const rows = await this.files.readDir(`/${clean(folder)}`);
-    return rows.map((e) => ({
-      name: e.name,
-      kind: e.kind === 'D' ? ('folder' as const) : ('file' as const),
-      size: e.size,
-    }));
+    return rows.map((e) =>
+      e.kind === 'D'
+        ? { name: e.name, kind: 'folder' as const, size: e.size }
+        : { name: e.name, kind: 'file' as const, size: e.size, hash: hex8(e.hash) },
+    );
+  }
+  sameOnDevice(file: Prepared, listing: readonly SampleEntry[]) {
+    // the +Drive lists the size without the trailer and `hash | 1` over the file with it (verifyWritten)
+    const e = listing.find((x) => x.name === file.name && x.kind === 'file');
+    return !!e && e.size === file.bytes.length && e.hash === hex8(this.hashOf(concat(file.bytes, TRAILER)));
   }
   async space() {
     const s = await this.files.space();
@@ -117,6 +159,38 @@ class RpcSamples implements SamplesBackend {
   }
   rmdir(folder: string) {
     return this.files.rmdir(clean(folder));
+  }
+  async removeTree(folder: string, o: RemoveTreeOptions = {}) {
+    const root = `/${treeRoot(folder)}`;
+    const files: string[] = [];
+    const dirs: string[] = []; // a folder after the folders in it
+    const walk = async (dir: string) => {
+      for (const e of await this.files.readDir(dir)) {
+        if (e.kind === 'D') await walk(`${dir}/${e.name}`);
+        else files.push(`${dir}/${e.name}`);
+      }
+      dirs.push(dir);
+    };
+    await walk(root);
+    o.onProgress?.(0, files.length);
+    let removed = 0;
+    for (const f of files) {
+      if (o.shouldStop?.()) return { removed, total: files.length, stopped: true };
+      try {
+        await this.files.remove(f);
+      } catch (e) {
+        throw namedFailure(f, e);
+      }
+      removed++;
+      o.onProgress?.(removed, files.length);
+    }
+    for (const d of dirs)
+      try {
+        await this.files.rmdir(d);
+      } catch (e) {
+        throw namedFailure(d, e);
+      }
+    return { removed, total: files.length, stopped: false };
   }
   async put(folder: string, file: Prepared, onProgress?: (sent: number, total: number) => void) {
     await this.files.write(join(folder, file.name), file.bytes, onProgress);
@@ -153,10 +227,10 @@ class RpcSamples implements SamplesBackend {
 
 /** The folder of the store that holds samples. */
 export const STORE_FOLDER = 'samples';
-/** VERIFY covers at most this many bytes of a file at a time (the device hashes about 2 MB a second: a request for a large file would outlast the timeout). */
+/** VERIFY covers at most this many bytes of a file at a time (one request for a whole large file could outlast the timeout). */
 export const VERIFY_PIECE = 1 << 20;
 
-const isFolderEntry = (e: DkEntry) => e.size === 0 && /^0+$/.test(e.sha256);
+const isFolderEntry = (e: DkEntry) => e.size === 0 && /^0+$/.test(e.hash);
 
 class StoreSamples implements SamplesBackend {
   readonly kind = 'digikit' as const;
@@ -189,9 +263,13 @@ class StoreSamples implements SamplesBackend {
       const slash = rest.indexOf('/');
       if (slash >= 0) out.set(rest.slice(0, slash), { name: rest.slice(0, slash), kind: 'folder', size: 0 });
       else if (isFolderEntry(e)) out.set(rest, { name: rest, kind: 'folder', size: 0 });
-      else out.set(rest, { name: rest, kind: 'file', size: e.size });
+      else out.set(rest, { name: rest, kind: 'file', size: e.size, hash: e.hash });
     }
     return [...out.values()];
+  }
+  sameOnDevice(file: Prepared, listing: readonly SampleEntry[]) {
+    const e = listing.find((x) => x.name === file.name && x.kind === 'file');
+    return !!e && e.size === file.stored.length && e.hash === fileHashHex(file.stored);
   }
   async space() {
     return storeSpace(this.s);
@@ -207,19 +285,49 @@ class StoreSamples implements SamplesBackend {
     // a folder entry is an entry of the store; a folder with files in it is only implied by their paths (nothing to delete)
     await this.s.delete(this.path(folder));
   }
+  async removeTree(folder: string, o: RemoveTreeOptions = {}) {
+    const top = this.path(treeRoot(folder));
+    const prefix = `${top}/`; // the slash keeps `Foo` from matching `Foobar/...`
+    const inside = (await this.under(prefix)).filter((e) => e.path.startsWith(prefix));
+    const files = inside.filter((e) => !isFolderEntry(e)).map((e) => e.path);
+    // folder entries inside the folder, the deepest first
+    const dirs = inside
+      .filter(isFolderEntry)
+      .map((e) => e.path)
+      .sort((a, b) => b.split('/').length - a.split('/').length);
+    // a folder with files is only implied by their paths, so it vanishes with its last file: "not in the store" means gone
+    const del = async (path: string) => {
+      try {
+        await this.s.delete(path);
+      } catch (e) {
+        if ((e as { status?: string } | null)?.status !== 'E_NOFILE') throw namedFailure(path, e);
+      }
+    };
+    o.onProgress?.(0, files.length);
+    let removed = 0;
+    for (const f of files) {
+      if (o.shouldStop?.()) return { removed, total: files.length, stopped: true };
+      await del(f);
+      removed++;
+      o.onProgress?.(removed, files.length);
+    }
+    for (const d of dirs) await del(d);
+    await del(top);
+    return { removed, total: files.length, stopped: false };
+  }
   async put(folder: string, file: Prepared, onProgress?: (sent: number, total: number) => void) {
     return this.s.put(this.path(join(folder, file.name)), file.stored, onProgress);
   }
   async verify(folder: string, file: Prepared): Promise<SampleVerified> {
     const path = this.path(join(folder, file.name));
     const want = file.stored;
-    const host = await hexSha256(want);
+    const host = fileHashHex(want);
     const entry = (await this.under(path)).find((e) => e.path === path && !isFolderEntry(e));
     const base = {
       host,
       sent: want.length,
       mismatchAt: null,
-      compared: 'the device sha256 of the stored file, read from the card (VERIFY), with the sha256 of the bytes sent',
+      compared: 'the device hash of the stored file, read from the card (VERIFY), with the hash of the bytes sent',
     };
     if (!entry) return { ...base, ok: false, device: null, size: null, message: 'the device does not have the file' };
     // one VERIFY for a small file, ranges of VERIFY_PIECE for a large one (all the ranges equal: the whole file is equal)
@@ -229,7 +337,7 @@ class StoreSamples implements SamplesBackend {
       const part = want.subarray(off, Math.min(want.length, off + VERIFY_PIECE));
       const whole = want.length <= VERIFY_PIECE;
       const got = whole ? await this.s.verify(path) : await this.s.verify(path, off, part.length);
-      if (got !== (whole ? host : await hexSha256(part))) {
+      if (got !== (whole ? host : fileHashHex(part))) {
         device = got;
         mismatchAt = off;
         break;
@@ -243,17 +351,17 @@ class StoreSamples implements SamplesBackend {
       size: entry.size,
       mismatchAt,
       message: ok
-        ? 'device sha256 matches'
+        ? 'device hash matches'
         : mismatchAt === null
           ? 'the device file has another size'
-          : 'device sha256 differs',
+          : 'device hash differs',
     };
   }
   async remove(folder: string, name: string) {
     return this.s.delete(this.path(join(folder, name)));
   }
   async canRename() {
-    return hasCap(await this.info(), 'RENAME'); // runtime 0.5.4
+    return hasCap(await this.info(), 'RENAME'); // runtime 0.5.6
   }
   async rename(folder: string, name: string, toFolder: string, toName: string) {
     if (!(await this.canRename())) throw new DkError({ error: 'this runtime cannot rename', kind: 'usage' });

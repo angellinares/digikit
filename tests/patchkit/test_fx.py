@@ -517,7 +517,8 @@ def test_the_dsp_diff_of_the_patched_image_is_the_hook_and_the_placed_code(
 
 def test_a_module_call_leaves_its_site_in_both_reply_records():
     """The fault table (modules/core/adapters/dsp-link/src/dsp/dsp-link.inc): the core writes `last` (stage | site << 8 | row byte offset << 16) into its own
-    word and, at once, into both reply records with the header; it clears the module step before the call and keeps it at the return."""
+    word and, at once, into both reply records with the header; it clears the module step word `_dk_step` (`_fx_rec[2]`) before the call, and does not
+    touch the records' word 25 (the block tail copies the step there)."""
     for route, site in ((0, 2), (1, 3)):
         rig = FxRig(
             [
@@ -528,8 +529,12 @@ def test_a_module_call_leaves_its_site_in_both_reply_records():
         rec = rig.built.data["_fx_rec"]
         rig.sess.poke(nw(rec), dv.RING_A)
         rig.sess.poke(nw(rec) + 1, dv.RING_B)
+        rig.sess.poke(nw(rec) + 2, rig.built.data["_dk_step"])
+        rig.sess.poke(nw(rig.built.data["_dk_step"]), 7)  # an old module step
         for ring in (dv.RING_A, dv.RING_B):
-            rig.sess.poke(nw(ring) + 298, 7)  # an old module step
+            rig.sess.poke(
+                nw(ring) + 298, 9
+            )  # a step the tail copied in an earlier block
         b = (
             rig.block(SIGNALS["ramp"], ctx="friendly")
             if route == 0
@@ -543,9 +548,12 @@ def test_a_module_call_leaves_its_site_in_both_reply_records():
         for ring in (dv.RING_A, dv.RING_B):
             assert rig.sess.peek(nw(ring) + 297) == want
             assert rig.sess.peek(nw(ring) + 45) == 0x20D1A6
-            assert rig.sess.peek(nw(ring) + 298) == 0, (
-                "cleared at the call; the test effect stores no step"
+            assert rig.sess.peek(nw(ring) + 298) == 9, (
+                "the records' word 25 is the tail's"
             )
+        assert rig.sess.peek(nw(rig.built.data["_dk_step"])) == 0, (
+            "cleared at the call; the test effect stores no step"
+        )
         assert rig.symbol_word("_fx_diag", 4 + route) == 1, (
             "one module call on this route"
         )

@@ -27,8 +27,8 @@ int input_turn(uint32_t encoder, int delta)
 
 static int32_t register_cmds(uint32_t first, uint32_t count, dk_service_cmd *handler)
 {
-    (void)count;
-    handlers[first & 255] = handler;
+    for (uint32_t c = first; c < first + count && c < 256; c++)
+        handlers[c] = handler;
     return 0;
 }
 

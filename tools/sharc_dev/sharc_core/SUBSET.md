@@ -145,12 +145,11 @@ translation reproduces rather than fixes:
   `f32` would round differently.
 - Overflow of that rounding gives signed infinity and reports AV (MV for
   the multiplier).
-- A NaN input gives the all-ones result `0xFFFFFFFF` and reports AI; a NaN
-  made by the operation from ordinary inputs (infinity minus infinity)
-  keeps the pattern the host computes and rounds, so it depends on the
-  host's default NaN and on how the Python version packs a NaN into
-  float32. A translation should pick one pattern and the core should
-  then name it; until then such results are not bit-exact across hosts.
+- A NaN input, or a NaN the operation makes from ordinary inputs (infinity
+  minus infinity), gives the all-ones result `0xFFFFFFFF` with AI set and AN
+  clear (measured on a Digitakt II, docs/findings/103-dsp-facts-on-a-digitakt-ii.md). The multiplier's
+  invalid result is `0x7FFFFFFF` with MI set and MN clear. The core tests
+  `_isnan` on the double result, so no host NaN pattern shows.
 - Denormals follow the manuals (docs/findings/15, "Denormal flush"): every
   float input is read through `_float32`, which turns a denormal into a zero
   of the same sign; every float result goes through `_float32_result`, which
@@ -162,7 +161,10 @@ translation reproduces rather than fixes:
   extended format and MODE1.RND32 are not modelled.
 - `fix` rounds to nearest even unless MODE1.TRUNCATE; `trunc` truncates;
   out-of-range results saturate or give all ones according to
-  MODE1.ALUSAT; an unknown mode bit gives an Unknown result.
+  MODE1.ALUSAT; an unknown mode bit gives an Unknown result. The fixed-point
+  add, subtract, carry forms, increment, decrement, negate and abs saturate
+  with MODE1.ALUSAT set (`flags._saturate_alu_result`); an overflow with an
+  unknown ALUSAT gives an Unknown result.
 - 64-bit operations compute in double directly, with no flush (a known gap: no
   analysed firmware executes one).
 

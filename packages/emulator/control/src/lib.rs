@@ -28,7 +28,8 @@ pub mod runtime_patch;
 pub mod server;
 
 pub use controller::{
-    CardSource, Command, Config, Handle, JsonReply, Mode, Reply, ScenarioSetup, load_scenario, spawn,
+    CardSource, Command, Config, Handle, JsonReply, Mode, Reply, ScenarioSetup, load_scenario,
+    spawn,
 };
 pub use devicefolders::DeviceFoldersConfig;
 pub use events::Events;

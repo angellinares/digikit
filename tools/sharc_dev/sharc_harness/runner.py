@@ -48,7 +48,6 @@ def _make_runner(
         start,
         regs=regs,
         explicit_memory_model=True,
-        approx_recips=True,
         follow_loaded_calls=True,
         max_call_depth=64,
         provisional_forms=provisional_forms,
@@ -166,7 +165,7 @@ def _clone_state(state: st.State) -> st.State:
     "unwritten DM reads as Unknown" for every clone, which is exactly the
     thing that would make a post-init render fork/halt where a bare one
     would not. ``dataclasses.replace`` keeps every scalar config field
-    (``explicit_memory_model``, ``approx_recips``, ``follow_loaded_calls``,
+    (``explicit_memory_model``, ``follow_loaded_calls``,
     ...) as the source had it, and only the mutable containers a step can
     write through are given fresh copies.
     """

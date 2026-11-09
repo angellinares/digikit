@@ -96,8 +96,7 @@ MIN_JOBS = 4
 
 def part_jobs(parts: int) -> int:
     """How many of PARTS independent parts of one scenario (each boots its own daemon) run at once:
-    DIGIKIT_PART_JOBS, else all of them. verify sets it to 1: a pool of N files must not start 3 or 4
-    daemons each (1.3 busy cores per daemon, measured) beyond the cores of its share."""
+    DIGIKIT_PART_JOBS, else all of them."""
     env = os.environ.get("DIGIKIT_PART_JOBS")
     return max(1, min(parts, int(env))) if env else max(1, parts)
 
@@ -120,10 +119,8 @@ def default_jobs(n: int) -> int:
     """Processes to run side by side: the free performance cores / 2 (a coupled daemon keeps two threads busy: the
     ColdFire and the DSP worker), at most MAX_JOBS, and never fewer than MIN_JOBS (bounded by the cores / 2) when
     there are two or more parts: a busy machine slows the parts down, but running them in sequence is slower.
-    DIGI_PK_JOBS (the verify gate sets it from its CPU budget, tools/devtools/verify_budget.py) replaces all that."""
-    cap = os.environ.get(
-        "DIGI_PK_JOBS"
-    )  # set by `verify` from the step's share of its CPU budget
+    DIGI_JOBS replaces all that."""
+    cap = os.environ.get("DIGI_JOBS")  # set by the Nx launcher
     if cap:
         return max(1, min(n, int(cap)))
     cores = performance_cores()
@@ -424,15 +421,71 @@ def run_dir_scope(
         finish_run_dir(run_dir, ok)
 
 
+# Cap of the patched boot-pair cache in GB; env DIGI_PATCHED_CACHE_MAX_GB.
+PATCHED_CACHE_MAX_GB = "30"
+PATCHED_CACHE_GRACE_S = 2 * 3600  # an entry written in this time is never removed
+_patched_pruned: set[Path] = set()
+
+
+def prune_patched_cache(
+    shared: Path,
+    max_bytes: int | None = None,
+    grace_s: float = PATCHED_CACHE_GRACE_S,
+    now: float | None = None,
+) -> int:
+    """Remove the oldest entries of `shared` (the patched boot-pair cache) until its size is <= max_bytes
+    (default `DIGI_PATCHED_CACHE_MAX_GB`, 30 GB). An entry's age is the newest mtime of the entry or its files, so it
+    is the time of its last write: the harness cannot tell which entry the daemon restored. Entries newer than
+    `grace_s` stay even when the cache is over the cap, so concurrent runs and lanes are safe. Entries that
+    vanish during the scan or the removal are ignored. Returns the number of entries removed."""
+    if max_bytes is None:
+        max_bytes = int(
+            float(os.environ.get("DIGI_PATCHED_CACHE_MAX_GB", PATCHED_CACHE_MAX_GB))
+            * (1 << 30)
+        )
+    now = time.time() if now is None else now
+    entries: list[tuple[float, int, Path]] = []
+    try:
+        children = list(shared.iterdir())
+    except OSError:
+        return 0
+    for entry in children:
+        try:
+            if not entry.is_dir():
+                continue
+            mtime = entry.stat().st_mtime
+            size = 0
+            for f in entry.iterdir():
+                st = f.stat()
+                mtime = max(mtime, st.st_mtime)
+                size += st.st_size
+        except OSError:
+            continue
+        entries.append((mtime, size, entry))
+    total = sum(size for _, size, _ in entries)
+    removed = 0
+    for mtime, size, entry in sorted(entries):
+        if total <= max_bytes or now - mtime < grace_s:
+            break
+        shutil.rmtree(entry, ignore_errors=True)
+        total -= size
+        removed += 1
+    return removed
+
+
 def link_shared(run_dir: Path, cache_dir: Path) -> None:
     """Make RUN_DIR/patched and RUN_DIR/cards the shared `cache_dir/patched` and `cache_dir/cards-store`. The daemon
     caches the coupled cold boot of a patched MAIN under `patched` (a pair of snapshots keyed by the MAIN, the DSP
     inputs and the card path), so every daemon of a proof run restores it (0.3 s) instead of booting cold (13 s);
-    `cards` holds the sample card built from the sample folder (about 15 s) and its ready state, content-keyed."""
+    `cards` holds the sample card built from the sample folder (about 15 s) and its ready state, content-keyed.
+    The first call of a process caps `patched` (`prune_patched_cache`)."""
     run_dir.mkdir(parents=True, exist_ok=True)
     for name, shared_name in (("patched", "patched"), ("cards", "cards-store")):
         shared = cache_dir / shared_name
         shared.mkdir(parents=True, exist_ok=True)
+        if name == "patched" and shared not in _patched_pruned:
+            _patched_pruned.add(shared)  # once per process
+            prune_patched_cache(shared)
         link = run_dir / name
         if link.is_symlink() and link.resolve() == shared.resolve():
             continue
@@ -686,7 +739,9 @@ class Session:
         env: dict[str, str] | None = None,
         cache_dir: Path | None = None,
         run_dir: Path | None = None,
+        dsp: str = "sharc",
     ):
+        self.dsp = dsp
         self.cell, self.goldens, self.update = cell, goldens, update
         self.run_dir = run_dir  # explicit: kept; None: a temp dir made by open, removed after a clean close
         self.env = dict(env or {})
@@ -731,7 +786,8 @@ class Session:
         run_dir = self.run_dir
         if self.cache_dir is not None:
             link_shared(run_dir, self.cache_dir)
-        self.emu = Emu.spawn_coupled(
+        spawn = Emu.spawn_zero if self.dsp == "zero" else Emu.spawn_coupled
+        self.emu = spawn(
             self.syx,
             self.ready,
             timeout=300,
@@ -740,7 +796,7 @@ class Session:
             env=self.env,
         )
         emu = self.emu
-        if emu.status().get("audio") is None:
+        if self.dsp == "sharc" and emu.status().get("audio") is None:
             raise HarnessError("this digi-emud has no coupled audio")
         emu.subscribe()
         if self.card_override:
@@ -815,7 +871,8 @@ class Session:
         )
         emu.drain_events()
         self.run_ms(300)
-        emu.pcm_start()
+        if self.dsp == "sharc":
+            emu.pcm_start()
         self.pcm_mark = 0
         self.health("ready")
         status = emu.status()
@@ -891,6 +948,8 @@ class Session:
 
     # -- actions
     def mark_pcm(self) -> None:
+        if self.dsp == "zero":
+            return
         emu = self.emu
         assert emu is not None
         self.pcm_mark = len(emu.pcm_report().get("window_rms") or [])

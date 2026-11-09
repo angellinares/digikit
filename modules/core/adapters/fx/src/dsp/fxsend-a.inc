@@ -156,9 +156,6 @@ _fxs_z: DM(I0, M6) = R0;
     R5 = -8;
     R6 = 0xff;
     R7 = 0x3c010204;                      // 1 / 127
-    // The last 11 instructions of a DO loop must be 48-bit (sc58x-2158x-prm p. 4-42). The assembler has one loop slot, so the inner DO
-    // ends the outer loop's 48-bit mode early: switch it off by hand around the nested loop.
-    .NOCOMPRESS;
     LCNTR = 4, DO _fxs_cw UNTIL LCE;
         R0 = DM(I1, M6);
         LCNTR = 4, DO _fxs_cb UNTIL LCE;
@@ -170,4 +167,3 @@ _fxs_z: DM(I0, M6) = R0;
             F1 = F1 * F1;
 _fxs_cb:    DM(I0, M6) = R1;
 _fxs_cw: NOP;
-    .COMPRESS;

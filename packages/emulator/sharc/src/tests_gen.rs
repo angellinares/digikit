@@ -53,7 +53,10 @@ fn engine_cfg(parcels: &[u16], mode1: u32, seed: u64, fast: bool, cfg: u8) -> cr
         // explicit_memory_model with the one the generated image was built
         // for (false for the DN2/DT2 images); a mismatch gates the fast tier
         // off as well. The runtime sets the image's value, so do the same.
-        assert_eq!(e.set_option(10, crate::gen_explicit_memory_model() as i64), 0);
+        assert_eq!(
+            e.set_option(10, crate::gen_explicit_memory_model() as i64),
+            0
+        );
         for key in [19, 20] {
             assert_eq!(e.set_option(key, 1), 0);
         }
@@ -125,7 +128,14 @@ fn make_circular(e: &mut crate::Engine, seed: u64) {
     }
 }
 
-fn engine_circ(parcels: &[u16], mode1: u32, seed: u64, fast: bool, cfg: u8, circ: bool) -> crate::Engine {
+fn engine_circ(
+    parcels: &[u16],
+    mode1: u32,
+    seed: u64,
+    fast: bool,
+    cfg: u8,
+    circ: bool,
+) -> crate::Engine {
     let mut e = engine_cfg(parcels, mode1, seed, fast, cfg);
     if circ {
         make_circular(&mut e, seed);
@@ -149,9 +159,15 @@ fn same(plain: &crate::Engine, fast: &crate::Engine, why: &str) {
         }
     }
     if !diffs.is_empty() {
-        eprintln!("I0-15 {:x?}", (16..32).map(|c| p.r[c].b).collect::<Vec<_>>());
+        eprintln!(
+            "I0-15 {:x?}",
+            (16..32).map(|c| p.r[c].b).collect::<Vec<_>>()
+        );
     }
-    assert!(diffs.is_empty(), "data bytes (offset, plain, fast) {diffs:x?} {why}");
+    assert!(
+        diffs.is_empty(),
+        "data bytes (offset, plain, fast) {diffs:x?} {why}"
+    );
 }
 
 /// (vectors, ran in the fast tier) per form for the current lowering.
@@ -167,7 +183,10 @@ fn run_shard(label: &str, shard: usize, shards: usize) -> BTreeMap<&'static str,
         if vi % shards != shard {
             continue;
         }
-        if only.as_ref().is_some_and(|o| !o.split(',').any(|f| f == *form)) {
+        if only
+            .as_ref()
+            .is_some_and(|o| !o.split(',').any(|f| f == *form))
+        {
             continue;
         }
         let n = *parcels as usize;
@@ -280,8 +299,16 @@ fn program_engine(
         }
     }
     for c in 0..16 {
-        e.s.r[c] = V::c(if floats { (1.5f32 + c as f32).to_bits() } else { rng.next() } as Int);
-        e.s.r[80 + c] = V::c(if floats { (0.5f32 + c as f32).to_bits() } else { rng.next() } as Int);
+        e.s.r[c] = V::c(if floats {
+            (1.5f32 + c as f32).to_bits()
+        } else {
+            rng.next()
+        } as Int);
+        e.s.r[80 + c] = V::c(if floats {
+            (0.5f32 + c as f32).to_bits()
+        } else {
+            rng.next()
+        } as Int);
     }
     e.s.r[16 + 12] = V::c((DATA + 0x40) as Int); // I12
     e.s.r[16 + 13] = V::c((DATA + 0x180) as Int); // I13
@@ -319,7 +346,8 @@ fn gen_programs_match_the_interpreter() {
                 let mut done = 0;
                 while done < total {
                     let n = chunk.min(total - done);
-                    let why = format!("{name} floats {floats} cfg {cfg} chunk {chunk} after {done}");
+                    let why =
+                        format!("{name} floats {floats} cfg {cfg} chunk {chunk} after {done}");
                     assert_eq!(plain.step(n), n, "{why}: {:?}", plain.halt);
                     assert_eq!(fast.step(n), n, "{why}: {:?}", fast.halt);
                     done += n;
@@ -342,8 +370,15 @@ use crate::tests_gen_programs::CONTROL;
 fn same_stacks(plain: &crate::Engine, fast: &crate::Engine, why: &str) {
     let (p, f) = (&plain.s, &fast.s);
     assert_eq!(p.pc_stack.items(), f.pc_stack.items(), "pc stack {why}");
-    assert_eq!(p.call_stack.items(), f.call_stack.items(), "call stack {why}");
-    assert_eq!(p.at_loaded_entry, f.at_loaded_entry, "at_loaded_entry {why}");
+    assert_eq!(
+        p.call_stack.items(),
+        f.call_stack.items(),
+        "call stack {why}"
+    );
+    assert_eq!(
+        p.at_loaded_entry, f.at_loaded_entry,
+        "at_loaded_entry {why}"
+    );
     assert_eq!(p.steps, f.steps, "steps {why}");
 }
 
@@ -364,7 +399,8 @@ fn gen_control_programs_match_the_interpreter() {
                 let mut best = 0u64;
                 for chunk in [1u32, 2, 3, 4, 5, 7, 11, 64] {
                     let build = |fast: bool| {
-                        let mut e = program_engine(parcels, false, 0x4321, entries, fast, cfg, false);
+                        let mut e =
+                            program_engine(parcels, false, 0x4321, entries, fast, cfg, false);
                         if *name == "ctl_return_slots" {
                             // I6 a circular index register, M14 = 0.
                             e.s.r[48 + 6] = V::c(0x40);
@@ -378,7 +414,8 @@ fn gen_control_programs_match_the_interpreter() {
                     let mut done = 0;
                     while done < total {
                         let n = chunk.min(total - done);
-                        let why = format!("{name} gen {force} cfg {cfg} chunk {chunk} after {done}");
+                        let why =
+                            format!("{name} gen {force} cfg {cfg} chunk {chunk} after {done}");
                         assert_eq!(plain.step(n), n, "{why}: {:?}", plain.halt);
                         assert_eq!(fast.step(n), n, "{why}: {:?}", fast.halt);
                         done += n;
@@ -390,7 +427,10 @@ fn gen_control_programs_match_the_interpreter() {
                 eprintln!("{name} gen {force} cfg {cfg}: fast tier ran {best} instructions");
                 // (The hand-written lowering has no MODE1 change, so SIMD programs
                 // never reach the fast tier with it.)
-                assert!(best > 0 || (force == 1 && name.contains("simd")), "{name}: the fast tier never ran");
+                assert!(
+                    best > 0 || (force == 1 && name.contains("simd")),
+                    "{name}: the fast tier never ran"
+                );
             }
         }
     }
@@ -523,5 +563,9 @@ fn helper_ns() {
         tot_int += i;
     }
     let k = pick.len() as f64;
-    eprintln!("helper_ns mean gen {:.1} ns, interpreter {:.1} ns", tot_gen / k, tot_int / k);
+    eprintln!(
+        "helper_ns mean gen {:.1} ns, interpreter {:.1} ns",
+        tot_gen / k,
+        tot_int / k
+    );
 }

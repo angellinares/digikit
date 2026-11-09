@@ -7,9 +7,10 @@
 //!
 //! Rules: task context only (never from an interrupt); no `core::fmt`; every `extern "C"` function takes and returns
 //! integers or pointers. Built with rustc_codegen_gcc for -mcpu=54418 (finding 26).
-#![no_std]
+#![cfg_attr(not(test), no_std)]
 #![allow(static_mut_refs)]
 
+#[cfg(not(test))]
 use core::panic::PanicInfo;
 use core::ptr::{addr_of, addr_of_mut, read_volatile, write_volatile};
 use dkrt_sdk::*;
@@ -25,14 +26,28 @@ mod gen_abi_check;
 pub mod fxpage;
 mod fxsend;
 mod loader;
+pub mod pageclick;
+pub mod nativepage;
+pub mod paramapi;
 pub mod registry;
 pub mod scan;
 pub mod settings;
+mod sample;
+mod sample_source;
+mod tracks;
+mod files;
+mod hash32;
+mod intro;
+mod safe_screen;
 mod sha256;
 pub mod store;
 mod table;
 pub mod upload;
+mod watch;
+mod worker;
+mod peakwin;
 
+#[cfg(not(test))]
 #[panic_handler]
 fn panic(_: &PanicInfo) -> ! {
     crate::crash::panic()
@@ -190,6 +205,7 @@ unsafe fn word_at_literal(lit: *const u32) -> Option<u32> {
 
 /// The firmware's DSP block counter (1500 per second, from boot; wraps), `None` when the anchor does not point at a DDR word.
 /// `BLOCK_COUNTER_LIT` is the 4-byte address literal in the firmware's code, whose value is the address of the word.
+#[cfg(not(test))]
 pub unsafe fn fw_blocks() -> Option<u32> {
     word_at_literal(addr_of!(dkfw::link::BLOCK_ISR_COUNTER_LIT) as *const u32)
 }
@@ -227,10 +243,12 @@ pub unsafe fn block_write(sector: u32, bytes: u32, buf: *const u8) -> i32 {
     raw_block_write(sector, bytes, buf)
 }
 
+#[cfg(not(test))]
 pub fn irq_mask() -> u32 {
     unsafe { dkrt_irq_mask() }
 }
 
+#[cfg(not(test))]
 pub fn irq_restore(sr: u32) {
     unsafe { dkrt_irq_restore(sr) }
 }
@@ -286,7 +304,7 @@ pub struct Import {
     pub name: [u8; 28],
     pub addr: *const (),
 }
-pub struct Imports(pub [Import; 10]);
+pub struct Imports(pub [Import; 14]);
 unsafe impl Sync for Imports {}
 
 const fn nm(s: &[u8]) -> [u8; 28] {
@@ -300,7 +318,7 @@ const fn nm(s: &[u8]) -> [u8; 28] {
 }
 
 /// The names of `IMPORTS`, in its order; checked against the `[[import]]` entries of `sdk/sdk.toml` without `requires` below.
-const NAMES: [&[u8]; 10] = [
+const NAMES: [&[u8]; 14] = [
     b"fw_block_read",
     b"fw_alloc",
     b"fw_free",
@@ -311,6 +329,10 @@ const NAMES: [&[u8]; 10] = [
     b"__udivdi3",
     b"__umoddi3",
     b"dkrt_blocks",
+    b"dkrt_log_sink_set",
+    b"dkrt_log_ev",
+    b"dkrt_peek_range",
+    b"dkrt_track_type",
 ];
 
 const fn names_match(ours: &[&[u8]], sdk: &[&str]) -> bool {
@@ -337,6 +359,10 @@ const fn names_match(ours: &[&[u8]], sdk: &[&str]) -> bool {
 
 const _: () = assert!(names_match(&NAMES, &dkrt_sdk::api::BUILTIN_NAMES), "IMPORTS names differ from [[import]] of sdk/sdk.toml");
 const _: dkrt_sdk::api::DkrtBlocksFn = dkrt_blocks;
+const _: dkrt_sdk::api::DkrtLogSinkSetFn = dlog::dkrt_log_sink_set;
+const _: dkrt_sdk::api::DkrtLogEvFn = dlog::dkrt_log_ev;
+const _: dkrt_sdk::api::DkrtPeekRangeFn = dkrt_peek_range;
+const _: dkrt_sdk::api::DkrtTrackTypeFn = dkrt_track_type;
 
 /// The names a module may import. Firmware functions come from patch-time anchors (`dkfw`); the helpers are this
 /// object's own copies, so a module need not carry them.
@@ -382,7 +408,54 @@ pub static IMPORTS: Imports = Imports([
         name: nm(NAMES[9]),
         addr: dkrt_blocks as *const (),
     },
+    Import {
+        name: nm(NAMES[10]),
+        addr: dlog::dkrt_log_sink_set as *const (),
+    },
+    Import {
+        name: nm(NAMES[11]),
+        addr: dlog::dkrt_log_ev as *const (),
+    },
+    Import {
+        name: nm(NAMES[12]),
+        addr: dkrt_peek_range as *const (),
+    },
+    Import {
+        name: nm(NAMES[13]),
+        addr: dkrt_track_type as *const (),
+    },
 ]);
+
+extern "C" {
+    /// Per-device data from the device file (`[digikit] peek`), defined by `src/cf/<dev>/device.s`: the number of ranges and `lo, hi` pairs.
+    static dkrt_peek_n: u32;
+    static dkrt_peek_ranges: [u32; 8];
+}
+
+/// Import `dkrt_peek_range`: how many RAM ranges the device file allows PEEK to read; for `i` below that, range `i` as `lo, hi` into `out`.
+unsafe extern "C" fn dkrt_peek_range(i: u32, out: *mut u32) -> u32 {
+    let n = read_volatile(addr_of!(dkrt_peek_n)).min(4);
+    if i < n {
+        let t = addr_of!(dkrt_peek_ranges) as *const u32;
+        *out = read_volatile(t.add(2 * i as usize));
+        *out.add(1) = read_volatile(t.add(2 * i as usize + 1));
+    }
+    n
+}
+
+/// Import `dkrt_track_type`: the machine type of a track of the active kit, from the firmware's own accessors (read-only); -1 past track 15 or when the
+/// firmware has no type for it, -2 when there is no project yet.
+unsafe extern "C" fn dkrt_track_type(track: u32) -> i32 {
+    // `Project *f(void)`, `Kit *f(Project *)` (the active kit), `int f(Kit *, int track)` (-1: no such track)
+    let p = dkfw::project::singleton();
+    if p == 0 {
+        return -2;
+    }
+    if track >= 16 {
+        return -1;
+    }
+    dkfw::project::track_type(dkfw::project::active_kit(p), track as i32) as i32
+}
 
 // ---- imports of other modules --------------------------------------------------------------------------------------------
 
@@ -448,6 +521,32 @@ unsafe extern "C" fn api_register_cmds(first: u32, count: u32, handler: Option<d
     upload::register_cmds(first, count, handler)
 }
 
+unsafe extern "C" fn api_sample_bank(id: u32) -> i32 { sample::bank(id) }
+unsafe extern "C" fn api_sample_load(handle: u32, path: *const u8) -> i32 { sample::load(handle, path) }
+unsafe extern "C" fn api_sample_status(handle: u32) -> i32 { sample::status(handle) }
+unsafe extern "C" fn api_sample_tracks(id: u32) -> i32 { tracks::tracks(id) }
+unsafe extern "C" fn api_sample_pool_add(handle: u32, path: *const u8) -> i32 { tracks::pool_add(handle, path) }
+unsafe extern "C" fn api_sample_pool_set(handle: u32, index: u32, path: *const u8) -> i32 { tracks::pool_set(handle, index, path) }
+unsafe extern "C" fn api_sample_pool_clear(handle: u32, track: u32) -> i32 { tracks::pool_clear(handle, track) }
+unsafe extern "C" fn api_sample_pool_status(handle: u32, track: u32) -> i32 { tracks::status(handle, track) }
+unsafe extern "C" fn api_sample_pool_info(handle: u32, track: u32, out: *mut u8) -> i32 { tracks::info(handle, track, out) }
+unsafe extern "C" fn api_sample_pool_peaks(handle: u32, track: u32, token: u32, out: *mut u8, capacity: u32) -> i32 { tracks::peaks(handle, track, token, out, capacity) }
+unsafe extern "C" fn api_sample_pool_path(handle: u32, track: u32, buf: *mut u8, cap: u32) -> i32 { tracks::path(handle, track, buf, cap) }
+unsafe extern "C" fn api_param_get(track: u32, word: u32) -> i32 { pageclick::param_get(track, word) }
+unsafe extern "C" fn api_param_set(track: u32, word: u32, raw: i32) -> i32 { pageclick::param_set(track, word, raw) }
+unsafe extern "C" fn api_files_client() -> i32 { files::client() }
+unsafe extern "C" fn api_files_list(client: u32, root: u32, path: *const u8, notify: Option<dkrt_sdk::api::FileEvent>, context: *mut u8) -> i32 { files::list(client, root, path, notify, context) }
+unsafe extern "C" fn api_files_poll(client: u32, ticket: u32, out: *mut u8, cap: u32) -> i32 { files::poll(client, ticket, out, cap) }
+unsafe extern "C" fn api_files_cancel(client: u32, ticket: u32) -> i32 { files::cancel(client, ticket) }
+unsafe extern "C" fn api_job_post(step: Option<dkrt_sdk::api::JobStep>, done: Option<dkrt_sdk::api::JobDone>, ctx: *mut u8) -> i32 { worker::post(dlog::current_source(), step, done, ctx) }
+unsafe extern "C" fn api_job_cancel(id: u32) -> i32 { worker::cancel(dlog::current_source(), id) }
+unsafe extern "C" fn api_sample_pool_peaks_window(handle: u32, track: u32, token: u32, first: u32, frames: u32, columns: u32, out: *mut u8, capacity: u32) -> i32 { peakwin::window(handle, track, token, first, frames, columns, out, capacity) }
+unsafe extern "C" fn api_settings_client() -> i32 { settings::module_client() }
+unsafe extern "C" fn api_settings_get(client: u32, key: *const u8, out: *mut u8, cap: u32) -> i32 { settings::module_get(client, key, out, cap) }
+unsafe extern "C" fn api_settings_put(client: u32, key: *const u8, value: *const u8, len: u32) -> i32 { settings::module_put(client, key, value, len) }
+unsafe extern "C" fn api_settings_remove(client: u32, key: *const u8) -> i32 { settings::module_remove(client, key) }
+unsafe extern "C" fn api_intro_take(frame: Option<dkrt_sdk::api::IntroFrame>, done: Option<dkrt_sdk::api::IntroDone>, ctx: *mut u8, ticks: u32) -> i32 { intro::take(frame, done, ctx, ticks) }
+
 /// The table is built at first use: pointers to the helpers are not constants.
 #[no_mangle]
 pub static mut dkrt_api: Api = Api {
@@ -468,6 +567,31 @@ pub static mut dkrt_api: Api = Api {
     umoddi3: 0,
     log_lv: api_log_lv,
     register_cmds: api_register_cmds,
+    sample_bank: api_sample_bank,
+    sample_load: api_sample_load,
+    sample_status: api_sample_status,
+    files_client: api_files_client,
+    files_list: api_files_list,
+    files_poll: api_files_poll,
+    files_cancel: api_files_cancel,
+    sample_tracks: api_sample_tracks,
+    sample_pool_add: api_sample_pool_add,
+    sample_pool_clear: api_sample_pool_clear,
+    sample_pool_status: api_sample_pool_status,
+    sample_pool_info: api_sample_pool_info,
+    sample_pool_path: api_sample_pool_path,
+    param_get: api_param_get,
+    param_set: api_param_set,
+    sample_pool_set: api_sample_pool_set,
+    sample_pool_peaks: api_sample_pool_peaks,
+    job_post: api_job_post,
+    job_cancel: api_job_cancel,
+    sample_pool_peaks_window: api_sample_pool_peaks_window,
+    settings_client: api_settings_client,
+    settings_get: api_settings_get,
+    settings_put: api_settings_put,
+    settings_remove: api_settings_remove,
+    intro_take: api_intro_take,
 };
 
 pub unsafe fn log(msg: *const u8, value: u32) {
@@ -596,10 +720,54 @@ pub unsafe extern "C" fn dkrt_blocks() -> u32 {
     }
 }
 
-/// Register (or, with 0, remove) a function that `dkrt_tick` calls at the end of every UI-loop pass, in the UI task. One caller only.
+/// Register (or, with 0, remove) a function that `dkrt_tick` calls at the end of every UI-loop pass, in the UI task. One caller only (the
+/// DIGIKIT menu's HEALTH page); `dkrt_poll_add` has room for more.
 #[no_mangle]
 pub unsafe extern "C" fn dkrt_poll_set(f: usize) {
     write_volatile(addr_of_mut!(DKRT_POLL), f);
+}
+
+/// Functions of `dkrt_poll_add`, called after the one of `dkrt_poll_set`.
+const POLLS: usize = 4;
+static mut POLL_TABLE: [usize; POLLS] = [0; POLLS];
+
+/// Add a function that `dkrt_tick` calls once per UI-loop pass, in the UI task (`core/ui` keeps its `dk_ui_tick` timers with one). Adding one
+/// that is in the table is OK; `E_NOMEM` when it is full. Task context.
+#[no_mangle]
+pub unsafe extern "C" fn dkrt_poll_add(f: usize) -> i32 {
+    if f == 0 {
+        return E_CONTRACT;
+    }
+    let t = &mut *addr_of_mut!(POLL_TABLE);
+    let mut free = POLLS;
+    let mut i = 0;
+    while i < POLLS {
+        if t[i] == f {
+            return OK;
+        }
+        if t[i] == 0 && free == POLLS {
+            free = i;
+        }
+        i += 1;
+    }
+    if free == POLLS {
+        return E_NOMEM;
+    }
+    t[free] = f;
+    OK
+}
+
+/// Remove a function added with `dkrt_poll_add` (no effect when it is not there). Task context.
+#[no_mangle]
+pub unsafe extern "C" fn dkrt_poll_remove(f: usize) {
+    let t = &mut *addr_of_mut!(POLL_TABLE);
+    let mut i = 0;
+    while i < POLLS {
+        if f != 0 && t[i] == f {
+            t[i] = 0;
+        }
+        i += 1;
+    }
 }
 
 fn health_fn(f: unsafe extern "C" fn()) -> usize {
@@ -797,8 +965,7 @@ pub unsafe extern "C" fn dkrt_diag(out: *mut DkrtDiag) {
     init_once();
     let o = &mut *out;
     let c = card::info();
-    let (oldest, newest) = dlog::range();
-    let (dsp_ok, hb) = dlog::heartbeat();
+    let (dsp_ok, hb) = watch::heartbeat();
     let k = crash::seen();
     *o = DkrtDiag {
         magic: DIAG_MAGIC,
@@ -808,17 +975,17 @@ pub unsafe extern "C" fn dkrt_diag(out: *mut DkrtDiag) {
         card_hash: c.hash,
         card_refused: c.refused,
         card_read_errors: c.read_errors,
-        debug_on: dlog::debug_on() as u32,
-        log_oldest: oldest,
-        log_newest: newest,
+        debug_on: dlog::sink_present() as u32,
+        log_oldest: 0,
+        log_newest: 0,
         dsp_diag_ok: dsp_ok as u32,
-        dsp_stopped: dlog::dsp_stopped() as u32,
+        dsp_stopped: watch::dsp_stopped() as u32,
         dsp_heartbeat: hb,
         crash_found: k.found,
         crash_pc: k.pc,
         crash_vec: k.vec,
         ram_kept: k.ram_kept,
-        dsp_crumb: dlog::stop_crumb(),
+        dsp_crumb: watch::stop_crumb(),
         fault_rows: 0,
         fault_text: [[0; 24]; FAULT_ROWS],
     };
@@ -836,14 +1003,6 @@ pub unsafe extern "C" fn dkrt_diag(out: *mut DkrtDiag) {
             o.fault_rows = k as u32;
         }
     }
-}
-
-/// `dkrt_debug_set(on)`: the debug log keeps every event (1) or errors only (0), now, and saved in the selection record's flags for the next
-/// boot. Returns the result of the save (`E_CARD_RO` on a card the runtime does not write: the setting then holds until the next boot).
-#[no_mangle]
-pub unsafe extern "C" fn dkrt_debug_set(on: u32) -> i32 {
-    init_once();
-    boot::debug_set(on != 0)
 }
 
 /// The `index`th loaded module (in load-slot order) into `out`; returns 0, or `E_NOT_FOUND` past the end.
@@ -967,13 +1126,19 @@ pub unsafe extern "C" fn dkrt_tick() {
     init_once();
     let s = st();
     s.ticks = s.ticks.wrapping_add(1);
+    intro::ui_pass();
     boot::ui_pass();
     upload::restart_poll();
     crash::install();
     dsp::step();
+    sample::tick();
+    worker::tick();
+    tracks::tick();
+    files::tick();
     fxpage::tick();
+    pageclick::tick();
     settings::tick();
-    dlog::tick();
+    watch::tick();
     let mb = &mut *addr_of_mut!(DKRT_MAILBOX);
     let cmd = read_volatile(addr_of!(mb.cmd));
     if cmd != 0 {
@@ -991,8 +1156,6 @@ pub unsafe extern "C" fn dkrt_tick() {
             OK
         } else if cmd == CMD_CARD_PROBE {
             card::probe(mb.arg.as_ptr())
-        } else if cmd == CMD_DEBUG {
-            boot::debug_set(*mb.arg.as_ptr() != 0)
         } else if cmd >= CMD_SETTINGS_PUT && cmd <= CMD_SETTINGS_FLUSH {
             settings::mailbox(cmd, mb.arg.as_mut_ptr())
         } else {
@@ -1024,6 +1187,15 @@ pub unsafe extern "C" fn dkrt_tick() {
         let call: unsafe extern "C" fn() = core::mem::transmute(p);
         call();
     }
+    let mut i = 0;
+    while i < POLLS {
+        let f = read_volatile(addr_of!(POLL_TABLE[i]));
+        if f != 0 {
+            let call: unsafe extern "C" fn() = core::mem::transmute(f);
+            call();
+        }
+        i += 1;
+    }
 }
 
 /// `CMD_SELECT` / `CMD_SELECT_ONE`: the mailbox argument is a list of NUL-terminated paths ended by an empty one. `copy` 0 or 1
@@ -1037,8 +1209,9 @@ unsafe fn mailbox_select(arg: *const u8, copy: u32) -> i32 {
         if len == 0 {
             break;
         }
-        if n == SEL_MAX {
-            return E_SEL_COUNT;
+        let e = sel::check_slot(n);
+        if e != OK {
+            return e;
         }
         if len >= SEL_PATH {
             return E_SEL_PATH;
@@ -1061,3 +1234,14 @@ unsafe fn mailbox_select(arg: *const u8, copy: u32) -> i32 {
         boot::selection_set_one(copy, &sel)
     }
 }
+
+#[cfg(test)]
+mod cleanup_tests;
+
+#[cfg(test)]
+pub fn irq_mask() -> u32 { 0 }
+#[cfg(test)]
+pub fn irq_restore(_: u32) {}
+
+#[cfg(test)]
+pub unsafe fn fw_blocks() -> Option<u32> { None }

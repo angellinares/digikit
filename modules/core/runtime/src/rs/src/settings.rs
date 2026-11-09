@@ -6,8 +6,10 @@
 //! record needs. A power cut in the write leaves the current copy valid. Unloaded modules keep their entries (nothing is removed but by `remove`).
 //!
 //! Callers: the UI task (the menu, `core/fxpages`) and the mailbox test commands. Not for interrupts or the MIDI task: the record is one buffer.
-//! The C ABI for core modules is `dkrt_settings_get`, `dkrt_settings_put`, `dkrt_settings_remove` and `dkrt_settings_flush` below; there is no API for `.dkm` modules yet
-//! (a module will reach its own `<module id>/` prefix only).
+//! The C ABI for core modules is `dkrt_settings_get`, `dkrt_settings_put`, `dkrt_settings_remove` and `dkrt_settings_flush` below.
+//! A `.dkm` module uses the API table (`settings_client`, `settings_get`, `settings_put`, `settings_remove`, api 1.9, `module_*` below): the runtime
+//! stores its keys as `<module name>/<key>`, so a module reaches its own prefix only. There is no task check: `settings_put` and `settings_remove`
+//! must be called from the UI task (a menu, slot 0, `dkm_init`), not from a service command handler (MIDI task) or an interrupt.
 use crate::{block_read, block_write, card, dlog};
 use core::ptr::{addr_of, addr_of_mut, read_volatile};
 use dkrt_sdk::proto::*;
@@ -16,7 +18,7 @@ use dkrt_sdk::store::Io;
 use dkrt_sdk::*;
 
 /// Blocks (1500 a second) with no change before the record is written: 2 s. Without the firmware's block counter the UI-loop passes count instead
-/// (`DELAY_PASSES`: about 2 s at the loop's 120 Hz).
+/// (`DELAY_PASSES`: about 8 s at the loop's measured 30 to 32 passes a second, docs/findings/37-boot-load.md).
 pub const DELAY_BLOCKS: u32 = 3000;
 const DELAY_PASSES: u32 = 240;
 /// Failed writes after which the record is left dirty no more (the next change tries again).
@@ -333,6 +335,83 @@ pub unsafe extern "C" fn dkrt_settings_put(key: *const u8, value: *const u8, len
 pub unsafe extern "C" fn dkrt_settings_remove(key: *const u8) -> i32 {
     crate::init_once();
     remove(key_of(key))
+}
+
+// ---- the API of a .dkm module (api 1.9) --------------------------------------------------------------------------------------
+
+/// `settings_client`: the module's handle, only inside its `dkm_init` (the check of `files_client`). The handle is the module's record index + 1: the
+/// same module gets the same handle every time. `E_NOT_FOUND` outside `dkm_init`.
+pub unsafe fn module_client() -> i32 {
+    let source = dlog::current_source();
+    if source == 0 {
+        return E_NOT_FOUND;
+    }
+    let rec = source as usize - 1;
+    if !crate::files::in_init(rec) {
+        return E_NOT_FOUND;
+    }
+    rec as i32 + 1
+}
+
+/// The stored key `<module name>/<key>` for `client` and the NUL-terminated `key`: the module name comes from the handle's record, never from the
+/// caller. A handle that is 0, past the table or of a record that is not loaded (and not inside its `dkm_init`) is stale: `E_SET_KEY`, the settings
+/// argument error, as for a key that breaks the rules. The prefix stops mistakes, not hostile code: modules are native code with no memory protection.
+unsafe fn module_stored_key(client: u32, key: *const u8, out: &mut [u8; set::KEY_MAX]) -> Result<usize, i32> {
+    if client == 0 || client as usize > crate::MAX_MODULES || key.is_null() {
+        return Err(E_SET_KEY);
+    }
+    let m = &crate::st().modules[client as usize - 1];
+    if m.used == 0 {
+        return Err(E_SET_KEY);
+    }
+    let name = core::slice::from_raw_parts(m.name.as_ptr(), crate::cstr_len(m.name.as_ptr(), 31));
+    match set::module_key(name, key_of(key), out) {
+        Some(n) => Ok(n),
+        None => Err(E_SET_KEY),
+    }
+}
+
+/// `settings_get`: the length of the value (0 is valid), `E_SET_NOKEY`, `E_SET_VALUE` (`cap` too small: nothing is written), `E_SET_KEY` (bad handle or
+/// key), `E_SET_OFF`. In `dkm_init` and in the UI task.
+pub unsafe fn module_get(client: u32, key: *const u8, out: *mut u8, cap: u32) -> i32 {
+    let mut k = [0u8; set::KEY_MAX];
+    let n = match module_stored_key(client, key, &mut k) {
+        Ok(n) => n,
+        Err(e) => return e,
+    };
+    if out.is_null() && cap != 0 {
+        return E_SET_KEY;
+    }
+    let mut none = [0u8; 0];
+    let buf: &mut [u8] = if cap == 0 { &mut none } else { core::slice::from_raw_parts_mut(out, cap as usize) };
+    get(&k[..n], buf)
+}
+
+/// `settings_put`: 0, or `E_SET_KEY` (bad handle or key, or `value` null with `len` above 0), `E_SET_VALUE` (over 1024 bytes), `E_SET_FULL`, `E_SET_OFF`. UI task.
+pub unsafe fn module_put(client: u32, key: *const u8, value: *const u8, len: u32) -> i32 {
+    let mut k = [0u8; set::KEY_MAX];
+    let n = match module_stored_key(client, key, &mut k) {
+        Ok(n) => n,
+        Err(e) => return e,
+    };
+    if len as usize > set::VALUE_MAX {
+        return E_SET_VALUE;
+    }
+    if value.is_null() && len != 0 {
+        return E_SET_KEY;
+    }
+    let v: &[u8] = if len == 0 { &[] } else { core::slice::from_raw_parts(value, len as usize) };
+    put(&k[..n], v)
+}
+
+/// `settings_remove`: 0 (also when the key was not there), or `E_SET_KEY` (bad handle or key), `E_SET_OFF`. UI task.
+pub unsafe fn module_remove(client: u32, key: *const u8) -> i32 {
+    let mut k = [0u8; set::KEY_MAX];
+    let n = match module_stored_key(client, key, &mut k) {
+        Ok(n) => n,
+        Err(e) => return e,
+    };
+    remove(&k[..n])
 }
 
 /// Write the record now when it has changes the card does not hold: 0 (also when nothing was changed), or `E_WRITE`, `E_RANGE`, `E_CARD_RO`, `E_SET_OFF`. UI task.

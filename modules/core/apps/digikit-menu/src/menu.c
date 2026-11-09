@@ -1,6 +1,6 @@
 /* core/digikit-menu: SETTINGS > DIGIKIT, written in C on <dk/ui.h> (core/ui draws it with the firmware's own views).
  *
- * DIGIKIT is a menu: ABOUT, HEALTH and MEMORY (text pages), MODULES (a list) and the DEBUG switch. MODULES has one
+ * DIGIKIT is a menu: ABOUT, HEALTH and MEMORY (text pages), and MODULES (a list). MODULES has one
  * row per .dkm file of the store. The check mark of a row means "load at the next restart"; it starts from the saved selection.
  * RIGHT opens the side panel (LOAD or UNLOAD, ROUTE... for a loaded effect, SETTINGS... for a loaded module that has a dkm_menu, INFO).
  * The check mark is the only on/off of a module. Nothing is saved until NO leaves the list with
@@ -15,6 +15,7 @@
 #include <stddef.h>
 #include <dk/ui.h>
 #include <dk_ui_core.h>
+#include <dk/gen/limits.h>
 #include "dkrt.h"
 
 #define MAX_ENT DKRT_SCAN_MAX
@@ -41,7 +42,7 @@ uint8_t DK_ABOUT[24][24];
 uint32_t DK_ABOUT_N;
 uint8_t DK_MEM[8][24];
 uint32_t DK_MEM_N;
-uint8_t DK_LINES[9][24];
+uint8_t DK_LINES[12][24];
 /* The last dialog the menu opened: title, text and how many were opened. */
 uint8_t DK_POPUP[48];
 uint8_t DK_POPUP_TEXT[48];
@@ -81,18 +82,20 @@ static uint8_t g_fx_saved[MAX_FXR];
 static int8_t g_row_fx[MAX_ENT]; /* the first effect of a loaded row's module, -1: none */
 static uint8_t g_saved[MAX_ENT];
 static uint32_t g_saved_extra;
+static int32_t g_selection_error;
 static int g_info_row;
-static int g_debug;
 static int g_route_row;
 static uint32_t g_safe_shown, g_seen, g_last, g_calls;
 static char g_empty_text[24];
+static int g_hdr;  /* 1: the MODULES list starts with the safe-mode header, so row r of the list is module r - 1 */
+static int g_lead; /* 1: the rows start with a mark column, ticked as " " and a selected module that is not loaded as "-" */
 
 static dk_ui_menu *g_main, *g_about, *g_mem, *g_modules, *g_info;
 
 /* The settings menu of each loaded module that has a dkm_menu, by the module's index in dkrt_module order. Each is built the first
    time the user opens it and kept: no module is unloaded at run time, so the module's code and the ctx it passes stay valid. */
 #define MAX_SET 16
-#define NAME_ROW 24
+#define NAME_ROW 32 /* a module name (31 characters at most) without its author */
 /* Calls the module's dkm_menu at address a (DkrtModule.menu) with the menu to fill. The host tests, where an address is wider than 32 bits, define their own. */
 #ifndef DK_CALL_MENU
 #define DK_CALL_MENU(a, m) ((void (*)(dk_ui_menu *, void *))(uintptr_t)(a))((m), 0)
@@ -253,11 +256,12 @@ static void result_text(txt *t, int32_t code)
 
 static void safe_reason(txt *t, uint32_t reason)
 {
-    // a table, not an if chain: five dense values become a jump table, which is data in the code
-    static const char *const why[6] = {"UNKNOWN", "2 BAD BOOTS", "KEY HELD", "REQUESTED", "DSP STOPPED", "CPU PANIC"};
-    _Static_assert(DKRT_SAFE_COUNTER == 1 && DKRT_SAFE_KEY == 2 && DKRT_SAFE_FLAG == 3 && DKRT_SAFE_DSP == 4 && DKRT_SAFE_PANIC == 5,
+    // a table, not an if chain: six dense values become a jump table, which is data in the code
+    static const char *const why[7] = {"UNKNOWN", "2 BAD BOOTS", "KEY HELD", "REQUESTED", "DSP STOPPED", "CPU PANIC", "READ FAILED"};
+    _Static_assert(DKRT_SAFE_COUNTER == 1 && DKRT_SAFE_KEY == 2 && DKRT_SAFE_FLAG == 3 && DKRT_SAFE_DSP == 4 && DKRT_SAFE_PANIC == 5 &&
+                       DKRT_SAFE_READ == 6,
                    "why[] follows the DKRT_SAFE_* values");
-    t_s(t, reason < 6 ? why[reason] : why[0]);
+    t_s(t, reason < 7 ? why[reason] : why[0]);
 }
 
 /* The file name of a path, upper case, at most max characters: from the end, or with head the first ones. */
@@ -337,7 +341,11 @@ static void read_boot(void)
 /* The saved selection, matched against the rows: a checked row for each path the store still has. */
 static void load_selection(void)
 {
-    dkrt_selection_get(&g_sel);
+    g_selection_error = dkrt_selection_get(&g_sel);
+    if (g_selection_error != DKRT_OK) {
+        STORE = 3;
+        return;
+    }
     for (uint32_t i = 0; i < MAX_ENT; i++)
         TICK[i] = 0;
     g_saved_extra = 0;
@@ -481,14 +489,6 @@ static int restart_pending(void)
 
 /* ---- the DIGIKIT menu ------------------------------------------------------------------------------------------------ */
 
-static void debug_changed(void *ctx, int v)
-{
-    (void)ctx;
-    int32_t r = dkrt_debug_set((uint32_t)v);
-    if (r != DKRT_OK)
-        fail_text("NOT SAVED", r);
-}
-
 static void safe_notice(void *ctx, int arg)
 {
     (void)ctx;
@@ -516,10 +516,6 @@ static void fill_main(dk_ui_menu *m, void *ctx)
     dk_ui_action(m, "HEALTH", open_health, 0, 0);
     dk_ui_submenu(m, "MEMORY", g_mem);
     dk_ui_action(m, "MODULES", open_modules, 0, 0);
-    DkrtDiag d;
-    dkrt_diag(&d);
-    g_debug = d.debug_on != 0;
-    dk_ui_toggle(m, "DEBUG", &g_debug, debug_changed, 0);
 }
 
 /* ---- ABOUT ----------------------------------------------------------------------------------------------------------- */
@@ -616,8 +612,10 @@ static void fill_about(dk_ui_menu *m, void *ctx)
     arow(m, t.b);
     /* each module of this boot's selection with its result; the names come from the saved selection, which is what the boot
        loaded unless it was saved again without a restart */
-    dkrt_selection_get(&g_sel);
-    uint32_t n = g_boot.count > DKRT_SEL_MAX ? DKRT_SEL_MAX : g_boot.count;
+    int32_t selection_result = dkrt_selection_get(&g_sel);
+    if (selection_result != DKRT_OK)
+        arow(m, "SELECTION READ ERROR");
+    uint32_t n = selection_result != DKRT_OK ? 0 : g_boot.count > DKRT_SEL_MAX ? DKRT_SEL_MAX : g_boot.count;
     for (uint32_t k = 0; k < n; k++) {
         const uint8_t *p = g_sel.paths[k];
         t_init(&t);
@@ -733,9 +731,13 @@ static void pct_text(txt *t, uint32_t x10)
     t_c(t, '%');
 }
 
-static void hrow(dk_ui_menu *m, const txt *t, int k)
+/* The next free row of the proof array DK_LINES; the page has up to 12 rows (the two BIG rows, the largest free block, only show when it differs from the total; the page is about 16 characters wide). */
+static int g_hrows;
+
+static void hrow(dk_ui_menu *m, const txt *t)
 {
-    keep(DK_LINES[k], t->b);
+    if (g_hrows < 12)
+        keep(DK_LINES[g_hrows++], t->b);
     dk_ui_text(m, t->b);
 }
 
@@ -744,23 +746,32 @@ static void fill_health(dk_ui_menu *m, void *ctx)
     (void)ctx;
     const DkrtHealth *h = &DK_HEALTH;
     txt t;
+    for (int r = 0; r < 12; r++)
+        keep(DK_LINES[r], "");
+    g_hrows = 0;
     t_init(&t);
-    t_s(&t, "CPU ");
+    /* relative to the quietest window since boot, not to the CPU's capacity */
+    t_s(&t, "CPU REL ");
     if (h->flags & DKRT_HEALTH_CPU)
         pct_text(&t, h->cpu_x10);
     else
         t_s(&t, "--");
-    hrow(m, &t, 0);
+    hrow(m, &t);
     t_init(&t);
-    t_s(&t, "DSP ");
-    if (h->flags & DKRT_HEALTH_DSP) {
+    /* of an assumed 1 GHz block (finding 100) */
+    t_s(&t, "DSP 1GHZ ");
+    if (h->flags & DKRT_HEALTH_DSP)
         pct_text(&t, h->dsp_avg_x10);
-        t_s(&t, " MAX ");
-        pct_text(&t, h->dsp_max_x10);
-    } else {
+    else
         t_s(&t, "--");
-    }
-    hrow(m, &t, 1);
+    hrow(m, &t);
+    t_init(&t);
+    t_s(&t, "DSP MAX ");
+    if (h->flags & DKRT_HEALTH_DSP)
+        pct_text(&t, h->dsp_max_x10);
+    else
+        t_s(&t, "--");
+    hrow(m, &t);
     t_init(&t);
     t_s(&t, "RAM FREE ");
     if (h->flags & DKRT_HEALTH_HEAP) {
@@ -770,43 +781,56 @@ static void fill_health(dk_ui_menu *m, void *ctx)
     } else {
         t_s(&t, "--");
     }
-    hrow(m, &t, 2);
+    hrow(m, &t);
     t_init(&t);
     t_s(&t, "LARGEST ");
     if (h->flags & DKRT_HEALTH_HEAP)
         size_text(&t, h->heap_largest);
     else
         t_s(&t, "--");
-    hrow(m, &t, 3);
+    hrow(m, &t);
     t_init(&t);
     t_s(&t, "CPU FREE ");
     size_text(&t, h->arena_free);
-    hrow(m, &t, 4);
+    hrow(m, &t);
+    /* arena_largest is a payload (block size minus the 16-byte block header, DK_ARENA_HDR); arena_free sums block sizes */
+    if (h->arena_largest + DK_ARENA_HDR < h->arena_free) {
+        t_init(&t);
+        t_s(&t, "CPU BIG ");
+        size_text(&t, h->arena_largest);
+        hrow(m, &t);
+    }
     t_init(&t);
     t_s(&t, "DSP FREE ");
     if (h->dsp_area_total != 0)
         size_text(&t, h->dsp_area_free);
     else
         t_s(&t, "--");
-    hrow(m, &t, 5);
+    hrow(m, &t);
+    if (h->dsp_area_total != 0 && h->dsp_area_largest < h->dsp_area_free) {
+        t_init(&t);
+        t_s(&t, "DSP BIG ");
+        size_text(&t, h->dsp_area_largest);
+        hrow(m, &t);
+    }
     t_init(&t);
     t_s(&t, "STORE USED ");
     if (h->flags & DKRT_HEALTH_STORE)
         size_text_kb(&t, h->store_used);
     else
         t_s(&t, "--");
-    hrow(m, &t, 6);
+    hrow(m, &t);
     t_init(&t);
     t_s(&t, "STORE FREE ");
     if (h->flags & DKRT_HEALTH_STORE)
         size_text_kb(&t, h->store_free);
     else
         t_s(&t, "--");
-    hrow(m, &t, 7);
+    hrow(m, &t);
     if (!(h->flags & DKRT_HEALTH_MODULE)) {
         t_init(&t);
         t_s(&t, "NO HEALTH MODULE");
-        hrow(m, &t, 8);
+        hrow(m, &t);
     }
 }
 
@@ -892,12 +916,25 @@ static void bytes_text(txt *t, uint32_t n)
     }
 }
 
-/* A row: the name (12), the kind (4) and the memory the module takes, right aligned: 22 characters, which fit the list (23 at most). */
+/* A module that the saved selection has and this boot did not load (safe mode, or the load failed): the check column cannot say "-", so
+   the row text does (g_lead) and the check mark stays off. A module the user checked just now is a pending change and keeps its check mark. */
+static int dashed(int i)
+{
+    return TICK[i] && g_saved[i] && !LOADED[i];
+}
+
+/* A row: the name (12), the kind (4) and the memory the module takes, right aligned: 22 characters, which fit the list (23 at most). With
+   a mark column the name has 11 characters and the other columns stay where they are. */
 static void module_row(dk_ui_menu *m, int i)
 {
     txt t;
     t_init(&t);
-    row_name(i, NAME_COLS, &t);
+    if (g_lead) {
+        t_c(&t, dashed(i) ? '-' : ' ');
+        row_name(i, NAME_COLS - 1, &t);
+    } else {
+        row_name(i, NAME_COLS, &t);
+    }
     t_pad(&t, NAME_COLS + 1);
     t_s(&t, kind_text(i));
     txt sz;
@@ -917,6 +954,7 @@ static void fill_modules(dk_ui_menu *m, void *ctx)
 {
     (void)ctx;
     DK_LOAD_N = 0;
+    g_hdr = 0;
     g_empty_text[0] = 0;
     if (STORE != 1) {
         copy_text((uint8_t *)g_empty_text, sizeof g_empty_text, STORE == 2 ? "NO STORE" : STORE == 3 ? "STORE READ ERROR" : "BAD STORE");
@@ -929,10 +967,27 @@ static void fill_modules(dk_ui_menu *m, void *ctx)
         return;
     }
     refit();
+    g_lead = 0;
+    for (uint32_t i = 0; i < NENT; i++)
+        if (g_saved[i] && !LOADED[i])
+            g_lead = 1;
+    g_hdr = g_boot.safe != 0;
+    if (g_hdr)
+        dk_ui_text(m, "SAFE MODE: NOT LOADED");
     for (uint32_t i = 0; i < NENT; i++)
         module_row(m, (int)i);
     for (uint32_t i = 0; i < MAX_ENT; i++)
-        dk_ui_check(m, (int)i, i < NENT && TICK[i]);
+        dk_ui_check(m, (int)i + g_hdr, i < NENT && TICK[i] && !dashed((int)i));
+    if (g_hdr)
+        dk_ui_check(m, 0, 0);
+}
+
+/* The check mark of a row after TICK changed. A saved row that is not loaded also changes its "-", which is row text. */
+static void show_tick(int row)
+{
+    dk_ui_check(g_modules, row + g_hdr, TICK[row] && !dashed(row));
+    if (g_saved[row] && !LOADED[row])
+        dk_ui_refresh(g_modules);
 }
 
 static void refuse(int row, const char *what)
@@ -956,16 +1011,20 @@ static void refuse(int row, const char *what)
    unchecked and a dialog says why. */
 static void set_tick(int row, int on)
 {
+    if (g_selection_error != DKRT_OK) {
+        fail_text("SELECTION READ ERROR", g_selection_error);
+        return;
+    }
     if (row < 0 || row >= (int)NENT)
         return;
     if (!on) {
         TICK[row] = 0;
-        dk_ui_check(g_modules, row, 0);
+        show_tick(row);
         return;
     }
     if (NOK[row]) {
         TICK[row] = 0;
-        dk_ui_check(g_modules, row, 0);
+        show_tick(row);
         refuse(row, "NOT COMPATIBLE");
         return;
     }
@@ -973,16 +1032,23 @@ static void set_tick(int row, int on)
     refit();
     if (wont(row)) {
         TICK[row] = 0;
-        dk_ui_check(g_modules, row, 0);
+        show_tick(row);
         refuse(row, "DOES NOT FIT");
         return;
     }
-    dk_ui_check(g_modules, row, 1);
+    show_tick(row);
 }
 
 static void modules_check(void *ctx, int row, int on)
 {
     (void)ctx;
+    row -= g_hdr;
+    if (row < 0) { /* the header is not a module */
+        dk_ui_check(g_modules, 0, 0);
+        return;
+    }
+    if (row < (int)NENT && dashed(row)) /* the check mark is off for it, so YES came as "on": it means off */
+        on = 0;
     set_tick(row, on);
 }
 
@@ -1055,7 +1121,7 @@ static void panel_settings(void *ctx, int row)
     if (k < 0)
         return;
     if (!g_set[k]) {
-        /* the title is the module's name without its author (digikit/remote: REMOTE): the title area is short */
+        /* the title is the module's name without its author (digikit/remote: REMOTE); the wide title bar holds 28 characters; the stock bar cuts a longer one at the start with '..' */
         int from = 0;
         for (int c = 0; c < 32 && mod.name[c]; c++)
             if (mod.name[c] == '/')
@@ -1065,7 +1131,7 @@ static void panel_settings(void *ctx, int row)
             g_set_title[k][c] = upper((char)mod.name[from + c]);
         g_set_desc[k].name = "DigikitModuleMenu";
         g_set_desc[k].title = g_set_title[k];
-        g_set_desc[k].flags = 0;
+        g_set_desc[k].flags = DK_UI_WIDE;
         g_set_desc[k].fill = fill_settings;
         g_set_desc[k].ctx = (void *)(uintptr_t)k;
         g_set[k] = dk_ui_menu_new(&g_set_desc[k]);
@@ -1092,6 +1158,7 @@ static void modules_panel(dk_ui_menu *p, int row, void *ctx)
 {
     (void)ctx;
     DK_PANEL_N = 0;
+    row -= g_hdr;
     if (row < 0 || row >= (int)NENT)
         return;
     prow(p, TICK[row] ? "UNLOAD" : "LOAD", panel_load, row);
@@ -1206,6 +1273,10 @@ static void fill_info(dk_ui_menu *m, void *ctx)
 /* Saves the selection and the changed routes, then restarts. dkrt_restart returns only when it refuses. */
 static void apply(void)
 {
+    if (g_selection_error != DKRT_OK) {
+        fail_text("NOT SAVED", g_selection_error);
+        return;
+    }
     DK_APPLIES++;
     static DkrtSelection sel;
     uint32_t n = 0;
@@ -1308,6 +1379,7 @@ static void open_modules(void *ctx, int arg)
     scan_store();
     read_fx();
     match_fx();
+    dk_ui_select(g_modules, STORE == 1 && NENT > 0 && g_boot.safe != 0); /* the first module, below the safe-mode header */
     dk_ui_open(g_modules);
 }
 

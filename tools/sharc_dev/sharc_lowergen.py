@@ -851,14 +851,14 @@ def _compute_field(f, short):
     return (f["compute[22:16]"] << 16) | f["compute[15:0]"]
 
 
-def i_compute(f, short, values, special=None, approx_recips=False):
+def i_compute(f, short, values, special=None):
     field = _compute_field(f, short)
     if isinstance(field, S) and not CTX.decide(P("!=", field.e, ("c", 0))):
         return None
     return CompTok("compute", "x", bool(short))
 
 
-def i_compute_pey(f, short, values, special=None, approx_recips=False):
+def i_compute_pey(f, short, values, special=None):
     field = _compute_field(f, short)
     if isinstance(field, S) and not CTX.decide(P("!=", field.e, ("c", 0))):
         return None
@@ -1160,7 +1160,6 @@ def trace_form(name: str, type_name: str):
             state = State(pc_sw=0)
             state.uregs = TR  # type: ignore[assignment]
             state.assume_nw32 = True
-            state.approx_recips = False
             state.special = {}
             state.trace = [{}]
             # memory is the kernel's

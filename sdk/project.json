@@ -1,0 +1,61 @@
+{
+  "$schema": "../node_modules/nx/schemas/project-schema.json",
+  "name": "sdk",
+  "targets": {
+    "test-host": {
+      "executor": "nx:run-commands",
+      "cache": false,
+      "inputs": [
+        "{projectRoot}/project.json",
+        "{projectRoot}/tests/**/*",
+        "{projectRoot}/include/**/*",
+        "jsToolchain",
+        "{workspaceRoot}/vitest.host.config.ts",
+        "{workspaceRoot}/vitest.host.projects.json",
+        "{workspaceRoot}/tsconfig*.json",
+        { "externalDependencies": ["vitest"] },
+        "{workspaceRoot}/tools/nx/tests/sdk-contract.test.ts",
+        "{workspaceRoot}/tests/fixtures/modules/sine/src/module.c",
+        "{workspaceRoot}/tests/fixtures/modules/dyn-fx-gain-both/src/module.c"
+      ],
+      "outputs": [],
+      "options": {
+        "forwardAllArgs": false,
+        "command": "pnpm exec vitest run --config vitest.host.config.ts --project nx-host tools/nx/tests/sdk-contract.test.ts",
+        "cwd": "."
+      }
+    },
+    "check-generated": {
+      "executor": "nx:run-commands",
+      "cache": false,
+      "dependsOn": ["patchkit:cli"],
+      "outputs": [],
+      "options": {
+        "command": "dist/patchkit/patchkit --root . gen --check --scope shared",
+        "cwd": "."
+      },
+      "inputs": [
+        "jsToolchain",
+        {
+          "input": "production",
+          "projects": ["patchkit"]
+        },
+        "{workspaceRoot}/sdk/project.json",
+        "{workspaceRoot}/sdk/sdk.toml",
+        "{workspaceRoot}/sdk/asm/**/*",
+        "{workspaceRoot}/sdk/include/dk/gen/**/*",
+        "{workspaceRoot}/devices/**/*",
+        "{workspaceRoot}/modules/core/runtime/abi.toml",
+        "{workspaceRoot}/modules/core/runtime/include/dkrt.h",
+        "{workspaceRoot}/modules/core/runtime/sdk/src/gen_*.rs",
+        "{workspaceRoot}/modules/core/runtime/src/rs/src/gen_abi_check.rs",
+        "{workspaceRoot}/modules/core/fw/**/*",
+        "{workspaceRoot}/tools/device/dklog_kinds.py",
+        "{workspaceRoot}/tools/device/dkproto.py",
+        "{workspaceRoot}/packages/dkneeds/src/gen_limits.rs",
+        "{workspaceRoot}/packages/dkupload/src/gen_proto.rs",
+        "{workspaceRoot}/packages/dk-session/src/gen_proto.ts"
+      ]
+    }
+  }
+}

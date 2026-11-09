@@ -4,7 +4,7 @@ with the core's unannotated handler parameters typed from their callers.
 The translator needs a static type for every expression it emits. mypy
 already has one for the annotated core. About 100 compute handlers are
 written without parameter annotations (they are reached through op tables,
-``ALU_OPS[opcode](rn, rx, ry, left, right, values, special, approx_recips)``),
+``ALU_OPS[opcode](rn, rx, ry, left, right, values, special)``),
 so mypy sees their parameters as ``Any``. This module finds each such
 parameter's type from its call sites -- direct calls, calls through a
 table or a function-valued parameter (a small points-to analysis over the

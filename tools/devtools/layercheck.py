@@ -358,7 +358,12 @@ def object_path(root: Path, m: Module, rel_path: str) -> Path:
     """Where the built object `rel_path` of the module is: in the module for `core/*`, else in the cache (packages/patchkit/src/build/mod.rs)."""
     if classify(root, m) == "core":
         return m.dir / rel_path
-    return root / "out/cache/dko" / m.id / rel_path
+    # entries are `<id>/<src12>/<path>`: read the newest one (no hashing here)
+    found = sorted(
+        (root / "out/cache/dko" / m.id).glob(f"*/{rel_path}"),
+        key=lambda p: p.stat().st_mtime,
+    )
+    return found[-1] if found else root / "out/cache/dko" / m.id / rel_path
 
 
 def check_committed_objects(root: Path, mods: list[Module]) -> list[Violation]:
@@ -506,6 +511,12 @@ SC_ALLOWED_PREFIXES = (
     ".agents/",
     "tests/fixtures/modules/",
 )
+# Runtime integration acceptance uses shipped modules as fixtures. Only this test
+# and the runtimeAcceptance metadata may name them; runtime implementation may not.
+SC_RUNTIME_TEST = (
+    "modules/core/runtime/tests/capacity/inferred/inferred-needs.device.test.ts"
+)
+SC_RUNTIME_PROJECT = "modules/core/runtime/tests/capacity/inferred/project.json"
 SC_SKIP_DIRS = {".git", "out", "node_modules", "target", "firmware", ".venv", "dist"}
 SC_HINT = (
     "move the test or model into the module's tests/ directory, use a fixture module (tests/fixtures/modules), "
@@ -563,12 +574,25 @@ def sc_hits(root: Path, mods: list[Module]) -> list[tuple[str, int, Module, str]
         )
     out = []
     for f in tracked_files(root):
-        if f.endswith(".md") or f.startswith(SC_ALLOWED_PREFIXES):
+        if (
+            f.endswith(".md")
+            or f.startswith(SC_ALLOWED_PREFIXES)
+            or f == SC_RUNTIME_TEST
+        ):
             continue
         data = (root / f).read_bytes()
         if b"\0" in data[:4096]:
             continue
         text = data.decode("utf-8", "replace")
+        if f == SC_RUNTIME_PROJECT:
+            acceptance = re.search(r'"runtimeAcceptance"\s*:\s*', text)
+            if acceptance:
+                start = acceptance.end()
+                _, end = json.JSONDecoder().raw_decode(text, start)
+                # Preserve line numbers and check all fields outside acceptance.
+                text = (
+                    text[:start] + re.sub(r"[^\n]", " ", text[start:end]) + text[end:]
+                )
         for m, d, pat in pats:
             if f.startswith(d + "/"):
                 continue

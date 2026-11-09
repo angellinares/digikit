@@ -31,17 +31,22 @@ toml = "0.9.12"
 object = { version = "0.37", default-features = false, features = ["read_core", "elf"] }
 # `patchkit build` for SHARC+: the public Selache assembler as a library, at the commit tools/patchkit/pk_toolchains.py pins
 # (SELACHE_REV; a test keeps the two equal). Pure Rust, std only: builds for wasm32.
-selas = { git = "https://github.com/js216/selache", rev = "2b26d3b75c53063575bc5c820fa0d38879335187" }
-selelf = { git = "https://github.com/js216/selache", rev = "2b26d3b75c53063575bc5c820fa0d38879335187" }
-selinstr = { git = "https://github.com/js216/selache", rev = "2b26d3b75c53063575bc5c820fa0d38879335187" }
+selas = { git = "https://github.com/ElekLabs/selache", rev = "02d6d785b8e3a125ab237a00bb89503aff835f5d" }
+selelf = { git = "https://github.com/ElekLabs/selache", rev = "02d6d785b8e3a125ab237a00bb89503aff835f5d" }
+selinstr = { git = "https://github.com/ElekLabs/selache", rev = "02d6d785b8e3a125ab237a00bb89503aff835f5d" }
 # The instruction decoder of the SHARC+ runtime (public ISA table): the re-decode of every assembled instruction. No dependencies.
 sharc-rt = { path = "../emulator/sharc-rt" }
 regex-lite = "0.1"
 # The settings record's decoder (the code the runtime uses); no_std, builds for every target.
 dkrt-sdk = { path = "../../modules/core/runtime/sdk" }
+# The fit rule (the code the DIGIKIT menu runs); no_std, builds for every target.
+dkrt-fit = { path = "../../modules/core/runtime/fit" }
 
 # `patchkit store dump` reads card images, `patchkit flash` sends to a MIDI port: the binary only (not wasm32).
 [target.'cfg(not(target_arch = "wasm32"))'.dependencies]
 midir = "0.11"
 plusdrive-format = { path = "../emulator/plusdrive" }
 emmc-card = { path = "../emulator/card" }
+
+[dev-dependencies]
+machine = { path = "../emulator/machine" }

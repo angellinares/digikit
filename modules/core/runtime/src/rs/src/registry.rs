@@ -21,16 +21,20 @@ const KIND_PARAM: u32 = 1;
 const KIND_MACHINE: u32 = 2;
 const KIND_PAGE: u32 = 3;
 const KIND_EFFECT: u32 = crate::fxpage::KIND_EFFECT;
+/// A click action of a parameter: the file's PARAM index and the image offset of the callback (docs/design/machine-page-click.md).
+const KIND_ACTION: u32 = 5;
+const LEN_ACTION: u32 = 0x10;
+const KIND_NATIVE_PAGE: u32 = crate::nativepage::KIND;
 const LEN_PARAM: u32 = 0x50;
 const LEN_MACHINE: u32 = 0x6c;
 const LEN_PAGE: u32 = 0x60;
 const LEN_EFFECT: u32 = crate::fxpage::LEN_EFFECT;
 const KNOB_PARAM: u32 = 0x8000_0000;
-const MAX_RECORDS: u32 = 32;
-const MAX_MACH: usize = 8;
-const MAX_PARAM: usize = 16;
-const MAX_PAGE: usize = 8;
-const KNOBS: usize = 8;
+const MAX_RECORDS: u32 = dkneeds::MAX_RECORDS;
+const MAX_MACH: usize = limits::MACHINE_ROWS;
+const MAX_PARAM: usize = limits::PARAM_ROWS;
+const MAX_PAGE: usize = limits::PAGE_ROWS;
+const KNOBS: usize = limits::PAGE_KNOBS;
 const MACH_TEXT: usize = 24;
 const REP_SIZE: usize = 48;
 
@@ -133,6 +137,18 @@ pub(crate) unsafe fn info() -> *const u32 {
     p
 }
 
+/// The code of the first run-time parameter row (a row `k` of the registry has code `param_first() + k`); `u32::MAX` without a registry.
+pub fn param_first() -> u32 {
+    unsafe {
+        let inf = info();
+        if inf.is_null() {
+            u32::MAX
+        } else {
+            iw(inf, w::P_DYN0)
+        }
+    }
+}
+
 unsafe fn iw(i: *const u32, k: usize) -> u32 {
     read_volatile(i.add(k))
 }
@@ -206,7 +222,7 @@ unsafe fn each(reg: *const u8, mut f: impl FnMut(u32, *const u8)) {
 }
 
 /// Validate the `register` records of a module file. `reg` points into the file (the staging buffer). Nothing is written.
-pub unsafe fn check(reg: *const u8, size: u32) -> i32 {
+pub unsafe fn check(reg: *const u8, size: u32, image_size: u32) -> i32 {
     if size == 0 {
         return OK;
     }
@@ -233,7 +249,7 @@ pub unsafe fn check(reg: *const u8, size: u32) -> i32 {
     }
     // pass 1: layout, counts
     let mut at: u32 = 16;
-    let (mut np, mut nm, mut ng, mut ne) = (0u32, 0u32, 0u32, 0u32);
+    let (mut np, mut nm, mut ng, mut ne, mut na, mut nn) = (0u32, 0u32, 0u32, 0u32, 0u32, 0u32);
     let mut i = 0;
     while i < n {
         if at > size || size - at < 8 {
@@ -241,12 +257,23 @@ pub unsafe fn check(reg: *const u8, size: u32) -> i32 {
         }
         let kind = rd32(reg.add(at as usize));
         let len = rd32(reg.add(at as usize + 4));
-        let want = match kind {
-            KIND_PARAM => LEN_PARAM,
-            KIND_MACHINE => LEN_MACHINE,
-            KIND_PAGE => LEN_PAGE,
-            KIND_EFFECT => LEN_EFFECT,
-            _ => return E_FORMAT,
+        // an if chain, not a `match`: a dense match becomes a PC-relative jump table, which is not ColdFire code
+        let want = if kind == KIND_PARAM {
+            LEN_PARAM
+        } else if kind == KIND_MACHINE {
+            LEN_MACHINE
+        } else if kind == KIND_PAGE {
+            LEN_PAGE
+        } else if kind == KIND_EFFECT {
+            LEN_EFFECT
+        } else if kind == KIND_ACTION {
+            LEN_ACTION
+        } else if kind == crate::nativepage::KIND_V2 {
+            crate::nativepage::LEN_V2
+        } else if kind == KIND_NATIVE_PAGE {
+            crate::nativepage::LEN
+        } else {
+            return E_FORMAT;
         };
         if len != want || size - at < len {
             return E_FORMAT;
@@ -257,15 +284,88 @@ pub unsafe fn check(reg: *const u8, size: u32) -> i32 {
             nm += 1;
         } else if kind == KIND_EFFECT {
             ne += 1;
+        } else if kind == KIND_ACTION {
+            na += 1;
+        } else if crate::nativepage::is_kind(kind) {
+            nn += 1;
         } else {
             ng += 1;
         }
         at += len;
         i += 1;
     }
-    if at != size || np as usize > MAX_PARAM || nm as usize > MAX_MACH || ng as usize > MAX_PAGE || ne as usize > crate::fxpage::MAX_FX {
+    if at != size || np as usize > MAX_PARAM || nm as usize > MAX_MACH || ng as usize > MAX_PAGE || ne as usize > crate::fxpage::MAX_FX || nn > 2 * nm {
         return E_FORMAT;
     }
+    // an action names a parameter of the file and code inside the image; a parameter has at most one
+    let mut acted = 0u32;
+    let mut bad_act = OK;
+    each(reg, |kind, b| {
+        if kind == KIND_ACTION && bad_act == OK {
+            let (pi, off) = (rd32(b), rd32(b.add(4)));
+            if pi >= np || pi >= 32 || acted & (1 << pi) != 0 || off >= image_size {
+                bad_act = E_FORMAT;
+            } else {
+                acted |= 1 << pi;
+            }
+        }
+    });
+    if bad_act != OK || na > np {
+        return E_FORMAT;
+    }
+    let mut native_set = crate::nativepage::PageSet::<MAX_MACH>::new();
+    let mut bad_native = OK;
+    each(reg, |kind, b| {
+        if !crate::nativepage::is_kind(kind) || bad_native != OK { return; }
+        bad_native = crate::nativepage::check(kind, b, np, image_size);
+        if bad_native != OK { return; }
+        let owner = rd32(b.add(4));
+        if !native_set.claim(kind, owner, crate::nativepage::page_index(kind, b)) {
+            bad_native = E_FORMAT; return;
+        }
+        let mut machine = false;
+        let mut ordinary_pages = 0;
+        each(reg, |k, row| {
+            if k == KIND_MACHINE && rd32(row) == owner { machine = true; }
+            if k == KIND_PAGE && rd32(row) == owner { ordinary_pages += 1; }
+        });
+        if !machine || (iw(inf, w::PG_ROWS) != 0 && ordinary_pages != 1) {
+            bad_native = E_FORMAT; return;
+        }
+        let mut snapshot = [false; MAX_PARAM];
+        each(reg, |k, row| {
+            if (k == KIND_MACHINE || k == KIND_PAGE) && rd32(row) == owner {
+                let offset = if k == KIND_MACHINE { 20 } else { 4 };
+                for j in 0..8 {
+                    let code = rd32(row.add(offset + 4 * j));
+                    if code & KNOB_PARAM != 0 {
+                        let index = (code & !KNOB_PARAM) as usize;
+                        if index < MAX_PARAM { snapshot[index] = true; }
+                    }
+                }
+            }
+        });
+        if snapshot.iter().filter(|&&used| used).count() > 8 { bad_native = E_FORMAT; return; }
+        let mut i = 0;
+        while i < 8 && bad_native == OK {
+            let binding = b.add(crate::nativepage::binding_offset(kind) + 12 * i);
+            if rd32(binding) == 1 {
+                let param = KNOB_PARAM | rd32(binding.add(4));
+                let mut owned = false;
+                each(reg, |k, row| {
+                    if (k == KIND_MACHINE || k == KIND_PAGE) && rd32(row) == owner {
+                        let offset = if k == KIND_MACHINE { 20 } else { 4 };
+                        let mut j = 0;
+                        while j < 8 { if rd32(row.add(offset + 4 * j)) == param { owned = true; } j += 1; }
+                    }
+                });
+                if !owned { bad_native = E_FORMAT; }
+            }
+            i += 1;
+        }
+    });
+    if bad_native != OK { return bad_native; }
+    if !native_set.complete() { return E_FORMAT; }
     // effect pages need core/fxpages; each record is checked on its own, and an effect has one page
     let mut fx_seen = 0u32;
     let mut bad_fx = OK;
@@ -300,8 +400,8 @@ pub unsafe fn check(reg: *const u8, size: u32) -> i32 {
     let mut bad = OK;
     let mut pi = 0u32;
     each(reg, |kind, b| {
-        if bad != OK || kind == KIND_EFFECT {
-            return; // an effect's page was checked above, it has no machine, parameter or page row of this registry
+        if bad != OK || kind == KIND_EFFECT || kind == KIND_ACTION || crate::nativepage::is_kind(kind) {
+            return; // an effect's page and an action were checked above, it has no machine, parameter or page row of this registry
         }
         if kind == KIND_PARAM {
             let index = rd32(b);
@@ -345,8 +445,9 @@ pub unsafe fn check(reg: *const u8, size: u32) -> i32 {
                 bad = E_FORMAT;
                 return;
             }
-            if t < dyn0 || t >= dyn0 + dyn_n || clone >= m_first {
-                bad = E_TYPE_RANGE;
+            let r = capacity::machine_type(t, dyn0, dyn_n, clone, m_first);
+            if r != OK {
+                bad = r;
                 return;
             }
             let mut j = 0;
@@ -407,31 +508,13 @@ pub unsafe fn check(reg: *const u8, size: u32) -> i32 {
     if bad != OK {
         return bad;
     }
-    // free reserved page rows
-    let mut free_pg = 0u32;
-    let mut k = 0;
-    while k < iw(inf, w::PG_DYN_N) as usize && k < MAX_PAGE {
-        if s.page_owner[k] == 0 {
-            free_pg += 1;
-        }
-        k += 1;
-    }
-    if free_pg < ng {
-        return E_PAGE_FULL;
-    }
-    // free reserved parameter rows
-    let mut free = 0u32;
-    let mut k = 0;
-    while k < iw(inf, w::P_DYN_N) as usize && k < MAX_PARAM {
-        if s.param_owner[k] == 0 {
-            free += 1;
-        }
-        k += 1;
-    }
-    if free < np {
-        return E_PARAM_FULL;
-    }
-    OK
+    // free reserved page and parameter rows
+    capacity::registry_rows(
+        ng,
+        capacity::free_rows(&s.page_owner, iw(inf, w::PG_DYN_N)),
+        np,
+        capacity::free_rows(&s.param_owner, iw(inf, w::P_DYN_N)),
+    )
 }
 
 /// Write one 60-byte parameter table row from its lowering spec (the template's words, the record's values).
@@ -496,7 +579,7 @@ unsafe fn write_param_row(
 }
 
 /// Fill the reserved rows from the (checked) records. `owner` = module record index + 1.
-pub unsafe fn apply(owner: u8, reg: *const u8, size: u32) -> i32 {
+pub unsafe fn apply(owner: u8, reg: *const u8, size: u32, base: u32) -> i32 {
     if size == 0 {
         return OK;
     }
@@ -508,6 +591,7 @@ pub unsafe fn apply(owner: u8, reg: *const u8, size: u32) -> i32 {
     let n = rd32(reg.add(12));
     // parameters first: their codes are what the machines' knobs name
     let mut codes = [0u32; MAX_PARAM];
+    let mut rows = [0usize; MAX_PARAM]; // the file's parameter i sits in row rows[i]
     let mut np = 0usize;
     each(reg, |kind, b| {
         if kind != KIND_PARAM {
@@ -523,6 +607,7 @@ pub unsafe fn apply(owner: u8, reg: *const u8, size: u32) -> i32 {
         s.param_owner[k] = owner;
         let code = iw(inf, w::P_DYN0) + k as u32;
         codes[np] = code;
+        rows[np] = k;
         np += 1;
         copy_text(s.s.param_name[k].as_mut_ptr(), b.add(24), 32);
         copy_text(s.s.param_short[k].as_mut_ptr(), b.add(56), 16);
@@ -539,6 +624,12 @@ pub unsafe fn apply(owner: u8, reg: *const u8, size: u32) -> i32 {
         );
     });
     let _ = n;
+    // click actions: the callback's address is the module's load address plus its image offset
+    each(reg, |kind, b| {
+        if kind == KIND_ACTION {
+            crate::pageclick::set(rows[rd32(b) as usize], base + rd32(b.add(4)));
+        }
+    });
     // pages (Digitone II): their machine is published below, so they sit unused until then
     let slot_base = iw(inf, w::SLOT_BASE);
     each(reg, |kind, b| {
@@ -619,6 +710,30 @@ pub unsafe fn apply(owner: u8, reg: *const u8, size: u32) -> i32 {
     // effect pages (Digitakt II): the effect's row in the chain is claimed, so its page, parameter rows and list entry can be written
     let mut rc = OK;
     each(reg, |kind, b| {
+        if crate::nativepage::is_kind(kind) && rc == OK {
+            // Snapshot only this machine's existing parameters, independently of
+            // its page2 encoder bindings. Registry order is declaration order.
+            let machine = rd32(b.add(4));
+            let mut words = [0u32; 8];
+            let mut count = 0;
+            for (index, code) in codes[..np].iter().enumerate() {
+                let mut owned = false;
+                each(reg, |k, row| {
+                    if (k == KIND_MACHINE || k == KIND_PAGE) && rd32(row) == machine {
+                        let offset = if k == KIND_MACHINE { 20 } else { 4 };
+                        for j in 0..8 {
+                            if rd32(row.add(offset + 4 * j)) == (KNOB_PARAM | index as u32) { owned = true; }
+                        }
+                    }
+                });
+                if owned {
+                    if count == words.len() { rc = E_FORMAT; break; }
+                    words[count] = *code;
+                    count += 1;
+                }
+            }
+            if rc == OK { rc = crate::nativepage::apply(kind, b, base, &codes, &words[..count]); }
+        }
         if kind == KIND_EFFECT && rc == OK {
             rc = crate::fxpage::apply(owner, b);
         }
@@ -728,6 +843,7 @@ pub unsafe fn remove(owner: u8) {
     while k < MAX_MACH {
         if s.mach_owner[k] == owner {
             let t = iw(inf, w::M_DYN0) + k as u32;
+            crate::nativepage::remove(t); // callbacks must go before code/strings can be released
             let row = iw(inf, w::M_ROWS) + (t - first) * iw(inf, w::M_ROW_SIZE);
             wr(row + iw(inf, w::O_NAME), empty); // hide first
             s.empty_rep = [0, 0, 0xffff_ffff, 0];
@@ -796,6 +912,7 @@ pub unsafe fn remove(owner: u8) {
                 empty,
             );
             s.param_owner[k] = 0;
+            crate::pageclick::set(k, 0);
         }
         k += 1;
     }

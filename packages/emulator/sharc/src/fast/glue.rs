@@ -110,6 +110,8 @@ pub const MN: u32 = 1 << 6;
 pub const MU: u32 = 1 << 8;
 pub const MUS: u32 = 1 << 8;
 pub const STKYX_CODE: usize = 120;
+/// STKYX.AOS: a fixed-point ALU overflow.
+pub const AOS: u32 = 1 << 2;
 pub const SV: u32 = 1 << 11;
 pub const SZ: u32 = 1 << 12;
 pub const SS: u32 = 1 << 13;
@@ -161,16 +163,15 @@ pub fn flag_mask(kind: FlagKind) -> u32 {
         | FlagKind::Isub
         | FlagKind::Logical
         | FlagKind::Fabs
+        | FlagKind::Fmant
         | FlagKind::Iabs
-        | FlagKind::RecipsAf
         | FlagKind::Compare { .. } => ALU_MASK,
-        FlagKind::Fmul | FlagKind::FmulForget => MULT_MASK,
+        FlagKind::Fmul | FlagKind::FmulForget | FlagKind::Mfix => MULT_MASK,
         FlagKind::Shift { .. }
         | FlagKind::Fext { .. }
         | FlagKind::Btst
         | FlagKind::Leftz
         | FlagKind::ShiftDyn => SV | SZ | SS,
-        FlagKind::Recips => AC | AS | AI | AN | AV | AZ,
     }
 }
 
@@ -231,6 +232,8 @@ pub fn apply_flag(v: V, kind: FlagKind, src: [u32; 2]) -> V {
             define(v, MULT_MASK, bits)
         }
         FlagKind::FmulForget => forget(v, MULT_MASK),
+        // The source holds MN and MU at their ASTATX bits; MV and MI are clear.
+        FlagKind::Mfix => define(v, MULT_MASK, src[0] & (MN | MU)),
         FlagKind::Iadd => define(v, ALU_MASK, arith_bits(src[0], src[1], false)),
         FlagKind::Isub => define(v, ALU_MASK, arith_bits(src[0], src[1], true)),
         FlagKind::Logical => {
@@ -257,6 +260,16 @@ pub fn apply_flag(v: V, kind: FlagKind, src: [u32; 2]) -> V {
         FlagKind::Fabs => {
             let mut bits = AF;
             if src[0] & 0x7fff_ffff == 0 {
+                bits |= AZ;
+            }
+            if src[1] >> 31 != 0 {
+                bits |= AS;
+            }
+            define(v, ALU_MASK, bits)
+        }
+        FlagKind::Fmant => {
+            let mut bits = AF;
+            if src[0] == 0 {
                 bits |= AZ;
             }
             if src[1] >> 31 != 0 {
@@ -304,17 +317,6 @@ pub fn apply_flag(v: V, kind: FlagKind, src: [u32; 2]) -> V {
                 bits |= SZ;
             }
             define(v, SV | SZ | SS, bits)
-        }
-        FlagKind::Recips => {
-            let bits = if src[0] >> 31 != 0 { AN } else { 0 };
-            define(v, AC | AS | AI | AN | AV | AZ, bits)
-        }
-        FlagKind::RecipsAf => {
-            let mut bits = src[1] & AF;
-            if src[0] >> 31 != 0 {
-                bits |= AN;
-            }
-            define(v, ALU_MASK, bits)
         }
         FlagKind::Iabs => {
             let neg = src[0] >> 31 != 0;
@@ -468,7 +470,12 @@ pub fn reg_checks(reqs: &[Req]) -> Vec<RegChk> {
                 want: v_word(0, mask),
             },
             // CaccUnknown is checked on the engine state by `astat_ok`, not a masked compare.
-            Req::NwPlain { .. } | Req::Within { .. } | Req::BankSync | Req::CaccUnknown => continue,
+            // MrFull is checked by `mr_ok` (MRF is a `Spec`, not a register).
+            Req::NwPlain { .. }
+            | Req::Within { .. }
+            | Req::BankSync
+            | Req::CaccUnknown
+            | Req::MrFull => continue,
         };
         if !out
             .iter()
@@ -501,6 +508,66 @@ fn within_ok(s: &St, r: &Region) -> bool {
 #[inline(always)]
 fn cacc_ok(s: &St, r: &Region) -> bool {
     !r.cacc_unknown || s.r[118].m & 0xff00_0000 != 0xff00_0000
+}
+
+/// The slot of MRF in `St::special` (the first of `SPECIAL_SLOT_SYMS`).
+const MRF_SLOT: usize = 0;
+const _: () = assert!(SPECIAL_SLOT_SYMS[MRF_SLOT] == S_MRF);
+
+/// Is MRF present with all 80 bits known (`Req::MrFull`)?
+#[inline(always)]
+fn mrf_known(s: &St) -> bool {
+    s.special_present[MRF_SLOT] && matches!(s.special[MRF_SLOT], Spec::M(m) if m.known())
+}
+
+/// `Req::MrFull`: a kernel that keeps MRF in `PSEUDO_MR` runs only while MRF
+/// is fully known.
+#[inline(always)]
+fn mr_ok(s: &St, r: &Region) -> bool {
+    !r.mr || mrf_known(s)
+}
+
+/// Put MRF into the context words of `PSEUDO_MR` (the kernel's entry values).
+#[inline(always)]
+fn load_mr(s: &St, r: &Region, ctx: &mut Ctx) {
+    if !r.mr {
+        return;
+    }
+    let Spec::M(m) = s.special[MRF_SLOT] else {
+        return;
+    };
+    ctx.set32(ctx_reg_in(PSEUDO_MR), m.bits as u32);
+    ctx.set32(ctx_reg_in(PSEUDO_MR + 1), (m.bits >> 32) as u32);
+    ctx.set32(ctx_reg_in(PSEUDO_MR + 2), (m.bits >> 64) as u32 & 0xffff);
+}
+
+/// MRF after a kernel that wrote it (after the exit-0 check, so a run that
+/// completed nothing leaves the state alone). A word the run did not write
+/// holds its entry value, so all three are stored.
+#[inline(always)]
+fn store_mr(s: &mut St, r: &Region, ctx: &Ctx) {
+    if !r.mr_written {
+        return;
+    }
+    let w0 = ctx.get32(ctx_reg_out(PSEUDO_MR)) as Int;
+    let w1 = ctx.get32(ctx_reg_out(PSEUDO_MR + 1)) as Int;
+    let w2 = ctx.get32(ctx_reg_out(PSEUDO_MR + 2)) as Int & 0xffff;
+    s.special[MRF_SLOT] = Spec::M(MR::new(MR_MASK, w0 | (w1 << 32) | (w2 << 64)));
+    s.special_present[MRF_SLOT] = true;
+}
+
+/// Latch AOS for a kernel that ran through an overflow. Like the interpreter's
+/// `_sticky_set`: the bit becomes known and set, and without an overflow STKYX
+/// stays as it was.
+#[inline(always)]
+fn store_aos(s: &mut St, r: &Region, ctx: &Ctx) {
+    if r.aos && ctx.get32(ctx_reg_out(PSEUDO_AOS)) >> 31 != 0 {
+        let v = s.r[STKYX_CODE];
+        s.r[STKYX_CODE] = V {
+            b: v.b | AOS,
+            m: v.m | AOS,
+        };
+    }
 }
 
 /// Do all of R's register requirements hold in S?
@@ -715,6 +782,7 @@ pub fn eval_req(s: &St, req: &Req, n: i64) -> bool {
         Req::FlagsKnown(mask) => s.r[118].m & mask == mask,
         Req::BankSync => !s.cfg.bank_model || bank_synced(s),
         Req::CaccUnknown => s.r[118].m & 0xff00_0000 != 0xff00_0000,
+        Req::MrFull => mrf_known(s),
         Req::Within { c, lo, hi } => {
             let v = s.r[c as usize];
             v.is_c() && (lo..=hi).contains(&v.b)
@@ -825,7 +893,7 @@ pub fn run(
             (1, 1)
         }
     };
-    if !regs_ok(s, &r.chk) || !cacc_ok(s, r) || !within_ok(s, r) {
+    if !regs_ok(s, &r.chk) || !cacc_ok(s, r) || !mr_ok(s, r) || !within_ok(s, r) {
         return Err(Decline::Req);
     }
     if !nw_ok(s, r, iters) {
@@ -867,6 +935,7 @@ pub fn run(
     }
     ctx.set32(CTX_ITERS, iters as u32);
     set_flat(ctx, s);
+    load_mr(s, r, ctx);
     // SAFETY: static windows cover every access of `iters` iterations by the
     // lowering's range analysis. Guarded read windows are resolved here and
     // each dynamic address is checked before its load and instruction commit.
@@ -899,6 +968,8 @@ pub fn run(
             };
         }
     }
+    store_mr(s, r, ctx);
+    store_aos(s, r, ctx);
     apply_flags(s, r, ctx, full, done, kk);
     apply_groups(s, r, ctx);
     apply_cacc(s, r, ctx);
@@ -1287,7 +1358,10 @@ mod sites {
             } else {
                 cur.b
             };
-            s.r[STKYX] = V { b, m: cur.m & !BIT26 };
+            s.r[STKYX] = V {
+                b,
+                m: cur.m & !BIT26,
+            };
         }
         if s.loops.n != loops_before || did {
             s.check_loops();
@@ -1322,6 +1396,37 @@ fn note_window(ctx: &mut Ctx, w: usize, lo: u32, hi: u32) {
 mod tests {
     use super::*;
     use crate::mem::Mem;
+
+    #[test]
+    fn ddr_monitor_invalidates_cached_static_and_dynamic_windows() {
+        let mut s = St::new(Mem::new());
+        let a = 0x8001_0000;
+        for k in 0..64 {
+            s.mem.write_byte(a + k, 0);
+        }
+        s.r[18] = V::c(a as Int);
+        let mut spec = super::super::WinSpec {
+            base: Base::None,
+            lo: 0,
+            hi: 0,
+            ts: 0,
+            nf: 0,
+            read: true,
+            write: true,
+            dynamic_anchor: None,
+        };
+        let cache = std::cell::Cell::new(WinCache::NONE);
+        assert!(window_ptr(&mut s.mem, &cache, &spec, a, a as u64 + 4).is_some());
+        s.mem.set_ddr_monitor(Some((a, a + 4))).unwrap();
+        assert!(window_ptr(&mut s.mem, &cache, &spec, a, a as u64 + 4).is_none());
+        assert_eq!(s.mem.first_ddr_access(), None);
+        s.mem.set_ddr_monitor(None).unwrap();
+        spec.dynamic_anchor = Some(18);
+        assert!(dynamic_window_ptr(&mut s, &cache, &spec, 18).is_some());
+        s.mem.set_ddr_monitor(Some((a, a + 4))).unwrap();
+        assert!(dynamic_window_ptr(&mut s, &cache, &spec, 18).is_none());
+        assert_eq!(s.mem.first_ddr_access(), None);
+    }
 
     #[test]
     fn dynamic_window_uses_alias_subspan_and_invalidates_cache() {
@@ -1500,13 +1605,20 @@ pub fn run_cfg(
             }
             _ => {
                 if COV_ON.load(std::sync::atomic::Ordering::Relaxed) {
-                    cov_why(|| format!("shape: return without a PC stack entry (loops {nloops} depth {} top {top:x?})", s.loop_depth));
+                    cov_why(|| {
+                        format!(
+                            "shape: return without a PC stack entry (loops {nloops} depth {} top {top:x?})",
+                            s.loop_depth
+                        )
+                    });
                 }
                 return Err(Decline::Shape);
             }
         }
     }
-    if meta.has_call && (s.call_stack.len() as Int >= s.cfg.max_call_depth || s.call_stack.len() + 2 >= MAX_CALLS)
+    if meta.has_call
+        && (s.call_stack.len() as Int >= s.cfg.max_call_depth
+            || s.call_stack.len() + 2 >= MAX_CALLS)
     {
         return Err(shape("call stack too deep"));
     }
@@ -1525,7 +1637,12 @@ pub fn run_cfg(
         None => rem_top.max(1),
     };
     let check = WIN_CHECK.load(std::sync::atomic::Ordering::Relaxed);
-    if !regs_ok(s, &r.chk) || !cacc_ok(s, r) || !within_ok(s, r) || !nw_ok(s, r, iters) {
+    if !regs_ok(s, &r.chk)
+        || !cacc_ok(s, r)
+        || !mr_ok(s, r)
+        || !within_ok(s, r)
+        || !nw_ok(s, r, iters)
+    {
         return Err(Decline::Req);
     }
     let avail = s.limit.saturating_sub(s.icount);
@@ -1579,6 +1696,7 @@ pub fn run_cfg(
     }
     ctx.set32(CTX_BUDGET, avail.min(1 << 31) as u32);
     set_flat(ctx, s);
+    load_mr(s, r, ctx);
     // SAFETY: static windows cover every access by the lowering's range
     // analysis. Guarded read windows are resolved here and each dynamic
     // address is checked before its load and instruction commit. The kernel
@@ -1604,6 +1722,8 @@ pub fn run_cfg(
             m: u32::MAX,
         };
     }
+    store_mr(s, r, ctx);
+    store_aos(s, r, ctx);
     apply_groups(s, r, ctx);
     apply_cacc(s, r, ctx);
     ctx.ret_at = site.ret;
@@ -1732,5 +1852,3 @@ pub fn run_cfg(
 ) -> Result<u32, Decline> {
     Err(Decline::Shape)
 }
-
-

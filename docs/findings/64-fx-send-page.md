@@ -4,7 +4,7 @@ A digikit effect is a master insert or a send (finding 62). The amounts of a sen
 The label is the effect's tab (`GAN`), and while the knob turns the title says `GAN Send=40` (0 to 127, default 0). Press FX again, or UP and DOWN, to change the page; the title shows `FX (2/2)`. The effect's own settings page stays in FUNC + FX (finding 61). No p-lock, no LFO, no MIDI CC
 on these knobs. The page exists only when at least one loaded effect is routed send. This finding records the firmware facts, the machinery, the flow at run time and the proof. Marks: **[D]** measured or read once by the author (no second agent has checked the image bytes
 yet, so nothing here is **[V]**), **[O]** open. Pieces: `modules/core/adapters/fxpages` (three hooks, a page row, two parameter rows), `modules/core/runtime/src/rs/src/fxsend.rs` (the route, the cells, the amounts), `dsp.rs` (the route and amount words of a row),
-`registry.rs` (`write_send_param_row`), `[fx]` and `[limits] send_slots` of `devices/digitakt-ii.toml`, the scenario `tests/digikit/scenarios/fx-route-dt2.toml` (`tools/patchkit/pk_digikit_fxroute.py`).
+`registry.rs` (`write_send_param_row`), `[fx]` and `[limits] send_slots` of `devices/digitakt-ii.toml`, the scenario `REF:tests/digikit/scenarios/fx-route-dt2.toml` (`tools/patchkit/pk_digikit_fxroute.py`).
 
 ## Firmware facts **[D]**
 
@@ -50,7 +50,7 @@ has the amount of its source; a feature). A page cell's randomise, copy and relo
 
 ## Proof **[D]** (scenario `fx-route-dt2`, quick tier; results below are from the final run)
 
-**[C]** Step 4 (finding 65): the scenario's effect is `test/dyn-fx-gain-both` (`route = "master"`, `routes = ["master", "send"]`; same gain, same page, tab GAN). `test/dyn-fx-gain` has no route fields and so allows the master only: a stored `send` for it is ignored. The first run of this scenario in the gate (it had no test file before step 4's `tests/digikit/test_fxroute_dt2.py`) found that.
+**[C]** Step 4 (finding 65): the scenario's effect is `test/dyn-fx-gain-both` (`route = "master"`, `routes = ["master", "send"]`; same gain, same page, tab GAN). `test/dyn-fx-gain` has no route fields and so allows the master only: a stored `send` for it is ignored. The first run of this scenario in the gate (it had no test file before step 4's `REF:tests/digikit/test_fxroute_dt2.py`) found that.
 
 All 43 checks pass (345 s, 33 emulators; `pk_digikit_scen run fx-route-dt2 --image dt2-1.17`). Screenshots (3x): `out/runs/lanes/fxr-shots/` (`stock-fx1`, `send-page1`, `send-page2-track1`, `send-turning` = `GAN Send=40`, `send-page2-track1-40`, `send-page2-track2-0`, `send-turning-track2`, `limit-page2`).
 

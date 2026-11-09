@@ -92,7 +92,7 @@ def probe_compute(form, fields):
             fields["compute[15:0]"] = fields["compute"] & 0xFFFF
         if "compute[22:16]" not in fields:
             return None
-        sharc_trace._compute(fields, False, values, {}, approx_recips=True)
+        sharc_trace._compute(fields, False, values, {})
     except (
         Exception
     ) as error:  # the tracer signals unsupported encodings with ValueError

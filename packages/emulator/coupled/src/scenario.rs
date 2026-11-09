@@ -17,10 +17,24 @@ pub enum When {
     Frames(u64),
 }
 
+/// Most bytes in one `midi` event (an event stays `Copy`).
+pub const MIDI_EVENT_MAX: usize = 16;
+
 #[derive(Clone, Copy, Debug)]
 pub enum Action {
-    Button { code: u8, down: bool },
-    Turn { encoder: u8, detents: i32 },
+    Button {
+        code: u8,
+        down: bool,
+    },
+    Turn {
+        encoder: u8,
+        detents: i32,
+    },
+    /// Bytes on the MIDI DIN input, one byte per wire time from the event.
+    Midi {
+        len: u8,
+        bytes: [u8; MIDI_EVENT_MAX],
+    },
 }
 
 #[derive(Clone, Copy, Debug)]
@@ -89,8 +103,23 @@ pub fn parse_scenario(v: &Value) -> Result<Scenario, String> {
                 detents: i32::try_from(e["detents"].as_i64().unwrap_or(1))
                     .map_err(|_| err("detents out of range"))?,
             }
+        } else if let Some(list) = e["midi"].as_array() {
+            if list.is_empty() || list.len() > MIDI_EVENT_MAX {
+                return Err(err("a midi event needs 1 to 16 bytes"));
+            }
+            let mut bytes = [0u8; MIDI_EVENT_MAX];
+            for (slot, b) in bytes.iter_mut().zip(list) {
+                *slot = b
+                    .as_u64()
+                    .and_then(|b| u8::try_from(b).ok())
+                    .ok_or_else(|| err("a midi byte must be 0 to 255"))?;
+            }
+            Action::Midi {
+                len: list.len() as u8,
+                bytes,
+            }
         } else {
-            return Err(err("an event needs \"button\" or \"turn\""));
+            return Err(err("an event needs \"button\", \"turn\" or \"midi\""));
         };
         events.push(Event {
             when,
@@ -115,6 +144,7 @@ pub fn fire(rt: &mut crate::CoupledRuntime, action: Action) -> Result<(), String
     match action {
         Action::Button { code, down } => rt.button(code, down),
         Action::Turn { encoder, detents } => rt.turn(encoder, detents),
+        Action::Midi { len, bytes } => rt.midi_in_at_wire_rate(&bytes[..usize::from(len)]),
     }
 }
 
@@ -144,6 +174,24 @@ mod tests {
         let nested = json!({"diagnostics": {"recorded_scenario": {"name": "r", "instructions": 5, "events": []}}});
         let found = find_scenario(&nested).unwrap();
         assert_eq!(found["name"], "r");
+    }
+
+    #[test]
+    fn parse_scenario_reads_midi_events() {
+        let sc = parse_scenario(
+            &json!({"name":"m","seconds":1,"events":[{"at_instr":4,"midi":[0x99,60,100]}]}),
+        )
+        .unwrap();
+        let Action::Midi { len, bytes } = sc.events[0].action else {
+            panic!("not a midi event");
+        };
+        assert_eq!(&bytes[..usize::from(len)], &[0x99, 60, 100]);
+        let bad = |events: serde_json::Value| {
+            parse_scenario(&json!({"name":"m","seconds":1,"events":events})).unwrap_err()
+        };
+        assert!(bad(json!([{"at_instr":0,"midi":[]}])).contains("1 to 16"));
+        assert!(bad(json!([{"at_instr":0,"midi":vec![0; 17]}])).contains("1 to 16"));
+        assert!(bad(json!([{"at_instr":0,"midi":[256]}])).contains("0 to 255"));
     }
 
     #[test]

@@ -132,8 +132,7 @@ per-voice "voice FX" before the filter (H5) exists on both devices.
 
 ## Parameters, pages and persistence (ColdFire) **[D]**
 
-- **Descriptor table.** DT2 1.17 `0x4020f59c`, 275 rows. DN2 1.12 `0x401f83a4`, 321 rows. Each row is 60 bytes (fields as
-  in finding 02). FX rows are codes `0x69..0x9f` on both devices: 55 rows, mirrors 25..69, the same on both. There are no
+- **Descriptor table.** Parameter table: [finding 100](100-module-limits.md). FX rows are codes `0x69..0x9f` on both devices: 55 rows, mirrors 25..69, the same on both. There are no
   free rows; `core/params` appends.
 - **Defaults.** A new FX code gets default 0 in a new kit unless the FX index-to-code table is patched. That table is 71
   words at bss `0x4316e854` on DT2, built by `0x400da84e`.

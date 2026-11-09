@@ -1,0 +1,95 @@
+[module]
+id = "core/dsp-lp0-proof"
+version = "0.5.0"
+name = "Private LP0 receive proof"
+category = "core"
+role = "adapter"
+type = "framework"
+author = "digikit"
+status = "experimental"
+summary = "Emulator-only DN2 1.12 LP0 setup, callback and rearm diagnostic; explicit opt-in."
+ports = ["dn2-1.12"]
+requires = ["core/expansion", "core/machines", "core/params", "core/dsp-voice"]
+conflicts = ["core/dsp-link", "core/runtime", "core/dsp-ddr-proof"]
+
+[targets]
+"dn2-1.12" = "untested"
+
+[[object]]
+path = "build/lp0-proof-cf.dko.json"
+sources = ["src/cf/lp0-proof.c", "src/cf/tramp.s", "src/cf/machine.c"]
+place = "cf.expansion"
+devices = ["dn2"]
+
+[object.externs]
+lp_stock_send = "cf.link.fn.bulk_send"
+lp_queue_pop = "cf.rtos.fn.queue_pop"
+lp_stock_copy = "cf.link.fn.reply_copy"
+
+[[object]]
+path = "build/lp0-proof-dsp.dko.json"
+sources = ["src/dsp/lp0-proof.s", "src/dsp/readers.s"]
+place = "dsp.l2"
+devices = ["dn2"]
+
+[object.externs]
+_lp_boot_back = "hook.dsp.cache.site.cache_enable.return"
+_lp_cache_range = "dsp.cache.fn.cache_range"
+_lp_back = "hook.dsp.link.site.block_tail.tail"
+_lp_open = "dsp.link.fn.lp0_open"
+_lp_set_callback = "dsp.link.fn.lp0_set_callback"
+_lp_submit = "dsp.link.fn.lp0_submit"
+_lp_port_record = "dsp.link.value.lp0_record"
+
+[[op]]
+op = "hook"
+hook = "cf.view.hook.ui_loop"
+to = "lp_loop_hook"
+
+[[op]]
+op = "hook"
+hook = "dsp.link.hook.block_tail"
+to = "_lp_hook"
+
+[[claim]]
+resource = "cf.view.site.ui_loop"
+
+[[claim]]
+resource = "dsp.link.site.block_tail"
+
+# Both wire counts are boot-only. The stock caller's 0xabc copy remains intact.
+[[op]]
+op = "hook"
+hook = "cf.link.hook.boot_wire_size"
+to = "lp_wire_size"
+
+[[op]]
+op = "hook"
+hook = "cf.link.hook.reply_copy"
+to = "lp_copy_reply"
+
+[[op]]
+op = "write"
+anchor = "dsp.link.site.boot_wire_size"
+hex = "840fcc0a"
+
+[[claim]]
+resource = "cf.link.site.boot_wire_size"
+
+[[claim]]
+resource = "cf.link.site.reply_copy"
+
+[[claim]]
+resource = "dsp.link.site.boot_wire_size"
+
+# Private boot-only cache range; absent from standard device module sets.
+[[op]]
+op = "hook"
+hook = "dsp.cache.hook.cache_enable"
+to = "_lp_boot_hook"
+
+[[claim]]
+resource = "dsp.cache.site.cache_enable"
+
+[[claim]]
+resource = "dsp.cache.rr4"

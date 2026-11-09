@@ -29,6 +29,10 @@ pub const C_FX_VIEW_OUT: &str = "sdk/include/dk/gen/fx.h";
 pub const C_API_OUT: &str = "sdk/include/dk/gen/api.h";
 /// The generated C header of the descriptor records, relative to the repository root.
 pub const C_DESC_OUT: &str = "sdk/include/dk/gen/desc.h";
+/// The generated C header of the format limits, relative to the repository root.
+pub const C_LIMITS_OUT: &str = "sdk/include/dk/gen/limits.h";
+/// The generated Rust format limits of the `.dkm` loader (re-exported by `dkneeds`), relative to the repository root.
+pub const LIMITS_RS_OUT: &str = "packages/dkneeds/src/gen_limits.rs";
 /// The generated Python protocol numbers, relative to the repository root.
 pub const PROTO_PY_OUT: &str = "tools/device/dkproto.py";
 /// The generated Rust protocol numbers of the host client, relative to the repository root.
@@ -177,6 +181,29 @@ struct Protocol {
     /// command byte marks a reply), so a range lies in 0x01..=0x3f and overlaps no command and no other range.
     #[serde(default)]
     ranges: BTreeMap<String, [u8; 2]>,
+    limits: ProtoLimits,
+}
+/// `[protocol.limits]`: the sizes of the upload protocol, generated into every language.
+#[derive(Deserialize)]
+#[serde(deny_unknown_fields)]
+struct ProtoLimits {
+    max_chunk: u32,
+    read_max: u32,
+    peek_max: u32,
+    max_request_wire: u32,
+    max_reply_wire: u32,
+}
+impl ProtoLimits {
+    /// (generated name, value) in file order.
+    fn all(&self) -> [(&'static str, u32); 5] {
+        [
+            ("MAX_CHUNK", self.max_chunk),
+            ("READ_MAX", self.read_max),
+            ("PEEK_MAX", self.peek_max),
+            ("MAX_REQUEST_WIRE", self.max_request_wire),
+            ("MAX_REPLY_WIRE", self.max_reply_wire),
+        ]
+    }
 }
 /// `[capacity]`: the kinds of a CAPACITY entry.
 #[derive(Deserialize)]
@@ -216,6 +243,54 @@ pub fn settings() -> Settings {
 #[serde(deny_unknown_fields)]
 struct LimitsSection {
     max: LimitsMax,
+    format: FormatLimits,
+}
+/// `[limits.format]`: the format limits of the `.dkm` loader that every host tool and the runtime share (`dkneeds`).
+#[derive(Deserialize)]
+#[serde(deny_unknown_fields)]
+struct FormatLimits {
+    dkm_header: u32,
+    dsp_header: u32,
+    max_records: u32,
+    max_relocs: u32,
+    max_imports: u32,
+    max_cf_imports: u32,
+    max_state_voices: u32,
+    max_state_bytes: u32,
+    granule: u32,
+    dsp_slack: u32,
+    arena_hdr: u32,
+}
+/// The format limits in file order, then the ones that come from other keys: (generated name, value).
+/// `MAX_VOICES` and `MAX_FX` are the contract maxima `machine_rows` and `fx_slots`; `SLOTS` is `[dkm.slot] count`.
+fn format_limits(sdk: &Sdk) -> Vec<(&'static str, u32)> {
+    let f = &sdk.limits.format;
+    vec![
+        ("DKM_HEADER", f.dkm_header),
+        ("DSP_HEADER", f.dsp_header),
+        ("MAX_RECORDS", f.max_records),
+        ("MAX_RELOCS", f.max_relocs),
+        ("MAX_IMPORTS", f.max_imports),
+        ("MAX_CF_IMPORTS", f.max_cf_imports),
+        ("MAX_STATE_VOICES", f.max_state_voices),
+        ("MAX_STATE_BYTES", f.max_state_bytes),
+        ("GRANULE", f.granule),
+        ("DSP_SLACK", f.dsp_slack),
+        ("ARENA_HDR", f.arena_hdr),
+        ("SLOTS", sdk.dkm.slot.count),
+        ("MAX_VOICES", sdk.limits.max.machine_rows as u32),
+        ("MAX_FX", sdk.limits.max.fx_slots as u32),
+    ]
+}
+
+/// `packages/dkneeds/src/gen_limits.rs`: the format limits as `u32`. The `.dkm` header is `HEADER` here (`dkneeds::HEADER`).
+fn rust_limits(sdk: &Sdk) -> String {
+    let mut s = format!("// {HEADER}\n\n");
+    for (n, v) in format_limits(sdk) {
+        let n = if n == "DKM_HEADER" { "HEADER" } else { n };
+        let _ = writeln!(s, "pub const {n}: u32 = {v};");
+    }
+    s
 }
 /// The contract maxima of the capacity limits: `[limits.max]` of `sdk/sdk.toml`. A device's `[limits]` value (and its `[digikit]`
 /// `dsp_area_bytes`) may not exceed them; `patchkit gen` refuses it (`devgen`).
@@ -229,6 +304,23 @@ pub struct LimitsMax {
     pub dsp_area_bytes: u64,
     pub param_rows: u64,
     pub page_rows: u64,
+    pub machine_rows: u64,
+    pub stage_bytes: u64,
+}
+
+/// `DK_PAGE_KNOBS` of `[desc]` in `sdk/sdk.toml`: the encoders on a page.
+fn page_knobs_of(sdk: &Sdk) -> usize {
+    sdk.desc
+        .consts
+        .iter()
+        .find(|c| c.name == "DK_PAGE_KNOBS")
+        .expect("sdk/sdk.toml [desc] has DK_PAGE_KNOBS")
+        .value as usize
+}
+
+/// `DK_PAGE_KNOBS` of the `sdk/sdk.toml` this crate was built with.
+pub fn page_knobs() -> usize {
+    page_knobs_of(&parse(include_str!("../../../sdk/sdk.toml")).expect("sdk/sdk.toml parses"))
 }
 
 /// The contract maxima of the `sdk/sdk.toml` this crate was built with.
@@ -334,6 +426,17 @@ pub fn embedded() -> ContractVersions {
         fx: (c.fx[0], c.fx[1]),
         service: (c.service[0], c.service[1]),
     }
+}
+
+/// The Api minor that appended the entry `name` (0 for an entry of the first table), from the `sdk/sdk.toml` this crate was built with.
+pub fn api_since(name: &str) -> Result<u8> {
+    let sdk = parse(include_str!("../../../sdk/sdk.toml")).expect("sdk/sdk.toml parses");
+    sdk.api
+        .fields
+        .iter()
+        .find(|f| f.name == name)
+        .map(|f| f.since.unwrap_or(0))
+        .ok_or_else(|| err!("uses_api: the Api has no entry named {name:?}"))
 }
 
 /// The runtime version of a parsed file as (major, minor, patch).
@@ -540,6 +643,9 @@ fn proto_consts(sdk: &Sdk, indent: &str, status_ty: &str) -> String {
     let p = &sdk.protocol;
     let mut s = String::new();
     let _ = writeln!(s, "{indent}pub const VERSION: u8 = {};", p.version);
+    for (n, v) in p.limits.all() {
+        let _ = writeln!(s, "{indent}pub const {n}: usize = {v};");
+    }
     for (n, v) in by_value(&p.commands) {
         let _ = writeln!(s, "{indent}pub const CMD_{n}: u8 = {v:#04x};");
     }
@@ -565,10 +671,7 @@ fn proto_consts(sdk: &Sdk, indent: &str, status_ty: &str) -> String {
         p.ranges.len()
     );
     for (n, [first, last]) in &p.ranges {
-        let _ = writeln!(
-            s,
-            "{indent}    ({first:#04x}, {last:#04x}), // {n}"
-        );
+        let _ = writeln!(s, "{indent}    ({first:#04x}, {last:#04x}), // {n}");
     }
     let _ = writeln!(s, "{indent}];");
     for (n, [first, last]) in &p.ranges {
@@ -634,10 +737,19 @@ fn rust(sdk: &Sdk) -> String {
     for (i, n) in LEVELS.iter().enumerate() {
         let _ = writeln!(s, "    pub const L_{}: u16 = {i};", n.to_uppercase());
     }
-    s.push_str("}\n\n/// The selection record's format limits (`[limits.max]`): paths and sticky map entries.\npub mod limits {\n");
+    s.push_str("}\n\n/// Format and table limits (`[limits.max]` and `DK_PAGE_KNOBS`): array sizes of the runtime.\npub mod limits {\n");
     let m = &sdk.limits.max;
     let _ = writeln!(s, "    pub const SEL_MAX: usize = {};", m.modules);
     let _ = writeln!(s, "    pub const MAP_N: usize = {};", m.map_entries);
+    let _ = writeln!(s, "    pub const MACHINE_ROWS: usize = {};", m.machine_rows);
+    let _ = writeln!(s, "    pub const PARAM_ROWS: usize = {};", m.param_rows);
+    let _ = writeln!(s, "    pub const PAGE_ROWS: usize = {};", m.page_rows);
+    let _ = writeln!(s, "    pub const STAGE_BYTES: usize = {};", m.stage_bytes);
+    let _ = writeln!(
+        s,
+        "    pub const PAGE_KNOBS: usize = {};",
+        page_knobs_of(sdk)
+    );
     s.push_str("}\n\n");
     s.push_str(&rust_settings(sdk));
     s.push_str("\npub mod proto {\n");
@@ -692,7 +804,15 @@ fn py_status(s: &mut String, name: &str, st: &Status) {
 fn python_proto(sdk: &Sdk) -> String {
     let p = &sdk.protocol;
     let mut s = format!("# {HEADER}\n\n");
-    let _ = writeln!(s, "VERSION = {}\n", p.version);
+    let _ = writeln!(s, "VERSION = {}", p.version);
+    for (n, v) in p.limits.all() {
+        let _ = writeln!(s, "{n} = {v}");
+    }
+    s.push_str("\n# the .dkm loader's format limits ([limits.format])\n");
+    for (n, v) in format_limits(sdk) {
+        let _ = writeln!(s, "{n} = {v}");
+    }
+    s.push('\n');
     s.push_str("CMD: dict[str, int] = {\n");
     for (n, v) in by_value(&p.commands) {
         let _ = writeln!(s, "    {n:?}: 0x{v:02X},");
@@ -753,9 +873,17 @@ fn rust_proto(sdk: &Sdk) -> String {
 fn ts_proto(sdk: &Sdk) -> String {
     let p = &sdk.protocol;
     let mut s = format!(
-        "// {HEADER}\n\nexport const PROTO_VERSION = {};\n\n",
+        "// {HEADER}\n\nexport const PROTO_VERSION = {};\n",
         p.version
     );
+    for (n, v) in p.limits.all() {
+        let _ = writeln!(s, "export const {n} = {v};");
+    }
+    s.push_str("\n/** The `.dkm` loader's format limits (`[limits.format]`). */\n");
+    for (n, v) in format_limits(sdk) {
+        let _ = writeln!(s, "export const {n} = {v};");
+    }
+    s.push('\n');
     s.push_str("export const CMD = {\n");
     for (n, v) in by_value(&p.commands) {
         let _ = writeln!(s, "  {n}: {v:#04x},");
@@ -997,6 +1125,16 @@ fn c_consts(
     s
 }
 
+/// `sdk/include/dk/gen/limits.h`: the format limits as C `#define`s, `DK_` plus the generated name (`DK_ARENA_HDR`).
+fn limits_h(sdk: &Sdk) -> String {
+    let mut s = format!("/* {HEADER} */\n#ifndef DK_GEN_LIMITS_H\n#define DK_GEN_LIMITS_H\n\n");
+    for (n, v) in format_limits(sdk) {
+        let _ = writeln!(s, "#define DK_{n} {v}");
+    }
+    s.push_str("\n#endif /* DK_GEN_LIMITS_H */\n");
+    s
+}
+
 /// `sdk/include/dk/gen/machine_consts.h`: the numbers of `sdk/include/dk/gen/machine.h`.
 fn machine_consts_h(sdk: &Sdk) -> String {
     let m = &sdk.machine;
@@ -1091,14 +1229,12 @@ fn split_name(s: &str) -> (&str, &str) {
     (s[..i].trim(), &s[i..])
 }
 
-fn parse_ty(
-    what: &str,
-    s: &str,
-    types: &BTreeMap<String, String>,
-    extra: &[&str],
-) -> Result<Ty> {
+fn parse_ty(what: &str, s: &str, types: &BTreeMap<String, String>, extra: &[&str]) -> Result<Ty> {
     let ptr = s.matches('*').count();
-    let words: Vec<&str> = s.split(|c: char| c == '*' || c.is_whitespace()).filter(|w| !w.is_empty()).collect();
+    let words: Vec<&str> = s
+        .split(|c: char| c == '*' || c.is_whitespace())
+        .filter(|w| !w.is_empty())
+        .collect();
     let (is_const, base) = match words.as_slice() {
         ["const", b] => (true, *b),
         [b] => (false, *b),
@@ -1130,9 +1266,8 @@ pub(crate) fn parse_fn(
     let inner = s.trim_end();
     let inner = &inner[open + 1..inner.len() - 1];
     let (t, n) = split_name(head);
-    let type_word = |w: &str| {
-        w == "const" || BASES.contains(&w) || types.contains_key(w) || extra.contains(&w)
-    };
+    let type_word =
+        |w: &str| w == "const" || BASES.contains(&w) || types.contains_key(w) || extra.contains(&w);
     let (rt, name) = if !n.is_empty() && !type_word(n) {
         (t, Some(n.to_string()))
     } else {
@@ -1144,7 +1279,9 @@ pub(crate) fn parse_fn(
         for a in inner.split(',') {
             let (t, n) = split_name(a);
             if t.is_empty() || !is_ident(n) {
-                return Err(err!("{SOURCE}: {what}: argument {a:?} needs a type and a name"));
+                return Err(err!(
+                    "{SOURCE}: {what}: argument {a:?} needs a type and a name"
+                ));
             }
             args.push((parse_ty(what, t, types, extra)?, n.to_string()));
         }
@@ -1177,7 +1314,10 @@ fn rust_ty(t: &Ty) -> String {
     };
     let mut s = base;
     for i in 0..t.ptr {
-        s = format!("*{} {s}", if i == 0 && t.is_const { "const" } else { "mut" });
+        s = format!(
+            "*{} {s}",
+            if i == 0 && t.is_const { "const" } else { "mut" }
+        );
     }
     s
 }
@@ -1271,7 +1411,9 @@ fn api_fields(sdk: &Sdk) -> Result<Vec<(&ApiField, FieldKind)>> {
         }
         if let Some(s) = f.since {
             if s == 0 || s > sdk.contract.api[1] {
-                return Err(err!("{SOURCE}: {what}: since {s} is not in 1..=[contract] api minor"));
+                return Err(err!(
+                    "{SOURCE}: {what}: since {s} is not in 1..=[contract] api minor"
+                ));
             }
         }
         let kind = match f.r#type.as_str() {
@@ -1280,7 +1422,9 @@ fn api_fields(sdk: &Sdk) -> Result<Vec<(&ApiField, FieldKind)>> {
             t if t.contains('(') => {
                 let (name, sig) = parse_fn(&what, t, &sdk.api.types, &[])?;
                 if name.is_some() {
-                    return Err(err!("{SOURCE}: {what}: a field signature has no function name"));
+                    return Err(err!(
+                        "{SOURCE}: {what}: a field signature has no function name"
+                    ));
                 }
                 FieldKind::Fn(sig)
             }
@@ -1300,7 +1444,9 @@ fn imports(sdk: &Sdk) -> Result<Vec<(&Import, Option<Sig>)>> {
             || im.name.len() > IMPORT_NAME_MAX
             || sdk.import[..i].iter().any(|o| o.name == im.name)
         {
-            return Err(err!("{SOURCE}: {what}: bad name, over {IMPORT_NAME_MAX} bytes, or twice"));
+            return Err(err!(
+                "{SOURCE}: {what}: bad name, over {IMPORT_NAME_MAX} bytes, or twice"
+            ));
         }
         if im.doc.is_empty() || im.doc.contains("*/") {
             return Err(err!("{SOURCE}: {what}: needs a doc without a comment end"));
@@ -1472,7 +1618,10 @@ fn rust_api(sdk: &Sdk) -> Result<String> {
         let _ = writeln!(s, "        {:?},", im.name);
     }
     s.push_str("    ];\n");
-    let own: Vec<_> = imps.iter().filter(|(im, _)| im.requires.is_none()).collect();
+    let own: Vec<_> = imps
+        .iter()
+        .filter(|(im, _)| im.requires.is_none())
+        .collect();
     s.push_str("\n    /// The names the runtime's own table holds (`IMPORTS`), in order: the imports without `requires`.\n");
     let _ = writeln!(s, "    pub const BUILTIN_NAMES: [&str; {}] = [", own.len());
     for (im, _) in &own {
@@ -1496,7 +1645,10 @@ fn rust_api(sdk: &Sdk) -> Result<String> {
 /// `optional::table()`: per import its name, the address the module gave (0 when absent) and the address of the stub (0 when it has none). It is
 /// a macro because the undefined symbols must belong to the runtime's own object, not to this crate.
 fn rust_optional(imps: &[(&Import, Option<Sig>)]) -> String {
-    let opt: Vec<_> = imps.iter().filter(|(im, _)| im.requires.is_some()).collect();
+    let opt: Vec<_> = imps
+        .iter()
+        .filter(|(im, _)| im.requires.is_some())
+        .collect();
     let mut s = String::from(
         "\n/// The imports that another module provides (`[[import]] requires`): the external functions, the stubs for an absent module and\n/// the table of both. Expand it once in the runtime's object; its symbols must be in the `optional` list of the runtime's module.toml.\n#[macro_export]\nmacro_rules! optional_imports {\n    () => {\n        #[allow(dead_code, trivial_numeric_casts)]\n        pub mod optional {\n            extern \"C\" {\n",
     );
@@ -1536,7 +1688,11 @@ fn rust_optional(imps: &[(&Import, Option<Sig>)]) -> String {
         let (Some(a), Some(sig)) = (&im.absent, sig) else {
             continue;
         };
-        let body = if a == "void" { String::new() } else { format!(" {a} as _") };
+        let body = if a == "void" {
+            String::new()
+        } else {
+            format!(" {a} as _")
+        };
         let _ = writeln!(
             s,
             "                pub unsafe extern \"C\" fn {}({}){} {{{body} }}",
@@ -1636,9 +1792,17 @@ fn api_h(sdk: &Sdk) -> Result<String> {
     let [init, fini, slot] = dkm_sigs(sdk)?;
     s.push_str("\n/* Entry points of a .dkm (symbols of its object). */\n");
     let _ = writeln!(s, "\n/* {} */", sdk.dkm.init.doc);
-    let _ = writeln!(s, "{};", c_decl(&init.ret, &format!("dkm_init({})", c_args(&init))));
+    let _ = writeln!(
+        s,
+        "{};",
+        c_decl(&init.ret, &format!("dkm_init({})", c_args(&init)))
+    );
     let _ = writeln!(s, "\n/* {} */", sdk.dkm.fini.doc);
-    let _ = writeln!(s, "{};", c_decl(&fini.ret, &format!("dkm_fini({})", c_args(&fini))));
+    let _ = writeln!(
+        s,
+        "{};",
+        c_decl(&fini.ret, &format!("dkm_fini({})", c_args(&fini)))
+    );
     let _ = writeln!(
         s,
         "\n/* {} The prototype is in <dk/ui.h> (`DK_MENU(fill)` defines it): `void dkm_menu(dk_ui_menu *m, void *ctx)`. */",
@@ -1717,7 +1881,11 @@ fn machine_h(sdk: &Sdk) -> Result<String> {
         "machine_consts.h",
         [
             ("dk_voice_in", "per call, built by the adapter", &v.input),
-            ("dk_machine_desc", "one per module in read-only data, found by the manifest's symbol", &v.desc),
+            (
+                "dk_machine_desc",
+                "one per module in read-only data, found by the manifest's symbol",
+                &v.desc,
+            ),
         ],
         &v.fns,
         &sdk.machine.c,
@@ -1752,7 +1920,10 @@ pub enum DescTy {
     /// Text: this many bytes.
     Char(usize),
     /// An array of an earlier record.
-    Rec { rec: String, count: usize },
+    Rec {
+        rec: String,
+        count: usize,
+    },
 }
 
 /// A field of a descriptor record: its place in bytes.
@@ -1811,7 +1982,10 @@ fn desc_layout(d: &DescToml) -> Result<(DescSpec, Vec<Vec<DescText>>)> {
     let mut consts = BTreeMap::new();
     for c in &d.consts {
         if !is_ident(&c.name) || consts.insert(c.name.clone(), c.value).is_some() {
-            return Err(err!("{SOURCE}: [desc] const {}: bad name or name twice", c.name));
+            return Err(err!(
+                "{SOURCE}: [desc] const {}: bad name or name twice",
+                c.name
+            ));
         }
     }
     let mut records: Vec<DescRecord> = Vec::new();
@@ -1842,7 +2016,9 @@ fn desc_layout(d: &DescToml) -> Result<(DescSpec, Vec<Vec<DescText>>)> {
         for entry in &r.fields {
             let (decl, doc) = entry.split_once(" // ").unwrap_or((entry, ""));
             if doc.contains("*/") {
-                return Err(err!("{SOURCE}: {what}: {entry:?}: the doc has a comment end"));
+                return Err(err!(
+                    "{SOURCE}: {what}: {entry:?}: the doc has a comment end"
+                ));
             }
             let Some((ty_text, rest)) = decl.trim().split_once(char::is_whitespace) else {
                 return Err(err!("{SOURCE}: {what}: {entry:?} needs a type and a name"));
@@ -1857,7 +2033,9 @@ fn desc_layout(d: &DescToml) -> Result<(DescSpec, Vec<Vec<DescText>>)> {
                 None => (rest.trim(), None),
             };
             if !is_ident(name) || fields.iter().any(|o| o.name == name) {
-                return Err(err!("{SOURCE}: {what}: field {name:?}: bad name or name twice"));
+                return Err(err!(
+                    "{SOURCE}: {what}: field {name:?}: bad name or name twice"
+                ));
             }
             let count = |t: &str| -> Result<usize> {
                 let n = match t.parse::<u32>() {
@@ -1998,9 +2176,11 @@ pub fn render(text: &str) -> Result<Vec<(String, String)>> {
         (FX_INC_OUT.to_string(), fx_inc(&sdk)),
         (C_MACHINE_OUT.to_string(), machine_consts_h(&sdk)),
         (C_FX_OUT.to_string(), fx_consts_h(&sdk)),
+        (C_LIMITS_OUT.to_string(), limits_h(&sdk)),
         (PROTO_PY_OUT.to_string(), python_proto(&sdk)),
         (PROTO_RS_OUT.to_string(), rust_proto(&sdk)),
         (PROTO_TS_OUT.to_string(), ts_proto(&sdk)),
+        (LIMITS_RS_OUT.to_string(), rust_limits(&sdk)),
         (C_MACHINE_VIEW_OUT.to_string(), machine_h(&sdk)?),
         (C_FX_VIEW_OUT.to_string(), fx_h(&sdk)?),
         (C_API_OUT.to_string(), api_h(&sdk)?),
@@ -2039,7 +2219,8 @@ pub fn generate(root: &std::path::Path) -> Result<Vec<(String, String)>> {
     let text = std::fs::read_to_string(&path).map_err(|e| err!("{}: {e}", path.display()))?;
     let mut files = render(&text)?;
     let abi_path = root.join(crate::abigen::SOURCE);
-    let abi = std::fs::read_to_string(&abi_path).map_err(|e| err!("{}: {e}", abi_path.display()))?;
+    let abi =
+        std::fs::read_to_string(&abi_path).map_err(|e| err!("{}: {e}", abi_path.display()))?;
     files.extend(crate::abigen::render(&abi, &abi_inputs(&text)?)?);
     Ok(files)
 }

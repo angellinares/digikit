@@ -26,6 +26,9 @@ The desktop app free-runs a runtime that has no DSP audio (ColdFire only, as a D
 DT2 firmware read SETTINGS as a long press (it opens only on a press shorter than about 0.5 emulated seconds).
 
 Coupled DSP audio in the daemon needs `--auto-coupled` and the ready inputs; see [PATCHING.md](PATCHING.md).
+Zero-DSP mode retains the existing SSI/DMA clock with zero samples, including patched-image loads,
+snapshot restores and reset reconstruction; it executes no SHARC engine. Its patched snapshots use a separate
+`-zero.snap` identity, so earlier CF-only snapshots cannot silently remove that timing.
 Startup flags are shared by both servers (`packages/emulator/control/src/cli.rs`): `--control`, `--no-control`, `--paused`,
 `--run-dir DIR`, `--card-image FILE` (with `--card-folder DIR`: the +Drive folder the image was built from; the firmware's changes are exported to it on exit; `--no-card-sync` turns the export off), `--device-folders` (one card folder per device, below), `--mirror-dir DIR` (the folder of the first loaded device), `--scenario NAME_OR_FILE`, `--report PATH`, `--no-audio` and the coupled-audio
 flags. `--scenario` needs a coupled-audio build.
@@ -74,7 +77,7 @@ Wrapper is the `Emu` method in `tools/control/digi_client.py`. `hello` reports a
 | `mem.cf.peek`, `mem.cf.poke` | `peek32`, `poke32` | `call` |
 | `mem.cf.write {addr, hex}` | | `call` |
 | `dev.reload {modules_dir?, swap_modules?, auto_no?, build?}` | | `call`; `mise run dk:dev` |
-| `card.overlay`, `card.export`, `card.load`, `card.status`, `card.cancel`, `card.folder`, `card.sync` | | `call` |
+| `card.overlay`, `card.export`, `card.load`, `card.status`, `card.cancel`, `card.folder`, `card.sync`, `card.reset_overlay` | | `call` |
 | `midi.in`, `midi.out` | `midi_in`, `midi_out` | `call` |
 | `midi.usb.in`, `midi.usb.out` | `usb_in`, `usb_out` | `call` |
 | `flash.status`, `flash.read {offset, length}` | | `call`; `patchkit flash --emulator` |
@@ -116,7 +119,7 @@ written this way runs as new code. Unmapped pages are mapped zeroed. Like `mem.c
 the daemon's process (`patchkit::build::build_module`; ColdFire C, assembly and Rust crates, and SHARC+ sources; gcc, as, ld and cargo run as child processes, the SHARC+ assembler is the Selache library in the process):
 a `core/*` module writes its committed `build/` objects, a content module writes `out/cache/dko`. The reply gets
 `build: {built: [{id, objects, ms}], skipped: [id], ms}`. A compiler error is the error message (`dev.reload: build of ID failed:` and the
-compiler output; for a SHARC+ source the assembler's or a guard's message, e.g. `known Selache encode bug`) and nothing is reloaded.
+compiler output; for a SHARC+ source the assembler's or a check's message, e.g. `the ISA does not allow`) and nothing is reloaded.
 The build runs on the controller thread, so the session is blocked while it runs.
 The module set is the patch record of the running image; the image is made again from the stock image (`modules_dir`: the repository root,
 default as for `firmware.load {runtime}`; the stock image is the load's base or the file of `firmware/` with the record's digest) and compared
@@ -142,8 +145,13 @@ they carry (it must be newer than the current one; it is taken when the call suc
 else the answer is `STALE_SESSION` ("stale emulator session") and nothing runs. Without `session` nothing is checked (the socket's clients).
 Time (release build): the first patch of a 1.17 or 1.12 image takes about 1.3 s, a cached one about 0.08 s.
 
-`framebuffer.get {hash?, data?}`: `hash: true` adds `sha256`, the hex SHA-256 of the 1024 decoded OLED bytes
+`framebuffer.get {hash?, data?, source?}`: `hash: true` adds `sha256`, the hex SHA-256 of the 1024 decoded OLED bytes
 (the bytes `data_b64` carries; the hash the patchkit smoke goldens use); `data: false` omits `data_b64`.
+`source` defaults to `current`, preserving the ordinary response. `intro` selects
+the retained latest drawing at the stock intro callback-return boundary and adds
+`source: "intro"`; it remains readable after main UI starts. This is before stock
+presentation, not proof of physical display. Its `revision` is the existing global
+display revision, not a separate intro sequence or history. Other sources are refused.
 
 `cpu.exceptions {deliver?}` (a test aid): `deliver: true` makes a CPU exception run the guest's own handler; the default is a fault of the run
 (`step` fails with `exception vector N`), because an exception in the firmware is a bug the harness must see. The setting is kept for every runtime
@@ -221,14 +229,16 @@ firmware) instead of the image it had loaded. `patchkit flash STOCK.syx --emulat
 
     {"window_s": 1.2,
      "cf":  {"model_pct", "real_pct", "real_high_pct"},
-     "dsp": {"busy_per_block", "model_pct", "real_pct", "real_high_pct"} | null}
+     "dsp": {"busy_per_block", "model_pct", "real_pct", "real_high_pct", "peak_pct"} | null}
 
 `model_pct` is the load in the emulator's own model. ColdFire: busy / total instructions of the window (busy = the
 interpreted ones; the idle fast-forward and the RAM clear do not count). DSP: busy instructions per block over the
 666,667 cycles of a block (1 instruction = 1 cycle). `real_*` estimate the chip. ColdFire: busy instructions per
 emulated second (total / 132 M) x busy CPI / 264 MHz, CPI nominal in `real_pct`, pessimistic in `real_high_pct`. DSP:
 the model load x the device's real-cycles-per-instruction factor, nominal in `real_pct`, high in `real_high_pct`.
-The real values are estimates from the public manuals' cycle tables and our instruction counts, not measurements. The
+`peak_pct` (DSP only, optional) is the largest unsmoothed `real_pct` of any single window since the meter was reset (a
+restored or replaced runtime resets it). On the device in the emulator, the runtime's HEALTH page shows the model figure
+(its EMUCLK ticks once per instruction), so compare it with `model_pct`, not `real_pct`. The real values are estimates from the public manuals' cycle tables and our instruction counts, not measurements. The
 factors are one file, `devices/cycle-factors.json` (cited findings inside; `tools/patchkit/pk_dsp_budget.py` reads the
 same numbers). Each closed window is blended 50/50 into the shown value; a restored or replaced runtime clears it.
 `dsp` is `null` without a DSP session (`status.dsp` is `"zero"` or `"none"`). The desktop panel gets the same object as
@@ -274,6 +284,9 @@ to `<out>/export/<stamp>/` first, each replaced file to `<out>/backup/<stamp>/` 
 `out/plusdrive`); files the firmware deleted are listed and kept unless `prune`. With `sync: true` a `quit` (or the controller
 stopping) saves `overlay.bin` next to the card image and runs the same export, and logs `card: exported N changed files to <dir> (...)`. The module store files (`digikit/`) are exported too (three-way against the card as built: a new or changed file is added or replaces the folder's; a file the card no longer has is listed in `deleted_by_firmware` and kept unless `prune`); during a session `card.folder` and `card.sync` keep them current (below). From the shell:
 `plusdrive export IMAGE [--overlay overlay.bin] -o FOLDER [--out DIR] [--prune]`.
+
+The quit saves `overlay.bin`, mirrors and exports only when the firmware reached ready in this session (`status.cf.ready`; a ready snapshot restored at load counts). Otherwise `overlay.bin` stays as it is and the log says `card: the card changes of this session were not saved because the firmware never reached ready`.
+`card.reset_overlay` (no parameters) renames the loaded card's `overlay.bin` to `overlay.bin.set-aside-<ms since the epoch>` beside it (never deleted) and returns `{overlay, set_aside}` (`set_aside` is null when there was no overlay). The running session then saves and exports nothing at quit, because its memory still holds the sectors that were set aside: reload the firmware (`firmware.load`) to boot on the card without them. It fails with `no card is loaded` and while a job runs. `card.folder` reports `overlay` (true when the loaded card has an `overlay.bin`).
 
 ## Examples
 

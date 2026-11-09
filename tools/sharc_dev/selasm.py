@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 """Assemble a VISA snippet with Selache and cross-check it against our own decoder.
 
-Selache (https://github.com/js216/selache) reads VISA 16-bit parcels
+Selache (https://github.com/ElekLabs/selache) reads VISA 16-bit parcels
 big-endian; the DT2 image and tools/sharc_dev/sharc_disasm.py read them little-endian
 (the boot-stream convention -- see docs/findings/05-sharc-isa-and-decoding.md,
 "selache encodes and decodes DT2 SHARC+ code, once parcel order is fixed").

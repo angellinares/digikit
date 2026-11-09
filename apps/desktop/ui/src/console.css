@@ -495,6 +495,106 @@ body {
   background: var(--ok);
   box-shadow: 0 0 6px var(--ok);
 }
+.tb.chip {
+  cursor: default;
+}
+.tb.chip.toggle {
+  cursor: pointer;
+}
+.chip.dbg-failed {
+  border-color: var(--bad, #c0504d);
+}
+.chip .debug-dot {
+  display: inline-block;
+  width: 6px;
+  height: 6px;
+  border-radius: 50%;
+  background: var(--ink-3);
+}
+.chip.dbg-on .debug-dot {
+  background: var(--ok);
+  box-shadow: 0 0 6px var(--ok);
+}
+.chip.dbg-unknown {
+  color: var(--ink-3);
+}
+.chip.dbg-unknown .debug-dot {
+  background: transparent;
+  border: 1px solid var(--ink-3);
+  box-sizing: border-box;
+}
+/* the Level menu opens below its button, over the list */
+.level-wrap {
+  position: relative;
+  display: inline-flex;
+}
+.level-pop {
+  position: absolute;
+  z-index: 20;
+  top: calc(100% + 6px);
+  right: 0;
+  width: max-content;
+  max-width: min(520px, 90vw);
+  max-height: 60vh;
+  overflow-y: auto;
+  padding: 8px 10px;
+  background: #1a1c20;
+  border: 1px solid #3a3e46;
+  border-radius: 8px;
+  box-shadow: 0 8px 24px rgb(0 0 0 / 45%);
+  font-size: 12px;
+}
+.level-row {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  padding: 3px 0;
+}
+.level-name {
+  flex: 0 0 120px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  font-family: var(--font-mono);
+  color: var(--ink-2);
+}
+.level-seg {
+  display: inline-flex;
+  border: 1px solid #2c2f35;
+  border-radius: 6px;
+  overflow: hidden;
+}
+.level-seg button {
+  height: 24px;
+  padding: 0 9px;
+  border: 0;
+  border-right: 1px solid #2c2f35;
+  background: #15171a;
+  color: var(--ink-2);
+  font: inherit;
+  font-size: 11.5px;
+  cursor: pointer;
+}
+.level-seg button:last-child {
+  border-right: 0;
+}
+.level-seg button:hover:not(:disabled) {
+  background: #23262b;
+}
+.level-seg button.on {
+  background: #2f3a4a;
+  color: var(--ink);
+}
+.level-seg button:disabled {
+  cursor: progress;
+}
+.level-note {
+  margin: 6px 0 0;
+  max-width: 440px;
+  color: var(--ink-3);
+  font-size: 11.5px;
+  line-height: 1.4;
+}
 .log-list {
   flex: 1;
   min-height: 0;

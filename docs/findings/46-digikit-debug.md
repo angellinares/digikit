@@ -10,14 +10,15 @@ emulator; nothing ran on a device. What no emulator can tell is listed under "Op
 |---|---|---|
 | One card-write function with a hard range check; read-only on a card that is not ours and not blank | `modules/core/runtime/src/rs/src/card.rs`, `block_write` in `lib.rs`; range test in `dkrt_sdk` (`store::write_allowed`, unit test) | scenario `card-safety` (dt2) |
 | The card check: ours (valid header A or B, or valid selection copy) / blank (whole range all 0x00 or all 0xFF) / foreign / unreadable; claim of a blank range before an upload stages data | `card.rs` | `card-safety` |
-| RAM log ring (512 events of 32 bytes), DEBUG switch (ON/OFF, selection flags bit 1, zero means ON), health snapshot, DSP diagnostics and heartbeat watch | `dlog.rs`, `boot.rs`, `lib.rs`; menu row in `modules/core/apps/digikit-menu` | `debug-log` (quick and full) |
-| SysEx LOG (0x20) and PEEK (0x21), INFO gains the log range and flags | `upload.rs`; spec in `digikit-upload.md` | `debug-log` |
+| The runtime's event log: every call site calls `dlog::ev`; a small ring of 32 boot and error events (the crash record's tail), one sink pointer (`dkrt_log_sink_set`) that receives every event; health snapshot, DSP diagnostics and heartbeat watch (`watch.rs`) | `dlog.rs`, `watch.rs`, `crash.rs`, `lib.rs` | `debug-log` (quick and full) |
+| The module `digikit/debug`: the 512-event ring (16 KiB in the module's own memory), the level filter, LOG, PEEK and LOGCFG, the track watch. The debug log is on exactly while it is loaded | `modules/tools/debug` | `modules/tools/debug/tests`, `debug-log` |
+| SysEx LOG (0x20), PEEK (0x21) and LOGCFG (0x22): the service range `debug` of `sdk/sdk.toml`, registered by `digikit/debug`. INFO reports the capabilities LOG, PEEK and LOGCFG only while a sink is set, and flag bit 3 (debug module loaded); its log range is 0 | `modules/tools/debug`, `upload.rs`; spec in `digikit-upload.md` | `debug-log` |
 | CPU exception capture across a soft reset, next-boot report, bad-boot counting | `crash.rs`, `src/cf/tramp.s` (`dkrt_exc_hook`), anchor `dkrt.fw.exc_hook_lit` | `crash-capture` (dt2, full tier) |
 | Mac tool `tools/device/dklog.py` (`follow`, `crash`, `peek`, `info`) | `tools/device/dklog.py`, `Uploader.log_page` / `peek` in `dkupload.py` | `tests/digikit/test_dklog.py`; used by `debug-log` and `crash-capture` against the emulator |
 | Device facts as data: `[digikit] keep_base`, `keep_bytes`, `peek` | `devices/*.toml`, `packages/patchkit/src/devgen.rs` (`KEEP_*`, `PEEK_*`), `device.s` | `packages/patchkit/tests/devdata.rs` |
 | Emulator: RAM kept across a soft reset (model), CPU exceptions delivered to the guest (RPC `cpu.exceptions`) | `packages/emulator/{boot,control,coupled,device-profile}` | `crash-capture` |
 
-`RUNTIME_VERSION` is 3 (INFO says so; a host that sees 2 has no LOG or PEEK and gets `E_PROTO` for them). The protocol version stays 1.
+A host asks INFO for the capabilities: without `digikit/debug` the commands LOG, PEEK and LOGCFG answer `E_PROTO`. The protocol version stays 1.
 
 ## Card safety
 
@@ -32,7 +33,7 @@ not blank (`E_CARD_RO`). The check (`card::check`) runs in the boot hook, before
 3. else **foreign** (`first_nonblank` sector and the crc32 of that sector are kept and logged), or **unreadable** when a read failed.
 
 Foreign and unreadable make the card read-only for the runtime. Then: no boot counter (so no safe mode by counter; ABOUT says `NO BOOT COUNTER`), a menu
-selection or DEBUG save answers `E_CARD_RO` (the popup says READ ONLY), BEGIN, DELETE and CLEAR answer `E_INUSE` (-62); INFO, LIST, LOG and PEEK still work;
+selection save answers `E_CARD_RO` (the popup says READ ONLY), BEGIN, DELETE and CLEAR answer `E_INUSE` (-62); INFO and LIST still work (and LOG and PEEK, with `digikit/debug`);
 ABOUT shows `CARD READ-ONLY`, `NOT OURS AT <sector>` (or `CARD UNREADABLE`) and `NO BOOT COUNTER` (checked on the OLED PNG: the longest row is 15
 characters and the screen holds about 22).
 
@@ -44,7 +45,7 @@ card it leaves: ours, empty store, the next upload works.
 
 **Kept scenario `card-safety`** (dt2, quick tier, 23 s; cf-only daemons, the write-watch and card-write checks as for the upload scenarios): blank card
 (state, 8 refused probes of different shapes, counters, nothing written, selection written as before and the area is ours then, log events), foreign card
-(state foreign, sector 100 and its crc32, boot normal, selection / in-range probe / DEBUG save refused with `E_CARD_RO`, out-of-range `E_RANGE`, no record
+(state foreign, sector 100 and its crc32, boot normal, selection / in-range probe refused with `E_CARD_RO`, out-of-range `E_RANGE`, no record
 written, INFO flag, BEGIN/DELETE/CLEAR `E_INUSE`, the log event, ABOUT rows read from `DK_ABOUT` plus a PNG, no store-range write at all), our store (state,
 no scan, selection and upload work), claim (above). The probe is the mailbox command `CMD_CARD_PROBE` (7), which calls `block_write` with the staging buffer;
 it is a test hook and the scenarios use it only on sectors outside the range or on a card that is not ours.
@@ -56,7 +57,7 @@ host (there is no CLEAR for a foreign card by design). The eMMC guarantees secto
 ## The log
 
 Event: `u32 seq` (from 1), `u32 time` (the firmware's block counter, 1500 per second; with no counter anchor 0), `u16 kind`, `u16 flags` (bit 0 error),
-five argument words. The ring holds 512; appends mask interrupts for a few instructions. With DEBUG OFF only error events are kept. Nothing is ever sent
+five argument words. The runtime's small ring holds 32: every event until the first UI frame (after all modules' `init`), then error events (not the long detail of a replayed crash record, which `crash::replay_detail` hands to a sink when one is set) and the boot's own kinds. A sink gets every event first, with interrupts masked, and the module's ring holds 512; appends mask interrupts for a few instructions. Without a sink the other events are dropped after the boot. A new sink gets the small ring's events at once, so the module starts with the boot; the module keeps their sequence numbers, so events the ring lost show as a gap (LOG's `oldest` starts after it). Nothing is ever sent
 unless a host asks (LOG), and LOG, PEEK and INFO are not logged themselves. Names and arguments (`dkrt_sdk::logk`, `tools/device/dklog.py KINDS`):
 
 | id | kind | arguments (a0..a4) | error |
@@ -77,7 +78,7 @@ unless a host asks (LOG), and LOG, PEEK and INFO are not logged themselves. Name
 | 14 | MOD_LOG | the module's `api.log` text (16 characters), value | |
 | 15 | UI_FIRST | block counter, safe, modules loaded | |
 | 16 | STABLE | block counter, the counter the stable period leaves (0, or 1 after a crash in a stable session) | |
-| 17 | DEBUG_SET | on | yes (so that turning it off is recorded) |
+| 17 | DEBUG_SET | on | the runtime no longer logs it (the debug switch is gone); the id stays for old logs |
 | 18 | RAM_KEEP | the keep probe of the boot before was in RAM (1/0), its generation | |
 | 20 | DSP_ABSENT | (the image has no `dl_diag`; once) | |
 | 21 | MOD_LIST | index, slots mask, name (when the DSP stopped: the loaded modules) | yes |
@@ -85,16 +86,20 @@ unless a host asks (LOG), and LOG, PEEK and INFO are not logged themselves. Name
 | 26 | MACHINE_CHANGE | track (0 based; `dklog` shows 1 based), old machine type, new type (0xffffffff: none) | |
 | 27 | MACHINE_FAULT | type \| voice << 16, kind (1 Inf or NaN, 2 over the level bound) \| faults << 8, knobs 0 to 5 of the call in pairs (runtime 5, finding 51) | yes |
 | 28 | MACHINE_DISABLED | type, machine types disabled so far, faults so far (runtime 5, finding 51) | yes |
+| 37 | POOL_LOAD | client << 8 \| pool index, result (0 usable), frames, base_l, token | |
+| 38 | POOL_PUBLISH | client << 8 \| track, token, frames, base_l, base_r | |
+| 39 | POOL_LOST | calls of `dkrt_pool_lost` since the start (warning level) | |
+| 40 | POOL_INVALID | client << 8 \| pool index (client 0xff: periodic check), reason (1 token 0, 2 load check failed, 3 no frames, 4 periodic check failed; check result in the high 16 bits), token, drops so far (first 64, then every 64th) | |
 
-**Periodic work** (`dlog::tick`, once per UI pass, reads the block counter): the DSP poll once a second (1500 blocks), a HEALTH snapshot every ten seconds
+**Periodic work** (`watch::tick`, once per UI pass, reads the block counter): the DSP poll once a second (1500 blocks), a HEALTH snapshot every ten seconds
 (the heap walk only in every fourth, because it takes the heap's mutex: the snapshot uses `dkrt_health_light`, which skips the store figures and, when asked,
 the walk). **[D]** `debug-log` (full tier, coupled daemon): snapshots 15,000 blocks apart, the stable-period event once after 30 s. A daemon without DSP does
 not advance the block counter, so the periodic events do not happen there (the quick tier runs the cf-only daemon and checks the rest).
 
-**Machine-change watch.** `dlog::watch_tracks` reads each of the 16 tracks' machine type from the firmware's own state through three anchored accessors
+**Machine-change watch.** `digikit/debug` (its tick, once per UI pass) reads each of the 16 tracks' machine type through the runtime import `dkrt_track_type`, which calls three anchored accessors
 (`dkrt.fw.project`, `dkrt.fw.kit_of`, `dkrt.fw.track_type`: `Project *f()`, `Kit *f(Project *)`, `int f(Kit *, int track)`; the functions of the archived hot-reload
 runtime's in-use check) every 30 blocks (20 ms), starting 3000 blocks after the first UI pass, and logs `MACHINE_CHANGE` when a type differs from the last read (the first
-read is the baseline; nothing is read with the debug log off). A project load logs one event per track that changed. **[D]** `debug-hang`: selecting the hang machine on track 1 logs
+read is the baseline; the watch exists only while the module is loaded). The event's source is `digikit/debug`. A project load logs one event per track that changed. **[D]** `debug-hang`: selecting the hang machine on track 1 logs
 track 0, old 0, new 19. **[O]** The first note started on a track after a change is not logged: no firmware word seen so far says which track a note started on, and the DSP
 diagnostics count dispatches per machine type, not per track. The CPU cost (16 calls per 20 ms) is not measured on the device.
 
@@ -172,7 +177,7 @@ command wakes it (a `status` request will do). `BootRig.wait_reset` does both ri
 
 `dklog follow` polls LOG once a second (`--interval`), writes a readable `# ` line and a JSON line per event to `out/runs/device-logs/<date>.log` and the
 readable line to the terminal, notes lost events (the ring overwrote them) and a device restart (the sequence numbers start again), `--once` stops after
-reading what is there. `dklog crash` prints the last crash record decoded; `dklog peek ADDR LEN` hex-dumps (any length, in 512-byte requests); `dklog info` prints INFO. With
+reading what is there. `dklog crash` prints the last crash record decoded; `dklog peek ADDR LEN` hex-dumps (any length, in 512-byte requests); `dklog info` prints INFO. `follow`, `peek` and `level` need `digikit/debug`; `crash` prints the kept fault record (`dk/fault`) without it. With
 `--emu`, `--run-dir DIR` names the emulator's run directory (the scenario uses it for a second connection to the rig's daemon, so the command line itself is tested). Transports as
 `dkupload`: `--emu`, or `--port NAME` with python-rtmidi (`uv run --with python-rtmidi python -m tools.device.dklog --port Digitakt follow`); **the device
 transport has not been run** (no real MIDI device was touched). A ring of 512 events holds about three minutes at one to three events a second, so a poll
@@ -209,3 +214,31 @@ of every fourth health snapshot (bounded, under the firmware heap's mutex, as th
   (finding 23 S6: not a measurement); the first device boot will say (`CARD_CHECK` in the log, and ABOUT).
 - **[O]** The torn first write to a blank card (above).
 - The log is lost at a reset (RAM); only the crash record, with the last 8 events, survives.
+
+## The log as a module (phase 3 of docs/plans/debug-mode-and-probes.md)
+
+**[D]** The runtime keeps what the fault paths need and moves the log out. Runtime object (`runtime.dko.json`) before and after: text 109,624 to 108,406
+bytes, data 3,547 to 2,736, bss 671,108 to 657,296 (the 16 KiB ring became 1 KiB, and 0.5 KiB holds the crash record found at boot for a sink that is set
+later). `digikit/debug` is 1,724 bytes of file and 16,472 bytes of bss; so with the module loaded the memory use is about the same as before, and without it
+the runtime holds about 15 KiB less.
+
+- The runtime keeps: the fault record, `dk/fault`, safe mode, the DSP heartbeat watch, the guards (`watch.rs`), module-source tracking (`dlog::enter_module`, owner of
+  the command ranges) and the small ring of 32 events for the crash record's tail. A crash record found at boot is replayed as events; the long detail (registers,
+  stack, tail, DSP words) is kept in RAM and goes to a sink when one is set.
+- The module: the sink, the level filter (default and per module, RAM only), LOG, PEEK (the ranges come from the runtime import `dkrt_peek_range`), LOGCFG (ops 0 and 1;
+  op 2 is gone), the track watch. Imports added: `dkrt_log_sink_set` (the sink and a tick, so the module holds no slot: a slot has one owner and the test modules need slot 0), `dkrt_log_ev`, `dkrt_peek_range`, `dkrt_track_type`.
+- The debug switch is gone: the selection record's bit 1 is reserved and ignored, `dkrt_debug_set` and the mailbox command 8 are removed, and so is the DEBUG row of the
+  DIGIKIT menu. Debug on or off is `digikit/debug` loaded or not; it is a default module of both device files.
+- Without the module a crash still leaves its record: the tail comes from the small ring, so it holds error events and the boot's events, not the info events
+  (`MOD_LOG`, `HEALTH`, `MACHINE_CHANGE`) that the 512-event ring used to add.
+- Safe mode loads no module, so after a crash or a stop the boot has no log: `digikit/debug` is not loaded, INFO has no LOG capability, and the long detail of the
+  crash record (`CRASH_REG`, `CRASH_STACK`, `CRASH_TAIL`, the DSP words) exists only in RAM (`DKRT_CRASH.tail` counts the tail's events; the runtime's ring
+  `DKRT_LOG` has `FAULT_FOUND`, `SAFE` and `CRASH_FOUND`). `dk/fault` and ABOUT carry the verdict. A crash that does not lead to safe mode (the first one) loads the
+  module again, which gets the whole record from `crash::replay_detail`. **[O]** Whether the safe boot should load `digikit/debug` (the one module that cannot crash a
+  boot by itself) is open.
+- A host cannot tell a new boot from the old one by the log without the module. INFO keeps its wire format (bytes 17 to 24, the log range, are 0 and 0; a host takes
+  the range from the module's LOG reply). `DkSession.waitForBoot` takes the device as booted when it answers again after a silent spell; `dkrun` always selects
+  the module, so its boot wait uses the log.
+- A module that loads before `digikit/debug` in the selection logs its first lines (`MOD_LOG` of its `init`) before the sink exists. Until the first UI frame
+  the small ring keeps every event, so the debug module copies them when it starts (test `a module that loads before the debug module has its log line in the
+  debug log`, with `digikit/remote` first). If more than 32 events come first, the oldest are lost and the debug log starts after a gap.

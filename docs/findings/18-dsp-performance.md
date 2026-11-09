@@ -227,6 +227,20 @@ What this shows:
   br 2.21 -> 1.61, srr 2.23 -> 1.51, dry hold 1.39 -> 1.51. The dry-hold figure went up with
   the larger core (or the load), so check with an exclusive timed run before quoting it. DT2
   was not regenerated: it has no FX scenarios to profile.
+- **Send-FX coverage from a live daemon [V, 2026-10-30], "Send-FX coverage".** The coupled scenarios run no runtime, so
+  a send effect module (`dyn-fx-gain-send`, `freqshift`) ran about 85% of its instructions in stock functions that no profile
+  had seen: DN2 fell from about 1000 to 40-99 DSP blocks/s. Recipe for DN2 1.12 (DT2: same with its card image):
+  1. Build `digi-emud` with `SHARC_PROFILE_PREFIX` support (this tree) and start it with the runtime firmware and
+     `SHARC_PROFILE_PREFIX=out/native/dn2-audio/fxprof-send/NAME`.
+  2. Wait 45 s for the boot. Install the module over SysEx (`dk.put`, `select`, `restart`, `waitForBoot`) and run
+     100 s of audio. The restart makes a second engine, so every run writes two file sets. Do this once per module
+     (`NAME` = `gainsend` for `dyn-fx-gain-send.dkm`, `freqshift` for `freqshift.dkm`). The module takes the send route by default.
+  3. Merge into the old profile: `uv run python -m tools.sharc_dev.aot_fxprof --out out/native/dn2-audio/fxprof-send
+     --base-cov .../fxprof-s3/prof-fx --base-entries .../prof-fx.entries --base-trans .../prof-fx.trans
+     --live .../fxprof-send/gainsend --live .../fxprof-send/freqshift` (counts are summed per key).
+  4. Regenerate with the usual `sharc_transpile` and `sharc_rsgen` recipe (`--coverage/--entries/--transitions` = the merged files).
+  Result: 2692 -> 2789 blocks; the daemon with `dyn-fx-gain-send` went from 97-101 to 600-660 blocks/s; PCM identical on all
+  DN2 pins and scenarios. Not covered: a module on the master route, module unload.
 - **A/B of the larger core [V, timed, exclusive lock, 2026-10-09].** Old (`gen-pre-fxprof-20261009`,
   binary in `out/native/target/g-e220e7a2`) vs new (prod gen), same sources, `coupled-run`
   alternated old/new, 2.0 s each, DSP CPU s per audio s (median, min-max): br-127 2.04
@@ -919,7 +933,7 @@ per-call counts on all 10 regions where a kernel already reaches a call (e.g. 0x
 
 Method. DT2 1.16 (`sections/.source-sha256` = 278541e4...), prod core `out/native/dt2-audio/gen`, default config, scenario
 `dt2-sample-trig` (3 s, one-sample card of `tools/emulator/dt2_sample_check.py`; the only DT2 load scenario). The DT2 DSP image has
-no fast regions in `tools/emulator/fast_regions.json`, so the tiers are AOT block, idle skip and interpreter. `tools/sharc_dev/aot_entry_iter.py`
+no fast regions in `config/emulator.json`, so the tiers are AOT block, idle skip and interpreter. `tools/sharc_dev/aot_entry_iter.py`
 now takes `--device dt2` (`aot_fxprof.py --dt2-card` runs on the card's ready state; the base profile is
 `prof-merged-c2`). Four rounds, each profiled with the core built from the previous round (rsgen about 50 s, build 1.5 min):
 new block starts 27, 8, 3, 1 (the fifth round finds one PC again, a 9000-count chain of one instruction per round, not
@@ -1165,7 +1179,7 @@ by a second agent.
   code for LLVM's wasm output against LLVM's arm64 output for the same Rust.
 - **Ceiling (b), the fast tier in the browser core: about 2.0 (1.8-2.3), confidence low.** Not measurable here:
   `digi_sharc_fast` panics on the first kernel build on `wasm32-unknown-unknown` (`std::time::Instant::now`; fixed
-  in `fast/mod.rs` by a clock shim), and with the DN2 static regions (`tools/emulator/fast_regions.json`, tried via a
+  in `fast/mod.rs` by a clock shim), and with the DN2 static regions (`config/emulator.json`, tried via a
   temporary `threshold 0` seeding) it stops at `Op::Helper` (`unimplemented!`, `sharc-fast-wasm/src/lib.rs`).
   Auto selection (256,64,0) is exact (3 s hash equals the AOT-only 3 s hash `ae86d0b3...`) but arms only 19
   kernels worth 0.4% of the instructions. Model from the native numbers: AOT 235M x 5.4 ns = 1.27 s, plus the
@@ -1200,7 +1214,7 @@ second agent.
 - **Build and seeding.** `tools/emulator/native_wasm.py` now builds the coupled core with `fast-wasm` (`--no-fast` leaves it out;
   the tier stays off until the page asks). New ABI `digi_sharc_fast_regions(regions, n, roots, n, threshold, min_insns,
   follow)` = the desktop configuration: the static regions and the block-translator cluster roots of
-  `tools/emulator/fast_regions.json` for the firmware's SHA-256 (`FastEngine::new(..).with_clusters(..)`), optional run-time
+  `config/emulator.json` for the firmware's SHA-256 (`FastEngine::new(..).with_clusters(..)`), optional run-time
   selection on top (`threshold != u32::MAX`). Page: `?fast=desktop|desktop+auto|auto|T,M,F`; `browser_bench.mjs --fast X`;
   `wasm_parity.mjs --fast desktop[+auto]` (also with `--split 1`). The bench reports the kernel host's counters and
   `digi_sharc_fast_report` (`dsp_kernels`, `dsp_fast`). The dev page is the only consumer: `?fast=` is off by default.
@@ -1519,7 +1533,7 @@ fast tier: clean tone (peak share 0.99995) and WAV hash `4bab8330915f0929`.
 What dominates at 0.94 to 1.05. Interpreted code is 5.7M to 5.9M of about 950M instructions per run (0.6%), so the cost is
 the AOT blocks plus the ColdFire thread, which runs in parallel (0.44 to 0.55 per audio s). The trig is under 1.0 and runs
 in real time (1.06); a bit-reduction scene does not (DSP 1.05, real-time factor 0.90). A DT2 fast-region list
-(`tools/emulator/fast_regions.json` has only the DN2 1.11 entry) is not cheap: it needs a region profile of the DT2 DSP, a list per
+(`config/emulator.json` has only the DN2 1.11 entry) is not cheap: it needs a region profile of the DT2 DSP, a list per
 firmware hash and an AOT = fast = no-AOT gate over the 60 FX scenarios; on DN2 the list is worth 19% over AOT without PGO.
 Not tried **[O]**. A promoted `gen` or a later entry round changes `sharc_gen`, so the profile needs a retrain
 (`check --device dt2` reports stale).
@@ -1702,7 +1716,7 @@ The five 64-trip loops are 8.7k of the 10.4k instructions.
   and the later loops read and filter these streams. The "16 changed words" seen in the voice record and the 0x24ebb0
   block are only the persistent state; the checker compares all memory, so the 64-sample stream stores must be
   reproduced bit for bit. No closed form exists (table lookup, linear interpolation, float rounding per sample).
-- All four loop heads (0x1c399a, 0x1c3862, 0x1c364f, 0x1c5765) are already in `tools/emulator/fast_regions.json`
+- All four loop heads (0x1c399a, 0x1c3862, 0x1c364f, 0x1c5765) are already in `config/emulator.json`
   (`fast_regions`) and run as Cranelift kernels, with 0x1c369b and 0x1c5796 as `blocktrans` roots. So the work an HLE
   could not avoid is the work that already runs at kernel speed. From "HLE: first function and checker", a
   hand-written exact routine costs about 0.9 ns per replaced instruction (value-domain checks, flags), no better than a
@@ -1783,7 +1797,7 @@ function and checker" measured ~0.9 ns, so they do not hold.
 
 ## Browser: where the wasm penalty is 2026-10-12 **[D]**
 
-- **[D]** The page arms the fast tier `desktop` by default when tools/emulator/fast_regions.json has an entry for the firmware
+- **[D]** The page arms the fast tier `desktop` by default when config/emulator.json has an entry for the firmware
   (DN2 1.11 only; a DT2 image arms nothing). `?fast=off` turns it off. DN2 in headless Chromium, 3 runs of 10 s: DSP
   worker 2.07-2.21 s per audio s and 0.471 audio s per wall s by default, against 2.45-2.48 and 0.411 with
   `?fast=off`.
@@ -1898,7 +1912,7 @@ function and checker" measured ~0.9 ns, so they do not hold.
   - the fallback interpreter is about 72% of DSP time (27.4M instructions per audio s at about 220 ns);
   - kernels and their calls are about 2.0 s;
   - kernel chaining would save under 0.3%.
-- **[D]** Page default: with no `?fast=` and no fast_regions.json entry, the DSP worker arms 4,2,1 when the core
+- **[D]** Page default: with no `?fast=` and no config/emulator.json entry, the DSP worker arms 4,2,1 when the core
   reports `digi_sharc_aot_blocks() == 0` (the generic core). An unlisted AOT core keeps the fast tier off.
 - **[D]** sharc-jit revived on lane/jit (a2292d7, 4637c61; about an hour of porting to today's sharc-rt):
   - Exact on 91/91 frames of the drive3-f0 DT2 pack, against fresh interpreter hashes, in wasmtime and V8.
@@ -1976,3 +1990,209 @@ DSP CPU per audio s and DSP instructions per audio s in millions:
   audio s, 0.1 to 0.25 s.
 - The fast-tier kernels still decline any store into a code-watched page (`mem_addr.rs` guards on the page's watch
   byte), so on DN2 module data on a code page leaves the fast tier; placing module data on its own page would avoid it.
+
+## Block bodies continue after MODE1 writes (2026-11-05)
+
+- **[D]** Dispatch causes, DN2 1.12, held note (trig1-hold), 1 audio second, existing `SHARC_PROFILE_PREFIX` `.trans`
+  data, classified against the 1.12 program database:
+  - 3.07M engine dispatches per audio second (fast-tier defaults).
+  - At least 54% (1.67M) end within 4 instructions after a MODE1 write. This is a lower bound: 44% end near
+    undecoded instructions. Returns to a caller are about 0%.
+  - Top stops: 0x1c07d2 and 0x1c07d7 (291k each; float-to-int helper: set TRUNCATE 0x8000, `fix`, `MODE1 = R2`);
+    0x1c06c0 and 0x1c06fe (float divide 0x1c06ba: clear RND32 0x10000, `frnd`, `MODE1 = R1`); 0x1c0c9d and 0x1c0d9f
+    (0x1c0c76: set 0x2000, `MODE1 = R12`). Others: PEYEN 0x200000 on and off.
+- **[D]** Cause: `tools/sharc_dev/sharc_rsgen.py` ended a body after any MODE1 write (TERMINAL), so the engine could
+  complete a bank request (`St::bank_complete`) and check interrupts. These writes change no bank-select bit (0x4f8),
+  IRPTEN or NESTM.
+- **[D]** Change (lane/sharc-mode1, commit 45ebd538): a MODE1 write that changes none of `MODE1_ENGINE_BITS`
+  (0x4f8|0x800|0x1000) and is followed by an instruction of the same block continues the body. Block code does the bank
+  bookkeeping of `St::commit` itself: one `St::bank_complete` after the write, one after the next instruction. A restore
+  with an unknown value (`MODE1 = Rn`) continues only under a run-time guard that MODE1 equals the body's entry value;
+  every guard exits with the state of the old exit. Tests: `tests/sharc/generation/test_sharc_rsgen_mode1.py` (decision
+  cases; emitted code run against the native runtime for the exact bank state, the guard exit and a trap in the next
+  instruction).
+- **[D]** Full DN2 core: OLD (rule off) is byte-identical to the promoted gen in code. MODE1 terminal sites 324 to 67;
+  `blocks_*.rs` +3.9% (57.96 MB to 60.20 MB). Exact PCM, full SHRD, instruction count and duration on held note and idle.
+- **[D]** Paired A/B (`tools/devtools/sharc_matrix.py`, plain builds, no PGO, default tiers, alternating pairs of 3
+  audio s). Criterion declared first: median B/A <= 0.98 in both scenarios and every pair < 1.
+  - Quiet host, DN2 only: held 0.9631, idle 0.9670.
+  - Later batch at load about 4: DN2 held 0.983, DN2 idle 0.996 (pairs 0.954 to 1.041), DT2 sample-trig 0.982, DT2
+    retrigger 0.985.
+  - Exact PCM, state, instruction count and duration on all cells.
+  - Block entries per 3 s: DN2 9.14M to 7.58M, DT2 7.95M to 6.51M.
+  - The gain in time is about 2 to 3.5% and is limited by host noise. The predeclared criterion passed in the first
+    run and failed in the second.
+  - DT2: MODE1 sites 107 to 29, `blocks_*.rs` +5.8%.
+  - Artifacts of the first run: `out/native/runs/20261105-mode1-full/ab/` (`results/summary.json`, `criterion.json`).
+- **[O]** About 383k MODE1 stops per audio second remain: restores whose value is not the body's entry value (for example
+  0x1c06fe, 0x1c0d9f). DT2 regeneration, the shared core and PGO are not measured yet.
+
+### MODE1 effect latency
+
+- **[D]** The public SHARC programming reference (ADSP-2136x/2137x/214xx, Table A-11 and the text before it) gives MODE1
+  one cycle of effect latency: the instruction right after a MODE1 write still uses the old mode. The public SHARC+
+  programming reference keeps this through stalls for compatibility. `sharc_core` delays only the bank selects
+  (`sharc_core/state.py` `bank_model`); rounding, truncation, saturation and PEYEN take effect on the next instruction.
+- **[D]** A static scan of DT2 1.17 (229 MODE1 writes) and DN2 1.12 (252) found no next instruction that depends on the
+  changed mode, except DN2 0x1c6d7c (ALUSAT set, then `R7 = add(R10,R10)`: differs only if that add overflows).
+  `recips` and `rsqrts` right after an RND32 clear at DT2 0x1c06bd and 0x1c1287 and DN2 0x1c06bd and 0x1c1231 are seed
+  approximations (inferred unaffected, not checked).
+- **[O]** Whether to model the latency.
+
+### Hardware counters and host noise
+
+- **[D]** CPU time for the same binary spread 10 to 24% on the development laptop in normal use. The DSP worker now
+  reports per-thread retired instructions and cycles (report.json `cpu.dsp_thread_insns_per_audio_s`,
+  `cpu.dsp_thread_cycles_per_audio_s`; docs/INSTRUMENTATION.md).
+- **[D]** A/A control, DN2 held, 3 pairs, load about 4: instructions 1.0002, 1.0000, 1.0000; cycles 1.0125, 0.9906,
+  0.9974; CPU time 1.0129, 0.9855, 0.9975.
+- **[D]** Instruction ratios settle a path-length question in one run. They do not show stalls or layout, so a timing
+  A/B on a quiet host remains the final check. IPC is about 5.5 in every tier configuration.
+
+### Engine work per dispatch
+
+- **[D]** A block dispatch no longer runs the full interrupt candidate when nothing allowed is latched and enabled,
+  reuses that result for the latent-interrupt check, calls the fast tier's run only for a PC it wants or when it has
+  queued work, and syncs chain stops only when some are pending. Exact PCM, state and every tier counter on the four
+  cells.
+- **[D]** Host instructions: DN2 0.9924, DT2 0.9895. Cycles in 3 pairs: DN2 held median 0.980, idle 0.978, DT2
+  sample-trig 1.021, DT2 retrigger 1.012.
+- **[O]** The DT2 cycle rise against fewer instructions, and an earlier timing run of the same source change at 0.955,
+  suggest a code-layout effect of several percent between builds; not separated.
+
+### Host instruction cost model
+
+- **[D]** Steady state per audio second, (6 s - 3 s)/3, plain build:
+
+  | cell / config | host insns | cycles | guest AOT | fast | interp | idle | block entries | fast calls |
+  |---|---:|---:|---:|---:|---:|---:|---:|---:|
+  | DN2 held, default | 24.52G | 4.47G | 235.5M | 265.5M | 2.0M | 497.0M | 2.525M | 516k |
+  | DN2 held, fast tier off | 31.71G | 6.05G | 500.4M | - | 2.5M | - | 1.728M | - |
+  | DT2 sample-trig, default | 25.29G | 4.42G | 294.1M | 18.6M | 1.8M | 685.4M | 2.168M | 313k |
+  | DT2 sample-trig, fast tier off | 47.42G | 8.89G | 295.2M | - | 19.4M | - | - | - |
+  | DT2 sample-trig, idle skip off | 129.3G | - | 979.8M | - | - | - | 145.0M | - |
+  | DN2 held, AOT off | 344.1G | - | - | 279.7M | 223.2M | - | - | - |
+
+- **[D]** One interpreted guest instruction costs about 900 to 1500 host instructions (three measurements), so 0.2% of
+  the guest work is about 8 to 12% of the host instructions.
+- **[O]** AOT about 63 and the fast tier about 12 host instructions per guest instruction (estimates from profile
+  shares). A dispatch costs about 550 (from the idle-skip-off row).
+- **[D]** Runtime roots 0xb8251e and 0x1c201d in the DN2 1.12 block-translator list: host instructions 24.54G to
+  23.85G (-2.8%), interpreted guest instructions 1.99M to 1.19M per audio second, exact PCM and state at 3 s and 6 s.
+
+### AOT path length
+
+- **[O]** From a hand count of older PGO disassembly (about +-20%): about 43 host instructions per guest instruction in
+  hot straight-line code. Real work 10%, float flush and classify 23%, flags 22%, spills 12%, loop end 10%, dead
+  Result tests 9%, memory checks 7%, other 8%. Undo copies, PC guards and budget checks fold away.
+- **[O]** Candidates: lazy flags, canonical floats, memory-test layout, loop-end index width.
+
+## Runtime patches bar hot regions on DN2 (2026-11-06)
+
+- **[D]** Live Workbench DN2 session at 947d2765 with valid PGO: 0.48-0.57x real time, DSP CPU 1.73-2.06 s per audio s,
+  13.5M interpreted guest instructions per audio s. The fixtures in out/fixtures/runtime dated from 2026-11-01 and
+  reported 8 differing PCs and 33 barred entries. The current runtime reports 44 and 106; most new PCs lie in
+  FUN_1c8ef1. `packages/emulator/sharc/src/code_diff.rs` bars all entries of a region with a changed block, so unchanged
+  code in those regions runs in the interpreter. DT2 is unaffected: 10 PCs, 44 barred, 1.8M interpreted per audio s, and
+  extra roots give no gain.
+- **[D]** 58.6% of the interpreted instructions were one region, 0x1c9aea..0x1c9b30: a DO loop of about 496 iterations
+  once per audio block that applies two gain ramps and writes through an offset table.
+- **[D]** Fix: DN2 `fallback_regions` in config/emulator.json (20 roots). The loop-body roots (0x1c9b0d,
+  0x1c9b12) give nearly all of the gain; the region entry alone does not. Fresh-fixture coupled run, PGO build, steady
+  state per audio s:
+
+  | cell | host insns | cycles | interpreted |
+  |---|---:|---:|---:|
+  | held, before | 39.11G | 5.15G | 13.5M |
+  | held, after | 25.89G | 4.34G | 3.9M |
+  | idle, before | 39.24G | 7.07G | 13.5M |
+  | idle, after | 25.98G | 4.42G | 3.9M |
+
+  PCM and full state are exact. Live Workbench, single 15 s samples at load about 5: 0.57x to 0.83x, CPU 1.73 to 1.19 s
+  per audio s.
+- **[O]** DN2 stays above real time on a busy host; the remaining interpreted work is about 4M instructions per audio s.
+- Tooling: `tools/devtools/fast_roots.py` (`rank` from a capture; `check` against `tools/emulator/fast_budgets.json` on a
+  fixture built from the current runtime and cached by content key); gate `gate-fast-roots`. **[D]** Without the roots
+  the guard fails at 13.4M against a 5M budget; with them it passes at 4.03M, and DT2 passes at 1.85M. Repeat runs give
+  equal counts.
+- The PGO training workload no longer checks pins. The gate `coupled_ready_exactness` reads its PCM expectation from
+  tests/scenarios/dn2.json and no longer checks the DSP export hash, whose literal was stale since 2026-11-01 (the pre-
+  and post-#291 builds give the same export).
+
+## Multiply-accumulate in the fast tier (2026-11-06)
+
+[D] After a soft reset DN2 runs a sample interpolation loop in FUN_1c44ae (hardware DO, about 64 iterations of 42 instructions, 1.5M AOT entries per audio second). The fast tier stopped at its first `MRF = Rx*Ry`, because kernels held no MR state. Kernels now hold MRF as three pseudo words and lower `MRF = Rx*Ry (SSF)`, `MRF = MRF + Rx*Ry (SSF)` and `Rn = SAT MRF (SF)`, SISD only; an MV result leaves the kernel. The DN2 fast root 0x1c451c then retires about 2,400 instructions per call. Plain build, DN2 post-reset, per audio second: 42.20G to 37.81G host instructions, 13.28M to 8.67M block entries, exact PCM and state. No change on DN2 first-boot or DT2.
+
+[D] Forms 16b and 14d and `Rn = mant Fx` also lower now. On their own they gave no gain (about +0.2 to +0.5% host instructions), and a static census of what they would unblock overestimated badly. A region that stops at a PC with no entry is now refused over a healthy AOT root: this kept the root above from raising interpreted work to 26M.
+
+[O] The next blocker is the add overflow guard `fixed_alu.rs:24` in loop 0x1c4b72 (about 27% of iterations). DN2 post-reset stays below real time.
+
+## ALU overflow and appended entries in the fast tier (2026-11-07)
+
+[D] FUN_1c4b54 on DN2 post-reset runs a loop of about 13 instructions, 32 iterations for each of 24,000 calls per audio second. It adds `R2 += R1; R1 += R2` and stores a sample only past a threshold. It looks like a wrapping noise generator, so about one add in four overflows by design. With a root at 0x1c4b72, the old overflow guard left the kernel about 508k times per audio second over 768k iterations, so the root gained nothing.
+
+[D] With MODE1.ALUSAT clear and outside SIMD, a fixed add, subtract, increment, decrement or negate now wraps in the kernel. The kernel ORs each overflow word into `PSEUDO_AOS`, and `glue::store_aos` sets STKYX.AOS when the kernel returns. Such a kernel requires ALUSAT clear (`Req::Mode1`). With ALUSAT set, in SIMD, and for abs, the guard stays. Root 0x1c4b72 then runs 270 instructions per call and only leaves by its return. Its calls fall from about 520k to 24k per audio second.
+
+[D] The workload cannot check AOS: the state hash stayed equal with the latch left out. `fast_diff` covers it: `forms` starts STKYX.AOS clear, set or unknown and builds a quarter of the instances with ALUSAT set, and `cfg` starts it clear or set. With `store_aos` disabled, `forms --filter /add` gave 1811 mismatches and `cfg` 3 differing runs.
+
+[D] Appended code entered by a block or kernel exit never became an entry: `note_appended` ran only after an interpreted branch landing. The interpreter now also notes a PC in appended code that the previous interpreted instruction did not lead to. Interpreted appended instructions per audio second: post-reset 2.68M to 1.14M, first boot 2.20M to 1.14M, DT2 no real change. `fast_budgets.json` for DN2 reset is now 4.5M interpreted and 8M block entries.
+
+[D] PGO builds, steady state per audio second, A is main at 32b8af05 and B is both changes. PCM and full state are exact on every state:
+
+| state | host insns A | host insns B | B/A | interpreted A to B | block entries A to B |
+|---|---:|---:|---:|---:|---:|
+| DN2 post-reset | 34.03G | 31.58G | 0.928 | 4.61M to 3.09M | 8.67M to 6.38M |
+| DN2 first boot | 25.19G | 24.54G | 0.974 | 3.45M to 2.41M | 3.08M to 3.09M |
+| DT2 | 22.49G | 22.57G | 1.0035 | 1.80M to 1.80M | 2.17M to 2.17M |
+
+[D] Timing, DN2 post-reset, 3 s runs including startup, three alternating pairs at load 9 to 12 (not a quiet machine): DSP CPU ratio 0.829, 0.942, 0.946, median 0.942; real time 0.62x to 0.66x in the last two pairs. The first pair ran at the highest load and is not used.
+
+[O] DT2 costs 0.35% more host instructions under PGO (1.0028 plain, also with runs one at a time) with equal tier counters and cycles. The cause is not known.
+
+[O] A fully unknown STKYX shows a known-mask difference in STKYX bit 26 between the tiers after a DO: the interpreter's `_push` leaves STKYX unknown, and the fast tier knows bit 26. It predates this work and `fast_diff cfg` avoids that state. Whether real runs reach it is not checked.
+
+[D] A DN2 core regenerated from the state B profile, on main before these changes: 15.5% more host instructions on post-reset, because the root lists no longer match its regions (interpreted 9.98M). With 36 more roots: post-reset 2.2% fewer, first boot 12% more. A core from the union of state A and B profiles, with those roots, in paired 3 s runs: post-reset 0.948 host instructions and 0.921 cycles, first boot 1.076 and 1.068. Dispatches fall from 8.67M to 2.68M but fast calls rise from 1.12M to 3.39M. Not adopted: it may overlap the gain above and needs a combined measurement.
+
+[O] About 1.14M interpreted appended instructions per audio second remain. Six entries at 24,000 calls per audio second each stop at a form 14a access: `normal-word address outside the plain range` (`_static_plain` in `sharc_lowergen.py`).
+
+[O] DN2 post-reset stays below real time, which is about 23G host instructions by DT2 at 22.5G and 1.02x. Remaining estimates: AOT path length about 12% (a rough hand count), appended code about 1.4G, union core up to 5%. Their sum still falls short, so reaching it also needs more AOT work moved to the fast tier; AOT is about 60% of the total.
+
+## Auto-arming beside AOT blocks and hand-picked regions [D]
+
+Measured 2026-11-09 on stock DN2 1.12, stepped, 20 s of emulated audio after a 3 s settle, audition on trig 1, on one binary (`tools/devtools/rt_matrix.py`). RT is emulated audio per wall second.
+
+| Machine | Baseline RT | `SHARC_FAST_AUTO=4,2,0` RT | Ratio |
+| --- | --- | --- | --- |
+| FM Tone | 1.086 | 1.057 | 0.97 |
+| WaveTone | 0.821 | 0.827 | 1.01 |
+| FM Drum | about 0.09 | 0.741 | about 8 |
+| Swarmer | about 0.08 | 0.751 | about 9 |
+| `digikit/pluck` | 0.518 | 0.744 | 1.44 |
+
+PCM matched the baseline in all 34 `coupled-run` scenarios (DN2 stock FX, load, machines and DT2 sample and FX). DN2 stock FX, load, FM Tone and WaveTone cost 3 to 5% more host instructions per audio second. FM Drum and Swarmer cost 0.36 and 0.32 of the baseline. DT2 cost 0.4 to 0.8% more, except two scenarios that cost less (0.964 and 0.935).
+
+Why the baseline is slow on these machines: FM Drum and Swarmer were not in the AOT training, so 97% of their interpreted work was in code with no generated block.
+
+Two engine rules make auto-arming safe beside the other tiers:
+- An interpreter landing at a PC with a usable AOT block does not count towards arming.
+- An auto-armed CFG region stops at the entry of a hand-picked region. Without this stop, large auto regions absorbed the hand-picked loops: on FM Tone at `4,2,0` the hand-picked regions fell from 7078M to 2973M guest instructions, and auto regions ran the work at about twice the host cost per instruction.
+
+Hand-picked loops run at about 0.6 ticks per guest instruction, large auto CFG regions at about 1.1, and auto regions under 16 instructions at 5 to 22. Thresholds alone cannot give both results: `256,64,0` keeps FM Tone at baseline but holds FM Drum at about 0.45x.
+
+**[O]** Real device tests are not faster with auto-arming: shot-picker took 236 s against 153 s, card-safety 280 s against 258 s, and freqshift 359 s against 364 s. It is therefore a workbench default only.
+
+**[O]** Compile runs on the SHARC thread. The first-note stall in free-running mode has not been measured.
+
+**[O]** Towards 1.0x:
+- Measure host time per tier and per CPU first.
+- Train AOT on more machines, or run it with `--all --coverage`.
+- Arm at the DO loop instead of upstream of it.
+- Generate the hand-picked list per machine with `perf:fast-roots rank`.
+- Make entry and exit cheaper for small regions.
+- Retrain PGO with more machines and the fast tier.
+- Add MODE1 data flow at function entry.
+- Resolve the 175 indirect jumps.
+- Add pointer-range analysis for the `address range unknown` refusals.
+- Write native kernels for hot functions such as `0x1c10e3`.
+- Lower the ColdFire instruction budget if it is the limit.
+- Compile in the background and keep an on-disk cache.

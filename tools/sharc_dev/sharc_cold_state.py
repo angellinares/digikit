@@ -38,7 +38,7 @@ def cold_blob_for_memory(data: sharcldr.LoadedMemory) -> tuple[bytes, int]:
     entries = sharcldr.entry_points(data.blocks)
     if not entries:
         raise SystemExit("loader has no FIRST entry")
-    runner = sr.Runner(data, entries[-1], approx_recips=True)
+    runner = sr.Runner(data, entries[-1])
     state = runner.state
     state.bank_model = True
     state.stack_model = True

@@ -17,14 +17,13 @@ that is the whole design idea — a usable synth voice without loading single-cy
 ## The slot constraint that shapes everything
 
 The adapter maps module parameters by their position in the device's `param_slots` (devices/digitakt-ii.toml
-`[adapter.machine]`, now `[1, 2, 4, 5]`, shared with PLUCK and CLOUDY), not by the knob a manifest names. Analog has
-four parameters, so it takes all four slots: DET on 1, WAVE on 2, SUB on 4, FOLD on 5. Slot 3 is the
+`[adapter.machine]`, now `[1, 2, 4, 5, 6]`, shared with PLUCK and CLOUDY), not by the knob a manifest names. Analog has
+four parameters, so it takes the first four slots: DET on 1, WAVE on 2, SUB on 4, FOLD on 5. Slot 3 is the
 sample slot of a SAMPLE clone and stays reserved (`reserved_slots`); slots 0 and 7 are the stock TUNE and LEV.
 
 Evidence: docs/findings/02-machines-and-parameters.md, "Knob slots 3 and 6 on a run-time SAMPLE clone".
 
-Consequence: four features (detune, shape, sub, fold) take the four knobs, one each. Adding a fifth control needs a
-new `param_slots` entry.
+Consequence: four features (detune, shape, sub, fold) take four knobs, one each. A fifth control takes slot 6 (knob G).
 
 ## Measured behaviour (note 48, 110 velocity, saw setting unless said)
 

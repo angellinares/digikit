@@ -134,30 +134,35 @@ impl Lower {
         self.mem_xfer(addr, Self::xfer_dir(d, ureg))
     }
 
-    /// 14d: an absolute unsigned short-word load into an R register.
+    /// 14d: an absolute byte or short-word access of an R register: loads
+    /// zero- or sign-extended (l selects short, x sign), stores of the low
+    /// byte or short word (l selects short; x=1 is not an instruction).
     /// Direct byte addresses are unscaled and need no normal-word mapping
-    /// restriction (`memory._canonical_dm_address`). Other widths, stores
-    /// and exclusive accesses remain with the interpreter.
+    /// restriction (`memory._canonical_dm_address`). Exclusive accesses and
+    /// the w=1 rows remain with the interpreter.
     pub fn form_14d(&mut self, d: &Dec) -> LR<()> {
-        if d.field("d") != Some(0)
-            || d.field("ex") != Some(0)
+        let store = d.field("d") == Some(1);
+        if d.field("ex") != Some(0)
             || d.field("w") != Some(0)
-            || d.field("l") != Some(1)
-            || d.field("x") != Some(0)
+            || !matches!(d.field("l"), Some(0 | 1))
+            || !matches!(d.field("x"), Some(0 | 1))
+            || (store && d.field("x") != Some(0))
         {
-            return refuse("14d requires an unsigned short-word load");
+            return refuse("14d exclusive, w=1 or sign-extended store");
         }
         let dreg = d.field("dreg").ok_or(Refuse("14d dreg".into()))? as u32;
         let a = d.wide("addr").ok_or(Refuse("14d addr".into()))?;
         let addr = self.ci(a);
-        self.mem_xfer_w(
-            addr,
-            Xfer::Load(dreg),
-            Width {
-                bytes: 2,
-                signed: false,
-            },
-        )
+        let w = Width {
+            bytes: if d.field("l") == Some(1) { 2 } else { 1 },
+            signed: d.field("x") == Some(1),
+        };
+        let x = if store {
+            Xfer::Store(dreg)
+        } else {
+            Xfer::Load(dreg)
+        };
+        self.mem_xfer_w(addr, x, w)
     }
 
     /// 19a / 19a_scaled: `Ia = MODIFY(Ib, imm32)`, scaled by the access

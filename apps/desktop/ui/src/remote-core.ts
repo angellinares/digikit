@@ -1,6 +1,7 @@
 // The Remote page's logic, without the page: what the state of digikit/remote says to the user, the device behind a session, and the
 // runtime object the faceplate presses keys on. Pure, so host tests can run it (apps/desktop/ui/tests/remote-page.test.ts).
 import { DkError, type DkSession, type RemoteState } from '@digi/dk-session';
+import { writing } from '../../../web/src/transfer/transfer-core.ts';
 
 /** The message under the faceplate for the state of digikit/remote (or for the error that asking for it gave). */
 export function remoteNotice(state: RemoteState | undefined, error?: unknown): string {
@@ -43,3 +44,22 @@ export function deviceOfPort(port: string): 'dt2' | 'dn2' | undefined {
   const d = port.split('-')[0];
   return d === 'dt2' || d === 'dn2' ? d : undefined;
 }
+
+/** The Remote page asks INFO (it only names the device) at most this often while the target stays the same. */
+export const INFO_EVERY_MS = 30_000;
+
+/** Is INFO due? When it was never asked (`lastAt` undefined), the target changed, or `INFO_EVERY_MS` have passed. */
+export const infoDue = (lastAt: number | undefined, now: number, targetChanged: boolean): boolean =>
+  lastAt === undefined || targetChanged || now - lastAt >= INFO_EVERY_MS;
+
+/**
+ * The Remote page's polls wait while a Transfer job writes to the device: they would only queue behind it on the shared session (and slow it).
+ * `busy` is the Transfer page's busy action ('' when none).
+ */
+export const remotePaused = (busy: string): boolean => writing(busy);
+
+/**
+ * Leaving the Remote page gives up the requests that wait on the session so the next page does not queue behind a silent device. While a
+ * Transfer job runs, that session is the job's: cancelling would fail its requests and end an upload that the user did not stop.
+ */
+export const leaveCancels = (busy: string): boolean => !writing(busy);

@@ -15,7 +15,7 @@
 //! Version 2 of the record (the fault trace): a kind word (`W_HKIND`: 1 CPU crash, 2 DSP stopped) and the DSP's site, id, step and diagnostic words after the
 //! last events. A DSP stop is written by `write_hang` (from the heartbeat watch in dlog.rs) the same way, then the soft reset. At the next boot either kind is
 //! copied into the settings key `dk/fault` (`store_fault`), which stays until a newer fault replaces it; the ABOUT page reads that key.
-use crate::dlog;
+use crate::{dlog, watch};
 use crate::{dkrt_flush, dkrt_soft_reset, st};
 use core::ptr::{addr_of, addr_of_mut, read_volatile, write_volatile};
 use dkrt_sdk::device::{DDR_BYTES, DDR_CACHED_BASE, KEEP_BASE, KEEP_BYTES};
@@ -57,7 +57,7 @@ const W_HSTEP: usize = W_HKIND + 4; // the module step (DK_STEP), 0: none
 const W_HLAST: usize = W_HKIND + 5; // the site's raw last word
 const W_HRT: usize = W_HKIND + 6; // runtime version
 const W_HDIAG: usize = W_HKIND + 7; // the DSP diagnostic words (DIAG_WORDS)
-const W_HNAME: usize = W_HDIAG + dlog::DIAG_WORDS; // 4 words: the module's name after its last `/` (16 bytes), what ABOUT shows
+const W_HNAME: usize = W_HDIAG + watch::DIAG_WORDS; // 4 words: the module's name after its last `/` (16 bytes), what ABOUT shows
 const W_CRC: usize = W_HNAME + 4;
 const REC_WORDS: usize = W_CRC + 1;
 
@@ -73,7 +73,7 @@ fn rec() -> *mut u32 {
 /// What `at_boot` found, kept for `dkrt_diag`, the proofs and the boot code.
 #[no_mangle]
 pub static mut DKRT_CRASH: CrashSeen =
-    CrashSeen { found: 0, pc: 0, vec: 0, module: u32::MAX, stable: 0, ram_kept: 0, installed: 0, bad: 0, hang: 0, saved: 0, panic: 0 };
+    CrashSeen { found: 0, pc: 0, vec: 0, module: u32::MAX, stable: 0, ram_kept: 0, installed: 0, bad: 0, hang: 0, saved: 0, panic: 0, tail: 0 };
 
 #[repr(C)]
 pub struct CrashSeen {
@@ -95,6 +95,8 @@ pub struct CrashSeen {
     pub saved: u32,
     /// The record was a panic record of the runtime (1: not a crash; `found` stays 0 and the boot counter is not touched).
     pub panic: u32,
+    /// The events of the record's tail (the last events before the stop, taken from the small ring at the crash).
+    pub tail: u32,
 }
 
 pub fn seen() -> &'static CrashSeen {
@@ -347,7 +349,7 @@ pub struct Hang {
     pub last: u32,
     /// Module record index that owns the site's machine type or effect row (`usize::MAX`: none).
     pub module: usize,
-    pub diag: [u32; dlog::DIAG_WORDS],
+    pub diag: [u32; watch::DIAG_WORDS],
 }
 
 /// Write the hang record of a stopped DSP (version 2, kind 2) into the keep area and soft-reset. Never returns.
@@ -371,7 +373,7 @@ pub unsafe fn write_hang(h: &Hang) -> ! {
     write_volatile(r.add(W_HSTEP), h.step);
     write_volatile(r.add(W_HLAST), h.last);
     i = 0;
-    while i < dlog::DIAG_WORDS {
+    while i < watch::DIAG_WORDS {
         write_volatile(r.add(W_HDIAG + i), h.diag[i]);
         i += 1;
     }
@@ -428,6 +430,9 @@ pub unsafe fn at_boot() -> bool {
         dlog::ev(logk::CRASH_FOUND, logk::F_ERROR, [0, 0, 0, 0, 0xbad]);
         return true;
     }
+    *addr_of_mut!(KEPT) = v;
+    write_volatile(addr_of_mut!(KEPT_OK), true);
+    c.tail = v[W_TAILN].min(TAIL as u32);
     let e = logk::F_ERROR;
     let kind = v[W_HKIND];
     let module_idx = v[W_MODULE];
@@ -451,12 +456,7 @@ pub unsafe fn at_boot() -> bool {
         f.at = v[W_HLAST];
         dlog::ev(logk::FAULT_FOUND, e, [kind | f.site << 8 | f.stage << 16, f.id, f.step, f.at, module_idx]);
         dlog::ev(logk::CRASH_MOD, e, [module_idx, 0, v[W_NAME], v[W_NAME + 1], v[W_NAME + 2]]);
-        k = 0;
-        while k < dlog::DIAG_WORDS {
-            dlog::ev(logk::DSP_DIAG, e, [(dlog::DIAG_WORDS as u32) << 8 | (k / 4) as u32, v[W_HDIAG + k], v[W_HDIAG + k + 1], v[W_HDIAG + k + 2], v[W_HDIAG + k + 3]]);
-            k += 4;
-        }
-        log_tail(&v);
+        log_detail(&v);
         c.saved = store_fault(&f);
         return true;
     }
@@ -465,8 +465,7 @@ pub unsafe fn at_boot() -> bool {
         c.panic = 1;
         c.module = module_idx;
         dlog::ev(logk::FAULT_FOUND, e, [kind, v[W_A7], 0, 0, module_idx]);
-        log_stack(&v);
-        log_tail(&v);
+        log_detail(&v);
         c.saved = store_fault(&f);
         return true;
     }
@@ -479,15 +478,43 @@ pub unsafe fn at_boot() -> bool {
     dlog::ev(logk::CRASH_MOD, e, [v[W_MODULE], v[W_ENTERED] | v[W_STABLE] << 16, v[W_NAME], v[W_NAME + 1], v[W_NAME + 2]]);
     dlog::ev(logk::CRASH_MOD, e, [0x100, v[W_FRAME0], v[W_FAULTS], v[W_NAME + 3], 0]);
     dlog::ev(logk::FAULT_FOUND, e, [kind, 0, 0, f.at, module_idx]);
-    k = 0;
-    while k < 16 {
-        dlog::ev(logk::CRASH_REG, e, [k as u32, v[W_REGS + k], v[W_REGS + k + 1], v[W_REGS + k + 2], v[W_REGS + k + 3]]);
-        k += 4;
-    }
-    log_stack(&v);
-    log_tail(&v);
+    log_detail(&v);
     c.saved = store_fault(&f);
     true
+}
+
+/// The record found at boot, kept for a log sink that is set later (`replay_detail`).
+static mut KEPT: [u32; REC_WORDS] = [0; REC_WORDS];
+static mut KEPT_OK: bool = false;
+
+/// The long part of a found record as events: the DSP words of a hang, the registers of a crash, the stack, the tail. The runtime's small ring does not keep
+/// these kinds (`dlog::keeps`); a sink gets them from `replay_detail`.
+unsafe fn log_detail(v: &[u32; REC_WORDS]) {
+    let e = logk::F_ERROR;
+    let kind = v[W_HKIND];
+    let mut k = 0;
+    if kind == dkrt_sdk::fault::KIND_DSP {
+        while k < watch::DIAG_WORDS {
+            dlog::ev(logk::DSP_DIAG, e, [(watch::DIAG_WORDS as u32) << 8 | (k / 4) as u32, v[W_HDIAG + k], v[W_HDIAG + k + 1], v[W_HDIAG + k + 2], v[W_HDIAG + k + 3]]);
+            k += 4;
+        }
+    } else {
+        if kind != dkrt_sdk::fault::KIND_PANIC {
+            while k < 16 {
+                dlog::ev(logk::CRASH_REG, e, [k as u32, v[W_REGS + k], v[W_REGS + k + 1], v[W_REGS + k + 2], v[W_REGS + k + 3]]);
+                k += 4;
+            }
+        }
+        log_stack(v);
+    }
+    log_tail(v);
+}
+
+/// A log sink was just set: give it the detail of the record found at boot, which the small ring left out.
+pub unsafe fn replay_detail() {
+    if read_volatile(addr_of!(KEPT_OK)) {
+        log_detail(&*addr_of!(KEPT));
+    }
 }
 
 /// The stack words of the record as `CRASH_STACK` events (four words each).

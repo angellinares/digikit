@@ -135,25 +135,30 @@ def measure(name: str, fw: str, seconds: float, hist: bool, pcm: bool = False) -
         p = pathlib.Path(str(s.image)[: -len(".syx")] + ".plan.json")
         if p.is_file():
             plan = json.loads(p.read_text())
-    s.close()
+    # The daemon prints its histogram when it exits; the run directory goes away with the session.
+    emu.__exit__(None, None, None)
+    s.emu = None
     if hist and errlog.is_file():
         out["hist"] = parse_hist(errlog.read_text(errors="replace"), plan)
+    s.close()
     return out
 
 
 def parse_hist(text: str, plan: dict | None) -> dict:
-    pcs = [
-        (int(m.group(1), 16), int(m.group(2)))
-        for m in re.finditer(r"hist: (0x[0-9a-f]+) (\d+)", text)
-    ]
+    """The interpreted instructions per PC of the whole daemon run (one line per PC per engine, summed)."""
+    per_pc: dict[int, int] = {}
+    for m in re.finditer(r"hist: (0x[0-9a-f]+) (\d+)", text):
+        per_pc[int(m.group(1), 16)] = per_pc.get(int(m.group(1), 16), 0) + int(
+            m.group(2)
+        )
     cm = re.search(r"code_mismatch (\d+)", text)
-    tot = re.search(r"hist: (\d+) interpreted insns over (\d+) PCs", text)
-    out: dict = {
+    ranked = sorted(per_pc.items(), key=lambda kv: -kv[1])
+    return {
         "code_mismatch": int(cm.group(1)) if cm else None,
-        "interpreted_total": int(tot.group(1)) if tot else None,
-        "top": [(hex(pc), n) for pc, n in pcs[:25]],
+        "interpreted_total": sum(per_pc.values()),
+        "top": [(hex(pc), n) for pc, n in ranked[:25]],
+        "pcs": {hex(pc): n for pc, n in per_pc.items()},
     }
-    return out
 
 
 def main() -> int:

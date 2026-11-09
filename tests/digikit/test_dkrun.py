@@ -2,12 +2,12 @@
 
 import pytest
 
+from tests.support import synth_spec as P
 from tools.device import dklog as L
 from tools.device import dkproto
 from tools.device import dkrun as R
 from tools.device import dkupload as D
 from tools.patchkit import patchkit as PK
-from tools.patchkit import pk_capacity as P
 
 UP = L.K["UPLOAD"]
 
@@ -128,6 +128,14 @@ def test_run_refuses_a_module_that_will_not_fit_unless_forced(
     ):
         R.run(up, "test/big", dkm=f, restart=False)
     assert up.sent == []  # nothing was uploaded, nothing selected
+    debug = tmp_path / "debug.dkm"
+    debug.write_bytes(b"debug")
+    monkeypatch.setattr(R, "build_pack", lambda module, device: debug)
     R.run(up, "test/big", dkm=f, restart=False, force=True)
-    assert up.sent == [("put", "modules/big.dkm"), ("select", ["modules/big.dkm"])]
+    # the log needs the debug module: it is uploaded and selected first, next to the module
+    assert up.sent == [
+        ("put", "modules/big.dkm"),
+        ("put", "modules/debug.dkm"),
+        ("select", ["modules/debug.dkm", "modules/big.dkm"]),
+    ]
     assert "WARNING test/big will not fit this device" in capsys.readouterr().out

@@ -2,7 +2,17 @@
 import assert from 'node:assert/strict';
 import { test } from 'vitest';
 import { DkError, type DkSession } from '@digi/dk-session';
-import { deviceOfPort, isRemoteMissing, remoteNotice, remoteRuntime, remoteStateWanted } from '../src/remote-core.ts';
+import {
+  INFO_EVERY_MS,
+  deviceOfPort,
+  infoDue,
+  isRemoteMissing,
+  leaveCancels,
+  remoteNotice,
+  remotePaused,
+  remoteRuntime,
+  remoteStateWanted,
+} from '../src/remote-core.ts';
 
 test('the notice: nothing when the module is on, where to check it, how to load the module', () => {
   assert.equal(remoteNotice({ enabled: true, format: 1, turnLimit: 30 }), '');
@@ -46,4 +56,23 @@ test('once the module is missing, REMOTE_STATE is asked again only when MODULES 
   assert.equal(remoteStateWanted(true, []), false);
   assert.equal(remoteStateWanted(true, [{ name: 'digikit/remote' }]), true);
   assert.equal(remoteStateWanted(true, undefined), true); // the list could not be read: ask as before
+});
+
+test('INFO only names the device: asked first, when the target changes, and every 30 s, not every poll', () => {
+  assert.equal(infoDue(undefined, 1000, false), true);
+  assert.equal(infoDue(1000, 3000, false), false);
+  assert.equal(infoDue(1000, 3000, true), true);
+  assert.equal(infoDue(1000, 1000 + INFO_EVERY_MS, false), true);
+});
+
+test('a Transfer job keeps the Remote page from cancelling its requests and from polling', () => {
+  // leaving the page cancels what waits on the session only when no job writes to the device (a read is short and not worth keeping)
+  assert.equal(leaveCancels(''), true);
+  assert.equal(leaveCancels('Reading'), true);
+  for (const job of ['Uploading', 'Installing', 'Deleting', 'Restarting']) {
+    assert.equal(leaveCancels(job), false, job);
+    assert.equal(remotePaused(job), true, job);
+  }
+  assert.equal(remotePaused(''), false);
+  assert.equal(remotePaused('Reading'), false);
 });

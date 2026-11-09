@@ -276,10 +276,13 @@ export function judge(p: PreparedFlash, a: Answer): Verdict {
   };
 }
 
-export const NO_RESTART_TEXT =
-  'The device did not restart in time. Look at its screen. If it still shows WAITING FOR SYSEX or RECEIVING, the image did not arrive complete: press NO and send again. If it shows an error, nothing was written.';
-export const NO_RETURN_TEXT =
-  'The device went away and did not come back in time. Wait a little, then look at its screen and the USB cable. If it does not start, use the recovery steps.';
+export const noReturnText = (device: string): string =>
+  `The device did not answer on any port named ${device}. Wait a little, then look at its screen and the USB cable. If it does not start, use the recovery steps.`;
+export const STOPPED_WAITING_TEXT = 'You stopped waiting. The device carries on by itself.';
+
+/** Is `name` the port of `device`? CoreMIDI adds a number when it names a second port alike ("Digitakt II 2"). */
+export const samePortName = (device: string, name: string): boolean =>
+  name === device || (name.startsWith(`${device} `) && /^\d+$/.test(name.slice(device.length + 1)));
 export const NO_ANSWER_TEXT =
   'The device is back but does not answer. The new image may not have reached the runtime: look at its screen. If it does not start, use the recovery steps.';
 

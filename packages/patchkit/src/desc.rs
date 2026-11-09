@@ -15,6 +15,8 @@ use crate::typed::{FxDef, FxKnob, MachineDef, PageDef, PageKnob, ParamDef, Voice
 /// The declarations of a set of objects.
 #[derive(Debug)]
 pub struct Desc {
+    pub sample_bank: Option<crate::typed::SampleBankDef>,
+    pub sample_tracks: Option<crate::typed::SampleTracksDef>,
     /// The effects, sorted by id.
     pub fx: Vec<FxDef>,
     /// The machines, sorted by id.
@@ -23,12 +25,19 @@ pub struct Desc {
     pub params: Vec<ParamDef>,
     /// The machines' pages, by machine id, then in the order of the records.
     pub pages: Vec<PageDef>,
+    pub native_pages: Vec<crate::typed::NativePageDef>,
     /// The machines' DSP routines, sorted by machine id.
     pub voices: Vec<VoiceDef>,
 }
 
 /// One record as it was read, before the records are put together.
 enum Rec {
+    NativePage {
+        what: String,
+        def: crate::typed::NativePageDef,
+    },
+    SampleBank(crate::typed::SampleBankDef),
+    SampleTracks(crate::typed::SampleTracksDef),
     Fx {
         what: String,
         def: FxDef,
@@ -46,6 +55,23 @@ enum Rec {
     Param {
         what: String,
         def: ParamDef,
+    },
+    ParamAction {
+        what: String,
+        machine: String,
+        word: u32,
+        func: String,
+    },
+    ParamGlyph {
+        what: String,
+        owner: String,
+        word: u32,
+        glyph: u32,
+    },
+    ParamLatched {
+        what: String,
+        owner: String,
+        word: u32,
     },
     Page {
         what: String,
@@ -189,17 +215,24 @@ fn fx_def(what: &str, spec: &DescSpec, b: &[u8], rec: &DescRecord) -> Result<Rec
 
 fn machine_def(what: &str, b: &[u8], rec: &DescRecord) -> Result<Rec> {
     let id = req(what, b, rec, "id")?;
+    let stereo = match word(b, rec, "stereo")? {
+        0 => false,
+        1 => true,
+        n => return Err(err!("{what}: stereo {n} is not 0 or 1")),
+    };
     Ok(Rec::Machine {
         def: MachineDef {
             id: id.clone(),
             name: req(what, b, rec, "name")?,
             short: req(what, b, rec, "short_name")?,
+            stereo,
         },
         voice: VoiceDef {
             machine: id,
             render: req(what, b, rec, "render")?,
             note_on: req(what, b, rec, "note_on")?,
             desc: req(what, b, rec, "desc")?,
+            stereo,
         },
     })
 }
@@ -216,6 +249,106 @@ fn param_def(what: &str, b: &[u8], rec: &DescRecord) -> Result<Rec> {
             min: sword(b, rec, "min")?,
             max: sword(b, rec, "max")?,
             default: sword(b, rec, "def")?,
+            action: None,
+            glyph: None,
+            latched: false,
+        },
+    })
+}
+
+fn param_glyph(what: &str, b: &[u8], rec: &DescRecord) -> Result<Rec> {
+    Ok(Rec::ParamGlyph {
+        what: what.to_string(),
+        owner: req(what, b, rec, "owner")?,
+        word: word(b, rec, "word")?,
+        glyph: word(b, rec, "glyph")?,
+    })
+}
+
+fn param_action(what: &str, b: &[u8], rec: &DescRecord) -> Result<Rec> {
+    Ok(Rec::ParamAction {
+        what: what.to_string(),
+        machine: req(what, b, rec, "machine")?,
+        word: word(b, rec, "word")?,
+        func: req(what, b, rec, "fn")?,
+    })
+}
+
+fn native_page_def(
+    what: &str,
+    spec: &DescSpec,
+    b: &[u8],
+    rec: &DescRecord,
+    replacement: bool,
+) -> Result<Rec> {
+    let version = if replacement { 2 } else { 1 };
+    let page = if replacement {
+        word(b, rec, "page")?
+    } else {
+        1
+    };
+    if word(b, rec, "version")? != version || page > 1 {
+        return Err(err!("{what}: invalid native page version/index"));
+    }
+    let flags = if replacement {
+        word(b, rec, "flags")?
+    } else {
+        0
+    };
+    if flags & !3 != 0 || (flags & 1 != 0 && page != 0) || (flags & 2 != 0 && page != 1) {
+        return Err(err!("{what}: invalid native page flags"));
+    }
+    let field = rec.field("binding")?;
+    let DescTy::Rec { rec: name, count } = &field.ty else {
+        return Err(err!("{what}: native bindings must be records"));
+    };
+    let binding = record(spec, name)?;
+    let mut bindings = vec![];
+    let mut absent = false;
+    let mut positions = 0u32;
+    for i in 0..*count {
+        let bytes = &b[field.off + i * binding.size..field.off + (i + 1) * binding.size];
+        let kind = word(bytes, binding, "kind")?;
+        if kind == 0 {
+            if bytes.iter().any(|&x| x != 0) {
+                return Err(err!("{what}: unused native binding must be zero"));
+            }
+            absent = true;
+            continue;
+        }
+        let position = word(bytes, binding, "position")?;
+        let value = word(bytes, binding, "value")?;
+        if absent
+            || !(1..=2).contains(&kind)
+            || position >= 8
+            || positions & (1 << position) != 0
+            || value >= 256
+        {
+            return Err(err!(
+                "{what}: native bindings need PARAM/LOCAL kinds, contiguous entries, unique positions 0..7 and values below 256"
+            ));
+        }
+        positions |= 1 << position;
+        bindings.push(crate::typed::NativeBinding {
+            kind,
+            value,
+            position,
+        });
+    }
+    if bindings.is_empty() {
+        return Err(err!("{what}: native page needs a binding"));
+    }
+    Ok(Rec::NativePage {
+        what: what.into(),
+        def: crate::typed::NativePageDef {
+            version,
+            page,
+            flags,
+            owner: req(what, b, rec, "owner")?,
+            title: req(what, b, rec, "title")?,
+            draw: req(what, b, rec, "draw")?,
+            event: req(what, b, rec, "event")?,
+            bindings,
         },
     })
 }
@@ -310,7 +443,9 @@ fn records(obj: &Dko, spec: &DescSpec) -> Result<Vec<Rec>> {
                 .iter()
                 .find(|r| r.kind == Some(kind))
                 .ok_or_else(|| err!("{what}: unknown record kind {kind}"))?;
-            if size != rec.size {
+            // A machine record of contract 1.1 ends before `stereo`: mono.
+            let legacy = rec.name == "dk_desc_machine" && size + 4 == rec.size;
+            if size != rec.size && !legacy {
                 return Err(err!(
                     "{what}: size {size} is not the {} bytes of {}",
                     rec.size,
@@ -324,13 +459,40 @@ fn records(obj: &Dko, spec: &DescSpec) -> Result<Vec<Rec>> {
                     b.len() - at
                 ));
             }
-            let rb = &b[at..at + size];
+            let mut padded;
+            let rb = if legacy {
+                padded = b[at..at + size].to_vec();
+                padded.resize(rec.size, 0);
+                &padded[..]
+            } else {
+                &b[at..at + size]
+            };
             out.push(match rec.name.as_str() {
+                "dk_desc_sample_bank" => Rec::SampleBank(crate::typed::SampleBankDef {
+                    local_id: word(rb, rec, "local_id")?,
+                    bank: req(&what, rb, rec, "bank")?,
+                    descriptor: req(&what, rb, rec, "descriptor")?,
+                    capacity_frames: word(rb, rec, "capacity_frames")?,
+                }),
+                "dk_desc_sample_tracks" => Rec::SampleTracks(crate::typed::SampleTracksDef {
+                    local_id: word(rb, rec, "local_id")?,
+                    records: req(&what, rb, rec, "records")?,
+                    control: req(&what, rb, rec, "control")?,
+                }),
                 "dk_desc_fx" => fx_def(&what, spec, rb, rec)?,
                 "dk_desc_fx_param" => fx_param(&what, spec, rb, rec)?,
                 "dk_desc_machine" => machine_def(&what, rb, rec)?,
                 "dk_desc_param" => param_def(&what, rb, rec)?,
+                "dk_desc_param_action" => param_action(&what, rb, rec)?,
+                "dk_desc_param_glyph" => param_glyph(&what, rb, rec)?,
+                "dk_desc_param_latched" => Rec::ParamLatched {
+                    what: what.clone(),
+                    owner: req(&what, rb, rec, "owner")?,
+                    word: word(rb, rec, "word")?,
+                },
                 "dk_desc_page" => page_def(&what, spec, rb, rec)?,
+                "dk_desc_native_page" => native_page_def(&what, spec, rb, rec, false)?,
+                "dk_desc_native_page_v2" => native_page_def(&what, spec, rb, rec, true)?,
                 _ => return Err(err!("{what}: no reader for {}", rec.name)),
             });
             at += size;
@@ -384,13 +546,40 @@ fn positions(what: &str, entries: &[PageKnob]) -> Result<Vec<u32>> {
 
 /// Put the records together: ids, owners and words are checked here.
 fn assemble(recs: Vec<Rec>) -> Result<Desc> {
+    let mut sample_bank = None;
+    let mut sample_tracks = None;
     let mut fxs: Vec<(String, FxDef)> = vec![];
     let mut fx_params: Vec<(String, String, u32, FxKnob)> = vec![];
     let mut machines: Vec<(MachineDef, VoiceDef)> = vec![];
     let mut params: Vec<(String, ParamDef)> = vec![];
+    let mut actions: Vec<(String, String, u32, String)> = vec![];
+    let mut glyphs: Vec<(String, String, u32, u32)> = vec![];
+    let mut latched = vec![];
     let mut pages: Vec<(String, String, String, String, Vec<PageKnob>)> = vec![];
+    let mut native_pages = vec![];
     for r in recs {
         match r {
+            Rec::NativePage { what, def } => native_pages.push((what, def)),
+            Rec::SampleBank(b) => {
+                if sample_bank.is_some() {
+                    return Err(err!("at most one sample bank per module"));
+                }
+                if !(1..=8192).contains(&b.capacity_frames) {
+                    return Err(err!("sample bank capacity must be 1 .. 8192 frames"));
+                }
+                sample_bank = Some(b);
+            }
+            Rec::SampleTracks(t) => {
+                if sample_tracks.is_some() {
+                    return Err(err!("at most one sample track table per module"));
+                }
+                if sample_bank.is_some() {
+                    return Err(err!(
+                        "a module declares a sample bank or a sample track table, not both"
+                    ));
+                }
+                sample_tracks = Some(t);
+            }
             Rec::Fx { what, def } => fxs.push((what, def)),
             Rec::FxParam {
                 what,
@@ -400,6 +589,19 @@ fn assemble(recs: Vec<Rec>) -> Result<Desc> {
             } => fx_params.push((what, fx, word, knob)),
             Rec::Machine { def, voice } => machines.push((def, voice)),
             Rec::Param { what, def } => params.push((what, def)),
+            Rec::ParamAction {
+                what,
+                machine,
+                word,
+                func,
+            } => actions.push((what, machine, word, func)),
+            Rec::ParamGlyph {
+                what,
+                owner,
+                word,
+                glyph,
+            } => glyphs.push((what, owner, word, glyph)),
+            Rec::ParamLatched { what, owner, word } => latched.push((what, owner, word)),
             Rec::Page {
                 what,
                 owner,
@@ -436,6 +638,64 @@ fn assemble(recs: Vec<Rec>) -> Result<Desc> {
         }
         ids.push(&p.id);
     }
+    for (what, machine, word, func) in actions {
+        let Some((_, p)) = params
+            .iter_mut()
+            .find(|(_, p)| p.machine == machine && p.word == word)
+        else {
+            return Err(err!(
+                "{what}: machine {machine} has no param at word {word} for a click action"
+            ));
+        };
+        if p.action.is_some() {
+            return Err(err!(
+                "{what}: param {} (word {word}) has two click actions",
+                p.id
+            ));
+        }
+        p.action = Some(func);
+    }
+    for (what, owner, word) in latched {
+        let Some((_, p)) = params
+            .iter_mut()
+            .find(|(_, p)| p.machine == owner && p.word == word)
+        else {
+            return Err(err!(
+                "{what}: machine {owner} has no param at word {word} for latching"
+            ));
+        };
+        if p.latched {
+            return Err(err!(
+                "{what}: param {} (word {word}) has two latched declarations",
+                p.id
+            ));
+        }
+        p.latched = true;
+    }
+    for (what, owner, word, glyph) in glyphs {
+        if glyph > 5 {
+            return Err(err!(
+                "{what}: unknown glyph {glyph} (DK_GLYPH_ENCODER .. DK_GLYPH_PLAY is 0 to 5)"
+            ));
+        }
+        if fxs.iter().any(|(_, f)| f.id == owner) {
+            return Err(err!(
+                "{what}: effect {owner}: glyphs on effect parameters are not supported yet"
+            ));
+        }
+        let Some((_, p)) = params
+            .iter_mut()
+            .find(|(_, p)| p.machine == owner && p.word == word)
+        else {
+            return Err(err!(
+                "{what}: machine {owner} has no param at word {word} for a glyph"
+            ));
+        };
+        if p.glyph.is_some() {
+            return Err(err!("{what}: param {} (word {word}) has two glyphs", p.id));
+        }
+        p.glyph = Some(glyph);
+    }
     for (m, _) in &machines {
         let mut words: Vec<u32> = params
             .iter()
@@ -462,7 +722,10 @@ fn assemble(recs: Vec<Rec>) -> Result<Desc> {
                     ));
                 }
                 if seen.contains(&k.word) {
-                    return Err(err!("{what}: knob {i}: word {} is on the page twice", k.word));
+                    return Err(err!(
+                        "{what}: knob {i}: word {} is on the page twice",
+                        k.word
+                    ));
                 }
                 seen.push(k.word);
             }
@@ -507,7 +770,11 @@ fn assemble(recs: Vec<Rec>) -> Result<Desc> {
                 mine.len()
             ));
         }
-        gapless(&who, "param", &mut mine.iter().map(|m| m.0).collect::<Vec<_>>())?;
+        gapless(
+            &who,
+            "param",
+            &mut mine.iter().map(|m| m.0).collect::<Vec<_>>(),
+        )?;
         mine.sort_by_key(|m| m.0);
         match fx_pages.iter().find(|p| p.0 == f.id) {
             Some((_, name, title, knobs)) => {
@@ -523,10 +790,14 @@ fn assemble(recs: Vec<Rec>) -> Result<Desc> {
                     match knobs.iter().filter(|k| k.word == w).count() {
                         1 => {}
                         0 => {
-                            return Err(err!("{who}: page {name}: param word {w} is not on the page"));
+                            return Err(err!(
+                                "{who}: page {name}: param word {w} is not on the page"
+                            ));
                         }
                         _ => {
-                            return Err(err!("{who}: page {name}: param word {w} is on the page twice"));
+                            return Err(err!(
+                                "{who}: page {name}: param word {w} is on the page twice"
+                            ));
                         }
                     }
                 }
@@ -551,10 +822,60 @@ fn assemble(recs: Vec<Rec>) -> Result<Desc> {
         }
         fx_out.push(f);
     }
+    let mut native_owners = vec![];
+    for (what, page) in &native_pages {
+        if !machines.iter().any(|(m, _)| m.id == page.owner)
+            || native_owners.contains(&(page.owner.clone(), page.page))
+        {
+            return Err(err!(
+                "{what}: native page needs a declared machine and unique native page indexes"
+            ));
+        }
+        native_owners.push((page.owner.clone(), page.page));
+        let owner_pages: Vec<_> = native_pages
+            .iter()
+            .filter(|(_, p)| p.owner == page.owner)
+            .collect();
+        if owner_pages
+            .iter()
+            .filter(|(_, p)| p.page == page.page)
+            .count()
+            > 1
+        {
+            return Err(err!("{what}: unique native page indexes required"));
+        }
+        if owner_pages.iter().any(|(_, p)| p.version != page.version)
+            || (page.version == 1 && owner_pages.len() != 1)
+            || (page.version == 2
+                && (owner_pages.len() != 2
+                    || !owner_pages.iter().any(|(_, p)| p.page == 0)
+                    || !owner_pages.iter().any(|(_, p)| p.page == 1)))
+        {
+            return Err(err!(
+                "{what}: native v2 requires exactly pages 0 and 1; cannot mix versions"
+            ));
+        }
+        for binding in &page.bindings {
+            if binding.kind == 1
+                && !params
+                    .iter()
+                    .any(|(_, p)| p.machine == page.owner && p.word == binding.value)
+            {
+                return Err(err!(
+                    "{what}: machine {} has no native-page parameter word {}",
+                    page.owner,
+                    binding.value
+                ));
+            }
+        }
+    }
     Ok(Desc {
+        sample_bank,
+        sample_tracks,
         fx: fx_out,
         params: params.into_iter().map(|p| p.1).collect(),
         pages: machine_pages,
+        native_pages: native_pages.into_iter().map(|(_, page)| page).collect(),
         voices: machines.iter().map(|m| m.1.clone()).collect(),
         machines: machines.into_iter().map(|m| m.0).collect(),
     })
@@ -648,6 +969,29 @@ mod tests {
         }
     }
 
+    #[test]
+    fn sample_bank_declarations_are_numeric_single_and_capacity_bounded() {
+        let mut r = Rb::new("dk_desc_sample_bank");
+        r.num("local_id", 17)
+            .text("bank", "_bank")
+            .text("descriptor", "_sample")
+            .num("capacity_frames", 8192);
+        let d = read(&obj(&r.done())).unwrap();
+        let b = d.sample_bank.unwrap();
+        assert_eq!((b.local_id, b.capacity_frames), (17, 8192));
+        assert_eq!(
+            (b.bank.as_str(), b.descriptor.as_str()),
+            ("_bank", "_sample")
+        );
+        assert!(err_of(&[&r, &r]).contains("one sample bank"));
+        for n in [0, 8193, u32::MAX] {
+            r.num("capacity_frames", n);
+            assert!(err_of(&[&r]).contains("capacity"));
+        }
+        r.num("capacity_frames", 1).text("bank", "");
+        assert!(err_of(&[&r]).contains("bank is empty"));
+    }
+
     const AUTO: u32 = 255;
 
     fn fx(id: &str) -> Rb {
@@ -681,7 +1025,8 @@ mod tests {
             .text("short_name", "PLK")
             .text("render", "_pk_render")
             .text("note_on", "_pk_note_on")
-            .text("desc", "_pk_desc");
+            .text("desc", "_pk_desc")
+            .num("stereo", 0);
         r
     }
 
@@ -698,9 +1043,25 @@ mod tests {
         r
     }
 
+    fn action(machine: &str, word: u32, func: &str) -> Rb {
+        let mut r = Rb::new("dk_desc_param_action");
+        r.text("machine", machine)
+            .num("word", word)
+            .text("fn", func);
+        r
+    }
+
+    fn glyph(owner: &str, word: u32, glyph: u32) -> Rb {
+        let mut r = Rb::new("dk_desc_param_glyph");
+        r.text("owner", owner).num("word", word).num("glyph", glyph);
+        r
+    }
+
     fn page(owner: &str) -> Rb {
         let mut r = Rb::new("dk_desc_page");
-        r.text("owner", owner).text("name", "PLUCK").text("title", "Pluck");
+        r.text("owner", owner)
+            .text("name", "PLUCK")
+            .text("title", "Pluck");
         r
     }
 
@@ -733,7 +1094,9 @@ mod tests {
     /// An effect with one parameter and a page for it.
     fn fshift() -> (Rb, Rb, Rb) {
         let mut pg = page("fshift");
-        pg.text("name", "FSH").text("title", "Freq Shifter").knob(0, 0, 0);
+        pg.text("name", "FSH")
+            .text("title", "Freq Shifter")
+            .knob(0, 0, 0);
         (fx("fshift"), fx_param("fshift", 0, "Freq Shift"), pg)
     }
 
@@ -775,7 +1138,12 @@ mod tests {
     fn an_effect_without_a_page_keeps_the_defaults_of_its_params() {
         let mut p1 = fx_param("fshift", 1, "Other");
         p1.num("def", 2.0f32.to_bits()).num("max", 3.0f32.to_bits());
-        let d = read(&obj(&all(&[&fx("fshift"), &p1, &fx_param("fshift", 0, "A")]))).unwrap();
+        let d = read(&obj(&all(&[
+            &fx("fshift"),
+            &p1,
+            &fx_param("fshift", 0, "A"),
+        ])))
+        .unwrap();
         let f = &d.fx[0];
         assert!(f.tab.is_none() && f.title.is_none() && f.knob.is_empty());
         assert_eq!(f.defaults, [0.0f32.to_bits(), 2.0f32.to_bits()]);
@@ -785,7 +1153,13 @@ mod tests {
     fn auto_positions_take_the_lowest_free_one_in_entry_order() {
         let mut g = page("fshift");
         g.knob(0, 0, AUTO).knob(1, 1, 0).knob(2, 2, AUTO);
-        let recs = [&fx("fshift"), &fx_param("fshift", 0, "A"), &fx_param("fshift", 1, "B"), &fx_param("fshift", 2, "C"), &g];
+        let recs = [
+            &fx("fshift"),
+            &fx_param("fshift", 0, "A"),
+            &fx_param("fshift", 1, "B"),
+            &fx_param("fshift", 2, "C"),
+            &g,
+        ];
         let d = read(&obj(&all(&recs))).unwrap();
         let pos: Vec<_> = d.fx[0].knob.iter().map(|k| k.position).collect();
         assert_eq!(pos, [Some(1), Some(0), Some(2)]);
@@ -795,7 +1169,12 @@ mod tests {
     fn effects_are_sorted_and_an_id_twice_is_refused() {
         let mut b = fx("zeta").done();
         b.extend(fx("alpha").done());
-        let ids: Vec<_> = read(&obj(&b)).unwrap().fx.into_iter().map(|f| f.id).collect();
+        let ids: Vec<_> = read(&obj(&b))
+            .unwrap()
+            .fx
+            .into_iter()
+            .map(|f| f.id)
+            .collect();
         assert_eq!(ids, ["alpha", "zeta"]);
         assert!(err_of(&[&fx("same"), &fx("same")]).contains("twice"));
     }
@@ -804,23 +1183,224 @@ mod tests {
     fn machine_records_read_to_machines_params_pages_and_voices() {
         let mut g = page("pluck");
         g.knob(0, 1, AUTO).knob(1, 0, 3);
-        let recs = [&machine("pluck"), &param("pluck", "pk_b", 1), &param("pluck", "pk_a", 0), &g];
+        let recs = [
+            &machine("pluck"),
+            &param("pluck", "pk_b", 1),
+            &param("pluck", "pk_a", 0),
+            &g,
+        ];
         let d = read(&obj(&all(&recs))).unwrap();
         assert_eq!(d.machines.len(), 1);
-        assert_eq!((d.machines[0].name.as_str(), d.machines[0].short.as_str()), ("Pluck", "PLK"));
+        assert_eq!(
+            (d.machines[0].name.as_str(), d.machines[0].short.as_str()),
+            ("Pluck", "PLK")
+        );
         assert_eq!(d.voices[0].render, "_pk_render");
         assert_eq!(d.voices[0].desc, "_pk_desc");
         // in word order
         let ids: Vec<_> = d.params.iter().map(|p| p.id.as_str()).collect();
         assert_eq!(ids, ["pk_a", "pk_b"]);
-        assert_eq!((d.params[0].min, d.params[0].max, d.params[0].default), (0, 0x7f00, 0x4000));
+        assert_eq!(
+            (d.params[0].min, d.params[0].max, d.params[0].default),
+            (0, 0x7f00, 0x4000)
+        );
         let [pg] = d.pages.as_slice() else {
             panic!("one page")
         };
-        assert_eq!((pg.machine.as_str(), pg.name.as_str(), pg.title.as_str()), ("pluck", "PLUCK", "Pluck"));
+        assert_eq!(
+            (pg.machine.as_str(), pg.name.as_str(), pg.title.as_str()),
+            ("pluck", "PLUCK", "Pluck")
+        );
         assert_eq!(pg.knobs[0].word, 1);
         assert_eq!(pg.knobs[0].position, None);
         assert_eq!(pg.knobs[1].position, Some(3));
+    }
+
+    #[test]
+    fn a_click_action_joins_the_param_at_its_word() {
+        let m = machine("pluck");
+        let recs = [
+            &m,
+            &param("pluck", "pk_b", 1),
+            &param("pluck", "pk_a", 0),
+            &action("pluck", 1, "_pk_click"),
+        ];
+        let d = read(&obj(&all(&recs))).unwrap();
+        assert_eq!(d.params[0].action, None);
+        assert_eq!(d.params[1].action.as_deref(), Some("_pk_click"));
+        // no param at that word, and two actions on one
+        let e = err_of(&[&m, &param("pluck", "a", 0), &action("pluck", 1, "f")]);
+        assert!(e.contains("no param at word 1"), "{e}");
+        let e = err_of(&[&m, &param("pluck", "a", 0), &action("nope", 0, "f")]);
+        assert!(e.contains("no param at word 0"), "{e}");
+        let e = err_of(&[
+            &m,
+            &param("pluck", "a", 0),
+            &action("pluck", 0, "f"),
+            &action("pluck", 0, "g"),
+        ]);
+        assert!(e.contains("two click actions"), "{e}");
+        let mut empty = action("pluck", 0, "");
+        empty.text("fn", "");
+        assert!(err_of(&[&m, &param("pluck", "a", 0), &empty]).contains("fn is empty"));
+    }
+
+    #[test]
+    fn native_callback_page_validates_version_owner_words_and_positions() {
+        let native = |owner: &str| {
+            let mut page = Rb::new("dk_desc_native_page");
+            page.num("version", 1)
+                .text("owner", owner)
+                .text("title", "Native proof")
+                .text("draw", "native_draw")
+                .text("event", "native_event");
+            let at = page.rec.field("binding").unwrap().off;
+            for (i, values) in [[1u32, 0, 0], [2, 0, 2], [1, 1, 3]].iter().enumerate() {
+                for (j, value) in values.iter().enumerate() {
+                    page.b[at + i * 12 + j * 4..at + i * 12 + j * 4 + 4]
+                        .copy_from_slice(&value.to_be_bytes());
+                }
+            }
+            page
+        };
+        let m = machine("proof");
+        let p0 = param("proof", "start", 0);
+        let p1 = param("proof", "end", 1);
+        let page = native("proof");
+        let d = read(&obj(&all(&[&m, &p0, &p1, &page]))).unwrap();
+        assert_eq!(
+            d.native_pages[0]
+                .bindings
+                .iter()
+                .map(|b| (b.kind, b.position))
+                .collect::<Vec<_>>(),
+            [(1, 0), (2, 2), (1, 3)]
+        );
+        assert!(err_of(&[&m, &p0, &p1, &native("absent")]).contains("declared machine"));
+        assert!(err_of(&[&m, &p0, &page]).contains("parameter word 1"));
+        assert!(err_of(&[&m, &p0, &p1, &page, &page]).contains("unique native page indexes"));
+        let mut bad = native("proof");
+        bad.num("version", 2);
+        assert!(err_of(&[&m, &p0, &p1, &bad]).contains("version/index"));
+        let mut bad = native("proof");
+        let at = bad.rec.field("binding").unwrap().off;
+        bad.b[at + 20..at + 24].copy_from_slice(&0u32.to_be_bytes()); // LOCAL duplicates encoder A
+        assert!(err_of(&[&m, &p0, &p1, &bad]).contains("unique positions"));
+    }
+
+    #[test]
+    fn native_replacement_pages_require_a_complete_unmixed_pair() {
+        let replacement = |index: u32| {
+            let mut page = Rb::new("dk_desc_native_page_v2");
+            page.num("version", 2)
+                .num("page", index)
+                .text("owner", "proof")
+                .text("title", "Replacement")
+                .text("draw", "draw")
+                .text("event", "event");
+            let at = page.rec.field("binding").unwrap().off;
+            for (j, value) in [1u32, 0, 7].iter().enumerate() {
+                page.b[at + j * 4..at + j * 4 + 4].copy_from_slice(&value.to_be_bytes());
+            }
+            page
+        };
+        let m = machine("proof");
+        let p = param("proof", "start", 0);
+        let a = replacement(0);
+        let b = replacement(1);
+        let pages = read(&obj(&all(&[&m, &p, &a, &b]))).unwrap().native_pages;
+        assert_eq!(
+            pages
+                .iter()
+                .map(|p| (p.version, p.page))
+                .collect::<Vec<_>>(),
+            [(2, 0), (2, 1)]
+        );
+        assert!(err_of(&[&m, &p, &a]).contains("exactly pages 0 and 1"));
+        assert!(err_of(&[&m, &p, &a, &a]).contains("unique native page indexes"));
+        assert!(err_of(&[&m, &p, &replacement(2), &b]).contains("version/index"));
+        let mut overlay = replacement(0);
+        overlay.num("flags", 1);
+        assert_eq!(
+            read(&obj(&all(&[&m, &p, &overlay, &b])))
+                .unwrap()
+                .native_pages[0]
+                .flags,
+            1
+        );
+        let mut wide = replacement(1);
+        wide.num("flags", 2);
+        assert_eq!(
+            read(&obj(&all(&[&m, &p, &a, &wide]))).unwrap().native_pages[1].flags,
+            2
+        );
+        for (index, flags) in [(0, 2), (1, 1), (0, 3), (1, 3), (0, 4)] {
+            let mut bad = replacement(index);
+            bad.num("flags", flags);
+            assert!(err_of(&[&m, &p, &bad, &b]).contains("invalid native page flags"));
+        }
+        let mut legacy = Rb::new("dk_desc_native_page");
+        legacy
+            .num("version", 1)
+            .text("owner", "proof")
+            .text("title", "Legacy")
+            .text("draw", "draw")
+            .text("event", "event");
+        let at = legacy.rec.field("binding").unwrap().off;
+        legacy.b[at..at + 4].copy_from_slice(&2u32.to_be_bytes());
+        assert!(err_of(&[&m, &p, &a, &legacy]).contains("cannot mix"));
+    }
+
+    #[test]
+    fn latched_parameters_join_declared_machine_words_only() {
+        let latched = |owner: &str, word: u32| {
+            let mut r = Rb::new("dk_desc_param_latched");
+            r.text("owner", owner).num("word", word);
+            r
+        };
+        let m = machine("pluck");
+        let a = param("pluck", "a", 0);
+        let b = param("pluck", "b", 1);
+        let latch = latched("pluck", 0);
+        let d = read(&obj(&all(&[&m, &a, &b, &latch]))).unwrap();
+        assert!(d.params[0].latched);
+        assert!(!d.params[1].latched);
+        assert!(err_of(&[&m, &a, &latch, &latch]).contains("two latched declarations"));
+        assert!(err_of(&[&m, &a, &latched("absent", 0)]).contains("no param at word 0"));
+        assert!(err_of(&[&m, &a, &latched("pluck", 1)]).contains("no param at word 1"));
+    }
+
+    #[test]
+    fn a_glyph_joins_the_param_at_its_word() {
+        let m = machine("pluck");
+        let recs = [
+            &m,
+            &param("pluck", "pk_b", 1),
+            &param("pluck", "pk_a", 0),
+            &glyph("pluck", 1, 4),
+        ];
+        let d = read(&obj(&all(&recs))).unwrap();
+        assert_eq!(d.params[0].glyph, None);
+        assert_eq!(d.params[1].glyph, Some(4));
+        // an effect owner, no param at that word, two glyphs on one, a value that is no glyph
+        let e = err_of(&[
+            &m,
+            &fx("fshift"),
+            &param("pluck", "a", 0),
+            &glyph("fshift", 0, 1),
+        ]);
+        assert!(e.contains("not supported yet"), "{e}");
+        let e = err_of(&[&m, &param("pluck", "a", 0), &glyph("pluck", 1, 1)]);
+        assert!(e.contains("no param at word 1"), "{e}");
+        let e = err_of(&[
+            &m,
+            &param("pluck", "a", 0),
+            &glyph("pluck", 0, 1),
+            &glyph("pluck", 0, 2),
+        ]);
+        assert!(e.contains("two glyphs"), "{e}");
+        let e = err_of(&[&m, &param("pluck", "a", 0), &glyph("pluck", 0, 9)]);
+        assert!(e.contains("unknown glyph 9"), "{e}");
     }
 
     #[test]
@@ -891,7 +1471,11 @@ mod tests {
     #[test]
     fn a_malformed_text_field_is_refused() {
         let id = |b: &mut Vec<u8>, f: &dyn Fn(&mut [u8])| {
-            let off = record(&sdkgen::desc_spec(), "dk_desc_fx").unwrap().field("id").unwrap().off;
+            let off = record(&sdkgen::desc_spec(), "dk_desc_fx")
+                .unwrap()
+                .field("id")
+                .unwrap()
+                .off;
             f(&mut b[off..off + 16]);
         };
         let broken = |f: &dyn Fn(&mut [u8])| {
@@ -908,13 +1492,23 @@ mod tests {
     fn a_malformed_record_is_refused() {
         let mut b = fx("fshift").done();
         b[3] = 99;
-        assert!(read(&obj(&b)).unwrap_err().0.contains("unknown record kind"));
+        assert!(
+            read(&obj(&b))
+                .unwrap_err()
+                .0
+                .contains("unknown record kind")
+        );
         let mut b = fx("fshift").done();
         b[7] += 4;
         assert!(read(&obj(&b)).unwrap_err().0.contains("size"));
         // a record cut short
         let b = fx("fshift").done();
-        assert!(read(&obj(&b[..b.len() - 4])).unwrap_err().0.contains("do not fit"));
+        assert!(
+            read(&obj(&b[..b.len() - 4]))
+                .unwrap_err()
+                .0
+                .contains("do not fit")
+        );
         // routes with a bit that is no route
         let mut r = fx("fshift");
         r.num("routes", 8);

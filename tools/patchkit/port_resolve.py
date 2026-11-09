@@ -67,6 +67,7 @@ Rule kinds (SHARC rules use the image's sharcdb through tools/sharc_dev/sharc.py
   cf_ptr         as cf_func (hash, ordinal, offset), but the 4 bytes at entry + offset are an absolute address literal
                  (a `lea table,An`, a `pea`, an `addi.l #table,Dn`): the anchor is the table the literal points to
                  (kind data, `src` = the literal, `len` bytes of the table hashed).
+  cf_literal     as cf_ptr, but the target is a RAM variable outside the image: a `value` anchor (addr = the literal, src = where it is read, the 4 bytes at src hashed)
 
   cf_reset_init_calls   the two reset-path calls (copy helper, clear helper) at the start of the reset code, found by
                  tools/coldfire/regions.py `reset_facts` (a masked signature of the clear helper plus the call sites):
@@ -625,6 +626,22 @@ def resolve_cf_anchor(cf: CfFacts, rule: dict) -> dict:
             "src": src,
             "sha256": sha(cf.bytes_at(target, n)),
         }
+    if kind == "cf_literal":
+        # a RAM variable the code reaches through an absolute 32-bit literal: the anchor value is the literal (the variable's address) and
+        # `src` the literal at entry + offset of the function `hash`; the 4 bytes at `src` are hashed
+        src = cf_func_addr(cf, rule)
+        target = int.from_bytes(cf.bytes_at(src, 4), "big")
+        if not 0x4000_0000 <= target < 0x5000_0000:
+            raise ResolveError(
+                f"{rule['name']}: the literal {target:#x} is not a main-OS RAM address"
+            )
+        return {
+            "kind": "value",
+            "addr": target,
+            "src": src,
+            "len": 4,
+            "sha256": sha(cf.bytes_at(src, 4)),
+        }
     if kind in ("cf_func", "cf_vtable_slot"):
         addr = cf_func_addr(cf, rule) if kind == "cf_func" else cf_vtable_addr(cf, rule)
         n = int(rule["len"])
@@ -687,7 +704,8 @@ def resolve_anchor(dsp: Dsp, rule: dict) -> dict:
         data = dsp.stream.read(addr, int(width))
         return {
             "kind": "value",
-            "addr": int(rows[0][0]),
+            # a literal is a 32-bit immediate: the DSP's DDR addresses (0x8422b9c8) read as negative in the database
+            "addr": int(rows[0][0]) & 0xFFFF_FFFF,
             "src": addr,
             "len": int(width),
             "sha256": sha(data),

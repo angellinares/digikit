@@ -1,9 +1,0 @@
-# The firmware's own MidiRpc Screenshot (0x04), read over the emulated USB MIDI path by tools/device/dkscreen.py, equals the emulator's frame capture.
-[scenario]
-name = "upload-screenshot"
-kind = "upload"
-devices = ["dt2", "dn2"]
-tier = "quick"
-
-[upload]
-part = "screenshot"

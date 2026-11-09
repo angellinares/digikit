@@ -21,7 +21,7 @@ name its place, and rehearses rung C in the coupled emulator with the images and
 | 6 | ODD_COPY_DONE: the odd voice copied the even voice's block | registered type, odd voice | both |
 | 7 | EPILOGUE_DONE: every register back but the saved R registers and L4 | registered type | both |
 
-A stock type (below 7, the engine's own) leaves only stage 1: its cost is 6 instructions a call. Two counters go with the word: dispatches to registered
+A stock type (below 7, the engine's own) leaves only stage 1: its cost is 6 instructions a call. With no registered type (`_dv_mask` is 0, built by voice 0 once per block) a voice other than 0 leaves no breadcrumb and returns to the stock renderer after one check. Two counters go with the word: dispatches to registered
 types (counted at stage 4) and routines that returned (at stage 5). `dispatches - returns` is 0 between calls, 1 while a routine runs, and stays 1 when
 the core stops inside one.
 
@@ -79,7 +79,7 @@ words are all that came through before. The first rung C halt on the device answ
 
 **Two limits of the breadcrumb.** A halt in stock code (a stock voice, the rest of the engine) leaves the last registered voice's breadcrumb, usually `EPILOGUE_DONE`:
 read `dispatches - returns` (0: no routine was running) and the frozen beats. The crumb word the ColdFire sees in a healthy run alternates between two values
-depending on which record the copy came from: the last voice entered (`HOOK_ENTERED voice=31`) and the last registered voice's `EPILOGUE_DONE`.
+depending on which record the copy came from: the last voice that wrote one and the last registered voice's `EPILOGUE_DONE`. With no registered type only voice 0 writes (`HOOK_ENTERED voice=0`).
 
 ## 3. Quieter log, full words on a stop
 

@@ -1,5 +1,14 @@
-import { expect, test } from 'vitest';
-import { decodeFault, faultRows, faultSummary, settingsValue } from '../src/fault.ts';
+import { expect, test, vi } from 'vitest';
+import { CMD, STATUS } from '../src/gen_proto.ts';
+import type { DkSession } from '../src/dkupload-core.ts';
+import {
+  decodeFault,
+  faultRows,
+  faultSummary,
+  readSettingsRecord,
+  readSettingsRecordIfPresent,
+  settingsValue,
+} from '../src/fault.ts';
 
 function record(entries: [string, Uint8Array][]): Uint8Array {
   const body = entries.flatMap(([key, value]) => [
@@ -71,4 +80,34 @@ test('the summary joins the rows for one line', () => {
   expect(f(2, 3, 4, 3, 0, 'test/dyn-fx-hang')).toBe('DSP STOP in DYN-FX-HANG, FX SEND STEP 3');
   expect(f(1, 0, 0, 0, 0x12a4f0, 'test/crash')).toBe('CPU CRASH in CRASH, PC 0012A4F0');
   expect(f(3, 0, 0, 0, 0, 'runtime')).toBe('CPU PANIC in RUNTIME');
+});
+
+function settingsReply(status: number, body = new Uint8Array()) {
+  return { cmd: CMD.SETTINGS, seq: 0, status, body };
+}
+const settingsCode = (name: string) => STATUS.find(([, status]) => status === name)![0];
+
+test('an absent settings record is explicit and the strict reader still rejects it', async () => {
+  const request = vi.fn<DkSession['request']>().mockResolvedValue(settingsReply(settingsCode('E_SET_NOKEY')));
+  await expect(readSettingsRecordIfPresent({ request })).resolves.toBeNull();
+  await expect(readSettingsRecord({ request })).rejects.toMatchObject({ kind: 'device', status: 'E_SET_NOKEY' });
+});
+
+test('an optional settings read preserves a real record', async () => {
+  const rec = record([['fx/route/test/gain', Uint8Array.of(1)]]);
+  const body = new Uint8Array(10 + rec.length);
+  new DataView(body.buffer).setUint32(6, rec.length);
+  body.set(rec, 10);
+  const request = vi.fn<DkSession['request']>().mockResolvedValue(settingsReply(0, body));
+  await expect(readSettingsRecordIfPresent({ request })).resolves.toEqual(rec);
+});
+
+test('other device errors, malformed replies and transport errors never become absent settings', async () => {
+  const request = vi.fn<DkSession['request']>().mockResolvedValue(settingsReply(settingsCode('E_SET_OFF')));
+  await expect(readSettingsRecordIfPresent({ request })).rejects.toMatchObject({ kind: 'device', status: 'E_SET_OFF' });
+  request.mockResolvedValueOnce(settingsReply(0));
+  await expect(readSettingsRecordIfPresent({ request })).rejects.toThrow('short record reply');
+  const error = new Error('transport lost E_SET_NOKEY');
+  request.mockRejectedValueOnce(error);
+  await expect(readSettingsRecordIfPresent({ request })).rejects.toBe(error);
 });

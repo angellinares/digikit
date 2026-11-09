@@ -3,6 +3,7 @@
 //! `wasm.rs`) in node.
 
 use crate::codec::*;
+use crate::gen_proto::{CAP_FILEHASH, CAP_FOLDERS, CAP_READ, CAP_VERIFY};
 use crate::proto::{READ_MAX, Status};
 use crate::session::Transport;
 use std::collections::VecDeque;
@@ -11,7 +12,7 @@ use std::time::Duration;
 struct Upload {
     path: String,
     size: usize,
-    sha: [u8; 32],
+    hash: [u8; 32],
     data: Vec<u8>,
     last: Option<(usize, usize)>,
 }
@@ -27,6 +28,8 @@ pub struct MockDevice {
     upload: Option<Upload>,
     pub safe_mode: bool,
     pub no_store: bool,
+    /// A runtime of the old store format: its INFO has no `CAP_FILEHASH`.
+    pub old_store: bool,
     /// Fault injection: the next n requests are lost before they are handled / the next n replies are lost.
     pub drop_requests: u32,
     pub drop_replies: u32,
@@ -48,6 +51,7 @@ impl MockDevice {
             upload: None,
             safe_mode: false,
             no_store: false,
+            old_store: false,
             drop_requests: 0,
             drop_replies: 0,
             log: Vec::new(),
@@ -104,6 +108,16 @@ impl MockDevice {
                 b.extend(self.free_bytes().to_be_bytes());
                 b.extend((MAX_CHUNK as u32).to_be_bytes());
                 b.push(self.safe_mode as u8 | (self.upload.is_some() as u8) << 1);
+                // the log range, the runtime version and the capability bits
+                b.extend([0; 8]);
+                b.extend(0x0001_0000u32.to_be_bytes());
+                b.extend(
+                    (CAP_VERIFY
+                        | CAP_READ
+                        | CAP_FOLDERS
+                        | if self.old_store { 0 } else { CAP_FILEHASH })
+                    .to_be_bytes(),
+                );
                 Self::reply(cmd, seq, Status::Ok, &b)
             }
             CMD_CLEAR => {
@@ -131,18 +145,18 @@ impl MockDevice {
                 let mut all: Vec<(&str, usize, [u8; 32])> = self
                     .files
                     .iter()
-                    .map(|(p, d)| (p.as_str(), d.len(), sha256(d)))
+                    .map(|(p, d)| (p.as_str(), d.len(), file_hash(d)))
                     .chain(self.dirs.iter().map(|p| (p.as_str(), 0, [0u8; 32])))
                     .filter(|(p, _, _)| prefix.is_none_or(|x| p.as_bytes().starts_with(x)))
                     .collect();
                 all.sort_by(|a, b| a.0.cmp(b.0));
                 let mut entries = Vec::new();
                 let mut n = 0u8;
-                for (p, size, sha) in all.iter().skip(first) {
+                for (p, size, hash) in all.iter().skip(first) {
                     let mut e = p.as_bytes().to_vec();
                     e.push(0);
                     e.extend((*size as u32).to_be_bytes());
-                    e.extend(sha);
+                    e.extend(hash);
                     // 1 KiB on the wire: status + total + n (6 bytes) plus the entries, packed 8 for 7.
                     if encode(cmd, true, 0, &[&[0u8; 6][..], &entries, &e].concat()).len()
                         > MAX_REPLY_WIRE
@@ -172,8 +186,8 @@ impl MockDevice {
                     return r(Status::Path);
                 }
                 let size = u32::from_be_bytes(body[nul + 1..nul + 5].try_into().unwrap()) as usize;
-                let mut sha = [0u8; 32];
-                sha.copy_from_slice(&body[nul + 5..]);
+                let mut hash = [0u8; 32];
+                hash.copy_from_slice(&body[nul + 5..]);
                 self.upload = None;
                 let need = size.div_ceil(512) as u64 * 512;
                 if need > self.free_bytes() as u64 {
@@ -182,7 +196,7 @@ impl MockDevice {
                 self.upload = Some(Upload {
                     path: path.into(),
                     size,
-                    sha,
+                    hash,
                     data: Vec::new(),
                     last: None,
                 });
@@ -222,7 +236,7 @@ impl MockDevice {
                     self.upload = Some(up);
                     return r(Status::Length);
                 }
-                if sha256(&up.data) != up.sha {
+                if file_hash(&up.data) != up.hash {
                     return r(Status::Hash);
                 }
                 self.files.retain(|(p, _)| *p != up.path);
@@ -393,7 +407,7 @@ impl MockDevice {
                     return r(Status::NoFile);
                 };
                 if body.len() == nul + 1 {
-                    return Self::reply(cmd, seq, Status::Ok, &sha256(d));
+                    return Self::reply(cmd, seq, Status::Ok, &file_hash(d));
                 }
                 let at = u32::from_be_bytes(body[nul + 1..nul + 5].try_into().unwrap()) as usize;
                 let len = u32::from_be_bytes(body[nul + 5..].try_into().unwrap()) as usize;
@@ -403,7 +417,7 @@ impl MockDevice {
                 if len == 0 || len > d.len() - at {
                     return r(Status::Length);
                 }
-                Self::reply(cmd, seq, Status::Ok, &sha256(&d[at..at + len]))
+                Self::reply(cmd, seq, Status::Ok, &file_hash(&d[at..at + len]))
             }
             CMD_ABORT => {
                 self.upload = None;

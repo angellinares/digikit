@@ -36,6 +36,8 @@ from tools.patchkit import pk_device
 
 ROOT = pathlib.Path(__file__).resolve().parents[2]
 SECTOR_RECORD = 8 + 64 + 512
+# The existing firmware kit-library sector ranges (hi exclusive), shared by fixed FX policies.
+KIT_AREAS = {"dt2": ((0x16000, 0x17000),), "dn2": ((0x2000, 0x2100),)}
 
 
 def card_store(device: str) -> tuple[int, int]:
@@ -85,6 +87,26 @@ def card_store_hits(
     if isinstance(sectors, (bytes, bytearray)):
         sectors = parse_overlay(bytes(sectors))
     return sorted(s for s in sectors if lo <= s < hi)
+
+
+def runtime_card_policy(
+    sectors, device: str, firmware_areas=(), store_extra=frozenset()
+) -> dict:
+    """The scenario common_checks policy, retaining its exact store and low-sector restrictions."""
+    store = pk_device.store_of(device)
+    allowed = {store.sel_a, store.sel_b}
+    return {
+        "invalid_store": sorted(
+            set(card_store_hits(sectors, device)) - allowed - store_extra
+        ),
+        "invalid_low": sorted(
+            s
+            for s in set(sectors)
+            if s < 0x50000
+            and s not in allowed
+            and not any(lo <= s < hi for lo, hi in firmware_areas)
+        ),
+    }
 
 
 def sector_ranges(sectors) -> list[tuple[int, int]]:

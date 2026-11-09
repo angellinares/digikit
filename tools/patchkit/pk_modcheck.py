@@ -4,21 +4,24 @@
     uv run python -m tools.patchkit.pk_modcheck NAME [--device dt2|dn2] [--trace]      (mise run module:check NAME)
 
 NAME is a module id (`<author/name>`) or its last part (`<name>`). An effect module runs tests/modules/test_fx_conformance.py. A machine module (tools/patchkit/pk_conform.py) runs the conformance
-suite, tests/modules/test_machine_conformance.py, for its devices (docs/TESTING.md "Machine conformance"). The same process includes the module's own tests: `modules/<group>/<name>/tests/**/test_*.py` and its scenarios in `tests/scenarios/*.toml` (only those run, at every tier). One pytest process runs all of them; the exit code is pytest's.
-Own tests may build or launch an emulator. A service/raw module with no own tests has its objects checked against their sources, then gets the size and fit lines; it returns success. This command does not prove every module loads in patched firmware.
+suite, tests/modules/test_machine_conformance.py, for its devices (docs/TESTING.md "Machine conformance"). The same process includes the module's own tests: `modules/<group>/<name>/tests/**/test_*.py` and its scenarios in `tests/scenarios/*.toml` (only those run, at every tier). One pytest process runs those Python tests. Module-owned Nx `test-device` targets then run their declared TypeScript device acceptance; any failing stage stops the check before size/fit.
+Own tests may build or launch an emulator. A service/raw module with no Python tests has its objects checked against their sources, then runs its owned device target if present. Size and fit follow only after both stages pass. This command does not prove every module loads in patched firmware.
 """
 
 from __future__ import annotations
 
 import argparse
 import os
+import re
 import subprocess
 import sys
 import tempfile
+import tomllib
 from pathlib import Path
 
 ROOT = Path(__file__).resolve().parents[2]
 
+from tools import python_env  # noqa: E402
 from tools.patchkit import modroots, pk_conform  # noqa: E402
 
 CONFORMANCE = "tests/modules/test_machine_conformance.py"
@@ -43,6 +46,16 @@ def own_tests(mid: str) -> list[str]:
     return [p.relative_to(ROOT).as_posix() for p in found]
 
 
+def _scenario_tests(kinds: set[str]) -> list[str]:
+    """The tests/digikit test files that run scenarios of KINDS (their `cases((kinds), device)` call)."""
+    files: set[str] = set()
+    for path in sorted((ROOT / "tests/digikit").glob("test_*.py")):
+        match = re.search(r"cases\(\(([^)]*)\)", path.read_text(encoding="utf-8"))
+        if match and kinds.intersection(re.findall(r'"([a-z]+)"', match.group(1))):
+            files.add(path.relative_to(ROOT).as_posix())
+    return sorted(files)
+
+
 def plan(mid: str, device: str | None) -> tuple[list[str], dict[str, str]]:
     """(pytest paths, extra environment) for module MID."""
     paths: list[str] = []
@@ -61,16 +74,80 @@ def plan(mid: str, device: str | None) -> tuple[list[str], dict[str, str]]:
         p.stem for p in (modroots.module_dir(mid) / "tests/scenarios").glob("*.toml")
     )
     if scen:
-        from tools.devtools import verify_route
-
         kinds = {
-            verify_route.scenario_refs()[f][0]
-            for f in verify_route.module_scenario_files(mid)
+            tomllib.loads(p.read_text(encoding="utf-8"))
+            .get("scenario", {})
+            .get("kind", "")
+            for p in (modroots.module_dir(mid) / "tests/scenarios").glob("*.toml")
         }
-        paths += [t for t in verify_route.scenario_tests(kinds) if t not in paths]
+        paths += [t for t in _scenario_tests(kinds) if t not in paths]
         env["DIGIKIT_SCENARIOS"] = ",".join(scen)
         env["DIGIKIT_TIER"] = "full"
     return paths, env
+
+
+def own_device_targets(mid: str) -> list[str]:
+    """Nx device acceptance targets at the module root and its nested test-only owners."""
+    from tools.devtools import nx_graph
+
+    nodes = nx_graph.nx_graph()["nodes"]
+    node = nodes.get(mid)
+    if node is None:
+        return []
+    data = node["data"]
+    owners = [mid] if "test-device" in data.get("targets", {}) else []
+    root = data.get("root")
+    if root:
+        for name, candidate in nodes.items():
+            candidate = candidate["data"]
+            if (
+                "test-only" in candidate.get("tags", [])
+                and candidate.get("root", "").startswith(root + "/")
+                and "test-device" in candidate.get("targets", {})
+            ):
+                owners.append(name)
+    roots: dict[str, str] = {}
+    for owner in sorted(owners):
+        owner_root = nodes[owner]["data"].get("root")
+        if owner_root and owner_root in roots:
+            raise SystemExit(
+                f"{mid}: ambiguous device acceptance root {owner_root}: {roots[owner_root]}, {owner}"
+            )
+        if owner_root:
+            roots[owner_root] = owner
+    return [f"{owner}:test-device" for owner in sorted(owners)]
+
+
+def run_device_targets(mid: str, targets: list[str]) -> int:
+    """Resolve both-device inputs once, then schedule all owned suites serially through Nx."""
+    from tools.devtools import benchlock
+    from tools.patchkit import pk_harness
+
+    binaries = {}
+    # The plain daemon build needs the same shared protection as the legacy harness path.
+    # Nested shared resolution is supported; release this span before the target owns its work.
+    with benchlock.hold("shared", f"module:check {mid} daemon resolution"):
+        for device, version in (("dt2", "1.17"), ("dn2", "1.12")):
+            syx, _ready = pk_harness.firmware_inputs(pk_harness.Cell(device, version))
+            binaries[f"DIGI_EMUD_{device.upper()}"] = str(
+                pk_harness.daemon_binary(device, syx, pgo=None)
+            )
+    print(f"{mid}: device acceptance {', '.join(targets)} (DT2 and DN2)", flush=True)
+    return subprocess.run(
+        [
+            "pnpm",
+            "exec",
+            "nx",
+            "run-many",
+            "-t",
+            "test-device",
+            "--projects",
+            ",".join(t.rsplit(":", 1)[0] for t in targets),
+            "--parallel=1",
+        ],
+        cwd=ROOT,
+        env=python_env({**os.environ, **binaries}),
+    ).returncode
 
 
 def device_caps(dev: str) -> dict[str, dict[str, int]]:
@@ -99,8 +176,8 @@ def device_caps(dev: str) -> dict[str, dict[str, int]]:
 
 def needs_lines(dkm: bytes, dev: str) -> list[str]:
     """What a load of a packed module takes, inferred from the file (docs/design/digikit-dkm.md: `patchkit needs`, packages/dkneeds), and whether it
-    fits the empty device DEV (the fit rule, tools/device/dkfit.py)."""
-    from tools.device import dkfit, dkneeds
+    fits the empty device DEV (the fit rule, `dkneeds.fit`)."""
+    from tools.device import dkneeds
 
     try:
         n = dkneeds.needs_of(dkm)
@@ -123,11 +200,11 @@ def needs_lines(dkm: bytes, dev: str) -> list[str]:
         if n[k]
     )
     caps = device_caps(dev)
-    short = dkfit.fits_now(n, dkfit.empty_caps(caps))
+    short = dkneeds.fit(caps, [n], empty=True)["each"][0]
     verdict = (
         "fits an empty device"
         if short is None
-        else f"DOES NOT FIT even an empty device: {dkfit.describe(short)}"
+        else f"DOES NOT FIT even an empty device: {short['describe']}"
     )
     return [
         f"{dev}: needs    {shown or 'nothing but its code'}",
@@ -183,6 +260,7 @@ def main() -> int:
     a = ap.parse_args()
     mid = resolve(a.name)
     paths, env = plan(mid, a.device)
+    targets = own_device_targets(mid)
     kind = (
         "machine module"
         if CONFORMANCE in paths
@@ -200,24 +278,29 @@ def main() -> int:
         except patchkit.BuildError as e:
             print(f"{mid}: {e}", file=sys.stderr)
             return 1
-        for line in size_lines(mid, devices, a.trace):
-            print(line, flush=True)
-        return 0
-    cmd = [
-        sys.executable,
-        "-m",
-        "pytest",
-        "-q",
-        "-p",
-        "no:cacheprovider",
-        "-rf",
-        *paths,
-    ]
-    rc = subprocess.run(cmd, cwd=ROOT, env={**os.environ, **env}).returncode
-    if rc == 0:
-        for line in size_lines(mid, devices, a.trace):
-            print(line, flush=True)
-    return rc
+    else:
+        cmd = [
+            sys.executable,
+            "-m",
+            "pytest",
+            "-q",
+            "-p",
+            "no:cacheprovider",
+            "-rf",
+            *paths,
+        ]
+        rc = subprocess.run(
+            cmd, cwd=ROOT, env=python_env({**os.environ, **env})
+        ).returncode
+        if rc:
+            return rc
+    if targets:
+        rc = run_device_targets(mid, targets)
+        if rc:
+            return rc
+    for line in size_lines(mid, devices, a.trace):
+        print(line, flush=True)
+    return 0
 
 
 if __name__ == "__main__":

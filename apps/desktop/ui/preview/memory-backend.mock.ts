@@ -4,8 +4,10 @@
 //   full   a machine pair, an effect, a tool and the unknown module
 //   empty  nothing loaded
 //   dsp    Pluck, Wavetable and FM 4-op: the DSP memory is nearly full
+//   split  as pluck, with the free CPU memory split in blocks (largest block 90 KiB)
+//   over   as dsp, with the DSP memory used above its limit
 // The figures go through the app's own `buildBars`, so the picture is what a device with these modules shows.
-import type { Caps } from '@web/modules/dkfit';
+import type { Caps } from '@web/modules/fit';
 import { buildBars, type KnownModule } from '../src/memory-core';
 import { PAUSED } from '../src/desktop-env';
 import { LIBRARY } from './sim';
@@ -21,6 +23,8 @@ const LOADED: Record<string, string[]> = {
   full: ['sine', 'pluck', 'chorus', 'remote', 'someone/mystery'],
   empty: [],
   dsp: ['pluck', 'wavetable', 'fm4'],
+  split: ['pluck', 'remote', 'someone/mystery'],
+  over: ['pluck', 'wavetable', 'fm4'],
 };
 const KiB = 1024;
 
@@ -47,6 +51,8 @@ export async function readMemory(): Promise<MemoryReading> {
     PARAM_ROWS: c(16, used.PARAM_ROWS),
     PAGE_ROWS: c(dev === 'dn2' ? 8 : 0, 0),
   };
+  if (mem === 'split') caps.ARENA.largest = 90 * KiB;
+  if (mem === 'over') caps.DSP_AREA.used += 80 * KiB;
   await new Promise((r) => setTimeout(r, 120));
   return { port: dev === 'dn2' ? 'dn2-1.12' : 'dt2-1.17', bars: buildBars(caps, names, known), loaded: names.length };
 }

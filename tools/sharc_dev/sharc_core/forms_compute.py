@@ -239,7 +239,6 @@ def _type_2a_short(
             False,
             _snapshot_uregs(state.uregs),
             state.special,
-            approx_recips=state.approx_recips,
         )
     except ValueError as error:
         return [_stop(state, insn, str(error))]
@@ -271,7 +270,6 @@ def _type_2a(
                 False,
                 _snapshot_uregs(state.uregs),
                 state.special,
-                approx_recips=state.approx_recips,
             )
         except ValueError as error:
             return [_stop(state, insn, str(error))]
@@ -290,7 +288,6 @@ def _type_2a(
             False,
             _snapshot_uregs(state.uregs),
             state.special,
-            approx_recips=state.approx_recips,
         )
     except ValueError as error:
         return [_stop(state, insn, str(error))]

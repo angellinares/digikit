@@ -1,0 +1,68 @@
+/* The Default modules drop-down (DefaultModules.tsx): a button that opens a list below it. Colours fall back to the desktop console's. */
+.defmods {
+  position: relative;
+  display: inline-flex;
+  flex-shrink: 0;
+}
+.defmods-btn {
+  height: 28px;
+  padding-inline: 10px;
+  border-radius: 7px;
+  border: 1px solid var(--fp-border, #2c2f35);
+  background: var(--fp-card, #1a1c20);
+  color: var(--ink, #eceae5);
+  font: inherit;
+  font-size: 12.5px;
+  font-weight: 500;
+  white-space: nowrap;
+  cursor: pointer;
+}
+.defmods-btn:hover:not(:disabled),
+.defmods-btn.on {
+  background: #23262b;
+}
+.defmods-btn:disabled {
+  color: var(--ink-3, #868b94);
+  cursor: not-allowed;
+}
+.defmods-pop {
+  position: absolute;
+  z-index: 30;
+  top: calc(100% + 6px);
+  right: 0;
+  width: max-content;
+  min-width: 320px;
+  max-width: min(480px, 90vw);
+  padding: 8px 12px;
+  background: #1a1c20;
+  border: 1px solid #3a3e46;
+  border-radius: 8px;
+  box-shadow: 0 8px 24px rgb(0 0 0 / 45%);
+  font-size: 12.5px;
+  text-align: left;
+}
+.defmods-row {
+  display: grid;
+  grid-template-columns: auto auto minmax(0, 1fr);
+  align-items: baseline;
+  gap: 8px;
+  padding: 4px 0;
+  cursor: pointer;
+}
+.defmods-row input {
+  margin: 0;
+  accent-color: var(--accent, #f3b52c);
+}
+.defmods-id {
+  font-family: var(--font-mono, monospace);
+  color: var(--ink, #eceae5);
+}
+.defmods-sum {
+  color: var(--ink-3, #868b94);
+}
+.defmods-note {
+  margin: 6px 0 0;
+  color: var(--ink-3, #868b94);
+  font-size: 11.5px;
+  line-height: 1.4;
+}

@@ -15,11 +15,11 @@ play_machine = "bd"
 hint = 7
 voices = 1
 ignore_run_machines = ["Bass Drum"]
-pcm_sha256 = "2cb0259aeb2626862b0b5fdbc4e3073ea5c3a33698dfaf20afcf730d027ebb0d"   # onset 258, 24000 samples (DT2 1.17, note 60); approved by Em 2026-10-29
+pcm_sha256 = "8de331fb3fec4648ef530b0f56e1fd8cf2634c094e7dd4631b472c2942f5dceb"   # onset 194, 24000 samples (DT2 1.17, note 60); approved by Em 2026-11-01 (exact RECIPS, finding 102)
 
 
 [equiv.dn2]
-pcm_sha256 = "3da404b56faf9b7a38b4fc50470de7496ef8e32ce0b6832dd84a31562b2725f7"   # onset 206, 24000 samples (DN2 1.12, note 60)
+pcm_sha256 = "5838f6e275cc21b45d6c97b43e1b48e1e6876517b18b07c527dae611b1325622"   # onset 270, 24000 samples (DN2 1.12, note 60); approved by Em 2026-11-01 (exact RECIPS, finding 102)
 hint = 4
 hint_run = 5    # the run-time machine follows MIDI
 trig_frame = 7000

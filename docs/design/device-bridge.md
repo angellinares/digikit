@@ -212,7 +212,7 @@ code). The emulator does not model USB timing, enumeration, the 4 KiB TX ring ti
 | Image id | Build, flash in the emulator, INFO equals; a stock image has no marker and gives none | `imageid.rs` and `packages/patchkit/tests/flash.rs` (built) |
 | SCREEN | Emulator: SCREEN bytes equal `framebuffer.get` data for the same frame (hash compare) once the emulator exposes the Bitmap object to the runtime; layout test on the Bitmap object for 1.17 | `tests/digikit/scenarios` case |
 | KEY | Emulator: RC off refuses; RC on, KEY(code) gives the same frame hash after N instructions as `input.tap(code)`; YES/NO refused | scenario case |
-| Existing pins | PCM pins and stock MidiRpc byte equality do not change (a stock image has no runtime) | `mise run verify` routed |
+| Existing pins | PCM pins and stock MidiRpc byte equality do not change (a stock image has no runtime) | `mise run test` |
 
 Hardware is not needed for any of these. A proof that the device accepts the pacing needs the device (rung D2).
 

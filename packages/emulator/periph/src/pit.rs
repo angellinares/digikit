@@ -162,6 +162,55 @@ impl PitBank {
         true
     }
 
+    /// Supply a Device timeout event, latching PIF independently of PIE/EN.
+    /// The caller supplies the event: no counter, clock or reset is simulated.
+    /// MCF5441XRM p1156/p1159; Oracle scheduling/bookkeeping is untouched.
+    /// Invalid channels reject before mutation.
+    pub fn device_latch_timeout(&mut self, channel: usize) -> bool {
+        let Some(regs) = self.regs.get_mut(channel) else {
+            return false;
+        };
+        regs.set_u16_at(PCSR, regs.u16_at(PCSR) | PIF);
+        true
+    }
+
+    /// Raw Device requests from all four physical channels: PIF && PIE,
+    /// independently of EN, Oracle configuration/held state and INTC/CPU masks.
+    /// Reading requests never acknowledges status or advances a clock.
+    pub fn device_pending_vectors(&self) -> Vec<u16> {
+        self.regs
+            .iter()
+            .enumerate()
+            .filter(|(_, regs)| regs.u16_at(PCSR) & (PIF | PIE) == (PIF | PIE))
+            .map(|(channel, _)| VECTORS[channel])
+            .collect()
+    }
+
+    /// Bounded Device register writes: aligned 16-bit PCSR and PMR only.
+    /// PCSR PIF is W1C (zero preserves it); every PMR write clears PIF,
+    /// independently of OVW (MCF5441XRM p1156/p1159). Other control bits are
+    /// stored; counter/phase effects are not modeled. Unsupported accesses,
+    /// including PCNTR writes, reject before mutation, without fidelity claims.
+    pub fn device_write(&mut self, addr: u32, size: u8, value: u32) -> bool {
+        let Some(channel) = Self::slot(addr) else {
+            return false;
+        };
+        let offset = (addr - BASES[channel]) as usize;
+        if size != 2 || !matches!(offset, PCSR | PMR) {
+            return false;
+        }
+        let regs = &mut self.regs[channel];
+        if offset == PCSR {
+            let value = value as u16;
+            let pif = regs.u16_at(PCSR) & PIF & !value;
+            regs.set_u16_at(PCSR, (value & !PIF) | pif);
+        } else {
+            regs.set_u16_at(PMR, value as u16);
+            regs.set_u16_at(PCSR, regs.u16_at(PCSR) & !PIF);
+        }
+        true
+    }
+
     pub fn set_ips(&mut self, ips: f64) {
         self.ips = ips;
     }
@@ -268,10 +317,19 @@ impl PitBank {
         done: u64,
         intc: &IntcBank,
         sr: &mut SrTracker,
-        mut offer: impl FnMut(u16, u8) -> bool,
+        offer: impl FnMut(u16, u8) -> bool,
     ) -> Vec<(u16, u8)> {
+        self.advance_pending(done);
+        self.deliver_pending_with(intc, sr, offer)
+    }
+
+    /// Advance and latch pending ticks in the Oracle scheduling model.
+    /// Does not deliver interrupts or consult INTC/CPU masks. This preserves
+    /// Oracle behavior: PIT does not assert guest PIF; this is not Device
+    /// timer status/acknowledgement semantics.
+    pub fn advance_pending(&mut self, done: u64) {
         if self.held {
-            return Vec::new();
+            return;
         }
         let donef = done as f64;
         for channel_index in 0..self.channels.len() {
@@ -307,6 +365,31 @@ impl PitBank {
                     }
                 }
             }
+        }
+    }
+
+    /// Raw Oracle pending vectors in configured channel order, independent
+    /// of INTC/CPU masks. Held banks expose no requests. No state is changed.
+    pub fn pending_vectors(&self) -> Vec<u16> {
+        if self.held {
+            return Vec::new();
+        }
+        self.channels
+            .iter()
+            .filter(|&&ci| self.ch[ci].pending)
+            .map(|&ci| VECTORS[ci])
+            .collect()
+    }
+
+    // Preserve Oracle channel order and consume only accepted entries.
+    fn deliver_pending_with(
+        &mut self,
+        intc: &IntcBank,
+        sr: &mut SrTracker,
+        mut offer: impl FnMut(u16, u8) -> bool,
+    ) -> Vec<(u16, u8)> {
+        if self.held {
+            return Vec::new();
         }
         if !self.ch.iter().any(|c| c.pending) {
             return Vec::new();

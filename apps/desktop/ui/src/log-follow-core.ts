@@ -13,15 +13,19 @@ import {
   sameFault,
   type DkLogEvent,
   type Fault,
+  type LogConfig,
 } from '@digi/dk-session';
 import { CAP, LOG_KIND, LOG_LEVELS } from '@digi/dk-session/gen_proto';
 import type { LogInput, Origin } from './log-core.ts';
+import { hasLogcfg } from './log-level-core.ts';
 
 /** What the follower needs of a protocol session (a `DkSession` with `followSession`, or a fake). */
 export interface FollowSession {
   info(quick?: boolean): Promise<{ caps: number | null }>;
   logPage(from: number, quick?: boolean): Promise<[number, number, DkLogEvent[]]>;
-  logConfig(quick?: boolean): Promise<{ level: number; debug: boolean }>;
+  logConfig(quick?: boolean): Promise<LogConfig>;
+  /** LOGCFG set (the Level menu of the Log drawer). */
+  setLogConfig(level: number, modules: number[], quick?: boolean): Promise<LogConfig>;
   /** The loaded modules; `index` is the module record index. */
   modules(): Promise<{ index: number; name: string }[]>;
   /** The fault record the runtime keeps on the card (`dk/fault`), or null. */
@@ -33,8 +37,10 @@ export type OriginStatus =
   /** Not followed (Follow is off, or nothing runs). */
   | 'off'
   | 'following'
-  /** The origin answers INFO but has no LOG capability. */
+  /** The origin answers INFO but has no runtime (an old image, or no digikit). */
   | 'no-runtime'
+  /** The runtime answers but the debug module (`digikit/debug`) is not loaded: no LOG, only the fault record. */
+  | 'no-debug'
   /** The MIDI port is not there. */
   | 'absent'
   | 'frozen';
@@ -44,6 +50,10 @@ export interface FollowOut {
   /** The names of the modules the origin has loaded changed. */
   modules(names: string[]): void;
   status(status: OriginStatus): void;
+  /** The LOGCFG state the follower read (at the start and after a restart). */
+  config?(config: LogConfig): void;
+  /** Whether the origin's INFO has the LOGCFG capability (the Level menu works on it). */
+  logcfg?(supported: boolean): void;
 }
 
 export interface FollowOptions {
@@ -58,11 +68,31 @@ export interface FollowOptions {
 /** No answer for this long: the device may be frozen. */
 export const FROZEN_MS = 5000;
 export const POLL_MS = 1000;
+/** Is the window on screen? A hidden window (minimized, on another desktop) asks nothing of the device. */
+export const windowShown = (): boolean => typeof document === 'undefined' || document.visibilityState !== 'hidden';
+/** The device is read this often while the Log drawer is closed (the badge and the auto-open for errors still work; the ring holds the events). */
+export const IDLE_MS = 5000;
+
+/**
+ * How a loop paces itself. A hidden window asks nothing (`ask` false; it looks again after `POLL_MS`). The device on the MIDI port is read
+ * at most every `IDLE_MS` while the drawer is closed; the emulator is a local call and keeps its pace.
+ */
+export function pace(
+  device: boolean,
+  shown: boolean,
+  drawerOpen: boolean,
+  wait: number,
+): { ask: boolean; wait: number } {
+  if (!shown) return { ask: false, wait: POLL_MS };
+  return { ask: true, wait: device && !drawerOpen ? Math.max(wait, IDLE_MS) : wait };
+}
 /** The events of the current boot that are kept for the detail of a fault. */
 const KEEP = 1100;
 
 const isCancelled = (e: unknown): boolean => (e as { kind?: string } | null)?.kind === 'cancelled';
 const hasLog = (caps: number | null): boolean => caps !== null && ((caps >>> CAP.LOG) & 1) === 1;
+/** A runtime answers (INFO carries capabilities, so it is a digikit runtime of this protocol), whether or not the debug module is loaded. */
+const hasRuntime = (caps: number | null): boolean => caps !== null && ((caps >>> CAP.SERVICE_CMDS) & 1) === 1;
 
 export class LogFollower {
   /** Whether the follower waits for a firmware flash to end. */
@@ -76,10 +106,12 @@ export class LogFollower {
   private lastAnswer: number;
   private frozen = false;
   private faultDue = false;
-  private debugDue = false;
+  private configDue = false;
   private modulesDue = false;
-  private lastDebug = '';
+  private lastConfig = '';
   private lastFault: Fault | null = null;
+  /** The runtime answers but has no debug module: only the fault record is read. */
+  private noDebug = false;
   private listed = '';
 
   constructor(private o: FollowOptions) {
@@ -90,7 +122,7 @@ export class LogFollower {
   async tick(): Promise<number> {
     try {
       const s = await this.o.session();
-      if (!this.started && !(await this.start(s))) return FROZEN_MS;
+      if (!this.started && !(await this.start(s))) return this.noDebug ? IDLE_MS : FROZEN_MS;
       await this.poll(s);
       this.answered();
     } catch (e) {
@@ -120,22 +152,28 @@ export class LogFollower {
     ]);
   }
 
-  /** INFO decides whether there is a runtime log to follow. */
+  /** INFO decides whether there is a runtime log to follow: it has the LOG capability while the debug module is loaded. */
   private async start(s: FollowSession): Promise<boolean> {
     const info = await s.info(true);
     if (!hasLog(info.caps)) {
-      this.o.out.status('no-runtime');
+      this.noDebug = hasRuntime(info.caps);
+      this.o.out.status(this.noDebug ? 'no-debug' : 'no-runtime');
+      this.o.out.logcfg?.(false);
       this.lastAnswer = this.o.now();
+      // the fault record is on the card whether or not the module is loaded
+      if (this.noDebug) await this.readFault(s);
       return false;
     }
+    this.noDebug = false;
     this.started = true;
+    this.o.out.logcfg?.(hasLogcfg(info.caps));
     this.o.out.status('following');
     this.lastAnswer = this.o.now();
     if (!this.everStarted) {
       this.everStarted = true;
       this.faultDue = true;
     }
-    this.debugDue = true;
+    this.configDue = true;
     this.modulesDue = true;
     return true;
   }
@@ -177,7 +215,7 @@ export class LogFollower {
           this.next = 0;
           this.seenNewest = 0;
           this.boot = [];
-          this.faultDue = this.debugDue = this.modulesDue = true;
+          this.faultDue = this.configDue = this.modulesDue = true;
           continue;
         }
         if (events.length === 0) break;
@@ -193,7 +231,7 @@ export class LogFollower {
       if (rows.length) this.o.out.push(rows.splice(0));
     }
     if (this.modulesDue) await this.readModules(s);
-    if (this.debugDue) await this.readDebug(s);
+    if (this.configDue) await this.readConfig(s);
     if (this.faultDue) await this.readFault(s);
   }
 
@@ -206,7 +244,6 @@ export class LogFollower {
       this.names.set(ev.args[0]! + 1, runtimeEvent(ev).fields.name as string);
       this.modulesDue = true;
     } else if (ev.kind === LOG_KIND.MOD_LOAD) this.modulesDue = true;
-    else if (ev.kind === LOG_KIND.DEBUG_SET) this.debugDue = true;
     this.boot.push(ev);
     if (this.boot.length > KEEP) this.boot.splice(0, this.boot.length - KEEP);
     if (FAULT_DETAIL_KINDS.has(ev.kind)) return; // part of the fault entry's detail
@@ -240,15 +277,14 @@ export class LogFollower {
     this.o.out.modules(names);
   }
 
-  private async readDebug(s: FollowSession): Promise<void> {
-    this.debugDue = false;
+  private async readConfig(s: FollowSession): Promise<void> {
+    this.configDue = false;
     const cfg = await this.aux(() => s.logConfig(true));
     if (!cfg) return;
-    const text = cfg.debug
-      ? `${this.o.origin}: debug logging on, level ${LOG_LEVELS[cfg.level] ?? cfg.level}`
-      : `${this.o.origin}: debug logging off: the runtime keeps only errors (turn it on in the runtime's DEBUG setting)`;
-    if (text === this.lastDebug) return;
-    this.lastDebug = text;
+    this.o.out.config?.(cfg);
+    const text = `${this.o.origin}: debug module loaded, level ${LOG_LEVELS[cfg.level] ?? cfg.level}`;
+    if (text === this.lastConfig) return;
+    this.lastConfig = text;
     this.say(text);
   }
 

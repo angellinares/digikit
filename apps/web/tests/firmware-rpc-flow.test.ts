@@ -31,7 +31,16 @@ const prepared = (over: Partial<PreparedFlash> = {}): PreparedFlash => ({
   image: Uint8Array.from({ length: SIZE }, (_, i) => (i * 31 + (i >> 3)) & 0xff),
   ...over,
 });
-const SHORT: FlowLimits = { leaveMs: 3000, returnMs: 3000, askMs: 6000, pollMs: 100, askEveryMs: 500 };
+const SHORT: FlowLimits = {
+  leaveMs: 3000,
+  returnMs: 3000,
+  askMs: 6000,
+  pollMs: 100,
+  askEveryMs: 500,
+  releaseMs: 30,
+  portsMs: 30,
+  askTryMs: 30,
+};
 const GOOD: Answer = { os: '1.12', runtime: '0.5.2', imageId: 'c5d8ccb27e139cbc' };
 
 const be32 = (n: number) => Uint8Array.of(n >>> 24, (n >>> 16) & 255, (n >>> 8) & 255, n & 255);
@@ -119,7 +128,8 @@ function fake(opts: Opts = {}) {
     release: async () => {
       released = true;
     },
-    portPresent: async () => (released ? t.ms - endAt > 1500 : true),
+    port: 'Digitakt II',
+    ports: async () => (released && t.ms - endAt <= 1500 ? [] : ['Digitakt II']),
     ask: async () => GOOD,
   };
   return { ops, log, stream, t };

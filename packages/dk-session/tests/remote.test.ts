@@ -67,7 +67,13 @@ class FakeRemote {
 }
 
 test('the service numbers are the generated ones', () => {
-  assert.deepEqual(SERVICE_CMD, { REMOTE_KEY: 0x38, REMOTE_TURN: 0x39, REMOTE_RELEASE: 0x3a, REMOTE_STATE: 0x3e });
+  const remote = Object.entries(SERVICE_CMD).filter(([name]) => name.startsWith('REMOTE_'));
+  assert.deepEqual(Object.fromEntries(remote), {
+    REMOTE_KEY: 0x38,
+    REMOTE_TURN: 0x39,
+    REMOTE_RELEASE: 0x3a,
+    REMOTE_STATE: 0x3e,
+  });
 });
 
 test('a request of the client has the framing the module reads', () => {

@@ -63,13 +63,12 @@ def make_engines(image: str, fields: dict, lib: str, frame: bytes):
     native.load_state(fields)
     for key, value in (
         (4, 1), (5, 1), (6, BASE_CLOCK), (9, 1), (10, 0),
-        (11, 1), (12, 1), (21, 1), (22, 1),
+        (12, 1), (21, 1), (22, 1),
     ):  # fmt: skip
         native.set_option(key, value)
     ref = sd.PythonEngine(data)
     ref.load_state(fields)
     state = ref._runner.state
-    state.approx_recips = True
     state.assume_nw32 = True
     state.explicit_memory_model = False
     state.bank_model = fields.get("bank_model", True)

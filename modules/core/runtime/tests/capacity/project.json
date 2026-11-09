@@ -1,0 +1,15 @@
+{
+  "$schema": "../../../../../node_modules/nx/schemas/project-schema.json",
+  "name": "core/runtime-capacity-tests",
+  "tags": ["test-only"],
+  "implicitDependencies": ["core/runtime"],
+  "metadata": {
+    "runtimeAcceptance": [
+      {
+        "files": ["capacity.device.test.ts"],
+        "modules": ["test/dyn-fx-gain"],
+        "plusdrive": true
+      }
+    ]
+  }
+}

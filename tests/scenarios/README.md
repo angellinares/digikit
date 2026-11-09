@@ -4,6 +4,11 @@ Scripted panel inputs for headless coupled runs (`coupled-run`, the desktop
 app's `--scenario` mode and the browser parity check). One file per device:
 
 - `dn2.json` is embedded into `coupled-run` as its default set.
+- `dn2-load.json` holds DN2 load scenarios for the span gate against stock (`docs/INSTRUMENTATION.md`,
+  "Gate against stock"). Give it with `--scenarios`. `--scenarios` is repeatable, so one run can
+  take `dn2.json` and `dn2-load.json`. A scenario name must not be in two files.
+- `dn2-machines.json` holds four audition scenarios (FM Tone, FM Drum, WaveTone, Swarmer): on the stock DN2 each picks the
+  machine on track 1 and plays Trig 1 six times. Give it with `--scenarios`.
 - `dt2.json` is passed with `--scenarios` (done for you by `--device dt2`).
 - DT2 FX sweeps live in `tests/regression/scenarios/dt2-trackfx.ts` and
   `tests/regression/scenarios/dt2-sendfx.ts`.
@@ -28,7 +33,8 @@ app's `--scenario` mode and the browser parity check). One file per device:
   instructions, `at_s` in audio seconds (DSPI2 frames sent / 1500).
 - Events: `{"at_instr"|"at_s": T, "button": CODE, "down": true|false}` for a
   button, `{"at_instr"|"at_s": T, "turn": ENCODER, "detents": N}` for an
-  encoder turn.
+  encoder turn, `{"at_instr"|"at_s": T, "midi": [BYTE, ...]}` for 1 to 16 bytes
+  on the MIDI DIN input. The bytes enter one per wire time (320 us) from T.
 - Events fire at chunk boundaries, before the chunk that follows, so a run is
   a function of its inputs. `clip_last_chunk` ends an `instructions` run exactly at its count. `exact_events` shortens the chunk so an `at_instr`
   event fires at exactly that count.
@@ -57,7 +63,7 @@ Renders are cached per scenario by content in `out/cache/renders/` (see
 `docs/TESTING.md`, "Render cache"). A hit restores the report entry and the WAV;
 `--diag` runs bypass the cache. Force renders with `--no-cache` or
 `DIGI_RENDER_CACHE=0`. `DIGI_RENDER_CACHE_CHECK=p` re-renders each hit with
-probability p and fails on a difference (`verify` uses 0.03).
+probability p and fails on a difference.
 
 The runs need the private ready inputs (`mise run emu:ready -- dn2|dt2`). Pins are
 only valid for the firmware and ready snapshot they were recorded with.
@@ -85,7 +91,7 @@ independently restores its ready snapshot. The existing native emulator binary i
 required. Card preparation invokes the small +Drive helper build/check, unless
 `DIGI_DT2_CARD` points to an existing compatible card image.
 Reports, measurements and logs are under `out/regression/dt2-fx/`; WAVs are
-removed after the run unless `DIGI_FX_KEEP_RUNS=1`. `verify.py --full --dt2` also
+removed after the run unless `DIGI_FX_KEEP_RUNS=1`. `mise run test:full` (or `pnpm nx:pilot run gate-fx-dt2:dt2-tier-sweep`) also
 compares DT2 FX PCM with and without AOT.
 
 Add cases and assertions to the corresponding DN2 or DT2 TypeScript sources in

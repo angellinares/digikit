@@ -1,7 +1,8 @@
 // test/dyn-fx-hang: an effect of the FX contract (<dk/fx.h>) that stops the SHARC on purpose. The process routine copies its input to its output, stores
 // the module step 1 (entered) and 2 (copied) in `DK_STEP` (sdk/asm/dk_trace.inc) and counts its calls in state word 0.
 // From the HANG_AFTER-th call on it stores step 3 and enters an endless loop: the core is halted for the engine, the heartbeats freeze, and the fault
-// table in the reply record holds the site (FX send), the row, the core step CALL and the module step 3.
+// table in the reply record holds the site (FX send), the row, the core step CALL and the module step 2: the step of the last block that ended (the block tail
+// copies `_dk_step` into the record), because the step 3 of the call that stops the core is lost with it.
 // State (4 bytes): word 0 the calls so far.
 
 #include "dk_fx.inc"

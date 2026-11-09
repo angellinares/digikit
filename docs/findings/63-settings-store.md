@@ -13,7 +13,7 @@ digikit keeps its own settings (which run-time effects are send effects, their 1
 | the codec (encode, decode, `why`, edit in place, load of the two copies, write of one) | `modules/core/runtime/sdk/src/settings.rs`; 15 unit tests and the shared vectors `sdk/settings-vectors.json` (8 valid, 18 refused records) |
 | the runtime (RAM record, the 2 s delay, the write to the other copy, C ABI, mailbox test commands, SETTINGS command, CAPACITY entry) | `modules/core/runtime/src/rs/src/settings.rs`, `upload.rs`, `lib.rs`, `boot.rs` |
 | the readers | `patchkit store dump` (`packages/patchkit/src/storedump.rs`), `tools/device/dksettings.py`, `tools/device/dkupload.py settings` |
-| the scenario | `tests/digikit/scenarios/settings-dt2.toml`, `settings-dn2.toml`, `tools/patchkit/pk_digikit_settings.py` |
+| the test | `tests/regression/runtime/settings.test.ts` (the runtime settings store, both devices) |
 
 ## Decisions **[D]**
 

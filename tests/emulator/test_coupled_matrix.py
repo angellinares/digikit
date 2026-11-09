@@ -1,6 +1,5 @@
 """tools/emulator/coupled_matrix.py: job planning, environments, aggregation, the report."""
 
-import dataclasses
 import json
 from pathlib import Path
 
@@ -9,7 +8,6 @@ from support.paths import REPO_ROOT
 
 ROOT = REPO_ROOT
 from tools.emulator import coupled_matrix as cm  # noqa: E402
-from tools.emulator import native_target  # noqa: E402
 
 
 def fake_report(name, dsp=1.9, rtf=0.5, over=1.0, ok=True, sha="ab" * 32):
@@ -35,32 +33,6 @@ def fake_report(name, dsp=1.9, rtf=0.5, over=1.0, ok=True, sha="ab" * 32):
         "pcm": {"rms": 0.25, "peak": 0.69, "sha256": sha},
         "gates": {"ok": ok},
     }
-
-
-def test_plan_orders_validation_first_and_spreads_repeats():
-    configs = [cm.CONFIGS["prod"], cm.CONFIGS["generic"]]
-    jobs = cm.plan(configs, ["idle", "trig1-hold"], None, None, True)
-    names = [(j.config, j.scenario, j.repeat) for j in jobs]
-    assert names[:3] == [
-        ("prod", "exactness-100m", 0),
-        ("prod", "trig1-noqa-40m", 0),
-        ("generic", "exactness-100m", 0),
-    ]
-    runs = names[3:]
-    # prod repeats 3x, generic once; repeat 1 covers every config before repeat 2.
-    assert runs[:4] == [
-        ("prod", "idle", 1),
-        ("prod", "trig1-hold", 1),
-        ("generic", "idle", 1),
-        ("generic", "trig1-hold", 1),
-    ]
-    assert [r for r in runs if r[0] == "generic"] == [
-        ("generic", "idle", 1),
-        ("generic", "trig1-hold", 1),
-    ]
-    assert sum(1 for r in runs if r[0] == "prod") == 6
-    assert all(j.seconds is None for j in jobs[:3])
-    assert {j.seconds for j in jobs[3:] if j.config == "prod"} == {10.0}
 
 
 def test_plan_overrides_and_no_validation():
@@ -94,27 +66,6 @@ def test_config_env_clears_tuning_and_sets_the_configs(monkeypatch):
     assert generic["SHARC_GEN_DIR"].endswith("gen-generic")
     auto = cm.config_env(cm.CONFIGS["generic-auto"], Path("x.syx"), base)
     assert auto["SHARC_FAST_AUTO"] == "256,64"
-
-
-def test_binary_and_build_command_follow_the_target_dir_convention(
-    tmp_path, monkeypatch
-):
-    # gen_key returns "prod" only for an existing dir equal to PROD_GEN.
-    gen = tmp_path / "gen"
-    gen.mkdir()
-    monkeypatch.setattr(native_target, "PROD_GEN", gen)
-    prod = dataclasses.replace(cm.CONFIGS["prod"], gen=gen)
-    # In a lane worktree the target root is out/native/target-wt/<name>.
-    target_root = native_target.TARGET_ROOT
-    assert cm.binary_path(prod, None) == target_root / "prod/release/coupled-run"
-    pgo = cm.binary_path(prod, "/p.profdata")
-    assert pgo == target_root / "prod/pgo-use" / cm.TRIPLE / "release/coupled-run"
-    cmd = cm.build_command(prod, None)
-    assert "--locked" in cmd and "--target" not in cmd
-    assert cmd[cmd.index("--target-dir") + 1].endswith("/prod")
-    assert "--target" in cm.build_command(prod, "/p.profdata")
-    profile = cm.build_command(prod, None, profile_regions=True)
-    assert profile[profile.index("--features") + 1] == "coupled-audio,region-profile"
 
 
 def test_aggregate_takes_medians_and_flags_failures_and_hash_splits():

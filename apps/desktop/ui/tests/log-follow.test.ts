@@ -5,7 +5,15 @@ import { test } from 'vitest';
 import { CAP, LOG_KIND } from '@digi/dk-session/gen_proto';
 import type { DkLogEvent, Fault } from '@digi/dk-session';
 import { autoOpens, type LogInput } from '../src/log-core.ts';
-import { FROZEN_MS, LogFollower, type FollowSession, type OriginStatus } from '../src/log-follow-core.ts';
+import {
+  FROZEN_MS,
+  IDLE_MS,
+  LogFollower,
+  POLL_MS,
+  pace,
+  type FollowSession,
+  type OriginStatus,
+} from '../src/log-follow-core.ts';
 import { createLogFollow } from '../src/log-follow.ts';
 
 const word = (s: string) => {
@@ -26,7 +34,7 @@ const lv = (level: number, src = 0, error = false) => (level << 1) | (src << 8) 
 class Device implements FollowSession {
   ring: DkLogEvent[] = [];
   caps: number | null = 1 << CAP.LOG;
-  debug = { level: 3, debug: true };
+  debug = { level: 3, modules: Array<number>(8).fill(0xff), debug: true };
   modulesLoaded: { index: number; name: string }[] = [];
   faultRecord: Fault | null = null;
   failWith: Error | null = null;
@@ -40,6 +48,10 @@ class Device implements FollowSession {
     return [this.ring[0]?.seq ?? 0, this.ring.at(-1)?.seq ?? 0, events];
   }
   async logConfig() {
+    return this.debug;
+  }
+  async setLogConfig(level: number, modules: number[]) {
+    this.debug = { ...this.debug, level, modules };
     return this.debug;
   }
   async modules() {
@@ -90,7 +102,7 @@ const fault = (over: Partial<Fault>): Fault => ({
   ...over,
 });
 
-test('a poll shows the events of the ring with the module that wrote them, and reads the debug state once', async () => {
+test('a poll shows the events of the ring with the module that wrote them, and reads the log configuration once', async () => {
   const d = new Device();
   d.modulesLoaded = [{ index: 1, name: 'freqshift' }];
   d.ring = [
@@ -109,27 +121,36 @@ test('a poll shows the events of the ring with the module that wrote them, and r
   assert.equal(rows.at(-1)!.rt!.module, 'freqshift');
   assert.equal(rows.at(-1)!.source, 'device');
   assert.deepEqual(t.moduleLists.at(-1), ['freqshift']);
-  assert.equal(t.texts().filter((x) => x.startsWith('device: debug logging')).length, 1);
-  assert.ok(t.texts().includes('device: debug logging on, level debug'));
+  assert.equal(t.texts().filter((x) => x.startsWith('device: debug module')).length, 1);
+  assert.ok(t.texts().includes('device: debug module loaded, level debug'));
 });
 
-test('debug off says what the runtime keeps; a DEBUG_SET event with a change adds the line again', async () => {
+test('without the debug module only the fault record is read, and the log starts when the module is there', async () => {
   const d = new Device();
-  d.debug = { level: 0, debug: false };
-  d.ring = [ev(1, 'BOOT_START')];
-  const t = setup(d, 'emulator');
-  await t.follower.tick();
-  assert.ok(
-    t
-      .texts()
-      .includes(
-        "emulator: debug logging off: the runtime keeps only errors (turn it on in the runtime's DEBUG setting)",
-      ),
+  d.caps = 1 << CAP.SERVICE_CMDS; // a runtime without the LOG capability
+  d.faultRecord = fault({});
+  let pages = 0;
+  const page = d.logPage.bind(d);
+  d.logPage = async (from) => {
+    pages++;
+    return page(from);
+  };
+  const t = setup(d);
+  assert.equal(await t.follower.tick(), IDLE_MS);
+  assert.deepEqual(t.statuses, ['no-debug']);
+  assert.equal(pages, 0);
+  assert.deepEqual(
+    t.entries.filter((e) => e.text.startsWith('fault:')).map((e) => e.level),
+    ['error'],
   );
-  d.debug = { level: 2, debug: true };
-  d.ring.push(ev(2, 'DEBUG_SET', [1]));
+  assert.equal(await t.follower.tick(), IDLE_MS);
+  assert.equal(t.entries.filter((e) => e.text.startsWith('fault:')).length, 1); // the same record is not shown twice
+  // the device restarts with the module loaded: the log is followed
+  d.caps = (1 << CAP.SERVICE_CMDS) | (1 << CAP.LOG);
+  d.ring = [ev(1, 'BOOT_START')];
   await t.follower.tick();
-  assert.ok(t.texts().includes('emulator: debug logging on, level info'));
+  assert.equal(t.statuses.at(-1), 'following');
+  assert.equal(t.entries.filter((e) => e.rt?.event).length, 1);
 });
 
 test('a DSP stop of the boot before is one error entry, with the crash events folded into its detail', async () => {
@@ -291,4 +312,12 @@ test('flash progress does not restart the loop: one pause note, and polling goes
   await wait(20);
   assert.ok(infos > 0);
   dispose();
+});
+
+test('pace: a hidden window asks nothing; a closed drawer reads the device slowly, the emulator keeps its pace', () => {
+  assert.equal(pace(true, false, true, POLL_MS).ask, false);
+  assert.deepEqual(pace(true, true, true, POLL_MS), { ask: true, wait: POLL_MS });
+  assert.deepEqual(pace(true, true, false, POLL_MS), { ask: true, wait: IDLE_MS });
+  assert.deepEqual(pace(false, true, false, POLL_MS), { ask: true, wait: POLL_MS });
+  assert.equal(pace(true, true, false, 30_000).wait, 30_000);
 });

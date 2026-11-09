@@ -41,7 +41,7 @@ fn info_list_put_delete() {
             .find(|e| e.path == format!("modules/f{k}.dkm"))
             .unwrap();
         assert_eq!(e.size as usize, n);
-        assert_eq!(e.sha256, sha256(&data(n, k as u8)));
+        assert_eq!(e.hash, file_hash(&data(n, k as u8)));
     }
     s.delete("modules/f1.dkm").unwrap();
     assert_eq!(s.list().unwrap().len(), 5);
@@ -223,7 +223,7 @@ fn errors_full_hash_path_state() {
     ));
     assert!(s.list().unwrap().is_empty());
     // E_OFFSET and E_LENGTH, and a retry of the previous chunk
-    let body = proto::begin_body("modules/o.dkm", 2048, &sha256(&data(2048, 1))).unwrap();
+    let body = proto::begin_body("modules/o.dkm", 2048, &file_hash(&data(2048, 1))).unwrap();
     s.request(0x10, &body).unwrap();
     assert!(matches!(
         s.request(0x11, &proto::data_body(512, &data(512, 1))),
@@ -284,7 +284,7 @@ fn replace_and_delete_free_space() {
     put(&mut s, "modules/c.dkm", c).unwrap();
     // what the repack looks for: store entries the library does not have
     let listing = s.list().unwrap();
-    let lib = vec![("modules/b.dkm".to_string(), sha256(&b))];
+    let lib = vec![("modules/b.dkm".to_string(), file_hash(&b))];
     assert_eq!(
         repack_missing(&listing, &lib),
         vec!["modules/c.dkm".to_string()]
@@ -307,14 +307,14 @@ fn verify_by_range_checks_large_files_in_pieces() {
     let mut s = session(1 << 20);
     let d = data(5000, 7);
     put(&mut s, "samples/a.wav", d.clone()).unwrap();
-    assert_eq!(s.verify("samples/a.wav").unwrap(), sha256(&d));
+    assert_eq!(s.verify("samples/a.wav").unwrap(), file_hash(&d));
     assert_eq!(
         s.verify_range("samples/a.wav", 1024, 2000).unwrap(),
-        sha256(&d[1024..3024])
+        file_hash(&d[1024..3024])
     );
     assert_eq!(
         s.verify_range("samples/a.wav", 4608, 392).unwrap(),
-        sha256(&d[4608..])
+        file_hash(&d[4608..])
     );
     for (off, len, want) in [
         (100, 10, Status::Offset),
@@ -469,11 +469,11 @@ fn read_ranges_and_errors() {
 }
 
 #[test]
-fn verify_returns_the_files_sha256_and_refuses_a_missing_file() {
+fn verify_returns_the_files_hash_and_refuses_a_missing_file() {
     let mut s = session(1 << 20);
     let d = data(1500, 9);
     put(&mut s, "modules/a.dkm", d.clone()).unwrap();
-    assert_eq!(s.verify("modules/a.dkm").unwrap(), sha256(&d));
+    assert_eq!(s.verify("modules/a.dkm").unwrap(), file_hash(&d));
     assert!(matches!(
         s.verify("modules/none.dkm"),
         Err(Error::Device {
@@ -482,4 +482,28 @@ fn verify_returns_the_files_sha256_and_refuses_a_missing_file() {
         })
     ));
     assert!(matches!(s.verify("a//b"), Err(Error::Request(_))));
+}
+
+#[test]
+fn a_runtime_without_the_file_hash_capability_is_refused_at_once() {
+    let mut s = session(1 << 20);
+    s.transport.dev.old_store = true;
+    let want = "Update the firmware: this runtime uses the old store format";
+    for r in [
+        put(&mut s, "modules/a.dkm", data(10, 1)),
+        s.list().map(drop),
+        s.verify("modules/a.dkm").map(drop),
+    ] {
+        assert!(matches!(r, Err(Error::Request(m)) if m == want));
+    }
+    // the refusal is before any upload command: nothing is open on the device
+    assert!(!s.info().unwrap().upload_open());
+}
+
+#[test]
+fn the_file_hash_slot_is_the_odd_content_hash_then_28_zeros() {
+    // the hash of nothing is the seed 0x43fa243a; the slot is never zero, so a folder's all-zero slot is not a file's
+    let slot = file_hash(&[]);
+    assert_eq!(&slot[..4], &[0x43, 0xfa, 0x24, 0x3b]);
+    assert!(slot[4..].iter().all(|&b| b == 0));
 }

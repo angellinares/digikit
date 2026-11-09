@@ -27,7 +27,7 @@ ports = ["dt2-1.17", "dn2-1.12"]
 
 # Device id, area size and the number of reserved types from the device files and core/machines types.toml, written by
 # `patchkit gen` (docs/design/device-data.md). This module reserves DYN_TYPES rows: keep the `[[entry]]` rows below at that number
-# (tests/patchkit/test_pk_types.py checks it).
+# (packages/patchkit/tests/devdata.rs checks it).
 [[gen]]
 kind = "gas"
 path = "build/gen/device-{dev}.inc"

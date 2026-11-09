@@ -1,12 +1,15 @@
 // The Modules backend of the preview (replaces ../src/transfer-backend.ts): the library and the device come from sim.ts; an install, a delete
 // and a restart emit the same events as dktransfer.ts, paced by `sim.speed`.
-import type { TransferEvent, TransferView } from '@web/modules/dktransfer';
+import { moduleFilePath, moduleFilesFolder, type TransferEvent, type TransferView } from '@web/modules/dktransfer';
 import { noteActivity } from '@web/transfer/activity';
 import { asked, noteConnection } from '@web/transfer/connection-state';
 import { PAUSED } from '../src/desktop-env';
 import { LIBRARY, delay, deviceFiles, deviceRead, libraryById, pathOf, sim, view, control } from './sim';
 
 export { PAUSED };
+
+/** The simulated device's module files, by store path. */
+const moduleFiles = new Map<string, Uint8Array>();
 
 /** Send `bytes` at the simulated speed, with a progress event about every 100 ms. */
 async function pace(bytes: number, emit: (sent: number) => void): Promise<void> {
@@ -48,6 +51,32 @@ export const transferBackend = {
       deviceFiles.delete(path);
     }
     onEvent({ event: 'done', deleted: paths });
+  },
+  async listModuleFiles(moduleId: string): Promise<{ name: string; size: number }[]> {
+    await deviceRead();
+    const folder = moduleFilesFolder(moduleId);
+    return [...moduleFiles.entries()]
+      .filter(([path]) => path.startsWith(folder))
+      .map(([path, bytes]) => ({ name: path.slice(folder.length), size: bytes.length }));
+  },
+  async putModuleFile(
+    moduleId: string,
+    name: string,
+    bytes: Uint8Array,
+    progress: (sent: number, total: number) => void,
+  ): Promise<void> {
+    const path = moduleFilePath(moduleId, name);
+    await pace(bytes.length, (sent) => progress(sent, bytes.length));
+    moduleFiles.set(path, bytes);
+  },
+  async readModuleFile(moduleId: string, name: string): Promise<Uint8Array> {
+    const bytes = moduleFiles.get(moduleFilePath(moduleId, name));
+    if (!bytes) throw new Error(`${name} is not on the device`);
+    return bytes;
+  },
+  async removeModuleFile(moduleId: string, name: string): Promise<void> {
+    await delay(250);
+    moduleFiles.delete(moduleFilePath(moduleId, name));
   },
   async restart(onEvent: (e: TransferEvent) => void): Promise<void> {
     onEvent({ event: 'restart' });

@@ -1,0 +1,12 @@
+{
+  "$schema": "../../../node_modules/nx/schemas/project-schema.json",
+  "name": "digikit/probe",
+  "metadata": {
+    "runtimeAcceptance": [
+      {
+        "files": ["tests/sharc-probe.device.test.ts"],
+        "modules": ["digikit/remote", "test/dsp-facts", "test/sharc-probe", "test/step-beacon"]
+      }
+    ]
+  }
+}

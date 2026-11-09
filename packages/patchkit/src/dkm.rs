@@ -18,8 +18,10 @@ pub const NONE: u32 = 0xffff_ffff;
 pub const SLOTS: u32 = 8;
 pub const NAME_LEN: usize = 32;
 pub const IMPORT_LEN: usize = 32;
-/// Largest module file the v0 runtime stages (its staging buffer).
-pub const MAX_FILE: usize = 64 * 1024;
+/// Largest module file the v0 runtime stages (its staging buffer): `[limits.max] stage_bytes` of sdk/sdk.toml.
+pub fn max_file() -> usize {
+    crate::sdkgen::limits_max().stage_bytes as usize
+}
 /// The runtime version this packer targets (`dkrt_sdk::RUNTIME_VERSION`), packed major << 16 | minor << 8 | patch, from sdk/sdk.toml.
 pub fn runtime_version() -> u32 {
     crate::sdkgen::embedded_runtime()
@@ -81,6 +83,30 @@ pub const FLAG_TRACE: u32 = 1 << 31;
 /// The runtime version that loads a DSP section (`dkrt_sdk::RUNTIME_VERSION` is at least this).
 pub const RUNTIME_DSP: u32 = 5; // DSP sections of version 2 (voices with knob ranges, finding 51); a runtime 2 to 4 loads version 1 only
 
+/// The newest minor of the machine contract that has no stereo machines (1.1: `track` appended to `voice_in`).
+pub const MACHINE_MONO_MINOR: u8 = 1;
+pub const MACHINE_STEREO_MINOR: u8 = 2;
+pub const MACHINE_LATCHED_MINOR: u8 = 3;
+pub const MACHINE_NATIVE_PAGE_MINOR: u8 = 4;
+pub const MACHINE_NATIVE_PAGES_MINOR: u8 = 5;
+/// The newest minor of the Api contract before the per-track sample table (1.5). A module declares 1.5 only when its DSP section holds a
+/// track table (`DK_SAMPLE_TRACKS`); every other module declares 1.4, so a runtime of Api 1.4 still accepts it.
+pub const API_PRE_TRACKS_MINOR: u8 = 4;
+/// The Api minor of the per-track sample table (1.5).
+pub const API_TRACKS_MINOR: u8 = 5;
+
+/// The Api minor a module declares: the lowest that has everything it needs. 1.4 for a module that needs nothing newer; 1.5 when its DSP
+/// section holds a track table; the newest `since` of the entries its manifest lists in `uses_api` (`Options::api_minor`) when that is
+/// higher. Never above the Api of the SDK this packer was built with.
+pub fn api_minor(sdk_minor: u8, uses_tracks: bool, listed: u8) -> u8 {
+    let base = if uses_tracks {
+        API_TRACKS_MINOR
+    } else {
+        API_PRE_TRACKS_MINOR
+    };
+    base.max(listed).min(sdk_minor)
+}
+
 pub struct Options {
     pub name: String,
     /// major << 16 | minor << 8 | patch
@@ -88,6 +114,11 @@ pub struct Options {
     pub runtime_min: u32,
     /// A traced build (`patchkit pack --trace`, DK_TRACE defined): sets [`FLAG_TRACE`].
     pub trace: bool,
+    /// A stereo machine (`DK_MACHINE_STEREO`): the file declares machine contract 1.2. A mono machine declares 1.1, so a runtime of
+    /// machine contract 1.1 still accepts it.
+    pub stereo: bool,
+    /// The newest Api minor of the entries the manifest lists in `uses_api` (0: none); see [`api_minor`].
+    pub api_minor: u8,
 }
 
 /// "1.2.3" -> 0x010203
@@ -162,6 +193,33 @@ fn has_machine_record(reg: &[u8]) -> bool {
     false
 }
 
+/// The global symbols of a ColdFire object with their offsets in the loaded image (the offsets `pack` writes for `dkm_init` and the slots). The
+/// register records that name a function (the click callbacks) need them before the file is packed.
+pub fn image_symbols(obj: &Dko) -> Result<BTreeMap<String, u32>> {
+    let defined: BTreeSet<&str> = obj
+        .symbols
+        .iter()
+        .filter(|s| s.section.is_some())
+        .map(|s| s.name.as_str())
+        .collect();
+    let externs: BTreeMap<String, u64> = obj
+        .relocs
+        .iter()
+        .filter(|r| !defined.contains(r.symbol.as_str()))
+        .map(|r| (r.symbol.clone(), 0))
+        .collect();
+    let linked = link::link(obj, 0, &externs)?;
+    let len = linked.image.len() as u64;
+    Ok(linked
+        .globals
+        .iter()
+        .filter_map(|n| {
+            let v = *linked.symbols.get(n)?;
+            (v < len).then_some((n.clone(), v as u32))
+        })
+        .collect())
+}
+
 /// Pack an object (or none: a data-only module) with `register` records (see [`register`]).
 pub fn pack_with(obj: Option<&Dko>, reg: &[u8], o: &Options) -> Result<Vec<u8>> {
     pack_full(obj, reg, &[], o)
@@ -170,7 +228,7 @@ pub fn pack_with(obj: Option<&Dko>, reg: &[u8], o: &Options) -> Result<Vec<u8>> 
 /// Pack an object (or none), `register` records and a DSP section (see [`crate::dkmdsp`]; empty: none). A file with a DSP section
 /// needs a runtime of version [`RUNTIME_DSP`] or later.
 pub fn pack_full(obj: Option<&Dko>, reg: &[u8], dsp: &[u8], o: &Options) -> Result<Vec<u8>> {
-    pack_full_max(obj, reg, dsp, o, MAX_FILE)
+    pack_full_max(obj, reg, dsp, o, max_file())
 }
 
 /// [`pack_full`] with another file size limit: `dkm_synth` makes files over the staging buffer on purpose (the capacity tests of the
@@ -350,21 +408,57 @@ pub fn pack_full_max(
     put(&mut f, H_VERSION, o.version);
     // contracts: api always; machine with a DSP section (that is not only effects) or a machine record; fx with an effect record; service with slot functions or a real `dkm_init`/`dkm_fini` (not the stub)
     let sdk = crate::sdkgen::embedded();
-    let has_service = !slots.is_empty() || has_obj && (init.is_some() || fini.is_some() || menu.is_some());
+    let has_service =
+        !slots.is_empty() || has_obj && (init.is_some() || fini.is_some() || menu.is_some());
     let none = (0, 0);
     // a DSP section of version 4 with effects and no voice implements the fx contract and not the machine contract (a machine needs a voice or a record)
     let word = |off: usize| {
         dsp.get(off..off + 4)
             .map_or(0, |b| u32::from_be_bytes(b.try_into().unwrap()))
     };
-    let has_fx = word(4) == crate::dkmdsp::VERSION_4 && word(0x38) > 0;
+    let has_fx =
+        matches!(word(4), crate::dkmdsp::VERSION_4 | crate::dkmdsp::VERSION_5) && word(0x38) > 0;
     let fx_only = has_fx && word(0x30) == 0;
+    // a version 5 DSP section whose record has kind 2 holds the per-track sample table: the module uses Api 1.5
+    let uses_tracks = word(4) == crate::dkmdsp::VERSION_5
+        && dsp
+            .get(word(0x3c) as usize..)
+            .and_then(|b| b.get(..4))
+            .is_some_and(|b| {
+                u32::from_le_bytes(b.try_into().unwrap()) == crate::dkmdsp::SAMPLE_TRACKS_KIND
+            });
+    let uses_latched = matches!(
+        word(4),
+        crate::dkmdsp::VERSION_3 | crate::dkmdsp::VERSION_4 | crate::dkmdsp::VERSION_5
+    ) && dsp.get(word(0x2c) as usize..).is_some_and(|voices| {
+        voices
+            .chunks_exact(crate::dkmdsp::VOICE_LEN_V3)
+            .take(word(0x30) as usize)
+            .any(|v| u32::from_be_bytes(v[56..60].try_into().unwrap()) != 0)
+    });
     let pairs = [
-        sdk.api,
+        (sdk.api.0, api_minor(sdk.api.1, uses_tracks, o.api_minor)),
         if (dsp.is_empty() || fx_only) && !has_machine_record(reg) {
             none
+        } else if !reg.is_empty()
+            && crate::register::Register::parse(reg)?
+                .native_pages
+                .iter()
+                .any(|p| p.version == 2)
+        {
+            (sdk.machine.0, sdk.machine.1.min(MACHINE_NATIVE_PAGES_MINOR))
+        } else if !reg.is_empty()
+            && !crate::register::Register::parse(reg)?
+                .native_pages
+                .is_empty()
+        {
+            (sdk.machine.0, sdk.machine.1.min(MACHINE_NATIVE_PAGE_MINOR))
+        } else if uses_latched {
+            (sdk.machine.0, sdk.machine.1.min(MACHINE_LATCHED_MINOR))
+        } else if o.stereo {
+            (sdk.machine.0, sdk.machine.1.min(MACHINE_STEREO_MINOR))
         } else {
-            sdk.machine
+            (sdk.machine.0, sdk.machine.1.min(MACHINE_MONO_MINOR))
         },
         if has_fx { sdk.fx } else { none },
         if has_service { sdk.service } else { none },
@@ -463,7 +557,10 @@ impl Dkm {
             return Err(err!("format {} is not supported", get(f, 4)));
         }
         let header = get(f, H_HDRSIZE) as usize;
-        if get(f, H_SIZE) as usize != f.len() || (header != HEADER && header != HEADER_MENU) || f.len() < header {
+        if get(f, H_SIZE) as usize != f.len()
+            || (header != HEADER && header != HEADER_MENU)
+            || f.len() < header
+        {
             return Err(err!("size fields do not match the file"));
         }
         if file_sha(f) != f[H_SHA..H_SHA + 32] {
@@ -530,7 +627,11 @@ impl Dkm {
             imports,
             init: opt(get(f, H_INIT)),
             fini: opt(get(f, H_FINI)),
-            menu: if header == HEADER_MENU { opt(get(f, H_MENU)) } else { None },
+            menu: if header == HEADER_MENU {
+                opt(get(f, H_MENU))
+            } else {
+                None
+            },
             slots,
             register: rng(get(f, H_REG_OFF) as usize, get(f, H_REG_SIZE) as usize)?.to_vec(),
             dsp: rng(get(f, H_DSP_OFF) as usize, get(f, H_DSP_SIZE) as usize)?.to_vec(),
@@ -632,7 +733,30 @@ mod tests {
             version: 0x010203,
             runtime_min: 1,
             trace: false,
+            stereo: false,
+            api_minor: 0,
         }
+    }
+
+    #[test]
+    fn image_symbols_are_the_offsets_the_packer_writes_for_global_symbols() {
+        let mut o = unstamped();
+        let mut local = sym("local_fn", Some(".text"), 0);
+        local.global = false;
+        o.symbols.push(local);
+        o.stamp_isa();
+        let syms = image_symbols(&o).unwrap();
+        let d = Dkm::parse(&pack(&o, &opts()).unwrap()).unwrap();
+        assert_eq!(syms["dkm_init"], d.init.unwrap());
+        assert_eq!(syms["dkm_slot_0"], d.slots[0].1);
+        assert!(
+            !syms.contains_key("local_fn"),
+            "a static function has no symbol to call by"
+        );
+        assert!(
+            !syms.contains_key("fw_thing"),
+            "an import is not in the image"
+        );
     }
 
     #[test]
@@ -686,30 +810,196 @@ mod tests {
     }
 
     #[test]
+    fn the_api_minor_is_the_lowest_that_has_what_the_module_needs() {
+        // (sdk minor, track table, newest listed entry) -> declared minor
+        assert_eq!(api_minor(6, false, 0), 4);
+        assert_eq!(api_minor(6, true, 0), 5);
+        assert_eq!(api_minor(6, false, 6), 6);
+        assert_eq!(api_minor(6, true, 6), 6);
+        assert_eq!(
+            api_minor(6, false, 3),
+            4,
+            "an old entry never lowers the floor"
+        );
+        assert_eq!(api_minor(6, false, 5), 5);
+        assert_eq!(
+            api_minor(5, false, 6),
+            5,
+            "never above the SDK this packer was built with"
+        );
+        // the entries of the Api: the table of sdk.toml says when each came
+        assert_eq!(crate::sdkgen::api_since("sample_pool_path").unwrap(), 6);
+        assert_eq!(crate::sdkgen::api_since("sample_pool_add").unwrap(), 5);
+        assert_eq!(crate::sdkgen::api_since("store_read").unwrap(), 0);
+        assert!(crate::sdkgen::api_since("no_such_entry").is_err());
+    }
+
+    #[test]
+    fn native_page_requires_machine_contract_1_4() {
+        use crate::register::{Machine, NativePage, Register};
+        let mut reg = Register {
+            device: 1,
+            ..Register::default()
+        };
+        reg.machines.push(Machine {
+            type_no: 16,
+            clone_of: 0,
+            position: 0,
+            own_dsp: 1,
+            level: 10,
+            knobs: [0; 8],
+            name: "Native".into(),
+            short: "NAT".into(),
+        });
+        let mut bindings = [[0; 3]; 8];
+        bindings[0] = [2, 0, 2];
+        reg.native_pages.push(NativePage {
+            version: 1,
+            page: 1,
+            flags: 0,
+            type_no: 16,
+            draw: 2,
+            event: 4,
+            title: "Native".into(),
+            bindings,
+        });
+        let file = pack_full(Some(&object()), &reg.encode(), &dsp_section(0, 1), &opts()).unwrap();
+        assert_eq!(&file[H_CONTRACT + 2..H_CONTRACT + 4], &[1, 4]);
+        needs(&file).expect("dkneeds accepts the native-page record");
+    }
+
+    #[test]
+    fn replacement_pages_require_machine_contract_1_5() {
+        use crate::register::{Machine, NativePage, Register};
+        let mut reg = Register {
+            device: 1,
+            ..Register::default()
+        };
+        reg.machines.push(Machine {
+            type_no: 16,
+            clone_of: 0,
+            position: 0,
+            own_dsp: 1,
+            level: 10,
+            knobs: [0; 8],
+            name: "Custom".into(),
+            short: "CST".into(),
+        });
+        let mut bindings = [[0; 3]; 8];
+        bindings[0] = [2, 0, 6];
+        for page in 0..2 {
+            reg.native_pages.push(NativePage {
+                version: 2,
+                page,
+                flags: 0,
+                type_no: 16,
+                draw: 2,
+                event: 4,
+                title: "Custom".into(),
+                bindings,
+            });
+        }
+        let file = pack_full(Some(&object()), &reg.encode(), &dsp_section(0, 1), &opts()).unwrap();
+        assert_eq!(&file[H_CONTRACT + 2..H_CONTRACT + 4], &[1, 5]);
+        needs(&file).expect("replacement-page requirements are readable");
+    }
+
+    #[test]
+    fn latched_voice_requires_machine_contract_1_3() {
+        let mut section = crate::dkmdsp::DspSection::parse(&dsp_section(0, 1)).unwrap();
+        section.voices[0].latched = 1;
+        section.voices[0].note_on = 2;
+        let dsp = section.encode();
+        let decoded = crate::dkmdsp::DspSection::parse(&dsp).unwrap();
+        assert_eq!(decoded.voices[0].latched, 1);
+        for stereo in [false, true] {
+            let options = Options { stereo, ..opts() };
+            let file = pack_full(Some(&object()), &[], &dsp, &options).unwrap();
+            assert_eq!(&file[H_CONTRACT + 2..H_CONTRACT + 4], &[1, 3]);
+        }
+    }
+
+    #[test]
     fn the_header_carries_the_contract_versions() {
         // 0x38..0x40: api, machine, fx, service as (major, minor)
         let c = |f: &[u8]| f[H_CONTRACT..H_CONTRACT + 8].to_vec();
         // ColdFire code with slots and init, no DSP section: api and service
         let f = pack(&object(), &opts()).unwrap();
-        assert_eq!(c(&f), vec![1, 2, 0, 0, 0, 0, 1, 0]);
+        assert_eq!(c(&f), vec![1, 4, 0, 0, 0, 0, 1, 0]);
         // with a DSP section: machine too (the section's bytes are not parsed by pack)
         let f = pack_full(Some(&object()), &[], &[0u8; 16], &opts()).unwrap();
-        assert_eq!(c(&f), vec![1, 2, 1, 0, 0, 0, 1, 0]);
+        assert_eq!(c(&f), vec![1, 4, 1, 1, 0, 0, 1, 0]);
+        // a stereo machine: contract 1.2
+        let stereo = Options {
+            stereo: true,
+            ..opts()
+        };
+        let f = pack_full(Some(&object()), &[], &[0u8; 16], &stereo).unwrap();
+        assert_eq!(c(&f), vec![1, 4, 1, 2, 0, 0, 1, 0]);
+        // a DSP section with a track table: Api 1.5, and nothing else changes
+        let tracks = crate::dkmdsp::DspSection {
+            sample_bank: None,
+            sample_tracks: Some(crate::dkmdsp::SampleTracks {
+                local_id: 0,
+                records_byte_offset: 0,
+                control_byte_offset: 512,
+            }),
+            device: 1,
+            image: vec![0; 768],
+            bss: 0,
+            align: 16,
+            imports: vec![],
+            relocs: vec![],
+            voices: vec![],
+            fxs: vec![],
+        };
+        let f = pack_full(Some(&object()), &[], &tracks.encode(), &stereo).unwrap();
+        assert_eq!(c(&f), vec![1, 5, 1, 2, 0, 0, 1, 0]);
+        needs(&f).expect("dkneeds accepts the kind 2 record the packer wrote");
+        // a manifest that lists an Api entry of 1.6 (`uses_api`): 1.6, with or without a table; a module of 1.4 stays 1.4 without it
+        let uses6 = Options {
+            api_minor: 6,
+            ..opts()
+        };
+        let f = pack(&object(), &uses6).unwrap();
+        assert_eq!(c(&f), vec![1, 6, 0, 0, 0, 0, 1, 0]);
+        let f = pack_full(
+            Some(&object()),
+            &[],
+            &tracks.encode(),
+            &Options {
+                api_minor: 6,
+                ..stereo
+            },
+        )
+        .unwrap();
+        assert_eq!(c(&f), vec![1, 6, 1, 2, 0, 0, 1, 0]);
+        // an entry of 1.3 does not lower what the table needs
+        let f = pack_full(
+            Some(&object()),
+            &[],
+            &tracks.encode(),
+            &Options {
+                api_minor: 3,
+                stereo: true,
+                ..opts()
+            },
+        )
+        .unwrap();
+        assert_eq!(c(&f), vec![1, 5, 1, 2, 0, 0, 1, 0]);
         // a data-only module with a DSP section: machine, no service
         let f = pack_full(None, &[], &[0u8; 16], &opts()).unwrap();
-        assert_eq!(c(&f), vec![1, 2, 1, 0, 0, 0, 0, 0]);
+        assert_eq!(c(&f), vec![1, 4, 1, 1, 0, 0, 0, 0]);
         // a data-only module without DSP code: api only
         let f = pack_with(None, &[], &opts()).unwrap();
-        assert_eq!(c(&f), vec![1, 2, 0, 0, 0, 0, 0, 0]);
+        assert_eq!(c(&f), vec![1, 4, 0, 0, 0, 0, 0, 0]);
         // register records that hold a machine: machine too (a data-only machine module); param and page records alone: not
-        let rec = |kind: u32, len: usize| {
-            let mut r = kind.to_be_bytes().to_vec();
-            r.extend((len as u32).to_be_bytes());
-            r.resize(len, 0);
-            r
-        };
+        let rec = record;
         let table = |recs: &[Vec<u8>]| {
             let mut t = vec![0u8; crate::register::HEADER];
+            t[0..4].copy_from_slice(&crate::register::MAGIC.to_be_bytes());
+            t[4..8].copy_from_slice(&crate::register::VERSION.to_be_bytes());
+            t[12..16].copy_from_slice(&(recs.len() as u32).to_be_bytes());
             for r in recs {
                 t.extend(r);
             }
@@ -718,14 +1008,35 @@ mod tests {
         let param = rec(crate::register::KIND_PARAM, crate::register::LEN_PARAM);
         let machine = rec(crate::register::KIND_MACHINE, crate::register::LEN_MACHINE);
         let f = pack_with(None, &table(&[param.clone(), machine]), &opts()).unwrap();
-        assert_eq!(c(&f), vec![1, 2, 1, 0, 0, 0, 0, 0]);
+        assert_eq!(c(&f), vec![1, 4, 1, 1, 0, 0, 0, 0]);
         let f = pack_with(None, &table(&[param]), &opts()).unwrap();
-        assert_eq!(c(&f), vec![1, 2, 0, 0, 0, 0, 0, 0]);
+        assert_eq!(c(&f), vec![1, 4, 0, 0, 0, 0, 0, 0]);
+    }
+
+    /// One register record of a kind and length. One-letter names: the packer validates the register section.
+    fn record(kind: u32, len: usize) -> Vec<u8> {
+        use crate::register::{KIND_MACHINE, KIND_PAGE, KIND_PARAM};
+        let mut r = kind.to_be_bytes().to_vec();
+        r.extend((len as u32).to_be_bytes());
+        r.resize(len, 0);
+        // Offsets of the text fields in the whole record, the 8-byte prefix included.
+        let text: &[usize] = match kind {
+            KIND_PARAM => &[32, 64],
+            KIND_MACHINE => &[60, 84],
+            KIND_PAGE => &[48, 72],
+            _ => &[],
+        };
+        for &o in text {
+            r[o] = b'x';
+        }
+        r
     }
 
     /// A DSP section of an 8-byte image with BSS bytes of bss and one version 3 voice with `voices` states of 20 bytes (0: version 2).
     fn dsp_section(bss: u32, voices: u32) -> Vec<u8> {
         crate::dkmdsp::DspSection {
+            sample_bank: None,
+            sample_tracks: None,
             device: 1,
             image: vec![0; 8],
             bss,
@@ -740,6 +1051,7 @@ mod tests {
                 clear_bytes: 0,
                 voices,
                 ranges: [0; 8],
+                latched: 0,
             }],
             fxs: vec![],
         }
@@ -780,12 +1092,7 @@ mod tests {
         let f = pack_full(Some(&object()), &[], &dsp_section(100, 0), &opts()).unwrap();
         assert_eq!(needs(&f).unwrap().dsp_area, 128);
         // register records: the counts of each kind
-        let rec = |kind: u32, len: usize| {
-            let mut r = kind.to_be_bytes().to_vec();
-            r.extend((len as u32).to_be_bytes());
-            r.resize(len, 0);
-            r
-        };
+        let rec = record;
         let mut t = vec![0u8; crate::register::HEADER];
         t[0..4].copy_from_slice(&0x444b_5247u32.to_be_bytes());
         t[4..8].copy_from_slice(&1u32.to_be_bytes());
@@ -819,6 +1126,7 @@ mod tests {
         assert_eq!(dkneeds::MAGIC, MAGIC);
         assert_eq!(dkneeds::FORMAT, super::FORMAT);
         assert_eq!(dkneeds::HEADER as usize, HEADER);
+        assert_eq!(dkneeds::SLOTS, crate::dkm::SLOTS);
         for (a, b) in [
             (dkneeds::H_SIZE, H_SIZE),
             (dkneeds::H_HDRSIZE, H_HDRSIZE),
@@ -849,14 +1157,9 @@ mod tests {
         assert_eq!(dkneeds::LEN_PAGE as usize, r::LEN_PAGE);
         assert_eq!(dkneeds::KIND_EFFECT, r::KIND_EFFECT);
         assert_eq!(dkneeds::LEN_EFFECT as usize, r::LEN_EFFECT);
-        assert_eq!(dkneeds::MAX_RECORDS as usize, r::MAX_RECORDS);
         use crate::dkmdsp as d;
         assert_eq!(dkneeds::DSP_MAGIC, d::MAGIC);
         assert_eq!(dkneeds::DSP_HEADER as usize, d::HEADER);
-        assert_eq!(dkneeds::MAX_RELOCS as usize, d::MAX_RELOCS);
-        assert_eq!(dkneeds::MAX_IMPORTS as usize, d::MAX_IMPORTS);
-        assert_eq!(dkneeds::MAX_VOICES as usize, d::MAX_VOICES);
-        assert_eq!(dkneeds::GRANULE, d::GRANULE);
     }
 
     #[test]

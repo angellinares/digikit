@@ -579,136 +579,80 @@ class FloatComputeTest(unittest.TestCase):
 
     # -- Fn = recips/rsqrts Fx seeds (PRM p.427, PGR p.11-44/11-45) ---------
 
-    def test_recips_rsqrts_decode_without_a_numeric_seed(self):
-        # Neither op's ordinary-case seed *mantissa* is claimed without
-        # --approx-recips (it comes from an unpublished ROM table), but
-        # both ops' own ASTATx/y Flags tables (PRM pp.19-16/19-17 recips,
-        # pp.19-17/19-18 rsqrts) define AV purely from classifying the
-        # input bit pattern, not from the ROM -- so AV is known (clear)
-        # here even though the seed value itself stays Unknown.
-        for opcode, name in ((0xC4, "float-recips-seed"), (0xC5, "float-rsqrts-seed")):
-            with self.subTest(opcode=hex(opcode)):
-                _, value, op, astatx = self.astatx_after(
-                    full_compute(0, opcode, 0, 1, 0),
-                    {1: T.Const(f32(2.0))},
-                    T.Unknown("start"),
-                )
-                self.assertEqual(op, name)
-                self.assertIsInstance(value, T.Unknown)
-                self.assertEqual(T._astatx_known_bit(astatx, T.AV_BIT), False)
+    # The seed tables and the flags are checked against the device capture in
+    # test_sharc_recips_device.py; the tests below pin single documented cases.
 
-    # -- --approx-recips: opt-in documented-formula seed approximation ------
-
-    def approx_after(self, opcode, rx_value, old_astatx=None):
+    def seed_after(self, opcode, rx_value, old_astatx=None):
         rn, value, operation, update = T._compute(
-            full_compute(0, opcode, 0, 1, 0),
-            False,
-            {1: rx_value},
-            approx_recips=True,
+            full_compute(0, opcode, 0, 1, 0), False, {1: rx_value}
         )
         return rn, value, operation, update(old_astatx or T.Unknown("start"))
 
-    def test_approx_recips_default_off_still_unknown(self):
-        # No approx_recips kwarg at all (the CLI's default): unchanged from
-        # test_recips_rsqrts_decode_without_a_numeric_seed above.
-        _, value, op, _ = self.astatx_after(
-            full_compute(0, 0xC4, 0, 1, 0),
-            {1: T.Const(f32(4.0))},
-            T.Unknown("start"),
-        )
+    def test_recips_ordinary_positive_value(self):
+        # 4.0 = 1.0 * 2^2: seed exponent -2 - 1 = -3, mantissa table entry 0.
+        _, value, op, astatx = self.seed_after(0xC4, T.Const(f32(4.0)))
         self.assertEqual(op, "float-recips-seed")
-        self.assertIsInstance(value, T.Unknown)
-
-    def test_approx_recips_ordinary_positive_value_within_documented_accuracy(self):
-        _, value, op, astatx = self.approx_after(0xC4, T.Const(f32(4.0)))
-        self.assertEqual(op, "float-recips-seed-approx")
-        approx = struct.unpack("<f", struct.pack("<I", value.value))[0]
-        # PRM p.19-17: "an 8-bit accurate seed" -- require the relative
-        # error against the true reciprocal to be within that bound.
-        self.assertLess(abs(approx - 0.25) / 0.25, 2**-8)
+        self.assertEqual(value, T.Const(0x3E7F8000))
         self.assertEqual(T._astatx_known_bit(astatx, T.AN_BIT), False)
         self.assertEqual(T._astatx_known_bit(astatx, T.AI_BIT), False)
         self.assertEqual(T._astatx_known_bit(astatx, T.AV_BIT), False)
         self.assertEqual(T._astatx_known_bit(astatx, T.AZ_BIT), False)
+        # a float ALU operation sets AF (measured on the device)
+        self.assertEqual(T._astatx_known_bit(astatx, T.AF_BIT), True)
 
-    def test_approx_recips_negative_value_sets_an_and_keeps_sign(self):
-        _, value, op, astatx = self.approx_after(0xC4, T.Const(f32(-4.0)))
-        approx = struct.unpack("<f", struct.pack("<I", value.value))[0]
-        self.assertLess(approx, 0.0)
-        self.assertLess(abs(approx - (-0.25)) / 0.25, 2**-8)
+    def test_recips_negative_value_sets_an_and_keeps_sign(self):
+        _, value, op, astatx = self.seed_after(0xC4, T.Const(f32(-4.0)))
+        self.assertEqual(value, T.Const(0xBE7F8000))
         self.assertEqual(T._astatx_known_bit(astatx, T.AN_BIT), True)
 
-    def test_approx_recips_nan_input_returns_all_ones_and_sets_ai(self):
-        _, value, op, astatx = self.approx_after(0xC4, T.Const(0x7FC00000))
-        self.assertEqual(value, T.Const(0xFFFFFFFF))
-        self.assertEqual(T._astatx_known_bit(astatx, T.AI_BIT), True)
+    def test_recips_nan_input_returns_all_ones_and_sets_ai_not_an(self):
+        # Measured: AN stays clear for a negative NAN, too.
+        for bits in (0x7FC00000, 0xFFC00000):
+            _, value, op, astatx = self.seed_after(0xC4, T.Const(bits))
+            self.assertEqual(value, T.Const(0xFFFFFFFF))
+            self.assertEqual(T._astatx_known_bit(astatx, T.AI_BIT), True)
+            self.assertEqual(T._astatx_known_bit(astatx, T.AN_BIT), False)
 
-    def test_approx_recips_zero_input_returns_signed_infinity_and_sets_av(self):
+    def test_recips_zero_input_returns_signed_infinity_and_sets_av(self):
         for zero_bits, expected in ((0x00000000, 0x7F800000), (0x80000000, 0xFF800000)):
             with self.subTest(zero_bits=hex(zero_bits)):
-                _, value, _, astatx = self.approx_after(0xC4, T.Const(zero_bits))
+                _, value, _, astatx = self.seed_after(0xC4, T.Const(zero_bits))
                 self.assertEqual(value, T.Const(expected))
                 self.assertEqual(T._astatx_known_bit(astatx, T.AV_BIT), True)
                 self.assertEqual(T._astatx_known_bit(astatx, T.AZ_BIT), False)
 
-    def test_approx_recips_denormal_input_is_flushed_to_zero_first(self):
+    def test_recips_denormal_input_is_flushed_to_zero_first(self):
         # PRM p.417-418 (IEEE-754 compatibility bullet, general to every
         # computational unit): "Denormal operands ... flush to zero when
         # input to a computational unit." A flushed +denormal therefore
         # takes recips's own +-zero -> +-infinity path.
-        _, value, _, astatx = self.approx_after(0xC4, T.Const(0x00000001))
+        _, value, _, astatx = self.seed_after(0xC4, T.Const(0x00000001))
         self.assertEqual(value, T.Const(0x7F800000))
         self.assertEqual(T._astatx_known_bit(astatx, T.AV_BIT), True)
 
-    def test_approx_recips_large_exponent_underflows_to_signed_zero(self):
+    def test_recips_large_exponent_underflows_to_signed_zero(self):
         # PRM p.19-17: "If the unbiased exponent of Fx is greater than
         # +125, the result is +-zero." biased 253 -> unbiased 126 > 125.
-        _, value, _, astatx = self.approx_after(0xC4, T.Const((253 << 23) | (1 << 31)))
+        _, value, op, astatx = self.seed_after(0xC4, T.Const((253 << 23) | (1 << 31)))
         self.assertEqual(value, T.Const(1 << 31))  # -zero
+        self.assertEqual(op, "float-recips-seed-underflow")
         self.assertEqual(T._astatx_known_bit(astatx, T.AZ_BIT), True)
         self.assertEqual(T._astatx_known_bit(astatx, T.AV_BIT), False)
 
-    def test_approx_recips_symbolic_input_stays_unknown_even_when_enabled(self):
-        _, value, op, _ = self.approx_after(0xC4, T.Unknown("uninitialized R1"))
-        self.assertEqual(op, "float-recips-seed-approx")
+    def test_recips_symbolic_input_stays_unknown(self):
+        _, value, op, _ = self.seed_after(0xC4, T.Unknown("uninitialized R1"))
+        self.assertEqual(op, "float-recips-seed")
         self.assertIsInstance(value, T.Unknown)
 
-    # -- --approx-recips extended to rsqrts's own special cases and its
-    # ordinary-case seed (PRM pp.19-17/19-18, "FN = rsqrts FX") -----------
-    #
-    # The manual's own exponent formula for the ordinary case ("the
-    # unbiased exponent of Fn = INT[e/2] <?> 1") has a missing operator
-    # glyph in the PDF itself (confirmed against the rendered page image,
-    # out/refs/sharc-plus-prm/png/p0470.png, not just extracted text), so
-    # --approx-recips approximates the seed the same way it does for
-    # recips: the true mathematical reciprocal-square-root's IEEE-754 bit
-    # pattern, keeping only the documented number of accurate mantissa
-    # bits (rsqrts: "a 4-bit accurate seed", so the top 4 mantissa bits).
-    # The four special-case inputs (NAN, +-zero, +infinity, negative
-    # nonzero), and every flag, are fully determined by the input's bit
-    # pattern and need no ROM data at all, so they are exact regardless of
-    # --approx-recips.
-
-    def test_approx_rsqrts_ordinary_positive_value_within_documented_accuracy(self):
-        _, value, op, astatx = self.approx_after(0xC5, T.Const(f32(4.0)))
-        self.assertEqual(op, "float-rsqrts-seed-approx")
-        approx = struct.unpack("<f", struct.pack("<I", value.value))[0]
-        # PRM p.19-18: "a 4-bit accurate seed" for 1/sqrt(4) = 0.5.
-        self.assertLess(abs(approx - 0.5) / 0.5, 2**-4)
+    def test_rsqrts_ordinary_positive_value(self):
+        # 4.0: e = 2, seed exponent -1 - (2 >> 1) = -2; index (exponent LSB 1, mantissa 0).
+        _, value, op, astatx = self.seed_after(0xC5, T.Const(f32(4.0)))
+        self.assertEqual(op, "float-rsqrts-seed")
+        self.assertEqual(value, T.Const(0x3EFF8000))
         self.assertEqual(T._astatx_known_bit(astatx, T.AN_BIT), False)
         self.assertEqual(T._astatx_known_bit(astatx, T.AI_BIT), False)
         self.assertEqual(T._astatx_known_bit(astatx, T.AV_BIT), False)
         self.assertEqual(T._astatx_known_bit(astatx, T.AZ_BIT), False)
-
-    def test_rsqrts_ordinary_value_stays_unknown_without_approx(self):
-        _, value, op, astatx = self.astatx_after(
-            full_compute(0, 0xC5, 0, 1, 0),
-            {1: T.Const(f32(4.0))},
-            T.Unknown("start"),
-        )
-        self.assertEqual(op, "float-rsqrts-seed")
-        self.assertIsInstance(value, T.Unknown)
-        self.assertEqual(T._astatx_known_bit(astatx, T.AV_BIT), False)
 
     def test_rsqrts_nan_or_negative_nonzero_input_returns_all_ones(self):
         # PRM p.19-18: "A NAN input or a negative nonzero input returns a
@@ -768,13 +712,8 @@ class FloatComputeTest(unittest.TestCase):
         self.assertEqual(value, T.Const(0))
         self.assertEqual(T._astatx_known_bit(astatx, T.AZ_BIT), True)
 
-    def test_approx_rsqrts_symbolic_input_stays_unknown(self):
-        # Unlike recips, --approx-recips's usage-gated string is not
-        # extended to a symbolic rsqrts input: rsqrts's ordinary-case
-        # approximation is keyed off a concretely classified input (see
-        # _alu_recip_seed_impl), so a symbolic input takes the generic
-        # not-a-Const branch and reports the plain (non-approx) op name.
-        _, value, op, _ = self.approx_after(0xC5, T.Unknown("uninitialized R1"))
+    def test_rsqrts_symbolic_input_stays_unknown(self):
+        _, value, op, _ = self.seed_after(0xC5, T.Unknown("uninitialized R1"))
         self.assertEqual(op, "float-rsqrts-seed")
         self.assertIsInstance(value, T.Unknown)
 
@@ -996,31 +935,6 @@ class FloatComputeTest(unittest.TestCase):
         self.assertEqual(executed.uregs[3], T.Const(7))
         self.assertEqual(executed.trace[-1]["result_register"], ["R0", "R3"])
         self.assertEqual(executed.trace[-1]["value"], [13, 7])
-
-    def recips_record(self):
-        fields = full_compute(0, 0xC4, 0, 1, 0)
-        return insn("2a", {"cond[4:0]": 0x1F, **fields}, 6)
-
-    def test_approx_recips_end_to_end_tags_the_path_and_emits_an_event(self):
-        state = T.State(1, {1: T.Const(f32(4.0))}, approx_recips=True)
-        executed = T._execute(state, self.recips_record())[0]
-        self.assertTrue(executed.approx_recips_used)
-        approx_events = [
-            event for event in executed.trace if event["action"] == "approximate-recips"
-        ]
-        self.assertEqual(len(approx_events), 1)
-        self.assertEqual(approx_events[0]["value"], f32(0.25))
-        self.assertEqual(executed.uregs[0], T.Const(f32(0.25)))
-
-    def test_approx_recips_disabled_by_default_leaves_no_trace_and_flag_unset(self):
-        state = T.State(1, {1: T.Const(f32(4.0))})
-        self.assertFalse(state.approx_recips)
-        executed = T._execute(state, self.recips_record())[0]
-        self.assertFalse(executed.approx_recips_used)
-        self.assertNotIn(
-            "approximate-recips", [event["action"] for event in executed.trace]
-        )
-        self.assertIsInstance(executed.uregs[0], T.Unknown)
 
 
 class PhaseAOpcodeRegressionTest(TraceRunMixin, unittest.TestCase):

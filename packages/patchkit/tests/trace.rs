@@ -67,7 +67,9 @@ fn pack(root: &Path, out: &Path, trace: bool) -> Vec<u8> {
 #[test]
 fn trace_marks_cost_nothing_when_off_and_show_when_on() {
     if Env::new(&root()).m68k("gcc").is_err() {
-        eprintln!("SKIP: the m68k-elf toolchain is not installed (uv run python -m tools.patchkit.pk_toolchains m68k)");
+        eprintln!(
+            "SKIP: the m68k-elf toolchain is not installed (uv run python -m tools.patchkit.pk_toolchains m68k)"
+        );
         return;
     }
     let d = std::env::temp_dir().join(format!("pk-trace-test-{}", std::process::id()));
@@ -79,16 +81,27 @@ fn trace_marks_cost_nothing_when_off_and_show_when_on() {
 
     let off = pack(&here, &out, false);
     let plain = pack(&d, &out, false);
-    assert!(off == plain, "without --trace the file must equal the one of the sources without the marks");
+    assert!(
+        off == plain,
+        "without --trace the file must equal the one of the sources without the marks"
+    );
     assert!(!Dkm::parse(&off).unwrap().trace);
 
     let on = pack(&here, &out, true);
     let dkm = Dkm::parse(&on).unwrap();
     assert!(dkm.trace, "a traced file carries the trace bit");
     assert!(on.len() > off.len());
-    assert_eq!(Dkm::parse(&off).unwrap().runtime_min, dkm.runtime_min, "the bit is not part of the runtime version");
+    assert_eq!(
+        Dkm::parse(&off).unwrap().runtime_min,
+        dkm.runtime_min,
+        "the bit is not part of the runtime version"
+    );
     let dsp = patchkit::dkmdsp::DspSection::parse(&dkm.dsp).unwrap();
-    assert!(dsp.imports.iter().any(|i| i == "_dk_step"), "imports: {:?}", dsp.imports);
+    assert!(
+        dsp.imports.iter().any(|i| i == "_dk_step"),
+        "imports: {:?}",
+        dsp.imports
+    );
     // the traced objects did not replace the plain ones in the cache
     assert_eq!(off, pack(&here, &out, false));
 

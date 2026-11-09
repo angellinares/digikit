@@ -504,13 +504,13 @@ loop (finding 07) is `(0x47e28470 - 0x40312000) / 16`.
 | `0x44e4a5b8`, `0x44e4a9b8` | the two display buffers (1 KiB each); the pointers live at `0x402b6058/5c` | `panel_diff` operands, ready snapshot |
 | `0x47e28470-0x47e30000` | not cleared, unreferenced, 31 KiB | refscan |
 | `0x47e30000-0x47e7a340` | DMA arena, reached through the **uncached alias** `+0x08000000` (`0x4fe30000...`): 82 absolute references, e.g. `0x4fe3b000`, `0x4fe57000`, `0x4fe79300`. Not cleared; the code initialises it. | refscan, canary (pages `0x47e3a000-0x47e72000` written) |
-| `0x47e7a340-0x47fff000` | **free** (see below), 1.5 MiB | refscan, canary |
+| `0x47e7a340-0x47fff000` | **free** (see below), 1.5 MiB (usable expansion region: [finding 100](100-module-limits.md)) | refscan, canary |
 | `0x47fff000-0x48000000` | the reset stack: `main()` runs on it (`0x47fffff0` holds the return addresses `0x40196d7a` and `0x4000056e`); one page used | ready snapshot |
 
 DN2 1.11 has the same shape: image `0x40000400-0x4030b980`, bss
 `0x402fc000-0x466b74d0`, heap `0x4464abf0-0x4664abf0`, display buffers
 `0x44622bc8/fc8`, DMA arena `0x466b8000-0x46701300` (alias `0x4e6c...`), and
-**24.8 MiB** free above it up to the stack, because DN2 has no sample memory in
+**24.8 MiB** free above it up to the stack (usable expansion region: [finding 100](100-module-limits.md)), because DN2 has no sample memory in
 RAM. 1.17 and 1.12 have the same layout (1.17: identical clear range and arena;
 1.12: bss `0x402fd000-0x466b84d0`, arena `0x466c0000-0x46709300`).
 

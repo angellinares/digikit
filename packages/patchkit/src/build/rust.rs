@@ -14,6 +14,9 @@ use sha2::{Digest, Sha256};
 use std::collections::BTreeMap;
 use std::path::{Component, Path, PathBuf};
 
+/// Target helpers are source-hashed so fixes invalidate cached ColdFire objects.
+const CF_HELPERS: &str = include_str!("cf_rust_helpers.s");
+
 /// Emitted into the object, so identical on every machine: no source paths in panic locations.
 const RUSTFLAGS_EXTRA: &str = "-Zlocation-detail=none -Zfmt-debug=none";
 const CARGO_ARGS: [&str; 3] = [
@@ -152,14 +155,16 @@ pub fn source_sha256(manifest: &Path) -> Result<String> {
         .as_bytes(),
     );
     h.update(tc::RUST_TARGET_JSON);
+    h.update(CF_HELPERS.as_bytes());
     Ok(hex(&h.finalize()))
 }
 
 fn toolchain_info(env: &Env) -> BTreeMap<String, String> {
     let pins = tc::pins();
-    let rustc = std::process::Command::new("rustc")
-        .arg(format!("+{}", pins.rust_nightly))
-        .arg("--version")
+    let rustc = std::process::Command::new("rustup")
+        .arg("run")
+        .arg(&pins.rust_nightly)
+        .args(["rustc", "--version"])
         .env_clear()
         .envs(env.codegen_gcc_env(""))
         .output()
@@ -192,6 +197,12 @@ fn copy_tree(src: &Path, dst: &Path) -> Result<()> {
             copy_tree(&from, &to)?;
         } else {
             std::fs::copy(&from, &to).map_err(|e| err!("{}: {e}", from.display()))?;
+            // The target dir is shared by every tree and Cargo compares modification times: stamp the copy now.
+            std::fs::File::options()
+                .write(true)
+                .open(&to)
+                .and_then(|f| f.set_modified(std::time::SystemTime::now()))
+                .map_err(|e| err!("{}: {e}", to.display()))?;
         }
     }
     Ok(())
@@ -300,6 +311,23 @@ fn build_staticlib(env: &Env, manifest: &Path, out_dir: &Path) -> Result<PathBuf
             manifest.display()
         ));
     }
+    let pin = &tc::pins().rust_nightly;
+    let rustc = std::process::Command::new("rustup")
+        .args(["which", "--toolchain", pin.as_str(), "rustc"])
+        .output()
+        .map_err(|e| err!("rustup which rustc: {e}"))?;
+    if !rustc.status.success() {
+        return Err(err!(
+            "cannot locate rustc for {pin}: {}",
+            String::from_utf8_lossy(&rustc.stderr).trim()
+        ));
+    }
+    let rustc = PathBuf::from(String::from_utf8_lossy(&rustc.stdout).trim());
+    if !rustc.is_absolute() {
+        return Err(err!(
+            "rustup which returned no absolute rustc path for {pin}"
+        ));
+    }
     let tdir = target_dir(env);
     std::fs::create_dir_all(&tdir).map_err(|e| err!("{}: {e}", tdir.display()))?;
     let cg_env = env.codegen_gcc_env(RUSTFLAGS_EXTRA);
@@ -313,9 +341,10 @@ fn build_staticlib(env: &Env, manifest: &Path, out_dir: &Path) -> Result<PathBuf
     let src = TempDir::new("pk-rust-src-")?;
     let crate_dir = src.path().join("crate");
     let staged = stage(manifest, &crate_dir, &crate_dir.join(".deps"), &mut vec![])?;
-    let mut cmd = std::process::Command::new("cargo");
-    cmd.arg(format!("+{}", tc::pins().rust_nightly))
-        .args(["rustc", "--release"])
+    let mut cmd = std::process::Command::new("rustup");
+    cmd.arg("run")
+        .arg(&tc::pins().rust_nightly)
+        .args(["cargo", "rustc", "--release"])
         .args(CARGO_ARGS)
         .arg("--target")
         .arg(&target)
@@ -325,8 +354,10 @@ fn build_staticlib(env: &Env, manifest: &Path, out_dir: &Path) -> Result<PathBuf
         .arg(&staged)
         .current_dir(staged.parent().unwrap())
         .env_clear()
-        .envs(cg_env);
-    let o = cmd.output().map_err(|e| err!("cargo: {e}"))?;
+        .envs(cg_env)
+        // Cargo otherwise finds the gate's real stable rustc on PATH, bypassing rustup's pin.
+        .env("RUSTC", rustc);
+    let o = cmd.output().map_err(|e| err!("rustup: {e}"))?;
     if !o.status.success() {
         let tail = |b: &[u8]| {
             let s = String::from_utf8_lossy(b).into_owned();
@@ -487,6 +518,23 @@ fn build_object(env: &Env, manifest: &Path, out: &Path) -> Result<Vec<String>> {
         args.push("-u".into());
         args.push(e.clone());
     }
+    // Strong ISA_C implementations override compiler_builtins' weak helpers.
+    // They are not export roots: --gc-sections retains only referenced helpers,
+    // and the usual localization pass below keeps them private to this object.
+    let helper_src = work.path().join("cf-rust-helpers.s");
+    let helper_obj = work.path().join("cf-rust-helpers.o");
+    std::fs::write(&helper_src, CF_HELPERS).map_err(|e| err!("{e}"))?;
+    tc::run(
+        &env.m68k("as")?,
+        &[
+            "-mcpu=54418".into(),
+            "-o".into(),
+            helper_obj.display().to_string(),
+            helper_src.display().to_string(),
+        ],
+        None,
+    )?;
+    args.push(helper_obj.display().to_string());
     args.push(tc::canon(&lib).display().to_string());
     tc::run(&env.m68k("ld")?, &args, None)?;
     let objcopy = env.m68k("objcopy")?;
@@ -553,4 +601,30 @@ pub fn object_proto(
     let mut toolchain = toolchain_info(env);
     toolchain.insert("exports".into(), exports.join(" "));
     Ok((proto, source_sha256(&manifest)?, toolchain))
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn copy_tree_stamps_the_copy_with_the_current_time() {
+        let src = TempDir::new("pk-copy-src-").unwrap();
+        let dst = TempDir::new("pk-copy-dst-").unwrap();
+        let file = src.path().join("lib.rs");
+        std::fs::write(&file, b"fn f() {}").unwrap();
+        let old = std::time::UNIX_EPOCH + std::time::Duration::from_secs(1_000_000);
+        std::fs::File::options()
+            .write(true)
+            .open(&file)
+            .unwrap()
+            .set_modified(old)
+            .unwrap();
+        copy_tree(src.path(), dst.path()).unwrap();
+        let copied = std::fs::metadata(dst.path().join("lib.rs"))
+            .unwrap()
+            .modified()
+            .unwrap();
+        assert!(copied > old);
+    }
 }

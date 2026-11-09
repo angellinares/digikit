@@ -12,24 +12,14 @@ import math
 import struct
 
 from .encoding import (
-    AC_BIT,
-    AI_BIT,
     ALUSAT_BIT,
-    AN_BIT,
-    AS_BIT,
-    AV_BIT,
-    AZ_BIT,
     TRUNCATE_BIT,
 )
 from .values import (
     Const,
-    FlagUpdate,
     Unknown,
     Value,
     _astatx_known_bit,
-    _flags_from_pairs,
-    _flags_put,
-    _flags_then,
     _signed,
     _signed32,
 )
@@ -190,6 +180,9 @@ def _float32_result(value: float) -> tuple[int, bool, bool]:
 
 
 _FLOAT_ALL_ONES = Const(0xFFFFFFFF)
+# The multiplier's invalid result (a NaN operand, infinity times zero) is not all ones: 0x7FFFFFFF with MN clear and MI set
+# (Digitakt II, finding 103; measured with positive operands only).
+_FLOAT_MUL_INVALID = Const(0x7FFFFFFF)
 
 
 def _float_binary(
@@ -213,8 +206,27 @@ def _float_binary(
     if _isnan(a) or _isnan(b):
         return _FLOAT_ALL_ONES, False, True
     raw = operation(a, b)
+    if _isnan(raw):
+        return _FLOAT_ALL_ONES, False, True
     bits, overflowed, _underflowed = _float32_result(raw)
-    return Const(bits), overflowed, _isnan(raw)
+    return Const(bits), overflowed, False
+
+
+def _float_binary_underflowed(left: Value, right: Value, operation) -> bool | None:
+    """Whether the post-rounded result of ``_float_binary`` with OPERATION is a
+    flushed denormal: a nonzero result below the smallest normal, returned as a
+    zero (AUS latches for it on a Digitakt II, finding 103). An exact zero, a
+    NaN or an infinity is not an underflow. None when an operand is unknown."""
+    a, b = _float32(left), _float32(right)
+    if a is None or b is None:
+        return None
+    if _isnan(a) or _isnan(b):
+        return False
+    raw = operation(a, b)
+    if _isnan(raw):
+        return False
+    _bits, _overflowed, underflowed = _float32_result(raw)
+    return underflowed
 
 
 def _float_multiply(
@@ -230,10 +242,12 @@ def _float_multiply(
     if a is None or b is None:
         return Unknown(expression), None, None, None
     if _isnan(a) or _isnan(b):
-        return _FLOAT_ALL_ONES, False, False, True
+        return _FLOAT_MUL_INVALID, False, False, True
     raw = a * b
+    if _isnan(raw):
+        return _FLOAT_MUL_INVALID, False, False, True
     bits, overflowed, underflowed = _float32_result(raw)
-    return Const(bits), overflowed, underflowed, _isnan(raw)
+    return Const(bits), overflowed, underflowed, False
 
 
 def _float_unary(
@@ -246,8 +260,10 @@ def _float_unary(
     if _isnan(a):
         return _FLOAT_ALL_ONES, False, True
     raw = operation(a)
+    if _isnan(raw):
+        return _FLOAT_ALL_ONES, False, True
     bits, overflowed, _underflowed = _float32_result(raw)
-    return Const(bits), overflowed, _isnan(raw)
+    return Const(bits), overflowed, False
 
 
 def _f_add(a: float, b: float) -> float:
@@ -276,16 +292,23 @@ def _f_pass(a: float) -> float:
 
 
 def _float_min(a: float, b: float) -> float:
-    """PGR p.11-46: smaller operand; min(+0, -0) is documented as -0."""
+    """PGR p.11-46: smaller operand; min(+0, -0) is documented as -0. Two zeros
+    give -0 if either is negative; min(+0, +0) is +0 (a denormal operand is a
+    zero of its sign; Digitakt II, finding 103)."""
     if a == 0.0 and b == 0.0:
-        return -0.0
+        if _copysign(1.0, a) < 0.0 or _copysign(1.0, b) < 0.0:
+            return -0.0
+        return 0.0
     return a if a < b else b
 
 
 def _float_max(a: float, b: float) -> float:
-    """PGR p.11-47: larger operand; max(+0, -0) is documented as +0."""
+    """PGR p.11-47: larger operand; max(+0, -0) is documented as +0. Two zeros
+    give +0 if either is positive."""
     if a == 0.0 and b == 0.0:
-        return 0.0
+        if _copysign(1.0, a) > 0.0 or _copysign(1.0, b) > 0.0:
+            return 0.0
+        return -0.0
     return a if a > b else b
 
 
@@ -841,88 +864,3 @@ def _float32_to_double(
         return _DOUBLE_ALL_ONES_HI, _DOUBLE_ALL_ONES_LO, True
     hi, lo = _double_pair_bits(a)
     return Const(hi), Const(lo), False
-
-
-def _approx_recips(left: Value) -> tuple[Value, FlagUpdate]:
-    """Opt-in ``--approx-recips`` model of ``FN = recips FX``.
-
-    PRM p.19-16/19-17 (out/refs/sharc-plus-prm, quoted in ``_compute``'s
-    recips/rsqrts branch below): "Creates an 8-bit accurate seed for
-    1/Fx... The mantissa of the seed is determined from a ROM table using
-    the 7 MSBs (excluding the hidden bit) of the Fx mantissa as an index."
-    That ROM table's contents are not published, so this cannot reproduce
-    the real hardware seed bit for bit. It instead:
-
-      - reproduces every documented special case exactly: NaN input ->
-        all-1s result (PRM p.417-418 IEEE-754-compatibility bullet: "NAN
-        inputs ... return a quiet NAN (all 1s)"); +-zero input -> +-infinity
-        with the overflow flag; an Fx unbiased exponent > +125 -> +-zero;
-      - flushes a denormal input to +-zero first, per the same PRM section's
-        general rule ("Denormal operands ... flush to zero when input to a
-        computational unit"), which recips's own page does not restate but
-        which applies to every computational unit;
-      - for the ordinary case, derives the seed's exponent from the
-        documented rule (unbiased exponent of Fn = -e-1, e = Fx's unbiased
-        exponent) and approximates its mantissa as the true mathematical
-        reciprocal's mantissa, truncated to the documented 8-bit accuracy
-        (the low 15 of 23 mantissa bits zeroed) so as not to claim
-        precision no public source confirms.
-
-    Every value this returns is an approximation the caller must not treat
-    as ground truth; ``_apply_compute`` tags it with an "approximate-recips"
-    trace event so a report can always tell it apart from a real seed.
-    """
-    updates: FlagUpdate = _flags_from_pairs(
-        (
-            (AC_BIT, False),
-            (AS_BIT, False),
-        )
-    )
-    if not isinstance(left, Const):
-        updates = _flags_then(
-            updates,
-            _flags_from_pairs(
-                (
-                    (AV_BIT, None),
-                    (AI_BIT, None),
-                    (AN_BIT, None),
-                    (AZ_BIT, None),
-                )
-            ),
-        )
-        return Unknown("recips seed (symbolic input)"), updates
-    bits = left.value & 0xFFFFFFFF
-    sign = (bits >> 31) & 1
-    biased_exp = (bits >> 23) & 0xFF
-    mantissa = bits & 0x7FFFFF
-    if biased_exp == 0xFF and mantissa != 0:  # NaN
-        updates = _flags_then(
-            updates,
-            _flags_from_pairs(
-                (
-                    (AI_BIT, True),
-                    (AN_BIT, bool(sign)),
-                    (AV_BIT, False),
-                    (AZ_BIT, False),
-                )
-            ),
-        )
-        return Const(0xFFFFFFFF), updates
-    updates = _flags_put(updates, AI_BIT, False)
-    updates = _flags_put(updates, AN_BIT, bool(sign))
-    if biased_exp == 0:  # +-zero, or a denormal flushed to zero on input
-        updates = _flags_put(updates, AV_BIT, True)
-        updates = _flags_put(updates, AZ_BIT, False)
-        return Const((sign << 31) | (0xFF << 23)), updates  # +-infinity
-    updates = _flags_put(updates, AV_BIT, False)
-    unbiased_exp = biased_exp - 127
-    if unbiased_exp > 125:
-        updates = _flags_put(updates, AZ_BIT, True)
-        return Const(sign << 31), updates  # +-zero
-    updates = _flags_put(updates, AZ_BIT, False)
-    x = _f32_from_bits(bits)
-    seed_bits, _overflowed = _float32_bits(1.0 / x)
-    # "8-bit accurate seed": keep sign, exponent and the top 8 mantissa
-    # bits; zero the low 15 mantissa bits this model cannot claim.
-    seed_bits &= 0xFFFF8000
-    return Const(seed_bits), updates

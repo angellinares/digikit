@@ -484,7 +484,7 @@ probe. Its resume took 3.74 seconds with all 60 artifact mtimes unchanged. Outpu
 passed; the full branch acceptance gate remains required before merge.
 
 **[O]** Consolidate firmware-specific fast-tier defaults from
-`tools/emulator/fast_regions.json` into the corresponding version entries in
+`config/emulator.json` into the corresponding version entries in
 `devices/digitakt-ii.toml` and `devices/digitone-ii.toml`. Preserve exact firmware
 hash matching, explicit override precedence and unknown-firmware behavior across
 Python, TypeScript and browser consumers. Keep experiment overrides in matrix
@@ -614,10 +614,152 @@ The combined desktop's first native build took 5m19s; both generated crates
 compiled, and the remaining DN2 compilation used about 15 CPU cores after DT2
 finished. That is a separate combined target cache, not regeneration. Subsequent
 validation runners reused it (14.70s coupled-run, 4.17s daemon). The combined
-build has no trained PGO profile; per-device PGO profiles are intentionally not
-applied. Comparison here is against the measured non-PGO binaries, not a freshly
+build now has its own PGO profile (device `both`, `mise run perf:pgo:both`); see
+"Two-core PGO profile (2026-11-01)" below. Per-device profiles are not applied to it.
+The comparison here is against the measured non-PGO binaries, not a freshly
 trained single-core PGO build.
 
 Artifacts: `out/native/runs/20261027-sharc-dual-default/` contains the frozen
 binaries, switch proof, matrix, and launcher checks. The initial branch gate was
 stopped when the user requested this new default; it is superseded, not a pass.
+
+## DT2 patched runtime: interpreted work by group (2026-10-31)
+
+**[D]** DT2 1.17 patched runtime (dsp-voice, converter, fx and link patches), `dt2-led-sweep`,
+3 audio seconds, ready state from a cold patched boot, `coupled scenario --diag hist`. The
+earlier figure of 19.4 M interpreted instructions per audio second (58.2 M in 3 s) was measured
+without the fast tier. The patched-image hash has no row in `config/emulator.json`,
+so a run that passes the patched `.syx` gets no fallback root unless
+`SHARC_FAST_FALLBACK_REGIONS` is set. The workbench resolves the defaults from the stock
+firmware and does run root `0x1c2607`. With that root alone the same run interprets 18.0 M
+(6.0 M per audio second) and the fast tier runs 40.2 M (the converter, 279 instructions per
+call, 48,000 calls per audio second).
+
+Where the 18.0 M go (one root, before the change below), and why:
+
+| Group | M / 3 s | Share | Why interpreted |
+| --- | ---: | ---: | --- |
+| Stock voice prologue `0x1c4ecf..0x1c4f1d` | 5.47 | 30% | The hook replaces the word at `0x1c4ecf`, so its region is barred. The adapter returns to `0x1c4ed2`, which is no AOT entry. |
+| Blocks of `0x1c1f7d` (`0x1c1fe7`, `0x1c204b`, `0x1c207b`) | 3.16 | 18% | The fx adapter patches the words at `0x1c207a/b`; the regions before and after are barred. |
+| Interrupt-handler code (`0x1c02a4`, `0x1c0b1d`) | 3.11 | 17% | No generated entry on the path. The wrapper starts with `BIT TST MODE1STK, 0x10000`; the fast tier has no lowering for a bit test of a system register (the generated form refuses it as a dynamic branch), and it refused the entry for good. Same code runs on stock. |
+| Appended adapter and module code (`0xb8d...`, `0xbcd...`, `0xbce...`) | 2.59 | 14% | Not in the generated image; no AOT entry can exist. Equals the `interp_appended` counter. |
+| Other stock code in `0xb8....` | 2.23 | 12% | Not examined: no generated entry on the executed path. |
+| Other stock code in `0x1c....` | 0.98 | 5% | Not examined. |
+| `0x1c06fe` zero-progress bail | 0.46 | 3% | Generated entry returns at once while a delayed transfer is pending. |
+
+Ceiling (finding 18: 60 to 105 ns per interpreted instruction, about 1 ns compiled): the
+6.0 M per audio second cost 0.36 to 0.63 DSP seconds per audio second. The prologue group
+alone is 0.11 to 0.19, the `0x1c1f7d` group 0.06 to 0.11. These are interpreter-rate
+estimates, not measured host time.
+
+Change: `config/emulator.json` for DT2 1.17 gets regular root `0x1c4ed2` and
+fallback roots `0x1c1fe7`, `0x1c204b` next to `0x1c2607`. A fallback root alone cannot take the
+prologue, because a fallback root must be a barred AOT entry and `0x1c4ed2` is not one; on
+stock code nothing reaches `0x1c4ed2` through the interpreter. Interpreted instructions on
+`dt2-led-sweep` (3 s): 18.0 M to 10.2 M (6.0 M to 3.4 M per audio second); `dt2-rec-play`
+(6 s): 36.0 M to 20.4 M. PCM and the DSP state dump are equal to the one-root run on both.
+`pk_tiers` PCM is equal for stock, the voice hook and PLUCK held (3 s each); the PLUCK window
+goes from 14.9 M to 13.3 M interpreted per audio second, of which 4.1 M are PLUCK's own
+appended code. The ISR code, appended code and the `0x1c06fe` bail remain; they need
+generated-core, fast-tier or JIT work.
+
+**[D]** Timing of the root change (2026-11-01), `perf:matrix`, 3 alternating pairs per cell, 3 s
+audio, DSP-thread CPU, ratio B/A (lower is faster). Both sides use the same two-core PGO binary;
+only the environment differs. A: `SHARC_FAST_REGIONS_2` unset,
+`SHARC_FAST_FALLBACK_REGIONS_2=0x1c2607`. B: `SHARC_FAST_REGIONS_2=0x1c4ed2`,
+`SHARC_FAST_FALLBACK_REGIONS_2=0x1c2607,0x1c1fe7,0x1c204b` (DT2 is slot 2, so the lists carry
+the `_2` suffix).
+
+| Cell | Ratio B/A (range) | Interpreted instructions, A to B |
+| --- | ---: | ---: |
+| DT2 runtime idle, `dt2-led-sweep` | 0.905 (0.880-0.913) | 18.19 M to 8.50 M |
+| DT2 runtime sample, `dt2-sample-trig` | 0.876 (0.869-0.882) | 18.01 M to 8.15 M |
+| DT2 stock, `dt2-sample-trig` (control, new roots not reached) | 1.014 (0.991-1.026) | 5.93 M both |
+
+The new roots save 9-12% DSP-thread CPU on the patched DT2 runtime. On stock the extra
+fast-tier lookup per PC is within noise.
+
+## Interpreter exits: chase and appended entries (2026-10-31)
+
+**[D]** The fast tier consults an entry only at a PC that is in its entry list. A refused
+entry (its first instruction is one a kernel cannot run) stayed with the interpreter for good,
+and so did all code after it. `0x1c02a4` (context save of every interrupt) is the main case:
+its first instruction is `BIT TST MODE1STK, 0x10000` (form 18a, bit-test; the hand lowering
+handles only MODE1 set and clear), and the function goes on with PCSTK, LCNTR, CURLCNTR, ASTATX
+and status-stack moves, 20a PUSH and POP, MMR stores, ACONV and a delayed RTI, none of which a
+kernel runs. Between those instructions lie runs of 3 to 21 plain stores and moves.
+
+Two changes in `packages/emulator/sharc/src/fast/mod.rs` and `lib.rs`:
+
+- **Chase.** A refused entry, whose instruction is not a branch or delay slot, makes the next
+  instruction an entry; so does the instruction after a stop of such a region. The chain follows
+  straight-line code. A chased entry whose calls retire fewer than 3 instructions on average is
+  dropped after 64 calls. `SHARC_FAST_CHASE=0` turns it off. DT2 1.17 got 23 more regular roots in
+  `config/emulator.json`: the places where the interpreter resumes after a branch
+  (found with the interpreter histogram and the instruction table).
+- **Appended entries.** When the interpreter lands in appended code (above the generated image's
+  code, set by the code check) by a taken branch, call, return or loop-back, that PC becomes a
+  chased entry. Appended code needs no unknown range and no moved data: the kernels are built
+  from the loaded words and checked against code stores as before (105 code generations in 3 s).
+
+Interpreted instructions, 3 audio s, same PCM hash and byte-equal DSP state dump before and after:
+
+| Replay | Before | After |
+| --- | ---: | ---: |
+| DT2 stock, `dt2-led-sweep` | 5.85 M | 3.28 M |
+| DT2 patched runtime, `dt2-led-sweep` | 10.66 M | 5.89 M (appended 2.60 M to 0.44 M) |
+| DN2 stock, `trig1-hold` | 1.92 M | 1.92 M |
+| DN2 patched runtime, `trig1-hold` | 7.79 M | 6.12 M (appended 2.74 M to 1.07 M) |
+
+DN2 stock does not move: its generated blocks already cover the interrupt code (the seeds gave
+-2%, so none were added). Fast-tier calls on DT2 patched rise from 0.30 M to 0.94 M per 3 s;
+the fast tier runs 6 M more instructions (about 9 per added call). **[O]** No timing was measured.
+
+What stays interpreted on DT2 stock (3.28 M), with causes, **[D]**:
+
+| Group | M / 3 s | Cause |
+| --- | ---: | --- |
+| `0x1c0b1d` dispatch | 0.57 | MMR accesses (14a outside the plain range), ACONV (7d), PCSTK moves, 20a, 11c |
+| `0x1c02a4` save and restore | 0.47 | PCSTK, LCNTR and CURLCNTR moves, 20a status-stack forms, MR data moves, 11c |
+| `0x1c06fe` | 0.46 | one NOP per consult while a delayed transfer is pending: the interpreter runs it and the failed consult adds cost; a pending check before the consult saves the consult, not the instruction |
+| `0xb8853a`, `0xb88200`, `0xb888d2` | 0.50, 0.26, 0.36 | task-switch save and restore: system-register moves, 20a, shift opcodes 0x14, 0x1d, 0x1f, MODE1 writes that change the bank selection |
+| `0xb8636d`, `0xb863ca` | 0.53 | a leaf called with the PC stack push still pending: block and kernel entries are gated until it completes |
+| `0x1c18a6`, `0x1c207b`, rest | 0.2 | not examined |
+
+Supporting PCSTK, LCNTR and status-stack forms in the kernel glue would make most of the first
+four rows runnable, at the cost of modelling the PC and loop stacks in kernel state: at most
+2 M instructions per 3 s (about 2 to 4% of one DSP thread at 60 to 105 ns each). Not worth it
+before a timing A/B shows the interpreter share.
+
+## Two-core PGO profile (2026-11-01)
+
+**[D]** Setup: `perf:matrix` (`tools/devtools/sharc_matrix.py`), 3 alternating pairs per cell,
+3 s audio, DSP-thread CPU, ratio B/A (lower is faster), quiet machine. Both binaries are
+two-core coupled-run builds (`--features second-core`, slot 1 DN2 core, slot 2 DT2 core). A is
+plain (`native_pgo coupled-build --device both --variant ab-plain`). B uses the two-core profile
+(`--profile current --variant ab-pgo`, profile key `6db98eed3f895b45`). Runtime cells use the
+patched-runtime fixtures from `mise run perf:fixture` (`out/fixtures/runtime/<dev>/`). PCM, DSP
+state, instruction count and duration were identical between A and B in every cell.
+
+A/B 1, plain against PGO, scenarios in the training set:
+
+| Cell | Ratio B/A (range) |
+| --- | ---: |
+| DT2 runtime, `dt2-sample-trig` | 0.829 (0.826-0.836) |
+| DN2 runtime, `trig1-hold` | 0.795 (0.787-0.837) |
+
+A/B 3, same binaries, scenarios not in the training set:
+
+| Cell | Ratio B/A (range) |
+| --- | ---: |
+| DT2 runtime, `dt2-led-sweep` | 0.824 (0.822-0.828) |
+| DN2 runtime, `kb-chord16` | 0.821 (0.816-0.822) |
+
+The two-core PGO profile cuts DSP-thread CPU by about 18% on both devices, also on scenarios
+outside the training set. DN2 gains far more than with the single-core DN2 profile (3%). The
+two-core profile also trains on the patched runtime. The single-core DN2 profile trains only on
+the stock exactness scenario. The DT2 root change is timed in the 2026-10-31 section "DT2
+patched runtime: interpreted work by group" (A/B 2).
+
+Artifacts: `out/native/runs/20261101-two-core-pgo/ab/` (`config-ab1.json`, `config-ab2.json`,
+`config-ab3.json`, `results-ab1`, `results-ab2`, `results-ab3`).

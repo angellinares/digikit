@@ -6,7 +6,10 @@
 // the known modules (the runtime's own, a module that is not in the library) is one "other" segment. Nothing that is only ticked or pending
 // is shown: the bars are what the device holds now.
 
-import type { Caps, Needs } from '../../../web/src/modules/dkfit.ts';
+import { ARENA_HDR } from '@digi/dk-session/gen_proto';
+import type { Caps, Needs } from '../../../web/src/modules/fit.ts';
+
+// ARENA_HDR (the arena's block header): the `largest` of the ARENA is a payload, while `free` adds up block sizes. DSP_AREA's `largest` is a raw gap.
 
 /** The type of a module, which sets its colour: the library's groups. A module that is not in the library is `other`. */
 export type SegmentKind = 'machine' | 'effect' | 'tool' | 'other';
@@ -35,10 +38,17 @@ export interface Bar {
   /** Bytes (shown in KiB) or a count. */
   bytes: boolean;
   limit: number;
+  /** What the device says is used. It can be above `limit`: then `over` is set and the segments add up to `used`. */
   used: number;
   /** One per loaded module that takes some of the resource, then `other` for the rest of `used`. */
   segments: Segment[];
   free: number;
+  /** The largest single free block (never above `free`). The fit check needs one block, not the total. */
+  largest: number;
+  /** Free memory is split: the largest block is smaller than the free total allows (see `ARENA_HDR`). */
+  split: boolean;
+  /** `used` is above `limit`. */
+  over: boolean;
 }
 
 interface Spec {
@@ -71,7 +81,8 @@ export function buildBars(caps: Caps, loaded: string[], library: KnownModule[]):
   for (const spec of SPECS) {
     const c = caps[spec.resource];
     if (!c || c.limit === 0) continue;
-    const used = Math.min(c.used, c.limit);
+    const used = c.used;
+    const free = Math.max(0, c.limit - used);
     const segments: Segment[] = [];
     let known = 0;
     for (const name of loaded) {
@@ -90,7 +101,10 @@ export function buildBars(caps: Caps, loaded: string[], library: KnownModule[]):
       limit: c.limit,
       used,
       segments,
-      free: c.limit - used,
+      free,
+      largest: Math.max(0, Math.min(c.largest, free)),
+      split: c.largest + (spec.resource === 'ARENA' ? ARENA_HDR : 0) < free,
+      over: used > c.limit,
     });
   }
   return bars;
@@ -114,8 +128,21 @@ export const segmentTitle = (bar: Bar, s: Segment): string =>
     ? `Other: ${amountText(bar, s.amount)} (not from a module of your library)`
     : `${s.label}: ${amountText(bar, s.amount)}`;
 
-/** The hover text of the free part. */
-export const freeTitle = (bar: Bar): string => `Free: ${amountText(bar, bar.free)}`;
+/** The free text: the total, and the largest block when memory is split so that it is smaller than the total. */
+export const freeText = (bar: Bar): string =>
+  bar.split
+    ? `Free: ${amountText(bar, bar.free)}, largest block ${amountText(bar, bar.largest)}`
+    : `Free: ${amountText(bar, bar.free)}`;
 
-/** The width of a part of a bar in percent of its limit. */
-export const widthPct = (bar: Bar, n: number): number => (bar.limit ? (100 * n) / bar.limit : 0);
+/** The hover text of the free part. */
+export const freeTitle = freeText;
+
+/** The line under a bar, if it has something to say: over the limit, or free memory split into smaller blocks. */
+export const noteText = (bar: Bar): string | null =>
+  bar.over ? `Over the limit by ${amountText(bar, bar.used - bar.limit)}` : bar.split ? freeText(bar) : null;
+
+/** The width of a part of a bar in percent of its limit, or of `used` when that is above the limit (the segments stay proportional). */
+export const widthPct = (bar: Bar, n: number): number => {
+  const span = Math.max(bar.limit, bar.used);
+  return span ? (100 * n) / span : 0;
+};

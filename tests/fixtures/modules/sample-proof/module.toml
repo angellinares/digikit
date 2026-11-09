@@ -1,0 +1,27 @@
+[module]
+id = "test/sample-proof"
+version = "0.1.0"
+name = "SAMPLE PROOF"
+category = "test"
+type = "machine"
+author = "digikit"
+status = "experimental"
+summary = "Bounded transferred-sample publication and playback fixture, not a product sampler."
+dynamic = true
+ports = ["dt2-1.17", "dn2-1.12"]
+requires = []
+conflicts = []
+
+[targets]
+"dt2-1.17" = "experimental"
+"dn2-1.12" = "experimental"
+
+[[object]]
+path = "build/sample-proof-cf.dko.json"
+sources = ["src/module.c"]
+place = "cf.expansion"
+
+[[object]]
+path = "build/sample-proof-dsp.dko.json"
+sources = ["src/dsp/sample-proof.s"]
+place = "dsp.l2"

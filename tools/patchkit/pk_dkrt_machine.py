@@ -103,14 +103,14 @@ def parse_dsp_section(dkm: bytes) -> dict[str, Any]:
         o, w = struct.unpack_from(">II", s, reloc_off + 8 * i)
         relocs.append((o, w >> 28, (w >> 24) & 15, w & 0xFFFF))
     version = be32(s, 4)
-    # version 1: type, entry; version 2 adds the eight knob ranges; versions 3 and 4 have voices of 64 bytes
+    # version 1: type, entry; version 2 adds the eight knob ranges; versions 3 to 5 have voices of 64 bytes
     stride = 16 if version == 1 else 48 if version == 2 else 64
     voices = [
         struct.unpack_from(">II", s, voice_off + stride * i) for i in range(nvoice)
     ]
     # version 4: effect records of 64 bytes (docs/design/digikit-dkm.md): process, desc, state_bytes, n_params, flags, p0 .. p7
     fxs = []
-    if version == 4:
+    if version in (4, 5):
         for i in range(be32(s, 0x38)):
             at = be32(s, 0x34) + 64 * i
             fxs.append(
@@ -156,6 +156,55 @@ def relocate(sec: dict[str, Any], base: int, imports: dict[str, int]) -> bytes:
             m[o + 2 : o + 4] = (v >> 16).to_bytes(2, "little")
             m[o + 4 : o + 6] = (v & 0xFFFF).to_bytes(2, "little")
     return bytes(m)
+
+
+def runtime_watch_env(
+    plan_file: Path, out: Path, *, sequential: bool = False
+) -> dict[str, str]:
+    """The runtime proof's existing DMA holes and allowed writer PCs, before a daemon starts."""
+    plan = json.loads(plan_file.read_text())
+    lo, hi = arena_safety.expansion(
+        plan["base"]["device"] + "-" + plan["base"]["version"]
+    )
+    # the card reads land by DMA in the runtime's staging buffer (and the 512-byte record buffer): left out of the watch
+    holes = [(sym(plan, "core/runtime", "DKRT_STAGE"), 64 * 1024)]
+    with contextlib.suppress(
+        ProofError
+    ):  # an image of an older runtime has no record buffer
+        holes.append((sym(plan, "core/runtime", "DKRT_SECBUF"), 512))
+    with contextlib.suppress(
+        ProofError
+    ):  # nor the upload buffer (36,896 bytes, card reads of the store land in it)
+        holes.append((sym(plan, "core/runtime", "DKRT_UPLOAD_BUF"), 36896))
+    with contextlib.suppress(
+        ProofError
+    ):  # nor the store-peek sector (the card read of the store's header DMAs into it)
+        holes.append((sym(plan, "core/runtime", "DKRT_STORE_PEEK"), 512))
+    with contextlib.suppress(ProofError):  # the fingerprint sector of a store list
+        holes.append((sym(plan, "core/runtime", "DKRT_STORE_FP"), 512))
+    with contextlib.suppress(
+        ProofError
+    ):  # the settings record's RAM copy and its header sector: the boot's card read of the settings area lands in them by DMA
+        holes.append(
+            (sym(plan, "core/runtime", "DKRT_SETTINGS"), SETTINGS_SECTORS * 512)
+        )
+        holes.append((sym(plan, "core/runtime", "DKRT_SETTINGS_HDR"), 512))
+    ranges, at = [], lo
+    for start, size in sorted(holes):
+        if start > at:  # adjacent holes leave no range between them
+            ranges.append("0x%x-0x%x" % (at, start))
+        at = start + size
+    ranges.append("0x%x-0x%x" % (at, hi))
+    env = {
+        "DIGI_WRITE_WATCH": ",".join(ranges),
+        "DIGI_WRITE_WATCH_AFTER": "cacr",
+        "DIGI_WRITE_WATCH_ALLOW_PC": arena_safety.plan_allow_pc(plan_file),
+        "DIGI_FLUSH_CHECK": "1",
+        "DIGI_WRITE_WATCH_OUT": str(out),
+    }
+    if sequential:
+        env["DIGI_WRITE_WATCH_SEQ"] = "1"
+    return env
 
 
 # ---- sessions --------------------------------------------------------------------------------------------------------------
@@ -211,50 +260,9 @@ class Rig:
         env: dict[str, str] = dict(extra_env or {})
         self.summary: Path | None = None
         if watch:
-            lo, hi = arena_safety.expansion(image)
-            # the card reads land by DMA in the runtime's staging buffer (and the 512-byte record buffer): left out of the watch
-            holes = [(sym(plan, "core/runtime", "DKRT_STAGE"), 64 * 1024)]
-            with contextlib.suppress(
-                ProofError
-            ):  # an image of an older runtime has no record buffer
-                holes.append((sym(plan, "core/runtime", "DKRT_SECBUF"), 512))
-            with contextlib.suppress(
-                ProofError
-            ):  # nor the upload buffer (36,896 bytes, card reads of the store land in it)
-                holes.append((sym(plan, "core/runtime", "DKRT_UPLOAD_BUF"), 36896))
-            with contextlib.suppress(
-                ProofError
-            ):  # nor the store-peek sector (the card read of the store's header DMAs into it)
-                holes.append((sym(plan, "core/runtime", "DKRT_STORE_PEEK"), 512))
-            with contextlib.suppress(
-                ProofError
-            ):  # the fingerprint sector of a store list
-                holes.append((sym(plan, "core/runtime", "DKRT_STORE_FP"), 512))
-            with contextlib.suppress(
-                ProofError
-            ):  # the settings record's RAM copy and its header sector: the boot's card read of the settings area lands in them by DMA
-                holes.append(
-                    (sym(plan, "core/runtime", "DKRT_SETTINGS"), SETTINGS_SECTORS * 512)
-                )
-                holes.append((sym(plan, "core/runtime", "DKRT_SETTINGS_HDR"), 512))
-            ranges, at = [], lo
-            for start, size in sorted(holes):
-                if start > at:  # adjacent holes leave no range between them
-                    ranges.append("0x%x-0x%x" % (at, start))
-                at = start + size
-            ranges.append("0x%x-0x%x" % (at, hi))
             out = work / f"{tag}.writewatch.jsonl"
             self.summary = out.with_suffix(".summary.json")
-            env |= {
-                "DIGI_WRITE_WATCH": ",".join(ranges),
-                # from the first cache enable on: the reset path clears and copies the whole RAM before it
-                "DIGI_WRITE_WATCH_AFTER": "cacr",
-                "DIGI_WRITE_WATCH_ALLOW_PC": arena_safety.plan_allow_pc(
-                    syx.with_suffix(".plan.json")
-                ),
-                "DIGI_FLUSH_CHECK": "1",
-                "DIGI_WRITE_WATCH_OUT": str(out),
-            }
+            env |= runtime_watch_env(syx.with_suffix(".plan.json"), out)
         self.s = self.session_cls(
             cell,
             H.Goldens(work / f"{tag}.goldens.json"),

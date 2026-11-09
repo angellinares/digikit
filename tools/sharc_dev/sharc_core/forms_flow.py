@@ -99,7 +99,6 @@ def _flow_apply_compute(
             False,
             _snapshot_uregs(executed.uregs),
             executed.special,
-            approx_recips=executed.approx_recips,
         )
     except ValueError as error:
         return str(error)

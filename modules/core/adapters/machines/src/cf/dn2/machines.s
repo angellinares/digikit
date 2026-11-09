@@ -222,7 +222,11 @@ mf_typemap0:
     bsr.w   mf_pg_count
     tst.l   %d0
     beq.s   1f
-    rts                                 | the count of the machine's own pages
+    move.l  %d0,-(%sp)
+    move.l  %a1,-(%sp)
+    jsr     mf_native_page_count
+    addq.l  #8,%sp
+    rts                                 | ordinary pages plus an opt-in native callback page
 1:  move.l  %a1,%d0
     CLONEMAP 4
 9:  jmp     _mf_t_typemap0
@@ -230,7 +234,15 @@ mf_typemap0:
 | FUN(type, page) -> the page descriptor (D2 is saved by the stock code before the site)
     .globl mf_typemap1
 mf_typemap1:
-    move.l  8(%sp),%d0
+    move.l  0xc(%sp),-(%sp)
+    move.l  0xc(%sp),-(%sp)
+    jsr     mf_native_descriptor
+    addq.l  #8,%sp
+    tst.l   %d0
+    beq.s   8f
+    move.l  (%sp)+,%d2
+    rts
+8:  move.l  8(%sp),%d0
     cmpi.l  #_mf_first,%d0
     bcs.s   9f
     movea.l %d0,%a1

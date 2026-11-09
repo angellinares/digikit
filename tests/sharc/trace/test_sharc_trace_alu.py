@@ -120,7 +120,7 @@ class AluOpcodesTest(ComputeHelperMixin, unittest.TestCase):
         _, value, _, astatx = self.astatx_after(
             full_compute(0, 0x30, 0, 1, 0),
             False,
-            {1: T.Const(0x80000000)},
+            {1: T.Const(0x80000000), T.UREG_CODES["MODE1"]: T.Const(0)},
             T.Unknown("start"),
         )
         self.assertEqual(value, T.Const(0x80000000))

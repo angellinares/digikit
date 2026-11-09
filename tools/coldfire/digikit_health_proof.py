@@ -35,6 +35,7 @@ import sys
 import time
 
 from tools.coldfire.digikit_menu_proof import Plan
+from tools.device.dkproto import ARENA_HDR
 
 ROOT = pathlib.Path(__file__).resolve().parents[2]
 OUT = ROOT / "out" / "runs" / "lanes" / "r1-health"
@@ -91,15 +92,9 @@ def size_text_kb(kb: int) -> str:
 def expected_lines(h: dict) -> list[str]:
     """What the page must say for the figures `h`: this file's own formatting, not the menu's."""
     f = h["flags"]
-    out = ["CPU " + (pct(h["cpu_x10"]) if f & F_CPU else "--")]
-    out.append(
-        "DSP "
-        + (
-            f"{pct(h['dsp_avg_x10'])} MAX {pct(h['dsp_max_x10'])}"
-            if f & F_DSP
-            else "--"
-        )
-    )
+    out = ["CPU REL " + (pct(h["cpu_x10"]) if f & F_CPU else "--")]
+    out.append("DSP 1GHZ " + (pct(h["dsp_avg_x10"]) if f & F_DSP else "--"))
+    out.append("DSP MAX " + (pct(h["dsp_max_x10"]) if f & F_DSP else "--"))
     out.append(
         "RAM FREE "
         + (
@@ -110,9 +105,13 @@ def expected_lines(h: dict) -> list[str]:
     )
     out.append("LARGEST " + (size_text(h["heap_largest"]) if f & F_HEAP else "--"))
     out.append("CPU FREE " + size_text(h["arena_free"]))
+    if h["arena_largest"] + ARENA_HDR < h["arena_free"]:
+        out.append("CPU BIG " + size_text(h["arena_largest"]))
     out.append(
         "DSP FREE " + (size_text(h["dsp_area_free"]) if h["dsp_area_total"] else "--")
     )
+    if h["dsp_area_total"] and h["dsp_area_largest"] < h["dsp_area_free"]:
+        out.append("DSP BIG " + size_text(h["dsp_area_largest"]))
     out.append("STORE USED " + (size_text_kb(h["store_used"]) if f & F_STORE else "--"))
     out.append("STORE FREE " + (size_text_kb(h["store_free"]) if f & F_STORE else "--"))
     return out
@@ -190,10 +189,10 @@ class HealthProof:
 
     def lines(self) -> list[str]:
         raw = b"".join(
-            self.w(self.sym("DK_LINES") + 4 * k).to_bytes(4, "big") for k in range(54)
+            self.w(self.sym("DK_LINES") + 4 * k).to_bytes(4, "big") for k in range(72)
         )
         out = []
-        for i in range(9):
+        for i in range(12):
             row = raw[24 * i : 24 * i + 24]
             out.append(row.split(b"\0")[0].decode("latin1"))
         return [x for x in out if x]

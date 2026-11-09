@@ -73,7 +73,7 @@ def main() -> int:
     args = parser.parse_args()
     data = sr._load_image_memory(args.image)
     entry = sharcldr.entry_points(data.blocks)[-1]
-    runner = sr.Runner(data, entry, approx_recips=True)
+    runner = sr.Runner(data, entry)
     runner.state.bank_model = True
     runner.state.stack_model = True
     if args.mmr_resets:

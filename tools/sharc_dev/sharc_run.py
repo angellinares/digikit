@@ -326,7 +326,7 @@ def fresh_call_state(
     state without re-running init for every hypothesis).
 
     dataclasses.replace() keeps every scalar config field the source had
-    (explicit_memory_model, approx_recips, follow_loaded_calls, ... -- the
+    (explicit_memory_model, follow_loaded_calls, ... -- the
     same reasoning tools/sharc_dev/sharc_harness/'s own _clone_state() docstring
     gives for why this is not sharc_core.state._copy(): that helper's
     positional State(...) construction always resets a clone's
@@ -758,7 +758,6 @@ def make_state(
     provisional_forms: Sequence[str] = (),
     provisional_interpretations: Mapping[str, str] | None = None,
     explicit_memory_model: bool = False,
-    approx_recips: bool = False,
     watch_tracker: _WatchTracker | None = None,
 ) -> st.State:
     """A fully concrete State ready to step, with sharc_trace's own
@@ -774,10 +773,6 @@ def make_state(
     former lets a *confirmed* decode with no confirmed execution semantics
     (e.g. 21p_undoc16) run as a named MODE (only "nop" is implemented)
     instead of stopping.
-    ``approx_recips`` is sharc_trace.py's own pre-existing State field
-    (State.approx_recips), exposed here too: a voice render's pitch/rate
-    math (docs/findings/06's "voice record contract") goes through recips,
-    whose ROM seed is undocumented without it.
 
     ``watch_tracker``, an already-constructed :class:`_WatchTracker` (see
     Runner's own ``watchpoints`` option), swaps in a watching overlay
@@ -812,7 +807,6 @@ def make_state(
         provisional_forms=tuple(provisional_forms),
         provisional_interpretations=dict(provisional_interpretations or {}),
         explicit_memory_model=explicit_memory_model,
-        approx_recips=approx_recips,
     )
     for address, value in sorted((pokes or {}).items()):
         if not st._dm_write(state, address, 4, st.Const(value & 0xFFFFFFFF)):
@@ -946,7 +940,6 @@ class Runner:
         provisional_forms: Sequence[str] = (),
         provisional_interpretations: Mapping[str, str] | None = None,
         explicit_memory_model: bool = False,
-        approx_recips: bool = False,
         watchpoints: Sequence[Watchpoint] = (),
         diagnose_unknown: bool = False,
     ) -> None:
@@ -964,7 +957,6 @@ class Runner:
             provisional_forms=provisional_forms,
             provisional_interpretations=provisional_interpretations,
             explicit_memory_model=explicit_memory_model,
-            approx_recips=approx_recips,
             watch_tracker=self._watch,
         )
         # Off by default: computing it is cheap (it only ever runs once, on
@@ -1455,15 +1447,6 @@ def main(argv: Sequence[str] | None = None) -> int:
         "(sharc_core.State.explicit_memory_model; off by default)",
     )
     p.add_argument(
-        "--approx-recips",
-        action="store_true",
-        default=False,
-        help="substitute a documented-but-unverified numeric model for "
-        "recips's undocumented ROM seed instead of leaving it Unknown "
-        "(sharc_core.State.approx_recips, same as tools/sharc_dev/sharc_trace.py's "
-        "own --approx-recips; off by default)",
-    )
-    p.add_argument(
         "--diagnose-unknown",
         action="store_true",
         default=False,
@@ -1579,7 +1562,6 @@ def main(argv: Sequence[str] | None = None) -> int:
             provisional_forms=a.provisional_forms,
             provisional_interpretations=provisional_interpretations,
             explicit_memory_model=a.explicit_memory_model,
-            approx_recips=a.approx_recips,
             watchpoints=watchpoints,
             diagnose_unknown=a.diagnose_unknown,
         )

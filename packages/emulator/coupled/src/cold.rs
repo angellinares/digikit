@@ -2,7 +2,7 @@
 //! `packages/emulator/boot/examples/sharc_live.rs` that `tools/emulator/ready.py` runs for a card.
 //!
 //! The ColdFire boots from the .syx with the card attached and the DSP
-//! (restored from the cold-idle state) on the DSPI2 link. When the panel is
+//! (restored from cold-idle, or initialized from reset for changed DSP) on the DSPI2 link. When the panel is
 //! ready and, for devices whose sample loader keeps sending (DT2), link
 //! port 0 has been quiet for a while, the ColdFire snapshot and the DSP state
 //! are written in the files `CoupledRuntime::new` restores from
@@ -35,21 +35,27 @@ const CHUNK: u32 = 250_000;
 /// What the cold boot needs besides the firmware and the card.
 #[derive(Clone, Debug)]
 pub struct ColdInputs {
+    /// Ordered validated logical transitions, queued through the normal panel path before guest execution.
+    pub initial_buttons: Vec<(u8, bool)>,
+    /// Deliver CPU exceptions to the guest handler during cold boot; false preserves fatal-error diagnostics.
+    pub deliver_exceptions: bool,
     /// The packed DSP loader image (`digi-audio-dn2-image.bin`).
     pub image: PathBuf,
     /// The DSP's cold-start state at its first idle rest (`cold-idle.dsp`, the
     /// `dsp_cold` example's output; the same `DT2DSP01` layout as the sidecar).
     pub cold_idle: PathBuf,
-    /// A DSP patch applied to the cold DSP before the ColdFire runs its first instruction: the firmware's DSP code as the device
-    /// boots it, when the .syx carries a different DSP section than the base. `None`: the base's DSP (the patch, if any, goes in
-    /// after the ready state).
+    /// Raw canonical reset state (`cold.state`), required only for changed DSP firmware.
+    pub cold_state: Option<PathBuf>,
+    /// The firmware DSP diff, applied once to raw reset state before DSP initialization.
+    /// The DSP must reach idle before the ColdFire starts. `None` restores cold-idle unchanged.
     pub dsp_patch: Option<elektron_native_boot::dsp_patch::DspPatch>,
     /// Ready at the main panel, without waiting for the filesystem check (a soft reset on a card an earlier boot used).
     pub relax_fs_check: bool,
     /// Where the boot leaves the card writes when the guest asks for a soft reset (RCM.RCR) before it is ready: the boot then ends
     /// with the error [`SOFT_RESET`] and the caller boots again from those writes (a module whose `init` resets the machine
     /// takes the boot through safe mode this way).
-    pub reset_out: Option<std::sync::Arc<std::sync::Mutex<Option<Vec<emmc_card::CardOverlaySector>>>>>,
+    pub reset_out:
+        Option<std::sync::Arc<std::sync::Mutex<Option<Vec<emmc_card::CardOverlaySector>>>>>,
     /// RAM a soft reset keeps (the digikit runtime's crash record; docs/findings/46-digikit-debug.md): the range, what the boot before left
     /// in it (written before the first instruction) and where this boot leaves it if the guest resets before it is ready.
     pub keep_ram: Option<KeepRam>,
@@ -118,7 +124,7 @@ pub fn boot_to_ready(
 /// [`boot_to_ready`] for a patched build of the firmware whose SHA-256 is
 /// `base_sha256` (`Emulator::new_patched`: the base names the device profile;
 /// the MAIN bytes are not checked). The DSP side is the base's, so `inputs`
-/// are the base's cold-start files.
+/// are the base's cold-start files; a DSP diff initializes from raw reset state.
 pub fn boot_patched_to_ready(
     syx: &[u8],
     card: Option<Card>,
@@ -142,6 +148,10 @@ pub fn boot_emulator_to_ready(
     mut progress: impl FnMut(&ColdProgress),
 ) -> Result<ColdReport, String> {
     let started = Instant::now();
+    emulator.set_deliver_exceptions(inputs.deliver_exceptions);
+    for &(code, down) in &inputs.initial_buttons {
+        emulator.button(code, down)?;
+    }
     if inputs.relax_fs_check {
         emulator.relax_fs_check();
     }
@@ -151,14 +161,6 @@ pub fn boot_emulator_to_ready(
         emulator.poke_ram(keep.base, &keep.input)?;
     }
     let image = std::fs::read(&inputs.image).map_err(|e| format!("DSP image: {e}"))?;
-    let dsp_patch = inputs.dsp_patch.clone();
-    let sidecar =
-        std::fs::read(&inputs.cold_idle).map_err(|e| format!("DSP cold-idle state: {e}"))?;
-    if sidecar.len() <= 24 || &sidecar[..8] != DSP_MAGIC {
-        return Err("cold-idle state is not a DT2DSP01 file".into());
-    }
-    let base = u64::from_le_bytes(sidecar[8..16].try_into().unwrap());
-    let state = sidecar[24..].to_vec();
 
     let profile = emulator.diagnostics();
     let registry = device_profile::Registry::load().map_err(|e| e.to_string())?;
@@ -177,19 +179,42 @@ pub fn boot_emulator_to_ready(
     };
     let sample_link = dsp.sample_link == Some(device_profile::SampleLink::Lp0);
     emulator.enable_ssi_diagnostic(96_000)?;
-    let (peer, handle, shared) = crate::dsp_core::spawn_dsp(
-        crate::dsp_core::Core::for_device(&profile.device),
+    let core = crate::dsp_core::Core::for_device(&profile.device);
+    let engine_inputs = if inputs.dsp_patch.is_some() {
+        let path = inputs.cold_state.as_ref().ok_or(
+            "raw DSP cold.state is required; regenerate ready inputs with `mise run emu:ready -- <device> --force`",
+        )?;
+        let state = std::fs::read(path).map_err(|e| format!(
+            "raw DSP cold.state {}: {e}; regenerate ready inputs with `mise run emu:ready -- <device> --force`", path.display()
+        ))?;
+        crate::dsp_core::initialize_cold_dsp(
+            core,
+            crate::dsp_core::EngineInputs {
+                image,
+                state,
+                clock_base: 0,
+                patch: inputs.dsp_patch.clone(),
+                idle,
+            },
+            cancel,
+        )?
+    } else {
+        let sidecar =
+            std::fs::read(&inputs.cold_idle).map_err(|e| format!("DSP cold-idle state: {e}"))?;
+        if sidecar.len() <= 24 || &sidecar[..8] != DSP_MAGIC {
+            return Err("cold-idle state is not a DT2DSP01 file".into());
+        }
         crate::dsp_core::EngineInputs {
             image,
-            state,
-            clock_base: base,
-            patch: dsp_patch,
+            state: sidecar[24..].to_vec(),
+            clock_base: u64::from_le_bytes(sidecar[8..16].try_into().unwrap()),
+            patch: None,
             idle,
-        },
-        period_from_env(),
-        false,
-        false,
-    )?;
+        }
+    };
+    let base = engine_inputs.clock_base;
+    let (peer, handle, shared) =
+        crate::dsp_core::spawn_dsp(core, engine_inputs, period_from_env(), false, false)?;
     if sample_link {
         peer.enable_sample_link();
     }
@@ -217,12 +242,42 @@ pub fn boot_emulator_to_ready(
                 *out.lock().expect("reset overlay") = Some(emulator.card_overlay());
             }
             if let Some(keep) = &inputs.keep_ram {
-                *keep.out.lock().expect("kept ram") = Some(emulator.peek_ram(keep.base, keep.bytes));
+                *keep.out.lock().expect("kept ram") =
+                    Some(emulator.peek_ram(keep.base, keep.bytes));
             }
             return Err(SOFT_RESET.into());
         }
         if let Some(error) = &status.error {
-            return Err(format!("guest fault during boot: {error}"));
+            let (d, a, pc, sr) = emulator.cpu_regs();
+            let last_bus_pc = emulator.last_bus_pc();
+            let stack_start = a[7] & !3;
+            // The board's SDRAM/SRAM range excludes MMIO. Keep the word reads
+            // aligned and bounded even when the guest has corrupted its SP.
+            let stack = if (0x4000_0000..0x8c00_0000).contains(&stack_start) {
+                emulator.peek_ram(stack_start, 128.min(0x8c00_0000 - stack_start))
+            } else {
+                Vec::new()
+            };
+            let code_start = last_bus_pc.saturating_sub(16).max(0x4000_0000) & !3;
+            let code = if (0x4000_0000..0x8c00_0000).contains(&last_bus_pc) {
+                emulator.peek_ram(code_start, 32.min(0x8c00_0000 - code_start))
+            } else {
+                Vec::new()
+            };
+            let diagnostic = serde_json::json!({
+                "error": error,
+                "cpu_regs": { "d": d, "a": a, "pc": pc, "sr": sr },
+                "last_bus_pc": last_bus_pc,
+                "code": { "address": code_start, "bytes": code },
+                "stack": { "address": stack_start, "bytes": stack },
+            });
+            let path = out_dir.join("boot-fault.json");
+            let message = format!("guest fault during boot: {error}");
+            let message = match write_atomic(&path, diagnostic.to_string().as_bytes()) {
+                Ok(()) => format!("{message} (diagnostic: {})", path.display()),
+                Err(write_error) => format!("{message} (could not save diagnostic: {write_error})"),
+            };
+            return Err(message);
         }
         // Commit every frame sent so far, so the quiet test does not depend on
         // how far the worker thread got.

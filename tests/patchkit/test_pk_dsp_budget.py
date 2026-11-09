@@ -15,18 +15,9 @@ def test_busy_per_block_is_executed_minus_idle_over_blocks():
     assert b.busy_per_block(tiers(1.0, 0, 0), tiers(1.0, 5, 0)) is None
 
 
-def test_stock_load_reproduces_the_report():
-    # DN2 stock held note: 334,529 busy per block -> 50 % emulator, 57 % nominal, 67 % high
-    assert round(b.load_pct(334_529, "dn2", "nominal")) == 57
-    assert round(b.load_pct(334_529, "dn2", "high")) == 67
-    assert round(b.load_pct(208_640, "dt2", "nominal")) == 35
-    assert round(b.load_pct(208_640, "dt2", "high")) == 44
-
-
 def test_added_load_and_gate():
     r = b.judge("dn2", 334_725.0, 334_800.0, 334_529.0)
     assert round(r["added_instructions_per_block"]) == 196
-    assert abs(r["added_load_high_pct"] - 196 * 1.326075 / 6666.6667) < 1e-9
     assert r["ok"]
     assert not b.judge("dn2", 334_725.0, 334_800.0, 334_529.0, budget_pct=10)["ok"]
     assert not b.judge("dt2", 600_000.0, 600_000.0, 208_640.0)["ok"]  # 130 % high

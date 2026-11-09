@@ -1,5 +1,5 @@
 {
-  "about": "Test vectors of the fit rule (docs/plans/what-fits.md): dkrt_fit (Rust), apps/web/src/modules/dkfit.ts and tools/device/dkfit.py read this file and must give the same answers. needs: the needs of a .dkm as `dkneeds` infers them (the names of Needs::fields, plus file_size); missing = 0. caps: a CAPACITY reply as [limit, used, largest] per kind (names of [capacity.kinds]), laid over caps_base. want: null (fits) or [resource, need, free] of the first short resource; for a set: null or [index, resource, need, free]. load_lines: the MODULES page's load line (dkrt_fit `load_line`, tools/device/dkfit.py `load_line`): always the DSP memory and then the CPU memory; caps is the whole capacity as [limit, used, largest] per kind, want the text.",
+  "about": "Test vectors of the fit rule (docs/plans/what-fits.md): dkrt_fit (Rust, modules/core/runtime/fit: the one copy of the rule) and packages/patchkit (the host wordings) read this file. needs: the needs of a .dkm as `dkneeds` infers them (the names of Needs::fields, plus file_size); missing = 0. caps: a CAPACITY reply as [limit, used, largest] per kind (names of [capacity.kinds]), laid over caps_base. want: null (fits) or [resource, need, free] of the first short resource; for a set: null or [index, resource, need, free]. shorts: a short resource with its texts: text and brief are dkrt_fit `short_text` (the device popup and list row); describe and describe_by are the host wordings of patchkit (fit.rs). load_lines: the MODULES page's load line (dkrt_fit `load_line`): always the DSP memory and then the CPU memory; caps is the whole capacity as [limit, used, largest] per kind, want the text.",
   "caps_base": {
     "MODULES": [8, 0, 0],
     "SELECTION": [8, 0, 0],
@@ -101,6 +101,17 @@
       "needs": [{"ARENA": 48, "times": 2}],
       "want": [1, "MODULES", 1, 0]
     }
+  ],
+  "shorts": [
+    {"resource": "DSP_AREA", "need": 409600, "free": 260096, "text": "DSP 400K > 254K FREE", "brief": "DSP 400K>254K", "describe": "DSP memory 400 KiB needed, 254 KiB free", "describe_by": "DSP memory 146 KiB short"},
+    {"resource": "DSP_AREA", "need": 409601, "free": 260096, "text": "DSP 401K > 254K FREE", "brief": "DSP 401K>254K", "describe": "DSP memory 401 KiB needed, 254 KiB free", "describe_by": "DSP memory 147 KiB short"},
+    {"resource": "DSP_AREA", "need": 400, "free": 50, "text": "DSP 1K > 0K FREE", "brief": "DSP 1K>0K", "describe": "DSP memory 400 bytes needed, 50 bytes free", "describe_by": "DSP memory 350 bytes short"},
+    {"resource": "DSP_AREA", "need": 307200, "free": 266240, "text": "DSP 300K > 260K FREE", "brief": "DSP 300K>260K", "describe": "DSP memory 300 KiB needed, 260 KiB free", "describe_by": "DSP memory 40 KiB short"},
+    {"resource": "DSP_AREA", "need": 600064, "free": 524280, "text": "DSP 586K > 511K FREE", "brief": "DSP 586K>511K", "describe": "DSP memory 586 KiB needed, 511 KiB free", "describe_by": "DSP memory 75 KiB short"},
+    {"resource": "ARENA", "need": 600000, "free": 100, "text": "CPU 586K > 0K FREE", "brief": "CPU 586K>0K", "describe": "CPU memory 586 KiB needed, 100 bytes free", "describe_by": "CPU memory 586 KiB short"},
+    {"resource": "ARENA", "need": 5120, "free": 2049, "text": "CPU 5K > 2K FREE", "brief": "CPU 5K>2K", "describe": "CPU memory 5 KiB needed, 2 KiB free", "describe_by": "CPU memory 3 KiB short"},
+    {"resource": "PARAM_ROWS", "need": 3, "free": 2, "text": "PARAMS 3 > 2 FREE", "brief": "PARAMS 3>2", "describe": "parameter rows 3 needed, 2 free", "describe_by": "parameter rows 1 short"},
+    {"resource": "STAGE", "need": 70000, "free": 65536, "text": "FILE 69K > 64K MAX", "brief": "FILE 69K>64K", "describe": "file 69 KiB needed, 64 KiB at most", "describe_by": "file 5 KiB too large"}
   ],
   "load_lines": [
     {"name": "always the DSP memory and the CPU memory, however full the rows are", "caps": {"MODULES": [8, 8, 0], "ARENA": [524288, 6000, 0], "DSP_AREA": [524288, 445000, 0], "MACHINE_ROWS": [8, 8, 0], "PARAM_ROWS": [16, 16, 0], "PAGE_ROWS": [8, 8, 0]}, "want": "DSP 85% CPU 2%"},

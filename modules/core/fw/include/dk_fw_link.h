@@ -7,12 +7,20 @@
 #include <stddef.h>
 
 /* cf.link.fn.block_isr: no sig yet */
+/* DN2 1.12 native LP0 tag plus 1024-word sender (finding 92). Locks the boot-initialized mutex; unbounded hardware-readiness wait. Emulator-only diagnostic use, format 1 sends numeric source words least-significant byte first. */
+void dk_fw_link_bulk_send(uint32_t tag, const uint32_t *source, uint32_t format) __asm__("cf.link.fn.bulk_send");
 /* cf.link.fn.frame: no sig yet */
+/* Original DN2 reply memcpy, returning destination in D0; retained by the private extension wrapper. */
+uint8_t * dk_fw_link_reply_copy(uint8_t *destination, const uint8_t *source, uint32_t length) __asm__("cf.link.fn.reply_copy");
 /* The 4-byte address literal of `addq.l #1,<counter>` in the block interrupt handler's tail: the firmware's DSP block counter, 1500 per second from boot. core/runtime reads it. */
 extern const uint8_t dk_fw_link_block_isr_counter_lit __asm__("cf.link.site.block_isr.counter_lit");
 /* Entry of the DSP block interrupt handler (vector 191); the hook point for per-block counting and reading the DSP's cycle count. */
 typedef void dk_fw_link_block_isr_hook(void);
 /* The jsr abs.l with which the block interrupt handler calls the stock frame driver (four arguments on the stack); the hook point for the DSP link's per-block sender. */
 typedef void dk_fw_link_block_isr_frame_call_hook(int32_t len, const uint16_t *src, int32_t reclen, const uint16_t *rec);
+/* Private boot-only replacement for the wire-length getter call. */
+typedef uint32_t dk_fw_link_boot_wire_size_hook(void);
+/* Private wrapper preserves the original copy and return value, then copies the isolated extension before DMA rearming. */
+typedef uint8_t * dk_fw_link_reply_copy_hook(uint8_t *destination, const uint8_t *source, uint32_t length);
 
 #endif

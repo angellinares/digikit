@@ -1,7 +1,7 @@
 // The operations of a flash (firmware-flow.ts `FlowOps`) over the app's MIDI port: the selected target's transport sends the messages, the
 // port list tells when the device has gone and come back, and the session asks it afterwards. Used by the page in both apps.
 import { transferEnv } from '../transfer/env';
-import { portTransport, releasePort, session, target } from '../transfer/target';
+import { portTransport, releasePort, selectTarget, session, target } from '../transfer/target';
 import { firmwareEnv } from './env';
 import { askSession } from './firmware-ask';
 import type { Answer } from './firmware-core';
@@ -19,7 +19,7 @@ export async function askDevice(): Promise<Answer & { port: string; model?: stri
 export function portOps(): FlowOps {
   const t = target();
   if (t.kind !== 'midi') throw new Error('No MIDI port is selected.');
-  const port = t.port;
+  let port = t.port;
   let link: ReturnType<typeof portTransport> | undefined;
   return {
     sender: (total) => firmwareEnv().sender(total),
@@ -33,7 +33,17 @@ export function portOps(): FlowOps {
       link = undefined;
       await releasePort();
     },
-    portPresent: async () => (await transferEnv().targets.ports()).includes(port),
+    get port() {
+      return port;
+    },
+    ports: () => transferEnv().targets.ports(),
+    async moved(name) {
+      // the next requests (this run, the Transfer pane, the Log) use the port under its new name
+      port = name;
+      link = undefined;
+      await selectTarget({ kind: 'midi', port: name });
+    },
+    log: (text) => firmwareEnv().log({ level: 'info', text }),
     async ask() {
       const { os, runtime, imageId } = await askDevice();
       return { os, runtime, imageId };
@@ -56,7 +66,15 @@ export function rpcPortOps(): RpcOps {
       link = undefined;
       await base.release();
     },
-    portPresent: base.portPresent,
+    get port() {
+      return base.port;
+    },
+    ports: base.ports,
+    moved: async (name) => {
+      link = undefined;
+      await base.moved?.(name);
+    },
+    log: base.log,
     ask: base.ask,
   };
 }

@@ -24,6 +24,7 @@ from support.dsp_voice_rig import (  # noqa: E402
     DIAG,
     M6_HOSTILE,
     M13_HOSTILE,
+    MASK,
     OUT,
     RECORDS,
     RETURN_SW,
@@ -31,7 +32,9 @@ from support.dsp_voice_rig import (  # noqa: E402
     RING_B,
     STACK,
     STATE,
+    STEP_WORD,
     STOCK_BP,
+    TABLE,
     TYPE,
     Rig,
     draw_context,
@@ -78,8 +81,8 @@ def test_every_word_redecodes(rig_cls):
 
 def test_an_unregistered_type_falls_through_to_the_stock_renderer(rig_cls):
     rig = rig_cls()
-    rig.set_type(0, 0)
-    out = rig.call(0)
+    rig.set_type(2, 0)
+    out = rig.call(5)
     assert stops_at(out, STOCK_BP), out["halt"]
     # only the displaced instruction's effect (I7 - 104 bytes) and R0-R2 / I4 differ; the callee-saved set is intact
     assert out["regs"]["I7"] == STACK - 104
@@ -89,7 +92,39 @@ def test_an_unregistered_type_falls_through_to_the_stock_renderer(rig_cls):
     for name in ("R3", "R5", "R15", "I0", "I5", "M1", "M3", "I8", "I9", "M8"):
         assert out["regs"][name] == out["in"][name], name
     assert out["regs"]["R4"] == out["in"]["R4"] and out["regs"]["R8"] == out["in"]["R8"]
-    assert out["instructions"] < 80
+    assert out["instructions"] < 60, (
+        "a slot whose type no row registers does not walk the table"
+    )
+
+
+def test_with_no_registered_type_a_voice_costs_a_check_and_voice_0_keeps_the_heartbeat(
+    rig_cls,
+):
+    rig = rig_cls()
+    for k in range(3 * 24):
+        rig.dm[nw(TABLE) + k] = (
+            0xFFFFFFFF if k % 24 == 0 and k < 48 else 0
+        )  # two free rows, then the end
+    rig.set_type(2, TYPE)  # a type that would be registered if a row had it
+    reads = {"diag": (nw(DIAG), 16), "mask": (nw(MASK), 1)}
+    out = rig.call(5, extra_reads=reads)
+    assert stops_at(out, STOCK_BP), out["halt"]
+    assert out["regs"]["I7"] == STACK - 104 and out["regs"]["I6"] == STACK
+    context_intact(out)
+    for name in ("R3", "R5", "R15", "I0", "I5", "M1", "M3", "I8", "I9", "M8"):
+        assert out["regs"][name] == out["in"][name], name
+    assert out["instructions"] < 15
+    assert not any(out["diag"]), "no beat and no breadcrumb from a voice other than 0"
+    # voice 0: the heartbeat, and the mask of what is registered (free rows are no type)
+    out = rig.call(0, extra_reads=reads)
+    assert stops_at(out, STOCK_BP), out["halt"]
+    assert out["diag"][0] == 1 and out["mask"][0] == 0
+    rig.dm[nw(TABLE) + 2 * 24] = 31
+    rig.dm[nw(TABLE) + 3 * 24] = 40
+    rig.dm[nw(TABLE) + 4 * 24] = 0
+    rig.dm[nw(TABLE) + 24] = 9  # a registered row after a free one
+    out = rig.call(0, extra_reads=reads, mask=0)
+    assert out["mask"][0] == 1 << 9 | 1 << 31, hex(out["mask"][0])
 
 
 @pytest.mark.parametrize("track", [0, 1, 4, 7, 15])
@@ -328,9 +363,9 @@ def test_breadcrumbs_name_each_step_and_reach_both_reply_records():
             assert sum(1 for x in r if x) == 4, (ring, v)
 
 
-def test_the_module_step_is_cleared_in_both_records_before_the_call():
-    """The fault table's module step (record word 298, dsp-link.inc) holds what the last module stored; the wrapper clears it in both reply records
-    right before it calls the routine, so a step read after a stop belongs to this call."""
+def test_the_module_step_word_is_cleared_before_the_call_and_the_records_are_left_alone():
+    """The module step is the static word `_dk_step` (its address is `_dv_rec[2]`, dsp-link.inc); the wrapper clears it right before it calls the routine,
+    so a step copied by the block tail belongs to a call of this block. The reply records' word 298 is the tail's, the wrapper does not touch it."""
     rig = CrumbRig()
     rig.set_rings()
     rig.set_type(1, TYPE)
@@ -338,10 +373,16 @@ def test_the_module_step_is_cleared_in_both_records_before_the_call():
     rig.rec_word(2, 0x1B8, 1)
     rig.dm[nw(RING_A) + 298] = 7
     rig.dm[nw(RING_B) + 298] = 9
-    reads = {"ra": (nw(RING_A) + 296, 4), "rb": (nw(RING_B) + 296, 4)}
+    rig.dm[nw(STEP_WORD)] = 5
+    reads = {
+        "ra": (nw(RING_A) + 296, 4),
+        "rb": (nw(RING_B) + 296, 4),
+        "step": (nw(STEP_WORD), 1),
+    }
     out = rig.call(2, extra_reads=reads, ctx="friendly")
     assert stops_at(out, RETURN_SW), out["halt"]
-    assert out["ra"][2] == 0 and out["rb"][2] == 0, (out["ra"], out["rb"])
+    assert out["step"] == [0], out["step"]
+    assert out["ra"][2] == 7 and out["rb"][2] == 9, (out["ra"], out["rb"])
 
 
 def test_the_routine_sees_the_called_breadcrumb():

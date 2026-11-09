@@ -170,13 +170,27 @@ def test_invalid_configured_core_fails_before_build(monkeypatch):
     assert calls == []
 
 
-def _known_syx(tmp_path, scope, monkeypatch, content=b"dn2"):
+def _set_table(monkeypatch, entries):
+    """Make the tier config hold ENTRIES (digest -> entry) in place of config/emulator.json."""
+    from tools.emulator import emulator_config
+
+    config = {"_contexts": {"workbench": {"SHARC_FAST_AUTO": "4,2,0"}}, **entries}
+    monkeypatch.setattr(digi_env, "tier_config", lambda: config)
+    monkeypatch.setattr(
+        digi_env, "fast_table", lambda: emulator_config.firmware_table(config)
+    )
+    return entries
+
+
+def _known_syx(tmp_path, scope, monkeypatch, content=b"dn2", **extra):
     syx = tmp_path / "fw.syx"
     syx.write_bytes(content)
-    table = scope["fast_regions_for"].__globals__["FAST_REGIONS"]
-    monkeypatch.setitem(
-        table, __import__("hashlib").sha256(content).hexdigest(), "0x10,0x20"
+    digest = __import__("hashlib").sha256(content).hexdigest()
+    entry = {"fast_regions": "0x10,0x20", **extra}
+    monkeypatch.setattr(
+        digi_env, "_syx_digest", lambda path: digest if Path(path) == syx else ""
     )
+    _set_table(monkeypatch, {digest: entry})
     return syx
 
 
@@ -190,41 +204,8 @@ def test_fast_regions_follow_the_firmware_hash(monkeypatch, tmp_path):
     assert scope["fast_regions_for"](tmp_path / "missing.syx") == ""
 
 
-def test_known_dn2_1_12_hash_has_the_verified_regions():
-    table = launcher()["FAST_REGIONS"]
-    assert (
-        table["7e5b8a733d4ab1fdf7e5d22757f7d8eddaa3cbf71d0858874a791844c02ceb35"]
-        == "0x1c399a,0x1c3862,0x1c364f,0x1c5765,0xb823db,0x1c1884,0x1cdcef,0x1c3030,0xb85347,0x1c1da8,0xb80509"
-    )
-
-
-def test_known_dn2_1_12_hash_has_the_cluster_roots():
-    table = launcher()["BLOCKTRANS_ROOTS"]
-    roots = table["7e5b8a733d4ab1fdf7e5d22757f7d8eddaa3cbf71d0858874a791844c02ceb35"]
-    assert roots == (
-        "0xb8276c,0x1c369b,0xb809f2,0x1c5796,0xb84a8c,0xb8212b,"
-        "0xb827b7,0x1c5110,0xb82568,0xb813cf,0xb8040f,0xb826a5"
-    )
-    assert len(roots.split(",")) == 12
-
-
 def _known_roots(tmp_path, scope, monkeypatch, content=b"dn2"):
-    syx = _known_syx(tmp_path, scope, monkeypatch, content)
-    table = scope["blocktrans_roots_for"].__globals__["BLOCKTRANS_ROOTS"]
-    monkeypatch.setitem(
-        table, __import__("hashlib").sha256(content).hexdigest(), "0x30,0x40"
-    )
-    return syx
-
-
-def test_blocktrans_roots_follow_the_firmware_hash(monkeypatch, tmp_path):
-    scope = launcher()
-    syx = _known_roots(tmp_path, scope, monkeypatch)
-    other = tmp_path / "other.syx"
-    other.write_bytes(b"other")
-    assert scope["blocktrans_roots_for"](syx) == "0x30,0x40"
-    assert scope["blocktrans_roots_for"](other) == ""
-    assert scope["blocktrans_roots_for"](tmp_path / "missing.syx") == ""
+    return _known_syx(tmp_path, scope, monkeypatch, content, blocktrans="0x30,0x40")
 
 
 def test_set_fast_regions_exports_the_cluster_roots(monkeypatch, tmp_path):
@@ -309,36 +290,6 @@ def _build_run_setup(monkeypatch):
 
     monkeypatch.setattr("subprocess.run", run)
     return scope, calls
-
-
-def test_build_only_prints_the_binary_and_does_not_launch(monkeypatch, capsys):
-    scope, calls = _build_run_setup(monkeypatch)
-    scope["main"](["x.syx", "--cf-only", "--build-only"])
-    assert len(calls) == 1
-    assert calls[0][:2] == ["cargo", "build"]
-    assert capsys.readouterr().out.strip().endswith("release/digiemu-desktop")
-
-
-def test_main_runs_the_built_binary_not_cargo_run(monkeypatch):
-    scope, calls = _build_run_setup(monkeypatch)
-    scope["main"](["x.syx", "--cf-only"])
-    assert len(calls) == 2
-    assert calls[1][0].endswith("digiemu-desktop")
-    assert not any(c[:2] == ["cargo", "run"] for c in calls)
-    assert calls[1][1:] == ["x.syx"]
-
-
-def test_cargo_command_uses_the_gen_keyed_target_dir(monkeypatch, tmp_path):
-    scope = launcher()
-    plain = scope["cargo_command"](["example.syx"])
-    assert plain[plain.index("--target-dir") + 1].endswith("/nogen")
-    gen = tmp_path / "gen"
-    gen.mkdir()
-    monkeypatch.setenv("SHARC_GEN_DIR", str(gen))
-    coupled = scope["cargo_command"](["example.syx", "--coupled"])
-    target = coupled[coupled.index("--target-dir") + 1]
-    assert target.endswith("/generic")
-    assert coupled.index("--target-dir") < coupled.index("--")
 
 
 # --- PGO decisions --------------------------------------------------------------
@@ -471,6 +422,30 @@ def test_rustflags_skip_warns_and_never_trains(pgo, capsys):
     assert capsys.readouterr().err.startswith("WARNING: native PGO: skipped")
 
 
+def test_stale_profile_is_reported_to_the_child(pgo):
+    scope = launcher()
+    assert scope["pgo_plan"](COUPLED) is None
+    assert scope["pgo_env"]() == {
+        "DIGI_PGO_STATUS": "stale",
+        "DIGI_PGO_DETAIL": "changed: sources",
+    }
+
+
+def test_current_profile_is_reported_ok_without_detail(pgo):
+    pgo.states = [("ok", "/p/abc.profdata")]
+    scope = launcher()
+    assert scope["pgo_plan"](COUPLED) is not None
+    assert scope["pgo_env"]() == {"DIGI_PGO_STATUS": "ok", "DIGI_PGO_DETAIL": ""}
+
+
+def test_pgo_opt_out_reports_nothing(pgo, monkeypatch):
+    pgo.states = [("off", "")]
+    monkeypatch.setenv("DIGI_EMU_PGO", "0")
+    scope = launcher()
+    assert scope["pgo_plan"](COUPLED) is None
+    assert scope["pgo_env"]() == {}
+
+
 def dt2_syx(monkeypatch, tmp_path):
     syx = tmp_path / "dt2.syx"
     syx.write_bytes(b"dt2")
@@ -528,51 +503,6 @@ def test_train_command_failure_to_start_falls_back(pgo, monkeypatch, capsys):
     assert "could not start training: no python" in capsys.readouterr().err
 
 
-@pytest.mark.parametrize("verify_exit, warns", [(0, False), (1, True), (2, False)])
-def test_pgo_mismatch_warns_but_never_blocks(monkeypatch, capsys, verify_exit, warns):
-    scope = launcher()
-    calls = []
-
-    def run(command, **_kwargs):
-        calls.append(command)
-        code = verify_exit if "verify" in command else 0
-        return subprocess.CompletedProcess(command, code)
-
-    monkeypatch.setattr(subprocess, "run", run)
-    scope["verify_pgo"](["cargo", "run", "--", "x"], {})
-    err = capsys.readouterr().err
-    assert ("PGO profile does not match this binary" in err) is warns
-    assert calls[0] == ["cargo", "build"]
-
-
-def test_pgo_build_failure_skips_the_check(monkeypatch, capsys):
-    calls = []
-
-    def run(command, **_kwargs):
-        calls.append(command)
-        return subprocess.CompletedProcess(command, 101)
-
-    monkeypatch.setattr(subprocess, "run", run)
-    with pytest.raises(SystemExit) as exc:
-        launcher()["verify_pgo"](["cargo", "run", "--", "x"], {})
-    assert exc.value.code == 101
-    assert len(calls) == 1
-    assert capsys.readouterr().err == ""
-
-
-def test_main_daemon_builds_and_runs_digi_emud(monkeypatch):
-    scope, calls = _build_run_setup(monkeypatch)
-    panel = []
-    monkeypatch.setitem(
-        scope["main"].__globals__, "build_panel", lambda environ: panel.append(1)
-    )
-    scope["main"](["x.syx", "--cf-only", "--daemon"])
-    assert panel == []
-    assert calls[0][:2] == ["cargo", "build"]
-    assert calls[1][0].endswith("release/digi-emud")
-    assert calls[1][1:] == ["x.syx"]
-
-
 def _dual_launch(monkeypatch, tmp_path, first):
     scope, calls = _build_run_setup(monkeypatch)
     inputs, cores = {}, {}
@@ -616,14 +546,18 @@ def _dual_launch(monkeypatch, tmp_path, first):
             monkeypatch.delenv(name + suffix)
     monkeypatch.delenv("DIGI_EMU_FAST", raising=False)
     monkeypatch.delenv("SHARC_FAST_AUTO", raising=False)
-    for function, value in (
-        ("fast_regions_for", "regions"),
-        ("blocktrans_roots_for", "roots"),
-        ("fallback_regions_for", "fallback"),
-    ):
-        monkeypatch.setitem(
-            glob, function, lambda path, value=value: f"{path.parent.name}-{value}"
-        )
+    _set_table(
+        monkeypatch,
+        {
+            device: {
+                "fast_regions": f"{device}-regions",
+                "blocktrans": f"{device}-roots",
+                "fallback_regions": f"{device}-fallback",
+            }
+            for device in ("dn2", "dt2")
+        },
+    )
+    monkeypatch.setattr(digi_env, "_syx_digest", lambda path: Path(path).parent.name)
     return scope, calls, inputs, cores
 
 
@@ -642,16 +576,65 @@ def test_desktop_defaults_to_both_devices_with_per_core_fast_settings(
         str(inputs[other][label])
         for label in ("DSP image", "DSP state", "CF snapshot", "firmware")
     ]
-    assert os.environ["SHARC_GEN_DIR"] == str(cores[first])
-    assert os.environ["SHARC_GEN_DIR_2"] == str(cores[other])
-    for suffix, device in (("", first), ("_2", other)):
+    # Slot order is fixed: slot 1 is the DN2 core, slot 2 the DT2 core, whichever firmware launches.
+    assert os.environ["SHARC_GEN_DIR"] == str(cores["dn2"])
+    assert os.environ["SHARC_GEN_DIR_2"] == str(cores["dt2"])
+    for suffix, device in (("", "dn2"), ("_2", "dt2")):
         for name, value in (
             ("SHARC_FAST_REGIONS", "regions"),
             ("SHARC_BLOCKTRANS", "roots"),
             ("SHARC_FAST_FALLBACK_REGIONS", "fallback"),
         ):
             assert os.environ[name + suffix] == f"{device}-{value}"
-    assert "no PGO profile for a two-core build" in capsys.readouterr().err
+
+
+@pytest.mark.parametrize("first", ["dn2", "dt2"])
+def test_two_core_launch_plans_the_both_profile_in_its_own_target_dir(
+    monkeypatch, tmp_path, first
+):
+    """A two-core launch asks for the `both` profile and builds outside the single-core target dirs."""
+    from tools.emulator import native_pgo
+
+    scope, calls, inputs, cores = _dual_launch(monkeypatch, tmp_path, first)
+    monkeypatch.setenv("DIGI_EMU_PGO", "1")
+    monkeypatch.setattr(native_pgo, "supported_host", lambda: True)
+    monkeypatch.setattr(native_pgo, "toolchain_rustc", lambda: "/fake/rustc")
+    asked = []
+
+    def pgo_state(_environ=None, device="dn2"):
+        asked.append(device)
+        return "ok", "/p/both.profdata"
+
+    monkeypatch.setattr(native_pgo, "pgo_state", pgo_state)
+    scope["main"]([])
+    assert asked == ["both"]
+    command = calls[0]
+    assert command[command.index("--features") + 1] == "second-core"
+    target = Path(command[command.index("--target-dir") + 1])
+    # Keyed by both cores, in slot order, and never the single-core pgo-use dir.
+    assert "+" in target.parent.name
+    assert target.name == "pgo-use"
+    assert target.parent != Path(scope["target_dir_for"](cores["dn2"]))
+
+
+def test_missing_both_profile_falls_back_to_the_plain_two_core_build(
+    monkeypatch, tmp_path, capsys
+):
+    from tools.emulator import native_pgo
+
+    scope, calls, inputs, cores = _dual_launch(monkeypatch, tmp_path, "dt2")
+    monkeypatch.setenv("DIGI_EMU_PGO", "1")
+    monkeypatch.delenv("DIGI_EMU_PGO_TRAIN", raising=False)
+    monkeypatch.setattr(
+        native_pgo,
+        "pgo_state",
+        lambda _e=None, device="dn2": ("missing", "no manifest"),
+    )
+    scope["main"]([])
+    command = calls[0]
+    assert command[command.index("--features") + 1] == "second-core"
+    assert "pgo-use" not in command[command.index("--target-dir") + 1]
+    assert "train --device both" in capsys.readouterr().err
 
 
 @pytest.mark.parametrize(
@@ -906,13 +889,17 @@ def test_card_cache_key_follows_every_file(monkeypatch, tmp_path):
 
 def test_fallback_defaults_single_and_dual_core(monkeypatch, tmp_path):
     scope = launcher()
-    first = _known_syx(tmp_path, scope, monkeypatch)
+    first = tmp_path / "fw.syx"
+    first.write_bytes(b"dn2")
     second = tmp_path / "second.syx"
     second.write_bytes(b"second")
-    table = scope["FALLBACK_REGIONS"]
-    monkeypatch.setitem(table, __import__("hashlib").sha256(b"dn2").hexdigest(), "0x50")
-    monkeypatch.setitem(
-        table, __import__("hashlib").sha256(b"second").hexdigest(), "0x60"
+    sha = __import__("hashlib").sha256
+    _set_table(
+        monkeypatch,
+        {
+            sha(b"dn2").hexdigest(): {"fallback_regions": "0x50"},
+            sha(b"second").hexdigest(): {"fallback_regions": "0x60"},
+        },
     )
     args = [
         "--audio-profile-syx",

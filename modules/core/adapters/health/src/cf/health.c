@@ -183,7 +183,7 @@ void health_heap(HealthRaw *o)
         fl |= HF_BAD;
         maxo = 0u;
     }
-    for (order = 0u; order <= maxo && !(fl & HF_BAD); order++) {
+    for (order = maxo + 1u; order-- > 0u && !(fl & HF_BAD);) {
         int idx = (int)heads[order];
         while (idx >= 0) {
             u32 bsize = 16u << order;

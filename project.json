@@ -1,0 +1,71 @@
+{
+  "name": "workspace",
+  "$schema": "node_modules/nx/schemas/project-schema.json",
+  "targets": {
+    "lint": {
+      "executor": "nx:run-commands",
+      "cache": true,
+      "outputs": [],
+      "inputs": [
+        "{workspaceRoot}/**/*.js",
+        "{workspaceRoot}/**/*.mjs",
+        "{workspaceRoot}/**/*.cjs",
+        "{workspaceRoot}/**/*.jsx",
+        "{workspaceRoot}/**/*.ts",
+        "{workspaceRoot}/**/*.mts",
+        "{workspaceRoot}/**/*.cts",
+        "{workspaceRoot}/**/*.tsx",
+        "{workspaceRoot}/**/*.astro",
+        "{workspaceRoot}/**/*.vue",
+        "{workspaceRoot}/**/*.svelte",
+        "{workspaceRoot}/.oxlintrc.json",
+        "jsToolchain"
+      ],
+      "options": {
+        "command": "pnpm lint",
+        "cwd": "."
+      }
+    },
+    "fmt-check": {
+      "executor": "nx:run-commands",
+      "cache": false,
+      "inputs": [
+        "{workspaceRoot}/**/*.js",
+        "{workspaceRoot}/**/*.mjs",
+        "{workspaceRoot}/**/*.cjs",
+        "{workspaceRoot}/**/*.jsx",
+        "{workspaceRoot}/**/*.ts",
+        "{workspaceRoot}/**/*.mts",
+        "{workspaceRoot}/**/*.cts",
+        "{workspaceRoot}/**/*.tsx",
+        "{workspaceRoot}/**/*.astro",
+        "{workspaceRoot}/**/*.vue",
+        "{workspaceRoot}/**/*.svelte",
+        "{workspaceRoot}/**/*.json",
+        "{workspaceRoot}/**/*.css",
+        "{workspaceRoot}/**/*.html",
+        "{workspaceRoot}/**/*.yml",
+        "{workspaceRoot}/**/*.yaml",
+        "{workspaceRoot}/.prettierrc.json",
+        "{workspaceRoot}/.prettierignore",
+        "{workspaceRoot}/.oxlintrc.json",
+        "jsToolchain"
+      ],
+      "options": {
+        "command": "pnpm fmt:check",
+        "cwd": "."
+      },
+      "description": "Not cached: prettier also opens files it never formats (.py, .rs), and nested .gitignore and .editorconfig files change its result."
+    },
+    "rust-fmt": {
+      "executor": "nx:run-commands",
+      "cache": false,
+      "inputs": ["{workspaceRoot}/**/*.rs", "{workspaceRoot}/Cargo.toml", "{workspaceRoot}/mise.toml"],
+      "options": {
+        "command": "node tools/nx/rust-env.mjs -- cargo fmt --check -p elektron-native-boot -p coldfire -p device-profile -p dt2-firmware-loader -p emmc-card -p periph -p live-audio -p machine -p patchkit -p dkupload -p sharc-rt -p plusdrive-format -p dksample -p sharc-fast-wasm -p sharc-fast-cl -p sharc-native -p sharc-gen -p sharc-stats -p sharc-native-2 -p sharc-gen-2 -p bootstrap-emu -p digi-control -p digi-coupled -p sharc-fast-cl-2 -p dkmidi -p dkui-host -p digiemu-desktop -p dkneeds -p dkrt-sdk -p dkrt-fit",
+        "cwd": "."
+      },
+      "description": "Workspace crates except dkfw, whose crate root is generated."
+    }
+  }
+}

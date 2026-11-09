@@ -3,7 +3,7 @@
 Every `cargo build` replaces `target/release/<bin>` with a fresh copy, even when nothing was compiled (new inode
 each time; measured 2026-10-18). A process that execs that path while another cargo rewrites it can sit in
 `_dyld_start` at 0 % CPU for ever, or be killed (macOS code-signing); with 3 builders and 6 runners it happened
-2 times in 1000 runs. `mise run verify` runs many test files at once and each one built patchkit first.
+2 times in 1000 runs. `mise run test` runs many test files at once and each one built patchkit first.
 
 The fix: build under one lock (`build_lock`) and run an immutable copy named by the content hash
 (`stable_copy`, written to a temp name and linked into place, never overwritten). cargo may rewrite

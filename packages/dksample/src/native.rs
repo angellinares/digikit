@@ -1,6 +1,11 @@
 //! The native sample file: a 0x40-byte header, big-endian 16-bit PCM and the 16-byte trailer the firmware adds when it closes a file
 //! (docs/findings/14-plus-drive-format.md).
 
+#[cfg(test)]
+extern crate std;
+#[cfg(test)]
+use self::std::{vec, vec::Vec};
+
 pub const NATIVE_HEADER_SIZE: usize = 0x40;
 pub const NATIVE_TRAILER_SIZE: usize = 0x10;
 /// The sample rate of the native file.

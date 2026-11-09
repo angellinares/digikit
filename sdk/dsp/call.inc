@@ -14,7 +14,7 @@
 //
 // Frame (stack grows down, I7 is the stack pointer, I6 the frame pointer):
 //   [I6]        caller's I6            (pushed by DK_CALL)
-//   [I6 - 1]    return address - 1     (pushed by DK_CALL)
+//   [I6 - 1]    explicit continuation - 1 (pushed by DK_CALL)
 //   [I6 - 2] .. [I6 - 1 - N]   N save slots of the routine (DK_SAVE slot numbers 2 .. N + 1)
 //   I7 = I6 - 2 on entry, I6 - 2 - N after DK_ENTER(N); DK_LEAVE's RFRAME sets I7 = I6 and I6 = [I6].
 //
@@ -28,10 +28,12 @@
 //
 // Cost in instructions: DK_CALL 3 (CJUMP and two delay slots). DK_ENTER 1, DK_SAVE 1 each, DK_RESTORE 1 each, DK_RETADDR 1,
 // DK_LEAVE 3 (jump and two delay slots, one of them a restore). With S saved registers: 3 + 1 + S + 1 + (S - 1) + 3 = 2 S + 7.
-// [O] The assembler spelling of CJUMP, `DM(I7, M7) = PC`, `MODIFY(I7, -N) (NW)` and RFRAME is taken from the findings above and
-// has not been assembled yet.
+// The immediate return-label store assembles as Type16a post-modify. Do not
+// store PC through Type3b: that source assembled as pre-modify and native PC
+// reads did not provide the required return value. Labels must be unique in
+// the assembled object, including repeated calls to the same routine.
 //
-// DK_CALL(fn)           call; the caller has put the arguments in R4, R8, R12
+// DK_CALL(fn, label)    call; unique continuation label; arguments in R4, R8, R12
 // DK_ENTER(N)           first instruction of a routine: reserve N save slots
 // DK_SAVE(SLOT, REG)    store REG in save slot SLOT (2 .. N + 1)
 // DK_RESTORE(REG, SLOT) reload REG from SLOT
@@ -40,10 +42,11 @@
 //
 // The caller writes the trailing ";" after each macro. Include this file once per module, before the routine files.
 
-#define DK_CALL(fn) \
+#define DK_CALL(fn, RETURN_LABEL) \
     CJUMP fn (DB); \
     DM(I7, M7) = R2; \
-    DM(I7, M7) = PC
+    DM(I7, M7) = RETURN_LABEL - 1; \
+    RETURN_LABEL:
 
 #define DK_ENTER(N) MODIFY(I7, -N) (NW)
 

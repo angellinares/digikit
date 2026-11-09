@@ -1,11 +1,11 @@
 // A fake digikit device that speaks the SysEx protocol of docs/design/digikit-upload.md byte for byte (framing included), as a `DkTransport` for
 // `DkSession`: files, a selection, a log, modules, and a RESTART that is silent for a while and then boots again. Shared by dktransfer.test.mjs and
 // the screenshot run of the site's Transfer page (tools/devtools/web_transfer_shots.mjs).
-import { createHash } from 'node:crypto';
-import { decode8in7, encode8in7 } from '@digi/dk-session';
-import { CAP, CAPACITY_KINDS, CMD, LOG_KIND } from '@digi/dk-session/gen_proto';
+import { decode8in7, encode8in7, fileHash } from '@digi/dk-session';
+import { CAP, CAPACITY_KINDS, CMD, LOG_KIND, SERVICE_CMD } from '@digi/dk-session/gen_proto';
 
-export const sha = (b) => createHash('sha256').update(b).digest();
+/** The store's hash slot of a file (the host's `fileHash`: what the real runtime keeps in its table). */
+export const sha = fileHash;
 export const hex = (b) => Buffer.from(b).toString('hex');
 export const concat = (...p) => Uint8Array.from(Buffer.concat(p.map((x) => Buffer.from(x))));
 export const be32 = (n) => Uint8Array.of((n >>> 24) & 255, (n >>> 16) & 255, (n >>> 8) & 255, n & 255);
@@ -61,7 +61,7 @@ export class FakeDevice {
       if (this.silent === 0) this.boot();
       return;
     }
-    const name = Object.entries(CMD).find(([, v]) => v === cmd)?.[0] ?? `0x${cmd.toString(16)}`;
+    const name = Object.entries({ ...CMD, ...SERVICE_CMD }).find(([, v]) => v === cmd)?.[0] ?? `0x${cmd.toString(16)}`;
     this.seen.push(name);
     const r = this.handle(cmd, seq, body);
     if (r) this.queue.push(r);
@@ -243,7 +243,7 @@ export class FakeDevice {
           ),
         );
       }
-      case CMD.LOG: {
+      case SERVICE_CMD.LOG: {
         const from = new DataView(body.buffer, body.byteOffset).getUint32(0);
         const ev = this.log.filter((e) => e.seq >= from).slice(0, 3);
         const out = ev.map((e) =>

@@ -18,13 +18,9 @@
 //! 4. two machines with the same key in one boot: the second takes a fresh number and is not recorded.
 use crate::{dlog, loader};
 use core::ptr::addr_of_mut;
-use dkrt_sdk::device::{DYN_TYPE_FIRST, DYN_TYPE_LAST};
 use dkrt_sdk::sel::{Record, MAP_N};
+use dkrt_sdk::sticky::{assign, clean, in_range, Event, MAX_KEYS};
 use dkrt_sdk::*;
-
-/// Machines a boot can name: 8 selected modules with 8 machines each.
-const MAX_KEYS: usize = SEL_MAX * 8;
-const NONE: u32 = 0xffff_ffff;
 
 /// The boot's assignment, peekable by the proof tools (`DKRT_ASSIGN`): `magic` "DKAS", `n` machines planned, `dirty` 1 when the map changed.
 #[repr(C, align(4))]
@@ -60,77 +56,6 @@ pub fn map_used() -> u32 {
     n
 }
 
-fn in_range(t: u32) -> bool {
-    t >= DYN_TYPE_FIRST && t <= DYN_TYPE_LAST
-}
-
-fn bit(t: u32) -> u32 {
-    1 << (t - DYN_TYPE_FIRST)
-}
-
-/// Type numbers referenced by the map, leaving out the entry of hash `except` (0: none left out).
-fn referenced_but(map: &[u32; MAP_N], except: u32) -> u32 {
-    let mut m = 0;
-    let mut i = 0;
-    while i < MAP_N {
-        if map[i] != 0 && map[i] >> 8 != except {
-            m |= bit(map[i] & 0xff);
-        }
-        i += 1;
-    }
-    m
-}
-
-/// Type numbers referenced by the map.
-fn referenced(map: &[u32; MAP_N]) -> u32 {
-    referenced_but(map, 0)
-}
-
-fn lowest_free(taken: u32) -> u32 {
-    let mut t = DYN_TYPE_FIRST;
-    while t <= DYN_TYPE_LAST {
-        if taken & bit(t) == 0 {
-            return t;
-        }
-        t += 1;
-    }
-    0
-}
-
-/// The map as read from the record without entries that cannot be right: a type outside the range, no hash, a number or a hash that an earlier
-/// entry has.
-fn clean(map: &[u32; MAP_N]) -> [u32; MAP_N] {
-    let mut out = [0u32; MAP_N];
-    let mut seen = 0u32;
-    let mut i = 0;
-    while i < MAP_N {
-        let (h, t) = (map[i] >> 8, map[i] & 0xff);
-        let mut dup_hash = false;
-        let mut j = 0;
-        while j < i {
-            dup_hash |= out[j] != 0 && out[j] >> 8 == h;
-            j += 1;
-        }
-        if h != 0 && in_range(t) && seen & bit(t) == 0 && !dup_hash {
-            out[i] = map[i];
-            seen |= bit(t);
-        }
-        i += 1;
-    }
-    out
-}
-
-fn find_hash(map: &[u32; MAP_N], h: u32) -> Option<usize> {
-    let mut i = 0;
-    while i < MAP_N {
-        if map[i] != 0 && map[i] >> 8 == h {
-            return Some(i);
-        }
-        i += 1;
-    }
-    None
-}
-
 /// Assign the numbers of every machine of the selected modules. Call once, at the start of the boot load, with the record the boot started from.
 pub unsafe fn plan(rec: &Record) {
     let a = st();
@@ -152,106 +77,11 @@ pub unsafe fn plan(rec: &Record) {
         }
         k += 1;
     }
-    let mut used = 0u32;
-    let mut e = 0;
-    while e < a.n {
-        let key = a.key[e];
-        let h = key >> 8;
-        if h == 0 {
-            e += 1;
-            continue; // a pinned number (key = type) or nothing to assign
-        }
-        let mut first = true;
-        let mut j = 0;
-        while j < e {
-            first &= a.key[j] != key;
-            j += 1;
-        }
-        let mut t = 0;
-        let mut sticky = 0;
-        let mut rule = 0; // 0 lowest free number, 1 the map
-        if first {
-            let at = find_hash(&a.map, h);
-            if let Some(i) = at {
-                let old = a.map[i] & 0xff;
-                if used & bit(old) == 0 {
-                    t = old;
-                    sticky = 1;
-                    rule = 1;
-                }
-            }
-            if t == 0 {
-                t = lowest_free(used | referenced(&a.map));
-                if t == 0 {
-                    // no number is unreferenced: drop the lowest entry of a machine that is not in this boot
-                    let mut victim = NONE;
-                    let mut i = 0;
-                    while i < MAP_N && victim == NONE {
-                        if a.map[i] != 0 && !wanted(a, a.map[i] >> 8) {
-                            victim = i as u32;
-                        }
-                        i += 1;
-                    }
-                    if victim != NONE {
-                        let v = a.map[victim as usize];
-                        dlog::ev(logk::MACHINE_TYPE_EVICTED, logk::F_ERROR, [v >> 8, v & 0xff, 0, 0, 0]);
-                        a.map[victim as usize] = 0;
-                        t = v & 0xff;
-                    }
-                }
-                if t != 0 {
-                    // record the entry: the slot the hash had, else the first empty one
-                    let slot = match at {
-                        Some(i) => i,
-                        None => first_empty(&a.map),
-                    };
-                    if slot < MAP_N {
-                        a.map[slot] = h << 8 | t;
-                    }
-                }
-            }
-        } else {
-            t = lowest_free(used | referenced(&a.map));
-            if t == 0 {
-                t = lowest_free(used);
-            }
-        }
-        if t != 0 {
-            used |= bit(t);
-        }
-        a.ty[e] = t;
-        dlog::ev(logk::MACHINE_TYPE_ASSIGNED, dlog::INFO, [h, t, sticky, rule, 0]);
-        e += 1;
-    }
-    a.dirty = 0;
-    let mut i = 0;
-    while i < MAP_N {
-        a.dirty |= (a.map[i] != rec.map[i]) as u32;
-        i += 1;
-    }
-}
-
-fn first_empty(map: &[u32; MAP_N]) -> usize {
-    let mut i = 0;
-    while i < MAP_N {
-        if map[i] == 0 {
-            return i;
-        }
-        i += 1;
-    }
-    MAP_N
-}
-
-/// Is `h` the hash of a machine of this boot's selection?
-fn wanted(a: &State, h: u32) -> bool {
-    let mut i = 0;
-    while i < a.n {
-        if a.key[i] >> 8 == h {
-            return true;
-        }
-        i += 1;
-    }
-    false
+    let n = a.n;
+    a.dirty = assign(&rec.map, &mut a.map, &a.key, &mut a.ty, n, &mut |ev: &Event| {
+        let flags = if ev.error { logk::F_ERROR } else { dlog::INFO };
+        dlog::ev(ev.kind, flags, ev.args);
+    });
 }
 
 /// The type number for machine key `key` of the module being loaded (selection index `loader::BOOT_IDX`): the number `plan` assigned, a pinned

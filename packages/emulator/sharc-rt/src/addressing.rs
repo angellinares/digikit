@@ -162,15 +162,39 @@ mod tests {
     fn normal_word_to_byte_matches_the_reference() {
         let mut checked = 0u64;
         let mut check = |a: i128| {
-            assert_eq!(normal_word_to_byte(a), reference_normal_word_to_byte(a), "{a:#x}");
+            assert_eq!(
+                normal_word_to_byte(a),
+                reference_normal_word_to_byte(a),
+                "{a:#x}"
+            );
             checked += 1;
         };
         // Every range boundary and its neighbours, then a stride over
         // the whole interesting span and the 32-bit edges.
         let bounds: [i128; 24] = [
-            0x90000, 0x9c000, 0xb0000, 0xbc000, 0xc0000, 0xc8000, 0xe0000, 0xe8000, 0x4000000,
-            0x8000000, 0x8046000, 0xa090000, 0xa09c000, 0xa0b0000, 0xa0bc000, 0xa0c0000,
-            0xa0c8000, 0xa0e0000, 0xa0e8000, 0x10000000, 0x18000000, 0x7fff_ffff, 0x8000_0000,
+            0x90000,
+            0x9c000,
+            0xb0000,
+            0xbc000,
+            0xc0000,
+            0xc8000,
+            0xe0000,
+            0xe8000,
+            0x4000000,
+            0x8000000,
+            0x8046000,
+            0xa090000,
+            0xa09c000,
+            0xa0b0000,
+            0xa0bc000,
+            0xa0c0000,
+            0xa0c8000,
+            0xa0e0000,
+            0xa0e8000,
+            0x10000000,
+            0x18000000,
+            0x7fff_ffff,
+            0x8000_0000,
             0xffff_ffff,
         ];
         for b in bounds {
@@ -188,11 +212,22 @@ mod tests {
         check(i128::MAX);
         check(i128::MIN);
         // The 32-bit form maps like the wide one, or leaves the address.
-        for a in (0u32..0x1900_0000).step_by(0x1f3).chain(0xffff_f000..=u32::MAX) {
+        for a in (0u32..0x1900_0000)
+            .step_by(0x1f3)
+            .chain(0xffff_f000..=u32::MAX)
+        {
             let want = reference_normal_word_to_byte(a as i128).map_or(a, |m| m as u32);
             assert_eq!(normal_word_or_same(a), want, "{a:#x}");
         }
-        for b in [0x90000u32, 0x9c000, 0xe7fff, 0xe8000, 0x3ff_ffff, 0x400_0000, 0x1800_0000] {
+        for b in [
+            0x90000u32,
+            0x9c000,
+            0xe7fff,
+            0xe8000,
+            0x3ff_ffff,
+            0x400_0000,
+            0x1800_0000,
+        ] {
             for d in 0..3u32 {
                 for a in [b.wrapping_add(d), b.wrapping_sub(d)] {
                     let want = reference_normal_word_to_byte(a as i128).map_or(a, |m| m as u32);

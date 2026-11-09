@@ -41,7 +41,31 @@ impl Page {
     }
 }
 
+/// Origin of the first overlapping attempted access. Storage events include
+/// host/DMA traffic and journal bookkeeping; they are not guest attribution.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum DdrAccessKind {
+    CpuRead,
+    CpuWrite,
+    StorageRead,
+    StorageWrite,
+}
+
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub struct DdrAccess {
+    pub address: u32,
+    pub width: u32,
+    pub kind: DdrAccessKind,
+}
+
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub struct InvalidDdrRange;
+
 pub struct Mem {
+    ddr_range: Option<(u32, u32)>,
+    ddr_first: std::cell::Cell<Option<DdrAccess>>,
+    /// Changes on monitor configuration, including replacement/removal.
+    pub ddr_monitor_gen: u64,
     pages: Box<[Option<Box<Page>>; NPAGES]>,
     loader: Vec<Option<Box<Page>>>,
     /// Pages holding overlay bytes (for export and reset).
@@ -98,14 +122,16 @@ impl Mem {
         // bounds check in the inline fast paths.
         let mut pages = Vec::with_capacity(NPAGES);
         pages.resize_with(NPAGES, || None);
-        let pages: Box<[Option<Box<Page>>; NPAGES]> =
-            match pages.into_boxed_slice().try_into() {
-                Ok(b) => b,
-                Err(_) => unreachable!("NPAGES entries"),
-            };
+        let pages: Box<[Option<Box<Page>>; NPAGES]> = match pages.into_boxed_slice().try_into() {
+            Ok(b) => b,
+            Err(_) => unreachable!("NPAGES entries"),
+        };
         let mut loader = Vec::with_capacity(NPAGES);
         loader.resize_with(NPAGES, || None);
         Mem {
+            ddr_range: None,
+            ddr_first: std::cell::Cell::new(None),
+            ddr_monitor_gen: 0,
             pages,
             loader,
             touched: Vec::new(),
@@ -122,6 +148,64 @@ impl Mem {
             code_gen: 0,
             dec_gen: 0,
             layout_gen: NEXT_LAYOUT_GEN.fetch_add(1 << 40, std::sync::atomic::Ordering::Relaxed),
+        }
+    }
+
+    /// Configure a byte-addressed half-open DDR interval. Invalid requests leave
+    /// the previous configuration and latch intact. Every successful set/remove
+    /// clears the latch and invalidates resolved fast windows. This diagnostic
+    /// observes attempts, does not block access, and is not an ownership proof.
+    pub fn set_ddr_monitor(&mut self, range: Option<(u32, u32)>) -> Result<(), InvalidDdrRange> {
+        if let Some((lo, hi)) = range
+            && !(0x8000_0000 <= lo && lo < hi && hi <= 0xa000_0000)
+        {
+            return Err(InvalidDdrRange);
+        }
+        let old = self.ddr_range;
+        self.ddr_range = range;
+        self.clear_ddr_access();
+        self.ddr_monitor_gen += 1;
+        self.layout_gen += 1;
+        for (lo, hi) in old.into_iter().chain(range) {
+            for idx in (lo >> PAGE_BITS)..=((hi - 1) >> PAGE_BITS) {
+                self.refresh_one(idx as usize);
+            }
+        }
+        Ok(())
+    }
+
+    pub fn ddr_monitor_range(&self) -> Option<(u32, u32)> {
+        self.ddr_range
+    }
+
+    pub fn ddr_monitor_active(&self) -> bool {
+        self.ddr_range.is_some()
+    }
+
+    pub fn first_ddr_access(&self) -> Option<DdrAccess> {
+        self.ddr_first.get()
+    }
+
+    pub fn clear_ddr_access(&self) {
+        self.ddr_first.set(None);
+    }
+
+    /// Record only known byte addresses; symbolic guest addresses are outside
+    /// this diagnostic's coverage. Duplicate fallback/bookkeeping calls cannot
+    /// replace the first event. Width is the attempted extent, not a count.
+    #[inline(always)]
+    pub fn note_ddr_access(&self, address: u32, width: u32, kind: DdrAccessKind) {
+        if let Some((lo, hi)) = self.ddr_range
+            && self.ddr_first.get().is_none()
+            && width != 0
+            && address < hi
+            && (address as u64 + width as u64) > lo as u64
+        {
+            self.ddr_first.set(Some(DdrAccess {
+                address,
+                width,
+                kind,
+            }));
         }
     }
 
@@ -244,7 +328,10 @@ impl Mem {
 
     fn refresh_one(&mut self, idx: usize) {
         let own = self.page_ptr(idx);
-        self.eff[idx] = if self.mmr[idx] {
+        self.eff[idx] = if self.mmr[idx]
+            || self.ddr_range.is_some_and(|(lo, hi)| {
+                idx >= (lo >> PAGE_BITS) as usize && idx <= ((hi - 1) >> PAGE_BITS) as usize
+            }) {
             std::ptr::null_mut()
         } else if !own.is_null() || idx >= ALIAS_PAGES {
             own
@@ -479,6 +566,7 @@ impl Mem {
         self.dec_gen += 1;
         for (k, &b) in bytes.iter().enumerate() {
             let addr = a.wrapping_add(k as u32);
+            self.note_ddr_access(addr, 1, DdrAccessKind::StorageWrite);
             let idx = (addr >> PAGE_BITS) as usize;
             let off = (addr as usize) & (PAGE_SIZE - 1);
             let page = self.loader[idx].get_or_insert_with(Page::empty);
@@ -489,6 +577,7 @@ impl Mem {
 
     /// Discard every overlay byte: memory is the loader image again.
     pub fn reset(&mut self) {
+        self.clear_ddr_access();
         self.layout_gen += 1;
         self.code_gen += 1;
         self.dec_gen += 1;
@@ -512,6 +601,16 @@ impl Mem {
     #[inline(always)]
     fn page(&self, a: u32) -> Option<&Page> {
         self.pages[(a >> PAGE_BITS) as usize].as_deref()
+    }
+
+    /// The LEN bytes at A as one slice, when they lie in one existing page
+    /// (diagnostics that compare a record with a snapshot).
+    pub fn bytes_in_page(&self, a: u32, len: usize) -> Option<&[u8]> {
+        let off = (a as usize) & (PAGE_SIZE - 1);
+        if off + len > PAGE_SIZE {
+            return None;
+        }
+        self.page(a).map(|p| &p.data[off..off + len])
     }
 
     #[inline(always)]
@@ -570,6 +669,7 @@ impl Mem {
     /// Little-endian read of WIDTH (<= 4) present bytes.
     #[inline(always)]
     pub fn read_le(&self, a: u32, width: u32) -> u32 {
+        self.note_ddr_access(a, width, DdrAccessKind::StorageRead);
         let off = (a as usize) & (PAGE_SIZE - 1);
         if let Some(p) = self.page(a)
             && off + 4 <= PAGE_SIZE
@@ -595,6 +695,7 @@ impl Mem {
 
     #[inline(always)]
     pub fn byte(&self, a: u32) -> u8 {
+        self.note_ddr_access(a, 1, DdrAccessKind::StorageRead);
         match self.page(a) {
             Some(p) => p.data[(a as usize) & (PAGE_SIZE - 1)],
             None => 0,
@@ -632,6 +733,7 @@ impl Mem {
 
     /// A loader-image byte (ignores the overlay).
     pub fn loader_byte(&self, a: u32) -> Option<u8> {
+        self.note_ddr_access(a, 1, DdrAccessKind::StorageRead);
         let p = self.loader[(a >> PAGE_BITS) as usize].as_deref()?;
         let off = (a as usize) & (PAGE_SIZE - 1);
         if p.present[off >> 6] & (1 << (off & 63)) != 0 {
@@ -645,6 +747,7 @@ impl Mem {
     /// present/dirty bits (bit 0, bit 1) for the undo journal.
     #[inline(always)]
     pub fn write_byte(&mut self, a: u32, v: u8) -> (u8, u8) {
+        self.note_ddr_access(a, 1, DdrAccessKind::StorageWrite);
         self.note_write_n(a, 1);
         let idx = (a >> PAGE_BITS) as usize;
         if self.pages[idx].is_none() {
@@ -669,6 +772,7 @@ impl Mem {
     /// The WIDTH (<= 4) bytes at A when all are present on one page.
     #[inline(always)]
     pub fn read_present(&self, a: u32, width: u32) -> Option<u32> {
+        self.note_ddr_access(a, width, DdrAccessKind::StorageRead);
         let off = (a as usize) & (PAGE_SIZE - 1);
         let p = self.page(a)?;
         if off + 4 > PAGE_SIZE {
@@ -698,6 +802,7 @@ impl Mem {
     /// The WIDTH (<= 4) bytes at A when all are overlay bytes on one page.
     #[inline(always)]
     pub fn read_dirty(&self, a: u32, width: u32) -> Option<u32> {
+        self.note_ddr_access(a, width, DdrAccessKind::StorageRead);
         let off = (a as usize) & (PAGE_SIZE - 1);
         let p = self.page(a)?;
         if off + 4 > PAGE_SIZE {
@@ -728,6 +833,7 @@ impl Mem {
     /// on one page already (nothing else changes); false otherwise.
     #[inline(always)]
     pub fn write_dirty(&mut self, a: u32, width: u32, v: u32) -> bool {
+        self.note_ddr_access(a, width, DdrAccessKind::StorageWrite);
         self.note_write_n(a, width);
         let off = (a as usize) & (PAGE_SIZE - 1);
         let Some(p) = self.pages[(a >> PAGE_BITS) as usize].as_deref_mut() else {
@@ -749,6 +855,7 @@ impl Mem {
 
     /// Undo a write_byte.
     pub fn restore(&mut self, a: u32, byte: u8, flags: u8) {
+        self.note_ddr_access(a, 1, DdrAccessKind::StorageWrite);
         self.layout_gen += 1;
         self.note_write_n(a, 1);
         if let Some(p) = self.pages[(a >> PAGE_BITS) as usize].as_deref_mut() {
@@ -787,7 +894,9 @@ impl Mem {
                     let b = bits.trailing_zeros() as usize;
                     bits &= bits - 1;
                     let off = w * 64 + b;
-                    out.push(((pg << PAGE_BITS) | off as u32, p.data[off]));
+                    let address = (pg << PAGE_BITS) | off as u32;
+                    self.note_ddr_access(address, 1, DdrAccessKind::StorageRead);
+                    out.push((address, p.data[off]));
                 }
             }
         }
@@ -843,7 +952,11 @@ mod word_path_tests {
             let w = b.fast_write_word(addr, v);
             if addr & 3 == 0 {
                 assert_eq!(w, g, "write {addr:#x}");
-                assert_eq!(a.fast_read(addr, 4), b.fast_read(addr, 4), "after {addr:#x}");
+                assert_eq!(
+                    a.fast_read(addr, 4),
+                    b.fast_read(addr, 4),
+                    "after {addr:#x}"
+                );
                 assert_eq!(a.code_gen, b.code_gen);
             } else {
                 assert_eq!(w, None, "write {addr:#x}");
@@ -926,5 +1039,112 @@ mod code_watch_tests {
         m.unwatch_code();
         m.write_byte(lo, 1);
         assert_eq!(cg(&m), g, "unwatched");
+    }
+}
+
+#[cfg(test)]
+mod ddr_monitor_tests {
+    use super::*;
+    const A: u32 = 0x8001_0000;
+
+    #[test]
+    fn ddr_monitor_ranges_overlap_and_first_attempt() {
+        let mut m = Mem::new();
+        for range in [
+            (0, 1),
+            (A, A),
+            (A + 1, A),
+            (0x7fff_ffff, A),
+            (A, 0xa000_0001),
+        ] {
+            assert_eq!(m.set_ddr_monitor(Some(range)), Err(InvalidDdrRange));
+        }
+        m.set_ddr_monitor(Some((A, A + 4))).unwrap();
+        m.note_ddr_access(A - 4, 4, DdrAccessKind::StorageRead);
+        m.note_ddr_access(A + 4, 1, DdrAccessKind::StorageWrite);
+        m.note_ddr_access(A, 0, DdrAccessKind::CpuRead);
+        assert_eq!(m.first_ddr_access(), None);
+        m.note_ddr_access(A - 1, 2, DdrAccessKind::StorageRead);
+        let first = DdrAccess {
+            address: A - 1,
+            width: 2,
+            kind: DdrAccessKind::StorageRead,
+        };
+        assert_eq!(m.first_ddr_access(), Some(first));
+        m.write_byte(A, 9);
+        assert_eq!(m.first_ddr_access(), Some(first));
+        assert!(m.set_ddr_monitor(Some((A, A))).is_err());
+        assert_eq!(m.first_ddr_access(), Some(first));
+        m.clear_ddr_access();
+        m.read_le(A + 3, 1);
+        assert_eq!(m.first_ddr_access().unwrap().address, A + 3);
+        m.set_ddr_monitor(Some((0x8000_0000, 0xa000_0000))).unwrap();
+        assert_eq!(m.first_ddr_access(), None);
+    }
+
+    #[test]
+    fn ddr_monitor_labels_host_image_and_export_traffic_as_storage() {
+        let mut m = Mem::new();
+        m.set_ddr_monitor(Some((A, A + 4))).unwrap();
+        m.load(A, &[1, 2, 3, 4]);
+        assert_eq!(
+            m.first_ddr_access().unwrap().kind,
+            DdrAccessKind::StorageWrite
+        );
+        m.reset();
+        assert_eq!(m.first_ddr_access(), None);
+        m.write_byte(A, 1);
+        m.clear_ddr_access();
+        assert_eq!(m.dirty_bytes(), vec![(A, 1)]);
+        assert_eq!(
+            m.first_ddr_access().unwrap().kind,
+            DdrAccessKind::StorageRead
+        );
+    }
+
+    #[test]
+    fn ddr_monitor_preserves_data_and_page_policy_through_reset_remove() {
+        let mut m = Mem::new();
+        m.load(A, &[1, 2, 3, 4]);
+        m.reset();
+        assert_eq!(m.fast_read_word(A), Some(0x0403_0201));
+        assert!(m.window(A, 4, true, false).is_some());
+        let gen_ = m.layout_gen;
+        m.set_ddr_monitor(Some((A + 1, A + 2))).unwrap();
+        assert!(m.layout_gen > gen_);
+        assert!(m.fast_read_word(A).is_none());
+        assert!(m.window(A, 4, true, false).is_none());
+        assert_eq!(m.first_ddr_access(), None); // Refusal is not an access.
+        assert_eq!(m.read_le(A, 4), 0x0403_0201);
+        assert_eq!(
+            m.first_ddr_access().unwrap().kind,
+            DdrAccessKind::StorageRead
+        );
+        m.clear_ddr_access();
+        m.write_byte(A + 1, 2); // Same-value write still reports.
+        assert_eq!(
+            m.first_ddr_access().unwrap().kind,
+            DdrAccessKind::StorageWrite
+        );
+        assert_eq!(m.read_le(A, 4), 0x0403_0201);
+        m.reset();
+        assert!(m.ddr_monitor_active());
+        assert_eq!(m.first_ddr_access(), None);
+        assert!(m.fast_read_word(A).is_none());
+        m.set_ddr_monitor(None).unwrap();
+        assert_eq!(m.fast_read_word(A), Some(0x0403_0201));
+        m.set_ddr_monitor(Some((A + 0x10000, A + 0x10004))).unwrap();
+        for k in 0..4 {
+            m.write_byte(A + 0x10000 + k, 7);
+        }
+        assert!(m.fast_read_word(A + 0x10000).is_none());
+        assert!(m.fast_write_word(A + 0x10000, 0).is_none());
+        assert_eq!(m.read_le(A + 0x10000, 4), 0x0707_0707);
+        m.reset();
+        assert_eq!(m.first_ddr_access(), None);
+        m.write_byte(A + 0x10000, 8);
+        assert!(m.fast_read(A + 0x10000, 1).is_none());
+        m.set_ddr_monitor(None).unwrap();
+        assert_eq!(m.fast_read(A + 0x10000, 1), Some(8));
     }
 }

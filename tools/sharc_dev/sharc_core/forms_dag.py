@@ -184,7 +184,6 @@ def _type_7a(
             False,
             _snapshot_uregs(state.uregs),
             state.special,
-            approx_recips=state.approx_recips,
         )
     except ValueError as error:
         return [_stop(state, insn, str(error))]

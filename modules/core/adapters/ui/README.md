@@ -8,6 +8,7 @@ call is a generated anchor (`modules/core/fw/include/dk_fw_*.h`). The host fake 
 - A plain menu and a text page are the firmware's `VerticalMenuView`; a `DK_UI_LIST` is a `MenuWithPopoutSideBarsView` (the PRESET MANAGER's
   base) with the right panel as the side panel. Each is built once and kept for the session through a `shared_ptr` this module owns, so the
   firmware never frees it.
+- `DK_UI_WIDE` (flag 4) builds a menu page as the list view without check marks or side panel: a full-width title bar (about 28 characters; the firmware cuts a longer title at its start with `..`) and full-width rows. `core/digikit-menu` sets it for module settings pages. A toggle or value row of a list or a wide page carries its value in its label (`TOGGLE            ON`, `VALUE              064`), because the list view does not give the item's draw function the row's origin; a change fills the list again.
 - Rows are stock `MenuItem`s. Their `std::function`s keep two words (the menu and the row number) in the function's own storage: no heap
   per row. The row data lives in an array of the menu that a refill rewrites.
 - The View vtable of a text page and of a list is a copy in module RAM: paint (slot 4) hides the cursor bar of a text page and draws the
@@ -16,6 +17,7 @@ call is a generated anchor (`modules/core/fw/include/dk_fw_*.h`). The host fake 
 - Dialogs are `make_shared` blocks built by hand and pushed on the Brain's view manager; the firmware frees them. One at a time.
 - `dk_ui_stock_row(stock_menu, text, fn, ctx)` is for other core modules (`include/dk_ui_core.h`, not part of the SDK): a row among the rows of a stock menu (SETTINGS), with its icon. `core/digikit-menu` and `test/ui-demo` use it.
 - The one firmware hook of the module is the end of the SETTINGS item list rebuild (`cf.menu.hook.settings_list.tail`, `src/shim.s` `dk_hook`). It calls the optional symbol `dk_app_settings_rows(settings_menu)` (`include/dk_ui_core.h`) that an app implements: patchkit resolves it to 0 when no app is in the image, and the hook then does nothing. `core/digikit-menu` and `test/ui-demo` implement it (they conflict: one DIGIKIT row). The layers are in [docs/ARCHITECTURE.md](../../../../docs/ARCHITECTURE.md).
+- `dk_ui_tick(fn, ctx, period_ms)` is a table of four timers (`src/tick.h`, no firmware, tested in `host/tests/tick.rs`) behind one function on the runtime's `dkrt_poll_add` list; it is on the list only while a timer runs. The block clock times the periods (the UI-loop pass when there is none).
 - An empty list paints the same inverted title bar as a list with rows, then its `empty` text. A text page opens at its first row; a menu or list keeps its selected row.
 
 Proof and demo: `tests/fixtures/modules/ui-demo`, driven by `uv run python -m tools.patchkit.pk_uidemo shots|leak --device dt2|dn2`.

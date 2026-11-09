@@ -10,8 +10,7 @@ so the needs only had to be right as a display and a pre-check, and a function o
 
 **[D]** The needs are computed once, by `needs_of` of the crate `packages/dkneeds` (no_std, no dependency), through a byte source: the device feeds it from store sector reads (header, `register` records, DSP section header and voice
 table; no staging of the file), a host from a slice. Its callers: the DIGIKIT menu (the card's files, once per open of MODULES), patchkit (`patchkit needs [--json]`, a line of `dkm-info`), `patchkit.wasm` (`pk_needs`, the Transfer page through
-`apps/web/src/modules/dkneeds.ts`) and the Python tools through the command line (`tools/device/dkneeds.py`). The fit compare (`fits_now`) stays in three languages on shared vectors (25 cases, 6 sets and the empty-capacity case in `sdk/fit-vectors.json`: Rust `dkrt_fit`,
-`dkfit.ts`, `dkfit.py`); no arithmetic of the needs exists outside Rust.
+`apps/web/src/modules/dkneeds.ts`) and the Python tools through the command line (`tools/device/dkneeds.py`). The fit compare (`fits_now`) is written once, in Rust `dkrt_fit`, with its vectors in `sdk/vectors/fit-vectors.json`. The web app calls it through `pk_fit` (`apps/web/src/modules/fit.ts`) and the Python tools through `patchkit fit --json -` (`tools/device/dkneeds.py` `fit`). No arithmetic of the needs or the fit exists outside Rust.
 
 **[D]** The inferred needs equal what the runtime takes when it loads the module, on both devices. `inferred-needs-dt2` loads each of 12 modules alone on a ColdFire-only rig (the repository's `pluck` and `remote` and ten fixtures; the three that fault on purpose
 are left out) and `inferred-needs-dn2` each of 10; CAPACITY (arena, DSP area, voice rows, and for a module without DSP code the machine, parameter and page rows) and the MODULES record equal `needs_of` of the file in every case. The rows of a DSP module
@@ -57,8 +56,8 @@ uses the live CAPACITY (next to the loaded modules) and the tooltip says whether
 ## The load line and the Memory panel (follow-up)
 
 **[D]** The MODULES page shows one line above APPLY & RESTART while a module is ticked: the DSP memory and the CPU memory of the capacity that `refit` already computes (the limits with the ticked modules that fit taken out), always these two in this order,
-for example `DSP 52% CPU 1%` for one half-size module on a Digitone II. The rule is `dkrt_fit::load_line` (percent rounded up; `DSP`, `CPU`; at most 17 characters, the list shows about 18), kept equal to
-`tools/device/dkfit.py` `load_line` by the `load_lines` of `sdk/fit-vectors.json`. `fits-dn2` and `fits-dt2` (DK_LOAD): no line with nothing ticked, the line directly above APPLY & RESTART with one module ticked and unchanged after a refused
+for example `DSP 52% CPU 1%` for one half-size module on a Digitone II. The rule is `dkrt_fit::load_line` (percent rounded up; `DSP`, `CPU`; at most 17 characters, the list shows about 18), tested on the
+`load_lines` of `sdk/vectors/fit-vectors.json`. `fits-dn2` and `fits-dt2` (DK_LOAD): no line with nothing ticked, the line directly above APPLY & RESTART with one module ticked and unchanged after a refused
 selection, gone with the last tick. A module's `arena` is its own block only in a coupled boot: the MEMORY page after loading `digikit/pluck` reads `CPU .......... 0%` (the DSP image's block of 1392 bytes is freed after the transfer; the
 ColdFire-only `inferred-needs-*` rigs keep it, which is why `take` still counts it for the fit). The desktop Memory panel therefore gives a module its `ARENA` need alone and puts the rest of `used` under "Other".
 

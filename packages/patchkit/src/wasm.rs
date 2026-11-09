@@ -270,6 +270,17 @@ pub unsafe extern "C" fn pk_needs(dkm: *const u8, dkm_len: usize) -> i32 {
     set(crate::dkm::needs_json(dkm).map(|j| (vec![], j.to_string())))
 }
 
+/// The fit rule (`dkrt-fit`, the code the DIGIKIT menu runs; packages/patchkit/src/fit.rs): JSON `{caps, needs, empty?}` in; `{each, set, line}` in
+/// `pk_plan_*`, or the reason in `pk_err_*` (1).
+///
+/// # Safety
+/// The range must be readable.
+#[unsafe(no_mangle)]
+pub unsafe extern "C" fn pk_fit(req: *const u8, req_len: usize) -> i32 {
+    let req = unsafe { slice(req, req_len) };
+    set(crate::fit::fit_json(req).map(|j| (vec![], j.to_string())))
+}
+
 /// Build a SHARC+ object from source texts: JSON `{sources: [text], includes: {name: text}, defines: [name]}` in; the `.dko.json` text in
 /// `pk_plan_*`, or the reason in `pk_err_*` (1).
 ///

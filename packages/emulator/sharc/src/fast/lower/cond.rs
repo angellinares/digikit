@@ -27,7 +27,7 @@
 
 use super::*;
 use crate::fast::MAX_FLAG_ID;
-use crate::fast::glue::{AC, AF, ALU_MASK, AN, AS, AV, AZ, MN, MULT_MASK, SS, SV, SZ};
+use crate::fast::glue::{AC, AF, ALU_MASK, AN, AS, AV, AZ, MN, MU, MULT_MASK, SS, SV, SZ};
 
 /// The forms whose condition gates the whole instruction (transfer, index
 /// update and compute), as `forms_compute`/`forms_move` execute them for
@@ -48,7 +48,7 @@ pub const COND_FORMS: &[&str] = &[
 
 const BTF: u32 = 1 << 18;
 const MV: u32 = 1 << 7;
-const ALUSAT: u32 = 1 << 13;
+pub(super) const ALUSAT: u32 = 1 << 13;
 const SHIFT_MASK: u32 = SV | SZ | SS;
 
 /// The ASTATX bits a condition code reads, and whether it complements the
@@ -208,16 +208,6 @@ impl Lower {
         self.bit(bits, b.trailing_zeros())
     }
 
-    /// ASTATX.AF as it is before the instruction, as the AF mask or 0, with
-    /// the entry requirement a condition reading AF would add.
-    pub fn af_mask(&mut self) -> Val {
-        self.read_mask |= AF;
-        self.need_flags_known |= AF & !self.fm_static;
-        let b = self.read_bit(AF);
-        let k = self.ci(AF.trailing_zeros());
-        self.bin(Bin::Shl, b, k)
-    }
-
     /// The execution condition `cond` (a 5-bit code) as a 0/1 value, and the
     /// ASTATX bits it reads recorded.
     pub fn cond_value(&mut self, cond: u32) -> LR<Val> {
@@ -354,6 +344,23 @@ impl Lower {
                     parts.push(self.ci(AF));
                 }
             }
+            FlagKind::Fmant => {
+                // AF set, AZ when the result (source 0) is zero, AS from the
+                // input sign (source 1), AN cleared.
+                mask = ALU_MASK;
+                if want & AZ != 0 {
+                    let r = self.to_i(srcs[0]);
+                    let z = self.ci(0);
+                    parts.push(self.bin(Bin::Eq, r, z));
+                }
+                if want & AS != 0 {
+                    let i = self.to_i(srcs[1]);
+                    parts.push(self.sign_to(i, 4));
+                }
+                if want & AF != 0 {
+                    parts.push(self.ci(AF));
+                }
+            }
             FlagKind::Compare { float } => {
                 // The value is eq | lt << 2 | gt << 31: AZ is bit 0, AN is
                 // bit 2; AF for the float form.
@@ -423,23 +430,6 @@ impl Lower {
                     parts.push(self.bin(Bin::Shl, nz, k));
                 }
             }
-            FlagKind::Recips => {
-                // Never noted: `falu_recips` notes `RecipsAf` in a kernel
-                // that tracks flags (`Recips` leaves AF as it was).
-                unreachable!("recips leaves AF unchanged and is not a lazy flag writer");
-            }
-            FlagKind::RecipsAf => {
-                // AN from the input sign (source 0), AF as found (source 1,
-                // the AF mask or 0); AC AS AI AV AZ cleared.
-                mask = ALU_MASK;
-                if want & AN != 0 {
-                    let r = self.to_i(srcs[0]);
-                    parts.push(self.sign_to(r, 2));
-                }
-                if want & AF != 0 {
-                    parts.push(self.to_i(srcs[1]));
-                }
-            }
             FlagKind::Iabs => {
                 // The adder of `0 - x` (x negative) or `0 + x`, and AS = the
                 // sign of x.
@@ -463,6 +453,16 @@ impl Lower {
             }
             FlagKind::FmulForget => {
                 mask = MULT_MASK;
+            }
+            FlagKind::Mfix => {
+                // The source holds MN and MU at their bit positions; MV and
+                // MI are clear.
+                mask = MULT_MASK;
+                if want & (MN | MU) != 0 {
+                    let v = self.to_i(srcs[0]);
+                    let m = self.ci(want & (MN | MU));
+                    parts.push(self.bin(Bin::And, v, m));
+                }
             }
             FlagKind::Iadd | FlagKind::Isub => {
                 mask = ALU_MASK;

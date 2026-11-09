@@ -1,4 +1,5 @@
 import fs from 'node:fs';
+import { createHash } from 'node:crypto';
 import { beforeEach, expect, test, vi } from 'vitest';
 import type { DkSession } from '@digi/dk-session';
 import type { Session } from '@digi/test-support';
@@ -15,9 +16,7 @@ const fake = vi.hoisted(() => ({
 vi.mock('node:timers/promises', () => ({
   setTimeout: (ms: number) => new Promise<void>((resolve) => setTimeout(resolve, ms)),
 }));
-vi.mock('node:child_process', () => ({
-  execFile: Object.assign(vi.fn(), { [Symbol.for('nodejs.util.promisify.custom')]: fake.exec }),
-}));
+vi.mock('../runtime/patchkit.ts', () => ({ patchkit: fake.exec }));
 vi.mock('node:fs', async (original) => ({
   default: {
     ...(await original<{ default: typeof import('node:fs') }>()).default,
@@ -32,8 +31,15 @@ vi.mock('../../../packages/test-support/src/inputs.ts', async (original) => ({
   ...(await original<object>()),
   resolveInputs: () => ({ syx: '/stock.syx' }),
 }));
-import { installRemote, prepareRemote, remoteTap, withRemoteRelease } from '../runtime/remote.ts';
-import { planSymbol, validateRuntimePlan, type RuntimePlan } from '../runtime/runtime-plan.ts';
+import { expectRuntimeUi } from '../runtime/ready.ts';
+import { waitEmulated } from '../runtime/waits.ts';
+import { expectRemoteEnabled, installRemote, prepareRemote, remoteTap, withRemoteRelease } from '../runtime/remote.ts';
+import {
+  planSymbol,
+  prepareRuntimePlanOffline,
+  validateRuntimePlan,
+  type RuntimePlan,
+} from '../runtime/runtime-plan.ts';
 import { openDigikitMenu, openRuntimeAbout, readAboutRows, expectRuntimeAbout } from '../runtime/runtime-menu.ts';
 
 const patchedSha256 = 'c'.repeat(64);
@@ -41,7 +47,11 @@ const plan: RuntimePlan = {
   output: { syx_sha256: patchedSha256 },
   base: { device: 'dt2', version: '1.17', syx_sha256: 'a'.repeat(64) },
   modules: ['core/runtime@0.1.0', 'core/digikit-menu@0.1.0'],
-  symbols: { 'core/digikit-menu@0.1.0:DK_ABOUT': 4096, 'core/digikit-menu@0.1.0:DK_ABOUT_N': 8192 },
+  symbols: {
+    'core/digikit-menu@0.1.0:DK_ABOUT': 4096,
+    'core/digikit-menu@0.1.0:DK_ABOUT_N': 8192,
+    'core/runtime@0.1.0:DKRT_BOOT': 12288,
+  },
 };
 const session = {
   options: { device: 'dt2', firmware: '1.17' },
@@ -58,8 +68,30 @@ const session = {
   },
 } as unknown as Session;
 
+/** Mutable daemon evidence for boot transitions; omitted words remain unmapped. */
+function readyDaemon() {
+  const status = {
+    mode: 'free',
+    epoch: 4,
+    cf: { ready: true, main_ui_reached: true, filesystem_verified: null as boolean | null },
+  };
+  const words: Record<number, number | null> = {
+    0: 0x444b4254,
+    4: 1,
+    8: 0,
+    12: 0,
+    16: 0,
+    28: 0,
+    36: 1,
+  };
+  const memPeek = vi.fn(async (address: number) => words[address - 12288] ?? null);
+  const daemon = { ...session, status: vi.fn(async () => status), client: { memPeek } } as unknown as Session;
+  return { daemon, status, words, memPeek };
+}
+
 /** A fake protocol session that records the order of the native install calls. */
 function fakeDk() {
+  const { daemon, status } = readyDaemon();
   const calls: string[] = [];
   const record = (name: string, result?: unknown) =>
     vi.fn(async (..._args: unknown[]) => {
@@ -74,8 +106,13 @@ function fakeDk() {
     waitForBoot: record('waitForBoot'),
     modules: record('modules', [{ name: 'digikit/remote' }]),
     remoteRelease: vi.fn().mockResolvedValue(undefined),
+    remoteState: vi.fn().mockResolvedValue({ enabled: true }),
   };
-  return { calls, dk, runtime: { session, dk } as unknown as PatchedSession };
+  dk.restart.mockImplementation(async () => {
+    calls.push('restart');
+    status.epoch++;
+  });
+  return { calls, dk, runtime: { session: daemon, dk } as unknown as PatchedSession };
 }
 
 beforeEach(() => {
@@ -107,25 +144,10 @@ test('symbol lookup accepts aliases of one address, including mangled Rust names
   expect(() => planSymbol({ ...plan, symbols: {} }, 'DK_ABOUT')).toThrow('0 addresses');
 });
 
-test('setup reuses the Python patch command, its own daemon and a bounded tool deadline, then installs natively', async () => {
+test('setup patches once with a bounded tool deadline, uses its own daemon, then installs natively', async () => {
   const { calls, runtime } = fakeDk();
   expect(await prepareRemote(runtime)).toEqual(plan);
-  expect(fake.exec.mock.calls[0]?.[1]).toEqual([
-    'run',
-    'python',
-    '-m',
-    'tools.patchkit.patchkit',
-    'patch',
-    '--firmware',
-    '/stock.syx',
-    '--set',
-    'emulator',
-    '-o',
-    '/run/own-daemon/runtime-dt2.syx',
-    '--plan',
-    '/run/own-daemon/runtime-dt2.plan.json',
-  ]);
-  expect(fake.exec.mock.calls.map((call) => call[2].timeout)).toEqual([30_000]);
+  expect(fake.exec.mock.calls.map((call) => call[1].timeout)).toEqual([30_000]);
   expect(fs.readFileSync).toHaveBeenCalledWith('/run/own-daemon/runtime-dt2.plan.json', 'utf8');
   expect(calls).toEqual(['put', 'verifyFile', 'select', 'restart', 'waitForBoot', 'modules']);
 });
@@ -148,7 +170,7 @@ test('failed KEY press still attempts key-up and overall release', async () => {
     remoteRelease: vi.fn(),
   };
   await expect(
-    withRemoteRelease(dk as unknown as DkSession, () => remoteTap(dk as unknown as DkSession, 'YES')),
+    withRemoteRelease(dk as unknown as DkSession, () => remoteTap(session, dk as unknown as DkSession, 'YES')),
   ).rejects.toThrow('key failed');
   expect(dk.remoteKey.mock.calls).toEqual([
     [10, true],
@@ -186,28 +208,31 @@ test('navigation failure releases remote inputs; a hung release has a bounded de
   }
 });
 
-test('successful tap retains the 300 ms hold and requested UI settle', async () => {
-  vi.useFakeTimers();
+/** A daemon whose DSP frame counter advances by `step` frames per status read (0: stuck). */
+function framesDaemon(step: number) {
+  let frames = 1000;
+  const status = vi.fn(async () => ({ audio: { frames: (frames += step) } }));
+  return { daemon: { ...session, status } as unknown as Session, status };
+}
+
+test('successful tap holds and settles in emulated time', async () => {
+  // 1500 frames per status read: the 300 ms hold (450 frames) and the 3000 ms settle (4500 frames).
+  const { daemon, status } = framesDaemon(1500);
   const dk = { remoteKey: vi.fn().mockResolvedValue(undefined) } as unknown as DkSession;
-  try {
-    const tap = remoteTap(dk, 'SETTINGS', 3000);
-    await vi.advanceTimersByTimeAsync(0);
-    await vi.advanceTimersByTimeAsync(299);
-    expect(dk.remoteKey).toHaveBeenCalledExactlyOnceWith(8, true);
-    await vi.advanceTimersByTimeAsync(1);
-    expect(dk.remoteKey).toHaveBeenLastCalledWith(8, false);
-    let settled = false;
-    void tap.then(() => {
-      settled = true;
-    });
-    await vi.advanceTimersByTimeAsync(2999);
-    expect(settled).toBe(false);
-    await vi.advanceTimersByTimeAsync(1);
-    await tap;
-    expect(settled).toBe(true);
-  } finally {
-    vi.useRealTimers();
-  }
+  await remoteTap(daemon, dk, 'SETTINGS', 3000);
+  expect(dk.remoteKey).toHaveBeenNthCalledWith(1, 8, true);
+  expect(dk.remoteKey).toHaveBeenNthCalledWith(2, 8, false);
+  // hold: start read + 1 poll; settle: start read + 3 polls
+  expect(status).toHaveBeenCalledTimes(6);
+});
+
+test('waitEmulated resolves once the frame counter has advanced by ms * 1.5 and throws when it is stuck', async () => {
+  const { daemon, status } = framesDaemon(100);
+  await waitEmulated(daemon, 1000);
+  // start read, then 1500 frames at 100 per read
+  expect(status).toHaveBeenCalledTimes(16);
+  const stuck = framesDaemon(0);
+  await expect(waitEmulated(stuck.daemon, 1000, { hangMs: 100 })).rejects.toThrow('stuck at 1000');
 });
 
 test('installer failure still releases remote inputs without reaching scenario actions', async () => {
@@ -227,7 +252,7 @@ test('installer failure still releases remote inputs without reaching scenario a
 test('key-up failure still reaches the overall remote release', async () => {
   const dk = { remoteKey: vi.fn().mockRejectedValue(new Error('key failed')), remoteRelease: vi.fn() };
   await expect(
-    withRemoteRelease(dk as unknown as DkSession, () => remoteTap(dk as unknown as DkSession, 'YES')),
+    withRemoteRelease(dk as unknown as DkSession, () => remoteTap(session, dk as unknown as DkSession, 'YES')),
   ).rejects.toThrow('key failed');
   expect(dk.remoteRelease).toHaveBeenCalledTimes(1);
 });
@@ -281,16 +306,14 @@ test('negative setup installs natively on its own device-set daemon without patc
   expect(dk.select).toHaveBeenCalledExactlyOnceWith(['modules/remote.dkm']);
 });
 
-test('menu navigation uses named SETTINGS and DIGIKIT checkpoints before ABOUT', async () => {
+test('menu navigation uses named SETTINGS and DIGIKIT checkpoints', async () => {
   const tap = vi.fn().mockResolvedValue(undefined);
   const checkpoint = vi.fn().mockResolvedValue(undefined);
   await openDigikitMenu(tap, checkpoint);
-  await openRuntimeAbout(tap);
   expect(tap.mock.calls).toEqual([
     ['NO', 2000],
     ['SETTINGS', 3000],
     ...Array.from({ length: 8 }, () => ['DOWN']),
-    ['YES', 3000],
     ['YES', 3000],
   ]);
   expect(checkpoint.mock.calls).toEqual([['settings-ninth-row'], ['digikit-main']]);
@@ -301,13 +324,239 @@ test('ABOUT reads are bounded and assert the live protocol runtime identity with
   const menuSession = { client: { memPeek } } as unknown as Session;
   await expect(readAboutRows(menuSession, plan)).rejects.toThrow('invalid ABOUT row count');
   expect(memPeek.mock.calls).toEqual([[8192]]);
-  const rows = ['DIGIKIT 0.1.0', 'RUNTIME 0.2.5'];
+  const rows = ['DIGIKIT 0.1.0', 'RUNTIME 0.2.5', 'BOOT: 1 OF 1 OK', 'RAM KEPT: NO'];
   const bytes = Buffer.from(rows.map((row) => row.padEnd(24, '\0')).join(''), 'latin1');
   memPeek.mockImplementation(async (address: number) =>
     address === 8192 ? rows.length : bytes.readUInt32BE(address - 4096),
   );
   const info = vi.fn().mockResolvedValue({ runtime: 0x205 });
-  await expect(expectRuntimeAbout(menuSession, { info } as unknown as DkSession, plan)).resolves.toEqual(rows);
+  await expect(expectRuntimeAbout(menuSession, { info } as unknown as DkSession, plan, '/artifacts')).resolves.toEqual(
+    rows,
+  );
   expect(info).toHaveBeenCalledWith();
   expect(fake.exec).not.toHaveBeenCalled();
 });
+
+test('UI readiness rejects stale epochs and records the last daemon and boot evidence on timeout', async () => {
+  const { daemon, status } = readyDaemon();
+  await expect(
+    expectRuntimeUi(daemon, plan, '/artifacts', { afterEpoch: status.epoch, timeout: 20 }),
+  ).rejects.toThrow();
+  const saved = fake.write.mock.calls.find(([file]) => file.endsWith('readiness-post-install.json'));
+  expect(JSON.parse(saved![1])).toMatchObject({ afterEpoch: 4, status: { epoch: 4 }, boot: { ui_reached: 1 } });
+  status.epoch++;
+  await expect(expectRuntimeUi(daemon, plan, '/artifacts', { afterEpoch: 4, timeout: 20 })).resolves.toBe(5);
+});
+
+test('UI readiness requires a valid normal boot and both daemon and actual runtime UI hooks', async () => {
+  const { daemon, status, words } = readyDaemon();
+  for (const [offset, invalid] of [
+    [0, 0],
+    [4, 2],
+    [8, 1],
+    [12, 1],
+    [36, 0],
+    [0, null],
+  ] as const) {
+    const previous = words[offset]!;
+    words[offset] = invalid;
+    await expect(expectRuntimeUi(daemon, plan, '/artifacts', { timeout: 20 })).rejects.toThrow();
+    words[offset] = previous;
+  }
+  for (const field of ['ready', 'main_ui_reached'] as const) {
+    status.cf[field] = false;
+    await expect(expectRuntimeUi(daemon, plan, '/artifacts', { timeout: 20 })).rejects.toThrow();
+    status.cf[field] = true;
+  }
+  status.mode = 'paused';
+  await expect(expectRuntimeUi(daemon, plan, '/artifacts', { timeout: 20 })).rejects.toThrow();
+  status.mode = 'free';
+  await expect(expectRuntimeUi(daemon, plan, '/artifacts', { timeout: 20 })).resolves.toBe(4);
+});
+
+test('fresh empty boot is an explicit prerequisite for skipping the pre-install stability wait', async () => {
+  const { daemon, words } = readyDaemon();
+  for (const offset of [16, 28]) {
+    words[offset] = 1;
+    await expect(expectRuntimeUi(daemon, plan, '/artifacts', { fresh: true, timeout: 20 })).rejects.toThrow(
+      'fresh pre-install',
+    );
+    words[offset] = 0;
+  }
+  await expect(expectRuntimeUi(daemon, plan, '/artifacts', { fresh: true, timeout: 20 })).resolves.toBe(4);
+});
+
+test('ABOUT refuses stale content before pressing YES', async () => {
+  const tap = vi.fn();
+  const memPeek = vi.fn().mockResolvedValue(4);
+  await expect(
+    openRuntimeAbout(tap, { client: { memPeek } } as unknown as Session, {} as DkSession, plan, '/artifacts'),
+  ).rejects.toThrow('ABOUT buffer is empty');
+  expect(tap).not.toHaveBeenCalled();
+  const saved = fake.write.mock.calls.find(([file]) => file.endsWith('about-before-open.json'));
+  expect(JSON.parse(saved![1])).toMatchObject({ initialCount: 4 });
+});
+
+test('ABOUT returns only the complete snapshot after the new open, keeping the key hold without a final settle', async () => {
+  const rows = ['DIGIKIT 0.1.0', 'RUNTIME 0.2.5', 'BOOT: 1 OF 1 OK', 'RAM KEPT: YES'];
+  const bytes = Buffer.from(rows.map((row) => row.padEnd(24, '\0')).join(''), 'latin1');
+  let polls = 0;
+  const memPeek = vi.fn(async (address: number) => {
+    // Pre-open is empty, then only identity, then BOOT, then the final RAM row.
+    if (address === 8192) return [0, 2, 3, 4][Math.min(polls++, 3)]!;
+    return bytes.readUInt32BE(address - 4096);
+  });
+  const tap = vi.fn().mockResolvedValue(undefined);
+  const info = vi.fn().mockResolvedValue({ runtime: 0x205 });
+  await expect(
+    openRuntimeAbout(
+      tap,
+      { client: { memPeek } } as unknown as Session,
+      { info } as unknown as DkSession,
+      plan,
+      '/artifacts',
+    ),
+  ).resolves.toEqual(rows);
+  expect(tap).toHaveBeenCalledExactlyOnceWith('YES', 0);
+  expect(polls).toBe(4);
+});
+
+test('never-answering status and boot reads cannot postpone readiness rejection or diagnostics', async () => {
+  for (const stalled of ['status', 'memory'] as const) {
+    const { daemon, memPeek } = readyDaemon();
+    if (stalled === 'status') vi.mocked(daemon.status).mockImplementation(() => new Promise(() => {}));
+    else memPeek.mockImplementation(() => new Promise(() => {}));
+    const started = Date.now();
+    await expect(expectRuntimeUi(daemon, plan, '/artifacts', { timeout: 30 })).rejects.toThrow();
+    expect(Date.now() - started).toBeLessThan(500);
+    const saved = fake.write.mock.calls.filter(([file]) => file.endsWith('readiness-post-install.json')).at(-1);
+    expect(JSON.parse(saved![1])).toMatchObject({ expired: true, boot: null });
+  }
+});
+
+test('ABOUT bounds initial count, info and row reads, and preserves incomplete rows on timeout', async () => {
+  for (const stalled of ['initial-count', 'info', 'row', 'incomplete'] as const) {
+    fake.write.mockClear();
+    const rows = ['RUNTIME 0.2.5', 'BOOT: 1 OF 1 OK'];
+    const bytes = Buffer.from(rows.map((row) => row.padEnd(24, '\0')).join(''), 'latin1');
+    let opened = false;
+    const memPeek = vi.fn(async (address: number): Promise<number> => {
+      if (!opened) return stalled === 'initial-count' ? new Promise(() => {}) : 0;
+      if (address === 8192) return rows.length;
+      if (stalled === 'row') return new Promise(() => {});
+      return bytes.readUInt32BE(address - 4096);
+    });
+    const info = vi.fn(async () => (stalled === 'info' ? new Promise<never>(() => {}) : { runtime: 0x205 }));
+    const tap = vi.fn(async () => {
+      opened = true;
+    });
+    const started = Date.now();
+    await expect(
+      openRuntimeAbout(
+        tap,
+        { client: { memPeek } } as unknown as Session,
+        { info } as unknown as DkSession,
+        plan,
+        '/artifacts',
+        30,
+      ),
+    ).rejects.toThrow();
+    expect(Date.now() - started).toBeLessThan(500);
+    const initial = fake.write.mock.calls.find(([file]) => file.endsWith('about-before-open.json'));
+    expect(JSON.parse(initial![1])).toMatchObject({ expired: true });
+    if (stalled === 'initial-count') expect(tap).not.toHaveBeenCalled();
+    else {
+      const saved = fake.write.mock.calls.find(([file]) => file.endsWith('about-readiness.json'));
+      expect(JSON.parse(saved![1])).toMatchObject({ expired: true, rows: stalled === 'incomplete' ? rows : [] });
+    }
+  }
+});
+
+test('a never-answering remote state request obeys the readiness deadline', async () => {
+  const dk = { remoteState: vi.fn(() => new Promise(() => {})) } as unknown as DkSession;
+  const started = Date.now();
+  await expect(expectRemoteEnabled(session, dk, 30)).rejects.toThrow();
+  expect(Date.now() - started).toBeLessThan(500);
+  const saved = fake.write.mock.calls.find(([file]) => file.endsWith('remote-readiness.json'));
+  expect(JSON.parse(saved![1])).toMatchObject({ state: null, expired: true });
+});
+
+test('post-restart UI readiness allows an unobserved filesystem worker only with a newer epoch', async () => {
+  const { daemon, status } = readyDaemon();
+  status.cf.ready = false;
+  await expect(expectRuntimeUi(daemon, plan, '/artifacts', { afterEpoch: 3, timeout: 20 })).resolves.toBe(4);
+  await expect(expectRuntimeUi(daemon, plan, '/artifacts', { timeout: 20 })).rejects.toThrow();
+  await expect(expectRuntimeUi(daemon, plan, '/artifacts', { afterEpoch: 4, timeout: 20 })).rejects.toThrow();
+  status.cf.filesystem_verified = false;
+  await expect(expectRuntimeUi(daemon, plan, '/artifacts', { afterEpoch: 3, timeout: 20 })).rejects.toThrow();
+  status.cf.ready = true;
+  await expect(expectRuntimeUi(daemon, plan, '/artifacts', { afterEpoch: 3, timeout: 20 })).rejects.toThrow();
+});
+
+test('offline preparation returns a symbol plan before any loaded-image identity exists', async () => {
+  const prepared = await prepareRuntimePlanOffline({ device: 'dt2', firmware: '1.17' }, '/offline', '/artifacts', [
+    'DKRT_BOOT',
+  ]);
+  expect(prepared.plan).toEqual(plan);
+  expect(prepared.planFile).toBe('/offline/runtime-dt2.plan.json');
+  // Offline availability never substitutes for the explicit loaded-image hash validation.
+  expect(() =>
+    validateRuntimePlan(prepared.plan, {
+      ...session,
+      loadResult: { ...session.loadResult, syx_sha256: 'd'.repeat(64) },
+    }),
+  ).toThrow('output hash');
+});
+
+test('prepared plan checks exact closure and artifact without requiring or synthesizing runtime identity', () => {
+  const preparedSession = {
+    ...session,
+    loadResult: { syx_sha256: patchedSha256 },
+    preparedRuntimeImage: {
+      syx: '/prepared.syx',
+      baseSha256: plan.base.syx_sha256,
+      syxSha256: patchedSha256,
+      modules: ['core/runtime', 'core/digikit-menu'],
+    },
+  };
+  expect(() => validateRuntimePlan(plan, preparedSession)).not.toThrow();
+  expect(() => validateRuntimePlan({ ...plan, modules: ['core/runtime'] }, preparedSession)).toThrow(
+    'module membership',
+  );
+  expect(() => validateRuntimePlan({ ...plan, output: { syx_sha256: 'b'.repeat(64) } }, preparedSession)).toThrow(
+    'output hash',
+  );
+});
+
+for (const invalid of [null, 'root', 'artifact'] as const) {
+  test(`explicit offline preparation pins expanded membership and exact output (${invalid ?? 'valid'})`, async () => {
+    const digest = (text: string) => createHash('sha256').update(text).digest('hex');
+    const explicitPlan = {
+      ...plan,
+      base: { ...plan.base, syx_sha256: digest('stock') },
+      output: { syx_sha256: digest('prepared') },
+    };
+    fake.read.mockImplementation((file: string) => {
+      if (file.endsWith('.plan.json')) return JSON.stringify(explicitPlan);
+      if (file === '/stock.syx') return Buffer.from('stock');
+      return Buffer.from(invalid === 'artifact' ? 'changed' : 'prepared');
+    });
+    const preparing = prepareRuntimePlanOffline(
+      { device: 'dt2', firmware: '1.17' },
+      '/offline',
+      '/artifacts',
+      ['DKRT_BOOT'],
+      { modules: [invalid === 'root' ? 'core/missing' : 'core/digikit-menu'] },
+    );
+    if (invalid) await expect(preparing).rejects.toThrow();
+    else {
+      const prepared = await preparing;
+      expect(prepared.preparedImage).toEqual({
+        syx: '/offline/runtime-dt2.syx',
+        baseSha256: digest('stock'),
+        syxSha256: digest('prepared'),
+        modules: ['core/runtime', 'core/digikit-menu'],
+      });
+    }
+  });
+}

@@ -112,7 +112,6 @@ class RealBlobStage6NormalWordAddressingTest(unittest.TestCase):
             concrete_memory=True,
             follow_loaded_calls=True,
             assume_nw32=True,
-            approx_recips=True,
             pokes=self._pokes(),
         )
         self.assertTrue(states)

@@ -1,0 +1,44 @@
+{
+  "$schema": "../../../../node_modules/nx/schemas/project-schema.json",
+  "name": "core/dynfx",
+  "metadata": {
+    "runtimeAcceptance": [
+      {
+        "files": [
+          "tests/fx-chain.device.test.ts"
+        ],
+        "modules": [
+          "test/dyn-fx-gain",
+          "test/sine"
+        ],
+        "aliases": {
+          "test/dyn-fx-gain-2": "test/dyn-fx-gain",
+          "test/dyn-fx-gain-3": "test/dyn-fx-gain",
+          "test/dyn-fx-gain-4": "test/dyn-fx-gain"
+        },
+        "sources": [
+          "tools/patchkit/hook_ab.py",
+          "tools/patchkit/pk_digikit_fx.py",
+          "tools/patchkit/pk_digikit_fxroute.py",
+          "tools/patchkit/pk_digikit_fxroutes.py"
+        ],
+        "pythonTools": true,
+        "plusdrive": true
+      },
+      {
+        "files": [
+          "tests/fx-reuse.device.test.ts"
+        ],
+        "modules": [
+          "test/dyn-fx-gain",
+          "test/sine"
+        ],
+        "sources": [
+          "tools/patchkit/hook_ab.py"
+        ],
+        "pythonTools": true,
+        "plusdrive": true
+      }
+    ]
+  }
+}

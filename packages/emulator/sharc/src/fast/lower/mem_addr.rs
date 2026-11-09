@@ -177,14 +177,7 @@ impl Lower {
     /// A guarded dynamic-window access at ADDR (and, with EXTRA, a second
     /// address that must lie in the same span) through the window anchored on
     /// index register ANCHOR.
-    fn dyn_xfer(
-        &mut self,
-        anchor: u8,
-        addr: Val,
-        extra: Option<Val>,
-        x: Xfer,
-        w: Width,
-    ) -> LR<()> {
+    fn dyn_xfer(&mut self, anchor: u8, addr: Val, extra: Option<Val>, x: Xfer, w: Width) -> LR<()> {
         let write = matches!(x, Xfer::Store(_) | Xfer::StoreV(_));
         let (p, o, slot) = self.dynamic_window(addr, anchor, write)?;
         let lo = self.emit(Ty::I32, Op::Ctx32(CTX_WIN_EXT + 8 * slot));
@@ -216,21 +209,41 @@ impl Lower {
     pub fn flat_access(&mut self, addr: Val, bytes: u8, write: bool) -> LR<(Val, Val)> {
         use crate::mem::{PAGE_BITS, PAGE_DIRTY_OFF, PAGE_PRESENT_OFF, PAGE_SIZE};
         let ptr64 = std::mem::size_of::<usize>() == 8;
+        #[cfg(test)]
+        let ptr64 = self.flat_ptr64.unwrap_or(ptr64);
         let eff = self.emit(Ty::I64, Op::Ctx64(CTX_FLAT_EFF));
         let bits = self.ci(PAGE_BITS);
         let idx = self.bin(Bin::ShrU, addr, bits);
         let psh = self.ci(if ptr64 { 3 } else { 2 });
         let eoff = self.bin(Bin::Shl, idx, psh);
-        let lo = self.emit(Ty::I32, Op::Load32 { base: eff, off: eoff });
+        let lo = self.emit(
+            Ty::I32,
+            Op::Load32 {
+                base: eff,
+                off: eoff,
+            },
+        );
         let page = if ptr64 {
             let four = self.ci(4);
             let hoff = self.bin(Bin::Add, eoff, four);
-            let hi = self.emit(Ty::I32, Op::Load32 { base: eff, off: hoff });
+            let hi = self.emit(
+                Ty::I32,
+                Op::Load32 {
+                    base: eff,
+                    off: hoff,
+                },
+            );
             let any = self.bin(Bin::Or, lo, hi);
             let zero = self.ci(0);
             let nz = self.bin(Bin::Ne, any, zero);
             self.guard(nz);
-            self.emit(Ty::I64, Op::Load64 { base: eff, off: eoff })
+            self.emit(
+                Ty::I64,
+                Op::Load64 {
+                    base: eff,
+                    off: eoff,
+                },
+            )
         } else {
             let zero = self.ci(0);
             let nz = self.bin(Bin::Ne, lo, zero);
@@ -254,9 +267,19 @@ impl Lower {
         let word = self.bin(Bin::ShrU, o16, c5);
         let c2 = self.ci(2);
         let word4 = self.bin(Bin::Shl, word, c2);
-        let map = self.ci(if write { PAGE_DIRTY_OFF } else { PAGE_PRESENT_OFF });
+        let map = self.ci(if write {
+            PAGE_DIRTY_OFF
+        } else {
+            PAGE_PRESENT_OFF
+        });
         let moff = self.bin(Bin::Add, word4, map);
-        let bm = self.emit(Ty::I32, Op::Load32 { base: page, off: moff });
+        let bm = self.emit(
+            Ty::I32,
+            Op::Load32 {
+                base: page,
+                off: moff,
+            },
+        );
         let ones = self.ci((1u32 << bytes) - 1);
         let mask = self.bin(Bin::Shl, ones, bit);
         let have = self.bin(Bin::And, bm, mask);
@@ -294,7 +317,14 @@ impl Lower {
         }
         if write {
             let watch = self.emit(Ty::I64, Op::Ctx64(CTX_FLAT_WATCH));
-            let w = self.emit(Ty::I32, Op::LoadN { base: watch, off: idx, bytes: 1 });
+            let w = self.emit(
+                Ty::I32,
+                Op::LoadN {
+                    base: watch,
+                    off: idx,
+                    bytes: 1,
+                },
+            );
             let zero = self.ci(0);
             let quiet = self.bin(Bin::Eq, w, zero);
             self.guard(quiet);

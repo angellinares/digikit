@@ -1,0 +1,18 @@
+{
+  "$schema": "../../../../node_modules/nx/schemas/project-schema.json",
+  "name": "core/dynreg",
+  "metadata": {
+    "runtimeAcceptance": [
+      {
+        "files": ["tests/roundtrip.device.test.ts"],
+        "modules": ["test/dyn-dn2", "test/dyn-params", "test/sine"],
+        "plusdrive": true
+      },
+      {
+        "files": ["tests/equiv.device.test.ts"],
+        "modules": ["test/dyn-dn2", "test/sine"],
+        "plusdrive": true
+      }
+    ]
+  }
+}

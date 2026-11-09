@@ -1,0 +1,23 @@
+{
+  "$schema": "../../node_modules/nx/schemas/project-schema.json",
+  "name": "nx-tools",
+  "targets": {
+    "test-host": {
+      "executor": "nx:run-commands",
+      "cache": false,
+      "inputs": [
+        "hostTests",
+        "{workspaceRoot}/**/project.json",
+        "{workspaceRoot}/modules/**/module.toml",
+        "{workspaceRoot}/tests/fixtures/modules/**/module.toml",
+        "{workspaceRoot}/**/Cargo.toml"
+      ],
+      "outputs": [],
+      "options": {
+        "forwardAllArgs": false,
+        "command": "pnpm exec vitest run --config vitest.host.config.ts --project nx-host",
+        "cwd": "."
+      }
+    }
+  }
+}

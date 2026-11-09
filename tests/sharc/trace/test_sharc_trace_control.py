@@ -644,12 +644,6 @@ class StateCopyPreservesEveryFieldTest(unittest.TestCase):
         copied = T._copy(state)
         self.assertTrue(copied.explicit_memory_model)
 
-    def test_approx_recips_survives_a_copy(self):
-        state = T.State(0x10, {}, approx_recips=True, approx_recips_used=True)
-        copied = T._copy(state)
-        self.assertTrue(copied.approx_recips)
-        self.assertTrue(copied.approx_recips_used)
-
     def test_mutable_containers_are_independent_copies(self):
         state = T.State(0x10, {T.UREG_CODES["R0"]: T.Const(1)})
         state.overlay[0x1000] = 0xAB

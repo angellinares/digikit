@@ -7,6 +7,9 @@ import AutoRefresh from '../transfer/AutoRefresh';
 import ConnectionBadge from '../transfer/ConnectionBadge';
 import TargetSelect from '../transfer/TargetSelect';
 import { target } from '../transfer/target';
+import DefaultModules from './DefaultModules';
+import { CUSTOM_BOOT_SCREEN_HELP } from './default-modules-core';
+import { customBootScreen, postRun } from './default-modules-state';
 import { firmwareEnv } from './env';
 import { createEffectOn } from './on-change';
 import {
@@ -45,6 +48,7 @@ import {
   runInEmulator,
   run,
   setAck,
+  setCustomBoot,
   setRestore,
   setRoute,
   startFlash,
@@ -152,6 +156,11 @@ export default function FirmwarePage(): JSX.Element {
     return DEVICE_NAMES[id ?? (isDeviceId(p ?? '') ? (p as DeviceId) : 'dt2')];
   };
   const shortName = (d: string) => d.toUpperCase();
+  /** The device id the default modules are for: the image's device, else the connected one. */
+  const modelId = () => {
+    const d = device();
+    return ready()?.p.device ?? (d.kind === 'connected' ? d.d.model : undefined);
+  };
 
   return (
     <section class="firmware-page" aria-label="Firmware">
@@ -235,6 +244,13 @@ export default function FirmwarePage(): JSX.Element {
             <button type="button" class="act" disabled={running(run())} onClick={() => input?.click()}>
               Choose…
             </button>
+            <DefaultModules
+              device={modelId()}
+              off={
+                restore() ? 'Not used when the stock firmware is restored' : running(run()) ? 'A flash is running' : ''
+              }
+              note="Uploaded and enabled after the flash."
+            />
           </div>
           <label class="tick">
             <input
@@ -245,6 +261,17 @@ export default function FirmwarePage(): JSX.Element {
             />
             <span>
               Restore stock <span class="dim">(send the stock file itself, to take digikit off the device)</span>
+            </span>
+          </label>
+          <label class="tick">
+            <input
+              type="checkbox"
+              checked={customBootScreen()}
+              disabled={running(run()) || restore()}
+              onChange={(e) => setCustomBoot(e.currentTarget.checked)}
+            />
+            <span>
+              Custom boot screen <span class="dim">({CUSTOM_BOOT_SCREEN_HELP})</span>
             </span>
           </label>
         </Step>
@@ -458,7 +485,8 @@ export default function FirmwarePage(): JSX.Element {
                       <For each={(s() as { lines: string[] }).lines}>{(l) => <li>{l}</li>}</For>
                     </ul>
                   </Show>
-                  <button type="button" class="act small" onClick={resetRun}>
+                  <PostRunView />
+                  <button type="button" class="act small" disabled={postRun().kind === 'working'} onClick={resetRun}>
                     Close
                   </button>
                 </>
@@ -481,6 +509,47 @@ export default function FirmwarePage(): JSX.Element {
         </Step>
       </div>
     </section>
+  );
+}
+
+/** The default modules that follow a flash: the progress, the lines, or the module that failed. */
+function PostRunView(): JSX.Element {
+  return (
+    <Switch>
+      <Match when={postRun().kind === 'working' && (postRun() as { text: string; done: number; total: number })}>
+        {(r) => (
+          <div class="flashing">
+            <div
+              class="progress"
+              role="progressbar"
+              aria-valuemin={0}
+              aria-valuemax={100}
+              aria-valuenow={Math.round((r().done / r().total) * 100)}
+            >
+              <i style={{ width: `${(r().done / r().total) * 100}%` }} />
+            </div>
+            <span class="ptext">{r().text}</span>
+          </div>
+        )}
+      </Match>
+      <Match when={postRun().kind === 'done' && (postRun() as { lines: string[] })}>
+        {(r) => (
+          <>
+            <p class="okt">Default modules installed.</p>
+            <ul class="plain">
+              <For each={r().lines}>{(l) => <li>{l}</li>}</For>
+            </ul>
+          </>
+        )}
+      </Match>
+      <Match when={postRun().kind === 'failed' && (postRun() as { message: string })}>
+        {(r) => (
+          <p class="bad" role="alert">
+            {r().message}
+          </p>
+        )}
+      </Match>
+    </Switch>
   );
 }
 

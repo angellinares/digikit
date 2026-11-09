@@ -204,10 +204,10 @@ enough, audio is an offline render.
 
 - 0.4: `Stream.append_block` and an `APPEND` patch op (Python and Rust); the ColdFire boot routine sends the whole
   depacked section 7 (limits: stored <= 0x100000, depacked <= 0xfffff). Usable appended payload: 727,540 B (DT2),
-  211,600 B (DN2), limited by the stream, not by L2. Free L2 by canary over the scenario suites: 922,756 B (DT2,
-  keep 0x200fa000-0x200fe000 out), 491,972 B (DN2). Open: the real SHARC boot ROM with an extra block (hardware);
+  211,600 B (DN2), limited by the stream, not by L2. Free L2 by canary over the scenario suites: 914,564 B (DT2) and
+  466,372 B (DN2), below the cache range 0x200fa000 (finding 100). Open: the real SHARC boot ROM with an extra block (hardware);
   L1 PM room.
-- 0.5: pinned binutils 2.47 + GCC 16.2.0 for `-mcpu=54418` and selache 2b26d3b7 under out/tools
+- 0.5: pinned binutils 2.47 + GCC 16.2.0 for `-mcpu=54418` and selache 926bfac9 (ElekLabs fork) under out/tools
   (`mise run toolchains`); `tools/patchkit/pk_link.py` (JSON object prototype, R_68K_32/PC32/PC16/PC8); call harness on the
   CF core (`Emulator::call_function`, `tools/patchkit/pk_cfcall.py`); `tools/patchkit/pk_sharc.py` assembles, links and re-decodes
   SHARC code and runs it on the core. selcc: glue only. Open: libgcc helpers for 54418 (float, 64-bit).
@@ -345,7 +345,7 @@ clicks while the knob moves, no fault. 20 to 968 DSP instructions per block.
 
 - **Neutral is 0x5000 (UI 80), not 0:** kits do not start from the descriptor default [C]; the module keeps the default.
 - New: anchor rule kinds `sharc_mem_addr` and `cf_words` (port_resolve), `(SW)`/`(SWSE)` direct loads in `pk_sharc`
-  (Selache ignores the suffix), `run_call(approx_recips=...)`, data-only ColdFire objects.
+  (Selache ignores the suffix), data-only ColdFire objects.
 - Open: hardware; whether R5-R13 are dead at the hook (saved anyway); DT2 1.16 and DN2 1.11 not run; the module's
   emulator test is slow and skips without inputs.
 
@@ -910,7 +910,7 @@ best mitigation available. Ranked by what a failure costs.
 | 5 | SPI slave boot expects multiples of 1024 bytes (HWR 40-21); the stock section is not | Stock boots with a short tail; patched tails differ (finding 06 (d)) | If the first appended image hangs while the in-place-only image boots, pad the appended block so that the section length keeps the stock value mod 1024 (505 including the command byte); a one-line change in `append_block` |
 | 6 | L1 targets and L1 PM room (appends refuse L1); the datasheet map is not in `out/refs` | No L1 appends | None; L2 only |
 | 7 | Rules and state of the ROM-prepared environment: L2 ECC initialised, caches off at handover, `RCU_BCODE` bits | Stock code already runs from L2 loaded this way (DT2: the 109 KB block at `0x20000000` holds functions at pc `0xb80000...`, 24,070 instructions in sharcdb) | Same path as stock; nothing to do |
-| 8 | Float behaviour on silicon against the core: denormal flush, saturation mode, reciprocal approximation (`approx_recips`) in module code | Seven DN2 PCM pins and 61 oracles exact against the core; module code unit-run and PCM-proved in the emulator only | Prefer plain add, multiply and compare in module code; check a module's output against its emulator render by ear and by the harness PCM test before trusting a new operation |
+| 8 | Float behaviour on silicon against the core: denormal flush, saturation mode, reciprocal seed (RECIPS, RSQRTS) in module code | Seven DN2 PCM pins and 61 oracles exact against the core; module code unit-run and PCM-proved in the emulator only | Prefer plain add, multiply and compare in module code; check a module's output against its emulator render by ear and by the harness PCM test before trusting a new operation |
 | 9 | Interrupts, DMA and ColdFire timing under real load (the DSPI frame cadence, SSI underruns, hot sample loading): the emulator is deterministic | Coupled runs and 35 s tours pass; 40-input stress in the harness | Hardware soak after the first success |
 | 10 | The MAIN OS image validator (`0x400d9e4c`) and the real flash writer were not run; flash cap 3 MiB and the HMAC trailer are checked by the emulated bootstrap | 0.2 [V] for the bootstrap; patched containers rebuild stock byte for byte | The harmless image first; the updater's own checks reject a bad container before it writes (the bootstrap runs from section 2, which patchkit never touches) |
 | 11 | Firmware version: the device runs 1.16; most proofs ran on 1.17 (and DN2 1.12). 1.16 has the same DSP section; its MAIN differs, `digikit/master-drive` now passes the 1.16 smoke cell, and 36 of 135 DT2 FX oracles differ on 1.17 | Port files for 1.16 exist; 1.16 PLAY in patterns 3 and 4 passes | Done in the emulator for `digikit/master-gain`, `digikit/master-drive`, `core/machines` + `test/xslice` on 1.16 (matrix cells, "Fidelity follow-ups"); flash the 1.16 port |

@@ -4,6 +4,7 @@ import { createSignal } from 'solid-js';
 import { asked, noteConnection } from '../transfer/connection-state';
 import { transferEnv } from '../transfer/env';
 import { target } from '../transfer/target';
+import { installAfterFlash, patchSet, resetPostRun, postWorking, setCustomBootScreen } from './default-modules-state';
 import { firmwareEnv } from './env';
 import {
   DEVICE_NAMES,
@@ -50,7 +51,7 @@ async function prepare(): Promise<void> {
   const { name, bytes } = file;
   setPrepared({ kind: 'working', name });
   try {
-    const p = await firmwareEnv().prepare(bytes, restore());
+    const p = await firmwareEnv().prepare(bytes, restore(), patchSet());
     if (mine !== preparing) return;
     setPrepared({ kind: 'ready', name, size: bytes.length, p });
   } catch (e) {
@@ -80,6 +81,14 @@ export async function chooseFile(picked: File | undefined): Promise<void> {
 export function setRestore(on: boolean): void {
   if (running(run())) return;
   setRestoreSignal(on);
+  setRun(IDLE);
+  void prepare();
+}
+
+/** The Custom boot screen toggle: the patch gets core/introblank (or not) and the file is prepared again. */
+export function setCustomBoot(on: boolean): void {
+  if (running(run())) return;
+  setCustomBootScreen(on);
   setRun(IDLE);
   void prepare();
 }
@@ -149,6 +158,7 @@ export async function startFlash(): Promise<void> {
     text: `${what} ${p.device} OS ${p.os} to ${t.port}: ${rpc ? `${p.image.length} bytes (MidiRpc)` : `${p.ends.length} messages (OS UPGRADE menu)`}`,
   });
   setNotice('');
+  resetPostRun();
   let final: FlashState = IDLE;
   try {
     final = rpc
@@ -170,6 +180,8 @@ export async function startFlash(): Promise<void> {
       detail: final.message,
     });
   else if (final.phase === 'failed') log({ level: 'error', text: `${what} failed: ${final.message}` });
+  // the flash is done and the runtime answered: the default modules follow in the same run (the flash stays done when one fails)
+  if (final.phase === 'done' && !p.restore) await installAfterFlash(p.device);
 }
 
 export function cancelFlash(): void {
@@ -178,7 +190,9 @@ export function cancelFlash(): void {
 
 /** Back to the start after a stopped or finished run. */
 export function resetRun(): void {
-  if (!running(run())) setRun(IDLE);
+  if (running(run()) || postWorking()) return;
+  setRun(IDLE);
+  resetPostRun();
 }
 
 /** Give the user the image as a file. */

@@ -1,5 +1,5 @@
 import type { Bar, KnownModule } from '../src/memory-core.ts';
-import type { Caps } from '../../../web/src/modules/dkfit.ts';
+import type { Caps } from '../../../web/src/modules/fit.ts';
 // The Memory panel's model (apps/desktop/ui/src/memory-core.ts): one bar per resource the device limits, a segment per loaded module coloured by its
 // type, "other" for the rest of what is used, and the texts.
 import assert from 'node:assert/strict';
@@ -8,6 +8,7 @@ import {
   amountText,
   buildBars,
   freeTitle,
+  noteText,
   kibText,
   segmentTitle,
   SPECS,
@@ -153,9 +154,42 @@ test('nothing loaded: every bar is free, and a known module never takes more tha
     cpu.segments.reduce((n, s) => n + s.amount, 0),
     3000,
   );
-  // used above the limit is clamped
+});
+
+test('used above the limit is shown as over, with proportional segments', () => {
   const over = by(buildBars({ ARENA: c(1000, 1500) }, [], library), 'ARENA');
-  assert.deepEqual([over.used, over.free], [1000, 0]);
+  assert.deepEqual([over.used, over.free, over.largest, over.over], [1500, 0, 0, true]);
+  assert.equal(usedText(over), '1.5 KiB / 1 KiB');
+  assert.equal(noteText(over), 'Over the limit by 0.5 KiB');
+  // the parts add up to `used` and are drawn against it
+  assert.equal(
+    over.segments.reduce((n, s) => n + s.amount, 0),
+    1500,
+  );
+  assert.equal(widthPct(over, 1500), 100);
+  assert.ok(Math.abs(widthPct(over, 1000) - (100 * 2) / 3) < 1e-9);
+});
+
+test('the largest free block is named only when it is smaller than the free total', () => {
+  const whole = by(buildBars(dn2, loaded, library), 'ARENA');
+  assert.equal(whole.largest, whole.free);
+  // the arena's largest is a payload: one free block of the whole free size reports 16 bytes less and is not split
+  const oneBlock = by(buildBars({ ARENA: { limit: 1000, used: 400, largest: 584 } }, [], library), 'ARENA');
+  assert.equal(noteText(oneBlock), null);
+  // the DSP area's largest is a raw gap: no allowance
+  const dspGap = by(buildBars({ DSP_AREA: { limit: 1000, used: 400, largest: 590 } }, [], library), 'DSP_AREA');
+  assert.equal(dspGap.split, true);
+  assert.equal(freeTitle(whole), `Free: ${kibText(whole.free)}`);
+  assert.equal(noteText(whole), null);
+  const split = by(
+    buildBars({ ...dn2, ARENA: { limit: 512 * KiB, used: 12 * KiB, largest: 100 * KiB } }, loaded, library),
+    'ARENA',
+  );
+  assert.equal(freeTitle(split), 'Free: 500 KiB, largest block 100 KiB');
+  assert.equal(noteText(split), 'Free: 500 KiB, largest block 100 KiB');
+  // a largest above the free total (a runtime rounding) is capped
+  const capped = by(buildBars({ ARENA: { limit: 1000, used: 900, largest: 5000 } }, [], library), 'ARENA');
+  assert.equal(capped.largest, 100);
 });
 
 test('the texts: KiB for bytes, counts for rows, the module name and amount on hover', () => {

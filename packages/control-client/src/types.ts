@@ -38,6 +38,12 @@ export interface EmuEvent {
 
 export type StartMode = 'auto' | 'snapshot' | 'cold';
 
+/** An ordered logical panel transition queued before the first coupled cold-boot instruction. */
+export interface InitialButton {
+  code: number;
+  down: boolean;
+}
+
 export interface FirmwareLoadParams {
   syx: string;
   base_sha256?: string;
@@ -45,10 +51,14 @@ export interface FirmwareLoadParams {
   card?: string;
   dsp_patch?: string;
   force?: boolean;
+  /** Reconstruct firmware/card state instead of injecting into the running image. */
+  replace?: boolean;
   auto_no?: boolean;
   /** Patch the stock image with the device profile patch set (cached by content). */
   runtime?: boolean;
   patch_set?: string;
+  /** At most 32 transitions; requires a patched coupled start:cold. Empty preserves the existing cache key. */
+  initial_buttons?: readonly InitialButton[];
 }
 
 export type RuntimeIdentity =
@@ -94,11 +104,15 @@ export interface InputScheduleEvent {
 }
 
 export interface FramebufferParams {
+  /** Default current; intro retains the last completed drawing callback before stock presentation. */
+  source?: 'current' | 'intro';
   hash?: boolean;
   data?: boolean;
 }
 
 export interface FramebufferResult {
+  /** Present only when explicitly reading the retained intro drawing. */
+  source?: 'intro';
   revision: number;
   /** base64 of the 1024 decoded OLED bytes; absent when `data: false`. */
   data_b64?: string;
@@ -139,7 +153,14 @@ export interface LoadStatus {
   window_s: number;
   cf: { model_pct: number; real_pct: number; real_high_pct: number };
   /** null when no DSP runs. */
-  dsp: { busy_per_block: number; model_pct: number; real_pct: number; real_high_pct: number } | null;
+  dsp: {
+    busy_per_block: number;
+    model_pct: number;
+    real_pct: number;
+    real_high_pct: number;
+    /** Largest unsmoothed `real_pct` of any window since the meter reset; absent from older controllers. */
+    peak_pct?: number;
+  } | null;
 }
 
 export interface StatusResult {

@@ -1,0 +1,29 @@
+[module]
+id = "test/step-beacon"
+version = "0.1.0"
+name = "Step beacon"
+category = "test"
+type = "fx"
+author = "digikit"
+status = "experimental"
+summary = "Diagnostic effect that stores 0xBE000000 plus a call counter in the module step word on every call; the audio passes unchanged."
+dynamic = true
+ports = ["dt2-1.17", "dn2-1.12"]
+requires = []
+conflicts = []
+
+[targets]
+"dt2-1.17" = "experimental"
+"dn2-1.12" = "experimental"
+
+# The effect declaration (DK_FX in src/module.c). It holds only the .dk.desc record; patchkit pack reads it and leaves it out of the .dkm.
+[[object]]
+path = "build/step-beacon-cf.dko.json"
+sources = ["src/module.c"]
+place = "cf.expansion"
+
+[[object]]
+path = "build/step-beacon-dsp.dko.json"
+sources = ["src/dsp/step_beacon.s"]
+place = "dsp.l2"
+devices = ["dt2", "dn2"]

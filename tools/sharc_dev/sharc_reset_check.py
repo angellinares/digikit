@@ -41,7 +41,6 @@ def probe(
     *,
     runtime_decode: bool = False,
     mmr_resets: pathlib.Path | None = None,
-    approx_recips: bool = False,
     instruction_clock: bool = False,
     banks: bool = False,
     stacks: bool = False,
@@ -67,7 +66,7 @@ def probe(
     image_hash = hashlib.sha256(data.data).hexdigest()
     if not runtime_decode and build["image_sha256"] != image_hash:
         raise ValueError("native library's instruction image does not match the loader")
-    runner = sr.Runner(data, entry, approx_recips=approx_recips)
+    runner = sr.Runner(data, entry)
     runner.state.bank_model = banks
     runner.state.stack_model = stacks
     runner.state.software_interrupts = software_interrupts
@@ -154,7 +153,6 @@ def probe(
         if core_timer
         else "static",
         "mmr_resets": resets_source,
-        "approx_recips": approx_recips,
         "clock_policy": "diagnostic: one tick per instruction, not cycle accurate"
         if instruction_clock
         else "static reference reset",
@@ -196,11 +194,6 @@ def main() -> int:
         "--mmr-resets",
         type=pathlib.Path,
         help="public HWR extraction containing register reset tables",
-    )
-    parser.add_argument(
-        "--approx-recips",
-        action="store_true",
-        help="use the existing approximate reciprocal seed mode",
     )
     parser.add_argument(
         "--instruction-clock",
@@ -259,7 +252,6 @@ def main() -> int:
             args.compare,
             runtime_decode=args.runtime_decode,
             mmr_resets=args.mmr_resets,
-            approx_recips=args.approx_recips,
             instruction_clock=args.instruction_clock,
             banks=args.banks,
             stacks=args.stacks,

@@ -1,0 +1,27 @@
+{
+  "$schema": "../../../node_modules/nx/schemas/project-schema.json",
+  "name": "core/runtime",
+  "implicitDependencies": ["dkrt-sdk", "dkrt-fit", "dkneeds", "dkfw"],
+  "targets": {
+    "rust-tests": {
+      "executor": "nx:run-commands",
+      "cache": false,
+      "inputs": [
+        "{projectRoot}/src/rs/**/*",
+        {
+          "input": "production",
+          "projects": ["dkrt-sdk", "dkrt-fit", "dkneeds", "dkfw"]
+        },
+        "{workspaceRoot}/.cargo/**/*",
+        "{workspaceRoot}/rust-toolchain*",
+        "{workspaceRoot}/mise.toml",
+        "{workspaceRoot}/tools/nx/rust-env.mjs"
+      ],
+      "outputs": [],
+      "options": {
+        "command": "node tools/nx/rust-env.mjs --variant host-dkrt -- cargo test --manifest-path modules/core/runtime/src/rs/Cargo.toml --lib --offline --locked",
+        "cwd": "."
+      }
+    }
+  }
+}

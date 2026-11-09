@@ -2,9 +2,10 @@
 
 Static checks: the committed objects are current, the DSP section is deterministic, its relocation agrees in three places
 (the Rust reference loader behind `patchkit dkm-dsp-image`, this file's own, and the loader's checks), and the two sides of the
-DSP area's size agree. The emulator proofs are the boot-time equivalence scenarios (tests/digikit, equiv-dyn-* and equiv-dn2-set: a selected
+DSP area's size agree. The emulator proofs are the boot-time equivalence scenarios (equiv-dyn-* in tests/digikit and modules/core/adapters/dynreg/tests/equiv.device.test.ts: a selected
 module against the patched-in one, PCM sample for sample); the hot-load proof that was here is archived."""
 
+import json
 import re
 import tomllib
 
@@ -91,3 +92,31 @@ def test_dsp_section_is_deterministic_and_relocates_like_the_reference(tmp_path)
     # a placement that is not 8-aligned is refused by the reference loader
     r = tools.run(tools.patchkit, "--root", ROOT, "dkm-dsp-image", a, "2000004")
     assert r.returncode != 0
+
+
+def test_runtime_watch_env_preserves_dma_holes_and_sequential_mode(
+    tmp_path, monkeypatch
+):
+    from tools.coldfire import arena_safety
+
+    plan = tmp_path / "runtime.plan.json"
+    plan.write_text(
+        json.dumps(
+            {
+                "base": {"device": "dt2", "version": "1.17"},
+                "regions": {"cf.expansion": [0x180]},
+                "symbols": {"core/runtime@0.1.0:DKRT_STAGE": 0x20000},
+            }
+        )
+    )
+    monkeypatch.setattr(arena_safety, "expansion", lambda _image: (0x1000, 0x80000))
+    env = pk_dkrt_machine.runtime_watch_env(
+        plan, tmp_path / "watch.jsonl", sequential=True
+    )
+    assert env["DIGI_WRITE_WATCH"] == "0x1000-0x20000,0x30000-0x80000"
+    assert env["DIGI_WRITE_WATCH_ALLOW_PC"] == "0x1000-0x1180"
+    assert env["DIGI_WRITE_WATCH_AFTER"] == "cacr" and env["DIGI_FLUSH_CHECK"] == "1"
+    assert env["DIGI_WRITE_WATCH_SEQ"] == "1"
+    assert "DIGI_WRITE_WATCH_SEQ" not in pk_dkrt_machine.runtime_watch_env(
+        plan, tmp_path / "watch.jsonl"
+    )

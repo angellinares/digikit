@@ -347,7 +347,7 @@ def test_old_accepted_short_still_dispatches():
     values = _values()
     for opcode in OLD_ACCEPTED["short"]:
         field = (opcode << 8) | (1 << 4) | 2
-        _compute({"compute": field}, True, values, {}, approx_recips=True)
+        _compute({"compute": field}, True, values, {})
 
 
 def test_old_accepted_mrdatamove_still_dispatches():
@@ -356,7 +356,7 @@ def test_old_accepted_mrdatamove_still_dispatches():
         opcode_s, direction_s = key.split(",")
         opcode, direction = int(opcode_s), int(direction_s)
         field = (1 << 22) | (direction << 16) | (opcode << 12) | (1 << 8) | 0x23
-        _compute(_field_dict(field), False, values, {}, approx_recips=True)
+        _compute(_field_dict(field), False, values, {})
 
 
 def test_old_accepted_cu_sweep_still_dispatches():
@@ -365,11 +365,11 @@ def test_old_accepted_cu_sweep_still_dispatches():
         cu = int(cu_key[2:])
         for opcode in OLD_ACCEPTED[cu_key]:
             field = (cu << 20) | (opcode << 12) | (1 << 8) | (2 << 4) | 3
-            _compute(_field_dict(field), False, values, {}, approx_recips=True)
+            _compute(_field_dict(field), False, values, {})
 
 
 def test_old_accepted_multifn_still_dispatches():
     values = _values()
     for category in OLD_ACCEPTED["multifn"]:
         field = (1 << 22) | (category << 16) | (1 << 12) | (2 << 8) | 0
-        _compute(_field_dict(field), False, values, {}, approx_recips=True)
+        _compute(_field_dict(field), False, values, {})

@@ -21,10 +21,10 @@ hot reload is archived, `docs/plans/digikit-hot-reload.md`). The DIGIKIT menu ch
 - Card safety (finding 46): every card write goes through `block_write` (`card.rs`): outside the store range it is refused (`E_RANGE`); on a card whose
   area is neither ours (valid store header or selection copy) nor blank (all 0x00 or 0xFF) the runtime is read-only (`E_CARD_RO`: no boot counter, no
   selection, uploads answer `E_INUSE`, ABOUT says so). `dkrt_diag` reports it. An upload on a blank card claims the range with an empty store header pair first.
-- Debug (finding 46): a RAM log ring (`dlog.rs`, 512 events, errors only when DEBUG is OFF: SETTINGS > DIGIKIT > DEBUG, selection flags bit 1) read over SysEx
-  (LOG 0x20, PEEK 0x21 over `[digikit] peek` of the device file) with `tools/device/dklog.py`; the DSP diagnostics poll (`dl_diag`, optional) and its
-  heartbeat watch; the firmware's exception hook (`cf.rtos.site.exc_hook_lit`) records a crash in kept RAM (`[digikit] keep_base`) and soft-resets, the next boot
-  reports it and counts the boot as bad. Test knobs: `CMD_CARD_PROBE`, `CMD_DEBUG`; test module `test/dyn-crash`.
+- Debug (finding 46): `dlog.rs` has a ring of 32 boot and error events and one sink pointer (`dkrt_log_sink_set`); the module `digikit/debug` (`modules/tools/debug`) holds the
+  512-event ring and answers LOG 0x20, PEEK 0x21 (over `[digikit] peek` of the device file) and LOGCFG 0x22 for `tools/device/dklog.py`; the DSP diagnostics poll (`dl_diag`, optional) and its
+  heartbeat watch (`watch.rs`); the firmware's exception hook (`cf.rtos.site.exc_hook_lit`) records a crash in kept RAM (`[digikit] keep_base`) and soft-resets, the next boot
+  reports it and counts the boot as bad. Test knob: `CMD_CARD_PROBE`; test module `test/dyn-crash`.
 - Fault trace (finding 77, runtime 0.5.3): a stopped DSP is declared by the heartbeat watch, written as a hang record (crash record version 2, kind 2: site, machine
   type or effect row, module, core step, module step, the DSP table, the last events) and the device soft-resets; the next boot is safe mode `SAFE_DSP`. Both record
   kinds are kept as the settings key `dk/fault` (40 bytes, flushed at once), which `dkrt_diag` turns into the ABOUT rows (`FAULT: ...`, `IN <MODULE>`, the place);
@@ -35,13 +35,13 @@ hot reload is archived, `docs/plans/digikit-hot-reload.md`). The DIGIKIT menu ch
   contract mismatch (`E_CONTRACT` -48: the .dkm header bytes 0x38..0x3f hold the module's api, machine and service contract versions; the major must
   equal the runtime's, the minor must not be above it). Header byte 0x30 is informational.
 - Log levels and sources (0.1.0): a log event has a level (flags bits 1-3: error, warn, info, debug, trace) and a source (bits 8-15; 0 = runtime, n = module
-  record index + 1). The default level is info; with DEBUG off only errors are kept. SysEx LOGCFG (0x22) sets the default and per-module levels. They are not
+  record index + 1). The default level is info; the level filter is the debug module's. SysEx LOGCFG (0x22) sets the default and per-module levels. They are not
   stored on the card (reset at boot). Modules use `Api.log(msg, value)` (info) or `Api.log_lv(level, msg, value)`. Host: `tools/device/dklog.py level`.
 - Table check (0.1.0): after every load and unload the runtime checks its module table (ranges inside their area, disjoint, rows owned by live modules).
   A violation logs TABLE_BAD and refuses further loads (`E_TABLE` -49). Limits per type are `[limits]` in `devices/*.toml`, generated into the runtime.
 - Capacity (finding 57, 0.2.3): `dkrt_capacity(DkrtCap *out, max)` writes the CAPACITY command's entries (limit, used, largest per resource) and returns how many; the SysEx command and the DIGIKIT MEMORY page read the same call.
 - Health (finding 41): `dkrt_health(DkrtHealth *)` (CPU load, the DSP's block time, heap, arena, DSP area; the first three need `core/health`), `dkrt_blocks()` (a 1500 Hz
-  clock), `dkrt_poll_set(fn)` (a function the UI-loop tick calls once per pass; the DIGIKIT HEALTH page refreshes itself with it), mailbox command `CMD_HEALTH`.
+  clock), `dkrt_poll_set(fn)` (a function the UI-loop tick calls once per pass; the DIGIKIT HEALTH page refreshes itself with it; `dkrt_poll_add(fn)` and `dkrt_poll_remove(fn)` are a second list of four for `core/ui`'s `dk_ui_tick`), `dkrt_store_stat` and `dkrt_store_read` (a store file's size, file hash slot and a sector range read, for the sample-pool adapters), mailbox command `CMD_HEALTH`.
 - Settings store (finding 63, 0.5.1): digikit's own key/value settings in two copies of 16 sectors before the selection record (`settings.rs`; the format and rules are `docs/design/digikit-store.md`, "The settings record"; the codec is `dkrt_sdk::settings`). The record is read into RAM
   at the boot, changed with `put` and `remove`, and written to the copy that is not current 2 s after the last change (through `block_write`, so with the range and ownership checks). C ABI for core modules: `dkrt_settings_get(key, buf, cap)`, `dkrt_settings_put(key, value, len)`,
   `dkrt_settings_remove(key)` (task context, not the MIDI task); a `.dkm` module has no API yet. SysEx `SETTINGS` (0x19) reads the record (`tools/device/dkupload.py settings`), CAPACITY kind `SETTINGS` reports its bytes, mailbox test commands 9 to 12. Host reader: `patchkit store dump`.

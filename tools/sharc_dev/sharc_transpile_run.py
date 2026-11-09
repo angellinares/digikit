@@ -248,7 +248,6 @@ OPT_INSTRUCTION_CLOCK = 5
 OPT_INSTRUCTION_CLOCK_BASE = 6
 OPT_STOP_SOFTWARE_INTERRUPT = 7
 OPT_EXPLICIT_MEMORY_MODEL = 10
-OPT_APPROX_RECIPS = 11
 OPT_ASSUME_NW32 = 12
 OPT_FOLLOW_LOADED_CALLS = 13
 OPT_MAX_CALL_DEPTH = 14
@@ -579,7 +578,6 @@ def to_native(core: NativeCore, state: st.State) -> None:
             present |= 1 << i
     core.set_option(OPT_SPECIAL_PRESENT, present)
     core.set_option(OPT_EXPLICIT_MEMORY_MODEL, state.explicit_memory_model)
-    core.set_option(OPT_APPROX_RECIPS, state.approx_recips)
     core.set_option(OPT_ASSUME_NW32, state.assume_nw32)
     core.set_option(OPT_FOLLOW_LOADED_CALLS, state.follow_loaded_calls)
     core.set_option(OPT_MAX_CALL_DEPTH, state.max_call_depth)
@@ -1308,7 +1306,6 @@ def _state_options(state: st.State) -> list[tuple[int, int]]:
     return [
         (OPT_SPECIAL_PRESENT, present),
         (OPT_EXPLICIT_MEMORY_MODEL, int(state.explicit_memory_model)),
-        (OPT_APPROX_RECIPS, int(state.approx_recips)),
         (OPT_ASSUME_NW32, int(state.assume_nw32)),
         (OPT_FOLLOW_LOADED_CALLS, int(state.follow_loaded_calls)),
         (OPT_MAX_CALL_DEPTH, int(state.max_call_depth)),

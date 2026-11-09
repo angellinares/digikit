@@ -9,7 +9,7 @@ globbing; no list names them; the names are unique across both places):
 
     [scenario]
     name = "equiv-dyn-pluck"       # the file's stem
-    kind = "equiv" | "roundtrip" | "safe" | "cut" | "menu" | "upload" | "card" | "debug" | "crash" | "pages" | "fx" | "fxsend" | "fxroute" | "fxroutes" | "settings"
+    kind = "equiv" | "menu" | "upload" | "pages" | "fx"
     devices = ["dt2"]              # the scenario runs on the images of these devices (`images` names them instead)
     tier = "quick" | "full"        # quick: part of the verify gate; full: only `--tier full` (merges to main)
 
@@ -29,54 +29,24 @@ Kinds:
              `pcm_samples` (default 24000) interleaved float32 samples; "record" fails and prints the hash. `env_run` and `env_ref` set environment variables of the run-time and the reference boot (`SHARC_UNINIT` for a machine that
              reads voice state beyond its cleared bytes: the run-time state is uninitialised L2). `ignore_run_machines` drops a run-time
              machine (with its parameters and pages) that the twin has no counterpart of. `play_module` and `play_machine` (default: the machine of `tools/patchkit/pk_dkrt_machine.py`, a sine) name the run-time machine the note is played with.
-  roundtrip  a project with the run-time machine on tracks, parameter values, p-locks and a sound lock is saved under set A,
-             loaded and saved under set B (machine absent) and under A again: the project slot's sound records, the sequencer
-             data and the sound locks are byte-identical to the first save; the track keeps its type while its machine is absent.
   safe       a module whose init resets the machine, twice: the third boot is safe mode (no module, reported). With `[safe] part = "late"`: a
              module that hangs the UI task some time into a session, before (early) or after (late) the stable period that clears the boot
              counter: early leads to safe mode at the third boot, late never does (finding 37).
   menu       a set checked in SETTINGS > DIGIKIT > MODULES on a boot with no selection and applied with NO and YES on APPLY & RESTART? is
              loaded by the next boot and compares as `equiv` does (rows, machine in the list, PCM of a note equal to the patched-in set's).
-  cut        the card states a power cut leaves between the two copies of the selection record.
-  card       card safety (finding 46): the one card-write function refuses writes outside the store range; a blank card works as before, a card
-             with foreign bytes in the range goes read-only and the runtime writes nothing, a card with our store keeps working.
-  debug      the debug log: LOG and PEEK over SysEx, the DEBUG switch, INFO's sequence numbers, the periodic events.
-             `[debug] part = "sticky"`: sticky machine type numbers (assigned at the boot load, kept in the selection record's map, eviction); the plain part also checks MODULES.
-             `part = "guard"` (both images): the runtime guard on a NaN fixture.
+  card       `[card] part = "torn"` only: a power cut inside the first writes to a blank card (finding 46, residual risk). The other card-safety
+             cases are the TypeScript card-safety test.
   crash      a CPU exception in a module's slot: the runtime's hook records it in RAM that a soft reset keeps and resets; the next boot reports
              the record (right PC), two in a row lead to safe mode (before and after the stable period).
   pages      the parameter pages of a machine chosen on track 1 (SRC, SRC again, encoder turns): the run-time module's frames equal the patched-in twin's, an
              added machine never draws the sample view, stock sample machines still do (finding 50; tools/patchkit/pk_digikit_pages.py).
-  fx         effects loaded at run time (DSP section version 4, `core/dynfx`; Digitakt II and Digitone II): the sine and `test/dyn-fx-gain` selected at boot play as the
-             dry sine times the gain, the chain's row, MODULES and CAPACITY say so, deselecting the effect and restarting gives the dry PCM again, and
-             one effect more than the device has slots is refused (`E_DSP_ROWS`, and by the fit rule); tools/patchkit/pk_digikit_fx.py.
-  fxsend     a run-time effect on the send route of `core/fx` (Digitakt II): the row's route and amount words are written with `dsp.patch`; no amount, or an amount on a silent track, leaves the PCM
-             dry bit for bit; an amount on the playing track adds the effect's return (the amount squared, as the stock sends); the effect runs once a block; tools/patchkit/pk_digikit_fxsend.py.
-  fxroutes   SETTINGS > DIGIKIT > MODULES > the side panel's ROUTE... and the effect's route fields (`route`, `routes` of DK_FX; Digitakt II): a send-default effect starts on the send route, the
-             ROUTE... choice of the side panel offers the allowed routes and the free send slots, the pending route is a change that NO and YES on APPLY & RESTART? write (settings) and restart, and the
-             route is in effect after it (row word, FX key page, PCM, `patchkit store dump`), the FX view lists send effects first; tools/patchkit/pk_digikit_fxroutes.py.
-  settings   the settings store of the runtime (docs/design/digikit-store.md, "The settings record"): a key put through the mailbox is written 2 s after the last change to the copy that is not
-             current (A, then B, then A), never to anything else in the store range; a soft restart reads it back; the SETTINGS command and CAPACITY kind SETTINGS report it; `patchkit store dump`
-             decodes the card the guest left; a blank card is claimed first; a torn newer copy leaves the older one; tools/patchkit/pk_digikit_settings.py.
-  fxpage     the FX view pages and knobs of run-time effects (`core/fxpages`; Digitakt II and Digitone II): with no effect loaded the three stock pages draw and play as on an image without
-             the pages; with `test/dyn-fx-gain` the view has a fourth page (tab GAN, title Test Gain, the GAIN knob and MIX), turning the knobs changes the PCM as
-             declared (gain, MIX 0 = dry bit for bit, MIX 127 = wet, the linear blend between), and deselecting the effect and restarting brings the three pages and
-             the dry PCM back; screenshots with `DIGIKIT_SHOTS=DIR`; tools/patchkit/pk_digikit_fxpage.py.
-  fxpersist  the values of run-time effects are saved with the kit (`core/fxpages` hooks on the kit loader, saver and initialiser; Digitakt II and Digitone II): Save Kit and Load Kit restore them to the
-             same effect (kit array, DSP row, PCM, pages) and give another effect, an empty row or a stock kit the defaults, never a zero on the way to the DSP; a project; another
-             pattern's kit; tools/patchkit/pk_digikit_fxpersist.py.
-  fxshift    the frequency shifter (`[fxshift] module` names it; Digitakt II and Digitone II; the manifest says send, MIX 127): its page (tab FSH, title Freq Shifter, SHIFT bipolar, MIX default 127), on the master route (stored `master` on
-             the Digitakt II, the fallback on the Digitone II, which has no send cells) MIX 0 leaves the PCM bit for bit as it was, MIX 127 and SHIFT 0 keeps the sine, turning SHIFT moves the sine by the shift of the routine's
-             mapping in either direction with the image 40 dB down, Save Kit and Load Kit give SHIFT back; on the Digitakt II also the send route (the default): an amount on track 1 gives a return of amount^2 x MIX x the shifted
-             track (compared with the float32 model), an amount on another track adds nothing; tools/patchkit/pk_digikit_fxshift.py.
-  upload     module upload over USB SysEx (docs/design/digikit-upload.md): `[upload] part` = ops | cut | stock | playback | quick, see
+  upload     module upload over USB SysEx (docs/design/digikit-upload.md): `[upload] part` = rust, see
              tools/patchkit/pk_digikit_upload.py. The `menu` kind with `upload = true` is the through-the-menu proof.
 
-Keys worth knowing: `[equiv] trig_frame` (the DSP frame the note starts at, after the setup), `[roundtrip] engine = "cf" | "coupled"` (the panel script on a
-ColdFire-only daemon beside a coupled boot check of each card, or all on coupled daemons). Time: `DIGIKIT_PROFILE=1` prints a phase table, `--jobs N` runs
+Keys worth knowing: `[equiv] trig_frame` (the DSP frame the note starts at, after the setup). Time: `DIGIKIT_PROFILE=1` prints a phase table, `--jobs N` runs
 (scenario, image) pairs in N processes, `DIGIKIT_RUN_SALT=x` forces cold boots, `DIGIKIT_SETTLE_MS` the emulated ms after a boot (default 300).
 
-Cards are cached by content in `out/cache/digikit/cards/` (they are read-only for the guest, its writes live in an overlay), and the
+Cards are cached by content in `out/cache/digikit/cards/`, or under `DIGIKIT_CACHE` (they are read-only for the guest, its writes live in an overlay), and the
 daemon's own boot cache is keyed by the card path, so a repeated scenario restores its boots instead of running them cold.
 """
 
@@ -108,7 +78,13 @@ from tools.patchkit import pk_harness as H  # noqa: E402
 
 # a module's own scenarios: modules/<group>/<name>/tests/scenarios/*.toml
 MODULE_SCENARIOS = "modules/*/*/tests/scenarios"
-CACHE = ROOT / "out" / "cache" / "digikit"
+# DIGIKIT_CACHE moves the cache: the cards are sparse files of the card's full size (16.7 GiB for a
+# DN2), and a file system without sparse files (WSL's mount of a Windows drive) writes each one out in full
+CACHE = (
+    Path(os.environ["DIGIKIT_CACHE"])
+    if os.environ.get("DIGIKIT_CACHE")
+    else ROOT / "out" / "cache" / "digikit"
+)
 # every device with a module store and its newest image that has a port (`port = true` in the device file)
 QUICK_IMAGES = {d: pk_device.port_images(d)[-1] for d in pk_device.digikit_devices()}
 RT = B.RT
@@ -312,7 +288,7 @@ class Ctx:
         written over the card, bytes that are not ours in the store range. Returns the cached file."""
         h = hashlib.sha256(self.image.encode())
         # the store format and area are part of the key: a card built for another area or version is not this card
-        h.update(b"store-v3.1" + repr(self.store).encode())
+        h.update(b"store-v4.0" + repr(self.store).encode())
         store_dir = self.env.folder / "digikit"
         for f in sorted(store_dir.rglob("*")):
             if f.is_file():
@@ -414,6 +390,8 @@ class Ctx:
     ) -> None:
         """The checks every scenario ends with. FIRMWARE_AREAS: sector ranges (first, end) below 0x50000 that the scenario makes the firmware write on purpose (the kit library of a Save Kit).
         STORE_EXTRA: store-range sectors besides the two selection sectors that the scenario writes on purpose (the settings copies)."""
+        from tools.coldfire import arena_safety
+
         t = self.totals
         self.check(
             "write-watch on cf.expansion over every boot: no stray write",
@@ -421,6 +399,9 @@ class Ctx:
             str(t),
         )
         self.check("flush check over every boot: no hit", t["flush_hits"] == 0, str(t))
+        policy = arena_safety.runtime_card_policy(
+            self.all_writes, self.device, firmware_areas, store_extra
+        )
         stray = sorted(
             self.store_writes - {self.store.sel_a, self.store.sel_b} - store_extra
         )
@@ -432,13 +413,7 @@ class Ctx:
             not stray,
             f"wrote {sorted(hex(s) for s in self.store_writes)}",
         )
-        outside = sorted(
-            x
-            for x in self.all_writes
-            if x < FIRMWARE_FIRST
-            and x not in (self.store.sel_a, self.store.sel_b)
-            and not any(lo <= x < hi for lo, hi in firmware_areas)
-        )
+        outside = policy["invalid_low"]
         self.check(
             "card writes elsewhere: only the firmware's own working project and project slots (sectors from 0x50000)"
             + (
@@ -771,257 +746,6 @@ def run_equiv(c: Ctx) -> None:
     c.common_checks()
 
 
-def run_safe_late(c: Ctx) -> None:
-    """A module that fails some time into a session (docs/findings/37-boot-load.md, "Safe mode after the first UI pass"). The runtime
-    clears its boot counter only after a stable period of UI loop; here the period is shortened (the scenario pokes `DKRT_STABLE_BLOCKS`).
-    EARLY: the module hangs the UI task before the period is over: each boot counts as bad, the third boot is safe mode. LATE: it hangs
-    after the period: the counter was cleared, every boot loads the module and none is safe. A power cycle is a new rig on the card the
-    last one left (the overlay of its writes laid over it)."""
-    from tools.patchkit.pk_digikit_project import card_after
-
-    t = c.table()
-    mod = c.pack(t["fault"], "late.dkm")
-    img = c.image_for(RT, "run")
-    cfg = c.env.folder / "digikit" / "cfg"
-    cfg.mkdir(parents=True, exist_ok=True)
-    cards: dict[str, Path] = {}
-    for kind in ("early", "late"):
-        (cfg / "fault-after.bin").write_bytes(
-            int(t[f"{kind}_blocks"]).to_bytes(4, "big") + bytes([1])
-        )  # hang
-        cards[kind] = c.card([mod], stable_blocks=int(t["stable_blocks"]))
-    # The coupled cold boot runs to its ready point before the rig is handed out: about 6,000 blocks (4 s) after the first UI-loop pass on
-    # a fresh card (measured: the first pass is at block 5,972 of the firmware's counter, the ready point at 11,921), fewer on a card the
-    # firmware has saved to. A failure earlier than the ready point would stop the boot from ever being ready, so the periods lie above it.
-    # The rig then runs until the UI loop stands still (the hang) or, in safe mode, for the same time.
-
-    def settle_hang(rig: Any, ticks_sym: int, limit_ms: int = 9000) -> bool:
-        """Run in steps until the runtime's UI-loop count stops rising; False when it never does within LIMIT_MS."""
-        for _ in range(limit_ms // 400):
-            t0 = rig.w(ticks_sym)
-            rig.s.run_ms(400)
-            if rig.w(ticks_sym) == t0:
-                return True
-        return False
-
-    def sequence(kind: str) -> Callable[[], None]:
-        def run() -> None:
-            base = cards[kind]
-            seen: list[dict[str, Any]] = []
-            ticks_sym = M.sym(img.plan, "core/runtime", "DKRT_STATE") + 8
-            for boot in range(3):
-                with c.rig(img, base, f"late-{kind}{boot}") as rig:
-                    info = rig.boot_info()
-                    hung = settle_hang(rig, ticks_sym)
-                    after = rig.boot_info()
-                    rec = B.current(rig.sel_records())
-                    seen.append(
-                        {"info": info, "after": after, "rec": rec, "hung": hung}
-                    )
-                    ov = rig.work / f"late-{kind}{boot}.ov.bin"
-                    rig.emu.call("card.overlay", path=str(ov))
-                    nxt = card_after(c, base, ov)
-                    c.done(rig)
-                base = nxt
-            i0, i1, i2 = (s["info"] for s in seen)
-
-            def m(s: dict[str, Any]) -> tuple[Any, ...]:
-                return (
-                    s["info"]["counter"],
-                    s["after"]["stable"],
-                    s["rec"] and s["rec"]["counter"],
-                    s["hung"],
-                )
-
-            if kind == "early":
-                c.check(
-                    "early: boots 1 and 2 load the module and the UI task hangs in it",
-                    all(
-                        s["info"]["safe"] == 0
-                        and s["info"]["loaded"] == 1
-                        and s["hung"]
-                        for s in seen[:2]
-                    ),
-                    str([m(s) for s in seen]),
-                )
-                c.check(
-                    "early: the counter is raised at the start of each boot and not cleared (the failure came before the stable period)",
-                    [i0["counter"], i1["counter"], i2["counter"]] == [0, 1, 2]
-                    and all(
-                        s["after"]["stable"] == 0
-                        and s["rec"]["counter"] == s["info"]["counter"] + 1
-                        for s in seen[:2]
-                    ),
-                    str([m(s) for s in seen]),
-                )
-                c.check(
-                    "early: two bad boots in a row, the third boot is safe mode (counter): the module is not loaded and the UI keeps running",
-                    i2["safe"] == 1
-                    and i2["reason"] == 1
-                    and i2["loaded"] == 0
-                    and not seen[2]["hung"],
-                    f"{i2['reason_name']} loaded {i2['loaded']} hung {seen[2]['hung']}",
-                )
-                c.check(
-                    "early: the safe boot clears the counter at its first UI-loop pass (nothing of a module runs in it), selection kept",
-                    seen[2]["after"]["stable"] == 1
-                    and seen[2]["rec"]["counter"] == 0
-                    and seen[2]["rec"]["paths"] == [mod],
-                    str(seen[2]["rec"]),
-                )
-            else:
-                c.check(
-                    "late: every boot loads the module and the UI task hangs in it",
-                    all(
-                        s["info"]["safe"] == 0
-                        and s["info"]["loaded"] == 1
-                        and s["hung"]
-                        for s in seen
-                    ),
-                    str([m(s) for s in seen]),
-                )
-                c.check(
-                    "late: the counter was cleared once the stable period was over, before the failure: every boot starts at 0, no boot is safe",
-                    all(
-                        s["after"]["stable"] == 1 and s["rec"]["counter"] == 0
-                        for s in seen
-                    )
-                    and [i0["counter"], i1["counter"], i2["counter"]] == [0, 0, 0],
-                    str([m(s) for s in seen]),
-                )
-
-        return run
-
-    c.parallel(sequence("early"), sequence("late"))
-    c.common_checks()
-
-
-def run_safe(c: Ctx) -> None:
-    t = c.table()
-    if t.get("part") == "late":
-        run_safe_late(c)
-        return
-    mod = c.pack(t["fault"], "fault.dkm")
-    other = [c.pack(m, f"m{i}.dkm") for i, m in enumerate(t.get("modules", []))]
-    img = c.image_for(RT, "run")
-    card_fault = c.card([mod])
-    card_flag = c.card(other, flags=1) if other else None
-
-    def fault() -> None:
-        with c.rig(img, card_fault, "safe") as rig:
-            info = rig.boot_info()
-            c.check(
-                "two boots that never reached the UI loop, the third boots in safe mode",
-                info["safe"] == 1 and info["reason"] == 1 and info["counter"] == 2,
-                f"{info['reason_name']} counter {info['counter']}",
-            )
-            c.check(
-                "safe mode loaded no module and reported it",
-                info["loaded"] == 0
-                and info["all_results"][0] == B.E_SAFE_MODE
-                and all(r[0] == B.FREE_TYPE for r in rig.voice_rows()),
-                str(info["all_results"][:2]),
-            )
-            rec = B.current(rig.sel_records())
-            c.check(
-                "the UI loop ran: counter 0, selection kept",
-                info["ui_reached"] == 1
-                and rec is not None
-                and rec["counter"] == 0
-                and rec["paths"] == [mod],
-                str(rec),
-            )
-            c.done(rig)
-
-    def flag() -> None:
-        assert card_flag is not None
-        with c.rig(img, card_flag, "safe-flag") as rig:
-            info = rig.boot_info()
-            rec = B.current(rig.sel_records())
-            c.check(
-                "the safe-once flag: safe mode (flag), no module, flag cleared, selection kept",
-                info["safe"] == 1
-                and info["reason"] == 3
-                and info["loaded"] == 0
-                and rec is not None
-                and rec["flags"] == 0
-                and rec["paths"] == other,
-                f"{info['reason_name']} {rec}",
-            )
-            c.done(rig)
-
-    c.parallel(*([fault, flag] if other else [fault]))
-    c.common_checks()
-
-
-def run_cut(c: Ctx) -> None:
-    t = c.table()
-    mods = [c.pack(m, f"m{i}.dkm") for i, m in enumerate(t["modules"])]
-    img = c.image_for(RT, "run")
-    new, old = B.make_record(mods, seq=2), B.make_record([], seq=1)
-    torn = bytearray(new)
-    torn[100] ^= 0xFF
-    named = {"new": new, "old": old, "torn": bytes(torn)}
-    cases = t["case"]
-    if c.tier == "quick":  # the first cases only
-        cases = cases[: t.get("quick_cases", len(cases))]
-
-    def one_case(case: dict[str, Any], k: int) -> Callable[[], None]:
-        a, b = named[case["a"]], named[case["b"]]
-        card = c.card(None, recs=(a, b))
-
-        def run() -> None:
-            with c.rig(img, card, f"cut{k}") as rig:
-                info = rig.boot_info()
-                want = case["want"]
-                n = len(mods) if want["loaded"] == "all" else want["loaded"]
-                c.check(
-                    f"power cut, A {case['a']} / B {case['b']}: the boot uses the valid copy with the higher sequence number",
-                    info["loaded"] == n
-                    and info["seq"] == want["seq"]
-                    and info["copy"] == want["copy"]
-                    and info["safe"] == 0,
-                    f"loaded {info['loaded']} seq {info['seq']} copy {info['copy']}",
-                )
-                c.done(rig)
-
-        return run
-
-    def runtime_cut() -> None:
-        with c.rig(img, c.card(None), "cut-rt") as rig:
-            r = rig.post(B.CMD_SELECT_ONE, "\0" + "\0".join(mods) + "\0\0")
-            recs = rig.sel_records()
-            c.check(
-                "one copy written by the runtime: A new, B still empty",
-                r == 0
-                and recs[0] is not None
-                and recs[0]["seq"] == 1
-                and recs[1] is None,
-                str(recs),
-            )
-            rig.restart()
-            info = rig.boot_info()
-            c.check(
-                "the restart after the cut loads the new copy",
-                info["loaded"] == len(mods) and info["copy"] == 0,
-                str(info["results"]),
-            )
-            c.done(rig)
-
-    # every boot is its own daemon on its own card: they run side by side
-    c.parallel(
-        *[one_case(case, k) for k, case in enumerate(cases)],
-        *([runtime_cut] if t.get("runtime_cut", True) else []),
-    )
-    c.common_checks()
-
-
-def run_roundtrip(c: Ctx) -> None:
-    from tools.patchkit import pk_digikit_project as P
-
-    P.run_roundtrip(c)
-
-
 def run_dkrun(
     c: Ctx, rig: B.BootRig, D: Any, blobs: dict[str, bytes], files: dict[str, str]
 ) -> None:
@@ -1059,14 +783,16 @@ def run_dkrun(
     c.check("dkrun: the module was uploaded", out["uploaded"] and out["path"] == path)
     res = {(d["kind"], d["args"][0]): d["args"][1] for d in out["results"]}
     c.check(
-        "dkrun: after the reboot MOD_LOAD result=1 (LOADING) and MOD_DSP result=0",
-        res.get(("MOD_LOAD", 0)) == 1 and res.get(("MOD_DSP", 0)) == 0,
+        "dkrun: after the reboot the debug module loads (MOD_LOAD result=0), then MOD_LOAD result=1 (LOADING) and MOD_DSP result=0 for the module",
+        res.get(("MOD_LOAD", 0)) == 0
+        and res.get(("MOD_LOAD", 1)) == 1
+        and res.get(("MOD_DSP", 1)) == 0,
         str(res),
     )
     rec = B.current(rig.sel_records())
     c.check(
-        "dkrun: SELECT wrote the record: the module and nothing else",
-        rec is not None and rec["paths"] == [path],
+        "dkrun: SELECT wrote the record: the debug module, the module and nothing else",
+        rec is not None and rec["paths"] == [R.module_path(R.DEBUG_MODULE), path],
         str(rec),
     )
     # a second run finds the file on the device (the same sha256) and uploads nothing (it stops after SELECT: one boot is enough here)
@@ -1301,18 +1027,25 @@ def run_menu(c: Ctx) -> None:
             run_dkrun(c, rig, D, blobs, files)
         info = rig.boot_info()
         k = len(rows)
+        extra = []  # the debug module `dkrun` selects next to the set
+        if dkrun:
+            from tools.device import dkrun as R
+
+            extra = [R.module_path(R.DEBUG_MODULE)]
+        kd = k + len(extra)
         c.check(
             "the boot after the install loaded the whole set",
-            info["count"] == k
-            and info["loaded"] == k
-            and info["results"] == [0] * k
+            info["count"] == kd
+            and info["loaded"] == kd
+            and info["results"] == [0] * kd
             and info["safe"] == 0,
             str(info["results"]),
         )
         rec = B.current(rig.sel_records())
         c.check(
             "the record in use holds the ticked modules",
-            rec is not None and sorted(rec["paths"]) == sorted(files.values()),
+            rec is not None
+            and sorted(rec["paths"]) == sorted([*files.values(), *extra]),
             str(rec),
         )
         got = decode_tables(rig)
@@ -1348,97 +1081,17 @@ def run_upload(c: Ctx) -> None:
     U.run_upload(c)
 
 
-def run_card(c: Ctx) -> None:
-    from tools.patchkit import pk_digikit_debug as DBG
-
-    DBG.run_card(c)
-
-
-def run_debug(c: Ctx) -> None:
-    from tools.patchkit import pk_digikit_debug as DBG
-
-    DBG.run_debug(c)
-
-
-def run_crash(c: Ctx) -> None:
-    from tools.patchkit import pk_digikit_debug as DBG
-
-    DBG.run_crash(c)
-
-
 def run_pages(c: Ctx) -> None:
     from tools.patchkit import pk_digikit_pages as PG
 
     PG.run_pages(c)
 
 
-def run_fx(c: Ctx) -> None:
-    from tools.patchkit import pk_digikit_fx as FX
-
-    FX.run_fx(c)
-
-
-def run_fxsend(c: Ctx) -> None:
-    from tools.patchkit import pk_digikit_fxsend as FXS
-
-    FXS.run_fxsend(c)
-
-
-def run_fxroute(c: Ctx) -> None:
-    from tools.patchkit import pk_digikit_fxroute as FR
-
-    FR.run_fxroute(c)
-
-
-def run_fxroutes(c: Ctx) -> None:
-    from tools.patchkit import pk_digikit_fxroutes as FRS
-
-    FRS.run_fxroutes(c)
-
-
-def run_settings(c: Ctx) -> None:
-    from tools.patchkit import pk_digikit_settings as SET
-
-    SET.run_settings(c)
-
-
-def run_fxpage(c: Ctx) -> None:
-    from tools.patchkit import pk_digikit_fxpage as FP
-
-    FP.run_fxpage(c)
-
-
-def run_fxpersist(c: Ctx) -> None:
-    from tools.patchkit import pk_digikit_fxpersist as FPS
-
-    FPS.run_fxpersist(c)
-
-
-def run_fxshift(c: Ctx) -> None:
-    from tools.patchkit import pk_digikit_fxshift as FSH
-
-    FSH.run_fxshift(c)
-
-
 KINDS = {
     "pages": run_pages,
-    "fx": run_fx,
-    "fxsend": run_fxsend,
-    "fxroute": run_fxroute,
-    "fxroutes": run_fxroutes,
-    "settings": run_settings,
-    "fxpage": run_fxpage,
-    "fxpersist": run_fxpersist,
-    "fxshift": run_fxshift,
-    "card": run_card,
-    "debug": run_debug,
-    "crash": run_crash,
     "equiv": run_equiv,
     "upload": run_upload,
     "menu": run_menu,
-    "safe": run_safe,
-    "cut": run_cut,
-    "roundtrip": run_roundtrip,
 }
 
 
@@ -1537,23 +1190,10 @@ def _run_pairs(
     base.mkdir(parents=True, exist_ok=True)
     t0 = time.monotonic()
     rank = {
-        "cut": 1,
         "upload": 1,
-        "card": 1,
-        "debug": 1,
-        "roundtrip": 2,
-        "safe": 3,
-        "crash": 3,
         "equiv": 4,
     }
-    order = sorted(
-        pairs,
-        key=lambda p: (
-            -1
-            if p[0].data.get(p[0].kind, {}).get("engine") == "coupled"
-            else rank.get(p[0].kind, 9)
-        ),
-    )
+    order = sorted(pairs, key=lambda p: rank.get(p[0].kind, 9))
 
     def one(pair: tuple[Scenario, str]) -> tuple[tuple[str, str], dict[str, Any]]:
         s, image = pair

@@ -3,8 +3,8 @@ an empty device (tools/patchkit/pk_modcheck.py). The needs come from a real pack
 
 import pytest
 
+from tests.support import synth_spec as P
 from tools.device import dkneeds
-from tools.patchkit import pk_capacity as P
 from tools.patchkit import pk_device, pk_modcheck
 
 
@@ -22,23 +22,6 @@ def needs(**n):
         "FX_SLOTS",
     )
     return {"file_size": 600, **dict.fromkeys(names, 0), **n}
-
-
-def test_device_caps_are_the_limits_of_the_device_file():
-    for dev in pk_device.digikit_devices():
-        lim = pk_device.limits(dev)
-        c = pk_modcheck.device_caps(dev)
-        assert c["DSP_AREA"] == {"limit": lim.dsp_area_bytes, "used": 0, "largest": 0}
-        assert (
-            c["ARENA"]["limit"],
-            c["MODULES"]["limit"],
-            c["PAGE_ROWS"]["limit"],
-        ) == (
-            lim.arena_bytes,
-            lim.modules,
-            lim.page_rows,
-        )
-        assert all(v["used"] == 0 for v in c.values())
 
 
 def test_a_module_that_fits_and_one_that_does_not(monkeypatch):

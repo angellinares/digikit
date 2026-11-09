@@ -738,3 +738,38 @@ offset = 0x2
 value = "mf_reader_real"
 width = 4
 devices = ["dn2"]
+
+# Opt-in native callback page v1. Ordinary machine rows and their ABI stay unchanged.
+[[object]]
+path = "build/native-page-dt2.dko.json"
+sources = ["src/cf/native-page-dt2.c"]
+place = "cf.expansion"
+devices = ["dt2"]
+
+[[object]]
+path = "build/native-page-dn2.dko.json"
+sources = ["src/cf/native-page-dn2.c"]
+place = "cf.expansion"
+devices = ["dn2"]
+
+[[object]]
+path = "build/native-page-hooks.dko.json"
+sources = ["src/cf/native-page-hooks.s"]
+place = "cf.expansion"
+[object.externs]
+mf_native_draw_next = "hook.cf.page.fn.source_draw.tail"
+mf_native_code_next = "hook.cf.page.fn.source_code.tail"
+
+[[op]]
+op = "hook"
+hook = "cf.page.hook.source_draw"
+to = "mf_native_draw_hook"
+[[claim]]
+resource = "cf.page.fn.source_draw"
+
+[[op]]
+op = "hook"
+hook = "cf.page.hook.source_code"
+to = "mf_native_code_hook"
+[[claim]]
+resource = "cf.page.fn.source_code"

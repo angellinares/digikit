@@ -63,25 +63,25 @@ fn the_register_records_are_the_lowered_typed_sections() {
         (machine_key("test/sine", "sine"), 0, 255, 10)
     );
     // knobs on the Digitakt: SAMPLE's tune and level rows, the module's parameter (index 0) at the first free position
-    assert_eq!(
-        mach.knobs,
-        [0xca, KNOB_PARAM, 0, 0, 0, 0, 0, 0xd1]
-    );
+    assert_eq!(mach.knobs, [0xca, KNOB_PARAM, 0, 0, 0, 0, 0, 0xd1]);
     let p = &reg.params[0];
-    assert_eq!((p.template, p.slot, p.min, p.max), (0xd1, 1, 0, 0x7f00));
+    assert_eq!((p.template, p.slot, p.min, p.max), (0xcc, 1, 0, 0x7f00));
     // the Digitone: a page holds the parameter, the machine row none
     let reg2 = Register::lower(dev("dn2"), "test/sine").unwrap();
     assert_eq!((reg2.device, reg2.machines[0].own_dsp), (2, 1));
     assert_eq!(reg2.machines[0].knobs, [0; 8]);
     assert_eq!(reg2.pages.len(), 1);
-    assert_eq!(reg2.pages[0].knobs[0], KNOB_PARAM);
-    assert_eq!((reg2.params[0].template, reg2.params[0].slot), (0xd5, 25));
+    // word 0 sits on knob B (`param_slots[0] = 1`), so knob A stays free and the slot is the base 25 plus 1
+    assert_eq!(reg2.pages[0].knobs[..2], [0, KNOB_PARAM]);
+    assert_eq!((reg2.params[0].template, reg2.params[0].slot), (0xd5, 26));
     // the file: a stub image, the records, and the same bytes every time
     let opts = dkm::Options {
         name: "test/sine".into(),
         version: 0x000100,
         runtime_min: 1,
         trace: false,
+        stereo: false,
+        api_minor: 0,
     };
     let a = dkm::pack_with(None, &reg.encode(), &opts).unwrap();
     assert_eq!(a, dkm::pack_with(None, &reg.encode(), &opts).unwrap());

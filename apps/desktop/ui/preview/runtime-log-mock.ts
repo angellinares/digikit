@@ -1,11 +1,11 @@
-// A fake runtime log for the Log drawer in the preview (?page=log&log=both|fault|frozen|empty). Each origin is a script of events on a clock:
+// A fake runtime log for the Log drawer in the preview (?page=log&log=both|fault|frozen|empty|nodebug: a runtime without the debug module, so without the LOG capability). Each origin is a script of events on a clock:
 // a boot, modules, MOD_LOG lines, then (log=both) a gap in the device's ring, a restart of the emulator, and a boot of the device that found a
 // stopped DSP. The sessions answer as the follower needs them (log-follow-core.ts); the events are the runtime's (docs/findings/46-digikit-debug.md).
-import type { DkLogEvent, Fault } from '@digi/dk-session';
+import type { DkLogEvent, Fault, LogConfig } from '@digi/dk-session';
 import { CAP, LOG_KIND } from '@digi/dk-session/gen_proto';
 import type { FollowSession } from '../src/log-follow-core';
 
-type Mode = 'both' | 'fault' | 'frozen' | 'empty';
+type Mode = 'both' | 'fault' | 'frozen' | 'empty' | 'nodebug';
 const query = new URLSearchParams(location.search);
 export const logMode: Mode = (query.get('log') as Mode) ?? 'both';
 /** How much faster than real time the script runs (a screenshot does not wait ten seconds). */
@@ -74,7 +74,6 @@ const deviceBoot0: Boot = {
     // the ring lost 6 events here
     modLog(3500, 2, 'shift tick', 0x150, 6),
     ev(4500, 'MENU', [3, 1], lv(2)),
-    ev(4700, 'DEBUG_SET', [1], lv(2)),
     modLog(5500, 2, 'shift tick', 0x15e),
     ev(6200, 'FX_FAULT', [1, 8], lv(0, 1, true)),
     ev(6900, 'DSP_STOPPED', [4021, 4020, 4 | (12 << 8) | (18 << 16), 220, 0], lv(0, 0, true)),
@@ -137,7 +136,7 @@ const emulatorBoot1: Boot = {
 interface Script {
   boots: Boot[];
   caps: number;
-  debug: { level: number; debug: boolean };
+  debug: LogConfig;
   /** What MODULES answers: the modules loaded (the names the Log uses for the source of an event). */
   modules?: { index: number; name: string }[];
   /** The fault record the card holds after the boot with this index starts. */
@@ -193,6 +192,12 @@ function session(script: Script): FollowSession {
       await gate();
       return script.debug;
     },
+    // the fake runtime keeps the levels as the real one does (RAM, one state)
+    async setLogConfig(level, modules) {
+      await gate();
+      script.debug = { ...script.debug, level, modules };
+      return script.debug;
+    },
     async modules() {
       await gate();
       return script.modules ?? [];
@@ -204,23 +209,27 @@ function session(script: Script): FollowSession {
   };
 }
 
-const LOG_CAPS = (1 << CAP.LOG) | (1 << CAP.LOGCFG) | (1 << CAP.SETTINGS);
+// the capabilities while digikit/debug is loaded; without it INFO has neither LOG nor PEEK nor LOGCFG
+const RUNTIME_CAPS = (1 << CAP.SERVICE_CMDS) | (1 << CAP.SETTINGS);
+const LOG_CAPS = RUNTIME_CAPS | (1 << CAP.LOG) | (1 << CAP.PEEK) | (1 << CAP.LOGCFG);
+const noDebug = logMode === 'nodebug';
 const both = logMode === 'both';
 const emulatorScript: Script = {
   boots: both ? [emulatorBoot0, emulatorBoot1] : [emulatorBoot0],
-  caps: LOG_CAPS,
-  debug: { level: 2, debug: false },
+  caps: noDebug ? RUNTIME_CAPS : LOG_CAPS,
+  debug: { level: 2, modules: Array<number>(8).fill(0xff), debug: true },
+  modules: [{ index: 0, name: 'freqshift' }],
   faults: [],
 };
 const deviceScript: Script = {
   boots: logMode === 'fault' ? [{ ...deviceBoot1, start: 0 }] : both ? [deviceBoot0, deviceBoot1] : [deviceBoot0],
-  caps: LOG_CAPS,
-  debug: { level: 2, debug: true },
+  caps: noDebug ? RUNTIME_CAPS : LOG_CAPS,
+  debug: { level: 2, modules: [0xff, 3, ...Array<number>(6).fill(0xff)], debug: true },
   modules: [
     { index: 0, name: 'dyn-fx-hang' },
     { index: 1, name: 'freqshift' },
   ],
-  faults: logMode === 'fault' ? [deviceFault] : [null, deviceFault],
+  faults: logMode === 'fault' || noDebug ? [deviceFault] : [null, deviceFault],
   ...(logMode === 'frozen' ? { silentFrom: 3000 } : {}),
 };
 

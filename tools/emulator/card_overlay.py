@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 """Turn the guest's writes to the emulated eMMC card into a card image another firmware can mount.
 
-    uv run python -m tools.emulator.card_overlay apply BASE.img OVERLAY OUT.img
+    from tools.emulator import card_overlay; card_overlay.apply(BASE, OVERLAY, OUT)
 
 The daemon method `card.overlay {path}` (`Emu.call("card.overlay", path=...)`) writes the sectors the guest wrote
 since the card was mounted: per sector a little-endian u64 sector number, a 64-byte mask (bit i of byte i // 8 names
@@ -13,11 +13,9 @@ samples and firmware: they stay under out/ and are never committed.
 
 from __future__ import annotations
 
-import argparse
 import os
 import shutil
 import subprocess
-import sys
 from pathlib import Path
 
 RECORD = 8 + 64 + 512
@@ -91,20 +89,3 @@ def apply(base: Path, overlay: Path, out: Path) -> int:
     finally:
         os.close(fd)
     return n
-
-
-def main(argv: list[str]) -> int:
-    ap = argparse.ArgumentParser(description=__doc__.splitlines()[0])
-    sub = ap.add_subparsers(dest="cmd", required=True)
-    a = sub.add_parser("apply")
-    a.add_argument("base", type=Path)
-    a.add_argument("overlay", type=Path)
-    a.add_argument("out", type=Path)
-    args = ap.parse_args(argv)
-    n = apply(args.base, args.overlay, args.out)
-    print(f"{args.out}: {n} sectors written over {args.base.name}")
-    return 0
-
-
-if __name__ == "__main__":
-    sys.exit(main(sys.argv[1:]))

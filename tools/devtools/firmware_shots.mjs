@@ -49,6 +49,8 @@ const tick = (label) =>
 const click = (text) =>
   `(() => { const b = [...document.querySelectorAll('button')].find((e) => e.textContent.trim() === ${JSON.stringify(text)}); if (!b) throw new Error('no button ' + ${JSON.stringify(text)}); b.click(); })()`;
 
+const clickStarting = (text) =>
+  `(() => { const b = [...document.querySelectorAll('button')].find((e) => e.textContent.trim().startsWith(${JSON.stringify(text)})); if (!b) throw new Error('no button ' + ${JSON.stringify(text)}); b.click(); })()`;
 const menuLink = click('Use the OS UPGRADE menu instead');
 const SCENES = [
   { name: 'step1-empty', size: WIDE, dev: 'dn2', file: null, wait: 'Connected' },
@@ -65,6 +67,69 @@ const SCENES = [
     ready: true,
     desktopOnly: true,
     query: 'fwfail=1',
+  },
+  // the Default modules list (desktop only): installed and enabled after the flash; `defmods` makes the fake install slow or fail
+  {
+    name: 'defaults-open',
+    size: WIDE,
+    dev: 'dn2',
+    file: 'dn2',
+    wait: 'Connected',
+    ready: true,
+    desktopOnly: true,
+    query: 'fwforce=1',
+    steps: [clickStarting('Default modules')],
+  },
+  {
+    name: 'defaults-unticked',
+    size: WIDE,
+    dev: 'dt2',
+    file: 'dt2',
+    wait: 'Connected',
+    ready: true,
+    desktopOnly: true,
+    query: 'fwforce=1',
+    steps: [clickStarting('Default modules'), 'eval:document.querySelector(".defmods-row input").click()'],
+  },
+  {
+    name: 'defaults-installing',
+    size: TALL,
+    dev: 'dn2',
+    file: 'dn2',
+    wait: 'Connected',
+    ready: true,
+    desktopOnly: true,
+    query: 'fwforce=1&defmods=slow',
+    steps: [click('Flash')],
+    until: 'Installing digikit/remote',
+    within: 240_000,
+    after: 300,
+  },
+  {
+    name: 'defaults-done',
+    size: TALL,
+    dev: 'dn2',
+    file: 'dn2',
+    wait: 'Connected',
+    ready: true,
+    desktopOnly: true,
+    query: 'fwforce=1',
+    steps: [click('Flash')],
+    until: 'Default modules installed.',
+    within: 240_000,
+  },
+  {
+    name: 'defaults-failed',
+    size: TALL,
+    dev: 'dn2',
+    file: 'dn2',
+    wait: 'Connected',
+    ready: true,
+    desktopOnly: true,
+    query: 'fwforce=1&defmods=fail',
+    steps: [click('Flash')],
+    until: 'The firmware flash is done',
+    within: 240_000,
   },
   { name: 'no-device', size: WIDE, dev: 'dn2', file: 'dn2', state: 'none', wait: 'Not connected', ready: true },
   { name: 'mismatch', size: WIDE, dev: 'dt2', file: 'dn2', wait: 'Connected', ready: true },
@@ -420,6 +485,7 @@ try {
       await sleep(400);
       for (const step of scene.steps ?? []) {
         if (step.startsWith('sleep:')) await sleep(Number(step.slice(6)));
+        else if (step.startsWith('eval:')) await evaluate(cdp, step.slice(5));
         else if (step.startsWith('wait:')) await waitFor(cdp, hasText(step.slice(5)), step, 90_000);
         else await evaluate(cdp, step);
         await sleep(200);

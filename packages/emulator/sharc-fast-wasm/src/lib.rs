@@ -310,7 +310,12 @@ impl Emit<'_> {
                 self.get(v);
                 self.i(I::I32Store(ma(0, 0)));
             }
-            Inst::StoreN { base, off, v, bytes } => {
+            Inst::StoreN {
+                base,
+                off,
+                v,
+                bytes,
+            } => {
                 self.addr(base, off);
                 self.get(v);
                 if bytes == 1 {
@@ -430,8 +435,19 @@ fn uses_helper(k: &Kernel, wide: bool) -> bool {
 /// The wasm function body of kernel K.
 fn emit_function(k: &Kernel) -> Result<Function, String> {
     k.validate()?;
+    if [&k.pre, &k.body, &k.post]
+        .into_iter()
+        .flatten()
+        .any(|i| matches!(i, Inst::Def(_, Op::CI64(_))))
+    {
+        return Err(
+            "a kernel with a host table address (recips, rsqrts) is not lowered to wasm".into(),
+        );
+    }
     if uses_helper(k, true) {
-        return Err("a helper record above 4 GiB (kernels with helper calls need a wasm32 core)".into());
+        return Err(
+            "a helper record above 4 GiB (kernels with helper calls need a wasm32 core)".into(),
+        );
     }
     let l = layout(k);
     let f = Function::new(l.decl.clone());

@@ -110,6 +110,27 @@ const SCENES = [
   },
   { name: 'samples', q: 'mode=samples', size: WIDE },
   {
+    // a folder with files: the armed Delete says its contents go; the second click shows the progress line with Cancel
+    name: 'samples-delete-folder-armed',
+    q: 'mode=samples',
+    size: WIDE,
+    steps: async (p) => {
+      await p.tick('^Delete (Drums)$');
+      await p.click(/^Delete/);
+    },
+  },
+  {
+    name: 'samples-delete-folder-running',
+    q: 'mode=samples',
+    size: WIDE,
+    steps: async (p) => {
+      await p.tick('^Delete (Drums)$');
+      await p.click(/^Delete/);
+      await p.click(/^Delete this folder/);
+      await p.wait(200);
+    },
+  },
+  {
     name: 'samples-select-partial',
     q: 'mode=samples',
     size: WIDE,
@@ -126,6 +147,27 @@ const SCENES = [
       await p.tick('^Upload (kick|snare|hat)');
       await p.click(/^Upload/);
       await p.wait(3000);
+    },
+  },
+  {
+    // a resumed upload: two of the three files are on the device already, the third is sent
+    name: 'samples-upload-skip',
+    q: 'mode=samples&speed=12&skip=kick_punchy,snare_tight_01',
+    size: WIDE,
+    steps: async (p) => {
+      await p.tick('^Upload (kick_punchy|snare_tight_01|hat_closed_a)\\.wav');
+      await p.click(/^Upload/);
+      await p.wait(4000);
+    },
+  },
+  {
+    name: 'samples-upload-failed',
+    q: 'mode=samples&speed=12&putfail=1',
+    size: WIDE,
+    steps: async (p) => {
+      for (const n of ['kick', 'snare', 'hat']) await p.tick(`^Upload ${n}`);
+      await p.click(/^Upload/);
+      await p.wait(4000);
     },
   },
   { name: 'samples-narrow', q: 'mode=samples', size: MIN },
@@ -840,6 +882,84 @@ const SCENES = [
       p.say('first lines: ' + (await p.eval('(window.__saved?.[0]?.text ?? "").split("\\n").slice(0, 4).join(" | ")')));
     },
   },
+  // ---- the Level menu and the debug module indicator of the Log drawer (workbench-device-log.md "Log levels") ----
+  ...[
+    // [name, query, size, Source value (empty: leave All), steps after choosing it]
+    [
+      'log-level-menu',
+      'page=log&log=both&logspeed=3&logh=640',
+      WIDE,
+      'device:all',
+      async (p) => {
+        await p.click(/^Level/);
+        await p.wait(400);
+      },
+    ],
+    [
+      'log-level-menu-changed',
+      'page=log&log=both&logspeed=3&logh=640',
+      WIDE,
+      'device:all',
+      async (p) => {
+        await p.click(/^Level/);
+        await p.wait(400);
+        // the module row of freqshift: error; the default row: trace
+        await p.eval(
+          "(() => { const rows = [...document.querySelectorAll('.level-row')]; const pick = (row, name) => [...row.querySelectorAll('button')].find((b) => b.textContent === name)?.click(); pick(rows[0], 'trace'); pick(rows[2], 'error'); })()",
+        );
+        await p.wait(500);
+      },
+    ],
+    [
+      'log-level-menu-emulator',
+      'page=log&log=both&logspeed=3&logh=640',
+      MIN,
+      'emulator:all',
+      async (p) => {
+        await p.click(/^Level/);
+        await p.wait(400);
+      },
+    ],
+    // the debug module is loaded on the device, and on the emulator in the other scene it is not
+    ['log-debug-module-loaded', 'page=log&log=both&logspeed=3&logh=640', WIDE, 'device:all', async () => {}],
+    ['log-debug-module-not-loaded', 'page=log&log=nodebug&logh=640', WIDE, 'device:all', async () => {}],
+    ['log-debug-module-not-loaded-narrow', 'page=log&log=nodebug&logh=640', MIN, 'device:all', async () => {}],
+    // Source is All and both origins are followed: the menu does not know which one is meant
+    ['log-debug-disabled-all', 'page=log&log=both&logspeed=3&logh=640', WIDE, '', async () => {}],
+  ].map(([name, q, size, source, after]) => ({
+    name,
+    q,
+    size,
+    steps: async (p) => {
+      await p.wait(5500);
+      if (source)
+        await p.eval(
+          `(() => { const s = document.querySelector('.log-drawer select'); s.value = ${JSON.stringify(source)}; s.dispatchEvent(new Event('change', { bubbles: true })); })()`,
+        );
+      await p.wait(1500);
+      await after(p);
+      p.say(
+        'header: ' +
+          (await p.eval(
+            "[...document.querySelectorAll('.log-drawer header .tb')].map((b) => b.textContent.trim() + (b.disabled ? ' [off]' : '')).join(' | ')",
+          )),
+      );
+    },
+  })),
+  // the Default modules list next to the emulator's firmware file (the toolbar of Console.tsx, replicated in the preview)
+  {
+    name: 'emulator-defaults-open',
+    q: 'page=emulator',
+    size: WIDE,
+    steps: async (p) => {
+      await p.wait(600);
+      await p.click(/^Default modules/);
+      await p.wait(300);
+    },
+  },
+  // a firmware is starting, and a load that failed: no old device badge, no faceplate, the state in the status bar
+  { name: 'emulator-booting', q: 'page=emulator&boot=loading', size: WIDE },
+  { name: 'emulator-boot-failed', q: 'page=emulator&boot=failed', size: WIDE },
   { name: 'emulator-faceplate-wide', q: 'page=emulator', size: WIDE },
   { name: 'emulator-faceplate-narrow', q: 'page=emulator', size: MIN },
 ];
@@ -990,6 +1110,9 @@ try {
       note = ` (step failed: ${e.message})`;
       failed++;
     }
+    // the bar's text, when the scene shows one (a speed is only proof if it reads right)
+    const stats = await p.eval("document.querySelector('.bar .stats')?.textContent ?? ''").catch(() => '');
+    if (stats) note += ` [.stats: ${stats}]`;
     const shot = await cdp.send('Page.captureScreenshot', { format: 'png' });
     const file = path.join(out, `${prefix ? `${prefix}-` : ''}${scene.name}.png`);
     fs.writeFileSync(file, Buffer.from(shot.data, 'base64'));

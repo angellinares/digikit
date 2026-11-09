@@ -150,7 +150,7 @@ def install() -> Prof:
         p.wrap(P, fn, f"panel: {fn}", span=True)
         # a call through the module's own name resolves at call time, so wrapping the module attribute is enough
     p.wrap(S.Ctx, "rig", "rig setup", span=True)
-    for kind in ("run_equiv", "run_safe", "run_cut"):
+    for kind in ("run_equiv",):
         p.wrap(S, kind, f"scenario {kind}")
 
     orig_run_ms = H.Session.run_ms

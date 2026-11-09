@@ -4,5 +4,6 @@ packages:
   - tests/regression
 allowBuilds:
   esbuild: true
+  nx: false
 minimumReleaseAgeExclude:
   - '@tauri-apps/api@2.12.1'

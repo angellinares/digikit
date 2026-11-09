@@ -81,7 +81,6 @@ def main(argv: list[str] | None = None) -> int:
         (nr.OPT_INSTRUCTION_CLOCK_BASE, a.clock_base),
         (nr.OPT_SOFTWARE_INTERRUPTS, 1),
         (nr.OPT_EXPLICIT_MEMORY_MODEL, 0),
-        (nr.OPT_APPROX_RECIPS, 1),
         (nr.OPT_CORE_TIMER, 1),
         (nr.OPT_PERIPHERAL_MODEL, 1),
         (nr.OPT_ASSUME_NW32, 1),

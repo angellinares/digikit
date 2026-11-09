@@ -1072,6 +1072,7 @@ dependencies = [
  "device-profile",
  "digi-control",
  "digi-coupled",
+ "dkmidi",
  "elektron-native-boot",
  "emmc-card",
  "midir",
@@ -1134,6 +1135,13 @@ name = "dkfw"
 version = "0.1.0"
 
 [[package]]
+name = "dkmidi"
+version = "0.1.0"
+dependencies = [
+ "midir",
+]
+
+[[package]]
 name = "dkneeds"
 version = "0.1.0"
 
@@ -1143,6 +1151,7 @@ version = "0.1.0"
 dependencies = [
  "dkneeds",
  "dkrt-sdk",
+ "serde_json",
 ]
 
 [[package]]
@@ -1164,8 +1173,8 @@ dependencies = [
 name = "dkupload"
 version = "0.1.0"
 dependencies = [
+ "dksample",
  "serde_json",
- "sha2",
 ]
 
 [[package]]
@@ -3088,10 +3097,12 @@ version = "0.1.0"
 dependencies = [
  "coldfire",
  "dkneeds",
+ "dkrt-fit",
  "dkrt-sdk",
  "dkupload",
  "dt2-firmware-loader",
  "emmc-card",
+ "machine",
  "midir",
  "object",
  "plusdrive-format",
@@ -3666,7 +3677,7 @@ checksum = "94143f37725109f92c262ed2cf5e59bce7498c01bcc1502d7b9afe439a4e9f49"
 [[package]]
 name = "selas"
 version = "0.1.0"
-source = "git+https://github.com/js216/selache?rev=2b26d3b75c53063575bc5c820fa0d38879335187#2b26d3b75c53063575bc5c820fa0d38879335187"
+source = "git+https://github.com/ElekLabs/selache?rev=02d6d785b8e3a125ab237a00bb89503aff835f5d#02d6d785b8e3a125ab237a00bb89503aff835f5d"
 dependencies = [
  "selelf",
  "selinstr",
@@ -3694,12 +3705,12 @@ dependencies = [
 [[package]]
 name = "selelf"
 version = "0.1.0"
-source = "git+https://github.com/js216/selache?rev=2b26d3b75c53063575bc5c820fa0d38879335187#2b26d3b75c53063575bc5c820fa0d38879335187"
+source = "git+https://github.com/ElekLabs/selache?rev=02d6d785b8e3a125ab237a00bb89503aff835f5d#02d6d785b8e3a125ab237a00bb89503aff835f5d"
 
 [[package]]
 name = "selinstr"
 version = "0.1.0"
-source = "git+https://github.com/js216/selache?rev=2b26d3b75c53063575bc5c820fa0d38879335187#2b26d3b75c53063575bc5c820fa0d38879335187"
+source = "git+https://github.com/ElekLabs/selache?rev=02d6d785b8e3a125ab237a00bb89503aff835f5d#02d6d785b8e3a125ab237a00bb89503aff835f5d"
 
 [[package]]
 name = "semver"

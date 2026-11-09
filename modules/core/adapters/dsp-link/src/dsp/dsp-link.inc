@@ -57,15 +57,16 @@
 //   23 the machine type the guard disabled last (docs/findings/51)
 //   24 the effect site's `last` (core/fx, fx.s _fx_mark): stage (4 the core is about to call the module, 5 it returned) | site << 8 (2 master route, 3 send route) |
 //      the row's byte offset in the effect table << 16 (96 bytes a row); written straight into both reply records at the call and the return
-//   25 the module step: the number the module stores into `_dk_step` (the import core/dyndsp exports; the runtime points the stores at this word of the reply
-//      record, dsp.rs `patch_steps`); the core clears it right before each call into a module; a module that stored nothing leaves 0
+//   25 the module step: the number the module stores into `_dk_step` (the import core/dyndsp exports). The sites (core/fx, core/dsp-voice) clear `_dk_step` right
+//      before each call into a module; the block tail copies it into this block's record, after all module calls of the block, and clears it; a block in which the
+//      last module stored nothing carries 0
 //   26 module calls of the master route   27 module calls of the send route (core/fx)
 //   28 effect faults (low 16 bits) | the row of the last fault (byte offset + 1) << 16   31 the row switched off last (byte offset + 1)
-//   29 the address of this block's reply record   30 the address of the one before (the two rings; the stores of the module step go to the lower)
-// The words 2 to 23 are filled when core/dsp-voice is in the image, 24 and 26 to 28 and 31 when core/fx is; 0, 1, 29 and 30 always. `last` and the module step
-// are written by the sites themselves into both records (a core that stopped never reaches this hook); the block tail copies what the sites keep in
-// DM (`_dv_diag`, `_fx_diag`) and the static `_dk_step` (used when the runtime could not patch the stores).
-// The block tail also stores this block's record address into the sites' tables (_dv_rec, _fx_rec; [0] this block's, [1] the one before).
+//   29 the address of this block's reply record   30 the address of the one before (the two rings)
+// The words 2 to 23 are filled when core/dsp-voice is in the image, 24 and 26 to 28 and 31 when core/fx is; 0, 1, 29 and 30 always. `last` is written by
+// the sites themselves into both records (a core that stopped never reaches this hook); the block tail copies what the sites keep in
+// DM (`_dv_diag`, `_fx_diag`) and the static `_dk_step`.
+// The block tail also stores this block's record address into the sites' tables (_dv_rec, _fx_rec; [0] this block's, [1] the one before) and, as [2], the address of `_dk_step`.
 // The ColdFire side is dl_diag(out, n) in dsp-link.c.
 
 #define DL_MAGIC 0xD15C
@@ -77,6 +78,9 @@
 .SECTION/PM seg_pmco;
 .GLOBAL _dl_hook;
 .EXTERN _dl_back;
+#ifdef DL_CHAIN_SP
+.EXTERN _sp_tail;
+#endif
 .EXTERN _dl_area;
 .EXTERN _dl_vrows;
 .EXTERN _dl_vcount;
@@ -346,6 +350,8 @@ _dl_out:
     DM(1, I3) = R0;
     R0 = I4;
     DM(0, I3) = R0;
+    R0 = _dk_step;                        // the module step word, for the site's clear before a module call
+    DM(2, I3) = R0;
 _dl_novd:
     R3 = _fx_diag;                        // 0 when core/fx is not in the image
     R3 = PASS R3;
@@ -372,14 +378,13 @@ _dl_novd:
     DM(1, I3) = R0;
     R0 = I4;
     DM(0, I3) = R0;
+    R0 = _dk_step;
+    DM(2, I3) = R0;
 _dl_nofx:
-    R0 = DM(_dk_step);                    // a module step stored in the static word (the record word is the usual place)
-    R0 = PASS R0;
-    IF EQ JUMP _dl_nostep;
+    R0 = DM(_dk_step);                    // the module step: the last module call of the block stored it (the sites clear it before each call)
     DM(298, I2) = R0;                     // word 25
     R3 = 0;
-    DM(_dk_step) = R3;
-_dl_nostep:
+    DM(_dk_step) = R3;                    // a block without a module call carries 0
     R0 = DM(_dk_rec);
     DM(360, I2) = R0;                     // word 30: the record of the block before
     R0 = I4;
@@ -399,7 +404,16 @@ _dl_nodiag:
     R4 = DM(_dl_sv4);
     R5 = DM(_dl_sv5);
     R6 = DM(_dl_sv6);
+#ifdef DL_CHAIN_SP
+    // core/sample-pool (DN2) hangs its own block work on this tail: _sp_tail saves every register itself and ends in the same
+    // `_dl_back` (it is 0 when that module is not in the image). R10 is free here, the epilogue reloads it from the frame.
+    R10 = _sp_tail;
+    R10 = PASS R10;
+    IF EQ JUMP _dl_back;
+    JUMP _sp_tail;
+#else
     JUMP _dl_back;
+#endif
 
 .SECTION/DM seg_dmda;
 .GLOBAL _dl_xid;
@@ -422,7 +436,7 @@ _dl_nodiag:
 .VAR _dl_svl2 = 0;
 .VAR _dl_svl3 = 0;
 .VAR _dl_beat = 0;
-// The module step (fault table word 25): the static word that core/dyndsp exports as `_dk_step` when the record word is not available.
+// The module step (fault table word 25): the static word that core/dyndsp exports as `_dk_step`.
 .VAR _dk_step = 0;
 // The previous block's record address (word 30).
 .VAR _dk_rec = 0;

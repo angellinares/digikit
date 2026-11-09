@@ -13,15 +13,20 @@ pub struct Script {
 
 impl Script {
     pub fn from_env() -> Self {
+        Self::with_notes(std::env::var("NOTE_EVENTS").ok().as_deref())
+    }
+
+    /// The QA sequence plus the key events of NOTES ("trig" or "play"; anything else: none).
+    pub fn with_notes(notes: Option<&str>) -> Self {
         let mut events = Vec::new();
-        match std::env::var("NOTE_EVENTS").as_deref() {
-            Ok("trig") => {
+        match notes {
+            Some("trig") => {
                 for t in [60_000_000, 110_000_000, 160_000_000] {
                     events.push((t, 25, true));
                     events.push((t + 40_000_000, 25, false));
                 }
             }
-            Ok("play") => {
+            Some("play") => {
                 events.push((60_000_000, 20, true));
                 events.push((61_000_000, 20, false));
                 events.push((200_000_000, 21, true));

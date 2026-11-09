@@ -279,8 +279,8 @@ test(
       assert.equal(JSON.parse(expected).arch, 'sharc');
     }
     // a refusal is a message, not a trap
-    const [bp, bl] = put(Buffer.from(JSON.stringify({ sources: ['.SECTION/PM seg_pmco;\nR0 = ASHIFT R11 BY 3;\n'] })));
+    const [bp, bl] = put(Buffer.from(JSON.stringify({ sources: ['.SECTION/PM seg_pmco;\nDM(15, I4) = I0;\n'] })));
     assert.equal(x.pk_sharc_object(bp, bl), 1);
-    assert.match(text(x.pk_err_ptr, x.pk_err_len), /known Selache encode bug/);
+    assert.match(text(x.pk_err_ptr, x.pk_err_len), /the ISA does not allow/);
   },
 );

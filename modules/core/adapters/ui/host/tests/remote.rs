@@ -35,12 +35,24 @@ fn the_page_shows_what_the_module_holds_and_releases_it() {
     assert_eq!(cmd(KEY, &[5, 1]), 0);
     assert_eq!(cmd(KEY, &[100, 1]), 0);
     open(p); // an open menu is filled again
-    assert_eq!(render(), ["KEYS HELD 2", "LAST: KEY 100D", "RELEASE ALL KEYS"]);
-    assert_eq!((unsafe { r_key_down(5) }, unsafe { r_key_down(100) }), (1, 1));
+    assert_eq!(
+        render(),
+        ["KEYS HELD 2", "LAST: KEY 100D", "RELEASE ALL KEYS"]
+    );
+    assert_eq!(
+        (unsafe { r_key_down(5) }, unsafe { r_key_down(100) }),
+        (1, 1)
+    );
     // the action lets go of every key it holds and the page shows it
     press_yes(2);
-    assert_eq!((unsafe { r_key_down(5) }, unsafe { r_key_down(100) }), (0, 0));
-    assert_eq!(render(), ["KEYS HELD 0", "LAST: RELEASE", "RELEASE ALL KEYS"]);
+    assert_eq!(
+        (unsafe { r_key_down(5) }, unsafe { r_key_down(100) }),
+        (0, 0)
+    );
+    assert_eq!(
+        render(),
+        ["KEYS HELD 0", "LAST: RELEASE", "RELEASE ALL KEYS"]
+    );
     // a key up takes it off the count
     assert_eq!(cmd(KEY, &[7, 1]), 0);
     assert_eq!(cmd(KEY, &[7, 0]), 0);

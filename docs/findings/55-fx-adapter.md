@@ -96,7 +96,7 @@ Effects can also be loaded at run time on the Digitakt II (`docs/design/digikit-
   free row); one effect steady 736 (was 732), a chain whose rows are all off 178 (was 174). The Digitakt II images that carry `core/dynfx` (the `device` and `emulator` patch sets) therefore always pay the hook: x1.03 DSP CPU in the
   emulator (the table above) and about 31 instructions per block on the DSP (0.005 % of a 666,667-cycle block at the emulator's model clock).
 - State of a run-time effect lives in the module's own DSP range (behind its image), zeroed by the adapter when the effect switches on.
-- Proof: `tests/digikit/scenarios/fx-dyn-dt2.toml` (`tools/patchkit/pk_digikit_fx.py`): the sine and `test/dyn-fx-gain` selected at boot play as 0.5 x the dry sine (within 2 ulps, from the onset on); the chain's row
+- Proof: `REF:tests/digikit/scenarios/fx-dyn-dt2.toml` (`tools/patchkit/pk_digikit_fx.py`): the sine and `test/dyn-fx-gain` selected at boot play as 0.5 x the dry sine (within 2 ulps, from the onset on); the chain's row
   holds the record's words; MODULES, CAPACITY (`FX_SLOTS` used 1 of 3) and `dkneeds` agree; deselect and restart gives the dry PCM bit for bit; three effects play as 0.125 x dry and the fourth is refused (`E_DSP_ROWS`
   and the fit rule: `FX 1 > 0 FREE`).
 
@@ -110,7 +110,7 @@ Effects can also be loaded at run time on the Digitakt II (`docs/design/digikit-
 ## Run-time effects on the Digitone II (F4 step 5, 2026-10-24) **[D]**
 
 `core/dynfx` builds for the Digitone II 1.12 (`[limits] fx_slots` 3 as on the Digitakt II; the registry `fx`, window 2 of `core/dsp-link` and the hook H1 were already there). Rows, the runtime and the proof are
-the Digitakt II's: scenario `tests/digikit/scenarios/fx-dyn-dn2.toml` (`tools/patchkit/pk_digikit_fx.py`, quick tier, 82 s): the sine and `test/dyn-fx-gain` selected at boot play as 0.5 x the dry sine (within 2 ulps from the
+the Digitakt II's: scenario `REF:tests/digikit/scenarios/fx-dyn-dn2.toml` (`tools/patchkit/pk_digikit_fx.py`, quick tier, 82 s): the sine and `test/dyn-fx-gain` selected at boot play as 0.5 x the dry sine (within 2 ulps from the
 onset on), the chain's row holds the record's words, MODULES, CAPACITY (`FX_SLOTS` used 1 of 3) and `dkneeds` agree, deselect and restart gives the dry PCM bit for bit, three effects play as 0.125 x dry and the fourth is
 refused (`E_DSP_ROWS`, and the fit rule). The sine is picked by its list position on the Digitone II (`Rig.pick`: the track's type word is read on the Digitakt II only).
 

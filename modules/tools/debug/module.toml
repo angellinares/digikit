@@ -1,0 +1,26 @@
+[module]
+id = "digikit/debug"
+version = "0.1.0"
+name = "Debug log"
+category = "tools"
+type = "service"
+author = "digikit"
+status = "experimental"
+summary = "Keeps the runtime's event log (512 events) and lets a computer read it, set its levels and peek at RAM over USB MIDI."
+# tools/device/dklog.py, the workbench's Log drawer and dk-session speak its protocol (host = true: it names the module's commands)
+host = true
+ports = ["dt2-1.17", "dn2-1.12"]
+requires = []
+conflicts = []
+
+[targets]
+"dt2-1.17" = "experimental"
+"dn2-1.12" = "experimental"
+
+# A run-time module (`.dkm`, `patchkit pack digikit/debug --device dt2`), built from C. dkm_init registers the debug range of sdk/sdk.toml (LOG, PEEK, LOGCFG)
+# with Api.register_cmds and sets the runtime's log sink (`dkrt_log_sink_set`). The 512-event ring is a static array, so the arena need is what `dkneeds` reads from
+# the file. Its tick (set with the sink, once per UI pass; no slot) watches the machine type of each track. The debug log is on exactly when the module is loaded.
+[[object]]
+path = "build/debug.dko.json"
+sources = ["src/c/debug.c"]
+place = "cf.expansion"

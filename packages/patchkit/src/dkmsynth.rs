@@ -153,7 +153,7 @@ pub fn synth(spec: &Spec, dev: &str, models: &Models) -> Result<Vec<u8>> {
         device,
         ..Default::default()
     };
-    let template = if dev == "dn2" { 0xd5 } else { 0xd1 };
+    let template = if dev == "dn2" { 0xd5 } else { 0xcc };
     let slots = model.knobs.count.max(1) as i64;
     for i in 0..spec.params {
         reg.params.push(Param {
@@ -233,9 +233,12 @@ pub fn synth(spec: &Spec, dev: &str, models: &Models) -> Result<Vec<u8>> {
                     clear_bytes: 0,
                     voices: v.voices,
                     ranges: [0; 8],
+                    latched: 0,
                 });
             }
             DspSection {
+                sample_bank: None,
+                sample_tracks: None,
                 device,
                 image: vec![spec.fill; d.image as usize],
                 bss: d.bss,
@@ -253,11 +256,13 @@ pub fn synth(spec: &Spec, dev: &str, models: &Models) -> Result<Vec<u8>> {
         version: 0x00_01_00,
         runtime_min: dkm::runtime_version(),
         trace: false,
+        stereo: false,
+        api_minor: 0,
     };
     let max = if spec.oversize {
         usize::MAX
     } else {
-        dkm::MAX_FILE
+        dkm::max_file()
     };
     dkm::pack_full_max(Some(&obj), &reg_bytes, &dsp_bytes, &opts, max)
 }
@@ -315,10 +320,7 @@ mod tests {
                 (8, 16, pages)
             );
             // a machine's key is the hashed key of "<module>:m<i>"
-            assert_eq!(
-                r.machines[3].type_no,
-                register::machine_key("cap/r", "m3")
-            );
+            assert_eq!(r.machines[3].type_no, register::machine_key("cap/r", "m3"));
             r.check().unwrap();
         }
         let e = synth(
@@ -355,7 +357,7 @@ mod tests {
         let e = synth(&Spec::parse(big).unwrap(), "dt2", &models()).unwrap_err();
         assert!(e.0.contains("runtime stages"), "{}", e.0);
         let f = make(&format!("{big}oversize = true\n"), "dt2");
-        assert!(f.len() > dkm::MAX_FILE);
+        assert!(f.len() > dkm::max_file());
         for bad in [
             "name = \"x\"\npad = 3\n",
             "name = \"\"\n",

@@ -1,4 +1,4 @@
-# SETTINGS > DIGIKIT: the entry is the ninth row of SETTINGS and opens the menu (ABOUT, HEALTH, MEMORY, MODULES, DEBUG); MODULES opens the list (the
+# SETTINGS > DIGIKIT: the entry is the ninth row of SETTINGS and opens the menu (ABOUT, HEALTH, MEMORY, MODULES); MODULES opens the list (the
 # harness card has no store: NO STORE); ABOUT shows the runtime; MEMORY shows the capacity; NO leaves. The entry, the menu and the MEMORY page are pinned as frames
 # (hashes in tests/patchkit/smoke/goldens.json): the pages have no glyphs, and MEMORY (a text page) has no highlighted row. ABOUT is checked by the rows the menu keeps in
 # DK_ABOUT, MEMORY also by those in DK_MEM, MODULES by the store state of its list (2 = no store, no rows). A key on a text page must not fault, and one DOWN must not change

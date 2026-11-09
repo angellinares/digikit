@@ -192,8 +192,10 @@ typedef enum {                         /* parameter kinds: decide the formatter 
 typedef struct dk_voice_in {            /* per call, built by the adapter                                         */
     int32_t  pitch;                     /* semitones << 8, MIDI note 60 = 60 << 8, tune already added            */
     int32_t  velocity;                  /* 0 .. 127 << 8                                                          */
-    uint32_t block;                     /* blocks since note-on, 0 on the note-on block; wraps at 2^32            */
-} dk_voice_in;
+    uint32_t block;                     /* byte 8: blocks since note-on, 0 on the note-on block; wraps at 2^32    */
+    float   *out;                       /* byte 12: render writes DK_BLOCK floats here                            */
+    uint32_t track;                     /* byte 16: source track 0 .. 15, latched at note_on (machine 1.1)        */
+} dk_voice_in;                          /* 20 bytes on SHARC; pitch at byte 0, velocity at byte 4                 */
 
 /* Static description, one per module, in the read-only data section; the packer reads it by the symbol `dk_machine_desc`. */
 typedef struct dk_machine_desc {
@@ -307,13 +309,14 @@ record_mark     = 0x1b9
 note_on         = "record"                # DN2: "trig-edge", trig_hw = 0x11
 pair            = "copy-even"             # DN2: "none"
 stock_knobs     = { pitch = 0xca, level = 0xd1 }   # pitch: the TUNE knob, folded into `pitch`; level: the engine's
-param_slots     = [1, 2, 4, 5]            # knob positions available to module parameters, in order (DN2: [0, 1, 2, 3])
+param_slots     = [1, 2, 4, 5, 6]         # knob positions available to module parameters, in order (DN2: [1, 2, 4, 5, 6, 0, 3, 7])
 param_template  = { percent = 0xd1, bipolar = 0xd1, enum = 0xd1 }   # DN2: 0xd5
 block_cycles    = 666666                  # dsp_clock_hz / dsp_blocks_per_second (existing [board] fields)
 ```
 
-`param_slots = [1,2,4,5]` keeps pluck's present knob positions (`pluck/module.toml:42`: knobs 3 and 6 empty), because a saved project stores values by
-slot. Why 3 and 6 are empty is not recorded; this design keeps it **[O]**: it is a clone-of-SAMPLE constraint or a pluck choice. A module with more
+`param_slots = [1,2,4,5,6]` keeps pluck's knob positions (`pluck/module.toml:42`: knobs 3 and 6 empty), because a saved project stores values by
+slot. Knob D (slot 3) is the sample slot on a SAMPLE clone (finding 02). Knob G (slot 6) is used by stock sample machines and works for a module; knob C is
+unused by every stock machine ([finding 100](../findings/100-module-limits.md)). A module with more
 parameters than `param_slots` is refused at build time with the profile's number in the message. (Slot rule: D1, section 11.5.)
 
 ### 5.3 The guard inside the adapter
@@ -419,14 +422,14 @@ into the open. DN2 needs per-device `voices` in `[limits]` if the memory is to b
 ### 6.4 What INFO and LIST report
 
 INFO (`upload.rs:470-493`, `digikit-upload.md:61`) keeps its layout (commands are only added; protocol 1). Proposal: a new command `MODULES` (index -> id, version, types, cf range,
-dsp range, state bytes, voices, health state, faults) and the free/largest figures for both memories; LIST keeps listing store files with `size` and `sha256`. INFO's flags gain "a module is disabled".
+dsp range, state bytes, voices, health state, faults) and the free/largest figures for both memories; LIST keeps listing store files with `size` and the file `hash`. INFO's flags gain "a module is disabled".
 `dkrt_module` (`lib.rs:671`) returns the same record through the C ABI so the DIGIKIT menu can show it (`digikit-runtime.md:58`).
 
 ### 6.5 What fits (built, docs/plans/what-fits.md)
 
 A module does not say what a load takes: the needs are inferred from the file's contents by one function (`dkneeds::needs_of`, docs/design/digikit-dkm.md, "Needs are inferred from the contents"), so a contributed or hand-built `.dkm` cannot misreport them;
 the runtime checks the same limits at load anyway. The menu runs it on the card's files, patchkit and its wasm on the host (`patchkit needs`, `pk_needs`). One rule, `fits_now(needs, capacity)`, compares them with the device's CAPACITY and names the first short resource
-(`dkrt_fit` for the menu, `dkfit.ts` for the host app, `dkfit.py` for the tools; `sdk/vectors/fit-vectors.json` keeps the three equal). The DIGIKIT menu's MODULES rows show the memory a module takes and `x` when it will not fit
+(`dkrt_fit` for the menu; the host app calls the same code through `pk_fit` of patchkit.wasm and the tools through `patchkit fit --json -`; the vectors are `sdk/vectors/fit-vectors.json`). The DIGIKIT menu's MODULES rows show the memory a module takes and `x` when it will not fit
 next to the ticked ones; the line above APPLY & RESTART gives the DSP and the CPU memory of the ticked set (`DSP 85% CPU 1%`); the Transfer page tags each library module `fits` or `won't fit` and says whether the ticked set fits together; the Memory panel of the desktop app (Emulator and Remote pages) shows what each loaded module takes of each resource the device limits; `dk run` refuses a module that does not fit unless `--force`; `module:check` prints the needs
 and whether the module fits an empty device. Because the module set is fixed per session, a selection is checked against the limits with the other ticked modules taken out, not against what is loaded now.
 
@@ -481,7 +484,7 @@ file, the key path, the rule and the fix, and are produced by the same code in t
 
 ```
 modules/machines/pluck/module.toml: [[param]] "decay": max 0x8000 is above the largest word 0x7f00 for kind "percent".
-modules/machines/pluck/module.toml: 5 parameters declared; digitakt-ii allows 4 ([adapter.machine] param_slots in devices/digitakt-ii.toml).
+modules/machines/pluck/module.toml: 5 parameters declared; digitakt-ii allows 5 ([adapter.machine] param_slots in devices/digitakt-ii.toml).
 ```
 
 Generated constants: `build/gen/` per module as today (`consts.rs`, `<dev>.inc`, `gallery.json`; finding 27, `27-module-schema.md:20-21`), plus `desc.inc` (`n_params`, ranges) that the
@@ -537,7 +540,7 @@ The SDK a module author sees: `<dk/machine.h>` (or `sdk/asm/dk_machine.inc`), th
 
 ## 10. Migration
 
-Every step keeps `main` green (`mise run verify`), is one lane, and starts from a recorded oracle. PCM pins in `tests/scenarios/*.json` change only with Em's approval (AGENTS.md):
+Every step keeps `main` green (`mise run test`), is one lane, and starts from a recorded oracle. PCM pins in `tests/scenarios/*.json` change only with Em's approval (AGENTS.md):
 a step that would move a pin stops and asks.
 
 ### 10.1 Order
@@ -551,7 +554,7 @@ a step that would move a pin stops and asks.
 | 4. Runtime table, limits, state placement | section 6; DSP section v3 | `table_check` unit test; `tests/digikit` boot scenarios (`card-safety`, `crash-capture`, `safe-fault`, `debug-*`) unchanged results; a new test that fills the machine rows, the DSP area and the module table and expects the named error codes |
 | 5. Manifest v2 and profile fields | section 7 | pluck rebuilt from the v2 manifest produces rows equal to today's `plan.json` rows for the same firmware (the test of finding 27, `27-module-schema.md:23-40`, with the new inputs); `patchkit gen --check` |
 | 6. Build-time checks | section 8 | each check has a negative fixture that must fail with the named message (as `pk_conform.NEGATIVE`, `:58-61`) |
-| 7. Fixtures | `dyn-guard-nan`, `dyn-dsp-hang`, `dyn-fault`, `dyn-fault-late`, `dyn-crash`, `c-demo`, `rust-demo`, `dn2-*`, `twin-*`, `registry-demo`, `dyn-demo`, `dyn-params`, `dyn-sine-dn2` move to `tests/fixtures/modules/`; scenarios and `types.toml` keys are renamed | the scenarios' PCM and log results unchanged; `tools/devtools/pathcheck.py` clean |
+| 7. Fixtures | `dyn-guard-nan`, `dyn-dsp-hang`, `dyn-fault`, `dyn-fault-late`, `dyn-crash`, `c-demo`, `rust-demo`, `dn2-*`, `twin-*`, `registry-demo`, `dyn-demo`, `dyn-params`, `dyn-sine-dn2` move to `tests/fixtures/modules/`; scenarios and `types.toml` keys are renamed | the scenarios' PCM and log results unchanged |
 | 8. Retire patched-in content | delete `digikit/pluck` as patched-in and `test/dyn-pluck`; one `digikit/pluck`, always run time; same for `xslice` if it fits a contract (`master-gain` is deleted) | see 10.3 |
 | 9. Tooling and guide | `module:new`, `module:check` extensions, Target, the guide | `module:new machine demo` then `module:check demo` passes on both devices, in CI |
 
@@ -603,7 +606,7 @@ with the toolchains (`module:check` needs only Selache, no firmware). If the web
 | Risk | Detail | Mitigation |
 | --- | --- | --- |
 | C on SHARC | the public compiler was evaluated on six small functions; no optimiser to speak of (24 instructions against 7 by hand for a scale loop); pointers are byte addresses, so whether silicon agrees is open (`20-patch-toolchains.md:71-82`); the frame call convention | assembly remains the supported language of v1; a C pilot (the `pluck` string loop in C, measured against the assembly on the rig for cycles) before `--lang c` is offered |
-| contract cost | adapter and frame call add cycles; DT2 has 16 tracks x 666,666 cycles per block of headroom shared with the firmware | cost targets in 5.4, measured on the rig in step 2 before step 3 starts |
+| contract cost | adapter and frame call add cycles; DT2 has 16 tracks x 666,667 (1 GHz, [D] finding 100) cycles per block of headroom shared with the firmware | cost targets in 5.4, measured on the rig in step 2 before step 3 starts |
 | DN2 memory | 320 KiB DSP area; pluck alone uses 256 KiB | state is declared and reported; `voices` per module and per device is in the profile |
 | DN2 engine constraints | the note-on is a one-block trig bit; the amp envelope and gate come after the module; whether the engine reads `own_dsp` machines the same for every module is only read for pluck (finding 33) | the DN2 adapter is the only place that knows; step 3 re-runs `equiv-dn2-set` and `pages-dyn-pluck` |
 | "write only own state" is not provable statically | computed pointers | write-set check on the rig (needs a store hook) plus a canary word after each state block, checked by the adapter, cost about 4 instructions per call |
@@ -614,12 +617,11 @@ with the toolchains (`module:check` needs only Selache, no firmware). If the web
 ### 11.2 Questions for Em
 
 1. Is a saved project with pluck as type 9 (the patched-in one) in use? If not, retire it without an alias (10.3).
-2. Why are knobs 3 and 6 empty on the DT2 pluck? If it is only a choice, `param_slots = [1,2,3,4,5,6]` gives six parameters; if it comes from the SAMPLE clone, the limit is four. A profile fact either way.
-3. C on SHARC: do you want the pilot measured before the contract is frozen, or contract first with assembly only? Recommendation: contract first; the contract does not depend on the language.
-4. DN2 DSP memory: accept 256 KiB for one pluck, or shorten the lines (changes the sound at low notes) or reduce `voices` on DN2?
-5. Should `xslice` (a SLICE clone, no synthesis) be part of the SDK as a second Machine kind ("sample machine") or stay outside?
-6. Cycle enforcement: SHARC cannot be preempted; only the guard's output check and the DSP hang breadcrumbs (finding 48) exist. Is a declared-and-measured budget enough, or should the runtime take the DSP block time from HEALTH and disable the heaviest machine when the block time is over budget?
-7. A new command `MODULES` and DSP section v3 raise `RUNTIME_VERSION` to 6; a card with runtime-5 `.dkm` files must still load (the plan: yes, both loaders in one runtime). Confirm. (Superseded by D3, section 11.5.)
+2. C on SHARC: do you want the pilot measured before the contract is frozen, or contract first with assembly only? Recommendation: contract first; the contract does not depend on the language.
+3. DN2 DSP memory: accept 256 KiB for one pluck, or shorten the lines (changes the sound at low notes) or reduce `voices` on DN2?
+4. Should `xslice` (a SLICE clone, no synthesis) be part of the SDK as a second Machine kind ("sample machine") or stay outside?
+5. Cycle enforcement: SHARC cannot be preempted; only the guard's output check and the DSP hang breadcrumbs (finding 48) exist. Is a declared-and-measured budget enough, or should the runtime take the DSP block time from HEALTH and disable the heaviest machine when the block time is over budget?
+6. A new command `MODULES` and DSP section v3 raise `RUNTIME_VERSION` to 6; a card with runtime-5 `.dkm` files must still load (the plan: yes, both loaders in one runtime). Confirm. (Superseded by D3, section 11.5.)
 
 ### 11.3 Estimates (agent time, a lane each; wall time is shorter with lanes in parallel; outcome risk stated separately)
 
@@ -681,7 +683,7 @@ A module that needs a SysEx command of its own (the first is `digikit/remote`: k
 The handler is `int handler(u32 cmd, u32 seq, const u8 *body, u32 len, u8 *out)`: it returns the number of reply bytes written to `out`, or a negative status. It runs in the firmware's
 MIDI task, so it is short and never waits. The ranges a module may take are reserved in `sdk/sdk.toml` `[protocol.ranges]`; a request outside them, over another module's, or empty
 returns `E_CMD_RANGE` (-64). The ranges are released when the module's `fini` has run. `docs/design/digikit-upload.md` ("Service commands") has the wire side; the fixture
-`test/svc-echo` and `tests/regression/runtime/service-commands.ts` show the round trip; the acceptance cases run with full verification, explicit `--only runtime-fixture`, or `mise run test:runtime -- service-commands` (see `tests/regression/README.md` for prerequisites).
+`test/svc-echo` and `modules/core/runtime/tests/service-commands/service-commands.device.test.ts` show the round trip; the acceptance cases run with default verification or `pnpm nx:pilot run core/runtime-service-tests:test-device` (see `tests/regression/README.md` for prerequisites).
 
 ### 11.7 The input adapter (`core/input`, runtime 0.2.5)
 
@@ -742,8 +744,8 @@ Scope: what the SDK contract and the adapter must provide. The tools and the tra
 
 | Item | Fact |
 | --- | --- |
-| log | 512 events of 32 bytes in RAM: `seq`, block-counter `time`, `kind`, `flags` (bit 0 error), five words; DEBUG off keeps errors only (`dlog.rs:13-60`; `46-digikit-debug.md:56-58`) |
-| switch | DEBUG on/off, remembered in the selection record (`FLAG_DEBUG_OFF`, `modules/core/runtime/sdk/src/lib.rs:337`); no levels, no categories |
+| log | events of 32 bytes: `seq`, block-counter `time`, `kind`, `flags` (bit 0 error), five words; a small ring of 32 in the runtime (`dlog.rs`), 512 in the module `digikit/debug` (`46-digikit-debug.md`) |
+| switch | the module `digikit/debug` loaded or not; levels by LOGCFG (RAM only), no categories |
 | transport | SysEx LOG 0x20, PEEK 0x21, INFO (`upload.rs:36-45`); the emulator answers the same (`dklog.py --emu`); one decoder, `tools/device/dklog.py` (`KINDS`, :111), a hand copy of `dkrt_sdk::logk` (`lib.rs:866`) |
 | module logging | ColdFire only: `Api.log(msg, value)`, 24 characters, kind MOD_LOG (14), no module id (`digikit-runtime.md:82`, `46-digikit-debug.md`, table row 14) |
 | DSP | no API. The wrapper writes fixed words: heartbeat, context registers, breadcrumb, dispatch and return counters, guard words, 24 words in the reply record (`dlog.rs:123-134`; `48-dsp-breadcrumbs.md:8-40`; `51:59-62`) |
@@ -758,8 +760,8 @@ Scope: what the SDK contract and the adapter must provide. The tools and the tra
 | source | `flags` bits 8 to 15: module record index + 1 (0 = the runtime); with `gen` in argument 4 where an event is module-scoped |
 | categories | the existing `kind` ranges are the categories: boot, card, upload, dsp-link, adapter, machine, module, crash. A `LogConfig` of one default level, one level per category (16 bytes) and one per module record (8 bytes) |
 | control | a new SysEx command `LOGCFG` (get, set): `dklog level debug`, `dklog level dsp-link=trace`, `dklog level module:pluck=debug`. No reflash |
-| memory | the default level and the category levels go in the selection record next to `FLAG_DEBUG_OFF` (which maps to default = error); per-module levels are not remembered (modules come and go), they reset at boot. Whether the record has room for 16 bytes is **[O]** (`digikit-store.md`) |
-| cost at off | one byte compare in `ev()` before any work, as the DEBUG test is today (`dlog.rs:44-46`) |
+| memory | the default level and the category levels would go in the selection record (bit 1 of its flags is reserved, once the debug-off flag); per-module levels are not remembered (modules come and go), they reset at boot. Whether the record has room for 16 bytes is **[O]** (`digikit-store.md`) |
+| cost at off | one pointer test in `ev()` before any work, when no sink is set (`dlog.rs`) |
 
 ### 13.3 Module logging API
 

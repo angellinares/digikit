@@ -9,14 +9,13 @@ emulator available.
 The panel is rebuilt only when its sources changed (DIGI_EMU_PANEL=1 forces
 it). The app is built once with cargo build and the binary is run directly;
 --build-only stops after the build and prints the binary path. A stale PGO
-profile is used with a warning; `mise run perf:pgo` retrains it (or launch once
-with DIGI_EMU_PGO_TRAIN=1).
+profile is not used: the build falls back to plain with a warning. `mise run
+perf:pgo` retrains it (or launch once with DIGI_EMU_PGO_TRAIN=1).
 """
 
 from __future__ import annotations
 
 import hashlib
-import json
 import os
 import pathlib
 import subprocess
@@ -24,19 +23,12 @@ import sys
 
 ROOT = pathlib.Path(__file__).resolve().parents[2]
 from tools import python_env  # noqa: E402
-from tools.emulator import digi_env  # noqa: E402
+from tools.emulator import digi_env, emulator_config  # noqa: E402
 
-# Fast-tier regions (SHARC_FAST_REGIONS) and block-translator cluster roots
-# (SHARC_BLOCKTRANS), keyed by the SHA-256 of the DN2 .syx. The data lives in
-# tools/emulator/fast_regions.json.
-FAST_REGIONS = {k: v.get("fast_regions", "") for k, v in digi_env.fast_table().items()}
-FALLBACK_REGIONS = {
-    k: v.get("fallback_regions", "") for k, v in digi_env.fast_table().items()
-}
-BLOCKTRANS_ROOTS = {
-    k: v.get("blocktrans", "") for k, v in digi_env.fast_table().items()
-}
-PANEL_STAMP = ROOT / "out" / "native" / "panel-stamp.json"
+# The desktop app embeds apps/desktop/ui/dist when cargo builds it, so a rewritten dist rebuilds the app (about 18 s). The digest of the
+# sources a dist was built from is kept inside that dist, and every worktree has its own dist: a stamp in the shared out/ made worktrees
+# with different UI sources rebuild each other's dist at every launch.
+PANEL_STAMP_NAME = ".panel-digest"
 PANEL_INPUTS = (
     "apps/desktop/ui",
     "apps/desktop/package.json",
@@ -45,70 +37,44 @@ PANEL_INPUTS = (
 )
 
 
-def _lookup(table: dict[str, str], syx: pathlib.Path) -> str:
-    try:
-        digest = hashlib.sha256(syx.read_bytes()).hexdigest()
-    except OSError:
-        return ""
-    return table.get(digest, "")
-
-
 def fast_regions_for(syx: pathlib.Path) -> str:
     """The verified fast regions for this firmware file, or "" if unknown."""
-    return _lookup(FAST_REGIONS, syx)
-
-
-def fallback_regions_for(syx: pathlib.Path) -> str:
-    """Runtime fallback roots for this firmware, or empty if unknown."""
-    return _lookup(FALLBACK_REGIONS, syx)
-
-
-def blocktrans_roots_for(syx: pathlib.Path) -> str:
-    """The verified block-translator cluster roots for this firmware, or ""."""
-    return _lookup(BLOCKTRANS_ROOTS, syx)
+    return digi_env.fast_regions_for(syx)
 
 
 def set_fast_regions(
     args: list[str], environ: dict[str, str] | os._Environ[str]
-) -> None:
+) -> emulator_config.Resolution | None:
     """Enable the fast tier for a coupled run unless the user chose otherwise.
 
-    Explicit lists win; DIGI_EMU_FAST=0 suppresses defaults. Explicit regular
-    regions or auto selection suppress fallback defaults for that core.
+    The rules are in `emulator_config.resolve` (explicit values win, DIGI_EMU_FAST=0 adds
+    nothing, explicit regions or auto selection suppress fallback roots for that core).
+    Returns the resolution of the first core, None when DIGI_EMU_FAST=0.
     """
     if environ.get("DIGI_EMU_FAST") == "0":
-        return
+        return None
     syx = (
         pathlib.Path(args[args.index("--audio-profile-syx") + 1])
         if "--audio-profile-syx" in args
         else digi_env.firmware(environ)
     )
-    # The first core's lists are SHARC_FAST_REGIONS and SHARC_BLOCKTRANS; the second core (`--also-coupled`, whose
-    # firmware is the fourth value) reads its own with a _2 suffix, since the addresses belong to one device's DSP image.
-    lists = [("", syx)]
+    # Slot 1's lists are SHARC_FAST_REGIONS and SHARC_BLOCKTRANS; slot 2 reads its own with a _2 suffix, since the
+    # addresses belong to one device's DSP image. In a two-core build (`--also-coupled`, whose firmware is the fourth
+    # value) slot 1 is always the DN2 core and slot 2 the DT2 core (see `second_core`), so the suffix follows the
+    # firmware's device, not the launch order.
+    firmwares = [syx]
     if "--also-coupled" in args and (at := args.index("--also-coupled") + 4) < len(
         args
     ):
-        lists.append(("_2", pathlib.Path(args[at])))
-    for suffix, firmware in lists:
-        # Check explicit fast settings before installing the regular default.
-        fallback_name = f"SHARC_FAST_FALLBACK_REGIONS{suffix}"
-        if (
-            fallback_name not in environ
-            and f"SHARC_FAST_REGIONS{suffix}" not in environ
-            and "SHARC_FAST_AUTO" not in environ
-            and (fallback := fallback_regions_for(firmware))
-        ):
-            environ[fallback_name] = fallback
-        if f"SHARC_FAST_REGIONS{suffix}" not in environ:
-            regions = fast_regions_for(firmware)
-            if regions:
-                environ[f"SHARC_FAST_REGIONS{suffix}"] = regions
-        # Cluster roots follow the same rules; a user-set SHARC_BLOCKTRANS wins.
-        if f"SHARC_BLOCKTRANS{suffix}" not in environ:
-            roots = blocktrans_roots_for(firmware)
-            if roots:
-                environ[f"SHARC_BLOCKTRANS{suffix}"] = roots
+        firmwares.append(pathlib.Path(args[at]))
+    dt2_first = len(firmwares) == 2 and digi_env.device_for_syx(syx) == "dt2"
+    suffixes = ["_2", ""] if dt2_first else ["", "_2"]
+    first = None
+    for suffix, firmware in zip(suffixes, firmwares, strict=False):
+        res = digi_env.resolve_tiers(None, firmware, suffix, environ)
+        environ.update(res.add)
+        first = first or res
+    return first
 
 
 def generated_core(args: list[str] | None = None) -> pathlib.Path:
@@ -151,9 +117,10 @@ def second_core(
     device: str, *, enabled_by_default: bool = False
 ) -> tuple[list[str], pathlib.Path | None]:
     """The other device's ready inputs for a binary with both generated cores (`--also-coupled`) and its generated core
-    (SHARC_GEN_DIR_2). Desktop launches enable it by default; daemons opt in with DIGI_EMU_SECOND_CORE=1.
-    DIGI_EMU_SECOND_CORE=0 disables it. The build has no PGO profile yet (profiles are per single-core binary).
-    Nothing (a one-core launch) when it is off or the other device lacks a ready set or a core."""
+    (a preset SHARC_GEN_DIR_2 names the other device's core, as SHARC_GEN_DIR names the launching device's; the caller
+    then stores both in slot order). Desktop launches enable it by default; daemons opt in with
+    DIGI_EMU_SECOND_CORE=1. DIGI_EMU_SECOND_CORE=0 disables it. The two-core build has its own PGO profile (device
+    `both`). Nothing (a one-core launch) when it is off or the other device lacks a ready set or a core."""
     if (
         os.environ.get("DIGI_EMU_SECOND_CORE", "1" if enabled_by_default else "0")
         != "1"
@@ -235,7 +202,14 @@ def default_audio_args(
     print(f"native core: {generated} ({reason})", file=sys.stderr)
     also, second = second_core(device, enabled_by_default=second_core_by_default)
     if second is not None:
-        os.environ["SHARC_GEN_DIR_2"] = str(second)
+        # Slot order of a two-core build, whichever firmware launches: slot 1 (SHARC_GEN_DIR) is the DN2 core, slot 2
+        # (SHARC_GEN_DIR_2) the DT2 core. The engine is chosen by the firmware's device at run time, and the
+        # profile, the target dir and the region lists are keyed by slot.
+        dn2_core, dt2_core = (
+            (second, generated) if device == "dt2" else (generated, second)
+        )
+        os.environ["SHARC_GEN_DIR"] = str(dn2_core)
+        os.environ["SHARC_GEN_DIR_2"] = str(dt2_core)
         args.extend(also)
     if positional is None:
         args.insert(0, str(paths["firmware"]))
@@ -355,7 +329,10 @@ def cargo_command(args: list[str], pgo: object | None = None) -> list[str]:
 
 
 def device_for_args(args: list[str]) -> str:
-    """The device a coupled launch runs (`dn2`, `dt2`), by its firmware file."""
+    """The PGO profile device of a coupled launch: `both` for a two-core build (SHARC_GEN_DIR_2 is set), else the
+    device of its firmware file (`dn2`, `dt2`)."""
+    if os.environ.get("SHARC_GEN_DIR_2"):
+        return "both"
     if "--audio-profile-syx" in args:
         position = args.index("--audio-profile-syx") + 1
         syx = pathlib.Path(args[position]) if position < len(args) else None
@@ -384,22 +361,40 @@ def train_profile(device: str = "dn2") -> str:
     return f"training failed (exit {done.returncode})" if done.returncode else ""
 
 
+PGO_REPORT: dict[str, str] = {}
+
+
+def pgo_env() -> dict[str, str]:
+    """DIGI_PGO_STATUS and DIGI_PGO_DETAIL for the child, from the last pgo_plan; empty when unknown."""
+    if not PGO_REPORT:
+        return {}
+    return {
+        "DIGI_PGO_STATUS": PGO_REPORT["status"],
+        "DIGI_PGO_DETAIL": PGO_REPORT["detail"],
+    }
+
+
+def note_pgo(status: str, detail: str) -> None:
+    """Remember the PGO state of this launch (partial counts as ok; an ok detail is a path, so it is dropped)."""
+    if status in ("ok", "partial"):
+        status, detail = "ok", ""
+    PGO_REPORT.update(status=status, detail=detail)
+
+
 def pgo_plan(args: list[str]) -> object | None:
     """Profile-use plan for the coupled build, or None for the ordinary build.
 
-    Each device has its own profile (`native_pgo.py train --device dt2`): a DN2
-    profile gives a DT2 build only the shared-engine 3%, a DT2 profile 19%.
-    The launcher never trains on its own. A stale or missing profile falls back
+    Each single-core device has its own profile (`native_pgo.py train --device dt2`): a DN2
+    profile gives a DT2 build only the shared-engine 3%, a DT2 profile 19%. The two-core build (SHARC_GEN_DIR_2
+    set, the desktop default) has the profile of device `both` (`train --device both`), built in a target dir of its
+    own. The launcher never trains on its own. A stale or missing profile falls back
     to the ordinary build (its own target dir, not the launcher's pgo-use). DIGI_EMU_PGO_TRAIN=1 trains a stale or missing
     profile here when the training inputs exist (`mise run perf:pgo` is the usual
     way); DIGI_EMU_PGO=0 skips PGO. Any failure falls back to the ordinary
     build with a WARNING line: launching is never blocked.
     """
+    PGO_REPORT.clear()
     if "--coupled" not in args and "--auto-coupled" not in args:
-        return None
-    if os.environ.get("SHARC_GEN_DIR_2"):
-        # The profiles are trained on single-core binaries; a two-core build runs without one.
-        print("second core: no PGO profile for a two-core build", file=sys.stderr)
         return None
     try:
         from tools.emulator import native_pgo
@@ -428,20 +423,25 @@ def pgo_plan(args: list[str]) -> object | None:
                 else:
                     status, detail = native_pgo.pgo_state(environ, device)
         elif status == "stale":
+            note_pgo(status, detail)
             print(native_pgo.stale_notice(detail, device), file=sys.stderr)
             return None
         else:
+            note_pgo(status, detail)
             print(native_pgo.fallback_notice(status, detail, device), file=sys.stderr)
             return None
     if status == "partial":
         profile = native_pgo.current_profile(device)
         if profile:
+            note_pgo(status, detail)
             print(native_pgo.PARTIAL_NOTICE, file=sys.stderr)
             return native_pgo.plan_for(profile, environ)
         status, detail = "missing", "profile file is gone"
     if status != "ok":
+        note_pgo(status, detail)
         print(native_pgo.fallback_notice(status, detail, device), file=sys.stderr)
         return None
+    note_pgo(status, detail)
     print(
         f"native PGO: using {device.upper() + ' ' if device != 'dn2' else ''}profile "
         + pathlib.Path(detail).name,
@@ -455,6 +455,9 @@ PGO_MISMATCH_WARNING = (
     "live DSP will run ~35% slower. Run uv run python -m tools.emulator.native_pgo train."
 )
 PGO_MISMATCH_WARNING_DT2 = PGO_MISMATCH_WARNING.replace("train.", "train --device dt2.")
+PGO_MISMATCH_WARNING_BOTH = PGO_MISMATCH_WARNING.replace(
+    "train.", "train --device both."
+)
 
 
 def build_command(command: list[str]) -> list[str]:
@@ -495,8 +498,12 @@ def verify_pgo(command: list[str], env: dict[str, str], device: str = "dn2") -> 
     except (OSError, ValueError):
         return
     if done.returncode == 1:
-        warning = PGO_MISMATCH_WARNING_DT2 if device == "dt2" else PGO_MISMATCH_WARNING
+        warning = {
+            "dt2": PGO_MISMATCH_WARNING_DT2,
+            "both": PGO_MISMATCH_WARNING_BOTH,
+        }.get(device, PGO_MISMATCH_WARNING)
         print(warning, file=sys.stderr, flush=True)
+        note_pgo("mismatch", "profile does not match this build")
 
 
 def daemon_command(args: list[str]) -> list[str]:
@@ -555,31 +562,36 @@ def panel_digest() -> str:
         for path in files:
             if path.name.startswith("emulator-core") and path.suffix == ".wasm":
                 continue
+            if "dist" in path.relative_to(top).parts[:1]:
+                continue  # the build output of the panel itself (apps/desktop/ui/dist)
             outer.update(f"{path.relative_to(ROOT)}\0".encode())
             outer.update(hashlib.sha256(path.read_bytes()).digest())
     return outer.hexdigest()
 
 
 def build_panel(environ: dict[str, str] | os._Environ[str]) -> None:
-    """Build the desktop console (apps/desktop/ui) unless its sources match the last build.
+    """Build the desktop console (apps/desktop/ui) unless its sources match the last build of this worktree's dist.
 
     DIGI_EMU_PANEL=1 forces the build.
     """
     digest = panel_digest()
     dist = ROOT / "apps" / "desktop" / "ui" / "dist"
+    if dist.is_symlink():
+        # a link to another worktree's dist (older worktree-setup.sh): that dist belongs to the other tree
+        dist.unlink()
+    stamp = dist / PANEL_STAMP_NAME
     try:
-        same = json.loads(PANEL_STAMP.read_text()).get("digest") == digest
-    except (OSError, ValueError):
+        same = stamp.read_text().strip() == digest
+    except OSError:
         same = False
-    if same and dist.is_dir() and environ.get("DIGI_EMU_PANEL") != "1":
+    if same and environ.get("DIGI_EMU_PANEL") != "1":
         return
     subprocess.run(
         ["pnpm", "--filter", "@digi/desktop", "run", "build:ui"],
         cwd=ROOT,
         check=True,
     )
-    PANEL_STAMP.parent.mkdir(parents=True, exist_ok=True)
-    PANEL_STAMP.write_text(json.dumps({"digest": digest}) + "\n")
+    stamp.write_text(digest + "\n")
 
 
 def plus_drive_files(root: pathlib.Path) -> list[pathlib.Path]:
@@ -771,6 +783,7 @@ def main(args: list[str] | None = None) -> None:
         raise SystemExit("--cf-only cannot be combined with coupled audio options")
     if not force_cf and "--coupled" not in args and "--auto-coupled" not in args:
         args = default_audio_args(args, second_core_by_default=not daemon)
+    fast = None
     if "--coupled" in args or "--auto-coupled" in args:
         generated = generated_core(args)
         if not generated.is_dir():
@@ -779,7 +792,7 @@ def main(args: list[str] | None = None) -> None:
             )
         digi_env.check_generated(generated)
         os.environ.setdefault("SHARC_GEN_DIR", str(generated))
-        set_fast_regions(args, os.environ)
+        fast = set_fast_regions(args, os.environ)
     # The native shell serves the built panel; it does not load browser WASM.
     # Avoid rebuilding the browser core (and its local DSP code) for a desktop run.
     # The daemon has no window: no panel, no PGO.
@@ -798,6 +811,14 @@ def main(args: list[str] | None = None) -> None:
     if build_only:
         print(binary)
         return
+    if not daemon:
+        env.update(pgo_env())
+        # Workbench default from config/emulator.json; an explicit value, including an empty one, still wins.
+        context = digi_env.resolve_tiers(
+            "workbench", digi_env.firmware(env), "", env, lists=False
+        )
+        env.update(context.add)
+        print(emulator_config.startup_line("workbench", env, fast, context), flush=True)
     subprocess.run([str(binary), *args], cwd=ROOT, check=True, env=env)
 
 

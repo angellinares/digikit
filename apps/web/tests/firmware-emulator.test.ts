@@ -12,11 +12,14 @@ import { test } from 'vitest';
 import { connect } from '../../../packages/control-client/src/client.ts';
 import { DkSession, EmuUsbTransport, decode8in7, splitMessages } from '@digi/dk-session';
 import { askSession } from '../src/firmware/firmware-ask.ts';
-import { runFlash, runRpcFlash, type FlowOps, type RpcOps } from '../src/firmware/firmware-flow.ts';
+import { LIMITS, runFlash, runRpcFlash, type FlowOps, type RpcOps } from '../src/firmware/firmware-flow.ts';
 import type { FlashState } from '../src/firmware/firmware-core.ts';
 import { PatchKit, type PreparedFlash } from '../src/patch/patchkit-core.ts';
 
 const socket = process.env.DIGI_FW_EMU_SOCKET;
+const NAME = 'Digitakt II';
+// the fake port list steps the guest while it answers, which takes real time
+const SLOW = { ...LIMITS, portsMs: 3_600_000 };
 const INSTR_PER_MS = 132_000;
 const FLASH_BASE = 0x80000;
 
@@ -81,8 +84,9 @@ test.skipIf(!socket)(
       async release() {
         phase = 'flashing';
       },
-      async portPresent() {
-        if (phase === 'sending') return true;
+      port: NAME,
+      async ports() {
+        if (phase === 'sending') return [NAME];
         if (phase === 'flashing') {
           // the device validates, erases and programs; the port is gone once the programming has stopped
           let last = [0, 0];
@@ -107,7 +111,7 @@ test.skipIf(!socket)(
             `flash: ${last[0]} erases, ${last[1]} programs; the container of ${want.length} bytes equals the image's`,
           );
           phase = 'gone';
-          return false;
+          return [];
         }
         if (phase === 'gone') {
           for (const ev of client.drainEvents()) {
@@ -115,10 +119,10 @@ test.skipIf(!socket)(
           }
           if (phase === 'gone') {
             await ops.sleep(400);
-            return false;
+            return [];
           }
         }
-        return true;
+        return [NAME];
       },
       async ask() {
         const a = await askSession(new DkSession(usb, { timeoutMs: 1500, retries: 0 }));
@@ -157,7 +161,8 @@ test.skipIf(!socket)(
       now: ops.now,
       sleep: ops.sleep,
       release: ops.release,
-      portPresent: ops.portPresent,
+      port: ops.port,
+      ports: ops.ports,
       ask: ops.ask,
     };
     const states: FlashState[] = [];
@@ -167,8 +172,8 @@ test.skipIf(!socket)(
       states.push(s);
     };
     const final = await (menu
-      ? runFlash(ops, p, new AbortController().signal, record)
-      : runRpcFlash(rpcOps, p, new AbortController().signal, record));
+      ? runFlash(ops, p, new AbortController().signal, record, SLOW)
+      : runRpcFlash(rpcOps, p, new AbortController().signal, record, SLOW));
     console.info(`final: ${JSON.stringify(final)}`);
     console.info(
       `image id the patch made: ${p.imageId}; sent ${menu ? `${sendTotal} messages` : `${p.image.length} bytes`}, guest ${Math.round(used / INSTR_PER_MS)} ms`,

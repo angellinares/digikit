@@ -3,20 +3,46 @@ import path from 'node:path';
 import { promisify } from 'node:util';
 import type { DkSession } from '@digi/dk-session';
 import { button, repoRoot, type Session } from '@digi/test-support';
-import type { PatchedSession } from '../support.ts';
-import { installModule, liveArtifacts, moduleArtifact, tap } from './live.ts';
+import { expect } from 'vitest';
+import { aggregate, type PatchedSession } from '../support.ts';
+import { liveArtifacts, record } from './artifacts.ts';
+import { installModule, moduleArtifact } from './install.ts';
+import { expectRuntimeUi } from './ready.ts';
+import { beforeReadinessDeadline, tap } from './waits.ts';
 import { prepareRuntimePlan, type RuntimePlan } from './runtime-plan.ts';
 
 const exec = promisify(execFile);
 const root = repoRoot();
 /** Prepare an exact loaded-image ABOUT plan, then install only the remote module. */
 export async function prepareRemote(runtime: PatchedSession): Promise<RuntimePlan> {
-  const plan = await prepareRuntimePlan(runtime.session, liveArtifacts(runtime.session, 'remote-input'), [
-    'DK_ABOUT',
-    'DK_ABOUT_N',
-  ]);
+  const { session, dk } = runtime;
+  const artifacts = liveArtifacts(session, 'remote-input');
+  const plan = await prepareRuntimePlan(session, artifacts, ['DKRT_BOOT', 'DK_ABOUT', 'DK_ABOUT_N']);
+  const epoch = await expectRuntimeUi(session, plan, artifacts, { fresh: true });
   await installRemote(runtime);
+  await expectRuntimeUi(session, plan, artifacts, { afterEpoch: epoch });
+  await expectRemoteEnabled(session, dk);
   return plan;
+}
+
+/** Registration is retained by installRemote; command readiness is a separate bounded observation. */
+export async function expectRemoteEnabled(session: Session, dk: DkSession, timeout = 10_000): Promise<void> {
+  const deadline = Date.now() + timeout;
+  let state: Awaited<ReturnType<DkSession['remoteState']>> | undefined;
+  try {
+    await expect
+      .poll(async () => (state = await beforeReadinessDeadline(deadline, () => dk.remoteState())).enabled, {
+        timeout,
+        interval: 500,
+        message: 'installed remote module enables its commands',
+      })
+      .toBe(true);
+  } finally {
+    record(liveArtifacts(session, 'remote-input'), 'remote-readiness', {
+      state: state ?? null,
+      expired: Date.now() >= deadline,
+    });
+  }
 }
 
 /** Install only: negative device-set cases need no offline ABOUT symbol plan. */
@@ -24,9 +50,9 @@ export async function installRemote({ session, dk }: PatchedSession): Promise<vo
   await installModule(dk, 'digikit/remote', moduleArtifact(session.options.device, 'digikit/remote'));
 }
 
-export async function remoteTap(dk: DkSession, name: string, settleMs = 1200): Promise<void> {
+export async function remoteTap(session: Session, dk: DkSession, name: string, settleMs = 1200): Promise<void> {
   const code = button(name);
-  await tap((down) => dk.remoteKey(code, down), 300, settleMs);
+  await tap(session, (down) => dk.remoteKey(code, down), 300, settleMs);
 }
 
 /** Always release held remote inputs, including on navigation/assertion failure. */
@@ -48,7 +74,7 @@ export async function withRemoteRelease(dk: DkSession, action: () => Promise<voi
       }),
     ]);
   } catch (error) {
-    if (actionFailed) throw new AggregateError([actionError, error], 'remote action and release failed');
+    if (actionFailed) throw aggregate([actionError, error], 'remote action and release failed');
     throw error;
   } finally {
     clearTimeout(timer);

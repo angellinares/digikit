@@ -1,0 +1,76 @@
+{
+  "$schema": "../../node_modules/nx/schemas/project-schema.json",
+  "name": "regression",
+  "implicitDependencies": [
+    "control-client",
+    "@digi/test-support",
+    "@digi/dk-session",
+    "digi-control",
+    "digi-coupled",
+    "dkui-host"
+  ],
+  "namedInputs": {
+    "production": [
+      "{projectRoot}/support.ts",
+      "{projectRoot}/timing.ts",
+      "{projectRoot}/watchdog.ts",
+      "{projectRoot}/vitest.config.ts",
+      "{projectRoot}/tsconfig.json",
+      "{projectRoot}/package.json"
+    ]
+  },
+  "targets": {
+    "typecheck": { "cache": false },
+    "test-device": {
+      "executor": "nx:run-commands",
+      "cache": false,
+      "dependsOn": [
+        "patchkit:cli",
+        { "target": "build-objects", "projects": ["tag:acceptance-image"] },
+        "digi-control:daemons",
+        "digikit/probe:pack",
+        "digikit/remote:pack",
+        "test/dsp-facts:pack",
+        "test/sharc-probe:pack",
+        "test/step-beacon:pack"
+      ],
+      "outputs": [],
+      "options": {
+        "command": "pnpm --filter @digi/regression test:runtime emulator/",
+        "cwd": "."
+      }
+    },
+    "test-host": {
+      "executor": "nx:run-commands",
+      "cache": true,
+      "inputs": [
+        "hostTests",
+        "^hostTests",
+        "{workspaceRoot}/config/emulator.json",
+        "{workspaceRoot}/devices/*.toml",
+        "{workspaceRoot}/sdk/vectors/**/*",
+        {
+          "runtime": "shasum -a 256 dist/plusdrive/plusdrive 2>/dev/null || echo no-plusdrive"
+        }
+      ],
+      "outputs": [],
+      "options": {
+        "forwardAllArgs": false,
+        "command": "pnpm exec vitest run --config vitest.host.config.ts --project regression-host",
+        "cwd": "."
+      }
+    }
+  },
+  "metadata": {
+    "runtimeAcceptance": [
+      {
+        "files": ["emulator/reply-inflight.test.ts"],
+        "modules": []
+      },
+      {
+        "files": ["emulator/sharc-semantics.test.ts"],
+        "modules": ["digikit/probe", "digikit/remote", "test/dsp-facts", "test/sharc-probe", "test/step-beacon"]
+      }
+    ]
+  }
+}

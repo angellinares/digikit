@@ -39,6 +39,11 @@ The emulator has no cache model: `FLUSH CACHE` and the `SHL1C_CFG` write are acc
 ## 5. Open
 
 - **[D]** Device retry (Em's DT2, OS 1.17, 2026-10-30, `device` set from this branch): freqshift boots and runs on the send route and on the master route, with no stop; its page shows under [FUNC]+[FX].
+- **[D]** Selache fix (ElekLabs fork, branch `fix/nested-do-loop-end`, commit 926bfac9): a nested `DO` no longer ends the outer loop's 48-bit mode early. We pin the fork in `packages/patchkit/Cargo.toml` and `tools/patchkit/pk_toolchains.py`. The `.NOCOMPRESS`/`.COMPRESS` workaround is removed from `fxsend-a.inc`; the rebuilt objects of all `core/*` modules have the same code, symbols and relocations as before (only `selache_rev` and, for the two fxsend objects, `source_sha256` differ). Not yet filed with the original project.
+- **[D]** Three more Selache encoding fixes in the fork branch `fix/encodings` (on top of 926bfac9): immediate shifts (PRM Table 17-9),
+  `(BW)/(BWSE)/(SW)/(SWSE)` on a direct load or store (Type 14d), and the 32-bit `MODIFY(Ii, Mm)` (Type 7b fixed bits). patchkit no longer has
+  `hazards`, `sw_prepare`/`sw_apply` or `fix_shift_counts`; the rebuilt objects of all modules have the same code, symbols and relocations as
+  before. The compact `ADD` tie of finding 20 is not an encoding bug and stays checked.
 - **[O]** Which of the two changes removed the stop: the loop end is the likely one; a build with only the loop-end fix would confirm it.
 - **[O]** Edge or level trigger and read-back of the operation bits (the form above does not depend on them), and what the stock write helper at 0x1c0272 does (it is not decoded in the database; it may poll).
 - **[O]** `_dl_area` cacheability and the effect of the write-back on a device load (finding 31).

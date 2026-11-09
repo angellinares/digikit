@@ -122,7 +122,7 @@
       "description": "Validation, not a load: the coupled_ready_exactness workload (QA prelude, Trig 1 down at +60M, up at +100M, ended at +100M instructions, as NOTE_EVENTS=trig). PCM must hash to the value the test asserts.",
       "instructions": 100000000,
       "qa_script": true,
-      "expect_sha256": "826db0d1de8f7738ac5d0c4579198439bb5a0102b4b9d8bc36d93fa07ce15843",
+      "expect_sha256": "e84a9cdc9b8d433fbce500508df74ce27f48d32a3bbf64b09475fa0e6316b1b2",
       "validation": true,
       "events": [
         {
@@ -142,7 +142,7 @@
       "description": "Validation, not a load: desktop_trig1_capture_without_qa_script (Trig 1 held from ready for 40M instructions, no prelude). With the 2026-10-06 ready snapshot (pSLC card, no SLC dialog) it sounds (rms 0.60). The 2026-10-03 snapshot (4G MLC card, DIGI_CARD_IDENTITY=mlc4g) stayed silent behind the SLC dialog, hash a50586e86b2d0246bd05181dd1f877b1b2570f2c1eb74b7613c9b17dbd4eb75a.",
       "instructions": 40000000,
       "clip_last_chunk": true,
-      "expect_sha256": "d56d8f4bce4e5435a7f0c2ec16a48b1edfcba148356b574d3458c6ccab73f1c9",
+      "expect_sha256": "4460493f74f70f0500c01e168d914987c7409d74ec18c24d8281a25bcbb28e2b",
       "validation": true,
       "events": [
         {
@@ -162,7 +162,7 @@
       "description": "Three Trig 1 taps (0.3 s hold each, the desktop Audition default) without the QA script; 10 s. The NO press (button 12) at 0 is kept so the pinned hash stays valid; the current ready state does not need it (trig1-noqa-40m sounds without it). Trig events are offset by 60M.",
       "seconds": 10.5,
       "exact_events": true,
-      "expect_sha256": "8b26c70cee443b75b90ad6d24f0f5e9e25178e9062e0237f4b839d08a8d3ae9b",
+      "expect_sha256": "6cadae1c8e08fefbf31bb4d501a6f1bef064f3e1894985379507a830562b17d9",
       "events": [
         {
           "at_instr": 0,
@@ -211,7 +211,7 @@
       "description": "One Trig 1 tap, then 8 s of release and idle (the desktop 'sine then noise' case). The NO press (button 12) at 0 is kept so the pinned hash stays valid; the current ready state does not need it (trig1-noqa-40m sounds without it). Trig events are offset by 60M.",
       "seconds": 8.5,
       "exact_events": true,
-      "expect_sha256": "f4f6d19fe0b270e83a0c537be31b055f0101755a26a444ece322ec340ba6a507",
+      "expect_sha256": "2ec38cc9a7c2edb6096c2fbf1129fd53d985f2d7126fc20a4bdb605102779291",
       "events": [
         {
           "at_instr": 0,

@@ -49,7 +49,7 @@ Tools: `tools/patchkit/pk_toolchains.py`, `pk_link.py`, `pk_cfcall.py`, `pk_shar
 
 ## SHARC+ (ADSP-2156x)
 
-- **Toolchain [D].** Selache at `2b26d3b7` (GPLv3, public), `cargo build --release`, built by
+- **Toolchain [D].** Selache at `926bfac9` (GPLv3, ElekLabs fork of the public project), `cargo build --release`, built by
   `tools/patchkit/pk_toolchains.py selache` into `out/tools/selache` in under a minute. `selas -proc ADSP-21569`.
 - **Object facts [D].** Section `seg_pmco` (assembly, 48-bit forms) or `seg_swco` (selcc). Symbol values and
   relocation offsets are in 16-bit parcels (the PC unit). Two relocation types: **11** = absolute 24-bit target
@@ -116,6 +116,9 @@ One agent; each item was met as a build failure or a wrong result and fixed in t
   extents disagree and `pk_sharc` stops with "Selache lists c001, our decoder c001703e". Registers R8-R15 and the
   `c1xx` subtract form are fine. Commute the operands (`R0 = R1 + R0` assembles as the 32-bit form). Which side is
   right on silicon is **[O]**; the firmware has no `c00x` word.
+  **[D][C]** Not a Selache encoding bug (checked 2026-10-30 for the fork): `selas` writes the Type 2c word the PRM defines, and the
+  firmware does have `c0xx` words (finding 05, "Type2b and the 16-bit Type2c"; finding 45, section 7). The tie is the emulator's
+  lookahead, so the fork was not changed and patchkit keeps its width check.
 - **`.VAR name[N]` is dropped and a multi-value `.VAR` produces a section-relative relocation.** `pk_sharc` takes
   `.PKDATA name, bytes;` (zeros, loaded) and `.PKBSS name, bytes;` (reserved, not loaded) instead: the line is removed
   before assembly, `name` becomes an extern, and the object gets a data or bss section and a global data symbol.
@@ -124,7 +127,11 @@ One agent; each item was met as a build failure or a wrong result and fixed in t
   bss begins, and the plan counts the bss against the region. A 262,144-byte delay area adds 0 bytes to the
   container. The program must write reserved memory before it reads it.
 - **`(SW)`/`(BW)` are ignored on indirect loads too** (`R1 = DM(I4, M5) (SW);` assembles as the normal-word load);
-  only the direct form is rewritten by `pk_sharc`. Read a short word as a 32-bit word and extract it.
+  the direct form is fixed in the fork (finding 22), the indirect one is not **[O]**.
+- **`MODIFY(Ix, My)` was a `selas` mis-encoding [D].** Its 32-bit word lacked the Type 7b fixed bits (frame bits 22-16 = `0111111`, PRM
+  Figure 14-20 and the SHARC Processor PGR), so no table row matched and the decoder read a 48-bit Type 7a. Stock has 57 Type 7b words on
+  DT2 1.17 and 74 on DN2 1.12, all with those bits; `MODIFY(I5, M2)` is `043f503f`, as at DN2 1.12 `sw 0xb80d93`. Fixed in the fork
+  ("selinstr: 32-bit MODIFY(Ii, Mm) carries the Type 7b fixed bits"). Read a short word as a 32-bit word and extract it.
 - **`FEXT/FDEP Rx BY Ry`: `Ry` = `bit6 | len6 << 6`** (the PRM figure: `len6` at Ry[11:6]); the immediate form is
   `BY pos:len`. `(SE)` is not parsed by this Selache (`unresolved symbol SE`): shift left and `ASHIFT` right by a
   register holding -16 instead.

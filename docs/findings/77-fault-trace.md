@@ -25,16 +25,14 @@ New words: 24 `last` of `core/fx`, 25 the module step, 26 and 27 module calls of
 29 and 30 the addresses of the two reply records, 31 the effect row switched off last. The voice site's `last` is the breadcrumb of finding 48 (word 14); the
 Digitone II wrapper now writes its stage 4 and 5 (call and return). Stage numbers are the breadcrumb's: 4 the core is about to call the module (CALL), 5 it returned (RET).
 
-**Why the sites write straight into the records.** The block-tail hook never runs again once the core stops (finding 48). Each site writes `last` (and clears the
-module step before a call) into both reply records, with the header word, at the call and at the return. The tail copies what the sites keep in DM for the blocks
-that end.
+**Why the sites write straight into the records.** The block-tail hook never runs again once the core stops (finding 48). Each site writes `last` into both reply
+records, with the header word, at the call and at the return, and clears the module step word `_dk_step` (a DM word, not a record word) before a call. The tail copies what the
+sites keep in DM, and `_dk_step`, for the blocks that end.
 
-**The module step.** `core/dyndsp` exports the import `_dk_step` (a 32-bit word; lane 2's `DK_STEP` stores a step number there). A word in DM would be
-lost with the core, so the runtime points the stores at word 25 of the older reply record: the record addresses are words 29 and 30, and `dsp.rs` `patch_steps` patches the
-relocated image just before its first chunk goes out (it waits up to 1500 UI passes for the DSP's table; then the static word `_dk_step` stays, and the block tail copies it
-into word 25, so the step is visible only when the block ends). The core clears word 25 in both records before each call; the module writes into one, so the ColdFire takes the
-non-zero value of the two replies. **[D]** in the emulator (section 5). **[O]** Whether the real DMA keeps sending both rings after the core stopped is the static argument of
-finding 48, section 2.
+**The module step.** `core/dyndsp` exports the import `_dk_step` (a 32-bit word; lane 2's `DK_STEP` stores a step number there). The sites clear it before each call into a
+module, and the block tail copies it into word 25 of the block's record. **[C]** The first design pointed the stores at word 25 of the older reply record (`patch_steps`, deleted);
+the sites cleared that word in both records, and on a Digitakt II the word was lost (finding 101). A step stored in the call that stops the DSP is not in any record, so the fault record
+shows the step of the last block that ended. **[O]** Whether the real DMA keeps sending both rings after the core stopped is the static argument of finding 48, section 2.
 
 ## 3. The hang record and the recovery
 
@@ -99,11 +97,11 @@ Dev trigger: the SysEx command `CMD_FAULT` (0x23), body byte 0 = 1, runs an out-
 
 Emulator, `tests/regression/runtime/fault-trace.test.ts` (Vitest `runtime` project; the daemon runs a stopped DSP at about 50 blocks a second, so a stop takes about 5 minutes
 of wall time; the tests wait in DSP blocks, not in seconds): **[D]** an effect on the send route that stops the DSP gives the hang record, safe mode `DSP STOPPED`, `dk/fault`
-(kind DSP, site FX send, core step CALL, module step 3, module `dyn-fx-hang`), the `FAULT_FOUND` and `SAFE` events and the last events of the boot before (DT2 and DN2); the
-ABOUT rows are read too on both devices (`SAFE: DSP STOPPED`, `FAULT: DSP STOP`, `IN DYN-FX-HANG`, `FX SEND STEP 3`). A machine that stops the DSP (DT2, `dyn-dsp-hang`) gives
+(kind DSP, site FX send, core step CALL, module step 2, module `dyn-fx-hang`), the `FAULT_FOUND` and `SAFE` events and the last events of the boot before (DT2 and DN2); the
+ABOUT rows are read too on both devices (`SAFE: DSP STOPPED`, `FAULT: DSP STOP`, `IN DYN-FX-HANG`, `FX SEND STEP 2`). A machine that stops the DSP (DT2, `dyn-dsp-hang`) gives
 site voice, core step CALL and the machine type in `dk/fault`. Effect faults give `FX_FAULT` and `FX_DISABLED` with the module's source (DT2, DN2). A normal send effect runs 9000
 blocks with no stop and no reset (DT2, DN2). A CPU crash gives `dk/fault` kind CPU with the PC of the crash record (DT2). `CMD_FAULT` gives a panic record, safe mode `CPU PANIC`, `dk/fault` kind panic and the ABOUT rows (DT2, DN2). The test sends it once (`quick`): a retry of the unanswered request reached the safe boot and panicked it again, which by the rules above does not reset. **[C]** An earlier version of this section said the DT2 ABOUT page could not be opened in the safe boot. The cause was the test: its keys were timed in DSP blocks (100 ms hold), and the DT2 UI did not take them; with 300 ms wall-clock taps (as the input-adapter test) SETTINGS > DIGIKIT > ABOUT opens in the safe boot and shows the rows. The DIGIKIT menu is reachable in safe mode on the DT2 (the first row is `SAFE: DSP STOPPED`, then ABOUT, HEALTH, MEMORY, MODULES).
 
 Unit tests: `dkrt-sdk` `fault.rs` (record and row text), `tests/digikit/test_dklog.py` (decoding), `tests/patchkit/test_dsplink.py` (the word slots),
-`tests/patchkit/test_fx.py` (the marks in both records, the fault words), `tests/patchkit/test_dsp_voice.py` (the step cleared before a call),
+`tests/patchkit/test_fx.py` (the marks in both records, the fault words), `tests/patchkit/test_dsp_voice.py` (the step word cleared before a call),
 `packages/dk-session/tests/fault.test.ts` (the record decoder and rows, in `packages/dk-session/src/fault.ts`). Fixtures: `tests/fixtures/modules/dyn-fx-hang`, `dyn-fx-nan`. The fixture `dyn-fx-hang` uses the `DK_STEP` macro of `sdk/asm/dk_trace.inc` and defines `DK_TRACE` itself, because the test needs the steps in a build without `--trace`.

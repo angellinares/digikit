@@ -95,7 +95,8 @@ fn main() {
     let mut args: Vec<String> = env::args().collect();
     let mut block_read = DT2_BLOCK_READ;
     if args.get(1).map(String::as_str) == Some("--block-read") && args.len() > 2 {
-        block_read = u32::from_str_radix(args[2].trim_start_matches("0x"), 16).expect("hex address");
+        block_read =
+            u32::from_str_radix(args[2].trim_start_matches("0x"), 16).expect("hex address");
         args.drain(1..3);
     }
     if args.len() < 4 {
@@ -224,7 +225,11 @@ fn main() {
                 let mut error = None;
                 while at < bytes {
                     let n = (bytes - at).div_ceil(512).min((CHUNK / 512) as usize) * 512;
-                    match call(&mut emu, block_read, &[sector + (at / 512) as u32, n as u32, BUF]) {
+                    match call(
+                        &mut emu,
+                        block_read,
+                        &[sector + (at / 512) as u32, n as u32, BUF],
+                    ) {
                         Ok(rc) => {
                             rc_all |= rc;
                             data.extend_from_slice(&emu.peek_bytes(BUF, n).unwrap());
@@ -237,7 +242,10 @@ fn main() {
                     at += n;
                 }
                 data.truncate(bytes);
-                let digest: String = Sha256::digest(&data).iter().map(|b| format!("{b:02x}")).collect();
+                let digest: String = Sha256::digest(&data)
+                    .iter()
+                    .map(|b| format!("{b:02x}"))
+                    .collect();
                 let head: String = data.iter().take(32).map(|b| format!("{b:02x}")).collect();
                 json!({"op": op, "rc": rc_all, "read": data.len(), "sha256": digest, "head": head, "error": error})
             }

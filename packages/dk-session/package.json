@@ -9,6 +9,7 @@
     "./gen_proto": "./src/gen_proto.ts",
     "./dksample": "./src/dksample.ts",
     "./rpcfiles": "./src/rpcfiles.ts",
+    "./process-transport": "./src/process-transport.ts",
     "./samples": "./src/samples.ts"
   },
   "scripts": {

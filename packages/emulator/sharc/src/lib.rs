@@ -30,13 +30,14 @@ pub mod canon;
 mod code_diff;
 mod cycmix;
 mod diag;
-mod irq_probe;
 pub mod fast;
 pub mod frames;
+mod irq_probe;
 mod live_capture;
+mod pc_dump;
+mod reply_watch;
 pub mod sha256;
 pub mod vectors;
-mod pc_dump;
 mod write_watch;
 pub use sharc_stats::{ModelStats, RegionCost, RegionEntryProfile, RegionProfile, TierCounters};
 
@@ -78,8 +79,10 @@ mod tests;
 #[cfg(all(test, sharc_gen))]
 mod tests_gen;
 #[cfg(all(test, sharc_gen))]
+#[rustfmt::skip]
 mod tests_gen_programs;
 #[cfg(all(test, sharc_gen))]
+#[rustfmt::skip]
 mod tests_gen_vectors;
 
 use rt::*;
@@ -279,6 +282,7 @@ pub struct Engine {
     pub idle_lo: u32,
     pub idle_hi: u32,
     idle_snap: Option<Box<IdleSnap>>,
+    ddr_monitor_gen: u64,
     pub idle_stats: IdleStats,
     /// Counters for the run-time gate that lets model-safe blocks run with
     /// the bank, stack, timer, peripheral, clock and interrupt models on.
@@ -322,6 +326,8 @@ pub struct Engine {
     live_capture: Option<live_capture::LiveCapture>,
     /// SHARC_WWATCH / SHARC_WWATCH_OUT (diagnostic): see `write_watch`.
     wwatch: Option<Box<write_watch::WriteWatch>>,
+    /// SHARC_REPLY_INFLIGHT (diagnostic): see `reply_watch`.
+    rwatch: Option<Box<reply_watch::ReplyWatch>>,
     /// SHARC_PCDUMP / SHARC_PCDUMP_OUT (diagnostic): see `pc_dump`.
     pcdump: Option<Box<pc_dump::PcDump>>,
     /// SHARC_CYCMIX (diagnostic): see `cycmix`.
@@ -331,6 +337,28 @@ pub struct Engine {
     /// Any of `cov`, `hist`, `wwatch`, `pcdump` is set: the interpreter loop
     /// tests this one flag per instruction and nothing else when it is off.
     diag_on: bool,
+    /// `wwatch` or `rwatch` is set: one flag test per dispatch unit, as with `wwatch` alone before.
+    ww_any: bool,
+    /// Set by `step` at the interrupt check of one loop iteration: MODE1, IRPTL,
+    /// IMASK and IMASKP are known and no source in the check's allowed mask is
+    /// latched and enabled (`irq_quiet_of`). Valid only until the iteration
+    /// writes one of those registers; `block_plan` may reuse it, nothing after
+    /// a block or kernel call may.
+    irq_quiet: bool,
+}
+
+/// MODE1, IRPTL, IMASK and IMASKP are all known and no source in ALLOWED is
+/// both latched and enabled. Then the generated `_interrupt_candidate`
+/// returns 0 on every path (it only reads those registers and the
+/// pending/loop state, and `candidates` is 0 before any priority mask), so
+/// the call can be skipped without a change in behaviour.
+fn irq_quiet_of(s: &St, allowed: u32) -> bool {
+    let r = &s.r;
+    r[114].is_c()
+        && r[122].is_c()
+        && r[123].is_c()
+        && r[124].is_c()
+        && (r[122].b & r[123].b & allowed) == 0
 }
 
 /// The last code check that found a mismatch (`Engine::verify_code`).
@@ -348,6 +376,9 @@ struct BlockPlan {
     limit: u64,
     /// Healthy fallback-only tiers do not participate in this dispatch or chain.
     fast_active: bool,
+    /// The fast tier wants this PC and `fast_allowed` held for it when the
+    /// plan was made (nothing that `fast_allowed` reads changes before the call).
+    fast_pc: bool,
     models: bool,
     timer_count: Option<u32>,
     /// A bank selection completed ahead of the block (its pending mask): it
@@ -555,6 +586,9 @@ fn image_insn_at() -> fn(Int) -> Option<Insn> {
 
 impl Drop for Engine {
     fn drop(&mut self) {
+        if let Some(prefix) = std::env::var_os("SHARC_PROFILE_PREFIX") {
+            self.write_profile(std::path::Path::new(&prefix));
+        }
         if let Some(p) = &self.irq_probe {
             eprintln!(
                 "irq_probe: windows {:x?} mask {:#x} every {}: {} latched, {} interrupts taken ({})",
@@ -650,6 +684,7 @@ impl Engine {
             idle_lo: 0,
             idle_hi: 0x00ff_ffff,
             idle_snap: None,
+            ddr_monitor_gen: 0,
             idle_stats: IdleStats::default(),
             model_stats: ModelStats::default(),
             code_checked: 0,
@@ -669,20 +704,29 @@ impl Engine {
                 .map(|_| Box::<std::collections::HashMap<u32, u64>>::default()),
             live_capture: live_capture::LiveCapture::from_env(),
             wwatch: write_watch::WriteWatch::from_env(),
+            rwatch: reply_watch::ReplyWatch::from_env(),
             pcdump: pc_dump::PcDump::from_env(),
             cycmix: cycmix::CycMix::from_env(),
             irq_probe: irq_probe::IrqProbe::from_env(),
             diag_on: false,
+            ww_any: false,
+            irq_quiet: false,
         };
+        // Live-daemon profile for sharc_rsgen (docs/INSTRUMENTATION.md): same maps as option 26.
+        if std::env::var_os("SHARC_PROFILE_PREFIX").is_some() {
+            engine.set_option(26, 1);
+        }
         engine.refresh_diag();
         engine
     }
 
     /// Recompute `diag_on` after any of the per-instruction diagnostics changed.
     fn refresh_diag(&mut self) {
+        self.ww_any = self.wwatch.is_some() || self.rwatch.is_some();
         self.diag_on = self.cov.is_some()
             || self.hist.is_some()
             || self.wwatch.is_some()
+            || self.rwatch.is_some()
             || self.pcdump.is_some()
             || self.cycmix.is_some();
     }
@@ -896,6 +940,13 @@ impl Engine {
         }
         self.host_event(|s| rt::periph::dma_done(s, TX, 69))?;
         self.host_event(|s| rt::periph::dma_done(s, RX, 70))?;
+        if self.rwatch.is_some() {
+            let reg = |s: &rt::St, o: u32| s.mmr_get(TX + o).map_or(0, |v| v.b as u32);
+            let dma = [reg(&self.s, 0x08), reg(&self.s, 0x0C), reg(&self.s, 0x10)];
+            if let Some(r) = &mut self.rwatch {
+                r.arm(self.s.icount, tx, frame.len(), dma, &self.s.mem);
+            }
+        }
         Ok(swap16(&reply))
     }
 
@@ -1132,6 +1183,25 @@ impl Engine {
             || self.software_interrupts
     }
 
+    /// An auto region at a PC with a usable AOT block would displace the block, because the fast tier runs first.
+    fn aot_block_usable(&mut self, pc: u32) -> bool {
+        if !self.use_blocks || !self.s.loops_ok {
+            return false;
+        }
+        let Some(entry) = self.dispatch.get_entry(pc as Int) else {
+            return false;
+        };
+        if !self.blocks_code_ok()
+            && self
+                .code_barred
+                .as_ref()
+                .is_none_or(|b| b.binary_search(&pc).is_ok())
+        {
+            return false;
+        }
+        !(self.models_active() && !entry.model_safe)
+    }
+
     /// The loaded code is what the generated blocks came from. Without
     /// runtime decoding the image's own table is the code, as always. With
     /// it, the generator's per-range SHA-256 of the short words (and the words
@@ -1205,11 +1275,10 @@ impl Engine {
                     let i = ranges.partition_point(|r| r.0 <= pc).checked_sub(1)?;
                     (pc < ranges[i].0 + ranges[i].1).then_some(i)
                 };
-                let barred = code_diff::barred_entries(
-                    generated::image::REGION_ENTRIES,
-                    &changed,
-                    |pc| range_of(pc).is_none_or(|i| whole.contains(&i)),
-                );
+                let barred =
+                    code_diff::barred_entries(generated::image::REGION_ENTRIES, &changed, |pc| {
+                        range_of(pc).is_none_or(|i| whole.contains(&i))
+                    });
                 for &pc in &barred {
                     self.s.chain_stop_add(pc);
                 }
@@ -1286,7 +1355,10 @@ impl Engine {
             checked += (start..start + len)
                 .filter(|&pc| generated::image::insn_at(pc as Int).is_some())
                 .count();
-            diffs.extend(self.changed_pcs_in(start, len, usize::MAX - 1).unwrap_or_default());
+            diffs.extend(
+                self.changed_pcs_in(start, len, usize::MAX - 1)
+                    .unwrap_or_default(),
+            );
         }
         let n = diffs.len();
         diffs.truncate(64);
@@ -1377,6 +1449,8 @@ impl Engine {
     /// the ticks before that), and no peripheral store (those leave the block
     /// as TRAP_BLOCK_MODEL).
     fn block_plan(&mut self, limit: u64) -> Option<(Option<Entry>, BlockPlan)> {
+        // Consumed here so a stale value is never reused by a later call.
+        let quiet = std::mem::take(&mut self.irq_quiet);
         if !(self.s.cfg.block_base_ok
             && !self.stop_software_interrupt
             && self.stop_pc.is_none()
@@ -1409,9 +1483,9 @@ impl Engine {
         };
         if !code_ok
             && entry.is_some_and(|_| {
-                self.code_barred.as_ref().is_none_or(|b| {
-                    b.binary_search(&(self.s.pc_sw as u32)).is_ok()
-                })
+                self.code_barred
+                    .as_ref()
+                    .is_none_or(|b| b.binary_search(&(self.s.pc_sw as u32)).is_ok())
             })
         {
             entry = None;
@@ -1430,6 +1504,7 @@ impl Engine {
         let mut plan = BlockPlan {
             limit,
             fast_active,
+            fast_pc,
             models: false,
             timer_count: None,
             bank_pre: None,
@@ -1463,7 +1538,16 @@ impl Engine {
                 return None;
             }
             if self.software_interrupts || s.cfg.core_timer || s.cfg.peripheral_model {
-                match self.latent_interrupt() {
+                // `irq_quiet` (set at this iteration's interrupt check, not
+                // cleared since) implies Some(false): the four registers are
+                // known and nothing in the check's allowed mask, a superset of
+                // `latent_interrupt`'s own, is latched and enabled.
+                let lat = if quiet {
+                    Some(false)
+                } else {
+                    self.latent_interrupt()
+                };
+                match lat {
                     Some(false) => {}
                     // A latched, unmasked interrupt that only an active DO
                     // loop defers (the interpreter delivers none while the
@@ -1579,8 +1663,7 @@ impl Engine {
             if self.models_active() {
                 let s = &self.s;
                 if (s.cfg.bank_model && (s.bank_pending_mask >= 0 || s.bank_requested_mask >= 0))
-                    || (s.cfg.stack_model
-                        && (s.pc_stack_pending >= 0 || s.pc_stack_requested >= 0))
+                    || (s.cfg.stack_model && (s.pc_stack_pending >= 0 || s.pc_stack_requested >= 0))
                 {
                     break;
                 }
@@ -1641,7 +1724,7 @@ impl Engine {
         if let Some(h) = &mut self.hist {
             *h.entry(pc_before as u32).or_default() += 1;
         }
-        if self.wwatch.is_some() {
+        if self.ww_on() {
             self.ww_begin(pc_before as u64, 'i');
         }
         if let Some(d) = &mut self.pcdump {
@@ -1660,12 +1743,21 @@ impl Engine {
         if let Some(w) = &mut self.wwatch {
             w.pending = Some((pc, unit));
         }
+        if let Some(r) = &mut self.rwatch {
+            r.pending = Some((pc, unit));
+        }
+    }
+
+    /// A write-watch or the reply-record check is on.
+    #[inline(always)]
+    fn ww_on(&self) -> bool {
+        self.ww_any
     }
 
     /// Re-read the watched words for the pending unit and log changes.
     #[inline(always)]
     fn ww_flush(&mut self) {
-        if self.wwatch.is_some() {
+        if self.ww_on() {
             self.ww_flush_pending();
         }
     }
@@ -1683,6 +1775,13 @@ impl Engine {
             }
             self.wwatch = Some(w);
         }
+        if let Some(r) = &mut self.rwatch {
+            r.check(self.s.icount, &self.s.mem);
+            if let Some(why) = r.failure.take() {
+                self.halt = Some(why);
+                self.one_dispatch = true;
+            }
+        }
     }
 
     /// Run up to N instructions. Returns how many completed; fewer means a
@@ -1696,6 +1795,7 @@ impl Engine {
         self.idle_snap = None;
         self.s.probe = None;
         'steploop: while self.s.icount < limit {
+            self.irq_quiet = false;
             self.ww_flush();
             if self.at_stop_range() {
                 break;
@@ -1729,19 +1829,22 @@ impl Engine {
             {
                 #[cfg(sharc_gen)]
                 {
-                    let allowed = self.irq_probe.as_ref().map_or(0, |p| p.mask as Int) | (if self.software_interrupts {
-                        0xf000_0000
-                    } else {
-                        0
-                    }) | (if self.s.cfg.core_timer {
-                        0x0040_0800
-                    } else {
-                        0
-                    }) | (if self.s.cfg.peripheral_model {
-                        0x0000_8000
-                    } else {
-                        0
-                    });
+                    let allowed = self.irq_probe.as_ref().map_or(0, |p| p.mask as Int)
+                        | (if self.software_interrupts {
+                            0xf000_0000
+                        } else {
+                            0
+                        })
+                        | (if self.s.cfg.core_timer {
+                            0x0040_0800
+                        } else {
+                            0
+                        })
+                        | (if self.s.cfg.peripheral_model {
+                            0x0000_8000
+                        } else {
+                            0
+                        });
                     if self.s.cfg.peripheral_model && rt::periph::sec_line_active(&self.s) {
                         // The SEC request line latches SECI at the boundary
                         // (tools/sharc_dev/sharc_run.py calls periph._sec_line here).
@@ -1755,8 +1858,16 @@ impl Engine {
                             }
                         }
                     }
-                    let candidate =
-                        generated::core_g::sequencer::_interrupt_candidate(&mut self.s, allowed);
+                    // Exact: see `irq_quiet_of`. Nothing writes the four
+                    // registers between here and `block_plan`, except the idle
+                    // skip, which clears the flag below.
+                    let quiet = irq_quiet_of(&self.s, allowed as u32);
+                    self.irq_quiet = quiet;
+                    let candidate = if quiet {
+                        Ok(0)
+                    } else {
+                        generated::core_g::sequencer::_interrupt_candidate(&mut self.s, allowed)
+                    };
                     let result = candidate.and_then(|mask| {
                         if mask == 0 {
                             return Ok(());
@@ -1769,8 +1880,8 @@ impl Engine {
                             self.s.bank_complete();
                             self.s.commit_host();
                             self.model_stats.irq_taken += 1;
-                            self.model_stats.irq_by_vector[(mask.trailing_zeros() & 63) as usize] +=
-                                1;
+                            self.model_stats.irq_by_vector
+                                [(mask.trailing_zeros() & 63) as usize] += 1;
                         } else {
                             self.s.rollback();
                         }
@@ -1800,10 +1911,11 @@ impl Engine {
                     _ => limit,
                 };
                 let before_skip = self.s.icount;
-                if self.wwatch.is_some() {
+                if self.ww_on() {
                     self.ww_begin(self.s.pc_sw as u64, 's');
                 }
                 self.idle_visit(head, skip_limit);
+                self.irq_quiet = false;
                 self.ww_flush();
                 if self.s.icount >= limit {
                     break;
@@ -1839,7 +1951,7 @@ impl Engine {
                         f.note(entry_pc);
                     }
                     self.last_interp_next = -1;
-                    if self.wwatch.is_some() {
+                    if self.ww_on() {
                         self.ww_begin(entry_pc as u64, 'b');
                     }
                     let t0 = if self.prof.is_some() { ticks() } else { 0 };
@@ -1850,15 +1962,34 @@ impl Engine {
                     let mut code = None;
                     // Ordinary tiers may flush followed entries even before `wants`
                     // sees them; only fallback policy may suppress this call.
+                    // For a PC the tier does not want, its `run` only drains
+                    // queued entries, so the call is skipped unless it has some
+                    // (`has_queued`). `plan.fast_pc` implies `fast_allowed`
+                    // held for this PC, and nothing it reads changed since.
                     let fast_eligible = plan.fast_active
                         && !plan.stop_loop_empty
-                        && self.fast_allowed(entry_pc);
+                        && (plan.fast_pc
+                            || (self.fast.as_ref().is_some_and(|f| f.has_queued())
+                                && self.fast_allowed(entry_pc)));
+                    // A generated entry dispatch would run at a PC, for the
+                    // fast tier's build-time checks (see `block_plan`).
+                    let aot_code_ok = fast_eligible && self.blocks_code_ok();
+                    let (aot_dispatch, aot_barred, aot_blocks) =
+                        (&self.dispatch, &self.code_barred, self.use_blocks);
+                    let aot = |pc: u32| {
+                        aot_blocks
+                            && aot_dispatch.get_entry(pc as Int).is_some()
+                            && (aot_code_ok
+                                || aot_barred
+                                    .as_ref()
+                                    .is_some_and(|b| b.binary_search(&pc).is_err()))
+                    };
                     if let Some(f) = self.fast.as_mut().filter(|_| fast_eligible) {
                         #[cfg(feature = "region-profile")]
                         {
                             let profile_start =
                                 self.region_profile.as_ref().map(|_| Instant::now());
-                            code = f.run(&mut self.s, entry_pc);
+                            code = f.run_with(&mut self.s, entry_pc, &aot);
                             if let (Some(profile), Some(start)) =
                                 (&mut self.region_profile, profile_start)
                             {
@@ -1872,13 +2003,16 @@ impl Engine {
                         }
                         #[cfg(not(feature = "region-profile"))]
                         {
-                            code = f.run(&mut self.s, entry_pc);
+                            code = f.run_with(&mut self.s, entry_pc, &aot);
                         }
                     }
-                    if code.is_some()
-                        && let Some(w) = &mut self.wwatch
-                    {
-                        w.pending = Some((entry_pc as u64, 'f'));
+                    if code.is_some() {
+                        if let Some(w) = &mut self.wwatch {
+                            w.pending = Some((entry_pc as u64, 'f'));
+                        }
+                        if let Some(r) = &mut self.rwatch {
+                            r.pending = Some((entry_pc as u64, 'f'));
+                        }
                     }
                     if code == Some(EXIT_NEXT) && plan.bank_pre.is_none() {
                         code = self.fast_continue(plan.limit, code);
@@ -1892,6 +2026,7 @@ impl Engine {
                                 self.region_profile.as_ref().map(|_| Instant::now());
                             if plan.fast_active
                                 && let Some(f) = self.fast.as_mut()
+                                && f.stops_pending()
                                 && !f.sync_chain_stops(&mut self.s)
                             {
                                 // The tier needs every dispatch: end the chain at
@@ -1933,6 +2068,7 @@ impl Engine {
                         {
                             if plan.fast_active
                                 && let Some(f) = self.fast.as_mut()
+                                && f.stops_pending()
                                 && !f.sync_chain_stops(&mut self.s)
                             {
                                 // The tier needs every dispatch: end the chain at
@@ -2072,6 +2208,14 @@ impl Engine {
             self.model_stats.interp_appended += (self.s.pc_sw as u32 >= self.appended_from) as u64;
             let loops_before = self.s.loops.n;
             let pc_before = self.s.pc_sw;
+            if pc_before as u32 >= self.appended_from
+                && pc_before != self.last_interp_next
+                && let Some(f) = self.fast.as_mut()
+            {
+                // Arrived here from a block or a kernel, not from the previous
+                // interpreted instruction: make it an entry as well.
+                f.note_appended(pc_before as u32);
+            }
             if self.diag_on {
                 self.diag_step(pc_before);
             }
@@ -2082,9 +2226,22 @@ impl Engine {
             if self.fast_auto && !(1..=3).contains(&(self.s.pc_sw - pc_before)) {
                 // A taken branch, call, return or loop-back landed here: a
                 // candidate region start for run-time selection.
+                let skip = self.aot_block_usable(self.s.pc_sw as u32);
                 if let Some(f) = self.fast.as_mut() {
-                    f.note(self.s.pc_sw as u32);
+                    if skip {
+                        f.skipped_for_aot();
+                    } else {
+                        f.note(self.s.pc_sw as u32);
+                    }
                 }
+            }
+            if self.s.pc_sw as u32 >= self.appended_from
+                && !(1..=3).contains(&(self.s.pc_sw - pc_before))
+                && let Some(f) = self.fast.as_mut()
+            {
+                // A landing in appended code: make it an entry (no generated
+                // block or root list names code a patch added).
+                f.note_appended(self.s.pc_sw as u32);
             }
             if self.s.loops.n != loops_before || !self.s.loops_ok {
                 // Block code assumes every loop ends at a PC the generator
@@ -2234,9 +2391,32 @@ impl Engine {
         })
     }
 
+    /// Configure the bounded DDR diagnostic and discard idle-loop evidence
+    /// across either activation or removal. No CLI/daemon ABI is exposed.
+    pub fn set_ddr_monitor(
+        &mut self,
+        range: Option<(u32, u32)>,
+    ) -> Result<(), mem::InvalidDdrRange> {
+        self.s.mem.set_ddr_monitor(range)?;
+        self.ddr_monitor_gen = self.s.mem.ddr_monitor_gen;
+        self.idle_snap = None;
+        self.s.probe = None;
+        Ok(())
+    }
+
     /// At an instruction boundary with the idle skip armed: at the loop head
     /// verify one iteration was a fixed point and replay the rest.
     fn idle_visit(&mut self, head: u32, limit: u64) {
+        if self.ddr_monitor_gen != self.s.mem.ddr_monitor_gen {
+            self.ddr_monitor_gen = self.s.mem.ddr_monitor_gen;
+            self.idle_snap = None;
+            self.s.probe = None;
+        }
+        if self.s.mem.ddr_monitor_active() {
+            self.idle_snap = None;
+            self.s.probe = None;
+            return;
+        }
         let pc = self.s.pc_sw;
         if pc < self.idle_lo as Int || pc > self.idle_hi as Int {
             if self.idle_snap.is_some() {
@@ -2570,6 +2750,21 @@ pub unsafe extern "C" fn sharc_native_profile(
 }
 
 impl Engine {
+    /// Writes the coverage, entries and transitions maps to
+    /// `PREFIX.e<pid>-<n>`, `.entries` and `.trans` (one set per engine).
+    /// Does nothing for maps that are off (option 26 unset).
+    fn write_profile(&self, prefix: &std::path::Path) {
+        static N: std::sync::atomic::AtomicUsize = std::sync::atomic::AtomicUsize::new(0);
+        let n = N.fetch_add(1, std::sync::atomic::Ordering::Relaxed);
+        for (kind, suffix) in [(0, ""), (1, ".entries"), (2, ".trans")] {
+            if let Some(text) = self.profile_text(kind) {
+                let mut path = prefix.as_os_str().to_owned();
+                path.push(format!(".e{}-{n}{suffix}", std::process::id()));
+                let _ = std::fs::write(path, text);
+            }
+        }
+    }
+
     /// The profile maps (option 26) as text (sharc_native_profile's KIND).
     pub fn profile_text(&self, kind: u32) -> Option<String> {
         let e = self;

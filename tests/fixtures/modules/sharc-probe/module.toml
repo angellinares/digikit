@@ -1,0 +1,30 @@
+[module]
+id = "test/sharc-probe"
+version = "0.1.0"
+name = "SHARC probe"
+category = "test"
+type = "fx"
+author = "digikit"
+status = "experimental"
+summary = "Test effect that runs RECIPS and RSQRTS over a fixed input sequence and sends one framed result word per block; the audio passes unchanged."
+dynamic = true
+ports = ["dt2-1.17", "dn2-1.12"]
+requires = []
+conflicts = []
+
+[targets]
+"dt2-1.17" = "experimental"
+"dn2-1.12" = "experimental"
+
+# The effect declaration (DK_FX in src/module.c). It holds only the .dk.desc record; patchkit pack reads it and leaves it out of the .dkm.
+[[object]]
+path = "build/sharc-probe-cf.dko.json"
+sources = ["src/module.c"]
+place = "cf.expansion"
+
+# src/probe_seq.inc is generated from tools/device/dkprobe_seq.py (`uv run python -m tools.device.dkprobe_seq --write PATH`); the host tool reads the same lists.
+[[object]]
+path = "build/sharc-probe-dsp.dko.json"
+sources = ["src/dsp/sharc_probe.s"]
+place = "dsp.l2"
+devices = ["dt2", "dn2"]

@@ -10,6 +10,7 @@ from support.paths import REPO_ROOT
 ROOT = REPO_ROOT
 
 from tools.coldfire import digikit_health_proof as hp  # noqa: E402
+from tools.device.dkproto import ARENA_HDR  # noqa: E402
 from tools.patchkit import patchkit as front_end  # noqa: E402
 from tools.patchkit import pk_toolchains  # noqa: E402
 
@@ -79,8 +80,9 @@ def test_formatting_helpers():
     assert hp.size_text(int(12.34 * 1024 * 1024)) == "12.3 MB"
     h = dict.fromkeys(hp.HEALTH_FIELDS, 0)
     assert hp.expected_lines(h) == [
-        "CPU --",
-        "DSP --",
+        "CPU REL --",
+        "DSP 1GHZ --",
+        "DSP MAX --",
         "RAM FREE --",
         "LARGEST --",
         "CPU FREE 0 KB",
@@ -100,17 +102,32 @@ def test_formatting_helpers():
         "arena_free": 523264,
         "dsp_area_total": 524288,
         "dsp_area_free": 520192,
+        "arena_largest": 523264,
+        "dsp_area_largest": 400 * 1024,
     }
     assert hp.expected_lines(h) == [
-        "CPU 37%",
-        "DSP 52% MAX 61%",
+        "CPU REL 37%",
+        "DSP 1GHZ 52%",
+        "DSP MAX 61%",
         "RAM FREE 12.3 MB",
         "LARGEST 4.1 MB",
         "CPU FREE 511 KB",
         "DSP FREE 508 KB",
+        "DSP BIG 400 KB",
         "STORE USED 2 KB",
         "STORE FREE 11.9 MB",
     ]
+
+
+def test_largest_rows_only_when_they_differ():
+    h = dict.fromkeys(hp.HEALTH_FIELDS, 0) | {
+        "arena_free": 512 * 1024,
+        "arena_largest": 100 * 1024,
+    }
+    assert "CPU BIG 100 KB" in hp.expected_lines(h)
+    # one free block: its payload is the size minus the header
+    h["arena_largest"] = h["arena_free"] - ARENA_HDR
+    assert not any("LARGEST" in x and x.startswith("CPU") for x in hp.expected_lines(h))
 
 
 def test_burn_routine_encoding():

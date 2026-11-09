@@ -47,4 +47,4 @@ A run-time module: it is not patched into the firmware. The digikit runtime load
 `core/dynfx` and `core/fxpages` (the `emulator` and `device` patch sets of both devices have them).
 
 Source and reference: `src/dsp/freqshift.s`, the float32 model `tests/freqshift_ref.py` (defines the arithmetic; `mise` is not needed to run it), the tests `tests/test_freqshift.py`,
-`tests/test_freqshift_ref.py` and the emulator scenario `tests/scenarios/fx-freqshift-dt2.toml` (and `-dn2`). A demo render for listening: `tests/freqshift_demo.py`.
+`tests/test_freqshift_ref.py` and the [device acceptance suite](tests/freqshift.device.test.ts). `mise run module:check digikit/freqshift` runs the conformance/reference tests and then its module-owned uncached Nx device target on both DT2 and DN2; `--device` does not narrow that target. A demo render for listening: `tests/freqshift_demo.py`.

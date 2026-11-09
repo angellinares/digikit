@@ -23,7 +23,13 @@ from __future__ import annotations
 from collections.abc import Callable, Mapping
 from typing import NamedTuple
 
-from .flags import MULT_FLAGS_CLEAR, MULT_FLAGS_FORGET, FlagUpdate, _mult_flags
+from .flags import (
+    FLAGS_NONE,
+    MULT_FLAGS_CLEAR,
+    MULT_FLAGS_FORGET,
+    FlagUpdate,
+    _mult_flags,
+)
 from .floats import (
     _DOUBLE_ALL_ONES_HI,
     _DOUBLE_ALL_ONES_LO,
@@ -72,7 +78,6 @@ Handler = Callable[
         Operand,
         Mapping[int, Value],
         Mapping[str, Operand | MR] | None,
-        bool,
     ],
     MultResult,
 ]
@@ -119,8 +124,11 @@ def _mr_data_move(
     foreground register ... and alternate or background" -- MRF/MRB).
     ``state._mr_read_word``/``_mr_write_word`` hold the actual word-slicing
     and MR1->MR2 sign-extension-on-write rule; this just picks which
-    accumulator and word. Flags: PRM p.493, MU/MN/MI/MV all cleared for
-    every direction and register."""
+    accumulator and word. Flags: PRM p.493 says MU/MN/MI/MV are cleared for
+    every direction and register. A Digitakt II leaves them as they were
+    when a register reads an MR word (`MRF = R1 * R2 (SSFR); R0 = MR1F;`
+    leaves MV set, finding 103); the write direction (register to MR) is
+    not measured and keeps the manual's clear."""
     reg_key, word = _MR_DATAMOVE_WORD[mr_name]
     op_name = "mr-data-move-%s" % mr_name.lower()
     specials = special if special is not None else NO_SPECIAL
@@ -129,7 +137,7 @@ def _mr_data_move(
         new_mr = _mr_write_word(current, word, _ureg(values, rn))
         return reg_key, new_mr, op_name, MULT_FLAGS_CLEAR
     value = _mr_read_word(current, word)
-    return rn, value, op_name, MULT_FLAGS_CLEAR
+    return rn, value, op_name, FLAGS_NONE
 
 
 def _mr_flags(
@@ -638,7 +646,7 @@ def mult_fixed(
 # multiplier's MN/MV/MU/MI (PRM Table 3-9), computed by _astatx_mult_float
 # above rather than forgotten -- unlike the fixed-point rows, every one of
 # these four is genuinely data-dependent for a float multiply.
-def mult_float(rn, rx, ry, left, right, values, special, approx_recips) -> tuple:
+def mult_float(rn, rx, ry, left, right, values, special) -> tuple:
     result, overflowed, underflowed, invalid = _float_multiply(
         left, right, "F%d * F%d" % (rx, ry)
     )
@@ -660,9 +668,7 @@ def mult_float(rn, rx, ry, left, right, values, special, approx_recips) -> tuple
 # observed use, like ``mult_undocumented_10`` below is decoded ahead of a
 # public source.
 # ---------------------------------------------------------------------------
-def mult_double_multiply(
-    rn, rx, ry, left, right, values, special, approx_recips
-) -> tuple:
+def mult_double_multiply(rn, rx, ry, left, right, values, special) -> tuple:
     """FM:N = FX:Y * FZ:W (p.23-2): both operands are register pairs."""
     hi, lo, overflowed, invalid = _double_binary(
         _ureg(values, rx + 1),
@@ -676,9 +682,7 @@ def mult_double_multiply(
     return (rn + 1, rn), (hi, lo), "double-multiply", astatx
 
 
-def mult_double_multiply_single(
-    rn, rx, ry, left, right, values, special, approx_recips
-) -> tuple:
+def mult_double_multiply_single(rn, rx, ry, left, right, values, special) -> tuple:
     """FM:N = FX:Y * FY (p.23-3): FX:Y a register pair, FY (RIGHT) a plain
     single-precision register."""
     label = "F%d:%d * F%d" % (rx + 1, rx, ry)
@@ -704,9 +708,7 @@ def mult_double_multiply_single(
     return (rn + 1, rn), (hi, lo), "double-multiply-single", astatx
 
 
-def mult_float_widening_multiply(
-    rn, rx, ry, left, right, values, special, approx_recips
-) -> tuple:
+def mult_float_widening_multiply(rn, rx, ry, left, right, values, special) -> tuple:
     """FM:N = FX * FY (p.23-4): both operands plain single-precision
     registers (LEFT/RIGHT, already resolved by ``_compute`` against the
     plain rx/ry codes); the double-precision result is exact (a
@@ -737,9 +739,7 @@ def mult_float_widening_multiply(
 # under the "0001 xxxx" opcode prefix -- neither has a 0001 0000 row.
 # Decode it (so the walk does not desync) and leave the result and flags
 # Unknown, same as the shifter's undocumented 0xB0 gap in compute_shift.py.
-def mult_undocumented_10(
-    rn, rx, ry, left, right, values, special, approx_recips
-) -> tuple:
+def mult_undocumented_10(rn, rx, ry, left, right, values, special) -> tuple:
     label = "multiply opcode 0x10 R%d, R%d (undocumented; no public source)" % (rx, ry)
     return rn, Unknown(label), "multiply-undocumented-10", MULT_FLAGS_FORGET
 

@@ -66,7 +66,6 @@ Handler = Callable[
         Operand,
         Mapping[int, Value],
         Mapping[str, Operand | MR] | None,
-        bool,
     ],
     ComputeResult,
 ]
@@ -577,7 +576,7 @@ def _shift_immediate(
 # PRM Table 17-9: SHIFTOP 00000000 is RN = LSHIFT RX by RY. The signed
 # low byte of RY selects a left (positive) or logical right (negative)
 # shift; magnitudes of 32 or more produce zero.
-def shift_logical(rn, rx, ry, left, right, values, special, approx_recips) -> tuple:
+def shift_logical(rn, rx, ry, left, right, values, special) -> tuple:
     amount: int | None = None
     value: Operand
     if not isinstance(right, Const):
@@ -606,7 +605,7 @@ def shift_logical(rn, rx, ry, left, right, values, special, approx_recips) -> tu
 # exactly.
 # CALIBRATION NOTE: added in a scratch copy of sharc_trace.py for this
 # task only; not part of the tracked tool.
-def shift_arithmetic(rn, rx, ry, left, right, values, special, approx_recips) -> tuple:
+def shift_arithmetic(rn, rx, ry, left, right, values, special) -> tuple:
     amount = None
     value: Operand
     if not isinstance(right, Const):
@@ -634,7 +633,7 @@ def shift_arithmetic(rn, rx, ry, left, right, values, special, approx_recips) ->
 # 8-bit immediate). Same signed-low-byte amount/32-magnitude rule as
 # plain lshift (0x00 above), computed independently here rather than
 # shared, then ORed into RN instead of replacing it.
-def shift_logical_or(rn, rx, ry, left, right, values, special, approx_recips) -> tuple:
+def shift_logical_or(rn, rx, ry, left, right, values, special) -> tuple:
     or_amount: int | None = None
     shifted: Operand
     if not isinstance(right, Const):
@@ -661,7 +660,7 @@ def shift_logical_or(rn, rx, ry, left, right, values, special, approx_recips) ->
 
 
 # PRM Table 17-9: SHIFTOP 10001000 is RN = leftz RX.
-def shift_leftz(rn, rx, ry, left, right, values, special, approx_recips) -> tuple:
+def shift_leftz(rn, rx, ry, left, right, values, special) -> tuple:
     value = (
         Const(32 if left.value == 0 else 32 - left.value.bit_length())
         if isinstance(left, Const)
@@ -672,7 +671,7 @@ def shift_leftz(rn, rx, ry, left, right, values, special, approx_recips) -> tupl
 
 # PGR p.11-83 (pgr.txt:23171): SHIFTOP 10001100 is RN = LEFTO RX --
 # leading 1s, the complement of leftz above (leading 0s of ~RX).
-def shift_lefto(rn, rx, ry, left, right, values, special, approx_recips) -> tuple:
+def shift_lefto(rn, rx, ry, left, right, values, special) -> tuple:
     value: Operand
     if isinstance(left, Const):
         inverted = (~left.value) & 0xFFFFFFFF
@@ -703,18 +702,18 @@ def _shift_bitset_impl(rn, rx, ry, left, right, opcode: int) -> tuple:
     )
 
 
-def shift_bset(rn, rx, ry, left, right, values, special, approx_recips) -> tuple:
+def shift_bset(rn, rx, ry, left, right, values, special) -> tuple:
     return _shift_bitset_impl(rn, rx, ry, left, right, 0xC0)
 
 
-def shift_bclr(rn, rx, ry, left, right, values, special, approx_recips) -> tuple:
+def shift_bclr(rn, rx, ry, left, right, values, special) -> tuple:
     return _shift_bitset_impl(rn, rx, ry, left, right, 0xC4)
 
 
 # PRM Table 17-9 and p. 23-5: SHIFTOP 11001000 is
 # RN = btgl RX by RY.  Positions outside the 32-bit field leave RX
 # unchanged.
-def shift_btgl(rn, rx, ry, left, right, values, special, approx_recips) -> tuple:
+def shift_btgl(rn, rx, ry, left, right, values, special) -> tuple:
     value: Operand
     if not isinstance(right, Const):
         value = Unknown("btgl R%d by R%d" % (rx, ry))
@@ -732,7 +731,7 @@ def shift_btgl(rn, rx, ry, left, right, values, special, approx_recips) -> tuple
 
 # PRM Table 18-9 and pp. 24-5--24-6: SHIFTOP 11001100 is
 # btst RX by RY. It changes status flags only and has no RN result.
-def shift_btst(rn, rx, ry, left, right, values, special, approx_recips) -> tuple:
+def shift_btst(rn, rx, ry, left, right, values, special) -> tuple:
     return rn, left, "bit-test", _astatx_btst(left, right)
 
 
@@ -741,7 +740,7 @@ def shift_btst(rn, rx, ry, left, right, values, special, approx_recips) -> tuple
 # 0x1f/cu=2 opcode 0x7c below (special-dict key "BFFWRP"; Unknown until
 # one of those has run). SF is documented "Not affected" so it is left
 # out of UPDATES entirely (stays whatever it already was).
-def shift_bffwrp_read(rn, rx, ry, left, right, values, special, approx_recips) -> tuple:
+def shift_bffwrp_read(rn, rx, ry, left, right, values, special) -> tuple:
     value = (special if special is not None else NO_SPECIAL).get(
         "BFFWRP", Unknown("uninitialized BFFWRP")
     )
@@ -760,9 +759,7 @@ def shift_bffwrp_read(rn, rx, ry, left, right, values, special, approx_recips) -
 # form reads the RN-positioned field as its SOURCE, not a destination,
 # per PGR's own text: "Updates write pointer from Rn ... Only 7 least
 # significant bits of Rn are written."
-def shift_bffwrp_write(
-    rn, rx, ry, left, right, values, special, approx_recips
-) -> tuple:
+def shift_bffwrp_write(rn, rx, ry, left, right, values, special) -> tuple:
     source = _ureg(values, rn)
     new_wrp = (
         Const(source.value & 0x7F)
@@ -787,9 +784,7 @@ def shift_bffwrp_write(
 # opcode, decode it (so the walk does not desync) and leave both the
 # result and its flags Unknown, per this file's existing rule for gaps
 # the manuals do not cover.
-def shift_undocumented_b0(
-    rn, rx, ry, left, right, values, special, approx_recips
-) -> tuple:
+def shift_undocumented_b0(rn, rx, ry, left, right, values, special) -> tuple:
     label = "shift opcode 0xb0 R%d, R%d (undocumented; no public source)" % (rx, ry)
     return (
         rn,
@@ -805,9 +800,7 @@ def shift_undocumented_b0(
 # row). Seen at `sw 0x1cadac`, between two otherwise-ordinary
 # instructions, so not obviously misdecoded data -- decoded like the
 # 0xb0 case above (so the walk does not desync) rather than guessed.
-def shift_undocumented_14(
-    rn, rx, ry, left, right, values, special, approx_recips
-) -> tuple:
+def shift_undocumented_14(rn, rx, ry, left, right, values, special) -> tuple:
     label = "shift opcode 0x14 R%d, R%d (undocumented; no public source)" % (rx, ry)
     return (
         rn,
@@ -857,11 +850,11 @@ def _fext_impl(rn, rx, ry, left, right, sign_extend: bool) -> tuple:
     return rn, value, operation, _astatx_fext_reg(right, value)
 
 
-def shift_fext(rn, rx, ry, left, right, values, special, approx_recips) -> tuple:
+def shift_fext(rn, rx, ry, left, right, values, special) -> tuple:
     return _fext_impl(rn, rx, ry, left, right, False)
 
 
-def shift_fext_se(rn, rx, ry, left, right, values, special, approx_recips) -> tuple:
+def shift_fext_se(rn, rx, ry, left, right, values, special) -> tuple:
     return _fext_impl(rn, rx, ry, left, right, True)
 
 
@@ -895,19 +888,19 @@ def _fdep_impl(
     return rn, value, operation, _astatx_fext_reg(right, value)
 
 
-def shift_fdep(rn, rx, ry, left, right, values, special, approx_recips) -> tuple:
+def shift_fdep(rn, rx, ry, left, right, values, special) -> tuple:
     return _fdep_impl(rn, rx, ry, left, right, values, False, False)
 
 
-def shift_fdep_se(rn, rx, ry, left, right, values, special, approx_recips) -> tuple:
+def shift_fdep_se(rn, rx, ry, left, right, values, special) -> tuple:
     return _fdep_impl(rn, rx, ry, left, right, values, False, True)
 
 
-def shift_fdep_or(rn, rx, ry, left, right, values, special, approx_recips) -> tuple:
+def shift_fdep_or(rn, rx, ry, left, right, values, special) -> tuple:
     return _fdep_impl(rn, rx, ry, left, right, values, True, False)
 
 
-def shift_fdep_or_se(rn, rx, ry, left, right, values, special, approx_recips) -> tuple:
+def shift_fdep_or_se(rn, rx, ry, left, right, values, special) -> tuple:
     return _fdep_impl(rn, rx, ry, left, right, values, True, True)
 
 
@@ -916,7 +909,7 @@ def shift_fdep_or_se(rn, rx, ry, left, right, values, special, approx_recips) ->
 # rotate by k bits to the right is a rotate by (32 - k) bits to the left, so
 # the low five bits of RY (two's complement) are the left-rotate count
 # whatever the operand width. Flags: SS and SV cleared, SZ = result zero.
-def shift_rotate(rn, rx, ry, left, right, values, special, approx_recips) -> tuple:
+def shift_rotate(rn, rx, ry, left, right, values, special) -> tuple:
     value: Operand
     if not isinstance(right, Const) or not isinstance(left, Const):
         value = Unknown("rot R%d by R%d" % (rx, ry))
@@ -940,9 +933,7 @@ def shift_rotate(rn, rx, ry, left, right, values, special, approx_recips) -> tup
 # RN. SZ/SV come from the shifted value before the OR; SS is left unknown,
 # as in the immediate form 0x09 (the OR-ashift entry has no SS line, PRM
 # pp.23-1 to 23-3).
-def shift_arithmetic_or(
-    rn, rx, ry, left, right, values, special, approx_recips
-) -> tuple:
+def shift_arithmetic_or(rn, rx, ry, left, right, values, special) -> tuple:
     or_amount: int | None = None
     shifted: Operand
     if not isinstance(right, Const):
@@ -1019,11 +1010,11 @@ def _exp_impl(rn, rx, left, values, extended: bool) -> tuple:
     return rn, value, "exp-ex" if extended else "exp", updates
 
 
-def shift_exp(rn, rx, ry, left, right, values, special, approx_recips) -> tuple:
+def shift_exp(rn, rx, ry, left, right, values, special) -> tuple:
     return _exp_impl(rn, rx, left, values, False)
 
 
-def shift_exp_ex(rn, rx, ry, left, right, values, special, approx_recips) -> tuple:
+def shift_exp_ex(rn, rx, ry, left, right, values, special) -> tuple:
     return _exp_impl(rn, rx, left, values, True)
 
 
@@ -1038,7 +1029,7 @@ def shift_exp_ex(rn, rx, ry, left, right, values, special, approx_recips) -> tup
 # "hidden" 1 is stripped) and padded. The sign is copied in every case.
 # NOT IN THE MANUAL: an all-zero exponent and fraction is taken as signed
 # zero (the N rule has no leading 1 to find). Flags SS, SZ, SV cleared.
-def shift_funpack(rn, rx, ry, left, right, values, special, approx_recips) -> tuple:
+def shift_funpack(rn, rx, ry, left, right, values, special) -> tuple:
     value: Operand
     if not isinstance(left, Const):
         value = Unknown("funpack R%d" % rx)
@@ -1094,19 +1085,19 @@ def _bit_fifo_unknown(rn: int, label: str, writes_rn: bool) -> ComputeResult:
     )
 
 
-def shift_bitdep(rn, rx, ry, left, right, values, special, approx_recips) -> tuple:
+def shift_bitdep(rn, rx, ry, left, right, values, special) -> tuple:
     if not isinstance(right, Const):
         return _bit_fifo_unknown(rn, "bitdep R%d by R%d" % (rx, ry), False)
     return _bitdep(left, right.value & 0x3F, special)
 
 
-def shift_bitext(rn, rx, ry, left, right, values, special, approx_recips) -> tuple:
+def shift_bitext(rn, rx, ry, left, right, values, special) -> tuple:
     if not isinstance(left, Const):
         return _bit_fifo_unknown(rn, "bitext R%d" % rx, True)
     return _bitext(rn, left.value & 0x3F, False, special)
 
 
-def shift_bitext_nu(rn, rx, ry, left, right, values, special, approx_recips) -> tuple:
+def shift_bitext_nu(rn, rx, ry, left, right, values, special) -> tuple:
     if not isinstance(left, Const):
         return _bit_fifo_unknown(rn, "bitext R%d (nu)" % rx, True)
     return _bitext(rn, left.value & 0x3F, True, special)

@@ -4,7 +4,7 @@ A run-time or patched-in effect of `core/fx` can run on a send bus instead of th
 processes that bus (the same `dk_fx` contract: 64 planar floats in, wet out) and its wet output times MIX is added to the stock FX return bus, which the master function mixes like the return of the stock send
 effects. This finding records the firmware facts the hook rests on, the row layout, the gain law, the proof and the costs. Marks: **[D]** measured or read once by the author (no second agent has checked the image
 bytes yet, so nothing here is **[V]**), **[O]** open. Pieces: `modules/core/adapters/fx/src/dsp/fxsend.s` (the send hook, a Digitakt II object), `fx.s` (the shared guard: `_fx_enter`, `_fx_exec`, `_fx_leave`),
-`tests/patchkit/test_fx_send.py` (concrete core), `tools/patchkit/pk_proof_fx.py` part `send`, the scenario `tests/digikit/scenarios/fx-send-dt2.toml` (`tools/patchkit/pk_digikit_fxsend.py`).
+`tests/patchkit/test_fx_send.py` (concrete core), `tools/patchkit/pk_proof_fx.py` part `send`, the scenario `REF:tests/digikit/scenarios/fx-send-dt2.toml` (`tools/patchkit/pk_digikit_fxsend.py`).
 
 ## The site and the buses **[D]**
 

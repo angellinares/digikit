@@ -1,4 +1,4 @@
-//! The module and sample store, version 3 (docs/design/digikit-store.md): the format, the readers and the one writer (a copy-on-commit
+//! The module and sample store, version 4 (docs/design/digikit-store.md): the format, the readers and the one writer (a copy-on-commit
 //! table), shared by the runtime and by tests on the host. `#![no_std]` and ColdFire rules: no `match` on integers, no `core::fmt`, no
 //! unchecked slice indexing in a loop that a card error can lengthen.
 //!
@@ -20,7 +20,8 @@ use crate::proto::{E_FULL, E_NOFILE, E_PATH, E_WRITE};
 use crate::{E_BAD_STORE, E_NOT_FOUND, E_READ, OK};
 
 pub const MAGIC: u32 = 0x444b_5354; // "DKST"
-pub const VERSION: u32 = 3;
+/// Version 4: the entry's 32-byte hash slot holds the +Drive content hash (`hash | 1`, big-endian, then 28 zeros), not a SHA-256.
+pub const VERSION: u32 = 4;
 /// Bytes of a table entry, and of its path field (NUL-terminated inside: a path has at most 159 bytes).
 pub const ENTRY: usize = 256;
 pub const PATH_BYTES: usize = 160;
@@ -94,7 +95,10 @@ pub struct Io {
 }
 
 pub unsafe fn be32(p: *const u8) -> u32 {
-    ((*p as u32) << 24) | ((*p.add(1) as u32) << 16) | ((*p.add(2) as u32) << 8) | (*p.add(3) as u32)
+    ((*p as u32) << 24)
+        | ((*p.add(1) as u32) << 16)
+        | ((*p.add(2) as u32) << 8)
+        | (*p.add(3) as u32)
 }
 
 pub unsafe fn put32(p: *mut u8, v: u32) {
@@ -155,7 +159,7 @@ pub fn crc32_of(p: *const u8, n: usize) -> u32 {
 }
 
 pub const fn sectors_of(bytes: u32) -> u32 {
-    (bytes + 511) / 512
+    bytes / 512 + ((bytes & 511 != 0) as u32)
 }
 
 /// Sectors of a table of `count` entries.
@@ -166,14 +170,36 @@ pub const fn table_sectors(count: u32) -> u32 {
 // ---- reads --------------------------------------------------------------------------------------------------------------
 
 /// Read `count` sectors starting `rel` sectors into the store; `cap` is the size of `buf` in bytes.
-pub unsafe fn read_sectors(io: &Io, lay: &Layout, rel: u32, count: u32, buf: *mut u8, cap: usize) -> i32 {
-    if rel >= lay.sectors || count > lay.sectors - rel || count as usize * 512 > cap || count > MAX_IO_SECTORS {
+pub unsafe fn read_sectors(
+    io: &Io,
+    lay: &Layout,
+    rel: u32,
+    count: u32,
+    buf: *mut u8,
+    cap: usize,
+) -> i32 {
+    if rel >= lay.sectors
+        || count > lay.sectors - rel
+        || count as usize * 512 > cap
+        || count > MAX_IO_SECTORS
+    {
         return E_BAD_STORE;
     }
     if (io.rd)(lay.first + rel, count * 512, buf) != 0 {
         return E_READ;
     }
     OK
+}
+
+/// The store sector where `count` sectors of a file start, `sector` sectors into it (`first` and `size` are the file's table entry). The
+/// range must lie inside the file rounded up to whole sectors, and `count` is 1 to `MAX_IO_SECTORS`: `E_RANGE` otherwise. A file's sectors
+/// are contiguous.
+pub fn file_span(first: u32, size: u32, sector: u32, count: u32) -> Result<u32, i32> {
+    let sectors = (size as u64 + 511) / 512;
+    if count == 0 || count > MAX_IO_SECTORS || sector as u64 + count as u64 > sectors {
+        return Err(crate::E_RANGE);
+    }
+    first.checked_add(sector).ok_or(crate::E_RANGE)
 }
 
 /// One header copy as the sector holds it.
@@ -194,11 +220,19 @@ pub struct Hdr {
 impl Hdr {
     /// The header of a store with nothing in it (`seq` 0: nothing was ever committed).
     pub const fn empty(lay: &Layout) -> Hdr {
-        Hdr { count: 0, table_sectors: 0, table_first: 1, table_crc: 0, seq: 0, used: 1, area: lay.sectors }
+        Hdr {
+            count: 0,
+            table_sectors: 0,
+            table_first: 1,
+            table_crc: 0,
+            seq: 0,
+            used: 1,
+            area: lay.sectors,
+        }
     }
 }
 
-/// Decode a header sector: the magic, version 3 and the CRC over bytes 0..508. `None` when any fails.
+/// Decode a header sector: the magic, version 4 and the CRC over bytes 0..508. `None` when any fails.
 pub unsafe fn parse_header(p: *const u8) -> Option<Hdr> {
     if be32(p) != MAGIC || be32(p.add(4)) != VERSION || be32(p.add(508)) != crc32_of(p, 508) {
         return None;
@@ -239,7 +273,8 @@ fn plausible(lay: &Layout, h: &Hdr) -> bool {
         && h.count <= (lay.limit() as u64 * 2) as u32
         && h.table_sectors == table_sectors(h.count)
         && h.table_first >= 1
-        && (h.table_sectors == 0 || (h.table_first as u64 + h.table_sectors as u64) <= lay.limit() as u64)
+        && (h.table_sectors == 0
+            || (h.table_first as u64 + h.table_sectors as u64) <= lay.limit() as u64)
         && h.used >= 1 + h.table_sectors
         && h.used <= lay.limit()
 }
@@ -261,14 +296,29 @@ unsafe fn header_at(io: &Io, lay: &Layout, rel: u32, scratch: *mut u8) -> Option
     parse_header(scratch).filter(|h| plausible(lay, h))
 }
 
-/// Read both headers (two sectors into `scratch`, 512 bytes, 16-byte aligned). `Err(E_NOT_FOUND)`: no store (neither sector has the magic);
+/// Does this header sector carry our magic and the current version?
+unsafe fn ours(p: *const u8) -> bool {
+    be32(p) == MAGIC && be32(p.add(4)) == VERSION
+}
+
+/// Does a header sector hold a store of another version (our magic, not version 4)? Such a store counts as no store: readers see none, and the
+/// first upload makes a version 4 one over it.
+pub unsafe fn old_header(p: *const u8) -> bool {
+    be32(p) == MAGIC && be32(p.add(4)) != VERSION
+}
+
+/// Read both headers (two sectors into `scratch`, 512 bytes, 16-byte aligned). `Err(E_NOT_FOUND)`: no store (neither sector has our magic and version; an older version is no store);
 /// `Err(E_BAD_STORE)`: a header is there but neither copy is usable.
-pub unsafe fn open_headers(io: &Io, lay: &Layout, scratch: *mut u8) -> Result<(Option<Hdr>, Option<Hdr>), i32> {
+pub unsafe fn open_headers(
+    io: &Io,
+    lay: &Layout,
+    scratch: *mut u8,
+) -> Result<(Option<Hdr>, Option<Hdr>), i32> {
     let r = read_sectors(io, lay, 0, 1, scratch, 512);
     if r != OK {
         return Err(r);
     }
-    let a_magic = be32(scratch) == MAGIC;
+    let a_magic = ours(scratch);
     let a = parse_header(scratch).filter(|h| plausible(lay, h));
     let b = header_at(io, lay, lay.header_b(), scratch);
     if a.is_none() && b.is_none() {
@@ -287,12 +337,23 @@ pub fn prefer_b(a: Option<&Hdr>, b: Option<&Hdr>) -> bool {
 }
 
 /// CRC of a table, read in pieces through `buf` (`cap` bytes).
-pub unsafe fn table_crc(io: &Io, lay: &Layout, first: u32, sectors: u32, buf: *mut u8, cap: usize) -> Result<u32, i32> {
+pub unsafe fn table_crc(
+    io: &Io,
+    lay: &Layout,
+    first: u32,
+    sectors: u32,
+    buf: *mut u8,
+    cap: usize,
+) -> Result<u32, i32> {
     let per = chunk_sectors(cap);
     let mut c = 0xffff_ffffu32;
     let mut done = 0;
     while done < sectors {
-        let n = if sectors - done > per { per } else { sectors - done };
+        let n = if sectors - done > per {
+            per
+        } else {
+            sectors - done
+        };
         let r = read_sectors(io, lay, first + done, n, buf, cap);
         if r != OK {
             return Err(r);
@@ -316,7 +377,13 @@ fn chunk_sectors(cap: usize) -> u32 {
 
 /// Does the table of `h`, or a file in it, reach into the tail (`header_b ..` the end of the area)? A store written before the settings record (tail of 3 sectors)
 /// may: its files could lie where the settings copies and header B are now. Such a store is not used (`open` skips it): the runtime would write over a file.
-pub unsafe fn reaches_tail(io: &Io, lay: &Layout, h: &Hdr, buf: *mut u8, cap: usize) -> Result<bool, i32> {
+pub unsafe fn reaches_tail(
+    io: &Io,
+    lay: &Layout,
+    h: &Hdr,
+    buf: *mut u8,
+    cap: usize,
+) -> Result<bool, i32> {
     let end = lay.header_b();
     if h.table_sectors != 0 && h.table_first.saturating_add(h.table_sectors) > end {
         return Ok(true);
@@ -339,7 +406,14 @@ pub unsafe fn reaches_tail(io: &Io, lay: &Layout, h: &Hdr, buf: *mut u8, cap: us
 
 /// Open the store: the headers, and (when `verify`) the table's CRC read through `buf` (`cap` bytes) and that nothing reaches into the tail; a copy whose table does not check is
 /// skipped for the other one. `scratch` is 512 bytes, 16-byte aligned, and must not overlap `buf`.
-pub unsafe fn open(io: &Io, lay: &Layout, scratch: *mut u8, buf: *mut u8, cap: usize, verify: bool) -> Result<Table, i32> {
+pub unsafe fn open(
+    io: &Io,
+    lay: &Layout,
+    scratch: *mut u8,
+    buf: *mut u8,
+    cap: usize,
+    verify: bool,
+) -> Result<Table, i32> {
     let (a, b) = open_headers(io, lay, scratch)?;
     let first_b = prefer_b(a.as_ref(), b.as_ref());
     let mut n = 0;
@@ -368,7 +442,11 @@ pub unsafe fn open(io: &Io, lay: &Layout, scratch: *mut u8, buf: *mut u8, cap: u
             Some(o) => o == h,
             None => false,
         };
-        return Ok(Table { h, copy: use_b as u32, agree });
+        return Ok(Table {
+            h,
+            copy: use_b as u32,
+            agree,
+        });
     }
     Err(E_BAD_STORE)
 }
@@ -385,7 +463,9 @@ pub unsafe fn fingerprint(io: &Io, lay: &Layout, scratch: *mut u8) -> Option<[u3
             return None;
         }
         if be32(scratch) == MAGIC {
-            out[2 * k] = be32(scratch.add(508)) ^ be32(scratch.add(20)).rotate_left(7) ^ be32(scratch.add(24)).rotate_left(13);
+            out[2 * k] = be32(scratch.add(508))
+                ^ be32(scratch.add(20)).rotate_left(7)
+                ^ be32(scratch.add(24)).rotate_left(13);
             out[2 * k + 1] = be32(scratch.add(4)) ^ be32(scratch.add(28)).rotate_left(3);
         }
         k += 1;
@@ -401,7 +481,12 @@ pub const STABLE_TRIES: u32 = 4;
 /// header A; a reader in another task that read the headers before and the table after could see a table that a later commit freed and reused.
 /// No lock: neither task ever waits for the other, and a reader that keeps losing the race (more than `STABLE_TRIES` commits in a row, which one
 /// host cannot do) returns what it read last. `scratch` as for `fingerprint`; `f` must not use it.
-pub unsafe fn stable<T, F: FnMut() -> Result<T, i32>>(io: &Io, lay: &Layout, scratch: *mut u8, mut f: F) -> Result<T, i32> {
+pub unsafe fn stable<T, F: FnMut() -> Result<T, i32>>(
+    io: &Io,
+    lay: &Layout,
+    scratch: *mut u8,
+    mut f: F,
+) -> Result<T, i32> {
     let mut tries = 0;
     loop {
         let before = fingerprint(io, lay, scratch);
@@ -429,6 +514,7 @@ pub struct Entry {
     pub first: u32,
     pub size: u32,
     pub kind: u8,
+    /// The hash slot: the file's content hash, big-endian, then 28 zeros (`hash32::slot`); all zero for a folder.
     pub sha: [u8; 32],
 }
 
@@ -439,7 +525,12 @@ pub unsafe fn entry_of(e: *const u8) -> Entry {
         sha[k] = *e.add(O_SHA + k);
         k += 1;
     }
-    Entry { first: be32(e.add(O_FIRST)), size: be32(e.add(O_SIZE)), kind: *e.add(O_KIND), sha }
+    Entry {
+        first: be32(e.add(O_FIRST)),
+        size: be32(e.add(O_SIZE)),
+        kind: *e.add(O_KIND),
+        sha,
+    }
 }
 
 /// Sectors the data of an entry takes.
@@ -484,17 +575,36 @@ pub unsafe fn path_len(e: *const u8) -> usize {
 
 /// Call `f(index, entry)` for the entries of the table of `h`, in table order, reading through `buf` (`cap` bytes, 16-byte aligned); stops
 /// when `f` returns false. The entry pointer is valid only inside the call.
-pub unsafe fn scan<F: FnMut(u32, *const u8) -> bool>(io: &Io, lay: &Layout, h: &Hdr, buf: *mut u8, cap: usize, f: F) -> i32 {
+pub unsafe fn scan<F: FnMut(u32, *const u8) -> bool>(
+    io: &Io,
+    lay: &Layout,
+    h: &Hdr,
+    buf: *mut u8,
+    cap: usize,
+    f: F,
+) -> i32 {
     scan_from(io, lay, h, 0, buf, cap, f)
 }
 
 /// `scan` from entry `from` on (the read starts at its sector).
-pub unsafe fn scan_from<F: FnMut(u32, *const u8) -> bool>(io: &Io, lay: &Layout, h: &Hdr, from: u32, buf: *mut u8, cap: usize, mut f: F) -> i32 {
+pub unsafe fn scan_from<F: FnMut(u32, *const u8) -> bool>(
+    io: &Io,
+    lay: &Layout,
+    h: &Hdr,
+    from: u32,
+    buf: *mut u8,
+    cap: usize,
+    mut f: F,
+) -> i32 {
     let per = chunk_sectors(cap);
     let mut sector = from / 2;
     let mut idx = from & !1;
     while sector < h.table_sectors {
-        let n = if h.table_sectors - sector > per { per } else { h.table_sectors - sector };
+        let n = if h.table_sectors - sector > per {
+            per
+        } else {
+            h.table_sectors - sector
+        };
         let r = read_sectors(io, lay, h.table_first + sector, n, buf, cap);
         if r != OK {
             return r;
@@ -513,7 +623,14 @@ pub unsafe fn scan_from<F: FnMut(u32, *const u8) -> bool>(io: &Io, lay: &Layout,
 }
 
 /// The entry with exactly this path (NUL-terminated).
-pub unsafe fn find(io: &Io, lay: &Layout, h: &Hdr, buf: *mut u8, cap: usize, path: *const u8) -> Result<Option<(u32, Entry)>, i32> {
+pub unsafe fn find(
+    io: &Io,
+    lay: &Layout,
+    h: &Hdr,
+    buf: *mut u8,
+    cap: usize,
+    path: *const u8,
+) -> Result<Option<(u32, Entry)>, i32> {
     let mut hit: Option<(u32, Entry)> = None;
     let r = scan(io, lay, h, buf, cap, |i, e| {
         if cstr_eq(e, path) {
@@ -528,6 +645,88 @@ pub unsafe fn find(io: &Io, lay: &Layout, h: &Hdr, buf: *mut u8, cap: usize, pat
     Ok(hit)
 }
 
+/// Copy one complete file into caller-owned storage, with fail-closed generation
+/// checks around lookup and read. Unlike `stable`, exhaustion never returns an
+/// unverified result. `hash` must compute the file hash slot (`hash32::slot`) of the supplied retained bytes.
+///
+/// # Safety
+/// `path` is NUL terminated. All buffers are private to this operation, disjoint,
+/// and 16-byte aligned: `fp` is 512 bytes; `scratch` has `cap >= 512` bytes;
+/// `dst` has `dst_cap` bytes, including sector padding. A failed call does not
+/// publish any bytes. The caller must not use `dst` after an error.
+#[allow(clippy::too_many_arguments)]
+pub unsafe fn snapshot<F: FnMut(&[u8]) -> [u8; 32]>(
+    io: &Io,
+    lay: &Layout,
+    path: *const u8,
+    fp: *mut u8,
+    scratch: *mut u8,
+    cap: usize,
+    dst: *mut u8,
+    dst_cap: usize,
+    max_bytes: u32,
+    mut hash: F,
+) -> Result<Entry, i32> {
+    let mut tries = 0;
+    loop {
+        let before = fingerprint(io, lay, fp).ok_or(E_READ)?;
+        let result = (|| {
+            let table = open(io, lay, fp, scratch, cap, true)?;
+            let (_, entry) = find(io, lay, &table.h, scratch, cap, path)?.ok_or(E_NOT_FOUND)?;
+            if entry.kind != KIND_FILE {
+                return Err(E_NOT_FOUND);
+            }
+            if entry.size == 0 || entry.size > max_bytes || entry.size > u32::MAX - 511 {
+                return Err(crate::E_TOO_BIG);
+            }
+            let sectors = sectors_of(entry.size);
+            if sectors as usize > dst_cap / 512
+                || entry.first == 0
+                || entry.first >= lay.limit()
+                || sectors > lay.limit() - entry.first
+            {
+                return Err(crate::E_TOO_BIG);
+            }
+            // Bounded reads even when the caller permits a file larger than one
+            // firmware block read. Nothing retains a table extent after return.
+            let mut done = 0;
+            while done < sectors {
+                let count = core::cmp::min(sectors - done, MAX_IO_SECTORS);
+                let r = read_sectors(
+                    io,
+                    lay,
+                    entry.first + done,
+                    count,
+                    dst.add(done as usize * 512),
+                    dst_cap - done as usize * 512,
+                );
+                if r != OK {
+                    return Err(r);
+                }
+                done += count;
+            }
+            if hash(core::slice::from_raw_parts(dst, entry.size as usize)) != entry.sha {
+                return Err(crate::E_SHA);
+            }
+            Ok(entry)
+        })();
+        let after = fingerprint(io, lay, fp).ok_or(E_READ)?;
+        if before == after {
+            return result;
+        }
+        if tries >= STABLE_TRIES {
+            return Err(crate::E_BUSY);
+        }
+        tries += 1;
+    }
+}
+
+/// Internal bounded metadata enumeration; no public C SDK contract.
+pub mod catalog;
+
+/// Pure fixed-memory immediate-child projection of a complete catalogue scan.
+pub mod directory;
+
 // ---- free space -------------------------------------------------------------------------------------------------------------
 
 const FIXED_MAX: usize = 6;
@@ -540,7 +739,10 @@ struct Fixed {
 
 impl Fixed {
     fn new() -> Fixed {
-        Fixed { v: [(0, 0); FIXED_MAX], n: 0 }
+        Fixed {
+            v: [(0, 0); FIXED_MAX],
+            n: 0,
+        }
     }
     fn push(&mut self, start: u32, len: u32) {
         if len == 0 || self.n >= FIXED_MAX {
@@ -615,7 +817,15 @@ pub unsafe fn gaps<F: FnMut(u32, u32) -> bool>(
 }
 
 /// The first gap of at least `need` sectors (first fit).
-pub unsafe fn first_fit(io: &Io, lay: &Layout, h: &Hdr, buf: *mut u8, cap: usize, need: u32, extra: &[(u32, u32)]) -> Result<Option<u32>, i32> {
+pub unsafe fn first_fit(
+    io: &Io,
+    lay: &Layout,
+    h: &Hdr,
+    buf: *mut u8,
+    cap: usize,
+    need: u32,
+    extra: &[(u32, u32)],
+) -> Result<Option<u32>, i32> {
     let mut at: Option<u32> = None;
     let r = gaps(io, lay, h, buf, cap, extra, |s, l| {
         if l >= need {
@@ -631,7 +841,14 @@ pub unsafe fn first_fit(io: &Io, lay: &Layout, h: &Hdr, buf: *mut u8, cap: usize
 }
 
 /// The largest gap in sectors.
-pub unsafe fn largest_gap(io: &Io, lay: &Layout, h: &Hdr, buf: *mut u8, cap: usize, extra: &[(u32, u32)]) -> Result<u32, i32> {
+pub unsafe fn largest_gap(
+    io: &Io,
+    lay: &Layout,
+    h: &Hdr,
+    buf: *mut u8,
+    cap: usize,
+    extra: &[(u32, u32)],
+) -> Result<u32, i32> {
     let mut best = 0u32;
     let r = gaps(io, lay, h, buf, cap, extra, |_, l| {
         if l > best {
@@ -786,7 +1003,16 @@ pub unsafe fn commit(
             None => return Err(E_FULL),
         };
     }
-    let mut out = Out { buf: buf_out, cap, at: 0, sectors: 0, crc: 0xffff_ffff, count: 0, used_files: 0, start };
+    let mut out = Out {
+        buf: buf_out,
+        cap,
+        at: 0,
+        sectors: 0,
+        crc: 0xffff_ffff,
+        count: 0,
+        used_files: 0,
+        start,
+    };
     let mut removed: Option<Entry> = None;
     // the entries the edit adds, in table order: each goes in before the first old entry it sorts before
     let null = core::ptr::null::<u8>();
@@ -902,7 +1128,15 @@ pub struct Rename {
 impl Rename {
     /// The edit to commit. The pointers are into `self`: keep it alive until the commit returns.
     pub fn edit(&self, from: *const u8) -> Edit {
-        Edit::Rename(from, self.to.as_ptr(), if self.has_keep { self.keep.as_ptr() } else { core::ptr::null() })
+        Edit::Rename(
+            from,
+            self.to.as_ptr(),
+            if self.has_keep {
+                self.keep.as_ptr()
+            } else {
+                core::ptr::null()
+            },
+        )
     }
 }
 
@@ -924,8 +1158,17 @@ unsafe fn inside(outer: *const u8, inner: *const u8) -> bool {
 /// itself. The entry keeps its data, size and sha256, so whatever names a file by its sha256 still finds it. When nothing else is in the folder
 /// that `from` leaves, that folder gets a folder entry, so a move or a rename never makes a folder go (a store of samples keeps its folders, as
 /// a sampler's +Drive does). `Err(E_NOFILE)`: no entry `from`; `Err(E_PATH)`: `to` (or `from`) breaks a rule.
-pub unsafe fn plan_rename(io: &Io, lay: &Layout, h: &Hdr, buf: *mut u8, cap: usize, from: *const u8, to: *const u8) -> Result<Rename, i32> {
-    if path_ok(from, PATH_BYTES).is_none() || path_ok(to, PATH_BYTES).is_none() || cstr_eq(from, to) {
+pub unsafe fn plan_rename(
+    io: &Io,
+    lay: &Layout,
+    h: &Hdr,
+    buf: *mut u8,
+    cap: usize,
+    from: *const u8,
+    to: *const u8,
+) -> Result<Rename, i32> {
+    if path_ok(from, PATH_BYTES).is_none() || path_ok(to, PATH_BYTES).is_none() || cstr_eq(from, to)
+    {
         return Err(E_PATH);
     }
     // the folder `from` is in: its path up to the last '/' (none at the top)
@@ -975,10 +1218,23 @@ pub unsafe fn plan_rename(io: &Io, lay: &Layout, h: &Hdr, buf: *mut u8, cap: usi
     if inside(from, to) {
         return Err(E_PATH);
     }
-    let mut out = Rename { to: [0; ENTRY], keep: [0; ENTRY], has_keep: !others };
+    let mut out = Rename {
+        to: [0; ENTRY],
+        keep: [0; ENTRY],
+        has_keep: !others,
+    };
     encode_entry(to, &old, out.to.as_mut_ptr());
     if out.has_keep {
-        encode_entry(parent.as_ptr(), &Entry { first: 0, size: 0, kind: KIND_DIR, sha: [0; 32] }, out.keep.as_mut_ptr());
+        encode_entry(
+            parent.as_ptr(),
+            &Entry {
+                first: 0,
+                size: 0,
+                kind: KIND_DIR,
+                sha: [0; 32],
+            },
+            out.keep.as_mut_ptr(),
+        );
     }
     Ok(out)
 }

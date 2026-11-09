@@ -5,6 +5,7 @@ parameter, and the voice ends with DK_DONE after 2 s (Digitakt II). Skips when S
 
 import numpy as np
 import pytest
+import support.dsp_voice_rig as dv
 from support.machine_rig import MachineRig
 
 from tools.patchkit import pk_toolchains
@@ -83,3 +84,26 @@ def test_a_retrigger_restarts_the_oscillator_and_the_voice_ends_after_two_second
         for _ in range(3000):  # 96,000 samples: DK_DONE, then silence
             b = rig.block("friendly")
         assert all(x == 0.0 for x in b.samples)
+
+
+@pytest.mark.parametrize("device", DEVICES)
+def test_a_slot_with_an_unregistered_type_goes_back_to_the_stock_code_without_the_table_walk(
+    device,
+):
+    rig = MachineRig(MODULE, device)
+    rig.select(1)
+    if device == "dt2":
+        rig._set_type_dt2(1, 0)
+    else:
+        rig.hw(74 + 1, 0)
+    b = rig.block()  # a drawn context: the stock code gets its own registers back
+    assert b.halt["reason"] == "breakpoint" and b.out["final_pc_sw"] == dv.STOCK_BP, (
+        b.halt
+    )
+    ctx = rig.last_ctx
+    assert [
+        n
+        for n in dv.CONTEXT_REGS
+        if (b.out["regs"][n] or 0) & 0xFFFFFFFF != ctx[n] & 0xFFFFFFFF
+    ] == []
+    assert b.instructions < 70, b.instructions
