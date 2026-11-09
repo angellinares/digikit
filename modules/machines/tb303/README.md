@@ -45,7 +45,7 @@ Differences from Open303:
 The slide and the amp's release read `in->gate` (sdk/sdk.toml [machine]): 0 from the note's release on. The state is never cleared
 by the adapter, and the runtime does not clear it at load, so a voice's first note-on zeroes it.
 
-Cost: 7,926 instructions per block including the adapter, the same for any note and setting (8,130 on a note-on block).
+Cost: 8,037 instructions per block including the adapter, the same for any note and setting (8,241 on a note-on block).
 
 Tables and constants: `uv run python modules/machines/tb303/src/dsp/gen_tables.py` writes `src/dsp/tables.inc`. Model:
 `tests/tb303_ref.py` (`Tb303`); the routine matches it exactly on the SHARC core (`tests/test_tb303.py`).
