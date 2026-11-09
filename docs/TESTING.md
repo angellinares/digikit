@@ -373,7 +373,8 @@ Plain `pnpm nx:pilot run ...` and every gate tier read and write the cache when 
 and sets the Nx variables only when the server answers.
 The store has a 14-day TTL swept daily and no size cap.
 
-Cached targets: module `test-device` and `test-conformance`. A key covers what the run consumes: the
+Cached targets: module `test-device` and `test-conformance`, `gate-stock:stock`, and the FX targets of `gate-fx-dn2`
+(`fx`, `fx-no-aot`, `tier-quick`) and `gate-fx-dt2` (`fx-dt2`, `dt2-tier-quick`; the FX key is described below). A key covers what the run consumes: the
 TypeScript import closure of the test files and of the Vitest setup file (`tools/nx/test-imports.mjs`), the
 outputs of the pack, CLI and daemon targets, the production files of the module (with its `module.toml`) and of the core modules in the
 patched image (with their manifests), the SDK, the files in `READ_BY_TESTS` (`tools/nx/module-targets.mjs`: `devices/**/*.toml`,
@@ -391,6 +392,18 @@ Specialized catalogue/files/LP0 card, patched-image, plan and boot-fixture overr
 reuse, because provenance can name further external files. LP0 case-selection flags are in the key.
 Ignored/external edits alone do not trigger Git affected selection: invoke the owning Nx target
 directly after changing an override binary/root or ignored firmware/ready/card input.
+FX targets run the coupled-run binary, not a daemon. `digi-coupled:build` and `build-dt2` write
+`dist/coupled-dn2.json` and `dist/coupled-dt2.json` (`coupled build --id-out`): the sha256 of the built binary, without
+its path. The FX key has this file (as a dependent task output), the named source globs `fxDn2` and `fxDt2` (they also
+drive `affected`), and `tools/nx/coupled-inputs.mjs`. That digest covers the firmware and the ready inputs that
+`tools/emulator/coupled.py` boots from (`tools/emulator/ready_inputs.json`, and the `DIGI_EMU_SYX*`,
+`DIGI_COUPLED_SYX`, `DIGI_EMU_READY_DIR*` and `DIGI_EMU_DSP_*` overrides by file content). These are not the
+patchkit ready dirs of `device-inputs.mjs`. Env in the key: `DIGI_FX_SWEEP`, `DIGI_FX_NO_AOT_SUBSET`, `DIGI_EMU_FAST`,
+`DIGI_NO_PROGRESS_MS`, `DIGI_DT2_CARD` (its file content too), `DIGI_COUPLED_FEATURES`, `SHARC_AOT`, the `SHARC_FAST_*`
+switches, `SHARC_BLOCKTRANS` and `UPDATE_GOLDENS`. The render cache (`out/cache/renders`) is keyed by content and is safe
+to share. The tier targets write reports under `out/runs/fx-tier/<step>`; nothing reads them back. Not covered:
+`SHARC_GEN_DIR` (the generated core is checked by `--check-generated` and is built into the binary hash) and
+`out/sections/*` (derived from the firmware file).
 Not in the key on purpose: `dist/session-cache` (boot cache, cannot
 change a result) and directory scans such as `modules/README.md`. Failed tasks are not cached.
 
