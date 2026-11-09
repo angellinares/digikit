@@ -481,6 +481,8 @@ export async function evidence(
 
 export interface GainFxSessionOptions {
   initial?: 'dry' | 'wet';
+  /** A patch set of the device file other than `emulator` (the sine and gain DKMs load as in any case). */
+  patchSet?: string;
   /** Idle cases may be silent; guard, nonfinite, fault and overlay checks always remain mandatory. */
   requireAudible?: boolean | ((runtime: PatchedSession) => boolean);
 }
@@ -510,16 +512,17 @@ export function withGainFxSession(device: Device, scope: string, config: GainFxS
     {
       ...options(device),
       dsp: 'sharc', // effects run on the DSP
+      patchSet: config.patchSet,
       runDirClaim: () => claimRunDir(device),
       env: async () => {
         artifacts = fs.mkdtempSync(path.join(os.tmpdir(), `digi-fx-reuse-${device}-`));
         console.info('FX safety artifacts:', artifacts);
-        const prepared = await prepareRuntimePlanOffline({ device, firmware: FIRMWARE[device] }, artifacts, artifacts, [
-          'DKRT_BOOT',
-          'DKRT_ASSIGN',
-          'fx.rows',
-          '_dl_area',
-        ]);
+        const prepared = await prepareRuntimePlanOffline(
+          { device, firmware: FIRMWARE[device], runtime: { patchSet: config.patchSet } },
+          artifacts,
+          artifacts,
+          ['DKRT_BOOT', 'DKRT_ASSIGN', 'fx.rows', '_dl_area'],
+        );
         plan = prepared.plan;
         watchOutput = path.join(artifacts, 'writewatch.jsonl');
         const env = runtimeWatchEnv(prepared.planFile, watchOutput);

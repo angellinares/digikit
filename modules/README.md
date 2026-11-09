@@ -391,6 +391,7 @@ then placed in a region. The firmware table is never stored in the repository.
 | `region` | where to place it |
 | `from` | `{ anchor, offset = 0, len = EXPR, expect_sha256 }`; `len` defaults to the rest of the anchor; `expect_sha256` is needed when the range reaches outside the anchor |
 | `append` | `{ registry, row = [EXPR, ...] }`: for each entry append the row; a word is `EXPR` (32-bit), `u8:EXPR` or `u16:EXPR`; `$field` is an entry field and `$index` its index |
+| `edit` | `{ registry, at = EXPR, fields = [{ offset, value = EXPR }, ...] }`: for each entry rewrite words of one copied row in place: `at` is the row's byte offset in the copied bytes, `offset` a word's offset in the row, `value` as a word of `append` (core/params `param_edits`) |
 | `align` | bytes, default 4 |
 | `devices` | optional device filter |
 

@@ -10,6 +10,8 @@
 //! decoded with the confident width, then the instructions a sweep from the start reaches, kept when at least [`MIN_DEPTH`] decoded
 //! instructions in a row end there. Code blocks are the stock ones (by target address; the DT2 and DN2 lists) and the run of blocks
 //! below 0x80000000 a patch appended before the final block. Data blocks are not scanned: decoded as code they give false stores.
+//! With the code ranges of the patch's plan (`Plan::sharc_code`), an appended block is scanned only inside them, as a module's data
+//! placed behind its code in the same block gives false stores too.
 
 use crate::build::sharc_legal::{Placed, legality_problems, loop_end_problems};
 use crate::dsp::{L2_BYTE_BASE, L2_BYTE_LIMIT, L2_SW_BASE, SW_ALIAS_BASE, Stream};
@@ -135,8 +137,9 @@ pub fn list(blob: &[u8]) -> Result<Vec<String>> {
     Ok(out)
 }
 
-/// One message per excluded store in the code blocks of the boot stream `blob` (container section 7, depacked).
-pub fn scan(blob: &[u8]) -> Result<Vec<String>> {
+/// One message per excluded store in the code blocks of the boot stream `blob` (container section 7, depacked). `code`: the byte
+/// ranges a patch placed as code; an appended block is scanned only inside them (none: the whole block).
+pub fn scan(blob: &[u8], code: Option<&[(u64, u64)]>) -> Result<Vec<String>> {
     let stream = Stream::parse(blob.to_vec())?;
     let mut found = vec![];
     for idx in code_blocks(&stream) {
@@ -147,8 +150,16 @@ pub fn scan(blob: &[u8]) -> Result<Vec<String>> {
         let Some(payload) = stream.read(b.target, b.count as usize) else {
             continue;
         };
-        let code = aligned(&payload);
-        for (off, d) in &code {
+        let stock = CODE_TARGETS.contains(&b.target);
+        let placed_code = |off: usize| {
+            let at = b.target as u64 + off as u64;
+            stock || code.is_none_or(|c| c.iter().any(|&(lo, hi)| (lo..hi).contains(&at)))
+        };
+        let insns: Vec<_> = aligned(&payload)
+            .into_iter()
+            .filter(|(off, _)| placed_code(*off))
+            .collect();
+        for (off, d) in &insns {
             for msg in legality_problems(d, "") {
                 found.push(format!(
                     "block {idx} pc {:#x}{msg}",
@@ -157,7 +168,7 @@ pub fn scan(blob: &[u8]) -> Result<Vec<String>> {
             }
         }
         // the loop ends (finding 91): positions are short-word addresses
-        let placed: Vec<Placed> = code
+        let placed: Vec<Placed> = insns
             .iter()
             .map(|(off, d)| {
                 (
@@ -172,9 +183,9 @@ pub fn scan(blob: &[u8]) -> Result<Vec<String>> {
     Ok(found)
 }
 
-/// The scan of a firmware image: section 7 must exist and be clean. `Ok` carries the summary line.
-pub fn check_section7(dsp: &[u8]) -> Result<String> {
-    let found = scan(dsp)?;
+/// The scan of a firmware image: section 7 must exist and be clean (`code` as in [`scan`]). `Ok` carries the summary line.
+pub fn check_section7(dsp: &[u8], code: Option<&[(u64, u64)]>) -> Result<String> {
+    let found = scan(dsp, code)?;
     if found.is_empty() {
         return Ok("section 7: no instruction the ISA excludes".into());
     }
@@ -222,15 +233,16 @@ mod tests {
 
     #[test]
     fn a_code_block_with_a_same_dag_store_is_refused_and_an_allowed_one_passes() {
-        let bad = scan(&stream_of(&assembled(
-            "    DM(-16, I6) = I0;\n    PM(15, I12) = I8;\n",
-        )))
+        let bad = scan(
+            &stream_of(&assembled("    DM(-16, I6) = I0;\n    PM(15, I12) = I8;\n")),
+            None,
+        )
         .unwrap();
         assert_eq!(bad.len(), 2, "{bad:?}");
         assert!(bad[0].starts_with("block 0 pc 0x"), "{bad:?}");
         assert!(bad[0].ends_with(": DM store of I0 (DAG1)"), "{bad:?}");
         assert!(bad[1].ends_with(": PM store of I8 (DAG2)"), "{bad:?}");
-        let e = check_section7(&stream_of(&assembled("    DM(-16, I6) = I0;\n")))
+        let e = check_section7(&stream_of(&assembled("    DM(-16, I6) = I0;\n")), None)
             .unwrap_err()
             .0;
         assert!(
@@ -239,8 +251,22 @@ mod tests {
         );
         // the direct-address store and a store of a data register are allowed
         let good = assembled("    DM(0x20000000) = I0;\n    DM(15, I4) = R0;\n");
-        assert_eq!(scan(&stream_of(&good)).unwrap(), Vec::<String>::new());
-        check_section7(&stream_of(&good)).unwrap();
+        assert_eq!(scan(&stream_of(&good), None).unwrap(), Vec::<String>::new());
+        check_section7(&stream_of(&good), None).unwrap();
+    }
+
+    #[test]
+    fn with_the_plans_code_ranges_only_placed_code_of_an_appended_block_is_scanned() {
+        // code, then bytes that decode as an excluded store (a module's data behind its code in the same block)
+        let code = assembled("");
+        let data = assembled("    DM(-16, I6) = I0;\n");
+        let blob = stream_of(&[code.clone(), data].concat());
+        assert_eq!(scan(&blob, None).unwrap().len(), 1);
+        let placed = [(APPENDED as u64, APPENDED as u64 + code.len() as u64)];
+        assert!(scan(&blob, Some(&placed)).unwrap().is_empty());
+        // a store inside the code ranges is still found
+        let all = [(APPENDED as u64, APPENDED as u64 + 0x1000)];
+        assert_eq!(scan(&blob, Some(&all)).unwrap().len(), 1);
     }
 
     #[test]
@@ -250,7 +276,7 @@ mod tests {
             ".SECTION/PM seg_pmco;\n_x:\n    DM(-16, I6) = I0;\n    RTS;\n",
         )
         .unwrap();
-        assert!(scan(&stream_of(&short)).unwrap().is_empty());
+        assert!(scan(&stream_of(&short), None).unwrap().is_empty());
     }
 
     #[test]

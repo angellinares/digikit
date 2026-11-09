@@ -69,7 +69,8 @@ export const createNodesV2 = [
     // The supported acceptance image sets; arbitrary overrides need separate input review.
     for (const profile of globSync('devices/*.toml', { cwd: ctx.workspaceRoot }).sort()) {
       const sets = read(ctx.workspaceRoot, profile).patch_sets ?? {};
-      for (const set of ['emulator', 'sample-tracks']) for (const id of sets[set] ?? []) includeImageModule(id);
+      for (const set of ['emulator', 'sample-tracks', 'overdrive-tracks'])
+        for (const id of sets[set] ?? []) includeImageModule(id);
     }
     const imageInput = { input: 'production', projects: [...imageModules].sort() };
     // Only the modules the gate packs get a pack target: patched-in core modules and static fixtures

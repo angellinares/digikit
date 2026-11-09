@@ -34,17 +34,17 @@ fn digest_without_dsp(syx: &[u8]) -> String {
     sha256_hex(&buf)
 }
 
-/// (stock image, modules, digest_without_dsp of the patched image); moved 2026-10-20 with the id renames (P3c-3a) and 2026-10-21 with the move of a plucked-string machine to test/patched-pluck (P3e-1): patch record only; DN2 pin moved 2026-11-02 with the shared knob map (param_slots [1, 2, 4, 5, 6, 0, 3, 7]): the page knobs sit on B C E F; both pins moved 2026-11-05 with native machine pages (the machines adapter patches the native-page hooks)
+/// (stock image, modules, digest_without_dsp of the patched image); moved 2026-10-20 with the id renames (P3c-3a) and 2026-10-21 with the move of a plucked-string machine to test/patched-pluck (P3e-1): patch record only; DN2 pin moved 2026-11-02 with the shared knob map (param_slots [1, 2, 4, 5, 6, 0, 3, 7]): the page knobs sit on B C E F; both pins moved 2026-11-05 with native machine pages (the machines adapter patches the native-page hooks); both pins moved 2026-11-09 with core/params' param_edits (its accessor hook looks up an edited code's class)
 const PINS: &[(&str, &str, &str)] = &[
     (
         "Digitakt_II_OS1.17.syx",
         "test/patched-pluck",
-        "6dfcfde3d23ee91b65b6bdf3ad1b129cd8aa1b948a25e574951d78330826a970",
+        "5fee3b10bb218b91821a77cb1e5255e7ba4870fc3aca82ea1328550b354d6f3c",
     ),
     (
         "Digitone_II_OS1.12.syx",
         "test/patched-pluck",
-        "f17f811559afebb4a17ce77e48980977a893118155215f23acf139d4878b8e2e",
+        "aafbaa977d7d8a628cf0f3f6c0f6d50212e245a70f1e3623800cffc02cc5ebb9",
     ),
 ];
 
