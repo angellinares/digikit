@@ -46,6 +46,12 @@ Highest payoff first. Each step states its proof.
    file sources. A change that does not change the bytes (a comment, an unused constant, a test-only patch set) reruns nothing. Real core changes
    still rerun everything. Owner: the Nx lane. Proof: `nx show target inputs` and one invalidation check per input kind.
    - [ ] Carried over: skip audio scenarios whose image, module objects, daemon and test code did not change.
+   - [ ] **[D]** The merge tier runs `test-device` and `test-conformance` for every owner and relies on cache replay. After main moves, nothing is
+     cached for the new main, so the next PR gate reruns the whole device suite, whatever the PR changed. Seen 2026-11-09: PR 362 (a Python test
+     helper and the formatting of one Nx file) started the full device suite. Fix: select device tasks whose inputs differ between base and head, or
+     warm the cache on main once after each merge.
+   - [ ] **[D]** Tool files that are declared inputs select heavy runs on any edit: a prettier-only change to `tools/nx/coupled-inputs.mjs` selected
+     `fx`, `fx-no-aot`, `fx-dt2`, `tier-quick` and `dt2-tier-quick`. Inputs of tool files should be what they compute, not their source text.
 4. [ ] **Core-change policy.** Decision for Em: (A) every core change runs all device tests, or (B) the merge tier runs runtime-tests, smoke,
    conformance and one test per area on both devices, and the full suite runs at batch points. Decide after steps 1 to 3 have shrunk the full suite.
 5. [ ] **Gate output and history.**
