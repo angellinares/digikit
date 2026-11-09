@@ -125,6 +125,7 @@ export async function word(session: Session, address: number): Promise<number> {
 }
 
 export async function dspBytes(session: Session, address: number, length: number): Promise<Buffer> {
+  session.requireDsp('dspBytes');
   const result = await rpc<{ hex: string; unknown: number }>(session, 'dsp.peek', { addr: address, len: length });
   expect(result.unknown, 'DSP bytes are mapped').toBe(0);
   const bytes = Buffer.from(result.hex, 'hex');
@@ -143,6 +144,7 @@ export async function rows(session: Session, plan: RuntimePlan, slots: number): 
 }
 
 export async function frames(session: Session): Promise<number> {
+  session.requireDsp('frames (the DSP frame count)');
   const frame = (await bounded(() => session.status())).dsp_frames;
   if (typeof frame !== 'number') throw new Error('status lacks DSP frame count');
   return frame;
@@ -196,6 +198,7 @@ export interface NoteOptions {
 /** The shared note sequence: run to `trigger`, capture `length` frames with TRIG 1 held, then check for faults. */
 export async function captureNote(session: Session, opts: NoteOptions): Promise<void> {
   const { file, trigger, tag, length = 1500 } = opts;
+  session.requireDsp('captureNote');
   const current = await frames(session);
   if (current >= trigger - 20) throw new Error(`${tag} setup too late: current frame ${current}, trigger ${trigger}`);
   if (!opts.tapStarted) await rpc(session, 'pcm.tap', { action: 'start' });
@@ -508,6 +511,7 @@ export function withGainFxSession(device: Device, scope: string, config: GainFxS
   const fixture = withReusablePatchedSession(
     {
       ...options(device),
+      dsp: 'sharc', // effects run on the DSP
       patchSet: config.patchSet,
       runDirClaim: () => claimRunDir(device),
       env: async () => {
