@@ -10,7 +10,7 @@ version = "0.5.6"   # 0.x: MINOR may break (contract major, store format, SysEx 
                     # contract (major != 0) when its major differs from the runtime's or its minor is above the runtime's. Major 0 = not implemented.
                     # An appended Api function is a minor bump; a changed or removed one is a major bump.
 api = [1, 9]        # the ColdFire Api table (every module, `raw` included); minor 9: settings_client/get/put/remove (module settings), intro_take (boot animation); minor 1: `log_lv` appended; minor 2: `register_cmds` appended; minor 3: sample bank API appended; minor 4: read-only listing; minor 5: stereo sample pool (per module, 16 entries); minor 6: sample_pool_path/param_get/param_set/sample_pool_set; minor 7: sample_pool_peaks; minor 8: job_post/job_cancel (background jobs)
-machine = [1, 6]    # minor 1: source track; 2: stereo; 3: executable parameter latches; 4: opt-in native callback page v1; 5: two replacement callback pages v2; 6: note gate appended to voice_in (DK_MACHINE_GATE)
+machine = [1, 6]    # minor 1: source track; 2: stereo; 3: executable parameter latches; 4: opt-in native callback page v1; 5: two replacement callback pages v2; 6: note gate appended to voice_in (DK_MACHINE_GATE); voice states start zeroed after a load
 fx = [1, 0]         # run-time effects (sdk/include/dk/gen/fx.h, DSP section version 4 of a .dkm); 0.4.0; effect pages (register kind 4) 0.5.0
 service = [1, 0]
 
@@ -130,7 +130,7 @@ desc = [
     "u32 contract // DK_MACHINE_V1 (low byte); a stereo machine (contract 1.2) or-s in DK_MACHINE_STEREO; a machine that reads `gate` (contract 1.6) or-s in DK_MACHINE_GATE",
     "u32 n_params // 0 .. DK_MAX_PARAMS, the manifest's `params` order",
     "u32 voices // 1 .. DK_MAX_VOICES the module supports",
-    "u32 state_bytes // per voice, a multiple of 4",
+    "u32 state_bytes // per voice, a multiple of 4; a voice's state is zeroed when its track first plays a note after the module loads (contract 1.6), then only state_clear_bytes at each note-on",
     "u32 state_clear_bytes // leading bytes zeroed at note-on, <= state_bytes",
     "u32 max_cycles_block // worst-case instructions of one render call",
     "u32 max_cycles_note_on // the same for the note-on block (note_on + render)",

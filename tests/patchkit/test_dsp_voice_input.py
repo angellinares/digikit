@@ -9,7 +9,7 @@ is not built."""
 import dataclasses
 
 import pytest
-from support.machine_rig import MachineRig
+from support.machine_rig import MachineRig, nw
 
 from tools.patchkit import pk_conform, pk_toolchains
 from tools.patchkit.pk_conform import Param
@@ -114,3 +114,22 @@ def test_the_digitone_gate_stays_1():
     r.block("friendly")
     r.release()
     assert [gate(r) for _ in range(2)] == [1.0, 1.0]
+
+
+@pytest.mark.parametrize("device", ["dt2", "dn2"])
+def test_a_tracks_state_is_zeroed_at_its_first_note_on_and_then_only_the_clear_bytes(
+    device,
+):
+    r = rig(device)
+    b = r.built
+    at = nw(b.state + b.stride * r.track)
+    words_ = b.stride // 4
+    assert [r.sess.peek(at + k) for k in range(words_)] != [0] * words_  # garbage
+    for _ in range(2):  # the Digitone II rig sees the trigger edge from the second call on
+        r.trigger()
+        assert r.block("friendly").returned
+    assert [r.sess.peek(at + k) for k in range(words_)] == [0] * words_
+    r.sess.poke(at, 0x1234)  # a note-on again: the clear bytes (0) only
+    r.trigger()
+    assert r.block("friendly").returned
+    assert r.sess.peek(at) == 0x1234

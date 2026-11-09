@@ -42,8 +42,8 @@ Differences from Open303:
   only below about 23 Hz) plays level 1, and levels 3 to 11 are stored shorter (exact resamplings, at least 8 samples per cycle of
   their top harmonic).
 
-The slide and the amp's release read `in->gate` (sdk/sdk.toml [machine]): 0 from the note's release on. The state is never cleared
-by the adapter, and the runtime does not clear it at load, so a voice's first note-on zeroes it.
+The slide and the amp's release read `in->gate` (sdk/sdk.toml [machine]): 0 from the note's release on. The adapter clears none of the state
+at note-on; it zeroes a track's whole state at its first note-on after the load (machine contract 1.6).
 
 Cost: 8,037 instructions per block including the adapter, the same for any note and setting (8,241 on a note-on block).
 

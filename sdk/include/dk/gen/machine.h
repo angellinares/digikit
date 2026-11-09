@@ -25,7 +25,7 @@ typedef struct dk_machine_desc {
     uint32_t contract;                  /* DK_MACHINE_V1 (low byte); a stereo machine (contract 1.2) or-s in DK_MACHINE_STEREO; a machine that reads `gate` (contract 1.6) or-s in DK_MACHINE_GATE */
     uint32_t n_params;                  /* 0 .. DK_MAX_PARAMS, the manifest's `params` order */
     uint32_t voices;                    /* 1 .. DK_MAX_VOICES the module supports */
-    uint32_t state_bytes;               /* per voice, a multiple of 4 */
+    uint32_t state_bytes;               /* per voice, a multiple of 4; a voice's state is zeroed when its track first plays a note after the module loads (contract 1.6), then only state_clear_bytes at each note-on */
     uint32_t state_clear_bytes;         /* leading bytes zeroed at note-on, <= state_bytes */
     uint32_t max_cycles_block;          /* worst-case instructions of one render call */
     uint32_t max_cycles_note_on;        /* the same for the note-on block (note_on + render) */

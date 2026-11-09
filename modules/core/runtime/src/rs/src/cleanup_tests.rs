@@ -175,11 +175,11 @@ fn voice_latch_mask_is_published_before_the_type() {
         d.row_pub[0] = 0;
         d.row_latched[0] = 5;
         d.row_type[0] = 17;
-        while LINK.events.len() < 3 {
+        while LINK.events.len() < 4 {
             dsp::step();
         }
         let at = 24 * VOICE_INFO[6];
-        assert_eq!(LINK.events, [Event::Word(1, at + 22, 5u32.swap_bytes()), Event::Word(1, at + 10, 0), Event::Word(1, at, 17u32.swap_bytes())]);
+        assert_eq!(LINK.events, [Event::Word(1, at + 22, 5u32.swap_bytes()), Event::Word(1, at + 23, 0), Event::Word(1, at + 10, 0), Event::Word(1, at, 17u32.swap_bytes())]);
         assert_eq!(dsp::ds().row_pub[0], 1);
     }
 }

@@ -455,7 +455,7 @@ Do not place `note_on` at offset 0 of the image: an offset of 0 reads as "no not
 The `dk_machine_desc` has 10 words: magic, contract, parameter count, voices (1 to 16), state bytes per voice (a multiple of 4), bytes cleared at
 note-on, max cycles of a block, max cycles of the note-on block, max call depth, stack bytes.
 
-The adapter in `core/dsp-voice` zeroes `state_clear_bytes` at note-on and clamps the parameter words to your ranges. After each call it checks the
+The adapter in `core/dsp-voice` zeroes `state_clear_bytes` at note-on (the first note-on of a track after the module loads zeroes its whole state: voice states start zeroed, machine contract 1.6; unload and load again zeroes again) and clamps the parameter words to your ranges. After each call it checks the
 output. A block with a sample that is not finite or is louder than 8.0 is zeroed. The voice ends. After 8 faults in a second the machine is
 switched off.
 

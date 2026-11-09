@@ -571,7 +571,16 @@ _dv_cpe:
     R11 = DM(_dv_c + 16);
     R11 = PASS R11;
     IF EQ JUMP _dv_crender;
+    R7 = DM(-1, I4);                      // row word 23: the tracks whose state has been zeroed since the load (the runtime writes 0)
+    R9 = 1;
+    R10 = LSHIFT R9 BY R2;
+    R9 = R7 AND R10;
     R5 = DM(-5, I4);                      // clear bytes
+    IF NE JUMP _dv_cseen;
+    R7 = R7 OR R10;
+    DM(-1, I4) = R7;
+    R5 = DM(-6, I4);                      // the first note-on of this track since the load: the whole state (the stride), not the clear bytes
+_dv_cseen:
     R6 = -2;
     R5 = LSHIFT R5 BY R6;                 // clear bytes -> words
     R5 = PASS R5;                         // (a shift sets SZ, the condition tests AZ)

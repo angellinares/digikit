@@ -31,8 +31,9 @@
 // Abrupt knob changes (an LFO's square, a p-lock) make the filter blow up, Open303's own too (README.md), so u0, es, eo and
 // the resonance glide to the knobs' values with a 2 ms time constant, a block per step (S_*T are the targets).
 //
-// State (256 bytes; never cleared by the adapter: the phase free-runs, a slide starts from the previous note, and the filters run on as in
-// Open303): words S_* below. The first note-on of a voice finds no S_INIT mark (the runtime does not clear the state) and zeroes it.
+// State (256 bytes; the adapter clears none at note-on: the phase free-runs, a slide starts from the previous note, and the filters run on as in
+// Open303): words S_* below. The adapter zeroes a track's state at its first note-on after the load (machine contract 1.6), so the first
+// note-on finds no S_INIT mark and zeroes the state again; the check is kept (one compare) and holds without that zeroing.
 // Constants: _tb_k at K_* (tables.inc).
 //
 // Loop registers: F9 wave, F10 frequency, F11 slide coefficient, F12 target, F13 phase, F6 k, F7 b0, F8 2g, F14 amp;
