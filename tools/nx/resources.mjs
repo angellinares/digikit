@@ -3,8 +3,9 @@
 import { spawnSync } from 'node:child_process';
 import { availableParallelism, cpus, totalmem } from 'node:os';
 
-// One coupled emulator needs about 2 cores (measured about 1.5).
-export const EMULATOR_CORES = 2;
+// Cores per emulator for the ceiling: most device tests run zero DSP (ColdFire only, about 1 core). A coupled run takes about 2;
+// the idle-core admission (ADMIT_IDLE_CORES plus the reserve) stops new emulators while coupled runs load the machine.
+export const EMULATOR_CORES = 1;
 // A new emulator is admitted when this many cores are idle, plus the reserve.
 export const ADMIT_IDLE_CORES = 2;
 // The idle check compares two CPU samples this far apart.
@@ -37,7 +38,7 @@ export function workCores() {
   return efficiency > 0 ? performance : total - 2;
 }
 
-// Most emulators at once: two cores each, and two GB of RAM each.
+// Most emulators at once: EMULATOR_CORES each, and two GB of RAM each.
 export function ceiling(work = workCores(), ramBytes = totalmem()) {
   return Math.max(1, Math.min(Math.floor(work / EMULATOR_CORES), Math.floor(ramBytes / 2 ** 30 / 2)));
 }
@@ -81,7 +82,8 @@ export function budget(work, override) {
   // Nx tasks follow the emulator ceiling.
   const tasks = ceiling(b);
   const workers = 1;
-  const threads = Math.ceil(b / tasks);
+  // Nextest threads per Rust test task: ceil(B / tasks) was 2 when tasks were B/2; tasks now follow the emulator ceiling (about B).
+  const threads = 2;
   const jobs = clamp(Math.floor(b / 2), 1, 6);
   return { budget: b, tasks, workers, threads, jobs };
 }

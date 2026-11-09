@@ -498,13 +498,13 @@ B = the performance core count on Apple Silicon, otherwise cores - 2, with a min
 
 | Setting | Formula | B=4 | B=8 | B=12 | B=16 |
 | --- | --- | --- | --- | --- | --- |
-| Nx tasks (`NX_PARALLEL`) and emulator ceiling | max(1, min(floor(B/2), floor(RAM GB/2))) | 2 | 4 | 6 | 8 |
+| Nx tasks (`NX_PARALLEL`) and emulator ceiling | max(1, min(B, floor(RAM GB/2))) | 4 | 8 | 12 | 16 |
 | `REGRESSION_JOBS` (Vitest workers per task) | 1 | 1 | 1 | 1 | 1 |
 | `DIGI_JOBS` (emulator processes) | clamp(floor(B/2), 1, 6) | 2 | 4 | 6 | 6 |
 | `CARGO_BUILD_JOBS` | B | 4 | 8 | 12 | 16 |
-| `NEXTEST_TEST_THREADS` | ceil(B/tasks) | 2 | 2 | 2 | 2 |
+| `NEXTEST_TEST_THREADS` | 2 | 2 | 2 | 2 | 2 |
 
-The values assume at least 2 GB of RAM per emulator. On Apple Silicon B is the performance core count, so a 12P+4E machine has B 12: 6 tasks, a ceiling of 6 emulators.
+The values assume at least 2 GB of RAM per emulator. On Apple Silicon B is the performance core count, so a 12P+4E machine has B 12: 12 tasks, a ceiling of 12 emulators; the idle-core admission keeps the efficiency cores and 2 more cores free, so load stays near 10 cores.
 `tools/nx/resources.mjs` holds this policy.
 
 Each launcher run has its own budget, so several lanes could start more emulators than the machine runs well.
