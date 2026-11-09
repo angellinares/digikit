@@ -704,5 +704,5 @@ runtimeTests(
       }
     }
   },
-  { devices: ['dn2'], patchSet: 'sample-tracks', timeout: 1_800_000 },
+  { dsp: 'sharc', devices: ['dn2'], patchSet: 'sample-tracks', timeout: 1_800_000 },
 );

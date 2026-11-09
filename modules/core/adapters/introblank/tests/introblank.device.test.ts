@@ -83,7 +83,7 @@ async function playsANote(h: CardRig, black: boolean) {
 /** The stock image's numbers per device, for the image with the adapter to beat. */
 const stock = new Map<Device, { blocks: number; ticks: number }>();
 
-cardRigs('introblank: the stock image (reference)', { relaxFs: true, roots: RT, symbols: CARD_SYMBOLS }, (h) => {
+cardRigs('introblank: the stock image (reference)', { dsp: 'sharc', relaxFs: true, roots: RT, symbols: CARD_SYMBOLS }, (h) => {
   test(
     'no boot screen: the stock intro plays to the end before the UI',
     async () => {
@@ -99,7 +99,7 @@ cardRigs('introblank: the stock image (reference)', { relaxFs: true, roots: RT, 
   test('control: a note plays on the stock image', () => playsANote(h, false), CARD_TIMEOUT);
 });
 
-cardRigs('introblank', { relaxFs: true, roots: IB, symbols: CARD_SYMBOLS }, (h) => {
+cardRigs('introblank', { dsp: 'sharc', relaxFs: true, roots: IB, symbols: CARD_SYMBOLS }, (h) => {
   test(
     'no boot screen: the intro is black and the UI comes sooner than on the stock image',
     async () => {
@@ -137,7 +137,7 @@ cardRigs('introblank', { relaxFs: true, roots: IB, symbols: CARD_SYMBOLS }, (h) 
 
 cardRigs(
   'introblank with REC held',
-  {
+  { dsp: 'sharc',
     relaxFs: true,
     roots: IB,
     symbols: CARD_SYMBOLS,

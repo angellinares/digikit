@@ -6,18 +6,32 @@ import { timePhase, timingContext } from '../timing.ts';
 /** The DSP frame counter advances 1500 frames per emulated second. */
 const FRAMES_PER_MS = 1.5;
 
-/** Wait until the DSP has run `frames` more frames (emulated time). Wall time only guards against a stuck daemon. */
+/** ColdFire instructions per DSP frame: 132 M instructions a second over 1500 frames a second. */
+const INSNS_PER_FRAME = 88_000;
+
+/**
+ * Wait until `frames` more frames of emulated time have passed (1500 a second). With a DSP the clock is its frame counter.
+ * Without one (`zero`, `cold`) it is `status.elapsed`, the ColdFire instruction count, at 88,000 instructions a frame.
+ * Wall time only guards against a stuck daemon.
+ */
 export async function waitEmulatedFrames(session: Session, frames: number, { hangMs = 30_000 } = {}): Promise<void> {
-  const read = async () => Number(((await session.status()).audio as { frames?: number } | null)?.frames ?? 0);
+  const coupled = session.dsp === 'sharc';
+  const unit = coupled ? 1 : INSNS_PER_FRAME;
+  const clock = coupled ? 'DSP frames' : 'ColdFire instructions';
+  const read = async () => {
+    const status = await session.status();
+    return Number(coupled ? ((status.audio as { frames?: number } | null)?.frames ?? 0) : (status.elapsed ?? 0));
+  };
   const start = await read();
+  const target = start + frames * unit;
   let seen = start;
   let lastAdvance = Date.now();
-  while (seen < start + frames) {
+  while (seen < target) {
     await delay(50);
     const now = await read();
     if (now > seen) lastAdvance = Date.now();
     else if (Date.now() - lastAdvance >= hangMs) {
-      throw new Error(`DSP frames stuck at ${now} (started at ${start}, wanted ${start + frames}) for ${hangMs} ms`);
+      throw new Error(`${clock} stuck at ${now} (started at ${start}, wanted ${target}) for ${hangMs} ms`);
     }
     seen = now;
   }

@@ -36,7 +36,7 @@ const CUT_CASES = [
 ] as const;
 
 
-cardRigs('safe mode', { full: true, relaxFs: true, roots: RT, symbols: CARD_SYMBOLS }, (h) => {
+cardRigs('safe mode', { dsp: 'sharc', full: true, relaxFs: true, roots: RT, symbols: CARD_SYMBOLS }, (h) => {
   test(
     'a module that resets the machine in its init: two boots never reach the UI loop, the third boots in safe mode',
     async () => {
@@ -134,7 +134,7 @@ cardRigs('safe mode', { full: true, relaxFs: true, roots: RT, symbols: CARD_SYMB
 for (const held of [true, false]) {
   cardRigs(
     `cold boot with REC ${held ? 'held' : 'released'}`,
-    {
+    { dsp: 'sharc',
       roots: RT, // default tier: these two cases run in the normal gate
       symbols: CARD_SYMBOLS,
       startEmpty: true,
@@ -180,7 +180,7 @@ for (const held of [true, false]) {
 
 cardRigs(
   'power cut between the selection record copies',
-  { full: true, roots: RT, symbols: CARD_SYMBOLS },
+  { dsp: 'sharc', full: true, roots: RT, symbols: CARD_SYMBOLS },
   (h) => {
     const modules = () => CUT_MODULES[h.device].map((id, i) => h.mod(id, `m${i}`));
 

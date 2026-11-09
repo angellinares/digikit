@@ -153,7 +153,7 @@ cardRigs('capacity, ColdFire only', { roots: RT, dsp: 'cold', symbols: SYMBOLS }
  */
 const REFERENCE = 'test/dyn-fx-gain';
 
-cardRigs('capacity, coupled', { roots: COUPLED_ROOTS, hold: true, symbols: SYMBOLS }, (rig) => {
+cardRigs('capacity, coupled', { dsp: 'sharc', roots: COUPLED_ROOTS, hold: true, symbols: SYMBOLS }, (rig) => {
   test(
     'full set behind a real module: the reference keeps its ranges and its DSP bytes in L2, every row is used up',
     async () => {

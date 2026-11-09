@@ -71,7 +71,6 @@ export async function startPatchedSession(
     () =>
       Session.start({
         ...opts,
-        dsp: opts.dsp ?? 'sharc',
         runtime: { patchSet: opts.patchSet },
       }),
     context,
@@ -250,7 +249,7 @@ export function withReusablePatchedSession(
     }
     try {
       // Without a DSP (zero or cold ColdFire-only) there is no audio capture to stop.
-      if (opts.dsp !== 'zero' && opts.dsp !== 'cold')
+      if (session!.dsp === 'sharc')
         await withinRuntimeDeadline(deadline, () => session!.client.call('pcm.tap', { action: 'capture_stop' }));
       await withinRuntimeDeadline(deadline, () => session!.client.call('run.mode', { mode: 'paused' }));
     } catch (error) {
@@ -283,7 +282,6 @@ export function withReusablePatchedSession(
       session = await Session.start({
         ...sessionOptions,
         ...(claim ? { runDir: claim.dir } : {}),
-        dsp: opts.dsp ?? 'sharc',
         runtime: { patchSet: opts.patchSet, reuse: true },
       });
     } catch (error) {

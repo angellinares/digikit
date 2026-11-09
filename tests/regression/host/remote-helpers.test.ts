@@ -55,6 +55,7 @@ const plan: RuntimePlan = {
 };
 const session = {
   options: { device: 'dt2', firmware: '1.17' },
+  dsp: 'sharc',
   runDir: '/run/own-daemon',
   loadResult: {
     syx_sha256: patchedSha256,

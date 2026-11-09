@@ -29,7 +29,7 @@ const INFERRED_NEEDS_MODULES = [
 /** Modules with no Digitone II port. */
 const DT2_ONLY = ['test/dyn-params'];
 
-cardRigs('inferred needs', { roots: COUPLED_ROOTS, hold: true, full: true, symbols: SYMBOLS }, (rig) => {
+cardRigs('inferred needs', { dsp: 'sharc', roots: COUPLED_ROOTS, hold: true, full: true, symbols: SYMBOLS }, (rig) => {
   for (const id of INFERRED_NEEDS_MODULES.filter((m) => !(rig.device === 'dn2' && DT2_ONLY.includes(m))))
     test(
       `${id}: the resources taken are the needs inferred from its contents`,

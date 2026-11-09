@@ -332,5 +332,5 @@ runtimeTests(
     await session.expectNoFault('stock pool borrow');
     writeFileSync(path.join(out, 'done'), 'ok');
   },
-  { devices: ['dt2'], timeout: 600_000 },
+  { dsp: 'sharc', devices: ['dt2'], timeout: 600_000 },
 );

@@ -133,7 +133,7 @@ cardRigs('boot screen', { relaxFs: true, roots: RT, symbols: CARD_SYMBOLS }, (h)
 
 cardRigs(
   'boot screen with REC held',
-  {
+  { dsp: 'sharc',
     relaxFs: true,
     roots: RT,
     symbols: CARD_SYMBOLS,
@@ -161,7 +161,7 @@ cardRigs(
 // (the module's code runs on the intro task, after the module is live), the next one that a card with the counter of two failed boots is safe mode.
 cardRigs(
   'boot screen fault halts',
-  { relaxFs: true, roots: RT, symbols: CARD_SYMBOLS, faults: true, deliverExceptions: true },
+  { dsp: 'sharc', relaxFs: true, roots: RT, symbols: CARD_SYMBOLS, faults: true, deliverExceptions: true },
   (h) => {
     test(
       'a fault in the intro callback halts in the stock handler',

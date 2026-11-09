@@ -114,6 +114,7 @@ async function expectSeedTables(patched: PatchedSession): Promise<void> {
 }
 
 runtimeTests('RECIPS and RSQRTS give the measured result and flags for every probe item', expectSeedTables, {
+  dsp: 'sharc',
   timeout: 600_000,
 });
 
@@ -165,7 +166,5 @@ async function expectFactsValues(patched: PatchedSession): Promise<void> {
 runtimeTests(
   'the instruction facts of the Digitakt II hold for every value item of the dsp-facts probe',
   expectFactsValues,
-  {
-    timeout: 600_000,
-  },
+  { dsp: 'sharc', timeout: 600_000 },
 );
