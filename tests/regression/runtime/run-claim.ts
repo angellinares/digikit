@@ -55,6 +55,10 @@ const lockText = (lock: string): string | undefined => {
 
 let staleCount = 0;
 
+let failedSeq = 0;
+/** The name a failed run dir gets. The time alone can repeat within a millisecond. */
+const failedName = (dir: string): string => `${dir}.failed-${Date.now()}-${process.pid}-${failedSeq++}`;
+
 /**
  * Take the lock for this process. The file appears with its pid in it: it is written aside and linked into place, which fails if the lock
  * exists. A stale lock is renamed away first, then the link is tried again: only the process whose link succeeds owns the lock. When the
@@ -196,7 +200,7 @@ export function claimDir(base: string, device: string, wipe: boolean): RunDirCla
     if (tryLock(lock)) break;
   }
   const dirty = path.join(dir, DIRTY);
-  if (fs.existsSync(dirty)) fs.renameSync(dir, `${dir}.failed-${Date.now()}`);
+  if (fs.existsSync(dirty)) fs.renameSync(dir, failedName(dir));
   fs.mkdirSync(dir, { recursive: true });
   if (wipe)
     for (const name of readNames(dir))
@@ -217,7 +221,7 @@ export function claimDir(base: string, device: string, wipe: boolean): RunDirCla
       if (released) return;
       released = true;
       try {
-        if (failed) fs.renameSync(dir, `${dir}.failed-${Date.now()}`);
+        if (failed) fs.renameSync(dir, failedName(dir));
         else fs.rmSync(dirty, { force: true });
       } finally {
         unlock();

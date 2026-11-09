@@ -59,7 +59,7 @@ test('a failed run dir is renamed, its snapshots are not reused, and only the ne
     fs.writeFileSync(path.join(claim.dir, 'cards', 'snap'), String(i));
     claim.release(true);
     expect(fs.existsSync(claim.dir)).toBe(false);
-    // `.failed-<ms>` names differ only by time
+    // `.failed-` names are unique
     for (const name of fs.readdirSync(base).filter((n) => n.includes('.failed-')))
       old(path.join(base, name), (FAILED_KEEP + 2 - i) * 1000);
   }

@@ -259,14 +259,15 @@ export class Session {
           ? await withinRuntimeDeadline(startupDeadline, () => prepareEnv(runDir))
           : prepareEnv;
       controller?.signal.throwIfAborted();
+      const env = {
+        ...(options.dsp === 'sharc' ? coupledEnv(inp.syx) : {}),
+        ...(options.snapshotDir ? { DIGI_SNAPSHOT_DIR: options.snapshotDir } : {}),
+        ...extraEnv,
+      };
       const daemon = await spawnDaemon({
         binary: options.binary,
         args,
-        env: {
-          ...(options.dsp === 'sharc' ? coupledEnv(inp.syx) : {}),
-          ...(options.snapshotDir ? { DIGI_SNAPSHOT_DIR: options.snapshotDir } : {}),
-          ...extraEnv,
-        },
+        env: Object.keys(env).length > 0 ? env : undefined,
         runDir,
         timeoutMs: options.runtime ? 120_000 : 300_000,
         signal: controller?.signal,
