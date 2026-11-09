@@ -99,7 +99,7 @@ Highest payoff first. Each step states its proof.
    - [x] Port next: the `equiv-dyn-pluck`, `-analog`, `-bd`, `-pd` scenarios as rows of `equiv.device.test.ts` (now one file per module, shared runner `tests/regression/runtime/equiv.ts`; only `equiv-dn2-set` is ported;
      the PCM pins are already approved, a port reuses the same values). Then `test_equiv_dt2.py` and `test_equiv_dn2.py` go.
      Done 2026-11-10: analog, bd, pd, pluck (both devices) and equiv-mixed (DT2) are rows; `test_equiv_dt2.py` and `test_equiv_dn2.py` are deleted.
-     The DN2 pluck reference has no runtime: `cardRig` option `plain`. Left: `run_equiv` in `pk_digikit_scen.py` has no scenario any more. Then the menu flows
+     The DN2 pluck reference has no runtime: `cardRig` option `plain`. `equiv-dyn-pluck.toml` stays as the input of `tools/devtools/sharc_matrix.py`, so `run_equiv` in `pk_digikit_scen.py` stays with it. Then the menu flows
      (`zero/menu.device.test.ts` covers only the empty-store menu) and the `pk_dkrt` boot proof as a safe-mode-style test.
    - [ ] Zero DSP where the subject allows: the boot, restart and safe-mode proofs of `test_patchkit_dkrt*.py` and the C-demo test. Equiv, menu and
      the conformance rigs keep the DSP (audio or SHARC subject).
