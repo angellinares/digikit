@@ -2608,9 +2608,8 @@ impl Actor {
             .and_then(|l| l.card.clone())
             .ok_or_else(|| RpcError::bad_params("no card is loaded"))?;
         let overlay = overlay_path(&image);
-        let aside = set_aside_overlay(&image).map_err(|e| {
-            RpcError::io(format!("could not set {} aside: {e}", overlay.display()))
-        })?;
+        let aside = set_aside_overlay(&image)
+            .map_err(|e| RpcError::io(format!("could not set {} aside: {e}", overlay.display())))?;
         if aside.is_some() {
             self.overlay_set_aside = true;
         }
@@ -4996,7 +4995,13 @@ mod card_key_tests {
         let aside = super::set_aside_overlay(&card).unwrap().unwrap();
         assert!(!overlay_path(&card).exists());
         assert_eq!(std::fs::read(&aside).unwrap(), b"bad overlay");
-        assert!(aside.file_name().unwrap().to_string_lossy().starts_with("overlay.bin.bad-"));
+        assert!(
+            aside
+                .file_name()
+                .unwrap()
+                .to_string_lossy()
+                .starts_with("overlay.bin.bad-")
+        );
         assert_eq!(none, card_snapshot_key(Some(&card), false));
         let _ = std::fs::remove_dir_all(&dir);
     }

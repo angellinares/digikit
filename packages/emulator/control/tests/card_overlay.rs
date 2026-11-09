@@ -43,7 +43,12 @@ fn wav(frequency: f64) -> Vec<u8> {
 }
 
 /// A session on a synced card built from `folder`; the card's image path.
-fn session(syx: &Path, run: &Path, folder: &Path, out: &Path) -> (Handle, std::thread::JoinHandle<()>, PathBuf) {
+fn session(
+    syx: &Path,
+    run: &Path,
+    folder: &Path,
+    out: &Path,
+) -> (Handle, std::thread::JoinHandle<()>, PathBuf) {
     let mut config = Config::new(None);
     config.run_dir = run.to_path_buf();
     let (handle, join) = spawn(config);
@@ -106,7 +111,11 @@ fn folder_of(dir: &Path) -> PathBuf {
     for (name, frequency) in [("a.wav", 220.0), ("b.wav", 880.0), ("c.wav", 1760.0)] {
         fs::write(folder.join(name), wav(frequency)).unwrap();
     }
-    fs::write(folder.join("digikit/modules/m.dkm"), b"module bytes for the store").unwrap();
+    fs::write(
+        folder.join("digikit/modules/m.dkm"),
+        b"module bytes for the store",
+    )
+    .unwrap();
     folder
 }
 
@@ -128,9 +137,16 @@ fn a_quit_before_ready_leaves_the_saved_overlay_and_exports_nothing() {
         false
     );
     quit(handle, join);
-    assert_eq!(fs::read(&overlay).unwrap(), before, "the overlay is as it was");
+    assert_eq!(
+        fs::read(&overlay).unwrap(),
+        before,
+        "the overlay is as it was"
+    );
     assert!(!overlay.with_extension("bin.part").exists());
-    assert!(!out.exists(), "nothing is exported from a session that never was ready");
+    assert!(
+        !out.exists(),
+        "nothing is exported from a session that never was ready"
+    );
     let _ = fs::remove_dir_all(&dir);
 }
 
@@ -156,7 +172,10 @@ fn a_ready_session_saves_and_reset_overlay_sets_the_saved_one_aside_for_good() {
     // Session 2: the overlay is loaded and reaches ready; reset sets it aside.
     let (handle, join, image2) = session(&syx, &run, &folder, &out);
     assert_eq!(image, image2);
-    assert_eq!(handle.call("card.folder", json!({})).unwrap()["overlay"], true);
+    assert_eq!(
+        handle.call("card.folder", json!({})).unwrap()["overlay"],
+        true
+    );
     boot_to_ready(&handle, 2);
     let reset = handle.call("card.reset_overlay", json!({})).unwrap();
     let aside = PathBuf::from(reset["set_aside"].as_str().expect("set aside"));
@@ -169,13 +188,19 @@ fn a_ready_session_saves_and_reset_overlay_sets_the_saved_one_aside_for_good() {
     );
     assert_eq!(fs::read(&aside).unwrap(), saved, "kept, not deleted");
     assert!(!overlay.exists());
-    assert_eq!(handle.call("card.folder", json!({})).unwrap()["overlay"], false);
+    assert_eq!(
+        handle.call("card.folder", json!({})).unwrap()["overlay"],
+        false
+    );
     // Nothing to reset a second time.
     let again = handle.call("card.reset_overlay", json!({})).unwrap();
     assert_eq!(again["set_aside"], Value::Null);
     // The session still holds the sectors; its quit must not write them back.
     quit(handle, join);
-    assert!(!overlay.exists(), "the quit did not bring the old sectors back");
+    assert!(
+        !overlay.exists(),
+        "the quit did not bring the old sectors back"
+    );
 
     // Session 3: a card without an overlay.
     let (handle, join, _) = session(&syx, &run, &folder, &out);
