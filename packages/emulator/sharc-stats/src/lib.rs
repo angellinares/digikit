@@ -83,6 +83,13 @@ pub struct TierCounters {
     pub code_verify_ns: u64,
     pub code_mismatch: u64,
     pub interp_appended: u64,
+    /// `SHARC_TIER_TIME=1`: host ticks (see `tick_hz`) spent in each tier, in
+    /// order: interpreter, generated blocks, fast tier, idle skip, before the
+    /// first tier of a step call. The time between two tier calls (dispatch,
+    /// models) counts for the tier that ran before it. All zero when off.
+    pub tt_on: bool,
+    pub tt_ticks: [u64; 5],
+    pub tt_hz: u64,
 }
 
 /// Cumulative cost of dispatching one entry PC in a run-time tier.

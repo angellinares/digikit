@@ -863,6 +863,7 @@ mod coupled {
             // The spike log needs the per-period DSP times and the reply waits.
             let link_timing = options.link_timing
                 || std::env::var("DN2_PROFILE_LINK").as_deref() == Ok("1")
+                || std::env::var_os("SHARC_TIER_TIME").is_some_and(|v| v != "0")
                 || elektron_native_boot::spikelog::enabled();
             emulator.enable_ssi_diagnostic(96_000)?;
             emulator.load_state(&snapshot)?;
@@ -1088,6 +1089,7 @@ mod coupled {
                             "code_gen": t.code_gen, "code_verifies": t.code_verifies,
                             "code_verify_ns": t.code_verify_ns, "code_mismatch": t.code_mismatch,
                             "interp_appended": t.interp_appended,
+                            "tier_time": tier_time_json(t, w.wait_ticks, w.wall_ticks, audio_s),
                         })
                     })
                 })
@@ -1147,6 +1149,32 @@ mod coupled {
             }
             report
         }
+    }
+
+    /// `SHARC_TIER_TIME=1`: host seconds per audio second of the DSP worker thread, by tier
+    /// (a tier's time includes the dispatch after it up to the next tier), its wait for the
+    /// ColdFire side, and the rest (SPI/SPORT exchange, models, peripherals).
+    fn tier_time_json(
+        t: &sharc_native::TierCounters,
+        wait_ticks: u64,
+        wall_ticks: u64,
+        audio_s: f64,
+    ) -> Value {
+        if !t.tt_on || audio_s <= 0.0 {
+            return Value::Null;
+        }
+        let per = |ticks: u64| ticks as f64 / t.tt_hz.max(1) as f64 / audio_s;
+        let engine: u64 = t.tt_ticks.iter().sum();
+        let busy = wall_ticks.saturating_sub(wait_ticks);
+        json!({
+            "units": "host seconds per audio second",
+            "interpreter": per(t.tt_ticks[0]), "aot_block": per(t.tt_ticks[1]),
+            "fast_tier": per(t.tt_ticks[2]), "idle_skip": per(t.tt_ticks[3]),
+            "step_entry": per(t.tt_ticks[4]),
+            "engine_total": per(engine), "worker_busy": per(busy),
+            "worker_other": per(busy.saturating_sub(engine)),
+            "worker_wait": per(wait_ticks), "worker_wall": per(wall_ticks),
+        })
     }
 
     fn link_timing_json(

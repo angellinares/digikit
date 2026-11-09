@@ -753,6 +753,10 @@
    "owner": "rust:packages/emulator",
    "purpose": "Comma list of 32-bit word indexes of the reply record to count; others are ignored."
   },
+  "SHARC_TIER_TIME": {
+   "owner": "rust:packages/emulator",
+   "purpose": "Set to 1 to report host time per SHARC tier and per thread in audio.report (dsp_tiers.tier_time); also turns link timing on."
+  },
   "SHARC_UNINIT": {
    "owner": "rust:packages/emulator",
    "purpose": "Hex seed: reads of never-written DSP bytes return a seeded non-zero pattern instead of zero."
