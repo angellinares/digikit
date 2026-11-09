@@ -1,6 +1,6 @@
 ---
 // A still picture of a device: the emulator's own panel drawing, optionally "playing" (trigs 1, 5, 9 and 13
-// lit in the device accent) with a Pluck page on the OLED. Server-rendered; no emulator runs.
+// lit in the device accent) with a screenshot of the MODULES list on the OLED. Server-rendered; no emulator runs.
 import PanelArt from './PanelArt';
 import { panels } from '../data/faceplates';
 import type { Key } from '../data/faceplates';
@@ -21,12 +21,7 @@ const keyLight = (key: Key) =>
   playing && key.style === 'trig' && lit.has(key.legend ?? '') ? `--lit: 1; --lit-color: ${panel.accent}` : undefined;
 const [gx0, gy0, gx1, gy1] = panel.glass;
 const oled = `left: ${(gx0 / 215) * 100}%; top: ${(gy0 / 176) * 100}%; width: ${((gx1 - gx0) / 215) * 100}%; height: ${((gy1 - gy0) / 176) * 100}%`;
-const params = [
-  ['DEC', '64'],
-  ['PICK', '32'],
-  ['BRT', '80'],
-  ['COL', '50'],
-];
+const base = import.meta.env.BASE_URL.replace(/\/?$/, '/');
 ---
 
 <div
@@ -37,40 +32,7 @@ const params = [
   aria-hidden={decorative ? 'true' : undefined}
 >
   <PanelArt panel={panel} keyLight={keyLight}>
-    {playing && (
-      <svg class="oled oled-art" style={oled} viewBox="0 0 128 64" preserveAspectRatio="none" aria-hidden="true">
-        <rect x="0" y="0" width="128" height="10" fill="#f1f1ec" />
-        <text class="inv" x="3" y="8">
-          T1
-        </text>
-        <text class="inv" x="22" y="8">
-          PLUCK
-        </text>
-        <text class="inv" x="96" y="8">
-          120.0
-        </text>
-        <text class="big" x="3" y="27">
-          PLUCK
-        </text>
-        <text x="92" y="20">
-          SRC
-        </text>
-        <text x="92" y="28">
-          1/2
-        </text>
-        {params.map(([name, value], i) => (
-          <>
-            <rect x={2 + i * 32} y="34" width="28" height="15" fill="none" stroke="#f1f1ec" stroke-width="1" />
-            <text x={16 + i * 32} y="45" text-anchor="middle">
-              {value}
-            </text>
-            <text x={16 + i * 32} y="61" text-anchor="middle">
-              {name}
-            </text>
-          </>
-        ))}
-      </svg>
-    )}
+    {playing && <img class="oled oled-art" style={oled} src={`${base}images/device-modules.png`} alt="" />}
   </PanelArt>
 </div>
 
@@ -82,18 +44,8 @@ const params = [
     filter: drop-shadow(0 30px 40px rgba(0, 0, 0, 0.55));
   }
   .device-art .oled-art {
-    shape-rendering: crispEdges;
-  }
-  .device-art .oled-art text {
-    font-family: var(--font-pixel);
-    font-size: 8px;
-    fill: #f1f1ec;
-  }
-  .device-art .oled-art text.big {
-    font-size: 16px;
-  }
-  .device-art .oled-art text.inv {
-    fill: #08090c;
+    image-rendering: pixelated;
+    object-fit: contain;
   }
   /* Static art: no pointer affordances. */
   .device-art .knob,

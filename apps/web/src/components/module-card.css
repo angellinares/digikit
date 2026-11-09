@@ -154,3 +154,90 @@
   background: var(--panel-3);
   border-color: #4a4e56;
 }
+button.add {
+  font-family: inherit;
+  cursor: pointer;
+  background: transparent;
+}
+.add[aria-pressed='true'] {
+  border-color: var(--amber);
+  color: var(--amber);
+}
+.by {
+  font-size: 12.5px;
+  color: var(--ink-3);
+}
+.card-foot .src {
+  margin-left: auto;
+  font-size: 13px;
+  color: var(--ink-3);
+  text-decoration: none;
+}
+.card-foot .src:hover {
+  text-decoration: underline;
+}
+
+/* Module browser: filter bar, card grid and the sticky selection bar. */
+.browse-bar {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 8px;
+  margin-bottom: 24px;
+}
+.browse-bar button {
+  height: 34px;
+  padding-inline: 13px;
+  border-radius: 8px;
+  border: 1px solid var(--line-2);
+  background: transparent;
+  color: var(--ink-2);
+  font: inherit;
+  font-size: 13.5px;
+  cursor: pointer;
+}
+.browse-bar button[aria-pressed='true'] {
+  border-color: var(--amber);
+  color: var(--amber);
+}
+.browse-spacer {
+  flex: 1 1 0;
+}
+.browse-bar label {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  font-size: 13.5px;
+  color: var(--ink-2);
+}
+.browse-bar select {
+  height: 34px;
+  border-radius: 8px;
+  border: 1px solid var(--line-2);
+  background: var(--panel);
+  color: var(--ink);
+  font: inherit;
+  font-size: 13.5px;
+  padding-inline: 8px;
+}
+.browse-empty {
+  color: var(--ink-2);
+}
+.browse-selected {
+  position: sticky;
+  bottom: 0;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  margin-top: 24px;
+  padding: 12px 16px calc(12px + env(safe-area-inset-bottom));
+  border: 1px solid var(--line-2);
+  border-radius: var(--r-m);
+  background: var(--panel);
+}
+@media (max-width: 600px) {
+  .browse-spacer {
+    display: none;
+  }
+}

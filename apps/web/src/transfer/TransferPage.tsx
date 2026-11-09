@@ -17,34 +17,62 @@ import { cancelPending, target, targetLabel } from './target';
 import SourcePanel from './SourcePanel';
 import { transferBackend } from './transfer-backend';
 import TransferBar from './TransferBar';
-import { MODES, modulesBar, parseMode, storageLine } from './transfer-core';
+import { MODES, modulesBar, parseMode, rowKey, storageLine, type TransferView } from './transfer-core';
 import { writing, type CancelledRun, type PageCtx } from './TransferParts';
 import {
   activeMode,
   askStop,
   beginJob,
+  browseDevice,
+  browsing,
   busy,
   endJob,
   error,
   log,
+  pendingAdd,
   progress,
+  setBrowsing,
   setDelTicks,
   setDeviceInfo,
   setError,
   setLastView,
   setMode,
+  setPendingAdd,
   setTicks,
 } from './transfer-state';
 import WaitNotice from './WaitNotice';
 import { failureLine } from './wait-core';
 import './transfer-page.css';
 
+/** Tick the modules named in the page URL (`?add=`) once the list has them; a row's id is the full module id (`<author>/<name>`). */
+function applyPendingAdd(view: TransferView): void {
+  const pending = pendingAdd();
+  if (!pending.length) return;
+  const keys = view.modules.filter((r) => r.id && pending.some((p) => p === r.id)).map(rowKey);
+  setTicks((t) => new Set([...t, ...keys]));
+  setPendingAdd([]);
+}
+
 /** Read what the mode shows, both sides: the device and the computer (the library, or the chosen samples folder). */
 async function read(): Promise<void> {
   const env = transferEnv();
   if (activeMode() === 'samples' && env.extras?.samples) return env.extras.samples.read();
-  const v = await transferBackend.list();
+  let v: TransferView;
+  try {
+    v = await transferBackend.list();
+  } catch (e) {
+    if (!env.libraryDevices) throw e;
+    // no device answered: show the library and keep the reason on the error line
+    const library = await transferBackend.listLibrary(browseDevice());
+    setBrowsing(true);
+    setLastView(library);
+    setDeviceInfo(undefined);
+    applyPendingAdd(library);
+    throw e;
+  }
+  setBrowsing(false);
   setLastView(v);
+  applyPendingAdd(v);
   setDeviceInfo({ name: await env.deviceName(v.device), runtime: v.runtime, storage: storageLine(v) });
 }
 
@@ -118,7 +146,8 @@ export default function TransferPage(): JSX.Element {
       () => {
         setLastView(undefined);
         setDeviceInfo(undefined);
-        setTicks(new Set<string>());
+        // ticks made before a device was plugged in survive (the list shows the library alone then)
+        if (!browsing()) setTicks(new Set<string>());
         setDelTicks(new Set<string>());
         transferEnv().extras?.samples?.reset();
         void run('Reading', async () => {});

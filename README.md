@@ -1,11 +1,23 @@
 # digikit
 
+New machines and effects for your Digitakt II and Digitone II.
+
 > 🧪 **digikit is experimental.** It will be released as stable once it reaches 1.0.0.
 
-digikit adds new machines and effects to the Elektron **Digitakt II** and **Digitone II**. It patches your own copy of
-the stock firmware with a small runtime. The runtime loads modules from its own area on the device's card, so you can add or change
-a machine without flashing again. An emulator runs the real firmware on your computer, so you can test everything
-before it goes near the device.
+[Open the site](https://eleklabs.github.io/digikit/) · [Browse modules](https://eleklabs.github.io/digikit/modules/)
+
+<p align="center">
+  <img src="apps/web/public/images/device-modules.png" alt="The MODULES list on the device, with several modules ticked" width="512">
+</p>
+<p align="center">
+  <img src="apps/web/public/images/device-digikit.png" alt="The DIGIKIT menu on the device: About, Health, Memory, Modules" width="512">
+</p>
+
+1. Patch your firmware in the browser. You choose your own stock `.syx`, and it is not uploaded.
+2. Flash it over USB.
+3. Install modules from the Transfer tab.
+
+digikit adds new machines and effects to the Elektron **Digitakt II** and **Digitone II**. It patches your own copy of the stock firmware with a small runtime. The runtime loads modules from its own area on the device's card, so you can add or change a machine without flashing again. An emulator in the desktop workbench runs the real firmware on your computer, so you can test everything before it goes near the device.
 
 > **Experimental.** Flashing modified firmware is at your own risk. Only flash images that pass `mise run patch:preflight`.
 > digikit never changes the bootloader, so the stock OS can always be restored (see [Recovery](#recovery)).
@@ -24,10 +36,11 @@ before it goes near the device.
   as a send effect like delay, reverb and chorus, with a send amount for each track on a second page of the FX key; the
   route is chosen in SETTINGS > DIGIKIT > FX ROUTES. Digikit's settings live in its own store on the card, not in your
   projects or kits.
-- **Emulator:** the real firmware (ColdFire and SHARC DSP) runs on your computer, with the front panel, display and audio.
+- **Emulator:** the real firmware (ColdFire and SHARC DSP) runs in the desktop workbench on your computer, with the front panel, display and audio.
 - **Module tests:** every machine is checked against a standard set of tests (parameter limits, modulation, long
   notes), in seconds, before it reaches a device.
-- **Browser patcher:** patch your firmware in the browser (`pnpm dev`, page `/patch`); nothing is uploaded.
+- **Site:** https://eleklabs.github.io/digikit/ patches and flashes firmware, lists the modules and installs them, all
+  in the browser; `mise web` serves it locally.
 
 ## Modules
 

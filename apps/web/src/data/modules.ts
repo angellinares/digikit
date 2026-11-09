@@ -3,6 +3,7 @@
 import { parse } from 'smol-toml';
 import type { DeviceId } from './device-profiles';
 import { isShipped } from './shipped.mjs';
+import type { Category } from './module-labels';
 
 const manifests = import.meta.glob('../../../../modules/**/module.toml', {
   query: '?raw',
@@ -23,7 +24,7 @@ const galleries = import.meta.glob('../../../../modules/**/build/gen/gallery.jso
   eager: true,
 }) as Record<string, string>;
 
-export type Category = 'fx' | 'machines' | 'core' | 'test' | 'ui' | 'tools';
+export { CATEGORY_LABEL, DEVICE_SHORT, type Category } from './module-labels';
 
 /** A machine a module adds, with the parameters on its knobs. */
 export interface GalleryMachine {
@@ -65,6 +66,10 @@ export interface ModuleInfo {
   id: string;
   name: string;
   version: string;
+  /** The manifest `author`, empty when absent. */
+  author: string;
+  /** The module's path in the repository, such as `modules/<kind>/<name>`. */
+  dir: string;
   category: Category;
   status: string;
   summary: string;
@@ -84,17 +89,6 @@ export interface ModuleInfo {
   shipped: boolean;
 }
 
-export const CATEGORY_LABEL: Record<Category, string> = {
-  fx: 'Effect',
-  machines: 'Machine',
-  core: 'Framework',
-  test: 'Test fixture',
-  ui: 'Interface',
-  tools: 'Tool',
-};
-
-export const DEVICE_SHORT: Record<DeviceId, string> = { dt2: 'DT2', dn2: 'DN2' };
-
 const FRAMEWORK_ICON = `<svg viewBox="0 0 48 48" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><rect x="12" y="12" width="24" height="24" rx="4"/><path d="M18 6v6M24 6v6M30 6v6M18 36v6M24 36v6M30 36v6M6 18h6M6 24h6M6 30h6M36 18h6M36 24h6M36 30h6" stroke-width="1.5"/><rect x="20" y="20" width="8" height="8" rx="1.5" style="stroke: var(--icon-accent); fill: var(--icon-accent)"/></svg>`;
 
 type Manifest = {
@@ -102,6 +96,7 @@ type Manifest = {
     id: string;
     name: string;
     version: string;
+    author?: string;
     category: Category;
     status: string;
     summary: string;
@@ -120,10 +115,13 @@ export const modules: ModuleInfo[] = Object.entries(manifests)
   .map(([path, text]) => {
     const { module: m, targets = {}, claim = [] } = parse(text) as unknown as Manifest;
     const named = new Set(Object.keys(targets).map((port) => port.split('-')[0]));
+    const dir = path.replace(/^(\.\.\/)+/, '').replace(/\/module\.toml$/, '');
     return {
       id: m.id,
       name: m.name,
       version: m.version,
+      author: m.author ?? '',
+      dir,
       category: m.category,
       status: m.status,
       summary: m.summary,
@@ -134,10 +132,21 @@ export const modules: ModuleInfo[] = Object.entries(manifests)
       icon: icons[path.replace(/module\.toml$/, 'gallery/icon.svg')] ?? FRAMEWORK_ICON,
       machines: galleryMachines(galleries[path.replace(/module\.toml$/, 'build/gen/gallery.json')]),
       dynamic: m.dynamic ?? false,
-      shipped: isShipped(parse(text), path.replace(/^(\.\.\/)+/, '').replace(/\/module\.toml$/, '')),
+      shipped: isShipped(parse(text), dir),
     };
   })
   .sort((a, b) => a.id.localeCompare(b.id));
 
 /** The modules the home page shows and the Transfer page installs: the run-time content modules the site ships. */
-export const shippedModules = modules.filter((m) => m.shipped);
+const CATEGORY_ORDER: Category[] = ['machines', 'fx', 'tools'];
+const categoryRank = (c: Category) => {
+  const i = CATEGORY_ORDER.indexOf(c);
+  return i < 0 ? CATEGORY_ORDER.length : i;
+};
+export const shippedModules = modules
+  .filter((m) => m.shipped)
+  .sort(
+    (a, b) =>
+      categoryRank(a.category) - categoryRank(b.category) ||
+      a.name.localeCompare(b.name, undefined, { sensitivity: 'base' }),
+  );

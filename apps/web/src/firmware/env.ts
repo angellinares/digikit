@@ -27,7 +27,7 @@ export interface FirmwareEnv {
   rpc(image: Uint8Array, chunk: number): Promise<RpcMachine>;
   /** Give the user the image as a .syx file. Resolves with where it went (a path, or the file name) and undefined when the user cancelled. */
   saveImage(name: string, bytes: Uint8Array): Promise<string | undefined>;
-  /** The site only: open the patched image in the emulator page of this browser (nothing is uploaded). The desktop app has its own emulator. */
+  /** The site only, and only when `SHOW_EMULATOR` in `site.config.mjs` is on: the patched image opens in the emulator page of this browser and nothing is uploaded. The desktop app has its own emulator. */
   runInEmulator?(name: string, device: string, bytes: Uint8Array): Promise<void>;
   /** The app's log of what happened. */
   log(run: FirmwareRun): void;

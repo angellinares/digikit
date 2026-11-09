@@ -10,6 +10,7 @@ import {
   install,
   libraryModule,
   listModuleFiles,
+  mergeView,
   moduleFilePath,
   moduleFilesFolder,
   putModuleFile,
@@ -91,6 +92,11 @@ export const transferBackend = {
     const { s, info } = await opened();
     const library = await loadLibrary(info.port);
     return asked(() => buildView(s, library));
+  },
+  /** The library alone, for a device id: nothing is read from a device. */
+  async listLibrary(device: string): Promise<TransferView> {
+    const library = await loadLibrary(device);
+    return { device, runtime: '', free_bytes: 0, loaded: [], capacity: null, ...mergeView(library, [], [], null, {}) };
   },
   /** Upload and VERIFY the modules (the same file hash is not sent again). The device's selection is not touched. */
   async install(modules: string[], onEvent: (e: TransferEvent) => void): Promise<void> {

@@ -9,6 +9,8 @@ export function isShipped(manifest, dir) {
   const m = manifest.module ?? {};
   if (!ROOTS.some((r) => `${dir}/`.startsWith(r))) return false;
   if (m.category === 'core' || m.type === 'framework') return false;
+  // A developer tool sets `site = false`: the public site is for end users.
+  if (m.site === false) return false;
   return Boolean(m.dynamic) || m.type === 'raw' || m.type === 'service';
 }
 

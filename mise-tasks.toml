@@ -36,6 +36,16 @@ description = "Build a device's ready snapshot from the .syx alone: mise run emu
 run = "pnpm --filter @digi/desktop exec vite --config ui/preview/vite.config.ts"
 description = "Serve the desktop UI pages in a browser (http://127.0.0.1:5199/) over a fake device and a fake samples folder; the state is in the address (?dev=ok|empty|noreply|error|slow&folder=files|empty|none&speed=3&mode=modules|samples&mkdir=0|1); screenshots: node tools/devtools/ui_shots.mjs"
 
+[web]
+dir = "{{config_root}}/apps/web"
+run = "node scripts/prebuild.mjs && pnpm exec astro dev"
+description = "Serve the site on the dev server (builds its assets first)"
+
+["site:shots"]
+dir = "{{config_root}}"
+description = "Capture the device screens used by the site and README (coupled emulator, DT2)"
+run = "node apps/web/scripts/site-shots.mjs"
+
 ["web:wasm"]
 run = "node tools/nx/wasm.mjs"
 description = "Build only the browser emulator core (WASM); the coupled core goes through wasm-opt -O3 (--wasm-opt= turns it off)"

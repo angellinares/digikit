@@ -128,6 +128,7 @@ Do not edit anything in `build/gen/`. A `.dkmod` export leaves out `build/` (sec
 | `dynamic` | `true` for a run-time `.dkm`. The machine and effect templates set it. |
 | `ports` | Firmware versions the module names: `["dt2-1.17", "dn2-1.12"]`. |
 | `requires`, `conflicts` | Other module ids. Empty for most content modules. |
+| `site` | `false` keeps a developer tool off the public site. The desktop workbench still has it. Leave it out for a module meant for users. |
 
 `[targets]` records the test status for each firmware: `untested`, `experimental` or `stable`.
 

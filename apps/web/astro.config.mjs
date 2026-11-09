@@ -3,6 +3,7 @@ import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { defineConfig } from 'astro/config';
 import solid from '@astrojs/solid-js';
+import { SHOW_EMULATOR } from './site.config.mjs';
 
 // Dev-only (`apply: 'serve'`): these files are firmware-derived and are never part of a build.
 const repoRoot = fileURLToPath(new URL('../..', import.meta.url));
@@ -114,6 +115,11 @@ const buildGuard = {
   name: 'digi-build-guard',
   hooks: {
     'astro:build:done': ({ dir }) => {
+      if (!SHOW_EMULATOR) {
+        // They stay in public/ for the dev server's emulator page.
+        for (const name of ['emulator-core.wasm', 'coi-serviceworker.js', 'pcm-worklet.js'])
+          fs.rmSync(path.join(fileURLToPath(dir), name), { force: true });
+      }
       const walk = (current) => {
         for (const entry of fs.readdirSync(current, { withFileTypes: true })) {
           const full = path.join(current, entry.name);
@@ -139,8 +145,22 @@ const buildGuard = {
 const extraFsAllow = (process.env.DIGI_VITE_FS_ALLOW || '').split(path.delimiter).filter(Boolean);
 const server = extraFsAllow.length ? { fs: { allow: [repoRoot, ...extraFsAllow] } } : undefined;
 
+// The emulator page is served by the dev server and, when SHOW_EMULATOR is set, by the build.
+const emulatorPage = {
+  name: 'digi-emulator-page',
+  hooks: {
+    'astro:config:setup': ({ command, injectRoute }) => {
+      if (command === 'dev' || SHOW_EMULATOR)
+        injectRoute({ pattern: '/emulator', entrypoint: './src/emulator-page/emulator.astro' });
+    },
+  },
+};
+
 export default defineConfig({
+  // The Pages workflow sets these two; the dev server and local builds stay at the root.
+  site: process.env.DIGI_SITE_ORIGIN || undefined,
+  base: process.env.DIGI_SITE_BASE || undefined,
   devToolbar: { enabled: false },
-  integrations: [solid(), buildGuard],
+  integrations: [solid(), emulatorPage, buildGuard],
   vite: { plugins: [localInputs], ...(server ? { server } : {}) },
 });

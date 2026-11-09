@@ -68,6 +68,7 @@ export const webEnv: TransferEnv = {
   moduleFiles: (id) => MODULE_FILES[id],
   patchkitWasm: async () => (await fetchOk(`${BASE}patchkit.wasm`)).arrayBuffer(),
   deviceName: async (device) => deviceNameOf(device),
+  libraryDevices: ['dt2', 'dn2'],
   targets: {
     emulator: false,
     async ports() {

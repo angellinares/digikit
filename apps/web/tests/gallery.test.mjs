@@ -101,7 +101,7 @@ test('the shipped modules: the index describes them, the sources hold no build o
   for (const m of modules) {
     assert.ok(m.source.includes('module.toml') && m.source.includes('README.md'), m.id);
     assert.ok(
-      m.source.every((f) => /^(module\.toml|README\.md|src\/|examples\/)/.test(f)),
+      m.source.every((f) => /^(module\.toml|README\.md|LICENSE[^/]*|src\/|examples\/)/.test(f)),
       m.id,
     );
     for (const f of m.source) assert.ok(existsSync(join(out, 'src', m.id, f)), `${m.id}/${f}`);

@@ -107,6 +107,8 @@ export interface TransferEnv {
   moduleFiles?(id: string): ModuleFilesSpec | undefined;
   /** The app's log of what happened (a run that ended, with its result). */
   logRun(run: TransferRun): void;
+  /** The site: the devices whose library can be listed when no device answers. The desktop app leaves it out. */
+  libraryDevices?: string[];
   /** Only the desktop app has these; the pane shows a part only when it is given. */
   extras?: {
     samples?: SamplesSlot;

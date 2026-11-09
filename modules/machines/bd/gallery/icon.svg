@@ -1,0 +1,5 @@
+<svg viewBox="0 0 48 48" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+  <circle cx="24" cy="24" r="20"/>
+  <circle cx="24" cy="24" r="13" stroke-width="1.5" opacity=".4"/>
+  <circle cx="24" cy="24" r="4" style="stroke: var(--icon-accent); fill: var(--icon-accent)"/>
+</svg>
