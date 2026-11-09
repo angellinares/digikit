@@ -74,9 +74,7 @@ The local `.nx/` cache is per worktree. Module `test-device` and `test-conforman
 
 Do not run test directories, full tier sweeps, or smoke `--update` across all cells while iterating. Use quick proof modes; the default test owns smoke coverage. Reserve `mise run test:full` for generated-core changes before merging to `main`. Preserve SHARC golden hashes for refactors; explain intentional updates. PCM pins in `tests/scenarios/*.json` require Em's approval.
 
-Wait without polling. Run a command under 9 minutes in the foreground with a long tool timeout.
-For a longer run use `node tools/devtools/job.mjs start NAME -- CMD`, then repeat `node tools/devtools/job.mjs wait NAME`: it blocks up to 9 minutes and prints the exit code and last lines. `wait` exits 75 while the job still runs. Jobs stop after 3 h unless `--timeout SEC` is set (0 for no limit); `job.mjs stop NAME` stops one. Do not redirect output inside a job command: `wait` reads the job log. Give a long-running sub-agent a time budget and a condition to stop and report.
-Do not wait with `sleep`, `tail` or repeated log reads, and never use `tail -f`. Read the log only when the result asks for detail.
+Wait without polling. Run a long command with a long tool timeout, up to 2 hours for a Claude Code session (`BASH_MAX_TIMEOUT_MS`). Claude Code moves it to the background after about 3 minutes and notifies you when it finishes: wait for that notification. Do not wait with `sleep`, `tail` or repeated log reads, and never use `tail -f`. If you stop early, stop what you started.
 
 ## Development and analysis
 
