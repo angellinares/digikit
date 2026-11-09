@@ -144,6 +144,15 @@ pub fn validate_manifest(m: &Manifest) -> Result<()> {
         if let Some(l) = &s.from.len {
             expr::parse(&l.text()).map_err(|e| err!("{id}: section {} len: {e}", s.name))?;
         }
+        if let Some(ed) = &s.edit {
+            expr::parse(&ed.at.text())
+                .map_err(|e| err!("{id}: section {} edit at: {e}", s.name))?;
+            for f in &ed.fields {
+                let t = f.value.text();
+                let (_, e) = word_spec(&t).map_err(|e| err!("{id}: section {}: {e}", s.name))?;
+                expr::parse(e).map_err(|e| err!("{id}: section {} edit: {e}", s.name))?;
+            }
+        }
         if let Some(a) = &s.append {
             if a.row.is_empty() {
                 return Err(err!("{id}: section {}: append needs a row", s.name));
@@ -458,6 +467,16 @@ pub fn collect<'a>(lib: &'a Library, order: &[String], dev: &str) -> Result<Acti
         }
     }
     for s in &act.sections {
+        if let Some(ed) = &s.def.edit
+            && !act.regs.iter().any(|r| r.def.name == ed.registry)
+        {
+            return Err(err!(
+                "{}: section {} edits rows of registry {}, which is not declared on {dev}",
+                s.owner.id(),
+                s.def.name,
+                ed.registry
+            ));
+        }
         if let Some(a) = &s.def.append
             && !act.regs.iter().any(|r| r.def.name == a.registry)
         {
@@ -758,6 +777,39 @@ pub fn build_rows(
         }
     }
     Ok(out)
+}
+
+/// The `edit` of a copied section: each entry of its registry rewrites words of one copied row in place.
+pub fn apply_edits(
+    sec: &ActiveSection,
+    entries: &[EntryValues],
+    be: bool,
+    scope: &Scope,
+    bytes: &mut [u8],
+) -> Result<()> {
+    let Some(ed) = &sec.def.edit else {
+        return Ok(());
+    };
+    for (k, vals) in entries.iter().enumerate() {
+        let sc = Scope {
+            fields: Some(vals),
+            ..*scope
+        };
+        let what = format!("section {} edit {k}", sec.def.name);
+        let at = expr::eval_str(&ed.at.text(), &sc).map_err(|e| err!("{what}: {e}"))?;
+        for f in &ed.fields {
+            let t = f.value.text();
+            let (width, e) = word_spec(&t)?;
+            let v = expr::eval_str(e, &sc).map_err(|e| err!("{what}: {e}"))?;
+            let b = pack(v, width, be, &what)?;
+            let o = (at as u64 + f.offset) as usize;
+            let dst = bytes
+                .get_mut(o..o + b.len())
+                .ok_or_else(|| err!("{what}: offset {o:#x} is outside the copied bytes"))?;
+            dst.copy_from_slice(&b);
+        }
+    }
+    Ok(())
 }
 
 // ---- hooks --------------------------------------------------------------------------------------------------
