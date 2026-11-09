@@ -53,7 +53,7 @@ Highest payoff first. Each step states its proof.
    file sources. A change that does not change the bytes (a comment, an unused constant, a test-only patch set) reruns nothing. Real core changes
    still rerun everything. Owner: the Nx lane. Proof: `nx show target inputs` and one invalidation check per input kind.
    - [ ] Carried over: skip audio scenarios whose image, module objects, daemon and test code did not change.
-   - [ ] **[D]** The merge tier runs `test-device` and `test-conformance` for every owner and relies on cache replay. After main moves, nothing is
+   - [x] (merge tier selects them with `affected`; `full` runs all) **[D]** The merge tier ran `test-device` and `test-conformance` for every owner and relied on cache replay. After main moves, nothing is
      cached for the new main, so the next PR gate reruns the whole device suite, whatever the PR changed. Seen 2026-11-09: PR 362 (a Python test
      helper and the formatting of one Nx file) started the full device suite. Fix: select device tasks whose inputs differ between base and head, or
      warm the cache on main once after each merge.

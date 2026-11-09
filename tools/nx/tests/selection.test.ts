@@ -7,7 +7,7 @@ import { afterAll, afterEach, beforeAll, describe, expect, it } from 'vitest';
 import { parse } from 'smol-toml';
 import { createDependencies } from '../modules.mjs';
 import { manifestClosure } from '../module-manifests.mjs';
-import { explainCommand, mergeCommand, TIERS } from '../gate.mjs';
+import { TIERS } from '../gate.mjs';
 
 const root = fileURLToPath(new URL('../../../', import.meta.url));
 const scratch = mkdtempSync(join(tmpdir(), 'digikit-nx-selection-'));
@@ -110,24 +110,6 @@ function pickerConsumer(): string {
 }
 
 describe('merge gate', () => {
-  it('runs device and conformance targets for every owning project in one run-many', () => {
-    expect(mergeCommand(['lint', 'test-device'], ['a', 'b'], ['--skip-nx-cache'])).toEqual([
-      'run-many',
-      '-t',
-      'lint,test-device',
-      '--projects=a,b',
-      '--skip-nx-cache',
-    ]);
-    expect(explainCommand('main', ['lint', 'test-device', 'test-conformance'], ['--explain'])).toEqual([
-      'affected',
-      '--base',
-      'main',
-      '-t',
-      'lint',
-      '--explain',
-    ]);
-  });
-
   it('keeps menu.c and ui.c edits on the normal device and conformance selection', () => {
     for (const file of ['modules/core/apps/digikit-menu/src/menu.c', 'modules/core/adapters/ui/src/ui.c'])
       expect(selected(file, 'test-device,test-conformance').tasks[`${imageConsumer()}:test-conformance`]).toBeDefined();
