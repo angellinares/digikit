@@ -772,6 +772,18 @@
   "SHARC_WWATCH_OUT": {
    "owner": "rust:packages/emulator",
    "purpose": "Output path of the SHARC_WWATCH CSV (default wwatch.csv in the diagnostics dir)."
+  },
+  "DIGI_EMU_RESERVE": {
+   "owner": "ts:tools/nx",
+   "purpose": "Cores that stay idle for the rest of the machine when emu-slot admits an emulator (default: the efficiency cores, else a quarter of the cores, at least 2)."
+  },
+  "DIGI_EMU_SLOTS": {
+   "owner": "ts:tools/nx",
+   "purpose": "Fixed number of machine-wide emulator slots, with no idle-core check (default: the ceiling from cores and RAM)."
+  },
+  "DIGI_TRANSFER_DIR": {
+   "owner": "python:tools/device",
+   "purpose": "Folder for the packed .dkm files and the failed-pack record of dktransfer (default out/patch/transfer); a test run sets one inside its run directory."
   }
  },
  "prefixes": {

@@ -56,7 +56,7 @@ iteration checks do not replace this gate. `mise run test:plan` explains task se
 | Empty-store menu fixture | `pnpm nx:pilot run core/digikit-menu-zero-tests:test-device` checks common menu navigation on both devices with zero DSP; the existing `core/digikit-menu:test-device` keeps coupled capacity checks. |
 | SDK UI fixture | `pnpm nx:pilot run sdk-ui-zero-tests:test-device` exercises the `test/ui-demo` SDK UI controls on both devices with zero DSP. |
 | Public SDK headers | `pnpm nx:pilot run sdk:test-host` and `pnpm nx:pilot run sdk-ui-zero-tests:test-device`; add the runtime loader fixtures above when load or ABI behavior is affected. |
-| Framework module, runtime | `core/runtime:rust-tests` for runtime units; an acceptance owner's `test-device` for iteration (runtime owners are listed below). Use `test:plan` for affected consumers. The default gate uses fixtures instead of unchanged shipped conformance only for an isolated `digikit-menu/src/menu.c` or `adapters/ui/src/ui.c` edit; other runtime and public SDK edits retain broad selection. |
+| Framework module, runtime | `core/runtime:rust-tests` for runtime units; an acceptance owner's `test-device` for iteration (runtime owners are listed below). Use `test:plan` for affected consumers. The default gate runs every owner's `test-device` and `test-conformance` and replays unchanged ones from the cache. |
 | SHARC core or transpiler | regenerate the cores, then `test:changed` |
 | Emulator crates | `test:changed`; the crates' Rust tests |
 | PCM pins (`tests/scenarios/*.json`) | only with Em's approval |
@@ -122,13 +122,13 @@ Plugin sources are not inputs of module device targets. A `runtimeAcceptance` re
 | `mise run test:slow` | `test_outcomes run --check` over `tests` with `--slow` and a one-hour per-file timeout, then `uv run python -m tools.emulator.coupled gates`. |
 | `mise run test:quick` | Launcher, PGO, target and coupled-tool tests, then `coupled test-quick`. |
 | `mise run test` | Complete affected verification and merge gate: `nx affected` against `DIGI_GATE_BASE` (default `main`). |
-| `mise run test:plan` | The same selection with native Nx `--explain`; no tasks execute. |
+| `mise run test:plan` | The `affected` selection of the non-device targets with native Nx `--explain`; no tasks execute. Device and conformance targets are not listed: all owners run and replay from the cache. |
 | `mise run test:full` | Every gate target on every project, plus `tier-sweep` and `dt2-tier-sweep`. Only after generated-core changes. |
 | `mise run clean:runs` | Lists old `digi-*` run directories under the temp dir (older than 24 h, not used by a running `digi-emud` or node process) and orphan `digi-emud` processes; `-- --yes` deletes the directories, `-- --hours N` sets the age. It never kills a process. A Session refuses to start with less than 50 GB free. |
 
 ### Nx gate
 
-- `mise run test` runs `nx affected` over the gate targets against `DIGI_GATE_BASE` (default `main`), through `node tools/nx/gate.mjs --tier merge`; the Nx launcher holds the shared benchlock and runs at nice 10.
+- `mise run test` runs the gate targets against `DIGI_GATE_BASE` (default `main`): `nx affected` selects them, except device and conformance targets (see the last notes of this section), through `node tools/nx/gate.mjs --tier merge`; the Nx launcher holds the shared benchlock and runs at nice 10.
 - `mise run test:full` runs every gate target on every project, plus `tier-sweep` and `dt2-tier-sweep`. Run it only after generated-core changes.
 - Gate projects in `tools/gate/` carry their triggers as `{workspaceRoot}` inputs: `gate-smoke` (target `smoke`), `gate-card` (`card`), `gate-stock` (`stock`, cached), `gate-fx-dn2` (`fx`, `fx-no-aot`, `tier-quick`, `tier-sweep`), `gate-fx-dt2` (`fx-dt2`, `dt2-tier-quick`, `dt2-tier-sweep`), `gate-pins` (`pins`), `gate-dt2-tone` (`dt2-tone`) and `gate-rust-modules` (`rust-tests`). The Vitest suites behind `stock`, `fx` and `fx-dt2` are the `test:stock`, `test:fx` and `test:fx:dt2` scripts of `tests/regression`. `smoke` and `card` run through `tools/nx/daemon-env.mjs`, which sets `DIGI_EMUD_<DEV>` from `dist/daemons.json`, so they use the same content-keyed daemon as the Vitest device tests. Module projects with device tests depend on `regression` (harness), `digi-control` (daemons), `patchkit` (packs) and `devices`; shared SDK contract/compiler surfaces are explicit target inputs. Only modules with `test-conformance` also depend on `conformance`. `python-checks` and `python-tests` run on any change outside `docs/`.
 - The number of concurrent Nx tasks and Vitest workers comes from the machine budget; see "CPU budget of the gate".
@@ -360,10 +360,8 @@ without running it.
   `mise.toml`, so task edits in `mise-tasks.toml` do not select every project.
 - If the selection is wider or narrower than the change can reach, fix the inputs and edges in
   `tools/nx/*.mjs` or the `project.json` files.
-- The default `mise run test` and `test:plan` use `tools/nx/gate.mjs` for two reviewed exceptions: when the only change is a modification to either `modules/core/apps/digikit-menu/src/menu.c` or `modules/core/adapters/ui/src/ui.c`, Nx runs its affected targets without unchanged shipped-module `test-conformance`. An edit to both files is mixed and retains normal selection. The menu's zero-DSP and coupled owners, runtime fixtures, and `dkui-host:rust-tests` remain selected. Its host test declares the real `menu.c` input in `modules/core/adapters/ui/host/project.json`.
-- For isolated `ui.c` edits, `sdk-ui-zero-tests:test-device`, both menu owners, both runtime fixture owners, every other native-selected consumer device test, and their build prerequisites remain selected. Nx recalculates dependencies after conformance is omitted. This accepts losing the per-shipped-artifact upload, stored-byte/reboot, registration, contract/DSP-status and fault-containment conformance proof for that edit; the fixtures do not establish that every shipped artifact loads. The raw hypothetical plan for `pack,test-device,test-conformance,rust-tests` has 20 device targets, nine conformance targets and 34 pack tasks (87 tasks including prerequisites). The policy removes only the nine requested conformance targets; Nx owns the resulting prerequisite graph.
-- Both exceptions require one explicit nonempty `--base`, no explicit or `NX_HEAD` head override, and all of `pack,test-device,test-conformance,rust-tests` in the requested targets. Mixed changes, additions, deletions, renames, unknown metadata, public SDK headers, UI `shim.s`, loader/runtime changes, alternate selectors (`--files`, stdin, uncommitted, untracked or all), unsupported comparisons and incomplete target sets use normal Nx affected selection. Named conformance targets and their full cache keys are unchanged.
-- Loader and public SDK changes have no automatic fixture-first exception: retain shipped conformance and every native-selected consumer device behavior check. The loader controls relocation/BSS, menu/function addresses, registry initialization and callback publication. The machine/FX fixture shares shipped load assertions (upload, persistence, registration, version/contracts, DSP status and faults), and a separate zero-DSP service fixture covers service behavior; these fixtures do not prove compatibility of every shipped artifact. Load conformance also does not prove rendered audio or all later module behavior. Use the owner targets above for iteration, then inspect `mise run test:plan` and run the full affected `mise run test` before merge. Any further omission needs an assertion-level mapping of omitted unique behavior and replacement coverage; see the [runtime/SDK coverage decision](plans/module-sdk-iteration.md#decision-runtime-loader-and-public-sdk-coverage).
+- The merge gate runs `test-device` and `test-conformance` for every project that owns one and relies on the cache: a key covers what the test consumes ("Nx cache"), so an unchanged test replays in seconds. All other gate targets stay on `affected`. `tools/nx/gate.mjs` makes one `run-many` over the affected projects and the device owners; a project that is affected only through the graph also runs its uncached targets (`test-host`, `typecheck`), about 7 s with the current owners. There is no fixture-first exception for `menu.c` or `ui.c`: an edit selects its consumers' keys and every shipped conformance target runs, or replays when its key did not change.
+- Loader and public SDK changes retain shipped conformance and every native-selected consumer device behavior check. The loader controls relocation/BSS, menu/function addresses, registry initialization and callback publication. The machine/FX fixture shares shipped load assertions (upload, persistence, registration, version/contracts, DSP status and faults), and a separate zero-DSP service fixture covers service behavior; these fixtures do not prove compatibility of every shipped artifact. Load conformance also does not prove rendered audio or all later module behavior. Use the owner targets above for iteration, then inspect `mise run test:plan` and run the full affected `mise run test` before merge. Any further omission needs an assertion-level mapping of omitted unique behavior and replacement coverage; see the [runtime/SDK coverage decision](plans/module-sdk-iteration.md#decision-runtime-loader-and-public-sdk-coverage).
 
 ### Remote cache
 
@@ -375,9 +373,12 @@ Plain `pnpm nx:pilot run ...` and every gate tier read and write the cache when 
 and sets the Nx variables only when the server answers.
 The store has a 14-day TTL swept daily and no size cap.
 
-Cached targets: module `test-device` and `test-conformance`. Inputs: the module and its graph deps,
-the outputs of the pack, CLI and daemon targets, the toolchain, the emulator env switches, the harness
-packages (`test-support`, `control-client`, `dk-session`), every `module.toml`,
+Cached targets: module `test-device` and `test-conformance`. A key covers what the run consumes: the
+TypeScript import closure of the test files and of the Vitest setup file (`tools/nx/test-imports.mjs`), the
+outputs of the pack, CLI and daemon targets, the production files of the module (with its `module.toml`) and of the core modules in the
+patched image (with their manifests), the SDK, the files in `READ_BY_TESTS` (`tools/nx/module-targets.mjs`: `devices/**/*.toml`,
+committed core objects, `types.toml`, fixture files, the Vitest and TypeScript config), each record's `sources`,
+the toolchain, the emulator env switches,
 `config/emulator.json`, and the firmware, ready dirs and DT2 sample card (hashed by
 `tools/nx/device-inputs.mjs`). That digest also hashes path, contents and file permissions of
 `DIGI_EMUD`, device-specific/proof daemon overrides, `DIGI_PATCHKIT`, `DIGI_PATCHKIT_BIN` and
@@ -480,22 +481,28 @@ The no-AOT halves of `tier-quick` and `tier-sweep` use `NO_AOT_SUBSET` in `tools
 `pnpm nx:pilot` runs `tools/nx/nx.mjs`, the one Nx launcher. It computes a budget from the machine:
 B = the performance core count on Apple Silicon, otherwise cores - 2, with a minimum of 2, or `DIGI_BUDGET=N`. A value already set in the environment wins over the derived one.
 
-| Setting | Formula | 4 cores | 8 cores | 12 cores | 16 cores |
+| Setting | Formula | B=4 | B=8 | B=12 | B=16 |
 | --- | --- | --- | --- | --- | --- |
-| Nx tasks (`NX_PARALLEL`) | clamp(floor(B/3), 1, 4) | 1 | 2 | 3 | 4 |
+| Nx tasks (`NX_PARALLEL`) and emulator ceiling | max(1, min(floor(B/2), floor(RAM GB/2))) | 2 | 4 | 6 | 8 |
 | `REGRESSION_JOBS` (Vitest workers per task) | 1 | 1 | 1 | 1 | 1 |
-| `DIGI_JOBS` (emulator processes) | clamp(floor(B/2), 1, 6) | 1 | 3 | 5 | 6 |
-| `CARGO_BUILD_JOBS` | B | 2 | 6 | 10 | 14 |
-| `NEXTEST_TEST_THREADS` | ceil(B/tasks) | 2 | 3 | 4 | 4 |
+| `DIGI_JOBS` (emulator processes) | clamp(floor(B/2), 1, 6) | 2 | 4 | 6 | 6 |
+| `CARGO_BUILD_JOBS` | B | 4 | 8 | 12 | 16 |
+| `NEXTEST_TEST_THREADS` | ceil(B/tasks) | 2 | 2 | 2 | 2 |
 
-On Apple Silicon B is the performance core count, so a 12P+4E machine has B 12: 4 tasks, 6 emulators for gate targets that run alone.
+The values assume at least 2 GB of RAM per emulator. On Apple Silicon B is the performance core count, so a 12P+4E machine has B 12: 6 tasks, a ceiling of 6 emulators.
+`tools/nx/resources.mjs` holds this policy.
 
-Each launcher run has its own budget, so several lanes can start more emulators than the machine runs well.
+Each launcher run has its own budget, so several lanes could start more emulators than the machine runs well.
 Module device targets and `test-conformance` therefore run behind `node tools/devtools/emu-slot.mjs --`. It takes one
-of N machine-wide slots (lock files in `<git common dir>/emu-slots/`, N = `DIGI_EMU_SLOTS`, default the launcher's
-Nx task count), runs the command, and passes on its exit status. A waiting task prints one line and waits without a
-limit; a lock of a dead process is taken over. The wait is outside Vitest, so it does not count against test timeouts.
-Gate targets such as `fx` and `stock` are not wrapped.
+of N machine-wide slots (lock files in `<git common dir>/emu-slots/`, N = the ceiling above), runs the command, and
+passes on its exit status. A slot is taken only when the machine has idle cores. One waiter at a time holds the
+`admit` lock and decides: if the slots in use reach the ceiling it waits; if none is in use it admits at once (work
+never starves); otherwise it samples the idle cores twice, 1 s apart, and admits when at least 2 plus the reserve are
+idle. The reserve is the efficiency-core count on Apple Silicon, else max(2, floor(cores/4)); `DIGI_EMU_RESERVE=N`
+sets it. After an admission the lock is kept for 3 s, so the next decision sees the new emulator's load. The log shows
+`emulator slot taken (M of ceiling, idle X.X cores)`. `DIGI_EMU_SLOTS=N` is a fixed count with no idle check, for an A/B.
+A waiting task prints one line and waits without a limit; a lock of a dead process is taken over. The wait is outside
+Vitest, so it does not count against test timeouts. Gate targets such as `fx` and `stock` are not wrapped.
 
 Formatting an emulator crate or `dkneeds` changes the daemon key and the PGO key, so the PGO profile needs a retrain.
 
@@ -567,6 +574,14 @@ replays the stored output of a target with `cache: true`; the hash covers only t
 Plugin sources (`tools/nx/*.mjs`) are not inputs: Nx hashes each project's resolved configuration, so a plugin
 edit invalidates only the targets whose definition changes. `UPDATE_GOLDENS` is a cache input of module device
 targets and `gate-stock:stock`.
+
+A package or a harness file that no test imports is not an input: an edit to `packages/dk-session/src/samples.ts`
+leaves a target that does not import it cached. A file that a test reads by path and does not import goes in
+`READ_BY_TESTS`, or in the `sources` of the record whose test reads it. `digi-control:daemons` declares the daemon
+sources (`SOURCE_GLOBS` of `tools/devtools/emud_key.py`) as inputs. The binary is keyed by content, and these
+inputs make a source edit select every task that consumes `dist/daemons.json`.
+`tools/device/dktransfer.py` keeps the state of failed packs in a folder. A test run sets `DIGI_TRANSFER_DIR` to a folder
+of its run directory, because `out/` is shared by all worktrees.
 
 Inspect declared inputs with `pnpm nx:pilot show target inputs PROJECT:TARGET --json`, or use
 `pnpm nx:pilot show target inputs PROJECT:TARGET --check PATH` for one file. Native Nx resolves
