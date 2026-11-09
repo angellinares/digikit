@@ -1,0 +1,20 @@
+{
+  "$schema": "../../../node_modules/nx/schemas/project-schema.json",
+  "name": "digikit/pluck",
+  "metadata": {
+    "runtimeAcceptance": [
+      {
+        "files": [
+          "tests/equiv.device.test.ts"
+        ],
+        "modules": [
+          "digikit/pluck"
+        ],
+        "plusdrive": true,
+        "sources": [
+          "tests/fixtures/modules/patched-pluck/**/*"
+        ]
+      }
+    ]
+  }
+}

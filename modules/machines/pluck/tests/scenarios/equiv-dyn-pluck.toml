@@ -1,0 +1,25 @@
+# Not a test: the input of tools/devtools/sharc_matrix.py PLUCK proof. The acceptance test is tests/equiv.device.test.ts.
+# A selection loaded at boot plays like the same module patched in (DT2): rows, voice row, PCM of a note.
+[scenario]
+name = "equiv-dyn-pluck"
+kind = "equiv"
+devices = ["dt2", "dn2"]
+tier = "quick"
+
+[equiv]
+modules = ["digikit/pluck"]
+twin = "test/patched-pluck"
+play = "pluck"
+play_module = "digikit/pluck"
+play_machine = "pluck"
+static_type = 9
+hint = 7
+trig_frame = 3500   # the note starts shortly after the panel setup ends (frame 3330 in both rigs); the capture is as long as ever
+voices = 1
+
+# Digitone II: the same module (own_dsp machine, SYN page, DSP routine) against the patched-in test/patched-pluck (type 9, listed before MIDI)
+[equiv.dn2]
+hint = 4
+hint_run = 5    # the run-time machine follows MIDI
+trig_frame = 7000
+ref_plain = true   # test/patched-pluck patched in leaves no room for the runtime's 320 KiB DSP area: the reference image has no runtime

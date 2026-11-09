@@ -89,7 +89,7 @@ equiv | C:674 | report of boot_ready (frames_at_ready, voice rows at ready) | DR
 
 ## equiv-dyn-analog, equiv-dyn-bd, equiv-dyn-pd (quick, both devices), equiv-dyn-pluck (quick), equiv-mixed (full, dt2)
 
-Same checks as the rows above, every one in `equiv.device.test.ts` (rows `SCENARIOS`); the `SHARC_UNINIT` environment of analog and pd is the row's `envRun`.
+Same checks as the rows above. The runner is `tests/regression/runtime/equiv.ts` (`defineEquiv`); each module has its rows in `modules/machines/<pluck|analog|bd|pd>/tests/equiv.device.test.ts` (pluck holds equiv-dyn-pluck and equiv-mixed), only `equiv-dn2-set` stays in `core/dynreg`; the `SHARC_UNINIT` environment of analog and pd is the row's `envRun`.
 equiv | C:665..726 | boot result, voice row, rows equal the twin (or the no-module boot when there is no twin), added rows | -> equiv.test.ts: the rows equal the reference; a set without a twin compares with `run.load('none', {})`
 equiv | M:503 | pcm_pin for analog, bd, pd on DT2 and DN2 (the pins of the deleted TOMLs, unchanged) | -> equiv.test.ts, same SHA-256 values
 equiv | C:653, M:466 | pluck on DT2: the twin's note is audible and the run-time note equals it (equal, or sample for sample from the onset, shift at most 128) | -> equiv.test.ts: equiv-dyn-pluck (`pcmMatches`)
