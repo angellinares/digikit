@@ -20,7 +20,9 @@ const supported = (['dt2', 'dn2'] as const).map((id) => ({
   versions: deviceProfiles[id].firmware
     .filter((f) => f.main_sha256)
     .map((f) => f.version)
-    .filter((v) => SHOW_EMULATOR || portFiles.has(`${id}-${v}.toml`)),
+    .filter((v) => SHOW_EMULATOR || portFiles.has(`${id}-${v}.toml`))
+    // The site patches only the newest release of each device.
+    .slice(SHOW_EMULATOR ? 0 : -1),
 }));
 ---
 
