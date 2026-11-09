@@ -308,5 +308,6 @@ runtimeTests('effect faults are logged with the module as source', expectFxFault
 runtimeTests('a normal effect is no stop', expectNoFalseStop, { dsp: 'sharc', timeout: 1_200_000 });
 runtimeTests('a CPU crash is kept as the last fault', expectCpuCrashFault, { timeout: 1_200_000, devices: ['dt2'] });
 runtimeTests('a panic of the runtime gives safe mode and names the runtime', expectRuntimePanic, {
+  dsp: 'sharc',
   timeout: 1_200_000,
 });
