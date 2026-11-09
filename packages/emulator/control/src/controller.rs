@@ -4357,8 +4357,13 @@ impl Actor {
             initial_buttons: _,
         } = install;
         let (card_obj, error) = card_for(card.clone()).map_err(&rejected)?;
-        let runtime =
+        let used_card = saved_overlay_applied(card_obj.as_ref());
+        let mut runtime =
             Runtime::new_patched_audio(&bytes, card_obj, &base_sha, &audio).map_err(&rejected)?;
+        if used_card {
+            // The ready pair was booted under the relaxed contract (see `saved_overlay_applied`).
+            runtime.relax_fs_check();
+        }
         report["audio"] = runtime.has_audio().into();
         let base_analysis = match &base_bytes {
             Some(base) => Some(Analysis::of(base).map_err(&rejected)?),
