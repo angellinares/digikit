@@ -123,9 +123,13 @@ def inputs_mtime(moddir: Path) -> float:
     if mid:  # the built objects of a content module are cached outside its directory
         roots.append((R.ROOT / "out" / "cache" / "dko" / mid, "*"))
     for root, pat in roots:
+        cached = R.ROOT / "out" / "cache" / "dko" in root.parents
         for f in root.rglob(pat):
-            if f.is_file() and "__pycache__" not in f.parts:
-                newest = max(newest, f.stat().st_mtime)
+            # `patchkit` touches a cached object each time it reads it (for its eviction order), so a file there says nothing; a
+            # changed source gives the object a new key directory, and that directory's own time counts.
+            if "__pycache__" in f.parts or not (f.is_dir() if cached else f.is_file()):
+                continue
+            newest = max(newest, f.stat().st_mtime)
     return max(newest, (R.ROOT / "sdk" / "sdk.toml").stat().st_mtime)
 
 

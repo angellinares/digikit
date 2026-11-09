@@ -19,6 +19,7 @@
 //       apps/web/public is deleted on every run.
 
 import { spawnSync } from 'node:child_process';
+import crypto from 'node:crypto';
 import fs from 'node:fs';
 import path from 'node:path';
 import { parseArgs } from 'node:util';
@@ -184,52 +185,73 @@ const WASM_FEATURE_FLAGS = [
   '--enable-reference-types',
 ];
 
-// A small wasm32 cdylib of packages/<name> (no generated core, no firmware), copied to public/<name>.wasm.
-function buildSmall(name) {
+// Small wasm32 cdylibs of packages/<name> (no generated core, no firmware), copied to public/<name>.wasm.
+// One cargo call builds all of them: separate calls (one per manifest) give each its own feature set for the crates they share, so each
+// call made the next one rebuild them (about 10 s on every run with nothing changed).
+function buildSmalls(names) {
   const target = resolveTargetDir('');
   const command = [
     'build',
-    '--manifest-path',
-    `packages/${name}/Cargo.toml`,
     '--locked',
     '--offline',
     '--release',
     '--lib',
+    ...names.flatMap((name) => ['-p', name]),
     '--target',
     'wasm32-unknown-unknown',
     '--target-dir',
     target,
   ];
   if (!run('cargo', command, { cwd: ROOT, env: withoutGenDir(baseEnv) })) {
-    die(`${name} WASM build failed`);
+    die(`${names.join(', ')} WASM build failed`);
   }
-  const built = path.join(target, `wasm32-unknown-unknown/release/${name}.wasm`);
-  const dest = path.join(publicDir, `${name}.wasm`);
-  const tmp = path.join(publicDir, `${name}.wasm.${process.pid}.tmp`);
-  if (which('wasm-opt') !== null) {
-    if (!run('wasm-opt', ['-Oz', ...WASM_FEATURE_FLAGS, built, '-o', tmp])) {
-      die(`wasm-opt failed on ${name}.wasm`);
+  for (const name of names) {
+    const built = path.join(target, `wasm32-unknown-unknown/release/${name}.wasm`);
+    const dest = path.join(publicDir, `${name}.wasm`);
+    // wasm-opt is slow and its result depends only on the built file (and the flags): keep the hash it ran for.
+    const stamp = path.join(localDir, `${name}.wasm.opt-stamp`);
+    const builtHash = crypto
+      .createHash('sha256')
+      .update(fs.readFileSync(built))
+      .update(WASM_FEATURE_FLAGS.join(' '))
+      .digest('hex');
+    const haveOpt = which('wasm-opt') !== null;
+    const sha = (file) => crypto.createHash('sha256').update(fs.readFileSync(file)).digest('hex');
+    // the stamp also names the output it made: apps/web/.local is shared by worktrees, public/ is not
+    const stampFor = (file) => `${builtHash} ${haveOpt} ${sha(file)}\n`;
+    const current = fs.existsSync(dest) && fs.existsSync(stamp) && fs.readFileSync(stamp, 'utf8') === stampFor(dest);
+    if (!current) {
+      const tmp = path.join(publicDir, `${name}.wasm.${process.pid}.tmp`);
+      if (haveOpt) {
+        if (!run('wasm-opt', ['-Oz', ...WASM_FEATURE_FLAGS, built, '-o', tmp])) {
+          die(`wasm-opt failed on ${name}.wasm`);
+        }
+      } else {
+        fs.copyFileSync(built, tmp);
+      }
+      // write only when the bytes differ, so a reader (the app) and file watchers see no change on a run with nothing new
+      if (fs.existsSync(dest) && fs.readFileSync(dest).equals(fs.readFileSync(tmp))) {
+        fs.rmSync(tmp);
+      } else {
+        fs.renameSync(tmp, dest);
+      }
+      fs.writeFileSync(stamp, stampFor(dest));
     }
-  } else {
-    fs.copyFileSync(built, tmp);
+    // patchkit.wasm carries the Selache assembler (the SHARC+ build, 0.4 MB); the others stay under 2 MiB
+    const limit = (name === 'patchkit' ? 5 : 4) * 512 * 1024;
+    const size = fs.statSync(dest).size;
+    if (size > limit) {
+      die(`${dest} is ${size} bytes: ${name}.wasm must stay small and firmware-free`);
+    }
+    console.log(`${name}.wasm: ${size} bytes${current ? ' (unchanged)' : ''}`);
   }
-  fs.renameSync(tmp, dest);
-  // patchkit.wasm carries the Selache assembler (the SHARC+ build, 0.4 MB); the others stay under 2 MiB
-  const limit = (name === 'patchkit' ? 5 : 4) * 512 * 1024;
-  const size = fs.statSync(dest).size;
-  if (size > limit) {
-    die(`${dest} is ${size} bytes: ${name}.wasm must stay small and firmware-free`);
-  }
-  console.log(`${name}.wasm: ${size} bytes`);
 }
 
 if (args['dksample-only']) {
-  buildSmall('dksample');
+  buildSmalls(['dksample']);
   process.exit(0);
 }
-buildSmall('patchkit');
-buildSmall('dkupload');
-buildSmall('dksample');
+buildSmalls(['patchkit', 'dkupload', 'dksample']);
 if (args['patchkit-only']) {
   process.exit(0);
 }
