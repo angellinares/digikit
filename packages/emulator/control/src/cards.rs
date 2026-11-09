@@ -95,7 +95,10 @@ impl CardPaths {
     }
 }
 
-/// The cache key: firmware, format tag, and every file's relative path and bytes.
+/// The cache key: firmware, format tag, and every file's relative path and bytes, except `digikit/selection.txt`.
+/// That file records the card's own module selection (the mirror and the quit export write it after each change), so a key
+/// that followed it would build a new card at the next launch and leave the saved overlay of the old one behind. A running
+/// guest's SELECT is in card sectors, so the old image and its overlay already hold it. A folder without the file keeps its key.
 pub fn card_key(device: &str, syx: &[u8], dir: &Path, files: &[String]) -> Result<String, String> {
     let mut hash = Sha256::new();
     if device != "dt2" {
@@ -108,7 +111,8 @@ pub fn card_key(device: &str, syx: &[u8], dir: &Path, files: &[String]) -> Resul
     hash.update(Sha256::digest(syx));
     hash.update(b"\0format\0");
     hash.update(FORMAT_TAG.as_bytes());
-    for rel in files {
+    let selection = format!("digikit/{}", plusdrive_format::SELECTION_FILE);
+    for rel in files.iter().filter(|rel| **rel != selection) {
         let path = dir.join(rel);
         let bytes = fs::read(&path).map_err(|e| format!("{}: {e}", path.display()))?;
         hash.update(b"\0file\0");
@@ -320,6 +324,31 @@ mod tests {
         assert_ne!(key, card_key("dt2", b"fw2", &dir, &files).unwrap());
         fs::write(dir.join("b.wav"), wav(881.0, 480)).unwrap();
         assert_ne!(key, card_key("dt2", b"fw1", &dir, &files).unwrap());
+        // the module selection record is not part of the key; a module file is
+        let before = card_key("dt2", b"fw1", &dir, &files).unwrap();
+        fs::create_dir_all(dir.join("digikit/modules")).unwrap();
+        fs::write(dir.join("digikit/modules/m.dkm"), b"module one").unwrap();
+        let with_module = list_files(&dir).unwrap();
+        let module_key = card_key("dt2", b"fw1", &dir, &with_module).unwrap();
+        assert_ne!(before, module_key, "a module file changes the key");
+        fs::write(dir.join("digikit/selection.txt"), b"modules/m.dkm\n").unwrap();
+        let with_selection = list_files(&dir).unwrap();
+        assert!(with_selection.contains(&"digikit/selection.txt".to_string()));
+        assert_eq!(
+            module_key,
+            card_key("dt2", b"fw1", &dir, &with_selection).unwrap()
+        );
+        fs::write(dir.join("digikit/selection.txt"), b"modules/other.dkm\n").unwrap();
+        assert_eq!(
+            module_key,
+            card_key("dt2", b"fw1", &dir, &with_selection).unwrap()
+        );
+        fs::write(dir.join("digikit/modules/m.dkm"), b"module two").unwrap();
+        assert_ne!(
+            module_key,
+            card_key("dt2", b"fw1", &dir, &with_selection).unwrap()
+        );
+        fs::remove_dir_all(dir.join("digikit")).unwrap();
         let paths = CardPaths::new(Path::new("run"), &key);
         assert!(
             paths
