@@ -1,7 +1,6 @@
 import fs from 'node:fs';
 import path from 'node:path';
 import { decode, encode, type Frame } from '@digi/dkbs';
-import { button } from '@digi/test-support';
 import { expect, test } from 'vitest';
 import { asciiOf } from '@digi/dk-session';
 import { bootInfo, bootInfoLoaded, currentRecord } from '@digi/regression/runtime/card-kit.ts';
@@ -17,7 +16,6 @@ import { ringEvents } from '@digi/regression/runtime/runtime-menu.ts';
  */
 
 const SAFE_COUNTER = 1;
-const SAFE_KEY = 2;
 const FILE = 'data/tools/bootscreen/test.dkbs';
 const ACTIVE = 'tools/bootscreen/active';
 
@@ -130,30 +128,6 @@ cardRigs('boot screen', { relaxFs: true, roots: RT, symbols: CARD_SYMBOLS }, (h)
     );
   }
 });
-
-cardRigs(
-  'boot screen with REC held',
-  { dsp: 'sharc',
-    relaxFs: true,
-    roots: RT,
-    symbols: CARD_SYMBOLS,
-    initialButtons: [{ code: button('RECORD'), down: true }],
-    initial: () => ({ modules: [], selection: [] }),
-  },
-  (h) => {
-    test(
-      'REC held from cold with a valid file: safe mode by key, the module is not loaded, the stock intro runs',
-      async () => {
-        // not `h.load`: it waits for the runtime UI, which a boot in safe mode by key does not reach
-        await h.boot(await h.card(spec(h, { name: 'test.dkbs', file: valid })));
-        const info = await h.ready(true);
-        expect(info).toMatchObject({ safe: 1, reason: SAFE_KEY, loaded: 0 });
-        expect((await intro(h)).equals(lastFrame), 'not the module frame').toBe(false);
-      },
-      CARD_TIMEOUT,
-    );
-  },
-);
 
 // The fault fixture takes the intro and faults in its first frame, on the intro task. The firmware's own handler gets the exception (the runtime
 // installs its handler from the UI loop only) and the machine halts, as on the device until the power is cycled. A halted boot ends the daemon

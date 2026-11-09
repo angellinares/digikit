@@ -80,8 +80,10 @@ Highest payoff first. Each step states its proof.
        **[D]** Done: the component checks went to the host tests (already covered by `picker.rs` and `pageclick.rs`); shot keeps one glue test (click, slot 1,
        folder, file; pool state and SMP). It stays on coupled DSP: shot's pack carries its DSP part and fails with E_DSP_XFER (-35) on zero DSP. Not done:
        the picker in `ui-demo` (the fixture has no picker or pool client; needs a fixture change). Time: 312 s in the gate before, 1m50s for the Nx target now.
-     - [ ] Then search for other cases: device tests that assert behaviour of `sdk/src` components (pages, chooser, picker, lists, knob handling)
+     - [x] Then search for other cases: device tests that assert behaviour of `sdk/src` components (pages, chooser, picker, lists, knob handling)
        or of core adapters that a host test or another device test already covers.
+       **[D]** Done as a static audit: [ledgers/device-test-audit.md](ledgers/device-test-audit.md). One exact duplicate deleted (`bootscreen` REC held); the
+       other candidates are listed there for decision.
 8. [ ] **Per-test emulator coverage.** After steps 1 and 2 (cheaper runs). Record the ColdFire and SHARC PCs each device test executes and map them
    to runtime and module functions through the patch plan and symbols. `digi-emud` already writes SHARC PC counts ([instrumentation](../INSTRUMENTATION.md),
    engine coverage files); the ColdFire side is not checked yet. Uses:
