@@ -1083,6 +1083,10 @@ pub struct WorkerReport {
     pub period_ns: Vec<u32>,
     /// Frames the worker handled, including ones past the record limit.
     pub periods: u64,
+    /// `SHARC_TIER_TIME=1`: host ticks (`sharc_native::tick_hz`) the worker thread has
+    /// waited for its next message, and its age; both 0 when off.
+    pub wait_ticks: u64,
+    pub wall_ticks: u64,
 }
 
 /// ColdFire-thread side of the threaded peer.
@@ -1249,7 +1253,15 @@ impl ThreadedPeer {
                 let mut periods = 0u64;
                 let mut frames_done = 0u64;
                 let mut spike = crate::spikelog::DspWindow::open(crate::cputime::thread_cpu_ns());
-                while let Ok(msg) = rx.recv() {
+                let tier_time = std::env::var_os("SHARC_TIER_TIME").is_some_and(|v| v != "0");
+                let born = sharc_native::ticks();
+                let mut wait_ticks = 0u64;
+                loop {
+                    let waited = if tier_time { sharc_native::ticks() } else { 0 };
+                    let Ok(msg) = rx.recv() else { break };
+                    if tier_time {
+                        wait_ticks += sharc_native::ticks() - waited;
+                    }
                     match msg {
                         Msg::Frame {
                             tx,
@@ -1300,6 +1312,12 @@ impl ThreadedPeer {
                                     tiers: core.engine.tier_counters(),
                                     model_stats: core.engine.model_stats(),
                                     periods: frames_done,
+                                    wait_ticks,
+                                    wall_ticks: if tier_time {
+                                        sharc_native::ticks() - born
+                                    } else {
+                                        0
+                                    },
                                     ..WorkerReport::default()
                                 };
                                 if let Some(w) = &mut spike {
@@ -1325,6 +1343,12 @@ impl ThreadedPeer {
                                 region_profile: core.engine.region_profile(),
                                 period_ns: period_ns.clone(),
                                 periods,
+                                wait_ticks,
+                                wall_ticks: if tier_time {
+                                    sharc_native::ticks() - born
+                                } else {
+                                    0
+                                },
                             });
                         }
                         Msg::Export => {

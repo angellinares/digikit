@@ -79,6 +79,14 @@ DEVICES: dict[str, dict[str, Any]] = {
         "mirror": 0x8000487C,
         "tx_type": 0x80005E60 + 0x94,
         "db": "out/sharcdb/dn2-1.12.sqlite",
+        "trig": TRIG1,
+    },
+    # DT2 1.17 on the one-sample card of tools/emulator/dt2_sample_check.py: a TRIG plays the card's
+    # sample. No machine switch, so there is no mirror address; the audition is checked by PCM and tiers.
+    "dt2": {
+        "syx": "firmware/Digitakt_II_OS1.17.syx",
+        "trig": 25,
+        "card": True,
     },
 }
 
@@ -91,6 +99,14 @@ STOCK_MACHINES = {
     "swarmer": ("menu", 3, 3),
 }
 SCENARIOS: dict[str, dict[str, Any]] = {
+    "sample": {"route": "stock", "machine": ("none", 0, None)},
+    # tests/scenarios/dn2-load.json load-seq16: all 16 steps of all 16 tracks, PLAY at +676M instructions;
+    # use --settle 7 so the window holds the running sequencer. The panel events come from that file.
+    "seq16": {
+        "route": "stock",
+        "machine": ("none", 0, None),
+        "events_from": ("tests/scenarios/dn2-load.json", "load-seq16"),
+    },
     **{name: {"route": "stock", "machine": m} for name, m in STOCK_MACHINES.items()},
     **{
         f"rt-{name}": {
@@ -114,10 +130,14 @@ def log(msg: str, logfile: pathlib.Path | None = None) -> None:
             f.write(line + "\n")
 
 
+TIER_TIME = False  # --tier-time: SHARC_TIER_TIME=1 for every cell (host time per tier, per thread)
+
+
 def setting_env(setting: str) -> dict[str, str]:
+    env = {"SHARC_TIER_TIME": "1"} if TIER_TIME else {}
     if setting == BASE:
-        return {}
-    return {"SHARC_FAST_AUTO": setting, "SHARC_FAST_LOG": "summary"}
+        return env
+    return {**env, "SHARC_FAST_AUTO": setting, "SHARC_FAST_LOG": "summary"}
 
 
 def host_note() -> str:
@@ -164,6 +184,7 @@ class Cell:
         self.setting, self.binary = setting, binary
         self.audio_s, self.settle_s = audio_s, settle_s
         self.spec = DEVICES[device]
+        self.trig = self.spec["trig"]
         self.sc = SCENARIOS[scenario]
         self.name = f"{scenario}-{activity}-{setting.replace(',', '_')}"
         self.dir = out / self.name
@@ -216,8 +237,8 @@ class Cell:
             self.run_ms(5)
         self.health(f"tap {keys}")
 
-    def hold(self, key: str, ms: float) -> None:
-        code = H.button(key)
+    def hold(self, key: str | int, ms: float) -> None:
+        code = key if isinstance(key, int) else H.button(key)
         self.emu.button(code, True)
         self.run_ms(ms)
         self.emu.button(code, False)
@@ -248,19 +269,37 @@ class Cell:
         clean = {k: v for k, v in os.environ.items() if not k.startswith("SHARC_")}
         self.dir.mkdir(parents=True, exist_ok=True)
         if self.sc["route"] == "stock":
-            ready = ROOT / self.spec["ready"]
             syx = ROOT / self.spec["syx"]
+            if self.spec.get("card"):
+                from tools.emulator import dt2_sample_check
+
+                inputs, card_args = dt2_sample_check.card_inputs()
+                syx = inputs["firmware"]
+                ready_args = [
+                    "--dsp-image",
+                    str(inputs["DSP image"]),
+                    "--dsp-state",
+                    str(inputs["DSP state"]),
+                    "--cf-snapshot",
+                    str(inputs["CF snapshot"]),
+                    *card_args,
+                ]
+            else:
+                ready = ROOT / self.spec["ready"]
+                ready_args = [
+                    "--dsp-image",
+                    str(ready / "digi-audio-dn2-image.bin"),
+                    "--dsp-state",
+                    str(ready / "digi-audio-m5.snap.dsp"),
+                    "--cf-snapshot",
+                    str(ready / "digi-audio-m5.snap"),
+                ]
             self.emu = Emu.spawn(
                 str(syx),
                 "--auto-coupled",
                 "--audio-profile-syx",
                 str(syx),
-                "--dsp-image",
-                str(ready / "digi-audio-dn2-image.bin"),
-                "--dsp-state",
-                str(ready / "digi-audio-m5.snap.dsp"),
-                "--cf-snapshot",
-                str(ready / "digi-audio-m5.snap"),
+                *ready_args,
                 "--no-audio",
                 binary=self.binary,
                 run_dir=self.dir,
@@ -352,6 +391,17 @@ class Cell:
         self.health("ready")
         self.shot("00-ready")
         kind, arg, want = self.sc["machine"]
+        if kind == "none" and "events_from" in self.sc:
+            self.res["switch_ok"] = True
+            return
+        if kind == "none":
+            self.res["switch_ok"] = True
+            self.hold("TRIG 1" if self.device == "dn2" else self.trig, 500)
+            self.run_ms(500)
+            if ACTIVITIES[self.activity]:
+                self.tap("SYN")
+                self.run_ms(300)
+            return
         self.tap(["FUNC", "SRC"])
         self.run_ms(200)
         if kind == "dynamic":
@@ -386,10 +436,24 @@ class Cell:
         """Inputs in emulated time, the same for every setting: TRIG 1 down every 1000 ms (500 ms hold);
         activity `par` adds an encoder turn every 50 ms. `at_instr` counts from `elapsed`."""
         events: list[dict[str, Any]] = []
+        if "events_from" in self.sc:
+            path, name = self.sc["events_from"]
+            found = next(
+                x
+                for x in json.loads((ROOT / path).read_text())["scenarios"]
+                if x["name"] == name
+            )
+            events = [{**e, "at_instr": start + e["at_instr"]} for e in found["events"]]
+            self.sched_trig = None
+            for i in range(0, len(events), 200):
+                self.emu.schedule(events[i : i + 200])
+            return
         t = start
         while t + 500 * MS <= end:
-            events.append({"at_instr": t, "button": TRIG1, "down": True})
-            events.append({"at_instr": t + 500 * MS, "button": TRIG1, "down": False})
+            events.append({"at_instr": t, "button": self.trig, "down": True})
+            events.append(
+                {"at_instr": t + 500 * MS, "button": self.trig, "down": False}
+            )
             self.sched_trig += 1
             t += 1000 * MS
         if ACTIVITIES[self.activity]:
@@ -407,7 +471,7 @@ class Cell:
     def recorded_counts(self) -> tuple[int, int]:
         events = self.emu.recorded().get("events", [])
         trig = sum(
-            1 for e in events if e.get("button") == TRIG1 and e.get("down", True)
+            1 for e in events if e.get("button") == self.trig and e.get("down", True)
         )
         turn = sum(1 for e in events if "turn" in e)
         return trig, turn
@@ -451,11 +515,28 @@ class Cell:
         window = self.dir / "window.wav"
         emu.call("pcm.tap", action="capture", path=str(window))
         marks: list[tuple[float, float, dict[str, Any]]] = []
+        self.host_marks: list[dict[str, Any]] = []
 
         def mark() -> None:
             a = emu.audio()
             marks.append(
                 (a["source_audio_seconds"], a["session_wall_seconds"], a["dsp_tiers"])
+            )
+            dt = a["dsp_tiers"] or {}
+            tt = dt.get("tier_time") or {}
+            lt = a.get("link_timing") or {}
+            aw = dt.get("audio_s") or 0.0
+            # tier_time values are per audio second of the worker since it started: make them totals
+            self.host_marks.append(
+                {
+                    "cf_cpu_s": emu.status().get("controller_cpu_ns", 0) / 1e9,
+                    "worker_audio_s": aw,
+                    "worker_cpu_s": dt.get("worker_cpu_s", 0.0),
+                    "tt": {k: v * aw for k, v in tt.items() if isinstance(v, float)},
+                    "reply_wait_s": lt.get("host_reply_wait_ns", 0) / 1e9,
+                    "done_wait_s": lt.get("host_done_wait_ns", 0) / 1e9,
+                    "fast_compile_s": (dt.get("fast_compile_ns") or 0) / 1e9,
+                }
             )
 
         mark()
@@ -473,7 +554,7 @@ class Cell:
         self.res["recorded"] = {"trig": trig - pre_trig, "turn": turn - pre_turn}
         self.res["inputs_valid"] = (
             None
-            if partial
+            if partial or self.sched_trig is None
             else (trig - pre_trig, turn - pre_turn)
             == (self.sched_trig, self.sched_turn)
         )
@@ -518,6 +599,7 @@ class Cell:
             }
 
         self.res["rt_whole"] = rt(0, n)
+        self.res["host"] = self.host_summary(0, n, marks)
         self.res["tiers"] = tiers(0, n)
         if n >= 5:
             self.res["rt_last5"] = rt(n - 5, n)
@@ -526,6 +608,33 @@ class Cell:
                 {"rt": rt(bounds[i], bounds[i + 1]), **tiers(bounds[i], bounds[i + 1])}
                 for i in range(5)
             ]
+
+    def host_summary(
+        self, i: int, j: int, marks: list[tuple[float, float, dict[str, Any]]]
+    ) -> dict[str, Any]:
+        """Host seconds per emulated audio second over marks i..j, by thread and tier."""
+        audio = marks[j][0] - marks[i][0]
+        wall = marks[j][1] - marks[i][1]
+        a, b = self.host_marks[i], self.host_marks[j]
+        waudio = b["worker_audio_s"] - a["worker_audio_s"]
+        out: dict[str, Any] = {
+            "rt": audio / wall,
+            "wall_per_audio_s": wall / audio,
+            "cf_cpu_per_audio_s": (b["cf_cpu_s"] - a["cf_cpu_s"]) / audio,
+            "dsp_cpu_per_audio_s": (b["worker_cpu_s"] - a["worker_cpu_s"]) / waudio
+            if waudio
+            else None,
+            "cf_wait_reply_per_audio_s": (b["reply_wait_s"] - a["reply_wait_s"])
+            / audio,
+            "cf_wait_done_per_audio_s": (b["done_wait_s"] - a["done_wait_s"]) / audio,
+            "fast_compile_per_audio_s": (b["fast_compile_s"] - a["fast_compile_s"])
+            / audio,
+        }
+        if waudio and b["tt"]:
+            out["dsp_tier_time_per_audio_s"] = {
+                k: (b["tt"][k] - a["tt"].get(k, 0.0)) / waudio for k in b["tt"]
+            }
+        return out
 
     def read_summary(self) -> None:
         try:
@@ -642,6 +751,8 @@ def result_table(results: list[dict[str, Any]]) -> str:
 
 
 def cmd_run(a: argparse.Namespace) -> int:
+    global TIER_TIME
+    TIER_TIME = a.tier_time
     binary = binary_for(a.device, a.binary)
     stamp = time.strftime("%Y%m%d-%H%M%S")
     out = pathlib.Path(a.out) if a.out else ROOT / "out" / "runs" / "rt-matrix" / stamp
@@ -740,8 +851,16 @@ def cmd_stall(a: argparse.Namespace) -> int:
         st = cell.health("pre")
         emu.schedule(
             [
-                {"at_instr": st["elapsed"] + 200 * MS, "button": TRIG1, "down": True},
-                {"at_instr": st["elapsed"] + 700 * MS, "button": TRIG1, "down": False},
+                {
+                    "at_instr": st["elapsed"] + 200 * MS,
+                    "button": TRIG1,
+                    "down": True,
+                },
+                {
+                    "at_instr": st["elapsed"] + 700 * MS,
+                    "button": TRIG1,
+                    "down": False,
+                },
             ]
         )
         emu.drain_events()
@@ -936,6 +1055,11 @@ def main(argv: list[str] | None = None) -> int:
         type=float,
         default=12.0,
         help="stop after the current cell above this 1-minute load",
+    )
+    r.add_argument(
+        "--tier-time",
+        action="store_true",
+        help="SHARC_TIER_TIME=1: report host seconds per audio second by thread and DSP tier",
     )
     r.set_defaults(func=cmd_run)
 
