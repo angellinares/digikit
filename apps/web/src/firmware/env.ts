@@ -27,13 +27,13 @@ export interface FirmwareEnv {
   rpc(image: Uint8Array, chunk: number): Promise<RpcMachine>;
   /** Give the user the image as a .syx file. Resolves with where it went (a path, or the file name) and undefined when the user cancelled. */
   saveImage(name: string, bytes: Uint8Array): Promise<string | undefined>;
-  /** The site only, and only when `SHOW_EMULATOR` is on: open the patched image in the emulator page of this browser (nothing is uploaded). The desktop app has its own emulator. */
+  /** The site only, and only when `SHOW_EMULATOR` in `site.config.mjs` is on: the patched image opens in the emulator page of this browser and nothing is uploaded. The desktop app has its own emulator. */
   runInEmulator?(name: string, device: string, bytes: Uint8Array): Promise<void>;
   /** The app's log of what happened. */
   log(run: FirmwareRun): void;
   /**
-   * Modules that are installed and enabled together with the firmware (`[digikit] default_modules` of the device file), on the flashed device
-   * after its flash and, in the desktop app, in the emulator after it loads the patched image. Both the desktop app and the site implement it.
+   * The desktop app only: modules that are installed and enabled together with the firmware (`[digikit] default_modules` of the device file), on
+   * the flashed device after its flash and in the emulator after it loads the patched image. The site leaves it out (it has no module install).
    */
   defaultModules?: {
     /** The list for the device id (`dt2`, `dn2`); the data is the device file's. */

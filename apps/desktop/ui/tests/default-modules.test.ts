@@ -3,12 +3,7 @@ import assert from 'node:assert/strict';
 import { test } from 'vitest';
 import { DkError } from '@digi/dk-session';
 import { shouldInstallAtStart } from '../src/default-modules.ts';
-import {
-  defaultModuleIds,
-  entries,
-  summaryOf,
-  waitForRuntime,
-} from '../../../web/src/firmware/default-modules-data.ts';
+import { defaultModuleIds, entries, summaryOf, waitForRuntime } from '../src/default-modules-data.ts';
 
 test('both device files list digikit/debug and digikit/remote, and each entry has the summary of its module.toml', () => {
   for (const device of ['dt2', 'dn2']) {

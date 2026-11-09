@@ -1,6 +1,6 @@
-// The Default modules drop-down: the run-time modules that are installed and enabled together with the firmware (the desktop app and the site: `[digikit]
+// The Default modules drop-down: the run-time modules that are installed and enabled together with the firmware (the desktop app: `[digikit]
 // default_modules` of the device file). The same control stands in the Firmware pane and next to the emulator's firmware file. The user can
-// untick an entry; the choice is kept per device (default-modules-state.ts). Renders nothing where the app gives no default modules.
+// untick an entry; the choice is kept per device (default-modules-state.ts). Renders nothing where the app gives no default modules (the site).
 import { For, Show, createSignal, onCleanup, createEffect, type JSX } from 'solid-js';
 import { defaultsLabel } from './default-modules-core';
 import { entriesFor, setTick, tickedFor, unticked } from './default-modules-state';

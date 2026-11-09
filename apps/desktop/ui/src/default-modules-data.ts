@@ -1,10 +1,11 @@
+/// <reference types="vite/client" />
 // The data side of the desktop's default modules: the list from the device files (`[digikit] default_modules`, with the one-line summary of each
 // module's own module.toml) and the wait for the runtime. The install itself is in default-modules.ts. Host tests: apps/desktop/ui/tests/default-modules.test.ts.
 import { parse } from 'smol-toml';
 import { DkError, type DkSession } from '@digi/dk-session';
 import dt2Source from '../../../../devices/digitakt-ii.toml?raw';
 import dn2Source from '../../../../devices/digitone-ii.toml?raw';
-import type { DefaultModuleEntry } from './default-modules-core';
+import type { DefaultModuleEntry } from '../../../web/src/firmware/default-modules-core';
 
 const sources: Record<string, string> = { dt2: dt2Source, dn2: dn2Source };
 

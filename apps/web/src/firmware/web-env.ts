@@ -4,13 +4,7 @@
 import { SHOW_EMULATOR } from '../../site.config.mjs';
 import { putHandoff } from '../patch/handoff';
 import { PatchKit, type PreparedFlash } from '../patch/patchkit-core';
-import { asked } from '../transfer/connection-state';
-import { resetSession, session } from '../transfer/target';
-import { loadLibrary } from '../transfer/transfer-backend';
 import '../transfer/web-env';
-import { installDefaults } from './default-modules-core';
-import { entries } from './default-modules-data';
-import { sessionOps } from './default-modules-session';
 import { setFirmwareEnv, type FirmwareEnv } from './env';
 import './firmware-site.css';
 
@@ -105,16 +99,6 @@ export const webFirmwareEnv: FirmwareEnv = {
         },
       }
     : {}),
-  defaultModules: {
-    entries,
-    async install(_where, device, ids, progress) {
-      // after a flash the old session may be of the port before the restart
-      resetSession();
-      const s = await session();
-      const library = await loadLibrary(device);
-      return asked(() => installDefaults(sessionOps(s, library), ids, progress));
-    },
-  },
   log(run) {
     (run.level === 'error' ? console.warn : console.info)(`[firmware] ${run.text}`, run.detail ?? '');
   },
