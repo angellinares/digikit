@@ -34,7 +34,7 @@ already full during the device phase, so speed must come from less work per test
 
 Highest payoff first. Each step states its proof.
 
-1. [ ] **Zero DSP by default** (branch `feat/zero-dsp-default`). Device tests run ColdFire only unless they need the DSP (`--dsp zero`: about 2.2 times
+1. [x] **Zero DSP by default** (merged in #361, 2026-11-09; the paired before/after proof below is still open). Device tests run ColdFire only unless they need the DSP (`--dsp zero`: about 2.2 times
    real time; coupled is about real time on DT2 and 0.62 to 0.66 times on DN2 at load, finding 18). Proof: per-file `runtime-phase` totals before and after on the same files, one paired run.
    - [ ] Weighted emulator slots: a zero-DSP emulator takes about one core, a coupled one about two. `emu-slot.mjs` counts a zero-DSP run as half a slot.
      Proof: same machine load at a higher device concurrency.
