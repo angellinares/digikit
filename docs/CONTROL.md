@@ -286,7 +286,7 @@ stopping) saves `overlay.bin` next to the card image and runs the same export, a
 `plusdrive export IMAGE [--overlay overlay.bin] -o FOLDER [--out DIR] [--prune]`.
 
 The quit saves `overlay.bin`, mirrors and exports only when the firmware reached ready in this session (`status.cf.ready`; a ready snapshot restored at load counts). Otherwise `overlay.bin` stays as it is and the log says `card: the card changes of this session were not saved because the firmware never reached ready`.
-`card.reset_overlay` (no parameters) renames the loaded card's `overlay.bin` to `overlay.bin.bad-<ms since the epoch>` beside it (never deleted) and returns `{overlay, set_aside}` (`set_aside` is null when there was no overlay). The running session then saves and exports nothing at quit, because its memory still holds the sectors that were set aside: reload the firmware (`firmware.load`) to boot on the card without them. It fails with `no card is loaded` and while a job runs. `card.folder` reports `overlay` (true when the loaded card has an `overlay.bin`).
+`card.reset_overlay` (no parameters) renames the loaded card's `overlay.bin` to `overlay.bin.set-aside-<ms since the epoch>` beside it (never deleted) and returns `{overlay, set_aside}` (`set_aside` is null when there was no overlay). The running session then saves and exports nothing at quit, because its memory still holds the sectors that were set aside: reload the firmware (`firmware.load`) to boot on the card without them. It fails with `no card is loaded` and while a job runs. `card.folder` reports `overlay` (true when the loaded card has an `overlay.bin`).
 
 ## Examples
 

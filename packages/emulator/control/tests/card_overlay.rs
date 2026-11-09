@@ -1,6 +1,5 @@
 //! The saved card writes (`overlay.bin` next to the card image): a quit saves them only when the firmware reached ready in
-//! the session, and `card.reset_overlay` sets them aside for good. ColdFire only. A real overlay saved by a ready session did not reach ready again within 20 emulated seconds
-//! (measured once, not explained), so the session that is reset starts from a one-sector overlay. Skipped without the DT2 1.17 firmware.
+//! the session, and `card.reset_overlay` sets them aside for good. ColdFire only. Skipped without the DT2 1.17 firmware.
 
 use std::{
     fs,
@@ -165,9 +164,6 @@ fn a_ready_session_saves_and_reset_overlay_sets_the_saved_one_aside_for_good() {
     quit(handle, join);
     let saved = fs::read(&overlay).expect("a ready session saves its card writes");
     assert!(!saved.is_empty());
-    // The next session starts from an overlay that is known to boot (see the note at the top).
-    let saved = fake_overlay(&image);
-    fs::write(&overlay, &saved).unwrap();
 
     // Session 2: the overlay is loaded and reaches ready; reset sets it aside.
     let (handle, join, image2) = session(&syx, &run, &folder, &out);
@@ -184,7 +180,7 @@ fn a_ready_session_saves_and_reset_overlay_sets_the_saved_one_aside_for_good() {
             .file_name()
             .unwrap()
             .to_string_lossy()
-            .starts_with("overlay.bin.bad-")
+            .starts_with("overlay.bin.set-aside-")
     );
     assert_eq!(fs::read(&aside).unwrap(), saved, "kept, not deleted");
     assert!(!overlay.exists());
@@ -210,5 +206,30 @@ fn a_ready_session_saves_and_reset_overlay_sets_the_saved_one_aside_for_good() {
         .unwrap();
     assert_eq!(written["sectors"], 0, "the next load has no overlay");
     quit(handle, join);
+    let _ = fs::remove_dir_all(&dir);
+}
+
+#[test]
+fn a_card_with_a_saved_overlay_reaches_ready_and_saves_again_at_quit() {
+    let Some(syx) = dt2_syx() else { return };
+    let dir = std::env::temp_dir().join(format!("digi-overlay-again-{}", std::process::id()));
+    let _ = fs::remove_dir_all(&dir);
+    let (folder, out, run) = (folder_of(&dir), dir.join("out"), dir.join("run"));
+    let (handle, join, image) = session(&syx, &run, &folder, &out);
+    let overlay = digi_control::controller::overlay_path(&image);
+    // A fresh card (no overlay) reaches ready under the strict filesystem-check contract.
+    boot_to_ready(&handle, 1);
+    quit(handle, join);
+    // A card an earlier boot used skips the firmware's filesystem check: the relaxed contract reaches ready, and the
+    // quit saves again (the one-sector overlay we put there grows by the session's writes).
+    let small = fake_overlay(&image);
+    fs::write(&overlay, &small).unwrap();
+    let (handle, join, _) = session(&syx, &run, &folder, &out);
+    boot_to_ready(&handle, 2);
+    quit(handle, join);
+    assert!(
+        fs::read(&overlay).unwrap().len() > small.len(),
+        "the ready session saved its writes"
+    );
     let _ = fs::remove_dir_all(&dir);
 }

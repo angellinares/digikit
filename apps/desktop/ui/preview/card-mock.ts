@@ -63,7 +63,7 @@ export async function cardCall(method: string, params: Record<string, unknown>):
     state.overlay = false;
     return {
       overlay: `${HOME}/out/native/run/cards/card/overlay.bin`,
-      set_aside: had ? `${HOME}/out/native/run/cards/card/overlay.bin.bad-1` : null,
+      set_aside: had ? `${HOME}/out/native/run/cards/card/overlay.bin.set-aside-1` : null,
     };
   }
   return folderState();
