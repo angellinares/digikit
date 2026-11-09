@@ -993,6 +993,10 @@ def build_tests(
     app: bool = False,
 ) -> pathlib.Path:
     """Build the workload test binary, or with app=True the desktop app binary."""
+    from tools.emulator import native_emu
+
+    # the desktop crate embeds the panel's build output
+    native_emu.build_panel(os.environ)
     env = base_env(gen)
     if rustflags:
         env["RUSTFLAGS"] = rustflags
