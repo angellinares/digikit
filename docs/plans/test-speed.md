@@ -77,9 +77,13 @@ Highest payoff first. Each step states its proof.
        (`sdk/src/picker_logic.c`, `sample_picker.c`, `chooser.c`; host tests in `modules/core/adapters/ui/host/tests/picker.rs`): folder-first
        order (it reimplements `pickerOrder`), levels closing to the page, cursor on slot 0, NO and YES. Move those to the host tests and ui-demo;
        keep "a click on SMP opens shot's slot list and a chosen file sets that pool slot" on zero DSP; "the sample plays" is in `shot-dt2`.
-       **[D]** Done: the component checks went to the host tests (already covered by `picker.rs` and `pageclick.rs`); shot keeps one glue test (click, slot 1,
-       folder, file; pool state and SMP). It stays on coupled DSP: shot's pack carries its DSP part and fails with E_DSP_XFER (-35) on zero DSP. Not done:
-       the picker in `ui-demo` (the fixture has no picker or pool client; needs a fixture change). Time: 312 s in the gate before, 1m50s for the Nx target now.
+       **[D]** Done: the picker logic (order, levels, cursor) is in `picker.rs`; shot keeps one glue test that runs the real hooks: click, slot list, slot 0 and 1,
+       replace of a filled slot (new token), NO one level at a time, held TRIG (E_HELD: SMP stays, the file loads), press with a turn and an unused C turn (no
+       list). State is read from the pool API and the SMP word; one screen hash tells page, list and browser apart. It stays on coupled DSP: shot's pack
+       carries its DSP part and fails with E_DSP_XFER (-35) on zero DSP. Not done: the picker in `ui-demo` (the fixture has no picker or pool client).
+       Time: 312 s in the gate before, 2m15s for the Nx target now.
+       `installModules` now waits for the main UI of the new boot (`expectUiAfterRestart`, `tests/regression/runtime/install.ts`), the one wait that the
+       deleted `settleUi` gave after an install.
      - [x] Then search for other cases: device tests that assert behaviour of `sdk/src` components (pages, chooser, picker, lists, knob handling)
        or of core adapters that a host test or another device test already covers.
        **[D]** Done as a static audit: [ledgers/device-test-audit.md](ledgers/device-test-audit.md). The candidates are listed there for decision.

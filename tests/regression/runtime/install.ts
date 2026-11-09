@@ -1,10 +1,27 @@
 import fs from 'node:fs';
 import path from 'node:path';
-import type { DkSession } from '@digi/dk-session';
-import { repoRoot, type Device } from '@digi/test-support';
+import { repoRoot, type Device, type Session } from '@digi/test-support';
 import { expect } from 'vitest';
 import { type PatchedSession } from '../support.ts';
 import { timePhase } from '../timing.ts';
+import { liveArtifacts } from './artifacts.ts';
+import { expectRuntimeUi } from './ready.ts';
+import { prepareRuntimePlan, type RuntimePlan } from './runtime-plan.ts';
+
+type Rig = Pick<PatchedSession, 'session' | 'dk'>;
+
+const bootPlans = new WeakMap<Session, RuntimePlan>();
+
+/** The main UI of the boot after a restart (an install ends with one): a new epoch, and the DT2 filesystem check is the relaxed one that a restart needs. */
+export async function expectUiAfterRestart(session: Session, epochBefore: number | undefined): Promise<void> {
+  const artifacts = liveArtifacts(session, 'install-ready');
+  let plan = bootPlans.get(session);
+  if (!plan) {
+    plan = await prepareRuntimePlan(session, artifacts, ['DKRT_BOOT']);
+    bootPlans.set(session, plan);
+  }
+  await expectRuntimeUi(session, plan, artifacts, { afterEpoch: epochBefore ?? -1 });
+}
 
 /** Prepared separately with patchkit pack; acceptance never builds a toolchain, module or daemon. */
 export function moduleArtifact(device: Device, id: string): string {
@@ -18,7 +35,8 @@ export function moduleArtifact(device: Device, id: string): string {
 export const DEBUG_MODULE = 'digikit/debug';
 
 /** Native USB upload of prepared modules, one selection with all of them (in this order), one restart, then wait for their registration. */
-export async function installModules(dk: DkSession, modules: { id: string; artifact: string }[]): Promise<void> {
+export async function installModules({ session, dk }: Rig, modules: { id: string; artifact: string }[]): Promise<void> {
+  const epochBefore = (await session.status()).epoch;
   await timePhase(
     'module.install',
     async () => {
@@ -39,18 +57,20 @@ export async function installModules(dk: DkSession, modules: { id: string; artif
     },
     { detail: modules.map((m) => m.id).join(' ') },
   );
+  // dk.waitForBoot only sees the restart event: a test that sends keys next needs the main UI.
+  await expectUiAfterRestart(session, typeof epochBefore === 'number' ? epochBefore : undefined);
 }
 
 /** One prepared module alone (a test that does not read the log). */
-export function installModule(dk: DkSession, id: string, artifact: string): Promise<void> {
-  return installModules(dk, [{ id, artifact }]);
+export function installModule(rig: Rig, id: string, artifact: string): Promise<void> {
+  return installModules(rig, [{ id, artifact }]);
 }
 
 /** The debug module and the modules `ids`, in one selection and one restart. */
-export function installWithDebug({ session, dk }: PatchedSession, ...ids: string[]): Promise<void> {
-  const device = session.options.device;
+export function installWithDebug(rig: Rig, ...ids: string[]): Promise<void> {
+  const device = rig.session.options.device;
   return installModules(
-    dk,
+    rig,
     [...new Set([DEBUG_MODULE, ...ids])].map((id) => ({ id, artifact: moduleArtifact(device, id) })),
   );
 }

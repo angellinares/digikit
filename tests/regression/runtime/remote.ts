@@ -46,8 +46,9 @@ export async function expectRemoteEnabled(session: Session, dk: DkSession, timeo
 }
 
 /** Install only: negative device-set cases need no offline ABOUT symbol plan. */
-export async function installRemote({ session, dk }: PatchedSession): Promise<void> {
-  await installModule(dk, 'digikit/remote', moduleArtifact(session.options.device, 'digikit/remote'));
+export async function installRemote(runtime: PatchedSession): Promise<void> {
+  const { session } = runtime;
+  await installModule(runtime, 'digikit/remote', moduleArtifact(session.options.device, 'digikit/remote'));
 }
 
 export async function remoteTap(session: Session, dk: DkSession, name: string, settleMs = 1200): Promise<void> {

@@ -67,7 +67,7 @@ host tests: their checks stay device tests until the logic is split out.
 
 | File | Test | s | Class | Reason | Proposed action |
 | --- | --- | --- | --- | --- | --- |
-| `shot-picker` | click on SMP, slot list, folder, file | 312 | S, was | re-tested the picker (order, levels, cursor, NO, YES) with framebuffer hashes | **Rewritten** (applied): one glue test on the pool API and the SMP word, 110 s as an Nx task |
+| `shot-picker` | click on SMP, slot list, folder, file | 312 | S, was | re-tested the picker (order, levels, cursor, NO, YES) with framebuffer hashes | **Rewritten** (applied): one glue test with the real hooks (held TRIG, press with a turn, replace, NO levels) on the pool API and the SMP word, 135 s as an Nx task |
 | `ui-demo/zero/ui` | rows, list focus, dialogs, toast | 130 | E | the SDK UI component on a device once | Keep. The picker has no ui-demo host (no pool client in the fixture) |
 | `digikit-menu/zero/menu`, `fits` | empty-store menu; what-fits rows | 51 / 266 | E | `fits` says the rule and the page logic are host tests (`menu.rs`) and this is the scan path | Keep |
 | `native-page` | native callback page cycles and routes turns | 388 | E | `nativepage.rs` host tests exist for the logic **[?]** | Read before deciding |

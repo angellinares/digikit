@@ -216,7 +216,7 @@ async function expectEarlyModuleLog(runtime: PatchedSession): Promise<void> {
   await expectRuntimeReady(session);
   const device = session.options.device;
   await installModules(
-    dk,
+    runtime,
     ['digikit/remote', DEBUG_MODULE].map((id) => ({ id, artifact: moduleArtifact(device, id) })),
   );
   expect((await dk.modules()).map((m) => m.name)).toEqual(['digikit/remote', 'digikit/debug']);

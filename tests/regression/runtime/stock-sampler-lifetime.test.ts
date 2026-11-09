@@ -186,6 +186,10 @@ async function discovery(session: Session, dk: DkSession): Promise<{ out: string
     return result;
   }
   try {
+    // Boot wait of the stock image (no install, no restart): the main UI of the firmware, as a state and not as a fixed time.
+    await expect
+      .poll(async () => (await session.status()).cf.main_ui_reached, { timeout: 120_000, interval: 500 })
+      .toBe(true);
     const identity = await session.status();
     record(out, 'identity', { load: session.loadResult, status: identity });
     expect(identity.firmware?.injected, 'unpatched stock image').toBe(false);

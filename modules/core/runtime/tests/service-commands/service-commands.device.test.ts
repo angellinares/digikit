@@ -6,10 +6,11 @@ import { installModule, moduleArtifact } from '@digi/regression/runtime/install.
 import { expectRuntimeReady, runtimeTests } from '@digi/regression/runtime/ready.ts';
 
 /** Port of live-svc: runtime command registration, dispatch and refusal semantics. */
-async function expectServiceCommands({ session, dk }: PatchedSession): Promise<void> {
+async function expectServiceCommands(runtime: PatchedSession): Promise<void> {
+  const { session, dk } = runtime;
   expect(['zero', 'none'], 'service RPC coverage runs without the DSP').toContain((await session.status()).dsp);
   await expectRuntimeReady(session);
-  await installModule(dk, 'test/svc-echo', moduleArtifact(session.options.device, 'test/svc-echo'));
+  await installModule(runtime, 'test/svc-echo', moduleArtifact(session.options.device, 'test/svc-echo'));
   expect(hasCap(await dk.info(), 'SERVICE_CMDS'), 'INFO advertises service commands').toBe(true);
   expect(RANGES.remote_state, 'reserved remote state command range').toEqual([0x3e, 0x3f]);
 
