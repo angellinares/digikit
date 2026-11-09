@@ -3,7 +3,7 @@
 import type { ReloadReport } from '../../../web/src/runtime/reload.ts';
 import type { FirmwareRun } from '../../../web/src/firmware/env.ts';
 import type { TransferRun } from '../../../web/src/transfer/env.ts';
-import type { CardFolder } from './card-core.ts';
+import type { CardFolder, OverlayReset } from './card-core.ts';
 import { shortFolder } from './card-core.ts';
 import type { RuntimeEvent } from '@digi/dk-session';
 
@@ -321,6 +321,16 @@ export function cardEntry(what: string, c: CardFolder): LogInput {
   const where = c.folder ? shortFolder(c.folder) : 'no folder';
   const later = c.reload_needed ? ' · reload to use it' : '';
   return { source: 'card', level: 'info', text: `${what}: ${where} (${n} file${n === 1 ? '' : 's'})${later}` };
+}
+
+/** The saved card changes were set aside (`card.reset_overlay`): what moved and where. */
+export function overlayResetEntry(r: OverlayReset): LogInput {
+  if (!r.set_aside) return { source: 'card', level: 'info', text: 'reset card changes: there was nothing to reset' };
+  return {
+    source: 'card',
+    level: 'info',
+    text: `reset card changes: set aside ${r.overlay} as ${r.set_aside}; the firmware reloads without them`,
+  };
 }
 
 const PAST: Record<string, string> = {

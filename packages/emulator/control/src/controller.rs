@@ -185,6 +185,28 @@ pub fn overlay_path(image: &Path) -> PathBuf {
     image.with_file_name("overlay.bin")
 }
 
+/// Whether `card` took a saved overlay (`apply_saved_overlay`) when it was built: a card an earlier boot used. The DT2 does not run its
+/// filesystem check again on such a card (docs/findings/37-boot-load.md), so the strict readiness contract (`main-panel-fs-check-v1`)
+/// can never complete and the boot gets the relaxed one, as after a soft reset. A fresh card has no writes and stays strict.
+fn saved_overlay_applied(card: Option<&Card>) -> bool {
+    card.is_some_and(|c| c.overlay_len() > 0)
+}
+
+/// Rename the saved overlay of `image` to `overlay.bin.set-aside-<ms since the epoch>` beside it; its new path, or `None` when
+/// there is none. The card key hashes the overlay file, so the next load keys as a card without one.
+fn set_aside_overlay(image: &Path) -> std::io::Result<Option<PathBuf>> {
+    let path = overlay_path(image);
+    if !path.is_file() {
+        return Ok(None);
+    }
+    let ms = std::time::SystemTime::now()
+        .duration_since(std::time::UNIX_EPOCH)
+        .map_or(0, |d| d.as_millis());
+    let aside = path.with_file_name(format!("overlay.bin.set-aside-{ms}"));
+    std::fs::rename(&path, &aside)?;
+    Ok(Some(aside))
+}
+
 /// Put the writes a synced session saved next to `image` (`overlay.bin`) back on a fresh card. A damaged or
 /// foreign file is ignored with a message. A ready snapshot restored afterwards brings its own overlay.
 fn apply_saved_overlay(card: &mut Card, image: &Path) {
@@ -241,7 +263,12 @@ fn runtime_from(
     audio: Option<&AudioOptions>,
 ) -> Result<(Runtime, Option<ReadError>), String> {
     let (card, error) = card_for(image)?;
-    Runtime::new(bytes, card, audio).map(|runtime| (runtime, error))
+    let used_card = saved_overlay_applied(card.as_ref());
+    let mut runtime = Runtime::new(bytes, card, audio)?;
+    if used_card {
+        runtime.relax_fs_check();
+    }
+    Ok((runtime, error))
 }
 
 pub type Reply = mpsc::Sender<Result<Snapshot, String>>;
@@ -734,6 +761,9 @@ struct Actor {
     reset_pending: bool,
     /// The card writes of the run that asked for the reset, for the cold boot that follows (the card keeps its contents).
     reset_overlay: Option<Vec<emmc_card::CardOverlaySector>>,
+    /// `card.reset_overlay` set the saved overlay aside: this session's card writes are not saved or exported at quit. A new
+    /// runtime (the reload that follows) clears it.
+    overlay_set_aside: bool,
     /// Soft resets in a row before the boot got ready (a bound for boot loops).
     boot_resets: u32,
     /// CPU exceptions run the guest's handler (RPC `cpu.exceptions`), for every runtime installed from now on.
@@ -850,6 +880,7 @@ impl Actor {
             health_tick: 0,
             reset_pending: false,
             reset_overlay: None,
+            overlay_set_aside: false,
             boot_resets: 0,
             deliver_exceptions: false,
             reset_ram: None,
@@ -1244,6 +1275,7 @@ impl Actor {
     fn install(&mut self, mut runtime: Runtime, error: Option<ReadError>) {
         runtime.set_deliver_exceptions(self.deliver_exceptions);
         self.runtime = Some(runtime);
+        self.overlay_set_aside = false;
         self.read_error = error;
         if std::mem::take(&mut self.want_auto_no) {
             self.auto_no = true;
@@ -1994,6 +2026,7 @@ impl Actor {
             "card.folder" => self.rpc_card_folder().map(Some),
             "card.folder_set" => self.rpc_card_folder_set(&p).map(Some),
             "card.sync" => self.rpc_card_sync().map(Some),
+            "card.reset_overlay" => self.rpc_card_reset_overlay().map(Some),
             "card.cancel" => Ok(Some(json!({"cancelled": self.cancel_card()}))),
             "quit" => {
                 self.quit = true;
@@ -2276,7 +2309,29 @@ impl Actor {
     /// At quit: save the firmware's card writes next to the image (`overlay.bin`, merged over an older one, so a
     /// session that did not start from it loses nothing), then, for a synced card, export them to its folder.
     /// Failures are printed: the quit goes on.
+    ///
+    /// Nothing is saved, mirrored or exported unless the firmware reached ready in this session (a ready snapshot
+    /// restored at load counts: its counters come with it): a boot that was cut short holds half-finished card
+    /// writes, and saved over the old overlay they would keep the next boot from reaching ready. The same holds
+    /// after `card.reset_overlay`, whose runtime still holds the sectors that were set aside.
     fn finish_card(&mut self) {
+        let Some(runtime) = self.runtime.as_mut() else {
+            return;
+        };
+        let ready = runtime.status().ready;
+        if !ready || self.overlay_set_aside {
+            if self.card_folder.is_some() || self.mirror.is_some() {
+                eprintln!(
+                    "card: the card changes of this session were not saved because {}",
+                    if self.overlay_set_aside {
+                        "the saved overlay was set aside (card.reset_overlay)"
+                    } else {
+                        "the firmware never reached ready"
+                    }
+                );
+            }
+            return;
+        }
         self.mirror_flush();
         let Some(folder) = self.card_folder.as_ref().filter(|f| f.sync) else {
             return;
@@ -2467,7 +2522,8 @@ impl Actor {
     /// (ms since the epoch) and what it did, and whether the card has writes the folder does not hold yet. And the folder's place in
     /// the device's choice: `device`, `default_folder`, `custom` (the user chose the folder), `chosen_missing` (a saved choice whose
     /// folder is gone: the default is used), `next_folder` (what the next load uses) and `reload_needed` (it is not `folder`: a device
-    /// with a path filesystem takes the new folder when its card is built again, at the next load).
+    /// with a path filesystem takes the new folder when its card is built again, at the next load). `overlay`: the loaded card has a saved
+    /// `overlay.bin` (`card.reset_overlay` can set it aside).
     fn rpc_card_folder(&mut self) -> RpcResult {
         let mut status = match &self.mirror {
             Some(m) => m.status(plusdrive_format::mirror::folder_files(&m.dir)),
@@ -2475,6 +2531,12 @@ impl Actor {
                 json!({"folder": null, "continuous": false, "files": [], "last_sync": null, "error": null})
             }
         };
+        status["overlay"] = self
+            .loaded
+            .as_ref()
+            .and_then(|l| l.card.as_deref())
+            .is_some_and(|image| overlay_path(image).is_file())
+            .into();
         if let Some(device) = self.loaded_device() {
             let next = self.folders.folder(device);
             status["device"] = device.into();
@@ -2543,6 +2605,30 @@ impl Actor {
     fn rpc_card_sync(&mut self) -> RpcResult {
         self.mirror_pass().map_err(RpcError::io)?;
         self.rpc_card_folder()
+    }
+
+    /// `card.reset_overlay`: rename the loaded card's `overlay.bin` to `overlay.bin.set-aside-<ms>` (never deleted). The running
+    /// session then saves and exports nothing at quit; reload the firmware to boot on the card without the overlay.
+    /// Returns `{overlay, set_aside}` (`set_aside` is null when the card has no overlay).
+    fn rpc_card_reset_overlay(&mut self) -> RpcResult {
+        if self.job.is_some() || self.card_job.is_some() || self.patch_job.is_some() {
+            return Err(RpcError::new(code::BUSY, "another job is running"));
+        }
+        let image = self
+            .loaded
+            .as_ref()
+            .and_then(|l| l.card.clone())
+            .ok_or_else(|| RpcError::bad_params("no card is loaded"))?;
+        let overlay = overlay_path(&image);
+        let aside = set_aside_overlay(&image)
+            .map_err(|e| RpcError::io(format!("could not set {} aside: {e}", overlay.display())))?;
+        if aside.is_some() {
+            self.overlay_set_aside = true;
+        }
+        Ok(json!({
+            "overlay": overlay.display().to_string(),
+            "set_aside": aside.map(|p| p.display().to_string()),
+        }))
     }
 
     /// `card.overlay {path}`: write the guest's writes to the card as a sparse file: per touched sector
@@ -3744,11 +3830,12 @@ impl Actor {
             apply_overlay_sectors(card_obj.get_or_insert_with(Card::default), sectors)
                 .map_err(&rejected)?;
         }
+        let used_card = saved_overlay_applied(card_obj.as_ref());
         let mut runtime = Runtime::new_patched(&bytes, card_obj, &base_sha).map_err(&rejected)?;
         if zero {
             runtime.enable_zero_dsp_timing().map_err(&rejected)?;
         }
-        if resetting || std::env::var_os("DIGI_COLD_RELAX_FS").is_some() {
+        if resetting || used_card || std::env::var_os("DIGI_COLD_RELAX_FS").is_some() {
             // A used card may skip the boot-time filesystem check, as on the coupled reset path.
             runtime.relax_fs_check();
         }
@@ -4182,7 +4269,7 @@ impl Actor {
             card.clone(),
             base_sha.to_string(),
         );
-        let inputs = digi_coupled::cold::ColdInputs {
+        let mut inputs = digi_coupled::cold::ColdInputs {
             initial_buttons: initial_buttons.unwrap_or_default().to_vec(),
             deliver_exceptions: self.deliver_exceptions,
             image,
@@ -4197,6 +4284,8 @@ impl Actor {
             .name("digi-patched-boot".into())
             .spawn(move || {
                 let result = card_for(worker_card).and_then(|(mut card_obj, _)| {
+                    // A card with saved writes was used before: the firmware skips its filesystem check (see `saved_overlay_applied`).
+                    inputs.relax_fs_check |= saved_overlay_applied(card_obj.as_ref());
                     if let Some(sectors) = &reset_overlay {
                         // A guest with no card file still writes to the default blank card: lay its writes over a new one,
                         // or a soft reset loses them (an upload then a RESTART booted on an empty store).
@@ -4268,8 +4357,13 @@ impl Actor {
             initial_buttons: _,
         } = install;
         let (card_obj, error) = card_for(card.clone()).map_err(&rejected)?;
-        let runtime =
+        let used_card = saved_overlay_applied(card_obj.as_ref());
+        let mut runtime =
             Runtime::new_patched_audio(&bytes, card_obj, &base_sha, &audio).map_err(&rejected)?;
+        if used_card {
+            // The ready pair was booted under the relaxed contract (see `saved_overlay_applied`).
+            runtime.relax_fs_check();
+        }
         report["audio"] = runtime.has_audio().into();
         let base_analysis = match &base_bytes {
             Some(base) => Some(Analysis::of(base).map_err(&rejected)?),
@@ -4904,6 +4998,31 @@ mod card_key_tests {
         assert_eq!(one, key(), "same content");
         std::fs::write(overlay_path(&card), b"overlay two").unwrap();
         assert_ne!(one, key(), "overlay content changed");
+        let _ = std::fs::remove_dir_all(&dir);
+    }
+
+    #[test]
+    fn setting_the_overlay_aside_keeps_it_and_returns_the_key_to_a_card_without_one() {
+        let dir = std::env::temp_dir().join(format!("digi-card-aside-{}", std::process::id()));
+        std::fs::create_dir_all(&dir).unwrap();
+        let card = dir.join("card");
+        std::fs::write(&card, vec![0u8; 512]).unwrap();
+        let _ = std::fs::remove_file(overlay_path(&card));
+        assert_eq!(super::set_aside_overlay(&card).unwrap(), None);
+        let none = card_snapshot_key(Some(&card), false);
+        std::fs::write(overlay_path(&card), b"old overlay").unwrap();
+        assert_ne!(none, card_snapshot_key(Some(&card), false));
+        let aside = super::set_aside_overlay(&card).unwrap().unwrap();
+        assert!(!overlay_path(&card).exists());
+        assert_eq!(std::fs::read(&aside).unwrap(), b"old overlay");
+        assert!(
+            aside
+                .file_name()
+                .unwrap()
+                .to_string_lossy()
+                .starts_with("overlay.bin.set-aside-")
+        );
+        assert_eq!(none, card_snapshot_key(Some(&card), false));
         let _ = std::fs::remove_dir_all(&dir);
     }
 
