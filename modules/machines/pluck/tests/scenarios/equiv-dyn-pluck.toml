@@ -1,8 +1,8 @@
-# A selection loaded at boot plays like the same module patched in (DT2): rows, voice row, PCM of a note.
+# A selection loaded at boot plays like the same module patched in (DN2; the DT2 case is in modules/core/adapters/dynreg/tests/equiv.device.test.ts): rows, voice row, PCM of a note.
 [scenario]
 name = "equiv-dyn-pluck"
 kind = "equiv"
-devices = ["dt2", "dn2"]
+devices = ["dn2"]
 tier = "quick"
 
 [equiv]

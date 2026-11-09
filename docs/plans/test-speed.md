@@ -98,7 +98,9 @@ Highest payoff first. Each step states its proof.
      `test_equiv_dt2` 493 s and `test_menu_dt2` 528 s for it. Move `DEVICE_SYX` to `tools.firmware.config`; check which edge brings `pk_dkrt` into
      `test_machine_conformance.py` and `test_fx_conformance.py` and cut it.
    - [ ] Port next: the `equiv-dyn-pluck`, `-analog`, `-bd`, `-pd` scenarios as rows of `equiv.device.test.ts` (only `equiv-dn2-set` is ported;
-     the PCM pins are already approved, a port reuses the same values). Then `test_equiv_dt2.py` and `test_equiv_dn2.py` go. Then the menu flows
+     the PCM pins are already approved, a port reuses the same values). Then `test_equiv_dt2.py` and `test_equiv_dn2.py` go.
+     Done 2026-11-10: analog, bd, pd (both devices), pluck and equiv-mixed (DT2) are rows; `test_equiv_dt2.py` is deleted. Left: `equiv-dyn-pluck` on
+     DN2 (reference image without the runtime; the card rig needs a no-runtime plan) and with it `test_equiv_dn2.py`. Then the menu flows
      (`zero/menu.device.test.ts` covers only the empty-store menu) and the `pk_dkrt` boot proof as a safe-mode-style test.
    - [ ] Zero DSP where the subject allows: the boot, restart and safe-mode proofs of `test_patchkit_dkrt*.py` and the C-demo test. Equiv, menu and
      the conformance rigs keep the DSP (audio or SHARC subject).
