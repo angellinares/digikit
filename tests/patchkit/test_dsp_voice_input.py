@@ -125,7 +125,9 @@ def test_a_tracks_state_is_zeroed_at_its_first_note_on_and_then_only_the_clear_b
     at = nw(b.state + b.stride * r.track)
     words_ = b.stride // 4
     assert [r.sess.peek(at + k) for k in range(words_)] != [0] * words_  # garbage
-    for _ in range(2):  # the Digitone II rig sees the trigger edge from the second call on
+    for _ in range(
+        2
+    ):  # the Digitone II rig sees the trigger edge from the second call on
         r.trigger()
         assert r.block("friendly").returned
     assert [r.sess.peek(at + k) for k in range(words_)] == [0] * words_
