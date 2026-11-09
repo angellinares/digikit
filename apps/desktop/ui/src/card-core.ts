@@ -31,6 +31,14 @@ export interface CardFolder {
   next_folder?: string | null;
   /** `next_folder` is not `folder` yet: the device's card is built from the folder, so it takes the new one at the next load. */
   reload_needed?: boolean;
+  /** The loaded card has a saved `overlay.bin` (the firmware's card changes from an earlier session). */
+  overlay?: boolean;
+}
+
+/** The answer of `card.reset_overlay`: the overlay file and where it went (null: there was none). */
+export interface OverlayReset {
+  overlay: string;
+  set_aside: string | null;
 }
 
 /** "never", "just now", "12 s ago", "3 min ago", "2 h ago". */

@@ -24,6 +24,7 @@ import {
   unseenErrors,
   type LogInput,
   type LogState,
+  overlayResetEntry,
 } from '../src/log-core.ts';
 
 const at = (h: number, m: number, s: number) => new Date(2026, 9, 28, h, m, s).getTime();
@@ -339,4 +340,11 @@ test('Save writes a # line for each entry and the event as JSON after the lines 
   // the JSON lines are what is left without the comments
   assert.equal(lines.filter((l) => l && !l.startsWith('#')).length, 1);
   assert.equal(saveName(at(9, 5, 0)), 'device-log-2026-10-28-0905.log');
+});
+
+test('the log says what the card reset set aside and where, or that there was nothing', () => {
+  const moved = overlayResetEntry({ overlay: '/c/overlay.bin', set_aside: '/c/overlay.bin.bad-7' });
+  assert.equal(moved.source, 'card');
+  assert.match(moved.text, /\/c\/overlay\.bin as \/c\/overlay\.bin\.bad-7/);
+  assert.match(overlayResetEntry({ overlay: '/c/overlay.bin', set_aside: null }).text, /nothing to reset/);
 });

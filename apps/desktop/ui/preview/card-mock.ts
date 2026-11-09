@@ -3,6 +3,7 @@
 //   card=dn2|dt2   the loaded device
 //   chosen=1       the user already chose a folder for it
 //   missing=1      the saved choice is gone (the default is used)
+//   overlay=0      the card has no saved changes (the reset button is off)
 
 const query = new URLSearchParams(location.search);
 const device = query.get('card') === 'dt2' ? 'dt2' : 'dn2';
@@ -16,6 +17,7 @@ const state = {
   choice: query.get('chosen') === '1' ? CHOSEN : (null as string | null),
   missing: query.get('missing') === '1',
   lastSync: Date.now() - 12_000,
+  overlay: query.get('overlay') !== '0',
 };
 
 const files = [
@@ -42,6 +44,7 @@ function folderState() {
     chosen_missing: state.missing ? (state.choice ?? CHOSEN) : null,
     next_folder: next(),
     reload_needed: state.folder !== next(),
+    overlay: state.overlay,
   };
 }
 
@@ -55,6 +58,14 @@ export async function cardCall(method: string, params: Record<string, unknown>):
     }
   }
   if (method === 'card.sync') state.lastSync = Date.now();
+  if (method === 'card.reset_overlay') {
+    const had = state.overlay;
+    state.overlay = false;
+    return {
+      overlay: `${HOME}/out/native/run/cards/card/overlay.bin`,
+      set_aside: had ? `${HOME}/out/native/run/cards/card/overlay.bin.bad-1` : null,
+    };
+  }
   return folderState();
 }
 

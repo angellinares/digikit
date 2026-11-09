@@ -18,9 +18,10 @@ import {
   shortFolder,
   statusText,
   type CardFolder,
+  type OverlayReset,
 } from './card-core';
 import { cardRefresh } from './card-state';
-import { cardEntry, failureEntry } from './log-core';
+import { cardEntry, failureEntry, overlayResetEntry } from './log-core';
 import { logInput } from './log-state';
 import { cardOpen as open, setCardOpen } from './panel-open';
 import './card-panel.css';
@@ -116,6 +117,23 @@ export default function CardPanel(props: { visible: boolean; reload?: () => Prom
       await props.reload?.();
       return call<CardFolder>('card.folder');
     });
+  /** Set the saved card changes aside (never deleted), then start the firmware again on the card without them. */
+  const resetOverlay = async () => {
+    setBusy(true);
+    try {
+      const r = await call<OverlayReset>('card.reset_overlay');
+      logInput(overlayResetEntry(r));
+      if (r.set_aside) await props.reload?.();
+      setCard(await call<CardFolder>('card.folder'));
+      setError('');
+    } catch (e) {
+      setError(errorLine(e));
+      logInput(failureEntry('card', 'reset card changes', errorLine(e)));
+    } finally {
+      setBusy(false);
+      setNow(Date.now());
+    }
+  };
   const openFolder = async () => {
     try {
       await invoke('card_open_folder');
@@ -172,6 +190,19 @@ export default function CardPanel(props: { visible: boolean; reload?: () => Prom
               onClick={() => void sync()}
             >
               {busy() ? 'Working…' : 'Sync now'}
+            </button>
+            <button
+              type="button"
+              class="act small"
+              disabled={!card()?.overlay || busy()}
+              title={
+                card()?.overlay
+                  ? 'Set the saved card changes aside and reload the firmware without them'
+                  : 'The card has no saved changes'
+              }
+              onClick={() => void resetOverlay()}
+            >
+              Reset card changes
             </button>
           </div>
           <Show when={card() && folderNotice(card()!)}>
