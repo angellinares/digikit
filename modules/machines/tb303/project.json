@@ -1,0 +1,13 @@
+{
+  "$schema": "../../../node_modules/nx/schemas/project-schema.json",
+  "name": "tom/tb303",
+  "metadata": {
+    "runtimeAcceptance": [
+      {
+        "files": ["tests/tb303.device.test.ts"],
+        "modules": ["tom/tb303", "digikit/debug"],
+        "plusdrive": true
+      }
+    ]
+  }
+}
