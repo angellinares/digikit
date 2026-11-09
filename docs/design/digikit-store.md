@@ -258,7 +258,7 @@ The exporter above runs at the end of a session (and on `card.export`). Since 20
 `plus_drive/<device>/digikit/<path>` (the DN2 too: it has no path filesystem, so only these files), `card.sync` does it at once, and a file the
 card no longer has is removed from the folder (to the backup), so a DT2 card built from the folder at the next start does not bring it back. One way
 only: nothing is read from the folder except by the DT2 startup build. The mirror removes only paths it has seen on the card in the session, so a session
-that starts on an empty card (the DN2 has none at boot) leaves the files an earlier session mirrored. The selection record is not a store file and is not mirrored.
+that starts on an empty card (the DN2 has none at boot) leaves the files an earlier session mirrored. The selection record is not a store file: when its paths change, the mirror writes them to `digikit/selection.txt` (same file as the exporter), so a card built from the folder at the next start, DT2 or DN2, loads the same modules at its first boot.
 
 ## Open
 

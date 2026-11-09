@@ -13,6 +13,7 @@ import {
   type RuntimeSnapshot,
   type RuntimeUpdate,
 } from '@web/runtime/runtime';
+import { booting as startBoot, bootingScreen, bootingStatus, loadFailure, type Booting } from './boot-core';
 import { bumpCardRefresh } from './card-state';
 import { DOCK_KEY_STEP, clampDock, dockAt, parseDock, startDock } from './dock-core';
 import {
@@ -152,6 +153,12 @@ export default function Console() {
   const [paused, setPaused] = createSignal(false);
   const [source, setSource] = createSignal<Source>();
   const [opened, setOpened] = createSignal('');
+  /** A firmware is starting: the old device information is gone until its first status. */
+  const [booting, setBooting] = createSignal<Booting>();
+  /** The last load failed: its file, so the faceplate is the file's device, or none when the name does not tell. */
+  /** The device that was showing: a file whose name does not tell its device keeps that faceplate. */
+  const [lastDevice, setLastDevice] = createSignal<string>();
+  const [failed, setFailed] = createSignal<Booting>();
   const [watching, setWatching] = createSignal(true);
   const [reloadNote, setReloadNote] = createSignal('');
   const [modulesBusy, setModulesBusy] = createSignal(false);
@@ -184,7 +191,7 @@ export default function Console() {
   // a memo: `status` is set once per display frame, and the panels must hear of a change of this value only
   const sidePanelsShown = createMemo(() => page() === 'emulator' && !!status());
   const device = () => {
-    const d = status()?.device;
+    const d = status()?.device ?? booting()?.device ?? failed()?.device ?? lastDevice();
     return d === 'dt2' || d === 'dn2' ? d : 'dn2';
   };
   const panel = () => panels[device()];
@@ -214,6 +221,7 @@ export default function Console() {
     }
     live?.show(event.snapshot);
     setStatus(event.snapshot.status);
+    setLastDevice(event.snapshot.status.device);
     startDefaultsAtLaunch();
     setError(event.snapshot.status.error ?? '');
     watchHealth({ error: event.snapshot.status.error });
@@ -265,6 +273,12 @@ export default function Console() {
     live?.releaseAll();
     live?.clear();
     setError('');
+    setStatus(undefined);
+    setInfo(undefined);
+    setReloadNote('');
+    setBooting(startBoot(name));
+    logInput({ source: 'firmware', level: 'info', text: bootingScreen(startBoot(name)) });
+    setFailed(undefined);
     health = healthStart();
     const began = performance.now();
     try {
@@ -292,7 +306,11 @@ export default function Console() {
       }
     } catch (e) {
       setError(message(e));
+      setFailed(startBoot(name));
+      setReloadNote(loadFailure(name, message(e)));
       logInput(failureEntry('firmware', `loading ${name}`, message(e)));
+    } finally {
+      setBooting(undefined);
     }
   };
   const load = (bytes: Uint8Array, name: string) => boot((r) => r.load(bytes, name, { runtime: bootRuntime() }), name);
@@ -928,8 +946,14 @@ export default function Console() {
 
       <footer class="statusbar">
         <span>
-          <i class="dot" classList={{ paused: paused() || !status() }} />
-          {!status() ? 'no firmware' : paused() ? 'paused' : phase() || 'running'}
+          <i class="dot" classList={{ paused: paused() || !status() || !!booting() }} />
+          {booting()
+            ? bootingStatus(booting()!)
+            : !status()
+              ? 'no firmware'
+              : paused()
+                ? 'paused'
+                : phase() || 'running'}
         </span>
         <Show when={audio()?.output_device}>
           <span>

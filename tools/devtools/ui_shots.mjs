@@ -957,6 +957,9 @@ const SCENES = [
       await p.wait(300);
     },
   },
+  // a firmware is starting, and a load that failed: no old device badge, no faceplate, the state in the status bar
+  { name: 'emulator-booting', q: 'page=emulator&boot=loading', size: WIDE },
+  { name: 'emulator-boot-failed', q: 'page=emulator&boot=failed', size: WIDE },
   { name: 'emulator-faceplate-wide', q: 'page=emulator', size: WIDE },
   { name: 'emulator-faceplate-narrow', q: 'page=emulator', size: MIN },
 ];
