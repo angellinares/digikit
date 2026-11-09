@@ -23,4 +23,5 @@ Music Machines. This licence covers the code in this repository only and gives n
 firmware.
 
 Third-party material: tools/coldfire/ghidra/ColdfireEMAC contains files from Ghidra under the Apache License 2.0 (see the
-LICENSE.txt in that directory).
+LICENSE.txt in that directory). A machine module derived from Open303 by Robin Schmidt carries
+its MIT License in its directory (LICENSE-Open303.txt).

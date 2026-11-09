@@ -21,7 +21,7 @@
 // [modules.frame] gap (halfwords between groups)
 #define ADM_PARAM_GAP 2
 // [adapter.machine] param_slots: number of knob positions for module parameters
-#define ADM_NPARAM_SLOTS 5
+#define ADM_NPARAM_SLOTS 6
 // [adapter.machine] param_slots: knob position of module parameter i (255: none)
 #define ADM_PARAM_SLOT0 1
 // [adapter.machine] param_slots: knob position of module parameter i (255: none)
@@ -33,7 +33,7 @@
 // [adapter.machine] param_slots: knob position of module parameter i (255: none)
 #define ADM_PARAM_SLOT4 6
 // [adapter.machine] param_slots: knob position of module parameter i (255: none)
-#define ADM_PARAM_SLOT5 255
+#define ADM_PARAM_SLOT5 7
 // [adapter.machine] param_slots: knob position of module parameter i (255: none)
 #define ADM_PARAM_SLOT6 255
 // [adapter.machine] param_slots: knob position of module parameter i (255: none)

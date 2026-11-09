@@ -788,6 +788,7 @@ plan.json {}",
                 },
                 trace: rest.iter().any(|a| a == "--trace"),
                 stereo: false,
+                gate: false,
                 api_minor: {
                     let mut newest = 0;
                     for name in &m.manifest.module.uses_api {
@@ -878,7 +879,7 @@ plan.json {}",
                 }
                 match sharc.first().filter(|_| !ui_preview) {
                     Some((o, _)) => {
-                        dsp = patchkit::dkmdsp::pack_with_samples(
+                        (dsp, opts.gate) = patchkit::dkmdsp::pack_with_gate(
                             o,
                             patchkit::register::device_id(&dev)?,
                             &voices,

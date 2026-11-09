@@ -71,6 +71,8 @@ pub const DESC_MAGIC: u32 = 0x444b_4d41;
 pub const DESC_CONTRACT: u32 = 1;
 /// Bit 8 of the desc's contract word: a stereo machine (contract 1.2, `DK_MACHINE_STEREO`). The low byte is the major number.
 pub const DESC_STEREO: u32 = 0x100;
+/// Bit 9 of the desc's contract word: a machine that reads `gate` in `dk_voice_in` (contract 1.6, `DK_MACHINE_GATE`).
+pub const DESC_GATE: u32 = 0x200;
 pub const DESC_WORDS: usize = 10;
 pub const VOICE_LEN_V1: usize = 16;
 pub const FX_LEN: usize = 64;
@@ -388,6 +390,19 @@ pub fn pack_with_samples(
     bank: Option<&crate::typed::SampleBankDef>,
     tracks: Option<&crate::typed::SampleTracksDef>,
 ) -> Result<Vec<u8>> {
+    pack_with_gate(obj, device, voices, fxs, bank, tracks).map(|(bytes, _)| bytes)
+}
+
+/// [`pack_with_samples`], and whether a voice desc carries `DESC_GATE` (the file then declares machine contract 1.6).
+pub fn pack_with_gate(
+    obj: &Dko,
+    device: u32,
+    voices: &[VoiceSpec],
+    fxs: &[FxSpec],
+    bank: Option<&crate::typed::SampleBankDef>,
+    tracks: Option<&crate::typed::SampleTracksDef>,
+) -> Result<(Vec<u8>, bool)> {
+    let mut gate = false;
     if bank.is_some() && tracks.is_some() {
         return Err(err!(
             "a module declares a sample bank or a track table, not both"
@@ -556,12 +571,13 @@ pub fn pack_with_samples(
                     w(0)
                 ));
             }
-            if w(1) & !DESC_STEREO != DESC_CONTRACT {
+            if w(1) & !(DESC_STEREO | DESC_GATE) != DESC_CONTRACT {
                 return Err(err!(
-                    "voice desc {d}: contract {:#x}, this packer takes {DESC_CONTRACT} (optionally with {DESC_STEREO:#x}, stereo)",
+                    "voice desc {d}: contract {:#x}, this packer takes {DESC_CONTRACT} (optionally with {DESC_STEREO:#x}, stereo, and {DESC_GATE:#x}, gate)",
                     w(1)
                 ));
             }
+            gate |= w(1) & DESC_GATE != 0;
             if (w(1) & DESC_STEREO != 0) != v.stereo {
                 return Err(err!(
                     "voice desc {d}: DK_MACHINE says stereo = {}, the desc's contract word says {}",
@@ -737,7 +753,7 @@ pub fn pack_with_samples(
         voices: vs,
         fxs: es,
     };
-    Ok(s.encode())
+    Ok((s.encode(), gate))
 }
 
 impl DspSection {
@@ -1554,7 +1570,26 @@ mod tests {
         assert!(e(&mono, true).contains("stereo = 1"));
         // another major number, or an unknown flag, is refused
         assert!(e(&machine_object(2), false).contains("contract 0x2"));
-        assert!(e(&machine_object(DESC_CONTRACT | 0x200), false).contains("contract 0x201"));
+        assert!(e(&machine_object(DESC_CONTRACT | 0x400), false).contains("contract 0x401"));
+    }
+
+    #[test]
+    fn the_gate_bit_of_the_desc_is_accepted_and_reported() {
+        let gated = machine_object(DESC_CONTRACT | DESC_GATE);
+        let plain = machine_object(DESC_CONTRACT);
+        let both = machine_object(DESC_CONTRACT | DESC_STEREO | DESC_GATE);
+        let gate_of = |o: &Dko, stereo: bool| {
+            pack_with_gate(o, 1, &[machine_spec(stereo)], &[], None, None)
+                .unwrap()
+                .1
+        };
+        assert!(gate_of(&gated, false));
+        assert!(gate_of(&both, true));
+        assert!(!gate_of(&plain, false));
+        // a gate bit with an unknown bit beside it is still refused
+        let bad = machine_object(DESC_CONTRACT | DESC_GATE | 0x800);
+        let e = pack(&bad, 1, &[machine_spec(false)], &[]).unwrap_err().0;
+        assert!(e.contains("contract 0xa01"));
     }
 
     #[test]

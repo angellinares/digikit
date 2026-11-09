@@ -122,7 +122,8 @@ One agent; each item was met as a build failure or a wrong result and fixed in t
 - **`.VAR name[N]` is dropped and a multi-value `.VAR` produces a section-relative relocation.** `pk_sharc` takes
   `.PKDATA name, bytes;` (zeros, loaded) and `.PKBSS name, bytes;` (reserved, not loaded) instead: the line is removed
   before assembly, `name` becomes an extern, and the object gets a data or bss section and a global data symbol.
-  `.GLOBAL name;` for such a name makes the symbol exported twice.
+  `.GLOBAL name;` for such a name makes the symbol exported twice. A generated table with contents is
+  `.PKHEX name, HEX;` (the bytes as they sit in memory, little-endian words): a loaded data section the same way.
 - **patchkit leaves a SHARC bss out of the boot stream** (it did copy it as zeros): the chunk image ends where the
   bss begins, and the plan counts the bss against the region. A 262,144-byte delay area adds 0 bytes to the
   container. The program must write reserved memory before it reads it.

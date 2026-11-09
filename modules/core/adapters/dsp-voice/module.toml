@@ -29,6 +29,8 @@ _fw_type_cache = "dsp.voice.value.type_cache"
 _fw_render_next = "dsp.voice.site.render_entry.next"
 _fw_frame = "dsp.voice.value.frame_base"
 _fw_param_rec = "dsp.voice.value.param_record_base"
+_fw_release_latch = "dsp.voice.value.release_latch"
+_fw_unpack = "dsp.voice.fn.track_unpack"
 
 # Digitone II: the render hook of the FM engine's host (docs/findings/06, "Per-voice hook on DN2"); another object, the
 # same registration table and claim.
@@ -77,6 +79,20 @@ op = "hook"
 hook = "dsp.voice.hook.render_entry"
 to = "_dv_entry"
 devices = ["dt2", "dn2"]
+
+# Digitakt II: the frame consumer's two calls of the per-track unpack go to _dv_unpack, which fixes the level of a track whose machine
+# has a parameter on knob 7.
+[[op]]
+op = "hook"
+hook = "dsp.frame.hook.frame_rx.unpack_call_a"
+to = "_dv_unpack"
+devices = ["dt2"]
+
+[[op]]
+op = "hook"
+hook = "dsp.frame.hook.frame_rx.unpack_call_b"
+to = "_dv_unpack"
+devices = ["dt2"]
 
 # Machine modules add rows {type, routine pc} with `[[entry]] registry = "voices"`:
 #
