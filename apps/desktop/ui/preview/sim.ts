@@ -93,7 +93,47 @@ const need = (size: number, dsp = 0, rows = dsp ? 1 : 0): Needs => ({
   VOICE_ROWS: rows,
   PARAM_ROWS: rows * 4,
 });
-export const LIBRARY: LibModule[] = [
+/** `?lib=site`: the modules of the site's index (apps/web/public/modules/index.json, made by gen-modules.mjs), if the file exists.
+ *  From the index: id, name, version, kind, and the dt2 file size. Invented: `needs` (a rough size from the file size, a DSP area for
+ *  machines only) and `test` (never). */
+const siteIndex = import.meta.glob('../../../web/public/modules/index.json', {
+  query: '?raw',
+  import: 'default',
+  eager: true,
+}) as Record<string, string>;
+const GROUP_OF_KIND: Record<string, TransferRow['group']> = { machines: 'Machines', fx: 'Effects', tools: 'Tools' };
+function siteLibrary(): LibModule[] | undefined {
+  const raw = Object.values(siteIndex)[0];
+  if (query.get('lib') !== 'site' || !raw) return undefined;
+  const entries = (
+    JSON.parse(raw) as {
+      modules?: {
+        id: string;
+        name: string;
+        kind: string;
+        version: string;
+        devices: Record<string, { size: number }>;
+      }[];
+    }
+  ).modules;
+  if (!Array.isArray(entries)) return undefined;
+  const list = entries
+    .filter((e) => e.devices?.dt2 && GROUP_OF_KIND[e.kind])
+    .map((e) => {
+      const size = e.devices.dt2.size;
+      return {
+        id: e.id,
+        label: e.name,
+        group: GROUP_OF_KIND[e.kind],
+        version: e.version,
+        size,
+        needs: need(size, e.kind === 'machines' ? 128 * KiB : 0),
+      };
+    });
+  return list.length ? list : undefined;
+}
+const SITE = siteLibrary();
+export const LIBRARY: LibModule[] = SITE ?? [
   {
     id: 'sine',
     label: 'Sine',
@@ -160,6 +200,14 @@ const device = new Map<string, DevFile>();
 function resetDevice(): void {
   device.clear();
   if (sim.dev === 'empty') return;
+  if (SITE) {
+    // the first and third machine are on the card, the first one is loaded
+    const machines = SITE.filter((m) => m.group === 'Machines');
+    [machines[0], machines[2]].forEach((m, i) => {
+      if (m) device.set(pathOf(m.id), { path: pathOf(m.id), size: m.size, same: true, loaded: i === 0 });
+    });
+    return;
+  }
   device.set(pathOf('sine'), { path: pathOf('sine'), size: 18 * KiB, same: true, loaded: true });
   device.set(pathOf('pluck'), { path: pathOf('pluck'), size: 40 * KiB, same: false, loaded: false });
   device.set(pathOf('chorus'), { path: pathOf('chorus'), size: 26 * KiB, same: true, loaded: false });
