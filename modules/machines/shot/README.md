@@ -69,7 +69,7 @@ The ordinary `DK_PAGE` remains the storage/parameter schema; its fixed knob slot
 
 - `tests/pages.test.ts`: C host test of the pages and the pool view (`tests/pages-host.c`). The SDK widget and region tests live in `sdk/tests` (run by `sdk:test-host`).
 - `tests/test_shot_playback.py`: the DSP on the concrete core through the real adapter, against a float32 model (SMP picks the record).
-- `tests/shot-dt2.device.test.ts`, `tests/shot-dn2.device.test.ts`: the pool API, the stereo output and an SMP phase on the emulator.
+- `tests/shot-dt2.device.test.ts`, `tests/shot-dn2-{pool,audio,supersede}.device.test.ts`: the pool API, the stereo output and an SMP phase on the emulator.
 
 ```sh
 mise run module:check -- digikit/shot

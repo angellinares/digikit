@@ -28,7 +28,71 @@
         "plusdrive": true
       },
       {
-        "files": ["tests/fx-track-route.device.test.ts"],
+        "files": ["tests/fx-track-route-stock.device.test.ts"],
+        "modules": ["test/dyn-fx-gain-both", "test/sine"],
+        "aliases": {
+          "test/dyn-fx-gain-both-2": "test/dyn-fx-gain-both",
+          "test/dyn-fx-gain-both-3": "test/dyn-fx-gain-both"
+        },
+        "sources": [
+          "tools/patchkit/hook_ab.py",
+          "tools/patchkit/pk_digikit_fxroute.py",
+          "tools/patchkit/pk_digikit_fxroutes.py",
+          "tools/patchkit/pk_digikit_fxsend.py"
+        ],
+        "pythonTools": true,
+        "plusdrive": true
+      },
+      {
+        "files": ["tests/fx-track-route-send.device.test.ts"],
+        "modules": ["test/dyn-fx-gain-both", "test/sine"],
+        "aliases": {
+          "test/dyn-fx-gain-both-2": "test/dyn-fx-gain-both",
+          "test/dyn-fx-gain-both-3": "test/dyn-fx-gain-both"
+        },
+        "sources": [
+          "tools/patchkit/hook_ab.py",
+          "tools/patchkit/pk_digikit_fxroute.py",
+          "tools/patchkit/pk_digikit_fxroutes.py",
+          "tools/patchkit/pk_digikit_fxsend.py"
+        ],
+        "pythonTools": true,
+        "plusdrive": true
+      },
+      {
+        "files": ["tests/fx-track-route-kit.device.test.ts"],
+        "modules": ["test/dyn-fx-gain-both", "test/sine"],
+        "aliases": {
+          "test/dyn-fx-gain-both-2": "test/dyn-fx-gain-both",
+          "test/dyn-fx-gain-both-3": "test/dyn-fx-gain-both"
+        },
+        "sources": [
+          "tools/patchkit/hook_ab.py",
+          "tools/patchkit/pk_digikit_fxroute.py",
+          "tools/patchkit/pk_digikit_fxroutes.py",
+          "tools/patchkit/pk_digikit_fxsend.py"
+        ],
+        "pythonTools": true,
+        "plusdrive": true
+      },
+      {
+        "files": ["tests/fx-track-route-limit.device.test.ts"],
+        "modules": ["test/dyn-fx-gain-both", "test/sine"],
+        "aliases": {
+          "test/dyn-fx-gain-both-2": "test/dyn-fx-gain-both",
+          "test/dyn-fx-gain-both-3": "test/dyn-fx-gain-both"
+        },
+        "sources": [
+          "tools/patchkit/hook_ab.py",
+          "tools/patchkit/pk_digikit_fxroute.py",
+          "tools/patchkit/pk_digikit_fxroutes.py",
+          "tools/patchkit/pk_digikit_fxsend.py"
+        ],
+        "pythonTools": true,
+        "plusdrive": true
+      },
+      {
+        "files": ["tests/fx-track-route-lock.device.test.ts"],
         "modules": ["test/dyn-fx-gain-both", "test/sine"],
         "aliases": {
           "test/dyn-fx-gain-both-2": "test/dyn-fx-gain-both",
