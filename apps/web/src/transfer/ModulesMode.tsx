@@ -44,11 +44,14 @@ import {
   type TransferRow,
 } from './transfer-core';
 import {
+  browseDevice,
+  browsing,
   delTicks,
   lastView,
   progress,
   setDelTicks,
   setLog,
+  setBrowseDevice,
   setProgress,
   setShowTests,
   setSourceId,
@@ -58,6 +61,9 @@ import {
   ticks,
   verified,
 } from './transfer-state';
+import './target-select.css';
+
+const BROWSE_NAMES: Record<string, string> = { dt2: 'Digitakt II', dn2: 'Digitone II' };
 
 export default function ModulesMode(props: { ctx: PageCtx }): JSX.Element {
   const { busy, run, setError } = props.ctx;
@@ -218,6 +224,23 @@ export default function ModulesMode(props: { ctx: PageCtx }): JSX.Element {
         }
         actions={
           <>
+            <Show when={browsing()}>
+              <span class="target-select">
+                <select
+                  aria-label="Show modules for"
+                  value={browseDevice()}
+                  disabled={!!busy()}
+                  onChange={(e) => {
+                    setBrowseDevice(e.currentTarget.value === 'dn2' ? 'dn2' : 'dt2');
+                    void run('Reading', async () => {});
+                  }}
+                >
+                  <For each={transferEnv().libraryDevices ?? []}>
+                    {(d) => <option value={d}>{BROWSE_NAMES[d] ?? d}</option>}
+                  </For>
+                </select>
+              </span>
+            </Show>
             <input
               ref={input}
               type="file"
@@ -253,11 +276,13 @@ export default function ModulesMode(props: { ctx: PageCtx }): JSX.Element {
             <button
               type="button"
               class="act primary"
-              disabled={!!busy() || ticked() === 0}
+              disabled={!!busy() || ticked() === 0 || browsing()}
               title={
-                ticked()
-                  ? 'Build, upload and verify the ticked modules on the device; select them in MODULES on the device'
-                  : 'Tick a module to install'
+                browsing()
+                  ? 'Connect a Digitakt II or Digitone II running the digikit runtime to install'
+                  : ticked()
+                    ? 'Build, upload and verify the ticked modules on the device; select them in MODULES on the device'
+                    : 'Tick a module to install'
               }
               onClick={() => void install()}
             >
@@ -349,7 +374,7 @@ export default function ModulesMode(props: { ctx: PageCtx }): JSX.Element {
         actions={
           <>
             <DeleteButton
-              n={nDelete()}
+              n={browsing() ? 0 : nDelete()}
               busy={busy()}
               confirming={confirm.confirming()}
               title="Delete the ticked files from the device (a loaded module stays loaded until the next restart)"
@@ -358,7 +383,7 @@ export default function ModulesMode(props: { ctx: PageCtx }): JSX.Element {
             <button
               type="button"
               class="act"
-              disabled={!!busy() || !lastView()}
+              disabled={!!busy() || !lastView() || browsing()}
               title="RESTART the device (it loads what its MODULES menu has selected)"
               onClick={() => void restart()}
             >
@@ -371,7 +396,13 @@ export default function ModulesMode(props: { ctx: PageCtx }): JSX.Element {
           {(v) => (
             <Show
               when={onDeviceWithPending(v(), progress()).length}
-              fallback={<p class="empty">The device holds no modules.</p>}
+              fallback={
+                <p class="empty">
+                  {browsing()
+                    ? 'Connect a Digitakt II or Digitone II to see what is on it.'
+                    : 'The device holds no modules.'}
+                </p>
+              }
             >
               <ul class="rows">
                 <For each={onDeviceWithPending(v(), progress())}>

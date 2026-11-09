@@ -60,7 +60,7 @@ export function setTick(device: string, id: string, on: boolean): void {
   }
 }
 
-/** The list for a device, or none where the app has no default modules (the site). */
+/** The list for a device, or none where the app gives no default modules. */
 export const entriesFor = (device: string): DefaultModuleEntry[] => firmwareEnv().defaultModules?.entries(device) ?? [];
 
 /** The ids ticked for the device, in list order. */

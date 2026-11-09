@@ -1,9 +1,16 @@
 // The site's side of the Firmware page (env.ts): patchkit.wasm in a worker patches and checks the image (the same worker as the old Patch page),
 // a second instance on the page's own thread drives the Rust sender, and a download link gives the .syx. The MIDI side is the Transfer
 // pane's (../transfer/web-env.ts). Every URL goes through BASE_URL.
+import { SHOW_EMULATOR } from '../../site.config.mjs';
 import { putHandoff } from '../patch/handoff';
 import { PatchKit, type PreparedFlash } from '../patch/patchkit-core';
+import { asked } from '../transfer/connection-state';
+import { resetSession, session } from '../transfer/target';
+import { loadLibrary } from '../transfer/transfer-backend';
 import '../transfer/web-env';
+import { installDefaults } from './default-modules-core';
+import { entries } from './default-modules-data';
+import { sessionOps } from './default-modules-session';
 import { setFirmwareEnv, type FirmwareEnv } from './env';
 import './firmware-site.css';
 
@@ -90,9 +97,23 @@ export const webFirmwareEnv: FirmwareEnv = {
     setTimeout(() => URL.revokeObjectURL(url), 10_000);
     return name;
   },
-  async runInEmulator(name, device, bytes) {
-    await putHandoff({ name, device, bytes: bytes.slice().buffer });
-    location.assign(`${BASE}emulator/?handoff=1`);
+  ...(SHOW_EMULATOR
+    ? {
+        async runInEmulator(name: string, device: string, bytes: Uint8Array) {
+          await putHandoff({ name, device, bytes: bytes.slice().buffer });
+          location.assign(`${BASE}emulator/?handoff=1`);
+        },
+      }
+    : {}),
+  defaultModules: {
+    entries,
+    async install(_where, device, ids, progress) {
+      // after a flash the old session may be of the port before the restart
+      resetSession();
+      const s = await session();
+      const library = await loadLibrary(device);
+      return asked(() => installDefaults(sessionOps(s, library), ids, progress));
+    },
   },
   log(run) {
     (run.level === 'error' ? console.warn : console.info)(`[firmware] ${run.text}`, run.detail ?? '');

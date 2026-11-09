@@ -127,6 +127,12 @@ const SOURCE_MAX = 256 * 1024;
 /** The files of a module that the site shows: module.toml, README.md and src/** (text only), relative to the module, sorted. */
 function sourceFiles(dir) {
   const out = ['module.toml', 'README.md'].filter((f) => existsSync(join(dir, f)));
+  out.push(
+    ...readdirSync(dir, { withFileTypes: true })
+      .filter((e) => e.isFile() && e.name.startsWith('LICENSE'))
+      .map((e) => e.name)
+      .sort(),
+  );
   const walkSrc = (d) => {
     for (const e of readdirSync(join(dir, d), { withFileTypes: true }).sort((a, b) => (a.name < b.name ? -1 : 1))) {
       const rel = `${d}/${e.name}`;
@@ -140,7 +146,7 @@ function sourceFiles(dir) {
 
 const sha256 = (b) => createHash('sha256').update(b).digest('hex');
 
-/** `patchkit pack` of one module for one device (the packer `mise run module:pack-all` uses); null when it does not pack for the device. */
+/** `patchkit pack` of one module for one device (the packer `mise run module:pack-all` uses); throws when it fails. */
 function pack(root, id, device, to) {
   const env = { ...process.env, PYTHONPATH: root };
   delete env.PATCHKIT_MODULES;
@@ -152,8 +158,9 @@ function pack(root, id, device, to) {
       stdio: 'pipe',
     });
     return readFileSync(to);
-  } catch {
-    return null;
+  } catch (e) {
+    const stderr = String(e.stderr ?? e.message ?? e).trim();
+    throw new Error(`patchkit pack failed for ${id} on ${device}: ${stderr}`);
   }
 }
 
@@ -176,7 +183,6 @@ export function shipModules(out, root = repoRoot) {
       const tmp = join(scratch, dev, `${leaf}.dkm`);
       mkdirSync(dirname(tmp), { recursive: true });
       const bytes = pack(root, m.id, dev, tmp);
-      if (!bytes) continue;
       mkdirSync(join(out, dev), { recursive: true });
       writeFileSync(join(out, dev, `${leaf}.dkm`), bytes);
       devices[dev] = { file: `${dev}/${leaf}.dkm`, size: bytes.length, sha256: sha256(bytes) };

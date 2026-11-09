@@ -29,6 +29,9 @@ export const transferBackend = {
     noteConnection({ type: 'answered', device: { id: 'dt2', name: 'Digitakt II', runtime: '0.5.2' } });
     return view();
   },
+  async listLibrary(_device: string): Promise<TransferView> {
+    throw new Error('not in the preview');
+  },
   async install(modules: string[], onEvent: (e: TransferEvent) => void): Promise<void> {
     await deviceRead();
     onEvent({ event: 'start', modules, device: 'dt2' });

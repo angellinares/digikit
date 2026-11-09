@@ -1,0 +1,5 @@
+<svg viewBox="0 0 48 48" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+  <path d="M4 24H44" stroke-width="1.5" opacity=".4"/>
+  <path d="M4 24C6 24 8 10 14 10S22 24 24 24"/>
+  <path d="M24 24C30 24 30 38 36 38C40 38 42 24 44 24" style="stroke: var(--icon-accent)"/>
+</svg>

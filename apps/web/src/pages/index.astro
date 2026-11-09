@@ -4,19 +4,33 @@ import DeviceArt from '../components/DeviceArt.astro';
 import ModuleCard from '../components/ModuleCard';
 import { shippedModules } from '../data/modules';
 import { deviceProfiles } from '../data/device-profiles';
+import { SHOW_EMULATOR } from '../../site.config.mjs';
 
 const base = import.meta.env.BASE_URL.replace(/\/?$/, '/');
+// Without the emulator, only the releases patchkit has a port file for (devices/ports/<device>-<version>.toml).
+const portFiles = new Set(
+  Object.keys(
+    import.meta.glob('../../../../devices/ports/*.toml', { query: '?raw', import: 'default', eager: true }),
+  ).map((p) => p.split('/').pop()),
+);
 // Releases the emulator boots and patchkit has ports for: the ones with a boot profile.
 const supported = (['dt2', 'dn2'] as const).map((id) => ({
   id,
   name: deviceProfiles[id].name,
-  versions: deviceProfiles[id].firmware.filter((f) => f.main_sha256).map((f) => f.version),
+  versions: deviceProfiles[id].firmware
+    .filter((f) => f.main_sha256)
+    .map((f) => f.version)
+    .filter((v) => SHOW_EMULATOR || portFiles.has(`${id}-${v}.toml`)),
 }));
 ---
 
 <Base
   title="digikit · new machines and effects for Digitakt II and Digitone II"
-  description="Add community machines and effects to your own Digitakt II or Digitone II firmware, then try it in the emulator before you flash. Everything runs in your browser."
+  description={
+    SHOW_EMULATOR
+      ? 'Add community machines and effects to your own Digitakt II or Digitone II firmware, then try it in the emulator before you flash. Everything runs in your browser.'
+      : 'Add community machines and effects to your own Digitakt II or Digitone II firmware. Everything runs in your browser.'
+  }
   active="home"
 >
   <main>
@@ -26,8 +40,9 @@ const supported = (['dt2', 'dn2'] as const).map((id) => ({
           <span class="eyebrow accent">Digitakt II · Digitone II</span>
           <h1>New machines and effects for your Elektron&nbsp;box.</h1>
           <p class="lede">
-            Patch the digikit runtime into your own firmware, try it in the emulator, then install machines and effects
-            over USB. It all runs in this browser tab.
+            {SHOW_EMULATOR
+              ? 'Patch the digikit runtime into your own firmware, try it in the emulator, then install machines and effects over USB. It all runs in this browser tab.'
+              : 'Patch the digikit runtime into your own firmware, then install machines and effects over USB. It all runs in this browser tab.'}
           </p>
           <div class="hero-cta">
             <a class="btn primary" href={`${base}firmware/`}>
@@ -43,9 +58,15 @@ const supported = (['dt2', 'dn2'] as const).map((id) => ({
                 ></path>
               </svg>
             </a>
-            <a class="btn quiet" href={`${base}emulator/`}>
-              Try the emulator
-            </a>
+            {SHOW_EMULATOR ? (
+              <a class="btn quiet" href={`${base}emulator/`}>
+                Try the emulator
+              </a>
+            ) : (
+              <a class="btn quiet" href={`${base}modules/`}>
+                Browse modules
+              </a>
+            )}
           </div>
           <ul class="facts">
             <li>
@@ -121,8 +142,12 @@ const supported = (['dt2', 'dn2'] as const).map((id) => ({
               3<i></i>
             </span>
             <div>
-              <h3>Patch, play, then flash</h3>
-              <p>Download the patched .syx, or run it in the emulator first and play it from the panel.</p>
+              <h3>{SHOW_EMULATOR ? 'Patch, play, then flash' : 'Patch, then flash'}</h3>
+              <p>
+                {SHOW_EMULATOR
+                  ? 'Download the patched .syx, or run it in the emulator first and play it from the panel.'
+                  : 'Download the patched .syx, or send it to your device from this page.'}
+              </p>
             </div>
           </li>
         </ol>
@@ -136,12 +161,12 @@ const supported = (['dt2', 'dn2'] as const).map((id) => ({
             <h2 id="mods" class="section-title">
               Modules
             </h2>
-            <p>Machines, effects and tools you install on your device over USB. See the source of each in Transfer.</p>
+            <p>Machines, effects and tools you install on your device over USB.</p>
           </div>
-          <a href={`${base}transfer/`}>Open Transfer →</a>
+          <a href={`${base}modules/`}>All modules →</a>
         </div>
         <ul class="cards">
-          {shippedModules.map((m) => (
+          {shippedModules.slice(0, 6).map((m) => (
             <li>
               <ModuleCard module={m} href={`${base}transfer/`} />
             </li>
@@ -167,7 +192,7 @@ const supported = (['dt2', 'dn2'] as const).map((id) => ({
                 <th scope="col">Device</th>
                 <th scope="col">OS versions</th>
                 <th scope="col">Patch</th>
-                <th scope="col">Emulator</th>
+                {SHOW_EMULATOR && <th scope="col">Emulator</th>}
               </tr>
             </thead>
             <tbody>
@@ -187,7 +212,7 @@ const supported = (['dt2', 'dn2'] as const).map((id) => ({
                     </span>
                   </td>
                   <td class="yes">Yes</td>
-                  <td class="yes">Yes</td>
+                  {SHOW_EMULATOR && <td class="yes">Yes</td>}
                 </tr>
               ))}
             </tbody>
@@ -201,8 +226,9 @@ const supported = (['dt2', 'dn2'] as const).map((id) => ({
         <div class="note">
           <h3>Before you flash</h3>
           <p>
-            Every module is experimental. Back up your projects, try the patched firmware in the emulator, and keep the
-            stock .syx so you can flash back.
+            {SHOW_EMULATOR
+              ? 'Every module is experimental. Back up your projects, try the patched firmware in the emulator, and keep the stock .syx so you can flash back.'
+              : 'Every module is experimental. Back up your projects and keep the stock .syx so you can flash back.'}
           </p>
         </div>
         <div class="note">

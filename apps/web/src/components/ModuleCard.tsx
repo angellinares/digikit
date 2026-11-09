@@ -1,12 +1,17 @@
 // One module on the home page: icon, name, one-line summary, the devices it is for, and a link to the Transfer page, where it is installed.
 import { For, Show } from 'solid-js';
-import { CATEGORY_LABEL, DEVICE_SHORT, type ModuleInfo } from '../data/modules';
+import { CATEGORY_LABEL, DEVICE_SHORT } from '../data/module-labels';
+import type { ModuleInfo } from '../data/modules';
 import './module-card.css';
 
 export interface ModuleCardProps {
   module: ModuleInfo;
-  /** Where the link goes (the Transfer page). */
-  href: string;
+  /** Where the Install link goes (the Transfer page). Not used when `onToggle` is given. */
+  href?: string;
+  /** The module is in the selection (the module browser). */
+  added?: boolean;
+  /** Shows an Add button in place of the Install link. */
+  onToggle?: () => void;
 }
 
 export default function ModuleCard(props: ModuleCardProps) {
@@ -29,14 +34,31 @@ export default function ModuleCard(props: ModuleCardProps) {
         <div class="devs">
           <For each={props.module.devices}>{(d) => <span class="dev">{DEVICE_SHORT[d]}</span>}</For>
         </div>
+        <Show when={props.module.author}>
+          <span class="by">by {props.module.author}</span>
+        </Show>
       </div>
       <div class="card-foot">
-        <span class="id" title={`${props.module.id} v${props.module.version}`}>
-          {props.module.id}
-        </span>
-        <a class="add" href={props.href}>
-          Install
-        </a>
+        <Show when={!props.onToggle}>
+          <span class="id" title={`${props.module.id} v${props.module.version}`}>
+            {props.module.id}
+          </span>
+        </Show>
+        <Show
+          when={props.onToggle}
+          fallback={
+            <a class="add" href={props.href}>
+              Install
+            </a>
+          }
+        >
+          <a class="src" href={`https://github.com/ElekLabs/digikit/tree/main/${props.module.dir}`}>
+            Source
+          </a>
+          <button type="button" class="add" aria-pressed={!!props.added} onClick={props.onToggle}>
+            {props.added ? 'Added' : 'Add'}
+          </button>
+        </Show>
       </div>
     </article>
   );
