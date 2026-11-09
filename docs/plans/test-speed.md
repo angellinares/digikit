@@ -46,6 +46,10 @@ Highest payoff first. Each step states its proof.
    its constraints apply (one log sink, safe-mode fallback, cursor, epoch and loss semantics, per-file isolation, fixed waits only where the subject is a duration).
    - [x] Stage 1: `settleUi` is deleted. **[D]** It waited a fixed 45 s of emulated time on DN2 and 12 s on DT2 (`shot-dn2`: 262 of 697 s in a loaded gate),
      after readiness was already established. Without it the `shot-dn2` body takes about 215 s instead of about 390 s.
+   - [ ] Stage 2, first job: the runtime reports "input consumed" and "parameter applied", and an install waits on "ready for input". **[D]** `main_ui_reached`
+     does not mean ready for input: `shot-dn2` failed in its SMP step in 9 of 19 runs with a wait on `main_ui_reached` after the install and in 0 of 12 without it
+     (the SMP word reaches 0x100 and does not move for 43 more detents). **[O]** Why the word stops moving (a guess: the DSP word freezes when the note ends)
+     belongs here.
    - [ ] Stage 2, observer module: a test-only module loaded first reports events the harness cannot read (module registered, machine assigned,
      note reached the DSP, card write done, input consumed) through the runtime log sink, with a boot-record fallback. Host side:
      `events.until(kind, predicate, {emulatedMs})`; a missing event fails with the last events seen. The remote control module stays the input path.
@@ -73,12 +77,20 @@ Highest payoff first. Each step states its proof.
      tests; the component on a device once, in the `ui-demo` fixture on zero DSP (keys reach it, it draws, it calls the file and pool API); each
      module keeps one thin device test of its own glue, on zero DSP where the glue is checked through API state (`param_get`, pool state) and not
      through DSP memory or framebuffer hashes. Audio stays in the module's playback test.
-     - [ ] First case: `shot-picker.device.test.ts` (coupled DSP, 25 min timeout, 312 s in the 2026-11-09 gate). It re-checks the shared picker
+     - [x] First case: `shot-picker.device.test.ts` (coupled DSP, 25 min timeout, 312 s in the 2026-11-09 gate). It re-checks the shared picker
        (`sdk/src/picker_logic.c`, `sample_picker.c`, `chooser.c`; host tests in `modules/core/adapters/ui/host/tests/picker.rs`): folder-first
        order (it reimplements `pickerOrder`), levels closing to the page, cursor on slot 0, NO and YES. Move those to the host tests and ui-demo;
        keep "a click on SMP opens shot's slot list and a chosen file sets that pool slot" on zero DSP; "the sample plays" is in `shot-dt2`.
-     - [ ] Then search for other cases: device tests that assert behaviour of `sdk/src` components (pages, chooser, picker, lists, knob handling)
+       **[D]** Done: the picker logic (order, levels, cursor) is in `picker.rs`; shot keeps one glue test that runs the real hooks: click, slot list, slot 0 and 1,
+       replace of a filled slot (new token), NO one level at a time, held TRIG (E_HELD: SMP stays, the file loads), press with a turn and an unused C turn (no
+       list). State is read from the pool API and the SMP word; one screen hash tells page, list and browser apart. It stays on coupled DSP: shot's pack
+       carries its DSP part and fails with E_DSP_XFER (-35) on zero DSP. Not done: the picker in `ui-demo` (the fixture has no picker or pool client).
+       Time: 312 s in the gate before, 2m15s for the Nx target now.
+       Waits after `settleUi`: `sample-playback` (UI after a restart), `stock-pool-borrow` (stock slots loaded) and `stock-sampler-lifetime`
+       (`cf.main_ui_reached`) wait on firmware state, each in its own file. `installModules` has no wait (see step 3, stage 2).
+     - [x] Then search for other cases: device tests that assert behaviour of `sdk/src` components (pages, chooser, picker, lists, knob handling)
        or of core adapters that a host test or another device test already covers.
+       **[D]** Done as a static audit: [ledgers/device-test-audit.md](ledgers/device-test-audit.md). The candidates are listed there for decision.
 8. [ ] **Per-test emulator coverage.** After steps 1 and 2 (cheaper runs). Record the ColdFire and SHARC PCs each device test executes and map them
    to runtime and module functions through the patch plan and symbols. `digi-emud` already writes SHARC PC counts ([instrumentation](../INSTRUMENTATION.md),
    engine coverage files); the ColdFire side is not checked yet. Uses:
@@ -92,7 +104,7 @@ Highest payoff first. Each step states its proof.
 10. [ ] **Python device scenarios to TS** only where they boot an emulator: module `equiv-*`, the pluck menu flows, `pages-dyn-pluck`, `upload-rust`
    ([ledgers](ledgers/)). Other Python tests stay; moving them buys no speed. `py_select` is a second, coarser selector next to Nx (file patterns and
    the import graph); each ported or deleted scenario takes work away from it.
-   - [ ] **[D]** Narrow first: `tests/digikit/scen_cases.py:9` imports `pk_dkrt` only for `DEVICE_SYX` (two firmware file names), so any edit to
+   - [x] **[D]** Narrow first (#363): `tests/digikit/scen_cases.py:9` imports `pk_dkrt` only for `DEVICE_SYX` (two firmware file names), so any edit to
      `tools/patchkit/pk_dkrt.py` selects every `tests/digikit` scenario (equiv, menu, upload). PR 362 (one line in `pk_dkrt.py`) ran
      `test_equiv_dt2` 493 s and `test_menu_dt2` 528 s for it. Move `DEVICE_SYX` to `tools.firmware.config`; check which edge brings `pk_dkrt` into
      `test_machine_conformance.py` and `test_fx_conformance.py` and cut it.

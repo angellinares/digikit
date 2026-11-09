@@ -18,7 +18,6 @@
       {
         "files": ["tests/shot-picker.device.test.ts"],
         "modules": ["digikit/shot", "digikit/debug", "test/stock-pool", "test/track-select"],
-        "pythonTools": "client",
         "plusdrive": true,
         "dksampleWasm": true
       }
