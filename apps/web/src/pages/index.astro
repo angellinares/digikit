@@ -103,7 +103,7 @@ const supported = (['dt2', 'dn2'] as const).map((id) => ({
                   stroke-linejoin="round"
                 ></path>
               </svg>
-              Experimental: you can always flash back to stock
+              Experimental: keep your stock .syx so you can flash back
             </li>
             <li>
               <svg viewBox="0 0 16 16" aria-hidden="true">
@@ -194,6 +194,23 @@ const supported = (['dt2', 'dn2'] as const).map((id) => ({
       </div>
     </section>
 
+    <section class="section tight" aria-labelledby="safety">
+      <div class="wrap">
+        <h2 id="safety" class="section-title">
+          If something goes wrong
+        </h2>
+        <p class="prose">
+          If a module stops your box from starting, it boots without modules after two failed tries and shows you why.
+          If a module locks up the sound engine, the box restarts without modules and tells you which one. You can also
+          hold RECORD at power-on to start without modules.
+        </p>
+        <p class="prose">
+          digikit is experimental for now, tested in the emulator, and a stable 1.0 is the goal. It doesn't touch the
+          bootloader, but keep your stock <code>.syx</code>.
+        </p>
+      </div>
+    </section>
+
     <section class="section tight" aria-labelledby="fw">
       <div class="wrap">
         <div class="section-head">
@@ -237,6 +254,22 @@ const supported = (['dt2', 'dn2'] as const).map((id) => ({
             </tbody>
           </table>
         </div>
+      </div>
+    </section>
+
+    <section class="section tight" aria-labelledby="dev">
+      <div class="wrap">
+        <h2 id="dev" class="section-title">
+          Write your own
+        </h2>
+        <p class="prose">
+          The repo has a desktop workbench with a full emulator of both boxes, a debug module, remote control and a test
+          suite. The SDK is still changing. You build it from source and bring your own <code>.syx</code>.
+        </p>
+        <p class="prose">
+          <a href="https://github.com/ElekLabs/digikit/blob/main/docs/MODULE-AUTHORING.md">Module guide</a> ·{' '}
+          <a href="https://github.com/ElekLabs/digikit/tree/main/sdk">SDK</a>
+        </p>
       </div>
     </section>
 
@@ -393,6 +426,14 @@ const supported = (['dt2', 'dn2'] as const).map((id) => ({
     color: var(--ink-2);
     max-width: 34em;
     margin-top: 8px;
+  }
+  .prose {
+    max-width: 62ch;
+    margin: 0 0 14px;
+    color: var(--ink-2);
+  }
+  .section-title + .prose {
+    margin-top: 14px;
   }
   .section-head a {
     text-decoration: none;
