@@ -2,6 +2,7 @@
 import { execFileSync, spawnSync } from 'node:child_process';
 import { realpathSync } from 'node:fs';
 import { fileURLToPath } from 'node:url';
+import { readRuns, report } from './gate-history.mjs';
 
 // Device and conformance results come from the Nx cache: their keys cover what the tests consume, so the merge
 // tier runs them for every owning project instead of selecting them with `affected`.
@@ -172,6 +173,14 @@ if (process.argv[1] && realpathSync(process.argv[1]) === fileURLToPath(import.me
       /* The PGO status is advice and never fails the gate. */
     }
   }
+  // Nx prints the quiet `summary` style when it detects an AI agent, so nothing appears until the end.
+  // `static-failures-only` prints one line per finished task as it finishes (a tick, `nx run project:target`
+  // and the cache status) and the full output of failed tasks. A person can still choose another style
+  // with NX_DEFAULT_OUTPUT_STYLE or `--output-style`.
+  const styled = (command) =>
+    tier && !explain && !process.env.NX_DEFAULT_OUTPUT_STYLE && !args.some((arg) => arg.startsWith('--output-style'))
+      ? [...command, '--output-style=static-failures-only']
+      : command;
   const wrap = (command) =>
     tier && !explain
       ? ['node', ['tools/nx/remote-cache.mjs', 'exec', '--access', tier.access, '--', 'pnpm', 'nx:pilot', ...command]]
@@ -196,10 +205,19 @@ if (process.argv[1] && realpathSync(process.argv[1]) === fileURLToPath(import.me
     console.log(`gate: ${commands[0][0]} ${tier ? 'over the tier targets' : 'with the given arguments'}`);
   }
   for (const command of commands) {
-    const [file, fileArgs] = wrap(command);
+    const [file, fileArgs] = wrap(styled(command));
     console.log(`gate: ${file} ${fileArgs.join(' ')}`);
+    const startedAt = Date.now();
     const result = spawnSync(file, fileArgs, { stdio: 'inherit' });
     if (result.error) throw result.error;
+    if (tier && !explain) {
+      // Nx records the run in its task history when the command ends; the durations come from there.
+      try {
+        console.log(`gate: this run, from the Nx task history\n${report(readRuns(startedAt))}`);
+      } catch (error) {
+        console.log(`gate: no task history (${error.message})`);
+      }
+    }
     if (result.status !== 0) process.exit(result.status ?? 1);
   }
 }

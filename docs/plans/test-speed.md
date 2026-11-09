@@ -62,9 +62,8 @@ Highest payoff first. Each step states its proof.
 5. [ ] **Core-change policy.** Decision for Em: (A) every core change runs all device tests, or (B) the merge tier runs runtime-tests, smoke,
    conformance and one test per area on both devices, and the full suite runs at batch points. Decide after steps 1 to 4 have shrunk the full suite.
 6. [ ] **Gate output and history.**
-   - [ ] One line per finished task (project:target, pass or fail, seconds) while the gate runs.
-   - [ ] Append each task's result and duration to a history file; use it to start the longest tasks first, to list timeouts and flaky tests, and to
-     show tests that got slower.
+   - [x] One line per finished task (project:target, pass or fail, cache status) while the gate runs: `--output-style=static-failures-only`. Nx prints no seconds there; the durations come with the history report at the end of the run.
+   - [x] History: Nx's own task history database already records project, target, hash, status and start and end of each task. `tools/nx/gate-history.mjs` (`mise run test:history`) reads it: slowest tasks, recent failures, slowdowns. It is per worktree and written at the end of a command. Nx already uses the database's average durations to order tasks, so longest-first needs no code. Flaky tests and timeouts: not built; Nx prints its own flaky-task message.
    - [ ] Test timeouts in emulated time or firmware state, as AGENTS.md requires for waits. A wall-time limit fails healthy tests under load.
 7. [ ] **Device test audit.** For each device test, one of: needs the emulator; can be a host test (Rust runtime unit test or TS); duplicates another
    test. Start with the reload-bound files (`card-safety`, `settings`, `bootscreen`, `introblank`, `memaudit`, `capacity`). Keep one device test per
