@@ -23,7 +23,9 @@ jobs:
       - run: mise install rust node pnpm "aqua:WebAssembly/binaryen"
       - uses: astral-sh/setup-uv@v10.3.3
       - run: rustup target add wasm32-unknown-unknown --toolchain 1.98.1
-      - uses: actions/cache@v6.1.0
+      - name: Fetch Rust crates
+        run: cargo fetch --locked
+      - uses: actions/cache/restore@v6.1.0
         id: tools
         with:
           path: out/tools
@@ -32,9 +34,12 @@ jobs:
         run: |
           uv run python -m tools.patchkit.pk_toolchains m68k
           uv run python -m tools.patchkit.pk_toolchains selache
-      - run: |
-          pnpm install --frozen-lockfile
-          cargo fetch --locked
+      - if: steps.tools.outputs.cache-hit != 'true'
+        uses: actions/cache/save@v6.1.0
+        with:
+          path: out/tools
+          key: ${{ steps.tools.outputs.cache-primary-key }}
+      - run: pnpm install --frozen-lockfile
       - run: pnpm --filter @digi/web build
         env:
           DIGI_SITE_ORIGIN: https://eleklabs.github.io
