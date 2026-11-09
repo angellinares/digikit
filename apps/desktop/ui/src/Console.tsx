@@ -156,6 +156,8 @@ export default function Console() {
   /** A firmware is starting: the old device information is gone until its first status. */
   const [booting, setBooting] = createSignal<Booting>();
   /** The last load failed: its file, so the faceplate is the file's device, or none when the name does not tell. */
+  /** The device that was showing: a file whose name does not tell its device keeps that faceplate. */
+  const [lastDevice, setLastDevice] = createSignal<string>();
   const [failed, setFailed] = createSignal<Booting>();
   const [watching, setWatching] = createSignal(true);
   const [reloadNote, setReloadNote] = createSignal('');
@@ -189,7 +191,7 @@ export default function Console() {
   // a memo: `status` is set once per display frame, and the panels must hear of a change of this value only
   const sidePanelsShown = createMemo(() => page() === 'emulator' && !!status());
   const device = () => {
-    const d = status()?.device ?? booting()?.device ?? failed()?.device;
+    const d = status()?.device ?? booting()?.device ?? failed()?.device ?? lastDevice();
     return d === 'dt2' || d === 'dn2' ? d : 'dn2';
   };
   const panel = () => panels[device()];
@@ -219,6 +221,7 @@ export default function Console() {
     }
     live?.show(event.snapshot);
     setStatus(event.snapshot.status);
+    setLastDevice(event.snapshot.status.device);
     startDefaultsAtLaunch();
     setError(event.snapshot.status.error ?? '');
     watchHealth({ error: event.snapshot.status.error });
@@ -274,6 +277,7 @@ export default function Console() {
     setInfo(undefined);
     setReloadNote('');
     setBooting(startBoot(name));
+    logInput({ source: 'firmware', level: 'info', text: bootingScreen(startBoot(name)) });
     setFailed(undefined);
     health = healthStart();
     const began = performance.now();
@@ -793,19 +797,7 @@ export default function Console() {
           {/* The faceplate stays mounted behind the Transfer and Remote pages: the emulator, its audio and the snapshot pump run on. */}
           <div class="emu-row" hidden={page() !== 'emulator'}>
             <main class="stage" aria-label={`${panel().name} front panel`}>
-              <Show when={booting()}>
-                {(b) => (
-                  <p class="booting" role="status">
-                    {bootingScreen(b())}
-                  </p>
-                )}
-              </Show>
-              <Show when={!booting() && !status() && failed() && !failed()!.device}>
-                <p class="booting" role="status">
-                  {loadFailure(failed()!.name, error())}
-                </p>
-              </Show>
-              <div class="surface" hidden={!!booting() || (!status() && !!failed() && !failed()!.device)}>
+              <div class="surface">
                 <LivePanel panel={panel()} runtime={runtime} onError={(e) => setError(e)} ref={(api) => (live = api)} />
               </div>
             </main>

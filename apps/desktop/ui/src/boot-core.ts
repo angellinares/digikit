@@ -1,4 +1,4 @@
-// The pure part of the loading state in Console.tsx: what the status bar and the screen area say while a firmware starts.
+// The pure part of the loading state in Console.tsx: what the status bar and the Log say while a firmware starts.
 // Host tests: apps/desktop/ui/tests/boot.test.ts.
 
 export type BootDevice = 'dt2' | 'dn2';
@@ -24,7 +24,7 @@ export function bootingStatus(b: Booting): string {
   return what ? `Booting ${what}…` : 'Booting…';
 }
 
-/** The screen area text. */
+/** The Log entry when a boot starts. */
 export function bootingScreen(b: Booting): string {
   return `${bootingStatus(b)} the first boot of a firmware can take a minute`;
 }

@@ -21,7 +21,7 @@ import SidePanels from '../src/SidePanels';
 import { setLocalFolder } from '../src/samples-state';
 import TransferPage from '@web/transfer/TransferPage';
 import { setMode } from '@web/transfer/transfer-state';
-import { deviceFromName, bootingScreen, bootingStatus, booting as startBoot, loadFailure } from '../src/boot-core';
+import { deviceFromName, bootingStatus, booting as startBoot, loadFailure } from '../src/boot-core';
 import { cardDevice, reloadCard } from './card-mock';
 import { installRemoteMock, testPattern } from './remote-mock';
 import { createLogFollow } from '../src/log-follow';
@@ -43,24 +43,14 @@ const emulatorFaceplate = () =>
   bootState ? (
     <div class="emu-row">
       <main class="stage" aria-label="front panel">
-        {bootState === 'loading' ? (
-          <p class="booting" role="status">
-            {bootingScreen(startBoot(bootFile))}
-          </p>
-        ) : deviceFromName(bootFile) ? (
-          <div class="surface">
-            <LivePanel
-              panel={panels[deviceFromName(bootFile)!]}
-              runtime={() => undefined}
-              onError={() => {}}
-              ref={() => {}}
-            />
-          </div>
-        ) : (
-          <p class="booting" role="status">
-            {loadFailure(bootFile, bootError)}
-          </p>
-        )}
+        <div class="surface">
+          <LivePanel
+            panel={panels[deviceFromName(bootFile) ?? 'dn2']}
+            runtime={() => undefined}
+            onError={() => {}}
+            ref={() => {}}
+          />
+        </div>
       </main>
     </div>
   ) : (
