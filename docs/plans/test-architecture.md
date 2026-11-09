@@ -32,7 +32,7 @@ TypeScript (vitest); Python stays for reverse engineering (tools/sharc_dev, tool
 | unit | Is the logic right (packing, manifests, routing, tables)? | Rust and TS (Python until moved), no emulator | ms to s |
 | module | Is the machine or FX right, and does it sound right? | the module routine alone, through its contract, on the native SHARC engine | s |
 | device-cf | Does the firmware handle it (menus, parameters, save and load, upload, type numbers, memory audit)? | ColdFire emulator, DSP stubbed | about 1.1x real time |
-| device-coupled | Does it sound right inside the device (stock filter, envelope, FX, master; the hook glue)? | both CPUs | 0.21-0.24x real time |
+| device-coupled | Does it sound right inside the device (stock filter, envelope, FX, master; the hook glue)? | both CPUs | DT2 about 1x, DN2 0.62-0.66x real time at load 9-12 (2026-11-07, [finding 18](../findings/18-dsp-performance.md)) |
 
 Each module type keeps one coupled test per device. Everything else moves down a level where it can.
 
