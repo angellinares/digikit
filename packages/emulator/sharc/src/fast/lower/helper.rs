@@ -25,8 +25,7 @@ impl Lower {
         if self.mode1_cur != self.env.mode1 || self.mode1_cur & (1 << 21) != 0 {
             return refuse("MODE1 differs from the engine's or SIMD");
         }
-        let Some(p) = crate::fast::helper::plan(d, &crate::fast::helper::EnvRegs(&self.env))
-        else {
+        let Some(p) = crate::fast::helper::plan(d, &crate::fast::helper::EnvRegs(&self.env)) else {
             return refuse("no generated helper body for these fields");
         };
         // The body reads these from the engine state: the kernel's current

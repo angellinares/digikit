@@ -23,7 +23,12 @@ pub struct CatalogCursor {
 }
 
 fn buffer_ok(ptr: *mut u8, cap: usize) -> bool {
-    !ptr.is_null() && ptr as usize & 15 == 0 && cap >= 512 && cap & 511 == 0 && cap <= isize::MAX as usize && (ptr as usize).checked_add(cap).is_some()
+    !ptr.is_null()
+        && ptr as usize & 15 == 0
+        && cap >= 512
+        && cap & 511 == 0
+        && cap <= isize::MAX as usize
+        && (ptr as usize).checked_add(cap).is_some()
 }
 
 impl CatalogCursor {
@@ -35,16 +40,40 @@ impl CatalogCursor {
     /// `fp` holds 512 writable bytes and `scratch` holds `cap` writable bytes,
     /// private, disjoint and 16-byte aligned. I/O and layout remain valid for the
     /// cursor lifetime. Subsequent calls must not overlap their buffers/output.
-    pub unsafe fn open(io: &Io, lay: &Layout, fp: *mut u8, scratch: *mut u8, cap: usize) -> Result<Self, i32> {
-        if lay.sectors <= TAIL || lay.first.checked_add(lay.sectors).is_none() || !buffer_ok(fp, 512) || !buffer_ok(scratch, cap) {
+    pub unsafe fn open(
+        io: &Io,
+        lay: &Layout,
+        fp: *mut u8,
+        scratch: *mut u8,
+        cap: usize,
+    ) -> Result<Self, i32> {
+        if lay.sectors <= TAIL
+            || lay.first.checked_add(lay.sectors).is_none()
+            || !buffer_ok(fp, 512)
+            || !buffer_ok(scratch, cap)
+        {
             return Err(E_BAD_STORE);
         }
         let generation = fingerprint(io, lay, fp).ok_or(E_READ)?;
-        let table = super::open(io, lay, fp, scratch, core::cmp::min(cap, MAX_IO_SECTORS as usize * 512), true)?;
+        let table = super::open(
+            io,
+            lay,
+            fp,
+            scratch,
+            core::cmp::min(cap, MAX_IO_SECTORS as usize * 512),
+            true,
+        )?;
         if fingerprint(io, lay, fp).ok_or(E_READ)? != generation {
             return Err(crate::E_BUSY);
         }
-        Ok(Self { io: *io, lay: *lay, header: table.h, generation, next: 0, error: 0 })
+        Ok(Self {
+            io: *io,
+            lay: *lay,
+            header: table.h,
+            generation,
+            next: 0,
+            error: 0,
+        })
     }
 
     fn fail<T>(&mut self, error: i32) -> Result<T, i32> {
@@ -91,7 +120,13 @@ impl CatalogCursor {
     /// # Safety
     /// `fp` and `scratch` meet `open`'s writable/disjoint buffer obligations and
     /// are disjoint from the caller-owned `out` slice. Nothing retains a buffer.
-    pub unsafe fn read_page(&mut self, fp: *mut u8, scratch: *mut u8, cap: usize, out: &mut [CatalogEntry]) -> Result<usize, i32> {
+    pub unsafe fn read_page(
+        &mut self,
+        fp: *mut u8,
+        scratch: *mut u8,
+        cap: usize,
+        out: &mut [CatalogEntry],
+    ) -> Result<usize, i32> {
         if self.error != 0 {
             return Err(self.error);
         }
@@ -108,7 +143,14 @@ impl CatalogCursor {
         let sectors = core::cmp::min(cap / 512, MAX_IO_SECTORS as usize);
         let n = core::cmp::min(left as usize, core::cmp::min(out.len(), sectors * 2 - skip));
         let count = (skip + n + 1) / 2;
-        let r = read_sectors(&self.io, &self.lay, self.header.table_first + self.next / 2, count as u32, scratch, cap);
+        let r = read_sectors(
+            &self.io,
+            &self.lay,
+            self.header.table_first + self.next / 2,
+            count as u32,
+            scratch,
+            cap,
+        );
         if r != OK {
             return self.fail(r);
         }
@@ -245,7 +287,11 @@ impl CatalogOpen {
                 Ok(value) => value,
                 Err(error) => return self.fail(error),
             };
-            self.headers = if prefer_b(a.as_ref(), b.as_ref()) { [b, a] } else { [a, b] };
+            self.headers = if prefer_b(a.as_ref(), b.as_ref()) {
+                [b, a]
+            } else {
+                [a, b]
+            };
             self.captured = true;
             return Ok(false);
         }
@@ -264,8 +310,18 @@ impl CatalogOpen {
         let h = self.headers[self.candidate].unwrap();
         let mut bad_read = false;
         if self.done < h.table_sectors {
-            let count = core::cmp::min(h.table_sectors - self.done, core::cmp::min(cap / 512, MAX_IO_SECTORS as usize) as u32);
-            let r = read_sectors(&self.io, &self.lay, h.table_first + self.done, count, scratch, cap);
+            let count = core::cmp::min(
+                h.table_sectors - self.done,
+                core::cmp::min(cap / 512, MAX_IO_SECTORS as usize) as u32,
+            );
+            let r = read_sectors(
+                &self.io,
+                &self.lay,
+                h.table_first + self.done,
+                count,
+                scratch,
+                cap,
+            );
             if r != OK {
                 bad_read = true;
             } else {
@@ -304,6 +360,13 @@ impl CatalogOpen {
             return Err(self.error);
         }
         let header = self.selected.ok_or(crate::E_BUSY)?;
-        Ok(CatalogCursor { io: self.io, lay: self.lay, header, generation: self.generation, next: 0, error: 0 })
+        Ok(CatalogCursor {
+            io: self.io,
+            lay: self.lay,
+            header,
+            generation: self.generation,
+            next: 0,
+            error: 0,
+        })
     }
 }

@@ -1,0 +1,21 @@
+[module]
+id = "test/intro-ticks"
+version = "0.1.0"
+name = "Intro ticks"
+category = "test"
+type = "raw"
+author = "digikit"
+status = "experimental"
+summary = "Test fixture: takes the boot animation and folds every tick of the frame callback into an order-dependent hash that done logs"
+requires = []
+conflicts = []
+
+[targets]
+"dt2-1.17" = "experimental"
+"dn2-1.12" = "experimental"
+
+# C, packed like test/intro-reset. `frame` keeps a tick count and a hash (no dk_api call); `done`, at the first UI pass, logs both.
+[[object]]
+path = "build/intro-ticks.dko.json"
+sources = ["src/c/intro_ticks.c"]
+place = "cf.expansion"

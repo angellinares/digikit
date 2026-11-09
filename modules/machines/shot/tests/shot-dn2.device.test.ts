@@ -16,6 +16,7 @@ import {
   allFinite,
   captureNote,
   expectSplitPair,
+  expectedWindow,
   onset,
   peak,
   selectDynamicMachine,
@@ -41,7 +42,10 @@ const PAGE = 4096;
 const FRAMES_PER_PAGE = 2048; // one page of one plane
 // [adapter.sample_pool] ddr_base is 0x80531000 in devices/digitone-ii.toml.
 const NW32_BASE = 0x1014c400; // sp_nw32(DDR_BASE), docs/design/dn2-sample-pool.md section 1
-const THROUGHPUT_FLOOR = 200; // pages per second of emulated DSP time (the ceiling is 1500)
+// Pages per second of emulated DSP time (the ceiling is 1500). A guard against a large fall, not a hardware requirement.
+// A page is 2048 mono frames, so a stereo voice streaming at 48 kHz needs about 47 pages/s; 150 is about 3x that.
+// Runs measure 187-193 (204 before 2026-11), and blocks vary about 4% between runs, so the rate is not exact.
+const THROUGHPUT_FLOOR = 150;
 const BLOCKS_PER_SECOND = 1500;
 
 const planePages = (frames: number) => Math.ceil(frames / FRAMES_PER_PAGE);
@@ -321,6 +325,25 @@ runtimeTests(
         expect(r0.baseR, 'same base_r').toBe(aRecord!.baseR);
       });
 
+      // ---- 2b. peak windows deep inside the ready sample A (3 s stereo), one of them larger than one 64 KiB read step ----------------
+      await phase('window', async () => {
+        const f = fixtures.a!;
+        const s = await api.status(0);
+        expect(s.state, 'A is ready').toBe(3);
+        const small = Math.floor(f.frames * 0.7) + 123;
+        const large = Math.floor(f.frames * 0.2);
+        const cases: [string, number, number][] = [
+          ['small', small, 950],
+          ['large', large, Math.min(40000, f.frames - large)],
+        ];
+        for (const [name, first, frames] of cases) {
+          const got = await api.awaitWindow(runtime, 0, s.token, first, frames, 95);
+          log[`window.${name}`] = { first, frames, ret: got.ret, ms: got.ms };
+          expect(got.ret, `${name} window ready`).toBe(95);
+          expect(got.cols, `${name} window columns`).toEqual(expectedWindow(f.prep.stored, f.channels, first, frames, 95));
+        }
+      });
+
       // ---- 3. stereo audio: SHOT playing L 440 Hz / R 660 Hz through the stock filter and pan -----------------------------------
       const holdNote = async (name: string, seconds: number) =>
         captureNote(runtime, path.join(artifacts, `${name}.wav`), async (clock) => {
@@ -542,7 +565,7 @@ runtimeTests(
       });
 
       // ---- 8b. SMP picks the pool entry of a note: T is entry 0 and L (4 s, 220/330 Hz) is added as entry 2, so entry 1 (Y) lies between them. The page is still
-      // SHOT's: knob B is SMP. Both SMP values are turned while a long sample plays, because `_dv_params` is rewritten only while a voice renders.
+      // SHOT's: knob D is SMP. Both SMP values are turned while a long sample plays, because `_dv_params` is rewritten only while a voice renders.
       await phase('smp', async () => {
         const index = await api.add(file('l'));
         expect(index, 'L takes the first free entry after Y').toBe(2);

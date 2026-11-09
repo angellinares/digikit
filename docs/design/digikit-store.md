@@ -1,7 +1,7 @@
 # The digikit module store
 
 Status: built (builder and reader in `packages/emulator/plusdrive/src/store.rs`, runtime in `modules/core/runtime/sdk/src/store.rs`), 2026-10-16; version 2 (two header copies, for
-module upload, `docs/design/digikit-upload.md`) 2026-10-18; **the settings record** (a fixed area of 32 sectors before the selection record: header copy B moved from `sectors - 3` to `sectors - 35`, runtime 0.5.1) 2026-10-25; **version 3** (a per-device area of 82 MiB / 22 GiB, folders, reusable space, 159-byte paths, a streamed table; runtime 0.3.0) 2026-10-22.
+module upload, `docs/design/digikit-upload.md`) 2026-10-18; **the settings record** (a fixed area of 32 sectors before the selection record: header copy B moved from `sectors - 3` to `sectors - 35`, runtime 0.5.1) 2026-10-25; **version 3** (a per-device area of 82 MiB / 22 GiB, folders, reusable space, 159-byte paths, a streamed table; runtime 0.3.0) 2026-10-22; **version 4** (the table's hash slot holds the +Drive content hash, not a SHA-256; capability FILEHASH) 2026-11-07.
 Plan: `docs/plans/storage.md`. Area choice: `docs/findings/59-storage-regions.md` (the older range choice, `docs/findings/23-digikit-runtime-spikes.md` S6, is superseded).
 
 The store holds the files of `plus_drive/<device>/digikit/` on the card (modules, and samples on the DN2), in sectors the firmware never writes, so the
@@ -27,7 +27,7 @@ The area is not a path filesystem: **folders are in the paths.** The runtime's m
 
 ## Format
 
-All integers are big-endian. Sector size 512. Version 3 is the only version: a header of another version is not a store (pre-1.0: no migrations;
+All integers are big-endian. Sector size 512. Version 4 is the only version: a header of another version is not a store (pre-1.0: no migrations;
 the version 1 and 2 stores lived in the old area `0x38000..0x3E000`, which no code uses any more).
 
 ```text
@@ -39,7 +39,7 @@ sectors - 2, sectors - 1       the selection record, two copies (below; not a st
 
 header (one sector)
   0   4   magic "DKST"
-  4   4   u32 version = 3
+  4   4   u32 version = 4
   8   4   u32 entry_count
   12  4   u32 table_sectors      = ceil(entry_count / 2)
   16  4   u32 table_first        relative to the store; 1 when there is no table
@@ -54,7 +54,7 @@ table: entry_count entries of 256 bytes, sorted by (first_sector, path in byte o
   0   160 path, NUL padded (relative to digikit/, "/" separated, at most 159 bytes)
   160 4   u32 first_sector       relative to the start of the store; 0 for an entry with no data
   164 4   u32 size_bytes
-  168 32  sha256 of the file bytes (zero for a folder)
+  168 32  file hash slot: the +Drive content hash of the file bytes `| 1` (`dksample::content_hash`, a lookup3 variant), 4 bytes big-endian, then 28 zero bytes; all zero for a folder
   200 1   u8 kind: 0 file, 1 folder with nothing in it
   201 55  zero
 ```
@@ -101,12 +101,20 @@ name overwritten sectors. So BEGIN, DELETE and CLEAR first rewrite the copy that
 starts again when it changed (`dkrt_sdk::store::stable`); no lock. A table is never overwritten in place, so a reader that began with the old header reads a complete old table, and only a
 second commit during one read could reuse its sectors (the fingerprint catches that too).
 
+### A store of another version
+
+A header sector with our magic and a version other than 4 (a version 3 store, which has SHA-256 in the hash slot) is **not a store**, and nothing reads or migrates it: `store::find`, LIST, the boot's loads and a sample load see an empty store, the
+card check still calls the card ours, and the first upload writes version 4 headers into both header sectors and reuses the old table and file sectors as free space (the old bytes are overwritten; files of the old store
+are uploaded again). What stays on the card: the **selection record** and the **settings record** are not part of the store structure, so they are kept as they are, and the next boot loads the modules the kept selection names once their files are uploaded again.
+Foreign bytes in a header sector are still refused (`E_NOSTORE` for the upload commands, the area is somebody's data), and a version 4 header that fails its checks is a damaged store, refused as before (`E_NOSTORE`, CLEAR works).
+`patchkit store dump` and `plusdrive store ls` refuse a version 3 store. Test: `modules/core/runtime/tests/store-format.device.test.ts` (both devices), `dkrt_sdk::store` unit test `a_store_of_another_version_is_no_store_a_damaged_current_one_is_refused`.
+
 ## Who writes and who reads
 
 - **The builder** (`plusdrive build`, the desktop card job): every regular file under `digikit/` (recursive; symbolic links and `.DS_Store` skipped; an empty folder is not built: folder entries are made by the runtime and exported). It writes both header copies (`seq` 1) and lays the data out in path order after the table. An image that holds store files or a selection reaches the end of the area (a sparse file).
 - **The exporter** (`card.export`, the end of a session) reads the store and writes its files back to `digikit/` (a folder with nothing in it too). The firmware never writes these
   sectors; only the runtime's upload does. A path-filesystem entry named `digikit` that the firmware's user made on the device is exported as `digikit~<id>` so it cannot land in the store folder.
-- **A reader** for tests: `plusdrive store ls IMAGE [--device dt2|dn2] [--cat PATH]` prints `path first_sector size sha256` by path (a folder with nothing in it as `path/ - 0 folder`; `--cat` writes one file's bytes).
+- **A reader** for tests: `plusdrive store ls IMAGE [--device dt2|dn2] [--cat PATH]` prints `path first_sector size hash` by path (a folder with nothing in it as `path/ - 0 folder`; `--cat` writes one file's bytes).
   The runtime reads it with the firmware's block read; `mise run plusdrive:check` calls that function on a booted DT2 and DN2 and compares the header, table and every file with the image and the folder.
 - **The runtime** (`modules/core/runtime`, Rust): `dkrt_sdk::store` is the format, the reader and the one writer; `upload.rs` is its commands (docs/design/digikit-upload.md); the device's area comes
   from its device object (`dkrt_store_first`, `dkrt_store_sectors`, written by `patchkit gen` from the device file). The runtime's one card-write function refuses a write outside the area (`E_RANGE`).
@@ -117,7 +125,7 @@ second commit during one read could reuse its sectors (the fingerprint catches t
 the DN2 has no path filesystem, so the runtime needs the store anyway; and a path-filesystem copy is read by file name through the mutex-guarded C++ layer where the block read is a single call. The cost is that a
 `digikit/` file is not visible on the device itself. **DT2 samples** are different: they belong in the sample browser, so they go to the +Drive (through the stock MidiRpc file commands, `docs/MIDI-SYSEX-RPC.md` section 12);
 **DN2 samples** go to the store's `samples/` folder (the firmware cannot play them yet).
-A sample in `samples/` is the DT2 native sample file, byte for byte what the +Drive holds (`packages/dksample`: a 64-byte header, the 48 kHz 16-bit PCM, a 16-byte zero trailer; the header's +4 is the PCM length), so a sampling engine reads one format on both devices. The host sends it through the same upload commands as a module (`packages/dk-session/src/samples.ts`, exported as `@digi/dk-session/samples`, backend "digikit"): `samples/<folder>/<name>`, no extension, and checks it with VERIFY (the host's sha256 of the bytes it sent against the runtime's sha256 of a fresh card read).
+A sample in `samples/` is the DT2 native sample file, byte for byte what the +Drive holds (`packages/dksample`: a 64-byte header, the 48 kHz 16-bit PCM, a 16-byte zero trailer; the header's +4 is the PCM length), so a sampling engine reads one format on both devices. The host sends it through the same upload commands as a module (`packages/dk-session/src/samples.ts`, exported as `@digi/dk-session/samples`, backend "digikit"): `samples/<folder>/<name>`, no extension, and checks it with VERIFY (the host's file hash of the bytes it sent against the runtime's file hash of a fresh card read).
 
 ## The selection record (boot-time loading, plan decision 9)
 
@@ -222,7 +230,7 @@ Unloaded modules keep their entries: nothing removes a key but `remove`.
 
 ## Reading our data locally
 
-`patchkit store dump IMAGE [--device dt2|dn2] [--overlay FILE] [--base-sector N] [--json]` prints, from a card image, everything of ours: the store header (the copy in use, `seq`, sectors used), the file table (path, size, first sector, sha256), the selection record (both
+`patchkit store dump IMAGE [--device dt2|dn2] [--overlay FILE] [--base-sector N] [--json]` prints, from a card image, everything of ours: the store header (the copy in use, `seq`, sectors used), the file table (path, size, first sector, file hash), the selection record (both
 copies, the one in use, boot counter, flags, the paths), and the settings record (both copies with their state, `seq` and size, the copy in use, every entry; `fx/route/...` as `master` or `send`, `fx/send/...` as 16 numbers; other keys as text or hex). `--json` prints the same as one object.
 `IMAGE` is a card image of the emulator (a sparse file of 512-byte sectors: the DT2 +Drive card, the DN2 card, `out/cache/digikit/cards/*.img`, the card a desktop run keeps), optionally with a `card.overlay` file of the guest's writes laid over it (as `plusdrive export --overlay`), or a raw dump
 of part of a real card whose first byte is the sector `--base-sector` (a dump of the area from `first_sector` to the end: `--base-sector 0x2df1000` on a DT2). `patchkit store dump --record FILE` decodes one settings record (the file `dkupload settings -o FILE` saves from a device) and needs no card.
@@ -231,8 +239,8 @@ The decoder is the runtime's own (`dkrt_sdk::settings`), so what the command pri
 ```text
 $ patchkit store dump out/cache/digikit/cards/dt2-<key>.img
 card dt2: store sectors 0x2df1000..0x2e1a000, header B 0x2e19fdd, settings 0x2e19fde and 0x2e19fee, selection 0x2e19ffe and 0x2e19fff
-store: header A in use, version 3, seq 1, 3 of 167901 sectors used, 1 entries
-  modules/a.dkm  6 bytes  first sector 0x2  sha256 5891b5b5...
+store: header A in use, version 4, seq 1, 3 of 167901 sectors used, 1 entries
+  modules/a.dkm  6 bytes  first sector 0x2  hash <8 hex digits, 56 zeros>
 selection: copy A valid, seq 1, boot counter 0, flags 0, 1 modules; copy B valid, seq 1, boot counter 0, flags 0, 1 modules
   modules/a.dkm
 settings: copy B in use
@@ -250,7 +258,7 @@ The exporter above runs at the end of a session (and on `card.export`). Since 20
 `plus_drive/<device>/digikit/<path>` (the DN2 too: it has no path filesystem, so only these files), `card.sync` does it at once, and a file the
 card no longer has is removed from the folder (to the backup), so a DT2 card built from the folder at the next start does not bring it back. One way
 only: nothing is read from the folder except by the DT2 startup build. The mirror removes only paths it has seen on the card in the session, so a session
-that starts on an empty card (the DN2 has none at boot) leaves the files an earlier session mirrored. The selection record is not a store file and is not mirrored.
+that starts on an empty card (the DN2 has none at boot) leaves the files an earlier session mirrored. The selection record is not a store file: when its paths change, the mirror writes them to `digikit/selection.txt` (same file as the exporter), so a card built from the folder at the next start, DT2 or DN2, loads the same modules at its first boot.
 
 ## Open
 

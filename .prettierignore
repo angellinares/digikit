@@ -28,3 +28,4 @@ apps/web/.local/
 apps/web/public/modules/
 apps/web/public/*.wasm
 pnpm-lock.yaml
+/apps/web/src/transfer/module-files.generated.ts

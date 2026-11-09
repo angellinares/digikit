@@ -408,7 +408,12 @@ impl FieldBlock {
                 names.push((e.1, i as u8));
             }
         }
-        let mut b = FieldBlock { kv, n, salt: NO_SALT, tab: [NO_SLOT; HASH_SLOTS] };
+        let mut b = FieldBlock {
+            kv,
+            n,
+            salt: NO_SALT,
+            tab: [NO_SLOT; HASH_SLOTS],
+        };
         'salts: for salt in 0..NO_SALT {
             let mut tab = [NO_SLOT; HASH_SLOTS];
             for &(name, idx) in &names {
@@ -443,8 +448,7 @@ impl std::fmt::Debug for Fields {
 fn intern_fields(kv: [FieldEntry; MAX_INSN_FIELDS], n: u8) -> &'static FieldBlock {
     use std::collections::HashMap;
     use std::sync::{Mutex, OnceLock};
-    static POOL: OnceLock<Mutex<HashMap<Box<[FieldEntry]>, &'static FieldBlock>>> =
-        OnceLock::new();
+    static POOL: OnceLock<Mutex<HashMap<Box<[FieldEntry]>, &'static FieldBlock>>> = OnceLock::new();
     let pool = POOL.get_or_init(Default::default);
     let key: Box<[FieldEntry]> = kv[..n as usize].into();
     let mut pool = pool.lock().unwrap_or_else(|e| e.into_inner());
@@ -459,7 +463,9 @@ fn intern_fields(kv: [FieldEntry; MAX_INSN_FIELDS], n: u8) -> &'static FieldBloc
 impl Fields {
     pub fn from_entries(kv: [FieldEntry; MAX_INSN_FIELDS], n: u8) -> Fields {
         assert!((n as usize) <= MAX_INSN_FIELDS);
-        Fields { b: intern_fields(kv, n) }
+        Fields {
+            b: intern_fields(kv, n),
+        }
     }
     #[inline(always)]
     pub fn entries(&self) -> &[FieldEntry] {
@@ -470,8 +476,7 @@ impl Fields {
     pub fn lookup(&self, k: Sym) -> Option<&FieldEntry> {
         let b = self.b;
         if b.salt == NO_SALT {
-            return b
-                .kv[..b.n as usize]
+            return b.kv[..b.n as usize]
                 .iter()
                 .find(|e| e.0 == k)
                 .or_else(|| b.kv[..b.n as usize].iter().find(|e| e.1 == k && e.0 != e.1));
@@ -1048,7 +1053,11 @@ impl St {
         if pc == CHAIN_STOP_EMPTY || self.chain_stops_at(pc) {
             return;
         }
-        let used = self.chain_stop.iter().filter(|&&v| v != CHAIN_STOP_EMPTY).count();
+        let used = self
+            .chain_stop
+            .iter()
+            .filter(|&&v| v != CHAIN_STOP_EMPTY)
+            .count();
         if (used + 1) * 2 > self.chain_stop.len() {
             let grown = vec![CHAIN_STOP_EMPTY; self.chain_stop.len() * 2].into_boxed_slice();
             let old = std::mem::replace(&mut self.chain_stop, grown);

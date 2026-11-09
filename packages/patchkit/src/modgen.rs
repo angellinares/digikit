@@ -80,8 +80,12 @@ fn gallery(lib: &Library, module: &str, rs: &[DevResolved]) -> Result<String> {
             .params
             .iter()
             .map(|p| {
-                json!({"id": p.id, "name": p.name, "short": p.short, "min": p.min, "max": p.max,
-                       "default": p.default, "slot": p.slot, "template": p.template})
+                let mut value = json!({"id": p.id, "name": p.name, "short": p.short, "min": p.min, "max": p.max,
+                       "default": p.default, "slot": p.slot, "template": p.template});
+                if let Some(word) = p.latched_word {
+                    value["latched_word"] = json!(word);
+                }
+                value
             })
             .collect();
         params.insert(r.dev.clone(), Value::Array(list));
@@ -127,7 +131,7 @@ pub fn generate_many(
 mod tests {
     use super::*;
     use crate::module::Module;
-    use crate::typed::{MachineDef, ParamDef, PageDef, PageKnob, VoiceDef};
+    use crate::typed::{MachineDef, PageDef, PageKnob, ParamDef, VoiceDef};
 
     const HEAD: &str = "[module]\nid = \"machines/t\"\nversion = \"0.1.0\"\nname = \"T\"\ncategory = \"machines\"\ntype = \"machine\"\nauthor = \"digikit\"\nstatus = \"experimental\"\nsummary = \"t.\"\n";
 
@@ -162,6 +166,7 @@ mod tests {
                     default: 50,
                     action: None,
                     glyph: None,
+                    latched: false,
                 })
                 .collect();
             m.manifest.page = vec![PageDef {
@@ -170,8 +175,14 @@ mod tests {
                 name: "T".into(),
                 title: "T".into(),
                 knobs: vec![
-                    PageKnob { word: 0, position: None },
-                    PageKnob { word: 1, position: None },
+                    PageKnob {
+                        word: 0,
+                        position: None,
+                    },
+                    PageKnob {
+                        word: 1,
+                        position: None,
+                    },
                 ],
             }];
             m.manifest.voice = vec![VoiceDef {
@@ -194,7 +205,10 @@ mod tests {
         let files = generate(&lib, &models, "machines/t").unwrap();
         assert_eq!(files.len(), 1);
         let g: serde_json::Value = serde_json::from_str(&files[0].1).unwrap();
-        assert_eq!(g["machines"][0]["devices"]["dt2"]["knobs"][2]["param"], "t_1");
+        assert_eq!(
+            g["machines"][0]["devices"]["dt2"]["knobs"][2]["param"],
+            "t_1"
+        );
         assert_eq!(g["machines"][0]["devices"]["dn2"]["page"]["title"], "T");
         // a parameter's slot is the device's slot base plus its knob position from `param_slots`: words 0 and 1 sit on B and C
         assert_eq!(g["params"]["dn2"][0]["slot"], 26);

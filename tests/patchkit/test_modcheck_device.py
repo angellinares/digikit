@@ -27,12 +27,97 @@ def test_only_the_nx_graph_test_device_target_declares_device_acceptance(
         }
     }
     monkeypatch.setattr(nx_graph, "nx_graph", lambda: graph)
-    assert pk_modcheck.own_device_target("owned/effect") == "owned/effect:test-device"
-    assert pk_modcheck.own_device_target("other/effect") is None
-    assert pk_modcheck.own_device_target("missing/effect") is None
+    assert pk_modcheck.own_device_targets("owned/effect") == [
+        "owned/effect:test-device"
+    ]
+    assert pk_modcheck.own_device_targets("other/effect") == []
+    assert pk_modcheck.own_device_targets("missing/effect") == []
     monkeypatch.setattr(pk_modcheck.pk_conform, "is_machine_module", lambda _mid: False)
     monkeypatch.setattr(pk_modcheck.pk_conform, "is_fx_module", lambda _mid: False)
     assert pk_modcheck.plan("owned/effect", "dt2") == ([], {})
+
+
+def test_nested_test_only_project_owns_module_device_acceptance(monkeypatch):
+    from tools.devtools import nx_graph
+
+    nested = {
+        "root": "modules/tools/example/tests",
+        "tags": ["test-only"],
+        "metadata": {"runtimeAcceptance": [{"files": ["acceptance.device.test.ts"]}]},
+        "targets": {"test-device": {}},
+    }
+    nodes = {
+        "owned/module": {"data": {"root": "modules/tools/example", "targets": {}}},
+        "owned/acceptance": {"data": nested},
+        "unrelated/acceptance": {
+            "data": {**nested, "root": "modules/tools/another/tests"}
+        },
+    }
+    monkeypatch.setattr(nx_graph, "nx_graph", lambda: {"nodes": nodes})
+    assert pk_modcheck.own_device_targets("owned/module") == [
+        "owned/acceptance:test-device"
+    ]
+    nested["tags"] = []
+    assert pk_modcheck.own_device_targets("owned/module") == []
+    nested["tags"] = ["test-only"]
+    nested["metadata"] = {}
+    assert pk_modcheck.own_device_targets("owned/module") == [
+        "owned/acceptance:test-device"
+    ]
+    nested["targets"] = {}
+    assert pk_modcheck.own_device_targets("owned/module") == []
+
+
+@pytest.mark.parametrize("root_has_target", [False, True])
+def test_multiple_device_acceptance_owners_are_discovered_in_stable_order(
+    monkeypatch, root_has_target
+):
+    from tools.devtools import nx_graph
+
+    nested = {
+        "root": "modules/tools/example/tests",
+        "tags": ["test-only"],
+        "metadata": {"runtimeAcceptance": [{"files": ["acceptance.device.test.ts"]}]},
+        "targets": {"test-device": {}},
+    }
+    nodes = {
+        "owned/module": {
+            "data": {
+                "root": "modules/tools/example",
+                "targets": {"test-device": {}} if root_has_target else {},
+            }
+        },
+        "owned/acceptance": {"data": nested},
+    }
+    if not root_has_target:
+        nodes["owned/second-acceptance"] = {
+            "data": {**nested, "root": "modules/tools/example/other-tests"}
+        }
+    monkeypatch.setattr(nx_graph, "nx_graph", lambda: {"nodes": nodes})
+    expected = [
+        f"{name}:test-device"
+        for name in sorted(nodes)
+        if nodes[name]["data"].get("targets")
+    ]
+    assert pk_modcheck.own_device_targets("owned/module") == expected
+
+
+def test_duplicate_device_acceptance_roots_fail_clearly(monkeypatch):
+    from tools.devtools import nx_graph
+
+    nested = {
+        "root": "modules/tools/example/tests",
+        "tags": ["test-only"],
+        "targets": {"test-device": {}},
+    }
+    nodes = {
+        "owned/module": {"data": {"root": "modules/tools/example", "targets": {}}},
+        "owned/first": {"data": nested},
+        "owned/second": {"data": nested},
+    }
+    monkeypatch.setattr(nx_graph, "nx_graph", lambda: {"nodes": nodes})
+    with pytest.raises(SystemExit, match="ambiguous device acceptance root"):
+        pk_modcheck.own_device_targets("owned/module")
 
 
 @pytest.mark.parametrize(
@@ -67,8 +152,10 @@ def test_owned_device_stage_follows_python_and_gates_size(
     )
     monkeypatch.setattr(
         pk_modcheck,
-        "own_device_target",
-        lambda _mid: "owned-effect:test-device" if owned else None,
+        "own_device_targets",
+        lambda _mid: (
+            ["owned-effect:test-device", "owned-service:test-device"] if owned else []
+        ),
     )
     monkeypatch.setattr(pk_modcheck.modroots, "module_dir", lambda _mid: tmp_path)
 
@@ -82,8 +169,11 @@ def test_owned_device_stage_follows_python_and_gates_size(
         assert folder == tmp_path and check
         observed.append("sources")
 
-    def device(mid, target):
-        assert mid == "owned/module" and target == "owned-effect:test-device"
+    def device(mid, targets):
+        assert mid == "owned/module" and targets == [
+            "owned-effect:test-device",
+            "owned-service:test-device",
+        ]
         observed.append("device")
         return device_result
 
@@ -94,7 +184,7 @@ def test_owned_device_stage_follows_python_and_gates_size(
 
     monkeypatch.setattr(pk_modcheck.subprocess, "run", python)
     monkeypatch.setattr(patchkit, "build_module", sources)
-    monkeypatch.setattr(pk_modcheck, "run_device_target", device)
+    monkeypatch.setattr(pk_modcheck, "run_device_targets", device)
     monkeypatch.setattr(pk_modcheck, "size_lines", size)
     assert pk_modcheck.main() == expected
     assert observed == stages
@@ -152,7 +242,7 @@ def test_owned_target_preserves_both_current_devices_and_legacy_overrides(
 
     def child(command, *, cwd, env):
         assert not held and cwd == pk_modcheck.ROOT
-        assert "owned-effect:test-device" in command
+        assert "owned-effect,owned-service" in command
         assert env["DIGI_EMUD_DT2"] == expected["dt2"]
         assert env["DIGI_EMUD_DN2"] == expected["dn2"]
         assert env["DIGI_PK_READY_DT2_117"] == "/ready-dt2"
@@ -165,6 +255,9 @@ def test_owned_target_preserves_both_current_devices_and_legacy_overrides(
     monkeypatch.setattr(pk_harness, "daemon_binary", binary)
     monkeypatch.setattr(pk_modcheck.subprocess, "run", child)
     assert (
-        pk_modcheck.run_device_target("owned/module", "owned-effect:test-device") == 11
+        pk_modcheck.run_device_targets(
+            "owned/module", ["owned-effect:test-device", "owned-service:test-device"]
+        )
+        == 11
     )
     assert cells == [("dt2", "1.17"), ("dn2", "1.12")]

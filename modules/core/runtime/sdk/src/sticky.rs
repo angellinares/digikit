@@ -122,7 +122,14 @@ pub fn wanted(key: &[u32], n: usize, h: u32) -> bool {
 /// Assign the numbers of the first `n` machine `key`s (load order) into `ty` (0: none was free or the key is a pinned number). `rec_map` is the
 /// map the boot started from; `map` is the cleaned map on entry and the map to keep on return. `log` gets every assignment and eviction in
 /// order. Returns `dirty`: 1 when `map` differs from `rec_map`.
-pub fn assign<F: FnMut(&Event)>(rec_map: &[u32; MAP_N], map: &mut [u32; MAP_N], key: &[u32], ty: &mut [u32], n: usize, log: &mut F) -> u32 {
+pub fn assign<F: FnMut(&Event)>(
+    rec_map: &[u32; MAP_N],
+    map: &mut [u32; MAP_N],
+    key: &[u32],
+    ty: &mut [u32],
+    n: usize,
+    log: &mut F,
+) -> u32 {
     let mut used = 0u32;
     let mut e = 0;
     while e < n {
@@ -170,7 +177,11 @@ pub fn assign<F: FnMut(&Event)>(rec_map: &[u32; MAP_N], map: &mut [u32; MAP_N], 
                     }
                     if victim != NONE {
                         let v = map[victim as usize];
-                        log(&Event { kind: logk::MACHINE_TYPE_EVICTED, error: true, args: [v >> 8, v & 0xff, 0, 0, 0] });
+                        log(&Event {
+                            kind: logk::MACHINE_TYPE_EVICTED,
+                            error: true,
+                            args: [v >> 8, v & 0xff, 0, 0, 0],
+                        });
                         map[victim as usize] = 0;
                         t = v & 0xff;
                     }
@@ -196,7 +207,11 @@ pub fn assign<F: FnMut(&Event)>(rec_map: &[u32; MAP_N], map: &mut [u32; MAP_N], 
             used |= bit(t);
         }
         ty[e] = t;
-        log(&Event { kind: logk::MACHINE_TYPE_ASSIGNED, error: false, args: [h, t, sticky, rule, 0] });
+        log(&Event {
+            kind: logk::MACHINE_TYPE_ASSIGNED,
+            error: false,
+            args: [h, t, sticky, rule, 0],
+        });
         e += 1;
     }
     let mut dirty = 0;

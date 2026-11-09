@@ -21,7 +21,10 @@ fn out(text: &str, suffix: &str) -> String {
 
 #[test]
 fn sig_with_pointers_and_const() {
-    let t = fn_entry("cf.view.fn.view_controller_push", "u32 (void *v, const char *name, u8 flag)");
+    let t = fn_entry(
+        "cf.view.fn.view_controller_push",
+        "u32 (void *v, const char *name, u8 flag)",
+    );
     let rs = out(&t, "rs/src/lib.rs");
     assert!(rs.contains("#[link_name = \"cf.view.fn.view_controller_push\"]"));
     assert!(rs.contains(
@@ -85,7 +88,9 @@ fn pointer_return_renders_in_rust_and_c() {
     assert!(rs.contains("pub fn bytes(n: u32) -> *const u8;"));
     let c = out(&t, "include/dk_fw_mem.h");
     assert!(c.contains("void * dk_fw_mem_new(uint32_t n) __asm__(\"cf.mem.fn.new\");"));
-    assert!(c.contains("const uint8_t * dk_fw_mem_bytes(uint32_t n) __asm__(\"cf.mem.fn.bytes\");"));
+    assert!(
+        c.contains("const uint8_t * dk_fw_mem_bytes(uint32_t n) __asm__(\"cf.mem.fn.bytes\");")
+    );
 }
 
 #[test]
@@ -110,13 +115,20 @@ fn entry_without_doc_is_an_error() {
 
 #[test]
 fn unknown_key_is_an_error() {
-    let t = format!("{}colour = \"red\"\n", fn_entry("cf.view.fn.view_controller_push", "void ()"));
+    let t = format!(
+        "{}colour = \"red\"\n",
+        fn_entry("cf.view.fn.view_controller_push", "void ()")
+    );
     assert!(render(&[("t.toml", t.as_str())]).is_err());
 }
 
 /// A site `cf.view.site.loop` and a hook `cf.view.hook.loop` on `site`; `regs` is a TOML inline table.
 fn hook_text(site: &str, mode: &str, regs: &str, extra: &str) -> String {
-    let doc = if extra.contains("doc =") { "" } else { "doc = \"A hook.\"\n" };
+    let doc = if extra.contains("doc =") {
+        ""
+    } else {
+        "doc = \"A hook.\"\n"
+    };
     format!(
         "[[site]]\nname = \"cf.view.site.loop\"\n{RULE}[[hook]]\nname = \"cf.view.hook.loop\"\nsite = \"{site}\"\ncpu = \"cf\"\nmode = \"{mode}\"\nregs = {regs}\n{doc}{extra}"
     )
@@ -142,9 +154,17 @@ fn before_hook_with_a_register_arg() {
         "/* cf.view.hook.loop: Top of the loop. */\n.macro dk_fw_view_loop_hook handler, next\n    move.l  %a2,-(%sp)\n    jsr     \\handler\n    addq.l  #4,%sp\n    jmp     \\next\n.endm\n"
     ), "{inc}");
     let c = out(&t, "include/dk_fw_view.h");
-    assert!(c.contains("/* Top of the loop. */\ntypedef void dk_fw_view_loop_hook(uint8_t *menu);"), "{c}");
+    assert!(
+        c.contains("/* Top of the loop. */\ntypedef void dk_fw_view_loop_hook(uint8_t *menu);"),
+        "{c}"
+    );
     let rs = out(&t, "rs/src/lib.rs");
-    assert!(rs.contains("/// Top of the loop.\n    pub type LoopHook = unsafe extern \"C\" fn(menu: *mut u8);"), "{rs}");
+    assert!(
+        rs.contains(
+            "/// Top of the loop.\n    pub type LoopHook = unsafe extern \"C\" fn(menu: *mut u8);"
+        ),
+        "{rs}"
+    );
 }
 
 #[test]
@@ -162,25 +182,39 @@ fn retarget_hook_with_stack_args_saves_registers() {
     );
     assert!(inc.contains(&want), "{inc}");
     let rs = out(&t, "rs/src/lib.rs");
-    assert!(rs.contains("pub type LoopHook = unsafe extern \"C\" fn(a: i32, b: i32, c: i32, d: i32) -> i32;"), "{rs}");
+    assert!(
+        rs.contains(
+            "pub type LoopHook = unsafe extern \"C\" fn(a: i32, b: i32, c: i32, d: i32) -> i32;"
+        ),
+        "{rs}"
+    );
 }
 
 #[test]
 fn bad_hooks_are_errors() {
     let regs = "{ in = [\"a2\"], clobbers = [\"ccr\"] }";
-    let handler = |args: &str| format!("handler = {{ sig = \"void (u8 *menu)\", args = {args} }}\n");
+    let handler =
+        |args: &str| format!("handler = {{ sig = \"void (u8 *menu)\", args = {args} }}\n");
     assert!(hook_error("cf.view.site.loop", "after", regs, "").contains("mode"));
     assert!(
-        hook_error("cf.view.site.loop", "before", "{ in = [], clobbers = [\"d9\"] }", "")
-            .contains("unknown register")
+        hook_error(
+            "cf.view.site.loop",
+            "before",
+            "{ in = [], clobbers = [\"d9\"] }",
+            ""
+        )
+        .contains("unknown register")
     );
     assert!(
         hook_error("cf.view.site.loop", "replace", regs, &handler("[\"a2\"]")).contains("handler")
     );
     assert!(hook_error("cf.view.site.loop", "before", regs, &handler("[]")).contains("args"));
-    assert!(hook_error("cf.view.site.loop", "before", regs, &handler("[\"sp+2\"]")).contains("sp+N"));
     assert!(
-        hook_error("cf.view.site.loop", "before", regs, &handler("[\"a3\"]")).contains("not in regs.in")
+        hook_error("cf.view.site.loop", "before", regs, &handler("[\"sp+2\"]")).contains("sp+N")
+    );
+    assert!(
+        hook_error("cf.view.site.loop", "before", regs, &handler("[\"a3\"]"))
+            .contains("not in regs.in")
     );
     assert!(
         hook_error(
@@ -226,7 +260,12 @@ fn reference_of(decls: &str, ports: &[String]) -> Value {
 }
 
 fn entry<'a>(v: &'a Value, name: &str) -> &'a Value {
-    v["entries"].as_array().unwrap().iter().find(|e| e["name"] == name).expect("entry")
+    v["entries"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .find(|e| e["name"] == name)
+        .expect("entry")
 }
 
 #[test]
@@ -256,10 +295,16 @@ fn reference_sites_lists_every_numbered_anchor() {
         "dt2",
         "1.17",
         'a',
-        &[("cf.view.sites.loops.0", 0x1000), ("cf.view.sites.loops.1", 0x2000)],
+        &[
+            ("cf.view.sites.loops.0", 0x1000),
+            ("cf.view.sites.loops.1", 0x2000),
+        ],
     )];
     let v = reference_of(&t, &ports);
-    let at = entry(&v, "cf.view.sites.loops")["at"]["dt2-1.17"].as_array().unwrap().clone();
+    let at = entry(&v, "cf.view.sites.loops")["at"]["dt2-1.17"]
+        .as_array()
+        .unwrap()
+        .clone();
     assert_eq!(at.len(), 2);
     assert_eq!(at[1]["addr"], "0x2000");
     assert!(entry(&v, "cf.view.sites.loops").get("bindings").is_none());
@@ -288,7 +333,7 @@ fn reference_hook_carries_site_mode_regs_and_bindings() {
 #[test]
 fn reference_per_device_rule_gives_both_device_rules() {
     let t = "[[fn]]\nname = \"cf.view.fn.push\"\ncpu = \"cf\"\nsig = \"void ()\"\ndoc = \"Pushes.\"\n[fn.rule.dt2]\nkind = \"cf_func\"\nhash = \"00\"\noffset = 2\nlen = 4\n[fn.rule.dn2]\nkind = \"cf_func\"\nhash = \"00\"\noffset = 6\nlen = 4\nmark = \"O\"\n";
-    let v = reference_of(t,&[port("dt2", "1.17", 'a', &[])]);
+    let v = reference_of(t, &[port("dt2", "1.17", 'a', &[])]);
     let r = &entry(&v, "cf.view.fn.push")["rule"];
     assert_eq!(r["dt2"]["offset"], 2);
     assert_eq!(r["dn2"]["offset"], 6);
@@ -298,8 +343,16 @@ fn reference_per_device_rule_gives_both_device_rules() {
 
 #[test]
 fn reference_hook_address_is_site_plus_offset_on_listing_ports() {
-    let t = hook_text("cf.view.site.loop", "before", "{ in = [], clobbers = [] }", "offset = 4\n");
-    let with = format!("{}\n[[hook]]\nname = \"cf.view.hook.loop\"\nsite = \"cf.view.site.loop\"\noffset = 4\nmode = \"before\"\n", port("dt2", "1.17", 'a', &[("cf.view.site.loop", 0x1000)]));
+    let t = hook_text(
+        "cf.view.site.loop",
+        "before",
+        "{ in = [], clobbers = [] }",
+        "offset = 4\n",
+    );
+    let with = format!(
+        "{}\n[[hook]]\nname = \"cf.view.hook.loop\"\nsite = \"cf.view.site.loop\"\noffset = 4\nmode = \"before\"\n",
+        port("dt2", "1.17", 'a', &[("cf.view.site.loop", 0x1000)])
+    );
     let without = port("dn2", "1.12", 'b', &[("cf.view.site.loop", 0x2000)]);
     let v = reference_of(&t, &[with, without]);
     let at = &entry(&v, "cf.view.hook.loop")["at"];

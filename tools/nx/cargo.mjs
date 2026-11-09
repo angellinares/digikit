@@ -1,7 +1,7 @@
 // Nx plugin: one project per Cargo workspace member (read from Cargo.toml files, cargo is not run).
 // Edges: path dependencies between members, in every dependency table.
 // rust-tests is cached for HERMETIC crates (direct cargo nextest into dist/cargo-tests); the others run
-// through tools/devtools/rust_ws.py uncached.
+// through tools/nx/rust-env.mjs uncached.
 import { existsSync, readFileSync } from 'node:fs';
 import { join, normalize } from 'node:path';
 import { DependencyType } from '@nx/devkit';
@@ -26,6 +26,7 @@ const CLI = {
 const cliTarget = ({ build, bin, dir }) => ({
   executor: 'nx:run-commands',
   cache: false,
+  parallelism: false,
   outputs: [`{workspaceRoot}/dist/${dir}/${bin}`],
   options: {
     commands: [
@@ -37,14 +38,46 @@ const cliTarget = ({ build, bin, dir }) => ({
   },
 });
 
+// Extra targets of named crates.
+const CRATE_TARGETS = {
+  dksample: {
+    wasm: {
+      executor: 'nx:run-commands',
+      cache: false,
+      description: 'Builds the dksample wasm that sample device tests load.',
+      outputs: ['{workspaceRoot}/apps/web/public/dksample.wasm'],
+      options: { command: 'node tools/nx/wasm.mjs --dksample-only', cwd: '.' },
+    },
+  },
+};
+
 // Gate helper targets. They build under dist/ or out/native; out/ is never an Nx output.
 const GATE = {
   'digi-control': {
     daemons: {
       executor: 'nx:run-commands',
       cache: false,
+      parallelism: false,
       outputs: ['{workspaceRoot}/dist/daemons.json'],
       inputs: [
+        // The sources the daemon is built from: SOURCE_GLOBS of tools/devtools/emud_key.py. The store keys the binary by
+        // content; these inputs make a source edit select this task, and so every task that consumes dist/daemons.json.
+        '{workspaceRoot}/Cargo.toml',
+        '{workspaceRoot}/Cargo.lock',
+        '{workspaceRoot}/rust-toolchain*',
+        '{workspaceRoot}/.cargo/**/*',
+        '{workspaceRoot}/packages/emulator/**/*',
+        '{workspaceRoot}/packages/dkneeds/**/*',
+        '{workspaceRoot}/packages/dksample/**/*',
+        '{workspaceRoot}/packages/dkupload/**/*',
+        '{workspaceRoot}/packages/patchkit/**/*',
+        '{workspaceRoot}/modules/core/runtime/fit/{Cargo.toml,build.rs,src/**/*}',
+        '{workspaceRoot}/modules/core/runtime/sdk/{Cargo.toml,build.rs,src/**/*}',
+        '{workspaceRoot}/devices/**/*',
+        '{workspaceRoot}/tests/scenarios/dn2.json',
+        '{workspaceRoot}/sdk/sdk.toml',
+        '{workspaceRoot}/tools/patchkit/toolchain/**/*',
+        '{workspaceRoot}/tools/sharc_dev/sharc_core/seed_tables.py',
         '{workspaceRoot}/tools/devtools/emud_key.py',
         '{workspaceRoot}/tools/devtools/verify_build.py',
         '{workspaceRoot}/tools/devtools/stablebin.py',
@@ -65,17 +98,25 @@ const GATE = {
     build: {
       executor: 'nx:run-commands',
       cache: false,
-      options: { command: 'uv run python -m tools.emulator.coupled build', cwd: '.' },
+      parallelism: false,
+      // dist/coupled-dn2.json holds the sha256 of the built binary: the cache key of the targets that run it.
+      outputs: ['{workspaceRoot}/dist/coupled-dn2.json'],
+      options: { command: 'uv run python -m tools.emulator.coupled build --id-out dist/coupled-dn2.json', cwd: '.' },
     },
     'build-dt2': {
       executor: 'nx:run-commands',
       cache: false,
-      options: { command: 'uv run python -m tools.emulator.coupled build --device dt2', cwd: '.' },
+      parallelism: false,
+      outputs: ['{workspaceRoot}/dist/coupled-dt2.json'],
+      options: {
+        command: 'uv run python -m tools.emulator.coupled build --device dt2 --id-out dist/coupled-dt2.json',
+        cwd: '.',
+      },
     },
   },
 };
 
-// Crates without tests (rust_ws also drops digiemu-desktop); no rust-tests target.
+// Crates without tests; no rust-tests target.
 const NO_TESTS = new Set([
   'sharc-stats',
   'sharc-gen',
@@ -100,11 +141,27 @@ export const HERMETIC = {
   'device-profile': ['{workspaceRoot}/devices/digitakt-ii.toml', '{workspaceRoot}/devices/digitone-ii.toml'],
   dkupload: [],
   dksample: [],
+  machine: [],
+  'sharc-rt': [],
+  dkmidi: [],
 };
 
 // Crates that compile another crate's sources by path (sharc-2 builds packages/emulator/sharc/src);
 // those files are outside the project root.
 const SHARED_SOURCE = { 'sharc-native-2': ['{workspaceRoot}/packages/emulator/sharc/**/*'] };
+
+// Files outside the crate embedded by patchkit's source, unit tests and build.rs.
+const COMPILE_SOURCE = {
+  patchkit: [
+    '{workspaceRoot}/sdk/sdk.toml',
+    '{workspaceRoot}/sdk/vectors/fit-vectors.json',
+    '{workspaceRoot}/sdk/vectors/settings-vectors.json',
+    '{workspaceRoot}/devices/*.toml',
+    '{workspaceRoot}/tools/patchkit/toolchain/pins.toml',
+    '{workspaceRoot}/tools/patchkit/toolchain/m68k-cf-none-elf-a2.json',
+    '{workspaceRoot}/tools/patchkit/pk_toolchains.py',
+  ],
+};
 
 // Normalized repo-relative roots of the path dependencies of a crate (all dependency tables).
 export const pathDeps = (workspaceRoot, crateRoot) => {
@@ -122,7 +179,7 @@ export const createNodesV2 = [
   'Cargo.toml',
   (files, _opts, ctx) =>
     files.map((f) => {
-      const inputs = ['default', '{workspaceRoot}/Cargo.toml', '{workspaceRoot}/Cargo.lock'];
+      const inputs = ['default', '^production', '{workspaceRoot}/Cargo.toml', '{workspaceRoot}/Cargo.lock'];
       if (existsSync(join(ctx.workspaceRoot, 'rust-toolchain.toml')))
         inputs.push('{workspaceRoot}/rust-toolchain.toml');
       const rust = read(ctx.workspaceRoot, 'mise.toml').tools.rust;
@@ -133,6 +190,8 @@ export const createNodesV2 = [
         '{workspaceRoot}/Cargo.lock',
         ...(existsSync(join(ctx.workspaceRoot, 'rust-toolchain.toml')) ? ['{workspaceRoot}/rust-toolchain.toml'] : []),
         { runtime: `rustup run ${rust} rustc -vV` },
+        { runtime: 'node tools/nx/cargo-profile-env.mjs' },
+        '{workspaceRoot}/tools/nx/cargo-profile-env.mjs',
         { env: 'RUSTFLAGS' },
         { env: 'CARGO_ENCODED_RUSTFLAGS' },
         { env: 'CARGO_BUILD_TARGET' },
@@ -155,8 +214,16 @@ export const createNodesV2 = [
           : {
               executor: 'nx:run-commands',
               cache: false,
-              inputs: [...inputs, ...(SHARED_SOURCE[name] ?? [])],
-              options: { command: `uv run python -m tools.devtools.rust_ws test --packages ${name}`, cwd: '.' },
+              inputs: [
+                ...inputs,
+                '{workspaceRoot}/tools/nx/rust-env.mjs',
+                ...(SHARED_SOURCE[name] ?? []),
+                ...(COMPILE_SOURCE[name] ?? []),
+              ],
+              options: {
+                command: `node tools/nx/rust-env.mjs${name === 'sharc-native' ? ' --gen' : ''} -- cargo nextest run -p ${name} --release --locked --offline`,
+                cwd: '.',
+              },
             };
       const projects = {};
       for (const root of read(ctx.workspaceRoot, f).workspace?.members ?? []) {
@@ -168,6 +235,7 @@ export const createNodesV2 = [
           targets: {
             ...(!NO_TESTS.has(name) && { 'rust-tests': rustTests(name) }),
             ...(CLI[name] && { cli: cliTarget(CLI[name]) }),
+            ...CRATE_TARGETS[name],
             ...GATE[name],
           },
         };

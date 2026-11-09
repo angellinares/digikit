@@ -1,0 +1,15 @@
+{
+  "$schema": "../../../../../node_modules/nx/schemas/project-schema.json",
+  "name": "native-page-proof-tests",
+  "tags": ["test-only"],
+  "implicitDependencies": ["core/runtime", "core/machines"],
+  "metadata": {
+    "runtimeAcceptance": [
+      {
+        "files": ["native-page.device.test.ts"],
+        "modules": ["test/native-page"],
+        "plusdrive": true
+      }
+    ]
+  }
+}

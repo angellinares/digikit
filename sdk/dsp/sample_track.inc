@@ -10,6 +10,18 @@
 #ifndef DK_SAMPLE_TRACK_INC
 #define DK_SAMPLE_TRACK_INC
 
+// Word offsets of struct dk_strack and the word counts. They must match struct dk_strack in sdk/include/dk/sample_track.h.
+#define DK_STRACK_W_READY 0
+#define DK_STRACK_W_TOKEN 1
+#define DK_STRACK_W_FRAMES 2
+#define DK_STRACK_W_RATE 3
+#define DK_STRACK_W_CHANNELS 4
+#define DK_STRACK_W_FMT 5
+#define DK_STRACK_W_BASE_L 6
+#define DK_STRACK_W_BASE_R 7
+#define DK_STRACK_WORDS 8
+#define DK_STRACK_CTL_WORDS 4
+
 #define DK_STRACK_CHECK_ADMISSION(REC, CTL, TMP, LIMIT, DENIED, FAULT) \
     TMP = DM(0, REC); \
     TMP = PASS TMP; \

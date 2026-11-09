@@ -15,11 +15,11 @@ dev tooling; the app starts no process.
 
 `list` is one merged view for the target's device (INFO): the repo's run-time modules that pack for it (never `core/*`; `test/` ones are
 marked), with group (machine, fx or service contract in the packed header: Machines, Effects, Tools), version, sizes, build state
-(`unchanged` = the built objects carry the hash of their sources; `needs build`), whether the file is on the card (LIST, same sha256),
+(`unchanged` = the built objects carry the hash of their sources; `needs build`), whether the file is on the card (LIST, same file hash),
 whether it is loaded (MODULES), and whether it fits (CAPACITY; a warning only). Card files that match no repo module are listed with
 their group, read from the 0xa0-byte header (READ, runtime 0.2.4).
 
-`install MOD...` (it emits `progress` events with the bytes sent of each upload, at most about ten per file) builds only the modules whose objects changed, packs them, uploads the files the card does not have (same sha256),
+`install MOD...` (it emits `progress` events with the bytes sent of each upload, at most about ten per file) builds only the modules whose objects changed, packs them, uploads the files the card does not have (same file hash),
 VERIFYs each file on the card (the device hashes it from a fresh read). That is all: the device's selection is not touched, because
 the selection belongs to the device (the user ticks the module in SETTINGS > DIGIKIT > MODULES and applies and restarts there).
 `--select` also sends SELECT, which replaces the selection by exactly these modules plus the `--keep` paths; `--restart` implies `--select`,
@@ -35,8 +35,8 @@ emulator is driven in real time. A paused emulator is refused (nothing would ste
 from __future__ import annotations
 
 import argparse
-import hashlib
 import json
+import os
 import struct
 import sys
 import time
@@ -124,18 +124,25 @@ def inputs_mtime(moddir: Path) -> float:
     if mid:  # the built objects of a content module are cached outside its directory
         roots.append((R.ROOT / "out" / "cache" / "dko" / mid, "*"))
     for root, pat in roots:
+        cached = R.ROOT / "out" / "cache" / "dko" in root.parents
         for f in root.rglob(pat):
-            if f.is_file() and "__pycache__" not in f.parts:
-                newest = max(newest, f.stat().st_mtime)
+            # `patchkit` touches a cached object each time it reads it (for its eviction order), so a file there says nothing; a
+            # changed source gives the object a new key directory, and that directory's own time counts.
+            if "__pycache__" in f.parts or not (f.is_dir() if cached else f.is_file()):
+                continue
+            newest = max(newest, f.stat().st_mtime)
     return max(newest, (R.ROOT / "sdk" / "sdk.toml").stat().st_mtime)
 
 
 def pack_for_transfer(module: str, device: str) -> Path:
     """Pack into out/patch/transfer/<device>/, so a list or install does not rewrite the files `dk run` leaves in out/patch. A packed file
     newer than everything the pack reads is reused (a pack costs about 0.25 s; a list packs every candidate). A module that did not pack
-    is remembered the same way (`_failed.json`), so a list does not try it again until something it reads changes."""
+    is remembered the same way (`_failed.json`), so a list does not try it again until something it reads changes.
+    `DIGI_TRANSFER_DIR` replaces out/patch/transfer: out/ is shared by all worktrees and runs, and the reuse rule compares file times,
+    so a test run keeps its own folder."""
     name = module.rsplit("/", 1)[-1]
-    folder = R.ROOT / "out" / "patch" / "transfer" / device
+    base = os.environ.get("DIGI_TRANSFER_DIR")
+    folder = (Path(base) if base else R.ROOT / "out" / "patch" / "transfer") / device
     out = folder / f"{name}.dkm"
     newest = inputs_mtime(modroots.module_dir(module))
     failed_file = folder / "_failed.json"
@@ -193,7 +200,7 @@ def repo_rows(
                 "label": m.get("name", mid),
                 "test": mid.startswith("test/"),
                 "path": R.module_path(mid),
-                "sha256": hashlib.sha256(data).hexdigest(),
+                "hash": D.file_hash(data).hex(),
                 "file_size": len(data),
                 "build": status(mid),
                 "dkm": str(dkm),
@@ -245,7 +252,7 @@ def merge(
             "no"
             if have is None
             else "yes"
-            if have == (r["file_size"], r["sha256"])
+            if have == (r["file_size"], r["hash"])
             else "other version"
         )
         r["loaded"] = r["name"] in loaded
@@ -353,7 +360,7 @@ def plan_install(
             m
             for m in wanted
             if on_card.get(by_id[m]["path"])
-            != (by_id[m]["file_size"], by_id[m]["sha256"])
+            != (by_id[m]["file_size"], by_id[m]["hash"])
         ],
         "select": select,
     }
@@ -510,21 +517,21 @@ def install(
             by_id[mid] = repo_rows(device, [mid], pack)[0]  # the packed file changed
         r = by_id[mid]
         data = Path(r["dkm"]).read_bytes()
-        sha = hashlib.sha256(data).hexdigest()
+        sha = D.file_hash(data).hex()
         emit({"event": "upload", "id": mid, "path": r["path"], "bytes": len(data)})
         if R.upload_if_changed(
             up, r["path"], data, have, quiet, upload_progress(emit, mid, len(data))
         ):
             uploaded.append(mid)
         else:
-            emit({"event": "skip", "id": mid, "reason": "same sha256 on the card"})
+            emit({"event": "skip", "id": mid, "reason": "same hash on the card"})
         if can_verify:
             got = up.verify(r["path"])
             ok = got == sha
             emit({"event": "verify", "id": mid, "path": r["path"], "ok": ok})
             if not ok:
                 raise TransferError(
-                    f"{r['path']}: the device reads back sha256 {got[:12]}, expected {sha[:12]}: the card did not keep the file"
+                    f"{r['path']}: the device reads back hash {got[:8]}, expected {sha[:8]}: the card did not keep the file"
                 )
     selected: list[str] = []
     if select or restart:

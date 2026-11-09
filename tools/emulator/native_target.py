@@ -16,9 +16,10 @@ its target dir from here:
                measurement's out/native/dn2-audio/gen-generic
     g-<hash>   any other gen with an image: hash of its resolved path
 
-In a git worktree (``.git`` is a file) the root is
-``out/native/target-wt/<worktree-name>/`` instead: ``out/`` is linked to the
-main tree's, and two checkouts building into one target dir would keep
+In a git worktree (``.git`` is a file) the root is ``dist/native-target/``
+inside the worktree instead (``dist/`` is git-ignored and nothing cleans it).
+The target dirs belong to the lane and are deleted with it. ``out/`` is linked
+to the main tree's, and two checkouts building into one target dir would keep
 invalidating each other's crates. A worktree cannot reuse the main tree's
 compiled crates (the package paths differ), so it pays one ``sharc-gen`` compile
 per gen and then reuses it.
@@ -42,10 +43,11 @@ import pathlib
 ROOT = pathlib.Path(__file__).resolve().parents[2]
 from tools.emulator import digi_env  # noqa: E402
 
-# A worktree's .git is a file; its target dirs must not collide with the main tree's.
+# A worktree's .git is a file; its target dirs live inside the worktree. Keep in step with
+# targetDir in tools/nx/rust-env.mjs.
 IS_WORKTREE = (ROOT / ".git").is_file()
 TARGET_ROOT = (
-    ROOT / "out" / "native" / "target-wt" / ROOT.name
+    ROOT / "dist" / "native-target"
     if IS_WORKTREE
     else ROOT / "out" / "native" / "target"
 )

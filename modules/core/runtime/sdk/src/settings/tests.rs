@@ -1,13 +1,16 @@
 //! The settings record: the shared vectors, the edits, the limits, and the two copies on a card in RAM (which one is read, a power cut in a write).
 extern crate std;
 use super::*;
-use std::sync::Mutex;
 use std::string::String;
+use std::sync::Mutex;
 use std::vec::Vec;
 
 const FIRST: u32 = 5000;
 const SECTORS: u32 = 4096;
-const LAY: Layout = Layout { first: FIRST, sectors: SECTORS };
+const LAY: Layout = Layout {
+    first: FIRST,
+    sectors: SECTORS,
+};
 
 static CARD: Mutex<Vec<u8>> = Mutex::new(Vec::new());
 /// The one read that fails (counted from 0 since `fresh`).
@@ -45,9 +48,15 @@ unsafe extern "C" fn wr(sector: u32, bytes: u32, buf: *mut u8) -> i32 {
         }
         f.3 += 1;
     }
-    assert!(LAY.write_allowed(sector, bytes), "a write outside the store: {sector} {bytes}");
+    assert!(
+        LAY.write_allowed(sector, bytes),
+        "a write outside the store: {sector} {bytes}"
+    );
     // only the settings area, and only the copy that was asked for
-    assert!(sector >= LAY.set_a() && sector + bytes / 512 <= LAY.sel_a(), "a write outside the settings area: {sector}");
+    assert!(
+        sector >= LAY.set_a() && sector + bytes / 512 <= LAY.sel_a(),
+        "a write outside the settings area: {sector}"
+    );
     WRITES.lock().unwrap().push((sector, bytes / 512));
     let mut c = CARD.lock().unwrap();
     let at = (sector - FIRST) as usize * 512;
@@ -70,7 +79,9 @@ fn fresh() {
 }
 
 fn hex(s: &str) -> Vec<u8> {
-    (0..s.len() / 2).map(|i| u8::from_str_radix(&s[2 * i..2 * i + 2], 16).unwrap()).collect()
+    (0..s.len() / 2)
+        .map(|i| u8::from_str_radix(&s[2 * i..2 * i + 2], 16).unwrap())
+        .collect()
 }
 
 fn area_of(b: &[u8]) -> Box<Area> {
@@ -96,7 +107,9 @@ fn load_now() -> (Result<Loaded, i32>, Box<Area>) {
 
 fn entries(a: &Area) -> Vec<(Vec<u8>, Vec<u8>)> {
     let u = used(&a.0);
-    iter(&a.0, u).map(|(k, v)| (k.to_vec(), v.to_vec())).collect()
+    iter(&a.0, u)
+        .map(|(k, v)| (k.to_vec(), v.to_vec()))
+        .collect()
 }
 
 /// A minimal JSON reader (the crate has no dependency: `rustc --test` builds it alone): objects, arrays, strings without escapes, unsigned numbers.
@@ -136,7 +149,11 @@ impl core::ops::Index<&str> for Value {
     type Output = Value;
     fn index(&self, k: &str) -> &Value {
         match self {
-            Value::Obj(o) => o.iter().find(|(n, _)| n == k).map(|(_, v)| v).unwrap_or(&NULL),
+            Value::Obj(o) => o
+                .iter()
+                .find(|(n, _)| n == k)
+                .map(|(_, v)| v)
+                .unwrap_or(&NULL),
             _ => &NULL,
         }
     }
@@ -165,7 +182,11 @@ impl Parser<'_> {
     }
     fn eat(&mut self, c: u8) {
         self.ws();
-        assert_eq!(self.b[self.at], c, "json: expected {} at {}", c as char, self.at);
+        assert_eq!(
+            self.b[self.at], c,
+            "json: expected {} at {}",
+            c as char, self.at
+        );
         self.at += 1;
     }
     fn string(&mut self) -> String {
@@ -224,7 +245,12 @@ impl Parser<'_> {
                 while self.at < self.b.len() && self.b[self.at].is_ascii_digit() {
                     self.at += 1;
                 }
-                Value::Num(core::str::from_utf8(&self.b[start..self.at]).unwrap().parse().unwrap())
+                Value::Num(
+                    core::str::from_utf8(&self.b[start..self.at])
+                        .unwrap()
+                        .parse()
+                        .unwrap(),
+                )
             }
         }
     }
@@ -232,7 +258,11 @@ impl Parser<'_> {
 
 fn vectors() -> Value {
     let text = include_str!("../../../../../../sdk/vectors/settings-vectors.json");
-    Parser { b: text.as_bytes(), at: 0 }.value()
+    Parser {
+        b: text.as_bytes(),
+        at: 0,
+    }
+    .value()
 }
 
 // ---- the shared vectors ---------------------------------------------------------------------------------------------------
@@ -261,15 +291,26 @@ fn valid_vectors_decode_and_encode_back() {
             .as_array()
             .unwrap()
             .iter()
-            .map(|e| (e[0].as_str().unwrap().as_bytes().to_vec(), hex(e[1].as_str().unwrap())))
+            .map(|e| {
+                (
+                    e[0].as_str().unwrap().as_bytes().to_vec(),
+                    hex(e[1].as_str().unwrap()),
+                )
+            })
             .collect();
         // the bytes as they are, and as a copy on the card (zero after them)
         let (seq, u) = check(&bytes).unwrap_or_else(|| panic!("{name}: refused"));
         assert_eq!(why(&bytes), "ok", "{name}");
-        assert_eq!((seq as u64, u as u64), (c["seq"].as_u64().unwrap(), c["used"].as_u64().unwrap()), "{name}");
+        assert_eq!(
+            (seq as u64, u as u64),
+            (c["seq"].as_u64().unwrap(), c["used"].as_u64().unwrap()),
+            "{name}"
+        );
         let a = area_of(&bytes);
         assert_eq!(check(&a.0), Some((seq, u)), "{name}: padded");
-        let got: Vec<(Vec<u8>, Vec<u8>)> = iter(&a.0, u).map(|(k, v)| (k.to_vec(), v.to_vec())).collect();
+        let got: Vec<(Vec<u8>, Vec<u8>)> = iter(&a.0, u)
+            .map(|(k, v)| (k.to_vec(), v.to_vec()))
+            .collect();
         assert_eq!(got, want, "{name}");
         // the encoder gives the record's own bytes
         let mut e = new_record(0);
@@ -345,7 +386,10 @@ fn key_and_value_bounds() {
     assert_eq!(put(&mut a.0, b"has space", b"x"), Err(E_SET_KEY));
     assert_eq!(put(&mut a.0, b"tab\t", b"x"), Err(E_SET_KEY));
     assert_eq!(put(&mut a.0, &[b'a', 0xe4], b"x"), Err(E_SET_KEY));
-    assert_eq!(put(&mut a.0, b"v", &std::vec![0u8; VALUE_MAX + 1]), Err(E_SET_VALUE));
+    assert_eq!(
+        put(&mut a.0, b"v", &std::vec![0u8; VALUE_MAX + 1]),
+        Err(E_SET_VALUE)
+    );
     assert_eq!(put(&mut a.0, b"v", &std::vec![9u8; VALUE_MAX]), Ok(true));
     let mut out = [0u8; 8];
     assert_eq!(get(&a.0, b"", &mut out), E_SET_KEY);
@@ -372,7 +416,11 @@ fn a_full_area_is_refused_and_left_as_it_was() {
     // 8192 bytes: 18 of header and 1 + 4 + 2 + 1024 for each entry: 7 fit
     assert_eq!(n, 7);
     let before = a.0[..used(&a.0)].to_vec();
-    assert_eq!(put(&mut a.0, b"another", b"x" ), Ok(true), "a small entry still fits in the rest");
+    assert_eq!(
+        put(&mut a.0, b"another", b"x"),
+        Ok(true),
+        "a small entry still fits in the rest"
+    );
     assert_eq!(remove(&mut a.0, b"another"), Ok(true));
     assert_eq!(&a.0[..used(&a.0)], &before[..]);
     // a replacement that would not fit is refused, the old value stays
@@ -385,7 +433,10 @@ fn a_full_area_is_refused_and_left_as_it_was() {
     let used0 = used(&a2.0);
     let room = AREA - used0;
     assert!(room < 1024);
-    assert_eq!(put(&mut a2.0, b"s", &std::vec![2u8; 1 + room + 1]), Err(E_SET_FULL));
+    assert_eq!(
+        put(&mut a2.0, b"s", &std::vec![2u8; 1 + room + 1]),
+        Err(E_SET_FULL)
+    );
     assert_eq!(used(&a2.0), used0);
     let mut out = [0u8; 4];
     assert_eq!(get(&a2.0, b"s", &mut out), 1);
@@ -428,7 +479,10 @@ fn no_record_is_an_empty_one() {
     fresh();
     let (r, a) = load_now();
     let r = r.unwrap();
-    assert_eq!((r.copy, r.seq, r.used, r.damaged), (NONE, 0, HEADER as u32, 0));
+    assert_eq!(
+        (r.copy, r.seq, r.used, r.damaged),
+        (NONE, 0, HEADER as u32, 0)
+    );
     assert_eq!(used(&a.0), HEADER);
     assert_eq!(entries(&a).len(), 0);
 }
@@ -445,10 +499,17 @@ fn the_higher_seq_wins_and_a_equal_pair_takes_a() {
     assert_eq!(entries(&a), std::vec![(b"k".to_vec(), b"b5".to_vec())]);
     write_copy(0, 6, b"k", b"a6");
     let (r, a) = load_now();
-    assert_eq!((r.unwrap().copy, entries(&a)[0].1.clone()), (0, b"a6".to_vec()));
+    assert_eq!(
+        (r.unwrap().copy, entries(&a)[0].1.clone()),
+        (0, b"a6".to_vec())
+    );
     write_copy(1, 6, b"k", b"b6");
     let (r, a) = load_now();
-    assert_eq!((r.unwrap().copy, entries(&a)[0].1.clone()), (0, b"a6".to_vec()), "equal: A");
+    assert_eq!(
+        (r.unwrap().copy, entries(&a)[0].1.clone()),
+        (0, b"a6".to_vec()),
+        "equal: A"
+    );
 }
 
 #[test]
@@ -516,6 +577,63 @@ fn a_power_cut_in_a_write_leaves_the_current_copy() {
     assert_eq!(unsafe { write(&IO, &LAY, 1, &b.0) }, OK);
     let (r, a) = load_now();
     assert_eq!((r.unwrap().copy, entries(&a)[0].1[0]), (1, 2));
+}
+
+#[test]
+fn a_module_key_is_its_name_a_slash_and_the_key() {
+    let mut out = [0u8; KEY_MAX];
+    let n = module_key(b"test/m", b"volume", &mut out).unwrap();
+    assert_eq!(&out[..n], b"test/m/volume");
+    let n = module_key(b"test/m", b"a.b-c", &mut out).unwrap();
+    assert_eq!(&out[..n], b"test/m/a.b-c");
+    // the longest key that fits: 47 characters in all
+    let key = [b'k'; KEY_MAX - 7];
+    assert_eq!(module_key(b"test/m", &key, &mut out), Some(KEY_MAX));
+}
+
+#[test]
+fn a_module_key_that_would_leave_its_prefix_or_break_the_rules_is_refused() {
+    let mut out = [0u8; KEY_MAX];
+    assert_eq!(module_key(b"test/m", b"", &mut out), None, "empty key");
+    assert_eq!(module_key(b"", b"k", &mut out), None, "empty module name");
+    assert_eq!(
+        module_key(b"test/m", b"/other/k", &mut out),
+        None,
+        "leading slash"
+    );
+    assert_eq!(
+        module_key(b"test", b"m/x", &mut out),
+        None,
+        "slash inside: would collide with test/m + x"
+    );
+    assert_eq!(module_key(b"test/m", b"../other/k", &mut out), None, "..");
+    assert_eq!(
+        module_key(b"test/m", b"a/../b", &mut out),
+        None,
+        ".. inside"
+    );
+    assert_eq!(
+        module_key(b"test/m", b"a..", &mut out),
+        None,
+        ".. at the end"
+    );
+    assert_eq!(module_key(b"test/m", b"has space", &mut out), None, "space");
+    assert_eq!(
+        module_key(b"test/m", b"tab\t", &mut out),
+        None,
+        "control byte"
+    );
+    assert_eq!(
+        module_key(b"test/m", b"caf\xc3\xa9", &mut out),
+        None,
+        "not ASCII"
+    );
+    let key = [b'k'; KEY_MAX - 6];
+    assert_eq!(
+        module_key(b"test/m", &key, &mut out),
+        None,
+        "48 characters in all"
+    );
 }
 
 #[test]

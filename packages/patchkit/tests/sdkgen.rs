@@ -19,8 +19,8 @@ fn the_fx_chain_cap_is_the_registrys() {
         .find(|c| c.name == "DK_FX_MAX")
         .unwrap()
         .value;
-    let man =
-        std::fs::read_to_string(root().join("modules/core/adapters/fx/module.toml")).unwrap_or_default();
+    let man = std::fs::read_to_string(root().join("modules/core/adapters/fx/module.toml"))
+        .unwrap_or_default();
     if !man.is_empty() {
         assert!(
             man.contains(&format!("max = {max}")),
@@ -33,7 +33,11 @@ fn the_fx_chain_cap_is_the_registrys() {
 fn with_api(text: &str, fields: &str) -> String {
     let a = text.find("[api]\n").unwrap();
     let b = a + text[a..].find("\n[api.types]\n").unwrap() + 1;
-    format!("{}[api]\nfields = [\n{fields}]\n\n{}", &text[..a], &text[b..])
+    format!(
+        "{}[api]\nfields = [\n{fields}]\n\n{}",
+        &text[..a],
+        &text[b..]
+    )
 }
 
 const TWO_FIELDS: &str = "    { name = \"version\", type = \"u32\", doc = \"v\" },\n    { name = \"hook\", type = \"void (u32 a, service_cmd handler)\", doc = \"h\" },\n";
@@ -65,11 +69,21 @@ fn a_bad_descriptor_layout_is_refused() {
     // text that needs padding
     let broken = text.replace("char short_name[8]", "char short_name[6]");
     assert_ne!(broken, text);
-    assert!(sdkgen::render(&broken).unwrap_err().0.contains("multiple of 4"));
+    assert!(
+        sdkgen::render(&broken)
+            .unwrap_err()
+            .0
+            .contains("multiple of 4")
+    );
     // a type that is not a base type or an earlier record
     let broken = text.replace("float min //", "double min //");
     assert_ne!(broken, text);
-    assert!(sdkgen::render(&broken).unwrap_err().0.contains("unknown type"));
+    assert!(
+        sdkgen::render(&broken)
+            .unwrap_err()
+            .0
+            .contains("unknown type")
+    );
     // a length that is not a const of [desc]
     let broken = text.replace("knob[DK_PAGE_KNOBS]", "knob[DK_NOPE]");
     assert_ne!(broken, text);
@@ -130,9 +144,13 @@ fn imports_of_other_modules_get_stubs_from_absent() {
     // the ui calls are linked by name and have the API's failure value as a stub; the table lists both addresses
     assert!(rs.contains("pub fn dk_ui_open(menu: *mut u8) -> i32;"));
     assert!(rs.contains("pub unsafe extern \"C\" fn dk_ui_open(_a0: *mut u8) -> i32 { -1 as _ }"));
-    assert!(rs.contains("pub unsafe extern \"C\" fn dk_ui_menu_new(_a0: *const u8) -> *mut u8 { 0 as _ }"));
+    assert!(rs.contains(
+        "pub unsafe extern \"C\" fn dk_ui_menu_new(_a0: *const u8) -> *mut u8 { 0 as _ }"
+    ));
     assert!(rs.contains("pub unsafe extern \"C\" fn dk_ui_close(_a0: *mut u8) { }"));
-    assert!(rs.contains("(\"dk_ui_has\", core::hint::black_box(dk_ui_has as usize), absent::dk_ui_has as usize),"));
+    assert!(rs.contains(
+        "(\"dk_ui_has\", core::hint::black_box(dk_ui_has as usize), absent::dk_ui_has as usize),"
+    ));
     // core/input has no stub: the import is not found without the module
     assert!(rs.contains("(\"input_key\", core::hint::black_box(input_key as usize), 0),"));
     // the runtime's own table is the imports without `requires`

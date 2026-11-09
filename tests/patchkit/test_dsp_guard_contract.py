@@ -23,10 +23,6 @@ MODULE = "test/dyn-guard-nan"
 FIX = (
     pk_conform.ROOT / "tests" / "fixtures" / "modules" / "dyn-guard-nan" / "src" / "dsp"
 )
-KNOB = {
-    "dt2": 1,
-    "dn2": 0,
-}  # the knob position of the first module parameter (ADM_PARAM_SLOT0)
 
 
 def rig(device: str, fixture: str = "nan", prefix: str = "gn") -> MachineRig:
@@ -77,7 +73,8 @@ def test_the_type_is_disabled_after_eight_faults(device):
 @pytest.mark.parametrize("device", ["dt2", "dn2"])
 def test_a_parameter_beyond_the_range_is_clamped_before_the_module(device):
     r = rig(device, "clamp", "cp")
-    r.hw(r.spec.frame.hw(r.track if device == "dt2" else r.voice, KNOB[device]), 0xFFFF)
+    knob = next(p.knob for p in r.spec.params if p.id == "nan_a")
+    r.hw(r.spec.frame.hw(r.track if device == "dt2" else r.voice, knob), 0xFFFF)
     b = note(r)
     assert b.faults == 0
     assert all(
@@ -88,12 +85,51 @@ def test_a_parameter_beyond_the_range_is_clamped_before_the_module(device):
 @pytest.mark.parametrize("device", ["dt2", "dn2"])
 def test_a_declared_wider_range_lets_it_through_to_the_guard(device):
     r = rig(device, "clamp", "cp")
-    r.sess.poke(nw(dv.TABLE) + 2 + KNOB[device], 0xFFFF << 16)
-    r.hw(r.spec.frame.hw(r.track if device == "dt2" else r.voice, KNOB[device]), 0xFFFF)
+    knob = next(p.knob for p in r.spec.params if p.id == "nan_a")
+    r.sess.poke(nw(dv.TABLE) + 2 + knob, 0xFFFF << 16)
+    r.hw(r.spec.frame.hw(r.track if device == "dt2" else r.voice, knob), 0xFFFF)
     b = note(r)
     assert b.faults == 1  # 0xffff * 2^-12 = 16.0 is above the bound of 8.0
     assert all(x == 0.0 for x in b.samples)
     assert math.isfinite(sum(b.samples))
+
+
+@pytest.mark.parametrize("device", ["dt2", "dn2"])
+def test_latched_word_uses_actual_note_on_clamp_and_retrigger(device):
+    r = rig(device, "clamp", "cp")
+    r.sess.poke(nw(dv.TABLE) + 22, 1)  # latch parameter word 0
+    r.set_param("nan_a", 0x1000)
+    r.trigger()
+    if device == "dn2":
+        edge = r.block("friendly")
+        assert all(x == 0 for x in edge.samples)
+        # The effective trigger value arrives after the silent edge, as it may
+        # for a p-lock. Snapshot at the actual callback, not the raw edge.
+        r.set_param("nan_a", 0xFFFF)
+    b = r.block("friendly")
+    expected = 0x7F00 if device == "dn2" else 0x1000
+    assert b.returned and not b.context_bad and b.faults == 0
+    assert all(x == expected * 2.0**-12 for x in b.samples)
+    r.set_param("nan_a", 0x2000)
+    assert all(x == expected * 2.0**-12 for x in r.block("friendly").samples)
+    assert all(x == 2 for x in note(r).samples)
+
+
+@pytest.mark.parametrize("device", ["dt2", "dn2"])
+def test_latched_word_is_private_to_physical_voice_slot(device):
+    r = rig(device, "clamp", "cp")
+    r.sess.poke(nw(dv.TABLE) + 22, 1)
+    for slot, value in [(3, 0x1000), (5, 0x2000)]:
+        r.select(slot)
+        if device == "dn2":
+            r.set_owner(7)  # overlap from the same source track, distinct slots
+        r.set_param("nan_a", value)
+        assert all(x == value * 2.0**-12 for x in note(r).samples)
+    r.use(3)
+    r.set_param("nan_a", 0x3000)
+    assert all(x == 1 for x in r.block("friendly").samples)
+    r.use(5)
+    assert all(x == 2 for x in r.block("friendly").samples)
 
 
 def observed(r: MachineRig, name: str) -> int:

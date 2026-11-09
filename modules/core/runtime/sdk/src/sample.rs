@@ -10,7 +10,10 @@ pub const MAX_FILE_BYTES: usize = HEADER_BYTES + MAX_FRAMES * 2 + TRAILER_BYTES;
 pub const RATE: u32 = 48_000;
 
 fn be32(bytes: &[u8], at: usize) -> u32 {
-    ((bytes[at] as u32) << 24) | ((bytes[at + 1] as u32) << 16) | ((bytes[at + 2] as u32) << 8) | bytes[at + 3] as u32
+    ((bytes[at] as u32) << 24)
+        | ((bytes[at + 1] as u32) << 16)
+        | ((bytes[at + 2] as u32) << 8)
+        | bytes[at + 3] as u32
 }
 
 /// Validate the complete canonical native file, rejecting empty/stereo/non-48 kHz
@@ -108,10 +111,15 @@ mod tests {
     #[test]
     fn sample_decode_every_pcm16_value_matches_independent_float_reference() {
         for start in (i16::MIN as i32..=i16::MAX as i32).step_by(MAX_FRAMES) {
-            let pcm: Vec<i16> = (start..start + MAX_FRAMES as i32).map(|n| n as i16).collect();
+            let pcm: Vec<i16> = (start..start + MAX_FRAMES as i32)
+                .map(|n| n as i16)
+                .collect();
             let mut out = vec![0; MAX_FRAMES + 1];
             out[MAX_FRAMES] = 0xdeadbeef;
-            assert_eq!(decode_native(&native(&pcm), &mut out), Ok(MAX_FRAMES as u32));
+            assert_eq!(
+                decode_native(&native(&pcm), &mut out),
+                Ok(MAX_FRAMES as u32)
+            );
             for (value, bits) in pcm.iter().zip(&out) {
                 assert_eq!(*bits, (*value as f32 / 32768.0).to_bits(), "{value}");
             }
@@ -133,14 +141,27 @@ mod tests {
         assert_eq!(native_header(&m, m.len() as u32), Ok((10, 1)));
         let s = file(1, 20);
         assert_eq!(native_header(&s, s.len() as u32), Ok((5, 2)));
-        assert_eq!(native_header(&s[..HEADER_BYTES], s.len() as u32), Ok((5, 2)));
+        assert_eq!(
+            native_header(&s[..HEADER_BYTES], s.len() as u32),
+            Ok((5, 2))
+        );
         // larger than the 8192-frame bank limit is fine here
         let big = file(1, 4 * 100_000);
-        assert_eq!(native_header(&big[..HEADER_BYTES], big.len() as u32), Ok((100_000, 2)));
-        assert_eq!(native_header(&s, s.len() as u32 + 1), Ok((5, 2)), "extra bytes after the trailer");
+        assert_eq!(
+            native_header(&big[..HEADER_BYTES], big.len() as u32),
+            Ok((100_000, 2))
+        );
+        assert_eq!(
+            native_header(&s, s.len() as u32 + 1),
+            Ok((5, 2)),
+            "extra bytes after the trailer"
+        );
         assert_eq!(native_header(&s, 64 + 20), Ok((5, 2)), "no trailer");
         assert!(native_header(&s, 64 + 20 - 1).is_err(), "pcm cut short");
-        assert!(native_header(&file(1, 18), 64 + 18 + 16).is_err(), "a partial stereo frame");
+        assert!(
+            native_header(&file(1, 18), 64 + 18 + 16).is_err(),
+            "a partial stereo frame"
+        );
         assert!(native_header(&file(2, 20), 100).is_err(), "channels");
         assert!(native_header(&file(0, 0), 80).is_err(), "empty");
         for at in [0usize, 2, 3, 12, 0x13, 0x14, 63] {

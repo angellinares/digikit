@@ -213,6 +213,8 @@ def artifact_run(
         "state": hashlib.sha256(state.read_bytes()).hexdigest(),
         "icount": icount,
         "dsp_cpu": sc["cpu"]["dsp_thread_per_audio_s"],
+        "dsp_cycles": sc["cpu"].get("dsp_thread_cycles_per_audio_s"),
+        "dsp_insns": sc["cpu"].get("dsp_thread_insns_per_audio_s"),
         "audio_s": duration,
         "tiers": sc["dsp_instructions"],
         "cf_cpu": sc["cpu"]["cf_thread_per_audio_s"],

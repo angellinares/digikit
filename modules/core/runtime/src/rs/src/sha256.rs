@@ -1,4 +1,4 @@
-//! SHA-256 (FIPS 180-4), streaming, 32-bit lengths only (a store file is at most 4 GiB - 1).
+//! SHA-256 (FIPS 180-4), streaming, 32-bit lengths only. The runtime uses it for one thing: the `.dkm` file's own header check (`loader.rs`).
 
 const K: [u32; 64] = [
     0x428a2f98, 0x71374491, 0xb5c0fbcf, 0xe9b5dba5, 0x3956c25b, 0x59f111f1, 0x923f82a4, 0xab1c5ed5,
@@ -74,7 +74,10 @@ impl Sha {
         } else {
             while i < 16 {
                 let q = p.add(i * 4);
-                w[i] = ((*q as u32) << 24) | ((*q.add(1) as u32) << 16) | ((*q.add(2) as u32) << 8) | (*q.add(3) as u32);
+                w[i] = ((*q as u32) << 24)
+                    | ((*q.add(1) as u32) << 16)
+                    | ((*q.add(2) as u32) << 8)
+                    | (*q.add(3) as u32);
                 i += 1;
             }
         }
@@ -212,11 +215,4 @@ impl Sha {
             i += 1;
         }
     }
-}
-
-/// SHA-256 of `n` bytes at `p` into `out[32]`.
-pub unsafe fn sha256(p: *const u8, n: u32, out: *mut u8) {
-    let mut s = Sha::new();
-    s.update(p, n);
-    s.finish(out);
 }

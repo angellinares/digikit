@@ -4,13 +4,13 @@
 # sdk/include/dk/gen/machine_consts.h, fx_consts.h, machine.h, fx.h and api.h from this file (`patchkit gen --check` fails when they are stale).
 
 [runtime]           # the digikit runtime release (semantic version; packed major<<16 | minor<<8 | patch)
-version = "0.5.4"   # 0.x: MINOR may break (contract major, store format, SysEx protocol), PATCH = features and fixes
+version = "0.5.5"   # 0.x: MINOR may break (contract major, store format, SysEx protocol), PATCH = features and fixes
 
 [contract]          # [major, minor] per contract (docs/design/module-sdk.md 11.5 D3). The runtime refuses a module that declares a
                     # contract (major != 0) when its major differs from the runtime's or its minor is above the runtime's. Major 0 = not implemented.
                     # An appended Api function is a minor bump; a changed or removed one is a major bump.
-api = [1, 6]        # the ColdFire Api table (every module, `raw` included); minor 1: `log_lv` appended; minor 2: `register_cmds` appended; minor 3: sample bank API appended; minor 4: read-only listing; minor 5: stereo sample pool (per module, 16 entries); minor 6: sample_pool_path appended
-machine = [1, 2]    # minor 1: source track appended to voice_in, latched at note_on; minor 2: stereo machines (out_r appended to voice_in, DK_MACHINE_STEREO, DK_STEREO)
+api = [1, 9]        # the ColdFire Api table (every module, `raw` included); minor 9: settings_client/get/put/remove (module settings), intro_take (boot animation); minor 1: `log_lv` appended; minor 2: `register_cmds` appended; minor 3: sample bank API appended; minor 4: read-only listing; minor 5: stereo sample pool (per module, 16 entries); minor 6: sample_pool_path/param_get/param_set/sample_pool_set; minor 7: sample_pool_peaks; minor 8: job_post/job_cancel (background jobs)
+machine = [1, 5]    # minor 1: source track; 2: stereo; 3: executable parameter latches; 4: opt-in native callback page v1; 5: two replacement callback pages v2
 fx = [1, 0]         # run-time effects (sdk/include/dk/gen/fx.h, DSP section version 4 of a .dkm); 0.4.0; effect pages (register kind 4) 0.5.0
 service = [1, 0]
 
@@ -53,6 +53,15 @@ fields = [
     { name = "param_get", type = "i32 (u32 track, u32 word)", doc = "Raw value (unit * 256, as DK_PARAM min/max/default) of parameter word `word` of the calling module on `track` (0 to 15). UI task only, and only in the flow of a click: from the DK_PARAM_ACTION callback until the page gets its next key or turn (so a list the callback opened may call it), else DK_PARAM_E_STATE. `word` counts the module's DK_PARAM rows in declaration order; a word the module does not own or a track above 15 is DK_PARAM_E_ARG. The value is the one the page shows.", since = 6 },
     { name = "param_set", type = "i32 (u32 track, u32 word, i32 raw)", doc = "Set parameter word `word` of the calling module on `track` to `raw` (unit * 256) with the stock setter of a knob turn: clamped to the row range, stored in the sound, observers notified. UI task only, in the same click flow as param_get. Returns 0, DK_PARAM_E_STATE (outside the flow), DK_PARAM_E_ARG (word or track) or DK_PARAM_E_HELD (a mode key such as TRIG or FUNC is held: nothing is written, so a click never records a p-lock).", since = 6 },
     { name = "sample_pool_set", type = "i32 (u32 handle, u32 index, const u8 *path)", doc = "Load a sample file into pool entry `index` (0..15), replacing what was there: the old file is released, the new one queues like sample_pool_add (copies the path, no file IO here). Other indexes never move. A file already held by another entry is shared, not loaded twice. Returns 0; DK_SAMPLE_E_CONTRACT for an index above 15 or no sample backing in the image; DK_SAMPLE_E_SEL_PATH for an empty or too long path.", since = 6 },
+    { name = "sample_pool_peaks", type = "i32 (u32 handle, u32 index, u32 token, u8 *out, u32 capacity)", doc = "Copy bounded PCM16 min/max overview pairs of a READY pool entry matching token. Returns bin count (1..512), negative error otherwise; capacity is bytes, output unchanged on refusal. Each bin spans ceil(frames/512) frames, combines channels and includes zero. No file IO or PCM scan. UI task only. See dk/sample_track.h.", since = 7 },
+    { name = "job_post", type = "i32 (job_step step, job_done done, u8 *ctx)", doc = "Run `step(ctx)` on the background worker until it returns 0 or a negative error (DK_JOB_MORE: call again; <dk/job.h>). `done(ctx, status)` is called once in the UI task with the final status, or DK_JOB_E_CANCELLED. Returns a job id > 0, or a negative error (E_BUSY when 8 jobs are queued, E_CONTRACT for a null step).", since = 8 },
+    { name = "job_cancel", type = "i32 (u32 id)", doc = "Cancel a job of this module: a queued job never runs and a running one stops after its current step; `done` gets DK_JOB_E_CANCELLED. Returns 0, or E_NOT_FOUND for an unknown id.", since = 8 },
+    { name = "sample_pool_peaks_window", type = "i32 (u32 handle, u32 index, u32 token, u32 first, u32 frames, u32 columns, u8 *out, u32 capacity)", doc = "Min/max of `columns` equal parts of the frames [first, first + frames) of a READY pool entry matching token, computed in the background. Returns `columns` when ready (out holds int16 min, max pairs; capacity is bytes, at least columns * 4; columns is 1..DK_SAMPLE_WINDOW_MAX), 0 while it is computed, or a negative error. Another request replaces a pending one. Poll from the draw callback. UI task only. See dk/sample_track.h.", since = 8 },
+    { name = "settings_client", type = "i32 ()", doc = "Init-only: acquire this module's settings handle; positive handle, or a negative error outside `dkm_init`. The same module always gets the same handle.", since = 9 },
+    { name = "settings_get", type = "i32 (u32 client, const char *key, void *out, u32 cap)", doc = "Read the value of `key` (NUL-terminated, own key space) into `out` (`cap` bytes): returns its length (0 is valid), E_SET_NOKEY when there is none, E_SET_VALUE when `cap` is too small (nothing is written), E_SET_KEY for a stale handle or a bad key, E_SET_OFF when the settings store is off. In `dkm_init` and in the UI task.", since = 9 },
+    { name = "settings_put", type = "i32 (u32 client, const char *key, const void *value, u32 len)", doc = "Set `key` to the `len` bytes (0 to 1024) at `value`; the card is written 2 s after the last change. Returns 0, E_SET_KEY (stale handle or bad key), E_SET_VALUE, E_SET_FULL or E_SET_OFF. The runtime stores the key as `<module name>/<key>`; the module name and the key together are at most 47 characters. UI task only, not a service command handler.", since = 9 },
+    { name = "settings_remove", type = "i32 (u32 client, const char *key)", doc = "Remove `key`: returns 0 (also when it was not there), E_SET_KEY (stale handle or bad key) or E_SET_OFF. UI task only, not a service command handler.", since = 9 },
+    { name = "intro_take", type = "i32 (intro_frame frame, intro_done done, void *ctx, u32 ticks)", doc = "Init-only: replace the stock boot animation. `frame(tick, ctx)` returns the 1024-byte native bitmap of tick 0 .. ticks-1 (30 ticks a second), or NULL to end the animation (the last frame stays); it runs on the intro task, must not block and must not call any dk_api function. `done(ctx)` (may be NULL) runs once in the UI task at the first UI pass: free the buffer there. `ticks` is 1 to 300. Returns 0, E_NOT_FOUND outside `dkm_init`, E_CONTRACT (no frame, bad ticks), E_BUSY (taken already) or E_BOOT_ONLY (the intro is over). See dk/intro.h.", since = 9 },
 ]
 
 # Function types by name. As a parameter or field a name is a nullable pointer to the function (`Option<ServiceCmd>` in Rust, `dk_service_cmd *` in C).
@@ -62,6 +71,15 @@ fields = [
 # negative status (a `proto::E_*` code or its own: sent as the reply's status with no body).
 service_cmd = "i32 (u32 cmd, u32 seq, const u8 *body, u32 len, u8 *out)"
 file_event = "void (u32 client, u32 request, i32 state, u8 *context)"
+# A background job step (`Api.job_post`). It runs in the worker task: it computes on its own memory and calls no dk_api function.
+# Returns DK_JOB_MORE (1) to be called again, 0 when finished, or a negative error.
+job_step = "i32 (u8 *ctx)"
+# The end of a background job, in the UI task, once. `status` is the last step's result, or DK_JOB_E_CANCELLED.
+job_done = "void (u8 *ctx, i32 status)"
+# One frame of a boot animation (`Api.intro_take`), on the intro task: the 1024-byte native bitmap of `tick`, or NULL to end the animation. No dk_api calls.
+intro_frame = "const u8 *(u32 tick, void *ctx)"
+# The end of a boot animation, in the UI task, once, at the first UI pass.
+intro_done = "void (void *ctx)"
 
 # The machine contract's numbers (sdk/include/dk/gen/machine.h is the generated C view; it includes the generated sdk/include/dk/gen/machine_consts.h).
 # `patchkit gen` writes sdk/asm/dk_machine.inc and sdk/include/dk/gen/machine_consts.h from this table: the constants, then the byte and word offsets of the fields (all 4 bytes).
@@ -119,7 +137,7 @@ desc = [
 ]
 fns = [
     "i32 note_on(void *state, const dk_voice_in *in, const i32 *params) // At note-on, after `state_clear_bytes` are zeroed; no sound. params: DK_MAX_PARAMS words. Returns 0, or a negative number (a fault). Entered with I13 = return address (R4 state, R8 in, R12 params; result R0).",
-    "i32 render(void *state, const dk_voice_in *in, const i32 *params) // Once per block while the voice runs, including the note-on block after note_on. Writes DK_BLOCK floats to in->out. params: DK_MAX_PARAMS words. Returns dk_status.",
+    "i32 render(void *state, const dk_voice_in *in, const i32 *params) // Once per block while the voice runs, including the note-on block after note_on. Writes DK_BLOCK floats to in->out. params: DK_MAX_PARAMS words; DK_PARAM_LATCHED words retain the effective clamped note_on value, all other words are live. Returns dk_status.",
 ]
 
 # The FX contract's numbers (sdk/include/dk/gen/fx.h is the generated C view; it includes the generated sdk/include/dk/gen/fx_consts.h).
@@ -186,6 +204,9 @@ consts = [
     { name = "DK_DESC_FX_PARAM", value = 5, doc = "Record kind of dk_desc_fx_param." },
     { name = "DK_DESC_PARAM_ACTION", value = 8, doc = "Record kind of dk_desc_param_action." },
     { name = "DK_DESC_PARAM_GLYPH", value = 9, doc = "Record kind of dk_desc_param_glyph." },
+    { name = "DK_DESC_PARAM_LATCHED", value = 10, doc = "Record kind of dk_desc_param_latched (machine contract 1.3)." },
+    { name = "DK_DESC_NATIVE_PAGE", value = 11, doc = "Record kind of dk_desc_native_page (machine contract 1.4)." },
+    { name = "DK_DESC_NATIVE_PAGE_V2", value = 12, doc = "Record kind of dk_desc_native_page_v2 (machine contract 1.5)." },
     { name = "DK_GLYPH_ENCODER", value = 0, doc = "Glyph (the dk_glyph values): a plain encoder knob, values 0 .. 127 (the default)." },
     { name = "DK_GLYPH_FADER", value = 1, doc = "Glyph: a fader, values 0 .. 127." },
     { name = "DK_GLYPH_PAN", value = 2, doc = "Glyph: a pan knob, values 0 .. 127 (centre 64, shows L/R)." },
@@ -315,6 +336,17 @@ fields = [
 ]
 
 [[desc.record]]
+name = "dk_desc_param_latched"
+kind = "DK_DESC_PARAM_LATCHED"
+doc = "Snapshot one machine parameter at actual note_on, after effective values and clamping. Render sees that value until the next note_on; undeclared words remain live. At most one declaration per parameter. Requires machine contract 1.3."
+fields = [
+    "u32 kind // DK_DESC_PARAM_LATCHED",
+    "u32 size // sizeof(dk_desc_param_latched)",
+    "char owner[16] // the declared machine id",
+    "u32 word // the declared machine parameter word, 0 .. 7",
+]
+
+[[desc.record]]
 name = "dk_desc_page_knob"
 doc = "One encoder of a page. An unused entry is all zero."
 fields = [
@@ -334,6 +366,47 @@ fields = [
     "char name[24] // 1 to 23 characters; for an effect, 1 to 3: the tab of the FX page",
     "char title[24] // 1 to 23 characters, the page title",
     "dk_desc_page_knob knob[DK_PAGE_KNOBS] // the encoders, from entry 0, without gaps",
+]
+
+[[desc.record]]
+name = "dk_desc_native_binding"
+doc = "One encoder of an opt-in native page: kind 1 PARAM names an existing parameter word; kind 2 LOCAL names a UI-local control id; kind 0 is unused."
+fields = [
+    "u32 kind // 0 unused, 1 PARAM, 2 LOCAL",
+    "u32 value // parameter word or local control id",
+    "u32 position // encoder 0 .. 7",
+]
+
+[[desc.record]]
+name = "dk_desc_native_page"
+kind = "DK_DESC_NATIVE_PAGE"
+doc = "One additional native page, after a machine's ordinary page zero. Version 1 has a bounded draw callback and an event callback for LOCAL controls only; PARAM controls use the native parameter edit path."
+fields = [
+    "u32 kind // DK_DESC_NATIVE_PAGE",
+    "u32 size // sizeof(dk_desc_native_page)",
+    "u32 version // 1",
+    "char owner[16] // declared machine id",
+    "char title[24] // 1 to 23 printable characters",
+    "char draw[32] // ColdFire draw callback symbol",
+    "char event[32] // ColdFire LOCAL event callback symbol",
+    "dk_desc_native_binding binding[DK_PAGE_KNOBS] // contiguous used entries, unique positions",
+]
+
+[[desc.record]]
+name = "dk_desc_native_page_v2"
+kind = "DK_DESC_NATIVE_PAGE_V2"
+doc = "One of exactly two replacement native pages, indexes zero and one, of a machine. Uses the shared callback frame/event v1 ABI; cannot mix with append-only native page v1."
+fields = [
+    "u32 kind // DK_DESC_NATIVE_PAGE_V2",
+    "u32 size // sizeof(dk_desc_native_page_v2)",
+    "u32 version // 2",
+    "char owner[16] // declared machine id",
+    "char title[24] // 1 to 23 printable characters",
+    "char draw[32] // ColdFire draw callback symbol",
+    "char event[32] // ColdFire LOCAL event callback symbol",
+    "u32 page // replacement page index 0 or 1; both are required",
+    "u32 flags // 0, DK_PAGE_STOCK_OVERLAY (1, page zero only) or DK_PAGE_WIDE_CANVAS (2, page one only, 107x53 canvas); the two flags are mutually exclusive",
+    "dk_desc_native_binding binding[DK_PAGE_KNOBS] // contiguous used entries, unique positions",
 ]
 
 # The names a module may import. The runtime's table (modules/core/runtime/src/rs/src/lib.rs `IMPORTS`) holds those without `requires`, in this
@@ -869,7 +942,7 @@ E_FULL = { code = -52, text = "not enough free sectors in the store" }
 E_STATE = { code = -53, text = "no upload open (or not in this state)" }
 E_OFFSET = { code = -54, text = "offset is neither the next byte nor a retry" }
 E_LENGTH = { code = -55, text = "bad chunk length, or the file would pass its size" }
-E_HASH = { code = -56, text = "the staged file does not match the sha256 of BEGIN" }
+E_HASH = { code = -56, text = "the staged file does not match the file hash of BEGIN" }
 E_WRITE = { code = -57, text = "the firmware's block write failed" }
 E_READ = { code = -58, text = "the firmware's block read failed" }
 E_NOFILE = { code = -59, text = "that path is not in the store" }
@@ -895,8 +968,9 @@ CAPACITY = 6
 READ = 7
 VERIFY = 8
 SERVICE_CMDS = 9    # modules register commands (Api.register_cmds)
-FOLDERS = 10        # LIST takes a prefix, MKDIR, CAPACITY kind STORE (store format 3)
+FOLDERS = 10        # LIST takes a prefix, MKDIR, CAPACITY kind STORE
 SETTINGS = 11       # the SETTINGS command (read the settings record), CAPACITY kind SETTINGS
+FILEHASH = 12       # store format 4: the 32-byte hash of BEGIN, END, LIST and VERIFY is the content hash (4 bytes, big-endian, then 28 zeros), not a SHA-256
 
 [capacity.kinds]   # the `kind` byte of a CAPACITY entry (u8 kind, u32 limit, u32 used, u32 largest); additive: a number is never reused
 MODULES = 1         # module records; used: loaded; largest: 0
@@ -965,7 +1039,7 @@ value = "u8x16"
 E_NOT_FOUND = { code = -1, text = "no store, or no such file or module" }
 E_BAD_STORE = { code = -2, text = "store header or table check failed" }
 E_READ = { code = -3, text = "the firmware's block read failed" }
-E_SHA = { code = -4, text = "store or .dkm sha256 does not match" }
+E_SHA = { code = -4, text = "store file hash or .dkm sha256 does not match" }
 E_FORMAT = { code = -5, text = "bad magic, version, bounds or alignment of the .dkm" }
 E_RUNTIME = { code = -6, text = "the module needs a newer runtime" }  # reserved
 E_IMPORT = { code = -7, text = "an import name is not in the runtime's table" }

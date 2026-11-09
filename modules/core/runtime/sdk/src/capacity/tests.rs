@@ -1,7 +1,10 @@
 //! Limits at their edges: exactly full is accepted, one more is refused with the right code.
 use super::*;
 use crate::sel;
-use crate::{E_DSP_ROWS, E_LOADED, E_PAGE_FULL, E_PARAM_FULL, E_SEL_COUNT, E_TABLE_FULL, E_TOO_BIG, E_TYPE_RANGE, OK, SEL_MAX};
+use crate::{
+    E_DSP_ROWS, E_LOADED, E_PAGE_FULL, E_PARAM_FULL, E_SEL_COUNT, E_TABLE_FULL, E_TOO_BIG,
+    E_TYPE_RANGE, OK, SEL_MAX,
+};
 
 // ---- DSP placement ----
 
@@ -162,7 +165,10 @@ fn pick_record_takes_the_first_free_record() {
 #[test]
 fn pick_record_refuses_a_name_that_is_loaded_even_after_a_free_record() {
     let used = [false, true, false, false];
-    assert_eq!(pick_record(4, |i| used[i], |i| NAMES[i] == b"b"), Err(E_LOADED));
+    assert_eq!(
+        pick_record(4, |i| used[i], |i| NAMES[i] == b"b"),
+        Err(E_LOADED)
+    );
 }
 
 #[test]
@@ -176,7 +182,10 @@ fn pick_record_takes_the_last_record_and_refuses_when_the_table_is_full() {
 
 #[test]
 fn a_loaded_name_is_reported_before_a_full_table() {
-    assert_eq!(pick_record(4, |_| true, |i| NAMES[i] == b"d"), Err(E_LOADED));
+    assert_eq!(
+        pick_record(4, |_| true, |i| NAMES[i] == b"d"),
+        Err(E_LOADED)
+    );
 }
 
 #[test]

@@ -14,6 +14,10 @@ from tools.patchkit.hook_ab import compare_aligned as scaled
 from tools.patchkit.pk_digikit_fxsend import aligned
 
 FS = 48000.0
+# Largest onset offset between two captures, in interleaved samples (128 audio frames, as in fx-live.ts). The note
+# starts later when the blocks before it cost more DSP instructions, so the offset is capture timing, not audio;
+# the bit-identical check after alignment is the real assertion. Gate runs under load gave 192 (96 frames).
+MAX_ONSET_SHIFT = 256
 AMOUNT = 40  # the send amount exercised by the acceptance captures
 
 
@@ -96,7 +100,7 @@ def analyze_pcm(
     rd = scaled(raw_pcm["dry"], raw_pcm["b"], 1.0)
     check(
         "shift B: with MIX 0 the PCM is the dry PCM bit for bit from the onset on",
-        bool(rd["identical"]) and abs(rd["shift"]) <= 128,
+        bool(rd["identical"]) and abs(rd["shift"]) <= MAX_ONSET_SHIFT,
         f"onset shift {rd['shift']}, max err {rd.get('max_abs_err')}",
     )
     ya = pcm["a"][win]
@@ -172,7 +176,7 @@ def analyze_pcm(
     ro = scaled(raw_pcm["dry"], raw_pcm["other"], 1.0)
     check(
         "other: the amount on track 2 only (silent) adds nothing to track 1: the PCM is the dry PCM bit for bit from the onset on, the shifter running on an empty bus",
-        bool(ro["identical"]) and abs(ro["shift"]) <= 128,
+        bool(ro["identical"]) and abs(ro["shift"]) <= MAX_ONSET_SHIFT,
         f"onset shift {ro['shift']}, max err {ro.get('max_abs_err')}",
     )
 

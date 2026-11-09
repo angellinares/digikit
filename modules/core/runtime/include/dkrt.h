@@ -53,6 +53,8 @@
 #define DKRT_SAFE_DSP 4
 /* DkrtBootInfo.reason: the boot before left a panic record (the runtime's Rust code panicked). */
 #define DKRT_SAFE_PANIC 5
+/* DkrtBootInfo.reason: no selection copy is valid and a copy could not be read; no modules load and the selection is not written during this boot. */
+#define DKRT_SAFE_READ 6
 /* Rows of DkrtDiag.fault_text. */
 #define DKRT_FAULT_ROWS 4
 /* Boots in a row that did not stay up for STABLE_BLOCKS after which the next one is safe mode. */
@@ -100,7 +102,7 @@
 #define DKRT_E_NOT_FOUND (-1)            /* no store, or no such file or module */
 #define DKRT_E_BAD_STORE (-2)            /* store header or table check failed */
 #define DKRT_E_READ (-3)                 /* the firmware's block read failed */
-#define DKRT_E_SHA (-4)                  /* store or .dkm sha256 does not match */
+#define DKRT_E_SHA (-4)                  /* store file hash or .dkm sha256 does not match */
 #define DKRT_E_FORMAT (-5)               /* bad magic, version, bounds or alignment of the .dkm */
 #define DKRT_E_RUNTIME (-6)              /* the module needs a newer runtime */
 #define DKRT_E_IMPORT (-7)               /* an import name is not in the runtime's table */
@@ -222,7 +224,7 @@ typedef struct DkrtStoreEntry {
     uint32_t size;
 } DkrtStoreEntry;
 
-/* A store file as dkrt_store_stat found it, for an adapter that streams it (dkrt_store_read): the first sector (relative to the store), the size in bytes and the sha256 of the table entry. The file's sectors are contiguous: sector n of the file is store sector first + n. */
+/* A store file as dkrt_store_stat found it, for an adapter that streams it (dkrt_store_read): the first sector (relative to the store), the size in bytes and the file hash slot of the table entry (the content hash, 4 bytes big-endian, then 28 zeros). The file's sectors are contiguous: sector n of the file is store sector first + n. */
 typedef struct DkrtStoreFile {
     uint32_t first;
     uint32_t size;
@@ -534,10 +536,10 @@ int32_t dkrt_store_read(const DkrtStoreFile *f, uint32_t sector, uint32_t count,
 /* The header fields of the .dkm that starts at store sector first (DkrtScan.first) into out: OK, E_FORMAT when the file is not a .dkm, or E_READ / E_NOT_FOUND when its first sector cannot be read. The runtime does the card read itself. */
 int32_t dkrt_module_header(uint32_t first, DkrtModuleHeader *out);
 
-/* The saved selection (what the next boot loads): count store paths. Always OK. */
+/* The saved selection (what the next boot loads): count store paths. OK, or E_READ without touching out when no copy is valid and a copy had a read error. */
 int32_t dkrt_selection_get(DkrtSelection *out);
 
-/* Save a selection (two copies in the card's store range); OK or an E_SEL_* code. No effect until the next boot. */
+/* Save a selection (two copies in the card's store range); OK, an E_SEL_* code, or E_READ without writes when no copy is valid and a copy had a read error. No effect until the next boot. */
 int32_t dkrt_selection_set(const DkrtSelection *sel);
 
 /* This boot: safe mode and why, the modules selected and each one's result. */
@@ -563,6 +565,12 @@ int32_t dkrt_fit(const DkrtScan *entries, uint32_t n, const uint8_t *ticked, Dkr
 
 /* Adapter to runtime: the load `req` of dkpool_load finished. result is OK (the handle `out` is filled), E_POOL, E_READ or E_FORMAT. Only from dkpool_tick. */
 void dkrt_pool_done(uint32_t req, int32_t result);
+
+/* Adapter to runtime: queue a job on the background worker (owner 0). step is the address of i32 step(u8 *ctx), run in the worker task: it returns 1 to be called again, 0 when finished, or a negative error. done is the address of void done(u8 *ctx, i32 status) (or 0), called once in the UI task with the final status, or -80 after a cancel. Returns a job id > 0, E_BUSY when the queue is full or E_CONTRACT for a null step. */
+int32_t dkrt_job_post(uintptr_t step, uintptr_t done, uint8_t *ctx);
+
+/* Adapter to runtime: cancel the job id of dkrt_job_post. A queued job gets done with -80 at the next tick; a running one stops after its current step. OK or E_NOT_FOUND. */
+int32_t dkrt_job_cancel(uint32_t id);
 
 /* Adapter to runtime: the backing was lost (a stock reset), every handle is invalid. Only from dkpool_tick. */
 void dkrt_pool_lost(void);

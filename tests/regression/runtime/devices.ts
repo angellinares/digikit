@@ -1,64 +1,74 @@
 import fs from 'node:fs';
 import path from 'node:path';
-import { repoRoot, type Device } from '@digi/test-support';
+import { cardCacheRoot, repoRoot, type Device } from '@digi/test-support';
+import { claimDir, newestFirst, pruneKeyDirs, type RunDirClaim } from './run-claim.ts';
 
 export const DEVICES = ['dt2', 'dn2'] as const;
 export const FIRMWARE = { dt2: '1.17', dn2: '1.12' } as const;
 
 const claimedRunDirs = new Map<Device, string>();
 
-function tryLock(lock: string): boolean {
-  for (let attempt = 0; attempt < 2; attempt++) {
+/** The daemon build key: the parent directory of a binary in the shared `<git dir>/emud-cache/<dev>/<key>/digi-emud` store. A custom binary has none. */
+export function daemonKey(binary: string): string | undefined {
+  const parts = path.resolve(binary).split(path.sep);
+  const at = parts.lastIndexOf('emud-cache');
+  return at >= 0 && parts.length === at + 4 ? parts[at + 2] : undefined;
+}
+
+/** Card dirs kept in the card cache (newest by mtime). */
+const CARDS_KEEP = 32;
+/** A card dir touched within this time is never evicted: another worker may have loaded it. */
+const CARDS_MIN_AGE_MS = 120 * 60_000;
+/** A work or temp dir of a card build older than this is a leftover of a killed run. */
+const WORK_MAX_AGE_MS = 60 * 60_000;
+
+/** Evict card dirs of the card cache beyond the newest CARDS_KEEP (cards are touched on reuse), and the leftovers of killed builds. */
+export function evictCards(): void {
+  const root = cardCacheRoot();
+  if (!fs.existsSync(root)) return;
+  for (const entry of newestFirst(root).slice(CARDS_KEEP))
+    if (Date.now() - entry.mtime > CARDS_MIN_AGE_MS) fs.rmSync(entry.full, { recursive: true, force: true });
+  for (const name of fs.readdirSync(root).filter((n) => n.startsWith('.work-'))) {
+    const full = path.join(root, name);
     try {
-      const fd = fs.openSync(lock, 'wx');
-      fs.writeSync(fd, String(process.pid));
-      fs.closeSync(fd);
-      return true;
-    } catch (error) {
-      if ((error as NodeJS.ErrnoException).code !== 'EEXIST') throw error;
+      if (Date.now() - fs.statSync(full).mtimeMs > WORK_MAX_AGE_MS) fs.rmSync(full, { recursive: true, force: true });
+    } catch {
+      /* removed meanwhile */
     }
-    const pid = Number.parseInt(fs.readFileSync(lock, 'utf8'), 10);
-    if (Number.isInteger(pid) && pid > 0) {
-      try {
-        process.kill(pid, 0);
-        return false;
-      } catch (error) {
-        if ((error as NodeJS.ErrnoException).code !== 'ESRCH') return false;
-      }
-    }
-    fs.rmSync(lock, { force: true });
   }
-  return false;
+}
+
+function sessionBase(device: Device): string | undefined {
+  const key = daemonKey(daemonBinary(device));
+  return key ? path.join(repoRoot(), 'dist/session-cache', key.slice(0, 12)) : undefined;
 }
 
 /** One run dir per device and vitest worker process at a time, so no two daemons share it. Dirs are reused
  * across processes (a pid lock file marks a dir as claimed), so the booted-snapshot cache stays warm: a cold
  * boot once per dir, then about 1 s. The dir count is bounded by the number of concurrent workers.
- * Keeps the newest 4 snapshot entries. */
+ * With a daemon from the shared build store the dirs sit below the daemon's build key
+ * (`dist/session-cache/<key12>/<device>-<n>`): snapshots carry no version, so a new daemon build must not
+ * load those of an older one. Keeps the newest PATCHED_KEEP snapshot entries. Used by `liveOptions` (not wiped). */
 export function cachedRunDir(device: Device): string {
   const known = claimedRunDirs.get(device);
   if (known) return known;
-  const base = path.join(repoRoot(), 'dist/session-cache');
-  fs.mkdirSync(base, { recursive: true });
-  let dir = '';
-  let lock = '';
-  for (let i = 0; ; i++) {
-    dir = path.join(base, `${device}-${i}`);
-    lock = `${dir}.lock`;
-    if (tryLock(lock)) break;
-  }
-  process.on('exit', () => fs.rmSync(lock, { force: true }));
-  claimedRunDirs.set(device, dir);
-  fs.mkdirSync(dir, { recursive: true });
-  const patched = path.join(dir, 'patched');
-  if (fs.existsSync(patched)) {
-    const entries = fs
-      .readdirSync(patched)
-      .map((name) => ({ full: path.join(patched, name), mtime: fs.statSync(path.join(patched, name)).mtimeMs }))
-      .sort((a, b) => b.mtime - a.mtime);
-    for (const entry of entries.slice(4)) fs.rmSync(entry.full, { recursive: true, force: true });
-  }
-  return dir;
+  const claim = claimDir(sessionBase(device) ?? path.join(repoRoot(), 'dist/session-cache'), device, false);
+  claimedRunDirs.set(device, claim.dir);
+  return claim.dir;
+}
+
+/**
+ * The run dir of one daemon start of a runtime fixture that wants snapshot restores: a persistent dir below the daemon's build key,
+ * wiped of everything but the daemon's caches. Release it when the session has closed (`failed`: the dir is renamed and not reused).
+ * Without a build key (a custom `DIGI_EMUD_<DEV>`) it gives undefined: the session uses a fresh temporary dir.
+ */
+export function claimRunDir(device: Device): RunDirClaim | undefined {
+  const base = sessionBase(device);
+  if (!base) return undefined;
+  const claim = claimDir(base, device, true);
+  pruneKeyDirs(path.dirname(base));
+  evictCards();
+  return claim;
 }
 
 /** The device daemon: `DIGI_EMUD_<DEV>`, else the same key in `dist/daemons.json` (written by `digi-control:daemons`). */

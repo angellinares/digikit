@@ -1,6 +1,9 @@
 from __future__ import annotations
 
+import subprocess
 from pathlib import Path
+
+import pytest
 
 from tools.devtools import emud_key
 
@@ -53,6 +56,48 @@ def test_key_ignores_file_order(tmp_path: Path) -> None:
     one = make(tmp_path)
     two = make(tmp_path, files=dict(reversed(list(one.files.items()))))
     assert emud_key.key_of(one) == emud_key.key_of(two)
+
+
+def test_mise_task_edits_preserve_key_but_rust_pin_changes_do_not(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    from tools.emulator import digi_env, native_pgo
+    from tools.patchkit import pk_emud_pgo
+
+    seed = make(tmp_path)
+    repo = tmp_path / "repo"
+    repo.mkdir()
+    subprocess.run(["git", "init", "-q", str(repo)], check=True)
+    mise = repo / "mise.toml"
+    mise.write_text(f'[tools]\nrust = "{digi_env.TOOLCHAIN}"\n')
+    source = repo / "packages/emulator/control/src/main.rs"
+    source.parent.mkdir(parents=True)
+    source.write_text("fn main() {}\n")
+    repo_files = emud_key.repo_files
+    monkeypatch.setattr(emud_key, "repo_files", lambda: repo_files(repo))
+    monkeypatch.setattr(emud_key, "rustc_version", lambda: "same rustc identity")
+    monkeypatch.setattr(
+        pk_emud_pgo, "generated_core", lambda _device: seed.gen_dirs["gen"]
+    )
+    monkeypatch.setattr(native_pgo, "current_profile", lambda _device, _gen=None: None)
+
+    before = emud_key.key_of(emud_key.inputs("dn2", {}))
+    mise.write_text(mise.read_text() + '\n[tasks.example]\nrun = "echo changed"\n')
+    assert emud_key.key_of(emud_key.inputs("dn2", {})) == before
+
+    # Distinct rustup pins can report the same rustc -vV; the pin itself still matters.
+    monkeypatch.setattr(digi_env, "TOOLCHAIN", "another-toolchain")
+    assert emud_key.key_of(emud_key.inputs("dn2", {})) != before
+
+    # Untracked Cargo sources remain covered, while a newly read mise file fails the audit.
+    inputs = make(tmp_path, files=repo_files(repo))
+    assert emud_key.audit(inputs, f"daemon: {source}\n", tmp_path / "target") == []
+    assert emud_key.audit(inputs, f"daemon: {mise}\n", tmp_path / "target") == [
+        str(mise)
+    ]
+    before = emud_key.key_of(inputs)
+    source.write_text('fn main() { println!("changed"); }\n')
+    assert emud_key.key_of(inputs) != before
 
 
 def test_parse_depfile_escapes_and_continuations() -> None:

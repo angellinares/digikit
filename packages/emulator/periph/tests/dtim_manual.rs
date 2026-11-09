@@ -187,7 +187,11 @@ fn oracle_collection_retains_requests_until_accepted_or_guest_cleared() {
     assert_eq!(bank.fired(0), 0);
     let intc = intc_with_level(VECTORS[0], 2);
     let mut sr = SrTracker::new();
-    assert!(bank.service_with(132, &intc, &mut sr, |_, _| false).0.is_empty());
+    assert!(
+        bank.service_with(132, &intc, &mut sr, |_, _| false)
+            .0
+            .is_empty()
+    );
     assert_eq!(sr.ipl(), 0);
     assert_eq!(bank.pending_vectors(), vec![VECTORS[0]]);
     assert_eq!(bank.service(132, &intc, &mut sr).0, vec![(VECTORS[0], 2)]);

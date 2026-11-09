@@ -20,7 +20,9 @@ use dt2_firmware_loader as loader;
 use std::ops::Range;
 
 /// The reply-driven route through the MidiRpc requests (the default); this file's `Sender` is the menu route.
-pub use crate::flash_rpc::{Action as RpcAction, FailCode as RpcFailCode, Failure as RpcFailure, RpcFlash};
+pub use crate::flash_rpc::{
+    Action as RpcAction, FailCode as RpcFailCode, Failure as RpcFailure, RpcFlash,
+};
 
 /// Pause between two messages (finding 75: 12 times the rate the emulated receiver keeps up with, below the 1 ms USB frame limit).
 pub const PACE_MS: u64 = 2;

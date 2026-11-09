@@ -201,7 +201,9 @@ impl Lower {
             Some((ic, iv, post)) => self.xfer_at(ic, iv, addr, post, Xfer::LoadV, w)?,
             None => self.mem_xfer_w(addr, Xfer::LoadV, w)?,
         }
-        self.xout.take().ok_or(Refuse("load produced no value".into()))
+        self.xout
+            .take()
+            .ok_or(Refuse("load produced no value".into()))
     }
 
     pub fn g_store(&mut self, addr: Val, v: Val, bytes: u8) -> LR<()> {

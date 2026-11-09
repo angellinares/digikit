@@ -1,0 +1,21 @@
+{
+  "name": "@digi/dkbs",
+  "version": "0.0.0",
+  "private": true,
+  "license": "AGPL-3.0-or-later",
+  "type": "module",
+  "exports": {
+    ".": "./src/index.ts",
+    "./player": "./src/player.ts"
+  },
+  "scripts": {
+    "typecheck": "tsc -p tsconfig.json"
+  },
+  "devDependencies": {
+    "@napi-rs/canvas": "1.1.0",
+    "@types/node": "22.15.0",
+    "typescript": "5.9.3",
+    "vite": "8.3.1",
+    "vitest": "3.2.4"
+  }
+}

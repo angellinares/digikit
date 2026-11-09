@@ -34,8 +34,12 @@ pub fn valid_tracks(record: &[u8], image: &[u8]) -> bool {
     let (records, control) = (word(8), word(12));
     let inside = |at: u32, len: u32| {
         at & 3 == 0
-            && (at as usize).checked_add(len as usize).is_some_and(|e| e <= image.len())
-            && image[at as usize..(at + len) as usize].iter().all(|x| *x == 0)
+            && (at as usize)
+                .checked_add(len as usize)
+                .is_some_and(|e| e <= image.len())
+            && image[at as usize..(at + len) as usize]
+                .iter()
+                .all(|x| *x == 0)
     };
     word(0) == 2
         && inside(records, TRACK_RECORDS_BYTES)
@@ -239,8 +243,19 @@ mod tests {
             r[i..i + 4].copy_from_slice(&v.to_le_bytes());
         }
         assert!(valid_tracks(&r, &image));
-        let set = |r: &mut [u8; 32], i: usize, v: u32| r[i..i + 4].copy_from_slice(&v.to_le_bytes());
-        for (word, value) in [(0, 1u32), (8, 4), (8, 513), (12, 770), (12, 1022), (12, 2), (16, 1), (28, 1), (8, u32::MAX - 3)] {
+        let set =
+            |r: &mut [u8; 32], i: usize, v: u32| r[i..i + 4].copy_from_slice(&v.to_le_bytes());
+        for (word, value) in [
+            (0, 1u32),
+            (8, 4),
+            (8, 513),
+            (12, 770),
+            (12, 1022),
+            (12, 2),
+            (16, 1),
+            (28, 1),
+            (8, u32::MAX - 3),
+        ] {
             let mut bad = r;
             set(&mut bad, word, value);
             assert!(!valid_tracks(&bad, &image), "word {word} = {value}");

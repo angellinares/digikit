@@ -39,7 +39,10 @@ impl PcDump {
         let spec = std::env::var("SHARC_PCDUMP").ok()?;
         let path = crate::diag::out_path("SHARC_PCDUMP_OUT", "pcdump.csv")?;
         // `{pid}` in the path becomes the process id (several emulators of one run)
-        let path = std::ffi::OsString::from(path.to_string_lossy().replace("{pid}", &std::process::id().to_string()));
+        let path = std::ffi::OsString::from(
+            path.to_string_lossy()
+                .replace("{pid}", &std::process::id().to_string()),
+        );
         let mut pcs = Vec::new();
         for item in spec.split(',').map(str::trim).filter(|s| !s.is_empty()) {
             if item == "all" {
@@ -97,7 +100,10 @@ impl PcDump {
         let _ = writeln!(out, "{h}");
         let mem = std::env::var("SHARC_PCDUMP_MEM").ok().and_then(|v| {
             let (a, n) = v.split_once(':')?;
-            Some((u32::from_str_radix(a.trim_start_matches("0x"), 16).ok()?, n.parse().ok()?))
+            Some((
+                u32::from_str_radix(a.trim_start_matches("0x"), 16).ok()?,
+                n.parse().ok()?,
+            ))
         });
         Some(Box::new(PcDump {
             mem,
@@ -113,16 +119,20 @@ impl PcDump {
     /// Dump a row for this step if PC and icount match. UREG codes: R 0, I 16,
     /// M 32, S 80, MODE2 116, ASTATX 118, ASTATY 119, STKYX 120, MODE1 114.
     pub fn hit(&mut self, s: &crate::rt::St, pc: u64, icount: u64) {
-        for (slot, n) in self
-            .deepest
-            .iter_mut()
-            .zip([s.pc_stack.n, s.loops.n, s.status_stack.n, s.call_stack.n])
+        for (slot, n) in
+            self.deepest
+                .iter_mut()
+                .zip([s.pc_stack.n, s.loops.n, s.status_stack.n, s.call_stack.n])
         {
             if n > slot.0 {
                 *slot = (n, pc);
             }
         }
-        if self.left == 0 || icount < self.lo || icount > self.hi || !(self.pcs[0] == u64::MAX || self.pcs.contains(&pc)) {
+        if self.left == 0
+            || icount < self.lo
+            || icount > self.hi
+            || !(self.pcs[0] == u64::MAX || self.pcs.contains(&pc))
+        {
             return;
         }
         self.left -= 1;

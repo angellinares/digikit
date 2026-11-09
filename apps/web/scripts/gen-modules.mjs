@@ -3,12 +3,12 @@
 // words). The bundle equals `tools/patchkit/patchkit.py bundle` (the node test compares them).
 //
 // The objects of content modules (every module but category "core") are build output, not committed: `patchkit build` makes them
-// first (it needs the m68k-elf toolchain; nothing is built when they are current) and they are read from the cache out/cache/dko/<id>/.
+// first (it needs the m68k-elf toolchain; nothing is built when they are current) and they are read from the cache out/cache/dko/<id>/<src12>/ (`patchkit build MODDIR --paths` names the files).
 // It also writes what the Transfer page ships (see shipModules): per device the prebuilt .dkm of each run-time content module
 // (public/modules/<dev>/<leaf>.dkm, the bytes `mise run module:pack-all` writes), public/modules/index.json and the sources of the
 // modules (public/modules/src/<id>/: module.toml, README.md, src/**; nothing of build/ or out/).
 //
-// The objects of `core/*` modules are committed in the module. The browser never builds: patchkit.wasm packs from the bundle.
+// The objects of `core/*` modules are committed in the module and are only read here, never rebuilt. The browser never builds: patchkit.wasm packs from the bundle.
 //
 //   node scripts/gen-modules.mjs [--out DIR]
 import { readFileSync, readdirSync, writeFileSync, mkdirSync, existsSync, statSync, rmSync } from 'node:fs';
@@ -41,12 +41,16 @@ const byParts = (a, b) => {
 
 const GALLERY = 'build/gen/gallery.json';
 
-/** `patchkit build` over the repository's module roots: builds the stale objects of content modules into the cache. */
-export function buildObjects(root = repoRoot) {
+/**
+ * `patchkit build DIR...` over the given content-module directories: builds their stale objects into the cache.
+ * Core modules are never passed: their objects are committed and read as they are (`patchkit:objects-check` finds a stale one).
+ */
+export function buildObjects(dirs, root = repoRoot) {
+  if (!dirs.length) return;
   const env = { ...process.env, PYTHONPATH: root };
   delete env.PATCHKIT_MODULES; // only the committed roots go into the bundle
   try {
-    execFileSync('python3', ['-m', 'tools.patchkit.patchkit', 'build'], {
+    execFileSync('python3', ['-m', 'tools.patchkit.patchkit', 'build', ...dirs], {
       cwd: root,
       env,
       encoding: 'utf8',
@@ -59,18 +63,28 @@ export function buildObjects(root = repoRoot) {
   }
 }
 
-/** The text of an object: in the module for `core/*`, else in the cache. */
-const objectText = (root, dir, d, o) =>
+/** `patchkit build MODDIR --paths`: the stored file of each object with sources, for the sources now (the cache entry is keyed by them). */
+function cachedPaths(root, dir) {
+  const env = { ...process.env, PYTHONPATH: root };
+  delete env.PATCHKIT_MODULES;
+  const out = execFileSync('python3', ['-m', 'tools.patchkit.patchkit', 'build', dir, '--paths'], {
+    cwd: root,
+    env,
+    encoding: 'utf8',
+    stdio: 'pipe',
+  });
+  return Object.values(JSON.parse(out))[0] ?? {};
+}
+
+/** The text of an object: in the module for `core/*`, else in the cache (`stored`: the paths of `cachedPaths`). */
+const objectText = (dir, d, o, stored) =>
   readFileSync(
-    d.module.category !== 'core' && (o.sources ?? []).length > 0
-      ? join(root, 'out', 'cache', 'dko', d.module.id, o.path)
-      : join(dir, o.path),
+    d.module.category !== 'core' && (o.sources ?? []).length > 0 ? stored[o.path] : join(dir, o.path),
     'utf8',
   );
 
 /** `{bundle}` from the committed tree under `root` plus the built objects of the content modules. */
 export function buildModuleData(root = repoRoot) {
-  buildObjects(root);
   const ports = readdirSync(join(root, 'devices', 'ports'))
     .filter((f) => f.endsWith('.toml'))
     .sort()
@@ -79,13 +93,20 @@ export function buildModuleData(root = repoRoot) {
   const manifests = ['modules', join('tests', 'fixtures', 'modules')].flatMap((r) =>
     walk(join(root, r), 'module.toml').sort(byParts),
   );
-  const modules = [];
-  for (const file of manifests) {
-    const dir = dirname(file);
+  const parsed = manifests.map((file) => {
     const text = readFileSync(file, 'utf8');
-    const d = parse(text);
+    return { dir: dirname(file), text, d: parse(text) };
+  });
+  const built = (d) => d.module.category !== 'core' && (d.object ?? []).some((o) => (o.sources ?? []).length > 0);
+  buildObjects(
+    parsed.filter((m) => built(m.d)).map((m) => m.dir),
+    root,
+  );
+  const modules = [];
+  for (const { dir, text, d } of parsed) {
     const files = {};
-    for (const o of d.object ?? []) files[o.path] = objectText(root, dir, d, o);
+    const stored = built(d) ? cachedPaths(root, dir) : {};
+    for (const o of d.object ?? []) files[o.path] = objectText(dir, d, o, stored);
     for (const r of d.registry ?? [])
       if (r.index_table) files[r.index_table] = readFileSync(join(dir, r.index_table), 'utf8');
     // `patchkit gen`: machines and parameters, for the page
@@ -184,7 +205,47 @@ export function shipModules(out, root = repoRoot) {
   return index;
 }
 
-if (process.argv[1] && resolve(process.argv[1]) === fileURLToPath(import.meta.url)) {
+const MODULE_FILES_TS = join(here, '..', 'src', 'transfer', 'module-files.generated.ts');
+
+/**
+ * The text of src/transfer/module-files.generated.ts: module id to the `[files]` table of its module.toml (the files it owns under
+ * `data/<module id>/`). Committed, because the desktop build does not run this script; `--check` fails when the file is stale.
+ */
+export function moduleFilesSource(root = repoRoot) {
+  const entries = [];
+  const manifests = ['machines', 'fx', 'tools'].flatMap((r) =>
+    walk(join(root, 'modules', r), 'module.toml').sort(byParts),
+  );
+  for (const file of manifests) {
+    const d = parse(readFileSync(file, 'utf8'));
+    if (!d.files) continue;
+    const spec = { label: d.files.label, ext: d.files.ext, preview: d.files.preview };
+    entries.push(`  ${JSON.stringify(d.module.id)}: ${JSON.stringify(spec)},`);
+  }
+  return [
+    '// Generated by apps/web/scripts/gen-modules.mjs from the [files] tables of module.toml. Do not edit.',
+    "import type { ModuleFilesSpec } from './env';",
+    '',
+    'export const MODULE_FILES: Record<string, ModuleFilesSpec> = {',
+    ...entries,
+    '};',
+    '',
+  ].join('\n');
+}
+
+if (
+  process.argv[1] &&
+  resolve(process.argv[1]) === fileURLToPath(import.meta.url) &&
+  process.argv.includes('--check')
+) {
+  const stale = !existsSync(MODULE_FILES_TS) || readFileSync(MODULE_FILES_TS, 'utf8') !== moduleFilesSource();
+  if (stale) {
+    console.error('src/transfer/module-files.generated.ts is stale: run node apps/web/scripts/gen-modules.mjs');
+    process.exit(1);
+  }
+  console.log('module-files.generated.ts is current');
+} else if (process.argv[1] && resolve(process.argv[1]) === fileURLToPath(import.meta.url)) {
+  writeFileSync(MODULE_FILES_TS, moduleFilesSource());
   const i = process.argv.indexOf('--out');
   const out = i > 0 ? resolve(process.argv[i + 1]) : join(here, '..', 'public', 'modules');
   const { bundle } = buildModuleData();

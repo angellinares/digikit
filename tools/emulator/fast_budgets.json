@@ -1,0 +1,26 @@
+{
+  "_comment": "Per device and fixture state (first-boot, reset): DSP work per audio second that tools.devtools.fast_roots check allows on the patched runtime. Interpreted instructions go up when barred generated regions run in the interpreter; block entries go up when the generated core lacks links for hot blocks. max_block_entries_per_audio_s is optional. The reset state is the guest soft reset (modules installed, Apply & Restart); DT2 has no such state. Confirm each value from runs.",
+  "dn2": {
+    "first-boot": {
+      "scenario": "trig1-hold",
+      "scenarios_file": "tests/scenarios/dn2.json",
+      "seconds": 3,
+      "max_interpreted_per_audio_s": 5000000
+    },
+    "reset": {
+      "scenario": "trig1-hold",
+      "scenarios_file": "tests/scenarios/dn2.json",
+      "seconds": 3,
+      "max_interpreted_per_audio_s": 4500000,
+      "max_block_entries_per_audio_s": 8000000
+    }
+  },
+  "dt2": {
+    "first-boot": {
+      "scenario": "dt2-sample-trig",
+      "scenarios_file": "tests/scenarios/dt2.json",
+      "seconds": 3,
+      "max_interpreted_per_audio_s": 2400000
+    }
+  }
+}

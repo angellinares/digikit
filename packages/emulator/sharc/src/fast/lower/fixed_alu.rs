@@ -4,24 +4,42 @@
 //! Flags (`flags.py _arith_flag_bits`): AC AV AN AZ from the adder, AS AI AF
 //! cleared; the logical ops set AN and AZ from the result and clear the rest.
 //!
-//! An add, subtract, increment, decrement, negate or abs that overflows (AV)
-//! leaves the kernel before the instruction: the interpreter latches the
-//! sticky AOS for it and saturates the result with MODE1.ALUSAT set
-//! (finding 103), and neither is modelled here.
+//! An add, subtract, increment, decrement or negate that overflows with
+//! ALUSAT clear wraps and runs on: the kernel collects the overflow and the
+//! glue latches AOS (`PSEUDO_AOS`). With ALUSAT set or in SIMD, and for abs,
+//! an overflow leaves the kernel before the instruction: the interpreter
+//! latches AOS and saturates (finding 103).
 
+use super::cond::ALUSAT;
 use super::*;
 use crate::fast::FlagKind;
 
 impl Lower {
+    /// Handle a possible overflow. Bit 31 of `both` is set when the add or
+    /// subtract overflows. With ALUSAT clear on PEx the result wraps and only
+    /// AOS is left to do: the kernel collects `both` for the glue. Otherwise
+    /// the kernel leaves before the instruction and the interpreter runs it.
+    #[track_caller]
+    fn alu_overflow(&mut self, both: Val) {
+        if self.mode1_cur & (ALUSAT | (1 << 21)) != 0 || self.pe_off != 0 {
+            let minus1 = self.ci(0xffff_ffff);
+            let no_overflow = self.bin(Bin::GtS, both, minus1);
+            self.guard(no_overflow);
+            return;
+        }
+        self.mode1_mask |= ALUSAT;
+        let seen = self.rd_any(PSEUDO_AOS as usize);
+        let seen = self.bin(Bin::Or, seen, both);
+        self.wr_any(PSEUDO_AOS, seen);
+    }
+
     pub fn ialu_add(&mut self, rn: u32, a: Val, b: Val) -> LR<()> {
         let r = self.bin(Bin::Add, a, b);
         // Signed overflow: both operands differ in sign from the result.
         let xa = self.bin(Bin::Xor, a, r);
         let xb = self.bin(Bin::Xor, b, r);
         let both = self.bin(Bin::And, xa, xb);
-        let minus1 = self.ci(0xffff_ffff);
-        let no_overflow = self.bin(Bin::GtS, both, minus1);
-        self.guard(no_overflow);
+        self.alu_overflow(both);
         self.wr_i(rn, r)?;
         self.pend_flag(FlagKind::Iadd, vec![a, b]);
         Ok(())
@@ -34,9 +52,7 @@ impl Lower {
         let xab = self.bin(Bin::Xor, a, b);
         let xar = self.bin(Bin::Xor, a, r);
         let both = self.bin(Bin::And, xab, xar);
-        let minus1 = self.ci(0xffff_ffff);
-        let no_overflow = self.bin(Bin::GtS, both, minus1);
-        self.guard(no_overflow);
+        self.alu_overflow(both);
         self.wr_i(rn, r)?;
         self.pend_flag(FlagKind::Isub, vec![a, b]);
         Ok(())

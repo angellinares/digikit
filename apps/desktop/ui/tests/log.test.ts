@@ -24,6 +24,7 @@ import {
   unseenErrors,
   type LogInput,
   type LogState,
+  overlayResetEntry,
 } from '../src/log-core.ts';
 
 const at = (h: number, m: number, s: number) => new Date(2026, 9, 28, h, m, s).getTime();
@@ -234,6 +235,37 @@ test('a transfer run counts the files sent and skipped', () => {
   assert.equal(ok.detail, lines.join('\n'));
   const failed = transferEntry({ what: 'Uploading', target: 'the emulator', error: 'no reply\nmore', lines: [] });
   assert.deepEqual([failed.level, failed.text], ['error', 'uploading failed: no reply']);
+  // a sample upload run: counts come from the file lines, "verified" only when every file is
+  const sent = transferEntry({
+    what: 'Uploading',
+    target: 'Emulator',
+    lines: ['a: verified', 'b: verified', 'c: verified'],
+  });
+  assert.deepEqual([sent.level, sent.text], ['info', 'uploaded 3 files on Emulator, verified']);
+  const none = transferEntry({
+    what: 'Uploading',
+    target: 'Emulator',
+    lines: ['a: not sent: the folder x could not be made'],
+  });
+  assert.deepEqual([none.level, none.text], ['error', 'uploaded 0 files on Emulator']);
+  // the error of a run that words it as "Uploading failed: ..." is not prefixed twice
+  const own = transferEntry({
+    what: 'Uploading',
+    target: 'Emulator',
+    error: 'Uploading failed: open /tst/a: the device answered status 0 (1 of 3 sent, 2 not sent)',
+    lines: ['a: failed: open /tst/a: the device answered status 0'],
+  });
+  assert.equal(own.text, 'uploading failed: open /tst/a: the device answered status 0 (1 of 3 sent, 2 not sent)');
+  // a cancelled run is an info entry with its counts and the line of each file
+  const stopped = transferEntry({
+    what: 'Uploading',
+    target: 'Emulator',
+    cancelled: true,
+    counts: '1 of 3 uploaded, 2 not sent',
+    lines: ['a: verified', 'b: cancelled while sending', 'c: not sent: cancelled'],
+  });
+  assert.deepEqual([stopped.level, stopped.text], ['info', 'uploading cancelled: 1 of 3 uploaded, 2 not sent']);
+  assert.match(stopped.detail ?? '', /b: cancelled while sending/);
 });
 
 test('a fault, a stall and a DSP halt are logged once, when they start', () => {
@@ -308,4 +340,11 @@ test('Save writes a # line for each entry and the event as JSON after the lines 
   // the JSON lines are what is left without the comments
   assert.equal(lines.filter((l) => l && !l.startsWith('#')).length, 1);
   assert.equal(saveName(at(9, 5, 0)), 'device-log-2026-10-28-0905.log');
+});
+
+test('the log says what the card reset set aside and where, or that there was nothing', () => {
+  const moved = overlayResetEntry({ overlay: '/c/overlay.bin', set_aside: '/c/overlay.bin.bad-7' });
+  assert.equal(moved.source, 'card');
+  assert.match(moved.text, /\/c\/overlay\.bin as \/c\/overlay\.bin\.bad-7/);
+  assert.match(overlayResetEntry({ overlay: '/c/overlay.bin', set_aside: null }).text, /nothing to reset/);
 });

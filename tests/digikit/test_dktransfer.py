@@ -1,6 +1,5 @@
 """tools/device/dktransfer.py without an emulator: header groups, the merged list, the install plan and the install sequence (a mock uploader)."""
 
-import hashlib
 import struct
 import tomllib
 from pathlib import Path
@@ -74,7 +73,7 @@ def row(
 ):
     return {
         "id": mid, "name": mid, "label": mid, "group": group, "test": mid.startswith("test/"),
-        "path": f"modules/{mid.split('/')[-1]}.dkm", "sha256": sha, "file_size": size, "arena": arena,
+        "path": f"modules/{mid.split('/')[-1]}.dkm", "hash": sha, "file_size": size, "arena": arena,
         "dsp": dsp, "build": build, "version": "0.1.0", "dkm": "x",
         "needs": {"file_size": size, "ARENA": arena, "DSP_AREA": dsp, "DSP_ALIGN": 8 if dsp else 0},
     }  # fmt: skip
@@ -190,7 +189,7 @@ class MockUp:
                 progress(min(len(data), at + self.chunk), len(data))
         self.data[path] = data
         self.card = [c for c in self.card if c[0] != path] + [
-            (path, len(data), hashlib.sha256(data).hexdigest())
+            (path, len(data), D.file_hash(data).hex())
         ]
 
     def verify(self, path):
@@ -198,7 +197,7 @@ class MockUp:
         got = self.data.get(path)
         if got is None:  # on the card from before: its listed hash
             return next(h for p, _, h in self.card if p == path)
-        return hashlib.sha256(got + (b"!" if self.corrupt else b"")).hexdigest()
+        return D.file_hash(got + (b"!" if self.corrupt else b"")).hex()
 
     def rm(self, path):
         self.calls.append(("rm", path))
@@ -222,7 +221,7 @@ def _two_rows(tmp_path):
     pl.write_bytes(b"P" * 600)
     sn = tmp_path / "sine.dkm"
     sn.write_bytes(b"S" * 700)
-    sha = lambda b: hashlib.sha256(b).hexdigest()  # noqa: E731
+    sha = lambda b: D.file_hash(b).hex()  # noqa: E731
     rows = [
         {**row("acme/synth", sha=sha(b"P" * 600), size=600), "dkm": str(pl)},
         {**row("test/sine", build="needs build", sha="stale", size=1), "dkm": str(sn)},
@@ -484,7 +483,7 @@ def test_upload_progress_events_are_capped_and_end_at_the_file_size(
     big = tmp_path / "big.dkm"
     big.write_bytes(b"B" * 20_000)
     row_big = {
-        **row("test/big", sha=hashlib.sha256(b"B" * 20_000).hexdigest(), size=20_000),
+        **row("test/big", sha=D.file_hash(b"B" * 20_000).hex(), size=20_000),
         "dkm": str(big),
     }
     row_big["path"] = "modules/big.dkm"

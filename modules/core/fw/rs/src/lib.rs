@@ -5,7 +5,13 @@
 
 pub mod draw {
     unsafe extern "C" {
-        /// Copies a 1 bpp Bitmap `src` onto `dst` at x, y, clipped; when `centre` is not 0, x, y is the centre of `src`. Bitmap: +4 width, +8 height, +0xc 32-bit row bands, data pointer at +0x14.
+        /// Clears the 32-bit row bands of a Bitmap to `value` (0: black); the intro's frame callbacks of the stock scene tables call it as (bitmap, 0, 1) before they draw.
+        #[link_name = "cf.draw.fn.bitmap_clear"]
+        pub fn bitmap_clear(bitmap: *mut u8, value: u32, flags: u32);
+    }
+
+    unsafe extern "C" {
+        /// Copies a 1 bpp Bitmap `src` onto `dst` at x, y, clipped; when `centre` is not 0, x, y is the centre of `src`. Bitmap: +4 width, +8 height, +0xc 32-bit row bands, +0x10 pixel pointer, +0x14 mask pointer.
         #[link_name = "cf.draw.fn.blit"]
         pub fn blit(dst: *mut u8, src: *mut u8, x: i32, y: i32, centre: u8);
     }
@@ -422,7 +428,29 @@ pub mod midi {
 }
 
 pub mod page {
+    unsafe extern "C" {
+        /// DN2 browser-selected sound from view+0x68 and the selected-sound index, as used by its draw and parameter mapper.
+        #[link_name = "cf.page.fn.native_library_sound"]
+        pub fn native_library_sound(sounds: *mut u8, index: u32) -> *mut u8;
+    }
+
+    unsafe extern "C" {
+        /// DN2 selected-sound/browser index of MultiSourcePageView (not page index); values below 0x80 select the browser sound instead of the current track sound.
+        #[link_name = "cf.page.fn.native_sound_index"]
+        pub fn native_sound_index(view: *mut u8) -> u32;
+    }
+
+    unsafe extern "C" {
+        /// DN2 track sound from the source view's sounds reference (view+0x78) and track, as used by its draw and parameter mapper.
+        #[link_name = "cf.page.fn.native_track_sound"]
+        pub fn native_track_sound(sounds: *mut u8, track: u32) -> *mut u8;
+    }
+
     // cf.page.fn.page_desc: no sig yet
+
+    // cf.page.fn.source_code: no sig yet
+
+    // cf.page.fn.source_draw: no sig yet
 
     // cf.page.fn.source_key: no sig yet
 
@@ -444,6 +472,12 @@ pub mod page {
         /// The stock list itself (rodata, three page numbers) and the stock count (the byte of `moveq 3,D1` at +1): the runtime copies them in front of its pages. The stock list (rodata 0x401e0448, pages 17, 18, 19) and the stock count.
         #[link_name = "cf.page.data.fx_view_list"]
         pub static FX_VIEW_LIST: u8;
+    }
+
+    unsafe extern "C" {
+        /// Address operand of pea at ParameterPageView generic knob draw+0xda; the operand points to the live RAM font object. Hash the code operand, not mutable RAM. Used only through bounded canvas text.
+        #[link_name = "cf.page.data.native_font_operand"]
+        pub static NATIVE_FONT_OPERAND: u8;
     }
 }
 
@@ -512,6 +546,12 @@ pub mod rtos {
         /// The firmware's default exception handler (the code every vector points at until a specific handler is installed; DT2 1.16 0x40001252, not a function of its own): `move #0x2700,sr; move.l sp,<save>; lea -16(sp),sp; movem.l d0-d1/a0-a1,(sp); movea.l <hook word>,a0; tst.l a0; beq +10; move.l <save>,-(sp); jsr (a0); ...; rte`.
         #[link_name = "cf.rtos.site.exc_hook_lit"]
         pub static EXC_HOOK_LIT: u8;
+    }
+
+    unsafe extern "C" {
+        /// The intro's current-entry pointer: {callback, frame count} in the scene table, NULL when no intro runs (DT2 0x43153a00, DN2 0x42c4cacc).
+        #[link_name = "cf.rtos.value.intro_entry"]
+        pub static INTRO_ENTRY: u8;
     }
 
     unsafe extern "C" {

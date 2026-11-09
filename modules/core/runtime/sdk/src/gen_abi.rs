@@ -48,6 +48,8 @@ pub const SAFE_FLAG: u32 = 3;
 pub const SAFE_DSP: u32 = 4;
 /// DkrtBootInfo.reason: the boot before left a panic record (the runtime's Rust code panicked).
 pub const SAFE_PANIC: u32 = 5;
+/// DkrtBootInfo.reason: no selection copy is valid and a copy could not be read; no modules load and the selection is not written during this boot.
+pub const SAFE_READ: u32 = 6;
 /// Rows of DkrtDiag.fault_text.
 pub const FAULT_ROWS: usize = 4;
 /// Boots in a row that did not stay up for STABLE_BLOCKS after which the next one is safe mode.
@@ -250,7 +252,7 @@ const _: () = assert!(offset_of!(DkrtStoreEntry, path) == 0, "DkrtStoreEntry.pat
 const _: () = assert!(offset_of!(DkrtStoreEntry, first) == 64, "DkrtStoreEntry.first");
 const _: () = assert!(offset_of!(DkrtStoreEntry, size) == 68, "DkrtStoreEntry.size");
 
-/// A store file as dkrt_store_stat found it, for an adapter that streams it (dkrt_store_read): the first sector (relative to the store), the size in bytes and the sha256 of the table entry. The file's sectors are contiguous: sector n of the file is store sector first + n.
+/// A store file as dkrt_store_stat found it, for an adapter that streams it (dkrt_store_read): the first sector (relative to the store), the size in bytes and the file hash slot of the table entry (the content hash, 4 bytes big-endian, then 28 zeros). The file's sectors are contiguous: sector n of the file is store sector first + n.
 #[repr(C)]
 pub struct DkrtStoreFile {
     pub first: u32,
@@ -581,10 +583,10 @@ pub mod sig {
     /// The header fields of the .dkm that starts at store sector first (DkrtScan.first) into out: OK, E_FORMAT when the file is not a .dkm, or E_READ / E_NOT_FOUND when its first sector cannot be read. The runtime does the card read itself.
     pub type dkrt_module_header = unsafe extern "C" fn(first: u32, out: *mut DkrtModuleHeader) -> i32;
 
-    /// The saved selection (what the next boot loads): count store paths. Always OK.
+    /// The saved selection (what the next boot loads): count store paths. OK, or E_READ without touching out when no copy is valid and a copy had a read error.
     pub type dkrt_selection_get = unsafe extern "C" fn(out: *mut DkrtSelection) -> i32;
 
-    /// Save a selection (two copies in the card's store range); OK or an E_SEL_* code. No effect until the next boot.
+    /// Save a selection (two copies in the card's store range); OK, an E_SEL_* code, or E_READ without writes when no copy is valid and a copy had a read error. No effect until the next boot.
     pub type dkrt_selection_set = unsafe extern "C" fn(sel: *const DkrtSelection) -> i32;
 
     /// This boot: safe mode and why, the modules selected and each one's result.
@@ -610,6 +612,12 @@ pub mod sig {
 
     /// Adapter to runtime: the load `req` of dkpool_load finished. result is OK (the handle `out` is filled), E_POOL, E_READ or E_FORMAT. Only from dkpool_tick.
     pub type dkrt_pool_done = unsafe extern "C" fn(req: u32, result: i32);
+
+    /// Adapter to runtime: queue a job on the background worker (owner 0). step is the address of i32 step(u8 *ctx), run in the worker task: it returns 1 to be called again, 0 when finished, or a negative error. done is the address of void done(u8 *ctx, i32 status) (or 0), called once in the UI task with the final status, or -80 after a cancel. Returns a job id > 0, E_BUSY when the queue is full or E_CONTRACT for a null step.
+    pub type dkrt_job_post = unsafe extern "C" fn(step: usize, done: usize, ctx: *mut u8) -> i32;
+
+    /// Adapter to runtime: cancel the job id of dkrt_job_post. A queued job gets done with -80 at the next tick; a running one stops after its current step. OK or E_NOT_FOUND.
+    pub type dkrt_job_cancel = unsafe extern "C" fn(id: u32) -> i32;
 
     /// Adapter to runtime: the backing was lost (a stock reset), every handle is invalid. Only from dkpool_tick.
     pub type dkrt_pool_lost = unsafe extern "C" fn();

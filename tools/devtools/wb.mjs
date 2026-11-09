@@ -6,7 +6,11 @@
 //     node tools/devtools/wb.mjs [--port SUB] [--bin PATH] info
 //     node tools/devtools/wb.mjs [--port SUB] [--bin PATH] samples ls [FOLDER]
 //     node tools/devtools/wb.mjs [--port SUB] [--bin PATH] samples put FILE... [--folder F]
+//     node tools/devtools/wb.mjs [--port SUB] [--bin PATH] store ls [PREFIX]
+//     node tools/devtools/wb.mjs [--port SUB] [--bin PATH] store put LOCAL REMOTE
+//     node tools/devtools/wb.mjs [--port SUB] [--bin PATH] store rm REMOTE
 //
+// `store` works on the card's store by path (for example data/tools/bootscreen/x.dkbs); `store put` verifies the file after the upload.
 // --port: a part of the MIDI port name (default "Digitakt"). --bin: the dkmidi binary (default $DKMIDI_BIN, else the nogen target dir;
 // `mise run dkmidi:build` builds it). `samples put` needs apps/web/public/dksample.wasm (`mise run wasm:dksample`).
 import { spawn, spawnSync } from 'node:child_process';
@@ -22,9 +26,9 @@ const root = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '../..')
 // the patchkit rule (tools/emulator/native_target.py): a worktree builds into its own target dir; no generated core is the "nogen" key
 const targetRoot = existsSync(path.join(root, '.git', 'HEAD'))
   ? path.join(root, 'out/native/target')
-  : path.join(root, 'out/native/target-wt', path.basename(root));
+  : path.join(root, 'dist/native-target');
 const usage =
-  'usage: node tools/devtools/wb.mjs [--port SUB] [--bin PATH] ports | info | samples ls [FOLDER] | samples put FILE... [--folder F]';
+  'usage: node tools/devtools/wb.mjs [--port SUB] [--bin PATH] ports | info | samples ls [FOLDER] | samples put FILE... [--folder F] | store ls [PREFIX] | store put LOCAL REMOTE | store rm REMOTE';
 
 // options anywhere on the line; the rest are the command words
 const args = process.argv.slice(2);
@@ -121,6 +125,32 @@ if (cmd === 'ports') {
         status = 1;
       }
     }
+  });
+} else if (cmd === 'store' && sub === 'ls') {
+  await withSession(async (session) => {
+    for (const e of await session.list(rest[0] || undefined)) console.log(`${e.path}\t${e.size}`);
+  });
+} else if (cmd === 'store' && sub === 'put') {
+  if (rest.length !== 2) fail(usage);
+  const [local, remote] = rest;
+  await withSession(async (session) => {
+    try {
+      if (!statSync(local).isFile()) throw new Error('not a file');
+      const bytes = Uint8Array.from(readFileSync(local));
+      await session.put(remote, bytes);
+      const ok = await session.verifyFile(remote, bytes);
+      console.log(`${ok ? 'ok  ' : 'FAIL'} ${remote}  ${bytes.length} bytes`);
+      if (!ok) status = 1;
+    } catch (e) {
+      console.error(`FAIL ${local}: ${e instanceof Error ? e.message : e}`);
+      status = 1;
+    }
+  });
+} else if (cmd === 'store' && sub === 'rm') {
+  if (rest.length !== 1) fail(usage);
+  await withSession(async (session) => {
+    await session.delete(rest[0]);
+    console.log(`removed ${rest[0]}`);
   });
 } else fail(usage);
 process.exit(status);

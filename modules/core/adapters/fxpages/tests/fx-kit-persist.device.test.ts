@@ -167,7 +167,8 @@ for (const device of DEVICES) {
         expect(result.max_err_ulps).toBeLessThanOrEqual(ulps);
         expect(Math.abs(result.rms_db! - 20 * Math.log10(gain))).toBeLessThan(0.001);
         expect(result.shift).not.toBeNull();
-        expect(Math.abs(result.shift!)).toBeLessThanOrEqual(128);
+        // hook_ab counts interleaved stereo samples; enforce the bound in audio frames.
+        expect(Math.abs(result.shift!) / 2).toBeLessThanOrEqual(128);
       };
       const page = async (row: number, tag: string) => {
         await ui().fxPage(3 + row);
@@ -293,7 +294,7 @@ for (const device of DEVICES) {
         const exact = await metrics('turned', 'loaded', 1, 'loaded');
         expect(exact.identical).toBe(true);
         expect(exact.shift).not.toBeNull();
-        expect(Math.abs(exact.shift!)).toBeLessThanOrEqual(128);
+        expect(Math.abs(exact.shift!) / 2).toBeLessThanOrEqual(128);
         expect((await metrics('changed', 'loaded', 1, 'changed-v-loaded')).identical).toBe(false);
         expect([await page(0, 'fx-page4-loaded'), await page(1, 'fx-page5-loaded')]).toEqual(hashes);
         await mainPage(session);

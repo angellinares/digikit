@@ -38,6 +38,12 @@ export interface EmuEvent {
 
 export type StartMode = 'auto' | 'snapshot' | 'cold';
 
+/** An ordered logical panel transition queued before the first coupled cold-boot instruction. */
+export interface InitialButton {
+  code: number;
+  down: boolean;
+}
+
 export interface FirmwareLoadParams {
   syx: string;
   base_sha256?: string;
@@ -51,6 +57,8 @@ export interface FirmwareLoadParams {
   /** Patch the stock image with the device profile patch set (cached by content). */
   runtime?: boolean;
   patch_set?: string;
+  /** At most 32 transitions; requires a patched coupled start:cold. Empty preserves the existing cache key. */
+  initial_buttons?: readonly InitialButton[];
 }
 
 export type RuntimeIdentity =
@@ -96,11 +104,15 @@ export interface InputScheduleEvent {
 }
 
 export interface FramebufferParams {
+  /** Default current; intro retains the last completed drawing callback before stock presentation. */
+  source?: 'current' | 'intro';
   hash?: boolean;
   data?: boolean;
 }
 
 export interface FramebufferResult {
+  /** Present only when explicitly reading the retained intro drawing. */
+  source?: 'intro';
   revision: number;
   /** base64 of the 1024 decoded OLED bytes; absent when `data: false`. */
   data_b64?: string;

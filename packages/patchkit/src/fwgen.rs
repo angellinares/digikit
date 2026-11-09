@@ -267,7 +267,8 @@ fn parse_ty(name: &str, toks: &[&str], info: &Info) -> Result<Ty> {
         return Err(err!("{name}: sig: bad type {:?}", toks.join(" ")));
     }
     let ptr = stars.len();
-    let known = SCALARS.contains(base) || *base == "void" || *base == "char" || info.contains_key(*base);
+    let known =
+        SCALARS.contains(base) || *base == "void" || *base == "char" || info.contains_key(*base);
     if !known {
         return Err(err!("{name}: sig: unknown type {base:?}"));
     }
@@ -314,7 +315,9 @@ fn parse_sig(name: &str, sig: &str, info: &Info) -> Result<Sig> {
                 return Err(err!("{name}: sig: an argument is empty"));
             };
             if !is_ident(arg) || *arg == "const" {
-                return Err(err!("{name}: sig: argument {a:?} needs a name after its type"));
+                return Err(err!(
+                    "{name}: sig: argument {a:?} needs a name after its type"
+                ));
             }
             let ty = parse_ty(name, ty, info)?;
             if ty.base == "void" && ty.ptr == 0 {
@@ -457,7 +460,10 @@ fn c_base(t: &str, info: &Info) -> String {
 fn rs_ty(t: &Ty, info: &Info) -> String {
     let mut s = rs_base(&t.base, info);
     for i in 0..t.ptr {
-        s = format!("*{} {s}", if i == 0 && t.is_const { "const" } else { "mut" });
+        s = format!(
+            "*{} {s}",
+            if i == 0 && t.is_const { "const" } else { "mut" }
+        );
     }
     s
 }
@@ -512,7 +518,9 @@ fn camel(rust: &str) -> String {
     rust.split('_')
         .map(|p| {
             let mut c = p.chars();
-            c.next().map(|f| f.to_ascii_uppercase().to_string() + c.as_str()).unwrap_or_default()
+            c.next()
+                .map(|f| f.to_ascii_uppercase().to_string() + c.as_str())
+                .unwrap_or_default()
         })
         .collect()
 }
@@ -548,7 +556,10 @@ fn rust_hook(h: &HookDef, info: &Info) -> String {
 }
 
 fn rust_struct(s: &StructDef, info: &Info) -> String {
-    let mut o = format!("    /// {}\n    #[repr(C)]\n    pub struct {} {{\n", s.doc, s.short);
+    let mut o = format!(
+        "    /// {}\n    #[repr(C)]\n    pub struct {} {{\n",
+        s.doc, s.short
+    );
     for sl in &s.slots {
         match sl {
             Slot::Field { name, ty, .. } => {
@@ -560,7 +571,10 @@ fn rust_struct(s: &StructDef, info: &Info) -> String {
         }
     }
     o.push_str("    }\n");
-    let _ = writeln!(o, "    #[cfg(target_arch = \"m68k\")]\n    const _: () = {{");
+    let _ = writeln!(
+        o,
+        "    #[cfg(target_arch = \"m68k\")]\n    const _: () = {{"
+    );
     let _ = writeln!(
         o,
         "        assert!(core::mem::size_of::<{}>() == {:#x});",
@@ -687,11 +701,8 @@ fn c_header(sub: &str, d: &Sub, info: &Info) -> String {
     for f in &d.fns {
         match &f.sig {
             Some(sig) => {
-                let mut args: Vec<String> = sig
-                    .args
-                    .iter()
-                    .map(|(t, n)| c_decl(t, n, info))
-                    .collect();
+                let mut args: Vec<String> =
+                    sig.args.iter().map(|(t, n)| c_decl(t, n, info)).collect();
                 if sig.varargs {
                     args.push("...".into());
                 }
@@ -722,12 +733,7 @@ fn c_header(sub: &str, d: &Sub, info: &Info) -> String {
         );
     }
     for h in &d.hooks {
-        let args: Vec<String> = h
-            .sig
-            .args
-            .iter()
-            .map(|(t, n)| c_decl(t, n, info))
-            .collect();
+        let args: Vec<String> = h.sig.args.iter().map(|(t, n)| c_decl(t, n, info)).collect();
         if let Some(doc) = &h.doc {
             let _ = writeln!(s, "/* {} */", c_comment(doc));
         }
@@ -736,7 +742,11 @@ fn c_header(sub: &str, d: &Sub, info: &Info) -> String {
             "typedef {} dk_fw_{sub}_{}_hook({});",
             c_ty(&h.sig.ret, info),
             h.rust,
-            if args.is_empty() { "void".to_string() } else { args.join(", ") }
+            if args.is_empty() {
+                "void".to_string()
+            } else {
+                args.join(", ")
+            }
         );
     }
     let _ = writeln!(s, "\n#endif");
@@ -755,7 +765,14 @@ fn gas_reglist(save: &[&str]) -> String {
         let n = pair.iter().filter(|r| save.contains(*r)).count();
         match n {
             2 => parts.push(format!("%{}-%{}", pair[0], pair[1])),
-            1 => parts.push(format!("%{}", if save.contains(&pair[0]) { pair[0] } else { pair[1] })),
+            1 => parts.push(format!(
+                "%{}",
+                if save.contains(&pair[0]) {
+                    pair[0]
+                } else {
+                    pair[1]
+                }
+            )),
             _ => {}
         }
     }
@@ -892,10 +909,16 @@ fn check_hook(
         ));
     };
     if site_cpu != cpu {
-        return Err(err!("{name}: cpu {cpu:?} differs from the cpu {site_cpu:?} of site {}", h.site));
+        return Err(err!(
+            "{name}: cpu {cpu:?} differs from the cpu {site_cpu:?} of site {}",
+            h.site
+        ));
     }
     if h.site.split('.').nth(1) != name.split('.').nth(1) {
-        return Err(err!("{name}: the subsystem differs from the one of site {}", h.site));
+        return Err(err!(
+            "{name}: the subsystem differs from the one of site {}",
+            h.site
+        ));
     }
     if !matches!(h.mode.as_str(), "before" | "replace" | "retarget") {
         return Err(err!(
@@ -915,7 +938,9 @@ fn check_hook(
                 _ => k == "simd" && v.is_bool(),
             };
             if !ok {
-                return Err(err!("{name}: bad modes entry {k} = {v} (m0-m15, l0-l15: integer; simd: bool)"));
+                return Err(err!(
+                    "{name}: bad modes entry {k} = {v} (m0-m15, l0-l15: integer; simd: bool)"
+                ));
             }
         }
     }
@@ -1025,13 +1050,16 @@ pub fn render(decls: &[(&str, &str)]) -> Result<Vec<(String, String)>> {
             match info.get(&short) {
                 Some((sub, _)) if s.name.split('.').nth(1) == Some(sub.as_str()) => {
                     let slots = layout(s, &info)?;
-                    subs.entry(sub.clone()).or_default().structs.push(StructDef {
-                        name: s.name.clone(),
-                        short,
-                        size: s.size,
-                        slots,
-                        doc: s.doc.clone().unwrap_or_default(),
-                    });
+                    subs.entry(sub.clone())
+                        .or_default()
+                        .structs
+                        .push(StructDef {
+                            name: s.name.clone(),
+                            short,
+                            size: s.size,
+                            slots,
+                            doc: s.doc.clone().unwrap_or_default(),
+                        });
                 }
                 _ => {}
             }
@@ -1131,7 +1159,10 @@ pub fn render(decls: &[(&str, &str)]) -> Result<Vec<(String, String)>> {
     }
     let mut out = vec![(RUST_OUT.to_string(), rust(&subs, &info))];
     for (sub, d) in &subs {
-        out.push((format!("{OUT_DIR}/include/dk_fw_{sub}.h"), c_header(sub, d, &info)));
+        out.push((
+            format!("{OUT_DIR}/include/dk_fw_{sub}.h"),
+            c_header(sub, d, &info),
+        ));
         if !d.structs.is_empty() || !d.hooks.is_empty() {
             out.push((format!("{OUT_DIR}/inc/dk_fw_{sub}.inc"), gas_inc(sub, d)));
         }
@@ -1148,7 +1179,11 @@ fn collect(root: &Path, dir: &Path, rel: &str, out: &mut Vec<(String, String)>) 
         .map_err(|e| err!("{}: {e}", dir.display()))?;
     paths.sort();
     for p in paths {
-        let name = p.file_name().unwrap_or_default().to_string_lossy().to_string();
+        let name = p
+            .file_name()
+            .unwrap_or_default()
+            .to_string_lossy()
+            .to_string();
         let r = format!("{rel}/{name}");
         if p.is_dir() {
             collect(root, &p, &r, out)?;
@@ -1164,7 +1199,10 @@ fn collect(root: &Path, dir: &Path, rel: &str, out: &mut Vec<(String, String)>) 
 pub fn generate(root: &Path) -> Result<Vec<(String, String)>> {
     let mut files = Vec::new();
     collect(root, &root.join(SOURCE), SOURCE, &mut files)?;
-    let refs: Vec<(&str, &str)> = files.iter().map(|(p, t)| (p.as_str(), t.as_str())).collect();
+    let refs: Vec<(&str, &str)> = files
+        .iter()
+        .map(|(p, t)| (p.as_str(), t.as_str()))
+        .collect();
     render(&refs)
 }
 
@@ -1209,7 +1247,9 @@ fn resolve(reg: &crate::port::Registry, name: &str, multi: bool) -> serde_json::
     let mut at = serde_json::Map::new();
     for p in &reg.ports {
         let found: Vec<&crate::port::Anchor> = if multi {
-            (0..).map_while(|i| p.anchor(&format!("{name}.{i}"))).collect()
+            (0..)
+                .map_while(|i| p.anchor(&format!("{name}.{i}")))
+                .collect()
         } else {
             p.anchor(name).into_iter().collect()
         };
@@ -1238,7 +1278,10 @@ fn rule_json(rule: &toml::Value, devices: &[String]) -> serde_json::Value {
     use serde_json::json;
     let one = |rule: &toml::Value| {
         let mut r = serde_json::Map::new();
-        r.insert("kind".into(), json!(rule.get("kind").and_then(|k| k.as_str()).unwrap_or("")));
+        r.insert(
+            "kind".into(),
+            json!(rule.get("kind").and_then(|k| k.as_str()).unwrap_or("")),
+        );
         for key in ["offset", "len"] {
             if let Some(v) = rule.get(key).and_then(|v| v.as_integer()) {
                 r.insert(key.into(), json!(v));
@@ -1266,7 +1309,12 @@ fn rule_json(rule: &toml::Value, devices: &[String]) -> serde_json::Value {
 }
 
 /// Where a hook runs on each port that lists it: its site anchor plus the offset.
-fn resolve_hook(reg: &crate::port::Registry, name: &str, site: &str, offset: u32) -> serde_json::Value {
+fn resolve_hook(
+    reg: &crate::port::Registry,
+    name: &str,
+    site: &str,
+    offset: u32,
+) -> serde_json::Value {
     use serde_json::json;
     let mut at = serde_json::Map::new();
     for p in &reg.ports {
@@ -1275,7 +1323,10 @@ fn resolve_hook(reg: &crate::port::Registry, name: &str, site: &str, offset: u32
         }
         let Some(a) = p.anchor(site) else { continue };
         let mut o = serde_json::Map::new();
-        o.insert("addr".into(), json!(format!("{:#x}", a.addr + u64::from(offset))));
+        o.insert(
+            "addr".into(),
+            json!(format!("{:#x}", a.addr + u64::from(offset))),
+        );
         if a.pm.is_some() {
             o.insert("pm".into(), json!(true));
         }
@@ -1294,10 +1345,15 @@ fn bindings(pairs: &[(&str, String)]) -> serde_json::Value {
 
 /// The reference data (JSON text) of the declarations, the `subsystems` text and the ports: every entry with its rule, its anchors
 /// per port and the bindings `render` makes. The declarations are checked by `render` first.
-pub fn reference(decls: &[(&str, &str)], subsystems: &str, reg: &crate::port::Registry) -> Result<String> {
+pub fn reference(
+    decls: &[(&str, &str)],
+    subsystems: &str,
+    reg: &crate::port::Registry,
+) -> Result<String> {
     use serde_json::{Value, json};
     render(decls)?;
-    let table: toml::Table = toml::from_str(subsystems).map_err(|e| err!("{SOURCE}/subsystems.toml: {e}"))?;
+    let table: toml::Table =
+        toml::from_str(subsystems).map_err(|e| err!("{SOURCE}/subsystems.toml: {e}"))?;
     let mut all_devices: Vec<String> = reg.ports.iter().map(|p| p.port.device.clone()).collect();
     all_devices.sort();
     all_devices.dedup();
@@ -1340,7 +1396,11 @@ pub fn reference(decls: &[(&str, &str)], subsystems: &str, reg: &crate::port::Re
                 if let Some(b) = &e.bind {
                     o.insert("bind".into(), json!(b));
                 }
-                let devs = if e.devices.is_empty() { &all_devices } else { &e.devices };
+                let devs = if e.devices.is_empty() {
+                    &all_devices
+                } else {
+                    &e.devices
+                };
                 o.insert("rule".into(), rule_json(&e.rule, devs));
                 o.insert("at".into(), resolve(reg, &e.name, kind == "sites"));
                 if cf {
@@ -1424,7 +1484,11 @@ pub fn reference(decls: &[(&str, &str)], subsystems: &str, reg: &crate::port::Re
             };
             let cf = is_cf(&s.name, cpu)?;
             // the declaring file names the subsystem
-            let sub = Path::new(path).file_stem().unwrap_or_default().to_string_lossy().to_string();
+            let sub = Path::new(path)
+                .file_stem()
+                .unwrap_or_default()
+                .to_string_lossy()
+                .to_string();
             note(cpu, &sub);
             let mut o = meta(&Meta {
                 name: &s.name,
@@ -1492,10 +1556,16 @@ pub fn generate_with_ports(root: &Path) -> Result<Vec<(String, String)>> {
     let mut out = generate(root)?;
     let mut files = Vec::new();
     collect(root, &root.join(SOURCE), SOURCE, &mut files)?;
-    let refs: Vec<(&str, &str)> = files.iter().map(|(p, t)| (p.as_str(), t.as_str())).collect();
+    let refs: Vec<(&str, &str)> = files
+        .iter()
+        .map(|(p, t)| (p.as_str(), t.as_str()))
+        .collect();
     let sp = root.join(SOURCE).join("subsystems.toml");
     let subsystems = std::fs::read_to_string(&sp).map_err(|e| err!("{}: {e}", sp.display()))?;
     let reg = crate::port::Registry::from_dir(&root.join("devices/ports"))?;
-    out.push((REFERENCE_OUT.to_string(), reference(&refs, &subsystems, &reg)?));
+    out.push((
+        REFERENCE_OUT.to_string(),
+        reference(&refs, &subsystems, &reg)?,
+    ));
     Ok(out)
 }

@@ -1,7 +1,7 @@
 import { fileURLToPath } from 'node:url';
 import { defineConfig } from 'vitest/config';
 
-// Each worker runs one coupled daemon (two cores); the gate sets REGRESSION_JOBS from its core share.
+// Each worker runs one coupled daemon (two cores); the Nx launcher sets REGRESSION_JOBS from its budget.
 // stock, runtime and conformance files run in parallel up to maxWorkers; fx-* stay serial.
 // Vitest 3.2 reads only singleFork per project; worker caps are root-level.
 const serial = { poolOptions: { forks: { singleFork: true } } };
@@ -13,6 +13,7 @@ const alias = [
   { find: /^@digi\/regression\/(.*)$/, replacement: `${at('.').replace(/\/$/, '')}/$1` },
   { find: /^@digi\/test-support$/, replacement: at('../../packages/test-support/src/index.ts') },
   { find: /^@digi\/control-client$/, replacement: at('../../packages/control-client/src/index.ts') },
+  { find: /^@digi\/dkbs$/, replacement: at('../../packages/dkbs/src/index.ts') },
   { find: /^@digi\/dk-session$/, replacement: at('../../packages/dk-session/src/index.ts') },
   { find: /^@digi\/dk-session\/(.*)$/, replacement: `${at('../../packages/dk-session/src')}/$1.ts` },
 ];
@@ -21,8 +22,10 @@ export default defineConfig({
   root: at('.'),
   resolve: { alias },
   test: {
+    // Removes the temp dirs of the file's fixtures after its last test.
+    setupFiles: [at('./setup-temp.ts')],
     // Caps the shared pool: workers at once in stock, runtime and conformance.
-    maxWorkers: Number(process.env.REGRESSION_JOBS ?? 4),
+    maxWorkers: Number(process.env.REGRESSION_JOBS ?? 2),
     // REGRESSION_JUNIT_FILE (verify's failed-unit record) names the report; REGRESSION_JUNIT=1 alone keeps the default.
     reporters:
       process.env.REGRESSION_JUNIT === '1' || process.env.REGRESSION_JUNIT_FILE
@@ -51,7 +54,11 @@ export default defineConfig({
         extends: true,
         test: {
           name: 'runtime',
-          include: ['emulator/**/*.test.ts', '../../modules/**/tests/**/*.device.test.ts'],
+          include: [
+            'emulator/**/*.test.ts',
+            '../../modules/**/tests/**/*.device.test.ts',
+            '../fixtures/modules/**/tests/**/*.device.test.ts',
+          ],
           pool: 'forks',
           // Hang detection is the no-progress watchdog (DIGI_NO_PROGRESS_MS, default 120 s). These limits are
           // backstops, so host load cannot fail a slow but healthy test.

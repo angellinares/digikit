@@ -5,36 +5,36 @@
     "pythonGate": [
       "{workspaceRoot}/tools/**/*",
       "{workspaceRoot}/tests/**/*",
-      "{workspaceRoot}/packages/**/*",
+      "{workspaceRoot}/packages/patchkit/**/*",
+      "{workspaceRoot}/packages/dkneeds/**/*",
+      "{workspaceRoot}/packages/emulator/control/**/*",
+      "{workspaceRoot}/packages/emulator/plusdrive/**/*",
       "{workspaceRoot}/modules/**/*",
-      "{workspaceRoot}/apps/**/*",
       "{workspaceRoot}/sdk/**/*",
       "{workspaceRoot}/devices/**/*",
       "{workspaceRoot}/pyproject.toml",
       "{workspaceRoot}/uv.lock",
       "{workspaceRoot}/Cargo.toml",
-      "{workspaceRoot}/Cargo.lock",
-      "{workspaceRoot}/package.json",
-      "{workspaceRoot}/pnpm-lock.yaml"
+      "{workspaceRoot}/Cargo.lock"
     ]
   },
   "targets": {
     "python-checks": {
       "executor": "nx:run-commands",
-      "description": "ruff, ruff format, mypy, layercheck and gen-check on every change outside docs/ and the repository's meta files. Nx affected ignores negated inputs, so the inputs list the directories.",
+      "description": "ruff, ruff format, mypy, layercheck and gen-check on changes to tools, tests, modules, sdk, devices, Python and Cargo manifests, and the patchkit, dkneeds, control and plusdrive packages. Nx affected ignores negated inputs, so the inputs list the directories.",
       "cache": false,
       "inputs": ["pythonGate"],
       "options": { "command": "uv run python -m tools.devtools.py_select checks", "cwd": "." }
     },
     "python-tests": {
       "executor": "nx:run-commands",
-      "description": "py_select picks the tests from the diff against DIGI_GATE_BASE; tests/patchkit/test_pk_current.py always runs. Skipped for changes under docs/ only.",
+      "description": "py_select picks the tests from the diff against DIGI_GATE_BASE; tests/patchkit/test_pk_current.py always runs. The first step builds the cf_call example that some tests need (pk_cfcall.build_example; a no-op when current). Selected only for changes in the scope of python-checks.",
       "cache": false,
       "parallelism": false,
       "dependsOn": ["digi-control:daemons"],
       "inputs": ["pythonGate"],
       "options": {
-        "command": "uv run python -m tools.devtools.py_select run --base ${DIGI_GATE_BASE:-origin/main}",
+        "command": "uv run python -c \"from tools.patchkit import pk_cfcall; pk_cfcall.build_example()\" && uv run python -m tools.devtools.py_select run --base ${DIGI_GATE_BASE:-main}",
         "cwd": "."
       }
     }

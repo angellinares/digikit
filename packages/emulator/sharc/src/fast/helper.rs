@@ -182,7 +182,11 @@ pub extern "C" fn helper_exec(st: *mut u8, rec: u64) -> u32 {
                 match crate::rt::bnd::decode_at(s, (), None, r.pc as Int) {
                     Ok(i) => Some(i),
                     Err(t) => {
-                        eprintln!("fast: helper decode at {:#x}: {}", r.pc, crate::trap_name(t));
+                        eprintln!(
+                            "fast: helper decode at {:#x}: {}",
+                            r.pc,
+                            crate::trap_name(t)
+                        );
                         None
                     }
                 }
@@ -229,7 +233,9 @@ pub struct Plan {
 /// The plan for D, or None when no generated body covers it (a form without
 /// one, a conditional or compute-carrying leaf, an unknown field).
 pub fn plan<S: RegRead>(d: &super::decode_view::Dec, s: &S) -> Option<Plan> {
-    let id = super::gen_helpers::FORMS.iter().position(|n| *n == d.form)?;
+    let id = super::gen_helpers::FORMS
+        .iter()
+        .position(|n| *n == d.form)?;
     let mut f = [0i64; super::gen_helpers::NF];
     let labels = super::gen_helpers::labels(id);
     if labels.len() > f.len() {

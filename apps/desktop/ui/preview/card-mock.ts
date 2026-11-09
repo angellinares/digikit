@@ -3,6 +3,7 @@
 //   card=dn2|dt2   the loaded device
 //   chosen=1       the user already chose a folder for it
 //   missing=1      the saved choice is gone (the default is used)
+//   overlay=0      the card has no saved changes (the reset button is off)
 
 const query = new URLSearchParams(location.search);
 const device = query.get('card') === 'dt2' ? 'dt2' : 'dn2';
@@ -16,12 +17,13 @@ const state = {
   choice: query.get('chosen') === '1' ? CHOSEN : (null as string | null),
   missing: query.get('missing') === '1',
   lastSync: Date.now() - 12_000,
+  overlay: query.get('overlay') !== '0',
 };
 
 const files = [
-  { path: 'modules/pluck.dkm', bytes: 2260, sha256: 'aa' },
-  { path: 'modules/sine.dkm', bytes: 932, sha256: 'bb' },
-  ...(device === 'dt2' ? [{ path: 'samples/kick.wav', bytes: 48_212, sha256: 'cc' }] : []),
+  { path: 'modules/pluck.dkm', bytes: 2260, hash: 'aa' },
+  { path: 'modules/sine.dkm', bytes: 932, hash: 'bb' },
+  ...(device === 'dt2' ? [{ path: 'samples/kick.wav', bytes: 48_212, hash: 'cc' }] : []),
 ];
 
 /** Only a device whose card is built from the folder (a path filesystem: the Digitakt II) needs a reload to take a new folder. */
@@ -42,6 +44,7 @@ function folderState() {
     chosen_missing: state.missing ? (state.choice ?? CHOSEN) : null,
     next_folder: next(),
     reload_needed: state.folder !== next(),
+    overlay: state.overlay,
   };
 }
 
@@ -55,6 +58,14 @@ export async function cardCall(method: string, params: Record<string, unknown>):
     }
   }
   if (method === 'card.sync') state.lastSync = Date.now();
+  if (method === 'card.reset_overlay') {
+    const had = state.overlay;
+    state.overlay = false;
+    return {
+      overlay: `${HOME}/out/native/run/cards/card/overlay.bin`,
+      set_aside: had ? `${HOME}/out/native/run/cards/card/overlay.bin.set-aside-1` : null,
+    };
+  }
   return folderState();
 }
 

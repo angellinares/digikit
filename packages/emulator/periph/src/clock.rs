@@ -75,6 +75,9 @@ mod tests {
         assert_eq!(scale_instr(132_000_000, 264_000_000), 264_000_000);
         assert_eq!(scale_instr(132_000_000, 33_000_000), 33_000_000);
         assert_eq!(scale_instr(3, 66_000_000), 2); // 1.5 rounds up
-        assert_eq!(unscale_instr(scale_instr(1_000_000, 198_000_000), 198_000_000), 1_000_000);
+        assert_eq!(
+            unscale_instr(scale_instr(1_000_000, 198_000_000), 198_000_000),
+            1_000_000
+        );
     }
 }

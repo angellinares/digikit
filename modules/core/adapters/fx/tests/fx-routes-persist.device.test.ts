@@ -1,5 +1,4 @@
 import { execFile } from 'node:child_process';
-import fs from 'node:fs';
 import path from 'node:path';
 import { promisify } from 'node:util';
 import { DkSession, EmuUsbTransport } from '@digi/dk-session';
@@ -12,6 +11,7 @@ import { withRouteFxSession } from '@digi/regression/runtime/fx-route-live.ts';
 import { inspectFxBoot, withPausedFxProtocol, tap } from '@digi/regression/runtime/fx-session.ts';
 import { MASTER, routeUi, SEND_ROUTE } from '@digi/regression/runtime/fx-routes-ui.ts';
 import { record } from '@digi/regression/runtime/artifacts.ts';
+import { patchkitBinary } from '@digi/regression/runtime/patchkit.ts';
 import { DEVICES, FIRMWARE } from '@digi/regression/runtime/devices.ts';
 import { expectRuntimeUi } from '@digi/regression/runtime/ready.ts';
 import { planSymbol } from '@digi/regression/runtime/runtime-plan.ts';
@@ -49,8 +49,7 @@ async function compareRoutePcm(base: string, sample: string, gain: number, artif
 async function storedRoute(runtime: PatchedSession, artifacts: string, tag: string) {
   const base = runtime.session.cardPath;
   if (!base) throw new Error('route persistence needs the loaded base card');
-  const binary = path.join(root, 'out/native/target/nogen/release/patchkit');
-  if (!fs.existsSync(binary)) throw new Error(`prepare prebuilt patchkit separately: ${binary}`);
+  const binary = patchkitBinary();
   const overlay = path.join(artifacts, `${tag}.overlay.bin`);
   await rpc(runtime.session, 'card.overlay', { path: overlay });
   const dumped = await exec(

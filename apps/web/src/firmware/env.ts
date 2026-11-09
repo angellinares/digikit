@@ -17,9 +17,10 @@ export interface FirmwareRun {
 export interface FirmwareEnv {
   /**
    * Patch the stock file and check the result (`flash::prepare`), or with `restore` check the stock file itself (`flash::restore`). A failed
-   * check is in the result; a file that is no known stock image throws patchkit's text.
+   * check is in the result; a file that is no known stock image throws patchkit's text. `set` is the device file's patch set: empty for `device`,
+   * `device-introblank` with the Custom boot screen toggle.
    */
-  prepare(stock: Uint8Array, restore: boolean): Promise<PreparedFlash>;
+  prepare(stock: Uint8Array, restore: boolean, set?: string): Promise<PreparedFlash>;
   /** The Rust sender (`flash::Sender`) for this many messages: the pacing has one source of truth. */
   sender(total: number): Promise<FlashSender>;
   /** The RPC flash machine (`flash_rpc::RpcFlash`) for the image: the one state machine of the default route. `chunk` 0 is the default size. */

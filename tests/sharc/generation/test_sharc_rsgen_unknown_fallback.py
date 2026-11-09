@@ -24,6 +24,7 @@ def test_unknown_fallback_preserves_masks_budgets_and_trap_rollback(
     if cargo is None:
         pytest.skip("Rust toolchain unavailable")
     monkeypatch.setattr(rg, "MODEL_SAFE_ONLY", True)
+    monkeypatch.setattr(rg, "STEP_BUDGET", True)
     monkeypatch.setattr(rg, "CHAINING", False)
     monkeypatch.setattr(rg, "TR", None)
     insn = SimpleNamespace(type_name="2a", length_bytes=2)

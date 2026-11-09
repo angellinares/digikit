@@ -1,0 +1,32 @@
+[module]
+id = "tools/bootscreen"
+version = "0.1.0"
+name = "Boot screen"
+category = "tools"
+type = "service"
+author = "digikit"
+status = "experimental"
+summary = "Plays a custom boot animation (a DKBS file) instead of the stock one; chosen in its menu, active at the next restart."
+ports = ["dt2-1.17", "dn2-1.12"]
+requires = ["core/ui"]
+conflicts = []
+# The workbench, packages/dkbs and tools/devtools/wb.mjs name the module (its file folder and label) (host = true: they speak its file protocol)
+host = true
+
+[targets]
+"dt2-1.17" = "experimental"
+"dn2-1.12" = "experimental"
+
+# The files the module reads from the card (`data/tools/bootscreen/`): the workbench lists them under this label and previews them as the 128x64 1-bit OLED.
+[files]
+label = "Boot screens"
+ext = ["dkbs"]
+preview = "oled-1bit"
+
+# A run-time module (`.dkm`), built from C. `dkm_init` reads the setting `active` and the file `data/tools/bootscreen/<active>`, checks it
+# (src/dkbs.c) and calls `intro_take` (<dk/intro.h>). It runs after the REC, safe-mode and boot-counter checks, and does no card I/O before the
+# main OS starts. Its `dkm_menu` (DK_MENU) has the row BOOT SCREEN: it lists the files of `data/tools/bootscreen/` and saves the choice.
+[[object]]
+path = "build/bootscreen.dko.json"
+sources = ["src/module.c", "src/dkbs.c", "../../../sdk/src/picker_logic.c"]
+place = "cf.expansion"

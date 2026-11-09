@@ -1,5 +1,7 @@
 # digikit
 
+> 🧪 **digikit is experimental.** It will be released as stable once it reaches 1.0.0.
+
 digikit adds new machines and effects to the Elektron **Digitakt II** and **Digitone II**. It patches your own copy of
 the stock firmware with a small runtime. The runtime loads modules from its own area on the device's card, so you can add or change
 a machine without flashing again. An emulator runs the real firmware on your computer, so you can test everything
@@ -104,8 +106,9 @@ FUNC while powering on to reach the STARTUP menu, and send the stock OS over MID
 - [Module reference](modules/README.md): manifest fields, the typed sections, generated files
 - [Patching, flashing and the device steps in detail](docs/PATCHING.md)
 - [Architecture](docs/ARCHITECTURE.md): the layers (module, SDK, runtime, adapters, firmware), what each may depend on, how a new device fits
-- [Developing digikit](docs/DEVELOPMENT.md): the emulator's options, [fast iteration](docs/DEVELOPMENT.md#fast-iteration-runtime-ui-and-modules) (`dk:dev`, Reload modules), tests, analysis tools, repository layout
-- [Testing](docs/TESTING.md): which check for which change; run `mise run test:changed` before committing
+- [Developing digikit](docs/DEVELOPMENT.md): [open a module, the DIGIKIT menu or UI demo](docs/DEVELOPMENT.md#visible-preview) (`mise run dk:module ID` for zero-DSP machine UI preview, add `--dsp` for audio; `mise run dk:menu`, `mise run dk:ui-demo`), [fast iteration](docs/DEVELOPMENT.md#fast-iteration-runtime-ui-and-modules), tests, analysis tools, repository layout
+- [Testing](docs/TESTING.md): `mise run test` verifies affected work; `mise run test:plan` explains selection first. `test:changed` is cheap preflight.
+- [Releasing](docs/RELEASING.md): independent module/runtime versions, previewing and applying version metadata
 - [Results of the research](docs/FINDINGS.md)
 - [Contributing](CONTRIBUTING.md)
 

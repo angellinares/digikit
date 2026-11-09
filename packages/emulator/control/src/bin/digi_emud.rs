@@ -43,16 +43,21 @@ fn main() {
     config.run_dir = run_dir.clone();
     config.mirror_dir = startup.mirror_dir.clone();
     // The daemon keeps the user's folder choices for the session only (no app data folder).
-    config.device_folders = startup.device_folders.then(|| digi_control::DeviceFoldersConfig {
-        root: None,
-        choices: None,
-        sync: startup.card_sync,
-    });
-    config.card_folder = startup.card_folder.clone().map(|dir| digi_control::CardSource {
-        dir,
-        sync: startup.card_sync,
-        out: None,
-    });
+    config.device_folders = startup
+        .device_folders
+        .then(|| digi_control::DeviceFoldersConfig {
+            root: None,
+            choices: None,
+            sync: startup.card_sync,
+        });
+    config.card_folder = startup
+        .card_folder
+        .clone()
+        .map(|dir| digi_control::CardSource {
+            dir,
+            sync: startup.card_sync,
+            out: None,
+        });
     if startup.scenario.is_some() {
         eprintln!(
             "digi-emud: --scenario is a desktop option (scenario.run over the socket is not built yet)"

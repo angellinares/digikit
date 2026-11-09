@@ -494,6 +494,17 @@
   </div>
 
   <div class="banner" id="banner" hidden></div>
+  <div class="controls">
+    <span>Glyph/bitmap discovery:</span>
+    <button type="button" id="find-bitmaps">Bitmap candidates</button>
+    <button type="button" id="find-params">Parameter candidates</button>
+    <span class="muted">Functions only; glyph IDs and bitmap assets are not catalogued.</span>
+  </div>
+  <div class="controls">
+    <button type="button" id="export">Export decisions (JSONL)</button>
+    <label>Import local decisions <input type="file" id="import" accept=".jsonl,application/json" disabled /></label>
+    <span class="muted" id="storage-mode">Connecting to decision storage…</span>
+  </div>
 
   <div class="main">
     <nav class="groups" id="groups" aria-label="Groups"></nav>
@@ -505,7 +516,7 @@
 
 <script>
   const DATA = __DATA__;
-  const state = { group: null, decisions: {}, db: null, canWrite: false, pending: {}, drafts: {} };
+  const state = { group: null, decisions: {}, db: null, local: false, canWrite: false, pending: {}, drafts: {} };
   const $ = (id) => document.getElementById(id);
   const rowsByGroup = new Map();
   for (const r of DATA.rows) {
@@ -513,7 +524,10 @@
     rowsByGroup.get(r.g).push(r);
   }
   const rowByAddr = new Map(DATA.rows.map((r) => [r.a, r]));
+  const linkedByAddr = new Map((DATA.linked_rows || []).map((r) => [r.a, r]));
   const docId = (a) => DATA.image + '-' + a;
+  const localKey = 'digikit-catalog-decisions-' + DATA.image;
+  if (DATA.full_inventory) $('f-lab').checked = false;
 
   function el(tag, attrs, ...kids) {
     const e = document.createElement(tag);
@@ -553,7 +567,9 @@
         r.by,
         r.ck,
         r.tags,
-        ...r.lab.flatMap((l) => [l.role, l.anchor, l.sig, l.ev]),
+        r.hash,
+        r.anchors,
+        ...r.lab.flatMap((l) => [l.role, l.anchor, l.sig, l.ev, l.use]),
       ]
         .join(' ')
         .toLowerCase();
@@ -741,7 +757,7 @@
       el(
         'div',
         { class: 'rtop' },
-        el('span', { class: 'mono', text: r.a }),
+        el('a', { class: 'mono', href: '#r-' + r.a, text: r.a, onclick: () => jump(r.a) }),
         el('span', { class: 'rname', text: r.n }),
         r.wn ? el('span', { class: 'muted mono', text: r.wn }) : null,
         r.cls ? el('span', { class: 'chip', text: r.cls }) : null,
@@ -757,6 +773,7 @@
         { class: 'kv' },
         lab.sig ? [el('dt', { text: 'Signature' }), el('dd', { class: 'mono', text: lab.sig })] : null,
         lab.ev ? [el('dt', { text: 'Evidence' }), el('dd', { text: lab.ev })] : null,
+        ...r.lab.filter((l) => l.use).map((l) => [el('dt', { text: 'SDK use' }), el('dd', { text: l.use })]),
         r.lab[1]
           ? [el('dt', { text: 'Second label' }), el('dd', { text: r.lab[1].role + ' → ' + r.lab[1].anchor })]
           : null,
@@ -765,8 +782,30 @@
         r.hint ? [el('dt', { text: 'UI string' }), el('dd', { text: '“' + r.hint + '”' })] : null,
         el('dt', { text: 'Rule' }),
         el('dd', { class: 'mono', text: r.rule + ' · ' + r.size + ' bytes · ' + r.uic + ' UI callers' }),
-        el('dt', { text: 'DN2 pair' }),
-        el('dd', { class: 'mono', text: r.pair ? r.pair + ' (' + r.pm + ')' : 'none' }),
+        el('dt', { text: DATA.other + ' pair' }),
+        el(
+          'dd',
+          { class: 'mono' },
+          r.pair_url ? el('a', { href: r.pair_url, text: r.pair }) : r.pair || 'none',
+          r.pair ? ' (' + r.pm + ')' + (r.pair_url ? '' : ' · outside paired inventory') : '',
+        ),
+        el('dt', { text: 'Pair evidence' }),
+        el('dd', {
+          text: 'Same hash: ' + evidenceFlag(r.pair_same_hash) + ' · same rule: ' + evidenceFlag(r.rule_both),
+        }),
+        el('dt', { text: 'Hash / stability' }),
+        el('dd', {
+          class: 'mono',
+          text:
+            (r.hash || 'unknown') +
+            ' · matches ' +
+            (r.hash_count || '?') +
+            ' · stable across versions: ' +
+            evidenceFlag(r.stable),
+        }),
+        el('dt', { text: 'UI strings / tags' }),
+        el('dd', { text: (r.ui_strings || '0') + ' strings · ' + r.tags }),
+        r.anchors ? [el('dt', { text: 'Existing anchors' }), el('dd', { class: 'mono', text: r.anchors })] : null,
       ),
       el('div', { class: 'edit' }, anchorIn, decide),
       noteIn,
@@ -775,21 +814,30 @@
     );
   }
 
+  function evidenceFlag(value) {
+    return value === '1' ? 'yes' : value === '0' ? 'no' : 'unknown';
+  }
+
   function jump(a) {
-    const r = rowByAddr.get(a);
+    const r = rowByAddr.get(a) || linkedByAddr.get(a);
     if (!r) return;
-    if (state.group !== r.g) {
-      state.group = r.g;
-      render();
+    if (!rowByAddr.has(a)) {
+      rowByAddr.set(a, r);
+      DATA.rows.push(r);
+      if (!rowsByGroup.has(r.g)) rowsByGroup.set(r.g, []);
+      rowsByGroup.get(r.g).push(r);
+      if (!DATA.groups.some((g) => g.id === r.g)) DATA.groups.push(DATA.linked_groups.find((g) => g.id === r.g));
     }
-    const e = document.getElementById('r-' + a);
-    if (!e) {
+    state.group = r.g;
+    // A deep link must reveal its row even when another filter hid the group.
+    if (!rowVisible(r) || !groupVisible(DATA.groups.find((g) => g.id === r.g))) {
       $('q').value = '';
       $('f-lab').checked = false;
       $('f-open').checked = false;
       $('f-grade').checked = false;
-      render();
+      $('f-rel').value = '';
     }
+    render();
     const t = document.getElementById('r-' + a);
     if (!t) return;
     t.scrollIntoView({
@@ -801,7 +849,7 @@
   }
 
   async function save(r, status, anchor, note, saved) {
-    if (!state.db || !state.canWrite) return;
+    if (!state.canWrite) return;
     const id = docId(r.a);
     const body = {
       status,
@@ -815,6 +863,14 @@
       proposed: r.lab[0]?.anchor || '',
       updated: new Date().toISOString(),
     };
+    if (state.local) {
+      if (status) state.decisions[id] = body;
+      else delete state.decisions[id];
+      persistLocal();
+      render();
+      return;
+    }
+    if (!state.db) return;
     saved.textContent = 'Saving…';
     const prev = state.pending[id] || Promise.resolve();
     const p = prev.then(() =>
@@ -836,6 +892,51 @@
     }
   }
 
+  function persistLocal() {
+    try {
+      localStorage.setItem(localKey, JSON.stringify(state.decisions));
+      $('storage-mode').textContent = 'Local browser decisions; export a copy to keep or share.';
+    } catch (e) {
+      $('storage-mode').textContent = 'Browser storage unavailable: decisions are in memory. Export before closing.';
+    }
+  }
+
+  $('export').addEventListener('click', () => {
+    const records = Object.values(state.decisions).filter((d) => d.image === DATA.image);
+    const blob = new Blob([records.map((d) => JSON.stringify(d)).join('\n') + '\n'], { type: 'application/x-ndjson' });
+    const url = URL.createObjectURL(blob);
+    const link = el('a', { href: url, download: DATA.image + '-decisions.jsonl' });
+    link.click();
+    setTimeout(() => URL.revokeObjectURL(url), 1000);
+  });
+  $('import').addEventListener('change', async (event) => {
+    const file = event.target.files[0];
+    if (!state.local || !file) return;
+    try {
+      const records = (await file.text())
+        .split(/\r?\n/)
+        .filter((line) => line.trim())
+        .map((line) => JSON.parse(line));
+      for (const d of records) {
+        if (
+          d.image !== DATA.image ||
+          !(rowByAddr.has(d.addr) || linkedByAddr.has(d.addr)) ||
+          !['keep', 'later', 'skip'].includes(d.status) ||
+          typeof d.anchor !== 'string' ||
+          typeof d.note !== 'string'
+        )
+          throw new Error('Wrong image, unknown row or invalid decision');
+      }
+      for (const d of records) state.decisions[docId(d.addr)] = d;
+      persistLocal();
+      render();
+    } catch (e) {
+      $('banner').hidden = false;
+      $('banner').textContent = 'Import failed: ' + e.message;
+    }
+    event.target.value = '';
+  });
+
   function render() {
     renderProgress();
     renderGroups();
@@ -853,18 +954,40 @@
   }
 
   for (const r of rels()) $('f-rel').append(el('option', { value: r, text: r }));
+  for (const [id, query] of [
+    ['find-bitmaps', 'bitmap'],
+    ['find-params', 'cf.param'],
+  ])
+    $(id).addEventListener('click', () => {
+      $('q').value = query;
+      $('f-lab').checked = false;
+      $('f-open').checked = false;
+      $('f-grade').checked = false;
+      $('f-rel').value = '';
+      render();
+    });
   for (const id of ['q', 'f-lab', 'f-open', 'f-grade', 'f-rel'])
     $(id).addEventListener('input', () => {
       renderGroups();
       renderDetail();
     });
-  const m = /^#g(\d+)$/.exec(location.hash);
+  const m = /^#g(-?\d+)$/.exec(location.hash);
   if (m) state.group = Number(m[1]);
+  function followHash() {
+    const row = /^#r-(0x[0-9a-f]+)$/i.exec(location.hash);
+    if (row) jump(row[1].toLowerCase());
+    const group = /^#g(-?\d+)$/.exec(location.hash);
+    if (group) {
+      state.group = Number(group[1]);
+      render();
+    }
+  }
+  window.addEventListener('hashchange', followHash);
   $('foot').textContent =
     DATA.groups.length +
     ' of ' +
     DATA.total_groups +
-    ' groups (10+ functions) and ' +
+    ' groups and ' +
     DATA.rows.length +
     ' of ' +
     DATA.total_rows +
@@ -872,17 +995,34 @@
     DATA.image +
     '.';
   render();
+  followHash();
 
   (async () => {
     const banner = $('banner');
     const db = await window.claude?.use?.('db');
     if (!db) {
+      state.local = true;
+      state.canWrite = true;
+      $('import').disabled = false;
+      try {
+        const stored = JSON.parse(localStorage.getItem(localKey) || '{}');
+        for (const d of Object.values(stored)) {
+          if (d?.image === DATA.image && typeof d.addr === 'string' && ['keep', 'later', 'skip'].includes(d.status))
+            state.decisions[docId(d.addr)] = d;
+        }
+        $('storage-mode').textContent = 'Local browser decisions; export a copy to keep or share.';
+      } catch (e) {
+        $('storage-mode').textContent = 'Browser storage unavailable: export before closing.';
+      }
       banner.hidden = false;
       banner.textContent =
-        "Decisions can't be saved in this view. Open the page on claude.ai while signed in to record them.";
+        'Local triage mode. Keep/later/skip stays in this browser when storage is available. Export/import JSONL backs up decisions without a server.';
+      render();
+      followHash();
       return;
     }
     state.db = db;
+    $('storage-mode').textContent = 'Claude database decisions';
     const user = await window.claude.use('user');
     const can = user ? await user.can('data.write') : null;
     state.canWrite = can !== false;
@@ -895,7 +1035,7 @@
       .onSnapshot(
         (snap) => {
           const next = {};
-          for (const d of snap.docs) next[d.id] = d.data();
+          for (const d of snap.docs) if (d.data().image === DATA.image) next[d.id] = d.data();
           state.decisions = next;
           const ae = document.activeElement;
           const keep = ae && ae.id;

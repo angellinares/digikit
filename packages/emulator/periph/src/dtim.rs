@@ -56,8 +56,12 @@ pub const IDLE_STEP: u64 = crate::pit::IDLE_STEP;
 /// Invalid use of the bounded Device reference-event component.
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub enum DeviceReferenceError {
-    InvalidChannel { channel: usize },
-    UnsupportedMode { channel: usize },
+    InvalidChannel {
+        channel: usize,
+    },
+    UnsupportedMode {
+        channel: usize,
+    },
     CounterOutOfRange {
         channel: usize,
         counter: u32,

@@ -262,7 +262,8 @@ fn rendered_input_path(path: *const c_char, max_records: u32) -> Result<PathBuf,
     if !path.is_absolute() {
         return Err("live rendered-input log path must be absolute".to_string());
     }
-    let lane = Path::new(env!("CARGO_MANIFEST_DIR")).join("../../../out/native/sharc-integrated-lane");
+    let lane =
+        Path::new(env!("CARGO_MANIFEST_DIR")).join("../../../out/native/sharc-integrated-lane");
     std::fs::create_dir_all(&lane).map_err(|e| format!("{}: {e}", lane.display()))?;
     let lane = lane
         .canonicalize()
@@ -292,7 +293,8 @@ fn rendered_input_path(path: *const c_char, max_records: u32) -> Result<PathBuf,
 #[test]
 fn rendered_input_destination_cannot_follow_symlink() {
     use std::ffi::CString;
-    let lane = Path::new(env!("CARGO_MANIFEST_DIR")).join("../../../out/native/sharc-integrated-lane");
+    let lane =
+        Path::new(env!("CARGO_MANIFEST_DIR")).join("../../../out/native/sharc-integrated-lane");
     std::fs::create_dir_all(&lane).unwrap();
     let path = lane.join(format!("symlink-check-{}.ndjson", std::process::id()));
     std::os::unix::fs::symlink("outside", &path).unwrap();

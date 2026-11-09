@@ -8,6 +8,7 @@ call is a generated anchor (`modules/core/fw/include/dk_fw_*.h`). The host fake 
 - A plain menu and a text page are the firmware's `VerticalMenuView`; a `DK_UI_LIST` is a `MenuWithPopoutSideBarsView` (the PRESET MANAGER's
   base) with the right panel as the side panel. Each is built once and kept for the session through a `shared_ptr` this module owns, so the
   firmware never frees it.
+- `DK_UI_WIDE` (flag 4) builds a menu page as the list view without check marks or side panel: a full-width title bar (about 28 characters; the firmware cuts a longer title at its start with `..`) and full-width rows. `core/digikit-menu` sets it for module settings pages. A toggle or value row of a list or a wide page carries its value in its label (`TOGGLE            ON`, `VALUE              064`), because the list view does not give the item's draw function the row's origin; a change fills the list again.
 - Rows are stock `MenuItem`s. Their `std::function`s keep two words (the menu and the row number) in the function's own storage: no heap
   per row. The row data lives in an array of the menu that a refill rewrites.
 - The View vtable of a text page and of a list is a copy in module RAM: paint (slot 4) hides the cursor bar of a text page and draws the

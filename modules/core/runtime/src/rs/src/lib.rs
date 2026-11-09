@@ -27,6 +27,7 @@ pub mod fxpage;
 mod fxsend;
 mod loader;
 pub mod pageclick;
+pub mod nativepage;
 pub mod paramapi;
 pub mod registry;
 pub mod scan;
@@ -35,11 +36,16 @@ mod sample;
 mod sample_source;
 mod tracks;
 mod files;
+mod hash32;
+mod intro;
+mod safe_screen;
 mod sha256;
 pub mod store;
 mod table;
 pub mod upload;
 mod watch;
+mod worker;
+mod peakwin;
 
 #[cfg(not(test))]
 #[panic_handler]
@@ -524,6 +530,7 @@ unsafe extern "C" fn api_sample_pool_set(handle: u32, index: u32, path: *const u
 unsafe extern "C" fn api_sample_pool_clear(handle: u32, track: u32) -> i32 { tracks::pool_clear(handle, track) }
 unsafe extern "C" fn api_sample_pool_status(handle: u32, track: u32) -> i32 { tracks::status(handle, track) }
 unsafe extern "C" fn api_sample_pool_info(handle: u32, track: u32, out: *mut u8) -> i32 { tracks::info(handle, track, out) }
+unsafe extern "C" fn api_sample_pool_peaks(handle: u32, track: u32, token: u32, out: *mut u8, capacity: u32) -> i32 { tracks::peaks(handle, track, token, out, capacity) }
 unsafe extern "C" fn api_sample_pool_path(handle: u32, track: u32, buf: *mut u8, cap: u32) -> i32 { tracks::path(handle, track, buf, cap) }
 unsafe extern "C" fn api_param_get(track: u32, word: u32) -> i32 { pageclick::param_get(track, word) }
 unsafe extern "C" fn api_param_set(track: u32, word: u32, raw: i32) -> i32 { pageclick::param_set(track, word, raw) }
@@ -531,7 +538,14 @@ unsafe extern "C" fn api_files_client() -> i32 { files::client() }
 unsafe extern "C" fn api_files_list(client: u32, root: u32, path: *const u8, notify: Option<dkrt_sdk::api::FileEvent>, context: *mut u8) -> i32 { files::list(client, root, path, notify, context) }
 unsafe extern "C" fn api_files_poll(client: u32, ticket: u32, out: *mut u8, cap: u32) -> i32 { files::poll(client, ticket, out, cap) }
 unsafe extern "C" fn api_files_cancel(client: u32, ticket: u32) -> i32 { files::cancel(client, ticket) }
-
+unsafe extern "C" fn api_job_post(step: Option<dkrt_sdk::api::JobStep>, done: Option<dkrt_sdk::api::JobDone>, ctx: *mut u8) -> i32 { worker::post(dlog::current_source(), step, done, ctx) }
+unsafe extern "C" fn api_job_cancel(id: u32) -> i32 { worker::cancel(dlog::current_source(), id) }
+unsafe extern "C" fn api_sample_pool_peaks_window(handle: u32, track: u32, token: u32, first: u32, frames: u32, columns: u32, out: *mut u8, capacity: u32) -> i32 { peakwin::window(handle, track, token, first, frames, columns, out, capacity) }
+unsafe extern "C" fn api_settings_client() -> i32 { settings::module_client() }
+unsafe extern "C" fn api_settings_get(client: u32, key: *const u8, out: *mut u8, cap: u32) -> i32 { settings::module_get(client, key, out, cap) }
+unsafe extern "C" fn api_settings_put(client: u32, key: *const u8, value: *const u8, len: u32) -> i32 { settings::module_put(client, key, value, len) }
+unsafe extern "C" fn api_settings_remove(client: u32, key: *const u8) -> i32 { settings::module_remove(client, key) }
+unsafe extern "C" fn api_intro_take(frame: Option<dkrt_sdk::api::IntroFrame>, done: Option<dkrt_sdk::api::IntroDone>, ctx: *mut u8, ticks: u32) -> i32 { intro::take(frame, done, ctx, ticks) }
 
 /// The table is built at first use: pointers to the helpers are not constants.
 #[no_mangle]
@@ -569,6 +583,15 @@ pub static mut dkrt_api: Api = Api {
     param_get: api_param_get,
     param_set: api_param_set,
     sample_pool_set: api_sample_pool_set,
+    sample_pool_peaks: api_sample_pool_peaks,
+    job_post: api_job_post,
+    job_cancel: api_job_cancel,
+    sample_pool_peaks_window: api_sample_pool_peaks_window,
+    settings_client: api_settings_client,
+    settings_get: api_settings_get,
+    settings_put: api_settings_put,
+    settings_remove: api_settings_remove,
+    intro_take: api_intro_take,
 };
 
 pub unsafe fn log(msg: *const u8, value: u32) {
@@ -1103,11 +1126,13 @@ pub unsafe extern "C" fn dkrt_tick() {
     init_once();
     let s = st();
     s.ticks = s.ticks.wrapping_add(1);
+    intro::ui_pass();
     boot::ui_pass();
     upload::restart_poll();
     crash::install();
     dsp::step();
     sample::tick();
+    worker::tick();
     tracks::tick();
     files::tick();
     fxpage::tick();

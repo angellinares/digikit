@@ -4,7 +4,7 @@ Status 2026-11-02: the Python scenarios, wrappers and pk_digikit_settings.py are
 
 Line format: `scenario | file:line | what | -> TS file:test | or COVERED by <test> | or DROPPED/NOT PORTED: reason`.
 Python files: `S` = `6a5bb1ed:tools/patchkit/pk_digikit_settings.py`, `P` = `tools/patchkit/pk_digikit_project.py`, `C` = `tools/patchkit/pk_digikit_scen.py`, `M` = `tools/patchkit/pk_dkrt_machine.py`.
-TS files are `modules/core/runtime/tests/settings.device.test.ts`, `modules/core/adapters/dynreg/tests/roundtrip.device.test.ts` and `equiv.device.test.ts` (below named without the `.device` part), helpers in `project-kit.ts`, fixture in `card-rig.ts`); the encoder test is `tests/regression/host/settings-record.test.ts`.
+TS files are `modules/core/runtime/tests/settings/settings.device.test.ts`, `modules/core/adapters/dynreg/tests/roundtrip.device.test.ts` and `equiv.device.test.ts` (below named without the `.device` part), helpers in `project-kit.ts`, fixture in `card-rig.ts`); the encoder test is `tests/regression/host/settings-record.test.ts`.
 Every TypeScript daemon is coupled (ColdFire and DSP). The Python `cf_only` engine has no TypeScript counterpart; the tiers and devices of the TOML files are kept.
 
 ## settings-dn2, settings-dt2 (quick, both devices, coupled)

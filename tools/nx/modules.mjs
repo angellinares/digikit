@@ -1,69 +1,80 @@
 // Nx plugin: one project per module.toml. Edges: [module].requires plus [[object]].sources paths
 // that resolve into another module directory. tools/devtools/nx_graph.py reads them from the graph.
-// Targets: pack (build + pack to dist/modules/<dev>/<leaf>.dkm), pack-aliases (renamed copies named by
+// Targets: pack (build stale objects and pack to dist/modules/<dev>/<leaf>.dkm), pack-aliases (renamed copies named by
 // metadata.runtimeAcceptance), test-host, test-device and test-conformance (vitest directly, after the packs).
-import { existsSync, globSync, readFileSync } from 'node:fs';
-import { dirname, join, normalize } from 'node:path';
-import { DependencyType } from '@nx/devkit';
-import { parse } from 'smol-toml';
+import { globSync, readFileSync } from 'node:fs';
+import { dirname, join } from 'node:path';
+import { read, records, packDevices, isUploadable, dkm, manifestClosure, manifestArgs } from './module-manifests.mjs';
+import {
+  PK,
+  IMAGE_BUILD,
+  BUILD_INPUTS,
+  DEVICE_INPUTS,
+  EMU_SLOT,
+  EMU_SLOT_INPUT,
+  VITEST_SETUP,
+  deviceTargets,
+  scopedManifestInputs,
+} from './module-targets.mjs';
+import { packSourceInputs } from './pack-inputs.mjs';
+import { testImportInputs } from './test-imports.mjs';
 
-const read = (root, toml) => parse(readFileSync(join(root, toml), 'utf8'));
-// Commands run with cwd '.' (the workspace root); Nx accepts {workspaceRoot} only at the start of an option.
-const PK = 'dist/patchkit/patchkit --root .';
-
-// The devices a module packs for: no ports means both devices.
-const packDevices = (m) => {
-  if (!m.ports?.length) return ['dt2', 'dn2'];
-  return ['dt2', 'dn2'].filter((d) => m.ports.some((p) => p.startsWith(`${d}-`)));
-};
-// Shipped module that is loaded at run time: it gets test-conformance.
-const isUploadable = (root, m) => root.startsWith('modules/') && !!(m.dynamic || m.host || m.type === 'service');
-// Cache inputs of test-device and test-conformance: the module and its graph deps (core modules, harness via
-// regression/conformance, daemon and patchkit crate sources) with their `production` files (sources without
-// tests/ and docs; for regression only the harness files, see tests/regression/project.json), the outputs of
-// the pack, CLI and daemons targets (dist/daemons.json names the content-keyed daemon), and the firmware and
-// ready dirs via device-inputs.mjs.
-// Also named explicitly: the harness packages (test-support, control-client, dk-session), every module.toml
-// (the conformance suite scans manifests to select modules) and tools/emulator/fast_regions.json (sets SHARC_* env).
-const DEVICE_INPUTS = [
-  'default',
-  '^production',
-  'jsToolchain',
-  { dependentTasksOutputFiles: '**/*', transitive: true },
-  { runtime: 'node tools/nx/device-inputs.mjs' },
-  { env: 'DIGI_EMU_FAST' },
-  { env: 'DIGI_NO_PROGRESS_MS' },
-  // quick or full tier (tests/regression/runtime/devices.ts FULL_TIER): selects which tests run.
-  { env: 'DIGIKIT_TIER' },
-  { env: 'DIGI_PK_READY_DT2_117' },
-  { env: 'DIGI_PK_READY_DN2_112' },
-  { env: 'SHARC_FAST_REGIONS' },
-  { env: 'SHARC_BLOCKTRANS' },
-  { env: 'SHARC_FAST_FALLBACK_REGIONS' },
-  { env: 'SHARC_FAST_AUTO' },
-  '{workspaceRoot}/packages/test-support/**/*',
-  '{workspaceRoot}/packages/control-client/**/*',
-  '{workspaceRoot}/packages/dk-session/**/*',
-  '{workspaceRoot}/modules/**/module.toml',
-  '{workspaceRoot}/tools/emulator/fast_regions.json',
-];
-const leaf = (id) => id.split('/').at(-1);
-const dkm = (dev, id) => `dist/modules/${dev}/${leaf(id)}.dkm`;
-const records = (root) => {
-  const file = join(root, 'project.json');
-  return existsSync(file) ? (JSON.parse(readFileSync(file, 'utf8')).metadata?.runtimeAcceptance ?? []) : [];
-};
+export { createDependencies } from './module-dependencies.mjs';
 
 export const createNodesV2 = [
-  '{modules,tests/fixtures/modules}/**/module.toml',
-  (files, _opts, ctx) => {
+  '{modules,tests/fixtures/modules,tests/regression}/**/{module.toml,project.json}',
+  (matched, _opts, ctx) => {
+    // Lazy for manifests without device targets (including small plugin fixtures).
+    let imports;
+    const importInputs = (files) => (imports ??= testImportInputs(ctx.workspaceRoot))(files);
+    const files = matched.filter((f) => f.endsWith('/module.toml'));
+    const testOwners = matched
+      .filter((f) => f.endsWith('/project.json'))
+      .map((f) => [f, JSON.parse(readFileSync(join(ctx.workspaceRoot, f), 'utf8'))])
+      .filter(([, p]) => p.tags?.includes('test-only'));
     // id -> manifest, so an alias can find the devices of its source module.
     const byId = new Map(
-      files.map((f) => [read(ctx.workspaceRoot, f).module.id, { manifest: read(ctx.workspaceRoot, f).module }]),
+      files.map((f) => {
+        const parsed = read(ctx.workspaceRoot, f);
+        return [parsed.module.id, { file: f, manifest: parsed.module, objects: parsed.object ?? [] }];
+      }),
     );
+    // Core generation reads the allocation providers and declarations of the complete core library.
+    // Build inputs follow manifest/source ownership, never the module's acceptance relationships.
+    const packInputs = (manifests) => [
+      ...scopedManifestInputs(
+        BUILD_INPUTS.filter((input) => input !== '^production'),
+        manifests,
+      ),
+      ...packSourceInputs(ctx.workspaceRoot, byId, manifests),
+    ];
+    const coreManifests = [...byId.values()]
+      .filter(({ manifest }) => manifest.category === 'core')
+      .map(({ file }) => file)
+      .sort();
+    const coreBuilds = new Set(
+      [...byId]
+        .filter(([, { manifest, objects }]) => manifest.category === 'core' && objects.some((o) => o.sources?.length))
+        .map(([id]) => id),
+    );
+    // Patch image composition follows module.requires, not acceptance-fixture graph edges.
+    const imageModules = new Set();
+    const includeImageModule = (id) => {
+      if (imageModules.has(id)) return;
+      const manifest = byId.get(id)?.manifest;
+      if (!manifest) throw new Error(`Unknown acceptance patch-set module ${id}`);
+      imageModules.add(id);
+      for (const required of manifest.requires ?? []) includeImageModule(required);
+    };
+    // The supported acceptance image sets; arbitrary overrides need separate input review.
+    for (const profile of globSync('devices/*.toml', { cwd: ctx.workspaceRoot }).sort()) {
+      const sets = read(ctx.workspaceRoot, profile).patch_sets ?? {};
+      for (const set of ['emulator', 'sample-tracks']) for (const id of sets[set] ?? []) includeImageModule(id);
+    }
+    const imageInput = { input: 'production', projects: [...imageModules].sort() };
     // Only the modules the gate packs get a pack target: patched-in core modules and static fixtures
     // (several ColdFire objects, no dkm_ symbols) cannot be packed as .dkm.
-    const packable = new Set(['digikit/debug']);
+    const packable = new Set();
     for (const [id, { manifest: m }] of byId) {
       const root = files.find((f) => read(ctx.workspaceRoot, f).module.id === id);
       if (root?.startsWith('modules/') && (m.dynamic || m.host || m.type === 'service')) packable.add(id);
@@ -79,11 +90,17 @@ export const createNodesV2 = [
         for (const source of Object.values(rec.aliases ?? {})) packable.add(source);
       }
     }
-    return files.map((f) => {
-      const { module: m } = read(ctx.workspaceRoot, f);
+    const nodes = files.map((f) => {
+      const { module: m, object: objects = [] } = read(ctx.workspaceRoot, f);
       const root = dirname(f);
       const project = { name: m.id, root, tags: ['module', `type:${m.type}`] };
-      const tests = globSync('tests/**/*.test.ts', { cwd: join(ctx.workspaceRoot, root) });
+      if (root.startsWith('modules/') && m.category !== 'core') project.tags.push('release-module');
+      if (coreBuilds.has(m.id) && imageModules.has(m.id)) project.tags.push('acceptance-image');
+      const tests = globSync('tests/**/*.test.ts', { cwd: join(ctx.workspaceRoot, root) }).filter(
+        (t) =>
+          !t.endsWith('.manual.device.test.ts') &&
+          !testOwners.some(([pf]) => join(root, t).startsWith(dirname(pf) + '/')),
+      );
       const hostTests = tests.filter((t) => !t.endsWith('.device.test.ts'));
       const deviceTests = tests.filter((t) => t.endsWith('.device.test.ts')).sort();
       const shipped = root.startsWith('modules/');
@@ -91,22 +108,45 @@ export const createNodesV2 = [
       const uploadable = isUploadable(root, m);
       const recs = records(join(ctx.workspaceRoot, root));
       const devices = packDevices(m);
-      if (devices.length && packable.has(m.id))
-        targets.pack = {
+      if (coreBuilds.has(m.id))
+        targets['build-objects'] = {
           executor: 'nx:run-commands',
           cache: false,
-          dependsOn: ['patchkit:cli'],
-          outputs: devices.map((d) => `{workspaceRoot}/${dkm(d, m.id)}`),
+          inputs: scopedManifestInputs(BUILD_INPUTS, coreManifests),
+          description:
+            'Check generated sources, then incrementally build committed core objects; may update tracked outputs.',
+          dependsOn: [
+            'sdk:check-generated',
+            ...(m.requires ?? []).filter((id) => coreBuilds.has(id)).map((id) => `${id}:build-objects`),
+          ],
+          outputs: objects.filter((o) => o.sources?.length).map((o) => `{workspaceRoot}/${root}/${o.path}`),
           options: {
             commands: [
-              'mkdir -p dist/modules/dt2 dist/modules/dn2',
+              `${PK} gen --modules ${m.id} ${manifestArgs(coreManifests)} --check --scope modules`,
               `${PK} build ${root}`,
-              ...devices.map((d) => `${PK} pack ${m.id} --device ${d} -o ${dkm(d, m.id)}`),
             ],
             parallel: false,
             cwd: '.',
           },
         };
+      if (devices.length && packable.has(m.id)) {
+        const manifests = manifestClosure(byId, [m.id]);
+        targets.pack = {
+          executor: 'nx:run-commands',
+          cache: false,
+          inputs: packInputs(manifests),
+          dependsOn: ['patchkit:cli'],
+          outputs: devices.map((d) => `{workspaceRoot}/${dkm(d, m.id)}`),
+          options: {
+            commands: [
+              'mkdir -p dist/modules/dt2 dist/modules/dn2',
+              ...devices.map((d) => `${PK} pack ${m.id} ${manifestArgs(manifests)} --device ${d} -o ${dkm(d, m.id)}`),
+            ],
+            parallel: false,
+            cwd: '.',
+          },
+        };
+      }
       const aliasCmds = [];
       const aliasOutputs = [];
       const aliasSources = new Set();
@@ -117,7 +157,9 @@ export const createNodesV2 = [
           if (!src) continue;
           aliasSources.add(source);
           for (const d of packDevices(src.manifest)) {
-            aliasCmds.push(`${PK} pack ${source} --device ${d} --name ${alias} -o ${dkm(d, alias)}`);
+            aliasCmds.push(
+              `${PK} pack ${source} ${manifestArgs(manifestClosure(byId, [source]))} --device ${d} --name ${alias} -o ${dkm(d, alias)}`,
+            );
             aliasOutputs.push(`{workspaceRoot}/${dkm(d, alias)}`);
           }
         }
@@ -125,6 +167,7 @@ export const createNodesV2 = [
         targets['pack-aliases'] = {
           executor: 'nx:run-commands',
           cache: false,
+          inputs: packInputs(manifestClosure(byId, [...aliasSources])),
           dependsOn: ['patchkit:cli', ...[...aliasSources].map((s) => `${s}:pack`)],
           outputs: aliasOutputs,
           options: {
@@ -144,90 +187,101 @@ export const createNodesV2 = [
             cwd: '.',
           },
         };
-      if (shipped && deviceTests.length) {
-        const dependsOn = ['patchkit:cli', 'digi-control:daemons'];
-        if (uploadable) dependsOn.push('pack');
-        for (const rec of recs) {
-          for (const id of rec.modules ?? []) dependsOn.push(`${id}:pack`);
-          if (Object.keys(rec.aliases ?? {}).length) dependsOn.push('pack-aliases');
-          if (rec.plusdrive) dependsOn.push('plusdrive-format:cli');
-        }
-        targets['test-device'] = {
-          executor: 'nx:run-commands',
-          cache: true,
-          inputs: DEVICE_INPUTS,
-          dependsOn: [...new Set(dependsOn)],
-          outputs: [],
-          options: {
-            env: { REGRESSION_JOBS: '2' },
-            command: `pnpm --filter @digi/regression test:runtime ${deviceTests.map((t) => `../../${root}/${t}`).join(' ')}`,
-            cwd: '.',
-          },
-        };
-      }
+      if (shipped && deviceTests.length)
+        Object.assign(
+          targets,
+          deviceTargets('test-device', root, deviceTests, recs, imageInput, importInputs, uploadable),
+        );
       // The rule is `isUploadable` in this file: the shared conformance suite loads these.
       if (uploadable)
         targets['test-conformance'] = {
           executor: 'nx:run-commands',
           cache: true,
-          inputs: DEVICE_INPUTS,
-          dependsOn: ['pack', 'digikit/debug:pack', 'digi-control:daemons'],
+          inputs: [
+            ...DEVICE_INPUTS,
+            'production',
+            EMU_SLOT_INPUT,
+            imageInput,
+            ...importInputs([
+              ...globSync('tests/conformance/**/*.device.test.ts', { cwd: ctx.workspaceRoot }),
+              VITEST_SETUP,
+            ]),
+          ],
+          dependsOn: ['pack', 'digikit/debug:pack', 'digi-control:daemons', IMAGE_BUILD],
           outputs: [],
           options: {
-            command: 'pnpm --filter @digi/regression test:conformance',
-            env: { DIGI_CONFORMANCE_MODULES: m.id, REGRESSION_JOBS: '2' },
+            command: `${EMU_SLOT} pnpm --filter @digi/regression test:conformance`,
+            env: { DIGI_CONFORMANCE_MODULES: m.id, DIGI_CONFORMANCE_MANIFEST: f },
             cwd: '.',
           },
         };
       if (Object.keys(targets).length) project.targets = targets;
       return [f, { projects: { [root]: project } }];
     });
+    for (const [file, config] of testOwners) {
+      const root = dirname(file);
+      const tests = globSync('**/*.device.test.ts', { cwd: join(ctx.workspaceRoot, root) })
+        .filter(
+          (t) =>
+            !t.endsWith('.manual.device.test.ts') &&
+            !testOwners.some(
+              ([pf]) => dirname(pf).startsWith(root + '/') && join(root, t).startsWith(dirname(pf) + '/'),
+            ),
+        )
+        .sort();
+      if (!tests.length) continue;
+      const recs = records(join(ctx.workspaceRoot, root));
+      if (recs.some((rec) => Object.keys(rec.aliases ?? {}).length))
+        throw new Error(`Test-only project ${config.name} needs explicit pack-aliases support`);
+      // Explicit fixture images build only their manifest requirements; ordinary owners keep the default image.
+      const patchRoots = [...new Set(recs.flatMap((rec) => rec.patchModules ?? []))];
+      const patchIds = patchRoots.length
+        ? manifestClosure(byId, patchRoots).map((file) => read(ctx.workspaceRoot, file).module.id)
+        : undefined;
+      const targetName = config.tags.includes('tier:full') ? 'test-device-full' : 'test-device';
+      const targets = deviceTargets(
+        targetName,
+        root,
+        tests,
+        recs,
+        patchIds ? { input: 'production', projects: patchIds } : imageInput,
+        importInputs,
+      );
+      for (const target of Object.values(targets)) {
+        if (!target.options) continue; // the no-op parent
+        if (patchIds)
+          target.dependsOn = target.dependsOn.flatMap((dependency) =>
+            dependency === IMAGE_BUILD
+              ? patchIds.filter((id) => coreBuilds.has(id)).map((id) => `${id}:build-objects`)
+              : [dependency],
+          );
+        if (targetName === 'test-device-full') target.options.env = { DIGIKIT_TIER: 'full' };
+      }
+      nodes.push([file, { projects: { [root]: { name: config.name, root, tags: config.tags, targets } } }]);
+    }
+    if (matched.includes('tests/regression/project.json'))
+      nodes.push([
+        'tests/regression/project.json',
+        {
+          projects: {
+            'tests/regression': {
+              targets: {
+                'test-device': {
+                  inputs: [
+                    ...DEVICE_INPUTS,
+                    imageInput,
+                    '{projectRoot}/project.json',
+                    ...importInputs([
+                      ...globSync('tests/regression/emulator/**/*.test.ts', { cwd: ctx.workspaceRoot }),
+                      VITEST_SETUP,
+                    ]),
+                  ],
+                },
+              },
+            },
+          },
+        },
+      ]);
+    return nodes;
   },
 ];
-
-export const createDependencies = (_opts, ctx) => {
-  const mods = Object.values(ctx.projects).filter((p) => p.tags?.includes('module'));
-  const owner = (path) =>
-    mods
-      .filter((p) => path === p.root || path.startsWith(p.root + '/'))
-      .sort((a, b) => b.root.length - a.root.length)[0]?.name;
-  // Shipped content modules (not core/*, not fixtures) need the runtime and the adapters of their type.
-  const implicit = (p, type) =>
-    !p.root.startsWith('modules/') || p.root.startsWith('modules/core/')
-      ? []
-      : [
-          'core/runtime',
-          ...(type === 'machine' ? ['core/dynreg', 'core/dsp-voice'] : []),
-          ...(type === 'fx' ? ['core/dynfx', 'core/fxpages'] : []),
-        ];
-  const all = Object.values(ctx.projects);
-  return mods.flatMap((p) => {
-    const t = read(ctx.workspaceRoot, join(p.root, 'module.toml'));
-    const deps = [...(t.module.requires ?? []), ...implicit(p, t.module.type)];
-    for (const o of t.object ?? []) for (const s of o.sources ?? []) deps.push(owner(normalize(join(p.root, s))) ?? '');
-    const statics = [...new Set(deps)]
-      .filter((d) => d && d !== p.name)
-      .map((target) => ({
-        source: p.name,
-        target,
-        sourceFile: join(p.root, 'module.toml'),
-        type: DependencyType.static,
-      }));
-    // Implicit edges: a module with device tests depends on the harness, the daemon and the packs;
-    // only a module with test-conformance also depends on the conformance suite.
-    const hasDeviceTests = !!(p.targets?.['test-device'] || p.targets?.['test-conformance']);
-    const implicitDeps = hasDeviceTests ? ['regression', 'digi-control', 'patchkit', 'devices', 'sdk'] : [];
-    // Runtime acceptance records name the fixture/content modules loaded by device tests.
-    // Their source changes must invalidate the consumer's device-test cache.
-    for (const rec of records(join(ctx.workspaceRoot, p.root))) {
-      implicitDeps.push(...(rec.modules ?? []), ...Object.values(rec.aliases ?? {}));
-    }
-    if (p.targets?.['test-conformance']) implicitDeps.push('conformance');
-    // Projects that live inside the module directory (for example core/ui and dkui-host).
-    for (const q of all) if (q.name !== p.name && q.root.startsWith(p.root + '/')) implicitDeps.push(q.name);
-    const implicits = [...new Set(implicitDeps)]
-      .filter((d) => d !== p.name && ctx.projects[d])
-      .map((target) => ({ source: p.name, target, type: DependencyType.implicit }));
-    return [...statics, ...implicits];
-  });
-};

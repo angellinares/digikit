@@ -484,7 +484,7 @@ probe. Its resume took 3.74 seconds with all 60 artifact mtimes unchanged. Outpu
 passed; the full branch acceptance gate remains required before merge.
 
 **[O]** Consolidate firmware-specific fast-tier defaults from
-`tools/emulator/fast_regions.json` into the corresponding version entries in
+`config/emulator.json` into the corresponding version entries in
 `devices/digitakt-ii.toml` and `devices/digitone-ii.toml`. Preserve exact firmware
 hash matching, explicit override precedence and unknown-firmware behavior across
 Python, TypeScript and browser consumers. Keep experiment overrides in matrix
@@ -628,7 +628,7 @@ stopped when the user requested this new default; it is superseded, not a pass.
 **[D]** DT2 1.17 patched runtime (dsp-voice, converter, fx and link patches), `dt2-led-sweep`,
 3 audio seconds, ready state from a cold patched boot, `coupled scenario --diag hist`. The
 earlier figure of 19.4 M interpreted instructions per audio second (58.2 M in 3 s) was measured
-without the fast tier. The patched-image hash has no row in `tools/emulator/fast_regions.json`,
+without the fast tier. The patched-image hash has no row in `config/emulator.json`,
 so a run that passes the patched `.syx` gets no fallback root unless
 `SHARC_FAST_FALLBACK_REGIONS` is set. The workbench resolves the defaults from the stock
 firmware and does run root `0x1c2607`. With that root alone the same run interprets 18.0 M
@@ -652,7 +652,7 @@ Ceiling (finding 18: 60 to 105 ns per interpreted instruction, about 1 ns compil
 alone is 0.11 to 0.19, the `0x1c1f7d` group 0.06 to 0.11. These are interpreter-rate
 estimates, not measured host time.
 
-Change: `tools/emulator/fast_regions.json` for DT2 1.17 gets regular root `0x1c4ed2` and
+Change: `config/emulator.json` for DT2 1.17 gets regular root `0x1c4ed2` and
 fallback roots `0x1c1fe7`, `0x1c204b` next to `0x1c2607`. A fallback root alone cannot take the
 prologue, because a fallback root must be a barred AOT entry and `0x1c4ed2` is not one; on
 stock code nothing reaches `0x1c4ed2` through the interpreter. Interpreted instructions on
@@ -695,7 +695,7 @@ Two changes in `packages/emulator/sharc/src/fast/mod.rs` and `lib.rs`:
   instruction an entry; so does the instruction after a stop of such a region. The chain follows
   straight-line code. A chased entry whose calls retire fewer than 3 instructions on average is
   dropped after 64 calls. `SHARC_FAST_CHASE=0` turns it off. DT2 1.17 got 23 more regular roots in
-  `tools/emulator/fast_regions.json`: the places where the interpreter resumes after a branch
+  `config/emulator.json`: the places where the interpreter resumes after a branch
   (found with the interpreter histogram and the instruction table).
 - **Appended entries.** When the interpreter lands in appended code (above the generated image's
   code, set by the code check) by a taken branch, call, return or loop-back, that PC becomes a

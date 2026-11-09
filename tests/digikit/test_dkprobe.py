@@ -166,7 +166,7 @@ def test_capture_waits_for_a_full_ring_reads_it_and_writes_a_complete_table():
     )
     assert doc["collector"]["frames_ok"] == h["frames"] and doc["identity"][
         "store"
-    ] == [{"path": "modules/a.dkm", "size": 10, "sha256": "ff" * 32}]
+    ] == [{"path": "modules/a.dkm", "size": 10, "hash": "ff" * 32}]
     assert doc["items_table"][0]["input"] == f"0x{ITEMS[0][1]:08x}" and len(
         doc["items_table"]
     ) == len(ITEMS)

@@ -63,10 +63,7 @@ fn the_register_records_are_the_lowered_typed_sections() {
         (machine_key("test/sine", "sine"), 0, 255, 10)
     );
     // knobs on the Digitakt: SAMPLE's tune and level rows, the module's parameter (index 0) at the first free position
-    assert_eq!(
-        mach.knobs,
-        [0xca, KNOB_PARAM, 0, 0, 0, 0, 0, 0xd1]
-    );
+    assert_eq!(mach.knobs, [0xca, KNOB_PARAM, 0, 0, 0, 0, 0, 0xd1]);
     let p = &reg.params[0];
     assert_eq!((p.template, p.slot, p.min, p.max), (0xcc, 1, 0, 0x7f00));
     // the Digitone: a page holds the parameter, the machine row none

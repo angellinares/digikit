@@ -178,14 +178,15 @@ while the card is read (time per 32 KiB page **[O]**).
 - `DIGI_WRITE_WATCH=LO-HI[,..]` reports every write into the ranges from CPU stores and from DMA (eSDHC, DSPI),
   with the instruction count, PC or DMA source, address, size and value; `DIGI_WRITE_WATCH_ALLOW_PC`,
   `DIGI_WRITE_WATCH_AFTER=cacr|ICOUNT`, `DIGI_WRITE_WATCH_OUT`, `DIGI_WRITE_WATCH_LIMIT`. `DIGI_FLUSH_CHECK=1`
-  reports a fetch from a 16-byte line written after the caches were enabled and not pushed and invalidated since.
+  reports a fetch of bytes written after the caches were enabled and not pushed and invalidated since (dirty
+  bytes are tracked per 16-byte line).
   Details: docs/INSTRUMENTATION.md. Code: packages/emulator/boot/src/watch.rs (on top of the `--guard`
   mechanism).
 - DT2 1.16 boot to ready and 40M further instructions, watch on `cf.expansion` (`0x47e8b000-0x47fe0000`) after
   the CACR write: 0 writes, 0 flush hits; the check saw 105.6M stores, 142K fetches and 1.03M CPUSHL. A control
   range in the display buffer (`0x44e4a5b8+0x400`) gave 691,512 writes from 18 PCs.
 - When off, the store path tests one flag, as before; the work is in a cold function.
-- Limits: only the first word of an instruction is checked; only DDR is tracked; host writes are not seen. The
+- Limits: all bytes of an instruction are checked; only DDR is tracked; host writes are not seen. The
   emulator does not map the uncached alias (`0x48000000+`) onto DDR, so a store through it lands in separate
   memory: code that relies on the alias would work on hardware and fail in the emulator **[O]**.
 

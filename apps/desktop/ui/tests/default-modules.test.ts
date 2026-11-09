@@ -2,6 +2,7 @@
 import assert from 'node:assert/strict';
 import { test } from 'vitest';
 import { DkError } from '@digi/dk-session';
+import { shouldInstallAtStart } from '../src/default-modules.ts';
 import { defaultModuleIds, entries, summaryOf, waitForRuntime } from '../src/default-modules-data.ts';
 
 test('both device files list digikit/debug and digikit/remote, and each entry has the summary of its module.toml', () => {
@@ -71,4 +72,13 @@ test('waitForRuntime asks again until a runtime answers, and gives up with the l
     ),
     DkError,
   );
+});
+
+test('the install starts at launch only with the runtime on and set, a status, and no install yet', () => {
+  const base = { runtimeOn: true, runtimeSet: true, started: false, hasStatus: true };
+  assert.equal(shouldInstallAtStart(base), true);
+  assert.equal(shouldInstallAtStart({ ...base, runtimeOn: false }), false);
+  assert.equal(shouldInstallAtStart({ ...base, runtimeSet: false }), false);
+  assert.equal(shouldInstallAtStart({ ...base, started: true }), false);
+  assert.equal(shouldInstallAtStart({ ...base, hasStatus: false }), false);
 });

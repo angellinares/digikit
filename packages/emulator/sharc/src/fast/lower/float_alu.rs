@@ -246,6 +246,30 @@ impl Lower {
         Ok(())
     }
 
+    /// RN = mant FX: the hidden bit and fraction, left-justified. A NaN or an
+    /// infinity leaves the kernel; exponent 0 (zero, denormal) gives 0 with a
+    /// select, so the flags stay exact without leaving.
+    pub fn falu_mant(&mut self, rn: u32, rx: u32) -> LR<()> {
+        let x = self.rd_f(rx)?;
+        let xb = self.to_i(x);
+        let e = self.exp_field(xb);
+        let k255 = self.ci(255);
+        let ok = self.bin(Bin::LtU, e, k255);
+        self.guard(ok);
+        let fm = self.ci(0x7f_ffff);
+        let frac = self.bin(Bin::And, xb, fm);
+        let hid = self.ci(0x80_0000);
+        let full = self.bin(Bin::Or, frac, hid);
+        let k8 = self.ci(8);
+        let shifted = self.bin(Bin::Shl, full, k8);
+        let z = self.ci(0);
+        let iszero = self.bin(Bin::Eq, e, z);
+        let r = self.select(iszero, z, shifted);
+        self.wr_i(rn, r)?;
+        self.pend_flag(FlagKind::Fmant, vec![r, x]);
+        Ok(())
+    }
+
     /// RN = scalb FX by RY for FX zero or normal and no overflow; an
     /// underflow flushes to a signed zero.
     pub fn falu_scalb(&mut self, rn: u32, rx: u32, ry: u32) -> LR<()> {

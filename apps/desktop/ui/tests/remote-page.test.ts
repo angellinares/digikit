@@ -7,7 +7,9 @@ import {
   deviceOfPort,
   infoDue,
   isRemoteMissing,
+  leaveCancels,
   remoteNotice,
+  remotePaused,
   remoteRuntime,
   remoteStateWanted,
 } from '../src/remote-core.ts';
@@ -61,4 +63,16 @@ test('INFO only names the device: asked first, when the target changes, and ever
   assert.equal(infoDue(1000, 3000, false), false);
   assert.equal(infoDue(1000, 3000, true), true);
   assert.equal(infoDue(1000, 1000 + INFO_EVERY_MS, false), true);
+});
+
+test('a Transfer job keeps the Remote page from cancelling its requests and from polling', () => {
+  // leaving the page cancels what waits on the session only when no job writes to the device (a read is short and not worth keeping)
+  assert.equal(leaveCancels(''), true);
+  assert.equal(leaveCancels('Reading'), true);
+  for (const job of ['Uploading', 'Installing', 'Deleting', 'Restarting']) {
+    assert.equal(leaveCancels(job), false, job);
+    assert.equal(remotePaused(job), true, job);
+  }
+  assert.equal(remotePaused(''), false);
+  assert.equal(remotePaused('Reading'), false);
 });

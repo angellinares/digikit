@@ -308,6 +308,36 @@ def test_two_smp_values_pick_two_records(device):
     assert not np.array_equal(first, second)
 
 
+@pytest.mark.parametrize("device", DEVICES)
+def test_smp_is_latched_but_other_parameter_words_remain_live(device):
+    s = Shot(device, index=2)
+    s.start(params={"shot_play": FWD_L})
+    s.step(1)
+    changed = {
+        "shot_smp": 5 << 8,
+        "shot_start": 12 << 8,
+        "shot_end": 100 << 8,
+        "shot_play": REV_L,
+        "shot_pitch": 72 << 8,
+    }
+    s.step(1, changed)
+    r = s.rig
+    live = nw(r.built.data["_dv_params"])
+    called = nw(r.built.data["_dv_call_params"])
+    assert r.sess.peek(live) == 5 << 8
+    assert r.sess.peek(called) == 2 << 8
+    for word, pid in enumerate(
+        ("shot_start", "shot_end", "shot_play", "shot_pitch"), 1
+    ):
+        assert r.sess.peek(called + word) == changed[pid]
+    # Entry 5 is empty: a new trigger must now use it and finish silently.
+    s.index = 5
+    s.start()
+    left, _ = s.step(1)
+    assert not np.any(left)
+    assert r.sess.peek(called) == 5 << 8
+
+
 @pytest.mark.parametrize(
     "smp",
     [7, 15, 16, 127],

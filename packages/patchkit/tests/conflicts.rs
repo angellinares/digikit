@@ -179,11 +179,7 @@ fn an_anchor_hash_mismatch_is_refused() {
         .iter_mut()
         .filter(|p| p.port.version == "1.17" && p.port.device == "dt2")
     {
-        for a in p
-            .anchor
-            .iter_mut()
-            .filter(|a| a.name == "dsp.fx.fn.entry")
-        {
+        for a in p.anchor.iter_mut().filter(|a| a.name == "dsp.fx.fn.entry") {
             a.sha256 = "ab".repeat(32);
         }
     }
@@ -231,12 +227,7 @@ fn a_patched_image_has_no_port() {
     need_toolchain!();
     let out = run(&library(vec![]), &["core/fx"]).unwrap();
     let lib = library(vec![]);
-    let again = apply::apply(
-        &out.syx,
-        &registry(),
-        &lib,
-        &["core/fx".to_string()],
-    );
+    let again = apply::apply(&out.syx, &registry(), &lib, &["core/fx".to_string()]);
     expect_err(again, "no port for firmware");
 }
 

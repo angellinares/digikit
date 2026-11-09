@@ -36,16 +36,22 @@ export function withTick(unticked: Unticked, device: string, id: string, on: boo
 export const tickedIds = (entries: DefaultModuleEntry[], unticked: Unticked, device: string): string[] =>
   entries.filter((e) => !(unticked[device] ?? []).includes(e.id)).map((e) => e.id);
 
+/** The device file's patch set the Firmware page asks for: `device`, or with the Custom boot screen toggle the same roots plus core/introblank. */
+export const patchSetFor = (customBootScreen: boolean): string => (customBootScreen ? 'device-introblank' : 'device');
+
+/** What the toggle says under its label. */
+export const CUSTOM_BOOT_SCREEN_HELP =
+  'Replaces the Elektron intro with black until a boot screen module takes over. Needs the Boot screens module.';
+
 /** The text of the Default modules button. */
 export const defaultsLabel = (ticked: number): string => `Default modules (${ticked})`;
 
 /** A default module failed: `id` is the module, `message` the reason. */
 export class DefaultModuleError extends Error {
-  constructor(
-    readonly id: string,
-    reason: string,
-  ) {
+  readonly id: string;
+  constructor(id: string, reason: string) {
     super(`${id}: ${reason}`);
+    this.id = id;
     this.name = 'DefaultModuleError';
   }
 }

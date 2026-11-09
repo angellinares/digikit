@@ -5,7 +5,7 @@
     mise run dk:probe -- --port Digitakt --modules test/dsp-facts --capture out/probe/facts.json
 
 Steps, one line each: INFO (the device id picks the pack target), the modules loaded now (the selection to restore), pack (`patchkit pack`) of the given
-modules, `digikit/remote`, `digikit/debug` and `digikit/probe`, upload of the files whose size or sha256 differ from LIST, SELECT (remote, debug, the modules, the collector),
+modules, `digikit/remote`, `digikit/debug` and `digikit/probe`, upload of the files whose size or file hash differ from LIST, SELECT (remote, debug, the modules, the collector),
 RESTART, the wait for the new boot, the boot's MOD_LOAD and MOD_DSP results and the loaded modules, the fault check, the capture
 (`dkprobe capture`), the fault check again, the comparison with `--compare`, and the restore: SELECT of the previous modules and RESTART, unless `--keep`.
 The restore also runs after a failure, once the new selection is saved.

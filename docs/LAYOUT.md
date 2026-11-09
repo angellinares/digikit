@@ -13,7 +13,7 @@ This file says who owns which part of the repository and which moves are planned
 | patchkit | Patch planning, building, validation, module builds | `packages/patchkit`; `tools/patchkit/patchkit.py`, `tools/patchkit/pk_*.py`, `port_resolve.py`, `machine*.py`, `patched_*.py`, `pluck_ref.py`, `dsp_patch.py`, `tools/patchkit/dsp_patches/`; `modules/`; `devices/ports/`; `sdk/` (the module contract: `sdk/sdk.toml`, with `packages/patchkit/src/sdkgen.rs`; generated: `modules/core/runtime/sdk/src/gen_sdk.rs`, `tools/device/dklog_kinds.py`) |
 | control client | Control-socket protocol | `packages/emulator/control` (crate `digi-control`: the `digi-emud` server and the `digi_control` library); `tools/control/digi_client.py` |
 | device | Tools for a real device over USB MIDI | `tools/device/` (`devrpc.py` runtime RPC, `midisniff.py` SysEx capture, `mmon.py` MIDI Monitor files) |
-| devtools | Verification, tests, locks, lanes, performance tooling | `tools/devtools/py_select.py`, `fx_tier.py`, `test_outcomes.py`, `rust_ws.py`, `layercheck.py` (module layering), `benchlock.py`, `lane.sh`, `worktree-setup.sh`, `perf*.py`, `fastcov.py`, `coupled_ab.py`, `spikes.py`, `app_soak.py`, `sharc_regionbench.py`, `sharc_prof_*.py`, `browser_bench.mjs`, `wasm_*.mjs` |
+| devtools | Verification, tests, locks, lanes, performance tooling | `tools/devtools/py_select.py`, `fx_tier.py`, `test_outcomes.py`, `layercheck.py` (module layering), `benchlock.py`, `lane.sh`, `worktree-setup.sh`, `perf*.py`, `fastcov.py`, `coupled_ab.py`, `spikes.py`, `app_soak.py`, `sharc_regionbench.py`, `sharc_prof_*.py`, `browser_bench.mjs`, `wasm_*.mjs` |
 | apps | Desktop and browser shells | `apps/desktop` (Tauri, crate `digiemu-desktop`), `apps/web` |
 | ColdFire analysis | ColdFire and Ghidra reverse-engineering tools | `tools/coldfire/cf*.py`, `ghidra*.py`, `tools/coldfire/ghidra/`, `tools/coldfire/cfisa/`, `rttiscan.py`, `refscan.py`, `vtcheck.py`, `fw.py`, `atlas.py`, `entryhist.py`, `codeseeds.py`, `hwlookup.py` |
 | firmware | `.syx` container, extraction, repacking | `dt2/`, `tools/firmware/extract.py` and the other `emu/` modules, `packages/emulator/loader` (crate `dt2-firmware-loader`), `packages/emulator/plusdrive` (crate `plusdrive-format`), `tools/firmware/roundtrip.py`, `aplib_check.py` |
@@ -42,7 +42,7 @@ Python tools live in `tools/<owner>/`, one package per owner above. The reposito
 | App | Builds |
 | --- | --- |
 | Desktop | `digiemu-desktop` depends on `elektron-native-boot`, `emmc-card`, `digi-coupled` and `digi-control`. Through them it pulls in most emulator crates, the loader, plusdrive and patchkit. |
-| Web | `tools/emulator/native_wasm.py` builds `packages/emulator/boot` (wasm32), `packages/patchkit` and `packages/dkupload` (C ABI). Output goes to `apps/web/.local` (not committed). |
+| Web | `tools/nx/wasm.mjs` builds `packages/emulator/boot` (wasm32), `packages/patchkit` and `packages/dkupload` (C ABI). Output goes to `apps/web/.local` (not committed). |
 
 ## Planned moves
 

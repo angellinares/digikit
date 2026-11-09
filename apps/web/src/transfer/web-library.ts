@@ -1,6 +1,6 @@
 // The library of the site's Transfer page (pure apart from the two fetch functions it is given; apps/web/tests/web-library.test.ts): the modules the
 // site ships (public/modules/index.json, made by scripts/gen-modules.mjs) with their prebuilt .dkm files per device, plus the .dkm files the user adds.
-import { hexSha256 } from '@digi/dk-session';
+import { hexOf } from '@digi/dk-session';
 import { headerInfo } from '../modules/dktransfer';
 import type { LibraryFile, TransferLibrary, TransferSource } from './env';
 
@@ -69,7 +69,7 @@ export function createWebLibrary(fetchers: Fetchers): { library: TransferLibrary
       }
       const f = known.flatMap((m) => Object.values(m.devices)).find((x) => x.file === path);
       const data = await fetchers.bytes(path);
-      if (f && (await hexSha256(data)) !== f.sha256)
+      if (f && hexOf(new Uint8Array(await crypto.subtle.digest('SHA-256', data as BufferSource))) !== f.sha256)
         throw new Error(`${path} does not match modules/index.json: reload the page to get the current files`);
       return data;
     },

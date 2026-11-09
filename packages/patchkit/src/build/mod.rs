@@ -7,7 +7,8 @@
 //!
 //! Where an object is written: a `core/*` module (`category = "core"`) keeps its objects in the module (`build/x.dko.json`, committed: the
 //! workbench and the browser patch without a toolchain). Every other module (content modules, test fixtures, imported modules) is
-//! build output: its objects go to the cache `out/cache/dko/<module id>/<object path>`. [`object_file`] names the file.
+//! build output: its objects go to the cache `out/cache/dko/<module id>/<src12>/<object path>`, where `<src12>` is the first 12 digits of the
+//! object's `source_sha256` (so builds of other commits sit beside this one). [`object_file`] names the file.
 //!
 //! An object whose `source_sha256` equals the hash of its sources now is not compiled ("unchanged"). `--check` rebuilds and
 //! compares with the stored object, ignoring the `*_sha256` keys of the toolchain record (they name the local binaries).
@@ -143,18 +144,65 @@ pub fn cache_dir(root: &Path) -> PathBuf {
     root.join("out/cache/dko")
 }
 
-/// Where the object `o` of a module is stored: in the module for `core/*`, else in the cache.
-fn object_file(env: &Env, moddir: &Path, m: &ModuleToml, o: &ObjectToml) -> PathBuf {
+/// Entries of one object kept in the cache (the newest by modification time; a use touches its entry).
+const KEEP_ENTRIES: usize = 3;
+
+/// The directory of a content module's objects in the cache. A build with defines has its own directory, so objects of different
+/// define sets never share a file.
+fn module_cache_dir(env: &Env, m: &ModuleToml) -> PathBuf {
+    let mut dir = m.module.id.clone();
+    for d in &env.defines {
+        dir.push('+');
+        dir.push_str(d);
+    }
+    cache_dir(&env.root).join(dir)
+}
+
+/// Where the object `o` of a module is stored: in the module for `core/*`, else in the cache under the first 12 digits of `hash`, the
+/// `source_sha256` of its sources.
+fn object_file_at(env: &Env, moddir: &Path, m: &ModuleToml, o: &ObjectToml, hash: &str) -> PathBuf {
     if m.is_content() {
-        // a build with defines has its own directory, so objects of different define sets never share a file
-        let mut dir = m.module.id.clone();
-        for d in &env.defines {
-            dir.push('+');
-            dir.push_str(d);
-        }
-        cache_dir(&env.root).join(dir).join(&o.path)
+        let key: String = hash.chars().take(12).collect();
+        module_cache_dir(env, m).join(key).join(&o.path)
     } else {
         moddir.join(&o.path)
+    }
+}
+
+/// The stored file of the object for the sources now (see [`object_file_at`]); an object whose sources cannot be hashed has the key `unhashed`.
+fn object_file(env: &Env, moddir: &Path, m: &ModuleToml, o: &ObjectToml) -> PathBuf {
+    let hash = source_hash(env, moddir, &o.sources).unwrap_or_else(|_| "unhashed".into());
+    object_file_at(env, moddir, m, o, &hash)
+}
+
+/// Mark a cache entry as used now.
+fn touch(file: &Path) {
+    if let Ok(f) = std::fs::File::options().append(true).open(file) {
+        let _ = f.set_modified(std::time::SystemTime::now());
+    }
+}
+
+/// Remove all but the newest [`KEEP_ENTRIES`] entries of the object `rel` under the module cache directory `dir`.
+fn evict(dir: &Path, rel: &str) {
+    let Ok(rd) = std::fs::read_dir(dir) else {
+        return;
+    };
+    let mut entries: Vec<(std::time::SystemTime, PathBuf)> = rd
+        .filter_map(|e| e.ok())
+        .map(|e| e.path().join(rel))
+        .filter_map(|f| Some((f.metadata().ok()?.modified().ok()?, f)))
+        .collect();
+    entries.sort_by(|a, b| b.0.cmp(&a.0));
+    for (_, f) in entries.into_iter().skip(KEEP_ENTRIES) {
+        let _ = std::fs::remove_file(&f);
+        // the key directory, when nothing else is in it
+        let mut d = f.parent();
+        while let Some(p) = d {
+            if p == dir || std::fs::remove_dir(p).is_err() {
+                break;
+            }
+            d = p.parent();
+        }
     }
 }
 
@@ -215,9 +263,15 @@ fn committed_hash(path: &Path) -> Option<String> {
 }
 
 fn object_unchanged(env: &Env, moddir: &Path, m: &ModuleToml, o: &ObjectToml) -> bool {
-    let out = object_file(env, moddir, m, o);
     match source_hash(env, moddir, &o.sources) {
-        Ok(want) => committed_hash(&out).is_some_and(|h| h == want),
+        Ok(want) => {
+            let out = object_file_at(env, moddir, m, o, &want);
+            let same = committed_hash(&out).is_some_and(|h| h == want);
+            if same && m.is_content() {
+                touch(&out);
+            }
+            same
+        }
         Err(_) => false,
     }
 }
@@ -230,6 +284,17 @@ pub fn module_status(root: &Path, moddir: &Path) -> Result<Vec<(String, bool)>> 
         .iter()
         .filter(|o| !o.sources.is_empty())
         .map(|o| (o.path.clone(), object_unchanged(&env, moddir, &m, o)))
+        .collect())
+}
+
+/// The stored file of every object of the module that lists sources, for the sources now: (its path, the file). Nothing is built.
+pub fn object_files(root: &Path, moddir: &Path) -> Result<Vec<(String, PathBuf)>> {
+    let env = Env::new(root);
+    let m = manifest(moddir)?;
+    Ok(m.object
+        .iter()
+        .filter(|o| !o.sources.is_empty())
+        .map(|o| (o.path.clone(), object_file(&env, moddir, &m, o)))
         .collect())
 }
 
@@ -303,7 +368,20 @@ pub fn read_cached_object(env: &Env, moddir: &Path, m: &ModuleToml, rel: &str) -
         .iter()
         .find(|o| o.path == rel)
         .ok_or_else(|| err!("{rel}: not an object of the module"))?;
-    toolchain::read_text(&object_file(env, moddir, m, o))
+    if !m.is_content() {
+        return toolchain::read_text(&moddir.join(&o.path));
+    }
+    // no hashing here: the newest entry
+    let dir = module_cache_dir(env, m);
+    let newest = std::fs::read_dir(&dir)
+        .map_err(|e| err!("{}: {e}", dir.display()))?
+        .filter_map(|e| e.ok())
+        .map(|e| e.path().join(&o.path))
+        .filter_map(|f| Some((f.metadata().ok()?.modified().ok()?, f)))
+        .max_by_key(|(t, _)| *t)
+        .map(|(_, f)| f)
+        .ok_or_else(|| err!("{}: no cached {rel}", dir.display()))?;
+    toolchain::read_text(&newest)
 }
 
 /// The text of the object `rel` of the content module in `moddir`, for the module library: the stored object when its `source_sha256`
@@ -317,12 +395,15 @@ pub fn load_object(env: &Env, moddir: &Path, m: &ModuleToml, rel: &str) -> Resul
         .iter()
         .find(|o| o.path == rel)
         .ok_or_else(|| err!("{rel}: not an object of the module"))?;
-    let file = object_file(env, moddir, m, o);
     let want = source_hash(env, moddir, &o.sources)
         .map_err(|e| err!("{}: {rel}: cannot hash the sources: {e}", moddir.display()))?;
+    let file = object_file_at(env, moddir, m, o, &want);
     if committed_hash(&file).is_some_and(|h| h == want)
         && let Ok(t) = std::fs::read_to_string(&file)
     {
+        if m.is_content() {
+            touch(&file);
+        }
         return Ok(t);
     }
     // the define set of the env: SHARC+ sources take it as `#ifdef` names, C sources as `-D` (the compiler step reads `env.defines`)
@@ -335,6 +416,9 @@ pub fn load_object(env: &Env, moddir: &Path, m: &ModuleToml, rel: &str) -> Resul
         .map_err(|e| err!("{}: {rel}: build failed: {e}", moddir.display()))?;
     let text = to_text(&obj)?;
     write_object(&file, &text)?;
+    if m.is_content() {
+        evict(&module_cache_dir(env, m), &o.path);
+    }
     Ok(text)
 }
 
@@ -350,14 +434,15 @@ pub fn build_module(moddir: &Path, opts: &BuildOptions) -> Result<BuildReport> {
     let m = manifest(moddir)?;
     let mut report = BuildReport::default();
     for o in m.object.iter().filter(|o| !o.sources.is_empty()) {
-        let stored = object_file(&env, moddir, &m, o);
+        let hash = source_hash(&env, moddir, &o.sources).ok();
+        let stored = |h: &str| object_file_at(&env, moddir, &m, o, h);
         if !opts.check
             && opts.defines.is_empty()
             && !opts.force
             && object_unchanged(&env, moddir, &m, o)
         {
             report.objects.push(ObjectReport {
-                path: stored,
+                path: stored(hash.as_deref().unwrap_or("unhashed")),
                 status: Status::Unchanged,
                 instructions: None,
             });
@@ -366,7 +451,7 @@ pub fn build_module(moddir: &Path, opts: &BuildOptions) -> Result<BuildReport> {
         let obj = build_object(&env, moddir, o, &opts.defines)?;
         let out = match &opts.out {
             Some(d) => d.join(&o.path),
-            None => stored,
+            None => stored(hash.as_deref().unwrap_or(&obj.source_sha256)),
         };
         let n = obj
             .toolchain
@@ -394,6 +479,9 @@ pub fn build_module(moddir: &Path, opts: &BuildOptions) -> Result<BuildReport> {
             });
         } else {
             write_object(&out, &to_text(&obj)?)?;
+            if opts.out.is_none() && m.is_content() {
+                evict(&module_cache_dir(&env, &m), &o.path);
+            }
             report.objects.push(ObjectReport {
                 path: out,
                 status: Status::Built,

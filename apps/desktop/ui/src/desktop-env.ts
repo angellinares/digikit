@@ -3,6 +3,7 @@
 import { invoke } from '@tauri-apps/api/core';
 import { listingChanged } from '../../../web/src/transfer/refresh-core';
 import { setTransferEnv, type SamplesSlot, type TransferEnv } from '../../../web/src/transfer/env';
+import { MODULE_FILES } from '../../../web/src/transfer/module-files.generated';
 import { target, targetLabel, type Target } from '../../../web/src/transfer/target';
 import { failureLine } from '../../../web/src/transfer/wait-core';
 import './desktop-firmware';
@@ -12,7 +13,7 @@ import { logInput } from './log-state';
 import { transferEntry } from './log-core';
 import { closeMidiPort, listMidiPorts, MidiPortTransport, openMidiPort } from './midi-transport';
 import { deviceStorage, listLocalNow, readLocal, readSamples } from './samples-backend';
-import { samplesBar } from './samples-core';
+import { samplesBar, uploadLines } from './samples-core';
 import {
   localEntries,
   localFolder,
@@ -21,6 +22,8 @@ import {
   setSampleTicks,
   setUploads,
   uploadBase,
+  uploadAverage,
+  uploadNotes,
   uploads,
 } from './samples-state';
 import SamplesMode from './SamplesMode';
@@ -48,9 +51,10 @@ const samples: SamplesSlot = {
     setUploads({});
   },
   bar(busy) {
-    const info = samplesBar(uploads(), uploadBase(), busy === 'Uploading');
+    const info = samplesBar(uploads(), uploadBase(), busy === 'Uploading', uploadAverage());
     return info ? { info, running: busy === 'Uploading' } : undefined;
   },
+  lines: () => [...uploadNotes(), ...uploadLines(uploads(), uploadBase())],
   async localChanged() {
     if (!localFolder()) return false;
     const now = await listLocalNow();
@@ -63,6 +67,7 @@ export const desktopEnv: TransferEnv = {
     scan: (device) => invoke<{ path: string; size: number }[]>('lib_scan', { device }),
     read: async (device, path) => new Uint8Array(await invoke<ArrayBuffer>('lib_read', { device, path })),
   },
+  moduleFiles: (id) => MODULE_FILES[id],
   patchkitWasm: () => invoke<ArrayBuffer>('patchkit_wasm'),
   deviceName: async (device) => (await deviceStorage(device)).name,
   targets: {

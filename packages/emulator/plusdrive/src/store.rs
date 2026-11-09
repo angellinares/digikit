@@ -1,4 +1,4 @@
-//! The module and sample store, version 3: files of `plus_drive/<device>/digikit/` in a reserved area of card sectors that the firmware never
+//! The module and sample store, version 4: files of `plus_drive/<device>/digikit/` in a reserved area of card sectors that the firmware never
 //! writes (format and rationale: docs/design/digikit-store.md; the runtime's reader and writer are `dkrt_sdk::store`, which this file matches byte for
 //! byte).
 //!
@@ -11,11 +11,11 @@
 //! sectors - 34 .. - 3       the settings record, two copies of 16 sectors (settings.rs; not a store structure)
 //! sectors - 2, - 1          the selection record, two copies (selection.rs; not a store structure)
 //!
-//! header:  "DKST", u32 version = 3, u32 entry_count, u32 table_sectors, u32 table_first, u32 table_crc (IEEE, over the table's sectors, zero
+//! header:  "DKST", u32 version = 4, u32 entry_count, u32 table_sectors, u32 table_first, u32 table_crc (IEEE, over the table's sectors, zero
 //!          padding included), u32 seq, u32 used_sectors (header A, the table and every file), u32 area_sectors (the area it was made for),
 //!          zero, u32 crc32 of bytes 0..508 at 508
 //! table:   entry_count entries of 256 bytes sorted by (first_sector, path): path[160] NUL padded (relative to digikit/, at most 159 bytes),
-//!          u32 first_sector, u32 size_bytes, sha256[32], u8 kind (0 file, 1 folder with nothing in it), zero. An entry with no data (a folder, an
+//!          u32 first_sector, u32 size_bytes, hash slot[32] (`dksample::file_hash`: 4 bytes, then zeros), u8 kind (0 file, 1 folder with nothing in it), zero. An entry with no data (a folder, an
 //!          empty file) has first_sector 0 and sorts before every file with data.
 //! data:    each file starts on a sector boundary
 //! ```
@@ -24,12 +24,11 @@
 //! another store has the same entries in any positions.
 
 use emmc_card::RandomAccessRead;
-use sha2::{Digest, Sha256};
 
 use crate::SECTOR;
 
 pub const STORE_MAGIC: [u8; 4] = *b"DKST";
-pub const STORE_VERSION: u32 = 3;
+pub const STORE_VERSION: u32 = 4;
 pub const STORE_ENTRY_BYTES: usize = 256;
 pub const STORE_PATH_BYTES: usize = 160;
 /// A path has at most this many bytes (the field ends in a NUL).
@@ -72,7 +71,8 @@ pub struct StoreEntry {
     /// Relative to the first sector of the store; 0 for an entry with no data.
     pub first_sector: u32,
     pub size_bytes: u32,
-    pub sha256: [u8; 32],
+    /// The hash slot (`dksample::file_hash`).
+    pub hash: [u8; 32],
     /// A folder with nothing in it.
     pub is_dir: bool,
 }
@@ -113,7 +113,7 @@ pub enum StoreError {
     PathConflict(String),
     /// A file over 4 GiB - 1 (the size field).
     TooLarge(String),
-    /// The reader found a header that is not version 3 or does not match its table.
+    /// The reader found a header that is not version 4 or does not match its table.
     Corrupt(String),
 }
 
@@ -241,7 +241,7 @@ pub fn encode_store(files: Vec<StoreFile>, available: u64) -> Result<Vec<u8>, St
         table[at + 160..at + 164].copy_from_slice(&firsts[i].to_be_bytes());
         table[at + 164..at + 168].copy_from_slice(&(file.bytes.len() as u32).to_be_bytes());
         if !file.dir {
-            table[at + 168..at + 200].copy_from_slice(&Sha256::digest(&file.bytes));
+            table[at + 168..at + 200].copy_from_slice(&dksample::file_hash(&file.bytes));
         }
         table[at + 200] = if file.dir { KIND_DIR } else { KIND_FILE };
     }
@@ -287,7 +287,7 @@ pub struct Header {
     pub area: u32,
 }
 
-/// Parse a header sector: the magic, version 3 and the header CRC. `None` otherwise.
+/// Parse a header sector: the magic, version 4 and the header CRC. `None` otherwise.
 pub fn parse_header(sector: &[u8]) -> Option<Header> {
     if sector.len() < SECTOR
         || sector[0..4] != STORE_MAGIC
@@ -378,7 +378,7 @@ fn load_store(
             path: String::from_utf8_lossy(&e[..name_len]).into_owned(),
             first_sector,
             size_bytes,
-            sha256: e[168..200].try_into().expect("32 bytes"),
+            hash: e[168..200].try_into().expect("32 bytes"),
             is_dir,
         });
     }
@@ -431,7 +431,7 @@ pub fn read_store(
     }
 }
 
-/// The bytes of one entry, checked against its SHA-256.
+/// The bytes of one entry, checked against its hash slot.
 pub fn read_store_file(
     img: &dyn RandomAccessRead,
     first_sector: u64,
@@ -442,9 +442,9 @@ pub fn read_store_file(
     }
     let at = (first_sector + u64::from(entry.first_sector)) * SECTOR as u64;
     let bytes = read_vec(img, at, entry.size_bytes as usize);
-    if Sha256::digest(&bytes)[..] != entry.sha256 {
+    if dksample::file_hash(&bytes) != entry.hash {
         return Err(StoreError::Corrupt(format!(
-            "digikit/{}: SHA-256 differs",
+            "digikit/{}: hash differs",
             entry.path
         )));
     }
@@ -526,7 +526,7 @@ mod tests {
             assert_eq!(read_store_file(&img, FIRST, e).unwrap(), want.bytes);
         }
         assert_eq!(&bytes[0..4], b"DKST");
-        assert_eq!(&bytes[4..8], &3u32.to_be_bytes());
+        assert_eq!(&bytes[4..8], &4u32.to_be_bytes());
     }
 
     #[test]
@@ -613,7 +613,7 @@ mod tests {
     fn equal_seq_takes_a_and_the_higher_seq_takes_b() {
         let (mut img, bytes) = card(vec![file("a", 700)]);
         let s = read_store(&img, FIRST, AVAIL, B).unwrap().unwrap();
-        assert_eq!((s.version, s.seq, s.from_b), (3, 1, false));
+        assert_eq!((s.version, s.seq, s.from_b), (4, 1, false));
         commit_b(&mut img, &bytes, 2, 0x100);
         let s = read_store(&img, FIRST, AVAIL, B).unwrap().unwrap();
         assert_eq!((s.seq, s.from_b, s.table_first_sector), (2, true, 0x100));

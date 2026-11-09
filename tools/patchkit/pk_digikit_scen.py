@@ -288,7 +288,7 @@ class Ctx:
         written over the card, bytes that are not ours in the store range. Returns the cached file."""
         h = hashlib.sha256(self.image.encode())
         # the store format and area are part of the key: a card built for another area or version is not this card
-        h.update(b"store-v3.1" + repr(self.store).encode())
+        h.update(b"store-v4.0" + repr(self.store).encode())
         store_dir = self.env.folder / "digikit"
         for f in sorted(store_dir.rglob("*")):
             if f.is_file():
@@ -783,14 +783,16 @@ def run_dkrun(
     c.check("dkrun: the module was uploaded", out["uploaded"] and out["path"] == path)
     res = {(d["kind"], d["args"][0]): d["args"][1] for d in out["results"]}
     c.check(
-        "dkrun: after the reboot MOD_LOAD result=1 (LOADING) and MOD_DSP result=0",
-        res.get(("MOD_LOAD", 0)) == 1 and res.get(("MOD_DSP", 0)) == 0,
+        "dkrun: after the reboot the debug module loads (MOD_LOAD result=0), then MOD_LOAD result=1 (LOADING) and MOD_DSP result=0 for the module",
+        res.get(("MOD_LOAD", 0)) == 0
+        and res.get(("MOD_LOAD", 1)) == 1
+        and res.get(("MOD_DSP", 1)) == 0,
         str(res),
     )
     rec = B.current(rig.sel_records())
     c.check(
-        "dkrun: SELECT wrote the record: the module and nothing else",
-        rec is not None and rec["paths"] == [path],
+        "dkrun: SELECT wrote the record: the debug module, the module and nothing else",
+        rec is not None and rec["paths"] == [R.module_path(R.DEBUG_MODULE), path],
         str(rec),
     )
     # a second run finds the file on the device (the same sha256) and uploads nothing (it stops after SELECT: one boot is enough here)
@@ -1025,18 +1027,25 @@ def run_menu(c: Ctx) -> None:
             run_dkrun(c, rig, D, blobs, files)
         info = rig.boot_info()
         k = len(rows)
+        extra = []  # the debug module `dkrun` selects next to the set
+        if dkrun:
+            from tools.device import dkrun as R
+
+            extra = [R.module_path(R.DEBUG_MODULE)]
+        kd = k + len(extra)
         c.check(
             "the boot after the install loaded the whole set",
-            info["count"] == k
-            and info["loaded"] == k
-            and info["results"] == [0] * k
+            info["count"] == kd
+            and info["loaded"] == kd
+            and info["results"] == [0] * kd
             and info["safe"] == 0,
             str(info["results"]),
         )
         rec = B.current(rig.sel_records())
         c.check(
             "the record in use holds the ticked modules",
-            rec is not None and sorted(rec["paths"]) == sorted(files.values()),
+            rec is not None
+            and sorted(rec["paths"]) == sorted([*files.values(), *extra]),
             str(rec),
         )
         got = decode_tables(rig)

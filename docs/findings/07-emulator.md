@@ -7034,3 +7034,105 @@ PLL writes are read statically, not executed (core 264 MHz rests on the measured
 stalls only between adjacent instructions; one dependent-register reading of the manual's stall text; misaligned-operand Table 3-12 and the EMAC saturation +1
 are not modelled. A second agent checked about 150 table cells against Tables 3-13 to 3-20: one error (a mispredicted Bcc
 cost 9 instead of 8 in total), corrected; no other cell mismatched.
+
+## DMA timer 0's counter: stock reads it, the main OS never starts it (2026-11-07) **[D]** **[C]**
+
+Stock DN2 1.11 reads DTCN0 (`0xfc07000c`, DMA timer 0's counter) as a free-running clock. Ten loads of that address
+are in the MAIN OS:
+
+- `0x400ceb82`: an elapsed time against the value stored at `[0x424388a8]`.
+- `0x400d0c84`: timestamps into the table at `0x4244140c`, with DTCN2.
+- `0x400db99e` and `0x400db9c6`: in a loop that reads the panel UART's status.
+- `0x4010d4a6` and `0x4010d690`: an elapsed time shifted right by 12.
+- `0x4011f69c`, `0x4011f9d6`, `0x4011fc54` and `0x40120544`: timestamps into queued messages.
+
+Nothing in the MAIN OS writes DMA timer 0. A write watch on `0xfc070000`-`0xfc07000f` saw no write from reset to ready
+and after. The same watch on DMA timer 2 saw one write, DTMR2 = `0x0007` at `0x400cec90`. So code before the main OS
+starts timer 0. The update file has no such code, and its rate is not known from the image.
+
+The emulator has no DTCN model: `periph/src/dtim.rs` keeps it as a plain register, and the runtime attaches DMA timers 3
+and 1 only. So DTCN0 reads 0, and code that measures time with it sees none pass.
+
+`DIGI_DTCN0=bus` turns on a model (`machine::Board::enable_dtcn0`). On DN2 it is now the default (see the end of this section). DTCN0 then reads the bus clock since reset at
+132 MHz, one tick per instruction at the default `DIGI_CF_IPS`, and wraps at 2^32. The rate is an assumption. The
+runtime gives the board the instruction count before each instruction, where it already sets the bus's count.
+
+Stock DN2 1.11, `--cold-base`, `--dsp zero`, with the model:
+
+- The cold boot reaches ready at the same instruction as without the model, 851,236,338.
+- DTCN0 at the end of a run equals the run's instruction count. Between 0.2 s and 1.0 s of `idle` it advances
+  105,749,995 ticks, which is 0.8 s at 132 MHz.
+- On `load-turns` the read at `0x4011fc54` runs 640 times, once per encoder turn. The read at `0x400ceb82` runs 6 times.
+- The seven scenarios of the span gate are `idle`, `kb-chord16`, `dn2-rec-play` and the four load scenarios of #317.
+  With the model they give the same `isr` and `evala` spans and the same run lengths as without it. The screen and LED
+  hashes are the same in every chunk, and so is the wall time.
+
+Stock DN2 1.12 has ten loads of DTCN0 too. The pinned PCM scenarios of `tests/scenarios/dn2.json` run on 1.12 from
+the ready snapshot, with `--dsp sharc`, in WSL:
+
+- `exactness-100m`, `trig1-noqa-40m`, `trig1-taps` and `trig1-tap-release` keep their pinned hashes with the model
+  and without it.
+- The model is live on this path. At the end of a 0.2 s run DTCN0 reads `0x34513185` with it, and 0 without it.
+- The reads run. In 3 s of `trig1-tap-release`, 8 reads of DTCN0 ran at 3 sites: `0x400cece8` (3 times),
+  `0x4011fcb8` (4 times) and `0x4011f97e` (once). The PCM is the same as without the model.
+
+Since 2026-11-07 the model is on by default on DN2. `DIGI_DTCN0=off` turns it off, and `DIGI_DTCN0=bus` turns it on
+for any device. Another value stops the run with an error. On DT2 it stays off by default, because no DT2 run was
+checked with it. With the default, stock 1.11 `load-turns` gates +0 against the stock report made without the model.
+
+**The rate, measured (2026-11-07).** The USB probe mod reads DTCN0 against the frame count on a unit. On the owner's unit
+DTCN0 runs at 132.00 MHz, the model's rate: 88,000 ticks for each frame.
+
+The MCF5441x Reference Manual (chapter 39, DTMRn) gives three clocks for a DMA timer. One is the internal bus clock divided
+by 1 or 16, then a prescaler of 1 to 256. The others are the timer's input pin and the IEEE 1588 timebase.
+
+The MCF5441x data sheet (Rev. 8, tables 1 and 2) rates the core at 250 MHz at most, and the bus at the core divided by 2.
+The only speed grade is 250 MHz.
+
+A photograph of a DN2 board shows the part at U1: MCF54415CMJ250, mask set 0N51E. The suffix 250 is that speed grade.
+For an MCF54415 the CIR is expected to give PIN `0x0A0` (`docs/refs/dspi2-edma-blocker-and-register-sources.md`). A read on
+the unit gives that value (below).
+
+The MCF54415 has no cryptography acceleration unit (CAU). In the data sheet's table 1 and the Reference Manual's table 1-1,
+only the MCF54416 and the MCF54418 have one. The CAU is an instruction coprocessor for DES, 3DES, AES, MD5, SHA-1 and
+SHA-256 (Reference Manual, section 1.7.14). So on a DN2 the HMAC-SHA256 check of an update file
+([finding 75](75-os-upgrade-receive.md)) runs in software on the ColdFire core.
+
+Another section of this finding shows the bus clock of 132 MHz: "The intro is meant to run at 15.00 fps, and the bus
+clock is 132 MHz".
+
+The MIDI port adds one more check. Stock's MIDI UART init (`0x40002844`, UART9 at `0xec074000`) is called with
+31,250 baud (`0x7a12`, at `0x400ced9c`). It writes UBG2 = 132,000,000 / (32 x 31,250) = 132. At a 125 MHz bus that
+divider gives 29,593 baud, 5.3 % slow.
+
+The MIDI specification allows 1 %. At 5.3 % a receiver samples the last bits of a byte near their edges. So it would
+likely lose bytes. DIN MIDI works on stock units.
+
+So the bus runs at about 132 MHz, above the data sheet's 125 MHz, and the core at 264 MHz if it is twice the bus. DTCN0 at
+132.00 MHz then counts the bus clock divided by 1, with a prescaler of 1. Nothing in the update file writes DTMR0, so a
+read of DTMR0 and PLL_DR on a unit was the direct check left. The bootstrap section writes one field of PLL_DR only,
+OUTDIV3 = 6 (the eSDHC clock). The core and bus dividers come from the reset configuration.
+
+**The registers, read on a unit (2026-11-08).** A USB probe build with a fixed list of read-only registers ran on the owner's
+unit: stock 1.11 and the probe, with no other change. Two reads a minute apart gave the same values:
+
+| register | value | fields | gives |
+|---|---|---|---|
+| CIR `0xec09000a` | `0x2802` | PIN `0x0A0`, PRN 2 | an MCF54415, mask revision 2 |
+| PLL_CR `0xfc0c0000` | `0x00001015` | FBKDIV 21, REFDIV 0, LOLEN 1 | fVCO = fREF x 22 |
+| PLL_DR `0xfc0c0004` | `0x00071861` | OUTDIV1 1, OUTDIV2 3, OUTDIV3 6, OUTDIV4 7, OUTDIV5 0 | core fVCO/2, bus fVCO/4, eSDHC fVCO/7, USB fVCO/8, NAND off |
+| PLL_SR `0xfc0c0008` | `0x00000030` | LOCK 1, LOCKS 1, no loss flags | the PLL is locked |
+| DTMR0 `0xfc070000` | `0x0003` | CLK 01, PS 0, RST 1 | DMA timer 0 counts the bus clock divided by 1 |
+| DTXMR0 `0xfc070002` | `0x00` | EN1588 0 | not the 1588 timebase |
+
+DTCN0 ran at 132.00 MHz during the reads. With the bus at 132.00 MHz and OUTDIV2 = 3, fVCO is 528 MHz and fREF is 24.00 MHz.
+So the core runs at 264 MHz, 5.6 % above the data sheet's 250 MHz. The eSDHC clock is 75.4 MHz and the USB clock is 66 MHz.
+
+- The reads confirm the inferences above: the bus at 132 MHz, the core at twice the bus, and DTCN0 on the bus clock with no
+  divider.
+- The eSDHC divider is the bootstrap's OUTDIV3 = 6. `devices/cycle-factors.json` already uses a core of 264 MHz.
+- The reads are from one unit.
+
+**DTCN2.** Stock writes DTMR2 = `0x0007`: RST = 1, CLK = 11, PS = 0. CLK = 11 selects the DT2IN pin (falling edge). So
+DMA timer 2 counts an external signal, and the bus clock cannot model it.
+

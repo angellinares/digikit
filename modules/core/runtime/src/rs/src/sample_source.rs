@@ -1,7 +1,7 @@
 //! Complete private source snapshots for the bounded mono sample proof. UI task
 //! only. DT2 file reads are synchronous and require no simultaneous Transfer
 //! writes: an open handle is not yet a proven immutable-file lease (finding 105).
-use crate::{arena, sha256, store};
+use crate::{arena, hash32, store};
 use core::ptr::{addr_of, read_volatile};
 use dkrt_sdk::{sample, E_FORMAT, E_NOMEM, E_NOT_FOUND, E_READ, E_TOO_BIG};
 
@@ -50,11 +50,7 @@ pub unsafe fn load(path: *const u8) -> Result<Source, i32> {
                 input,
                 INPUT_CAP,
                 sample::MAX_FILE_BYTES as u32,
-                |bytes| {
-                    let mut sha = [0; 32];
-                    sha256::sha256(bytes.as_ptr(), bytes.len() as u32, sha.as_mut_ptr());
-                    sha
-                },
+                |bytes| hash32::slot_of(bytes.as_ptr(), bytes.len() as u32),
             )?;
             entry.size as usize
         };

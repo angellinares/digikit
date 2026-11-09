@@ -95,7 +95,10 @@ impl CardPaths {
     }
 }
 
-/// The cache key: firmware, format tag, and every file's relative path and bytes.
+/// The cache key: firmware, format tag, and every file's relative path and bytes, except `digikit/selection.txt`.
+/// That file records the card's own module selection (the mirror and the quit export write it after each change), so a key
+/// that followed it would build a new card at the next launch and leave the saved overlay of the old one behind. A running
+/// guest's SELECT is in card sectors, so the old image and its overlay already hold it. A folder without the file keeps its key.
 pub fn card_key(device: &str, syx: &[u8], dir: &Path, files: &[String]) -> Result<String, String> {
     let mut hash = Sha256::new();
     if device != "dt2" {
@@ -108,7 +111,8 @@ pub fn card_key(device: &str, syx: &[u8], dir: &Path, files: &[String]) -> Resul
     hash.update(Sha256::digest(syx));
     hash.update(b"\0format\0");
     hash.update(FORMAT_TAG.as_bytes());
-    for rel in files {
+    let selection = format!("digikit/{}", plusdrive_format::SELECTION_FILE);
+    for rel in files.iter().filter(|rel| **rel != selection) {
         let path = dir.join(rel);
         let bytes = fs::read(&path).map_err(|e| format!("{}: {e}", path.display()))?;
         hash.update(b"\0file\0");
@@ -140,7 +144,9 @@ pub fn build_card(
     mut progress: impl FnMut(usize, usize),
 ) -> Result<CardInfo, String> {
     // only the DT2 has a project to seed (`Dt2Seed`)
-    let seed = (device == "dt2").then(|| Dt2Seed::from_syx(syx)).transpose()?;
+    let seed = (device == "dt2")
+        .then(|| Dt2Seed::from_syx(syx))
+        .transpose()?;
     let layout = card_layout(device)?;
     let scanned = scan_folder(dir, &layout, &mut progress)?;
     for line in &scanned.skipped {
@@ -318,6 +324,31 @@ mod tests {
         assert_ne!(key, card_key("dt2", b"fw2", &dir, &files).unwrap());
         fs::write(dir.join("b.wav"), wav(881.0, 480)).unwrap();
         assert_ne!(key, card_key("dt2", b"fw1", &dir, &files).unwrap());
+        // the module selection record is not part of the key; a module file is
+        let before = card_key("dt2", b"fw1", &dir, &files).unwrap();
+        fs::create_dir_all(dir.join("digikit/modules")).unwrap();
+        fs::write(dir.join("digikit/modules/m.dkm"), b"module one").unwrap();
+        let with_module = list_files(&dir).unwrap();
+        let module_key = card_key("dt2", b"fw1", &dir, &with_module).unwrap();
+        assert_ne!(before, module_key, "a module file changes the key");
+        fs::write(dir.join("digikit/selection.txt"), b"modules/m.dkm\n").unwrap();
+        let with_selection = list_files(&dir).unwrap();
+        assert!(with_selection.contains(&"digikit/selection.txt".to_string()));
+        assert_eq!(
+            module_key,
+            card_key("dt2", b"fw1", &dir, &with_selection).unwrap()
+        );
+        fs::write(dir.join("digikit/selection.txt"), b"modules/other.dkm\n").unwrap();
+        assert_eq!(
+            module_key,
+            card_key("dt2", b"fw1", &dir, &with_selection).unwrap()
+        );
+        fs::write(dir.join("digikit/modules/m.dkm"), b"module two").unwrap();
+        assert_ne!(
+            module_key,
+            card_key("dt2", b"fw1", &dir, &with_selection).unwrap()
+        );
+        fs::remove_dir_all(dir.join("digikit")).unwrap();
         let paths = CardPaths::new(Path::new("run"), &key);
         assert!(
             paths
@@ -328,7 +359,11 @@ mod tests {
         // another device: its own key and image name
         let dn2 = card_key("dn2", b"fw1", &dir, &files).unwrap();
         assert_ne!(key, dn2);
-        assert!(CardPaths::for_device(Path::new("run"), &dn2, "dn2").image.ends_with(format!("cards/{}/dn2.img", &dn2[..12])));
+        assert!(
+            CardPaths::for_device(Path::new("run"), &dn2, "dn2")
+                .image
+                .ends_with(format!("cards/{}/dn2.img", &dn2[..12]))
+        );
     }
 
     #[test]
@@ -341,7 +376,10 @@ mod tests {
         fs::write(dir.join("digikit/modules/m.dkm"), b"m").unwrap();
         fs::create_dir_all(dir.join(".mmcfs/projects")).unwrap();
         fs::write(dir.join(".mmcfs/projects/0000.bin"), b"p").unwrap();
-        assert_eq!(device_files("dn2", &dir).unwrap(), [".mmcfs/projects/0000.bin", "digikit/modules/m.dkm"]);
+        assert_eq!(
+            device_files("dn2", &dir).unwrap(),
+            [".mmcfs/projects/0000.bin", "digikit/modules/m.dkm"]
+        );
         assert!(device_files("nope", &dir).is_err());
     }
 
@@ -377,11 +415,15 @@ mod tests {
         fs::write(samples.join("digikit/m.dkm"), b"module").unwrap();
         let files = list_files(&samples).unwrap();
         let mut seen = Vec::new();
-        let (paths, cached, count) =
-            ensure_card("dt2", &dir.join("run"), &syx, &samples, &files, |done, total| {
-                seen.push((done, total))
-            })
-            .unwrap();
+        let (paths, cached, count) = ensure_card(
+            "dt2",
+            &dir.join("run"),
+            &syx,
+            &samples,
+            &files,
+            |done, total| seen.push((done, total)),
+        )
+        .unwrap();
         assert!(!cached);
         assert_eq!(count, 4);
         assert_eq!(seen.last(), Some(&(4, 6)), "{seen:?}");
@@ -408,9 +450,14 @@ mod tests {
             assert!(names.iter().any(|n| n == name), "{names:?}");
         }
         let area = plusdrive_format::card_layout("dt2").unwrap().store.unwrap();
-        let store = plusdrive_format::read_store(&image, area.first_sector, area.store_limit(), area.header_b())
-            .unwrap()
-            .unwrap();
+        let store = plusdrive_format::read_store(
+            &image,
+            area.first_sector,
+            area.store_limit(),
+            area.header_b(),
+        )
+        .unwrap()
+        .unwrap();
         assert_eq!(store.entries.len(), 1);
         let mut slot = [0u8; 7];
         emmc_card::RandomAccessRead::read_at(&image, (0x58000 + 2 * 0x8000) * 512, &mut slot);

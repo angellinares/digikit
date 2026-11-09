@@ -427,19 +427,30 @@ fn yes_on_a_file_loads_it_into_the_slot_picks_the_slot_and_closes_the_whole_flow
     press_yes(1);
     assert_eq!(unsafe { pf_sets() }, 1);
     assert_eq!(last_path(), "DRUMS/KICK_01");
-    assert_eq!(unsafe { pf_last_index() }, 5, "the slot the click was on, not the first free one");
+    assert_eq!(
+        unsafe { pf_last_index() },
+        5,
+        "the slot the click was on, not the first free one"
+    );
     assert_eq!(
         (unsafe { pf_picks() }, unsafe { pf_last_pick() }),
         (1, 5),
         "the slot goes to the machine"
     );
-    assert_eq!(depth(), 0, "browser and list closed in one step: back on the page");
+    assert_eq!(
+        depth(),
+        0,
+        "browser and list closed in one step: back on the page"
+    );
     assert!(toasts().is_empty());
     // the next open marks the slot when the machine passes the new SMP value
     unsafe { pf_open_pool(5, 1) };
     assert_eq!(entry(5), "05>KICK_01 QUEUED");
     assert_eq!(entry(0), "00 -");
-    assert!(render().iter().all(|r| r.starts_with("  ")), "no row keeps the check mark");
+    assert!(
+        render().iter().all(|r| r.starts_with("  ")),
+        "no row keeps the check mark"
+    );
 }
 
 #[test]
@@ -453,15 +464,24 @@ fn each_slot_takes_its_own_file_and_a_filled_slot_is_replaced() {
     press_yes(2);
     assert_eq!(unsafe { pf_last_pick() }, 1);
     unsafe { pf_open_pool(1, 1) };
-    assert_eq!((entry(0).as_str(), entry(1).as_str()), ("00 A QUEUED", "01>B QUEUED"));
+    assert_eq!(
+        (entry(0).as_str(), entry(1).as_str()),
+        ("00 A QUEUED", "01>B QUEUED")
+    );
     // YES on the filled slot 0 opens the browser again; the file replaces A
     browse_slot(0, &[("A", false, 1024), ("B", false, 1024)]);
     assert_eq!(depth(), 2);
     press_yes(2);
-    assert_eq!((unsafe { pf_last_index() }, unsafe { pf_last_pick() }), (0, 0));
+    assert_eq!(
+        (unsafe { pf_last_index() }, unsafe { pf_last_pick() }),
+        (0, 0)
+    );
     assert_eq!((unsafe { pf_sets() }, unsafe { pf_picks() }), (3, 3));
     unsafe { pf_open_pool(0, 1) };
-    assert_eq!((entry(0).as_str(), entry(1).as_str()), ("00>B QUEUED", "01 B QUEUED"));
+    assert_eq!(
+        (entry(0).as_str(), entry(1).as_str()),
+        ("00>B QUEUED", "01 B QUEUED")
+    );
     assert_eq!(entry(2), "02 -");
 }
 
@@ -574,7 +594,10 @@ fn yes_on_a_slot_opens_the_browser_empty_or_filled_and_picks_nothing_yet() {
         pf_open_pool(0, 1);
     }
     press_yes(7); // empty
-    assert_eq!((unsafe { pf_picks() }, depth(), title().as_str()), (0, 2, "SAMPLES"));
+    assert_eq!(
+        (unsafe { pf_picks() }, depth(), title().as_str()),
+        (0, 2, "SAMPLES")
+    );
     assert_eq!(rows()[0], "..  /");
     press_no(); // back to the slot list
     assert_eq!(depth(), 1);
@@ -794,7 +817,10 @@ fn yes_on_a_slot_opens_the_browser_and_calls_nothing() {
     press_yes(4);
     assert_eq!(depth(), 2, "the browser is over the list");
     assert_eq!(rows()[0], "..  /");
-    assert_eq!((unsafe { cf_done_calls() }, unsafe { cf_fill_calls() }), (0, 0));
+    assert_eq!(
+        (unsafe { cf_done_calls() }, unsafe { cf_fill_calls() }),
+        (0, 0)
+    );
     assert!(toasts().is_empty());
 }
 
@@ -810,8 +836,14 @@ fn a_file_is_filled_into_the_slot_and_closes_both_levels_in_one_press() {
     assert_eq!(depth(), 2);
     press_yes(1);
     assert_eq!(toy_fill_path(), "SNARES/S1");
-    assert_eq!((unsafe { cf_fill_calls() }, unsafe { cf_last_slot() }), (1, 2));
-    assert_eq!((unsafe { cf_done_calls() }, unsafe { cf_last_done() }), (1, 2));
+    assert_eq!(
+        (unsafe { cf_fill_calls() }, unsafe { cf_last_slot() }),
+        (1, 2)
+    );
+    assert_eq!(
+        (unsafe { cf_done_calls() }, unsafe { cf_last_done() }),
+        (1, 2)
+    );
     assert_eq!(depth(), 0, "all levels closed");
     assert!(toasts().is_empty());
 }
@@ -831,7 +863,10 @@ fn no_goes_back_one_level_and_calls_nothing() {
     assert_eq!(cursor(), 0);
     press_no(); // out of the list
     assert_eq!(depth(), 0);
-    assert_eq!((unsafe { cf_done_calls() }, unsafe { cf_fill_calls() }), (0, 0));
+    assert_eq!(
+        (unsafe { cf_done_calls() }, unsafe { cf_fill_calls() }),
+        (0, 0)
+    );
     assert!(toasts().is_empty());
 }
 

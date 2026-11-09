@@ -11,8 +11,8 @@ dynamic = true
 ports = ["dt2-1.17", "dn2-1.12"]
 requires = []
 conflicts = []
-# Calls through the Api table that the packer cannot see: the SMP pick writes the parameter (API 1.6).
-uses_api = ["param_get", "param_set", "sample_pool_set"]
+# Every dk_api field the module's sources call (module and picker); the packer takes the API floor from the newest.
+uses_api = ["files_client", "files_list", "files_poll", "files_cancel", "sample_tracks", "sample_pool_set", "sample_pool_clear", "sample_pool_status", "sample_pool_info", "sample_pool_path", "sample_pool_peaks", "sample_pool_peaks_window", "param_get", "param_set"]
 
 [targets]
 "dt2-1.17" = "experimental"
@@ -22,7 +22,7 @@ uses_api = ["param_get", "param_set", "sample_pool_set"]
 # the .dkm. The machine declaration, the parameters and the track table are in src/module.c; the DSP in src/dsp/shot.s.
 [[object]]
 path = "build/shot-cf.dko.json"
-sources = ["src/module.c", "../../../sdk/src/sample_picker.c", "../../../sdk/src/chooser.c", "../../../sdk/src/picker_logic.c"]
+sources = ["src/module.c", "src/pages.c", "src/sample_view.c", "../../../sdk/src/sample_picker.c", "../../../sdk/src/chooser.c", "../../../sdk/src/picker_logic.c"]
 place = "cf.expansion"
 
 [[object]]

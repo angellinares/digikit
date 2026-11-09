@@ -290,13 +290,19 @@ pub const fn ctx_reg_out(c: u32) -> u32 {
 pub const PSEUDO_FB0: u32 = NREGS;
 /// Groups 0..2 are PEx's (ASTATX), 3..5 PEy's (ASTATY, SIMD).
 pub const NGROUPS: u32 = 6;
-pub const NPSEUDO: u32 = 2 + 3 * NGROUPS;
+pub const NPSEUDO: u32 = 6 + 3 * NGROUPS;
 pub const fn pseudo_flag(group: u32, part: u32) -> u32 {
     NREGS + 1 + 3 * group + part
 }
 /// The CACC compare history (ASTATX bits 24-31) as the compare ops shift it:
 /// initialised from the entry ASTATX, written out for the glue.
 pub const PSEUDO_CACC: u32 = NREGS + 1 + 3 * NGROUPS;
+/// The multiplier accumulator MRF as three words: bits 31:0, bits 63:32 and
+/// bits 79:64 (kept masked to 0xFFFF). Codes `PSEUDO_MR..PSEUDO_MR + 3`.
+pub const PSEUDO_MR: u32 = NREGS + 2 + 3 * NGROUPS;
+/// Overflows of fixed-point adds and subtracts with ALUSAT clear: the OR of
+/// their overflow words, so bit 31 says that one ran. The glue latches AOS from it.
+pub const PSEUDO_AOS: u32 = NREGS + 5 + 3 * NGROUPS;
 
 /// Where the kernel finds the engine state: it is called with a pointer to
 /// the `St` it runs on, and reads and writes register values at these byte
@@ -537,7 +543,12 @@ impl Kernel {
                             return err("store operand types");
                         }
                     }
-                    Inst::StoreN { base, off, v, bytes } => {
+                    Inst::StoreN {
+                        base,
+                        off,
+                        v,
+                        bytes,
+                    } => {
                         if !use_ok(base) || !use_ok(off) || !use_ok(v) {
                             return err("operand not defined");
                         }
@@ -789,9 +800,12 @@ impl Kernel {
                     }
                     Inst::Set(v, x) => w.extend([1, v.0, x]),
                     Inst::Store32 { base, off, v } => w.extend([2, base, off, v]),
-                    Inst::StoreN { base, off, v, bytes } => {
-                        w.extend([11, base, off, v, bytes as u32])
-                    }
+                    Inst::StoreN {
+                        base,
+                        off,
+                        v,
+                        bytes,
+                    } => w.extend([11, base, off, v, bytes as u32]),
                     Inst::StCtx32 { off, v } => w.extend([3, off, v]),
                     Inst::Guard { ok, k, exit } => w.extend([4, ok, k, exit]),
                     Inst::GuardAny { a, b, k, exit } => w.extend([5, a, b, k, exit]),

@@ -158,7 +158,7 @@ def main(argv: list[str] | None = None) -> int:
     from tools.emulator import coupled
 
     binary = a.binary or coupled.ensure_binary(
-        not a.rebuild, "dt2", ready_dir / "digi-audio-dn2-image.bin"
+        not a.rebuild, "dt2", ready_dir / "digi-audio-dn2-image.bin", pgo=True
     )
     wav = a.wav or work / "trig.wav"
     env = coupled.run_env({}) if a.fast else {**os.environ, "SHARC_FAST_REGIONS": ""}

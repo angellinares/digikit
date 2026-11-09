@@ -39,6 +39,16 @@ excludes = [[0x200fa000, 0x200fe000]]
 mark = "D"
 
 [[anchor]]
+name = "cf.draw.fn.bitmap_clear"
+cpu = "cf"
+kind = "code"
+addr = 0x40113700
+len = 4
+sha256 = "7694646addf9bf72b639ece8ba990d8e101955de2d4cecd4d9e1bd66b670ef41"
+mark = "D"
+rule = "fw/draw:cf_func"
+
+[[anchor]]
 name = "cf.draw.fn.blit"
 cpu = "cf"
 kind = "code"
@@ -967,12 +977,42 @@ mark = "D"
 rule = "fw/page:cf_ptr"
 
 [[anchor]]
+name = "cf.page.data.native_font_operand"
+cpu = "cf"
+kind = "code"
+addr = 0x4006b18c
+len = 4
+sha256 = "ba5567a341c8e3a326c468378b5850c697eacc0af1fcb44ddbf0883c1d1eb3f3"
+mark = "D"
+rule = "fw/page:cf_func"
+
+[[anchor]]
 name = "cf.page.fn.page_desc"
 cpu = "cf"
 kind = "code"
 addr = 0x400c898a
 len = 6
 sha256 = "4804747ca9c54fb6cf82b4a21415559c390b2b2f9fc4f3cea86546d00ee4dc72"
+mark = "D"
+rule = "fw/page:cf_func"
+
+[[anchor]]
+name = "cf.page.fn.source_code"
+cpu = "cf"
+kind = "code"
+addr = 0x40017cd4
+len = 8
+sha256 = "aafc8f979f6aeb11a4358bcf7b01706892acebe4c40d3e520f88528b3cac80a8"
+mark = "D"
+rule = "fw/page:cf_func"
+
+[[anchor]]
+name = "cf.page.fn.source_draw"
+cpu = "cf"
+kind = "code"
+addr = 0x40016eac
+len = 8
+sha256 = "0a19a633070732de69815e030ca0d25aaa0823017b5e957942c8a8835582aab1"
 mark = "D"
 rule = "fw/page:cf_func"
 
@@ -2328,6 +2368,16 @@ mark = "D"
 rule = "fw/rtos:cf_func"
 
 [[anchor]]
+name = "cf.rtos.site.intro_setup.table_arg"
+cpu = "cf"
+kind = "code"
+addr = 0x400d183a
+len = 6
+sha256 = "03ecf6de6621b1244703968590878d561fdc9fb5be9a05774791bb104128566c"
+mark = "D"
+rule = "fw/rtos:cf_func"
+
+[[anchor]]
 name = "cf.rtos.site.main_os_task"
 cpu = "cf"
 kind = "code"
@@ -2336,6 +2386,17 @@ len = 8
 sha256 = "f446b70c3829f8c05b4cb484c6f85e777d19f62557951248a5c622fe97d11223"
 mark = "D"
 rule = "fw/rtos:cf_words"
+
+[[anchor]]
+name = "cf.rtos.value.intro_entry"
+cpu = "cf"
+kind = "value"
+addr = 0x43153a00
+src = 0x400d1964
+len = 4
+sha256 = "251ac2eca7ee73e5ff367fb6f68d9b48b1606627202954432f7eef98e75fc540"
+mark = "D"
+rule = "fw/rtos:cf_literal"
 
 [[anchor]]
 name = "cf.rtos.value.reset.clear_helper"
@@ -3236,6 +3297,16 @@ site = "cf.page.site.sound_load_exit"
 mode = "replace"
 
 [[hook]]
+name = "cf.page.hook.source_code"
+site = "cf.page.fn.source_code"
+mode = "before"
+
+[[hook]]
+name = "cf.page.hook.source_draw"
+site = "cf.page.fn.source_draw"
+mode = "before"
+
+[[hook]]
 name = "cf.page.hook.source_key"
 site = "cf.page.fn.source_key"
 mode = "before"
@@ -3260,6 +3331,11 @@ mode = "before"
 name = "cf.rtos.hook.idle"
 site = "cf.rtos.site.idle"
 mode = "replace"
+
+[[hook]]
+name = "cf.rtos.hook.intro_setup.table_arg"
+site = "cf.rtos.site.intro_setup.table_arg"
+mode = "before"
 
 [[hook]]
 name = "cf.rtos.hook.main_os_task"

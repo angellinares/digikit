@@ -6,7 +6,15 @@
 #include <stdbool.h>
 #include <stddef.h>
 
+/* DN2 browser-selected sound from view+0x68 and the selected-sound index, as used by its draw and parameter mapper. */
+uint8_t * dk_fw_page_native_library_sound(uint8_t *sounds, uint32_t index) __asm__("cf.page.fn.native_library_sound");
+/* DN2 selected-sound/browser index of MultiSourcePageView (not page index); values below 0x80 select the browser sound instead of the current track sound. */
+uint32_t dk_fw_page_native_sound_index(uint8_t *view) __asm__("cf.page.fn.native_sound_index");
+/* DN2 track sound from the source view's sounds reference (view+0x78) and track, as used by its draw and parameter mapper. */
+uint8_t * dk_fw_page_native_track_sound(uint8_t *sounds, uint32_t track) __asm__("cf.page.fn.native_track_sound");
 /* cf.page.fn.page_desc: no sig yet */
+/* cf.page.fn.source_code: no sig yet */
+/* cf.page.fn.source_draw: no sig yet */
 /* cf.page.fn.source_key: no sig yet */
 /* cf.page.fn.source_turn: no sig yet */
 /* The track of a parameter page: called with the page's reference at view+0x74, it returns the track number (the stock code clamps it to 0 to 15 and uses it as the track index into the project's sound array, FUN_40035cca on the Digitakt II). Same function body on both devices (DT2 0x4004abb8, DN2 0x40046bfe). */
@@ -15,5 +23,7 @@ uint32_t dk_fw_page_view_track(const uint8_t *track_ref) __asm__("cf.page.fn.vie
 extern const uint8_t dk_fw_page_fx_key_list __asm__("cf.page.data.fx_key_list");
 /* The stock list itself (rodata, three page numbers) and the stock count (the byte of `moveq 3,D1` at +1): the runtime copies them in front of its pages. The stock list (rodata 0x401e0448, pages 17, 18, 19) and the stock count. */
 extern const uint8_t dk_fw_page_fx_view_list __asm__("cf.page.data.fx_view_list");
+/* Address operand of pea at ParameterPageView generic knob draw+0xda; the operand points to the live RAM font object. Hash the code operand, not mutable RAM. Used only through bounded canvas text. */
+extern const uint8_t dk_fw_page_native_font_operand __asm__("cf.page.data.native_font_operand");
 
 #endif

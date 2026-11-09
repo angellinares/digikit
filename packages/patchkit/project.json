@@ -1,0 +1,55 @@
+{
+  "name": "patchkit",
+  "targets": {
+    "catalog-check": {
+      "executor": "nx:run-commands",
+      "cache": false,
+      "inputs": [
+        "default",
+        "{workspaceRoot}/modules/**/module.toml",
+        "{workspaceRoot}/tests/fixtures/modules/**/module.toml",
+        { "dependentTasksOutputFiles": "**/*", "transitive": true }
+      ],
+      "dependsOn": ["cli"],
+      "outputs": [],
+      "options": {
+        "command": "dist/patchkit/patchkit --root . catalog-check",
+        "cwd": "."
+      }
+    },
+    "objects-check": {
+      "executor": "nx:run-commands",
+      "cache": false,
+      "description": "Fails when a committed core object (modules/core/**/build/*.dko.json) is older than its sources. Content-module objects are not read.",
+      "inputs": [
+        "{workspaceRoot}/modules/core/**/src/**/*",
+        "{workspaceRoot}/modules/core/**/module.toml",
+        "{workspaceRoot}/modules/core/**/build/*.dko.json",
+        "{workspaceRoot}/modules/core/runtime/sdk/**/*",
+        "{workspaceRoot}/modules/core/runtime/fit/**/*",
+        "{workspaceRoot}/modules/core/fw/rs/**/*",
+        "{workspaceRoot}/packages/dkneeds/**/*",
+        "{workspaceRoot}/devices/*.toml",
+        "{workspaceRoot}/sdk/sdk.toml",
+        "{workspaceRoot}/sdk/include/**/*",
+        "{workspaceRoot}/sdk/asm/**/*",
+        "{workspaceRoot}/sdk/dsp/**/*",
+        "{workspaceRoot}/sdk/vectors/**/*",
+        "{workspaceRoot}/tools/patchkit/toolchain/**/*",
+        "{workspaceRoot}/tools/patchkit/pk_toolchains.py",
+        "{workspaceRoot}/Cargo.toml",
+        "{workspaceRoot}/Cargo.lock",
+        "{workspaceRoot}/.cargo/**/*",
+        "{workspaceRoot}/rust-toolchain*",
+        "{workspaceRoot}/mise.toml",
+        { "dependentTasksOutputFiles": "**/*", "transitive": true }
+      ],
+      "dependsOn": ["cli"],
+      "outputs": [],
+      "options": {
+        "command": "dist/patchkit/patchkit --root . build --check --tree modules/core || { echo 'A committed core object is stale: run dist/patchkit/patchkit --root . build modules/core (or nx run <core module>:build-objects) and commit the result.' >&2; exit 1; }",
+        "cwd": "."
+      }
+    }
+  }
+}
