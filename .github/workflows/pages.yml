@@ -31,9 +31,7 @@ jobs:
           path: out/tools
           key: tools-${{ runner.os }}-${{ hashFiles('tools/patchkit/toolchain/pins.toml', 'tools/patchkit/pk_toolchains.py') }}
       - if: steps.tools.outputs.cache-hit != 'true'
-        run: |
-          uv run python -m tools.patchkit.pk_toolchains m68k
-          uv run python -m tools.patchkit.pk_toolchains selache
+        run: uv run python -m tools.patchkit.pk_toolchains m68k
       - if: steps.tools.outputs.cache-hit != 'true'
         uses: actions/cache/save@v6.1.0
         with:
