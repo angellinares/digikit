@@ -72,6 +72,8 @@ export interface CardRigOptions {
   skip?: Partial<Record<Device, string>>;
   /** Module roots of the runtime image (`patchkit apply --modules`); omit for the emulator patch set. */
   roots?: string[];
+  /** The image has no runtime (a patched-in module only): no `DKRT_BOOT`, no runtime readiness; the case is ready 300 emulated ms after the stock firmware's ready point. */
+  plain?: boolean;
   /** Plan symbols besides `DKRT_BOOT`. */
   symbols?: string[];
   /** Daemon environment besides the write watch; it overrides the watch's variables. A function gets the prepared runtime plan when the daemon starts. */
@@ -207,7 +209,7 @@ export function cardRig(device: Device, scope: string, o: CardRigOptions = {}): 
   const overlays: string[] = [];
   const epochs = new Set<number>();
   const extra = new Set(o.storeExtra ?? []);
-  const symbols = ['DKRT_BOOT', ...(o.symbols ?? [])];
+  const symbols = [...(o.plain ? [] : ['DKRT_BOOT']), ...(o.symbols ?? [])];
 
   const baseline = (
     cardImage: string,
@@ -216,11 +218,11 @@ export function cardRig(device: Device, scope: string, o: CardRigOptions = {}): 
   ): RuntimeBaseline => {
     if (o.roots && !prepared.preparedImage)
       throw new Error('the explicit runtime plan lacks a prepared image identity');
-    const boot = planSymbol(prepared.plan, 'DKRT_BOOT');
+    const boot = o.plain ? 0 : planSymbol(prepared.plan, 'DKRT_BOOT');
     return {
       cardImage,
       preparedImage: prepared.preparedImage,
-      guard: { protect: [{ lo: boot, hi: boot + 8, label: 'runtime boot identity' }], allow_pc: [] },
+      guard: { protect: o.plain ? [] : [{ lo: boot, hi: boot + 8, label: 'runtime boot identity' }], allow_pc: [] },
       deliverExceptions,
       initialButtons: o.initialButtons,
       relaxedReady: o.relaxFs,
@@ -285,7 +287,8 @@ export function cardRig(device: Device, scope: string, o: CardRigOptions = {}): 
           o.roots ? { modules: o.roots } : undefined,
         );
         watchOutput = path.join(artifacts, 'writewatch.jsonl');
-        const env = runtimeWatchEnv(prepared.planFile, watchOutput);
+        // a plain image has no runtime areas to watch
+        const env = o.plain ? {} : runtimeWatchEnv(prepared.planFile, watchOutput);
         record(artifacts, 'watch-environment', env);
         return {
           ...env,
@@ -323,6 +326,7 @@ export function cardRig(device: Device, scope: string, o: CardRigOptions = {}): 
       },
       tempDirs: () => [artifacts],
       afterClose: async (_session) => {
+        if (o.plain) return;
         const report = runtimeSafety(device, watchOutput, overlays, Math.max(1, epochs.size), 'default', [...extra]);
         record(artifacts, 'lifetime-safety', report);
         expect(report.write_events, 'write-watch on cf.expansion over every boot: no stray write').toBe(0);
@@ -358,6 +362,11 @@ export function cardRig(device: Device, scope: string, o: CardRigOptions = {}): 
     afterEpoch = o.relaxFs && runtime.epoch ? runtime.epoch - 1 : undefined,
     options = {},
   ) => {
+    if (o.plain) {
+      await advance(runtime.session, 300);
+      await rpc(runtime.session, 'run.mode', { mode: 'paused' });
+      return runtime;
+    }
     if (o.hold) {
       // Python `settle_ms` (SETTLE_MS, 300 emulated ms), then `wait_dsp`: up to 5 s until no module is still LOADING (its DSP part follows the ColdFire part)
       await advance(runtime.session, 300);

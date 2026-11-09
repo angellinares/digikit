@@ -1,7 +1,6 @@
 import { setTimeout as delay } from 'node:timers/promises';
 import { withinRuntimeDeadline as beforeReadinessDeadline, type Session } from '@digi/test-support';
-import { expect } from 'vitest';
-import { timePhase, timingContext } from '../timing.ts';
+import { timePhase } from '../timing.ts';
 
 /** The DSP frame counter advances 1500 frames per emulated second. */
 const FRAMES_PER_MS = 1.5;
@@ -59,14 +58,4 @@ export async function tap(
     await send(false);
   }
   await timePhase('settle.input', () => waitEmulated(session, settleMs));
-}
-
-/** The DN2 firmware needs a longer pre-install settle than the DT2. Emulated time, like `waitEmulated`. */
-export async function settleUi(session: Session): Promise<void> {
-  const ms = session.options.device === 'dn2' ? 45_000 : 12_000;
-  await timePhase('settle.live', () => waitEmulated(session, ms), {
-    ...timingContext(session),
-    detail: `settle ${ms} ms`,
-  });
-  expect((await session.status()).mode, 'the daemon runs freely').toBe('free');
 }

@@ -122,19 +122,19 @@ Plugin sources are not inputs of module device targets. A `runtimeAcceptance` re
 | `mise run test:slow` | `test_outcomes run --check` over `tests` with `--slow` and a one-hour per-file timeout, then `uv run python -m tools.emulator.coupled gates`. |
 | `mise run test:quick` | Launcher, PGO, target and coupled-tool tests, then `coupled test-quick`. |
 | `mise run test` | Complete affected verification and merge gate: `nx affected` against `DIGI_GATE_BASE` (default `main`). |
-| `mise run test:plan` | The `affected` selection of the non-device targets with native Nx `--explain`; no tasks execute. Device and conformance targets are not listed: all owners run and replay from the cache. |
+| `mise run test:plan` | The `affected` selection of all gate targets, device and conformance included, with native Nx `--explain`; no tasks execute. |
 | `mise run test:full` | Every gate target on every project, plus `tier-sweep` and `dt2-tier-sweep`. Only after generated-core changes. |
 | `mise run clean:runs` | Lists old `digi-*` run directories under the temp dir (older than 24 h, not used by a running `digi-emud` or node process) and orphan `digi-emud` processes; `-- --yes` deletes the directories, `-- --hours N` sets the age. It never kills a process. A Session refuses to start with less than 50 GB free. |
 
 ### Nx gate
 
-- `mise run test` runs the gate targets against `DIGI_GATE_BASE` (default `main`): `nx affected` selects them, except device and conformance targets (see the last notes of this section), through `node tools/nx/gate.mjs --tier merge`; the Nx launcher holds the shared benchlock and runs at nice 10.
+- `mise run test` runs the gate targets against `DIGI_GATE_BASE` (default `main`): `nx affected` selects them, device and conformance targets included, through `node tools/nx/gate.mjs --tier merge`; the Nx launcher holds the shared benchlock and runs at nice 10.
 - `mise run test:full` runs every gate target on every project, plus `tier-sweep` and `dt2-tier-sweep`. Run it only after generated-core changes.
 - Gate projects in `tools/gate/` carry their triggers as `{workspaceRoot}` inputs: `gate-smoke` (target `smoke`), `gate-card` (`card`), `gate-stock` (`stock`, cached), `gate-fx-dn2` (`fx`, `fx-no-aot`, `tier-quick`, `tier-sweep`), `gate-fx-dt2` (`fx-dt2`, `dt2-tier-quick`, `dt2-tier-sweep`), `gate-pins` (`pins`), `gate-dt2-tone` (`dt2-tone`) and `gate-rust-modules` (`rust-tests`). The Vitest suites behind `stock`, `fx` and `fx-dt2` are the `test:stock`, `test:fx` and `test:fx:dt2` scripts of `tests/regression`. `smoke` and `card` run through `tools/nx/daemon-env.mjs`, which sets `DIGI_EMUD_<DEV>` from `dist/daemons.json`, so they use the same content-keyed daemon as the Vitest device tests. Module projects with device tests depend on `regression` (harness), `digi-control` (daemons), `patchkit` (packs) and `devices`; shared SDK contract/compiler surfaces are explicit target inputs. Only modules with `test-conformance` also depend on `conformance`. `python-checks` and `python-tests` run on any change outside `docs/`.
 - The number of concurrent Nx tasks and Vitest workers comes from the machine budget; see "CPU budget of the gate".
 - Nx's `summary` output reports counts and paths to full failure logs; `--output-style=static-failures-only` prints failing task output inline. No custom status router is involved.
 
-Wait without polling: run a long command with a long tool timeout (up to 2 hours in Claude Code with `BASH_MAX_TIMEOUT_MS`), not with `sleep` or `tail`. Claude Code moves it to the background after about 3 minutes and notifies you when it finishes: wait for that notification. If you stop early, stop what you started. Nx detects agents (`isAiAgent`, which reads `CLAUDECODE` among others; `AI_AGENT` alone does not trigger it) and then prints the `summary` style, so task output appears only in the log paths it names. A person who wants a live log sets `NX_DEFAULT_OUTPUT_STYLE=stream` (or passes `--output-style=stream`).
+Wait without polling: run a long command with a long tool timeout (up to 2 hours in Claude Code with `BASH_MAX_TIMEOUT_MS`), not with `sleep` or `tail`. Claude Code moves it to the background after about 3 minutes and notifies you when it finishes: wait for that notification. If you stop early, stop what you started. Nx detects agents (`isAiAgent`, which reads `CLAUDECODE` among others; `AI_AGENT` alone does not trigger it) and then prints the `summary` style, so task output appears only in the log paths it names. A person who wants a live log sets `NX_DEFAULT_OUTPUT_STYLE=stream` (or passes `--output-style=stream`). The gate (`tools/nx/gate.mjs`, tiers `merge` and `full`) therefore passes `--output-style=static-failures-only` unless the style is already chosen: one line per task as it finishes (a tick, `nx run project:target`, the cache status) and the full output of failed tasks. Nx prints no duration there. When the run ends, the gate prints the slowest tasks, failures and slowdowns of that run. `mise run test:history` (`tools/nx/gate-history.mjs`, `-- --days N --top N`) prints them for the last 14 days of this worktree; it reads Nx's own task history database in `.nx/workspace-data/`, which Nx writes when a command ends, so a killed gate leaves no record and a new worktree starts empty.
 
 `uv run python -m tools.devtools.test_outcomes BEFORE.xml AFTER.xml --renames-from REF` compares
 outcomes and skip reasons test by test after moving tests.
@@ -277,9 +277,11 @@ Device sessions run in a claimed `dist/session-cache/<key12>/<device>-<n>` (per 
 snapshots of an older one. A daemon from another place (a custom `DIGI_EMUD_<DEV>`) uses
 `dist/session-cache/<device>-<n>`, or for the card and fx fixtures a fresh temp dir. A vitest worker process
 claims the first free `<n>` with a pid lock file (`<device>-<n>.lock`) and keeps it until it exits; later
-processes reuse the dir, so the daemon's boot cache stays warm. It is pruned to 8 snapshot entries. The card
-and fx fixtures claim a dir when their daemon starts (not at collection), empty everything but `patched/` and
-`cards/`, and release it when the session closes. A file with a failed test or a failed post-close safety check
+processes reuse the dir. The boot snapshots are not in the run dir: all run dirs of a daemon build and device share
+`dist/session-cache/<key12>/snapshots/<device>` (the daemon's `DIGI_SNAPSHOT_DIR`). An entry is named by its content key (firmware,
+card identity, DSP state), so a card boots cold once per daemon build and any later file or run restores it (about 0.2 s). A claim prunes the store to
+6 GiB, oldest entries first (a hit touches its entry). A file that fails removes the entries that its own cold boots wrote. The card
+and fx fixtures claim a dir when their daemon starts (not at collection), empty everything but `cards/`, and release it when the session closes. A file with a failed test or a failed post-close safety check
 renames its dir to `<dir>.failed-<time>` (the newest 2 per device stay), so the next claim boots cold: a snapshot
 of a boot that failed a check would otherwise pass the next run. A `.dirty` marker, written at the claim and removed by a clean release, does the same for a killed or timed-out run. Only the newest 2 `<key12>` dirs of each device stay.
 Cards that the fixtures build (`cardRig`, the fx presets) are content-named: `dist/session-cache/cards/<key>/`
@@ -360,7 +362,7 @@ without running it.
   `mise.toml`, so task edits in `mise-tasks.toml` do not select every project.
 - If the selection is wider or narrower than the change can reach, fix the inputs and edges in
   `tools/nx/*.mjs` or the `project.json` files.
-- The merge gate runs `test-device` and `test-conformance` for every project that owns one and relies on the cache: a key covers what the test consumes ("Nx cache"), so an unchanged test replays in seconds. All other gate targets stay on `affected`. `tools/nx/gate.mjs` makes one `run-many` over the affected projects and the device owners; a project that is affected only through the graph also runs its uncached targets (`test-host`, `typecheck`), about 7 s with the current owners. There is no fixture-first exception for `menu.c` or `ui.c`: an edit selects its consumers' keys and every shipped conformance target runs, or replays when its key did not change.
+- The merge gate selects `test-device` and `test-conformance` with `nx affected`, like every other target: a project is affected when a file in its declared inputs changed between base and head, directly or through a dependency (packs, daemons, SDK, patchkit, devices). A task whose inputs did not change does not run, so a cold cache after main moves does not rerun the suite. `affected` sees git changes only: after a change to untracked inputs (firmware, ready snapshots, override binaries) or to what `tools/nx/device-inputs.mjs` or `coupled-inputs.mjs` hash, run the named targets or the full tier. A cache hit still replays a task that is selected but unchanged since an earlier run. Affected is per project: when only one of a project's device or conformance targets reads the changed file, all targets of that project run (`pk_dkrt.py` selects 23 of 41 device and conformance tasks, `sdk/sdk.toml` all 41). `nx show target inputs PROJECT:TARGET --check PATH` lists only file inputs of the task itself, not dependency outputs (`packages/patchkit/src/apply.rs` is no file input of any device task, and selects all 41 through the patchkit build). There is no fixture-first exception for `menu.c` or `ui.c`: an edit selects its consumers' keys and every shipped conformance target runs, or replays when its key did not change.
 - Loader and public SDK changes retain shipped conformance and every native-selected consumer device behavior check. The loader controls relocation/BSS, menu/function addresses, registry initialization and callback publication. The machine/FX fixture shares shipped load assertions (upload, persistence, registration, version/contracts, DSP status and faults), and a separate zero-DSP service fixture covers service behavior; these fixtures do not prove compatibility of every shipped artifact. Load conformance also does not prove rendered audio or all later module behavior. Use the owner targets above for iteration, then inspect `mise run test:plan` and run the full affected `mise run test` before merge. Any further omission needs an assertion-level mapping of omitted unique behavior and replacement coverage; see the [runtime/SDK coverage decision](plans/module-sdk-iteration.md#decision-runtime-loader-and-public-sdk-coverage).
 
 ### Remote cache
@@ -496,13 +498,13 @@ B = the performance core count on Apple Silicon, otherwise cores - 2, with a min
 
 | Setting | Formula | B=4 | B=8 | B=12 | B=16 |
 | --- | --- | --- | --- | --- | --- |
-| Nx tasks (`NX_PARALLEL`) and emulator ceiling | max(1, min(floor(B/2), floor(RAM GB/2))) | 2 | 4 | 6 | 8 |
+| Nx tasks (`NX_PARALLEL`) and emulator ceiling | max(1, min(B, floor(RAM GB/2))) | 4 | 8 | 12 | 16 |
 | `REGRESSION_JOBS` (Vitest workers per task) | 1 | 1 | 1 | 1 | 1 |
 | `DIGI_JOBS` (emulator processes) | clamp(floor(B/2), 1, 6) | 2 | 4 | 6 | 6 |
 | `CARGO_BUILD_JOBS` | B | 4 | 8 | 12 | 16 |
-| `NEXTEST_TEST_THREADS` | ceil(B/tasks) | 2 | 2 | 2 | 2 |
+| `NEXTEST_TEST_THREADS` | 2 | 2 | 2 | 2 | 2 |
 
-The values assume at least 2 GB of RAM per emulator. On Apple Silicon B is the performance core count, so a 12P+4E machine has B 12: 6 tasks, a ceiling of 6 emulators.
+The values assume at least 2 GB of RAM per emulator. On Apple Silicon B is the performance core count, so a 12P+4E machine has B 12: 12 tasks, a ceiling of 12 emulators; the idle-core admission keeps the efficiency cores and 2 more cores free, so load stays near 10 cores.
 `tools/nx/resources.mjs` holds this policy.
 
 Each launcher run has its own budget, so several lanes could start more emulators than the machine runs well.
@@ -584,7 +586,7 @@ select `patchkit:catalog-check`; an edit to Pluck's C source does not. This veri
 `pnpm nx:pilot` keeps the task cache and the workspace data in `.nx/` of each worktree. The local cache is
 per worktree; the "Remote cache" section covers sharing across worktrees. A hit
 replays the stored output of a target with `cache: true`; the hash covers only the declared `inputs`.
-Plugin sources (`tools/nx/*.mjs`) are not inputs: Nx hashes each project's resolved configuration, so a plugin
+Digest tools are inputs through their result, not their source text: `tools/nx/device-inputs.mjs` and `tools/nx/coupled-inputs.mjs` run as `runtime` inputs, so a format-only edit selects no device or FX task. Plugin sources (`tools/nx/*.mjs`) are not inputs: Nx hashes each project's resolved configuration, so a plugin
 edit invalidates only the targets whose definition changes. `UPDATE_GOLDENS` is a cache input of module device
 targets and `gate-stock:stock`.
 

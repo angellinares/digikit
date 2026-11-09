@@ -151,7 +151,7 @@ export function fxRender(
         if (String(name).endsWith('.wav')) fs.unlinkSync(path.join(run, String(name)));
       }
   });
-  beforeAll(async (suite) => {
+  beforeAll(async ({}, suite) => {
     const selected = suite.tasks.filter((task) => task.mode === 'run').flatMap((task) => needs.get(task.name) ?? []);
     const names = new Set(selected);
     for (const name of selected) {

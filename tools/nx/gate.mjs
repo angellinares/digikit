@@ -1,42 +1,8 @@
 // Scheduling policy only: native Nx still owns task dependencies and cache inputs.
-import { execFileSync, spawnSync } from 'node:child_process';
+import { spawnSync } from 'node:child_process';
 import { realpathSync } from 'node:fs';
 import { fileURLToPath } from 'node:url';
-
-// Device and conformance results come from the Nx cache: their keys cover what the tests consume, so the merge
-// tier runs them for every owning project instead of selecting them with `affected`.
-export const DEVICE_TARGETS = ['test-device', 'test-conformance'];
-
-// The merge tier in one Nx invocation, so all tasks share the scheduler: `run-many` over the affected projects
-// and the owners of device and conformance targets. A project that is affected only through the graph also runs
-// its uncached targets (test-host, typecheck); with the current owners that adds about 7 s.
-export function mergeCommand(targets, projects, extra = []) {
-  return ['run-many', '-t', targets.join(','), `--projects=${projects.join(',')}`, ...extra];
-}
-
-// `--explain` exists for `affected` only: the plan lists the selected non-device tasks.
-export function explainCommand(base, targets, extra = []) {
-  return [
-    'affected',
-    '--base',
-    base,
-    '-t',
-    targets.filter((target) => !DEVICE_TARGETS.includes(target)).join(','),
-    ...extra,
-  ];
-}
-
-const nxProjects = (...query) => {
-  const out = execFileSync('pnpm', ['--silent', 'nx:pilot', 'show', 'projects', ...query, '--json'], {
-    encoding: 'utf8',
-    maxBuffer: 16 * 1024 * 1024,
-  });
-  return JSON.parse(out.slice(out.indexOf('[')));
-};
-
-export const deviceOwners = () => [
-  ...new Set(DEVICE_TARGETS.flatMap((target) => nxProjects(`--withTarget=${target}`))),
-];
+import { readRuns, report } from './gate-history.mjs';
 
 const MERGE_TARGETS = [
   'lint',
@@ -75,7 +41,7 @@ export const TIERS = {
     access: 'rw',
     narrow: false,
   },
-  merge: { targets: MERGE_TARGETS, access: 'rw', narrow: false, deviceFromCache: true, pgo: true },
+  merge: { targets: MERGE_TARGETS, access: 'rw', narrow: false, pgo: true },
   full: {
     targets: [...MERGE_TARGETS, 'test-device-full', 'tier-sweep', 'dt2-tier-sweep'],
     access: 'rw',
@@ -172,34 +138,34 @@ if (process.argv[1] && realpathSync(process.argv[1]) === fileURLToPath(import.me
       /* The PGO status is advice and never fails the gate. */
     }
   }
+  // Nx prints the quiet `summary` style when it detects an AI agent, so nothing appears until the end.
+  // `static-failures-only` prints one line per finished task as it finishes (a tick, `nx run project:target`
+  // and the cache status) and the full output of failed tasks. A person can still choose another style
+  // with NX_DEFAULT_OUTPUT_STYLE or `--output-style`.
+  const styled = (command) =>
+    tier && !explain && !process.env.NX_DEFAULT_OUTPUT_STYLE && !args.some((arg) => arg.startsWith('--output-style'))
+      ? [...command, '--output-style=static-failures-only']
+      : command;
   const wrap = (command) =>
     tier && !explain
       ? ['node', ['tools/nx/remote-cache.mjs', 'exec', '--access', tier.access, '--', 'pnpm', 'nx:pilot', ...command]]
       : ['pnpm', ['nx:pilot', ...command]];
-  let commands;
-  if (tier?.deviceFromCache) {
-    // args: ['--base', BASE, '-t', TARGETS, ...extra]
-    const extra = args.slice(4);
-    if (explain) {
-      commands = [explainCommand(args[1], tier.targets, extra)];
-      console.log('gate: test-device and test-conformance run for every owning project and replay from the cache');
-    } else {
-      const affected = nxProjects('--affected', '--base', args[1]);
-      const projects = [...new Set([...affected, ...deviceOwners()])];
-      console.log(
-        `gate: ${affected.length} affected projects + device owners = ${projects.length} projects, one run-many`,
-      );
-      commands = [mergeCommand(tier.targets, projects, extra)];
-    }
-  } else {
-    commands = tier?.runMany ? [['run-many', ...args]] : [['affected', ...args]];
-    console.log(`gate: ${commands[0][0]} ${tier ? 'over the tier targets' : 'with the given arguments'}`);
-  }
+  const commands = [tier?.runMany ? ['run-many', ...args] : ['affected', ...args]];
+  console.log(`gate: ${commands[0][0]} ${tier ? 'over the tier targets' : 'with the given arguments'}`);
   for (const command of commands) {
-    const [file, fileArgs] = wrap(command);
+    const [file, fileArgs] = wrap(styled(command));
     console.log(`gate: ${file} ${fileArgs.join(' ')}`);
+    const startedAt = Date.now();
     const result = spawnSync(file, fileArgs, { stdio: 'inherit' });
     if (result.error) throw result.error;
+    if (tier && !explain) {
+      // Nx records the run in its task history when the command ends; the durations come from there.
+      try {
+        console.log(`gate: this run, from the Nx task history\n${report(readRuns(startedAt))}`);
+      } catch (error) {
+        console.log(`gate: no task history (${error.message})`);
+      }
+    }
     if (result.status !== 0) process.exit(result.status ?? 1);
   }
 }

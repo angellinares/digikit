@@ -77,7 +77,6 @@
       "outputs": [],
       "inputs": [
         "fxDt2",
-        "{workspaceRoot}/tools/nx/coupled-inputs.mjs",
         "jsToolchain",
         { "dependentTasksOutputFiles": "**/*", "transitive": true },
         { "runtime": "node tools/nx/coupled-inputs.mjs" },
@@ -108,7 +107,6 @@
       "outputs": [],
       "inputs": [
         "fxDt2",
-        "{workspaceRoot}/tools/nx/coupled-inputs.mjs",
         "jsToolchain",
         { "dependentTasksOutputFiles": "**/*", "transitive": true },
         { "runtime": "node tools/nx/coupled-inputs.mjs" },

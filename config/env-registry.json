@@ -397,6 +397,10 @@
    "owner": "ts:tests/regression",
    "purpose": "Directory of the built runtime modules installed by device tests (default dist/modules)."
   },
+  "DIGI_SNAPSHOT_DIR": {
+   "owner": "rust:packages/emulator",
+   "purpose": "Directory of the daemon's boot snapshots (default: <run dir>/patched, private to the run dir); device tests set one store per daemon build and device."
+  },
   "DIGI_SPIKE_LOG": {
    "owner": "rust:packages/emulator",
    "purpose": "Directory; when set, the emulator writes dsp.jsonl and cf.jsonl timing logs for real-time spike analysis."
@@ -752,6 +756,10 @@
   "SHARC_REPLY_INFLIGHT_WORDS": {
    "owner": "rust:packages/emulator",
    "purpose": "Comma list of 32-bit word indexes of the reply record to count; others are ignored."
+  },
+  "SHARC_TIER_TIME": {
+   "owner": "rust:packages/emulator",
+   "purpose": "Set to 1 to report host time per SHARC tier and per thread in audio.report (dsp_tiers.tier_time); also turns link timing on."
   },
   "SHARC_UNINIT": {
    "owner": "rust:packages/emulator",

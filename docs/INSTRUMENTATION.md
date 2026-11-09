@@ -41,6 +41,7 @@ the default directory for every native `*_OUT` that is unset.
 | `fastcov` | fast-tier coverage, refusals, exits, interpreter histogram | `stderr.log` | `SHARC_FAST_LOG=summary`, `SHARC_FAST_COV`, `SHARC_FAST_HIST` |
 | `fastlog` | fast-tier summary | `stderr.log` | `SHARC_FAST_LOG=summary` |
 | `fasttime` | per-slot host time of the fast tier | `stderr.log` | `SHARC_FAST_TIME=1`: on engine drop, prints a `fast time` table per fast-tier slot, sorted by host ticks: PC, `auto` or `list`, `loop` or `cfg`, region length, calls, guest instructions, ticks, ticks per guest instruction, and the tick rate |
+| `tiertime` | host time per DSP tier and per thread | `audio.report` `dsp_tiers.tier_time`, `link_timing` | `SHARC_TIER_TIME=1` (also turns link timing on): host seconds per audio second in the interpreter, generated blocks, fast tier and idle skip (time between two tier calls counts for the tier before it), the DSP worker's busy, wait and other time, and the ColdFire side's wait for the DSP. `rt_matrix run --tier-time` adds the `host` block (ColdFire thread CPU, waits, DSP tiers) to each cell. Cost: one tick read per change of tier |
 | `hist` | interpreted instructions per PC | `stderr.log` | `SHARC_FAST_HIST` |
 | `dump` | fast-tier kernels and real calls (wasm gate input) | `fastdump/` | `SHARC_FAST_DUMP`; needs the `fast-dump` feature (coupled.py adds it) |
 | `pcm` | the rendered audio | `../audio.wav` | `--wav` |

@@ -54,7 +54,7 @@ interface PcmMetrics {
 }
 
 for (const device of DEVICES) {
-  describe.sequential(`${device.toUpperCase()} ${FIRMWARE[device]} FX kit/project persistence`, () => {
+  describe(`${device.toUpperCase()} ${FIRMWARE[device]} FX kit/project persistence`, () => {
     const full = device === 'dt2';
     const context = withPreparedFxSession(device, 'FX kit/project persistence', {
       image: {

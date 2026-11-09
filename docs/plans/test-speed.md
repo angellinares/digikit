@@ -36,19 +36,16 @@ Highest payoff first. Each step states its proof.
 
 1. [x] **Zero DSP by default** (merged in #361, 2026-11-09; the paired before/after proof below is still open). Device tests run ColdFire only unless they need the DSP (`--dsp zero`: about 2.2 times
    real time; coupled is about real time on DT2 and 0.62 to 0.66 times on DN2 at load, finding 18). Proof: per-file `runtime-phase` totals before and after on the same files, one paired run.
-   - [ ] Weighted emulator slots: a zero-DSP emulator takes about one core, a coupled one about two. `emu-slot.mjs` counts a zero-DSP run as half a slot.
-     Proof: same machine load at a higher device concurrency.
-2. [ ] **Reload cost.** Find out why a reload between tests costs 25 to 40 s when a snapshot hit is 0.2 to 1.5 s: snapshot misses, or module loading
-   replayed in emulated time after the restore. Use the `runtime-phase` records ([finding 69](../findings/69-runtime-test-timing.md)); no new runs if
-   the gate logs answer it. If loading is the cost, snapshot at "runtime ready" per image, card and module set, and restore that per test.
-   Proof: `bootscreen` and `introblank` reload time per test.
-3. [ ] **Wait on events, not fixed times.** `settleUi` (`tests/regression/runtime/waits.ts`) waits a fixed 45 s of emulated time on DN2 and 12 s on
-   DT2: about 130 s wall each under gate load. **[D]** `shot-dn2` spent 262 of 697 s in two of them; 7 files call it 12 times. The idea is the deferred
-   "event-driven test observer" of the [test-build workflow](test-build-workflow.md); its constraints apply (one log sink, safe-mode fallback, cursor,
-   epoch and loss semantics, per-file isolation, fixed waits only where the subject is a duration).
-   - [ ] Stage 1, no module: find what the DN2 45 s waits for (project load, sample loading, a background task) and replace the fixed wait with a
-     firmware-state predicate the harness can read today, run in emulated time (runtime ready, UI loop idle), as `CardRig` restarts already do.
-     Proof: `settle.live` per call on `shot-dn2` and the other `settleUi` files, same assertions.
+   - [x] Emulator ceiling: one core per emulator (`tools/nx/resources.mjs`), so 12 emulators and 12 Nx tasks on a 12P+4E machine. The idle-core
+     admission still stops new emulators while coupled runs load the machine. Half-slot weights were built and dropped: they needed polling of the
+     process list and rebalancing for the same result.
+2. [x] **Reload cost.** A slow reload is a snapshot miss, a cold boot of the card inside `firmware.load` ([finding 118](../findings/118-device-test-reload-cost.md)).
+   Snapshots lived per run dir and were pruned to 8, so a file rarely found an earlier one. One shared store per daemon build and device replaces them.
+   - [ ] A cold gate still boots each distinct card once. Reduce distinct cards where the subject is not the boot (write state through the protocol).
+3. [ ] **Wait on events, not fixed times.** The idea is the deferred "event-driven test observer" of the [test-build workflow](test-build-workflow.md);
+   its constraints apply (one log sink, safe-mode fallback, cursor, epoch and loss semantics, per-file isolation, fixed waits only where the subject is a duration).
+   - [x] Stage 1: `settleUi` is deleted. **[D]** It waited a fixed 45 s of emulated time on DN2 and 12 s on DT2 (`shot-dn2`: 262 of 697 s in a loaded gate),
+     after readiness was already established. Without it the `shot-dn2` body takes about 215 s instead of about 390 s.
    - [ ] Stage 2, observer module: a test-only module loaded first reports events the harness cannot read (module registered, machine assigned,
      note reached the DSP, card write done, input consumed) through the runtime log sink, with a boot-record fallback. Host side:
      `events.until(kind, predicate, {emulatedMs})`; a missing event fails with the last events seen. The remote control module stays the input path.
@@ -56,18 +53,17 @@ Highest payoff first. Each step states its proof.
    file sources. A change that does not change the bytes (a comment, an unused constant, a test-only patch set) reruns nothing. Real core changes
    still rerun everything. Owner: the Nx lane. Proof: `nx show target inputs` and one invalidation check per input kind.
    - [ ] Carried over: skip audio scenarios whose image, module objects, daemon and test code did not change.
-   - [ ] **[D]** The merge tier runs `test-device` and `test-conformance` for every owner and relies on cache replay. After main moves, nothing is
+   - [x] (merge tier selects them with `affected`; `full` runs all) **[D]** The merge tier ran `test-device` and `test-conformance` for every owner and relied on cache replay. After main moves, nothing is
      cached for the new main, so the next PR gate reruns the whole device suite, whatever the PR changed. Seen 2026-11-09: PR 362 (a Python test
      helper and the formatting of one Nx file) started the full device suite. Fix: select device tasks whose inputs differ between base and head, or
      warm the cache on main once after each merge.
-   - [ ] **[D]** Tool files that are declared inputs select heavy runs on any edit: a prettier-only change to `tools/nx/coupled-inputs.mjs` selected
+   - [x] **[D]** Tool files that are declared inputs select heavy runs on any edit: a prettier-only change to `tools/nx/coupled-inputs.mjs` selected
      `fx`, `fx-no-aot`, `fx-dt2`, `tier-quick` and `dt2-tier-quick`. Inputs of tool files should be what they compute, not their source text.
 5. [ ] **Core-change policy.** Decision for Em: (A) every core change runs all device tests, or (B) the merge tier runs runtime-tests, smoke,
    conformance and one test per area on both devices, and the full suite runs at batch points. Decide after steps 1 to 4 have shrunk the full suite.
 6. [ ] **Gate output and history.**
-   - [ ] One line per finished task (project:target, pass or fail, seconds) while the gate runs.
-   - [ ] Append each task's result and duration to a history file; use it to start the longest tasks first, to list timeouts and flaky tests, and to
-     show tests that got slower.
+   - [x] One line per finished task (project:target, pass or fail, cache status) while the gate runs: `--output-style=static-failures-only`. Nx prints no seconds there; the durations come with the history report at the end of the run.
+   - [x] History: Nx's own task history database already records project, target, hash, status and start and end of each task. `tools/nx/gate-history.mjs` (`mise run test:history`) reads it: slowest tasks, recent failures, slowdowns. It is per worktree and written at the end of a command. Nx already uses the database's average durations to order tasks, so longest-first needs no code. Flaky tests and timeouts: not built; Nx prints its own flaky-task message.
    - [ ] Test timeouts in emulated time or firmware state, as AGENTS.md requires for waits. A wall-time limit fails healthy tests under load.
 7. [ ] **Device test audit.** For each device test, one of: needs the emulator; can be a host test (Rust runtime unit test or TS); duplicates another
    test. Start with the reload-bound files (`card-safety`, `settings`, `bootscreen`, `introblank`, `memaudit`, `capacity`). Keep one device test per
@@ -91,8 +87,8 @@ Highest payoff first. Each step states its proof.
    - selection for step 5: a changed function selects the tests that execute it, instead of every test that declares the image as an input;
    - host gaps: `cargo llvm-cov` on the runtime unit tests shows logic that only a device test reaches, the first candidates for host tests.
    Vitest's own coverage is not used: it covers only the TS harness. Proof: per-function test lists for one core adapter, checked by hand against its tests.
-9. [ ] **Vitest 5.** One PR from 3.2.4 to 5.x (needs Node 22.12 or later; we run 24): `singleFork` and `poolOptions` become `maxWorkers`/`isolate`
-   settings, `workspace` is `projects`. Then close the Dependabot Vitest PRs. Use tags for the DSP mode and `--last-failed` for reruns.
+9. [x] **Vitest 5.** All packages are on 5.1.0. `singleFork` became `fileParallelism: false`, the default `pool: 'forks'` and `extends: true` were removed, and the root
+   package is `"type": "module"` (Vitest 5 loads the config natively). Tags for the DSP mode and `--last-failed` for reruns stay for later.
 10. [ ] **Python device scenarios to TS** only where they boot an emulator: module `equiv-*`, the pluck menu flows, `pages-dyn-pluck`, `upload-rust`
    ([ledgers](ledgers/)). Other Python tests stay; moving them buys no speed. `py_select` is a second, coarser selector next to Nx (file patterns and
    the import graph); each ported or deleted scenario takes work away from it.
@@ -100,8 +96,10 @@ Highest payoff first. Each step states its proof.
      `tools/patchkit/pk_dkrt.py` selects every `tests/digikit` scenario (equiv, menu, upload). PR 362 (one line in `pk_dkrt.py`) ran
      `test_equiv_dt2` 493 s and `test_menu_dt2` 528 s for it. Move `DEVICE_SYX` to `tools.firmware.config`; check which edge brings `pk_dkrt` into
      `test_machine_conformance.py` and `test_fx_conformance.py` and cut it.
-   - [ ] Port next: the `equiv-dyn-pluck`, `-analog`, `-bd`, `-pd` scenarios as rows of `equiv.device.test.ts` (only `equiv-dn2-set` is ported;
-     the PCM pins are already approved, a port reuses the same values). Then `test_equiv_dt2.py` and `test_equiv_dn2.py` go. Then the menu flows
+   - [x] Port next: the `equiv-dyn-pluck`, `-analog`, `-bd`, `-pd` scenarios as rows of `equiv.device.test.ts` (only `equiv-dn2-set` is ported;
+     the PCM pins are already approved, a port reuses the same values). Then `test_equiv_dt2.py` and `test_equiv_dn2.py` go.
+     Done 2026-11-10: analog, bd, pd, pluck (both devices) and equiv-mixed (DT2) are rows; `test_equiv_dt2.py` and `test_equiv_dn2.py` are deleted.
+     The DN2 pluck reference has no runtime: `cardRig` option `plain`. Left: `run_equiv` in `pk_digikit_scen.py` has no scenario any more. Then the menu flows
      (`zero/menu.device.test.ts` covers only the empty-store menu) and the `pk_dkrt` boot proof as a safe-mode-style test.
    - [ ] Zero DSP where the subject allows: the boot, restart and safe-mode proofs of `test_patchkit_dkrt*.py` and the C-demo test. Equiv, menu and
      the conformance rigs keep the DSP (audio or SHARC subject).

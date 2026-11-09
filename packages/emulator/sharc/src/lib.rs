@@ -121,6 +121,29 @@ pub fn tick_hz() -> u64 {
     }
 }
 
+/// `SHARC_TIER_TIME=1`: host time per tier, by tier transition (one tick read at each
+/// change of tier, none while the same tier keeps running).
+#[derive(Default)]
+struct TierTime {
+    cur: u8,
+    last: u64,
+    acc: [u64; 5],
+}
+
+impl TierTime {
+    #[inline(always)]
+    fn enter(&mut self, tier: u8) {
+        if self.cur != tier {
+            let n = ticks();
+            if let Some(a) = self.acc.get_mut(self.cur as usize) {
+                *a += n - self.last;
+            }
+            self.last = n;
+            self.cur = tier;
+        }
+    }
+}
+
 /// A dispatch entry: the block function and whether the generator classed it
 /// model-safe (tools/sharc_dev/sharc_rsgen.py model_safe), i.e. its instructions touch
 /// none of the state the bank, stack, timer, interrupt, clock and peripheral
@@ -267,6 +290,7 @@ pub struct Engine {
     /// (counter ticks, instructions, entries), ticks of the generic
     /// counter (cntvct_el0 on aarch64).
     pub prof: Option<std::collections::HashMap<u32, (u64, u64, u64)>>,
+    tt: Option<Box<TierTime>>,
     /// Opt-in dispatch costs for coupled-run's per-entry region profile.
     #[cfg(feature = "region-profile")]
     region_profile: Option<RegionProfile>,
@@ -676,6 +700,9 @@ impl Engine {
             entries: None,
             trans: None,
             prof: None,
+            tt: std::env::var_os("SHARC_TIER_TIME")
+                .is_some_and(|v| v != "0")
+                .then(Box::<TierTime>::default),
             #[cfg(feature = "region-profile")]
             region_profile: None,
             last_interp_next: -1,
@@ -749,6 +776,11 @@ impl Engine {
             interp_appended: self.model_stats.interp_appended,
             ..TierCounters::default()
         };
+        if let Some(tt) = &self.tt {
+            t.tt_on = true;
+            t.tt_ticks = tt.acc;
+            t.tt_hz = tick_hz();
+        }
         if let Some(f) = self.fast.as_ref().and_then(|f| f.fast_stats()) {
             t.fast_present = true;
             t.fast_insns = f.insns;
@@ -1794,6 +1826,10 @@ impl Engine {
         let limit = start + n as u64;
         self.idle_snap = None;
         self.s.probe = None;
+        if let Some(tt) = &mut self.tt {
+            tt.cur = 5;
+            tt.enter(4);
+        }
         'steploop: while self.s.icount < limit {
             self.irq_quiet = false;
             self.ww_flush();
@@ -1914,6 +1950,11 @@ impl Engine {
                 if self.ww_on() {
                     self.ww_begin(self.s.pc_sw as u64, 's');
                 }
+                if let Some(tt) = &mut self.tt
+                    && self.s.pc_sw == head as Int
+                {
+                    tt.enter(3);
+                }
                 self.idle_visit(head, skip_limit);
                 self.irq_quiet = false;
                 self.ww_flush();
@@ -1984,6 +2025,11 @@ impl Engine {
                                     .as_ref()
                                     .is_some_and(|b| b.binary_search(&pc).is_err()))
                     };
+                    if let Some(tt) = &mut self.tt
+                        && fast_eligible
+                    {
+                        tt.enter(2);
+                    }
                     if let Some(f) = self.fast.as_mut().filter(|_| fast_eligible) {
                         #[cfg(feature = "region-profile")]
                         {
@@ -2020,6 +2066,9 @@ impl Engine {
                     if code.is_none()
                         && let Some(entry) = entry
                     {
+                        if let Some(tt) = &mut self.tt {
+                            tt.enter(1);
+                        }
                         #[cfg(feature = "region-profile")]
                         {
                             let profile_start =
@@ -2205,6 +2254,9 @@ impl Engine {
                 break;
             };
             self.stats.single_steps += 1;
+            if let Some(tt) = &mut self.tt {
+                tt.enter(0);
+            }
             self.model_stats.interp_appended += (self.s.pc_sw as u32 >= self.appended_from) as u64;
             let loops_before = self.s.loops.n;
             let pc_before = self.s.pc_sw;
@@ -2257,6 +2309,9 @@ impl Engine {
         self.ww_flush();
         self.idle_snap = None;
         self.s.probe = None;
+        if let Some(tt) = &mut self.tt {
+            tt.enter(5);
+        }
         (self.s.icount - start) as u32
     }
 

@@ -10,7 +10,6 @@ import { liveArtifacts, record } from '@digi/regression/runtime/artifacts.ts';
 import { installWithDebug } from '@digi/regression/runtime/install.ts';
 import { memory, panel } from '@digi/regression/runtime/panel.ts';
 import { runtimeTests } from '@digi/regression/runtime/ready.ts';
-import { settleUi } from '@digi/regression/runtime/waits.ts';
 import { planSymbol, prepareRuntimePlan } from '@digi/regression/runtime/runtime-plan.ts';
 import { expectedWindow, setSmp, trackApi as sharedTrackApi } from './shot-support.ts';
 
@@ -276,9 +275,7 @@ runtimeTests(
     const api = trackApi(runtime);
     const log: Record<string, unknown> = {};
     try {
-      await settleUi(session);
       await installWithDebug(runtime, 'digikit/shot', 'test/track-select', 'test/stock-pool');
-      await settleUi(session);
       expect((await dk.modules()).map((m) => m.name)).toEqual(
         expect.arrayContaining(['digikit/shot', 'test/track-select', 'test/stock-pool']),
       );

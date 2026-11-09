@@ -297,7 +297,7 @@ export async function setSmp(
   } finally {
     await session.client.inputButton(button('TRIG 1'), false);
   }
-  throw new Error(`SMP did not reach ${index}: words ${trace.map((w) => w.toString(16))}`);
+  throw new Error(`SMP did not reach ${index} in ${maxTurns} detents, last word ${trace.at(-1)?.toString(16)}: words ${trace.map((w) => w.toString(16))}`);
 }
 
 /** The `dk_strack` record of pool entry `track` in the DSP data of the first module with a table (client 0): eight words. `recordsSymbol` is the plan address of
