@@ -16,7 +16,6 @@ perf:pgo` retrains it (or launch once with DIGI_EMU_PGO_TRAIN=1).
 from __future__ import annotations
 
 import hashlib
-import json
 import os
 import pathlib
 import subprocess
@@ -26,7 +25,10 @@ ROOT = pathlib.Path(__file__).resolve().parents[2]
 from tools import python_env  # noqa: E402
 from tools.emulator import digi_env, emulator_config  # noqa: E402
 
-PANEL_STAMP = ROOT / "out" / "native" / "panel-stamp.json"
+# The desktop app embeds apps/desktop/ui/dist when cargo builds it, so a rewritten dist rebuilds the app (about 18 s). The digest of the
+# sources a dist was built from is kept inside that dist, and every worktree has its own dist: a stamp in the shared out/ made worktrees
+# with different UI sources rebuild each other's dist at every launch.
+PANEL_STAMP_NAME = ".panel-digest"
 PANEL_INPUTS = (
     "apps/desktop/ui",
     "apps/desktop/package.json",
@@ -560,31 +562,36 @@ def panel_digest() -> str:
         for path in files:
             if path.name.startswith("emulator-core") and path.suffix == ".wasm":
                 continue
+            if "dist" in path.relative_to(top).parts[:1]:
+                continue  # the build output of the panel itself (apps/desktop/ui/dist)
             outer.update(f"{path.relative_to(ROOT)}\0".encode())
             outer.update(hashlib.sha256(path.read_bytes()).digest())
     return outer.hexdigest()
 
 
 def build_panel(environ: dict[str, str] | os._Environ[str]) -> None:
-    """Build the desktop console (apps/desktop/ui) unless its sources match the last build.
+    """Build the desktop console (apps/desktop/ui) unless its sources match the last build of this worktree's dist.
 
     DIGI_EMU_PANEL=1 forces the build.
     """
     digest = panel_digest()
     dist = ROOT / "apps" / "desktop" / "ui" / "dist"
+    if dist.is_symlink():
+        # a link to another worktree's dist (older worktree-setup.sh): that dist belongs to the other tree
+        dist.unlink()
+    stamp = dist / PANEL_STAMP_NAME
     try:
-        same = json.loads(PANEL_STAMP.read_text()).get("digest") == digest
-    except (OSError, ValueError):
+        same = stamp.read_text().strip() == digest
+    except OSError:
         same = False
-    if same and dist.is_dir() and environ.get("DIGI_EMU_PANEL") != "1":
+    if same and environ.get("DIGI_EMU_PANEL") != "1":
         return
     subprocess.run(
         ["pnpm", "--filter", "@digi/desktop", "run", "build:ui"],
         cwd=ROOT,
         check=True,
     )
-    PANEL_STAMP.parent.mkdir(parents=True, exist_ok=True)
-    PANEL_STAMP.write_text(json.dumps({"digest": digest}) + "\n")
+    stamp.write_text(digest + "\n")
 
 
 def plus_drive_files(root: pathlib.Path) -> list[pathlib.Path]:

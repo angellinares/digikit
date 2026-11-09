@@ -30,7 +30,6 @@ links=(
   .venv
   apps/web/.local
   apps/web/dist
-  apps/desktop/ui/dist
   tools/coldfire/ghidra/SHARC
   tools/coldfire/ghidra/ColdfireEMAC/data/languages/coldfire_emac.sla
   tools/coldfire/ghidra/ColdfireEMAC/extension.properties
