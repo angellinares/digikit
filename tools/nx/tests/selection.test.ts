@@ -277,14 +277,6 @@ describe('workspace selection', () => {
     30_000,
   );
 
-  it('selects cached device consumers when the device digest recipe changes', () => {
-    const graph = selected('tools/nx/device-inputs.mjs', 'test-device,test-conformance,stock');
-    expect(graph.tasks['core/runtime-tests:test-device']).toBeDefined();
-    expect(graph.tasks['core/runtime-service-tests:test-device']).toBeDefined();
-    expect(graph.tasks[`${imageConsumer()}:test-conformance`]).toBeDefined();
-    expect(graph.tasks['gate-stock:stock']).toBeDefined();
-  }, 30_000);
-
   it('selects hermetic Rust tests when the release profile digest recipe changes', () => {
     const graph = selected('tools/nx/cargo-profile-env.mjs', 'rust-tests');
     expect(graph.tasks['dkneeds:rust-tests']).toBeDefined();

@@ -586,7 +586,7 @@ select `patchkit:catalog-check`; an edit to Pluck's C source does not. This veri
 `pnpm nx:pilot` keeps the task cache and the workspace data in `.nx/` of each worktree. The local cache is
 per worktree; the "Remote cache" section covers sharing across worktrees. A hit
 replays the stored output of a target with `cache: true`; the hash covers only the declared `inputs`.
-Plugin sources (`tools/nx/*.mjs`) are not inputs: Nx hashes each project's resolved configuration, so a plugin
+Digest tools are inputs through their result, not their source text: `tools/nx/device-inputs.mjs` and `tools/nx/coupled-inputs.mjs` run as `runtime` inputs, so a format-only edit selects no device or FX task. Plugin sources (`tools/nx/*.mjs`) are not inputs: Nx hashes each project's resolved configuration, so a plugin
 edit invalidates only the targets whose definition changes. `UPDATE_GOLDENS` is a cache input of module device
 targets and `gate-stock:stock`.
 

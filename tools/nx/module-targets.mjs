@@ -141,7 +141,6 @@ export const DEVICE_INPUTS = [
   { env: 'SHARC_FAST_FALLBACK_REGIONS' },
   { env: 'SHARC_FAST_AUTO' },
   { env: 'UPDATE_GOLDENS' },
-  '{workspaceRoot}/tools/nx/device-inputs.mjs',
   '{workspaceRoot}/config/emulator.json',
 ];
 // Device and conformance tasks run behind this wrapper: it takes one machine-wide emulator slot.
