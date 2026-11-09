@@ -7,7 +7,7 @@ import { liveArtifacts } from '@digi/regression/runtime/artifacts.ts';
 import { installWithDebug } from '@digi/regression/runtime/install.ts';
 import { panel } from '@digi/regression/runtime/panel.ts';
 import { runtimeTests } from '@digi/regression/runtime/ready.ts';
-import { settleUi, waitEmulated } from '@digi/regression/runtime/waits.ts';
+import { waitEmulated } from '@digi/regression/runtime/waits.ts';
 
 // DT2 1.17: tom/tb303 (machine contract 1.6, DK_MACHINE_GATE) loads, plays one note on track 1 and ends it after the note-off.
 // The audio is the coupled PCM of the stock chain (pcm.tap, 48 kHz stereo float).
@@ -63,9 +63,7 @@ runtimeTests(
   async (runtime) => {
     const { session, dk } = runtime;
     const artifacts = liveArtifacts(session, 'tb303-dt2');
-    await settleUi(session);
     await installWithDebug(runtime, 'tom/tb303');
-    await settleUi(session);
     expect((await dk.modules()).map((m) => m.name)).toContain('tom/tb303');
     await selectDynamicMachine(runtime);
 

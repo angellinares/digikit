@@ -36,19 +36,16 @@ Highest payoff first. Each step states its proof.
 
 1. [x] **Zero DSP by default** (merged in #361, 2026-11-09; the paired before/after proof below is still open). Device tests run ColdFire only unless they need the DSP (`--dsp zero`: about 2.2 times
    real time; coupled is about real time on DT2 and 0.62 to 0.66 times on DN2 at load, finding 18). Proof: per-file `runtime-phase` totals before and after on the same files, one paired run.
-   - [ ] Weighted emulator slots: a zero-DSP emulator takes about one core, a coupled one about two. `emu-slot.mjs` counts a zero-DSP run as half a slot.
-     Proof: same machine load at a higher device concurrency.
-2. [ ] **Reload cost.** Find out why a reload between tests costs 25 to 40 s when a snapshot hit is 0.2 to 1.5 s: snapshot misses, or module loading
-   replayed in emulated time after the restore. Use the `runtime-phase` records ([finding 69](../findings/69-runtime-test-timing.md)); no new runs if
-   the gate logs answer it. If loading is the cost, snapshot at "runtime ready" per image, card and module set, and restore that per test.
-   Proof: `bootscreen` and `introblank` reload time per test.
-3. [ ] **Wait on events, not fixed times.** `settleUi` (`tests/regression/runtime/waits.ts`) waits a fixed 45 s of emulated time on DN2 and 12 s on
-   DT2: about 130 s wall each under gate load. **[D]** `shot-dn2` spent 262 of 697 s in two of them; 7 files call it 12 times. The idea is the deferred
-   "event-driven test observer" of the [test-build workflow](test-build-workflow.md); its constraints apply (one log sink, safe-mode fallback, cursor,
-   epoch and loss semantics, per-file isolation, fixed waits only where the subject is a duration).
-   - [ ] Stage 1, no module: find what the DN2 45 s waits for (project load, sample loading, a background task) and replace the fixed wait with a
-     firmware-state predicate the harness can read today, run in emulated time (runtime ready, UI loop idle), as `CardRig` restarts already do.
-     Proof: `settle.live` per call on `shot-dn2` and the other `settleUi` files, same assertions.
+   - [x] Emulator ceiling: one core per emulator (`tools/nx/resources.mjs`), so 12 emulators and 12 Nx tasks on a 12P+4E machine. The idle-core
+     admission still stops new emulators while coupled runs load the machine. Half-slot weights were built and dropped: they needed polling of the
+     process list and rebalancing for the same result.
+2. [x] **Reload cost.** A slow reload is a snapshot miss, a cold boot of the card inside `firmware.load` ([finding 118](../findings/118-device-test-reload-cost.md)).
+   Snapshots lived per run dir and were pruned to 8, so a file rarely found an earlier one. One shared store per daemon build and device replaces them.
+   - [ ] A cold gate still boots each distinct card once. Reduce distinct cards where the subject is not the boot (write state through the protocol).
+3. [ ] **Wait on events, not fixed times.** The idea is the deferred "event-driven test observer" of the [test-build workflow](test-build-workflow.md);
+   its constraints apply (one log sink, safe-mode fallback, cursor, epoch and loss semantics, per-file isolation, fixed waits only where the subject is a duration).
+   - [x] Stage 1: `settleUi` is deleted. **[D]** It waited a fixed 45 s of emulated time on DN2 and 12 s on DT2 (`shot-dn2`: 262 of 697 s in a loaded gate),
+     after readiness was already established. Without it the `shot-dn2` body takes about 215 s instead of about 390 s.
    - [ ] Stage 2, observer module: a test-only module loaded first reports events the harness cannot read (module registered, machine assigned,
      note reached the DSP, card write done, input consumed) through the runtime log sink, with a boot-record fallback. Host side:
      `events.until(kind, predicate, {emulatedMs})`; a missing event fails with the last events seen. The remote control module stays the input path.

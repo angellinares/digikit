@@ -6,7 +6,7 @@ import { claimDir, newestFirst, pruneKeyDirs, type RunDirClaim } from './run-cla
 export const DEVICES = ['dt2', 'dn2'] as const;
 export const FIRMWARE = { dt2: '1.17', dn2: '1.12' } as const;
 
-const claimedRunDirs = new Map<Device, string>();
+const claimedRunDirs = new Map<Device, { dir: string; snapshotDir: string }>();
 
 /** The daemon build key: the parent directory of a binary in the shared `<git dir>/emud-cache/<dev>/<key>/digi-emud` store. A custom binary has none. */
 export function daemonKey(binary: string): string | undefined {
@@ -44,17 +44,21 @@ function sessionBase(device: Device): string | undefined {
 }
 
 /** One run dir per device and vitest worker process at a time, so no two daemons share it. Dirs are reused
- * across processes (a pid lock file marks a dir as claimed), so the booted-snapshot cache stays warm: a cold
- * boot once per dir, then about 1 s. The dir count is bounded by the number of concurrent workers.
- * With a daemon from the shared build store the dirs sit below the daemon's build key
- * (`dist/session-cache/<key12>/<device>-<n>`): snapshots carry no version, so a new daemon build must not
- * load those of an older one. Keeps the newest PATCHED_KEEP snapshot entries. Used by `liveOptions` (not wiped). */
-export function cachedRunDir(device: Device): string {
+ * across processes (a pid lock file marks a dir as claimed). With a daemon from the shared build store the dirs sit below the daemon's
+ * build key (`dist/session-cache/<key12>/<device>-<n>`), and so does the booted-snapshot store they share
+ * (`<key12>/snapshots/<device>`, see run-claim.ts): snapshots carry no version, so a new daemon build must not load those of an older one.
+ * Used by `liveOptions` (not wiped). */
+export function cachedRunDir(device: Device): { dir: string; snapshotDir: string } {
   const known = claimedRunDirs.get(device);
   if (known) return known;
-  const claim = claimDir(sessionBase(device) ?? path.join(repoRoot(), 'dist/session-cache'), device, false);
-  claimedRunDirs.set(device, claim.dir);
-  return claim.dir;
+  const { dir, snapshotDir } = claimDir(
+    sessionBase(device) ?? path.join(repoRoot(), 'dist/session-cache'),
+    device,
+    false,
+  );
+  const claim = { dir, snapshotDir };
+  claimedRunDirs.set(device, claim);
+  return claim;
 }
 
 /**
@@ -94,8 +98,16 @@ export function liveOptions(device: Device, extra: { patchSet?: string; mirror?:
     );
   }
   const { fresh, ...rest } = extra;
-  const runDir = extra.mirror || fresh ? undefined : cachedRunDir(device);
-  return { device, firmware: FIRMWARE[device], binary, card, ...rest, runDir };
+  const claim = extra.mirror || fresh ? undefined : cachedRunDir(device);
+  return {
+    device,
+    firmware: FIRMWARE[device],
+    binary,
+    card,
+    ...rest,
+    runDir: claim?.dir,
+    snapshotDir: claim?.snapshotDir,
+  };
 }
 
 /** Full-tier scenarios run only under `DIGIKIT_TIER=full` (`verify --full`), as the Python tiers do. */

@@ -9,7 +9,6 @@ import { expect, test } from 'vitest';
 import { withSession } from '../support.ts';
 import { record } from './artifacts.ts';
 import { memory, panel } from './panel.ts';
-import { settleUi } from './waits.ts';
 
 // Current DT2 1.17 observations in finding81. All diagnostic accesses are reads.
 const CF = { slotBlock: 0x405b5368, slotRef: 0x405b1368, slotLength: 0x405ba768, blocks: 0x405a0f64 };
@@ -187,7 +186,6 @@ async function discovery(session: Session, dk: DkSession): Promise<{ out: string
     return result;
   }
   try {
-    await settleUi(session);
     const identity = await session.status();
     record(out, 'identity', { load: session.loadResult, status: identity });
     expect(identity.firmware?.injected, 'unpatched stock image').toBe(false);

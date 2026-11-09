@@ -14,7 +14,7 @@ import { fileTemp } from './file-temp.ts';
 import { portFile } from './runtime/device-data.ts';
 import { daemonBinary } from './runtime/devices.ts';
 import type { RunDirClaim } from './runtime/run-claim.ts';
-import { setTimingContext, timePhase, timingContext } from './timing.ts';
+import { recordPhase, setTimingContext, timePhase, timingContext } from './timing.ts';
 import { startNoProgressWatchdog, type Watchdog } from './watchdog.ts';
 
 /** An AggregateError whose message names its causes (Vitest prints only the message). */
@@ -198,6 +198,8 @@ export function withReusablePatchedSession(
   /** A failed file leaves a run dir that must not be reused: a snapshot of a boot that failed a check would pass the next run. */
   let failed = false;
   const releaseClaim = () => {
+    // A snapshot that a failed file's boots wrote is not reused: its state may be one that a check rejected.
+    if (failed) for (const entry of session?.writtenSnapshots ?? []) fs.rmSync(entry, { recursive: true, force: true });
     claim?.release(failed);
     claim = undefined;
   };
@@ -209,7 +211,26 @@ export function withReusablePatchedSession(
     setTimingContext(session!, context);
     // A load with its own timeout (a long multi-boot chain) gets the same bound as no-progress limit; the next case restores the default.
     watchdog?.setLimit(next.timeoutMs);
-    const epoch = await timePhase('session.baseline-reload', () => session!.reloadRuntimeBaseline(next), context);
+    const epoch = await timePhase(
+      'session.baseline-reload',
+      async () => {
+        const result = await session!.reloadRuntimeBaseline(next);
+        // Child records: the firmware.load call (a boot snapshot hit or a cold boot) and the rest (status, guard, ready checks).
+        const reload = session!.lastReload;
+        const load = session!.loadResult;
+        if (reload) {
+          recordPhase('reload.firmware-load', reload.loadMs, {
+            startUsed: load.start_used,
+            cacheHit: load.cache_hit === true,
+            cacheDir: load.cache_dir,
+            card: path.basename(path.dirname(next.cardImage)),
+          });
+          recordPhase('reload.other', reload.totalMs - reload.loadMs);
+        }
+        return result;
+      },
+      context,
+    );
     let active = true;
     const dk = new DkSession(
       new EmuUsbTransport(async <T>(method: string, params?: Record<string, unknown>) => {
@@ -281,7 +302,7 @@ export function withReusablePatchedSession(
     try {
       session = await Session.start({
         ...sessionOptions,
-        ...(claim ? { runDir: claim.dir } : {}),
+        ...(claim ? { runDir: claim.dir, snapshotDir: claim.snapshotDir } : {}),
         runtime: { patchSet: opts.patchSet, reuse: true },
       });
     } catch (error) {
