@@ -24,6 +24,7 @@ import { setMode } from '@web/transfer/transfer-state';
 import { deviceFromName, bootingStatus, booting as startBoot, loadFailure } from '../src/boot-core';
 import { cardDevice, reloadCard } from './card-mock';
 import { installRemoteMock, testPattern } from './remote-mock';
+import { queryFrame } from './frame-from-png';
 import { createLogFollow } from '../src/log-follow';
 import LogPanel from '../src/LogPanel';
 import { setLogOpen } from '../src/log-state';
@@ -61,7 +62,7 @@ const emulatorFaceplate = () =>
             panel={panels[cardDevice]}
             runtime={() => undefined}
             onError={() => {}}
-            ref={(api) => queueMicrotask(() => api.showFrame(testPattern()))}
+            ref={(api) => void queryFrame().then((f) => api.showFrame(f ?? testPattern()))}
           />
         </div>
       </main>
@@ -154,7 +155,7 @@ render(
               <span class="lbl">Reload</span>
             </button>
           </>
-        ) : (
+        ) : new URLSearchParams(location.search).get('banner') === '0' ? null : (
           <span class="path">
             UI preview: fake device (state in the address: ?dev=ok|empty|noreply|error|slow &amp;
             folder=files|empty|none &amp; speed=MiB/s &amp; mode=modules|samples &amp; mkdir=0|1)

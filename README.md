@@ -6,12 +6,28 @@ New machines and effects for your Digitakt II and Digitone II.
 
 [Open the site](https://eleklabs.github.io/digikit/) · [Browse modules](https://eleklabs.github.io/digikit/modules/)
 
-<p align="center">
-  <img src="apps/web/public/images/device-modules.png" alt="The MODULES list on the device, with several modules ticked" width="512">
-</p>
-<p align="center">
-  <img src="apps/web/public/images/device-digikit.png" alt="The DIGIKIT menu on the device: About, Health, Memory, Modules" width="512">
-</p>
+<!-- readme-shots:start -->
+<table>
+  <tr>
+    <td align="center" valign="top"><a href="apps/web/public/images/device-modules.png"><img src="apps/web/public/images/device-modules.png" alt="The MODULES list on the device" width="256"></a><br><sub>Pick which modules load</sub></td>
+    <td align="center" valign="top"><a href="apps/web/public/images/device-digikit.png"><img src="apps/web/public/images/device-digikit.png" alt="The DIGIKIT menu on the device" width="256"></a><br><sub>About, health, memory, modules</sub></td>
+    <td></td>
+  </tr>
+  <tr>
+    <td align="center" valign="top"><a href="docs/images/workbench-emulator.png"><img src="docs/images/workbench-emulator-thumb.png" alt="The workbench emulator page" width="280"></a><br><sub>The real firmware on your computer</sub></td>
+    <td align="center" valign="top"><a href="docs/images/workbench-transfer.png"><img src="docs/images/workbench-transfer-thumb.png" alt="The workbench Transfer page" width="280"></a><br><sub>Install modules over USB</sub></td>
+    <td align="center" valign="top"><a href="docs/images/workbench-remote.png"><img src="docs/images/workbench-remote-thumb.png" alt="The workbench Remote page" width="280"></a><br><sub>Press keys and turn encoders from your computer</sub></td>
+  </tr>
+</table>
+<!-- readme-shots:end -->
+
+- New machines and effects, patched into your own Digitakt II or Digitone II firmware
+- A module loader: install modules over USB and change them without flashing again
+- Boot-loop protection: after two failed starts, the box starts without modules
+- Safe mode: hold RECORD at power-on to start without modules
+- A desktop emulator that runs the real firmware, for testing before you flash
+- Remote control and debugging over USB: press keys, read the event log, peek at memory
+- A module SDK and test suite, still in development
 
 1. Patch your firmware in the browser. You choose your own stock `.syx`, and it is not uploaded.
 2. Flash it over USB.
@@ -25,22 +41,13 @@ digikit adds new machines and effects to the Elektron **Digitakt II** and **Digi
 
 ## Features
 
-- **Runtime on the device:** a SETTINGS > DIGIKIT menu, modules loaded from the card at boot, upload over USB, and a
-  debug log you can follow on your computer.
-- **Storage:** the runtime keeps modules (and, on the Digitone II, samples) in a store of its own on the card, in an
-  area the stock firmware never uses (the Digitakt II's is 82 MiB, the Digitone II's about 22 GiB). Samples for the
-  Digitakt II go to its +Drive over USB. The workbench's Transfer page has a Modules and a Samples tab for both.
-- **Run-time machines:** new machine types next to the stock ones, with their own parameters and DSP code. A safety
-  guard mutes a misbehaving machine instead of silencing the whole device.
-- **Run-time effects:** up to 3 effects of your own, each with its own page in FUNC + FX. An effect runs as a master insert or
-  as a send effect like delay, reverb and chorus, with a send amount for each track on a second page of the FX key; the
-  route is chosen in SETTINGS > DIGIKIT > FX ROUTES. Digikit's settings live in its own store on the card, not in your
-  projects or kits.
+- **Runtime on the device:** a SETTINGS > DIGIKIT menu, modules loaded from the card at boot, upload over USB, and a debug log you can follow on your computer.
+- **Storage:** the runtime keeps modules (and, on the Digitone II, samples) in a store of its own on the card, in an area the stock firmware never uses (the Digitakt II's is 82 MiB, the Digitone II's about 22 GiB). Samples for the Digitakt II go to its +Drive over USB. The workbench's Transfer page has a Modules and a Samples tab for both.
+- **Run-time machines:** new machine types next to the stock ones, with their own parameters and DSP code. A safety guard mutes a misbehaving machine instead of silencing the whole device.
+- **Run-time effects:** up to 3 effects of your own, each with its own page in FUNC + FX. An effect runs as a master insert or as a send effect like delay, reverb and chorus, with a send amount for each track on a second page of the FX key; the route is chosen in SETTINGS > DIGIKIT > FX ROUTES. Digikit's settings live in its own store on the card, not in your projects or kits.
 - **Emulator:** the real firmware (ColdFire and SHARC DSP) runs in the desktop workbench on your computer, with the front panel, display and audio.
-- **Module tests:** every machine is checked against a standard set of tests (parameter limits, modulation, long
-  notes), in seconds, before it reaches a device.
-- **Site:** https://eleklabs.github.io/digikit/ patches and flashes firmware, lists the modules and installs them, all
-  in the browser; `mise web` serves it locally.
+- **Module tests:** every machine is checked against a standard set of tests (parameter limits, modulation, long notes), in seconds, before it reaches a device.
+- **Site:** https://eleklabs.github.io/digikit/ patches and flashes firmware, lists the modules and installs them, all in the browser; `mise web` serves it locally.
 
 ## Modules
 

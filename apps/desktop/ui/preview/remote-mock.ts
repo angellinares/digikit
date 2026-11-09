@@ -2,6 +2,7 @@
 // pattern, so a screenshot shows where and how large the 128 x 64 image is drawn. The Remote page is the app's own code; only the
 // DkSession methods that ask the device are replaced.
 import { DkSession } from '@digi/dk-session';
+import { queryFrame } from './frame-from-png';
 
 /** A recognisable 128 x 64 frame in the firmware's screen layout (`screenPixel`): a frame, corner marks, a diagonal, and a bar of steps. */
 export function testPattern(): Uint8Array {
@@ -33,8 +34,9 @@ export function testPattern(): Uint8Array {
 
 export function installRemoteMock(): void {
   const proto = DkSession.prototype as unknown as Record<string, unknown>;
-  const frame = testPattern();
-  proto.screen = async () => frame.slice();
+  const fallback = testPattern();
+  const loaded = queryFrame();
+  proto.screen = async () => ((await loaded) ?? fallback).slice();
   proto.info = async () => ({ port: 'dn2-1.12' });
   proto.remoteState = async () => ({ enabled: true, format: 1, turnLimit: 10 });
   proto.remoteKey = async () => {};
