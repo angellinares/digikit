@@ -6,6 +6,7 @@ category = "tools"
 type = "service"
 author = "digikit"
 status = "experimental"
+site = false
 summary = "Collects the words a DSP probe module sends each block and hands them to a computer over USB MIDI."
 # tools/device/dkprobe.py speaks its protocol (host = true: it names the module's commands)
 host = true

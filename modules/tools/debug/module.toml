@@ -6,6 +6,7 @@ category = "tools"
 type = "service"
 author = "digikit"
 status = "experimental"
+site = false
 summary = "Keeps the runtime's event log (512 events) and lets a computer read it, set its levels and peek at RAM over USB MIDI."
 # tools/device/dklog.py, the workbench's Log drawer and dk-session speak its protocol (host = true: it names the module's commands)
 host = true
