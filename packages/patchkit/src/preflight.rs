@@ -81,12 +81,14 @@ impl Outcome {
 /// Sections that a patch may change.
 const PATCHABLE: [u32; 2] = [3, 7];
 
-/// Check `patched` against its base. `stock` returns the bytes of the base file for a known firmware (`None`: not present).
+/// Check `patched` against its base. `stock` returns the bytes of the base file for a known firmware (`None`: not present). `code`:
+/// the DSP code ranges of the patch's plan, for the ISA check (`dspscan::scan`).
 pub fn preflight(
     patched: &[u8],
     reg: &Registry,
     known: &[Known],
     stock: &dyn Fn(&Known) -> Option<Vec<u8>>,
+    code: Option<&[(u64, u64)]>,
 ) -> Outcome {
     let mut o = Outcome::default();
     let fw = match Firmware::parse(patched) {
@@ -285,7 +287,7 @@ pub fn preflight(
         Err(e) => o.fail(format!("verify: {e}")),
     }
     match fw.section(7) {
-        Some(dsp) => match crate::dspscan::check_section7(&dsp.data) {
+        Some(dsp) => match crate::dspscan::check_section7(&dsp.data, code) {
             Ok(t) => o.ok(format!("ISA check: {t}")),
             Err(e) => o.fail(format!("ISA check: {e}")),
         },

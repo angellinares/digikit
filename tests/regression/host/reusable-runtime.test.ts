@@ -40,6 +40,7 @@ async function fixture(
   const session = {
     runDir: '/fixture/owned',
     options: { device: 'dn2' },
+    dsp: 'sharc',
     client: { call },
     reloadRuntimeBaseline: vi.fn(async () => {
       calls.push('load');
@@ -58,7 +59,7 @@ async function fixture(
     calls.push('evidence');
   });
   const handle = withReusablePatchedSession(
-    { device: 'dn2', firmware: '1.12' },
+    { device: 'dn2', firmware: '1.12', dsp: 'sharc' },
     {
       prepareBaseline: async (owned) => {
         expect(owned).toBe(session);

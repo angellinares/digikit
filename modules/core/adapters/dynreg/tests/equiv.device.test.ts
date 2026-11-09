@@ -64,7 +64,7 @@ const SCENARIOS: Equiv[] = [
 for (const sc of SCENARIOS) {
   describe(`${sc.device.toUpperCase()} ${FIRMWARE[sc.device]} ${sc.name}`, () => {
     const { device } = sc;
-    const run = cardRig(device, `${sc.name}-run`, {
+    const run = cardRig(device, `${sc.name}-run`, { dsp: 'sharc',
       roots: RT,
       hold: true,
       symbols: [...SYMBOLS, 'voices.rows', 'dyndsp_info'],
@@ -74,7 +74,7 @@ for (const sc of SCENARIOS) {
       }),
     });
     // the reference: the twin patched in, a card with no selection
-    const ref = cardRig(device, `${sc.name}-ref`, {
+    const ref = cardRig(device, `${sc.name}-ref`, { dsp: 'sharc',
       roots: [...RT, sc.twin],
       symbols: SYMBOLS,
       initial: () => ({}),

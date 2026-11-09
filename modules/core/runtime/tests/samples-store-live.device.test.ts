@@ -155,8 +155,7 @@ async function expectSamplesStore({ session }: PatchedSession): Promise<void> {
   }
 }
 
-runtimeTests('samples-store-live conversion, upload and persistent card bytes', expectSamplesStore, {
-  devices: ['dn2'],
+runtimeTests('samples-store-live conversion, upload and persistent card bytes', expectSamplesStore, { devices: ['dn2'],
   mirror: true,
   timeout: 1_000_000,
 });

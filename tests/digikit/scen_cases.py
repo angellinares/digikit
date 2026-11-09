@@ -5,8 +5,8 @@ import os
 import pytest
 
 from tools.firmware import config
+from tools.firmware.config import DEVICE_SYX
 from tools.patchkit import pk_digikit_scen as S
-from tools.patchkit.pk_dkrt import DEVICE_SYX
 
 TIER = os.environ.get("DIGIKIT_TIER", "quick")
 # `mise run module:check` runs only the scenarios of the module (comma-separated names)

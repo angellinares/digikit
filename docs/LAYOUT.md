@@ -29,7 +29,7 @@ This file says who owns which part of the repository and which moves are planned
 | `modules/core/runtime` | `runtime` | Loads `.dkm` modules, links their imports, owns store, selection and policy |
 | `modules/core/expansion` | `installer` | Reset-time installer of all patched-in code |
 | `modules/core/fw` | none | Generated firmware bindings (a library, not a module) |
-| `modules/core/adapters/*` | `adapter` | One adapter per firmware plug-in point: ui, input, fx, fxpages, dsp-voice, dsp-link, dyndsp, dynfx, dynreg, machines, params, health |
+| `modules/core/adapters/*` | `adapter` | One adapter per firmware plug-in point: ui, input, fx, fxpages, dsp-voice, dsp-link, dyndsp, dynfx, dynreg, machines, params, overdrive, health |
 | `modules/core/apps/*` | `app` | Menus and screens on the adapters' API (digikit-menu) |
 | `modules/machines`, `modules/fx`, `modules/tools` | none | Content modules |
 

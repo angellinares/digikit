@@ -98,7 +98,13 @@ test('patched fixture preserves zero-DSP startup while loading the runtime firmw
 });
 
 test('a mirrored runtime owns its mirror inside the temporary run directory', async () => {
-  const runtime = await startPatchedSession({ device: 'dn2', firmware: '1.12', mirror: true, autoNo: false });
+  const runtime = await startPatchedSession({
+    device: 'dn2',
+    firmware: '1.12',
+    dsp: 'sharc',
+    mirror: true,
+    autoNo: false,
+  });
   const runDir = runtime.session.runDir;
   try {
     expect(fs.existsSync(runDir)).toBe(true);
@@ -118,6 +124,7 @@ test('patched fixture loads the card, requests runtime auto boot and free mode, 
   const runtime = await startPatchedSession({
     device: 'dt2',
     firmware: '1.17',
+    dsp: 'sharc',
     card: '/samples',
     patchSet: 'emulator',
   });

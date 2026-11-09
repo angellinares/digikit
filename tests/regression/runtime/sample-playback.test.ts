@@ -323,4 +323,7 @@ async function expectTransferredBank(runtime: PatchedSession): Promise<void> {
 
 // Exact note-on/render PCM is checked by the fixture's own numerical tests.
 // Coupled captures prove silence-before-READY and audible transferred playback/retrigger.
-runtimeTests('transferred sample publishes an immutable mono bank', expectTransferredBank, { timeout: 900_000 });
+runtimeTests('transferred sample publishes an immutable mono bank', expectTransferredBank, {
+  dsp: 'sharc',
+  timeout: 900_000,
+});

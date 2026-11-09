@@ -15,6 +15,7 @@ SINE = ROOT / "tests" / "support" / "raw_sine.s"
 CORE_BASE, SINE_BASE = 0xB90000, 0xB92000
 STOCK_BP = 0xB9F000  # stands in for the stock renderer's second instruction
 RETURN_SW = 0xB9F100  # the caller's return point
+UNPACK_BP = 0xB9F010  # stands in for the stock per-track unpack (dsp.voice.fn.track_unpack), where _dv_unpack continues
 # byte addresses of the stand-ins (L2), one 4 KiB page each
 TYPE_CACHE, FRAME, RECORDS, OUT, TABLE, STATE, STACK, DIAG = (
     0x20091000,
@@ -36,7 +37,10 @@ MASK = (
     DIAG + 0x11C
 )  # `_dv_mask`: the registered types, rebuilt by voice 0 from the table
 GUARD = DIAG + 0x200  # the guard's scalars and arrays (_dv_g, 128 bytes)
-# the contract adapter's data (`_dv_in` 24 bytes, `_dv_params` 32, `_dv_blk` 64, `_dv_c` 64, `_dv_st` 64, `_dv_call_params` 32, `_dv_trig_params` 512): zero, and not used by a row of the old form
+RELEASE = (
+    DIAG + 0x800
+)  # the release bytes (dsp.voice.value.release_latch): byte v is 1 for about a block after voice v's note-off
+# the contract adapter's data (`_dv_in` 28 bytes, `_dv_params` 32, `_dv_blk` 64, `_dv_c` 64, `_dv_st` 64, `_dv_call_params` 32, `_dv_trig_params` 512, `_dv_gate` 64): zero, and not used by a row of the old form
 ADAPTER = {
     "_dv_in": DIAG + 0x300,
     "_dv_params": DIAG + 0x320,
@@ -48,6 +52,7 @@ ADAPTER = {
     "_dv_call_params": DIAG + 0x440,  # 8 words: the merged callback words
     "_dv_trig_params": DIAG
     + 0x500,  # 128 words (512 bytes): per voice/slot latch snapshots
+    "_dv_gate": DIAG + 0x700,  # 16 words: the per-track gate (machine contract 1.6)
 }
 ROW = 24  # words of a registry row: type, pc, the ranges of knobs 0 to 7, the guard fields, the contract fields (words 16 to 19)
 RING_A, RING_B = (
@@ -68,6 +73,8 @@ def core_externs() -> dict[str, int]:
         "_fw_render_next": STOCK_BP,
         "_fw_frame": FRAME,
         "_fw_param_rec": PARAM_REC,
+        "_fw_release_latch": RELEASE,
+        "_fw_unpack": UNPACK_BP,
         "_dv_table": TABLE,
         "_dv_diag": DIAG,
         "_dv_sv_l4": SV_L4,
@@ -329,6 +336,23 @@ class Rig:
         )
         out["in"] = r
         return out
+
+
+def unpack(rig: "Rig", track: int, mask: int | None = None) -> dict:
+    """The frame consumer's call of the per-track unpack (R12 = track, R8 = its even voice), hooked by `_dv_unpack`; `out["lev"]` is knob 7's
+    frame word after it (byte 0xec + 0x60 t)."""
+    rig.dm[nw(MASK)] = rig.table_mask() if mask is None else mask
+    lev = nw(FRAME + 0xEC + 0x60 * track)
+    return pk_sharc.run_call(
+        rig.core_linked,
+        "_dv_unpack",
+        regs={**FRIENDLY, "R12": track, "R8": 2 * track, "I6": STACK, "I7": STACK},
+        dm_words=dict(rig.dm),
+        reads={"lev": (lev, 1)},
+        return_sw=RETURN_SW,
+        others=(rig.sine_linked,),
+        extra_breaks=(UNPACK_BP,),
+    )
 
 
 def stops_at(out: dict, sw: int) -> bool:

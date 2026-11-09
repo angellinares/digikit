@@ -22,6 +22,7 @@ from support.dsp_voice_rig import (  # noqa: E402
     CONTEXT_REGS,
     CORE,
     DIAG,
+    FRAME,
     M6_HOSTILE,
     M13_HOSTILE,
     MASK,
@@ -36,10 +37,12 @@ from support.dsp_voice_rig import (  # noqa: E402
     STOCK_BP,
     TABLE,
     TYPE,
+    UNPACK_BP,
     Rig,
     draw_context,
     nw,
     stops_at,
+    unpack,
 )
 
 from tools.patchkit import pk_sharc, pk_toolchains  # noqa: E402
@@ -728,3 +731,31 @@ def test_a_retrigger_restarts_the_oscillator_and_a_stopped_voice_is_silent(rig_c
     rig.rec_word(0, 0x1B8, 0)
     out = rig.call(0)
     assert out["out"] == [0] * 32
+
+
+def test_a_machine_with_a_parameter_on_knob_7_gets_a_fixed_level_before_the_stock_unpack():
+    """Row word 9 is knob 7's declared range: a machine whose parameters reach knob 7 (param_slots) has one, and its tracks' LEV word
+    in the frame copy becomes 0x6400 (level 100) before the stock unpack reads it; the word's other half stays."""
+    rig = Rig()
+    lev = nw(FRAME + 0xEC + 0x60 * 3)
+    rig.set_type(3, TYPE)
+    rig.dm[lev] = 0x12340100
+    rig.dm[nw(TABLE) + 9] = 0x7F00 << 16
+    out = unpack(rig, 3)
+    assert stops_at(out, UNPACK_BP) and out["lev"] == [0x12346400]
+    rig.dm[nw(TABLE) + 9] = 0  # knob 7 is the stock LEV
+    out = unpack(rig, 3)
+    assert stops_at(out, UNPACK_BP) and out["lev"] == [0x12340100]
+
+
+def test_the_unpack_hook_leaves_other_tracks_and_costs_a_check_without_rows():
+    rig = Rig()
+    rig.dm[nw(TABLE) + 9] = 0x7F00 << 16
+    rig.set_type(3, TYPE)
+    rig.set_type(4, 2)
+    lev = nw(FRAME + 0xEC + 0x60 * 4)
+    rig.dm[lev] = 0x0100
+    out = unpack(rig, 4)
+    assert stops_at(out, UNPACK_BP) and out["lev"] == [0x0100]
+    out = unpack(rig, 3, mask=0)
+    assert stops_at(out, UNPACK_BP) and out["instructions"] < 6

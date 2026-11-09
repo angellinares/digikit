@@ -23,7 +23,13 @@ export const runtimeModules: readonly RuntimeModule[] = loadRuntimeModules(repoR
 // Each cell starts its own daemon. Sessions of a worker reuse one cached run dir (fast boot);
 // the store starts empty in every cell.
 export function conformanceSuite(device: Device): void {
-  for (const module of runtimeModules.filter((module) => supportsDevice(module, device))) {
+  const modules = runtimeModules.filter((module) => supportsDevice(module, device));
+  if (modules.length === 0) {
+    // a module without a port for this device (e.g. a DT2-only machine): nothing to load, but the file must hold a test
+    test.skip(`${device}: no module of this run has a ${device} port`, () => {});
+    return;
+  }
+  for (const module of modules) {
     const name = `${device} ${FIRMWARE[device]} loads and registers ${module.id} through USB without runtime faults`;
     test(name, async () => {
       const options = liveOptions(device);

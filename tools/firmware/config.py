@@ -60,6 +60,13 @@ def stock(name: str) -> pathlib.Path:
     return FIRMWARE_DIR / name
 
 
+# The firmware files of the current analysis images, by image key (AGENTS.md: DT2 OS 1.17, DN2 OS 1.12).
+DEVICE_SYX = {
+    "dt2-1.17": "Digitakt_II_OS1.17.syx",
+    "dn2-1.12": "Digitone_II_OS1.12.syx",
+}
+
+
 def image_key(syx) -> str:
     """-> "<device short>-<version>" (dt2-1.16, dn2-1.10E) of a firmware file.
 

@@ -142,7 +142,7 @@ for (const sc of SCENARIOS) {
     const selectionOf = (set: string) => sc.sets[set]!.map(storeName);
     // The first boot runs the DT2 filesystem check; a card the firmware saved a project on never does, so the later boots are a second daemon with the check relaxed
     // (the environment is the daemon's, as in Python where `Ctx.rig` relaxes used cards only). The stock firmware's project seeds the first card (Python `Env.card`).
-    const base = { roots: RT, symbols: ['DKRT_ASSIGN'] };
+    const base = { dsp: 'sharc' as const, roots: RT, symbols: ['DKRT_ASSIGN'] };
     const first = cardRig(device, sc.name, {
       ...base,
       initial: () => ({ modules, selection: selectionOf(sc.order[0]!) }),

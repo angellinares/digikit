@@ -236,20 +236,20 @@ async function expectEarlyModuleLog(runtime: PatchedSession): Promise<void> {
 runtimeTests(
   'without the debug module the runtime boots, has no log commands and keeps a small ring',
   expectWithoutDebugModule,
-  {
+  { dsp: 'sharc',
     timeout: 600_000,
   },
 );
-runtimeTests('with the debug module the boot events, levels, PEEK and a module log line work', expectWithDebugModule, {
+runtimeTests('with the debug module the boot events, levels, PEEK and a module log line work', expectWithDebugModule, { dsp: 'sharc',
   timeout: 900_000,
 });
-runtimeTests('a module that loads before the debug module has its log line in the debug log', expectEarlyModuleLog, {
+runtimeTests('a module that loads before the debug module has its log line in the debug log', expectEarlyModuleLog, { dsp: 'sharc',
   timeout: 900_000,
 });
 runtimeTests(
   'the periodic events: HEALTH every ten seconds, STABLE once, quiet DSP diagnostics',
   expectPeriodicEvents,
-  {
+  { dsp: 'sharc',
     timeout: 1_200_000,
     devices: ['dt2'],
     full: true,
