@@ -1,0 +1,799 @@
+{
+ "_comment": "Every SHARC_* and DIGI_* environment name that the Rust, TypeScript and Python sources mention as a string literal. owner: language and directory of the first mention. Checked by tools/devtools/env_registry.py (mise run check:env); names built at run time are in prefixes; not_env lists look-alikes that are not variables.",
+ "vars": {
+  "DIGI_ALLOW_STALE_GEN": {
+   "owner": "python:tests/emulator",
+   "purpose": "1 turns the refusal of a generated SHARC core older than sharc_core into a warning (flag)"
+  },
+  "DIGI_BIND_CLOSE_CF_CALL": {
+   "owner": "python:tests/patchkit",
+   "purpose": "Path to a prebuilt cf_call runner for the DSP sample binding close test (default pk_cfcall.EXAMPLE)"
+  },
+  "DIGI_BUDGET": {
+   "owner": "python:tools/devtools",
+   "purpose": "Overrides the CPU budget of an Nx launcher run (positive integer)"
+  },
+  "DIGI_CARD_CACHE": {
+   "owner": "ts:packages/test-support",
+   "purpose": "Directory of shared content-named card images for device tests (default dist/session-cache/cards)"
+  },
+  "DIGI_CARD_IDENTITY": {
+   "owner": "rust:packages/emulator",
+   "purpose": "Selects the emulated card identity (a test sets small for a 1 MiB blank card)"
+  },
+  "DIGI_CATALOG_CARD": {
+   "owner": "ts:tools/nx",
+   "purpose": "Path to a prebuilt DT2 card image for the file-catalog device proof"
+  },
+  "DIGI_CATALOG_EMUD": {
+   "owner": "ts:tools/nx",
+   "purpose": "Absolute path to the prebuilt digi-emud daemon for the file-catalog device proof"
+  },
+  "DIGI_CFDIS": {
+   "owner": "python:tools/coldfire",
+   "purpose": "Path to the cfdis ColdFire disassembler binary (default: out/native/cfdis-tool, built on demand)"
+  },
+  "DIGI_CF_IPS": {
+   "owner": "rust:packages/emulator",
+   "purpose": "ColdFire emulated instructions per second (default 132000000); timers and SSI pacing follow it"
+  },
+  "DIGI_CF_MIX_OUT": {
+   "owner": "rust:packages/emulator",
+   "purpose": "Output directory: a cf-mix build of coupled-run writes one executed-instruction JSON per scenario"
+  },
+  "DIGI_CF_STATES": {
+   "owner": "python:tools/patchkit",
+   "purpose": "0 disables the cached ColdFire boot-state snapshots in the patchkit boot harness (flag)"
+  },
+  "DIGI_COLD_RELAX_FS": {
+   "owner": "rust:packages/emulator",
+   "purpose": "Set (any value) relaxes the DT2 filesystem check that the readiness wait expects on a used card"
+  },
+  "DIGI_CONFORM_DEVICE": {
+   "owner": "python:tests/modules",
+   "purpose": "Device (dt2 or dn2) that the machine conformance tests run on"
+  },
+  "DIGI_CONFORM_MODULES": {
+   "owner": "python:tests/modules",
+   "purpose": "Comma-separated module ids (author/name) that the conformance tests select"
+  },
+  "DIGI_COUPLED_DSP_EXPORT": {
+   "owner": "rust:packages/emulator",
+   "purpose": "Output file path: the pinned coupled ready workload test writes the DSP export there"
+  },
+  "DIGI_COUPLED_FEATURES": {
+   "owner": "python:tools/devtools",
+   "purpose": "Cargo features of the coupled-run build (default coupled-audio)"
+  },
+  "DIGI_COUPLED_FIXTURES": {
+   "owner": "rust:apps/desktop",
+   "purpose": "Directory of the DN2 ready fixtures (snapshots) for coupled runs and the desktop app"
+  },
+  "DIGI_COUPLED_PCM_F32LE": {
+   "owner": "rust:packages/emulator",
+   "purpose": "Output file path: the coupled ready workload test writes its PCM as f32 little-endian there"
+  },
+  "DIGI_COUPLED_SYX": {
+   "owner": "rust:apps/desktop",
+   "purpose": "Path of the DN2 firmware .syx for coupled runs (fallback after DIGI_EMU_SYX)"
+  },
+  "DIGI_DDR_MONITOR_EMUD": {
+   "owner": "ts:tools/nx",
+   "purpose": "Absolute path to the digi-emud daemon for the DSP DDR monitor device test"
+  },
+  "DIGI_DDR_PROOF_CF_STATE": {
+   "owner": "python:tests/patchkit",
+   "purpose": "Optional ColdFire state snapshot path for the DDR proof CF tests"
+  },
+  "DIGI_DESKTOP_TRIG1_HOLD": {
+   "owner": "rust:packages/emulator",
+   "purpose": "Instructions that Trig 1 is held in the desktop Trig 1 capture test (default 40000000)"
+  },
+  "DIGI_DESKTOP_TRIG1_PCM_F32LE": {
+   "owner": "rust:packages/emulator",
+   "purpose": "Output file path: the desktop Trig 1 capture test writes its PCM as f32 little-endian"
+  },
+  "DIGI_DESKTOP_TRIG1_PRESS_AFTER": {
+   "owner": "rust:packages/emulator",
+   "purpose": "Instructions to wait before Trig 1 is pressed in the desktop Trig 1 capture test (default 0)"
+  },
+  "DIGI_DESKTOP_TRIG1_REQUIRE_NONZERO": {
+   "owner": "rust:packages/emulator",
+   "purpose": "1 makes the desktop Trig 1 capture test fail on silent PCM; 0 or unset allows it"
+  },
+  "DIGI_DEVICES_DIR": {
+   "owner": "rust:packages/emulator",
+   "purpose": "Directory of the devices/*.toml device profiles, read at run time (else devices/ found from cwd)"
+  },
+  "DIGI_DIAG_DIR": {
+   "owner": "rust:packages/emulator",
+   "purpose": "Default directory for diagnostic output files whose own *_OUT variable is unset"
+  },
+  "DIGI_DSPI_LOG": {
+   "owner": "rust:packages/emulator",
+   "purpose": "Output file path: the DSP peer logs every DSPI2 frame the ColdFire sends (DSPILOG1 binary)"
+  },
+  "DIGI_DSP_MODEL_LOG": {
+   "owner": "rust:packages/emulator",
+   "purpose": "Output file path: per-frame DSP tier counters as CSV"
+  },
+  "DIGI_DSP_PEEK_EMUD": {
+   "owner": "ts:tools/nx",
+   "purpose": "Absolute path to the digi-emud daemon for the DSP cache registers device test"
+  },
+  "DIGI_DSP_PERIOD": {
+   "owner": "rust:packages/emulator",
+   "purpose": "DSP instructions per DSPI2 frame; experiment override of the coupled DSP scheduling"
+  },
+  "DIGI_DSP_RX_PHASE": {
+   "owner": "rust:packages/emulator",
+   "purpose": "DSP instructions (below the period) of SPI delivery phase inside a frame; experiment only"
+  },
+  "DIGI_DSP_WATCH": {
+   "owner": "rust:packages/emulator",
+   "purpose": "Comma-separated DSP word addresses sampled once per frame into the watch CSV"
+  },
+  "DIGI_DSP_WATCH_OUT": {
+   "owner": "rust:packages/emulator",
+   "purpose": "Output CSV path for DIGI_DSP_WATCH (frame, pc, busy, watched words)"
+  },
+  "DIGI_DT2_CARD": {
+   "owner": "python:tools/devtools",
+   "purpose": "Set makes coupled.py use the DT2 one-sample card and its ready state (same as --dt2-card)"
+  },
+  "DIGI_DTCN0": {
+   "owner": "rust:packages/emulator",
+   "purpose": "bus turns on the DTCN0 bus-clock timer model, off turns it off (default on for DN2, off for DT2)"
+  },
+  "DIGI_EMUD": {
+   "owner": "python:tests/control",
+   "purpose": "Path to the digi-emud daemon binary used by the stock and device tests (shared by both devices)"
+  },
+  "DIGI_EMUD_DN2": {
+   "owner": "python:tests/patchkit",
+   "purpose": "Path to the DN2 digi-emud daemon binary; overrides DIGI_EMUD for DN2"
+  },
+  "DIGI_EMUD_DT2": {
+   "owner": "python:tests/patchkit",
+   "purpose": "Path to the DT2 digi-emud daemon binary; overrides DIGI_EMUD for DT2"
+  },
+  "DIGI_EMU_CF_SNAPSHOT": {
+   "owner": "python:tools/devtools",
+   "purpose": "Path of the ColdFire ready snapshot (default READY/digi-audio-m5.snap)"
+  },
+  "DIGI_EMU_DSP_IMAGE": {
+   "owner": "python:tools/devtools",
+   "purpose": "Path of the DN2 DSP image (default READY/digi-audio-dn2-image.bin)"
+  },
+  "DIGI_EMU_DSP_STATE": {
+   "owner": "python:tools/devtools",
+   "purpose": "Path of the DSP ready state (default READY/digi-audio-m5.snap.dsp)"
+  },
+  "DIGI_EMU_FAST": {
+   "owner": "python:tests/emulator",
+   "purpose": "0 turns off the SHARC fast regions (no region list is added)"
+  },
+  "DIGI_EMU_PANEL": {
+   "owner": "python:tools/emulator",
+   "purpose": "1 forces a rebuild of the desktop panel (otherwise rebuilt only when its sources change)"
+  },
+  "DIGI_EMU_PCM_F32LE": {
+   "owner": "rust:packages/emulator",
+   "purpose": "Output file path: the desktop emulator captures its audio as f32 little-endian PCM"
+  },
+  "DIGI_EMU_PCM_SECONDS": {
+   "owner": "rust:packages/emulator",
+   "purpose": "Seconds of PCM to capture for DIGI_EMU_PCM_F32LE (unset means unlimited)"
+  },
+  "DIGI_EMU_PGO": {
+   "owner": "python:tests/emulator",
+   "purpose": "0 turns off PGO in gate and launcher builds (flag)"
+  },
+  "DIGI_EMU_PGO_TRAIN": {
+   "owner": "python:tests/emulator",
+   "purpose": "1 retrains a stale or missing PGO profile when the launcher starts (flag)"
+  },
+  "DIGI_EMU_PGO_VARIANT": {
+   "owner": "python:tools/emulator",
+   "purpose": "Name of the PGO build target directory for experiments (default pgo-use, which the launcher owns)"
+  },
+  "DIGI_EMU_READY_DIR": {
+   "owner": "python:tools/devtools",
+   "purpose": "Directory of the DN2 ready inputs (overrides ready_dir in tools/emulator/ready_inputs.json)"
+  },
+  "DIGI_EMU_SECOND_CORE": {
+   "owner": "python:tests/emulator",
+   "purpose": "1 enables, 0 disables the second device core in the desktop launcher (default on for desktop)"
+  },
+  "DIGI_EMU_SINK_WAV": {
+   "owner": "rust:packages/emulator",
+   "purpose": "Output WAV path: the audio that the output device actually played, as float WAV"
+  },
+  "DIGI_EMU_SYX": {
+   "owner": "rust:packages/emulator",
+   "purpose": "Path of the Digitone II firmware .syx for the emulator launcher"
+  },
+  "DIGI_EMU_SYX_DT2": {
+   "owner": "python:tests/devtools",
+   "purpose": "Path of the DT2 firmware .syx for the emulator launcher"
+  },
+  "DIGI_FILES_CARD_DT2": {
+   "owner": "ts:tools/nx",
+   "purpose": "Path to the prebuilt DT2 card image for the files API device test"
+  },
+  "DIGI_FILES_EMUD_DN2": {
+   "owner": "ts:tools/nx",
+   "purpose": "Path to the prebuilt DN2 digi-emud daemon for the files API device test"
+  },
+  "DIGI_FILES_EMUD_DT2": {
+   "owner": "ts:tools/nx",
+   "purpose": "Path to the prebuilt DT2 digi-emud daemon for the files API device test"
+  },
+  "DIGI_FILES_PATCH_DN2": {
+   "owner": "ts:tools/nx",
+   "purpose": "Path to the patched DN2 firmware for the files API device test"
+  },
+  "DIGI_FILES_PATCH_DT2": {
+   "owner": "ts:tools/nx",
+   "purpose": "Path to the patched DT2 firmware for the files API device test"
+  },
+  "DIGI_FILES_PLAN_DN2": {
+   "owner": "ts:tools/nx",
+   "purpose": "Path to the DN2 patch plan (plan.json) for the files API device test"
+  },
+  "DIGI_FILES_PLAN_DT2": {
+   "owner": "ts:tools/nx",
+   "purpose": "Path to the DT2 patch plan (plan.json) for the files API device test"
+  },
+  "DIGI_FIRMWARE_DIR": {
+   "owner": "rust:packages/emulator",
+   "purpose": "Directory of the stock firmware images (default firmware/)"
+  },
+  "DIGI_FLUSH_CHECK": {
+   "owner": "rust:packages/emulator",
+   "purpose": "1 turns on the emulator cache-flush check; patchkit proof runs set it with DIGI_WRITE_WATCH"
+  },
+  "DIGI_FW_EMU_SOCKET": {
+   "owner": "python:tools/emulator",
+   "purpose": "Control socket path of the emulator for the web Firmware page test; set by os_upgrade_rig.py"
+  },
+  "DIGI_INTC_FORCE": {
+   "owner": "rust:packages/emulator",
+   "purpose": "Set to 0 to turn off delivery of guest-forced interrupt sources (INTFRCH/INTFRCL); on by default (A/B)."
+  },
+  "DIGI_JOBS": {
+   "owner": "python:tests/devtools",
+   "purpose": "Bounds the number of parallel render jobs (integer); not part of the render cache key."
+  },
+  "DIGI_KEEP_TEST_DIR": {
+   "owner": "rust:packages/emulator",
+   "purpose": "When set, the card export and roundtrip Rust tests keep their temporary directory (flag)."
+  },
+  "DIGI_LEGACY_SNAPSHOT_DN2_SYX": {
+   "owner": "rust:packages/emulator",
+   "purpose": "Path to the exact stock DN2 image for the legacy snapshot policy test; the test skips if unset."
+  },
+  "DIGI_LEGACY_SNAPSHOT_DT2_SYX": {
+   "owner": "rust:packages/emulator",
+   "purpose": "Path to the exact stock DT2 image for the legacy snapshot policy test; the test skips if unset."
+  },
+  "DIGI_LIVE_SOCKET": {
+   "owner": "python:tests/patchkit",
+   "purpose": "Daemon socket path that the desktop live preview Vite server connects to (set by pk_panel.py)."
+  },
+  "DIGI_LP0_AUDIO": {
+   "owner": "ts:tools/nx",
+   "purpose": "Set to 1 to run the optional held stock audio case of the LP0 sample transfer device test."
+  },
+  "DIGI_LP0_BOOT_FIXTURE": {
+   "owner": "ts:tools/nx",
+   "purpose": "Absolute path to the private provenance JSON of the boot fixture for the LP0 sample transfer test."
+  },
+  "DIGI_LP0_CF_CALL": {
+   "owner": "python:tests/patchkit",
+   "purpose": "Path to the ColdFire call runner used by the LP0 proof test (default pk_cfcall.EXAMPLE)."
+  },
+  "DIGI_LP0_CLOSE": {
+   "owner": "ts:tools/nx",
+   "purpose": "Set to 1 to run the optional native held stock audio CLOSE case of the LP0 sample transfer test."
+  },
+  "DIGI_LP0_EMUD": {
+   "owner": "ts:tools/nx",
+   "purpose": "Path to the emulator daemon binary used by the LP0 sample transfer device test."
+  },
+  "DIGI_LP0_FULL_BANK": {
+   "owner": "ts:tools/nx",
+   "purpose": "Set to 1 to run the optional full sample bank case of the LP0 sample transfer test."
+  },
+  "DIGI_LP0_LOG": {
+   "owner": "rust:packages/emulator",
+   "purpose": "When set, the emulator prints a stderr line for each LP0 unit it handles (tag, words, rearm count)."
+  },
+  "DIGI_LP0_VOICES": {
+   "owner": "ts:tools/nx",
+   "purpose": "Set to 1 to run the optional voices case of the LP0 sample transfer device test (otherwise skipped)."
+  },
+  "DIGI_NO_PROGRESS_MS": {
+   "owner": "ts:tools/nx",
+   "purpose": "Wall-time limit in ms of the no-progress watchdog in device tests (default 120000; 0 turns it off)."
+  },
+  "DIGI_PANEL_TX_LOG": {
+   "owner": "rust:packages/emulator",
+   "purpose": "File path; the emulator appends one line per front-panel UART8 drain and per injected panel button."
+  },
+  "DIGI_PATCHED_CACHE_MAX_GB": {
+   "owner": "python:tools/patchkit",
+   "purpose": "Size cap in GB of the patched boot-pair cache; the patchkit harness removes the oldest entries above it (default 30)."
+  },
+  "DIGI_PATCHED_STARTUP_EMUD": {
+   "owner": "ts:tools/nx",
+   "purpose": "Path to the emulator daemon binary used by the patched DSP startup device test."
+  },
+  "DIGI_PATCHKIT": {
+   "owner": "ts:tests/regression",
+   "purpose": "Path to the patchkit binary for host and device tests (default dist/patchkit/patchkit)."
+  },
+  "DIGI_PATCHKIT_BIN": {
+   "owner": "ts:tools/nx",
+   "purpose": "Path to the patchkit binary used by the patched DSP startup and stereo proof device tests."
+  },
+  "DIGI_PGO_DETAIL": {
+   "owner": "rust:apps/desktop",
+   "purpose": "Detail text of the PGO profile state, set by native_emu.py for the child and read by the desktop app."
+  },
+  "DIGI_PGO_STATUS": {
+   "owner": "rust:apps/desktop",
+   "purpose": "PGO profile state (such as stale), set by native_emu.py for the child and read by the desktop app."
+  },
+  "DIGI_PK_PGO": {
+   "owner": "python:tools/patchkit",
+   "purpose": "Set to 0 to run the patchkit harness on a non-PGO emulator binary (pk_load.py defaults it to 0)."
+  },
+  "DIGI_PK_READY_DN2_112": {
+   "owner": "python:tests/patchkit",
+   "purpose": "Directory of the ready inputs for DN2 OS 1.12 used by patchkit proofs and module checks."
+  },
+  "DIGI_PK_READY_DT2_117": {
+   "owner": "python:tests/patchkit",
+   "purpose": "Directory of the ready inputs for DT2 OS 1.17 used by patchkit proofs and module checks."
+  },
+  "DIGI_PK_ROOT": {
+   "owner": "ts:tests/regression",
+   "purpose": "Repository or module variant root passed to patchkit as --root in device tests (default repo root)."
+  },
+  "DIGI_PLUSDRIVE": {
+   "owner": "ts:tests/regression",
+   "purpose": "Path to the plusdrive CLI binary used by device tests (default the shared build)."
+  },
+  "DIGI_PLUSDRIVE_OUT": {
+   "owner": "rust:packages/emulator",
+   "purpose": "Directory for card exports and backups of the control daemon (default out/plusdrive)."
+  },
+  "DIGI_PLUS_DRIVE": {
+   "owner": "rust:packages/emulator",
+   "purpose": "Root of the plus_drive device folders for the control daemon (default the repository's plus_drive/)."
+  },
+  "DIGI_RENDER_CACHE": {
+   "owner": "python:tests/devtools",
+   "purpose": "Set to 0 to turn off the render cache of tools/devtools/render_cache.py."
+  },
+  "DIGI_RENDER_CACHE_CHECK": {
+   "owner": "python:tests/devtools",
+   "purpose": "unclear: cache control, not a render input; see tools/devtools/render_cache.py:44"
+  },
+  "DIGI_RENDER_CACHE_MAX_GB": {
+   "owner": "python:tools/devtools",
+   "purpose": "Size limit of the render cache in GB (default 30)."
+  },
+  "DIGI_REPO_ROOT": {
+   "owner": "rust:packages/emulator",
+   "purpose": "Repository root that the runtime patcher uses to find the module library."
+  },
+  "DIGI_REQUIRE_PGO": {
+   "owner": "python:tests/emulator",
+   "purpose": "Set to 1 to make a stale or missing PGO profile a fatal error in native_pgo.py."
+  },
+  "DIGI_RUNTIME_MODULES": {
+   "owner": "ts:tests/regression",
+   "purpose": "Directory of the built runtime modules installed by device tests (default dist/modules)."
+  },
+  "DIGI_SPIKE_LOG": {
+   "owner": "rust:packages/emulator",
+   "purpose": "Directory; when set, the emulator writes dsp.jsonl and cf.jsonl timing logs for real-time spike analysis."
+  },
+  "DIGI_STACK_WATCH": {
+   "owner": "rust:packages/emulator",
+   "purpose": "Hex ranges LO-HI of task stacks; records the lowest store address (stack high-water mark) per range."
+  },
+  "DIGI_STACK_WATCH_EPOCH": {
+   "owner": "rust:packages/emulator",
+   "purpose": "Hex ranges LO-HI; a store into one ends a stack epoch, and the stack low-water mark is kept per epoch."
+  },
+  "DIGI_STALL_MS": {
+   "owner": "rust:packages/emulator",
+   "purpose": "Emulated-time ms without progress before the health watchdog reports a stall (default 1000; 0 disables)."
+  },
+  "DIGI_STEREO_PROOF_EMUD": {
+   "owner": "ts:tools/nx",
+   "purpose": "Path to the emulator daemon binary used by the DSP stereo proof device test."
+  },
+  "DIGI_STORAGE_FAULT_EMUD": {
+   "owner": "ts:tools/nx",
+   "purpose": "Path to the emulator daemon binary used by the storage fault device test."
+  },
+  "DIGI_STORAGE_FAULT_ISR_DN2_SYX": {
+   "owner": "rust:packages/patchkit",
+   "purpose": "Path to the stock DN2 image for the storage fault ISR patchkit Rust test."
+  },
+  "DIGI_STORAGE_FAULT_ISR_SYX": {
+   "owner": "rust:packages/patchkit",
+   "purpose": "Path to the stock DT2 image for the storage fault ISR patchkit Rust test."
+  },
+  "DIGI_WRITE_WATCH": {
+   "owner": "rust:packages/emulator",
+   "purpose": "Hex guest ranges LO-HI or LO+LEN; logs every CPU and DMA write into them (write-watch instrument)."
+  },
+  "DIGI_WRITE_WATCH_AFTER": {
+   "owner": "rust:packages/emulator",
+   "purpose": "Start of write-watch reporting: cacr (first cache enable) or an instruction count (default from start)."
+  },
+  "DIGI_WRITE_WATCH_ALLOW_PC": {
+   "owner": "rust:packages/emulator",
+   "purpose": "Hex PC ranges LO-HI whose stores the write-watch does not report (the runtime's own code)."
+  },
+  "DIGI_WRITE_WATCH_LIMIT": {
+   "owner": "rust:packages/emulator",
+   "purpose": "Maximum number of write-watch events written to the log (default 100000); counting continues."
+  },
+  "DIGI_WRITE_WATCH_OUT": {
+   "owner": "rust:packages/emulator",
+   "purpose": "Path of the write-watch JSONL log (default $DIGI_DIAG_DIR/writewatch.jsonl, else stderr)."
+  },
+  "DIGI_WRITE_WATCH_SEQ": {
+   "owner": "rust:packages/emulator",
+   "purpose": "Set to 1 to write one numbered write-watch log and summary per emulator of the process."
+  },
+  "SHARC_AOT": {
+   "owner": "rust:packages/emulator",
+   "purpose": "Set to 0 to turn off the generated SHARC block tier (on by default)."
+  },
+  "SHARC_AOT_DENY": {
+   "owner": "rust:packages/emulator",
+   "purpose": "Comma list of hex entry PCs of generated SHARC blocks to leave out, for bisecting a tier fault."
+  },
+  "SHARC_BLOCKTRANS": {
+   "owner": "rust:packages/emulator",
+   "purpose": "Hex PC list (or @FILE) of block-translator cluster roots for the first SHARC core."
+  },
+  "SHARC_BLOCKTRANS_2": {
+   "owner": "rust:packages/emulator",
+   "purpose": "Same as SHARC_BLOCKTRANS for the second SHARC core."
+  },
+  "SHARC_CIRC_NOWRAP": {
+   "owner": "python:tools/sharc_dev",
+   "purpose": "When set in a circstats build, circular-buffer post-modify returns the plain sum without wrap (diagnostic)."
+  },
+  "SHARC_CIRC_STATS": {
+   "owner": "python:tools/sharc_dev",
+   "purpose": "When set in a circstats build, prints circular-buffer post-modify counts to stderr at exit."
+  },
+  "SHARC_CODE_LOG": {
+   "owner": "rust:packages/emulator",
+   "purpose": "When set, logs the differing PCs and barred entries of the SHARC code check to stderr."
+  },
+  "SHARC_CODE_PARITY": {
+   "owner": "rust:packages/emulator",
+   "purpose": "When set, logs once how many SHARC PCs differ between the loaded code and the generated image."
+  },
+  "SHARC_CONCRETISE": {
+   "owner": "python:tools/sharc_dev",
+   "purpose": "unclear: only a prefix filter, no reader; see tools/sharc_dev/blocktrans_coverage.py:586"
+  },
+  "SHARC_CYCMIX": {
+   "owner": "rust:packages/emulator",
+   "purpose": "Set to 1 to record the executed-instruction profile and cache hit rates for cycle costing."
+  },
+  "SHARC_CYCMIX_MEM": {
+   "owner": "rust:packages/emulator",
+   "purpose": "Path of the per-PC instruction info file (size, branch, DAG registers) for the cycle-mix recorder."
+  },
+  "SHARC_CYCMIX_OUT": {
+   "owner": "rust:packages/emulator",
+   "purpose": "Output path of the cycle-mix recorder (default cycmix.tsv in the diagnostic dir)."
+  },
+  "SHARC_FAST_AUTO": {
+   "owner": "rust:packages/emulator",
+   "purpose": "Run-time fast region selection, comma list of numbers a,b,... (mise run wb defaults it to 4,2,0)."
+  },
+  "SHARC_FAST_BACKEND": {
+   "owner": "rust:packages/emulator",
+   "purpose": "Path of a plug-in backend library for the SHARC fast tier; else the reference interpreter runs."
+  },
+  "SHARC_FAST_CHAIN": {
+   "owner": "rust:packages/emulator",
+   "purpose": "Set to 0 to turn off chaining of fast-tier entries (A/B control; entries reached by a chain are then missed)."
+  },
+  "SHARC_FAST_CHASE": {
+   "owner": "rust:packages/emulator",
+   "purpose": "Fast tier: after a refused entry runs in the interpreter, the next instruction becomes an entry; 0 turns it off."
+  },
+  "SHARC_FAST_CL_DISASM": {
+   "owner": "rust:packages/emulator",
+   "purpose": "Set: the Cranelift fast backend keeps and dumps the disassembly of each compiled kernel."
+  },
+  "SHARC_FAST_CL_NOVERIFY": {
+   "owner": "rust:packages/emulator",
+   "purpose": "Set: the Cranelift fast backend skips IR verification of compiled kernels."
+  },
+  "SHARC_FAST_CL_OPT": {
+   "owner": "rust:packages/emulator",
+   "purpose": "Cranelift opt level of fast-tier kernels: speed, speed_and_size (default none)."
+  },
+  "SHARC_FAST_COV": {
+   "owner": "rust:packages/emulator",
+   "purpose": "Set: fast-tier coverage reporting (why calls were declined, exits) at exit."
+  },
+  "SHARC_FAST_DEFER": {
+   "owner": "rust:packages/emulator",
+   "purpose": "Number of calls to interpret before a new fast kernel is used; simulates a late background compile."
+  },
+  "SHARC_FAST_DUMP": {
+   "owner": "rust:packages/emulator",
+   "purpose": "Directory: dumps fast-tier kernels and real calls (wasm gate input); needs the fast-dump feature."
+  },
+  "SHARC_FAST_DUMP_ALL": {
+   "owner": "rust:packages/emulator",
+   "purpose": "Set: SHARC_FAST_DUMP also dumps kernels below the minimum instruction count."
+  },
+  "SHARC_FAST_DYNFLAT": {
+   "owner": "rust:packages/emulator",
+   "purpose": "Set: instructions whose guarded dynamic window keeps failing at run time are lowered as flat accesses."
+  },
+  "SHARC_FAST_FALLBACK_REGIONS": {
+   "owner": "rust:packages/emulator",
+   "purpose": "Fast roots used only when code verification bars their generated entry; hex list; DT2 1.17 default 0x1c2607."
+  },
+  "SHARC_FAST_FALLBACK_REGIONS_2": {
+   "owner": "rust:packages/emulator",
+   "purpose": "Same as SHARC_FAST_FALLBACK_REGIONS, for the second SHARC core."
+  },
+  "SHARC_FAST_FLATAUTO": {
+   "owner": "rust:packages/emulator",
+   "purpose": "Fast-tier flat-access lowering for auto-selected regions; on by default, 0 turns it off."
+  },
+  "SHARC_FAST_FOLLOW": {
+   "owner": "rust:packages/emulator",
+   "purpose": "1: extra fast-tier entries follow the stop instruction of a region (never dropped as unprofitable)."
+  },
+  "SHARC_FAST_GEN": {
+   "owner": "rust:packages/emulator",
+   "purpose": "Generated lowering forms for the fast tier: default all, 0 = hand-written forms only, or a comma list."
+  },
+  "SHARC_FAST_GUARDED_READS": {
+   "owner": "rust:packages/emulator",
+   "purpose": "Set: fast-tier loads also go through a guarded dynamic window, not only clusters."
+  },
+  "SHARC_FAST_HELPER": {
+   "owner": "rust:packages/emulator",
+   "purpose": "1 or LO-HI hex ranges: instructions lacking an address range become helper calls instead of ending a region."
+  },
+  "SHARC_FAST_HIST": {
+   "owner": "rust:packages/emulator",
+   "purpose": "Set: fast-tier run prints an interpreter histogram (instructions run outside the fast tier)."
+  },
+  "SHARC_FAST_LOG": {
+   "owner": "rust:packages/emulator",
+   "purpose": "Set: prints fast-tier summary and why calls were declined (wrong shape, refusals)."
+  },
+  "SHARC_FAST_NOBACKOFF": {
+   "owner": "rust:packages/emulator",
+   "purpose": "Set: turns off the fast-tier back-off after window declines (A/B control)."
+  },
+  "SHARC_FAST_NOGUARD": {
+   "owner": "rust:packages/emulator",
+   "purpose": "Set: turns off guarded dynamic windows for memory access in every fast region (A/B control)."
+  },
+  "SHARC_FAST_NOPUSHDYN": {
+   "owner": "rust:packages/emulator",
+   "purpose": "Set: pushes use static windows only, not the guarded dynamic window lowering (A/B control)."
+  },
+  "SHARC_FAST_NOREGN": {
+   "owner": "rust:packages/emulator",
+   "purpose": "Set: loops with register trip counts stay unknown in the fast tier (A/B control)."
+  },
+  "SHARC_FAST_ONLY": {
+   "owner": "rust:packages/emulator",
+   "purpose": "List of regions: restricts the fast tier to these entries (used by delta-debugging in fast_ddmin.py)."
+  },
+  "SHARC_FAST_REGIONS": {
+   "owner": "rust:packages/emulator",
+   "purpose": "Fast-tier region entry PCs (hex list; @FILE allowed) for the first SHARC core."
+  },
+  "SHARC_FAST_REGIONS_2": {
+   "owner": "rust:packages/emulator",
+   "purpose": "Same as SHARC_FAST_REGIONS, for the second SHARC core."
+  },
+  "SHARC_FAST_SHAPE": {
+   "owner": "rust:packages/emulator",
+   "purpose": "cfg: forces the control-flow-graph lowering shape for fast-tier regions."
+  },
+  "SHARC_FAST_TIME": {
+   "owner": "rust:packages/emulator",
+   "purpose": "Non-empty, not 0: measures host ticks per fast region and reports them at exit."
+  },
+  "SHARC_FAST_TL": {
+   "owner": "rust:packages/emulator",
+   "purpose": "Set: prints why each fast kernel is built and whether its machine code is position independent."
+  },
+  "SHARC_FAST_TL_DUMP": {
+   "owner": "rust:packages/emulator",
+   "purpose": "Directory: dumps pointer-free fast kernels (measurement for the wasm backend)."
+  },
+  "SHARC_FAST_TL_X": {
+   "owner": "python:tests/devtools",
+   "purpose": "unclear: see tests/devtools/test_render_cache.py:52 (only a sample env key in a test)"
+  },
+  "SHARC_GEN_DIR": {
+   "owner": "rust:packages/emulator",
+   "purpose": "Directory of the generated SHARC core (first core); read by sharc-gen build.rs."
+  },
+  "SHARC_GEN_DIR_2": {
+   "owner": "rust:packages/emulator",
+   "purpose": "Directory of the generated SHARC core for the second core (sharc-gen-2)."
+  },
+  "SHARC_IRQ_PROBE": {
+   "owner": "rust:packages/emulator",
+   "purpose": "LO-HI[,..]:MASK[:EVERY]: latches interrupt bits at instruction boundaries in PC windows (diagnostic)."
+  },
+  "SHARC_LIVE_AOT_CAPTURE_DIR": {
+   "owner": "rust:packages/emulator",
+   "purpose": "Directory for raw generated-block call snapshots (opt-in diagnostic)."
+  },
+  "SHARC_LIVE_AOT_CAPTURE_LIMIT": {
+   "owner": "rust:packages/emulator",
+   "purpose": "Max snapshots to capture (default 4, max 16)."
+  },
+  "SHARC_LIVE_AOT_CAPTURE_PC": {
+   "owner": "rust:packages/emulator",
+   "purpose": "Hex PC of the generated block whose calls are captured."
+  },
+  "SHARC_NATIVE_ALLOW_STALE": {
+   "owner": "python:tools/sharc_dev",
+   "purpose": "1: load a stale native SHARC library anyway, with a warning (e.g. to time an old build)."
+  },
+  "SHARC_NATIVE_GUARD_LIB": {
+   "owner": "python:tests/sharc",
+   "purpose": "Path of the native SHARC library used by the guard tests (default library if unset)."
+  },
+  "SHARC_NATIVE_LIB": {
+   "owner": "rust:packages/emulator",
+   "purpose": "Path of the native SHARC library; overrides the default build."
+  },
+  "SHARC_PCDUMP": {
+   "owner": "rust:packages/emulator",
+   "purpose": "Comma list of PCs: dumps registers and stack depths at those PCs to a CSV; 0 records only stack maxima."
+  },
+  "SHARC_PCDUMP_ICOUNT": {
+   "owner": "rust:packages/emulator",
+   "purpose": "lo:hi instruction-count window in which SHARC_PCDUMP records."
+  },
+  "SHARC_PCDUMP_LIMIT": {
+   "owner": "rust:packages/emulator",
+   "purpose": "Max rows written by SHARC_PCDUMP (default 10000)."
+  },
+  "SHARC_PCDUMP_MEM": {
+   "owner": "rust:packages/emulator",
+   "purpose": "hexaddr:count: also dumps these memory words at each SHARC_PCDUMP row."
+  },
+  "SHARC_PCDUMP_OUT": {
+   "owner": "rust:packages/emulator",
+   "purpose": "Output path of the SHARC_PCDUMP CSV (default pcdump.csv in the diagnostics dir; {pid} allowed)."
+  },
+  "SHARC_PROFILE_PREFIX": {
+   "owner": "rust:packages/emulator",
+   "purpose": "Path prefix: the SHARC engine writes its profile to files with this prefix when dropped."
+  },
+  "SHARC_REGIONBENCH_SOL": {
+   "owner": "rust:packages/emulator",
+   "purpose": "Path of a local firmware-derived source file compiled into the region bench (build-time)."
+  },
+  "SHARC_REGIONBENCH_SOL_PATH": {
+   "owner": "rust:packages/emulator",
+   "purpose": "Set by sharc build.rs from SHARC_REGIONBENCH_SOL; the region bench includes this file."
+  },
+  "SHARC_RENDER_CARD_SHA256": {
+   "owner": "rust:packages/emulator",
+   "purpose": "Expected card SHA-256 checked by the rendered replay test."
+  },
+  "SHARC_RENDER_FRAMES": {
+   "owner": "rust:packages/emulator",
+   "purpose": "Max frame count for the rendered replay test."
+  },
+  "SHARC_RENDER_INPUTS": {
+   "owner": "rust:packages/emulator",
+   "purpose": "Path of the input file for the rendered replay test."
+  },
+  "SHARC_RENDER_LIB": {
+   "owner": "rust:packages/emulator",
+   "purpose": "Path of the native library for the rendered replay test."
+  },
+  "SHARC_RENDER_PACK": {
+   "owner": "rust:packages/emulator",
+   "purpose": "Path of the SHARC state pack for the rendered replay test."
+  },
+  "SHARC_RENDER_WIRE": {
+   "owner": "rust:packages/emulator",
+   "purpose": "Path of the expected ColdFire wire trace for the rendered replay test."
+  },
+  "SHARC_REPLY_INFLIGHT": {
+   "owner": "rust:packages/emulator",
+   "purpose": "1 reports, fail also halts: finds core stores into the SPI2 reply record while it is on the wire."
+  },
+  "SHARC_REPLY_INFLIGHT_IPS": {
+   "owner": "rust:packages/emulator",
+   "purpose": "DSP instructions per second for the reply-inflight window (default 1500 x DIGI_DSP_PERIOD)."
+  },
+  "SHARC_REPLY_INFLIGHT_LOG": {
+   "owner": "rust:packages/emulator",
+   "purpose": "Number of reply-record changes printed one by one (default 24)."
+  },
+  "SHARC_REPLY_INFLIGHT_OUT": {
+   "owner": "rust:packages/emulator",
+   "purpose": "Output path of the reply-inflight summary (default reply-inflight.txt in the diagnostics dir)."
+  },
+  "SHARC_REPLY_INFLIGHT_SCK": {
+   "owner": "rust:packages/emulator",
+   "purpose": "SPI2 clock in Hz for the reply-inflight window (default 44000000)."
+  },
+  "SHARC_REPLY_INFLIGHT_SKIP": {
+   "owner": "rust:packages/emulator",
+   "purpose": "Number of first SPI2 exchanges that the reply-inflight check leaves out."
+  },
+  "SHARC_REPLY_INFLIGHT_WORDS": {
+   "owner": "rust:packages/emulator",
+   "purpose": "Comma list of 32-bit word indexes of the reply record to count; others are ignored."
+  },
+  "SHARC_UNINIT": {
+   "owner": "rust:packages/emulator",
+   "purpose": "Hex seed: reads of never-written DSP bytes return a seeded non-zero pattern instead of zero."
+  },
+  "SHARC_UNINIT_LOG": {
+   "owner": "rust:packages/emulator",
+   "purpose": "File path: log of uninitialised-read patterns and trap hits (stderr if unset for the trap)."
+  },
+  "SHARC_UNINIT_TRAP": {
+   "owner": "rust:packages/emulator",
+   "purpose": "Non-0: lists reads of never-written DSP bytes once per word address; values unchanged."
+  },
+  "SHARC_WWATCH": {
+   "owner": "rust:packages/emulator",
+   "purpose": "addr[:n],..: logs changes of watched DSP memory words (hex byte addresses) to a CSV."
+  },
+  "SHARC_WWATCH_OUT": {
+   "owner": "rust:packages/emulator",
+   "purpose": "Output path of the SHARC_WWATCH CSV (default wwatch.csv in the diagnostics dir)."
+  },
+  "DIGI_EMU_RESERVE": {
+   "owner": "ts:tools/nx",
+   "purpose": "Cores that stay idle for the rest of the machine when emu-slot admits an emulator (default: the efficiency cores, else a quarter of the cores, at least 2)."
+  },
+  "DIGI_EMU_SLOTS": {
+   "owner": "ts:tools/nx",
+   "purpose": "Fixed number of machine-wide emulator slots, with no idle-core check (default: the ceiling from cores and RAM)."
+  },
+  "DIGI_TRANSFER_DIR": {
+   "owner": "python:tools/device",
+   "purpose": "Folder for the packed .dkm files and the failed-pack record of dktransfer (default out/patch/transfer); a test run sets one inside its run directory."
+  }
+ },
+ "prefixes": {
+  "DIGI_EMU_READY_DIR_": "Prefix: suffix is the device name in upper case (DT2): ready-input directory of that device",
+  "DIGI_EMU_SYX_": "Prefix: suffix is the device name in upper case (DT2): firmware .syx path of that device",
+  "SHARC_FAST_": "Prefix: every SHARC_FAST_* variable (fast tier setting) is passed on or filtered by native_pgo.py."
+ },
+ "not_env": {
+  "DIGI_X": "Placeholder name in tests/devtools/test_render_cache.py.",
+  "SHARC_DIR": "Not an environment variable: Python constant for out/sharcdb in tools/coldfire/fw.py:42, patched in tests.",
+  "SHARC_VISA": "unclear: see tests/coldfire/test_ghidraq.py:226 (a Ghidra address space name, not an environment variable)"
+ }
+}

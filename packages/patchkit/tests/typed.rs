@@ -34,17 +34,17 @@ fn digest_without_dsp(syx: &[u8]) -> String {
     sha256_hex(&buf)
 }
 
-/// (stock image, modules, digest_without_dsp of the patched image); moved 2026-10-20 with the id renames (P3c-3a) and 2026-10-21 with the move of a plucked-string machine to test/patched-pluck (P3e-1): patch record only; DN2 pin moved 2026-11-02 with the shared knob map (param_slots [1, 2, 4, 5, 6, 0, 3, 7]): the page knobs sit on B C E F
+/// (stock image, modules, digest_without_dsp of the patched image); moved 2026-10-20 with the id renames (P3c-3a) and 2026-10-21 with the move of a plucked-string machine to test/patched-pluck (P3e-1): patch record only; DN2 pin moved 2026-11-02 with the shared knob map (param_slots [1, 2, 4, 5, 6, 0, 3, 7]): the page knobs sit on B C E F; both pins moved 2026-11-05 with native machine pages (the machines adapter patches the native-page hooks); both pins moved 2026-11-09 with core/params' param_edits (its accessor hook looks up an edited code's class)
 const PINS: &[(&str, &str, &str)] = &[
     (
         "Digitakt_II_OS1.17.syx",
         "test/patched-pluck",
-        "936b551870c40b71b04a5a2c5cf59ba651c1fdcfe185ce9668a06799db3b490b",
+        "5fee3b10bb218b91821a77cb1e5255e7ba4870fc3aca82ea1328550b354d6f3c",
     ),
     (
         "Digitone_II_OS1.12.syx",
         "test/patched-pluck",
-        "da143c2d67df5358cbc597c9a219509f70bef17fc534b70b6cfad8aa09880f6f",
+        "aafbaa977d7d8a628cf0f3f6c0f6d50212e245a70f1e3623800cffc02cc5ebb9",
     ),
 ];
 
@@ -151,7 +151,11 @@ fn generation_needs_no_object_files() {
     assert!(m.objects.is_empty() && m.manifest.machine.is_empty());
     let mut lib = Library { modules: vec![m] };
     lib.lower(&models).unwrap();
-    assert!(modgen::generate(&lib, &models, "test/patched-pluck").unwrap().is_empty());
+    assert!(
+        modgen::generate(&lib, &models, "test/patched-pluck")
+            .unwrap()
+            .is_empty()
+    );
 }
 
 /// The bundle path of the browser: the same lowering from texts (ports, manifests, objects, device files).
@@ -168,9 +172,11 @@ fn bundle_lowering_matches_the_scan() {
     let dir = root().join("tests/fixtures/modules/patched-pluck");
     let text = std::fs::read_to_string(dir.join("module.toml")).unwrap();
     // the objects of a content module are in the cache (the scan above built them); the gallery bundle holds them as texts
-    let cache = root().join("out/cache/dko/test/patched-pluck");
+    let files = patchkit::build::object_files(&root(), &dir).unwrap();
     let read = |p: &str| {
-        std::fs::read_to_string(cache.join(p)).map_err(|e| patchkit::Error(e.to_string()))
+        let f = files.iter().find(|(r, _)| r == p).map(|(_, f)| f.clone());
+        std::fs::read_to_string(f.unwrap_or_else(|| dir.join(p)))
+            .map_err(|e| patchkit::Error(e.to_string()))
     };
     let m = patchkit::module::Module::from_parts(&text, &read).unwrap();
     let mut lib = Library { modules: vec![m] };

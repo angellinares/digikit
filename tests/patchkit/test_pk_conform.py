@@ -17,7 +17,8 @@ def test_machine_parameters_come_from_the_manifest_and_the_device_frame():
     assert [dt2.frame.hw(0, p.knob) - dt2.frame.base for p in dt2.params] == [0, 1]
     # the frame skips two halfwords per group of four knobs
     assert [dt2.frame.hw(0, k) - dt2.frame.base for k in (3, 4, 5)] == [3, 6, 7]
-    assert [(p.id, p.knob) for p in dn2.params] == [("sine_level", 0)]
+    # Module word 0 sits on knob B on both devices; DN2 has no stock TUNE knob.
+    assert [(p.id, p.knob) for p in dn2.params] == [("sine_level", 1)]
     assert dn2.frame.hw(3, 1) == dn2.frame.base + 3 * dn2.frame.stride + 1
     # a run-time machine has no fixed number: the rig takes the first number of the run-time range of the device (core/machines types.toml)
     types = tomllib.loads(

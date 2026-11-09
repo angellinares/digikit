@@ -27,11 +27,24 @@ struct Fake {
 fn id(size: u32, hash: u8) -> FileId {
     let mut h = [0; 32];
     h[0] = hash;
-    FileId { root: 1, size, mtime: 0, flags: ID_HASH_VALID, hash_kind: 1, hash: h }
+    FileId {
+        root: 1,
+        size,
+        mtime: 0,
+        flags: ID_HASH_VALID,
+        hash_kind: 1,
+        hash: h,
+    }
 }
 impl Fake {
     fn new() -> Self {
-        Fake { free: 100_000, sync: true, drain: true, next_tok: 1, ..Default::default() }
+        Fake {
+            free: 100_000,
+            sync: true,
+            drain: true,
+            next_tok: 1,
+            ..Default::default()
+        }
     }
     fn add(&mut self, p: &str, i: FileId, frames: u32, ch: u32) {
         self.files.push((p.as_bytes().to_vec(), i, frames, ch));
@@ -43,7 +56,14 @@ impl Fake {
 impl Env for Fake {
     fn inspect(&mut self, p: &[u8]) -> Result<Inspect, i32> {
         self.log.push("inspect");
-        self.file(p).map(|f| Inspect { id: f.1, frames: f.2, rate: 48000, channels: f.3 }).ok_or(E_NOT_FOUND)
+        self.file(p)
+            .map(|f| Inspect {
+                id: f.1,
+                frames: f.2,
+                rate: 48000,
+                channels: f.3,
+            })
+            .ok_or(E_NOT_FOUND)
     }
     fn stat(&mut self, p: &[u8]) -> Result<FileId, i32> {
         self.file(p).map(|f| f.1).ok_or(E_NOT_FOUND)
@@ -55,7 +75,15 @@ impl Env for Fake {
         let f = self.file(p).unwrap().clone();
         assert!(f.1.same(i));
         self.loads += 1;
-        *out = Handle { id: self.loads, token: self.next_tok, base_l: 0x1000 * self.loads, base_r: 0x1000 * self.loads + f.2, frames: f.2, rate: 48000, channels: f.3 };
+        *out = Handle {
+            id: self.loads,
+            token: self.next_tok,
+            base_l: 0x1000 * self.loads,
+            base_r: 0x1000 * self.loads + f.2,
+            frames: f.2,
+            rate: 48000,
+            channels: f.3,
+        };
         self.next_tok += 1;
         if self.sync {
             Load::Done
@@ -71,7 +99,11 @@ impl Env for Fake {
         self.cancelled.push(req);
     }
     fn check(&mut self, _h: &Handle) -> i32 {
-        if self.lost { E_LOST } else { 0 }
+        if self.lost {
+            E_LOST
+        } else {
+            0
+        }
     }
     fn free_frames(&mut self) -> u32 {
         self.free
@@ -121,7 +153,10 @@ fn select_reaches_ready_and_publishes_one_record() {
     assert_eq!(c.status(0, 3), READY);
     let (cl, tr, r) = e.published[0];
     assert_eq!((cl, tr), (0, 3));
-    assert_eq!((r.ready, r.frames, r.channels, r.fmt), (1, 500, 2, FMT_PCM16));
+    assert_eq!(
+        (r.ready, r.frames, r.channels, r.fmt),
+        (1, 500, 2, FMT_PCM16)
+    );
     assert_ne!(r.base_l, r.base_r);
     assert_eq!(c.info(0, 3).unwrap().token, r.token);
 }
@@ -133,7 +168,11 @@ fn ready_waits_until_the_record_has_landed_in_the_dsp() {
     e.add("a.wav", id(100, 1), 500, 2);
     c.select(0, 0, b"a.wav");
     run(&mut c, &mut e, 3);
-    assert_eq!(c.status(0, 0), LOADING, "published, but the writes are on their way");
+    assert_eq!(
+        c.status(0, 0),
+        LOADING,
+        "published, but the writes are on their way"
+    );
     assert_eq!(c.info(0, 0), Err(E_NOT_FOUND));
     run(&mut c, &mut e, 4);
     assert_eq!(c.status(0, 0), READY);
@@ -438,8 +477,14 @@ fn project_change_selects_first_then_unbinds_and_keeps_shared_entries() {
     assert_eq!(c.status(0, 1), UNUSED, "project 6 has no track 1");
     c.project_changed(5);
     run(&mut c, &mut e, 10);
-    assert_eq!((c.status(0, 0), c.status(0, 1), c.status(0, 2)), (READY, READY, UNUSED));
-    assert_eq!(e.loads, 4, "a.wav survived through dedup; b.wav was released by project 6 and loads again");
+    assert_eq!(
+        (c.status(0, 0), c.status(0, 1), c.status(0, 2)),
+        (READY, READY, UNUSED)
+    );
+    assert_eq!(
+        e.loads, 4,
+        "a.wav survived through dedup; b.wav was released by project 6 and loads again"
+    );
 }
 
 #[test]
@@ -513,7 +558,11 @@ fn a_select_that_supersedes_a_running_load_cancels_it_once() {
     assert!(e.cancelled.is_empty());
     c.select(0, 0, b"b.wav");
     run(&mut c, &mut e, 3);
-    assert_eq!(e.cancelled, [e.queued[0]], "the request of the superseded load");
+    assert_eq!(
+        e.cancelled,
+        [e.queued[0]],
+        "the request of the superseded load"
+    );
     run(&mut c, &mut e, 5);
     assert_eq!(e.cancelled.len(), 1, "once");
     // the adapter still completes the cancelled request; the entry is reaped, the track is not touched
@@ -602,7 +651,11 @@ fn the_track_path_is_there_in_every_state_but_unused() {
     c.select(0, 1, b"dir/missing.wav");
     run(&mut c, &mut e, 2);
     assert_eq!(c.status(0, 1), E_NOT_FOUND);
-    assert_eq!(c.path(0, 1), Ok(&b"dir/missing.wav"[..]), "a sticky error still names its file");
+    assert_eq!(
+        c.path(0, 1),
+        Ok(&b"dir/missing.wav"[..]),
+        "a sticky error still names its file"
+    );
     c.unbind(0, 0);
     assert_eq!(c.path(0, 0), Err(E_NOT_FOUND));
 }
@@ -616,7 +669,11 @@ fn the_track_path_follows_a_project_change() {
     c.select(0, 0, b"p1.wav");
     run(&mut c, &mut e, 4);
     c.project_changed(2);
-    assert_eq!(c.path(0, 0), Err(E_NOT_FOUND), "the new project has no selection on track 0");
+    assert_eq!(
+        c.path(0, 0),
+        Err(E_NOT_FOUND),
+        "the new project has no selection on track 0"
+    );
     c.select(0, 0, b"p2.wav");
     c.project_changed(1);
     assert_eq!(c.path(0, 0), Ok(&b"p1.wav"[..]));
@@ -632,11 +689,17 @@ fn pool_add_takes_the_first_free_index_and_a_cleared_hole_is_taken_next() {
     assert_eq!(c.pool_add(0, b"b"), 1);
     assert_eq!(c.pool_add(0, b"c"), 2);
     run(&mut c, &mut e, 6);
-    assert_eq!((c.status(0, 0), c.status(0, 1), c.status(0, 2)), (READY, READY, READY));
+    assert_eq!(
+        (c.status(0, 0), c.status(0, 1), c.status(0, 2)),
+        (READY, READY, READY)
+    );
     // a hole at 1 keeps indexes 0 and 2 where they are; the next add fills it
     assert_eq!(c.unbind(0, 1), 0);
     run(&mut c, &mut e, 4);
-    assert_eq!((c.status(0, 0), c.status(0, 1), c.status(0, 2)), (READY, UNUSED, READY));
+    assert_eq!(
+        (c.status(0, 0), c.status(0, 1), c.status(0, 2)),
+        (READY, UNUSED, READY)
+    );
     e.add("d", id(104, 4), 500, 2);
     assert_eq!(c.pool_add(0, b"d"), 1);
     assert_eq!(c.path(0, 1), Ok(&b"d"[..]));
@@ -651,7 +714,11 @@ fn pool_add_of_a_file_already_in_the_pool_returns_its_index() {
     assert_eq!(c.pool_add(0, b"a"), 0);
     assert_eq!(c.pool_add(0, b"b"), 1);
     run(&mut c, &mut e, 6);
-    assert_eq!(c.pool_add(0, b"a"), 0, "same path, same entry, no second load");
+    assert_eq!(
+        c.pool_add(0, b"a"),
+        0,
+        "same path, same entry, no second load"
+    );
     assert_eq!(c.pool_add(0, b"b\0junk"), 1);
     run(&mut c, &mut e, 6);
     assert_eq!(e.loads, 2);
@@ -679,7 +746,11 @@ fn pool_add_reports_a_full_pool_and_bad_arguments() {
     }
     e.add("extra", id(999, 99), 100, 1);
     assert_eq!(c.pool_add(0, b"extra"), E_POOL);
-    assert_eq!(c.pool_add(0, b"f3"), 3, "a file already in a full pool still resolves");
+    assert_eq!(
+        c.pool_add(0, b"f3"),
+        3,
+        "a file already in a full pool still resolves"
+    );
     assert_eq!(c.pool_add(0, b""), E_SEL_PATH);
     assert_eq!(c.pool_add(1, b"f1"), E_NOT_FOUND, "client 1 is not open");
     assert_eq!(c.unbind(0, 7), 0);
@@ -751,12 +822,20 @@ fn the_pool_list_follows_a_project_change_with_its_holes() {
     run(&mut c, &mut e, 4);
     c.project_changed(2);
     run(&mut c, &mut e, 8);
-    assert_eq!(c.status(0, 0), UNUSED, "project 2 starts with an empty pool");
+    assert_eq!(
+        c.status(0, 0),
+        UNUSED,
+        "project 2 starts with an empty pool"
+    );
     assert_eq!(c.pool_add(0, b"x"), 0);
     run(&mut c, &mut e, 6);
     c.project_changed(1);
     run(&mut c, &mut e, 12);
-    assert_eq!((c.status(0, 0), c.status(0, 1), c.status(0, 2)), (READY, UNUSED, READY), "the hole at 1 is still a hole");
+    assert_eq!(
+        (c.status(0, 0), c.status(0, 1), c.status(0, 2)),
+        (READY, UNUSED, READY),
+        "the hole at 1 is still a hole"
+    );
     assert_eq!(c.path(0, 2), Ok(&b"c"[..]));
 }
 
@@ -766,11 +845,19 @@ fn paths_get_the_device_root() {
     let n = rooted(ROOT_DT2, b"KICKS/K1", &mut out).unwrap();
     assert_eq!(&out[..n], b"/KICKS/K1");
     let n = rooted(ROOT_DT2, b"/KICKS/K1\0junk", &mut out).unwrap();
-    assert_eq!(&out[..n], b"/KICKS/K1", "the 1.5 absolute form stays as it is");
+    assert_eq!(
+        &out[..n],
+        b"/KICKS/K1",
+        "the 1.5 absolute form stays as it is"
+    );
     let n = rooted(ROOT_DN2, b"KICKS/K1", &mut out).unwrap();
     assert_eq!(&out[..n], b"samples/KICKS/K1");
     let n = rooted(ROOT_DN2, b"samples/x", &mut out).unwrap();
-    assert_eq!(&out[..n], b"samples/samples/x", "root-relative always on DN2: a folder may be called samples");
+    assert_eq!(
+        &out[..n],
+        b"samples/samples/x",
+        "root-relative always on DN2: a folder may be called samples"
+    );
     assert_eq!(rooted(ROOT_DT2, b"", &mut out), Err(E_SEL_PATH));
     assert_eq!(rooted(ROOT_DT2, b"\0a", &mut out), Err(E_SEL_PATH));
     // the result must fit: 255 bytes is the most
@@ -805,13 +892,53 @@ fn a_store_file_is_inspected_with_the_native_header_and_its_table_sha() {
     let size = 64 + 400 + 16;
     let i = store_inspect(size, &sha, &head).unwrap();
     assert_eq!((i.frames, i.channels, i.rate), (100, 2, 48000));
-    assert_eq!((i.id.size, i.id.hash_kind, i.id.flags), (size, crate::files::HASH_SHA256, ID_HASH_VALID));
+    assert_eq!(
+        (i.id.size, i.id.hash_kind, i.id.flags),
+        (size, crate::files::HASH_ELEKTRON32, ID_HASH_VALID)
+    );
     assert_eq!(i.id.hash, sha);
     assert!(i.id.same(&store_identity(size, &sha)));
-    assert!(!i.id.same(&store_identity(size, &[8u8; 32])), "another sha is another file");
+    assert!(
+        !i.id.same(&store_identity(size, &[8u8; 32])),
+        "another sha is another file"
+    );
     assert!(!i.id.same(&store_identity(size + 4, &sha)));
-    assert!(store_inspect(size + 4, &sha, &head).is_ok(), "extra bytes after the trailer are allowed");
-    assert_eq!(store_inspect(64 + 400 - 1, &sha, &head).err(), Some(E_FORMAT), "size is shorter than the header says");
+    assert!(
+        store_inspect(size + 4, &sha, &head).is_ok(),
+        "extra bytes after the trailer are allowed"
+    );
+    assert_eq!(
+        store_inspect(64 + 400 - 1, &sha, &head).err(),
+        Some(E_FORMAT),
+        "size is shorter than the header says"
+    );
     head[8] ^= 1;
-    assert_eq!(store_inspect(size, &sha, &head).err(), Some(E_FORMAT), "rate");
+    assert_eq!(
+        store_inspect(size, &sha, &head).err(),
+        Some(E_FORMAT),
+        "rate"
+    );
+}
+
+#[test]
+fn peak_handles_require_the_current_ready_generation() {
+    let (mut c, mut e) = (core(), Fake::new());
+    e.add("a", id(100, 1), 500, 2);
+    e.add("b", id(200, 2), 800, 1);
+    c.pool_set(0, 0, b"a");
+    assert!(c.peak_handle(0, 0, 0).is_err());
+    run(&mut c, &mut e, 6);
+    let old = c.info(0, 0).unwrap().token;
+    assert_eq!(c.peak_handle(0, 0, old).unwrap().frames, 500);
+    assert!(c.peak_handle(0, 0, old + 1).is_err());
+    c.pool_set(0, 0, b"b");
+    assert!(c.peak_handle(0, 0, old).is_err());
+    run(&mut c, &mut e, 8);
+    let next = c.info(0, 0).unwrap().token;
+    assert_ne!(old, next);
+    assert!(c.peak_handle(0, 0, old).is_err());
+    assert_eq!(c.peak_handle(0, 0, next).unwrap().frames, 800);
+    c.unbind(0, 0);
+    assert!(c.peak_handle(0, 0, next).is_err());
+    assert!(c.peak_handle(0, 16, next).is_err());
 }

@@ -27,7 +27,7 @@
 
 use super::*;
 use crate::fast::MAX_FLAG_ID;
-use crate::fast::glue::{AC, AF, ALU_MASK, AN, AS, AV, AZ, MN, MULT_MASK, SS, SV, SZ};
+use crate::fast::glue::{AC, AF, ALU_MASK, AN, AS, AV, AZ, MN, MU, MULT_MASK, SS, SV, SZ};
 
 /// The forms whose condition gates the whole instruction (transfer, index
 /// update and compute), as `forms_compute`/`forms_move` execute them for
@@ -48,7 +48,7 @@ pub const COND_FORMS: &[&str] = &[
 
 const BTF: u32 = 1 << 18;
 const MV: u32 = 1 << 7;
-const ALUSAT: u32 = 1 << 13;
+pub(super) const ALUSAT: u32 = 1 << 13;
 const SHIFT_MASK: u32 = SV | SZ | SS;
 
 /// The ASTATX bits a condition code reads, and whether it complements the
@@ -344,6 +344,23 @@ impl Lower {
                     parts.push(self.ci(AF));
                 }
             }
+            FlagKind::Fmant => {
+                // AF set, AZ when the result (source 0) is zero, AS from the
+                // input sign (source 1), AN cleared.
+                mask = ALU_MASK;
+                if want & AZ != 0 {
+                    let r = self.to_i(srcs[0]);
+                    let z = self.ci(0);
+                    parts.push(self.bin(Bin::Eq, r, z));
+                }
+                if want & AS != 0 {
+                    let i = self.to_i(srcs[1]);
+                    parts.push(self.sign_to(i, 4));
+                }
+                if want & AF != 0 {
+                    parts.push(self.ci(AF));
+                }
+            }
             FlagKind::Compare { float } => {
                 // The value is eq | lt << 2 | gt << 31: AZ is bit 0, AN is
                 // bit 2; AF for the float form.
@@ -436,6 +453,16 @@ impl Lower {
             }
             FlagKind::FmulForget => {
                 mask = MULT_MASK;
+            }
+            FlagKind::Mfix => {
+                // The source holds MN and MU at their bit positions; MV and
+                // MI are clear.
+                mask = MULT_MASK;
+                if want & (MN | MU) != 0 {
+                    let v = self.to_i(srcs[0]);
+                    let m = self.ci(want & (MN | MU));
+                    parts.push(self.bin(Bin::And, v, m));
+                }
             }
             FlagKind::Iadd | FlagKind::Isub => {
                 mask = ALU_MASK;

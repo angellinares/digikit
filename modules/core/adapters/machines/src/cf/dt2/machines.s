@@ -324,11 +324,18 @@ mf_srcpage:
     addq.l  #4,%sp
     cmpi.l  #_mf_first,%d0
     blt.s   1f
-    clr.l   0x90(%a2)               | an added type: page 0 and SRC_PAGES entries
-    move.l  0x7c(%a2),%d1
-    addi.l  #4 * SRC_PAGES,%d1
-    move.l  %d1,0x80(%a2)
-    jmp     _mf_spa
+    move.l  #SRC_PAGES,-(%sp)
+    move.l  %d0,-(%sp)
+    jsr     mf_native_page_count
+    addq.l  #8,%sp
+    move.l  %d0,%d1
+    lsl.l   #2,%d1
+    add.l   0x7c(%a2),%d1
+    move.l  %d1,0x80(%a2)            | existing capacity is two entries; no allocation or vector growth
+    cmp.l   0x90(%a2),%d0
+    bhi.s   4f
+    clr.l   0x90(%a2)
+4:  jmp     _mf_spa
 1:  move.l  0x80(%a2),%d0           | any other type: the stock vector again if an added type cut it
     sub.l   0x7c(%a2),%d0
     subq.l  #4 * SRC_PAGES,%d0
@@ -354,3 +361,8 @@ mf_ready:    .space 4
 mf_list_buf: .space 4 * 64
 mf_rank_buf: .space 8 * 64
 mf_strbuf:   .space REPSIZE * 2 * MAXN
+
+    .text
+    .globl mf_native_type
+mf_native_type:
+    jmp     _mf_spt

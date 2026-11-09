@@ -233,6 +233,8 @@ pub struct ParamDef {
     pub action: Option<String>,
     /// The glyph (a `DK_PARAM_GLYPH` record, `dk_glyph`); `None`: the encoder.
     pub glyph: Option<u32>,
+    /// The adapter snapshots this word at actual note_on (machine contract 1.3).
+    pub latched: bool,
 }
 
 /// The template name and the allowed knob range (min, max) of a `dk_glyph` value.
@@ -265,6 +267,25 @@ pub struct PageDef {
     pub name: String,
     pub title: String,
     pub knobs: Vec<PageKnob>,
+}
+
+#[derive(Clone, Debug, Serialize)]
+pub struct NativeBinding {
+    pub kind: u32,
+    pub value: u32,
+    pub position: u32,
+}
+
+#[derive(Clone, Debug, Serialize)]
+pub struct NativePageDef {
+    pub version: u32,
+    pub page: u32,
+    pub flags: u32,
+    pub owner: String,
+    pub title: String,
+    pub draw: String,
+    pub event: String,
+    pub bindings: Vec<NativeBinding>,
 }
 
 /// The DSP routines of a machine (from its `DK_MACHINE` record): `render` and `note_on` are the symbols of the routines, `desc` the
@@ -373,6 +394,7 @@ pub struct RParam {
     pub mirror: i64,
     /// The symbol of the click callback of the knob.
     pub action: Option<String>,
+    pub latched_word: Option<u32>,
 }
 
 #[derive(Clone, Debug)]
@@ -393,6 +415,7 @@ pub struct RVoice {
     pub note_on: Option<String>,
     pub desc: Option<String>,
     pub stereo: bool,
+    pub latched: u32,
     /// A patched-in contract voice: the state block `Library::lower` reserved for it (`desc` read from the object).
     pub state: Option<VoiceState>,
 }
@@ -415,6 +438,7 @@ pub struct DevResolved {
     pub params: Vec<RParam>,
     pub pages: Vec<RPage>,
     pub voices: Vec<RVoice>,
+    pub native_pages: Vec<NativePageDef>,
 }
 
 /// Where the parameters of one machine sit on a device: `pos[i]` is the knob position of parameter `i` (of the machine's list);
@@ -438,7 +462,8 @@ fn place(
 ) -> Result<Placed> {
     let kn = &model.knobs;
     // the entries of each page as (parameter index, position)
-    let mut entries: Vec<Vec<(usize, Option<usize>)>> = vec![];    let mut on_page = vec![false; mine.len()];
+    let mut entries: Vec<Vec<(usize, Option<usize>)>> = vec![];
+    let mut on_page = vec![false; mine.len()];
     for pg in pages {
         let mut list = vec![];
         for e in &pg.knobs {
@@ -514,19 +539,17 @@ fn place(
     })
 }
 
-/// Whether a module of `ports` (empty: any) is for device `dev`.
-fn on_ports(ports: &[String], dev: &str) -> bool {
-    ports.is_empty() || ports.iter().any(|p| p.split('-').next() == Some(dev))
-}
-
 /// Resolve the typed sections against the device models: one [`DevResolved`] per device that has something.
 pub fn resolve(m: &Manifest, models: &Models) -> Result<Vec<DevResolved>> {
+    if !m.native_page.is_empty() && !m.module.dynamic {
+        return Err(err!("native callback pages require a run-time machine"));
+    }
     let who = m.module.id.as_str();
     let mut out = vec![];
     if m.machine.is_empty() {
         return Ok(out);
     }
-    'dev: for (dev, model) in &models.by_device {
+    for (dev, model) in &models.by_device {
         let kn = &model.knobs;
         if kn.to != "machine" && kn.to != "page" {
             return Err(err!(
@@ -541,12 +564,7 @@ pub fn resolve(m: &Manifest, models: &Models) -> Result<Vec<DevResolved>> {
             let what = format!("machine {}", d.id);
             let mine: Vec<&ParamDef> = m.param.iter().filter(|p| p.machine == d.id).collect();
             let mpages: Vec<&PageDef> = m.page.iter().filter(|p| p.machine == d.id).collect();
-            let placed = match place(who, &what, dev, model, d, &mine, &mpages) {
-                Ok(p) => p,
-                // a device outside the module's ports need not fit it (more parameters than its knobs, for one)
-                Err(_) if !on_ports(&m.module.ports, dev) => continue 'dev,
-                Err(e) => return Err(e),
-            };
+            let placed = place(who, &what, dev, model, d, &mine, &mpages)?;
             // the machine's knob list: positions to parameters, plus the stock rows of a machine-row device
             let mut knobs = vec![Knob::Code(0); kn.count];
             if kn.to == "machine" {
@@ -606,9 +624,10 @@ pub fn resolve(m: &Manifest, models: &Models) -> Result<Vec<DevResolved>> {
                         p.max as f64 / 256.0
                     ));
                 }
-                let template = *model.templates.get(gname).ok_or_else(|| {
-                    err!("{who}: devices/{dev}.toml has no `{gname}` template")
-                })?;
+                let template = *model
+                    .templates
+                    .get(gname)
+                    .ok_or_else(|| err!("{who}: devices/{dev}.toml has no `{gname}` template"))?;
                 params.push(RParam {
                     id: p.id.clone(),
                     name: p.name.clone(),
@@ -622,6 +641,7 @@ pub fn resolve(m: &Manifest, models: &Models) -> Result<Vec<DevResolved>> {
                     frame_off: model.frame_offset(at),
                     mirror: model.frame.mirror_base + model.frame_offset(at),
                     action: p.action.clone(),
+                    latched_word: p.latched.then_some(p.word),
                 });
             }
             for (k, (name, title, list)) in placed.pages.iter().enumerate() {
@@ -653,9 +673,37 @@ pub fn resolve(m: &Manifest, models: &Models) -> Result<Vec<DevResolved>> {
                 note_on: Some(v.note_on.clone()),
                 desc: Some(v.desc.clone()),
                 stereo: v.stereo,
+                latched: m
+                    .param
+                    .iter()
+                    .filter(|p| p.machine == v.machine && p.latched)
+                    .fold(0, |mask, p| mask | (1 << p.word)),
                 state: m.voice_state.get(&v.machine).cloned(),
             })
             .collect();
+        let native_pages = m
+            .native_page
+            .iter()
+            .map(|page| {
+                let mut page = page.clone();
+                for binding in &mut page.bindings {
+                    if binding.kind == 1 {
+                        let p = m
+                            .param
+                            .iter()
+                            .find(|p| p.machine == page.owner && p.word == binding.value)
+                            .ok_or_else(|| {
+                                err!("native page parameter word {} is missing", binding.value)
+                            })?;
+                        binding.value =
+                            params.iter().position(|r| r.id == p.id).ok_or_else(|| {
+                                err!("native page parameter {} unavailable on {dev}", p.id)
+                            })? as u32;
+                    }
+                }
+                Ok(page)
+            })
+            .collect::<Result<Vec<_>>>()?;
         out.push(DevResolved {
             dev: dev.clone(),
             model: model.clone(),
@@ -663,6 +711,7 @@ pub fn resolve(m: &Manifest, models: &Models) -> Result<Vec<DevResolved>> {
             params,
             pages,
             voices,
+            native_pages,
         });
     }
     Ok(out)
@@ -740,6 +789,9 @@ pub fn entries(resolved: &[DevResolved]) -> Vec<EntryDef> {
             }
             if let Some(n) = &v.note_on {
                 f.push(kv("note_on", s(n)));
+            }
+            if v.latched != 0 {
+                f.push(kv("latched", int(v.latched as i64)));
             }
             if let Some(st) = &v.state {
                 f.push(kv("state_base", s(&st.symbol)));
@@ -946,6 +998,7 @@ summary = "t."
                 default: 50,
                 action: None,
                 glyph: None,
+                latched: false,
             })
             .collect();
         m.page = pages
@@ -979,30 +1032,12 @@ summary = "t."
     }
     fn knobs_of(m: &Manifest, dev: &str) -> Vec<Knob> {
         let r = resolve(m, &models()).unwrap();
-        r.iter().find(|x| x.dev == dev).unwrap().machines[0].knobs.clone()
+        r.iter().find(|x| x.dev == dev).unwrap().machines[0]
+            .knobs
+            .clone()
     }
     fn bad(m: &Manifest) -> String {
         resolve(m, &models()).unwrap_err().0
-    }
-
-    #[test]
-    fn a_device_outside_the_ports_that_cannot_place_the_parameters_is_left_out() {
-        let six = DT2.replace(
-            "param_slots = [1, 2, 4, 5]",
-            "param_slots = [1, 2, 4, 5, 6, 7]",
-        );
-        let models = Models::from_texts([six.as_str(), DN2]).unwrap();
-        let mut m = manifest(6, &[]);
-        let e = resolve(&m, &models).unwrap_err().0;
-        assert!(e.contains("6 parameters, but dn2 has only 4"), "{e}");
-        m.module.ports = vec!["dt2-1.17".into()];
-        let r = resolve(&m, &models).unwrap();
-        assert_eq!(
-            r.iter().map(|x| x.dev.as_str()).collect::<Vec<_>>(),
-            ["dt2"]
-        );
-        assert_eq!(r[0].machines[0].knobs[6], p("t_4"));
-        assert_eq!(r[0].machines[0].knobs[7], p("t_5"));
     }
 
     #[test]
@@ -1076,7 +1111,10 @@ summary = "t."
         assert!(r.iter().find(|x| x.dev == "dt2").unwrap().pages.is_empty());
         let dn2 = r.iter().find(|x| x.dev == "dn2").unwrap();
         assert_eq!(dn2.pages.len(), 1);
-        assert_eq!((dn2.pages[0].name.as_str(), dn2.pages[0].title.as_str()), ("TEE", "Tee"));
+        assert_eq!(
+            (dn2.pages[0].name.as_str(), dn2.pages[0].title.as_str()),
+            ("TEE", "Tee")
+        );
         assert_eq!(dn2.pages[0].knobs, [p("t_0"), p("t_1")]);
     }
 
@@ -1086,9 +1124,21 @@ summary = "t."
         let x = Knob::Code(0);
         assert_eq!(
             knobs_of(&m, "dt2"),
-            [Knob::Code(0xca), p("t_0"), p("t_1"), x.clone(), p("t_2"), p("t_3"), x, Knob::Code(0xd1)]
+            [
+                Knob::Code(0xca),
+                p("t_0"),
+                p("t_1"),
+                x.clone(),
+                p("t_2"),
+                p("t_3"),
+                x,
+                Knob::Code(0xd1)
+            ]
         );
-        assert_eq!(knobs_of(&m, "dn2"), [p("t_0"), p("t_1"), p("t_2"), p("t_3")]);
+        assert_eq!(
+            knobs_of(&m, "dn2"),
+            [p("t_0"), p("t_1"), p("t_2"), p("t_3")]
+        );
     }
 
     #[test]
@@ -1096,9 +1146,15 @@ summary = "t."
         let m = manifest(3, &[&[(0, None), (1, None), (2, None)]]);
         let r = resolve(&m, &models()).unwrap();
         let dt2 = r.iter().find(|x| x.dev == "dt2").unwrap();
-        assert_eq!(dt2.params.iter().map(|q| q.knob).collect::<Vec<_>>(), [1, 2, 4]);
+        assert_eq!(
+            dt2.params.iter().map(|q| q.knob).collect::<Vec<_>>(),
+            [1, 2, 4]
+        );
         let dn2 = r.iter().find(|x| x.dev == "dn2").unwrap();
-        assert_eq!(dn2.params.iter().map(|q| q.knob).collect::<Vec<_>>(), [0, 1, 2]);
+        assert_eq!(
+            dn2.params.iter().map(|q| q.knob).collect::<Vec<_>>(),
+            [0, 1, 2]
+        );
     }
 
     #[test]
@@ -1118,7 +1174,10 @@ summary = "t."
     fn placement_mistakes_are_refused() {
         // more parameters than a device has free positions
         let e = bad(&manifest(5, &[]));
-        assert!(e.contains("5 parameters") && e.contains("free knob positions"), "{e}");
+        assert!(
+            e.contains("5 parameters") && e.contains("free knob positions"),
+            "{e}"
+        );
         // a page entry names a word the machine does not have
         let e = bad(&manifest(2, &[&[(0, None), (7, None)]]));
         assert!(e.contains("word 7"), "{e}");
@@ -1173,7 +1232,10 @@ summary = "t."
         let res = resolve(&m, &models()).unwrap();
         for r in &res {
             assert_eq!(
-                r.params.iter().map(|p| p.action.as_deref()).collect::<Vec<_>>(),
+                r.params
+                    .iter()
+                    .map(|p| p.action.as_deref())
+                    .collect::<Vec<_>>(),
                 [None, Some("_t_click"), None]
             );
             let mut reg = crate::register::Register::lower(r, "machines/t").unwrap();
@@ -1189,7 +1251,13 @@ summary = "t."
     fn a_glyph_selects_the_template_row_of_the_device() {
         let templates = |m: &Manifest, dev: &str| -> Vec<i64> {
             let r = resolve(m, &models()).unwrap();
-            r.iter().find(|x| x.dev == dev).unwrap().params.iter().map(|q| q.template).collect()
+            r.iter()
+                .find(|x| x.dev == dev)
+                .unwrap()
+                .params
+                .iter()
+                .map(|q| q.template)
+                .collect()
         };
         let mut m = manifest(2, &[]);
         assert_eq!(templates(&m, "dt2"), [0xcc, 0xcc]);

@@ -122,11 +122,10 @@ impl Mem {
         // bounds check in the inline fast paths.
         let mut pages = Vec::with_capacity(NPAGES);
         pages.resize_with(NPAGES, || None);
-        let pages: Box<[Option<Box<Page>>; NPAGES]> =
-            match pages.into_boxed_slice().try_into() {
-                Ok(b) => b,
-                Err(_) => unreachable!("NPAGES entries"),
-            };
+        let pages: Box<[Option<Box<Page>>; NPAGES]> = match pages.into_boxed_slice().try_into() {
+            Ok(b) => b,
+            Err(_) => unreachable!("NPAGES entries"),
+        };
         let mut loader = Vec::with_capacity(NPAGES);
         loader.resize_with(NPAGES, || None);
         Mem {
@@ -953,7 +952,11 @@ mod word_path_tests {
             let w = b.fast_write_word(addr, v);
             if addr & 3 == 0 {
                 assert_eq!(w, g, "write {addr:#x}");
-                assert_eq!(a.fast_read(addr, 4), b.fast_read(addr, 4), "after {addr:#x}");
+                assert_eq!(
+                    a.fast_read(addr, 4),
+                    b.fast_read(addr, 4),
+                    "after {addr:#x}"
+                );
                 assert_eq!(a.code_gen, b.code_gen);
             } else {
                 assert_eq!(w, None, "write {addr:#x}");

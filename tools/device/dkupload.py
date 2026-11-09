@@ -18,7 +18,7 @@
     uv run python -m tools.device.dkupload --emu remote turn 1 -5          # turn encoder 1 by -5 detents
 
 `put FILE [PATH]` streams FILE (read from disk in chunks, so a large sample is not held in memory) to PATH (default: `modules/<file name>`) in chunks of at most 32 KiB, two requests in flight, and
-checks the file's sha256 on the device (END reads the staged file back from the card). `--chunk` and `--depth` set the chunk size and the
+checks the file's hash on the device (END reads the staged file back from the card). `--chunk` and `--depth` set the chunk size and the
 requests in flight; `put` prints a timing line (tools/device/dktiming.py) and `--timing FILE` keeps every request and reply as JSON lines. It changes only the module store; an uploaded
 module appears in DIGIKIT > MODULES and loads after APPLY & RESTART (or `tools.device.dkrun`, which also selects and restarts).
 
@@ -30,7 +30,6 @@ from __future__ import annotations
 
 import argparse
 import contextlib
-import hashlib
 import json
 import struct
 import sys
@@ -125,6 +124,79 @@ def has_cap(info: dict[str, Any], name: str) -> bool:
         return bool(info["caps"] >> CAP[name] & 1)
     since = CAP_SINCE.get(name)
     return since is not None and info["runtime"] >= since
+
+
+class FileHasher:
+    """The store's hash slot of a file, streaming (BEGIN, LIST, VERIFY): the +Drive content hash (`dksample::content_hash`, a lookup3 variant over
+    big-endian words, seed 0x43fa243a) `| 1`, 4 bytes big-endian, then 28 zeros. The same value as `dksample::file_hash` (Rust), `fileHash`
+    (TypeScript) and the runtime's `hash32.rs`, with the same carry: the variant keeps the last 1 to 12 bytes for the tail, so a block is mixed
+    only when more than 12 bytes are known and up to 12 bytes wait between updates."""
+
+    M = 0xFFFFFFFF
+
+    def __init__(self) -> None:
+        self.a = self.b = self.c = 0x43FA243A
+        self.carry = b""
+
+    @classmethod
+    def _rot(cls, x: int, n: int) -> int:
+        return ((x << n) | (x >> (32 - n))) & cls.M
+
+    def _mix(self, k0: int, k1: int, k2: int) -> None:
+        m, rot = self.M, self._rot
+        a, b, c = self.a, self.b, self.c
+        c = (c + k2) & m
+        t2 = (k1 + b + c) & m
+        u1 = rot(c, 4) ^ ((k0 + a - c) & m)
+        t3 = (t2 + u1) & m
+        u2 = ((k1 + b - u1) & m) ^ rot(u1, 6)
+        t4 = (t3 + u2) & m
+        u3 = ((t2 - u2) & m) ^ rot(u2, 8)
+        t2b = (t4 + u3) & m
+        u4 = ((t3 - u3) & m) ^ rot(u3, 16)
+        a = (t2b + u4) & m
+        u5 = ((t4 - u4) & m) ^ rot(u4, 19)
+        self.a, self.b, self.c = a, (a + u5) & m, ((t2b - u5) & m) ^ rot(u5, 4)
+
+    def update(self, data: bytes) -> None:
+        buf = self.carry + data
+        off = 0
+        while len(buf) - off > 12:
+            self._mix(*struct.unpack_from(">III", buf, off))
+            off += 12
+        self.carry = buf[off:]
+
+    def digest(self) -> bytes:
+        m, rot = self.M, self._rot
+        a, b, c = self.a, self.b, self.c
+        d, n = self.carry, len(self.carry)
+        h = c
+        if n:
+            word = lambda x: struct.unpack(">I", x.ljust(4, b"\0"))[0]  # noqa: E731
+            if n <= 4:
+                a = (a + word(d)) & m
+            elif n <= 8:
+                a = (a + word(d[:4])) & m
+                b = (b + word(d[4:])) & m
+            else:
+                a = (a + word(d[:4])) & m
+                b = (b + word(d[4:8])) & m
+                c = (c + word(d[8:])) & m
+            u1 = ((b ^ c) - rot(b, 14)) & m
+            u2 = ((u1 ^ a) - rot(u1, 11)) & m
+            u3 = ((u2 ^ b) - rot(u2, 25)) & m
+            u4 = ((u3 ^ u1) - rot(u3, 16)) & m
+            a2 = ((u4 ^ u2) - rot(u4, 4)) & m
+            b2 = ((a2 ^ u3) - rot(a2, 14)) & m
+            h = ((b2 ^ u4) - rot(b2, 24)) & m
+        return struct.pack(">I", h | 1) + bytes(28)
+
+
+def file_hash(data: bytes) -> bytes:
+    """The hash slot of `data` (see `FileHasher`)."""
+    h = FileHasher()
+    h.update(data)
+    return h.digest()
 
 
 class UploadError(RuntimeError):
@@ -273,6 +345,16 @@ class Uploader:
         self.skip_foreign = skip_foreign
         self.seq = 0
         self.log: list[tuple[str, int]] = []
+        self._file_hash_ok = False
+
+    def _need_file_hash(self) -> None:
+        """Fail at once for a runtime whose store keeps SHA-256 (asked once, before the first command that carries a file hash)."""
+        if not self._file_hash_ok:
+            if not has_cap(self.info(), "FILEHASH"):
+                raise UploadError(
+                    0, "Update the firmware: this runtime uses the old store format"
+                )
+            self._file_hash_ok = True
 
     # -- one request, one reply
     def _next_seq(self) -> int:
@@ -347,8 +429,9 @@ class Uploader:
         }
 
     def ls(self, prefix: str | None = None) -> list[tuple[str, int, str]]:
-        """Every file of the store, or (`prefix`, runtime 0.3.0, capability FOLDERS) the entries whose path starts with it: (path, size, sha256 hex),
-        in the store's order. A folder with nothing in it is listed with size 0 and a zero sha256."""
+        """Every file of the store, or (`prefix`, runtime 0.3.0, capability FOLDERS) the entries whose path starts with it: (path, size, hash hex),
+        in the store's order. A folder with nothing in it is listed with size 0 and a zero hash."""
+        self._need_file_hash()
         out: list[tuple[str, int, str]] = []
         first = 0
         tail = prefix.encode() + b"\0" if prefix else b""
@@ -525,11 +608,12 @@ class Uploader:
         """REMOTE_RELEASE: let go of every key the module holds (a host sends it when it stops)."""
         self._ok(dkproto.SERVICE_CMD["REMOTE_RELEASE"], "remote release")
 
-    def begin(self, path: str, size: int, sha256: bytes) -> None:
+    def begin(self, path: str, size: int, hash: bytes) -> None:
+        self._need_file_hash()
         self._ok(
             CMD_BEGIN,
             "begin",
-            path.encode() + b"\0" + struct.pack(">I", size) + sha256,
+            path.encode() + b"\0" + struct.pack(">I", size) + hash,
         )
 
     def end(self) -> None:
@@ -576,10 +660,10 @@ class Uploader:
     def verify(
         self, path: str, offset: int | None = None, length: int | None = None
     ) -> str:
-        """VERIFY (runtime 0.2.4, capability VERIFY): the sha256 (hex) of a store file, computed by the device from a fresh read of the card.
-        With `offset` (a multiple of 512) and `length` (runtime 0.3.0): of that range of the file, so a large file is checked in pieces (the
-        device spends about 120 ColdFire instructions a byte: a request for all of a large file can outlast the host's timeout).
+        """VERIFY (runtime 0.2.4, capability VERIFY): the hash slot (hex, `file_hash`) of a store file, computed by the device from a fresh read of the card.
+        With `offset` (a multiple of 512) and `length` (runtime 0.3.0): of that range of the file, so a large file is checked in pieces.
         Raises `UploadError`: E_NOFILE, E_READ, E_OFFSET, E_LENGTH."""
+        self._need_file_hash()
         body = path.encode() + b"\0"
         if offset is not None:
             body += struct.pack(">II", offset, length or 0)
@@ -599,12 +683,12 @@ class Uploader:
         range of `src`; stops at the first difference."""
         size = src.stat().st_size
         if size == 0:
-            return self.verify(path) == hashlib.sha256(b"").hexdigest()
+            return self.verify(path) == file_hash(b"").hex()
         with src.open("rb") as f:
             for off in range(0, size, piece):
                 n = min(piece, size - off)
                 f.seek(off)
-                want = hashlib.sha256(f.read(n)).hexdigest()
+                want = file_hash(f.read(n)).hex()
                 if self.verify(path, off, n) != want:
                     return False
                 if progress:
@@ -645,7 +729,7 @@ class Uploader:
         path: str,
         data: bytes,
         progress: Callable[[int, int], None] | None = None,
-        sha256: bytes | None = None,
+        hash: bytes | None = None,
     ) -> None:
         """Store `data` at `path`: BEGIN, DATA chunks with up to `depth` in flight, END. Raises `UploadError` at the first bad
         status (an open upload is then left for the caller to ABORT)."""
@@ -653,7 +737,7 @@ class Uploader:
             path,
             len(data),
             lambda off, n: data[off : off + n],
-            sha256 or hashlib.sha256(data).digest(),
+            hash or file_hash(data),
             progress,
         )
 
@@ -663,14 +747,14 @@ class Uploader:
         src: Path,
         progress: Callable[[int, int], None] | None = None,
     ) -> None:
-        """`put` from a file on disk without holding it in memory (a sample can be hundreds of MB): one pass for the sha256, one for the chunks."""
-        h = hashlib.sha256()
+        """`put` from a file on disk without holding it in memory (a sample can be hundreds of MB): one pass feeds the streaming hash, one reads the chunks.
+        The hash is pure Python, so a large sample takes a while: the workbench is the tool for those."""
+        h = FileHasher()
         size = 0
         with src.open("rb") as f:
             while block := f.read(1 << 20):
                 h.update(block)
                 size += len(block)
-            f.seek(0)
 
             def read_at(off: int, n: int) -> bytes:
                 f.seek(off)
@@ -683,10 +767,10 @@ class Uploader:
         path: str,
         size: int,
         read_at: Callable[[int, int], bytes],
-        sha256: bytes,
+        hash: bytes,
         progress: Callable[[int, int], None] | None,
     ) -> None:
-        self.begin(path, size, sha256)
+        self.begin(path, size, hash)
         inflight: list[int] = []
         sent = 0
         offsets = list(range(0, size, self.chunk))
@@ -908,7 +992,7 @@ def main(argv: list[str] | None = None) -> int:
             up.put_file(path, args.file)
             size = args.file.stat().st_size
             print(
-                f"{path}: {size} bytes in {time.monotonic() - t0:.1f} s (sha256 checked on the device)"
+                f"{path}: {size} bytes in {time.monotonic() - t0:.1f} s (hash checked on the device)"
             )
             print(dktiming.summary_line(dktiming.summary(t.events, size)))
         elif args.cmd == "read":

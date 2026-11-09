@@ -425,6 +425,7 @@ unsafe fn complete(
         let call: unsafe extern "C" fn(*const Api) -> i32 = core::mem::transmute(init as usize);
         let r = crate::dlog::call_init(rec as usize, call, addr_of!(dkrt_api));
         if r != 0 {
+            crate::intro::discard(rec);
             crate::files::retire(rec);
             crate::upload::release_cmds(owner);
             crate::registry::remove(owner);
@@ -444,6 +445,8 @@ unsafe fn complete(
     m.used = 1;
     s.loads = s.loads.wrapping_add(1);
     crate::files::ready(rec);
+    // fully loaded: a boot animation the module asked for in `dkm_init` goes live now (never before: a rolled-back module is not reachable)
+    crate::intro::commit(rec);
     OK
 }
 
@@ -484,6 +487,9 @@ pub unsafe fn unload_rec(rec: usize) -> i32 {
 
 unsafe fn unload_rec_inner(rec: usize) -> i32 {
     if !crate::files::retire(rec) { return E_BUSY; }
+    if !crate::worker::retire(rec) { return E_BUSY; }
+    // an intro of this module that has not run `done` yet: `done` must not point into freed code
+    crate::intro::discard(rec);
     let s = st();
     let m: &mut Module = &mut s.modules[rec];
     // 1. clear the slots (one aligned store each) so no new call starts

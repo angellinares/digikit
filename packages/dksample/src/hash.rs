@@ -69,6 +69,13 @@ pub fn hashlittle(data: &[u8], initval: u32) -> u32 {
 pub fn content_hash(data: &[u8]) -> u32 {
     hashlittle(data, 0x43fa243a_u32.wrapping_sub(0xdeadbeef))
 }
+/// The digikit store's hash slot of a file (table entry, BEGIN, LIST, VERIFY): `content_hash | 1` (never 0: a folder's slot is all zero) as 4 big-endian
+/// bytes, then 28 zeros. The runtime computes the same (`modules/core/runtime/src/rs/src/hash32.rs`).
+pub fn file_hash(data: &[u8]) -> [u8; 32] {
+    let mut slot = [0u8; 32];
+    slot[..4].copy_from_slice(&(content_hash(data) | 1).to_be_bytes());
+    slot
+}
 
 #[cfg(test)]
 mod tests {
@@ -77,6 +84,14 @@ mod tests {
     #[test]
     fn the_empty_file_hashes_to_the_seed() {
         assert_eq!(content_hash(b""), 0x43fa_243a);
+    }
+
+    #[test]
+    fn the_store_slot_is_the_odd_hash_then_28_zeros() {
+        let slot = file_hash(b"");
+        assert_eq!(&slot[..4], &[0x43, 0xfa, 0x24, 0x3b]);
+        assert!(slot[4..].iter().all(|&b| b == 0));
+        assert_eq!(&file_hash(b"abc")[..4], &[0x49, 0xbe, 0xc8, 0x45]);
     }
 
     #[test]

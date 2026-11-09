@@ -16,8 +16,8 @@ const card = (extra: Partial<CardFolder> = {}): CardFolder => ({
   folder: '/Users/em/src/digi/digitakt2/plus_drive/dt2',
   continuous: true,
   files: [
-    { path: 'modules/sine.dkm', bytes: 932, sha256: 'bb' },
-    { path: 'modules/pluck.dkm', bytes: 2260, sha256: 'aa' },
+    { path: 'modules/sine.dkm', bytes: 932, hash: 'bb' },
+    { path: 'modules/pluck.dkm', bytes: 2260, hash: 'aa' },
   ],
   last_sync: 1_000_000,
   behind: false,

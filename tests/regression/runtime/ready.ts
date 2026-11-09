@@ -1,4 +1,4 @@
-import type { Device, Session } from '@digi/test-support';
+import type { Device, Session, SessionOptions } from '@digi/test-support';
 import { describe, expect, test } from 'vitest';
 import { expectRuntimeBoot, withPatchedSession, type PatchedSession } from '../support.ts';
 import { timePhase, timingContext } from '../timing.ts';
@@ -13,6 +13,7 @@ export function runtimeTests(
   body: (runtime: PatchedSession) => Promise<void>,
   opts: {
     patchSet?: string;
+    dsp?: SessionOptions['dsp'];
     mirror?: boolean;
     timeout?: number;
     devices?: readonly Device[];
@@ -24,7 +25,7 @@ export function runtimeTests(
     describe.skipIf((opts.full === true && !FULL_TIER) || opts.skip !== undefined)(
       `${device.toUpperCase()} ${FIRMWARE[device]}`,
       () => {
-        const handle = withPatchedSession(liveOptions(device, opts), name);
+        const handle = withPatchedSession({ ...liveOptions(device, opts), dsp: opts.dsp }, name);
         test(
           name,
           async () => {
@@ -46,7 +47,15 @@ export async function expectRuntimeReady(session: Session): Promise<void> {
 }
 
 /** DkrtBootInfo word offsets, owned by modules/core/runtime/abi.toml (checked in modules/core/runtime/sdk/src/gen_abi.rs). */
-const BOOT_FIELDS = { magic: 0, version: 4, safe: 8, reason: 12, counter: 16, count: 28, ui_reached: 36 } as const;
+export const BOOT_FIELDS = {
+  magic: 0,
+  version: 4,
+  safe: 8,
+  reason: 12,
+  counter: 16,
+  count: 28,
+  ui_reached: 36,
+} as const;
 
 /** Current UI-hook evidence, rather than elapsed time or the boot's in-memory stability flag. */
 export async function expectRuntimeUi(
@@ -55,7 +64,9 @@ export async function expectRuntimeUi(
   artifacts: string,
   options: { fresh?: boolean; afterEpoch?: number; timeout?: number; paused?: boolean } = {},
 ): Promise<number> {
-  const timeout = options.timeout ?? 45_000;
+  // Wall time is only a hang guard: readiness is the firmware state polled below. A DN2 reboot takes 45-75 s of wall time
+  // under load, so the guard matches the lifecycle deadline of reloadRuntimeBaseline (120 s).
+  const timeout = options.timeout ?? 120_000;
   const deadline = Date.now() + timeout;
   const base = planSymbol(plan, 'DKRT_BOOT');
   let status: Awaited<ReturnType<Session['status']>> | undefined;

@@ -511,8 +511,7 @@ impl Op {
             let astat = bnd::_apply_flag_update(s, s.r[118], flags);
             s.set_r(118, astat).map_err(err)?;
             if matches!(descriptor.compute.kind, Kind::Mul) {
-                core::compute::_apply_sticky(s, S_STKYX, astat, S_FLOAT_MULTIPLY)
-                    .map_err(err)?;
+                core::compute::_apply_sticky(s, S_STKYX, astat, S_FLOAT_MULTIPLY).map_err(err)?;
             }
         }
         if FULL_ADVANCE {

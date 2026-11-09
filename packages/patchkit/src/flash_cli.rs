@@ -866,10 +866,16 @@ mod tests {
 
     #[test]
     fn the_question_names_the_device_the_os_and_what_is_flashed() {
-        let q = flash_question(&prepared(true), device_name(&prepared(true), "Elektron Digitakt II"));
+        let q = flash_question(
+            &prepared(true),
+            device_name(&prepared(true), "Elektron Digitakt II"),
+        );
         assert_eq!(q, "Flash Digitakt II OS 1.17 (stock) now? [y/N] ");
         let q = flash_question(&prepared(false), "Digitakt II");
-        assert!(q.starts_with("Flash Digitakt II OS 1.17 with digikit runtime "), "{q}");
+        assert!(
+            q.starts_with("Flash Digitakt II OS 1.17 with digikit runtime "),
+            "{q}"
+        );
         assert!(q.ends_with(" now? [y/N] "), "{q}");
     }
 }

@@ -1074,7 +1074,7 @@ _dv_gfaultk:
     R3 = DM(_dv_c + 20);
     R3 = PASS R3;
     IF EQ JUMP _dv_gseen;
-    I1 = _dv_params;                      // a contract voice: the words the module saw are its parameter buffer
+    I1 = _dv_call_params;                      // a contract voice: the words the module saw are its parameter buffer
     R14 = _dv_g;
     R3 = 76;
     R14 = R14 + R3;
@@ -1407,8 +1407,40 @@ _dv_cpl:
 _dv_cpw:
     CALL _dv_pw;
     R1 = DM(_dv_c + 8);
+    // Retain live effective words for UI/debug readers. Callbacks receive the
+    // merged live/latched view in _dv_call_params through the unchanged ABI.
     R2 = LSHIFT R1 BY 2;
     R3 = _dv_params;
+    R3 = R3 + R2;
+    I1 = R3;
+    DM(0, I1) = R0;
+    // Machine contract 1.3: latch declared words per adapter voice/slot at
+    // actual note_on, after effective parameters (including p-locks) are clamped.
+    R2 = DM(_dv_g + 0);
+    I1 = R2;
+    R2 = DM(-2, I1);                      // row word 22: parameter-word latch mask
+    R3 = 1;
+    R3 = LSHIFT R3 BY R1;
+    R2 = R2 AND R3;
+    R2 = PASS R2;
+    IF EQ JUMP _dv_cplive;
+    R2 = DM(_dv_g + 12);
+    R2 = LSHIFT R2 BY 5;                  // 8 words / 32 bytes per voice/slot
+    R3 = _dv_trig_params;
+    R3 = R3 + R2;
+    R2 = LSHIFT R1 BY 2;
+    R3 = R3 + R2;
+    I2 = R3;
+    R5 = DM(_dv_c + 0);
+    R5 = PASS R5;
+    IF EQ JUMP _dv_cpread;
+    DM(0, I2) = R0;
+    JUMP _dv_cplive;
+_dv_cpread:
+    R0 = DM(0, I2);
+_dv_cplive:
+    R2 = LSHIFT R1 BY 2;
+    R3 = _dv_call_params;
     R3 = R3 + R2;
     I1 = R3;
     DM(0, I1) = R0;
@@ -1443,7 +1475,7 @@ _dv_cnoclr:
     R0 = DM(-8, I4);
     I12 = R0;                             // the note_on pc
     R8 = _dv_in;
-    R12 = _dv_params;
+    R12 = _dv_call_params;
     I13 = _dv_nback;
     JUMP (M13, I12);
 _dv_nback:
@@ -1456,7 +1488,7 @@ _dv_crender:
     I12 = R0;                             // the render pc
     R4 = DM(_dv_c + 12);
     R8 = _dv_in;
-    R12 = _dv_params;
+    R12 = _dv_call_params;
     I13 = _dv_rback;
     JUMP (M13, I12);
 _dv_rback:
@@ -1773,7 +1805,10 @@ _dv_frame_sw:
 // The contract adapter's data: the `dk_voice_in` it hands to the module, the parameter words (8), the blocks since the note-on per track (16), the gates
 // per track (16), its scalars (see `_dv_contract`) and the knob positions of the module's parameters in order (ADM_PARAM_SLOT0 .. 7; 255: none).
 .PKDATA _dv_in, DK_IN_BYTES;
-.PKDATA _dv_params, 32;
+.PKDATA _dv_params, 32;                    // live effective UI/debug words
+.PKDATA _dv_call_params, 32;               // merged callback words (latched declarations over live words)
+// Adapter-private snapshots: DT2 track / DN2 physical voice slot, never firmware-owned state.
+.PKDATA _dv_trig_params, 512;
 .PKDATA _dv_blk, 64;
 .PKDATA _dv_gate, 64;
 .PKDATA _dv_c, 64;

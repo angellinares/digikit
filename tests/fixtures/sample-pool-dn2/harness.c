@@ -30,19 +30,18 @@ void dkrt_pool_done(uint32_t req, int32_t result) { if (!in_tick) done_outside_t
 void dkrt_pool_lost(void) { puts("LOST"); exit(4); }
 
 /* ---- the worker: one posted job, run after the tick that posted it ---- */
-static void (*job_invoker)(const void *);
-static void *job_storage;
-static int job_pending, worker_runs, queued, no_worker, name_ok = 1, layout_ok = 1;
-static uint32_t worker_object = 0x44648a20u;
-uint32_t sp_worker_get(void) { return no_worker ? 0 : worker_object; }
-uint32_t sp_worker_queue(uint32_t worker, const char *name, void *job, void *done)
+/* The runtime's job queue (dkrt_job_post): step runs after the tick that posted it, done runs in the UI task at the next pass. */
+static int32_t (*job_step)(uint8_t *);
+static void (*job_done)(uint8_t *, int32_t);
+static int32_t job_status;
+static int job_pending, job_finished, worker_runs, queued, no_worker, name_ok = 1, layout_ok = 1;
+int32_t dkrt_job_post(uintptr_t step, uintptr_t done, uint8_t *ctx)
 {
-    uintptr_t *j = job; uint32_t *d = done, i;
-    if (worker != worker_object || strcmp(name, "SamplePool")) name_ok = 0;
-    for (i = 0; i < 8; i++) if (d[i]) layout_ok = 0;
-    if (!j[2] || !j[3] || job_pending) layout_ok = 0;
-    job_invoker = (void (*)(const void *))(uintptr_t)j[3];
-    job_storage = j;
+    (void)ctx;
+    if (no_worker) return -1;
+    if (!step || !done || job_pending || job_finished) layout_ok = 0;
+    job_step = (int32_t (*)(uint8_t *))step;
+    job_done = (void (*)(uint8_t *, int32_t))done;
     job_pending = 1;
     queued++;
     return 1;
@@ -85,8 +84,15 @@ static void frame_event(void)
 }
 static void ui_event(void)
 {
+    if (job_finished) { job_finished = 0; job_done(0, job_status); }
     in_tick = 1; dkpool_tick(); in_tick = 0;
-    if (job_pending) { job_pending = 0; worker_runs++; job_t0 = t_us; in_worker = 1; job_invoker(job_storage); in_worker = 0; job_t1 = t_us; }
+    if (job_pending) {
+        int32_t rc;
+        job_pending = 0; worker_runs++; job_t0 = t_us; in_worker = 1;
+        do rc = job_step(0); while (rc == 1);
+        in_worker = 0; job_t1 = t_us;
+        job_status = rc; job_finished = 1;
+    }
 }
 static void advance(uint32_t us)
 {

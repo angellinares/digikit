@@ -41,6 +41,8 @@ pub struct Manifest {
     #[serde(skip)]
     pub page: Vec<crate::typed::PageDef>,
     #[serde(skip)]
+    pub native_page: Vec<crate::typed::NativePageDef>,
+    #[serde(skip)]
     pub voice: Vec<crate::typed::VoiceDef>,
     /// Removed forms (`[[fx]]`, `[[machine]]`, `[[param]]`, `[[page]]`, `[[voice]]`): kept only to refuse them with a clear error.
     #[serde(default)]
@@ -62,6 +64,36 @@ pub struct Manifest {
     /// Set by `Library::lower`: the state block of each patched-in contract voice, by machine id.
     #[serde(skip)]
     pub voice_state: BTreeMap<String, crate::typed::VoiceState>,
+}
+
+impl Manifest {
+    /// Checks independent of objects, allocation tables, device models and firmware.
+    fn validate_header(&self) -> Result<()> {
+        if self.module.category == "core" && self.module.role.is_none() {
+            return Err(err!(
+                "{}: a core module needs `role = \"runtime\" | \"installer\" | \"adapter\" | \"app\"` in [module]",
+                self.module.id
+            ));
+        }
+        if self.fx.is_some() {
+            return Err(err!(
+                "[[fx]] is no longer read: declare effects with DK_FX in C (sdk/include/dk/fx.h)"
+            ));
+        }
+        for (name, old) in [
+            ("machine", &self.machine_old),
+            ("param", &self.param_old),
+            ("page", &self.page_old),
+            ("voice", &self.voice_old),
+        ] {
+            if old.is_some() {
+                return Err(err!(
+                    "[[{name}]] is no longer read: declare machines with DK_MACHINE in C (sdk/include/dk/machine.h)"
+                ));
+            }
+        }
+        Ok(())
+    }
 }
 
 /// One generated file of device data: `kind` is `rust` (constants every device agrees on, one file), `gas-shared` (the same as `.equ` lines), `gas` (a ColdFire assembler
@@ -107,6 +139,26 @@ pub struct SectionDef {
     pub from: SectionFrom,
     #[serde(default)]
     pub append: Option<SectionAppend>,
+    #[serde(default)]
+    pub edit: Option<SectionEdit>,
+}
+
+/// Rewrites of the copied bytes, one per entry of a registry: an entry names the copied row (`at`) and new values for
+/// some of its words (a module changes a stock row of a framework's table).
+#[derive(Clone, Debug, Deserialize)]
+pub struct SectionEdit {
+    pub registry: String,
+    /// Byte offset of the edited row in the copied bytes (expression; the entry's fields are `$name`).
+    pub at: ExprSrc,
+    pub fields: Vec<SectionEditField>,
+}
+
+#[derive(Clone, Debug, Deserialize)]
+pub struct SectionEditField {
+    /// Byte offset in the row.
+    pub offset: u64,
+    /// The new value; `u8:EXPR` and `u16:EXPR` as in `append.row`.
+    pub value: ExprSrc,
 }
 
 #[derive(Clone, Debug, Deserialize)]
@@ -505,29 +557,7 @@ impl Module {
         lenient: bool,
     ) -> Result<Module> {
         let mut manifest: Manifest = toml::from_str(manifest_text)?;
-        if manifest.module.category == "core" && manifest.module.role.is_none() {
-            return Err(err!(
-                "{}: a core module needs `role = \"runtime\" | \"installer\" | \"adapter\" | \"app\"` in [module]",
-                manifest.module.id
-            ));
-        }
-        if manifest.fx.is_some() {
-            return Err(err!(
-                "[[fx]] is no longer read: declare effects with DK_FX in C (sdk/include/dk/fx.h)"
-            ));
-        }
-        for (name, old) in [
-            ("machine", &manifest.machine_old),
-            ("param", &manifest.param_old),
-            ("page", &manifest.page_old),
-            ("voice", &manifest.voice_old),
-        ] {
-            if old.is_some() {
-                return Err(err!(
-                    "[[{name}]] is no longer read: declare machines with DK_MACHINE in C (sdk/include/dk/machine.h)"
-                ));
-            }
-        }
+        manifest.validate_header()?;
         let mut objects = vec![];
         let mut all = manifest_text.to_string();
         for o in &manifest.object {
@@ -546,6 +576,7 @@ impl Module {
             manifest.machine = d.machines;
             manifest.param = d.params;
             manifest.page = d.pages;
+            manifest.native_page = d.native_pages;
             manifest.voice = d.voices;
             manifest.sample_bank = d.sample_bank;
             manifest.sample_tracks = d.sample_tracks;
@@ -714,8 +745,17 @@ impl Library {
         }
         let mut found = vec![];
         walk(root, &mut found);
+        Self::read_paths(&found, lenient, build)
+    }
+
+    /// Read only the named manifests, without walking module roots or lowering.
+    fn read_paths(
+        paths: &[std::path::PathBuf],
+        lenient: bool,
+        build: Option<(&crate::build::toolchain::Env, Build)>,
+    ) -> Result<Vec<Module>> {
         let mut modules = vec![];
-        for p in found {
+        for p in paths {
             let dir = p.parent().unwrap().to_path_buf();
             let text = std::fs::read_to_string(&p).map_err(|e| err!("{}: {e}", p.display()))?;
             // a content module's objects come from the cache (built when stale); the others are files of the module
@@ -750,6 +790,92 @@ impl Library {
             modules.push(m);
         }
         Ok(modules)
+    }
+
+    /// Manifest metadata only: never read objects, source files or allocation tables.
+    fn read_headers(paths: &[std::path::PathBuf]) -> Result<Library> {
+        let mut headers = Library::default();
+        for path in paths {
+            let text =
+                std::fs::read_to_string(path).map_err(|e| err!("{}: {e}", path.display()))?;
+            crate::build::ModuleToml::parse(&text).map_err(|e| err!("{}: {e}", path.display()))?;
+            let manifest = toml::from_str(&text).map_err(|e| err!("{}: {e}", path.display()))?;
+            headers.extend_unique(vec![Module {
+                manifest,
+                objects: vec![],
+                alloc: BTreeMap::new(),
+                digest: String::new(),
+                dir: path.parent().unwrap().to_path_buf(),
+            }])?;
+        }
+        Ok(headers)
+    }
+
+    /// Validate every repository and test-fixture manifest and its requires graph without reading
+    /// objects or lowering. Model, descriptor, allocation and firmware checks stay with pack/gen/apply.
+    pub fn catalog_check(root: &std::path::Path) -> Result<usize> {
+        fn walk(dir: &std::path::Path, paths: &mut Vec<std::path::PathBuf>) -> Result<()> {
+            let rd = match std::fs::read_dir(dir) {
+                Ok(rd) => rd,
+                Err(e) if e.kind() == std::io::ErrorKind::NotFound => return Ok(()),
+                Err(e) => return Err(err!("{}: {e}", dir.display())),
+            };
+            let mut entries = rd
+                .map(|e| e.map(|e| e.path()))
+                .collect::<std::io::Result<Vec<_>>>()
+                .map_err(|e| err!("{}: {e}", dir.display()))?;
+            entries.sort();
+            for path in entries {
+                if path.is_dir() {
+                    walk(&path, paths)?;
+                } else if path.file_name().is_some_and(|n| n == "module.toml") {
+                    paths.push(path);
+                }
+            }
+            Ok(())
+        }
+        let mut paths = vec![];
+        walk(&root.join("modules"), &mut paths)?;
+        walk(&root.join("tests/fixtures/modules"), &mut paths)?;
+        let headers = Self::read_headers(&paths)?;
+        for m in &headers.modules {
+            m.manifest
+                .validate_header()
+                .and_then(|()| crate::prim::validate_manifest(&m.manifest))
+                .map_err(|e| err!("{}: {e}", m.dir.join("module.toml").display()))?;
+        }
+        let ids: Vec<_> = headers.modules.iter().map(|m| m.id().to_string()).collect();
+        headers.with_requires(&ids)?;
+        Ok(headers.modules.len())
+    }
+
+    /// An explicit manifest library, without discovery or lowering. The caller supplies all required modules; the selection
+    /// and dependency closure are validated before loading objects. Paths are used as given (relative to the working directory).
+    pub fn from_manifests(
+        build: Build,
+        paths: &[std::path::PathBuf],
+        lenient: bool,
+        selected: &[String],
+    ) -> Result<Library> {
+        // Validate the complete explicit selection before any objects are read or built.
+        let headers = Self::read_headers(paths)?;
+        headers.with_requires(selected)?;
+        // Support manifests (for example core/machines allocations) are explicit inputs too;
+        // validate their requirements rather than silently accepting a partial library.
+        let ids: Vec<_> = headers.modules.iter().map(|m| m.id().to_string()).collect();
+        headers.with_requires(&ids)?;
+        let closure = build
+            .only
+            .map(|ids| headers.with_requires(ids).map(|(all, _)| all))
+            .transpose()?;
+        let build = Build {
+            only: closure.as_deref(),
+            ..build
+        };
+        let env = crate::build::toolchain::Env::new(build.root).with_defines(build.defines);
+        let mut lib = Library::default();
+        lib.extend_unique(Self::read_paths(paths, lenient, Some((&env, build)))?)?;
+        Ok(lib)
     }
 
     /// Add modules; refuses an id that is already there (the error names both directories).
@@ -860,21 +986,85 @@ impl Library {
         Ok(lib)
     }
 }
-
 #[cfg(all(test, not(target_arch = "wasm32")))]
 mod cache_generation_tests {
     use super::*;
 
     #[test]
+    fn core_generation_matches_explicit_core_manifest_catalog() {
+        let root = std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join("../..");
+        let started = std::time::Instant::now();
+        // Match gen's first pass: read existing cache declarations, never check freshness or build.
+        let legacy = Library::scan_repo_defined(&root, true, Some(&[]), &[]).unwrap();
+        let core: Vec<_> = legacy
+            .modules
+            .iter()
+            .filter(|m| m.dir.starts_with(root.join("modules/core")))
+            .collect();
+        assert!(!core.is_empty());
+        let paths: Vec<_> = core.iter().map(|m| m.dir.join("module.toml")).collect();
+        let ids: Vec<_> = core.iter().map(|m| m.id().to_string()).collect();
+        // This also verifies every required module is included in the explicit core set.
+        let mut explicit = Library::from_manifests(
+            Build {
+                root: &root,
+                only: Some(&[]),
+                defines: &[],
+            },
+            &paths,
+            true,
+            &ids,
+        )
+        .unwrap();
+        let models = crate::typed::Models::from_dir(&root.join("devices")).unwrap();
+        let facts = crate::devgen::Facts::from_dir(&root.join("devices")).unwrap();
+        explicit.lower(&models).unwrap();
+        let generate = |lib: &Library, id: &str| {
+            let mut files = crate::modgen::generate(lib, &models, id).unwrap();
+            files.extend(crate::devgen::generate(lib, &facts, id).unwrap());
+            files.sort();
+            files
+        };
+        let mut count = 0;
+        for id in &ids {
+            let baseline = generate(&legacy, id);
+            assert_eq!(
+                baseline,
+                generate(&explicit, id),
+                "core generation differs for {id}"
+            );
+            count += baseline.len();
+            println!(
+                "{id}: {}",
+                baseline
+                    .iter()
+                    .map(|(path, _)| path.as_str())
+                    .collect::<Vec<_>>()
+                    .join(", ")
+            );
+        }
+        // The content pass cannot add a gallery for these core modules: all their objects were
+        // already read in both libraries above, because Build::only filters content modules only.
+        assert!(count > 0);
+        println!(
+            "compared {} core modules, {count} generated files in {:?}",
+            ids.len(),
+            started.elapsed()
+        );
+    }
+
+    #[test]
     fn generation_reads_cached_declarations_without_building_and_tolerates_missing_cache() {
         let root = std::env::temp_dir().join(format!("digikit-cached-gen-{}", std::process::id()));
         let dir = root.join("modules").join("new-machine");
-        let cache = root.join("out/cache/dko/test/new-machine/build/module.dko.json");
+        let cache = root.join("out/cache/dko/test/new-machine/k/build/module.dko.json");
         std::fs::create_dir_all(&dir).unwrap();
         std::fs::create_dir_all(cache.parent().unwrap()).unwrap();
         // No sources or toolchains exist here: either a freshness check or a
         // build would fail. Generation must use the existing cache only.
-        std::fs::write(dir.join("module.toml"), r#"
+        std::fs::write(
+            dir.join("module.toml"),
+            r#"
 [module]
 id = "test/new-machine"
 version = "0.1.0"
@@ -889,16 +1079,28 @@ dynamic = true
 path = "build/module.dko.json"
 sources = ["missing.c"]
 place = "cf.expansion"
-"#).unwrap();
+"#,
+        )
+        .unwrap();
         let spec = crate::sdkgen::desc_spec();
-        let rec = spec.records.iter().find(|r| r.name == "dk_desc_machine").unwrap();
+        let rec = spec
+            .records
+            .iter()
+            .find(|r| r.name == "dk_desc_machine")
+            .unwrap();
         let mut bytes = vec![0u8; rec.size];
         for (field, word) in [("kind", rec.kind.unwrap()), ("size", rec.size as u32)] {
             let at = rec.field(field).unwrap().off;
             bytes[at..at + 4].copy_from_slice(&word.to_be_bytes());
         }
-        for (field, value) in [("id", "new"), ("name", "New machine"), ("short_name", "NEW"),
-            ("render", "_render"), ("note_on", "_note_on"), ("desc", "_desc")] {
+        for (field, value) in [
+            ("id", "new"),
+            ("name", "New machine"),
+            ("short_name", "NEW"),
+            ("render", "_render"),
+            ("note_on", "_note_on"),
+            ("desc", "_desc"),
+        ] {
             let at = rec.field(field).unwrap().off;
             bytes[at..at + value.len()].copy_from_slice(value.as_bytes());
         }
@@ -906,14 +1108,20 @@ place = "cf.expansion"
             "format": crate::dko::FORMAT, "arch": "cf", "source_sha256": "stale",
             "sections": [{ "name": spec.section, "kind": "data", "align": 4,
                 "size": bytes.len(), "hex": hex(&bytes) }], "symbols": [], "relocs": []
-        }).to_string();
+        })
+        .to_string();
         std::fs::write(&cache, &object).unwrap();
         let env = crate::build::toolchain::Env::new(&root);
-        let build = Build { root: &root, only: Some(&[]), defines: &[] };
+        let build = Build {
+            root: &root,
+            only: Some(&[]),
+            defines: &[],
+        };
         let models = crate::typed::Models::from_texts([
             include_str!("../../../devices/digitakt-ii.toml"),
             include_str!("../../../devices/digitone-ii.toml"),
-        ]).unwrap();
+        ])
+        .unwrap();
         let load = || Library {
             modules: Library::read_root(&root.join("modules"), true, Some((&env, build))).unwrap(),
         };
@@ -923,13 +1131,30 @@ place = "cf.expansion"
         let gallery: serde_json::Value = serde_json::from_str(&files[0].1).unwrap();
         assert_eq!(gallery["machines"][0]["id"], "new");
         assert_eq!(gallery["machines"][0]["name"], "New machine");
+        let mut explicit = Library::from_manifests(
+            build,
+            &[dir.join("module.toml")],
+            true,
+            &["test/new-machine".into()],
+        )
+        .unwrap();
+        explicit.lower(&models).unwrap();
+        assert_eq!(
+            crate::modgen::generate(&lib, &models, "test/new-machine").unwrap(),
+            crate::modgen::generate(&explicit, &models, "test/new-machine").unwrap(),
+        );
         assert_eq!(std::fs::read_to_string(&cache).unwrap(), object);
         // Excluded modules in a pack still omit objects even if cache exists.
-        let excluded = Library::read_root(&root.join("modules"), false, Some((&env, build))).unwrap();
+        let excluded =
+            Library::read_root(&root.join("modules"), false, Some((&env, build))).unwrap();
         assert!(excluded[0].objects.is_empty());
         std::fs::remove_file(&cache).unwrap();
         let lib = load();
-        assert!(crate::modgen::generate(&lib, &models, "test/new-machine").unwrap().is_empty());
+        assert!(
+            crate::modgen::generate(&lib, &models, "test/new-machine")
+                .unwrap()
+                .is_empty()
+        );
         assert!(!cache.exists());
         std::fs::remove_dir_all(root).unwrap();
     }

@@ -40,7 +40,7 @@ typedef struct dk_machine_desc {
 /* At note-on, after `state_clear_bytes` are zeroed; no sound. params: DK_MAX_PARAMS words. Returns 0, or a negative number (a fault). Entered with I13 = return address (R4 state, R8 in, R12 params; result R0). */
 int32_t note_on(void *state, const dk_voice_in *in, const int32_t *params);
 
-/* Once per block while the voice runs, including the note-on block after note_on. Writes DK_BLOCK floats to in->out. params: DK_MAX_PARAMS words. Returns dk_status. */
+/* Once per block while the voice runs, including the note-on block after note_on. Writes DK_BLOCK floats to in->out. params: DK_MAX_PARAMS words; DK_PARAM_LATCHED words retain the effective clamped note_on value, all other words are live. Returns dk_status. */
 int32_t render(void *state, const dk_voice_in *in, const int32_t *params);
 
 #endif /* DK_GEN_MACHINE_H */

@@ -199,7 +199,8 @@ SELECT writes the selection record and loads nothing; RESTART applies it at the 
 
 - The settings record is digikit's one key-value store (`docs/design/digikit-store.md`, "Keys by owner"). Keys now: `fx/route/<module
   id>`, `fx/send/<module id>`, `dk/fault` (the crash handler's fault record, `crash.rs:545-548`). Keys `<module id>/...` are reserved for
-  the module itself; there is no module API yet. A module can already export a settings menu (`dkm_menu`, `docs/plans/sdk-api.md`).
+  the module itself, through the settings API of API 1.9 (`settings_client`, `settings_get`, `settings_put`, `settings_remove`, `<dk/settings.h>`). A module
+  can also export a settings menu (`dkm_menu`, `docs/plans/sdk-api.md`).
 - The runtime has a semantic version (`sdk/sdk.toml` `version`, now 0.5.4; `docs/design/module-sdk.md` D9). While it is 0.x, MINOR may
   break. Adapters carry the version of the runtime image they are built into.
 - Each contract has [major, minor] (`sdk/sdk.toml` `[contract]`, api is 1.5). It decides compatibility (D3).
@@ -715,7 +716,7 @@ None of them changes D1 to D24. They decide how much of the adapter layer can lo
     SDK documents this rule.
   - The runtime never interprets a module's values. Unloaded modules keep their entries (`settings.rs`).
   - Values saved with the project (parameters) are the firmware's and are not part of this.
-  - The module settings API (get, put, remove within the module's prefix) is a later item; the settings menu (`dkm_menu`) exists.
+  - The module settings API (`settings_client`, `settings_get`, `settings_put`, `settings_remove` within the module's prefix, API 1.9) and the settings menu (`dkm_menu`) exist.
 
 ## 13. Enforcement
 
@@ -824,8 +825,6 @@ default images and objects.
         capabilities the selected modules use, hot-path hooks first, and adapters that no module uses leave the default images.
   - [ ] The cost of each adapter when no module uses it (image bytes, RAM, cycles per block).
   - [ ] The Selache C compiler against hand-written assembly, on one machine.
-
-Later, not ordered: the module settings API (12).
 
 ## 15. Open
 

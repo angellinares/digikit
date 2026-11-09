@@ -559,7 +559,7 @@ Folded from a lane notebook; not re-checked by a second agent.
   trig run and generates a DT2 block library (1112 blocks after one cycle), registered by DSP
   image SHA-256 in `out/native/gen-index.json`. DSP CPU per audio s on `dt2-sample-trig`:
   interpreter 37.7, one cycle 3.07, two 1.83, three 1.76, same PCM. **[O]** There is no DT2
-  entry in `tools/emulator/fast_regions.json`: the hot DT2 loops are SIMD-mode code that the fast
+  entry in `config/emulator.json`: the hot DT2 loops are SIMD-mode code that the fast
   tier did not lower.
 
 ## DT2 runs through coupled.py used the DN2 generated core (2026-10-08) **[V][C]**

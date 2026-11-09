@@ -1,0 +1,84 @@
+{
+ "arch": "cf",
+ "format": 1,
+ "relocs": [
+  {
+   "addend": 0,
+   "offset": 12,
+   "section": ".text",
+   "symbol": ".sec..rodata",
+   "type": "cf.32"
+  },
+  {
+   "addend": 5,
+   "offset": 24,
+   "section": ".text",
+   "symbol": ".sec..rodata",
+   "type": "cf.32"
+  },
+  {
+   "addend": 10,
+   "offset": 46,
+   "section": ".text",
+   "symbol": ".sec..rodata",
+   "type": "cf.32"
+  }
+ ],
+ "sections": [
+  {
+   "align": 4,
+   "hex": "202f0004e080226f000841f90000000008000000670641f90000000012d866fc5389e280028000000007e78841f900000000d1c012d866fc4e75",
+   "kind": "text",
+   "name": ".text",
+   "size": 58
+  },
+  {
+   "align": 1,
+   "hex": "5052452000505354200053544b0000000000544e4834000000004841524400000000534f4654000000005455424500000000464f4c440000000046555a5a000000005351520000000000",
+   "kind": "data",
+   "name": ".rodata",
+   "size": 74
+  }
+ ],
+ "source_sha256": "010930d4db64f36f85cdf5bb7e8bed9ec257ce08c7d441f74ec067ed66509829",
+ "symbols": [
+  {
+   "global": false,
+   "name": ".sec..rodata",
+   "section": ".rodata",
+   "value": 0
+  },
+  {
+   "global": true,
+   "name": "od_type_fmt",
+   "section": ".text",
+   "value": 0
+  },
+  {
+   "global": false,
+   "name": "ot_names",
+   "section": ".rodata",
+   "value": 10
+  },
+  {
+   "global": false,
+   "name": "ot_pre",
+   "section": ".rodata",
+   "value": 0
+  },
+  {
+   "global": false,
+   "name": "ot_pst",
+   "section": ".rodata",
+   "value": 5
+  }
+ ],
+ "toolchain": {
+  "as": "GNU assembler (GNU Binutils) 2.47.20260726",
+  "cflags": "-mcpu=54418 -Os -ffreestanding -fno-builtin -nostdlib -fno-pic -fno-pie -ffunction-sections -fdata-sections -fno-asynchronous-unwind-tables -fno-unwind-tables -fno-stack-protector -Wall -Wextra -Werror",
+  "gcc": "m68k-elf-gcc (GCC) 16.2.0",
+  "instructions_redecoded": "18",
+  "isa_check": "bf80176162e3ae821e1d3aceae7e9950177af9313c800032a37bc29fc59c7ec9",
+  "ld": "GNU ld (GNU Binutils) 2.47.20260726"
+ }
+}

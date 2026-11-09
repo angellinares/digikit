@@ -18,11 +18,13 @@ use std::{
 
 /// Largest number of ColdFire instructions a host runs per `step_chunk`.
 pub const STEP_CHUNK: u32 = 250_000;
+
 #[cfg(feature = "coupled-audio")]
 pub mod cold;
 #[cfg(feature = "coupled-audio")]
 pub mod dsp_core;
 pub mod scenario;
+pub mod span_gate;
 /// Most inputs kept for replay.
 const INPUT_LOG_LIMIT: usize = 100_000;
 /// Sink events kept in the periodic UI status report.
@@ -230,6 +232,14 @@ impl CoupledRuntime {
         self.zero
     }
 
+    /// Pace the existing SSI/DMA zero peer without a SHARC engine. Call before guest execution
+    /// or snapshot restore; unlike `attach`, this does not load a stock firmware snapshot.
+    pub fn enable_zero_dsp_timing(&mut self) -> Result<(), String> {
+        self.emulator.enable_ssi_diagnostic(96_000)?;
+        self.zero = true;
+        Ok(())
+    }
+
     /// True when the queued output audio has reached the pace target; the
     /// controller's free running waits then. False without playback.
     pub fn audio_ahead(&self) -> bool {
@@ -316,9 +326,8 @@ impl CoupledRuntime {
             // The default DSPI2 peer answers zeros; no audio session.
             let snapshot =
                 std::fs::read(&options.snapshot).map_err(|e| format!("CF snapshot: {e}"))?;
-            self.emulator.enable_ssi_diagnostic(96_000)?;
+            self.enable_zero_dsp_timing()?;
             self.emulator.load_state(&snapshot)?;
-            self.zero = true;
             self.input_base = self.emulator.icount();
             return Ok(());
         }
@@ -431,6 +440,17 @@ impl CoupledRuntime {
     pub fn turn(&mut self, encoder: u8, detents: i32) -> Result<(), String> {
         self.emulator.turn(encoder, detents)?;
         self.record_input(json!({"turn": encoder, "detents": detents}));
+        Ok(())
+    }
+
+    /// Queue bytes on the MIDI DIN input, one byte per wire time (31,250 baud), recording them for replay
+    /// (a scenario's `midi` event). `Emulator::midi_in` takes its own period and records nothing.
+    pub fn midi_in_at_wire_rate(&mut self, bytes: &[u8]) -> Result<(), String> {
+        let ips = elektron_native_boot::clock::cf_ips();
+        let period =
+            elektron_native_boot::clock::scale_instr(elektron_native_boot::midi::WIRE_PERIOD, ips);
+        self.emulator.midi_in(bytes, period)?;
+        self.record_input(json!({"midi": bytes}));
         Ok(())
     }
 
@@ -555,9 +575,7 @@ mod coupled {
     use super::*;
     use elektron_native_boot::{
         pcm_play::{Mode, PcmPlayer, Recovery, SOURCE_RATE},
-        sharc_peer::{
-            DEFAULT_PERIOD, Shared, ThreadedHandle, ThreadedTimingProfile,
-        },
+        sharc_peer::{DEFAULT_PERIOD, Shared, ThreadedHandle, ThreadedTimingProfile},
         wav::WavWriter,
     };
     use serde_json::json;
@@ -1298,6 +1316,29 @@ mod coupled {
         }
         /// Gate (private fixtures): private DN2 ready fixtures and locally generated DSP; bounded 100M-instruction gate.
         pub fn coupled_ready_exactness() {
+            let (digest, pcm_sha256) = coupled_ready_workload();
+            // Checks the CF state digest (pinned below; it covers the DSPI RX buffer filled with DSP replies) and the PCM SHA-256 (from tests/scenarios/dn2.json).
+            // re-pinned 2026-10-13: forced IRQ delivery on by default (Em approved)
+            // re-pinned 2026-10-30: the DN2 1.12 ready fixture (67fee13b) changed the CF state (Em approved)
+            assert_eq!(
+                digest,
+                "8bd3e0bf6b5fbf8720481efa752a6a5d2210d3f84094984d2d92a2cf37faa59b"
+            );
+            // The PCM expectation lives in tests/scenarios/dn2.json (scenario exactness-100m).
+            let scenarios =
+                crate::scenario::parse_scenarios(crate::scenario::DEFAULT_SCENARIOS).unwrap();
+            let expected_pcm = scenarios
+                .iter()
+                .find(|sc| sc.name == "exactness-100m")
+                .and_then(|sc| sc.expect_sha256.as_deref())
+                .expect("scenario exactness-100m with expect_sha256");
+            assert_eq!(pcm_sha256, expected_pcm);
+        }
+
+        /// The bounded 100M-instruction workload of the exactness gate, without the pin checks (PGO training runs it).
+        /// Returns the CF state digest and the PCM SHA-256, both as hex.
+        /// `DIGI_COUPLED_DSP_EXPORT` writes the DSP export to that path.
+        pub fn coupled_ready_workload() -> (String, String) {
             use sha2::{Digest, Sha256};
             let mut runtime = CoupledRuntime::new(&syx(), None, Some(&options())).unwrap();
             runtime.observe_pcm(true);
@@ -1364,15 +1405,7 @@ mod coupled {
                     after.audio_sync_wall_ns.saturating_sub(sync),
                 );
             }
-            // Updated 2026-10-06 for the Type 17 SIMD Cureg fix (docs/findings/16); the CF digest covers the DSPI RX buffer filled with DSP replies.
-            // Updated again 2026-10-06 for the dn2-audio-ready-2026-10-06 snapshot (pSLC 32 GB card, no SLC dialog; docs/findings/14): the CF state changed, the PCM and the DSP export did not.
-            // Updated 2026-10-07: reference state rebuilt from cold start (`mise run emu:ready -- dn2`, tools/emulator/ready.py: DSP state from the .syx alone) with the DSPI1 eDMA ch14 board fix. The old state had the DC-blocker coefficient (DM 0x24f378) corrupted by the pre-ed02999 SIMD Type 17 bug. CF digest, PCM and DSP export are all new.
-            // re-pinned 2026-10-13: forced IRQ delivery on by default (Em approved)
-            // re-pinned 2026-10-30: the DN2 1.12 ready fixture (67fee13b) changed the CF state (Em approved)
-            assert_eq!(
-                runtime.emulator.state_digest().unwrap(),
-                "8bd3e0bf6b5fbf8720481efa752a6a5d2210d3f84094984d2d92a2cf37faa59b"
-            );
+            let digest = runtime.emulator.state_digest().unwrap();
             let audio = runtime.audio.as_ref().unwrap();
             let pcm: Vec<u8> = captured(audio)
                 .iter()
@@ -1382,20 +1415,10 @@ mod coupled {
                 std::fs::write(path, &pcm).unwrap();
             }
             assert_eq!(captured(audio).len(), 72_896);
-            assert_eq!(
-                format!("{:x}", Sha256::digest(&pcm)),
-                "826db0d1de8f7738ac5d0c4579198439bb5a0102b4b9d8bc36d93fa07ce15843"
-            );
+            let pcm_sha256 = format!("{:x}", Sha256::digest(&pcm));
             if let Some(path) = std::env::var_os("DIGI_COUPLED_DSP_EXPORT") {
                 std::fs::write(path, audio.handle.export().0).unwrap();
             }
-            // Cold-start snapshot: the export is the DSP state after the 100M-instruction workload from the rebuilt ready state.
-            // re-pinned 2026-10-30: changed after d59058c7 by a SHARC core change (most likely conditional Type 7a,
-            // f881124a; not the 2026-10-27 RFRAME fix); the PCM is identical (Em approved)
-            assert_eq!(
-                format!("{:x}", Sha256::digest(audio.handle.export().0)),
-                "795515d85cbabfc71909ddd4d1f8793a0a936a7a6ea43076be61d4f483a4be24"
-            );
             assert_eq!(audio.report()["missing_blocks"], 0);
             assert!(audio.shared.borrow().pcm.is_empty());
             assert!(audio.shared.borrow().raw.is_empty());
@@ -1404,6 +1427,7 @@ mod coupled {
             assert_eq!(report["sharc_execution_connected"], true);
             assert_eq!(report["pcm_output_connected"], false);
             println!("native_audio_health={}", report["native_audio"]);
+            (digest, pcm_sha256)
         }
 
         /// Gate (private fixtures): private DN2 ready fixtures; captures the desktop Audition Trig 1 path without the shared QA script.

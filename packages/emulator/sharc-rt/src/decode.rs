@@ -187,7 +187,11 @@ pub fn decode_parcels(words: &[u16], max_width_bytes: u8) -> Decoded {
 
 /// A supported fixed-width ISA instruction in little-endian 48-bit storage.
 pub fn decode_isa(raw: u64) -> Decoded {
-    decode_words_mode(&[(raw >> 32) as u16, (raw >> 16) as u16, raw as u16], true, 6)
+    decode_words_mode(
+        &[(raw >> 32) as u16, (raw >> 16) as u16, raw as u16],
+        true,
+        6,
+    )
 }
 
 fn decode_words_mode(words: &[u16], isa: bool, max_width_bytes: u8) -> Decoded {

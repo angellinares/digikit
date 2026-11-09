@@ -33,16 +33,36 @@ fn boot(card_map: [u32; MAP_N], hashes: &[u32]) -> Boot {
     let mut ty = [0u32; MAX_KEYS];
     let mut map = clean(&card_map);
     let mut events = Vec::new();
-    let dirty = assign(&card_map, &mut map, &keys, &mut ty, hashes.len(), &mut |e: &Event| events.push(*e));
-    Boot { ty: ty[..hashes.len()].to_vec(), map, dirty, events }
+    let dirty = assign(
+        &card_map,
+        &mut map,
+        &keys,
+        &mut ty,
+        hashes.len(),
+        &mut |e: &Event| events.push(*e),
+    );
+    Boot {
+        ty: ty[..hashes.len()].to_vec(),
+        map,
+        dirty,
+        events,
+    }
 }
 
 fn assigned(b: &Boot) -> Vec<[u32; 4]> {
-    b.events.iter().filter(|e| e.kind == logk::MACHINE_TYPE_ASSIGNED).map(|e| [e.args[0], e.args[1], e.args[2], e.args[3]]).collect()
+    b.events
+        .iter()
+        .filter(|e| e.kind == logk::MACHINE_TYPE_ASSIGNED)
+        .map(|e| [e.args[0], e.args[1], e.args[2], e.args[3]])
+        .collect()
 }
 
 fn evicted(b: &Boot) -> Vec<(u32, u32, bool)> {
-    b.events.iter().filter(|e| e.kind == logk::MACHINE_TYPE_EVICTED).map(|e| (e.args[0], e.args[1], e.error)).collect()
+    b.events
+        .iter()
+        .filter(|e| e.kind == logk::MACHINE_TYPE_EVICTED)
+        .map(|e| (e.args[0], e.args[1], e.error))
+        .collect()
 }
 
 fn map_of(entries: &[u32]) -> [u32; MAP_N] {
@@ -54,7 +74,10 @@ fn map_of(entries: &[u32]) -> [u32; MAP_N] {
 /// The eight entries of other machines (not in the boot), type 16 + i.
 fn full_foreign() -> ([u32; MAP_N], [u32; MAP_N]) {
     let fakes: [u32; MAP_N] = core::array::from_fn(|i| 0x1111 + i as u32);
-    (fakes, core::array::from_fn(|i| entry(fakes[i], 16 + i as u32)))
+    (
+        fakes,
+        core::array::from_fn(|i| entry(fakes[i], 16 + i as u32)),
+    )
 }
 
 #[test]
@@ -93,7 +116,10 @@ fn a_new_machine_does_not_take_the_number_of_an_absent_machine() {
     assert_eq!(b.ty, [17, 18]);
     assert!(!b.ty.contains(&16));
     assert_eq!(b.dirty, 1);
-    assert_eq!(b.map[..3], [entry(NAN, 16), entry(SINE, 17), entry(PARAMS, 18)]);
+    assert_eq!(
+        b.map[..3],
+        [entry(NAN, 16), entry(SINE, 17), entry(PARAMS, 18)]
+    );
 }
 
 #[test]
@@ -167,7 +193,15 @@ fn a_machines_own_entry_beats_the_lowest_free_number_and_nothing_is_rewritten() 
 
 #[test]
 fn a_selection_keeps_the_map_bytes() {
-    let cur = Record { seq: 4, boot_counter: 9, flags: 0, count: 1, stable_blocks: 77, map: map_of(&[entry(NAN, 16), entry(SINE, 17)]), ..Record::empty() };
+    let cur = Record {
+        seq: 4,
+        boot_counter: 9,
+        flags: 0,
+        count: 1,
+        stable_blocks: 77,
+        map: map_of(&[entry(NAN, 16), entry(SINE, 17)]),
+        ..Record::empty()
+    };
     let mut paths = [[0u8; crate::SEL_PATH]; SEL_MAX];
     paths[0][..3].copy_from_slice(b"/a\0");
     let r = crate::sel::next_record(&cur, 0xffff_ffff, 1, &paths);
@@ -192,7 +226,9 @@ fn a_pinned_key_is_left_alone_and_takes_no_number() {
     let mut ty = [9u32; MAX_KEYS];
     let mut map = [0; MAP_N];
     let mut n_events = 0;
-    let dirty = assign(&[0; MAP_N], &mut map, &keys, &mut ty, 2, &mut |_| n_events += 1);
+    let dirty = assign(&[0; MAP_N], &mut map, &keys, &mut ty, 2, &mut |_| {
+        n_events += 1
+    });
     assert_eq!((ty[0], ty[1], dirty, n_events), (0, 16, 1, 1));
 }
 
@@ -207,13 +243,16 @@ fn a_repeated_key_takes_a_fresh_number_and_is_not_recorded() {
 fn clean_drops_entries_that_cannot_be_right() {
     let m = map_of(&[
         entry(NAN, 16),
-        entry(NAN, 17),   // same hash as an earlier entry
-        entry(SINE, 16),  // same number as an earlier entry
+        entry(NAN, 17),    // same hash as an earlier entry
+        entry(SINE, 16),   // same number as an earlier entry
         entry(PARAMS, 24), // outside the run-time range
-        entry(0, 18),     // no hash
+        entry(0, 18),      // no hash
         entry(0x77, 23),
     ]);
-    assert_eq!(clean(&m), map_of(&[entry(NAN, 16), 0, 0, 0, 0, entry(0x77, 23)]));
+    assert_eq!(
+        clean(&m),
+        map_of(&[entry(NAN, 16), 0, 0, 0, 0, entry(0x77, 23)])
+    );
 }
 
 #[test]

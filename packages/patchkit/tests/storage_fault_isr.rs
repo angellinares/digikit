@@ -1389,13 +1389,19 @@ fn actual_dtim3_handler_prefix_acknowledges_reference_and_preserves_capture() {
             m.board.write32(DTIM3 + 12, 0).unwrap();
             m.board.write32(DTIM3 + 4, 0x43238).unwrap();
             m.board.write16(DTIM3, 0x001d).unwrap();
-            m.board.time_mut().unwrap().device_dtim_reference(3).unwrap();
+            m.board
+                .time_mut()
+                .unwrap()
+                .device_dtim_reference(3)
+                .unwrap();
             assert_eq!(m.board.read8(DTIM3 + 3).unwrap(), capture | 2);
             assert_eq!(m.board.read16(helper_call).unwrap(), 0x4eb9);
             assert_eq!(m.board.read32(helper_call + 2).unwrap(), 0x4000_1896);
             m.board.write32(VBR + 99 * 4, handler).unwrap();
             m.cpu.sr = 0x2000;
-            m.cpu.take_interrupt(&mut m.board, 99, Some(2), InterruptPolicy::Device).unwrap();
+            m.cpu
+                .take_interrupt(&mut m.board, 99, Some(2), InterruptPolicy::Device)
+                .unwrap();
             assert_eq!(m.cpu.pc, handler);
             assert_eq!(m.board.read8(DTIM3 + 3).unwrap(), capture | 2);
             m.board.set_guest_access_capture(true);
@@ -1414,9 +1420,19 @@ fn actual_dtim3_handler_prefix_acknowledges_reference_and_preserves_capture() {
                 }
             }
             assert_eq!(m.cpu.pc, helper_call, "bounded actual handler prefix");
-            assert!(acknowledged, "actual DTER REF byte acknowledgement observed");
+            assert!(
+                acknowledged,
+                "actual DTER REF byte acknowledgement observed"
+            );
             assert_eq!(m.board.read8(DTIM3 + 3).unwrap(), capture);
-            assert!(m.board.time().unwrap().device_dtim_reference_requests().unwrap().is_empty());
+            assert!(
+                m.board
+                    .time()
+                    .unwrap()
+                    .device_dtim_reference_requests()
+                    .unwrap()
+                    .is_empty()
+            );
         }
     }
 }

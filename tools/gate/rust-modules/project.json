@@ -17,7 +17,7 @@
         "{workspaceRoot}/tools/patchkit/toolchain/**/*"
       ],
       "options": {
-        "command": "uv run python -m tools.devtools.rust_ws test --packages patchkit,elektron-native-boot",
+        "command": "node tools/nx/rust-env.mjs -- cargo nextest run -p patchkit -p elektron-native-boot --release --locked --offline",
         "cwd": "."
       }
     }

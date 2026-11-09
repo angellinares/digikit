@@ -54,7 +54,12 @@ fn main() {
     let t1 = Instant::now();
     match sharc_fast_wasm::emit_module(&all, 1) {
         Ok(m) => {
-            println!("all.wasm: {} kernels, {} bytes, emitted in {:?}", all.len(), m.len(), t1.elapsed());
+            println!(
+                "all.wasm: {} kernels, {} bytes, emitted in {:?}",
+                all.len(),
+                m.len(),
+                t1.elapsed()
+            );
             std::fs::write(format!("{out}/all.wasm"), m).unwrap();
         }
         Err(e) => eprintln!("all: {e}"),

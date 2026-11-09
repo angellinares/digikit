@@ -1173,8 +1173,8 @@ dependencies = [
 name = "dkupload"
 version = "0.1.0"
 dependencies = [
+ "dksample",
  "serde_json",
- "sha2",
 ]
 
 [[package]]

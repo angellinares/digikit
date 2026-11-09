@@ -96,7 +96,9 @@ def test_check_generated_refuses_stale_core_before_any_binary_or_render(monkeypa
     monkeypatch.setattr(
         coupled,
         "ensure_binary",
-        lambda *args: pytest.fail("binary preparation before stale-core rejection"),
+        lambda *args, **kw: pytest.fail(
+            "binary preparation before stale-core rejection"
+        ),
     )
     with pytest.raises(SystemExit, match="stale core"):
         coupled.cmd_scenario(args)

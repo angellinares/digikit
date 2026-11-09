@@ -39,7 +39,28 @@
   },
   {
    "addend": 0,
+   "offset": 58,
+   "section": ".text",
+   "symbol": "_pe_count",
+   "type": "cf.32"
+  },
+  {
+   "addend": 0,
+   "offset": 88,
+   "section": ".text",
+   "symbol": "_pe_rowsize",
+   "type": "cf.32"
+  },
+  {
+   "addend": 0,
    "offset": 66,
+   "section": ".text",
+   "symbol": "_pe_rows",
+   "type": "cf.32"
+  },
+  {
+   "addend": 0,
+   "offset": 106,
    "section": ".text",
    "symbol": "_pf_t_t2",
    "type": "cf.32"
@@ -48,14 +69,32 @@
  "sections": [
   {
    "align": 4,
-   "hex": "4feffff848d7010222000481000000000c81000000006418203c000000004c010800068000000000204020280008600820010680000000004cd701024fef00084ef900000000",
+   "hex": "4feffff848d7010222000481000000000c81000000006418203c000000004c01080006800000000020402028000860302001068000000000223c00000000672041f900000000b090660c4aa80014671020280014600ad1fc00000000538166e64cd701024fef00084ef900000000",
    "kind": "text",
    "name": ".text",
-   "size": 70
+   "size": 110
   }
  ],
- "source_sha256": "99be502385d5d28a6de97322501813a4c6d728a894d884615679fbb8c94b8eb1",
+ "source_sha256": "ece10b71ba8448aba2a850bf2824644ad3778b39d6d7fd6a64477d3e40628982",
  "symbols": [
+  {
+   "global": true,
+   "name": "_pe_count",
+   "section": null,
+   "value": 0
+  },
+  {
+   "global": true,
+   "name": "_pe_rows",
+   "section": null,
+   "value": 0
+  },
+  {
+   "global": true,
+   "name": "_pe_rowsize",
+   "section": null,
+   "value": 0
+  },
   {
    "global": true,
    "name": "_pf_count",
@@ -97,8 +136,8 @@
   "as": "GNU assembler (GNU Binutils) 2.47.20260726",
   "cflags": "-mcpu=54418 -Os -ffreestanding -fno-builtin -nostdlib -fno-pic -fno-pie -ffunction-sections -fdata-sections -fno-asynchronous-unwind-tables -fno-unwind-tables -fno-stack-protector -Wall -Wextra -Werror",
   "gcc": "m68k-elf-gcc (GCC) 16.2.0",
-  "instructions_redecoded": "17",
-  "isa_check": "f860c214bf24397700bbc99b592247a780f058c3fc64a1a3aa042593cb03e15f",
+  "instructions_redecoded": "29",
+  "isa_check": "9b6e08dcfe3ec68c5e6eba72ef39c6c34e68bea2f8e157e2f9d8f363565796dc",
   "ld": "GNU ld (GNU Binutils) 2.47.20260726"
  }
 }

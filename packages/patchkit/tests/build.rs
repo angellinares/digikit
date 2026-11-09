@@ -89,7 +89,9 @@ const LIBGCC_NOT_CALLED: [&str; 14] = [
 fn compiler_helper_names_match_libgcc() {
     let Some(env) = toolchain() else { return };
     let Some(lib) = env.libgcc_cf() else {
-        eprintln!("SKIP: libgcc-cf54418.a is not built (uv run python -m tools.patchkit.pk_toolchains libgcc-cf)");
+        eprintln!(
+            "SKIP: libgcc-cf54418.a is not built (uv run python -m tools.patchkit.pk_toolchains libgcc-cf)"
+        );
         return;
     };
     let out = std::process::Command::new(env.m68k("nm").unwrap())
@@ -119,7 +121,10 @@ fn compiler_helper_names_match_libgcc() {
         .iter()
         .filter(|n| rust::is_helper(n) || !defined.contains(**n))
         .collect();
-    assert!(wrong.is_empty(), "stale LIBGCC_NOT_CALLED entries: {wrong:?}");
+    assert!(
+        wrong.is_empty(),
+        "stale LIBGCC_NOT_CALLED entries: {wrong:?}"
+    );
 }
 
 #[test]
@@ -361,9 +366,15 @@ fn the_object_carries_its_isa_record() {
 #[test]
 fn isa_check_of_blobs_and_archives() {
     // divs.l d1,d2:d0 (64-bit dividend), bfextu: 68020 forms with no ColdFire encoding
-    let bad = vec![(".text".to_string(), vec![0x4c, 0x41, 0x0c, 0x02, 0xe9, 0xc0, 0x10, 0x00, 0x4e, 0x75])];
+    let bad = vec![(
+        ".text".to_string(),
+        vec![0x4c, 0x41, 0x0c, 0x02, 0xe9, 0xc0, 0x10, 0x00, 0x4e, 0x75],
+    )];
     let e = cf::check_text(&bad, "x: ").unwrap_err().0;
-    assert!(e.contains("x: .text+0x0:") && e.contains("outside ISA_A/B/C+EMAC"), "{e}");
+    assert!(
+        e.contains("x: .text+0x0:") && e.contains("outside ISA_A/B/C+EMAC"),
+        "{e}"
+    );
     let ok = vec![(".text".to_string(), vec![0x4e, 0x75])];
     assert_eq!(cf::check_text(&ok, "").unwrap().values().sum::<u32>(), 1);
     let Some(env) = toolchain() else { return };
@@ -512,7 +523,7 @@ fn a_module_builds_once_and_then_is_unchanged() {
     let _ = std::fs::remove_dir_all(&out);
 }
 
-/// A content module (any category but `core`) keeps its objects in the cache `out/cache/dko/<id>/<path>`, not in the module; the
+/// A content module (any category but `core`) keeps its objects in the cache `out/cache/dko/<id>/<src12>/<path>`, not in the module; the
 /// library builds a stale or missing one on demand and leaves out the objects of modules it was not asked for.
 #[test]
 fn a_content_module_builds_into_the_cache_on_demand() {
@@ -529,11 +540,25 @@ fn a_content_module_builds_into_the_cache_on_demand() {
         ),
     )
     .unwrap();
-    std::fs::write(moddir.join("src/t.c"), "int twice(int x) { return x + x; }\n").unwrap();
-    let cached = build::cache_dir(&root()).join(&id).join("build/tiny.dko.json");
+    std::fs::write(
+        moddir.join("src/t.c"),
+        "int twice(int x) { return x + x; }\n",
+    )
+    .unwrap();
+    let cached_now = || build::object_files(&root(), &moddir).unwrap()[0].1.clone();
+    let cached = cached_now();
     let _ = std::fs::remove_dir_all(build::cache_dir(&root()).join(&id));
     let scan = |only: Option<&[String]>| {
-        Library::scan_in(Some(Build { root: &root(), only, defines: &[] }), &d, false).unwrap()
+        Library::scan_in(
+            Some(Build {
+                root: &root(),
+                only,
+                defines: &[],
+            }),
+            &d,
+            false,
+        )
+        .unwrap()
     };
 
     // asked for nothing: no object, nothing built
@@ -543,19 +568,40 @@ fn a_content_module_builds_into_the_cache_on_demand() {
     assert_eq!(scan(None).get(&id).unwrap().objects.len(), 1);
     assert!(cached.is_file() && !moddir.join("build").exists());
     let text = std::fs::read_to_string(&cached).unwrap();
-    let stamp = std::fs::metadata(&cached).unwrap().modified().unwrap();
+    // a build writes a new file (a rename), a use only touches it: the inode tells them apart
+    let inode = || std::os::unix::fs::MetadataExt::ino(&std::fs::metadata(&cached).unwrap());
+    let stamp = inode();
     // a current object is read, not built again
     assert_eq!(scan(Some(&[id.clone()])).get(&id).unwrap().objects.len(), 1);
-    assert_eq!(std::fs::metadata(&cached).unwrap().modified().unwrap(), stamp);
+    assert_eq!(inode(), stamp);
     // a changed source makes it stale; the next scan builds it again
-    std::fs::write(moddir.join("src/t.c"), "int twice(int x) { return 2 * x + 1; }\n").unwrap();
+    std::fs::write(
+        moddir.join("src/t.c"),
+        "int twice(int x) { return 2 * x + 1; }\n",
+    )
+    .unwrap();
     assert_eq!(scan(None).get(&id).unwrap().objects.len(), 1);
-    assert_ne!(std::fs::read_to_string(&cached).unwrap(), text);
+    // the new sources have their own entry; the old one stays beside it
+    let cached2 = cached_now();
+    assert_ne!(cached2, cached);
+    assert!(cached.is_file());
+    assert_ne!(std::fs::read_to_string(&cached2).unwrap(), text);
+    let cached = cached2;
     // `patchkit build` finds it current
-    let r = build::build_module(&moddir, &BuildOptions { root: root(), ..Default::default() }).unwrap();
+    let r = build::build_module(
+        &moddir,
+        &BuildOptions {
+            root: root(),
+            ..Default::default()
+        },
+    )
+    .unwrap();
     assert_eq!(r.objects[0].status, Status::Unchanged);
     // both canonical: in a lane `out` is a symlink to the main tree's
-    assert_eq!(std::fs::canonicalize(&r.objects[0].path).unwrap(), std::fs::canonicalize(&cached).unwrap());
+    assert_eq!(
+        std::fs::canonicalize(&r.objects[0].path).unwrap(),
+        std::fs::canonicalize(&cached).unwrap()
+    );
     let _ = std::fs::remove_dir_all(build::cache_dir(&root()).join(&id));
     let _ = std::fs::remove_dir_all(&d);
 }
@@ -584,7 +630,10 @@ fn sharc_sources_given_as_texts_make_the_object_of_the_files() {
         .to_string();
     let build = |defines: &[String]| {
         let t = sharc::source_text_from(std::slice::from_ref(&src), &includes, defines).unwrap();
-        (sharc::source_hash(&t), build::to_text(&sharc::sharc_object(&t).unwrap()).unwrap())
+        (
+            sharc::source_hash(&t),
+            build::to_text(&sharc::sharc_object(&t).unwrap()).unwrap(),
+        )
     };
     let (h0, plain) = build(&[]);
     let (h1, extra) = build(&["EXTRA".into()]);
@@ -597,7 +646,10 @@ fn sharc_sources_given_as_texts_make_the_object_of_the_files() {
     std::fs::write(d.join("k.inc"), &includes["k.inc"]).unwrap();
     std::fs::write(d.join("m.s"), &src).unwrap();
     let t = sharc::source_text_in(vec![d.clone()], &[d.join("m.s")], &[]).unwrap();
-    assert_eq!(build::to_text(&sharc::sharc_object(&t).unwrap()).unwrap(), plain);
+    assert_eq!(
+        build::to_text(&sharc::sharc_object(&t).unwrap()).unwrap(),
+        plain
+    );
     std::fs::remove_dir_all(&d).unwrap();
     // a missing include and a refused instruction are errors, not panics
     assert!(sharc::source_text_from(&["#include \"no.inc\"".into()], &includes, &[]).is_err());

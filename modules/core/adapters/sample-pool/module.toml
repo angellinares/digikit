@@ -66,8 +66,6 @@ devices = ["dn2"]
 [object.externs]
 sp_stock_copy = "cf.link.fn.reply_copy"
 sp_stock_sleep = "cf.rtos.fn.sleep_us"
-sp_worker_get = "cf.samples.fn.worker.get"
-sp_worker_queue = "cf.samples.fn.worker.queue"
 
 [[object]]
 path = "build/sample-pool-dsp-dn2.dko.json"

@@ -6,7 +6,8 @@
       {
         "files": ["tests/remote-input.device.test.ts"],
         "modules": [],
-        "sources": ["tools/control/digi_client.py"]
+        "sources": ["tools/control/digi_client.py"],
+        "pythonTools": "client"
       }
     ]
   }

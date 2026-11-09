@@ -125,7 +125,7 @@ def unit():
     sym.update({f"_mf_rc{i}": a for i, a in enumerate(RC)})
     return pk_cfunit.CfUnit(
         SYX,
-        [SRC],
+        [SRC, ROOT / "tests/fixtures/native-page-absent.s"],
         STUBS,
         sym,
         [
@@ -320,7 +320,7 @@ def unit_pg():
     sym.update({f"_mf_rc{i}": a for i, a in enumerate(RC)})
     return pk_cfunit.CfUnit(
         SYX,
-        [SRC],
+        [SRC, ROOT / "tests/fixtures/native-page-absent.s"],
         STUBS,
         sym,
         ["mf_typemap0", "mf_typemap1", "mf_typemap2", "mf_reader"],

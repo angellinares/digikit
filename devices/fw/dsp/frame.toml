@@ -2,7 +2,47 @@
 # Names follow <cpu>.<subsystem>.<kind>.<name>; was = former names, for reading older docs, never resolved (docs/design/firmware-decls.md).
 
 # FUN_1c2b24, the per-block consumer of the ColdFire frame (finding 06): it copies the frame into the DSP's frame copy
-# (dsp.voice.value.frame_base) and turns it into each voice's parameters with two calls of the per-track unpack per track.
+# (dsp.voice.value.frame_base) twice per block, then turns it into each voice's parameters with two calls of the per-track unpack per track.
+[[site]]
+name = "dsp.frame.site.frame_rx.copy_cond"
+cpu = "sharc"
+devices = ["dt2"]
+rule = { kind = "sharc_func", reloc_hash = "55a5d8458350a1b67249f5aca8d49a4692d9ab5886fd12d95c259479f83ce780", offset = 0x164, len = 6 }
+mark = "D"
+users = ["core/overdrive"]
+doc = "The instruction after the frame consumer's conditional copy of the ColdFire frame into the DSP's frame copy."
+
+[[site]]
+name = "dsp.frame.site.frame_rx.copy_block"
+cpu = "sharc"
+devices = ["dt2"]
+rule = { kind = "sharc_func", reloc_hash = "55a5d8458350a1b67249f5aca8d49a4692d9ab5886fd12d95c259479f83ce780", offset = 0x556, len = 6 }
+mark = "D"
+users = ["core/overdrive"]
+doc = "The instruction after the copy of the ColdFire frame that the frame consumer makes near the end of every block."
+
+[[hook]]
+name = "dsp.frame.hook.frame_rx.copy_cond"
+site = "dsp.frame.site.frame_rx.copy_cond"
+cpu = "sharc"
+mode = "before"
+regs = { in = [], clobbers = ["astat"] }   # the flags are dead here
+devices = ["dt2"]
+mark = "D"
+users = ["core/overdrive"]
+doc = "After the conditional frame copy; the hook point for rewriting track parameters in the frame copy before the stock code reads them."
+
+[[hook]]
+name = "dsp.frame.hook.frame_rx.copy_block"
+site = "dsp.frame.site.frame_rx.copy_block"
+cpu = "sharc"
+mode = "before"
+regs = { in = [], clobbers = ["astat"] }   # the flags are dead here
+devices = ["dt2"]
+mark = "D"
+users = ["core/overdrive"]
+doc = "After the frame copy of every block; the hook point for rewriting track parameters in the frame copy before the stock code reads them."
+
 [[site]]
 name = "dsp.frame.site.frame_rx.unpack_call_a"
 cpu = "sharc"

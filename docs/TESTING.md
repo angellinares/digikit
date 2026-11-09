@@ -1,9 +1,14 @@
 # Tests
 
-Reference for the test levels, commands, inputs and gate. The gate is `mise run gate`. Other docs
+Reference for the test levels, commands, inputs and gate. Use `mise run test` for affected verification
+and the merge gate. Use `mise run test:plan` first when selection is unclear;
+it explains the same task selection without executing tests or builds. `test:changed` is cheap preflight,
+not complete verification. Other docs
 link here. Results of runs belong in `docs/findings/`, not here. Planned changes:
 [docs/plans/test-architecture.md](plans/test-architecture.md); gate speed:
-[docs/plans/gate-speed.md](plans/gate-speed.md).
+[docs/plans/gate-speed.md](plans/gate-speed.md). Current implementation sequence and evidence:
+[test/build workflow](plans/test-build-workflow.md). The current module and SDK iteration follow-up is
+[fast module and SDK iteration](plans/module-sdk-iteration.md).
 
 ## Test levels
 
@@ -18,7 +23,7 @@ execution requirements, not levels. A successful boot proves only what the run a
 | Unit (TS host) | Packages, desktop UI logic, regression helpers; no device | `pnpm test:host` |
 | Unit (web) | Web app Node suites in `apps/web/tests` | `pnpm --filter @digi/web test` |
 | Unit (Python) | RE, firmware and dev tools | pytest on named files under `tests/<owner>/`; `mise run test:pypy` for the PyPy subset |
-| Unit (Rust) | Workspace and standalone dkrt | Gate target `rust-tests` or `mise run test`; runtime-only: `mise run test:runtime:unit` |
+| Unit (Rust) | Workspace and standalone dkrt | Explicit Nx project target `rust-tests`; runtime-only: `pnpm nx:pilot run core/runtime:rust-tests` |
 | Component | Module DSP conformance on the SHARC core | `mise run module:check ID` |
 | Device: stock UI | DT2 stock pages and transport goldens (zero DSP) | `mise run test:stock` |
 | Device: FX | Stock FX oracles | `mise run test:fx`, `mise run test:fx:dt2` |
@@ -31,14 +36,14 @@ A mocked UI test, a preview or a daemon scenario is not app E2E coverage.
 
 ## Which check for which change
 
-Use the owner command while iterating. The coordinator runs the routed gate once per merge
-(`mise run gate`). `pnpm nx:pilot show projects --affected --base main` prints the selection without running it.
+Use an explicit owner target or named test while iterating. Run `mise run test` once before merging;
+iteration checks do not replace this gate. `mise run test:plan` explains task selection without running it.
 
 | Change | While iterating |
 | --- | --- |
-| JS/TS host tests and helpers | `pnpm test:host`, `pnpm verify:host` |
+| JS/TS host tests and helpers | `pnpm nx:pilot run <project>:test-host`, `<project>:typecheck` |
 | Web Node tests | `pnpm --filter @digi/web test` |
-| Desktop UI or app | `pnpm verify:host`; `ui:preview` and `ui_shots.mjs` for pages (below) |
+| Desktop UI or app | `pnpm nx:pilot run @digi/desktop:test-host`, `@digi/desktop:check:ui` (source types); `@digi/desktop:typecheck` for test types. `ui:preview` and `ui_shots.mjs` for pages (below). |
 | Stock DT2 UI goldens | `test:stock` |
 | DN2 or DT2 FX sources and oracles | `test:fx`, `test:fx:dt2` |
 | Python under `tools/` or `tests/` | `test:changed`; then the named pytest files |
@@ -47,47 +52,66 @@ Use the owner command while iterating. The coordinator runs the routed gate once
 | Device tests of one module | `pnpm nx:pilot run <module-id>:test-device` |
 | One device test file | `pnpm nx:pilot run <module-id>:pack`, then `pnpm --filter @digi/regression test:runtime <path filter>` |
 | Loading one module | `pnpm nx:pilot run <module-id>:test-conformance` |
-| Framework module, runtime | `pnpm nx:pilot run <module-id>:test-device`, `pnpm nx:pilot run-many -t test-conformance` |
+| Runtime loader fixtures | `pnpm nx:pilot run core/runtime-fixture-tests:test-device` checks a machine and FX on both coupled devices; `core/runtime-service-tests:test-device` covers a zero-DSP service. |
+| Empty-store menu fixture | `pnpm nx:pilot run core/digikit-menu-zero-tests:test-device` checks common menu navigation on both devices with zero DSP; the existing `core/digikit-menu:test-device` keeps coupled capacity checks. |
+| SDK UI fixture | `pnpm nx:pilot run sdk-ui-zero-tests:test-device` exercises the `test/ui-demo` SDK UI controls on both devices with zero DSP. |
+| Public SDK headers | `pnpm nx:pilot run sdk:test-host` and `pnpm nx:pilot run sdk-ui-zero-tests:test-device`; add the runtime loader fixtures above when load or ABI behavior is affected. |
+| Framework module, runtime | `core/runtime:rust-tests` for runtime units; an acceptance owner's `test-device` for iteration (runtime owners are listed below). Use `test:plan` for affected consumers. The default gate runs every owner's `test-device` and `test-conformance` and replays unchanged ones from the cache. |
 | SHARC core or transpiler | regenerate the cores, then `test:changed` |
 | Emulator crates | `test:changed`; the crates' Rust tests |
 | PCM pins (`tests/scenarios/*.json`) | only with Em's approval |
 
 ## Commands
 
-Device tasks never build a daemon or the emulator themselves. Prerequisites are in "Inputs".
+Nx owns task selection and prerequisites; mise supplies thin entry points. Nx 24 selects individual
+affected tasks using their declared inputs and dependencies. Both local plugins (`tools/nx/modules.mjs`
+and `cargo.mjs`) discover projects without running Cargo. Explicit Rust targets use their pinned commands.
+`nx.json` owns shared inputs, target defaults and plugin registration. `tools/nx/modules.mjs` infers
+module targets and patch-set inputs; `tools/nx/cargo.mjs` infers Rust targets and path dependencies.
+Each owner's `project.json` supplies its explicit targets and overrides. The real plan regressions
+in `tools/nx/tests/selection.test.ts` verify native Nx input resolution and affected selection.
+Device targets may build their declared packs, CLIs and daemons on demand; direct Vitest invocations
+require those artifacts to exist already (see "Inputs").
 
-`test:changed` sends its complete changed-path list to `pnpm nx:pilot affected --target=test-host`
-on stdin, with one Nx task at a time. Nx selects whole registered host projects, including dependency
-consumers, shared configuration and explicit filesystem inputs. Deleted paths retain their project
-scope; newline-containing paths are rejected. Empty changes select no host work. The former full-host versus `vitest related`
-branch is removed; lint, formatting, types and the full merge gate retain their existing selection.
-
-The evaluated Rust discovery plugin is unregistered for host preflight, so host selection does not
-require Rust toolchains or Cargo metadata. Explicit Rust targets retain their own pinned commands.
-See the [Nx migration boundary](plans/nx-pilot.md#host-preflight-migration).
+`test:changed` runs only affected lint, format, types, host tests and Python checks. `test` runs the
+complete affected target list, with `test:plan` adding Nx `--explain` to that same invocation.
+The default gate requests affected module `pack` targets directly, even when a module has no device-test
+target. A `module.toml` edit also selects the host-only `patchkit:catalog-check` target once to validate
+repository-wide manifest IDs and requirements; each module's pack and conformance read its own manifest
+and declared requirement closure.
+`DIGI_GATE_BASE` defaults to `main` and is exported so Nx and the Python selector compare the same base.
+Set `DIGI_GATE_BASE=HEAD mise run test:plan` to inspect only uncommitted work, or use
+`mise run test -- --explain=/tmp/test-plan.json` to save native Nx selection reasons.
+Use `DIGI_GATE_BASE` rather than forwarding `--base`, so Python sees the same comparison.
+For a proposed file, invoke `pnpm nx:pilot affected --files=path/to/file -t TARGET --explain` directly;
+Nx rejects `--files` together with the main command's `--base`.
 
 Control-client, test-support, dk-session, desktop-host and regression-host targets use local result
-caching; web-transfer and the per-module `test-host` targets remain uncached. tools/nx/modules.mjs infers, for each shipped module, a `test-host` target (host tests under `tests/`), a `test-device` target (its `tests/**/*.device.test.ts`, run with Vitest directly after its packs) and, for each shipped dynamic, service or `host` module, a `test-conformance` target (the shared conformance suite for that module). Device targets set `parallelism: false`. Other Nx targets: `pack` (patchkit build, then pack for each device into `dist/modules/<device>/<leaf>.dkm`; only for the modules the gate packs, not for patched-in core modules or static fixtures), `pack-aliases` (renamed copies named by `runtimeAcceptance` aliases, same directory), `patchkit:cli` (`dist/patchkit/patchkit`) and `plusdrive-format:cli` (`dist/plusdrive/plusdrive`). Outputs go to `dist/`, never under `out/`. Shipped content modules (not `core/*`) depend on `core/runtime`; machines also on `core/dynreg` and `core/dsp-voice`, effects on `core/dynfx` and `core/fxpages`. Web tests retain ignored
+caching; web-transfer and the per-module `test-host` targets remain uncached. tools/nx/modules.mjs infers, for each shipped module, a `test-host` target (host tests under `tests/`), a `test-device` target (its `tests/**/*.device.test.ts`, run with Vitest directly after its packs) and, for each shipped dynamic, service or `host` module, a `test-conformance` target (the shared conformance suite for that module). A project with several device test files has one cached target per file, `test-device--<file>`, and `test-device` is their no-op parent; a project with one file has only `test-device`. Tasks and Vitest workers follow the CPU budget below. Other Nx targets: `pack` (patchkit pack for each device, building stale module objects on demand, into `dist/modules/<device>/<leaf>.dkm`; only for the modules the gate packs, not for patched-in core modules or static fixtures), `pack-aliases` (renamed copies named by `runtimeAcceptance` aliases, same directory), `patchkit:cli` (`dist/patchkit/patchkit`) and `plusdrive-format:cli` (`dist/plusdrive/plusdrive`). Outputs go to `dist/`, never under `out/`. Shipped content modules (not `core/*`) depend on `core/runtime`; machines also on `core/dynreg` and `core/dsp-voice`, effects on `core/dynfx` and `core/fxpages`. Web tests retain ignored
 generated WASM and optional inputs outside the cache boundary. Cache use assumes a frozen installation. New test helpers, environment
-reads or external inputs require an input audit before relying on cached results. The
+reads or external inputs require input/output review and scoped invalidation/restoration evidence before relying on cached results. The
 [bounded cache observations](findings/nx-pilot.md) include dependency failure/restoration probes;
-only the support/session pair was timed, not whole preflight. Rust and runtime targets remain uncached.
+only the support/session pair was timed, not whole preflight. The standalone runtime unit target
+remains uncached; all test-only device targets, including `core/runtime-tests`, are cached like other module device targets.
+Plugin sources are not inputs of module device targets. A `runtimeAcceptance` record may set `dksampleWasm: true`
+(depends on `dksample:wasm`) and `pythonTools` (`true` hashes the Python tools in `PYTHON_TOOL_SOURCES`; `"client"` hashes only the smaller
+`PYTHON_CLIENT_SOURCES`; both in `tools/nx/module-targets.mjs`, for tests that spawn Python tools).
 
 | Command | What runs |
 | --- | --- |
 | `mise run test:changed` | `nx affected` against `DIGI_GATE_BASE` (default `main`) over the targets `lint`, `fmt-check`, `typecheck`, `test-host` and `python-checks`. Does not run Rust, module builds or devices. |
-| `pnpm test:host` | All seven Vitest projects from `vitest.host.projects.json`: control-client, test-support, dk-session, web-transfer, desktop-host, regression-host, module-tests. One worker by default; `-- --maxWorkers N` changes it. |
+| `pnpm test:host` | All eight Vitest projects from `vitest.host.projects.json`: control-client, test-support, dk-session, web-transfer, desktop-host, regression-host, module-tests, nx-host. One worker by default; `-- --maxWorkers N` changes it. |
 | `pnpm verify:host` | oxlint, Prettier check, host Vitest, typecheck of control-client, dk-session, test-support, regression and desktop. Stops at the first failure. |
 | `pnpm --filter @digi/web test` | `node --test` in `apps/web/tests`. Cases that need WASM or firmware skip when absent. |
 | `mise run lint:py` | `ruff check` and `ruff format --check` over the pyproject include list. |
-| `mise run lint` | `lint:py`, `lint:rust`, `pnpm lint`, `pnpm fmt:check`. |
+| `mise run lint` | `lint:py`, `lint:rust`, `pnpm lint`, `pnpm fmt:check`. `lint:rust` runs `workspace:rust-fmt` (`cargo fmt --check` on every workspace crate except `dkfw`). `dkfw` is left out because its crate root is generated. Other generated files carry `#[rustfmt::skip]` on their `mod` line. A format change of `dkrt-sdk`, `dkrt-fit` or `dkneeds` changes `source_sha256` in the committed `build/*.dko.json` objects, so rebuild them with `core/runtime:build-objects`. |
 | `mise run test:pypy` | The SHARC core tests under PyPy 3.11. Slow. |
 | `mise run test:stock` | Vitest project `stock` (`tests/regression/dt2`): DT2 1.17 zero-DSP goldens. Filters pass through. |
 | `mise run test:fx` | Project `fx-dn2`: 61 quick assertions; `DIGI_FX_SWEEP=1` runs 191 across 134 scenarios. `DIGI_JOBS` bounds rendering. |
 | `mise run test:fx:dt2` | Project `fx-dt2`: 135 quick assertions; `DIGI_FX_SWEEP=1` runs 146 across 60 scenarios. `DIGI_DT2_CARD` selects a prepared card image. |
 | `pnpm nx:pilot run <module-id>:test-device` | The module's `*.device.test.ts` files (Vitest project `runtime`) after its packs, aliases and the plusdrive CLI are built into `dist/`. |
 | `pnpm nx:pilot run-many -t test-conformance` | Project `conformance`: `tests/conformance/load-{dt2,dn2}.device.test.ts` on DT2 1.17 and DN2 1.12, once per eligible module (`DIGI_CONFORMANCE_MODULES` is set per module). |
-| Other Nx gate targets | `digi-control:daemons` builds the daemons and writes `dist/daemons.json`; device helpers read it when `DIGI_EMUD_*` is unset. `digi-coupled:build` and `build-dt2` build the coupled emulator. `@digi/web:patchkit-wasm` builds the patchkit Wasm (the web `test` depends on it). `workspace:lint` and `workspace:fmt-check` run `pnpm lint` and `pnpm fmt:check`. Project `regression`: `test-device` runs `tests/regression/emulator/` after the packs of its runtime-acceptance records; `test:stock` depends on `daemons`, `test:fx` and `test:fx:dt2` on the coupled builds; `test:fx-no-aot` runs `test:fx` in the no-AOT configuration. Project `@digi/desktop`: `cargo-test` runs the app crate tests. Owner projects `tools`, `devices`, `sdk` and `tests` own the paths no other project owns; `tools` carries `python-checks` and `python-tests`. The emulator gate targets live in the gate projects under `tools/gate/` (see "Nx gate"). |
+| Other Nx gate targets | `patchkit:objects-check` fails when a committed core object (`modules/core/**/build/*.dko.json`) is older than its sources (fix: `patchkit build modules/core`); it ignores the content-module cache. `digi-control:daemons` builds the daemons and writes `dist/daemons.json`; device helpers read it when `DIGI_EMUD_*` is unset. `digi-coupled:build` and `build-dt2` build the coupled emulator. `@digi/web:patchkit-wasm` builds the patchkit Wasm (the web `test` depends on it). `workspace:lint` and `workspace:fmt-check` run `pnpm lint` and `pnpm fmt:check`. Project `regression`: `test-device` runs `tests/regression/emulator/` after the packs of its runtime-acceptance records; `test:stock` depends on `daemons`, `test:fx` and `test:fx:dt2` on the coupled builds; `test:fx-no-aot` runs `test:fx` in the no-AOT configuration. Project `@digi/desktop`: `rust-tests` runs the app crate tests. Owner projects `tools`, `devices`, `sdk` and `tests` own the paths no other project owns; `tools` carries `python-checks` and `python-tests`. The emulator gate targets live in the gate projects under `tools/gate/` (see "Nx gate"). |
 | `mise run module:check ID` | Machine/effect conformance and own Python tests, then any module-owned Nx `test-device` target. May build or emulate; size/fit follows both. Not an all-module load proof. |
 | `mise run module:audit NAME` | ColdFire memory audit of one run-time module. |
 | `mise run patch:test` | Smoke tour over `tests/patchkit/smoke/matrix.toml` (`-- --cell dt2-1.17:core/fx`, `-- --update`). |
@@ -95,19 +119,22 @@ only the support/session pair was timed, not whole preflight. Rust and runtime t
 | `mise run dev:plusdrive-check` | The firmware's own view of an image built from a folder (about 1 min). |
 | `mise run scenario NAME` | Replays one headless scenario. |
 | `mise run scenario:all` | Every DN2 scenario; fails when a pinned PCM hash differs. |
-| `mise run test:slow` | `test_outcomes run --check` over `tests` with `--slow` and a one-hour per-file timeout, then `rust_ws gates`. |
+| `mise run test:slow` | `test_outcomes run --check` over `tests` with `--slow` and a one-hour per-file timeout, then `uv run python -m tools.emulator.coupled gates`. |
 | `mise run test:quick` | Launcher, PGO, target and coupled-tool tests, then `coupled test-quick`. |
-| `mise run gate` | The merge gate: `nx affected` over the gate targets against `DIGI_GATE_BASE` (default `main`). |
-| `mise run gate:full` | Every gate target on every project, plus `tier-sweep` and `dt2-tier-sweep`. Only after generated-core changes. |
+| `mise run test` | Complete affected verification and merge gate: `nx affected` against `DIGI_GATE_BASE` (default `main`). |
+| `mise run test:plan` | The `affected` selection of the non-device targets with native Nx `--explain`; no tasks execute. Device and conformance targets are not listed: all owners run and replay from the cache. |
+| `mise run test:full` | Every gate target on every project, plus `tier-sweep` and `dt2-tier-sweep`. Only after generated-core changes. |
 | `mise run clean:runs` | Lists old `digi-*` run directories under the temp dir (older than 24 h, not used by a running `digi-emud` or node process) and orphan `digi-emud` processes; `-- --yes` deletes the directories, `-- --hours N` sets the age. It never kills a process. A Session refuses to start with less than 50 GB free. |
 
 ### Nx gate
 
-- `mise run gate` runs `nx affected` over the gate targets against `DIGI_GATE_BASE` (default `main`), under the shared benchlock at nice 10.
-- `mise run gate:full` runs every gate target on every project, plus `tier-sweep` and `dt2-tier-sweep`. Run it only after generated-core changes.
-- Gate projects in `tools/gate/` carry their triggers as `{workspaceRoot}` inputs: `gate-smoke` (target `smoke`), `gate-card` (`card`), `gate-stock` (`stock`, cached), `gate-fx-dn2` (`fx`, `fx-no-aot`, `tier-quick`, `tier-sweep`), `gate-fx-dt2` (`fx-dt2`, `dt2-tier-quick`, `dt2-tier-sweep`), `gate-pins` (`pins`), `gate-dt2-tone` (`dt2-tone`) and `gate-rust-modules` (`rust-tests`). The Vitest suites behind `stock`, `fx` and `fx-dt2` are the `test:stock`, `test:fx` and `test:fx:dt2` scripts of `tests/regression`. `smoke` and `card` run through `tools/nx/daemon-env.mjs`, which sets `DIGI_EMUD_<DEV>` from `dist/daemons.json`, so they use the same content-keyed daemon as the Vitest device tests. Module projects with device tests depend on `regression` (harness), `digi-control` (daemons), `patchkit` (packs), `devices` and `sdk`; only modules with `test-conformance` also depend on `conformance`. `python-checks` and `python-tests` run on any change outside `docs/`.
-- Emulator targets run one at a time.
-- Nx prints the output of each task; there is no run directory or `--rerun-failed`.
+- `mise run test` runs the gate targets against `DIGI_GATE_BASE` (default `main`): `nx affected` selects them, except device and conformance targets (see the last notes of this section), through `node tools/nx/gate.mjs --tier merge`; the Nx launcher holds the shared benchlock and runs at nice 10.
+- `mise run test:full` runs every gate target on every project, plus `tier-sweep` and `dt2-tier-sweep`. Run it only after generated-core changes.
+- Gate projects in `tools/gate/` carry their triggers as `{workspaceRoot}` inputs: `gate-smoke` (target `smoke`), `gate-card` (`card`), `gate-stock` (`stock`, cached), `gate-fx-dn2` (`fx`, `fx-no-aot`, `tier-quick`, `tier-sweep`), `gate-fx-dt2` (`fx-dt2`, `dt2-tier-quick`, `dt2-tier-sweep`), `gate-pins` (`pins`), `gate-dt2-tone` (`dt2-tone`) and `gate-rust-modules` (`rust-tests`). The Vitest suites behind `stock`, `fx` and `fx-dt2` are the `test:stock`, `test:fx` and `test:fx:dt2` scripts of `tests/regression`. `smoke` and `card` run through `tools/nx/daemon-env.mjs`, which sets `DIGI_EMUD_<DEV>` from `dist/daemons.json`, so they use the same content-keyed daemon as the Vitest device tests. Module projects with device tests depend on `regression` (harness), `digi-control` (daemons), `patchkit` (packs) and `devices`; shared SDK contract/compiler surfaces are explicit target inputs. Only modules with `test-conformance` also depend on `conformance`. `python-checks` and `python-tests` run on any change outside `docs/`.
+- The number of concurrent Nx tasks and Vitest workers comes from the machine budget; see "CPU budget of the gate".
+- Nx's `summary` output reports counts and paths to full failure logs; `--output-style=static-failures-only` prints failing task output inline. No custom status router is involved.
+
+Wait without polling: run a long command with a long tool timeout (up to 2 hours in Claude Code with `BASH_MAX_TIMEOUT_MS`), not with `sleep` or `tail`. Claude Code moves it to the background after about 3 minutes and notifies you when it finishes: wait for that notification. If you stop early, stop what you started. Nx detects agents (`isAiAgent`, which reads `CLAUDECODE` among others; `AI_AGENT` alone does not trigger it) and then prints the `summary` style, so task output appears only in the log paths it names. A person who wants a live log sets `NX_DEFAULT_OUTPUT_STYLE=stream` (or passes `--output-style=stream`).
 
 `uv run python -m tools.devtools.test_outcomes BEFORE.xml AFTER.xml --renames-from REF` compares
 outcomes and skip reasons test by test after moving tests.
@@ -122,7 +149,27 @@ module set (`--stop` ends it), runs the key script from the main screen, and wri
 steps or inline text (`tap:KEY`, `wait:MS`, `turn:ENC A:BY`, `shot:NAME`, `*N` repeats). The workbench has the same call as the Reload
 modules button (⇧⌘R), with `build: true`: it builds the stale objects of the session's modules first (ColdFire and SHARC+; docs/CONTROL.md). `dk:dev` builds in its own step
 and reloads without `build`.
+While iterating, run one device with a Vitest name filter on a per-file or single-file target: `pnpm nx:pilot run <project>:test-device--<file> -- -t 'DN2 1.12'` (or `'DT2 1.17'`). The filter is part of the cache key, so a filtered result never stands in for a full one. It does not reach the files through the no-op `test-device` parent, and the ui-demo, ui-preview and conformance titles use lowercase device names.
 `--store ID,ID*,synth:NAME:BSS` boots the daemon on a card whose module store holds those modules (`*`: also in the saved selection; `synth:` needs BSS bytes of arena, so it never fits), which the MODULES list of `core/digikit-menu` needs; each list has its own kept daemon.
+
+For a no-argument DN2 preview, `mise run dk:menu` opens the real DIGIKIT menu in a visible browser faceplate;
+`mise run dk:ui-demo` opens the separate [`test/ui-demo` fixture](../tests/fixtures/modules/ui-demo/README.md), which conflicts with the real menu. See [visible previews](DEVELOPMENT.md#visible-preview) for the quick start. Both start or reload their kept daemon with the same automatic DSP selection as
+`dk:dev`, navigate to the menu, then open `/panel.html` through the live Vite proxy on an available localhost port against that exact daemon.
+The command prints the exact panel URL. `dk:dev` itself writes screenshots without opening a browser.
+Keep the command running while using the panel. Ctrl-C stops its browser server and keeps the emulator for the next reload;
+`mise run dk:dev -- emulator --stop` or `mise run dk:dev -- test/ui-demo --stop` stops the respective emulator.
+The commands also write `out/runs/devreload/dn2/digikit-menu.png` or `ui-demo.png`. Use `dk:dev` directly to choose DT2, load a particular module or card store, or provide another key script.
+
+For a content module, `mise run dk:module ID [--device dn2|dt2] [--dsp]` packs its card `.dkm`, selects it for boot and opens the MODULES list in the live faceplate. It uses the `emulator` patch set. Declarative machines default to a data-only UI preview pack with zero DSP and no audio; preview packs reject actions, samples and hooks. ColdFire-only services keep normal packing with zero DSP. Effects and other DSP-backed modules require `--dsp` for the full pack and automatic SHARC selection. `dk:module` delegates to generic `dk:dev --store`: the generic path stages content and compares the exact request and initial selection. Unchanged content keeps the daemon and overlay, including a user-edited live selection; changed content rebuilds the card and restarts that exact daemon. Stop and restart to restore the initial selected card after changing selection live. `mise run dk:module ID --stop` stops it. See [visible previews](DEVELOPMENT.md#visible-preview) for aliases and selection behavior. This interactive preview does not replace the module's acceptance checks.
+
+The Pluck zero-DSP UI proof is `pnpm nx:pilot run digikit-pluck-preview-tests:test-device`. It runs two UI-only tests across DT2 1.17 and DN2 1.12 (42.5s for the named target) and has no dependency on the full Pluck pack. Full module conformance remains coupled to SHARC.
+
+`dk:dev` automatically reports and selects DSP `zero` for ColdFire-only module closures (such as `test/ui-demo`), skipping PCM
+capture. `tools/patchkit/pk_devreload.toml` lists base patch sets whose menu/runtime supports a zero DSP
+peer despite optional DSP adapters (`emulator` on both devices). Store module closures are always checked independently: adding
+`--store digikit/pluck` selects coupled SHARC, as do content DSP objects, unknown object placements and arbitrary `file:` store content.
+Other patch sets, including `sample-tracks`, use the conservative object check. Each DSP mode has its own kept daemon directory;
+the mode and audio status are checked after connecting and reloading. No additional flag is needed.
 
 The daemon method is `dev.reload` (docs/CONTROL.md). It applies the modules again and compares the result with the running image:
 
@@ -218,9 +265,31 @@ Rust tests in their crates.
 - Lint and types come from `pyproject.toml`: new Python files are covered by `[tool.ruff] include`;
   add new typed files to `[tool.mypy] files`. Both run as commands in the gate target `python-checks`.
 
-Device sessions run in a claimed `dist/session-cache/<device>-<n>` (per worktree, gitignored). A vitest
-worker process claims the first free `<n>` with a pid lock file (`<device>-<n>.lock`) and keeps it until it
-exits; later processes reuse the dir, so the daemon's boot cache stays warm. It is pruned to 4 snapshot entries.
+The patchkit harness shares boot snapshot pairs in `out/runs/.cache/patched`. The first harness call of a process
+caps it at 30 GB (`DIGI_PATCHED_CACHE_MAX_GB`): it removes the oldest entries first by last write time and never an
+entry written in the last 2 hours, so concurrent runs and lanes keep what they use. The harness cannot tell which
+entry the daemon restored, so a reused but old entry can go and is rebuilt on its next use (about 13 s). `cards-store`
+(a few entries) has no cap.
+
+Device sessions run in a claimed `dist/session-cache/<key12>/<device>-<n>` (per worktree, gitignored).
+`<key12>` is the first 12 characters of the daemon build key (the directory name of the binary in
+`<git dir>/emud-cache/<dev>/<key>/`): a boot snapshot has no version, so a new daemon build must not read the
+snapshots of an older one. A daemon from another place (a custom `DIGI_EMUD_<DEV>`) uses
+`dist/session-cache/<device>-<n>`, or for the card and fx fixtures a fresh temp dir. A vitest worker process
+claims the first free `<n>` with a pid lock file (`<device>-<n>.lock`) and keeps it until it exits; later
+processes reuse the dir, so the daemon's boot cache stays warm. It is pruned to 8 snapshot entries. The card
+and fx fixtures claim a dir when their daemon starts (not at collection), empty everything but `patched/` and
+`cards/`, and release it when the session closes. A file with a failed test or a failed post-close safety check
+renames its dir to `<dir>.failed-<time>` (the newest 2 per device stay), so the next claim boots cold: a snapshot
+of a boot that failed a check would otherwise pass the next run. A `.dirty` marker, written at the claim and removed by a clean release, does the same for a killed or timed-out run. Only the newest 2 `<key12>` dirs of each device stay.
+Cards that the fixtures build (`cardRig`, the fx presets) are content-named: `dist/session-cache/cards/<key>/`
+holds `card.img` and `overlay.bin`, read-only. The key is a hash of the spec, the bytes of every input file
+(`.dkm`, `.syx`, the settings tool), the plusdrive binary, `devices/*.toml` and a format version in
+`tests/regression/runtime/card-cache.ts`. Equal inputs give the same path, size and mtime, so the daemon's
+snapshot key matches and a baseline reload restores the snapshot (0.2 to 1.5 s) instead of a cold boot
+(14 s DT2, 38 s DN2). A card built on a `base` outside the cache (a card after the guest's writes) is built in a
+fresh dir and always boots cold. Eviction runs when a fixture claims its run dir: only the newest 32 card dirs
+stay (a load touches a dir; one used in the last 2 hours stays). Fx presets with a `seed-card` settings step are built in the run dir, not cached. Delete `dist/session-cache/cards` to rebuild.
 `liveOptions(..., { fresh: true })` and mirror sessions use a fresh temp dir.
 
 ## Module-owned tests
@@ -230,9 +299,18 @@ A module keeps its tests in its own folder, `modules/<kind>/<name>/tests/`. No l
 - `test_*.py`, also in subfolders: pytest files. The basename is unique across the repository (prefix it with the module name). A helper
   next to the test is imported by name. Use `Path(__file__).parents[1]` for the module folder.
 - `*.test.ts`: Vitest project `module-tests` of `vitest.host.projects.json` (`pnpm test:host`), found recursively under `modules/`.
-- `*.device.test.ts`: device tests, registered in the module's `project.json` (`metadata.runtimeAcceptance`, files relative to the module
-  root) and run by the `runtime` project. `pnpm nx:pilot run <module-id>:test-device` runs one module's files; `pnpm nx:pilot run <module-id>:test-conformance`
-  loads the module through the shared conformance suite.
+- `*.device.test.ts`: device tests, registered in the owner's `project.json` (`metadata.runtimeAcceptance`, files relative to that
+  project root) and run by Vitest's `runtime` project. Runtime acceptance is owned by `core/runtime-tests`
+  (`modules/core/runtime/tests/project.json`) with CF-only service commands and settings in nested
+  `core/runtime-service-tests` and `core/runtime-settings-tests` (`service-commands/project.json` and
+  `settings/project.json`). Each owner's `test-device` runs its files;
+  `mise run module:check core/runtime` discovers and runs all owners serially.
+  `pnpm nx:pilot run <module-id>:test-device` runs one module's files; `pnpm nx:pilot run <module-id>:test-conformance`
+  loads the module through the shared conformance suite. Uploadable modules without a DSP image run
+  with the zero SSI peer and no SHARC audio session; modules with DSP images retain coupled execution
+  and the DSP registration wait. Both paths retain upload/restart, persisted bytes/hash, SDK contract,
+  registration, UI and fault acceptance, including the same forbidden runtime log kinds. Task and
+  cache ownership remain per module.
 - `scenarios/*.toml`: digikit scenarios. `pk_digikit_scen list|run NAME` and the tiers find them in `tests/digikit/scenarios/` and `modules/*/*/tests/scenarios/`.
 - `module:check ID`, `gate` and `test:changed` select them. A change in the module selects its tests and those of the modules that depend
   on it; a change only in `tests/` runs python-tests (and `host` for `.ts`), no Rust or web step.
@@ -251,40 +329,82 @@ Nx selects by project. `pnpm nx:pilot show projects --affected --base main` prin
 without running it.
 
 - The gate projects `gate-smoke`, `gate-card`, `gate-stock`, `gate-fx-dn2`, `gate-fx-dt2`, `gate-pins`,
-  `gate-dt2-tone` and `gate-rust-modules` (in `tools/gate/`) carry their trigger paths as positive
+  `gate-fast-roots` (`fast-roots`), `gate-dt2-tone` and `gate-rust-modules` (in `tools/gate/`) carry their trigger paths as positive
   `{workspaceRoot}` globs in their target inputs. Nx affected ignores negated (`!`) inputs, so inputs
   that decide selection must be positive globs.
+- `gate-fast-roots` replays fixtures built from the current runtime and fails when interpreted guest instructions per audio second (or, where a budget sets it, generated-block entries per audio second) exceed `tools/emulator/fast_budgets.json`, the sign that runtime patches bar hot generated regions or the generated core lacks links for hot blocks. DN2 has two cases: `first-boot` (the state right after the first boot) and `reset` (the state after a guest soft reset, which installing modules and Apply & Restart boot into another kit with effect sends active; about 40% more host work). DT2 keeps its first-boot state, so it has one case. `gate-fast-roots:fixtures` builds the fixtures first, with the daemon from `digi-control:daemons`; the fixture key covers the project's `fixtureKey` input (no tests or Markdown), and the store keeps the newest 4 keys per device.
 - Module projects with device tests depend on `regression` (harness), `digi-control` (daemons),
-  `patchkit` (packs), `devices` and `sdk`; only modules with `test-conformance` also depend on
-  `conformance`. A change in a dependency selects the modules that use it. The module targets
+  `patchkit` (packs) and `devices`; shared SDK contract/compiler surfaces are explicit target inputs.
+  Only modules with `test-conformance` also depend on `conformance`. A change in a dependency selects the modules that use it. The module targets
   `test-device` and `test-conformance` hash `^production` of their dependencies. `production` is the
   named input in `nx.json` (default minus `{projectRoot}/tests/**` and Markdown); for `regression` it is
   the harness only (see `tests/regression/project.json`). So a change to a stock test, a golden, an FX
   scenario, a host test or another module's tests still selects the dependent modules, but their device
   results replay from the cache. Packs still run (they are not cached).
-- `tools:python-checks` and `tools:python-tests` run on any change outside `docs/`. `python-checks` runs ruff, ruff
+- Build, pack and device inputs share `sdk/sdk.toml`, public `sdk/include`, `sdk/asm`, `sdk/dsp` and `sdk/vectors`.
+  Optional implementation sources under `sdk/src` belong to their explicit consumers: pack manifests name the C
+  files, with adjacent private headers included, and `dkui-host:rust-tests` names the picker sources and headers
+  compiled by its build script. Module and Cargo source ownership remains project-wide. A picker helper edit
+  selects Shot's pack, device and conformance checks and the UI host tests, plus their prerequisites; unrelated
+  module packs and conformance are excluded. Public headers and the SDK contract retain broad selection.
+  `sdk:check-generated` names the shared generator inputs and all generated output surfaces, including outputs
+  outside `sdk`; changes to generator output paths must update this list. It excludes optional `sdk/src` sources.
+- `tools:python-checks` and `tools:python-tests` run on changes to tools, tests, modules, sdk, devices, Python and
+  Cargo manifests, and the patchkit, dkneeds, control and plusdrive packages. `python-checks` runs ruff, ruff
   format, mypy, layercheck and `patchkit gen --check`. `python-tests` first runs
   `tests/patchkit/test_pk_current.py` (module and port staleness), then the Python test files that
   `tools/devtools/py_select.py` selects by the diff: the gate test (`PY_GATE`), the `PY_SUITES` the
   change triggers, the tests that reach a changed module in the import graph, and the changed tests.
   One process runs one file.
 - Inputs name the toolchain by version (runtime inputs such as the pinned `rustup run <version> rustc -vV`, node versions), not by
-  `mise.toml`, so task edits in `mise.toml` do not select every project.
+  `mise.toml`, so task edits in `mise-tasks.toml` do not select every project.
 - If the selection is wider or narrower than the change can reach, fix the inputs and edges in
   `tools/nx/*.mjs` or the `project.json` files.
+- The merge gate runs `test-device` and `test-conformance` for every project that owns one and relies on the cache: a key covers what the test consumes ("Nx cache"), so an unchanged test replays in seconds. All other gate targets stay on `affected`. `tools/nx/gate.mjs` makes one `run-many` over the affected projects and the device owners; a project that is affected only through the graph also runs its uncached targets (`test-host`, `typecheck`), about 7 s with the current owners. There is no fixture-first exception for `menu.c` or `ui.c`: an edit selects its consumers' keys and every shipped conformance target runs, or replays when its key did not change.
+- Loader and public SDK changes retain shipped conformance and every native-selected consumer device behavior check. The loader controls relocation/BSS, menu/function addresses, registry initialization and callback publication. The machine/FX fixture shares shipped load assertions (upload, persistence, registration, version/contracts, DSP status and faults), and a separate zero-DSP service fixture covers service behavior; these fixtures do not prove compatibility of every shipped artifact. Load conformance also does not prove rendered audio or all later module behavior. Use the owner targets above for iteration, then inspect `mise run test:plan` and run the full affected `mise run test` before merge. Any further omission needs an assertion-level mapping of omitted unique behavior and replacement coverage; see the [runtime/SDK coverage decision](plans/module-sdk-iteration.md#decision-runtime-loader-and-public-sdk-coverage).
 
 ### Remote cache
 
 All worktrees of a clone share one Cacheiro server on `127.0.0.1:47311`. Its state is in
 `<git common dir>/nx-remote-cache` (config with a read/write and a read-only token, mode 0600).
-`mise run gate` and `gate:full` write; `test:changed` reads. `tools/nx/remote-cache.mjs` starts the
-server on demand (`status` and `stop` subcommands) and sets the Nx variables only when it answers.
+Plain `pnpm nx:pilot run ...` and every gate tier read and write the cache when the server already answers
+(`, remote` on the stderr line); only the gate starts the server.
+`--skip-nx-cache` or `DIGI_NX_REMOTE=0` turns it off. `tools/nx/remote-cache.mjs` has `status` and `stop` subcommands
+and sets the Nx variables only when the server answers.
+The store has a 14-day TTL swept daily and no size cap.
 
-Cached targets: module `test-device` and `test-conformance`. Inputs: the module and its graph deps,
-the outputs of the pack, CLI and daemon targets, the toolchain, the emulator env switches, the harness
-packages (`test-support`, `control-client`, `dk-session`), every `module.toml`,
-`tools/emulator/fast_regions.json`, and the firmware, ready dirs and DT2 sample card (hashed by
-`tools/nx/device-inputs.mjs`). Not in the key on purpose: `dist/session-cache` (boot cache, cannot
+Cached targets: module `test-device` and `test-conformance`, `gate-stock:stock`, and the FX targets of `gate-fx-dn2`
+(`fx`, `fx-no-aot`, `tier-quick`) and `gate-fx-dt2` (`fx-dt2`, `dt2-tier-quick`; the FX key is described below). A key covers what the run consumes: the
+TypeScript import closure of the test files and of the Vitest setup file (`tools/nx/test-imports.mjs`), the
+outputs of the pack, CLI and daemon targets, the production files of the module (with its `module.toml`) and of the core modules in the
+patched image (with their manifests), the SDK, the files in `READ_BY_TESTS` (`tools/nx/module-targets.mjs`: `devices/**/*.toml`,
+committed core objects, `types.toml`, fixture files, the Vitest and TypeScript config), each record's `sources`,
+the toolchain, the emulator env switches,
+`config/emulator.json`, and the firmware, ready dirs and DT2 sample card (hashed by
+`tools/nx/device-inputs.mjs`). That digest also hashes path, contents and file permissions of
+`DIGI_EMUD`, device-specific/proof daemon overrides, `DIGI_PATCHKIT`, `DIGI_PATCHKIT_BIN` and
+`DIGI_PLUSDRIVE` (following binary symlinks). Nonempty `PATCHKIT_MODULES` or `DIGI_PK_ROOT`, or any
+explicit `DIGI_RUNTIME_MODULES` (including empty), deliberately prevent cache reuse with a fresh runtime nonce: arbitrary
+sources/includes, variant toolchains and mutable object caches have no proven bounded input closure.
+Overrides remain supported; these rare runs can write entries that will never be reused in local/remote
+caches. Default runs retain a deterministic digest and do not scan override trees.
+Specialized catalogue/files/LP0 card, patched-image, plan and boot-fixture overrides also prevent
+reuse, because provenance can name further external files. LP0 case-selection flags are in the key.
+Ignored/external edits alone do not trigger Git affected selection: invoke the owning Nx target
+directly after changing an override binary/root or ignored firmware/ready/card input.
+FX targets run the coupled-run binary, not a daemon. `digi-coupled:build` and `build-dt2` write
+`dist/coupled-dn2.json` and `dist/coupled-dt2.json` (`coupled build --id-out`): the sha256 of the built binary, without
+its path. The FX key has this file (as a dependent task output), the named source globs `fxDn2` and `fxDt2` (they also
+drive `affected`), and `tools/nx/coupled-inputs.mjs`. That digest covers the firmware and the ready inputs that
+`tools/emulator/coupled.py` boots from (`tools/emulator/ready_inputs.json`, and the `DIGI_EMU_SYX*`,
+`DIGI_COUPLED_SYX`, `DIGI_EMU_READY_DIR*` and `DIGI_EMU_DSP_*` overrides by file content). These are not the
+patchkit ready dirs of `device-inputs.mjs`. Env in the key: `DIGI_FX_SWEEP`, `DIGI_FX_NO_AOT_SUBSET`, `DIGI_EMU_FAST`,
+`DIGI_NO_PROGRESS_MS`, `DIGI_DT2_CARD` (its file content too), `DIGI_COUPLED_FEATURES`, `SHARC_AOT`, the `SHARC_FAST_*`
+switches, `SHARC_BLOCKTRANS` and `UPDATE_GOLDENS`. The render cache (`out/cache/renders`) is keyed by content and is safe
+to share. The tier targets write reports under `out/runs/fx-tier/<step>`; nothing reads them back. Not covered:
+`SHARC_GEN_DIR` (the generated core is checked by `--check-generated` and is built into the binary hash) and
+`out/sections/*` (derived from the firmware file).
+Not in the key on purpose: `dist/session-cache` (boot cache, cannot
 change a result) and directory scans such as `modules/README.md`. Failed tasks are not cached.
 
 ### Digikit boot scenarios
@@ -302,9 +422,9 @@ and a table named like the kind. Kinds:
 | `pages` | Parameter pages of a machine on track 1: the run-time module's frames equal the patched-in twin's. |
 
 Every scenario ends with the write-watch over `cf.expansion` (0 stray writes), the flush check (0 hits)
-and the card-sector check. Tiers: `DIGIKIT_TIER=quick` is the default. No gate sets `full`: full-tier tests (Python scenarios and TypeScript device tests with `full: true`) run only when `DIGIKIT_TIER=full` is set by hand. `mise run module:check` sets it for a module's own scenarios.
+and the card-sector check. Tiers: `DIGIKIT_TIER=quick` is the default. The default `mise run test` gate does not select full-tier tests. `mise run test:full` selects the separate `core/runtime-inferred-needs-tests:test-device-full` target and sets `DIGIKIT_TIER=full`; `mise run module:check` sets it for a module's own scenarios.
 Both use the newest image of each device. Cards are cached by content in `out/cache/digikit/cards/`.
-Jobs: `DIGIKIT_JOBS` (default 3). `DIGIKIT_PROFILE=1` prints the phase table,
+Jobs: `DIGI_JOBS`. `DIGIKIT_PROFILE=1` prints the phase table,
 `DIGIKIT_RUN_SALT=x` forces cold boots.
 
 The memory audit proves that a loaded module set writes no ColdFire memory outside what each module
@@ -319,18 +439,19 @@ are audited too. DMA and host writes are not seen. The full-tier variant loads t
 of the capacity tests behind `test/dyn-demo` (`fullSet` in `synth.ts`) and also expects no free arena byte and
 no whole free DSP granule.
 
-The capacity tests are TypeScript device tests: `modules/core/runtime/tests/capacity.device.test.ts` fills every runtime limit with
-synthetic modules (`patchkit synth-dkm`, built by `tests/regression/runtime/synth.ts`; limits in `[limits]` of `devices/*.toml`), checks the refusal codes,
-the reference module's DSP bytes and the needs that `patchkit needs` infers (full tier); `modules/core/apps/digikit-menu/tests/fits.device.test.ts` checks the
-MODULES page. `tests/patchkit/test_limits.py` keeps tools from repeating a limit as a number.
+The quick TypeScript capacity tests in `modules/core/runtime/tests/capacity/capacity.device.test.ts` fill runtime limits with
+synthetic modules (`patchkit synth-dkm`, built by `tests/regression/runtime/synth.ts`; limits in `[limits]` of `devices/*.toml`) and check refusal codes and
+the reference module's DSP bytes. The separate full-tier `modules/core/runtime/tests/capacity/inferred/inferred-needs.device.test.ts` checks needs inferred
+by `patchkit needs` against real modules and fixtures. `modules/core/apps/digikit-menu/tests/fits.device.test.ts` checks the MODULES page.
+`tests/patchkit/test_limits.py` keeps tools from repeating a limit as a number.
 
 ### Machine and FX conformance (`tests/modules`)
 
 `mise run module:check NAME [--device dt2|dn2]` (NAME: `<author/name>` or the name alone) selects the suite by
 module type and runs the module's own Python tests. A module with `tests/**/*.device.test.ts` files gets
-an uncached Nx `test-device` target (inferred by `tools/nx/modules.mjs`, read from the Nx graph); `module:check` runs it only after Python success, propagates a
+Nx `test-device` targets (inferred by `tools/nx/modules.mjs`, read from the Nx graph); `module:check` runs all owners serially after Python success, propagates a
 failure, and reports size/fit only after both stages pass. With no Python tests, the existing source
-check still precedes an owned target. Frequency shifter owns the exact existing TypeScript shifter
+check still precedes the owned targets. Frequency shifter owns the exact existing TypeScript shifter
 suite on both devices, including when `--device` limits other checks. Its daemons and ready inputs
 use the existing harness resolution/overrides; only resolution holds a shared benchlock, released
 before the target. The target does not run the broad gate. Its bounded source inputs are conservative affected-selection inputs, not a cache-closure or
@@ -350,7 +471,7 @@ FX rules (`tests/modules/test_fx_conformance.py`, rig `tests/support/fx_rig.py`)
 within 200,000 instructions; registers the stock function expects are preserved; the core/fx fault
 count stays 0; the module stores only to its output block, data, bss and stack; the master stays finite
 within 8.0; the effect stays within `min(headroom) / 4` plus 900 for core/fx. Negative fixtures:
-`test/dyn-dsp-hang` (machine), `test/fx-nan` (effect). `DIGI_CONFORM_JOBS` sets the worker count.
+`test/dyn-dsp-hang` (machine), `test/fx-nan` (effect). `DIGI_JOBS` sets the worker count.
 A change in a machine or effect module, `core/dsp-voice`, `core/fx`, `pk_conform.py` or the rigs selects the suite.
 
 ### DSP budget gate (patchkit smoke)
@@ -370,25 +491,56 @@ The no-AOT halves of `tier-quick` and `tier-sweep` use `NO_AOT_SUBSET` in `tools
 
 ## CPU budget of the gate
 
-The gate limits CPU use through Nx and the shared benchlock.
+`pnpm nx:pilot` runs `tools/nx/nx.mjs`, the one Nx launcher. It computes a budget from the machine:
+B = the performance core count on Apple Silicon, otherwise cores - 2, with a minimum of 2, or `DIGI_BUDGET=N`. A value already set in the environment wins over the derived one.
 
-- Nx runs at most 2 tasks at once (`--parallel 2`). Device targets (module `test-device` and
-  `test-conformance`, regression `test-device`) run up to 2 at a time with `REGRESSION_JOBS=2` vitest
-  workers each. 2 targets x `REGRESSION_JOBS=2` x 2 cores per emulator is about 8 emulator cores, the
-  same budget the old gate gave the runtime suite on a 16-core machine; at 3, a load-sensitive FX page
-  test failed. The other heavy targets set `parallelism: false` and run one at a time. The gate runs at nice 10 under the shared benchlock.
-- Pool sizes inside a target have defaults from the machine and can be set by variable:
-  `DIGI_PY_JOBS` (Python test files at once), `DIGI_TIER_JOBS` (coupled-run processes of the tier
-  sweeps), `DIGI_PK_JOBS` (patchkit smoke cells), `DIGI_JOBS`, `DIGIKIT_JOBS`, `DIGI_CONFORM_JOBS`,
-  `DIGIKIT_PART_JOBS`. One coupled emulator process keeps 2 cores busy.
-- `DIGI_RUNTIME_JOBS=N` sets the number of coupled daemons of the runtime acceptance run (1 is the
-  serial run). A no-progress watchdog (`tests/regression/watchdog.ts`) is on by default. It closes a
+| Setting | Formula | B=4 | B=8 | B=12 | B=16 |
+| --- | --- | --- | --- | --- | --- |
+| Nx tasks (`NX_PARALLEL`) and emulator ceiling | max(1, min(floor(B/2), floor(RAM GB/2))) | 2 | 4 | 6 | 8 |
+| `REGRESSION_JOBS` (Vitest workers per task) | 1 | 1 | 1 | 1 | 1 |
+| `DIGI_JOBS` (emulator processes) | clamp(floor(B/2), 1, 6) | 2 | 4 | 6 | 6 |
+| `CARGO_BUILD_JOBS` | B | 4 | 8 | 12 | 16 |
+| `NEXTEST_TEST_THREADS` | ceil(B/tasks) | 2 | 2 | 2 | 2 |
+
+The values assume at least 2 GB of RAM per emulator. On Apple Silicon B is the performance core count, so a 12P+4E machine has B 12: 6 tasks, a ceiling of 6 emulators.
+`tools/nx/resources.mjs` holds this policy.
+
+Each launcher run has its own budget, so several lanes could start more emulators than the machine runs well.
+Module device targets and `test-conformance` therefore run behind `node tools/devtools/emu-slot.mjs --`. It takes one
+of N machine-wide slots (lock files in `<git common dir>/emu-slots/`, N = the ceiling above), runs the command, and
+passes on its exit status. A slot is taken only when the machine has idle cores. One waiter at a time holds the
+`admit` lock and decides: if the slots in use reach the ceiling it waits; if none is in use it admits at once (work
+never starves); otherwise it samples the idle cores twice, 1 s apart, and admits when at least 2 plus the reserve are
+idle. The reserve is the efficiency-core count on Apple Silicon, else max(2, floor(cores/4)); `DIGI_EMU_RESERVE=N`
+sets it. After an admission the lock is kept for 3 s, so the next decision sees the new emulator's load. The log shows
+`emulator slot taken (M of ceiling, idle X.X cores)`. `DIGI_EMU_SLOTS=N` is a fixed count with no idle check, for an A/B.
+A waiting task prints one line and waits without a limit; a lock of a dead process is taken over. The wait is outside
+Vitest, so it does not count against test timeouts. Gate targets such as `fx` and `stock` are not wrapped.
+
+Formatting an emulator crate or `dkneeds` changes the daemon key and the PGO key, so the PGO profile needs a retrain.
+
+- For verbs that run tasks the launcher runs at nice 10 and takes the shared benchlock, except when all
+  targets are light (`lint`, `fmt-check`, `rust-fmt`, `typecheck`, `test-host`, `check`, `check:ui`,
+  `build:ui`, `python-checks`): those take no lock. `show`, `graph`, `--graph` and `--explain` take no lock. Nx has no per-kind limit: a target with `parallelism: false`
+  (cargo build targets `cli`, `daemons`, `digi-coupled:build`, `build-dt2`) runs alone.
+- `DIGI_JOBS` is the only job variable; the `fx`, `fx-no-aot` and `fx-dt2` targets set it to 1. Each runs one emulator, so these three may run beside other tasks; the other gate targets with their own job counts run alone (`parallelism: false`).
+  `DIGIKIT_PART_JOBS` stays. One coupled emulator process keeps 2 cores busy.
+- A no-progress watchdog (`tests/regression/watchdog.ts`) is on by default. It closes a
   daemon whose DSP frames, main loop hits and audio frames stay the same for 120 s of wall time
   (`DIGI_NO_PROGRESS_MS`, in ms; 0 turns it off), so the test fails at once; a paused daemon without a
   job is idle and not counted. The runtime and conformance wall timeouts are 30 min backstops.
 - `pnpm nx:pilot run digi-control:daemons` builds the daemons and writes `dist/daemons.json`; helpers
   read it when `DIGI_EMUD_*` is unset. The builds use the daemon store (`<git common dir>/emud-cache`,
   `tools/devtools/verify_build.py`).
+
+Test builds of `digi-emud` and `coupled-run` use the current PGO profile through `native_pgo.profile_for_tests`.
+A missing or stale profile prints one warning: a stale profile is still applied to `digi-emud`, and `coupled-run` builds plain.
+`DIGI_REQUIRE_PGO=1` makes this an error; the gate does not set it, because every core change makes the profile stale until a retrain.
+`mise run test` and `test:plan` (tiers `merge` and `full`) print the DN2 and DT2 profile state before the first task and repeat a stale or missing warning at the end; this never fails the gate.
+`uv run python -m tools.emulator.native_pgo clean [--dry-run] [--days N]` removes bench, ab, raw and train output and unreferenced profiles older than N days (default 14) under `out/native/pgo`. It keeps profiles named by `manifest.json` or the newest four `by-key` entries. `train` calls it at its end when `AUTO_CLEAN` is set.
+`DIGI_EMU_PGO=0` turns PGO off. Measuring tools (`coupled_ab`, `sharc_matrix`, `perf`, `fastcov`, `fast_roots`) keep their own builds.
+
+`tools/devtools/sharc_cells.py` compares host instruction counts of two built `coupled-run` binaries on runtime fixtures (`uv run python -m tools.devtools.sharc_cells A=BIN B=BIN --state dn2-reset --jobs 2 --cov`). It runs each binary at two lengths, prints steady-state counters per audio second, the B/A instruction ratio and PCM and DSP state parity (non-zero exit on a difference), and with `--cov` the fast-tier root and exit tables. It does not take the bench lock, because counters are not timing; use `coupled_ab` for the final timing A/B.
 
 ## Render cache
 
@@ -412,31 +564,71 @@ Set `DIGI_RENDER_CACHE=0` for release and publication gates.
 
 ## Nx cache
 
+Patched-image device and conformance targets first run `build-objects` for the core modules in the
+supported profiles' image closure. The plugin derives the `acceptance-image` tag from those profiles;
+it is not a manually maintained module list. Stock-only targets and runtime host units have no such prerequisite.
+The existing regression device target mixes stock and patched-runtime cases, so its prerequisites prepare the image too.
+
+Each producer checks generated inputs with `patchkit gen --modules ID --check`, then runs the existing
+incremental `patchkit build MODULE_ROOT` under shared benchlock. If generation is stale, run
+`mise run gen:modules -- --modules ID`, inspect the generated diff, and retry. The module filter scopes
+owner-generated files; SDK and firmware-interface generation is shared and is also checked or written.
+Core objects are tracked `build/*.dko.json` outputs: a stale build may update them, and their diff needs review.
+These producers are uncached; patchkit's source hashes skip current objects. Conservative default inputs
+remain in place, so existing graph edges can overselect preparation; narrowing awaits clearer test ownership.
+Repeated per-owner generation checks currently repeat shared SDK/interface checks. This is a future optimization.
+
+Catalog selection has a scoped proof: hypothetical edits to a shipped manifest and a fixture manifest both
+select `patchkit:catalog-check`; an edit to Pluck's C source does not. This verifies selection behavior only.
+
 `pnpm nx:pilot` keeps the task cache and the workspace data in `.nx/` of each worktree. The local cache is
-per worktree: Nx 22's database cache does not restore entries that another worktree recorded. The "Remote cache" section covers sharing across worktrees. A hit
+per worktree; the "Remote cache" section covers sharing across worktrees. A hit
 replays the stored output of a target with `cache: true`; the hash covers only the declared `inputs`.
+Plugin sources (`tools/nx/*.mjs`) are not inputs: Nx hashes each project's resolved configuration, so a plugin
+edit invalidates only the targets whose definition changes. `UPDATE_GOLDENS` is a cache input of module device
+targets and `gate-stock:stock`.
 
-A target may be cached only when `uv run python -m tools.devtools.nx_input_audit PROJECT:TARGET`
-passes. The audit runs the command with `tools/devtools/fs_trace.mjs` preloaded and compares every
-file read with the expanded inputs. Run it after changing the inputs or the command of a cached
-target. `--all-cached` audits every cached target; `--json FILE` keeps the full result. The audit also
-resolves `nx:run-script` targets (it runs `pnpm run SCRIPT` in the project directory).
+A package or a harness file that no test imports is not an input: an edit to `packages/dk-session/src/samples.ts`
+leaves a target that does not import it cached. A file that a test reads by path and does not import goes in
+`READ_BY_TESTS`, or in the `sources` of the record whose test reads it. `digi-control:daemons` declares the daemon
+sources (`SOURCE_GLOBS` of `tools/devtools/emud_key.py`) as inputs. The binary is keyed by content, and these
+inputs make a source edit select every task that consumes `dist/daemons.json`.
+`tools/device/dktransfer.py` keeps the state of failed packs in a folder. A test run sets `DIGI_TRANSFER_DIR` to a folder
+of its run directory, because `out/` is shared by all worktrees.
 
-The audit reports firmware, ready dirs and `dist/daemons.json` of device targets as "generated", because
-it does not know that `tools/nx/device-inputs.mjs` and `dependentTasksOutputFiles` hash them. Those
-findings are expected for device targets. Any "undeclared" finding is not.
+Inspect declared inputs with `pnpm nx:pilot show target inputs PROJECT:TARGET --json`, or use
+`pnpm nx:pilot show target inputs PROJECT:TARGET --check PATH` for one file. Native Nx resolves
+nested ownership, dependency inputs and prerequisite outputs; inspection executes no target.
+This describes the declared hash plan, not every file a command or subprocess actually reads.
+
+Before enabling or changing a cache, review source/dependency reads, outputs, toolchain and
+environment identities, including setup commands and runtime digests. Run scoped behavior checks
+appropriate to the change: invalidation for relevant inputs and restoration of declared outputs.
+The remote `test-conformance` cache proof measured 20.9s on its first run (two cells), 1.8s on an
+identical repeat (1/22 cache hit, the test target), and 14.5s after changing declared
+`DIGI_NO_PROGRESS_MS=180000`. The module source input and sibling exclusion were inspected against
+affected plans. The cached test target declares no outputs; pack and CLI producers remain
+`cache: false`, so `dist/` output restoration is not yet applicable or proven.
+Verify affected selection separately: a runtime hash does not select a task after an ignored input
+changes. The former custom auditor/tracer was removed; its historical passes did not prove
+subprocess closure or runtime-digest provenance. Unresolved coverage is not a cache-safety proof.
 
 Cached targets: module `test-device` and `test-conformance`, `gate-stock:stock`, `typecheck` (set in
 `nx.json` `targetDefaults`; the `typecheck` of `regression` is not cached because its tsconfig reads every
 module's device tests), `@digi/web:check`, `@digi/desktop:build:ui` and `check:ui`, `workspace:lint`, the
 host tests, and `rust-tests` of the crates in `HERMETIC` in `tools/nx/cargo.mjs`
-(coldfire, periph, emmc-card, dkneeds, dkrt-sdk, dkrt-fit, device-profile, dkupload, dksample). Those run
+(coldfire, periph, emmc-card, dkneeds, dkrt-sdk, dkrt-fit, device-profile, dkupload, dksample, machine,
+sharc-rt, dkmidi). Those run
 `rustup run <mise rust> cargo nextest run -p NAME --release --locked --offline --target-dir dist/cargo-tests`.
-Other crates run uncached through `tools/devtools/rust_ws.py`. Crates without tests have no `rust-tests`
+Their runtime key includes the sorted present `CARGO_PROFILE_RELEASE_*` names and values, including
+build-override options; changing these environment settings requires a direct target invocation when
+there is no tracked change selecting the crate.
+Other crates run uncached through `node tools/nx/rust-env.mjs --`; only `sharc-native` and the desktop crate
+add `--gen`, because only they need the generated core. Crates without tests have no `rust-tests`
 target. `workspace:fmt-check` is not cached: prettier also opens files it never formats (`.py`, `.rs`),
 and nested `.gitignore` and `.editorconfig` files change its result.
 
-`nx_input_audit` cannot trace cargo. For the `HERMETIC` `rust-tests`, run
+Compiler depfiles provide separate evidence. For the `HERMETIC` `rust-tests`, run
 `node tools/nx/cargo-depfiles.mjs` after the targets ran. It checks every repository file in cargo's
 dep-info files under `dist/cargo-tests` against the crate, its path dependencies and its extra inputs.
 Dep-info does not show run-time reads (`std::fs`), so a crate is `HERMETIC` only if its tests read no
@@ -451,8 +643,10 @@ nothing; a stored file is never rewritten. The last 4 used keys per device stay.
 
 The key is printed by `uv run python -m tools.devtools.emud_key key --device DEV`: a sha256 over the
 content of the repository files in `SOURCE_GLOBS` and `RECIPE_FILES`, every file of the generated core
-directory (resolved as `pk_emud_pgo` does), the PGO profile, `rustc -vV` of the pinned toolchain, and the
-build flags. A device without its stock firmware or ready directory is skipped.
+directory (resolved as `pk_emud_pgo` does), the PGO profile, the `tools.rust` pin from `mise.toml`,
+`rustc -vV` of that toolchain, and the build flags. Task definitions in `mise-tasks.toml` are excluded.
+Narrowing this input changes the key once, so existing stored daemons miss on the next request.
+A device without its stock firmware or ready directory is skipped.
 
 Each build audits itself: `verify_build` compares the dependency file cargo wrote (`digi-emud.d`) with
 the key. A dependency that the key does not cover (and that is not under the cargo target dir) fails the

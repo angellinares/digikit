@@ -3,7 +3,11 @@
 
 State lives under ``out/native/pgo/dn2/<host-triple>/`` (ignored by git):
 
-    manifest.json          what the current profile was trained from
+    manifest.json          what the profile of the last main-tree training was trained from
+    by-key/<key>.json      the same record per profile key; every training writes one, and a
+                           lane's training writes only this (``train --set-current`` also
+                           overwrites manifest.json). Readers use the by-key file of the
+                           tree's current key when there is one (status ok), else manifest.json.
     profiles/<sha>.profdata  merged profile, content addressed
     bench-<time>/          copied binaries, logs, bench.tsv, summary.json
 
@@ -13,7 +17,7 @@ release build in the key dir itself (shared with the desktop app and the
 fast-tier examples, so the generated core is not recompiled), the profile
 builds differ by RUSTFLAGS and use ``pgo-instrument/`` and ``pgo-use/`` below it.
 
-Commands: ``train``, ``check``, ``plan``, ``bench --pairs N``,
+Commands: ``train``, ``clean [--dry-run] [--days N]``, ``check``, ``plan``, ``bench --pairs N``,
 ``bench-bins A B --pairs N`` (two prebuilt workload test binaries).
 
 DT2 (``--device dt2`` on ``train``/``check``/``coupled-build``): the desktop app
@@ -88,6 +92,7 @@ import pathlib
 import platform
 import re
 import shutil
+import stat
 import statistics
 import subprocess
 import sys
@@ -108,9 +113,16 @@ BOTH_WORKLOAD_NAME = "both-v1"
 TEST_NAME = "desktop_runtime::coupled::tests::coupled_ready_exactness"
 WORKLOAD = "desktop-bin"
 EXPECTED_FRAMES = 1139
-TRAIN_RUNS = 4
+# The workload is deterministic: one pass gave host instruction counts within 0.03% of four
+# on dn2-reset, dn2 and dt2 (sharc_cells, 2026-11-07), so training runs it once.
+TRAIN_RUNS = 1
 FLAGS_TEMPLATE = "-Cprofile-use={profdata}"
-SKIP_DIRS = {"target", ".git", "node_modules"}
+SKIP_DIRS = {
+    "target",
+    "out",
+    ".git",
+    "node_modules",
+}  # `out`: generated output that a test run leaves inside a crate (gitignored)
 SKIP_FILES = {".DS_Store"}
 
 
@@ -236,9 +248,14 @@ class FileHasher:
         if self.new == self.old:
             return
         self.cache_path.parent.mkdir(parents=True, exist_ok=True)
-        tmp = self.cache_path.with_suffix(".tmp")
-        tmp.write_text(json.dumps(self.new))
-        tmp.replace(self.cache_path)
+        # The cache only saves time. The cache file is shared by all lanes: write a unique temp file and
+        # rename it, so a concurrent writer cannot remove ours. A lost update is acceptable (it is rebuilt).
+        tmp = self.cache_path.with_name(f"{self.cache_path.name}.{os.getpid()}.tmp")
+        try:
+            tmp.write_text(json.dumps(self.new))
+            tmp.replace(self.cache_path)
+        except OSError:
+            tmp.unlink(missing_ok=True)
 
 
 def tree_files(top: pathlib.Path) -> list[pathlib.Path]:
@@ -313,47 +330,28 @@ def local_package_dirs(features: str = FEATURES) -> list[str]:
     return sorted(d for d in dirs if is_emulation_package(d))
 
 
+def _pgo_tiers(environ: dict[str, str] | os._Environ[str] | None):
+    environ = os.environ if environ is None else environ
+    return digi_env.resolve_tiers("pgo", digi_env.firmware(environ), "", environ)
+
+
 def fast_regions(environ: dict[str, str] | os._Environ[str] | None = None) -> str:
     """The fast-tier region list a coupled run uses ("" when off).
 
-    An explicit SHARC_FAST_REGIONS wins, DIGI_EMU_FAST=0 turns the tier off,
-    otherwise the per-firmware table (tools/emulator/fast_regions.json) is read for the
-    firmware (DIGI_EMU_SYX, then DIGI_COUPLED_SYX).
+    Rules in `emulator_config.resolve`; the firmware is DIGI_EMU_SYX, then DIGI_COUPLED_SYX.
+    An explicit SHARC_FAST_REGIONS wins even under DIGI_EMU_FAST=0.
     """
-    environ = os.environ if environ is None else environ
-    if "SHARC_FAST_REGIONS" in environ:
-        return environ["SHARC_FAST_REGIONS"]
-    if environ.get("DIGI_EMU_FAST") == "0":
-        return ""
-    return digi_env.fast_regions_for(digi_env.firmware(environ))
+    return _pgo_tiers(environ).effective("SHARC_FAST_REGIONS")
 
 
 def fallback_regions(environ: dict[str, str] | os._Environ[str] | None = None) -> str:
     """Runtime fallback list, respecting explicit fast-region diagnostics."""
-    environ = os.environ if environ is None else environ
-    if "SHARC_FAST_FALLBACK_REGIONS" in environ:
-        return environ["SHARC_FAST_FALLBACK_REGIONS"]
-    if (
-        environ.get("DIGI_EMU_FAST") == "0"
-        or "SHARC_FAST_REGIONS" in environ
-        or "SHARC_FAST_AUTO" in environ
-    ):
-        return ""
-    return digi_env.fallback_regions_for(digi_env.firmware(environ))
+    return _pgo_tiers(environ).effective("SHARC_FAST_FALLBACK_REGIONS")
 
 
 def blocktrans_roots(environ: dict[str, str] | os._Environ[str] | None = None) -> str:
-    """The SHARC_BLOCKTRANS cluster roots a coupled run uses ("" when none).
-
-    Same precedence as :func:`fast_regions`: explicit env, DIGI_EMU_FAST=0,
-    then the per-firmware table.
-    """
-    environ = os.environ if environ is None else environ
-    if "SHARC_BLOCKTRANS" in environ:
-        return environ["SHARC_BLOCKTRANS"]
-    if environ.get("DIGI_EMU_FAST") == "0":
-        return ""
-    return digi_env.blocktrans_roots_for(digi_env.firmware(environ))
+    """The SHARC_BLOCKTRANS cluster roots a coupled run uses ("" when none)."""
+    return _pgo_tiers(environ).effective("SHARC_BLOCKTRANS")
 
 
 def compute_components(
@@ -418,10 +416,58 @@ def device_state(device: str = "dn2") -> pathlib.Path:
 
 
 def read_manifest(device: str = "dn2") -> dict[str, object] | None:
+    """The shared ``manifest.json`` of a device: the profile of the last main-tree trainer."""
     try:
         return json.loads((device_state(device) / "manifest.json").read_text())
     except (OSError, ValueError):
         return None
+
+
+def by_key_dir(device: str = "dn2") -> pathlib.Path:
+    return device_state(device) / "by-key"
+
+
+def read_by_key(device: str, key: str) -> dict[str, object] | None:
+    """The manifest of the profile trained for exactly KEY, or None."""
+    try:
+        return json.loads((by_key_dir(device) / f"{key}.json").read_text())
+    except (OSError, ValueError):
+        return None
+
+
+def write_json_atomic(path: pathlib.Path, data: dict[str, object]) -> None:
+    path.parent.mkdir(parents=True, exist_ok=True)
+    tmp = path.with_name(path.name + f".{os.getpid()}.tmp")
+    tmp.write_text(json.dumps(data, indent=2) + "\n")
+    tmp.replace(path)
+
+
+def in_linked_worktree() -> bool:
+    """True in a linked git worktree (a lane), as native_target decides it."""
+    return bool(native_target().IS_WORKTREE)
+
+
+def save_manifest(
+    device: str, manifest: dict[str, object], set_current: bool = False
+) -> None:
+    """Record a trained profile: always ``by-key/<key>.json``, and ``manifest.json``
+    from the main tree or with SET_CURRENT.
+
+    ``manifest.json`` is one file per device that every worktree reads, so a lane
+    that trained must not take it over silently. Its profile stays reachable: any
+    tree whose current key equals the trained key finds it in by-key (see :func:`resolve`).
+    """
+    state = device_state(device)
+    key = str(manifest["key"])
+    write_json_atomic(by_key_dir(device) / f"{key}.json", manifest)
+    if set_current or not in_linked_worktree():
+        write_json_atomic(state / "manifest.json", manifest)
+        print(f"wrote by-key/{key[:16]}.json and manifest.json")
+    else:
+        print(
+            f"linked worktree: wrote by-key/{key[:16]}.json only; manifest.json "
+            "is unchanged (--set-current overwrites it)"
+        )
 
 
 def profdata_path(manifest: dict[str, object], device: str = "dn2") -> pathlib.Path:
@@ -436,9 +482,14 @@ def profdata_path(manifest: dict[str, object], device: str = "dn2") -> pathlib.P
     return local if local.is_file() else path
 
 
-def current_profile(device: str = "dn2") -> str | None:
-    """The manifest's profile file if it still exists (even when stale)."""
-    manifest = read_manifest(device)
+def current_profile(
+    device: str = "dn2",
+    gen: pathlib.Path | None = None,
+    gen2: pathlib.Path | None = None,
+) -> str | None:
+    """The profile file for this tree (exact by-key match, else the shared manifest's, even
+    when stale), or None."""
+    manifest = resolve(device, gen, gen2).manifest
     if not manifest:
         return None
     path = profdata_path(manifest, device)
@@ -448,6 +499,93 @@ def current_profile(device: str = "dn2") -> str | None:
 def desktop_digest(hasher: FileHasher) -> str:
     """Digest of the desktop crate: recorded for reporting, not part of the key."""
     return tree_digest(hasher, ROOT / DESKTOP_DIR, ROOT, set())[0]
+
+
+@dataclasses.dataclass
+class Resolved:
+    """The profile chosen for this tree: its manifest (None when missing) and how well it fits."""
+
+    manifest: dict[str, object] | None
+    status: str  # ok, partial, stale or missing
+    detail: str
+    desktop_changed: bool = False
+
+
+def resolve(
+    device: str = "dn2",
+    gen: pathlib.Path | None = None,
+    gen2: pathlib.Path | None = None,
+    fast: str = "",
+    blocktrans: str = "",
+) -> Resolved:
+    """Choose the profile of DEVICE for this tree.
+
+    1. Compute the current key. The package list comes from the shared manifest
+       (no extra metadata call). If ``by-key/<key>.json`` exists and its profile
+       file is there, that is an exact match: ``ok``. A key covers every input
+       listed in compute_components, so an exact match cannot be stale. It does not
+       cover the fixtures' content (only the workload name), the fast-region lists
+       or the apps/ crates; a profile trained on other fixtures or lists is at worst
+       slightly less tuned, never wrong (LLVM drops counters of changed functions).
+    2. Otherwise the shared manifest decides as before: ok, partial (only the
+       sources digest differs) or stale. If the package list itself changed (a
+       crate added or removed), the computed key matches no by-key file and the
+       shared manifest answers; that is safe, it only loses the exact match.
+
+    DEVICE selects the profile (``train --device``); a DT2 profile's key also
+    carries the DT2 workload name. For ``both``, GEN is the DN2 core (slot 1) and
+    GEN2 the DT2 core (slot 2); they default to the registered cores.
+    """
+    manifest = read_manifest(device)
+    if manifest is None:
+        return Resolved(None, "missing", "no manifest")
+    if not toolchain_dir().is_dir():
+        profdata = profdata_path(manifest, device)
+        if not profdata.is_file():
+            return Resolved(None, "missing", f"profile file {profdata} is gone")
+        return Resolved(
+            manifest, "stale", f"rustup toolchain {TOOLCHAIN} is not installed"
+        )
+    hasher = FileHasher(device_state(device) / "hash-cache.json")
+    if device == BOTH:
+        default1, default2 = both_generated()
+        gen, gen2 = gen or default1, gen2 or default2
+    gen = gen or generated_dir()
+    components, _ = compute_components(
+        list(manifest["packages"]),  # type: ignore[call-overload]
+        gen,
+        hasher,
+        fast,
+        blocktrans,
+        gen2 if device == BOTH else None,
+    )
+    if device == "dt2":
+        components["workload"] = DT2_WORKLOAD_NAME
+    if device == BOTH:
+        components["workload"] = both_workload_name(reset_fixture_present())
+    desktop = desktop_digest(hasher)
+    hasher.save()
+    exact = read_by_key(device, key_of(components))
+    if exact is not None and profdata_path(exact, device).is_file():
+        return Resolved(
+            exact,
+            "ok",
+            str(profdata_path(exact, device)),
+            exact.get("desktop_sha256") != desktop,
+        )
+    profdata = profdata_path(manifest, device)
+    if not profdata.is_file():
+        return Resolved(None, "missing", f"profile file {profdata} is gone")
+    old = manifest["components"]
+    changed = [name for name, value in components.items() if old.get(name) != value]  # type: ignore[attr-defined]
+    if changed == ["sources"]:
+        # Engine or tool edits only: LLVM skips profile data of changed functions.
+        return Resolved(manifest, "partial", "changed: sources")
+    if changed:
+        return Resolved(manifest, "stale", "changed: " + ", ".join(changed))
+    return Resolved(
+        manifest, "ok", str(profdata), manifest.get("desktop_sha256") != desktop
+    )
 
 
 def check_state(
@@ -461,43 +599,10 @@ def check_state(
 
     partial: only the sources digest differs (the profile is still used);
     stale: the rustc or generated core (or any other component) differs.
-
-    DEVICE selects the profile (``train --device``); a DT2 profile's key also
-    carries the DT2 workload name. For ``both``, GEN is the DN2 core (slot 1) and
-    GEN2 the DT2 core (slot 2); they default to the registered cores.
+    See :func:`resolve` for the exact by-key match.
     """
-    manifest = read_manifest(device)
-    if manifest is None:
-        return "missing", "no manifest", False
-    profdata = profdata_path(manifest, device)
-    if not profdata.is_file():
-        return "missing", f"profile file {profdata} is gone", False
-    if not toolchain_dir().is_dir():
-        return "stale", f"rustup toolchain {TOOLCHAIN} is not installed", False
-    hasher = FileHasher(device_state(device) / "hash-cache.json")
-    if device == BOTH:
-        default1, default2 = both_generated()
-        gen, gen2 = gen or default1, gen2 or default2
-    components, _ = compute_components(
-        list(manifest["packages"]),
-        gen or generated_dir(),
-        hasher,
-        fast,
-        blocktrans,
-        gen2 if device == BOTH else None,
-    )  # type: ignore[call-overload]
-    if device == "dt2":
-        components["workload"] = DT2_WORKLOAD_NAME
-    desktop = desktop_digest(hasher)
-    hasher.save()
-    old = manifest["components"]
-    changed = [name for name, value in components.items() if old.get(name) != value]  # type: ignore[attr-defined]
-    if changed == ["sources"]:
-        # Engine or tool edits only: LLVM skips profile data of changed functions.
-        return "partial", "changed: sources", False
-    if changed:
-        return "stale", "changed: " + ", ".join(changed), False
-    return "ok", str(profdata), manifest.get("desktop_sha256") != desktop
+    r = resolve(device, gen, gen2, fast, blocktrans)
+    return r.status, r.detail, r.desktop_changed
 
 
 def check(
@@ -589,6 +694,61 @@ def train_hint(device: str = "dn2") -> str:
     )
 
 
+def profile_for_tests(
+    device: str,
+    gen: pathlib.Path,
+    environ: dict[str, str] | os._Environ[str] | None = None,
+) -> tuple[str | None, str, str]:
+    """(profile or None, state, message) for a test build of DEVICE's core GEN.
+
+    state is ok, partial, stale, missing or off. It reads and reports nothing else; see report_profile.
+    """
+    environ = os.environ if environ is None else environ
+    if environ.get("DIGI_EMU_PGO") == "0" or not supported_host():
+        return None, "off", ""
+    r = resolve(
+        device,
+        gen,
+        None,
+        environ.get("SHARC_FAST_REGIONS", ""),
+        environ.get("SHARC_BLOCKTRANS", ""),
+    )
+    status, detail = r.status, r.detail
+    if status in ("ok", "partial"):
+        path = profdata_path(r.manifest, device) if r.manifest else None  # type: ignore[arg-type]
+        profile = str(path) if path and path.is_file() else None
+        return profile, status, PARTIAL_NOTICE if status == "partial" else ""
+    return (
+        None,
+        status,
+        f"WARNING: native PGO: profile {status} ({detail}). Retrain: {train_hint(device)}",
+    )
+
+
+def report_profile(
+    device: str,
+    state: str,
+    message: str,
+    applied: bool,
+    environ: dict[str, str] | os._Environ[str] | None = None,
+) -> None:
+    """One loud stderr line for a stale or missing profile. DIGI_REQUIRE_PGO=1 makes it fatal."""
+    environ = os.environ if environ is None else environ
+    if state in ("stale", "missing"):
+        suffix = (
+            "; using the stale profile"
+            if applied
+            else "; building without PGO (about 30% slower DSP)"
+        )
+        print(message + suffix, file=sys.stderr, flush=True)
+        if environ.get("DIGI_REQUIRE_PGO") == "1":
+            raise SystemExit(
+                f"DIGI_REQUIRE_PGO=1: the PGO profile for {device} is {state}"
+            )
+    elif state == "partial":
+        print(message, file=sys.stderr, flush=True)
+
+
 def fallback_notice(status: str, detail: str, device: str = "dn2") -> str:
     if status == "skipped":
         return f"WARNING: native PGO: skipped ({detail}); building without PGO"
@@ -607,7 +767,8 @@ def fallback_notice(status: str, detail: str, device: str = "dn2") -> str:
 def stale_notice(detail: str = "", device: str = "dn2") -> str:
     """The one line printed when a stale profile is not used."""
     return (
-        "PGO profile is stale for this core; building without PGO. Retrain with "
+        "WARNING: native PGO: profile is stale for this core; building without PGO "
+        "(about 30% slower DSP). Retrain with "
         "`mise run perf:pgo` (all three), `mise run perf:pgo:dn2`, `mise run perf:pgo:dt2` or "
         "`mise run perf:pgo:both` (the two-core desktop build; "
         "`uv run python -m tools.emulator.native_pgo train --device both`)."
@@ -658,7 +819,11 @@ def launch_plan(
     if status == "stale":
         return None, stale_notice(detail, device)
     if status == "partial":
-        profile = current_profile(device)
+        profile = current_profile(
+            device,
+            generated_dir(environ),
+            second_generated(environ) if device == BOTH else None,
+        )
         if profile:
             return plan_for(profile, environ), PARTIAL_NOTICE
         return None, fallback_notice("missing", "profile file is gone", device)
@@ -966,6 +1131,21 @@ def require_inputs(gen: pathlib.Path) -> None:
             raise SystemExit(f"missing private input {path}")
 
 
+def fresh_raw_dir(target: pathlib.Path) -> pathlib.Path:
+    """An empty directory for the training's .profraw files, inside the instrumented target dir.
+
+    Its path is part of the instrumented build's RUSTFLAGS (``-Cprofile-generate=``), and
+    cargo rebuilds every crate, the 80 MB generated core included, when the flags change.
+    A path named by the profile key changed with every source edit; this one is stable per
+    target dir (a worktree has its own), so only the edited crates rebuild. It is cleared at
+    the start of each training so files of an earlier one never mix in.
+    """
+    raw = target / "profraw"
+    shutil.rmtree(raw, ignore_errors=True)
+    raw.mkdir(parents=True)
+    return raw
+
+
 def cmd_train(args: argparse.Namespace) -> None:
     gen = generated_dir()
     require_inputs(gen)
@@ -990,11 +1170,10 @@ def cmd_train(args: argparse.Namespace) -> None:
     key = key_of(components)
     t = phase("key", t)
 
-    raw = state / f"raw-{key[:16]}"
-    shutil.rmtree(raw, ignore_errors=True)
-    raw.mkdir(parents=True)
+    target = native_target().target_dir(gen, "pgo-instrument")
+    raw = fresh_raw_dir(target)
     binary = build_tests(
-        native_target().target_dir(gen, "pgo-instrument"),
+        target,
         f"-Cprofile-generate={raw}",
         gen,
         state / "instrument-build.log",
@@ -1066,16 +1245,18 @@ def cmd_train(args: argparse.Namespace) -> None:
         "phase_seconds": timings,
         "created": datetime.datetime.now(datetime.UTC).isoformat(),
     }
-    (state / "manifest.json").write_text(json.dumps(manifest, indent=2) + "\n")
+    save_manifest("dn2", manifest, args.set_current)
     print(
         f"trained {final} ({final.stat().st_size} bytes) key {key[:16]} in {time.monotonic() - started:.1f} s"
     )
+    auto_clean()
 
 
 def cmd_check(_: argparse.Namespace) -> int:
     began = time.monotonic()
-    status, detail, desktop = check_state(None, fast_regions(), blocktrans_roots())
-    manifest = read_manifest() or {}
+    r = resolve("dn2", None, None, fast_regions(), blocktrans_roots())
+    status, detail, desktop = r.status, r.detail, r.desktop_changed
+    manifest = r.manifest or {}
     fast_changed = status == "ok" and (
         manifest.get("fast_regions", "") != fast_regions()
         or manifest.get("fallback_regions", "") != fallback_regions()
@@ -1097,11 +1278,6 @@ def cmd_check(_: argparse.Namespace) -> int:
 
 
 def cmd_verify(args: argparse.Namespace) -> int:
-    manifest = read_manifest(args.device)
-    profdata = profdata_path(manifest, args.device) if manifest else None
-    if profdata is None or not profdata.is_file():
-        print("no trained profile to verify against")
-        return 1
     environ = os.environ
     if args.device == BOTH:
         gen, gen2 = both_generated()
@@ -1110,6 +1286,11 @@ def cmd_verify(args: argparse.Namespace) -> int:
             "SHARC_GEN_DIR": str(gen),
             "SHARC_GEN_DIR_2": str(gen2),
         }
+    profile = current_profile(args.device)
+    profdata = pathlib.Path(profile) if profile else None
+    if profdata is None:
+        print("no trained profile to verify against")
+        return 1
     binary = pathlib.Path(args.binary) if args.binary else pgo_binary(environ)
     if not binary.is_file():
         print(f"no binary at {binary}")
@@ -1282,7 +1463,7 @@ def run_items(
             "--out", str(report),
         ]  # fmt: skip
         env = {**os.environ, **extra_env}
-        fast = digi_env.fast_env(env, syx=item.fast_syx)
+        fast = digi_env.fast_env(env, syx=item.fast_syx, context="pgo")
         env.update(digi_env.slot_env(item.device, fast) if slots else fast)
         done = subprocess.run(
             argv,
@@ -1323,12 +1504,11 @@ def cmd_train_dt2(args: argparse.Namespace) -> None:
     components["workload"] = DT2_WORKLOAD_NAME
     hasher.save()
     key = key_of(components)
-    raw = state / f"raw-{key[:16]}"
-    shutil.rmtree(raw, ignore_errors=True)
-    raw.mkdir(parents=True)
     variant = args.variant or "pgo-dt2-instrument"
+    target = native_target().target_dir(gen, variant)
+    raw = fresh_raw_dir(target)
     binary = build_coupled(
-        native_target().target_dir(gen, variant),
+        target,
         f"-Cprofile-generate={raw}",
         gen,
         state / "instrument-build.log",
@@ -1386,34 +1566,24 @@ def cmd_train_dt2(args: argparse.Namespace) -> None:
         "run_seconds": seconds,
         "created": datetime.datetime.now(datetime.UTC).isoformat(),
     }
-    (state / "manifest.json").write_text(json.dumps(manifest, indent=2) + "\n")
+    save_manifest("dt2", manifest, args.set_current)
     print(
         f"trained {final} ({final.stat().st_size} bytes) key {key[:16]} "
         f"in {time.monotonic() - started:.1f} s"
     )
+    auto_clean()
 
 
 def cmd_check_dt2() -> int:
-    manifest = read_manifest("dt2")
-    if manifest is None:
-        print("missing (no manifest)")
+    r = resolve("dt2", dt2_generated())
+    if r.status == "missing":
+        print(f"missing ({r.detail})")
         return 1
-    profdata = profdata_path(manifest, "dt2")
-    if not profdata.is_file():
-        print(f"missing (profile file {profdata} is gone)")
-        return 1
-    hasher = FileHasher(state_dir(device="dt2") / "hash-cache.json")
-    components, _ = compute_components(
-        list(manifest["packages"]),  # type: ignore[call-overload]
-        dt2_generated(),
-        hasher,
-    )
-    components["workload"] = DT2_WORKLOAD_NAME
-    hasher.save()
-    old = manifest["components"]
-    changed = [n for n, v in components.items() if old.get(n) != v]  # type: ignore[attr-defined]
-    print(f"stale changed: {', '.join(changed)}" if changed else f"ok {profdata}")
-    return 1 if changed else 0
+    if r.status == "ok":
+        print(f"ok {r.detail}")
+        return 0
+    print(f"stale {r.detail}" if r.status == "stale" else f"{r.status} {r.detail}")
+    return 1
 
 
 # --- both: the two-core build, instrumented coupled-run -------------------------
@@ -1498,8 +1668,45 @@ def load_fixture(device: str, directory: pathlib.Path | str | None = None) -> Fi
     return Fixture(device, directory, files, provenance)
 
 
-def both_items(fixtures: dict[str, Fixture]) -> list[WorkItem]:
-    """The training workload of the two-core build: DN2 items, then DT2 items."""
+RESET_FIXTURE_DIR = FIXTURE_ROOT / "dn2-reset"
+
+
+def reset_fixture_present(directory: pathlib.Path | None = None) -> bool:
+    """Is there a DN2 reset-state fixture (made by `runtime_fixture.ts --state reset`)? Cheap: no hashing."""
+    try:
+        provenance = json.loads(
+            ((directory or RESET_FIXTURE_DIR) / "provenance.json").read_text()
+        )
+    except (OSError, ValueError):
+        return False
+    return provenance.get("state") == "reset"
+
+
+def load_reset_fixture(directory: pathlib.Path | None = None) -> Fixture | None:
+    """The DN2 reset-state fixture (the state after a guest soft reset, which users run), or None with one notice line.
+
+    A fixture that is present but does not match its provenance is an error (the same as the other fixtures),
+    so the workload identity never depends on a silently skipped input.
+    """
+    directory = directory or RESET_FIXTURE_DIR
+    if not reset_fixture_present(directory):
+        print(
+            f"no DN2 reset fixture at {directory}; training without it "
+            "(`node tools/devtools/runtime_fixture.ts --device dn2 --state reset`)"
+        )
+        return None
+    return load_fixture("dn2", directory)
+
+
+def both_workload_name(with_reset: bool) -> str:
+    """The workload identity of the two-core profile; it names the reset input when that is trained."""
+    return BOTH_WORKLOAD_NAME + ("+dn2-reset" if with_reset else "")
+
+
+def both_items(
+    fixtures: dict[str, Fixture], reset: Fixture | None = None
+) -> list[WorkItem]:
+    """The training workload of the two-core build: DN2 items, then DT2 items, then the replays (and the DN2 reset replay)."""
     inputs = digi_env.ready_inputs(device="dn2")
     missing = [f"{k}: {v}" for k, v in inputs.items() if not pathlib.Path(v).exists()]
     if missing:
@@ -1533,6 +1740,21 @@ def both_items(fixtures: dict[str, Fixture]) -> list[WorkItem]:
                 seconds,
             )
         )
+    if reset is not None:
+        file, name, seconds = REPLAYS["dn2"]
+        firmware = reset.files["firmware"]
+        assert firmware is not None
+        items.append(
+            WorkItem(
+                f"dn2-reset-replay-{name}",
+                "dn2",
+                file,
+                (name,),
+                reset.input_args(),
+                digi_env.base_firmware(firmware),
+                seconds,
+            )
+        )
     return items
 
 
@@ -1548,20 +1770,21 @@ def cmd_train_both(args: argparse.Namespace) -> None:
         "dn2": load_fixture("dn2", args.fixture_dn2),
         "dt2": load_fixture("dt2", args.fixture_dt2),
     }
-    items = both_items(fixtures)
+    reset = load_reset_fixture()
+    items = both_items(fixtures, reset)
     state = device_state(BOTH)
     started = time.monotonic()
     packages = local_package_dirs(BOTH_FEATURES)
     hasher = FileHasher(state / "hash-cache.json")
     components, nfiles = compute_components(packages, gen, hasher, gen2=gen2)
+    components["workload"] = both_workload_name(reset is not None)
     hasher.save()
     key = key_of(components)
-    raw = state / f"raw-{key[:16]}"
-    shutil.rmtree(raw, ignore_errors=True)
-    raw.mkdir(parents=True)
     variant = args.variant or "pgo-both-instrument"
+    target = native_target().target_dir(gen, variant, gen2)
+    raw = fresh_raw_dir(target)
     binary = build_coupled(
-        native_target().target_dir(gen, variant, gen2),
+        target,
         f"-Cprofile-generate={raw}",
         gen,
         state / "instrument-build.log",
@@ -1605,13 +1828,16 @@ def cmd_train_both(args: argparse.Namespace) -> None:
             item.label: {
                 k: v
                 for k, v in digi_env.slot_env(
-                    item.device, digi_env.fast_env(syx=item.fast_syx)
+                    item.device, digi_env.fast_env(syx=item.fast_syx, context="pgo")
                 ).items()
                 if k.startswith(("SHARC_FAST_", "SHARC_BLOCKTRANS"))
             }
             for item in items
         },
-        "fixtures": {device: fx.record() for device, fx in fixtures.items()},
+        "fixtures": {
+            **{device: fx.record() for device, fx in fixtures.items()},
+            **({"dn2-reset": reset.record()} if reset is not None else {}),
+        },
         "file_count": nfiles,
         "rustc_vV": rustc_version(),
         "triple": TRIPLE,
@@ -1629,11 +1855,12 @@ def cmd_train_both(args: argparse.Namespace) -> None:
         "run_seconds": seconds,
         "created": datetime.datetime.now(datetime.UTC).isoformat(),
     }
-    (state / "manifest.json").write_text(json.dumps(manifest, indent=2) + "\n")
+    save_manifest(BOTH, manifest, args.set_current)
     print(
         f"trained {final} ({final.stat().st_size} bytes) key {key[:16]} "
         f"in {time.monotonic() - started:.1f} s"
     )
+    auto_clean()
 
 
 def cmd_check_both() -> int:
@@ -1662,10 +1889,9 @@ def cmd_coupled_build(args: argparse.Namespace) -> None:
     flags = None
     profile = args.profile
     if profile == "current":
-        manifest = read_manifest(args.device)
-        if manifest is None:
-            raise SystemExit(f"no {args.device} manifest")
-        profile = str(profdata_path(manifest, args.device))
+        profile = current_profile(args.device, gen, gen2)
+        if profile is None:
+            raise SystemExit(f"no {args.device} profile")
     if profile:
         profile = str(pathlib.Path(profile).resolve())
         flags = profile_use_flags(profile)
@@ -1910,6 +2136,308 @@ def cmd_build(args: argparse.Namespace) -> None:
     print(binary)
 
 
+# --- clean: remove old experiment output and unreferenced profiles -------------------------
+
+CLEAN_DAYS = 14
+CLEAN_KEEP_BY_KEY = 4
+# Run :func:`clean_all` at the end of every ``train``.
+AUTO_CLEAN = True
+# Directories directly in a device state dir that no command reads back. ``bench-*`` and
+# ``train-N`` are written by bench and train, the others by older versions of this tool
+# (``target`` and ``instrument-target`` are old cargo target dirs).
+CLEAN_DIR_NAMES = re.compile(
+    r"(bench-.*|ab-.*|control-target|raw-.*|train-\d+|target|instrument-target)\Z"
+)
+
+
+def pgo_root() -> pathlib.Path:
+    return ROOT / "out" / "native" / "pgo"
+
+
+@dataclasses.dataclass
+class CleanItem:
+    kind: str  # experiment, profile or by-key
+    group: str  # a name pattern for experiment dirs, else the kind
+    paths: list[pathlib.Path]
+    size: int
+
+
+@dataclasses.dataclass
+class CleanPlan:
+    state: pathlib.Path
+    items: list[CleanItem] = dataclasses.field(default_factory=list)
+    kept: dict[str, int] = dataclasses.field(default_factory=dict)
+    notes: list[str] = dataclasses.field(default_factory=list)
+
+    def keep(self, reason: str, count: int = 1) -> None:
+        self.kept[reason] = self.kept.get(reason, 0) + count
+
+
+def _tree_stats(path: pathlib.Path) -> tuple[float, int]:
+    """Newest mtime and disk bytes of PATH (a file, link or tree); links are never followed."""
+    seen: set[tuple[int, int]] = set()
+    newest = 0.0
+    total = 0
+
+    def visit(entry: pathlib.Path) -> None:
+        nonlocal newest, total
+        try:
+            st = entry.lstat()
+        except OSError:
+            return
+        newest = max(newest, st.st_mtime)
+        if stat.S_ISLNK(st.st_mode) or (st.st_ino, st.st_dev) in seen:
+            return
+        seen.add((st.st_ino, st.st_dev))
+        total += getattr(st, "st_blocks", 0) * 512 or st.st_size
+
+    visit(path)
+    if path.is_dir() and not path.is_symlink():
+        for base, dirs, files in os.walk(path, followlinks=False):
+            for name in (*dirs, *files):
+                visit(pathlib.Path(base) / name)
+    return newest, total
+
+
+def _inside(root: pathlib.Path, directory: pathlib.Path) -> bool:
+    real = pathlib.Path(os.path.realpath(directory))
+    return real == root or root in real.parents
+
+
+def _entries(directory: pathlib.Path) -> list[pathlib.Path]:
+    try:
+        return sorted(directory.iterdir())
+    except OSError:
+        return []
+
+
+def _profile_name(record: object) -> str | None:
+    try:
+        return pathlib.Path(str(record["profdata"]["path"])).name  # type: ignore[index]
+    except (KeyError, TypeError):
+        return None
+
+
+def plan_clean(
+    state: pathlib.Path,
+    days: float,
+    now: float | None = None,
+    root: pathlib.Path | None = None,
+) -> CleanPlan:
+    """What :func:`clean_state` would remove from one device state dir.
+
+    Age is the newest mtime anywhere inside a candidate, so anything a running training or
+    benchmark touches stays. Profiles named by manifest.json or by a kept by-key entry stay
+    (matched by file name: a manifest trained in another lane records that lane's path).
+    """
+    plan = CleanPlan(state)
+    root = pathlib.Path(os.path.realpath(root or pgo_root()))
+    cutoff = (time.time() if now is None else now) - days * 86400
+    if not _inside(root, state):
+        plan.notes.append(f"skipped: {state} resolves outside {root}")
+        return plan
+
+    # Experiment output, by name only.
+    groups: dict[str, list[CleanItem]] = {}
+    for entry in _entries(state):
+        if not CLEAN_DIR_NAMES.match(entry.name):
+            continue
+        if not entry.is_dir():  # a real directory, or a link to one
+            continue
+        newest, size = _tree_stats(entry)
+        if newest >= cutoff:
+            plan.keep("young experiment dirs")
+            continue
+        group = (
+            entry.name
+            if entry.name.endswith("target")
+            else entry.name.split("-")[0] + "-*"
+        )
+        groups.setdefault(group, []).append(
+            CleanItem("experiment", group, [entry], size)
+        )
+    for group in sorted(groups):
+        plan.items.extend(groups[group])
+
+    # Profiles: the manifest and the newest by-key entries name those to keep.
+    referenced: dict[str, str] = {}
+    manifest_ok = False
+    try:
+        manifest = json.loads((state / "manifest.json").read_text())
+        name = _profile_name(manifest)
+        manifest_ok = name is not None
+        if name:
+            referenced[name] = "manifest"
+    except (OSError, ValueError):
+        pass
+    if not manifest_ok:
+        plan.notes.append("manifest.json unreadable: all profiles kept")
+
+    by_key = state / "by-key"
+    if by_key.exists() and not _inside(root, by_key):
+        plan.notes.append(f"by-key skipped: resolves outside {root}")
+    elif by_key.exists():
+        valid: list[tuple[float, pathlib.Path, str]] = []
+        for entry in _entries(by_key):
+            if entry.suffix != ".json" or entry.is_symlink() or not entry.is_file():
+                continue
+            try:
+                name = _profile_name(json.loads(entry.read_text()))
+                mtime = entry.stat().st_mtime
+            except (OSError, ValueError):
+                name = None
+            if name is None:
+                plan.notes.append(f"corrupt by-key entry left in place: {entry.name}")
+                continue
+            valid.append((mtime, entry, name))
+        valid.sort(key=lambda item: (item[0], item[1].name), reverse=True)
+        for rank, (mtime, entry, name) in enumerate(valid):
+            if rank < CLEAN_KEEP_BY_KEY or mtime >= cutoff:
+                referenced.setdefault(name, "by-key")
+                plan.keep("by-key entries")
+            else:
+                plan.items.append(
+                    CleanItem("by-key", "by-key", [entry], entry.stat().st_size)
+                )
+
+    profiles = state / "profiles"
+    if profiles.exists() and not _inside(root, profiles):
+        plan.notes.append(f"profiles skipped: resolves outside {root}")
+    elif profiles.exists():
+        files: dict[str, list[pathlib.Path]] = {}
+        for entry in _entries(profiles):
+            if entry.is_symlink() or entry.is_file():
+                for suffix in (".profdata.crates.json", ".profdata"):
+                    if entry.name.endswith(suffix) and len(entry.name) > len(suffix):
+                        base = entry.name[: -len(suffix)] + ".profdata"
+                        files.setdefault(base, []).append(entry)
+                        break
+        for base in sorted(files):
+            if base in referenced:
+                plan.keep(f"profiles named by {referenced[base]}")
+                continue
+            if not manifest_ok:
+                plan.keep("profiles kept: manifest unreadable")
+                continue
+            stats = [_tree_stats(path) for path in files[base]]
+            if max(newest for newest, _ in stats) >= cutoff:
+                plan.keep("young profiles")
+                continue
+            plan.items.append(
+                CleanItem(
+                    "profile", "profile", files[base], sum(size for _, size in stats)
+                )
+            )
+    return plan
+
+
+def apply_clean(plan: CleanPlan, root: pathlib.Path | None = None) -> list[CleanItem]:
+    """Delete the items of PLAN; the ones that were removed. A failure leaves that item."""
+    root = pathlib.Path(os.path.realpath(root or pgo_root()))
+    done = []
+    for item in plan.items:
+        try:
+            for path in item.paths:
+                if path.parent not in (
+                    plan.state,
+                    plan.state / "profiles",
+                    plan.state / "by-key",
+                ) or not _inside(root, path.parent):
+                    raise OSError(f"refusing {path}: outside {root}")
+                if path.is_symlink() or not path.is_dir():
+                    path.unlink()
+                else:
+                    shutil.rmtree(path)
+            done.append(item)
+        except OSError as error:
+            plan.notes.append(f"not removed: {item.paths[0].name}: {error}")
+    return done
+
+
+def human_bytes(size: float) -> str:
+    for unit in ("B", "KB", "MB", "GB"):
+        if size < 1000 or unit == "GB":
+            return f"{size:.0f} B" if unit == "B" else f"{size:.1f} {unit}"
+        size /= 1000
+    return ""
+
+
+def clean_states(root: pathlib.Path | None = None) -> list[pathlib.Path]:
+    """Every ``<root>/{dn2,dt2,both}/<triple>`` state dir."""
+    root = root or pgo_root()
+    return [
+        triple
+        for device in ("dn2", "dt2", BOTH)
+        for triple in _entries(root / device)
+        if triple.is_dir() and not triple.is_symlink()
+    ]
+
+
+def summary_line(done: list[CleanItem], dry_run: bool) -> str:
+    profiles = sum(1 for item in done if item.kind == "profile")
+    experiments = sum(1 for item in done if item.kind == "experiment")
+    entries = sum(1 for item in done if item.kind == "by-key")
+    freed = sum(item.size for item in done)
+    verb = "would remove" if dry_run else "removed"
+    extra = f", {entries} by-key entries" if entries else ""
+    return (
+        f"pgo clean: {verb} {profiles} profiles, {experiments} experiment dirs"
+        f"{extra}, freed {human_bytes(freed)}"
+    )
+
+
+def print_plan(plan: CleanPlan) -> None:
+    print(f"== {plan.state}")
+    by_group: dict[str, list[CleanItem]] = {}
+    for item in plan.items:
+        by_group.setdefault(item.group, []).append(item)
+    if not by_group:
+        print("  nothing to remove")
+    for group, items in by_group.items():
+        names = [item.paths[0].name for item in items]
+        more = f" (+{len(names) - 3} more)" if len(names) > 3 else ""
+        label = {"profile": "profiles", "by-key": "by-key entries"}.get(group, group)
+        print(
+            f"  remove {label}: {len(items)}, {human_bytes(sum(i.size for i in items))}; "
+            f"first: {', '.join(names[:3])}{more}"
+        )
+    print(f"  total to free: {human_bytes(sum(item.size for item in plan.items))}")
+    for reason in sorted(plan.kept):
+        print(f"  kept {reason}: {plan.kept[reason]}")
+    for note in plan.notes:
+        print(f"  note: {note}")
+
+
+def clean_all(days: float = CLEAN_DAYS, dry_run: bool = False) -> list[CleanItem]:
+    """Clean every device state dir; prints a dry-run report or one summary line."""
+    done: list[CleanItem] = []
+    for state in clean_states():
+        plan = plan_clean(state, days)
+        if dry_run:
+            print_plan(plan)
+            done.extend(plan.items)
+        else:
+            done.extend(apply_clean(plan))
+            for note in plan.notes:
+                print(f"pgo clean: {state.parent.name}: {note}")
+    print(summary_line(done, dry_run))
+    return done
+
+
+def auto_clean() -> None:
+    """The cleanup at the end of a training: never fails it."""
+    if not AUTO_CLEAN:
+        return
+    try:
+        clean_all()
+    except Exception as error:  # noqa: BLE001
+        print(f"pgo clean failed: {error}", file=sys.stderr)
+
+
+def cmd_clean(args: argparse.Namespace) -> None:
+    clean_all(args.days, args.dry_run)
+
+
 def main(argv: list[str] | None = None) -> int:
     parser = argparse.ArgumentParser(description=__doc__.splitlines()[0])
     sub = parser.add_subparsers(dest="command", required=True)
@@ -1917,6 +2445,11 @@ def main(argv: list[str] | None = None) -> int:
         "train", help="build instrumented, run the workload, merge a profile"
     )
     train.add_argument("--runs", type=int, default=TRAIN_RUNS)
+    train.add_argument(
+        "--set-current",
+        action="store_true",
+        help="from a linked worktree: also overwrite the shared manifest.json (default: by-key only)",
+    )
     train.add_argument("--device", choices=["dn2", "dt2", BOTH], default="dn2")
     train.add_argument(
         "--variant", help="dt2, both: target-dir variant of the instrumented build"
@@ -1929,6 +2462,12 @@ def main(argv: list[str] | None = None) -> int:
         "--fixture-dt2",
         help="both: DT2 runtime fixture (default out/fixtures/runtime/dt2)",
     )
+    clean = sub.add_parser(
+        "clean",
+        help="remove old experiment dirs and unreferenced profiles under out/native/pgo",
+    )
+    clean.add_argument("--days", type=float, default=CLEAN_DAYS)
+    clean.add_argument("--dry-run", action="store_true")
     check = sub.add_parser(
         "check", help="print ok/stale/missing for the current profile"
     )
@@ -1992,6 +2531,8 @@ def main(argv: list[str] | None = None) -> int:
             cmd_train_dt2(args)
         else:
             cmd_train(args)
+    elif args.command == "clean":
+        cmd_clean(args)
     elif args.command == "coupled-build":
         cmd_coupled_build(args)
     elif args.command == "bench":

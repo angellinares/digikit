@@ -328,12 +328,19 @@ fn the_effect_page_rows_are_eight_parameter_rows_for_each_fx_slot() {
             let send = t["limits"]["send_slots"].as_integer().unwrap() as u64;
             let n = t["fx"]["send_indices"].as_array().unwrap().len() as u64;
             // the rows are shared by both devices (as many as the device with the most send cells); a device uses n of them
-            assert!(track_page > 0 && send <= n && n <= send_rows, "{file}: {send} {n} {send_rows}");
+            assert!(
+                track_page > 0 && send <= n && n <= send_rows,
+                "{file}: {send} {n} {send_rows}"
+            );
             let (off, stride) = (
                 t["fx"]["sound_off"].as_integer().unwrap(),
                 t["fx"]["sound_stride"].as_integer().unwrap(),
             );
-            assert_eq!(off + 16 * stride, t["fx"]["array_off"].as_integer().unwrap(), "{file}");
+            assert_eq!(
+                off + 16 * stride,
+                t["fx"]["array_off"].as_integer().unwrap(),
+                "{file}"
+            );
         }
         // the values and the mark are indices of the array that no stock parameter uses; the u32 behind the array
         assert_eq!(
@@ -455,7 +462,10 @@ fn the_patch_sets_are_the_rt021_flash_modules() {
     };
     for dev in devdata::all() {
         // both sets are the flash modules and core/input
-        for (set, extra) in [("device", vec!["core/input"]), ("emulator", vec!["core/input"])] {
+        for (set, extra) in [
+            ("device", vec!["core/input"]),
+            ("emulator", vec!["core/input"]),
+        ] {
             let roots = dev.patch_set(set).unwrap();
             let (mut all, _) = lib.with_requires(roots).unwrap();
             all.sort();
@@ -473,6 +483,15 @@ fn the_patch_sets_are_the_rt021_flash_modules() {
             want.sort();
             assert_eq!(all, want, "{} set {set}", dev.short);
         }
+        // the Workbench's Custom boot screen toggle: the `device` modules and the optional black intro
+        let (mut with, _) = lib
+            .with_requires(dev.patch_set("device-introblank").unwrap())
+            .unwrap();
+        let (mut base, _) = lib.with_requires(dev.patch_set("device").unwrap()).unwrap();
+        base.push("core/introblank".to_string());
+        with.sort();
+        base.sort();
+        assert_eq!(with, base, "{} set device-introblank", dev.short);
         assert!(dev.patch_set("nope").is_err());
     }
 }
@@ -563,7 +582,9 @@ fn a_content_modules_gallery_needs_its_objects() {
     // the fixture root read without a build: its objects are files of the module folder, which has none (the object cache is not read)
     let light = Library::scan_in(None, &root().join("tests/fixtures/modules"), true).unwrap();
     assert!(
-        modgen::generate_many(&light, &models, &id).unwrap().is_empty(),
+        modgen::generate_many(&light, &models, &id)
+            .unwrap()
+            .is_empty(),
         "without objects the module has no typed sections"
     );
     let Some(full) = Library::scan_repo_for_or_skip(&root(), Some(&id)) else {
@@ -573,7 +594,12 @@ fn a_content_modules_gallery_needs_its_objects() {
     assert_eq!(files.len(), 1);
     let (path, text) = &files[0];
     assert!(path.ends_with("build/gen/gallery.json"));
-    assert_eq!(&std::fs::read_to_string(path).unwrap(), text, "{} is stale", path.display());
+    assert_eq!(
+        &std::fs::read_to_string(path).unwrap(),
+        text,
+        "{} is stale",
+        path.display()
+    );
 }
 
 #[test]

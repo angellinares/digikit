@@ -304,7 +304,11 @@ fn typed_writes_check_width_range_and_symbols() {
     let lib = library(vec![module(
         "t/a",
         "",
-        &write_val(0x100, "image.u32(dsp.master.site.q31_converter.call + 4)", 4),
+        &write_val(
+            0x100,
+            "image.u32(dsp.master.site.q31_converter.call + 4)",
+            4,
+        ),
         None,
     )]);
     expect_err(run(&lib, &["t/a"]), "lies outside the anchor");
@@ -941,10 +945,7 @@ fn a_hook_op_takes_everything_but_the_target_from_its_declaration() {
         &hook_body("t.nope", ""),
         Some(cf_obj()),
     )]);
-    expect_err(
-        run_on(DT2, &hook_reg(), &lib, &["t/h"]),
-        "no hook t.nope",
-    );
+    expect_err(run_on(DT2, &hook_reg(), &lib, &["t/h"]), "no hook t.nope");
 }
 
 #[test]
@@ -1133,7 +1134,11 @@ fn a_sharc_hook_replaces_the_instruction_by_a_jump_and_the_tail_executes_it() {
     assert_eq!(site[2] as u64, (f >> 16) & 0xff);
     assert_eq!(&site[4..6], &((f & 0xffff) as u16).to_le_bytes());
     let tail_pc = sym(&out, "t/h", "hook.dsp.master.site.q31_converter.call.tail");
-    let ret = sym(&out, "t/h", "hook.dsp.master.site.q31_converter.call.return");
+    let ret = sym(
+        &out,
+        "t/h",
+        "hook.dsp.master.site.q31_converter.call.return",
+    );
     assert_eq!(ret, a.pm.unwrap() + 3);
     let tail_byte = 0x2000_0000 + (tail_pc as u32 - 0xB8_0000) * 2;
     let t = so.read(tail_byte, 12).unwrap();

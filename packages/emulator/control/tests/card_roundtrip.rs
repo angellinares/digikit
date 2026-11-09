@@ -55,7 +55,10 @@ fn step_ms(handle: &Handle, ms: u64) {
     while left > 0 {
         let chunk = left.min(200_000_000);
         handle
-            .call("step", json!({"instructions": chunk, "timeout_wall_s": 300}))
+            .call(
+                "step",
+                json!({"instructions": chunk, "timeout_wall_s": 300}),
+            )
             .unwrap();
         left -= chunk;
     }
@@ -150,7 +153,10 @@ fn a_saved_project_survives_quit_export_rebuild_and_boot() {
         !folder.join(".mmcfs/boot/050000.bin").exists(),
         "the working project is not exported by default"
     );
-    assert_eq!(fs::read(folder.join("digikit/modules/m.dkm")).unwrap(), module);
+    assert_eq!(
+        fs::read(folder.join("digikit/modules/m.dkm")).unwrap(),
+        module
+    );
     eprintln!(
         "session 1: card built in {build1:.1} s, boot {boot1:.1} s, quit+export {quit1:.1} s; \
          project slot 0 {} bytes",
@@ -190,7 +196,11 @@ fn a_saved_project_survives_quit_export_rebuild_and_boot() {
     .unwrap()
     .expect("module store");
     assert_eq!(store.entries.len(), 1);
-    assert!(store.entries[0].path.ends_with("m.dkm"), "{:?}", store.entries[0]);
+    assert!(
+        store.entries[0].path.ends_with("m.dkm"),
+        "{:?}",
+        store.entries[0]
+    );
     let boot2 = boot_to_main(&handle);
 
     // The firmware boots on it. A second export adds and replaces nothing (the working project, which the firmware

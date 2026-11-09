@@ -6,7 +6,7 @@ import { expect } from 'vitest';
 import type { PatchedSession } from '@digi/regression/support.ts';
 import { liveArtifacts } from '@digi/regression/runtime/artifacts.ts';
 import { DEBUG_MODULE, installWithDebug, moduleArtifact } from '@digi/regression/runtime/install.ts';
-import { expectRuntimeReady, runtimeTests } from '@digi/regression/runtime/ready.ts';
+import { BOOT_FIELDS, expectRuntimeReady, runtimeTests } from '@digi/regression/runtime/ready.ts';
 import {
   openDigikitMenu,
   readAboutRows,
@@ -14,13 +14,11 @@ import {
   readSmallRing,
   RING_SYMBOLS,
 } from '@digi/regression/runtime/runtime-menu.ts';
-import { prepareRuntimePlan } from '@digi/regression/runtime/runtime-plan.ts';
+import { planSymbol, prepareRuntimePlan } from '@digi/regression/runtime/runtime-plan.ts';
 
 const SOURCE_SHIFT = 8;
 /** The watch declares a stop after 4500 blocks (3 s) without a heartbeat; the daemon emulates the DSP far slower than 1500 blocks a second. */
 const BLOCKS_PAST_THE_LIMIT = 9000;
-/** After a reset the UI needs about ten seconds before it takes keys (the input-adapter test waits the same). */
-const SETTLE_BLOCKS = 15_000;
 /** The ABOUT walk holds each key this many emulated ms, timed by the daemon in ColdFire instructions like the stock tests. */
 const TAP_HOLD_MS = 100;
 
@@ -82,6 +80,24 @@ async function waitForSafeMode({ dk }: PatchedSession): Promise<void> {
     .toBe(true);
 }
 
+/** Wait until the safe boot has reached the UI loop: DKRT_BOOT has `safe` set and `ui_reached` raised (the first UI pass). The main OS starts the UI
+ * loop after the boot intro, and the boot hook has already kept `dk/fault` and the log events by then. Wall time is only a hang guard. */
+async function waitForSafeUi({ session }: PatchedSession, plan: Awaited<ReturnType<typeof prepareRuntimePlan>>): Promise<void> {
+  const base = planSymbol(plan, 'DKRT_BOOT');
+  await expect
+    .poll(
+      async () => {
+        const [safe, ui] = await Promise.all([
+          session.client.memPeek(base + BOOT_FIELDS.safe),
+          session.client.memPeek(base + BOOT_FIELDS.ui_reached),
+        ]);
+        return safe === 1 && ui === 1;
+      },
+      { timeout: 300_000, interval: 1000, message: 'the safe boot reached the UI loop' },
+    )
+    .toBe(true);
+}
+
 /** After a stop or a crash the boot is safe mode: INFO has no LOG capability (the debug module is not loaded). Returns the runtime's own ring. */
 async function expectNoDebugModule(runtime: PatchedSession, plan: Awaited<ReturnType<typeof prepareRuntimePlan>>) {
   const { session, dk } = runtime;
@@ -99,11 +115,12 @@ async function expectFxHang(runtime: PatchedSession): Promise<void> {
   const plan = await prepareRuntimePlan(session, liveArtifacts(session, 'fault-trace'), [
     'DK_ABOUT',
     'DK_ABOUT_N',
+    'DKRT_BOOT',
     ...RING_SYMBOLS,
   ]);
   await installWithDebug(runtime, 'test/dyn-fx-hang');
   await waitForSafeMode(runtime);
-  await waitFrames(runtime, SETTLE_BLOCKS);
+  await waitForSafeUi(runtime, plan);
 
   // the card keeps the fault
   const fault = decodeFault(settingsValue(await readSettingsRecord(dk), 'dk/fault') ?? new Uint8Array());
@@ -144,6 +161,7 @@ async function expectFxHang(runtime: PatchedSession): Promise<void> {
 async function expectVoiceHang(runtime: PatchedSession): Promise<void> {
   const { session, dk } = runtime;
   await expectRuntimeReady(session);
+  const plan = await prepareRuntimePlan(session, liveArtifacts(session, 'fault-trace'), ['DKRT_BOOT']);
   await installWithDebug(runtime, 'test/dyn-dsp-hang');
   const tap = panelTap(runtime);
   await session.client.inputButton(button('FUNC'), true);
@@ -165,7 +183,7 @@ async function expectVoiceHang(runtime: PatchedSession): Promise<void> {
     .toBe(true);
   await session.client.inputButton(button('TRIG 1'), true); // the render hangs on the third block of the note
   await waitForSafeMode(runtime);
-  await waitFrames(runtime, SETTLE_BLOCKS);
+  await waitForSafeUi(runtime, plan);
 
   const fault = decodeFault(settingsValue(await readSettingsRecord(dk), 'dk/fault') ?? new Uint8Array());
   expect(fault).toMatchObject({ kind: 'dsp', site: SITE_VOICE, stage: STAGE_CALL, step: 0, module: 'dyn-dsp-hang' });
@@ -227,7 +245,7 @@ async function expectCpuCrashFault(runtime: PatchedSession): Promise<void> {
   const cfg = Uint8Array.of(0, 0, 0x0b, 0xb8, 0); // 3000 blocks (2 s) after the first slot call, an illegal instruction
   await dk.put('cfg/crash-after.bin', cfg);
   const device = session.options.device;
-  const plan = await prepareRuntimePlan(session, liveArtifacts(session, 'fault-trace'), ['DK_ABOUT', ...RING_SYMBOLS]);
+  const plan = await prepareRuntimePlan(session, liveArtifacts(session, 'fault-trace'), ['DK_ABOUT', 'DKRT_BOOT', ...RING_SYMBOLS]);
   for (const id of [DEBUG_MODULE, 'test/dyn-crash']) {
     await dk.put(`modules/${id.split('/')[1]}.dkm`, fs.readFileSync(moduleArtifact(device, id)));
   }
@@ -235,7 +253,7 @@ async function expectCpuCrashFault(runtime: PatchedSession): Promise<void> {
   await dk.restart();
   // the module crashes this boot and the next one; the third boot is safe mode (two bad boots)
   await waitForSafeMode(runtime);
-  await waitFrames(runtime, SETTLE_BLOCKS);
+  await waitForSafeUi(runtime, plan);
   const fault = decodeFault(settingsValue(await readSettingsRecord(dk), 'dk/fault') ?? new Uint8Array());
   expect(fault).toMatchObject({ kind: 'cpu', module: 'dyn-crash' });
   // the safe boot has no debug module: the runtime's own ring has the crash event, and the record's tail came from that ring
@@ -252,12 +270,13 @@ async function expectRuntimePanic(runtime: PatchedSession): Promise<void> {
   const plan = await prepareRuntimePlan(session, liveArtifacts(session, 'fault-trace'), [
     'DK_ABOUT',
     'DK_ABOUT_N',
+    'DKRT_BOOT',
     ...RING_SYMBOLS,
   ]);
   // the device resets inside the handler and never replies; one try (quick), since a retry would reach the safe boot and panic it too
   await dk.request(CMD.FAULT, Uint8Array.of(1), true).catch(() => undefined);
   await waitForSafeMode(runtime);
-  await waitFrames(runtime, SETTLE_BLOCKS);
+  await waitForSafeUi(runtime, plan);
 
   const fault = decodeFault(settingsValue(await readSettingsRecord(dk), 'dk/fault') ?? new Uint8Array());
   expect(fault, 'dk/fault is in the settings record').not.toBeNull();

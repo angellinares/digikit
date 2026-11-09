@@ -12,7 +12,7 @@ import { memory, panel } from '@digi/regression/runtime/panel.ts';
 import { runtimeTests } from '@digi/regression/runtime/ready.ts';
 import { settleUi } from '@digi/regression/runtime/waits.ts';
 import { planSymbol, prepareRuntimePlan } from '@digi/regression/runtime/runtime-plan.ts';
-import { setSmp } from './shot-support.ts';
+import { expectedWindow, setSmp, trackApi as sharedTrackApi } from './shot-support.ts';
 
 // End to end, DT2 1.17: the device-neutral runtime (API 1.5 sample pool), core/sample-pool (the borrowed stock pool), machine contract 1.2
 // and digikit/shot playing a stereo sample that a fixture module added to the pool by path (docs/design/sample-api-1.5.md).
@@ -313,6 +313,24 @@ runtimeTests(
       expect(Math.abs(readyA.frames - SECONDS * RATE), `frames ${readyA.frames}`).toBeLessThanOrEqual(64);
       expect(readyA.token).not.toBe(0);
 
+      // 3b. Peak windows deep inside A, one of them larger than one 64 KiB read step.
+      {
+        const shared = sharedTrackApi(runtime);
+        const stored = files[0]!.stored;
+        const small = Math.floor(readyA.frames * 0.7) + 123;
+        const large = Math.floor(readyA.frames * 0.2);
+        const cases: [string, number, number][] = [
+          ['small', small, 950],
+          ['large', large, Math.min(40000, readyA.frames - large)],
+        ];
+        for (const [name, first, frames] of cases) {
+          const got = await shared.awaitWindow(runtime, TRACK, readyA.token, first, frames, 95);
+          log[`window.${name}`] = { first, frames, ret: got.ret, ms: got.ms };
+          expect(got.ret, `${name} window ready`).toBe(95);
+          expect(got.cols, `${name} window columns`).toEqual(expectedWindow(stored, 2, first, frames, 95));
+        }
+      }
+
       // 4. A note right after READY (READY means the record is in the DSP): both source channels reach the output.
       const noteA = await captureNote(runtime, path.join(artifacts, 'note-a.wav'), async (clock) => {
         await until(clock, (await clock()) + 1.5 * RATE);
@@ -448,7 +466,7 @@ runtimeTests(
         [440, 660],
       );
 
-      // 4b. SMP picks the pool entry of a note. B is entry 0 (SMP 0, the default), A is added as entry 1. SMP is knob B of the SRC page; it is turned to 1 while
+      // 4b. SMP picks the pool entry of a note. B is entry 0 (SMP 0, the default), A is added as entry 1. SMP is knob D of the SRC page; it is turned to 1 while
       // B plays (`_dv_params` is rewritten only while a voice renders), then the next note is A. Back to 0 for the pitch step.
       const smpIndex = await api.add(`/${FOLDER}/a`);
       expect(smpIndex, 'A is entry 1 next to B').toBe(1);
@@ -470,8 +488,8 @@ runtimeTests(
       log.smpTurnToB = await setSmp(runtime, readSmp, 0);
       await session.expectNoFault('SMP');
 
-      // 5. Pitch: PITCH is 0.375 semitone per unit (0x100 raw), so +32 units (0x6000 from 0x4000) are one octave. ENC G: PITCH is knob 6, the second
-      // row of the SRC page under END and PLAY (knob 3 is the sample slot, SMP is knob B). The stock encoder accelerates by event rate, so the knob is turned in fast
+      // 5. Pitch: PITCH is 0.375 semitone per unit (0x100 raw), so +32 units (0x6000 from 0x4000) are one octave. PITCH is encoder A on Shot's
+      // custom control page (SMP D, PLAY B, START E and END H). The stock encoder accelerates by event rate, so the knob is turned in fast
       // bursts. The read-back is word 4 (PITCH) of `_dv_params`, the parameter words that core/dsp-voice builds every block and passes to SHOT
       // as R12 (the words SHOT actually reads). The buffer is rewritten only while a voice renders, so TRIG 1 is held during the turn.
       const PITCH_OCTAVE = 0x6000;
@@ -490,7 +508,7 @@ runtimeTests(
       let turned: Awaited<ReturnType<typeof ui.turnTo>>;
       try {
         await expect.poll(readPitch, { timeout: 10_000, interval: 100 }).toBe(0x4000);
-        turned = await ui.turnTo('ENC G', readPitch, PITCH_OCTAVE);
+        turned = await ui.turnTo('ENC A', readPitch, PITCH_OCTAVE);
       } finally {
         await session.client.inputButton(button('TRIG 1'), false);
       }

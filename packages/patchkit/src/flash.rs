@@ -20,7 +20,9 @@ use dt2_firmware_loader as loader;
 use std::ops::Range;
 
 /// The reply-driven route through the MidiRpc requests (the default); this file's `Sender` is the menu route.
-pub use crate::flash_rpc::{Action as RpcAction, FailCode as RpcFailCode, Failure as RpcFailure, RpcFlash};
+pub use crate::flash_rpc::{
+    Action as RpcAction, FailCode as RpcFailCode, Failure as RpcFailure, RpcFlash,
+};
 
 /// Pause between two messages (finding 75: 12 times the rate the emulated receiver keeps up with, below the 1 ms USB frame limit).
 pub const PACE_MS: u64 = 2;
@@ -157,9 +159,14 @@ pub fn prepare(stock: &[u8], reg: &Registry, lib: &Library, set: &str) -> Result
     );
     let known = known_of(reg);
     let stock_sha = sfw.syx_sha256.clone();
-    let o = preflight::preflight(&applied.syx, reg, &known, &|k| {
-        (k.sha256 == stock_sha).then(|| stock.to_vec())
-    });
+    let code = applied.plan.sharc_code();
+    let o = preflight::preflight(
+        &applied.syx,
+        reg,
+        &known,
+        &|k| (k.sha256 == stock_sha).then(|| stock.to_vec()),
+        Some(&code),
+    );
     let bad: Vec<String> = o
         .lines
         .iter()
@@ -183,7 +190,7 @@ pub fn prepare(stock: &[u8], reg: &Registry, lib: &Library, set: &str) -> Result
             bad.join(" | ")
         },
     });
-    let mut p = finish(applied.syx, reg, cs, false)?;
+    let mut p = finish(applied.syx, reg, cs, false, Some(&code))?;
     p.os = os;
     p.sha_stock = stock_sha;
     p.image_id = applied.image_id;
@@ -244,7 +251,7 @@ pub fn restore(stock: &[u8], reg: &Registry) -> Result<Prepared> {
         "stock",
         Ok(((), format!("{device} {os}, sha256 {}", sfw.syx_sha256))),
     );
-    let mut p = finish(stock.to_vec(), reg, cs, true)?;
+    let mut p = finish(stock.to_vec(), reg, cs, true, None)?;
     p.os = os;
     p.sha_stock = sfw.syx_sha256;
     Ok(p)
@@ -269,10 +276,16 @@ fn known_port<'a>(fw: &Firmware, raw: &[u8], reg: &'a Registry) -> Result<&'a cr
 /// The checks every image takes, patched or stock: verify (checksums, HMAC, limits, record), the product byte, the build floor and
 /// the round trip through the model of the device's receiver. `check_image` runs them on any image (the tests tamper with images).
 pub fn check_image(image: Vec<u8>, reg: &Registry) -> Result<Prepared> {
-    finish(image, reg, Checks(vec![]), false)
+    finish(image, reg, Checks(vec![]), false, None)
 }
 
-fn finish(image: Vec<u8>, reg: &Registry, mut cs: Checks, restore: bool) -> Result<Prepared> {
+fn finish(
+    image: Vec<u8>,
+    reg: &Registry,
+    mut cs: Checks,
+    restore: bool,
+    code: Option<&[(u64, u64)]>,
+) -> Result<Prepared> {
     let device = Firmware::parse(&image)?.device.short().to_string();
     let info = info_of(&device)?;
     let mut messages: Vec<Range<usize>> = vec![];
@@ -300,7 +313,7 @@ fn finish(image: Vec<u8>, reg: &Registry, mut cs: Checks, restore: bool) -> Resu
     }
     cs.run("product", product_check(&image, info));
     cs.run("build floor", floor_check(&image, info));
-    cs.run("DSP scan", dsp_scan(&image));
+    cs.run("DSP scan", dsp_scan(&image, code));
     let rt = cs.run("round trip", round_trip(&image, info));
     if rt.is_some() {
         messages = split(&image)?;
@@ -403,13 +416,13 @@ fn floor_of(word: [u8; 4], info: &DeviceInfo) -> Result<String> {
     }
 }
 
-/// The DSP section (7) holds no store the SHARC+ ISA excludes (`dspscan`; the stock images have none).
-pub fn dsp_scan(image: &[u8]) -> Result<((), String)> {
+/// The DSP section (7) holds no store the SHARC+ ISA excludes (`dspscan`; the stock images have none). With `code` (the plan's SHARC code ranges), appended blocks are scanned only inside those ranges.
+pub fn dsp_scan(image: &[u8], code: Option<&[(u64, u64)]>) -> Result<((), String)> {
     let fw = Firmware::parse(image)?;
     let dsp = fw
         .section(7)
         .ok_or_else(|| err!("the image has no DSP section (7)"))?;
-    Ok(((), crate::dspscan::check_section7(&dsp.data)?))
+    Ok(((), crate::dspscan::check_section7(&dsp.data, code)?))
 }
 
 /// The device's build floor (`[patch] build_floor`), on the image's container.

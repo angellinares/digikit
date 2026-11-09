@@ -233,6 +233,7 @@ pub fn synth(spec: &Spec, dev: &str, models: &Models) -> Result<Vec<u8>> {
                     clear_bytes: 0,
                     voices: v.voices,
                     ranges: [0; 8],
+                    latched: 0,
                 });
             }
             DspSection {
@@ -319,10 +320,7 @@ mod tests {
                 (8, 16, pages)
             );
             // a machine's key is the hashed key of "<module>:m<i>"
-            assert_eq!(
-                r.machines[3].type_no,
-                register::machine_key("cap/r", "m3")
-            );
+            assert_eq!(r.machines[3].type_no, register::machine_key("cap/r", "m3"));
             r.check().unwrap();
         }
         let e = synth(

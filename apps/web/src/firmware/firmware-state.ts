@@ -4,7 +4,7 @@ import { createSignal } from 'solid-js';
 import { asked, noteConnection } from '../transfer/connection-state';
 import { transferEnv } from '../transfer/env';
 import { target } from '../transfer/target';
-import { installAfterFlash, resetPostRun, postWorking } from './default-modules-state';
+import { installAfterFlash, patchSet, resetPostRun, postWorking, setCustomBootScreen } from './default-modules-state';
 import { firmwareEnv } from './env';
 import {
   DEVICE_NAMES,
@@ -51,7 +51,7 @@ async function prepare(): Promise<void> {
   const { name, bytes } = file;
   setPrepared({ kind: 'working', name });
   try {
-    const p = await firmwareEnv().prepare(bytes, restore());
+    const p = await firmwareEnv().prepare(bytes, restore(), patchSet());
     if (mine !== preparing) return;
     setPrepared({ kind: 'ready', name, size: bytes.length, p });
   } catch (e) {
@@ -81,6 +81,14 @@ export async function chooseFile(picked: File | undefined): Promise<void> {
 export function setRestore(on: boolean): void {
   if (running(run())) return;
   setRestoreSignal(on);
+  setRun(IDLE);
+  void prepare();
+}
+
+/** The Custom boot screen toggle: the patch gets core/introblank (or not) and the file is prepared again. */
+export function setCustomBoot(on: boolean): void {
+  if (running(run())) return;
+  setCustomBootScreen(on);
   setRun(IDLE);
   void prepare();
 }

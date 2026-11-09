@@ -35,8 +35,19 @@ const TX35_MAX_BYTES: usize = 4096;
 /// eDMA channel the DT2 firmware uses for DSPI1 RX (finding 04, transfer inventory).
 const DSPI1_RX_CHAN: usize = 14;
 type RamPage = Box<[u8]>;
-/// UART9 (MIDI DIN) data register: the firmware sends MIDI by byte stores here (finding 25).
+/// UART9 (MIDI DIN) data register: the firmware sends MIDI by byte stores here, or through eDMA
+/// channel 37 (finding 25).
 pub const MIDI_UDR: u32 = 0xec07_400c;
+/// DMA timer 0's counter (DTCN0, MCF5441XRM chapter 39). Stock DN2 1.11 reads it as a free-running
+/// clock, and nothing in the main OS starts the timer: code before the main OS does.
+pub const DTCN0: u32 = 0xfc07_000c;
+/// The bus clock DTCN0 counts in the [`Board::enable_dtcn0`] model (`periph::pit::F_BUS`).
+const DTCN0_HZ: u128 = 132_000_000;
+/// eDMA channel that drains the DN2 MIDI DIN transmit ring into [`MIDI_UDR`] (finding 25).
+pub const MIDI_TX_CHAN: usize = 37;
+/// Its major-loop interrupt: INTC1 source 29, vector 157.
+pub const MIDI_TX_SOURCE: u32 = 29;
+pub const MIDI_TX_VECTOR: u8 = 128 + MIDI_TX_SOURCE as u8;
 
 // `owned_mmio`'s fast reject: no owned device slot starts below the end of
 // SDRAM.
@@ -176,9 +187,18 @@ pub struct Board {
     /// Bytes drained by the eDMA35 UART8-TX model. This is host observation
     /// only; UART RX and peripheral responses remain outside this Board seam.
     uart_tx: Vec<u8>,
-    /// Bytes the guest stored to the MIDI DIN UART (UART9) data register. Host observation
-    /// only: not part of a checkpoint.
+    /// Bytes the guest stored to the MIDI DIN UART (UART9) data register, by itself or through
+    /// eDMA channel 37. Host observation only: not part of a checkpoint.
     midi_tx: Vec<u8>,
+    /// `enable_dtcn0`: DTCN0 reads the bus clock since reset, from `clock`.
+    dtcn0: bool,
+    /// The guest's instruction count, set by the host before each instruction.
+    clock: u64,
+    /// eDMA channel 37 (MIDI DIN transmit): a major loop runs whole at its SERQ write.
+    midi_tx37: edma::TxChannel,
+    /// Bytes of the channel-37 transfers started since the host last took them. The host times
+    /// the completion interrupt from them. `snap_save` refuses while it is not zero.
+    midi_tx37_started: u64,
     /// DSPI1 RX completion (eDMA channel 14) waiting for the host to raise
     /// its interrupt. Not part of the snapshot: `snap_save` refuses while set.
     dspi1_irq: bool,
@@ -417,6 +437,10 @@ impl Board {
             sd_gate: None,
             uart_tx: vec![],
             midi_tx: vec![],
+            dtcn0: false,
+            clock: 0,
+            midi_tx37: edma::TxChannel::new(MIDI_TX_CHAN, u16::from(MIDI_TX_VECTOR)),
+            midi_tx37_started: 0,
             dspi1_irq: false,
         }
     }
@@ -427,9 +451,14 @@ impl Board {
     /// loader, same optional lanes enabled); host-owned peers are untouched.
     /// Fails if completion events or DMA ranges are still undrained.
     pub fn snap_save(&self, w: &mut periph::snap::Writer) -> Result<(), String> {
-        if !self.events.is_empty() || !self.dma_written.is_empty() || self.dspi1_irq {
+        if !self.events.is_empty()
+            || !self.dma_written.is_empty()
+            || self.dspi1_irq
+            || self.midi_tx37_started != 0
+        {
             return Err(
-                "board has undrained completion events, DMA ranges or a DSPI1 interrupt".into(),
+                "board has undrained completion events, DMA ranges, a DSPI1 interrupt or a MIDI transfer"
+                    .into(),
             );
         }
         const BLOCK: usize = 4096;
@@ -829,6 +858,7 @@ impl Board {
             || !self.dma_written.is_empty()
             || !self.uart_tx.is_empty()
             || self.dspi1_irq
+            || self.midi_tx37_started != 0
     }
     /// A DSPI1 RX completion interrupt (eDMA channel 14) is waiting for the
     /// host to deliver it; the host calls `clear_dspi1_irq` once it has.
@@ -919,6 +949,30 @@ impl Board {
     /// Return the bytes the guest wrote to the MIDI DIN UART9 data register since the prior call.
     pub fn take_midi_tx(&mut self) -> Vec<u8> {
         std::mem::take(&mut self.midi_tx)
+    }
+    /// Model DTCN0 as a counter of the bus clock since reset, read from the instruction count the
+    /// host sets with [`Board::set_clock`] (one bus tick per instruction at 132 MHz). This assumes
+    /// the configuration that code before the main OS sets up. Off by default.
+    pub fn enable_dtcn0(&mut self) {
+        self.dtcn0 = true;
+    }
+
+    /// The guest's instruction count: the host sets it before each instruction.
+    #[inline(always)]
+    pub fn set_clock(&mut self, icount: u64) {
+        self.clock = icount;
+    }
+
+    fn dtcn0_value(&self) -> u32 {
+        let ips = u128::from(periph::clock::cf_ips().max(1));
+        (u128::from(self.clock) * DTCN0_HZ / ips) as u32
+    }
+
+    /// Return the bytes of the eDMA channel-37 transfers started since the prior call (0: none).
+    /// Each transfer has already moved its bytes into the MIDI output; the host raises the
+    /// completion interrupt (`MIDI_TX_VECTOR`) after their wire time.
+    pub fn take_midi_tx_started(&mut self) -> u64 {
+        std::mem::take(&mut self.midi_tx37_started)
     }
     /// Return UART8 TX bytes drained by eDMA channel 35 since the prior call.
     pub fn take_uart_tx(&mut self) -> Vec<u8> {
@@ -1324,9 +1378,10 @@ impl Board {
     /// Read eDMA35's UART8 source exactly as `unicorn-reference-final:emu/edma.py`'s `TxChannel.run` does:
     /// every byte advances by SOFF and source modulo is applied per byte.
     /// This preflights all guest reads before the SERQ write mutates the TCD.
-    fn tx35_source(&mut self) -> Result<Vec<u8>, BoardWriteError> {
+    /// Channel 37 (MIDI DIN transmit) reads its source the same way.
+    fn tx_source(&mut self, chan: usize) -> Result<Vec<u8>, BoardWriteError> {
         let (mask, tcd) = {
-            let view = edma::TcdView::new(&mut self.dma.edma_regs, self.dma.tx35.chan);
+            let view = edma::TcdView::new(&mut self.dma.edma_regs, chan);
             (view.smod_mask(), view.snapshot())
         };
         let nbytes = tcd.nbytes as usize;
@@ -1506,6 +1561,9 @@ impl Board {
     }
 
     fn read_inner_unforced(&mut self, addr: u32, size: u8) -> Result<u32, BusError> {
+        if self.dtcn0 && addr == DTCN0 && size == 4 {
+            return Ok(self.dtcn0_value());
+        }
         if Time::owns(addr) {
             return self
                 .time
@@ -1604,7 +1662,8 @@ impl Board {
                 let ssi_pending = self.device_ssi50_pending();
                 let pending = self.dma.edma_regs.read(addr, size);
                 self.dma.edma_regs.write(addr, size, pending & !value);
-                if ssi_pending && !self.device_ssi50_pending()
+                if ssi_pending
+                    && !self.device_ssi50_pending()
                     && let Some(ssi) = self.dma.ssi.as_mut()
                 {
                     ssi.on_cint(ssi::TX_CHAN as u8);
@@ -1628,7 +1687,18 @@ impl Board {
             let is_tx35_serq = addr == edma::SERQ
                 && (value as u8 & 0x40 != 0 || (value as u8 & 0x3f) as usize == self.dma.tx35.chan)
                 && tx35_citer != 0;
-            let tx35_source = is_tx35_serq.then(|| self.tx35_source()).transpose()?;
+            let tx35_source = is_tx35_serq
+                .then(|| self.tx_source(self.dma.tx35.chan))
+                .transpose()?;
+            let midi_tcd = edma::TcdView::new(&mut self.dma.edma_regs, MIDI_TX_CHAN);
+            let is_midi_serq = addr == edma::SERQ
+                && value as u8 & 0x80 == 0
+                && (value as u8 & 0x40 != 0 || (value as u8 & 0x3f) as usize == MIDI_TX_CHAN)
+                && midi_tcd.citer() != 0
+                && midi_tcd.daddr() == MIDI_UDR;
+            let midi_source = is_midi_serq
+                .then(|| self.tx_source(MIDI_TX_CHAN))
+                .transpose()?;
             let is_tx_serq = addr == edma::SERQ
                 && size == 1
                 && value as u8 & 0x80 == 0
@@ -1667,6 +1737,11 @@ impl Board {
             if let Some(source) = tx35_source.as_deref() {
                 self.dma.finish_tx35_capture(source);
                 self.uart_tx.extend_from_slice(source);
+            }
+            if let Some(source) = midi_source.as_deref() {
+                self.midi_tx37.run(&mut self.dma.edma_regs, source);
+                self.midi_tx.extend_from_slice(source);
+                self.midi_tx37_started += source.len() as u64;
             }
             if effect == SerqEffect::Dspi2Capture {
                 self.dma.finish_dspi2_capture(

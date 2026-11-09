@@ -128,7 +128,12 @@ fn a_set_loads_its_modules_in_turn() {
                     .as_array()
                     .unwrap_or_else(|| panic!("{}: short {short:?}", s["name"]));
                 assert_eq!(
-                    (i as u64, short_name(&short), short.need as u64, short.free as u64),
+                    (
+                        i as u64,
+                        short_name(&short),
+                        short.need as u64,
+                        short.free as u64
+                    ),
                     (
                         w[0].as_u64().unwrap(),
                         w[1].as_str().unwrap(),

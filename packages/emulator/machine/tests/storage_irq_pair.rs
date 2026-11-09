@@ -307,7 +307,14 @@ fn oracle_interrupt_register_writes_keep_passthrough_behavior() {
 
 #[test]
 fn queued_dma_invalidates_decoded_code_before_handler_or_normal_instruction() {
-    for (deliver, route) in [(false, 0), (true, 0), (false, 1), (true, 1), (false, 2), (true, 2)] {
+    for (deliver, route) in [
+        (false, 0),
+        (true, 0),
+        (false, 1),
+        (true, 1),
+        (false, 2),
+        (true, 2),
+    ] {
         let mut m = device();
         let mut payload = [0u8; 512];
         payload[..2].copy_from_slice(&0x7002u16.to_be_bytes()); // MOVEQ #2,D0

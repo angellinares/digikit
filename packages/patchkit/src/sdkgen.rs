@@ -671,10 +671,7 @@ fn proto_consts(sdk: &Sdk, indent: &str, status_ty: &str) -> String {
         p.ranges.len()
     );
     for (n, [first, last]) in &p.ranges {
-        let _ = writeln!(
-            s,
-            "{indent}    ({first:#04x}, {last:#04x}), // {n}"
-        );
+        let _ = writeln!(s, "{indent}    ({first:#04x}, {last:#04x}), // {n}");
     }
     let _ = writeln!(s, "{indent}];");
     for (n, [first, last]) in &p.ranges {
@@ -1232,14 +1229,12 @@ fn split_name(s: &str) -> (&str, &str) {
     (s[..i].trim(), &s[i..])
 }
 
-fn parse_ty(
-    what: &str,
-    s: &str,
-    types: &BTreeMap<String, String>,
-    extra: &[&str],
-) -> Result<Ty> {
+fn parse_ty(what: &str, s: &str, types: &BTreeMap<String, String>, extra: &[&str]) -> Result<Ty> {
     let ptr = s.matches('*').count();
-    let words: Vec<&str> = s.split(|c: char| c == '*' || c.is_whitespace()).filter(|w| !w.is_empty()).collect();
+    let words: Vec<&str> = s
+        .split(|c: char| c == '*' || c.is_whitespace())
+        .filter(|w| !w.is_empty())
+        .collect();
     let (is_const, base) = match words.as_slice() {
         ["const", b] => (true, *b),
         [b] => (false, *b),
@@ -1271,9 +1266,8 @@ pub(crate) fn parse_fn(
     let inner = s.trim_end();
     let inner = &inner[open + 1..inner.len() - 1];
     let (t, n) = split_name(head);
-    let type_word = |w: &str| {
-        w == "const" || BASES.contains(&w) || types.contains_key(w) || extra.contains(&w)
-    };
+    let type_word =
+        |w: &str| w == "const" || BASES.contains(&w) || types.contains_key(w) || extra.contains(&w);
     let (rt, name) = if !n.is_empty() && !type_word(n) {
         (t, Some(n.to_string()))
     } else {
@@ -1285,7 +1279,9 @@ pub(crate) fn parse_fn(
         for a in inner.split(',') {
             let (t, n) = split_name(a);
             if t.is_empty() || !is_ident(n) {
-                return Err(err!("{SOURCE}: {what}: argument {a:?} needs a type and a name"));
+                return Err(err!(
+                    "{SOURCE}: {what}: argument {a:?} needs a type and a name"
+                ));
             }
             args.push((parse_ty(what, t, types, extra)?, n.to_string()));
         }
@@ -1318,7 +1314,10 @@ fn rust_ty(t: &Ty) -> String {
     };
     let mut s = base;
     for i in 0..t.ptr {
-        s = format!("*{} {s}", if i == 0 && t.is_const { "const" } else { "mut" });
+        s = format!(
+            "*{} {s}",
+            if i == 0 && t.is_const { "const" } else { "mut" }
+        );
     }
     s
 }
@@ -1412,7 +1411,9 @@ fn api_fields(sdk: &Sdk) -> Result<Vec<(&ApiField, FieldKind)>> {
         }
         if let Some(s) = f.since {
             if s == 0 || s > sdk.contract.api[1] {
-                return Err(err!("{SOURCE}: {what}: since {s} is not in 1..=[contract] api minor"));
+                return Err(err!(
+                    "{SOURCE}: {what}: since {s} is not in 1..=[contract] api minor"
+                ));
             }
         }
         let kind = match f.r#type.as_str() {
@@ -1421,7 +1422,9 @@ fn api_fields(sdk: &Sdk) -> Result<Vec<(&ApiField, FieldKind)>> {
             t if t.contains('(') => {
                 let (name, sig) = parse_fn(&what, t, &sdk.api.types, &[])?;
                 if name.is_some() {
-                    return Err(err!("{SOURCE}: {what}: a field signature has no function name"));
+                    return Err(err!(
+                        "{SOURCE}: {what}: a field signature has no function name"
+                    ));
                 }
                 FieldKind::Fn(sig)
             }
@@ -1441,7 +1444,9 @@ fn imports(sdk: &Sdk) -> Result<Vec<(&Import, Option<Sig>)>> {
             || im.name.len() > IMPORT_NAME_MAX
             || sdk.import[..i].iter().any(|o| o.name == im.name)
         {
-            return Err(err!("{SOURCE}: {what}: bad name, over {IMPORT_NAME_MAX} bytes, or twice"));
+            return Err(err!(
+                "{SOURCE}: {what}: bad name, over {IMPORT_NAME_MAX} bytes, or twice"
+            ));
         }
         if im.doc.is_empty() || im.doc.contains("*/") {
             return Err(err!("{SOURCE}: {what}: needs a doc without a comment end"));
@@ -1613,7 +1618,10 @@ fn rust_api(sdk: &Sdk) -> Result<String> {
         let _ = writeln!(s, "        {:?},", im.name);
     }
     s.push_str("    ];\n");
-    let own: Vec<_> = imps.iter().filter(|(im, _)| im.requires.is_none()).collect();
+    let own: Vec<_> = imps
+        .iter()
+        .filter(|(im, _)| im.requires.is_none())
+        .collect();
     s.push_str("\n    /// The names the runtime's own table holds (`IMPORTS`), in order: the imports without `requires`.\n");
     let _ = writeln!(s, "    pub const BUILTIN_NAMES: [&str; {}] = [", own.len());
     for (im, _) in &own {
@@ -1637,7 +1645,10 @@ fn rust_api(sdk: &Sdk) -> Result<String> {
 /// `optional::table()`: per import its name, the address the module gave (0 when absent) and the address of the stub (0 when it has none). It is
 /// a macro because the undefined symbols must belong to the runtime's own object, not to this crate.
 fn rust_optional(imps: &[(&Import, Option<Sig>)]) -> String {
-    let opt: Vec<_> = imps.iter().filter(|(im, _)| im.requires.is_some()).collect();
+    let opt: Vec<_> = imps
+        .iter()
+        .filter(|(im, _)| im.requires.is_some())
+        .collect();
     let mut s = String::from(
         "\n/// The imports that another module provides (`[[import]] requires`): the external functions, the stubs for an absent module and\n/// the table of both. Expand it once in the runtime's object; its symbols must be in the `optional` list of the runtime's module.toml.\n#[macro_export]\nmacro_rules! optional_imports {\n    () => {\n        #[allow(dead_code, trivial_numeric_casts)]\n        pub mod optional {\n            extern \"C\" {\n",
     );
@@ -1677,7 +1688,11 @@ fn rust_optional(imps: &[(&Import, Option<Sig>)]) -> String {
         let (Some(a), Some(sig)) = (&im.absent, sig) else {
             continue;
         };
-        let body = if a == "void" { String::new() } else { format!(" {a} as _") };
+        let body = if a == "void" {
+            String::new()
+        } else {
+            format!(" {a} as _")
+        };
         let _ = writeln!(
             s,
             "                pub unsafe extern \"C\" fn {}({}){} {{{body} }}",
@@ -1777,9 +1792,17 @@ fn api_h(sdk: &Sdk) -> Result<String> {
     let [init, fini, slot] = dkm_sigs(sdk)?;
     s.push_str("\n/* Entry points of a .dkm (symbols of its object). */\n");
     let _ = writeln!(s, "\n/* {} */", sdk.dkm.init.doc);
-    let _ = writeln!(s, "{};", c_decl(&init.ret, &format!("dkm_init({})", c_args(&init))));
+    let _ = writeln!(
+        s,
+        "{};",
+        c_decl(&init.ret, &format!("dkm_init({})", c_args(&init)))
+    );
     let _ = writeln!(s, "\n/* {} */", sdk.dkm.fini.doc);
-    let _ = writeln!(s, "{};", c_decl(&fini.ret, &format!("dkm_fini({})", c_args(&fini))));
+    let _ = writeln!(
+        s,
+        "{};",
+        c_decl(&fini.ret, &format!("dkm_fini({})", c_args(&fini)))
+    );
     let _ = writeln!(
         s,
         "\n/* {} The prototype is in <dk/ui.h> (`DK_MENU(fill)` defines it): `void dkm_menu(dk_ui_menu *m, void *ctx)`. */",
@@ -1858,7 +1881,11 @@ fn machine_h(sdk: &Sdk) -> Result<String> {
         "machine_consts.h",
         [
             ("dk_voice_in", "per call, built by the adapter", &v.input),
-            ("dk_machine_desc", "one per module in read-only data, found by the manifest's symbol", &v.desc),
+            (
+                "dk_machine_desc",
+                "one per module in read-only data, found by the manifest's symbol",
+                &v.desc,
+            ),
         ],
         &v.fns,
         &sdk.machine.c,
@@ -1893,7 +1920,10 @@ pub enum DescTy {
     /// Text: this many bytes.
     Char(usize),
     /// An array of an earlier record.
-    Rec { rec: String, count: usize },
+    Rec {
+        rec: String,
+        count: usize,
+    },
 }
 
 /// A field of a descriptor record: its place in bytes.
@@ -1952,7 +1982,10 @@ fn desc_layout(d: &DescToml) -> Result<(DescSpec, Vec<Vec<DescText>>)> {
     let mut consts = BTreeMap::new();
     for c in &d.consts {
         if !is_ident(&c.name) || consts.insert(c.name.clone(), c.value).is_some() {
-            return Err(err!("{SOURCE}: [desc] const {}: bad name or name twice", c.name));
+            return Err(err!(
+                "{SOURCE}: [desc] const {}: bad name or name twice",
+                c.name
+            ));
         }
     }
     let mut records: Vec<DescRecord> = Vec::new();
@@ -1983,7 +2016,9 @@ fn desc_layout(d: &DescToml) -> Result<(DescSpec, Vec<Vec<DescText>>)> {
         for entry in &r.fields {
             let (decl, doc) = entry.split_once(" // ").unwrap_or((entry, ""));
             if doc.contains("*/") {
-                return Err(err!("{SOURCE}: {what}: {entry:?}: the doc has a comment end"));
+                return Err(err!(
+                    "{SOURCE}: {what}: {entry:?}: the doc has a comment end"
+                ));
             }
             let Some((ty_text, rest)) = decl.trim().split_once(char::is_whitespace) else {
                 return Err(err!("{SOURCE}: {what}: {entry:?} needs a type and a name"));
@@ -1998,7 +2033,9 @@ fn desc_layout(d: &DescToml) -> Result<(DescSpec, Vec<Vec<DescText>>)> {
                 None => (rest.trim(), None),
             };
             if !is_ident(name) || fields.iter().any(|o| o.name == name) {
-                return Err(err!("{SOURCE}: {what}: field {name:?}: bad name or name twice"));
+                return Err(err!(
+                    "{SOURCE}: {what}: field {name:?}: bad name or name twice"
+                ));
             }
             let count = |t: &str| -> Result<usize> {
                 let n = match t.parse::<u32>() {
@@ -2182,7 +2219,8 @@ pub fn generate(root: &std::path::Path) -> Result<Vec<(String, String)>> {
     let text = std::fs::read_to_string(&path).map_err(|e| err!("{}: {e}", path.display()))?;
     let mut files = render(&text)?;
     let abi_path = root.join(crate::abigen::SOURCE);
-    let abi = std::fs::read_to_string(&abi_path).map_err(|e| err!("{}: {e}", abi_path.display()))?;
+    let abi =
+        std::fs::read_to_string(&abi_path).map_err(|e| err!("{}: {e}", abi_path.display()))?;
     files.extend(crate::abigen::render(&abi, &abi_inputs(&text)?)?);
     Ok(files)
 }

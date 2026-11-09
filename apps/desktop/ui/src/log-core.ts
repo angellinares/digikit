@@ -3,7 +3,7 @@
 import type { ReloadReport } from '../../../web/src/runtime/reload.ts';
 import type { FirmwareRun } from '../../../web/src/firmware/env.ts';
 import type { TransferRun } from '../../../web/src/transfer/env.ts';
-import type { CardFolder } from './card-core.ts';
+import type { CardFolder, OverlayReset } from './card-core.ts';
 import { shortFolder } from './card-core.ts';
 import type { RuntimeEvent } from '@digi/dk-session';
 
@@ -323,6 +323,16 @@ export function cardEntry(what: string, c: CardFolder): LogInput {
   return { source: 'card', level: 'info', text: `${what}: ${where} (${n} file${n === 1 ? '' : 's'})${later}` };
 }
 
+/** The saved card changes were set aside (`card.reset_overlay`): what moved and where. */
+export function overlayResetEntry(r: OverlayReset): LogInput {
+  if (!r.set_aside) return { source: 'card', level: 'info', text: 'reset card changes: there was nothing to reset' };
+  return {
+    source: 'card',
+    level: 'info',
+    text: `reset card changes: set aside ${r.overlay} as ${r.set_aside}; the firmware reloads without them`,
+  };
+}
+
 const PAST: Record<string, string> = {
   Installing: 'installed',
   Restarting: 'restarted',
@@ -335,14 +345,33 @@ const PAST: Record<string, string> = {
 export function transferEntry(run: TransferRun): LogInput {
   const detail = run.lines.length ? { detail: run.lines.join('\n') } : {};
   if (run.cancelled)
-    return { source: 'transfer', level: 'info', text: `${run.what.toLowerCase()} cancelled`, ...detail };
-  if (run.error !== undefined)
+    return {
+      source: 'transfer',
+      level: 'info',
+      text: `${run.what.toLowerCase()} cancelled${run.counts ? `: ${run.counts}` : ''}`,
+      ...detail,
+    };
+  if (run.error !== undefined) {
+    // a run that already words its error as "<What> failed: ..." is not prefixed twice
+    const first = run.error.split('\n')[0] ?? '';
+    const own = `${run.what} failed: `;
     return {
       source: 'transfer',
       level: 'error',
-      text: `${run.what.toLowerCase()} failed: ${run.error.split('\n')[0]}`,
+      text: first.startsWith(own)
+        ? run.what.toLowerCase() + first.slice(run.what.length)
+        : `${run.what.toLowerCase()} failed: ${first}`,
       ...detail,
     };
+  }
+  // an upload run of the Samples mode: one line per file (`a: verified`)
+  const files =
+    run.what === 'Uploading' ? run.lines.filter((l) => /: (verified|not sent|failed|not finished)/.test(l)) : [];
+  if (files.length) {
+    const n = files.filter((l) => l.endsWith(': verified')).length;
+    const text = `${PAST.Uploading} ${n} file${n === 1 ? '' : 's'} on ${run.target}${n === files.length ? ', verified' : ''}`;
+    return { source: 'transfer', level: n === files.length ? 'info' : 'error', text, ...detail };
+  }
   const sent = run.lines.filter((l) => /^Uploading .* bytes\)$/.test(l)).length;
   const skipped = run.lines.filter((l) => /already on the card/.test(l)).length;
   const counts = [sent ? `sent ${sent}` : '', skipped ? `skipped ${skipped}` : ''].filter(Boolean).join(', ');

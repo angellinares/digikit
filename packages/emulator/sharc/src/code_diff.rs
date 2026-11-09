@@ -70,7 +70,10 @@ pub fn barred_entries(
     changed: &[u32],
     whole: impl Fn(u32) -> bool,
 ) -> Vec<u32> {
-    let mut starts: Vec<u32> = region_entries.iter().flat_map(|e| e.iter().copied()).collect();
+    let mut starts: Vec<u32> = region_entries
+        .iter()
+        .flat_map(|e| e.iter().copied())
+        .collect();
     starts.sort_unstable();
     starts.dedup();
     let hit = |pc: u32| {
@@ -78,7 +81,9 @@ pub fn barred_entries(
             return true;
         }
         let i = starts.partition_point(|&s| s < pc);
-        let end = starts.get(i + 1).map_or(u32::MAX, |&n| n.saturating_add(LOOKAHEAD));
+        let end = starts
+            .get(i + 1)
+            .map_or(u32::MAX, |&n| n.saturating_add(LOOKAHEAD));
         let first = changed.partition_point(|&c| c < pc);
         changed.get(first).is_some_and(|&c| c < end)
     };
@@ -169,10 +174,16 @@ mod tests {
     fn too_many_changes_give_none() {
         let stock = |pc: u32| Some(pc);
         assert_eq!(changed_pcs(0, 10, stock, |_| None, 3), None);
-        assert_eq!(changed_pcs(0, 10, stock, |_| None, 10).map(|v| v.len()), Some(10));
+        assert_eq!(
+            changed_pcs(0, 10, stock, |_| None, 10).map(|v| v.len()),
+            Some(10)
+        );
         // A PC the table has nothing at is skipped, whatever is loaded.
         let sparse = |pc: u32| (pc % 2 == 0).then_some(pc);
-        assert_eq!(changed_pcs(0, 10, sparse, |_| None, 10).map(|v| v.len()), Some(5));
+        assert_eq!(
+            changed_pcs(0, 10, sparse, |_| None, 10).map(|v| v.len()),
+            Some(5)
+        );
     }
 
     #[test]

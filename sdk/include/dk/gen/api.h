@@ -10,6 +10,18 @@
 /* The function type `file_event` of [api.types]. */
 typedef void dk_file_event(uint32_t client, uint32_t request, int32_t state, uint8_t *context);
 
+/* The function type `intro_done` of [api.types]. */
+typedef void dk_intro_done(void *ctx);
+
+/* The function type `intro_frame` of [api.types]. */
+typedef const uint8_t *dk_intro_frame(uint32_t tick, void *ctx);
+
+/* The function type `job_done` of [api.types]. */
+typedef void dk_job_done(uint8_t *ctx, int32_t status);
+
+/* The function type `job_step` of [api.types]. */
+typedef int32_t dk_job_step(uint8_t *ctx);
+
 /* The function type `service_cmd` of [api.types]. */
 typedef int32_t dk_service_cmd(uint32_t cmd, uint32_t seq, const uint8_t *body, uint32_t len, uint8_t *out);
 
@@ -48,10 +60,19 @@ typedef struct dk_api {
     int32_t (*param_get)(uint32_t track, uint32_t word); /* (api 1.6) Raw value (unit * 256, as DK_PARAM min/max/default) of parameter word `word` of the calling module on `track` (0 to 15). UI task only, and only in the flow of a click: from the DK_PARAM_ACTION callback until the page gets its next key or turn (so a list the callback opened may call it), else DK_PARAM_E_STATE. `word` counts the module's DK_PARAM rows in declaration order; a word the module does not own or a track above 15 is DK_PARAM_E_ARG. The value is the one the page shows. */
     int32_t (*param_set)(uint32_t track, uint32_t word, int32_t raw); /* (api 1.6) Set parameter word `word` of the calling module on `track` to `raw` (unit * 256) with the stock setter of a knob turn: clamped to the row range, stored in the sound, observers notified. UI task only, in the same click flow as param_get. Returns 0, DK_PARAM_E_STATE (outside the flow), DK_PARAM_E_ARG (word or track) or DK_PARAM_E_HELD (a mode key such as TRIG or FUNC is held: nothing is written, so a click never records a p-lock). */
     int32_t (*sample_pool_set)(uint32_t handle, uint32_t index, const uint8_t *path); /* (api 1.6) Load a sample file into pool entry `index` (0..15), replacing what was there: the old file is released, the new one queues like sample_pool_add (copies the path, no file IO here). Other indexes never move. A file already held by another entry is shared, not loaded twice. Returns 0; DK_SAMPLE_E_CONTRACT for an index above 15 or no sample backing in the image; DK_SAMPLE_E_SEL_PATH for an empty or too long path. */
+    int32_t (*sample_pool_peaks)(uint32_t handle, uint32_t index, uint32_t token, uint8_t *out, uint32_t capacity); /* (api 1.7) Copy bounded PCM16 min/max overview pairs of a READY pool entry matching token. Returns bin count (1..512), negative error otherwise; capacity is bytes, output unchanged on refusal. Each bin spans ceil(frames/512) frames, combines channels and includes zero. No file IO or PCM scan. UI task only. See dk/sample_track.h. */
+    int32_t (*job_post)(dk_job_step *step, dk_job_done *done, uint8_t *ctx); /* (api 1.8) Run `step(ctx)` on the background worker until it returns 0 or a negative error (DK_JOB_MORE: call again; <dk/job.h>). `done(ctx, status)` is called once in the UI task with the final status, or DK_JOB_E_CANCELLED. Returns a job id > 0, or a negative error (E_BUSY when 8 jobs are queued, E_CONTRACT for a null step). */
+    int32_t (*job_cancel)(uint32_t id);      /* (api 1.8) Cancel a job of this module: a queued job never runs and a running one stops after its current step; `done` gets DK_JOB_E_CANCELLED. Returns 0, or E_NOT_FOUND for an unknown id. */
+    int32_t (*sample_pool_peaks_window)(uint32_t handle, uint32_t index, uint32_t token, uint32_t first, uint32_t frames, uint32_t columns, uint8_t *out, uint32_t capacity); /* (api 1.8) Min/max of `columns` equal parts of the frames [first, first + frames) of a READY pool entry matching token, computed in the background. Returns `columns` when ready (out holds int16 min, max pairs; capacity is bytes, at least columns * 4; columns is 1..DK_SAMPLE_WINDOW_MAX), 0 while it is computed, or a negative error. Another request replaces a pending one. Poll from the draw callback. UI task only. See dk/sample_track.h. */
+    int32_t (*settings_client)(void);        /* (api 1.9) Init-only: acquire this module's settings handle; positive handle, or a negative error outside `dkm_init`. The same module always gets the same handle. */
+    int32_t (*settings_get)(uint32_t client, const char *key, void *out, uint32_t cap); /* (api 1.9) Read the value of `key` (NUL-terminated, own key space) into `out` (`cap` bytes): returns its length (0 is valid), E_SET_NOKEY when there is none, E_SET_VALUE when `cap` is too small (nothing is written), E_SET_KEY for a stale handle or a bad key, E_SET_OFF when the settings store is off. In `dkm_init` and in the UI task. */
+    int32_t (*settings_put)(uint32_t client, const char *key, const void *value, uint32_t len); /* (api 1.9) Set `key` to the `len` bytes (0 to 1024) at `value`; the card is written 2 s after the last change. Returns 0, E_SET_KEY (stale handle or bad key), E_SET_VALUE, E_SET_FULL or E_SET_OFF. The runtime stores the key as `<module name>/<key>`; the module name and the key together are at most 47 characters. UI task only, not a service command handler. */
+    int32_t (*settings_remove)(uint32_t client, const char *key); /* (api 1.9) Remove `key`: returns 0 (also when it was not there), E_SET_KEY (stale handle or bad key) or E_SET_OFF. UI task only, not a service command handler. */
+    int32_t (*intro_take)(dk_intro_frame *frame, dk_intro_done *done, void *ctx, uint32_t ticks); /* (api 1.9) Init-only: replace the stock boot animation. `frame(tick, ctx)` returns the 1024-byte native bitmap of tick 0 .. ticks-1 (30 ticks a second), or NULL to end the animation (the last frame stays); it runs on the intro task, must not block and must not call any dk_api function. `done(ctx)` (may be NULL) runs once in the UI task at the first UI pass: free the buffer there. `ticks` is 1 to 300. Returns 0, E_NOT_FOUND outside `dkm_init`, E_CONTRACT (no frame, bad ticks), E_BUSY (taken already) or E_BOOT_ONLY (the intro is over). See dk/intro.h. */
 } dk_api;
 
 #if UINTPTR_MAX == 0xffffffffu
-_Static_assert(sizeof(dk_api) == 132, "dk_api size");
+_Static_assert(sizeof(dk_api) == 168, "dk_api size");
 _Static_assert(offsetof(dk_api, version) == 0, "dk_api.version");
 _Static_assert(offsetof(dk_api, size) == 4, "dk_api.size");
 _Static_assert(offsetof(dk_api, device) == 8, "dk_api.device");
@@ -85,6 +106,15 @@ _Static_assert(offsetof(dk_api, sample_pool_path) == 116, "dk_api.sample_pool_pa
 _Static_assert(offsetof(dk_api, param_get) == 120, "dk_api.param_get");
 _Static_assert(offsetof(dk_api, param_set) == 124, "dk_api.param_set");
 _Static_assert(offsetof(dk_api, sample_pool_set) == 128, "dk_api.sample_pool_set");
+_Static_assert(offsetof(dk_api, sample_pool_peaks) == 132, "dk_api.sample_pool_peaks");
+_Static_assert(offsetof(dk_api, job_post) == 136, "dk_api.job_post");
+_Static_assert(offsetof(dk_api, job_cancel) == 140, "dk_api.job_cancel");
+_Static_assert(offsetof(dk_api, sample_pool_peaks_window) == 144, "dk_api.sample_pool_peaks_window");
+_Static_assert(offsetof(dk_api, settings_client) == 148, "dk_api.settings_client");
+_Static_assert(offsetof(dk_api, settings_get) == 152, "dk_api.settings_get");
+_Static_assert(offsetof(dk_api, settings_put) == 156, "dk_api.settings_put");
+_Static_assert(offsetof(dk_api, settings_remove) == 160, "dk_api.settings_remove");
+_Static_assert(offsetof(dk_api, intro_take) == 164, "dk_api.intro_take");
 #endif
 
 /* Imports: names the loader resolves in the runtime's table (Api.import gives the address at run time). */
@@ -142,6 +172,6 @@ void dkm_slot_5(const dk_api *api);
 void dkm_slot_6(const dk_api *api);
 void dkm_slot_7(const dk_api *api);
 
-#define DK_API_MINOR 6
+#define DK_API_MINOR 9
 
 #endif /* DK_GEN_API_H */

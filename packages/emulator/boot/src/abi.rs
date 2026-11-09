@@ -72,7 +72,11 @@ pub unsafe extern "C" fn digi_load_snapshot(
     snap: *const u8,
     snap_len: usize,
 ) -> i32 {
-    if syx.is_null() || syx_len == 0 || syx_len > ALLOCATION_LIMIT || snap.is_null() || snap_len == 0
+    if syx.is_null()
+        || syx_len == 0
+        || syx_len > ALLOCATION_LIMIT
+        || snap.is_null()
+        || snap_len == 0
     {
         return failure("invalid input");
     }
@@ -349,7 +353,9 @@ mod coupled {
         DSP_PEER.with(|slot| match slot.borrow_mut().as_mut() {
             Some(peer) => {
                 let reply = peer.reply(tx);
-                unsafe { std::ptr::copy_nonoverlapping(reply.as_ptr(), rx, reply.len().min(tx_len)) };
+                unsafe {
+                    std::ptr::copy_nonoverlapping(reply.as_ptr(), rx, reply.len().min(tx_len))
+                };
                 0
             }
             None => -1,
@@ -498,7 +504,7 @@ mod coupled {
     /// The desktop configuration of the fast tier: REGIONS and ROOTS are
     /// arrays of little-endian u32 entry PCs (`n` entries each; the static
     /// regions and the block-translator cluster roots of
-    /// `tools/emulator/fast_regions.json`), and a `threshold` other than `u32::MAX`
+    /// `config/emulator.json`), and a `threshold` other than `u32::MAX`
     /// adds run-time selection as `digi_sharc_fast` does.
     #[cfg(feature = "fast-wasm")]
     #[unsafe(no_mangle)]

@@ -266,8 +266,16 @@ fn hw_all_mask_commands_ignore_source_field_and_reserved_bit_rejects() {
             assert!(intc.hw_apply_simr_cimr(base + 0x1c, 0x40 | field));
             for (other, other_base) in BASES.into_iter().enumerate() {
                 // Other banks never changed from reset, and SALL restored this one.
-                assert_eq!(intc.read(other_base + 0x08, 4), Some(u32::MAX), "{bank}/{other}");
-                assert_eq!(intc.read(other_base + 0x0c, 4), Some(u32::MAX), "{bank}/{other}");
+                assert_eq!(
+                    intc.read(other_base + 0x08, 4),
+                    Some(u32::MAX),
+                    "{bank}/{other}"
+                );
+                assert_eq!(
+                    intc.read(other_base + 0x0c, 4),
+                    Some(u32::MAX),
+                    "{bank}/{other}"
+                );
             }
         }
     }

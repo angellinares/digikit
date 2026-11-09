@@ -1,4 +1,4 @@
-/* Per-module stereo sample pool (16 entries). API contract 1.5, sample_pool_path 1.6 (docs/design/sample-api-1.5.md).
+/* Per-module stereo sample pool (16 entries). API contract 1.5, selection/path 1.6, peaks 1.7 (docs/design/sample-api-1.5.md).
    Additive to <dk/sample.h> (1.3 bank, frozen, mono, 8192 frames, float): a module
    uses the bank family or the track family, never both (the second is refused with
    DK_SAMPLE_E_CONTRACT). A pool entry holds one PCM16 sample, mono or stereo, in
@@ -50,6 +50,24 @@ typedef struct dk_sample_info {
 } dk_sample_info;
 _Static_assert(sizeof(dk_sample_info) == 16, "dk_sample_info layout");
 
+/* API 1.7: immutable READY-token overview, built during loading. The caller
+   supplies DK_SAMPLE_PEAK_BINS native-endian int16 min/max pairs (2048 bytes);
+   success returns 1..512 bins,
+   each covering ceil(info.frames/512) frames. Both channels contribute, extrema
+   include zero. sample_pool_peaks(h,index,info.token,out,sizeof out) rejects a
+   stale token or non-READY entry without touching out. Peaks may be unavailable
+   even while the sample stays READY/playable. No PCM scan or IO occurs.
+   Check api->size covers sample_pool_peaks before calling; UI task only. */
+#define DK_SAMPLE_PEAK_BINS 512u
+typedef struct dk_sample_peak { int16_t min, max; } dk_sample_peak;
+
+/* API 1.8: sample_pool_peaks_window(h, index, token, first, frames, columns, out, capacity) gives min/max pairs (dk_sample_peak) of
+   `columns` equal parts of the frames [first, first + frames) of a READY entry. The runtime reads the PCM in the background. It returns
+   `columns` when out is filled, 0 while the window is computed (call again from the draw callback with the same arguments), or a
+   negative error. A call with other arguments replaces a pending window; one window is kept per module. columns is 1..DK_SAMPLE_WINDOW_MAX
+   and capacity is at least columns * 4 bytes. Check api->size covers sample_pool_peaks_window; UI task only. */
+#define DK_SAMPLE_WINDOW_MAX 128u
+
 /* Declares the table: RECORDS names 16 zeroed dk_strack in the module's DSP data
    (DK_STRACKS * 8 words); CONTROL names 16 control sets of 4 zeroed words.
    The runtime fills the records; the module never writes them. */
@@ -67,6 +85,7 @@ _Static_assert(sizeof(dk_sample_info) == 16, "dk_sample_info layout");
      int32_t sample_pool_status(h, index);                     sticky errors until the entry is added again or cleared
      int32_t sample_pool_info(h, index, uint8_t *out);         out is a dk_sample_info
      int32_t sample_pool_path(h, index, uint8_t *buf, uint32_t cap);   (api 1.6) length, or error
+     int32_t sample_pool_peaks(h, index, token, uint8_t *out, uint32_t capacity); (api 1.7) bins, or error
    set loads the file into the given index (a filled entry is replaced in place, the old file is released; a file another entry holds is
    shared); index >= 16: E_CONTRACT. add returns the first UNUSED index. A file that is already in the pool (the same path) returns its index and loads nothing; if that
    entry has a sticky error, the add selects it again. Indexes are stable: clear leaves a hole and never moves another entry, so a value

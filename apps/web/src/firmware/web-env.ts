@@ -62,13 +62,13 @@ function kit(): Promise<PatchKit> {
 }
 
 export const webFirmwareEnv: FirmwareEnv = {
-  async prepare(stock, restore) {
+  async prepare(stock, restore, set = '') {
     const w = await patchWorker();
     const id = nextId++;
     const reply = await new Promise<Reply>((resolve, reject) => {
       pending.set(id, { resolve, reject });
       const copy = stock.slice().buffer;
-      w.postMessage({ type: 'prepare', id, firmware: copy, restore }, [copy]);
+      w.postMessage({ type: 'prepare', id, firmware: copy, restore, set }, [copy]);
     });
     const p = reply.prepared!;
     return { ...p, image: new Uint8Array(p.image) };

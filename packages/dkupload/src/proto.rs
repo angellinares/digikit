@@ -86,7 +86,7 @@ impl Status {
             Status::State => "no upload open",
             Status::Offset => "offset is neither the next byte nor a retry of the previous chunk",
             Status::Length => "chunk length breaks the rule, or the file would pass its size",
-            Status::Hash => "the staged file does not match the sha256 sent with BEGIN",
+            Status::Hash => "the staged file does not match the file hash sent with BEGIN",
             Status::Write => "the firmware's block write failed",
             Status::Read => "the firmware's block read failed",
             Status::NoFile => "that path is not in the store",
@@ -208,7 +208,7 @@ impl Info {
 pub struct Entry {
     pub path: String,
     pub size: u32,
-    pub sha256: [u8; 32],
+    pub hash: [u8; 32],
 }
 
 #[derive(Clone, Debug, PartialEq, Eq)]
@@ -249,6 +249,9 @@ impl<'a> Cur<'a> {
         Ok(s)
     }
 }
+
+/// What a host says to a runtime without `CAP_FILEHASH`: its store keeps SHA-256, this host sends the content hash.
+pub const OLD_STORE: &str = "Update the firmware: this runtime uses the old store format";
 
 pub fn parse_info(body: &[u8]) -> Result<Info, Error> {
     let mut c = Cur(body);
@@ -297,9 +300,9 @@ pub fn parse_list(body: &[u8]) -> Result<ListPage, Error> {
     for _ in 0..n {
         let path = c.cstr()?;
         let size = c.u32()?;
-        let mut sha256 = [0u8; 32];
-        sha256.copy_from_slice(c.take(32)?);
-        entries.push(Entry { path, size, sha256 });
+        let mut hash = [0u8; 32];
+        hash.copy_from_slice(c.take(32)?);
+        entries.push(Entry { path, size, hash });
     }
     Ok(ListPage { total, entries })
 }
@@ -346,10 +349,10 @@ pub fn parse_read(body: &[u8]) -> Result<(u32, Vec<u8>), Error> {
     Ok((size, c.0.to_vec()))
 }
 
-pub fn begin_body(path: &str, size: u32, sha: &[u8; 32]) -> Result<Vec<u8>, Error> {
+pub fn begin_body(path: &str, size: u32, hash: &[u8; 32]) -> Result<Vec<u8>, Error> {
     let mut b = path_body(path)?;
     b.extend(size.to_be_bytes());
-    b.extend(sha);
+    b.extend(hash);
     Ok(b)
 }
 

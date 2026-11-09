@@ -1,11 +1,14 @@
 import { be32 } from '@digi/dk-session';
-import type { Device } from '@digi/test-support';
+import { button, type Device } from '@digi/test-support';
 import { expect, test } from 'vitest';
 import { bootInfo, bootInfoLoaded, CMD as MAILBOX, currentRecord, encodeRecord, postRaw } from '@digi/regression/runtime/card-kit.ts';
 import { CARD_SYMBOLS, cardRigs, RT } from '@digi/regression/runtime/card-rig.ts';
 import { CARD_TIMEOUT, settleHang } from '@digi/regression/runtime/debug-kit.ts';
 import { rpc } from '@digi/regression/runtime/fx-live.ts';
+import { drainInputs } from '@digi/regression/runtime/fx-session.ts';
+import { introNow, safeFrame } from '@digi/regression/runtime/intro-frame.ts';
 import { planSymbol } from '@digi/regression/runtime/runtime-plan.ts';
+import { waitEmulatedFrames } from '@digi/regression/runtime/waits.ts';
 
 /**
  * Safe mode and power cuts (the Python scenarios, deleted: safe-fault, safe-late-fault and cut-selection, all full
@@ -16,6 +19,7 @@ import { planSymbol } from '@digi/regression/runtime/runtime-plan.ts';
 type BootInfo = Awaited<ReturnType<typeof bootInfo>>;
 const E_SAFE_MODE = -44;
 const SAFE_COUNTER = 1;
+const SAFE_KEY = 2;
 const SAFE_FLAG = 3;
 /** Scenario safe-fault: the module that follows `fault` on the card of the safe-once flag. */
 const FLAG_MODULES: Record<Device, string[]> = { dt2: ['test/sine'], dn2: ['test/dyn-dn2'] };
@@ -37,7 +41,8 @@ cardRigs('safe mode', { full: true, relaxFs: true, roots: RT, symbols: CARD_SYMB
     'a module that resets the machine in its init: two boots never reach the UI loop, the third boots in safe mode',
     async () => {
       const fault = h.mod('test/dyn-fault', 'fault');
-      await h.boot(await h.card({ modules: [fault], selection: [fault.name] }));
+      // Three boots of the fault card run inside this one reload; the hang guard covers all three.
+      await h.boot(await h.card({ modules: [fault], selection: [fault.name] }), { timeoutMs: 600_000 });
       const info = await h.ready(true);
       expect(info, 'the third boot is safe mode (counter 2)').toMatchObject({
         safe: 1,
@@ -46,6 +51,7 @@ cardRigs('safe mode', { full: true, relaxFs: true, roots: RT, symbols: CARD_SYMB
       });
       expect(info.loaded, 'safe mode loaded no module').toBe(0);
       expect(info.allResults[0], 'and reported it').toBe(E_SAFE_MODE);
+      expect((await introNow(h.session)).equals(safeFrame('counter')), 'the intro shows the 2 FAILED BOOTS frame').toBe(true);
       const rec = currentRecord(await h.records());
       expect(rec?.counter, 'the UI loop ran: counter 0').toBe(0);
       expect(rec?.paths, 'selection kept').toEqual([fault.name]);
@@ -123,6 +129,54 @@ cardRigs('safe mode', { full: true, relaxFs: true, roots: RT, symbols: CARD_SYMB
     );
   }
 });
+
+// REC (the safe-mode key) is queued before the cold boot: held, or pressed and released.
+for (const held of [true, false]) {
+  cardRigs(
+    `cold boot with REC ${held ? 'held' : 'released'}`,
+    {
+      roots: RT, // default tier: these two cases run in the normal gate
+      symbols: CARD_SYMBOLS,
+      startEmpty: true,
+      initial: () => ({ modules: ['test/c-demo'], selection: ['modules/c-demo.dkm'] }),
+      initialButtons: held
+        ? [{ code: button('RECORD'), down: true }]
+        : [
+            { code: button('RECORD'), down: true },
+            { code: button('RECORD'), down: false },
+          ],
+    },
+    (h) => {
+      test(
+        held ? 'REC held: safe mode (key), no module loaded' : 'REC released: no safe mode, the module loads',
+        async () => {
+          await expect.poll(async () => (await bootInfo(h.session, h.plan)).uiReached, { timeout: 30_000 }).toBe(1);
+          // Check the first decision, not a later boot: a wrong safe result must fail here.
+          const first = await bootInfo(h.session, h.plan);
+          expect(first).toMatchObject({ safe: held ? 1 : 0, reason: held ? SAFE_KEY : 0, count: 1 });
+          // the safe-mode screen replaces the stock intro in a safe boot only (its bytes are the host test's fixture)
+          const shown = await introNow(h.session);
+          expect(shown.equals(safeFrame('key')), held ? 'REC held: the SAFE MODE / REC HELD frame' : 'REC released: not the safe-mode frame').toBe(held);
+          expect(shown.equals(safeFrame('counter')), 'never the counter frame').toBe(false);
+          const info = held ? first : await bootInfoLoaded(h.session, h.plan);
+          expect(info).toMatchObject({ loaded: held ? 0 : 1 });
+          await rpc(h.session, 'run.mode', { mode: 'free' });
+          try {
+            if (held) await rpc(h.session, 'input.button', { code: button('RECORD'), down: false });
+            await waitEmulatedFrames(h.session, 150);
+          } finally {
+            try {
+              await drainInputs(h.session);
+            } finally {
+              await rpc(h.session, 'run.mode', { mode: 'paused' });
+            }
+          }
+        },
+        CARD_TIMEOUT,
+      );
+    },
+  );
+}
 
 cardRigs(
   'power cut between the selection record copies',

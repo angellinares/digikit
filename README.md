@@ -1,5 +1,7 @@
 # digikit
 
+> 🧪 **digikit is experimental.** It will be released as stable once it reaches 1.0.0.
+
 digikit adds new machines and effects to the Elektron **Digitakt II** and **Digitone II**. It patches your own copy of
 the stock firmware with a small runtime. The runtime loads modules from its own area on the device's card, so you can add or change
 a machine without flashing again. An emulator runs the real firmware on your computer, so you can test everything
@@ -34,6 +36,8 @@ before it goes near the device.
 | [digikit runtime](modules/core/runtime/README.md) | Menu, module loading, upload, debug log | Digitakt II, Digitone II | Digitakt II (OS 1.17) |
 | [PLUCK](modules/machines/pluck/README.md) | Plucked-string synth: decay, pick position, brightness, colour. A run-time module: load it with `mise run dk:run` | Digitakt II, Digitone II | Digitakt II (OS 1.17) |
 | [Frequency shifter](modules/fx/freqshift/README.md) | Moves every frequency up or down by the same number of Hz (an FX page with SHIFT and MIX). A run-time module; a send effect by default, or a master insert | Digitakt II, Digitone II | not yet |
+| [Overdrive curves](modules/core/adapters/overdrive/README.md) | Eight overdrive curves per track (stock, TNH4, HARD, SOFT, TUBE, FOLD, FUZZ, SQR), before or after the filter: the FX page's OVR ROUTING knob becomes OVR TYPE. Patched into the image (`core/overdrive`) | Digitakt II | not yet |
+| [TB-303](modules/machines/tb303/README.md) | Open303 (MIT) as a machine: saw or square through a TB-303 filter, filter envelope, accent above velocity 100, slides between overlapping notes; knobs WAVE ACC CUT RES ENV DEC. A run-time module | Digitakt II | not yet |
 
 Supported firmware: **Digitakt II OS 1.17** and **Digitone II OS 1.12**. Download them from Elektron's support site and
 put them in `firmware/` (`Digitakt_II_OS1.17.syx`, `Digitone_II_OS1.12.syx`). Device work so far is on the Digitakt II.
@@ -104,8 +108,9 @@ FUNC while powering on to reach the STARTUP menu, and send the stock OS over MID
 - [Module reference](modules/README.md): manifest fields, the typed sections, generated files
 - [Patching, flashing and the device steps in detail](docs/PATCHING.md)
 - [Architecture](docs/ARCHITECTURE.md): the layers (module, SDK, runtime, adapters, firmware), what each may depend on, how a new device fits
-- [Developing digikit](docs/DEVELOPMENT.md): the emulator's options, [fast iteration](docs/DEVELOPMENT.md#fast-iteration-runtime-ui-and-modules) (`dk:dev`, Reload modules), tests, analysis tools, repository layout
-- [Testing](docs/TESTING.md): which check for which change; run `mise run test:changed` before committing
+- [Developing digikit](docs/DEVELOPMENT.md): [open a module, the DIGIKIT menu or UI demo](docs/DEVELOPMENT.md#visible-preview) (`mise run dk:module ID` for zero-DSP machine UI preview, add `--dsp` for audio; `mise run dk:menu`, `mise run dk:ui-demo`), [fast iteration](docs/DEVELOPMENT.md#fast-iteration-runtime-ui-and-modules), tests, analysis tools, repository layout
+- [Testing](docs/TESTING.md): `mise run test` verifies affected work; `mise run test:plan` explains selection first. `test:changed` is cheap preflight.
+- [Releasing](docs/RELEASING.md): independent module/runtime versions, previewing and applying version metadata
 - [Results of the research](docs/FINDINGS.md)
 - [Contributing](CONTRIBUTING.md)
 

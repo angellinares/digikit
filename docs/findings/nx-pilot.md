@@ -134,7 +134,7 @@ speedup are not established. Lint/format/type selection and merge-gate routing r
 **[D]** On base `8e98b797` plus this extension, support and session joined control-client as cached
 host targets; the other four hosts and Rust/runtime targets remain uncached. Support uses standard
 `hostTests`, `^hostTests` (its graph dependency on control-client), and the explicit
-`tools/emulator/fast_regions.json` input. Session retains its project/shared inputs and `sdk/sdk.toml`.
+`config/emulator.json` input. Session retains its project/shared inputs and `sdk/sdk.toml`.
 Current tests use local sources, mocks and temporary data; frozen installed dependencies are assumed.
 Future helper, environment or external-input changes require another boundary audit.
 

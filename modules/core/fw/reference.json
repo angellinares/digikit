@@ -4,6 +4,56 @@
       "at": {
         "dn2-1.11": [
           {
+            "addr": "0x40114d94",
+            "len": 4
+          }
+        ],
+        "dn2-1.12": [
+          {
+            "addr": "0x40115074",
+            "len": 4
+          }
+        ],
+        "dt2-1.17": [
+          {
+            "addr": "0x40113700",
+            "len": 4
+          }
+        ]
+      },
+      "bindings": {
+        "c": "dk_fw_draw_bitmap_clear",
+        "rust": "dkfw::draw::bitmap_clear"
+      },
+      "cpu": "cf",
+      "doc": "Clears the 32-bit row bands of a Bitmap to `value` (0: black); the intro's frame callbacks of the stock scene tables call it as (bitmap, 0, 1) before they draw.",
+      "file": "devices/fw/draw.toml",
+      "kind": "fn",
+      "mark": "D",
+      "name": "cf.draw.fn.bitmap_clear",
+      "rule": {
+        "dn2": {
+          "kind": "cf_func",
+          "len": 4,
+          "offset": 0
+        },
+        "dt2": {
+          "kind": "cf_func",
+          "len": 4,
+          "offset": 0
+        }
+      },
+      "sig": "void (u8 *bitmap, u32 value, u32 flags)",
+      "subsystem": "draw",
+      "users": [
+        "core/introblank"
+      ],
+      "was": []
+    },
+    {
+      "at": {
+        "dn2-1.11": [
+          {
             "addr": "0x401157fc",
             "len": 4
           }
@@ -26,7 +76,7 @@
         "rust": "dkfw::draw::blit"
       },
       "cpu": "cf",
-      "doc": "Copies a 1 bpp Bitmap `src` onto `dst` at x, y, clipped; when `centre` is not 0, x, y is the centre of `src`. Bitmap: +4 width, +8 height, +0xc 32-bit row bands, data pointer at +0x14.",
+      "doc": "Copies a 1 bpp Bitmap `src` onto `dst` at x, y, clipped; when `centre` is not 0, x, y is the centre of `src`. Bitmap: +4 width, +8 height, +0xc 32-bit row bands, +0x10 pixel pointer, +0x14 mask pointer.",
       "file": "devices/fw/draw.toml",
       "kind": "fn",
       "mark": "D",
@@ -6290,6 +6340,157 @@
     },
     {
       "at": {
+        "dn2-1.12": [
+          {
+            "addr": "0x40065ae8",
+            "len": 4
+          }
+        ],
+        "dt2-1.17": [
+          {
+            "addr": "0x4006b18c",
+            "len": 4
+          }
+        ]
+      },
+      "bindings": {
+        "c": "dk_fw_page_native_font_operand",
+        "rust": "dkfw::page::NATIVE_FONT_OPERAND"
+      },
+      "cpu": "cf",
+      "doc": "Address operand of pea at ParameterPageView generic knob draw+0xda; the operand points to the live RAM font object. Hash the code operand, not mutable RAM. Used only through bounded canvas text.",
+      "file": "devices/fw/page.toml",
+      "kind": "data",
+      "mark": "D",
+      "name": "cf.page.data.native_font_operand",
+      "rule": {
+        "dn2": {
+          "kind": "cf_func",
+          "len": 4,
+          "offset": 220
+        },
+        "dt2": {
+          "kind": "cf_func",
+          "len": 4,
+          "offset": 220
+        }
+      },
+      "subsystem": "page",
+      "users": [
+        "core/machines"
+      ],
+      "was": []
+    },
+    {
+      "at": {
+        "dn2-1.12": [
+          {
+            "addr": "0x4003e426",
+            "len": 4
+          }
+        ]
+      },
+      "bindings": {
+        "c": "dk_fw_page_native_library_sound",
+        "rust": "dkfw::page::native_library_sound"
+      },
+      "cpu": "cf",
+      "devices": [
+        "dn2"
+      ],
+      "doc": "DN2 browser-selected sound from view+0x68 and the selected-sound index, as used by its draw and parameter mapper.",
+      "file": "devices/fw/page.toml",
+      "kind": "fn",
+      "mark": "D",
+      "name": "cf.page.fn.native_library_sound",
+      "rule": {
+        "dn2": {
+          "kind": "cf_func",
+          "len": 4,
+          "offset": 0
+        }
+      },
+      "sig": "u8 *(u8 *sounds, u32 index)",
+      "subsystem": "page",
+      "users": [
+        "core/machines"
+      ],
+      "was": []
+    },
+    {
+      "at": {
+        "dn2-1.12": [
+          {
+            "addr": "0x400167a4",
+            "len": 4
+          }
+        ]
+      },
+      "bindings": {
+        "c": "dk_fw_page_native_sound_index",
+        "rust": "dkfw::page::native_sound_index"
+      },
+      "cpu": "cf",
+      "devices": [
+        "dn2"
+      ],
+      "doc": "DN2 selected-sound/browser index of MultiSourcePageView (not page index); values below 0x80 select the browser sound instead of the current track sound.",
+      "file": "devices/fw/page.toml",
+      "kind": "fn",
+      "mark": "D",
+      "name": "cf.page.fn.native_sound_index",
+      "rule": {
+        "dn2": {
+          "kind": "cf_func",
+          "len": 4,
+          "offset": 0
+        }
+      },
+      "sig": "u32 (u8 *view)",
+      "subsystem": "page",
+      "users": [
+        "core/machines"
+      ],
+      "was": []
+    },
+    {
+      "at": {
+        "dn2-1.12": [
+          {
+            "addr": "0x40030e66",
+            "len": 4
+          }
+        ]
+      },
+      "bindings": {
+        "c": "dk_fw_page_native_track_sound",
+        "rust": "dkfw::page::native_track_sound"
+      },
+      "cpu": "cf",
+      "devices": [
+        "dn2"
+      ],
+      "doc": "DN2 track sound from the source view's sounds reference (view+0x78) and track, as used by its draw and parameter mapper.",
+      "file": "devices/fw/page.toml",
+      "kind": "fn",
+      "mark": "D",
+      "name": "cf.page.fn.native_track_sound",
+      "rule": {
+        "dn2": {
+          "kind": "cf_func",
+          "len": 4,
+          "offset": 0
+        }
+      },
+      "sig": "u8 *(u8 *sounds, u32 track)",
+      "subsystem": "page",
+      "users": [
+        "core/machines"
+      ],
+      "was": []
+    },
+    {
+      "at": {
         "dn2-1.11": [
           {
             "addr": "0x400c2474",
@@ -6339,6 +6540,92 @@
         "cf.fxpages.acc",
         "cf.page.fn.acc"
       ]
+    },
+    {
+      "at": {
+        "dn2-1.12": [
+          {
+            "addr": "0x4001683a",
+            "len": 8
+          }
+        ],
+        "dt2-1.17": [
+          {
+            "addr": "0x40017cd4",
+            "len": 8
+          }
+        ]
+      },
+      "bindings": {
+        "c": "dk_fw_page_source_code",
+        "rust": "dkfw::page::source_code"
+      },
+      "cpu": "cf",
+      "doc": "Native source-page encoder-to-parameter-code entry (vtable slot 47), stack (view, encoder). Callback page PARAM bindings return an existing code; page zero and stock mappings resume unchanged.",
+      "file": "devices/fw/page.toml",
+      "kind": "fn",
+      "mark": "D",
+      "name": "cf.page.fn.source_code",
+      "rule": {
+        "dn2": {
+          "kind": "cf_func",
+          "len": 8,
+          "offset": 0
+        },
+        "dt2": {
+          "kind": "cf_func",
+          "len": 8,
+          "offset": 0
+        }
+      },
+      "subsystem": "page",
+      "users": [
+        "core/machines"
+      ],
+      "was": []
+    },
+    {
+      "at": {
+        "dn2-1.12": [
+          {
+            "addr": "0x40018118",
+            "len": 8
+          }
+        ],
+        "dt2-1.17": [
+          {
+            "addr": "0x40016eac",
+            "len": 8
+          }
+        ]
+      },
+      "bindings": {
+        "c": "dk_fw_page_source_draw",
+        "rust": "dkfw::page::source_draw"
+      },
+      "cpu": "cf",
+      "doc": "Native source-page draw entry, stack (view, Bitmap*). A callback page may draw and return before the displaced prologue; ordinary pages resume unchanged.",
+      "file": "devices/fw/page.toml",
+      "kind": "fn",
+      "mark": "D",
+      "name": "cf.page.fn.source_draw",
+      "rule": {
+        "dn2": {
+          "kind": "cf_func",
+          "len": 8,
+          "offset": 0
+        },
+        "dt2": {
+          "kind": "cf_func",
+          "len": 8,
+          "offset": 0
+        }
+      },
+      "subsystem": "page",
+      "users": [
+        "core/machines"
+      ],
+      "was": []
     },
     {
       "at": {
@@ -6858,6 +7145,88 @@
     },
     {
       "at": {
+        "dn2-1.12": [
+          {
+            "addr": "0x4001683a"
+          }
+        ],
+        "dt2-1.17": [
+          {
+            "addr": "0x40017cd4"
+          }
+        ]
+      },
+      "cpu": "cf",
+      "devices": [
+        "dt2",
+        "dn2"
+      ],
+      "doc": "Encoder code entry: opt-in page returns its declarative code (zero for LOCAL/unused); other mappings resume unchanged.",
+      "file": "devices/fw/page.toml",
+      "kind": "hook",
+      "mark": "D",
+      "mode": "before",
+      "name": "cf.page.hook.source_code",
+      "regs": {
+        "clobbers": [
+          "d0",
+          "d1",
+          "a0",
+          "a1",
+          "ccr"
+        ],
+        "in": []
+      },
+      "site": "cf.page.fn.source_code",
+      "subsystem": "page",
+      "users": [
+        "core/machines"
+      ],
+      "was": []
+    },
+    {
+      "at": {
+        "dn2-1.12": [
+          {
+            "addr": "0x40018118"
+          }
+        ],
+        "dt2-1.17": [
+          {
+            "addr": "0x40016eac"
+          }
+        ]
+      },
+      "cpu": "cf",
+      "devices": [
+        "dt2",
+        "dn2"
+      ],
+      "doc": "Draw entry: opt-in page returns directly after bounded callback rendering; every other page resumes its prologue.",
+      "file": "devices/fw/page.toml",
+      "kind": "hook",
+      "mark": "D",
+      "mode": "before",
+      "name": "cf.page.hook.source_draw",
+      "regs": {
+        "clobbers": [
+          "d0",
+          "d1",
+          "a0",
+          "a1",
+          "ccr"
+        ],
+        "in": []
+      },
+      "site": "cf.page.fn.source_draw",
+      "subsystem": "page",
+      "users": [
+        "core/machines"
+      ],
+      "was": []
+    },
+    {
+      "at": {
         "dn2-1.11": [
           {
             "addr": "0x40016480"
@@ -6925,7 +7294,7 @@
         "dt2",
         "dn2"
       ],
-      "doc": "Entry of the machine page's encoder turn handler; the hook sees every turn and never consumes one.",
+      "doc": "Entry of the machine page's encoder turn handler; ordinary PARAM turns continue natively, while opt-in native-page LOCAL/unused turns return one to consume.",
       "file": "devices/fw/page.toml",
       "kind": "hook",
       "mark": "D",
@@ -9508,6 +9877,50 @@
       "at": {
         "dn2-1.11": [
           {
+            "addr": "0x400d3bae"
+          }
+        ],
+        "dn2-1.12": [
+          {
+            "addr": "0x400d3d12"
+          }
+        ],
+        "dt2-1.17": [
+          {
+            "addr": "0x400d183a"
+          }
+        ]
+      },
+      "cpu": "cf",
+      "devices": [
+        "dt2",
+        "dn2"
+      ],
+      "doc": "The intro setup function, before it reads its scene table argument from (0x24,sp); a hook that writes another table pointer there changes the whole intro.",
+      "file": "devices/fw/rtos.toml",
+      "kind": "hook",
+      "mark": "D",
+      "mode": "before",
+      "name": "cf.rtos.hook.intro_setup.table_arg",
+      "regs": {
+        "clobbers": [
+          "d0",
+          "a0",
+          "ccr"
+        ],
+        "in": []
+      },
+      "site": "cf.rtos.site.intro_setup.table_arg",
+      "subsystem": "rtos",
+      "users": [
+        "core/introblank"
+      ],
+      "was": []
+    },
+    {
+      "at": {
+        "dn2-1.11": [
+          {
             "addr": "0x4002ed34"
           }
         ],
@@ -9659,6 +10072,51 @@
       "at": {
         "dn2-1.11": [
           {
+            "addr": "0x400d3bae",
+            "len": 6
+          }
+        ],
+        "dn2-1.12": [
+          {
+            "addr": "0x400d3d12",
+            "len": 6
+          }
+        ],
+        "dt2-1.17": [
+          {
+            "addr": "0x400d183a",
+            "len": 6
+          }
+        ]
+      },
+      "cpu": "cf",
+      "doc": "The load of the scene table argument in the intro setup function (`move.l (0x24,sp),d0; movea.l d0,a0`, 6 bytes); the hook may change the argument on the stack.",
+      "file": "devices/fw/rtos.toml",
+      "kind": "site",
+      "mark": "D",
+      "name": "cf.rtos.site.intro_setup.table_arg",
+      "rule": {
+        "dn2": {
+          "kind": "cf_func",
+          "len": 6,
+          "offset": 8
+        },
+        "dt2": {
+          "kind": "cf_func",
+          "len": 6,
+          "offset": 8
+        }
+      },
+      "subsystem": "rtos",
+      "users": [
+        "core/introblank"
+      ],
+      "was": []
+    },
+    {
+      "at": {
+        "dn2-1.11": [
+          {
             "addr": "0x4002ed34",
             "len": 8
           }
@@ -9702,6 +10160,55 @@
         "cf.rtos.site.boot",
         "dkrt.hook.boot"
       ]
+    },
+    {
+      "at": {
+        "dn2-1.11": [
+          {
+            "addr": "0x42c4bacc",
+            "len": 4
+          }
+        ],
+        "dn2-1.12": [
+          {
+            "addr": "0x42c4cacc",
+            "len": 4
+          }
+        ],
+        "dt2-1.17": [
+          {
+            "addr": "0x43153a00",
+            "len": 4
+          }
+        ]
+      },
+      "bindings": {
+        "c": "dk_fw_rtos_intro_entry",
+        "rust": "dkfw::rtos::INTRO_ENTRY"
+      },
+      "cpu": "cf",
+      "doc": "The intro's current-entry pointer: {callback, frame count} in the scene table, NULL when no intro runs (DT2 0x43153a00, DN2 0x42c4cacc).",
+      "file": "devices/fw/rtos.toml",
+      "kind": "value",
+      "mark": "D",
+      "name": "cf.rtos.value.intro_entry",
+      "rule": {
+        "dn2": {
+          "kind": "cf_literal",
+          "len": 4,
+          "offset": 116
+        },
+        "dt2": {
+          "kind": "cf_literal",
+          "len": 4,
+          "offset": 116
+        }
+      },
+      "subsystem": "rtos",
+      "users": [
+        "core/runtime"
+      ],
+      "was": []
     },
     {
       "at": {
@@ -12518,6 +13025,70 @@
       "at": {
         "dt2-1.17": [
           {
+            "addr": "0x283860f4",
+            "pm": true
+          }
+        ]
+      },
+      "cpu": "sharc",
+      "devices": [
+        "dt2"
+      ],
+      "doc": "After the frame copy of every block; the hook point for rewriting track parameters in the frame copy before the stock code reads them.",
+      "file": "devices/fw/dsp/frame.toml",
+      "kind": "hook",
+      "mark": "D",
+      "mode": "before",
+      "name": "dsp.frame.hook.frame_rx.copy_block",
+      "regs": {
+        "clobbers": [
+          "astat"
+        ],
+        "in": []
+      },
+      "site": "dsp.frame.site.frame_rx.copy_block",
+      "subsystem": "frame",
+      "users": [
+        "core/overdrive"
+      ],
+      "was": []
+    },
+    {
+      "at": {
+        "dt2-1.17": [
+          {
+            "addr": "0x28385910",
+            "pm": true
+          }
+        ]
+      },
+      "cpu": "sharc",
+      "devices": [
+        "dt2"
+      ],
+      "doc": "After the conditional frame copy; the hook point for rewriting track parameters in the frame copy before the stock code reads them.",
+      "file": "devices/fw/dsp/frame.toml",
+      "kind": "hook",
+      "mark": "D",
+      "mode": "before",
+      "name": "dsp.frame.hook.frame_rx.copy_cond",
+      "regs": {
+        "clobbers": [
+          "astat"
+        ],
+        "in": []
+      },
+      "site": "dsp.frame.site.frame_rx.copy_cond",
+      "subsystem": "frame",
+      "users": [
+        "core/overdrive"
+      ],
+      "was": []
+    },
+    {
+      "at": {
+        "dt2-1.17": [
+          {
             "addr": "0x28385934",
             "pm": true
           }
@@ -12591,6 +13162,70 @@
       "subsystem": "frame",
       "users": [
         "core/dsp-voice"
+      ],
+      "was": []
+    },
+    {
+      "at": {
+        "dt2-1.17": [
+          {
+            "addr": "0x283860f4",
+            "len": 6,
+            "pm": true
+          }
+        ]
+      },
+      "cpu": "sharc",
+      "devices": [
+        "dt2"
+      ],
+      "doc": "The instruction after the copy of the ColdFire frame that the frame consumer makes near the end of every block.",
+      "file": "devices/fw/dsp/frame.toml",
+      "kind": "site",
+      "mark": "D",
+      "name": "dsp.frame.site.frame_rx.copy_block",
+      "rule": {
+        "dt2": {
+          "kind": "sharc_func",
+          "len": 6,
+          "offset": 1366
+        }
+      },
+      "subsystem": "frame",
+      "users": [
+        "core/overdrive"
+      ],
+      "was": []
+    },
+    {
+      "at": {
+        "dt2-1.17": [
+          {
+            "addr": "0x28385910",
+            "len": 6,
+            "pm": true
+          }
+        ]
+      },
+      "cpu": "sharc",
+      "devices": [
+        "dt2"
+      ],
+      "doc": "The instruction after the frame consumer's conditional copy of the ColdFire frame into the DSP's frame copy.",
+      "file": "devices/fw/dsp/frame.toml",
+      "kind": "site",
+      "mark": "D",
+      "name": "dsp.frame.site.frame_rx.copy_cond",
+      "rule": {
+        "dt2": {
+          "kind": "sharc_func",
+          "len": 6,
+          "offset": 356
+        }
+      },
+      "subsystem": "frame",
+      "users": [
+        "core/overdrive"
       ],
       "was": []
     },
@@ -14032,6 +14667,38 @@
     },
     {
       "at": {
+        "dt2-1.17": [
+          {
+            "addr": "0x283967b0",
+            "len": 6,
+            "pm": true
+          }
+        ]
+      },
+      "cpu": "sharc",
+      "devices": [
+        "dt2"
+      ],
+      "doc": "The overdrive stage (FUN_1cb3d8), called for each track and for the master: y = clamp(drive x, -1, 1), then y (2 - |y|) three times, out = x + mix (y - x), drive and mix ramped across the block from its record; C convention (R4 record, R8 in, R12 out, the sample count at DM(1, I6)).",
+      "file": "devices/fw/dsp/voice.toml",
+      "kind": "fn",
+      "mark": "D",
+      "name": "dsp.voice.fn.overdrive",
+      "rule": {
+        "dt2": {
+          "kind": "sharc_func",
+          "len": 6,
+          "offset": 0
+        }
+      },
+      "subsystem": "voice",
+      "users": [
+        "core/overdrive"
+      ],
+      "was": []
+    },
+    {
+      "at": {
         "dn2-1.11": [
           {
             "addr": "0x20004a36",
@@ -14355,6 +15022,110 @@
       "subsystem": "voice",
       "users": [
         "core/dsp-voice"
+      ],
+      "was": []
+    },
+    {
+      "at": {
+        "dt2-1.17": [
+          {
+            "addr": "0x2838d8b2",
+            "pm": true
+          }
+        ]
+      },
+      "cpu": "sharc",
+      "devices": [
+        "dt2"
+      ],
+      "doc": "The chain driver's CALL of the overdrive stage for a track; the hook point for another per-track overdrive (the master's calls stay).",
+      "file": "devices/fw/dsp/voice.toml",
+      "kind": "hook",
+      "mark": "D",
+      "mode": "retarget",
+      "name": "dsp.voice.hook.chain.overdrive_call",
+      "regs": {
+        "clobbers": [
+          "r0-r2",
+          "r4",
+          "r8",
+          "r12",
+          "i4",
+          "astat"
+        ],
+        "in": [
+          "r4",
+          "r8",
+          "r12",
+          "r14",
+          "i6",
+          "i7"
+        ],
+        "modes": {
+          "l3": 0,
+          "l4": 0,
+          "l5": 0,
+          "m14": 1,
+          "m6": 1,
+          "simd": false
+        }
+      },
+      "site": "dsp.voice.site.chain.overdrive_call",
+      "subsystem": "voice",
+      "users": [
+        "core/overdrive"
+      ],
+      "was": []
+    },
+    {
+      "at": {
+        "dt2-1.17": [
+          {
+            "addr": "0x2838e70e",
+            "pm": true
+          }
+        ]
+      },
+      "cpu": "sharc",
+      "devices": [
+        "dt2"
+      ],
+      "doc": "The other per-track CALL of the overdrive stage (out-of-line code of the chain driver); hooked together with dsp.voice.hook.chain.overdrive_call.",
+      "file": "devices/fw/dsp/voice.toml",
+      "kind": "hook",
+      "mark": "D",
+      "mode": "retarget",
+      "name": "dsp.voice.hook.chain_ool.overdrive_call",
+      "regs": {
+        "clobbers": [
+          "r0-r2",
+          "r4",
+          "r8",
+          "r12",
+          "i4",
+          "astat"
+        ],
+        "in": [
+          "r4",
+          "r8",
+          "r12",
+          "r14",
+          "i6",
+          "i7"
+        ],
+        "modes": {
+          "l3": 0,
+          "l4": 0,
+          "l5": 0,
+          "m14": 1,
+          "m6": 1,
+          "simd": false
+        }
+      },
+      "site": "dsp.voice.site.chain_ool.overdrive_call",
+      "subsystem": "voice",
+      "users": [
+        "core/overdrive"
       ],
       "was": []
     },
@@ -15514,6 +16285,70 @@
     },
     {
       "at": {
+        "dt2-1.17": [
+          {
+            "addr": "0x2838d8b2",
+            "len": 6,
+            "pm": true
+          }
+        ]
+      },
+      "cpu": "sharc",
+      "devices": [
+        "dt2"
+      ],
+      "doc": "A CALL of the overdrive stage in the per-voice chain driver (FUN_1c642a), one of the two per-track overdrive calls; the voice is 32 - R14 (the driver counts the 32 voices down).",
+      "file": "devices/fw/dsp/voice.toml",
+      "kind": "site",
+      "mark": "D",
+      "name": "dsp.voice.site.chain.overdrive_call",
+      "rule": {
+        "dt2": {
+          "kind": "sharc_func",
+          "len": 6,
+          "offset": 2095
+        }
+      },
+      "subsystem": "voice",
+      "users": [
+        "core/overdrive"
+      ],
+      "was": []
+    },
+    {
+      "at": {
+        "dt2-1.17": [
+          {
+            "addr": "0x2838e70e",
+            "len": 6,
+            "pm": true
+          }
+        ]
+      },
+      "cpu": "sharc",
+      "devices": [
+        "dt2"
+      ],
+      "doc": "The other per-track CALL of the overdrive stage, in the chain driver's out-of-line code (FUN_1c71ec, finding 06); R14 as at dsp.voice.site.chain.overdrive_call.",
+      "file": "devices/fw/dsp/voice.toml",
+      "kind": "site",
+      "mark": "D",
+      "name": "dsp.voice.site.chain_ool.overdrive_call",
+      "rule": {
+        "dt2": {
+          "kind": "sharc_func",
+          "len": 6,
+          "offset": 411
+        }
+      },
+      "subsystem": "voice",
+      "users": [
+        "core/overdrive"
+      ],
+      "was": []
+    },
+    {
+      "at": {
         "dn2-1.12": [
           {
             "addr": "0x2839315e",
@@ -16470,7 +17305,8 @@
       },
       "subsystem": "voice",
       "users": [
-        "core/dsp-voice"
+        "core/dsp-voice",
+        "core/overdrive"
       ],
       "was": [
         "dsp.voice.frame_base"
@@ -16649,7 +17485,7 @@
   ],
   "subsystems": [
     {
-      "count": 4,
+      "count": 5,
       "cpu": "cf",
       "file": "devices/fw/draw.toml",
       "meaning": "pixels, rectangles, bitmaps, the screen",
@@ -16698,7 +17534,7 @@
       "name": "midi"
     },
     {
-      "count": 26,
+      "count": 34,
       "cpu": "cf",
       "file": "devices/fw/page.toml",
       "meaning": "parameter and FX pages",
@@ -16719,7 +17555,7 @@
       "name": "project"
     },
     {
-      "count": 11,
+      "count": 14,
       "cpu": "cf",
       "file": "devices/fw/rtos.toml",
       "meaning": "tasks, queues, mutexes, idle, interrupts, the reset and boot path",
@@ -16782,7 +17618,7 @@
       "name": "cache"
     },
     {
-      "count": 4,
+      "count": 8,
       "cpu": "sharc",
       "file": "devices/fw/dsp/frame.toml",
       "meaning": "the frame orchestrator",
@@ -16817,7 +17653,7 @@
       "name": "master"
     },
     {
-      "count": 82,
+      "count": 87,
       "cpu": "sharc",
       "file": "devices/fw/dsp/voice.toml",
       "meaning": "voice rendering",

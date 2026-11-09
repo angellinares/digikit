@@ -2,19 +2,20 @@
 
 #[cfg(target_arch = "wasm32")]
 mod abi;
-pub mod card_file;
 mod capture;
-#[cfg(feature = "cf-profile")]
-pub mod cfprof;
+pub mod card_file;
 #[cfg(feature = "cf-mix")]
 pub mod cfmix;
+#[cfg(feature = "cf-profile")]
+pub mod cfprof;
 mod common;
 mod cputime;
-mod guard;
-pub mod midi;
 pub mod ddr_monitor;
 pub mod dsp_patch;
 pub mod dsp_stream;
+mod guard;
+mod late_send;
+pub mod midi;
 pub mod panel_leds;
 #[cfg(feature = "play")]
 pub mod pcm_play;
@@ -23,16 +24,17 @@ mod runtime;
 #[cfg(feature = "sharc")]
 pub mod sharc_peer;
 mod softfloat;
+mod spans;
 pub mod spikelog;
 mod telemetry;
 mod watch;
 pub mod wav;
 
 pub use capture::Dspi2Capture;
-pub use periph::clock;
 pub use common::FlashWrites;
 pub use cputime::thread_cpu_ns;
 pub use guard::{GUARD_HIT_LIMIT, GuardHit, GuardRange, GuardReport, parse_guard_spec};
+pub use periph::clock;
 pub use telemetry::DiagnosticReport;
 pub use watch::{After, FlushHit, WatchConfig, Writer, parse_ranges};
 

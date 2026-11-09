@@ -731,2990 +731,3046 @@
    "type": "sharc.abs32"
   },
   {
-   "addend": 20,
-   "offset": 932,
-   "section": "seg_pmco",
-   "symbol": "_dv_c",
-   "type": "sharc.abs32"
-  },
-  {
    "addend": 0,
-   "offset": 938,
+   "offset": 931,
    "section": "seg_pmco",
-   "symbol": "_dv_cpl",
-   "type": "sharc.abs24"
-  },
-  {
-   "addend": 4,
-   "offset": 941,
-   "section": "seg_pmco",
-   "symbol": "_dv_c",
+   "symbol": "_dv_row",
    "type": "sharc.abs32"
   },
   {
    "addend": 0,
    "offset": 944,
    "section": "seg_pmco",
+   "symbol": "_dv_cplive",
+   "type": "sharc.abs24"
+  },
+  {
+   "addend": 4,
+   "offset": 947,
+   "section": "seg_pmco",
+   "symbol": "_dv_c",
+   "type": "sharc.abs32"
+  },
+  {
+   "addend": 0,
+   "offset": 953,
+   "section": "seg_pmco",
+   "symbol": "_dv_trig_params",
+   "type": "sharc.abs32"
+  },
+  {
+   "addend": 16,
+   "offset": 963,
+   "section": "seg_pmco",
+   "symbol": "_dv_c",
+   "type": "sharc.abs32"
+  },
+  {
+   "addend": 0,
+   "offset": 967,
+   "section": "seg_pmco",
+   "symbol": "_dv_cpread",
+   "type": "sharc.abs24"
+  },
+  {
+   "addend": 0,
+   "offset": 972,
+   "section": "seg_pmco",
+   "symbol": "_dv_cplive",
+   "type": "sharc.abs24"
+  },
+  {
+   "addend": 0,
+   "offset": 980,
+   "section": "seg_pmco",
+   "symbol": "_dv_call_params",
+   "type": "sharc.abs32"
+  },
+  {
+   "addend": 20,
+   "offset": 989,
+   "section": "seg_pmco",
+   "symbol": "_dv_c",
+   "type": "sharc.abs32"
+  },
+  {
+   "addend": 0,
+   "offset": 995,
+   "section": "seg_pmco",
+   "symbol": "_dv_cpl",
+   "type": "sharc.abs24"
+  },
+  {
+   "addend": 4,
+   "offset": 998,
+   "section": "seg_pmco",
+   "symbol": "_dv_c",
+   "type": "sharc.abs32"
+  },
+  {
+   "addend": 0,
+   "offset": 1001,
+   "section": "seg_pmco",
    "symbol": "_dv_row",
    "type": "sharc.abs32"
   },
   {
    "addend": 28,
-   "offset": 957,
+   "offset": 1014,
    "section": "seg_pmco",
    "symbol": "_dv_c",
    "type": "sharc.abs32"
   },
   {
    "addend": 16,
-   "offset": 960,
+   "offset": 1017,
    "section": "seg_pmco",
    "symbol": "_dv_c",
-   "type": "sharc.abs32"
-  },
-  {
-   "addend": 0,
-   "offset": 964,
-   "section": "seg_pmco",
-   "symbol": "_dv_crender",
-   "type": "sharc.abs24"
-  },
-  {
-   "addend": 0,
-   "offset": 974,
-   "section": "seg_pmco",
-   "symbol": "_dv_cnoclr",
-   "type": "sharc.abs24"
-  },
-  {
-   "addend": 0,
-   "offset": 991,
-   "section": "seg_pmco",
-   "symbol": "_dv_in",
-   "type": "sharc.abs32"
-  },
-  {
-   "addend": 0,
-   "offset": 994,
-   "section": "seg_pmco",
-   "symbol": "_dv_params",
-   "type": "sharc.abs32"
-  },
-  {
-   "addend": 0,
-   "offset": 997,
-   "section": "seg_pmco",
-   "symbol": "_dv_nback",
-   "type": "sharc.abs32"
-  },
-  {
-   "addend": 0,
-   "offset": 1003,
-   "section": "seg_pmco",
-   "symbol": "_dv_nfault",
-   "type": "sharc.abs24"
-  },
-  {
-   "addend": 0,
-   "offset": 1006,
-   "section": "seg_pmco",
-   "symbol": "_dv_row",
-   "type": "sharc.abs32"
-  },
-  {
-   "addend": 28,
-   "offset": 1015,
-   "section": "seg_pmco",
-   "symbol": "_dv_c",
-   "type": "sharc.abs32"
-  },
-  {
-   "addend": 0,
-   "offset": 1018,
-   "section": "seg_pmco",
-   "symbol": "_dv_in",
    "type": "sharc.abs32"
   },
   {
    "addend": 0,
    "offset": 1021,
    "section": "seg_pmco",
-   "symbol": "_dv_params",
-   "type": "sharc.abs32"
-  },
-  {
-   "addend": 0,
-   "offset": 1024,
-   "section": "seg_pmco",
-   "symbol": "_dv_rback",
-   "type": "sharc.abs32"
-  },
-  {
-   "addend": 48,
-   "offset": 1033,
-   "section": "seg_pmco",
-   "symbol": "_dv_c",
-   "type": "sharc.abs32"
-  },
-  {
-   "addend": 32,
-   "offset": 1038,
-   "section": "seg_pmco",
-   "symbol": "_dv_c",
-   "type": "sharc.abs32"
-  },
-  {
-   "addend": 8,
-   "offset": 1041,
-   "section": "seg_pmco",
-   "symbol": "_dv_c",
-   "type": "sharc.abs32"
-  },
-  {
-   "addend": 0,
-   "offset": 1067,
-   "section": "seg_pmco",
-   "symbol": "_dv_gfault",
-   "type": "sharc.abs24"
-  },
-  {
-   "addend": 0,
-   "offset": 1070,
-   "section": "seg_pmco",
-   "symbol": "_gs_post",
-   "type": "sharc.abs24"
-  },
-  {
-   "addend": 32,
-   "offset": 1075,
-   "section": "seg_pmco",
-   "symbol": "_dv_c",
-   "type": "sharc.abs32"
-  },
-  {
-   "addend": 0,
-   "offset": 1079,
-   "section": "seg_pmco",
-   "symbol": "_dv_back",
-   "type": "sharc.abs24"
-  },
-  {
-   "addend": 12,
-   "offset": 1082,
-   "section": "seg_pmco",
-   "symbol": "_dv_c",
-   "type": "sharc.abs32"
-  },
-  {
-   "addend": 0,
-   "offset": 1091,
-   "section": "seg_pmco",
-   "symbol": "_dv_back",
-   "type": "sharc.abs24"
-  },
-  {
-   "addend": 0,
-   "offset": 1096,
-   "section": "seg_pmco",
-   "symbol": "_dv_gfaultk",
-   "type": "sharc.abs24"
-  },
-  {
-   "addend": 36,
-   "offset": 1110,
-   "section": "seg_pmco",
-   "symbol": "_dv_c",
-   "type": "sharc.abs32"
-  },
-  {
-   "addend": 0,
-   "offset": 1113,
-   "section": "seg_pmco",
-   "symbol": "_dv_params",
-   "type": "sharc.abs32"
-  },
-  {
-   "addend": 0,
-   "offset": 1116,
-   "section": "seg_pmco",
-   "symbol": "_dv_diag",
-   "type": "sharc.abs32"
-  },
-  {
-   "addend": 12,
-   "offset": 1140,
-   "section": "seg_pmco",
-   "symbol": "_dv_c",
-   "type": "sharc.abs32"
-  },
-  {
-   "addend": 8,
-   "offset": 1149,
-   "section": "seg_pmco",
-   "symbol": "_dv_c",
-   "type": "sharc.abs32"
-  },
-  {
-   "addend": 0,
-   "offset": 1162,
-   "section": "seg_pmco",
-   "symbol": "_dv_row",
-   "type": "sharc.abs32"
-  },
-  {
-   "addend": 0,
-   "offset": 1167,
-   "section": "seg_pmco",
-   "symbol": "_dv_diag",
-   "type": "sharc.abs32"
-  },
-  {
-   "addend": 0,
-   "offset": 1177,
-   "section": "seg_pmco",
-   "symbol": "_dv_gwin",
-   "type": "sharc.abs24"
-  },
-  {
-   "addend": 0,
-   "offset": 1199,
-   "section": "seg_pmco",
-   "symbol": "_dv_gnd",
-   "type": "sharc.abs24"
-  },
-  {
-   "addend": 0,
-   "offset": 1202,
-   "section": "seg_pmco",
-   "symbol": "_dv_c",
-   "type": "sharc.abs32"
-  },
-  {
-   "addend": 0,
-   "offset": 1208,
-   "section": "seg_pmco",
-   "symbol": "_dv_gnd",
-   "type": "sharc.abs24"
-  },
-  {
-   "addend": 84,
-   "offset": 1213,
-   "section": "seg_pmco",
-   "symbol": "_dv_diag",
-   "type": "sharc.abs32"
-  },
-  {
-   "addend": 44,
-   "offset": 1216,
-   "section": "seg_pmco",
-   "symbol": "_dv_c",
-   "type": "sharc.abs32"
-  },
-  {
-   "addend": 44,
-   "offset": 1220,
-   "section": "seg_pmco",
-   "symbol": "_dv_c",
-   "type": "sharc.abs32"
-  },
-  {
-   "addend": 40,
-   "offset": 1223,
-   "section": "seg_pmco",
-   "symbol": "_dv_c",
-   "type": "sharc.abs32"
-  },
-  {
-   "addend": 40,
-   "offset": 1227,
-   "section": "seg_pmco",
-   "symbol": "_dv_c",
-   "type": "sharc.abs32"
-  },
-  {
-   "addend": 36,
-   "offset": 1234,
-   "section": "seg_pmco",
-   "symbol": "_dv_c",
-   "type": "sharc.abs32"
-  },
-  {
-   "addend": 44,
-   "offset": 1241,
-   "section": "seg_pmco",
-   "symbol": "_dv_c",
-   "type": "sharc.abs32"
-  },
-  {
-   "addend": 60,
-   "offset": 1248,
-   "section": "seg_pmco",
-   "symbol": "_dv_diag",
-   "type": "sharc.abs32"
-  },
-  {
-   "addend": 0,
-   "offset": 1251,
-   "section": "seg_pmco",
-   "symbol": "_dv_c",
-   "type": "sharc.abs32"
-  },
-  {
-   "addend": 4,
-   "offset": 1254,
-   "section": "seg_pmco",
-   "symbol": "_dv_c",
-   "type": "sharc.abs32"
-  },
-  {
-   "addend": 64,
-   "offset": 1261,
-   "section": "seg_pmco",
-   "symbol": "_dv_diag",
-   "type": "sharc.abs32"
-  },
-  {
-   "addend": 0,
-   "offset": 1264,
-   "section": "seg_pmco",
-   "symbol": "_dv_back",
-   "type": "sharc.abs24"
-  },
-  {
-   "addend": 0,
-   "offset": 1271,
-   "section": "seg_pmco",
-   "symbol": "_dv_cz",
-   "type": "sharc.abs24"
-  },
-  {
-   "addend": 8,
-   "offset": 1278,
-   "section": "seg_pmco",
-   "symbol": "_dv_c",
-   "type": "sharc.abs32"
-  },
-  {
-   "addend": 0,
-   "offset": 1291,
-   "section": "seg_pmco",
-   "symbol": "_dv_back",
-   "type": "sharc.abs24"
-  },
-  {
-   "addend": 0,
-   "offset": 1347,
-   "section": "seg_pmco",
-   "symbol": "_fw_frame",
-   "type": "sharc.abs32"
-  },
-  {
-   "addend": 0,
-   "offset": 1377,
-   "section": "seg_pmco",
-   "symbol": "_fw_frame",
-   "type": "sharc.abs32"
-  },
-  {
-   "addend": 0,
-   "offset": 1420,
-   "section": "seg_pmco",
-   "symbol": "_gs_stamp",
-   "type": "sharc.abs32"
-  },
-  {
-   "addend": 0,
-   "offset": 1428,
-   "section": "seg_pmco",
-   "symbol": "_dv_diag",
-   "type": "sharc.abs32"
-  },
-  {
-   "addend": 0,
-   "offset": 1432,
-   "section": "seg_pmco",
-   "symbol": "_gs_fo_stock",
-   "type": "sharc.abs24"
-  },
-  {
-   "addend": 0,
-   "offset": 1444,
-   "section": "seg_pmco",
-   "symbol": "_gs_fo_bad",
-   "type": "sharc.abs24"
-  },
-  {
-   "addend": 0,
-   "offset": 1452,
-   "section": "seg_pmco",
-   "symbol": "_gs_fo_bad",
-   "type": "sharc.abs24"
-  },
-  {
-   "addend": 0,
-   "offset": 1464,
-   "section": "seg_pmco",
-   "symbol": "_gs_stamp",
-   "type": "sharc.abs32"
-  },
-  {
-   "addend": 0,
-   "offset": 1475,
-   "section": "seg_pmco",
-   "symbol": "_gs_fo_rec",
-   "type": "sharc.abs32"
-  },
-  {
-   "addend": 0,
-   "offset": 1484,
-   "section": "seg_pmco",
-   "symbol": "_gs_rbuf",
-   "type": "sharc.abs32"
-  },
-  {
-   "addend": 0,
-   "offset": 1509,
-   "section": "seg_pmco",
-   "symbol": "_gs_fo_stock",
-   "type": "sharc.abs24"
-  },
-  {
-   "addend": -1,
-   "offset": 1513,
-   "section": "seg_pmco",
-   "symbol": "_gs_fo_l",
-   "type": "sharc.abs32"
-  },
-  {
-   "addend": 0,
-   "offset": 1527,
-   "section": "seg_pmco",
-   "symbol": "_gs_fo_stock",
-   "type": "sharc.abs24"
-  },
-  {
-   "addend": -1,
-   "offset": 1531,
-   "section": "seg_pmco",
-   "symbol": "_gs_fo_r",
-   "type": "sharc.abs32"
-  },
-  {
-   "addend": 0,
-   "offset": 1539,
-   "section": "seg_pmco",
-   "symbol": "_gs_leave",
-   "type": "sharc.abs24"
-  },
-  {
-   "addend": 36,
-   "offset": 1546,
-   "section": "seg_pmco",
-   "symbol": "_gs_cnt",
-   "type": "sharc.abs32"
-  },
-  {
-   "addend": 36,
-   "offset": 1550,
-   "section": "seg_pmco",
-   "symbol": "_gs_cnt",
-   "type": "sharc.abs32"
-  },
-  {
-   "addend": 0,
-   "offset": 1553,
-   "section": "seg_pmco",
-   "symbol": "_gs_nbad",
-   "type": "sharc.abs32"
-  },
-  {
-   "addend": 0,
-   "offset": 1557,
-   "section": "seg_pmco",
-   "symbol": "_gs_nbad",
-   "type": "sharc.abs32"
-  },
-  {
-   "addend": 0,
-   "offset": 1560,
-   "section": "seg_pmco",
-   "symbol": "_gs_hacc",
-   "type": "sharc.abs32"
-  },
-  {
-   "addend": 0,
-   "offset": 1566,
-   "section": "seg_pmco",
-   "symbol": "_gs_hacc",
-   "type": "sharc.abs32"
-  },
-  {
-   "addend": 0,
-   "offset": 1569,
-   "section": "seg_pmco",
-   "symbol": "_gs_fo_stock",
-   "type": "sharc.abs24"
-  },
-  {
-   "addend": 0,
-   "offset": 1585,
-   "section": "seg_pmco",
-   "symbol": "_gs_stamp",
-   "type": "sharc.abs32"
-  },
-  {
-   "addend": 0,
-   "offset": 1593,
-   "section": "seg_pmco",
-   "symbol": "_dv_diag",
-   "type": "sharc.abs32"
-  },
-  {
-   "addend": 0,
-   "offset": 1597,
-   "section": "seg_pmco",
-   "symbol": "_gs_uy_stock",
-   "type": "sharc.abs24"
-  },
-  {
-   "addend": 0,
-   "offset": 1609,
-   "section": "seg_pmco",
-   "symbol": "_gs_uy_bad",
-   "type": "sharc.abs24"
-  },
-  {
-   "addend": 0,
-   "offset": 1617,
-   "section": "seg_pmco",
-   "symbol": "_gs_uy_bad",
-   "type": "sharc.abs24"
-  },
-  {
-   "addend": 0,
-   "offset": 1629,
-   "section": "seg_pmco",
-   "symbol": "_gs_stamp",
-   "type": "sharc.abs32"
-  },
-  {
-   "addend": 0,
-   "offset": 1636,
-   "section": "seg_pmco",
-   "symbol": "_gs_uy_rec",
-   "type": "sharc.abs32"
-  },
-  {
-   "addend": 0,
-   "offset": 1645,
-   "section": "seg_pmco",
-   "symbol": "_gs_rbuf",
-   "type": "sharc.abs32"
-  },
-  {
-   "addend": 0,
-   "offset": 1674,
-   "section": "seg_pmco",
-   "symbol": "_gs_uy_stock",
-   "type": "sharc.abs24"
-  },
-  {
-   "addend": -1,
-   "offset": 1678,
-   "section": "seg_pmco",
-   "symbol": "_gs_uy_l",
-   "type": "sharc.abs32"
-  },
-  {
-   "addend": 0,
-   "offset": 1692,
-   "section": "seg_pmco",
-   "symbol": "_gs_uy_stock",
-   "type": "sharc.abs24"
-  },
-  {
-   "addend": -1,
-   "offset": 1696,
-   "section": "seg_pmco",
-   "symbol": "_gs_uy_r",
-   "type": "sharc.abs32"
-  },
-  {
-   "addend": 0,
-   "offset": 1704,
-   "section": "seg_pmco",
-   "symbol": "_gs_leave",
-   "type": "sharc.abs24"
-  },
-  {
-   "addend": 40,
-   "offset": 1711,
-   "section": "seg_pmco",
-   "symbol": "_gs_cnt",
-   "type": "sharc.abs32"
-  },
-  {
-   "addend": 40,
-   "offset": 1715,
-   "section": "seg_pmco",
-   "symbol": "_gs_cnt",
-   "type": "sharc.abs32"
-  },
-  {
-   "addend": 0,
-   "offset": 1718,
-   "section": "seg_pmco",
-   "symbol": "_gs_nbad",
-   "type": "sharc.abs32"
-  },
-  {
-   "addend": 0,
-   "offset": 1722,
-   "section": "seg_pmco",
-   "symbol": "_gs_nbad",
-   "type": "sharc.abs32"
-  },
-  {
-   "addend": 0,
-   "offset": 1725,
-   "section": "seg_pmco",
-   "symbol": "_gs_hacc",
-   "type": "sharc.abs32"
-  },
-  {
-   "addend": 0,
-   "offset": 1731,
-   "section": "seg_pmco",
-   "symbol": "_gs_hacc",
-   "type": "sharc.abs32"
-  },
-  {
-   "addend": 0,
-   "offset": 1734,
-   "section": "seg_pmco",
-   "symbol": "_gs_uy_stock",
-   "type": "sharc.abs24"
-  },
-  {
-   "addend": 0,
-   "offset": 1750,
-   "section": "seg_pmco",
-   "symbol": "_gs_stamp",
-   "type": "sharc.abs32"
-  },
-  {
-   "addend": 0,
-   "offset": 1758,
-   "section": "seg_pmco",
-   "symbol": "_dv_diag",
-   "type": "sharc.abs32"
-  },
-  {
-   "addend": 0,
-   "offset": 1762,
-   "section": "seg_pmco",
-   "symbol": "_gs_gain_stock",
-   "type": "sharc.abs24"
-  },
-  {
-   "addend": 0,
-   "offset": 1774,
-   "section": "seg_pmco",
-   "symbol": "_gs_gain_bad",
-   "type": "sharc.abs24"
-  },
-  {
-   "addend": 0,
-   "offset": 1782,
-   "section": "seg_pmco",
-   "symbol": "_gs_gain_bad",
-   "type": "sharc.abs24"
-  },
-  {
-   "addend": 0,
-   "offset": 1794,
-   "section": "seg_pmco",
-   "symbol": "_gs_stamp",
-   "type": "sharc.abs32"
-  },
-  {
-   "addend": 0,
-   "offset": 1806,
-   "section": "seg_pmco",
-   "symbol": "_gs_gain_rec",
-   "type": "sharc.abs32"
-  },
-  {
-   "addend": 0,
-   "offset": 1815,
-   "section": "seg_pmco",
-   "symbol": "_gs_rbuf",
-   "type": "sharc.abs32"
-  },
-  {
-   "addend": 0,
-   "offset": 1838,
-   "section": "seg_pmco",
-   "symbol": "_gs_gain_cap",
-   "type": "sharc.abs24"
-  },
-  {
-   "addend": 0,
-   "offset": 1850,
-   "section": "seg_pmco",
-   "symbol": "_gs_gain_stock",
-   "type": "sharc.abs24"
-  },
-  {
-   "addend": -1,
-   "offset": 1854,
-   "section": "seg_pmco",
-   "symbol": "_gs_gain_l",
-   "type": "sharc.abs32"
-  },
-  {
-   "addend": 0,
-   "offset": 1874,
-   "section": "seg_pmco",
-   "symbol": "_gs_gain_stock",
-   "type": "sharc.abs24"
-  },
-  {
-   "addend": -1,
-   "offset": 1878,
-   "section": "seg_pmco",
-   "symbol": "_gs_gain_r",
-   "type": "sharc.abs32"
-  },
-  {
-   "addend": 0,
-   "offset": 1886,
-   "section": "seg_pmco",
-   "symbol": "_gs_leave",
-   "type": "sharc.abs24"
-  },
-  {
-   "addend": 44,
-   "offset": 1893,
-   "section": "seg_pmco",
-   "symbol": "_gs_cnt",
-   "type": "sharc.abs32"
-  },
-  {
-   "addend": 44,
-   "offset": 1897,
-   "section": "seg_pmco",
-   "symbol": "_gs_cnt",
-   "type": "sharc.abs32"
-  },
-  {
-   "addend": 0,
-   "offset": 1900,
-   "section": "seg_pmco",
-   "symbol": "_gs_nbad",
-   "type": "sharc.abs32"
-  },
-  {
-   "addend": 0,
-   "offset": 1904,
-   "section": "seg_pmco",
-   "symbol": "_gs_nbad",
-   "type": "sharc.abs32"
-  },
-  {
-   "addend": 0,
-   "offset": 1907,
-   "section": "seg_pmco",
-   "symbol": "_gs_hacc",
-   "type": "sharc.abs32"
-  },
-  {
-   "addend": 0,
-   "offset": 1913,
-   "section": "seg_pmco",
-   "symbol": "_gs_hacc",
-   "type": "sharc.abs32"
-  },
-  {
-   "addend": 0,
-   "offset": 1916,
-   "section": "seg_pmco",
-   "symbol": "_gs_gain_stock",
-   "type": "sharc.abs24"
-  },
-  {
-   "addend": 0,
-   "offset": 1932,
-   "section": "seg_pmco",
-   "symbol": "_gs_stamp",
-   "type": "sharc.abs32"
-  },
-  {
-   "addend": 0,
-   "offset": 1940,
-   "section": "seg_pmco",
-   "symbol": "_dv_diag",
-   "type": "sharc.abs32"
-  },
-  {
-   "addend": 0,
-   "offset": 1944,
-   "section": "seg_pmco",
-   "symbol": "_gs_c5_stock",
-   "type": "sharc.abs24"
-  },
-  {
-   "addend": 0,
-   "offset": 1956,
-   "section": "seg_pmco",
-   "symbol": "_gs_c5_bad",
-   "type": "sharc.abs24"
-  },
-  {
-   "addend": 0,
-   "offset": 1964,
-   "section": "seg_pmco",
-   "symbol": "_gs_c5_bad",
-   "type": "sharc.abs24"
-  },
-  {
-   "addend": 0,
-   "offset": 1988,
-   "section": "seg_pmco",
-   "symbol": "_gs_stamp",
-   "type": "sharc.abs32"
-  },
-  {
-   "addend": 0,
-   "offset": 1996,
-   "section": "seg_pmco",
-   "symbol": "_gs_c5_rec",
-   "type": "sharc.abs32"
-  },
-  {
-   "addend": 0,
-   "offset": 2005,
-   "section": "seg_pmco",
-   "symbol": "_gs_rbuf",
-   "type": "sharc.abs32"
-  },
-  {
-   "addend": 0,
-   "offset": 2014,
-   "section": "seg_pmco",
-   "symbol": "_gs_c5_scr",
-   "type": "sharc.abs32"
-  },
-  {
-   "addend": 0,
-   "offset": 2043,
-   "section": "seg_pmco",
-   "symbol": "_gs_c5_cap",
-   "type": "sharc.abs24"
-  },
-  {
-   "addend": 0,
-   "offset": 2049,
-   "section": "seg_pmco",
-   "symbol": "_gs_c5_stock",
-   "type": "sharc.abs24"
-  },
-  {
-   "addend": -1,
-   "offset": 2053,
-   "section": "seg_pmco",
-   "symbol": "_gs_c5_l",
-   "type": "sharc.abs32"
-  },
-  {
-   "addend": 0,
-   "offset": 2068,
-   "section": "seg_pmco",
-   "symbol": "_gs_c5_stock",
-   "type": "sharc.abs24"
-  },
-  {
-   "addend": -1,
-   "offset": 2072,
-   "section": "seg_pmco",
-   "symbol": "_gs_c5_r",
-   "type": "sharc.abs32"
-  },
-  {
-   "addend": 0,
-   "offset": 2131,
-   "section": "seg_pmco",
-   "symbol": "_gs_leave",
-   "type": "sharc.abs24"
-  },
-  {
-   "addend": 48,
-   "offset": 2138,
-   "section": "seg_pmco",
-   "symbol": "_gs_cnt",
-   "type": "sharc.abs32"
-  },
-  {
-   "addend": 48,
-   "offset": 2142,
-   "section": "seg_pmco",
-   "symbol": "_gs_cnt",
-   "type": "sharc.abs32"
-  },
-  {
-   "addend": 0,
-   "offset": 2145,
-   "section": "seg_pmco",
-   "symbol": "_gs_nbad",
-   "type": "sharc.abs32"
-  },
-  {
-   "addend": 0,
-   "offset": 2149,
-   "section": "seg_pmco",
-   "symbol": "_gs_nbad",
-   "type": "sharc.abs32"
-  },
-  {
-   "addend": 0,
-   "offset": 2152,
-   "section": "seg_pmco",
-   "symbol": "_gs_hacc",
-   "type": "sharc.abs32"
-  },
-  {
-   "addend": 0,
-   "offset": 2158,
-   "section": "seg_pmco",
-   "symbol": "_gs_hacc",
-   "type": "sharc.abs32"
-  },
-  {
-   "addend": 0,
-   "offset": 2161,
-   "section": "seg_pmco",
-   "symbol": "_gs_c5_stock",
-   "type": "sharc.abs24"
-  },
-  {
-   "addend": 0,
-   "offset": 2177,
-   "section": "seg_pmco",
-   "symbol": "_gs_stamp",
-   "type": "sharc.abs32"
-  },
-  {
-   "addend": 0,
-   "offset": 2185,
-   "section": "seg_pmco",
-   "symbol": "_dv_diag",
-   "type": "sharc.abs32"
-  },
-  {
-   "addend": 0,
-   "offset": 2189,
-   "section": "seg_pmco",
-   "symbol": "_gs_shaper_stock",
-   "type": "sharc.abs24"
-  },
-  {
-   "addend": 0,
-   "offset": 2201,
-   "section": "seg_pmco",
-   "symbol": "_gs_shaper_early_bad",
-   "type": "sharc.abs24"
-  },
-  {
-   "addend": 0,
-   "offset": 2209,
-   "section": "seg_pmco",
-   "symbol": "_gs_shaper_early_bad",
-   "type": "sharc.abs24"
-  },
-  {
-   "addend": 0,
-   "offset": 2221,
-   "section": "seg_pmco",
-   "symbol": "_gs_stamp",
-   "type": "sharc.abs32"
-  },
-  {
-   "addend": 0,
-   "offset": 2229,
-   "section": "seg_pmco",
-   "symbol": "_gs_sh_rec",
-   "type": "sharc.abs32"
-  },
-  {
-   "addend": 0,
-   "offset": 2238,
-   "section": "seg_pmco",
-   "symbol": "_gs_rbuf",
-   "type": "sharc.abs32"
-  },
-  {
-   "addend": 0,
-   "offset": 2271,
-   "section": "seg_pmco",
-   "symbol": "_gs_shaper_stock",
-   "type": "sharc.abs24"
-  },
-  {
-   "addend": -1,
-   "offset": 2275,
-   "section": "seg_pmco",
-   "symbol": "_gs_shaper_early_l",
-   "type": "sharc.abs32"
-  },
-  {
-   "addend": 0,
-   "offset": 2289,
-   "section": "seg_pmco",
-   "symbol": "_gs_shaper_stock",
-   "type": "sharc.abs24"
-  },
-  {
-   "addend": -1,
-   "offset": 2293,
-   "section": "seg_pmco",
-   "symbol": "_gs_shaper_early_r",
-   "type": "sharc.abs32"
-  },
-  {
-   "addend": 0,
-   "offset": 2301,
-   "section": "seg_pmco",
-   "symbol": "_gs_leave",
-   "type": "sharc.abs24"
-  },
-  {
-   "addend": 8,
-   "offset": 2308,
-   "section": "seg_pmco",
-   "symbol": "_gs_cnt",
-   "type": "sharc.abs32"
-  },
-  {
-   "addend": 8,
-   "offset": 2312,
-   "section": "seg_pmco",
-   "symbol": "_gs_cnt",
-   "type": "sharc.abs32"
-  },
-  {
-   "addend": 0,
-   "offset": 2315,
-   "section": "seg_pmco",
-   "symbol": "_gs_nbad",
-   "type": "sharc.abs32"
-  },
-  {
-   "addend": 0,
-   "offset": 2319,
-   "section": "seg_pmco",
-   "symbol": "_gs_nbad",
-   "type": "sharc.abs32"
-  },
-  {
-   "addend": 0,
-   "offset": 2322,
-   "section": "seg_pmco",
-   "symbol": "_gs_hacc",
-   "type": "sharc.abs32"
-  },
-  {
-   "addend": 0,
-   "offset": 2328,
-   "section": "seg_pmco",
-   "symbol": "_gs_hacc",
-   "type": "sharc.abs32"
-  },
-  {
-   "addend": 0,
-   "offset": 2331,
-   "section": "seg_pmco",
-   "symbol": "_gs_shaper_stock",
-   "type": "sharc.abs24"
-  },
-  {
-   "addend": 0,
-   "offset": 2347,
-   "section": "seg_pmco",
-   "symbol": "_gs_stamp",
-   "type": "sharc.abs32"
-  },
-  {
-   "addend": 0,
-   "offset": 2355,
-   "section": "seg_pmco",
-   "symbol": "_dv_diag",
-   "type": "sharc.abs32"
-  },
-  {
-   "addend": 0,
-   "offset": 2359,
-   "section": "seg_pmco",
-   "symbol": "_gs_shaper_stock",
-   "type": "sharc.abs24"
-  },
-  {
-   "addend": 0,
-   "offset": 2371,
-   "section": "seg_pmco",
-   "symbol": "_gs_shaper_late_bad",
-   "type": "sharc.abs24"
-  },
-  {
-   "addend": 0,
-   "offset": 2379,
-   "section": "seg_pmco",
-   "symbol": "_gs_shaper_late_bad",
-   "type": "sharc.abs24"
-  },
-  {
-   "addend": 0,
-   "offset": 2391,
-   "section": "seg_pmco",
-   "symbol": "_gs_stamp",
-   "type": "sharc.abs32"
-  },
-  {
-   "addend": 0,
-   "offset": 2399,
-   "section": "seg_pmco",
-   "symbol": "_gs_sh_rec",
-   "type": "sharc.abs32"
-  },
-  {
-   "addend": 0,
-   "offset": 2408,
-   "section": "seg_pmco",
-   "symbol": "_gs_rbuf",
-   "type": "sharc.abs32"
-  },
-  {
-   "addend": 0,
-   "offset": 2441,
-   "section": "seg_pmco",
-   "symbol": "_gs_shaper_stock",
-   "type": "sharc.abs24"
-  },
-  {
-   "addend": -1,
-   "offset": 2445,
-   "section": "seg_pmco",
-   "symbol": "_gs_shaper_late_l",
-   "type": "sharc.abs32"
-  },
-  {
-   "addend": 0,
-   "offset": 2478,
-   "section": "seg_pmco",
-   "symbol": "_gs_shaper_stock",
-   "type": "sharc.abs24"
-  },
-  {
-   "addend": -1,
-   "offset": 2482,
-   "section": "seg_pmco",
-   "symbol": "_gs_shaper_late_r",
-   "type": "sharc.abs32"
-  },
-  {
-   "addend": 0,
-   "offset": 2509,
-   "section": "seg_pmco",
-   "symbol": "_gs_leave",
-   "type": "sharc.abs24"
-  },
-  {
-   "addend": 12,
-   "offset": 2516,
-   "section": "seg_pmco",
-   "symbol": "_gs_cnt",
-   "type": "sharc.abs32"
-  },
-  {
-   "addend": 12,
-   "offset": 2520,
-   "section": "seg_pmco",
-   "symbol": "_gs_cnt",
-   "type": "sharc.abs32"
-  },
-  {
-   "addend": 0,
-   "offset": 2523,
-   "section": "seg_pmco",
-   "symbol": "_gs_nbad",
-   "type": "sharc.abs32"
-  },
-  {
-   "addend": 0,
-   "offset": 2527,
-   "section": "seg_pmco",
-   "symbol": "_gs_nbad",
-   "type": "sharc.abs32"
-  },
-  {
-   "addend": 0,
-   "offset": 2530,
-   "section": "seg_pmco",
-   "symbol": "_gs_hacc",
-   "type": "sharc.abs32"
-  },
-  {
-   "addend": 0,
-   "offset": 2536,
-   "section": "seg_pmco",
-   "symbol": "_gs_hacc",
-   "type": "sharc.abs32"
-  },
-  {
-   "addend": 0,
-   "offset": 2539,
-   "section": "seg_pmco",
-   "symbol": "_gs_shaper_stock",
-   "type": "sharc.abs24"
-  },
-  {
-   "addend": 0,
-   "offset": 2555,
-   "section": "seg_pmco",
-   "symbol": "_gs_stamp",
-   "type": "sharc.abs32"
-  },
-  {
-   "addend": 0,
-   "offset": 2563,
-   "section": "seg_pmco",
-   "symbol": "_dv_diag",
-   "type": "sharc.abs32"
-  },
-  {
-   "addend": 0,
-   "offset": 2567,
-   "section": "seg_pmco",
-   "symbol": "_gs_held_stock",
-   "type": "sharc.abs24"
-  },
-  {
-   "addend": 0,
-   "offset": 2579,
-   "section": "seg_pmco",
-   "symbol": "_gs_held_early_bad",
-   "type": "sharc.abs24"
-  },
-  {
-   "addend": 0,
-   "offset": 2587,
-   "section": "seg_pmco",
-   "symbol": "_gs_held_early_bad",
-   "type": "sharc.abs24"
-  },
-  {
-   "addend": 0,
-   "offset": 2599,
-   "section": "seg_pmco",
-   "symbol": "_gs_stamp",
-   "type": "sharc.abs32"
-  },
-  {
-   "addend": 0,
-   "offset": 2607,
-   "section": "seg_pmco",
-   "symbol": "_gs_hd_rec",
-   "type": "sharc.abs32"
-  },
-  {
-   "addend": 0,
-   "offset": 2616,
-   "section": "seg_pmco",
-   "symbol": "_gs_rbuf",
-   "type": "sharc.abs32"
-  },
-  {
-   "addend": 0,
-   "offset": 2641,
-   "section": "seg_pmco",
-   "symbol": "_gs_held_stock",
-   "type": "sharc.abs24"
-  },
-  {
-   "addend": -1,
-   "offset": 2645,
-   "section": "seg_pmco",
-   "symbol": "_gs_held_early_l",
-   "type": "sharc.abs32"
-  },
-  {
-   "addend": 0,
-   "offset": 2659,
-   "section": "seg_pmco",
-   "symbol": "_gs_held_stock",
-   "type": "sharc.abs24"
-  },
-  {
-   "addend": -1,
-   "offset": 2663,
-   "section": "seg_pmco",
-   "symbol": "_gs_held_early_r",
-   "type": "sharc.abs32"
-  },
-  {
-   "addend": 0,
-   "offset": 2671,
-   "section": "seg_pmco",
-   "symbol": "_gs_leave",
-   "type": "sharc.abs24"
-  },
-  {
-   "addend": 0,
-   "offset": 2678,
-   "section": "seg_pmco",
-   "symbol": "_gs_cnt",
-   "type": "sharc.abs32"
-  },
-  {
-   "addend": 0,
-   "offset": 2682,
-   "section": "seg_pmco",
-   "symbol": "_gs_cnt",
-   "type": "sharc.abs32"
-  },
-  {
-   "addend": 0,
-   "offset": 2685,
-   "section": "seg_pmco",
-   "symbol": "_gs_nbad",
-   "type": "sharc.abs32"
-  },
-  {
-   "addend": 0,
-   "offset": 2689,
-   "section": "seg_pmco",
-   "symbol": "_gs_nbad",
-   "type": "sharc.abs32"
-  },
-  {
-   "addend": 0,
-   "offset": 2692,
-   "section": "seg_pmco",
-   "symbol": "_gs_hacc",
-   "type": "sharc.abs32"
-  },
-  {
-   "addend": 0,
-   "offset": 2698,
-   "section": "seg_pmco",
-   "symbol": "_gs_hacc",
-   "type": "sharc.abs32"
-  },
-  {
-   "addend": 0,
-   "offset": 2701,
-   "section": "seg_pmco",
-   "symbol": "_gs_held_stock",
-   "type": "sharc.abs24"
-  },
-  {
-   "addend": 0,
-   "offset": 2717,
-   "section": "seg_pmco",
-   "symbol": "_gs_stamp",
-   "type": "sharc.abs32"
-  },
-  {
-   "addend": 0,
-   "offset": 2725,
-   "section": "seg_pmco",
-   "symbol": "_dv_diag",
-   "type": "sharc.abs32"
-  },
-  {
-   "addend": 0,
-   "offset": 2729,
-   "section": "seg_pmco",
-   "symbol": "_gs_held_stock",
-   "type": "sharc.abs24"
-  },
-  {
-   "addend": 0,
-   "offset": 2741,
-   "section": "seg_pmco",
-   "symbol": "_gs_held_late_bad",
-   "type": "sharc.abs24"
-  },
-  {
-   "addend": 0,
-   "offset": 2749,
-   "section": "seg_pmco",
-   "symbol": "_gs_held_late_bad",
-   "type": "sharc.abs24"
-  },
-  {
-   "addend": 0,
-   "offset": 2761,
-   "section": "seg_pmco",
-   "symbol": "_gs_stamp",
-   "type": "sharc.abs32"
-  },
-  {
-   "addend": 0,
-   "offset": 2769,
-   "section": "seg_pmco",
-   "symbol": "_gs_hd_rec",
-   "type": "sharc.abs32"
-  },
-  {
-   "addend": 0,
-   "offset": 2778,
-   "section": "seg_pmco",
-   "symbol": "_gs_rbuf",
-   "type": "sharc.abs32"
-  },
-  {
-   "addend": 0,
-   "offset": 2803,
-   "section": "seg_pmco",
-   "symbol": "_gs_held_stock",
-   "type": "sharc.abs24"
-  },
-  {
-   "addend": -1,
-   "offset": 2807,
-   "section": "seg_pmco",
-   "symbol": "_gs_held_late_l",
-   "type": "sharc.abs32"
-  },
-  {
-   "addend": 0,
-   "offset": 2821,
-   "section": "seg_pmco",
-   "symbol": "_gs_held_stock",
-   "type": "sharc.abs24"
-  },
-  {
-   "addend": -1,
-   "offset": 2825,
-   "section": "seg_pmco",
-   "symbol": "_gs_held_late_r",
-   "type": "sharc.abs32"
-  },
-  {
-   "addend": 0,
-   "offset": 2833,
-   "section": "seg_pmco",
-   "symbol": "_gs_leave",
-   "type": "sharc.abs24"
-  },
-  {
-   "addend": 4,
-   "offset": 2840,
-   "section": "seg_pmco",
-   "symbol": "_gs_cnt",
-   "type": "sharc.abs32"
-  },
-  {
-   "addend": 4,
-   "offset": 2844,
-   "section": "seg_pmco",
-   "symbol": "_gs_cnt",
-   "type": "sharc.abs32"
-  },
-  {
-   "addend": 0,
-   "offset": 2847,
-   "section": "seg_pmco",
-   "symbol": "_gs_nbad",
-   "type": "sharc.abs32"
-  },
-  {
-   "addend": 0,
-   "offset": 2851,
-   "section": "seg_pmco",
-   "symbol": "_gs_nbad",
-   "type": "sharc.abs32"
-  },
-  {
-   "addend": 0,
-   "offset": 2854,
-   "section": "seg_pmco",
-   "symbol": "_gs_hacc",
-   "type": "sharc.abs32"
-  },
-  {
-   "addend": 0,
-   "offset": 2860,
-   "section": "seg_pmco",
-   "symbol": "_gs_hacc",
-   "type": "sharc.abs32"
-  },
-  {
-   "addend": 0,
-   "offset": 2863,
-   "section": "seg_pmco",
-   "symbol": "_gs_held_stock",
-   "type": "sharc.abs24"
-  },
-  {
-   "addend": 0,
-   "offset": 2879,
-   "section": "seg_pmco",
-   "symbol": "_gs_stamp",
-   "type": "sharc.abs32"
-  },
-  {
-   "addend": 0,
-   "offset": 2887,
-   "section": "seg_pmco",
-   "symbol": "_dv_diag",
-   "type": "sharc.abs32"
-  },
-  {
-   "addend": 0,
-   "offset": 2891,
-   "section": "seg_pmco",
-   "symbol": "_gs_case1_stock",
-   "type": "sharc.abs24"
-  },
-  {
-   "addend": 0,
-   "offset": 2903,
-   "section": "seg_pmco",
-   "symbol": "_gs_case1_bad",
-   "type": "sharc.abs24"
-  },
-  {
-   "addend": 0,
-   "offset": 2911,
-   "section": "seg_pmco",
-   "symbol": "_gs_case1_bad",
-   "type": "sharc.abs24"
-  },
-  {
-   "addend": 0,
-   "offset": 2923,
-   "section": "seg_pmco",
-   "symbol": "_gs_stamp",
-   "type": "sharc.abs32"
-  },
-  {
-   "addend": 0,
-   "offset": 2931,
-   "section": "seg_pmco",
-   "symbol": "_gs_c1_rec",
-   "type": "sharc.abs32"
-  },
-  {
-   "addend": 0,
-   "offset": 2940,
-   "section": "seg_pmco",
-   "symbol": "_gs_rbuf",
-   "type": "sharc.abs32"
-  },
-  {
-   "addend": 0,
-   "offset": 2997,
-   "section": "seg_pmco",
-   "symbol": "_gs_case1_stock",
-   "type": "sharc.abs24"
-  },
-  {
-   "addend": -1,
-   "offset": 3001,
-   "section": "seg_pmco",
-   "symbol": "_gs_case1_l",
-   "type": "sharc.abs32"
-  },
-  {
-   "addend": 0,
-   "offset": 3015,
-   "section": "seg_pmco",
-   "symbol": "_gs_case1_stock",
-   "type": "sharc.abs24"
-  },
-  {
-   "addend": -1,
-   "offset": 3019,
-   "section": "seg_pmco",
-   "symbol": "_gs_case1_r",
-   "type": "sharc.abs32"
-  },
-  {
-   "addend": 0,
-   "offset": 3027,
-   "section": "seg_pmco",
-   "symbol": "_gs_leave",
-   "type": "sharc.abs24"
-  },
-  {
-   "addend": 16,
-   "offset": 3034,
-   "section": "seg_pmco",
-   "symbol": "_gs_cnt",
-   "type": "sharc.abs32"
-  },
-  {
-   "addend": 16,
-   "offset": 3038,
-   "section": "seg_pmco",
-   "symbol": "_gs_cnt",
-   "type": "sharc.abs32"
-  },
-  {
-   "addend": 0,
-   "offset": 3041,
-   "section": "seg_pmco",
-   "symbol": "_gs_nbad",
-   "type": "sharc.abs32"
-  },
-  {
-   "addend": 0,
-   "offset": 3045,
-   "section": "seg_pmco",
-   "symbol": "_gs_nbad",
-   "type": "sharc.abs32"
-  },
-  {
-   "addend": 0,
-   "offset": 3048,
-   "section": "seg_pmco",
-   "symbol": "_gs_hacc",
-   "type": "sharc.abs32"
-  },
-  {
-   "addend": 0,
-   "offset": 3054,
-   "section": "seg_pmco",
-   "symbol": "_gs_hacc",
-   "type": "sharc.abs32"
-  },
-  {
-   "addend": 0,
-   "offset": 3057,
-   "section": "seg_pmco",
-   "symbol": "_gs_case1_stock",
-   "type": "sharc.abs24"
-  },
-  {
-   "addend": 0,
-   "offset": 3073,
-   "section": "seg_pmco",
-   "symbol": "_gs_stamp",
-   "type": "sharc.abs32"
-  },
-  {
-   "addend": 0,
-   "offset": 3081,
-   "section": "seg_pmco",
-   "symbol": "_dv_diag",
-   "type": "sharc.abs32"
-  },
-  {
-   "addend": 0,
-   "offset": 3085,
-   "section": "seg_pmco",
-   "symbol": "_gs_case2_stock",
-   "type": "sharc.abs24"
-  },
-  {
-   "addend": 0,
-   "offset": 3097,
-   "section": "seg_pmco",
-   "symbol": "_gs_case2_bad",
-   "type": "sharc.abs24"
-  },
-  {
-   "addend": 0,
-   "offset": 3105,
-   "section": "seg_pmco",
-   "symbol": "_gs_case2_bad",
-   "type": "sharc.abs24"
-  },
-  {
-   "addend": 0,
-   "offset": 3117,
-   "section": "seg_pmco",
-   "symbol": "_gs_stamp",
-   "type": "sharc.abs32"
-  },
-  {
-   "addend": 0,
-   "offset": 3125,
-   "section": "seg_pmco",
-   "symbol": "_gs_c2_rec",
-   "type": "sharc.abs32"
-  },
-  {
-   "addend": 0,
-   "offset": 3134,
-   "section": "seg_pmco",
-   "symbol": "_gs_rbuf",
-   "type": "sharc.abs32"
-  },
-  {
-   "addend": 0,
-   "offset": 3167,
-   "section": "seg_pmco",
-   "symbol": "_gs_case2_cap",
-   "type": "sharc.abs24"
-  },
-  {
-   "addend": 0,
-   "offset": 3173,
-   "section": "seg_pmco",
-   "symbol": "_gs_case2_stock",
-   "type": "sharc.abs24"
-  },
-  {
-   "addend": -1,
-   "offset": 3177,
-   "section": "seg_pmco",
-   "symbol": "_gs_case2_l",
-   "type": "sharc.abs32"
-  },
-  {
-   "addend": 0,
-   "offset": 3191,
-   "section": "seg_pmco",
-   "symbol": "_gs_case2_stock",
-   "type": "sharc.abs24"
-  },
-  {
-   "addend": -1,
-   "offset": 3195,
-   "section": "seg_pmco",
-   "symbol": "_gs_case2_r",
-   "type": "sharc.abs32"
-  },
-  {
-   "addend": 0,
-   "offset": 3203,
-   "section": "seg_pmco",
-   "symbol": "_gs_leave",
-   "type": "sharc.abs24"
-  },
-  {
-   "addend": 20,
-   "offset": 3210,
-   "section": "seg_pmco",
-   "symbol": "_gs_cnt",
-   "type": "sharc.abs32"
-  },
-  {
-   "addend": 20,
-   "offset": 3214,
-   "section": "seg_pmco",
-   "symbol": "_gs_cnt",
-   "type": "sharc.abs32"
-  },
-  {
-   "addend": 0,
-   "offset": 3217,
-   "section": "seg_pmco",
-   "symbol": "_gs_nbad",
-   "type": "sharc.abs32"
-  },
-  {
-   "addend": 0,
-   "offset": 3221,
-   "section": "seg_pmco",
-   "symbol": "_gs_nbad",
-   "type": "sharc.abs32"
-  },
-  {
-   "addend": 0,
-   "offset": 3224,
-   "section": "seg_pmco",
-   "symbol": "_gs_hacc",
-   "type": "sharc.abs32"
-  },
-  {
-   "addend": 0,
-   "offset": 3230,
-   "section": "seg_pmco",
-   "symbol": "_gs_hacc",
-   "type": "sharc.abs32"
-  },
-  {
-   "addend": 0,
-   "offset": 3233,
-   "section": "seg_pmco",
-   "symbol": "_gs_case2_stock",
-   "type": "sharc.abs24"
-  },
-  {
-   "addend": 0,
-   "offset": 3249,
-   "section": "seg_pmco",
-   "symbol": "_gs_stamp",
-   "type": "sharc.abs32"
-  },
-  {
-   "addend": 0,
-   "offset": 3257,
-   "section": "seg_pmco",
-   "symbol": "_dv_diag",
-   "type": "sharc.abs32"
-  },
-  {
-   "addend": 0,
-   "offset": 3261,
-   "section": "seg_pmco",
-   "symbol": "_gs_case3_stock",
-   "type": "sharc.abs24"
-  },
-  {
-   "addend": 0,
-   "offset": 3273,
-   "section": "seg_pmco",
-   "symbol": "_gs_case3_bad",
-   "type": "sharc.abs24"
-  },
-  {
-   "addend": 0,
-   "offset": 3281,
-   "section": "seg_pmco",
-   "symbol": "_gs_case3_bad",
-   "type": "sharc.abs24"
-  },
-  {
-   "addend": 0,
-   "offset": 3293,
-   "section": "seg_pmco",
-   "symbol": "_gs_stamp",
-   "type": "sharc.abs32"
-  },
-  {
-   "addend": 0,
-   "offset": 3301,
-   "section": "seg_pmco",
-   "symbol": "_gs_c3_rec",
-   "type": "sharc.abs32"
-  },
-  {
-   "addend": 0,
-   "offset": 3310,
-   "section": "seg_pmco",
-   "symbol": "_gs_rbuf",
-   "type": "sharc.abs32"
-  },
-  {
-   "addend": 0,
-   "offset": 3371,
-   "section": "seg_pmco",
-   "symbol": "_gs_case3_stock",
-   "type": "sharc.abs24"
-  },
-  {
-   "addend": -1,
-   "offset": 3375,
-   "section": "seg_pmco",
-   "symbol": "_gs_case3_l",
-   "type": "sharc.abs32"
-  },
-  {
-   "addend": 0,
-   "offset": 3389,
-   "section": "seg_pmco",
-   "symbol": "_gs_case3_stock",
-   "type": "sharc.abs24"
-  },
-  {
-   "addend": -1,
-   "offset": 3393,
-   "section": "seg_pmco",
-   "symbol": "_gs_case3_r",
-   "type": "sharc.abs32"
-  },
-  {
-   "addend": 0,
-   "offset": 3401,
-   "section": "seg_pmco",
-   "symbol": "_gs_leave",
-   "type": "sharc.abs24"
-  },
-  {
-   "addend": 24,
-   "offset": 3408,
-   "section": "seg_pmco",
-   "symbol": "_gs_cnt",
-   "type": "sharc.abs32"
-  },
-  {
-   "addend": 24,
-   "offset": 3412,
-   "section": "seg_pmco",
-   "symbol": "_gs_cnt",
-   "type": "sharc.abs32"
-  },
-  {
-   "addend": 0,
-   "offset": 3415,
-   "section": "seg_pmco",
-   "symbol": "_gs_nbad",
-   "type": "sharc.abs32"
-  },
-  {
-   "addend": 0,
-   "offset": 3419,
-   "section": "seg_pmco",
-   "symbol": "_gs_nbad",
-   "type": "sharc.abs32"
-  },
-  {
-   "addend": 0,
-   "offset": 3422,
-   "section": "seg_pmco",
-   "symbol": "_gs_hacc",
-   "type": "sharc.abs32"
-  },
-  {
-   "addend": 0,
-   "offset": 3428,
-   "section": "seg_pmco",
-   "symbol": "_gs_hacc",
-   "type": "sharc.abs32"
-  },
-  {
-   "addend": 0,
-   "offset": 3431,
-   "section": "seg_pmco",
-   "symbol": "_gs_case3_stock",
-   "type": "sharc.abs24"
-  },
-  {
-   "addend": 0,
-   "offset": 3447,
-   "section": "seg_pmco",
-   "symbol": "_gs_stamp",
-   "type": "sharc.abs32"
-  },
-  {
-   "addend": 0,
-   "offset": 3455,
-   "section": "seg_pmco",
-   "symbol": "_dv_diag",
-   "type": "sharc.abs32"
-  },
-  {
-   "addend": 0,
-   "offset": 3459,
-   "section": "seg_pmco",
-   "symbol": "_gs_ring_stock",
-   "type": "sharc.abs24"
-  },
-  {
-   "addend": 0,
-   "offset": 3471,
-   "section": "seg_pmco",
-   "symbol": "_gs_ring4_bad",
-   "type": "sharc.abs24"
-  },
-  {
-   "addend": 0,
-   "offset": 3479,
-   "section": "seg_pmco",
-   "symbol": "_gs_ring4_bad",
-   "type": "sharc.abs24"
-  },
-  {
-   "addend": 0,
-   "offset": 3491,
-   "section": "seg_pmco",
-   "symbol": "_gs_stamp",
-   "type": "sharc.abs32"
-  },
-  {
-   "addend": 0,
-   "offset": 3499,
-   "section": "seg_pmco",
-   "symbol": "_gs_rg_rec",
-   "type": "sharc.abs32"
-  },
-  {
-   "addend": 0,
-   "offset": 3508,
-   "section": "seg_pmco",
-   "symbol": "_gs_rbuf",
-   "type": "sharc.abs32"
-  },
-  {
-   "addend": 0,
-   "offset": 3554,
-   "section": "seg_pmco",
-   "symbol": "_gs_ring_stock",
-   "type": "sharc.abs24"
-  },
-  {
-   "addend": -1,
-   "offset": 3558,
-   "section": "seg_pmco",
-   "symbol": "_gs_ring4_l",
-   "type": "sharc.abs32"
-  },
-  {
-   "addend": 0,
-   "offset": 3572,
-   "section": "seg_pmco",
-   "symbol": "_gs_ring_stock",
-   "type": "sharc.abs24"
-  },
-  {
-   "addend": -1,
-   "offset": 3576,
-   "section": "seg_pmco",
-   "symbol": "_gs_ring4_r",
-   "type": "sharc.abs32"
-  },
-  {
-   "addend": 0,
-   "offset": 3584,
-   "section": "seg_pmco",
-   "symbol": "_gs_leave",
-   "type": "sharc.abs24"
-  },
-  {
-   "addend": 28,
-   "offset": 3591,
-   "section": "seg_pmco",
-   "symbol": "_gs_cnt",
-   "type": "sharc.abs32"
-  },
-  {
-   "addend": 28,
-   "offset": 3595,
-   "section": "seg_pmco",
-   "symbol": "_gs_cnt",
-   "type": "sharc.abs32"
-  },
-  {
-   "addend": 0,
-   "offset": 3598,
-   "section": "seg_pmco",
-   "symbol": "_gs_nbad",
-   "type": "sharc.abs32"
-  },
-  {
-   "addend": 0,
-   "offset": 3602,
-   "section": "seg_pmco",
-   "symbol": "_gs_nbad",
-   "type": "sharc.abs32"
-  },
-  {
-   "addend": 0,
-   "offset": 3605,
-   "section": "seg_pmco",
-   "symbol": "_gs_hacc",
-   "type": "sharc.abs32"
-  },
-  {
-   "addend": 0,
-   "offset": 3611,
-   "section": "seg_pmco",
-   "symbol": "_gs_hacc",
-   "type": "sharc.abs32"
-  },
-  {
-   "addend": 0,
-   "offset": 3614,
-   "section": "seg_pmco",
-   "symbol": "_gs_ring_stock",
-   "type": "sharc.abs24"
-  },
-  {
-   "addend": 0,
-   "offset": 3630,
-   "section": "seg_pmco",
-   "symbol": "_gs_stamp",
-   "type": "sharc.abs32"
-  },
-  {
-   "addend": 0,
-   "offset": 3638,
-   "section": "seg_pmco",
-   "symbol": "_dv_diag",
-   "type": "sharc.abs32"
-  },
-  {
-   "addend": 0,
-   "offset": 3642,
-   "section": "seg_pmco",
-   "symbol": "_gs_ring_stock",
-   "type": "sharc.abs24"
-  },
-  {
-   "addend": 0,
-   "offset": 3654,
-   "section": "seg_pmco",
-   "symbol": "_gs_ring6_bad",
-   "type": "sharc.abs24"
-  },
-  {
-   "addend": 0,
-   "offset": 3662,
-   "section": "seg_pmco",
-   "symbol": "_gs_ring6_bad",
-   "type": "sharc.abs24"
-  },
-  {
-   "addend": 0,
-   "offset": 3674,
-   "section": "seg_pmco",
-   "symbol": "_gs_stamp",
-   "type": "sharc.abs32"
-  },
-  {
-   "addend": 0,
-   "offset": 3682,
-   "section": "seg_pmco",
-   "symbol": "_gs_rg_rec",
-   "type": "sharc.abs32"
-  },
-  {
-   "addend": 0,
-   "offset": 3691,
-   "section": "seg_pmco",
-   "symbol": "_gs_rbuf",
-   "type": "sharc.abs32"
-  },
-  {
-   "addend": 0,
-   "offset": 3737,
-   "section": "seg_pmco",
-   "symbol": "_gs_ring_stock",
-   "type": "sharc.abs24"
-  },
-  {
-   "addend": -1,
-   "offset": 3741,
-   "section": "seg_pmco",
-   "symbol": "_gs_ring6_l",
-   "type": "sharc.abs32"
-  },
-  {
-   "addend": 0,
-   "offset": 3755,
-   "section": "seg_pmco",
-   "symbol": "_gs_ring_stock",
-   "type": "sharc.abs24"
-  },
-  {
-   "addend": -1,
-   "offset": 3759,
-   "section": "seg_pmco",
-   "symbol": "_gs_ring6_r",
-   "type": "sharc.abs32"
-  },
-  {
-   "addend": 0,
-   "offset": 3767,
-   "section": "seg_pmco",
-   "symbol": "_gs_leave",
-   "type": "sharc.abs24"
-  },
-  {
-   "addend": 32,
-   "offset": 3774,
-   "section": "seg_pmco",
-   "symbol": "_gs_cnt",
-   "type": "sharc.abs32"
-  },
-  {
-   "addend": 32,
-   "offset": 3778,
-   "section": "seg_pmco",
-   "symbol": "_gs_cnt",
-   "type": "sharc.abs32"
-  },
-  {
-   "addend": 0,
-   "offset": 3781,
-   "section": "seg_pmco",
-   "symbol": "_gs_nbad",
-   "type": "sharc.abs32"
-  },
-  {
-   "addend": 0,
-   "offset": 3785,
-   "section": "seg_pmco",
-   "symbol": "_gs_nbad",
-   "type": "sharc.abs32"
-  },
-  {
-   "addend": 0,
-   "offset": 3788,
-   "section": "seg_pmco",
-   "symbol": "_gs_hacc",
-   "type": "sharc.abs32"
-  },
-  {
-   "addend": 0,
-   "offset": 3794,
-   "section": "seg_pmco",
-   "symbol": "_gs_hacc",
-   "type": "sharc.abs32"
-  },
-  {
-   "addend": 0,
-   "offset": 3797,
-   "section": "seg_pmco",
-   "symbol": "_gs_ring_stock",
-   "type": "sharc.abs24"
-  },
-  {
-   "addend": 0,
-   "offset": 3809,
-   "section": "seg_pmco",
-   "symbol": "_gs_engine_base",
-   "type": "sharc.abs32"
-  },
-  {
-   "addend": 0,
-   "offset": 3818,
-   "section": "seg_pmco",
-   "symbol": "_gs_fo_reset_stock",
-   "type": "sharc.abs24"
-  },
-  {
-   "addend": 0,
-   "offset": 3835,
-   "section": "seg_pmco",
-   "symbol": "_gs_fo_reset_stock",
-   "type": "sharc.abs24"
-  },
-  {
-   "addend": 0,
-   "offset": 3843,
-   "section": "seg_pmco",
-   "symbol": "_gs_fo_reset_stock",
-   "type": "sharc.abs24"
-  },
-  {
-   "addend": 0,
-   "offset": 3846,
-   "section": "seg_pmco",
-   "symbol": "_gs_fo_rec",
-   "type": "sharc.abs32"
-  },
-  {
-   "addend": 0,
-   "offset": 3862,
-   "section": "seg_pmco",
-   "symbol": "_gs_fo_reset_stock",
-   "type": "sharc.abs24"
-  },
-  {
-   "addend": 0,
-   "offset": 3865,
-   "section": "seg_pmco",
-   "symbol": "_gs_engine_base",
-   "type": "sharc.abs32"
-  },
-  {
-   "addend": 0,
-   "offset": 3874,
-   "section": "seg_pmco",
-   "symbol": "_gs_uy_reset_stock",
-   "type": "sharc.abs24"
-  },
-  {
-   "addend": 0,
-   "offset": 3884,
-   "section": "seg_pmco",
-   "symbol": "_gs_uy_reset_stock",
-   "type": "sharc.abs24"
-  },
-  {
-   "addend": 0,
-   "offset": 3891,
-   "section": "seg_pmco",
-   "symbol": "_gs_uy_reset_stock",
-   "type": "sharc.abs24"
-  },
-  {
-   "addend": 0,
-   "offset": 3894,
-   "section": "seg_pmco",
-   "symbol": "_gs_uy_rec",
-   "type": "sharc.abs32"
-  },
-  {
-   "addend": 0,
-   "offset": 3906,
-   "section": "seg_pmco",
-   "symbol": "_gs_uy_reset_stock",
-   "type": "sharc.abs24"
-  },
-  {
-   "addend": 0,
-   "offset": 3909,
-   "section": "seg_pmco",
-   "symbol": "_gs_engine_base",
-   "type": "sharc.abs32"
-  },
-  {
-   "addend": 0,
-   "offset": 3918,
-   "section": "seg_pmco",
-   "symbol": "_gs_held_reset_stock",
-   "type": "sharc.abs24"
-  },
-  {
-   "addend": 0,
-   "offset": 3932,
-   "section": "seg_pmco",
-   "symbol": "_gs_held_reset_stock",
-   "type": "sharc.abs24"
-  },
-  {
-   "addend": 0,
-   "offset": 3940,
-   "section": "seg_pmco",
-   "symbol": "_gs_held_reset_stock",
-   "type": "sharc.abs24"
-  },
-  {
-   "addend": 0,
-   "offset": 3943,
-   "section": "seg_pmco",
-   "symbol": "_gs_hd_rec",
-   "type": "sharc.abs32"
-  },
-  {
-   "addend": 0,
-   "offset": 3961,
-   "section": "seg_pmco",
-   "symbol": "_gs_held_reset_stock",
-   "type": "sharc.abs24"
-  },
-  {
-   "addend": 0,
-   "offset": 3964,
-   "section": "seg_pmco",
-   "symbol": "_gs_engine_base",
-   "type": "sharc.abs32"
-  },
-  {
-   "addend": 0,
-   "offset": 3973,
-   "section": "seg_pmco",
-   "symbol": "_gs_case1_reset_stock",
-   "type": "sharc.abs24"
-  },
-  {
-   "addend": 0,
-   "offset": 3987,
-   "section": "seg_pmco",
-   "symbol": "_gs_case1_reset_stock",
-   "type": "sharc.abs24"
-  },
-  {
-   "addend": 0,
-   "offset": 3995,
-   "section": "seg_pmco",
-   "symbol": "_gs_case1_reset_stock",
-   "type": "sharc.abs24"
-  },
-  {
-   "addend": 0,
-   "offset": 3998,
-   "section": "seg_pmco",
-   "symbol": "_gs_c1_rec",
-   "type": "sharc.abs32"
-  },
-  {
-   "addend": 0,
-   "offset": 4010,
-   "section": "seg_pmco",
-   "symbol": "_gs_case1_reset_stock",
-   "type": "sharc.abs24"
-  },
-  {
-   "addend": 0,
-   "offset": 4013,
-   "section": "seg_pmco",
-   "symbol": "_gs_engine_base",
-   "type": "sharc.abs32"
-  },
-  {
-   "addend": 0,
-   "offset": 4022,
-   "section": "seg_pmco",
-   "symbol": "_gs_case2_reset_stock",
-   "type": "sharc.abs24"
-  },
-  {
-   "addend": 0,
-   "offset": 4036,
-   "section": "seg_pmco",
-   "symbol": "_gs_case2_reset_stock",
-   "type": "sharc.abs24"
-  },
-  {
-   "addend": 0,
-   "offset": 4044,
-   "section": "seg_pmco",
-   "symbol": "_gs_case2_reset_stock",
-   "type": "sharc.abs24"
-  },
-  {
-   "addend": 0,
-   "offset": 4047,
-   "section": "seg_pmco",
-   "symbol": "_gs_c2_rec",
-   "type": "sharc.abs32"
-  },
-  {
-   "addend": 0,
-   "offset": 4059,
-   "section": "seg_pmco",
-   "symbol": "_gs_case2_reset_stock",
-   "type": "sharc.abs24"
-  },
-  {
-   "addend": 0,
-   "offset": 4062,
-   "section": "seg_pmco",
-   "symbol": "_gs_engine_base",
-   "type": "sharc.abs32"
-  },
-  {
-   "addend": 0,
-   "offset": 4071,
-   "section": "seg_pmco",
-   "symbol": "_gs_case3_reset_stock",
-   "type": "sharc.abs24"
-  },
-  {
-   "addend": 0,
-   "offset": 4085,
-   "section": "seg_pmco",
-   "symbol": "_gs_case3_reset_stock",
-   "type": "sharc.abs24"
-  },
-  {
-   "addend": 0,
-   "offset": 4093,
-   "section": "seg_pmco",
-   "symbol": "_gs_case3_reset_stock",
-   "type": "sharc.abs24"
-  },
-  {
-   "addend": 0,
-   "offset": 4096,
-   "section": "seg_pmco",
-   "symbol": "_gs_c3_rec",
-   "type": "sharc.abs32"
-  },
-  {
-   "addend": 0,
-   "offset": 4114,
-   "section": "seg_pmco",
-   "symbol": "_gs_case3_reset_stock",
-   "type": "sharc.abs24"
-  },
-  {
-   "addend": 0,
-   "offset": 4117,
-   "section": "seg_pmco",
-   "symbol": "_gs_engine_base",
-   "type": "sharc.abs32"
-  },
-  {
-   "addend": 0,
-   "offset": 4126,
-   "section": "seg_pmco",
-   "symbol": "_gs_case5_reset_stock",
-   "type": "sharc.abs24"
-  },
-  {
-   "addend": 0,
-   "offset": 4140,
-   "section": "seg_pmco",
-   "symbol": "_gs_case5_reset_stock",
-   "type": "sharc.abs24"
-  },
-  {
-   "addend": 0,
-   "offset": 4148,
-   "section": "seg_pmco",
-   "symbol": "_gs_case5_reset_stock",
-   "type": "sharc.abs24"
-  },
-  {
-   "addend": 0,
-   "offset": 4151,
-   "section": "seg_pmco",
-   "symbol": "_gs_c5_rec",
-   "type": "sharc.abs32"
-  },
-  {
-   "addend": 0,
-   "offset": 4163,
-   "section": "seg_pmco",
-   "symbol": "_gs_case5_reset_stock",
-   "type": "sharc.abs24"
-  },
-  {
-   "addend": 0,
-   "offset": 4166,
-   "section": "seg_pmco",
-   "symbol": "_gs_engine_base",
-   "type": "sharc.abs32"
-  },
-  {
-   "addend": 0,
-   "offset": 4175,
-   "section": "seg_pmco",
-   "symbol": "_gs_ring_reset_stock",
-   "type": "sharc.abs24"
-  },
-  {
-   "addend": 0,
-   "offset": 4189,
-   "section": "seg_pmco",
-   "symbol": "_gs_ring_reset_stock",
-   "type": "sharc.abs24"
-  },
-  {
-   "addend": 0,
-   "offset": 4197,
-   "section": "seg_pmco",
-   "symbol": "_gs_ring_reset_stock",
-   "type": "sharc.abs24"
-  },
-  {
-   "addend": 0,
-   "offset": 4200,
-   "section": "seg_pmco",
-   "symbol": "_gs_rg_rec",
-   "type": "sharc.abs32"
-  },
-  {
-   "addend": 0,
-   "offset": 4216,
-   "section": "seg_pmco",
-   "symbol": "_gs_ring_reset_stock",
-   "type": "sharc.abs24"
-  },
-  {
-   "addend": 0,
-   "offset": 4219,
-   "section": "seg_pmco",
-   "symbol": "_gs_hacc",
-   "type": "sharc.abs32"
-  },
-  {
-   "addend": 0,
-   "offset": 4222,
-   "section": "seg_pmco",
-   "symbol": "_gs_health",
-   "type": "sharc.abs32"
-  },
-  {
-   "addend": 0,
-   "offset": 4227,
-   "section": "seg_pmco",
-   "symbol": "_gs_hacc",
-   "type": "sharc.abs32"
-  },
-  {
-   "addend": 0,
-   "offset": 4236,
-   "section": "seg_pmco",
-   "symbol": "_gs_pp_done",
-   "type": "sharc.abs24"
-  },
-  {
-   "addend": 0,
-   "offset": 4239,
-   "section": "seg_pmco",
-   "symbol": "_dv_diag",
-   "type": "sharc.abs32"
-  },
-  {
-   "addend": 0,
-   "offset": 4244,
-   "section": "seg_pmco",
-   "symbol": "_gs_stamp",
-   "type": "sharc.abs32"
-  },
-  {
-   "addend": 0,
-   "offset": 4253,
-   "section": "seg_pmco",
-   "symbol": "_gs_pp_next",
-   "type": "sharc.abs24"
-  },
-  {
-   "addend": 0,
-   "offset": 4259,
-   "section": "seg_pmco",
-   "symbol": "_gs_rbuf",
-   "type": "sharc.abs32"
-  },
-  {
-   "addend": 0,
-   "offset": 4263,
-   "section": "seg_pmco",
-   "symbol": "_gs_engine_base",
-   "type": "sharc.abs32"
-  },
-  {
-   "addend": 0,
-   "offset": 4305,
-   "section": "seg_pmco",
-   "symbol": "_gs_engine_base",
-   "type": "sharc.abs32"
-  },
-  {
-   "addend": 0,
-   "offset": 4334,
-   "section": "seg_pmco",
-   "symbol": "_gs_pp_next",
-   "type": "sharc.abs24"
-  },
-  {
-   "addend": 0,
-   "offset": 4337,
-   "section": "seg_pmco",
-   "symbol": "_gs_engine_base",
-   "type": "sharc.abs32"
-  },
-  {
-   "addend": 0,
-   "offset": 4359,
-   "section": "seg_pmco",
-   "symbol": "_gs_pp_next",
-   "type": "sharc.abs24"
-  },
-  {
-   "addend": 0,
-   "offset": 4391,
-   "section": "seg_pmco",
-   "symbol": "_gs_pp_slot",
-   "type": "sharc.abs24"
-  },
-  {
-   "addend": 0,
-   "offset": 4397,
-   "section": "seg_pmco",
-   "symbol": "_gs_pre_cont",
-   "type": "sharc.abs24"
-  },
-  {
-   "addend": 0,
-   "offset": 4405,
-   "section": "seg_pmco",
-   "symbol": "_gs_stamp",
-   "type": "sharc.abs32"
-  },
-  {
-   "addend": 0,
-   "offset": 4413,
-   "section": "seg_pmco",
-   "symbol": "_dv_diag",
-   "type": "sharc.abs32"
-  },
-  {
-   "addend": 0,
-   "offset": 4417,
-   "section": "seg_pmco",
-   "symbol": "_gs_mono",
-   "type": "sharc.abs24"
-  },
-  {
-   "addend": 0,
-   "offset": 4423,
-   "section": "seg_pmco",
-   "symbol": "_gs_mono",
-   "type": "sharc.abs24"
-  },
-  {
-   "addend": 0,
-   "offset": 4430,
-   "section": "seg_pmco",
-   "symbol": "_gs_rbuf",
-   "type": "sharc.abs32"
-  },
-  {
-   "addend": 0,
-   "offset": 4483,
-   "section": "seg_pmco",
-   "symbol": "_gs_pan_end",
-   "type": "sharc.abs24"
-  },
-  {
-   "addend": 0,
-   "offset": 4493,
-   "section": "seg_pmco",
-   "symbol": "_gs_pan_cont",
-   "type": "sharc.abs24"
-  },
-  {
-   "addend": 48,
-   "offset": 4496,
-   "section": "seg_pmco",
-   "symbol": "_dv_c",
-   "type": "sharc.abs32"
-  },
-  {
-   "addend": 4,
-   "offset": 4503,
-   "section": "seg_pmco",
-   "symbol": "_dv_c",
-   "type": "sharc.abs32"
-  },
-  {
-   "addend": 0,
-   "offset": 4509,
-   "section": "seg_pmco",
-   "symbol": "_gs_seen",
-   "type": "sharc.abs32"
-  },
-  {
-   "addend": 0,
-   "offset": 4515,
-   "section": "seg_pmco",
-   "symbol": "_dv_diag",
-   "type": "sharc.abs32"
-  },
-  {
-   "addend": 0,
-   "offset": 4523,
-   "section": "seg_pmco",
-   "symbol": "_gs_rbuf",
-   "type": "sharc.abs32"
-  },
-  {
-   "addend": 0,
-   "offset": 4550,
-   "section": "seg_pmco",
-   "symbol": "_gs_badr",
-   "type": "sharc.abs24"
-  },
-  {
-   "addend": 0,
-   "offset": 4553,
-   "section": "seg_pmco",
-   "symbol": "_dv_diag",
-   "type": "sharc.abs32"
-  },
-  {
-   "addend": 0,
-   "offset": 4556,
-   "section": "seg_pmco",
-   "symbol": "_gs_nhb",
-   "type": "sharc.abs32"
-  },
-  {
-   "addend": 0,
-   "offset": 4560,
-   "section": "seg_pmco",
-   "symbol": "_gs_samehb",
+   "symbol": "_dv_crender",
    "type": "sharc.abs24"
-  },
-  {
-   "addend": 0,
-   "offset": 4563,
-   "section": "seg_pmco",
-   "symbol": "_gs_nhb",
-   "type": "sharc.abs32"
-  },
-  {
-   "addend": 0,
-   "offset": 4568,
-   "section": "seg_pmco",
-   "symbol": "_gs_ns",
-   "type": "sharc.abs32"
-  },
-  {
-   "addend": 0,
-   "offset": 4571,
-   "section": "seg_pmco",
-   "symbol": "_gs_ns",
-   "type": "sharc.abs32"
   },
   {
    "addend": 0,
-   "offset": 4577,
+   "offset": 1031,
    "section": "seg_pmco",
-   "symbol": "_gs_capped",
+   "symbol": "_dv_cnoclr",
    "type": "sharc.abs24"
-  },
-  {
-   "addend": 0,
-   "offset": 4581,
-   "section": "seg_pmco",
-   "symbol": "_gs_ns",
-   "type": "sharc.abs32"
-  },
-  {
-   "addend": 0,
-   "offset": 4606,
-   "section": "seg_pmco",
-   "symbol": "_gs_stamp",
-   "type": "sharc.abs32"
   },
   {
    "addend": 0,
-   "offset": 4614,
-   "section": "seg_pmco",
-   "symbol": "_dv_diag",
-   "type": "sharc.abs32"
-  },
-  {
-   "addend": 8,
-   "offset": 4617,
+   "offset": 1048,
    "section": "seg_pmco",
    "symbol": "_dv_in",
    "type": "sharc.abs32"
   },
   {
    "addend": 0,
-   "offset": 4621,
+   "offset": 1051,
    "section": "seg_pmco",
-   "symbol": "_gs_clear",
-   "type": "sharc.abs24"
-  },
-  {
-   "addend": 0,
-   "offset": 4626,
-   "section": "seg_pmco",
-   "symbol": "_gs_stamped",
-   "type": "sharc.abs24"
-  },
-  {
-   "addend": 72,
-   "offset": 4629,
-   "section": "seg_pmco",
-   "symbol": "_gs_cnt",
-   "type": "sharc.abs32"
-  },
-  {
-   "addend": 72,
-   "offset": 4633,
-   "section": "seg_pmco",
-   "symbol": "_gs_cnt",
+   "symbol": "_dv_call_params",
    "type": "sharc.abs32"
   },
   {
    "addend": 0,
-   "offset": 4642,
+   "offset": 1054,
+   "section": "seg_pmco",
+   "symbol": "_dv_nback",
+   "type": "sharc.abs32"
+  },
+  {
+   "addend": 0,
+   "offset": 1060,
+   "section": "seg_pmco",
+   "symbol": "_dv_nfault",
+   "type": "sharc.abs24"
+  },
+  {
+   "addend": 0,
+   "offset": 1063,
+   "section": "seg_pmco",
+   "symbol": "_dv_row",
+   "type": "sharc.abs32"
+  },
+  {
+   "addend": 28,
+   "offset": 1072,
+   "section": "seg_pmco",
+   "symbol": "_dv_c",
+   "type": "sharc.abs32"
+  },
+  {
+   "addend": 0,
+   "offset": 1075,
+   "section": "seg_pmco",
+   "symbol": "_dv_in",
+   "type": "sharc.abs32"
+  },
+  {
+   "addend": 0,
+   "offset": 1078,
+   "section": "seg_pmco",
+   "symbol": "_dv_call_params",
+   "type": "sharc.abs32"
+  },
+  {
+   "addend": 0,
+   "offset": 1081,
+   "section": "seg_pmco",
+   "symbol": "_dv_rback",
+   "type": "sharc.abs32"
+  },
+  {
+   "addend": 48,
+   "offset": 1090,
+   "section": "seg_pmco",
+   "symbol": "_dv_c",
+   "type": "sharc.abs32"
+  },
+  {
+   "addend": 32,
+   "offset": 1095,
+   "section": "seg_pmco",
+   "symbol": "_dv_c",
+   "type": "sharc.abs32"
+  },
+  {
+   "addend": 8,
+   "offset": 1098,
+   "section": "seg_pmco",
+   "symbol": "_dv_c",
+   "type": "sharc.abs32"
+  },
+  {
+   "addend": 0,
+   "offset": 1124,
+   "section": "seg_pmco",
+   "symbol": "_dv_gfault",
+   "type": "sharc.abs24"
+  },
+  {
+   "addend": 0,
+   "offset": 1127,
+   "section": "seg_pmco",
+   "symbol": "_gs_post",
+   "type": "sharc.abs24"
+  },
+  {
+   "addend": 32,
+   "offset": 1132,
+   "section": "seg_pmco",
+   "symbol": "_dv_c",
+   "type": "sharc.abs32"
+  },
+  {
+   "addend": 0,
+   "offset": 1136,
+   "section": "seg_pmco",
+   "symbol": "_dv_back",
+   "type": "sharc.abs24"
+  },
+  {
+   "addend": 12,
+   "offset": 1139,
+   "section": "seg_pmco",
+   "symbol": "_dv_c",
+   "type": "sharc.abs32"
+  },
+  {
+   "addend": 0,
+   "offset": 1148,
+   "section": "seg_pmco",
+   "symbol": "_dv_back",
+   "type": "sharc.abs24"
+  },
+  {
+   "addend": 0,
+   "offset": 1153,
+   "section": "seg_pmco",
+   "symbol": "_dv_gfaultk",
+   "type": "sharc.abs24"
+  },
+  {
+   "addend": 36,
+   "offset": 1167,
+   "section": "seg_pmco",
+   "symbol": "_dv_c",
+   "type": "sharc.abs32"
+  },
+  {
+   "addend": 0,
+   "offset": 1170,
+   "section": "seg_pmco",
+   "symbol": "_dv_call_params",
+   "type": "sharc.abs32"
+  },
+  {
+   "addend": 0,
+   "offset": 1173,
+   "section": "seg_pmco",
+   "symbol": "_dv_diag",
+   "type": "sharc.abs32"
+  },
+  {
+   "addend": 12,
+   "offset": 1197,
+   "section": "seg_pmco",
+   "symbol": "_dv_c",
+   "type": "sharc.abs32"
+  },
+  {
+   "addend": 8,
+   "offset": 1206,
+   "section": "seg_pmco",
+   "symbol": "_dv_c",
+   "type": "sharc.abs32"
+  },
+  {
+   "addend": 0,
+   "offset": 1219,
+   "section": "seg_pmco",
+   "symbol": "_dv_row",
+   "type": "sharc.abs32"
+  },
+  {
+   "addend": 0,
+   "offset": 1224,
+   "section": "seg_pmco",
+   "symbol": "_dv_diag",
+   "type": "sharc.abs32"
+  },
+  {
+   "addend": 0,
+   "offset": 1234,
+   "section": "seg_pmco",
+   "symbol": "_dv_gwin",
+   "type": "sharc.abs24"
+  },
+  {
+   "addend": 0,
+   "offset": 1256,
+   "section": "seg_pmco",
+   "symbol": "_dv_gnd",
+   "type": "sharc.abs24"
+  },
+  {
+   "addend": 0,
+   "offset": 1259,
+   "section": "seg_pmco",
+   "symbol": "_dv_c",
+   "type": "sharc.abs32"
+  },
+  {
+   "addend": 0,
+   "offset": 1265,
+   "section": "seg_pmco",
+   "symbol": "_dv_gnd",
+   "type": "sharc.abs24"
+  },
+  {
+   "addend": 84,
+   "offset": 1270,
+   "section": "seg_pmco",
+   "symbol": "_dv_diag",
+   "type": "sharc.abs32"
+  },
+  {
+   "addend": 44,
+   "offset": 1273,
+   "section": "seg_pmco",
+   "symbol": "_dv_c",
+   "type": "sharc.abs32"
+  },
+  {
+   "addend": 44,
+   "offset": 1277,
+   "section": "seg_pmco",
+   "symbol": "_dv_c",
+   "type": "sharc.abs32"
+  },
+  {
+   "addend": 40,
+   "offset": 1280,
+   "section": "seg_pmco",
+   "symbol": "_dv_c",
+   "type": "sharc.abs32"
+  },
+  {
+   "addend": 40,
+   "offset": 1284,
+   "section": "seg_pmco",
+   "symbol": "_dv_c",
+   "type": "sharc.abs32"
+  },
+  {
+   "addend": 36,
+   "offset": 1291,
+   "section": "seg_pmco",
+   "symbol": "_dv_c",
+   "type": "sharc.abs32"
+  },
+  {
+   "addend": 44,
+   "offset": 1298,
+   "section": "seg_pmco",
+   "symbol": "_dv_c",
+   "type": "sharc.abs32"
+  },
+  {
+   "addend": 60,
+   "offset": 1305,
+   "section": "seg_pmco",
+   "symbol": "_dv_diag",
+   "type": "sharc.abs32"
+  },
+  {
+   "addend": 0,
+   "offset": 1308,
+   "section": "seg_pmco",
+   "symbol": "_dv_c",
+   "type": "sharc.abs32"
+  },
+  {
+   "addend": 4,
+   "offset": 1311,
+   "section": "seg_pmco",
+   "symbol": "_dv_c",
+   "type": "sharc.abs32"
+  },
+  {
+   "addend": 64,
+   "offset": 1318,
+   "section": "seg_pmco",
+   "symbol": "_dv_diag",
+   "type": "sharc.abs32"
+  },
+  {
+   "addend": 0,
+   "offset": 1321,
+   "section": "seg_pmco",
+   "symbol": "_dv_back",
+   "type": "sharc.abs24"
+  },
+  {
+   "addend": 0,
+   "offset": 1328,
+   "section": "seg_pmco",
+   "symbol": "_dv_cz",
+   "type": "sharc.abs24"
+  },
+  {
+   "addend": 8,
+   "offset": 1335,
+   "section": "seg_pmco",
+   "symbol": "_dv_c",
+   "type": "sharc.abs32"
+  },
+  {
+   "addend": 0,
+   "offset": 1348,
+   "section": "seg_pmco",
+   "symbol": "_dv_back",
+   "type": "sharc.abs24"
+  },
+  {
+   "addend": 0,
+   "offset": 1404,
+   "section": "seg_pmco",
+   "symbol": "_fw_frame",
+   "type": "sharc.abs32"
+  },
+  {
+   "addend": 0,
+   "offset": 1434,
+   "section": "seg_pmco",
+   "symbol": "_fw_frame",
+   "type": "sharc.abs32"
+  },
+  {
+   "addend": 0,
+   "offset": 1477,
+   "section": "seg_pmco",
+   "symbol": "_gs_stamp",
+   "type": "sharc.abs32"
+  },
+  {
+   "addend": 0,
+   "offset": 1485,
+   "section": "seg_pmco",
+   "symbol": "_dv_diag",
+   "type": "sharc.abs32"
+  },
+  {
+   "addend": 0,
+   "offset": 1489,
+   "section": "seg_pmco",
+   "symbol": "_gs_fo_stock",
+   "type": "sharc.abs24"
+  },
+  {
+   "addend": 0,
+   "offset": 1501,
+   "section": "seg_pmco",
+   "symbol": "_gs_fo_bad",
+   "type": "sharc.abs24"
+  },
+  {
+   "addend": 0,
+   "offset": 1509,
+   "section": "seg_pmco",
+   "symbol": "_gs_fo_bad",
+   "type": "sharc.abs24"
+  },
+  {
+   "addend": 0,
+   "offset": 1521,
+   "section": "seg_pmco",
+   "symbol": "_gs_stamp",
+   "type": "sharc.abs32"
+  },
+  {
+   "addend": 0,
+   "offset": 1532,
    "section": "seg_pmco",
    "symbol": "_gs_fo_rec",
    "type": "sharc.abs32"
   },
   {
    "addend": 0,
-   "offset": 4658,
+   "offset": 1541,
    "section": "seg_pmco",
-   "symbol": "_gs_uy_rec",
+   "symbol": "_gs_rbuf",
    "type": "sharc.abs32"
   },
   {
    "addend": 0,
-   "offset": 4674,
+   "offset": 1566,
    "section": "seg_pmco",
-   "symbol": "_gs_gain_rec",
-   "type": "sharc.abs32"
-  },
-  {
-   "addend": 0,
-   "offset": 4690,
-   "section": "seg_pmco",
-   "symbol": "_gs_c5_rec",
-   "type": "sharc.abs32"
-  },
-  {
-   "addend": 0,
-   "offset": 4706,
-   "section": "seg_pmco",
-   "symbol": "_gs_hd_rec",
-   "type": "sharc.abs32"
-  },
-  {
-   "addend": 0,
-   "offset": 4722,
-   "section": "seg_pmco",
-   "symbol": "_gs_c1_rec",
-   "type": "sharc.abs32"
-  },
-  {
-   "addend": 0,
-   "offset": 4738,
-   "section": "seg_pmco",
-   "symbol": "_gs_c2_rec",
-   "type": "sharc.abs32"
-  },
-  {
-   "addend": 0,
-   "offset": 4754,
-   "section": "seg_pmco",
-   "symbol": "_gs_c3_rec",
-   "type": "sharc.abs32"
-  },
-  {
-   "addend": 0,
-   "offset": 4770,
-   "section": "seg_pmco",
-   "symbol": "_gs_rg_rec",
-   "type": "sharc.abs32"
-  },
-  {
-   "addend": 0,
-   "offset": 4786,
-   "section": "seg_pmco",
-   "symbol": "_dv_diag",
-   "type": "sharc.abs32"
-  },
-  {
-   "addend": 64,
-   "offset": 4794,
-   "section": "seg_pmco",
-   "symbol": "_gs_cnt",
-   "type": "sharc.abs32"
-  },
-  {
-   "addend": 64,
-   "offset": 4798,
-   "section": "seg_pmco",
-   "symbol": "_gs_cnt",
-   "type": "sharc.abs32"
-  },
-  {
-   "addend": 0,
-   "offset": 4803,
-   "section": "seg_pmco",
-   "symbol": "_gs_raise",
+   "symbol": "_gs_fo_stock",
    "type": "sharc.abs24"
   },
   {
-   "addend": 68,
-   "offset": 4806,
+   "addend": -1,
+   "offset": 1570,
+   "section": "seg_pmco",
+   "symbol": "_gs_fo_l",
+   "type": "sharc.abs32"
+  },
+  {
+   "addend": 0,
+   "offset": 1584,
+   "section": "seg_pmco",
+   "symbol": "_gs_fo_stock",
+   "type": "sharc.abs24"
+  },
+  {
+   "addend": -1,
+   "offset": 1588,
+   "section": "seg_pmco",
+   "symbol": "_gs_fo_r",
+   "type": "sharc.abs32"
+  },
+  {
+   "addend": 0,
+   "offset": 1596,
+   "section": "seg_pmco",
+   "symbol": "_gs_leave",
+   "type": "sharc.abs24"
+  },
+  {
+   "addend": 36,
+   "offset": 1603,
    "section": "seg_pmco",
    "symbol": "_gs_cnt",
    "type": "sharc.abs32"
   },
   {
-   "addend": 68,
-   "offset": 4810,
+   "addend": 36,
+   "offset": 1607,
    "section": "seg_pmco",
    "symbol": "_gs_cnt",
    "type": "sharc.abs32"
   },
   {
    "addend": 0,
-   "offset": 4815,
+   "offset": 1610,
+   "section": "seg_pmco",
+   "symbol": "_gs_nbad",
+   "type": "sharc.abs32"
+  },
+  {
+   "addend": 0,
+   "offset": 1614,
+   "section": "seg_pmco",
+   "symbol": "_gs_nbad",
+   "type": "sharc.abs32"
+  },
+  {
+   "addend": 0,
+   "offset": 1617,
    "section": "seg_pmco",
    "symbol": "_gs_hacc",
    "type": "sharc.abs32"
   },
   {
    "addend": 0,
-   "offset": 4819,
+   "offset": 1623,
+   "section": "seg_pmco",
+   "symbol": "_gs_hacc",
+   "type": "sharc.abs32"
+  },
+  {
+   "addend": 0,
+   "offset": 1626,
+   "section": "seg_pmco",
+   "symbol": "_gs_fo_stock",
+   "type": "sharc.abs24"
+  },
+  {
+   "addend": 0,
+   "offset": 1642,
+   "section": "seg_pmco",
+   "symbol": "_gs_stamp",
+   "type": "sharc.abs32"
+  },
+  {
+   "addend": 0,
+   "offset": 1650,
+   "section": "seg_pmco",
+   "symbol": "_dv_diag",
+   "type": "sharc.abs32"
+  },
+  {
+   "addend": 0,
+   "offset": 1654,
+   "section": "seg_pmco",
+   "symbol": "_gs_uy_stock",
+   "type": "sharc.abs24"
+  },
+  {
+   "addend": 0,
+   "offset": 1666,
+   "section": "seg_pmco",
+   "symbol": "_gs_uy_bad",
+   "type": "sharc.abs24"
+  },
+  {
+   "addend": 0,
+   "offset": 1674,
+   "section": "seg_pmco",
+   "symbol": "_gs_uy_bad",
+   "type": "sharc.abs24"
+  },
+  {
+   "addend": 0,
+   "offset": 1686,
+   "section": "seg_pmco",
+   "symbol": "_gs_stamp",
+   "type": "sharc.abs32"
+  },
+  {
+   "addend": 0,
+   "offset": 1693,
+   "section": "seg_pmco",
+   "symbol": "_gs_uy_rec",
+   "type": "sharc.abs32"
+  },
+  {
+   "addend": 0,
+   "offset": 1702,
+   "section": "seg_pmco",
+   "symbol": "_gs_rbuf",
+   "type": "sharc.abs32"
+  },
+  {
+   "addend": 0,
+   "offset": 1731,
+   "section": "seg_pmco",
+   "symbol": "_gs_uy_stock",
+   "type": "sharc.abs24"
+  },
+  {
+   "addend": -1,
+   "offset": 1735,
+   "section": "seg_pmco",
+   "symbol": "_gs_uy_l",
+   "type": "sharc.abs32"
+  },
+  {
+   "addend": 0,
+   "offset": 1749,
+   "section": "seg_pmco",
+   "symbol": "_gs_uy_stock",
+   "type": "sharc.abs24"
+  },
+  {
+   "addend": -1,
+   "offset": 1753,
+   "section": "seg_pmco",
+   "symbol": "_gs_uy_r",
+   "type": "sharc.abs32"
+  },
+  {
+   "addend": 0,
+   "offset": 1761,
+   "section": "seg_pmco",
+   "symbol": "_gs_leave",
+   "type": "sharc.abs24"
+  },
+  {
+   "addend": 40,
+   "offset": 1768,
+   "section": "seg_pmco",
+   "symbol": "_gs_cnt",
+   "type": "sharc.abs32"
+  },
+  {
+   "addend": 40,
+   "offset": 1772,
+   "section": "seg_pmco",
+   "symbol": "_gs_cnt",
+   "type": "sharc.abs32"
+  },
+  {
+   "addend": 0,
+   "offset": 1775,
+   "section": "seg_pmco",
+   "symbol": "_gs_nbad",
+   "type": "sharc.abs32"
+  },
+  {
+   "addend": 0,
+   "offset": 1779,
+   "section": "seg_pmco",
+   "symbol": "_gs_nbad",
+   "type": "sharc.abs32"
+  },
+  {
+   "addend": 0,
+   "offset": 1782,
+   "section": "seg_pmco",
+   "symbol": "_gs_hacc",
+   "type": "sharc.abs32"
+  },
+  {
+   "addend": 0,
+   "offset": 1788,
+   "section": "seg_pmco",
+   "symbol": "_gs_hacc",
+   "type": "sharc.abs32"
+  },
+  {
+   "addend": 0,
+   "offset": 1791,
+   "section": "seg_pmco",
+   "symbol": "_gs_uy_stock",
+   "type": "sharc.abs24"
+  },
+  {
+   "addend": 0,
+   "offset": 1807,
+   "section": "seg_pmco",
+   "symbol": "_gs_stamp",
+   "type": "sharc.abs32"
+  },
+  {
+   "addend": 0,
+   "offset": 1815,
+   "section": "seg_pmco",
+   "symbol": "_dv_diag",
+   "type": "sharc.abs32"
+  },
+  {
+   "addend": 0,
+   "offset": 1819,
+   "section": "seg_pmco",
+   "symbol": "_gs_gain_stock",
+   "type": "sharc.abs24"
+  },
+  {
+   "addend": 0,
+   "offset": 1831,
+   "section": "seg_pmco",
+   "symbol": "_gs_gain_bad",
+   "type": "sharc.abs24"
+  },
+  {
+   "addend": 0,
+   "offset": 1839,
+   "section": "seg_pmco",
+   "symbol": "_gs_gain_bad",
+   "type": "sharc.abs24"
+  },
+  {
+   "addend": 0,
+   "offset": 1851,
+   "section": "seg_pmco",
+   "symbol": "_gs_stamp",
+   "type": "sharc.abs32"
+  },
+  {
+   "addend": 0,
+   "offset": 1863,
+   "section": "seg_pmco",
+   "symbol": "_gs_gain_rec",
+   "type": "sharc.abs32"
+  },
+  {
+   "addend": 0,
+   "offset": 1872,
+   "section": "seg_pmco",
+   "symbol": "_gs_rbuf",
+   "type": "sharc.abs32"
+  },
+  {
+   "addend": 0,
+   "offset": 1895,
+   "section": "seg_pmco",
+   "symbol": "_gs_gain_cap",
+   "type": "sharc.abs24"
+  },
+  {
+   "addend": 0,
+   "offset": 1907,
+   "section": "seg_pmco",
+   "symbol": "_gs_gain_stock",
+   "type": "sharc.abs24"
+  },
+  {
+   "addend": -1,
+   "offset": 1911,
+   "section": "seg_pmco",
+   "symbol": "_gs_gain_l",
+   "type": "sharc.abs32"
+  },
+  {
+   "addend": 0,
+   "offset": 1931,
+   "section": "seg_pmco",
+   "symbol": "_gs_gain_stock",
+   "type": "sharc.abs24"
+  },
+  {
+   "addend": -1,
+   "offset": 1935,
+   "section": "seg_pmco",
+   "symbol": "_gs_gain_r",
+   "type": "sharc.abs32"
+  },
+  {
+   "addend": 0,
+   "offset": 1943,
+   "section": "seg_pmco",
+   "symbol": "_gs_leave",
+   "type": "sharc.abs24"
+  },
+  {
+   "addend": 44,
+   "offset": 1950,
+   "section": "seg_pmco",
+   "symbol": "_gs_cnt",
+   "type": "sharc.abs32"
+  },
+  {
+   "addend": 44,
+   "offset": 1954,
+   "section": "seg_pmco",
+   "symbol": "_gs_cnt",
+   "type": "sharc.abs32"
+  },
+  {
+   "addend": 0,
+   "offset": 1957,
+   "section": "seg_pmco",
+   "symbol": "_gs_nbad",
+   "type": "sharc.abs32"
+  },
+  {
+   "addend": 0,
+   "offset": 1961,
+   "section": "seg_pmco",
+   "symbol": "_gs_nbad",
+   "type": "sharc.abs32"
+  },
+  {
+   "addend": 0,
+   "offset": 1964,
+   "section": "seg_pmco",
+   "symbol": "_gs_hacc",
+   "type": "sharc.abs32"
+  },
+  {
+   "addend": 0,
+   "offset": 1970,
+   "section": "seg_pmco",
+   "symbol": "_gs_hacc",
+   "type": "sharc.abs32"
+  },
+  {
+   "addend": 0,
+   "offset": 1973,
+   "section": "seg_pmco",
+   "symbol": "_gs_gain_stock",
+   "type": "sharc.abs24"
+  },
+  {
+   "addend": 0,
+   "offset": 1989,
+   "section": "seg_pmco",
+   "symbol": "_gs_stamp",
+   "type": "sharc.abs32"
+  },
+  {
+   "addend": 0,
+   "offset": 1997,
+   "section": "seg_pmco",
+   "symbol": "_dv_diag",
+   "type": "sharc.abs32"
+  },
+  {
+   "addend": 0,
+   "offset": 2001,
+   "section": "seg_pmco",
+   "symbol": "_gs_c5_stock",
+   "type": "sharc.abs24"
+  },
+  {
+   "addend": 0,
+   "offset": 2013,
+   "section": "seg_pmco",
+   "symbol": "_gs_c5_bad",
+   "type": "sharc.abs24"
+  },
+  {
+   "addend": 0,
+   "offset": 2021,
+   "section": "seg_pmco",
+   "symbol": "_gs_c5_bad",
+   "type": "sharc.abs24"
+  },
+  {
+   "addend": 0,
+   "offset": 2045,
+   "section": "seg_pmco",
+   "symbol": "_gs_stamp",
+   "type": "sharc.abs32"
+  },
+  {
+   "addend": 0,
+   "offset": 2053,
+   "section": "seg_pmco",
+   "symbol": "_gs_c5_rec",
+   "type": "sharc.abs32"
+  },
+  {
+   "addend": 0,
+   "offset": 2062,
+   "section": "seg_pmco",
+   "symbol": "_gs_rbuf",
+   "type": "sharc.abs32"
+  },
+  {
+   "addend": 0,
+   "offset": 2071,
+   "section": "seg_pmco",
+   "symbol": "_gs_c5_scr",
+   "type": "sharc.abs32"
+  },
+  {
+   "addend": 0,
+   "offset": 2100,
+   "section": "seg_pmco",
+   "symbol": "_gs_c5_cap",
+   "type": "sharc.abs24"
+  },
+  {
+   "addend": 0,
+   "offset": 2106,
+   "section": "seg_pmco",
+   "symbol": "_gs_c5_stock",
+   "type": "sharc.abs24"
+  },
+  {
+   "addend": -1,
+   "offset": 2110,
+   "section": "seg_pmco",
+   "symbol": "_gs_c5_l",
+   "type": "sharc.abs32"
+  },
+  {
+   "addend": 0,
+   "offset": 2125,
+   "section": "seg_pmco",
+   "symbol": "_gs_c5_stock",
+   "type": "sharc.abs24"
+  },
+  {
+   "addend": -1,
+   "offset": 2129,
+   "section": "seg_pmco",
+   "symbol": "_gs_c5_r",
+   "type": "sharc.abs32"
+  },
+  {
+   "addend": 0,
+   "offset": 2188,
+   "section": "seg_pmco",
+   "symbol": "_gs_leave",
+   "type": "sharc.abs24"
+  },
+  {
+   "addend": 48,
+   "offset": 2195,
+   "section": "seg_pmco",
+   "symbol": "_gs_cnt",
+   "type": "sharc.abs32"
+  },
+  {
+   "addend": 48,
+   "offset": 2199,
+   "section": "seg_pmco",
+   "symbol": "_gs_cnt",
+   "type": "sharc.abs32"
+  },
+  {
+   "addend": 0,
+   "offset": 2202,
+   "section": "seg_pmco",
+   "symbol": "_gs_nbad",
+   "type": "sharc.abs32"
+  },
+  {
+   "addend": 0,
+   "offset": 2206,
+   "section": "seg_pmco",
+   "symbol": "_gs_nbad",
+   "type": "sharc.abs32"
+  },
+  {
+   "addend": 0,
+   "offset": 2209,
+   "section": "seg_pmco",
+   "symbol": "_gs_hacc",
+   "type": "sharc.abs32"
+  },
+  {
+   "addend": 0,
+   "offset": 2215,
+   "section": "seg_pmco",
+   "symbol": "_gs_hacc",
+   "type": "sharc.abs32"
+  },
+  {
+   "addend": 0,
+   "offset": 2218,
+   "section": "seg_pmco",
+   "symbol": "_gs_c5_stock",
+   "type": "sharc.abs24"
+  },
+  {
+   "addend": 0,
+   "offset": 2234,
+   "section": "seg_pmco",
+   "symbol": "_gs_stamp",
+   "type": "sharc.abs32"
+  },
+  {
+   "addend": 0,
+   "offset": 2242,
+   "section": "seg_pmco",
+   "symbol": "_dv_diag",
+   "type": "sharc.abs32"
+  },
+  {
+   "addend": 0,
+   "offset": 2246,
+   "section": "seg_pmco",
+   "symbol": "_gs_shaper_stock",
+   "type": "sharc.abs24"
+  },
+  {
+   "addend": 0,
+   "offset": 2258,
+   "section": "seg_pmco",
+   "symbol": "_gs_shaper_early_bad",
+   "type": "sharc.abs24"
+  },
+  {
+   "addend": 0,
+   "offset": 2266,
+   "section": "seg_pmco",
+   "symbol": "_gs_shaper_early_bad",
+   "type": "sharc.abs24"
+  },
+  {
+   "addend": 0,
+   "offset": 2278,
+   "section": "seg_pmco",
+   "symbol": "_gs_stamp",
+   "type": "sharc.abs32"
+  },
+  {
+   "addend": 0,
+   "offset": 2286,
+   "section": "seg_pmco",
+   "symbol": "_gs_sh_rec",
+   "type": "sharc.abs32"
+  },
+  {
+   "addend": 0,
+   "offset": 2295,
+   "section": "seg_pmco",
+   "symbol": "_gs_rbuf",
+   "type": "sharc.abs32"
+  },
+  {
+   "addend": 0,
+   "offset": 2328,
+   "section": "seg_pmco",
+   "symbol": "_gs_shaper_stock",
+   "type": "sharc.abs24"
+  },
+  {
+   "addend": -1,
+   "offset": 2332,
+   "section": "seg_pmco",
+   "symbol": "_gs_shaper_early_l",
+   "type": "sharc.abs32"
+  },
+  {
+   "addend": 0,
+   "offset": 2346,
+   "section": "seg_pmco",
+   "symbol": "_gs_shaper_stock",
+   "type": "sharc.abs24"
+  },
+  {
+   "addend": -1,
+   "offset": 2350,
+   "section": "seg_pmco",
+   "symbol": "_gs_shaper_early_r",
+   "type": "sharc.abs32"
+  },
+  {
+   "addend": 0,
+   "offset": 2358,
+   "section": "seg_pmco",
+   "symbol": "_gs_leave",
+   "type": "sharc.abs24"
+  },
+  {
+   "addend": 8,
+   "offset": 2365,
+   "section": "seg_pmco",
+   "symbol": "_gs_cnt",
+   "type": "sharc.abs32"
+  },
+  {
+   "addend": 8,
+   "offset": 2369,
+   "section": "seg_pmco",
+   "symbol": "_gs_cnt",
+   "type": "sharc.abs32"
+  },
+  {
+   "addend": 0,
+   "offset": 2372,
+   "section": "seg_pmco",
+   "symbol": "_gs_nbad",
+   "type": "sharc.abs32"
+  },
+  {
+   "addend": 0,
+   "offset": 2376,
+   "section": "seg_pmco",
+   "symbol": "_gs_nbad",
+   "type": "sharc.abs32"
+  },
+  {
+   "addend": 0,
+   "offset": 2379,
+   "section": "seg_pmco",
+   "symbol": "_gs_hacc",
+   "type": "sharc.abs32"
+  },
+  {
+   "addend": 0,
+   "offset": 2385,
+   "section": "seg_pmco",
+   "symbol": "_gs_hacc",
+   "type": "sharc.abs32"
+  },
+  {
+   "addend": 0,
+   "offset": 2388,
+   "section": "seg_pmco",
+   "symbol": "_gs_shaper_stock",
+   "type": "sharc.abs24"
+  },
+  {
+   "addend": 0,
+   "offset": 2404,
+   "section": "seg_pmco",
+   "symbol": "_gs_stamp",
+   "type": "sharc.abs32"
+  },
+  {
+   "addend": 0,
+   "offset": 2412,
+   "section": "seg_pmco",
+   "symbol": "_dv_diag",
+   "type": "sharc.abs32"
+  },
+  {
+   "addend": 0,
+   "offset": 2416,
+   "section": "seg_pmco",
+   "symbol": "_gs_shaper_stock",
+   "type": "sharc.abs24"
+  },
+  {
+   "addend": 0,
+   "offset": 2428,
+   "section": "seg_pmco",
+   "symbol": "_gs_shaper_late_bad",
+   "type": "sharc.abs24"
+  },
+  {
+   "addend": 0,
+   "offset": 2436,
+   "section": "seg_pmco",
+   "symbol": "_gs_shaper_late_bad",
+   "type": "sharc.abs24"
+  },
+  {
+   "addend": 0,
+   "offset": 2448,
+   "section": "seg_pmco",
+   "symbol": "_gs_stamp",
+   "type": "sharc.abs32"
+  },
+  {
+   "addend": 0,
+   "offset": 2456,
+   "section": "seg_pmco",
+   "symbol": "_gs_sh_rec",
+   "type": "sharc.abs32"
+  },
+  {
+   "addend": 0,
+   "offset": 2465,
+   "section": "seg_pmco",
+   "symbol": "_gs_rbuf",
+   "type": "sharc.abs32"
+  },
+  {
+   "addend": 0,
+   "offset": 2498,
+   "section": "seg_pmco",
+   "symbol": "_gs_shaper_stock",
+   "type": "sharc.abs24"
+  },
+  {
+   "addend": -1,
+   "offset": 2502,
+   "section": "seg_pmco",
+   "symbol": "_gs_shaper_late_l",
+   "type": "sharc.abs32"
+  },
+  {
+   "addend": 0,
+   "offset": 2535,
+   "section": "seg_pmco",
+   "symbol": "_gs_shaper_stock",
+   "type": "sharc.abs24"
+  },
+  {
+   "addend": -1,
+   "offset": 2539,
+   "section": "seg_pmco",
+   "symbol": "_gs_shaper_late_r",
+   "type": "sharc.abs32"
+  },
+  {
+   "addend": 0,
+   "offset": 2566,
+   "section": "seg_pmco",
+   "symbol": "_gs_leave",
+   "type": "sharc.abs24"
+  },
+  {
+   "addend": 12,
+   "offset": 2573,
+   "section": "seg_pmco",
+   "symbol": "_gs_cnt",
+   "type": "sharc.abs32"
+  },
+  {
+   "addend": 12,
+   "offset": 2577,
+   "section": "seg_pmco",
+   "symbol": "_gs_cnt",
+   "type": "sharc.abs32"
+  },
+  {
+   "addend": 0,
+   "offset": 2580,
+   "section": "seg_pmco",
+   "symbol": "_gs_nbad",
+   "type": "sharc.abs32"
+  },
+  {
+   "addend": 0,
+   "offset": 2584,
+   "section": "seg_pmco",
+   "symbol": "_gs_nbad",
+   "type": "sharc.abs32"
+  },
+  {
+   "addend": 0,
+   "offset": 2587,
+   "section": "seg_pmco",
+   "symbol": "_gs_hacc",
+   "type": "sharc.abs32"
+  },
+  {
+   "addend": 0,
+   "offset": 2593,
+   "section": "seg_pmco",
+   "symbol": "_gs_hacc",
+   "type": "sharc.abs32"
+  },
+  {
+   "addend": 0,
+   "offset": 2596,
+   "section": "seg_pmco",
+   "symbol": "_gs_shaper_stock",
+   "type": "sharc.abs24"
+  },
+  {
+   "addend": 0,
+   "offset": 2612,
+   "section": "seg_pmco",
+   "symbol": "_gs_stamp",
+   "type": "sharc.abs32"
+  },
+  {
+   "addend": 0,
+   "offset": 2620,
+   "section": "seg_pmco",
+   "symbol": "_dv_diag",
+   "type": "sharc.abs32"
+  },
+  {
+   "addend": 0,
+   "offset": 2624,
+   "section": "seg_pmco",
+   "symbol": "_gs_held_stock",
+   "type": "sharc.abs24"
+  },
+  {
+   "addend": 0,
+   "offset": 2636,
+   "section": "seg_pmco",
+   "symbol": "_gs_held_early_bad",
+   "type": "sharc.abs24"
+  },
+  {
+   "addend": 0,
+   "offset": 2644,
+   "section": "seg_pmco",
+   "symbol": "_gs_held_early_bad",
+   "type": "sharc.abs24"
+  },
+  {
+   "addend": 0,
+   "offset": 2656,
+   "section": "seg_pmco",
+   "symbol": "_gs_stamp",
+   "type": "sharc.abs32"
+  },
+  {
+   "addend": 0,
+   "offset": 2664,
+   "section": "seg_pmco",
+   "symbol": "_gs_hd_rec",
+   "type": "sharc.abs32"
+  },
+  {
+   "addend": 0,
+   "offset": 2673,
+   "section": "seg_pmco",
+   "symbol": "_gs_rbuf",
+   "type": "sharc.abs32"
+  },
+  {
+   "addend": 0,
+   "offset": 2698,
+   "section": "seg_pmco",
+   "symbol": "_gs_held_stock",
+   "type": "sharc.abs24"
+  },
+  {
+   "addend": -1,
+   "offset": 2702,
+   "section": "seg_pmco",
+   "symbol": "_gs_held_early_l",
+   "type": "sharc.abs32"
+  },
+  {
+   "addend": 0,
+   "offset": 2716,
+   "section": "seg_pmco",
+   "symbol": "_gs_held_stock",
+   "type": "sharc.abs24"
+  },
+  {
+   "addend": -1,
+   "offset": 2720,
+   "section": "seg_pmco",
+   "symbol": "_gs_held_early_r",
+   "type": "sharc.abs32"
+  },
+  {
+   "addend": 0,
+   "offset": 2728,
+   "section": "seg_pmco",
+   "symbol": "_gs_leave",
+   "type": "sharc.abs24"
+  },
+  {
+   "addend": 0,
+   "offset": 2735,
+   "section": "seg_pmco",
+   "symbol": "_gs_cnt",
+   "type": "sharc.abs32"
+  },
+  {
+   "addend": 0,
+   "offset": 2739,
+   "section": "seg_pmco",
+   "symbol": "_gs_cnt",
+   "type": "sharc.abs32"
+  },
+  {
+   "addend": 0,
+   "offset": 2742,
+   "section": "seg_pmco",
+   "symbol": "_gs_nbad",
+   "type": "sharc.abs32"
+  },
+  {
+   "addend": 0,
+   "offset": 2746,
+   "section": "seg_pmco",
+   "symbol": "_gs_nbad",
+   "type": "sharc.abs32"
+  },
+  {
+   "addend": 0,
+   "offset": 2749,
+   "section": "seg_pmco",
+   "symbol": "_gs_hacc",
+   "type": "sharc.abs32"
+  },
+  {
+   "addend": 0,
+   "offset": 2755,
+   "section": "seg_pmco",
+   "symbol": "_gs_hacc",
+   "type": "sharc.abs32"
+  },
+  {
+   "addend": 0,
+   "offset": 2758,
+   "section": "seg_pmco",
+   "symbol": "_gs_held_stock",
+   "type": "sharc.abs24"
+  },
+  {
+   "addend": 0,
+   "offset": 2774,
+   "section": "seg_pmco",
+   "symbol": "_gs_stamp",
+   "type": "sharc.abs32"
+  },
+  {
+   "addend": 0,
+   "offset": 2782,
+   "section": "seg_pmco",
+   "symbol": "_dv_diag",
+   "type": "sharc.abs32"
+  },
+  {
+   "addend": 0,
+   "offset": 2786,
+   "section": "seg_pmco",
+   "symbol": "_gs_held_stock",
+   "type": "sharc.abs24"
+  },
+  {
+   "addend": 0,
+   "offset": 2798,
+   "section": "seg_pmco",
+   "symbol": "_gs_held_late_bad",
+   "type": "sharc.abs24"
+  },
+  {
+   "addend": 0,
+   "offset": 2806,
+   "section": "seg_pmco",
+   "symbol": "_gs_held_late_bad",
+   "type": "sharc.abs24"
+  },
+  {
+   "addend": 0,
+   "offset": 2818,
+   "section": "seg_pmco",
+   "symbol": "_gs_stamp",
+   "type": "sharc.abs32"
+  },
+  {
+   "addend": 0,
+   "offset": 2826,
+   "section": "seg_pmco",
+   "symbol": "_gs_hd_rec",
+   "type": "sharc.abs32"
+  },
+  {
+   "addend": 0,
+   "offset": 2835,
+   "section": "seg_pmco",
+   "symbol": "_gs_rbuf",
+   "type": "sharc.abs32"
+  },
+  {
+   "addend": 0,
+   "offset": 2860,
+   "section": "seg_pmco",
+   "symbol": "_gs_held_stock",
+   "type": "sharc.abs24"
+  },
+  {
+   "addend": -1,
+   "offset": 2864,
+   "section": "seg_pmco",
+   "symbol": "_gs_held_late_l",
+   "type": "sharc.abs32"
+  },
+  {
+   "addend": 0,
+   "offset": 2878,
+   "section": "seg_pmco",
+   "symbol": "_gs_held_stock",
+   "type": "sharc.abs24"
+  },
+  {
+   "addend": -1,
+   "offset": 2882,
+   "section": "seg_pmco",
+   "symbol": "_gs_held_late_r",
+   "type": "sharc.abs32"
+  },
+  {
+   "addend": 0,
+   "offset": 2890,
+   "section": "seg_pmco",
+   "symbol": "_gs_leave",
+   "type": "sharc.abs24"
+  },
+  {
+   "addend": 4,
+   "offset": 2897,
+   "section": "seg_pmco",
+   "symbol": "_gs_cnt",
+   "type": "sharc.abs32"
+  },
+  {
+   "addend": 4,
+   "offset": 2901,
+   "section": "seg_pmco",
+   "symbol": "_gs_cnt",
+   "type": "sharc.abs32"
+  },
+  {
+   "addend": 0,
+   "offset": 2904,
+   "section": "seg_pmco",
+   "symbol": "_gs_nbad",
+   "type": "sharc.abs32"
+  },
+  {
+   "addend": 0,
+   "offset": 2908,
+   "section": "seg_pmco",
+   "symbol": "_gs_nbad",
+   "type": "sharc.abs32"
+  },
+  {
+   "addend": 0,
+   "offset": 2911,
+   "section": "seg_pmco",
+   "symbol": "_gs_hacc",
+   "type": "sharc.abs32"
+  },
+  {
+   "addend": 0,
+   "offset": 2917,
+   "section": "seg_pmco",
+   "symbol": "_gs_hacc",
+   "type": "sharc.abs32"
+  },
+  {
+   "addend": 0,
+   "offset": 2920,
+   "section": "seg_pmco",
+   "symbol": "_gs_held_stock",
+   "type": "sharc.abs24"
+  },
+  {
+   "addend": 0,
+   "offset": 2936,
+   "section": "seg_pmco",
+   "symbol": "_gs_stamp",
+   "type": "sharc.abs32"
+  },
+  {
+   "addend": 0,
+   "offset": 2944,
+   "section": "seg_pmco",
+   "symbol": "_dv_diag",
+   "type": "sharc.abs32"
+  },
+  {
+   "addend": 0,
+   "offset": 2948,
+   "section": "seg_pmco",
+   "symbol": "_gs_case1_stock",
+   "type": "sharc.abs24"
+  },
+  {
+   "addend": 0,
+   "offset": 2960,
+   "section": "seg_pmco",
+   "symbol": "_gs_case1_bad",
+   "type": "sharc.abs24"
+  },
+  {
+   "addend": 0,
+   "offset": 2968,
+   "section": "seg_pmco",
+   "symbol": "_gs_case1_bad",
+   "type": "sharc.abs24"
+  },
+  {
+   "addend": 0,
+   "offset": 2980,
+   "section": "seg_pmco",
+   "symbol": "_gs_stamp",
+   "type": "sharc.abs32"
+  },
+  {
+   "addend": 0,
+   "offset": 2988,
+   "section": "seg_pmco",
+   "symbol": "_gs_c1_rec",
+   "type": "sharc.abs32"
+  },
+  {
+   "addend": 0,
+   "offset": 2997,
+   "section": "seg_pmco",
+   "symbol": "_gs_rbuf",
+   "type": "sharc.abs32"
+  },
+  {
+   "addend": 0,
+   "offset": 3054,
+   "section": "seg_pmco",
+   "symbol": "_gs_case1_stock",
+   "type": "sharc.abs24"
+  },
+  {
+   "addend": -1,
+   "offset": 3058,
+   "section": "seg_pmco",
+   "symbol": "_gs_case1_l",
+   "type": "sharc.abs32"
+  },
+  {
+   "addend": 0,
+   "offset": 3072,
+   "section": "seg_pmco",
+   "symbol": "_gs_case1_stock",
+   "type": "sharc.abs24"
+  },
+  {
+   "addend": -1,
+   "offset": 3076,
+   "section": "seg_pmco",
+   "symbol": "_gs_case1_r",
+   "type": "sharc.abs32"
+  },
+  {
+   "addend": 0,
+   "offset": 3084,
+   "section": "seg_pmco",
+   "symbol": "_gs_leave",
+   "type": "sharc.abs24"
+  },
+  {
+   "addend": 16,
+   "offset": 3091,
+   "section": "seg_pmco",
+   "symbol": "_gs_cnt",
+   "type": "sharc.abs32"
+  },
+  {
+   "addend": 16,
+   "offset": 3095,
+   "section": "seg_pmco",
+   "symbol": "_gs_cnt",
+   "type": "sharc.abs32"
+  },
+  {
+   "addend": 0,
+   "offset": 3098,
+   "section": "seg_pmco",
+   "symbol": "_gs_nbad",
+   "type": "sharc.abs32"
+  },
+  {
+   "addend": 0,
+   "offset": 3102,
+   "section": "seg_pmco",
+   "symbol": "_gs_nbad",
+   "type": "sharc.abs32"
+  },
+  {
+   "addend": 0,
+   "offset": 3105,
+   "section": "seg_pmco",
+   "symbol": "_gs_hacc",
+   "type": "sharc.abs32"
+  },
+  {
+   "addend": 0,
+   "offset": 3111,
+   "section": "seg_pmco",
+   "symbol": "_gs_hacc",
+   "type": "sharc.abs32"
+  },
+  {
+   "addend": 0,
+   "offset": 3114,
+   "section": "seg_pmco",
+   "symbol": "_gs_case1_stock",
+   "type": "sharc.abs24"
+  },
+  {
+   "addend": 0,
+   "offset": 3130,
+   "section": "seg_pmco",
+   "symbol": "_gs_stamp",
+   "type": "sharc.abs32"
+  },
+  {
+   "addend": 0,
+   "offset": 3138,
+   "section": "seg_pmco",
+   "symbol": "_dv_diag",
+   "type": "sharc.abs32"
+  },
+  {
+   "addend": 0,
+   "offset": 3142,
+   "section": "seg_pmco",
+   "symbol": "_gs_case2_stock",
+   "type": "sharc.abs24"
+  },
+  {
+   "addend": 0,
+   "offset": 3154,
+   "section": "seg_pmco",
+   "symbol": "_gs_case2_bad",
+   "type": "sharc.abs24"
+  },
+  {
+   "addend": 0,
+   "offset": 3162,
+   "section": "seg_pmco",
+   "symbol": "_gs_case2_bad",
+   "type": "sharc.abs24"
+  },
+  {
+   "addend": 0,
+   "offset": 3174,
+   "section": "seg_pmco",
+   "symbol": "_gs_stamp",
+   "type": "sharc.abs32"
+  },
+  {
+   "addend": 0,
+   "offset": 3182,
+   "section": "seg_pmco",
+   "symbol": "_gs_c2_rec",
+   "type": "sharc.abs32"
+  },
+  {
+   "addend": 0,
+   "offset": 3191,
+   "section": "seg_pmco",
+   "symbol": "_gs_rbuf",
+   "type": "sharc.abs32"
+  },
+  {
+   "addend": 0,
+   "offset": 3224,
+   "section": "seg_pmco",
+   "symbol": "_gs_case2_cap",
+   "type": "sharc.abs24"
+  },
+  {
+   "addend": 0,
+   "offset": 3230,
+   "section": "seg_pmco",
+   "symbol": "_gs_case2_stock",
+   "type": "sharc.abs24"
+  },
+  {
+   "addend": -1,
+   "offset": 3234,
+   "section": "seg_pmco",
+   "symbol": "_gs_case2_l",
+   "type": "sharc.abs32"
+  },
+  {
+   "addend": 0,
+   "offset": 3248,
+   "section": "seg_pmco",
+   "symbol": "_gs_case2_stock",
+   "type": "sharc.abs24"
+  },
+  {
+   "addend": -1,
+   "offset": 3252,
+   "section": "seg_pmco",
+   "symbol": "_gs_case2_r",
+   "type": "sharc.abs32"
+  },
+  {
+   "addend": 0,
+   "offset": 3260,
+   "section": "seg_pmco",
+   "symbol": "_gs_leave",
+   "type": "sharc.abs24"
+  },
+  {
+   "addend": 20,
+   "offset": 3267,
+   "section": "seg_pmco",
+   "symbol": "_gs_cnt",
+   "type": "sharc.abs32"
+  },
+  {
+   "addend": 20,
+   "offset": 3271,
+   "section": "seg_pmco",
+   "symbol": "_gs_cnt",
+   "type": "sharc.abs32"
+  },
+  {
+   "addend": 0,
+   "offset": 3274,
+   "section": "seg_pmco",
+   "symbol": "_gs_nbad",
+   "type": "sharc.abs32"
+  },
+  {
+   "addend": 0,
+   "offset": 3278,
+   "section": "seg_pmco",
+   "symbol": "_gs_nbad",
+   "type": "sharc.abs32"
+  },
+  {
+   "addend": 0,
+   "offset": 3281,
+   "section": "seg_pmco",
+   "symbol": "_gs_hacc",
+   "type": "sharc.abs32"
+  },
+  {
+   "addend": 0,
+   "offset": 3287,
+   "section": "seg_pmco",
+   "symbol": "_gs_hacc",
+   "type": "sharc.abs32"
+  },
+  {
+   "addend": 0,
+   "offset": 3290,
+   "section": "seg_pmco",
+   "symbol": "_gs_case2_stock",
+   "type": "sharc.abs24"
+  },
+  {
+   "addend": 0,
+   "offset": 3306,
+   "section": "seg_pmco",
+   "symbol": "_gs_stamp",
+   "type": "sharc.abs32"
+  },
+  {
+   "addend": 0,
+   "offset": 3314,
+   "section": "seg_pmco",
+   "symbol": "_dv_diag",
+   "type": "sharc.abs32"
+  },
+  {
+   "addend": 0,
+   "offset": 3318,
+   "section": "seg_pmco",
+   "symbol": "_gs_case3_stock",
+   "type": "sharc.abs24"
+  },
+  {
+   "addend": 0,
+   "offset": 3330,
+   "section": "seg_pmco",
+   "symbol": "_gs_case3_bad",
+   "type": "sharc.abs24"
+  },
+  {
+   "addend": 0,
+   "offset": 3338,
+   "section": "seg_pmco",
+   "symbol": "_gs_case3_bad",
+   "type": "sharc.abs24"
+  },
+  {
+   "addend": 0,
+   "offset": 3350,
+   "section": "seg_pmco",
+   "symbol": "_gs_stamp",
+   "type": "sharc.abs32"
+  },
+  {
+   "addend": 0,
+   "offset": 3358,
+   "section": "seg_pmco",
+   "symbol": "_gs_c3_rec",
+   "type": "sharc.abs32"
+  },
+  {
+   "addend": 0,
+   "offset": 3367,
+   "section": "seg_pmco",
+   "symbol": "_gs_rbuf",
+   "type": "sharc.abs32"
+  },
+  {
+   "addend": 0,
+   "offset": 3428,
+   "section": "seg_pmco",
+   "symbol": "_gs_case3_stock",
+   "type": "sharc.abs24"
+  },
+  {
+   "addend": -1,
+   "offset": 3432,
+   "section": "seg_pmco",
+   "symbol": "_gs_case3_l",
+   "type": "sharc.abs32"
+  },
+  {
+   "addend": 0,
+   "offset": 3446,
+   "section": "seg_pmco",
+   "symbol": "_gs_case3_stock",
+   "type": "sharc.abs24"
+  },
+  {
+   "addend": -1,
+   "offset": 3450,
+   "section": "seg_pmco",
+   "symbol": "_gs_case3_r",
+   "type": "sharc.abs32"
+  },
+  {
+   "addend": 0,
+   "offset": 3458,
+   "section": "seg_pmco",
+   "symbol": "_gs_leave",
+   "type": "sharc.abs24"
+  },
+  {
+   "addend": 24,
+   "offset": 3465,
+   "section": "seg_pmco",
+   "symbol": "_gs_cnt",
+   "type": "sharc.abs32"
+  },
+  {
+   "addend": 24,
+   "offset": 3469,
+   "section": "seg_pmco",
+   "symbol": "_gs_cnt",
+   "type": "sharc.abs32"
+  },
+  {
+   "addend": 0,
+   "offset": 3472,
+   "section": "seg_pmco",
+   "symbol": "_gs_nbad",
+   "type": "sharc.abs32"
+  },
+  {
+   "addend": 0,
+   "offset": 3476,
+   "section": "seg_pmco",
+   "symbol": "_gs_nbad",
+   "type": "sharc.abs32"
+  },
+  {
+   "addend": 0,
+   "offset": 3479,
+   "section": "seg_pmco",
+   "symbol": "_gs_hacc",
+   "type": "sharc.abs32"
+  },
+  {
+   "addend": 0,
+   "offset": 3485,
+   "section": "seg_pmco",
+   "symbol": "_gs_hacc",
+   "type": "sharc.abs32"
+  },
+  {
+   "addend": 0,
+   "offset": 3488,
+   "section": "seg_pmco",
+   "symbol": "_gs_case3_stock",
+   "type": "sharc.abs24"
+  },
+  {
+   "addend": 0,
+   "offset": 3504,
+   "section": "seg_pmco",
+   "symbol": "_gs_stamp",
+   "type": "sharc.abs32"
+  },
+  {
+   "addend": 0,
+   "offset": 3512,
+   "section": "seg_pmco",
+   "symbol": "_dv_diag",
+   "type": "sharc.abs32"
+  },
+  {
+   "addend": 0,
+   "offset": 3516,
+   "section": "seg_pmco",
+   "symbol": "_gs_ring_stock",
+   "type": "sharc.abs24"
+  },
+  {
+   "addend": 0,
+   "offset": 3528,
+   "section": "seg_pmco",
+   "symbol": "_gs_ring4_bad",
+   "type": "sharc.abs24"
+  },
+  {
+   "addend": 0,
+   "offset": 3536,
+   "section": "seg_pmco",
+   "symbol": "_gs_ring4_bad",
+   "type": "sharc.abs24"
+  },
+  {
+   "addend": 0,
+   "offset": 3548,
+   "section": "seg_pmco",
+   "symbol": "_gs_stamp",
+   "type": "sharc.abs32"
+  },
+  {
+   "addend": 0,
+   "offset": 3556,
+   "section": "seg_pmco",
+   "symbol": "_gs_rg_rec",
+   "type": "sharc.abs32"
+  },
+  {
+   "addend": 0,
+   "offset": 3565,
+   "section": "seg_pmco",
+   "symbol": "_gs_rbuf",
+   "type": "sharc.abs32"
+  },
+  {
+   "addend": 0,
+   "offset": 3611,
+   "section": "seg_pmco",
+   "symbol": "_gs_ring_stock",
+   "type": "sharc.abs24"
+  },
+  {
+   "addend": -1,
+   "offset": 3615,
+   "section": "seg_pmco",
+   "symbol": "_gs_ring4_l",
+   "type": "sharc.abs32"
+  },
+  {
+   "addend": 0,
+   "offset": 3629,
+   "section": "seg_pmco",
+   "symbol": "_gs_ring_stock",
+   "type": "sharc.abs24"
+  },
+  {
+   "addend": -1,
+   "offset": 3633,
+   "section": "seg_pmco",
+   "symbol": "_gs_ring4_r",
+   "type": "sharc.abs32"
+  },
+  {
+   "addend": 0,
+   "offset": 3641,
+   "section": "seg_pmco",
+   "symbol": "_gs_leave",
+   "type": "sharc.abs24"
+  },
+  {
+   "addend": 28,
+   "offset": 3648,
+   "section": "seg_pmco",
+   "symbol": "_gs_cnt",
+   "type": "sharc.abs32"
+  },
+  {
+   "addend": 28,
+   "offset": 3652,
+   "section": "seg_pmco",
+   "symbol": "_gs_cnt",
+   "type": "sharc.abs32"
+  },
+  {
+   "addend": 0,
+   "offset": 3655,
+   "section": "seg_pmco",
+   "symbol": "_gs_nbad",
+   "type": "sharc.abs32"
+  },
+  {
+   "addend": 0,
+   "offset": 3659,
+   "section": "seg_pmco",
+   "symbol": "_gs_nbad",
+   "type": "sharc.abs32"
+  },
+  {
+   "addend": 0,
+   "offset": 3662,
+   "section": "seg_pmco",
+   "symbol": "_gs_hacc",
+   "type": "sharc.abs32"
+  },
+  {
+   "addend": 0,
+   "offset": 3668,
+   "section": "seg_pmco",
+   "symbol": "_gs_hacc",
+   "type": "sharc.abs32"
+  },
+  {
+   "addend": 0,
+   "offset": 3671,
+   "section": "seg_pmco",
+   "symbol": "_gs_ring_stock",
+   "type": "sharc.abs24"
+  },
+  {
+   "addend": 0,
+   "offset": 3687,
+   "section": "seg_pmco",
+   "symbol": "_gs_stamp",
+   "type": "sharc.abs32"
+  },
+  {
+   "addend": 0,
+   "offset": 3695,
+   "section": "seg_pmco",
+   "symbol": "_dv_diag",
+   "type": "sharc.abs32"
+  },
+  {
+   "addend": 0,
+   "offset": 3699,
+   "section": "seg_pmco",
+   "symbol": "_gs_ring_stock",
+   "type": "sharc.abs24"
+  },
+  {
+   "addend": 0,
+   "offset": 3711,
+   "section": "seg_pmco",
+   "symbol": "_gs_ring6_bad",
+   "type": "sharc.abs24"
+  },
+  {
+   "addend": 0,
+   "offset": 3719,
+   "section": "seg_pmco",
+   "symbol": "_gs_ring6_bad",
+   "type": "sharc.abs24"
+  },
+  {
+   "addend": 0,
+   "offset": 3731,
+   "section": "seg_pmco",
+   "symbol": "_gs_stamp",
+   "type": "sharc.abs32"
+  },
+  {
+   "addend": 0,
+   "offset": 3739,
+   "section": "seg_pmco",
+   "symbol": "_gs_rg_rec",
+   "type": "sharc.abs32"
+  },
+  {
+   "addend": 0,
+   "offset": 3748,
+   "section": "seg_pmco",
+   "symbol": "_gs_rbuf",
+   "type": "sharc.abs32"
+  },
+  {
+   "addend": 0,
+   "offset": 3794,
+   "section": "seg_pmco",
+   "symbol": "_gs_ring_stock",
+   "type": "sharc.abs24"
+  },
+  {
+   "addend": -1,
+   "offset": 3798,
+   "section": "seg_pmco",
+   "symbol": "_gs_ring6_l",
+   "type": "sharc.abs32"
+  },
+  {
+   "addend": 0,
+   "offset": 3812,
+   "section": "seg_pmco",
+   "symbol": "_gs_ring_stock",
+   "type": "sharc.abs24"
+  },
+  {
+   "addend": -1,
+   "offset": 3816,
+   "section": "seg_pmco",
+   "symbol": "_gs_ring6_r",
+   "type": "sharc.abs32"
+  },
+  {
+   "addend": 0,
+   "offset": 3824,
+   "section": "seg_pmco",
+   "symbol": "_gs_leave",
+   "type": "sharc.abs24"
+  },
+  {
+   "addend": 32,
+   "offset": 3831,
+   "section": "seg_pmco",
+   "symbol": "_gs_cnt",
+   "type": "sharc.abs32"
+  },
+  {
+   "addend": 32,
+   "offset": 3835,
+   "section": "seg_pmco",
+   "symbol": "_gs_cnt",
+   "type": "sharc.abs32"
+  },
+  {
+   "addend": 0,
+   "offset": 3838,
+   "section": "seg_pmco",
+   "symbol": "_gs_nbad",
+   "type": "sharc.abs32"
+  },
+  {
+   "addend": 0,
+   "offset": 3842,
+   "section": "seg_pmco",
+   "symbol": "_gs_nbad",
+   "type": "sharc.abs32"
+  },
+  {
+   "addend": 0,
+   "offset": 3845,
+   "section": "seg_pmco",
+   "symbol": "_gs_hacc",
+   "type": "sharc.abs32"
+  },
+  {
+   "addend": 0,
+   "offset": 3851,
+   "section": "seg_pmco",
+   "symbol": "_gs_hacc",
+   "type": "sharc.abs32"
+  },
+  {
+   "addend": 0,
+   "offset": 3854,
+   "section": "seg_pmco",
+   "symbol": "_gs_ring_stock",
+   "type": "sharc.abs24"
+  },
+  {
+   "addend": 0,
+   "offset": 3866,
+   "section": "seg_pmco",
+   "symbol": "_gs_engine_base",
+   "type": "sharc.abs32"
+  },
+  {
+   "addend": 0,
+   "offset": 3875,
+   "section": "seg_pmco",
+   "symbol": "_gs_fo_reset_stock",
+   "type": "sharc.abs24"
+  },
+  {
+   "addend": 0,
+   "offset": 3892,
+   "section": "seg_pmco",
+   "symbol": "_gs_fo_reset_stock",
+   "type": "sharc.abs24"
+  },
+  {
+   "addend": 0,
+   "offset": 3900,
+   "section": "seg_pmco",
+   "symbol": "_gs_fo_reset_stock",
+   "type": "sharc.abs24"
+  },
+  {
+   "addend": 0,
+   "offset": 3903,
+   "section": "seg_pmco",
+   "symbol": "_gs_fo_rec",
+   "type": "sharc.abs32"
+  },
+  {
+   "addend": 0,
+   "offset": 3919,
+   "section": "seg_pmco",
+   "symbol": "_gs_fo_reset_stock",
+   "type": "sharc.abs24"
+  },
+  {
+   "addend": 0,
+   "offset": 3922,
+   "section": "seg_pmco",
+   "symbol": "_gs_engine_base",
+   "type": "sharc.abs32"
+  },
+  {
+   "addend": 0,
+   "offset": 3931,
+   "section": "seg_pmco",
+   "symbol": "_gs_uy_reset_stock",
+   "type": "sharc.abs24"
+  },
+  {
+   "addend": 0,
+   "offset": 3941,
+   "section": "seg_pmco",
+   "symbol": "_gs_uy_reset_stock",
+   "type": "sharc.abs24"
+  },
+  {
+   "addend": 0,
+   "offset": 3948,
+   "section": "seg_pmco",
+   "symbol": "_gs_uy_reset_stock",
+   "type": "sharc.abs24"
+  },
+  {
+   "addend": 0,
+   "offset": 3951,
+   "section": "seg_pmco",
+   "symbol": "_gs_uy_rec",
+   "type": "sharc.abs32"
+  },
+  {
+   "addend": 0,
+   "offset": 3963,
+   "section": "seg_pmco",
+   "symbol": "_gs_uy_reset_stock",
+   "type": "sharc.abs24"
+  },
+  {
+   "addend": 0,
+   "offset": 3966,
+   "section": "seg_pmco",
+   "symbol": "_gs_engine_base",
+   "type": "sharc.abs32"
+  },
+  {
+   "addend": 0,
+   "offset": 3975,
+   "section": "seg_pmco",
+   "symbol": "_gs_held_reset_stock",
+   "type": "sharc.abs24"
+  },
+  {
+   "addend": 0,
+   "offset": 3989,
+   "section": "seg_pmco",
+   "symbol": "_gs_held_reset_stock",
+   "type": "sharc.abs24"
+  },
+  {
+   "addend": 0,
+   "offset": 3997,
+   "section": "seg_pmco",
+   "symbol": "_gs_held_reset_stock",
+   "type": "sharc.abs24"
+  },
+  {
+   "addend": 0,
+   "offset": 4000,
+   "section": "seg_pmco",
+   "symbol": "_gs_hd_rec",
+   "type": "sharc.abs32"
+  },
+  {
+   "addend": 0,
+   "offset": 4018,
+   "section": "seg_pmco",
+   "symbol": "_gs_held_reset_stock",
+   "type": "sharc.abs24"
+  },
+  {
+   "addend": 0,
+   "offset": 4021,
+   "section": "seg_pmco",
+   "symbol": "_gs_engine_base",
+   "type": "sharc.abs32"
+  },
+  {
+   "addend": 0,
+   "offset": 4030,
+   "section": "seg_pmco",
+   "symbol": "_gs_case1_reset_stock",
+   "type": "sharc.abs24"
+  },
+  {
+   "addend": 0,
+   "offset": 4044,
+   "section": "seg_pmco",
+   "symbol": "_gs_case1_reset_stock",
+   "type": "sharc.abs24"
+  },
+  {
+   "addend": 0,
+   "offset": 4052,
+   "section": "seg_pmco",
+   "symbol": "_gs_case1_reset_stock",
+   "type": "sharc.abs24"
+  },
+  {
+   "addend": 0,
+   "offset": 4055,
+   "section": "seg_pmco",
+   "symbol": "_gs_c1_rec",
+   "type": "sharc.abs32"
+  },
+  {
+   "addend": 0,
+   "offset": 4067,
+   "section": "seg_pmco",
+   "symbol": "_gs_case1_reset_stock",
+   "type": "sharc.abs24"
+  },
+  {
+   "addend": 0,
+   "offset": 4070,
+   "section": "seg_pmco",
+   "symbol": "_gs_engine_base",
+   "type": "sharc.abs32"
+  },
+  {
+   "addend": 0,
+   "offset": 4079,
+   "section": "seg_pmco",
+   "symbol": "_gs_case2_reset_stock",
+   "type": "sharc.abs24"
+  },
+  {
+   "addend": 0,
+   "offset": 4093,
+   "section": "seg_pmco",
+   "symbol": "_gs_case2_reset_stock",
+   "type": "sharc.abs24"
+  },
+  {
+   "addend": 0,
+   "offset": 4101,
+   "section": "seg_pmco",
+   "symbol": "_gs_case2_reset_stock",
+   "type": "sharc.abs24"
+  },
+  {
+   "addend": 0,
+   "offset": 4104,
+   "section": "seg_pmco",
+   "symbol": "_gs_c2_rec",
+   "type": "sharc.abs32"
+  },
+  {
+   "addend": 0,
+   "offset": 4116,
+   "section": "seg_pmco",
+   "symbol": "_gs_case2_reset_stock",
+   "type": "sharc.abs24"
+  },
+  {
+   "addend": 0,
+   "offset": 4119,
+   "section": "seg_pmco",
+   "symbol": "_gs_engine_base",
+   "type": "sharc.abs32"
+  },
+  {
+   "addend": 0,
+   "offset": 4128,
+   "section": "seg_pmco",
+   "symbol": "_gs_case3_reset_stock",
+   "type": "sharc.abs24"
+  },
+  {
+   "addend": 0,
+   "offset": 4142,
+   "section": "seg_pmco",
+   "symbol": "_gs_case3_reset_stock",
+   "type": "sharc.abs24"
+  },
+  {
+   "addend": 0,
+   "offset": 4150,
+   "section": "seg_pmco",
+   "symbol": "_gs_case3_reset_stock",
+   "type": "sharc.abs24"
+  },
+  {
+   "addend": 0,
+   "offset": 4153,
+   "section": "seg_pmco",
+   "symbol": "_gs_c3_rec",
+   "type": "sharc.abs32"
+  },
+  {
+   "addend": 0,
+   "offset": 4171,
+   "section": "seg_pmco",
+   "symbol": "_gs_case3_reset_stock",
+   "type": "sharc.abs24"
+  },
+  {
+   "addend": 0,
+   "offset": 4174,
+   "section": "seg_pmco",
+   "symbol": "_gs_engine_base",
+   "type": "sharc.abs32"
+  },
+  {
+   "addend": 0,
+   "offset": 4183,
+   "section": "seg_pmco",
+   "symbol": "_gs_case5_reset_stock",
+   "type": "sharc.abs24"
+  },
+  {
+   "addend": 0,
+   "offset": 4197,
+   "section": "seg_pmco",
+   "symbol": "_gs_case5_reset_stock",
+   "type": "sharc.abs24"
+  },
+  {
+   "addend": 0,
+   "offset": 4205,
+   "section": "seg_pmco",
+   "symbol": "_gs_case5_reset_stock",
+   "type": "sharc.abs24"
+  },
+  {
+   "addend": 0,
+   "offset": 4208,
+   "section": "seg_pmco",
+   "symbol": "_gs_c5_rec",
+   "type": "sharc.abs32"
+  },
+  {
+   "addend": 0,
+   "offset": 4220,
+   "section": "seg_pmco",
+   "symbol": "_gs_case5_reset_stock",
+   "type": "sharc.abs24"
+  },
+  {
+   "addend": 0,
+   "offset": 4223,
+   "section": "seg_pmco",
+   "symbol": "_gs_engine_base",
+   "type": "sharc.abs32"
+  },
+  {
+   "addend": 0,
+   "offset": 4232,
+   "section": "seg_pmco",
+   "symbol": "_gs_ring_reset_stock",
+   "type": "sharc.abs24"
+  },
+  {
+   "addend": 0,
+   "offset": 4246,
+   "section": "seg_pmco",
+   "symbol": "_gs_ring_reset_stock",
+   "type": "sharc.abs24"
+  },
+  {
+   "addend": 0,
+   "offset": 4254,
+   "section": "seg_pmco",
+   "symbol": "_gs_ring_reset_stock",
+   "type": "sharc.abs24"
+  },
+  {
+   "addend": 0,
+   "offset": 4257,
+   "section": "seg_pmco",
+   "symbol": "_gs_rg_rec",
+   "type": "sharc.abs32"
+  },
+  {
+   "addend": 0,
+   "offset": 4273,
+   "section": "seg_pmco",
+   "symbol": "_gs_ring_reset_stock",
+   "type": "sharc.abs24"
+  },
+  {
+   "addend": 0,
+   "offset": 4276,
+   "section": "seg_pmco",
+   "symbol": "_gs_hacc",
+   "type": "sharc.abs32"
+  },
+  {
+   "addend": 0,
+   "offset": 4279,
+   "section": "seg_pmco",
+   "symbol": "_gs_health",
+   "type": "sharc.abs32"
+  },
+  {
+   "addend": 0,
+   "offset": 4284,
+   "section": "seg_pmco",
+   "symbol": "_gs_hacc",
+   "type": "sharc.abs32"
+  },
+  {
+   "addend": 0,
+   "offset": 4293,
+   "section": "seg_pmco",
+   "symbol": "_gs_pp_done",
+   "type": "sharc.abs24"
+  },
+  {
+   "addend": 0,
+   "offset": 4296,
+   "section": "seg_pmco",
+   "symbol": "_dv_diag",
+   "type": "sharc.abs32"
+  },
+  {
+   "addend": 0,
+   "offset": 4301,
+   "section": "seg_pmco",
+   "symbol": "_gs_stamp",
+   "type": "sharc.abs32"
+  },
+  {
+   "addend": 0,
+   "offset": 4310,
+   "section": "seg_pmco",
+   "symbol": "_gs_pp_next",
+   "type": "sharc.abs24"
+  },
+  {
+   "addend": 0,
+   "offset": 4316,
+   "section": "seg_pmco",
+   "symbol": "_gs_rbuf",
+   "type": "sharc.abs32"
+  },
+  {
+   "addend": 0,
+   "offset": 4320,
+   "section": "seg_pmco",
+   "symbol": "_gs_engine_base",
+   "type": "sharc.abs32"
+  },
+  {
+   "addend": 0,
+   "offset": 4362,
+   "section": "seg_pmco",
+   "symbol": "_gs_engine_base",
+   "type": "sharc.abs32"
+  },
+  {
+   "addend": 0,
+   "offset": 4391,
+   "section": "seg_pmco",
+   "symbol": "_gs_pp_next",
+   "type": "sharc.abs24"
+  },
+  {
+   "addend": 0,
+   "offset": 4394,
+   "section": "seg_pmco",
+   "symbol": "_gs_engine_base",
+   "type": "sharc.abs32"
+  },
+  {
+   "addend": 0,
+   "offset": 4416,
+   "section": "seg_pmco",
+   "symbol": "_gs_pp_next",
+   "type": "sharc.abs24"
+  },
+  {
+   "addend": 0,
+   "offset": 4448,
+   "section": "seg_pmco",
+   "symbol": "_gs_pp_slot",
+   "type": "sharc.abs24"
+  },
+  {
+   "addend": 0,
+   "offset": 4454,
+   "section": "seg_pmco",
+   "symbol": "_gs_pre_cont",
+   "type": "sharc.abs24"
+  },
+  {
+   "addend": 0,
+   "offset": 4462,
+   "section": "seg_pmco",
+   "symbol": "_gs_stamp",
+   "type": "sharc.abs32"
+  },
+  {
+   "addend": 0,
+   "offset": 4470,
+   "section": "seg_pmco",
+   "symbol": "_dv_diag",
+   "type": "sharc.abs32"
+  },
+  {
+   "addend": 0,
+   "offset": 4474,
+   "section": "seg_pmco",
+   "symbol": "_gs_mono",
+   "type": "sharc.abs24"
+  },
+  {
+   "addend": 0,
+   "offset": 4480,
+   "section": "seg_pmco",
+   "symbol": "_gs_mono",
+   "type": "sharc.abs24"
+  },
+  {
+   "addend": 0,
+   "offset": 4487,
+   "section": "seg_pmco",
+   "symbol": "_gs_rbuf",
+   "type": "sharc.abs32"
+  },
+  {
+   "addend": 0,
+   "offset": 4540,
+   "section": "seg_pmco",
+   "symbol": "_gs_pan_end",
+   "type": "sharc.abs24"
+  },
+  {
+   "addend": 0,
+   "offset": 4550,
+   "section": "seg_pmco",
+   "symbol": "_gs_pan_cont",
+   "type": "sharc.abs24"
+  },
+  {
+   "addend": 48,
+   "offset": 4553,
+   "section": "seg_pmco",
+   "symbol": "_dv_c",
+   "type": "sharc.abs32"
+  },
+  {
+   "addend": 4,
+   "offset": 4560,
+   "section": "seg_pmco",
+   "symbol": "_dv_c",
+   "type": "sharc.abs32"
+  },
+  {
+   "addend": 0,
+   "offset": 4566,
+   "section": "seg_pmco",
+   "symbol": "_gs_seen",
+   "type": "sharc.abs32"
+  },
+  {
+   "addend": 0,
+   "offset": 4572,
+   "section": "seg_pmco",
+   "symbol": "_dv_diag",
+   "type": "sharc.abs32"
+  },
+  {
+   "addend": 0,
+   "offset": 4580,
+   "section": "seg_pmco",
+   "symbol": "_gs_rbuf",
+   "type": "sharc.abs32"
+  },
+  {
+   "addend": 0,
+   "offset": 4607,
+   "section": "seg_pmco",
+   "symbol": "_gs_badr",
+   "type": "sharc.abs24"
+  },
+  {
+   "addend": 0,
+   "offset": 4610,
+   "section": "seg_pmco",
+   "symbol": "_dv_diag",
+   "type": "sharc.abs32"
+  },
+  {
+   "addend": 0,
+   "offset": 4613,
+   "section": "seg_pmco",
+   "symbol": "_gs_nhb",
+   "type": "sharc.abs32"
+  },
+  {
+   "addend": 0,
+   "offset": 4617,
+   "section": "seg_pmco",
+   "symbol": "_gs_samehb",
+   "type": "sharc.abs24"
+  },
+  {
+   "addend": 0,
+   "offset": 4620,
+   "section": "seg_pmco",
+   "symbol": "_gs_nhb",
+   "type": "sharc.abs32"
+  },
+  {
+   "addend": 0,
+   "offset": 4625,
+   "section": "seg_pmco",
+   "symbol": "_gs_ns",
+   "type": "sharc.abs32"
+  },
+  {
+   "addend": 0,
+   "offset": 4628,
+   "section": "seg_pmco",
+   "symbol": "_gs_ns",
+   "type": "sharc.abs32"
+  },
+  {
+   "addend": 0,
+   "offset": 4634,
+   "section": "seg_pmco",
+   "symbol": "_gs_capped",
+   "type": "sharc.abs24"
+  },
+  {
+   "addend": 0,
+   "offset": 4638,
+   "section": "seg_pmco",
+   "symbol": "_gs_ns",
+   "type": "sharc.abs32"
+  },
+  {
+   "addend": 0,
+   "offset": 4663,
+   "section": "seg_pmco",
+   "symbol": "_gs_stamp",
+   "type": "sharc.abs32"
+  },
+  {
+   "addend": 0,
+   "offset": 4671,
+   "section": "seg_pmco",
+   "symbol": "_dv_diag",
+   "type": "sharc.abs32"
+  },
+  {
+   "addend": 8,
+   "offset": 4674,
+   "section": "seg_pmco",
+   "symbol": "_dv_in",
+   "type": "sharc.abs32"
+  },
+  {
+   "addend": 0,
+   "offset": 4678,
+   "section": "seg_pmco",
+   "symbol": "_gs_clear",
+   "type": "sharc.abs24"
+  },
+  {
+   "addend": 0,
+   "offset": 4683,
+   "section": "seg_pmco",
+   "symbol": "_gs_stamped",
+   "type": "sharc.abs24"
+  },
+  {
+   "addend": 72,
+   "offset": 4686,
+   "section": "seg_pmco",
+   "symbol": "_gs_cnt",
+   "type": "sharc.abs32"
+  },
+  {
+   "addend": 72,
+   "offset": 4690,
+   "section": "seg_pmco",
+   "symbol": "_gs_cnt",
+   "type": "sharc.abs32"
+  },
+  {
+   "addend": 0,
+   "offset": 4699,
+   "section": "seg_pmco",
+   "symbol": "_gs_fo_rec",
+   "type": "sharc.abs32"
+  },
+  {
+   "addend": 0,
+   "offset": 4715,
+   "section": "seg_pmco",
+   "symbol": "_gs_uy_rec",
+   "type": "sharc.abs32"
+  },
+  {
+   "addend": 0,
+   "offset": 4731,
+   "section": "seg_pmco",
+   "symbol": "_gs_gain_rec",
+   "type": "sharc.abs32"
+  },
+  {
+   "addend": 0,
+   "offset": 4747,
+   "section": "seg_pmco",
+   "symbol": "_gs_c5_rec",
+   "type": "sharc.abs32"
+  },
+  {
+   "addend": 0,
+   "offset": 4763,
+   "section": "seg_pmco",
+   "symbol": "_gs_hd_rec",
+   "type": "sharc.abs32"
+  },
+  {
+   "addend": 0,
+   "offset": 4779,
+   "section": "seg_pmco",
+   "symbol": "_gs_c1_rec",
+   "type": "sharc.abs32"
+  },
+  {
+   "addend": 0,
+   "offset": 4795,
+   "section": "seg_pmco",
+   "symbol": "_gs_c2_rec",
+   "type": "sharc.abs32"
+  },
+  {
+   "addend": 0,
+   "offset": 4811,
+   "section": "seg_pmco",
+   "symbol": "_gs_c3_rec",
+   "type": "sharc.abs32"
+  },
+  {
+   "addend": 0,
+   "offset": 4827,
+   "section": "seg_pmco",
+   "symbol": "_gs_rg_rec",
+   "type": "sharc.abs32"
+  },
+  {
+   "addend": 0,
+   "offset": 4843,
+   "section": "seg_pmco",
+   "symbol": "_dv_diag",
+   "type": "sharc.abs32"
+  },
+  {
+   "addend": 64,
+   "offset": 4851,
+   "section": "seg_pmco",
+   "symbol": "_gs_cnt",
+   "type": "sharc.abs32"
+  },
+  {
+   "addend": 64,
+   "offset": 4855,
+   "section": "seg_pmco",
+   "symbol": "_gs_cnt",
+   "type": "sharc.abs32"
+  },
+  {
+   "addend": 0,
+   "offset": 4860,
+   "section": "seg_pmco",
+   "symbol": "_gs_raise",
+   "type": "sharc.abs24"
+  },
+  {
+   "addend": 68,
+   "offset": 4863,
+   "section": "seg_pmco",
+   "symbol": "_gs_cnt",
+   "type": "sharc.abs32"
+  },
+  {
+   "addend": 68,
+   "offset": 4867,
+   "section": "seg_pmco",
+   "symbol": "_gs_cnt",
+   "type": "sharc.abs32"
+  },
+  {
+   "addend": 0,
+   "offset": 4872,
+   "section": "seg_pmco",
+   "symbol": "_gs_hacc",
+   "type": "sharc.abs32"
+  },
+  {
+   "addend": 0,
+   "offset": 4876,
    "section": "seg_pmco",
    "symbol": "_gs_hacc",
    "type": "sharc.abs32"
@@ -3723,10 +3779,10 @@
  "sections": [
   {
    "align": 8,
-   "hex": "001100000000800f10000fc300060000000000100000000000c20006000000000111000000000211000000007e713f000011000000007e733f00001100000000b40f0000800f5a000fc1810ffe0f840101013e0200001101020f00000000800121113e703f8a089880003e02100020403e0200002204800f000420cda4011201820f1f0012c3240102002011820f000080012121021000000000a0012102810f010021cc0010000000003e703f1a0010000000003e703f0a0110000000000210000000002006000000000010000000008715ffffeeff3e06000000007e713f000011000000007e733f00001100000000b40f0000140f000000000899800008990101089982010899030208998402089905030899860308990704089988040899090508998a0508990b0608998c0608990d0708998e073e713f0008990f003e713f80089910003f713f00089911003f713f80089912007e713f80089913000899140e0899950e3e723f80089916003f723f00089917003f723f80089918007e723f00089919008cc3200600000000800f7f008401c001800f100010c3200600000000800f100080010f21020600000000800f0f0010c32406000000000111000000000c110000000011c2200600000000140f000000000898800011c5089980007e72bf80089981007f72bf00089982007f72bf8008998300fe72bf8008998400ff72bf0008998500ff72bf80089986007f71bf00089987007f71bf80089988007f74bf80089989007f73bf8008998a003f77bf0008998b00be0600000000140f00000000830f00000898000084150000180000c2000600000000020600000000820f1f0002c3240102002010810f0100a001100131cd3e0600000000031100000000011000000000800f4a0080011010810ffe0f840101013e0200001101020f00000000800121113e703f8a089880003e02100020403e0200002204800f000420cda4011201140f00000000089800000898010184150000180000c200060000000001c32006000000007e713f000011000000000898f80133c2000f000000002001020000123f703f0e01c20210000000000410000000008c0f2000140f000000007e72bf81089980017f72bf01089981017f72bf81089982010899831608990417089985173e73bf01089986013e73bf81089987013f73bf01089988013f73bf81089989017e73bf8108998a013f77bf0108998b01a50f0000a60f0100a70fffffad0f0000ae0f0100af0fffffb00f0000b10f0000b20f0000b30f0000b50f00002214200000a00214010000000100001100000000860f0400870f0000be06000000001d0f000000003f083f28860f0500870fffffbe0600000000140f0000000008980b003e703f3901000898801208980113089882130898831608980417089885170898061808988718089808190898891908988a1a140f000000000898800008980101089882010898030208988402089805030898860308980704089888040898090508988a0508980b0608988c0608980d0708988e0708980f080898900808981109089892090898930a0898140e0898950e089896100898171108989811089819120010000000003e703f1a0010000000003e703f0a0010000000008715ffffeeff3e06000000000110000000003e02000011080310000000003e020000331013cd16cd011100000000110f000000000892820133c20006000000003f70bf880892800137cc08938001110f000000000892800133c20006000000003f70bf8801a30000c000030f2000a6d10893ad01110f000000000892810133c2000a000000003f70bf8801a30000c000030f2000a6d10893ad013e0a000000000011000000000211000000000411000000000310000000003f703f8a0898f20130c30006000000003e0200003204050f0000000053c00511000000007e70bf89800f1100be0600000000021000000000810f000012c1a0010100810f0100840101090896000608968106089781049dc3240600000000ccc20006000000008b0f0000810f0100c1c300010200101b810f0200089780000b1100000000bbc2000600000000021000000000800f2d0502c0be0600000000810f100001c322060000000008970300089603000011000000000b100000000008960200810f0000bbc220010200101000110000000000c508970200021000000000800f010002c0be0600000000001100000000021000000000800f1a0002c0be06000000000011000000000410000000000411000000000210000000003e0200000207010f0000000001c0001100000000800f0100001100000000800f00000011000000000010000000003e0200001002020f0000000021c03f70bf0808920003820fff0062c3000600000000061100000000021000000000830f490097013203800f6d0003c006c0be06000000000610000000000d10000000003e020000e602dec08e0f5800dec1fe70bf89089680060e0f007f0000ddc200010200e01d3e021020ed103e021020dd0086010e1086010d200110000000003e0200002102030f0000000032c03f70bf880893000011c5011100000000820f080012c30206000000000210000000000310000000003f703f8a0898f9000898fa0197013203800113140411000000000b1000000000bbc20006000000000898fb02860ffeffa001560555c20006000000007e703f09800f0000050d00000300be5500800000089878003e703f0e080f000000000c0f000000001d0f000000003f083f2800c20206000000000310000000003f703f8a089869003e703f0e041000000000080f000000000c0f000000001d0f000000003f083f28810f02008401010202110000000011c401cc001100000000081000000000be703f088d0f0000090fff7fffff000c00200900be51000000003e01040009003e010600d02d000f00410000d0c3240600000000be0600000000810f010000100000000001c32006000000000510000000007e70bf89800f0000089700003e06000000008c0f03003e06000000008c0f0100000f807f0000d0c3830f020002010200301c0c1100000000110f00000000120f00000000021600004400000c00040f00be5380010000be53800400003e02000099103e0104003913be55808100000510000000007e70bf89800f000008970000081000000000be703f08830f0000000c00200300be51808100000310000000003f703f8a0510000000000898730380015627830fdc0573c30206000000000899f302870f00000899f4030898f40377c50899f4030898f50499c50899f504830f080073c30206000000000010000000000898f20130c30006000000000899720000110000000003100000000033c503110000000003100000000033c5031100000000000f0000ffff30cc0010000000003e020000001030cd0010000000003e020000001830cd0311000000000010000000000310000000003e020000331003cd0011000000003e0600000000800f0000089700003e0600000000810f010008978000081000000000be703f08830f0000000c00200300be51808100003e0600000000010f8042000001c88c0100d18c0110a202c9020ff63a421920cf030f133cf44723c820cf030f643d27aa23c820cf030f753ed4ea23c820cf030f313f7b7223c820cf030f7f3fffff23c8830fc0ff800131118b0121d03e0a00000000810ffe0f840101013e0200001101020f00000000800121113e703f8a089880003e02100020403e0200002204800f000420cda40112003e0a00000000810ffe0f840101013e0200001101020f00000000800121113e703f8a089880003e02100020403e0200002204800f000420cda40112003e0200000010810ff0ffa00101403e0a000000003f703f0a089868003e703f0a08980000800180203e02007800fb010f0000000001c03e703f0a0898800000100000000001c32006000000003f73bf807e733f0010cd7e733f8010cd11c2200600000000089c0100810f200001c32006000000008715fffff8ff3e713f00089d7c007e713f00010f0000000001c13e02000010053e020000200212c1020f0000000012c0089dfe003e0200001005020f0000000012c0089dfd007e703f0a089c7e08089815000891150008981600089116000898170008911700089c0100f09f041800000000f29fc09fffffffff871500000100089c7e02089c7d04c8c2089c0100f09f041800000000f29fc09fffffffff871500000100089c7c083e0600000000810f00000899800001100000000011c501110000000001100000000011c5011100000000011000000000820f030012cd0111000000003e06000000003f703f0a089868003e703f0a08980000800180203e02007800fb010f0000000001c03e703f0a0898800000100000000001c32006000000003f73bf807e733f0010cd7e733f8010cd11c2200600000000089c0100810f200001c32006000000008715fffff8ff3e713f00089d7c007e713f00010f0000000001c13e0200001003020f0000000012c0089dfe003e0200001005020f0000000012c0089dfd007e703f0a089c7e080898020008910200089803000891030008980400089104000898050008910500089c0100f09f041800000000f29fc09fffffffff871500000100089c7e02089c7d04c8c2089c0100f09f041800000000f29fc09fffffffff871500000100089c7c083e0600000000810f00000899800001100000000011c501110000000001100000000011c5011100000000011000000000820f030012cd0111000000003e06000000003f703f0a089868003e703f0a08980000800180203e02007800fb010f0000000001c03e703f0a0898800000100000000001c32006000000003f73bf807e733f0010cd7e733f8010cd11c2200600000000089c0300810f200001c32006000000008715fffff8ff3e713f00089d7c007e713f00010f0000000001c13e02000010033e020000200112c010c0020f0000000012c0089dfe003e0200001005020f0000000012c0089dfd007e703f0a089c7e08810f0b00089800000891000004160000040000160000040011c6200600000000089c0300f09f089c0200f09f089c0100f09f041800000000f29fc09fffffffff871500000300089c7e02089c7d04c8c2089c0300f09f089c0200f09f089c0100f09f041800000000f29fc09fffffffff871500000300089c7c083e0600000000810f00000899800001100000000011c501110000000001100000000011c5011100000000011000000000820f030012cd0111000000003e06000000003f703f0a089868003e703f0a08980000800180203e02007800fb010f0000000001c03e703f0a0898800000100000000001c32006000000003f73bf807e733f0010cd7e733f8010cd11c2200600000000089c0100810f200001c32006000000008715fffff0ff3e713f00089d7c003e713f80089d7b007e713f80089d7a00089df901089d78037e713f00010f0000000001c1810f350097011001020f0000000012c0089dfe003e0200001005020f0000000012c0089dfd003e0200001005020f0000000012c0089df7007e703f0a089c7e08041600002c00001600002c00810f2600089800000891000004160000040000160000040011c6200600000000089c0100f09f041800000000f29fc09fffffffff871500000100089c7e02089c7d04089c7706089c0100f09f041800000000f29fc09fffffffff871500000100089c7c08089c7d0a089cf70a089cfd0808900001089002060890070408900900000c00201800be5b00020000be59800100003e01130024043e01130083033e01080043163e0108002c123e0108008018be5300830000089c7c08089cfb08089cfa0a089cf901089c78033e0600000000810f00000899800001100000000011c501110000000001100000000011c5011100000000011000000000820f030012cd0111000000003e06000000003f703f0a089868003e703f0a08980000800180203e02007800fb010f0000000001c03e703f0a0898800000100000000001c32006000000003f73bf807e733f0010cd7e733f8010cd11c2200600000000089c0100810f200001c32006000000008715fffff8ff3e713f00089d7c007e713f00010f0000000001c1810f180097011001020f0000000012c0089dfe003e0200001005020f0000000012c0089dfd007e703f0a089c7e08089800000891000008980100089101000898020008910200089805000891050008980c0008910c00089c0100f09f041800000000f29fc09fffffffff871500000100089c7e02089c7d04c8c2089c0100f09f041800000000f29fc09fffffffff871500000100089c7c083e0600000000810f00000899800001100000000011c501110000000001100000000011c5011100000000011000000000820f030012cd0111000000003e06000000003f703f0a089868003e703f0a08980000800180203e02007800fb010f0000000001c03e703f0a0898800000100000000001c32006000000003f73bf807e733f0010cd7e733f8010cd11c2200600000000089c0100810f200001c32006000000008715fffff8ff3e713f00089d7c007e713f00010f0000000001c1810f180097011001020f0000000012c0089dfe003e0200001005020f0000000012c0089dfd007e703f0a089c7e08089800000891000008980100089101000898020008910200089805000891050008980c0008910c00089c0100f09f041800000000f29fc09fffffffff871500000100089c7d0a089c7d08020f80410000000c00200900be59000000003e0113000200be5100800000089c7e02089c7d04c8c2089c0100f09f041800000000f29fc09fffffffff871500000100089c7d0a089c7d08020f803d0000000c00200900be59000000003e0113000200be5100800000089c7c083e0600000000810f00000899800001100000000011c501110000000001100000000011c5011100000000011000000000820f030012cd0111000000003e06000000003f703f0a089868003e703f0a08980000800180203e02007800fb010f0000000001c03e703f0a0898800000100000000001c32006000000003f73bf807e733f0010cd7e733f8010cd11c2200600000000089c0100810f200001c32006000000008715fffff8ff3e713f00089d7c007e713f00010f0000000001c1810f050097011001020f0000000012c0089dfe003e0200001005020f0000000012c0089dfd007e703f0a089c7e08089800000891000008980300089103000898040008910400089c0100f09f041800000000f29fc09fffffffff871500000100089c7e02089c7d04c8c2089c0100f09f041800000000f29fc09fffffffff871500000100089c7c083e0600000000810f00000899800001100000000011c501110000000001100000000011c5011100000000011000000000820f030012cd0111000000003e06000000003f703f0a089868003e703f0a08980000800180203e02007800fb010f0000000001c03e703f0a0898800000100000000001c32006000000003f73bf807e733f0010cd7e733f8010cd11c2200600000000089c0100810f200001c32006000000008715fffff8ff3e713f00089d7c007e713f00010f0000000001c1810f050097011001020f0000000012c0089dfe003e0200001005020f0000000012c0089dfd007e703f0a089c7e08089800000891000008980300089103000898040008910400089c0100f09f041800000000f29fc09fffffffff871500000100089c7e02089c7d04c8c2089c0100f09f041800000000f29fc09fffffffff871500000100089c7c083e0600000000810f00000899800001100000000011c501110000000001100000000011c5011100000000011000000000820f030012cd0111000000003e06000000003f703f0a089868003e703f0a08980000800180203e02007800fb010f0000000001c03e703f0a0898800000100000000001c32006000000003f73bf807e733f0010cd7e733f8010cd11c2200600000000089c0100810f200001c32006000000008715fffff8ff3e713f00089d7c007e713f00010f0000000001c1810f330097011001020f0000000012c0089dfe003e0200001005020f0000000012c0089dfd007e703f0a089c7e0808980500089105000898060008910600089807000891070008980c0008910c0008980e0008910e0008981a0008911a0008981c0008911c0008982100089121000898230008912300089828000891280008982a0008912a00089c0100f09f041800000000f29fc09fffffffff871500000100089c7e02089c7d04c8c2089c0100f09f041800000000f29fc09fffffffff871500000100089c7c083e0600000000810f00000899800001100000000011c501110000000001100000000011c5011100000000011000000000820f030012cd0111000000003e06000000003f703f0a089868003e703f0a08980000800180203e02007800fb010f0000000001c03e703f0a0898800000100000000001c32006000000003f73bf807e733f0010cd7e733f8010cd11c2200600000000089c0100810f200001c32006000000008715fffff8ff3e713f00089d7c007e713f00010f0000000001c1810f4b0097011001020f0000000012c0089dfe003e0200001005020f0000000012c0089dfd007e703f0a089c7e08041600003000001600003000810f090008980000089100000898020008910200041600001c00001600001c0011c6200600000000089c0100f09f041800000000f29fc09fffffffff871500000100089c7e02089c7d04c8c2089c0100f09f041800000000f29fc09fffffffff871500000100089c7c083e0600000000810f00000899800001100000000011c501110000000001100000000011c5011100000000011000000000820f030012cd0111000000003e06000000003f703f0a089868003e703f0a08980000800180203e02007800fb010f0000000001c03e703f0a0898800000100000000001c32006000000003f73bf807e733f0010cd7e733f8010cd11c2200600000000089c0100810f200001c32006000000008715fffff8ff3e713f00089d7c007e713f00010f0000000001c1810f3b0097011001020f0000000012c0089dfe003e0200001005020f0000000012c0089dfd007e703f0a089c7e080898000008910000089801000891010008980200089102000898030008910300089804000891040008980e0008910e00089812000891120008981900089119000898200008912000089827000891270008982e0008912e000898350008913500089c0100f09f041800000000f29fc09fffffffff871500000100089c7e02089c7d04c8c2089c0100f09f041800000000f29fc09fffffffff871500000100089c7c083e0600000000810f00000899800001100000000011c501110000000001100000000011c5011100000000011000000000820f030012cd0111000000003e06000000003f703f0a089868003e703f0a08980000800180203e02007800fb010f0000000001c03e703f0a0898800000100000000001c32006000000003f73bf807e733f0010cd7e733f8010cd11c2200600000000089c0100810f200001c32006000000008715fffff8ff3e713f00089d7c007e713f00010f0000000001c1810f120097011001020f0000000012c0089dfe003e0200001005020f0000000012c0089dfd007e703f0a089c7e083e020000100d020f4b90001012c008919000089802000891020008980300089103000898040008910400089805000891050008980a0008910a0008980f0008910f00089c0100f09f041800000000f29fc09fffffffff871500000100089c7e02089c7d04c8c2089c0100f09f041800000000f29fc09fffffffff871500000100089c7c083e0600000000810f00000899800001100000000011c501110000000001100000000011c5011100000000011000000000820f030012cd0111000000003e06000000003f703f0a089868003e703f0a08980000800180203e02007800fb010f0000000001c03e703f0a0898800000100000000001c32006000000003f73bf807e733f0010cd7e733f8010cd11c2200600000000089c0100810f200001c32006000000008715fffff8ff3e713f00089d7c007e713f00010f0000000001c1810f120097011001020f0000000012c0089dfe003e0200001005020f0000000012c0089dfd007e703f0a089c7e083e020000100d020f4b90001012c008919000089802000891020008980300089103000898040008910400089805000891050008980a0008910a0008980f0008910f00089c0100f09f041800000000f29fc09fffffffff871500000100089c7e02089c7d04c8c2089c0100f09f041800000000f29fc09fffffffff871500000100089c7c083e0600000000810f00000899800001100000000011c501110000000001100000000011c5011100000000011000000000820f030012cd0111000000003e0600000000089c7f0e0100010001003f083f3401000119000f00000000010f000088e001c08001402002060000000020c23e02007800fc810f2500970101003e02007800f8810f100001c3220600000000810f70009701010002c3200600000000010f0000000001c03e703f0a810f0000089998000899990008999a0008999b003e0600000000000f00000000010f0100482101c08001402002060000000020c23e02007800fb810f100001c32206000000003e020000000502c3200600000000010f0000000001c03e703f0a810f000008998600089987003e0600000000000f00000000010f0000c8ee01c08001402002060000000020c2810fcd0c970101003e02007800f0810f100001c3220600000000810f14009701010002c3200600000000010f0000000001c03e703f0a810f000008998000089981000899820008998300089984003e0600000000000f00000000010f000008f301c08001402002060000000020c2810f4201970101003e02007800f0810f100001c3220600000000810fcc009701010002c3200600000000010f0000000001c03e703f0a810f000008998300089984003e0600000000000f00000000010f0000c8ff01c08001402002060000000020c2810fdb00970101003e02007800f0810f100001c3220600000000810f2c019701010002c3200600000000010f0000000001c03e703f0a810f000008998a0008998b003e0600000000000f00000000010f0100881201c08001402002060000000020c2810f1601970101003e02007800f0810f100001c3220600000000810fec009701010002c3200600000000010f0000000001c03e703f0a810f0000089985000899890008998a0008998b0008998c003e0600000000000f00000000010f0100c82701c08001402002060000000020c2810f3601970101003e02007800f0810f100001c3220600000000810fd4009701010002c3200600000000010f0000000001c03e703f0a810f00000899890008998a003e0600000000000f00000000010f0100482301c08001402002060000000020c2810f8f03970101003e02007800f0810f100001c3220600000000810f48009701010002c3200600000000010f0000000001c03e703f0a810f00000899800008998e00ff72bf00089991003e0600000000001000000000001100000000800f00000011000000003e0a00000000850f200095c32006000000000810000000008f0f0000050f000000005fc07e70bf880892000368c32006000000003e020000ef05050f00000000e5c0060f000000003e0200007f037fc167c0070f01005c3967c07f70bf080892000508928205ff703f09000c00200c0004a4000000003e011300a4043e010800ab1abe55008200003e0200787ffe860f0c0084017606050f0000000056c0060f0100fc3856c07e70bf8808920002850f0300840175053e0200005503860f000080016525a0014504850fff0045cc44c2000600000000060f000000003e0200007f033e0200005f0175c07fc067c0070f01001c3567c07f70bf0808920002a80140840e0600000000ff703f090a0f803f00000b0f04bd0821000c00200c0004a4000000003e011300a4043e010800ab1abe5500820000850f0400f5c0850f4000f5c30206000000000214200000003e06000000003f71bf81089ce80235c1050f0000000053c07e70bf880892000307100000000067c3200600000000870f1f0007c3200600000000a3c23e020000e305050f00000000e5c0ff70bf09089a81067e723f08fe70bf8808987b060da800006b0001a8000069009797930128049301170fb491bf93000c001f0f00be5588012c12be5788021d113e0113002306be5113831507be5380830000089ce8013ac03f70bf890316000004003e0600000000910f000009c6930128043e043f603e060000000002100000000022c2000a000000000410000000003e0200001402000f0000000001c03e70bf09001000000000089700003e0200005407060f0000000056c07e703f888d0f0000090fff7fffff000c00200900be51000000003e01040009003e010600d02d000f00410000d0c324060000000000100000000001100000000001c3000600000000001100000000810f0000011100000000011000000000820f080012c322060000000011c50111000000007e703f887e70bf88020fca3f01de000c00200900be51000000003e0113000200be53008000003e0200001402020f0000000021c03f703f090894800100100000000007100000000077c200060000000000c630c300060000000001100000000011c5011100000000800f0000810f700097011401020f0000000012c03e70bf89000c001c0300be5700800000810f200097011401020f0000000012c03e70bf89000c00080300be5700800000810f2c0097011401020f0000000012c03e70bf89000c000b0300be5700800000810fd40097011401020f0000000012c03e70bf89000c00350300be5700800000810f140097011401020f0000000012c03e70bf89000c00050300be5700800000810fcc0097011401020f0000000012c03e70bf89000c00330300be5700800000810f2c0197011401020f0000000012c03e70bf89000c004b0300be5700800000810fec0097011401020f0000000012c03e70bf89000c003b0300be5700800000810f480097011401020f0000000012c03e70bf89000c00120300be5700800000800f010008977f00001000000000089500003e0a0000000001100000000011c5011100000000820f05003e060000000001100000000011c5011100000000820f090001100000000012cd0111000000003e0a00000000",
+   "hex": "001100000000800f10000fc300060000000000100000000000c20006000000000111000000000211000000007e713f000011000000007e733f00001100000000b40f0000800f5a000fc1810ffe0f840101013e0200001101020f00000000800121113e703f8a089880003e02100020403e0200002204800f000420cda4011201820f1f0012c3240102002011820f000080012121021000000000a0012102810f010021cc0010000000003e703f1a0010000000003e703f0a0110000000000210000000002006000000000010000000008715ffffeeff3e06000000007e713f000011000000007e733f00001100000000b40f0000140f000000000899800008990101089982010899030208998402089905030899860308990704089988040899090508998a0508990b0608998c0608990d0708998e073e713f0008990f003e713f80089910003f713f00089911003f713f80089912007e713f80089913000899140e0899950e3e723f80089916003f723f00089917003f723f80089918007e723f00089919008cc3200600000000800f7f008401c001800f100010c3200600000000800f100080010f21020600000000800f0f0010c32406000000000111000000000c110000000011c2200600000000140f000000000898800011c5089980007e72bf80089981007f72bf00089982007f72bf8008998300fe72bf8008998400ff72bf0008998500ff72bf80089986007f71bf00089987007f71bf80089988007f74bf80089989007f73bf8008998a003f77bf0008998b00be0600000000140f00000000830f00000898000084150000180000c2000600000000020600000000820f1f0002c3240102002010810f0100a001100131cd3e0600000000031100000000011000000000800f4a0080011010810ffe0f840101013e0200001101020f00000000800121113e703f8a089880003e02100020403e0200002204800f000420cda4011201140f00000000089800000898010184150000180000c200060000000001c32006000000007e713f000011000000000898f80133c2000f000000002001020000123f703f0e01c20210000000000410000000008c0f2000140f000000007e72bf81089980017f72bf01089981017f72bf81089982010899831608990417089985173e73bf01089986013e73bf81089987013f73bf01089988013f73bf81089989017e73bf8108998a013f77bf0108998b01a50f0000a60f0100a70fffffad0f0000ae0f0100af0fffffb00f0000b10f0000b20f0000b30f0000b50f00002214200000a00214010000000100001100000000860f0400870f0000be06000000001d0f000000003f083f28860f0500870fffffbe0600000000140f0000000008980b003e703f3901000898801208980113089882130898831608980417089885170898061808988718089808190898891908988a1a140f000000000898800008980101089882010898030208988402089805030898860308980704089888040898090508988a0508980b0608988c0608980d0708988e0708980f080898900808981109089892090898930a0898140e0898950e089896100898171108989811089819120010000000003e703f1a0010000000003e703f0a0010000000008715ffffeeff3e06000000000110000000003e02000011080310000000003e020000331013cd16cd011100000000110f000000000892820133c20006000000003f70bf880892800137cc08938001110f000000000892800133c20006000000003f70bf8801a30000c000030f2000a6d10893ad01110f000000000892810133c2000a000000003f70bf8801a30000c000030f2000a6d10893ad013e0a000000000011000000000211000000000411000000000310000000003f703f8a0898f20130c30006000000003e0200003204050f0000000053c00511000000007e70bf89800f1100be0600000000021000000000810f000012c1a0010100810f0100840101090896000608968106089781049dc3240600000000ccc20006000000008b0f0000810f0100c1c300010200101b810f0200089780000b1100000000bbc2000600000000021000000000800f2d0502c0be0600000000810f100001c322060000000008970300089603000011000000000b100000000008960200810f0000bbc220010200101000110000000000c508970200021000000000800f010002c0be0600000000001100000000021000000000800f1a0002c0be06000000000011000000000410000000000411000000000210000000003e0200000207010f0000000001c0001100000000800f0100001100000000800f00000011000000000010000000003e0200001002020f0000000021c03f70bf0808920003820fff0062c3000600000000061100000000021000000000830f490097013203800f6d0003c006c0be06000000000610000000000d10000000003e020000e602dec08e0f5800dec1fe70bf89089680060e0f007f0000ddc200010200e01d3e021020ed103e021020dd0086010e1086010d200110000000003e0200002102030f0000000032c03f70bf88089300000210000000003f70bf0808927e01830f0100a001310323cc22c20006000000000210000000003e0200002205030f0000000032c03e020000210232c03f703f8905100000000055c2000600000000089500003e0600000000089400003e0200002102030f0000000032c03f70bf880893000011c5011100000000820f080012c30206000000000210000000000310000000003f703f8a0898f9000898fa0197013203800113140411000000000b1000000000bbc20006000000000898fb02860ffeffa001560555c20006000000007e703f09800f0000050d00000300be5500800000089878003e703f0e080f000000000c0f000000001d0f000000003f083f2800c20206000000000310000000003f703f8a089869003e703f0e041000000000080f000000000c0f000000001d0f000000003f083f28810f02008401010202110000000011c401cc001100000000081000000000be703f088d0f0000090fff7fffff000c00200900be51000000003e01040009003e010600d02d000f00410000d0c3240600000000be0600000000810f010000100000000001c32006000000000510000000007e70bf89800f0000089700003e06000000008c0f03003e06000000008c0f0100000f807f0000d0c3830f020002010200301c0c1100000000110f00000000120f00000000021600004400000c00040f00be5380010000be53800400003e02000099103e0104003913be55808100000510000000007e70bf89800f000008970000081000000000be703f08830f0000000c00200300be51808100000310000000003f703f8a0510000000000898730380015627830fdc0573c30206000000000899f302870f00000899f4030898f40377c50899f4030898f50499c50899f504830f080073c30206000000000010000000000898f20130c30006000000000899720000110000000003100000000033c503110000000003100000000033c5031100000000000f0000ffff30cc0010000000003e020000001030cd0010000000003e020000001830cd0311000000000010000000000310000000003e020000331003cd0011000000003e0600000000800f0000089700003e0600000000810f010008978000081000000000be703f08830f0000000c00200300be51808100003e0600000000010f8042000001c88c0100d18c0110a202c9020ff63a421920cf030f133cf44723c820cf030f643d27aa23c820cf030f753ed4ea23c820cf030f313f7b7223c820cf030f7f3fffff23c8830fc0ff800131118b0121d03e0a00000000810ffe0f840101013e0200001101020f00000000800121113e703f8a089880003e02100020403e0200002204800f000420cda40112003e0a00000000810ffe0f840101013e0200001101020f00000000800121113e703f8a089880003e02100020403e0200002204800f000420cda40112003e0200000010810ff0ffa00101403e0a000000003f703f0a089868003e703f0a08980000800180203e02007800fb010f0000000001c03e703f0a0898800000100000000001c32006000000003f73bf807e733f0010cd7e733f8010cd11c2200600000000089c0100810f200001c32006000000008715fffff8ff3e713f00089d7c007e713f00010f0000000001c13e02000010053e020000200212c1020f0000000012c0089dfe003e0200001005020f0000000012c0089dfd007e703f0a089c7e08089815000891150008981600089116000898170008911700089c0100f09f041800000000f29fc09fffffffff871500000100089c7e02089c7d04c8c2089c0100f09f041800000000f29fc09fffffffff871500000100089c7c083e0600000000810f00000899800001100000000011c501110000000001100000000011c5011100000000011000000000820f030012cd0111000000003e06000000003f703f0a089868003e703f0a08980000800180203e02007800fb010f0000000001c03e703f0a0898800000100000000001c32006000000003f73bf807e733f0010cd7e733f8010cd11c2200600000000089c0100810f200001c32006000000008715fffff8ff3e713f00089d7c007e713f00010f0000000001c13e0200001003020f0000000012c0089dfe003e0200001005020f0000000012c0089dfd007e703f0a089c7e080898020008910200089803000891030008980400089104000898050008910500089c0100f09f041800000000f29fc09fffffffff871500000100089c7e02089c7d04c8c2089c0100f09f041800000000f29fc09fffffffff871500000100089c7c083e0600000000810f00000899800001100000000011c501110000000001100000000011c5011100000000011000000000820f030012cd0111000000003e06000000003f703f0a089868003e703f0a08980000800180203e02007800fb010f0000000001c03e703f0a0898800000100000000001c32006000000003f73bf807e733f0010cd7e733f8010cd11c2200600000000089c0300810f200001c32006000000008715fffff8ff3e713f00089d7c007e713f00010f0000000001c13e02000010033e020000200112c010c0020f0000000012c0089dfe003e0200001005020f0000000012c0089dfd007e703f0a089c7e08810f0b00089800000891000004160000040000160000040011c6200600000000089c0300f09f089c0200f09f089c0100f09f041800000000f29fc09fffffffff871500000300089c7e02089c7d04c8c2089c0300f09f089c0200f09f089c0100f09f041800000000f29fc09fffffffff871500000300089c7c083e0600000000810f00000899800001100000000011c501110000000001100000000011c5011100000000011000000000820f030012cd0111000000003e06000000003f703f0a089868003e703f0a08980000800180203e02007800fb010f0000000001c03e703f0a0898800000100000000001c32006000000003f73bf807e733f0010cd7e733f8010cd11c2200600000000089c0100810f200001c32006000000008715fffff0ff3e713f00089d7c003e713f80089d7b007e713f80089d7a00089df901089d78037e713f00010f0000000001c1810f350097011001020f0000000012c0089dfe003e0200001005020f0000000012c0089dfd003e0200001005020f0000000012c0089df7007e703f0a089c7e08041600002c00001600002c00810f2600089800000891000004160000040000160000040011c6200600000000089c0100f09f041800000000f29fc09fffffffff871500000100089c7e02089c7d04089c7706089c0100f09f041800000000f29fc09fffffffff871500000100089c7c08089c7d0a089cf70a089cfd0808900001089002060890070408900900000c00201800be5b00020000be59800100003e01130024043e01130083033e01080043163e0108002c123e0108008018be5300830000089c7c08089cfb08089cfa0a089cf901089c78033e0600000000810f00000899800001100000000011c501110000000001100000000011c5011100000000011000000000820f030012cd0111000000003e06000000003f703f0a089868003e703f0a08980000800180203e02007800fb010f0000000001c03e703f0a0898800000100000000001c32006000000003f73bf807e733f0010cd7e733f8010cd11c2200600000000089c0100810f200001c32006000000008715fffff8ff3e713f00089d7c007e713f00010f0000000001c1810f180097011001020f0000000012c0089dfe003e0200001005020f0000000012c0089dfd007e703f0a089c7e08089800000891000008980100089101000898020008910200089805000891050008980c0008910c00089c0100f09f041800000000f29fc09fffffffff871500000100089c7e02089c7d04c8c2089c0100f09f041800000000f29fc09fffffffff871500000100089c7c083e0600000000810f00000899800001100000000011c501110000000001100000000011c5011100000000011000000000820f030012cd0111000000003e06000000003f703f0a089868003e703f0a08980000800180203e02007800fb010f0000000001c03e703f0a0898800000100000000001c32006000000003f73bf807e733f0010cd7e733f8010cd11c2200600000000089c0100810f200001c32006000000008715fffff8ff3e713f00089d7c007e713f00010f0000000001c1810f180097011001020f0000000012c0089dfe003e0200001005020f0000000012c0089dfd007e703f0a089c7e08089800000891000008980100089101000898020008910200089805000891050008980c0008910c00089c0100f09f041800000000f29fc09fffffffff871500000100089c7d0a089c7d08020f80410000000c00200900be59000000003e0113000200be5100800000089c7e02089c7d04c8c2089c0100f09f041800000000f29fc09fffffffff871500000100089c7d0a089c7d08020f803d0000000c00200900be59000000003e0113000200be5100800000089c7c083e0600000000810f00000899800001100000000011c501110000000001100000000011c5011100000000011000000000820f030012cd0111000000003e06000000003f703f0a089868003e703f0a08980000800180203e02007800fb010f0000000001c03e703f0a0898800000100000000001c32006000000003f73bf807e733f0010cd7e733f8010cd11c2200600000000089c0100810f200001c32006000000008715fffff8ff3e713f00089d7c007e713f00010f0000000001c1810f050097011001020f0000000012c0089dfe003e0200001005020f0000000012c0089dfd007e703f0a089c7e08089800000891000008980300089103000898040008910400089c0100f09f041800000000f29fc09fffffffff871500000100089c7e02089c7d04c8c2089c0100f09f041800000000f29fc09fffffffff871500000100089c7c083e0600000000810f00000899800001100000000011c501110000000001100000000011c5011100000000011000000000820f030012cd0111000000003e06000000003f703f0a089868003e703f0a08980000800180203e02007800fb010f0000000001c03e703f0a0898800000100000000001c32006000000003f73bf807e733f0010cd7e733f8010cd11c2200600000000089c0100810f200001c32006000000008715fffff8ff3e713f00089d7c007e713f00010f0000000001c1810f050097011001020f0000000012c0089dfe003e0200001005020f0000000012c0089dfd007e703f0a089c7e08089800000891000008980300089103000898040008910400089c0100f09f041800000000f29fc09fffffffff871500000100089c7e02089c7d04c8c2089c0100f09f041800000000f29fc09fffffffff871500000100089c7c083e0600000000810f00000899800001100000000011c501110000000001100000000011c5011100000000011000000000820f030012cd0111000000003e06000000003f703f0a089868003e703f0a08980000800180203e02007800fb010f0000000001c03e703f0a0898800000100000000001c32006000000003f73bf807e733f0010cd7e733f8010cd11c2200600000000089c0100810f200001c32006000000008715fffff8ff3e713f00089d7c007e713f00010f0000000001c1810f330097011001020f0000000012c0089dfe003e0200001005020f0000000012c0089dfd007e703f0a089c7e0808980500089105000898060008910600089807000891070008980c0008910c0008980e0008910e0008981a0008911a0008981c0008911c0008982100089121000898230008912300089828000891280008982a0008912a00089c0100f09f041800000000f29fc09fffffffff871500000100089c7e02089c7d04c8c2089c0100f09f041800000000f29fc09fffffffff871500000100089c7c083e0600000000810f00000899800001100000000011c501110000000001100000000011c5011100000000011000000000820f030012cd0111000000003e06000000003f703f0a089868003e703f0a08980000800180203e02007800fb010f0000000001c03e703f0a0898800000100000000001c32006000000003f73bf807e733f0010cd7e733f8010cd11c2200600000000089c0100810f200001c32006000000008715fffff8ff3e713f00089d7c007e713f00010f0000000001c1810f4b0097011001020f0000000012c0089dfe003e0200001005020f0000000012c0089dfd007e703f0a089c7e08041600003000001600003000810f090008980000089100000898020008910200041600001c00001600001c0011c6200600000000089c0100f09f041800000000f29fc09fffffffff871500000100089c7e02089c7d04c8c2089c0100f09f041800000000f29fc09fffffffff871500000100089c7c083e0600000000810f00000899800001100000000011c501110000000001100000000011c5011100000000011000000000820f030012cd0111000000003e06000000003f703f0a089868003e703f0a08980000800180203e02007800fb010f0000000001c03e703f0a0898800000100000000001c32006000000003f73bf807e733f0010cd7e733f8010cd11c2200600000000089c0100810f200001c32006000000008715fffff8ff3e713f00089d7c007e713f00010f0000000001c1810f3b0097011001020f0000000012c0089dfe003e0200001005020f0000000012c0089dfd007e703f0a089c7e080898000008910000089801000891010008980200089102000898030008910300089804000891040008980e0008910e00089812000891120008981900089119000898200008912000089827000891270008982e0008912e000898350008913500089c0100f09f041800000000f29fc09fffffffff871500000100089c7e02089c7d04c8c2089c0100f09f041800000000f29fc09fffffffff871500000100089c7c083e0600000000810f00000899800001100000000011c501110000000001100000000011c5011100000000011000000000820f030012cd0111000000003e06000000003f703f0a089868003e703f0a08980000800180203e02007800fb010f0000000001c03e703f0a0898800000100000000001c32006000000003f73bf807e733f0010cd7e733f8010cd11c2200600000000089c0100810f200001c32006000000008715fffff8ff3e713f00089d7c007e713f00010f0000000001c1810f120097011001020f0000000012c0089dfe003e0200001005020f0000000012c0089dfd007e703f0a089c7e083e020000100d020f4b90001012c008919000089802000891020008980300089103000898040008910400089805000891050008980a0008910a0008980f0008910f00089c0100f09f041800000000f29fc09fffffffff871500000100089c7e02089c7d04c8c2089c0100f09f041800000000f29fc09fffffffff871500000100089c7c083e0600000000810f00000899800001100000000011c501110000000001100000000011c5011100000000011000000000820f030012cd0111000000003e06000000003f703f0a089868003e703f0a08980000800180203e02007800fb010f0000000001c03e703f0a0898800000100000000001c32006000000003f73bf807e733f0010cd7e733f8010cd11c2200600000000089c0100810f200001c32006000000008715fffff8ff3e713f00089d7c007e713f00010f0000000001c1810f120097011001020f0000000012c0089dfe003e0200001005020f0000000012c0089dfd007e703f0a089c7e083e020000100d020f4b90001012c008919000089802000891020008980300089103000898040008910400089805000891050008980a0008910a0008980f0008910f00089c0100f09f041800000000f29fc09fffffffff871500000100089c7e02089c7d04c8c2089c0100f09f041800000000f29fc09fffffffff871500000100089c7c083e0600000000810f00000899800001100000000011c501110000000001100000000011c5011100000000011000000000820f030012cd0111000000003e0600000000089c7f0e0100010001003f083f3401000119000f00000000010f000088e001c08001402002060000000020c23e02007800fc810f2500970101003e02007800f8810f100001c3220600000000810f70009701010002c3200600000000010f0000000001c03e703f0a810f0000089998000899990008999a0008999b003e0600000000000f00000000010f0100482101c08001402002060000000020c23e02007800fb810f100001c32206000000003e020000000502c3200600000000010f0000000001c03e703f0a810f000008998600089987003e0600000000000f00000000010f0000c8ee01c08001402002060000000020c2810fcd0c970101003e02007800f0810f100001c3220600000000810f14009701010002c3200600000000010f0000000001c03e703f0a810f000008998000089981000899820008998300089984003e0600000000000f00000000010f000008f301c08001402002060000000020c2810f4201970101003e02007800f0810f100001c3220600000000810fcc009701010002c3200600000000010f0000000001c03e703f0a810f000008998300089984003e0600000000000f00000000010f0000c8ff01c08001402002060000000020c2810fdb00970101003e02007800f0810f100001c3220600000000810f2c019701010002c3200600000000010f0000000001c03e703f0a810f000008998a0008998b003e0600000000000f00000000010f0100881201c08001402002060000000020c2810f1601970101003e02007800f0810f100001c3220600000000810fec009701010002c3200600000000010f0000000001c03e703f0a810f0000089985000899890008998a0008998b0008998c003e0600000000000f00000000010f0100c82701c08001402002060000000020c2810f3601970101003e02007800f0810f100001c3220600000000810fd4009701010002c3200600000000010f0000000001c03e703f0a810f00000899890008998a003e0600000000000f00000000010f0100482301c08001402002060000000020c2810f8f03970101003e02007800f0810f100001c3220600000000810f48009701010002c3200600000000010f0000000001c03e703f0a810f00000899800008998e00ff72bf00089991003e0600000000001000000000001100000000800f00000011000000003e0a00000000850f200095c32006000000000810000000008f0f0000050f000000005fc07e70bf880892000368c32006000000003e020000ef05050f00000000e5c0060f000000003e0200007f037fc167c0070f01005c3967c07f70bf080892000508928205ff703f09000c00200c0004a4000000003e011300a4043e010800ab1abe55008200003e0200787ffe860f0c0084017606050f0000000056c0060f0100fc3856c07e70bf8808920002850f0300840175053e0200005503860f000080016525a0014504850fff0045cc44c2000600000000060f000000003e0200007f033e0200005f0175c07fc067c0070f01001c3567c07f70bf0808920002a80140840e0600000000ff703f090a0f803f00000b0f04bd0821000c00200c0004a4000000003e011300a4043e010800ab1abe5500820000850f0400f5c0850f4000f5c30206000000000214200000003e06000000003f71bf81089ce80235c1050f0000000053c07e70bf880892000307100000000067c3200600000000870f1f0007c3200600000000a3c23e020000e305050f00000000e5c0ff70bf09089a81067e723f08fe70bf8808987b060da800006b0001a8000069009797930128049301170fb491bf93000c001f0f00be5588012c12be5788021d113e0113002306be5113831507be5380830000089ce8013ac03f70bf890316000004003e0600000000910f000009c6930128043e043f603e060000000002100000000022c2000a000000000410000000003e0200001402000f0000000001c03e70bf09001000000000089700003e0200005407060f0000000056c07e703f888d0f0000090fff7fffff000c00200900be51000000003e01040009003e010600d02d000f00410000d0c324060000000000100000000001100000000001c3000600000000001100000000810f0000011100000000011000000000820f080012c322060000000011c50111000000007e703f887e70bf88020fca3f01de000c00200900be51000000003e0113000200be53008000003e0200001402020f0000000021c03f703f090894800100100000000007100000000077c200060000000000c630c300060000000001100000000011c5011100000000800f0000810f700097011401020f0000000012c03e70bf89000c001c0300be5700800000810f200097011401020f0000000012c03e70bf89000c00080300be5700800000810f2c0097011401020f0000000012c03e70bf89000c000b0300be5700800000810fd40097011401020f0000000012c03e70bf89000c00350300be5700800000810f140097011401020f0000000012c03e70bf89000c00050300be5700800000810fcc0097011401020f0000000012c03e70bf89000c00330300be5700800000810f2c0197011401020f0000000012c03e70bf89000c004b0300be5700800000810fec0097011401020f0000000012c03e70bf89000c003b0300be5700800000810f480097011401020f0000000012c03e70bf89000c00120300be5700800000800f010008977f00001000000000089500003e0a0000000001100000000011c5011100000000820f05003e060000000001100000000011c5011100000000820f090001100000000012cd0111000000003e0a00000000",
    "kind": "text",
    "name": "seg_pmco",
-   "size": 9650
+   "size": 9764
   },
   {
    "align": 8,
@@ -3860,6 +3916,20 @@
    "kind": "data",
    "name": "pkdata__dv_params",
    "size": 32
+  },
+  {
+   "align": 4,
+   "hex": "0000000000000000000000000000000000000000000000000000000000000000",
+   "kind": "data",
+   "name": "pkdata__dv_call_params",
+   "size": 32
+  },
+  {
+   "align": 4,
+   "hex": "0000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000",
+   "kind": "data",
+   "name": "pkdata__dv_trig_params",
+   "size": 512
   },
   {
    "align": 4,
@@ -4016,7 +4086,7 @@
    "size": 4
   }
  ],
- "source_sha256": "acc3f5b6b07a650c549b13f19fcadba4b8d87371d9cc70dba258348d9963c0ec",
+ "source_sha256": "92b85a9697b1c9d69dfd03941b14c433591f2072761b134b431719729e1875d0",
  "symbols": [
   {
    "global": false,
@@ -4028,19 +4098,19 @@
    "global": false,
    "name": "_dv_cbadowner",
    "section": "seg_pmco",
-   "value": 1267
+   "value": 1324
   },
   {
    "global": false,
    "name": "_dv_cedge",
    "section": "seg_pmco",
-   "value": 1274
+   "value": 1331
   },
   {
    "global": false,
    "name": "_dv_cnoclr",
    "section": "seg_pmco",
-   "value": 987
+   "value": 1044
   },
   {
    "global": false,
@@ -4058,7 +4128,7 @@
    "global": false,
    "name": "_dv_cpe",
    "section": "seg_pmco",
-   "value": 941
+   "value": 998
   },
   {
    "global": false,
@@ -4068,15 +4138,27 @@
   },
   {
    "global": false,
+   "name": "_dv_cplive",
+   "section": "seg_pmco",
+   "value": 977
+  },
+  {
+   "global": false,
+   "name": "_dv_cpread",
+   "section": "seg_pmco",
+   "value": 975
+  },
+  {
+   "global": false,
    "name": "_dv_crender",
    "section": "seg_pmco",
-   "value": 1006
+   "value": 1063
   },
   {
    "global": false,
    "name": "_dv_cz",
    "section": "seg_pmco",
-   "value": 1278
+   "value": 1335
   },
   {
    "global": false,
@@ -4094,19 +4176,19 @@
    "global": true,
    "name": "_dv_exp2",
    "section": "seg_pmco",
-   "value": 1294
+   "value": 1351
   },
   {
    "global": true,
    "name": "_dv_frame_hw",
    "section": "seg_pmco",
-   "value": 1340
+   "value": 1397
   },
   {
    "global": true,
    "name": "_dv_frame_sw",
    "section": "seg_pmco",
-   "value": 1370
+   "value": 1427
   },
   {
    "global": false,
@@ -4118,25 +4200,25 @@
    "global": false,
    "name": "_dv_gfault",
    "section": "seg_pmco",
-   "value": 1099
+   "value": 1156
   },
   {
    "global": false,
    "name": "_dv_gfaultk",
    "section": "seg_pmco",
-   "value": 1110
+   "value": 1167
   },
   {
    "global": false,
    "name": "_dv_gnd",
    "section": "seg_pmco",
-   "value": 1223
+   "value": 1280
   },
   {
    "global": false,
    "name": "_dv_gwin",
    "section": "seg_pmco",
-   "value": 1186
+   "value": 1243
   },
   {
    "global": false,
@@ -4172,13 +4254,13 @@
    "global": false,
    "name": "_dv_nback",
    "section": "seg_pmco",
-   "value": 1002
+   "value": 1059
   },
   {
    "global": false,
    "name": "_dv_nfault",
    "section": "seg_pmco",
-   "value": 1094
+   "value": 1151
   },
   {
    "global": false,
@@ -4196,7 +4278,7 @@
    "global": false,
    "name": "_dv_rback",
    "section": "seg_pmco",
-   "value": 1029
+   "value": 1086
   },
   {
    "global": false,
@@ -4208,469 +4290,469 @@
    "global": false,
    "name": "_gs_badr",
    "section": "seg_pmco",
-   "value": 4794
+   "value": 4851
   },
   {
    "global": true,
    "name": "_gs_block",
    "section": "seg_pmco",
-   "value": 4219
+   "value": 4276
   },
   {
    "global": true,
    "name": "_gs_c5",
    "section": "seg_pmco",
-   "value": 1919
+   "value": 1976
   },
   {
    "global": false,
    "name": "_gs_c5_bad",
    "section": "seg_pmco",
-   "value": 2134
+   "value": 2191
   },
   {
    "global": false,
    "name": "_gs_c5_cap",
    "section": "seg_pmco",
-   "value": 2032
+   "value": 2089
   },
   {
    "global": false,
    "name": "_gs_c5_l",
    "section": "seg_pmco",
-   "value": 2056
+   "value": 2113
   },
   {
    "global": false,
    "name": "_gs_c5_r",
    "section": "seg_pmco",
-   "value": 2075
+   "value": 2132
   },
   {
    "global": false,
    "name": "_gs_capped",
    "section": "seg_pmco",
-   "value": 4806
+   "value": 4863
   },
   {
    "global": true,
    "name": "_gs_case1",
    "section": "seg_pmco",
-   "value": 2866
+   "value": 2923
   },
   {
    "global": false,
    "name": "_gs_case1_bad",
    "section": "seg_pmco",
-   "value": 3030
+   "value": 3087
   },
   {
    "global": false,
    "name": "_gs_case1_l",
    "section": "seg_pmco",
-   "value": 3004
+   "value": 3061
   },
   {
    "global": false,
    "name": "_gs_case1_r",
    "section": "seg_pmco",
-   "value": 3022
+   "value": 3079
   },
   {
    "global": true,
    "name": "_gs_case1_reset",
    "section": "seg_pmco",
-   "value": 3964
+   "value": 4021
   },
   {
    "global": true,
    "name": "_gs_case2",
    "section": "seg_pmco",
-   "value": 3060
+   "value": 3117
   },
   {
    "global": false,
    "name": "_gs_case2_bad",
    "section": "seg_pmco",
-   "value": 3206
+   "value": 3263
   },
   {
    "global": false,
    "name": "_gs_case2_cap",
    "section": "seg_pmco",
-   "value": 3152
+   "value": 3209
   },
   {
    "global": false,
    "name": "_gs_case2_l",
    "section": "seg_pmco",
-   "value": 3180
+   "value": 3237
   },
   {
    "global": false,
    "name": "_gs_case2_r",
    "section": "seg_pmco",
-   "value": 3198
+   "value": 3255
   },
   {
    "global": true,
    "name": "_gs_case2_reset",
    "section": "seg_pmco",
-   "value": 4013
+   "value": 4070
   },
   {
    "global": true,
    "name": "_gs_case3",
    "section": "seg_pmco",
-   "value": 3236
+   "value": 3293
   },
   {
    "global": false,
    "name": "_gs_case3_bad",
    "section": "seg_pmco",
-   "value": 3404
+   "value": 3461
   },
   {
    "global": false,
    "name": "_gs_case3_l",
    "section": "seg_pmco",
-   "value": 3378
+   "value": 3435
   },
   {
    "global": false,
    "name": "_gs_case3_r",
    "section": "seg_pmco",
-   "value": 3396
+   "value": 3453
   },
   {
    "global": true,
    "name": "_gs_case3_reset",
    "section": "seg_pmco",
-   "value": 4062
+   "value": 4119
   },
   {
    "global": true,
    "name": "_gs_case5_reset",
    "section": "seg_pmco",
-   "value": 4117
+   "value": 4174
   },
   {
    "global": false,
    "name": "_gs_clear",
    "section": "seg_pmco",
-   "value": 4636
+   "value": 4693
   },
   {
    "global": true,
    "name": "_gs_fo",
    "section": "seg_pmco",
-   "value": 1407
+   "value": 1464
   },
   {
    "global": false,
    "name": "_gs_fo_bad",
    "section": "seg_pmco",
-   "value": 1542
+   "value": 1599
   },
   {
    "global": false,
    "name": "_gs_fo_l",
    "section": "seg_pmco",
-   "value": 1516
+   "value": 1573
   },
   {
    "global": false,
    "name": "_gs_fo_r",
    "section": "seg_pmco",
-   "value": 1534
+   "value": 1591
   },
   {
    "global": true,
    "name": "_gs_fo_reset",
    "section": "seg_pmco",
-   "value": 3809
+   "value": 3866
   },
   {
    "global": true,
    "name": "_gs_gain",
    "section": "seg_pmco",
-   "value": 1737
+   "value": 1794
   },
   {
    "global": false,
    "name": "_gs_gain_bad",
    "section": "seg_pmco",
-   "value": 1889
+   "value": 1946
   },
   {
    "global": false,
    "name": "_gs_gain_cap",
    "section": "seg_pmco",
-   "value": 1827
+   "value": 1884
   },
   {
    "global": false,
    "name": "_gs_gain_l",
    "section": "seg_pmco",
-   "value": 1857
+   "value": 1914
   },
   {
    "global": false,
    "name": "_gs_gain_r",
    "section": "seg_pmco",
-   "value": 1881
+   "value": 1938
   },
   {
    "global": true,
    "name": "_gs_held_early",
    "section": "seg_pmco",
-   "value": 2542
+   "value": 2599
   },
   {
    "global": false,
    "name": "_gs_held_early_bad",
    "section": "seg_pmco",
-   "value": 2674
+   "value": 2731
   },
   {
    "global": false,
    "name": "_gs_held_early_l",
    "section": "seg_pmco",
-   "value": 2648
+   "value": 2705
   },
   {
    "global": false,
    "name": "_gs_held_early_r",
    "section": "seg_pmco",
-   "value": 2666
+   "value": 2723
   },
   {
    "global": true,
    "name": "_gs_held_late",
    "section": "seg_pmco",
-   "value": 2704
+   "value": 2761
   },
   {
    "global": false,
    "name": "_gs_held_late_bad",
    "section": "seg_pmco",
-   "value": 2836
+   "value": 2893
   },
   {
    "global": false,
    "name": "_gs_held_late_l",
    "section": "seg_pmco",
-   "value": 2810
+   "value": 2867
   },
   {
    "global": false,
    "name": "_gs_held_late_r",
    "section": "seg_pmco",
-   "value": 2828
+   "value": 2885
   },
   {
    "global": true,
    "name": "_gs_held_reset",
    "section": "seg_pmco",
-   "value": 3909
+   "value": 3966
   },
   {
    "global": false,
    "name": "_gs_leave",
    "section": "seg_pmco",
-   "value": 3800
+   "value": 3857
   },
   {
    "global": false,
    "name": "_gs_mono",
    "section": "seg_pmco",
-   "value": 4486
+   "value": 4543
   },
   {
    "global": true,
    "name": "_gs_post",
    "section": "seg_pmco",
-   "value": 4496
+   "value": 4553
   },
   {
    "global": false,
    "name": "_gs_pp_done",
    "section": "seg_pmco",
-   "value": 4394
+   "value": 4451
   },
   {
    "global": false,
    "name": "_gs_pp_next",
    "section": "seg_pmco",
-   "value": 4385
+   "value": 4442
   },
   {
    "global": false,
    "name": "_gs_pp_slot",
    "section": "seg_pmco",
-   "value": 4244
+   "value": 4301
   },
   {
    "global": true,
    "name": "_gs_prepan",
    "section": "seg_pmco",
-   "value": 4233
+   "value": 4290
   },
   {
    "global": false,
    "name": "_gs_raise",
    "section": "seg_pmco",
-   "value": 4815
+   "value": 4872
   },
   {
    "global": true,
    "name": "_gs_ring4",
    "section": "seg_pmco",
-   "value": 3434
+   "value": 3491
   },
   {
    "global": false,
    "name": "_gs_ring4_bad",
    "section": "seg_pmco",
-   "value": 3587
+   "value": 3644
   },
   {
    "global": false,
    "name": "_gs_ring4_l",
    "section": "seg_pmco",
-   "value": 3561
+   "value": 3618
   },
   {
    "global": false,
    "name": "_gs_ring4_r",
    "section": "seg_pmco",
-   "value": 3579
+   "value": 3636
   },
   {
    "global": true,
    "name": "_gs_ring6",
    "section": "seg_pmco",
-   "value": 3617
+   "value": 3674
   },
   {
    "global": false,
    "name": "_gs_ring6_bad",
    "section": "seg_pmco",
-   "value": 3770
+   "value": 3827
   },
   {
    "global": false,
    "name": "_gs_ring6_l",
    "section": "seg_pmco",
-   "value": 3744
+   "value": 3801
   },
   {
    "global": false,
    "name": "_gs_ring6_r",
    "section": "seg_pmco",
-   "value": 3762
+   "value": 3819
   },
   {
    "global": true,
    "name": "_gs_ring_reset",
    "section": "seg_pmco",
-   "value": 4166
+   "value": 4223
   },
   {
    "global": false,
    "name": "_gs_samehb",
    "section": "seg_pmco",
-   "value": 4571
+   "value": 4628
   },
   {
    "global": true,
    "name": "_gs_shaper_early",
    "section": "seg_pmco",
-   "value": 2164
+   "value": 2221
   },
   {
    "global": false,
    "name": "_gs_shaper_early_bad",
    "section": "seg_pmco",
-   "value": 2304
+   "value": 2361
   },
   {
    "global": false,
    "name": "_gs_shaper_early_l",
    "section": "seg_pmco",
-   "value": 2278
+   "value": 2335
   },
   {
    "global": false,
    "name": "_gs_shaper_early_r",
    "section": "seg_pmco",
-   "value": 2296
+   "value": 2353
   },
   {
    "global": true,
    "name": "_gs_shaper_late",
    "section": "seg_pmco",
-   "value": 2334
+   "value": 2391
   },
   {
    "global": false,
    "name": "_gs_shaper_late_bad",
    "section": "seg_pmco",
-   "value": 2512
+   "value": 2569
   },
   {
    "global": false,
    "name": "_gs_shaper_late_l",
    "section": "seg_pmco",
-   "value": 2448
+   "value": 2505
   },
   {
    "global": false,
    "name": "_gs_shaper_late_r",
    "section": "seg_pmco",
-   "value": 2485
+   "value": 2542
   },
   {
    "global": true,
    "name": "_gs_slot",
    "section": "seg_pmco",
-   "value": 4400
+   "value": 4457
   },
   {
    "global": false,
    "name": "_gs_stamped",
    "section": "seg_pmco",
-   "value": 4786
+   "value": 4843
   },
   {
    "global": true,
    "name": "_gs_uy",
    "section": "seg_pmco",
-   "value": 1572
+   "value": 1629
   },
   {
    "global": false,
    "name": "_gs_uy_bad",
    "section": "seg_pmco",
-   "value": 1707
+   "value": 1764
   },
   {
    "global": false,
    "name": "_gs_uy_l",
    "section": "seg_pmco",
-   "value": 1681
+   "value": 1738
   },
   {
    "global": false,
    "name": "_gs_uy_r",
    "section": "seg_pmco",
-   "value": 1699
+   "value": 1756
   },
   {
    "global": true,
    "name": "_gs_uy_reset",
    "section": "seg_pmco",
-   "value": 3865
+   "value": 3922
   },
   {
    "global": true,
@@ -4682,6 +4764,12 @@
    "global": true,
    "name": "_dv_c",
    "section": "pkdata__dv_c",
+   "value": 0
+  },
+  {
+   "global": true,
+   "name": "_dv_call_params",
+   "section": "pkdata__dv_call_params",
    "value": 0
   },
   {
@@ -4790,6 +4878,12 @@
    "global": true,
    "name": "_dv_t",
    "section": "pkdata__dv_t",
+   "value": 0
+  },
+  {
+   "global": true,
+   "name": "_dv_trig_params",
+   "section": "pkdata__dv_trig_params",
    "value": 0
   },
   {
@@ -5070,7 +5164,7 @@
   }
  ],
  "toolchain": {
-  "instructions_redecoded": "2221",
+  "instructions_redecoded": "2247",
   "selache_rev": "02d6d785b8e3a125ab237a00bb89503aff835f5d"
  }
 }

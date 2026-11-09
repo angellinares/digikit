@@ -3,7 +3,11 @@
 //! Unpaced it ran about 20 times real time: a 100 ms click lasted seconds of emulated time, the firmware saw a long press of
 //! SETTINGS and opened nothing (the desktop workbench, 2026-10-23). Skipped without the DT2 1.17 firmware.
 
-use std::{path::PathBuf, thread::sleep, time::{Duration, Instant}};
+use std::{
+    path::PathBuf,
+    thread::sleep,
+    time::{Duration, Instant},
+};
 
 use digi_control::{Config, Handle, spawn};
 use serde_json::{Value, json};
@@ -23,12 +27,17 @@ fn dt2_syx() -> Option<PathBuf> {
 
 fn step_ms(handle: &Handle, ms: u64) {
     handle
-        .call("step", json!({"instructions": ms * MS, "timeout_wall_s": 300}))
+        .call(
+            "step",
+            json!({"instructions": ms * MS, "timeout_wall_s": 300}),
+        )
         .unwrap();
 }
 
 fn elapsed(handle: &Handle) -> u64 {
-    handle.call("status", json!({})).unwrap()["elapsed"].as_u64().unwrap()
+    handle.call("status", json!({})).unwrap()["elapsed"]
+        .as_u64()
+        .unwrap()
 }
 
 fn frame_hash(handle: &Handle) -> String {
@@ -40,9 +49,13 @@ fn frame_hash(handle: &Handle) -> String {
 
 /// Press `code`, hold it for `hold` of wall time, release (what the faceplate does), and let the firmware answer.
 fn click(handle: &Handle, code: u64, hold: Duration) {
-    handle.call("input.button", json!({"code": code, "down": true})).unwrap();
+    handle
+        .call("input.button", json!({"code": code, "down": true}))
+        .unwrap();
     sleep(hold);
-    handle.call("input.button", json!({"code": code, "down": false})).unwrap();
+    handle
+        .call("input.button", json!({"code": code, "down": false}))
+        .unwrap();
     sleep(Duration::from_millis(600));
 }
 
@@ -62,13 +75,17 @@ fn a_free_running_coldfire_only_runtime_follows_the_wall_clock_and_a_click_is_a_
     for _ in 0..20 {
         step_ms(&handle, 500);
         let status = handle.call("status", json!({})).unwrap();
-        if status["cf"]["ready"] == Value::Bool(true) && status["cf"]["main_ui_reached"] == Value::Bool(true) {
+        if status["cf"]["ready"] == Value::Bool(true)
+            && status["cf"]["main_ui_reached"] == Value::Bool(true)
+        {
             ready = true;
             break;
         }
     }
     assert!(ready, "the DT2 did not reach the main screen");
-    handle.call("input.tap", json!({"code": NO, "hold": 20 * MS})).unwrap();
+    handle
+        .call("input.tap", json!({"code": NO, "hold": 20 * MS}))
+        .unwrap();
     step_ms(&handle, 400);
     let main_screen = frame_hash(&handle);
 
@@ -76,7 +93,10 @@ fn a_free_running_coldfire_only_runtime_follows_the_wall_clock_and_a_click_is_a_
     sleep(Duration::from_millis(300));
     let (start, before) = (Instant::now(), elapsed(&handle));
     sleep(Duration::from_millis(1500));
-    let (wall, ran) = (start.elapsed().as_secs_f64(), (elapsed(&handle) - before) as f64 / 132e6);
+    let (wall, ran) = (
+        start.elapsed().as_secs_f64(),
+        (elapsed(&handle) - before) as f64 / 132e6,
+    );
     assert!(
         (0.5 * wall..=1.3 * wall).contains(&ran),
         "free running paced: {ran:.2} emulated s in {wall:.2} s of wall time"
@@ -85,6 +105,9 @@ fn a_free_running_coldfire_only_runtime_follows_the_wall_clock_and_a_click_is_a_
     // a click of 150 ms of wall time opens the settings, as on a Digitone II
     click(&handle, SETTINGS, Duration::from_millis(150));
     let settings = frame_hash(&handle);
-    assert_ne!(settings, main_screen, "SETTINGS did not open the settings screen");
+    assert_ne!(
+        settings, main_screen,
+        "SETTINGS did not open the settings screen"
+    );
     handle.call("quit", json!({})).ok();
 }

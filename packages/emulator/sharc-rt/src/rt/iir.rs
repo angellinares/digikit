@@ -66,14 +66,38 @@ const ADDR_MASK: u32 = 0x3FFF_FFFF;
 
 /// iir.LEGACY_TCB: the load order, down from the chain pointer.
 const LEGACY_TCB: [u32; 13] = [
-    IIR_CTL2, IIR_INIDX, IIR_INMOD, IIR_INLEN, IIR_INBASE, IIR_OUTIDX, IIR_OUTMOD,
-    IIR_OUTLEN, IIR_OUTBASE, IIR_COEFIDX, IIR_COEFMOD, IIR_COEFLEN, IIR_CHNPTR,
+    IIR_CTL2,
+    IIR_INIDX,
+    IIR_INMOD,
+    IIR_INLEN,
+    IIR_INBASE,
+    IIR_OUTIDX,
+    IIR_OUTMOD,
+    IIR_OUTLEN,
+    IIR_OUTBASE,
+    IIR_COEFIDX,
+    IIR_COEFMOD,
+    IIR_COEFLEN,
+    IIR_CHNPTR,
 ];
 /// iir.ACM_TCB
 const ACM_TCB: [u32; 16] = [
-    IIR_CTL2, IIR_INIDX, IIR_INMOD, IIR_INLEN, IIR_INBASE, IIR_OUTIDX, IIR_OUTMOD,
-    IIR_OUTLEN, IIR_OUTBASE, IIR_COEFIDX, IIR_COEFMOD, IIR_COEFLEN, IIR_SGCTL, IIR_SCTL2,
-    IIR_SCTL1, IIR_CHNPTR,
+    IIR_CTL2,
+    IIR_INIDX,
+    IIR_INMOD,
+    IIR_INLEN,
+    IIR_INBASE,
+    IIR_OUTIDX,
+    IIR_OUTMOD,
+    IIR_OUTLEN,
+    IIR_OUTBASE,
+    IIR_COEFIDX,
+    IIR_COEFMOD,
+    IIR_COEFLEN,
+    IIR_SGCTL,
+    IIR_SCTL2,
+    IIR_SCTL1,
+    IIR_CHNPTR,
 ];
 
 /// One biquad: A0, A1, B1, A2, B2, s1, s2 (s1 is added to the output), and the
@@ -186,8 +210,16 @@ fn window(s: &mut St, biquads: &mut [Biquad], layout: &[u32], pointer: u32, acm:
     let w = ((ctl2 >> CTL2_WINDOW_SHIFT) & CTL2_WINDOW_MASK) + 1;
     let mut inidx = mmr(s, IIR_INIDX)? & ADDR_MASK;
     let mut outidx = mmr(s, IIR_OUTIDX)? & ADDR_MASK;
-    let (inmod, inlen, inbase) = (mmr(s, IIR_INMOD)?, mmr(s, IIR_INLEN)? & 0xFFFF, mmr(s, IIR_INBASE)? & ADDR_MASK);
-    let (outmod, outlen, outbase) = (mmr(s, IIR_OUTMOD)?, mmr(s, IIR_OUTLEN)? & 0xFFFF, mmr(s, IIR_OUTBASE)? & ADDR_MASK);
+    let (inmod, inlen, inbase) = (
+        mmr(s, IIR_INMOD)?,
+        mmr(s, IIR_INLEN)? & 0xFFFF,
+        mmr(s, IIR_INBASE)? & ADDR_MASK,
+    );
+    let (outmod, outlen, outbase) = (
+        mmr(s, IIR_OUTMOD)?,
+        mmr(s, IIR_OUTLEN)? & 0xFFFF,
+        mmr(s, IIR_OUTBASE)? & ADDR_MASK,
+    );
     for _ in 0..w {
         let mut x = f32::from_bits(word_read(s, inidx)?);
         for bq in biquads.iter_mut() {
@@ -206,7 +238,11 @@ fn window(s: &mut St, biquads: &mut [Biquad], layout: &[u32], pointer: u32, acm:
         outidx = 0x0000_0000;
     }
     word_write(s, pointer.wrapping_sub(position(layout, IIR_INIDX)), inidx)?;
-    word_write(s, pointer.wrapping_sub(position(layout, IIR_OUTIDX)), outidx)?;
+    word_write(
+        s,
+        pointer.wrapping_sub(position(layout, IIR_OUTIDX)),
+        outidx,
+    )?;
     put(s, IIR_INIDX, inidx)?;
     put(s, IIR_OUTIDX, outidx)
 }
@@ -236,7 +272,9 @@ fn run(s: &mut St) -> R<u32> {
             }
             n += 1;
             load_tcb(s, pointer, &ACM_TCB)?;
-            if mmr(s, IIR_SGCTL)? & (SGCTL_FORTYBIT | SGCTL_RND) != 0 || mmr(s, IIR_CTL2)? & CTL2_TWAIT != 0 {
+            if mmr(s, IIR_SGCTL)? & (SGCTL_FORTYBIT | SGCTL_RND) != 0
+                || mmr(s, IIR_CTL2)? & CTL2_TWAIT != 0
+            {
                 return Err(TRAP_PERIPHERAL);
             }
             let mut biquads = coefficients(s)?;

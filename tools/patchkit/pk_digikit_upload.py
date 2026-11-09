@@ -15,7 +15,6 @@ card-built module) is the `menu` kind with `upload = true` (tests/digikit/scenar
 
 from __future__ import annotations
 
-import hashlib
 import random
 from pathlib import Path
 from typing import Any
@@ -56,7 +55,7 @@ def transport(rig: Any) -> D.EmuTransport:
 
 
 def sha(b: bytes) -> bytes:
-    return hashlib.sha256(b).digest()
+    return D.file_hash(b)
 
 
 # ---- the card as the plusdrive reader sees it -----------------------------------------------------------------------------------
@@ -66,7 +65,7 @@ def card_view(
     c: Any, rig: Any, base: Path, tag: str
 ) -> tuple[dict[str, bytes], str, set[int]]:
     """The module store of BASE with the guest's writes laid over it: ({path: bytes}, the reader's header line, the sectors the guest
-    wrote anywhere). The files are read (and their sha256 checked) by `plusdrive store ls --cat`."""
+    wrote anywhere). The files are read (and their file hash checked) by `plusdrive store ls --cat`."""
     from tools.coldfire import arena_safety
     from tools.patchkit.pk_digikit_project import card_after
 
@@ -111,7 +110,7 @@ def same(
     files: dict[str, bytes],
     view: dict[str, bytes],
     head: str,
-    version: int = 3,
+    version: int = 4,
 ) -> None:
     """The device's LIST, the reader's view and the bytes that were sent all agree."""
     want = {p: (len(b), sha(b).hex()) for p, b in files.items()}
@@ -245,10 +244,10 @@ def run_rust(c: Any) -> None:
         files[mod] = dkm
         got = host(rig, "ls")
         c.check(
-            "Rust LIST shows the module with the right size and sha256",
+            "Rust LIST shows the module with the right size and file hash",
             got.get("ok")
             and got["result"]
-            == [{"path": mod, "size": len(dkm), "sha256": sha(dkm).hex()}],
+            == [{"path": mod, "size": len(dkm), "hash": sha(dkm).hex()}],
             str(got),
         )
         check("Rust put of a module")
@@ -264,9 +263,9 @@ def run_rust(c: Any) -> None:
         # the Python tool and the Rust host agree on the same bytes
         up.put("modules/py.dkm", dkm)
         files["modules/py.dkm"] = dkm
-        rl = {e["path"]: (e["size"], e["sha256"]) for e in host(rig, "ls")["result"]}
+        rl = {e["path"]: (e["size"], e["hash"]) for e in host(rig, "ls")["result"]}
         c.check(
-            "the Rust LIST equals the Python LIST (the same module put by either has the same sha256)",
+            "the Rust LIST equals the Python LIST (the same module put by either has the same file hash)",
             rl == device_ls(up) and rl[mod] == rl["modules/py.dkm"],
             str(rl),
         )
@@ -316,7 +315,7 @@ def run_rust(c: Any) -> None:
         f.write_bytes(bad)
         r = host(rig, "badhash", str(f), "modules/bad.dkm")
         c.check(
-            "Rust wrong sha256: END answers E_HASH (-56)",
+            "Rust wrong file hash: END answers E_HASH (-56)",
             not r["ok"] and r["failure"].get("status") == -56,
             str(r),
         )

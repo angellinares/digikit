@@ -13,13 +13,13 @@
     "fmt": "prettier --write . '!out/**' '!**/target/**' '!**/gen/**' '!**/dist/**' '!**/.astro/**' '!apps/web/.local/**'",
     "fmt:check": "prettier --check . '!out/**' '!**/target/**' '!**/gen/**' '!**/dist/**' '!**/.astro/**' '!apps/web/.local/**'",
     "test:host": "vitest run --config vitest.host.config.ts",
-    "nx:pilot": "NX_CACHE_DIRECTORY=\"$PWD/.nx/cache\" NX_WORKSPACE_DATA_DIRECTORY=\"$PWD/.nx/workspace-data\" NX_DAEMON=false NX_NO_CLOUD=true nx",
+    "nx:pilot": "node tools/nx/nx.mjs",
     "verify:host": "oxlint && pnpm fmt:check && pnpm test:host && pnpm -r run typecheck"
   },
   "devDependencies": {
-    "@nx/devkit": "22.7.12",
+    "@nx/devkit": "24.0.3",
     "eslint-plugin-solid": "0.18.1",
-    "nx": "22.7.12",
+    "nx": "24.0.3",
     "oxlint": "1.87.0",
     "prettier": "3.9.9",
     "prettier-plugin-astro": "1.1.1",

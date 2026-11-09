@@ -10,12 +10,14 @@ from __future__ import annotations
 import argparse
 import csv
 import glob
+import html
 import json
 import os
 import sys
 from collections import defaultdict
 from collections.abc import Iterable, Mapping, Sequence
 from typing import Any
+from urllib.parse import quote
 
 from tools.coldfire import fw
 
@@ -124,7 +126,10 @@ def build_payload(
     row_labels: Mapping[int, Sequence[Mapping[str, Any]]],
     min_group: int,
     per_group: int,
+    full_inventory: bool = False,
+    other_addrs: set[int] | None = None,
 ) -> dict[str, Any]:
+    edges = list(edges)
     by_addr = {int(r["addr"], 16): r for r in rows}
     nbr = neighbours(edges)
 
@@ -136,12 +141,30 @@ def build_payload(
 
     labelled_groups = {int(by_addr[a]["group"]) for a in row_labels if a in by_addr}
     keep_groups, small = select_groups(groups, labelled_groups, min_group)
+    if full_inventory:
+        keep_groups, small = list(groups), set()
+        known = {int(g["id"]) for g in keep_groups}
+        for gid in sorted({int(r["group"]) for r in rows} - known):
+            members_missing = [r for r in rows if int(r["group"]) == gid]
+            keep_groups.append(
+                {
+                    "id": str(gid),
+                    "size": str(len(members_missing)),
+                    "grade": str(
+                        sum(r["anchor_grade"] == "1" for r in members_missing)
+                    ),
+                    "anchored": str(sum(bool(r["anchors"]) for r in members_missing)),
+                    "top_classes": "",
+                    "top_strings": "",
+                    "top_tags": "",
+                }
+            )
     members: dict[int, list[Row]] = {int(g["id"]): [] for g in keep_groups}
     for r in rows:
         gi = int(r["group"])
         if gi in members:
             members[gi].append(r)
-    picked = pick_rows(members, row_labels, per_group)
+    picked = list(rows) if full_inventory else pick_rows(members, row_labels, per_group)
     picked = [
         r
         for r in picked
@@ -167,6 +190,14 @@ def build_payload(
                 "hint": r["hint"],
                 "pair": r["pair_addr"],
                 "pm": r["pair_method"],
+                "pair_url": pair_link(other, r["pair_addr"], other_addrs),
+                "hash": r.get("h_strict", ""),
+                "hash_count": r.get("hash_count", ""),
+                "stable": r.get("stable", ""),
+                "pair_same_hash": r.get("pair_same_hash", ""),
+                "rule_both": r.get("rule_both", ""),
+                "ui_strings": r.get("ui_strings", ""),
+                "anchors": r["anchors"],
                 "rule": r["rule_kind"]
                 + ("#" + r["rule_ordinal"] if r["rule_ordinal"] else ""),
                 "by": r["caller_classes"],
@@ -201,14 +232,104 @@ def build_payload(
             }
         )
 
-    return {
+    payload = {
         "image": image,
         "other": other,
         "total_rows": len(rows),
-        "total_groups": len(groups),
+        "total_groups": len(
+            {int(g["id"]) for g in groups} | {int(r["group"]) for r in rows}
+        ),
+        "full_inventory": full_inventory,
         "groups": out_groups,
         "rows": out_rows,
     }
+    if not full_inventory:
+        # Curated pages resolve links from the full TSV or the other device by
+        # promoting an omitted row on demand, without rendering the inventory.
+        complete = build_payload(
+            image,
+            other,
+            rows,
+            groups,
+            edges,
+            group_labels,
+            row_labels,
+            min_group,
+            per_group,
+            True,
+            other_addrs,
+        )
+        selected = {r["a"] for r in out_rows}
+        payload["linked_rows"] = [r for r in complete["rows"] if r["a"] not in selected]
+        payload["linked_groups"] = complete["groups"]
+    return payload
+
+
+def review_link(image: str, addr: str, page_filename: str | None = None) -> str:
+    page = (
+        quote(page_filename, safe="")
+        if page_filename is not None
+        else quote(image, safe="") + "-review.html"
+    )
+    return page + "#r-" + quote(addr, safe="")
+
+
+def pair_link(other: str, addr: str, other_addrs: set[int] | None) -> str:
+    if (
+        not other
+        or not addr
+        or (other_addrs is not None and int(addr, 16) not in other_addrs)
+    ):
+        return ""
+    return review_link(other, addr)
+
+
+def write_review_tsv(
+    path: str,
+    image: str,
+    other: str,
+    rows: Sequence[Row],
+    group_labels: Mapping[int, Sequence[Mapping[str, Any]]],
+    row_labels: Mapping[int, Sequence[Mapping[str, Any]]],
+    other_addrs: set[int] | None = None,
+    page_filename: str | None = None,
+) -> None:
+    """Export the complete inventory with original evidence and flattened labels."""
+    label_keys = (
+        "role",
+        "proposed_anchor",
+        "signature_guess",
+        "confidence",
+        "evidence",
+        "sdk_use",
+    )
+    group_keys = ("label", "summary", "subsystem", "sdk_relevance")
+    columns = ["image", "other_image", *dict.fromkeys(k for r in rows for k in r)]
+    columns += ["review_link", "pair_review_link"]
+    columns += ["label_" + k for k in label_keys] + ["group_" + k for k in group_keys]
+    with open(path, "w", newline="") as f:
+        writer = csv.DictWriter(f, columns, delimiter="\t")
+        writer.writeheader()
+        for r in rows:
+            labels = row_labels.get(int(r["addr"], 16), [])
+            glabels = group_labels.get(int(r["group"]), [])
+            writer.writerow(
+                {
+                    **r,
+                    "image": image,
+                    "other_image": other,
+                    "review_link": review_link(image, r["addr"], page_filename),
+                    "pair_review_link": pair_link(other, r["pair_addr"], other_addrs),
+                    **{
+                        "label_" + k: " | ".join(str(x.get(k, "")) for x in labels)
+                        for k in label_keys
+                    },
+                    **{
+                        "group_" + k: " | ".join(str(x.get(k, "")) for x in glabels)
+                        for k in group_keys
+                    },
+                }
+            )
 
 
 def device_title(image: str) -> str:
@@ -227,14 +348,14 @@ def subtitle(image: str, other: str) -> str:
 
 
 def render(template: str, payload: Mapping[str, Any], sub: str) -> str:
-    data = json.dumps(payload, separators=(",", ":")).replace("</", "<\\/")
-    return template.replace("__SUBTITLE__", sub).replace("__DATA__", data)
+    data = json.dumps(payload, separators=(",", ":")).replace("<", "\\u003c")
+    return template.replace("__SUBTITLE__", html.escape(sub)).replace("__DATA__", data)
 
 
 def main(argv: list[str] | None = None) -> int:
     ap = argparse.ArgumentParser(description=__doc__.splitlines()[0])
     ap.add_argument("image")
-    ap.add_argument("--other", help="image of the paired device (page text only)")
+    ap.add_argument("--other", help="image of the paired device")
     ap.add_argument(
         "--labels",
         nargs="+",
@@ -243,6 +364,9 @@ def main(argv: list[str] | None = None) -> int:
     )
     ap.add_argument("--min-group", type=int, default=10)
     ap.add_argument("--per-group", type=int, default=20)
+    ap.add_argument(
+        "--all", action="store_true", help="include every catalogue row and group"
+    )
     ap.add_argument("--out", help="default: <atlas>/<image>-review.html")
     args = ap.parse_args(argv)
 
@@ -264,6 +388,12 @@ def main(argv: list[str] | None = None) -> int:
     )
     rows = read_tsv(paths[0])
     groups = read_tsv(paths[1])
+    other_catalog = os.path.join(fw.ATLAS_DIR, other + "-catalog.tsv")
+    other_addrs = (
+        {int(r["addr"], 16) for r in read_tsv(other_catalog)}
+        if other and os.path.exists(other_catalog)
+        else set()
+    )
     with open(paths[2]) as f:
         graph = json.load(f)
     group_labels, row_labels = read_labels(label_files)
@@ -277,6 +407,8 @@ def main(argv: list[str] | None = None) -> int:
         row_labels,
         args.min_group,
         args.per_group,
+        args.all,
+        other_addrs,
     )
     with open(TEMPLATE) as f:
         template = f.read()
@@ -284,6 +416,17 @@ def main(argv: list[str] | None = None) -> int:
     out = args.out or base + "-review.html"
     with open(out, "w") as f:
         f.write(page)
+    tsv = os.path.splitext(out)[0] + ".tsv"
+    write_review_tsv(
+        tsv,
+        image,
+        other,
+        rows,
+        group_labels,
+        row_labels,
+        other_addrs,
+        page_filename=os.path.basename(out),
+    )
     print(
         "groups",
         len(payload["groups"]),
@@ -295,6 +438,8 @@ def main(argv: list[str] | None = None) -> int:
         len(page),
         "->",
         out,
+        "TSV ->",
+        tsv,
     )
     return 0
 

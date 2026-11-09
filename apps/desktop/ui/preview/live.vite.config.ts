@@ -2,6 +2,7 @@
 // Tauri `invoke` is replaced by live-tauri.ts, whose `emu_call` goes through this server to the daemon's control socket, the way the app's
 // Rust side does; the library folder and patchkit.wasm come from the repository. Nothing is mocked but the file dialogs.
 //   DIGI_LIVE_SOCKET=SOCKET pnpm --filter @digi/desktop exec vite --config ui/preview/live.vite.config.ts --port 5298
+// Open `/panel.html` for only the interactive faceplate, or `/live.html` for the workbench preview.
 // (SOCKET: `uv run python -m tools.devtools.emu_live`). `/__stats` answers how many control calls each method got since the last `/__stats?reset=1`.
 import fs from 'node:fs';
 import net from 'node:net';
@@ -18,11 +19,24 @@ function controller(socketPath: string): Plugin {
   let sock: net.Socket | undefined;
   let buf = '';
   let nextId = 1;
+  let hello: Promise<unknown> | undefined;
   const waiting = new Map<number, { ok: (v: unknown) => void; fail: (e: Error) => void }>();
   const open = () => {
     if (sock && !sock.destroyed) return sock;
     const s = net.connect(socketPath);
     sock = s;
+    buf = '';
+    const disconnect = (error: Error) => {
+      if (sock !== s) return;
+      sock = undefined;
+      hello = undefined;
+      buf = '';
+      for (const pending of waiting.values()) pending.fail(error);
+      waiting.clear();
+      s.destroy();
+    };
+    s.on('close', () => disconnect(new Error('emulator socket closed')));
+    s.on('error', disconnect);
     s.on('data', (d) => {
       buf += d;
       for (let i = buf.indexOf('\n'); i >= 0; i = buf.indexOf('\n')) {
@@ -35,16 +49,25 @@ function controller(socketPath: string): Plugin {
         else w.ok(m.result);
       }
     });
-    s.on('error', () => {});
     return s;
   };
   const call = (method: string, params: unknown) =>
     new Promise<unknown>((ok, fail) => {
       const id = nextId++;
-      waiting.set(id, { ok, fail });
-      open().write(JSON.stringify({ jsonrpc: '2.0', id, method, params }) + '\n');
+      const socket = open();
+      const timer = setTimeout(() => socket.destroy(new Error('emulator socket timed out')), 10_000);
+      waiting.set(id, {
+        ok: (value) => {
+          clearTimeout(timer);
+          ok(value);
+        },
+        fail: (error) => {
+          clearTimeout(timer);
+          fail(error);
+        },
+      });
+      socket.write(JSON.stringify({ jsonrpc: '2.0', id, method, params }) + '\n');
     });
-  let hello: Promise<unknown> | undefined;
   return {
     name: 'digi-live-controller',
     configureServer(server) {

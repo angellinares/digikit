@@ -44,6 +44,7 @@ pub mod cfg;
 pub mod decode_view;
 pub mod dump;
 #[allow(unreachable_code)]
+#[rustfmt::skip]
 pub mod gen_helpers;
 pub mod glue;
 pub mod helper;
@@ -75,6 +76,9 @@ pub enum FlagKind {
     Fmul,
     /// Short float multiply: MN MV MU MI become unknown.
     FmulForget,
+    /// Fixed-point MRF multiply, MAC and saturate (source: MN and MU at their
+    /// ASTATX bit positions): MN MU from the source, MV MI cleared.
+    Mfix,
     /// Adder flags of `a + b` / `a - b`; AS AI AF cleared.
     Iadd,
     Isub,
@@ -96,6 +100,9 @@ pub enum FlagKind {
     /// Float abs: AF set, AZ from the result bits, AN cleared, AS from the
     /// input sign (sources: result, input).
     Fabs,
+    /// Float mantissa (sources: result, input): AF set, AZ when the result is
+    /// zero, AS from the input sign, AN AC AV AI cleared.
+    Fmant,
     /// comp, compu, fcomp (source: value = eq | lt << 2 | gt << 31): AZ AN
     /// from the value, AF set for the float form, AC AV AS AI cleared. The
     /// CACC shift register is not part of this effect: the kernel tracks it
@@ -132,9 +139,11 @@ impl FlagKind {
             FlagKind::Fabs => (0, 7),
             FlagKind::Compare { float: false } => (0, 8),
             FlagKind::Compare { float: true } => (0, 9),
+            FlagKind::Fmant => (0, 10),
             FlagKind::Iabs => (0, 11),
             FlagKind::Fmul => (1, 1),
             FlagKind::FmulForget => (1, 2),
+            FlagKind::Mfix => (1, 3),
             FlagKind::Shift { sv: false } => (2, 1),
             FlagKind::Shift { sv: true } => (2, 2),
             FlagKind::Fext { sv: false } => (2, 3),
@@ -156,9 +165,11 @@ impl FlagKind {
             (0, 7) => FlagKind::Fabs,
             (0, 8) => FlagKind::Compare { float: false },
             (0, 9) => FlagKind::Compare { float: true },
+            (0, 10) => FlagKind::Fmant,
             (0, 11) => FlagKind::Iabs,
             (1, 1) => FlagKind::Fmul,
             (1, 2) => FlagKind::FmulForget,
+            (1, 3) => FlagKind::Mfix,
             (2, 1) => FlagKind::Shift { sv: false },
             (2, 2) => FlagKind::Shift { sv: true },
             (2, 3) => FlagKind::Fext { sv: false },
@@ -211,6 +222,9 @@ pub enum Req {
     /// except a compare), so there is no history to track. The counterpart of
     /// `FlagsKnown(u32::MAX)`, which the exact-shift kernel requires.
     CaccUnknown,
+    /// The multiplier accumulator MRF is present and every one of its 80 bits
+    /// is known (the kernel keeps it in `PSEUDO_MR`).
+    MrFull,
     /// The register is known and its value lies in `lo..=hi` (unsigned): an
     /// index register inside its circular buffer, which is what bounds every
     /// address the wrapped updates produce.
@@ -261,6 +275,12 @@ pub trait FastTier: Send {
     /// Run the region at PC if it applies. `Some(exit code)` only when at
     /// least one instruction completed; `None` leaves the state untouched.
     fn run(&mut self, s: &mut St, pc: u32) -> Option<u32>;
+    /// `run` with a query for a healthy generated entry at a PC (one that
+    /// dispatch would run). A tier may use it at build time to refuse a
+    /// region that would strand code in the interpreter.
+    fn run_with(&mut self, s: &mut St, pc: u32, _aot: &dyn Fn(u32) -> bool) -> Option<u32> {
+        self.run(s, pc)
+    }
     /// `run` for a kernel entered straight from another kernel's exit
     /// (`Engine::step`'s continuation): only an already built region that
     /// takes the state, with no builds, rebuilds or decline accounting (the
@@ -282,6 +302,17 @@ pub trait FastTier: Send {
     fn sync_chain_stops(&mut self, _s: &mut St) -> bool {
         true
     }
+    /// False only when `sync_chain_stops` would change nothing and return
+    /// true, so the engine may skip the call. The default is conservative.
+    fn stops_pending(&self) -> bool {
+        true
+    }
+    /// False only when `run` at a PC this tier does not `wants` would change
+    /// no state and decline, so the engine may skip the call. The default is
+    /// conservative: a tier may do work in `run` before `wants` sees a PC.
+    fn has_queued(&self) -> bool {
+        true
+    }
     /// A one-paragraph summary for logs.
     fn report(&self) -> String {
         String::new()
@@ -299,6 +330,8 @@ pub trait FastTier: Send {
     /// boundary (the target of a taken branch, call or loop-back) or at a
     /// generated-block dispatch. Only called when `auto()`; must be cheap.
     fn note(&mut self, _pc: u32) {}
+    /// The engine did not call `note` for a PC that has a usable AOT block.
+    fn skipped_for_aot(&mut self) {}
     /// The interpreter landed by a taken branch, call, return or loop-back in
     /// appended code (code a patch added after the generated image's code):
     /// a candidate entry, which no generated block or root list can name.
@@ -330,6 +363,7 @@ pub struct FastStats {
     /// Regions rebuilt with flat accesses after their dynamic windows kept failing.
     pub dyn_flat: u64,
     pub cached_refusals: u64,
+    pub auto_skipped_aot: u64,
     pub reasons: std::collections::BTreeMap<String, u64>,
 }
 
@@ -456,6 +490,8 @@ struct Slot {
     chased: bool,
     calls: u64,
     insns: u64,
+    /// Host ticks spent in calls that ran (`SHARC_FAST_TIME`).
+    ticks: u64,
     cov: SlotCov,
 }
 
@@ -522,6 +558,8 @@ pub struct FastEngine {
     log: bool,
     /// Reports at exit (`SHARC_FAST_LOG` set to anything).
     summary: bool,
+    /// `SHARC_FAST_TIME`: host ticks per region, reported at exit.
+    time: bool,
     /// `SHARC_FAST_FOLLOW=1`: the instruction after an instruction a region
     /// stopped at (one the lowering cannot run) becomes an entry too, so the
     /// code after it runs from a region again once the interpreter has run
@@ -657,6 +695,7 @@ impl FastEngine {
                 on
             },
             summary: std::env::var_os("SHARC_FAST_LOG").is_some(),
+            time: std::env::var("SHARC_FAST_TIME").is_ok_and(|v| !v.is_empty() && v != "0"),
             follow: std::env::var("SHARC_FAST_FOLLOW").is_ok_and(|v| v == "1"),
             chase: std::env::var("SHARC_FAST_CHASE").map_or(true, |v| v != "0"),
             follow_queue: Vec::new(),
@@ -832,9 +871,9 @@ impl FastEngine {
         self.slots[self.index(pc)?].region.as_ref()
     }
 
-    fn build(&mut self, s: &mut St, pc: u32) -> Option<()> {
+    fn build(&mut self, s: &mut St, pc: u32, aot: Option<&dyn Fn(u32) -> bool>) -> Option<()> {
         if self.tl.is_none() && self.defer_n == 0 {
-            return self.build_inner(s, pc);
+            return self.build_inner(s, pc, aot);
         }
         let (b0, c0) = (self.stats.build_ns, self.stats.compile_ns);
         let t = clock::Instant::now();
@@ -850,7 +889,7 @@ impl FastEngine {
             "first"
         };
         let (sc, si) = ix.map_or((0, 0), |i| (self.slots[i].calls, self.slots[i].insns));
-        let r = self.build_inner(s, pc);
+        let r = self.build_inner(s, pc, aot);
         let wall_us = t.elapsed().as_micros();
         if let Some(i) = ix
             && r.is_some()
@@ -910,7 +949,12 @@ impl FastEngine {
         r
     }
 
-    fn build_inner(&mut self, s: &mut St, pc: u32) -> Option<()> {
+    fn build_inner(
+        &mut self,
+        s: &mut St,
+        pc: u32,
+        aot: Option<&dyn Fn(u32) -> bool>,
+    ) -> Option<()> {
         let t0 = clock::Instant::now();
         // The remaining iterations of the active DO loop that starts here,
         // else (or when that is refused) the CFG shape from this pc.
@@ -933,7 +977,18 @@ impl FastEngine {
                     Some(Err(e)) => Some(e),
                     _ => None,
                 };
-                match region::build_cfg_opts(s, pc, cluster) {
+                // An auto region stops at every hand-picked entry.
+                let barrier: std::collections::BTreeSet<u32> =
+                    if self.lookup.get(&pc).is_some_and(|&i| self.slots[i].auto) {
+                        self.lookup
+                            .iter()
+                            .filter(|&(&p, &i)| p != pc && !self.slots[i].auto)
+                            .map(|(&p, _)| p)
+                            .collect()
+                    } else {
+                        Default::default()
+                    };
+                match region::build_cfg_opts(s, pc, cluster, &barrier) {
                     Ok(r) => Ok(r),
                     Err(e) => Err(match loop_err {
                         Some(l) => {
@@ -972,6 +1027,27 @@ impl FastEngine {
                 None
             }
             Ok(mut r) => {
+                // A root over a healthy generated entry must not stop at a
+                // PC that only the interpreter would run: it would replace
+                // fast generated code with interpreted code. Roots without
+                // such an entry (barred, appended) have the interpreter as
+                // the alternative anyway.
+                if let Some(aot) = aot
+                    && aot(pc)
+                    && let Some(c) = &r.cfg
+                    && let Some((at, _)) = c.stops.iter().find(|(at, why)| {
+                        !stop_is_exempt(why) && !self.lookup.contains_key(at) && !aot(*at)
+                    })
+                {
+                    let why = format!("stops before an entry: {at:#x}");
+                    if self.log {
+                        eprintln!("fast: {pc:#x} refused: {why}");
+                    }
+                    self.stats.refused += 1;
+                    *self.stats.reasons.entry(reason_class(&why)).or_default() += 1;
+                    slot.refused = Some(why);
+                    return None;
+                }
                 let t1 = clock::Instant::now();
                 let k = self.backend.compile(&r.kernel);
                 self.stats.compile_ns += t1.elapsed().as_nanos() as u64;
@@ -1017,13 +1093,7 @@ impl FastEngine {
                             && let Some(c) = &r.cfg
                         {
                             for (at, why) in &c.stops {
-                                // Calls, jumps, loops and delay slots leave
-                                // the interpreter at another PC (an entry of
-                                // its own or not worth one).
-                                if ["call", "jump", "indirect", "delay", "loop", "zero", "DO"]
-                                    .iter()
-                                    .any(|k| why.starts_with(k))
-                                {
+                                if stop_is_exempt(why) {
                                     continue;
                                 }
                                 if let Ok(d) = region::decode_one(s, *at) {
@@ -1068,6 +1138,14 @@ impl FastEngine {
     }
 }
 
+/// Calls, jumps, loops and delay slots leave the interpreter at another PC
+/// (an entry of its own or not worth one): such stops are not mid-block.
+fn stop_is_exempt(why: &str) -> bool {
+    ["call", "jump", "indirect", "delay", "loop", "zero", "DO"]
+        .iter()
+        .any(|k| why.starts_with(k))
+}
+
 /// On by default (`SHARC_FAST_DYNFLAT=0` turns it off; `LO-HI`, hex PCs, limits it to a range): a region whose calls mostly
 /// leave the kernel at an instruction with a guarded dynamic window (the span
 /// anchored on an index register cannot hold an address that is a loaded
@@ -1082,7 +1160,9 @@ fn dynflat_range() -> Option<(u32, u32)> {
         match v.as_str() {
             "" | "0" => None,
             "1" => Some((0, u32::MAX)),
-            r => r.split_once('-').and_then(|(a, b)| Some((hex(a)?, hex(b)?))),
+            r => r
+                .split_once('-')
+                .and_then(|(a, b)| Some((hex(a)?, hex(b)?))),
         }
     })
 }
@@ -1270,8 +1350,14 @@ fn chase_target(s: &St, pc: u32, why: &str) -> Option<u32> {
         return None;
     }
     let d = region::decode_one(s, pc).ok()?;
-    let digits = d.form.len() - d.form.trim_start_matches(|c: char| c.is_ascii_digit()).len();
-    let control = matches!(&d.form[..digits], "8" | "9" | "10" | "11" | "12" | "13" | "25");
+    let digits = d.form.len()
+        - d.form
+            .trim_start_matches(|c: char| c.is_ascii_digit())
+            .len();
+    let control = matches!(
+        &d.form[..digits],
+        "8" | "9" | "10" | "11" | "12" | "13" | "25"
+    );
     (!control).then(|| pc + d.len_sw)
 }
 
@@ -1289,6 +1375,36 @@ impl Drop for FastEngine {
         }
         if self.summary && (self.stats.calls > 0 || self.stats.armed > 0) {
             eprintln!("{}", self.report());
+        }
+        if self.time {
+            let mut rows: Vec<(&u32, &Slot)> = self
+                .pcs
+                .iter()
+                .zip(&self.slots)
+                .filter(|(_, sl)| sl.calls > 0)
+                .collect();
+            rows.sort_by(|a, b| b.1.ticks.cmp(&a.1.ticks));
+            eprintln!(
+                "fast time: {} regions with calls, tick rate {} Hz (pc, origin, shape, len, calls, insns, ticks, ticks/insn)",
+                rows.len(),
+                crate::tick_hz()
+            );
+            for (pc, sl) in rows.into_iter().take(60) {
+                let shape = match &sl.region {
+                    Some(r) if r.cfg.is_some() => "cfg",
+                    Some(_) => "loop",
+                    None => "none",
+                };
+                eprintln!(
+                    "fast time {pc:#x} {} {shape} {} {} {} {} {:.3}",
+                    if sl.auto { "auto" } else { "list" },
+                    sl.region.as_ref().map_or(0, |r| r.len()),
+                    sl.calls,
+                    sl.insns,
+                    sl.ticks,
+                    sl.ticks as f64 / sl.insns.max(1) as f64
+                );
+            }
         }
         if self.cov {
             for (pc, s) in self.pcs.iter().zip(&self.slots) {
@@ -1320,7 +1436,13 @@ impl Drop for FastEngine {
 }
 
 impl FastEngine {
-    fn run_inner(&mut self, s: &mut St, pc: u32, chained: bool) -> Option<u32> {
+    fn run_inner(
+        &mut self,
+        s: &mut St,
+        pc: u32,
+        chained: bool,
+        aot: Option<&dyn Fn(u32) -> bool>,
+    ) -> Option<u32> {
         if let Some(tl) = &mut self.tl
             && s.icount >= tl.next_tick
         {
@@ -1379,7 +1501,7 @@ impl FastEngine {
                 self.drop_slot(pc);
                 return None;
             }
-            let built = self.build(s, pc);
+            let built = self.build(s, pc, aot);
             self.drain_chase();
             if built.is_none() {
                 if self.slots[ix].auto && self.slots[ix].refused.is_some() {
@@ -1412,6 +1534,7 @@ impl FastEngine {
         self.stats.calls += 1;
         let before = s.icount;
         let kernel = slot.kernel.as_deref()?;
+        let t0 = if self.time { crate::ticks() } else { 0 };
         let mut res = run_variant(s, region, kernel, &mut self.ctx);
         if res == Err(glue::Decline::Req)
             && !slot.alts.is_empty()
@@ -1469,6 +1592,9 @@ impl FastEngine {
         }
         slot.calls += 1;
         slot.insns += s.icount - before;
+        if self.time && res.is_ok() {
+            slot.ticks += crate::ticks() - t0;
+        }
         if self.cov {
             match &res {
                 Ok(_) => {
@@ -1630,7 +1756,7 @@ impl FastEngine {
                     };
                     let n = slot.rebuilds;
                     let old = (slot.region.take(), slot.kernel.take());
-                    if self.build(s, pc).is_some() {
+                    if self.build(s, pc, aot).is_some() {
                         let slot = &mut self.slots[ix];
                         slot.rebuilds = n;
                         if let (Some(r), Some(k)) = old {
@@ -1664,7 +1790,10 @@ impl FastEngine {
                 && !r.dyn_pcs.is_empty()
             {
                 sl.dyn_exits += r.dyn_pcs.contains(&at) as u32;
-                if sl.calls >= 64 && sl.calls.is_power_of_two() && sl.dyn_exits as u64 * 2 >= sl.calls {
+                if sl.calls >= 64
+                    && sl.calls.is_power_of_two()
+                    && sl.dyn_exits as u64 * 2 >= sl.calls
+                {
                     let pcs: Vec<u32> = r
                         .dyn_pcs
                         .iter()
@@ -1725,11 +1854,15 @@ impl FastTier for FastEngine {
     }
 
     fn run(&mut self, s: &mut St, pc: u32) -> Option<u32> {
-        self.run_inner(s, pc, false)
+        self.run_inner(s, pc, false, None)
+    }
+
+    fn run_with(&mut self, s: &mut St, pc: u32, aot: &dyn Fn(u32) -> bool) -> Option<u32> {
+        self.run_inner(s, pc, false, Some(aot))
     }
 
     fn run_chained(&mut self, s: &mut St, pc: u32) -> Option<u32> {
-        self.run_inner(s, pc, true)
+        self.run_inner(s, pc, true, None)
     }
 
     fn caps_chain(&self) -> bool {
@@ -1752,12 +1885,26 @@ impl FastTier for FastEngine {
         true
     }
 
+    fn stops_pending(&self) -> bool {
+        self.cap_chain && (self.auto_dispatch() || !self.stops_new.is_empty())
+    }
+
+    /// `run_inner` at a PC with no entry only drains the follow and chase
+    /// queues (and prints the `tl` timeline tick), then declines.
+    fn has_queued(&self) -> bool {
+        !self.follow_queue.is_empty() || !self.chase_queue.is_empty() || self.tl.is_some()
+    }
+
     fn auto(&self) -> bool {
         self.auto.is_some()
     }
 
     fn auto_dispatch(&self) -> bool {
         self.auto.as_ref().is_some_and(|a| a.blocks)
+    }
+
+    fn skipped_for_aot(&mut self) {
+        self.stats.auto_skipped_aot += 1;
     }
 
     #[inline(always)]
@@ -1815,9 +1962,10 @@ impl FastTier for FastEngine {
             .map(|(r, n)| format!("{n}x {r}"))
             .collect();
         format!(
-            "fast tier [{}]: {} armed, {} built ({} ms compile, {} ms build), {} refused ({} cached), {} unprofitable; {} calls: {} ran ({} insns), declined shape/req/window/budget/exit0 = {:?}; refusals: [{}]",
+            "fast tier [{}]: {} armed ({} skipped for aot), {} built ({} ms compile, {} ms build), {} refused ({} cached), {} unprofitable; {} calls: {} ran ({} insns), declined shape/req/window/budget/exit0 = {:?}; refusals: [{}]",
             self.backend.name(),
             s.armed,
+            s.auto_skipped_aot,
             s.built,
             s.compile_ns / 1_000_000,
             s.build_ns / 1_000_000,

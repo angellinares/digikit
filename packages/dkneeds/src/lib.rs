@@ -14,6 +14,7 @@
 //! the records. The only input the answer needs from outside is the device's limits, which [`Needs`] is compared with elsewhere (`dkrt_fit`).
 #![no_std]
 
+#[rustfmt::skip]
 mod gen_limits;
 /// The loader's format limits, from `[limits.format]` of sdk/sdk.toml (`HEADER`, `DSP_HEADER`, `MAX_RECORDS`, `MAX_RELOCS`, `MAX_IMPORTS`,
 /// `MAX_CF_IMPORTS`, `SLOTS`, `MAX_VOICES`, `MAX_FX`, `MAX_STATE_VOICES`, `MAX_STATE_BYTES`, `GRANULE`, `DSP_SLACK`, `ARENA_HDR`).
@@ -58,6 +59,10 @@ pub const LEN_EFFECT: u32 = 0x1a4;
 /// A parameter's click callback: it takes no row (the parameter's row is counted by its PARAM record).
 pub const KIND_ACTION: u32 = 5;
 pub const LEN_ACTION: u32 = 0x10;
+pub const KIND_NATIVE_PAGE: u32 = 6;
+pub const LEN_NATIVE_PAGE: u32 = 0x90;
+pub const KIND_NATIVE_PAGE_V2: u32 = 7;
+pub const LEN_NATIVE_PAGE_V2: u32 = 0x98;
 
 /// The DSP section: magic "DKDS", versions 1 to 5, header 0x40 bytes, voices of 16, 48 or 64 bytes (version 4: voices of 64 bytes and effect records).
 pub const DSP_MAGIC: u32 = 0x444b_4453;
@@ -277,6 +282,10 @@ fn registry<B: Bytes>(src: &mut B, off: u32, size: u32, n: &mut Needs) -> Result
             LEN_EFFECT
         } else if kind == KIND_ACTION {
             LEN_ACTION
+        } else if kind == KIND_NATIVE_PAGE_V2 {
+            LEN_NATIVE_PAGE_V2
+        } else if kind == KIND_NATIVE_PAGE {
+            LEN_NATIVE_PAGE
         } else {
             return Err(Error::Register);
         };
@@ -379,7 +388,9 @@ fn dsp<B: Bytes>(src: &mut B, off: u32, size: u32, n: &mut Needs) -> Result<(), 
                 }
                 for i in 0..nreloc {
                     let r = word(src, off + reloc_off + i * 8)?;
-                    if u64::from(r) < u64::from(b) + u64::from(len) && u64::from(r) + 6 > u64::from(b) {
+                    if u64::from(r) < u64::from(b) + u64::from(len)
+                        && u64::from(r) + 6 > u64::from(b)
+                    {
                         return Err(Error::Dsp);
                     }
                 }
@@ -418,7 +429,8 @@ fn dsp<B: Bytes>(src: &mut B, off: u32, size: u32, n: &mut Needs) -> Result<(), 
             }
             for i in 0..nreloc {
                 let r = word(src, off + reloc_off + i * 8)?;
-                if u64::from(r) < u64::from(descriptor) + 16 && u64::from(r) + 6 > u64::from(descriptor)
+                if u64::from(r) < u64::from(descriptor) + 16
+                    && u64::from(r) + 6 > u64::from(descriptor)
                 {
                     return Err(Error::Dsp);
                 }

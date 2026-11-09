@@ -7,7 +7,6 @@ pub const DIRECTORY: u32 = 2;
 pub const SIZE_VALID: u32 = 1;
 pub const HASH_VALID: u32 = 2;
 pub const HASH_NONE: u32 = 0;
-pub const HASH_SHA256: u32 = 1;
 pub const HASH_ELEKTRON32: u32 = 2;
 pub const PATH_BYTES: usize = 256;
 #[repr(C)]

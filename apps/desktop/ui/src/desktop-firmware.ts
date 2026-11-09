@@ -30,9 +30,11 @@ export function unpack(buf: Uint8Array): { summary: FlashSummary; image: Uint8Ar
 }
 
 export const desktopFirmwareEnv: FirmwareEnv = {
-  async prepare(stock, restore) {
+  async prepare(stock, restore, set = '') {
     const raw = new Uint8Array(
-      await invoke<ArrayBuffer>('firmware_prepare', stock, { headers: { 'x-restore': restore ? '1' : '0' } }),
+      await invoke<ArrayBuffer>('firmware_prepare', stock, {
+        headers: { 'x-restore': restore ? '1' : '0', 'x-set': set },
+      }),
     );
     const { summary, image } = unpack(raw);
     return preparedFromSummary(summary, image);

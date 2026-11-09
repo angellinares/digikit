@@ -275,7 +275,7 @@ def identity(up: Any) -> dict[str, Any]:
     info = up.info()
     mods = up.modules()
     store = [
-        {"path": p, "size": sz, "sha256": h}
+        {"path": p, "size": sz, "hash": h}
         for p, sz, h in up.ls()
         if p.startswith("modules/")
     ]

@@ -97,7 +97,6 @@ files = [
     "tests/dsp/test_audiocheck.py",
     "tools/sharc_dev/aot_fxprof.py",
     "tools/devtools/benchlock.py",
-    "tools/devtools/nx_input_audit.py",
     "tools/devtools/nx_graph.py",
     "tools/control/digi_client.py",
     "tools/sharc_dev/sharc_peer.py",
@@ -134,6 +133,8 @@ files = [
     "tools/devtools/py_select.py",
     "tools/devtools/agent_guard.py",
     "tools/devtools/emud_key.py",
+    "tools/devtools/fast_roots.py",
+    "tools/devtools/sharc_cells.py",
     "tools/sharc_dev/recip_tables.py",
 ]
 mypy_path = "."

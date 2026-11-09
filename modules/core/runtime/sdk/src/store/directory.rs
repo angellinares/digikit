@@ -9,8 +9,16 @@
 use super::catalog::CatalogEntry;
 use super::*;
 
-const DIRECTORY: Entry = Entry { first: 0, size: 0, kind: KIND_DIR, sha: [0; 32] };
-const EMPTY: CatalogEntry = CatalogEntry { path: [0; PATH_BYTES], entry: DIRECTORY };
+const DIRECTORY: Entry = Entry {
+    first: 0,
+    size: 0,
+    kind: KIND_DIR,
+    sha: [0; 32],
+};
+const EMPTY: CatalogEntry = CatalogEntry {
+    path: [0; PATH_BYTES],
+    entry: DIRECTORY,
+};
 
 /// A completed page, sorted by full path bytes. Directories have canonical zero
 /// metadata; files retain their exact Entry, including SHA (not validated here).
@@ -45,7 +53,8 @@ fn owned_path(path: &[u8], root: bool) -> Result<[u8; PATH_BYTES], i32> {
     }
     let mut out = [0; PATH_BYTES];
     out[..path.len()].copy_from_slice(path);
-    if (path.is_empty() && root) || unsafe { path_ok(out.as_ptr(), PATH_BYTES) } == Some(path.len()) {
+    if (path.is_empty() && root) || unsafe { path_ok(out.as_ptr(), PATH_BYTES) } == Some(path.len())
+    {
         Ok(out)
     } else {
         Err(E_BAD_STORE)
@@ -64,9 +73,14 @@ impl<const N: usize> DirectoryCollector<N> {
         let mut key = [0; PATH_BYTES];
         if let Some(after) = after {
             key = owned_path(after, false)?;
-            let start = if directory.is_empty() { 0 } else { directory.len() + 1 };
+            let start = if directory.is_empty() {
+                0
+            } else {
+                directory.len() + 1
+            };
             if after.len() <= start
-                || (!directory.is_empty() && (!after.starts_with(directory) || after[directory.len()] != b'/'))
+                || (!directory.is_empty()
+                    && (!after.starts_with(directory) || after[directory.len()] != b'/'))
                 || after[start..].contains(&b'/')
             {
                 return Err(E_BAD_STORE);
@@ -149,7 +163,10 @@ impl<const N: usize> DirectoryCollector<N> {
                 self.exists = true;
                 continue;
             }
-            if value.entry.kind == KIND_FILE && directory.starts_with(path) && directory.get(n) == Some(&b'/') {
+            if value.entry.kind == KIND_FILE
+                && directory.starts_with(path)
+                && directory.get(n) == Some(&b'/')
+            {
                 return self.fail(E_NOT_FOUND);
             }
             let start = if directory.is_empty() {
@@ -203,7 +220,10 @@ impl<const N: usize> DirectoryCollector<N> {
         if !self.finished {
             return Err(crate::E_BUSY);
         }
-        Ok(DirectoryPage { entries: &self.entries[..self.len], more: self.more })
+        Ok(DirectoryPage {
+            entries: &self.entries[..self.len],
+            more: self.more,
+        })
     }
 }
 
@@ -216,7 +236,12 @@ mod tests {
     fn value(path: &[u8], kind: u8, id: u32) -> CatalogEntry {
         let mut out = EMPTY;
         out.path[..path.len()].copy_from_slice(path);
-        out.entry = Entry { first: id, size: id * 71, kind, sha: [id as u8; 32] };
+        out.entry = Entry {
+            first: id,
+            size: id * 71,
+            kind,
+            sha: [id as u8; 32],
+        };
         out
     }
     fn file(path: &[u8], id: u32) -> CatalogEntry {
@@ -226,7 +251,10 @@ mod tests {
         value(path, KIND_DIR, 17)
     }
     fn names(page: &DirectoryPage<'_>) -> Vec<Vec<u8>> {
-        page.entries.iter().map(|e| e.path[..e.path.iter().position(|b| *b == 0).unwrap()].to_vec()).collect()
+        page.entries
+            .iter()
+            .map(|e| e.path[..e.path.iter().position(|b| *b == 0).unwrap()].to_vec())
+            .collect()
     }
 
     #[test]
@@ -249,7 +277,10 @@ mod tests {
         c.feed(&data[3..]).unwrap();
         c.finish(Ok(())).unwrap();
         let p = c.page().unwrap();
-        assert_eq!(names(&p), [b"a/empty".to_vec(), b"a/file".to_vec(), b"a/z".to_vec()]);
+        assert_eq!(
+            names(&p),
+            [b"a/empty".to_vec(), b"a/file".to_vec(), b"a/z".to_vec()]
+        );
         assert_eq!(p.entries[0].entry, DIRECTORY);
         assert_eq!(p.entries[1], file(b"a/file", 7));
         assert_eq!(p.entries[2].entry, DIRECTORY);
@@ -269,7 +300,12 @@ mod tests {
         long[0] = b'a';
         long[1] = b'/';
         let high = [b'a', b'/', 0x80, 0xff];
-        let data = [file(&high, 2), file(&long, 3), file(b"a/x", 4), file(b"a/z", 5)];
+        let data = [
+            file(&high, 2),
+            file(&long, 3),
+            file(b"a/x", 4),
+            file(b"a/z", 5),
+        ];
         c.feed(&data).unwrap();
         c.finish(Ok(())).unwrap();
         let p = c.page().unwrap();
@@ -282,7 +318,17 @@ mod tests {
 
     #[test]
     fn continuation_pages_replay_full_unsorted_scan_and_count_distinct_children() {
-        let data = [file(b"z", 9), file(b"d/q", 8), file(b"b", 2), dir(b"d"), file(b"a", 1), file(b"c", 3), file(b"b", 2), file(b"d/r", 7), file(b"z", 9)];
+        let data = [
+            file(b"z", 9),
+            file(b"d/q", 8),
+            file(b"b", 2),
+            dir(b"d"),
+            file(b"a", 1),
+            file(b"c", 3),
+            file(b"b", 2),
+            file(b"d/r", 7),
+            file(b"z", 9),
+        ];
         let mut after: Option<Vec<u8>> = None;
         let mut all = Vec::new();
         for expected_more in [true, true, false] {
@@ -297,7 +343,16 @@ mod tests {
             after = paths.last().cloned();
             all.extend(paths);
         }
-        assert_eq!(all, [b"a".to_vec(), b"b".to_vec(), b"c".to_vec(), b"d".to_vec(), b"z".to_vec()]);
+        assert_eq!(
+            all,
+            [
+                b"a".to_vec(),
+                b"b".to_vec(),
+                b"c".to_vec(),
+                b"d".to_vec(),
+                b"z".to_vec()
+            ]
+        );
         let mut c = DirectoryCollector::<1>::new(b"", Some(b"z")).unwrap();
         c.feed(&data).unwrap();
         c.finish(Ok(())).unwrap();
@@ -308,16 +363,21 @@ mod tests {
     #[test]
     fn cap_one_handles_evictions_duplicates_and_exactly_full_page() {
         let mut c = DirectoryCollector::<1>::new(b"", None).unwrap();
-        c.feed(&[file(b"z", 1), file(b"b", 2), file(b"a", 3), file(b"a", 3)]).unwrap();
+        c.feed(&[file(b"z", 1), file(b"b", 2), file(b"a", 3), file(b"a", 3)])
+            .unwrap();
         c.finish(Ok(())).unwrap();
         assert_eq!(names(&c.page().unwrap()), [b"a".to_vec()]);
         assert!(c.page().unwrap().more);
         let mut c = DirectoryCollector::<1>::new(b"", None).unwrap();
-        c.feed(&[dir(b"only/child"), dir(b"only"), dir(b"only/other")]).unwrap();
+        c.feed(&[dir(b"only/child"), dir(b"only"), dir(b"only/other")])
+            .unwrap();
         c.finish(Ok(())).unwrap();
         assert!(!c.page().unwrap().more);
         assert_eq!(c.page().unwrap().entries[0].entry, DIRECTORY);
-        assert_eq!(DirectoryCollector::<0>::new(b"", None).err().map(|e| e), Some(E_BAD_STORE));
+        assert_eq!(
+            DirectoryCollector::<0>::new(b"", None).err().map(|e| e),
+            Some(E_BAD_STORE)
+        );
     }
 
     #[test]
@@ -348,18 +408,41 @@ mod tests {
 
     #[test]
     fn paths_and_kinds_are_checked_globally_and_failures_stick() {
-        for path in [b"/a".as_slice(), b"a/", b"a//b", b"a/.", b"a/../b", b".", b"..", b"a\x1f", b"a\x7f", b"a\0b"] {
-            assert_eq!(DirectoryCollector::<1>::new(path, None).err(), Some(E_BAD_STORE));
+        for path in [
+            b"/a".as_slice(),
+            b"a/",
+            b"a//b",
+            b"a/.",
+            b"a/../b",
+            b".",
+            b"..",
+            b"a\x1f",
+            b"a\x7f",
+            b"a\0b",
+        ] {
+            assert_eq!(
+                DirectoryCollector::<1>::new(path, None).err(),
+                Some(E_BAD_STORE)
+            );
         }
-        assert_eq!(DirectoryCollector::<1>::new(&[b'a'; PATH_BYTES], None).err(), Some(E_BAD_STORE));
+        assert_eq!(
+            DirectoryCollector::<1>::new(&[b'a'; PATH_BYTES], None).err(),
+            Some(E_BAD_STORE)
+        );
         for after in [b"".as_slice(), b"a", b"ab/c", b"a/b/c", b"a/..", b"a/b\0c"] {
-            assert_eq!(DirectoryCollector::<1>::new(b"a", Some(after)).err(), Some(E_BAD_STORE));
+            assert_eq!(
+                DirectoryCollector::<1>::new(b"a", Some(after)).err(),
+                Some(E_BAD_STORE)
+            );
         }
         let mut bad = Vec::new();
         for path in [b"".as_slice(), b"x//y", b"x/..", b"x\x01"] {
             bad.push(file(path, 1));
         }
-        bad.push(CatalogEntry { path: [b'x'; PATH_BYTES], entry: DIRECTORY });
+        bad.push(CatalogEntry {
+            path: [b'x'; PATH_BYTES],
+            entry: DIRECTORY,
+        });
         bad.push(value(b"unrelated", 9, 1));
         for entry in bad {
             let mut c = DirectoryCollector::<1>::new(b"a", Some(b"a/z")).unwrap();
@@ -388,7 +471,8 @@ mod tests {
         }
         // Deliberately not a global consistency audit for keys outside the page.
         let mut c = DirectoryCollector::<1>::new(b"", None).unwrap();
-        c.feed(&[file(b"a", 1), file(b"z", 2), file(b"z", 3), dir(b"z")]).unwrap();
+        c.feed(&[file(b"a", 1), file(b"z", 2), file(b"z", 3), dir(b"z")])
+            .unwrap();
         c.finish(Ok(())).unwrap();
         assert_eq!(names(&c.page().unwrap()), [b"a".to_vec()]);
         assert!(c.page().unwrap().more);
@@ -412,6 +496,10 @@ mod tests {
         assert_eq!(c.feed(&[]), Err(crate::E_FORMAT));
         assert_eq!(c.page().err(), Some(crate::E_FORMAT));
         // Array storage is proportional only to fixed N, never the scan length.
-        assert_eq!(core::mem::size_of::<DirectoryCollector<9>>() - core::mem::size_of::<DirectoryCollector<1>>(), 8 * core::mem::size_of::<CatalogEntry>());
+        assert_eq!(
+            core::mem::size_of::<DirectoryCollector<9>>()
+                - core::mem::size_of::<DirectoryCollector<1>>(),
+            8 * core::mem::size_of::<CatalogEntry>()
+        );
     }
 }

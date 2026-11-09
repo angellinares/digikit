@@ -55,7 +55,7 @@
     "packages/patchkit/src/flash_cli.rs": 1,
     "packages/patchkit/src/fwgen.rs": 3,
     "packages/patchkit/src/modgen.rs": 2,
-    "packages/patchkit/src/module.rs": 6,
+    "packages/patchkit/src/module.rs": 8,
     "packages/patchkit/src/port.rs": 2,
     "packages/patchkit/src/sdkgen.rs": 10,
     "packages/patchkit/src/storedump.rs": 3,
@@ -74,7 +74,7 @@
     "packages/patchkit/src/fit.rs": "Inline unit-test include_str vectors; covered by the binary digest.",
     "packages/patchkit/src/flash_cli.rs": "Flash CLI stock-image input; this source is scanned but not called by coupled-run.",
     "packages/patchkit/src/fwgen.rs": "Firmware binding/reference generation reads devices/fw TOMLs and ports; not called by coupled-run.",
-    "packages/patchkit/src/module.rs": "Repository loader reads manifests/objects; new includes and cache read are inline unit-test fixtures. Coupled rendering only uses patchkit verification of the supplied firmware bytes.",
+    "packages/patchkit/src/module.rs": "Repository loader reads manifests/objects; catalog_check and read_headers read manifest headers only (catalog validation, not called by coupled-run). The include_str and cache read are inline unit-test fixtures. Coupled rendering only uses patchkit verification of the supplied firmware bytes.",
     "packages/patchkit/src/sdkgen.rs": "Embedded SDK contract is covered by the binary digest; filesystem contract and ABI reads are SDK generation/packing inputs, not coupled-run reads."
   }
 }

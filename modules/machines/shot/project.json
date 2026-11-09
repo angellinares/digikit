@@ -6,17 +6,21 @@
       {
         "files": ["tests/shot-dt2.device.test.ts"],
         "modules": ["digikit/shot", "digikit/debug", "test/stock-pool", "test/track-select"],
-        "plusdrive": true
+        "plusdrive": true,
+        "dksampleWasm": true
       },
       {
         "files": ["tests/shot-dn2.device.test.ts"],
         "modules": ["digikit/shot", "digikit/debug", "test/track-select"],
-        "plusdrive": true
+        "plusdrive": true,
+        "dksampleWasm": true
       },
       {
         "files": ["tests/shot-picker.device.test.ts"],
         "modules": ["digikit/shot", "digikit/debug", "test/stock-pool", "test/track-select"],
-        "plusdrive": true
+        "pythonTools": "client",
+        "plusdrive": true,
+        "dksampleWasm": true
       }
     ]
   }

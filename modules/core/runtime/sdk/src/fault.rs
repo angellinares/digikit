@@ -379,7 +379,10 @@ mod tests {
         assert_eq!(Fault::decode(&f.encode()), Some(f));
         let mut out = [Row::new(), Row::new(), Row::new(), Row::new()];
         assert_eq!(rows(&f, &mut out), 2);
-        assert_eq!((text(&out[0]), text(&out[1])), ("FAULT: CPU PANIC", "IN RUNTIME"));
+        assert_eq!(
+            (text(&out[0]), text(&out[1])),
+            ("FAULT: CPU PANIC", "IN RUNTIME")
+        );
     }
 
     #[test]

@@ -15,7 +15,11 @@ fn pit_deadline_keeps_emulated_time() {
     // At tick 1000 the remaining 132 instructions become 264 at double the rate.
     bank.rescale(1000.0, 2.0 * F_BUS);
     assert_eq!(bank.next_deadline(1), Some(1264.0));
-    assert_eq!(bank.period(1), Some(264.0), "later periods use the new rate");
+    assert_eq!(
+        bank.period(1),
+        Some(264.0),
+        "later periods use the new rate"
+    );
     bank.rescale(1000.0, F_BUS / 4.0);
     assert_eq!(bank.next_deadline(1), Some(1033.0));
     assert_eq!(bank.period(1), Some(33.0));
@@ -42,5 +46,8 @@ fn ssi_deadline_keeps_emulated_time() {
     assert!(before > 0);
     dma.rescale_at(0, 264_000_000);
     let after = dma.step(0, None);
-    assert!((after as i64 - 2 * before as i64).abs() <= 1, "{after} vs {before}");
+    assert!(
+        (after as i64 - 2 * before as i64).abs() <= 1,
+        "{after} vs {before}"
+    );
 }

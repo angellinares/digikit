@@ -55,6 +55,17 @@ pub struct Plan {
     pub output: Option<PlanOutput>,
 }
 
+impl Plan {
+    /// The byte ranges of the code the plan placed on the SHARC.
+    pub fn sharc_code(&self) -> Vec<(u64, u64)> {
+        self.writes
+            .iter()
+            .filter(|w| w.cpu == SHARC)
+            .flat_map(|w| w.code.iter().copied())
+            .collect()
+    }
+}
+
 #[derive(Clone, Debug, Serialize)]
 pub struct PlanBase {
     pub device: String,
@@ -310,13 +321,9 @@ fn expand_op(m: &Module, port: &Port, op: &Op) -> Result<Op> {
     let Some(name) = op.hook.as_deref().filter(|_| op.op == "hook") else {
         return Ok(op.clone());
     };
-    let h = port.hook(name).ok_or_else(|| {
-        err!(
-            "{}: no hook {name} on {}",
-            m.id(),
-            port.port.device
-        )
-    })?;
+    let h = port
+        .hook(name)
+        .ok_or_else(|| err!("{}: no hook {name} on {}", m.id(), port.port.device))?;
     let mut x = op.clone();
     x.anchor = h.site.clone();
     x.offset = h.offset;
@@ -851,6 +858,13 @@ pub fn apply_with(
                 let t = w.text();
                 add(&mut names, prim::word_spec(&t)?.1)?;
             }
+            if let Some(ed) = &s.def.edit {
+                add(&mut names, &ed.at.text())?;
+                for f in &ed.fields {
+                    let t = f.value.text();
+                    add(&mut names, prim::word_spec(&t)?.1)?;
+                }
+            }
         }
         for r in &active.regs {
             add(&mut names, &r.def.first.text())?;
@@ -1183,6 +1197,14 @@ pub fn apply_with(
             let (addr, cpu) = sec_at[si];
             let sp = &stg.secs[si];
             let mut bytes = sp.copied.clone();
+            if let Some(ed) = &s.def.edit {
+                let ri = active
+                    .regs
+                    .iter()
+                    .position(|r| r.def.name == ed.registry)
+                    .unwrap();
+                prim::apply_edits(s, &built[ri], cpu == CF, &scope, &mut bytes)?;
+            }
             let mut rows = 0u64;
             if let Some(ap) = &s.def.append {
                 let ri = active

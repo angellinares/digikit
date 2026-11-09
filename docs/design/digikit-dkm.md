@@ -115,7 +115,7 @@ Who calls it: the DIGIKIT menu (`modules/core/apps/digikit-menu`, on the card's 
 The rule that compares the needs with a device is `fits_now` (docs/plans/what-fits.md; `dkrt_fit` in `modules/core/runtime/fit`, vectors in `sdk/vectors/fit-vectors.json`; the compare and the needs are each written once, in Rust: the web app calls the compare through `pk_fit` and the tools through `patchkit fit --json -`): the staging buffer holds the file, a module record and a selection path are free,
 the DSP range (with up to `DSP_ALIGN - 8` bytes for alignment) is at most the largest free range, the arena holds the module's block and the block of its DSP image together (each block at most the largest free block), and every row count is at most
 limit - used. A kind that a device's CAPACITY lacks is not judged.
-The `inferred needs` tests of `modules/core/runtime/tests/capacity.device.test.ts` (full tier) load a set of run-time modules and fixtures alone, coupled, and compare
+The `inferred needs` tests of `modules/core/runtime/tests/capacity/inferred/inferred-needs.device.test.ts` (full tier) load a set of run-time modules and fixtures alone, coupled, and compare
 CAPACITY and MODULES with `needs_of` of the file (rows of a DSP module come in after the DSP acknowledges). The Rust tests of `dkneeds` cover the arithmetic and malformed files (truncated sections, absurd counts, every cut of a file).
 
 ## DSP section
@@ -201,7 +201,7 @@ type 0's (finding 30). A machine that clones SAMPLE, like `pluck`, is right alre
 
 ## What the loader checks, in order (nothing is written to the arena before the last one)
 
-1. Store: header, table checksum, the path, the table's sha256 of the file (`E_NOT_FOUND`, `E_BAD_STORE`, `E_SHA`, `E_TOO_BIG`).
+1. Store: header, table checksum, the path, the table's file hash of the file (`E_NOT_FOUND`, `E_BAD_STORE`, `E_SHA`, `E_TOO_BIG`).
 2. Magic, format 1, size fields equal the file (`E_FORMAT`); the file's own sha256 (`E_SHA`).
 3. Contracts (0x38): for each contract the module declares (major not 0), its major equals the runtime's and its minor is not above the runtime's (`E_CONTRACT`: built for another SDK contract, rebuild the module). `runtime_min` is not checked.
 4. Name, alignment, table bounds, reloc kinds and offsets, slot numbers and function offsets (`E_FORMAT`).

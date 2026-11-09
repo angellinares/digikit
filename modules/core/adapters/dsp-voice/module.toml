@@ -114,7 +114,7 @@ terminator = true
 #   0 type, 1 pc, 2 to 9 the declared range of machine knob 0 to 7 (min | max << 16, from the machine's [[param]]; 0: undeclared, the
 #   guard clamps to 0 .. 0x7f00), 10 the type this row's faults disabled, 11 the block of the fault window's start, 12 faults in the
 #   window, 13 faults since the start, 14 and 15 spare, 16 to 23 the contract words (note_on, state_base, stride, clear, gen, level,
-#   2 spare; below). The ranges come from the typed `[[voice]]` of the machine module (patchkit
+#   latch mask and one spare; below). The ranges come from the typed `[[voice]]` of the machine module (patchkit
 #   fills them), or from the voice record of a `.dkm`'s DSP section; the guard words are the DSP's.
 [[registry.field]]
 name = "type"
@@ -203,13 +203,13 @@ default = 0
 name = "gen"
 kind = "u32"
 default = 0
-# 21 level: log level (0 for now)
+# 21 level: log level (0 for now); 22 latched: parameter-word mask (machine contract 1.3), 23 spare
 [[registry.field]]
 name = "level"
 kind = "u32"
 default = 0
 [[registry.field]]
-name = "spare2"
+name = "latched"
 kind = "u32"
 default = 0
 [[registry.field]]
