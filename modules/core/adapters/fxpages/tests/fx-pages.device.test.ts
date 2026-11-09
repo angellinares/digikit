@@ -71,7 +71,7 @@ async function scaled(base: string, sample: string, gain: number, ulps: number, 
 }
 
 for (const device of DEVICES) {
-  describe.sequential(`${device.toUpperCase()} ${FIRMWARE[device]} FUNC + FX effect pages`, () => {
+  describe(`${device.toUpperCase()} ${FIRMWARE[device]} FUNC + FX effect pages`, () => {
     let referenceHashes: string[];
     let referencePcm: string;
     const trigger = triggerFrame(device);
