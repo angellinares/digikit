@@ -73,6 +73,16 @@ Highest payoff first. Each step states its proof.
    test. Start with the reload-bound files (`card-safety`, `settings`, `bootscreen`, `introblank`, `memaudit`, `capacity`). Keep one device test per
    boundary. Split composite tests such as `fx-track-route` so they run in parallel.
    - [ ] Carried over: move ColdFire-only checks to the CF-only rig (fxroute, fxroutes, fxpage, fxpersist, settings).
+   - [ ] **Rule: a shared SDK component is tested once; a module tests only its glue.** Component logic (ordering, levels, cursor, keys) in host
+     tests; the component on a device once, in the `ui-demo` fixture on zero DSP (keys reach it, it draws, it calls the file and pool API); each
+     module keeps one thin device test of its own glue, on zero DSP where the glue is checked through API state (`param_get`, pool state) and not
+     through DSP memory or framebuffer hashes. Audio stays in the module's playback test.
+     - [ ] First case: `shot-picker.device.test.ts` (coupled DSP, 25 min timeout, 312 s in the 2026-11-09 gate). It re-checks the shared picker
+       (`sdk/src/picker_logic.c`, `sample_picker.c`, `chooser.c`; host tests in `modules/core/adapters/ui/host/tests/picker.rs`): folder-first
+       order (it reimplements `pickerOrder`), levels closing to the page, cursor on slot 0, NO and YES. Move those to the host tests and ui-demo;
+       keep "a click on SMP opens shot's slot list and a chosen file sets that pool slot" on zero DSP; "the sample plays" is in `shot-dt2`.
+     - [ ] Then search for other cases: device tests that assert behaviour of `sdk/src` components (pages, chooser, picker, lists, knob handling)
+       or of core adapters that a host test or another device test already covers.
 8. [ ] **Per-test emulator coverage.** After steps 1 and 2 (cheaper runs). Record the ColdFire and SHARC PCs each device test executes and map them
    to runtime and module functions through the patch plan and symbols. `digi-emud` already writes SHARC PC counts ([instrumentation](../INSTRUMENTATION.md),
    engine coverage files); the ColdFire side is not checked yet. Uses:
