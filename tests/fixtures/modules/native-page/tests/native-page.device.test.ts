@@ -11,10 +11,9 @@ import { expectRuntimeReady, runtimeTests } from '@digi/regression/runtime/ready
 
 runtimeTests(
   'native callback page cycles and routes PARAM and LOCAL turns',
-  async (runtime) => {
-    const { session, dk } = runtime;
+  async ({ session, dk }) => {
     await expectRuntimeReady(session);
-    await installModule(runtime, 'test/native-page', moduleArtifact(session.options.device, 'test/native-page'));
+    await installModule(dk, 'test/native-page', moduleArtifact(session.options.device, 'test/native-page'));
     const ui = panel(session);
     const artifacts = path.join(session.runDir, 'native-page-proof');
     fs.mkdirSync(artifacts, { recursive: true });

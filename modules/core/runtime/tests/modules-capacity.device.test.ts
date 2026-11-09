@@ -21,7 +21,7 @@ async function expectModulesReply(runtime: PatchedSession): Promise<void> {
   const plan = await prepareRuntimePlan(session, liveArtifacts(session, 'modules-capacity'), ['DKRT_STATE']);
   const ids = ['test/dyn-params', 'test/sine', DEBUG_MODULE]; // the debug module last: it owns no machine
   await installModules(
-    runtime,
+    dk,
     ids.map((id) => ({ id, artifact: moduleArtifact(device, id) })),
   );
   const info = await dk.info();

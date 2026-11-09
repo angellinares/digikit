@@ -73,7 +73,7 @@ host tests: their checks stay device tests until the logic is split out.
 | `native-page` | native callback page cycles and routes turns | 388 | E | `nativepage.rs` host tests exist for the logic **[?]** | Read before deciding |
 | `pluck/ui-preview` (zero DSP) | preview loads and edits its page | 73 | E | | Keep |
 | `tb303` | loads, plays one note, ends it | n/a | E | module audio, one per module | Keep |
-| `shot-dt2`, `shot-dn2` | playback, SMP, window (one test each) | 251 / 697 | E | composite; DN2 is the slowest single test after `fx-track-route` | **[?]** split by function (pool, window, play) |
+| `shot-dt2`, `shot-dn2` | playback, SMP, window (one test each) | 251 / 697 | E | composite; DN2 is the slowest single test after `fx-track-route`. The DN2 SMP step stops at word 0x100 when a wait on `main_ui_reached` follows the install (9 of 19 runs, 0 of 12 without) | **[?]** split by function (pool, window, play); find why the word freezes (plan step 3, stage 2) |
 
 ## Applied
 

@@ -46,6 +46,10 @@ Highest payoff first. Each step states its proof.
    its constraints apply (one log sink, safe-mode fallback, cursor, epoch and loss semantics, per-file isolation, fixed waits only where the subject is a duration).
    - [x] Stage 1: `settleUi` is deleted. **[D]** It waited a fixed 45 s of emulated time on DN2 and 12 s on DT2 (`shot-dn2`: 262 of 697 s in a loaded gate),
      after readiness was already established. Without it the `shot-dn2` body takes about 215 s instead of about 390 s.
+   - [ ] Stage 2, first job: the runtime reports "input consumed" and "parameter applied", and an install waits on "ready for input". **[D]** `main_ui_reached`
+     does not mean ready for input: `shot-dn2` failed in its SMP step in 9 of 19 runs with a wait on `main_ui_reached` after the install and in 0 of 12 without it
+     (the SMP word reaches 0x100 and does not move for 43 more detents). **[O]** Why the word stops moving (a guess: the DSP word freezes when the note ends)
+     belongs here.
    - [ ] Stage 2, observer module: a test-only module loaded first reports events the harness cannot read (module registered, machine assigned,
      note reached the DSP, card write done, input consumed) through the runtime log sink, with a boot-record fallback. Host side:
      `events.until(kind, predicate, {emulatedMs})`; a missing event fails with the last events seen. The remote control module stays the input path.
@@ -82,8 +86,8 @@ Highest payoff first. Each step states its proof.
        list). State is read from the pool API and the SMP word; one screen hash tells page, list and browser apart. It stays on coupled DSP: shot's pack
        carries its DSP part and fails with E_DSP_XFER (-35) on zero DSP. Not done: the picker in `ui-demo` (the fixture has no picker or pool client).
        Time: 312 s in the gate before, 2m15s for the Nx target now.
-       `installModules` now waits for the main UI of the new boot (`expectUiAfterRestart`, `tests/regression/runtime/install.ts`), the one wait that the
-       deleted `settleUi` gave after an install.
+       Waits after `settleUi`: `sample-playback` (UI after a restart), `stock-pool-borrow` (stock slots loaded) and `stock-sampler-lifetime`
+       (`cf.main_ui_reached`) wait on firmware state, each in its own file. `installModules` has no wait (see step 3, stage 2).
      - [x] Then search for other cases: device tests that assert behaviour of `sdk/src` components (pages, chooser, picker, lists, knob handling)
        or of core adapters that a host test or another device test already covers.
        **[D]** Done as a static audit: [ledgers/device-test-audit.md](ledgers/device-test-audit.md). The candidates are listed there for decision.

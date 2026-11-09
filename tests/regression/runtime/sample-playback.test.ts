@@ -7,7 +7,7 @@ import { button, repoRoot } from '@digi/test-support';
 import { expect } from 'vitest';
 import type { PatchedSession } from '../support.ts';
 import { liveArtifacts, record } from './artifacts.ts';
-import { expectUiAfterRestart, installWithDebug, moduleArtifact } from './install.ts';
+import { installWithDebug, moduleArtifact } from './install.ts';
 import { runtimeTests } from './ready.ts';
 import { planSymbol, prepareRuntimePlan } from './runtime-plan.ts';
 
@@ -226,7 +226,10 @@ async function expectTransferredBank(runtime: PatchedSession): Promise<void> {
   await dk.restart();
   await dk.waitForBoot(); // requires fresh BOOT_START and no old RESTART event
   expect((await session.status()).epoch).toBeGreaterThan(epoch as number);
-  await expectUiAfterRestart(session, epoch as number); // the next step sends keys
+  // The next step sends keys: wait for the main UI of the new boot.
+  await expect
+    .poll(async () => (await session.status()).cf.main_ui_reached, { timeout: 120_000, interval: 500 })
+    .toBe(true);
   base = await bankBase();
   expect(await status(), 'the new boot owns a clean UNUSED bank').toBe(0);
   expect(await bytes(base + viewOffset, 16), 'new descriptor begins unready').toEqual(Buffer.alloc(16));
