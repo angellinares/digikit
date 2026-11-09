@@ -129,15 +129,15 @@ async function main() {
 
   const cell = (s) =>
     `    <td align="center" valign="top"><a href="${s.file}"><img src="${s.thumb}" alt="${s.alt}" width="${s.kind === 'device' ? 256 : 280}"></a><br><sub>${s.caption}</sub></td>`;
-  const row = (list, pad) => `  <tr>\n${list.map(cell).join('\n')}${pad ? '\n    <td></td>' : ''}\n  </tr>`;
-  const table = `<table>\n${row(SHOTS.slice(0, 2), true)}\n${row(SHOTS.slice(2), false)}\n</table>`;
+  const table = (list) => `<table>\n  <tr>\n${list.map(cell).join('\n')}\n  </tr>\n</table>`;
+  const tables = `${table(SHOTS.slice(0, 2))}\n\n${table(SHOTS.slice(2))}`;
 
   const readme = abs('README.md');
   const text = fs.readFileSync(readme, 'utf8');
   const a = text.indexOf(START);
   const b = text.indexOf(END);
   if (a < 0 || b < a) fail('README.md is missing the readme-shots markers');
-  fs.writeFileSync(readme, `${text.slice(0, a + START.length)}\n${table}\n${text.slice(b)}`);
+  fs.writeFileSync(readme, `${text.slice(0, a + START.length)}\n${tables}\n${text.slice(b)}`);
   console.log('wrote README.md');
 }
 

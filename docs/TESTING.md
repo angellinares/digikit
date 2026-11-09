@@ -191,7 +191,7 @@ Tests that lack an input skip with a reason; `pytest -rs` lists them.
 
 | Input | How to provide |
 | --- | --- |
-| Stock images in `firmware/` (DT2 1.17, DN2 1.12) | README "Firmware"; `DIGI_EMU_SYX`, `DIGI_EMU_SYX_DT2` override paths. |
+| Stock images in `firmware/` (DT2 1.17, DN2 1.12) | README "Firmware files"; `DIGI_EMU_SYX`, `DIGI_EMU_SYX_DT2` override paths. |
 | Sections `out/sections/<image>/` | `uv run python -m tools.firmware.extract firmware/SYX -o out/sections/<image>`. |
 | SHARC database `out/sharcdb/<image>.sqlite` | `uv run python -m tools.sharc_dev.sharcdb build out/sections/*/section_7_BLOB.bin`. |
 | ColdFire dump `out/ghidra/<image>-emac` and cfdb | Needs Ghidra: `tools.coldfire.ghidradump`, then `tools.coldfire.cfdb build`. |
