@@ -47,7 +47,9 @@ export const coupledInputs = async (env = process.env) => {
     await add(`dt2/ready/${f}`, join(dt2Ready, f));
   }
   if (env.DIGI_DT2_CARD) await add('dt2/card', under(env.DIGI_DT2_CARD));
-  return createHash('sha256').update(`coupled-inputs v1\n${lines.join('\n')}`).digest('hex');
+  return createHash('sha256')
+    .update(`coupled-inputs v1\n${lines.join('\n')}`)
+    .digest('hex');
 };
 
 if (process.argv[1] && resolve(process.argv[1]) === fileURLToPath(import.meta.url)) console.log(await coupledInputs());

@@ -7,7 +7,7 @@
 was archived): it patches core/runtime into the stock firmware, packs test/dyn-demo (and four broken variants) into `.dkm` files,
 builds a +Drive card with them in the module store and a selection record that names, in order, a file with a bad sha256, a file
 with an import the runtime does not have, a file that is not there, the good module with api major 2, the good module with api
-minor 9 (both E_CONTRACT), the good module, and the good module again. The boot hook loads
+minor 255 (both E_CONTRACT), the good module, and the good module again. The boot hook loads
 the selection (through packages/emulator/boot/examples/cf_script.rs); the proof reads the boot report (the five refusals, the load,
 the duplicate refused), the module's counter rising while the UI task runs, and checks that the refused files left nothing behind
 (arena, slots, module records). After the boot a `dkrt_load` (mailbox and direct call) answers `E_BOOT_ONLY` and a command 2 (the
@@ -150,7 +150,7 @@ def pack(tools: Tools, module: str, out: Path, *extra: object) -> None:
 def broken_variants(work: Path, tools: Tools, module: str, folder: Path) -> None:
     """From a module's object: `bad-sha.dkm` (one byte of the image changed after packing) and `bad-import.dkm`
     (a relocation against a name the runtime does not provide), and `contract-major.dkm` / `contract-minor.dkm` (api major 2; api
-    minor 9, the file sha256 recomputed)."""
+    minor 255, the file sha256 recomputed)."""
     man = (modroots.module_dir(module) / "module.toml").read_text()
     obj_path = next(
         ln.split("=", 1)[1].strip().strip('"')
@@ -204,10 +204,11 @@ def broken_variants(work: Path, tools: Tools, module: str, folder: Path) -> None
                   "-o", folder / "modules" / "bad-import.dkm", "--name", "bad-import")  # fmt: skip
     if r.returncode:
         raise ProofError(f"pack bad-import: {r.stderr}")
-    # the api contract of the header (bytes 0x38 major, 0x39 minor) changed, the file sha256 made right again
+    # the api contract of the header (bytes 0x38 major, 0x39 minor) changed, the file sha256 made right again;
+    # minor 0xFF is above any runtime's, so the file stays too new when the SDK's api minor grows
     for name, offset, value in (
         ("contract-major", 0x38, 2),
-        ("contract-minor", 0x39, 9),
+        ("contract-minor", 0x39, 0xFF),
     ):
         forged = bytearray(good.read_bytes())
         forged[offset] = value
