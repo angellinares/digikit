@@ -5,8 +5,8 @@ and the merge gate. Use `mise run test:plan` first when selection is unclear;
 it explains the same task selection without executing tests or builds. `test:changed` is cheap preflight,
 not complete verification. Other docs
 link here. Results of runs belong in `docs/findings/`, not here. Planned changes:
-[docs/plans/test-architecture.md](plans/test-architecture.md); gate speed:
-[docs/plans/gate-speed.md](plans/gate-speed.md). Current implementation sequence and evidence:
+[docs/plans/test-architecture.md](plans/test-architecture.md); test speed:
+[docs/plans/test-speed.md](plans/test-speed.md). Current implementation sequence and evidence:
 [test/build workflow](plans/test-build-workflow.md). The current module and SDK iteration follow-up is
 [fast module and SDK iteration](plans/module-sdk-iteration.md).
 
