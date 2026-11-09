@@ -53,18 +53,17 @@ Highest payoff first. Each step states its proof.
    file sources. A change that does not change the bytes (a comment, an unused constant, a test-only patch set) reruns nothing. Real core changes
    still rerun everything. Owner: the Nx lane. Proof: `nx show target inputs` and one invalidation check per input kind.
    - [ ] Carried over: skip audio scenarios whose image, module objects, daemon and test code did not change.
-   - [ ] **[D]** The merge tier runs `test-device` and `test-conformance` for every owner and relies on cache replay. After main moves, nothing is
+   - [x] (merge tier selects them with `affected`; `full` runs all) **[D]** The merge tier ran `test-device` and `test-conformance` for every owner and relied on cache replay. After main moves, nothing is
      cached for the new main, so the next PR gate reruns the whole device suite, whatever the PR changed. Seen 2026-11-09: PR 362 (a Python test
      helper and the formatting of one Nx file) started the full device suite. Fix: select device tasks whose inputs differ between base and head, or
      warm the cache on main once after each merge.
-   - [ ] **[D]** Tool files that are declared inputs select heavy runs on any edit: a prettier-only change to `tools/nx/coupled-inputs.mjs` selected
+   - [x] **[D]** Tool files that are declared inputs select heavy runs on any edit: a prettier-only change to `tools/nx/coupled-inputs.mjs` selected
      `fx`, `fx-no-aot`, `fx-dt2`, `tier-quick` and `dt2-tier-quick`. Inputs of tool files should be what they compute, not their source text.
 5. [ ] **Core-change policy.** Decision for Em: (A) every core change runs all device tests, or (B) the merge tier runs runtime-tests, smoke,
    conformance and one test per area on both devices, and the full suite runs at batch points. Decide after steps 1 to 4 have shrunk the full suite.
 6. [ ] **Gate output and history.**
-   - [ ] One line per finished task (project:target, pass or fail, seconds) while the gate runs.
-   - [ ] Append each task's result and duration to a history file; use it to start the longest tasks first, to list timeouts and flaky tests, and to
-     show tests that got slower.
+   - [x] One line per finished task (project:target, pass or fail, cache status) while the gate runs: `--output-style=static-failures-only`. Nx prints no seconds there; the durations come with the history report at the end of the run.
+   - [x] History: Nx's own task history database already records project, target, hash, status and start and end of each task. `tools/nx/gate-history.mjs` (`mise run test:history`) reads it: slowest tasks, recent failures, slowdowns. It is per worktree and written at the end of a command. Nx already uses the database's average durations to order tasks, so longest-first needs no code. Flaky tests and timeouts: not built; Nx prints its own flaky-task message.
    - [ ] Test timeouts in emulated time or firmware state, as AGENTS.md requires for waits. A wall-time limit fails healthy tests under load.
 7. [ ] **Device test audit.** For each device test, one of: needs the emulator; can be a host test (Rust runtime unit test or TS); duplicates another
    test. Start with the reload-bound files (`card-safety`, `settings`, `bootscreen`, `introblank`, `memaudit`, `capacity`). Keep one device test per

@@ -114,6 +114,10 @@ description = "Explain the default test selection; runs nothing. DIGI_GATE_BASE 
 run = "node tools/nx/gate.mjs --tier full"
 description = "Full gate: every gate target on every project, plus the tier sweeps; the Nx launcher sets the CPU budget, DIGI_BUDGET overrides it"
 
+["test:history"]
+run = "node tools/nx/gate-history.mjs"
+description = "Slowest tasks, recent failures and tasks that got slower, from this worktree's Nx task history (-- --days N --top N)"
+
 # --- tests ---
 
 ["clean:runs"]

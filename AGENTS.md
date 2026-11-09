@@ -50,7 +50,7 @@ out/                Ignored generated artifacts and run outputs
 ## Checks
 
 Use `mise run test` for complete affected verification and the merge gate.
-When selection is unclear, run `mise run test:plan` first: Nx explains the tasks without running them. Device and conformance targets always run for every owner and replay from the cache when their key is unchanged; the plan does not list them.
+When selection is unclear, run `mise run test:plan` first: Nx explains the tasks without running them. Device and conformance targets are selected like every other target: `affected` runs the tasks of projects whose declared inputs (including dependency outputs) changed between base and head, and the plan lists them. A task whose inputs did not change does not run. `affected` sees git changes only: after a change to untracked inputs (firmware, ready snapshots, override binaries) or to what `tools/nx/device-inputs.mjs` or `coupled-inputs.mjs` hash, run the named targets or `test:full`. `test:full` runs every target on every project.
 Use the owner's explicit Nx target or named test while iterating. `test:changed` is only cheap preflight,
 not complete verification. Do not use `--skip-nx-cache` to rerun a failed test: Nx does not cache failures, and the flag reruns every dependency. Full command details and preparation live in [testing](docs/TESTING.md). Emulator tier settings live in `config/emulator.json`; `tools/emulator/emulator_config.py` and `packages/test-support/src/emulator-config.ts` resolve them.
 
