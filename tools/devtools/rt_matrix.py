@@ -14,6 +14,17 @@ settings of one cell run next to each other. `base` sets no SHARC_FAST_AUTO; any
 `threshold,min_insns,blocks` for SHARC_FAST_AUTO, and SHARC_FAST_LOG=summary is added so that the
 engine writes its summary lines when the daemon quits.
 
+Scenarios are data (SCENARIOS, FX_SETUPS, ACTIVITIES). A cell is `scenario[:activity]`, and each scenario names its
+devices. Setups come from the existing panel scenarios (tests/scenarios, tests/regression/scenarios): FX cells
+(`fmtone-del`, `sample-rev`, `sample-comp`, `sample-trk`, ...) run the FX setup of those scenarios, then
+play Trig 1 once per second; `seq16` plays the full pattern of load-seq16 (no Trig 1); `par` adds encoder turns;
+`pages` also moves through the SRC, FLTR, AMP, FX and MOD pages, one per second. A cell must prove what it claims
+(`judge`): non-silent PCM, matching inputs, FX state changed in the firmware (the sound and FX blocks that
+DEVICES `fxpeek` names), sequencer LED states moving for a pattern, several distinct screens for `pages`. A cell that
+fails is INVALID: the table gives the reasons and no RT, and the numbers move to `unproven` in the result.
+`run --profile PREFIX` captures a SHARC profile per cell (docs/INSTRUMENTATION.md) at PREFIX-<cell>, for AOT
+training and `gaps`, and lists them in <out>/profiles.json.
+
 Method: the machine is switched in stepped (paused) mode and checked from firmware state (the type
 byte of track 1 that the audio side reads). Then 3 s settle and 20 s emulated audio run in steps of one
 emulated second. The inputs are scheduled in emulated time, so every setting of a cell gets the same
@@ -47,6 +58,7 @@ import bisect
 import collections
 import hashlib
 import json
+import math
 import os
 import pathlib
 import re
@@ -80,6 +92,8 @@ DEVICES: dict[str, dict[str, Any]] = {
         "tx_type": 0x80005E60 + 0x94,
         "db": "out/sharcdb/dn2-1.12.sqlite",
         "trig": TRIG1,
+        # (pointer address, offset, bytes) of the sound and the FX block the audio side reads
+        "fxpeek": {"snd": (0x800052A0, 0x48, 202), "fx": (0x800052A4, 0, 202)},
     },
     # DT2 1.17 on the one-sample card of tools/emulator/dt2_sample_check.py: a TRIG plays the card's
     # sample. No machine switch, so there is no mirror address; the audition is checked by PCM and tiers.
@@ -87,6 +101,8 @@ DEVICES: dict[str, dict[str, Any]] = {
         "syx": "firmware/Digitakt_II_OS1.17.syx",
         "trig": 25,
         "card": True,
+        "db": "out/sharcdb/dt2-1.17.sqlite",
+        "fxpeek": {"snd": (0x8000470C, 0x14, 142), "fx": (0x80004708, 0, 142)},
     },
 }
 
@@ -98,28 +114,107 @@ STOCK_MACHINES = {
     "wavetone": ("menu", 2, 1),
     "swarmer": ("menu", 3, 3),
 }
+SETUP_DIR = "tests/regression/scenarios"
+# Panel setups as data: (kind, file, scenario name). `json`: a scenario of tests/scenarios; `ts`: a scenario
+# exported by a module of SETUP_DIR (run with node). The setup events of an FX scenario are its panel events
+# without the Trig 1 note at the end: this tool plays Trig 1 itself, once per second, after the setup.
+FX_SETUPS: dict[str, dict[str, tuple[str, str, str]]] = {
+    "del": {
+        "dn2": ("ts", "dn2-sendfx.ts", "sf-del-ref"),
+        "dt2": ("ts", "dt2-sendfx.ts", "sf-del-ref"),
+    },
+    "rev": {
+        "dn2": ("ts", "dn2-sendfx.ts", "sf-rev-ref"),
+        "dt2": ("ts", "dt2-sendfx.ts", "sf-rev-ref"),
+    },
+    "comp": {
+        "dn2": ("ts", "dn2-sendfx.ts", "sf-mst-thr0"),
+        "dt2": ("ts", "dt2-sendfx.ts", "sf-mst-thr0"),
+    },
+    "trk": {"dt2": ("ts", "dt2-trackfx.ts", "tf-over-127")},
+}
+BOTH = ("dn2", "dt2")
 SCENARIOS: dict[str, dict[str, Any]] = {
-    "sample": {"route": "stock", "machine": ("none", 0, None)},
-    # tests/scenarios/dn2-load.json load-seq16: all 16 steps of all 16 tracks, PLAY at +676M instructions;
-    # use --settle 7 so the window holds the running sequencer. The panel events come from that file.
+    "sample": {"route": "stock", "machine": ("none", 0, None), "devices": ("dt2",)},
+    # All 16 steps of all 16 tracks, PLAY at +676M instructions (tests/scenarios/dn2-load.json load-seq16).
+    # The firmware must be seen playing: the LED states move.
     "seq16": {
         "route": "stock",
         "machine": ("none", 0, None),
-        "events_from": ("tests/scenarios/dn2-load.json", "load-seq16"),
+        "setup": ("json", "tests/scenarios/dn2-load.json", "load-seq16"),
+        "pattern": True,
+        "devices": BOTH,
     },
-    **{name: {"route": "stock", "machine": m} for name, m in STOCK_MACHINES.items()},
+    **{
+        name: {"route": "stock", "machine": m, "devices": ("dn2",)}
+        for name, m in STOCK_MACHINES.items()
+    },
+    # A stock machine with an FX setup: `fmtone-del` is FM Tone with the delay send up.
+    **{
+        f"{name}-{fx}": {
+            "route": "stock",
+            "machine": STOCK_MACHINES[name],
+            "setup": FX_SETUPS[fx]["dn2"],
+            "fx": fx,
+            "devices": ("dn2",),
+        }
+        for name in ("fmtone", "fmdrum")
+        for fx in ("del", "rev", "comp")
+    },
+    **{
+        f"sample-{fx}": {
+            "route": "stock",
+            "machine": ("none", 0, None),
+            "setup": FX_SETUPS[fx]["dt2"],
+            "fx": fx,
+            "devices": ("dt2",),
+        }
+        for fx in ("del", "rev", "comp", "trk")
+    },
     **{
         f"rt-{name}": {
             "route": "runtime",
             "target": "emulator",
             "store": [],
             "machine": m,
+            "devices": ("dn2",),
         }
         for name, m in STOCK_MACHINES.items()
     },
 }
-ACTIVITIES = {"aud": False, "par": True}  # name -> encoder turns during the audition
+# name -> kind of panel activity during the audition
+ACTIVITIES = {"aud": "", "par": "par", "pages": "pages"}
+# Pages visited by `pages` (button codes, one page per second): SRC/SYN, FLTR, AMP, FX, MOD.
+PAGE_BUTTONS = (2, 3, 4, 5, 6)
 BASE = "base"
+
+
+_SETUPS: dict[tuple[str, str, str], list[dict[str, Any]]] = {}
+
+
+def load_setup(kind: str, file: str, name: str) -> list[dict[str, Any]]:
+    """Panel events of one scenario (see FX_SETUPS)."""
+    key = (kind, file, name)
+    if key not in _SETUPS:
+        if kind == "json":
+            found = json.loads((ROOT / file).read_text())["scenarios"]
+        else:
+            code = (
+                "const m = await import(process.env.SETUP_FILE);"
+                "process.stdout.write(JSON.stringify(m.scenarios));"
+            )
+            found = json.loads(
+                subprocess.run(
+                    ["node", "--input-type=module", "-e", code],
+                    cwd=ROOT / SETUP_DIR,
+                    env={**os.environ, "SETUP_FILE": f"./{file}"},
+                    capture_output=True,
+                    text=True,
+                    check=True,
+                ).stdout
+            )
+        _SETUPS[key] = next(x for x in found if x["name"] == name)["events"]
+    return _SETUPS[key]
 
 
 def log(msg: str, logfile: pathlib.Path | None = None) -> None:
@@ -130,6 +225,9 @@ def log(msg: str, logfile: pathlib.Path | None = None) -> None:
             f.write(line + "\n")
 
 
+PROFILE: str | None = (
+    None  # --profile PREFIX: SHARC_PROFILE_PREFIX=PREFIX-<cell> for every cell
+)
 TIER_TIME = False  # --tier-time: SHARC_TIER_TIME=1 for every cell (host time per tier, per thread)
 
 
@@ -257,6 +355,10 @@ class Cell:
     # ----- daemon
     def start(self) -> None:
         env = {**setting_env(self.setting)}
+        if PROFILE:
+            self.profile_prefix = f"{PROFILE}-{self.name}"
+            pathlib.Path(self.profile_prefix).parent.mkdir(parents=True, exist_ok=True)
+            env["SHARC_PROFILE_PREFIX"] = self.profile_prefix
         regions = digi_env.fast_regions_for(ROOT / self.spec["syx"])
         roots = digi_env.blocktrans_roots_for(ROOT / self.spec["syx"])
         base_env = {}
@@ -391,14 +493,14 @@ class Cell:
         self.health("ready")
         self.shot("00-ready")
         kind, arg, want = self.sc["machine"]
-        if kind == "none" and "events_from" in self.sc:
+        if kind == "none" and self.sc.get("pattern"):
             self.res["switch_ok"] = True
             return
         if kind == "none":
             self.res["switch_ok"] = True
             self.hold("TRIG 1" if self.device == "dn2" else self.trig, 500)
             self.run_ms(500)
-            if ACTIVITIES[self.activity]:
+            if ACTIVITIES[self.activity] and not self.sc.get("setup"):
                 self.tap("SYN")
                 self.run_ms(300)
             return
@@ -428,39 +530,55 @@ class Cell:
         )
         if not ok:
             raise RuntimeError("machine switch not confirmed")
-        if ACTIVITIES[self.activity]:
+        if ACTIVITIES[self.activity] and not self.sc.get("setup"):
             self.tap("SYN")
             self.run_ms(300)
 
+    def setup_events(self) -> tuple[list[dict[str, Any]], int]:
+        """The panel events of the scenario's setup and the instruction at which the last one happens."""
+        spec = self.sc.get("setup")
+        if not spec:
+            return [], 0
+        events = load_setup(*spec)
+        if not self.sc.get("pattern"):
+            # an FX setup: leave out its Trig 1 note, this tool plays Trig 1
+            events = [e for e in events if e.get("button") != TRIG1]
+        return events, max(e["at_instr"] for e in events)
+
     def schedule(self, start: int, end: int) -> None:
-        """Inputs in emulated time, the same for every setting: TRIG 1 down every 1000 ms (500 ms hold);
-        activity `par` adds an encoder turn every 50 ms. `at_instr` counts from `elapsed`."""
-        events: list[dict[str, Any]] = []
-        if "events_from" in self.sc:
-            path, name = self.sc["events_from"]
-            found = next(
-                x
-                for x in json.loads((ROOT / path).read_text())["scenarios"]
-                if x["name"] == name
-            )
-            events = [{**e, "at_instr": start + e["at_instr"]} for e in found["events"]]
+        """Inputs in emulated time, the same for every setting. The setup events of the scenario come
+        first. Then TRIG 1 goes down every 1000 ms (500 ms hold; none in a pattern). Activity `par` adds an
+        encoder turn every 50 ms; `pages` does the same and also moves to the next page every second.
+        `at_instr` counts from `elapsed`."""
+        events, setup_end = self.setup_events()
+        self.sched_turn += sum("turn" in e for e in events)
+        events = [{**e, "at_instr": start + e["at_instr"]} for e in events]
+        t0 = start + (setup_end + 100 * MS if events else 0)
+        if not self.sc.get("pattern"):
+            t = t0
+            while t + 500 * MS <= end:
+                events.append({"at_instr": t, "button": self.trig, "down": True})
+                events.append(
+                    {"at_instr": t + 500 * MS, "button": self.trig, "down": False}
+                )
+                self.sched_trig += 1
+                t += 1000 * MS
+        else:
             self.sched_trig = None
-            for i in range(0, len(events), 200):
-                self.emu.schedule(events[i : i + 200])
-            return
-        t = start
-        while t + 500 * MS <= end:
-            events.append({"at_instr": t, "button": self.trig, "down": True})
-            events.append(
-                {"at_instr": t + 500 * MS, "button": self.trig, "down": False}
-            )
-            self.sched_trig += 1
-            t += 1000 * MS
-        if ACTIVITIES[self.activity]:
-            t, k = start + 20 * MS, 0
+        kind = ACTIVITIES[self.activity]
+        if kind:
+            t, k = t0 + 20 * MS, 0
             while t < end:
+                if kind == "pages" and (t - t0) % (1000 * MS) < 50 * MS:
+                    page = PAGE_BUTTONS[((t - t0) // (1000 * MS)) % len(PAGE_BUTTONS)]
+                    events.append({"at_instr": t, "button": page, "down": True})
+                    events.append(
+                        {"at_instr": t + 20 * MS, "button": page, "down": False}
+                    )
                 sign = 1 if (k // 8) % 2 == 0 else -1
-                events.append({"at_instr": t, "turn": 1 + k % 8, "detents": 4 * sign})
+                events.append(
+                    {"at_instr": t + 25 * MS, "turn": 1 + k % 8, "detents": 4 * sign}
+                )
                 self.sched_turn += 1
                 t += 50 * MS
                 k += 1
@@ -482,7 +600,11 @@ class Cell:
         st0 = self.health("pre")
         icount, elapsed0 = st0["icount"], st0["elapsed"]
         t0 = icount + 100 * MS
+        # the settle time covers the setup events of the scenario and one second more
+        setup_end = self.setup_events()[1]
+        self.settle_s = max(self.settle_s, math.ceil(setup_end / CF_IPS + 0.1) + 1.0)
         total_s = self.settle_s + self.audio_s
+        fx0 = self.fx_state()
         self.schedule(elapsed0 + 100 * MS, elapsed0 + 100 * MS + int(total_s * CF_IPS))
         frame_before = emu.frame_hash()
         started = time.monotonic()
@@ -506,7 +628,11 @@ class Cell:
                     partial = True
                     return False
 
+        if self.sc.get("pattern"):
+            step_to(self.settle_s - 0.6)
+            self.res["led_states_seen"] = self.led_probe()
         step_to(self.settle_s)
+        self.res["fx_changed"] = self.fx_changed(fx0, self.fx_state())
         self.shot("02-settled")
         audio = emu.audio()
         if not audio.get("flow_started") or audio["frames"] < 100:
@@ -540,10 +666,12 @@ class Cell:
             )
 
         mark()
+        page_hashes = [emu.frame_hash()]
         for k in range(1, int(self.audio_s) + 1):
             if not step_to(self.settle_s + k):
                 break
             mark()
+            page_hashes.append(emu.frame_hash())
             m0, m1 = marks[-2], marks[-1]
             self.say(f"t={k}s RT(1s)={(m1[0] - m0[0]) / (m1[1] - m0[1]):.3f}")
         emu.call("pcm.tap", action="capture_stop")
@@ -561,8 +689,66 @@ class Cell:
         if window.is_file():
             self.res["pcm_sha256"] = hashlib.sha256(window.read_bytes()).hexdigest()
             self.res["pcm_nonzero_share"] = nonzero_share(window)
+            self.res["pcm"] = pcm_stats(window)
+        self.res["distinct_frames_in_window"] = len(set(page_hashes))
         self.shot("03-end")
         self.health("end")
+        self.judge()
+
+    def fx_state(self) -> dict[str, list[int]]:
+        """Longwords of the sound and FX blocks the audio side reads (DEVICES `fxpeek`)."""
+        out: dict[str, list[int]] = {}
+        for key, (ptr, off, size) in self.spec.get("fxpeek", {}).items():
+            base = self.emu.peek32(ptr) or 0
+            out[key] = [
+                self.emu.peek32(base + off + 4 * i) or 0 for i in range((size + 3) // 4)
+            ]
+        return out
+
+    @staticmethod
+    def fx_changed(a: dict[str, list[int]], b: dict[str, list[int]]) -> dict[str, int]:
+        return {k: sum(x != y for x, y in zip(a[k], b[k], strict=False)) for k in a}
+
+    def led_probe(self) -> int:
+        """Distinct LED states in 0.5 s of emulated time, in steps of 62 ms: a running sequencer moves them."""
+        seen = set()
+        for _ in range(8):
+            self.run_ms(62)
+            seen.add(json.dumps(self.emu.leds().get("leds")))
+        return len(seen)
+
+    def judge(self) -> None:
+        """A cell is valid only when the checks of what it claims pass; reasons go to `invalid`."""
+        r, why = self.res, []
+        if r.get("partial"):
+            why.append("window cut short")
+        if r.get("inputs_valid") is False:
+            why.append("recorded inputs differ from the schedule")
+        if r.get("switch_ok") is False:
+            why.append("machine switch not confirmed")
+        pcm = r.get("pcm") or {}
+        if pcm.get("active_share", 0) < 0.5:
+            why.append(f"PCM mostly silent ({pcm})")
+        if self.sc.get("fx") and not any(r["fx_changed"].values()):
+            why.append("no FX or send parameter changed in the firmware state")
+        if self.sc.get("pattern") and r.get("led_states_seen", 0) < 3:
+            why.append(
+                f"sequencer not seen playing (LED states {r.get('led_states_seen')})"
+            )
+        if self.activity == "par" and not r.get("display_changed_by_turns"):
+            why.append("encoder turns did not change the display")
+        if self.activity == "pages" and r["distinct_frames_in_window"] < 3:
+            why.append("fewer than 3 distinct screens: pages not visited")
+        r["valid"] = not why
+        r["invalid"] = why
+        if why:  # no number of an unproven cell is reported
+            r["unproven"] = {
+                k: r.pop(k)
+                for k in ("rt_whole", "rt_last5", "tiers", "host", "subs")
+                if k in r
+            }
+        for w in why:
+            self.say(f"INVALID: {w}")
 
     def summarise(self, marks: list[tuple[float, float, dict[str, Any]]]) -> None:
         n = len(marks) - 1
@@ -656,22 +842,49 @@ class Cell:
         try:
             self.prepare()
             self.measure()
-            t = self.res["tiers"]
-            self.say(
-                f"RT whole={self.res['rt_whole']:.3f} last5={self.res.get('rt_last5', 0):.3f} "
-                f"partial={self.res['partial']} shares fast/aot/interp="
-                f"{t['fast_share']:.2f}/{t['aot_share']:.2f}/{t['interp_share']:.3f} "
-                f"inputs_valid={self.res['inputs_valid']} "
-                f"pcm={self.res.get('pcm_sha256', '')[:12]}"
-            )
+            t = self.res.get("tiers")
+            if t is None:
+                t = self.res["unproven"]["tiers"]
+                self.say("cell is INVALID: no RT is reported")
+            else:
+                self.say(
+                    f"RT whole={self.res['rt_whole']:.3f} last5={self.res.get('rt_last5', 0):.3f} "
+                    f"partial={self.res['partial']} shares fast/aot/interp="
+                    f"{t['fast_share']:.2f}/{t['aot_share']:.2f}/{t['interp_share']:.3f} "
+                    f"inputs_valid={self.res['inputs_valid']} "
+                    f"pcm={self.res.get('pcm_sha256', '')[:12]}"
+                )
         finally:
             self.stop()
         self.read_summary()
+        if PROFILE:
+            prefix = pathlib.Path(self.profile_prefix)
+            files = sorted(f.name for f in prefix.parent.glob(prefix.name + ".e*"))
+            self.res["profile"] = {"prefix": str(prefix), "files": files}
+            self.say(f"profile {prefix}.e* ({len(files)} files)")
         self.say(f"end | {host_note()}")
         (self.dir / "result.json").write_text(
             json.dumps(self.res, indent=1, default=str)
         )
         return self.res
+
+
+def pcm_stats(wav: pathlib.Path) -> dict[str, float]:
+    """RMS and the share of 100 ms blocks above -80 dBFS RMS of the captured window."""
+    import numpy as np
+
+    from tools.patchkit import hook_ab
+
+    x = np.asarray(hook_ab.read_wav(wav), dtype=float)
+    x = x.reshape(len(x), -1)
+    n = len(x) // 4800
+    if not n:
+        return {"rms": 0.0, "active_share": 0.0}
+    blocks = np.sqrt((x[: n * 4800] ** 2).reshape(n, 4800, -1).mean(axis=(1, 2)))
+    return {
+        "rms": float(np.sqrt((x**2).mean())),
+        "active_share": float((blocks > 1e-4).mean()),
+    }
 
 
 def nonzero_share(wav: pathlib.Path) -> float | None:
@@ -729,6 +942,9 @@ def result_table(results: list[dict[str, Any]]) -> str:
         "armed/skip/built/refused/ms     pcm==base inputs"
     ]
     for r in results:
+        if r.get("valid") is False:
+            rows.append(f"{r['cell']:<28}  INVALID {'; '.join(r['invalid'])[:200]}")
+            continue
         if "rt_whole" not in r:
             rows.append(f"{r['cell']:<28}  FAILED {r.get('failed', '')}")
             continue
@@ -751,8 +967,9 @@ def result_table(results: list[dict[str, Any]]) -> str:
 
 
 def cmd_run(a: argparse.Namespace) -> int:
-    global TIER_TIME
+    global TIER_TIME, PROFILE
     TIER_TIME = a.tier_time
+    PROFILE = a.profile
     binary = binary_for(a.device, a.binary)
     stamp = time.strftime("%Y%m%d-%H%M%S")
     out = pathlib.Path(a.out) if a.out else ROOT / "out" / "runs" / "rt-matrix" / stamp
@@ -766,12 +983,15 @@ def cmd_run(a: argparse.Namespace) -> int:
             "target": "emulator",
             "store": [a.module],
             "machine": ("dynamic", 5, None),
+            "devices": ("dn2",),
         }
     cells = []
     for spec in a.cells.split(","):
         scenario, _, activity = spec.partition(":")
         if scenario not in SCENARIOS or (activity or "aud") not in ACTIVITIES:
             raise SystemExit(f"rt_matrix: unknown cell {spec!r}")
+        if a.device not in SCENARIOS[scenario].get("devices", BOTH):
+            raise SystemExit(f"rt_matrix: cell {spec!r} is not for {a.device}")
         cells.append((scenario, activity or "aud"))
     log(
         f"RUN binary={binary} measure={a.measure} audio={a.audio}s settle={a.settle}s "
@@ -816,6 +1036,10 @@ def cmd_run(a: argparse.Namespace) -> int:
         if stopped:
             break
     (out / "results.json").write_text(json.dumps(results, indent=1, default=str))
+    if PROFILE:
+        (out / "profiles.json").write_text(
+            json.dumps({r["cell"]: r.get("profile") for r in results}, indent=1)
+        )
     table = result_table(results)
     (out / "table.txt").write_text(table + "\n")
     log("\n" + table, logfile)
@@ -1060,6 +1284,12 @@ def main(argv: list[str] | None = None) -> int:
         "--tier-time",
         action="store_true",
         help="SHARC_TIER_TIME=1: report host seconds per audio second by thread and DSP tier",
+    )
+    r.add_argument(
+        "--profile",
+        metavar="PREFIX",
+        help="capture a SHARC profile per cell (SHARC_PROFILE_PREFIX=PREFIX-<cell>, for AOT training and "
+        "`gaps`); the files and prefixes are listed in <out>/profiles.json",
     )
     r.set_defaults(func=cmd_run)
 
