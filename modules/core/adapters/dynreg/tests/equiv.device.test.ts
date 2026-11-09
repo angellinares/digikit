@@ -30,6 +30,8 @@ interface Equiv {
   modules: string[];
   /** The patched-in twin; none: the rows are compared with a boot of no module. */
   twin?: string;
+  /** The twin leaves no room for the runtime's DSP area: the reference image holds the twin only, with no runtime. */
+  refPlain?: boolean;
   /** Full tier only (`DIGIKIT_TIER=full`). */
   full?: boolean;
   /** DT2: the run-time machine to put on track 1 (its type is read from the runtime). DN2: the sound proves the choice. */
@@ -71,8 +73,6 @@ const UNINIT = { SHARC_UNINIT: '5eed1234' }; // the voice state is uninitialised
 const DT2_TRIG = 7500;
 const DN2_TRIG = 7000;
 
-// Not ported: equiv-dyn-pluck on DN2 (Python `equiv-dyn-pluck` keeps only that device). Its patched-in twin leaves no room for the runtime's
-// 320 KiB DSP area, so the reference image has no runtime, which the card rig cannot boot (it plans DKRT_BOOT).
 const SCENARIOS: Equiv[] = [
   {
     name: 'equiv-dn2-set',
@@ -96,6 +96,20 @@ const SCENARIOS: Equiv[] = [
     staticType: 9,
     hint: 7,
     trigFrame: 3500,
+    voices: 1,
+    ignoreRunMachines: [],
+  },
+  {
+    // the DN2 list has the patched-in pluck at position 4, the run-time machines follow MIDI
+    name: 'equiv-dyn-pluck',
+    device: 'dn2',
+    modules: ['digikit/pluck'],
+    twin: 'test/patched-pluck',
+    refPlain: true,
+    play: { module: 'digikit/pluck', machine: 'pluck' },
+    hint: 4,
+    hintRun: 5,
+    trigFrame: DN2_TRIG,
     voices: 1,
     ignoreRunMachines: [],
   },
@@ -230,8 +244,9 @@ for (const sc of SCENARIOS) {
     const ref = sc.twin
       ? cardRig(device, `${sc.name}-ref`, {
           dsp: 'sharc',
-          roots: [...RT, sc.twin],
-          symbols: SYMBOLS,
+          roots: sc.refPlain ? [sc.twin] : [...RT, sc.twin],
+          plain: sc.refPlain,
+          symbols: sc.refPlain ? SYMBOLS.filter((x) => !x.startsWith('DKRT_')) : SYMBOLS,
           initial: () => ({}),
           hold: true,
         })
