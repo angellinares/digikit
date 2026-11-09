@@ -398,7 +398,8 @@ pub struct Config {
     pub audio_alt: Vec<AudioOptions>,
     pub scenario: Option<ScenarioSetup>,
     pub mode: Mode,
-    /// Where patched-firmware snapshots are cached (`<run_dir>/patched`).
+    /// The run directory. Patched-firmware snapshots are cached in `<run_dir>/patched`, or in `DIGI_SNAPSHOT_DIR` when it is set
+    /// (a store that many run dirs share: its entries are named by their content key).
     pub run_dir: PathBuf,
     pub events: Events,
     /// Called on the controller thread when `quit` arrives, after the reply.
@@ -1495,6 +1496,12 @@ impl Actor {
 
     /// Whether the card `image` comes from a synced card folder: the loaded one, the startup `--card-folder` the first card load will
     /// adopt, or a device folder card (`adopt_card_folder`).
+    /// The directory of the booted-state snapshots (see `Config::run_dir`).
+    fn snapshot_root(&self) -> PathBuf {
+        std::env::var_os("DIGI_SNAPSHOT_DIR")
+            .map_or_else(|| self.run_dir.join("patched"), PathBuf::from)
+    }
+
     fn card_synced(&self, image: Option<&Path>) -> bool {
         let Some(image) = image else {
             return false;
@@ -3828,8 +3835,7 @@ impl Actor {
         let zero = self.audio.as_ref().is_some_and(|audio| audio.zero);
         let mode = if zero { "-zero" } else { "" };
         let cache = self
-            .run_dir
-            .join("patched")
+            .snapshot_root()
             .join(format!("{main_sha}{card_key}{mode}.snap"));
         // With coupled audio inputs for the base: boot the ColdFire and the
         // DSP together (or restore the cached pair).
@@ -3890,6 +3896,9 @@ impl Actor {
             runtime.poke_ram(base, ram).map_err(&rejected)?;
         }
         let cache_hit = start != "cold" && cache.as_ref().is_some_and(|p| p.is_file());
+        if let Some(path) = &cache {
+            report["cache_dir"] = path.display().to_string().into();
+        }
         report["audio"] = false.into();
         report["dsp"] = json!({
             "applied": false,
@@ -4109,7 +4118,7 @@ fn patched_pair_key(
 impl Actor {
     /// A patched MAIN with DSP audio. The ColdFire boots from the patched
     /// bytes with its DSP initialized before ColdFire startup. The ready pair
-    /// is cached under `<run_dir>/patched/<MAIN>-<key>/`.
+    /// is cached under `<snapshot root>/<MAIN>-<key>/`.
     #[cfg(feature = "coupled-audio")]
     #[allow(clippy::too_many_arguments)]
     fn load_patched_coupled(
@@ -4233,7 +4242,7 @@ impl Actor {
             initial_buttons.unwrap_or_default(),
         )
         .map_err(&rejected)?;
-        let pair = self.run_dir.join("patched").join(stem);
+        let pair = self.snapshot_root().join(stem);
         let (snapshot, dsp_state) = (
             pair.join("digi-audio-m5.snap"),
             pair.join("digi-audio-m5.snap.dsp"),

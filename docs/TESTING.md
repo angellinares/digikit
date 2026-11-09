@@ -277,9 +277,11 @@ Device sessions run in a claimed `dist/session-cache/<key12>/<device>-<n>` (per 
 snapshots of an older one. A daemon from another place (a custom `DIGI_EMUD_<DEV>`) uses
 `dist/session-cache/<device>-<n>`, or for the card and fx fixtures a fresh temp dir. A vitest worker process
 claims the first free `<n>` with a pid lock file (`<device>-<n>.lock`) and keeps it until it exits; later
-processes reuse the dir, so the daemon's boot cache stays warm. It is pruned to 8 snapshot entries. The card
-and fx fixtures claim a dir when their daemon starts (not at collection), empty everything but `patched/` and
-`cards/`, and release it when the session closes. A file with a failed test or a failed post-close safety check
+processes reuse the dir. The boot snapshots are not in the run dir: all run dirs of a daemon build and device share
+`dist/session-cache/<key12>/snapshots/<device>` (the daemon's `DIGI_SNAPSHOT_DIR`). An entry is named by its content key (firmware,
+card identity, DSP state), so a card boots cold once per daemon build and any later file or run restores it (about 0.2 s). A claim prunes the store to
+6 GiB, oldest entries first (a hit touches its entry). A file that fails removes the entries that its own cold boots wrote. The card
+and fx fixtures claim a dir when their daemon starts (not at collection), empty everything but `cards/`, and release it when the session closes. A file with a failed test or a failed post-close safety check
 renames its dir to `<dir>.failed-<time>` (the newest 2 per device stay), so the next claim boots cold: a snapshot
 of a boot that failed a check would otherwise pass the next run. A `.dirty` marker, written at the claim and removed by a clean release, does the same for a killed or timed-out run. Only the newest 2 `<key12>` dirs of each device stay.
 Cards that the fixtures build (`cardRig`, the fx presets) are content-named: `dist/session-cache/cards/<key>/`

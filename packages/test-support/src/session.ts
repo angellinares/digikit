@@ -84,6 +84,8 @@ export interface SessionOptions {
   card?: string;
   /** Run directory; default a fresh temporary directory. */
   runDir?: string;
+  /** Shared store of booted-state snapshots (`DIGI_SNAPSHOT_DIR`); default `<runDir>/patched`, private to the run dir. */
+  snapshotDir?: string;
   /** Mirror the module store under this session's run directory. */
   mirror?: boolean;
   /** Stall threshold in emulated ms for the watchdog (default 1000, as the Python harness). */
@@ -139,6 +141,8 @@ export class Session {
   #events: EmuEvent[] = [];
   #ownedDir: string | null;
   #load: FirmwareLoadResult | undefined;
+  #written: string[] = [];
+  #lastReload: { loadMs: number; totalMs: number } | undefined;
   #card: string | undefined;
   #preparedImage: PreparedRuntimeImage | undefined;
   #guarded: Client | undefined;
@@ -174,6 +178,16 @@ export class Session {
   /** Base card image loaded for this session; guest writes remain in its overlay. */
   get cardPath(): string | undefined {
     return this.#card;
+  }
+
+  /** Wall time of the last baseline reload: the `firmware.load` call alone, and the whole reload. */
+  get lastReload(): { loadMs: number; totalMs: number } | undefined {
+    return this.#lastReload;
+  }
+
+  /** Snapshot entries that this session's cold boots wrote into the store: removed when the file fails. */
+  get writtenSnapshots(): readonly string[] {
+    return this.#written;
   }
 
   get loadResult(): FirmwareLoadResult {
@@ -248,7 +262,11 @@ export class Session {
       const daemon = await spawnDaemon({
         binary: options.binary,
         args,
-        env: options.dsp === 'sharc' ? { ...coupledEnv(inp.syx), ...extraEnv } : extraEnv,
+        env: {
+          ...(options.dsp === 'sharc' ? coupledEnv(inp.syx) : {}),
+          ...(options.snapshotDir ? { DIGI_SNAPSHOT_DIR: options.snapshotDir } : {}),
+          ...extraEnv,
+        },
         runDir,
         timeoutMs: options.runtime ? 120_000 : 300_000,
         signal: controller?.signal,
@@ -312,7 +330,11 @@ export class Session {
 
   // The boot cache is pruned by mtime (tests/regression/runtime/devices.ts cachedRunDir), so a hit marks its entry as recent.
   #touchCacheHit(load: { cache_hit?: boolean; cache_dir?: unknown }): void {
-    if (load.cache_hit !== true || typeof load.cache_dir !== 'string') return;
+    if (typeof load.cache_dir !== 'string') return;
+    if (load.cache_hit !== true) {
+      this.#written.push(load.cache_dir);
+      return;
+    }
     try {
       const now = new Date();
       fs.utimesSync(load.cache_dir, now, now);
@@ -326,6 +348,8 @@ export class Session {
     if (!this.options.runtime?.reuse) throw new Error('runtime baseline reload requires runtime.reuse');
     if (this.#closing || this.#reloading) throw new Error('runtime session is closed or already reloading');
     this.#reloading = true;
+    const reloadStart = performance.now();
+    let loadMs = 0;
     const deadline = Date.now() + (baseline.timeoutMs ?? 120_000);
     let phase = 'validate.card';
     const checked = <T>(operationPhase: string, operation: () => Promise<T>) => {
@@ -390,6 +414,7 @@ export class Session {
       // at full speed), so the DSP frames it runs between the install and the pause would count against a test's trigger frame.
       if (baseline.paused)
         await checked('run.mode.before-load', () => this.client.call('run.mode', { mode: 'paused' }));
+      const loadStart = performance.now();
       const load = (resolvedLoad = await checked('firmware.load', () =>
         this.client.firmwareLoad({
           syx: prepared?.syx ?? inp.syx,
@@ -406,6 +431,7 @@ export class Session {
           auto_no: this.options.autoNo ?? true,
         }),
       ));
+      loadMs = performance.now() - loadStart;
       phase = 'cache.touch';
       this.#touchCacheHit(load);
       await checked('guard.set', () => this.client.guardSet(baseline.guard));
@@ -444,6 +470,7 @@ export class Session {
       this.#load = load;
       this.#card = image;
       this.#preparedImage = prepared;
+      this.#lastReload = { loadMs, totalMs: performance.now() - reloadStart };
       this.#collect();
       return status.epoch;
     } catch (error) {

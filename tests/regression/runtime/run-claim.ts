@@ -3,13 +3,15 @@ import path from 'node:path';
 
 /**
  * Persistent run dirs of the device fixtures. A dir is claimed with a pid lock file (`<dir>.lock`) while a daemon runs in it. What the
- * daemon cached for a boot (`patched/`, `cards/`) stays for the next claim; everything else is per run and is removed at the claim.
+ * daemon cached for a card (`cards/`) stays for the next claim; everything else is per run and is removed at the claim.
+ * The booted-state snapshots are not in the run dir: all run dirs of a daemon build and device share the store `<key>/snapshots/<device>`
+ * (`DIGI_SNAPSHOT_DIR`). Its entries are named by their content key, so any daemon of the build may use any entry.
  */
 
 /** Names in a run dir that survive from one claim to the next. */
-const KEEP = new Set(['patched', 'cards']);
-/** Booted-snapshot entries kept per run dir (newest by mtime). */
-export const PATCHED_KEEP = 8;
+const KEEP = new Set(['cards']);
+/** Size of the shared snapshot store of one daemon build and device; the oldest entries (by mtime) go first at a claim. */
+export const SNAPSHOTS_MAX_BYTES = 6 * 1024 ** 3;
 /** Failed run dirs kept per device. */
 export const FAILED_KEEP = 2;
 /** Daemon-key dirs kept under the session cache (the newest by mtime). */
@@ -117,6 +119,27 @@ export function newestFirst(dir: string): { full: string; mtime: number }[] {
     .sort((a, b) => b.mtime - a.mtime);
 }
 
+/** Delete the oldest entries (files or dirs; a hit touches its entry) of the snapshot store until it is at most SNAPSHOTS_MAX_BYTES. */
+export function pruneSnapshots(store: string, maxBytes = SNAPSHOTS_MAX_BYTES): void {
+  const size = (full: string): number => {
+    try {
+      const stat = fs.statSync(full);
+      return stat.isDirectory()
+        ? readNames(full).reduce((sum, name) => sum + size(path.join(full, name)), 0)
+        : stat.size;
+    } catch {
+      return 0; // removed meanwhile
+    }
+  };
+  const entries = newestFirst(store).map((entry) => ({ ...entry, bytes: size(entry.full) }));
+  let total = entries.reduce((sum, entry) => sum + entry.bytes, 0);
+  for (const entry of entries.reverse()) {
+    if (total <= maxBytes) break;
+    fs.rmSync(entry.full, { recursive: true, force: true });
+    total -= entry.bytes;
+  }
+}
+
 /** Delete the failed run dirs (`<device>-<n>.failed-<time>`) of DEVICE beyond the newest FAILED_KEEP. */
 export function pruneFailed(base: string, device: string): void {
   const failed = newestFirst(base).filter(
@@ -150,6 +173,8 @@ export function pruneKeyDirs(sessionCache: string): void {
 
 export interface RunDirClaim {
   readonly dir: string;
+  /** The shared snapshot store of this daemon build and device (a daemon gets it as `DIGI_SNAPSHOT_DIR`). */
+  readonly snapshotDir: string;
   /** Give the dir back. A failed run's dir is renamed `<dir>.failed-<time>`: its snapshots are not reused and its files stay for diagnosis. Idempotent. */
   release(failed?: boolean): void;
 }
@@ -176,10 +201,9 @@ export function claimDir(base: string, device: string, wipe: boolean): RunDirCla
   if (wipe)
     for (const name of readNames(dir))
       if (!KEEP.has(name)) fs.rmSync(path.join(dir, name), { recursive: true, force: true });
-  const patched = path.join(dir, 'patched');
-  if (fs.existsSync(patched))
-    for (const entry of newestFirst(patched).slice(PATCHED_KEEP))
-      fs.rmSync(entry.full, { recursive: true, force: true });
+  const snapshotDir = path.join(base, 'snapshots', device);
+  fs.mkdirSync(snapshotDir, { recursive: true });
+  pruneSnapshots(snapshotDir);
   pruneFailed(base, device);
   fs.writeFileSync(dirty, String(process.pid));
   const unlock = () => {
@@ -188,6 +212,7 @@ export function claimDir(base: string, device: string, wipe: boolean): RunDirCla
   let released = false;
   const claim: RunDirClaim = {
     dir,
+    snapshotDir,
     release(failed = false) {
       if (released) return;
       released = true;

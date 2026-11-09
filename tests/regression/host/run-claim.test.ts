@@ -2,7 +2,7 @@ import fs from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
 import { afterEach, beforeEach, expect, test } from 'vitest';
-import { claimDir, FAILED_KEEP, pruneKeyDirs, tryLock } from '../runtime/run-claim.ts';
+import { claimDir, FAILED_KEEP, pruneSnapshots, pruneKeyDirs, tryLock } from '../runtime/run-claim.ts';
 
 let base: string;
 beforeEach(() => {
@@ -38,8 +38,8 @@ test('an empty or unreadable lock is held until it is 10 minutes old', () => {
 
 test('a claim wipes per-run files but keeps the daemon caches, and a release frees the dir', () => {
   const first = claimDir(base, 'dt2', true);
-  fs.mkdirSync(path.join(first.dir, 'patched'));
-  fs.writeFileSync(path.join(first.dir, 'patched', 'snap'), 'x');
+  fs.mkdirSync(path.join(first.dir, 'cards'));
+  fs.writeFileSync(path.join(first.dir, 'cards', 'snap'), 'x');
   fs.mkdirSync(path.join(first.dir, 'boot-1'));
   fs.writeFileSync(path.join(first.dir, 'daemon.stderr'), 'x');
   const second = claimDir(base, 'dt2', true);
@@ -48,15 +48,15 @@ test('a claim wipes per-run files but keeps the daemon caches, and a release fre
   first.release();
   const again = claimDir(base, 'dt2', true);
   expect(again.dir).toBe(first.dir);
-  expect(fs.readdirSync(again.dir).sort()).toEqual(['.dirty', 'patched']);
-  expect(fs.existsSync(path.join(again.dir, 'patched', 'snap'))).toBe(true);
+  expect(fs.readdirSync(again.dir).sort()).toEqual(['.dirty', 'cards']);
+  expect(fs.existsSync(path.join(again.dir, 'cards', 'snap'))).toBe(true);
 });
 
 test('a failed run dir is renamed, its snapshots are not reused, and only the newest ones stay', () => {
   for (let i = 0; i < FAILED_KEEP + 2; i++) {
     const claim = claimDir(base, 'dn2', true);
-    fs.mkdirSync(path.join(claim.dir, 'patched'));
-    fs.writeFileSync(path.join(claim.dir, 'patched', 'snap'), String(i));
+    fs.mkdirSync(path.join(claim.dir, 'cards'));
+    fs.writeFileSync(path.join(claim.dir, 'cards', 'snap'), String(i));
     claim.release(true);
     expect(fs.existsSync(claim.dir)).toBe(false);
     // `.failed-<ms>` names differ only by time
@@ -64,24 +64,24 @@ test('a failed run dir is renamed, its snapshots are not reused, and only the ne
       old(path.join(base, name), (FAILED_KEEP + 2 - i) * 1000);
   }
   const next = claimDir(base, 'dn2', true);
-  expect(fs.existsSync(path.join(next.dir, 'patched'))).toBe(false);
+  expect(fs.existsSync(path.join(next.dir, 'cards'))).toBe(false);
   expect(fs.readdirSync(base).filter((n) => n.includes('.failed-'))).toHaveLength(FAILED_KEEP);
 });
 
 test('a dir that was not released cleanly is not reused; a clean release removes the marker', () => {
   const clean = claimDir(base, 'dt2', true);
-  fs.mkdirSync(path.join(clean.dir, 'patched'));
+  fs.mkdirSync(path.join(clean.dir, 'cards'));
   expect(fs.existsSync(path.join(clean.dir, '.dirty'))).toBe(true);
   clean.release();
   expect(fs.existsSync(path.join(clean.dir, '.dirty'))).toBe(false);
   const reused = claimDir(base, 'dt2', true);
   expect(reused.dir).toBe(clean.dir);
-  expect(fs.existsSync(path.join(reused.dir, 'patched'))).toBe(true);
+  expect(fs.existsSync(path.join(reused.dir, 'cards'))).toBe(true);
   // the process dies: the lock is stale and the marker stays
   fs.writeFileSync(`${reused.dir}.lock`, '2147483646');
   const next = claimDir(base, 'dt2', true);
   expect(next.dir).toBe(reused.dir);
-  expect(fs.existsSync(path.join(next.dir, 'patched'))).toBe(false);
+  expect(fs.existsSync(path.join(next.dir, 'cards'))).toBe(false);
   expect(fs.readdirSync(base).filter((n) => n.includes('.failed-'))).toHaveLength(1);
 });
 
@@ -110,4 +110,18 @@ test('old daemon-key dirs go, except the newest 2 of each device and those with 
   expect(fs.readdirSync(base).sort()).toEqual([keys[0]!, keys[1]!, keys[3]!, keys[4]!].sort());
   fs.writeFileSync(path.join(base, keys[1]!, 'dt2-0.lock'), String(process.pid));
   expect(() => pruneKeyDirs(path.join(base, 'missing'))).not.toThrow();
+});
+
+test('the snapshot store is shared by the run dirs and pruned by size, oldest entries first', () => {
+  const first = claimDir(base, 'dt2', true);
+  const second = claimDir(base, 'dt2', true);
+  expect(second.snapshotDir).toBe(first.snapshotDir);
+  for (const [i, name] of ['old', 'mid', 'new'].entries()) {
+    const entry = path.join(first.snapshotDir, name);
+    fs.mkdirSync(entry);
+    fs.writeFileSync(path.join(entry, 'snap'), 'x'.repeat(100));
+    old(entry, (3 - i) * 1000);
+  }
+  pruneSnapshots(first.snapshotDir, 250);
+  expect(fs.readdirSync(first.snapshotDir).sort()).toEqual(['mid', 'new']);
 });
