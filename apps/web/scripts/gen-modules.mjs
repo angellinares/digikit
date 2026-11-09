@@ -90,9 +90,9 @@ export function buildModuleData(root = repoRoot) {
     .sort()
     .map((f) => readFileSync(join(root, 'devices', 'ports', f), 'utf8'));
   // the module roots in the order of tools/patchkit/modroots.py REPO_ROOTS; the tests use the fixtures
-  const manifests = ['modules', join('tests', 'fixtures', 'modules')].flatMap((r) =>
-    walk(join(root, r), 'module.toml').sort(byParts),
-  );
+  // The published site leaves out the test fixtures: only the site's tests use them, and some need the Rust toolchain for ColdFire.
+  const roots = process.env.DIGI_SITE_NO_FIXTURES ? ['modules'] : ['modules', join('tests', 'fixtures', 'modules')];
+  const manifests = roots.flatMap((r) => walk(join(root, r), 'module.toml').sort(byParts));
   const parsed = manifests.map((file) => {
     const text = readFileSync(file, 'utf8');
     return { dir: dirname(file), text, d: parse(text) };
