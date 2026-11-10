@@ -6,7 +6,7 @@
     "dt2-tone": {
       "executor": "nx:run-commands",
       "cache": false,
-      "parallelism": false,
+      "parallelism": true,
       "dependsOn": ["digi-coupled:build-dt2"],
       "inputs": [
         "{workspaceRoot}/tools/__init__.py",
@@ -49,7 +49,7 @@
         "{workspaceRoot}/tools/emulator/ready.py",
         "{workspaceRoot}/tests/scenarios/dt2.json"
       ],
-      "options": { "command": "uv run python -m tools.emulator.dt2_sample_check", "cwd": "." }
+      "options": { "command": "node tools/devtools/emu-slot.mjs -- uv run python -m tools.emulator.dt2_sample_check", "cwd": "." }
     }
   }
 }

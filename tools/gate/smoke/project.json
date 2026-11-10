@@ -6,7 +6,7 @@
     "smoke": {
       "executor": "nx:run-commands",
       "cache": false,
-      "parallelism": false,
+      "parallelism": true,
       "dependsOn": ["digi-control:daemons"],
       "inputs": [
         "{workspaceRoot}/tools/__init__.py",

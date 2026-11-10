@@ -519,15 +519,14 @@ idle. The reserve is the efficiency-core count on Apple Silicon, else max(2, flo
 sets it. After an admission the lock is kept for 3 s, so the next decision sees the new emulator's load. The log shows
 `emulator slot taken (M of ceiling, idle X.X cores)`. `DIGI_EMU_SLOTS=N` is a fixed count with no idle check, for an A/B.
 A waiting task prints one line and waits without a limit; a lock of a dead process is taken over. The wait is outside
-Vitest, so it does not count against test timeouts. Gate targets such as `fx` and `stock` are not wrapped.
+Vitest, so it does not count against test timeouts. The emulator gate targets are wrapped too (see the job rule below).
 
 Formatting an emulator crate or `dkneeds` changes the daemon key and the PGO key, so the PGO profile needs a retrain.
 
 - For verbs that run tasks the launcher runs at nice 10 and takes the shared benchlock, except when all
   targets are light (`lint`, `fmt-check`, `rust-fmt`, `typecheck`, `test-host`, `check`, `check:ui`,
-  `build:ui`, `python-checks`): those take no lock. `show`, `graph`, `--graph` and `--explain` take no lock. Nx has no per-kind limit: a target with `parallelism: false`
-  (cargo build targets `cli`, `daemons`, `digi-coupled:build`, `build-dt2`) runs alone.
-- `DIGI_JOBS` is the only job variable; the `fx`, `fx-no-aot` and `fx-dt2` targets set it to 1. Each runs one emulator, so these three may run beside other tasks; the other gate targets with their own job counts run alone (`parallelism: false`).
+  `build:ui`, `python-checks`): those take no lock. `show`, `graph`, `--graph` and `--explain` take no lock. Nx has no per-kind limit. No gate task is exclusive: a task with `parallelism: false` scheduled mid-run makes Nx wait for every running task to finish first, so do not add one. The `cli`, `digi-coupled` and `digi-control:daemons` builds run beside other tasks with `CARGO_BUILD_JOBS=DIGI_JOBS`.
+- `DIGI_JOBS` is the only job variable. The `fx`, `fx-no-aot` and `fx-dt2` targets and the single-emulator gate targets (`card`, `dt2-tone`, `fast-roots`) run one emulator each (1 job), behind one `emu-slot`, beside device tests. The multi-emulator gate targets (`smoke`, `stock`, `pins`, `tier-quick`, `tier-sweep`, `dt2-tier-quick`, `dt2-tier-sweep`) keep their own `DIGI_JOBS` and take no slot: the idle-core admission of the slot-wrapped device tasks keeps the machine within its budget while they run. `python-tests` runs with 2 jobs (`DIGI_JOBS=2`) beside other tasks, without a slot.
   `DIGIKIT_PART_JOBS` stays. One coupled emulator process keeps 2 cores busy.
 - A no-progress watchdog (`tests/regression/watchdog.ts`) is on by default. It closes a
   daemon whose DSP frames, main loop hits and audio frames stay the same for 120 s of wall time
