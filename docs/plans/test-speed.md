@@ -31,6 +31,13 @@ Durations come from the Nx terminal outputs (vitest `Duration`, nextest summary,
 
 **[D]** History of core-touching merges (30 days, 128 merges): 12% change no built bytes (the scoped payoff of step 4), 33% are emulator-only changes, 38% change object bytes.
 
+**[D]** Full tier of 2026-11-10 17:08 (lane `ts-slots` task history and cached terminal outputs): device tasks 984 task-min, of which 303 inside Vitest and about 595 waiting for an emulator slot.
+Only 3 to 5 emulators ran at a time: admission needs about 6 idle cores (2 plus 4 efficiency cores), and proof runs of other branches shared the slots. The wrapper held Nx slots, so `rust-tests` started at minute 77 and the smoke and fx tiers at 84 to 96. The run started at load 11.6.
+Top Vitest minutes: fxpages 48, runtime-tests 45, fx 31, inferred-needs 29, conformance 21 (11 modules), freqshift 19, shot 17, introblank 13. `fx-track-route-lock--dn2`: 2018 s task, 195 s test.
+Zero DSP cannot load a module with a DSP part (`ZeroPeer` drops link bytes and answers zeros; `dsp.rs` waits for `DL_DONE`), so conformance, inferred-needs, module-load, fits, dynreg roundtrip and the ColdFire-only fx checks use full SHARC.
+
+**[D]** Byte determinism: patched images and `.dkm` files are byte-identical across comment edits. The daemon is reproducible per worktree path only.
+
 Conclusions: module work is already scoped well. A core change reruns every device test. Device time is mostly emulator reloads, and the machine is
 already full during the device phase, so speed must come from less work per test, not more slots.
 
@@ -65,6 +72,8 @@ Highest payoff first. Each step states its proof.
 4. [ ] **Device inputs from built bytes.** Device and conformance tasks hash the patched image and `.dkm` content instead of SDK, patchkit and device
    file sources. A change that does not change the bytes (a comment, an unused constant, a test-only patch set) reruns nothing. Real core changes
    still rerun everything. Owner: the Nx lane. Proof: `nx show target inputs` and one invalidation check per input kind.
+   - [x] Main part (#397): `patchkit:device-bytes` writes `dist/bytes/core-objects.sha256` (core `.dko.json` files with `source_sha256` stripped). Full-input device tasks drop image-module sources, SDK headers, dko globs, the blanket output glob and `emu-slot.mjs`; the `compiles`, `patchModules` and `pythonTools` records keep SDK and toolchain inputs. **[D]** A runtime comment, an unused SDK define and a module comment keep the hash; a used constant changes it.
+   - [ ] Not achieved: profile-edit selectivity (`devices/**/*.toml` stays an input because tests read it); the narrow policy-B set is unchanged; the daemon stays on its source key (its bytes embed the worktree path).
    - [x] Generated device includes hold only the constants each module lists in `uses` (runtime-and-services.md section 5.8).
      Test selection is unchanged: the daemon, the patchkit CLI and the device-test inputs hash the whole profile.
    - [ ] A profile edit selects only the device tests whose built bytes change (needs the items below).
@@ -78,11 +87,13 @@ Highest payoff first. Each step states its proof.
 5. [x] **Core-change policy.** (B), decided 2026-11-10. A change runs all device tests of the projects it edits. Device tests it reaches only through shared inputs
    run only the subset marked in `metadata.mergeTests` of the owning project.json: other files get a narrow merge cache key (own folder, test code, loaded packs), so Nx replays their last result. `test-device-all` (run by
    `mise run test:full`) runs every file with full inputs. Batch point: run `test:full` before each push or PR to main.
-6. [ ] **Gate output and history.**
+6. [x] **Gate output and history.**
    - [x] One line per finished task (project:target, pass or fail, cache status) while the gate runs: `--output-style=static-failures-only`. Nx prints no seconds there; the durations come with the history report at the end of the run.
    - [x] History: Nx's own task history database already records project, target, hash, status and start and end of each task. `tools/nx/gate-history.mjs` (`mise run test:history`) reads it: slowest tasks, recent failures, slowdowns. It is per worktree and written at the end of a command. Nx already uses the database's average durations to order tasks, so longest-first needs no code. Flaky tests and timeouts: not built; Nx prints its own flaky-task message.
    - [x] No gate task runs alone (2026-11-10): builds run beside other tasks with capped cargo jobs; single-emulator gate targets take an emu-slot; multi-emulator targets keep their job counts.
-   - [ ] Test timeouts in emulated time or firmware state, as AGENTS.md requires for waits. A wall-time limit fails healthy tests under load.
+   - [x] Gate run trace (#395): `NX_PARALLEL` is twice the emulator ceiling (`DIGI_NX_PARALLEL` overrides). Gate tier runs write `out/runs/gate/<stamp>/` (`nx-profile.json`, `slots-trace.json` from `emu-slot.mjs`, merged `trace.json` for ui.perfetto.dev) and print wall, task-min, slot wait against run time and the slowest tasks by run time. `gate-history.mjs --trace <dir>` reads a run; `test:history` reads the newest `-v<N>.db`.
+   - [x] Gate emulator targets are cached (#396): smoke, tier-sweep, dt2-tier-sweep, pins, dt2-tone, card and fast-roots (`fixtures` stays uncached). `SHARC_GEN_DIR` and `_2` are inputs of every cached gate target, `DIGI_PK_PGO` of smoke. Replay proven (rerun 3.3 s).
+   - [x] Test timeouts in emulated time or firmware state, as AGENTS.md requires for waits (#398). `status.boot` reports a cold boot; the cold DSP init wall limit (120 s) became an 800M-step cap; the watchdog runs on a second connection from `Session.start` and counts instructions only during a job or boot. Fixed wall limits became `pollEmulated` waits and about 35 per-test timeouts were deleted. Guards that remain: clock stuck 60 s (`DIGI_CLOCK_STUCK_MS`), `waitReset` 80M instructions, 300 s before the socket and for the env, plusdrive exec 30 s.
 7. [ ] **Device test audit.** For each device test, one of: needs the emulator; can be a host test (Rust runtime unit test or TS); duplicates another
    test. Start with the reload-bound files (`card-safety`, `settings`, `bootscreen`, `introblank`, `memaudit`, `capacity`). Keep one device test per
    boundary. Split composite tests such as `fx-track-route` so they run in parallel.
@@ -141,6 +152,22 @@ Highest payoff first. Each step states its proof.
 13. [ ] **Test quality: mutation testing**, later and occasionally, on host unit tests of logic-heavy code only (runtime loader, store format and
     settings record; patchkit), with `cargo-mutants`. It checks that tests assert our behaviour. Never on device tests: it reruns the tests once per
     mutant. Not a speed step.
+
+## Later (deferred, 2026-11-10)
+
+Measured payoff is given where known.
+
+- CPU-measured emulator admission: count our emulators' CPU against foreign load instead of requiring about 6 idle cores. Calibrate capacity first with a 4/6/8/10/12 concurrency throughput run. Payoff: slot waits were 595 task-min in the 17:08 full tier and 767 in the green full tier on ea8132e6 (they no longer block other tasks since #395).
+- Coupled emulator binaries in the shared content-keyed store, like the daemons (`verify_build daemons`). A lane without a coupled build pays a cold `sharc_gen` build (about 13 min, 6 GB) before any gate suite runs.
+- A stand-in DSP peer that acknowledges loads. It would move conformance (21 Vitest-min), inferred-needs (29) and the ColdFire-only fx checks off SHARC. Validate by comparing ColdFire-visible outputs with real SHARC.
+- fx helpers choose DSP mode and PCM evidence per test (`withPreparedFxSession` and `withGainFxSession` hard-code SHARC; `evidence()` always taps PCM).
+- Fix the comment at `card-rig.ts:81`: it says SHARC is the default, it is not.
+- The `proofs` Vitest project (12 files in `tests/regression/runtime/*.test.ts`) runs in no Nx target: move the files into modules, or delete them after review.
+- `py_select` is a second selector next to Nx. Retire it by giving the Python owners Nx targets.
+- SDK host compile tests for every template and header (`chooser.h`, `data.h`, `job.h`, `params.h` and `sample_picker.h` have no test reference).
+- Host-test moves: fits row format, capacity error boundaries, upload protocol errors, store v3 layout, settings bounds, card-safety classification.
+- Conformance uses the cached `runtimeTests` daemon instead of a fresh daemon per module.
+- Python ports still open: pluck menu flows, `pages-dyn-pluck`, `upload-rust`, the last dkrt proof gap (step 10).
 
 ## Not planned
 
