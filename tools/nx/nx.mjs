@@ -77,7 +77,7 @@ function main() {
     NX_DAEMON: 'false',
     NX_NO_CLOUD: 'true',
   };
-  env.NX_PARALLEL ??= String(b.tasks);
+  env.NX_PARALLEL ??= process.env.DIGI_NX_PARALLEL || String(b.nxTasks);
   env.REGRESSION_JOBS ??= String(b.workers);
   env.DIGI_JOBS ??= String(b.jobs);
   env.CARGO_BUILD_JOBS ??= String(b.budget);
@@ -104,7 +104,7 @@ function main() {
         ...command,
       ];
     console.error(
-      `nx: budget ${b.budget}: ${b.tasks} tasks, ${b.workers} vitest workers, ${b.tasks} emulators, ${b.jobs} script jobs, ${b.budget} cargo jobs${remote ? ', remote' : ''}`,
+      `nx: budget ${b.budget}: ${env.NX_PARALLEL} Nx tasks, ${b.workers} vitest workers, ${b.tasks} emulators, ${b.jobs} script jobs, ${b.budget} cargo jobs${remote ? ', remote' : ''}`,
     );
   }
   const result = spawnSync(command[0], command.slice(1), { stdio: 'inherit', env });

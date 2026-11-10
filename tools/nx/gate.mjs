@@ -1,8 +1,9 @@
 // Scheduling policy only: native Nx still owns task dependencies and cache inputs.
 import { spawnSync } from 'node:child_process';
-import { realpathSync } from 'node:fs';
+import { mkdirSync, realpathSync } from 'node:fs';
+import { relative, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
-import { readRuns, report } from './gate-history.mjs';
+import { readRuns, report, traceSummary } from './gate-history.mjs';
 
 const MERGE_TARGETS = [
   'lint',
@@ -162,7 +163,18 @@ if (process.argv[1] && realpathSync(process.argv[1]) === fileURLToPath(import.me
     const [file, fileArgs] = wrap(styled(command));
     console.log(`gate: ${file} ${fileArgs.join(' ')}`);
     const startedAt = Date.now();
-    const result = spawnSync(file, fileArgs, { stdio: 'inherit' });
+    // A tier run keeps its trace in out/runs/gate/<stamp>/: Nx's task profile and the emulator slot waits.
+    // NX_PROFILE is joined to the cwd by Nx, so it is passed relative.
+    let traceDir;
+    const env = { ...process.env };
+    if (tier && !explain) {
+      traceDir = resolve('out/runs/gate', new Date(startedAt).toISOString().replace(/[:.]/g, '-'));
+      mkdirSync(traceDir, { recursive: true });
+      env.NX_PROFILE = relative(process.cwd(), `${traceDir}/nx-profile.json`);
+      env.DIGI_TRACE_DIR = traceDir;
+      console.log(`gate: trace dir ${traceDir}`);
+    }
+    const result = spawnSync(file, fileArgs, { stdio: 'inherit', env });
     if (result.error) throw result.error;
     if (tier && !explain) {
       // Nx records the run in its task history when the command ends; the durations come from there.
@@ -170,6 +182,11 @@ if (process.argv[1] && realpathSync(process.argv[1]) === fileURLToPath(import.me
         console.log(`gate: this run, from the Nx task history\n${report(readRuns(startedAt))}`);
       } catch (error) {
         console.log(`gate: no task history (${error.message})`);
+      }
+      try {
+        console.log(traceSummary(traceDir));
+      } catch (error) {
+        console.log(`gate: no trace summary (${error.message})`);
       }
     }
     if (result.status !== 0) process.exit(result.status ?? 1);
