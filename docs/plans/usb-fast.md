@@ -82,8 +82,11 @@ SDK API 1.10. Handles are tagged with their owner; unloading a module aborts its
   scratch, about 9 KiB); it never touches `DKRT_UPLOAD_BUF`.
 - **Store (DN2, and the DT2 store)**: `file_close` checks the running hash against `hash4` when one was given (`E_HASH`), then commits with the
   existing two-header scheme. Power-cut safe as today.
-- **+Drive (DT2)**: `core/plusdrive-write` calls the firmware's C-level open, write and close (DT2 1.17 write `FUN_4015866a`; open and close to
-  resolve on 1.17 **[O]**), which take the firmware's recursive filesystem mutex **[D]**. Elektron's allocation, inode and flush code runs unchanged.
+- **+Drive (DT2)**: `core/plusdrive-write` calls the firmware's C-level file API (finding 120: open 0x40158902, write 0x4015866a, hash 0x4015b3aa,
+  close 0x401588c0, info, delete, mkdir; a caller-owned 16-byte handle), which takes the firmware's recursive filesystem mutex **[D]**. A cut
+  mid-write leaves a visible half-written file and the firmware does not repair it, so the adapter writes under a temporary name in a hidden folder,
+  appends the 16 zero trailer bytes, hashes, closes, then renames into place; at boot it deletes leftovers in that folder. Rename keeping the hash
+  and who adds the trailer on a stock close are **[O]**: settle both on the emulator first. Elektron's allocation, inode and flush code runs unchanged.
   Close runs the firmware's read-back hash (`hashlittle`, seed 0x43fa243a) and stores `hash|1`; `file_close` returns it. Rules from the 1.17
   write-path analysis **[D]**: task context only, never an ISR; never on a file the stock MidiRpc writer has open; whole 32 KiB pages from a
   16-byte-aligned buffer; always close so the hash runs; `file_abort` closes and deletes. The filesystem lock is held for the close hash (seconds for
