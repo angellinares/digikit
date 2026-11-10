@@ -6,7 +6,7 @@
     "stock": {
       "executor": "nx:run-commands",
       "cache": true,
-      "parallelism": false,
+      "parallelism": true,
       "dependsOn": ["digi-control:daemons"],
       "outputs": [],
       "inputs": [

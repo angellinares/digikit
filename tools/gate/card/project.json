@@ -5,7 +5,7 @@
     "card": {
       "executor": "nx:run-commands",
       "cache": false,
-      "parallelism": false,
+      "parallelism": true,
       "dependsOn": ["digi-control:daemons"],
       "inputs": [
         "{workspaceRoot}/tools/__init__.py",
@@ -56,9 +56,9 @@
       ],
       "options": {
         "commands": [
-          "node tools/nx/daemon-env.mjs -- uv run python -m tools.emulator.card_check",
-          "uv run python -m tools.firmware.plusdrive_check",
-          "uv run python -m tools.firmware.plusdrive_check --dn2"
+          "node tools/devtools/emu-slot.mjs -- node tools/nx/daemon-env.mjs -- uv run python -m tools.emulator.card_check",
+          "node tools/devtools/emu-slot.mjs -- uv run python -m tools.firmware.plusdrive_check",
+          "node tools/devtools/emu-slot.mjs -- uv run python -m tools.firmware.plusdrive_check --dn2"
         ],
         "parallel": false,
         "cwd": "."

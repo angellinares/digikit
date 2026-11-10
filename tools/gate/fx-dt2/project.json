@@ -102,7 +102,7 @@
     "dt2-tier-quick": {
       "executor": "nx:run-commands",
       "cache": true,
-      "parallelism": false,
+      "parallelism": true,
       "dependsOn": ["digi-coupled:build-dt2"],
       "outputs": [],
       "inputs": [
@@ -128,7 +128,7 @@
     "dt2-tier-sweep": {
       "executor": "nx:run-commands",
       "cache": false,
-      "parallelism": false,
+      "parallelism": true,
       "dependsOn": ["digi-coupled:build-dt2"],
       "inputs": ["fxDt2"],
       "options": { "command": "uv run python -m tools.devtools.fx_tier dt2-tier-sweep", "cwd": "." }

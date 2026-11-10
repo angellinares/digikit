@@ -33,18 +33,18 @@
       "executor": "nx:run-commands",
       "description": "Builds the runtime fixtures of the fast-roots check when the store has no entry for their key, with the daemon from digi-control:daemons. A store hit takes about a second.",
       "cache": false,
-      "parallelism": false,
+      "parallelism": true,
       "inputs": ["fixtureKey", "{workspaceRoot}/tools/devtools/fast_roots.py"],
       "dependsOn": ["digi-control:daemons"],
       "options": {
-        "command": "uv run python -m tools.devtools.fast_roots fixtures --device dn2,dt2",
+        "command": "node tools/devtools/emu-slot.mjs -- uv run python -m tools.devtools.fast_roots fixtures --device dn2,dt2",
         "cwd": "."
       }
     },
     "fast-roots": {
       "executor": "nx:run-commands",
       "cache": false,
-      "parallelism": false,
+      "parallelism": true,
       "dependsOn": [
         "fixtures",
         "digi-coupled:build",
@@ -91,7 +91,7 @@
         "{workspaceRoot}/Cargo.lock"
       ],
       "options": {
-        "command": "uv run python -m tools.devtools.fast_roots check --device dn2,dt2",
+        "command": "node tools/devtools/emu-slot.mjs -- uv run python -m tools.devtools.fast_roots check --device dn2,dt2",
         "cwd": "."
       }
     }

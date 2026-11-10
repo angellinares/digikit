@@ -128,7 +128,7 @@
     "tier-quick": {
       "executor": "nx:run-commands",
       "cache": true,
-      "parallelism": false,
+      "parallelism": true,
       "dependsOn": ["digi-coupled:build"],
       "outputs": [],
       "inputs": [
@@ -154,7 +154,7 @@
     "tier-sweep": {
       "executor": "nx:run-commands",
       "cache": false,
-      "parallelism": false,
+      "parallelism": true,
       "dependsOn": ["digi-coupled:build"],
       "inputs": ["fxDn2"],
       "options": { "command": "uv run python -m tools.devtools.fx_tier tier-sweep", "cwd": "." }

@@ -27,6 +27,8 @@ Durations come from the Nx terminal outputs (vitest `Duration`, nextest summary,
 | `tests/regression/runtime/fixtures.ts` | 41 | 204 task-min |
 | `packages/patchkit/src/apply.rs` | 63 | 293 task-min |
 
+**[D]** 2026-11-10 core gate (device-constants change, cold snapshot store, ~3 cores busy elsewhere): 126.8 min, 180 tasks. Exclusive tasks ran one after another until minute 50 (no device test started before), a 5 s exclusive CLI drained the run for ~9 min at minute 61, python-tests ran alone at the end (4 min). A one-emulator-per-target trial made smoke and tier-quick 3-5x slower (smoke 19 min, tier-quick 20 min); they keep their job counts.
+
 Conclusions: module work is already scoped well. A core change reruns every device test. Device time is mostly emulator reloads, and the machine is
 already full during the device phase, so speed must come from less work per test, not more slots.
 
@@ -77,6 +79,7 @@ Highest payoff first. Each step states its proof.
 6. [ ] **Gate output and history.**
    - [x] One line per finished task (project:target, pass or fail, cache status) while the gate runs: `--output-style=static-failures-only`. Nx prints no seconds there; the durations come with the history report at the end of the run.
    - [x] History: Nx's own task history database already records project, target, hash, status and start and end of each task. `tools/nx/gate-history.mjs` (`mise run test:history`) reads it: slowest tasks, recent failures, slowdowns. It is per worktree and written at the end of a command. Nx already uses the database's average durations to order tasks, so longest-first needs no code. Flaky tests and timeouts: not built; Nx prints its own flaky-task message.
+   - [x] No gate task runs alone (2026-11-10): builds run beside other tasks with capped cargo jobs; single-emulator gate targets take an emu-slot; multi-emulator targets keep their job counts.
    - [ ] Test timeouts in emulated time or firmware state, as AGENTS.md requires for waits. A wall-time limit fails healthy tests under load.
 7. [ ] **Device test audit.** For each device test, one of: needs the emulator; can be a host test (Rust runtime unit test or TS); duplicates another
    test. Start with the reload-bound files (`card-safety`, `settings`, `bootscreen`, `introblank`, `memaudit`, `capacity`). Keep one device test per

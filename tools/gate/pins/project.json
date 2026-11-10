@@ -6,7 +6,7 @@
     "pins": {
       "executor": "nx:run-commands",
       "cache": false,
-      "parallelism": false,
+      "parallelism": true,
       "dependsOn": ["digi-coupled:build"],
       "inputs": [
         "{workspaceRoot}/tools/__init__.py",

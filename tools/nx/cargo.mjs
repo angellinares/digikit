@@ -26,7 +26,7 @@ const CLI = {
 const cliTarget = ({ build, bin, dir }) => ({
   executor: 'nx:run-commands',
   cache: false,
-  parallelism: false,
+  parallelism: true, // cargo locks dist/cargo itself and the install step is cp+mv, so it may run beside other tasks
   outputs: [`{workspaceRoot}/dist/${dir}/${bin}`],
   options: {
     commands: [
@@ -57,7 +57,7 @@ const GATE = {
     daemons: {
       executor: 'nx:run-commands',
       cache: false,
-      parallelism: false,
+      parallelism: true, // no gate task is exclusive; an exclusive task scheduled mid-run makes Nx wait for every running task
       outputs: ['{workspaceRoot}/dist/daemons.json'],
       inputs: [
         // The sources the daemon is built from: SOURCE_GLOBS of tools/devtools/emud_key.py. The store keys the binary by
@@ -88,7 +88,10 @@ const GATE = {
         '{workspaceRoot}/tools/patchkit/pk_emud_pgo.py',
       ],
       options: {
-        commands: ['mkdir -p dist', 'uv run python -m tools.devtools.verify_build daemons --env-out dist/daemons.json'],
+        commands: [
+          'mkdir -p dist',
+          'CARGO_BUILD_JOBS=${DIGI_JOBS:-4} uv run python -m tools.devtools.verify_build daemons --env-out dist/daemons.json',
+        ],
         parallel: false,
         cwd: '.',
       },
@@ -98,18 +101,23 @@ const GATE = {
     build: {
       executor: 'nx:run-commands',
       cache: false,
-      parallelism: false,
+      parallelism: true, // cargo jobs are capped by CARGO_BUILD_JOBS so it can build beside device tests
       // dist/coupled-dn2.json holds the sha256 of the built binary: the cache key of the targets that run it.
       outputs: ['{workspaceRoot}/dist/coupled-dn2.json'],
-      options: { command: 'uv run python -m tools.emulator.coupled build --id-out dist/coupled-dn2.json', cwd: '.' },
+      options: {
+        command:
+          'CARGO_BUILD_JOBS=${DIGI_JOBS:-4} uv run python -m tools.emulator.coupled build --id-out dist/coupled-dn2.json',
+        cwd: '.',
+      },
     },
     'build-dt2': {
       executor: 'nx:run-commands',
       cache: false,
-      parallelism: false,
+      parallelism: true,
       outputs: ['{workspaceRoot}/dist/coupled-dt2.json'],
       options: {
-        command: 'uv run python -m tools.emulator.coupled build --device dt2 --id-out dist/coupled-dt2.json',
+        command:
+          'CARGO_BUILD_JOBS=${DIGI_JOBS:-4} uv run python -m tools.emulator.coupled build --device dt2 --id-out dist/coupled-dt2.json',
         cwd: '.',
       },
     },
