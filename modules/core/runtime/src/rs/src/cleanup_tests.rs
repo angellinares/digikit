@@ -408,6 +408,38 @@ pub extern "C" fn dkpool_free_frames() -> u32 {
 #[no_mangle]
 pub extern "C" fn dkpool_tick() {}
 
+// The +Drive write adapter, absent in this host fixture (version 0 is refused).
+#[no_mangle]
+pub extern "C" fn dkpw_version() -> u32 {
+    0
+}
+#[no_mangle]
+pub extern "C" fn dkpw_begin(_: *const u8, _: u32, _: *const u8, _: u32) -> i32 {
+    -48
+}
+#[no_mangle]
+pub extern "C" fn dkpw_write(_: *const u8, _: u32) -> i32 {
+    -48
+}
+#[no_mangle]
+pub extern "C" fn dkpw_close(_: *mut u8) -> i32 {
+    -48
+}
+#[no_mangle]
+pub extern "C" fn dkpw_abort() {}
+#[no_mangle]
+pub extern "C" fn dkpw_delete(_: *const u8) -> i32 {
+    -48
+}
+#[no_mangle]
+pub extern "C" fn dkpw_recover(_: *mut u32) -> i32 {
+    -48
+}
+#[no_mangle]
+pub extern "C" fn dkpw_staging() -> *const u8 {
+    b"/.dkstage\0".as_ptr()
+}
+
 #[no_mangle]
 pub extern "C" fn dkpool_cancel(_: u32) {
     panic!("host cleanup tests have no pending sample-pool requests")

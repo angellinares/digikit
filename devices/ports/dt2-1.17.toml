@@ -2652,6 +2652,116 @@ mark = "D"
 rule = "fw/storage:cf_func"
 
 [[anchor]]
+name = "cf.storage.fn.file.any_open"
+cpu = "cf"
+kind = "code"
+addr = 0x4015bfc4
+len = 4
+sha256 = "7b1239ef680499a1f8003a769d0a0dfa1e3650cd77d962f0388c771679389375"
+mark = "D"
+rule = "fw/storage:cf_func"
+
+[[anchor]]
+name = "cf.storage.fn.file.delete"
+cpu = "cf"
+kind = "code"
+addr = 0x40157078
+len = 4
+sha256 = "e55cb9eb6848781ac430a42dab0c41908a214ea6edea999929995e5df4c3a358"
+mark = "D"
+rule = "fw/storage:cf_func"
+
+[[anchor]]
+name = "cf.storage.fn.file.hash"
+cpu = "cf"
+kind = "code"
+addr = 0x4015b3aa
+len = 4
+sha256 = "945e33bb4b14d28a5813755f8106ac0c2dbec82302f81140d3b1bf6fc964d321"
+mark = "D"
+rule = "fw/storage:cf_func"
+
+[[anchor]]
+name = "cf.storage.fn.file.id_open"
+cpu = "cf"
+kind = "code"
+addr = 0x4015bf92
+len = 4
+sha256 = "722ca8039c8eebdf90cbebf597b0c144a2c7979c379def4f7d87b953df4f5b50"
+mark = "D"
+rule = "fw/storage:cf_func"
+
+[[anchor]]
+name = "cf.storage.fn.file.info"
+cpu = "cf"
+kind = "code"
+addr = 0x4015af4c
+len = 4
+sha256 = "763c9ca825a3c90532f3d216b86b386464ff32c1f1c2085ebcb3e40ea3c692ad"
+mark = "D"
+rule = "fw/storage:cf_func"
+
+[[anchor]]
+name = "cf.storage.fn.file.link"
+cpu = "cf"
+kind = "code"
+addr = 0x40156ffc
+len = 4
+sha256 = "e59cdca0d536f67a27bdb308b1683f2c5d97565cb4d2dfe566afb0c8f6dae402"
+mark = "D"
+rule = "fw/storage:cf_func"
+
+[[anchor]]
+name = "cf.storage.fn.file.mkdir"
+cpu = "cf"
+kind = "code"
+addr = 0x4015746e
+len = 4
+sha256 = "9c3e7cb4c05995a95716e3b7da8a68bb9cf1f169764e2fd1d98fbbacbd6cc0c8"
+mark = "D"
+rule = "fw/storage:cf_func"
+
+[[anchor]]
+name = "cf.storage.fn.file.rename"
+cpu = "cf"
+kind = "code"
+addr = 0x40156f6c
+len = 4
+sha256 = "e59cdca0d536f67a27bdb308b1683f2c5d97565cb4d2dfe566afb0c8f6dae402"
+mark = "D"
+rule = "fw/storage:cf_func"
+
+[[anchor]]
+name = "cf.storage.fn.file.reserve"
+cpu = "cf"
+kind = "code"
+addr = 0x40158810
+len = 4
+sha256 = "945e33bb4b14d28a5813755f8106ac0c2dbec82302f81140d3b1bf6fc964d321"
+mark = "D"
+rule = "fw/storage:cf_func"
+
+[[anchor]]
+name = "cf.storage.fn.file.rmdir"
+cpu = "cf"
+kind = "code"
+addr = 0x40157192
+len = 4
+sha256 = "6240ed2cbe7b6b6b8b2f0e7fd4de1ee3c458134434d8e29ef7acf254b42fcf12"
+mark = "D"
+rule = "fw/storage:cf_func"
+
+[[anchor]]
+name = "cf.storage.fn.file.write"
+cpu = "cf"
+kind = "code"
+addr = 0x4015866a
+len = 4
+sha256 = "113d7d273d960e160432424a308cfa6f91d9afba235ff28c03bfb0aea8198d9e"
+mark = "D"
+rule = "fw/storage:cf_func"
+
+[[anchor]]
 name = "cf.storage.fn.path.close"
 cpu = "cf"
 kind = "code"
@@ -2718,6 +2828,16 @@ kind = "code"
 addr = 0x4012d642
 len = 6
 sha256 = "ecda53f8ded4ab291974386fad6a07fc3d8672509f611233aff4a9c2560b15f9"
+mark = "D"
+rule = "fw/storage:cf_func"
+
+[[anchor]]
+name = "cf.storage.site.mounted"
+cpu = "cf"
+kind = "code"
+addr = 0x4015af5e
+len = 4
+sha256 = "c6c7f1c74f7be630032892c1a1f671ab0984257c7a9ee416aa2e0d29b362805b"
 mark = "D"
 rule = "fw/storage:cf_func"
 

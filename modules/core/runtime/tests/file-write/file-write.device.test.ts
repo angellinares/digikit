@@ -18,6 +18,7 @@ const CMD_B = 0x28;
 const E_BUSY = -12;
 const E_EXISTS = -18;
 const E_CONTEXT = -19;
+const E_CONTRACT = -48;
 const E_HASH = -56;
 const E_STATE = -53;
 const WRITE = 1; // correct hash4
@@ -30,6 +31,7 @@ const SPIN = 7;
 const STALE = 8;
 const FOREIGN = 9;
 const BIG_CALL = 10;
+const REPLACE = 0x40; // added to the case: DK_FILE_REPLACE
 const SELECTION = ['modules/file-write.dkm', 'modules/file-write-b.dkm'];
 const pattern = (n: number) => Buffer.from(Uint8Array.from({ length: n }, (_, i) => (i * 7 + (i >> 8)) & 255));
 const cstr = (s: string) => Buffer.concat([Buffer.from(s), Buffer.from([0])]);
@@ -117,6 +119,55 @@ for (const device of DEVICES) {
       expect((await files(rt)).get('data/sdk-b.bin')?.hash).toBe(sha(pattern(700)));
       await rt.session.expectNoFault('SDK writes');
       expect((await rt.session.client.status()).heartbeat.stall_count, 'the I/O task did not stall the UI').toBe(before);
+    }, 900_000);
+
+    test('a replace swaps the file atomically: the new bytes verify, an abort leaves the old file, and a path that is not there is created', async () => {
+      const rt = await boot('replace');
+      const old = pattern(3000);
+      expect(await start(rt, WRITE, 3000, 'data/r.bin')).toBe(0);
+      expect((await until(rt, 2)).close).toBe(0);
+
+      // a replace that is aborted after one chunk leaves the old file whole
+      expect(await start(rt, ABORT | REPLACE, 9000, 'data/r.bin')).toBe(0);
+      const ab = await until(rt, 2);
+      expect([ab.create > 0, ab.abort, ab.job], 'create with REPLACE passes, then file_abort').toEqual([true, 0, 0]);
+      expect((await files(rt)).get('data/r.bin')?.hash, 'the old file is untouched').toBe(sha(old));
+      expect(await usb(rt, (dk) => dk.verify('data/r.bin'))).toBe(sha(old));
+
+      // a wrong expected hash leaves the old file too
+      expect(await start(rt, WRITE_BAD_HASH | REPLACE, 9000, 'data/r.bin')).toBe(0);
+      expect((await until(rt, 2)).close, 'E_HASH').toBe(E_HASH);
+      expect((await files(rt)).get('data/r.bin')?.hash).toBe(sha(old));
+
+      // the replace itself
+      const fresh = pattern(9000);
+      expect(await start(rt, WRITE | REPLACE, 9000, 'data/r.bin')).toBe(0);
+      const done = await until(rt, 2);
+      expect([done.create > 0, done.close, done.job, done.written]).toEqual([true, 0, 0, 9000]);
+      const f = (await files(rt)).get('data/r.bin');
+      expect([f?.size, f?.hash], 'the new size and hash').toEqual([9000, sha(fresh)]);
+      expect(await usb(rt, (dk) => dk.verify('data/r.bin')), 'VERIFY reads the new bytes').toBe(sha(fresh));
+      expect(Buffer.from((await usb(rt, (dk) => dk.read('data/r.bin', 4000, 600))).bytes)).toEqual(fresh.subarray(4000, 4600));
+
+      // REPLACE on a path that is not there is a plain create; without it the existing file is still E_EXISTS
+      expect(await start(rt, WRITE | REPLACE, 700, 'data/new.bin')).toBe(0);
+      expect((await until(rt, 2)).close).toBe(0);
+      expect((await files(rt)).get('data/new.bin')?.hash).toBe(sha(pattern(700)));
+      expect(await start(rt, WRITE, 700, 'data/r.bin')).toBe(0);
+      expect((await until(rt, 2)).create, 'no REPLACE: E_EXISTS').toBe(E_EXISTS);
+      await rt.session.expectNoFault('replace');
+    }, 900_000);
+
+    test('the samples root: the Digitone II store folder samples/, and on the Digitakt II E_CONTRACT while core/plusdrive-write is not in the image', async () => {
+      const rt = await boot('root');
+      expect(await start(rt, WRITE | 0x80, 2000, 'a.bin')).toBe(0);
+      const s = await until(rt, 2);
+      if (device === 'dn2') {
+        expect([s.create > 0, s.close], 'samples/ in the store').toEqual([true, 0]);
+        expect((await files(rt)).get('samples/a.bin')?.hash).toBe(sha(pattern(2000)));
+      } else {
+        expect([s.create, s.job], 'no adapter').toEqual([E_CONTRACT, E_CONTRACT]);
+      }
     }, 900_000);
 
     test('a wrong expected hash is E_HASH and leaves nothing; an abort leaves nothing and frees the session; a delete removes the file', async () => {

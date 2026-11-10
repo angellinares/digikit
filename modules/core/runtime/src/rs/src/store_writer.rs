@@ -162,6 +162,8 @@ struct Up {
     sha: [u8; 32],
     /// The hash of the bytes received so far (a large file is not read back from the card).
     run: Hash32,
+    /// The session writes the +Drive through `core/plusdrive-write` (DT2 samples root): no store lock, no table, the adapter holds the file.
+    pd: bool,
     /// Next expected byte offset.
     next: u32,
     last_off: u32,
@@ -182,6 +184,7 @@ static mut UP: Up = Up {
     size: 0,
     sha: [0; 32],
     run: Hash32::new(),
+    pd: false,
     next: 0,
     last_off: 0,
     last_len: 0,
@@ -217,7 +220,7 @@ pub fn preempt() -> bool {
 pub fn end_job(id: u32) {
     let u = up();
     if u.kind == SDK && id != 0 && u.job == id {
-        u.kind = NONE;
+        drop_sdk(u);
     }
 }
 
@@ -240,6 +243,7 @@ unsafe fn now() -> u32 {
 /// UI task, once per pass: a write session (SysEx or SDK) with no BEGIN or write for 20 s is dropped (its extent was never in the table) and logged.
 /// Skipped while the store lock is held (a write is in progress) and when the block clock is not there.
 pub unsafe fn tick() {
+    pd_tick();
     let u = up();
     if u.kind == NONE {
         return;
@@ -248,6 +252,9 @@ pub unsafe fn tick() {
     if crate::fw_blocks().is_none() {
         return;
     }
+    if u.pd && pd_busy() {
+        return; // an adapter call is running in the I/O task
+    }
     let knob = read_volatile(addr_of!(DKRT_SESSION_IDLE));
     let limit = if knob != 0 { knob } else { IDLE_BLOCKS };
     if now().wrapping_sub(u.last) < limit || !try_lock() {
@@ -255,7 +262,7 @@ pub unsafe fn tick() {
     }
     if u.kind != NONE && now().wrapping_sub(u.last) >= limit {
         crate::dlog::ev(dkrt_sdk::logk::UPLOAD, dkrt_sdk::logk::F_ERROR, [0xb6, u.kind as u32, u.owner as u32, u.next, u.size]);
-        u.kind = NONE;
+        drop_sdk(u);
     }
     unlock();
 }
@@ -272,7 +279,7 @@ pub fn abort_sysex() {
 pub fn retire(owner: u8) {
     let u = up();
     if u.kind == SDK && u.owner == owner {
-        u.kind = NONE;
+        drop_sdk(u);
     }
     lease_drop_owner(owner);
 }
@@ -612,6 +619,7 @@ pub unsafe fn begin(
         u.sha = w;
     }
     u.run = Hash32::new();
+    u.pd = false;
     u.next = 0;
     u.have_last = false;
     u.last_off = 0;
@@ -789,6 +797,8 @@ pub unsafe fn delete(b: &Bufs, path: *const u8, drop_sysex: bool) -> i32 {
 /// `DK_FILES_*` of `<dk/files.h>`.
 const ROOT_SAMPLES: u32 = 1;
 const ROOT_STORE: u32 = 2;
+/// `DK_FILE_REPLACE` of `<dk/file.h>`.
+pub const FILE_REPLACE: u32 = 1;
 /// A store path with its root prefix: at most `store::PATH_MAX` bytes and the NUL.
 const FULL_MAX: usize = 168;
 
@@ -808,13 +818,21 @@ fn busy(r: i32) -> i32 {
     r
 }
 
-/// `root`/`path` as one store path in `full`. `E_CONTRACT`: no such root, or the samples root of the DT2 (the +Drive adapter is another change);
-/// `E_PATH`: no NUL in 160 bytes, or the path breaks the store rules. Returns the length.
-unsafe fn sdk_path(root: u32, path: *const u8, full: &mut [u8; FULL_MAX]) -> Result<usize, i32> {
+/// `root`/`path` as one path in `full` (the store's: `store::path_ok`; the +Drive's: the same rules without a root prefix). `pd` is set for the
+/// DT2 samples root, which the +Drive adapter serves. `E_CONTRACT`: no such root; `E_PATH`: no NUL in 160 bytes, or the path breaks the rules, or
+/// (+Drive) it starts in the adapter's staging folder. Returns the length.
+unsafe fn sdk_path(root: u32, path: *const u8, full: &mut [u8; FULL_MAX], pd: &mut bool) -> Result<usize, i32> {
+    *pd = false;
     let prefix: &[u8] = if root == ROOT_STORE {
         b""
     } else if root == ROOT_SAMPLES && crate::device() == 2 {
         b"samples/"
+    } else if root == ROOT_SAMPLES && crate::device() == 1 {
+        if !pd_present() {
+            return Err(E_CONTRACT); // no adapter in the image
+        }
+        *pd = true;
+        b""
     } else {
         return Err(E_CONTRACT);
     };
@@ -832,22 +850,35 @@ unsafe fn sdk_path(root: u32, path: *const u8, full: &mut [u8; FULL_MAX]) -> Res
     copy(full.as_mut_ptr(), prefix.as_ptr(), prefix.len());
     copy(full.as_mut_ptr().add(prefix.len()), path, n);
     match store::path_ok(full.as_ptr(), FULL_MAX) {
-        Some(l) => Ok(l),
+        Some(l) => {
+            if *pd && pd_staging(full.as_ptr(), l) {
+                return Err(E_PATH);
+            }
+            Ok(l)
+        }
         None => Err(E_PATH),
     }
 }
 
 /// `file_create`: a write session for a new file; the handle (> 0) or a status. `hash4`: null, or the expected `hash | 1`, big-endian.
-pub unsafe fn sdk_create(root: u32, path: *const u8, size: u32, hash4: *const u8) -> i32 {
+/// `flags`: `FILE_REPLACE` or 0.
+pub unsafe fn sdk_create(root: u32, path: *const u8, size: u32, hash4: *const u8, flags: u32) -> i32 {
     let owner = match sdk_owner() {
         Ok(o) => o,
         Err(e) => return e,
     };
+    if flags & !FILE_REPLACE != 0 {
+        return E_CONTRACT;
+    }
     let mut full = [0u8; FULL_MAX];
-    let pl = match sdk_path(root, path, &mut full) {
+    let mut pd = false;
+    let pl = match sdk_path(root, path, &mut full, &mut pd) {
         Ok(l) => l,
         Err(e) => return e,
     };
+    if pd {
+        return pd_create(owner, full.as_ptr(), size, hash4, flags);
+    }
     let want = if hash4.is_null() {
         None
     } else {
@@ -859,7 +890,7 @@ pub unsafe fn sdk_create(root: u32, path: *const u8, size: u32, hash4: *const u8
         return busy(E_BUSY);
     }
     let mut free = 0;
-    let r = begin(&sdk_bufs(), SDK, owner, full.as_ptr(), pl, size, want, true, &mut free);
+    let r = begin(&sdk_bufs(), SDK, owner, full.as_ptr(), pl, size, want, flags & FILE_REPLACE == 0, &mut free);
     unlock();
     if r != OK {
         return busy(r);
@@ -876,6 +907,9 @@ pub unsafe fn sdk_write(h: i32, offset: u32, buf: *const u8, len: u32) -> i32 {
     };
     if buf.is_null() || (buf as usize) & 15 != 0 {
         return E_CONTRACT;
+    }
+    if up().pd {
+        return pd_write(owner, h, offset, buf, len);
     }
     if !acquire() {
         return busy(E_BUSY);
@@ -897,6 +931,9 @@ pub unsafe fn sdk_close(h: i32, out: *mut u8) -> i32 {
         Ok(o) => o,
         Err(e) => return e,
     };
+    if up().pd {
+        return pd_close(owner, h, out);
+    }
     if !acquire() {
         return busy(E_BUSY);
     }
@@ -910,6 +947,9 @@ pub unsafe fn sdk_abort(h: i32) -> i32 {
         Ok(o) => o,
         Err(e) => return e,
     };
+    if up().pd {
+        return pd_abort(owner, h);
+    }
     if !acquire() {
         return busy(E_BUSY);
     }
@@ -923,8 +963,12 @@ pub unsafe fn sdk_delete(root: u32, path: *const u8) -> i32 {
         return e;
     }
     let mut full = [0u8; FULL_MAX];
-    if let Err(e) = sdk_path(root, path, &mut full) {
+    let mut pd = false;
+    if let Err(e) = sdk_path(root, path, &mut full, &mut pd) {
         return e;
+    }
+    if pd {
+        return pd_delete(full.as_ptr());
     }
     if !acquire() {
         return busy(E_BUSY);
@@ -932,6 +976,268 @@ pub unsafe fn sdk_delete(root: u32, path: *const u8) -> i32 {
     let r = delete(&sdk_bufs(), full.as_ptr(), false);
     unlock();
     busy(r)
+}
+
+
+// ---- the +Drive route (DT2 samples root, `core/plusdrive-write`) --------------------------------------------------------------
+
+extern "C" {
+    // Optional symbols of the adapter (`dkrt_pdw.h`; `[object] optional` in module.toml): 0 when it is not in the image.
+    fn dkpw_version() -> u32;
+    fn dkpw_begin(path: *const u8, size: u32, hash4: *const u8, flags: u32) -> i32;
+    fn dkpw_write(buf: *const u8, len: u32) -> i32;
+    fn dkpw_close(hash_out: *mut u8) -> i32;
+    fn dkpw_abort();
+    fn dkpw_delete(path: *const u8) -> i32;
+    fn dkpw_recover(out: *mut u32) -> i32;
+    fn dkpw_staging() -> *const u8;
+}
+
+const DKPW_VERSION: u32 = 1;
+/// 0 not checked, 1 usable, 2 absent or another version.
+static mut PD_STATE: u8 = 0;
+/// An adapter call is running (the I/O task, or the UI task in `pd_tick`): the adapter has one set of state and runs one call at a time.
+static mut PD_BUSY: bool = false;
+/// The adapter holds a staged file that the runtime no longer tracks (a session dropped by idle expiry, job end or unload): `pd_tick` aborts it.
+static mut PD_DIRTY: bool = false;
+/// The adapter may hold a staged file (`dkpw_begin` succeeded and no close or abort since).
+static mut PD_ACTIVE: bool = false;
+/// Test knob: when not 0, the adapter stops dead at that step of the next +Drive write (`dkrt_pdw.h`), as a power cut would; 0 at every boot.
+#[no_mangle]
+pub static mut DKRT_PD_CUT: u32 = 0;
+/// The boot recovery of the staging folder ran.
+static mut PD_RECOVERED: bool = false;
+
+unsafe fn pd_present() -> bool {
+    if read_volatile(addr_of!(PD_STATE)) == 0 {
+        let here = core::hint::black_box(dkpw_begin as *const () as usize) != 0
+            && core::hint::black_box(dkpw_write as *const () as usize) != 0
+            && core::hint::black_box(dkpw_close as *const () as usize) != 0
+            && core::hint::black_box(dkpw_abort as *const () as usize) != 0
+            && core::hint::black_box(dkpw_delete as *const () as usize) != 0
+            && core::hint::black_box(dkpw_recover as *const () as usize) != 0
+            && core::hint::black_box(dkpw_version as *const () as usize) != 0
+            && core::hint::black_box(dkpw_staging as *const () as usize) != 0;
+        write_volatile(addr_of_mut!(PD_STATE), if here && dkpw_version() == DKPW_VERSION { 1 } else { 2 });
+    }
+    read_volatile(addr_of!(PD_STATE)) == 1
+}
+
+/// Take the adapter for one call while no write session is open (the UI pass). The session test and the claim of the adapter are one step under
+/// the irq mask, so a `pd_create` that claims the session meanwhile finds the adapter busy and gives up.
+fn pd_enter_idle() -> bool {
+    let sr = crate::irq_mask();
+    let ok = unsafe { !read_volatile(addr_of!(PD_BUSY)) && up().kind == NONE };
+    if ok {
+        unsafe { write_volatile(addr_of_mut!(PD_BUSY), true) };
+    }
+    crate::irq_restore(sr);
+    ok
+}
+
+/// Take the adapter for one call. False: another call is running.
+fn pd_enter() -> bool {
+    let sr = crate::irq_mask();
+    let free = unsafe { !read_volatile(addr_of!(PD_BUSY)) };
+    if free {
+        unsafe { write_volatile(addr_of_mut!(PD_BUSY), true) };
+    }
+    crate::irq_restore(sr);
+    free
+}
+
+fn pd_leave() {
+    unsafe { write_volatile(addr_of_mut!(PD_BUSY), false) };
+}
+
+fn pd_busy() -> bool {
+    unsafe { read_volatile(addr_of!(PD_BUSY)) }
+}
+
+/// Drop an SDK session that nobody ends any more; a +Drive session leaves a staged file that `pd_tick` removes.
+fn drop_sdk(u: &mut Up) {
+    if u.pd {
+        unsafe { write_volatile(addr_of_mut!(PD_DIRTY), true) };
+    }
+    u.kind = NONE;
+}
+
+/// Is `full` (`l` bytes) the adapter's staging folder or inside it?
+unsafe fn pd_staging(full: *const u8, l: usize) -> bool {
+    let st = dkpw_staging();
+    let mut n = 0;
+    while *st.add(n) != 0 {
+        n += 1;
+    }
+    // `staging` is the folder name with its leading '/': the path has none, so compare from the second byte
+    let name = st.add(1);
+    let m = n - 1;
+    if l < m {
+        return false;
+    }
+    let mut i = 0;
+    while i < m {
+        if *full.add(i) != *name.add(i) {
+            return false;
+        }
+        i += 1;
+    }
+    l == m || *full.add(m) == b'/'
+}
+
+/// UI task, once per pass: remove the staged file of a dropped session, and run the staging recovery once after the filesystem is up.
+unsafe fn pd_tick() {
+    if crate::device() != 1 || !pd_present() {
+        return;
+    }
+    if read_volatile(addr_of!(PD_DIRTY)) && pd_enter_idle() {
+        dkpw_abort();
+        write_volatile(addr_of_mut!(PD_DIRTY), false);
+        write_volatile(addr_of_mut!(PD_ACTIVE), false);
+        pd_leave();
+    }
+    if !read_volatile(addr_of!(PD_RECOVERED)) && pd_enter_idle() {
+        let mut out = [0u32; 4];
+        let r = dkpw_recover(out.as_mut_ptr());
+        pd_leave();
+        if r >= 0 {
+            write_volatile(addr_of_mut!(PD_RECOVERED), true);
+            if out[0] != 0 || out[1] != 0 || out[2] != 0 || out[3] != 0 {
+                // renamed into place, deleted, our leftovers that stayed, entries that are not ours (left alone)
+                crate::dlog::ev(dkrt_sdk::logk::UPLOAD, 0, [0xb7, out[0], out[1], out[2], out[3]]);
+            }
+        }
+    }
+}
+
+/// Claim the one write session for the +Drive. `E_BUSY`: a session is open or the store is in use.
+unsafe fn pd_create(owner: u8, path: *const u8, size: u32, hash4: *const u8, flags: u32) -> i32 {
+    if !pd_present() {
+        return E_CONTRACT;
+    }
+    if !read_volatile(addr_of!(PD_RECOVERED)) {
+        return busy(E_BUSY); // the boot recovery of the staging folder has not run yet
+    }
+    if !acquire() {
+        return busy(E_BUSY);
+    }
+    let u = up();
+    if u.kind != NONE {
+        unlock();
+        return busy(E_BUSY);
+    }
+    // the claim is made before the adapter call (which can take long): a SysEx BEGIN meanwhile finds an SDK session and says E_BUSY
+    u.pd = true;
+    u.size = size;
+    u.next = 0;
+    u.owner = owner;
+    NEXT_HANDLE = NEXT_HANDLE.wrapping_add(1) & 0x7fff;
+    u.handle = NEXT_HANDLE + 1;
+    u.job = crate::io::step_job();
+    u.last = now();
+    u.kind = SDK;
+    unlock();
+    if !pd_enter() {
+        u.kind = NONE;
+        return busy(E_BUSY);
+    }
+    if read_volatile(addr_of!(PD_ACTIVE)) {
+        dkpw_abort(); // a staged file that no session owns
+        write_volatile(addr_of_mut!(PD_ACTIVE), false);
+    }
+    let r = dkpw_begin(path, size, hash4, flags | (read_volatile(addr_of!(DKRT_PD_CUT)) << 8));
+    if r == OK {
+        write_volatile(addr_of_mut!(PD_ACTIVE), true);
+    }
+    pd_leave();
+    if r != OK {
+        u.kind = NONE;
+        u.pd = false;
+        return busy(r);
+    }
+    u.last = now();
+    u.handle
+}
+
+unsafe fn pd_write(owner: u8, h: i32, offset: u32, buf: *const u8, len: u32) -> i32 {
+    if !mine(SDK, owner, h) {
+        return E_STATE;
+    }
+    let u = up();
+    if offset != u.next {
+        return E_OFFSET;
+    }
+    let end = offset as u64 + len as u64;
+    if end > u.size as u64 || (len & 511 != 0 && end != u.size as u64) {
+        return E_LENGTH;
+    }
+    if len == 0 {
+        return OK;
+    }
+    if !pd_enter() {
+        return busy(E_BUSY);
+    }
+    let r = dkpw_write(buf, len);
+    pd_leave();
+    if r == OK {
+        u.last = now();
+        u.next = end as u32;
+    }
+    r
+}
+
+unsafe fn pd_close(owner: u8, h: i32, out: *mut u8) -> i32 {
+    if !mine(SDK, owner, h) {
+        return E_STATE;
+    }
+    if !pd_enter() {
+        return busy(E_BUSY);
+    }
+    let u = up();
+    let r = if u.next != u.size {
+        dkpw_abort();
+        E_LENGTH
+    } else {
+        dkpw_close(out)
+    };
+    write_volatile(addr_of_mut!(PD_ACTIVE), false);
+    pd_leave();
+    u.kind = NONE;
+    u.pd = false;
+    if r != OK {
+        // a failed close can leave a journal and a staged file (a rename that failed after the destination was deleted): the UI pass runs the
+        // recovery again before the next file is accepted
+        write_volatile(addr_of_mut!(PD_RECOVERED), false);
+    }
+    r
+}
+
+unsafe fn pd_abort(owner: u8, h: i32) -> i32 {
+    if !mine(SDK, owner, h) {
+        return E_STATE;
+    }
+    if !pd_enter() {
+        return busy(E_BUSY);
+    }
+    dkpw_abort();
+    write_volatile(addr_of_mut!(PD_ACTIVE), false);
+    pd_leave();
+    let u = up();
+    u.kind = NONE;
+    u.pd = false;
+    OK
+}
+
+unsafe fn pd_delete(path: *const u8) -> i32 {
+    if !pd_present() {
+        return E_CONTRACT;
+    }
+    if is_open() || !read_volatile(addr_of!(PD_RECOVERED)) || !pd_enter() {
+        return busy(E_BUSY);
+    }
+    let r = dkpw_delete(path);
+    pd_leave();
+    r
 }
 
 /// Host tests of other files share the one session and lock: they hold this lock.

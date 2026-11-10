@@ -11229,7 +11229,8 @@
       "subsystem": "storage",
       "users": [
         "core/file-catalog-proof",
-        "core/runtime"
+        "core/runtime",
+        "core/plusdrive-write"
       ],
       "was": []
     },
@@ -11266,7 +11267,404 @@
       "subsystem": "storage",
       "users": [
         "core/file-catalog-proof",
-        "core/runtime"
+        "core/runtime",
+        "core/plusdrive-write"
+      ],
+      "was": []
+    },
+    {
+      "at": {
+        "dt2-1.17": [
+          {
+            "addr": "0x4015bfc4",
+            "len": 4
+          }
+        ]
+      },
+      "bindings": {
+        "c": "dk_fw_storage_file_any_open",
+        "rust": "dkfw::storage::file_any_open"
+      },
+      "cpu": "cf",
+      "devices": [
+        "dt2"
+      ],
+      "doc": "Nonzero when any inode's bit is set in the open-file bitmap (finding 120).",
+      "file": "devices/fw/storage.toml",
+      "kind": "fn",
+      "mark": "D",
+      "name": "cf.storage.fn.file.any_open",
+      "rule": {
+        "dt2": {
+          "kind": "cf_func",
+          "len": 4,
+          "offset": 0
+        }
+      },
+      "sig": "i32 ()",
+      "subsystem": "storage",
+      "users": [
+        "core/plusdrive-write"
+      ],
+      "was": []
+    },
+    {
+      "at": {
+        "dt2-1.17": [
+          {
+            "addr": "0x40157078",
+            "len": 4
+          }
+        ]
+      },
+      "bindings": {
+        "c": "dk_fw_storage_file_delete",
+        "rust": "dkfw::storage::file_delete"
+      },
+      "cpu": "cf",
+      "devices": [
+        "dt2"
+      ],
+      "doc": "Delete a file and free its pages: 0, -1 for a missing path or an open file (open bitmap) (finding 120).",
+      "file": "devices/fw/storage.toml",
+      "kind": "fn",
+      "mark": "D",
+      "name": "cf.storage.fn.file.delete",
+      "rule": {
+        "dt2": {
+          "kind": "cf_func",
+          "len": 4,
+          "offset": 0
+        }
+      },
+      "sig": "i32 (const u8 *path)",
+      "subsystem": "storage",
+      "users": [
+        "core/plusdrive-write"
+      ],
+      "was": []
+    },
+    {
+      "at": {
+        "dt2-1.17": [
+          {
+            "addr": "0x4015b3aa",
+            "len": 4
+          }
+        ]
+      },
+      "bindings": {
+        "c": "dk_fw_storage_file_hash",
+        "rust": "dkfw::storage::file_hash"
+      },
+      "cpu": "cf",
+      "devices": [
+        "dt2"
+      ],
+      "doc": "Read the whole open file back and store its hash (hashlittle, seed 0x43fa243a; hash|1 in the inode) and hash-table page: 0 or -1. Holds the filesystem mutex for the read-back; call before path.close (finding 120).",
+      "file": "devices/fw/storage.toml",
+      "kind": "fn",
+      "mark": "D",
+      "name": "cf.storage.fn.file.hash",
+      "rule": {
+        "dt2": {
+          "kind": "cf_func",
+          "len": 4,
+          "offset": 0
+        }
+      },
+      "sig": "i32 (u32 *handle)",
+      "subsystem": "storage",
+      "users": [
+        "core/plusdrive-write"
+      ],
+      "was": []
+    },
+    {
+      "at": {
+        "dt2-1.17": [
+          {
+            "addr": "0x4015bf92",
+            "len": 4
+          }
+        ]
+      },
+      "bindings": {
+        "c": "dk_fw_storage_file_id_open",
+        "rust": "dkfw::storage::file_id_open"
+      },
+      "cpu": "cf",
+      "devices": [
+        "dt2"
+      ],
+      "doc": "Nonzero when the inode's bit is set in the open-file bitmap 0x46f4ded0 (any reader or writer holds it open). No mutex (finding 120).",
+      "file": "devices/fw/storage.toml",
+      "kind": "fn",
+      "mark": "D",
+      "name": "cf.storage.fn.file.id_open",
+      "rule": {
+        "dt2": {
+          "kind": "cf_func",
+          "len": 4,
+          "offset": 0
+        }
+      },
+      "sig": "i32 (u32 inode_id)",
+      "subsystem": "storage",
+      "users": [
+        "core/plusdrive-write"
+      ],
+      "was": []
+    },
+    {
+      "at": {
+        "dt2-1.17": [
+          {
+            "addr": "0x4015af4c",
+            "len": 4
+          }
+        ]
+      },
+      "bindings": {
+        "c": "dk_fw_storage_file_info",
+        "rust": "dkfw::storage::file_info"
+      },
+      "cpu": "cf",
+      "devices": [
+        "dt2"
+      ],
+      "doc": "Four words: id, stored hash|1, size incl. the 16-byte trailer, record counter. -1 when the leaf is missing or not hashed (finding 120).",
+      "file": "devices/fw/storage.toml",
+      "kind": "fn",
+      "mark": "D",
+      "name": "cf.storage.fn.file.info",
+      "rule": {
+        "dt2": {
+          "kind": "cf_func",
+          "len": 4,
+          "offset": 0
+        }
+      },
+      "sig": "i32 (const u8 *path, u32 *out)",
+      "subsystem": "storage",
+      "users": [
+        "core/plusdrive-write"
+      ],
+      "was": []
+    },
+    {
+      "at": {
+        "dt2-1.17": [
+          {
+            "addr": "0x40156ffc",
+            "len": 4
+          }
+        ]
+      },
+      "bindings": {
+        "c": "dk_fw_storage_file_link",
+        "rust": "dkfw::storage::file_link"
+      },
+      "cpu": "cf",
+      "devices": [
+        "dt2"
+      ],
+      "doc": "Add a second directory entry for an existing file (FUN_40156b00 with limit check 1; the sibling of file.rename that does not remove the old entry): the inode's link count goes 1 to 2 and is written through before the entry. 0 or -1. A name of a file whose count is 2 can be deleted with file.delete without freeing the data (finding 120). The adapter calls it only to make the two-names state for its power-cut test.",
+      "file": "devices/fw/storage.toml",
+      "kind": "fn",
+      "mark": "D",
+      "name": "cf.storage.fn.file.link",
+      "rule": {
+        "dt2": {
+          "kind": "cf_func",
+          "len": 4,
+          "offset": 0
+        }
+      },
+      "sig": "i32 (const u8 *old_path, const u8 *new_path)",
+      "subsystem": "storage",
+      "users": [
+        "core/plusdrive-write"
+      ],
+      "was": []
+    },
+    {
+      "at": {
+        "dt2-1.17": [
+          {
+            "addr": "0x4015746e",
+            "len": 4
+          }
+        ]
+      },
+      "bindings": {
+        "c": "dk_fw_storage_file_mkdir",
+        "rust": "dkfw::storage::file_mkdir"
+      },
+      "cpu": "cf",
+      "devices": [
+        "dt2"
+      ],
+      "doc": "Create one folder level; the parent must exist: 0, -1 when the leaf exists or a name character is invalid (finding 120).",
+      "file": "devices/fw/storage.toml",
+      "kind": "fn",
+      "mark": "D",
+      "name": "cf.storage.fn.file.mkdir",
+      "rule": {
+        "dt2": {
+          "kind": "cf_func",
+          "len": 4,
+          "offset": 0
+        }
+      },
+      "sig": "i32 (const u8 *path)",
+      "subsystem": "storage",
+      "users": [
+        "core/plusdrive-write"
+      ],
+      "was": []
+    },
+    {
+      "at": {
+        "dt2-1.17": [
+          {
+            "addr": "0x40156f6c",
+            "len": 4
+          }
+        ]
+      },
+      "bindings": {
+        "c": "dk_fw_storage_file_rename",
+        "rust": "dkfw::storage::file_rename"
+      },
+      "cpu": "cf",
+      "devices": [
+        "dt2"
+      ],
+      "doc": "Path rename under the filesystem mutex (FUN_40156b00 adds the new directory entry for the same inode, then FUN_40156e94 removes the old one): 0, -1 when the source is missing, a folder or open (a destination that exists was not tested: callers delete it first). The inode id and hash stay (finding 120).",
+      "file": "devices/fw/storage.toml",
+      "kind": "fn",
+      "mark": "D",
+      "name": "cf.storage.fn.file.rename",
+      "rule": {
+        "dt2": {
+          "kind": "cf_func",
+          "len": 4,
+          "offset": 0
+        }
+      },
+      "sig": "i32 (const u8 *old_path, const u8 *new_path)",
+      "subsystem": "storage",
+      "users": [
+        "core/plusdrive-write"
+      ],
+      "was": []
+    },
+    {
+      "at": {
+        "dt2-1.17": [
+          {
+            "addr": "0x40158810",
+            "len": 4
+          }
+        ]
+      },
+      "bindings": {
+        "c": "dk_fw_storage_file_reserve",
+        "rust": "dkfw::storage::file_reserve"
+      },
+      "cpu": "cf",
+      "devices": [
+        "dt2"
+      ],
+      "doc": "Reserve pages for [offset, offset+bytes) of an open file: 0, -1 when the card cannot hold them (finding 120).",
+      "file": "devices/fw/storage.toml",
+      "kind": "fn",
+      "mark": "D",
+      "name": "cf.storage.fn.file.reserve",
+      "rule": {
+        "dt2": {
+          "kind": "cf_func",
+          "len": 4,
+          "offset": 0
+        }
+      },
+      "sig": "i32 (u32 *handle, u32 offset, u32 bytes)",
+      "subsystem": "storage",
+      "users": [
+        "core/plusdrive-write"
+      ],
+      "was": []
+    },
+    {
+      "at": {
+        "dt2-1.17": [
+          {
+            "addr": "0x40157192",
+            "len": 4
+          }
+        ]
+      },
+      "bindings": {
+        "c": "dk_fw_storage_file_rmdir",
+        "rust": "dkfw::storage::file_rmdir"
+      },
+      "cpu": "cf",
+      "devices": [
+        "dt2"
+      ],
+      "doc": "Remove an empty folder: 0 or -1 (finding 120).",
+      "file": "devices/fw/storage.toml",
+      "kind": "fn",
+      "mark": "D",
+      "name": "cf.storage.fn.file.rmdir",
+      "rule": {
+        "dt2": {
+          "kind": "cf_func",
+          "len": 4,
+          "offset": 0
+        }
+      },
+      "sig": "i32 (const u8 *path)",
+      "subsystem": "storage",
+      "users": [
+        "core/plusdrive-write"
+      ],
+      "was": []
+    },
+    {
+      "at": {
+        "dt2-1.17": [
+          {
+            "addr": "0x4015866a",
+            "len": 4
+          }
+        ]
+      },
+      "bindings": {
+        "c": "dk_fw_storage_file_write",
+        "rust": "dkfw::storage::file_write"
+      },
+      "cpu": "cf",
+      "devices": [
+        "dt2"
+      ],
+      "doc": "Write `bytes` at handle.pos and advance it; the byte count, -1 when the card is full. Reserves 32 KiB pages, a whole page goes straight from a 16-byte aligned `buf`. Task context; takes the filesystem mutex (finding 120).",
+      "file": "devices/fw/storage.toml",
+      "kind": "fn",
+      "mark": "D",
+      "name": "cf.storage.fn.file.write",
+      "rule": {
+        "dt2": {
+          "kind": "cf_func",
+          "len": 4,
+          "offset": 0
+        }
+      },
+      "sig": "i32 (const u8 *buf, u32 bytes, u32 *handle)",
+      "subsystem": "storage",
+      "users": [
+        "core/plusdrive-write"
       ],
       "was": []
     },
@@ -11303,7 +11701,8 @@
       "subsystem": "storage",
       "users": [
         "core/runtime",
-        "core/sample-pool"
+        "core/sample-pool",
+        "core/plusdrive-write"
       ],
       "was": []
     },
@@ -11340,7 +11739,8 @@
       "subsystem": "storage",
       "users": [
         "core/runtime",
-        "core/sample-pool"
+        "core/sample-pool",
+        "core/plusdrive-write"
       ],
       "was": []
     },
@@ -11602,6 +12002,42 @@
       "subsystem": "storage",
       "users": [
         "core/storage-fault-proof"
+      ],
+      "was": []
+    },
+    {
+      "at": {
+        "dt2-1.17": [
+          {
+            "addr": "0x4015af5e",
+            "len": 4
+          }
+        ]
+      },
+      "bind": "static",
+      "bindings": {
+        "c": "dk_fw_storage_mounted",
+        "rust": "dkfw::storage::MOUNTED"
+      },
+      "cpu": "cf",
+      "devices": [
+        "dt2"
+      ],
+      "doc": "The 4-byte address literal of the filesystem's mounted flag (0x44f2bd68 on 1.17): every path function starts with `tst.l (flag)`; nonzero after FUN_4015a72c mounted the +Drive (finding 120).",
+      "file": "devices/fw/storage.toml",
+      "kind": "site",
+      "mark": "D",
+      "name": "cf.storage.site.mounted",
+      "rule": {
+        "dt2": {
+          "kind": "cf_func",
+          "len": 4,
+          "offset": 18
+        }
+      },
+      "subsystem": "storage",
+      "users": [
+        "core/plusdrive-write"
       ],
       "was": []
     },
@@ -17950,7 +18386,7 @@
       "name": "samples"
     },
     {
-      "count": 16,
+      "count": 28,
       "cpu": "cf",
       "file": "devices/fw/storage.toml",
       "meaning": "block device reads and writes, the boot record",

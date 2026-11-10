@@ -19,6 +19,7 @@ import { deviceListing } from '@digi/regression/runtime/upload-kit.ts';
 
 const CMD = 0x24;
 const WRITE = 1;
+const REPLACE = 0x40; // added to the case: DK_FILE_REPLACE
 const SIZE = 2 * 4096 + 777;
 const PATH = 'data/sdk-cut.bin';
 const pattern = (n: number) => Buffer.from(Uint8Array.from({ length: n }, (_, i) => (i * 7 + (i >> 8)) & 255));
@@ -34,8 +35,8 @@ const cases = [
 ] as const;
 
 /** Start a write job of the fixture and run the emulator until it has ended; returns the job's status and the close result. */
-async function runJob(rig: CardRig, dk: DkSession, size: number, file: string): Promise<{ job: number; close: number }> {
-  const r = await dk.request(CMD, Buffer.concat([Buffer.from([WRITE]), be32(size), cstr(file)]));
+async function runJob(rig: CardRig, dk: DkSession, size: number, file: string, kind = WRITE): Promise<{ job: number; close: number }> {
+  const r = await dk.request(CMD, Buffer.concat([Buffer.from([kind]), be32(size), cstr(file)]));
   expect(r.status, 'the job is queued').toBe(0);
   for (let i = 0; i < 200; i++) {
     await advance(rig.session, 100);
@@ -93,6 +94,42 @@ for (const device of DEVICES) {
         const files: Files = { ...want, 'data/after.bin': pattern(5000), 'modules/more.dkm': more };
         const after = await rig.view(`sdkcut${k}-w`);
         expect(listing(after.files), `${label}: both writes are on the card ${after.head}`).toEqual(listing(files));
+      }
+    }, 3_600_000);
+    test('a replace cut or torn at any card write leaves the old file or the new one, never neither, and the next replace works', async () => {
+      const old = blob(3000, 21);
+      const oldFile = path.join(rig.artifacts, 'old-r.dkm');
+      fs.writeFileSync(oldFile, old);
+      const prev = pattern(1500);
+      const prevFile = path.join(rig.artifacts, 'prev.bin');
+      fs.writeFileSync(prevFile, prev);
+      const mod = rig.mod('test/file-write');
+      const moduleBytes = fs.readFileSync(mod.file);
+      const base = await rig.card({
+        name: 'cut-replace-base',
+        modules: [mod, { name: 'modules/old.dkm', file: oldFile }, { name: PATH, file: prevFile }],
+        selection: [mod.name],
+      });
+      const oldFiles: Files = { 'modules/old.dkm': old, [mod.name]: moduleBytes, [PATH]: prev };
+      const data = pattern(SIZE);
+      for (const [k, [label, knobs, committed]] of cases.entries()) {
+        const dk = await rig.pausedBoot(base);
+        for (const [name, value] of Object.entries(knobs)) await pokeKnob(rig.session, rig.plan, name, value);
+        const done = await runJob(rig, dk, SIZE, PATH, WRITE | REPLACE);
+        const whole = 'DKRT_UPLOAD_CUT' in knobs && knobs.DKRT_UPLOAD_CUT >= 7;
+        expect(done.job === 0, `${label}: the replace ${whole ? 'ends ok' : 'is refused a write'} (status ${done.job})`).toBe(whole);
+        const card = await rig.after(`sdkrcut${k}`);
+
+        const want: Files = committed ? { ...oldFiles, [PATH]: data } : oldFiles;
+        const next = await rig.pausedBoot(card);
+        expect(await deviceListing(next), `${label}: the next boot reads the old file or the new one, whole`).toEqual(listing(want));
+        const view = await rig.view(`sdkrcut${k}-v`);
+        expect(listing(view.files), `${label}: plusdrive reads the same from the card ${view.head}`).toEqual(listing(want));
+        expect(await next.verify(PATH), `${label}: VERIFY of the file at the path`).toBe(sha(committed ? data : prev));
+
+        const again = await runJob(rig, next, 5000, PATH, WRITE | REPLACE);
+        expect([again.job, again.close], `${label}: the next replace works`).toEqual([0, 0]);
+        expect(await next.verify(PATH)).toBe(sha(pattern(5000)));
       }
     }, 3_600_000);
   });

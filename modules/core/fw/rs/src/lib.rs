@@ -700,6 +700,72 @@ pub mod storage {
     }
 
     unsafe extern "C" {
+        /// Nonzero when any inode's bit is set in the open-file bitmap (finding 120).
+        #[link_name = "cf.storage.fn.file.any_open"]
+        pub fn file_any_open() -> i32;
+    }
+
+    unsafe extern "C" {
+        /// Delete a file and free its pages: 0, -1 for a missing path or an open file (open bitmap) (finding 120).
+        #[link_name = "cf.storage.fn.file.delete"]
+        pub fn file_delete(path: *const u8) -> i32;
+    }
+
+    unsafe extern "C" {
+        /// Read the whole open file back and store its hash (hashlittle, seed 0x43fa243a; hash|1 in the inode) and hash-table page: 0 or -1. Holds the filesystem mutex for the read-back; call before path.close (finding 120).
+        #[link_name = "cf.storage.fn.file.hash"]
+        pub fn file_hash(handle: *mut u32) -> i32;
+    }
+
+    unsafe extern "C" {
+        /// Nonzero when the inode's bit is set in the open-file bitmap 0x46f4ded0 (any reader or writer holds it open). No mutex (finding 120).
+        #[link_name = "cf.storage.fn.file.id_open"]
+        pub fn file_id_open(inode_id: u32) -> i32;
+    }
+
+    unsafe extern "C" {
+        /// Four words: id, stored hash|1, size incl. the 16-byte trailer, record counter. -1 when the leaf is missing or not hashed (finding 120).
+        #[link_name = "cf.storage.fn.file.info"]
+        pub fn file_info(path: *const u8, out: *mut u32) -> i32;
+    }
+
+    unsafe extern "C" {
+        /// Add a second directory entry for an existing file (FUN_40156b00 with limit check 1; the sibling of file.rename that does not remove the old entry): the inode's link count goes 1 to 2 and is written through before the entry. 0 or -1. A name of a file whose count is 2 can be deleted with file.delete without freeing the data (finding 120). The adapter calls it only to make the two-names state for its power-cut test.
+        #[link_name = "cf.storage.fn.file.link"]
+        pub fn file_link(old_path: *const u8, new_path: *const u8) -> i32;
+    }
+
+    unsafe extern "C" {
+        /// Create one folder level; the parent must exist: 0, -1 when the leaf exists or a name character is invalid (finding 120).
+        #[link_name = "cf.storage.fn.file.mkdir"]
+        pub fn file_mkdir(path: *const u8) -> i32;
+    }
+
+    unsafe extern "C" {
+        /// Path rename under the filesystem mutex (FUN_40156b00 adds the new directory entry for the same inode, then FUN_40156e94 removes the old one): 0, -1 when the source is missing, a folder or open (a destination that exists was not tested: callers delete it first). The inode id and hash stay (finding 120).
+        #[link_name = "cf.storage.fn.file.rename"]
+        pub fn file_rename(old_path: *const u8, new_path: *const u8) -> i32;
+    }
+
+    unsafe extern "C" {
+        /// Reserve pages for [offset, offset+bytes) of an open file: 0, -1 when the card cannot hold them (finding 120).
+        #[link_name = "cf.storage.fn.file.reserve"]
+        pub fn file_reserve(handle: *mut u32, offset: u32, bytes: u32) -> i32;
+    }
+
+    unsafe extern "C" {
+        /// Remove an empty folder: 0 or -1 (finding 120).
+        #[link_name = "cf.storage.fn.file.rmdir"]
+        pub fn file_rmdir(path: *const u8) -> i32;
+    }
+
+    unsafe extern "C" {
+        /// Write `bytes` at handle.pos and advance it; the byte count, -1 when the card is full. Reserves 32 KiB pages, a whole page goes straight from a 16-byte aligned `buf`. Task context; takes the filesystem mutex (finding 120).
+        #[link_name = "cf.storage.fn.file.write"]
+        pub fn file_write(buf: *const u8, bytes: u32, handle: *mut u32) -> i32;
+    }
+
+    unsafe extern "C" {
         /// Close a successfully opened four-word handle; 0 succeeds. Takes the filesystem mutex internally (finding 105).
         #[link_name = "cf.storage.fn.path.close"]
         pub fn path_close(handle: *mut u32) -> i32;
@@ -721,6 +787,12 @@ pub mod storage {
         /// File byte length by internal entry id (handle word 0), NOT by handle pointer; 0xffffffff on error (finding 105).
         #[link_name = "cf.storage.fn.path.size"]
         pub fn path_size(entry_id: u32) -> u32;
+    }
+
+    unsafe extern "C" {
+        /// The 4-byte address literal of the filesystem's mounted flag (0x44f2bd68 on 1.17): every path function starts with `tst.l (flag)`; nonzero after FUN_4015a72c mounted the +Drive (finding 120).
+        #[link_name = "cf.storage.site.mounted"]
+        pub static MOUNTED: u8;
     }
 }
 

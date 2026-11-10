@@ -44,7 +44,7 @@ sig = "i32 (const u8 *path, const u8 *mode, u32 *handle)"
 devices = ["dt2"]
 rule = { kind = "cf_func", hash = "f642319babf0cc8f26a18a17356a25df", offset = 0x0, len = 4 }
 mark = "D"
-users = ["core/runtime", "core/sample-pool"]
+users = ["core/runtime", "core/sample-pool", "core/plusdrive-write"]
 doc = "Path open; 0 succeeds. Handle is four words (entry id, position, write mode, open). The sample adapter passes only mode r; task context, internal filesystem locking (finding 105)."
 
 [[fn]]
@@ -64,7 +64,7 @@ sig = "i32 (u32 *handle)"
 devices = ["dt2"]
 rule = { kind = "cf_func", hash = "ad3982007ea053f7f633f28b1f0e5f59", offset = 0x0, len = 4 }
 mark = "D"
-users = ["core/runtime", "core/sample-pool"]
+users = ["core/runtime", "core/sample-pool", "core/plusdrive-write"]
 doc = "Close a successfully opened four-word handle; 0 succeeds. Takes the filesystem mutex internally (finding 105)."
 
 [[fn]]
@@ -77,6 +77,128 @@ mark = "D"
 users = ["core/runtime"]
 doc = "File byte length by internal entry id (handle word 0), NOT by handle pointer; 0xffffffff on error (finding 105)."
 
+# DT2 1.17 file writes for core/plusdrive-write (finding 120). Same convention as the read functions above.
+
+[[fn]]
+name = "cf.storage.fn.file.write"
+cpu = "cf"
+sig = "i32 (const u8 *buf, u32 bytes, u32 *handle)"
+devices = ["dt2"]
+rule = { kind = "cf_func", hash = "a2c1df3d75289bf0303697618f4c92ee", offset = 0x0, len = 4 }
+mark = "D"
+users = ["core/plusdrive-write"]
+doc = "Write `bytes` at handle.pos and advance it; the byte count, -1 when the card is full. Reserves 32 KiB pages, a whole page goes straight from a 16-byte aligned `buf`. Task context; takes the filesystem mutex (finding 120)."
+
+[[fn]]
+name = "cf.storage.fn.file.reserve"
+cpu = "cf"
+sig = "i32 (u32 *handle, u32 offset, u32 bytes)"
+devices = ["dt2"]
+rule = { kind = "cf_func", hash = "3da0b0458b2bd3bc920b7b28898bda58", offset = 0x0, len = 4 }
+mark = "D"
+users = ["core/plusdrive-write"]
+doc = "Reserve pages for [offset, offset+bytes) of an open file: 0, -1 when the card cannot hold them (finding 120)."
+
+[[fn]]
+name = "cf.storage.fn.file.hash"
+cpu = "cf"
+sig = "i32 (u32 *handle)"
+devices = ["dt2"]
+rule = { kind = "cf_func", hash = "0dfe3aa5cadab0e82643415ef4a6f0f9", offset = 0x0, len = 4 }
+mark = "D"
+users = ["core/plusdrive-write"]
+doc = "Read the whole open file back and store its hash (hashlittle, seed 0x43fa243a; hash|1 in the inode) and hash-table page: 0 or -1. Holds the filesystem mutex for the read-back; call before path.close (finding 120)."
+
+[[fn]]
+name = "cf.storage.fn.file.delete"
+cpu = "cf"
+sig = "i32 (const u8 *path)"
+devices = ["dt2"]
+rule = { kind = "cf_func", hash = "4900c52f1741daeb3c6d135bbff647d6", offset = 0x0, len = 4 }
+mark = "D"
+users = ["core/plusdrive-write"]
+doc = "Delete a file and free its pages: 0, -1 for a missing path or an open file (open bitmap) (finding 120)."
+
+[[fn]]
+name = "cf.storage.fn.file.mkdir"
+cpu = "cf"
+sig = "i32 (const u8 *path)"
+devices = ["dt2"]
+rule = { kind = "cf_func", hash = "aa63f0091fff183d872b70744d4ec0fc", offset = 0x0, len = 4 }
+mark = "D"
+users = ["core/plusdrive-write"]
+doc = "Create one folder level; the parent must exist: 0, -1 when the leaf exists or a name character is invalid (finding 120)."
+
+[[fn]]
+name = "cf.storage.fn.file.info"
+cpu = "cf"
+sig = "i32 (const u8 *path, u32 *out)"
+devices = ["dt2"]
+rule = { kind = "cf_func", hash = "c43b399ff1b6f8a228646b583d335a8a", offset = 0x0, len = 4 }
+mark = "D"
+users = ["core/plusdrive-write"]
+doc = "Four words: id, stored hash|1, size incl. the 16-byte trailer, record counter. -1 when the leaf is missing or not hashed (finding 120)."
+
+[[fn]]
+name = "cf.storage.fn.file.any_open"
+cpu = "cf"
+sig = "i32 ()"
+devices = ["dt2"]
+rule = { kind = "cf_func", hash = "0d51b093da49feaf6446a8990289cd27", offset = 0x0, len = 4 }
+mark = "D"
+users = ["core/plusdrive-write"]
+doc = "Nonzero when any inode's bit is set in the open-file bitmap (finding 120)."
+
+[[fn]]
+name = "cf.storage.fn.file.rmdir"
+cpu = "cf"
+sig = "i32 (const u8 *path)"
+devices = ["dt2"]
+rule = { kind = "cf_func", hash = "d1767db87bc0ea8afc6d2721641c3786", offset = 0x0, len = 4 }
+mark = "D"
+users = ["core/plusdrive-write"]
+doc = "Remove an empty folder: 0 or -1 (finding 120)."
+
+[[fn]]
+name = "cf.storage.fn.file.rename"
+cpu = "cf"
+sig = "i32 (const u8 *old_path, const u8 *new_path)"
+devices = ["dt2"]
+rule = { kind = "cf_func", hash = "253b625ae3e99764d6f5992ca1129887", offset = 0x0, len = 4 }
+mark = "D"
+users = ["core/plusdrive-write"]
+doc = "Path rename under the filesystem mutex (FUN_40156b00 adds the new directory entry for the same inode, then FUN_40156e94 removes the old one): 0, -1 when the source is missing, a folder or open (a destination that exists was not tested: callers delete it first). The inode id and hash stay (finding 120)."
+
+[[fn]]
+name = "cf.storage.fn.file.id_open"
+cpu = "cf"
+sig = "i32 (u32 inode_id)"
+devices = ["dt2"]
+rule = { kind = "cf_func", hash = "8cd912767687c6aed1e8d3f79c878309", offset = 0x0, len = 4 }
+mark = "D"
+users = ["core/plusdrive-write"]
+doc = "Nonzero when the inode's bit is set in the open-file bitmap 0x46f4ded0 (any reader or writer holds it open). No mutex (finding 120)."
+
+[[fn]]
+name = "cf.storage.fn.file.link"
+cpu = "cf"
+sig = "i32 (const u8 *old_path, const u8 *new_path)"
+devices = ["dt2"]
+rule = { kind = "cf_func", hash = "dd4ad82c45a9e99e488a59cac28ea00b", offset = 0x0, len = 4 }
+mark = "D"
+users = ["core/plusdrive-write"]
+doc = "Add a second directory entry for an existing file (FUN_40156b00 with limit check 1; the sibling of file.rename that does not remove the old entry): the inode's link count goes 1 to 2 and is written through before the entry. 0 or -1. A name of a file whose count is 2 can be deleted with file.delete without freeing the data (finding 120). The adapter calls it only to make the two-names state for its power-cut test."
+
+[[site]]
+name = "cf.storage.site.mounted"
+bind = "static"
+cpu = "cf"
+devices = ["dt2"]
+rule = { kind = "cf_func", hash = "c43b399ff1b6f8a228646b583d335a8a", offset = 0x12, len = 4 }
+mark = "D"
+users = ["core/plusdrive-write"]
+doc = "The 4-byte address literal of the filesystem's mounted flag (0x44f2bd68 on 1.17): every path function starts with `tst.l (flag)`; nonzero after FUN_4015a72c mounted the +Drive (finding 120)."
+
 # Private DT2 UI-task directory diagnostic; plain caller-owned data, finding 93.
 [[fn]]
 name = "cf.storage.fn.directory.open"
@@ -85,7 +207,7 @@ sig = "i32 (const u8 *path, u32 *state)"
 devices = ["dt2"]
 rule = { kind = "cf_func", hash = "570eb9f42d27913a3ea63d6043d901bd", offset = 0, len = 4 }
 mark = "D"
-users = ["core/file-catalog-proof", "core/runtime"]
+users = ["core/file-catalog-proof", "core/runtime", "core/plusdrive-write"]
 doc = "DT2 1.17 read-only path directory open, 0 success/-1 failure; caller-owned four-word state. Task context; may block under filesystem locking (finding 93)."
 
 [[fn]]
@@ -95,7 +217,7 @@ sig = "i32 (u32 *state, u8 *output)"
 devices = ["dt2"]
 rule = { kind = "cf_func", hash = "3541efc67bfb00c8131ae96c343288d3", offset = 0, len = 4 }
 mark = "D"
-users = ["core/file-catalog-proof", "core/runtime"]
+users = ["core/file-catalog-proof", "core/runtime", "core/plusdrive-write"]
 doc = "DT2 1.17 read-only directory next, 1 entry/0 EOF/-1 failure. Caller zeros private 0x114-byte output; ID +0, u16 type +4, directory ID +8, page/offset +12/+16, NUL name[256] +20. Task context; no latency bound (finding 93)."
 
 [[fn]]

@@ -136,6 +136,8 @@ export interface CardOptions extends Partial<Omit<SelRecord, 'paths'>> {
   name?: string;
   /** Modules of the store: `name` is the store path (`modules/a.dkm`), `file` the .dkm. */
   modules?: { name: string; file: string }[];
+  /** Files of the DT2 +Drive path filesystem (`name` is the path below the root, e.g. `Samples/a.bin`; `file` the bytes). */
+  drive?: { name: string; file: string }[];
   /** Verified DT2 firmware (.syx) that seeds the boot project; omit for none. */
   syx?: string;
   /** Selected store paths, written to both copies. Undefined or null: no record. */
@@ -161,6 +163,10 @@ export async function buildCard(device: Device, o: CardOptions): Promise<string>
     for (const m of o.modules ?? []) {
       fs.mkdirSync(path.dirname(path.join(seed, 'digikit', m.name)), { recursive: true });
       fs.copyFileSync(m.file, path.join(seed, 'digikit', m.name));
+    }
+    for (const f of o.drive ?? []) {
+      fs.mkdirSync(path.dirname(path.join(seed, f.name)), { recursive: true });
+      fs.copyFileSync(f.file, path.join(seed, f.name));
     }
     await exec(
       plusdriveBinary(),

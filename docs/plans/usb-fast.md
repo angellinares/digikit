@@ -59,7 +59,7 @@ Not selected, the module is absent and USB stays stock (rule 5).
 ### 3.1 File writes
 
 ```c
-i32 file_create(u32 root, const char *path, u32 size, const u8 *hash4); // a write session; hash4 NULL or the expected hash; no overwrite: E_EXISTS
+i32 file_create(u32 root, const char *path, u32 size, const u8 *hash4, u32 flags); // a write session; hash4 NULL or the expected hash; E_EXISTS unless flags has DK_FILE_REPLACE (atomic replace)
 i32 file_write(i32 h, u32 offset, const u8 *buf, u32 len);   // offset must be the next byte; len a multiple of 512 except the last
 i32 file_close(i32 h, u8 hash_out[4]);                      // commits; hash_out = the device's `hash|1`, big-endian (store slot and +Drive alike)
 i32 file_abort(i32 h);                                      // drops the partial file
@@ -84,13 +84,16 @@ SDK API 1.10. Handles are tagged with their owner; unloading a module aborts its
   existing two-header scheme. Power-cut safe as today.
 - **+Drive (DT2)**: `core/plusdrive-write` calls the firmware's C-level file API (finding 120: open 0x40158902, write 0x4015866a, hash 0x4015b3aa,
   close 0x401588c0, info, delete, mkdir; a caller-owned 16-byte handle), which takes the firmware's recursive filesystem mutex **[D]**. A cut
-  mid-write leaves a visible half-written file and the firmware does not repair it, so the adapter writes under a temporary name in a hidden folder,
-  appends the 16 zero trailer bytes, hashes, closes, then renames into place; at boot it deletes leftovers in that folder. Rename keeping the hash
-  and who adds the trailer on a stock close are **[O]**: settle both on the emulator first. Elektron's allocation, inode and flush code runs unchanged.
+  mid-write leaves a visible half-written file and the firmware does not repair it, so the adapter writes under a temporary name in the folder
+  `/.dkstage`, appends the 16 zero trailer bytes itself (the stored hash covers data + 16 zeros), hashes, closes, then renames into place; a
+  replace writes a hashed journal record first, deletes the destination and renames. At boot the runtime's UI pass runs `dkpw_recover`: a replace
+  that lost its destination is finished, every other leftover is deleted. Rename keeps the inode and hash **[D]** (finding 120). Elektron's
+  allocation, inode and flush code runs unchanged.
   Close runs the firmware's read-back hash (`hashlittle`, seed 0x43fa243a) and stores `hash|1`; `file_close` returns it. Rules from the 1.17
   write-path analysis **[D]**: task context only, never an ISR; never on a file the stock MidiRpc writer has open; whole 32 KiB pages from a
   16-byte-aligned buffer; always close so the hash runs; `file_abort` closes and deletes. The filesystem lock is held for the close hash (seconds for
   a large file): the stock sample browser waits meanwhile.
+- The +Drive calls do not take the store lock (the firmware's filesystem mutex protects its own tables). The runtime claims the one write session under the store lock, then runs the adapter call outside it; one adapter call runs at a time (a busy flag), and an idle, unloaded or ended session leaves its staged file to the UI pass, which aborts it.
 - Context: only in an I/O worker step (3.2). Other contexts get `E_CONTEXT`.
 
 ### 3.2 I/O worker
@@ -166,7 +169,7 @@ per-device data through anchors.
 - A bad descriptor or a USB hang: hold REC at boot (safe mode, `boot.rs:255-309`), then deselect usb-fast in the DIGIKIT menu. DIN MIDI OS upgrade
   stays as the last resort. Prove the safe-mode path on the emulator before the first hardware run, and do the REC drill once on each device.
 - Selecting the module costs one USB reconnect during boot when the host had already enumerated: the MIDI port disappears briefly then.
-- SDK file writes: no overwrite, whole-file sessions, the existing card write gate (`card::admit`), one writer per root.
+- SDK file writes: no overwrite unless DK_FILE_REPLACE (the old file stays until the commit), whole-file sessions, the existing card write gate (`card::admit`), one writer per root.
 
 ## 7. Host side
 
@@ -219,7 +222,7 @@ Each step ends with its own tests (owner's Nx target), DN2 first, then DT2.
 | 0 | Findings 42 and 43: today's measurements and corrections | review against the image bytes | 1 hour |
 | 1 | Store writer split out of `upload.rs`; SDK `file_*` on the store, `io_post`, `hash32_*` | existing upload and `upload-cut` tests unchanged; a test module writes, aborts, deletes; `E_BUSY` against a SysEx upload | half a day |
 | 1b | **Done.** Store read leases (DN2): the sample pool leases a store file while it loads it; the store writer refuses delete or replace of a leased file ("in use") and never allocates sectors a lease still reads. Closes a gap SysEx upload has today (a commit frees the old extent; the next write may reuse it under a running load). DT2 gets this from the firmware's open-file bitmap | a load in progress plus a replace and a delete of the same file: refused; the pool's copy matches the old bytes | a few hours |
-| 2 | `core/plusdrive-write` (DT2) behind `file_*` on the samples root | write, close hash, abort cleanup, other files' hashes unchanged (plusdrive read) | half a day |
+| 2 | **Done.** `core/plusdrive-write` (DT2) behind `file_*` on the samples root, with `DK_FILE_REPLACE` (atomic replace on both roots) | write, close hash, abort cleanup, other files' hashes unchanged (plusdrive read) | half a day |
 | 3 | `core/usb-bulk`, anchors, emulator `usb.bulk.in/out`, then a hardware echo on the DN2 | table words and descriptor bytes in RAM; echo through a test module; deselect gives stock words; the DN2 enumerates with interface 2 and echoes | 1 day |
 | 4 | `usb-fast` module and protocol | upload, VERIFY, `E_HASH`, ABORT, power cut over bulk, both devices | a few hours |
 | 5 | `dkbulk`, desktop backend with SysEx fallback, CLI (also the bench); WebUSB link | host tests on a fake device; workbench against the emulator | 1 day |

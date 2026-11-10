@@ -18,6 +18,28 @@ int32_t dk_fw_storage_directory_metadata(uint32_t entry_id, uint32_t *output) __
 int32_t dk_fw_storage_directory_next(uint32_t *state, uint8_t *output) __asm__("cf.storage.fn.directory.next");
 /* DT2 1.17 read-only path directory open, 0 success/-1 failure; caller-owned four-word state. Task context; may block under filesystem locking (finding 93). */
 int32_t dk_fw_storage_directory_open(const uint8_t *path, uint32_t *state) __asm__("cf.storage.fn.directory.open");
+/* Nonzero when any inode's bit is set in the open-file bitmap (finding 120). */
+int32_t dk_fw_storage_file_any_open(void) __asm__("cf.storage.fn.file.any_open");
+/* Delete a file and free its pages: 0, -1 for a missing path or an open file (open bitmap) (finding 120). */
+int32_t dk_fw_storage_file_delete(const uint8_t *path) __asm__("cf.storage.fn.file.delete");
+/* Read the whole open file back and store its hash (hashlittle, seed 0x43fa243a; hash|1 in the inode) and hash-table page: 0 or -1. Holds the filesystem mutex for the read-back; call before path.close (finding 120). */
+int32_t dk_fw_storage_file_hash(uint32_t *handle) __asm__("cf.storage.fn.file.hash");
+/* Nonzero when the inode's bit is set in the open-file bitmap 0x46f4ded0 (any reader or writer holds it open). No mutex (finding 120). */
+int32_t dk_fw_storage_file_id_open(uint32_t inode_id) __asm__("cf.storage.fn.file.id_open");
+/* Four words: id, stored hash|1, size incl. the 16-byte trailer, record counter. -1 when the leaf is missing or not hashed (finding 120). */
+int32_t dk_fw_storage_file_info(const uint8_t *path, uint32_t *out) __asm__("cf.storage.fn.file.info");
+/* Add a second directory entry for an existing file (FUN_40156b00 with limit check 1; the sibling of file.rename that does not remove the old entry): the inode's link count goes 1 to 2 and is written through before the entry. 0 or -1. A name of a file whose count is 2 can be deleted with file.delete without freeing the data (finding 120). The adapter calls it only to make the two-names state for its power-cut test. */
+int32_t dk_fw_storage_file_link(const uint8_t *old_path, const uint8_t *new_path) __asm__("cf.storage.fn.file.link");
+/* Create one folder level; the parent must exist: 0, -1 when the leaf exists or a name character is invalid (finding 120). */
+int32_t dk_fw_storage_file_mkdir(const uint8_t *path) __asm__("cf.storage.fn.file.mkdir");
+/* Path rename under the filesystem mutex (FUN_40156b00 adds the new directory entry for the same inode, then FUN_40156e94 removes the old one): 0, -1 when the source is missing, a folder or open (a destination that exists was not tested: callers delete it first). The inode id and hash stay (finding 120). */
+int32_t dk_fw_storage_file_rename(const uint8_t *old_path, const uint8_t *new_path) __asm__("cf.storage.fn.file.rename");
+/* Reserve pages for [offset, offset+bytes) of an open file: 0, -1 when the card cannot hold them (finding 120). */
+int32_t dk_fw_storage_file_reserve(uint32_t *handle, uint32_t offset, uint32_t bytes) __asm__("cf.storage.fn.file.reserve");
+/* Remove an empty folder: 0 or -1 (finding 120). */
+int32_t dk_fw_storage_file_rmdir(const uint8_t *path) __asm__("cf.storage.fn.file.rmdir");
+/* Write `bytes` at handle.pos and advance it; the byte count, -1 when the card is full. Reserves 32 KiB pages, a whole page goes straight from a 16-byte aligned `buf`. Task context; takes the filesystem mutex (finding 120). */
+int32_t dk_fw_storage_file_write(const uint8_t *buf, uint32_t bytes, uint32_t *handle) __asm__("cf.storage.fn.file.write");
 /* Close a successfully opened four-word handle; 0 succeeds. Takes the filesystem mutex internally (finding 105). */
 int32_t dk_fw_storage_path_close(uint32_t *handle) __asm__("cf.storage.fn.path.close");
 /* Path open; 0 succeeds. Handle is four words (entry id, position, write mode, open). The sample adapter passes only mode r; task context, internal filesystem locking (finding 105). */
@@ -26,5 +48,7 @@ int32_t dk_fw_storage_path_open(const uint8_t *path, const uint8_t *mode, uint32
 int32_t dk_fw_storage_path_read(uint8_t *buf, uint32_t bytes, uint32_t *handle) __asm__("cf.storage.fn.path.read");
 /* File byte length by internal entry id (handle word 0), NOT by handle pointer; 0xffffffff on error (finding 105). */
 uint32_t dk_fw_storage_path_size(uint32_t entry_id) __asm__("cf.storage.fn.path.size");
+/* The 4-byte address literal of the filesystem's mounted flag (0x44f2bd68 on 1.17): every path function starts with `tst.l (flag)`; nonzero after FUN_4015a72c mounted the +Drive (finding 120). */
+extern const uint8_t dk_fw_storage_mounted __asm__("cf.storage.site.mounted");
 
 #endif

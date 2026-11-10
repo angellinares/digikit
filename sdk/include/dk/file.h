@@ -4,12 +4,14 @@
  * Only an I/O step (<dk/io.h>, api->io_post) may call these: the call must be made in the I/O task, by the step. Anywhere else (the UI or MIDI task
  * as well, even while a step waits) they return E_CONTEXT.
  *
- *   h = api->file_create(DK_FILES_STORE, "samples/kick.dkn", size, hash4);    hash4: NULL, or the expected file hash (4 bytes, big-endian)
+ *   h = api->file_create(DK_FILES_STORE, "samples/kick.dkn", size, hash4, 0);  hash4: NULL, or the expected file hash (4 bytes, big-endian)
  *   api->file_write(h, 0, buf, n);  api->file_write(h, n, buf, m);  ...       in order: `offset` is the next byte
  *   api->file_close(h, hash_out);                                             checks `hash4`, commits, returns the file hash of the bytes
  * or api->file_abort(h) to drop the partial file. The file is in the store only after file_close returns 0 (a power cut before that leaves
- * the old state; the commit is the store's two-header scheme). A file that already exists is not replaced: file_create returns E_EXISTS
- * (file_delete it first).
+ * the old state; the commit is the store's two-header scheme). A file that already exists is not replaced unless the last argument of
+ * file_create is DK_FILE_REPLACE: without it file_create returns E_EXISTS. A replace is atomic: the old file stays whole and readable until
+ * file_close swaps the new one in, so a power cut, an error or file_abort leaves the old file (never delete first, then write). A reader that
+ * still reads the old file (a sample loading from it) makes file_create or file_close return E_FILE_IN_USE: try again later.
  *
  * Rules:
  *   - One write session in all, shared with the SysEx upload: a second file_create (or a SysEx BEGIN while yours is open) gets E_BUSY. A
@@ -28,7 +30,12 @@
  *     the hash on E_HASH. It returns E_LENGTH when fewer than `size` bytes were written. The session is closed whatever the result.
  *
  * Roots (<dk/files.h>): DK_FILES_STORE on both devices. DK_FILES_SAMPLES: on the Digitone II the `samples/` folder of the store; on the
- * Digitakt II E_CONTRACT in this API version (the +Drive adapter comes later).
+ * Digitakt II the stock +Drive, written through the firmware's own file code by the adapter core/plusdrive-write (E_CONTRACT when it is not
+ * in the image). On the +Drive: `size` is the sample file's size without the 16 zero bytes that the firmware stores after every file (the
+ * adapter writes them); `hash4` and the `hash_out` of file_close are the firmware's hash of the data plus those 16 zeros (hash32_* over both);
+ * missing folders of `path` are created; an existing file is E_FILE_IN_USE while the stock firmware has it open; file_close can take seconds
+ * for a large file (the firmware reads it back to hash it). The replace is a delete and a rename of a fully written, hashed file: a power cut
+ * leaves the old or the new file, and the next boot finishes or drops the half-done step.
  *
  * Statuses: E_EXISTS (-18) and E_CONTEXT (-19) of sdk/sdk.toml [load.status]; E_BUSY (-12); the store's E_PATH (-51), E_FULL (-52), E_HASH
  * (-56), E_WRITE (-57), E_NOFILE (-59), E_NOSTORE (-61), E_INUSE (-62), E_FILE_IN_USE (-71, file_delete: a sample is still loading from the file), and E_STATE (-53), E_OFFSET (-54), E_LENGTH (-55) for a misused handle,
@@ -39,6 +46,7 @@
 #include <dk/api.h>
 #include <dk/files.h>
 
+#define DK_FILE_REPLACE   1u  /* file_create flag: replace an existing file atomically */
 #define DK_FILE_E_BUSY    (-12)
 #define DK_FILE_E_EXISTS  (-18)
 #define DK_FILE_E_CONTEXT (-19)
@@ -50,5 +58,6 @@
 #define DK_FILE_E_HASH    (-56)
 #define DK_FILE_E_WRITE   (-57)
 #define DK_FILE_E_NOFILE  (-59)
+#define DK_FILE_E_FILE_IN_USE (-71)
 
 #endif

@@ -1,7 +1,8 @@
 /* Store file write fixture (<dk/file.h>, <dk/io.h>, <dk/hash32.h>). A service command starts an I/O job that writes a file of a known pattern
    (byte i = (i * 7 + (i >> 8)) & 255), a chunk of 4096 bytes a step; another command reports what the job saw. The tests run on both devices.
    Commands (PROOF_CMD = 0x24):
-     +0 START   body: u8 case, u32 size (big-endian), path NUL. Cases:
+     +0 START   body: u8 case (low 4 bits; bit 5 = the expected hash covers the pattern and 16 zero bytes (the +Drive's files), bit 6 = DK_FILE_REPLACE,
+                bit 7 = the DK_FILES_SAMPLES root), u32 size (big-endian), path NUL. Cases:
                 1 write with the correct hash4, 4 write with hash4 NULL, 5 write with a wrong hash4 (file_close answers E_HASH),
                 2 write one chunk, then file_abort, 3 write one chunk, then sleep (DK_IO_WAIT) with the session open until RELEASE, then abort,
                 6 file_delete of the path,
@@ -28,6 +29,7 @@ static const dk_api *sdk;
 static uint8_t buf[BIG] __attribute__((aligned(16)));
 static volatile uint32_t state; /* 0 idle, 1 running, 2 finished */
 static uint8_t job_case;
+static uint32_t root, flags, tail16;
 static uint32_t size, written, steps, mod_hash;
 static char path[160];
 static uint8_t dev_hash[4];
@@ -49,7 +51,7 @@ static int32_t step(uint8_t *ctx) {
         return 0;
     }
     if (job_case == 6) {
-        int32_t rc = a->file_delete(DK_FILES_STORE, path);
+        int32_t rc = a->file_delete(root, path);
         if (rc == DK_FILE_E_BUSY) return DK_IO_MORE;
         close_rc = rc;
         return rc;
@@ -63,10 +65,14 @@ static int32_t step(uint8_t *ctx) {
             fill(off, n);
             a->hash32_update((uint8_t *)&hs, buf, n);
         }
+        if (tail16) {
+            static const uint8_t tail[16] __attribute__((aligned(16)));
+            a->hash32_update((uint8_t *)&hs, tail, 16);
+        }
         mod_hash = a->hash32_finish((uint8_t *)&hs);
         uint8_t h4[4];
         dk_hash32_bytes(job_case == 5 ? mod_hash ^ 0x100u : mod_hash, h4);
-        handle = a->file_create(DK_FILES_STORE, path, size, job_case == 4 || job_case == 2 || job_case == 3 || job_case == 7 || job_case == 8 || job_case == 10 ? 0 : h4);
+        handle = a->file_create(root, path, size, job_case == 4 || job_case == 2 || job_case == 3 || job_case == 7 || job_case == 8 || job_case == 10 ? 0 : h4, flags);
         create_rc = handle;
         if (handle <= 0) return handle ? handle : -1;
         if (job_case == 7) {
@@ -131,11 +137,14 @@ static int32_t command(uint32_t cmd, uint32_t seq, const uint8_t *body, uint32_t
     (void)seq;
     if (cmd == PROOF_CMD) {
         if (state == 1) return -12;
-        if (len < 7 || body[0] < 1 || body[0] > 10) return -50;
+        if (len < 7 || (body[0] & 0x1f) < 1 || (body[0] & 0x1f) > 10) return -50;
         uint32_t i = 5;
         while (i < len && body[i] != 0) i++;
         if (i >= len || i - 5 >= sizeof path) return -50;
-        job_case = body[0];
+        job_case = body[0] & 0x1f;
+        tail16 = (body[0] & 0x20) != 0;
+        flags = (body[0] & 0x40) ? DK_FILE_REPLACE : 0;
+        root = (body[0] & 0x80) ? DK_FILES_SAMPLES : DK_FILES_STORE;
         size = ((uint32_t)body[1] << 24) | ((uint32_t)body[2] << 16) | ((uint32_t)body[3] << 8) | body[4];
         for (uint32_t k = 0; k <= i - 5; ++k) path[k] = (char)body[5 + k];
         written = steps = mod_hash = 0;
@@ -170,7 +179,7 @@ static int32_t command(uint32_t cmd, uint32_t seq, const uint8_t *body, uint32_t
         return 0;
     }
     if (cmd == PROOF_CMD + 3) {
-        put32(out, (uint32_t)sdk->file_create(DK_FILES_STORE, "ctx-probe", 512, 0));
+        put32(out, (uint32_t)sdk->file_create(DK_FILES_STORE, "ctx-probe", 512, 0, 0));
         out[4] = (uint8_t)in_spin;
         int32_t h = len >= 4 ? (int32_t)(((uint32_t)body[0] << 24) | ((uint32_t)body[1] << 16) | ((uint32_t)body[2] << 8) | body[3]) : 0;
         put32(out + 5, (uint32_t)sdk->file_write(h, 0, buf, 512));

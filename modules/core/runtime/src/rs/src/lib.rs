@@ -587,7 +587,7 @@ unsafe extern "C" fn api_settings_put(client: u32, key: *const u8, value: *const
 unsafe extern "C" fn api_settings_remove(client: u32, key: *const u8) -> i32 { settings::module_remove(client, key) }
 unsafe extern "C" fn api_intro_take(frame: Option<dkrt_sdk::api::IntroFrame>, done: Option<dkrt_sdk::api::IntroDone>, ctx: *mut u8, ticks: u32) -> i32 { intro::take(frame, done, ctx, ticks) }
 
-unsafe extern "C" fn api_file_create(root: u32, path: *const u8, size: u32, hash4: *const u8) -> i32 { store_writer::sdk_create(root, path, size, hash4) }
+unsafe extern "C" fn api_file_create(root: u32, path: *const u8, size: u32, hash4: *const u8, flags: u32) -> i32 { store_writer::sdk_create(root, path, size, hash4, flags) }
 unsafe extern "C" fn api_file_write(h: i32, offset: u32, buf: *const u8, len: u32) -> i32 { store_writer::sdk_write(h, offset, buf, len) }
 unsafe extern "C" fn api_file_close(h: i32, hash_out: *mut u8) -> i32 { store_writer::sdk_close(h, hash_out) }
 unsafe extern "C" fn api_file_abort(h: i32) -> i32 { store_writer::sdk_abort(h) }
