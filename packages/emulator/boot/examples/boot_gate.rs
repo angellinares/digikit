@@ -4,12 +4,14 @@
 //! reporter, ran; or the runtime stopped with an error, e.g.
 //! `UnsupportedGuestPc`), or it reached **no UI** within the budget (a hang).
 //!
-//! usage: boot_gate SYX [--base SHA256] [--watch PC[,PC...]] [--max INSTRUCTIONS]
+//! usage: boot_gate SYX [--base SHA256] [--watch PC[,PC...]]... [--max INSTRUCTIONS]
 //!                  [--after N] [--frame OUT.pbm]
 //!   --base   the stock firmware SYX was made from, for an image with no digikit
-//!            patch record (`Emulator::new_patched`); a stock image needs none
+//!            patch record (`Emulator::new_patched`); a stock image needs none, and
+//!            nor does a build that keeps its release's build stamp (section 5)
 //!   --watch  PCs to watch; any execution of one is a fault (e.g. a firmware's
-//!            fault reporter). Hex with 0x, or decimal.
+//!            fault reporter). Hex with 0x, or decimal. Repeat the flag or give
+//!            a comma list; a value that is not a PC is a usage error.
 //!   --max    instructions to give up after (default 2,000,000,000)
 //!   --after  instructions to keep running after the main UI (default
 //!            100,000,000), so a fault just after boot is still caught
@@ -48,7 +50,7 @@ fn main() -> ExitCode {
     let args: Vec<String> = env::args().skip(1).collect();
     let Some(syx_path) = args.first() else {
         eprintln!(
-            "usage: boot_gate SYX [--base SHA256] [--watch PC,...] [--max N] [--after N] [--frame OUT.pbm]"
+            "usage: boot_gate SYX [--base SHA256] [--watch PC,...]... [--max N] [--after N] [--frame OUT.pbm]"
         );
         return ExitCode::from(3);
     };
@@ -58,13 +60,23 @@ fn main() -> ExitCode {
             .and_then(|i| args.get(i + 1))
             .cloned()
     };
-    let watch: Vec<u32> = flag("--watch")
-        .map(|list| {
-            list.split(',')
-                .filter_map(|pc| number(pc).map(|v| v as u32))
-                .collect()
-        })
-        .unwrap_or_default();
+    // Every --watch counts: `--watch A --watch B` watches both, as `--watch A,B` does.
+    let mut watch: Vec<u32> = Vec::new();
+    for (i, _) in args.iter().enumerate().filter(|(_, a)| *a == "--watch") {
+        let Some(list) = args.get(i + 1) else {
+            eprintln!("--watch needs a PC list");
+            return ExitCode::from(3);
+        };
+        for pc in list.split(',') {
+            match number(pc).and_then(|v| u32::try_from(v).ok()) {
+                Some(pc) => watch.push(pc),
+                None => {
+                    eprintln!("--watch: {pc:?} is not a 32-bit PC");
+                    return ExitCode::from(3);
+                }
+            }
+        }
+    }
     let max = flag("--max")
         .and_then(|n| number(&n))
         .unwrap_or(2_000_000_000);

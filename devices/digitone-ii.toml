@@ -23,11 +23,15 @@ syx_id = 0x15
 version = "1.10E"
 sha256 = "9881ee5ca4624be2b833e5eb94e294f2f8425371e6729781baccd1c256cac504"
 filename = "Digitone_II_OS1.10E.syx"
+# Section 5 (meta) of the container. A modified build keeps it, so it names this release.
+build_stamp = "250910 15:18:16"
 
 [[firmware]]
 version = "1.11"
 sha256 = "2af43e65e3d8390b41c9f66222620f8cce027d73ed87db00c80b440f628472e0"
 filename = "Digitone_II_OS1.11.syx"
+# Section 5 (meta) of the container. A modified build keeps it, so it names this release.
+build_stamp = "260908 14:25:18"
 # RAM that dn2_firmware_explore's mods use at fixed addresses inside cf.expansion (finding 73: `dnfw mods overlap`),
 # rounded out to 4 KiB. patchkit places nothing there, so those mods and digikit's runtime do not meet in RAM. The
 # shared machine and parameter sites of finding 73 still keep the two out of one image; this is only the RAM part.
@@ -49,6 +53,8 @@ dsp = { image = "dn2-1.11", idle_start = 0xb88a49, idle_end = 0xb88abb, idle_hea
 version = "1.12"
 sha256 = "7e5b8a733d4ab1fdf7e5d22757f7d8eddaa3cbf71d0858874a791844c02ceb35"
 filename = "Digitone_II_OS1.12.syx"
+# Section 5 (meta) of the container. A modified build keeps it, so it names this release.
+build_stamp = "260930 10:59:50"
 main_sha256 = "a098f620019b2ad38fd7e0397df39501fb1cf6bc26d0283915f34c49446fdf1a"
 boot_contract = "main-os-oracle-v1"
 symbol_profile = "elektron-rtos-v1"

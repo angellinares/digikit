@@ -416,11 +416,22 @@ impl Emulator {
                 .or_else(|e| match patchkit::verify::patch_record(syx) {
                     Ok(Some(record)) => registry.boot_for_base(&record.base_sha256),
                     _ => Err(e),
+                })
+                // Another modified build keeps its release's build stamp, section 5 (meta).
+                .or_else(|e| {
+                    firmware
+                        .sections
+                        .iter()
+                        .find(|section| section.id == 5)
+                        .and_then(|meta| {
+                            registry.boot_for_stamp(&String::from_utf8_lossy(&meta.bytes))
+                        })
+                        .unwrap_or(Err(e))
                 }),
         }
         .map_err(|e| match e {
             device_profile::RegistryError::UnknownFirmware { sha256 } => format!(
-                "this file is not a supported firmware: use a stock {}, or a digikit patch of one (SHA-256 {sha256})",
+                "this file is not a supported firmware: use a stock {}, a digikit patch of one, or a build of one that keeps its build stamp (SHA-256 {sha256})",
                 supported_firmware(&registry)
             ),
             device_profile::RegistryError::UnsupportedBoot { version, .. } => format!(
@@ -3871,6 +3882,21 @@ mod tests {
         assert_eq!(dtcn0_on("dn2", Some("off")), Ok(false));
         assert_eq!(dtcn0_on("dt2", Some("bus")), Ok(true));
         assert!(dtcn0_on("dn2", Some("on")).is_err());
+    }
+
+    #[test]
+    fn section_5_of_a_stock_file_is_its_release_stamp() {
+        let Ok(syx) = std::fs::read("../../../firmware/Digitone_II_OS1.12.syx") else {
+            return;
+        };
+        let firmware = parse(&syx).unwrap();
+        let meta = firmware.sections.iter().find(|s| s.id == 5).unwrap();
+        let registry = device_profile::Registry::load().unwrap();
+        let (_, profile, _) = registry
+            .boot_for_stamp(&String::from_utf8_lossy(&meta.bytes))
+            .unwrap()
+            .unwrap();
+        assert_eq!(profile.version, "1.12");
     }
 
     #[test]

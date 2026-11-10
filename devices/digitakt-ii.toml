@@ -23,11 +23,15 @@ syx_id = 0x14
 version = "1.15C"
 sha256 = "62d588456e47194bd56dfee9568fb9dd4521c4ff1e8b5427eb461355532e8c6c"
 filename = "Digitakt_II_OS1.15C.syx"
+# Section 5 (meta) of the container. A modified build keeps it, so it names this release.
+build_stamp = "250910 15:18:30"
 
 [[firmware]]
 version = "1.16"
 sha256 = "278541e466edcd77d6b3e018a91fb90185932d3c7de224dd3e68294dddf3a9ec"
 filename = "Digitakt_II_OS1.16.syx"
+# Section 5 (meta) of the container. A modified build keeps it, so it names this release.
+build_stamp = "260908 14:25:26"
 # This identifies the existing explicit Oracle MAIN diagnostic contract. It
 # does not describe hardware topology; that needs separate evidence.
 main_sha256 = "57bb4dfa8df07d846adc72fdb4fb0d3cd3c5680c524bf498338460207e008e7d"
@@ -48,6 +52,8 @@ dsp = { image = "dt2-1.16", idle_start = 0xb8636d, idle_end = 0xb863df, idle_hea
 version = "1.17"
 sha256 = "26c22f6652625ac2cfd47f7ee970d388ed8b6427dae3563c0a6a2f2d334350d5"
 filename = "Digitakt_II_OS1.17.syx"
+# Section 5 (meta) of the container. A modified build keeps it, so it names this release.
+build_stamp = "260930 10:52:25"
 main_sha256 = "a1e7b657b705eba1a19d81c33c1e11ba9c409816447ad74005d7bbf36da6d964"
 boot_contract = "main-os-oracle-v1"
 symbol_profile = "elektron-rtos-v1"

@@ -94,6 +94,11 @@ pub struct FirmwareProfile {
     pub version: String,
     pub sha256: String,
     pub filename: Option<String>,
+    /// The release's build stamp: the text of section 5 (`meta`) of its ELE3
+    /// container, e.g. "260908 14:25:18". A build that changes other sections
+    /// keeps it, so it names the release the build was made from
+    /// (`boot_for_stamp`).
+    pub build_stamp: Option<String>,
     pub boot: Option<BootProfile>,
     pub plusdrive_project_contract: Option<PlusdriveProjectContract>,
     pub readiness_contract: Option<ReadinessContract>,
@@ -226,6 +231,7 @@ struct SourceFirmware {
     version: String,
     sha256: String,
     filename: Option<String>,
+    build_stamp: Option<String>,
     main_sha256: Option<String>,
     boot_contract: Option<BootContract>,
     symbol_profile: Option<SymbolProfile>,
@@ -243,6 +249,7 @@ impl Registry {
         let mut devices = Vec::with_capacity(sources.len());
         let mut ids = HashSet::new();
         let mut hashes = HashSet::new();
+        let mut stamps = HashSet::new();
 
         for &(source, text) in sources {
             let parsed: SourceDocument =
@@ -269,6 +276,14 @@ impl Registry {
                 if !hashes.insert(sha256.clone()) {
                     return invalid(source, format!("duplicate firmware SHA-256 {sha256}"));
                 }
+                if let Some(stamp) = &firmware.build_stamp {
+                    if stamp.trim().is_empty() || stamp.trim() != stamp {
+                        return invalid(source, "build_stamp must be non-empty and trimmed");
+                    }
+                    if !stamps.insert(stamp.clone()) {
+                        return invalid(source, format!("duplicate build_stamp {stamp}"));
+                    }
+                }
                 let boot = match (
                     firmware.main_sha256,
                     firmware.boot_contract,
@@ -293,6 +308,7 @@ impl Registry {
                     version: firmware.version,
                     sha256,
                     filename: firmware.filename,
+                    build_stamp: firmware.build_stamp,
                     boot,
                     plusdrive_project_contract: firmware.plusdrive_project_contract,
                     readiness_contract: firmware.readiness_contract,
@@ -453,6 +469,32 @@ impl Registry {
             });
         };
         Ok((device, firmware, boot))
+    }
+
+    /// The boot profile of the release whose build stamp is `stamp`, for a
+    /// modified build: no profile knows its SHA-256 or its MAIN, but it keeps
+    /// its release's section 5 (`meta`). Nothing in the bytes is checked; each
+    /// signature lookup still has to resolve, as for `boot_for_base`. `None`
+    /// when no release has this stamp.
+    pub fn boot_for_stamp(
+        &self,
+        stamp: &str,
+    ) -> Option<Result<(&DeviceProfile, &FirmwareProfile, &BootProfile), RegistryError>> {
+        let stamp = stamp.trim_matches(|c: char| c == '\0' || c.is_whitespace());
+        let (device, firmware) = self.devices.iter().find_map(|device| {
+            device
+                .firmwares
+                .iter()
+                .find(|firmware| firmware.build_stamp.as_deref() == Some(stamp))
+                .map(|firmware| (device, firmware))
+        })?;
+        Some(match firmware.boot.as_ref() {
+            Some(boot) => Ok((device, firmware, boot)),
+            None => Err(RegistryError::UnsupportedBoot {
+                version: firmware.version.clone(),
+                sha256: firmware.sha256.clone(),
+            }),
+        })
     }
 
     /// The boot profile of the known firmware whose MAIN OS is `main`, for a
@@ -641,6 +683,46 @@ mod tests {
                 .unwrap()
                 .identify(&"ab".repeat(32))
                 .is_err()
+        );
+    }
+
+    #[test]
+    fn a_build_stamp_names_one_release() {
+        let registry = Registry::embedded().unwrap();
+        let (device, firmware, _) = registry.boot_for_stamp("260908 14:25:18").unwrap().unwrap();
+        assert_eq!(
+            (device.short.as_str(), firmware.version.as_str()),
+            ("dn2", "1.11")
+        );
+        // Section 5 as stored, with padding around the text.
+        let (device, firmware, _) = registry
+            .boot_for_stamp("260930 10:52:25\0\0")
+            .unwrap()
+            .unwrap();
+        assert_eq!(
+            (device.short.as_str(), firmware.version.as_str()),
+            ("dt2", "1.17")
+        );
+        // A known release with no boot contract is refused, not booted.
+        assert!(matches!(
+            registry.boot_for_stamp("250910 15:18:16"),
+            Some(Err(RegistryError::UnsupportedBoot { .. }))
+        ));
+        assert!(registry.boot_for_stamp("not a stamp").is_none());
+        let stamps = registry
+            .devices()
+            .iter()
+            .flat_map(|device| device.firmwares.iter())
+            .filter(|firmware| firmware.build_stamp.is_some())
+            .count();
+        assert_eq!(stamps, 6, "every canonical release has its stamp");
+    }
+
+    #[test]
+    fn rejects_stamp_ambiguity() {
+        let duplicate = DN2.replacen("260908 14:25:18", "260908 14:25:26", 1);
+        assert!(
+            matches!(Registry::parse(&[("dt2", DT2), ("dn2", &duplicate)]), Err(RegistryError::Invalid { detail, .. }) if detail.contains("duplicate build_stamp"))
         );
     }
 
