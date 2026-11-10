@@ -53,6 +53,7 @@ pub const E_SET_FULL: i8 = -67;
 pub const E_SET_NOKEY: i8 = -68;
 pub const E_SET_VALUE: i8 = -69;
 pub const E_SET_OFF: i8 = -70;
+pub const E_FILE_IN_USE: i8 = -71;
 pub const CAP_LOG: u32 = 1 << 0;
 pub const CAP_PEEK: u32 = 1 << 1;
 pub const CAP_LOGCFG: u32 = 1 << 2;

@@ -31,7 +31,7 @@
  * Digitakt II E_CONTRACT in this API version (the +Drive adapter comes later).
  *
  * Statuses: E_EXISTS (-18) and E_CONTEXT (-19) of sdk/sdk.toml [load.status]; E_BUSY (-12); the store's E_PATH (-51), E_FULL (-52), E_HASH
- * (-56), E_WRITE (-57), E_NOFILE (-59), E_NOSTORE (-61), E_INUSE (-62), and E_STATE (-53), E_OFFSET (-54), E_LENGTH (-55) for a misused handle,
+ * (-56), E_WRITE (-57), E_NOFILE (-59), E_NOSTORE (-61), E_INUSE (-62), E_FILE_IN_USE (-71, file_delete: a sample is still loading from the file), and E_STATE (-53), E_OFFSET (-54), E_LENGTH (-55) for a misused handle,
  * offset or length. */
 #ifndef DK_FILE_H
 #define DK_FILE_H

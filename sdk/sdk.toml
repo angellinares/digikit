@@ -66,7 +66,7 @@ fields = [
     { name = "file_write", type = "i32 (i32 h, u32 offset, const u8 *buf, u32 len)", doc = "I/O step only: write `len` bytes at `offset`, the next byte of the file. `buf` is 16-byte aligned; `len` a multiple of 512 except for the last piece of the file (the tail sector is padded with zeros). Any length: it is split into 32 KiB writes. Returns 0, E_STATE (no such session), E_OFFSET, E_LENGTH (past `size`, or a short piece before the end), E_WRITE, E_CONTRACT (unaligned buf), or E_BUSY (the store stayed in use for about 3 s: nothing of this call was written; call again). The store lock is held for the whole call, so once a piece is written E_BUSY is never returned.", since = 10 },
     { name = "file_close", type = "i32 (i32 h, u8 *hash_out)", doc = "I/O step only: end the file. All `size` bytes must have been written (E_LENGTH) and match `hash4` when it was given (E_HASH); the table is committed (power-cut safe). `hash_out` (4 bytes, may be NULL) gets the file hash of the bytes written, checks or not. The session is closed whatever the result, except for E_BUSY (try again). Returns 0 or a status.", since = 10 },
     { name = "file_abort", type = "i32 (i32 h)", doc = "I/O step only: drop the session and the partial file (it was never in the table). Returns 0 or E_STATE.", since = 10 },
-    { name = "file_delete", type = "i32 (u32 root, const char *path)", doc = "I/O step only: remove a file or folder entry. Returns 0, E_NOFILE, E_BUSY (a write session is open, or the store is in use) or a path or store status.", since = 10 },
+    { name = "file_delete", type = "i32 (u32 root, const char *path)", doc = "I/O step only: remove a file or folder entry. Returns 0, E_NOFILE, E_FILE_IN_USE (a reader, such as the sample pool loading it, still reads the file: try again later), E_BUSY (a write session is open, or the store is in use) or a path or store status.", since = 10 },
     { name = "io_post", type = "i32 (io_step step, io_done done, u8 *ctx)", doc = "Run `step(ctx)` on the runtime's I/O task (priority 3, its own stack; <dk/io.h>). The step may block and call file_*. It returns DK_IO_MORE (run again), DK_IO_WAIT (sleep until io_wake), 0 (done) or a negative error. `done(ctx, status)` runs once in the UI task. Task context only (not an ISR). Returns a job id > 0, E_CONTRACT (no step) or E_BUSY (8 jobs).", since = 10 },
     { name = "io_cancel", type = "i32 (i32 id)", doc = "Cancel a job of this module: a queued job never runs, a running one stops after its step returns; `done` gets DK_IO_E_CANCELLED. Returns 0 or E_NOT_FOUND.", since = 10 },
     { name = "io_wake", type = "void (i32 id)", doc = "Wake a job whose step returned DK_IO_WAIT. Callable from an interrupt handler, an adapter or any task. Unknown ids are ignored.", since = 10 },
@@ -995,6 +995,7 @@ E_SET_FULL = { code = -67, text = "the settings area is full" }
 E_SET_NOKEY = { code = -68, text = "no such settings key (or no settings record)" }
 E_SET_VALUE = { code = -69, text = "a settings value is too long, or the buffer is too small" }
 E_SET_OFF = { code = -70, text = "settings store off: an older store reaches its area, or no store" }
+E_FILE_IN_USE = { code = -71, text = "a sample is still loading from that file: wait and try again" }
 
 [protocol.caps]     # INFO capability bits (bit numbers of the `caps` word)
 LOG = 0

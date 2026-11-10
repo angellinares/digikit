@@ -10,6 +10,8 @@
 #include "cf/pool_peaks.h"
 
 #define SP_REQS 16u
+/* every request holds a lease; a reserve of 8 is left for the peak-window step (one at a time) and other users (DKRT_STORE_LEASES of abi.toml) */
+typedef char sp_leases_fit[(SP_REQS + 8u <= DKRT_STORE_LEASES) ? 1 : -1];
 
 /* request states */
 #define RQ_FREE 0u
@@ -21,6 +23,7 @@ typedef struct SpReq {
     uint32_t req;         /* the runtime's request number */
     uint32_t blk;         /* index in sp_pool */
     uint32_t age;         /* order of arrival */
+    int32_t lease;        /* the store lease of `file` (dkrt_store_lease), > 0 from dkpool_load until the request ends */
     volatile uint32_t cancelled;   /* dkpool_cancel (UI task): nobody waits for the result any more; the job reads it between pages */
     dkpool_handle *out;
     DkrtStoreFile file;
@@ -42,4 +45,6 @@ uint32_t sp_wire_size(void);
 void *sp_copy_reply(void *destination, const void *source, uint32_t length);
 void sp_xfer_tick(void);
 void sp_xfer_cancel(SpReq *r);
+/* End the store lease of a request (UI task); no effect when it has none. */
+void sp_unlease(SpReq *r);
 #endif

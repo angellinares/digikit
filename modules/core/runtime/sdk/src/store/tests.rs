@@ -1844,3 +1844,175 @@ fn a_file_range_stays_inside_the_file_rounded_up_to_sectors() {
     assert_eq!(file_span(7, u32::MAX, u32::MAX, 1), Err(crate::E_RANGE));
     assert_eq!(file_span(u32::MAX, u32::MAX, 5, 1), Err(crate::E_RANGE));
 }
+
+// ---- read leases (lease.rs) ------------------------------------------------------------------------------------------------
+
+use super::lease::{Leases, MAX as LEASE_MAX};
+
+#[test]
+fn a_lease_table_takes_ends_and_drops_by_owner() {
+    let mut t = Leases::new();
+    assert!(!t.any());
+    let a = t.take(0, 100, 10);
+    let b = t.take(2, 200, 5);
+    assert!(a > 0 && b > 0 && a != b);
+    assert!(t.any());
+    assert_eq!(t.end(a), 0);
+    assert_eq!(t.end(a), crate::E_NOT_FOUND, "a second release is harmless");
+    assert_eq!(t.end(0), crate::E_NOT_FOUND);
+    t.drop_owner(1);
+    assert!(t.guards(200, 1), "another owner keeps its lease");
+    t.drop_owner(2);
+    assert!(!t.any());
+    assert_eq!(t.end(b), crate::E_NOT_FOUND, "dropped with its owner");
+}
+
+#[test]
+fn a_full_lease_table_fails_cleanly_and_a_release_makes_room() {
+    let mut t = Leases::new();
+    let mut ids = Vec::new();
+    for k in 0..LEASE_MAX as u32 {
+        let id = t.take(0, 100 + k * 10, 10);
+        assert!(id > 0);
+        ids.push(id);
+    }
+    assert_eq!(t.take(0, 5000, 1), crate::E_NOMEM);
+    assert_eq!(t.end(ids[3]), 0);
+    assert!(t.take(0, 5000, 1) > 0);
+}
+
+#[test]
+fn ids_stay_unique_when_the_counter_wraps() {
+    let mut t = Leases::new();
+    let keep = t.take(0, 100, 1);
+    for _ in 0..0x8000 {
+        let id = t.take(0, 200, 1);
+        assert!(id > 0 && id != keep);
+        assert_eq!(t.end(id), 0);
+    }
+    assert_eq!(t.end(keep), 0);
+}
+
+#[test]
+fn a_lease_guards_the_files_whose_data_overlaps_it() {
+    let mut t = Leases::new();
+    t.take(0, 100, 10); // sectors 100 to 109
+    assert!(t.guards(100, 10));
+    assert!(t.guards(105, 1));
+    assert!(t.guards(90, 11), "touches sector 100");
+    assert!(!t.guards(90, 10), "ends before sector 100");
+    assert!(!t.guards(110, 4), "starts after the lease");
+    assert!(!t.guards(100, 0), "an entry with no data");
+    t.take(0, 300, 0); // a file with no data
+    assert!(!t.guards(300, 1));
+    let mut out = [(0, 0); 4];
+    assert_eq!(t.extents(&mut out, 1), 2, "the empty lease adds no extent");
+    assert_eq!(out[1], (100, 10));
+    let mut small = [(0, 0); 1];
+    assert_eq!(
+        t.extents(&mut small, 1),
+        1,
+        "an extent that does not fit is left out, not written past the end"
+    );
+}
+
+#[test]
+fn space_freed_under_a_lease_is_not_handed_out_again() {
+    let _g = lock();
+    fresh();
+    let mut w = work();
+    // a filler to sector 99, the leased file at 100 to 109, another file at 200
+    insert(&mut w, "fill", 2, 98 * 512, &[]).unwrap();
+    insert(&mut w, "samples/a", 100, 10 * 512, &[]).unwrap();
+    insert(&mut w, "samples/b", 200, 10 * 512, &[]).unwrap();
+    let mut leases = Leases::new();
+    leases.take(0, 100, 10);
+    let mut ex = [(0, 0); LEASE_MAX + 2];
+    let n = leases.extents(&mut ex, 0);
+    // the store layer deletes whatever it is told (the writer refuses first): the extents are what a lease protects
+    let cur = current(&mut w);
+    let p = cstr("samples/a");
+    unsafe {
+        commit(
+            &IO,
+            &LAY,
+            &cur,
+            w.a.0.as_mut_ptr(),
+            w.b.0.as_mut_ptr(),
+            1024,
+            w.s.0.as_mut_ptr(),
+            Edit::Remove(p.as_ptr()),
+            &ex[..n],
+        )
+    }
+    .unwrap();
+    // the next commit writes a table into the first gap: without the lease that is the freed extent (the case this test is about), with it the
+    // table goes elsewhere. The same commit on the same card, twice.
+    let snap = CARD.lock().unwrap().clone();
+    let free = insert(&mut w, "samples/c", 300, 512, &[]).unwrap();
+    assert!(
+        free.h.table_first >= 100 && free.h.table_first < 110,
+        "without the lease the table lands in the freed extent (else this test proves nothing): {}",
+        free.h.table_first
+    );
+    *CARD.lock().unwrap() = snap;
+    let kept = insert(&mut w, "samples/c", 300, 512, &ex[..n]).unwrap();
+    assert!(
+        kept.h.table_first + kept.h.table_sectors <= 100 || kept.h.table_first >= 110,
+        "the table went into the leased extent: {}",
+        kept.h.table_first
+    );
+    let h = current(&mut w);
+    let gaps_of = |w: &mut Work, extra: &[(u32, u32)]| {
+        let mut v = Vec::new();
+        unsafe {
+            gaps(&IO, &LAY, &h, w.a.0.as_mut_ptr(), 4096, extra, |s, l| {
+                v.push((s, l));
+                true
+            })
+        };
+        v
+    };
+    let overlaps = |v: &[(u32, u32)]| v.iter().any(|&(s, l)| s < 110 && 100 < s + l);
+    assert!(
+        overlaps(&gaps_of(&mut w, &[])),
+        "without the lease the freed extent is free space"
+    );
+    assert!(
+        !overlaps(&gaps_of(&mut w, &ex[..n])),
+        "with the lease no gap touches it"
+    );
+    let at = unsafe { first_fit(&IO, &LAY, &h, w.a.0.as_mut_ptr(), 4096, 10, &ex[..n]) }
+        .unwrap()
+        .unwrap();
+    assert!(at >= 110, "the leased extent is skipped, got {at}");
+}
+
+#[test]
+fn the_free_space_code_keeps_a_full_lease_table_a_file_and_the_capacity_apart() {
+    let _g = lock();
+    fresh();
+    let mut w = work();
+    let mut leases = Leases::new();
+    // 16 leases of 4 sectors with one free sector between them, from sector 100
+    for k in 0..LEASE_MAX as u32 {
+        leases.take(0, 100 + k * 5, 4);
+    }
+    let h = current(&mut w);
+    let mut ex = [(0, 0); LEASE_MAX + 2];
+    let n = leases.extents(&mut ex, 0);
+    ex[n] = (100 + LEASE_MAX as u32 * 5, 50); // a file being written
+    ex[n + 1] = (3000, 4096 - 3000); // the capacity knob
+    let at = unsafe { first_fit(&IO, &LAY, &h, w.a.0.as_mut_ptr(), 4096, 4, &ex[..n + 2]) }
+        .unwrap()
+        .unwrap();
+    assert!(
+        at < 100 || (at >= 100 + LEASE_MAX as u32 * 5 + 50 && at + 4 <= 3000),
+        "at {at}"
+    );
+    // the gap before the first lease (99 sectors) is too small for 100
+    let at2 = unsafe { first_fit(&IO, &LAY, &h, w.a.0.as_mut_ptr(), 4096, 100, &ex[..n + 2]) }
+        .unwrap()
+        .unwrap();
+    assert!(at2 >= 100 + LEASE_MAX as u32 * 5 + 50, "{at2}");
+}

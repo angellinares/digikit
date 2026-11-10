@@ -564,7 +564,8 @@ unsafe fn cmd_end(seq: u32, buf: *mut u8) -> i32 {
 
 /// DELETE: a path of the store (a file or a folder entry). The space is free again when the commit is done. An upload in progress is aborted.
 unsafe fn cmd_delete(seq: u32, buf: *mut u8, body: *const u8, blen: usize) -> i32 {
-    if !sw::preempt() {
+    // an open SysEx upload is dropped by `sw::delete` only when the delete goes on to commit
+    if sw::is_open() && !sw::sysex_open() {
         return reply(CMD_DELETE, seq, E_BUSY, 0);
     }
     if !card::writable() {
@@ -574,7 +575,7 @@ unsafe fn cmd_delete(seq: u32, buf: *mut u8, body: *const u8, blen: usize) -> i3
         Some(n) if n + 1 == blen => {}
         _ => return reply(CMD_DELETE, seq, if blen < 2 { E_MSG } else { E_PATH }, 0),
     }
-    let r = sw::delete(&Bufs::sysex(buf), body);
+    let r = sw::delete(&Bufs::sysex(buf), body, true);
     reply(CMD_DELETE, seq, r, 0)
 }
 
@@ -698,6 +699,10 @@ unsafe fn cmd_verify(seq: u32, buf: *mut u8, body: *const u8, blen: usize) -> i3
 }
 
 unsafe fn cmd_clear(seq: u32, buf: *mut u8, body: *const u8, blen: usize) -> i32 {
+    // CLEAR frees every extent: a reader that still reads one (a sample load) keeps the store as it is
+    if sw::leased_any() {
+        return reply(CMD_CLEAR, seq, E_FILE_IN_USE, 0);
+    }
     if !sw::preempt() {
         return reply(CMD_CLEAR, seq, E_BUSY, 0);
     }

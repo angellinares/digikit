@@ -77,6 +77,7 @@ export const STATUS: [number, string, string][] = [
   [-68, 'E_SET_NOKEY', 'no such settings key (or no settings record)'],
   [-69, 'E_SET_VALUE', 'a settings value is too long, or the buffer is too small'],
   [-70, 'E_SET_OFF', 'settings store off: an older store reaches its area, or no store'],
+  [-71, 'E_FILE_IN_USE', 'a sample is still loading from that file: wait and try again'],
 ];
 
 /** [code, name, text] */

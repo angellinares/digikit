@@ -99,6 +99,10 @@ STATUS: dict[int, tuple[str, str]] = {
         "E_SET_OFF",
         "settings store off: an older store reaches its area, or no store",
     ),
+    -71: (
+        "E_FILE_IN_USE",
+        "a sample is still loading from that file: wait and try again",
+    ),
 }
 
 LOAD_STATUS: dict[int, tuple[str, str]] = {

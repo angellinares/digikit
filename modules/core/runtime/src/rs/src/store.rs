@@ -352,3 +352,54 @@ pub unsafe extern "C" fn dkrt_store_read(f: *const DkrtStoreFile, sector: u32, c
     crate::store_writer::unlock();
     r
 }
+
+/// `lease(owner, path, out)`: look the store file `path` up and lease its extent, in one store-lock hold, so that the extent in `out` is the
+/// committed one and stays unchanged until the lease ends: the writer refuses to replace or delete the file and never gives its sectors to another
+/// file. The id (> 0), `E_NOT_FOUND` (no store, no such file, a folder), `E_NOMEM` (the table is full: fail the load, do not wait) or `E_BUSY`.
+/// The table is scanned through the SDK buffers of the store writer, which the store lock guards: the staging buffer is not touched, so any task
+/// may lease (the sample pool's window step does, in the worker task).
+pub unsafe fn lease(owner: u8, path: *const u8, out: &mut DkrtStoreFile) -> i32 {
+    if !crate::store_writer::acquire() {
+        return E_BUSY;
+    }
+    let b = crate::store_writer::sdk_bufs();
+    let found = match open_in(b.scr, b.tin, crate::store_writer::TBL_CAP) {
+        Ok(t) => match store::find(&reader(), &layout(), &t.h, b.tin, crate::store_writer::TBL_CAP, path) {
+            Ok(Some((_, e))) if e.kind == KIND_FILE => Ok(e),
+            Ok(_) => Err(E_NOT_FOUND),
+            Err(e) => Err(e),
+        },
+        Err(e) => Err(e),
+    };
+    let r = match found {
+        Ok(e) => {
+            let id = crate::store_writer::lease_take(owner, e.first, e.size);
+            if id > 0 {
+                out.first = e.first;
+                out.size = e.size;
+                out.sha = e.sha;
+            }
+            id
+        }
+        Err(e) => e,
+    };
+    crate::store_writer::unlock();
+    r
+}
+
+/// `dkrt_store_lease(path, out)`: `dkrt_store_stat` that also leases the file's extent for the caller (an adapter, owner 0) until
+/// `dkrt_store_unlease(id)`. The id (> 0) or a negative code (see `lease`).
+#[no_mangle]
+pub unsafe extern "C" fn dkrt_store_lease(path: *const u8, out: *mut DkrtStoreFile) -> i32 {
+    if path.is_null() || out.is_null() {
+        return E_CONTRACT;
+    }
+    crate::init_once();
+    lease(0, path, &mut *out)
+}
+
+/// `dkrt_store_unlease(id)`: end a lease (any task, no waiting). An id that is not live is ignored.
+#[no_mangle]
+pub unsafe extern "C" fn dkrt_store_unlease(id: i32) {
+    crate::store_writer::lease_end(id);
+}

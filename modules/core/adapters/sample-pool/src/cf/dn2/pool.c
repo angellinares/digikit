@@ -68,19 +68,30 @@ i32 dkpool_load(u32 req, const dk_file_id *id, const u8 *path, dkpool_handle *ou
         return DKPOOL_E_CONTRACT;
     if (sp_link_dead)
         return DKPOOL_E_READ;
-    rc = dkrt_store_stat(path, &r->file);
-    if (rc != 0)
-        return rc == DKRT_E_NOT_FOUND ? DKPOOL_E_NOT_FOUND : DKPOOL_E_READ;
-    if (r->file.size < SPW_HEADER_BYTES ||dkrt_store_read(&r->file, 0, 1, hbuf) != 0)
+    /* the lease keeps the file as it is until the load ends: an upload cannot replace or delete it, and no file takes its sectors, so
+     * the extent in r->file stays the one this file was found at (docs/plans/usb-fast.md 1b). It ends in sp_unlease, whatever the result. */
+    rc = dkrt_store_lease(path, &r->file);
+    if (rc <= 0)
+        return rc == DKRT_E_NOT_FOUND ? DKPOOL_E_NOT_FOUND : rc == DKRT_E_NOMEM ? DKPOOL_E_POOL : DKPOOL_E_READ;
+    r->lease = rc;
+    if (r->file.size < SPW_HEADER_BYTES || dkrt_store_read(&r->file, 0, 1, hbuf) != 0) {
+        sp_unlease(r);
         return DKPOOL_E_READ;
+    }
     rc = spw_header(hbuf, r->file.size, &frames, &channels);
-    if (rc != 0)
+    if (rc != 0) {
+        sp_unlease(r);
         return rc;
+    }
     rc = spa_open(&sp_pool, frames, channels, id->size, hash ? id->hash_kind : 0, hash, &idx);
-    if (rc == SPA_E_TOKENS)
+    if (rc == SPA_E_TOKENS) {
+        sp_unlease(r);
         return DKPOOL_E_CONTRACT;
-    if (rc < 0)
+    }
+    if (rc < 0) {
+        sp_unlease(r);
         return DKPOOL_E_POOL;
+    }
     r->state = RQ_QUEUED;
     r->req = req;
     r->blk = idx;
@@ -89,6 +100,7 @@ i32 dkpool_load(u32 req, const dk_file_id *id, const u8 *path, dkpool_handle *ou
     r->out = out;
     if (rc == SPA_HIT) {   /* only reached when the identity was hashed after all; handled above, kept for safety */
         r->state = RQ_FREE;
+        sp_unlease(r);
         spa_fill(&sp_pool, idx, out);
         return DKPOOL_DONE;
     }
@@ -139,15 +151,18 @@ i32 dkpool_peaks(const dkpool_handle *h, u8 *out, u32 cap)
 
 /* One step of a peak window (dkrt_pool.h), in the worker task: reads the store file of the block, at most DKPOOL_WINDOW_CHUNK bytes of
  * PCM from frame *cursor on. The PCM starts at byte 64 and a frame is 2 or 4 bytes, so a frame never crosses a sector border: each
- * read feeds whole frames and no partial frame is carried. `path` is not needed: sp_files keeps the file of each loaded block. */
+ * read feeds whole frames and no partial frame is carried. The load's lease ended with the load, so a sample can be replaced while it is loaded: the step
+ * leases `path` for the length of its reads and compares the leased file (extent, size, hash) with sp_files. A different file, or none, ends the window
+ * with DKPOOL_E_CHANGED and nothing is read at the old extent (it may belong to another file now). */
 i32 dkpool_window_step(const dkpool_handle *h, const u8 *path, u32 first, u32 frames, u32 columns, int16_t *out, u32 *cursor)
 {
-    u32 fb, end, at, total_sectors;
+    u32 fb, end, at, total_sectors, i;
+    i32 lease, result = 0;
+    DkrtStoreFile cur;
     const DkrtStoreFile *f;
-    (void)path;
     if (dkpool_check(h) != 0)
         return DKPOOL_E_LOST;
-    if (!out || !cursor || !columns || !frames || h->id >= SPA_BLOCKS || (h->channels != 1 && h->channels != 2))
+    if (!path || !out || !cursor || !columns || !frames || h->id >= SPA_BLOCKS || (h->channels != 1 && h->channels != 2))
         return DKPOOL_E_CONTRACT;
     if (first > h->frames || frames > h->frames - first || *cursor < first || *cursor > first + frames)
         return DKPOOL_E_CONTRACT;
@@ -159,19 +174,34 @@ i32 dkpool_window_step(const dkpool_handle *h, const u8 *path, u32 first, u32 fr
         end = at + DKPOOL_WINDOW_CHUNK / fb;
     if (f->size < SPW_HEADER_BYTES || (f->size - SPW_HEADER_BYTES) / fb < end)
         return DKPOOL_E_FORMAT;
+    lease = dkrt_store_lease(path, &cur);
+    if (lease <= 0)
+        return lease == DKRT_E_NOT_FOUND ? DKPOOL_E_CHANGED : lease == DKRT_E_NOMEM ? DKPOOL_E_POOL : DKPOOL_E_READ;
+    if (cur.first != f->first || cur.size != f->size)
+        result = DKPOOL_E_CHANGED;
+    for (i = 0; i < 32; i++)
+        if (cur.sha[i] != f->sha[i])
+            result = DKPOOL_E_CHANGED;
+    if (result) {
+        dkrt_store_unlease(lease);
+        return result;
+    }
     total_sectors = (f->size + SPW_SECTOR - 1u) / SPW_SECTOR;
     while (at < end) {
         u32 byte = SPW_HEADER_BYTES + at * fb, sector = byte / SPW_SECTOR, skip = byte % SPW_SECTOR, count = total_sectors - sector, n;
         if (count > 8u)
             count = 8u;
-        if (dkrt_store_read(f, sector, count, win_buf) != 0)
+        if (dkrt_store_read(f, sector, count, win_buf) != 0) {
+            dkrt_store_unlease(lease);
             return DKPOOL_E_READ;
+        }
         n = (count * SPW_SECTOR - skip) / fb;
         if (n > end - at)
             n = end - at;
         spp_window_feed(out, columns, first, frames, at, win_buf + skip, n, h->channels);
         at += n;
     }
+    dkrt_store_unlease(lease);
     *cursor = at;
     return at < first + frames ? 1 : 0;
 }

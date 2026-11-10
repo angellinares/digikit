@@ -16,6 +16,7 @@ use crate::hash32::{self, Hash32};
 use crate::{block_read, block_write, card};
 use core::ptr::{addr_of, addr_of_mut, read_volatile, write_volatile};
 use dkrt_sdk::proto::*;
+use dkrt_sdk::store::lease::{self, Leases};
 use dkrt_sdk::store::{self, Edit, Entry, Hdr, Io, Layout, Table, KIND_DIR, KIND_FILE};
 use dkrt_sdk::{CARD_TOO_SMALL, E_BUSY, E_CONTEXT, E_CONTRACT, E_EXISTS, E_NOT_FOUND, OK};
 
@@ -58,7 +59,7 @@ pub struct SdkBuf {
 #[no_mangle]
 pub static mut DKRT_SDK_BUF: SdkBuf = SdkBuf { tin: [0; TBL_CAP], tout: [0; TBL_CAP], scr: [0; SDK_SCRATCH] };
 
-unsafe fn sdk_bufs() -> Bufs {
+pub(crate) unsafe fn sdk_bufs() -> Bufs {
     let b = addr_of_mut!(DKRT_SDK_BUF);
     Bufs { tin: addr_of_mut!((*b).tin) as *mut u8, tout: addr_of_mut!((*b).tout) as *mut u8, scr: addr_of_mut!((*b).scr) as *mut u8 }
 }
@@ -273,6 +274,51 @@ pub fn retire(owner: u8) {
     if u.kind == SDK && u.owner == owner {
         u.kind = NONE;
     }
+    lease_drop_owner(owner);
+}
+
+// ---- read leases --------------------------------------------------------------------------------------------------------------
+
+/// The leases (`dkrt_sdk::store::lease`): extents of store files that a reader still reads. A lease is taken under the store lock (`lease_take`), so
+/// the extent is the committed one and no commit runs at the same time. The table changes with the interrupts masked: a release comes from the
+/// reader's own task and never waits for the lock. Reads of the table (the refusals, the allocator's extents) hold the store lock.
+static mut LEASES: Leases = Leases::new();
+
+fn leases() -> &'static mut Leases {
+    unsafe { &mut *addr_of_mut!(LEASES) }
+}
+
+/// Lease the data extent (`first`, `size` bytes) of a store file for `owner` (0: an adapter). The caller holds the store lock. The id (> 0), or
+/// `E_NOMEM` when the table (`lease::MAX`) is full: the caller fails its load; it must not wait with the lock held.
+pub fn lease_take(owner: u8, first: u32, size: u32) -> i32 {
+    let sr = crate::irq_mask();
+    let id = leases().take(owner, first, sectors_of(size));
+    crate::irq_restore(sr);
+    id
+}
+
+/// Release lease `id` (any task, no lock): 0, or `E_NOT_FOUND`.
+pub fn lease_end(id: i32) -> i32 {
+    let sr = crate::irq_mask();
+    let r = leases().end(id);
+    crate::irq_restore(sr);
+    r
+}
+
+fn lease_drop_owner(owner: u8) {
+    let sr = crate::irq_mask();
+    leases().drop_owner(owner);
+    crate::irq_restore(sr);
+}
+
+/// Is any lease live? (CLEAR refuses then.)
+pub fn leased_any() -> bool {
+    leases().any()
+}
+
+/// Does a lease hold the data of the file entry `e`? Replacing or deleting it is refused then (`E_FILE_IN_USE`).
+fn leased(e: &Entry) -> bool {
+    leases().guards(e.first, store::entry_sectors(e))
 }
 
 // ---- test knobs ---------------------------------------------------------------------------------------------------------------
@@ -407,8 +453,14 @@ fn limit_now() -> u32 {
     }
 }
 
-/// The extents an allocation keeps out of: the sectors the test knob takes away, and `pend` (a file being written). At most two.
-pub fn extras(buf: &mut [(u32, u32); 2], pend: Option<(u32, u32)>) -> &[(u32, u32)] {
+/// Room for the extents an allocation keeps out of: the capacity knob, a file being written and the leases.
+pub const EXTRA_MAX: usize = 2 + lease::MAX;
+
+/// The extents an allocation keeps out of: the sectors the test knob takes away, `pend` (a file being written) and the leased extents. A lease
+/// guards its file against replace and delete, so its extent is free space only if the table lost the file by a path the writer does not
+/// know (a CLEAR is refused too); keeping it out of the allocator as well makes the guarantee hold without that assumption. The caller holds
+/// the store lock.
+pub fn extras(buf: &mut [(u32, u32); EXTRA_MAX], pend: Option<(u32, u32)>) -> &[(u32, u32)] {
     let l = lay();
     let mut n = 0;
     let lim = limit_now();
@@ -420,6 +472,7 @@ pub fn extras(buf: &mut [(u32, u32); 2], pend: Option<(u32, u32)>) -> &[(u32, u3
         buf[n] = p;
         n += 1;
     }
+    n = leases().extents(buf, n);
     &buf[..n]
 }
 
@@ -457,7 +510,7 @@ pub unsafe fn sync_headers(b: &Bufs, t: &Table) -> bool {
 
 /// Commit an edit of the table `cur`; the runtime's store cache learns the new table. A status.
 pub unsafe fn do_commit(b: &Bufs, cur: &Hdr, edit: Edit, pend: Option<(u32, u32)>) -> i32 {
-    let mut ex = [(0, 0); 2];
+    let mut ex = [(0, 0); EXTRA_MAX];
     let extra = extras(&mut ex, pend);
     match store::commit(&io(), &lay(), cur, b.tin, b.tout, TBL_CAP, b.scr, edit, extra) {
         Ok(c) => {
@@ -501,12 +554,14 @@ pub unsafe fn begin(
     // the path may replace a file (unless `no_overwrite`), but not a folder, and may not lie inside a file or over a folder that has entries
     let mut conflict = false;
     let mut exists = false;
+    let mut held = false;
     let r = store::scan(&io, &lay, &t.h, b.tin, TBL_CAP, |_, e| {
         let rel = store::relation(path, e);
         if rel >= 2 || (rel == 1 && store::entry_of(e).kind == KIND_DIR) {
             conflict = true;
         } else if rel == 1 {
             exists = true;
+            held = leased(&store::entry_of(e));
         }
         !conflict
     });
@@ -519,9 +574,13 @@ pub unsafe fn begin(
     if exists && no_overwrite {
         return E_EXISTS;
     }
+    // a reader still reads the file this one would replace (the commit would free its extent)
+    if held {
+        return E_FILE_IN_USE;
+    }
     // the file's extent: the first gap that holds it, and room beside it for the table of one more entry
     let need = sectors_of(size);
-    let mut ex0 = [(0, 0); 2];
+    let mut ex0 = [(0, 0); EXTRA_MAX];
     let start = if need == 0 {
         0
     } else {
@@ -535,7 +594,7 @@ pub unsafe fn begin(
         }
     };
     let pend = if need == 0 { None } else { Some((start, need)) };
-    let mut ex1 = [(0, 0); 2];
+    let mut ex1 = [(0, 0); EXTRA_MAX];
     match store::first_fit(&io, &lay, &t.h, b.tin, TBL_CAP, store::table_sectors(t.h.count + 1), extras(&mut ex1, pend)) {
         Ok(Some(_)) => {}
         Ok(None) => {
@@ -663,6 +722,18 @@ unsafe fn close_inner(b: &Bufs, out: *mut u8) -> i32 {
         Ok(t) => t,
         Err(e) => return e,
     };
+    // a reader took a lease on the file this commit replaces after BEGIN: the commit would free its extent, so the new bytes are not committed
+    if leased_any() {
+        match store::find(&io(), &lay(), &t.h, b.tin, TBL_CAP, u.path.as_ptr()) {
+            Ok(Some((_, old))) => {
+                if leased(&old) {
+                    return E_FILE_IN_USE;
+                }
+            }
+            Ok(None) => {}
+            Err(e) => return pe(e),
+        }
+    }
     let mut ent = [0u8; store::ENTRY];
     let e = Entry { first: u.start, size: u.size, kind: KIND_FILE, sha: got };
     store::encode_entry(u.path.as_ptr(), &e, ent.as_mut_ptr());
@@ -681,8 +752,11 @@ pub fn abort(kind: u8, owner: u8, handle: i32) -> i32 {
 
 /// Remove `path` (NUL-terminated, already checked) from the table: a file or a folder entry. No session may be open (the caller called
 /// `preempt` for SysEx; an open session is `E_BUSY` here). The space is free again when the commit is done.
-pub unsafe fn delete(b: &Bufs, path: *const u8) -> i32 {
-    if up().kind != NONE {
+/// `drop_sysex`: the caller is the SysEx DELETE, which takes the place of an open SysEx session. The session is dropped only when the command goes
+/// on to commit: a refusal (`E_FILE_IN_USE`, `E_NOFILE`, ...) leaves it open. An SDK session is always `E_BUSY`.
+pub unsafe fn delete(b: &Bufs, path: *const u8, drop_sysex: bool) -> i32 {
+    let k = up().kind;
+    if k == SDK || (k == SYSEX && !drop_sysex) {
         return E_BUSY;
     }
     if !card::writable() {
@@ -696,9 +770,16 @@ pub unsafe fn delete(b: &Bufs, path: *const u8) -> i32 {
         return E_WRITE;
     }
     match store::find(&io(), &lay(), &t.h, b.tin, TBL_CAP, path) {
-        Ok(Some(_)) => {}
+        Ok(Some((_, e))) => {
+            if leased(&e) {
+                return E_FILE_IN_USE;
+            }
+        }
         Ok(None) => return E_NOFILE,
         Err(e) => return pe(e),
+    }
+    if k == SYSEX {
+        up().kind = NONE;
     }
     do_commit(b, &t.h, Edit::Remove(path), None)
 }
@@ -848,7 +929,7 @@ pub unsafe fn sdk_delete(root: u32, path: *const u8) -> i32 {
     if !acquire() {
         return busy(E_BUSY);
     }
-    let r = delete(&sdk_bufs(), full.as_ptr());
+    let r = delete(&sdk_bufs(), full.as_ptr(), false);
     unlock();
     busy(r)
 }

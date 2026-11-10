@@ -86,6 +86,8 @@ allocates a file's extent in the first gap that holds it (first fit) and, on eve
 free-space figure (`used_sectors`, INFO's free bytes) is the sum of the gaps less the room for the table of one more entry; **a file larger than the largest gap is refused with
 `E_FULL` even when the sum is larger** (the free space is not one piece).
 
+**Read leases.** A reader that streams a file over several tasks (the Digitone II sample pool) leases its extent (`dkrt_store_lease`, `dkrt_sdk::store::lease`) until it is done: replacing or deleting that file and CLEAR answer `E_FILE_IN_USE`, and the extent is kept out of every allocation (the `extra` list of `first_fit` and `commit`), so a running load never reads the bytes of another file. Taking a lease and every commit hold the store lock, so a lease records the committed extent. The table is `DKRT_STORE_LEASES` (24) entries in RAM: a reboot clears every lease, so a lease that was never released (a bug in a reader) blocks replace, delete and CLEAR of that file until the next boot.
+
 ## Commits and power cuts
 
 A commit (the end of an upload, a delete, a clear, a rename) streams the old table through two small buffers into a gap, with the entry inserted, replaced or removed, reads the new

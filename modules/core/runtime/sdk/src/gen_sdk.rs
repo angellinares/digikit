@@ -144,6 +144,7 @@ pub mod proto {
     pub const E_SET_NOKEY: i32 = -68;
     pub const E_SET_VALUE: i32 = -69;
     pub const E_SET_OFF: i32 = -70;
+    pub const E_FILE_IN_USE: i32 = -71;
     pub const CAP_LOG: u32 = 1 << 0;
     pub const CAP_PEEK: u32 = 1 << 1;
     pub const CAP_LOGCFG: u32 = 1 << 2;
@@ -356,7 +357,7 @@ pub mod api {
         pub file_close: unsafe extern "C" fn(h: i32, hash_out: *mut u8) -> i32,
         /// (api 1.10) I/O step only: drop the session and the partial file (it was never in the table). Returns 0 or E_STATE.
         pub file_abort: unsafe extern "C" fn(h: i32) -> i32,
-        /// (api 1.10) I/O step only: remove a file or folder entry. Returns 0, E_NOFILE, E_BUSY (a write session is open, or the store is in use) or a path or store status.
+        /// (api 1.10) I/O step only: remove a file or folder entry. Returns 0, E_NOFILE, E_FILE_IN_USE (a reader, such as the sample pool loading it, still reads the file: try again later), E_BUSY (a write session is open, or the store is in use) or a path or store status.
         pub file_delete: unsafe extern "C" fn(root: u32, path: *const u8) -> i32,
         /// (api 1.10) Run `step(ctx)` on the runtime's I/O task (priority 3, its own stack; <dk/io.h>). The step may block and call file_*. It returns DK_IO_MORE (run again), DK_IO_WAIT (sleep until io_wake), 0 (done) or a negative error. `done(ctx, status)` runs once in the UI task. Task context only (not an ISR). Returns a job id > 0, E_CONTRACT (no step) or E_BUSY (8 jobs).
         pub io_post: unsafe extern "C" fn(step: Option<IoStep>, done: Option<IoDone>, ctx: *mut u8) -> i32,

@@ -193,6 +193,25 @@ int32_t dkrt_store_stat(const uint8_t *path, DkrtStoreFile *o)
         }
     return DKRT_E_NOT_FOUND;
 }
+/* leases (the runtime's dkrt_store_lease): ids from 1, `leases_live` counts the ones not ended; lease_full makes the next lease fail with E_NOMEM */
+static int lease_next = 1, leases_live, lease_full, lease_bad_end;
+static uint8_t lease_open[64];
+int32_t dkrt_store_lease(const uint8_t *path, DkrtStoreFile *o)
+{
+    int32_t rc;
+    if (lease_full) return DKRT_E_NOMEM;
+    rc = dkrt_store_stat(path, o);
+    if (rc != 0) return rc;
+    lease_open[lease_next] = 1;
+    leases_live++;
+    return lease_next++;
+}
+void dkrt_store_unlease(int32_t id)
+{
+    if (id <= 0 || id >= 64 || !lease_open[id]) { lease_bad_end++; return; }
+    lease_open[id] = 0;
+    leases_live--;
+}
 int32_t dkrt_store_read(const DkrtStoreFile *f, uint32_t sector, uint32_t count, uint8_t *dst)
 {
     File *file = &files[f->first / 0x10000u];
@@ -368,6 +387,54 @@ int main(int argc, char **argv)
         on_read = 0;
         load(2, "b", &H[1]); run(3000, 1);
         printf("b %d planes %d\n", done_res[1], planes_ok(&H[1], 24));
+    } else if (!strcmp(s, "lease")) {   /* a lease from dkpool_load to the end of the request, whatever the end is */
+        make_file("a", 40, 3000, 2, 0); make_file("b", 41, 3000, 2, 0); make_file("c", 42, 30000, 2, 0); make_file("bad", 43, 3000, 2, 1);
+        rc = load(1, "a", &H[0]);
+        printf("queued rc %d live %d\n", rc, leases_live);
+        run(3000, 1);
+        printf("done %d live %d\n", done_res[0], leases_live);
+        rc = load(2, "nothing", &H[1]);
+        printf("missing rc %d live %d\n", rc, leases_live);
+        rc = load(3, "bad", &H[1]);
+        printf("bad rc %d live %d\n", rc, leases_live);
+        load(4, "b", &H[1]); load(5, "c", &H[2]);
+        printf("two queued live %d\n", leases_live);
+        dkpool_cancel(5);   /* c has not started */
+        run(3000, 0);
+        printf("after cancel of a queued one live %d\n", leases_live);
+        make_file("d", 44, 30000, 2, 0);
+        cancel_req = 6; cancel_at_page = pages_sent_n + 2; on_page = page_cancel;
+        load(6, "d", &H[3]);
+        run(10, 0);
+        printf("running live %d\n", leases_live);
+        run(3000, 0);
+        printf("cancelled running live %d\n", leases_live);
+        make_file("e", 45, 3000, 2, 0);
+        reads = 0; read_fail_at = 1; on_read = 0;
+        load(7, "e", &H[4]); run(3000, 0);
+        printf("read fail %d live %d\n", done_res[done_n - 1], leases_live);
+        lease_full = 1;
+        make_file("f", 46, 3000, 2, 0);
+        rc = load(8, "f", &H[5]);
+        printf("table full rc %d live %d\n", rc, leases_live);
+        lease_full = 0;
+        rc = load(9, "f", &H[5]); run(3000, 1);
+        printf("then ok rc %d done %d live %d bad ends %d\n", rc, done_res[done_n - 1], leases_live, lease_bad_end);
+    } else if (!strcmp(s, "window")) {   /* a peak window after the store file changed reads nothing at the old extent */
+        int16_t out[16]; uint32_t cursor = 0; int before, rc2;
+        make_file("a", 50, 3000, 2, 0);
+        load(1, "a", &H[0]); run(3000, 1);
+        memset(out, 0, sizeof out);
+        rc = dkpool_window_step(&H[0], (const uint8_t *)"a", 0, 3000, 8, out, &cursor);
+        printf("same file rc %d cursor %u live %d\n", rc, cursor, leases_live);
+        before = reads; cursor = 0;
+        files[0].id = 99;   /* replaced: another hash at the same path */
+        rc = dkpool_window_step(&H[0], (const uint8_t *)"a", 0, 3000, 8, out, &cursor);
+        printf("replaced rc %d reads %d live %d\n", rc, reads - before, leases_live);
+        files[0].id = 50; files[0].path[0] = 'z';   /* deleted */
+        rc2 = dkpool_window_step(&H[0], (const uint8_t *)"a", 0, 3000, 8, out, &cursor);
+        printf("deleted rc %d reads %d live %d\n", rc2, reads - before, leases_live);
+        printf("pool still ready %d\n", dkpool_check(&H[0]));
     } else if (!strcmp(s, "settle")) {   /* cancelled with a page in flight and a late acknowledgement: the page is settled before the load ends */
         make_file("a", 25, 30000, 2, 0);
         freeze_frames = 40;

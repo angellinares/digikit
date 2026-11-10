@@ -54,6 +54,7 @@ const SPECS: Record<string, () => [Uint8Array, number]> = {
   t: () => [wav(5, [440, 660]), 2], // the long tone and the throughput load
   l: () => [wav(4, [220, 330]), 2], // the load that is superseded
   y: () => [wav(1.2, [600, 900]), 2], // the file that supersedes it
+  q: () => [wav(10, [440, 660]), 2], // a long load (375 pages, about 2 s of emulated time): the lease test replaces and deletes it while it runs
 };
 
 export type Dn2 = Awaited<ReturnType<typeof setup>>;

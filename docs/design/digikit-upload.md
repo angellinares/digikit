@@ -57,6 +57,7 @@ Every reply body starts with `i8 status` (0 = ok). Codes, in the runtime's code 
 | -68 | E_SET_NOKEY | no such settings key; for the SETTINGS command: no record on the card and none made |
 | -69 | E_SET_VALUE | a settings value is over 1024 bytes, or the caller's buffer is too small |
 | -70 | E_SET_OFF | the settings store is off: an older store on the card reaches into its area (or the store's headers do not read) |
+| -71 | E_FILE_IN_USE | BEGIN of a path that exists, DELETE or CLEAR while a reader still reads the file (on the Digitone II the sample pool, while it loads a sample from the store): nothing is changed; try again when the load is done. END answers it too when the lease came after BEGIN (the new bytes are dropped; BEGIN again) |
 | -64 | E_CMD_RANGE | `Api.register_cmds` with a range that is empty, outside every reserved range, or over a registered one (runtime 0.2.5) |
 
 SELECT also answers the selection record's own codes (runtime codes -40 to -49): -40 `E_SEL_PATH` (a path is empty, too long (over 55 bytes) or has a character outside 0x21 to 0x7e), -41 `E_SEL_COUNT` (more than 8 paths), -42 `E_SEL_WRITE` (the firmware's block write failed), -46 `E_RANGE`, -47 `E_CARD_RO`.
@@ -222,7 +223,7 @@ selection_sectors - 1`; recorded in `devices/<device>.toml` `[card.store]`, not 
   padded). Nothing the current header points at is written.
 - **Commit (END, DELETE, CLEAR, MKDIR, RENAME):** END first checks the file hash of the bytes received (DATA feeds a running hash, so END costs the same for a file of any size and a 4 GiB sample is not read back through a 250 MHz ColdFire; VERIFY reads the card, in ranges). Then the new table is streamed from the old one, with the entry inserted, replaced (a replaced path takes the
   new entry and frees the old extent; a folder entry that the new path lies inside is dropped), removed, or renamed (the entry leaves its old path and takes the new one, with a folder entry for the folder it leaves when that folder is empty now), into the first gap that holds it (never over the table in use or the staged file), read back and checked by its CRC; then header B with `seq + 1`, then header A
-  with `seq + 1`. A power cut before B leaves the old store; between B and A the next reader takes B. Space freed by a delete or a replace is reused by the next BEGIN; BEGIN, DELETE and CLEAR first
+  with `seq + 1`. A power cut before B leaves the old store; between B and A the next reader takes B. Space freed by a delete or a replace is reused by the next BEGIN, except an extent a reader has leased (`store_writer.rs`: a file that the sample pool is loading cannot be replaced or deleted, and a new file never takes its sectors); BEGIN, DELETE and CLEAR first
   make the two header copies agree.
 - **Full:** BEGIN answers E_FULL with the free bytes. The host's way out is to delete files (the space is reused), or CLEAR and an upload of the files it wants; a module missing at boot is skipped and reported, as today.
 - Every card access goes through the firmware's block read and block write (`cf.storage.fn.block.read`, `cf.storage.fn.block.write`; the
