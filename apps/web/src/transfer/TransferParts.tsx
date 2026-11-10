@@ -5,8 +5,9 @@ import TargetSelect from './TargetSelect';
 import { fmtRate } from './rate-core';
 import type { PaneSelect } from './pane-select';
 import { dragKind, selectState, toggleAll } from './select-core';
+import { linkTag } from './link-core';
 import { deleteLabel, freeLine, writing, type RowTag } from './transfer-core';
-import { deviceInfo, liveRate } from './transfer-state';
+import { activeMode, deviceInfo, liveRate, sampleLink } from './transfer-state';
 
 /** What the page gives each mode: the one busy action, and the error line. */
 export interface PageCtx {
@@ -445,6 +446,7 @@ export function DevicePane(props: {
                 <Show when={d().free !== undefined}>
                   <span class="meta">{freeLine(d().free)}</span>
                 </Show>
+                <Show when={activeMode() === 'samples' && linkTag(sampleLink())}>{(t) => <Tag tag={t()} />}</Show>
                 <Show when={d().storage}>
                   <span class="meta storage">{d().storage}</span>
                 </Show>

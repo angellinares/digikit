@@ -113,6 +113,8 @@ export interface SamplesOptions {
   bulk?: BulkSession;
   /** Where the backend reports what it did on its own (a bulk failure that fell back to SysEx). */
   note?: (line: string) => void;
+  /** Called when the bulk link failed and the rest of the run falls back: the reason is the logged failure. */
+  onFallback?: (reason: string) => void;
 }
 
 /** The backend for the profile's `[storage] samples` value. */
@@ -129,7 +131,9 @@ export function openSamples(kind: string, o: SamplesOptions): SamplesBackend {
     base = new StoreSamples(o.session);
     expectedOf = (f) => new DataView(fileHash(f.stored).buffer, 0, 4).getUint32(0);
   } else throw new DkError({ error: `unknown samples backend "${kind}" (stock-rpc or digikit)`, kind: 'usage' });
-  return o.bulk ? new BulkSamples(base, o.bulk, kind === 'digikit', expectedOf, o.note ?? (() => {})) : base;
+  return o.bulk
+    ? new BulkSamples(base, o.bulk, kind === 'digikit', expectedOf, o.note ?? (() => {}), o.onFallback)
+    : base;
 }
 
 const clean = (folder: string) => folder.replace(/^\/+|\/+$/g, '');
@@ -416,13 +420,16 @@ class BulkSamples implements SamplesBackend {
   private expectedOf: (file: Prepared) => number;
   private note: (line: string) => void;
   private failed = false;
+  private onFallback?: (reason: string) => void;
   constructor(
     base: SamplesBackend,
     bulk: BulkSession,
     store: boolean,
     expectedOf: (file: Prepared) => number,
     note: (line: string) => void,
+    onFallback?: (reason: string) => void,
   ) {
+    this.onFallback = onFallback;
     this.base = base;
     this.kind = base.kind;
     this.bulk = bulk;
@@ -482,8 +489,10 @@ class BulkSamples implements SamplesBackend {
       if (e instanceof BulkDeviceError || (e as { kind?: string } | null)?.kind === 'cancelled' || opts.signal?.aborted)
         throw e;
       this.failed = true;
+      const reason = e instanceof Error ? e.message : String(e);
+      this.onFallback?.(reason);
       this.note(
-        `USB bulk link failed (${e instanceof Error ? e.message : String(e)}); the rest of this run goes over ${this.base.kind === 'digikit' ? 'SysEx' : 'MidiRpc'}`,
+        `USB bulk link failed (${reason}); the rest of this run goes over ${this.base.kind === 'digikit' ? 'SysEx' : 'MidiRpc'}`,
       );
       return this.base.put(folder, file, onProgress, opts);
     }

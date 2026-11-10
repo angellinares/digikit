@@ -5,6 +5,7 @@ import { listingChanged } from '../../../web/src/transfer/refresh-core';
 import { setTransferEnv, type SamplesSlot, type TransferEnv } from '../../../web/src/transfer/env';
 import { MODULE_FILES } from '../../../web/src/transfer/module-files.generated';
 import { target, targetLabel, type Target } from '../../../web/src/transfer/target';
+import { sampleLink, setSampleLink } from '../../../web/src/transfer/transfer-state';
 import { failureLine } from '../../../web/src/transfer/wait-core';
 import './desktop-firmware';
 import { bumpCardRefresh } from './card-state';
@@ -50,9 +51,10 @@ const samples: SamplesSlot = {
     setSampleFolder('');
     setSampleTicks(new Set<string>());
     setUploads({});
+    setSampleLink(undefined);
   },
   bar(busy) {
-    const info = samplesBar(uploads(), uploadBase(), busy === 'Uploading', uploadAverage());
+    const info = samplesBar(uploads(), uploadBase(), busy === 'Uploading', uploadAverage(), sampleLink());
     return info ? { info, running: busy === 'Uploading' } : undefined;
   },
   lines: () => [...uploadNotes(), ...uploadLines(uploads(), uploadBase())],

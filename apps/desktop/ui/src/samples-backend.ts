@@ -12,7 +12,7 @@ import { transferEnv } from '@web/transfer/env';
 import { asked, noteConnection } from '@web/transfer/connection-state';
 import { session as running, target } from '@web/transfer/target';
 import { joinPath, type LocalEntry, type Prepare } from './samples-core';
-import { setDeviceInfo } from '@web/transfer/transfer-state';
+import { setDeviceInfo, setSampleLink } from '@web/transfer/transfer-state';
 import {
   localFolder,
   localPath,
@@ -68,7 +68,7 @@ const note = (why: string) => console.info(`[samples] ${why}`);
  * is no bulk link or the last one failed during a run (it is not cached as broken for the session), so an interface that appears later is used at the next
  * run; with no candidate on the bus that costs one USB listing. SysEx stays the channel for LIST, MKDIR, DELETE and the rest.
  */
-export async function openDeviceSamples(): Promise<OpenedSamples> {
+export async function openDeviceSamples(forRun = false): Promise<OpenedSamples> {
   const s = await asked(running);
   if (last && last.s !== s) {
     // another session: let go of the bulk link of the old one (the interface stays claimed until then)
@@ -85,7 +85,8 @@ export async function openDeviceSamples(): Promise<OpenedSamples> {
     last = { s, name: storage.name, runtime: fmtVersion(info.runtime), samples: storage.samples };
   }
   const had = last.bulk;
-  if (had && last.opened?.backend.bulkState === 'fallback') {
+  // only a run chooses again after a failure: a read between the failure and the next run keeps the fallback pill
+  if (forRun && had && last.opened?.backend.bulkState === 'fallback') {
     await Promise.resolve(had.link.close()).catch(() => {});
     last.bulk = undefined;
   }
@@ -93,7 +94,11 @@ export async function openDeviceSamples(): Promise<OpenedSamples> {
     const env = transferEnv().bulk;
     last.bulk = env && target().kind === 'midi' ? await chooseBulk(s, env, note) : undefined;
   }
-  if (last.opened && !had === !last.bulk && (!had || had === last.bulk)) return last.opened;
+  if (last.opened && !had === !last.bulk && (!had || had === last.bulk)) {
+    // a new choice for the run (the last one had failed and the link is the same again): the pill follows it
+    if (forRun) setSampleLink({ state: last.opened.link });
+    return last.opened;
+  }
   const conv = await converter();
   last.opened = {
     name: last.name,
@@ -104,10 +109,12 @@ export async function openDeviceSamples(): Promise<OpenedSamples> {
       hashOf: (d) => conv.hash(d),
       bulk: last.bulk?.session,
       note,
+      onFallback: (reason) => setSampleLink({ state: 'fallback', reason }),
     }),
     prepare: (name, bytes) => prepareUpload(conv, name, bytes),
     link: last.bulk ? 'bulk' : 'sysex',
   };
+  setSampleLink({ state: last.opened.link });
   return last.opened;
 }
 

@@ -145,7 +145,7 @@ export default function SamplesMode(props: { ctx: PageCtx }): JSX.Element {
   const send = async (mkdirs: string[], items: UploadItem[]): Promise<boolean> => {
     let done = false;
     await run('Uploading', async (): Promise<void | CancelledRun> => {
-      const o = await openDeviceSamples();
+      const o = await openDeviceSamples(true);
       if (mkdirs.length && !(await o.backend.canMkdir())) throw new Error(noFoldersMessage(o.name));
       setNote('');
       const base = uploads();

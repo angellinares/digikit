@@ -2,6 +2,7 @@
 // (it is refreshed behind it), and an install's verify results stay until the next restart.
 import { createSignal } from 'solid-js';
 import { transferEnv } from './env';
+import type { LinkState } from './link-core';
 import { parseMode, type Mode, type Progress, type TransferView, type Verified } from './transfer-core';
 
 export interface DeviceInfo {
@@ -55,6 +56,9 @@ export const activeMode = (): Mode => (mode() === 'samples' && transferEnv().ext
 /** What the On device column says about the device: its name (the profile's), the runtime, the free space of what the mode shows, and the
  * samples backend; `canMkdir` is known after the samples backend was opened. */
 export const [deviceInfo, setDeviceInfo] = createSignal<DeviceInfo>();
+
+/** The link that carries the samples of the target (Samples mode, desktop app); undefined until the samples backend was opened for it. */
+export const [sampleLink, setSampleLink] = createSignal<LinkState>();
 
 /** The device whose library the list shows while no device answers (the site). */
 export const [browseDevice, setBrowseDevice] = remembered<'dt2' | 'dn2'>('digikit.transferBrowseDevice', (v) =>
