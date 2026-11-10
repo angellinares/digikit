@@ -271,6 +271,8 @@ Flow:
 
 Not checked yet: whether the web patchkit can link these objects. The spike answers this.
 
+**Device constants reach only the modules that use them.** **[D]** Today every core module gets all device profile constants in one generated include (`build/gen/device-*.inc`). On 2026-11-10 one constant used only by the runtime and `digikit/debug` changed about 39 generated files across the adapters. Test selection shows the same coupling: an edit of `devices/digitakt-ii.toml` selects every device test. The device profile stays the one home of device constants (future devices need only a profile). The fix is in the plumbing: a module or service declares the profile entries it uses (for example a list in `module.toml`), the generator writes only those into its include, and the Nx inputs of its targets name only those entries. A new constant then touches only its users, and a profile edit reruns only their tests. Services make this more important: each `.dks` is bound per device and should depend only on the profile entries it reads.
+
 ### 5.9 Report
 
 The packer writes one report per file, in the file and in build output:

@@ -60,6 +60,8 @@ Highest payoff first. Each step states its proof.
 4. [ ] **Device inputs from built bytes.** Device and conformance tasks hash the patched image and `.dkm` content instead of SDK, patchkit and device
    file sources. A change that does not change the bytes (a comment, an unused constant, a test-only patch set) reruns nothing. Real core changes
    still rerun everything. Owner: the Nx lane. Proof: `nx show target inputs` and one invalidation check per input kind.
+   - [ ] First: device profile constants reach only the modules that use them ([runtime and services plan](runtime-and-services.md), section 5.8). A
+     profile edit then selects only the tests of those modules instead of every device test.
    - [ ] Carried over: skip audio scenarios whose image, module objects, daemon and test code did not change.
    - [x] (merge tier selects them with `affected`; `full` runs all) **[D]** The merge tier ran `test-device` and `test-conformance` for every owner and relied on cache replay. After main moves, nothing is
      cached for the new main, so the next PR gate reruns the whole device suite, whatever the PR changed. Seen 2026-11-09: PR 362 (a Python test
