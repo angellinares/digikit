@@ -59,12 +59,14 @@ Not selected, the module is absent and USB stays stock (rule 5).
 ### 3.1 File writes
 
 ```c
-i32 file_create(u32 root, const char *path, u32 size);   // a write session; no overwrite: E_EXISTS
-i32 file_write(i32 h, u32 offset, const u8 *buf, u32 len); // offset must be the next byte; len a multiple of 512 except the last
-i32 file_close(i32 h, u8 hash_out[4]);                    // commits; returns the content hash the device computed
-i32 file_abort(i32 h);                                    // drops the partial file
+i32 file_create(u32 root, const char *path, u32 size, const u8 *hash4); // a write session; hash4 NULL or the expected hash; no overwrite: E_EXISTS
+i32 file_write(i32 h, u32 offset, const u8 *buf, u32 len);   // offset must be the next byte; len a multiple of 512 except the last
+i32 file_close(i32 h, u8 hash_out[4]);                      // commits; hash_out = the device's `hash|1`, big-endian (store slot and +Drive alike)
+i32 file_abort(i32 h);                                      // drops the partial file
 i32 file_delete(u32 root, const char *path);
 ```
+
+SDK API 1.10. Handles are tagged with their owner; unloading a module aborts its open session.
 
 - Roots as in `files.h`: `DK_FILES_STORE` and `DK_FILES_SAMPLES`. On DN2 both are the digikit store (samples live in its `samples/` folder). On DT2
   the samples root is the stock +Drive through `core/plusdrive-write`; absent adapter: `E_CONTRACT`.
@@ -73,9 +75,13 @@ i32 file_delete(u32 root, const char *path);
   `cmd_end` (path and space checks, `first_fit`, `write_sectors`, running hash, END hash check, `do_commit`) move into a new runtime file
   `store_writer.rs` (`begin`, `write`, `close`, `abort`). The SysEx handlers call it after decoding a request; the SDK `file_*` calls call it too. A
   refactor with no change in behaviour: the existing upload device tests and `upload-cut` must pass unchanged.
-- **One writer at a time** per root, across SysEx upload and the SDK (`E_BUSY`): the store writer holds the one session.
-- **Store (DN2, and the DT2 store)**: `file_close` checks the running hash against `file_create`'s optional expected hash when one is given
-  (`file_create` variant with a 4-byte hash; `E_HASH`), then commits with the existing two-header scheme. Power-cut safe as today.
+- **One write session** in all, across SysEx upload and the SDK (`E_BUSY`): the store writer holds it.
+- **Two tasks, one store**: SysEx store commands run in the MIDI task, SDK calls on the I/O task. One store lock (taken without blocking, under
+  the irq mask) covers every store read and write, so a commit never overlaps a LIST, VERIFY or another write. A SysEx store command that finds it
+  held replies `E_BUSY` and the host retries after a short wait (`dkupload-core`). The SDK path has its own scratch buffer (table stream and sector
+  scratch, about 9 KiB); it never touches `DKRT_UPLOAD_BUF`.
+- **Store (DN2, and the DT2 store)**: `file_close` checks the running hash against `hash4` when one was given (`E_HASH`), then commits with the
+  existing two-header scheme. Power-cut safe as today.
 - **+Drive (DT2)**: `core/plusdrive-write` calls the firmware's C-level open, write and close (DT2 1.17 write `FUN_4015866a`; open and close to
   resolve on 1.17 **[O]**), which take the firmware's recursive filesystem mutex **[D]**. Elektron's allocation, inode and flush code runs unchanged.
   Close runs the firmware's read-back hash (`hashlittle`, seed 0x43fa243a) and stores `hash|1`; `file_close` returns it. Rules from the 1.17
@@ -87,25 +93,34 @@ i32 file_delete(u32 root, const char *path);
 ### 3.2 I/O worker
 
 ```c
-i32 io_post(io_step step, io_done done, u8 *ctx);   // like job_post, but the step may call file_* and usb_bulk_wait, and may block
+i32  io_post(io_step step, io_done done, u8 *ctx);  // run on the runtime's I/O task; the step may block and call file_*
+i32  io_cancel(i32 id);
+void io_wake(i32 id);                              // from an ISR, an adapter or another task: wake a waiting step
+// io_step returns DK_IO_MORE (call again), DK_IO_WAIT (sleep until io_wake or a timeout), 0 (done) or a negative error
 ```
 
-A runtime task created at boot when a loaded module imports `io_post` (firmware task create, near the anchor `cf.rtos.fn.create_main`): priority
-below the MIDI task and above the UI, its own stack, one step at a time, `done` in the UI task. The existing job worker stays for short compute steps
-(10 ms budget, no API calls). Creating a task after the firmware's boot thread is **[O]**; if it is not safe, the fallback is to create it from the
-boot hook only.
+A reusable SDK facility, not only for usb-fast (sampler recording, exports). One runtime-owned RTOS task, created once from the boot hook when a
+loaded module imports `io_post`, idle when it has no work; it is never deleted. Priority below the UI task (near the stock loader worker), so a
+transfer does not slow the UI; its own stack; one step at a time, round robin between jobs; `done` in the UI task. It sleeps on a semaphore that
+`io_wake` posts (ISR-safe), so a transfer is event-driven: the usb-bulk ISR wakes it when a buffer is full. Unload cancels the owner's jobs (as
+`worker::retire`). Modules get no raw task or semaphore calls: the runtime owns the task's stack and lifetime. The existing job worker (`job_post`,
+the stock loader task, 10 ms, no API calls) stays for short compute steps.
+
+Needs new RTOS anchors (task create, semaphore init, pend and post) on DT2 1.17, DN2 1.12 and DN2 1.11. Creating a task after the scheduler
+started is **[O]** (static check, then an emulator proof); if it is not safe, `io_post` falls back to the stock loader worker behind the same API.
 
 ### 3.3 Hash
 
-`hash32_init/update/finish` export the runtime's `hash32.rs` (the +Drive content hash), so modules and the host agree on one implementation.
+`hash32_init/update/finish` export the runtime's `hash32.rs` (the +Drive content hash) with a caller-owned 28-byte state (`dk_hash32`), so modules
+and the host agree on one implementation.
 
 ## 4. Adapter `core/usb-bulk`
 
 The USB engine is the same code at the same addresses on DT2 1.17 and DN2 1.12 (strict hashes equal); only data addresses differ **[D]**. One source,
 per-device data through anchors.
 
-- **Imports for modules** (`requires = "core/usb-bulk"`): `usb_bulk_enable()`, `usb_bulk_wait(timeout)` (from an I/O step: the next full RX buffer),
-  `usb_bulk_release(buf)`, `usb_bulk_send(buf, len)` (a reply on EP2 IN), `usb_bulk_state()`.
+- **Imports for modules** (`requires = "core/usb-bulk"`): `usb_bulk_enable(io_id)` (the I/O job to wake), `usb_bulk_take(&buf, &len)` (the next
+  full RX buffer, or none: non-blocking), `usb_bulk_release(buf)`, `usb_bulk_send(buf, len)` (a reply on EP2 IN), `usb_bulk_state()`.
 - **Anchors** (new `devices/fw/usb.toml`, resolved into `devices/ports/`): `cf.usb.data.port_table` (`cf_ptr` in FUN_40006c16, offset 0x22),
   `cf.usb.fn.connect` (FUN_400043e2), `cf.usb.fn.disconnect` (FUN_4000436e), `cf.usb.fn.queue_td` (FUN_40005a86), `cf.usb.fn.cancel_ep`
   (FUN_400059aa), `cf.usb.fn.td_alloc` (FUN_40005764, needs `ordinal`), `cf.usb.fn.stop` (FUN_40006bac), `cf.usb.fn.restart` (FUN_40006bc6).
@@ -118,15 +133,16 @@ per-device data through anchors.
 - **Connect** (our +0): stock FUN_400044b8, then QH 0x100 and 0x140 caps 0x22000000, ENDPTCTRL2 = 0xc800c8, prime EP2 OUT. Re-entrant (resume calls it
   too). **Disconnect** (our +4): ENDPTCTRL2 = 0, flush EP2 RX and TX (bounded poll, unlike the stock one), cancel both queues, then stock FUN_4000436e.
 - **RX**: dTDs from the 32-entry bulk pool (MIDI mode uses about 4) **[D]**, buffers in the uncached DDR alias. Multi-page dTDs (16 KiB each) are our
-  own work: the firmware only uses single-page dTDs **[O]**. The ISR callback marks a buffer full, re-primes if a buffer is free and posts the
-  semaphore `usb_bulk_wait` sleeps on (FUN_4000155c, already used from ISRs **[D]**). No free buffer: no prime, the host gets NAK, so flow control
+  own work: the firmware only uses single-page dTDs **[O]**. The ISR callback marks a buffer full, re-primes if a buffer is free and calls
+  `io_wake` for the registered job (the runtime posts the I/O task's semaphore, ISR-safe). No free buffer: no prime, the host gets NAK, so flow control
   needs no window protocol.
 - **TX**: dTD token `len<<16 | 0x8080`, queue index 6.
 
 ## 5. Module `usb-fast`
 
 - Tool module (`modules/tools/usb-fast`), C on the SDK, `requires = ["core/usb-bulk"]`, for both devices.
-- `dkm_init`: `usb_bulk_enable()`, then `io_post` the transfer loop.
+- `dkm_init`: `io_post` the transfer loop, then `usb_bulk_enable(id)`. The step takes full buffers, writes and hashes them, replies, and returns
+  `DK_IO_WAIT` when none is left.
 - **Protocol on EP2** (big-endian, no SysEx framing, no 8-in-7):
 
   ```text
