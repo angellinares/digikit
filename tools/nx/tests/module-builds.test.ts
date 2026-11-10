@@ -77,6 +77,7 @@ it('scopes explicit acceptance images without changing the default image produce
       JSON.stringify({
         name,
         tags: ['test-only'],
+        ...(patchModules ? {} : { implicitDependencies: ['example/owner'] }),
         metadata: { runtimeAcceptance: [{ files: ['ui.device.test.ts'], patchModules }] },
       }),
     );

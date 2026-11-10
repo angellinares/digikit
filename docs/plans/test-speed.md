@@ -70,8 +70,9 @@ Highest payoff first. Each step states its proof.
      warm the cache on main once after each merge.
    - [x] **[D]** Tool files that are declared inputs select heavy runs on any edit: a prettier-only change to `tools/nx/coupled-inputs.mjs` selected
      `fx`, `fx-no-aot`, `fx-dt2`, `tier-quick` and `dt2-tier-quick`. Inputs of tool files should be what they compute, not their source text.
-5. [ ] **Core-change policy.** Decision for Em: (A) every core change runs all device tests, or (B) the merge tier runs runtime-tests, smoke,
-   conformance and one test per area on both devices, and the full suite runs at batch points. Decide after steps 1 to 4 have shrunk the full suite.
+5. [x] **Core-change policy.** (B), decided 2026-11-10. A change runs all device tests of the projects it edits. Device tests it reaches only through shared inputs
+   run only the subset marked in `metadata.mergeTests` of the owning project.json: other files get a narrow merge cache key (own folder, test code, loaded packs), so Nx replays their last result. `test-device-all` (run by
+   `mise run test:full`) runs every file with full inputs. Batch point: run `test:full` before each push or PR to main.
 6. [ ] **Gate output and history.**
    - [x] One line per finished task (project:target, pass or fail, cache status) while the gate runs: `--output-style=static-failures-only`. Nx prints no seconds there; the durations come with the history report at the end of the run.
    - [x] History: Nx's own task history database already records project, target, hash, status and start and end of each task. `tools/nx/gate-history.mjs` (`mise run test:history`) reads it: slowest tasks, recent failures, slowdowns. It is per worktree and written at the end of a command. Nx already uses the database's average durations to order tasks, so longest-first needs no code. Flaky tests and timeouts: not built; Nx prints its own flaky-task message.

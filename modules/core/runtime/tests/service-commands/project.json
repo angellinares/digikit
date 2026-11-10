@@ -9,6 +9,7 @@
         "files": ["service-commands.device.test.ts"],
         "modules": ["test/svc-echo"]
       }
-    ]
+    ],
+    "mergeTests": ["service-commands.device.test.ts"]
   }
 }
