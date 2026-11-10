@@ -20,7 +20,7 @@
 // the gain of the last block that ran this row to the new gain: the gain before sample k is old + (k + 1) * step, step = (new - old) / 32, by adding the step
 // per sample (the stock sends ramp the same way). The old gains are kept per row in `_fxs_prev`. A track with the old and the new gain 0 costs a few instructions.
 //
-// Cost (concrete core, modules/core/adapters/fx/tests/test_fx_send.py, the half test effect of about 210 instructions): a block with no send row costs the quick scan, 16 instructions
+// Cost (concrete core, tests/patchkit/test_fx_send.py, the half test effect of about 210 instructions): a block with no send row costs the quick scan, 16 instructions
 // (no row) to 31 (three free rows), about 8 for each effect row. A send row, steady: 1264 instructions with all amounts 0 (the context save and restore, the output
 // check of fx.s, clearing the bus, the 16 gains, the return add: 256), 1414 with one track, each track with a gain adds 150 (4 instructions a sample), 3664 with 16 tracks.
 // A track whose old and new gain are 0 costs 10.

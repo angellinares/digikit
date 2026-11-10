@@ -1,5 +1,5 @@
 /* Address helpers of the sample pool that every device shares (no firmware access, no device model). pool_core.h (DT2) and pool_alloc.h
- * (DN2) include it; tests/test_sample_pool_core.py and test_sample_pool_dn2.py compile them on the host. */
+ * (DN2) include it; tests/patchkit/test_sample_pool_core.py and test_sample_pool_dn2.py compile them on the host. */
 #ifndef SP_NW32_H
 #define SP_NW32_H
 #include <stdint.h>

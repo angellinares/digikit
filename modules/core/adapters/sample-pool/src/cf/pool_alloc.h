@@ -1,5 +1,5 @@
 /* The DN2 sample pool's allocator: 4 KiB pages of the DSP's DDR range, a sorted free-extent list, a table of blocks with the file identity,
- * a reference count and a cache of released blocks. No firmware access and no libc: tests/test_sample_pool_dn2.py compiles it
+ * a reference count and a cache of released blocks. No firmware access and no libc: tests/patchkit/test_sample_pool_dn2.py compiles it
  * on the host. docs/design/dn2-sample-pool.md section 1 is the specification.
  *
  * A block holds one sample: `channels` planes of `plane_pages` pages each, the right plane right after the left one. A mono block has

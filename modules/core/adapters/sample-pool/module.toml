@@ -33,7 +33,7 @@ conflicts = ["core/dsp-lp0-proof"]
 # the DSP object (an optional import of dsp-link), and `_sp_back` below is the end of that tail.
 # core/dsp-lp0-proof claims the same sites (it is the private diagnostic of the same transport): the two never go into one image.
 # The shared logic that does not touch the firmware is src/cf/pool_core.h (the DT2 stock slot model), pool_nw32.h (address helpers),
-# pool_alloc.h (the DN2 allocator) and pool_wire.h (page tag, acknowledgement and the page state machine); tests/test_sample_pool_*.py
+# pool_alloc.h (the DN2 allocator) and pool_wire.h (page tag, acknowledgement and the page state machine); tests/patchkit/test_sample_pool_*.py
 # compile them on the host.
 
 # The device's slot floor and reserved DDR range, from [adapter.sample_pool] of the device files (`patchkit gen`).

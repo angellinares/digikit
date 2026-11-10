@@ -1,6 +1,6 @@
 // A machine of the SDK contract that shows its input: samples 0 to 7 are its parameter words times 2^-12 (below the guard's bound),
 // the rest `in->gate`.
-// modules/core/adapters/dsp-voice/tests/test_dsp_voice_input.py runs it through core/dsp-voice in tests/support/machine_rig.py.
+// tests/patchkit/test_dsp_voice_input.py runs it through core/dsp-voice in tests/support/machine_rig.py.
 
 #include "dk_machine.inc"
 

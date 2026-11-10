@@ -8,7 +8,7 @@
  * ready poll: a poll that does not end in SP_PORT_POLLS reads stops the page and reports it, so no task can hang on the port.
  *
  * Task context. The port halves are the same two addresses the stock helpers use; no other code writes them (docs/findings/92). The host test
- * (tests/test_sample_pool_dn2.py) defines SP_PORT_HOST and supplies the three access functions as a model of the port. */
+ * (tests/patchkit/test_sample_pool_dn2.py) defines SP_PORT_HOST and supplies the three access functions as a model of the port. */
 
 #include <stdint.h>
 #include "cf/dn2/xfer.h"
