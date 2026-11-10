@@ -183,7 +183,31 @@ calling the adapter's EP2 OUT completion callback (found by its symbol in the pa
 power-cut cases. Not testable in the emulator: enumeration, the descriptor on a real host, the dTD engine and real throughput. Descriptor bytes and
 table words are checked in a device test by reading guest RAM.
 
-## 9. Work order and proof
+## 9. Safety and reliability proof
+
+**Emulator, DN2 and DT2, with each step:**
+
+- Store writer split: `upload`, `upload-depth`, `upload-faults`, `card-safety` and `store-format` device tests pass unchanged.
+- Power cuts: the `DKRT_UPLOAD_CUT` and `DKRT_UPLOAD_TEAR` knobs applied to SDK writes and bulk uploads; the store reads back the old or the new
+  state, never a broken one.
+- Concurrency: SysEx upload, LIST and VERIFY during an SDK write or commit get `E_BUSY` and nothing is corrupted; a module unloaded mid-write aborts
+  cleanly.
+- DT2 +Drive: after every write, abort and failure, plusdrive confirms that the hashes of all other files are unchanged and no partial file is left;
+  a stock MidiRpc writer and ours never share a file.
+- Bulk link faults: lost, duplicate, truncated and out-of-order packets, the host gone mid-file, a USB reset mid-transfer; each ends with the partial
+  file removed and SysEx still working.
+- Soak: hundreds of files of random sizes, a few large ones, cancels at random points; every file checked by hash.
+- UI: the heartbeat and `stall_count` show no stall during a transfer.
+
+**Real device:**
+
+- After step 3 (DN2): enumeration with interface 2, echo, MIDI still working beside it, unplug and replug, the REC safe-mode drill and deselect.
+- Step 6 (DN2, then DT2): the bench; a hash listing of every existing sample before and after (identical); USB pulled mid-transfer, then recovery; a
+  large file and a folder of hundreds of files; the REC drill on DT2. On DT2 cut USB, not power; back up +Drive with Elektron Transfer first.
+
+**Before the PR:** an independent adversarial code review (given the code, not our conclusions) and `mise run test:full`.
+
+## 10. Work order and proof
 
 Each step ends with its own tests (owner's Nx target), DN2 first, then DT2.
 
@@ -200,7 +224,7 @@ Each step ends with its own tests (owner's Nx target), DN2 first, then DT2.
 About 3 to 4 agent days. Outcome risk: medium, separate from the time: enumeration, multi-page dTDs, the real eMMC rate and WebUSB on macOS are
 hardware-only; the echo in step 3 settles enumeration early. Steps 1 and 2 pay off on their own (file writes for any module).
 
-## 10. Open questions
+## 11. Open questions
 
 1. Is creating the I/O worker task safe from our boot hook (3.2)?
 2. Multi-page dTDs and uncached buffers in our arena (4).
