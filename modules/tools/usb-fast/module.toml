@@ -1,0 +1,27 @@
+[module]
+id = "digikit/usb-fast"
+version = "0.1.0"
+name = "Fast USB transfer"
+category = "tools"
+type = "service"
+author = "digikit"
+status = "experimental"
+site = false
+summary = "Takes sample and file uploads on a USB bulk interface, several times faster than SysEx."
+# the desktop workbench, the web app and dkbulk speak its protocol (host = true: it names the module's commands)
+host = true
+ports = ["dt2-1.17", "dn2-1.12"]
+requires = ["core/usb-bulk"]
+conflicts = []
+
+[targets]
+"dt2-1.17" = "experimental"
+"dn2-1.12" = "experimental"
+
+# A run-time module (`.dkm`, `patchkit pack digikit/usb-fast --device dt2`), built from C. dkm_init posts the transfer job on the runtime's I/O task and
+# registers SET_NONCE (the usb_fast range of sdk/sdk.toml); the job enables the bulk interface of core/usb-bulk and runs the bulk protocol
+# ([protocol.bulk]) on file_create, file_write, file_close and file_abort. Plan: docs/plans/usb-fast.md section 5 and usb-fast-hardware.md "Step 4".
+[[object]]
+path = "build/usb-fast.dko.json"
+sources = ["src/c/usb-fast.c"]
+place = "cf.expansion"

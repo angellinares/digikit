@@ -1,0 +1,14 @@
+{
+  "$schema": "../../../node_modules/nx/schemas/project-schema.json",
+  "name": "digikit/usb-fast",
+  "implicitDependencies": ["core/runtime", "core/usb-bulk", "core/plusdrive-write"],
+  "metadata": {
+    "runtimeAcceptance": [
+      {
+        "files": ["tests/usb-fast.device.test.ts"],
+        "modules": ["digikit/usb-fast"],
+        "plusdrive": true
+      }
+    ]
+  }
+}

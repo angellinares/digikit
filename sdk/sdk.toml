@@ -1030,12 +1030,12 @@ frame_slack = 64    # a frame whose body length exceeds data_max + 4 + this is a
 REPLACE = 0x0001    # the destination may exist: the device replaces it atomically at END (DN2: the store's replace commit; DT2: temp file, then rename); a failed or aborted upload keeps the old file. Clear: an existing file gives E_EXISTS
 
 [protocol.bulk.commands]  # never reuse or renumber (additive only)
-INFO = 0x01         # reply body: version u8, flags u8, u16 reserved, u32 data_max, u32 align
+INFO = 0x01         # reply body: version u8, flags u8, u16 reserved, u32 data_max, u32 align, nonce[8] (20 bytes)
 BEGIN = 0x02        # body: root u32, path (NUL-terminated), size u32, expected hash 4 bytes (all zero: none)
 DATA = 0x03         # body: offset u32, then the bytes; the next offset only
 END = 0x04          # reply body: the device's hash|1 of the file (4 bytes, big-endian)
 ABORT = 0x05        # drop the open file
-VERIFY = 0x06       # body: offset u32, length u32; reply body: the 4-byte hash of that range
+VERIFY = 0x06       # reserved, not implemented by usb-fast: the reply is E_PROTO (the host verifies over SysEx: DN2 VERIFY, DT2 file info; both are device-CPU bound with tiny replies)
 
 [protocol.status]   # reply status codes of the upload commands (0 = ok); never renumber
 E_MSG = { code = -50, text = "body too short or malformed" }

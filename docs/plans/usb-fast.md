@@ -156,8 +156,8 @@ per-device data through anchors.
   reply:    magic 'DKB1' | cmd|0x40 | seq | status i16 | len u32 | body[len]
   ```
 
-  Commands: INFO, BEGIN (root, path, size, expected hash), DATA (offset, up to 64 KiB), END (returns the device's hash), ABORT, VERIFY (DN2 store:
-  read back a range and hash it). Numbers and status codes in `sdk.toml [protocol]`, generated for C, Rust and TypeScript like the SysEx protocol.
+  Commands: INFO, BEGIN (root, path, size, expected hash), DATA (offset, up to 64 KiB), END (returns the device's hash), ABORT; VERIFY (0x06) is reserved and
+  the module answers `E_PROTO` (the host verifies over SysEx, where both devices are CPU bound with tiny replies). Numbers and status codes in `sdk.toml [protocol]`, generated for C, Rust and TypeScript like the SysEx protocol.
   LIST, MKDIR, DELETE and everything else stay on SysEx.
 - **Framing on USB (host and device rules, `[protocol.bulk]` in sdk.toml).**
   - A frame is bounded: a body longer than `data_max + 4 + frame_slack` (64) is a protocol error. A bad magic or an oversize length is fatal on both
@@ -181,7 +181,7 @@ per-device data through anchors.
   or the last one failed, and a bulk failure in a run moves the rest of that run to SysEx.
 - **WebUSB access.** The page opens only devices it may already use (`navigator.usb.getDevices()`); `requestDevice` (the chooser, needs a click) is a
   separate explicit `requestAccess()`.
-- **Verification**: DN2: the store's running hash at close (`E_HASH`), then VERIFY reads back (on by default). DT2: the firmware's close hash returned
+- **Verification**: DN2: the store's running hash at close (`E_HASH`), then the SysEx VERIFY reads back (on by default; bulk VERIFY is reserved, not implemented). DT2: the firmware's close hash returned
   by END; the host compares it with its `content_hash` of the bytes sent plus the 16-byte trailer, as today's GetFileInfoV2 check does. Replace, never
   delete then upload: the host sets the REPLACE flag (bit 0 of the request header `flags`, `[protocol.bulk.flags]`) in BEGIN when the listing shows the file; the device
   replaces it atomically at END (DN2: the store's replace commit; DT2: temp file, then rename), so a failed upload keeps the old file. Without the flag an existing
@@ -248,7 +248,7 @@ Each step ends with its own tests (owner's Nx target), DN2 first, then DT2.
 | 1b | **Done.** Store read leases (DN2): the sample pool leases a store file while it loads it; the store writer refuses delete or replace of a leased file ("in use") and never allocates sectors a lease still reads. Closes a gap SysEx upload has today (a commit frees the old extent; the next write may reuse it under a running load). DT2 gets this from the firmware's open-file bitmap | a load in progress plus a replace and a delete of the same file: refused; the pool's copy matches the old bytes | a few hours |
 | 2 | **Done.** `core/plusdrive-write` (DT2) behind `file_*` on the samples root, with `DK_FILE_REPLACE` (atomic replace on both roots) | write, close hash, abort cleanup, other files' hashes unchanged (plusdrive read) | half a day |
 | 3 | `core/usb-bulk`, anchors, emulator `usb.bulk.in/out`, then a hardware echo on the DN2 | table words and descriptor bytes in RAM; echo through a test module; deselect gives stock words; the DN2 enumerates with interface 2 and echoes | 1 day |
-| 4 | `usb-fast` module and protocol | upload, VERIFY, `E_HASH`, ABORT, power cut over bulk, both devices | a few hours |
+| 4 | `usb-fast` module and protocol | upload, `E_HASH`, ABORT, REPLACE, reset, power cut over bulk, both devices | a few hours |
 | 5 | `dkbulk`, desktop backend with SysEx fallback, CLI (also the bench); WebUSB link | host tests on a fake device; workbench against the emulator | 1 day |
 | 6 | Hardware, DN2 then DT2: bench, REC drill, before/after listing of existing samples | measured MB/s in finding 43 | 1 hour |
 

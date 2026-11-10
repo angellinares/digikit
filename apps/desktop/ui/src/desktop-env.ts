@@ -1,6 +1,7 @@
 // The desktop workbench's side of the Transfer pane (apps/web/src/transfer/env.ts): the library folder of built modules, the MIDI ports and
 // the emulator through the Tauri commands, the samples mode and the Card panel. Loaded first by main.tsx.
 import { invoke } from '@tauri-apps/api/core';
+import { EmuBulkLink } from '@digi/dk-session';
 import { listingChanged } from '../../../web/src/transfer/refresh-core';
 import { setTransferEnv, type SamplesSlot, type TransferEnv } from '../../../web/src/transfer/env';
 import { MODULE_FILES } from '../../../web/src/transfer/module-files.generated';
@@ -10,7 +11,7 @@ import { failureLine } from '../../../web/src/transfer/wait-core';
 import './desktop-firmware';
 import { bumpCardRefresh } from './card-state';
 import { TauriBulkLink } from './bulk-link';
-import { EmuUsbTransport, emulatorMode } from './desktop-transport';
+import { EmuUsbTransport, emulatorMode, emuCall } from './desktop-transport';
 import { logInput } from './log-state';
 import { transferEntry } from './log-core';
 import { closeMidiPort, listMidiPorts, MidiPortTransport, openMidiPort } from './midi-transport';
@@ -65,6 +66,8 @@ const samples: SamplesSlot = {
   },
 };
 
+const emulatorBulk = EmuBulkLink.opener(emuCall);
+
 export const desktopEnv: TransferEnv = {
   library: {
     scan: (device) => invoke<{ path: string; size: number }[]>('lib_scan', { device }),
@@ -73,7 +76,11 @@ export const desktopEnv: TransferEnv = {
   moduleFiles: (id) => MODULE_FILES[id],
   patchkitWasm: () => invoke<ArrayBuffer>('patchkit_wasm'),
   deviceName: async (device) => (await deviceStorage(device)).name,
-  bulk: { candidates: TauriBulkLink.candidates, open: (id) => TauriBulkLink.open(id) },
+  // the Emulator target has its own bulk link (the daemon's usb.bulk.in/out), so the pill and the transfers there follow the same path as a device
+  bulk: {
+    candidates: () => (target().kind === 'emulator' ? emulatorBulk.candidates() : TauriBulkLink.candidates()),
+    open: (id) => (id === 'emulator' ? emulatorBulk.open(id) : TauriBulkLink.open(id)),
+  },
   targets: {
     emulator: true,
     ports: listMidiPorts,

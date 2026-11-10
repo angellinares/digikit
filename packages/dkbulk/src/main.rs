@@ -3,6 +3,8 @@
 //!     dkbulk list                          the devices that offer a bulk interface: ID (bus:address), name, interface number
 //!     dkbulk open [ID]                     bridge: whole request frames on stdin go to the device, every reply frame comes out on stdout
 //!                                          (the TypeScript session code of tools/devtools/wb.mjs speaks the protocol over it)
+//!     dkbulk echo [--id ID] [--sizes N,N,...]
+//!                                          the first hardware run (test/usb-echo, step 3): send each size of bytes, read the same bytes back, compare, print MB/s
 //!     dkbulk put [--id ID] [--root N] [--chunk N] [--trailer] [--replace] LOCAL REMOTE [LOCAL REMOTE ...]
 //!                                          upload files with the Rust client and print MB/s (--trailer: the expected hash covers 16 zero bytes more, as on the DT2 +Drive)
 use std::io::{Read, Write};
@@ -10,6 +12,7 @@ use std::process::exit;
 use std::sync::atomic::AtomicBool;
 use std::time::{Duration, Instant};
 
+use dkbulk::link::InPipe;
 use dkbulk::usb::{self, UsbLink};
 use dkbulk::{Client, Options, gen_bulk, proto};
 
@@ -34,9 +37,10 @@ fn main() {
         },
         "open" => bridge(args.first().map(String::as_str)),
         "put" => put(args),
+        "echo" => echo(args),
         _ => die(
             2,
-            "usage: dkbulk list | dkbulk open [ID] | dkbulk put [--id ID] [--root N] [--chunk N] [--trailer] [--replace] LOCAL REMOTE ...",
+            "usage: dkbulk list | dkbulk open [ID] | dkbulk echo [--id ID] [--sizes N,N,...] | dkbulk put [--id ID] [--root N] [--chunk N] [--trailer] [--replace] LOCAL REMOTE ...",
         ),
     }
 }
@@ -160,4 +164,62 @@ fn put(mut args: Vec<String>) {
         s,
         bytes as f64 / 1e6 / s
     );
+}
+
+/// The sizes of the first hardware run (docs/plans/usb-fast-hardware.md, DN2 run 1): around the 512-byte packet, a 16 KiB buffer, a frame and 1 MiB.
+const ECHO_SIZES: &[usize] = &[1, 511, 512, 513, 4096, 16384, 65536, 1_048_576];
+
+/// Send `size` bytes of a pattern to the echo module of `test/usb-echo` and read them back: the bytes must be identical. Raw bytes, not frames.
+fn echo(mut args: Vec<String>) {
+    let mut take = |flag: &str| -> Option<String> {
+        let at = args.iter().position(|a| a == flag)?;
+        args.remove(at);
+        (at < args.len()).then(|| args.remove(at))
+    };
+    let device = take("--id");
+    let sizes: Vec<usize> = take("--sizes").map_or_else(
+        || ECHO_SIZES.to_vec(),
+        |v| {
+            v.split(',')
+                .map(|n| {
+                    n.trim()
+                        .parse()
+                        .unwrap_or_else(|_| die(2, "--sizes N,N,..."))
+                })
+                .collect()
+        },
+    );
+    let mut link = UsbLink::open(device.as_deref()).unwrap_or_else(|e| die(1, &e));
+    let mut failed = false;
+    for (i, &size) in sizes.iter().enumerate() {
+        let data: Vec<u8> = (0..size)
+            .map(|k| (k.wrapping_mul(7) + (k >> 8) + i) as u8)
+            .collect();
+        let start = Instant::now();
+        if let Err(e) = link.tx.send(&data, Duration::from_secs(10)) {
+            die(1, &format!("send of {size} bytes: {e}"));
+        }
+        let mut back = Vec::with_capacity(size);
+        while back.len() < size {
+            match link.rx.read(Duration::from_secs(10)) {
+                Ok(b) => back.extend_from_slice(&b),
+                Err(e) => die(
+                    1,
+                    &format!("read after {} of {size} bytes: {e}", back.len()),
+                ),
+            }
+        }
+        let s = start.elapsed().as_secs_f64();
+        let same = back == data;
+        failed |= !same;
+        println!(
+            "{size}\t{}\t{:.3} s\t{:.2} MB/s (both ways)",
+            if same { "identical" } else { "DIFFERENT" },
+            s,
+            2.0 * size as f64 / 1e6 / s
+        );
+    }
+    if failed {
+        exit(1);
+    }
 }

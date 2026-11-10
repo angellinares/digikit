@@ -92,7 +92,7 @@ export async function openDeviceSamples(forRun = false): Promise<OpenedSamples> 
   }
   if (!last.bulk) {
     const env = transferEnv().bulk;
-    last.bulk = env && target().kind === 'midi' ? await chooseBulk(s, env, note) : undefined;
+    last.bulk = env && target().kind !== 'none' ? await chooseBulk(s, env, note) : undefined;
   }
   if (last.opened && !had === !last.bulk && (!had || had === last.bulk)) {
     // a new choice for the run (the last one had failed and the link is the same again): the pill follows it
