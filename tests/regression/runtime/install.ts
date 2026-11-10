@@ -5,6 +5,7 @@ import { repoRoot, type Device } from '@digi/test-support';
 import { expect } from 'vitest';
 import { type PatchedSession } from '../support.ts';
 import { timePhase } from '../timing.ts';
+import { waitForBootEmulated } from './waits.ts';
 
 /** Prepared separately with patchkit pack; acceptance never builds a toolchain, module or daemon. */
 export function moduleArtifact(device: Device, id: string): string {
@@ -32,7 +33,7 @@ export async function installModules(dk: DkSession, modules: { id: string; artif
       }
       await dk.select(paths);
       await timePhase('protocol.restart', () => dk.restart());
-      await timePhase('protocol.waitForBoot', () => dk.waitForBoot());
+      await timePhase('protocol.waitForBoot', () => waitForBootEmulated(dk));
       await expect
         .poll(async () => (await dk.modules()).map((entry) => entry.name), { timeout: 30_000, interval: 500 })
         .toEqual(expect.arrayContaining(modules.map((m) => m.id)));

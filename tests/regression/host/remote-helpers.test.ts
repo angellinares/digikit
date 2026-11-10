@@ -32,7 +32,7 @@ vi.mock('../../../packages/test-support/src/inputs.ts', async (original) => ({
   resolveInputs: () => ({ syx: '/stock.syx' }),
 }));
 import { expectRuntimeUi } from '../runtime/ready.ts';
-import { pollEmulated, waitEmulated } from '../runtime/waits.ts';
+import { bindBootClock, pollEmulated, waitEmulated, waitForBootEmulated } from '../runtime/waits.ts';
 import { expectRemoteEnabled, installRemote, prepareRemote, remoteTap, withRemoteRelease } from '../runtime/remote.ts';
 import {
   planSymbol,
@@ -285,13 +285,51 @@ test('pollEmulated counts boot progress as movement only while a load or boot ru
   await expect(
     pollEmulated(booting, bootDone, Boolean, { emulatedMs: 1000, intervalMs: 5, hangMs: 40, message: 'm' }),
   ).resolves.toBe(true);
+  // Everything stands still and no load or boot runs (paused or dead): trip.
   let cf = 0;
-  const halted = {
-    status: vi.fn(async () => ({ mode: 'free', audio: { frames: 1000 }, cf: { icount: (cf += 1000) } })),
+  const frozen = {
+    status: vi.fn(async () => ({
+      mode: 'paused',
+      audio: { frames: 1000 },
+      elapsed: 5000,
+      cf: { icount: (cf += 1000) },
+    })),
   } as unknown as Session;
   await expect(
-    pollEmulated(halted, async () => false, Boolean, { emulatedMs: 1000, intervalMs: 5, hangMs: 40, message: 'm' }),
+    pollEmulated(frozen, async () => false, Boolean, { emulatedMs: 1000, intervalMs: 5, hangMs: 40, message: 'm' }),
   ).rejects.toThrow('emulated clock stuck');
+});
+
+test('a halted DSP does not stop the emulated clock: the ColdFire instruction count advances it', async () => {
+  // Frames frozen, 1 320 000 ColdFire instructions (10 emulated ms) per status read, no job: no stuck trip, the wait ends at emulatedMs.
+  const make = () => {
+    let elapsed = 0;
+    return {
+      status: vi.fn(async () => ({ mode: 'free', audio: { frames: 1000 }, elapsed: (elapsed += 1_320_000) })),
+    } as unknown as Session;
+  };
+  const halted = make();
+  await expect(
+    pollEmulated(halted, async () => false, Boolean, { emulatedMs: 50, intervalMs: 1, hangMs: 40, message: 'm' }),
+  ).rejects.toThrow('m: not seen within 50 ms of emulated time');
+  await expect(waitEmulated(make(), 100, { hangMs: 40 })).resolves.toBeUndefined();
+  let waits = 0;
+  const sleeps: number[] = [];
+  const dk = {
+    waitForBoot: async (sleep: (ms: number) => Promise<void>) => {
+      for (; waits < 3; waits++) await sleep(1).then(() => sleeps.push(waits));
+    },
+  };
+  bindBootClock(dk, make());
+  await expect(waitForBootEmulated(dk)).resolves.toBeUndefined();
+  expect(sleeps).toEqual([0, 1, 2]);
+  const late = {
+    waitForBoot: async (sleep: (ms: number) => Promise<void>) => {
+      for (;;) await sleep(1);
+    },
+  };
+  bindBootClock(late, make());
+  await expect(waitForBootEmulated(late, { emulatedMs: 50 })).rejects.toThrow('no new boot: not seen within 50 ms');
 });
 
 test('installer failure still releases remote inputs without reaching scenario actions', async () => {

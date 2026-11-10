@@ -39,7 +39,7 @@
         { "env": "SHARC_GEN_DIR_2" },
         { "env": "UPDATE_GOLDENS" }
       ],
-      "options": { "command": "REGRESSION_JOBS=${DIGI_JOBS:-4} pnpm --filter @digi/regression test:stock", "cwd": "." }
+      "options": { "command": "node tools/devtools/emu-slot.mjs -- env REGRESSION_JOBS=${DIGI_JOBS:-4} pnpm --filter @digi/regression test:stock", "cwd": "." }
     }
   }
 }
