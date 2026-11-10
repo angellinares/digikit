@@ -43,7 +43,13 @@ export const TIERS = {
   },
   merge: { targets: MERGE_TARGETS, access: 'rw', narrow: false, pgo: true },
   full: {
-    targets: [...MERGE_TARGETS, 'test-device-full', 'tier-sweep', 'dt2-tier-sweep'],
+    targets: [
+      ...MERGE_TARGETS.filter((target) => target !== 'test-device'),
+      'test-device-all',
+      'test-device-full',
+      'tier-sweep',
+      'dt2-tier-sweep',
+    ],
     access: 'rw',
     narrow: false,
     runMany: true,

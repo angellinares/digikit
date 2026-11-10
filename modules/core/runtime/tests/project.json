@@ -97,6 +97,7 @@
         "modules": ["test/c-demo", "test/dyn-demo", "test/dyn-demo-stray", "test/dyn-dn2", "test/sine"],
         "plusdrive": true
       }
-    ]
+    ],
+    "mergeTests": ["upload-depth.device.test.ts", "safe-mode.device.test.ts"]
   }
 }

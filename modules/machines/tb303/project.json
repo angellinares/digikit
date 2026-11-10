@@ -8,6 +8,7 @@
         "modules": ["tom/tb303", "digikit/debug"],
         "plusdrive": true
       }
-    ]
+    ],
+    "mergeTests": ["tests/tb303.device.test.ts"]
   }
 }

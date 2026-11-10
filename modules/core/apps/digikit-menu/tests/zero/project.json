@@ -9,6 +9,7 @@
         "files": ["menu.device.test.ts"],
         "modules": []
       }
-    ]
+    ],
+    "mergeTests": ["menu.device.test.ts"]
   }
 }
