@@ -5,6 +5,7 @@ import { expect } from 'vitest';
 import type { PatchedSession } from '@digi/regression/support.ts';
 import { record } from '@digi/regression/runtime/artifacts.ts';
 import { memory, panel } from '@digi/regression/runtime/panel.ts';
+import { listenEvents, remoteTurnTaken } from '@digi/regression/runtime/events.ts';
 import { waitEmulated } from '@digi/regression/runtime/waits.ts';
 
 // Helpers of the SHOT device tests (shot-dn2): WAV fixtures, the sample pool requests of test/track-select, PCM capture with the
@@ -272,16 +273,23 @@ export function expectedWindow(stored: Uint8Array, channels: number, first: numb
 }
 
 /** Turn SMP (knob D of the SHOT page, word 0 of `_dv_params`, index << 8) to pool entry `index`, one detent at a time with TRIG 1 held: the
- * parameter buffer is rewritten only while a voice renders, so a note must sound while the value is read back. The loop reads the word after every
- * detent and turns toward the target (a detent may move one unit or several); it stops on `word >> 8 === index`. Returns the words seen. */
+ * parameter buffer is rewritten only while a voice renders, so a note must sound while the value is read back. Each detent goes through
+ * digikit/remote (digikit/remote and digikit/debug must be loaded) and waits for its INPUT_TAKEN event. The loop reads the word after every
+ * detent and turns toward the target (a detent may move one unit or several); it stops on `word >> 8 === index`. Returns the words seen. A failure
+ * lists the detents the firmware decoder took and the last events of the log, so "not taken" and "taken, word did not move" differ. */
 export async function setSmp(
-  { session }: Pick<PatchedSession, 'session'>,
+  runtime: PatchedSession,
   readWord: () => Promise<number>,
   index: number,
   maxTurns = 30,
+  /** Send the turns through digikit/remote and wait for INPUT_TAKEN (both modules loaded). DT2's stock-pool fixture holds the remote commands 0x38 to 0x3b, so its test turns through the panel input. */
+  viaRemote = false,
 ): Promise<number[]> {
+  const { session } = runtime;
   const ui = panel(session);
+  const events = viaRemote ? await listenEvents(runtime) : null;
   const trace: number[] = [];
+  let taken = 0;
   await session.client.inputButton(button('TRIG 1'), true);
   try {
     await ui.settle(200);
@@ -291,13 +299,23 @@ export async function setSmp(
       const now = word >> 8;
       if (now === index) return trace;
       if (i === maxTurns) break;
-      await ui.burst('ENC D', 1, now < index ? 1 : -1);
+      const dir = now < index ? 1 : -1;
+      if (events) {
+        if ((await remoteTurnTaken(runtime, events, 4, dir)) !== 0) taken++;
+      } else {
+        await ui.burst('ENC D', 1, dir);
+      }
       await ui.settle(60);
     }
   } finally {
     await session.client.inputButton(button('TRIG 1'), false);
   }
-  throw new Error(`SMP did not reach ${index} in ${maxTurns} detents, last word ${trace.at(-1)?.toString(16)}: words ${trace.map((w) => w.toString(16))}`);
+  throw new Error(
+    `SMP did not reach ${index} in ${maxTurns} detents, last word ${trace.at(-1)?.toString(16)}: words ${trace.map((w) => w.toString(16))}\n` +
+      (events
+      ? `the firmware decoder took ${taken} of ${maxTurns} detents; last events of the log:\n${events.seen()}`
+      : 'turns sent through the panel input (no events)'),
+  );
 }
 
 /** The `dk_strack` record of pool entry `track` in the DSP data of the first module with a table (client 0): eight words. `recordsSymbol` is the plan address of

@@ -46,10 +46,14 @@ Highest payoff first. Each step states its proof.
    its constraints apply (one log sink, safe-mode fallback, cursor, epoch and loss semantics, per-file isolation, fixed waits only where the subject is a duration).
    - [x] Stage 1: `settleUi` is deleted. **[D]** It waited a fixed 45 s of emulated time on DN2 and 12 s on DT2 (`shot-dn2`: 262 of 697 s in a loaded gate),
      after readiness was already established. Without it the `shot-dn2` body takes about 215 s instead of about 390 s.
-   - [ ] Stage 2, first job: the runtime reports "input consumed" and "parameter applied", and an install waits on "ready for input". **[D]** `main_ui_reached`
+   - [ ] Stage 2, first job (partly built, no new module): `digikit/remote` logs `INPUT_TAKEN` (kind 41, debug level) when core/input handed a key or turn to the firmware
+     decoder, and the host helper `events.until(kind, predicate, {emulatedMs})` (`packages/test-support/src/events.ts`, `listenEvents` and `remoteTurnTaken` in
+     `tests/regression/runtime/events.ts`) waits on it with a cursor over sequence numbers (new boot resets it, a gap fails). `setSmp` of `shot-dn2-supersede` turns
+     through the remote and waits on the event; a failure lists the detents taken and the last events. 4 of 4 runs passed (about 1 m 52 s each, same as before).
+     DT2's `shot-dt2` keeps the panel input: its `test/stock-pool` fixture holds the remote commands 0x38 to 0x3b. `PARAM_CHANGE` (kind 42, built 2026-11-10, [finding 119](../findings/119-param-change-observer.md)): `digikit/debug` logs a changed Sound word of the selected track (two new anchors, one runtime import); a knob turn is proven on both devices, but the SMP turn of `setSmp` does not change that array, so `setSmp` does not use it (module parameters such as SMP are stock parameter rows outside the Sound array). Not built: the "ready for input" wait after an install, and the `tap` helper (a key event says the decoder took it, not that the UI redrew).
+     **[D]** `main_ui_reached`
      does not mean ready for input: `shot-dn2` failed in its SMP step in 9 of 19 runs with a wait on `main_ui_reached` after the install and in 0 of 12 without it
-     (the SMP word reaches 0x100 and does not move for 43 more detents). **[O]** Why the word stops moving (a guess: the DSP word freezes when the note ends)
-     belongs here.
+     (the SMP word reaches 0x100 and does not move for 43 more detents). **[O]** Why the word stops moving: a guess is that the note ends before the knob reaches the target; 6 passing runs on 2026-11-10 showed the voice sounding to the end of every turn (margin about 1.7 s), no failure reproduced ([handover](../handovers/HANDOVER-2026-11-10-test-speed.md)).
    - [ ] Stage 2, observer module: a test-only module loaded first reports events the harness cannot read (module registered, machine assigned,
      note reached the DSP, card write done, input consumed) through the runtime log sink, with a boot-record fallback. Host side:
      `events.until(kind, predicate, {emulatedMs})`; a missing event fails with the last events seen. The remote control module stays the input path.

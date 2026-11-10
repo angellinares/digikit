@@ -13,7 +13,11 @@
  *
  * A turn: the firmware adds a delta to a pending count per encoder and flushes at most 30 detents every 4 ticks. The module keeps its own estimate of
  * the pending count (it drains PACE_DRAIN per PACE_BLOCKS blocks of 1/1500 s, deliberately slower than the firmware) and takes only what fits below
- * the limit, so the firmware's clamp is never the thing that drops or delays a turn. */
+ * the limit, so the firmware's clamp is never the thing that drops or delays a turn.
+ *
+ * Log: when core/input has handed a key or a turn to the firmware decoder (the call returned 0) the module logs INPUT_TAKEN at debug level (3): what (1 key,
+ * 2 turn), the key code or encoder, and the delta taken (a key: 1 down, 0 up). The firmware applies a turn at its next tick, so the event says "accepted
+ * by the decoder", not "applied". */
 
 #include <dk/api.h>
 #include <dk/ui.h>
@@ -28,6 +32,20 @@ typedef int8_t s8;
 #define PACE_DRAIN 30u
 #define PACE_BLOCKS 96u
 #define MAX_ENC 16u
+
+/* The log event for an input the firmware decoder took (docs/findings/46-digikit-debug.md): debug level (3), shown when LOGCFG raises this module's level. */
+#define K_INPUT_TAKEN 41u
+#define LOG_DEBUG_FLAGS (3u << 1)
+
+static void taken(u32 what, u32 control, int delta)
+{
+    u32 a[5];
+    a[0] = what;
+    a[1] = control;
+    a[2] = (u32)delta;
+    a[3] = a[4] = 0u;
+    dkrt_log_ev(K_INPUT_TAKEN, LOG_DEBUG_FLAGS, a);
+}
 
 static u8 held[16]; /* a bit per key code 0..127 */
 static int pending[MAX_ENC];
@@ -58,6 +76,7 @@ static int32_t key(u32 cmd, u32 seq, const u8 *body, u32 len, u8 *out)
     r = input_key(body[0], body[1]);
     last_is(1, body[0], body[1], r);
     if (r == 0) {
+        taken(1u, body[0], body[1]);
         if (body[1])
             held[body[0] >> 3] |= (u8)(1u << (body[0] & 7u));
         else
@@ -106,6 +125,7 @@ static int32_t turn(u32 cmd, u32 seq, const u8 *body, u32 len, u8 *out)
     if (r != 0)
         return r;
     pending[enc - 1u] += take;
+    taken(2u, enc, take);
     out[0] = (u8)(s8)take;
     return 1;
 }
@@ -164,8 +184,9 @@ int32_t dkm_init(const dk_api *api)
 {
     int a = api->register_cmds(0x38, 3, panel);
     int d = api->register_cmds(0x3e, 1, state);
+    /* STATE is optional: another module may hold 0x3e (the test fixture track-select does), and KEY, TURN and RELEASE work without it. */
     api->log((const u8 *)"remote registered", (u32)(a | d));
-    return (a | d) ? -1 : 0;
+    return a ? -1 : 0;
 }
 
 /* ---- settings ------------------------------------------------------------------------------------------------------------ */

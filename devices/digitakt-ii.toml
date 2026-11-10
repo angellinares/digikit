@@ -149,6 +149,8 @@ store_halfwords = 28
 track_page = 12
 sound_off = 0x34
 sound_stride = 0x450
+# The number of s16 parameter words in a Sound object's array (the stock getter's bound; finding 02): the debug log's parameter watch reads them.
+sound_words = 71
 send_template = 0x44
 send_indices = [69, 70]
 # An index of the array that nothing reads or writes either (Fx[70]; poked in the emulator without any effect, finding 61): core/fxpages keeps a mark there, set when it gave an effect row its defaults

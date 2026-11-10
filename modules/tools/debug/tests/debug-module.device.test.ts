@@ -3,6 +3,8 @@ import { CMD, LOG_KIND, SERVICE_CMD } from '@digi/dk-session/gen_proto';
 import { expect } from 'vitest';
 import type { PatchedSession } from '@digi/regression/support.ts';
 import { waitFrames } from '@digi/regression/runtime/debug-kit.ts';
+import { listenEvents } from '@digi/regression/runtime/events.ts';
+import { panel } from '@digi/regression/runtime/panel.ts';
 import { deviceProfile } from '@digi/regression/runtime/device-data.ts';
 import { liveArtifacts } from '@digi/regression/runtime/artifacts.ts';
 import { DEBUG_MODULE, installModules, installWithDebug, moduleArtifact } from '@digi/regression/runtime/install.ts';
@@ -233,6 +235,26 @@ async function expectEarlyModuleLog(runtime: PatchedSession): Promise<void> {
   await session.expectNoFault('runtime with an early module log line');
 }
 
+/** A knob turn on the selected track logs PARAM_CHANGE: the watch logs a baseline event (index 0xffffffff) when it has taken its snapshot, then ten bursts of four
+ * detents on knob A of the main screen change one Sound word of the selected track, and the event has the new value above the old (a positive turn). The index is
+ * a position of the Sound array (finding 119), so the test does not name it. */
+async function expectParamChange(runtime: PatchedSession): Promise<void> {
+  const { session } = runtime;
+  await expectRuntimeReady(session);
+  await installWithDebug(runtime);
+  const events = await listenEvents(runtime);
+  await events.until(LOG_KIND.PARAM_CHANGE, (e) => (e.args[1]! | 0) === -1, { emulatedMs: 20_000 });
+  await panel(session).burst('ENC A', 10, 4);
+  const change = await events.until(LOG_KIND.PARAM_CHANGE, (e) => (e.args[1]! | 0) !== -1, { emulatedMs: 3000 });
+  const [track, index, old, now] = change.args.map((a) => a | 0);
+  expect(track, 'the selected track').toBeGreaterThanOrEqual(0);
+  expect(track).toBeLessThan(16);
+  expect(index, 'a word of the Sound array').toBeGreaterThanOrEqual(0);
+  expect(index).toBeLessThan(101);
+  expect(now!, `word ${index} of track ${track} went up`).toBeGreaterThan(old!);
+  await session.expectNoFault('PARAM_CHANGE');
+}
+
 runtimeTests(
   'without the debug module the runtime boots, has no log commands and keeps a small ring',
   expectWithoutDebugModule,
@@ -255,3 +277,4 @@ runtimeTests(
     full: true,
   },
 );
+runtimeTests('a knob turn on the selected track logs PARAM_CHANGE', expectParamChange, { dsp: 'sharc', timeout: 900_000 });

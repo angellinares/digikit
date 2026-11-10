@@ -22,30 +22,42 @@ Goal: the gate and module checks finish sooner through less work, the MacBook st
 | #369 | Gate prints a line per finished task; `mise run test:history`; the merge tier selects device tasks with `nx affected` |
 | #370 | Vitest 5.1.0 |
 | #371, #372 | Equivalence scenarios in TypeScript, each machine's rows in its own `tests/`, shared runner `tests/regression/runtime/equiv.ts` |
+| #373 | `card.rs` decisions as pure functions with 14 host tests; no device test changed |
+| #374 | `fx-track-route` and `shot-dn2` split into per-file targets (5 and 3 files), assertions moved |
+| #375 | `shot-picker` as one glue test with the hook steps restored; the device test audit ledger (`docs/plans/ledgers/device-test-audit.md`); targeted waits in three proof files; this handover |
+| this PR | Test events: `INPUT_TAKEN` and `PARAM_CHANGE`, the `events.until` helper (see below) |
 
 ## Open
 
-- **#373** `card.rs` decisions as pure functions with 14 host tests. No device test changed. Em to review. The list of device cases it could make redundant recommends deleting none.
-- **#374** `fx-track-route` and `shot-dn2` split into per-file targets (5 and 3 files), assertions moved. Em to review. The first runs of `shot-dn2-audio` and `shot-dn2-supersede` each failed once and passed on rerun; cause not found.
-- **`test-speed/device-audit`**, PR open for Em: `shot-picker` rewritten to one glue test with the hook steps restored (still needs the DSP); `docs/plans/ledgers/device-test-audit.md` (all 50 device files classified); bootscreen REC held test kept; targeted waits in `sample-playback`, `stock-pool-borrow`, `stock-sampler-lifetime`. `installModules` is unchanged from main. Checks: `shot-dn2` 3 of 3, `shot-picker`, `shot-dt2`, `tom/tb303`, the three proof files once (the `proofs` Vitest project has no Nx target), repo-wide static checks.
+Nothing from this work is open. The first runs of `shot-dn2-audio` and `shot-dn2-supersede` (#374) each failed once and passed on rerun; cause not found.
+
+## Observer state (merged)
+
+Built: `INPUT_TAKEN` (kind 41, `digikit/remote`, when the firmware decoder took a queued key or turn), the `Events` helper (`events.until(kind, predicate, {emulatedMs})`, cursor by sequence number, reset on a new boot, loud failure on a gap), `setSmp` through the remote on DN2, and `PARAM_CHANGE` (kind 42, `digikit/debug`, the selected track's Sound words). The read goes through anchors `cf.project.fn.settings` (new) and `cf.page.fn.native_track_sound` (now on both devices) and the runtime import `dkrt_selected_params`; the word count is a device profile constant ([finding 119](../findings/119-param-change-observer.md), byte-checked parts marked [V]). A baseline event (index 0xffffffff) tells a host the watch has its snapshot. A knob-turn device test in `modules/tools/debug` proves it on both devices.
+
+Not covered: module parameters such as shot's SMP are stock parameter rows outside the Sound array, so `PARAM_CHANGE` does not see them; where their value is stored is open. Not built: a "ready for input" wait after an install. DT2 `setSmp` keeps the panel input (`test/stock-pool` holds the remote's commands 0x38-0x3b).
 
 ## The open `shot-dn2` problem
 
-The SMP step can get stuck. The DSP word reaches `0x100` and does not move while the knob keeps turning (43 more detents with a limit of 64, so the limit is not the cause). Runs on 2026-11-09 and 2026-11-10: no post-install wait 0 failures of 12; with a post-install wait 9 of 19, at mixed load. The mechanism is unknown. One guess, untested: the word only updates while the note plays, so it freezes when a short sample ends.
+The SMP step can get stuck. The DSP word reaches `0x100` and does not move while the knob keeps turning (43 more detents with a limit of 64). Runs on 2026-11-09 and 2026-11-10: no post-install wait 0 failures of 12; with a post-install wait 9 of 19, at mixed load. The mechanism is unknown.
+
+Hypothesis (not confirmed): `setSmp` reads `_dv_params`, which is rewritten only while a voice renders, and holds TRIG 1 for one note-on, so a voice that ends before the knob reaches the target freezes the word. Check on 2026-11-10 (temporary log of the word and the output level at each detent, removed again): 6 runs of `shot-dn2-supersede` all passed, no failure to observe. In every run the output stayed audible (window RMS 0.016 and above) until the end of each turn. Turning 0 to 2 takes 1.8 s (22 detents) of the 5 s T sample, and 2 to 0 takes 2.1 to 2.3 s (25 to 27 detents) of the 4 s L sample. One pool entry is 16 detents (the word moves in 0x10 steps), and the word stays at its old value for the first 15 detents of a turn. So the voice does not end inside the passing runs, and the margin of the second turn is about 1.7 s. A failure would need that turn to take almost twice as long in emulated time (dropped detents, pacing). Not applied: a longer Y sample or a retrigger, because no passing run shows the voice ending. If the failure comes back, log the same two values (`pcm.tap` report `window_rms` and the word) at each detent and look at the level when the word stops.
 
 The review of #367 found that `settleUi` was the only wait after a module install: `installModules` stops at the restart log entry and the module list. The firmware-state replacement passed `main_ui_reached` in about 20 ms and the test still failed, so that state does not mean "ready for input". The wait is out of `installModules` again for now.
 
 ## Next steps, in order
 
-1. Em reviews #373, #374 and the `device-audit` PR.
-2. Design the observer module (plan step 3, stage 2) with Em before building: a test-only module loaded first reports "input consumed", "parameter applied" and other events through the runtime log sink; install waits on "ready for input"; host API `events.until(kind, predicate, {emulatedMs})`. This is where the post-install wait and the frozen-word question are resolved.
-3. Measure one real gate that touches core against the 111-minute baseline of 2026-11-09 (`mise run test:history`). No full gate was run for the changes above. The 12-emulator ceiling has not been seen at full load.
-4. Plan step 4: key device tasks on built bytes. It needs cacheable `pack` first. A core change still selects all 41 device tasks.
+1. Measure one real gate that touches core against the 111-minute baseline of 2026-11-09 (`mise run test:history`). No full gate was run for the changes above. The first run starts with a cold snapshot store; the 12-emulator ceiling has not been seen at full load.
+2. Plan step 4: key device tasks on built bytes. It needs cacheable `pack` first. A core or runtime change still selects all 41 device tasks.
+3. Tooling fixes found on 2026-11-10: `tools.patchkit.pk_modcheck` (`mise run module:check`) calls `nx run-many` directly and starts an Nx daemon (route it through `pnpm nx:pilot`); a device profile constant goes into every core adapter's generated `build/gen/device-*.inc`, so one new constant changes about 39 generated files (only the adapters that use a constant should get it); `devices/ports/dn2-1.11.toml` is stale against the resolver (`resolve-all` rewrites about 1000 lines; not covered by `test_pk_current.py`).
+4. Observer, rest of plan step 3 stage 2, when a test needs it: an event for module parameters such as SMP, and a "ready for input" event for the post-install wait.
 5. Audit rows for Em to decide, each deletion through the independent review first: `settings` copies and safe-mode copy pairs; `freqshift` and `fx-pages` trims; other rows in the ledger. Remaining items: wall-time test timeouts to emulated time, the ui-demo picker test.
+
+When briefing agents, name the checks up front (the owner's targets that the change can break, then the repo-wide static checks); otherwise they default to `module:check`, which can take 15 minutes.
 
 ## Decisions pending from Em
 
-Core-change policy (plan step 5). Observer module design. A GitHub issue for boourns's notes on overdrive output level and curve choice has not been filed.
+Core-change policy (plan step 5). A GitHub issue for boourns's notes on overdrive output level and curve choice has not been filed.
 
 ## Known limits
 
@@ -56,4 +68,4 @@ Core-change policy (plan step 5). Observer module design. A GitHub issue for boo
 
 ## Lanes
 
-`ts-settle` (device-audit), `ts-slots` (#373), `ts-reload` (#374), `main-fixes` and `test-speed` (free). Em removes worktrees; give the command when asked.
+All work from this session is merged. `ts-settle`, `ts-slots`, `ts-reload`, `main-fixes`, `test-speed`, `pr-275` and `pr-276` can be removed. `ts-slots` holds a stash ("observer: word count in debug (dropped, 2026-11-10)"): the word count stays in the device profile. Em removes worktrees; give the command when asked.

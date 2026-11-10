@@ -4,3 +4,4 @@ export * from './golden.ts';
 export * from './inputs.ts';
 export * from './keys.ts';
 export * from './session.ts';
+export * from './events.ts';

@@ -71,6 +71,7 @@
     .equ FX_TRACK_PAGE, 0x10    /* [fx] track_page (the stock page the send page copies its title and level slot from; 0: no send page) */
     .equ FX_SOUND_OFF, 0x34    /* [fx] sound_off (the first Sound object in the kit object, bytes from the kit object) */
     .equ FX_SOUND_STRIDE, 0x48b    /* [fx] sound_stride (bytes between the 16 Sound objects) */
+    .equ FX_SOUND_WORDS, 0x65    /* [fx] sound_words (s16 parameter words in a Sound object's array) */
     .equ FX_SEND_TEMPLATE, 0x44    /* [fx] send_template (the stock send row whose owner and key words a send knob copies) */
     .equ LIMIT_SEND_SLOTS, 0x1    /* [limits] send_slots (effects on a send bus: the cells of the send page; 0 on a device without one) */
     .equ FX_VALUE_0, 0x46    /* [fx] value_indices (an effect value index that no stock parameter uses) */

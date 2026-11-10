@@ -152,6 +152,9 @@ uint32_t dkrt_peek_range(uint32_t i, uint32_t *out);
 /* The machine type of track 0 to 15 of the active kit, read from the firmware (read-only); -1 for a track the firmware has no type for, -2 when there is no project yet. */
 int32_t dkrt_track_type(uint32_t track);
 
+/* The selected track and its Sound parameter words (read-only, from the firmware's own accessors). Writes the first `n` s16 words of that track's Sound array to `out` (words past the device's count are 0) and returns the track, 0 to 15. Returns -2 when there is no project yet and -3 when the track has no Sound record (a kit is loading): `out` is not written then. The index of a word is the mirror index of the firmware's parameter table, not a parameter code. Used by digikit/debug. */
+int32_t dkrt_selected_params(int16_t *out, uint32_t n);
+
 /* Entry points of a .dkm (symbols of its object). */
 
 /* Runs once after the copy, relocation and cache flush. Returns 0 = ok; the module is unloaded otherwise. */

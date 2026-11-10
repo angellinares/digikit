@@ -655,6 +655,11 @@ name = "dkrt_track_type"
 sig = "i32 (u32 track)"
 doc = "The machine type of track 0 to 15 of the active kit, read from the firmware (read-only); -1 for a track the firmware has no type for, -2 when there is no project yet."
 
+[[import]]
+name = "dkrt_selected_params"
+sig = "i32 (i16 *out, u32 n)"
+doc = "The selected track and its Sound parameter words (read-only, from the firmware's own accessors). Writes the first `n` s16 words of that track's Sound array to `out` (words past the device's count are 0) and returns the track, 0 to 15. Returns -2 when there is no project yet and -3 when the track has no Sound record (a kit is loading): `out` is not written then. The index of a word is the mirror index of the firmware's parameter table, not a parameter code. Used by digikit/debug."
+
 # The entry points of a .dkm (docs/design/digikit-dkm.md); `api` is the dk_api table. At least one must exist.
 [dkm]
 init = { sig = "i32 (const api *api)", doc = "Runs once after the copy, relocation and cache flush. Returns 0 = ok; the module is unloaded otherwise." }
@@ -892,6 +897,20 @@ args = ["count", "-", "-", "-", "-"]
 id = 40
 name = "POOL_INVALID"
 args = ["entry", "reason", "token", "count", "-"]
+
+# the remote module's input reached the firmware decoder (debug level 3): key or turn, which control, and the delta the decoder accepted (a key: 1 down, 0 up)
+[[log.kind]]
+id = 41
+name = "INPUT_TAKEN"
+args = ["what", "control", "delta", "-", "-"]
+
+# a Sound parameter word of the selected track changed (debug level 3, logged by digikit/debug from a poll once per UI pass): the track, the mirror index of the word
+# (a position in the Sound array, not a parameter code), the old and the new s16 value. When the watch takes its snapshot (first pass after the project exists, a new selected track, a kit load) it logs one baseline event with index 0xffffffff and old and new 0: a turn after it is seen.
+# Only writes to that array show: p-lock, sound lock, LFO and MIDI CC take other paths (docs/findings/119-param-change-observer.md).
+[[log.kind]]
+id = 42
+name = "PARAM_CHANGE"
+args = ["track", "index", "old", "new", "-"]
 
 [protocol]          # the digikit SysEx protocol (F0 7D 64 6B ...); docs/design/digikit-upload.md
 version = 1         # the request version byte; a request with another version gets E_PROTO

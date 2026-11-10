@@ -13,6 +13,16 @@ users = ["core/runtime"]
 doc = "`Kit *f(Project *)`: the active kit of a project. core/runtime uses it with the project singleton and track_type to watch each track's machine type."
 
 [[fn]]
+name = "cf.project.fn.settings"
+cpu = "cf"
+sig = "u32 (u32 project)"
+devices = ["dt2", "dn2"]
+rule = { kind = "cf_func", hash = "0b9b326582c946a5c61e402ed2d03bc4", offset = 0x0, len = 4 }
+mark = "D"
+users = ["core/runtime"]
+doc = "`ProjectSettings *f(Project *)`: project + 0x30. Pass it to `cf.page.fn.view_track` to get the selected track."
+
+[[fn]]
 name = "cf.project.fn.serialize"
 was = ["dkrt.fw.project_serialize"]
 cpu = "cf"

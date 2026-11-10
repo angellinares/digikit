@@ -75,6 +75,9 @@ struct FxDoc {
     sound_off: u64,
     #[serde(default)]
     sound_stride: u64,
+    /// The number of s16 parameter words in a Sound object's array (at +0x14): the debug log's parameter watch reads that many.
+    #[serde(default)]
+    sound_words: u64,
     #[serde(default)]
     send_template: u64,
     #[serde(default)]
@@ -227,6 +230,7 @@ struct FxF {
     track_page: u64,
     sound_off: u64,
     sound_stride: u64,
+    sound_words: u64,
     send_template: u64,
     send_indices: Vec<u64>,
 }
@@ -559,6 +563,7 @@ fn fx_facts(short: &str, f: Option<FxDoc>, fx_slots: u64, send_slots: u64) -> Re
         track_page: f.track_page,
         sound_off: f.sound_off,
         sound_stride: f.sound_stride,
+        sound_words: f.sound_words,
         send_template: f.send_template,
         send_indices: f.send_indices,
     })
@@ -1277,6 +1282,11 @@ fn constants(lib: &Library, dev: &str, e: &Entry) -> Result<Vec<C>> {
             "FX_SOUND_STRIDE",
             fx.sound_stride,
             "[fx] sound_stride (bytes between the 16 Sound objects)",
+        ),
+        (
+            "FX_SOUND_WORDS",
+            fx.sound_words,
+            "[fx] sound_words (s16 parameter words in a Sound object's array)",
         ),
         (
             "FX_SEND_TEMPLATE",

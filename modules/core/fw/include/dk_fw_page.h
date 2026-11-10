@@ -10,7 +10,7 @@
 uint8_t * dk_fw_page_native_library_sound(uint8_t *sounds, uint32_t index) __asm__("cf.page.fn.native_library_sound");
 /* DN2 selected-sound/browser index of MultiSourcePageView (not page index); values below 0x80 select the browser sound instead of the current track sound. */
 uint32_t dk_fw_page_native_sound_index(uint8_t *view) __asm__("cf.page.fn.native_sound_index");
-/* DN2 track sound from the source view's sounds reference (view+0x78) and track, as used by its draw and parameter mapper. */
+/* `Sound *f(Kit *, int track)`: the Sound value object of a track (track clamped to 0..15; kit + 0x6c + 0x3c0 * track). DN2 uses it with the source view's sounds reference (view+0x78) in its draw and parameter mapper; core/runtime uses it with the active kit. Its vtable slot 0x28 returns the sound record, whose s16 parameter words start at +0x14. DT2 1.17 0x40035cca, DN2 1.12 0x40030e66. */
 uint8_t * dk_fw_page_native_track_sound(uint8_t *sounds, uint32_t track) __asm__("cf.page.fn.native_track_sound");
 /* cf.page.fn.page_desc: no sig yet */
 /* cf.page.fn.source_code: no sig yet */
