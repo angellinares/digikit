@@ -274,6 +274,26 @@ test('pollEmulated fails after the emulated time, counts a lowered clock as a re
   ).rejects.toThrow('boom');
 });
 
+test('pollEmulated counts boot progress as movement only while a load or boot runs', async () => {
+  // The emulated clock stands still. A restart's cold boot moves boot.icount: no trip. A running ColdFire without a job or boot (a halted DSP) trips.
+  let icount = 0;
+  const booting = {
+    status: vi.fn(async () => ({ audio: { frames: 1000 }, boot: { icount: (icount += 1000) } })),
+  } as unknown as Session;
+  let reads = 0;
+  const bootDone = async () => ++reads > 30;
+  await expect(
+    pollEmulated(booting, bootDone, Boolean, { emulatedMs: 1000, intervalMs: 5, hangMs: 40, message: 'm' }),
+  ).resolves.toBe(true);
+  let cf = 0;
+  const halted = {
+    status: vi.fn(async () => ({ mode: 'free', audio: { frames: 1000 }, cf: { icount: (cf += 1000) } })),
+  } as unknown as Session;
+  await expect(
+    pollEmulated(halted, async () => false, Boolean, { emulatedMs: 1000, intervalMs: 5, hangMs: 40, message: 'm' }),
+  ).rejects.toThrow('emulated clock stuck');
+});
+
 test('installer failure still releases remote inputs without reaching scenario actions', async () => {
   const { dk, runtime } = fakeDk();
   dk.put.mockRejectedValueOnce(new Error('install failed'));

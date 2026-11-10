@@ -1,5 +1,6 @@
 import fs from 'node:fs';
 import path from 'node:path';
+import { isLoading } from '@digi/test-support';
 
 /** The status fields the watchdog reads (the daemon's `status` reply has more). */
 interface WatchedStatus {
@@ -101,14 +102,14 @@ export function startNoProgressWatchdog(session: WatchedSession, options: Watchd
       if (stopped) return;
       const t = now();
       // A boot inside `firmware.load` (`boot`) is a job too: a paused daemon that loads is not idle.
-      if (status?.mode === 'paused' && !status.job && !status.boot) {
+      if (status?.mode === 'paused' && !isLoading(status)) {
         lastChange = t;
         return;
       }
       const mainloop = status?.cf?.mainloop_hits;
       // The instruction counts are progress only while a load or boot runs: a firmware that spins after its boot
       // moves them too, and the frame and main loop counters are what show it stuck.
-      const loading = Boolean(status?.job || status?.boot);
+      const loading = isLoading(status);
       const parts = status
         ? [
             status.epoch,

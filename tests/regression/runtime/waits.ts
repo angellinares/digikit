@@ -1,5 +1,10 @@
 import { setTimeout as delay } from 'node:timers/promises';
-import { withinRuntimeDeadline as beforeReadinessDeadline, type Session } from '@digi/test-support';
+import {
+  describeRestart,
+  restartProgress,
+  withinRuntimeDeadline as beforeReadinessDeadline,
+  type Session,
+} from '@digi/test-support';
 import { timePhase } from '../timing.ts';
 
 /** The DSP frame counter advances 1500 frames per emulated second. */
@@ -17,8 +22,13 @@ export async function waitEmulatedFrames(session: Session, frames: number, { han
   const coupled = session.dsp === 'sharc';
   const unit = coupled ? 1 : INSNS_PER_FRAME;
   const clock = coupled ? 'DSP frames' : 'ColdFire instructions';
+  let progress: string | undefined;
+  let restarting = false;
   const read = async () => {
     const status = await session.status();
+    const key = restartProgress(status);
+    restarting = progress !== undefined && key !== progress;
+    progress = key;
     return Number(coupled ? ((status.audio as { frames?: number } | null)?.frames ?? 0) : (status.elapsed ?? 0));
   };
   const start = await read();
@@ -28,7 +38,7 @@ export async function waitEmulatedFrames(session: Session, frames: number, { han
   while (seen < target) {
     await delay(50);
     const now = await read();
-    if (now > seen) lastAdvance = Date.now();
+    if (now > seen || restarting) lastAdvance = Date.now();
     else if (Date.now() - lastAdvance >= hangMs) {
       throw new Error(`${clock} stuck at ${now} (started at ${start}, wanted ${target}) for ${hangMs} ms`);
     }
@@ -68,6 +78,7 @@ export async function pollEmulated<T>(
   let last: number | undefined;
   const hangMs = hang ?? CLOCK_STUCK_MS;
   let lastAdvance = Date.now();
+  let lastProgress: string | undefined;
   for (;;) {
     let value: T | undefined;
     let failure: unknown;
@@ -89,6 +100,11 @@ export async function pollEmulated<T>(
     await delay(intervalMs);
     const reply = await session.status();
     const now = emulatedClockMs(reply);
+    // A restart's cold boot moves the epoch and instruction counts while the clock stands still: that is movement too.
+    const progress = restartProgress(reply);
+    const restarting = lastProgress !== undefined && progress !== lastProgress;
+    lastProgress = progress;
+    if (restarting && now === last) lastAdvance = Date.now();
     if (now > last) {
       waited += now - last;
       lastAdvance = Date.now();
@@ -96,7 +112,9 @@ export async function pollEmulated<T>(
       lastAdvance = Date.now(); // a restart lowers the clock: that is movement
     } else if (Date.now() - lastAdvance >= hangMs) {
       const mode = (reply as { mode?: string }).mode;
-      throw new Error(`${message}: emulated clock stuck at ${now} ms (mode ${mode ?? 'unknown'}) for ${hangMs} ms`);
+      throw new Error(
+        `${message}: emulated clock stuck at ${now} ms (mode ${mode ?? 'unknown'})${describeRestart(reply)} for ${hangMs} ms`,
+      );
     }
     last = now;
   }
