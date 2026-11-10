@@ -35,6 +35,8 @@
         { "env": "SHARC_BLOCKTRANS" },
         { "env": "SHARC_FAST_FALLBACK_REGIONS" },
         { "env": "SHARC_FAST_AUTO" },
+        { "env": "SHARC_GEN_DIR" },
+        { "env": "SHARC_GEN_DIR_2" },
         { "env": "UPDATE_GOLDENS" }
       ],
       "options": { "command": "REGRESSION_JOBS=${DIGI_JOBS:-4} pnpm --filter @digi/regression test:stock", "cwd": "." }
