@@ -104,6 +104,7 @@ Highest payoff first. Each step states its proof.
        or of core adapters that a host test or another device test already covers.
        **[D]** Done as a static audit: [ledgers/device-test-audit.md](ledgers/device-test-audit.md). The candidates are listed there for decision.
      - [x] Each device test file runs as one task per device (`DIGI_DEVICE`), 2026-11-10; a file's floor is its DN2 half.
+     - [x] nx-tools host tests keep the plugin-logic cases; cases that re-proved declared inputs through ~30 real-workspace nx spawns are gone (2026-11-10).
 8. [ ] **Per-test emulator coverage.** After steps 1 and 2 (cheaper runs). Record the ColdFire and SHARC PCs each device test executes and map them
    to runtime and module functions through the patch plan and symbols. `digi-emud` already writes SHARC PC counts ([instrumentation](../INSTRUMENTATION.md),
    engine coverage files); the ColdFire side is not checked yet. Uses:

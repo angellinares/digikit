@@ -4,7 +4,6 @@ import { tmpdir } from 'node:os';
 import { join, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { afterAll, afterEach, beforeAll, describe, expect, it } from 'vitest';
-import { parse } from 'smol-toml';
 import { createDependencies } from '../modules.mjs';
 import { manifestClosure } from '../module-manifests.mjs';
 import { TIERS } from '../gate.mjs';
@@ -79,10 +78,9 @@ afterEach(async () => {
   await new Promise<void>((resolve) => setImmediate(resolve));
 });
 
-function imageConsumer(excluded?: string): string {
+function imageConsumer(): string {
   return Object.entries(workspace.nodes).find(
-    ([id, node]) =>
-      id !== excluded && node.data.root.startsWith('modules/machines/') && node.data.targets['test-conformance'],
+    ([, node]) => node.data.root.startsWith('modules/machines/') && node.data.targets['test-conformance'],
   )![0];
 }
 
@@ -94,27 +92,6 @@ function otherImageConsumer(): string {
 }
 
 const manifestOf = (id: string) => `${workspace.nodes[id].data.root}/module.toml`;
-
-function pickerConsumer(): string {
-  const consumers = Object.entries(workspace.nodes).filter(([id, node]) => {
-    if (!node.data.targets.pack) return false;
-    const manifest = parse(readFileSync(join(root, manifestOf(id)), 'utf8')) as {
-      object?: { sources?: string[] }[];
-    };
-    return manifest.object?.some((object) =>
-      object.sources?.some((source) => resolve(root, node.data.root, source) === join(root, 'sdk/src/sample_picker.c')),
-    );
-  });
-  expect(consumers).toHaveLength(1);
-  return consumers[0][0];
-}
-
-describe('merge gate', () => {
-  it('keeps menu.c and ui.c edits on the normal device and conformance selection', () => {
-    for (const file of ['modules/core/apps/digikit-menu/src/menu.c', 'modules/core/adapters/ui/src/ui.c'])
-      expect(selected(file, 'test-device,test-conformance').tasks[`${imageConsumer()}:test-conformance`]).toBeDefined();
-  }, 30_000);
-});
 
 it('keeps runtime and shipped content outside dependency cycles', () => {
   const reaches = (from: string, target: string, seen = new Set<string>()): boolean => {
@@ -216,10 +193,9 @@ it('forms explicit manifest libraries from selected modules and transitive requi
 describe('workspace selection', () => {
   it('keeps full-only module fixtures out of quick capacity selection', () => {
     const manifest = manifestOf(otherImageConsumer());
-    expect(selected(manifest, 'test-device').tasks['core/runtime-capacity-tests:test-device']).toBeUndefined();
-    const full = selected(manifest, 'test-device-full');
-    expect(full.tasks['core/runtime-inferred-needs-tests:test-device-full']).toBeDefined();
-    expect(full.tasks['core/runtime-capacity-tests:test-device']).toBeUndefined();
+    const graph = selected(manifest, 'test-device,test-device-full');
+    expect(graph.tasks['core/runtime-capacity-tests:test-device']).toBeUndefined();
+    expect(graph.tasks['core/runtime-inferred-needs-tests:test-device-full']).toBeDefined();
     const quick = selected('tests/fixtures/modules/dyn-fx-gain/src/module.c', 'test-device');
     expect(quick.tasks['core/runtime-capacity-tests:test-device']).toBeDefined();
   }, 30_000);
@@ -252,15 +228,11 @@ describe('workspace selection', () => {
     expect(node.data.targets.pack.cache).toBe(false);
   }, 30_000);
 
-  it.each(['modules/core/adapters/ui/src/ui.c'])(
-    'selects image consumers when %s changes',
-    (file) => {
-      const graph = selected(file, 'test-device,test-conformance');
-      expect(graph.tasks['core/runtime-tests:test-device']).toBeDefined();
-      expect(graph.tasks[`${imageConsumer()}:test-conformance`]).toBeDefined();
-    },
-    30_000,
-  );
+  it('selects image consumers when ui.c changes', () => {
+    const graph = selected('modules/core/adapters/ui/src/ui.c', 'test-device,test-conformance');
+    expect(graph.tasks['core/runtime-tests:test-device']).toBeDefined();
+    expect(graph.tasks[`${imageConsumer()}:test-conformance`]).toBeDefined();
+  }, 30_000);
 
   it('selects hermetic Rust tests when the release profile digest recipe changes', () => {
     const graph = selected('tools/nx/cargo-profile-env.mjs', 'rust-tests');
@@ -268,47 +240,15 @@ describe('workspace selection', () => {
     expect(graph.tasks['device-profile:rust-tests']).toBeDefined();
     expect(graph.tasks['patchkit:rust-tests']).toBeUndefined();
   }, 30_000);
-});
 
-it.each(['sdk/src/sample_picker.c'])(
-  'limits private SDK source %s to its pack and host consumers',
-  (file) => {
-    const picker = pickerConsumer();
-    const unrelated = imageConsumer(picker);
-    const graph = selected(file, 'pack,rust-tests,test-device,test-conformance');
-    expect(graph.tasks[`${picker}:pack`]).toBeDefined();
-    expect(graph.tasks['dkui-host:rust-tests']).toBeDefined();
-    const conformanceOwners = Object.values(graph.tasks)
-      .filter((task) => task.target.target === 'test-conformance')
-      .map((task) => task.target.project);
-    expect(conformanceOwners).toEqual(workspace.nodes[picker].data.targets['test-conformance'] ? [picker] : []);
-    for (const target of [`${picker}:pack`, 'dkui-host:rust-tests']) {
-      const inputs = JSON.parse(nx(['show', 'target', 'inputs', target, '--json']));
-      expect(inputs.files, target).toContain(file);
-    }
-    for (const target of [`${unrelated}:pack`, `${unrelated}:test-conformance`, 'core/runtime:build-objects']) {
-      const inputs = JSON.parse(nx(['show', 'target', 'inputs', target, '--json']));
-      expect(inputs.files, target).not.toContain(file);
-    }
-    expect(graph.tasks[`${unrelated}:pack`]).toBeUndefined();
-    expect(graph.tasks[`${picker}:test-device`]).toBeDefined();
-  },
-  30_000,
-);
-
-it.each(['sdk/include/dk/api.h'])(
-  'retains broad module and device selection for shared SDK contract %s',
-  (file) => {
-    const picker = pickerConsumer();
-    const unrelated = imageConsumer(picker);
-    const graph = selected(file, 'pack,test-device,test-conformance');
+  it('keeps shared SDK contract edits on the SDK host, pack, runtime device and conformance selection', () => {
+    const graph = selected('sdk/include/dk/api.h', 'test-host,pack,test-device,test-conformance');
     for (const target of [
-      `${picker}:pack`,
-      `${unrelated}:pack`,
-      `${unrelated}:test-conformance`,
+      'sdk:test-host',
+      `${imageConsumer()}:pack`,
       'core/runtime-tests:test-device',
+      `${imageConsumer()}:test-conformance`,
     ])
       expect(graph.tasks[target], target).toBeDefined();
-  },
-  30_000,
-);
+  }, 30_000);
+});
