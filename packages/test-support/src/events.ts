@@ -3,7 +3,8 @@
 // does not advance (finding 46).
 //
 // Cursor rules:
-// - `listen()` puts the cursor at the newest event: older events never match.
+// - `listen()` puts the cursor at the newest event: older events never match. `listen({ fromBoot: true })` puts it before sequence 1 of this
+//   boot: use it to wait on an event a module logs by itself right after boot.
 // - A wait consumes events up to the one that matched; the next wait starts after it.
 // - A new boot restarts the log at sequence 1. The cursor keeps the last consumed event and reads it again with each poll: when it is gone or
 //   differs (or the log is shorter), the boot changed, the cursor starts at the new log's first event and `boots` counts it.
@@ -78,11 +79,20 @@ export class Events {
     this.hangMs = options.hangMs ?? 30_000;
   }
 
-  /** Start at the newest event and set the levels. Call it once the debug module is loaded (and again after a restart that loses the levels). */
-  async listen(): Promise<void> {
-    const [, newest] = await this.log.logPage(NEWEST);
+  /**
+   * Start at the newest event and set the levels. Call it once the debug module is loaded (and again after a restart that loses the levels).
+   * `fromBoot: true` starts before sequence 1 of the current boot instead, so every event of this boot can match. Use it to wait on an event
+   * that a module logs by itself right after boot: the guest may have logged it before `listen()` reads the newest event.
+   */
+  async listen({ fromBoot = false }: { fromBoot?: boolean } = {}): Promise<void> {
     this.last = null;
     this.recent = [];
+    if (fromBoot) {
+      this.maxSeen = 0;
+      await this.setLevels();
+      return;
+    }
+    const [, newest] = await this.log.logPage(NEWEST);
     this.maxSeen = newest;
     if (newest > 0) {
       const [, , events] = await this.log.logPage(newest);

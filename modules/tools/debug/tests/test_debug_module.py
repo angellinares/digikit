@@ -294,8 +294,12 @@ def test_track_watch_logs_a_change_after_the_baseline_and_waits_for_the_project(
     ]
     out = run(harness, lines)
     _, _, evs = log(out[-1])
-    assert [(e[2], e[4], e[5], e[6]) for e in evs] == [(26, 2, 5, 7)]
-    assert (evs[0][3] >> 1) & 7 == 2  # info
+    # the param watch baseline (track 0 is selected, info level) comes at the first pass after the track watch started; the machine change follows
+    assert [(e[2], e[4], e[5], e[6]) for e in evs] == [
+        (42, 0, 0xFFFFFFFF, 0),
+        (26, 2, 5, 7),
+    ]
+    assert [(e[3] >> 1) & 7 for e in evs] == [2, 2]  # info
 
 
 def test_param_watch_logs_a_changed_word_and_takes_the_snapshot_again_on_a_new_track(

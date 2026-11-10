@@ -54,6 +54,7 @@ Highest payoff first. Each step states its proof.
      **[D]** `main_ui_reached`
      does not mean ready for input: `shot-dn2` failed in its SMP step in 9 of 19 runs with a wait on `main_ui_reached` after the install and in 0 of 12 without it
      (the SMP word reaches 0x100 and does not move for 43 more detents). **[O]** Why the word stops moving: a guess is that the note ends before the knob reaches the target; 6 passing runs on 2026-11-10 showed the voice sounding to the end of every turn (margin about 1.7 s), no failure reproduced ([handover](../handovers/HANDOVER-2026-11-10-test-speed.md)).
+   - [ ] Waits on an event a module logs right after boot use `listen({ fromBoot: true })` (2026-11-10, PARAM_CHANGE baseline race). Check whether the shot-dn2 SMP stall after installModules has the same cause.
    - [ ] Stage 2, observer module: a test-only module loaded first reports events the harness cannot read (module registered, machine assigned,
      note reached the DSP, card write done, input consumed) through the runtime log sink, with a boot-record fallback. Host side:
      `events.until(kind, predicate, {emulatedMs})`; a missing event fails with the last events seen. The remote control module stays the input path.
