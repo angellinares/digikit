@@ -83,6 +83,11 @@
         "plusdrive": true
       },
       {
+        "files": ["boot-restart.device.test.ts"],
+        "modules": ["test/dyn-dn2", "test/sine"],
+        "plusdrive": true
+      },
+      {
         "files": ["crash-capture.device.test.ts"],
         "modules": ["digikit/debug", "test/dyn-crash"],
         "plusdrive": true

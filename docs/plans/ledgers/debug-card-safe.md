@@ -159,6 +159,18 @@ cut-selection | S:947 | the quick tier runs the first two cases (`quick_cases`) 
 cut-selection | S:974 | one copy written by the runtime: A new, B empty | -> safe-mode.test.ts: one copy written by the runtime ...
 cut-selection | S:984 | restart after the cut loads the new copy | -> safe-mode.test.ts: one copy written by the runtime ... (`dk.restart` + `waitForBoot`)
 
+## pk_dkrt_boot restart (dt2 and dn2; `Proof.restart`)
+
+Status: ported to `boot-restart.device.test.ts`, passed on DT2 and DN2 at the full tier (2026-11-10). The Python proof (`test_boot_load_restart_cut_and_safe_mode` in `tests/patchkit/test_patchkit_dkrt_boot.py`, run only by `mise run test:slow`) stays until these gaps are closed (independent review, 2026-11-10): (1) DSP area byte-equal to the relocated `test/sine` image with its imports, on both devices (`capacity` checks an effect with no imports); (2) an audible note (peak > 0.01) of `test/sine` on DT2 (`dynreg/equiv` is DN2 only); (3) voice row types equal the assigned types (`boot-restart` checks the count only). Optional: "all voice rows free" in safe mode. Then delete only that test function, the `Proof` class and CLI of `tools/patchkit/pk_dkrt_boot.py` (the rest is used by `pk_digikit_scen`, `pk_digikit_upload`, `test_cf_states` and the file's static tests), and its `DAEMON_TESTS` entry in `tools/devtools/py_select.py`. Cut, safe and the write-watch totals are covered by `safe-mode.device.test.ts` and the card rig's close checks; the boot-load results and voice-row counts by `roundtrip`, `dynreg/equiv` and `boot-restart`.
+
+restart | S:840 | an empty selection boots with no module, seq 1 | -> boot-restart.device.test.ts
+restart | S:849 | the mailbox selection answers 0 | -> boot-restart.device.test.ts
+restart | S:852 | both copies equal, the selection, seq 2 | -> boot-restart.device.test.ts
+restart | S:863 | the next boot loads it (results all 0, seq 2) | -> boot-restart.device.test.ts
+restart | S:869 | its voice rows are claimed | -> boot-restart.device.test.ts (`voiceRows`, `dsp: 'sharc'`)
+restart | S:873 | the new boot's UI loop cleared the counter | -> boot-restart.device.test.ts
+restart | S:878 | select nothing, restart: no module, voice rows free (full tier) | -> boot-restart.device.test.ts (`FULL_TIER`)
+
 ## sticky-types (dt2, quick; D `run_sticky`; Python deleted)
 
 The assignment is now the pure function `dkrt_sdk::sticky::assign`, which the runtime's `assign::plan` calls. The 9 boots are unit tests in `modules/core/runtime/sdk/src/sticky/tests.rs` (run by `dkrt-sdk:rust-tests`). The device roundtrip (`modules/core/adapters/dynreg/tests/roundtrip.device.test.ts`) still covers the card and boot integration.
