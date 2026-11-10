@@ -5,7 +5,7 @@ import { timePhase, timingContext } from '../timing.ts';
 import { liveArtifacts, record } from './artifacts.ts';
 import { FIRMWARE, FULL_TIER, liveOptions, selectDevices, skipEmptyHalf } from './devices.ts';
 import { planSymbol, prepareRuntimePlan, type RuntimePlan } from './runtime-plan.ts';
-import { beforeReadinessDeadline } from './waits.ts';
+import { pollEmulated } from './waits.ts';
 
 /** One test per device, each on its own fresh runtime daemon that has passed `expectRuntimeBoot`. */
 export function runtimeTests(
@@ -64,28 +64,27 @@ export async function expectRuntimeUi(
   session: Session,
   plan: RuntimePlan,
   artifacts: string,
-  options: { fresh?: boolean; afterEpoch?: number; timeout?: number; paused?: boolean } = {},
+  options: { fresh?: boolean; afterEpoch?: number; emulatedMs?: number; hangMs?: number; paused?: boolean } = {},
 ): Promise<number> {
-  // Wall time is only a hang guard: readiness is the firmware state polled below. A DN2 reboot takes 45-75 s of wall time
-  // under load, so the guard matches the lifecycle deadline of reloadRuntimeBaseline (120 s).
-  const timeout = options.timeout ?? 120_000;
-  const deadline = Date.now() + timeout;
+  // The wait is bounded in emulated time; a stuck emulator is closed by the no-progress watchdog.
+  const emulatedMs = options.emulatedMs ?? 120_000;
+  let expired = false;
+  let stopped: string | undefined;
   const base = planSymbol(plan, 'DKRT_BOOT');
   let status: Awaited<ReturnType<Session['status']>> | undefined;
   let boot: Record<keyof typeof BOOT_FIELDS, number | null> | undefined;
   try {
-    await expect
-      .poll(
+    try {
+      await pollEmulated(
+        session,
         async () => {
-          status = await beforeReadinessDeadline(deadline, () => session.status());
+          status = await session.status();
           boot = Object.fromEntries(
-            await beforeReadinessDeadline(deadline, () =>
-              Promise.all(
-                Object.entries(BOOT_FIELDS).map(async ([name, offset]) => [
-                  name,
-                  await session.client.memPeek(base + offset),
-                ]),
-              ),
+            await Promise.all(
+              Object.entries(BOOT_FIELDS).map(async ([name, offset]) => [
+                name,
+                await session.client.memPeek(base + offset),
+              ]),
             ),
           ) as typeof boot;
           return (
@@ -103,13 +102,20 @@ export async function expectRuntimeUi(
             boot.ui_reached === 1
           );
         },
+        Boolean,
         {
-          timeout,
-          interval: 500,
+          emulatedMs,
+          intervalMs: 500,
+          hangMs: options.hangMs,
           message: 'current runtime boot reached the normal UI hook',
         },
-      )
-      .toBe(true);
+      );
+    } catch (error) {
+      // Only the emulated-time bound is an expiry; a watchdog close or a stuck clock is recorded as it is.
+      if (error instanceof Error && error.message.includes('not seen within')) expired = true;
+      else stopped = error instanceof Error ? error.message : String(error);
+      throw error;
+    }
     if (options.fresh) {
       // boot.rs only raises the persisted counter when count != 0 or counter != 0.
       // This fresh empty boot and one controlled install restart need no stability wait.
@@ -123,7 +129,8 @@ export async function expectRuntimeUi(
       afterEpoch: options.afterEpoch,
       status: status ?? null,
       boot: boot ?? null,
-      expired: Date.now() >= deadline,
+      expired,
+      ...(stopped ? { stopped } : {}),
     });
   }
 }

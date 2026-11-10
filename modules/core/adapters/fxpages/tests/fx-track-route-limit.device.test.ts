@@ -33,5 +33,5 @@ trackRouteSuite('limit', { initial: 'limit', presets: ['limit'], base: false }, 
           expect((await amounts(runtime, 2))[0]).toBe(0);
         }
 
-  }, 600_000);
+  });
 });

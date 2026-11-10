@@ -197,6 +197,15 @@ pub fn boot_emulator_to_ready(
                 idle,
             },
             cancel,
+            // The DSP runs first: its step count is the boot's progress until the ColdFire starts.
+            |dsp_steps| {
+                progress(&ColdProgress {
+                    icount: dsp_steps,
+                    frames: 0,
+                    fraction: 0.0,
+                    wall_seconds: started.elapsed().as_secs_f64(),
+                })
+            },
         )?
     } else {
         let sidecar =

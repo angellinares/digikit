@@ -7,7 +7,7 @@ import type { PatchedSession } from '@digi/regression/support.ts';
 import { liveArtifacts, record } from '@digi/regression/runtime/artifacts.ts';
 import { DEBUG_MODULE, installWithDebug } from '@digi/regression/runtime/install.ts';
 import { expectRuntimeReady } from '@digi/regression/runtime/ready.ts';
-import { waitEmulated } from '@digi/regression/runtime/waits.ts';
+import { pollEmulated, waitEmulated } from '@digi/regression/runtime/waits.ts';
 import type { RuntimeModule } from './manifests.ts';
 
 /** Real USB upload, persisted bytes, selected reboot, registration and fault acceptance.
@@ -55,15 +55,15 @@ export async function expectModuleLoad(
       // This cell selects the debug module (index 0) and then this module's path, so boot's selection index is one (not MODULES' registry index).
       let completionLog: DkLogEvent[] = [];
       try {
-        await expect
-          .poll(
-            async () => {
-              completionLog = await dk.readLog();
-              return completionLog.some((event) => event.kind === LOG_KIND.MOD_DSP && event.args[0] === 1);
-            },
-            { timeout: 30_000, interval: 500, message: 'selected module DSP completion' },
-          )
-          .toBe(true);
+        await pollEmulated(
+          session,
+          async () => {
+            completionLog = await dk.readLog();
+            return completionLog.some((event) => event.kind === LOG_KIND.MOD_DSP && event.args[0] === 1);
+          },
+          Boolean,
+          { emulatedMs: 30_000, intervalMs: 500, message: 'selected module DSP completion' },
+        );
       } finally {
         record(artifacts, 'dsp-completion-log', completionLog);
       }
@@ -103,12 +103,12 @@ export async function expectModuleLoad(
     expect(modules.map(({ name, faults, guard_off }) => ({ name, faults, guard_off }))).toEqual(
       names.map((name) => ({ name, faults: 0, guard_off: false })),
     );
-    await expect
-      .poll(async () => (await dk.readLog()).some((event) => event.kind === LOG_KIND.UI_FIRST), {
-        timeout: 30_000,
-        interval: 500,
-      })
-      .toBe(true);
+    await pollEmulated(
+      session,
+      async () => (await dk.readLog()).some((event) => event.kind === LOG_KIND.UI_FIRST),
+      Boolean,
+      { emulatedMs: 30_000, intervalMs: 500, message: 'the firmware UI is reached' },
+    );
     const log = await dk.readLog();
     record(artifacts, 'boot-log', log);
     expect(

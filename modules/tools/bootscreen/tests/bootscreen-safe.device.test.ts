@@ -2,7 +2,6 @@ import { expect, test } from 'vitest';
 import { button } from '@digi/test-support';
 import { currentRecord } from '@digi/regression/runtime/card-kit.ts';
 import { CARD_SYMBOLS, cardRigs, RT } from '@digi/regression/runtime/card-rig.ts';
-import { CARD_TIMEOUT } from '@digi/regression/runtime/debug-kit.ts';
 import { intro, lastFrame, SAFE_COUNTER, SAFE_KEY, spec, valid } from './bootscreen-support.ts';
 
 /** tools/bootscreen, safe mode (see bootscreen.device.test.ts): by the REC key and by the boot counter after resets from the intro callback. */
@@ -26,7 +25,6 @@ cardRigs(
         expect(info).toMatchObject({ safe: 1, reason: SAFE_KEY, loaded: 0 });
         expect((await intro(h)).equals(lastFrame), 'not the module frame').toBe(false);
       },
-      CARD_TIMEOUT,
     );
   },
 );
@@ -43,7 +41,7 @@ cardRigs(
       'a reset from the intro callback reaches safe mode on boot 3',
       async () => {
         const reset = h.mod('test/intro-reset', 'intro-reset');
-        await h.boot(await h.card({ modules: [reset], selection: [reset.name] }), { timeoutMs: 600_000 });
+        await h.boot(await h.card({ modules: [reset], selection: [reset.name] }));
         const info = await h.ready(true);
         console.log(`RESETCHAIN ${h.device} ${JSON.stringify(info)}`);
         expect(info, 'the third boot is safe mode by counter').toMatchObject({ safe: 1, reason: SAFE_COUNTER, counter: 2, loaded: 0 });
@@ -54,7 +52,6 @@ cardRigs(
         expect(raw.equals(lastFrame), 'the stock intro, not a module frame').toBe(false);
         expect(currentRecord(await h.records())?.paths, 'selection kept').toEqual([reset.name]);
       },
-      CARD_TIMEOUT,
     );
   },
 );

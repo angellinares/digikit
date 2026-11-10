@@ -203,7 +203,7 @@ export function defineEquiv(scenarios: Equiv[]): void {
               Object.keys(got.machines).length + Object.keys(got.params).length + got.pages.length,
               'the run-time set added rows',
             ).toBeGreaterThan(0);
-        }, 1_800_000);
+        });
       },
       sc.full === true && !FULL_TIER,
     );

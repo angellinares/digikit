@@ -173,6 +173,8 @@ export interface StatusResult {
   audio?: { halted?: unknown; [key: string]: unknown } | null;
   /** null until the first window has closed (about a second of emulated time) or without a firmware. */
   load?: LoadStatus | null;
+  /** Progress of a cold boot inside `firmware.load`, null otherwise. `icount` restarts at 0 on a soft reset: any change is progress. */
+  boot?: { icount: number; wall_s: number } | null;
   [key: string]: unknown;
 }
 

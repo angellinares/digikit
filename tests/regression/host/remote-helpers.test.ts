@@ -32,7 +32,7 @@ vi.mock('../../../packages/test-support/src/inputs.ts', async (original) => ({
   resolveInputs: () => ({ syx: '/stock.syx' }),
 }));
 import { expectRuntimeUi } from '../runtime/ready.ts';
-import { waitEmulated } from '../runtime/waits.ts';
+import { pollEmulated, waitEmulated } from '../runtime/waits.ts';
 import { expectRemoteEnabled, installRemote, prepareRemote, remoteTap, withRemoteRelease } from '../runtime/remote.ts';
 import {
   planSymbol,
@@ -74,6 +74,8 @@ function readyDaemon() {
   const status = {
     mode: 'free',
     epoch: 4,
+    /** Each status call advances the emulated clock by 100 ms (132 000 instructions a millisecond). */
+    elapsed: 0,
     cf: { ready: true, main_ui_reached: true, filesystem_verified: null as boolean | null },
   };
   const words: Record<number, number | null> = {
@@ -86,7 +88,11 @@ function readyDaemon() {
     36: 1,
   };
   const memPeek = vi.fn(async (address: number) => words[address - 12288] ?? null);
-  const daemon = { ...session, status: vi.fn(async () => status), client: { memPeek } } as unknown as Session;
+  const daemon = {
+    ...session,
+    status: vi.fn(async () => ((status.elapsed += status.mode === 'paused' ? 0 : 13_200_000), status)),
+    client: { memPeek },
+  } as unknown as Session;
   return { daemon, status, words, memPeek };
 }
 
@@ -236,6 +242,38 @@ test('waitEmulated resolves once the frame counter has advanced by ms * 1.5 and 
   await expect(waitEmulated(stuck.daemon, 1000, { hangMs: 100 })).rejects.toThrow('stuck at 1000');
 });
 
+test('pollEmulated fails after the emulated time, counts a lowered clock as a restart and can retry a failing read', async () => {
+  // 10 emulated ms per status read (132 000 instructions a millisecond), and a reboot that sets the clock back once.
+  let elapsed = 0;
+  let reads = 0;
+  const clock = {
+    status: vi.fn(async () => ({ elapsed: (elapsed = reads++ === 3 ? 0 : elapsed + 1_320_000) })),
+  } as unknown as Session;
+  await expect(
+    pollEmulated(clock, async () => false, Boolean, { emulatedMs: 50, intervalMs: 1, message: 'never' }),
+  ).rejects.toThrow('never: not seen within 50 ms of emulated time');
+  // the clock reads 10, 20, 30 ms, then 0 after the reset (adds nothing), then 10, 20, 30 ms again: 50 ms are counted after 7 reads
+  expect(clock.status).toHaveBeenCalledTimes(7);
+  let failures = 2;
+  const flaky = async () => {
+    if (failures-- > 0) throw new Error('restarting');
+    return true;
+  };
+  await expect(
+    pollEmulated(clock, flaky, Boolean, { emulatedMs: 1000, intervalMs: 1, message: 'm', retry: true }),
+  ).resolves.toBe(true);
+  await expect(
+    pollEmulated(
+      clock,
+      async () => {
+        throw new Error('boom');
+      },
+      Boolean,
+      { emulatedMs: 1000, intervalMs: 1, message: 'm' },
+    ),
+  ).rejects.toThrow('boom');
+});
+
 test('installer failure still releases remote inputs without reaching scenario actions', async () => {
   const { dk, runtime } = fakeDk();
   dk.put.mockRejectedValueOnce(new Error('install failed'));
@@ -341,12 +379,12 @@ test('ABOUT reads are bounded and assert the live protocol runtime identity with
 test('UI readiness rejects stale epochs and records the last daemon and boot evidence on timeout', async () => {
   const { daemon, status } = readyDaemon();
   await expect(
-    expectRuntimeUi(daemon, plan, '/artifacts', { afterEpoch: status.epoch, timeout: 20 }),
+    expectRuntimeUi(daemon, plan, '/artifacts', { afterEpoch: status.epoch, emulatedMs: 20 }),
   ).rejects.toThrow();
   const saved = fake.write.mock.calls.find(([file]) => file.endsWith('readiness-post-install.json'));
   expect(JSON.parse(saved![1])).toMatchObject({ afterEpoch: 4, status: { epoch: 4 }, boot: { ui_reached: 1 } });
   status.epoch++;
-  await expect(expectRuntimeUi(daemon, plan, '/artifacts', { afterEpoch: 4, timeout: 20 })).resolves.toBe(5);
+  await expect(expectRuntimeUi(daemon, plan, '/artifacts', { afterEpoch: 4, emulatedMs: 20 })).resolves.toBe(5);
 });
 
 test('UI readiness requires a valid normal boot and both daemon and actual runtime UI hooks', async () => {
@@ -361,30 +399,35 @@ test('UI readiness requires a valid normal boot and both daemon and actual runti
   ] as const) {
     const previous = words[offset]!;
     words[offset] = invalid;
-    await expect(expectRuntimeUi(daemon, plan, '/artifacts', { timeout: 20 })).rejects.toThrow();
+    await expect(expectRuntimeUi(daemon, plan, '/artifacts', { emulatedMs: 20 })).rejects.toThrow();
     words[offset] = previous;
   }
   for (const field of ['ready', 'main_ui_reached'] as const) {
     status.cf[field] = false;
-    await expect(expectRuntimeUi(daemon, plan, '/artifacts', { timeout: 20 })).rejects.toThrow();
+    await expect(expectRuntimeUi(daemon, plan, '/artifacts', { emulatedMs: 20 })).rejects.toThrow();
     status.cf[field] = true;
   }
+  // A paused daemon's clock stands still: the stuck-clock guard fails the wait, naming the mode.
   status.mode = 'paused';
-  await expect(expectRuntimeUi(daemon, plan, '/artifacts', { timeout: 20 })).rejects.toThrow();
+  await expect(expectRuntimeUi(daemon, plan, '/artifacts', { emulatedMs: 20, hangMs: 50 })).rejects.toThrow(
+    /emulated clock stuck at .* \(mode paused\)/,
+  );
+  const stuck = fake.write.mock.calls.filter(([file]) => file.endsWith('readiness-post-install.json')).at(-1);
+  expect(JSON.parse(stuck![1])).toMatchObject({ expired: false, stopped: expect.stringContaining('stuck') });
   status.mode = 'free';
-  await expect(expectRuntimeUi(daemon, plan, '/artifacts', { timeout: 20 })).resolves.toBe(4);
-});
+  await expect(expectRuntimeUi(daemon, plan, '/artifacts', { emulatedMs: 20 })).resolves.toBe(4);
+}, 20_000);
 
 test('fresh empty boot is an explicit prerequisite for skipping the pre-install stability wait', async () => {
   const { daemon, words } = readyDaemon();
   for (const offset of [16, 28]) {
     words[offset] = 1;
-    await expect(expectRuntimeUi(daemon, plan, '/artifacts', { fresh: true, timeout: 20 })).rejects.toThrow(
+    await expect(expectRuntimeUi(daemon, plan, '/artifacts', { fresh: true, emulatedMs: 20 })).rejects.toThrow(
       'fresh pre-install',
     );
     words[offset] = 0;
   }
-  await expect(expectRuntimeUi(daemon, plan, '/artifacts', { fresh: true, timeout: 20 })).resolves.toBe(4);
+  await expect(expectRuntimeUi(daemon, plan, '/artifacts', { fresh: true, emulatedMs: 20 })).resolves.toBe(4);
 });
 
 test('ABOUT refuses stale content before pressing YES', async () => {
@@ -420,19 +463,6 @@ test('ABOUT returns only the complete snapshot after the new open, keeping the k
   ).resolves.toEqual(rows);
   expect(tap).toHaveBeenCalledExactlyOnceWith('YES', 0);
   expect(polls).toBe(4);
-});
-
-test('never-answering status and boot reads cannot postpone readiness rejection or diagnostics', async () => {
-  for (const stalled of ['status', 'memory'] as const) {
-    const { daemon, memPeek } = readyDaemon();
-    if (stalled === 'status') vi.mocked(daemon.status).mockImplementation(() => new Promise(() => {}));
-    else memPeek.mockImplementation(() => new Promise(() => {}));
-    const started = Date.now();
-    await expect(expectRuntimeUi(daemon, plan, '/artifacts', { timeout: 30 })).rejects.toThrow();
-    expect(Date.now() - started).toBeLessThan(500);
-    const saved = fake.write.mock.calls.filter(([file]) => file.endsWith('readiness-post-install.json')).at(-1);
-    expect(JSON.parse(saved![1])).toMatchObject({ expired: true, boot: null });
-  }
 });
 
 test('ABOUT bounds initial count, info and row reads, and preserves incomplete rows on timeout', async () => {
@@ -485,13 +515,13 @@ test('a never-answering remote state request obeys the readiness deadline', asyn
 test('post-restart UI readiness allows an unobserved filesystem worker only with a newer epoch', async () => {
   const { daemon, status } = readyDaemon();
   status.cf.ready = false;
-  await expect(expectRuntimeUi(daemon, plan, '/artifacts', { afterEpoch: 3, timeout: 20 })).resolves.toBe(4);
-  await expect(expectRuntimeUi(daemon, plan, '/artifacts', { timeout: 20 })).rejects.toThrow();
-  await expect(expectRuntimeUi(daemon, plan, '/artifacts', { afterEpoch: 4, timeout: 20 })).rejects.toThrow();
+  await expect(expectRuntimeUi(daemon, plan, '/artifacts', { afterEpoch: 3, emulatedMs: 20 })).resolves.toBe(4);
+  await expect(expectRuntimeUi(daemon, plan, '/artifacts', { emulatedMs: 20 })).rejects.toThrow();
+  await expect(expectRuntimeUi(daemon, plan, '/artifacts', { afterEpoch: 4, emulatedMs: 20 })).rejects.toThrow();
   status.cf.filesystem_verified = false;
-  await expect(expectRuntimeUi(daemon, plan, '/artifacts', { afterEpoch: 3, timeout: 20 })).rejects.toThrow();
+  await expect(expectRuntimeUi(daemon, plan, '/artifacts', { afterEpoch: 3, emulatedMs: 20 })).rejects.toThrow();
   status.cf.ready = true;
-  await expect(expectRuntimeUi(daemon, plan, '/artifacts', { afterEpoch: 3, timeout: 20 })).rejects.toThrow();
+  await expect(expectRuntimeUi(daemon, plan, '/artifacts', { afterEpoch: 3, emulatedMs: 20 })).rejects.toThrow();
 });
 
 test('offline preparation returns a symbol plan before any loaded-image identity exists', async () => {

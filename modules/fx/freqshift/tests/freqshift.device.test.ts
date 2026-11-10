@@ -268,6 +268,6 @@ for (const device of DEVICES) {
       expect(report.checks.length).toBeGreaterThan(0);
       for (const check of report.checks) expect(check.pass, `${check.label}: ${check.detail}`).toBe(true);
       expect(report.pass).toBe(true);
-    }, 600_000);
+    });
   });
 }

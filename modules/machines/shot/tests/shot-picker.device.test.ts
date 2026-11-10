@@ -198,5 +198,5 @@ runtimeTests(
       }
     }
   },
-  { dsp: 'sharc', devices: ['dt2'], patchSet: 'sample-tracks', timeout: 600_000 },
+  { dsp: 'sharc', devices: ['dt2'], patchSet: 'sample-tracks' },
 );

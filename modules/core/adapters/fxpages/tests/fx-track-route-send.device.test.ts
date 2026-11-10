@@ -125,5 +125,5 @@ trackRouteSuite('send', { initial: 'sine', presets: ['sine', 'send'], base: true
           await context.evidence(runtime, 'send-audible', true);
         }
 
-  }, 600_000);
+  });
 });

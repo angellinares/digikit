@@ -27,6 +27,7 @@ import { planSymbol, prepareRuntimePlanOffline, validateRuntimePlan, type Runtim
 import { runtimeSafety, runtimeWatchEnv } from './write-safety.ts';
 import { GAIN, SINE } from './fixtures.ts';
 import { drainInputs, tap } from './fx-session.ts';
+import { pollEmulated } from './waits.ts';
 
 const exec = promisify(execFile);
 const root = repoRoot();
@@ -383,26 +384,23 @@ export async function inspect(
   await rpc(session, 'run.mode', { mode: 'free' });
   await expectRuntimeUi(session, plan, artifacts, { afterEpoch });
   const names = [SINE, ...(wet ? [GAIN] : [])];
-  const deadline = Date.now() + 30_000;
   let modules: DkModule[] = [];
-  await expect
-    .poll(
-      async () => {
-        modules = await withinRuntimeDeadline(deadline, () => dk.modules());
-        const boot = planSymbol(plan, 'DKRT_BOOT');
-        const results = await withinRuntimeDeadline(deadline, () =>
-          Promise.all(names.map((_, i) => word(session, boot + 40 + i * 4))),
-        );
-        return { names: modules.map((module) => module.name), results };
-      },
-      { timeout: 30_000, interval: 500 },
-    )
-    .toEqual({ names, results: names.map(() => 0) });
+  await pollEmulated(
+    session,
+    async () => {
+      modules = await bounded(() => dk.modules());
+      const boot = planSymbol(plan, 'DKRT_BOOT');
+      const results = await Promise.all(names.map((_, i) => word(session, boot + 40 + i * 4)));
+      return { names: modules.map((module) => module.name), results };
+    },
+    (state) => JSON.stringify(state) === JSON.stringify({ names, results: names.map(() => 0) }),
+    { emulatedMs: 30_000, intervalMs: 500, message: 'the expected modules and results' },
+  );
   const capacity = await bounded(() => dk.capacity());
   expect(capacity.FX_SLOTS).toEqual({ limit: slots, used: wet ? 1 : 0, largest: 0 });
   const settings = await bounded(() => readSettingsRecordIfPresent(dk));
   expect(settings === null ? null : settingsValue(settings, 'dk/fault')).toBeNull();
-  await drainInputs(session, Math.max(1, deadline - Date.now()));
+  await drainInputs(session);
   await rpc(session, 'run.mode', { mode: 'paused' });
   const boot = planSymbol(plan, 'DKRT_BOOT');
   const fields = await Promise.all(Array.from({ length: 10 + names.length }, (_, i) => word(session, boot + i * 4)));

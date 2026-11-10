@@ -15,6 +15,7 @@ import {
   RING_SYMBOLS,
 } from '@digi/regression/runtime/runtime-menu.ts';
 import { planSymbol, prepareRuntimePlan } from '@digi/regression/runtime/runtime-plan.ts';
+import { pollEmulated, waitEmulatedFrames } from '@digi/regression/runtime/waits.ts';
 
 const SOURCE_SHIFT = 8;
 /** The watch declares a stop after 4500 blocks (3 s) without a heartbeat; the daemon emulates the DSP far slower than 1500 blocks a second. */
@@ -24,11 +25,7 @@ const TAP_HOLD_MS = 100;
 
 /** Wait until the DSP has run `blocks` more frames (emulated time, not wall time). */
 async function waitFrames({ session }: PatchedSession, blocks: number): Promise<void> {
-  const frames = async () => Number(((await session.status()).audio as { frames?: number } | null)?.frames ?? 0);
-  const start = await frames();
-  await expect
-    .poll(async () => (await frames()) - start, { timeout: 900_000, interval: 1000, message: `${blocks} DSP blocks` })
-    .toBeGreaterThanOrEqual(blocks);
+  await waitEmulatedFrames(session, blocks);
 }
 const SITE_VOICE = 1;
 const SITE_FX_SEND = 3;
@@ -70,32 +67,31 @@ async function aboutRows(runtime: PatchedSession, plan: Awaited<ReturnType<typeo
 }
 
 /** Wait for the device to restart itself into safe mode (the hang record is written about 20 s after the DSP stopped). */
-async function waitForSafeMode({ dk }: PatchedSession): Promise<void> {
-  await expect
-    .poll(async () => (await dk.info(true)).safe_mode, {
-      timeout: 900_000,
-      interval: 2000,
-      message: 'safe mode after the stop',
-    })
-    .toBe(true);
+async function waitForSafeMode({ session, dk }: PatchedSession): Promise<void> {
+  await pollEmulated(session, async () => (await dk.info(true)).safe_mode, Boolean, {
+    emulatedMs: 180_000,
+    intervalMs: 2000,
+    retry: true,
+    message: 'safe mode after the stop',
+  });
 }
 
 /** Wait until the safe boot has reached the UI loop: DKRT_BOOT has `safe` set and `ui_reached` raised (the first UI pass). The main OS starts the UI
- * loop after the boot intro, and the boot hook has already kept `dk/fault` and the log events by then. Wall time is only a hang guard. */
+ * loop after the boot intro, and the boot hook has already kept `dk/fault` and the log events by then. The wait is in emulated time. */
 async function waitForSafeUi({ session }: PatchedSession, plan: Awaited<ReturnType<typeof prepareRuntimePlan>>): Promise<void> {
   const base = planSymbol(plan, 'DKRT_BOOT');
-  await expect
-    .poll(
-      async () => {
-        const [safe, ui] = await Promise.all([
-          session.client.memPeek(base + BOOT_FIELDS.safe),
-          session.client.memPeek(base + BOOT_FIELDS.ui_reached),
-        ]);
-        return safe === 1 && ui === 1;
-      },
-      { timeout: 300_000, interval: 1000, message: 'the safe boot reached the UI loop' },
-    )
-    .toBe(true);
+  await pollEmulated(
+    session,
+    async () => {
+      const [safe, ui] = await Promise.all([
+        session.client.memPeek(base + BOOT_FIELDS.safe),
+        session.client.memPeek(base + BOOT_FIELDS.ui_reached),
+      ]);
+      return safe === 1 && ui === 1;
+    },
+    Boolean,
+    { emulatedMs: 180_000, intervalMs: 1000, retry: true, message: 'the safe boot reached the UI loop' },
+  );
 }
 
 /** After a stop or a crash the boot is safe mode: INFO has no LOG capability (the debug module is not loaded). Returns the runtime's own ring. */
@@ -171,16 +167,16 @@ async function expectVoiceHang(runtime: PatchedSession): Promise<void> {
   for (let i = 0; i < 7; i++) await tap('DOWN', 300);
   await tap('YES', 1200);
   await tap('YES', 1200);
-  await expect
-    .poll(
-      async () =>
-        (await dk.readLog(true)).some(
-          (e) =>
-            e.kind === LOG_KIND.MACHINE_CHANGE && e.args[0] === 0 && (e.args[2] ?? 0) >= 7 && e.args[2] !== 0xffffffff,
-        ),
-      { timeout: 300_000, interval: 2000, message: 'the run-time machine is on track 1' },
-    )
-    .toBe(true);
+  await pollEmulated(
+    session,
+    async () =>
+      (await dk.readLog(true)).some(
+        (e) =>
+          e.kind === LOG_KIND.MACHINE_CHANGE && e.args[0] === 0 && (e.args[2] ?? 0) >= 7 && e.args[2] !== 0xffffffff,
+      ),
+    Boolean,
+    { emulatedMs: 180_000, intervalMs: 2000, message: 'the run-time machine is on track 1' },
+  );
   await session.client.inputButton(button('TRIG 1'), true); // the render hangs on the third block of the note
   await waitForSafeMode(runtime);
   await waitForSafeUi(runtime, plan);
@@ -196,13 +192,11 @@ async function expectFxFaultEvents(runtime: PatchedSession): Promise<void> {
   const { session, dk } = runtime;
   await expectRuntimeReady(session);
   await installWithDebug(runtime, 'test/dyn-fx-nan');
-  await expect
-    .poll(async () => (await dk.readLog(true)).some((e) => e.kind === LOG_KIND.FX_DISABLED), {
-      timeout: 600_000,
-      interval: 2000,
-      message: 'the guard switched the row off',
-    })
-    .toBe(true);
+  await pollEmulated(session, async () => (await dk.readLog(true)).some((e) => e.kind === LOG_KIND.FX_DISABLED), Boolean, {
+    emulatedMs: 180_000,
+    intervalMs: 2000,
+    message: 'the guard switched the row off',
+  });
   const log = await dk.readLog();
   const faults = log.filter((e) => e.kind === LOG_KIND.FX_FAULT);
   const disabled = log.filter((e) => e.kind === LOG_KIND.FX_DISABLED);
@@ -298,16 +292,13 @@ async function expectRuntimePanic(runtime: PatchedSession): Promise<void> {
 }
 
 runtimeTests('an effect that stops the DSP gives safe mode and names the module, site and step', expectFxHang, { dsp: 'sharc',
-  timeout: 1_200_000,
 });
 runtimeTests('a machine that stops the DSP gives safe mode and names the module and the voice site', expectVoiceHang, { dsp: 'sharc',
-  timeout: 1_200_000,
   devices: ['dt2'],
 });
-runtimeTests('effect faults are logged with the module as source', expectFxFaultEvents, { dsp: 'sharc', timeout: 900_000 });
-runtimeTests('a normal effect is no stop', expectNoFalseStop, { dsp: 'sharc', timeout: 1_200_000 });
-runtimeTests('a CPU crash is kept as the last fault', expectCpuCrashFault, { timeout: 1_200_000, devices: ['dt2'] });
+runtimeTests('effect faults are logged with the module as source', expectFxFaultEvents, { dsp: 'sharc' });
+runtimeTests('a normal effect is no stop', expectNoFalseStop, { dsp: 'sharc' });
+runtimeTests('a CPU crash is kept as the last fault', expectCpuCrashFault, { devices: ['dt2'] });
 runtimeTests('a panic of the runtime gives safe mode and names the runtime', expectRuntimePanic, {
   dsp: 'sharc',
-  timeout: 1_200_000,
 });

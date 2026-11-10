@@ -2,7 +2,6 @@ import { expect, test } from 'vitest';
 import { asciiOf } from '@digi/dk-session';
 import { bootInfo, bootInfoLoaded } from '@digi/regression/runtime/card-kit.ts';
 import { CARD_SYMBOLS, cardRigs, RT } from '@digi/regression/runtime/card-rig.ts';
-import { CARD_TIMEOUT } from '@digi/regression/runtime/debug-kit.ts';
 import { ringEvents } from '@digi/regression/runtime/runtime-menu.ts';
 import { intro, lastFrame, spec, valid } from './bootscreen-support.ts';
 
@@ -23,7 +22,6 @@ cardRigs('boot screen', { relaxFs: true, roots: RT, symbols: CARD_SYMBOLS }, (h)
       expect(await intro(h)).toEqual(lastFrame);
       await expect.poll(async () => (await bootInfo(h.session, h.plan)).uiReached, { timeout: 30_000 }).toBe(1);
     },
-    CARD_TIMEOUT,
   );
 
   test(
@@ -46,7 +44,6 @@ cardRigs('boot screen', { relaxFs: true, roots: RT, symbols: CARD_SYMBOLS }, (h)
       expect(logged.get('hash'), 'order-dependent hash of ticks 0..39').toEqual([want]);
       console.log(`TICKHASH ${h.device} ${want.toString(16)}`);
     },
-    CARD_TIMEOUT,
   );
 
   let stock: Buffer | undefined;
@@ -67,7 +64,6 @@ cardRigs('boot screen', { relaxFs: true, roots: RT, symbols: CARD_SYMBOLS }, (h)
         expect(raw.equals(stock!), 'the same stock intro every time').toBe(true);
         await expect.poll(async () => (await bootInfo(h.session, h.plan)).uiReached, { timeout: 30_000 }).toBe(1);
       },
-      CARD_TIMEOUT,
     );
   }
 });

@@ -186,5 +186,4 @@ async function expectSamplesLive({ session }: PatchedSession): Promise<void> {
 
 runtimeTests('samples-live conversion, upload and persistent card bytes', expectSamplesLive, { devices: ['dt2'],
   mirror: true,
-  timeout: 1_000_000,
 });

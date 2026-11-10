@@ -30,7 +30,6 @@ async function expectProbeTransport(patched: PatchedSession): Promise<void> {
 }
 
 runtimeTests('the SHARC probe sends framed words that the collector receives without errors', expectProbeTransport, { dsp: 'sharc',
-  timeout: 600_000,
 });
 
 /** The words the beacon stores for its call number n (the counter after the increment): the counter, the two initialised words and the descriptor magic, each held for two calls. */

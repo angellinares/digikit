@@ -75,5 +75,5 @@ trackRouteSuite('kit', { initial: 'send', presets: ['send'], base: false }, (t) 
           expect((await settings(runtime, 'kit-after')).entries.get(sendKey)?.slice(0, 4)).toBe('2864');
         }
 
-  }, 600_000);
+  });
 });

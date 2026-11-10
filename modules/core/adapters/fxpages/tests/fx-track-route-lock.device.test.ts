@@ -90,5 +90,5 @@ trackRouteSuite('lock', { initial: 'send', presets: ['send'], base: false }, (t)
             }
           }
         }
-  }, 600_000);
+  });
 });

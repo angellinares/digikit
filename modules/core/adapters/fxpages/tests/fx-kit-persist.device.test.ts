@@ -360,6 +360,6 @@ for (const device of DEVICES) {
       } finally {
         for (const dk of protocols) dk.cancelPending();
       }
-    }, 600_000);
+    });
   });
 }

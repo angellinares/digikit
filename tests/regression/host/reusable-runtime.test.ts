@@ -136,23 +136,6 @@ test('a rejected reset cannot expose the prior protocol as the next case', async
   await f.afterAll();
 });
 
-test('slow startup leaves only the remaining beforeAll budget for baseline preparation', async () => {
-  vi.useFakeTimers();
-  try {
-    const failed = expect(fixture({ startDelay: 119_000, hangPreparation: true })).rejects.toThrow('deadline');
-    await vi.advanceTimersByTimeAsync(119_000);
-    const session = await fake.start.mock.results[0]!.value;
-    expect(session.close).not.toHaveBeenCalled();
-    await vi.advanceTimersByTimeAsync(999);
-    expect(session.close).not.toHaveBeenCalled();
-    await vi.advanceTimersByTimeAsync(1);
-    await failed;
-    expect(session.close).toHaveBeenCalledWith({ preserveDiagnostics: true });
-  } finally {
-    vi.useRealTimers();
-  }
-});
-
 test('post-close evidence waits for owned shutdown and runs once after a failed case', async () => {
   const checked = vi.fn(async () => {});
   const f = await fixture({ afterClose: checked });

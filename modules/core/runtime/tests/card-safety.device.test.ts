@@ -16,7 +16,7 @@ import {
   statusOf,
 } from '@digi/regression/runtime/card-kit.ts';
 import { CARD_SYMBOLS, cardRigs, RT } from '@digi/regression/runtime/card-rig.ts';
-import { CARD_TIMEOUT, NONE, openAbout, opStatuses } from '@digi/regression/runtime/debug-kit.ts';
+import { NONE, openAbout, opStatuses } from '@digi/regression/runtime/debug-kit.ts';
 import { cardStore, deviceProfile } from '@digi/regression/runtime/device-data.ts';
 import { logEvents, ofKind } from '@digi/regression/runtime/runtime-menu.ts';
 
@@ -101,7 +101,6 @@ cardRigs(
           expect(e.args[2], 'reason: outside the range').toBe(1);
         }
       },
-      CARD_TIMEOUT,
     );
 
     test(
@@ -125,7 +124,6 @@ cardRigs(
         expect(await h.storeWrites(), 'nothing was written to the store range').toEqual([]);
         expect((await cardInfo(rt.session, h.plan)).writes).toBe(0);
       },
-      CARD_TIMEOUT,
     );
 
     test(
@@ -149,7 +147,6 @@ cardRigs(
           claims: 0,
         });
       },
-      CARD_TIMEOUT,
     );
 
     test(
@@ -171,7 +168,6 @@ cardRigs(
         expect(await next.dk.list(), 'the store is empty').toEqual([]);
         expect(await statusOf(() => next.dk.put('modules/c.dkm', blob(5_000, 3))), 'an upload works').toBe(0);
       },
-      CARD_TIMEOUT,
     );
   },
 );
@@ -228,7 +224,6 @@ cardRigs(
         for (const row of rows) expect(row.length, row).toBeLessThanOrEqual(21);
         expect(await h.storeWrites(), 'the runtime wrote nothing in the store range').toEqual([]);
       },
-      CARD_TIMEOUT,
     );
   },
 );
@@ -251,7 +246,6 @@ cardRigs('card safety: torn sectors', { dsp: 'zero', uploads: true, roots: RT, s
       expect(await statusOf(() => rt.dk.put('modules/b.dkm', blob(3_000, 31))), 'the next upload commits').toBe(0);
       expect((await rt.dk.list()).map((e) => e.path)).toContain('modules/b.dkm');
     },
-    CARD_TIMEOUT,
   );
 
   test(
@@ -263,7 +257,6 @@ cardRigs('card safety: torn sectors', { dsp: 'zero', uploads: true, roots: RT, s
       expect(await statusOf(() => rt.dk.put('modules/a.dkm', blob(3_000, 31)))).toBe(0);
       expect((await rt.dk.list()).map((e) => e.path)).toContain('modules/a.dkm');
     },
-    CARD_TIMEOUT,
   );
 
   test(
@@ -275,7 +268,6 @@ cardRigs('card safety: torn sectors', { dsp: 'zero', uploads: true, roots: RT, s
       expect(await opStatuses(rt.dk, ['begin', 'clear'])).toEqual([E_INUSE, E_INUSE]);
       expect(await h.storeWrites()).toEqual([]);
     },
-    CARD_TIMEOUT,
   );
 
   test(
@@ -290,7 +282,6 @@ cardRigs('card safety: torn sectors', { dsp: 'zero', uploads: true, roots: RT, s
       expect(recs[0]).not.toBeNull();
       expect(recs[0]).toEqual(recs[1]);
     },
-    CARD_TIMEOUT,
   );
 });
 
@@ -345,7 +336,6 @@ cardRigs(
         // the stock firmware formats this blank card (writes below the store area), so only the store range is checked
         expect(await h.storeWrites(), 'the runtime wrote nothing in the store range').toEqual([]);
       },
-      CARD_TIMEOUT,
     );
   },
 );

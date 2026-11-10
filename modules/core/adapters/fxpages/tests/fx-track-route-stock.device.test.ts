@@ -44,5 +44,5 @@ trackRouteSuite('stock', { initial: 'sine', presets: ['sine', 'master'], base: t
           await capacity(runtime, 0);
         }
 
-  }, 600_000);
+  });
 });

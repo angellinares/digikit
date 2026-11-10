@@ -21,6 +21,7 @@ import { plusdriveBinary } from './card-kit.ts';
 import { FIRMWARE, claimRunDir } from './devices.ts';
 import { moduleArtifact } from './install.ts';
 import { expectRuntimeUi } from './ready.ts';
+import { pollEmulated } from './waits.ts';
 import { advance, analysisJson, bounded, evidence, options, pickSine, word } from './fx-live.ts';
 import {
   planSymbol,
@@ -98,16 +99,16 @@ export async function tap(session: Session, key: string, settleMs = 300, held?: 
 }
 
 /** Wait until the boot input has finished, so the run can pause. */
-export async function drainInputs(session: Session, timeoutMs = 30_000): Promise<void> {
-  await expect
-    .poll(
-      async () => {
-        const status = await bounded(() => session.status());
-        return { pending: status.cf.input_pending, scheduled: status.scheduled_inputs };
-      },
-      { timeout: timeoutMs, interval: 100, message: 'boot input has finished before pausing' },
-    )
-    .toEqual({ pending: 0, scheduled: 0 });
+export async function drainInputs(session: Session, emulatedMs = 30_000): Promise<void> {
+  await pollEmulated(
+    session,
+    async () => {
+      const status = await bounded(() => session.status());
+      return { pending: status.cf.input_pending, scheduled: status.scheduled_inputs };
+    },
+    (state) => state.pending === 0 && state.scheduled === 0,
+    { emulatedMs, intervalMs: 100, message: 'boot input has finished before pausing' },
+  );
 }
 
 /** Preserve the exact decoded OLED image and hash for pixel comparisons. */
@@ -181,16 +182,16 @@ export async function inspectFxBoot(
   const boot = planSymbol(plan, 'DKRT_BOOT');
   let modules = await bounded(() => dk.modules());
   let results: number[] = [];
-  await expect
-    .poll(
-      async () => {
-        modules = await bounded(() => dk.modules());
-        results = await Promise.all(expectedResults.map(async (_, i) => (await word(session, boot + 40 + i * 4)) | 0));
-        return { names: modules.map((module) => module.name), results };
-      },
-      { timeout: 30_000, interval: 500 },
-    )
-    .toEqual({ names: expectedNames, results: expectedResults });
+  await pollEmulated(
+    session,
+    async () => {
+      modules = await bounded(() => dk.modules());
+      results = await Promise.all(expectedResults.map(async (_, i) => (await word(session, boot + 40 + i * 4)) | 0));
+      return { names: modules.map((module) => module.name), results };
+    },
+    (state) => JSON.stringify(state) === JSON.stringify({ names: expectedNames, results: expectedResults }),
+    { emulatedMs: 30_000, intervalMs: 500, message: 'the expected modules and results' },
+  );
   const capacity = await bounded(() => dk.capacity());
   await drainInputs(session);
   await bounded(() => session.client.call('run.mode', { mode: 'paused' }));
@@ -302,7 +303,7 @@ export function withPreparedFxSession(device: Device, scope: string, config: Pre
             fs.mkdirSync(path.dirname(out), { recursive: true });
             const built = await exec(binary, ['build', seed, '-o', out, '--device', device], {
               cwd: root,
-              timeout: 30_000,
+              timeout: 30_000, // host work is invisible to the emulator watchdog
             });
             record(artifacts, `card-${tag}`, { stdout: built.stdout, stderr: built.stderr });
             if (preset.settings?.length) {

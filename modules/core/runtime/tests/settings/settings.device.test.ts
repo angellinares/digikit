@@ -156,7 +156,7 @@ for (const device of DEVICES) {
         all.filter((x) => x !== s.selA && x !== s.selB),
         'the only store sectors written are the two settings copies',
       ).toEqual(settingsArea);
-    }, 900_000);
+    });
 
     test('restart: a put and at once a restart keeps the value (dkrt_restart writes the pending record first)', async () => {
       const rt = await kit.first();
@@ -174,6 +174,6 @@ for (const device of DEVICES) {
       expect(await mb.get(ROUTE), 'the value is there').toEqual([1, byte(1)]);
       const only = (await written()).filter((x) => x !== s.selA && x !== s.selB);
       expect(only, 'the only store sector written besides the selection record is settings copy A').toEqual([s.setA]);
-    }, 600_000);
+    });
   });
 }

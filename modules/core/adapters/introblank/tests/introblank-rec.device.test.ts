@@ -1,7 +1,6 @@
 import { button } from '@digi/test-support';
 import { expect, test } from 'vitest';
 import { CARD_SYMBOLS, cardRigs } from '@digi/regression/runtime/card-rig.ts';
-import { CARD_TIMEOUT } from '@digi/regression/runtime/debug-kit.ts';
 import { introNow, safeFrame } from '@digi/regression/runtime/intro-frame.ts';
 import { bootScreenCard, IB, lastFrame, SAFE_KEY } from './introblank-support.ts';
 
@@ -28,7 +27,6 @@ cardRigs(
         expect(shown.equals(safeFrame('key')), 'the SAFE MODE / REC HELD frame').toBe(true);
         expect(shown.equals(lastFrame), 'not the module frame').toBe(false);
       },
-      CARD_TIMEOUT,
     );
   },
 );
