@@ -77,4 +77,4 @@ the device runs. Nothing changes for the player. It ran on a Digitakt II (OS 1.1
 
 Design, measurements and open points: [docs/findings/31-dsp-link.md](../../../../docs/findings/31-dsp-link.md) and, for the windows and
 the wider chunk header, [docs/findings/32-runtime-dsp-machines.md](../../../../docs/findings/32-runtime-dsp-machines.md). Proof:
-`uv run python -m tools.patchkit.pk_dsplink proof --device dt2|dn2`; tests: `tests/patchkit/test_dsplink.py`.
+`uv run python -m tools.patchkit.pk_dsplink proof --device dt2|dn2`; tests: `tests/test_dsplink.py`.

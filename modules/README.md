@@ -378,7 +378,7 @@ module table is inconsistent (`E_TABLE` -49). `patchkit pack` and `dkm-info` pri
 include the note of each constant is on the line before its `#define`: a trailing comment would become part of the macro.
 
 Example (pluck, Digitakt II): `R1 = FRAME_BASE;` and `R0 = R13 + PLUCK_DECAY_FRAME_OFF;` instead of `0x6d` and `1`.
-`tests/patchkit/test_pk_gen_include.py` shows that this assembles to the committed object, byte for byte.
+`modules/core/adapters/dsp-voice/tests/test_pk_gen_include.py` shows that this assembles to the committed object, byte for byte.
 
 ### `[[section]]`
 
@@ -529,5 +529,5 @@ Example and fixture: `tests/fixtures/modules/dyn-fx-gain`.
 The frameworks themselves are ordinary modules: `modules/core/adapters/machines/` (about 24 ColdFire anchors, six copied
 tables, the hooks in `src/cf/dt2/machines.s` and `src/cf/dn2/machines.s`), `modules/core/adapters/params/` and
 `modules/core/adapters/dsp-voice/`. Their routines are unit-tested on the emulated ColdFire core (`tools/patchkit/pk_cfunit.py`,
-`tests/patchkit/test_pk_machines_fw.py`, `tests/patchkit/test_pk_params_fw.py`), and the proofs are `tools/patchkit/pk_proof_machines.py` and
+`modules/core/adapters/machines/tests/test_pk_machines_fw.py`, `modules/core/adapters/params/tests/test_pk_params_fw.py`), and the proofs are `tools/patchkit/pk_proof_machines.py` and
 `tools/patchkit/pk_proof_pluck.py`. Contract and evidence: [finding 02](../docs/findings/02-machines-and-parameters.md).

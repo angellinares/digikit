@@ -120,6 +120,8 @@ Highest payoff first. Each step states its proof.
      Done 2026-11-10: analog, bd, pd, pluck (both devices) and equiv-mixed (DT2) are rows; `test_equiv_dt2.py` and `test_equiv_dn2.py` are deleted.
      The DN2 pluck reference has no runtime: `cardRig` option `plain`. `equiv-dyn-pluck.toml` stays as the input of `tools/devtools/sharc_matrix.py`, so `run_equiv` in `pk_digikit_scen.py` stays with it. Then the menu flows
      (`zero/menu.device.test.ts` covers only the empty-store menu) and the `pk_dkrt` boot proof as a safe-mode-style test.
+   - [x] Module-subject Python tests live with their module (29 files moved out of `tests/patchkit`, 2026-11-10); `py_select` selects them by folder;
+     a patchkit edit no longer runs them.
    - [ ] Zero DSP where the subject allows: the boot, restart and safe-mode proofs of `test_patchkit_dkrt*.py` and the C-demo test. Equiv, menu and
      the conformance rigs keep the DSP (audio or SHARC subject).
    - Keep in Python (host or RE tooling): `test_machine_conformance.py`, `test_fx_conformance.py`, `test_pk_current.py` and the static parts of the

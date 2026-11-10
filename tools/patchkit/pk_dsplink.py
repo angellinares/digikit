@@ -10,7 +10,7 @@
   2. runs the patched firmware with no transfer: the PCM must equal the reference (the module is invisible when idle);
   3. for each size: starts a transfer of known bytes into the DSP's reserved area (a host poke of the request fields,
      which is what `dl_send` stores; `dl_send`/`dl_poll` themselves are unit-tested on the ColdFire core in
-     tests/patchkit/test_dsplink.py), waits for DONE, reads the DSP's L2 back (`dsp.peek`) and compares byte for byte,
+     modules/core/adapters/dsp-link/tests/test_dsplink.py), waits for DONE, reads the DSP's L2 back (`dsp.peek`) and compares byte for byte,
      counts DSP blocks for the throughput, and compares the PCM of the whole note with the reference;
   4. a destination outside the area (forged request) must stop with status 3 and leave the area untouched;
   5. a lost chunk (the sender's position is pushed ahead) must be recovered by going back.

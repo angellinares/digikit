@@ -188,11 +188,11 @@ Measured with the stock image on the model rig (`tests/support/dn2_stereo_rig.py
 
 Model tests:
 
-1. `tests/patchkit/test_dsp_stereo_gain_slot.py`: the stock block `0x1c99de..0x1c9b33` with both hooks against the stock block on L and on R: mono slots bit-identical, stereo slots A = stock(L).A and B = stock(R).B, with block ramp and fade, loop counts, flags, live-out registers.
-2. `tests/patchkit/test_dsp_stereo_twins.py`: each twin against two isolated mono channels over 3 to 9 blocks with changing controls, callee-saved registers, unstamped slot is the stock call; negative controls (shared history, controls copied after the L call, no scaling on R for the late shaper); the R ring is its own, at the profile base; the dirty-ring decision with its negative control.
-3. `tests/patchkit/test_dsp_stereo_identity.py`: with the same audio in L and R, R equals L bit for bit through every twin over seven blocks with changing controls and a reset in the middle of the note (the reset wrappers); negative control: the stock reset without the mirror breaks it.
-4. `tests/patchkit/test_dsp_stereo_lifecycle.py`: the reset mirrors against the real stock resets (L is the stock reset, R's private words are set, no other slot is touched), a pointer that is no slot, the guard (one refusal counted per stage, `_gs_health`), a mono slot goes straight to the stock stage.
-5. `tests/patchkit/test_dsp_voice_stereo_dn2.py`: the adapter on the machine rig: stamp, latch, R scaling, bad R, cap, counters and health word, note-on clear of every R record, gap, retrigger, mono unchanged, the proof module cannot be installed with it.
+1. `modules/core/adapters/dsp-voice/tests/test_dsp_stereo_gain_slot.py`: the stock block `0x1c99de..0x1c9b33` with both hooks against the stock block on L and on R: mono slots bit-identical, stereo slots A = stock(L).A and B = stock(R).B, with block ramp and fade, loop counts, flags, live-out registers.
+2. `modules/core/adapters/dsp-voice/tests/test_dsp_stereo_twins.py`: each twin against two isolated mono channels over 3 to 9 blocks with changing controls, callee-saved registers, unstamped slot is the stock call; negative controls (shared history, controls copied after the L call, no scaling on R for the late shaper); the R ring is its own, at the profile base; the dirty-ring decision with its negative control.
+3. `modules/core/adapters/dsp-voice/tests/test_dsp_stereo_identity.py`: with the same audio in L and R, R equals L bit for bit through every twin over seven blocks with changing controls and a reset in the middle of the note (the reset wrappers); negative control: the stock reset without the mirror breaks it.
+4. `modules/core/adapters/dsp-voice/tests/test_dsp_stereo_lifecycle.py`: the reset mirrors against the real stock resets (L is the stock reset, R's private words are set, no other slot is touched), a pointer that is no slot, the guard (one refusal counted per stage, `_gs_health`), a mono slot goes straight to the stock stage.
+5. `modules/core/adapters/dsp-voice/tests/test_dsp_voice_stereo_dn2.py`: the adapter on the machine rig: stamp, latch, R scaling, bad R, cap, counters and health word, note-on clear of every R record, gap, retrigger, mono unchanged, the proof module cannot be installed with it.
 
 ## 6. Phase 2 as built
 

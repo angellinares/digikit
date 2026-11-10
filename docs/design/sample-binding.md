@@ -112,7 +112,7 @@ close/load, supersession, stale acknowledgements and failed publication. This
 bounded proof is independent of claiming a larger production pool.
 
 Reuse the prior single-bank paused-reader method in
-`tests/patchkit/test_dsp_ddr_proof.py` and the SDK's two-bank macro tests in
+`modules/core/adapters/dsp-ddr-proof/tests/test_dsp_ddr_proof.py` and the SDK's two-bank macro tests in
 `tests/patchkit/test_dsp_sample_bank.py`. The new proof must add track routing and
 unaffected-track audio, not repeat those tests under new names. Keep this as an
 isolated assembled-consumer test; preserving a paused runner's register/loop state

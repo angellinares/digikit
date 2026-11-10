@@ -192,7 +192,7 @@ When native opt-ins are enabled without it, collection fails clearly.
 
 ## Validation limits
 
-Focused assembled checks: `uv run python -m pytest tests/patchkit/test_dsp_lp0_proof.py -q`.
+Focused assembled checks: `uv run python -m pytest modules/core/adapters/dsp-lp0-proof/tests/test_dsp_lp0_proof.py -q`.
 All 73 focused cases pass, including 16 four-byte data-placement phases checking
 RX alignment, complete footprint ownership and padding preservation.
 Stand-ins test our guards/call frames, halfword decoding, stock-copy boundary,
