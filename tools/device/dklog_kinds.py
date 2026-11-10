@@ -51,6 +51,7 @@ KINDS: dict[int, tuple[str, tuple[str, str, str, str, str]]] = {
     39: ("POOL_LOST", ("count", "-", "-", "-", "-")),
     40: ("POOL_INVALID", ("entry", "reason", "token", "count", "-")),
     41: ("INPUT_TAKEN", ("what", "control", "delta", "-", "-")),
+    42: ("PARAM_CHANGE", ("track", "index", "old", "new", "-")),
 }
 GUARD_KINDS: dict[int, str] = {1: "nonfinite", 2: "overlevel"}
 F_ERROR = 1

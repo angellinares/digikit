@@ -2146,12 +2146,32 @@ mark = "D"
 rule = "fw/project:cf_func"
 
 [[anchor]]
+name = "cf.project.fn.settings"
+cpu = "cf"
+kind = "code"
+addr = 0x4003e40e
+len = 4
+sha256 = "7f284fb65360c6f575800b1a7f6020278ea44dcfb08684ee639a5b361437086c"
+mark = "D"
+rule = "fw/project:cf_func"
+
+[[anchor]]
 name = "cf.project.fn.singleton"
 cpu = "cf"
 kind = "code"
 addr = 0x4018a97a
 len = 4
 sha256 = "9d173d59041b301888ec7a85e552356c0a38f1538ed266082f5001737ceb2308"
+mark = "D"
+rule = "fw/project:cf_func"
+
+[[anchor]]
+name = "cf.project.fn.track_sound"
+cpu = "cf"
+kind = "code"
+addr = 0x40030e66
+len = 4
+sha256 = "722ca8039c8eebdf90cbebf597b0c144a2c7979c379def4f7d87b953df4f5b50"
 mark = "D"
 rule = "fw/project:cf_func"
 

@@ -144,6 +144,8 @@
 #define FX_SOUND_OFF 52
 // [fx] sound_stride (bytes between the 16 Sound objects)
 #define FX_SOUND_STRIDE 1104
+// [fx] sound_words (s16 parameter words in a Sound object's array)
+#define FX_SOUND_WORDS 71
 // [fx] send_template (the stock send row whose owner and key words a send knob copies)
 #define FX_SEND_TEMPLATE 68
 // [limits] send_slots (effects on a send bus: the cells of the send page; 0 on a device without one)

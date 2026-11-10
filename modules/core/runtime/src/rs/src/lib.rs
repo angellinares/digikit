@@ -304,7 +304,7 @@ pub struct Import {
     pub name: [u8; 28],
     pub addr: *const (),
 }
-pub struct Imports(pub [Import; 14]);
+pub struct Imports(pub [Import; 15]);
 unsafe impl Sync for Imports {}
 
 const fn nm(s: &[u8]) -> [u8; 28] {
@@ -318,7 +318,7 @@ const fn nm(s: &[u8]) -> [u8; 28] {
 }
 
 /// The names of `IMPORTS`, in its order; checked against the `[[import]]` entries of `sdk/sdk.toml` without `requires` below.
-const NAMES: [&[u8]; 14] = [
+const NAMES: [&[u8]; 15] = [
     b"fw_block_read",
     b"fw_alloc",
     b"fw_free",
@@ -333,6 +333,7 @@ const NAMES: [&[u8]; 14] = [
     b"dkrt_log_ev",
     b"dkrt_peek_range",
     b"dkrt_track_type",
+    b"dkrt_selected_params",
 ];
 
 const fn names_match(ours: &[&[u8]], sdk: &[&str]) -> bool {
@@ -363,6 +364,7 @@ const _: dkrt_sdk::api::DkrtLogSinkSetFn = dlog::dkrt_log_sink_set;
 const _: dkrt_sdk::api::DkrtLogEvFn = dlog::dkrt_log_ev;
 const _: dkrt_sdk::api::DkrtPeekRangeFn = dkrt_peek_range;
 const _: dkrt_sdk::api::DkrtTrackTypeFn = dkrt_track_type;
+const _: dkrt_sdk::api::DkrtSelectedParamsFn = dkrt_selected_params;
 
 /// The names a module may import. Firmware functions come from patch-time anchors (`dkfw`); the helpers are this
 /// object's own copies, so a module need not carry them.
@@ -424,12 +426,18 @@ pub static IMPORTS: Imports = Imports([
         name: nm(NAMES[13]),
         addr: dkrt_track_type as *const (),
     },
+    Import {
+        name: nm(NAMES[14]),
+        addr: dkrt_selected_params as *const (),
+    },
 ]);
 
 extern "C" {
     /// Per-device data from the device file (`[digikit] peek`), defined by `src/cf/<dev>/device.s`: the number of ranges and `lo, hi` pairs.
     static dkrt_peek_n: u32;
     static dkrt_peek_ranges: [u32; 8];
+    /// The s16 words of a Sound array on this device (`[fx] sound_words`).
+    static dkrt_sound_words: u32;
 }
 
 /// Import `dkrt_peek_range`: how many RAM ranges the device file allows PEEK to read; for `i` below that, range `i` as `lo, hi` into `out`.
@@ -455,6 +463,36 @@ unsafe extern "C" fn dkrt_track_type(track: u32) -> i32 {
         return -1;
     }
     dkfw::project::track_type(dkfw::project::active_kit(p), track as i32) as i32
+}
+
+/// Vtable slot 0x28 of a Sound value object: the Sound record, whose s16 parameter words start at +0x14 (`Value<sound_struct>::vfunc_10`: the word at +0x10 of the object).
+const SOUND_VT_RECORD: u32 = 0x28;
+const SOUND_WORDS_AT: u32 = 0x14;
+
+/// Import `dkrt_selected_params`: the selected track (`view_track` of the project's settings) and the first `n` words of its Sound array, through the firmware's
+/// own accessors, plain reads. The words are big-endian s16 at a byte address that may be odd on the Digitone II (stride 0x48b), so they are read byte by byte.
+/// -2: no project yet; -3: the track has no record (a kit is loading): `out` is not written.
+unsafe extern "C" fn dkrt_selected_params(out: *mut i16, n: u32) -> i32 {
+    let p = dkfw::project::singleton();
+    if p == 0 {
+        return -2;
+    }
+    let track = dkfw::page::view_track(dkfw::project::settings(p) as *const u8).min(15);
+    let sound = dkfw::project::track_sound(dkfw::project::active_kit(p), track as i32);
+    let vt = read_volatile(sound as *const u32);
+    let record: unsafe extern "C" fn(u32) -> u32 = core::mem::transmute(read_volatile((vt + SOUND_VT_RECORD) as *const u32) as usize);
+    let rec = record(sound);
+    if rec == 0 {
+        return -3;
+    }
+    let words = read_volatile(addr_of!(dkrt_sound_words));
+    let mut i = 0;
+    while i < n {
+        let v = if i < words { fxpage::rd16(rec + SOUND_WORDS_AT + 2 * i) } else { 0 };
+        write_volatile(out.add(i as usize), v as i16);
+        i += 1;
+    }
+    track as i32
 }
 
 // ---- imports of other modules --------------------------------------------------------------------------------------------

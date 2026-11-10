@@ -29,6 +29,10 @@ Goal: the gate and module checks finish sooner through less work, the MacBook st
 - **#374** `fx-track-route` and `shot-dn2` split into per-file targets (5 and 3 files), assertions moved. Em to review. The first runs of `shot-dn2-audio` and `shot-dn2-supersede` each failed once and passed on rerun; cause not found.
 - **`test-speed/device-audit`**, PR open for Em: `shot-picker` rewritten to one glue test with the hook steps restored (still needs the DSP); `docs/plans/ledgers/device-test-audit.md` (all 50 device files classified); bootscreen REC held test kept; targeted waits in `sample-playback`, `stock-pool-borrow`, `stock-sampler-lifetime`. `installModules` is unchanged from main. Checks: `shot-dn2` 3 of 3, `shot-picker`, `shot-dt2`, `tom/tb303`, the three proof files once (the `proofs` Vitest project has no Nx target), repo-wide static checks.
 
+## Observer state (branch `test-speed/observer`)
+
+Built: `INPUT_TAKEN` (kind 41, `digikit/remote`), the `Events` helper (`events.until`), `setSmp` through the remote on DN2, and `PARAM_CHANGE` (kind 42, `digikit/debug`: the selected track's Sound words through anchors `cf.project.fn.settings` and `cf.project.fn.track_sound`, import `dkrt_selected_params`, [finding 119](../findings/119-param-change-observer.md)). `PARAM_CHANGE` is proven by a knob-turn device test in `modules/tools/debug` on both devices. Not adopted in `setSmp`: a turn of SMP (a latched run-time parameter) changes no word of the Sound array on DN2, with or without TRIG 1 held; where it is stored is open. No `paramChange` helper predicate was added: nothing uses it. Not built: the "ready for input" wait after an install.
+
 ## The open `shot-dn2` problem
 
 The SMP step can get stuck. The DSP word reaches `0x100` and does not move while the knob keeps turning (43 more detents with a limit of 64, so the limit is not the cause). Runs on 2026-11-09 and 2026-11-10: no post-install wait 0 failures of 12; with a post-install wait 9 of 19, at mixed load. The mechanism is unknown. One guess, untested: the word only updates while the note plays, so it freezes when a short sample ends.

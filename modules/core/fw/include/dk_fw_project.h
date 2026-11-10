@@ -10,8 +10,12 @@
 uint32_t dk_fw_project_active_kit(uint32_t project) __asm__("cf.project.fn.active_kit");
 /* The firmware's "serialize the live project into the persistent arena" (FUN_40030c9c on DT2, FUN_4002c694 on DN2: `int f(void)`, returns 1). The same hash on all four images. */
 int32_t dk_fw_project_serialize(void) __asm__("cf.project.fn.serialize");
+/* `ProjectSettings *f(Project *)`: project + 0x30. Pass it to `cf.page.fn.view_track` to get the selected track. */
+uint32_t dk_fw_project_settings(uint32_t project) __asm__("cf.project.fn.settings");
 /* The Project singleton getter `Project *f(void)`; its code differs per image. core/runtime reads it for the machine-change watch. */
 uint32_t dk_fw_project_singleton(void) __asm__("cf.project.fn.singleton");
+/* `Sound *f(Kit *, int track)`: the Sound value object of a track (track clamped to 0..15; kit + 0x6c + 0x3c0 * track). Its vtable slot 0x28 returns the sound record, whose s16 parameter words start at +0x14. The same hash on DT2 1.17 (0x40035cca) and DN2 1.12 (0x40030e66). */
+uint32_t dk_fw_project_track_sound(uint32_t kit, int32_t track) __asm__("cf.project.fn.track_sound");
 /* `int f(Kit *, int track)`: the machine type of a track of a kit, -1 when the track does not exist. core/runtime uses it for the machine-change watch. */
 int32_t dk_fw_project_track_type(uint32_t kit, int32_t track) __asm__("cf.project.fn.track_type");
 

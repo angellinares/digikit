@@ -9546,6 +9546,60 @@
       "at": {
         "dn2-1.11": [
           {
+            "addr": "0x4003e40e",
+            "len": 4
+          }
+        ],
+        "dn2-1.12": [
+          {
+            "addr": "0x4003e40e",
+            "len": 4
+          }
+        ],
+        "dt2-1.17": [
+          {
+            "addr": "0x40041d18",
+            "len": 4
+          }
+        ]
+      },
+      "bindings": {
+        "c": "dk_fw_project_settings",
+        "rust": "dkfw::project::settings"
+      },
+      "cpu": "cf",
+      "devices": [
+        "dt2",
+        "dn2"
+      ],
+      "doc": "`ProjectSettings *f(Project *)`: project + 0x30. Pass it to `cf.page.fn.view_track` to get the selected track.",
+      "file": "devices/fw/project.toml",
+      "kind": "fn",
+      "mark": "D",
+      "name": "cf.project.fn.settings",
+      "rule": {
+        "dn2": {
+          "kind": "cf_func",
+          "len": 4,
+          "offset": 0
+        },
+        "dt2": {
+          "kind": "cf_func",
+          "len": 4,
+          "offset": 0
+        }
+      },
+      "sig": "u32 (u32 project)",
+      "subsystem": "project",
+      "users": [
+        "core/runtime"
+      ],
+      "was": []
+    },
+    {
+      "at": {
+        "dn2-1.11": [
+          {
             "addr": "0x4018a97a",
             "len": 4
           }
@@ -9594,6 +9648,60 @@
         "cf.project.fn.get",
         "dkrt.fw.project"
       ]
+    },
+    {
+      "at": {
+        "dn2-1.11": [
+          {
+            "addr": "0x40030e66",
+            "len": 4
+          }
+        ],
+        "dn2-1.12": [
+          {
+            "addr": "0x40030e66",
+            "len": 4
+          }
+        ],
+        "dt2-1.17": [
+          {
+            "addr": "0x40035cca",
+            "len": 4
+          }
+        ]
+      },
+      "bindings": {
+        "c": "dk_fw_project_track_sound",
+        "rust": "dkfw::project::track_sound"
+      },
+      "cpu": "cf",
+      "devices": [
+        "dt2",
+        "dn2"
+      ],
+      "doc": "`Sound *f(Kit *, int track)`: the Sound value object of a track (track clamped to 0..15; kit + 0x6c + 0x3c0 * track). Its vtable slot 0x28 returns the sound record, whose s16 parameter words start at +0x14. The same hash on DT2 1.17 (0x40035cca) and DN2 1.12 (0x40030e66).",
+      "file": "devices/fw/project.toml",
+      "kind": "fn",
+      "mark": "D",
+      "name": "cf.project.fn.track_sound",
+      "rule": {
+        "dn2": {
+          "kind": "cf_func",
+          "len": 4,
+          "offset": 0
+        },
+        "dt2": {
+          "kind": "cf_func",
+          "len": 4,
+          "offset": 0
+        }
+      },
+      "sig": "u32 (u32 kit, i32 track)",
+      "subsystem": "project",
+      "users": [
+        "core/runtime"
+      ],
+      "was": []
     },
     {
       "at": {
@@ -17548,7 +17656,7 @@
       "name": "param"
     },
     {
-      "count": 4,
+      "count": 6,
       "cpu": "cf",
       "file": "devices/fw/project.toml",
       "meaning": "the project object, kits, tracks, serialisation",

@@ -50,8 +50,7 @@ Highest payoff first. Each step states its proof.
      decoder, and the host helper `events.until(kind, predicate, {emulatedMs})` (`packages/test-support/src/events.ts`, `listenEvents` and `remoteTurnTaken` in
      `tests/regression/runtime/events.ts`) waits on it with a cursor over sequence numbers (new boot resets it, a gap fails). `setSmp` of `shot-dn2-supersede` turns
      through the remote and waits on the event; a failure lists the detents taken and the last events. 4 of 4 runs passed (about 1 m 52 s each, same as before).
-     DT2's `shot-dt2` keeps the panel input: its `test/stock-pool` fixture holds the remote commands 0x38 to 0x3b. Not built: `PARAM_CHANGE` ([finding 46](../findings/46-digikit-debug.md):
-     no anchor for a track's Sound array), the "ready for input" wait after an install, and the `tap` helper (a key event says the decoder took it, not that the UI redrew).
+     DT2's `shot-dt2` keeps the panel input: its `test/stock-pool` fixture holds the remote commands 0x38 to 0x3b. `PARAM_CHANGE` (kind 42, built 2026-11-10, [finding 119](../findings/119-param-change-observer.md)): `digikit/debug` logs a changed Sound word of the selected track (two new anchors, one runtime import); a knob turn is proven on both devices, but the SMP turn of `setSmp` does not change that array, so `setSmp` does not use it. Not built: the "ready for input" wait after an install, and the `tap` helper (a key event says the decoder took it, not that the UI redrew).
      **[D]** `main_ui_reached`
      does not mean ready for input: `shot-dn2` failed in its SMP step in 9 of 19 runs with a wait on `main_ui_reached` after the install and in 0 of 12 without it
      (the SMP word reaches 0x100 and does not move for 43 more detents). **[O]** Why the word stops moving (a guess: the DSP word freezes when the note ends)
