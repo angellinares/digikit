@@ -32,7 +32,7 @@ DDR is and which eSDHC holds the card are board choices and live in `[board]`.
 
 ## What `[[gen]]` does
 
-A module asks for generated files with `[[gen]]` in its `module.toml` (`kind`, `path`). `patchkit gen` writes them from the device
+A module asks for generated files with `[[gen]]` in its `module.toml` (`kind`, `path`, and `uses` for four kinds). `patchkit gen` writes them from the device
 files and `types.toml`; `gen --check` fails when one is stale. The kinds (`packages/patchkit/src/devgen.rs`):
 
 - `rust`: `pub const`s in one file, for a crate that is one image for all devices (the runtime). Only constants that every device
@@ -47,6 +47,18 @@ Because the runtime object is built once and used on every device, a constant it
 devices. If a new device needs a different store, a different safe key and so on, that fact has to become a per-device value
 that the runtime reads from its device object (like `dkrt_device_id`), which changes the runtime's code; `gen` refuses to write the
 shared file until it is done.
+
+`uses = [...]` is required on the kinds `rust`, `gas-shared`, `gas` and `sharc`: it lists the constant names the module reads.
+A trailing `*` matches a family by prefix (`FX_VALUE_*`). The generator writes only the listed names, in its own order. It refuses:
+
+- a listed name that matches no constant;
+- a listed name that the module's own sources never reference (whole word, comments count as references; the scan skips the
+  directories `build`, `target`, `node_modules` and `tests`, directories whose name starts with `.`, and the generator's own
+  output files; `rust` entries are checked against `*.rs`, the other kinds against `*.s *.S *.inc *.c *.h`).
+
+A constant the sources use but the list lacks is not in the include, so the build fails on the undefined name.
+
+The kinds `sharc-adapter`, `gas-sample-pool`, `sharc-sample-pool` and `c-shared` take no `uses`.
 
 ## Adding a device (what exists today, what is still hand work)
 

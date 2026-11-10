@@ -1391,9 +1391,11 @@ summary = "Scoped generation check"
 [[gen]]
 kind = "gas"
 path = "build/gen/device-{dev}.inc"
+uses = ["DEVICE_ID"]
 "#,
         )
         .unwrap();
+        std::fs::write(module_dir.join("main.s"), "    move.l #DEVICE_ID, %d0\n").unwrap();
         let args = |scope: &str| Args {
             root: fixture.0.clone(),
             rest: [

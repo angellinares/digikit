@@ -7,14 +7,10 @@ pub const DYN_TYPE_FIRST: u32 = 0x10;
 pub const DYN_TYPE_LAST: u32 = 0x17;
 /// run-time machine types; core/dynreg reserves one machine row and core/dyndsp one voice row for each
 pub const DYN_TYPES: u32 = 0x8;
-/// [board] console_uart_base
-pub const CONSOLE_UART_BASE: u32 = 0xec070000;
 /// [board] ddr_cached_base
 pub const DDR_CACHED_BASE: u32 = 0x40000000;
 /// [board] ddr_bytes
 pub const DDR_BYTES: u32 = 0x8000000;
-/// [board] ddr_uncached_alias
-pub const DDR_UNCACHED_ALIAS: u32 = 0x48000000;
 /// [board] esdhc_base
 pub const ESDHC_BASE: u32 = 0xfc0cc000;
 /// [digikit] safe_key (a panel control code)

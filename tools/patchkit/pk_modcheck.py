@@ -133,11 +133,11 @@ def run_device_targets(mid: str, targets: list[str]) -> int:
                 pk_harness.daemon_binary(device, syx, pgo=None)
             )
     print(f"{mid}: device acceptance {', '.join(targets)} (DT2 and DN2)", flush=True)
+    # The launcher sets no-daemon and the job budget and takes the shared lock, so the hold above must end first.
     return subprocess.run(
         [
             "pnpm",
-            "exec",
-            "nx",
+            "nx:pilot",
             "run-many",
             "-t",
             "test-device",

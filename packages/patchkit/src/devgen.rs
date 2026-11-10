@@ -224,7 +224,6 @@ struct FxF {
     template_bipolar: u64,
     template_mix: u64,
     store_off: u64,
-    store_halfwords: u64,
     mark_index: u64,
     tail_off: u64,
     track_page: u64,
@@ -557,7 +556,6 @@ fn fx_facts(short: &str, f: Option<FxDoc>, fx_slots: u64, send_slots: u64) -> Re
         template_bipolar: f.template_bipolar,
         template_mix: f.template_mix,
         store_off: f.store_off,
-        store_halfwords: f.store_halfwords,
         mark_index: f.mark_index,
         tail_off: f.tail_off,
         track_page: f.track_page,
@@ -1024,24 +1022,6 @@ fn constants(lib: &Library, dev: &str, e: &Entry) -> Result<Vec<C>> {
             "[card.store] end_sector - first_sector",
         ),
         c(
-            "STORE_HEADER_B",
-            s.header_b - s.first,
-            PerDevice,
-            "[card.store] header_b_sector - first_sector (store header copy B, relative to the store)",
-        ),
-        c(
-            "STORE_SEL_A",
-            s.end - 2,
-            PerDevice,
-            "[card.store] end_sector - 2 (selection record copy A, absolute)",
-        ),
-        c(
-            "STORE_SEL_B",
-            s.end - 1,
-            PerDevice,
-            "[card.store] end_sector - 1 (selection record copy B, absolute)",
-        ),
-        c(
             "DYN_TYPE_FIRST",
             first as u64,
             Shared,
@@ -1249,11 +1229,6 @@ fn constants(lib: &Library, dev: &str, e: &Entry) -> Result<Vec<C>> {
             "[fx] store_off (the first spare halfword of the kit storage's effect value record, bytes from its start)",
         ),
         (
-            "FX_STORE_HW",
-            fx.store_halfwords,
-            "[fx] store_halfwords (spare halfwords in that record: the values, then one effect ID for each effect row)",
-        ),
-        (
             "FX_MARK_INDEX",
             fx.mark_index,
             "[fx] mark_index (the array index that holds the mark: an effect row has its values)",
@@ -1437,11 +1412,14 @@ fn shared<'a>(module: &str, per_dev: &'a [(String, Vec<C>)]) -> Result<Vec<&'a C
     Ok(out)
 }
 
-fn rust(module: &str, per_dev: &[(String, Vec<C>)]) -> Result<String> {
+fn rust(module: &str, per_dev: &[(String, Vec<C>)], emit: &[&str]) -> Result<String> {
     let mut s = format!(
         "// {module}: {NOTE}.\n// Only constants that every device file agrees on; the runtime is one image for all devices.\n\n"
     );
-    for k in shared(module, per_dev)? {
+    for k in shared(module, per_dev)?
+        .into_iter()
+        .filter(|k| emit.contains(&k.name))
+    {
         let _ = writeln!(s, "/// {}", k.note);
         let _ = writeln!(s, "pub const {}: u32 = {};", k.name, hex(k.value));
     }
@@ -1461,9 +1439,12 @@ fn c_shared(module: &str) -> String {
     )
 }
 
-fn gas_shared(module: &str, per_dev: &[(String, Vec<C>)]) -> Result<String> {
+fn gas_shared(module: &str, per_dev: &[(String, Vec<C>)], emit: &[&str]) -> Result<String> {
     let mut s = format!("/* {module}: {NOTE}. Constants that every device file agrees on. */\n");
-    for k in shared(module, per_dev)? {
+    for k in shared(module, per_dev)?
+        .into_iter()
+        .filter(|k| emit.contains(&k.name))
+    {
         let _ = writeln!(
             s,
             "    .equ {}, {}    /* {} */",
@@ -1475,9 +1456,12 @@ fn gas_shared(module: &str, per_dev: &[(String, Vec<C>)]) -> Result<String> {
     Ok(s)
 }
 
-fn gas(module: &str, dev: &str, cs: &[C]) -> String {
+fn gas(module: &str, dev: &str, cs: &[C], emit: Option<&[&str]>) -> String {
     let mut s = format!("/* {module} on {dev}: {NOTE}. */\n");
-    for k in cs {
+    for k in cs
+        .iter()
+        .filter(|k| emit.is_none_or(|e| e.contains(&k.name)))
+    {
         let _ = writeln!(
             s,
             "    .equ {}, {}    /* {} */",
@@ -1489,16 +1473,123 @@ fn gas(module: &str, dev: &str, cs: &[C]) -> String {
     s
 }
 
-fn sharc(module: &str, dev: &str, cs: &[C]) -> String {
+fn sharc(module: &str, dev: &str, cs: &[C], emit: Option<&[&str]>) -> String {
     let mut s = format!(
         "// {module} on {dev}: {NOTE}.\n// Decimal values: the assembler upper-cases macro text, which breaks `0x` literals after `+`.\n"
     );
-    for k in cs {
+    for k in cs
+        .iter()
+        .filter(|k| emit.is_none_or(|e| e.contains(&k.name)))
+    {
         // the note goes on its own line: the assembler's preprocessor keeps a trailing comment in the macro body, where it would
         // swallow the rest of a line that uses the macro (`R3 = DL_TAIL_WORDS - 3;`)
         let _ = writeln!(s, "// {}\n#define {} {}", k.note, k.name, k.value);
     }
     s
+}
+
+/// Does the `uses` pattern match a constant name: an exact name, or a prefix and one trailing `*`?
+fn uses_match(pattern: &str, name: &str) -> bool {
+    match pattern.strip_suffix('*') {
+        Some(prefix) => name.starts_with(prefix),
+        None => name == pattern,
+    }
+}
+
+/// The constant names a `rust`, `gas-shared`, `gas` or `sharc` entry writes: those that its `uses` list names, in the order of `constants()`.
+fn emitted_names(
+    module: &str,
+    g: &crate::module::GenDef,
+    per_dev: &[(String, Vec<C>)],
+) -> Result<Vec<&'static str>> {
+    let at = format!("{module}: gen {}", g.path);
+    if g.uses.is_empty() {
+        return Err(err!(
+            "{at}: a `{}` gen needs `uses`, the constants the module reads",
+            g.kind
+        ));
+    }
+    let shared_only = matches!(g.kind.as_str(), "rust" | "gas-shared");
+    let all = &per_dev[0].1;
+    for p in &g.uses {
+        let stars = p.matches('*').count();
+        if p.is_empty() || stars > 1 || (stars == 1 && !p.ends_with('*')) {
+            return Err(err!(
+                "{at}: `uses` pattern {p:?} must be a name, or a prefix and one trailing `*`"
+            ));
+        }
+        let hits: Vec<&C> = all.iter().filter(|k| uses_match(p, k.name)).collect();
+        if hits.is_empty() {
+            return Err(err!("{at}: `uses` {p:?} matches no device constant"));
+        }
+        if shared_only && hits.iter().all(|k| k.scope == Scope::PerDevice) {
+            return Err(err!(
+                "{at}: `uses` {p:?} is per-device, and a `{}` gen takes only shared constants",
+                g.kind
+            ));
+        }
+    }
+    Ok(all
+        .iter()
+        .filter(|k| !shared_only || k.scope == Scope::Shared)
+        .filter(|k| g.uses.iter().any(|p| uses_match(p, k.name)))
+        .map(|k| k.name)
+        .collect())
+}
+
+fn has_word(text: &str, word: &str) -> bool {
+    let id = |b: u8| b.is_ascii_alphanumeric() || b == b'_';
+    let t = text.as_bytes();
+    text.match_indices(word)
+        .any(|(i, _)| (i == 0 || !id(t[i - 1])) && t.get(i + word.len()).is_none_or(|&b| !id(b)))
+}
+
+/// Every emitted name must occur as a word in a source file of the module (outputs of its own `[[gen]]` entries excluded).
+fn check_sources(
+    module: &str,
+    g: &crate::module::GenDef,
+    dir: &std::path::Path,
+    outputs: &[std::path::PathBuf],
+    exts: &[&str],
+    names: &[&str],
+) -> Result<()> {
+    let mut texts = vec![];
+    let mut dirs = vec![dir.to_path_buf()];
+    while let Some(d) = dirs.pop() {
+        let Ok(rd) = std::fs::read_dir(&d) else {
+            continue;
+        };
+        for e in rd.flatten() {
+            let p = e.path();
+            let name = e.file_name().to_string_lossy().into_owned();
+            if p.is_dir() {
+                if !(name.starts_with('.')
+                    || ["build", "target", "node_modules", "tests"].contains(&name.as_str()))
+                {
+                    dirs.push(p);
+                }
+            } else if p.extension().is_some_and(|x| exts.iter().any(|w| x == *w))
+                && !outputs.contains(&p)
+            {
+                if let Ok(t) = std::fs::read_to_string(&p) {
+                    texts.push(t);
+                }
+            }
+        }
+    }
+    let missing: Vec<&str> = names
+        .iter()
+        .copied()
+        .filter(|n| !texts.iter().any(|t| has_word(t, n)))
+        .collect();
+    if missing.is_empty() {
+        return Ok(());
+    }
+    Err(err!(
+        "{module}: gen {}: the module's sources never use {}; remove them from `uses`",
+        g.path,
+        missing.join(", ")
+    ))
 }
 
 /// The files a module asks for with `[[gen]]` (empty: it asks for none).
@@ -1518,14 +1609,45 @@ pub fn generate(lib: &Library, facts: &Facts, module: &str) -> Result<Vec<GenFil
     for (dev, e) in &facts.docs {
         per_dev.push((dev.clone(), constants(lib, dev, e)?));
     }
+    let outputs: Vec<std::path::PathBuf> = m
+        .manifest
+        .gens
+        .iter()
+        .flat_map(|g| {
+            facts
+                .docs
+                .keys()
+                .map(|dev| m.dir.join(g.path.replace("{dev}", dev)))
+        })
+        .collect();
     let mut out = vec![];
     for g in &m.manifest.gens {
+        let picks = matches!(g.kind.as_str(), "rust" | "gas-shared" | "gas" | "sharc");
+        if !picks && !g.uses.is_empty() {
+            return Err(err!(
+                "{module}: a `{}` gen ({}) takes no `uses`",
+                g.kind,
+                g.path
+            ));
+        }
+        let emit = if picks {
+            let names = emitted_names(module, g, &per_dev)?;
+            let exts: &[&str] = if g.kind == "rust" {
+                &["rs"]
+            } else {
+                &["s", "S", "inc", "c", "h"]
+            };
+            check_sources(module, g, &m.dir, &outputs, exts, &names)?;
+            names
+        } else {
+            vec![]
+        };
         match g.kind.as_str() {
             "rust" => {
                 if g.path.contains("{dev}") {
                     return Err(err!("{module}: a `rust` gen is one file for all devices"));
                 }
-                out.push((g.path.clone(), rust(module, &per_dev)?));
+                out.push((g.path.clone(), rust(module, &per_dev, &emit)?));
             }
             "c-shared" => {
                 if g.path.contains("{dev}") {
@@ -1541,7 +1663,7 @@ pub fn generate(lib: &Library, facts: &Facts, module: &str) -> Result<Vec<GenFil
                         "{module}: a `gas-shared` gen is one file for all devices"
                     ));
                 }
-                out.push((g.path.clone(), gas_shared(module, &per_dev)?));
+                out.push((g.path.clone(), gas_shared(module, &per_dev, &emit)?));
             }
             "gas" | "sharc" => {
                 if !g.path.contains("{dev}") {
@@ -1552,9 +1674,9 @@ pub fn generate(lib: &Library, facts: &Facts, module: &str) -> Result<Vec<GenFil
                 }
                 for (dev, cs) in &per_dev {
                     let text = if g.kind == "gas" {
-                        gas(module, dev, cs)
+                        gas(module, dev, cs, Some(&emit))
                     } else {
-                        sharc(module, dev, cs)
+                        sharc(module, dev, cs, Some(&emit))
                     };
                     out.push((g.path.replace("{dev}", dev), text));
                 }
@@ -1579,7 +1701,10 @@ pub fn generate(lib: &Library, facts: &Facts, module: &str) -> Result<Vec<GenFil
                             "[adapter.sample_pool] ring_r_base (byte address of the 16 R rings of 32 KiB, one per slot)",
                         ));
                     }
-                    out.push((g.path.replace("{dev}", dev), sharc(module, dev, &constants)));
+                    out.push((
+                        g.path.replace("{dev}", dev),
+                        sharc(module, dev, &constants, None),
+                    ));
                 }
             }
             "gas-sample-pool" => {
@@ -1595,7 +1720,7 @@ pub fn generate(lib: &Library, facts: &Facts, module: &str) -> Result<Vec<GenFil
                         .ok_or_else(|| err!("{module}: {dev} has no [adapter.sample_pool]"))?;
                     out.push((
                         g.path.replace("{dev}", dev),
-                        gas(module, dev, &sample_pool_constants(p)),
+                        gas(module, dev, &sample_pool_constants(p), None),
                     ));
                 }
             }
@@ -1612,7 +1737,7 @@ pub fn generate(lib: &Library, facts: &Facts, module: &str) -> Result<Vec<GenFil
                     };
                     out.push((
                         g.path.replace("{dev}", dev),
-                        sharc(module, dev, &sample_pool_dsp_constants(p)),
+                        sharc(module, dev, &sample_pool_dsp_constants(p), None),
                     ));
                 }
             }
