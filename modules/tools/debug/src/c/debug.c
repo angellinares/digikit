@@ -247,7 +247,8 @@ static struct {
     int16_t words[PARAMS];
 } watch;
 
-/* PARAM_CHANGE (debug level): each Sound word of the selected track that differs from the last pass: track, index, old, new. Only writes to that array show (the stock
+/* PARAM_CHANGE (debug level; the baseline is info level, so a host that raises the level right after a restart cannot miss it: its level set can land after the
+ * first snapshot): each Sound word of the selected track that differs from the last pass: track, index, old, new. Only writes to that array show (the stock
  * setter: a knob turn); p-lock, sound lock, LFO and MIDI CC take other paths. A change of the selected track, or a track whose record is
  * missing (a kit load), takes the snapshot again and logs a baseline instead: index 0xffffffff, old and new 0. */
 static void watch_params(void)
@@ -279,7 +280,7 @@ static void watch_params(void)
         a[0] = (u32)t;
         a[1] = 0xffffffffu;
         a[2] = a[3] = a[4] = 0u;
-        dkrt_log_ev(K_PARAM_CHANGE, L_DEBUG << LEVEL_SHIFT, a);
+        dkrt_log_ev(K_PARAM_CHANGE, L_INFO << LEVEL_SHIFT, a);
     }
 }
 

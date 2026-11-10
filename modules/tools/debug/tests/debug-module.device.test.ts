@@ -237,12 +237,13 @@ async function expectEarlyModuleLog(runtime: PatchedSession): Promise<void> {
 
 /** A knob turn on the selected track logs PARAM_CHANGE: the watch logs a baseline event (index 0xffffffff) when it has taken its snapshot, then ten bursts of four
  * detents on knob A of the main screen change one Sound word of the selected track, and the event has the new value above the old (a positive turn). The index is
- * a position of the Sound array (finding 119), so the test does not name it. */
+ * a position of the Sound array (finding 119), so the test does not name it. The test listens from boot: the debug module logs the baseline by itself right after
+ * boot, and in about half of the DT2 runs it was logged before a listen at the newest event read its cursor. */
 async function expectParamChange(runtime: PatchedSession): Promise<void> {
   const { session } = runtime;
   await expectRuntimeReady(session);
   await installWithDebug(runtime);
-  const events = await listenEvents(runtime);
+  const events = await listenEvents(runtime, { fromBoot: true });
   await events.until(LOG_KIND.PARAM_CHANGE, (e) => (e.args[1]! | 0) === -1, { emulatedMs: 20_000 });
   await panel(session).burst('ENC A', 10, 4);
   const change = await events.until(LOG_KIND.PARAM_CHANGE, (e) => (e.args[1]! | 0) !== -1, { emulatedMs: 3000 });
