@@ -176,6 +176,9 @@ export function defineEquiv(scenarios: Equiv[]): void {
           } else if (refPcm) {
             const same = pcmMatches(refPcm, runPcm, 128);
             expect(same.ok, `PCM of the run-time machine equals the patched-in machine's: ${same.detail}`).toBe(true);
+          } else if (sc.play && !ref) {
+            // no pin and no twin: the note is only audible
+            expect(peak(runPcm), 'the run-time note is audible').toBeGreaterThan(0.01);
           }
 
           if (!ref) {
