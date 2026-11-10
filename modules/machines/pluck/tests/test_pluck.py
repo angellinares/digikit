@@ -1,7 +1,7 @@
 """digikit/pluck on the concrete SHARC+ core, against the float32 model of pluck_ref.py.
 
 The wrapper (core/dsp-voice) and the routine are assembled from the module sources and run block by block the way
-the engine calls them (see tests/patchkit/test_dsp_voice.py). The routine's delay line (reserved, unloaded L2 on the
+the engine calls them (see modules/core/adapters/dsp-voice/tests/test_dsp_voice.py). The routine's delay line (reserved, unloaded L2 on the
 device) is carried from call to call as DM words. Skips when Selache is not built."""
 
 import numpy as np

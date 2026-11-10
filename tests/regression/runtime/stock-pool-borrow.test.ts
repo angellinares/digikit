@@ -10,7 +10,6 @@ import { liveArtifacts, record } from './artifacts.ts';
 import { installModule, moduleArtifact } from './install.ts';
 import { memory, panel } from './panel.ts';
 import { runtimeTests } from './ready.ts';
-import { settleUi } from './waits.ts';
 
 // DT2 1.17 stock sample pool (findings 81, 82, 85). All firmware state is read with peeks.
 const POOL = { slotMap: 0x405b5368, slotKey: 0x405b1368, slotLength: 0x405ba768, blocks: 0x405a0f64 };
@@ -161,9 +160,7 @@ runtimeTests(
     const dir = liveArtifacts(session, 'stock-pool-borrow');
     const out = path.join(repoRoot(), 'out/runs/stock-pool-borrow');
     mkdirSync(out, { recursive: true });
-    await settleUi(session);
     await installModule(dk, 'test/stock-pool', moduleArtifact('dt2', 'test/stock-pool'));
-    await settleUi(session);
     const ui = panel(session);
     const mod = moduleApi(runtime);
     const p = await pool(runtime);
@@ -182,13 +179,22 @@ runtimeTests(
     record(out, 'listing', listing);
 
     // Stock slots loaded from the card project.
-    const stock: { slot: number; state: Awaited<ReturnType<typeof p.slot>> }[] = [];
-    for (let n = 1; n < 0x80; n++) {
-      const state = await p.slot(n);
-      if (state.index >= 0) stock.push({ slot: n, state });
-    }
+    // The firmware loads the project's samples after the main UI: wait on that state.
+    let stock: { slot: number; state: Awaited<ReturnType<typeof p.slot>> }[] = [];
+    await expect
+      .poll(
+        async () => {
+          stock = [];
+          for (let n = 1; n < 0x80; n++) {
+            const state = await p.slot(n);
+            if (state.index >= 0) stock.push({ slot: n, state });
+          }
+          return stock.length;
+        },
+        { timeout: 60_000, interval: 1000, message: 'the card project loads samples' },
+      )
+      .toBeGreaterThan(0);
     record(out, 'stock-slots', stock);
-    expect(stock.length, 'the card project loads samples').toBeGreaterThan(0);
     const donor = stock[0]!;
     // A slot the boot never touched reads map word 0 (zeroed BSS), not -1: only the DSP record tells it is empty.
     const untouched = [await p.slot(0x3ff), await p.slot(0x3fe)];
@@ -332,5 +338,5 @@ runtimeTests(
     await session.expectNoFault('stock pool borrow');
     writeFileSync(path.join(out, 'done'), 'ok');
   },
-  { devices: ['dt2'], timeout: 600_000 },
+  { dsp: 'sharc', devices: ['dt2'], timeout: 600_000 },
 );

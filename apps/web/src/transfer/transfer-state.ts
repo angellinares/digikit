@@ -56,6 +56,15 @@ export const activeMode = (): Mode => (mode() === 'samples' && transferEnv().ext
  * samples backend; `canMkdir` is known after the samples backend was opened. */
 export const [deviceInfo, setDeviceInfo] = createSignal<DeviceInfo>();
 
+/** The device whose library the list shows while no device answers (the site). */
+export const [browseDevice, setBrowseDevice] = remembered<'dt2' | 'dn2'>('digikit.transferBrowseDevice', (v) =>
+  v === 'dn2' ? 'dn2' : 'dt2',
+);
+/** The list shows the library alone, with no device behind it. */
+export const [browsing, setBrowsing] = createSignal(false);
+/** Module ids from the page URL to tick once the list is read. */
+export const [pendingAdd, setPendingAdd] = createSignal<string[]>([]);
+
 /** The module whose source the side panel shows (SourcePanel.tsx), or none. */
 export const [sourceId, setSourceId] = createSignal<string>();
 

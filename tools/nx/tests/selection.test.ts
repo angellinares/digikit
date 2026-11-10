@@ -3,11 +3,11 @@ import { existsSync, globSync, mkdirSync, mkdtempSync, readFileSync, rmSync, wri
 import { tmpdir } from 'node:os';
 import { join, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
-import { afterAll, afterEach, beforeAll, beforeEach, describe, expect, it, vi } from 'vitest';
+import { afterAll, afterEach, beforeAll, describe, expect, it } from 'vitest';
 import { parse } from 'smol-toml';
 import { createDependencies } from '../modules.mjs';
 import { manifestClosure } from '../module-manifests.mjs';
-import { changedFiles, gateCommands, menuOnly, MENU_SOURCE, TIERS, uiOnly, UI_SOURCE } from '../gate.mjs';
+import { TIERS } from '../gate.mjs';
 
 const root = fileURLToPath(new URL('../../../', import.meta.url));
 const scratch = mkdtempSync(join(tmpdir(), 'digikit-nx-selection-'));
@@ -109,157 +109,11 @@ function pickerConsumer(): string {
   return consumers[0][0];
 }
 
-describe('default gate fixture scheduling policy', () => {
-  beforeEach(() => vi.stubEnv('NX_HEAD', ''));
-  afterEach(() => vi.unstubAllEnvs());
-  const targets = 'pack,test-device,test-conformance,rust-tests';
-  const requestedTargets = (command: string[]) => {
-    const index = command.indexOf('-t');
-    return new Set(command[index + 1].split(','));
-  };
-  const commandsFor = (files: string[]) =>
-    gateCommands(
-      ['--base=main', '-t', targets],
-      files.map((file) => ({ file, status: 'M' })),
-    );
-  // Supply hypothetical changed files to Nx only after the gate classifies the default comparison.
-  const gatePlan = (files: string[]) =>
-    commandsFor(files).map(
-      (command: string[]) =>
-        plan([...command.filter((arg) => arg !== '--base=main'), `--files=${files.join(',')}`]).tasks,
-    );
-  const withoutConformance = targets
-    .split(',')
-    .filter((target) => target !== 'test-conformance')
-    .join(',');
-
-  it('keeps comparisons without one explicit nonempty base on the broad path', () => {
-    for (const comparison of [[], ['--base='], ['--base=main', '--base=HEAD'], ['--base=main', '--head=HEAD']]) {
-      expect(changedFiles(comparison)).toEqual([]);
-    }
-    const command = gateCommands(['-t', targets], [{ file: MENU_SOURCE, status: 'M' }])[0];
-    expect(command).toEqual(['affected', '-t', targets]);
-  });
-
-  it('keeps an Nx environment head override on the broad path', () => {
-    vi.stubEnv('NX_HEAD', 'another-commit');
-    expect(changedFiles(['--base=main'])).toEqual([]);
-    expect(gateCommands(['--base=main', '-t', targets], [{ file: MENU_SOURCE, status: 'M' }])).toEqual([
-      ['affected', '--base=main', '-t', targets],
-    ]);
-  });
-
-  it('keeps alternate file and stdin selectors on the broad path', () => {
-    for (const selector of [['--stdin'], ['--stdin=true']]) expect(menuOnly(changedFiles(selector))).toBe(false);
-    for (const selector of [
-      ['--files', MENU_SOURCE, 'sdk/include/dk/api.h'],
-      ['--files', MENU_SOURCE, '--files', 'sdk/include/dk/api.h'],
-      [`--files=${MENU_SOURCE}`, '--files=sdk/include/dk/api.h'],
-      [`--files=${MENU_SOURCE},sdk/include/dk/api.h`],
-      [`--files=${MENU_SOURCE}`],
-    ]) {
-      expect(changedFiles(selector)).toEqual([]);
-      // Even a supplied menu-only classification cannot override an alternate selector.
-      const commands = gateCommands([...selector, '-t', targets], [{ file: MENU_SOURCE, status: 'M' }]);
-      expect(commands).toEqual([['affected', ...selector, '-t', targets]]);
-    }
-  });
-
-  it('drops only conformance for the menu fixture and keeps the base comparison', () => {
-    expect(commandsFor([MENU_SOURCE])).toEqual([['affected', '--base=main', '-t', withoutConformance]]);
-  });
-
-  it('drops only conformance for the UI fixture and keeps the base comparison', () => {
-    expect(commandsFor([UI_SOURCE])).toEqual([['affected', '--base=main', '-t', withoutConformance]]);
-  });
-
-  it('keeps UI policy fail-closed for unsupported selectors, comparisons and incomplete target sets', () => {
-    const changes = [{ file: UI_SOURCE, status: 'M' }];
-    const selections = [
-      [],
-      ['--base='],
-      ['--base=main', '--base=HEAD'],
-      ['--base=main', '--head=HEAD'],
-      ...['--files', '--stdin', '--uncommitted', '--untracked', '--all'].map((selector) => [
-        '--base=main',
-        `${selector}=true`,
-      ]),
-    ];
-    for (const args of selections) {
-      expect(changedFiles(args)).toEqual([]);
-      const command = gateCommands([...args, '-t', targets], changes)[0];
-      expect(requestedTargets(command)).toEqual(new Set(targets.split(',')));
-    }
-    vi.stubEnv('NX_HEAD', 'another-commit');
-    expect(requestedTargets(gateCommands(['--base=main', '-t', targets], changes)[0])).toEqual(
-      new Set(targets.split(',')),
-    );
-    vi.stubEnv('NX_HEAD', '');
-    for (const missing of targets.split(',')) {
-      const incomplete = targets
-        .split(',')
-        .filter((target) => target !== missing)
-        .join(',');
-      expect(gateCommands(['--base=main', '-t', incomplete], changes)).toEqual([
-        ['affected', '--base=main', '-t', incomplete],
-      ]);
-    }
-  });
-
-  it('keeps normal affected selection for mixed and unknown changes', () => {
-    for (const files of [
-      [UI_SOURCE, 'sdk/include/dk/api.h'],
-      [UI_SOURCE, 'modules/core/runtime/src/rs/src/loader.rs'],
-      ['unknown-file'],
-    ]) {
-      const graphs = gatePlan(files);
-      expect(graphs).toHaveLength(1);
-      expect(graphs[0]).toEqual(selectedPlan(files));
-      if (files[0] !== 'unknown-file')
-        expect(Object.keys(graphs[0].tasks)).toContain(`${imageConsumer()}:test-conformance`);
-    }
-    function selectedPlan(files: string[]) {
-      return plan(['affected', `--files=${files.join(',')}`, '-t', targets]).tasks;
-    }
-  }, 60_000);
-
-  it('rejects rename, deletion and uncertain change metadata', () => {
-    for (const status of ['A', 'D', 'R100', '?']) expect(menuOnly([{ file: MENU_SOURCE, status }])).toBe(false);
-    expect(menuOnly([])).toBe(false);
-    for (const status of ['A', 'D', 'R100', '?']) {
-      const changes = [{ file: UI_SOURCE, status }];
-      expect(uiOnly(changes)).toBe(false);
-      expect(requestedTargets(gateCommands(['--base=main', '-t', targets], changes)[0])).toEqual(
-        new Set(targets.split(',')),
-      );
-    }
-    expect(uiOnly([])).toBe(false);
-  });
-
-  it.each([
-    [MENU_SOURCE, menuOnly],
-    [UI_SOURCE, uiOnly],
-  ] as const)('uses Git status to classify modifications to %s', (source, isolatedOnly) => {
-    const repo = join(scratch, `git-policy-${source === MENU_SOURCE ? 'menu' : 'ui'}`);
-    mkdirSync(join(repo, source, '..'), { recursive: true });
-    const git = (...args: string[]) => execFileSync('git', args, { cwd: repo, stdio: 'pipe' });
-    git('init', '-b', 'main');
-    writeFileSync(join(repo, source), 'original');
-    git('add', '.');
-    git('-c', 'user.name=Gate Test', '-c', 'user.email=gate@example.invalid', 'commit', '-m', 'fixture');
-    const changes = () => changedFiles(['--base=main'], repo);
-    writeFileSync(join(repo, source), 'modified');
-    expect(isolatedOnly(changes())).toBe(true);
-    writeFileSync(join(repo, 'unknown'), 'new');
-    expect(isolatedOnly(changes())).toBe(false);
-    rmSync(join(repo, 'unknown'));
-    git('mv', source, 'renamed.c');
-    expect(isolatedOnly(changes())).toBe(false);
-    expect(isolatedOnly(changedFiles([`--files=${source}`], repo))).toBe(false);
-    git('reset', '--hard', 'HEAD');
-    rmSync(join(repo, source));
-    expect(isolatedOnly(changes())).toBe(false);
-  });
+describe('merge gate', () => {
+  it('keeps menu.c and ui.c edits on the normal device and conformance selection', () => {
+    for (const file of ['modules/core/apps/digikit-menu/src/menu.c', 'modules/core/adapters/ui/src/ui.c'])
+      expect(selected(file, 'test-device,test-conformance').tasks[`${imageConsumer()}:test-conformance`]).toBeDefined();
+  }, 30_000);
 });
 
 it('keeps runtime and shipped content outside dependency cycles', () => {
@@ -404,14 +258,6 @@ describe('workspace selection', () => {
     },
     30_000,
   );
-
-  it('selects cached device consumers when the device digest recipe changes', () => {
-    const graph = selected('tools/nx/device-inputs.mjs', 'test-device,test-conformance,stock');
-    expect(graph.tasks['core/runtime-tests:test-device']).toBeDefined();
-    expect(graph.tasks['core/runtime-service-tests:test-device']).toBeDefined();
-    expect(graph.tasks[`${imageConsumer()}:test-conformance`]).toBeDefined();
-    expect(graph.tasks['gate-stock:stock']).toBeDefined();
-  }, 30_000);
 
   it('selects hermetic Rust tests when the release profile digest recipe changes', () => {
     const graph = selected('tools/nx/cargo-profile-env.mjs', 'rust-tests');

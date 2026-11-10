@@ -329,12 +329,12 @@ doc = "DN2 selected-sound/browser index of MultiSourcePageView (not page index);
 [[fn]]
 name = "cf.page.fn.native_track_sound"
 cpu = "cf"
-devices = ["dn2"]
+devices = ["dt2", "dn2"]
 sig = "u8 *(u8 *sounds, u32 track)"
 rule = { kind = "cf_func", hash = "9fbd7b798068d1cc0a201b9060ff7250", offset = 0, len = 4 }
 mark = "D"
-users = ["core/machines"]
-doc = "DN2 track sound from the source view's sounds reference (view+0x78) and track, as used by its draw and parameter mapper."
+users = ["core/machines", "core/runtime"]
+doc = "`Sound *f(Kit *, int track)`: the Sound value object of a track (track clamped to 0..15; kit + 0x6c + 0x3c0 * track). DN2 uses it with the source view's sounds reference (view+0x78) in its draw and parameter mapper; core/runtime uses it with the active kit. Its vtable slot 0x28 returns the sound record, whose s16 parameter words start at +0x14. DT2 1.17 0x40035cca, DN2 1.12 0x40030e66."
 
 [[fn]]
 name = "cf.page.fn.native_library_sound"

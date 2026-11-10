@@ -53,3 +53,26 @@ export async function timePhase<T>(phase: string, action: () => Promise<T>, cont
     }
   }
 }
+
+/** A phase record for a duration measured elsewhere (inside a package that cannot import this file), with extra fields. */
+export function recordPhase(phase: string, durationMs: number, extra: Record<string, unknown> = {}): void {
+  const parent = spans.getStore();
+  const { span: parentSpan, ...inherited } = parent ?? { span: undefined };
+  try {
+    console.info(
+      JSON.stringify({
+        event: 'runtime-phase',
+        ...inherited,
+        phase,
+        span: randomUUID(),
+        parentSpan: parentSpan ?? null,
+        durationMs,
+        durationKind: 'inclusive',
+        outcome: 'success',
+        ...extra,
+      }),
+    );
+  } catch {
+    // Diagnostics must not change the result of the operation.
+  }
+}

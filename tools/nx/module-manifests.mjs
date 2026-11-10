@@ -17,6 +17,11 @@ export const records = (root) => {
   const file = join(root, 'project.json');
   return existsSync(file) ? (JSON.parse(readFileSync(file, 'utf8')).metadata?.runtimeAcceptance ?? []) : [];
 };
+// Device test files (relative to the project root) whose merge target keeps full inputs.
+export const mergeTests = (root) => {
+  const file = join(root, 'project.json');
+  return existsSync(file) ? (JSON.parse(readFileSync(file, 'utf8')).metadata?.mergeTests ?? []) : [];
+};
 
 // Explicit patchkit libraries include only selected modules and their declared requirements.
 export const manifestClosure = (byId, ids) => {

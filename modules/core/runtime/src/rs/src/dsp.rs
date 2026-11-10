@@ -9,7 +9,7 @@
 //! Voice rows (the voices registry of `core/dsp-voice`, scanned by the DSP for every voice it renders) are 24 words
 //! (`ROW_WORDS`) and written one word per transfer through window 1 of `core/dsp-link`: the eight knob ranges (words 2 to 9: the
 //! runtime guard clamps the machine's parameter words to them), the pc, the note_on pc (16), the state base (17), the state stride
-//! (18) and the clear bytes (19), the guard's disabled-type word cleared, and the type
+//! (18) and the clear bytes (19), the latch mask (22), the zeroed-tracks mask (23) cleared, the guard's disabled-type word cleared, and the type
 //! last (the row is still free until then: its type is `0xffffffff`, which no machine type equals), so the render scan never sees a
 //! half-written row. A row is freed the other way round (type to `0xffffffff` first). The generation (20) and log level (21) words
 //! are not written yet (0).
@@ -34,7 +34,7 @@ const MAX_RELOCS: u32 = dkneeds::MAX_RELOCS;
 const MAX_IMPORTS: u32 = dkneeds::MAX_IMPORTS;
 const GRANULE: u32 = dkneeds::GRANULE;
 /// Words of a voice row of `core/dsp-voice`: 0 type, 1 pc, 2 to 9 the range of knob 0 to 7 (min | max << 16), 10 the type the guard disabled, then its counters,
-/// 16 note_on pc, 17 state base, 18 state stride, 19 clear bytes, 20 generation, 21 log level, 22 parameter latch mask, 23 spare.
+/// 16 note_on pc, 17 state base, 18 state stride, 19 clear bytes, 20 generation, 21 log level, 22 parameter latch mask, 23 the tracks whose state the adapter has zeroed since the load (bit t; the runtime writes 0).
 const ROW_WORDS: u32 = 24;
 /// Bytes of a voice entry in a DSP section: version 1 16 (type, entry), version 2 48 (type, entry, 8 ranges, 2 reserved),
 /// version 3 64 (type, render, note_on, state_bytes, clear_bytes, 8 ranges, voices, latch mask, reserved).
@@ -43,8 +43,8 @@ const VOICE_V2: u32 = 48;
 const VOICE_V3: u32 = 64;
 /// Most voice states a module may reserve.
 const MAX_STATE_VOICES: u32 = dkneeds::MAX_STATE_VOICES;
-/// Steps to publish a row: 8 ranges, the pc, note_on, state base, stride, clear, the latch mask, the cleared disabled word, the type.
-const ROW_STEPS: u32 = 16;
+/// Steps to publish a row: 8 ranges, the pc, note_on, state base, stride, clear, the latch mask, the zeroed-tracks mask, the cleared disabled word, the type.
+const ROW_STEPS: u32 = 17;
 /// Effect rows: the most a chain takes (`DK_FX_MAX`), the bytes of an effect record in a DSP section of version 4, the words of a row of `core/fx`, the pc of
 /// a free row and the steps to publish a row: 8 parameter words, desc, state, mix, enabled, the 4 amount words and the route (finding 62), the pc.
 pub const MAX_FX: usize = dkneeds::MAX_FX as usize;
@@ -1410,6 +1410,8 @@ pub unsafe fn step() {
                     } else if want == 13 {
                         (at + 22, d.row_latched[row])
                     } else if want == 14 {
+                        (at + 23, 0) // no track has had its state zeroed since this load (the adapter zeroes it at the track's first note-on)
+                    } else if want == 15 {
                         (at + 10, 0)
                     } else {
                         (at, d.row_type[row])

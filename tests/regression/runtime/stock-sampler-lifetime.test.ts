@@ -9,7 +9,6 @@ import { expect, test } from 'vitest';
 import { withSession } from '../support.ts';
 import { record } from './artifacts.ts';
 import { memory, panel } from './panel.ts';
-import { settleUi } from './waits.ts';
 
 // Current DT2 1.17 observations in finding81. All diagnostic accesses are reads.
 const CF = { slotBlock: 0x405b5368, slotRef: 0x405b1368, slotLength: 0x405ba768, blocks: 0x405a0f64 };
@@ -187,7 +186,10 @@ async function discovery(session: Session, dk: DkSession): Promise<{ out: string
     return result;
   }
   try {
-    await settleUi(session);
+    // Boot wait of the stock image (no install, no restart): the main UI of the firmware, as a state and not as a fixed time.
+    await expect
+      .poll(async () => (await session.status()).cf.main_ui_reached, { timeout: 120_000, interval: 500 })
+      .toBe(true);
     const identity = await session.status();
     record(out, 'identity', { load: session.loadResult, status: identity });
     expect(identity.firmware?.injected, 'unpatched stock image').toBe(false);

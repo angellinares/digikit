@@ -2276,6 +2276,16 @@ mark = "D"
 rule = "fw/project:cf_func"
 
 [[anchor]]
+name = "cf.project.fn.settings"
+cpu = "cf"
+kind = "code"
+addr = 0x4003e40e
+len = 4
+sha256 = "7f284fb65360c6f575800b1a7f6020278ea44dcfb08684ee639a5b361437086c"
+mark = "D"
+rule = "fw/project:cf_func"
+
+[[anchor]]
 name = "cf.project.fn.singleton"
 cpu = "cf"
 kind = "code"

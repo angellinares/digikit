@@ -36,15 +36,56 @@ const MIN_FREE_GB = 50;
 const MAX_STEP = 200_000_000;
 const FAULT_KINDS = new Set(['halt', 'fault', 'stall', 'stall.end', 'lagged']);
 
+export type DspMode = 'zero' | 'sharc' | 'cold';
+
+/**
+ * The one place that decides the DSP mode. An explicit `dsp` wins. Otherwise a test runs without the DSP: the entry point
+ * knows neither the modules a test will load nor what it reads, and the DSP is most of the boot time. A test that needs
+ * DSP audio, DSP memory or a machine/FX module's DSP path passes `dsp: 'sharc'`. The session refuses audio and DSP RPCs
+ * without a DSP (`DSP_ONLY_RPC`), so a wrongly classified test fails loudly. tools/patchkit/pk_devreload.py
+ * `target_dsp_mode` is the module-list policy for the dev loop; module lists are not known here.
+ */
+export function resolveDsp(options: { dsp?: DspMode }): DspMode {
+  return options.dsp ?? 'zero';
+}
+
+/** RPC methods that read audio, PCM or DSP state: without a DSP they would answer zeros or nothing. */
+const DSP_ONLY_RPC = /^(pcm|dsp|audio)\./;
+
+function needsDsp(what: string, dsp: DspMode): Error {
+  return new Error(`${what} needs the DSP, but this session runs with dsp:'${dsp}'; pass dsp:'sharc' to this test`);
+}
+
+/** A client whose DSP-only RPCs throw when the session runs without a DSP. */
+function guardDspClient(client: Client, dsp: DspMode): Client {
+  if (dsp === 'sharc') return client;
+  return new Proxy(client, {
+    get(target, prop) {
+      const value = Reflect.get(target, prop, target);
+      if (prop !== 'call') return typeof value === 'function' ? value.bind(target) : value;
+      return (method: string, ...rest: unknown[]) => {
+        if (DSP_ONLY_RPC.test(method)) return Promise.reject(needsDsp(method, dsp));
+        return (target.call as (...a: unknown[]) => unknown)(method, ...rest);
+      };
+    },
+  }) as Client;
+}
+
 export interface SessionOptions {
   device: Device;
   firmware: string;
-  /** "zero": no DSP (`--dsp zero --cf-snapshot`); "sharc": coupled DSP audio from the ready inputs; "cold": no DSP and no snapshot (every load boots cold, for a card identity other than the snapshot's). */
-  dsp: 'zero' | 'sharc' | 'cold';
+  /**
+   * "zero": no DSP (`--dsp zero --cf-snapshot`); "sharc": coupled DSP audio from the ready inputs; "cold": no DSP and no
+   * snapshot (every load boots cold, for a card identity other than the snapshot's).
+   * Omitted: `resolveDsp` decides, here and nowhere else (see there).
+   */
+  dsp?: DspMode;
   /** Card sample directory for `card.load` (DT2). */
   card?: string;
   /** Run directory; default a fresh temporary directory. */
   runDir?: string;
+  /** Shared store of booted-state snapshots (`DIGI_SNAPSHOT_DIR`); default `<runDir>/patched`, private to the run dir. */
+  snapshotDir?: string;
   /** Mirror the module store under this session's run directory. */
   mirror?: boolean;
   /** Stall threshold in emulated ms for the watchdog (default 1000, as the Python harness). */
@@ -100,8 +141,11 @@ export class Session {
   #events: EmuEvent[] = [];
   #ownedDir: string | null;
   #load: FirmwareLoadResult | undefined;
+  #written: string[] = [];
+  #lastReload: { loadMs: number; totalMs: number } | undefined;
   #card: string | undefined;
   #preparedImage: PreparedRuntimeImage | undefined;
+  #guarded: Client | undefined;
   #closing: Promise<void> | undefined;
   #reloading = false;
   #preserveDiagnostics = false;
@@ -112,8 +156,18 @@ export class Session {
     this.#ownedDir = ownedDir;
   }
 
+  /** The resolved DSP mode of this session. */
+  get dsp(): DspMode {
+    return this.options.dsp!;
+  }
+
   get client(): Client {
-    return this.#daemon.client;
+    return (this.#guarded ??= guardDspClient(this.#daemon.client, this.dsp));
+  }
+
+  /** Throws unless the session has a DSP: for helpers that capture or read audio, PCM, spectra or DSP state. */
+  requireDsp(what: string): void {
+    if (this.dsp !== 'sharc') throw needsDsp(what, this.dsp);
   }
 
   /** Directory of this daemon, including its CLI discovery file. */
@@ -124,6 +178,16 @@ export class Session {
   /** Base card image loaded for this session; guest writes remain in its overlay. */
   get cardPath(): string | undefined {
     return this.#card;
+  }
+
+  /** Wall time of the last baseline reload: the `firmware.load` call alone, and the whole reload. */
+  get lastReload(): { loadMs: number; totalMs: number } | undefined {
+    return this.#lastReload;
+  }
+
+  /** Snapshot entries that this session's cold boots wrote into the store: removed when the file fails. */
+  get writtenSnapshots(): readonly string[] {
+    return this.#written;
   }
 
   get loadResult(): FirmwareLoadResult {
@@ -137,7 +201,8 @@ export class Session {
     return image ? { ...image, modules: [...image.modules] } : undefined;
   }
 
-  static async start(options: SessionOptions): Promise<Session> {
+  static async start(given: SessionOptions): Promise<Session> {
+    const options: SessionOptions = { ...given, dsp: resolveDsp(given) };
     if (options.startEmpty && (options.dsp !== 'sharc' || !options.runtime?.reuse))
       throw new Error('empty startup requires a reusable coupled session');
     if (options.runtime?.reuse && options.mirror) throw new Error('reusable runtime sessions cannot mirror cards');
@@ -194,10 +259,15 @@ export class Session {
           ? await withinRuntimeDeadline(startupDeadline, () => prepareEnv(runDir))
           : prepareEnv;
       controller?.signal.throwIfAborted();
+      const env = {
+        ...(options.dsp === 'sharc' ? coupledEnv(inp.syx) : {}),
+        ...(options.snapshotDir ? { DIGI_SNAPSHOT_DIR: options.snapshotDir } : {}),
+        ...extraEnv,
+      };
       const daemon = await spawnDaemon({
         binary: options.binary,
         args,
-        env: options.dsp === 'sharc' ? { ...coupledEnv(inp.syx), ...extraEnv } : extraEnv,
+        env: Object.keys(env).length > 0 ? env : undefined,
         runDir,
         timeoutMs: options.runtime ? 120_000 : 300_000,
         signal: controller?.signal,
@@ -261,7 +331,11 @@ export class Session {
 
   // The boot cache is pruned by mtime (tests/regression/runtime/devices.ts cachedRunDir), so a hit marks its entry as recent.
   #touchCacheHit(load: { cache_hit?: boolean; cache_dir?: unknown }): void {
-    if (load.cache_hit !== true || typeof load.cache_dir !== 'string') return;
+    if (typeof load.cache_dir !== 'string') return;
+    if (load.cache_hit !== true) {
+      this.#written.push(load.cache_dir);
+      return;
+    }
     try {
       const now = new Date();
       fs.utimesSync(load.cache_dir, now, now);
@@ -275,6 +349,8 @@ export class Session {
     if (!this.options.runtime?.reuse) throw new Error('runtime baseline reload requires runtime.reuse');
     if (this.#closing || this.#reloading) throw new Error('runtime session is closed or already reloading');
     this.#reloading = true;
+    const reloadStart = performance.now();
+    let loadMs = 0;
     const deadline = Date.now() + (baseline.timeoutMs ?? 120_000);
     let phase = 'validate.card';
     const checked = <T>(operationPhase: string, operation: () => Promise<T>) => {
@@ -339,6 +415,7 @@ export class Session {
       // at full speed), so the DSP frames it runs between the install and the pause would count against a test's trigger frame.
       if (baseline.paused)
         await checked('run.mode.before-load', () => this.client.call('run.mode', { mode: 'paused' }));
+      const loadStart = performance.now();
       const load = (resolvedLoad = await checked('firmware.load', () =>
         this.client.firmwareLoad({
           syx: prepared?.syx ?? inp.syx,
@@ -355,6 +432,7 @@ export class Session {
           auto_no: this.options.autoNo ?? true,
         }),
       ));
+      loadMs = performance.now() - loadStart;
       phase = 'cache.touch';
       this.#touchCacheHit(load);
       await checked('guard.set', () => this.client.guardSet(baseline.guard));
@@ -393,6 +471,7 @@ export class Session {
       this.#load = load;
       this.#card = image;
       this.#preparedImage = prepared;
+      this.#lastReload = { loadMs, totalMs: performance.now() - reloadStart };
       this.#collect();
       return status.epoch;
     } catch (error) {

@@ -4,7 +4,16 @@
 // metadata.runtimeAcceptance), test-host, test-device and test-conformance (vitest directly, after the packs).
 import { globSync, readFileSync } from 'node:fs';
 import { dirname, join } from 'node:path';
-import { read, records, packDevices, isUploadable, dkm, manifestClosure, manifestArgs } from './module-manifests.mjs';
+import {
+  read,
+  records,
+  mergeTests,
+  packDevices,
+  isUploadable,
+  dkm,
+  manifestClosure,
+  manifestArgs,
+} from './module-manifests.mjs';
 import {
   PK,
   IMAGE_BUILD,
@@ -12,6 +21,7 @@ import {
   DEVICE_INPUTS,
   EMU_SLOT,
   EMU_SLOT_INPUT,
+  VITEST_SETUP,
   deviceTargets,
   scopedManifestInputs,
 } from './module-targets.mjs';
@@ -68,7 +78,8 @@ export const createNodesV2 = [
     // The supported acceptance image sets; arbitrary overrides need separate input review.
     for (const profile of globSync('devices/*.toml', { cwd: ctx.workspaceRoot }).sort()) {
       const sets = read(ctx.workspaceRoot, profile).patch_sets ?? {};
-      for (const set of ['emulator', 'sample-tracks']) for (const id of sets[set] ?? []) includeImageModule(id);
+      for (const set of ['emulator', 'sample-tracks', 'overdrive-tracks'])
+        for (const id of sets[set] ?? []) includeImageModule(id);
     }
     const imageInput = { input: 'production', projects: [...imageModules].sort() };
     // Only the modules the gate packs get a pack target: patched-in core modules and static fixtures
@@ -89,6 +100,19 @@ export const createNodesV2 = [
         for (const source of Object.values(rec.aliases ?? {})) packable.add(source);
       }
     }
+    // A marker that names a missing file would silently give that file a narrow key.
+    const checkMergeTests = (root, deviceTests, fullTier) => {
+      const listed = mergeTests(join(ctx.workspaceRoot, root));
+      if (!Array.isArray(listed) || listed.some((t) => typeof t !== 'string'))
+        throw new Error(`metadata.mergeTests of ${root} must be an array of strings`);
+      if (!listed.length) return;
+      if (fullTier) throw new Error(`metadata.mergeTests of ${root} has no meaning on a tier:full project`);
+      const unknown = listed.filter((t) => !deviceTests.includes(t));
+      if (unknown.length)
+        throw new Error(
+          `metadata.mergeTests of ${root} names files that are not its device tests: ${unknown.join(', ')}`,
+        );
+    };
     const nodes = files.map((f) => {
       const { module: m, object: objects = [] } = read(ctx.workspaceRoot, f);
       const root = dirname(f);
@@ -186,10 +210,15 @@ export const createNodesV2 = [
             cwd: '.',
           },
         };
+      checkMergeTests(root, deviceTests, false);
       if (shipped && deviceTests.length)
         Object.assign(
           targets,
-          deviceTargets('test-device', root, deviceTests, recs, imageInput, importInputs, uploadable),
+          deviceTargets('test-device', root, deviceTests, recs, imageInput, importInputs, uploadable, {
+            twin: true,
+            moduleId: m.id,
+            mergeTests: mergeTests(join(ctx.workspaceRoot, root)),
+          }),
         );
       // The rule is `isUploadable` in this file: the shared conformance suite loads these.
       if (uploadable)
@@ -197,15 +226,14 @@ export const createNodesV2 = [
           executor: 'nx:run-commands',
           cache: true,
           inputs: [
-            ...scopedManifestInputs(
-              DEVICE_INPUTS.filter((input) => input !== '^production'),
-              [f],
-            ),
-            // The shared runner's Vitest, TypeScript and package configuration is not an import of a test file.
-            { input: 'production', projects: ['regression'] },
+            ...DEVICE_INPUTS,
+            'production',
             EMU_SLOT_INPUT,
             imageInput,
-            ...importInputs(globSync('tests/conformance/**/*.device.test.ts', { cwd: ctx.workspaceRoot })),
+            ...importInputs([
+              ...globSync('tests/conformance/**/*.device.test.ts', { cwd: ctx.workspaceRoot }),
+              VITEST_SETUP,
+            ]),
           ],
           dependsOn: ['pack', 'digikit/debug:pack', 'digi-control:daemons', IMAGE_BUILD],
           outputs: [],
@@ -229,6 +257,7 @@ export const createNodesV2 = [
             ),
         )
         .sort();
+      checkMergeTests(root, tests, config.tags.includes('tier:full'));
       if (!tests.length) continue;
       const recs = records(join(ctx.workspaceRoot, root));
       if (recs.some((rec) => Object.keys(rec.aliases ?? {}).length))
@@ -239,6 +268,10 @@ export const createNodesV2 = [
         ? manifestClosure(byId, patchRoots).map((file) => read(ctx.workspaceRoot, file).module.id)
         : undefined;
       const targetName = config.tags.includes('tier:full') ? 'test-device-full' : 'test-device';
+      if (targetName === 'test-device' && !config.implicitDependencies?.length && !patchRoots.length)
+        throw new Error(
+          `Test-only project ${config.name}: the narrow merge key needs the subject module; name it in implicitDependencies`,
+        );
       const targets = deviceTargets(
         targetName,
         root,
@@ -246,6 +279,12 @@ export const createNodesV2 = [
         recs,
         patchIds ? { input: 'production', projects: patchIds } : imageInput,
         importInputs,
+        false,
+        {
+          twin: targetName === 'test-device',
+          subjects: config.implicitDependencies,
+          mergeTests: mergeTests(join(ctx.workspaceRoot, root)),
+        },
       );
       for (const target of Object.values(targets)) {
         if (!target.options) continue; // the no-op parent
@@ -268,12 +307,16 @@ export const createNodesV2 = [
               targets: {
                 'test-device': {
                   inputs: [
-                    ...DEVICE_INPUTS.map((input) => (input === 'default' ? 'production' : input)),
+                    ...DEVICE_INPUTS,
                     imageInput,
                     '{projectRoot}/project.json',
-                    ...importInputs(globSync('tests/regression/emulator/**/*.test.ts', { cwd: ctx.workspaceRoot })),
+                    ...importInputs([
+                      ...globSync('tests/regression/emulator/**/*.test.ts', { cwd: ctx.workspaceRoot }),
+                      VITEST_SETUP,
+                    ]),
                   ],
                 },
+                'test-device-all': { executor: 'nx:noop', dependsOn: ['test-device'] },
               },
             },
           },

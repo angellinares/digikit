@@ -45,20 +45,78 @@
 // does what each machine's prologue used to do. It finds the note-on (record +0x1b8 ACTIVE != 0 and +0x1b9 mark == 0, and writes the
 // mark), zeroes the first `clear` bytes of the voice's state (row words 17 state base, 18 stride, 19 clear; the state of track t is
 // base + t stride) and calls note_on, then render, with R4 = state, R8 = a `dk_voice_in` of its own (pitch with the tune knob folded
-// in, velocity, blocks since the note-on, the output block), R12 = the parameter words (the knobs of `ADM_PARAM_SLOT*`, clamped to
+// in, velocity, blocks since the note-on, the output block, the gate), R12 = the parameter words (the knobs of `ADM_PARAM_SLOT*`, clamped to
 // the row's ranges, in its own buffer: the frame is not written). It ends the voice (ACTIVE and mark cleared) on DK_DONE or a fault,
 // and the output check below (the guard) is the same for both kinds. An idle voice is not called: its block is silent.
+// The gate of track t is 1 from its note-on until the firmware's release byte of voice 2t (dsp.voice.value.release_latch, a pulse of
+// about one block after the note-off) has been seen, then 0 (`_dv_gate`).
+//
+// Knob 7 is the track's level (LEV); a machine whose parameters reach knob 7 (`param_slots`) declares that knob's range in its row
+// (word 9). `_dv_unpack` then gives its tracks the fixed level DV_FIXED_LEVEL in the frame copy before the stock unpack turns knob 7
+// into the voice chain's level; the frame copy after the unpack restores the knob, so the module still reads its parameter.
 
 #include "adapter-dt2.inc"
 #include "dk_machine.inc"
 
+#define DV_FIXED_LEVEL 0x6400                 // knob 7's word for level 100
+#define DV_SLOTS_ALWAYS 4                     // the parameter slots every machine reads (knobs 1, 2, 4, 5); the rest only when declared
+
 .SECTION/PM seg_pmco;
 .GLOBAL _dv_entry;
+.GLOBAL _dv_unpack;
 .EXTERN _fw_type_cache;
 .EXTERN _fw_render_next;
 .EXTERN _fw_frame;
 .EXTERN _fw_param_rec;
+.EXTERN _fw_release_latch;
+.EXTERN _fw_unpack;
 .EXTERN _dv_table;
+
+// The frame consumer's two calls of the per-track unpack (R12 = track, R8 = voice) come here. Without a registered row (`_dv_mask` 0) it
+// goes to the stock unpack at once. Otherwise, when the row of the track's type declares knob 7's range (word 9), knob 7's frame word
+// (byte 0xec + 0x60 t, low half) becomes DV_FIXED_LEVEL. R0-R2 and I4 are free here (the unpack sets them before it reads them; L4 is 0).
+_dv_unpack:
+    R0 = DM(_dv_mask);
+    R0 = PASS R0;
+    IF EQ JUMP _fw_unpack;
+    R0 = FEXT R12 BY 1:3;
+    R0 = LSHIFT R0 BY 2;
+    R1 = _fw_type_cache;
+    R0 = R0 + R1;
+    I4 = R0;
+    R1 = DM(0, I4);
+    R0 = FEXT R12 BY 0:1;
+    R0 = LSHIFT R0 BY 4;
+    R2 = 0x400;
+    R0 = R0 OR R2;
+    R1 = FEXT R1 BY R0;                   // cache[t]
+    I4 = _dv_table;
+_dv_uscan:
+    R0 = DM(0, I4);
+    R0 = PASS R0;
+    IF EQ JUMP _fw_unpack;
+    COMP(R0, R1);
+    IF EQ JUMP _dv_ulev;
+    MODIFY(I4, 24) (NW);
+    JUMP _dv_uscan;
+_dv_ulev:
+    R2 = DM(9, I4);
+    R2 = PASS R2;
+    IF EQ JUMP _fw_unpack;
+    R0 = 0x60;
+    R0 = R12 * R0 (SSI);
+    R1 = _fw_frame;
+    R0 = R0 + R1;
+    R1 = 0xec;
+    R0 = R0 + R1;
+    I4 = R0;
+    R1 = DM(0, I4);
+    R0 = 0xffff0000;
+    R1 = R1 AND R0;
+    R2 = DV_FIXED_LEVEL;
+    R1 = R1 OR R2;
+    DM(0, I4) = R1;
+    JUMP _fw_unpack;
 
 _dv_entry:
     // The cheap path when no row is registered (`_dv_mask` is 0): voice 0 (R14 = 32) keeps the full path for the heartbeat and the mask below; every other voice
@@ -1291,7 +1349,37 @@ _dv_cmarked:
     R0 = 128;                             // machine contract 1.2: out_r is the odd voice's block of the pair (the buffers are 128 apart, as `_dv_odd` copies)
     R0 = R0 + R8;
     DM(_dv_in + DK_IN_OUT_R) = R0;
-    // the parameter words: knob ADM_PARAM_SLOTi of the track, until a slot of 255 (the buffer's other words stay 0)
+    // the gate: set at the note-on, cleared once voice 2t's release byte is seen (the byte of a word at (2t & ~3), bits 8 (2t & 3))
+    R2 = DM(_dv_g + 12);
+    R3 = LSHIFT R2 BY 2;
+    R6 = _dv_gate;
+    R6 = R6 + R3;
+    I1 = R6;
+    R0 = DM(0, I1);
+    R1 = 1;
+    R11 = DM(_dv_c + 0);
+    R11 = PASS R11;
+    IF NE R0 = PASS R1;
+    R3 = LSHIFT R2 BY 1;
+    R1 = 0xfffffffc;
+    R6 = R3 AND R1;
+    R1 = _fw_release_latch;
+    R6 = R6 + R1;
+    I3 = R6;
+    R6 = DM(0, I3);
+    R1 = 3;
+    R3 = R3 AND R1;
+    R3 = LSHIFT R3 BY 3;
+    R3 = -R3;
+    R6 = LSHIFT R6 BY R3;
+    R1 = 0xff;
+    R6 = R6 AND R1;
+    R1 = 0;
+    IF NE R0 = PASS R1;
+    DM(0, I1) = R0;
+    DM(_dv_in + DK_IN_GATE) = R0;
+    // the parameter words: knob ADM_PARAM_SLOTi of the track, until a slot of 255 or, past the first DV_SLOTS_ALWAYS, a knob whose range
+    // the row does not declare (row word 2 + knob; the buffer's other words stay 0)
     R0 = 0;
     DM(_dv_c + 8) = R0;
 _dv_cpl:
@@ -1304,6 +1392,19 @@ _dv_cpl:
     R2 = 255;
     COMP(R6, R2);
     IF EQ JUMP _dv_cpe;
+    R2 = DV_SLOTS_ALWAYS;
+    COMP(R0, R2);
+    IF LT JUMP _dv_cpw;
+    R3 = DM(_dv_g + 0);                   // the row's end, a byte address: word 2 + knob is 4 (knob - 22) bytes from it
+    R2 = LSHIFT R6 BY 2;
+    R3 = R3 + R2;
+    R2 = 88;
+    R3 = R3 - R2;
+    I1 = R3;
+    R2 = DM(0, I1);
+    R2 = PASS R2;
+    IF EQ JUMP _dv_cpe;
+_dv_cpw:
     CALL _dv_pw;
     R1 = DM(_dv_c + 8);
     // Retain live effective words for UI/debug readers. Callbacks receive the
@@ -1361,7 +1462,16 @@ _dv_cpe:
     R11 = DM(_dv_c + 0);
     R11 = PASS R11;
     IF EQ JUMP _dv_crender;
+    R7 = DM(-1, I4);                      // row word 23: the tracks whose state has been zeroed since the load (the runtime writes 0)
+    R9 = 1;
+    R10 = LSHIFT R9 BY R2;
+    R9 = R7 AND R10;
     R5 = DM(-5, I4);                      // clear bytes
+    IF NE JUMP _dv_cseen;
+    R7 = R7 OR R10;
+    DM(-1, I4) = R7;
+    R5 = DM(-6, I4);                      // the first note-on of this track since the load: the whole state (the stride), not the clear bytes
+_dv_cseen:
     R6 = -2;
     R5 = LSHIFT R5 BY R6;                 // clear bytes -> words
     R5 = PASS R5;                         // (a shift sets SZ, the condition tests AZ)
@@ -1701,14 +1811,15 @@ _dv_frame_sw:
 // The addresses of the two reply records (rings): [0] the one the last block built, [1] the one before it, and [2] the address of the module step word
 // `_dk_step` (cleared before a module call). Written by core/dsp-link.
 .PKDATA _dv_rec, 12;
-// The contract adapter's data: the `dk_voice_in` it hands to the module, the parameter words (8), the blocks since the note-on per track (16), its scalars
-// (see `_dv_contract`) and the knob positions of the module's parameters in order (ADM_PARAM_SLOT0 .. 7; 255: none).
-.PKDATA _dv_in, 24;
+// The contract adapter's data: the `dk_voice_in` it hands to the module, the parameter words (8), the blocks since the note-on per track (16), the gates
+// per track (16), its scalars (see `_dv_contract`) and the knob positions of the module's parameters in order (ADM_PARAM_SLOT0 .. 7; 255: none).
+.PKDATA _dv_in, DK_IN_BYTES;
 .PKDATA _dv_params, 32;                    // live effective UI/debug words
 .PKDATA _dv_call_params, 32;               // merged callback words (latched declarations over live words)
 // Adapter-private snapshots: DT2 track / DN2 physical voice slot, never firmware-owned state.
 .PKDATA _dv_trig_params, 512;
 .PKDATA _dv_blk, 64;
+.PKDATA _dv_gate, 64;
 .PKDATA _dv_c, 64;
 // Per track: nonzero while the even voice has written R into the odd voice's block this block (contract 1.2); the odd voice consumes it.
 .PKDATA _dv_st, 64;

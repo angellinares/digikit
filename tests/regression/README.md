@@ -82,7 +82,7 @@ fresh runtime daemon for each device case.
 
 FX route acceptance on both devices lives in `modules/core/adapters/fx/tests/fx-routes-panel.device.test.ts`
 (route choices, defaults, capacity and pending changes), `modules/core/adapters/fx/tests/fx-routes-persist.device.test.ts`
-(apply/restart persistence and PCM), and `modules/core/adapters/fxpages/tests/fx-track-route.device.test.ts`
+(apply/restart persistence and PCM), and `modules/core/adapters/fxpages/tests/fx-track-route-*.device.test.ts`
 (track SEND pages, amounts, kit loads and project-byte controls). These replace the Python `fxroute` and
 `fxroutes` scenarios. Independent cases reload clean card baselines in an owned daemon; apply/restart cases
 preserve the guest's writes. Track SEND's image without the page hook closes before its image with the hook

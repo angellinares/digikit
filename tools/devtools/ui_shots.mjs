@@ -962,6 +962,31 @@ const SCENES = [
   { name: 'emulator-boot-failed', q: 'page=emulator&boot=failed', size: WIDE },
   { name: 'emulator-faceplate-wide', q: 'page=emulator', size: WIDE },
   { name: 'emulator-faceplate-narrow', q: 'page=emulator', size: MIN },
+  // README shots: the site's modules and its device screens, no preview banner
+  {
+    name: 'readme-emulator',
+    q: 'page=emulator&card=dn2&frame=device-modules&banner=0',
+    size: WIDE,
+    steps: async (p) => p.wait(700),
+  },
+  {
+    name: 'readme-transfer',
+    q: 'mode=modules&lib=site&banner=0',
+    size: WIDE,
+    steps: async (p) => {
+      await p.wait(500);
+      // tick the first two library rows that can be installed
+      await p.eval(
+        "(() => { [...document.querySelectorAll('input[type=checkbox]')].filter((x) => /^Install /.test(x.getAttribute('aria-label') ?? '') && !x.checked && !x.disabled).slice(0, 2).forEach((x) => x.click()); })()",
+      );
+    },
+  },
+  {
+    name: 'readme-remote',
+    q: 'page=remote&frame=device-digikit&banner=0',
+    size: WIDE,
+    steps: async (p) => p.wait(800),
+  },
 ];
 
 if (args.includes('--list')) {

@@ -3,7 +3,8 @@
 //!
 //! The assembler writes a relocatable ELF whose 16-bit parcels are big endian. Steps, in order:
 //!
-//! 1. [`bss_prepare`] takes `.PKBSS` / `.PKDATA name, size;` out (Selache drops `.VAR name[N];`); the object gets a section for each.
+//! 1. [`bss_prepare`] takes `.PKBSS` / `.PKDATA name, size;` and `.PKHEX name, HEX;` out (Selache drops `.VAR name[N];`); the object
+//!    gets a section for each.
 //! 2. `selas::assemble_text` writes the ELF; [`read_object`] reads the section, symbols, data sections and relocations.
 //! 3. [`native_rows`] finds the instruction extents with our decoder and cross-checks Selache's own.
 //! 4. [`link`] places the section at a placeholder base with placeholder externs; [`verify`] re-decodes every instruction and reads the
@@ -65,13 +66,40 @@ fn decode_row(raw: &[u8], max_bytes: u8) -> Decoded {
 
 // ------------------------------------------------------------------------------------------------------------------------ checks
 
+/// A data section declared in the source: name, size in bytes, bss, and the loaded bytes of a `.PKHEX`.
+type DataDecl = (String, u64, bool, Option<Vec<u8>>);
+
 /// `.PKDATA name, bytes;` (loaded zeros, part of the boot-stream block) or `.PKBSS name, bytes;` (reserved memory the stream does not
 /// load: the program must write it before it reads it): the line is replaced by `.EXTERN name;`, and the object gets a data or bss
 /// section of that size with a global data symbol `name` (the linker allocates it). The size may be a `#define` of a plain number in
-/// the same source (the generated device includes of `patchkit gen`).
-fn bss_prepare(source: &str) -> Result<(String, Vec<(String, u64, bool)>)> {
+/// the same source (the generated device includes of `patchkit gen`). `.PKHEX name, HEX;` is a data section with loaded contents: HEX
+/// is its bytes as they sit in memory (little-endian words), for tables a generator writes.
+fn bss_prepare(source: &str) -> Result<(String, Vec<DataDecl>)> {
+    static X: OnceLock<Regex> = OnceLock::new();
     static P: OnceLock<Regex> = OnceLock::new();
     static D: OnceLock<Regex> = OnceLock::new();
+    let pkhex = rx(
+        &X,
+        r"^[ \t]*\.PKHEX[ \t]+([A-Za-z_.$][\w.$]*)[ \t]*,[ \t]*([0-9a-fA-F]+)[ \t]*;[^\n]*$",
+        "m",
+    );
+    let mut found = vec![];
+    let mut failed: Option<Error> = None;
+    let source = pkhex.replace_all(source, |c: &regex_lite::Captures| {
+        let digits = &c[2];
+        if digits.len() % 2 != 0 {
+            failed.get_or_insert(err!(".PKHEX {}: an odd number of hex digits", &c[1]));
+        }
+        let blob: Vec<u8> = (0..digits.len() / 2)
+            .map(|i| u8::from_str_radix(&digits[2 * i..2 * i + 2], 16).unwrap_or(0))
+            .collect();
+        found.push((c[1].to_string(), blob.len() as u64, false, Some(blob)));
+        format!(".EXTERN {};", &c[1])
+    });
+    if let Some(e) = failed.take() {
+        return Err(e);
+    }
+    let source = source.as_ref();
     let pk = rx(
         &P,
         r"^[ \t]*\.PK(BSS|DATA)[ \t]+([A-Za-z_.$][\w.$]*)[ \t]*,[ \t]*(0x[0-9a-fA-F]+|\d+|[A-Za-z_]\w*)[ \t]*;[^\n]*$",
@@ -86,8 +114,6 @@ fn bss_prepare(source: &str) -> Result<(String, Vec<(String, u64, bool)>)> {
     for m in def.captures_iter(source) {
         defines.insert(m[1].to_string(), parse_uint(&m[2])?);
     }
-    let mut found = vec![];
-    let mut failed: Option<Error> = None;
     let out = pk.replace_all(source, |c: &regex_lite::Captures| {
         let size = &c[3];
         let n = match defines.get(size) {
@@ -108,7 +134,7 @@ fn bss_prepare(source: &str) -> Result<(String, Vec<(String, u64, bool)>)> {
                 0
             }
         };
-        found.push((c[2].to_string(), n, &c[1] == "BSS"));
+        found.push((c[2].to_string(), n, &c[1] == "BSS", None));
         format!(".EXTERN {};", &c[2])
     });
     if let Some(e) = failed {
@@ -742,15 +768,17 @@ pub fn assemble(source: &str) -> Result<Obj> {
     let elf = selas::assemble_text(&text, Some(PROCESSOR), &[], &[], true)
         .map_err(|e| err!("selas failed:\nselas: {e}"))?;
     let mut obj = read_object(&elf, sha256_hex(source.as_bytes()))?;
-    for (name, size, is_bss) in bss_decls {
+    for (name, size, is_bss, blob) in bss_decls {
         if size == 0 || !size.is_multiple_of(4) {
             return Err(err!(
-                ".PKBSS/.PKDATA {name}: size {size} is not a positive multiple of 4"
+                ".PKBSS/.PKDATA/.PKHEX {name}: size {size} is not a positive multiple of 4"
             ));
         }
         let sec = format!("{}_{name}", if is_bss { "pkbss" } else { "pkdata" });
-        obj.data
-            .put(sec.clone(), (vec![0; size as usize], 4, is_bss));
+        obj.data.put(
+            sec.clone(),
+            (blob.unwrap_or_else(|| vec![0; size as usize]), 4, is_bss),
+        );
         obj.data_symbols.put(name, (sec, 0, true));
     }
     Ok(obj)
@@ -1183,6 +1211,24 @@ mod tests {
         assert_eq!(o.data_symbols.0.iter().filter(|(_, v)| v.2).count(), 2);
         for bad in [".PKBSS _b, 6;", ".PKBSS _b, 0;", ".PKBSS _b, SOME;"] {
             assert!(asm(bad).is_err(), "{bad}");
+        }
+    }
+
+    #[test]
+    fn pkhex_is_a_loaded_data_section_with_its_bytes() {
+        let o = asm(".GLOBAL _f;\n_f:\n    R2 = _tab;\n    I4 = R2;\n    R0 = DM(1, I4);\n    RTS;\n.PKHEX _tab, 0000803f00000040;\n").unwrap();
+        let (_, (blob, align, bss)) = o.data.0.iter().find(|(n, _)| n == "pkdata__tab").unwrap();
+        assert_eq!(
+            (hex(blob).as_str(), *align, *bss),
+            ("0000803f00000040", 4, false)
+        );
+        assert!(o.data_symbols.has("_tab"));
+        assert!(o.relocs.iter().any(|r| r.symbol == "_tab"));
+        for bad in ["0000803", "000080"] {
+            assert!(
+                asm(&format!("_f: RTS;\n.PKHEX _tab, {bad};\n")).is_err(),
+                "{bad}"
+            );
         }
     }
 

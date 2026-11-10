@@ -10,15 +10,26 @@
         "dksampleWasm": true
       },
       {
-        "files": ["tests/shot-dn2.device.test.ts"],
+        "files": ["tests/shot-dn2-pool.device.test.ts"],
         "modules": ["digikit/shot", "digikit/debug", "test/track-select"],
+        "plusdrive": true,
+        "dksampleWasm": true
+      },
+      {
+        "files": ["tests/shot-dn2-audio.device.test.ts"],
+        "modules": ["digikit/shot", "digikit/debug", "test/track-select"],
+        "plusdrive": true,
+        "dksampleWasm": true
+      },
+      {
+        "files": ["tests/shot-dn2-supersede.device.test.ts"],
+        "modules": ["digikit/shot", "digikit/debug", "digikit/remote", "test/track-select"],
         "plusdrive": true,
         "dksampleWasm": true
       },
       {
         "files": ["tests/shot-picker.device.test.ts"],
         "modules": ["digikit/shot", "digikit/debug", "test/stock-pool", "test/track-select"],
-        "pythonTools": "client",
         "plusdrive": true,
         "dksampleWasm": true
       }

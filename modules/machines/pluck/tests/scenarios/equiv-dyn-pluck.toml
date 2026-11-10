@@ -1,3 +1,4 @@
+# Not a test: the input of tools/devtools/sharc_matrix.py PLUCK proof. The acceptance test is tests/equiv.device.test.ts.
 # A selection loaded at boot plays like the same module patched in (DT2): rows, voice row, PCM of a note.
 [scenario]
 name = "equiv-dyn-pluck"

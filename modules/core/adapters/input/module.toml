@@ -22,6 +22,8 @@ ports = ["dt2-1.17", "dn2-1.12"]
 [[gen]]
 kind = "gas"
 path = "build/gen/input-{dev}.inc"
+uses = ["INPUT_BACKEND", "PANEL_LINEAR", "PANEL_BUTTON_CHANNELS", "PANEL_ENCODERS", "PANEL_EXC_N", "PANEL_EXC_CODE_*",
+    "PANEL_EXC_CH_*", "PANEL_EXC_BIT_*"]
 
 [[object]]
 path = "build/input.dko.json"

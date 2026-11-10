@@ -723,7 +723,7 @@ class Uploader:
         self._ok(CMD_MKDIR, "mkdir", path.encode() + b"\0")
 
     def rename(self, src: str, dst: str) -> None:
-        """RENAME (runtime 0.5.6, capability RENAME): rename or move a file or an empty folder. The data and its hash stay; the folder it
+        """RENAME (runtime 0.5.7, capability RENAME): rename or move a file or an empty folder. The data and its hash stay; the folder it
         leaves stays. E_NOFILE: no such entry; E_PATH: the new path is taken, inside a file, inside the entry itself, or breaks the rules."""
         self._ok(CMD_RENAME, "rename", src.encode() + b"\0" + dst.encode() + b"\0")
 

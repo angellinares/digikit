@@ -98,12 +98,15 @@ impl Manifest {
 
 /// One generated file of device data: `kind` is `rust` (constants every device agrees on, one file), `gas-shared` (the same as `.equ` lines), `gas` (a ColdFire assembler
 /// include, `.equ` lines, one file per device), `sharc` (a SHARC+ include, `#define` lines, one file per device) `sharc-adapter` (the `ADM_*` defines of `[adapter.machine]`, one file per device), `gas-sample-pool` or `sharc-sample-pool` (the `SP_*` numbers of `[adapter.sample_pool]` for ColdFire and SHARC+ assembly, one file per device). `path` is relative
-/// to the module; `{dev}` stands for the device's short name in a per-device path.
+/// to the module; `{dev}` stands for the device's short name in a per-device path. `uses` lists the constant names the module reads; a trailing `*` matches a numbered
+/// family (`FX_VALUE_*`). It is required for `rust`, `gas-shared`, `gas` and `sharc`, and refused for the other kinds.
 #[derive(Clone, Debug, Deserialize)]
 #[serde(deny_unknown_fields)]
 pub struct GenDef {
     pub kind: String,
     pub path: String,
+    #[serde(default)]
+    pub uses: Vec<String>,
 }
 
 /// A number or an expression (`crate::expr`) written either as a TOML integer or as a string.
@@ -139,6 +142,26 @@ pub struct SectionDef {
     pub from: SectionFrom,
     #[serde(default)]
     pub append: Option<SectionAppend>,
+    #[serde(default)]
+    pub edit: Option<SectionEdit>,
+}
+
+/// Rewrites of the copied bytes, one per entry of a registry: an entry names the copied row (`at`) and new values for
+/// some of its words (a module changes a stock row of a framework's table).
+#[derive(Clone, Debug, Deserialize)]
+pub struct SectionEdit {
+    pub registry: String,
+    /// Byte offset of the edited row in the copied bytes (expression; the entry's fields are `$name`).
+    pub at: ExprSrc,
+    pub fields: Vec<SectionEditField>,
+}
+
+#[derive(Clone, Debug, Deserialize)]
+pub struct SectionEditField {
+    /// Byte offset in the row.
+    pub offset: u64,
+    /// The new value; `u8:EXPR` and `u16:EXPR` as in `append.row`.
+    pub value: ExprSrc,
 }
 
 #[derive(Clone, Debug, Deserialize)]

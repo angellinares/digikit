@@ -6,6 +6,7 @@ category = "tools"
 type = "service"
 author = "digikit"
 status = "experimental"
+site = false
 summary = "Presses keys and turns encoders from a computer over USB MIDI."
 # the workbench's Remote page, dk-session and the SDK speak its protocol
 host = true

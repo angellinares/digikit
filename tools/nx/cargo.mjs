@@ -60,6 +60,24 @@ const GATE = {
       parallelism: false,
       outputs: ['{workspaceRoot}/dist/daemons.json'],
       inputs: [
+        // The sources the daemon is built from: SOURCE_GLOBS of tools/devtools/emud_key.py. The store keys the binary by
+        // content; these inputs make a source edit select this task, and so every task that consumes dist/daemons.json.
+        '{workspaceRoot}/Cargo.toml',
+        '{workspaceRoot}/Cargo.lock',
+        '{workspaceRoot}/rust-toolchain*',
+        '{workspaceRoot}/.cargo/**/*',
+        '{workspaceRoot}/packages/emulator/**/*',
+        '{workspaceRoot}/packages/dkneeds/**/*',
+        '{workspaceRoot}/packages/dksample/**/*',
+        '{workspaceRoot}/packages/dkupload/**/*',
+        '{workspaceRoot}/packages/patchkit/**/*',
+        '{workspaceRoot}/modules/core/runtime/fit/{Cargo.toml,build.rs,src/**/*}',
+        '{workspaceRoot}/modules/core/runtime/sdk/{Cargo.toml,build.rs,src/**/*}',
+        '{workspaceRoot}/devices/**/*',
+        '{workspaceRoot}/tests/scenarios/dn2.json',
+        '{workspaceRoot}/sdk/sdk.toml',
+        '{workspaceRoot}/tools/patchkit/toolchain/**/*',
+        '{workspaceRoot}/tools/sharc_dev/sharc_core/seed_tables.py',
         '{workspaceRoot}/tools/devtools/emud_key.py',
         '{workspaceRoot}/tools/devtools/verify_build.py',
         '{workspaceRoot}/tools/devtools/stablebin.py',
@@ -81,13 +99,19 @@ const GATE = {
       executor: 'nx:run-commands',
       cache: false,
       parallelism: false,
-      options: { command: 'uv run python -m tools.emulator.coupled build', cwd: '.' },
+      // dist/coupled-dn2.json holds the sha256 of the built binary: the cache key of the targets that run it.
+      outputs: ['{workspaceRoot}/dist/coupled-dn2.json'],
+      options: { command: 'uv run python -m tools.emulator.coupled build --id-out dist/coupled-dn2.json', cwd: '.' },
     },
     'build-dt2': {
       executor: 'nx:run-commands',
       cache: false,
       parallelism: false,
-      options: { command: 'uv run python -m tools.emulator.coupled build --device dt2', cwd: '.' },
+      outputs: ['{workspaceRoot}/dist/coupled-dt2.json'],
+      options: {
+        command: 'uv run python -m tools.emulator.coupled build --device dt2 --id-out dist/coupled-dt2.json',
+        cwd: '.',
+      },
     },
   },
 };

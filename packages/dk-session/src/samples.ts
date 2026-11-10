@@ -361,7 +361,7 @@ class StoreSamples implements SamplesBackend {
     return this.s.delete(this.path(join(folder, name)));
   }
   async canRename() {
-    return hasCap(await this.info(), 'RENAME'); // runtime 0.5.6
+    return hasCap(await this.info(), 'RENAME'); // runtime 0.5.7
   }
   async rename(folder: string, name: string, toFolder: string, toName: string) {
     if (!(await this.canRename())) throw new DkError({ error: 'this runtime cannot rename', kind: 'usage' });

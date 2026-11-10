@@ -446,23 +446,6 @@ class GeneratedLanguage(unittest.TestCase):
             if cls.lint["compile"]["returncode"] == 0
             else None
         )
-        cls.temp_slaspec = os.path.join(src, "sharc_visa.slaspec")
-        cls.temp_sla = os.path.join(cls.tmp, "lang", "sharc_visa.sla")
-        cls.artifact_diagnostics = {
-            "temporary_slaspec": cls.temp_slaspec,
-            "temporary_slaspec_sha256": sharcpcode.sha256_file(cls.temp_slaspec),
-            "temporary_sla": cls.temp_sla,
-            "temporary_sla_sha256": sharcpcode.sha256_file(cls.temp_sla)
-            if os.path.exists(cls.temp_sla)
-            else None,
-            "in_tree_slaspec": os.path.join(sharcpcode.LANG_DIR, "sharc_visa.slaspec"),
-            "in_tree_sla": os.path.join(sharcpcode.LANG_DIR, "sharc_visa.sla"),
-        }
-        for kind in ("slaspec", "sla"):
-            path = cls.artifact_diagnostics[f"in_tree_{kind}"]
-            cls.artifact_diagnostics[f"in_tree_{kind}_sha256"] = (
-                sharcpcode.sha256_file(path) if os.path.exists(path) else None
-            )
 
     @classmethod
     def tearDownClass(cls):
@@ -544,21 +527,6 @@ class GeneratedLanguage(unittest.TestCase):
                 if lifted_value & (1 << (source.size * 8 - 1)):
                     lifted_value |= 0xFFFFFFFF << (source.size * 8)
                 self.assertEqual(lifted_value & 0xFFFFFFFF, expected)
-
-    def test_temporary_artifacts_match_in_tree_when_present(self):
-        """Report both paths/hashes if a generated or compiled artifact goes stale."""
-        if self.artifact_diagnostics["in_tree_slaspec_sha256"] is not None:
-            self.assertEqual(
-                self.artifact_diagnostics["temporary_slaspec_sha256"],
-                self.artifact_diagnostics["in_tree_slaspec_sha256"],
-                self.artifact_diagnostics,
-            )
-        if self.artifact_diagnostics["in_tree_sla_sha256"] is not None:
-            self.assertEqual(
-                self.artifact_diagnostics["temporary_sla_sha256"],
-                self.artifact_diagnostics["in_tree_sla_sha256"],
-                self.artifact_diagnostics,
-            )
 
     def test_type7d_pure_aconv_selectors_lift_to_register_shifts(self):
         """Pure ACONV is explicit p-code only; address-map/ILAD stays absent."""

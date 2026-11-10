@@ -1,4 +1,4 @@
-"""The stage table and the harness of the DN2 R twins (tests/patchkit/test_dsp_stereo_twins.py, test_dsp_stereo_identity.py).
+"""The stage table and the harness of the DN2 R twins (modules/core/adapters/dsp-voice/tests/test_dsp_stereo_twins.py, test_dsp_stereo_identity.py).
 
 A `Stage` names a twin, the stock stage behind it, the L record, the words the stage shares between the channels (`controls`, copied before the L call) and the
 words each channel keeps (`histories`). `run_chain` runs the twin on a stamped slot next to two reference cores that run the stock function alone, one for each

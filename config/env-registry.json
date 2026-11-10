@@ -82,7 +82,7 @@
    "purpose": "Absolute path to the digi-emud daemon for the DSP DDR monitor device test"
   },
   "DIGI_DDR_PROOF_CF_STATE": {
-   "owner": "python:tests/patchkit",
+   "owner": "python:modules/core/adapters/dsp-ddr-proof/tests",
    "purpose": "Optional ColdFire state snapshot path for the DDR proof CF tests"
   },
   "DIGI_DESKTOP_TRIG1_HOLD": {
@@ -290,7 +290,7 @@
    "purpose": "Absolute path to the private provenance JSON of the boot fixture for the LP0 sample transfer test."
   },
   "DIGI_LP0_CF_CALL": {
-   "owner": "python:tests/patchkit",
+   "owner": "python:modules/core/adapters/dsp-lp0-proof/tests",
    "purpose": "Path to the ColdFire call runner used by the LP0 proof test (default pk_cfcall.EXAMPLE)."
   },
   "DIGI_LP0_CLOSE": {
@@ -396,6 +396,10 @@
   "DIGI_RUNTIME_MODULES": {
    "owner": "ts:tests/regression",
    "purpose": "Directory of the built runtime modules installed by device tests (default dist/modules)."
+  },
+  "DIGI_SNAPSHOT_DIR": {
+   "owner": "rust:packages/emulator",
+   "purpose": "Directory of the daemon's boot snapshots (default: <run dir>/patched, private to the run dir); device tests set one store per daemon build and device."
   },
   "DIGI_SPIKE_LOG": {
    "owner": "rust:packages/emulator",
@@ -753,6 +757,10 @@
    "owner": "rust:packages/emulator",
    "purpose": "Comma list of 32-bit word indexes of the reply record to count; others are ignored."
   },
+  "SHARC_TIER_TIME": {
+   "owner": "rust:packages/emulator",
+   "purpose": "Set to 1 to report host time per SHARC tier and per thread in audio.report (dsp_tiers.tier_time); also turns link timing on."
+  },
   "SHARC_UNINIT": {
    "owner": "rust:packages/emulator",
    "purpose": "Hex seed: reads of never-written DSP bytes return a seeded non-zero pattern instead of zero."
@@ -772,6 +780,18 @@
   "SHARC_WWATCH_OUT": {
    "owner": "rust:packages/emulator",
    "purpose": "Output path of the SHARC_WWATCH CSV (default wwatch.csv in the diagnostics dir)."
+  },
+  "DIGI_EMU_RESERVE": {
+   "owner": "ts:tools/nx",
+   "purpose": "Cores that stay idle for the rest of the machine when emu-slot admits an emulator (default: the efficiency cores, else a quarter of the cores, at least 2)."
+  },
+  "DIGI_EMU_SLOTS": {
+   "owner": "ts:tools/nx",
+   "purpose": "Fixed number of machine-wide emulator slots, with no idle-core check (default: the ceiling from cores and RAM)."
+  },
+  "DIGI_TRANSFER_DIR": {
+   "owner": "python:tools/device",
+   "purpose": "Folder for the packed .dkm files and the failed-pack record of dktransfer (default out/patch/transfer); a test run sets one inside its run directory."
   }
  },
  "prefixes": {

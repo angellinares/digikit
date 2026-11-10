@@ -37,7 +37,7 @@ function pageRow(file: string, n: Record<string, number>): string {
   return row.padEnd(23 - size.length) + size;
 }
 
-cardRigs('MODULES page: what fits', { roots: [...RT, 'core/digikit-menu'], symbols: SYMBOLS }, (rig) => {
+cardRigs('MODULES page: what fits', { dsp: 'sharc', roots: [...RT, 'core/digikit-menu'], symbols: SYMBOLS }, (rig) => {
   test(
     'a module larger than the DSP area and a second half-size module are refused with the reason; unticking makes room',
     async () => {

@@ -23,4 +23,4 @@ A framework module: it lets other modules process the final stereo block of the 
   dry block bit for bit. The effect page of a run-time effect sets it (`core/fxpages`, finding 61).
 - Empty chain: 16 instructions per block with no row, 21 with one free row, 31 with three free rows (a quick scan of at most four rows, about 5 instructions per free row); one effect adds
   4 to the bookkeeping of its row (steady 760 at mix 1.0, 1159 at another mix, 622 at mix 0, off 195 instructions per block).
-- Tests: `tests/patchkit/test_fx.py` (the adapter on the concrete core), `tests/patchkit/test_fx_send.py` (the send route), `tests/support/fx_rig.py`.
+- Tests: `tests/test_fx.py` (the adapter on the concrete core), `tests/test_fx_send.py` (the send route), `tests/support/fx_rig.py`.

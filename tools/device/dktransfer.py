@@ -36,6 +36,7 @@ from __future__ import annotations
 
 import argparse
 import json
+import os
 import struct
 import sys
 import time
@@ -136,9 +137,12 @@ def inputs_mtime(moddir: Path) -> float:
 def pack_for_transfer(module: str, device: str) -> Path:
     """Pack into out/patch/transfer/<device>/, so a list or install does not rewrite the files `dk run` leaves in out/patch. A packed file
     newer than everything the pack reads is reused (a pack costs about 0.25 s; a list packs every candidate). A module that did not pack
-    is remembered the same way (`_failed.json`), so a list does not try it again until something it reads changes."""
+    is remembered the same way (`_failed.json`), so a list does not try it again until something it reads changes.
+    `DIGI_TRANSFER_DIR` replaces out/patch/transfer: out/ is shared by all worktrees and runs, and the reuse rule compares file times,
+    so a test run keeps its own folder."""
     name = module.rsplit("/", 1)[-1]
-    folder = R.ROOT / "out" / "patch" / "transfer" / device
+    base = os.environ.get("DIGI_TRANSFER_DIR")
+    folder = (Path(base) if base else R.ROOT / "out" / "patch" / "transfer") / device
     out = folder / f"{name}.dkm"
     newest = inputs_mtime(modroots.module_dir(module))
     failed_file = folder / "_failed.json"

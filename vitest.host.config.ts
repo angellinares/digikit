@@ -1,7 +1,7 @@
 import { fileURLToPath } from 'node:url';
 import { configDefaults, defineConfig } from 'vitest/config';
 // The Nx test-host targets read this file; host tests are device-free.
-import projects from './vitest.host.projects.json';
+import projects from './vitest.host.projects.json' with { type: 'json' };
 
 const root = fileURLToPath(new URL('.', import.meta.url));
 

@@ -18,6 +18,8 @@ loaded like any other from the card store; it needs `core/input` in the image (b
 
 Design: `docs/plans/remote-control.md`.
 
+**Log.** After core/input hands a key or a turn to the firmware decoder, the module logs `INPUT_TAKEN` (kind 41, debug level 3, needs `digikit/debug` to be read): what (1 key, 2 turn), the key code or encoder, and the delta taken. It means "accepted by the decoder", not "applied" (finding 46). STATE (0x3e) is optional: when another module holds 0x3e (the `test/track-select` fixture does), the module still loads without STATE. The host waits on it with `events.until` (`packages/test-support/src/events.ts`).
+
 The deterministic host C pacing check uses the actual command handler with a controlled block clock:
 
 ```sh

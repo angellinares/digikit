@@ -103,11 +103,14 @@ def check(command: str, cwd: Path) -> str | None:
     if TAIL_FOLLOW_RE.search(bare):
         return "tail -f never exits: poll with a bound (sleep 60 or less, then tail -n)"
     if TIER_FULL_RE.search(bare):
-        return "--tier full runs only before a merge to main; iterate on the quick tier"
+        return (
+            "--tier full runs at batch points, before each push or PR to main and after generated-core "
+            "changes, by the coordinator; lanes run scoped checks, the coordinator runs mise run test"
+        )
     if FULL_TEST_RE.search(bare):
         return (
-            "test:full runs only after generated-core changes, by the coordinator; "
-            "lanes run scoped checks, the coordinator mise run test"
+            "test:full runs at batch points, before each push or PR to main and after generated-core "
+            "changes, by the coordinator; lanes run scoped checks, the coordinator runs mise run test"
         )
     for segment in SEGMENT_SPLIT_RE.split(command):
         try:

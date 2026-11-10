@@ -4,7 +4,7 @@
     uv run python -m tools.patchkit.pk_modcheck NAME [--device dt2|dn2] [--trace]      (mise run module:check NAME)
 
 NAME is a module id (`<author/name>`) or its last part (`<name>`). An effect module runs tests/modules/test_fx_conformance.py. A machine module (tools/patchkit/pk_conform.py) runs the conformance
-suite, tests/modules/test_machine_conformance.py, for its devices (docs/TESTING.md "Machine conformance"). The same process includes the module's own tests: `modules/<group>/<name>/tests/**/test_*.py` and its scenarios in `tests/scenarios/*.toml` (only those run, at every tier). One pytest process runs those Python tests. Module-owned Nx `test-device` targets then run their declared TypeScript device acceptance; any failing stage stops the check before size/fit.
+suite, tests/modules/test_machine_conformance.py, for its devices (docs/TESTING.md "Machine conformance"). The same process includes the module's own tests: `modules/<group>/<name>/tests/**/test_*.py` and its scenarios in `tests/scenarios/*.toml` (only those run, at every tier). One pytest process runs those Python tests. Module-owned Nx `test-device-all` targets (full inputs) then run their declared TypeScript device acceptance; any failing stage stops the check before size/fit.
 Own tests may build or launch an emulator. A service/raw module with no Python tests has its objects checked against their sources, then runs its owned device target if present. Size and fit follow only after both stages pass. This command does not prove every module loads in patched firmware.
 """
 
@@ -115,7 +115,7 @@ def own_device_targets(mid: str) -> list[str]:
             )
         if owner_root:
             roots[owner_root] = owner
-    return [f"{owner}:test-device" for owner in sorted(owners)]
+    return [f"{owner}:test-device-all" for owner in sorted(owners)]
 
 
 def run_device_targets(mid: str, targets: list[str]) -> int:
@@ -133,14 +133,14 @@ def run_device_targets(mid: str, targets: list[str]) -> int:
                 pk_harness.daemon_binary(device, syx, pgo=None)
             )
     print(f"{mid}: device acceptance {', '.join(targets)} (DT2 and DN2)", flush=True)
+    # The launcher sets no-daemon and the job budget and takes the shared lock, so the hold above must end first.
     return subprocess.run(
         [
             "pnpm",
-            "exec",
-            "nx",
+            "nx:pilot",
             "run-many",
             "-t",
-            "test-device",
+            "test-device-all",
             "--projects",
             ",".join(t.rsplit(":", 1)[0] for t in targets),
             "--parallel=1",

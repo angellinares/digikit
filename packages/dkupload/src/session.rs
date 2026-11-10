@@ -118,7 +118,7 @@ impl<T: Transport> Session<T> {
         self.request(CMD_MKDIR, &path_body(path)?).map(drop)
     }
 
-    /// RENAME (runtime 0.5.6, capability `CAP_RENAME`): rename or move a file or an empty folder. The data and its hash stay; the
+    /// RENAME (runtime 0.5.7, capability `CAP_RENAME`): rename or move a file or an empty folder. The data and its hash stay; the
     /// folder it leaves stays. `NoFile`: no such entry; `Path`: `to` is taken, inside a file or inside `from`, or a path breaks the rules.
     pub fn rename(&mut self, from: &str, to: &str) -> Result<(), Error> {
         let mut body = path_body(from)?;

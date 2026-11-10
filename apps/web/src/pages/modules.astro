@@ -1,0 +1,35 @@
+---
+import Base from '../layouts/Base.astro';
+import ModuleBrowser from '../components/ModuleBrowser';
+import { shippedModules } from '../data/modules';
+
+const base = import.meta.env.BASE_URL.replace(/\/?$/, '/');
+---
+
+<Base
+  title="Modules · digikit"
+  description="Machines, effects and tools for the Digitakt II and Digitone II that you install over USB."
+  active="modules"
+>
+  <main>
+    <div class="wrap page">
+      <h1>Modules</h1>
+      <p class="intro">Machines, effects and tools you install on your device over USB. All are experimental.</p>
+      <ModuleBrowser client:load modules={shippedModules} base={base} />
+    </div>
+  </main>
+</Base>
+
+<style>
+  .page {
+    padding-block: 56px 96px;
+  }
+  h1 {
+    font-size: var(--t-xl);
+  }
+  .intro {
+    color: var(--ink-2);
+    max-width: 34em;
+    margin: 8px 0 28px;
+  }
+</style>

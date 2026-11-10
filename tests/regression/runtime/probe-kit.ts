@@ -34,6 +34,7 @@ export function status(body: Uint8Array): Record<string, number> {
 }
 
 export async function installProbe({ session, dk }: PatchedSession, effect: string): Promise<void> {
+  session.requireDsp('installProbe (a SHARC probe module)');
   await expectRuntimeReady(session);
   const paths: string[] = [];
   for (const id of [REMOTE, effect, COLLECTOR]) {

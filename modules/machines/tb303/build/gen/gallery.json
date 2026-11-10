@@ -1,0 +1,219 @@
+{
+  "machines": [
+    {
+      "devices": {
+        "dn2": {
+          "clone_of": 0,
+          "knobs": [
+            {
+              "param": "tb303_dec",
+              "slot": 25
+            },
+            {
+              "param": "tb303_wave",
+              "slot": 26
+            },
+            {
+              "param": "tb303_acc",
+              "slot": 27
+            },
+            null,
+            {
+              "param": "tb303_cut",
+              "slot": 29
+            },
+            {
+              "param": "tb303_res",
+              "slot": 30
+            },
+            {
+              "param": "tb303_env",
+              "slot": 31
+            }
+          ],
+          "level": 10,
+          "name": "TB303",
+          "own_dsp": true,
+          "page": {
+            "name": "TB303",
+            "title": "TB303"
+          },
+          "position": null,
+          "short": "303",
+          "type": null
+        },
+        "dt2": {
+          "clone_of": 0,
+          "knobs": [
+            {
+              "slot": 0,
+              "stock": 202
+            },
+            {
+              "param": "tb303_wave",
+              "slot": 1
+            },
+            {
+              "param": "tb303_acc",
+              "slot": 2
+            },
+            null,
+            {
+              "param": "tb303_cut",
+              "slot": 4
+            },
+            {
+              "param": "tb303_res",
+              "slot": 5
+            },
+            {
+              "param": "tb303_env",
+              "slot": 6
+            },
+            {
+              "param": "tb303_dec",
+              "slot": 7
+            }
+          ],
+          "level": 10,
+          "name": "TB303",
+          "own_dsp": false,
+          "page": null,
+          "position": null,
+          "short": "303",
+          "type": null
+        }
+      },
+      "id": "tb303",
+      "name": "TB303",
+      "short": "303"
+    }
+  ],
+  "module": "tom/tb303",
+  "params": {
+    "dn2": [
+      {
+        "default": 0,
+        "id": "tb303_wave",
+        "max": 256,
+        "min": 0,
+        "name": "Wave",
+        "short": "WAVE",
+        "slot": 26,
+        "template": 213
+      },
+      {
+        "default": 32512,
+        "id": "tb303_acc",
+        "max": 32512,
+        "min": 0,
+        "name": "Accent",
+        "short": "ACC",
+        "slot": 27,
+        "template": 213
+      },
+      {
+        "default": 16384,
+        "id": "tb303_cut",
+        "max": 32512,
+        "min": 0,
+        "name": "Cutoff",
+        "short": "CUT",
+        "slot": 29,
+        "template": 213
+      },
+      {
+        "default": 16384,
+        "id": "tb303_res",
+        "max": 32512,
+        "min": 0,
+        "name": "Resonance",
+        "short": "RES",
+        "slot": 30,
+        "template": 213
+      },
+      {
+        "default": 16384,
+        "id": "tb303_env",
+        "max": 32512,
+        "min": 0,
+        "name": "Env Mod",
+        "short": "ENV",
+        "slot": 31,
+        "template": 213
+      },
+      {
+        "default": 16384,
+        "id": "tb303_dec",
+        "max": 32512,
+        "min": 0,
+        "name": "Decay",
+        "short": "DEC",
+        "slot": 25,
+        "template": 213
+      }
+    ],
+    "dt2": [
+      {
+        "default": 0,
+        "id": "tb303_wave",
+        "max": 256,
+        "min": 0,
+        "name": "Wave",
+        "short": "WAVE",
+        "slot": 1,
+        "template": 204
+      },
+      {
+        "default": 32512,
+        "id": "tb303_acc",
+        "max": 32512,
+        "min": 0,
+        "name": "Accent",
+        "short": "ACC",
+        "slot": 2,
+        "template": 204
+      },
+      {
+        "default": 16384,
+        "id": "tb303_cut",
+        "max": 32512,
+        "min": 0,
+        "name": "Cutoff",
+        "short": "CUT",
+        "slot": 4,
+        "template": 204
+      },
+      {
+        "default": 16384,
+        "id": "tb303_res",
+        "max": 32512,
+        "min": 0,
+        "name": "Resonance",
+        "short": "RES",
+        "slot": 5,
+        "template": 204
+      },
+      {
+        "default": 16384,
+        "id": "tb303_env",
+        "max": 32512,
+        "min": 0,
+        "name": "Env Mod",
+        "short": "ENV",
+        "slot": 6,
+        "template": 204
+      },
+      {
+        "default": 16384,
+        "id": "tb303_dec",
+        "max": 32512,
+        "min": 0,
+        "name": "Decay",
+        "short": "DEC",
+        "slot": 7,
+        "template": 204
+      }
+    ]
+  }
+}

@@ -81,6 +81,7 @@ fn the_register_records_are_the_lowered_typed_sections() {
         runtime_min: 1,
         trace: false,
         stereo: false,
+        gate: false,
         api_minor: 0,
     };
     let a = dkm::pack_with(None, &reg.encode(), &opts).unwrap();

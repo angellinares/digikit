@@ -4,19 +4,35 @@ import DeviceArt from '../components/DeviceArt.astro';
 import ModuleCard from '../components/ModuleCard';
 import { shippedModules } from '../data/modules';
 import { deviceProfiles } from '../data/device-profiles';
+import { SHOW_EMULATOR } from '../../site.config.mjs';
 
 const base = import.meta.env.BASE_URL.replace(/\/?$/, '/');
+// Without the emulator, only the releases patchkit has a port file for (devices/ports/<device>-<version>.toml).
+const portFiles = new Set(
+  Object.keys(
+    import.meta.glob('../../../../devices/ports/*.toml', { query: '?raw', import: 'default', eager: true }),
+  ).map((p) => p.split('/').pop()),
+);
 // Releases the emulator boots and patchkit has ports for: the ones with a boot profile.
 const supported = (['dt2', 'dn2'] as const).map((id) => ({
   id,
   name: deviceProfiles[id].name,
-  versions: deviceProfiles[id].firmware.filter((f) => f.main_sha256).map((f) => f.version),
+  versions: deviceProfiles[id].firmware
+    .filter((f) => f.main_sha256)
+    .map((f) => f.version)
+    .filter((v) => SHOW_EMULATOR || portFiles.has(`${id}-${v}.toml`))
+    // The site patches only the newest release of each device.
+    .slice(SHOW_EMULATOR ? 0 : -1),
 }));
 ---
 
 <Base
   title="digikit · new machines and effects for Digitakt II and Digitone II"
-  description="Add community machines and effects to your own Digitakt II or Digitone II firmware, then try it in the emulator before you flash. Everything runs in your browser."
+  description={
+    SHOW_EMULATOR
+      ? 'Add community machines and effects to your own Digitakt II or Digitone II firmware, then try it in the emulator before you flash. Everything runs in your browser.'
+      : 'Add loadable machines and effects to your own Digitakt II or Digitone II firmware. Everything runs in your browser.'
+  }
   active="home"
 >
   <main>
@@ -24,10 +40,11 @@ const supported = (['dt2', 'dn2'] as const).map((id) => ({
       <div class="wrap hero-grid">
         <div class="hero-copy">
           <span class="eyebrow accent">Digitakt II · Digitone II</span>
-          <h1>New machines and effects for your Elektron&nbsp;box.</h1>
+          <h1>Loadable machines and effects for your Elektron&nbsp;box.</h1>
           <p class="lede">
-            Patch the digikit runtime into your own firmware, try it in the emulator, then install machines and effects
-            over USB. It all runs in this browser tab.
+            {SHOW_EMULATOR
+              ? 'Patch the digikit runtime into your own firmware, try it in the emulator, then install machines and effects over USB. It all runs in this browser tab.'
+              : 'Patch your firmware once. After that, load new machines and effects as modules over USB, and change them without flashing again. Nothing to download: it all runs in your browser.'}
           </p>
           <div class="hero-cta">
             <a class="btn primary" href={`${base}firmware/`}>
@@ -43,10 +60,17 @@ const supported = (['dt2', 'dn2'] as const).map((id) => ({
                 ></path>
               </svg>
             </a>
-            <a class="btn quiet" href={`${base}emulator/`}>
-              Try the emulator
-            </a>
+            {SHOW_EMULATOR ? (
+              <a class="btn quiet" href={`${base}emulator/`}>
+                Try the emulator
+              </a>
+            ) : (
+              <a class="btn quiet" href={`${base}modules/`}>
+                Browse modules
+              </a>
+            )}
           </div>
+          <p class="hero-note">Works in Chrome or Edge.</p>
           <ul class="facts">
             <li>
               <svg viewBox="0 0 16 16" aria-hidden="true">
@@ -55,7 +79,7 @@ const supported = (['dt2', 'dn2'] as const).map((id) => ({
                   <path d="M5.5 7V5a2.5 2.5 0 0 1 5 0V7"></path>
                 </g>
               </svg>
-              Firmware never leaves your device
+              Your firmware file stays on your computer
             </li>
             <li>
               <svg viewBox="0 0 16 16" aria-hidden="true">
@@ -68,7 +92,20 @@ const supported = (['dt2', 'dn2'] as const).map((id) => ({
                   stroke-linejoin="round"
                 ></path>
               </svg>
-              Every patch verified before download
+              Checked before anything reaches your device
+            </li>
+            <li>
+              <svg viewBox="0 0 16 16" aria-hidden="true">
+                <path
+                  d="M3 8.5L6.5 12L13 4.5"
+                  fill="none"
+                  stroke="currentColor"
+                  stroke-width="2"
+                  stroke-linecap="round"
+                  stroke-linejoin="round"
+                ></path>
+              </svg>
+              Experimental: keep your stock .syx so you can flash back
             </li>
             <li>
               <svg viewBox="0 0 16 16" aria-hidden="true">
@@ -86,7 +123,7 @@ const supported = (['dt2', 'dn2'] as const).map((id) => ({
           </ul>
         </div>
         <div class="hero-device">
-          <DeviceArt device="dt2" playing label="Digitakt II front panel running the Pluck machine" />
+          <DeviceArt device="dt2" playing label="Digitakt II front panel showing the digikit MODULES list" />
         </div>
       </div>
     </section>
@@ -112,8 +149,11 @@ const supported = (['dt2', 'dn2'] as const).map((id) => ({
               2<i></i>
             </span>
             <div>
-              <h3>Add the runtime</h3>
-              <p>The patch adds the digikit runtime. Machines and effects come later, over USB, from Transfer.</p>
+              <h3>Add digikit</h3>
+              <p>
+                Your firmware gets a small add-on that loads modules from the card. You choose machines and effects
+                later, in Transfer.
+              </p>
             </div>
           </li>
           <li class="step">
@@ -121,8 +161,12 @@ const supported = (['dt2', 'dn2'] as const).map((id) => ({
               3<i></i>
             </span>
             <div>
-              <h3>Patch, play, then flash</h3>
-              <p>Download the patched .syx, or run it in the emulator first and play it from the panel.</p>
+              <h3>{SHOW_EMULATOR ? 'Patch, play, then flash' : 'Patch, then flash'}</h3>
+              <p>
+                {SHOW_EMULATOR
+                  ? 'Download the patched .syx, or run it in the emulator first and play it from the panel.'
+                  : 'Download the patched .syx, or send it to your device from this page.'}
+              </p>
             </div>
           </li>
         </ol>
@@ -136,17 +180,36 @@ const supported = (['dt2', 'dn2'] as const).map((id) => ({
             <h2 id="mods" class="section-title">
               Modules
             </h2>
-            <p>Machines, effects and tools you install on your device over USB. See the source of each in Transfer.</p>
+            <p>
+              Machines, effects and tools you load onto your device over USB. Add or change them without flashing again.
+            </p>
           </div>
-          <a href={`${base}transfer/`}>Open Transfer →</a>
+          <a href={`${base}modules/`}>All modules →</a>
         </div>
         <ul class="cards">
-          {shippedModules.map((m) => (
+          {shippedModules.slice(0, 6).map((m) => (
             <li>
               <ModuleCard module={m} href={`${base}transfer/`} />
             </li>
           ))}
         </ul>
+      </div>
+    </section>
+
+    <section class="section tight" aria-labelledby="safety">
+      <div class="wrap">
+        <h2 id="safety" class="section-title">
+          If something goes wrong
+        </h2>
+        <p class="prose">
+          If a module stops your box from starting, it boots without modules after two failed tries and shows you why.
+          If a module locks up the sound engine, the box restarts without modules and tells you which one. You can also
+          hold RECORD at power-on to start without modules.
+        </p>
+        <p class="prose">
+          digikit is experimental for now, tested in the emulator, and a stable 1.0 is the goal. It doesn't touch the
+          bootloader, but keep your stock <code>.syx</code>.
+        </p>
       </div>
     </section>
 
@@ -167,7 +230,7 @@ const supported = (['dt2', 'dn2'] as const).map((id) => ({
                 <th scope="col">Device</th>
                 <th scope="col">OS versions</th>
                 <th scope="col">Patch</th>
-                <th scope="col">Emulator</th>
+                {SHOW_EMULATOR && <th scope="col">Emulator</th>}
               </tr>
             </thead>
             <tbody>
@@ -187,7 +250,7 @@ const supported = (['dt2', 'dn2'] as const).map((id) => ({
                     </span>
                   </td>
                   <td class="yes">Yes</td>
-                  <td class="yes">Yes</td>
+                  {SHOW_EMULATOR && <td class="yes">Yes</td>}
                 </tr>
               ))}
             </tbody>
@@ -196,13 +259,30 @@ const supported = (['dt2', 'dn2'] as const).map((id) => ({
       </div>
     </section>
 
+    <section class="section tight" aria-labelledby="dev">
+      <div class="wrap">
+        <h2 id="dev" class="section-title">
+          Write your own
+        </h2>
+        <p class="prose">
+          The repo has a desktop workbench with a full emulator of both boxes, a debug module, remote control and a test
+          suite. The SDK is still changing. You build it from source and bring your own <code>.syx</code>.
+        </p>
+        <p class="prose">
+          <a href="https://github.com/ElekLabs/digikit/blob/main/docs/MODULE-AUTHORING.md">Module guide</a> ·{' '}
+          <a href="https://github.com/ElekLabs/digikit/tree/main/sdk">SDK</a>
+        </p>
+      </div>
+    </section>
+
     <section class="section tight last">
       <div class="wrap notes">
         <div class="note">
           <h3>Before you flash</h3>
           <p>
-            Every module is experimental. Back up your projects, try the patched firmware in the emulator, and keep the
-            stock .syx so you can flash back.
+            {SHOW_EMULATOR
+              ? 'Every module is experimental. Back up your projects, try the patched firmware in the emulator, and keep the stock .syx so you can flash back.'
+              : 'Every module is experimental. Back up your projects and keep the stock .syx so you can flash back.'}
           </p>
         </div>
         <div class="note">
@@ -266,6 +346,11 @@ const supported = (['dt2', 'dn2'] as const).map((id) => ({
     height: 50px;
     padding-inline: 22px;
     font-size: 15.5px;
+  }
+  .hero-note {
+    font-size: var(--t-sm);
+    color: var(--ink-2);
+    margin: 4px 0 0;
   }
   .facts {
     display: flex;
@@ -343,6 +428,14 @@ const supported = (['dt2', 'dn2'] as const).map((id) => ({
     color: var(--ink-2);
     max-width: 34em;
     margin-top: 8px;
+  }
+  .prose {
+    max-width: 62ch;
+    margin: 0 0 14px;
+    color: var(--ink-2);
+  }
+  .section-title + .prose {
+    margin-top: 14px;
   }
   .section-head a {
     text-decoration: none;

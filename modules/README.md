@@ -364,8 +364,8 @@ stale (`packages/patchkit/tests/typed.rs` runs it). The files hold no firmware b
 `gallery.json` is part of the web bundle (`files["build/gen/gallery.json"]`) and shown on the module card.
 
 A module can also ask for constants from the device files (`devices/*.toml`: `[board]`, `[digikit]`, `[card.store]`) and
-`core/machines` `types.toml` with `[[gen]]` entries in its `module.toml` (`kind` = `rust`, `gas-shared`, `gas`, `sharc` or `sharc-adapter` (only the `ADM_*` defines of `[adapter.machine]`), and a
-`path`; `{dev}` in the path makes one file per device). They are written by the same `patchkit gen` and checked by `gen --check`;
+`core/machines` `types.toml` with `[[gen]]` entries in its `module.toml` (`kind` = `rust`, `gas-shared`, `gas`, `sharc` or `sharc-adapter` (only the `ADM_*` defines of `[adapter.machine]`), a
+`path`, and for `rust`, `gas-shared`, `gas` and `sharc` a `uses` list of the constants the module reads; `{dev}` in the path makes one file per device). They are written by the same `patchkit gen` and checked by `gen --check`;
 what each kind holds, which fact lives where and what a new device needs are in `docs/design/device-data.md`.
 
 `sdk/sdk.toml` is the one source of the runtime version (0.1.0, packed `major<<16|minor<<8|patch`; runtimes 1 to 5 read as 0.0.1 to 0.0.5), the
@@ -378,7 +378,7 @@ module table is inconsistent (`E_TABLE` -49). `patchkit pack` and `dkm-info` pri
 include the note of each constant is on the line before its `#define`: a trailing comment would become part of the macro.
 
 Example (pluck, Digitakt II): `R1 = FRAME_BASE;` and `R0 = R13 + PLUCK_DECAY_FRAME_OFF;` instead of `0x6d` and `1`.
-`tests/patchkit/test_pk_gen_include.py` shows that this assembles to the committed object, byte for byte.
+`modules/core/adapters/dsp-voice/tests/test_pk_gen_include.py` shows that this assembles to the committed object, byte for byte.
 
 ### `[[section]]`
 
@@ -391,6 +391,7 @@ then placed in a region. The firmware table is never stored in the repository.
 | `region` | where to place it |
 | `from` | `{ anchor, offset = 0, len = EXPR, expect_sha256 }`; `len` defaults to the rest of the anchor; `expect_sha256` is needed when the range reaches outside the anchor |
 | `append` | `{ registry, row = [EXPR, ...] }`: for each entry append the row; a word is `EXPR` (32-bit), `u8:EXPR` or `u16:EXPR`; `$field` is an entry field and `$index` its index |
+| `edit` | `{ registry, at = EXPR, fields = [{ offset, value = EXPR }, ...] }`: for each entry rewrite words of one copied row in place: `at` is the row's byte offset in the copied bytes, `offset` a word's offset in the row, `value` as a word of `append` (core/params `param_edits`) |
 | `align` | bytes, default 4 |
 | `devices` | optional device filter |
 
@@ -528,5 +529,5 @@ Example and fixture: `tests/fixtures/modules/dyn-fx-gain`.
 The frameworks themselves are ordinary modules: `modules/core/adapters/machines/` (about 24 ColdFire anchors, six copied
 tables, the hooks in `src/cf/dt2/machines.s` and `src/cf/dn2/machines.s`), `modules/core/adapters/params/` and
 `modules/core/adapters/dsp-voice/`. Their routines are unit-tested on the emulated ColdFire core (`tools/patchkit/pk_cfunit.py`,
-`tests/patchkit/test_pk_machines_fw.py`, `tests/patchkit/test_pk_params_fw.py`), and the proofs are `tools/patchkit/pk_proof_machines.py` and
+`modules/core/adapters/machines/tests/test_pk_machines_fw.py`, `modules/core/adapters/params/tests/test_pk_params_fw.py`), and the proofs are `tools/patchkit/pk_proof_machines.py` and
 `tools/patchkit/pk_proof_pluck.py`. Contract and evidence: [finding 02](../docs/findings/02-machines-and-parameters.md).

@@ -8,7 +8,7 @@
 // (public/modules/<dev>/<leaf>.dkm, the bytes `mise run module:pack-all` writes), public/modules/index.json and the sources of the
 // modules (public/modules/src/<id>/: module.toml, README.md, src/**; nothing of build/ or out/).
 //
-// The objects of `core/*` modules are committed in the module. The browser never builds: patchkit.wasm packs from the bundle.
+// The objects of `core/*` modules are committed in the module and are only read here, never rebuilt. The browser never builds: patchkit.wasm packs from the bundle.
 //
 //   node scripts/gen-modules.mjs [--out DIR]
 import { readFileSync, readdirSync, writeFileSync, mkdirSync, existsSync, statSync, rmSync } from 'node:fs';
@@ -41,12 +41,16 @@ const byParts = (a, b) => {
 
 const GALLERY = 'build/gen/gallery.json';
 
-/** `patchkit build` over the repository's module roots: builds the stale objects of content modules into the cache. */
-export function buildObjects(root = repoRoot) {
+/**
+ * `patchkit build DIR...` over the given content-module directories: builds their stale objects into the cache.
+ * Core modules are never passed: their objects are committed and read as they are (`patchkit:objects-check` finds a stale one).
+ */
+export function buildObjects(dirs, root = repoRoot) {
+  if (!dirs.length) return;
   const env = { ...process.env, PYTHONPATH: root };
   delete env.PATCHKIT_MODULES; // only the committed roots go into the bundle
   try {
-    execFileSync('python3', ['-m', 'tools.patchkit.patchkit', 'build'], {
+    execFileSync('python3', ['-m', 'tools.patchkit.patchkit', 'build', ...dirs], {
       cwd: root,
       env,
       encoding: 'utf8',
@@ -81,25 +85,27 @@ const objectText = (dir, d, o, stored) =>
 
 /** `{bundle}` from the committed tree under `root` plus the built objects of the content modules. */
 export function buildModuleData(root = repoRoot) {
-  buildObjects(root);
   const ports = readdirSync(join(root, 'devices', 'ports'))
     .filter((f) => f.endsWith('.toml'))
     .sort()
     .map((f) => readFileSync(join(root, 'devices', 'ports', f), 'utf8'));
   // the module roots in the order of tools/patchkit/modroots.py REPO_ROOTS; the tests use the fixtures
-  const manifests = ['modules', join('tests', 'fixtures', 'modules')].flatMap((r) =>
-    walk(join(root, r), 'module.toml').sort(byParts),
+  // The published site leaves out the test fixtures: only the site's tests use them, and some need the Rust toolchain for ColdFire.
+  const roots = process.env.DIGI_SITE_NO_FIXTURES ? ['modules'] : ['modules', join('tests', 'fixtures', 'modules')];
+  const manifests = roots.flatMap((r) => walk(join(root, r), 'module.toml').sort(byParts));
+  const parsed = manifests.map((file) => {
+    const text = readFileSync(file, 'utf8');
+    return { dir: dirname(file), text, d: parse(text) };
+  });
+  const built = (d) => d.module.category !== 'core' && (d.object ?? []).some((o) => (o.sources ?? []).length > 0);
+  buildObjects(
+    parsed.filter((m) => built(m.d)).map((m) => m.dir),
+    root,
   );
   const modules = [];
-  for (const file of manifests) {
-    const dir = dirname(file);
-    const text = readFileSync(file, 'utf8');
-    const d = parse(text);
+  for (const { dir, text, d } of parsed) {
     const files = {};
-    const stored =
-      d.module.category !== 'core' && (d.object ?? []).some((o) => (o.sources ?? []).length > 0)
-        ? cachedPaths(root, dir)
-        : {};
+    const stored = built(d) ? cachedPaths(root, dir) : {};
     for (const o of d.object ?? []) files[o.path] = objectText(dir, d, o, stored);
     for (const r of d.registry ?? [])
       if (r.index_table) files[r.index_table] = readFileSync(join(dir, r.index_table), 'utf8');
@@ -121,6 +127,12 @@ const SOURCE_MAX = 256 * 1024;
 /** The files of a module that the site shows: module.toml, README.md and src/** (text only), relative to the module, sorted. */
 function sourceFiles(dir) {
   const out = ['module.toml', 'README.md'].filter((f) => existsSync(join(dir, f)));
+  out.push(
+    ...readdirSync(dir, { withFileTypes: true })
+      .filter((e) => e.isFile() && e.name.startsWith('LICENSE'))
+      .map((e) => e.name)
+      .sort(),
+  );
   const walkSrc = (d) => {
     for (const e of readdirSync(join(dir, d), { withFileTypes: true }).sort((a, b) => (a.name < b.name ? -1 : 1))) {
       const rel = `${d}/${e.name}`;
@@ -134,7 +146,7 @@ function sourceFiles(dir) {
 
 const sha256 = (b) => createHash('sha256').update(b).digest('hex');
 
-/** `patchkit pack` of one module for one device (the packer `mise run module:pack-all` uses); null when it does not pack for the device. */
+/** `patchkit pack` of one module for one device (the packer `mise run module:pack-all` uses); throws when it fails. */
 function pack(root, id, device, to) {
   const env = { ...process.env, PYTHONPATH: root };
   delete env.PATCHKIT_MODULES;
@@ -146,8 +158,9 @@ function pack(root, id, device, to) {
       stdio: 'pipe',
     });
     return readFileSync(to);
-  } catch {
-    return null;
+  } catch (e) {
+    const stderr = String(e.stderr ?? e.message ?? e).trim();
+    throw new Error(`patchkit pack failed for ${id} on ${device}: ${stderr}`);
   }
 }
 
@@ -170,7 +183,6 @@ export function shipModules(out, root = repoRoot) {
       const tmp = join(scratch, dev, `${leaf}.dkm`);
       mkdirSync(dirname(tmp), { recursive: true });
       const bytes = pack(root, m.id, dev, tmp);
-      if (!bytes) continue;
       mkdirSync(join(out, dev), { recursive: true });
       writeFileSync(join(out, dev, `${leaf}.dkm`), bytes);
       devices[dev] = { file: `${dev}/${leaf}.dkm`, size: bytes.length, sha256: sha256(bytes) };

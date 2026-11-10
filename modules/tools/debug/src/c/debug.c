@@ -11,7 +11,7 @@
  *   0x22 LOGCFG  body: u8 op (0 get, 1 set; a set adds u8 default level and 8 bytes, the level of module record 0 to 7, 0xff: the default)
  *                reply: u8 default level, 8 module levels, u8 1 (the debug module is loaded)
  *
- * The tick (once per pass of the UI task, set with the sink) reads the machine type of each of the 16 tracks every 20 ms from the firmware (`dkrt_track_type`) and logs a change (MACHINE_CHANGE). */
+ * The tick (once per pass of the UI task, set with the sink) reads the machine type of each of the 16 tracks every 20 ms from the firmware (`dkrt_track_type`) and logs a change (MACHINE_CHANGE). Each pass it also reads the Sound words of the selected track (`dkrt_selected_params`) and logs a changed word (PARAM_CHANGE, level 3). */
 
 #include <dk/api.h>
 
@@ -46,10 +46,13 @@ typedef uint8_t u8;
 #define LEVEL_MASK 7u
 #define SOURCE_SHIFT 8u
 #define L_INFO 2u
+#define L_DEBUG 3u
 #define LEVEL_NONE 0xffu
 #define LEVEL_MAX 4u
 
 #define K_MACHINE_CHANGE 26u
+#define K_PARAM_CHANGE 42u
+#define PARAMS 101u /* Sound words of the larger device (Digitone II); the runtime zeroes the words a device does not have */
 #define TRACKS 16u
 #define TRACKS_EVERY 30u /* blocks: 20 ms */
 #define TRACKS_FROM 3000u /* blocks after the first pass: the project exists by then */
@@ -239,7 +242,46 @@ static struct {
     u32 started, next;
     u32 valid;
     int32_t types[TRACKS];
+    /* the Sound words of the selected track at the last pass; `track` is -1 until a pass has read them */
+    int32_t track;
+    int16_t words[PARAMS];
 } watch;
+
+/* PARAM_CHANGE (debug level): each Sound word of the selected track that differs from the last pass: track, index, old, new. Only writes to that array show (the stock
+ * setter: a knob turn); p-lock, sound lock, LFO and MIDI CC take other paths. A change of the selected track, or a track whose record is
+ * missing (a kit load), takes the snapshot again and logs a baseline instead: index 0xffffffff, old and new 0. */
+static void watch_params(void)
+{
+    int16_t now[PARAMS];
+    u32 i, a[5];
+    int32_t was = watch.track;
+    int32_t t = dkrt_selected_params(now, PARAMS);
+    if (t < 0) {
+        watch.track = -1;
+        return;
+    }
+    if (t == watch.track) {
+        for (i = 0; i < PARAMS; i++) {
+            if (now[i] == watch.words[i])
+                continue;
+            a[0] = (u32)t;
+            a[1] = i;
+            a[2] = (u32)(int32_t)watch.words[i];
+            a[3] = (u32)(int32_t)now[i];
+            a[4] = 0u;
+            dkrt_log_ev(K_PARAM_CHANGE, L_DEBUG << LEVEL_SHIFT, a);
+        }
+    }
+    watch.track = t;
+    for (i = 0; i < PARAMS; i++)
+        watch.words[i] = now[i];
+    if (t != was) { /* a baseline: the host knows from here on that a turn on this track is seen */
+        a[0] = (u32)t;
+        a[1] = 0xffffffffu;
+        a[2] = a[3] = a[4] = 0u;
+        dkrt_log_ev(K_PARAM_CHANGE, L_DEBUG << LEVEL_SHIFT, a);
+    }
+}
 
 /* The tick of the sink: the runtime calls it once per pass of the UI task, so the module needs no slot (a slot has one owner). */
 static void tick(void)
@@ -251,6 +293,8 @@ static void tick(void)
         watch.next = b + TRACKS_FROM;
         return;
     }
+    if (watch.valid)
+        watch_params();
     if ((int32_t)(b - watch.next) < 0)
         return;
     watch.next = b + TRACKS_EVERY;
@@ -273,6 +317,7 @@ static void tick(void)
 int32_t dkm_init(const dk_api *api)
 {
     u32 i;
+    watch.track = -1;
     for (i = 0; i < MODULES; i++)
         level_module[i] = LEVEL_NONE;
     level_default = L_INFO;

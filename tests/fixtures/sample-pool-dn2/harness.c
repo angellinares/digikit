@@ -1,6 +1,6 @@
 /* Host harness for modules/core/adapters/sample-pool/src/cf/dn2 (pool.c, xfer.c and send.c, unchanged): the store, the DSP block clock, the
  * LP0 port, the SampleLoader worker and the runtime's completion call are stand-ins, and a small model of the DSP receiver (spw_dsp_rule)
- * writes the pages it decodes from the port into a DDR array and answers through the real reply hook. tests/patchkit/test_sample_pool_dn2.py
+ * writes the pages it decodes from the port into a DDR array and answers through the real reply hook. modules/core/adapters/sample-pool/tests/test_sample_pool_dn2.py
  * runs the scenarios. It tests our logic: the allocator, the page order, the job loop with its resend, error and cancel rules, the raw
  * sender's byte order and bounds, the hand-over between the UI task and the job, and the data that reaches DDR; not the firmware or the DSP
  * code. */

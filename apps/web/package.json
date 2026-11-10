@@ -7,7 +7,7 @@
   "scripts": {
     "predev": "node ../../tools/nx/wasm.mjs && node scripts/gen-modules.mjs",
     "dev": "astro dev",
-    "prebuild": "node ../../tools/nx/wasm.mjs && node scripts/gen-modules.mjs",
+    "prebuild": "node scripts/prebuild.mjs",
     "build": "astro build",
     "check": "node scripts/gen-modules.mjs --check && astro check",
     "test": "node --test \"tests/*.test.mjs\""

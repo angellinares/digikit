@@ -131,5 +131,5 @@ runtimeTests(
     expect((await observed()).draws).toBeGreaterThan(stock.draws);
     await session.expectNoFault('native callback page');
   },
-  { timeout: 240_000 },
+  { dsp: 'sharc', timeout: 240_000 },
 );

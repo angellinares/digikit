@@ -41,6 +41,7 @@
         "pythonTools": true,
         "plusdrive": true
       }
-    ]
+    ],
+    "mergeTests": ["tests/fx-send.device.test.ts"]
   }
 }

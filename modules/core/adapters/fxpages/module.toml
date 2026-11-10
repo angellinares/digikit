@@ -35,6 +35,9 @@ ports = ["dt2-1.17", "dn2-1.12"]
 [[gen]]
 kind = "gas"
 path = "build/gen/device-{dev}.inc"
+uses = ["DEVICE_ID", "LIMIT_FX_SLOTS", "FX_KIT_PTR", "FX_ARRAY_OFF", "FX_PAGE_FIRST", "FX_TPL_PERCENT", "FX_TPL_BIPOLAR",
+    "FX_TPL_MIX", "FX_STORE_OFF", "FX_MARK_INDEX", "FX_TAIL_OFF", "FX_VALUES_N", "FX_TRACK_PAGE", "FX_SOUND_OFF",
+    "FX_SOUND_STRIDE", "FX_SEND_TEMPLATE", "LIMIT_SEND_SLOTS", "FX_VALUE_*", "FX_SEND_IDX_*"]
 
 [[object]]
 path = "build/fxpages-dt2.dko.json"

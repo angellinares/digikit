@@ -914,7 +914,7 @@ export class DkSession {
     await this.ok(GCMD.MKDIR, 'mkdir', concat(text.encode(path), Uint8Array.of(0)));
   }
 
-  /** RENAME (runtime 0.5.6, capability RENAME): rename or move a file or an empty folder. The data and its hash stay, and the folder it
+  /** RENAME (runtime 0.5.7, capability RENAME): rename or move a file or an empty folder. The data and its hash stay, and the folder it
    * leaves stays. E_NOFILE: no such entry; E_PATH: `to` is taken, inside a file or inside `from`, or a path breaks the rules. */
   async rename(from: string, to: string): Promise<void> {
     await this.ok(

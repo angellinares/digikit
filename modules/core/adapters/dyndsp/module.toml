@@ -31,6 +31,7 @@ ports = ["dt2-1.17", "dn2-1.12"]
 [[gen]]
 kind = "gas"
 path = "build/gen/device-{dev}.inc"
+uses = ["DEVICE_ID", "DYN_TYPES", "DL_AREA_BYTES"]
 
 [[object]]
 path = "build/dyndsp-dt2.dko.json"

@@ -477,6 +477,8 @@ _dv_cowner:
     R1 = _gs_rbuf;
     R0 = R0 + R1;
     DM(_dv_in + DK_IN_OUT_R) = R0;
+    R0 = 1;
+    DM(_dv_in + DK_IN_GATE) = R0;          // no note-off source is known on the Digitone II yet: the gate stays 1
     // the parameter words: knob ADM_PARAM_SLOTi of the slot, until a slot of 255 (the buffer's other words stay 0)
     R0 = 0;
     DM(_dv_c + 20) = R0;
@@ -569,7 +571,16 @@ _dv_cpe:
     R11 = DM(_dv_c + 16);
     R11 = PASS R11;
     IF EQ JUMP _dv_crender;
+    R7 = DM(-1, I4);                      // row word 23: the tracks whose state has been zeroed since the load (the runtime writes 0)
+    R9 = 1;
+    R10 = LSHIFT R9 BY R2;
+    R9 = R7 AND R10;
     R5 = DM(-5, I4);                      // clear bytes
+    IF NE JUMP _dv_cseen;
+    R7 = R7 OR R10;
+    DM(-1, I4) = R7;
+    R5 = DM(-6, I4);                      // the first note-on of this track since the load: the whole state (the stride), not the clear bytes
+_dv_cseen:
     R6 = -2;
     R5 = LSHIFT R5 BY R6;                 // clear bytes -> words
     R5 = PASS R5;                         // (a shift sets SZ, the condition tests AZ)
@@ -815,7 +826,7 @@ _dv_frame_sw:
 .PKDATA _dv_row, 4;
 // The contract adapter's data: the `dk_voice_in` it hands to the module, the parameter words (8), its scalars (see `_dv_contract`), the slots'
 // records (4 words each) and the knob positions of the module's parameters in order (ADM_PARAM_SLOT0 .. 7; 255: none).
-.PKDATA _dv_in, 24;
+.PKDATA _dv_in, DK_IN_BYTES;
 .PKDATA _dv_params, 32;                    // live effective UI/debug words
 .PKDATA _dv_call_params, 32;               // merged callback words (latched declarations over live words)
 // Adapter-private snapshots: DT2 track / DN2 physical voice slot, never firmware-owned state.

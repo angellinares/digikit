@@ -9,7 +9,6 @@ import type { PatchedSession } from '../support.ts';
 import { liveArtifacts, record } from './artifacts.ts';
 import { installWithDebug, moduleArtifact } from './install.ts';
 import { runtimeTests } from './ready.ts';
-import { settleUi } from './waits.ts';
 import { planSymbol, prepareRuntimePlan } from './runtime-plan.ts';
 
 /** Deterministic exact PCM16 fixture: mono48k avoids converter/resampler rounding. */
@@ -139,7 +138,6 @@ async function captureProofNote(
 
 async function expectTransferredBank(runtime: PatchedSession): Promise<void> {
   const { session, dk } = runtime;
-  await settleUi(session);
   const artifacts = liveArtifacts(session, 'sample-playback');
   const dispatchSymbol = session.options.device === 'dt2' ? '_dv_g' : '_dv_c';
   const dispatchOffset = session.options.device === 'dt2' ? 4 : 0;
@@ -228,8 +226,11 @@ async function expectTransferredBank(runtime: PatchedSession): Promise<void> {
   await dk.restart();
   await dk.waitForBoot(); // requires fresh BOOT_START and no old RESTART event
   expect((await session.status()).epoch).toBeGreaterThan(epoch as number);
+  // The next step sends keys: wait for the main UI of the new boot.
+  await expect
+    .poll(async () => (await session.status()).cf.main_ui_reached, { timeout: 120_000, interval: 500 })
+    .toBe(true);
   base = await bankBase();
-  await settleUi(session);
   expect(await status(), 'the new boot owns a clean UNUSED bank').toBe(0);
   expect(await bytes(base + viewOffset, 16), 'new descriptor begins unready').toEqual(Buffer.alloc(16));
   await selectProofMachine({ session }, artifacts);
@@ -323,4 +324,7 @@ async function expectTransferredBank(runtime: PatchedSession): Promise<void> {
 
 // Exact note-on/render PCM is checked by the fixture's own numerical tests.
 // Coupled captures prove silence-before-READY and audible transferred playback/retrigger.
-runtimeTests('transferred sample publishes an immutable mono bank', expectTransferredBank, { timeout: 900_000 });
+runtimeTests('transferred sample publishes an immutable mono bank', expectTransferredBank, {
+  dsp: 'sharc',
+  timeout: 900_000,
+});

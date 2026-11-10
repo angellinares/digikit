@@ -1,15 +1,16 @@
 ---
-// Shared page shell: fonts, tokens, the site navigation, and the COI service worker (GitHub Pages cannot
-// send COOP/COEP headers; the worker adds them so SharedArrayBuffer works after the first reload).
+// Shared page shell: fonts, tokens, the site navigation, and the COI service worker, which only the emulator needs
+// (GitHub Pages cannot send COOP/COEP headers; the worker adds them so SharedArrayBuffer works after the first reload).
 import '@fontsource-variable/archivo/wdth.css';
 import '@fontsource/jetbrains-mono/400.css';
 import '@fontsource/jetbrains-mono/500.css';
 import '@fontsource/silkscreen/400.css';
 import '../styles/site.css';
+import { SHOW_EMULATOR } from '../../site.config.mjs';
 interface Props {
   title: string;
   description?: string;
-  active?: 'home' | 'firmware' | 'emulator' | 'transfer';
+  active?: 'home' | 'firmware' | 'emulator' | 'modules' | 'transfer';
   /** The page fills the window instead of scrolling (the emulator). */
   fill?: boolean;
 }
@@ -27,7 +28,7 @@ const current = (page: Props['active']) => (active === page ? 'page' : undefined
     <meta name="theme-color" content="#0b0c0e" />
     {description && <meta name="description" content={description} />}
     <title>{title}</title>
-    <script is:inline src={`${base}coi-serviceworker.js`}></script>
+    {SHOW_EMULATOR && <script is:inline src={`${base}coi-serviceworker.js`}></script>}
   </head>
   <body class:list={{ fill }}>
     <header class="sitenav">
@@ -45,8 +46,13 @@ const current = (page: Props['active']) => (active === page ? 'page' : undefined
           <a href={`${base}firmware/`} aria-current={current('firmware')}>
             Firmware
           </a>
-          <a href={`${base}emulator/`} aria-current={current('emulator')}>
-            Emulator
+          {SHOW_EMULATOR && (
+            <a href={`${base}emulator/`} aria-current={current('emulator')}>
+              Emulator
+            </a>
+          )}
+          <a href={`${base}modules/`} aria-current={current('modules')}>
+            Modules
           </a>
           <a href={`${base}transfer/`} aria-current={current('transfer')}>
             Transfer

@@ -12,6 +12,9 @@ dkrt_device_name:
     .globl dkrt_peek_n
 dkrt_peek_n:
     .long PEEK_N
+    .globl dkrt_sound_words
+dkrt_sound_words:
+    .long FX_SOUND_WORDS
     .globl dkrt_peek_ranges
 dkrt_peek_ranges:
     .long PEEK_LO_0, PEEK_HI_0, PEEK_LO_1, PEEK_HI_1

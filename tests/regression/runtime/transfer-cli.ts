@@ -37,7 +37,9 @@ export async function transferCommand(
       let stdout: string;
       let stderr: string;
       try {
-        const result = await exec('uv', command, { cwd: repoRoot(), timeout, maxBuffer: 4 * 1024 * 1024 });
+        // out/patch/transfer is shared by all worktrees and runs. A run packs into its own folder.
+        const env = { ...process.env, DIGI_TRANSFER_DIR: path.join(session.runDir, 'transfer') };
+        const result = await exec('uv', command, { cwd: repoRoot(), env, timeout, maxBuffer: 4 * 1024 * 1024 });
         stdout = result.stdout;
         stderr = result.stderr;
       } catch (error) {

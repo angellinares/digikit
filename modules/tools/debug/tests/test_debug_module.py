@@ -25,6 +25,8 @@ static int32_t (*the_cmd)(u32, u32, const u8 *, u32, u8 *);
 static u32 clock_blocks;
 static int32_t track_ty[16];
 static int project = 1;
+static int32_t sel_track;
+static int16_t sel_words[101];
 static u32 ranges[2][2];
 static u32 n_ranges;
 
@@ -32,6 +34,13 @@ void dkrt_log_sink_set(uint8_t *s, uint8_t *t) { the_sink = (void (*)(const Ev *
 uint32_t dkrt_blocks(void) { return clock_blocks; }
 uint32_t dkrt_peek_range(uint32_t i, uint32_t *out) { if (i < n_ranges) { out[0] = ranges[i][0]; out[1] = ranges[i][1]; } return n_ranges; }
 int32_t dkrt_track_type(uint32_t t) { return !project ? -2 : t < 16 ? track_ty[t] : -1; }
+int32_t dkrt_selected_params(int16_t *out, uint32_t n)
+{
+    if (!project) return -2;
+    if (sel_track < 0) return -3;
+    for (uint32_t i = 0; i < n; i++) out[i] = sel_words[i];
+    return sel_track;
+}
 void dkrt_log_ev(uint32_t kind, uint32_t flags, const uint32_t *a)
 {
     Ev e = { 0, clock_blocks, (u16)kind, (u16)flags, { a[0], a[1], a[2], a[3], a[4] } };
@@ -63,6 +72,10 @@ int main(void)
             for (b = 0; b < sizeof peek_mem; b++) peek_mem[b] = (u8)(a + b);
         } else if (sscanf(line, "track %u %d", &a, &c) == 2) {
             track_ty[a] = (int32_t)c;
+        } else if (sscanf(line, "sel %d", &c) == 1) {
+            sel_track = (int32_t)c;
+        } else if (sscanf(line, "word %u %d", &a, &c) == 2) {
+            sel_words[a] = (int16_t)c;
         } else if (!strncmp(line, "noproject", 9)) {
             project = 0;
         } else if (!strncmp(line, "project", 7)) {
@@ -283,3 +296,46 @@ def test_track_watch_logs_a_change_after_the_baseline_and_waits_for_the_project(
     _, _, evs = log(out[-1])
     assert [(e[2], e[4], e[5], e[6]) for e in evs] == [(26, 2, 5, 7)]
     assert (evs[0][3] >> 1) & 7 == 2  # info
+
+
+def test_param_watch_logs_a_changed_word_and_takes_the_snapshot_again_on_a_new_track(
+    harness,
+):
+    lines = [
+        "cmd 34 0103ffffffffffffffff",  # default level debug
+        "project",
+        "sel 3",
+        "word 5 -100",
+        "clock 0",
+        "slot",  # the first pass: starts the timer
+        "clock 3030",
+        "slot",  # the track watch starts
+        "slot",  # the baseline of the words: one baseline event
+        "word 5 32512",
+        "word 70 1",
+        "slot",  # two changes
+        "slot",  # no change
+        "sel 4",
+        "word 5 7",
+        "slot",  # another track: the snapshot is taken again (a baseline event)
+        "sel -1",
+        "word 5 8",
+        "slot",  # no record (a kit is loading): nothing
+        "sel 4",
+        "slot",  # the record is back: the snapshot again (a baseline event)
+        "word 5 9",
+        "slot",
+        "cmd 32 00000000",
+    ]
+    out = run(harness, lines)
+    _, _, evs = log(out[-1])
+    changes = [(e[4], e[5], e[6], e[7], e[8]) for e in evs if e[2] == 42]
+    B = 0xFFFFFFFF  # a baseline: the snapshot was taken (first pass, new track, record back)
+    assert changes == [
+        (3, B, 0, 0, 0),
+        (3, 5, 0xFFFFFF9C, 32512, 0),
+        (3, 70, 0, 1, 0),
+        (4, B, 0, 0, 0),
+        (4, B, 0, 0, 0),
+        (4, 5, 8, 9, 0),
+    ]

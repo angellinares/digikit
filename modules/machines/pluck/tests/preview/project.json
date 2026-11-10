@@ -2,6 +2,7 @@
   "$schema": "../../../../../node_modules/nx/schemas/project-schema.json",
   "name": "digikit-pluck-preview-tests",
   "tags": ["test-only"],
+  "implicitDependencies": ["digikit/pluck"],
   "metadata": {
     "runtimeAcceptance": [
       {

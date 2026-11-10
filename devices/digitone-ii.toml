@@ -143,6 +143,8 @@ tail_off = 0xca
 track_page = 16
 sound_off = 0x34
 sound_stride = 0x48b
+# The number of s16 parameter words in a Sound object's array (the stock getter's bound; finding 02): the debug log's parameter watch reads them.
+sound_words = 101
 send_template = 0x44
 send_indices = [100]
 

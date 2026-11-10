@@ -1,6 +1,6 @@
 [module]
 id = "core/runtime"
-version = "0.5.6"
+version = "0.5.7"
 name = "digikit runtime"
 category = "core"
 role = "runtime"
@@ -35,14 +35,19 @@ optional = ["mf_native_register", "mf_native_register_v2", "mf_native_remove", "
 [[gen]]
 kind = "rust"
 path = "sdk/src/device.rs"
+uses = ["DYN_TYPE_FIRST", "DYN_TYPE_LAST", "DYN_TYPES", "DDR_CACHED_BASE", "DDR_BYTES", "ESDHC_BASE", "SAFE_KEY_CODE",
+    "DSP_BLOCK_CYCLES", "KEEP_BASE", "KEEP_BYTES", "LIMIT_MODULES", "LIMIT_MACHINE_ROWS", "LIMIT_ARENA_BYTES",
+    "LIMIT_STAGE_BYTES"]
 
 [[gen]]
 kind = "gas-shared"
 path = "build/gen/device.inc"
+uses = ["CONSOLE_UART_BASE", "DDR_UNCACHED_ALIAS"]
 
 [[gen]]
 kind = "gas"
 path = "build/gen/device-{dev}.inc"
+uses = ["DEVICE_ID", "DEVICE_NAME_WORD", "STORE_FIRST", "STORE_SECTORS", "PEEK_N", "FX_SOUND_WORDS", "PEEK_LO_*", "PEEK_HI_*"]
 
 # The UI-loop hook trampoline and the cache flush (assembly).
 [[object]]

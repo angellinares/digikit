@@ -151,7 +151,8 @@ export function fxRender(
         if (String(name).endsWith('.wav')) fs.unlinkSync(path.join(run, String(name)));
       }
   });
-  beforeAll(async (suite) => {
+  // oxlint-disable-next-line no-empty-pattern -- Vitest 5 passes the context first and rejects a named first argument of a hook
+  beforeAll(async ({}, suite) => {
     const selected = suite.tasks.filter((task) => task.mode === 'run').flatMap((task) => needs.get(task.name) ?? []);
     const names = new Set(selected);
     for (const name of selected) {

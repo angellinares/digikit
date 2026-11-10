@@ -209,6 +209,8 @@ export const LOG_KIND = {
   POOL_PUBLISH: 38,
   POOL_LOST: 39,
   POOL_INVALID: 40,
+  INPUT_TAKEN: 41,
+  PARAM_CHANGE: 42,
 } as const;
 
 /** The kind of a LOG event by id: its name and the names of its five arguments ("-": not used). */
@@ -253,6 +255,8 @@ export const LOG_KINDS: Record<number, [string, [string, string, string, string,
   38: ['POOL_PUBLISH', ['entry', 'token', 'frames', 'base_l', 'base_r']],
   39: ['POOL_LOST', ['count', '-', '-', '-', '-']],
   40: ['POOL_INVALID', ['entry', 'reason', 'token', 'count', '-']],
+  41: ['INPUT_TAKEN', ['what', 'control', 'delta', '-', '-']],
+  42: ['PARAM_CHANGE', ['track', 'index', 'old', 'new', '-']],
 };
 
 /** `MACHINE_FAULT` argument 1, low byte: what the DSP guard found. */

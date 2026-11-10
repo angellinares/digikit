@@ -47,7 +47,15 @@ export async function expectRuntimeReady(session: Session): Promise<void> {
 }
 
 /** DkrtBootInfo word offsets, owned by modules/core/runtime/abi.toml (checked in modules/core/runtime/sdk/src/gen_abi.rs). */
-const BOOT_FIELDS = { magic: 0, version: 4, safe: 8, reason: 12, counter: 16, count: 28, ui_reached: 36 } as const;
+export const BOOT_FIELDS = {
+  magic: 0,
+  version: 4,
+  safe: 8,
+  reason: 12,
+  counter: 16,
+  count: 28,
+  ui_reached: 36,
+} as const;
 
 /** Current UI-hook evidence, rather than elapsed time or the boot's in-memory stability flag. */
 export async function expectRuntimeUi(

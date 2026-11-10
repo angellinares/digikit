@@ -1,0 +1,62 @@
+name: Pages
+
+on:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: pages
+  cancel-in-progress: true
+
+jobs:
+  build:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 120
+    steps:
+      - uses: actions/checkout@v7.0.1
+      - run: sudo apt-get update && sudo apt-get install -y libgmp-dev libmpfr-dev libmpc-dev libisl-dev libzstd-dev libasound2-dev pkg-config flex bison texinfo
+      - uses: jdx/mise-action@v5.2.7
+        with:
+          install: false
+      - run: mise install rust node pnpm "aqua:WebAssembly/binaryen"
+      - uses: astral-sh/setup-uv@v10.3.3
+      - run: rustup target add wasm32-unknown-unknown --toolchain 1.98.1
+      - name: Fetch Rust crates
+        run: cargo fetch --locked
+      - uses: actions/cache/restore@v6.1.0
+        id: tools
+        with:
+          path: out/tools
+          key: tools-${{ runner.os }}-${{ hashFiles('tools/patchkit/toolchain/pins.toml', 'tools/patchkit/pk_toolchains.py') }}
+      - if: steps.tools.outputs.cache-hit != 'true'
+        run: uv run python -m tools.patchkit.pk_toolchains m68k
+      - if: steps.tools.outputs.cache-hit != 'true'
+        uses: actions/cache/save@v6.1.0
+        with:
+          path: out/tools
+          key: ${{ steps.tools.outputs.cache-primary-key }}
+      - run: pnpm install --frozen-lockfile
+      - run: pnpm --filter @digi/web build
+        env:
+          DIGI_SITE_ORIGIN: https://eleklabs.github.io
+          DIGI_SITE_BASE: /digikit
+          DIGI_SITE_NO_FIXTURES: '1'
+      - uses: actions/configure-pages@v6.0.0
+      - uses: actions/upload-pages-artifact@v5.0.0
+        with:
+          path: apps/web/dist
+
+  deploy:
+    needs: build
+    runs-on: ubuntu-24.04
+    permissions:
+      pages: write
+      id-token: write
+    environment:
+      name: github-pages
+      url: ${{ steps.deployment.outputs.page_url }}
+    steps:
+      - uses: actions/deploy-pages@v5.0.1
+        id: deployment

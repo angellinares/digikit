@@ -1,7 +1,7 @@
 """The rig of the digikit/pluck tests (test_pluck.py, test_pluck_range.py, test_pluck_tune.py): the routine on the concrete SHARC+ core.
 
 The wrapper (core/dsp-voice) and the routine are assembled from the module sources and run block by block the way
-the engine calls them (see tests/patchkit/test_dsp_voice.py). The generic machine rig keeps the core's memory (the routine's
+the engine calls them (see modules/core/adapters/dsp-voice/tests/test_dsp_voice.py). The generic machine rig keeps the core's memory (the routine's
 delay line, reserved unloaded L2 on the device) from call to call. Skips when Selache is not built."""
 
 import struct

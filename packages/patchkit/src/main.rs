@@ -25,8 +25,10 @@ const USAGE: &str = "usage: patchkit [--root DIR] COMMAND ...
   explain --firmware X.syx (--modules a,b | --plan plan.json)   what a patch does, site by site
   verify  OUT.syx [--base X.syx]         re-decode and check an image
   preflight OUT.syx                      before flashing: known stock base, sections 2/4/5/8 identical, checksum, HMAC, limits;
-                                         exit 1 on any failure (stock files are looked up in firmware/ by sha256)
+                                         exit 1 on any failure (stock files are looked up in firmware/ by sha256; with OUT.plan.json
+                                         beside it, the ISA check reads appended DSP blocks only where the plan placed code)
   isa-scan X.syx [--list]                stores in the DSP section (7) the SHARC+ ISA does not have, one per line; exit 1 when found
+                                         (X.plan.json as for preflight)
   rebuild X.syx -o OUT.syx               codec round trip (an unchanged image reproduces itself)
   pack    MODULE_ID -o OUT.dkm [--name N] [--runtime-min V] [--device SHORT] [--trace] [--ui-preview] [--manifest PATH]...   the module's ColdFire object as a run-time .dkm;
                                          builds the objects that are stale first (content modules: cache out/cache/dko)
@@ -252,6 +254,21 @@ fn with_requires(lib: &Library, ids: Vec<String>) -> Result<Vec<String>> {
         println!("added by requires: {}", added.join(", "));
     }
     Ok(all)
+}
+
+/// The DSP code ranges of the plan `patch` wrote beside the image (`OUT.plan.json`), when there is one.
+fn plan_code(syx: &str) -> Option<Vec<(u64, u64)>> {
+    let b = std::fs::read(Path::new(syx).with_extension("plan.json")).ok()?;
+    let p: serde_json::Value = serde_json::from_slice(&b).ok()?;
+    Some(
+        p["writes"]
+            .as_array()?
+            .iter()
+            .filter(|w| w["cpu"] == "sharc")
+            .flat_map(|w| w["code"].as_array().cloned().unwrap_or_default())
+            .filter_map(|r| Some((r[0].as_u64()?, r[1].as_u64()?)))
+            .collect(),
+    )
 }
 
 fn library_for_apply(
@@ -691,7 +708,8 @@ plan.json {}",
                     (sha256_hex(&b) == k.sha256).then_some(b)
                 })
             };
-            let out = patchkit::preflight::preflight(&raw, &reg, &known, &stock);
+            let code = plan_code(path);
+            let out = patchkit::preflight::preflight(&raw, &reg, &known, &stock, code.as_deref());
             for l in &out.lines {
                 println!("{}  {}", if l.ok { "ok  " } else { "FAIL" }, l.text);
             }
@@ -702,7 +720,8 @@ plan.json {}",
             println!("PREFLIGHT OK: {path}");
         }
         "isa-scan" => {
-            let fw = Firmware::parse(&read(need(rest)?)?)?;
+            let path = need(rest)?;
+            let fw = Firmware::parse(&read(path)?)?;
             let dsp = fw
                 .section(7)
                 .ok_or_else(|| Error("the image has no DSP section (7)".into()))?;
@@ -713,7 +732,7 @@ plan.json {}",
                 }
                 return Ok(());
             }
-            let found = patchkit::dspscan::scan(&dsp.data)?;
+            let found = patchkit::dspscan::scan(&dsp.data, plan_code(path).as_deref())?;
             for f in &found {
                 println!("{f}");
             }
@@ -769,6 +788,7 @@ plan.json {}",
                 },
                 trace: rest.iter().any(|a| a == "--trace"),
                 stereo: false,
+                gate: false,
                 api_minor: {
                     let mut newest = 0;
                     for name in &m.manifest.module.uses_api {
@@ -859,7 +879,7 @@ plan.json {}",
                 }
                 match sharc.first().filter(|_| !ui_preview) {
                     Some((o, _)) => {
-                        dsp = patchkit::dkmdsp::pack_with_samples(
+                        (dsp, opts.gate) = patchkit::dkmdsp::pack_with_gate(
                             o,
                             patchkit::register::device_id(&dev)?,
                             &voices,
@@ -1371,9 +1391,11 @@ summary = "Scoped generation check"
 [[gen]]
 kind = "gas"
 path = "build/gen/device-{dev}.inc"
+uses = ["DEVICE_ID"]
 "#,
         )
         .unwrap();
+        std::fs::write(module_dir.join("main.s"), "    move.l #DEVICE_ID, %d0\n").unwrap();
         let args = |scope: &str| Args {
             root: fixture.0.clone(),
             rest: [

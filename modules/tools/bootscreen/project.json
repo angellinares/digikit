@@ -5,7 +5,8 @@
     "runtimeAcceptance": [
       {
         "files": ["tests/bootscreen.device.test.ts"],
-        "modules": ["test/intro-fault", "test/intro-reset", "test/intro-ticks"]
+        "modules": ["test/intro-fault", "test/intro-reset", "test/intro-ticks"],
+        "plusdrive": true
       }
     ]
   }

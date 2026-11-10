@@ -185,11 +185,13 @@ pub fn overlay_path(image: &Path) -> PathBuf {
     image.with_file_name("overlay.bin")
 }
 
-/// Whether `card` took a saved overlay (`apply_saved_overlay`) when it was built: a card an earlier boot used. The DT2 does not run its
-/// filesystem check again on such a card (docs/findings/37-boot-load.md), so the strict readiness contract (`main-panel-fs-check-v1`)
-/// can never complete and the boot gets the relaxed one, as after a soft reset. A fresh card has no writes and stays strict.
-fn saved_overlay_applied(card: Option<&Card>) -> bool {
-    card.is_some_and(|c| c.overlay_len() > 0)
+/// Whether `card` took a saved overlay (`apply_saved_overlay`) when it was built and comes from a synced card folder: a card an earlier
+/// boot used. The DT2 does not run its filesystem check again on such a card (docs/findings/37-boot-load.md), so the strict readiness
+/// contract (`main-panel-fs-check-v1`) can never complete and the boot gets the relaxed one, as after a soft reset. A fresh card has no
+/// writes and stays strict. Only a synced folder writes `overlay.bin` at quit; a test card has overlay data too, but its firmware has
+/// not run the check yet, so it stays strict (tests that want the relaxed check ask for it).
+fn saved_overlay_applied(card: Option<&Card>, synced: bool) -> bool {
+    synced && card.is_some_and(|c| c.overlay_len() > 0)
 }
 
 /// Rename the saved overlay of `image` to `overlay.bin.set-aside-<ms since the epoch>` beside it; its new path, or `None` when
@@ -261,9 +263,10 @@ fn runtime_from(
     bytes: &[u8],
     image: Option<PathBuf>,
     audio: Option<&AudioOptions>,
+    synced: bool,
 ) -> Result<(Runtime, Option<ReadError>), String> {
     let (card, error) = card_for(image)?;
-    let used_card = saved_overlay_applied(card.as_ref());
+    let used_card = saved_overlay_applied(card.as_ref(), synced);
     let mut runtime = Runtime::new(bytes, card, audio)?;
     if used_card {
         runtime.relax_fs_check();
@@ -395,7 +398,8 @@ pub struct Config {
     pub audio_alt: Vec<AudioOptions>,
     pub scenario: Option<ScenarioSetup>,
     pub mode: Mode,
-    /// Where patched-firmware snapshots are cached (`<run_dir>/patched`).
+    /// The run directory. Patched-firmware snapshots are cached in `<run_dir>/patched`, or in `DIGI_SNAPSHOT_DIR` when it is set
+    /// (a store that many run dirs share: its entries are named by their content key).
     pub run_dir: PathBuf,
     pub events: Events,
     /// Called on the controller thread when `quit` arrives, after the reply.
@@ -1451,7 +1455,8 @@ impl Actor {
                     audio.snapshot = paths.snapshot();
                     audio.state = paths.dsp_state();
                 }
-                match runtime_from(&bytes, Some(paths.image.clone()), audio.as_ref()) {
+                let synced = self.card_synced(Some(&paths.image));
+                match runtime_from(&bytes, Some(paths.image.clone()), audio.as_ref(), synced) {
                     Ok((runtime, error)) => {
                         self.audio = audio;
                         self.card_last = json!({
@@ -1464,13 +1469,19 @@ impl Actor {
                     }
                     // A cache that no longer boots: start without a card.
                     Err(_) => {
-                        let (runtime, error) = runtime_from(&bytes, None, self.audio.as_ref())?;
+                        let (runtime, error) =
+                            runtime_from(&bytes, None, self.audio.as_ref(), false)?;
                         (runtime, error, None)
                     }
                 }
             }
             None => {
-                let (runtime, error) = runtime_from(&bytes, image.clone(), self.audio.as_ref())?;
+                let (runtime, error) = runtime_from(
+                    &bytes,
+                    image.clone(),
+                    self.audio.as_ref(),
+                    self.card_synced(image.as_deref()),
+                )?;
                 (runtime, error, image)
             }
         };
@@ -1481,6 +1492,25 @@ impl Actor {
         self.startup_snapshot = Some(snapshot.clone());
         self.emit("session.changed", json!({"reason": "load"}));
         Ok(snapshot)
+    }
+
+    /// Whether the card `image` comes from a synced card folder: the loaded one, the startup `--card-folder` the first card load will
+    /// adopt, or a device folder card (`adopt_card_folder`).
+    /// The directory of the booted-state snapshots (see `Config::run_dir`).
+    fn snapshot_root(&self) -> PathBuf {
+        std::env::var_os("DIGI_SNAPSHOT_DIR")
+            .map_or_else(|| self.run_dir.join("patched"), PathBuf::from)
+    }
+
+    fn card_synced(&self, image: Option<&Path>) -> bool {
+        let Some(image) = image else {
+            return false;
+        };
+        self.card_folder
+            .as_ref()
+            .is_some_and(|f| f.sync && f.image == image)
+            || self.startup_card_folder.as_ref().is_some_and(|s| s.sync)
+            || (self.folder_sync && self.next_auto.as_ref().is_some_and(|(i, _)| i == image))
     }
 
     /// The first load that mounts a card image takes the startup `--card-folder`: that card's +Drive folder.
@@ -1629,7 +1659,8 @@ impl Actor {
                 .unwrap_or_else(|| loaded.current.clone()),
             loaded.card.clone(),
         );
-        let (runtime, error) = runtime_from(&bytes, image, self.audio.as_ref())?;
+        let synced = self.card_synced(image.as_deref());
+        let (runtime, error) = runtime_from(&bytes, image, self.audio.as_ref(), synced)?;
         self.session = next_session;
         self.loaded = self.loaded.take().map(|mut l| {
             l.current = bytes;
@@ -3630,8 +3661,13 @@ impl Actor {
                 "start cold needs a patched MAIN; a stock firmware restores its snapshot",
             ));
         }
-        let (runtime, error) = runtime_from(&bytes, card.clone(), self.audio.as_ref())
-            .map_err(|e| RpcError::new(code::FIRMWARE_REJECTED, e))?;
+        let (runtime, error) = runtime_from(
+            &bytes,
+            card.clone(),
+            self.audio.as_ref(),
+            self.card_synced(card.as_deref()),
+        )
+        .map_err(|e| RpcError::new(code::FIRMWARE_REJECTED, e))?;
         report["audio"] = runtime.has_audio().into();
         report["snapshot_ok"] = (runtime.has_audio() || runtime.is_zero()).into();
         report["start_used"] = if runtime.has_audio() || runtime.is_zero() {
@@ -3669,8 +3705,13 @@ impl Actor {
                 "start cold is for a patched MAIN; this MAIN is the base's",
             ));
         }
-        let (runtime, error) = runtime_from(&base_bytes, card.clone(), self.audio.as_ref())
-            .map_err(|e| RpcError::new(code::FIRMWARE_REJECTED, e))?;
+        let (runtime, error) = runtime_from(
+            &base_bytes,
+            card.clone(),
+            self.audio.as_ref(),
+            self.card_synced(card.as_deref()),
+        )
+        .map_err(|e| RpcError::new(code::FIRMWARE_REJECTED, e))?;
         report["audio"] = runtime.has_audio().into();
         report["snapshot_ok"] = (runtime.has_audio() || runtime.is_zero()).into();
         report["start_used"] = if runtime.has_audio() || runtime.is_zero() {
@@ -3794,8 +3835,7 @@ impl Actor {
         let zero = self.audio.as_ref().is_some_and(|audio| audio.zero);
         let mode = if zero { "-zero" } else { "" };
         let cache = self
-            .run_dir
-            .join("patched")
+            .snapshot_root()
             .join(format!("{main_sha}{card_key}{mode}.snap"));
         // With coupled audio inputs for the base: boot the ColdFire and the
         // DSP together (or restore the cached pair).
@@ -3830,7 +3870,7 @@ impl Actor {
             apply_overlay_sectors(card_obj.get_or_insert_with(Card::default), sectors)
                 .map_err(&rejected)?;
         }
-        let used_card = saved_overlay_applied(card_obj.as_ref());
+        let used_card = saved_overlay_applied(card_obj.as_ref(), self.card_synced(card.as_deref()));
         let mut runtime = Runtime::new_patched(&bytes, card_obj, &base_sha).map_err(&rejected)?;
         if zero {
             runtime.enable_zero_dsp_timing().map_err(&rejected)?;
@@ -3856,6 +3896,9 @@ impl Actor {
             runtime.poke_ram(base, ram).map_err(&rejected)?;
         }
         let cache_hit = start != "cold" && cache.as_ref().is_some_and(|p| p.is_file());
+        if let Some(path) = &cache {
+            report["cache_dir"] = path.display().to_string().into();
+        }
         report["audio"] = false.into();
         report["dsp"] = json!({
             "applied": false,
@@ -4075,7 +4118,7 @@ fn patched_pair_key(
 impl Actor {
     /// A patched MAIN with DSP audio. The ColdFire boots from the patched
     /// bytes with its DSP initialized before ColdFire startup. The ready pair
-    /// is cached under `<run_dir>/patched/<MAIN>-<key>/`.
+    /// is cached under `<snapshot root>/<MAIN>-<key>/`.
     #[cfg(feature = "coupled-audio")]
     #[allow(clippy::too_many_arguments)]
     fn load_patched_coupled(
@@ -4199,7 +4242,7 @@ impl Actor {
             initial_buttons.unwrap_or_default(),
         )
         .map_err(&rejected)?;
-        let pair = self.run_dir.join("patched").join(stem);
+        let pair = self.snapshot_root().join(stem);
         let (snapshot, dsp_state) = (
             pair.join("digi-audio-m5.snap"),
             pair.join("digi-audio-m5.snap.dsp"),
@@ -4269,6 +4312,7 @@ impl Actor {
             card.clone(),
             base_sha.to_string(),
         );
+        let synced = self.card_synced(card.as_deref());
         let mut inputs = digi_coupled::cold::ColdInputs {
             initial_buttons: initial_buttons.unwrap_or_default().to_vec(),
             deliver_exceptions: self.deliver_exceptions,
@@ -4285,7 +4329,7 @@ impl Actor {
             .spawn(move || {
                 let result = card_for(worker_card).and_then(|(mut card_obj, _)| {
                     // A card with saved writes was used before: the firmware skips its filesystem check (see `saved_overlay_applied`).
-                    inputs.relax_fs_check |= saved_overlay_applied(card_obj.as_ref());
+                    inputs.relax_fs_check |= saved_overlay_applied(card_obj.as_ref(), synced);
                     if let Some(sectors) = &reset_overlay {
                         // A guest with no card file still writes to the default blank card: lay its writes over a new one,
                         // or a soft reset loses them (an upload then a RESTART booted on an empty store).
@@ -4357,7 +4401,7 @@ impl Actor {
             initial_buttons: _,
         } = install;
         let (card_obj, error) = card_for(card.clone()).map_err(&rejected)?;
-        let used_card = saved_overlay_applied(card_obj.as_ref());
+        let used_card = saved_overlay_applied(card_obj.as_ref(), self.card_synced(card.as_deref()));
         let mut runtime =
             Runtime::new_patched_audio(&bytes, card_obj, &base_sha, &audio).map_err(&rejected)?;
         if used_card {
@@ -4762,8 +4806,8 @@ impl Actor {
         };
         let job = self.card_job.take().expect("card job");
         let seconds = job.started.elapsed().as_secs_f64();
-        let result =
-            outcome.and_then(|ready| self.install_card(&job.syx, &job.name, ready, seconds));
+        let result = outcome
+            .and_then(|ready| self.install_card(&job.syx, &job.name, ready, seconds, job.sync));
         match &result {
             Ok(report) => {
                 self.auto_card = None;
@@ -4796,13 +4840,15 @@ impl Actor {
         name: &str,
         ready: CardReady,
         seconds: f64,
+        sync: bool,
     ) -> Result<Value, String> {
         let mut audio = self.audio.clone();
         if let (Some(audio), Some((snapshot, dsp))) = (audio.as_mut(), ready.ready.as_ref()) {
             audio.snapshot = snapshot.clone();
             audio.state = dsp.clone();
         }
-        let (runtime, error) = runtime_from(syx, Some(ready.paths.image.clone()), audio.as_ref())?;
+        let (runtime, error) =
+            runtime_from(syx, Some(ready.paths.image.clone()), audio.as_ref(), sync)?;
         let has_audio = runtime.has_audio();
         if let Some(loaded) = self.loaded.as_mut() {
             loaded.card = Some(ready.paths.image.clone());
