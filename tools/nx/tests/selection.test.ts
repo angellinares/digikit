@@ -143,7 +143,10 @@ it('keeps every gated runtime device file in exactly one owner command', () => {
   const actual = owners
     .flatMap((owner) => {
       const targets = Object.entries(owner.targets)
-        .filter(([name, target]) => /^test-device(-full)?(--|$)/.test(name) && target.options?.command)
+        .filter(
+          ([name, target]) =>
+            /^test-device(-full)?(--|$)/.test(name) && !name.endsWith('--dn2') && target.options?.command,
+        )
         .map(([, target]) => target);
       const files = targets.flatMap((target) =>
         (target.options.command.match(/\S+\.device\.test\.ts/g) ?? []).map((file) =>

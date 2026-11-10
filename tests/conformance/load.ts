@@ -3,7 +3,7 @@ import { repoRoot, type Device } from '@digi/test-support';
 import { test } from 'vitest';
 import { expectRuntimeBoot, startPatchedSession } from '@digi/regression/support.ts';
 import { timePhase, timingContext } from '@digi/regression/timing.ts';
-import { FIRMWARE, liveOptions } from '@digi/regression/runtime/devices.ts';
+import { FIRMWARE, liveOptions, selectDevices } from '@digi/regression/runtime/devices.ts';
 import { moduleArtifact } from '@digi/regression/runtime/install.ts';
 
 import { loadRuntimeModules, scanRuntimeModules as scanManifests, supportsDevice, type RuntimeModule } from './manifests.ts';
@@ -23,7 +23,9 @@ export const runtimeModules: readonly RuntimeModule[] = loadRuntimeModules(repoR
 // Each cell starts its own daemon. Sessions of a worker reuse one cached run dir (fast boot);
 // the store starts empty in every cell.
 export function conformanceSuite(device: Device): void {
-  const modules = runtimeModules.filter((module) => supportsDevice(module, device));
+  const modules = selectDevices([device]).length
+    ? runtimeModules.filter((module) => supportsDevice(module, device))
+    : [];
   if (modules.length === 0) {
     // a module without a port for this device (e.g. a DT2-only machine): nothing to load, but the file must hold a test
     test.skip(`${device}: no module of this run has a ${device} port`, () => {});

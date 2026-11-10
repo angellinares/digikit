@@ -294,7 +294,7 @@ export const createNodesV2 = [
               ? patchIds.filter((id) => coreBuilds.has(id)).map((id) => `${id}:build-objects`)
               : [dependency],
           );
-        if (targetName === 'test-device-full') target.options.env = { DIGIKIT_TIER: 'full' };
+        if (targetName === 'test-device-full') target.options.env = { ...target.options.env, DIGIKIT_TIER: 'full' };
       }
       nodes.push([file, { projects: { [root]: { name: config.name, root, tags: config.tags, targets } } }]);
     }

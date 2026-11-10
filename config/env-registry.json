@@ -169,6 +169,10 @@
    "owner": "python:tools/devtools",
    "purpose": "Path of the DSP ready state (default READY/digi-audio-m5.snap.dsp)"
   },
+  "DIGI_DEVICE": {
+   "owner": "ts:tests/regression",
+   "purpose": "dt2 or dn2 runs a device test file for that device only (unset: both); Nx sets it for the --dt2 and --dn2 halves"
+  },
   "DIGI_EMU_FAST": {
    "owner": "python:tests/emulator",
    "purpose": "0 turns off the SHARC fast regions (no region list is added)"

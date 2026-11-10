@@ -1,7 +1,7 @@
 import { createHash } from 'node:crypto';
 import path from 'node:path';
 import { button, MS, type Device, type Session } from '@digi/test-support';
-import { describe, expect, test } from 'vitest';
+import { expect, test } from 'vitest';
 import { bootInfo } from '@digi/regression/runtime/card-kit.ts';
 import { cardRig, RT } from '@digi/regression/runtime/card-rig.ts';
 import {
@@ -14,7 +14,7 @@ import {
   readFloatWav,
   rpc,
 } from '@digi/regression/runtime/fx-live.ts';
-import { FIRMWARE, FULL_TIER } from '@digi/regression/runtime/devices.ts';
+import { FIRMWARE, FULL_TIER, describeOn } from '@digi/regression/runtime/devices.ts';
 import {
   decodeTables,
   diffTables,
@@ -101,103 +101,108 @@ async function playNote(session: Session, file: string, trigFrame: number): Prom
 /** One `describe` per row: the run-time set and its reference boot in two daemons. */
 export function defineEquiv(scenarios: Equiv[]): void {
   for (const sc of scenarios) {
-    describe.skipIf(sc.full && !FULL_TIER)(`${sc.device.toUpperCase()} ${FIRMWARE[sc.device]} ${sc.name}`, () => {
-      const { device } = sc;
-      const run = cardRig(device, `${sc.name}-run`, {
-        dsp: 'sharc',
-        roots: RT,
-        hold: true,
-        env: sc.envRun,
-        symbols: [...SYMBOLS, 'voices.rows', 'dyndsp_info', 'DKRT_ASSIGN'],
-        initial: () => ({
-          modules: sc.modules,
-          selection: sc.modules.map((id) => `modules/${id.split('/').at(-1)}.dkm`),
-        }),
-      });
-      // the reference: the twin patched in, a card with no selection
-      const ref = sc.twin
-        ? cardRig(device, `${sc.name}-ref`, {
-            dsp: 'sharc',
-            roots: sc.refPlain ? [sc.twin] : [...RT, sc.twin],
-            plain: sc.refPlain,
-            symbols: sc.refPlain ? SYMBOLS.filter((x) => !x.startsWith('DKRT_')) : SYMBOLS,
-            initial: () => ({}),
-            hold: true,
-          })
-        : undefined;
+    describeOn(
+      sc.device,
+      `${sc.device.toUpperCase()} ${FIRMWARE[sc.device]} ${sc.name}`,
+      () => {
+        const { device } = sc;
+        const run = cardRig(device, `${sc.name}-run`, {
+          dsp: 'sharc',
+          roots: RT,
+          hold: true,
+          env: sc.envRun,
+          symbols: [...SYMBOLS, 'voices.rows', 'dyndsp_info', 'DKRT_ASSIGN'],
+          initial: () => ({
+            modules: sc.modules,
+            selection: sc.modules.map((id) => `modules/${id.split('/').at(-1)}.dkm`),
+          }),
+        });
+        // the reference: the twin patched in, a card with no selection
+        const ref = sc.twin
+          ? cardRig(device, `${sc.name}-ref`, {
+              dsp: 'sharc',
+              roots: sc.refPlain ? [sc.twin] : [...RT, sc.twin],
+              plain: sc.refPlain,
+              symbols: sc.refPlain ? SYMBOLS.filter((x) => !x.startsWith('DKRT_')) : SYMBOLS,
+              initial: () => ({}),
+              hold: true,
+            })
+          : undefined;
 
-      /** Machine 1 of the track: DT2 reads the type; DN2 uses the list position (finding 33), the sound proves the type. */
-      const pickRun = async (session: Session) => {
-        if (!sc.play || device === 'dn2') return pickSine(session, sc.hintRun ?? sc.hint);
-        const type = await dynType(session, run.plan, sc.play.module, sc.play.machine);
-        await selectType(session, 1, type, sc.hintRun ?? sc.hint ?? 7);
-      };
+        /** Machine 1 of the track: DT2 reads the type; DN2 uses the list position (finding 33), the sound proves the type. */
+        const pickRun = async (session: Session) => {
+          if (!sc.play || device === 'dn2') return pickSine(session, sc.hintRun ?? sc.hint);
+          const type = await dynType(session, run.plan, sc.play.module, sc.play.machine);
+          await selectType(session, 1, type, sc.hintRun ?? sc.hint ?? 7);
+        };
 
-      test('the rows equal the reference; the note matches', async () => {
-        let want: Tables;
-        let refPcm: Float32Array | undefined;
-        if (ref) {
-          const refRt = await ref.first();
-          want = await decodeTables(refRt.session, ref.plan);
-          if (sc.play && !sc.pcmSha256) {
-            if (device === 'dt2') await selectType(refRt.session, 1, sc.staticType!, sc.hint ?? 7);
-            else await pickSine(refRt.session, sc.hint);
-            refPcm = await playNote(refRt.session, path.join(ref.artifacts, 'ref.wav'), sc.trigFrame);
-            expect(peak(refPcm), 'the reference note is audible').toBeGreaterThan(0.01);
+        test('the rows equal the reference; the note matches', async () => {
+          let want: Tables;
+          let refPcm: Float32Array | undefined;
+          if (ref) {
+            const refRt = await ref.first();
+            want = await decodeTables(refRt.session, ref.plan);
+            if (sc.play && !sc.pcmSha256) {
+              if (device === 'dt2') await selectType(refRt.session, 1, sc.staticType!, sc.hint ?? 7);
+              else await pickSine(refRt.session, sc.hint);
+              refPcm = await playNote(refRt.session, path.join(ref.artifacts, 'ref.wav'), sc.trigFrame);
+              expect(peak(refPcm), 'the reference note is audible').toBeGreaterThan(0.01);
+            }
           }
-        }
 
-        const rt = await run.first();
-        const { session } = rt;
-        const info = await bootInfo(session, run.plan);
-        const n = sc.modules.length;
-        expect(info.count, 'the selection loaded at boot').toBe(n);
-        expect(info.results, 'every module result is 0').toEqual(Array(n).fill(0));
-        expect([info.loaded, info.safe]).toEqual([n, 0]);
-        const got = await decodeTables(session, run.plan);
-        const used = (await voiceRows(session, run.plan)).filter(([type]) => type !== FREE_TYPE);
-        expect(used.length, `voice rows claimed: ${JSON.stringify(used)}`).toBe(sc.voices);
+          const rt = await run.first();
+          const { session } = rt;
+          const info = await bootInfo(session, run.plan);
+          const n = sc.modules.length;
+          expect(info.count, 'the selection loaded at boot').toBe(n);
+          expect(info.results, 'every module result is 0').toEqual(Array(n).fill(0));
+          expect([info.loaded, info.safe]).toEqual([n, 0]);
+          const got = await decodeTables(session, run.plan);
+          const used = (await voiceRows(session, run.plan)).filter(([type]) => type !== FREE_TYPE);
+          expect(used.length, `voice rows claimed: ${JSON.stringify(used)}`).toBe(sc.voices);
 
-        // the note starts the same instruction after the block boundary of `trigFrame` in every run
-        await pickRun(session);
-        const runPcm = await playNote(session, path.join(run.artifacts, 'run.wav'), sc.trigFrame);
+          // the note starts the same instruction after the block boundary of `trigFrame` in every run
+          await pickRun(session);
+          const runPcm = await playNote(session, path.join(run.artifacts, 'run.wav'), sc.trigFrame);
 
-        if (sc.pcmSha256) {
-          // PCM pin: the SHA-256 over PIN_SAMPLES interleaved little-endian float32 samples from the onset (first sample above 1e-6; it lies on a whole stereo frame)
-          const { onset, window } = pcmWindow(runPcm, PIN_SAMPLES);
-          const sha = createHash('sha256').update(window).digest('hex');
+          if (sc.pcmSha256) {
+            // PCM pin: the SHA-256 over PIN_SAMPLES interleaved little-endian float32 samples from the onset (first sample above 1e-6; it lies on a whole stereo frame)
+            const { onset, window } = pcmWindow(runPcm, PIN_SAMPLES);
+            const sha = createHash('sha256').update(window).digest('hex');
+            expect(
+              { ok: onset >= 0 && onset % 2 === 0 && window.length / 4 === PIN_SAMPLES, sha },
+              `PCM from the onset (${onset}) over ${PIN_SAMPLES} samples has the pinned SHA-256`,
+            ).toEqual({ ok: true, sha: sc.pcmSha256 });
+          } else if (refPcm) {
+            const same = pcmMatches(refPcm, runPcm, 128);
+            expect(same.ok, `PCM of the run-time machine equals the patched-in machine's: ${same.detail}`).toBe(true);
+          }
+
+          if (!ref) {
+            // a set with no twin: the rows are compared with a boot of no module
+            const none = await run.load('none', {});
+            want = await decodeTables(none.session, run.plan);
+          }
+          for (const name of sc.ignoreRunMachines) {
+            const gone = (got.machines[name] ?? {}) as { knobs?: (string | number)[] };
+            delete got.machines[name];
+            const mine = got.pages.filter((p) => p.machine === name);
+            for (const k of [...(gone.knobs ?? []), ...mine.flatMap((p) => p.knobs)]) delete got.params[String(k)];
+            got.pages = got.pages.filter((p) => p.machine !== name);
+          }
+          const diff = diffTables(got, want!);
           expect(
-            { ok: onset >= 0 && onset % 2 === 0 && window.length / 4 === PIN_SAMPLES, sha },
-            `PCM from the onset (${onset}) over ${PIN_SAMPLES} samples has the pinned SHA-256`,
-          ).toEqual({ ok: true, sha: sc.pcmSha256 });
-        } else if (refPcm) {
-          const same = pcmMatches(refPcm, runPcm, 128);
-          expect(same.ok, `PCM of the run-time machine equals the patched-in machine's: ${same.detail}`).toBe(true);
-        }
-
-        if (!ref) {
-          // a set with no twin: the rows are compared with a boot of no module
-          const none = await run.load('none', {});
-          want = await decodeTables(none.session, run.plan);
-        }
-        for (const name of sc.ignoreRunMachines) {
-          const gone = (got.machines[name] ?? {}) as { knobs?: (string | number)[] };
-          delete got.machines[name];
-          const mine = got.pages.filter((p) => p.machine === name);
-          for (const k of [...(gone.knobs ?? []), ...mine.flatMap((p) => p.knobs)]) delete got.params[String(k)];
-          got.pages = got.pages.filter((p) => p.machine !== name);
-        }
-        const diff = diffTables(got, want!);
-        expect(
-          diff,
-          ref ? "machine, parameter and page rows equal the static twin's" : "rows equal the no-module boot's",
-        ).toEqual([]);
-        if (ref)
-          expect(
-            Object.keys(got.machines).length + Object.keys(got.params).length + got.pages.length,
-            'the run-time set added rows',
-          ).toBeGreaterThan(0);
-      }, 1_800_000);
-    });
+            diff,
+            ref ? "machine, parameter and page rows equal the static twin's" : "rows equal the no-module boot's",
+          ).toEqual([]);
+          if (ref)
+            expect(
+              Object.keys(got.machines).length + Object.keys(got.params).length + got.pages.length,
+              'the run-time set added rows',
+            ).toBeGreaterThan(0);
+        }, 1_800_000);
+      },
+      sc.full === true && !FULL_TIER,
+    );
   }
 }

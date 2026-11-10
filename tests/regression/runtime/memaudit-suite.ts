@@ -8,7 +8,7 @@ import { record } from './artifacts.ts';
 import { bootInfo } from './card-kit.ts';
 import { CARD_SYMBOLS, cardRig, RT, type CardRig, type CardSpec } from './card-rig.ts';
 import { CARD_TIMEOUT, pausedProtocol } from './debug-kit.ts';
-import { DEVICES, FIRMWARE, FULL_TIER } from './devices.ts';
+import { FIRMWARE, FULL_TIER, selectDevices, skipEmptyHalf } from './devices.ts';
 import { advance } from './fx-live.ts';
 import {
   arenaBounds,
@@ -81,7 +81,9 @@ function loggedStores(dir: string): { pc: number; addr: number; size: number }[]
 }
 
 export function defineMemaudit(set: (device: Device) => AuditSet | undefined, o: AuditOptions = {}): void {
-  for (const device of o.devices ?? DEVICES) {
+  const selected = selectDevices(o.devices);
+  skipEmptyHalf(selected, 'memaudit');
+  for (const device of selected) {
     const spec = set(device);
     if (!spec) continue;
     describe.skipIf(o.full === true && !FULL_TIER)(
