@@ -26,6 +26,7 @@
       "cache": false,
       "dependsOn": [
         "patchkit:cli",
+        "patchkit:device-bytes",
         { "target": "build-objects", "projects": ["tag:acceptance-image"] },
         "digi-control:daemons",
         "digikit/probe:pack",

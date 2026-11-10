@@ -11,6 +11,7 @@
       {
         "files": ["tests/equiv.device.test.ts"],
         "modules": ["test/dyn-dn2", "test/sine"],
+        "compiles": true,
         "sources": ["tests/fixtures/modules/twin-dn2/**/*"],
         "plusdrive": true
       }

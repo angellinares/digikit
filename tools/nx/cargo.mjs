@@ -40,6 +40,19 @@ const cliTarget = ({ build, bin, dir }) => ({
 
 // Extra targets of named crates.
 const CRATE_TARGETS = {
+  patchkit: {
+    'device-bytes': {
+      executor: 'nx:run-commands',
+      cache: false, // runs every time (under a second): the file it writes is part of the cache key of the device tasks
+      parallelism: true,
+      description:
+        'Writes dist/bytes/core-objects.sha256: the hash of each committed core object without its source hash.',
+      inputs: ['{workspaceRoot}/tools/nx/device-bytes.mjs', { dependentTasksOutputFiles: '**/*', transitive: true }],
+      dependsOn: [{ target: 'build-objects', projects: ['tag:acceptance-image'] }],
+      outputs: ['{workspaceRoot}/dist/bytes/core-objects.sha256'],
+      options: { command: 'node tools/nx/device-bytes.mjs', cwd: '.' },
+    },
+  },
   dksample: {
     wasm: {
       executor: 'nx:run-commands',

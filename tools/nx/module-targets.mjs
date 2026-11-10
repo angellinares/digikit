@@ -1,9 +1,12 @@
 // Module build and acceptance target inputs and factories.
+import { existsSync } from 'node:fs';
 import { basename, join } from 'node:path';
 
 // Commands run with cwd '.' (the workspace root); Nx accepts {workspaceRoot} only at the start of an option.
 export const PK = 'dist/patchkit/patchkit --root .';
 export const IMAGE_BUILD = { target: 'build-objects', projects: ['tag:acceptance-image'] };
+// Writes the hash of every committed core object without its source hash (tools/nx/device-bytes.mjs).
+export const DEVICE_BYTES = 'patchkit:device-bytes';
 // Shared compiler/contract surfaces. Optional implementation sources are named by their consumers.
 export const SHARED_SDK_INPUTS = [
   '{workspaceRoot}/sdk/sdk.toml',
@@ -96,14 +99,15 @@ export const scopedManifestInputs = (inputs, manifests) => [
 
 // Files that tests read by path and do not import. The import walk (test-imports.mjs) cannot see them.
 // Extend this list when a test reads a new file; a file only one record's tests read goes in that record's `sources`.
-// SHARED_READS reach a test through the image and the daemon; a narrow merge key leaves them out.
+// SHARED_READS are files that every device test may read and the built bytes do not carry.
 const SHARED_READS = [
-  // the daemon reads every device file to patch the image. Manifests are not listed: the image input holds those of
-  // the image modules, `production` the test's own, and the pack outputs the loaded ones. A manifest outside the image
-  // can only make the daemon's scan fail, which `pack` and `patchkit build --check` catch.
+  // tests/regression/runtime/device-data.ts and card-cache.ts read the profiles and the firmware ports
   '{workspaceRoot}/devices/**/*.toml',
-  // committed core objects: the patched image is made from them
-  '{workspaceRoot}/modules/core/**/build/*.dko.json',
+  // the manifests of the core modules: `patchkit apply` reads them with the objects
+  '{workspaceRoot}/modules/core/**/module.toml',
+  // upload-kit.ts and files-api.test.ts read the runtime version and the [api] table
+  '{workspaceRoot}/sdk/sdk.toml',
+  // synth.ts reads the machine types
   '{workspaceRoot}/modules/core/adapters/machines/types.toml',
 ];
 const TEST_READS = [
@@ -157,19 +161,32 @@ const DEVICE_COMMON = [
   { env: 'UPDATE_GOLDENS' },
   '{workspaceRoot}/config/emulator.json',
 ];
-export const DEVICE_INPUTS = [
-  ...SHARED_SDK_INPUTS,
-  ...READ_BY_TESTS,
-  { dependentTasksOutputFiles: '**/*', transitive: true },
-  ...DEVICE_COMMON,
-];
-// Device and conformance tasks run behind this wrapper: it takes one machine-wide emulator slot.
+// Full set: what the run consumes is the built bytes (the image hashes, the packs, the tool binaries), not the sources
+// they are made from. A source edit that leaves these bytes alone changes no key.
+export const BUILT_OUTPUTS = [
+  'dist/bytes/core-objects.sha256',
+  'dist/modules/*/*.dkm',
+  'dist/patchkit/patchkit',
+  'dist/daemons.json',
+  'dist/plusdrive/plusdrive',
+  'apps/web/public/dksample.wasm',
+].map((glob) => ({ dependentTasksOutputFiles: glob, transitive: true }));
+export const DEVICE_INPUTS = [...READ_BY_TESTS, ...BUILT_OUTPUTS, ...DEVICE_COMMON];
+// Tests that run `patchkit build` or `pack` at run time, or patch with explicit fixture modules, compile sources:
+// they keep the SDK and the toolchain as inputs (record flag `compiles`, `patchModules`, or any `pythonTools`: the Python devtools may build or pack).
+export const COMPILE_INPUTS = [...SHARED_SDK_INPUTS, '{workspaceRoot}/tools/patchkit/toolchain/**/*'];
+// Device and conformance tasks run behind this wrapper: it takes one machine-wide emulator slot. It only schedules and is
+// no input: it cannot change a result, and Nx does not cache failures.
 export const EMU_SLOT = 'node tools/devtools/emu-slot.mjs --';
-export const EMU_SLOT_INPUT = '{workspaceRoot}/tools/devtools/emu-slot.mjs';
+// Directories of a module project that its objects are built from (see the pack and image outputs).
+export const builtSourceExclusions = (root, base = '.') =>
+  ['src', 'include', 'fit', 'sdk']
+    .filter((dir) => existsSync(join(base, root, dir)) && !root.includes('/tests'))
+    .map((dir) => `!{projectRoot}/${dir}/**/*`);
 // `opts`: `narrow` selects the narrow input set; `moduleId` is the project's module id (its pack is loaded when
 // `uploadable`); `subjects` are the projects a test-only project tests.
 export const deviceTarget = (root, tests, recs, imageInput, importInputs, uploadable = false, opts = {}) => {
-  const dependsOn = ['patchkit:cli', 'digi-control:daemons', IMAGE_BUILD];
+  const dependsOn = ['patchkit:cli', 'digi-control:daemons', IMAGE_BUILD, DEVICE_BYTES];
   if (uploadable) dependsOn.push('pack');
   for (const rec of recs) {
     for (const id of rec.modules ?? []) dependsOn.push(`${id}:pack`);
@@ -212,10 +229,18 @@ export const deviceTarget = (root, tests, recs, imageInput, importInputs, upload
               ? [{ input: 'production', projects: [...new Set(recs.flatMap((r) => r.patchModules ?? []))] }]
               : []),
           ]
-        : [...DEVICE_INPUTS, imageInput]),
-      'production',
-      EMU_SLOT_INPUT,
+        : [
+            ...DEVICE_INPUTS,
+            // an explicit fixture image is built from the sources of its modules at run time
+            ...(imageInput ? [imageInput] : []),
+          ]),
+      // the module itself (its sources, without tests/ and docs). Full set: the sources that become objects reach the
+      // run through the pack outputs and the image hashes.
+      ...(opts.narrow ? ['production'] : ['production', ...builtSourceExclusions(root, opts.base)]),
       ...importInputs([...tests.map((test) => join(root, test)), VITEST_SETUP]),
+      ...(!opts.narrow && recs.some((rec) => rec.compiles || rec.patchModules?.length || rec.pythonTools)
+        ? COMPILE_INPUTS
+        : []),
       ...new Set(recs.flatMap((rec) => (rec.sources ?? []).map((s) => `{workspaceRoot}/${s}`))),
       ...(recs.some((rec) => rec.pythonTools === true)
         ? PYTHON_TOOL_SOURCES

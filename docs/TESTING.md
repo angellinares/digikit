@@ -345,7 +345,8 @@ without running it.
   the harness only (see `tests/regression/project.json`). So a change to a stock test, a golden, an FX
   scenario, a host test or another module's tests still selects the dependent modules, but their device
   results replay from the cache. Packs still run (they are not cached).
-- Build, pack and device inputs share `sdk/sdk.toml`, public `sdk/include`, `sdk/asm`, `sdk/dsp` and `sdk/vectors`.
+- Build and pack inputs share `sdk/sdk.toml`, public `sdk/include`, `sdk/asm`, `sdk/dsp` and `sdk/vectors`. Full-input device tasks do not
+  hash them; they hash the built bytes (see "Cached targets"). `tools/devtools/emu-slot.mjs` is no device input: it only schedules.
   Optional implementation sources under `sdk/src` belong to their explicit consumers: pack manifests name the C
   files, with adjacent private headers included, and `dkui-host:rust-tests` names the picker sources and headers
   compiled by its build script. Module and Cargo source ownership remains project-wide. A picker helper edit
@@ -380,9 +381,18 @@ The store has a 14-day TTL swept daily and no size cap.
 Cached targets: module `test-device` and `test-conformance`, `gate-stock:stock`, and the FX targets of `gate-fx-dn2`
 (`fx`, `fx-no-aot`, `tier-quick`) and `gate-fx-dt2` (`fx-dt2`, `dt2-tier-quick`; the FX key is described below). A key covers what the run consumes: the
 TypeScript import closure of the test files and of the Vitest setup file (`tools/nx/test-imports.mjs`), the
-outputs of the pack, CLI and daemon targets, the production files of the module (with its `module.toml`) and of the core modules in the
-patched image (with their manifests), the SDK, the files in `READ_BY_TESTS` (`tools/nx/module-targets.mjs`: `devices/**/*.toml`,
-committed core objects, `types.toml`, fixture files, the Vitest and TypeScript config), each record's `sources`,
+built bytes (full set; the narrow set of a file outside `mergeTests` is described above): `patchkit:device-bytes` writes
+`dist/bytes/core-objects.sha256`, one line per committed core object (`modules/core/**/build/*.dko.json`) with its hash without
+`source_sha256`, the only field that follows the source text (a comment edit changes no other field; checked for Rust, C and assembly).
+The patched image is a function of these objects, the core manifests, the device files, the patchkit binary and the firmware, and all of
+them are inputs, so every patch set and every `--modules` combination of core roots is covered. The sources, SDK headers and
+`source_sha256` of the image are not inputs: a comment, an unused constant or a rebuilt object with the same bytes changes no key. The key
+also holds the pack outputs (`dist/modules/*/*.dkm`), the `patchkit`, daemon, `plusdrive` and `dksample.wasm` outputs, the module's own
+production files without its object sources (`src`, `include`, `fit`, `sdk`; they reach the run through the packs and the object hashes), the
+files in `READ_BY_TESTS` (`tools/nx/module-targets.mjs`: `devices/**/*.toml`, `modules/core/**/module.toml`, `sdk/sdk.toml`, `types.toml`,
+fixture files, the Vitest and TypeScript config; tests read these without importing them),
+each record's `sources`. A record that runs `patchkit build` or `pack` at run time, or patches with explicit fixture modules (`patchModules`),
+also keeps the SDK and the toolchain as inputs (record flag `compiles`; the equiv tests with a patched-in twin set it, because `apply` builds the twin at run time),
 the toolchain, the emulator env switches,
 `config/emulator.json`, and the firmware, ready dirs and DT2 sample card (hashed by
 `tools/nx/device-inputs.mjs`). That digest also hashes path, contents and file permissions of
