@@ -1,6 +1,7 @@
 # SDK API and module build
 
 Status: agreed with Em on 2026-10-27.
+The SDK contract work now belongs to item 5 of [runtime-and-services.md](runtime-and-services.md) (sections 7.2 and 12), which amends decisions 1 and 6 here.
 This plan replaces step 9 (UI runtime services) of
 [firmware-decls-and-sdk.md](firmware-decls-and-sdk.md) and the prebuilt-object part of its step 8.
 It comes before the own-DSP work (`sdk/dsp`, the C-on-SHARC replacement).

@@ -4,6 +4,8 @@ Date: 2026-11-06. Base: `main` at 9a849b7b. Targets: DT2 OS 1.17, DN2 OS 1.12.
 
 Status: **draft for Em's review. Nothing is built.** This is the only active plan for this work.
 
+2026-11-10: proposals added for Em's review, each marked **Proposal**: DSP cycles as a resource (5.3), sink slots (5.11), the owner of per-block DSP dispatch (6.1), DSP rules, cycle cost and `DK_SPAN` in the contract (7.2), and the SDK contract earlier in the order (13.1). They come from the [profiling plan](profiling.md). The order across both plans is in [sdk-runtime-roadmap.md](sdk-runtime-roadmap.md).
+
 Evidence: facts come from read-only code reviews on 2026-11-06. Nothing was run. Line counts are approximate. Size figures come from `docs/plans/module-architecture.md` section 4 and `modules/core/runtime/build/runtime.dko.json`, not from a new measurement. Line references are pointers, read around that commit, some from a branch with a Rust format pass. Recheck them when an item starts. `R` means `modules/core/runtime/src/rs/src`.
 
 ## 1. Goal
@@ -211,7 +213,9 @@ There is one rule for all. A service offers capacities. Every module and provide
 
 The broker sums uses per resource, checks exclusive keys for duplicates (module id, `<module>:<machine>`, effect id, settings prefix) and checks versions. It names no service. The same function runs in the packer, Transfer tab (wasm), menu and loader; it extends `dkrt-fit`. Today the loader enforces limits with separate code that shares constants and a few helpers (`loader.rs:183-262`, `dkrt_sdk::capacity`).
 
-Dynamic demands stay run-time calls that return errors, such as PCM memory or `dk_alloc`. DSP cycles remain unbudgeted.
+Dynamic demands stay run-time calls that return errors, such as PCM memory or `dk_alloc`. DSP cycles are unbudgeted today.
+
+**Proposal:** DSP cycles per block become a derived use, like DSP bytes. The packer writes each module's worst-case cycles per block into the header and the report (section 7.2, "Cycle cost"). The device adapter reports the free cycles per block from the profile. The broker refuses a selection that exceeds them, with a reason, and still names no service. Providers count like modules.
 
 Limits today: arena 512 KiB and `.dkm` 64 KiB on both devices; 8 machine rows and 16 param rows on both; 3 FX slots on both; send slots 2 on DT2 and 1 on DN2; page rows 0 on DT2 and 8 on DN2; DSP area 512 KiB on DT2 and 320 KiB on DN2.
 
@@ -292,6 +296,17 @@ Readers: reviewers (CI output), the Transfer tab and menu (fit before restart), 
 
 A new plug-in point starts as an experimental `.dks` with its own hook table, and needs no change to the image. Modules import from it by name, and the report shows "experimental". It is not part of the default service set. When proven (two users, or Em's call), the mark comes off and module sources do not change. Only we build `.dks` files for now, because they carry firmware-level power. Whether third parties can write them is a later decision.
 
+### 5.11 Sink slots
+
+**Proposal.** The runtime has one observer mechanism today: the log sink. `digikit/debug` sets it with `dkrt_log_sink_set`; without a sink, error events go to the small ring and the rest is dropped, at the cost of one pointer test ([debug-mode-and-probes.md](debug-mode-and-probes.md), phase 1). Make this one generic mechanism with numbered channels, `log` and `span` first:
+
+- The runtime keeps one pointer per channel and names no service or kind. Producers pass opaque owner ids (`owner_of_row`).
+- A module or service sets a channel's sink by import. One owner per channel; a second claimant is refused while planning, like a hook site.
+- The slot is cleared after the owner's `fini`. Only `log` replays its ring to a new sink, as today.
+- With no sink set, a producer pays one pointer test.
+
+Users: `digikit/debug` (`log`), `profile.dks` (`span`, [profiling plan](profiling.md) section 7). The probe's per-block `dl_set_tick_cb` slot in dsp-link can follow the same rule later.
+
 ## 6. DSP
 
 Three concepts are mixed today:
@@ -316,6 +331,12 @@ Target: `submit(owner, addr, bytes, done)` with one FIFO. Delete all `busy()` cr
 `watch.rs`: keep the heartbeat and hang record in the runtime. Move voice and FX guards and attribution to their services. Boot-counter safe mode does not use `watch.rs` (`boot.rs:254-309`); hang records do (`crash.rs:449`). The DIAG words move to a shared crate to break the `crash` and `watch` cycle.
 
 `_dv_exp2` is exported by `dsp-voice` to machine DSP code. DSP-side imports are part of the `machines` contract and need to be declared as such.
+
+### 6.1 Per-block DSP dispatch
+
+Today the per-block calls into machine and FX DSP code sit in the `dsp-voice` and `fx` adapters (26 and 2 SHARC hooks, section 11.1). This plan does not yet say who owns that dispatch in the target.
+
+**Proposal:** each kind's per-block dispatcher belongs to the service that owns the kind: `machines` for voice rows, `fx` for effect rows, and a new kind's service brings its own. If SHARC hooks cannot move (section 11.2), the dispatcher stays in the image as a generic stub that walks the rows services registered. Either way the dispatcher is the one place for `DK_SPAN` (section 7.2) and the DSP stack guard (section 8), so content modules need neither.
 
 ## 7. SDK
 
@@ -409,11 +430,21 @@ Open design issues this work must solve:
 | `requires` | Real in `remote` (`core/input`) and `probe` (`core/dsp-link`) | Derive from imports before dropping it |
 | Device restriction | `ports` is the only one today (`main.rs:788-799`) | Use `[targets]`: `unsupported` means the module does not apply there |
 | Record size versioning | Kind and size fields carry it today (`desc.rs:391-418`) | Decide with the record format |
-| Asm-only facts | `state_bytes`, `max_cycles_*`, `stack_bytes` | These need a C field or stay in asm |
+| Asm-only facts | `state_bytes`, `max_cycles_*`, `stack_bytes` | `state_bytes` and `stack_bytes` need a C field or stay in asm. **Proposal:** `max_cycles_*` is derived by the packer ("Cycle cost" below) |
 | Latched params | `DK_PARAM_LATCHED` (`machine.h:60`) | A `.latched` field |
 | Native pages | `DK_NATIVE_PAGE_V1/_V2/_V2_FLAGS` | A const record |
 | Sample tracks | `DK_SAMPLE_TRACKS(0, _shot_rec, _shot_ctl)` names asm symbols | The record needs a C-to-asm reference by name |
 | Constants | `DK_GLYPH_*`, `DK_POS_AUTO`, `DK_ROUTE_*`, `DK_PERCENT`, `DK_BIPOLAR`, `DK_MACHINE_STEREO` | Stay as generated constants |
+
+**Proposal: DSP rules.** What a module's DSP code may do is written down in parts today: `sdk/dsp/README.md` "Block routines" lists clobbered and kept registers, the M5, M6, M7 and M14 values the module contract guarantees, and the I12, I13 and entry I7 rules for machine code; `sdk/dsp/delay.inc` says the module contract keeps MODE1.CBUFEN set. There is no single list, and `pk_conform` checks none of it.
+
+- One rules section in `sdk/` for machine and FX entry points: registers a module may clobber, registers and mode bits it must restore, memory it may touch.
+- Derive the stock side from sharcdb: `regdef`/`reguse` of the interrupt context save (`0x1c02a4`, [finding 68](../findings/68-sharc-runtime-performance.md); image and port to confirm) and of the adapter dispatchers, and `mem_access` for memory stock code owns. No finding records the stock save set yet [O]; record it in `docs/findings/` and have a second agent check it against image bytes before [V].
+- `pk_conform` checks each module against the rules, using sharcdb tables built for the module's own DSP section ([profiling plan](profiling.md) 3.3).
+
+**Proposal: Cycle cost.** `max_cycles_*` stops being written by hand. The packer derives a DSP cycles-per-block use and writes it into the header and the report (5.9, for example `uses ... dsp.cycles 38000`). The source is the `module:check` emulator measurement at the device's voice count, or a static estimate over the module's sharcdb tables (loop trip counts times body cost), scaled by the emulator-to-device calibration factor ([profiling plan](profiling.md) 6 and 7.3). The broker checks it (5.3).
+
+**Proposal: `DK_SPAN`.** `DK_SPAN_BEGIN(owner)` and `DK_SPAN_END(owner)` in `dk/trace.h` and `dk/trace.inc` (section 7.1 layout), for both CPUs. They read the cycle counter and emit `(owner, cycles)` to the `span` sink (5.11). With no sink set they cost one flag test. Only service dispatchers use them (6.1); content modules do not. In the emulator a counter read can change the execution tier (`UNSAFE_READ_NAMES` in `tools/sharc_dev/sharc_rsgen.py`), so the reads run only while a sink is set [O: measure the tier effect].
 
 The Api table becomes named imports, grouped by service in `sdk.toml`. `dkm_init` takes no argument. `uses_api` and `api->size` checks go. `fw_alloc`, `fw_free`, `fw_block_read` go: no content module, template or SDK source uses them (core users not fully checked). The runtime can only stop naming samples and params once this is done, because the Api table thunks name them (`lib.rs:521-579`).
 
@@ -580,9 +611,11 @@ Today's only run-time hook write is a data word (`crash.rs:109`). No code jump i
 
 Projects (`docs/plans/digikit-project.md`) stay on their own branch, after module states. `dk_data_*` become imports. "Project changed" becomes an event table entry. Where the project feature lives (runtime or service) is open; recommendation: a loadable service, as a module that uses no project data should not pay for it. It needs module states and the MISSING placeholder.
 
-## 13. Order
+## 13. Items
 
-Before each item over a day: state payoff and confidence, and stop when they are weak. One after the other, not in parallel, so there is less to review at once.
+The order of these items, together with the items of other plans, lives in [sdk-runtime-roadmap.md](sdk-runtime-roadmap.md). Item numbers are ids, not an order. Section 13.1 lists the dependencies the roadmap must keep.
+
+Before each item over a day: state payoff and confidence, and stop when they are weak. Items of this plan run one after the other, not in parallel, so there is less to review at once.
 
 Items 7, 9 and 10 link services into the image as a temporary step, so each boundary is proven before loading is added. Item 12 is the end state.
 
@@ -607,6 +640,18 @@ Items 7, 9 and 10 link services into the image as a temporary step, so each boun
 Total to item 12: about 36-47 agent days. None of the `.dks` path is proven until item 8.
 
 Note on payoff: moving code into a `.dks` saves memory only when it is unused, and moves it to the arena when it is used. The main value is the clean boundary, a small runtime, stock firmware sites when unused, and adding services without runtime edits.
+
+### 13.1 Dependencies
+
+**Proposal (2026-11-10, for Em's review).** Goal: fix the module contract first, then refactor the runtime under it, so modules break once and later runtime work does not change them. The resulting order is in [sdk-runtime-roadmap.md](sdk-runtime-roadmap.md). Dependencies checked in this plan:
+
+- 1 stays first. Section 7.1 cleans only what survives the contract change, and its hash task is the proof tool for the later items.
+- 4 stays before 5. Its SHARC answer (11.1 point 2) decides where DSP dispatch and `DK_SPAN` live (6.1, 7.2), so the contract is not frozen before it.
+- 5 does not need 2 or 3. Section 10 already allows item 5 to change the SDK headers while the runtime items keep them fixed. Doing 5 before 2 means the import table changes in `lib.rs` before the split moves it; that costs one extra move, not a blocker.
+- 5 is designed against this plan's target (records, named imports grouped by service, derived needs), not against today's runtime. Where today's runtime lacks something, a small shim fills it until the runtime items land.
+- 5 grows by the DSP rules, cycle cost and `DK_SPAN` proposals in 7.2: about 1-2 more agent days.
+- **Blocked:** the contract's acceptance test, one new kind (an LFO shape) with no runtime edits, needs the generic record walker of item 7 (section 4). Item 5 ports the existing modules and fixtures; the new-kind proof moves to the end of item 7.
+- The sink slots (5.11) fit item 2 (the `dlog.rs` and module context split). The dsp-link windows the profiler needs fit item 6.
 
 ## 14. Checks
 
@@ -640,7 +685,6 @@ Base documents to rewrite when each item lands. These decisions are amended: `do
 ## 17. Not in this plan
 
 - Flaky device tests: DN2 `throughput` floor of 200 pages/s fails on `main` too (about 190-193); DN2 "no reply from the device" or "no new boot within 90 s" while another emulator runs. Em fixes these later.
-- `mise.toml` task name clash `wb`: rename the tool task, for example to `wb:cli`.
 - Findings to record: DT2 1.17 seek by the path handle's position word ([D], emulator only; `FUN_4015824e` read-at-offset, `path.read` at 0x4015860a reads at handle word 1). DN2 1.12 firmware font glyph widths, if they stay in use: most capitals and digits 4 px; T, x and 1 at 3 px; M 5 px; '.' 1 px; 1 px spacing.
 - Gate width for runtime and SDK changes: once needs are derived, make tests depend on the services and kinds they load, so the Nx selection follows what a change can reach.
 - Arena size: measure the footprint first (`docs/plans/module-limits.md:45`). Keep DT2 at 512 KiB until then.
