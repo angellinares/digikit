@@ -8,7 +8,7 @@ This plan replaces `~/src/digi/SHARC-PROFILING-PLAN.md` (2026-11-05, outside the
 checkout and lane state. It works with [runtime-and-services.md](runtime-and-services.md) (where device hooks may live),
 [debug-mode-and-probes.md](debug-mode-and-probes.md) (log sink, `digikit/debug`, probes) and
 [workbench-device-log.md](workbench-device-log.md) (the Log pane). The order of its items, together with the runtime-and-services items,
-lives in [roadmap.md](roadmap.md).
+lives in [sdk-runtime-roadmap.md](sdk-runtime-roadmap.md).
 
 ## 1. Goal
 
@@ -268,7 +268,7 @@ Build each item when a concrete need appears, not before.
 
 ## 13. Items
 
-Item numbers are ids, not an order. The order lives in [roadmap.md](roadmap.md); this table keeps each item's dependencies.
+Item numbers are ids, not an order. The order lives in [sdk-runtime-roadmap.md](sdk-runtime-roadmap.md); this table keeps each item's dependencies.
 
 | # | Item | Track | Agent time | Depends on |
 | --- | --- | --- | --- | --- |

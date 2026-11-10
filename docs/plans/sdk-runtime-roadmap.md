@@ -1,4 +1,4 @@
-# Roadmap: SDK contract, runtime, profiling
+# SDK and runtime roadmap: contract, runtime, profiling
 
 Date: 2026-11-10. Status: **draft for Em's review.**
 

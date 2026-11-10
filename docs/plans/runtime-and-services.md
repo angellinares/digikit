@@ -4,7 +4,7 @@ Date: 2026-11-06. Base: `main` at 9a849b7b. Targets: DT2 OS 1.17, DN2 OS 1.12.
 
 Status: **draft for Em's review. Nothing is built.** This is the only active plan for this work.
 
-2026-11-10: proposals added for Em's review, each marked **Proposal**: DSP cycles as a resource (5.3), sink slots (5.11), the owner of per-block DSP dispatch (6.1), DSP rules, cycle cost and `DK_SPAN` in the contract (7.2), and the SDK contract earlier in the order (13.1). They come from the [profiling plan](profiling.md). The order across both plans is in [roadmap.md](roadmap.md).
+2026-11-10: proposals added for Em's review, each marked **Proposal**: DSP cycles as a resource (5.3), sink slots (5.11), the owner of per-block DSP dispatch (6.1), DSP rules, cycle cost and `DK_SPAN` in the contract (7.2), and the SDK contract earlier in the order (13.1). They come from the [profiling plan](profiling.md). The order across both plans is in [sdk-runtime-roadmap.md](sdk-runtime-roadmap.md).
 
 Evidence: facts come from read-only code reviews on 2026-11-06. Nothing was run. Line counts are approximate. Size figures come from `docs/plans/module-architecture.md` section 4 and `modules/core/runtime/build/runtime.dko.json`, not from a new measurement. Line references are pointers, read around that commit, some from a branch with a Rust format pass. Recheck them when an item starts. `R` means `modules/core/runtime/src/rs/src`.
 
@@ -613,7 +613,7 @@ Projects (`docs/plans/digikit-project.md`) stay on their own branch, after modul
 
 ## 13. Items
 
-The order of these items, together with the items of other plans, lives in [roadmap.md](roadmap.md). Item numbers are ids, not an order. Section 13.1 lists the dependencies the roadmap must keep.
+The order of these items, together with the items of other plans, lives in [sdk-runtime-roadmap.md](sdk-runtime-roadmap.md). Item numbers are ids, not an order. Section 13.1 lists the dependencies the roadmap must keep.
 
 Before each item over a day: state payoff and confidence, and stop when they are weak. Items of this plan run one after the other, not in parallel, so there is less to review at once.
 
@@ -643,7 +643,7 @@ Note on payoff: moving code into a `.dks` saves memory only when it is unused, a
 
 ### 13.1 Dependencies
 
-**Proposal (2026-11-10, for Em's review).** Goal: fix the module contract first, then refactor the runtime under it, so modules break once and later runtime work does not change them. The resulting order is in [roadmap.md](roadmap.md). Dependencies checked in this plan:
+**Proposal (2026-11-10, for Em's review).** Goal: fix the module contract first, then refactor the runtime under it, so modules break once and later runtime work does not change them. The resulting order is in [sdk-runtime-roadmap.md](sdk-runtime-roadmap.md). Dependencies checked in this plan:
 
 - 1 stays first. Section 7.1 cleans only what survives the contract change, and its hash task is the proof tool for the later items.
 - 4 stays before 5. Its SHARC answer (11.1 point 2) decides where DSP dispatch and `DK_SPAN` live (6.1, 7.2), so the contract is not frozen before it.
