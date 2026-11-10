@@ -159,9 +159,33 @@ per-device data through anchors.
   Commands: INFO, BEGIN (root, path, size, expected hash), DATA (offset, up to 64 KiB), END (returns the device's hash), ABORT, VERIFY (DN2 store:
   read back a range and hash it). Numbers and status codes in `sdk.toml [protocol]`, generated for C, Rust and TypeScript like the SysEx protocol.
   LIST, MKDIR, DELETE and everything else stay on SysEx.
+- **Framing on USB (host and device rules, `[protocol.bulk]` in sdk.toml).**
+  - A frame is bounded: a body longer than `data_max + 4 + frame_slack` (64) is a protocol error. A bad magic or an oversize length is fatal on both
+    sides: the host closes the link and fails the request, no resync.
+  - **OUT zero-length packet.** The device RX buffers are 16 KiB multi-page dTDs that complete only when full or on a short packet. The host therefore
+    sends a zero-length OUT transfer after every OUT frame whose length is a multiple of `packet` (512). The transports do it (nusb `UsbTx`, the `dkbulk`
+    bridge through it, WebUSB `transferOut` with an empty buffer); the fakes of both clients do not deliver a 512-multiple frame without it.
+  - **IN zero-length transfer.** The device keeps ZLT on for EP2 IN: after a reply whose length is a multiple of 512 bytes the host receives an extra
+    zero-length IN transfer. Every reader (nusb `UsbRx`, the Tauri `bulk_recv`, the `dkbulk` bridge, the WebUSB pump) treats it as "no bytes" and reads on.
+  - **Replies in order, late ones dropped.** The device answers in order. A host that gave up on a request (timeout, cancel) reads or discards every
+    reply still owed (the head included), then sends ABORT and confirms its reply, before the next request; a reply that is not the awaited one is dropped
+    and logged. BEGIN that stays `E_BUSY` after the retries gets one ABORT and one more BEGIN; the busy budget is per run of busy answers (reset by every
+    acknowledged DATA).
+- **Which device is it (identity handshake).** Several Elektron devices can be attached and their USB serial strings are the same on all units, so the
+  host does not rely on them. `[protocol.ranges] usb_fast = [0x36, 0x37]` reserves the SysEx service command `USB_FAST_NONCE = 0x36` for the module:
+  body `nonce[8]`, reply empty; the module keeps the 8 bytes (RAM, reset at boot). The INFO reply body is `version u8, flags u8, reserved u16,
+  data_max u32, align u32, nonce[8]` (20 bytes): the nonce set last, all zero before. The host generates 8 random bytes, sends USB_FAST_NONCE to the
+  device on the selected MIDI target (`DkSession.usbFastNonce`), opens each candidate (`dkbulk list`: id = `bus:address`; the desktop `bulk_list` and
+  `bulk_open(id)`; WebUSB: the devices of `getDevices()`), asks INFO and keeps only the one whose nonce matches; the others are closed. None matches (or
+  SET_NONCE fails with E_PROTO: usb-fast not loaded): SysEx, with the reason logged. The host repeats the choice at every upload run while there is no bulk link
+  or the last one failed, and a bulk failure in a run moves the rest of that run to SysEx.
+- **WebUSB access.** The page opens only devices it may already use (`navigator.usb.getDevices()`); `requestDevice` (the chooser, needs a click) is a
+  separate explicit `requestAccess()`.
 - **Verification**: DN2: the store's running hash at close (`E_HASH`), then VERIFY reads back (on by default). DT2: the firmware's close hash returned
-  by END; the host compares it with its `content_hash` of the bytes sent plus the 16-byte trailer, as today's GetFileInfoV2 check does. No overwrite:
-  the host checks the listing first (as `sameOnDevice` does) and deletes over SysEx when asked.
+  by END; the host compares it with its `content_hash` of the bytes sent plus the 16-byte trailer, as today's GetFileInfoV2 check does. Replace, never
+  delete then upload: the host sets the REPLACE flag (bit 0 of the request header `flags`, `[protocol.bulk.flags]`) in BEGIN when the listing shows the file; the device
+  replaces it atomically at END (DN2: the store's replace commit; DT2: temp file, then rename), so a failed upload keeps the old file. Without the flag an existing
+  file gets E_EXISTS.
 
 ## 6. Safety and recovery
 

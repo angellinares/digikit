@@ -1,0 +1,21 @@
+[package]
+name = "dkbulk"
+license.workspace = true
+repository.workspace = true
+version = "0.1.0"
+edition = "2024"
+rust-version = "1.98"
+publish = false
+description = "Host side of the digikit USB bulk link (docs/plans/usb-fast.md): protocol client over a Link, nusb transport, a fake device for tests"
+
+[lib]
+name = "dkbulk"
+path = "src/lib.rs"
+
+[[bin]]
+name = "dkbulk"
+path = "src/main.rs"
+
+[dependencies]
+nusb = "0.2"
+dksample = { path = "../dksample" }

@@ -41,12 +41,23 @@ test('bundle lists the committed modules and ports', () => {
   );
   assert.ok(bundle.modules.some((m) => m.manifest.includes('id = "core/fx"')));
   assert.equal(bundle.ports.length, readdirSync(join(root, 'devices/ports')).length);
-  // Module content only: no firmware blobs or out/modules oracles. The bundle is 4,097,029 characters
-  // with SHOT and the expanded runtime (1,593,445 characters); keep a small margin for module growth.
-  const json = JSON.stringify(bundle);
-  assert.ok(!json.includes('out/modules'));
-  const maxChars = 4.5 * 1024 * 1024;
-  assert.ok(json.length < maxChars, `bundle is ${json.length} characters (budget: ${maxChars})`);
+  // Module content only: no firmware blobs or out/modules oracles.
+  assert.ok(!JSON.stringify(bundle).includes('out/modules'));
+});
+
+test('the published bundle (no test fixtures) stays within its size budget', () => {
+  // What the site ships: DIGI_SITE_NO_FIXTURES leaves out tests/fixtures/modules (proof modules like test/file-write that only the tests use).
+  // 4,131,187 characters at the usb-fast lane (the runtime module is 1.8 MB of it); keep a margin for module growth.
+  const before = process.env.DIGI_SITE_NO_FIXTURES;
+  process.env.DIGI_SITE_NO_FIXTURES = '1';
+  try {
+    const json = JSON.stringify(buildModuleData(root).bundle);
+    const maxChars = 4.5 * 1024 * 1024;
+    assert.ok(json.length < maxChars, `bundle is ${json.length} characters (budget: ${maxChars})`);
+  } finally {
+    if (before === undefined) delete process.env.DIGI_SITE_NO_FIXTURES;
+    else process.env.DIGI_SITE_NO_FIXTURES = before;
+  }
 });
 
 test('bundle carries the device knob models and the gallery JSON of typed modules', () => {

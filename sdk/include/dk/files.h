@@ -24,8 +24,10 @@
 #define DK_FILES_ROW 1
 #define DK_FILES_END 2
 /* SIZE_VALID reports source physical bytes, including DT2's 16-byte trailer
- * (unlike stock RPC ReadDir). HASH_VALID names stored metadata: SHA256 bytewise,
- * or DT2 stored odd 32-bit hash big endian in hash[0..4], remainder zero.
+ * (unlike stock RPC ReadDir). HASH_VALID names stored metadata: the stored odd
+ * 32-bit content hash (HASH_ELEKTRON32) big endian in hash[0..4], remainder zero,
+ * on both devices (store format 4 keeps it in the table's hash slot). HASH_SHA256
+ * is reserved: store format 3 kept SHA-256, and no runtime produces it now.
  * Unknown directory/file metadata has flags 0, size/hash fields zero. No writable
  * or read-only permission flag is inferred from firmware node bits. A DT2 file
  * metadata read failure yields a row with flags 0; open/iteration errors remain

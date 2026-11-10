@@ -75,10 +75,14 @@ description = "Check the browser core renders a scenario's PCM byte-identical to
 run = "cargo build -p dkmidi --release --offline --target-dir \"$(SHARC_GEN_DIR= uv run python -m tools.emulator.native_target dir)\""
 description = "Build the dkmidi MIDI bridge (the workbench's MIDI port code on stdin and stdout) into the nogen target dir, where tools/devtools/wb.mjs looks"
 
+["dkbulk:build"]
+run = "cargo build -p dkbulk --release --offline --target-dir \"$(SHARC_GEN_DIR= uv run python -m tools.emulator.native_target dir)\""
+description = "Build the dkbulk USB bulk bridge and uploader (packages/dkbulk) into the nogen target dir, where tools/devtools/wb.mjs looks; `dkbulk list` shows the devices that offer the bulk interface"
+
 ["wb:cli"]
-depends = ["dkmidi:build"]
+depends = ["dkmidi:build", "dkbulk:build"]
 run = "node tools/devtools/wb.mjs"
-description = "Workbench actions from the command line through the workbench's own code: mise run wb:cli -- samples put FILE... --folder F | samples ls | store put LOCAL REMOTE | store ls [PREFIX] | store rm REMOTE | info | ports"
+description = "Workbench actions from the command line through the workbench's own code: mise run wb:cli -- samples put FILE... --folder F [--bulk auto|off|force] | samples ls | store put LOCAL REMOTE | store ls [PREFIX] | store rm REMOTE | info | ports"
 
 ["bootscreen"]
 run = "node packages/dkbs/cli/bootscreen.mjs"

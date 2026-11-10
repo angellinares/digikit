@@ -3,7 +3,9 @@
 //   "digikit"    the `samples/` folder of the digikit store, the runtime's SysEx commands (`DkSession`; the Digitone II)
 // Both take the file `prepareUpload` (dksample.ts) makes, the same native sample file, so a sampling engine reads one format. The result of a verify has one
 // shape on both: what the device keeps against what the host sent. Written without TS-only runtime syntax so node can import it.
-import { DkError, concat, fileHashHex, hasCap, storeSpace } from './dkupload-core.ts';
+import type { BulkSession } from './bulk.ts';
+import { BulkDeviceError } from './bulk.ts';
+import { DkError, concat, fileHash, fileHashHex, hasCap, storeSpace } from './dkupload-core.ts';
 import type { DkEntry, DkInfoFull, DkSession } from './dkupload-core.ts';
 import type { Prepared } from './dksample.ts';
 import { RpcFiles, TRAILER, verifyWritten } from './rpcfiles.ts';
@@ -70,7 +72,18 @@ export interface SamplesBackend {
    * the same size and the same content hash. No request: the listing carries the device's hash. A listing cut short only makes this false.
    */
   sameOnDevice(file: Prepared, listing: readonly SampleEntry[]): boolean;
-  put(folder: string, file: Prepared, onProgress?: (sent: number, total: number) => void): Promise<void>;
+  /**
+   * Send the file. `opts.signal` cancels it (a request in flight ends with a `cancelled` error); `opts.exists` is what the caller's listing says about the
+   * destination (the bulk path needs it to replace atomically; absent: the backend looks itself).
+   */
+  put(
+    folder: string,
+    file: Prepared,
+    onProgress?: (sent: number, total: number) => void,
+    opts?: PutOptions,
+  ): Promise<void>;
+  /** 'bulk' while file bytes go over the USB bulk link, 'fallback' after it failed (SysEx or MidiRpc for the rest of the run); absent without a bulk link. */
+  readonly bulkState?: 'bulk' | 'fallback';
   /** Compare the stored file with `file` (a device that does not have it, or has other bytes, reports `ok` false). */
   verify(folder: string, file: Prepared): Promise<SampleVerified>;
   remove(folder: string, name: string): Promise<void>;
@@ -78,6 +91,11 @@ export interface SamplesBackend {
   canRename(): Promise<boolean>;
   /** Rename or move the file or empty folder `name` of `folder` to `toName` in `toFolder`. Whatever links a sample by its hash still finds it. */
   rename(folder: string, name: string, toFolder: string, toName: string): Promise<void>;
+}
+
+export interface PutOptions {
+  signal?: AbortSignal;
+  exists?: boolean;
 }
 
 /** What the digikit backend needs of the store session (`DkSession`). */
@@ -91,16 +109,27 @@ export interface SamplesOptions {
   session: StorePort & RpcPort;
   /** The +Drive content hash (`Sample.hash`); needed by "stock-rpc". */
   hashOf?: (data: Uint8Array) => number;
+  /** The USB bulk link, when the device offers its interface (usb-fast): file bytes go over it, everything else stays on `session`. */
+  bulk?: BulkSession;
+  /** Where the backend reports what it did on its own (a bulk failure that fell back to SysEx). */
+  note?: (line: string) => void;
 }
 
 /** The backend for the profile's `[storage] samples` value. */
 export function openSamples(kind: string, o: SamplesOptions): SamplesBackend {
+  let base: SamplesBackend;
+  let expectedOf: (file: Prepared) => number;
   if (kind === 'stock-rpc') {
-    if (!o.hashOf) throw new DkError({ error: 'stock-rpc samples need the content hash (dksample)', kind: 'usage' });
-    return new RpcSamples(new RpcFiles(o.session), o.hashOf);
-  }
-  if (kind === 'digikit') return new StoreSamples(o.session);
-  throw new DkError({ error: `unknown samples backend "${kind}" (stock-rpc or digikit)`, kind: 'usage' });
+    const hashOf = o.hashOf;
+    if (!hashOf) throw new DkError({ error: 'stock-rpc samples need the content hash (dksample)', kind: 'usage' });
+    base = new RpcSamples(new RpcFiles(o.session), hashOf);
+    // the +Drive hashes the file with its 16-byte trailer, which the device adds
+    expectedOf = (f) => hashOf(concat(f.bytes, TRAILER)) >>> 0;
+  } else if (kind === 'digikit') {
+    base = new StoreSamples(o.session);
+    expectedOf = (f) => new DataView(fileHash(f.stored).buffer, 0, 4).getUint32(0);
+  } else throw new DkError({ error: `unknown samples backend "${kind}" (stock-rpc or digikit)`, kind: 'usage' });
+  return o.bulk ? new BulkSamples(base, o.bulk, kind === 'digikit', expectedOf, o.note ?? (() => {})) : base;
 }
 
 const clean = (folder: string) => folder.replace(/^\/+|\/+$/g, '');
@@ -192,7 +221,7 @@ class RpcSamples implements SamplesBackend {
       }
     return { removed, total: files.length, stopped: false };
   }
-  async put(folder: string, file: Prepared, onProgress?: (sent: number, total: number) => void) {
+  async put(folder: string, file: Prepared, onProgress?: (sent: number, total: number) => void, _opts?: PutOptions) {
     await this.files.write(join(folder, file.name), file.bytes, onProgress);
   }
   async verify(folder: string, file: Prepared): Promise<SampleVerified> {
@@ -315,7 +344,7 @@ class StoreSamples implements SamplesBackend {
     await del(top);
     return { removed, total: files.length, stopped: false };
   }
-  async put(folder: string, file: Prepared, onProgress?: (sent: number, total: number) => void) {
+  async put(folder: string, file: Prepared, onProgress?: (sent: number, total: number) => void, _opts?: PutOptions) {
     return this.s.put(this.path(join(folder, file.name)), file.stored, onProgress);
   }
   async verify(folder: string, file: Prepared): Promise<SampleVerified> {
@@ -366,5 +395,97 @@ class StoreSamples implements SamplesBackend {
   async rename(folder: string, name: string, toFolder: string, toName: string) {
     if (!(await this.canRename())) throw new DkError({ error: 'this runtime cannot rename', kind: 'usage' });
     await this.s.rename(this.path(join(folder, name)), this.path(join(toFolder, toName)));
+  }
+}
+
+// ---- file bytes over the USB bulk link ----------------------------------------------------------------------------------------------
+
+/** `DK_FILES_SAMPLES` (<dk/files.h>): the `samples/` folder of the store on the Digitone II, the +Drive on the Digitakt II. */
+export const BULK_ROOT_SAMPLES = 1;
+
+/**
+ * The backend of the device, with `put` over the bulk link (usb-fast). Listing, folders, delete, verify and the space stay on the base backend (SysEx or
+ * MidiRpc). A file that exists is replaced atomically by the device (REPLACE flag, never delete then upload). The device checks the file
+ * hash at the end of the transfer and the session compares what it returns, so a `put` that returns is verified; `verify` stays available.
+ */
+class BulkSamples implements SamplesBackend {
+  readonly kind: SamplesKind;
+  private base: SamplesBackend;
+  private bulk: BulkSession;
+  private store: boolean;
+  private expectedOf: (file: Prepared) => number;
+  private note: (line: string) => void;
+  private failed = false;
+  constructor(
+    base: SamplesBackend,
+    bulk: BulkSession,
+    store: boolean,
+    expectedOf: (file: Prepared) => number,
+    note: (line: string) => void,
+  ) {
+    this.base = base;
+    this.kind = base.kind;
+    this.bulk = bulk;
+    this.store = store;
+    this.expectedOf = expectedOf;
+    this.note = note;
+  }
+  get bulkState() {
+    return this.failed ? ('fallback' as const) : ('bulk' as const);
+  }
+  list(folder?: string) {
+    return this.base.list(folder);
+  }
+  space() {
+    return this.base.space();
+  }
+  canMkdir() {
+    return this.base.canMkdir();
+  }
+  mkdir(folder: string) {
+    return this.base.mkdir(folder);
+  }
+  rmdir(folder: string) {
+    return this.base.rmdir(folder);
+  }
+  removeTree(folder: string, o?: RemoveTreeOptions) {
+    return this.base.removeTree(folder, o);
+  }
+  sameOnDevice(file: Prepared, listing: readonly SampleEntry[]) {
+    return this.base.sameOnDevice(file, listing);
+  }
+  verify(folder: string, file: Prepared) {
+    return this.base.verify(folder, file);
+  }
+  remove(folder: string, name: string) {
+    return this.base.remove(folder, name);
+  }
+  async put(folder: string, file: Prepared, onProgress?: (sent: number, total: number) => void, opts: PutOptions = {}) {
+    if (this.failed) return this.base.put(folder, file, onProgress, opts);
+    const path = join(folder, file.name);
+    // the +Drive needs the folder; the store's folders follow from the paths
+    if (!this.store && clean(folder)) await this.base.mkdir(folder);
+    const bytes = this.store ? file.stored : file.bytes;
+    // the caller's listing says whether the file exists: then the device replaces it atomically (a failed upload keeps the old file). Without a hint
+    // the backend looks once. A file that appeared after the listing is refused (E_EXISTS) and reported.
+    const replace =
+      opts.exists ?? (await this.base.list(folder)).some((e) => e.name === file.name && e.kind === 'file');
+    try {
+      await this.bulk.put(BULK_ROOT_SAMPLES, path, bytes, {
+        expected: this.expectedOf(file),
+        onProgress,
+        replace,
+        signal: opts.signal,
+      });
+    } catch (e) {
+      // the device answered (E_FULL, E_EXISTS, E_HASH ...) or the user cancelled: those are the result. Anything else is the link: SysEx for the rest of the run
+      if (e instanceof BulkDeviceError || (e as { kind?: string } | null)?.kind === 'cancelled' || opts.signal?.aborted)
+        throw e;
+      this.failed = true;
+      this.note(
+        `USB bulk link failed (${e instanceof Error ? e.message : String(e)}); the rest of this run goes over ${this.base.kind === 'digikit' ? 'SysEx' : 'MidiRpc'}`,
+      );
+      return this.base.put(folder, file, onProgress, opts);
+    }
   }
 }

@@ -4,6 +4,7 @@
 //   desktop: apps/desktop/ui/src/desktop-env.ts (Tauri commands: the library folder, MIDI ports, the emulator, samples, the card)
 //   site:    apps/web/src/transfer/web-env.ts (WebMIDI, the built modules the site ships, their sources)
 import type { JSX } from 'solid-js';
+import type { BulkOpener } from '@digi/dk-session/bulk-select';
 import type { DkTransport } from '@digi/dk-session';
 import type { Target } from './target';
 import type { BarInfo } from './transfer-core';
@@ -94,6 +95,15 @@ export interface SamplesSlot {
   localChanged(): Promise<boolean>;
 }
 
+/**
+ * The USB bulk link of the usb-fast module (docs/plans/usb-fast.md). An app gives this only where it can open one (the desktop app: Tauri; the site: WebUSB
+ * in Chrome); a consumer (the samples backend) uses it when a candidate answers the nonce handshake (bulk-select.ts) and else stays on SysEx.
+ */
+export interface TransferBulk extends BulkOpener {
+  /** The site: ask the user for the device (WebUSB's chooser; needs a click). Only an explicit action calls it, a link never asks by itself. */
+  requestAccess?(): Promise<void>;
+}
+
 export interface TransferEnv {
   library: TransferLibrary;
   /** The bytes of patchkit.wasm (its `pk_needs` tells what a .dkm takes of the device). */
@@ -101,6 +111,8 @@ export interface TransferEnv {
   /** The name of the device with this id (`dt2`: "Digitakt II"). */
   deviceName(device: string): Promise<string>;
   targets: TransferTargets;
+  /** The bulk link, where the app can open one. */
+  bulk?: TransferBulk;
   /** The Source link of a library row and its panel; the pane shows them only when this is given. */
   source?: TransferSource;
   /** The `[files]` table of the module with this id, or none; the pane shows a files area only for a module that has one. */

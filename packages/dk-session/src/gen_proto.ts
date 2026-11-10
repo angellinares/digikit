@@ -49,6 +49,7 @@ export const SERVICE_CMD = {
   LOG: 0x20,
   PEEK: 0x21,
   LOGCFG: 0x22,
+  USB_FAST_NONCE: 0x36,
   REMOTE_KEY: 0x38,
   REMOTE_TURN: 0x39,
   REMOTE_RELEASE: 0x3a,
@@ -153,6 +154,7 @@ export const RANGES = {
   probe: [0x32, 0x35],
   remote: [0x38, 0x3d],
   remote_state: [0x3e, 0x3f],
+  usb_fast: [0x36, 0x37],
 } as const;
 
 export const CAPACITY_KINDS = {

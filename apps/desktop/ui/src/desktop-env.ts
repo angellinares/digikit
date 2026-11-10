@@ -8,6 +8,7 @@ import { target, targetLabel, type Target } from '../../../web/src/transfer/targ
 import { failureLine } from '../../../web/src/transfer/wait-core';
 import './desktop-firmware';
 import { bumpCardRefresh } from './card-state';
+import { TauriBulkLink } from './bulk-link';
 import { EmuUsbTransport, emulatorMode } from './desktop-transport';
 import { logInput } from './log-state';
 import { transferEntry } from './log-core';
@@ -70,6 +71,7 @@ export const desktopEnv: TransferEnv = {
   moduleFiles: (id) => MODULE_FILES[id],
   patchkitWasm: () => invoke<ArrayBuffer>('patchkit_wasm'),
   deviceName: async (device) => (await deviceStorage(device)).name,
+  bulk: { candidates: TauriBulkLink.candidates, open: (id) => TauriBulkLink.open(id) },
   targets: {
     emulator: true,
     ports: listMidiPorts,

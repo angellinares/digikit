@@ -39,7 +39,10 @@ Rename by path is the wrapper `FUN_40156f6c(old, new)` (anchor `file.rename`): i
   partial pages through the page cache, sets the inode size to max(size, pos+len) and writes the inode back on every call. Cheapest path: whole 0x8000
   chunks at pos multiples of 0x8000 from a 16-byte-aligned buffer, the short chunk last.
 - **Trailer**: the C API does not add the 16-byte zero trailer. The recorder writes it itself (`FUN_4015866a(buf, 0x10, h)`) just before the hash;
-  GetFileInfo reports size - 16. Who adds it on a MidiRpc close is **[O]**; the content hash of a stock file covers the bytes plus 16 zero bytes.
+  GetFileInfo reports size - 16. The stock MidiRpc close adds it **[D]** (emulator, 1.17, plusdrive read-back of the card, 2026-11-11): files of 1000, 4096
+  and 100000 bytes written with OPEN_WRITE, WRITE_V1 and CLOSE_WRITE are stored as 1016, 4112 and 100016 bytes, the first N bytes are the data and the last
+  16 are zero. The stored `hash|1` (0414ef0d, 025a9689, 422af69b) equals dksample `content_hash` over the N bytes plus 16 zeros, and differs from the hash
+  over the N bytes alone (6b0e551d, 70aab58b, 9329e53d). So `core/plusdrive-write` must write the 16 zeros itself before the hash.
 - **Close**: `file.hash` (`FUN_4015b3aa` -> `FUN_4015b1e8`: reads the whole file back in 32 KiB pieces, hashlittle with seed 0x43fa243a, writes the
   hash-table page at `0x5ee980 + (id >> 13) * 0x40` and the inode word +0x0C) while it holds the mutex for the whole read-back, then `path.close`
   (`FUN_401588c0`: clears valid and the open bit). Stock (`FUN_40158cc4`) hashes only for mode 1.

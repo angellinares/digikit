@@ -5,7 +5,7 @@
 //     node tools/devtools/wb.mjs [--port SUB] [--bin PATH] ports
 //     node tools/devtools/wb.mjs [--port SUB] [--bin PATH] info
 //     node tools/devtools/wb.mjs [--port SUB] [--bin PATH] samples ls [FOLDER]
-//     node tools/devtools/wb.mjs [--port SUB] [--bin PATH] samples put FILE... [--folder F]
+//     node tools/devtools/wb.mjs [--port SUB] [--bin PATH] samples put FILE... [--folder F] [--bulk auto|off|force] [--bulk-bin PATH]
 //     node tools/devtools/wb.mjs [--port SUB] [--bin PATH] store ls [PREFIX]
 //     node tools/devtools/wb.mjs [--port SUB] [--bin PATH] store put LOCAL REMOTE
 //     node tools/devtools/wb.mjs [--port SUB] [--bin PATH] store rm REMOTE
@@ -13,11 +13,14 @@
 // `store` works on the card's store by path (for example data/tools/bootscreen/x.dkbs); `store put` verifies the file after the upload.
 // --port: a part of the MIDI port name (default "Digitakt"). --bin: the dkmidi binary (default $DKMIDI_BIN, else the nogen target dir;
 // `mise run dkmidi:build` builds it). `samples put` needs apps/web/public/dksample.wasm (`mise run wasm:dksample`).
+// `samples put` sends the file bytes over the USB bulk link when the device offers its interface (usb-fast; the `dkbulk` bridge, `mise run dkbulk:build`,
+// $DKBULK_BIN or --bulk-bin) and over SysEx or MidiRpc otherwise; --bulk off forces SysEx, --bulk force fails when there is no bulk link. It prints the
+// link and MB/s of every file and of the run: the repeatable bench (docs/plans/usb-fast.md step 6): run it once with --bulk off and once with auto.
 import { spawn, spawnSync } from 'node:child_process';
 import { existsSync, readFileSync, statSync } from 'node:fs';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
-import { DkSession } from '../../packages/dk-session/src/index.ts';
+import { DkSession, ProcessBulkLink, chooseBulk } from '../../packages/dk-session/src/index.ts';
 import { ProcessTransport } from '../../packages/dk-session/src/process-transport.ts';
 import { Sample, prepareUpload } from '../../packages/dk-session/src/dksample.ts';
 import { openSamples } from '../../packages/dk-session/src/samples.ts';
@@ -36,11 +39,13 @@ const opts = {
   port: 'Digitakt',
   bin: process.env.DKMIDI_BIN || path.join(targetRoot, 'nogen/release/dkmidi'),
   folder: '',
+  bulk: 'auto',
+  'bulk-bin': process.env.DKBULK_BIN || path.join(targetRoot, 'nogen/release/dkbulk'),
 };
 const words = [];
 for (let i = 0; i < args.length; i++) {
   const a = args[i];
-  if (a === '--port' || a === '--bin' || a === '--folder') {
+  if (a === '--port' || a === '--bin' || a === '--folder' || a === '--bulk' || a === '--bulk-bin') {
     if (i + 1 >= args.length) fail(`${a} needs a value`);
     opts[a.slice(2)] = args[++i];
   } else words.push(a);
@@ -82,6 +87,59 @@ async function withSession(run) {
   }
 }
 
+/**
+ * The bulk session for the device on the MIDI port (--port), or undefined (--bulk off, no dkbulk binary, no candidate, no candidate with this device's nonce).
+ * The selection is the dk-session `chooseBulk` the desktop app uses: SET_NONCE over SysEx to the MIDI target, then each `dkbulk list` candidate is opened
+ * (`dkbulk open ID`, a child process) and asked INFO; only the one that returns the nonce is used. --bulk force: those are errors.
+ */
+async function connectBulk(sysex) {
+  const force = opts.bulk === 'force';
+  if (!['auto', 'off', 'force'].includes(opts.bulk)) fail('--bulk is auto, off or force');
+  if (opts.bulk === 'off') return undefined;
+  const none = (why) => (force ? fail(why, 1) : (console.error(`wb: no bulk link (${why}); using SysEx`), undefined));
+  const bin = opts['bulk-bin'];
+  if (!existsSync(bin)) return none(`no dkbulk binary at ${bin}; run: mise run dkbulk:build`);
+  const children = [];
+  const opener = {
+    async candidates() {
+      const listed = spawnSync(bin, ['list'], { encoding: 'utf8' });
+      if (listed.status !== 0) throw new Error(`dkbulk list failed: ${listed.stderr.trim()}`);
+      return listed.stdout
+        .split('\n')
+        .filter(Boolean)
+        .map((line) => {
+          const [id, name] = line.split('\t');
+          return { id, name };
+        });
+    },
+    async open(id) {
+      const child = spawn(bin, ['open', id], { stdio: ['pipe', 'pipe', 'inherit'] });
+      const exited = new Promise((resolve) => child.on('exit', resolve));
+      child.stdin.on('error', () => {});
+      children.push(exited);
+      return new ProcessBulkLink(
+        (b) => child.stdin.write(b),
+        (cb) => child.stdout.on('data', (d) => cb(new Uint8Array(d))),
+        () => child.stdin.end(),
+      );
+    },
+  };
+  const notes = [];
+  const choice = await chooseBulk(sysex, opener, (n) => notes.push(n), { timeoutMs: 20000 });
+  if (!choice) {
+    await Promise.all(children);
+    return none(notes.at(-1) ?? 'no device offers a bulk interface; is usb-fast loaded?');
+  }
+  for (const n of notes) console.error(`wb: ${n}`);
+  return {
+    session: choice.session,
+    async close() {
+      await choice.link.close();
+      await Promise.all(children);
+    },
+  };
+}
+
 async function loadSample() {
   const wasm = path.join(root, 'apps/web/public/dksample.wasm');
   if (!existsSync(wasm)) fail('apps/web/public/dksample.wasm is missing (run: mise run wasm:dksample)', 1);
@@ -107,25 +165,53 @@ if (cmd === 'ports') {
 } else if (cmd === 'samples' && sub === 'put') {
   if (rest.length === 0) fail(usage);
   const sample = await loadSample();
-  await withSession(async (session) => {
-    const backend = openSamples('stock-rpc', { session, hashOf: (d) => sample.hash(d) });
-    if (opts.folder) await backend.mkdir(opts.folder);
-    for (const file of rest) {
-      try {
-        if (!statSync(file).isFile()) throw new Error('not a file');
-        const prepared = prepareUpload(sample, path.basename(file), Uint8Array.from(readFileSync(file)));
-        await backend.put(opts.folder, prepared);
-        const v = await backend.verify(opts.folder, prepared);
-        console.log(
-          `${v.ok ? 'ok  ' : 'FAIL'} +Drive/${opts.folder ? `${opts.folder}/` : ''}${prepared.name}  ${v.message}`,
-        );
-        if (!v.ok) status = 1;
-      } catch (e) {
-        console.error(`FAIL ${file}: ${e instanceof Error ? e.message : e}`);
-        status = 1;
+  let bulk;
+  try {
+    await withSession(async (session) => {
+      bulk = await connectBulk(session);
+      // the profile names the backend (`[storage] samples`); the Digitakt II is the stock +Drive, the Digitone II the digikit store
+      // (a stock Digitakt II has no runtime to answer INFO: the +Drive then)
+      const kind = await session.info().then(
+        (i) => (i.port === 'dn2' ? 'digikit' : 'stock-rpc'),
+        () => 'stock-rpc',
+      );
+      const backend = openSamples(kind, {
+        session,
+        hashOf: (d) => sample.hash(d),
+        bulk: bulk?.session,
+        note: (n) => console.error(`wb: ${n}`),
+      });
+      const link = () => (backend.bulkState === 'bulk' ? 'bulk' : 'sysex');
+      if (opts.folder) await backend.mkdir(opts.folder);
+      let total = 0;
+      const t0 = performance.now();
+      for (const file of rest) {
+        try {
+          if (!statSync(file).isFile()) throw new Error('not a file');
+          const prepared = prepareUpload(sample, path.basename(file), Uint8Array.from(readFileSync(file)));
+          const t = performance.now();
+          await backend.put(opts.folder, prepared);
+          const s = (performance.now() - t) / 1000;
+          const n = prepared.stored.length;
+          total += n;
+          const v = await backend.verify(opts.folder, prepared);
+          console.log(
+            `${v.ok ? 'ok  ' : 'FAIL'} ${kind === 'digikit' ? 'samples' : '+Drive'}/${opts.folder ? `${opts.folder}/` : ''}${prepared.name}  ${v.message}  ${n} bytes ${s.toFixed(2)} s ${(n / 1e6 / s).toFixed(2)} MB/s via ${link()}`,
+          );
+          if (!v.ok) status = 1;
+        } catch (e) {
+          console.error(`FAIL ${file}: ${e instanceof Error ? e.message : e}`);
+          status = 1;
+        }
       }
-    }
-  });
+      const s = (performance.now() - t0) / 1000;
+      console.log(
+        `total ${total} bytes ${s.toFixed(2)} s ${(total / 1e6 / s).toFixed(2)} MB/s via ${link()} (put and verify)`,
+      );
+    });
+  } finally {
+    await bulk?.close();
+  }
 } else if (cmd === 'store' && sub === 'ls') {
   await withSession(async (session) => {
     for (const e of await session.list(rest[0] || undefined)) console.log(`${e.path}\t${e.size}`);

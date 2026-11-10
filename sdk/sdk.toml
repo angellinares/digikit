@@ -963,6 +963,7 @@ remote_state = [0x3e, 0x3f]   # digikit/remote: the state
 probe = [0x32, 0x35]   # digikit/probe: collector status, raw reads, reset (docs/plans/debug-mode-and-probes.md)
 debug = [0x20, 0x22]   # digikit/debug: LOG, PEEK, LOGCFG (docs/findings/46-digikit-debug.md)
 file_write_test = [0x24, 0x27]   # test/file-write: start an I/O job that writes a file, its status, wake it, a file call outside an I/O step
+usb_fast = [0x36, 0x37]   # usb-fast: SET_NONCE (the host proves which USB device is on its MIDI port, docs/plans/usb-fast.md section 5)
 file_write_test_b = [0x28, 0x2b]   # test/file-write-b: the same commands for a second module
 
 [protocol.service]  # the commands of run-time service modules, by name; each lies in a range above (a module registers them with Api.register_cmds)
@@ -972,7 +973,32 @@ REMOTE_RELEASE = 0x3a  # release every key the module holds
 LOG = 0x20             # digikit/debug: body u32 from_seq; reply u32 oldest, u32 newest, u8 n, then n events of 32 bytes
 PEEK = 0x21            # digikit/debug: body u32 addr, u16 len (1 to 512, inside the device file's `[digikit] peek` ranges); reply u32 addr, u16 len, the bytes
 LOGCFG = 0x22          # digikit/debug: body u8 op (0 get, 1 set: u8 default, 8 module levels); reply u8 default, 8 module levels, u8 debug_on (1 while loaded)
+USB_FAST_NONCE = 0x36  # usb-fast: body nonce[8]; the module keeps it and returns it in the INFO reply of the bulk link; reply empty
 REMOTE_STATE = 0x3e    # reply: enabled (u8, always 1 while the module is loaded), state format (u8), turn limit (u8)
+
+[protocol.bulk]     # the bulk link: a vendor interface 2 (class 0xFF) on EP2 OUT/IN, no SysEx framing, big-endian (docs/plans/usb-fast.md section 5)
+# request: magic[4] | cmd u8 | seq u8 | flags u16 | len u32 | body[len];  reply: magic[4] | cmd|reply_flag u8 | seq u8 | status i16 | len u32 | body[len]
+magic = "DKB1"
+reply_flag = 0x40   # set in the command byte of a reply
+header = 12         # bytes of a request header and of a reply header
+data_max = 65536    # bytes of one DATA request (offset u32 + up to this many data bytes, a multiple of 512 except the last)
+align = 512         # DATA offsets and lengths are multiples of this, except the last piece
+vid = 0x1935        # USB vendor id of Elektron
+class = 0xFF        # interface class of the bulk interface
+packet = 512        # the bulk packet size (high speed). An OUT transfer whose length is a multiple of this is followed by a zero-length OUT transfer (ZLP): the device RX buffers (16 KiB multi-page dTDs) complete only when full or on a short packet. The device keeps ZLT on for EP2 IN: after a reply that is a multiple of this the host receives a zero-length IN transfer, which means "no bytes", never end or error
+nonce_len = 8       # bytes of the nonce of the identity handshake: SET_NONCE over SysEx, then INFO returns it (body: version u8, flags u8, reserved u16, data_max u32, align u32, nonce[8])
+frame_slack = 64    # a frame whose body length exceeds data_max + 4 + this is a protocol error: fatal, the link is closed, no resync
+
+[protocol.bulk.flags]     # bits of the `flags` u16 of a request header (BEGIN)
+REPLACE = 0x0001    # the destination may exist: the device replaces it atomically at END (DN2: the store's replace commit; DT2: temp file, then rename); a failed or aborted upload keeps the old file. Clear: an existing file gives E_EXISTS
+
+[protocol.bulk.commands]  # never reuse or renumber (additive only)
+INFO = 0x01         # reply body: version u8, flags u8, u16 reserved, u32 data_max, u32 align
+BEGIN = 0x02        # body: root u32, path (NUL-terminated), size u32, expected hash 4 bytes (all zero: none)
+DATA = 0x03         # body: offset u32, then the bytes; the next offset only
+END = 0x04          # reply body: the device's hash|1 of the file (4 bytes, big-endian)
+ABORT = 0x05        # drop the open file
+VERIFY = 0x06       # body: offset u32, length u32; reply body: the 4-byte hash of that range
 
 [protocol.status]   # reply status codes of the upload commands (0 = ok); never renumber
 E_MSG = { code = -50, text = "body too short or malformed" }

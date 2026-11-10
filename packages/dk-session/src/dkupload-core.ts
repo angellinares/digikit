@@ -1118,6 +1118,12 @@ export class DkSession {
     }
   }
 
+  // ---- usb-fast (docs/plans/usb-fast.md section 5) ---------------------------------------------------------------------------
+  /** USB_FAST_NONCE: hand the module 8 bytes; it returns them in the INFO reply of its bulk link, which proves which USB device is on this MIDI port. E_PROTO when usb-fast is not loaded. */
+  async usbFastNonce(nonce: Uint8Array): Promise<void> {
+    await this.ok(SERVICE_CMD.USB_FAST_NONCE, 'usb-fast nonce', nonce);
+  }
+
   // ---- digikit/remote (docs/plans/remote-control.md): the commands of a run-time service module -----------------------------------
   /** REMOTE_STATE: E_PROTO when digikit/remote is not loaded. */
   async remoteState(): Promise<RemoteState> {

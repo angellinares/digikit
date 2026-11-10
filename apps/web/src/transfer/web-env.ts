@@ -15,6 +15,7 @@ import {
   type MidiInputLike,
   type MidiOutputLike,
 } from '../modules/webmidi';
+import { WebUsbBulkLink, webUsbAvailable, webUsbOpener } from '../modules/webusb-bulk';
 import './transfer-site.css';
 
 const BASE = import.meta.env.BASE_URL.replace(/\/?$/, '/');
@@ -69,6 +70,8 @@ export const webEnv: TransferEnv = {
   patchkitWasm: async () => (await fetchOk(`${BASE}patchkit.wasm`)).arrayBuffer(),
   deviceName: async (device) => deviceNameOf(device),
   libraryDevices: ['dt2', 'dn2'],
+  // only where the browser has WebUSB; devices the user already allowed are used, `requestAccess` (from a click) asks for another
+  ...(webUsbAvailable() ? { bulk: { ...webUsbOpener(), requestAccess: () => WebUsbBulkLink.requestAccess() } } : {}),
   targets: {
     emulator: false,
     async ports() {

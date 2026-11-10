@@ -11,6 +11,7 @@ use digi_control::{
     load_scenario,
 };
 use elektron_native_boot::Snapshot;
+mod bulk_port;
 mod desktop_runtime;
 mod firmware;
 mod library;
@@ -573,6 +574,7 @@ fn main() {
         .plugin(tauri_plugin_opener::init())
         .manage(host)
         .manage(midi_port::MidiPort::default())
+        .manage(bulk_port::BulkPort::default())
         // on the main thread, before any command: CoreMIDI refreshes the port list on the run loop of the thread of its first client
         .setup(|app| {
             use tauri::Manager;
@@ -610,7 +612,13 @@ fn main() {
             midi_port::midi_close,
             midi_port::midi_send,
             midi_port::midi_recv,
-            midi_port::midi_cancel
+            midi_port::midi_cancel,
+            bulk_port::bulk_list,
+            bulk_port::bulk_open,
+            bulk_port::bulk_close,
+            bulk_port::bulk_send,
+            bulk_port::bulk_recv,
+            bulk_port::bulk_cancel
         ])
         .build(context)
         .expect("tauri build error");

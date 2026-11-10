@@ -642,8 +642,17 @@ export async function uploadItems(
         continue;
       }
     }
+    // what the listing says about the destination (the bulk path replaces an existing file atomically); the user's stop reaches a send in flight
+    const exists = listings.get(folder)?.some((e) => e.name === p.name && e.kind === 'file');
+    const abort = new AbortController();
+    const watch = setInterval(() => {
+      if (stop()) abort.abort();
+    }, 50);
     try {
-      await backend.put(folder, p, (sent, bytes) => emit({ event: 'progress', folder, name: p.name, sent, bytes }));
+      await backend.put(folder, p, (sent, bytes) => emit({ event: 'progress', folder, name: p.name, sent, bytes }), {
+        signal: abort.signal,
+        exists,
+      });
     } catch (e) {
       if (isCancelled(e)) {
         cancelled = true;
@@ -653,6 +662,8 @@ export async function uploadItems(
       emit({ event: 'failed', folder, name: p.name, message: errorLine(e) });
       stopped = `the upload of ${p.name} failed`;
       continue;
+    } finally {
+      clearInterval(watch);
     }
     emit({ event: 'verifying', folder, name: p.name });
     try {

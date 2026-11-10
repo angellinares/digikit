@@ -7,8 +7,10 @@ import { errorLine } from '@web/modules/backend';
 import { fmtVersion, type DkSession } from '@digi/dk-session';
 import { Sample, prepareUpload, sourceKind, type Prepared } from '@digi/dk-session/dksample';
 import { openSamples, type SamplesBackend } from '@digi/dk-session/samples';
+import { chooseBulk, type BulkChoice } from '@digi/dk-session/bulk-select';
+import { transferEnv } from '@web/transfer/env';
 import { asked, noteConnection } from '@web/transfer/connection-state';
-import { session as running } from '@web/transfer/target';
+import { session as running, target } from '@web/transfer/target';
 import { joinPath, type LocalEntry, type Prepare } from './samples-core';
 import { setDeviceInfo } from '@web/transfer/transfer-state';
 import {
@@ -39,6 +41,8 @@ export interface OpenedSamples {
   samples: string;
   backend: SamplesBackend;
   prepare: Prepare;
+  /** Where the file bytes go: the USB bulk link (usb-fast) or the SysEx / MidiRpc backend. */
+  link: 'bulk' | 'sysex';
 }
 
 let sample: Promise<Sample> | undefined;
@@ -53,28 +57,58 @@ function converter(): Promise<Sample> {
   return sample;
 }
 
-let last: { s: DkSession; opened: OpenedSamples } | undefined;
+let last:
+  | { s: DkSession; name: string; runtime: string; samples: string; opened?: OpenedSamples; bulk?: BulkChoice }
+  | undefined;
 
-/** The samples backend of the device on the target. One per session: the backend keeps what INFO said. */
+const note = (why: string) => console.info(`[samples] ${why}`);
+
+/**
+ * The samples backend of the device on the target. The session part (INFO, the storage) is kept per session. The bulk choice is made again whenever there
+ * is no bulk link or the last one failed during a run (it is not cached as broken for the session), so an interface that appears later is used at the next
+ * run; with no candidate on the bus that costs one USB listing. SysEx stays the channel for LIST, MKDIR, DELETE and the rest.
+ */
 export async function openDeviceSamples(): Promise<OpenedSamples> {
   const s = await asked(running);
-  if (last?.s === s) return last.opened;
-  const info = await asked(() => s.info());
-  const storage = await deviceStorage(info.port);
-  noteConnection({
-    type: 'answered',
-    device: { id: info.port, name: storage.name, runtime: fmtVersion(info.runtime) },
-  });
+  if (last && last.s !== s) {
+    // another session: let go of the bulk link of the old one (the interface stays claimed until then)
+    await Promise.resolve(last.bulk?.link.close()).catch(() => {});
+    last = undefined;
+  }
+  if (!last) {
+    const info = await asked(() => s.info());
+    const storage = await deviceStorage(info.port);
+    noteConnection({
+      type: 'answered',
+      device: { id: info.port, name: storage.name, runtime: fmtVersion(info.runtime) },
+    });
+    last = { s, name: storage.name, runtime: fmtVersion(info.runtime), samples: storage.samples };
+  }
+  const had = last.bulk;
+  if (had && last.opened?.backend.bulkState === 'fallback') {
+    await Promise.resolve(had.link.close()).catch(() => {});
+    last.bulk = undefined;
+  }
+  if (!last.bulk) {
+    const env = transferEnv().bulk;
+    last.bulk = env && target().kind === 'midi' ? await chooseBulk(s, env, note) : undefined;
+  }
+  if (last.opened && !had === !last.bulk && (!had || had === last.bulk)) return last.opened;
   const conv = await converter();
-  const opened: OpenedSamples = {
-    name: storage.name,
-    runtime: fmtVersion(info.runtime),
-    samples: storage.samples,
-    backend: openSamples(storage.samples, { session: s, hashOf: (d) => conv.hash(d) }),
+  last.opened = {
+    name: last.name,
+    runtime: last.runtime,
+    samples: last.samples,
+    backend: openSamples(last.samples, {
+      session: s,
+      hashOf: (d) => conv.hash(d),
+      bulk: last.bulk?.session,
+      note,
+    }),
     prepare: (name, bytes) => prepareUpload(conv, name, bytes),
+    link: last.bulk ? 'bulk' : 'sysex',
   };
-  last = { s, opened };
-  return opened;
+  return last.opened;
 }
 
 /** Read the device's open folder, its free space and what the backend can do (the On device column of Samples mode). */

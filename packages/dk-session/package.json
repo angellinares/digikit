@@ -10,7 +10,11 @@
     "./dksample": "./src/dksample.ts",
     "./rpcfiles": "./src/rpcfiles.ts",
     "./process-transport": "./src/process-transport.ts",
-    "./samples": "./src/samples.ts"
+    "./samples": "./src/samples.ts",
+    "./gen_bulk": "./src/gen_bulk.ts",
+    "./bulk": "./src/bulk.ts",
+    "./bulk-select": "./src/bulk-select.ts",
+    "./bulk-fake": "./src/bulk-fake.ts"
   },
   "scripts": {
     "typecheck": "tsc -p tsconfig.json"
