@@ -6,6 +6,14 @@ static dk_service_cmd *handlers[256];
 static int key_state[128];
 static int key_calls, next_result;
 
+/* modules/tools/remote/tests/remote-pacing.c checks the INPUT_TAKEN records; the settings page test here ignores them. */
+void dkrt_log_ev(uint32_t kind, uint32_t flags, const uint32_t *a)
+{
+    (void)kind;
+    (void)flags;
+    (void)a;
+}
+
 int input_key(uint32_t code, uint32_t down)
 {
     key_calls++;
