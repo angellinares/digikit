@@ -4,7 +4,11 @@
   "metadata": {
     "runtimeAcceptance": [
       {
-        "files": ["tests/bootscreen.device.test.ts"],
+        "files": [
+          "tests/bootscreen.device.test.ts",
+          "tests/bootscreen-safe.device.test.ts",
+          "tests/bootscreen-fault.device.test.ts"
+        ],
         "modules": ["test/intro-fault", "test/intro-reset", "test/intro-ticks"],
         "plusdrive": true
       }

@@ -6,7 +6,7 @@
   "metadata": {
     "runtimeAcceptance": [
       {
-        "files": ["settings.device.test.ts"],
+        "files": ["settings.device.test.ts", "settings-copies.device.test.ts", "settings-cards.device.test.ts"],
         "modules": ["test/c-demo"],
         "plusdrive": true
       },

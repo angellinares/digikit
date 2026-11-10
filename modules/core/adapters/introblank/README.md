@@ -26,6 +26,6 @@ The black callback runs at intro frame 0, before REC is read and before the boot
 
 ## What does not depend on the intro length
 
-Findings 36 and 116: the boot thread does the DSP boot, the eMMC init, the project decode, the card mount and the block interrupt before it creates the intro and main-OS tasks. The intro pointer and counters are read only by the intro functions. The semaphore `0x43149550` has one wait (the main-OS task, `0x400d1502`) and one post (the end of the intro task, `0x400d1a9a`). The device test `tests/introblank.device.test.ts` proves a complete boot after the early end: the UI is reached at 115 blocks instead of 5973 (DT2), a note plays with the same PCM peak as on the stock image, and the REC and boot screen paths work.
+Findings 36 and 116: the boot thread does the DSP boot, the eMMC init, the project decode, the card mount and the block interrupt before it creates the intro and main-OS tasks. The intro pointer and counters are read only by the intro functions. The semaphore `0x43149550` has one wait (the main-OS task, `0x400d1502`) and one post (the end of the intro task, `0x400d1a9a`). The device test `tests/introblank.device.test.ts` proves a complete boot after the early end: the UI is reached at 115 blocks instead of 5973 (DT2), a note plays with the same PCM peak as on the stock image, and the boot screen path works; `tests/introblank-rec.device.test.ts` proves the REC path.
 
 Proof: `pnpm nx:pilot run core/introblank:test-device` (DT2 1.17 and DN2 1.12).

@@ -4,7 +4,7 @@
   "metadata": {
     "runtimeAcceptance": [
       {
-        "files": ["tests/introblank.device.test.ts"],
+        "files": ["tests/introblank.device.test.ts", "tests/introblank-rec.device.test.ts"],
         "modules": ["tools/bootscreen", "test/sine"],
         "plusdrive": true
       }
