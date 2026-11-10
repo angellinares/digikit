@@ -251,6 +251,10 @@ pub struct Emulator {
     observed_pcs: Vec<u32>,
     /// Whether `observed_pcs` holds a PC outside the MAIN image (RAM code).
     observed_outside_main: bool,
+    /// Where the PC may run outside MAIN. `None`: the board's RAM window.
+    /// `Some`: only these `[start, end)` ranges, from the DNFW area of an
+    /// image that has no digikit patch record (`dnfw_code_ranges`).
+    exec_ranges: Option<Vec<(u32, u32)>>,
     /// Host-requested PC hit counters (`probe_pcs`), for headless diagnosis.
     probe_hits: BTreeMap<u32, u64>,
     /// Host-requested instruction spans between two PCs (`add_span`).
@@ -548,6 +552,12 @@ impl Emulator {
         };
         let bus = LoggingBus::new(board, true, true, 160, ENTRY);
         let ram_clear = RamClear::resolve(&main);
+        // An image with a DNFW area declares its RAM code; one with a digikit patch
+        // record also runs digikit's code from RAM, so it keeps the whole window.
+        let exec_ranges = match patchkit::verify::patch_record(syx) {
+            Ok(Some(_)) => None,
+            _ => dnfw_code_ranges(&main),
+        };
         let fused_loops = resolve_fused_loops(&main);
         let mut cpu = Cpu::new();
         cpu.pc = ENTRY;
@@ -635,6 +645,7 @@ impl Emulator {
             fused_clean: Vec::new(),
             observed_pcs: Vec::new(),
             observed_outside_main: false,
+            exec_ranges,
             probe_hits: BTreeMap::new(),
             spans: crate::spans::Spans::default(),
             late_send: None,
@@ -1778,10 +1789,31 @@ impl Emulator {
     /// Whether the core may fetch at `pc` outside the MAIN image: anywhere in
     /// SDRAM or internal SRAM (the board's RAM window). The hardware executes
     /// from DDR (ACR0 covers it) and SRAM; the core's decode cache is evicted
-    /// by every write, so code written at run time is seen.
+    /// by every write, so code written at run time is seen. An image whose
+    /// DNFW area declares its code may run only there (`exec_ranges`), so a
+    /// jump into a mod's data or into unclaimed RAM stops as
+    /// `UnsupportedGuestPc`.
     #[inline]
-    fn ram_exec(pc: u32) -> bool {
-        (RAM_EXEC_START..RAM_EXEC_END).contains(&pc)
+    fn ram_exec(&self, pc: u32) -> bool {
+        match &self.exec_ranges {
+            None => (RAM_EXEC_START..RAM_EXEC_END).contains(&pc),
+            Some(ranges) => ranges
+                .iter()
+                .any(|&(start, end)| (start..end).contains(&pc)),
+        }
+    }
+
+    /// The `[start, end)` ranges outside MAIN where this image may run, when
+    /// its DNFW area declares them; `None` when it may run anywhere in RAM.
+    pub fn exec_ranges(&self) -> Option<&[(u32, u32)]> {
+        self.exec_ranges.as_deref()
+    }
+
+    /// Set where the PC may run outside MAIN: `None` for the board's whole RAM
+    /// window (a host that writes code of its own into RAM), `Some` for only
+    /// these `[start, end)` ranges.
+    pub fn set_exec_ranges(&mut self, ranges: Option<Vec<(u32, u32)>>) {
+        self.exec_ranges = ranges;
     }
 
     #[inline]
@@ -1860,7 +1892,7 @@ impl Emulator {
             let pc = self.cpu.pc;
             let outside = pc.wrapping_sub(MAIN_LOAD) as usize > last_pc_offset;
             if outside
-                && (!Self::ram_exec(pc)
+                && (!self.ram_exec(pc)
                     || (self.observed_outside_main && self.observed_pcs.binary_search(&pc).is_ok()))
             {
                 #[cfg(feature = "cf-profile")]
@@ -2077,7 +2109,7 @@ impl Emulator {
                 return;
             }
         }
-        if !self.in_main(pc) && !Self::ram_exec(pc) {
+        if !self.in_main(pc) && !self.ram_exec(pc) {
             self.set_error(format!("UnsupportedGuestPc({pc:#010x})"));
             return;
         }
@@ -4723,4 +4755,113 @@ fn panel_tx_write(icount: u64, text: &str) {
 fn panel_tx_log(icount: u64, bytes: &[u8]) {
     let hex: String = bytes.iter().map(|b| format!("{b:02x}")).collect();
     panel_tx_write(icount, &hex);
+}
+
+/// The RAM ranges a DNFW area (dn2_firmware_explore's `src/dnfw/patch/area.py`)
+/// declares as code: `[load, load + image length)` of each `CODE` chunk. The
+/// area is the last word-aligned `'DNFW'` in MAIN whose length fits; its chunk
+/// directory is `id, offset, length` per chunk (big-endian u32), and a `CODE`
+/// chunk starts with its load address and image length. `None` when MAIN has
+/// no such area; `Some(empty)` when it has one with no `CODE` chunk.
+fn dnfw_code_ranges(main: &[u8]) -> Option<Vec<(u32, u32)>> {
+    let be32 = |at: usize| -> Option<u32> {
+        main.get(at..at.checked_add(4)?)
+            .map(|b| u32::from_be_bytes([b[0], b[1], b[2], b[3]]))
+    };
+    let start = (0..main.len().saturating_sub(12))
+        .step_by(4)
+        .rev()
+        .find(|&at| {
+            &main[at..at + 4] == b"DNFW"
+                && be32(at + 4).is_some_and(|total| {
+                    total >= 12 && at.saturating_add(total as usize) <= main.len()
+                })
+        })?;
+    let end = start + be32(start + 4)? as usize;
+    let count = be32(start + 8)? as usize;
+    let mut ranges = Vec::new();
+    for k in 0..count.min(256) {
+        let entry = start + 12 + 12 * k;
+        if entry + 12 > end {
+            break;
+        }
+        let (Some(offset), Some(length)) = (be32(entry + 4), be32(entry + 8)) else {
+            break;
+        };
+        if &main[entry..entry + 4] != b"CODE" || length < 16 {
+            continue;
+        }
+        let chunk = start.saturating_add(offset as usize);
+        if chunk.saturating_add(16) > end {
+            continue;
+        }
+        if let (Some(load), Some(image)) = (be32(chunk), be32(chunk + 4)) {
+            ranges.push((load, load.saturating_add(image)));
+        }
+    }
+    Some(ranges)
+}
+
+#[cfg(test)]
+mod dnfw_area_tests {
+    use super::dnfw_code_ranges;
+
+    /// An area as `src/dnfw/patch/area.py` builds it.
+    fn area(chunks: &[(&[u8; 4], Vec<u8>)]) -> Vec<u8> {
+        let head = 12 + 12 * chunks.len();
+        let (mut directory, mut body) = (Vec::new(), Vec::new());
+        for (id, data) in chunks {
+            directory.extend_from_slice(*id);
+            directory.extend_from_slice(&((head + body.len()) as u32).to_be_bytes());
+            directory.extend_from_slice(&(data.len() as u32).to_be_bytes());
+            body.extend_from_slice(data);
+            body.resize(body.len().next_multiple_of(4), 0);
+        }
+        let mut out = b"DNFW".to_vec();
+        out.extend_from_slice(&((head + body.len()) as u32).to_be_bytes());
+        out.extend_from_slice(&(chunks.len() as u32).to_be_bytes());
+        out.extend(directory);
+        out.extend(body);
+        out
+    }
+
+    fn code(load: u32, image: u32) -> Vec<u8> {
+        let mut out = Vec::new();
+        for word in [load, image, 0, 0] {
+            out.extend_from_slice(&word.to_be_bytes());
+        }
+        out.resize(16 + image as usize, 0x4e);
+        out
+    }
+
+    #[test]
+    fn code_chunks_are_the_ranges_and_data_chunks_are_not() {
+        let mut main = vec![0u8; 64];
+        main.extend(area(&[
+            (b"BOOT", vec![1; 10]),
+            (b"CODE", code(0x4670_c000, 0x40)),
+            (b"CODE", code(0x4680_0000, 0x10)),
+        ]));
+        assert_eq!(
+            dnfw_code_ranges(&main),
+            Some(vec![(0x4670_c000, 0x4670_c040), (0x4680_0000, 0x4680_0010)])
+        );
+    }
+
+    #[test]
+    fn no_area_and_an_area_without_code_differ() {
+        assert_eq!(dnfw_code_ranges(&[0u8; 64]), None);
+        let mut main = vec![0u8; 8];
+        main.extend(area(&[(b"BOOT", vec![1; 4])]));
+        assert_eq!(dnfw_code_ranges(&main), Some(Vec::new()));
+    }
+
+    #[test]
+    fn an_area_that_claims_more_than_main_holds_is_not_one() {
+        let mut main = vec![0u8; 8];
+        let mut bad = area(&[(b"CODE", code(0x4670_c000, 0x40))]);
+        bad[4..8].copy_from_slice(&0x1000u32.to_be_bytes());
+        main.extend(bad);
+        assert_eq!(dnfw_code_ranges(&main), None);
+    }
 }

@@ -16,6 +16,9 @@
 //!   --after  instructions to keep running after the main UI (default
 //!            100,000,000), so a fault just after boot is still caught
 //!   --frame  write the last screen as a 128x64 PBM
+//! An image with a DNFW area and no digikit patch record may run outside MAIN only
+//! in the area's CODE chunks; a PC anywhere else is a fault (`UnsupportedGuestPc`).
+//! `exec_ranges` in the report says which rule applied.
 //! Prints one JSON line; the exit status is 0 booted, 1 fault, 2 no UI, 3 usage.
 //! A watched PC's first execution is reported with its registers.
 
@@ -159,6 +162,15 @@ fn main() -> ExitCode {
             })
         })
         .collect();
+    // Where the PC could run outside MAIN: "ram" (the board's RAM window), or the
+    // CODE ranges of the image's DNFW area.
+    let exec_ranges = match emulator.exec_ranges() {
+        None => serde_json::json!("ram"),
+        Some(ranges) => ranges
+            .iter()
+            .map(|(start, end)| format!("{start:#010x}..{end:#010x}"))
+            .collect(),
+    };
     println!(
         "{}",
         serde_json::json!({
@@ -166,6 +178,7 @@ fn main() -> ExitCode {
             "device": s.device, "version": s.version, "base": base,
             "icount": s.icount, "main_ui_at": ui_at, "phase": s.phase,
             "error": s.error, "pc": format!("{:#010x}", s.pc), "watched": hits,
+            "exec_ranges": exec_ranges,
             "wall_seconds": started.elapsed().as_secs_f64(),
         })
     );
