@@ -19,6 +19,7 @@ const _: sig::dkrt_store_stat = crate::store::dkrt_store_stat;
 const _: sig::dkrt_store_lease = crate::store::dkrt_store_lease;
 const _: sig::dkrt_store_unlease = crate::store::dkrt_store_unlease;
 const _: sig::dkrt_store_read = crate::store::dkrt_store_read;
+const _: sig::dkrt_io_wake = crate::io::dkrt_io_wake;
 const _: sig::dkrt_module_header = crate::dkrt_module_header;
 const _: sig::dkrt_selection_get = crate::dkrt_selection_get;
 const _: sig::dkrt_selection_set = crate::dkrt_selection_set;

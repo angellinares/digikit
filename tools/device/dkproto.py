@@ -104,6 +104,10 @@ STATUS: dict[int, tuple[str, str]] = {
         "E_FILE_IN_USE",
         "a sample is still loading from that file: wait and try again",
     ),
+    -72: (
+        "E_AGAIN",
+        "usb_bulk_send: the engine refused and nothing is in flight; wait for the wake, retry",
+    ),
 }
 
 LOAD_STATUS: dict[int, tuple[str, str]] = {
@@ -183,6 +187,7 @@ RANGES: dict[str, tuple[int, int]] = {
     "probe": (0x32, 0x35),
     "remote": (0x38, 0x3D),
     "remote_state": (0x3E, 0x3F),
+    "usb_echo_test": (0x2C, 0x2D),
     "usb_fast": (0x36, 0x37),
 }
 

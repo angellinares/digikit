@@ -47,6 +47,8 @@ export const BULK_STATUS = {
   E_SET_NOKEY: -68,
   E_SET_VALUE: -69,
   E_SET_OFF: -70,
+  E_FILE_IN_USE: -71,
+  E_AGAIN: -72,
   L_E_NOT_FOUND: -1,
   L_E_BAD_STORE: -2,
   L_E_READ: -3,

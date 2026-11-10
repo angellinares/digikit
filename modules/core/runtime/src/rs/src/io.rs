@@ -413,6 +413,12 @@ pub fn wake(id: i32) {
     }
 }
 
+/// `dkrt_io_wake(id)`: `wake` for an adapter (core/usb-bulk calls it from the USB interrupt when a buffer is full). Safe in an interrupt handler.
+#[no_mangle]
+pub extern "C" fn dkrt_io_wake(id: i32) {
+    wake(id)
+}
+
 /// Loader calls it before an unload frees `rec`'s memory. The owner's waiting, sleeping and finished jobs are dropped without `done`. False: its
 /// step is running; the job is cancelled and gets no `done`, and the caller keeps the module memory (`E_BUSY`) until a later call returns true.
 pub unsafe fn retire(rec: usize) -> bool {

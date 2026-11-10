@@ -141,6 +141,15 @@ Plan: `docs/plans/usb-fast.md`. Facts below are static, DT2 1.17 and DN2 1.12 **
   callback; then a 30-tick delay) and `FUN_40006bc6` (restart via `FUN_40005cde` when the delay ends). Boot order on DT2 1.17: the boot thread
   `FUN_400cc9c8` initialises storage, loads settings (USB mode byte `DAT_4099d5c4`), calls `FUN_40006c52(port)` at 0x400cce06 / 0x400cce2e, then creates
   tasks. Our runtime loads modules at the main-OS task entry, after USB init.
+- **Engine facts used by `core/usb-bulk`** (static, DT2 1.17 and DN2 1.12; the adapter and its emulator test follow them) **[D]**: the stock configuration bytes have
+  wTotalLength 0 in the image (the firmware's `FUN_4000677a` writes 0x65 into its copy at run time and pushes the cache lines), so a copy compares bytes 2 and 3 as free.
+  The port table has 7 entries (entry 7 is not a port; the cfdb rule hashes 0x118 bytes). The entry-2 connect callback `FUN_400044b8` is `moveq #1,d0; move.l d0,4(sp);
+  bra.w FUN_400043e2`: it writes its caller's argument slot, so it is called with one dummy argument. `FUN_400043e2` calls the stock disconnect first, so connect is re-entrant.
+  Each queue head (0x40 bytes at 0x80000000 + offset) has the firmware's own list of queued dTDs at +0x30 (head) and +0x34 (tail), and `FUN_40005a86` sets the interrupt-on-completion
+  bit when the dTD has a completion (+0x24) or free (+0x38) callback. The completion loop (`vector_134_handler`, `FUN_400059aa`) calls the free callback (+0x38, returns the dTD
+  to the pool of 32) first, then the completion callback with (bytes = dTD+0x20 minus the remaining count, dTD+0x30 = the buffer pointer given at +8); a cancelled, still active dTD
+  gets +0x28 instead. `FUN_40006c16` only acts when the port changes; a re-enumeration on the same port is `FUN_40006bac` then `FUN_40006bc6` (it sets the flag that the
+  tick `FUN_4000713e` needs to restart the device after the 30-tick delay). The stock disconnect polls ENDPTFLUSH (0xfc0b01b4) without a bound.
 - **Overbridge mode** already has a vendor interface 3 with EP2 bulk OUT 512; its protocol is unknown, so the safe design is a new interface in MIDI mode
   **[O]**. Audio mode uses EP2 for feedback: not available there.
 - **Bandwidth coexistence**: EP3 audio takes at most 1012 + 256 bytes per 125 us of about 7.5 KB per microframe; bulk keeps the rest. The limiting resource

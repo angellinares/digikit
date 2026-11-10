@@ -887,6 +887,56 @@ pub mod text {
     }
 }
 
+pub mod usb {
+    unsafe extern "C" {
+        /// Cancel and free every transfer descriptor queued on endpoint queue `index` (`FUN_400059aa`, 0x400059aa); each one's cancel callback (+0x28) is called.
+        #[link_name = "cf.usb.fn.cancel_ep"]
+        pub fn cancel_ep(index: u32);
+    }
+
+    unsafe extern "C" {
+        /// The connect body of the USB MIDI port (`FUN_400043e2`, 0x400043e2): sets the EP1 queue heads, ENDPTCTRL1 and primes EP1 OUT.
+        #[link_name = "cf.usb.fn.connect"]
+        pub fn connect(hs: u32);
+    }
+
+    unsafe extern "C" {
+        /// The disconnect callback of the USB MIDI port (`FUN_4000436e`, 0x4000436e): clears ENDPTCTRL1, flushes EP1 (an unbounded poll on ENDPTFLUSH), cancels both EP1 queues.
+        #[link_name = "cf.usb.fn.disconnect"]
+        pub fn disconnect();
+    }
+
+    unsafe extern "C" {
+        /// Queue a transfer descriptor on endpoint queue `index` = endpoint + 4 * direction (IN = 1) and prime it (`FUN_40005a86`, 0x40005a86).
+        #[link_name = "cf.usb.fn.queue_td"]
+        pub fn queue_td(index: u32, dtd: *mut u8) -> i32;
+    }
+
+    unsafe extern "C" {
+        /// Start the USB device again when the stop delay has ended (`FUN_40006bc6`, 0x40006bc6); the second half of a re-enumeration.
+        #[link_name = "cf.usb.fn.restart"]
+        pub fn restart();
+    }
+
+    unsafe extern "C" {
+        /// Stop the USB device (`FUN_40006bac`, 0x40006bac): clears USBCMD.RS, calls the port's disconnect callback and starts a 30-tick delay; the first half of a re-enumeration.
+        #[link_name = "cf.usb.fn.stop"]
+        pub fn stop();
+    }
+
+    unsafe extern "C" {
+        /// Take a dTD from the pool of 32 bulk and interrupt descriptors (`FUN_40005764`, 0x40005764); non-blocking, safe in the ISR; 0 when the pool is empty. Its hash is shared with `FUN_400056be`: the ordinal picks this one.
+        #[link_name = "cf.usb.fn.td_alloc"]
+        pub fn td_alloc() -> *mut u8;
+    }
+
+    unsafe extern "C" {
+        /// The USB port table, 0x28 bytes an entry (+0 connect callback, +4 disconnect callback, +8 device descriptor, +0xC configuration pointer, +0x10 its length, +0x24 high-speed flag), the pointer operand at +0x22 of the mode switch `FUN_40006c16`. Entry 2 is USB MIDI. DT2 1.17 0x4029ef80, DN2 1.12 0x40287af0. RAM at run time.
+        #[link_name = "cf.usb.data.port_table"]
+        pub static PORT_TABLE: u8;
+    }
+}
+
 pub mod view {
     /// View (finding 71 section 2, "View vtable"): the vptr at +0, the manager (ViewController) at +0x2c, 0 when the view is not on the stack; the fields of derived windows start at +0x4c. The fields are [D] (finding 71); the size is [O]: derived windows start their own fields at +0x4c.
     #[repr(C)]

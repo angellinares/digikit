@@ -12689,6 +12689,357 @@
     },
     {
       "at": {
+        "dn2-1.12": [
+          {
+            "addr": "0x40287af0",
+            "len": 280
+          }
+        ],
+        "dt2-1.17": [
+          {
+            "addr": "0x4029ef80",
+            "len": 280
+          }
+        ]
+      },
+      "bindings": {
+        "c": "dk_fw_usb_port_table",
+        "rust": "dkfw::usb::PORT_TABLE"
+      },
+      "cpu": "cf",
+      "doc": "The USB port table, 0x28 bytes an entry (+0 connect callback, +4 disconnect callback, +8 device descriptor, +0xC configuration pointer, +0x10 its length, +0x24 high-speed flag), the pointer operand at +0x22 of the mode switch `FUN_40006c16`. Entry 2 is USB MIDI. DT2 1.17 0x4029ef80, DN2 1.12 0x40287af0. RAM at run time.",
+      "file": "devices/fw/usb.toml",
+      "kind": "data",
+      "mark": "D",
+      "name": "cf.usb.data.port_table",
+      "rule": {
+        "dn2": {
+          "kind": "cf_ptr",
+          "len": 280,
+          "offset": 34
+        },
+        "dt2": {
+          "kind": "cf_ptr",
+          "len": 280,
+          "offset": 34
+        }
+      },
+      "subsystem": "usb",
+      "users": [
+        "core/usb-bulk"
+      ],
+      "was": []
+    },
+    {
+      "at": {
+        "dn2-1.12": [
+          {
+            "addr": "0x400059aa",
+            "len": 4
+          }
+        ],
+        "dt2-1.17": [
+          {
+            "addr": "0x400059aa",
+            "len": 4
+          }
+        ]
+      },
+      "bindings": {
+        "c": "dk_fw_usb_cancel_ep",
+        "rust": "dkfw::usb::cancel_ep"
+      },
+      "cpu": "cf",
+      "doc": "Cancel and free every transfer descriptor queued on endpoint queue `index` (`FUN_400059aa`, 0x400059aa); each one's cancel callback (+0x28) is called.",
+      "file": "devices/fw/usb.toml",
+      "kind": "fn",
+      "mark": "D",
+      "name": "cf.usb.fn.cancel_ep",
+      "rule": {
+        "dn2": {
+          "kind": "cf_func",
+          "len": 4,
+          "offset": 0
+        },
+        "dt2": {
+          "kind": "cf_func",
+          "len": 4,
+          "offset": 0
+        }
+      },
+      "sig": "void (u32 index)",
+      "subsystem": "usb",
+      "users": [
+        "core/usb-bulk"
+      ],
+      "was": []
+    },
+    {
+      "at": {
+        "dn2-1.12": [
+          {
+            "addr": "0x400043e2",
+            "len": 4
+          }
+        ],
+        "dt2-1.17": [
+          {
+            "addr": "0x400043e2",
+            "len": 4
+          }
+        ]
+      },
+      "bindings": {
+        "c": "dk_fw_usb_connect",
+        "rust": "dkfw::usb::connect"
+      },
+      "cpu": "cf",
+      "doc": "The connect body of the USB MIDI port (`FUN_400043e2`, 0x400043e2): sets the EP1 queue heads, ENDPTCTRL1 and primes EP1 OUT.",
+      "file": "devices/fw/usb.toml",
+      "kind": "fn",
+      "mark": "D",
+      "name": "cf.usb.fn.connect",
+      "rule": {
+        "dn2": {
+          "kind": "cf_func",
+          "len": 4,
+          "offset": 0
+        },
+        "dt2": {
+          "kind": "cf_func",
+          "len": 4,
+          "offset": 0
+        }
+      },
+      "sig": "void (u32 hs)",
+      "subsystem": "usb",
+      "users": [
+        "core/usb-bulk"
+      ],
+      "was": []
+    },
+    {
+      "at": {
+        "dn2-1.12": [
+          {
+            "addr": "0x4000436e",
+            "len": 4
+          }
+        ],
+        "dt2-1.17": [
+          {
+            "addr": "0x4000436e",
+            "len": 4
+          }
+        ]
+      },
+      "bindings": {
+        "c": "dk_fw_usb_disconnect",
+        "rust": "dkfw::usb::disconnect"
+      },
+      "cpu": "cf",
+      "doc": "The disconnect callback of the USB MIDI port (`FUN_4000436e`, 0x4000436e): clears ENDPTCTRL1, flushes EP1 (an unbounded poll on ENDPTFLUSH), cancels both EP1 queues.",
+      "file": "devices/fw/usb.toml",
+      "kind": "fn",
+      "mark": "D",
+      "name": "cf.usb.fn.disconnect",
+      "rule": {
+        "dn2": {
+          "kind": "cf_func",
+          "len": 4,
+          "offset": 0
+        },
+        "dt2": {
+          "kind": "cf_func",
+          "len": 4,
+          "offset": 0
+        }
+      },
+      "sig": "void ()",
+      "subsystem": "usb",
+      "users": [
+        "core/usb-bulk"
+      ],
+      "was": []
+    },
+    {
+      "at": {
+        "dn2-1.12": [
+          {
+            "addr": "0x40005a86",
+            "len": 4
+          }
+        ],
+        "dt2-1.17": [
+          {
+            "addr": "0x40005a86",
+            "len": 4
+          }
+        ]
+      },
+      "bindings": {
+        "c": "dk_fw_usb_queue_td",
+        "rust": "dkfw::usb::queue_td"
+      },
+      "cpu": "cf",
+      "doc": "Queue a transfer descriptor on endpoint queue `index` = endpoint + 4 * direction (IN = 1) and prime it (`FUN_40005a86`, 0x40005a86).",
+      "file": "devices/fw/usb.toml",
+      "kind": "fn",
+      "mark": "D",
+      "name": "cf.usb.fn.queue_td",
+      "rule": {
+        "dn2": {
+          "kind": "cf_func",
+          "len": 4,
+          "offset": 0
+        },
+        "dt2": {
+          "kind": "cf_func",
+          "len": 4,
+          "offset": 0
+        }
+      },
+      "sig": "i32 (u32 index, u8 *dtd)",
+      "subsystem": "usb",
+      "users": [
+        "core/usb-bulk"
+      ],
+      "was": []
+    },
+    {
+      "at": {
+        "dn2-1.12": [
+          {
+            "addr": "0x40006bc6",
+            "len": 4
+          }
+        ],
+        "dt2-1.17": [
+          {
+            "addr": "0x40006bc6",
+            "len": 4
+          }
+        ]
+      },
+      "bindings": {
+        "c": "dk_fw_usb_restart",
+        "rust": "dkfw::usb::restart"
+      },
+      "cpu": "cf",
+      "doc": "Start the USB device again when the stop delay has ended (`FUN_40006bc6`, 0x40006bc6); the second half of a re-enumeration.",
+      "file": "devices/fw/usb.toml",
+      "kind": "fn",
+      "mark": "D",
+      "name": "cf.usb.fn.restart",
+      "rule": {
+        "dn2": {
+          "kind": "cf_func",
+          "len": 4,
+          "offset": 0
+        },
+        "dt2": {
+          "kind": "cf_func",
+          "len": 4,
+          "offset": 0
+        }
+      },
+      "sig": "void ()",
+      "subsystem": "usb",
+      "users": [
+        "core/usb-bulk"
+      ],
+      "was": []
+    },
+    {
+      "at": {
+        "dn2-1.12": [
+          {
+            "addr": "0x40006bac",
+            "len": 4
+          }
+        ],
+        "dt2-1.17": [
+          {
+            "addr": "0x40006bac",
+            "len": 4
+          }
+        ]
+      },
+      "bindings": {
+        "c": "dk_fw_usb_stop",
+        "rust": "dkfw::usb::stop"
+      },
+      "cpu": "cf",
+      "doc": "Stop the USB device (`FUN_40006bac`, 0x40006bac): clears USBCMD.RS, calls the port's disconnect callback and starts a 30-tick delay; the first half of a re-enumeration.",
+      "file": "devices/fw/usb.toml",
+      "kind": "fn",
+      "mark": "D",
+      "name": "cf.usb.fn.stop",
+      "rule": {
+        "dn2": {
+          "kind": "cf_func",
+          "len": 4,
+          "offset": 0
+        },
+        "dt2": {
+          "kind": "cf_func",
+          "len": 4,
+          "offset": 0
+        }
+      },
+      "sig": "void ()",
+      "subsystem": "usb",
+      "users": [
+        "core/usb-bulk"
+      ],
+      "was": []
+    },
+    {
+      "at": {
+        "dn2-1.12": [
+          {
+            "addr": "0x40005764",
+            "len": 4
+          }
+        ],
+        "dt2-1.17": [
+          {
+            "addr": "0x40005764",
+            "len": 4
+          }
+        ]
+      },
+      "bindings": {
+        "c": "dk_fw_usb_td_alloc",
+        "rust": "dkfw::usb::td_alloc"
+      },
+      "cpu": "cf",
+      "doc": "Take a dTD from the pool of 32 bulk and interrupt descriptors (`FUN_40005764`, 0x40005764); non-blocking, safe in the ISR; 0 when the pool is empty. Its hash is shared with `FUN_400056be`: the ordinal picks this one.",
+      "file": "devices/fw/usb.toml",
+      "kind": "fn",
+      "mark": "D",
+      "name": "cf.usb.fn.td_alloc",
+      "rule": {
+        "dn2": {
+          "kind": "cf_func",
+          "len": 4,
+          "offset": 0
+        },
+        "dt2": {
+          "kind": "cf_func",
+          "len": 4,
+          "offset": 0
+        }
+      },
+      "sig": "u8 *()",
+      "subsystem": "usb",
+      "users": [
+        "core/usb-bulk"
+      ],
+      "was": []
+    },
+    {
+      "at": {
         "dn2-1.11": [
           {
             "addr": "0x4018c8dc",
@@ -18412,6 +18763,13 @@
       "file": "devices/fw/text.toml",
       "meaning": "fonts and text drawing",
       "name": "text"
+    },
+    {
+      "count": 8,
+      "cpu": "cf",
+      "file": "devices/fw/usb.toml",
+      "meaning": "the USB device engine: port table, connect and disconnect callbacks, endpoint queues, mode switch",
+      "name": "usb"
     },
     {
       "count": 11,

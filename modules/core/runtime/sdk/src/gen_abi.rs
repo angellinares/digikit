@@ -588,6 +588,9 @@ pub mod sig {
     /// Read count sectors of the file f, starting at its sector `sector`, into dst (512 bytes per sector). dst must be 16-byte aligned (E_CONTRACT otherwise). count is 1 to 128 and the range lies inside the file, rounded up to whole sectors (E_RANGE otherwise). No sha check, no staging buffer: the caller owns dst. OK or E_READ.
     pub type dkrt_store_read = unsafe extern "C" fn(f: *const DkrtStoreFile, sector: u32, count: u32, dst: *mut u8) -> i32;
 
+    /// Wake the I/O job `id` (api->io_wake for an adapter): the job's next step runs, or, when it has not yet reached its DK_IO_WAIT, that wait does not sleep. Unknown ids are ignored. Safe in an interrupt handler. core/usb-bulk calls it when a receive buffer is full.
+    pub type dkrt_io_wake = unsafe extern "C" fn(id: i32);
+
     /// The header fields of the .dkm that starts at store sector first (DkrtScan.first) into out: OK, E_FORMAT when the file is not a .dkm, or E_READ / E_NOT_FOUND when its first sector cannot be read. The runtime does the card read itself.
     pub type dkrt_module_header = unsafe extern "C" fn(first: u32, out: *mut DkrtModuleHeader) -> i32;
 

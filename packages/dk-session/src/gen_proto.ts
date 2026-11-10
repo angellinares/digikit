@@ -79,6 +79,7 @@ export const STATUS: [number, string, string][] = [
   [-69, 'E_SET_VALUE', 'a settings value is too long, or the buffer is too small'],
   [-70, 'E_SET_OFF', 'settings store off: an older store reaches its area, or no store'],
   [-71, 'E_FILE_IN_USE', 'a sample is still loading from that file: wait and try again'],
+  [-72, 'E_AGAIN', 'usb_bulk_send: the engine refused and nothing is in flight; wait for the wake, retry'],
 ];
 
 /** [code, name, text] */
@@ -154,6 +155,7 @@ export const RANGES = {
   probe: [0x32, 0x35],
   remote: [0x38, 0x3d],
   remote_state: [0x3e, 0x3f],
+  usb_echo_test: [0x2c, 0x2d],
   usb_fast: [0x36, 0x37],
 } as const;
 

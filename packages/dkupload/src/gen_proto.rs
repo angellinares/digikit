@@ -55,6 +55,7 @@ pub const E_SET_NOKEY: i8 = -68;
 pub const E_SET_VALUE: i8 = -69;
 pub const E_SET_OFF: i8 = -70;
 pub const E_FILE_IN_USE: i8 = -71;
+pub const E_AGAIN: i8 = -72;
 pub const CAP_LOG: u32 = 1 << 0;
 pub const CAP_PEEK: u32 = 1 << 1;
 pub const CAP_LOGCFG: u32 = 1 << 2;
@@ -84,13 +85,14 @@ pub const CAPK_STORE: u8 = 12;
 pub const CAPK_SETTINGS: u8 = 13;
 pub const CAPK_SEND_SLOTS: u8 = 14;
 /// The command ranges a module may register, as (first, last).
-pub const RANGES: [(u8, u8); 7] = [
+pub const RANGES: [(u8, u8); 8] = [
     (0x20, 0x22), // debug
     (0x24, 0x27), // file_write_test
     (0x28, 0x2b), // file_write_test_b
     (0x32, 0x35), // probe
     (0x38, 0x3d), // remote
     (0x3e, 0x3f), // remote_state
+    (0x2c, 0x2d), // usb_echo_test
     (0x36, 0x37), // usb_fast
 ];
 pub const RANGE_DEBUG: (u8, u8) = (0x20, 0x22);
@@ -99,4 +101,5 @@ pub const RANGE_FILE_WRITE_TEST_B: (u8, u8) = (0x28, 0x2b);
 pub const RANGE_PROBE: (u8, u8) = (0x32, 0x35);
 pub const RANGE_REMOTE: (u8, u8) = (0x38, 0x3d);
 pub const RANGE_REMOTE_STATE: (u8, u8) = (0x3e, 0x3f);
+pub const RANGE_USB_ECHO_TEST: (u8, u8) = (0x2c, 0x2d);
 pub const RANGE_USB_FAST: (u8, u8) = (0x36, 0x37);

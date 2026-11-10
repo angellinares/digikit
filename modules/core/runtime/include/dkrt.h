@@ -543,6 +543,9 @@ void dkrt_store_unlease(int32_t id);
 /* Read count sectors of the file f, starting at its sector `sector`, into dst (512 bytes per sector). dst must be 16-byte aligned (E_CONTRACT otherwise). count is 1 to 128 and the range lies inside the file, rounded up to whole sectors (E_RANGE otherwise). No sha check, no staging buffer: the caller owns dst. OK or E_READ. */
 int32_t dkrt_store_read(const DkrtStoreFile *f, uint32_t sector, uint32_t count, uint8_t *dst);
 
+/* Wake the I/O job `id` (api->io_wake for an adapter): the job's next step runs, or, when it has not yet reached its DK_IO_WAIT, that wait does not sleep. Unknown ids are ignored. Safe in an interrupt handler. core/usb-bulk calls it when a receive buffer is full. */
+void dkrt_io_wake(int32_t id);
+
 /* The header fields of the .dkm that starts at store sector first (DkrtScan.first) into out: OK, E_FORMAT when the file is not a .dkm, or E_READ / E_NOT_FOUND when its first sector cannot be read. The runtime does the card read itself. */
 int32_t dkrt_module_header(uint32_t first, DkrtModuleHeader *out);
 

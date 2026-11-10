@@ -495,6 +495,42 @@ doc = "Turn an encoder by `delta`."
 requires = "core/input"
 
 [[import]]
+name = "usb_bulk_enable"
+sig = "i32 (i32 io_id)"
+doc = "Add the vendor bulk interface (interface 2, EP2 OUT and IN, 512-byte packets) to USB MIDI mode and re-enumerate. `io_id` is the I/O job that usb_bulk_* wakes when a receive buffer is full. Idempotent for the same job; another job gets E_BUSY (one owner). Task context. 0, or a negative error (E_CONTRACT: the firmware's USB tables are not the stock ones, E_NOMEM: no free slot on the runtime's per-pass list). See <dk/usb_bulk.h>."
+requires = "core/usb-bulk"
+
+[[import]]
+name = "usb_bulk_disable"
+sig = "i32 (i32 io_id)"
+doc = "The job that called usb_bulk_enable goes away (call it in dkm_fini): the adapter stops waking it and another job may enable the interface. The interface stays in the USB configuration until the next boot. 0, or E_STATE for another job."
+requires = "core/usb-bulk"
+
+[[import]]
+name = "usb_bulk_take"
+sig = "i32 (u8 **buf, u32 *len)"
+doc = "The next full receive buffer, in arrival order: 1 and `*buf`, `*len` set (the buffer is yours until usb_bulk_release), or 0 when none is full. Never blocks. A buffer holds the bytes of one USB transfer: up to 16 KiB, ended by a short packet or a full buffer, so a message of a multiple of 512 bytes must be followed by a zero-length packet from the host."
+requires = "core/usb-bulk"
+
+[[import]]
+name = "usb_bulk_release"
+sig = "i32 (u8 *buf)"
+doc = "Give a buffer from usb_bulk_take back: it is queued for the next transfer. 0, or E_STATE for a pointer that is not a taken buffer."
+requires = "core/usb-bulk"
+
+[[import]]
+name = "usb_bulk_send"
+sig = "i32 (const u8 *buf, u32 len)"
+doc = "Send `len` bytes (1 to 16384) to the host on EP2 IN. The bytes are copied: `buf` is free when the call returns. 0, E_BUSY when both send slots are in flight (the job is woken when one completes), E_AGAIN (-72) when nothing is in flight and the engine refused the transfer (the job is woken within a few milliseconds to try again), E_STATE when the host is not connected or the bus was reset during the call, E_LENGTH."
+requires = "core/usb-bulk"
+
+[[import]]
+name = "usb_bulk_state"
+sig = "u32 ()"
+doc = "State word: bit 0 enabled, bit 1 connected (the host configured interface 2), bits 8..15 receive buffers full, bits 16..23 send slots in flight, bits 24..31 the reset count (it changes when the USB bus is reset or the host disconnects; a transfer in progress is void then)."
+requires = "core/usb-bulk"
+
+[[import]]
 name = "dk_ui_has"
 sig = "i32 (i32 cap)"
 doc = "1 when this device has the UI capability `cap` (DK_UI_CAP_*), else 0. See <dk/ui.h>."
@@ -965,6 +1001,7 @@ debug = [0x20, 0x22]   # digikit/debug: LOG, PEEK, LOGCFG (docs/findings/46-digi
 file_write_test = [0x24, 0x27]   # test/file-write: start an I/O job that writes a file, its status, wake it, a file call outside an I/O step
 usb_fast = [0x36, 0x37]   # usb-fast: SET_NONCE (the host proves which USB device is on its MIDI port, docs/plans/usb-fast.md section 5)
 file_write_test_b = [0x28, 0x2b]   # test/file-write-b: the same commands for a second module
+usb_echo_test = [0x2c, 0x2d]   # test/usb-echo: its status
 
 [protocol.service]  # the commands of run-time service modules, by name; each lies in a range above (a module registers them with Api.register_cmds)
 REMOTE_KEY = 0x38      # digikit/remote: code (u8), down (u8)
@@ -1022,6 +1059,7 @@ E_SET_NOKEY = { code = -68, text = "no such settings key (or no settings record)
 E_SET_VALUE = { code = -69, text = "a settings value is too long, or the buffer is too small" }
 E_SET_OFF = { code = -70, text = "settings store off: an older store reaches its area, or no store" }
 E_FILE_IN_USE = { code = -71, text = "a sample is still loading from that file: wait and try again" }
+E_AGAIN = { code = -72, text = "usb_bulk_send: the engine refused and nothing is in flight; wait for the wake, retry" }
 
 [protocol.caps]     # INFO capability bits (bit numbers of the `caps` word)
 LOG = 0

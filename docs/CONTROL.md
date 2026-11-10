@@ -80,6 +80,7 @@ Wrapper is the `Emu` method in `tools/control/digi_client.py`. `hello` reports a
 | `card.overlay`, `card.export`, `card.load`, `card.status`, `card.cancel`, `card.folder`, `card.sync`, `card.reset_overlay` | | `call` |
 | `midi.in`, `midi.out` | `midi_in`, `midi_out` | `call` |
 | `midi.usb.in`, `midi.usb.out` | `usb_in`, `usb_out` | `call` |
+| `usb.bulk.in {bytes \| file, period?, connect?, zlp?}`, `usb.bulk.out {file?}` | | `call` |
 | `flash.status`, `flash.read {offset, length}` | | `call`; `patchkit flash --emulator` |
 | `watchdog.config` | `watchdog` | `call` |
 | `cpu.exceptions` | `cpu_exceptions` | `call` |
@@ -213,6 +214,17 @@ resolved (known: DT2 1.16 and 1.17, DN2 1.11 and 1.12). While the next call is n
 (the audio interrupt), the batched fast path and the analytic idle skip run as they do with no input queued, up to the instruction at
 which the call is handed over (they ran one instruction at a time with any USB input queued, 135 ns an instruction; finding 43, "Upload speed"). The
 instruction at which each call is handed over, and the guest state, are the same (`state.digest {"arch": true}` equal at every checked point).
+
+`usb.bulk.in {bytes | file, period?, connect?}` is the host side of the vendor bulk endpoint of `core/usb-bulk` (EP2 OUT; the controller is not modelled). The host's
+512-byte packets fill the dTDs the guest has queued on EP2 OUT (through each dTD's page array: page 0 pointer with its start offset, then the pages); a dTD completes when its count is used up or a packet shorter than 512 bytes, a zero-length one too, ends the transfer, and a partly filled dTD stays active. One dTD per delivery `period` instructions apart (default 49,500, one 16 KiB high-speed transfer), by reading
+the head of the endpoint's dTD list in the controller SRAM (queue head 0x80000100, list pointers +0x30 and +0x34), writing the bytes into the dTD's buffer, completing
+the dTD as the firmware's own loop does (the remaining count, the unlink) and calling its free callback (+0x38) and completion callback (+0x24) at interrupt level.
+With no dTD primed, or EP2 receive off (ENDPTCTRL2), the host is NAKed (`bulk_naks`) and the message waits one period. A message of a multiple of 512 bytes is followed by a zero-length packet, as a host sends it; `zlp: false` leaves the transfer open, and `{zlp: true}` with no bytes sends only that packet (the host's duty: without it the dTD never completes). `connect` is
+the address of the adapter's connect callback (`usb_bulk_connect`, from the patch plan), called first, ahead of everything queued (a bus reset does not wait): the bus reset after the enumeration is not modelled. The queue,
+the interrupt and the pacing are those of `midi.usb.in`, so the two interleave. `usb.bulk.out {file?}` returns (and clears) what the guest queued on EP2 IN, as hex, seen where
+the firmware's queue function (`FUN_40005a86`, queue index 6) gets the dTD; the dTD is completed one period later. Both start the capture; The IN data is read through the dTD's page array; with zero-length termination on (QH caps bit 29 clear) a transfer of a multiple of 512 bytes counts one zero-length packet (`bulk_out_zlps`). The counters
+`bulk_in_bytes`, `bulk_out_bytes`, `bulk_out_pending`, `bulk_naks` and `bulk_out_zlps` are in the `status` of `usb.bulk.out`.
+
 The DIN input (`midi.in`) still keeps the one-instruction loop while bytes are queued.
 
 `flash.status` and `flash.read`: the OS UPGRADE of the firmware writes its container to the flash. The emulator takes over MAIN OS's sector erase and page program

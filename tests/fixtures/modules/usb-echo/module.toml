@@ -1,0 +1,20 @@
+[module]
+id = "test/usb-echo"
+version = "0.1.0"
+name = "USB echo"
+category = "test"
+type = "raw"
+author = "digikit"
+status = "experimental"
+summary = "Test fixture: enables the bulk interface of core/usb-bulk and echoes every received buffer back on EP2 IN from an I/O job (the proof of the adapter)"
+requires = ["core/usb-bulk"]
+conflicts = []
+
+[targets]
+"dt2-1.17" = "experimental"
+"dn2-1.12" = "experimental"
+
+[[object]]
+path = "build/usb-echo.dko.json"
+sources = ["src/usb-echo.c"]
+place = "cf.expansion"

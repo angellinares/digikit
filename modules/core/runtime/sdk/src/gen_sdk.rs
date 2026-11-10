@@ -146,6 +146,7 @@ pub mod proto {
     pub const E_SET_VALUE: i32 = -69;
     pub const E_SET_OFF: i32 = -70;
     pub const E_FILE_IN_USE: i32 = -71;
+    pub const E_AGAIN: i32 = -72;
     pub const CAP_LOG: u32 = 1 << 0;
     pub const CAP_PEEK: u32 = 1 << 1;
     pub const CAP_LOGCFG: u32 = 1 << 2;
@@ -175,13 +176,14 @@ pub mod proto {
     pub const CAPK_SETTINGS: u8 = 13;
     pub const CAPK_SEND_SLOTS: u8 = 14;
     /// The command ranges a module may register, as (first, last).
-    pub const RANGES: [(u8, u8); 7] = [
+    pub const RANGES: [(u8, u8); 8] = [
         (0x20, 0x22), // debug
         (0x24, 0x27), // file_write_test
         (0x28, 0x2b), // file_write_test_b
         (0x32, 0x35), // probe
         (0x38, 0x3d), // remote
         (0x3e, 0x3f), // remote_state
+        (0x2c, 0x2d), // usb_echo_test
         (0x36, 0x37), // usb_fast
     ];
     pub const RANGE_DEBUG: (u8, u8) = (0x20, 0x22);
@@ -190,6 +192,7 @@ pub mod proto {
     pub const RANGE_PROBE: (u8, u8) = (0x32, 0x35);
     pub const RANGE_REMOTE: (u8, u8) = (0x38, 0x3d);
     pub const RANGE_REMOTE_STATE: (u8, u8) = (0x3e, 0x3f);
+    pub const RANGE_USB_ECHO_TEST: (u8, u8) = (0x2c, 0x2d);
     pub const RANGE_USB_FAST: (u8, u8) = (0x36, 0x37);
 }
 
@@ -377,7 +380,7 @@ pub mod api {
     }
 
     /// The names a module may import, in the order of the runtime's table (`[[import]]`).
-    pub const IMPORT_NAMES: [&str; 36] = [
+    pub const IMPORT_NAMES: [&str; 42] = [
         "fw_block_read",
         "fw_alloc",
         "fw_free",
@@ -389,6 +392,12 @@ pub mod api {
         "__umoddi3",
         "input_key",
         "input_turn",
+        "usb_bulk_enable",
+        "usb_bulk_disable",
+        "usb_bulk_take",
+        "usb_bulk_release",
+        "usb_bulk_send",
+        "usb_bulk_state",
         "dk_ui_has",
         "dk_ui_menu_new",
         "dk_ui_open",
@@ -441,6 +450,24 @@ pub mod api {
     /// `input_turn`: Turn an encoder by `delta`.
     pub type InputTurnFn = unsafe extern "C" fn(encoder: u32, delta: i32) -> i32;
 
+    /// `usb_bulk_enable`: Add the vendor bulk interface (interface 2, EP2 OUT and IN, 512-byte packets) to USB MIDI mode and re-enumerate. `io_id` is the I/O job that usb_bulk_* wakes when a receive buffer is full. Idempotent for the same job; another job gets E_BUSY (one owner). Task context. 0, or a negative error (E_CONTRACT: the firmware's USB tables are not the stock ones, E_NOMEM: no free slot on the runtime's per-pass list). See <dk/usb_bulk.h>.
+    pub type UsbBulkEnableFn = unsafe extern "C" fn(io_id: i32) -> i32;
+
+    /// `usb_bulk_disable`: The job that called usb_bulk_enable goes away (call it in dkm_fini): the adapter stops waking it and another job may enable the interface. The interface stays in the USB configuration until the next boot. 0, or E_STATE for another job.
+    pub type UsbBulkDisableFn = unsafe extern "C" fn(io_id: i32) -> i32;
+
+    /// `usb_bulk_take`: The next full receive buffer, in arrival order: 1 and `*buf`, `*len` set (the buffer is yours until usb_bulk_release), or 0 when none is full. Never blocks. A buffer holds the bytes of one USB transfer: up to 16 KiB, ended by a short packet or a full buffer, so a message of a multiple of 512 bytes must be followed by a zero-length packet from the host.
+    pub type UsbBulkTakeFn = unsafe extern "C" fn(buf: *mut *mut u8, len: *mut u32) -> i32;
+
+    /// `usb_bulk_release`: Give a buffer from usb_bulk_take back: it is queued for the next transfer. 0, or E_STATE for a pointer that is not a taken buffer.
+    pub type UsbBulkReleaseFn = unsafe extern "C" fn(buf: *mut u8) -> i32;
+
+    /// `usb_bulk_send`: Send `len` bytes (1 to 16384) to the host on EP2 IN. The bytes are copied: `buf` is free when the call returns. 0, E_BUSY when both send slots are in flight (the job is woken when one completes), E_AGAIN (-72) when nothing is in flight and the engine refused the transfer (the job is woken within a few milliseconds to try again), E_STATE when the host is not connected or the bus was reset during the call, E_LENGTH.
+    pub type UsbBulkSendFn = unsafe extern "C" fn(buf: *const u8, len: u32) -> i32;
+
+    /// `usb_bulk_state`: State word: bit 0 enabled, bit 1 connected (the host configured interface 2), bits 8..15 receive buffers full, bits 16..23 send slots in flight, bits 24..31 the reset count (it changes when the USB bus is reset or the host disconnects; a transfer in progress is void then).
+    pub type UsbBulkStateFn = unsafe extern "C" fn() -> u32;
+
     /// `dl_set_tick_cb`: Set the one per-block callback of core/dsp-link (0: off): `void cb(const volatile u16 *rec)`, called every block in the block interrupt with the copy of the previous DSP reply record. Keep it short: a plain C function, no allocation, no logging. Clear it in `fini`. Without core/dsp-link the call does nothing.
     pub type DlSetTickCbFn = unsafe extern "C" fn(cb: *mut u8);
 
@@ -473,6 +500,12 @@ macro_rules! optional_imports {
             extern "C" {
                 pub fn input_key(code: u32, down: u32) -> i32;
                 pub fn input_turn(encoder: u32, delta: i32) -> i32;
+                pub fn usb_bulk_enable(io_id: i32) -> i32;
+                pub fn usb_bulk_disable(io_id: i32) -> i32;
+                pub fn usb_bulk_take(buf: *mut *mut u8, len: *mut u32) -> i32;
+                pub fn usb_bulk_release(buf: *mut u8) -> i32;
+                pub fn usb_bulk_send(buf: *const u8, len: u32) -> i32;
+                pub fn usb_bulk_state() -> u32;
                 pub fn dk_ui_has(cap: i32) -> i32;
                 pub fn dk_ui_menu_new(desc: *const u8) -> *mut u8;
                 pub fn dk_ui_open(menu: *mut u8) -> i32;
@@ -518,10 +551,16 @@ macro_rules! optional_imports {
             }
 
             /// (name, address from the module or 0, address of the stub or 0)
-            pub fn table() -> [(&'static str, usize, usize); 21] {
+            pub fn table() -> [(&'static str, usize, usize); 27] {
                 [
                     ("input_key", core::hint::black_box(input_key as usize), 0),
                     ("input_turn", core::hint::black_box(input_turn as usize), 0),
+                    ("usb_bulk_enable", core::hint::black_box(usb_bulk_enable as usize), 0),
+                    ("usb_bulk_disable", core::hint::black_box(usb_bulk_disable as usize), 0),
+                    ("usb_bulk_take", core::hint::black_box(usb_bulk_take as usize), 0),
+                    ("usb_bulk_release", core::hint::black_box(usb_bulk_release as usize), 0),
+                    ("usb_bulk_send", core::hint::black_box(usb_bulk_send as usize), 0),
+                    ("usb_bulk_state", core::hint::black_box(usb_bulk_state as usize), 0),
                     ("dk_ui_has", core::hint::black_box(dk_ui_has as usize), absent::dk_ui_has as usize),
                     ("dk_ui_menu_new", core::hint::black_box(dk_ui_menu_new as usize), absent::dk_ui_menu_new as usize),
                     ("dk_ui_open", core::hint::black_box(dk_ui_open as usize), absent::dk_ui_open as usize),

@@ -1,0 +1,2033 @@
+{
+ "arch": "cf",
+ "format": 1,
+ "relocs": [
+  {
+   "addend": 0,
+   "offset": 2,
+   "section": ".text.rx_index",
+   "symbol": ".sec..bss.area",
+   "type": "cf.32"
+  },
+  {
+   "addend": 0,
+   "offset": 12,
+   "section": ".text.rx_index",
+   "symbol": "usb_alias_delta",
+   "type": "cf.32"
+  },
+  {
+   "addend": 0,
+   "offset": 6,
+   "section": ".text.usb_bulk_td_free",
+   "symbol": ".sec..bss.stock_free",
+   "type": "cf.32"
+  },
+  {
+   "addend": 0,
+   "offset": 20,
+   "section": ".text.usb_bulk_td_free",
+   "symbol": ".sec..bss.td_status",
+   "type": "cf.32"
+  },
+  {
+   "addend": 0,
+   "offset": 2,
+   "section": ".text.wake",
+   "symbol": ".sec..bss.io_job",
+   "type": "cf.32"
+  },
+  {
+   "addend": 0,
+   "offset": 14,
+   "section": ".text.wake",
+   "symbol": "dkrt_io_wake",
+   "type": "cf.32"
+  },
+  {
+   "addend": 0,
+   "offset": 12,
+   "section": ".text.ep2_stop",
+   "symbol": ".sec..bss.stopping",
+   "type": "cf.32"
+  },
+  {
+   "addend": 0,
+   "offset": 18,
+   "section": ".text.ep2_stop",
+   "symbol": ".sec..text.ep2_lists_clear",
+   "type": "cf.32"
+  },
+  {
+   "addend": 0,
+   "offset": 24,
+   "section": ".text.ep2_stop",
+   "symbol": ".sec..bss.qh_ready",
+   "type": "cf.32"
+  },
+  {
+   "addend": 0,
+   "offset": 40,
+   "section": ".text.ep2_stop",
+   "symbol": ".sec..text.ep2_flush",
+   "type": "cf.32"
+  },
+  {
+   "addend": 0,
+   "offset": 50,
+   "section": ".text.ep2_stop",
+   "symbol": "usb_fw_cancel_ep",
+   "type": "cf.32"
+  },
+  {
+   "addend": 0,
+   "offset": 82,
+   "section": ".text.ep2_stop",
+   "symbol": ".sec..bss.rx_state",
+   "type": "cf.32"
+  },
+  {
+   "addend": 0,
+   "offset": 116,
+   "section": ".text.ep2_stop",
+   "symbol": ".sec..bss.order_count",
+   "type": "cf.32"
+  },
+  {
+   "addend": 0,
+   "offset": 122,
+   "section": ".text.ep2_stop",
+   "symbol": ".sec..bss.order_head",
+   "type": "cf.32"
+  },
+  {
+   "addend": 0,
+   "offset": 128,
+   "section": ".text.ep2_stop",
+   "symbol": ".sec..bss.tx_state",
+   "type": "cf.32"
+  },
+  {
+   "addend": 1,
+   "offset": 134,
+   "section": ".text.ep2_stop",
+   "symbol": ".sec..bss.tx_state",
+   "type": "cf.32"
+  },
+  {
+   "addend": 0,
+   "offset": 140,
+   "section": ".text.ep2_stop",
+   "symbol": ".sec..bss.need_prime",
+   "type": "cf.32"
+  },
+  {
+   "addend": 0,
+   "offset": 146,
+   "section": ".text.ep2_stop",
+   "symbol": ".sec..bss.qh_ready",
+   "type": "cf.32"
+  },
+  {
+   "addend": 0,
+   "offset": 152,
+   "section": ".text.ep2_stop",
+   "symbol": ".sec..bss.connected",
+   "type": "cf.32"
+  },
+  {
+   "addend": 0,
+   "offset": 160,
+   "section": ".text.ep2_stop",
+   "symbol": ".sec..bss.resets",
+   "type": "cf.32"
+  },
+  {
+   "addend": 0,
+   "offset": 166,
+   "section": ".text.ep2_stop",
+   "symbol": ".sec..bss.connected",
+   "type": "cf.32"
+  },
+  {
+   "addend": 0,
+   "offset": 172,
+   "section": ".text.ep2_stop",
+   "symbol": ".sec..text.wake",
+   "type": "cf.32"
+  },
+  {
+   "addend": 0,
+   "offset": 182,
+   "section": ".text.ep2_stop",
+   "symbol": ".sec..bss.stopping",
+   "type": "cf.32"
+  },
+  {
+   "addend": 0,
+   "offset": 10,
+   "section": ".text.usb_bulk_disconnect",
+   "symbol": ".sec..text.ep2_stop",
+   "type": "cf.32"
+  },
+  {
+   "addend": 0,
+   "offset": 20,
+   "section": ".text.usb_bulk_disconnect",
+   "symbol": "usb_fw_disconnect",
+   "type": "cf.32"
+  },
+  {
+   "addend": 0,
+   "offset": 6,
+   "section": ".text.queue_transfer.constprop.0",
+   "symbol": "usb_fw_td_alloc",
+   "type": "cf.32"
+  },
+  {
+   "addend": 0,
+   "offset": 30,
+   "section": ".text.queue_transfer.constprop.0",
+   "symbol": ".sec..text.usb_bulk_td_free",
+   "type": "cf.32"
+  },
+  {
+   "addend": 0,
+   "offset": 38,
+   "section": ".text.queue_transfer.constprop.0",
+   "symbol": ".sec..bss.stock_free",
+   "type": "cf.32"
+  },
+  {
+   "addend": 0,
+   "offset": 104,
+   "section": ".text.queue_transfer.constprop.0",
+   "symbol": ".sec..text.usb_bulk_td_free",
+   "type": "cf.32"
+  },
+  {
+   "addend": 0,
+   "offset": 110,
+   "section": ".text.queue_transfer.constprop.0",
+   "symbol": ".sec..text.usb_bulk_cancel",
+   "type": "cf.32"
+  },
+  {
+   "addend": 0,
+   "offset": 142,
+   "section": ".text.queue_transfer.constprop.0",
+   "symbol": "usb_fw_queue_td",
+   "type": "cf.32"
+  },
+  {
+   "addend": 0,
+   "offset": 160,
+   "section": ".text.queue_transfer.constprop.0",
+   "symbol": ".sec..bss.stock_free",
+   "type": "cf.32"
+  },
+  {
+   "addend": 0,
+   "offset": 16,
+   "section": ".text.usb_bulk_cancel",
+   "symbol": ".sec..text.rx_index",
+   "type": "cf.32"
+  },
+  {
+   "addend": 0,
+   "offset": 24,
+   "section": ".text.usb_bulk_cancel",
+   "symbol": ".sec..bss.td_status",
+   "type": "cf.32"
+  },
+  {
+   "addend": 0,
+   "offset": 36,
+   "section": ".text.usb_bulk_cancel",
+   "symbol": ".sec..bss.rx_state",
+   "type": "cf.32"
+  },
+  {
+   "addend": 0,
+   "offset": 66,
+   "section": ".text.usb_bulk_cancel",
+   "symbol": "usb_alias_delta",
+   "type": "cf.32"
+  },
+  {
+   "addend": 0,
+   "offset": 78,
+   "section": ".text.usb_bulk_cancel",
+   "symbol": ".sec..bss.area",
+   "type": "cf.32"
+  },
+  {
+   "addend": 0,
+   "offset": 102,
+   "section": ".text.usb_bulk_cancel",
+   "symbol": ".sec..bss.tx_state",
+   "type": "cf.32"
+  },
+  {
+   "addend": 0,
+   "offset": 10,
+   "section": ".text.usb_bulk_tx_done",
+   "symbol": "usb_alias_delta",
+   "type": "cf.32"
+  },
+  {
+   "addend": 0,
+   "offset": 22,
+   "section": ".text.usb_bulk_tx_done",
+   "symbol": ".sec..bss.area",
+   "type": "cf.32"
+  },
+  {
+   "addend": 0,
+   "offset": 42,
+   "section": ".text.usb_bulk_tx_done",
+   "symbol": ".sec..bss.td_status",
+   "type": "cf.32"
+  },
+  {
+   "addend": 0,
+   "offset": 60,
+   "section": ".text.usb_bulk_tx_done",
+   "symbol": ".sec..bss.tx_state",
+   "type": "cf.32"
+  },
+  {
+   "addend": 0,
+   "offset": 66,
+   "section": ".text.usb_bulk_tx_done",
+   "symbol": ".sec..bss.td_status",
+   "type": "cf.32"
+  },
+  {
+   "addend": 0,
+   "offset": 76,
+   "section": ".text.usb_bulk_tx_done",
+   "symbol": ".sec..text.wake",
+   "type": "cf.32"
+  },
+  {
+   "addend": 0,
+   "offset": 2,
+   "section": ".text.prime_one",
+   "symbol": ".sec..bss.stopping",
+   "type": "cf.32"
+  },
+  {
+   "addend": 0,
+   "offset": 10,
+   "section": ".text.prime_one",
+   "symbol": ".sec..bss.connected",
+   "type": "cf.32"
+  },
+  {
+   "addend": 0,
+   "offset": 18,
+   "section": ".text.prime_one",
+   "symbol": ".sec..text.usb_bulk_rx_done",
+   "type": "cf.32"
+  },
+  {
+   "addend": 0,
+   "offset": 40,
+   "section": ".text.prime_one",
+   "symbol": "usb_alias_delta",
+   "type": "cf.32"
+  },
+  {
+   "addend": 0,
+   "offset": 46,
+   "section": ".text.prime_one",
+   "symbol": ".sec..bss.area",
+   "type": "cf.32"
+  },
+  {
+   "addend": 0,
+   "offset": 58,
+   "section": ".text.prime_one",
+   "symbol": ".sec..text.queue_transfer.constprop.0",
+   "type": "cf.32"
+  },
+  {
+   "addend": 0,
+   "offset": 78,
+   "section": ".text.prime_one",
+   "symbol": ".sec..bss.rx_state",
+   "type": "cf.32"
+  },
+  {
+   "addend": 0,
+   "offset": 10,
+   "section": ".text.prime_all",
+   "symbol": ".sec..bss.stopping",
+   "type": "cf.32"
+  },
+  {
+   "addend": 0,
+   "offset": 20,
+   "section": ".text.prime_all",
+   "symbol": ".sec..bss.connected",
+   "type": "cf.32"
+  },
+  {
+   "addend": 0,
+   "offset": 30,
+   "section": ".text.prime_all",
+   "symbol": ".sec..bss.rx_state",
+   "type": "cf.32"
+  },
+  {
+   "addend": 0,
+   "offset": 36,
+   "section": ".text.prime_all",
+   "symbol": ".sec..text.prime_one",
+   "type": "cf.32"
+  },
+  {
+   "addend": 0,
+   "offset": 74,
+   "section": ".text.prime_all",
+   "symbol": ".sec..bss.need_prime",
+   "type": "cf.32"
+  },
+  {
+   "addend": 0,
+   "offset": 4,
+   "section": ".text.usb_bulk_tick",
+   "symbol": ".sec..bss.enabled",
+   "type": "cf.32"
+  },
+  {
+   "addend": 0,
+   "offset": 18,
+   "section": ".text.usb_bulk_tick",
+   "symbol": ".sec..bss.need_prime",
+   "type": "cf.32"
+  },
+  {
+   "addend": 0,
+   "offset": 26,
+   "section": ".text.usb_bulk_tick",
+   "symbol": ".sec..text.prime_all",
+   "type": "cf.32"
+  },
+  {
+   "addend": 0,
+   "offset": 32,
+   "section": ".text.usb_bulk_tick",
+   "symbol": ".sec..bss.tx_retry",
+   "type": "cf.32"
+  },
+  {
+   "addend": 0,
+   "offset": 38,
+   "section": ".text.usb_bulk_tick",
+   "symbol": ".sec..bss.tx_retry",
+   "type": "cf.32"
+  },
+  {
+   "addend": 0,
+   "offset": 52,
+   "section": ".text.usb_bulk_tick",
+   "symbol": ".sec..text.wake",
+   "type": "cf.32"
+  },
+  {
+   "addend": 0,
+   "offset": 10,
+   "section": ".text.usb_bulk_connect",
+   "symbol": ".sec..text.ep2_stop",
+   "type": "cf.32"
+  },
+  {
+   "addend": 0,
+   "offset": 20,
+   "section": ".text.usb_bulk_connect",
+   "symbol": ".sec..bss.stock_connect",
+   "type": "cf.32"
+  },
+  {
+   "addend": 0,
+   "offset": 70,
+   "section": ".text.usb_bulk_connect",
+   "symbol": ".sec..text.ep2_flush",
+   "type": "cf.32"
+  },
+  {
+   "addend": 0,
+   "offset": 90,
+   "section": ".text.usb_bulk_connect",
+   "symbol": ".sec..bss.connected",
+   "type": "cf.32"
+  },
+  {
+   "addend": 0,
+   "offset": 96,
+   "section": ".text.usb_bulk_connect",
+   "symbol": ".sec..text.prime_all",
+   "type": "cf.32"
+  },
+  {
+   "addend": 0,
+   "offset": 20,
+   "section": ".text.usb_bulk_rx_done",
+   "symbol": ".sec..text.rx_index",
+   "type": "cf.32"
+  },
+  {
+   "addend": 0,
+   "offset": 32,
+   "section": ".text.usb_bulk_rx_done",
+   "symbol": ".sec..bss.td_status",
+   "type": "cf.32"
+  },
+  {
+   "addend": 0,
+   "offset": 38,
+   "section": ".text.usb_bulk_rx_done",
+   "symbol": ".sec..bss.td_status",
+   "type": "cf.32"
+  },
+  {
+   "addend": 0,
+   "offset": 48,
+   "section": ".text.usb_bulk_rx_done",
+   "symbol": ".sec..bss.rx_state",
+   "type": "cf.32"
+  },
+  {
+   "addend": 0,
+   "offset": 74,
+   "section": ".text.usb_bulk_rx_done",
+   "symbol": ".sec..bss.usb_bulk_rx_errors",
+   "type": "cf.32"
+  },
+  {
+   "addend": 0,
+   "offset": 86,
+   "section": ".text.usb_bulk_rx_done",
+   "symbol": ".sec..text.prime_one",
+   "type": "cf.32"
+  },
+  {
+   "addend": 0,
+   "offset": 102,
+   "section": ".text.usb_bulk_rx_done",
+   "symbol": ".sec..bss.need_prime",
+   "type": "cf.32"
+  },
+  {
+   "addend": 0,
+   "offset": 140,
+   "section": ".text.usb_bulk_rx_done",
+   "symbol": ".sec..bss.rx_len",
+   "type": "cf.32"
+  },
+  {
+   "addend": 0,
+   "offset": 150,
+   "section": ".text.usb_bulk_rx_done",
+   "symbol": ".sec..bss.order_count",
+   "type": "cf.32"
+  },
+  {
+   "addend": 0,
+   "offset": 158,
+   "section": ".text.usb_bulk_rx_done",
+   "symbol": ".sec..bss.order_head",
+   "type": "cf.32"
+  },
+  {
+   "addend": 0,
+   "offset": 164,
+   "section": ".text.usb_bulk_rx_done",
+   "symbol": ".sec..bss.order",
+   "type": "cf.32"
+  },
+  {
+   "addend": 0,
+   "offset": 172,
+   "section": ".text.usb_bulk_rx_done",
+   "symbol": ".sec..bss.order_count",
+   "type": "cf.32"
+  },
+  {
+   "addend": 0,
+   "offset": 190,
+   "section": ".text.usb_bulk_rx_done",
+   "symbol": ".sec..text.prime_all",
+   "type": "cf.32"
+  },
+  {
+   "addend": 0,
+   "offset": 196,
+   "section": ".text.usb_bulk_rx_done",
+   "symbol": ".sec..text.wake",
+   "type": "cf.32"
+  },
+  {
+   "addend": 0,
+   "offset": 10,
+   "section": ".text.usb_bulk_enable",
+   "symbol": ".sec..bss.io_job",
+   "type": "cf.32"
+  },
+  {
+   "addend": 0,
+   "offset": 22,
+   "section": ".text.usb_bulk_enable",
+   "symbol": ".sec..bss.io_job",
+   "type": "cf.32"
+  },
+  {
+   "addend": 0,
+   "offset": 32,
+   "section": ".text.usb_bulk_enable",
+   "symbol": ".sec..bss.enabled",
+   "type": "cf.32"
+  },
+  {
+   "addend": 0,
+   "offset": 48,
+   "section": ".text.usb_bulk_enable",
+   "symbol": ".sec..bss.io_job",
+   "type": "cf.32"
+  },
+  {
+   "addend": 0,
+   "offset": 64,
+   "section": ".text.usb_bulk_enable",
+   "symbol": "usb_ddr_base",
+   "type": "cf.32"
+  },
+  {
+   "addend": 0,
+   "offset": 70,
+   "section": ".text.usb_bulk_enable",
+   "symbol": ".sec..bss.mem",
+   "type": "cf.32"
+  },
+  {
+   "addend": 0,
+   "offset": 82,
+   "section": ".text.usb_bulk_enable",
+   "symbol": "usb_ddr_bytes",
+   "type": "cf.32"
+  },
+  {
+   "addend": 102540,
+   "offset": 88,
+   "section": ".text.usb_bulk_enable",
+   "symbol": ".sec..bss.mem",
+   "type": "cf.32"
+  },
+  {
+   "addend": 96,
+   "offset": 98,
+   "section": ".text.usb_bulk_enable",
+   "symbol": "usb_port_table",
+   "type": "cf.32"
+  },
+  {
+   "addend": 116,
+   "offset": 108,
+   "section": ".text.usb_bulk_enable",
+   "symbol": "usb_port_table",
+   "type": "cf.32"
+  },
+  {
+   "addend": 0,
+   "offset": 116,
+   "section": ".text.usb_bulk_enable",
+   "symbol": "usb_fw_disconnect",
+   "type": "cf.32"
+  },
+  {
+   "addend": 84,
+   "offset": 122,
+   "section": ".text.usb_bulk_enable",
+   "symbol": "usb_port_table",
+   "type": "cf.32"
+  },
+  {
+   "addend": 80,
+   "offset": 130,
+   "section": ".text.usb_bulk_enable",
+   "symbol": "usb_port_table",
+   "type": "cf.32"
+  },
+  {
+   "addend": 0,
+   "offset": 214,
+   "section": ".text.usb_bulk_enable",
+   "symbol": "usb_fw_connect_body",
+   "type": "cf.32"
+  },
+  {
+   "addend": 92,
+   "offset": 224,
+   "section": ".text.usb_bulk_enable",
+   "symbol": "usb_port_table",
+   "type": "cf.32"
+  },
+  {
+   "addend": 0,
+   "offset": 244,
+   "section": ".text.usb_bulk_enable",
+   "symbol": ".sec..rodata.stock_config",
+   "type": "cf.32"
+  },
+  {
+   "addend": 0,
+   "offset": 272,
+   "section": ".text.usb_bulk_enable",
+   "symbol": ".sec..text.usb_bulk_tick",
+   "type": "cf.32"
+  },
+  {
+   "addend": 0,
+   "offset": 278,
+   "section": ".text.usb_bulk_enable",
+   "symbol": "dkrt_poll_add",
+   "type": "cf.32"
+  },
+  {
+   "addend": 4095,
+   "offset": 292,
+   "section": ".text.usb_bulk_enable",
+   "symbol": ".sec..bss.mem",
+   "type": "cf.32"
+  },
+  {
+   "addend": 0,
+   "offset": 304,
+   "section": ".text.usb_bulk_enable",
+   "symbol": ".sec..bss.area",
+   "type": "cf.32"
+  },
+  {
+   "addend": 0,
+   "offset": 314,
+   "section": ".text.usb_bulk_enable",
+   "symbol": ".sec..bss.mem",
+   "type": "cf.32"
+  },
+  {
+   "addend": 0,
+   "offset": 336,
+   "section": ".text.usb_bulk_enable",
+   "symbol": "usb_alias_delta",
+   "type": "cf.32"
+  },
+  {
+   "addend": 0,
+   "offset": 348,
+   "section": ".text.usb_bulk_enable",
+   "symbol": ".sec..bss.area",
+   "type": "cf.32"
+  },
+  {
+   "addend": 0,
+   "offset": 372,
+   "section": ".text.usb_bulk_enable",
+   "symbol": ".sec..rodata.bulk_interface",
+   "type": "cf.32"
+  },
+  {
+   "addend": 0,
+   "offset": 404,
+   "section": ".text.usb_bulk_enable",
+   "symbol": ".sec..bss.order_count",
+   "type": "cf.32"
+  },
+  {
+   "addend": 0,
+   "offset": 410,
+   "section": ".text.usb_bulk_enable",
+   "symbol": ".sec..bss.order_head",
+   "type": "cf.32"
+  },
+  {
+   "addend": 0,
+   "offset": 426,
+   "section": ".text.usb_bulk_enable",
+   "symbol": ".sec..bss.rx_state",
+   "type": "cf.32"
+  },
+  {
+   "addend": 1,
+   "offset": 432,
+   "section": ".text.usb_bulk_enable",
+   "symbol": ".sec..bss.rx_state",
+   "type": "cf.32"
+  },
+  {
+   "addend": 2,
+   "offset": 438,
+   "section": ".text.usb_bulk_enable",
+   "symbol": ".sec..bss.rx_state",
+   "type": "cf.32"
+  },
+  {
+   "addend": 3,
+   "offset": 444,
+   "section": ".text.usb_bulk_enable",
+   "symbol": ".sec..bss.rx_state",
+   "type": "cf.32"
+  },
+  {
+   "addend": 0,
+   "offset": 450,
+   "section": ".text.usb_bulk_enable",
+   "symbol": ".sec..bss.tx_state",
+   "type": "cf.32"
+  },
+  {
+   "addend": 1,
+   "offset": 456,
+   "section": ".text.usb_bulk_enable",
+   "symbol": ".sec..bss.tx_state",
+   "type": "cf.32"
+  },
+  {
+   "addend": 0,
+   "offset": 462,
+   "section": ".text.usb_bulk_enable",
+   "symbol": ".sec..bss.qh_ready",
+   "type": "cf.32"
+  },
+  {
+   "addend": 0,
+   "offset": 468,
+   "section": ".text.usb_bulk_enable",
+   "symbol": ".sec..bss.io_job",
+   "type": "cf.32"
+  },
+  {
+   "addend": 80,
+   "offset": 480,
+   "section": ".text.usb_bulk_enable",
+   "symbol": "usb_port_table",
+   "type": "cf.32"
+  },
+  {
+   "addend": 0,
+   "offset": 488,
+   "section": ".text.usb_bulk_enable",
+   "symbol": ".sec..text.usb_bulk_disconnect",
+   "type": "cf.32"
+  },
+  {
+   "addend": 0,
+   "offset": 494,
+   "section": ".text.usb_bulk_enable",
+   "symbol": ".sec..bss.stock_connect",
+   "type": "cf.32"
+  },
+  {
+   "addend": 92,
+   "offset": 500,
+   "section": ".text.usb_bulk_enable",
+   "symbol": "usb_port_table",
+   "type": "cf.32"
+  },
+  {
+   "addend": 96,
+   "offset": 506,
+   "section": ".text.usb_bulk_enable",
+   "symbol": "usb_port_table",
+   "type": "cf.32"
+  },
+  {
+   "addend": 0,
+   "offset": 514,
+   "section": ".text.usb_bulk_enable",
+   "symbol": ".sec..text.usb_bulk_connect",
+   "type": "cf.32"
+  },
+  {
+   "addend": 80,
+   "offset": 520,
+   "section": ".text.usb_bulk_enable",
+   "symbol": "usb_port_table",
+   "type": "cf.32"
+  },
+  {
+   "addend": 84,
+   "offset": 526,
+   "section": ".text.usb_bulk_enable",
+   "symbol": "usb_port_table",
+   "type": "cf.32"
+  },
+  {
+   "addend": 0,
+   "offset": 532,
+   "section": ".text.usb_bulk_enable",
+   "symbol": ".sec..bss.enabled",
+   "type": "cf.32"
+  },
+  {
+   "addend": 0,
+   "offset": 544,
+   "section": ".text.usb_bulk_enable",
+   "symbol": "usb_fw_stop",
+   "type": "cf.32"
+  },
+  {
+   "addend": 0,
+   "offset": 550,
+   "section": ".text.usb_bulk_enable",
+   "symbol": "usb_fw_restart",
+   "type": "cf.32"
+  },
+  {
+   "addend": 0,
+   "offset": 14,
+   "section": ".text.usb_bulk_disable",
+   "symbol": ".sec..bss.io_job",
+   "type": "cf.32"
+  },
+  {
+   "addend": 0,
+   "offset": 22,
+   "section": ".text.usb_bulk_disable",
+   "symbol": ".sec..bss.io_job",
+   "type": "cf.32"
+  },
+  {
+   "addend": 0,
+   "offset": 12,
+   "section": ".text.usb_bulk_take",
+   "symbol": ".sec..bss.need_prime",
+   "type": "cf.32"
+  },
+  {
+   "addend": 0,
+   "offset": 20,
+   "section": ".text.usb_bulk_take",
+   "symbol": ".sec..text.prime_all",
+   "type": "cf.32"
+  },
+  {
+   "addend": 0,
+   "offset": 26,
+   "section": ".text.usb_bulk_take",
+   "symbol": ".sec..bss.order_count",
+   "type": "cf.32"
+  },
+  {
+   "addend": 0,
+   "offset": 36,
+   "section": ".text.usb_bulk_take",
+   "symbol": ".sec..bss.order_head",
+   "type": "cf.32"
+  },
+  {
+   "addend": 0,
+   "offset": 44,
+   "section": ".text.usb_bulk_take",
+   "symbol": ".sec..bss.order",
+   "type": "cf.32"
+  },
+  {
+   "addend": 0,
+   "offset": 52,
+   "section": ".text.usb_bulk_take",
+   "symbol": ".sec..bss.order_count",
+   "type": "cf.32"
+  },
+  {
+   "addend": 0,
+   "offset": 64,
+   "section": ".text.usb_bulk_take",
+   "symbol": ".sec..bss.rx_state",
+   "type": "cf.32"
+  },
+  {
+   "addend": 0,
+   "offset": 74,
+   "section": ".text.usb_bulk_take",
+   "symbol": ".sec..bss.rx_len",
+   "type": "cf.32"
+  },
+  {
+   "addend": 0,
+   "offset": 80,
+   "section": ".text.usb_bulk_take",
+   "symbol": ".sec..bss.order_head",
+   "type": "cf.32"
+  },
+  {
+   "addend": 0,
+   "offset": 100,
+   "section": ".text.usb_bulk_take",
+   "symbol": "usb_alias_delta",
+   "type": "cf.32"
+  },
+  {
+   "addend": 0,
+   "offset": 106,
+   "section": ".text.usb_bulk_take",
+   "symbol": ".sec..bss.area",
+   "type": "cf.32"
+  },
+  {
+   "addend": 0,
+   "offset": 12,
+   "section": ".text.usb_bulk_release",
+   "symbol": ".sec..bss.enabled",
+   "type": "cf.32"
+  },
+  {
+   "addend": 0,
+   "offset": 34,
+   "section": ".text.usb_bulk_release",
+   "symbol": ".sec..text.rx_index",
+   "type": "cf.32"
+  },
+  {
+   "addend": 0,
+   "offset": 48,
+   "section": ".text.usb_bulk_release",
+   "symbol": ".sec..bss.rx_state",
+   "type": "cf.32"
+  },
+  {
+   "addend": 0,
+   "offset": 70,
+   "section": ".text.usb_bulk_release",
+   "symbol": ".sec..text.prime_all",
+   "type": "cf.32"
+  },
+  {
+   "addend": 0,
+   "offset": 32,
+   "section": ".text.usb_bulk_send",
+   "symbol": ".sec..bss.connected",
+   "type": "cf.32"
+  },
+  {
+   "addend": 0,
+   "offset": 40,
+   "section": ".text.usb_bulk_send",
+   "symbol": ".sec..bss.stopping",
+   "type": "cf.32"
+  },
+  {
+   "addend": 0,
+   "offset": 64,
+   "section": ".text.usb_bulk_send",
+   "symbol": ".sec..bss.need_prime",
+   "type": "cf.32"
+  },
+  {
+   "addend": 0,
+   "offset": 72,
+   "section": ".text.usb_bulk_send",
+   "symbol": ".sec..text.prime_all",
+   "type": "cf.32"
+  },
+  {
+   "addend": 0,
+   "offset": 78,
+   "section": ".text.usb_bulk_send",
+   "symbol": ".sec..bss.tx_state",
+   "type": "cf.32"
+  },
+  {
+   "addend": 1,
+   "offset": 90,
+   "section": ".text.usb_bulk_send",
+   "symbol": ".sec..bss.tx_state",
+   "type": "cf.32"
+  },
+  {
+   "addend": 0,
+   "offset": 106,
+   "section": ".text.usb_bulk_send",
+   "symbol": ".sec..bss.resets",
+   "type": "cf.32"
+  },
+  {
+   "addend": 0,
+   "offset": 134,
+   "section": ".text.usb_bulk_send",
+   "symbol": "usb_alias_delta",
+   "type": "cf.32"
+  },
+  {
+   "addend": 0,
+   "offset": 140,
+   "section": ".text.usb_bulk_send",
+   "symbol": ".sec..bss.area",
+   "type": "cf.32"
+  },
+  {
+   "addend": 0,
+   "offset": 174,
+   "section": ".text.usb_bulk_send",
+   "symbol": ".sec..bss.connected",
+   "type": "cf.32"
+  },
+  {
+   "addend": 0,
+   "offset": 182,
+   "section": ".text.usb_bulk_send",
+   "symbol": ".sec..bss.stopping",
+   "type": "cf.32"
+  },
+  {
+   "addend": 0,
+   "offset": 190,
+   "section": ".text.usb_bulk_send",
+   "symbol": ".sec..bss.resets",
+   "type": "cf.32"
+  },
+  {
+   "addend": 0,
+   "offset": 220,
+   "section": ".text.usb_bulk_send",
+   "symbol": ".sec..text.usb_bulk_tx_done",
+   "type": "cf.32"
+  },
+  {
+   "addend": 0,
+   "offset": 242,
+   "section": ".text.usb_bulk_send",
+   "symbol": ".sec..text.queue_transfer.constprop.0",
+   "type": "cf.32"
+  },
+  {
+   "addend": 0,
+   "offset": 266,
+   "section": ".text.usb_bulk_send",
+   "symbol": ".sec..bss.tx_retry",
+   "type": "cf.32"
+  },
+  {
+   "addend": 0,
+   "offset": 12,
+   "section": ".text.usb_bulk_state",
+   "symbol": ".sec..bss.enabled",
+   "type": "cf.32"
+  },
+  {
+   "addend": 0,
+   "offset": 20,
+   "section": ".text.usb_bulk_state",
+   "symbol": ".sec..bss.connected",
+   "type": "cf.32"
+  },
+  {
+   "addend": 0,
+   "offset": 26,
+   "section": ".text.usb_bulk_state",
+   "symbol": ".sec..bss.tx_state",
+   "type": "cf.32"
+  },
+  {
+   "addend": 1,
+   "offset": 40,
+   "section": ".text.usb_bulk_state",
+   "symbol": ".sec..bss.tx_state",
+   "type": "cf.32"
+  },
+  {
+   "addend": 0,
+   "offset": 48,
+   "section": ".text.usb_bulk_state",
+   "symbol": ".sec..bss.resets",
+   "type": "cf.32"
+  },
+  {
+   "addend": 0,
+   "offset": 60,
+   "section": ".text.usb_bulk_state",
+   "symbol": ".sec..bss.order_count",
+   "type": "cf.32"
+  }
+ ],
+ "sections": [
+  {
+   "align": 2,
+   "hex": "080000004000000008000000",
+   "kind": "data",
+   "name": ".rodata",
+   "size": 12
+  },
+  {
+   "align": 2,
+   "hex": "223900000000202f0004d2b90000000090810c80000100006406720ee2a84e7570ff60fa",
+   "kind": "text",
+   "name": ".text.rx_index",
+   "size": 36
+  },
+  {
+   "align": 2,
+   "hex": "206f000422790000000071a800072f48000423c0000000004ed1",
+   "kind": "text",
+   "name": ".text.usb_bulk_td_free",
+   "size": 26
+  },
+  {
+   "align": 2,
+   "hex": "42b980000104203cdead000123c08000010842b98000010c42b98000013042b98000013442b98000014423c08000014842b98000014c42b98000017042b9800001744e75",
+   "kind": "text",
+   "name": ".text.ep2_lists_clear",
+   "size": 68
+  },
+  {
+   "align": 2,
+   "hex": "203c0004000423c0fc0b01b4203c00004e202239fc0b01b40281000400044a81670653804a8066ea4e75",
+   "kind": "text",
+   "name": ".text.ep2_flush",
+   "size": 42
+  },
+  {
+   "align": 2,
+   "hex": "2039000000004a806f0a2f004eb900000000588f4e75",
+   "kind": "text",
+   "name": ".text.wake",
+   "size": 22
+  },
+  {
+   "align": 2,
+   "hex": "4feffff4700148d70c0423c00000000045f9000000004ab90000000066024e9242b9fc0b01c84eb9000000004878000247f9000000004e93487800064e934e92508f223c00040004428023c1fc0b01bc41f90000000073b0080057814a81670642011181080052807404b48066e84200720142b90000000042b90000000013c00000000013c00000000042b90000000023c1000000004ab900000000671252b90000000042b9000000004eb9000000004cd70c0442b9000000004fef000c4e75",
+   "kind": "text",
+   "name": ".text.ep2_stop",
+   "size": 192
+  },
+  {
+   "align": 2,
+   "hex": "2f0240c246fc27004eb90000000046c2241f4ef900000000",
+   "kind": "text",
+   "name": ".text.usb_bulk_disconnect",
+   "size": 24
+  },
+  {
+   "align": 2,
+   "hex": "2f0a2f024eb90000000024404a80660870ff241f245f4e75202a00380c8000000000670623c000000000202f001424bcdead0001256f0010000841ea000c4840424008c00007254000047001b0af0018645c73c0740ce5a9d2af001020c172055280b28066e6223c00000000203c00000000256f00140020256f001c002425410038254000282f0a2f2f00104eb900000000508f220042804a816c00ff762079000000002f0a4e90588f6000ff64428160aa",
+   "kind": "text",
+   "name": ".text.queue_transfer.constprop.0",
+   "size": 178
+  },
+  {
+   "align": 2,
+   "hex": "2f032f0240c246fc27002f2f00104eb900000000588f42b90000000072ffb280671e41f90000000073b0080053814a81660642011181080046c2241f261f4e75223900000000068100010000d2b900000000202f001090810c8000007fff62d8760ee6a841f90000000060c6",
+   "kind": "text",
+   "name": ".text.usb_bulk_cancel",
+   "size": 108
+  },
+  {
+   "align": 2,
+   "hex": "2f0240c246fc2700223900000000068100010000d2b900000000202f000c90810c8000007fff630c42b90000000046c2241f4e75720ee2a8420141f90000000042b900000000118108004eb90000000060dc",
+   "kind": "text",
+   "name": ".text.usb_bulk_tx_done",
+   "size": 82
+  },
+  {
+   "align": 2,
+   "hex": "4ab900000000664e4ab9000000006746487900000000720e487800044878400071ef0012e3a8d0b900000000d0b9000000002f00487800024eb9000000004fef00144a8066107001222f000441f900000000118018004e75",
+   "kind": "text",
+   "name": ".text.prime_one",
+   "size": 88
+  },
+  {
+   "align": 2,
+   "hex": "4feffff048d70c0c2639000000004a83663c4ab9000000006734428245f90000000047f9000000004a32280066062f024e93588f4a32280057c052827100448086807004b08266e023c3000000004cd70c0c4fef00104e75",
+   "kind": "text",
+   "name": ".text.prime_all",
+   "size": 88
+  },
+  {
+   "align": 2,
+   "hex": "2f024ab900000000672e40c246fc27004ab90000000067064eb90000000020390000000042b90000000046c24a806708241f4ef900000000241f4e75",
+   "kind": "text",
+   "name": ".text.usb_bulk_tick",
+   "size": 60
+  },
+  {
+   "align": 2,
+   "hex": "2f0240c246fc27004eb900000000487800012079000000004e90588f203c2200000023c080000100203c0200000023c0800001402039fc0b01b80280000400044a8067064eb900000000203c00c800c823c0fc0b01c8700123c0000000004eb90000000046c2241f4e75",
+   "kind": "text",
+   "name": ".text.usb_bulk_connect",
+   "size": 106
+  },
+  {
+   "align": 2,
+   "hex": "4feffff048d7041c40c346fc27002f2f00184eb900000000588f72ff240020390000000042b900000000b282673c45f90000000073b2280053814a81662c7268c0814a806730420452b900000000158428002f024eb900000000588f4a3228006608700123c00000000046c34cd7041c4fef00104e754aaf0014660842001580280060ce7802222f001441f90000000021812c002239000000002001d0b90000000041f900000000528123c100000000158428007803c084118208004eb9000000004eb9000000006092",
+   "kind": "text",
+   "name": ".text.usb_bulk_rx_done",
+   "size": 202
+  },
+  {
+   "align": 2,
+   "hex": "4feffff048d70c044ab9000000006f0e222f0014b2b900000000660002162439000000004a826716242f0014428023c2000000004cd70c044fef00104e752039000000000c8000000000630470d060e4d0b9000000000c800000000065ee7065b0b90000000066e47201b2b90000000066da41f900000000b1f90000000066cc20790000000072707190b28066be71a8000153804a8066b471a80002722fb28066aa71a800037240b28066a04a280004669a71a8000559804a80669071a800067260b28066864a28000766807168000841f00808b1fc000000006600ff7024790000000091c820085580e2886604528860f443f90000000073b2880071b18800b0816600ff4852887065b08866d84879000000004eb900000000588f4a8066000118223c000000000281fffff00023c10000000042812041d1fc00000000f4e80681000000100c810001909066e8207900000000d1fc00018000d1f90000000093c947f298007265119398005289b28966f043f90000000045f128007217119228655282b28266f0343c7c007203226f001442b90000000042b9000000003142000242021141000413c20000000013c20000000013c20000000013c20000000013c20000000013c20000000042b90000000023c90000000040c146fc270045f900000000747c43f90000000023d20000000023c80000000023c200000000740141f90000000023c80000000023c90000000023c20000000046c12f40000c4eb9000000004eb900000000202f000c6000fe0470f46000fdfe70f86000fdf8",
+   "kind": "text",
+   "name": ".text.usb_bulk_enable",
+   "size": 574
+  },
+  {
+   "align": 2,
+   "hex": "202f00044a806e0470cb4e75b0b90000000066f442b900000000428060ec",
+   "kind": "text",
+   "name": ".text.usb_bulk_disable",
+   "size": 30
+  },
+  {
+   "align": 2,
+   "hex": "2f032f0240c246fc27004ab90000000067064eb9000000002079000000004a886760203900000000760343f900000000538823c80000000073b10800528041f900000000c680700343f90000000023c300000000760e118018002001e7a8206f000cd0b900000000d0b90000000020807001206f001020b11c0046c2241f261f4e75428060f4",
+   "kind": "text",
+   "name": ".text.usb_bulk_take",
+   "size": 134
+  },
+  {
+   "align": 2,
+   "hex": "2f032f0240c246fc27004ab900000000660a70cb46c2241f261f4e752f2f000c4eb900000000588f72ffb28067e441f90000000073b0080057814a8166d44201118108004eb900000000428060c6",
+   "kind": "text",
+   "name": ".text.usb_bulk_release",
+   "size": 78
+  },
+  {
+   "align": 2,
+   "hex": "4fefffec202f001c538048d70c1c0c8000003fff6200010240c446fc27004ab900000000670a2639000000004a83670e46c470cb4cd70c1c4fef00144e754ab90000000067064eb90000000045f9000000004a12677c74ff4a39000000006608740170011580280022390000000046c478ffb882670000a82002588071c0780ee9a82040d1f900000000d1f900000000226f0018200347f13800119338005283b6af001c66ea40c346fc27004ab90000000067104ab9000000006608b2b900000000671242001580280070cb46c36000ff644282608c720ce2a84879000000002240486900012f2f00242f08487800064eb9000000004fef00144a806712420072011580280070b823c10000000060bc78021584280060b470c96000ff1870f46000ff12",
+   "kind": "text",
+   "name": ".text.usb_bulk_send",
+   "size": 292
+  },
+  {
+   "align": 2,
+   "hex": "598f2f0240c046fc270022390000000022402079000000001039000000004a8156c11f400006103900000000730124390000000044811f400007203900000000e18871c080817218e3aa4a8856c1808273014a2f000656c24481d281750280814a2f000756c1730144819282484142418081220946c1241f588f4e75",
+   "kind": "text",
+   "name": ".text.usb_bulk_state",
+   "size": 124
+  },
+  {
+   "align": 2,
+   "hex": "",
+   "kind": "bss",
+   "name": ".bss.usb_bulk_rx_errors",
+   "size": 4
+  },
+  {
+   "align": 2,
+   "hex": "",
+   "kind": "bss",
+   "name": ".bss.td_status",
+   "size": 4
+  },
+  {
+   "align": 2,
+   "hex": "",
+   "kind": "bss",
+   "name": ".bss.stock_free",
+   "size": 4
+  },
+  {
+   "align": 2,
+   "hex": "",
+   "kind": "bss",
+   "name": ".bss.stock_connect",
+   "size": 4
+  },
+  {
+   "align": 2,
+   "hex": "",
+   "kind": "bss",
+   "name": ".bss.io_job",
+   "size": 4
+  },
+  {
+   "align": 2,
+   "hex": "",
+   "kind": "bss",
+   "name": ".bss.qh_ready",
+   "size": 4
+  },
+  {
+   "align": 2,
+   "hex": "",
+   "kind": "bss",
+   "name": ".bss.tx_retry",
+   "size": 4
+  },
+  {
+   "align": 2,
+   "hex": "",
+   "kind": "bss",
+   "name": ".bss.need_prime",
+   "size": 4
+  },
+  {
+   "align": 2,
+   "hex": "",
+   "kind": "bss",
+   "name": ".bss.stopping",
+   "size": 4
+  },
+  {
+   "align": 2,
+   "hex": "",
+   "kind": "bss",
+   "name": ".bss.resets",
+   "size": 4
+  },
+  {
+   "align": 2,
+   "hex": "",
+   "kind": "bss",
+   "name": ".bss.connected",
+   "size": 4
+  },
+  {
+   "align": 2,
+   "hex": "",
+   "kind": "bss",
+   "name": ".bss.enabled",
+   "size": 4
+  },
+  {
+   "align": 1,
+   "hex": "",
+   "kind": "bss",
+   "name": ".bss.tx_state",
+   "size": 2
+  },
+  {
+   "align": 2,
+   "hex": "",
+   "kind": "bss",
+   "name": ".bss.order_count",
+   "size": 4
+  },
+  {
+   "align": 2,
+   "hex": "",
+   "kind": "bss",
+   "name": ".bss.order_head",
+   "size": 4
+  },
+  {
+   "align": 1,
+   "hex": "",
+   "kind": "bss",
+   "name": ".bss.order",
+   "size": 4
+  },
+  {
+   "align": 2,
+   "hex": "",
+   "kind": "bss",
+   "name": ".bss.rx_len",
+   "size": 16
+  },
+  {
+   "align": 1,
+   "hex": "",
+   "kind": "bss",
+   "name": ".bss.rx_state",
+   "size": 4
+  },
+  {
+   "align": 2,
+   "hex": "",
+   "kind": "bss",
+   "name": ".bss.area",
+   "size": 4
+  },
+  {
+   "align": 1,
+   "hex": "",
+   "kind": "bss",
+   "name": ".bss.mem",
+   "size": 102540
+  },
+  {
+   "align": 1,
+   "hex": "0904020002ff0000000705020200020007058202000200",
+   "kind": "data",
+   "name": ".rodata.bulk_interface",
+   "size": 23
+  },
+  {
+   "align": 1,
+   "hex": "09020000020100c0030904000000010100000924010001090001010904010002010300000724010001410006240201010006240202020009240301030102010009240302040101010009050102000200000005250101010905810200020000000525010103",
+   "kind": "data",
+   "name": ".rodata.stock_config",
+   "size": 101
+  }
+ ],
+ "source_sha256": "72ece1ccb1f6fac654bfb77ef2a28292bcb21f03304eac16c6441a8811990f8f",
+ "symbols": [
+  {
+   "global": false,
+   "name": ".sec..bss.area",
+   "section": ".bss.area",
+   "value": 0
+  },
+  {
+   "global": false,
+   "name": ".sec..bss.connected",
+   "section": ".bss.connected",
+   "value": 0
+  },
+  {
+   "global": false,
+   "name": ".sec..bss.enabled",
+   "section": ".bss.enabled",
+   "value": 0
+  },
+  {
+   "global": false,
+   "name": ".sec..bss.io_job",
+   "section": ".bss.io_job",
+   "value": 0
+  },
+  {
+   "global": false,
+   "name": ".sec..bss.mem",
+   "section": ".bss.mem",
+   "value": 0
+  },
+  {
+   "global": false,
+   "name": ".sec..bss.need_prime",
+   "section": ".bss.need_prime",
+   "value": 0
+  },
+  {
+   "global": false,
+   "name": ".sec..bss.order",
+   "section": ".bss.order",
+   "value": 0
+  },
+  {
+   "global": false,
+   "name": ".sec..bss.order_count",
+   "section": ".bss.order_count",
+   "value": 0
+  },
+  {
+   "global": false,
+   "name": ".sec..bss.order_head",
+   "section": ".bss.order_head",
+   "value": 0
+  },
+  {
+   "global": false,
+   "name": ".sec..bss.qh_ready",
+   "section": ".bss.qh_ready",
+   "value": 0
+  },
+  {
+   "global": false,
+   "name": ".sec..bss.resets",
+   "section": ".bss.resets",
+   "value": 0
+  },
+  {
+   "global": false,
+   "name": ".sec..bss.rx_len",
+   "section": ".bss.rx_len",
+   "value": 0
+  },
+  {
+   "global": false,
+   "name": ".sec..bss.rx_state",
+   "section": ".bss.rx_state",
+   "value": 0
+  },
+  {
+   "global": false,
+   "name": ".sec..bss.stock_connect",
+   "section": ".bss.stock_connect",
+   "value": 0
+  },
+  {
+   "global": false,
+   "name": ".sec..bss.stock_free",
+   "section": ".bss.stock_free",
+   "value": 0
+  },
+  {
+   "global": false,
+   "name": ".sec..bss.stopping",
+   "section": ".bss.stopping",
+   "value": 0
+  },
+  {
+   "global": false,
+   "name": ".sec..bss.td_status",
+   "section": ".bss.td_status",
+   "value": 0
+  },
+  {
+   "global": false,
+   "name": ".sec..bss.tx_retry",
+   "section": ".bss.tx_retry",
+   "value": 0
+  },
+  {
+   "global": false,
+   "name": ".sec..bss.tx_state",
+   "section": ".bss.tx_state",
+   "value": 0
+  },
+  {
+   "global": false,
+   "name": ".sec..bss.usb_bulk_rx_errors",
+   "section": ".bss.usb_bulk_rx_errors",
+   "value": 0
+  },
+  {
+   "global": false,
+   "name": ".sec..rodata.bulk_interface",
+   "section": ".rodata.bulk_interface",
+   "value": 0
+  },
+  {
+   "global": false,
+   "name": ".sec..rodata.stock_config",
+   "section": ".rodata.stock_config",
+   "value": 0
+  },
+  {
+   "global": false,
+   "name": ".sec..text.ep2_flush",
+   "section": ".text.ep2_flush",
+   "value": 0
+  },
+  {
+   "global": false,
+   "name": ".sec..text.ep2_lists_clear",
+   "section": ".text.ep2_lists_clear",
+   "value": 0
+  },
+  {
+   "global": false,
+   "name": ".sec..text.ep2_stop",
+   "section": ".text.ep2_stop",
+   "value": 0
+  },
+  {
+   "global": false,
+   "name": ".sec..text.prime_all",
+   "section": ".text.prime_all",
+   "value": 0
+  },
+  {
+   "global": false,
+   "name": ".sec..text.prime_one",
+   "section": ".text.prime_one",
+   "value": 0
+  },
+  {
+   "global": false,
+   "name": ".sec..text.queue_transfer.constprop.0",
+   "section": ".text.queue_transfer.constprop.0",
+   "value": 0
+  },
+  {
+   "global": false,
+   "name": ".sec..text.rx_index",
+   "section": ".text.rx_index",
+   "value": 0
+  },
+  {
+   "global": false,
+   "name": ".sec..text.usb_bulk_cancel",
+   "section": ".text.usb_bulk_cancel",
+   "value": 0
+  },
+  {
+   "global": false,
+   "name": ".sec..text.usb_bulk_connect",
+   "section": ".text.usb_bulk_connect",
+   "value": 0
+  },
+  {
+   "global": false,
+   "name": ".sec..text.usb_bulk_disconnect",
+   "section": ".text.usb_bulk_disconnect",
+   "value": 0
+  },
+  {
+   "global": false,
+   "name": ".sec..text.usb_bulk_rx_done",
+   "section": ".text.usb_bulk_rx_done",
+   "value": 0
+  },
+  {
+   "global": false,
+   "name": ".sec..text.usb_bulk_td_free",
+   "section": ".text.usb_bulk_td_free",
+   "value": 0
+  },
+  {
+   "global": false,
+   "name": ".sec..text.usb_bulk_tick",
+   "section": ".text.usb_bulk_tick",
+   "value": 0
+  },
+  {
+   "global": false,
+   "name": ".sec..text.usb_bulk_tx_done",
+   "section": ".text.usb_bulk_tx_done",
+   "value": 0
+  },
+  {
+   "global": false,
+   "name": ".sec..text.wake",
+   "section": ".text.wake",
+   "value": 0
+  },
+  {
+   "global": false,
+   "name": "area",
+   "section": ".bss.area",
+   "value": 0
+  },
+  {
+   "global": false,
+   "name": "bulk_interface",
+   "section": ".rodata.bulk_interface",
+   "value": 0
+  },
+  {
+   "global": false,
+   "name": "connected",
+   "section": ".bss.connected",
+   "value": 0
+  },
+  {
+   "global": true,
+   "name": "dkrt_io_wake",
+   "section": null,
+   "value": 0
+  },
+  {
+   "global": true,
+   "name": "dkrt_poll_add",
+   "section": null,
+   "value": 0
+  },
+  {
+   "global": false,
+   "name": "enabled",
+   "section": ".bss.enabled",
+   "value": 0
+  },
+  {
+   "global": false,
+   "name": "ep2_flush",
+   "section": ".text.ep2_flush",
+   "value": 0
+  },
+  {
+   "global": false,
+   "name": "ep2_lists_clear",
+   "section": ".text.ep2_lists_clear",
+   "value": 0
+  },
+  {
+   "global": false,
+   "name": "ep2_stop",
+   "section": ".text.ep2_stop",
+   "value": 0
+  },
+  {
+   "global": false,
+   "name": "io_job",
+   "section": ".bss.io_job",
+   "value": 0
+  },
+  {
+   "global": false,
+   "name": "mem",
+   "section": ".bss.mem",
+   "value": 0
+  },
+  {
+   "global": false,
+   "name": "need_prime",
+   "section": ".bss.need_prime",
+   "value": 0
+  },
+  {
+   "global": false,
+   "name": "order",
+   "section": ".bss.order",
+   "value": 0
+  },
+  {
+   "global": false,
+   "name": "order_count",
+   "section": ".bss.order_count",
+   "value": 0
+  },
+  {
+   "global": false,
+   "name": "order_head",
+   "section": ".bss.order_head",
+   "value": 0
+  },
+  {
+   "global": false,
+   "name": "prime_all",
+   "section": ".text.prime_all",
+   "value": 0
+  },
+  {
+   "global": false,
+   "name": "prime_one",
+   "section": ".text.prime_one",
+   "value": 0
+  },
+  {
+   "global": false,
+   "name": "qh_ready",
+   "section": ".bss.qh_ready",
+   "value": 0
+  },
+  {
+   "global": false,
+   "name": "queue_transfer.constprop.0",
+   "section": ".text.queue_transfer.constprop.0",
+   "value": 0
+  },
+  {
+   "global": false,
+   "name": "resets",
+   "section": ".bss.resets",
+   "value": 0
+  },
+  {
+   "global": false,
+   "name": "rx_index",
+   "section": ".text.rx_index",
+   "value": 0
+  },
+  {
+   "global": false,
+   "name": "rx_len",
+   "section": ".bss.rx_len",
+   "value": 0
+  },
+  {
+   "global": false,
+   "name": "rx_state",
+   "section": ".bss.rx_state",
+   "value": 0
+  },
+  {
+   "global": false,
+   "name": "stock_config",
+   "section": ".rodata.stock_config",
+   "value": 0
+  },
+  {
+   "global": false,
+   "name": "stock_connect",
+   "section": ".bss.stock_connect",
+   "value": 0
+  },
+  {
+   "global": false,
+   "name": "stock_free",
+   "section": ".bss.stock_free",
+   "value": 0
+  },
+  {
+   "global": false,
+   "name": "stopping",
+   "section": ".bss.stopping",
+   "value": 0
+  },
+  {
+   "global": false,
+   "name": "td_status",
+   "section": ".bss.td_status",
+   "value": 0
+  },
+  {
+   "global": false,
+   "name": "tx_retry",
+   "section": ".bss.tx_retry",
+   "value": 0
+  },
+  {
+   "global": false,
+   "name": "tx_state",
+   "section": ".bss.tx_state",
+   "value": 0
+  },
+  {
+   "global": true,
+   "name": "usb_alias_delta",
+   "section": ".rodata",
+   "value": 0
+  },
+  {
+   "global": true,
+   "name": "usb_bulk_cancel",
+   "section": ".text.usb_bulk_cancel",
+   "value": 0
+  },
+  {
+   "global": true,
+   "name": "usb_bulk_connect",
+   "section": ".text.usb_bulk_connect",
+   "value": 0
+  },
+  {
+   "global": true,
+   "name": "usb_bulk_disable",
+   "section": ".text.usb_bulk_disable",
+   "value": 0
+  },
+  {
+   "global": true,
+   "name": "usb_bulk_disconnect",
+   "section": ".text.usb_bulk_disconnect",
+   "value": 0
+  },
+  {
+   "global": true,
+   "name": "usb_bulk_enable",
+   "section": ".text.usb_bulk_enable",
+   "value": 0
+  },
+  {
+   "global": true,
+   "name": "usb_bulk_release",
+   "section": ".text.usb_bulk_release",
+   "value": 0
+  },
+  {
+   "global": true,
+   "name": "usb_bulk_rx_done",
+   "section": ".text.usb_bulk_rx_done",
+   "value": 0
+  },
+  {
+   "global": true,
+   "name": "usb_bulk_rx_errors",
+   "section": ".bss.usb_bulk_rx_errors",
+   "value": 0
+  },
+  {
+   "global": true,
+   "name": "usb_bulk_send",
+   "section": ".text.usb_bulk_send",
+   "value": 0
+  },
+  {
+   "global": true,
+   "name": "usb_bulk_state",
+   "section": ".text.usb_bulk_state",
+   "value": 0
+  },
+  {
+   "global": true,
+   "name": "usb_bulk_take",
+   "section": ".text.usb_bulk_take",
+   "value": 0
+  },
+  {
+   "global": true,
+   "name": "usb_bulk_td_free",
+   "section": ".text.usb_bulk_td_free",
+   "value": 0
+  },
+  {
+   "global": true,
+   "name": "usb_bulk_tick",
+   "section": ".text.usb_bulk_tick",
+   "value": 0
+  },
+  {
+   "global": true,
+   "name": "usb_bulk_tx_done",
+   "section": ".text.usb_bulk_tx_done",
+   "value": 0
+  },
+  {
+   "global": true,
+   "name": "usb_ddr_base",
+   "section": ".rodata",
+   "value": 4
+  },
+  {
+   "global": true,
+   "name": "usb_ddr_bytes",
+   "section": ".rodata",
+   "value": 8
+  },
+  {
+   "global": true,
+   "name": "usb_fw_cancel_ep",
+   "section": null,
+   "value": 0
+  },
+  {
+   "global": true,
+   "name": "usb_fw_connect_body",
+   "section": null,
+   "value": 0
+  },
+  {
+   "global": true,
+   "name": "usb_fw_disconnect",
+   "section": null,
+   "value": 0
+  },
+  {
+   "global": true,
+   "name": "usb_fw_queue_td",
+   "section": null,
+   "value": 0
+  },
+  {
+   "global": true,
+   "name": "usb_fw_restart",
+   "section": null,
+   "value": 0
+  },
+  {
+   "global": true,
+   "name": "usb_fw_stop",
+   "section": null,
+   "value": 0
+  },
+  {
+   "global": true,
+   "name": "usb_fw_td_alloc",
+   "section": null,
+   "value": 0
+  },
+  {
+   "global": true,
+   "name": "usb_port_table",
+   "section": null,
+   "value": 0
+  },
+  {
+   "global": false,
+   "name": "wake",
+   "section": ".text.wake",
+   "value": 0
+  }
+ ],
+ "toolchain": {
+  "as": "GNU assembler (GNU Binutils) 2.47.20260726",
+  "cflags": "-mcpu=54418 -Os -ffreestanding -fno-builtin -nostdlib -fno-pic -fno-pie -ffunction-sections -fdata-sections -fno-asynchronous-unwind-tables -fno-unwind-tables -fno-stack-protector -Wall -Wextra -Werror",
+  "gcc": "m68k-elf-gcc (GCC) 16.2.0",
+  "instructions_redecoded": "728",
+  "isa_check": "7fb8139e948438f71361fadfc8515fd8c65fc1331d06ff126c9cb887c55d11d6",
+  "ld": "GNU ld (GNU Binutils) 2.47.20260726"
+ }
+}

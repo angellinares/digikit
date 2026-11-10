@@ -2019,6 +2019,8 @@ impl Actor {
             "card.overlay" => self.rpc_card_overlay(&p).map(Some),
             "midi.in" | "midi.usb.in" => self.rpc_midi_in(method, &p).map(Some),
             "midi.out" | "midi.usb.out" => self.rpc_midi_out(method, &p).map(Some),
+            "usb.bulk.in" => self.rpc_bulk_in(&p).map(Some),
+            "usb.bulk.out" => self.rpc_bulk_out(&p).map(Some),
             "card.export" => self.rpc_card_export(&p).map(Some),
             "watchdog.config" => self.rpc_watchdog(&p).map(Some),
             "cpu.exceptions" => self.rpc_cpu_exceptions(&p).map(Some),
@@ -2689,35 +2691,7 @@ impl Actor {
     /// modelled; docs/CONTROL.md) in calls of `chunk` bytes (1 to 384, default 64) `period` instructions apart (default 132,000, a
     /// full-speed frame; 16,500 is a high-speed microframe). `bytes` is a hex string (spaces allowed) or an array of numbers.
     fn rpc_midi_in(&mut self, method: &str, p: &Params) -> RpcResult {
-        let data = match (p.get("bytes"), p.opt_str("file")?) {
-            (Some(Value::String(hex)), None) => {
-                let digits: Vec<u8> = hex.bytes().filter(|b| !b.is_ascii_whitespace()).collect();
-                if digits.len() % 2 != 0 || !digits.iter().all(u8::is_ascii_hexdigit) {
-                    return Err(RpcError::bad_params(
-                        "bytes is an even number of hex digits",
-                    ));
-                }
-                digits
-                    .chunks(2)
-                    .map(|c| {
-                        u8::from_str_radix(std::str::from_utf8(c).unwrap_or("0"), 16).unwrap_or(0)
-                    })
-                    .collect::<Vec<u8>>()
-            }
-            (Some(Value::Array(items)), None) => items
-                .iter()
-                .map(|v| v.as_u64().and_then(|n| u8::try_from(n).ok()))
-                .collect::<Option<Vec<u8>>>()
-                .ok_or_else(|| RpcError::bad_params("bytes holds numbers 0..255"))?,
-            (None, Some(path)) => {
-                std::fs::read(path).map_err(|e| RpcError::io(format!("{path}: {e}")))?
-            }
-            _ => {
-                return Err(RpcError::bad_params(
-                    "give bytes (hex string or array) or file",
-                ));
-            }
-        };
+        let data = bytes_param(p)?;
         let period = p
             .opt_u64("period")?
             .unwrap_or(elektron_native_boot::midi::WIRE_PERIOD);
@@ -2750,6 +2724,45 @@ impl Actor {
                 r.take_midi_out()
             };
             Ok((bytes, r.midi_status()))
+        })?;
+        if let Some(path) = p.opt_str("file")? {
+            std::fs::write(path, &bytes).map_err(|e| RpcError::io(format!("{path}: {e}")))?;
+        }
+        let hex: String = bytes.iter().map(|b| format!("{b:02x}")).collect();
+        Ok(json!({"bytes": bytes.len(), "hex": hex, "status": status}))
+    }
+
+    /// `usb.bulk.in {bytes | file, period?, connect?, zlp?}`: a host message on the vendor bulk endpoint (EP2 OUT of `core/usb-bulk`; docs/CONTROL.md).
+    /// It is delivered through the dTDs the guest has queued (the adapter's completion callbacks run at interrupt level), `period` instructions
+    /// apart (default 49,500, one 16 KiB high-speed transfer); with no dTD queued the host is NAKed and the message waits. `connect` is the address of
+    /// the adapter's connect callback (`usb_bulk_connect` of the patch plan), called first: the bus reset after the enumeration is not modelled.
+    fn rpc_bulk_in(&mut self, p: &Params) -> RpcResult {
+        let data = if p.get("bytes").is_none() && p.opt_str("file")?.is_none() {
+            vec![]
+        } else {
+            bytes_param(p)?
+        };
+        let period = p.opt_u64("period")?;
+        let zlp = p.opt_bool("zlp")?;
+        let connect = p
+            .opt_u64("connect")?
+            .map(|a| {
+                u32::try_from(a).map_err(|_| RpcError::bad_params("connect is a 32-bit address"))
+            })
+            .transpose()?;
+        let queued = self.with_runtime(|r| {
+            r.usb_bulk_in(&data, period, connect, zlp)
+                .map_err(RpcError::bad_params)
+        })?;
+        Ok(json!({"bytes": data.len(), "queued": queued}))
+    }
+
+    /// `usb.bulk.out {file?}` returns (and clears) what the guest queued on EP2 IN since the last call, as a hex string. The first `usb.bulk.in` or
+    /// `usb.bulk.out` starts the capture. `file` also writes the bytes raw.
+    fn rpc_bulk_out(&mut self, p: &Params) -> RpcResult {
+        let (bytes, status) = self.with_runtime(|r| {
+            r.usb_bulk_watch().map_err(RpcError::bad_params)?;
+            Ok((r.take_bulk_out(), r.midi_status()))
         })?;
         if let Some(path) = p.opt_str("file")? {
             std::fs::write(path, &bytes).map_err(|e| RpcError::io(format!("{path}: {e}")))?;
@@ -5596,4 +5609,36 @@ mod ddr_monitor_tests {
             );
         }
     }
+}
+
+/// The `bytes` (hex string or array of numbers) or `file` of the input methods.
+fn bytes_param(p: &Params) -> Result<Vec<u8>, RpcError> {
+    let data = match (p.get("bytes"), p.opt_str("file")?) {
+        (Some(Value::String(hex)), None) => {
+            let digits: Vec<u8> = hex.bytes().filter(|b| !b.is_ascii_whitespace()).collect();
+            if digits.len() % 2 != 0 || !digits.iter().all(u8::is_ascii_hexdigit) {
+                return Err(RpcError::bad_params(
+                    "bytes is an even number of hex digits",
+                ));
+            }
+            digits
+                .chunks(2)
+                .map(|c| u8::from_str_radix(std::str::from_utf8(c).unwrap_or("0"), 16).unwrap_or(0))
+                .collect::<Vec<u8>>()
+        }
+        (Some(Value::Array(items)), None) => items
+            .iter()
+            .map(|v| v.as_u64().and_then(|n| u8::try_from(n).ok()))
+            .collect::<Option<Vec<u8>>>()
+            .ok_or_else(|| RpcError::bad_params("bytes holds numbers 0..255"))?,
+        (None, Some(path)) => {
+            std::fs::read(path).map_err(|e| RpcError::io(format!("{path}: {e}")))?
+        }
+        _ => {
+            return Err(RpcError::bad_params(
+                "give bytes (hex string or array) or file",
+            ));
+        }
+    };
+    Ok(data)
 }
