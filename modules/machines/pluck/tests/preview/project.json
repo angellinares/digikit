@@ -8,6 +8,7 @@
       {
         "files": ["ui-preview.device.test.ts"],
         "plusdrive": true,
+        "compiles": true,
         "sources": ["modules/machines/pluck/module.toml", "modules/machines/pluck/src/module.c"]
       }
     ]

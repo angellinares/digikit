@@ -20,9 +20,10 @@ import {
   BUILD_INPUTS,
   DEVICE_INPUTS,
   EMU_SLOT,
-  EMU_SLOT_INPUT,
   VITEST_SETUP,
   deviceTargets,
+  builtSourceExclusions,
+  DEVICE_BYTES,
   scopedManifestInputs,
 } from './module-targets.mjs';
 import { packSourceInputs } from './pack-inputs.mjs';
@@ -75,13 +76,12 @@ export const createNodesV2 = [
       imageModules.add(id);
       for (const required of manifest.requires ?? []) includeImageModule(required);
     };
-    // The supported acceptance image sets; arbitrary overrides need separate input review.
+    // The patch sets of the device profiles; arbitrary overrides need separate input review.
     for (const profile of globSync('devices/*.toml', { cwd: ctx.workspaceRoot }).sort()) {
       const sets = read(ctx.workspaceRoot, profile).patch_sets ?? {};
-      for (const set of ['emulator', 'sample-tracks', 'overdrive-tracks'])
-        for (const id of sets[set] ?? []) includeImageModule(id);
+      // every set: tools/nx/device-bytes.mjs hashes each one, so their objects are built first
+      for (const ids of Object.values(sets)) for (const id of ids) includeImageModule(id);
     }
-    const imageInput = { input: 'production', projects: [...imageModules].sort() };
     // Only the modules the gate packs get a pack target: patched-in core modules and static fixtures
     // (several ColdFire objects, no dkm_ symbols) cannot be packed as .dkm.
     const packable = new Set();
@@ -214,10 +214,11 @@ export const createNodesV2 = [
       if (shipped && deviceTests.length)
         Object.assign(
           targets,
-          deviceTargets('test-device', root, deviceTests, recs, imageInput, importInputs, uploadable, {
+          deviceTargets('test-device', root, deviceTests, recs, null, importInputs, uploadable, {
             twin: true,
             moduleId: m.id,
             mergeTests: mergeTests(join(ctx.workspaceRoot, root)),
+            base: ctx.workspaceRoot,
           }),
         );
       // The rule is `isUploadable` in this file: the shared conformance suite loads these.
@@ -228,14 +229,13 @@ export const createNodesV2 = [
           inputs: [
             ...DEVICE_INPUTS,
             'production',
-            EMU_SLOT_INPUT,
-            imageInput,
+            ...builtSourceExclusions(root, ctx.workspaceRoot),
             ...importInputs([
               ...globSync('tests/conformance/**/*.device.test.ts', { cwd: ctx.workspaceRoot }),
               VITEST_SETUP,
             ]),
           ],
-          dependsOn: ['pack', 'digikit/debug:pack', 'digi-control:daemons', IMAGE_BUILD],
+          dependsOn: ['pack', 'digikit/debug:pack', 'digi-control:daemons', IMAGE_BUILD, DEVICE_BYTES],
           outputs: [],
           options: {
             command: `${EMU_SLOT} pnpm --filter @digi/regression test:conformance`,
@@ -277,12 +277,13 @@ export const createNodesV2 = [
         root,
         tests,
         recs,
-        patchIds ? { input: 'production', projects: patchIds } : imageInput,
+        patchIds ? { input: 'production', projects: patchIds } : null,
         importInputs,
         false,
         {
           twin: targetName === 'test-device',
           subjects: config.implicitDependencies,
+          base: ctx.workspaceRoot,
           mergeTests: mergeTests(join(ctx.workspaceRoot, root)),
         },
       );
@@ -308,7 +309,6 @@ export const createNodesV2 = [
                 'test-device': {
                   inputs: [
                     ...DEVICE_INPUTS,
-                    imageInput,
                     '{projectRoot}/project.json',
                     ...importInputs([
                       ...globSync('tests/regression/emulator/**/*.test.ts', { cwd: ctx.workspaceRoot }),
