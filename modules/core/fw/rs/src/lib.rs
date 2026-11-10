@@ -441,7 +441,7 @@ pub mod page {
     }
 
     unsafe extern "C" {
-        /// DN2 track sound from the source view's sounds reference (view+0x78) and track, as used by its draw and parameter mapper.
+        /// `Sound *f(Kit *, int track)`: the Sound value object of a track (track clamped to 0..15; kit + 0x6c + 0x3c0 * track). DN2 uses it with the source view's sounds reference (view+0x78) in its draw and parameter mapper; core/runtime uses it with the active kit. Its vtable slot 0x28 returns the sound record, whose s16 parameter words start at +0x14. DT2 1.17 0x40035cca, DN2 1.12 0x40030e66.
         #[link_name = "cf.page.fn.native_track_sound"]
         pub fn native_track_sound(sounds: *mut u8, track: u32) -> *mut u8;
     }
@@ -526,12 +526,6 @@ pub mod project {
         /// The Project singleton getter `Project *f(void)`; its code differs per image. core/runtime reads it for the machine-change watch.
         #[link_name = "cf.project.fn.singleton"]
         pub fn singleton() -> u32;
-    }
-
-    unsafe extern "C" {
-        /// `Sound *f(Kit *, int track)`: the Sound value object of a track (track clamped to 0..15; kit + 0x6c + 0x3c0 * track). Its vtable slot 0x28 returns the sound record, whose s16 parameter words start at +0x14. The same hash on DT2 1.17 (0x40035cca) and DN2 1.12 (0x40030e66).
-        #[link_name = "cf.project.fn.track_sound"]
-        pub fn track_sound(kit: u32, track: i32) -> u32;
     }
 
     unsafe extern "C" {

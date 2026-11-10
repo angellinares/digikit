@@ -249,11 +249,12 @@ static struct {
 
 /* PARAM_CHANGE (debug level): each Sound word of the selected track that differs from the last pass: track, index, old, new. Only writes to that array show (the stock
  * setter: a knob turn); p-lock, sound lock, LFO and MIDI CC take other paths. A change of the selected track, or a track whose record is
- * missing (a kit load), takes the snapshot again and logs nothing. */
+ * missing (a kit load), takes the snapshot again and logs a baseline instead: index 0xffffffff, old and new 0. */
 static void watch_params(void)
 {
     int16_t now[PARAMS];
     u32 i, a[5];
+    int32_t was = watch.track;
     int32_t t = dkrt_selected_params(now, PARAMS);
     if (t < 0) {
         watch.track = -1;
@@ -274,6 +275,12 @@ static void watch_params(void)
     watch.track = t;
     for (i = 0; i < PARAMS; i++)
         watch.words[i] = now[i];
+    if (t != was) { /* a baseline: the host knows from here on that a turn on this track is seen */
+        a[0] = (u32)t;
+        a[1] = 0xffffffffu;
+        a[2] = a[3] = a[4] = 0u;
+        dkrt_log_ev(K_PARAM_CHANGE, L_DEBUG << LEVEL_SHIFT, a);
+    }
 }
 
 /* The tick of the sink: the runtime calls it once per pass of the UI task, so the module needs no slot (a slot has one owner). */

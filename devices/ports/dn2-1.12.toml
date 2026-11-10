@@ -2296,16 +2296,6 @@ mark = "D"
 rule = "fw/project:cf_func"
 
 [[anchor]]
-name = "cf.project.fn.track_sound"
-cpu = "cf"
-kind = "code"
-addr = 0x40030e66
-len = 4
-sha256 = "722ca8039c8eebdf90cbebf597b0c144a2c7979c379def4f7d87b953df4f5b50"
-mark = "D"
-rule = "fw/project:cf_func"
-
-[[anchor]]
 name = "cf.project.fn.track_type"
 cpu = "cf"
 kind = "code"

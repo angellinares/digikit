@@ -23,16 +23,6 @@ users = ["core/runtime"]
 doc = "`ProjectSettings *f(Project *)`: project + 0x30. Pass it to `cf.page.fn.view_track` to get the selected track."
 
 [[fn]]
-name = "cf.project.fn.track_sound"
-cpu = "cf"
-sig = "u32 (u32 kit, i32 track)"
-devices = ["dt2", "dn2"]
-rule = { kind = "cf_func", hash = "9fbd7b798068d1cc0a201b9060ff7250", offset = 0x0, len = 4 }
-mark = "D"
-users = ["core/runtime"]
-doc = "`Sound *f(Kit *, int track)`: the Sound value object of a track (track clamped to 0..15; kit + 0x6c + 0x3c0 * track). Its vtable slot 0x28 returns the sound record, whose s16 parameter words start at +0x14. The same hash on DT2 1.17 (0x40035cca) and DN2 1.12 (0x40030e66)."
-
-[[fn]]
 name = "cf.project.fn.serialize"
 was = ["dkrt.fw.project_serialize"]
 cpu = "cf"

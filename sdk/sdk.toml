@@ -905,7 +905,7 @@ name = "INPUT_TAKEN"
 args = ["what", "control", "delta", "-", "-"]
 
 # a Sound parameter word of the selected track changed (debug level 3, logged by digikit/debug from a poll once per UI pass): the track, the mirror index of the word
-# (a position in the Sound array, not a parameter code), the old and the new s16 value. A change of the selected track logs nothing (the snapshot is taken again).
+# (a position in the Sound array, not a parameter code), the old and the new s16 value. When the watch takes its snapshot (first pass after the project exists, a new selected track, a kit load) it logs one baseline event with index 0xffffffff and old and new 0: a turn after it is seen.
 # Only writes to that array show: p-lock, sound lock, LFO and MIDI CC take other paths (docs/findings/119-param-change-observer.md).
 [[log.kind]]
 id = 42

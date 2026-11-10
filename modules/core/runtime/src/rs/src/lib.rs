@@ -478,7 +478,7 @@ unsafe extern "C" fn dkrt_selected_params(out: *mut i16, n: u32) -> i32 {
         return -2;
     }
     let track = dkfw::page::view_track(dkfw::project::settings(p) as *const u8).min(15);
-    let sound = dkfw::project::track_sound(dkfw::project::active_kit(p), track as i32);
+    let sound = dkfw::page::native_track_sound(dkfw::project::active_kit(p) as *mut u8, track) as u32;
     let vt = read_volatile(sound as *const u32);
     let record: unsafe extern "C" fn(u32) -> u32 = core::mem::transmute(read_volatile((vt + SOUND_VT_RECORD) as *const u32) as usize);
     let rec = record(sound);

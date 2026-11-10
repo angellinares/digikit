@@ -310,19 +310,19 @@ def test_param_watch_logs_a_changed_word_and_takes_the_snapshot_again_on_a_new_t
         "slot",  # the first pass: starts the timer
         "clock 3030",
         "slot",  # the track watch starts
-        "slot",  # the baseline of the words: no event
+        "slot",  # the baseline of the words: one baseline event
         "word 5 32512",
         "word 70 1",
         "slot",  # two changes
         "slot",  # no change
         "sel 4",
         "word 5 7",
-        "slot",  # another track: the snapshot is taken again, no event
+        "slot",  # another track: the snapshot is taken again (a baseline event)
         "sel -1",
         "word 5 8",
         "slot",  # no record (a kit is loading): nothing
         "sel 4",
-        "slot",  # the record is back: the snapshot again, no event
+        "slot",  # the record is back: the snapshot again (a baseline event)
         "word 5 9",
         "slot",
         "cmd 32 00000000",
@@ -330,8 +330,12 @@ def test_param_watch_logs_a_changed_word_and_takes_the_snapshot_again_on_a_new_t
     out = run(harness, lines)
     _, _, evs = log(out[-1])
     changes = [(e[4], e[5], e[6], e[7], e[8]) for e in evs if e[2] == 42]
+    B = 0xFFFFFFFF  # a baseline: the snapshot was taken (first pass, new track, record back)
     assert changes == [
+        (3, B, 0, 0, 0),
         (3, 5, 0xFFFFFF9C, 32512, 0),
         (3, 70, 0, 1, 0),
+        (4, B, 0, 0, 0),
+        (4, B, 0, 0, 0),
         (4, 5, 8, 9, 0),
     ]
