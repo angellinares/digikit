@@ -82,13 +82,17 @@ pub const CAPK_STORE: u8 = 12;
 pub const CAPK_SETTINGS: u8 = 13;
 pub const CAPK_SEND_SLOTS: u8 = 14;
 /// The command ranges a module may register, as (first, last).
-pub const RANGES: [(u8, u8); 4] = [
+pub const RANGES: [(u8, u8); 6] = [
     (0x20, 0x22), // debug
+    (0x24, 0x27), // file_write_test
+    (0x28, 0x2b), // file_write_test_b
     (0x32, 0x35), // probe
     (0x38, 0x3d), // remote
     (0x3e, 0x3f), // remote_state
 ];
 pub const RANGE_DEBUG: (u8, u8) = (0x20, 0x22);
+pub const RANGE_FILE_WRITE_TEST: (u8, u8) = (0x24, 0x27);
+pub const RANGE_FILE_WRITE_TEST_B: (u8, u8) = (0x28, 0x2b);
 pub const RANGE_PROBE: (u8, u8) = (0x32, 0x35);
 pub const RANGE_REMOTE: (u8, u8) = (0x38, 0x3d);
 pub const RANGE_REMOTE_STATE: (u8, u8) = (0x3e, 0x3f);

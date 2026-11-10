@@ -2207,6 +2207,67 @@ mark = "D"
 rule = "fw/rtos:cf_func"
 
 [[anchor]]
+name = "cf.rtos.fn.sem_init"
+cpu = "cf"
+kind = "code"
+addr = 0x40001398
+len = 4
+sha256 = "1f6b50a3616f922607a92f5ea30e249ecfae4035c48517445d22acbd059dd2ec"
+mark = "D"
+rule = "fw/rtos:cf_func"
+
+[[anchor]]
+name = "cf.rtos.fn.sem_pend"
+cpu = "cf"
+kind = "code"
+addr = 0x4000141a
+len = 4
+sha256 = "bdf14071c21c6e97ed12d3dc87c4e743ee390ae73ccae37a43008bf368cd043d"
+mark = "D"
+rule = "fw/rtos:cf_func"
+
+[[anchor]]
+name = "cf.rtos.fn.sem_post"
+cpu = "cf"
+kind = "code"
+addr = 0x4000155c
+len = 4
+sha256 = "f3a94b54a3d17d40fead7d93cf515e08249de46c1dd8eec9950c44fa7af8b070"
+mark = "D"
+rule = "fw/rtos:cf_func"
+
+[[anchor]]
+name = "cf.rtos.fn.task_create"
+cpu = "cf"
+kind = "code"
+addr = 0x400012c8
+len = 4
+sha256 = "ca5b67b44e7bce64824b12125557dff767ee441b8a62d2964595749b96b6ad81"
+mark = "D"
+rule = "fw/rtos:cf_func"
+
+[[anchor]]
+name = "cf.rtos.fn.task_start"
+cpu = "cf"
+kind = "code"
+addr = 0x40001314
+len = 4
+sha256 = "f3a94b54a3d17d40fead7d93cf515e08249de46c1dd8eec9950c44fa7af8b070"
+mark = "D"
+rule = "fw/rtos:cf_func"
+
+[[anchor]]
+name = "cf.rtos.value.current_tcb"
+cpu = "cf"
+kind = "value"
+addr = 0x4664acdc
+src = 0x4000142e
+len = 4
+sha256 = "cc67779fd4e345d4b87c96232eb38bdd22f334dca394b0ed744bc051f35194f7"
+mark = "D"
+rule = "fw/rtos:cf_literal"
+
+[[anchor]]
 name = "cf.rtos.fn.reset.init_calls"
 cpu = "cf"
 kind = "code"

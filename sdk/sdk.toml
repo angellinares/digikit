@@ -9,7 +9,7 @@ version = "0.5.7"   # 0.x: MINOR may break (contract major, store format, SysEx 
 [contract]          # [major, minor] per contract (docs/design/module-sdk.md 11.5 D3). The runtime refuses a module that declares a
                     # contract (major != 0) when its major differs from the runtime's or its minor is above the runtime's. Major 0 = not implemented.
                     # An appended Api function is a minor bump; a changed or removed one is a major bump.
-api = [1, 9]        # the ColdFire Api table (every module, `raw` included); minor 9: settings_client/get/put/remove (module settings), intro_take (boot animation); minor 1: `log_lv` appended; minor 2: `register_cmds` appended; minor 3: sample bank API appended; minor 4: read-only listing; minor 5: stereo sample pool (per module, 16 entries); minor 6: sample_pool_path/param_get/param_set/sample_pool_set; minor 7: sample_pool_peaks; minor 8: job_post/job_cancel (background jobs)
+api = [1, 10]       # the ColdFire Api table (every module, `raw` included); minor 10: file_create/write/close/abort/delete (store files), io_post/io_cancel/io_wake (the I/O task), hash32_init/update/finish; minor 9: settings_client/get/put/remove (module settings), intro_take (boot animation); minor 1: `log_lv` appended; minor 2: `register_cmds` appended; minor 3: sample bank API appended; minor 4: read-only listing; minor 5: stereo sample pool (per module, 16 entries); minor 6: sample_pool_path/param_get/param_set/sample_pool_set; minor 7: sample_pool_peaks; minor 8: job_post/job_cancel (background jobs)
 machine = [1, 6]    # minor 1: source track; 2: stereo; 3: executable parameter latches; 4: opt-in native callback page v1; 5: two replacement callback pages v2; 6: note gate appended to voice_in (DK_MACHINE_GATE); voice states start zeroed after a load
 fx = [1, 0]         # run-time effects (sdk/include/dk/gen/fx.h, DSP section version 4 of a .dkm); 0.4.0; effect pages (register kind 4) 0.5.0
 service = [1, 0]
@@ -62,6 +62,17 @@ fields = [
     { name = "settings_put", type = "i32 (u32 client, const char *key, const void *value, u32 len)", doc = "Set `key` to the `len` bytes (0 to 1024) at `value`; the card is written 2 s after the last change. Returns 0, E_SET_KEY (stale handle or bad key), E_SET_VALUE, E_SET_FULL or E_SET_OFF. The runtime stores the key as `<module name>/<key>`; the module name and the key together are at most 47 characters. UI task only, not a service command handler.", since = 9 },
     { name = "settings_remove", type = "i32 (u32 client, const char *key)", doc = "Remove `key`: returns 0 (also when it was not there), E_SET_KEY (stale handle or bad key) or E_SET_OFF. UI task only, not a service command handler.", since = 9 },
     { name = "intro_take", type = "i32 (intro_frame frame, intro_done done, void *ctx, u32 ticks)", doc = "Init-only: replace the stock boot animation. `frame(tick, ctx)` returns the 1024-byte native bitmap of tick 0 .. ticks-1 (30 ticks a second), or NULL to end the animation (the last frame stays); it runs on the intro task, must not block and must not call any dk_api function. `done(ctx)` (may be NULL) runs once in the UI task at the first UI pass: free the buffer there. `ticks` is 1 to 300. Returns 0, E_NOT_FOUND outside `dkm_init`, E_CONTRACT (no frame, bad ticks), E_BUSY (taken already) or E_BOOT_ONLY (the intro is over). See dk/intro.h.", since = 9 },
+    { name = "file_create", type = "i32 (u32 root, const char *path, u32 size, const u8 *hash4)", doc = "I/O step only (E_CONTEXT in any other task, including a module's code running in the UI or MIDI task while a step waits): open the one write session for a new file `path` of `size` bytes under `root` (DK_FILES_STORE; DK_FILES_SAMPLES is the store's samples/ folder on the Digitone II and E_CONTRACT on the Digitakt II). `hash4`: NULL, or the expected file hash (`hash|1`, 4 bytes big-endian: dk/hash32.h); file_close then checks it. No overwrite: E_EXISTS for an existing file. Returns a handle > 0 owned by this module, or E_BUSY (a write session is open, or the store stayed in use for about 3 s: try again). A session with no write for 20 s is aborted by the runtime, E_PATH, E_FULL, E_NOSTORE, E_INUSE, E_WRITE. See dk/file.h.", since = 10 },
+    { name = "file_write", type = "i32 (i32 h, u32 offset, const u8 *buf, u32 len)", doc = "I/O step only: write `len` bytes at `offset`, the next byte of the file. `buf` is 16-byte aligned; `len` a multiple of 512 except for the last piece of the file (the tail sector is padded with zeros). Any length: it is split into 32 KiB writes. Returns 0, E_STATE (no such session), E_OFFSET, E_LENGTH (past `size`, or a short piece before the end), E_WRITE, E_CONTRACT (unaligned buf), or E_BUSY (the store stayed in use for about 3 s: nothing of this call was written; call again). The store lock is held for the whole call, so once a piece is written E_BUSY is never returned.", since = 10 },
+    { name = "file_close", type = "i32 (i32 h, u8 *hash_out)", doc = "I/O step only: end the file. All `size` bytes must have been written (E_LENGTH) and match `hash4` when it was given (E_HASH); the table is committed (power-cut safe). `hash_out` (4 bytes, may be NULL) gets the file hash of the bytes written, checks or not. The session is closed whatever the result, except for E_BUSY (try again). Returns 0 or a status.", since = 10 },
+    { name = "file_abort", type = "i32 (i32 h)", doc = "I/O step only: drop the session and the partial file (it was never in the table). Returns 0 or E_STATE.", since = 10 },
+    { name = "file_delete", type = "i32 (u32 root, const char *path)", doc = "I/O step only: remove a file or folder entry. Returns 0, E_NOFILE, E_BUSY (a write session is open, or the store is in use) or a path or store status.", since = 10 },
+    { name = "io_post", type = "i32 (io_step step, io_done done, u8 *ctx)", doc = "Run `step(ctx)` on the runtime's I/O task (priority 3, its own stack; <dk/io.h>). The step may block and call file_*. It returns DK_IO_MORE (run again), DK_IO_WAIT (sleep until io_wake), 0 (done) or a negative error. `done(ctx, status)` runs once in the UI task. Task context only (not an ISR). Returns a job id > 0, E_CONTRACT (no step) or E_BUSY (8 jobs).", since = 10 },
+    { name = "io_cancel", type = "i32 (i32 id)", doc = "Cancel a job of this module: a queued job never runs, a running one stops after its step returns; `done` gets DK_IO_E_CANCELLED. Returns 0 or E_NOT_FOUND.", since = 10 },
+    { name = "io_wake", type = "void (i32 id)", doc = "Wake a job whose step returned DK_IO_WAIT. Callable from an interrupt handler, an adapter or any task. Unknown ids are ignored.", since = 10 },
+    { name = "hash32_init", type = "void (u8 *state)", doc = "Start the file hash (the Elektron +Drive content hash, dk/hash32.h) in the caller's 28-byte `dk_hash32`.", since = 10 },
+    { name = "hash32_update", type = "void (u8 *state, const u8 *p, u32 n)", doc = "Feed `n` bytes.", since = 10 },
+    { name = "hash32_finish", type = "u32 (u8 *state)", doc = "The file hash `hash|1`: the value the store keeps (4 bytes big-endian in a table slot). The state is spent.", since = 10 },
 ]
 
 # Function types by name. As a parameter or field a name is a nullable pointer to the function (`Option<ServiceCmd>` in Rust, `dk_service_cmd *` in C).
@@ -80,6 +91,10 @@ job_done = "void (u8 *ctx, i32 status)"
 intro_frame = "const u8 *(u32 tick, void *ctx)"
 # The end of a boot animation, in the UI task, once, at the first UI pass.
 intro_done = "void (void *ctx)"
+# A step of an I/O job (`Api.io_post`), in the runtime's I/O task: it may block and call file_*. Returns DK_IO_MORE (1), DK_IO_WAIT (2), 0 or a negative error.
+io_step = "i32 (u8 *ctx)"
+# The end of an I/O job, in the UI task, once. `status` is the last step's result, or DK_IO_E_CANCELLED.
+io_done = "void (u8 *ctx, i32 status)"
 
 # The machine contract's numbers (sdk/include/dk/gen/machine.h is the generated C view; it includes the generated sdk/include/dk/gen/machine_consts.h).
 # `patchkit gen` writes sdk/asm/dk_machine.inc and sdk/include/dk/gen/machine_consts.h from this table: the constants, then the byte and word offsets of the fields (all 4 bytes).
@@ -947,6 +962,8 @@ remote = [0x38, 0x3d]   # digikit/remote: key and turn of the panel (docs/plans/
 remote_state = [0x3e, 0x3f]   # digikit/remote: the state
 probe = [0x32, 0x35]   # digikit/probe: collector status, raw reads, reset (docs/plans/debug-mode-and-probes.md)
 debug = [0x20, 0x22]   # digikit/debug: LOG, PEEK, LOGCFG (docs/findings/46-digikit-debug.md)
+file_write_test = [0x24, 0x27]   # test/file-write: start an I/O job that writes a file, its status, wake it, a file call outside an I/O step
+file_write_test_b = [0x28, 0x2b]   # test/file-write-b: the same commands for a second module
 
 [protocol.service]  # the commands of run-time service modules, by name; each lies in a range above (a module registers them with Api.register_cmds)
 REMOTE_KEY = 0x38      # digikit/remote: code (u8), down (u8)
@@ -1070,12 +1087,14 @@ E_NOMEM = { code = -8, text = "arena full" }
 E_INIT = { code = -9, text = "init returned non-zero" }
 E_LOADED = { code = -10, text = "a module of that name is loaded" }
 E_SLOT = { code = -11, text = "a slot it binds is taken" }
-E_BUSY = { code = -12, text = "a task is still inside the module" }
+E_BUSY = { code = -12, text = "a task is still inside the module, or the store is in use (try again)" }
 E_TOO_BIG = { code = -13, text = "larger than the staging buffer" }
 E_TABLE_FULL = { code = -14, text = "no free module record" }
 E_LOST = { code = -15, text = "the sample backing was lost and the reload failed" }
 E_POOL = { code = -16, text = "the sample pool is full" }
 E_CHANGED = { code = -17, text = "the sample file differs from the selection snapshot" }
+E_EXISTS = { code = -18, text = "the file exists already (file_create does not overwrite)" }
+E_CONTEXT = { code = -19, text = "the call is not allowed in this context (file_* run in an I/O step)" }
 E_NO_REGISTRY = { code = -20, text = "register records, but the image has no registry" }
 E_REG_DEVICE = { code = -21, text = "the records are for another device" }
 E_TYPE_RANGE = { code = -22, text = "machine type outside the range, or bad clone_of" }

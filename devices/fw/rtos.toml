@@ -15,11 +15,10 @@ doc = "The function that creates the main-OS task, the target of the boot thread
 name = "cf.rtos.fn.sleep_us"
 cpu = "cf"
 sig = "void (u32 us)"
-devices = ["dn2"]
 rule = { kind = "cf_func", hash = "113f4261cb994d31a918bb90032ffe45", offset = 0x0, len = 4 }
 mark = "D"
-users = ["core/sample-pool"]
-doc = "DN2 1.12 stock short sleep (DT2 pair 0x40136544): locks its own mutex, loads timer DTIM1 (prescaler 0x84, about 1 MHz) with `us` and blocks the task on a semaphore until the timer interrupt. Task context only. Eight stock callers; the LP0 sender waits 100 after each page with it."
+users = ["core/sample-pool", "core/runtime"]
+doc = "Stock short sleep (DT2 1.17 0x40136544, DN2 1.12 0x4013492c, DN2 1.11 0x4013464c; DT2 stock name dtim1_sleep_100us): locks its own mutex, loads timer DTIM1 (prescaler 0x84, about 1 MHz) with `us` and blocks the task on a semaphore until the timer interrupt. Task context only. The LP0 sender waits 100 after each page with it; the runtime's I/O task uses it for delays (the kernel has no timed pend)."
 
 [[fn]]
 name = "cf.rtos.fn.queue_pop"
@@ -29,6 +28,51 @@ rule = { kind = "cf_func", hash = "5545f84fcc633b347034f629aa4858b9", offset = 0
 mark = "D"
 users = ["core/runtime"]
 doc = "The stock queue pop (blocking pend on the queue, returns the next item), the function the hook call goes to."
+
+[[fn]]
+name = "cf.rtos.fn.task_create"
+cpu = "cf"
+sig = "i32 (u32 tcb, u32 entry, u32 prio, u32 stack, u32 size)"
+rule = { kind = "cf_func", hash = "b9945d9e9b7cd85bd846fae0b02433c2", offset = 0x0, len = 4 }
+mark = "D"
+users = ["core/runtime"]
+doc = "Kernel task init (0x400012c8 on DT2 1.17, DN2 1.12 and DN2 1.11; the kernel is byte-identical): fills the caller's TCB (at least 0x54 bytes) for priority `prio` (0 to 15, higher wins; above 15 overwrites the current-TCB pointer) and builds the first RTE frame at the top of the caller's stack (entry gets no argument and must never return). Writes only the TCB and the stack; returns 1. The task runs after cf.rtos.fn.task_start. Stock creates tasks this way from the boot thread and, after the scheduler runs, from the main-OS task (the progress screen)."
+
+[[fn]]
+name = "cf.rtos.fn.task_start"
+cpu = "cf"
+sig = "void (u32 tcb)"
+rule = { kind = "cf_func", hash = "8a64289f96ca37db27637e3e85329c19", ordinal = 0, offset = 0x0, len = 4 }
+mark = "D"
+users = ["core/runtime"]
+doc = "Kernel task start (0x40001314 on all three images): links the TCB into its priority's ready ring under SR 0x2700; does not reschedule. The hash is shared by three identical wrappers (0x40001314, 0x4000132c, 0x4000155c), hence the ordinal."
+
+[[fn]]
+name = "cf.rtos.fn.sem_init"
+cpu = "cf"
+sig = "void (u32 *sem, u32 count)"
+rule = { kind = "cf_func", hash = "12e0c05f98237db73e5d4777b09af2e2", offset = 0x0, len = 4 }
+mark = "D"
+users = ["core/runtime"]
+doc = "Semaphore init (0x40001398 on all three images). A semaphore is 8 bytes: +0 count or flag, +4 the one waiting TCB (one waiter only). No static initialiser."
+
+[[fn]]
+name = "cf.rtos.fn.sem_pend"
+cpu = "cf"
+sig = "void (u32 *sem)"
+rule = { kind = "cf_func", hash = "1eb93b50f94f227f9607b2230c76cd99", offset = 0x0, len = 4 }
+mark = "D"
+users = ["core/runtime"]
+doc = "Binary semaphore pend (0x4000141a on all three images): if the flag is set it clears it and returns, else the task blocks (trap #0). No timeout; task context only."
+
+[[fn]]
+name = "cf.rtos.fn.sem_post"
+cpu = "cf"
+sig = "void (u32 *sem)"
+rule = { kind = "cf_func", hash = "8a64289f96ca37db27637e3e85329c19", ordinal = 2, offset = 0x0, len = 4 }
+mark = "D"
+users = ["core/runtime"]
+doc = "Binary semaphore post (0x4000155c on all three images): masks SR, sets the flag, readies the waiter and forces the reschedule interrupt. ISR-safe (the DTIM1 interrupt posts the sleep semaphore this way). Posts coalesce: the waiter must drain its work after each wake. Shares its hash with cf.rtos.fn.task_start (ordinal 2)."
 
 [[fn]]
 name = "cf.rtos.fn.reset.init_calls"
@@ -74,6 +118,14 @@ rule.dn2 = { kind = "cf_words", as = "code", words = [0x4e56ff58, 0x48d73cfc, 0x
 mark = "D"
 users = ["core/runtime"]
 doc = "The entry of the main-OS task (`link a6,#-0xa8; movem.l ...; ...; jsr (a4); jsr (a3); move.l d0,-0x80(a6); jsr <next singleton>`), found by the words of its first 28 bytes: Digitakt II (the entry is 2 mod 4: the first word of the row is half of the previous function) and Digitone II (4-aligned)."
+
+[[value]]
+name = "cf.rtos.value.current_tcb"
+cpu = "cf"
+rule = { kind = "cf_literal", hash = "1eb93b50f94f227f9607b2230c76cd99", offset = 0x14, len = 4 }
+mark = "D"
+users = ["core/runtime"]
+doc = "The kernel's current-TCB pointer variable (DT2 1.17 0x47db3f64, DN2 1.12 0x4664bcdc: the literal that cf.rtos.fn.sem_pend loads first; it stores the value as the semaphore's waiting task). Read the word at this address to learn which task runs now; the kernel is byte-identical on all three images."
 
 [[value]]
 name = "cf.rtos.value.reset.clear_helper"

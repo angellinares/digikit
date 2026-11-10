@@ -615,6 +615,26 @@ export interface DkSessionOptions {
 const WINDOW_CHUNKS = 8;
 /** The wait for the replies still in flight once a DATA request has failed. */
 const SETTLE_MS = 2000;
+/**
+ * A reply of E_BUSY means the device's store was in use (an SDK file write or commit on its I/O task) and the command did nothing: the same request
+ * is sent again after this wait, at most this many times (2 s in all) before the E_BUSY reaches the caller.
+ */
+export const BUSY_WAIT_MS = 20;
+/** The built-in commands that work on the store: only their E_BUSY means "the store is in use, ask again" (a module's own command may answer E_BUSY for its own reasons). */
+const STORE_COMMANDS = new Set<number>([
+  GCMD.INFO,
+  GCMD.LIST,
+  GCMD.BEGIN,
+  GCMD.DATA,
+  GCMD.END,
+  GCMD.DELETE,
+  GCMD.MKDIR,
+  GCMD.CLEAR,
+  GCMD.READ,
+  GCMD.VERIFY,
+  GCMD.ABORT,
+]);
+export const BUSY_RETRIES = 100;
 
 export const u32 = (b: Uint8Array, at: number) => new DataView(b.buffer, b.byteOffset + at, 4).getUint32(0);
 const u16 = (b: Uint8Array, at: number) => new DataView(b.buffer, b.byteOffset + at, 2).getUint16(0);
@@ -818,12 +838,23 @@ export class DkSession {
       done += k + 1;
       deadline = Date.now() + this.timeoutMs;
     }
+    if (failure && statusName(failure.r.status) === 'E_BUSY') {
+      // the store was in use: nothing of the chunk was taken and the chunks behind it were refused at their offset; send them again in turn
+      for (let i = failure.i; i < chunks.length; i++) {
+        const r = await this.exchange(GCMD.DATA, chunks[i]!.body, false, signal);
+        if (r.status !== 0) throw deviceError(`data at ${chunks[i]!.off}`, r.status, r.body);
+        acked(i);
+      }
+      return;
+    }
     if (failure) throw deviceError(`data at ${chunks[failure.i]!.off}`, failure.r.status, failure.r.body);
   }
 
   private async exchange(cmd: number, body: Uint8Array, quick: boolean, signal: AbortSignal): Promise<RawReply> {
     const retries = quick ? 0 : this.retries;
     const timeoutMs = quick ? Math.min(this.timeoutMs, QUICK_TIMEOUT_MS) : this.timeoutMs;
+    const retryBusy = !quick && STORE_COMMANDS.has(cmd);
+    let busy = 0;
     for (let attempt = 0; attempt <= retries; attempt++) {
       if (signal.aborted) throw cancelledError();
       const seq = this.takeSeq();
@@ -833,7 +864,14 @@ export class DkSession {
         const raw = await abortable(this.t.recv(left, signal), signal);
         if (!raw) break;
         const r = parseReply(raw);
-        if (r && r.seq === seq && r.cmd === cmd) return r;
+        if (r && r.seq === seq && r.cmd === cmd) {
+          if (!retryBusy || statusName(r.status) !== 'E_BUSY' || busy >= BUSY_RETRIES) return r;
+          // the device's store is in use: the request did nothing; ask again shortly (not a timeout: it does not use up a retry)
+          busy++;
+          await abortable(new Promise<void>((done) => setTimeout(done, BUSY_WAIT_MS)), signal);
+          attempt--;
+          break;
+        }
       }
     }
     throw new DkError({ error: 'no reply from the device', kind: 'timeout' });

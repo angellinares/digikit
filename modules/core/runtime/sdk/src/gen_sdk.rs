@@ -4,7 +4,7 @@
 pub const RUNTIME_VERSION: u32 = 0x000507;
 
 pub mod contract {
-    pub const API: (u8, u8) = (1, 9);
+    pub const API: (u8, u8) = (1, 10);
     pub const MACHINE: (u8, u8) = (1, 6);
     pub const FX: (u8, u8) = (1, 0);
     pub const SERVICE: (u8, u8) = (1, 0);
@@ -173,13 +173,17 @@ pub mod proto {
     pub const CAPK_SETTINGS: u8 = 13;
     pub const CAPK_SEND_SLOTS: u8 = 14;
     /// The command ranges a module may register, as (first, last).
-    pub const RANGES: [(u8, u8); 4] = [
+    pub const RANGES: [(u8, u8); 6] = [
         (0x20, 0x22), // debug
+        (0x24, 0x27), // file_write_test
+        (0x28, 0x2b), // file_write_test_b
         (0x32, 0x35), // probe
         (0x38, 0x3d), // remote
         (0x3e, 0x3f), // remote_state
     ];
     pub const RANGE_DEBUG: (u8, u8) = (0x20, 0x22);
+    pub const RANGE_FILE_WRITE_TEST: (u8, u8) = (0x24, 0x27);
+    pub const RANGE_FILE_WRITE_TEST_B: (u8, u8) = (0x28, 0x2b);
     pub const RANGE_PROBE: (u8, u8) = (0x32, 0x35);
     pub const RANGE_REMOTE: (u8, u8) = (0x38, 0x3d);
     pub const RANGE_REMOTE_STATE: (u8, u8) = (0x3e, 0x3f);
@@ -203,6 +207,8 @@ pub mod load {
     pub const E_LOST: i32 = -15;
     pub const E_POOL: i32 = -16;
     pub const E_CHANGED: i32 = -17;
+    pub const E_EXISTS: i32 = -18;
+    pub const E_CONTEXT: i32 = -19;
     pub const E_NO_REGISTRY: i32 = -20;
     pub const E_REG_DEVICE: i32 = -21;
     pub const E_TYPE_RANGE: i32 = -22;
@@ -240,6 +246,12 @@ pub mod api {
 
     /// The function type `intro_frame` of `[api.types]`.
     pub type IntroFrame = unsafe extern "C" fn(tick: u32, ctx: *mut u8) -> *const u8;
+
+    /// The function type `io_done` of `[api.types]`.
+    pub type IoDone = unsafe extern "C" fn(ctx: *mut u8, status: i32);
+
+    /// The function type `io_step` of `[api.types]`.
+    pub type IoStep = unsafe extern "C" fn(ctx: *mut u8) -> i32;
 
     /// The function type `job_done` of `[api.types]`.
     pub type JobDone = unsafe extern "C" fn(ctx: *mut u8, status: i32);
@@ -336,6 +348,28 @@ pub mod api {
         pub settings_remove: unsafe extern "C" fn(client: u32, key: *const u8) -> i32,
         /// (api 1.9) Init-only: replace the stock boot animation. `frame(tick, ctx)` returns the 1024-byte native bitmap of tick 0 .. ticks-1 (30 ticks a second), or NULL to end the animation (the last frame stays); it runs on the intro task, must not block and must not call any dk_api function. `done(ctx)` (may be NULL) runs once in the UI task at the first UI pass: free the buffer there. `ticks` is 1 to 300. Returns 0, E_NOT_FOUND outside `dkm_init`, E_CONTRACT (no frame, bad ticks), E_BUSY (taken already) or E_BOOT_ONLY (the intro is over). See dk/intro.h.
         pub intro_take: unsafe extern "C" fn(frame: Option<IntroFrame>, done: Option<IntroDone>, ctx: *mut u8, ticks: u32) -> i32,
+        /// (api 1.10) I/O step only (E_CONTEXT in any other task, including a module's code running in the UI or MIDI task while a step waits): open the one write session for a new file `path` of `size` bytes under `root` (DK_FILES_STORE; DK_FILES_SAMPLES is the store's samples/ folder on the Digitone II and E_CONTRACT on the Digitakt II). `hash4`: NULL, or the expected file hash (`hash|1`, 4 bytes big-endian: dk/hash32.h); file_close then checks it. No overwrite: E_EXISTS for an existing file. Returns a handle > 0 owned by this module, or E_BUSY (a write session is open, or the store stayed in use for about 3 s: try again). A session with no write for 20 s is aborted by the runtime, E_PATH, E_FULL, E_NOSTORE, E_INUSE, E_WRITE. See dk/file.h.
+        pub file_create: unsafe extern "C" fn(root: u32, path: *const u8, size: u32, hash4: *const u8) -> i32,
+        /// (api 1.10) I/O step only: write `len` bytes at `offset`, the next byte of the file. `buf` is 16-byte aligned; `len` a multiple of 512 except for the last piece of the file (the tail sector is padded with zeros). Any length: it is split into 32 KiB writes. Returns 0, E_STATE (no such session), E_OFFSET, E_LENGTH (past `size`, or a short piece before the end), E_WRITE, E_CONTRACT (unaligned buf), or E_BUSY (the store stayed in use for about 3 s: nothing of this call was written; call again). The store lock is held for the whole call, so once a piece is written E_BUSY is never returned.
+        pub file_write: unsafe extern "C" fn(h: i32, offset: u32, buf: *const u8, len: u32) -> i32,
+        /// (api 1.10) I/O step only: end the file. All `size` bytes must have been written (E_LENGTH) and match `hash4` when it was given (E_HASH); the table is committed (power-cut safe). `hash_out` (4 bytes, may be NULL) gets the file hash of the bytes written, checks or not. The session is closed whatever the result, except for E_BUSY (try again). Returns 0 or a status.
+        pub file_close: unsafe extern "C" fn(h: i32, hash_out: *mut u8) -> i32,
+        /// (api 1.10) I/O step only: drop the session and the partial file (it was never in the table). Returns 0 or E_STATE.
+        pub file_abort: unsafe extern "C" fn(h: i32) -> i32,
+        /// (api 1.10) I/O step only: remove a file or folder entry. Returns 0, E_NOFILE, E_BUSY (a write session is open, or the store is in use) or a path or store status.
+        pub file_delete: unsafe extern "C" fn(root: u32, path: *const u8) -> i32,
+        /// (api 1.10) Run `step(ctx)` on the runtime's I/O task (priority 3, its own stack; <dk/io.h>). The step may block and call file_*. It returns DK_IO_MORE (run again), DK_IO_WAIT (sleep until io_wake), 0 (done) or a negative error. `done(ctx, status)` runs once in the UI task. Task context only (not an ISR). Returns a job id > 0, E_CONTRACT (no step) or E_BUSY (8 jobs).
+        pub io_post: unsafe extern "C" fn(step: Option<IoStep>, done: Option<IoDone>, ctx: *mut u8) -> i32,
+        /// (api 1.10) Cancel a job of this module: a queued job never runs, a running one stops after its step returns; `done` gets DK_IO_E_CANCELLED. Returns 0 or E_NOT_FOUND.
+        pub io_cancel: unsafe extern "C" fn(id: i32) -> i32,
+        /// (api 1.10) Wake a job whose step returned DK_IO_WAIT. Callable from an interrupt handler, an adapter or any task. Unknown ids are ignored.
+        pub io_wake: unsafe extern "C" fn(id: i32),
+        /// (api 1.10) Start the file hash (the Elektron +Drive content hash, dk/hash32.h) in the caller's 28-byte `dk_hash32`.
+        pub hash32_init: unsafe extern "C" fn(state: *mut u8),
+        /// (api 1.10) Feed `n` bytes.
+        pub hash32_update: unsafe extern "C" fn(state: *mut u8, p: *const u8, n: u32),
+        /// (api 1.10) The file hash `hash|1`: the value the store keeps (4 bytes big-endian in a table slot). The state is spent.
+        pub hash32_finish: unsafe extern "C" fn(state: *mut u8) -> u32,
     }
 
     /// The names a module may import, in the order of the runtime's table (`[[import]]`).

@@ -9872,9 +9872,165 @@
     },
     {
       "at": {
+        "dn2-1.11": [
+          {
+            "addr": "0x40001398",
+            "len": 4
+          }
+        ],
+        "dn2-1.12": [
+          {
+            "addr": "0x40001398",
+            "len": 4
+          }
+        ],
+        "dt2-1.17": [
+          {
+            "addr": "0x40001398",
+            "len": 4
+          }
+        ]
+      },
+      "bindings": {
+        "c": "dk_fw_rtos_sem_init",
+        "rust": "dkfw::rtos::sem_init"
+      },
+      "cpu": "cf",
+      "doc": "Semaphore init (0x40001398 on all three images). A semaphore is 8 bytes: +0 count or flag, +4 the one waiting TCB (one waiter only). No static initialiser.",
+      "file": "devices/fw/rtos.toml",
+      "kind": "fn",
+      "mark": "D",
+      "name": "cf.rtos.fn.sem_init",
+      "rule": {
+        "dn2": {
+          "kind": "cf_func",
+          "len": 4,
+          "offset": 0
+        },
+        "dt2": {
+          "kind": "cf_func",
+          "len": 4,
+          "offset": 0
+        }
+      },
+      "sig": "void (u32 *sem, u32 count)",
+      "subsystem": "rtos",
+      "users": [
+        "core/runtime"
+      ],
+      "was": []
+    },
+    {
+      "at": {
+        "dn2-1.11": [
+          {
+            "addr": "0x4000141a",
+            "len": 4
+          }
+        ],
+        "dn2-1.12": [
+          {
+            "addr": "0x4000141a",
+            "len": 4
+          }
+        ],
+        "dt2-1.17": [
+          {
+            "addr": "0x4000141a",
+            "len": 4
+          }
+        ]
+      },
+      "bindings": {
+        "c": "dk_fw_rtos_sem_pend",
+        "rust": "dkfw::rtos::sem_pend"
+      },
+      "cpu": "cf",
+      "doc": "Binary semaphore pend (0x4000141a on all three images): if the flag is set it clears it and returns, else the task blocks (trap #0). No timeout; task context only.",
+      "file": "devices/fw/rtos.toml",
+      "kind": "fn",
+      "mark": "D",
+      "name": "cf.rtos.fn.sem_pend",
+      "rule": {
+        "dn2": {
+          "kind": "cf_func",
+          "len": 4,
+          "offset": 0
+        },
+        "dt2": {
+          "kind": "cf_func",
+          "len": 4,
+          "offset": 0
+        }
+      },
+      "sig": "void (u32 *sem)",
+      "subsystem": "rtos",
+      "users": [
+        "core/runtime"
+      ],
+      "was": []
+    },
+    {
+      "at": {
+        "dn2-1.11": [
+          {
+            "addr": "0x4000155c",
+            "len": 4
+          }
+        ],
+        "dn2-1.12": [
+          {
+            "addr": "0x4000155c",
+            "len": 4
+          }
+        ],
+        "dt2-1.17": [
+          {
+            "addr": "0x4000155c",
+            "len": 4
+          }
+        ]
+      },
+      "bindings": {
+        "c": "dk_fw_rtos_sem_post",
+        "rust": "dkfw::rtos::sem_post"
+      },
+      "cpu": "cf",
+      "doc": "Binary semaphore post (0x4000155c on all three images): masks SR, sets the flag, readies the waiter and forces the reschedule interrupt. ISR-safe (the DTIM1 interrupt posts the sleep semaphore this way). Posts coalesce: the waiter must drain its work after each wake. Shares its hash with cf.rtos.fn.task_start (ordinal 2).",
+      "file": "devices/fw/rtos.toml",
+      "kind": "fn",
+      "mark": "D",
+      "name": "cf.rtos.fn.sem_post",
+      "rule": {
+        "dn2": {
+          "kind": "cf_func",
+          "len": 4,
+          "offset": 0
+        },
+        "dt2": {
+          "kind": "cf_func",
+          "len": 4,
+          "offset": 0
+        }
+      },
+      "sig": "void (u32 *sem)",
+      "subsystem": "rtos",
+      "users": [
+        "core/runtime"
+      ],
+      "was": []
+    },
+    {
+      "at": {
         "dn2-1.12": [
           {
             "addr": "0x4013492c",
+            "len": 4
+          }
+        ],
+        "dt2-1.17": [
+          {
+            "addr": "0x40136544",
             "len": 4
           }
         ]
@@ -9884,10 +10040,7 @@
         "rust": "dkfw::rtos::sleep_us"
       },
       "cpu": "cf",
-      "devices": [
-        "dn2"
-      ],
-      "doc": "DN2 1.12 stock short sleep (DT2 pair 0x40136544): locks its own mutex, loads timer DTIM1 (prescaler 0x84, about 1 MHz) with `us` and blocks the task on a semaphore until the timer interrupt. Task context only. Eight stock callers; the LP0 sender waits 100 after each page with it.",
+      "doc": "Stock short sleep (DT2 1.17 0x40136544, DN2 1.12 0x4013492c, DN2 1.11 0x4013464c; DT2 stock name dtim1_sleep_100us): locks its own mutex, loads timer DTIM1 (prescaler 0x84, about 1 MHz) with `us` and blocks the task on a semaphore until the timer interrupt. Task context only. The LP0 sender waits 100 after each page with it; the runtime's I/O task uses it for delays (the kernel has no timed pend).",
       "file": "devices/fw/rtos.toml",
       "kind": "fn",
       "mark": "D",
@@ -9897,12 +10050,118 @@
           "kind": "cf_func",
           "len": 4,
           "offset": 0
+        },
+        "dt2": {
+          "kind": "cf_func",
+          "len": 4,
+          "offset": 0
         }
       },
       "sig": "void (u32 us)",
       "subsystem": "rtos",
       "users": [
-        "core/sample-pool"
+        "core/sample-pool",
+        "core/runtime"
+      ],
+      "was": []
+    },
+    {
+      "at": {
+        "dn2-1.11": [
+          {
+            "addr": "0x400012c8",
+            "len": 4
+          }
+        ],
+        "dn2-1.12": [
+          {
+            "addr": "0x400012c8",
+            "len": 4
+          }
+        ],
+        "dt2-1.17": [
+          {
+            "addr": "0x400012c8",
+            "len": 4
+          }
+        ]
+      },
+      "bindings": {
+        "c": "dk_fw_rtos_task_create",
+        "rust": "dkfw::rtos::task_create"
+      },
+      "cpu": "cf",
+      "doc": "Kernel task init (0x400012c8 on DT2 1.17, DN2 1.12 and DN2 1.11; the kernel is byte-identical): fills the caller's TCB (at least 0x54 bytes) for priority `prio` (0 to 15, higher wins; above 15 overwrites the current-TCB pointer) and builds the first RTE frame at the top of the caller's stack (entry gets no argument and must never return). Writes only the TCB and the stack; returns 1. The task runs after cf.rtos.fn.task_start. Stock creates tasks this way from the boot thread and, after the scheduler runs, from the main-OS task (the progress screen).",
+      "file": "devices/fw/rtos.toml",
+      "kind": "fn",
+      "mark": "D",
+      "name": "cf.rtos.fn.task_create",
+      "rule": {
+        "dn2": {
+          "kind": "cf_func",
+          "len": 4,
+          "offset": 0
+        },
+        "dt2": {
+          "kind": "cf_func",
+          "len": 4,
+          "offset": 0
+        }
+      },
+      "sig": "i32 (u32 tcb, u32 entry, u32 prio, u32 stack, u32 size)",
+      "subsystem": "rtos",
+      "users": [
+        "core/runtime"
+      ],
+      "was": []
+    },
+    {
+      "at": {
+        "dn2-1.11": [
+          {
+            "addr": "0x40001314",
+            "len": 4
+          }
+        ],
+        "dn2-1.12": [
+          {
+            "addr": "0x40001314",
+            "len": 4
+          }
+        ],
+        "dt2-1.17": [
+          {
+            "addr": "0x40001314",
+            "len": 4
+          }
+        ]
+      },
+      "bindings": {
+        "c": "dk_fw_rtos_task_start",
+        "rust": "dkfw::rtos::task_start"
+      },
+      "cpu": "cf",
+      "doc": "Kernel task start (0x40001314 on all three images): links the TCB into its priority's ready ring under SR 0x2700; does not reschedule. The hash is shared by three identical wrappers (0x40001314, 0x4000132c, 0x4000155c), hence the ordinal.",
+      "file": "devices/fw/rtos.toml",
+      "kind": "fn",
+      "mark": "D",
+      "name": "cf.rtos.fn.task_start",
+      "rule": {
+        "dn2": {
+          "kind": "cf_func",
+          "len": 4,
+          "offset": 0
+        },
+        "dt2": {
+          "kind": "cf_func",
+          "len": 4,
+          "offset": 0
+        }
+      },
+      "sig": "void (u32 tcb)",
+      "subsystem": "rtos",
+      "users": [
+        "core/runtime"
       ],
       "was": []
     },
@@ -10233,6 +10492,55 @@
         "cf.rtos.site.boot",
         "dkrt.hook.boot"
       ]
+    },
+    {
+      "at": {
+        "dn2-1.11": [
+          {
+            "addr": "0x4664acdc",
+            "len": 4
+          }
+        ],
+        "dn2-1.12": [
+          {
+            "addr": "0x4664bcdc",
+            "len": 4
+          }
+        ],
+        "dt2-1.17": [
+          {
+            "addr": "0x47db3f64",
+            "len": 4
+          }
+        ]
+      },
+      "bindings": {
+        "c": "dk_fw_rtos_current_tcb",
+        "rust": "dkfw::rtos::CURRENT_TCB"
+      },
+      "cpu": "cf",
+      "doc": "The kernel's current-TCB pointer variable (DT2 1.17 0x47db3f64, DN2 1.12 0x4664bcdc: the literal that cf.rtos.fn.sem_pend loads first; it stores the value as the semaphore's waiting task). Read the word at this address to learn which task runs now; the kernel is byte-identical on all three images.",
+      "file": "devices/fw/rtos.toml",
+      "kind": "value",
+      "mark": "D",
+      "name": "cf.rtos.value.current_tcb",
+      "rule": {
+        "dn2": {
+          "kind": "cf_literal",
+          "len": 4,
+          "offset": 20
+        },
+        "dt2": {
+          "kind": "cf_literal",
+          "len": 4,
+          "offset": 20
+        }
+      },
+      "subsystem": "rtos",
+      "users": [
+        "core/runtime"
+      ],
+      "was": []
     },
     {
       "at": {
@@ -17628,7 +17936,7 @@
       "name": "project"
     },
     {
-      "count": 14,
+      "count": 20,
       "cpu": "cf",
       "file": "devices/fw/rtos.toml",
       "meaning": "tasks, queues, mutexes, idle, interrupts, the reset and boot path",

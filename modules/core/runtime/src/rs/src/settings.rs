@@ -123,7 +123,19 @@ pub unsafe fn load() {
     // An older store (written before the settings area, with header B 32 sectors further on) may have a table or a file where the settings copies
     // and header B are now: `store::open` checks that nothing reaches into the tail (and so does every later open, before a commit). No store header
     // at all is a card with no files; a header that does not read or reaches into the tail turns the settings store off: nothing is read or written.
-    if let Err(e) = crate::store::open() {
+    let opened = if crate::store_writer::acquire() {
+        let r = crate::store::open();
+        crate::store_writer::unlock();
+        r.map(|_| ())
+    } else {
+        Err(E_BUSY)
+    };
+    if let Err(e) = opened {
+        if e == E_BUSY {
+            // the store was in use (an SDK write on the I/O task) for the whole wait: not a damaged store. Nothing is decided; the next call of `ensure` loads again.
+            s.loaded = 0;
+            return;
+        }
         if e != E_NOT_FOUND {
             set::init(&mut area()[..], 0);
             s.copy = set::NONE;

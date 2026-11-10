@@ -110,12 +110,14 @@
 #define DKRT_E_INIT (-9)                 /* init returned non-zero */
 #define DKRT_E_LOADED (-10)              /* a module of that name is loaded */
 #define DKRT_E_SLOT (-11)                /* a slot it binds is taken */
-#define DKRT_E_BUSY (-12)                /* a task is still inside the module */
+#define DKRT_E_BUSY (-12)                /* a task is still inside the module, or the store is in use (try again) */
 #define DKRT_E_TOO_BIG (-13)             /* larger than the staging buffer */
 #define DKRT_E_TABLE_FULL (-14)          /* no free module record */
 #define DKRT_E_LOST (-15)                /* the sample backing was lost and the reload failed */
 #define DKRT_E_POOL (-16)                /* the sample pool is full */
 #define DKRT_E_CHANGED (-17)             /* the sample file differs from the selection snapshot */
+#define DKRT_E_EXISTS (-18)              /* the file exists already (file_create does not overwrite) */
+#define DKRT_E_CONTEXT (-19)             /* the call is not allowed in this context (file_* run in an I/O step) */
 #define DKRT_E_NO_REGISTRY (-20)         /* register records, but the image has no registry */
 #define DKRT_E_REG_DEVICE (-21)          /* the records are for another device */
 #define DKRT_E_TYPE_RANGE (-22)          /* machine type outside the range, or bad clone_of */

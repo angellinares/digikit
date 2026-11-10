@@ -41,6 +41,8 @@ mod intro;
 mod safe_screen;
 mod sha256;
 pub mod store;
+pub mod store_writer;
+mod io;
 mod table;
 pub mod upload;
 mod watch;
@@ -585,6 +587,18 @@ unsafe extern "C" fn api_settings_put(client: u32, key: *const u8, value: *const
 unsafe extern "C" fn api_settings_remove(client: u32, key: *const u8) -> i32 { settings::module_remove(client, key) }
 unsafe extern "C" fn api_intro_take(frame: Option<dkrt_sdk::api::IntroFrame>, done: Option<dkrt_sdk::api::IntroDone>, ctx: *mut u8, ticks: u32) -> i32 { intro::take(frame, done, ctx, ticks) }
 
+unsafe extern "C" fn api_file_create(root: u32, path: *const u8, size: u32, hash4: *const u8) -> i32 { store_writer::sdk_create(root, path, size, hash4) }
+unsafe extern "C" fn api_file_write(h: i32, offset: u32, buf: *const u8, len: u32) -> i32 { store_writer::sdk_write(h, offset, buf, len) }
+unsafe extern "C" fn api_file_close(h: i32, hash_out: *mut u8) -> i32 { store_writer::sdk_close(h, hash_out) }
+unsafe extern "C" fn api_file_abort(h: i32) -> i32 { store_writer::sdk_abort(h) }
+unsafe extern "C" fn api_file_delete(root: u32, path: *const u8) -> i32 { store_writer::sdk_delete(root, path) }
+unsafe extern "C" fn api_io_post(step: Option<dkrt_sdk::api::IoStep>, done: Option<dkrt_sdk::api::IoDone>, ctx: *mut u8) -> i32 { io::post(dlog::current_source(), step, done, ctx) }
+unsafe extern "C" fn api_io_cancel(id: i32) -> i32 { io::cancel(dlog::current_source(), id) }
+unsafe extern "C" fn api_io_wake(id: i32) { io::wake(id) }
+unsafe extern "C" fn api_hash32_init(state: *mut u8) { core::ptr::write(state as *mut hash32::Hash32, hash32::Hash32::new()) }
+unsafe extern "C" fn api_hash32_update(state: *mut u8, p: *const u8, n: u32) { (*(state as *mut hash32::Hash32)).update(p, n) }
+unsafe extern "C" fn api_hash32_finish(state: *mut u8) -> u32 { core::ptr::read(state as *const hash32::Hash32).finish() | 1 }
+
 /// The table is built at first use: pointers to the helpers are not constants.
 #[no_mangle]
 pub static mut dkrt_api: Api = Api {
@@ -630,6 +644,17 @@ pub static mut dkrt_api: Api = Api {
     settings_put: api_settings_put,
     settings_remove: api_settings_remove,
     intro_take: api_intro_take,
+    file_create: api_file_create,
+    file_write: api_file_write,
+    file_close: api_file_close,
+    file_abort: api_file_abort,
+    file_delete: api_file_delete,
+    io_post: api_io_post,
+    io_cancel: api_io_cancel,
+    io_wake: api_io_wake,
+    hash32_init: api_hash32_init,
+    hash32_update: api_hash32_update,
+    hash32_finish: api_hash32_finish,
 };
 
 pub unsafe fn log(msg: *const u8, value: u32) {
@@ -1167,10 +1192,12 @@ pub unsafe extern "C" fn dkrt_tick() {
     intro::ui_pass();
     boot::ui_pass();
     upload::restart_poll();
+    store_writer::tick();
     crash::install();
     dsp::step();
     sample::tick();
     worker::tick();
+    io::tick();
     tracks::tick();
     files::tick();
     fxpage::tick();

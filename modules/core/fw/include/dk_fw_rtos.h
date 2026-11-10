@@ -9,10 +9,22 @@
 /* cf.rtos.fn.create_main: no sig yet */
 /* cf.rtos.fn.queue_pop: no sig yet */
 /* cf.rtos.fn.reset.init_calls: no sig yet */
-/* DN2 1.12 stock short sleep (DT2 pair 0x40136544): locks its own mutex, loads timer DTIM1 (prescaler 0x84, about 1 MHz) with `us` and blocks the task on a semaphore until the timer interrupt. Task context only. Eight stock callers; the LP0 sender waits 100 after each page with it. */
+/* Semaphore init (0x40001398 on all three images). A semaphore is 8 bytes: +0 count or flag, +4 the one waiting TCB (one waiter only). No static initialiser. */
+void dk_fw_rtos_sem_init(uint32_t *sem, uint32_t count) __asm__("cf.rtos.fn.sem_init");
+/* Binary semaphore pend (0x4000141a on all three images): if the flag is set it clears it and returns, else the task blocks (trap #0). No timeout; task context only. */
+void dk_fw_rtos_sem_pend(uint32_t *sem) __asm__("cf.rtos.fn.sem_pend");
+/* Binary semaphore post (0x4000155c on all three images): masks SR, sets the flag, readies the waiter and forces the reschedule interrupt. ISR-safe (the DTIM1 interrupt posts the sleep semaphore this way). Posts coalesce: the waiter must drain its work after each wake. Shares its hash with cf.rtos.fn.task_start (ordinal 2). */
+void dk_fw_rtos_sem_post(uint32_t *sem) __asm__("cf.rtos.fn.sem_post");
+/* Stock short sleep (DT2 1.17 0x40136544, DN2 1.12 0x4013492c, DN2 1.11 0x4013464c; DT2 stock name dtim1_sleep_100us): locks its own mutex, loads timer DTIM1 (prescaler 0x84, about 1 MHz) with `us` and blocks the task on a semaphore until the timer interrupt. Task context only. The LP0 sender waits 100 after each page with it; the runtime's I/O task uses it for delays (the kernel has no timed pend). */
 void dk_fw_rtos_sleep_us(uint32_t us) __asm__("cf.rtos.fn.sleep_us");
+/* Kernel task init (0x400012c8 on DT2 1.17, DN2 1.12 and DN2 1.11; the kernel is byte-identical): fills the caller's TCB (at least 0x54 bytes) for priority `prio` (0 to 15, higher wins; above 15 overwrites the current-TCB pointer) and builds the first RTE frame at the top of the caller's stack (entry gets no argument and must never return). Writes only the TCB and the stack; returns 1. The task runs after cf.rtos.fn.task_start. Stock creates tasks this way from the boot thread and, after the scheduler runs, from the main-OS task (the progress screen). */
+int32_t dk_fw_rtos_task_create(uint32_t tcb, uint32_t entry, uint32_t prio, uint32_t stack, uint32_t size) __asm__("cf.rtos.fn.task_create");
+/* Kernel task start (0x40001314 on all three images): links the TCB into its priority's ready ring under SR 0x2700; does not reschedule. The hash is shared by three identical wrappers (0x40001314, 0x4000132c, 0x4000155c), hence the ordinal. */
+void dk_fw_rtos_task_start(uint32_t tcb) __asm__("cf.rtos.fn.task_start");
 /* The firmware's default exception handler (the code every vector points at until a specific handler is installed; DT2 1.16 0x40001252, not a function of its own): `move #0x2700,sr; move.l sp,<save>; lea -16(sp),sp; movem.l d0-d1/a0-a1,(sp); movea.l <hook word>,a0; tst.l a0; beq +10; move.l <save>,-(sp); jsr (a0); ...; rte`. */
 extern const uint8_t dk_fw_rtos_exc_hook_lit __asm__("cf.rtos.site.exc_hook_lit");
+/* The kernel's current-TCB pointer variable (DT2 1.17 0x47db3f64, DN2 1.12 0x4664bcdc: the literal that cf.rtos.fn.sem_pend loads first; it stores the value as the semaphore's waiting task). Read the word at this address to learn which task runs now; the kernel is byte-identical on all three images. */
+extern const uint8_t dk_fw_rtos_current_tcb __asm__("cf.rtos.value.current_tcb");
 /* The intro's current-entry pointer: {callback, frame count} in the scene table, NULL when no intro runs (DT2 0x43153a00, DN2 0x42c4cacc). */
 extern const uint8_t dk_fw_rtos_intro_entry __asm__("cf.rtos.value.intro_entry");
 /* Address of the reset code's bss clear helper, the second call of cf.rtos.fn.reset.init_calls; the expansion loader calls it after it copies its segments. */

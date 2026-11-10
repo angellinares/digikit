@@ -543,15 +543,51 @@ pub mod rtos {
     // cf.rtos.fn.reset.init_calls: no sig yet
 
     unsafe extern "C" {
-        /// DN2 1.12 stock short sleep (DT2 pair 0x40136544): locks its own mutex, loads timer DTIM1 (prescaler 0x84, about 1 MHz) with `us` and blocks the task on a semaphore until the timer interrupt. Task context only. Eight stock callers; the LP0 sender waits 100 after each page with it.
+        /// Semaphore init (0x40001398 on all three images). A semaphore is 8 bytes: +0 count or flag, +4 the one waiting TCB (one waiter only). No static initialiser.
+        #[link_name = "cf.rtos.fn.sem_init"]
+        pub fn sem_init(sem: *mut u32, count: u32);
+    }
+
+    unsafe extern "C" {
+        /// Binary semaphore pend (0x4000141a on all three images): if the flag is set it clears it and returns, else the task blocks (trap #0). No timeout; task context only.
+        #[link_name = "cf.rtos.fn.sem_pend"]
+        pub fn sem_pend(sem: *mut u32);
+    }
+
+    unsafe extern "C" {
+        /// Binary semaphore post (0x4000155c on all three images): masks SR, sets the flag, readies the waiter and forces the reschedule interrupt. ISR-safe (the DTIM1 interrupt posts the sleep semaphore this way). Posts coalesce: the waiter must drain its work after each wake. Shares its hash with cf.rtos.fn.task_start (ordinal 2).
+        #[link_name = "cf.rtos.fn.sem_post"]
+        pub fn sem_post(sem: *mut u32);
+    }
+
+    unsafe extern "C" {
+        /// Stock short sleep (DT2 1.17 0x40136544, DN2 1.12 0x4013492c, DN2 1.11 0x4013464c; DT2 stock name dtim1_sleep_100us): locks its own mutex, loads timer DTIM1 (prescaler 0x84, about 1 MHz) with `us` and blocks the task on a semaphore until the timer interrupt. Task context only. The LP0 sender waits 100 after each page with it; the runtime's I/O task uses it for delays (the kernel has no timed pend).
         #[link_name = "cf.rtos.fn.sleep_us"]
         pub fn sleep_us(us: u32);
+    }
+
+    unsafe extern "C" {
+        /// Kernel task init (0x400012c8 on DT2 1.17, DN2 1.12 and DN2 1.11; the kernel is byte-identical): fills the caller's TCB (at least 0x54 bytes) for priority `prio` (0 to 15, higher wins; above 15 overwrites the current-TCB pointer) and builds the first RTE frame at the top of the caller's stack (entry gets no argument and must never return). Writes only the TCB and the stack; returns 1. The task runs after cf.rtos.fn.task_start. Stock creates tasks this way from the boot thread and, after the scheduler runs, from the main-OS task (the progress screen).
+        #[link_name = "cf.rtos.fn.task_create"]
+        pub fn task_create(tcb: u32, entry: u32, prio: u32, stack: u32, size: u32) -> i32;
+    }
+
+    unsafe extern "C" {
+        /// Kernel task start (0x40001314 on all three images): links the TCB into its priority's ready ring under SR 0x2700; does not reschedule. The hash is shared by three identical wrappers (0x40001314, 0x4000132c, 0x4000155c), hence the ordinal.
+        #[link_name = "cf.rtos.fn.task_start"]
+        pub fn task_start(tcb: u32);
     }
 
     unsafe extern "C" {
         /// The firmware's default exception handler (the code every vector points at until a specific handler is installed; DT2 1.16 0x40001252, not a function of its own): `move #0x2700,sr; move.l sp,<save>; lea -16(sp),sp; movem.l d0-d1/a0-a1,(sp); movea.l <hook word>,a0; tst.l a0; beq +10; move.l <save>,-(sp); jsr (a0); ...; rte`.
         #[link_name = "cf.rtos.site.exc_hook_lit"]
         pub static EXC_HOOK_LIT: u8;
+    }
+
+    unsafe extern "C" {
+        /// The kernel's current-TCB pointer variable (DT2 1.17 0x47db3f64, DN2 1.12 0x4664bcdc: the literal that cf.rtos.fn.sem_pend loads first; it stores the value as the semaphore's waiting task). Read the word at this address to learn which task runs now; the kernel is byte-identical on all three images.
+        #[link_name = "cf.rtos.value.current_tcb"]
+        pub static CURRENT_TCB: u8;
     }
 
     unsafe extern "C" {

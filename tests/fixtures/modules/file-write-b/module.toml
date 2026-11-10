@@ -1,0 +1,20 @@
+[module]
+id = "test/file-write-b"
+version = "0.1.0"
+name = "File write B"
+category = "test"
+type = "raw"
+author = "digikit"
+status = "experimental"
+summary = "Test fixture: store file writes from an I/O job (file_create, file_write, file_close, file_abort, file_delete, io_post, io_wake, hash32), started by service commands."
+requires = []
+conflicts = []
+
+[targets]
+"dt2-1.17" = "experimental"
+"dn2-1.12" = "experimental"
+
+[[object]]
+path = "build/file-write-b.dko.json"
+sources = ["src/file-write-proof.c"]
+place = "cf.expansion"
