@@ -1,9 +1,39 @@
 import fs from 'node:fs';
 import path from 'node:path';
+import { describe, test } from 'vitest';
 import { cardCacheRoot, repoRoot, type Device } from '@digi/test-support';
 import { claimDir, newestFirst, pruneKeyDirs, type RunDirClaim } from './run-claim.ts';
 
-export const DEVICES = ['dt2', 'dn2'] as const;
+const ALL_DEVICES: readonly Device[] = ['dt2', 'dn2'];
+
+/** `list` (default: both devices) narrowed to `DIGI_DEVICE` (`dt2` or `dn2`) when it is set. Every device loop of a device test goes through here. */
+export function selectDevices(list: readonly Device[] = ALL_DEVICES): Device[] {
+  const only = process.env.DIGI_DEVICE;
+  if (only === undefined || only === '') return [...list];
+  if (!ALL_DEVICES.includes(only as Device)) throw new Error(`DIGI_DEVICE must be dt2 or dn2, got '${only}'`);
+  return list.filter((device) => device === only);
+}
+
+/** The devices of this run: both, or the one in `DIGI_DEVICE`. */
+export const DEVICES: readonly Device[] = selectDevices();
+
+/** Registers a skipped test when `DIGI_DEVICE` removed every device of a file, so the file still has a test. Does nothing when `selected` is not empty. */
+export function skipEmptyHalf(selected: readonly Device[], name: string): void {
+  if (selected.length === 0)
+    test.skip(`${name}: no device of this file is selected by DIGI_DEVICE=${process.env.DIGI_DEVICE}`, () => {});
+}
+
+/** `describe` for a file pinned to one device: skipped, without running `define`, when `DIGI_DEVICE` selects another device. */
+export function describeOn(device: Device, name: string, define: () => void, skip = false): void {
+  if (selectDevices([device]).length === 0) {
+    describe.skip(name, () => {
+      test('not selected by DIGI_DEVICE', () => {});
+    });
+  } else {
+    describe.skipIf(skip)(name, define);
+  }
+}
+
 export const FIRMWARE = { dt2: '1.17', dn2: '1.12' } as const;
 
 const claimedRunDirs = new Map<Device, { dir: string; snapshotDir: string }>();

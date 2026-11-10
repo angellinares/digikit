@@ -10,7 +10,7 @@ import { CMD as GCMD } from '../../../packages/dk-session/src/gen_proto.ts';
 import { listing, plusdriveBinary, storeList, type Files, type Listing } from './card-kit.ts';
 import { cardRig, type CardRig } from './card-rig.ts';
 import { bounded, rpc } from './fx-live.ts';
-import { DEVICES, FIRMWARE, FULL_TIER } from './devices.ts';
+import { FIRMWARE, FULL_TIER, selectDevices, skipEmptyHalf } from './devices.ts';
 import { overlayRecords } from './write-safety.ts';
 
 /**
@@ -111,7 +111,9 @@ export function uploadTests(
     skip?: string;
   } = {},
 ): void {
-  for (const device of opts.devices ?? DEVICES) {
+  const selected = selectDevices(opts.devices);
+  skipEmptyHalf(selected, name);
+  for (const device of selected) {
     describe.skipIf(opts.skip !== undefined || (opts.full === true && !FULL_TIER))(
       `${device.toUpperCase()} ${FIRMWARE[device]}`,
       () => {

@@ -88,8 +88,9 @@ it('scopes explicit acceptance images without changing the default image produce
   );
   const inferred = createNodesV2[1]([...manifests, ...files], {}, { workspaceRoot: root });
   const projects = Object.assign({}, ...inferred.map(([, result]) => result.projects));
-  const scoped = projects['tests/fixtures/modules/scoped-ui-tests/tests/zero'].targets['test-device'];
-  const normal = projects['tests/fixtures/modules/default-ui-tests/tests/zero'].targets['test-device'];
+  // the run targets are the device halves; `test-device` is their no-op parent
+  const scoped = projects['tests/fixtures/modules/scoped-ui-tests/tests/zero'].targets['test-device--dt2'];
+  const normal = projects['tests/fixtures/modules/default-ui-tests/tests/zero'].targets['test-device--dn2'];
   expect(scoped.dependsOn).toContain('example/dep:build-objects');
   expect(scoped.dependsOn).not.toContain('example/owner:build-objects');
   expect(scoped.inputs).toContainEqual({ input: 'production', projects: ['example/dep'] });

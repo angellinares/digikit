@@ -1,11 +1,11 @@
 import path from 'node:path';
-import { describe, expect, test } from 'vitest';
+import { expect, test } from 'vitest';
 import type { Device, Session } from '@digi/test-support';
 import { bootInfo, E_LOADING } from '@digi/regression/runtime/card-kit.ts';
 import { cardRig, RT } from '@digi/regression/runtime/card-rig.ts';
 import { advance, pickSine, rpc } from '@digi/regression/runtime/fx-live.ts';
 import { tap } from '@digi/regression/runtime/fx-session.ts';
-import { FIRMWARE, FULL_TIER } from '@digi/regression/runtime/devices.ts';
+import { FIRMWARE, FULL_TIER, describeOn } from '@digi/regression/runtime/devices.ts';
 import {
   diffSlot,
   dynType,
@@ -136,7 +136,7 @@ async function loadProject(session: Session) {
 }
 
 for (const sc of SCENARIOS) {
-  describe.skipIf(sc.full && !FULL_TIER)(`${sc.device.toUpperCase()} ${FIRMWARE[sc.device]} ${sc.name}`, () => {
+  describeOn(sc.device, `${sc.device.toUpperCase()} ${FIRMWARE[sc.device]} ${sc.name}`, () => {
     const { device } = sc;
     const modules = [...new Set(Object.values(sc.sets).flat())];
     const selectionOf = (set: string) => sc.sets[set]!.map(storeName);
@@ -267,5 +267,5 @@ for (const sc of SCENARIOS) {
         `the header stamp changes once (first save to second) and then stays: ${stamps.map((x) => x.toString(16))}`,
       ).toBe(true);
     }, 3_600_000);
-  });
+  }, sc.full === true && !FULL_TIER);
 }

@@ -79,7 +79,7 @@
       },
       {
         "files": ["safe-mode.device.test.ts"],
-        "modules": ["test/dyn-dn2", "test/dyn-fault", "test/dyn-fault-late", "test/sine"],
+        "modules": ["test/c-demo", "test/dyn-dn2", "test/dyn-fault", "test/dyn-fault-late", "test/sine"],
         "plusdrive": true
       },
       {

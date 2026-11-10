@@ -1,6 +1,6 @@
 import path from 'node:path';
 import { button } from '@digi/test-support';
-import { describe, expect, test } from 'vitest';
+import { expect, test } from 'vitest';
 import type { PatchedSession } from '@digi/regression/support.ts';
 import {
   analysisJson,
@@ -19,7 +19,7 @@ import {
 import { slotBusAddress } from '@digi/regression/runtime/device-data.ts';
 import { triggerFrame } from '@digi/regression/runtime/fixtures.ts';
 import { record } from '@digi/regression/runtime/artifacts.ts';
-import { FIRMWARE } from '@digi/regression/runtime/devices.ts';
+import { FIRMWARE, describeOn } from '@digi/regression/runtime/devices.ts';
 import { planSymbol } from '@digi/regression/runtime/runtime-plan.ts';
 
 const analyzer = 'tools.patchkit.pk_digikit_fxsend';
@@ -79,7 +79,7 @@ async function captureSend(
   return trig;
 }
 
-describe(`DN2 ${FIRMWARE.dn2} FX send voice slots`, () => {
+describeOn('dn2', `DN2 ${FIRMWARE.dn2} FX send voice slots`, () => {
   const audible = new WeakSet<PatchedSession>();
   const context = withGainFxSession('dn2', 'FX send DN2 chord/idle', {
     initial: 'wet',

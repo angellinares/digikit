@@ -1,6 +1,6 @@
 import path from 'node:path';
 import { encoder, type Session } from '@digi/test-support';
-import { describe, expect, test } from 'vitest';
+import { expect, test } from 'vitest';
 import type { PatchedSession } from '@digi/regression/support.ts';
 import {
   advance,
@@ -16,7 +16,7 @@ import { tap, type FxProfile } from '@digi/regression/runtime/fx-session.ts';
 import { soundImage } from '@digi/regression/runtime/fx-track-ui.ts';
 import { triggerFrame } from '@digi/regression/runtime/fixtures.ts';
 import { record } from '@digi/regression/runtime/artifacts.ts';
-import { FIRMWARE } from '@digi/regression/runtime/devices.ts';
+import { FIRMWARE, describeOn } from '@digi/regression/runtime/devices.ts';
 
 // DT2 only (core/overdrive has a dt2-1.17 port). The FX page's OD.TY knob (ENC H) is the track's OVR TYPE: Sound[68] of the kit,
 // value = curve << 9 | post << 8 (README of core/overdrive). The sine fixture plays on track 1.
@@ -39,7 +39,7 @@ async function setType(session: Session, profile: FxProfile, want: number): Prom
   throw new Error(`OVR TYPE did not reach curve ${want}`);
 }
 
-describe(`DT2 ${FIRMWARE.dt2} core/overdrive OVR TYPE`, () => {
+describeOn('dt2', `DT2 ${FIRMWARE.dt2} core/overdrive OVR TYPE`, () => {
   const context = withGainFxSession('dt2', 'overdrive OVR TYPE', { initial: 'dry', patchSet: 'overdrive-tracks' });
 
   test('a non-stock curve changes the note at a high amount, the stock value does not, and amount 0 stays dry', async () => {

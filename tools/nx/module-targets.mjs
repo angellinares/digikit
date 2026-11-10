@@ -236,7 +236,30 @@ export const deviceTarget = (root, tests, recs, imageInput, importInputs, upload
 // `name` stays the target everything selects: a no-op parent of the per-file targets.
 // With `opts.twin`, `name` is the merge target (narrow keys for files outside `opts.mergeTests`) and `${name}-all`
 // runs every file with full inputs.
+// Each run target is split in two halves, `<name>--dt2` and `<name>--dn2` (env DIGI_DEVICE), so they run in
+// parallel. `<name>` stays as a no-op parent with the inputs of the run target.
 export const deviceTargets = (name, root, tests, recs, imageInput, importInputs, uploadable = false, opts = {}) => {
+  const targets = fileTargets(name, root, tests, recs, imageInput, importInputs, uploadable, opts);
+  const split = {};
+  for (const [key, target] of Object.entries(targets)) {
+    if (!target.options?.command) {
+      split[key] = target;
+      continue;
+    }
+    const halves = ['dt2', 'dn2'].map((device) => `${key}--${device}`);
+    split[key] = { executor: 'nx:noop', inputs: target.inputs, dependsOn: halves };
+    halves.forEach((half, i) => {
+      split[half] = {
+        ...target,
+        inputs: [...target.inputs, { env: 'DIGI_DEVICE' }],
+        options: { ...target.options, env: { ...target.options.env, DIGI_DEVICE: ['dt2', 'dn2'][i] } },
+      };
+    });
+  }
+  return split;
+};
+
+const fileTargets = (name, root, tests, recs, imageInput, importInputs, uploadable = false, opts = {}) => {
   const allName = `${name}-all`;
   const merge = opts.mergeTests ?? [];
   const isMerge = (test) => !opts.twin || merge.includes(test);

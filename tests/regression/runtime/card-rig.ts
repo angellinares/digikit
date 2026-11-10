@@ -24,7 +24,7 @@ import { uploadStore } from './device-data.ts';
 import { advance, bounded, options, rpc } from './fx-live.ts';
 import { withPausedFxProtocol } from './fx-session.ts';
 import { record } from './artifacts.ts';
-import { DEVICES, FIRMWARE, FULL_TIER, claimRunDir } from './devices.ts';
+import { FIRMWARE, FULL_TIER, claimRunDir, selectDevices, skipEmptyHalf } from './devices.ts';
 import { moduleArtifact } from './install.ts';
 import { expectRuntimeUi } from './ready.ts';
 import { RING_SYMBOLS } from './runtime-menu.ts';
@@ -182,7 +182,9 @@ export interface CardRig {
 
 /** One describe per device (`label` in its title) with a rig inside. */
 export function cardRigs(label: string, o: CardRigOptions, define: (rig: CardRig) => void): void {
-  for (const device of o.devices ?? DEVICES) {
+  const selected = selectDevices(o.devices);
+  skipEmptyHalf(selected, label);
+  for (const device of selected) {
     describe.skipIf((o.full === true && !FULL_TIER) || o.skip?.[device] !== undefined)(
       `${device.toUpperCase()} ${FIRMWARE[device]}: ${label}`,
       () => {

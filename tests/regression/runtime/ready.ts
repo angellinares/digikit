@@ -3,7 +3,7 @@ import { describe, expect, test } from 'vitest';
 import { expectRuntimeBoot, withPatchedSession, type PatchedSession } from '../support.ts';
 import { timePhase, timingContext } from '../timing.ts';
 import { liveArtifacts, record } from './artifacts.ts';
-import { DEVICES, FIRMWARE, FULL_TIER, liveOptions } from './devices.ts';
+import { FIRMWARE, FULL_TIER, liveOptions, selectDevices, skipEmptyHalf } from './devices.ts';
 import { planSymbol, prepareRuntimePlan, type RuntimePlan } from './runtime-plan.ts';
 import { beforeReadinessDeadline } from './waits.ts';
 
@@ -21,7 +21,9 @@ export function runtimeTests(
     skip?: string;
   } = {},
 ): void {
-  for (const device of opts.devices ?? DEVICES) {
+  const selected = selectDevices(opts.devices);
+  skipEmptyHalf(selected, name);
+  for (const device of selected) {
     describe.skipIf((opts.full === true && !FULL_TIER) || opts.skip !== undefined)(
       `${device.toUpperCase()} ${FIRMWARE[device]}`,
       () => {
