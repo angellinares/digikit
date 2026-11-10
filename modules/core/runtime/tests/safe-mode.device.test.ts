@@ -8,7 +8,7 @@ import { rpc } from '@digi/regression/runtime/fx-live.ts';
 import { drainInputs } from '@digi/regression/runtime/fx-session.ts';
 import { introNow, safeFrame } from '@digi/regression/runtime/intro-frame.ts';
 import { planSymbol } from '@digi/regression/runtime/runtime-plan.ts';
-import { waitEmulatedFrames } from '@digi/regression/runtime/waits.ts';
+import { waitEmulatedFrames, waitForBootEmulated } from '@digi/regression/runtime/waits.ts';
 
 /**
  * Safe mode and power cuts (the Python scenarios, deleted: safe-fault, safe-late-fault and cut-selection, all full
@@ -221,7 +221,7 @@ cardRigs(
         expect(recs[1], 'B is still empty').toBeNull();
 
         await dk.restart();
-        await dk.waitForBoot();
+        await waitForBootEmulated(dk);
         await h.ready();
         expect(await bootInfoLoaded(session, h.plan), 'the restart loads the new copy').toMatchObject({
           loaded: mods.length,

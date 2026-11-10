@@ -86,7 +86,7 @@
         { "env": "UPDATE_GOLDENS" }
       ],
       "options": {
-        "command": "uv run python -m tools.emulator.coupled scenario --all --no-build --jobs ${DIGI_JOBS:-4}",
+        "command": "node tools/devtools/emu-slot.mjs -- uv run python -m tools.emulator.coupled scenario --all --no-build --jobs ${DIGI_JOBS:-4}",
         "cwd": "."
       }
     }

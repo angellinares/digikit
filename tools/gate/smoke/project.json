@@ -141,7 +141,7 @@
         { "env": "UPDATE_GOLDENS" }
       ],
       "options": {
-        "command": "node tools/nx/daemon-env.mjs -- uv run python -m tools.patchkit.pk_harness run --jobs ${DIGI_JOBS:-4}",
+        "command": "node tools/devtools/emu-slot.mjs -- node tools/nx/daemon-env.mjs -- uv run python -m tools.patchkit.pk_harness run --jobs ${DIGI_JOBS:-4}",
         "cwd": "."
       }
     }

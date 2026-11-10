@@ -13,6 +13,7 @@
 //
 // The log level of events such as INPUT_TAKEN is debug (3); `listen()` raises the level of the named module records with LOGCFG and leaves the default.
 import { setTimeout as delay } from 'node:timers/promises';
+import { restartProgress } from './progress.ts';
 import type { Session } from './session.ts';
 
 /** The shape of a LOG event (`DkLogEvent` of @digi/dk-session). */
@@ -64,6 +65,7 @@ export class Events {
   private readonly tail: number;
   private readonly pollMs: number;
   private readonly hangMs: number;
+  private lastStatus: Awaited<ReturnType<Session['status']>> | undefined;
 
   private readonly log: LogReader;
   private readonly session: Pick<Session, 'status'>;
@@ -133,13 +135,18 @@ export class Events {
     const target = start + emulatedMs * INSNS_PER_MS;
     let seen = start;
     let lastAdvance = Date.now();
+    let progress: string | undefined;
     for (;;) {
       const hit = await this.poll(kind, predicate);
       if (hit) return hit;
       if (seen >= target) break;
       await delay(this.pollMs);
       const now = await this.clock();
-      if (now > seen) lastAdvance = Date.now();
+      // A restart's cold boot moves the epoch and boot counts while the clock stands still.
+      const key = restartProgress(this.lastStatus);
+      const restarting = progress !== undefined && key !== progress;
+      progress = key;
+      if (now > seen || restarting) lastAdvance = Date.now();
       else if (Date.now() - lastAdvance >= this.hangMs) {
         throw new Error(
           `events.until ${this.name(kind)}: the emulated clock is stuck at ${now} for ${this.hangMs} ms\n${this.seen()}`,
@@ -153,7 +160,9 @@ export class Events {
   }
 
   private async clock(): Promise<number> {
-    const elapsed = (await this.session.status()).elapsed;
+    const status = await this.session.status();
+    this.lastStatus = status;
+    const elapsed = status.elapsed;
     if (typeof elapsed !== 'number') throw new Error('events needs status.elapsed');
     return elapsed;
   }

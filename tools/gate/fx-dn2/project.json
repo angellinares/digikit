@@ -92,7 +92,7 @@
         { "env": "UPDATE_GOLDENS" }
       ],
       "options": {
-        "command": "pnpm --filter @digi/regression test:fx",
+        "command": "node tools/devtools/emu-slot.mjs -- pnpm --filter @digi/regression test:fx",
         "env": { "DIGI_JOBS": "1" },
         "cwd": "."
       }
@@ -124,7 +124,7 @@
         { "env": "UPDATE_GOLDENS" }
       ],
       "options": {
-        "command": "uv run python -m tools.devtools.fx_tier exec-no-aot -- pnpm --filter @digi/regression test:fx",
+        "command": "node tools/devtools/emu-slot.mjs -- uv run python -m tools.devtools.fx_tier exec-no-aot -- pnpm --filter @digi/regression test:fx",
         "env": { "DIGI_FX_NO_AOT_SUBSET": "1", "DIGI_JOBS": "1" },
         "cwd": "."
       }
@@ -155,7 +155,7 @@
         { "env": "SHARC_GEN_DIR_2" },
         { "env": "UPDATE_GOLDENS" }
       ],
-      "options": { "command": "uv run python -m tools.devtools.fx_tier tier-quick", "cwd": "." }
+      "options": { "command": "node tools/devtools/emu-slot.mjs -- uv run python -m tools.devtools.fx_tier tier-quick", "cwd": "." }
     },
     "tier-sweep": {
       "executor": "nx:run-commands",
@@ -183,7 +183,7 @@
         { "env": "SHARC_GEN_DIR_2" },
         { "env": "UPDATE_GOLDENS" }
       ],
-      "options": { "command": "uv run python -m tools.devtools.fx_tier tier-sweep", "cwd": "." }
+      "options": { "command": "node tools/devtools/emu-slot.mjs -- uv run python -m tools.devtools.fx_tier tier-sweep", "cwd": "." }
     }
   }
 }
