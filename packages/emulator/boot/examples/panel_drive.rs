@@ -7,7 +7,8 @@
 //!                    [--hold N]
 //!                    --steps STEP,STEP,... | --steps @FILE
 //!   --base        the stock firmware SYX was made from, for an image with no digikit
-//!                 patch record (`Emulator::new_patched`); a stock image needs none
+//!                 patch record (`Emulator::new_patched`); a stock image needs none, and
+//!                 nor does a build that keeps its release's build stamp (section 5)
 //!   --state       resume a state written by --save-state (skips the boot)
 //!   --save-state  after the boot (or the resume), before the steps, write the
 //!                 state: the next run starts there in a moment
@@ -17,7 +18,8 @@
 //!                 interrupt then runs, 1500 a second, and with it the engine's
 //!                 tick and the sequencer. Off by default. Not with --state.
 //!   --max         give up the boot after this many (default 2,000,000,000)
-//!   --watch       PCs to count; any execution stops the run as a fault
+//!   --watch       PCs to count; any execution stops the run as a fault. --watch,
+//!                 --count and --regs-at take a comma list and can be repeated
 //!   --count       PCs to count only (reported with the watched ones)
 //!   --regs-at     PCs at which to record D0-D7, A0-A7 and the four longwords at A7,
 //!                 each time they run
@@ -226,18 +228,24 @@ fn main() -> ExitCode {
         .and_then(|n| number(&n))
         .unwrap_or(10_000_000);
     let out = PathBuf::from(flag("--out").unwrap_or_else(|| ".".into()));
-    let pcs = |name: &str| -> Vec<u32> {
-        flag(name)
-            .map(|list| {
-                list.split(',')
-                    .filter_map(|pc| number(pc).map(|v| v as u32))
-                    .collect()
-            })
-            .unwrap_or_default()
+    // Every use of a PC-list flag counts: `--watch A --watch B` is `--watch A,B`.
+    let pcs = |name: &str| -> Result<Vec<u32>, String> {
+        let mut out = Vec::new();
+        for (i, _) in args.iter().enumerate().filter(|(_, a)| *a == name) {
+            let list = args.get(i + 1).ok_or(format!("{name} needs a comma list"))?;
+            for pc in list.split(',') {
+                let pc = number(pc)
+                    .and_then(|v| u32::try_from(v).ok())
+                    .ok_or(format!("{name}: {pc:?} is not a 32-bit number"))?;
+                out.push(pc);
+            }
+        }
+        Ok(out)
     };
-    let watch = pcs("--watch");
-    let counted = pcs("--count");
-    let regs_at = pcs("--regs-at");
+    let (watch, counted, regs_at) = match (pcs("--watch"), pcs("--count"), pcs("--regs-at")) {
+        (Ok(w), Ok(c), Ok(r)) => (w, c, r),
+        (Err(e), _, _) | (_, Err(e), _) | (_, _, Err(e)) => return usage(&e),
+    };
     let call_at = flag("--call-at").and_then(|n| number(&n)).map(|n| n as u32);
     let call_fn = flag("--call-fn").and_then(|n| number(&n)).map(|n| n as u32);
     // --call-buf stack (the default): the bytes go on the guest's stack
@@ -245,7 +253,10 @@ fn main() -> ExitCode {
         None | Some("stack") => Some(GuestCall::STACK),
         Some(n) => number(n).map(|n| n as u32),
     };
-    let call_args = pcs("--call-args");
+    let call_args = match pcs("--call-args") {
+        Ok(v) => v,
+        Err(e) => return usage(&e),
+    };
     let captures: Vec<(u32, usize, usize)> = flag("--capture")
         .map(|list| {
             list.split(',')

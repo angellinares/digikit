@@ -23,7 +23,7 @@
 //! (a card-sized image, e.g. a formatted +Drive), and the extents lie over it.
 //! A booted state (`--state`) carries no card: pass the image and extents with it.
 //! `--base SHA256` names the stock firmware SYX was made from, for an image with no
-//! digikit patch record (`Emulator::new_patched`).
+//! digikit patch record (`Emulator::new_patched`) and no known build stamp (section 5).
 //!
 //! `--count PC,...` counts executions of each PC over the whole session; the counts
 //! are printed as a last line, {"counts": {...}}, when stdin ends.
