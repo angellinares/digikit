@@ -85,5 +85,8 @@ export function budget(work, override) {
   // Nextest threads per Rust test task: ceil(B / tasks) was 2 when tasks were B/2; tasks now follow the emulator ceiling (about B).
   const threads = 2;
   const jobs = clamp(Math.floor(b / 2), 1, 6);
-  return { budget: b, tasks, workers, threads, jobs };
+  // Nx task slots are not emulators: device tasks wait for an emulator slot while holding one, so Nx runs
+  // twice as many tasks as the emulator ceiling and the other task kinds (Rust, lint, gate targets) are not starved.
+  const nxTasks = 2 * tasks;
+  return { budget: b, tasks, nxTasks, workers, threads, jobs };
 }

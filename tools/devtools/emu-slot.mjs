@@ -124,6 +124,7 @@ const slotsInUse = (dir, slots) => {
 // the caller releases at exit (it also expires by itself after the ramp interval).
 export const acquire = async (dir, slots, live = true, log = (line) => console.error(line)) => {
   fs.mkdirSync(dir, { recursive: true });
+  const startedAt = Date.now();
   const admit = path.join(dir, 'admit');
   let told = false;
   const wait = async (used) => {
@@ -158,7 +159,8 @@ export const acquire = async (dir, slots, live = true, log = (line) => console.e
       const lock = path.join(dir, `slot-${i}`);
       if (!tryLock(lock)) continue;
       const idleText = idle === undefined ? '' : `, idle ${idle.toFixed(1)} cores`;
-      log(`emulator slot taken (${used + 1} of ${slots}${idleText})`);
+      const waited = (Date.now() - startedAt) / 1000;
+      log(`emulator slot taken (${used + 1} of ${slots}${idleText}), emulator slot waited ${Math.round(waited)} s`);
       // Keep the admit lock for the ramp interval; the exit handler releases it earlier if the command ends first.
       if (live) setTimeout(() => release(admit), RAMP_MS).unref();
       else release(admit);
@@ -171,6 +173,22 @@ export const acquire = async (dir, slots, live = true, log = (line) => console.e
 
 export const release = (lock) => {
   if (lockText(lock) === String(process.pid)) fs.rmSync(lock, { force: true });
+};
+
+// One whole line per event in one append: safe with concurrent writers (JSON lines; tools/nx/gate-history.mjs converts).
+const traceEvent = (name, startMs, endMs) => {
+  const dir = process.env.DIGI_TRACE_DIR;
+  if (!dir) return;
+  const tid = process.env.NX_TASK_TARGET_PROJECT
+    ? `${process.env.NX_TASK_TARGET_PROJECT}:${process.env.NX_TASK_TARGET_TARGET}`
+    : path.basename(process.argv.slice(process.argv.indexOf('--') + 1).join(' ')).slice(0, 80);
+  const event = { name, ph: 'X', ts: startMs * 1000, dur: (endMs - startMs) * 1000, pid: 'emulator slots', tid };
+  try {
+    fs.mkdirSync(dir, { recursive: true });
+    fs.appendFileSync(path.join(dir, 'slots-trace.json'), `${JSON.stringify(event)}\n`);
+  } catch {
+    /* a trace is advice and never fails a task */
+  }
 };
 
 const main = async () => {
@@ -190,7 +208,10 @@ const main = async () => {
   };
   process.on('SIGTERM', () => forward('SIGTERM'));
   process.on('SIGINT', () => forward('SIGINT'));
+  const enteredAt = Date.now();
   const { lock, admit } = await acquire(slotDir(), slotCount(), liveCheck());
+  const takenAt = Date.now();
+  traceEvent('wait', enteredAt, takenAt);
   process.on('exit', () => {
     release(lock);
     release(admit);
@@ -202,6 +223,7 @@ const main = async () => {
     process.exit(127);
   });
   child.on('exit', (code, signal) => {
+    traceEvent('run', takenAt, Date.now());
     process.exit(code ?? 128 + (constants.signals[signal] ?? 0));
   });
 };
