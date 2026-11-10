@@ -17,8 +17,8 @@ conflicts = []
 "dn2-1.12" = "experimental"
 
 # Like test/dyn-dsp-hang, with a machine of the SDK contract whose render outputs NaN (src/dsp/nan.s: one body for both devices; the rig runs it on both,
-# the debug-guard scenario on both images). The other sources in src/dsp are fixtures of the guard's rig tests (clamp.s: tests/patchkit/test_dsp_guard_contract.py;
-# nan_legacy.s, loud.s, clean.s: tests/patchkit/test_dsp_guard.py, the old form of a voice row) and are not linked into this module. The machine
+# the debug-guard scenario on both images). The other sources in src/dsp are fixtures of the guard's rig tests (clamp.s: modules/core/adapters/dsp-voice/tests/test_dsp_guard_contract.py;
+# nan_legacy.s, loud.s, clean.s: modules/core/adapters/dsp-voice/tests/test_dsp_guard.py, the old form of a voice row) and are not linked into this module. The machine
 # is harmless on a device: the guard zeroes the block and, after 8 faults in a second, switches the machine off until the next start
 # (docs/findings/51-pluck-tune-guard.md).
 [[object]]

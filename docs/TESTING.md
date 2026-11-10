@@ -231,7 +231,8 @@ under `modules/` and `tests/conformance/`.
 | Directory | What it tests |
 | --- | --- |
 | `tests/sharc/{semantics,trace,generation,analysis,integration}` | SHARC+ semantics, tracer, assembler and generator, loader and sharcdb, firmware-backed harness and golden hashes |
-| `tests/patchkit` | Patchkit, module primitives, DSP voice rig, PLUCK, proofs. `smoke/` holds the smoke matrix (`matrix.toml`, `tours/`, `goldens.json`). |
+| `tests/patchkit` | Patchkit's own tests and module primitives. `smoke/` holds the smoke matrix (`matrix.toml`, `tours/`, `goldens.json`). |
+| `modules/<kind>/<name>/tests/test_*.py` | Python tests whose subject is one module (DSP voice rig, FX, sample pool, proofs, PLUCK); an edit to the module selects them |
 | `tests/modules` | Machine and FX conformance for every module |
 | `modules/**/tests` | A module's own tests, `*.device.test.ts` included (below, "Module-owned tests") |
 | `tests/coldfire` | ColdFire analysis tools |

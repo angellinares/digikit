@@ -1,5 +1,5 @@
 /* The DN2 sample pool's LP0 page protocol, on the ColdFire side and without firmware access (docs/design/dn2-sample-pool.md section 2).
- * tests/patchkit/test_sample_pool_dn2.py compiles it on the host. The DSP side (src/dsp/dn2/sample-pool.s) implements the same rules in
+ * tests/test_sample_pool_dn2.py compiles it on the host. The DSP side (src/dsp/dn2/sample-pool.s) implements the same rules in
  * assembly; spw_dsp_rule is the reference the assembled receiver is tested against.
  *
  * One page is 4,096 bytes of one plane (1,024 words) with a 32-bit tag in front: 0xD0000000 | seq8 << 20 | page_index20. The page index

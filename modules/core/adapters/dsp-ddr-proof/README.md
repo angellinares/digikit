@@ -80,7 +80,7 @@ even when callers catch it, so no queued C can continue after uncertain B comple
 it does not establish exclusive ownership of the DDR range. Boot-stream gaps and
 bounded emulator results are not a hardware reservation or coexistence proof.
 
-Focused tests: `tests/patchkit/test_dsp_ddr_proof.py`. The coupled acceptance test
+Focused tests: `tests/test_dsp_ddr_proof.py`. The coupled acceptance test
 is `tests/regression/runtime/sample-ddr-transfer.test.ts`; run only after review,
 with explicitly supplied prebuilt device daemons (`DIGI_EMUD_DT2` and/or
 `DIGI_EMUD_DN2`) and `DIGI_PATCHKIT_BIN`. It captures the baseline,
@@ -115,7 +115,7 @@ selection; queued notes starting after new READY resolve the new bank.
 Conservative instruction budgets are 2400/2600 (render/note-on including render),
 without a hardware cycle claim.
 
-The consumer unit test is `tests/patchkit/test_dsp_ddr_playback.py`, including
+The consumer unit test is `tests/test_dsp_ddr_playback.py`, including
 forward/reverse retriggers, end-of-view completion and an extra silent render
 with no source reads after DONE. The coupled valid scenario verifies the entire
 transport and canaries before selecting this machine, then records a complete

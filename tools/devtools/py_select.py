@@ -83,7 +83,7 @@ PY_SUITES: tuple[tuple[str, tuple[str, ...], tuple[str, ...]], ...] = (
         # a change in a module selects its own tests through the Nx module projects
         "module-tests",
         (),
-        ("modules/*/*/tests/test_*.py",),
+        ("modules/**/tests/test_*.py",),
     ),
     (
         "digikit-boot",
@@ -205,9 +205,19 @@ def is_python_source(path: str) -> bool:
 
 
 def is_module_test_dir(path: str) -> bool:
-    """Whether PATH is inside a module's own tests/ directory (modules/<group>/<name>/tests/)."""
+    """Whether PATH is inside a module's own tests/ directory (modules/**/<name>/tests/)."""
     parts = path.split("/")
-    return len(parts) > 4 and parts[0] == "modules" and parts[3] == "tests"
+    return len(parts) > 4 and parts[0] == "modules" and "tests" in parts[3:-1]
+
+
+def module_root(path: str) -> str | None:
+    """The module directory of PATH: the nearest ancestor below modules/ that holds a module.toml."""
+    parent = (ROOT / path).parent
+    while parent != ROOT / "modules" and ROOT in parent.parents:
+        if (parent / "module.toml").is_file():
+            return parent.relative_to(ROOT).as_posix()
+        parent = parent.parent
+    return None
 
 
 def is_changed_test(path: str) -> bool:
@@ -239,11 +249,15 @@ def resolve_tests(paths: tuple[str, ...]) -> list[str]:
 
 
 def support_users(path: str) -> list[str]:
-    """The test files that import the changed helper module tests/support/NAME.py."""
+    """The test files (of tests/ and modules/) that import the changed helper module tests/support/NAME.py."""
     if not (path.startswith("tests/support/") and path.endswith(".py")):
         return []
     module = "support." + path.removeprefix("tests/support/").removesuffix(".py")
-    tests = sorted((ROOT / "tests").rglob("test_*.py"))
+    tests = sorted((ROOT / "tests").rglob("test_*.py")) + sorted(
+        p
+        for p in (ROOT / "modules").rglob("test_*.py")
+        if is_module_test_dir(p.relative_to(ROOT).as_posix())
+    )
     users = [t for t in tests if module in t.read_text(encoding="utf-8")]
     return [t.relative_to(ROOT).as_posix() for t in users]
 
@@ -321,6 +335,15 @@ def graph(*, local_imports: bool = False) -> grimp.ImportGraph:
         for dst in sorted(targets & mods - {mod}):
             g.add_import(importer=mod, imported=dst)
     _add_module_tests(g, mods)
+    # the root conftest.py is outside the packages grimp reads: add it with its imports of tools
+    g.add_module("conftest")
+    tree = ast.parse((ROOT / "conftest.py").read_text(encoding="utf-8"))
+    for n in ast.walk(tree):
+        if isinstance(n, ast.ImportFrom) and n.level == 0 and n.module:
+            for dst in sorted(
+                {n.module, *(f"{n.module}.{a.name}" for a in n.names)} & mods
+            ):
+                g.add_import(importer="conftest", imported=dst)
     return g
 
 
@@ -328,7 +351,7 @@ def module_test_files() -> list[str]:
     """Every .py file in a module's own tests/ directory (modules/<kind>/<name>/tests/), tests and helpers."""
     return sorted(
         p.relative_to(ROOT).as_posix()
-        for p in (ROOT / "modules").glob("*/*/tests/**/*.py")
+        for p in (ROOT / "modules").glob("**/tests/**/*.py")
         if "__pycache__" not in p.parts
     )
 
@@ -426,8 +449,8 @@ def importing_tests(module: str) -> dict[str, str]:
             seen.add(imp)
             path = path_of(imp)
             if imp.rsplit(".", 1)[-1] == "conftest":
-                if path == "tests/conftest.py":
-                    continue  # the caller puts the root conftest in gate_adds
+                if path == "conftest.py":
+                    continue  # python_test_plan selects every test for the root conftest
                 for t in conftest_tests(path):
                     by_conftest.setdefault(t, f"{path} imports {module}")
             elif is_test_file(path):
@@ -474,7 +497,7 @@ def gate_tests(files: list[str]) -> tuple[dict[str, str], list[str]]:
         module = module_of(f)
         if module is None or is_test_file(f) or module not in g.modules:
             continue
-        if "tests.conftest" in g.find_downstream_modules(module):
+        if "conftest" in g.find_downstream_modules(module):
             broad.append(f)
         direct = importing_tests(module)
         # Device scenarios (DAEMON_TESTS) run for their own triggers and
@@ -500,17 +523,19 @@ def python_test_plan(files: list[str], full: bool) -> list[tuple[str, str]]:
     # Python tests owned by content modules are selected by edits to that module's
     # implementation or manifest. Keep this scoped to the changed module directory.
     module_roots = {
-        "/".join(f.split("/")[:3])
+        root
         for f in files
         if f.startswith("modules/")
-        and len(f.split("/")) > 3
-        and f.split("/")[3] != "tests"
+        and (root := module_root(f))
+        and not f.startswith(f"{root}/tests/")
     }
     for root in sorted(module_roots):
         plan_ += [
             (path, "module-source")
             for path in resolve_tests((f"{root}/tests/test_*.py",))
         ]
+    if "conftest.py" in files:
+        plan_ += [(t, "conftest") for t in conftest_tests("conftest.py")]
     # A changed Python module selects the tests that reach it in the import graph; the suites that
     # name a test directory trigger only on the other files (and on a module the root conftest reaches).
     graph_tests, conftest_broad = gate_tests([f for f in files if is_python_source(f)])

@@ -1,7 +1,7 @@
 """core/fx, the send route on the Digitone II (modules/core/adapters/fx/src/dsp/fxsend-dn2.s, finding 67): the slot mix on the concrete SHARC+ core.
 
 The Digitone II has no track buses before its master function: the send bus is the sum over the 16 voice slots of the gain of the slot's track times the slot's bus
-(the map slot -> track at `dsp.fx.value.send.slot_map`). The model is the routine's own float32 arithmetic, as in tests/patchkit/test_fx_send.py (gain, ramp, return add), slots summed in order."""
+(the map slot -> track at `dsp.fx.value.send.slot_map`). The model is the routine's own float32 arithmetic, as in test_fx_send.py (gain, ramp, return add), slots summed in order."""
 
 import random
 

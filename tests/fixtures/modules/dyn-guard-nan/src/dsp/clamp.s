@@ -1,6 +1,6 @@
 // Guard fixture (rig only, not linked into the module): a machine of the SDK contract whose block is the first parameter word times 2^-12, in every
 // sample. With the parameter inside 0 .. 0x7f00 the level stays below 8.0 (the clamp of the adapter keeps a frame word beyond it out of the
-// module); a row that declares a wider range lets 0xffff through (16.0), and the guard steps in. Not a conformance fixture: tests/patchkit/test_dsp_guard_contract.py.
+// module); a row that declares a wider range lets 0xffff through (16.0), and the guard steps in. Not a conformance fixture: modules/core/adapters/dsp-voice/tests/test_dsp_guard_contract.py.
 
 #include "dk_machine.inc"
 

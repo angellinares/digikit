@@ -82,7 +82,7 @@
    "purpose": "Absolute path to the digi-emud daemon for the DSP DDR monitor device test"
   },
   "DIGI_DDR_PROOF_CF_STATE": {
-   "owner": "python:tests/patchkit",
+   "owner": "python:modules/core/adapters/dsp-ddr-proof/tests",
    "purpose": "Optional ColdFire state snapshot path for the DDR proof CF tests"
   },
   "DIGI_DESKTOP_TRIG1_HOLD": {
@@ -290,7 +290,7 @@
    "purpose": "Absolute path to the private provenance JSON of the boot fixture for the LP0 sample transfer test."
   },
   "DIGI_LP0_CF_CALL": {
-   "owner": "python:tests/patchkit",
+   "owner": "python:modules/core/adapters/dsp-lp0-proof/tests",
    "purpose": "Path to the ColdFire call runner used by the LP0 proof test (default pk_cfcall.EXAMPLE)."
   },
   "DIGI_LP0_CLOSE": {

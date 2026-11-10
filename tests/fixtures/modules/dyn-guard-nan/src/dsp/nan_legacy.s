@@ -1,4 +1,4 @@
-// Legacy form, kept for the rig test of core/dsp-voice rows without a note_on pc (tests/patchkit/test_dsp_guard.py; not linked into the module, the module links nan.s): a DSP routine of the core/dsp-voice ABI that outputs NaN while its voice is active (fixture of the runtime guard,
+// Legacy form, kept for the rig test of core/dsp-voice rows without a note_on pc (modules/core/adapters/dsp-voice/tests/test_dsp_guard.py; not linked into the module, the module links nan.s): a DSP routine of the core/dsp-voice ABI that outputs NaN while its voice is active (fixture of the runtime guard,
 // docs/findings/51-pluck-tune-guard.md). An idle voice renders silence. Entry: R4 = voice record (byte +0x1b8 ACTIVE), R8 = output block.
 
 .SECTION/PM seg_pmco;

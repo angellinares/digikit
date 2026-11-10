@@ -1,5 +1,5 @@
 /* The part of the DT2 sample pool adapter that does not touch the firmware: slot choice, PCM geometry and the free-space figure, on plain
- * data the caller passes in (the stock slot model; the device-neutral address helpers are in pool_nw32.h). tests/patchkit/test_sample_pool_core.py compiles it on the host. Finding 109 and 81 are the sources. */
+ * data the caller passes in (the stock slot model; the device-neutral address helpers are in pool_nw32.h). tests/test_sample_pool_core.py compiles it on the host. Finding 109 and 81 are the sources. */
 #ifndef SP_CORE_H
 #define SP_CORE_H
 #include <stdint.h>

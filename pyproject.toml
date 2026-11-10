@@ -36,7 +36,8 @@ src = ["."]
 include = [
     "tests/**/*.py",
     "tools/**/*.py",
-    "modules/*/*/tests/**/*.py",
+    "modules/**/tests/**/*.py",
+    "conftest.py",
 ]
 
 [tool.ruff.lint]
