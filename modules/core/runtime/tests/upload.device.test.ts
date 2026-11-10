@@ -429,31 +429,31 @@ async function folders(rig: CardRig): Promise<void> {
     files[to] = files[from]!;
     delete files[from];
   };
-  await move('holes/small.bin', 'moved/small.bin');
+  await move('holes/small.bin', 'shifted/small.bin');
   rows = await verify('RENAME into a new folder (holes keeps f0 and f2: no entry)', []);
   check(
     'RENAME keeps the file sectors: the moved file starts where it was',
-    rows['moved/small.bin'] === small,
-    `${rows['moved/small.bin']} vs ${small}`,
+    rows['shifted/small.bin'] === small,
+    `${rows['shifted/small.bin']} vs ${small}`,
   );
   await move('holes/f0.bin', 'holes/F0 renamed.bin');
   await verify('RENAME in the same folder', []);
-  await move('holes/f2.bin', 'moved/f2.bin');
-  await move('holes/F0 renamed.bin', 'moved/f0.bin');
+  await move('holes/f2.bin', 'shifted/f2.bin');
+  await move('holes/F0 renamed.bin', 'shifted/f0.bin');
   await verify('the folder the last file left stays, as a folder entry', ['holes']);
   for (const [from, to, want] of [
-    ['moved/nope', 'moved/x', -59],
-    ['moved/f0.bin', 'moved/f2.bin', -51],
-    ['moved/f0.bin', 'moved', -51],
-    ['moved/f0.bin', 'moved/f0.bin/x', -51],
+    ['shifted/nope', 'shifted/x', -59],
+    ['shifted/f0.bin', 'shifted/f2.bin', -51],
+    ['shifted/f0.bin', 'shifted', -51],
+    ['shifted/f0.bin', 'shifted/f0.bin/x', -51],
     ['holes', 'holes/in', -51],
-    ['moved', 'elsewhere', -59],
-    ['moved/f0.bin', 'a//b', -51],
+    ['shifted', 'elsewhere', -59],
+    ['shifted/f0.bin', 'a//b', -51],
   ] as const) {
     const st = await status(GCMD.RENAME, concat(cstr(from), cstr(to)));
     check(`RENAME ${JSON.stringify(from)} -> ${JSON.stringify(to)}: refused (${want})`, st === want, String(st));
   }
-  const oneArg = await status(GCMD.RENAME, cstr('moved/f0.bin'));
+  const oneArg = await status(GCMD.RENAME, cstr('shifted/f0.bin'));
   check('RENAME with no second path: E_MSG or E_PATH', oneArg === -50 || oneArg === -51, String(oneArg));
   await verify('refused renames change nothing', ['holes']);
   await dk.rename('holes', 'empty');
