@@ -364,8 +364,8 @@ stale (`packages/patchkit/tests/typed.rs` runs it). The files hold no firmware b
 `gallery.json` is part of the web bundle (`files["build/gen/gallery.json"]`) and shown on the module card.
 
 A module can also ask for constants from the device files (`devices/*.toml`: `[board]`, `[digikit]`, `[card.store]`) and
-`core/machines` `types.toml` with `[[gen]]` entries in its `module.toml` (`kind` = `rust`, `gas-shared`, `gas`, `sharc` or `sharc-adapter` (only the `ADM_*` defines of `[adapter.machine]`), and a
-`path`; `{dev}` in the path makes one file per device). They are written by the same `patchkit gen` and checked by `gen --check`;
+`core/machines` `types.toml` with `[[gen]]` entries in its `module.toml` (`kind` = `rust`, `gas-shared`, `gas`, `sharc` or `sharc-adapter` (only the `ADM_*` defines of `[adapter.machine]`), a
+`path`, and for `rust`, `gas-shared`, `gas` and `sharc` a `uses` list of the constants the module reads; `{dev}` in the path makes one file per device). They are written by the same `patchkit gen` and checked by `gen --check`;
 what each kind holds, which fact lives where and what a new device needs are in `docs/design/device-data.md`.
 
 `sdk/sdk.toml` is the one source of the runtime version (0.1.0, packed `major<<16|minor<<8|patch`; runtimes 1 to 5 read as 0.0.1 to 0.0.5), the

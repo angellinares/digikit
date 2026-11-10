@@ -20,6 +20,7 @@ conflicts = []
 [[gen]]
 kind = "sharc"
 path = "build/gen/device-{dev}.inc"
+uses = ["DL_AREA_BYTES", "DL_AREA_WORDS", "DL_TAIL_OFF", "DL_TAIL_WORDS"]
 
 # The contract's maximum area (the link's 17-bit word offset), a C header for the ColdFire object that both devices share.
 [[gen]]

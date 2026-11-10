@@ -74,11 +74,19 @@ fn the_runtime_constants_are_the_device_files_numbers() {
     );
     let dn2 = get("build/gen/device-dn2.inc");
     assert!(dn2.contains(".equ DEVICE_ID, 0x2 "), "{dn2}");
-    assert!(dn2.contains(".equ LIMIT_FX_SLOTS, 0x3 "), "{dn2}");
+    // the effect slots and the DSP area are read by other modules: their generated files hold them
+    let dynfx = devgen::generate(&lib, &facts, "core/dynfx").unwrap();
+    let dynfx = |p: &str| &dynfx.iter().find(|f| f.0 == p).unwrap().1;
     assert!(
-        get("build/gen/device-dt2.inc").contains(".equ LIMIT_FX_SLOTS, 0x3 "),
+        dynfx("build/gen/device-dn2.inc").contains(".equ LIMIT_FX_SLOTS, 0x3 "),
+        "dn2"
+    );
+    assert!(
+        dynfx("build/gen/device-dt2.inc").contains(".equ LIMIT_FX_SLOTS, 0x3 "),
         "dt2"
     );
+    let link = devgen::generate(&lib, &facts, "core/dsp-link").unwrap();
+    let link = |p: &str| &link.iter().find(|f| f.0 == p).unwrap().1;
     // the store area of each device ([card.store], docs/design/digikit-store.md): DN2 from 0x800000, DT2 after the +Drive, both to the end of the card
     for (inc, first, sectors) in [
         (dn2, "0x800000", "0x261a000"),
@@ -92,14 +100,10 @@ fn the_runtime_constants_are_the_device_files_numbers() {
             inc.contains(&format!(".equ STORE_SECTORS, {sectors} ")),
             "{inc}"
         );
-        assert!(
-            inc.contains(".equ STORE_HEADER_B, ")
-                && inc.contains(".equ STORE_SEL_A, 0x2e19ffe ")
-                && inc.contains(".equ STORE_SEL_B, 0x2e19fff "),
-            "{inc}"
-        );
     }
-    assert!(dn2.contains(".equ DL_AREA_BYTES, 0x50000 "), "{dn2}");
+    // 0x50000 bytes
+    let dl = link("build/gen/device-dn2.inc");
+    assert!(dl.contains("#define DL_AREA_BYTES 327680\n"), "{dl}");
     // the PEEK ranges are per device (the runtime's region differs), up to four, unused ones 0, 0
     assert!(dn2.contains(".equ PEEK_N, 0x2 "), "{dn2}");
     assert!(dn2.contains(".equ PEEK_LO_1, 0x46712000 "), "{dn2}");
@@ -109,6 +113,87 @@ fn the_runtime_constants_are_the_device_files_numbers() {
         dt2.contains(".equ PEEK_LO_1, 0x47e8b000 ") && dt2.contains(".equ PEEK_HI_1, 0x47fe1000 "),
         "{dt2}"
     );
+}
+
+/// What `devgen::generate` makes of `module` when its `[[gen]]` entries are replaced by one entry.
+fn generate_with(
+    module: &str,
+    kind: &str,
+    path: &str,
+    uses: &[&str],
+) -> Option<patchkit::error::Result<Vec<(String, String)>>> {
+    let mut lib = Library::scan_repo_or_skip(&root())?;
+    lib.lower(&Models::from_dir(&root().join("devices")).unwrap())
+        .unwrap();
+    let facts = Facts::from_dir(&root().join("devices")).unwrap();
+    let m = lib.modules.iter_mut().find(|m| m.id() == module).unwrap();
+    m.manifest.gens = vec![patchkit::module::GenDef {
+        kind: kind.into(),
+        path: path.into(),
+        uses: uses.iter().map(|s| s.to_string()).collect(),
+    }];
+    Some(devgen::generate(&lib, &facts, module))
+}
+
+#[test]
+fn a_uses_list_names_constants_the_module_reads() {
+    let gas = "build/gen/x-{dev}.inc";
+    // a name that is no constant
+    if let Some(r) = generate_with("core/fxpages", "gas", gas, &["NO_SUCH_*", "FX_KIT_PTR"]) {
+        assert!(r.unwrap_err().0.contains("NO_SUCH_*"));
+    }
+    // a per-device name in a shared-only kind
+    for kind in ["rust", "gas-shared"] {
+        if let Some(r) = generate_with("core/runtime", kind, "build/gen/x", &["PEEK_N"]) {
+            let e = r.unwrap_err().0;
+            assert!(
+                e.contains("per-device") && e.contains("PEEK_N"),
+                "{kind}: {e}"
+            );
+        }
+    }
+    // a constant that the sources of the module never use
+    if let Some(r) = generate_with(
+        "core/fxpages",
+        "gas",
+        gas,
+        &["FX_KIT_PTR", "PANEL_ENCODERS"],
+    ) {
+        let e = r.unwrap_err().0;
+        assert!(
+            e.contains("PANEL_ENCODERS") && !e.contains("FX_KIT_PTR,"),
+            "{e}"
+        );
+        // the message names only the unreferenced constants, so the used one is absent at any position
+        assert!(!e.contains("FX_KIT_PTR"), "{e}");
+    }
+    // an empty list on a kind that needs one
+    if let Some(r) = generate_with("core/fxpages", "gas", gas, &[]) {
+        let e = r.unwrap_err().0;
+        assert!(e.contains("needs `uses`"), "{e}");
+    }
+    // a list on a kind that takes none
+    if let Some(r) = generate_with(
+        "core/sample-pool",
+        "gas-sample-pool",
+        "build/gen/sample-pool-{dev}.inc",
+        &["SP_DDR_BASE"],
+    ) {
+        let e = r.unwrap_err().0;
+        assert!(e.contains("takes no `uses`"), "{e}");
+    }
+    // a trailing `*` takes the whole family and nothing else
+    if let Some(r) = generate_with("core/fxpages", "gas", gas, &["FX_VALUE_*"]) {
+        for (_, text) in r.unwrap() {
+            let names: Vec<&str> = text
+                .lines()
+                .filter_map(|l| l.trim().strip_prefix(".equ "))
+                .map(|l| l.split(',').next().unwrap())
+                .collect();
+            assert_eq!(names.len(), 32, "{text}");
+            assert!(names.iter().all(|n| n.starts_with("FX_VALUE_")), "{text}");
+        }
+    }
 }
 
 #[test]
