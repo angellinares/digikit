@@ -4,7 +4,7 @@ import net from 'node:net';
 import os from 'node:os';
 import path from 'node:path';
 import { test } from 'vitest';
-import { connect, RpcError, type EmuEvent } from '../src/index.ts';
+import { connect, RpcError, spawnDaemon, type EmuEvent } from '../src/index.ts';
 
 type Handler = (method: string, params: any, reply: (msg: object) => void) => void;
 
@@ -149,6 +149,20 @@ test('abort closes a connection whose hello handshake never replies', { timeout:
     await new Promise<void>((resolve) => server.close(() => resolve()));
   } finally {
     server.close();
+    fs.rmSync(dir, { recursive: true, force: true });
+  }
+});
+
+test('spawnDaemon gives up on a daemon that never opens its socket and stops the child', async () => {
+  const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'digi-ts-'));
+  const binary = path.join(dir, 'silent-daemon');
+  fs.writeFileSync(binary, '#!/bin/sh\nexec sleep 30\n', { mode: 0o755 });
+  try {
+    await assert.rejects(
+      spawnDaemon({ binary, runDir: path.join(dir, 'run'), timeoutMs: 300 }),
+      /did not open its socket .* within 300 ms/,
+    );
+  } finally {
     fs.rmSync(dir, { recursive: true, force: true });
   }
 });

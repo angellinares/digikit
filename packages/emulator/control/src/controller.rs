@@ -15,7 +15,7 @@ use std::{
     path::{Path, PathBuf},
     sync::{
         Arc, Mutex,
-        atomic::{AtomicBool, Ordering},
+        atomic::{AtomicBool, AtomicU64, Ordering},
         mpsc,
     },
     thread,
@@ -2186,9 +2186,14 @@ impl Actor {
             .job
             .as_ref()
             .map(|j| json!({"kind": j.label, "wall_seconds": j.started.elapsed().as_secs_f64()}));
+        // Progress of a cold boot in `firmware.load`. The count restarts at 0 when a soft reset
+        // reboots the job, so a client counts any change as progress.
+        let boot = self.patch_job.as_ref().map(|j| {
+            json!({"icount": j.progress.load(Ordering::Relaxed), "wall_s": j.started.elapsed().as_secs_f64()})
+        });
         let scheduled = self.schedule.len();
         let Some(runtime) = self.runtime.as_mut() else {
-            return Ok(json!({"firmware": null, "job": job}));
+            return Ok(json!({"firmware": null, "job": job, "boot": boot}));
         };
         let status = runtime.status();
         let cf = serde_json::to_value(&status).unwrap_or(Value::Null);
@@ -2204,7 +2209,7 @@ impl Actor {
         let frame = runtime.current_frame().map(|(revision, _)| revision);
         Ok(json!({
             "controller_cpu_ns": elektron_native_boot::thread_cpu_ns(),
-            "firmware": loaded, "cf": cf, "audio": audio, "dsp": dsp, "job": job,
+            "firmware": loaded, "cf": cf, "audio": audio, "dsp": dsp, "job": job, "boot": boot,
             "scheduled_inputs": scheduled, "frame_revision": frame,
             "heartbeat": {"mainloop_hits": cf["mainloop_hits"], "stalled": self.health.stalled(),
                           "stall_count": self.health.stall_count, "stall_ms": self.health.stall_ms,
@@ -4029,6 +4034,9 @@ struct PatchJob {
     cancel: Arc<AtomicBool>,
     reply: RpcReply,
     started: Instant,
+    /// Instruction count of the running boot, stored by the worker's progress callback.
+    /// It restarts at 0 when a soft reset reboots the job, so a client counts any change as progress.
+    progress: Arc<AtomicU64>,
     install: PatchInstall,
     /// The card writes of a boot that ended in a soft reset (see `digi_coupled::cold::SOFT_RESET`).
     reset_out: Arc<Mutex<Option<Vec<emmc_card::CardOverlaySector>>>>,
@@ -4305,6 +4313,8 @@ impl Actor {
         install.report["start_used"] = "cold".into();
         install.report["cache_dir"] = pair.display().to_string().into();
         let cancel = Arc::new(AtomicBool::new(false));
+        let progress = Arc::new(AtomicU64::new(0));
+        let worker_progress = progress.clone();
         let (done_tx, done) = mpsc::channel();
         let (worker_cancel, worker_bytes, worker_card, worker_base) = (
             cancel.clone(),
@@ -4343,7 +4353,7 @@ impl Actor {
                         &inputs,
                         &pair,
                         &worker_cancel,
-                        |_| {},
+                        |p| worker_progress.store(p.icount, Ordering::Relaxed),
                     )
                 });
                 let _ = done_tx.send(result.map(|r| PatchBooted {
@@ -4359,6 +4369,7 @@ impl Actor {
             cancel,
             reply: reply.clone(),
             started: Instant::now(),
+            progress,
             install,
             reset_out,
             keep_out,

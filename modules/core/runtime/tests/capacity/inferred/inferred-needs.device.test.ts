@@ -1,6 +1,5 @@
 import { expect, test } from 'vitest';
 import { cardRigs } from '@digi/regression/runtime/card-rig.ts';
-import { CARD_TIMEOUT } from '@digi/regression/runtime/debug-kit.ts';
 import { needsOf } from '@digi/regression/runtime/dkm.ts';
 import { moduleArtifact } from '@digi/regression/runtime/install.ts';
 import { block, geometryOf, LOADED } from '@digi/regression/runtime/synth.ts';
@@ -61,6 +60,5 @@ cardRigs('inferred needs', { dsp: 'sharc', roots: COUPLED_ROOTS, hold: true, ful
           'the MODULES record: arena block, DSP range, voice rows',
         ).toEqual([n!.ARENA, n!.DSP_AREA, n!.VOICE_ROWS]);
       },
-      CARD_TIMEOUT,
     );
 });

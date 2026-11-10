@@ -538,10 +538,22 @@ Formatting an emulator crate or `dkneeds` changes the daemon key and the PGO key
   `build:ui`, `python-checks`): those take no lock. `show`, `graph`, `--graph` and `--explain` take no lock. Nx has no per-kind limit. No gate task is exclusive: a task with `parallelism: false` scheduled mid-run makes Nx wait for every running task to finish first, so do not add one. The `cli`, `digi-coupled` and `digi-control:daemons` builds run beside other tasks with `CARGO_BUILD_JOBS=DIGI_JOBS`.
 - `DIGI_JOBS` is the only job variable. The `fx`, `fx-no-aot` and `fx-dt2` targets and the single-emulator gate targets (`card`, `dt2-tone`, `fast-roots`) run one emulator each (1 job), behind one `emu-slot`, beside device tests. The multi-emulator gate targets (`smoke`, `stock`, `pins`, `tier-quick`, `tier-sweep`, `dt2-tier-quick`, `dt2-tier-sweep`) keep their own `DIGI_JOBS` and take no slot: the idle-core admission of the slot-wrapped device tasks keeps the machine within its budget while they run. `python-tests` runs with 2 jobs (`DIGI_JOBS=2`) beside other tasks, without a slot.
   `DIGIKIT_PART_JOBS` stays. One coupled emulator process keeps 2 cores busy.
-- A no-progress watchdog (`tests/regression/watchdog.ts`) is on by default. It closes a
-  daemon whose DSP frames, main loop hits and audio frames stay the same for 120 s of wall time
-  (`DIGI_NO_PROGRESS_MS`, in ms; 0 turns it off), so the test fails at once; a paused daemon without a
-  job is idle and not counted. The runtime and conformance wall timeouts are 30 min backstops.
+- A no-progress watchdog (`tests/regression/watchdog.ts`) is on by default. It starts with the daemon (`Session.start`
+  option `onSession`), so it covers `firmware.load`, and it reads `status` over a second connection (`Session.watchStatus`):
+  the status call answers while a load runs. It closes a daemon when none of the DSP frames, main loop hits, audio frames,
+  `cf.icount`, `boot.icount` (the instruction count of a boot inside `firmware.load`) and the epoch changes for 120 s of wall time
+  (`DIGI_NO_PROGRESS_MS`, in ms; 0 turns it off), so the test fails at once. A cold boot, a card-rig load and a
+  multi-boot chain move the instruction counts; the counts are not monotonic (a soft reset or a snapshot restore lowers them),
+  so a change in either direction is progress. A paused daemon without a job or a boot is idle and not counted. Host work (building a card)
+  moves no counter and is not covered: a daemon is not asked to progress then, and only the Vitest limit applies.
+- Tests have no wall-time limit of their own for runtime start, baseline reload, boot, restart and safe-mode waits. The
+  watchdog catches a stopped emulator; a wait on firmware state uses emulated time (`pollEmulated` and `waitEmulated` in
+  `tests/regression/runtime/waits.ts`, `events.until(kind, predicate, { emulatedMs })`). Vitest's `testTimeout` (30 min) and
+  `hookTimeout` (10 min) of the `runtime` and `conformance` projects are the only wall limits: do not repeat them in a test.
+  Hang guards that never fail a healthy slow run: a clock that stands still for 60 s (`DIGI_CLOCK_STUCK_MS`) fails `pollEmulated`
+  (a paused daemon, a halted DSP); the phases before the daemon has a socket (environment preparation, the startup load of a
+  non-reused session) nothing can be asked, so each has a 300 s guard (`PRE_SOCKET_HANG_MS`); `waitReset` stops after 200 steps
+  of 400k instructions. Host processes (builders, tools) keep their own `timeout`: the emulator watchdog cannot see them.
 - `pnpm nx:pilot run digi-control:daemons` builds the daemons and writes `dist/daemons.json`; helpers
   read it when `DIGI_EMUD_*` is unset. The builds use the daemon store (`<git common dir>/emud-cache`,
   `tools/devtools/verify_build.py`).

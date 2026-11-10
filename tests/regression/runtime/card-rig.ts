@@ -4,7 +4,7 @@ import os from 'node:os';
 import path from 'node:path';
 import { setTimeout as delay } from 'node:timers/promises';
 import { DkSession, EmuUsbTransport, frame, parseReply } from '@digi/dk-session';
-import type { InitialButton } from '@digi/control-client';
+import { RpcError, type InitialButton } from '@digi/control-client';
 import { resolveInputs, type Device, type RuntimeBaseline, type Session } from '@digi/test-support';
 import { describe, expect } from 'vitest';
 import { expectNoGuardHits, withReusablePatchedSession, type PatchedSession, type RuntimeCase } from '../support.ts';
@@ -22,7 +22,8 @@ import {
 import { cachedCard, cachedCardId, cardKey, fileSha } from './card-cache.ts';
 import { uploadStore } from './device-data.ts';
 import { advance, bounded, options, rpc } from './fx-live.ts';
-import { withPausedFxProtocol } from './fx-session.ts';
+import { drainInputs, withPausedFxProtocol } from './fx-session.ts';
+import { pollEmulated } from './waits.ts';
 import { record } from './artifacts.ts';
 import { FIRMWARE, FULL_TIER, claimRunDir, selectDevices, skipEmptyHalf } from './devices.ts';
 import { moduleArtifact } from './install.ts';
@@ -82,8 +83,6 @@ export interface CardRigOptions {
   dsp?: 'zero' | 'sharc' | 'cold';
   /** Configure coupled audio without loading stock firmware before the first explicit baseline. */
   startEmpty?: boolean;
-  /** Explicit absolute baseline budget; omit to preserve the shared 120-second default. */
-  baselineTimeoutMs?: number;
   /** The first card: a function that gives its spec (default a blank store card) or `small`, a blank 1 MiB file (a test sets `DIGI_CARD_IDENTITY=small`). */
   initial?: 'small' | (() => CardSpec);
   /** Seed every card with the stock firmware's project (Python `Env.card`). */
@@ -131,7 +130,7 @@ export interface CardRig {
   /** A card in a fresh directory of the run directory (plusdrive build + the records of `spec`). */
   card(spec?: CardSpec): Promise<string>;
   /** Boot the runtime on this card image in the same daemon; the previous case's evidence is collected first. */
-  boot(cardImage: string, o?: { deliverExceptions?: boolean; timeoutMs?: number }): Promise<RuntimeCase>;
+  boot(cardImage: string, o?: { deliverExceptions?: boolean }): Promise<RuntimeCase>;
   /** `boot` of a card built from `spec`, then `settle`. */
   load(tag: string, spec: CardSpec): Promise<RuntimeCase>;
   /** The first case (the `initial` card), settled. */
@@ -140,7 +139,7 @@ export interface CardRig {
   settle(
     runtime: PatchedSession & { epoch?: number },
     afterEpoch?: number,
-    options?: { timeout?: number },
+    options?: { emulatedMs?: number },
   ): Promise<PatchedSession>;
   /** Poll until the UI loop was reached (and the boot is safe mode when `safe`); returns the boot's fields. */
   ready(safe?: boolean): Promise<Awaited<ReturnType<typeof bootInfo>>>;
@@ -159,7 +158,7 @@ export interface CardRig {
   /** Allow store sectors in the lifetime check (a test that writes them on purpose). */
   allowStoreWrites(sectors: Iterable<number>): void;
   /** Step until the guest soft-resets and the cold boot is ready (Python `Rig.wait_reset`). */
-  waitReset(timeoutMs?: number): Promise<void>;
+  waitReset(): Promise<void>;
 
   // ---- paused protocol sessions (the upload tests) ----
   /** Cold boot on a card of its own that shares the image of `card`, wait for the main UI, pause and settle 300 ms; returns a protocol session that steps the emulator while it waits for a reply. */
@@ -179,6 +178,9 @@ export interface CardRig {
   /** One request that must be answered with status 0. */
   send(cmd: number, body?: Uint8Array): Promise<void>;
 }
+
+const WAIT_RESET_STEP_INSNS = 400_000;
+const WAIT_RESET_STEPS = 200;
 
 /** One describe per device (`label` in its title) with a rig inside. */
 export function cardRigs(label: string, o: CardRigOptions, define: (rig: CardRig) => void): void {
@@ -213,11 +215,7 @@ export function cardRig(device: Device, scope: string, o: CardRigOptions = {}): 
   const extra = new Set(o.storeExtra ?? []);
   const symbols = [...(o.plain ? [] : ['DKRT_BOOT']), ...(o.symbols ?? [])];
 
-  const baseline = (
-    cardImage: string,
-    deliverExceptions = o.deliverExceptions,
-    timeoutMs = o.baselineTimeoutMs,
-  ): RuntimeBaseline => {
+  const baseline = (cardImage: string, deliverExceptions = o.deliverExceptions): RuntimeBaseline => {
     if (o.roots && !prepared.preparedImage)
       throw new Error('the explicit runtime plan lacks a prepared image identity');
     const boot = o.plain ? 0 : planSymbol(prepared.plan, 'DKRT_BOOT');
@@ -229,7 +227,6 @@ export function cardRig(device: Device, scope: string, o: CardRigOptions = {}): 
       initialButtons: o.initialButtons,
       relaxedReady: o.relaxFs,
       paused: o.hold,
-      timeoutMs,
     };
   };
   const freshDir = (session: Session, tag = 'card') => {
@@ -300,7 +297,6 @@ export function cardRig(device: Device, scope: string, o: CardRigOptions = {}): 
       },
     },
     {
-      watchdogLimitMs: o.baselineTimeoutMs,
       prepareBaseline: async (session) => {
         if (o.startEmpty) {
           const startup = await session.status();
@@ -377,7 +373,7 @@ export function cardRig(device: Device, scope: string, o: CardRigOptions = {}): 
     await expectRuntimeUi(runtime.session, prepared.plan, artifacts, {
       afterEpoch,
       paused: o.hold,
-      timeout: options.timeout,
+      emulatedMs: options.emulatedMs,
     });
     await rpc(runtime.session, 'run.mode', { mode: 'paused' });
     return runtime;
@@ -423,9 +419,7 @@ export function cardRig(device: Device, scope: string, o: CardRigOptions = {}): 
     },
     card: (spec = {}) => build(fixture.runtime.session, spec.name ?? 'card', spec),
     async boot(cardImage, extraOptions = {}) {
-      const next = await fixture.reload(
-        baseline(cardImage, extraOptions.deliverExceptions, extraOptions.timeoutMs ?? o.baselineTimeoutMs),
-      );
+      const next = await fixture.reload(baseline(cardImage, extraOptions.deliverExceptions));
       if (prepared.preparedImage) validateRuntimePlan(prepared.plan, next.session);
       epochs.add(next.epoch);
       image = cardImage;
@@ -441,15 +435,15 @@ export function cardRig(device: Device, scope: string, o: CardRigOptions = {}): 
     settle,
     async ready(safe = false) {
       const { session } = fixture.runtime;
-      await expect
-        .poll(
-          async () => {
-            const b = await bootInfo(session, prepared.plan);
-            return b.uiReached === 1 && b.safe === (safe ? 1 : 0);
-          },
-          { timeout: 600_000, interval: 1000, message: `the UI loop was reached (safe mode: ${safe})` },
-        )
-        .toBe(true);
+      await pollEmulated(
+        session,
+        async () => {
+          const b = await bootInfo(session, prepared.plan);
+          return b.uiReached === 1 && b.safe === (safe ? 1 : 0);
+        },
+        Boolean,
+        { emulatedMs: 300_000, intervalMs: 1000, message: `the UI loop was reached (safe mode: ${safe})` },
+      );
       return bootInfo(session, prepared.plan);
     },
     async restart(runtime) {
@@ -461,7 +455,7 @@ export function cardRig(device: Device, scope: string, o: CardRigOptions = {}): 
       const dk = new DkSession(new EmuUsbTransport((method, params) => session.client.call(method, params)));
       // This controller can answer throughout the guest reset: settle proves the fresh ready epoch/UI hook.
       cap = undefined;
-      return settle({ session, dk, close: runtime.close }, before, { timeout: 90_000 });
+      return settle({ session, dk, close: runtime.close }, before);
     },
     usb: (runtime, run) => withPausedFxProtocol(runtime, run),
     after: (tag = `after-${++seq}`, base = image) => afterCard(tag, base),
@@ -479,18 +473,33 @@ export function cardRig(device: Device, scope: string, o: CardRigOptions = {}): 
     allowStoreWrites(sectors) {
       for (const s of sectors) extra.add(s);
     },
-    async waitReset(timeoutMs = 900_000) {
+    async waitReset() {
       const { session } = fixture.runtime;
       const { client } = session;
       client.drainEvents();
       let resetSeen = false;
-      const end = Date.now() + timeoutMs;
-      while (Date.now() < end) {
+      // Emulated bound (steps that ran; a refused step ran nothing): 200 steps of 400k instructions are 80M, about 0.6 s of device time,
+      // far above a reset after a fault. A stalled boot makes the no-progress watchdog close the session, and a closed connection ends the loop.
+      let steps = 0;
+      for (;;) {
         if (resetSeen) {
           // the controller notices that its worker has finished only when a command wakes it: a status request is one
           await delay(200);
-          await session.status().catch(() => undefined);
-        } else await client.step(400_000, { timeout_wall_s: 30 }).catch(() => delay(500)); // steps are refused during a cold boot
+          await session.status().catch((error) => {
+            if (!(error instanceof RpcError)) throw error;
+          });
+        } else {
+          if (steps >= WAIT_RESET_STEPS)
+            throw new Error(`no reset within ${WAIT_RESET_STEPS * WAIT_RESET_STEP_INSNS} instructions`);
+          await client.step(WAIT_RESET_STEP_INSNS, { timeout_wall_s: 30 }).then(
+            () => void steps++,
+            (error) => {
+              // The daemon refuses steps during a cold boot; a lost connection is not refused, it is the end.
+              if (!(error instanceof RpcError)) throw error;
+              return delay(500);
+            },
+          );
+        }
         for (const ev of client.drainEvents()) {
           if (ev.kind === 'cpu.reset') {
             if (ev.restart === 'unsupported') throw new Error('the emulator cannot restart this build');
@@ -505,7 +514,6 @@ export function cardRig(device: Device, scope: string, o: CardRigOptions = {}): 
           }
         }
       }
-      throw new Error(`no reset within ${timeoutMs / 1000} s`);
     },
 
     async pausedBoot(card) {
@@ -521,15 +529,7 @@ export function cardRig(device: Device, scope: string, o: CardRigOptions = {}): 
       linkCard(card, path.dirname(next), cardOverlay(card)); // the daemon may save next to the image: boot a card of its own
       const runtime = await rig.boot(next);
       await expectRuntimeUi(runtime.session, prepared.plan, artifacts, { afterEpoch: runtime.epoch - 1 });
-      await expect
-        .poll(
-          async () => {
-            const status = await bounded(() => runtime.session.status());
-            return { pending: status.cf.input_pending, scheduled: status.scheduled_inputs };
-          },
-          { timeout: 30_000, interval: 100, message: 'boot input has finished before pausing' },
-        )
-        .toEqual({ pending: 0, scheduled: 0 });
+      await drainInputs(runtime.session);
       await rpc(runtime.session, 'run.mode', { mode: 'paused' });
       await advance(runtime.session, 300);
       if (previous && previous !== path.dirname(next)) fs.rmSync(previous, { recursive: true, force: true });

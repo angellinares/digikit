@@ -119,7 +119,6 @@ cardRigs(
         expect(info.results, 'its load fails the hash check (E_SHA)').toEqual([-4]);
         expect(await names(rt), 'no module is registered').toEqual([]);
       },
-      CARD_TIMEOUT,
     );
 
     test(

@@ -1,6 +1,5 @@
 import { expect, test } from 'vitest';
 import { CARD_SYMBOLS, cardRigs, RT } from '@digi/regression/runtime/card-rig.ts';
-import { CARD_TIMEOUT } from '@digi/regression/runtime/debug-kit.ts';
 
 /** tools/bootscreen, fault in the intro callback (see bootscreen.device.test.ts). */
 
@@ -16,13 +15,12 @@ cardRigs(
       'a fault in the intro callback halts in the stock handler',
       async () => {
         const fault = h.mod('test/intro-fault', 'intro-fault');
-        const err = await h.boot(await h.card({ modules: [fault], selection: [fault.name] }), { timeoutMs: 600_000 }).then(
+        const err = await h.boot(await h.card({ modules: [fault], selection: [fault.name] })).then(
           () => undefined,
           (e: unknown) => e,
         );
         expect(String(err)).toContain('guest fault during boot: Halted');
       },
-      CARD_TIMEOUT,
     );
   },
 );

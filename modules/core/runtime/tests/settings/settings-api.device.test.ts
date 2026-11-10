@@ -82,7 +82,7 @@ for (const device of DEVICES) {
       expect(again.init.subarray(0, 3), 'the value of the earlier boot').toEqual(text('xyz'));
       expect(await record(reboot), 'the record is as it was').toEqual({ [`${A}/boot`]: hex('xyz') });
       kit.allowStoreWrites(await kit.storeWrites());
-    }, 900_000);
+    });
 
     test('the same key in two modules gives two records', async () => {
       const rt = await kit.load('collide', spec);
@@ -98,7 +98,7 @@ for (const device of DEVICES) {
       expect((await call(rt, B, GET, 'k')).rc).toBe(E_SET_NOKEY);
       await advance(rt.session, DELAY_MS + 500);
       kit.allowStoreWrites(await kit.storeWrites());
-    }, 900_000);
+    });
 
     test('a key that is too long, leaves its prefix or breaks the rules is refused and nothing is written', async () => {
       const rt = await kit.load('refused', spec);
@@ -117,6 +117,6 @@ for (const device of DEVICES) {
         await statusOf(() => kit.usb(rt, settingsRecord)),
         'the settings record is still empty (SETTINGS answers E_SET_NOKEY)',
       ).toBe(E_SET_NOKEY);
-    }, 900_000);
+    });
   });
 }

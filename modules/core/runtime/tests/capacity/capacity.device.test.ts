@@ -3,7 +3,6 @@ import path from 'node:path';
 import type { DkModule } from '@digi/dk-session';
 import { expect, test } from 'vitest';
 import { cardRigs, RT, type CardRig } from '@digi/regression/runtime/card-rig.ts';
-import { CARD_TIMEOUT } from '@digi/regression/runtime/debug-kit.ts';
 import { needsOf, parseDspSection, relocate } from '@digi/regression/runtime/dkm.ts';
 import { dspBytes } from '@digi/regression/runtime/fx-live.ts';
 import { moduleArtifact } from '@digi/regression/runtime/install.ts';
@@ -86,7 +85,6 @@ cardRigs('capacity, ColdFire only', { roots: RT, dsp: 'cold', symbols: SYMBOLS }
         'the arena has no free byte (the DSP images keep their arena copy on a ColdFire-only rig)',
       ).toEqual([g.arenaFree, 0]);
     },
-    CARD_TIMEOUT,
   );
 
   test(
@@ -113,7 +111,6 @@ cardRigs('capacity, ColdFire only', { roots: RT, dsp: 'cold', symbols: SYMBOLS }
         mods.reduce((n, m) => n + block(m.cf_size), 0),
       );
     },
-    CARD_TIMEOUT,
   );
 
   test(
@@ -141,7 +138,6 @@ cardRigs('capacity, ColdFire only', { roots: RT, dsp: 'cold', symbols: SYMBOLS }
         'the refused DSP module left no range in the DSP area and no row',
       ).toEqual([0, 0]);
     },
-    CARD_TIMEOUT,
   );
 });
 
@@ -177,6 +173,5 @@ cardRigs('capacity, coupled', { dsp: 'sharc', roots: COUPLED_ROOTS, hold: true, 
         "the reference's DSP bytes in L2 equal its packed image relocated at its range",
       ).toEqual(want);
     },
-    CARD_TIMEOUT,
   );
 });

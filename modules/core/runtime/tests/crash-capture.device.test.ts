@@ -2,7 +2,7 @@ import { be32, hasCap } from '@digi/dk-session';
 import { expect, test } from 'vitest';
 import { bootInfo, cardInfo, crashInfo, currentRecord } from '@digi/regression/runtime/card-kit.ts';
 import { CARD_SYMBOLS, cardRigs, RT, type CardRig } from '@digi/regression/runtime/card-rig.ts';
-import { CARD_TIMEOUT, crashRecord, pausedProtocol } from '@digi/regression/runtime/debug-kit.ts';
+import { crashRecord, pausedProtocol } from '@digi/regression/runtime/debug-kit.ts';
 import { rpc } from '@digi/regression/runtime/fx-live.ts';
 
 /**
@@ -120,7 +120,6 @@ cardRigs(
           expect(b2.info.uiReached, 'the safe boot clears the counter at its first UI-loop pass').toBe(1);
           expect(b2.sel?.paths, 'and keeps the selection').toEqual([debug.name, crash.name]);
         },
-        CARD_TIMEOUT,
       );
     }
   },

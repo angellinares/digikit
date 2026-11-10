@@ -229,6 +229,6 @@ export function dn2Tests(title: string, id: string, uploads: string[], body: (c:
         }
       }
     },
-    { dsp: 'sharc', devices: ['dn2'], patchSet: 'sample-tracks', timeout: 1_800_000 },
+    { dsp: 'sharc', devices: ['dn2'], patchSet: 'sample-tracks' },
   );
 }

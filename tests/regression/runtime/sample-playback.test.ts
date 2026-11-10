@@ -10,6 +10,7 @@ import { liveArtifacts, record } from './artifacts.ts';
 import { installWithDebug, moduleArtifact } from './install.ts';
 import { runtimeTests } from './ready.ts';
 import { planSymbol, prepareRuntimePlan } from './runtime-plan.ts';
+import { pollEmulated } from './waits.ts';
 
 /** Deterministic exact PCM16 fixture: mono48k avoids converter/resampler rounding. */
 function proofWav(frames = 4096): { wav: Uint8Array; pcm: number[] } {
@@ -227,9 +228,11 @@ async function expectTransferredBank(runtime: PatchedSession): Promise<void> {
   await dk.waitForBoot(); // requires fresh BOOT_START and no old RESTART event
   expect((await session.status()).epoch).toBeGreaterThan(epoch as number);
   // The next step sends keys: wait for the main UI of the new boot.
-  await expect
-    .poll(async () => (await session.status()).cf.main_ui_reached, { timeout: 120_000, interval: 500 })
-    .toBe(true);
+  await pollEmulated(session, async () => (await session.status()).cf.main_ui_reached, Boolean, {
+    emulatedMs: 120_000,
+    intervalMs: 500,
+    message: 'the main UI of the new boot',
+  });
   base = await bankBase();
   expect(await status(), 'the new boot owns a clean UNUSED bank').toBe(0);
   expect(await bytes(base + viewOffset, 16), 'new descriptor begins unready').toEqual(Buffer.alloc(16));

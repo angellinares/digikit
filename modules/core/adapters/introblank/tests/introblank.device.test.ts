@@ -3,7 +3,6 @@ import type { Device } from '@digi/test-support';
 import { expect, test } from 'vitest';
 import { bootInfo, bootInfoLoaded } from '@digi/regression/runtime/card-kit.ts';
 import { CARD_SYMBOLS, cardRigs, RT, type CardRig } from '@digi/regression/runtime/card-rig.ts';
-import { CARD_TIMEOUT } from '@digi/regression/runtime/debug-kit.ts';
 import { capture, peak, readFloatWav } from '@digi/regression/runtime/fx-live.ts';
 import { introNow } from '@digi/regression/runtime/intro-frame.ts';
 import { ringEvents } from '@digi/regression/runtime/runtime-menu.ts';
@@ -69,10 +68,9 @@ cardRigs('introblank: the stock image (reference)', { dsp: 'sharc', relaxFs: tru
       expect(ui.ticks, 'the stock intro ran its whole length').toBeGreaterThanOrEqual(STOCK_TICKS);
       stock.set(h.device, ui);
     },
-    CARD_TIMEOUT,
   );
 
-  test('control: a note plays on the stock image', () => playsANote(h, false), CARD_TIMEOUT);
+  test('control: a note plays on the stock image', () => playsANote(h, false));
 });
 
 cardRigs('introblank', { dsp: 'sharc', relaxFs: true, roots: IB, symbols: CARD_SYMBOLS }, (h) => {
@@ -90,7 +88,6 @@ cardRigs('introblank', { dsp: 'sharc', relaxFs: true, roots: IB, symbols: CARD_S
       expect(ref, 'the stock reference ran first').toBeDefined();
       expect(ref!.blocks - ui.blocks, 'at least 2 s of emulated time sooner').toBeGreaterThan(2 * 1500);
     },
-    CARD_TIMEOUT,
   );
 
   test(
@@ -101,12 +98,10 @@ cardRigs('introblank', { dsp: 'sharc', relaxFs: true, roots: IB, symbols: CARD_S
       expect(info).toMatchObject({ safe: 0, loaded: 1, uiReached: 1 });
       expect((await introNow(h.session)).equals(lastFrame), 'the module frame').toBe(true);
     },
-    CARD_TIMEOUT,
   );
 
   test(
     'after the early end the boot is complete: a note plays and the DSP runs',
     () => playsANote(h, true),
-    CARD_TIMEOUT,
   );
 });

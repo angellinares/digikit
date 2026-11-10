@@ -105,7 +105,6 @@ export function uploadTests(
     full?: boolean;
     symbols?: string[];
     sharc?: boolean;
-    timeout?: number;
     stallMs?: number;
     /** Skip with this reason (the Python scenario still covers it); see docs/plans/python-test-triage.md. */
     skip?: string;
@@ -139,13 +138,9 @@ export function uploadTests(
             ).toEqual([]);
           },
         });
-        test(
-          name,
-          async () => {
-            await body(rig);
-          },
-          opts.timeout ?? 1_800_000,
-        );
+        test(name, async () => {
+          await body(rig);
+        });
       },
     );
   }

@@ -34,7 +34,7 @@ for (const device of DEVICES) {
       expect(d.store.files, 'an empty store (header pair, no file)').toEqual([]);
       expect(d.settings.active).toBe('A');
       expect(d.settings.copies[0].entries[0].key, 'the key in copy A').toBe(ROUTE);
-    }, 600_000);
+    });
 
     // cards with both copies set by hand
     const old = encodeSettings(4, [['k', text('old')]]);
@@ -101,7 +101,6 @@ for (const device of DEVICES) {
           true,
         );
       },
-      600_000,
     );
   });
 }

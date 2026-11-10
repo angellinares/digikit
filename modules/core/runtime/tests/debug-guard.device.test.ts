@@ -5,7 +5,7 @@ import { button, encoder } from '@digi/test-support';
 import { expect, test } from 'vitest';
 import { bootInfoLoaded } from '@digi/regression/runtime/card-kit.ts';
 import { CARD_SYMBOLS, cardRigs, RT } from '@digi/regression/runtime/card-rig.ts';
-import { CARD_TIMEOUT, pausedProtocol } from '@digi/regression/runtime/debug-kit.ts';
+import { pausedProtocol } from '@digi/regression/runtime/debug-kit.ts';
 import { advance, frames, pickSine, readFloatWav, rpc, windowRms } from '@digi/regression/runtime/fx-live.ts';
 import { tap } from '@digi/regression/runtime/fx-session.ts';
 import { ofKind } from '@digi/regression/runtime/runtime-menu.ts';
@@ -128,6 +128,5 @@ cardRigs('debug guard', { dsp: 'sharc', full: true, uploads: true, roots: RT, sy
         expect(fixture.faults).toBeGreaterThanOrEqual(FAULT_LIMIT);
       }
     },
-    CARD_TIMEOUT,
   );
 });

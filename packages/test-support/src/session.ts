@@ -4,6 +4,8 @@ import path from 'node:path';
 import { setTimeout as delay } from 'node:timers/promises';
 import {
   RpcError,
+  connect,
+  readSocket,
   spawnDaemon,
   type Client,
   type Daemon,
@@ -91,7 +93,9 @@ export interface SessionOptions {
   /** Stall threshold in emulated ms for the watchdog (default 1000, as the Python harness). */
   stallMs?: number;
   binary?: string;
-  /** Additional daemon environment, prepared before spawn under the same startup deadline. */
+  /** Called as soon as the daemon is connected, before its first RPC (the load of a non-reused session): start a watchdog here. */
+  onSession?: (session: Session) => void;
+  /** Additional daemon environment, prepared before spawn. */
   env?: Record<string, string> | ((runDir: string) => Promise<Record<string, string>>);
   /** Press NO automatically when ready; defaults to true. */
   autoNo?: boolean;
@@ -115,8 +119,13 @@ export interface RuntimeBaseline {
   relaxedReady?: boolean;
   /** Leave the emulator paused at the ready point (the default is free running); a test that times events in DSP frames steps from there. */
   paused?: boolean;
-  timeoutMs?: number;
 }
+
+/**
+ * A hang guard, not a deadline, for the phases before the daemon has a socket (environment preparation, the daemon's startup load) where the
+ * no-progress watchdog cannot ask anything. A normal load takes 5-10 s; a healthy but slow host must never reach this.
+ */
+export const PRE_SOCKET_HANG_MS = 300_000;
 
 /** Bound awaited control RPCs to one absolute lifecycle deadline, including a peer that never answers. */
 export async function withinRuntimeDeadline<T>(deadline: number, operation: () => Promise<T>): Promise<T> {
@@ -149,6 +158,7 @@ export class Session {
   #closing: Promise<void> | undefined;
   #reloading = false;
   #preserveDiagnostics = false;
+  #watch: Promise<Client> | undefined;
 
   private constructor(options: SessionOptions, daemon: Daemon, ownedDir: string | null) {
     this.options = options;
@@ -238,25 +248,18 @@ export class Session {
             ];
     if (options.runtime?.reuse) args.push('--no-card-sync');
     if (options.mirror) args.push('--mirror-dir', path.join(runDir, 'mirror'));
-    const startupDeadline = Date.now() + (options.runtime ? 120_000 : 300_000);
+    // After the socket opens, the daemon and its load are watched through the no-progress watchdog (`onSession`); before it only the hang guards below apply.
     const controller = options.runtime ? new AbortController() : undefined;
-    let timer: ReturnType<typeof setTimeout> | undefined;
-    const expired = controller
-      ? new Promise<never>((_resolve, reject) => {
-          // Leave time for the owned daemon's ten-second close before Vitest's 150s runtime hook deadline.
-          timer = setTimeout(() => {
-            const error = new Error('runtime startup timed out after 120000 ms');
-            controller.abort(error);
-            reject(error);
-          }, 120_000);
-        })
-      : undefined;
     let session: Session | undefined;
     const started = (async () => {
       const prepareEnv = options.env;
       const extraEnv =
         typeof prepareEnv === 'function'
-          ? await withinRuntimeDeadline(startupDeadline, () => prepareEnv(runDir))
+          ? await withinRuntimeDeadline(Date.now() + PRE_SOCKET_HANG_MS, () => prepareEnv(runDir)).catch((error) => {
+              if (error instanceof Error && error.message === 'runtime lifecycle deadline exceeded')
+                throw new Error(`environment preparation hung: no result within ${PRE_SOCKET_HANG_MS} ms`);
+              throw error;
+            })
           : prepareEnv;
       controller?.signal.throwIfAborted();
       const env = {
@@ -269,10 +272,11 @@ export class Session {
         args,
         env: Object.keys(env).length > 0 ? env : undefined,
         runDir,
-        timeoutMs: options.runtime ? 120_000 : 300_000,
+        timeoutMs: PRE_SOCKET_HANG_MS, // hang guard: on expiry spawnDaemon kills its child and awaits its exit
         signal: controller?.signal,
       });
       session = new Session(options, daemon, ownedDir);
+      options.onSession?.(session);
       controller?.signal.throwIfAborted();
       const checked = async <T>(operation: Promise<T>): Promise<T> => {
         const value = await operation;
@@ -310,7 +314,7 @@ export class Session {
       return session;
     })();
     try {
-      return await (expired ? Promise.race([started, expired]) : started);
+      return await started;
     } catch (err) {
       controller?.abort(err);
       if (session) {
@@ -324,8 +328,6 @@ export class Session {
         else if (ownedDir) console.info(`kept run dir for diagnostics: ${ownedDir}`); // the daemon did not start: its stderr is there
       }
       throw err;
-    } finally {
-      clearTimeout(timer);
     }
   }
 
@@ -351,11 +353,11 @@ export class Session {
     this.#reloading = true;
     const reloadStart = performance.now();
     let loadMs = 0;
-    const deadline = Date.now() + (baseline.timeoutMs ?? 120_000);
     let phase = 'validate.card';
+    // No wall deadline: a reload that stops moving is closed by the no-progress watchdog, which fails each pending call.
     const checked = <T>(operationPhase: string, operation: () => Promise<T>) => {
       phase = operationPhase;
-      return withinRuntimeDeadline(deadline, operation);
+      return operation();
     };
     let lastStatus: StatusResult | undefined;
     let statusPhase: 'before-load' | 'after-load' | undefined;
@@ -569,6 +571,23 @@ export class Session {
     return this.client.status();
   }
 
+  /** `status` over a second connection, for a watchdog: it answers while a `firmware.load` runs on the main connection. */
+  async watchStatus(): Promise<StatusResult> {
+    this.#watch ??= (async () => {
+      const socket = readSocket(this.runDir);
+      if (!socket) throw new Error('the daemon has no control socket');
+      return connect(socket);
+    })();
+    try {
+      return await (await this.#watch).status();
+    } catch (error) {
+      // A failed connect or a closed connection is opened again by the next call.
+      void this.#watch?.then((client) => client.close()).catch(() => {});
+      this.#watch = undefined;
+      throw error;
+    }
+  }
+
   #collect(): void {
     this.#events.push(...this.client.drainEvents().filter((e) => e.kind !== 'frame'));
   }
@@ -604,6 +623,7 @@ export class Session {
     if (options.preserveDiagnostics) this.#preserveDiagnostics = true;
     return (this.#closing ??= (async () => {
       try {
+        void this.#watch?.then((client) => client.close()).catch(() => {});
         await this.#daemon.close();
       } finally {
         // The one rule for a run dir that Session.start made itself: a clean close removes it, a failed one keeps it.

@@ -71,7 +71,7 @@ for (const device of DEVICES) {
           sectorOf(after, first + firstRel + k).equals(PATTERN),
           `file sector ${k} is byte for byte as it was`,
         ).toBe(true);
-    }, 600_000);
+    });
 
     test('oldcard: a card with the older header B at sectors - 3 boots, keeps its selection and repairs the header copy on an upload', async () => {
       const dir = path.join(kit.artifacts, 'newlayout');
@@ -132,6 +132,6 @@ for (const device of DEVICES) {
       expect(d.selection.a.paths, 'the selection kept').toEqual([MODULE_PATH]);
       expect(d.settings.active, 'the key in settings copy A').toBe('A');
       kit.allowStoreWrites(await written());
-    }, 600_000);
+    });
   });
 }

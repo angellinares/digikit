@@ -12,7 +12,7 @@ export interface SpawnOptions {
   runDir: string;
   env?: Record<string, string>;
   cwd?: string;
-  /** Wait for the socket, ms. Default 120000. */
+  /** Wait for the socket, ms. Default 120000; 0 waits for as long as the child runs; a daemon that loads a firmware first opens its socket late, so callers pass a generous hang guard. */
   timeoutMs?: number;
   connect?: ConnectOptions;
   /** Abort startup, closing the connection and awaiting this child's exit. */
@@ -38,7 +38,8 @@ export function resolveBinary(binary?: string): string {
 
 const sleep = (ms: number) => new Promise((r) => setTimeout(r, ms));
 
-function readSocket(runDir: string): string | null {
+/** The control socket that RUNDIR's `current.json` names, or null while there is none. */
+export function readSocket(runDir: string): string | null {
   try {
     const info = JSON.parse(fs.readFileSync(path.join(runDir, 'current.json'), 'utf8'));
     const sock = String(info.socket);
@@ -91,7 +92,8 @@ export async function spawnDaemon(opts: SpawnOptions): Promise<Daemon> {
   let client: Client;
   try {
     opts.signal?.throwIfAborted();
-    const deadline = Date.now() + (opts.timeoutMs ?? 120_000);
+    const limit = opts.timeoutMs ?? 120_000;
+    const deadline = limit > 0 ? Date.now() + limit : 0;
     let sock: string | null = null;
     while (!sock) {
       opts.signal?.throwIfAborted();
@@ -99,7 +101,8 @@ export async function spawnDaemon(opts: SpawnOptions): Promise<Daemon> {
         const err = fs.readFileSync(errPath, 'utf8').trim().slice(-400);
         throw new Error(`digi-emud exited ${exited}: ${err}`);
       }
-      if (Date.now() > deadline) throw new Error(`digi-emud did not open its socket in ${runDir}`);
+      if (deadline > 0 && Date.now() > deadline)
+        throw new Error(`digi-emud did not open its socket in ${runDir} within ${limit} ms`);
       sock = readSocket(runDir);
       if (!sock) await sleep(100);
     }

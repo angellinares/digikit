@@ -3,7 +3,7 @@ import { button, type Device } from '@digi/test-support';
 import { expect, test } from 'vitest';
 import { bootInfo, bootInfoLoaded, CMD as MAILBOX, currentRecord, encodeRecord, postRaw } from '@digi/regression/runtime/card-kit.ts';
 import { CARD_SYMBOLS, cardRigs, RT } from '@digi/regression/runtime/card-rig.ts';
-import { CARD_TIMEOUT, settleHang } from '@digi/regression/runtime/debug-kit.ts';
+import { settleHang } from '@digi/regression/runtime/debug-kit.ts';
 import { rpc } from '@digi/regression/runtime/fx-live.ts';
 import { drainInputs } from '@digi/regression/runtime/fx-session.ts';
 import { introNow, safeFrame } from '@digi/regression/runtime/intro-frame.ts';
@@ -41,8 +41,8 @@ cardRigs('safe mode', { dsp: 'sharc', full: true, relaxFs: true, roots: RT, symb
     'a module that resets the machine in its init: two boots never reach the UI loop, the third boots in safe mode',
     async () => {
       const fault = h.mod('test/dyn-fault', 'fault');
-      // Three boots of the fault card run inside this one reload; the hang guard covers all three.
-      await h.boot(await h.card({ modules: [fault], selection: [fault.name] }), { timeoutMs: 600_000 });
+      // Three boots of the fault card run inside this one reload; the no-progress watchdog sees each of them (`boot.icount`).
+      await h.boot(await h.card({ modules: [fault], selection: [fault.name] }));
       const info = await h.ready(true);
       expect(info, 'the third boot is safe mode (counter 2)').toMatchObject({
         safe: 1,
@@ -56,7 +56,6 @@ cardRigs('safe mode', { dsp: 'sharc', full: true, relaxFs: true, roots: RT, symb
       expect(rec?.counter, 'the UI loop ran: counter 0').toBe(0);
       expect(rec?.paths, 'selection kept').toEqual([fault.name]);
     },
-    CARD_TIMEOUT,
   );
 
   test(
@@ -70,7 +69,6 @@ cardRigs('safe mode', { dsp: 'sharc', full: true, relaxFs: true, roots: RT, symb
       expect(rec?.flags, 'flag cleared').toBe(0);
       expect(rec?.paths, 'selection kept').toEqual(others.map((m) => m.name));
     },
-    CARD_TIMEOUT,
   );
 
   for (const kind of ['early', 'late'] as const) {
@@ -125,7 +123,6 @@ cardRigs('safe mode', { dsp: 'sharc', full: true, relaxFs: true, roots: RT, symb
           expect(counters, 'every boot starts at 0, no boot is safe').toEqual([0, 0, 0]);
         }
       },
-      CARD_TIMEOUT,
     );
   }
 });
@@ -172,7 +169,6 @@ for (const held of [true, false]) {
             }
           }
         },
-        CARD_TIMEOUT,
       );
     },
   );
@@ -204,7 +200,6 @@ cardRigs(
             safe: 0,
           });
         },
-        CARD_TIMEOUT,
       );
     }
 
@@ -233,7 +228,6 @@ cardRigs(
           copy: 0,
         });
       },
-      CARD_TIMEOUT,
     );
   },
 );

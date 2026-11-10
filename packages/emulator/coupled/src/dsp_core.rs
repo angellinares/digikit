@@ -11,7 +11,6 @@ use std::{
     cell::RefCell,
     rc::Rc,
     sync::atomic::{AtomicBool, Ordering},
-    time::{Duration, Instant},
 };
 
 use elektron_native_boot::{
@@ -113,14 +112,19 @@ pub fn spawn_dsp(
     }
 }
 
+/// Instruction budget of the cold DSP initialization, in place of a wall limit
+/// (a slow host must not fail it). Normal init is much shorter (see
+/// `examples/dsp_cold.rs`); the budget only ends a DSP that never reaches idle.
+const COLD_INIT_LIMIT: u64 = 800_000_000;
+
 /// Initialize a changed DSP before attaching the ColdFire. Exporting here keeps
 /// the worker's restore path ordinary: its input has no patch left to apply.
 pub fn initialize_cold_dsp(
     core: Core,
     inputs: EngineInputs,
     cancel: &AtomicBool,
+    progress: impl FnMut(u64),
 ) -> Result<EngineInputs, String> {
-    let started = Instant::now();
     validate_cold_state(&inputs.image, &inputs.state, inputs.idle)?;
     let mut engine: Box<dyn DspEngine> = match core {
         Core::First => Box::new(elektron_native_boot::sharc_peer::NativeDsp(
@@ -137,9 +141,7 @@ pub fn initialize_cold_dsp(
             )?,
         )),
     };
-    finish_cold_initialization(inputs, engine.as_mut(), cancel, || {
-        started.elapsed() >= Duration::from_secs(120)
-    })
+    finish_cold_initialization(inputs, engine.as_mut(), cancel, progress)
 }
 
 fn validate_cold_state(image: &[u8], state: &[u8], idle: IdleLoop) -> Result<(), String> {
@@ -167,12 +169,12 @@ fn finish_cold_initialization(
     mut inputs: EngineInputs,
     engine: &mut dyn DspEngine,
     cancel: &AtomicBool,
-    timed_out: impl FnMut() -> bool,
+    progress: impl FnMut(u64),
 ) -> Result<EngineInputs, String> {
     if let Some(patch) = inputs.patch.take() {
         engine.apply_dsp_patch(&patch)?;
     }
-    run_cold_to_idle(engine, inputs.idle, cancel, 800_000_000, timed_out)?;
+    run_cold_to_idle(engine, inputs.idle, cancel, COLD_INIT_LIMIT, progress)?;
     inputs.state = engine.export();
     inputs.clock_base = engine.icount();
     Ok(inputs)
@@ -183,16 +185,13 @@ fn run_cold_to_idle(
     idle: IdleLoop,
     cancel: &AtomicBool,
     limit: u64,
-    mut timed_out: impl FnMut() -> bool,
+    mut progress: impl FnMut(u64),
 ) -> Result<(), String> {
     let mut done = 0u64;
     let mut rested = 0;
     loop {
         if cancel.load(Ordering::Relaxed) {
             return Err("cancelled".into());
-        }
-        if timed_out() {
-            return Err("DSP initialization exceeded 120 seconds before idle".into());
         }
         if let Some(halt) = engine.halt_reason() {
             return Err(format!("DSP halted during initialization: {halt}"));
@@ -213,9 +212,7 @@ fn run_cold_to_idle(
         if cancel.load(Ordering::Relaxed) {
             return Err("cancelled".into());
         }
-        if timed_out() {
-            return Err("DSP initialization exceeded 120 seconds before idle".into());
-        }
+        progress(done);
         if (idle.range.0..=idle.range.1).contains(&engine.pc()) {
             rested += 1;
             if rested == 8 {
@@ -321,7 +318,7 @@ mod tests {
     #[test]
     fn idle_observations_must_be_consecutive() {
         let mut e = Fake::new([10, 10, 0, 10, 10, 10, 10, 10, 10, 10, 20]);
-        run_cold_to_idle(&mut e, IDLE, &AtomicBool::new(false), 3_000_000, || false).unwrap();
+        run_cold_to_idle(&mut e, IDLE, &AtomicBool::new(false), 3_000_000, |_| {}).unwrap();
         assert_eq!(e.steps, 11 * 250_000);
     }
 
@@ -331,31 +328,26 @@ mod tests {
         let mut e = Fake::new([10]);
         e.halt = true;
         assert!(
-            run_cold_to_idle(&mut e, IDLE, &cancel, 3_000_000, || false)
+            run_cold_to_idle(&mut e, IDLE, &cancel, 3_000_000, |_| {})
                 .unwrap_err()
                 .contains("halt")
         );
         e.halt = false;
         e.stalled = true;
         assert!(
-            run_cold_to_idle(&mut e, IDLE, &cancel, 3_000_000, || false)
+            run_cold_to_idle(&mut e, IDLE, &cancel, 3_000_000, |_| {})
                 .unwrap_err()
                 .contains("no progress")
         );
         e.stalled = false;
         cancel.store(true, Ordering::Relaxed);
         assert_eq!(
-            run_cold_to_idle(&mut e, IDLE, &cancel, 3_000_000, || false).unwrap_err(),
+            run_cold_to_idle(&mut e, IDLE, &cancel, 3_000_000, |_| {}).unwrap_err(),
             "cancelled"
         );
         cancel.store(false, Ordering::Relaxed);
         assert!(
-            run_cold_to_idle(&mut e, IDLE, &cancel, 3_000_000, || true)
-                .unwrap_err()
-                .contains("120 seconds")
-        );
-        assert!(
-            run_cold_to_idle(&mut e, IDLE, &cancel, 250_000, || false)
+            run_cold_to_idle(&mut e, IDLE, &cancel, 250_000, |_| {})
                 .unwrap_err()
                 .contains("did not reach idle")
         );
@@ -372,7 +364,7 @@ mod tests {
             idle: IDLE,
         };
         let ready =
-            finish_cold_initialization(inputs, &mut e, &AtomicBool::new(false), || false).unwrap();
+            finish_cold_initialization(inputs, &mut e, &AtomicBool::new(false), |_| {}).unwrap();
         assert_eq!(e.patches, 1);
         assert_eq!(ready.state, vec![42]);
         assert_eq!(ready.clock_base, e.steps);

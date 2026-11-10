@@ -95,5 +95,5 @@ runtimeTests(
     const tail = Math.max(peak(l, from, l.length), peak(r, from, r.length));
     expect(tail, `silent ${SILENT_AFTER_MS - 1000} ms after the note-off (held peak ${heard})`).toBeLessThan(0.002);
   },
-  { dsp: 'sharc', devices: ['dt2'], timeout: 600_000 },
+  { dsp: 'sharc', devices: ['dt2'] },
 );

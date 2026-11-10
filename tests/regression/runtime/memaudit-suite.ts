@@ -7,7 +7,7 @@ import { afterAll, describe, expect, test } from 'vitest';
 import { record } from './artifacts.ts';
 import { bootInfo } from './card-kit.ts';
 import { CARD_SYMBOLS, cardRig, RT, type CardRig, type CardSpec } from './card-rig.ts';
-import { CARD_TIMEOUT, pausedProtocol } from './debug-kit.ts';
+import { pausedProtocol } from './debug-kit.ts';
 import { FIRMWARE, FULL_TIER, selectDevices, skipEmptyHalf } from './devices.ts';
 import { advance } from './fx-live.ts';
 import {
@@ -115,113 +115,109 @@ export function defineMemaudit(set: (device: Device) => AuditSet | undefined, o:
             },
           });
 
-          test(
-            'the set loads; while the UI is driven no store lands outside the module blocks and the patch code',
-            async (ctx) => {
-              const mods = [];
-              for (const id of spec.modules) {
-                const m = o.artifact ? await o.artifact(h, id) : h.mod(id);
-                if ('skip' in m) return ctx.skip(m.skip);
-                mods.push(m);
+          test('the set loads; while the UI is driven no store lands outside the module blocks and the patch code', async (ctx) => {
+            const mods = [];
+            for (const id of spec.modules) {
+              const m = o.artifact ? await o.artifact(h, id) : h.mod(id);
+              if ('skip' in m) return ctx.skip(m.skip);
+              mods.push(m);
+            }
+            const wants: Want[] = mods.map(() => LOADED);
+            const loaded = [...spec.modules]; // the module ids MODULES must list
+            if (spec.full) {
+              // the second daemon builds the same card: the files must outlive the first daemon's artifact directory
+              const g = geometryOf(device, h.plan);
+              const fill = fullSet(g, (await needsOf(mods.map((m) => m.file))).map(usageOf));
+              for (const [i, f] of fill.entries()) {
+                mods.push({
+                  name: `modules/full${i}.dkm`,
+                  file: await packSynth(device, f.spec, synthDir, `${i}.dkm`),
+                });
+                wants.push(f.want);
+                if (f.want === LOADED) loaded.push(f.spec.name);
               }
-              const wants: Want[] = mods.map(() => LOADED);
-              const loaded = [...spec.modules]; // the module ids MODULES must list
-              if (spec.full) {
-                // the second daemon builds the same card: the files must outlive the first daemon's artifact directory
-                const g = geometryOf(device, h.plan);
-                const fill = fullSet(g, (await needsOf(mods.map((m) => m.file))).map(usageOf));
-                for (const [i, f] of fill.entries()) {
-                  mods.push({
-                    name: `modules/full${i}.dkm`,
-                    file: await packSynth(device, f.spec, synthDir, `${i}.dkm`),
-                  });
-                  wants.push(f.want);
-                  if (f.want === LOADED) loaded.push(f.spec.name);
-                }
-              }
-              cardSpec = { modules: mods, selection: mods.map((m) => m.name) };
-              const runtime = await h.load('audit', cardSpec);
-              const { session } = runtime;
+            }
+            cardSpec = { modules: mods, selection: mods.map((m) => m.name) };
+            const runtime = await h.load('audit', cardSpec);
+            const { session } = runtime;
 
-              const info = await bootInfo(session, h.plan);
-              expect(info.safe, 'not in safe mode').toBe(0);
-              expect(info.count, 'every module of the set is in the boot record').toBe(mods.length);
+            const info = await bootInfo(session, h.plan);
+            expect(info.safe, 'not in safe mode').toBe(0);
+            expect(info.count, 'every module of the set is in the boot record').toBe(mods.length);
+            expect(
+              info.results.every((r, i) => (wants[i] === LOADED ? r === 0 || r === E_LOADING : r === wants[i])),
+              `every module loaded (ColdFire part), the refused ones with their code: ${JSON.stringify(info.results)} for ${JSON.stringify(wants)}`,
+            ).toBe(true);
+
+            const { modules, cap } = await pausedProtocol(runtime, async (dk) => ({
+              modules: await dk.modules(),
+              cap: await dk.capacity(),
+            }));
+            blocks = modules;
+            const arena = await arenaBounds(session, h.plan);
+            expect(modules.map((m) => m.name).sort(), 'MODULES lists the loaded modules').toEqual([...loaded].sort());
+            for (const m of modules)
               expect(
-                info.results.every((r, i) => (wants[i] === LOADED ? r === 0 || r === E_LOADING : r === wants[i])),
-                `every module loaded (ColdFire part), the refused ones with their code: ${JSON.stringify(info.results)} for ${JSON.stringify(wants)}`,
+                arena[0] <= m.cf_base && m.cf_base + m.cf_size <= arena[1],
+                `${m.name}: the block lies inside the arena ${arena.map((a) => a.toString(16))}`,
               ).toBe(true);
 
-              const { modules, cap } = await pausedProtocol(runtime, async (dk) => ({
-                modules: await dk.modules(),
-                cap: await dk.capacity(),
-              }));
-              blocks = modules;
-              const arena = await arenaBounds(session, h.plan);
-              expect(modules.map((m) => m.name).sort(), 'MODULES lists the loaded modules').toEqual([...loaded].sort());
-              for (const m of modules)
-                expect(
-                  arena[0] <= m.cf_base && m.cf_base + m.cf_size <= arena[1],
-                  `${m.name}: the block lies inside the arena ${arena.map((a) => a.toString(16))}`,
-                ).toBe(true);
+            if (spec.full)
+              expect(
+                [cap.ARENA!.limit - cap.ARENA!.used, cap.ARENA!.largest, cap.DSP_AREA!.largest < DSP_GRANULE],
+                'the full set uses the arena to its last byte and the DSP area to its last whole granule',
+              ).toEqual([0, 0, true]);
 
-              if (spec.full)
-                expect(
-                  [cap.ARENA!.limit - cap.ARENA!.used, cap.ARENA!.largest, cap.DSP_AREA!.largest < DSP_GRANULE],
-                  'the full set uses the arena to its last byte and the DSP area to its last whole granule',
-                ).toEqual([0, 0, true]);
+            const plan = guardPlan(device, FIRMWARE[device], h.plan, modules, arena);
+            guard = plan;
+            record(h.artifacts, 'memaudit-plan', {
+              protect: plan.protect.map((r) => [r.label, r.lo, r.hi]),
+              code: plan.code.map((c) => [c.owner, c.lo, c.hi]),
+              modules: modules.map((m) => [m.name, m.cf_base, m.cf_size]),
+            });
 
-              const plan = guardPlan(device, FIRMWARE[device], h.plan, modules, arena);
-              guard = plan;
-              record(h.artifacts, 'memaudit-plan', {
-                protect: plan.protect.map((r) => [r.label, r.lo, r.hi]),
-                code: plan.code.map((c) => [c.owner, c.lo, c.hi]),
-                modules: modules.map((m) => [m.name, m.cf_base, m.cf_size]),
+            const machines: PanelMachine[] = [];
+            for (const m of spec.machines ?? [])
+              machines.push({
+                track: m.track,
+                type: await dynType(session, h.plan, m.module, m.machine),
+                hint: m.hint,
               });
 
-              const machines: PanelMachine[] = [];
-              for (const m of spec.machines ?? [])
-                machines.push({
-                  track: m.track,
-                  type: await dynType(session, h.plan, m.module, m.machine),
-                  hint: m.hint,
-                });
-
-              const before = await moduleBlocks(session, modules);
-              await session.client.guardSet({
-                protect: plan.protect.map(({ lo, hi, label }) => ({ lo, hi, label })),
-                allow_pc: plan.code.map(({ lo, hi }) => ({ lo, hi })),
-              });
-              try {
-                await driveAuditUi(session, machines, spec.sweep, !spec.stray);
-                const { total, hits } = await guardHits(session, modules, plan.code);
-                const after = await moduleBlocks(session, modules);
-                const changed = Object.fromEntries(
-                  modules.map((m) => [m.name, bytesChanged(before.get(m.name)!, after.get(m.name)!)]),
-                );
-                record(h.artifacts, 'memaudit-result', { total, hits, changed });
-                for (const name of spec.mustRun ?? [])
-                  expect(
-                    changed[name],
-                    `${name} ran while the guard was armed (its block changed): ${JSON.stringify(changed)}`,
-                  ).toBeGreaterThan(0);
-                if (spec.stray) {
-                  const others = (await session.faults()).filter((e) => !e.kind.startsWith('guard'));
-                  expect(others, 'no fault but the expected guard hit').toEqual([]);
-                  expect(
-                    { total, hits: hits.map((x) => [x.writer, x.label]) },
-                    `exactly one store, by the code of ${spec.stray}, inside the protected arena: ${describeHits(hits)}`,
-                  ).toEqual({ total: 1, hits: [[`module ${spec.stray}`, 'arena']] });
-                } else
-                  expect(
-                    total,
-                    `no store outside the module blocks and the patch code while the UI was driven: ${describeHits(hits)}`,
-                  ).toBe(0);
-              } finally {
-                await session.client.guardClear(); // the case's own guard check must not see the negative control's store
-              }
-            },
-            CARD_TIMEOUT,
-          );
+            const before = await moduleBlocks(session, modules);
+            await session.client.guardSet({
+              protect: plan.protect.map(({ lo, hi, label }) => ({ lo, hi, label })),
+              allow_pc: plan.code.map(({ lo, hi }) => ({ lo, hi })),
+            });
+            try {
+              await driveAuditUi(session, machines, spec.sweep, !spec.stray);
+              const { total, hits } = await guardHits(session, modules, plan.code);
+              const after = await moduleBlocks(session, modules);
+              const changed = Object.fromEntries(
+                modules.map((m) => [m.name, bytesChanged(before.get(m.name)!, after.get(m.name)!)]),
+              );
+              record(h.artifacts, 'memaudit-result', { total, hits, changed });
+              for (const name of spec.mustRun ?? [])
+                expect(
+                  changed[name],
+                  `${name} ran while the guard was armed (its block changed): ${JSON.stringify(changed)}`,
+                ).toBeGreaterThan(0);
+              if (spec.stray) {
+                const others = (await session.faults()).filter((e) => !e.kind.startsWith('guard'));
+                expect(others, 'no fault but the expected guard hit').toEqual([]);
+                expect(
+                  { total, hits: hits.map((x) => [x.writer, x.label]) },
+                  `exactly one store, by the code of ${spec.stray}, inside the protected arena: ${describeHits(hits)}`,
+                ).toEqual({ total: 1, hits: [[`module ${spec.stray}`, 'arena']] });
+              } else
+                expect(
+                  total,
+                  `no store outside the module blocks and the patch code while the UI was driven: ${describeHits(hits)}`,
+                ).toBe(0);
+            } finally {
+              await session.client.guardClear(); // the case's own guard check must not see the negative control's store
+            }
+          });
         });
 
         describe('load pass', () => {
@@ -234,20 +230,16 @@ export function defineMemaudit(set: (device: Device) => AuditSet | undefined, o:
             },
           });
 
-          test(
-            'a cold boot of the same card with the write watch on: the load and init of the modules store nothing outside their blocks',
-            async (ctx) => {
-              if (!cardSpec || !guard) return ctx.skip('the drive test did not get as far as arming the guard');
-              const runtime = await h.load('load-pass', cardSpec);
-              await advance(runtime.session, 300);
-              const stores = loggedStores(h.artifacts);
-              expect(
-                stores.map((s) => `pc 0x${s.pc.toString(16)} addr 0x${s.addr.toString(16)} size ${s.size}`),
-                `no store while the modules loaded (${blocks.map((m) => m.name)})`,
-              ).toEqual([]);
-            },
-            CARD_TIMEOUT,
-          );
+          test('a cold boot of the same card with the write watch on: the load and init of the modules store nothing outside their blocks', async (ctx) => {
+            if (!cardSpec || !guard) return ctx.skip('the drive test did not get as far as arming the guard');
+            const runtime = await h.load('load-pass', cardSpec);
+            await advance(runtime.session, 300);
+            const stores = loggedStores(h.artifacts);
+            expect(
+              stores.map((s) => `pc 0x${s.pc.toString(16)} addr 0x${s.addr.toString(16)} size ${s.size}`),
+              `no store while the modules loaded (${blocks.map((m) => m.name)})`,
+            ).toEqual([]);
+          });
         });
       },
     );

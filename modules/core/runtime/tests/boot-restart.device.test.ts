@@ -1,7 +1,6 @@
 import { expect, test } from 'vitest';
 import { bootInfoLoaded, CMD as MAILBOX, currentRecord, pokeWord, setSelection } from '@digi/regression/runtime/card-kit.ts';
 import { CARD_SYMBOLS, cardRigs, RT } from '@digi/regression/runtime/card-rig.ts';
-import { CARD_TIMEOUT } from '@digi/regression/runtime/debug-kit.ts';
 import { FULL_TIER } from '@digi/regression/runtime/devices.ts';
 import { advance } from '@digi/regression/runtime/fx-live.ts';
 import { dynType, voiceRows } from '@digi/regression/runtime/project-kit.ts';
@@ -97,7 +96,6 @@ cardRigs(
           ).toBe(true);
         }
       },
-      CARD_TIMEOUT,
     );
   },
 );

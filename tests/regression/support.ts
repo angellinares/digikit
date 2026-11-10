@@ -13,6 +13,7 @@ import {
 import { fileTemp } from './file-temp.ts';
 import { portFile } from './runtime/device-data.ts';
 import { daemonBinary } from './runtime/devices.ts';
+import { pollEmulated } from './runtime/waits.ts';
 import type { RunDirClaim } from './runtime/run-claim.ts';
 import { recordPhase, setTimingContext, timePhase, timingContext } from './timing.ts';
 import { startNoProgressWatchdog, type Watchdog } from './watchdog.ts';
@@ -66,17 +67,24 @@ export async function startPatchedSession(
   scope = 'patched runtime',
 ): Promise<PatchedSession> {
   const context = { scope, device: opts.device, session: randomUUID() };
+  // The watchdog starts with the daemon, so it covers the load inside `Session.start`.
+  let watchdog: Watchdog | undefined;
   const session = await timePhase(
     'session.startup',
     () =>
       Session.start({
         ...opts,
         runtime: { patchSet: opts.patchSet },
+        onSession: (started) => {
+          watchdog = startNoProgressWatchdog(started);
+        },
+      }).catch((error) => {
+        watchdog?.stop();
+        throw error;
       }),
     context,
   );
   setTimingContext(session, context);
-  const watchdog = startNoProgressWatchdog(session);
   try {
     const dk = new DkSession(new EmuUsbTransport((method, params) => session.client.call(method, params)));
     let closing: Promise<void> | undefined;
@@ -84,7 +92,7 @@ export async function startPatchedSession(
       session,
       dk,
       close() {
-        watchdog.stop();
+        watchdog?.stop();
         return (closing ??= timePhase(
           'session.shutdown',
           async () => {
@@ -96,7 +104,7 @@ export async function startPatchedSession(
       },
     };
   } catch (err) {
-    watchdog.stop();
+    watchdog?.stop();
     session.keepDiagnostics();
     await timePhase('session.shutdown', () => session.close(), context);
     throw err;
@@ -122,7 +130,10 @@ export async function expectRuntimeBoot({ session, dk }: PatchedSession): Promis
         expect(identity.cache_file).toBeTruthy();
       }
       expect(session.loadResult.start_used).toBeTruthy();
-      await expect.poll(async () => (await session.status()).cf.ready, { timeout: 20_000 }).toBe(true);
+      await pollEmulated(session, async () => (await session.status()).cf.ready, Boolean, {
+        emulatedMs: 20_000,
+        message: 'the ColdFire runtime is ready',
+      });
       const status = await session.status();
       expect(status.mode).toBe('free');
       expect(status.cf.ready).toBe(true);
@@ -176,8 +187,6 @@ export function withReusablePatchedSession(
     runDirClaim?: () => RunDirClaim | undefined;
   },
   lifecycle: {
-    /** Explicit no-progress budget for this fixture; undefined preserves the environment/default limit. */
-    watchdogLimitMs?: number;
     prepareBaseline: (session: Session) => Promise<RuntimeBaseline>;
     /** Required scenario evidence (guard/fault/card/PCM) before state is discarded. Holds release in their own finally. */
     finishCase: (runtime: RuntimeCase) => Promise<void>;
@@ -209,8 +218,6 @@ export function withReusablePatchedSession(
   const loadCase = async (next: RuntimeBaseline): Promise<RuntimeCase> => {
     const context = { scope, device: opts.device, session: randomUUID() };
     setTimingContext(session!, context);
-    // A load with its own timeout (a long multi-boot chain) gets the same bound as no-progress limit; the next case restores the default.
-    watchdog?.setLimit(next.timeoutMs);
     const epoch = await timePhase(
       'session.baseline-reload',
       async () => {
@@ -278,7 +285,6 @@ export function withReusablePatchedSession(
     } finally {
       // No release-all RPC exists. Bounded taps/chords own release; the mandatory next load clears runtime/scheduled input.
       cancel?.();
-      watchdog?.setLimit(undefined);
       runtime = undefined;
     }
     if (errors.length) {
@@ -296,25 +302,27 @@ export function withReusablePatchedSession(
     }
   };
   beforeAll(async () => {
-    const deadline = Date.now() + 120_000;
     const { runDirClaim, ...sessionOptions } = opts;
     claim = runDirClaim?.();
     try {
       session = await Session.start({
         ...sessionOptions,
+        onSession: (started) => {
+          watchdog = startNoProgressWatchdog(started);
+        },
         ...(claim ? { runDir: claim.dir, snapshotDir: claim.snapshotDir } : {}),
         runtime: { patchSet: opts.patchSet, reuse: true },
       });
     } catch (error) {
+      watchdog?.stop();
       failed = true;
       releaseClaim();
       throw error;
     }
-    watchdog = startNoProgressWatchdog(session, { limitMs: lifecycle.watchdogLimitMs });
     try {
-      baseline = await withinRuntimeDeadline(deadline, () => lifecycle.prepareBaseline(session!));
+      baseline = await lifecycle.prepareBaseline(session);
     } catch (error) {
-      watchdog.stop();
+      watchdog?.stop();
       failed = true;
       await session.close({ preserveDiagnostics: true });
       releaseClaim();

@@ -40,5 +40,4 @@ async function expectServiceCommands({ session, dk }: PatchedSession): Promise<v
 
 runtimeTests('service commands echo bodies and preserve registration and dispatch refusals', expectServiceCommands, {
   dsp: 'zero',
-  timeout: 360_000,
 });

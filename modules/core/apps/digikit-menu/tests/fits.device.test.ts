@@ -1,7 +1,6 @@
 import path from 'node:path';
 import { expect, test } from 'vitest';
 import { cardRigs, RT } from '@digi/regression/runtime/card-rig.ts';
-import { CARD_TIMEOUT } from '@digi/regression/runtime/debug-kit.ts';
 import { fit, needsOf } from '@digi/regression/runtime/dkm.ts';
 import { deviceProfile } from '@digi/regression/runtime/device-data.ts';
 import { advance, rpc } from '@digi/regression/runtime/fx-live.ts';
@@ -135,6 +134,5 @@ cardRigs('MODULES page: what fits', { dsp: 'sharc', roots: [...RT, 'core/digikit
       ).toEqual([names.map((_, i) => Number(i === second)), popups3]);
       await rpc(session, 'run.mode', { mode: 'paused' });
     },
-    CARD_TIMEOUT,
   );
 });

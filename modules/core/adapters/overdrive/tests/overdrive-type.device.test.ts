@@ -84,5 +84,5 @@ describeOn('dt2', `DT2 ${FIRMWARE.dt2} core/overdrive OVR TYPE`, () => {
     expect(compare('stock-high', 'stock-zero').differ, 'the amount shapes the stock curve').toBeGreaterThan(100);
     expect(compare('stock-high', 'fold-high').differ, 'FOLD differs from the stock curve at a high amount').toBeGreaterThan(100);
     expect(compare('stock-zero', 'fold-zero').differ, 'amount 0 leaves the note as stock for every curve').toBe(0);
-  }, 600_000);
+  });
 });

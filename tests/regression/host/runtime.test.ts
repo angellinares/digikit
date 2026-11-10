@@ -26,8 +26,9 @@ vi.mock('../../../packages/test-support/src/inputs.ts', async (original) => ({
   coupledEnv: fake.coupledEnv,
   resolveInputs: () => ({ syx: '/stock.syx', cfSnapshot: '/ready.snap', dspImage: '/dsp.bin', dspState: '/dsp.snap' }),
 }));
-import { Session } from '@digi/test-support';
+import { PRE_SOCKET_HANG_MS, Session } from '@digi/test-support';
 import { startPatchedSession } from '../support.ts';
+import { startNoProgressWatchdog } from '../watchdog.ts';
 
 const identity = {
   patched: true as const,
@@ -185,55 +186,51 @@ test('daemon spawn failure keeps the owned temporary run directory for diagnosti
   fs.rmSync(runDir, { recursive: true, force: true });
 });
 
-test('runtime startup deadline closes a hung load before rejecting', async () => {
-  vi.useFakeTimers();
-  let finishClose!: () => void;
-  fake.close.mockImplementation(
+test('a watchdog trip during the startup load fails the load and closes the owned daemon', async () => {
+  let failLoad!: (error: Error) => void;
+  fake.client.firmwareLoad.mockImplementation(
     () =>
-      new Promise<void>((resolve) => {
-        finishClose = resolve;
+      new Promise((_resolve, reject) => {
+        failLoad = reject;
       }),
   );
-  fake.client.firmwareLoad.mockImplementation(() => new Promise(() => {}));
-  try {
-    const started = startPatchedSession({ device: 'dn2', firmware: '1.12' });
-    let rejected = false;
-    const result = expect(started)
-      .rejects.toThrow('runtime startup timed out')
-      .then(() => {
-        rejected = true;
-      });
-    await vi.advanceTimersByTimeAsync(120_000);
-    expect(fake.close).toHaveBeenCalledTimes(1);
-    expect(rejected).toBe(false);
-    expect(fake.spawn.mock.calls[0]?.[0].signal.aborted).toBe(true);
-    finishClose();
-    await result;
-    const runDir = fake.spawn.mock.calls[0]?.[0].runDir;
-    expect(fs.existsSync(runDir), 'a failed startup keeps the run dir').toBe(true);
-    fs.rmSync(runDir, { recursive: true, force: true });
-  } finally {
-    vi.useRealTimers();
-  }
+  // The watchdog closes the client socket, which fails the pending RPC (as the real client does).
+  (fake.client as { close?: () => void }).close = () => failLoad(new Error('connection closed'));
+  let watchdog: ReturnType<typeof startNoProgressWatchdog> | undefined;
+  const started = Session.start({
+    device: 'dn2',
+    firmware: '1.12',
+    dsp: 'zero',
+    onSession: (session) => {
+      watchdog = startNoProgressWatchdog(session, { intervalMs: 5, limitMs: 30, log: () => {} });
+    },
+  });
+  await expect(started).rejects.toThrow('connection closed');
+  expect(watchdog?.tripped).toContain('no emulated progress');
+  expect(fake.close).toHaveBeenCalled();
+  const runDir = fake.spawn.mock.calls[0]?.[0].runDir;
+  fs.rmSync(runDir, { recursive: true, force: true });
 });
 
-test('runtime startup expiry closes a late spawn handle before rejecting', async () => {
+test('environment preparation that never finishes fails at the hang guard and spawns no daemon', async () => {
   vi.useFakeTimers();
-  let spawned!: (daemon: object) => void;
-  fake.spawn.mockImplementation(
-    () =>
-      new Promise((resolve) => {
-        spawned = resolve;
-      }),
-  );
+  let directory = '';
   try {
-    const started = startPatchedSession({ device: 'dn2', firmware: '1.12' });
-    const result = expect(started).rejects.toThrow('runtime startup timed out');
-    await vi.advanceTimersByTimeAsync(120_000);
-    spawned({ client: fake.client, close: fake.close });
-    await result;
-    expect(fake.close).toHaveBeenCalledTimes(1);
-    expect(fake.client.eventsSubscribe).not.toHaveBeenCalled();
+    const started = Session.start({
+      device: 'dn2',
+      firmware: '1.12',
+      dsp: 'sharc',
+      runtime: { reuse: true },
+      env: (runDir) => {
+        directory = runDir;
+        return new Promise(() => {});
+      },
+    });
+    const failed = expect(started).rejects.toThrow('environment preparation hung');
+    await vi.advanceTimersByTimeAsync(PRE_SOCKET_HANG_MS);
+    await failed;
+    expect(fake.spawn).not.toHaveBeenCalled();
+    fs.rmSync(directory, { recursive: true, force: true });
   } finally {
     vi.useRealTimers();
   }
@@ -327,19 +324,6 @@ for (const invalid of ['outside', 'symlink', 'same-epoch', 'busy', 'load-error']
   });
 }
 
-for (const stalled of ['status', 'firmwareLoad'] as const) {
-  test(`unanswered baseline ${stalled} is bounded and closes its owned daemon`, async () => {
-    const { session, baseline } = await reusableSession();
-    fake.client[stalled].mockImplementationOnce(() => new Promise(() => {}));
-    const started = Date.now();
-    await expect(session.reloadRuntimeBaseline({ ...baseline, timeoutMs: 30 })).rejects.toThrow('deadline');
-    expect(Date.now() - started).toBeLessThan(500);
-    expect(fake.close).toHaveBeenCalledTimes(1);
-    expect(fs.existsSync(path.join(session.runDir, 'runtime-baseline-error.json'))).toBe(true);
-    fs.rmSync(session.runDir, { recursive: true, force: true });
-  });
-}
-
 test('reuse starts subscribed with no SDK card or patched load until the explicit baseline', async () => {
   const session = await Session.start({ device: 'dn2', firmware: '1.12', dsp: 'sharc', runtime: { reuse: true } });
   try {
@@ -389,36 +373,6 @@ test('failed environment preparation keeps the owned directory and does not spaw
   expect(fake.spawn).not.toHaveBeenCalled();
   expect(fs.existsSync(directory)).toBe(true);
   fs.rmSync(directory, { recursive: true, force: true });
-});
-
-test('expired environment preparation cannot spawn a late daemon', async () => {
-  vi.useFakeTimers();
-  let finish!: (env: Record<string, string>) => void;
-  let directory = '';
-  try {
-    const started = Session.start({
-      device: 'dn2',
-      firmware: '1.12',
-      dsp: 'sharc',
-      runtime: { reuse: true },
-      env: (runDir) => {
-        directory = runDir;
-        return new Promise((resolve) => {
-          finish = resolve;
-        });
-      },
-    });
-    const failed = expect(started).rejects.toThrow('runtime startup timed out');
-    await vi.advanceTimersByTimeAsync(120_000);
-    await failed;
-    finish({ DIGI_FLUSH_CHECK: '1' });
-    await vi.advanceTimersByTimeAsync(0);
-    expect(fake.spawn).not.toHaveBeenCalled();
-    expect(fs.existsSync(directory)).toBe(true);
-    fs.rmSync(directory, { recursive: true, force: true });
-  } finally {
-    vi.useRealTimers();
-  }
 });
 
 for (const mismatch of [null, 'artifact', 'stock', 'load', 'status-image', 'status-base'] as const) {
