@@ -29,6 +29,8 @@ Durations come from the Nx terminal outputs (vitest `Duration`, nextest summary,
 
 **[D]** 2026-11-10 core gate (device-constants change, cold snapshot store, ~3 cores busy elsewhere): 126.8 min, 180 tasks. Exclusive tasks ran one after another until minute 50 (no device test started before), a 5 s exclusive CLI drained the run for ~9 min at minute 61, python-tests ran alone at the end (4 min). A one-emulator-per-target trial made smoke and tier-quick 3-5x slower (smoke 19 min, tier-quick 20 min); they keep their job counts.
 
+**[D]** History of core-touching merges (30 days, 128 merges): 12% change no built bytes (the scoped payoff of step 4), 33% are emulator-only changes, 38% change object bytes.
+
 Conclusions: module work is already scoped well. A core change reruns every device test. Device time is mostly emulator reloads, and the machine is
 already full during the device phase, so speed must come from less work per test, not more slots.
 
