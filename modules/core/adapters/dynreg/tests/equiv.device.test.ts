@@ -1,6 +1,16 @@
-import { defineEquiv, type Equiv } from '@digi/regression/runtime/equiv.ts';
+import { defineEquiv, DT2_TRIG, type Equiv } from '@digi/regression/runtime/equiv.ts';
 
 const SCENARIOS: Equiv[] = [
+  {
+    // no twin and no PCM pin: the rows equal a boot of no module and the note of test/sine is audible
+    name: 'equiv-dt2-sine',
+    device: 'dt2',
+    modules: ['test/sine'],
+    play: { module: 'test/sine', machine: 'sine' },
+    trigFrame: DT2_TRIG,
+    voices: 1,
+    ignoreRunMachines: ['Sine'],
+  },
   {
     name: 'equiv-dn2-set',
     device: 'dn2',

@@ -4,7 +4,7 @@ import { CARD_SYMBOLS, cardRigs, RT } from '@digi/regression/runtime/card-rig.ts
 import { CARD_TIMEOUT } from '@digi/regression/runtime/debug-kit.ts';
 import { FULL_TIER } from '@digi/regression/runtime/devices.ts';
 import { advance } from '@digi/regression/runtime/fx-live.ts';
-import { voiceRows } from '@digi/regression/runtime/project-kit.ts';
+import { dynType, voiceRows } from '@digi/regression/runtime/project-kit.ts';
 import { planSymbol } from '@digi/regression/runtime/runtime-plan.ts';
 
 /**
@@ -29,7 +29,7 @@ cardRigs(
   {
     dsp: 'sharc',
     roots: RT,
-    symbols: [...CARD_SYMBOLS, 'voices.rows', 'dyndsp_info'],
+    symbols: [...CARD_SYMBOLS, 'voices.rows', 'dyndsp_info', 'DKRT_ASSIGN'],
   },
   (h) => {
     test(
@@ -73,6 +73,18 @@ cardRigs(
         expect(b1.results, 'every module result is 0').toEqual(Array(mods.length).fill(0));
         const rows = (await voiceRows(session, h.plan)).filter(([type]) => type !== FREE_TYPE);
         expect(rows.length, `its voice rows are claimed: ${JSON.stringify(rows)}`).toBe(VOICES[h.device]);
+        // the rows have the assigned types: DT2 the type of test/sine; DN2 the types of test/dyn-dn2 and test/sine
+        const assigned =
+          h.device === 'dt2'
+            ? [await dynType(session, h.plan, 'test/sine', 'sine')]
+            : [
+                await dynType(session, h.plan, 'test/dyn-dn2', 'dyn_pluck'),
+                await dynType(session, h.plan, 'test/sine', 'sine'),
+              ];
+        expect(
+          [...new Set(rows.map(([type]) => type))].sort(),
+          `the voice rows have the assigned types: ${JSON.stringify(rows)}`,
+        ).toEqual([...assigned].sort());
         expect(currentRecord(await h.records())?.counter, 'the UI loop of the new boot cleared the counter').toBe(0);
 
         if (FULL_TIER) {
