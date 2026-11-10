@@ -87,6 +87,8 @@
         { "env": "SHARC_BLOCKTRANS" },
         { "env": "SHARC_FAST_FALLBACK_REGIONS" },
         { "env": "SHARC_FAST_AUTO" },
+        { "env": "SHARC_GEN_DIR" },
+        { "env": "SHARC_GEN_DIR_2" },
         { "env": "UPDATE_GOLDENS" }
       ],
       "options": {
@@ -117,6 +119,8 @@
         { "env": "SHARC_BLOCKTRANS" },
         { "env": "SHARC_FAST_FALLBACK_REGIONS" },
         { "env": "SHARC_FAST_AUTO" },
+        { "env": "SHARC_GEN_DIR" },
+        { "env": "SHARC_GEN_DIR_2" },
         { "env": "UPDATE_GOLDENS" }
       ],
       "options": {
@@ -147,16 +151,38 @@
         { "env": "SHARC_BLOCKTRANS" },
         { "env": "SHARC_FAST_FALLBACK_REGIONS" },
         { "env": "SHARC_FAST_AUTO" },
+        { "env": "SHARC_GEN_DIR" },
+        { "env": "SHARC_GEN_DIR_2" },
         { "env": "UPDATE_GOLDENS" }
       ],
       "options": { "command": "uv run python -m tools.devtools.fx_tier tier-quick", "cwd": "." }
     },
     "tier-sweep": {
       "executor": "nx:run-commands",
-      "cache": false,
+      "cache": true,
       "parallelism": true,
       "dependsOn": ["digi-coupled:build"],
-      "inputs": ["fxDn2"],
+      "outputs": [],
+      "inputs": [
+        "fxDn2",
+        "jsToolchain",
+        { "dependentTasksOutputFiles": "**/*", "transitive": true },
+        { "runtime": "node tools/nx/coupled-inputs.mjs" },
+        { "env": "DIGI_FX_SWEEP" },
+        { "env": "DIGI_FX_NO_AOT_SUBSET" },
+        { "env": "DIGI_EMU_FAST" },
+        { "env": "DIGI_NO_PROGRESS_MS" },
+        { "env": "DIGI_DT2_CARD" },
+        { "env": "DIGI_COUPLED_FEATURES" },
+        { "env": "SHARC_AOT" },
+        { "env": "SHARC_FAST_REGIONS" },
+        { "env": "SHARC_BLOCKTRANS" },
+        { "env": "SHARC_FAST_FALLBACK_REGIONS" },
+        { "env": "SHARC_FAST_AUTO" },
+        { "env": "SHARC_GEN_DIR" },
+        { "env": "SHARC_GEN_DIR_2" },
+        { "env": "UPDATE_GOLDENS" }
+      ],
       "options": { "command": "uv run python -m tools.devtools.fx_tier tier-sweep", "cwd": "." }
     }
   }

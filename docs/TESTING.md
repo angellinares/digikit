@@ -616,7 +616,10 @@ Verify affected selection separately: a runtime hash does not select a task afte
 changes. The former custom auditor/tracer was removed; its historical passes did not prove
 subprocess closure or runtime-digest provenance. Unresolved coverage is not a cache-safety proof.
 
-Cached targets: module `test-device` and `test-conformance`, `gate-stock:stock`, `typecheck` (set in
+Cached targets: module `test-device` and `test-conformance`, `gate-stock:stock`, the gate emulator targets
+(`gate-fx-dn2` `tier-quick` and `tier-sweep`, `gate-fx-dt2` `dt2-tier-quick` and `dt2-tier-sweep`, `gate-pins:pins`,
+`gate-dt2-tone:dt2-tone`, `gate-card:card`, `gate-smoke:smoke`, `gate-fast-roots:fast-roots`; `gate-fast-roots:fixtures`
+stays uncached, because it writes a content-keyed store outside Nx), `typecheck` (set in
 `nx.json` `targetDefaults`; the `typecheck` of `regression` is not cached because its tsconfig reads every
 module's device tests), `@digi/web:check`, `@digi/desktop:build:ui` and `check:ui`, `workspace:lint`, the
 host tests, and `rust-tests` of the crates in `HERMETIC` in `tools/nx/cargo.mjs`
