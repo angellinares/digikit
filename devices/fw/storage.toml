@@ -291,3 +291,115 @@ regs = { in = [], clobbers = ["d0", "ccr"] }
 mark = "D"
 users = ["core/storage-fault-proof"]
 doc = "Replay one original IRQSTAT load; retain its D0/CCR result while latching audited error bits. Jump site+6, never the displaced-code tail; no complete storage-fault coverage claim."
+
+# The tail of the firmware's close hash (FUN_4015b1e8, finding 120 "Close without the re-read"): core/plusdrive-write hashes the card's pages with its own
+# code and runs the rest of that function (hash page, table rebuild, inode word, event, write-back) with these functions.
+[[fn]]
+name = "cf.storage.fn.inode.get"
+cpu = "cf"
+sig = "u8 *(u32 inode_id)"
+devices = ["dt2"]
+rule = { kind = "cf_func", hash = "ff673b836e54740e54a69cf81fb5bd8e", offset = 0x0, len = 4 }
+mark = "D"
+users = ["core/plusdrive-write"]
+doc = "Inode cache lookup FUN_4015b92a (DT2 1.17): the cached 0x80-byte inode of inode_id with its use count raised, read from the card when it is not cached; 0 for an id out of range. No mutex: call it under the filesystem mutex and release it with inode.put (finding 120)."
+
+[[fn]]
+name = "cf.storage.fn.inode.put"
+cpu = "cf"
+sig = "void (u8 *inode)"
+devices = ["dt2"]
+rule = { kind = "cf_func", hash = "04d0d820a0b0deabafe4a470b3355c1b", offset = 0x0, len = 4 }
+mark = "D"
+users = ["core/plusdrive-write"]
+doc = "Release an inode of inode.get (FUN_4015b846): lowers its use count. No mutex (finding 120)."
+
+[[fn]]
+name = "cf.storage.fn.inode.write"
+cpu = "cf"
+sig = "void (u8 *inode)"
+devices = ["dt2"]
+rule = { kind = "cf_func", hash = "4c137b57727e23fcbfd78bd49640412a", offset = 0x0, len = 4 }
+mark = "D"
+users = ["core/plusdrive-write"]
+doc = "Inode write-back FUN_4015b868: reads the inode's 32 KiB card page, replaces the 0x80-byte inode and writes the page through (synchronous). No mutex (finding 120)."
+
+[[fn]]
+name = "cf.storage.fn.file.page_find"
+cpu = "cf"
+sig = "u32 (u8 *inode, u32 page, u32 *phys)"
+devices = ["dt2"]
+rule = { kind = "cf_func", hash = "eb516744245e9fed9355ebe49c9a5a2e", offset = 0x0, len = 4 }
+mark = "D"
+users = ["core/plusdrive-write"]
+doc = "Extent lookup FUN_4015813c: the low byte is 1 and *phys is the card page of file page `page` (32 KiB units; card sector = phys * 0x40 + the data base site); 0 when the page is past the extents. No mutex (finding 120)."
+
+[[fn]]
+name = "cf.storage.fn.hash_table.rebuild"
+cpu = "cf"
+sig = "void ()"
+devices = ["dt2"]
+rule = { kind = "cf_func", hash = "d469af65af152105336e666e7580d6e6", offset = 0x0, len = 4 }
+mark = "D"
+users = ["core/plusdrive-write"]
+doc = "Rebuild the RAM content-hash table (FUN_4015b0ee) from the 44 hash pages on the card and the RAM inodes, and sort it; the close hash calls it after each hash page update. Call under the filesystem mutex (finding 120)."
+
+[[fn]]
+name = "cf.storage.fn.event.post"
+cpu = "cf"
+sig = "void (u32 kind, u32 a, u32 b)"
+devices = ["dt2"]
+rule = { kind = "cf_func", hash = "cdf8dc4e011368645d324356f80e758b", offset = 0x0, len = 4 }
+mark = "D"
+users = ["core/plusdrive-write"]
+doc = "Post a file-system event (FUN_4015a6aa) into the 32-entry ring and wake its consumer: kind 2 after a write, kind 3 after the close hash (a = inode word +8, b = inode id) (finding 120)."
+
+[[site]]
+name = "cf.storage.site.fs_mutex"
+bind = "static"
+cpu = "cf"
+devices = ["dt2"]
+rule = { kind = "cf_func", hash = "0dfe3aa5cadab0e82643415ef4a6f0f9", offset = 0x14, len = 4 }
+mark = "D"
+users = ["core/plusdrive-write"]
+doc = "The 4-byte literal of the filesystem mutex address (0x46f4deb0 on 1.17), the `pea` before the lock call in file.hash (finding 120)."
+
+[[site]]
+name = "cf.storage.site.hash_read_buf"
+bind = "static"
+cpu = "cf"
+devices = ["dt2"]
+rule = { kind = "cf_func", hash = "757fcf5a7db3c8de434711ce4d23593e", offset = 0x5e, len = 4 }
+mark = "D"
+users = ["core/plusdrive-write"]
+doc = "The 4-byte literal of the 32 KiB scratch buffer (0x4066d8c0 on 1.17) that the close hash FUN_4015b1e8 reads the file into; free for a caller that holds the filesystem mutex (finding 120)."
+
+[[site]]
+name = "cf.storage.site.hash_page_buf"
+bind = "static"
+cpu = "cf"
+devices = ["dt2"]
+rule = { kind = "cf_func", hash = "757fcf5a7db3c8de434711ce4d23593e", offset = 0x86, len = 4 }
+mark = "D"
+users = ["core/plusdrive-write"]
+doc = "The 4-byte literal of the 32 KiB scratch buffer (0x406658c0 on 1.17) in which the close hash FUN_4015b1e8 updates a hash page; used under the filesystem mutex (finding 120)."
+
+[[site]]
+name = "cf.storage.site.hash_page_sector"
+bind = "static"
+cpu = "cf"
+devices = ["dt2"]
+rule = { kind = "cf_func", hash = "757fcf5a7db3c8de434711ce4d23593e", offset = 0x9e, len = 4 }
+mark = "D"
+users = ["core/plusdrive-write"]
+doc = "The 4-byte literal of the card sector of the first hash page (0x5ee980 on 1.17): the page of inode id is at sector + (id >> 13) * 0x40, word id & 0x1fff holds hash|1 (finding 120)."
+
+[[site]]
+name = "cf.storage.site.data_sector_base"
+bind = "static"
+cpu = "cf"
+devices = ["dt2"]
+rule = { kind = "cf_func", hash = "96659286ec4dc86ce3c4112bdd5815b2", offset = 0x82, len = 4 }
+mark = "D"
+users = ["core/plusdrive-write"]
+doc = "The 4-byte literal of the card sector of data page 0 (0x5ee180 on 1.17): page p of the +Drive is at sector base + p * 0x40 (the page write-back FUN_40155c34) (finding 120)."

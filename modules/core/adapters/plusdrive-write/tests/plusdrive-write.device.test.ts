@@ -5,9 +5,10 @@ import { promisify } from 'node:util';
 import { be32, fileHash, type DkSession } from '@digi/dk-session';
 import { repoRoot } from '@digi/test-support';
 import { expect, test } from 'vitest';
-import { overlayArgs, plusdriveBinary, pokeKnob, pokeWord } from '@digi/regression/runtime/card-kit.ts';
+import { overlayArgs, plusdriveBinary, pokeKnob, pokeWord, readSectors } from '@digi/regression/runtime/card-kit.ts';
 import { cardRigs, RT, type CardRig } from '@digi/regression/runtime/card-rig.ts';
-import { advance } from '@digi/regression/runtime/fx-live.ts';
+import { advance, word } from '@digi/regression/runtime/fx-live.ts';
+import { overlayFile, overlayRecords } from '@digi/regression/runtime/write-safety.ts';
 
 /**
  * Writes to the stock +Drive through core/plusdrive-write (docs/plans/usb-fast.md 3.1, finding 120), on the Digitakt II 1.17. The fixture
@@ -180,6 +181,175 @@ cardRigs('+Drive writes through core/plusdrive-write', { devices: ['dt2'] , dsp:
     expect(s.files.has('Samples/Kits/new.bin')).toBe(false);
     same(before, s.files, ['Samples/old.bin', 'Samples/Kits/new.bin', 'Samples/Kits/']);
     await rig.session.expectNoFault('+Drive writes');
+  }, 1_800_000);
+
+  // The close hash (finding 120): the adapter hashes the card's pages with its own code and runs the rest of the firmware's close hash
+  // (hash page, table rebuild, inode word, event, write-back). DKRT_PD_CUT = 0x80 closes with the firmware's own hash instead. Both are run
+  // from the same card and must leave the same card sectors of the filesystem (inodes, hash pages, bitmap, data) and the same RAM hash table.
+  const FS_FIRST = 0x5d8000; // the superblock "SFke"; the store and the settings are below
+  const HASH_PAGES = [0x5ee980, 0x5ee980 + 44 * 0x40]; // the 44 hash pages
+  const TABLE = 0x4067d8c0; // the RAM hash table: count, then (hash, id) pairs
+  const fsWrites = (card: string) => {
+    const m = new Map<number, string>();
+    for (const r of overlayRecords(fs.readFileSync(overlayFile(card)))) if (r.sector >= FS_FIRST) m.set(r.sector, Buffer.concat([r.mask, r.data]).toString('hex'));
+    return m;
+  };
+  const hashTable = async () => {
+    const n = await word(rig.session, TABLE);
+    const out: number[] = [n];
+    for (let i = 0; i < n * 2; i++) out.push(await word(rig.session, TABLE + 4 + 4 * i));
+    return out;
+  };
+  // The inode records of the path filesystem: 128-byte records, 256 per 32 KiB page, from sector 0x5d8180 (packages/emulator/plusdrive/src/reader.rs).
+  const REC_FIRST = 0x5d8180;
+  const REC_SECTORS = 0x16000;
+  const REC = 0x80;
+  const inodes = (card: string) => readSectors(card, REC_FIRST, REC_SECTORS);
+  const at = (area: Buffer, id: number) => area.subarray((Math.floor(id / 256) * 0x40) * 512 + (id % 256) * REC, (Math.floor(id / 256) * 0x40) * 512 + (id % 256) * REC + REC);
+  const live = (area: Buffer, test: (r: Buffer) => boolean) => {
+    const ids: number[] = [];
+    for (let id = 2; id < (REC_SECTORS / 0x40) * 256; id++) {
+      const r = at(area, id);
+      if (r.readUInt16BE(2) > 0 && test(r)) ids.push(id);
+    }
+    return ids;
+  };
+  const fileOfSize = (area: Buffer, size: number) => live(area, (r) => (r[0]! & 1) === 0 && r.readUInt32BE(4) === size);
+  /** The extents of a record: [logical page, pages, physical page]; the count only above the 8 inline extents (their index pages are not read). */
+  const extentsOf = (area: Buffer, id: number) => {
+    const r = at(area, id);
+    const count = r.readUInt16BE(0x1e);
+    const list: number[][] = [];
+    if (count <= 8) for (let i = 0; i < count; i++) list.push([r.readUInt32BE(0x20 + 12 * i), r.readUInt32BE(0x24 + 12 * i), r.readUInt32BE(0x28 + 12 * i)]);
+    return { count, list };
+  };
+  const bothHashes = async (knob: number) => {
+    const dk = await rig.pausedBoot(await baseCard());
+    await advance(rig.session, 2000);
+    await pokeKnob(rig.session, rig.plan, 'DKRT_PD_CUT', knob);
+    const a = pattern(70000); // two pages and a tail
+    const b = pattern(5000); // one partial page; the second file's table holds both
+    const c = pattern(32752); // data + 16 zeros is exactly one page
+    const r: string[] = [];
+    for (const [d, p] of [[a, 'Samples/Kits/a.bin'], [b, 'Samples/b.bin'], [c, 'Samples/c.bin']] as const) {
+      const x = await run(dk, WRITE | SAMPLES, d.length, p);
+      expect([x.close, x.job, x.devHash], `${p} closed with the hash of data + 16 zeros`).toEqual([0, 0, slot4(d)]);
+      r.push(x.devHash);
+    }
+    const card = await rig.after(`pdh${knob}`);
+    const files = await drive(card);
+    for (const [d, p] of [[a, 'Samples/Kits/a.bin'], [b, 'Samples/b.bin'], [c, 'Samples/c.bin']] as const) {
+      expect(files.get(p), p).toEqual({ size: d.length + 16, hash: slot4(d) });
+      expect((await cat(card, p)).subarray(0, d.length), `${p} bytes`).toEqual(d);
+    }
+    return { writes: fsWrites(card), table: await hashTable() };
+  };
+  test('the close hash with the adapter\'s own code leaves the card and the RAM hash table as the firmware\'s close hash does', async () => {
+    const fast = await bothHashes(0);
+    const slow = await bothHashes(0x80);
+    expect(fast.table[0], 'the hash table has entries').toBeGreaterThan(3);
+    expect(fast.table, 'the RAM hash table after the rebuild').toEqual(slow.table);
+    expect([...fast.writes.keys()].sort((x, y) => x - y), 'the same sectors were written').toEqual([...slow.writes.keys()].sort((x, y) => x - y));
+    expect(fast.writes.size, 'the card was written').toBeGreaterThan(20);
+    for (const [sector, data] of fast.writes) expect(data, `sector 0x${sector.toString(16)}`).toBe(slow.writes.get(sector));
+    await rig.session.expectNoFault('close hash');
+  }, 1_800_000);
+
+  // The only part of the fast close that differs from the stock read is the page to card mapping (file_page_find), and a file of one extent does
+  // not test it. The adapter reserves the whole file in one call; the firmware's allocator (FUN_40155974, FUN_4015583c) takes the first free run of
+  // that length, else the longest runs it finds, one extent each. So the free space is fragmented in RAM before the write: in the page occupancy
+  // bitmap (0x46f39ca0, one bit per 32 KiB page, set = used) every even page from the first one after the seed files is marked used, so that every
+  // free run is one page long. Both variants get the same bitmap.
+  const BITMAP = 0x46f39ca0;
+  const FRAG_FIRST_WORD = 83; // pages 2656 and up; the allocator starts at page 2682
+  const FRAG_LAST_WORD = 0x5004; // the allocator scans this many words (FUN_4015583c)
+  const FRAG_USED_WORDS = 100; // pages below 3200 may hold files: their bits are kept
+  const FRAG_PAGES = 20; // more pieces than the 8 inline extents, which puts the extents into an index page
+  const fragBig = async (knob: number) => {
+    const dk = await rig.pausedBoot(await baseCard());
+    await advance(rig.session, 2000);
+    for (let w = FRAG_FIRST_WORD; w < FRAG_LAST_WORD; w++) {
+      const kept = w < FRAG_USED_WORDS ? await word(rig.session, BITMAP + 4 * w) : 0;
+      await pokeWord(rig.session, BITMAP + 4 * w, (kept | 0x55555555) >>> 0);
+    }
+    await pokeKnob(rig.session, rig.plan, 'DKRT_PD_CUT', knob);
+    const big = pattern(FRAG_PAGES * 32768 - 16 - 700);
+    const x = await run(dk, WRITE | SAMPLES, big.length, 'Samples/Frag/big.bin');
+    expect([x.close, x.job, x.devHash], 'closed with the hash of data + 16 zeros').toEqual([0, 0, slot4(big)]);
+    const out = await rig.after(`pdg${knob}`);
+    expect((await cat(out, 'Samples/Frag/big.bin')).subarray(0, big.length), 'bytes').toEqual(big);
+    const area = inodes(out);
+    const ids = fileOfSize(area, big.length + 16);
+    expect(ids.length, 'one record of that size').toBe(1);
+    return { card: out, writes: fsWrites(out), table: await hashTable(), extents: extentsOf(area, ids[0]!) };
+  };
+  test('the close hash on a fragmented file (several extents) leaves the card and the RAM hash table as the firmware\'s close hash does', async () => {
+    const fast = await fragBig(0);
+    const slow = await fragBig(0x80);
+    // the file is fragmented: the firmware's own extent count in the inode, read from the card
+    console.log(`fragmented file: ${fast.extents.count} extents`);
+    expect(fast.extents.count, 'more extents than the 8 inline ones').toBeGreaterThan(8);
+    expect(slow.extents.count, 'the same layout through the firmware close').toBe(fast.extents.count);
+    expect(fast.extents.list, 'the same extents').toEqual(slow.extents.list);
+    expect(fast.table, 'the RAM hash table after the rebuild').toEqual(slow.table);
+    expect([...fast.writes.keys()].sort((x, y) => x - y), 'the same sectors were written').toEqual([...slow.writes.keys()].sort((x, y) => x - y));
+    for (const [sector, data] of fast.writes) expect(data, `sector 0x${sector.toString(16)}`).toBe(slow.writes.get(sector));
+    await rig.session.expectNoFault('fragmented close hash');
+  }, 3_600_000);
+
+  test('a failure after the hash page was written puts the hash word back: nothing points at the deleted inode', async () => {
+    const dk = await rig.pausedBoot(await baseCard());
+    await advance(rig.session, 2000);
+    const before = await snapshot('pdw0');
+    const tableBefore = await hashTable();
+    await pokeKnob(rig.session, rig.plan, 'DKRT_PD_CUT', 9); // the close fails right after the hash page write
+    const r = await run(dk, WRITE | SAMPLES, 40000, 'Samples/never.bin');
+    expect(r.job, 'write error').toBe(-57);
+    const after = await snapshot('pdw1');
+    expect(fsWrites(after.card).has(HASH_PAGES[0]!), 'the hash page was written (and written back)').toBe(true);
+    const pages = (card: string) => readSectors(card, HASH_PAGES[0]!, HASH_PAGES[1]! - HASH_PAGES[0]!);
+    expect(pages(after.card).equals(pages(before.card)), 'every hash word is as it was').toBe(true);
+    expect(await hashTable(), 'the RAM hash table was not rebuilt').toEqual(tableBefore);
+    expect(after.files.has('Samples/never.bin')).toBe(false);
+    expect(staged(after.files)).toEqual([]);
+    same(before.files, after.files, []);
+    await pokeKnob(rig.session, rig.plan, 'DKRT_PD_CUT', 0);
+    const ok = await run(dk, WRITE | SAMPLES, 3000, 'Samples/good.bin');
+    expect([ok.close, ok.job], 'the next file is accepted').toEqual([0, 0]);
+    await rig.session.expectNoFault('hash word restore');
+  }, 1_800_000);
+
+  test('a wrong expected hash is refused and leaves the card\'s hash pages and the RAM hash table as they were', async () => {
+    const dk = await rig.pausedBoot(await baseCard());
+    await advance(rig.session, 2000);
+    const before = await snapshot('pdm0');
+    const tableBefore = await hashTable();
+    const bad = await run(dk, 5 | SAMPLES, 40000, 'Samples/bad.bin'); // WRITE_BAD_HASH: two pages and a tail
+    expect([bad.close, bad.job], 'E_HASH').toEqual([-56, -56]);
+    const after = await snapshot('pdm1');
+    expect(after.files.has('Samples/bad.bin')).toBe(false);
+    expect(staged(after.files), 'staging recovered').toEqual([]);
+    same(before.files, after.files, []);
+    expect(await hashTable(), 'the RAM hash table is untouched').toEqual(tableBefore);
+    // the delete of the staged file may write a hash page back, so the test compares the content of the 44 hash pages, not the writes
+    const pages = (card: string) => readSectors(card, HASH_PAGES[0]!, HASH_PAGES[1]! - HASH_PAGES[0]!);
+    expect(pages(after.card).equals(pages(before.card)), 'the hash pages on the card hold what they held').toBe(true);
+    // the inodes of the seed files and of their folders are unchanged; only the staged file's own records and the staging folder's change
+    const a0 = inodes(before.card);
+    const a1 = inodes(after.card);
+    const seedIds = [5000, 1234, 300].flatMap((n) => [...fileOfSize(a0, n), ...fileOfSize(a0, n + 16)]); // old.bin, deep.bin, keep.bin
+    expect(seedIds.length, 'the seed files were found').toBe(3);
+    const root = at(a0, seedIds[2]!).readUInt32BE(8); // keep.bin's folder; the staging folder entry may touch it
+    const folders = new Set(seedIds.map((id) => at(a0, id).readUInt32BE(8)));
+    folders.delete(root);
+    for (const id of [...seedIds, ...folders]) expect(at(a1, id).equals(at(a0, id)), `inode ${id} (a seed file or the Samples/Sub folder) is unchanged`).toBe(true);
+    let changed = 0;
+    for (let id = 2; id < (REC_SECTORS / 0x40) * 256; id++) if (!at(a1, id).equals(at(a0, id))) changed++;
+    expect(changed, 'only the staged file and the staging folder (and the root entry for it) were touched').toBeLessThanOrEqual(4);
+    // the next good file is accepted
+    const ok = await run(dk, WRITE | SAMPLES, 3000, 'Samples/good.bin');
+    expect([ok.close, ok.job]).toEqual([0, 0]);
+    await rig.session.expectNoFault('wrong hash');
   }, 1_800_000);
 
   test('a destination that the stock firmware has open is E_FILE_IN_USE for a replace and a delete, and nothing changes', async () => {

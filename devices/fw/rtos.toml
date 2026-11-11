@@ -197,3 +197,23 @@ devices = ["dt2", "dn2"]
 mark = "D"
 users = ["core/introblank"]
 doc = "The intro setup function, before it reads its scene table argument from (0x24,sp); a hook that writes another table pointer there changes the whole intro."
+
+[[fn]]
+name = "cf.rtos.fn.mutex_lock"
+cpu = "cf"
+sig = "void (u32 *mutex)"
+devices = ["dt2"]
+rule = { kind = "cf_func", hash = "c02de192e5cfdc542a335acc2d314923", offset = 0x0, len = 4 }
+mark = "D"
+users = ["core/plusdrive-write"]
+doc = "Lock a recursive owner-aware mutex (FUN_400015a0 on DT2 1.17): a task that holds it takes it again without blocking. Task context only."
+
+[[fn]]
+name = "cf.rtos.fn.mutex_unlock"
+cpu = "cf"
+sig = "void (u32 *mutex)"
+devices = ["dt2"]
+rule = { kind = "cf_func", hash = "ff7148e8cfd55a92f20fca9420bea643", offset = 0x0, len = 4 }
+mark = "D"
+users = ["core/plusdrive-write"]
+doc = "Unlock a mutex of mutex_lock (FUN_400016d2 on DT2 1.17). Task context only."
