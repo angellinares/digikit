@@ -56,24 +56,47 @@ import {
 } from './firmware-state';
 import './firmware-page.css';
 
+/**
+ * One step of the page. A done step that has a `summary` folds to its header with that one line (the steps before the current one stay out of
+ * the way); its Show button opens it again. `aside` stays in the header either way.
+ */
 function Step(props: {
   n: number;
   title: string;
   mark: StepMark;
   children: JSX.Element;
   aside?: JSX.Element;
+  summary?: JSX.Element;
 }): JSX.Element {
+  const [shown, setShown] = createSignal(false);
+  const folded = () => props.mark === 'done' && props.summary !== undefined && !shown();
   return (
-    <section class="step" classList={{ [props.mark]: true }} aria-labelledby={`fw-step-${props.n}`}>
+    <section class="step" classList={{ [props.mark]: true, folded: folded() }} aria-labelledby={`fw-step-${props.n}`}>
       <header class="steph">
         <span class="mark" aria-hidden="true">
           {props.mark === 'done' ? '✓' : props.mark === 'bad' ? '!' : props.n}
         </span>
         <h3 id={`fw-step-${props.n}`}>{props.title}</h3>
+        <Show when={folded()}>
+          <span class="summary">{props.summary}</span>
+        </Show>
         <span class="sp" />
         {props.aside}
+        <Show when={props.mark === 'done' && props.summary !== undefined}>
+          <button
+            type="button"
+            class="linkbtn fold"
+            aria-expanded={!folded()}
+            aria-controls={`fw-step-${props.n}-body`}
+            onClick={() => setShown(!shown())}
+          >
+            {folded() ? 'Show' : 'Hide'}
+          </button>
+        </Show>
       </header>
-      <div class="stepb">{props.children}</div>
+      <div class="stepb" id={`fw-step-${props.n}-body`} hidden={folded()}>
+        {props.children}
+      </div>
     </section>
   );
 }
@@ -167,7 +190,34 @@ export default function FirmwarePage(): JSX.Element {
     <section class="firmware-page" aria-label="Firmware">
       <header class="head">
         <h2>Firmware</h2>
-        <span class="dim">Patch the stock firmware and flash it over MIDI, or go back to stock.</span>
+        <span class="modes" role="radiogroup" aria-label="What to send">
+          <button
+            type="button"
+            role="radio"
+            aria-checked={!restore()}
+            classList={{ on: !restore() }}
+            disabled={running(run())}
+            onClick={() => restore() && setRestore(false)}
+          >
+            Patch and flash
+          </button>
+          <button
+            type="button"
+            role="radio"
+            aria-checked={restore()}
+            classList={{ on: restore() }}
+            disabled={running(run())}
+            title="Send the stock file itself, to take digikit off the device"
+            onClick={() => !restore() && setRestore(true)}
+          >
+            Restore stock
+          </button>
+        </span>
+        <span class="dim">
+          {restore()
+            ? 'Send the stock file itself, to take digikit off the device.'
+            : 'Patch the stock firmware and flash it over MIDI.'}
+        </span>
       </header>
       <AutoRefresh
         busy={() => (running(run()) ? 'Flashing' : '')}
@@ -180,7 +230,19 @@ export default function FirmwarePage(): JSX.Element {
 
       <div class="steps">
         {/* 1 */}
-        <Step n={1} title="Firmware" mark={marks()[0]!}>
+        <Step
+          n={1}
+          title="Firmware"
+          mark={marks()[0]!}
+          summary={
+            ready() ? (
+              <>
+                <span class="fname">{ready()!.name}</span> {shortName(ready()!.p.device)} {ready()!.p.os}
+                {ready()!.p.restore ? ' · stock, sent as it is' : ''}
+              </>
+            ) : undefined
+          }
+        >
           <input
             ref={input}
             class="hidden"
@@ -259,17 +321,6 @@ export default function FirmwarePage(): JSX.Element {
           <label class="tick">
             <input
               type="checkbox"
-              checked={restore()}
-              disabled={running(run())}
-              onChange={(e) => setRestore(e.currentTarget.checked)}
-            />
-            <span>
-              Restore stock <span class="dim">(send the stock file itself, to take digikit off the device)</span>
-            </span>
-          </label>
-          <label class="tick">
-            <input
-              type="checkbox"
               checked={customBootScreen()}
               disabled={running(run()) || restore()}
               onChange={(e) => setCustomBoot(e.currentTarget.checked)}
@@ -285,6 +336,9 @@ export default function FirmwarePage(): JSX.Element {
           n={2}
           title="Checks"
           mark={marks()[1]!}
+          summary={
+            ready()?.p.ok ? `${checkRows(ready()!.p).length} of ${checkRows(ready()!.p).length} passed` : undefined
+          }
           aside={
             <Show when={ready()?.p.ok}>
               <>
@@ -348,6 +402,7 @@ export default function FirmwarePage(): JSX.Element {
           n={3}
           title="Device"
           mark={marks()[2]!}
+          summary={match().state === 'match' ? match().text : undefined}
           aside={transferEnv().targets.inHeader ? undefined : <TargetSelect reload={reload} />}
         >
           <div class="devrow">
