@@ -56,6 +56,7 @@ not complete verification. Do not use `--skip-nx-cache` to rerun a failed test: 
 
 | Work | Iteration check |
 | --- | --- |
+| C code | Hand-written C and headers are formatted with the clang-format pinned in `mise.toml` (`.clang-format`; generated files are in `.clang-format-ignore`). `fmt-check` fails on a difference; `mise run fmt:c` applies it. |
 | Any change | `mise run test:changed`: lint, format, types, host tests and Python checks of the affected projects; no builds or devices. |
 | JS/TS host helpers | `pnpm nx:pilot run <project>:test-host` and `<project>:typecheck`. |
 | Desktop UI | `pnpm nx:pilot run @digi/desktop:test-host` and `@digi/desktop:check:ui`; `@digi/desktop:typecheck` checks its test sources. |

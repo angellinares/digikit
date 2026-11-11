@@ -186,6 +186,10 @@ description = "The SHARC core's tests under PyPy 3.11 (slow; needs uv and a PyPy
 run = "pnpm nx:pilot run workspace:rust-fmt"
 description = "cargo fmt --check on the crates listed in the workspace rust-fmt target"
 
+["fmt:c"]
+run = "pnpm fmt:c"
+description = "Format the hand-written C with the pinned clang-format (fmt-check fails on a difference)"
+
 [lint]
 depends = ["lint:py", "lint:rust"]
 run = ["pnpm lint", "pnpm fmt:check"]

@@ -1,0 +1,21 @@
+# C style of the hand-written C in this repository. clang-format is pinned in mise.toml.
+# Generated files are listed in .clang-format-ignore.
+Language: Cpp
+BasedOnStyle: LLVM
+IndentWidth: 4
+ContinuationIndentWidth: 4
+UseTab: Never
+ColumnLimit: 100
+BreakBeforeBraces: Linux
+PointerAlignment: Right
+ReflowComments: false
+SortIncludes: Never
+IndentPPDirectives: None
+AllowShortFunctionsOnASingleLine: None
+AllowShortIfStatementsOnASingleLine: Never
+AllowShortLoopsOnASingleLine: false
+AlignAfterOpenBracket: Align
+AlignConsecutiveMacros: None
+MaxEmptyLinesToKeep: 1
+AllowShortEnumsOnASingleLine: true
+BreakStringLiterals: false
