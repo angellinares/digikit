@@ -11,6 +11,7 @@ import {
   noteText,
   kibText,
   segmentTitle,
+  slotCells,
   SPECS,
   usedText,
   widthPct,
@@ -212,4 +213,30 @@ test('the texts: KiB for bytes, counts for rows, the module name and amount on h
   assert.equal(amountText({ bytes: false }, 7), '7');
   assert.equal(widthPct(dsp, 256 * KiB), 50);
   assert.equal(widthPct({ limit: 0 } as Bar, 5), 0);
+});
+
+test('a count bar is one cell per slot, coloured by the module that holds it; byte bars and long counts stay bars', () => {
+  const bars = buildBars(dn2, loaded, library);
+  const modules = slotCells(by(bars, 'MODULES'))!;
+  assert.equal(modules.length, 8);
+  assert.deepEqual(
+    modules.map((c) => c.kind),
+    ['machine', 'effect', 'tool', 'free', 'free', 'free', 'free', 'free'],
+  );
+  assert.equal(modules[0]!.title, 'sine: 1');
+  assert.equal(modules[7]!.title, freeTitle(by(bars, 'MODULES')));
+  assert.equal(slotCells(by(bars, 'PARAM_ROWS'))!.length, 16);
+  assert.ok(slotCells(by(bars, 'PAGE_ROWS'))!.every((c) => c.kind === 'free'));
+  assert.equal(slotCells(by(bars, 'ARENA')), null, 'bytes');
+  assert.equal(slotCells({ ...by(bars, 'MODULES'), limit: 64 }), null, 'too many slots to draw one by one');
+});
+
+test('slots past the limit are drawn after it and marked', () => {
+  const over = buildBars({ ...dn2, MACHINE_ROWS: c(1, 2) }, loaded, library);
+  const cells = slotCells(by(over, 'MACHINE_ROWS'))!;
+  assert.equal(cells.length, 2);
+  assert.deepEqual(
+    cells.map((x) => x.over),
+    [false, true],
+  );
 });

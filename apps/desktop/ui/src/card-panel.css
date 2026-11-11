@@ -14,31 +14,6 @@
 .card-panel[hidden] {
   display: none;
 }
-.card-panel.closed {
-  width: 36px;
-}
-.card-panel .card-toggle {
-  display: flex;
-  align-items: center;
-  gap: 8px;
-  height: 34px;
-  padding: 0 11px;
-  border: 0;
-  border-bottom: 1px solid #222428;
-  background: transparent;
-  color: var(--ink-2, #a9adb4);
-  font: inherit;
-  cursor: pointer;
-  text-align: left;
-}
-.card-panel .card-toggle svg {
-  width: 14px;
-  height: 14px;
-  flex-shrink: 0;
-}
-.card-panel .card-toggle:hover {
-  color: var(--ink, #eceae5);
-}
 .card-panel .card-body {
   display: flex;
   flex-direction: column;
@@ -155,10 +130,10 @@
   margin-top: 2px;
 }
 
-/* The column: the Card panel on top, the Memory panel under it. A closed panel keeps its title bar; with both closed the column is a rail. */
+/* The column (SidePanels.tsx): tabs over one panel at a time; folded, it is a rail with the fold button only. */
 .side-col {
   flex-shrink: 0;
-  width: 260px;
+  width: 280px;
   min-height: 0;
   display: flex;
   flex-direction: column;
@@ -169,23 +144,65 @@
   display: none;
 }
 .side-col.rail {
-  width: 36px;
+  width: 40px;
+}
+.side-tabs {
+  flex-shrink: 0;
+  display: flex;
+  align-items: stretch;
+  gap: 2px;
+  height: 40px;
+  padding: 0 4px 0 8px;
+  border-bottom: 1px solid #222428;
+}
+.side-col.rail .side-tabs {
+  padding: 0;
+  justify-content: center;
+}
+.side-tab {
+  padding: 0 9px;
+  border: 0;
+  border-bottom: 2px solid transparent;
+  margin-bottom: -1px;
+  background: transparent;
+  color: var(--ink-2, #a9adb4);
+  font: inherit;
+  font-size: 12.5px;
+  font-weight: 500;
+  cursor: pointer;
+}
+.side-tab:hover {
+  color: var(--ink, #eceae5);
+}
+.side-tab.on {
+  border-bottom-color: var(--amber, #f3b52c);
+  color: var(--ink, #eceae5);
+  font-weight: 600;
+}
+.side-fold {
+  align-self: center;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 30px;
+  height: 30px;
+  border: 0;
+  border-radius: 7px;
+  background: transparent;
+  color: var(--ink-3, #868b94);
+  cursor: pointer;
+}
+.side-fold:hover {
+  background: #1a1c20;
+  color: var(--ink, #eceae5);
+}
+.side-fold svg {
+  width: 14px;
+  height: 14px;
 }
 .side-col .card-panel {
   width: auto;
-  min-height: 34px;
-  flex: 0 1 auto;
+  flex: 1 1 auto;
+  min-height: 0;
   border-left: 0;
-}
-.side-col .card-panel + .card-panel {
-  border-top: 1px solid #222428;
-}
-.side-col .card-panel.closed {
-  flex-shrink: 0;
-}
-.side-col .card-panel.closed .card-toggle {
-  border-bottom: 0;
-}
-.side-col.rail .card-toggle strong {
-  display: none;
 }

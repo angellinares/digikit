@@ -1,20 +1,20 @@
-// The Memory panel: what the resources a device limits are used for. A collapsible panel in the Card panel's look (card-panel.css), under the
-// Card panel in the right-hand column of the Emulator page (SidePanels.tsx) and alone in the Remote page's. One bar per resource the device
-// limits (memory-core.ts); each bar is split into one segment per loaded module, coloured by the module's type, then free space; hover a
+// The Memory panel: what the resources a device limits are used for. A tab of the right-hand column (SidePanels.tsx) of the Emulator page, beside
+// Card and Metrics, and of the Remote page, alone; in the Card panel's look (card-panel.css). One bar per resource the device limits
+// (memory-core.ts); each bar is split into one segment per loaded module, coloured by the module's type, then free space (a count with few slots,
+// such as Machines, is one cell per slot instead); hover a
 // segment for the module and its amount.
 // The panel reads CAPACITY, MODULES and the local library (memory-backend.ts) over the session it is given, which is the target's one session
-// (target.ts): when it is shown or opened, when a Transfer job ended or the emulator restarted (the same signal the Card panel reads), when
+// (target.ts): when its tab is shown, when a Transfer job ended or the emulator restarted (the same signal the Card panel reads), when
 // the window gets the focus, and with its Refresh button. One read at a time (read-gate-core.ts); a read that fails is tried again a few
-// times with a growing gap (a device that is still booting after a restart). A hidden or collapsed panel reads nothing. Nothing pending or
+// times with a growing gap (a device that is still booting after a restart). A panel whose tab is not shown reads nothing. Nothing pending or
 // ticked is shown.
 import { For, Show, createEffect, createMemo, createSignal, onCleanup, onMount, untrack, type JSX } from 'solid-js';
 import { panels } from '@web/data/faceplates';
 import { isCancelled } from '@web/modules/backend';
 import type { DkSession } from '@digi/dk-session';
 import { cardRefresh } from './card-state';
-import { memoryOpen as open, setMemoryOpen } from './panel-open';
 import { deviceOfPort } from './remote-core';
-import { freeTitle, noteText, segmentTitle, usedText, widthPct } from './memory-core';
+import { freeTitle, noteText, segmentTitle, slotCells, usedText, widthPct } from './memory-core';
 import { readMemory, type MemoryReading } from './memory-backend';
 import { createReadGate } from './read-gate-core';
 import { focusReadDue } from '@web/transfer/refresh-core';
@@ -66,7 +66,7 @@ export default function MemoryPanel(props: {
   });
   // Only a change of whether the panel is on screen and open counts, not each change of what `visible` reads (the Console's `status` changes
   // once per display frame): a memo passes on a change of its value only.
-  const active = createMemo(() => props.visible && open());
+  const active = createMemo(() => props.visible);
   // read when the panel is shown and opened, when the target changed, when a Transfer job ended or the emulator restarted
   createEffect(() => {
     cardRefresh();
@@ -92,103 +92,99 @@ export default function MemoryPanel(props: {
     document.removeEventListener('visibilitychange', back);
   });
 
-  const toggle = () => setMemoryOpen(!open());
   const device = () => {
     const d = deviceOfPort(reading()?.port ?? '');
     return d ? panels[d].name : '';
   };
 
   return (
-    <aside class="card-panel memory-panel" classList={{ closed: !open() }} aria-label="Memory" hidden={!props.visible}>
-      <button
-        type="button"
-        class="card-toggle"
-        aria-expanded={open()}
-        title={open() ? 'Collapse the Memory panel' : 'Show the Memory panel'}
-        onClick={toggle}
-      >
-        <svg viewBox="0 0 16 16" aria-hidden="true">
-          <path
-            d={open() ? 'M6 3L11 8L6 13' : 'M10 3L5 8L10 13'}
-            fill="none"
-            stroke="currentColor"
-            stroke-width="1.6"
-            stroke-linecap="round"
-            stroke-linejoin="round"
-          />
-        </svg>
-        <strong>Memory</strong>
-      </button>
-      <Show when={open()}>
-        <div class="card-body">
-          <Show when={device()}>
-            <h3 class="device">{device()}</h3>
-          </Show>
-          <Show when={reading()}>
-            {(r) => (
-              <>
-                <For each={r().bars}>
-                  {(bar) => (
-                    <div class="mem-bar">
-                      <div class="mem-head">
-                        <span>{bar.label}</span>
-                        <span class="used">{usedText(bar)}</span>
-                      </div>
-                      <div
-                        class="bar"
-                        classList={{ over: bar.over }}
-                        role="img"
-                        aria-label={`${bar.label}: ${usedText(bar)}`}
-                      >
-                        <For each={bar.segments}>
-                          {(s) => (
-                            <span
-                              class={`seg ${s.kind}`}
-                              style={{ width: `${widthPct(bar, s.amount)}%` }}
-                              title={segmentTitle(bar, s)}
-                            />
-                          )}
-                        </For>
-                        <span class="seg free" title={freeTitle(bar)} />
-                      </div>
-                      <Show when={noteText(bar)}>
-                        {(note) => (
-                          <span class="mem-note" classList={{ over: bar.over }}>
-                            {note()}
-                          </span>
-                        )}
-                      </Show>
+    <aside class="card-panel memory-panel" aria-label="Memory" hidden={!props.visible}>
+      <div class="card-body">
+        <Show when={device()}>
+          <h3 class="device">{device()}</h3>
+        </Show>
+        <Show when={reading()}>
+          {(r) => (
+            <>
+              <For each={r().bars}>
+                {(bar) => (
+                  <div class="mem-bar">
+                    <div class="mem-head">
+                      <span>{bar.label}</span>
+                      <span class="used">{usedText(bar)}</span>
                     </div>
+                    <Show
+                      when={slotCells(bar)}
+                      fallback={
+                        <div
+                          class="bar"
+                          classList={{ over: bar.over }}
+                          role="img"
+                          aria-label={`${bar.label}: ${usedText(bar)}`}
+                        >
+                          <For each={bar.segments}>
+                            {(s) => (
+                              <span
+                                class={`seg ${s.kind}`}
+                                style={{ width: `${widthPct(bar, s.amount)}%` }}
+                                title={segmentTitle(bar, s)}
+                              />
+                            )}
+                          </For>
+                          <span class="seg free" title={freeTitle(bar)} />
+                        </div>
+                      }
+                    >
+                      {(cells) => (
+                        <div
+                          class="cells"
+                          classList={{ over: bar.over }}
+                          role="img"
+                          aria-label={`${bar.label}: ${usedText(bar)}`}
+                        >
+                          <For each={cells()}>
+                            {(c) => <span class={`cell ${c.kind}`} classList={{ over: c.over }} title={c.title} />}
+                          </For>
+                        </div>
+                      )}
+                    </Show>
+                    <Show when={noteText(bar)}>
+                      {(note) => (
+                        <span class="mem-note" classList={{ over: bar.over }}>
+                          {note()}
+                        </span>
+                      )}
+                    </Show>
+                  </div>
+                )}
+              </For>
+              <Show when={r().loaded === 0}>
+                <p class="empty">No module is loaded.</p>
+              </Show>
+              <ul class="legend" aria-label="Module types">
+                <For each={LEGEND}>
+                  {(l) => (
+                    <li>
+                      <span class={`swatch ${l.kind}`} />
+                      {l.text}
+                    </li>
                   )}
                 </For>
-                <Show when={r().loaded === 0}>
-                  <p class="empty">No module is loaded.</p>
-                </Show>
-                <ul class="legend" aria-label="Module types">
-                  <For each={LEGEND}>
-                    {(l) => (
-                      <li>
-                        <span class={`swatch ${l.kind}`} />
-                        {l.text}
-                      </li>
-                    )}
-                  </For>
-                </ul>
-              </>
-            )}
-          </Show>
-          <Show when={error()}>
-            <p class="err" role="alert">
-              {error()}
-            </p>
-          </Show>
-          <div class="acts">
-            <button type="button" class="act small" disabled={busy()} onClick={() => gate.request()}>
-              {busy() ? 'Reading…' : 'Refresh'}
-            </button>
-          </div>
+              </ul>
+            </>
+          )}
+        </Show>
+        <Show when={error()}>
+          <p class="err" role="alert">
+            {error()}
+          </p>
+        </Show>
+        <div class="acts">
+          <button type="button" class="act small" disabled={busy()} onClick={() => gate.request()}>
+            {busy() ? 'Reading…' : 'Refresh'}
+          </button>
         </div>
-      </Show>
+      </div>
     </aside>
   );
 }

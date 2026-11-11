@@ -34,6 +34,7 @@ import { followOn, logEvent, logInput, logOpen, logState, setLogOpen } from './l
 import LogPanel from './LogPanel';
 import SidePanels from './SidePanels';
 import TitleBar from './TitleBar';
+import { setInspectorOpen, setInspectorTab } from './panel-open';
 import RemotePage from './RemotePage';
 import { emulatorSession, lastMidiPort, lastMidiSession, target } from '@web/transfer/target';
 import { transferEnv } from '@web/transfer/env';
@@ -166,7 +167,6 @@ export default function Console() {
   const [audio, setAudio] = createSignal<NativeAudioStatus>();
   const [buildInfo, setBuildInfo] = createSignal<BuildInfo>();
   const [rate, setRate] = createSignal<number>();
-  const [drawer, setDrawer] = createSignal(false);
   // the Log drawer: the last entry seen (the badge counts the errors after it); the filter and the list are in LogPanel.tsx
   const [seenId, setSeenId] = createSignal(0);
   // the Log dock: its height (undefined: the default share of the window), the window height, and a drag in progress
@@ -396,7 +396,11 @@ export default function Console() {
   };
 
   const toggleLog = () => setLogOpen(!logOpen());
-  const toggleMetrics = () => setDrawer(!drawer());
+  const showMetrics = () => {
+    setPage('emulator');
+    setInspectorTab('metrics');
+    setInspectorOpen(true);
+  };
   const dockPx = () => startDock(dockSaved(), windowPx());
   const dockDragTo = (clientY: number) => {
     if (!dockEl) return;
@@ -568,6 +572,86 @@ export default function Console() {
   };
   const load_ = () => audio()?.load ?? undefined;
   const sink = () => audio()?.sink ?? undefined;
+
+  /** The Metrics tab of the right-hand column: what the emulator measures, polled once a second, and two test actions. */
+  const metrics = (
+    <div class="card-body metrics">
+      <p class="poll">1 s poll</p>
+      <dl>
+        <dt>Firmware</dt>
+        <dd>{status() ? `${status()!.device} ${status()!.version} · ${phase()}` : '—'}</dd>
+        <dt>Instructions</dt>
+        <dd>{status()?.icount.toLocaleString() ?? '—'}</dd>
+        <dt>Audio output</dt>
+        <dd>{audio()?.output_device ?? (audio()?.setup_needed ? 'no audio for this firmware' : '—')}</dd>
+        <dt>Speed</dt>
+        <dd>{rate() !== undefined ? `${rate()!.toFixed(2)}× real time (recent)` : '—'}</dd>
+        <dt>Underruns</dt>
+        <dd classList={{ warn: (sink()?.underrun_events ?? 0) > 0 }}>{sink()?.underrun_events ?? 0}</dd>
+        <dt>DSP cost</dt>
+        <dd>
+          {typeof audio()?.dsp_tiers?.dsp_cpu_per_audio_s === 'number'
+            ? `${audio()!.dsp_tiers!.dsp_cpu_per_audio_s!.toFixed(2)} CPU s / audio s`
+            : '—'}
+        </dd>
+        <dt>Produced</dt>
+        <dd>{audio() ? `${audio()!.source_audio_seconds.toFixed(2)} s` : '—'}</dd>
+        <dt>CF load</dt>
+        <dd>{load_() ? `${Math.round(load_()!.cf.real_pct)} %` : '—'}</dd>
+        <dt title="Estimate for the real chip. The model figure counts one cycle per instruction, as the on-device HEALTH page does in the emulator.">
+          DSP load (est.)
+        </dt>
+        <dd>
+          {load_()?.dsp
+            ? `${Math.round(load_()!.dsp!.real_pct)} % est. (worst ${Math.round(load_()!.dsp!.real_high_pct)} %), model ${Math.round(load_()!.dsp!.model_pct)} %`
+            : '—'}
+        </dd>
+        <dt title="Largest estimated DSP load of any window since the meter was reset">DSP window peak</dt>
+        <dd>{load_()?.dsp?.peak_pct !== undefined ? `${Math.round(load_()!.dsp!.peak_pct!)} % est.` : '—'}</dd>
+      </dl>
+      <Show when={reloadNote()}>
+        <p class="note">{reloadNote()}</p>
+      </Show>
+      <Show when={card()}>
+        <p class="note">{cardLine(card())}</p>
+      </Show>
+      <div class="acts">
+        <button
+          type="button"
+          class="tb"
+          disabled={!status() || !audio()?.flow_started}
+          onClick={() =>
+            void runtime()
+              ?.tap?.(25)
+              .catch((e) => setError(message(e)))
+          }
+        >
+          Audition Trig 1
+        </button>
+        <Show when={device() === 'dt2' && runtime()?.cards}>
+          <input
+            ref={(el) => {
+              folderInput = el;
+              el.setAttribute('webkitdirectory', '');
+            }}
+            type="file"
+            multiple
+            hidden
+            onChange={(e) => void chooseSamples(e.currentTarget.files)}
+          />
+          <button
+            type="button"
+            class="tb"
+            disabled={!status() || cardBusy()}
+            title="Pick a plus_drive-style folder: WAVs become samples (track N plays file N, sorted by name), .mmcfs/ and digikit/ are used as they are"
+            onClick={() => folderInput?.click()}
+          >
+            Sample folder…
+          </button>
+        </Show>
+      </div>
+    </div>
+  );
 
   return (
     <div
@@ -824,6 +908,7 @@ export default function Console() {
                 visible={sidePanelsShown()}
                 card
                 reload={restart}
+                metrics={metrics}
                 session={emulatorSession}
                 where={() => 'the emulator'}
               />
@@ -882,88 +967,6 @@ export default function Console() {
         </section>
       </Show>
 
-      <Show when={drawer()}>
-        <section class="drawer" aria-label="Metrics">
-          <header>
-            <strong>Metrics</strong>
-            <span>1 s poll</span>
-          </header>
-          <dl>
-            <dt>Firmware</dt>
-            <dd>{status() ? `${status()!.device} ${status()!.version} · ${phase()}` : '—'}</dd>
-            <dt>Instructions</dt>
-            <dd>{status()?.icount.toLocaleString() ?? '—'}</dd>
-            <dt>Audio output</dt>
-            <dd>{audio()?.output_device ?? (audio()?.setup_needed ? 'no audio for this firmware' : '—')}</dd>
-            <dt>Speed</dt>
-            <dd>{rate() !== undefined ? `${rate()!.toFixed(2)}× real time (recent)` : '—'}</dd>
-            <dt>Underruns</dt>
-            <dd classList={{ warn: (sink()?.underrun_events ?? 0) > 0 }}>{sink()?.underrun_events ?? 0}</dd>
-            <dt>DSP cost</dt>
-            <dd>
-              {typeof audio()?.dsp_tiers?.dsp_cpu_per_audio_s === 'number'
-                ? `${audio()!.dsp_tiers!.dsp_cpu_per_audio_s!.toFixed(2)} CPU s / audio s`
-                : '—'}
-            </dd>
-            <dt>Produced</dt>
-            <dd>{audio() ? `${audio()!.source_audio_seconds.toFixed(2)} s` : '—'}</dd>
-            <dt>CF load</dt>
-            <dd>{load_() ? `${Math.round(load_()!.cf.real_pct)} %` : '—'}</dd>
-            <dt title="Estimate for the real chip. The model figure counts one cycle per instruction, as the on-device HEALTH page does in the emulator.">
-              DSP load (est.)
-            </dt>
-            <dd>
-              {load_()?.dsp
-                ? `${Math.round(load_()!.dsp!.real_pct)} % est. (worst ${Math.round(load_()!.dsp!.real_high_pct)} %), model ${Math.round(load_()!.dsp!.model_pct)} %`
-                : '—'}
-            </dd>
-            <dt title="Largest estimated DSP load of any window since the meter was reset">DSP window peak</dt>
-            <dd>{load_()?.dsp?.peak_pct !== undefined ? `${Math.round(load_()!.dsp!.peak_pct!)} % est.` : '—'}</dd>
-          </dl>
-          <Show when={reloadNote()}>
-            <p class="note">{reloadNote()}</p>
-          </Show>
-          <Show when={card()}>
-            <p class="note">{cardLine(card())}</p>
-          </Show>
-          <div class="acts">
-            <button
-              type="button"
-              class="tb"
-              disabled={!status() || !audio()?.flow_started}
-              onClick={() =>
-                void runtime()
-                  ?.tap?.(25)
-                  .catch((e) => setError(message(e)))
-              }
-            >
-              Audition Trig 1
-            </button>
-            <Show when={device() === 'dt2' && runtime()?.cards}>
-              <input
-                ref={(el) => {
-                  folderInput = el;
-                  el.setAttribute('webkitdirectory', '');
-                }}
-                type="file"
-                multiple
-                hidden
-                onChange={(e) => void chooseSamples(e.currentTarget.files)}
-              />
-              <button
-                type="button"
-                class="tb"
-                disabled={!status() || cardBusy()}
-                title="Pick a plus_drive-style folder: WAVs become samples (track N plays file N, sorted by name), .mmcfs/ and digikit/ are used as they are"
-                onClick={() => folderInput?.click()}
-              >
-                Sample folder…
-              </button>
-            </Show>
-          </div>
-        </section>
-      </Show>
-
       <footer class="statusbar">
         <span>
           <i class="dot" classList={{ paused: paused() || !status() || !!booting() }} />
@@ -1004,14 +1007,14 @@ export default function Console() {
             <Meter value={load_()!.cf.real_pct} />
           </span>
           <Show when={load_()!.dsp}>
-            <span title="Estimated DSP load of the real chip. Model figure (as the HEALTH page shows in the emulator) and window peak are in the drawer">
+            <span title="Estimated DSP load of the real chip. Model figure (as the HEALTH page shows in the emulator) and window peak are in the Metrics tab">
               DSP est. {Math.round(load_()!.dsp!.real_pct)}%
               <Meter value={load_()!.dsp!.real_pct} worst={load_()!.dsp!.real_high_pct} />
             </span>
           </Show>
         </Show>
         <span class="sp" />
-        <Show when={reloadNote() && !drawer()}>
+        <Show when={reloadNote()}>
           <span class="muted" title={reloadNote()}>
             {reloadNote()}
           </span>
@@ -1025,9 +1028,8 @@ export default function Console() {
           </Show>
           <Icon d={logOpen() ? DOWN : UP} />
         </button>
-        <button type="button" class="sb" aria-expanded={drawer()} onClick={toggleMetrics}>
+        <button type="button" class="sb" title="Show the Metrics tab of the Emulator page" onClick={showMetrics}>
           Metrics
-          <Icon d={drawer() ? DOWN : UP} />
         </button>
       </footer>
     </div>

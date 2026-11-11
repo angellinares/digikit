@@ -1,4 +1,4 @@
-/* The desktop console: a top bar, the panel filling the window, a status bar and a metrics drawer.
+/* The desktop console: a title bar, the pages beside a sidebar, the Log dock and a status bar.
    Tokens and fonts come from the site (apps/web/src/styles/site.css); the panel drawing from panel.css. */
 html,
 body,
@@ -20,7 +20,7 @@ body {
 /* Toolbar and status icons; the panel drawing sizes itself. */
 .page-head svg,
 .statusbar svg,
-.drawer svg,
+.metrics svg,
 .log-drawer svg {
   width: 13px;
   height: 13px;
@@ -378,7 +378,7 @@ body {
   flex-shrink: 0;
 }
 .statusbar .warn,
-.drawer .warn {
+.metrics .warn {
   color: #f0b35a;
 }
 .dot {
@@ -427,54 +427,34 @@ body {
   background: var(--ink);
 }
 
-.drawer {
-  position: absolute;
-  right: 12px;
-  bottom: calc(44px + var(--dock-h, 0px));
-  width: min(400px, calc(100% - 24px));
-  max-height: calc(100% - 120px - var(--dock-h, 0px));
-  overflow-y: auto;
-  background: #15171a;
-  border: 1px solid #2c2f35;
-  border-radius: 12px;
-  box-shadow: 0 24px 60px rgba(0, 0, 0, 0.6);
-  padding: 16px;
-  display: flex;
-  flex-direction: column;
-  gap: 12px;
-  z-index: 5;
-}
-.drawer header {
-  display: flex;
-  justify-content: space-between;
-  align-items: baseline;
-}
-.drawer header span {
+/* The Metrics tab of the right-hand column (Console.tsx, SidePanels.tsx). */
+.metrics .poll {
+  margin: 0;
   font-family: var(--font-mono);
-  font-size: 11.5px;
+  font-size: 11px;
   color: var(--ink-3);
 }
-.drawer dl {
+.metrics dl {
   margin: 0;
   display: grid;
-  grid-template-columns: 120px minmax(0, 1fr);
+  grid-template-columns: 112px minmax(0, 1fr);
   gap: 7px 10px;
   font-family: var(--font-mono);
   font-size: 12.5px;
   font-variant-numeric: tabular-nums;
 }
-.drawer dt {
+.metrics dt {
   color: var(--ink-3);
 }
-.drawer dd {
+.metrics dd {
   margin: 0;
   overflow-wrap: anywhere;
 }
-.drawer .note {
+.metrics .note {
   font-size: 12.5px;
   color: var(--ink-2);
 }
-.drawer .acts {
+.metrics .acts {
   display: flex;
   gap: 8px;
   flex-wrap: wrap;

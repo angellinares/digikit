@@ -71,6 +71,31 @@ const emulatorFaceplate = () =>
         visible
         card
         reload={reloadCard}
+        metrics={
+          // the Metrics tab of ../src/Console.tsx with the values of a running DN2
+          <div class="card-body metrics">
+            <p class="poll">1 s poll</p>
+            <dl>
+              <dt>Firmware</dt>
+              <dd>dn2 1.12 · running</dd>
+              <dt>Audio output</dt>
+              <dd>MacBook Pro Speakers</dd>
+              <dt>Speed</dt>
+              <dd>1.00× real time (recent)</dd>
+              <dt>Underruns</dt>
+              <dd>0</dd>
+              <dt>CF load</dt>
+              <dd>38 %</dd>
+              <dt>DSP load (est.)</dt>
+              <dd>52 % est. (worst 61 %), model 47 %</dd>
+            </dl>
+            <div class="acts">
+              <button type="button" class="tb">
+                Audition Trig 1
+              </button>
+            </div>
+          </div>
+        }
         session={() => Promise.resolve({} as never)}
         where={() => 'the emulator'}
       />

@@ -46,20 +46,42 @@
   min-width: 0;
   background: transparent;
 }
-/* a segment is coloured by its module's type */
+/* A count with few slots (Machines, Parameters, Pages, Modules): one cell per slot, lit like the device's trig keys. */
+.memory-panel .cells {
+  display: flex;
+  gap: 3px;
+  height: 10px;
+}
+.memory-panel .cell {
+  flex: 1 1 0;
+  min-width: 3px;
+  border-radius: 2px;
+  background: var(--panel-3, #23262b);
+}
+.memory-panel .cell.over {
+  outline: 1px solid var(--bad, #e5736b);
+}
+/* a segment or cell is coloured by its module's type */
 .memory-panel .seg.machine,
+.memory-panel .cell.machine,
 .memory-panel .swatch.machine {
   background: var(--amber, #f3b52c);
 }
+.memory-panel .cell.machine {
+  box-shadow: 0 0 6px rgba(243, 181, 44, 0.35);
+}
 .memory-panel .seg.effect,
+.memory-panel .cell.effect,
 .memory-panel .swatch.effect {
   background: var(--teal, #6fc7d1);
 }
 .memory-panel .seg.tool,
+.memory-panel .cell.tool,
 .memory-panel .swatch.tool {
   background: var(--ok, #74d49d);
 }
 .memory-panel .seg.other,
+.memory-panel .cell.other,
 .memory-panel .swatch.other {
   background: var(--ink-3, #868b94);
 }
