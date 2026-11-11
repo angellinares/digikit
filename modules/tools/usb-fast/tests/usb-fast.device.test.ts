@@ -530,6 +530,90 @@ for (const device of DEVICES) {
       }
     }, 3_600_000);
 
+    /** STATUS 'A' [limit]: sets the largest staging buffer of the next BEGIN (0: none) and returns the size the last BEGIN got. */
+    const accKnob = async (dk: DkSession, limit?: number) => {
+      const body = limit === undefined ? [0x41] : [0x41, ...be32(limit)];
+      return Buffer.from((await dk.request(0x37, Uint8Array.from(body))).body).readUInt32BE(0);
+    };
+
+    test('the staging buffer: sizes around its edges, abort and bus reset across a flush, and a small or no buffer, all with the device hash equal to the host hash', async () => {
+      const { dk, bulk } = await boot();
+      const MIB = 1 << 20;
+      // 0 and 1, a sector short, 64 KiB, one byte under, at and over one buffer, and three buffers with a tail
+      const sizes = [0, 1, 511, 65_536, MIB - 1, MIB, MIB + 512, 3 * MIB + 777];
+      const obtained: Record<string, number> = {};
+      const run = async (session: BulkChoice['session'], tag: string, list: number[], limit?: number) => {
+        for (const size of list) {
+          if (limit !== undefined) await accKnob(dk, limit); // the knob lasts one BEGIN
+          const data = pattern(size, size + 3);
+          const got = await session.put(SAMPLES, rp(`acc-${tag}-${size}.bin`), data, { expected: hashU32(data, dt2) });
+          expect(got, `${tag} ${size} bytes: the device hash is the host hash`).toBe(hashU32(data, dt2));
+          obtained[`${tag}-${size}`] = await accKnob(dk);
+        }
+      };
+      await run(bulk.session, 'big', sizes);
+      let s = await state(dk, 'ub0');
+      for (const size of [511, MIB + 512, 3 * MIB + 777]) await expectFile(dk, s, `acc-big-${size}.bin`, pattern(size, size + 3), `${size} bytes`);
+
+      // a forced small buffer (64 KiB), then none (one file_write per DATA, as before): the same bytes arrive
+      expect(await accKnob(dk, 65_536), 'the knob returns the size of the last BEGIN').toBe(obtained[`big-${3 * MIB + 777}`]);
+      await run(bulk.session, 'small', [1, 65_536 + 512, MIB + 5], 65_536);
+      expect(obtained[`small-${MIB + 5}`], 'a forced 64 KiB buffer').toBe(65_536);
+      await run(bulk.session, 'none', [511, 200_003], 0);
+      expect(obtained['none-200003'], 'no buffer').toBe(0);
+      s = await state(dk, 'ub1');
+      await expectFile(dk, s, `acc-small-${MIB + 5}.bin`, pattern(MIB + 5, MIB + 5 + 3), 'small buffer');
+      await expectFile(dk, s, 'acc-none-200003.bin', pattern(200_003, 200_003 + 3), 'no buffer');
+
+      // the protocol rules of file_write stay: a wrong offset, a part-sector DATA that is not the last, bytes past the size (none of them takes the file down)
+      const link = bulk.link;
+      const a = pattern(4096, 91);
+      await link.send(req(BULK_CMD.BEGIN, 1, beginBody('acc-rules.bin', a.length, be32(hashU32(a, dt2)))));
+      await replies(link, 1);
+      await link.send(dataFrame(2, 512, a.subarray(512, 1024)));
+      await link.send(dataFrame(3, 0, a.subarray(0, 100)));
+      await link.send(dataFrame(4, 0, Buffer.concat([a, Buffer.alloc(1)])));
+      expect((await replies(link, 3)).map((x) => x.status), 'offset, length, past the size').toEqual([BULK_STATUS.E_OFFSET, BULK_STATUS.E_LENGTH, BULK_STATUS.E_LENGTH]);
+      await link.send(Buffer.concat([dataFrame(5, 0, a.subarray(0, 1024)), dataFrame(6, 1024, a.subarray(1024)), req(BULK_CMD.END, 7)]));
+      const rr = await replies(link, 3);
+      expect(rr.map((x) => x.status), 'the file goes on and ends').toEqual([0, 0, 0]);
+      expect(rr[2]!.body.readUInt32BE(0)).toBe(hashU32(a, dt2));
+
+      // a cancel after the first buffer was flushed: the destination is not created; a bus reset after it leaves no file and the next upload works
+      const before = (await state(dk, 'ub2')).files;
+      const long = pattern(3 * MIB, 7);
+      const stop = new AbortController();
+      const e = await bulk.session
+        .put(SAMPLES, rp('acc-cancel.bin'), long, { signal: stop.signal, onProgress: (sent) => sent >= MIB + MIB / 2 && stop.abort() })
+        .catch((x) => x);
+      expect((e as { kind?: string }).kind, 'cancelled after a flush').toBe('cancelled');
+      expect((await state(dk, 'ub3')).files.has('acc-cancel.bin'), 'nothing at the aborted path').toBe(false);
+      const reset = await connect(dk, { timeoutMs: 1500 });
+      const connectAddr = await EmuBulkLink.connectCallback(call);
+      let cut = false;
+      const failed = await reset.session
+        .put(SAMPLES, rp('acc-reset.bin'), long, {
+          onProgress: (sent) => {
+            if (!cut && sent >= MIB + MIB / 4) {
+              cut = true;
+              void rpc(rig.session, 'usb.bulk.in', { connect: connectAddr });
+            }
+          },
+        })
+        .catch((x) => x);
+      expect(cut, 'the reset came after a flush').toBe(true);
+      expect(failed, 'the upload fails').toBeInstanceOf(Error);
+      s = await state(dk, 'ub4');
+      expect(s.files.has('acc-reset.bin'), 'no partial file').toBe(false);
+      expect([...s.files.keys()].sort(), 'the other files are as before').toEqual([...before.keys()].sort());
+      const again = await connect(dk);
+      const ok = pattern(MIB + 100, 12);
+      expect(await again.session.put(SAMPLES, rp('acc-reset.bin'), ok, { expected: hashU32(ok, dt2) }), 'the next upload after the reset').toBe(hashU32(ok, dt2));
+      await rig.session.expectNoFault('usb-fast staging buffer');
+      // eslint-disable-next-line no-console
+      console.log(`ACC buffer sizes obtained (bytes): ${JSON.stringify(obtained)}`);
+    }, 3_600_000);
+
     test('storage bench: STATUS "B" runs every test, "R" returns the times, and no bench file is left', async () => {
       const { dk } = await boot();
       const before = (await state(dk, 'bn0')).files;
