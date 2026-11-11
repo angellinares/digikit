@@ -119,9 +119,9 @@ def build_reader(kernel="_dk_sample_linear", source_base=SRC):
         pytest.skip("selache not built")
     text = "\n".join(
         [
-            '#include "dsp/call.inc"',
-            '#include "dsp/sample.inc"',
-            '#include "dsp/sample_pcm16.inc"' if "pcm16" in kernel else "",
+            '#include "dsp/contract/call.inc"',
+            '#include "dsp/sample/float.inc"',
+            '#include "dsp/sample/pcm16.inc"' if "pcm16" in kernel else "",
             ".SECTION/PM seg_pmco;",
             ".GLOBAL _sample_h;",
             "_sample_h:",

@@ -424,7 +424,7 @@ export function skipVerifyAfterBulk(
 
 // ---- file bytes over the USB bulk link ----------------------------------------------------------------------------------------------
 
-/** `DK_FILES_SAMPLES` (<dk/files.h>): the `samples/` folder of the store on the Digitone II, the +Drive on the Digitakt II. */
+/** `DK_FILES_SAMPLES` (<dk/platform/files.h>): the `samples/` folder of the store on the Digitone II, the +Drive on the Digitakt II. */
 export const BULK_ROOT_SAMPLES = 1;
 
 /**

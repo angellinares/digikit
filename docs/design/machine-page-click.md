@@ -7,14 +7,14 @@ A click on a knob of a digikit machine's page (press and release of the encoder,
 ## Contract for a machine module (SHOT)
 
 ```c
-#include <dk/machine.h>
+#include <dk/machine/machine.h>
 
 DK_PARAM(shot, 0, shot_smp, "Sample", "SMP", 0, 15, 0);   // word 0: knob B on both devices
 DK_PARAM_ACTION(shot, 0, shot_smp_click);                 // clicking the knob of word 0 calls shot_smp_click
 
 void shot_smp_click(uint32_t track)                       // global, not static
 {
-    dk_picker_open_pool(track);                           // opens a <dk/ui.h> menu over the page
+    dk_sample_picker_open_pool(track);                           // opens a <dk/platform/ui.h> menu over the page
 }
 ```
 
@@ -23,7 +23,7 @@ void shot_smp_click(uint32_t track)                       // global, not static
 - The runtime calls `FN(track)` in the UI task, from the UI loop pass that follows the release of the encoder (not inside the key handler). `track` is the page's track, 0 to 15.
 - `FN` may open a `dk_ui` menu. The page stays under it: NO, or a pick followed by `dk_ui_close`, returns to the page. `FN` does not return to the page itself.
 - A knob without an action, a stock knob and a click with a turn behave as stock. Patched-in modules (not `dynamic`) cannot declare an action: `patchkit` refuses it.
-- From the click flow a module can read and set parameters of its own machine: `param_get(track, word)` returns the raw value (unit * 256) and `param_set(track, word, raw)` writes it through the stock setter of a knob turn (API 1.6, `<dk/params.h>`). They work in the UI task from the callback until the page gets its next key or turn, so the list the callback opened can set the value when the user picks. `word` is the n-th `DK_PARAM` row of the module in declaration order (one machine per module for now); a foreign word or a track above 15 is refused; a held TRIG, FUNC or track-mode key (logical keys 0x10, 0x11, 0x16 of `cf.input.fn.key_down`) refuses the write. The runtime keeps the clicked view next to the track (`Held` in `paramapi.rs`). Static source: the stock turn path of `ParameterPageView` (`FUN_4006cb14`): getter = view vtable 0x54 (view, code, -1), parameter object = view vtable 0xc4 (view, code, track), setter = `cf.param.fn.set_value` (DT2 0x4003b570, DN2 0x40037326) **[D]**; the emulator proof is open **[O]**.
+- From the click flow a module can read and set parameters of its own machine: `param_get(track, word)` returns the raw value (unit * 256) and `param_set(track, word, raw)` writes it through the stock setter of a knob turn (API 1.6, `<dk/platform/param.h>`). They work in the UI task from the callback until the page gets its next key or turn, so the list the callback opened can set the value when the user picks. `word` is the n-th `DK_PARAM` row of the module in declaration order (one machine per module for now); a foreign word or a track above 15 is refused; a held TRIG, FUNC or track-mode key (logical keys 0x10, 0x11, 0x16 of `cf.input.fn.key_down`) refuses the write. The runtime keeps the clicked view next to the track (`Held` in `paramapi.rs`). Static source: the stock turn path of `ParameterPageView` (`FUN_4006cb14`): getter = view vtable 0x54 (view, code, -1), parameter object = view vtable 0xc4 (view, code, track), setter = `cf.param.fn.set_value` (DT2 0x4003b570, DN2 0x40037326) **[D]**; the emulator proof is open **[O]**.
 - Actions need the runtime with this feature. A module with an action is refused by an older runtime (`E_FORMAT`: it does not know the record kind).
 - Which encoder a word sits on follows `param_slots` of the device profile. With DT2 `[1,2,4,5,6]` and DN2 `[1,2,4,5,6,0,3,7]`: word 0 is knob B (encoder 1, key code 0x2a), word 1 C, word 2 E, word 3 F, word 4 G; DN2 word 5 is A, word 6 D, word 7 H. The runtime does not read `param_slots`: it asks the page which parameter code sits under the encoder (below), so a change of the layout needs no change here.
 

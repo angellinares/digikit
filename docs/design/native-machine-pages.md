@@ -76,7 +76,7 @@ portable direction/loop mark is drawn with our own canvas primitives.
 
 The waveform page binds START E, local ZOOM G and END H, with labels and values
 along the bottom and no filename footer; START/END numbers are centered under
-E/H, with ZOOM centered near G. `<dk/sample_region.h>` renders at most
+E/H, with ZOOM centered near G. `<dk/sample/view.h>` renders at most
 512 zero-inclusive stereo min/max bins, a permanent center line and contrasting
 opposite trim flags. Zoom is a Q8 ratio 256..1024 (1x..4x), 1/64x per detent,
 following START; off-viewport handles are pinned to its edge. The original
@@ -101,7 +101,7 @@ V2 page zero may opt into `DK_PAGE_STOCK_OVERLAY`. The hook lets stock drawing
 finish before calling the bounded overlay renderer; only callback fill rectangles
 are composited. Default V2 and V1 behavior is unchanged. Unknown flags and
 page-one overlays are rejected. The frame ABI stays unchanged. The separate
-`<dk/widgets.h>` helpers remain available for modules drawing their own pages;
+`<dk/page/widgets.h>` helpers remain available for modules drawing their own pages;
 Shot declares page zero with `DK_PAGE_STOCK_OVERLAY`: the firmware labels, the
 E/H encoders (START, END) and the LEV fader stay, and the module draws its own
 TUNE, PLAY and SMP glyphs over the A, B and D glyph areas. Page one uses

@@ -7,7 +7,7 @@
  * input_key and input_turn are imports of the runtime's table (the names core/input provides); a runtime without core/input does not find them and the
  * module does not load. */
 
-#include <dk/api.h>
+#include <dk/core/api.h>
 
 typedef uint32_t u32;
 typedef uint8_t u8;

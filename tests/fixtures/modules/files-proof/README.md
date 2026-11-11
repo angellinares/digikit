@@ -1,6 +1,6 @@
 # Public listing boundary fixture
 
-This module uses only `<dk/files.h>` and public service commands. It registers no
+This module uses only `<dk/platform/files.h>` and public service commands. It registers no
 slots, so deferred notifications do not require slot 0. API 1.4 / runtime 0.5.4,
 304-byte entry offsets and the old API prefix are checked by its CF compilation.
 

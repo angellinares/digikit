@@ -418,7 +418,7 @@ def full_dsp():
     here = MOD / "src/dsp"
     text = (here / "ddr-proof.s").read_text() + "\n" + (here / "playback.s").read_text()
     text = pk_sharc.expand_includes(
-        text, [here, REPO_ROOT / "sdk/asm", REPO_ROOT / "sdk"]
+        text, [here, REPO_ROOT / "sdk/dsp/contract", REPO_ROOT / "sdk"]
     )
     obj = pk_sharc.assemble(text)
     syms = {

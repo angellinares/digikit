@@ -1,5 +1,5 @@
-#include "dsp/call.inc"
-#include "dsp/sample_bank.inc"
+#include "dsp/contract/call.inc"
+#include "dsp/sample/bank.inc"
 // DN2 1.12 private LP0 data/CLOSE diagnostic and two bounded SDK readers.
 .SECTION/PM seg_pmco;
 .GLOBAL _lp_hook;

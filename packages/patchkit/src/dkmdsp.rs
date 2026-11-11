@@ -57,9 +57,11 @@ pub const SAMPLE_BANK_LEN: usize = 32;
 /// The same 32-byte record with kind word 2 declares the per-track sample table (API 1.5) instead of a bank: little-endian words
 /// kind, local id, records byte offset, control byte offset, then four reserved zero words. A module has a bank or a table, never both.
 pub const SAMPLE_TRACKS_KIND: u32 = 2;
-/// 16 `dk_strack` records of 8 words, and 16 control sets of 4 words (`<dk/sample_track.h>`).
-pub const STRACKS_RECORD_BYTES: u32 = 512;
-pub const STRACKS_CONTROL_BYTES: u32 = 256;
+/// The pool's `dk_sample_pool_entry` records and its control sets (`<dk/sample/pool.h>`), from `[sample]` of `sdk/sdk.toml`.
+pub const SAMPLE_POOL_RECORD_BYTES: u32 =
+    (dkrt_sdk::sample_pool::ENTRIES * dkrt_sdk::sample_pool::ENTRY_WORDS * 4) as u32;
+pub const SAMPLE_POOL_CONTROL_BYTES: u32 =
+    (dkrt_sdk::sample_pool::ENTRIES * dkrt_sdk::sample_pool::CTL_WORDS * 4) as u32;
 /// The version without voice ranges (voices of `VOICE_LEN_V1` bytes); the runtime still loads it, with every range undeclared.
 pub const VERSION_1: u32 = 1;
 pub const HEADER: usize = 0x40;
@@ -83,9 +85,9 @@ pub const ROUTE_SEND: u32 = 2;
 pub const FXF_SEND: u32 = 1;
 pub const FXF_NOMASTER: u32 = 2;
 pub const FXF_DEFAULT_SEND: u32 = 4;
-/// Effects a module may carry (`DK_FX_MAX` of <dk/fx.h>).
+/// Effects a module may carry (`DK_FX_MAX` of <dk/fx/fx.h>).
 pub const MAX_FX: usize = dkneeds::MAX_FX as usize;
-/// `dk_fx_desc` (<dk/fx.h>): magic "DKFX", the contract number the packer accepts, its size in u32 words and the most parameter words.
+/// `dk_fx_desc` (<dk/fx/fx.h>): magic "DKFX", the contract number the packer accepts, its size in u32 words and the most parameter words.
 pub const FX_DESC_MAGIC: u32 = 0x444b_4658;
 pub const FX_DESC_CONTRACT: u32 = 1;
 pub const FX_DESC_WORDS: usize = 7;
@@ -320,8 +322,8 @@ pub struct SampleTracks {
 impl SampleTracks {
     fn validate(&self, image: &[u8], relocs: &[Reloc]) -> Result<()> {
         let blocks = [
-            (self.records_byte_offset, STRACKS_RECORD_BYTES),
-            (self.control_byte_offset, STRACKS_CONTROL_BYTES),
+            (self.records_byte_offset, SAMPLE_POOL_RECORD_BYTES),
+            (self.control_byte_offset, SAMPLE_POOL_CONTROL_BYTES),
         ];
         for (off, len) in blocks {
             let end = off
@@ -343,7 +345,7 @@ impl SampleTracks {
             }
         }
         let (r, c) = (self.records_byte_offset, self.control_byte_offset);
-        if r < c + STRACKS_CONTROL_BYTES && c < r + STRACKS_RECORD_BYTES {
+        if r < c + SAMPLE_POOL_CONTROL_BYTES && c < r + SAMPLE_POOL_RECORD_BYTES {
             return Err(err!("sample track records and control sets overlap"));
         }
         Ok(())
@@ -727,8 +729,8 @@ pub fn pack_with_gate(
         .map(|t| -> Result<SampleTracks> {
             let tracks = SampleTracks {
                 local_id: t.local_id,
-                records_byte_offset: symbol(&t.records, "data", STRACKS_RECORD_BYTES)?,
-                control_byte_offset: symbol(&t.control, "data", STRACKS_CONTROL_BYTES)?,
+                records_byte_offset: symbol(&t.records, "data", SAMPLE_POOL_RECORD_BYTES)?,
+                control_byte_offset: symbol(&t.control, "data", SAMPLE_POOL_CONTROL_BYTES)?,
             };
             tracks.validate(&image, &relocs)?;
             Ok(tracks)

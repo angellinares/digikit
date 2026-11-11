@@ -13,7 +13,7 @@
  *
  * The tick (once per pass of the UI task, set with the sink) reads the machine type of each of the 16 tracks every 20 ms from the firmware (`dkrt_track_type`) and logs a change (MACHINE_CHANGE). Each pass it also reads the Sound words of the selected track (`dkrt_selected_params`) and logs a changed word (PARAM_CHANGE, level 3). */
 
-#include <dk/api.h>
+#include <dk/core/api.h>
 
 typedef uint32_t u32;
 typedef uint16_t u16;

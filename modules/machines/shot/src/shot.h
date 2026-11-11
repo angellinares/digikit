@@ -1,13 +1,13 @@
 /* shot.h: the internal header of the SHOT module. */
 #ifndef SHOT_H
 #define SHOT_H
-#include <dk/api.h>
-#include <dk/machine.h>
-#include <dk/params.h>
-#include <dk/sample_track.h>
-#include <dk/sample_region.h>
-#include <dk/widgets.h>
-#include <dk/ui.h>
+#include <dk/core/api.h>
+#include <dk/machine/machine.h>
+#include <dk/platform/param.h>
+#include <dk/sample/pool.h>
+#include <dk/sample/view.h>
+#include <dk/page/widgets.h>
+#include <dk/platform/ui.h>
 #include "shot_params.h"
 #include "sample_view.h"
 

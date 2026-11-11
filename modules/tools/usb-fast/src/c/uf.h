@@ -2,7 +2,7 @@
 #ifndef UF_H
 #define UF_H
 
-#include <dk/api.h>
+#include <dk/core/api.h>
 
 #define UF_TRACE 0 /* per-file time totals in the log at END (hardware hunt); 0 removes them */
 #define UF_BENCH 0 /* 1 for measurement builds: STATUS body 'B' runs the storage bench, 'R' reads its results (uf-bench.c) */

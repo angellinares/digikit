@@ -1,7 +1,7 @@
 # SHOT
 
 digikit/shot: a stereo sample-playback machine for the Digitakt II and the Digitone II, loaded at run time. It plays one entry of its sample pool
-once per note (a one-shot) through the per-module pool of API 1.5 (`<dk/sample_track.h>`): 16 entries, kept per project. The parameter SMP
+once per note (a one-shot) through the per-module pool of API 1.5 (`<dk/sample/pool.h>`): 16 entries, kept per project. The parameter SMP
 picks the entry. The picker adds PCM16 files (mono or stereo) to the pool through the runtime and sets SMP to the chosen entry; SHOT reads the pool.
 
 | Word | Parameter | Knob | Range and default | Meaning |
@@ -43,7 +43,7 @@ The ordinary `DK_PAGE` remains the storage/parameter schema; its fixed knob slot
 - Stereo: a stereo sample gives distinct L and R through machine contract 1.2 (`out_r`). A mono sample plays centred (`base_r = base_l`). On the
   Digitakt II R goes to the odd voice of the stock voice pair. On the Digitone II L and R are both heard: all pre-pan stages have R twins
   (`docs/design/dn2-stereo.md`, phase 2); the fallback to R = L is only a guard.
-- Lifecycle: `note_on` takes the pool index from the SMP word and copies that entry's `dk_strack` record under the admission and epoch macros; every
+- Lifecycle: `note_on` takes the pool index from the SMP word and copies that entry's `dk_sample_pool_entry` record under the admission and epoch macros; every
   `render` checks the epoch and acquires and releases the entry. A stale token (clear, a new load, a stock reset) or an entry that is not ready gives
   a silent block and `DK_DONE`.
 - Packing: `patchkit pack digikit/shot --device dt2|dn2` carries the pool table in the DSP section (kind 2 record) and declares API 1.5 and machine

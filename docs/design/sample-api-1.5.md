@@ -1,14 +1,14 @@
 # Stereo sample pool, API 1.5 (and the 1.6 additions, section 6)
 
-Status: accepted by Em on 2026-11-01, with the recommendations in section 5 (device code in core/adapters/sample-pool, not core/runtime). Pool model decided by Em on 2026-11-02 (section 1): the module owns a pool of 16 entries instead of one sample for each track, and a parameter (SHOT's SMP) names the entry of a note. The sources below are the 2026-11-01 inputs. Sources: sdk/include/dk/sample.h (1.3 bank), files.h (1.4), gen/machine.h (contract 1.1, `track`), sdk/dsp/sample_bank.inc, sample_pcm16*.inc, docs/design/sample-binding.md, findings 84, 87, 94, 105, 81 (and 96, 99 for the stereo kernels).
+Status: accepted by Em on 2026-11-01, with the recommendations in section 5 (device code in core/adapters/sample-pool, not core/runtime). Pool model decided by Em on 2026-11-02 (section 1): the module owns a pool of 16 entries instead of one sample for each track, and a parameter (SHOT's SMP) names the entry of a note. The sources below are the 2026-11-01 inputs. Sources: sdk/include/dk/sample/bank.h (1.3 bank), files.h (1.4), gen/machine.h (contract 1.1, `track`), sdk/dsp/sample/bank.inc, sdk/dsp/sample/pcm16*.inc, docs/design/sample-binding.md, findings 84, 87, 94, 105, 81 (and 96, 99 for the stereo kernels).
 
 ## 1. Module-facing API (C header sketch)
 
-Decision: add a new header `dk/sample_track.h` and new Api entries (minor 5). Keep `dk/sample.h` as is. Nothing in 1.4 changes.
+Decision: add a new header `dk/sample/pool.h` and new Api entries (minor 5). Keep `dk/sample/bank.h` as is. Nothing in 1.4 changes.
 
 ```c
-/* dk/sample_track.h -- the module's stereo sample pool. API contract 1.5. */
-#define DK_STRACKS 16u                  /* pool entries */
+/* dk/sample/pool.h -- the module's stereo sample pool. API contract 1.5. */
+#define DK_SAMPLE_POOL_ENTRIES 16u                  /* pool entries */
 /* states: reuse DK_SAMPLE_UNUSED/QUEUED/LOADING/READY (0..3); errors < 0 */
 #define DK_SAMPLE_E_CHANGED (-14)   /* file identity differs from the selection snapshot */
 #define DK_SAMPLE_E_LOST    (-15)   /* backing wiped (DT2 stock reset), reload failed */
@@ -17,7 +17,7 @@ Decision: add a new header `dk/sample_track.h` and new Api entries (minor 5). Ke
    TOO_BIG now means "does not fit the live pool", not "> 8192 frames". */
 
 /* DSP record, one per pool entry, 8 words, runtime writes, module reads. */
-typedef struct dk_strack {        /* normal-word DM view */
+typedef struct dk_sample_pool_entry {        /* normal-word DM view */
     uint32_t ready;               /* 0/1, published last */
     uint32_t token;               /* nonzero generation; never reused, no wrap */
     uint32_t frames;
@@ -26,9 +26,9 @@ typedef struct dk_strack {        /* normal-word DM view */
     uint32_t fmt;                 /* 1 = packed PCM16 (finding 87); float is not offered */
     uint32_t base_l;              /* normal-word address of plane L */
     uint32_t base_r;              /* plane R; == base_l when channels == 1 */
-} dk_strack;
+} dk_sample_pool_entry;
 #define DK_SAMPLE_TRACKS(LOCAL_ID, TABLE) /* new desc kind DK_DESC_SAMPLE_TRACKS:
-    16 zeroed dk_strack records in module BSS plus the epoch/count/close words
+    16 zeroed dk_sample_pool_entry records in module BSS plus the epoch/count/close words
     that sample_bank.inc already uses, one set per pool entry */
 
 /* Api table additions (ColdFire side, resolved/used like sample_bank in init) */
@@ -44,7 +44,7 @@ Calls are legal from init and service/UI callbacks. `index >= 16` returns `E_CON
 
 **Pool model.** The module owns 16 entries; the entry index is the record index the DSP reads. `sample_pool_add` returns the first UNUSED index. A file whose stored path is already in the pool returns its index and loads nothing (an entry with a sticky error is selected again); a full pool returns `E_POOL`. Indexes are stable: `sample_pool_clear` leaves a hole, no other entry moves, and the next add takes the lowest hole. A sound or a p-lock that saved an index keeps its meaning. There is no select by index in the module API (the runtime uses one for the project reload). An entry that is not READY is silent. The pool list is kept per project (section 3). Dedup of the backing by file identity (section 2.1) is separate from the path rule of the add: two entries cannot hold the same path, but the backing still shares a block when two pools or two projects select the same file.
 
-What the DSP reads at note_on: the machine picks the entry. SHOT takes it from its SMP parameter word (`word >> 8`, 0 to 15), not from `in->track`: `dk_strack[index]`. Using the existing bank macros in one masked scope: CHECK_ADMISSION, then LATCH_EPOCH, then copy `base_l`, `base_r`, `frames`, `channels`, `rate`, `token` into the voice state (7 words, add to `state_bytes`). Denied: `note_on` returns 0 and render returns `DK_DONE` at once (silent).
+What the DSP reads at note_on: the machine picks the entry. SHOT takes it from its SMP parameter word (`word >> 8`, 0 to 15), not from `in->track`: `dk_sample_pool_entry[index]`. Using the existing bank macros in one masked scope: CHECK_ADMISSION, then LATCH_EPOCH, then copy `base_l`, `base_r`, `frames`, `channels`, `rate`, `token` into the voice state (7 words, add to `state_bytes`). Denied: `note_on` returns 0 and render returns `DK_DONE` at once (silent).
 
 Stable view during a note (no `note_off`, so no lease held across blocks, per design doc): the voice keeps its snapshot and the token. Each render does CHECK_EPOCH + ACQUIRE in one masked scope, reads, then RELEASE. A stale token (select, unbind, stock reset) returns `DK_DONE` without touching PCM. The runtime guarantees PCM does not move while the token is current, on both devices.
 
@@ -56,12 +56,12 @@ Rule (ARCHITECTURE.md): anything that depends on device or firmware version sits
 
 ### 2.1 core/runtime (device-neutral)
 
-- Entries of `dk/sample_track.h` (API 1.5) and the 16-entry pool table of each module.
+- Entries of `dk/sample/pool.h` (API 1.5) and the 16-entry pool table of each module.
 - Preflight at `select`, before any backing change: open file, check header (format, channels 1/2, rate, PCM16), size arithmetic (frames, plane words P = 2*C*N for stereo planar), identity snapshot (size + hash from the 1.4 listing row, plus open-time stat). Fail with FORMAT / NOT_FOUND / TOO_BIG without touching the old binding.
 - Dedup: key = file identity (path root + hash/size). Refcount = pool entries bound. The same file in two entries (two projects, or another module's pool) shares one backing handle. Last unref calls `release`.
 - Load state machine per pool entry: UNUSED / QUEUED / LOADING / READY / ERROR (section 3). Completion matching on (client, index, request token); counter exhaustion fails, never wraps.
 - Stop-old-notes: on a new load into an entry or on `clear`, CLOSE the entry's generation, wait for the DSP drain ack (never spin in an interrupt), only then call the backing. Other entries are not touched.
-- Publish: write `dk_strack`, `ready` last, after load, identity check and ACK.
+- Publish: write `dk_sample_pool_entry`, `ready` last, after load, identity check and ACK.
 - Project change and per-project selection store (section 3). Project identity comes from the project adapter (2.4).
 
 ### 2.2 Backing plug-in point (`dkrt_pool.h`, version 1)
@@ -73,7 +73,7 @@ All `dkpool_*` calls run in the runtime's UI-loop task. `id` and `path` are runt
 typedef struct dkpool_handle {          /* what the runtime stores per dedup entry */
     uint32_t id;                        /* adapter-private (DT2: slot; DN2: block index) */
     uint32_t token;                     /* nonzero, unique per load; never reused */
-    uint32_t base_l, base_r;            /* DSP normal-word addresses of the planes, as dk_strack: NW32 alias of DDR */
+    uint32_t base_l, base_r;            /* DSP normal-word addresses of the planes, as dk_sample_pool_entry: NW32 alias of DDR */
     uint32_t frames;
     uint32_t rate;                      /* Hz; DT2: 48000, every stock native file */
     uint32_t channels;                  /* 1 or 2; base_r == base_l for 1 */
@@ -119,7 +119,7 @@ Key = (device, slot, project name). The current project slot byte is an anchor: 
 
 ### 2.5 Content modules
 
-A SHOT machine or picker sees only `dk/sample_track.h`: no slot, no address, no device.
+A SHOT machine or picker sees only `dk/sample/pool.h`: no slot, no address, no device.
 
 ## 3. Lifecycle (per pool entry)
 
@@ -152,7 +152,7 @@ Module unload: unbind all, drain, free; teardown waits for terminal completion o
 
 Resolved by the split and the emulator results (dropped): where the DT2 slot map is the truth (it is not; use key and DSP record), whether the DT2 borrow works, how DN2 pool size is stored (profile field).
 
-1. One header and entries as above, or extend `dk/sample.h`? Recommend the new header; the old family stays frozen and mono-only.
+1. One header and entries as above, or extend `dk/sample/bank.h`? Recommend the new header; the old family stays frozen and mono-only.
 2. Voice view: snapshot + per-render epoch check, versus a lease for the whole note? Recommend snapshot + check (no `note_off`; leases leak on stolen voices).
 3. PCM16 as the only stored format in 1.5? Recommend yes; float later as additive `fmt`.
 4. Expose free bytes to modules? Recommend `sample_pool_info` failure detail plus read-only `pool_free_frames` for the UI, fed by `dkpool_free_frames`; no reservation API.
@@ -190,7 +190,7 @@ Copies the NUL-terminated, root-relative path of the entry into `buf` and return
 
 The rooted path must stay under 256 bytes (`E_SEL_PATH` otherwise). The stored selections keep the rooted form; `sample_pool_path` cuts the root off again. The shot-dt2 test and the `test/track-select` fixture pass absolute DT2 paths and keep working. The path rule of the add compares the stored (rooted) form: `/KICKS/K1` and `KICKS/K1` on DT2 are the same entry.
 
-### 6.3 `dk_ui_tick` (G4, `<dk/ui.h>`, `DK_UI_CAP_TICK`)
+### 6.3 `dk_ui_tick` (G4, `<dk/platform/ui.h>`, `DK_UI_CAP_TICK`)
 
 ```c
 typedef void dk_ui_tick_fn(void *ctx);

@@ -24,9 +24,9 @@ ext = ["dkbs"]
 preview = "oled-1bit"
 
 # A run-time module (`.dkm`), built from C. `dkm_init` reads the setting `active` and the file `data/tools/bootscreen/<active>`, checks it
-# (src/dkbs.c) and calls `intro_take` (<dk/intro.h>). It runs after the REC, safe-mode and boot-counter checks, and does no card I/O before the
+# (src/dkbs.c) and calls `intro_take` (<dk/platform/intro.h>). It runs after the REC, safe-mode and boot-counter checks, and does no card I/O before the
 # main OS starts. Its `dkm_menu` (DK_MENU) has the row BOOT SCREEN: it lists the files of `data/tools/bootscreen/` and saves the choice.
 [[object]]
 path = "build/bootscreen.dko.json"
-sources = ["src/module.c", "src/dkbs.c", "../../../sdk/src/picker_logic.c"]
+sources = ["src/module.c", "src/dkbs.c", "../../../sdk/src/chooser/logic.c"]
 place = "cf.expansion"

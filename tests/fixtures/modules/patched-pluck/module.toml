@@ -17,7 +17,7 @@ conflicts = []
 
 # A patched-in machine with plucked-string DSP, a copy of a run-time machine's source kept here so that this fixture reads nothing outside its folder: the same declaration,
 # type 9 of core/machines. The DSP routines render the permanent type number of this machine, one body for both devices: a machine of
-# the SDK contract (<dk/machine.h>), `desc` holds its voices, state and clear bytes.
+# the SDK contract (<dk/machine/machine.h>), `desc` holds its voices, state and clear bytes.
 [[object]]
 path = "build/pluck-cf.dko.json"
 sources = ["src/module.c"]

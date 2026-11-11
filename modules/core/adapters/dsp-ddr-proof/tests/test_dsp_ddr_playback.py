@@ -70,9 +70,9 @@ def consumer():
     text = "\n".join(
         [
             '#include "dk_machine.inc"',
-            '#include "dsp/call.inc"',
-            '#include "dsp/sample.inc"',
-            '#include "dsp/sample_pcm16.inc"',
+            '#include "dsp/contract/call.inc"',
+            '#include "dsp/sample/float.inc"',
+            '#include "dsp/sample/pcm16.inc"',
             '#include "playback.inc"',
         ]
     )
@@ -89,7 +89,7 @@ def consumer():
     externs.update({f"_dd_{name}": addr for name, addr in CONTROL.items()})
     return pk_sharc.build(
         pk_sharc.expand_includes(
-            text, [REPO_ROOT / "sdk/asm", REPO_ROOT / "sdk", HERE]
+            text, [REPO_ROOT / "sdk/dsp/contract", REPO_ROOT / "sdk", HERE]
         ),
         0xB90000,
         externs,

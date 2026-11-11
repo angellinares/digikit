@@ -649,8 +649,8 @@ def test_instruction_count_comparison_only(whole_block_dsp, traces):
 def test_raw_fetch_shared_index_at_last_ddr_word():
     # New macro domain edge: the two indices may be the SAME register. Frame2
     # is an odd terminal's low half in the final valid full NW32 DDR word.
-    source = """#include "dsp/sample_pcm16_fetch.inc"
-#include "dsp/sample_pcm16_fetch.inc"
+    source = """#include "dsp/sample/pcm16_fetch.inc"
+#include "dsp/sample/pcm16_fetch.inc"
 .SECTION/PM seg_pmco;
 .GLOBAL _raw_fetch_h;
 _raw_fetch_h:

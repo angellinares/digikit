@@ -19,9 +19,9 @@
  *   0x3e  window result:  body = handle, 'r'. The reply body is the last return of the API as a signed BE32 (0 = not ready yet, columns = ready,
  *                         < 0 error) and, when it is positive, columns * 4 bytes: per column int16 min then int16 max, big endian.
  */
-#include <dk/api.h>
-#include <dk/sample_track.h>
-#include <dk/ui.h>
+#include <dk/core/api.h>
+#include <dk/sample/pool.h>
+#include <dk/platform/ui.h>
 
 typedef uint32_t u32;
 typedef uint8_t u8;

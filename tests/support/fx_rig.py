@@ -154,7 +154,7 @@ def _assemble(path: Path) -> pk_sharc.SharcObject:
     """A DSP source the way tools/patchkit/pk_sharc.py reads it: `#include` from the module's directories, the SDK
     and the source's directory (a source outside a module: the SDK and its directory)."""
     mods = [p for p in path.parents if (p / "module.toml").exists()]
-    sdk = [ROOT / "sdk" / "asm", ROOT / "sdk"]
+    sdk = [ROOT / "sdk" / "dsp" / "contract", ROOT / "sdk"]
     dirs = [*(pk_sharc.sharc_include_dirs(mods[0]) if mods else sdk), path.parent]
     return pk_sharc.assemble(pk_sharc.expand_includes(path.read_text(), dirs))
 
@@ -188,7 +188,7 @@ def _build(sources: tuple[Path, ...], device: str) -> _Built:
         inits.append((addr, bytes(AUTO_STATE_BYTES), True))
         own[-1].append((addr, AUTO_STATE_BYTES))
         addr += AUTO_STATE_BYTES
-    # the module step word (`DK_STEP`, sdk/asm/dk_trace.inc); core/dyndsp exports it on the device
+    # the module step word (`DK_STEP`, sdk/dsp/contract/dk_trace.inc); core/dyndsp exports it on the device
     data["_dk_step"] = addr
     inits.append((addr, bytes(4), True))
     own[-1].append((addr, 4))
@@ -435,7 +435,7 @@ class FxRig:
         return tuple(w2f(self.sess.peek(at + k) or 0) for k in range(64))
 
     def allowed(self, stack_bytes: int) -> list[tuple[int, int, str]]:
-        """The DM that the module's code may store to in a call (docs/design/module-sdk.md 11.5 D6, <dk/fx.h>): the output block, its own data
+        """The DM that the module's code may store to in a call (docs/design/module-sdk.md 11.5 D6, <dk/fx/fx.h>): the output block, its own data
         and bss (its state included) and `stack_bytes` of data stack below I7 (the adapter does not lower I7 before the call)."""
         out = [(self.built.data["_fx_scratch"], 4 * 64, "output block")]
         out += [(a, n, "module data") for a, n in self.built.module_data]

@@ -2,7 +2,7 @@
    the device never sees them. The DSP reads the words in this order: BEND, INDEX, RATIO, NOISE (src/dsp/bd.s).
    TUNE (slot 0) is the kick's note. The parameters take the first positions of the device's param_slots list:
    1, 2 and 4 on the Digitakt II. */
-#include <dk/machine.h>
+#include <dk/machine/machine.h>
 
 DK_MACHINE(bd, .name = "Bass Drum", .short_name = "BD", .render = "_bd_render",
            .note_on = "_bd_note_on", .desc = "_bd_desc");

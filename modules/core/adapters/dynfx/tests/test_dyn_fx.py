@@ -123,7 +123,7 @@ def test_the_fit_rule_counts_the_effect_slots_of_the_device(packed):
     assert (short["resource"], short["need"], short["free"]) == ("FX_SLOTS", 1, 0)
     assert short["describe"] == "effect slots 1 needed, 0 free"
     assert short["text"] == "FX 1 > 0 FREE"
-    # (a set of four effects stops at the fourth: the "sets" vectors of sdk/vectors/fit-vectors.json, tested in modules/core/runtime/fit)
+    # (a set of four effects stops at the fourth: the "sets" vectors of modules/core/runtime/vectors/fit-vectors.json, tested in modules/core/runtime/fit)
 
 
 def test_the_effect_packs_for_the_digitone_too(packed, tmp_path):

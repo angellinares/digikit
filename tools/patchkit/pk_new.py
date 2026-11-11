@@ -1,9 +1,9 @@
 #!/usr/bin/env python3
-"""Create a run-time content module from a template (`mise run module:new -- machine|fx|service AUTHOR/NAME [--dir DIR]`).
+"""Create a run-time content module from a template (`mise run module:new -- machine|fx|tool AUTHOR/NAME [--dir DIR]`).
 
     uv run python -m tools.patchkit.pk_new machine alice/drone         # a SHARC+ voice machine
     uv run python -m tools.patchkit.pk_new fx alice/crunch --title Crunch --short CRU
-    uv run python -m tools.patchkit.pk_new service alice/hello --dir ~/my-modules
+    uv run python -m tools.patchkit.pk_new tool alice/hello --dir ~/my-modules
 
 The templates are the source trees in sdk/templates/<kind>/. The tokens `__ID__`, `__AUTHOR__`, `__NAME__` (lower snake),
 `__UPPER__`, `__TITLE__`, `__SHORT__` and `__TAB__` (the first 3 characters of the short name) are replaced in file names and file contents. The module goes to
@@ -25,7 +25,7 @@ ROOT = HERE.parent.parent
 
 MODULES = ROOT / "modules"
 TEMPLATES = ROOT / "sdk" / "templates"
-KIND_DIRS = {"machine": "machines", "fx": "fx", "service": "tools"}
+KIND_DIRS = {"machine": "machines", "fx": "fx", "tool": "tools"}
 
 AUTHOR_RE = re.compile(r"[a-z0-9]+(-[a-z0-9]+)*")
 NAME_RE = re.compile(r"[a-z][a-z0-9]*(_[a-z0-9]+)*")

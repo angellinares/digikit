@@ -4,7 +4,7 @@
     uv run python -m tools.device.dksettings FILE            # decode one record file (what `dkupload settings -o FILE` saves)
     uv run python -m tools.device.dksettings FILE --json
 
-The same rules as `dkrt_sdk::settings` (the runtime and `patchkit store dump`); `sdk/vectors/settings-vectors.json` keeps the three equal (tests/digikit/test_dksettings.py).
+The same rules as `dkrt_sdk::settings` (the runtime and `patchkit store dump`); `modules/core/runtime/vectors/settings-vectors.json` keeps the three equal (tests/digikit/test_dksettings.py).
 A record is `"DKST" | u16 version = 1 | u32 seq | u32 used | u32 crc32 | entries`, big-endian; the crc32 (zlib's) covers bytes 0..14 and 18..used; an entry is
 `u8 key_len | key | u16 value_len | value`. The limits and the keys by owner come from `sdk/sdk.toml [settings]` (`tools/device/dkproto.py`).
 """

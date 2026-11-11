@@ -394,7 +394,7 @@ Memory cleanup: files state is 33,980 B in `.data`, about 42 KB with scratch, fo
 
 **Deletions and single sources:**
 
-- Sample bank API 1.3, by Em's decision. Only `tests/fixtures/modules/sample-proof` declares a bank. Delete `R/sample.rs` and `DK_SAMPLE_BANK`; the Api entries stay as reserved fields until imports replace the table, so module bytes do not shift. Check first what still uses `sample_source.rs`, `sample.h` and `sdk/dsp/sample_bank.inc`: SHOT includes `sample_bank.inc`, so it may stay. Separate commit, outside the byte check, because the fixture and the runtime change.
+- Sample bank API 1.3, by Em's decision. Only `tests/fixtures/modules/sample-proof` declares a bank. Delete `R/sample.rs` and `DK_SAMPLE_BANK`; the Api entries stay as reserved fields until imports replace the table, so module bytes do not shift. Check first what still uses `sample_source.rs`, `dk/sample/bank.h` and `sdk/dsp/sample/bank.inc`: SHOT includes `bank.inc`, so it may stay. Separate commit, outside the byte check, because the fixture and the runtime change.
 - One generated source for record kinds (section 4). `fxpage::MAX_FX` literal goes. Extend the pin test (`dkm.rs:966-975`) to cover all kinds.
 - After a caller check across modules, packages, apps, tools and tests: `dkrt_store_list`, `dkrt_settings_get/remove` externs, second poll registry, second log (`State.log`), `selection_set_one` duplication, hot-reload leftovers not on the failure path.
 - One capacity table used by `dkrt_capacity` and `dkrt-fit`.

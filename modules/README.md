@@ -37,7 +37,7 @@ Sources may sit in subfolders (`src/cf/dt2/`, `src/cf/dn2/`) when one module ser
   refuses two modules with one id. Module roots: `modules/`, `tests/fixtures/modules/` (test fixtures, ids `test/NAME`) and the
   extra roots of `--modules-dir` and `PATCHKIT_MODULES`.
 - **Categories**: `core` (frameworks other modules require), `fx`, `machines`, `ui`, `tools`, `test` (fixtures and
-  research probes; they are not for users). `mise run module:new` makes run-time content modules only (`machine`, `fx` or `service`; guide section 3). A patched-in
+  research probes; they are not for users). `mise run module:new` makes run-time content modules only (`machine`, `fx` or `tool`; guide section 3). A patched-in
   module starts as a copy of a similar one, for example `tests/fixtures/modules/patched-pluck`.
 - **Entry ids** (in `[[entry]]`): `[a-z][a-z0-9_]*`. They become symbols (`machines.pluck.index`).
 - **Symbols** in expressions: `[A-Za-z_.][A-Za-z0-9_.]*`.
@@ -323,7 +323,7 @@ patchkit refuses an entry for an unknown registry, an unknown or missing field, 
 
 ### Machine rows (lowering of the C declarations)
 
-**Note.** A machine is declared in C with `DK_MACHINE`, `DK_PARAM` and `DK_PAGE` (`sdk/include/dk/machine.h`; see
+**Note.** A machine is declared in C with `DK_MACHINE`, `DK_PARAM` and `DK_PAGE` (`sdk/include/dk/machine/machine.h`; see
 [docs/MODULE-AUTHORING.md](../docs/MODULE-AUTHORING.md), section 5.2), not in the manifest. The manifest parser ignores unknown keys,
 so `patchkit` keeps a short refusal: a manifest with `[[fx]]`, `[[voice]]`, `[[machine]]`, `[[param]]` or `[[page]]` fails with the
 name of the C macro to use. The text below describes how the declarations are lowered into registry rows.
@@ -370,7 +370,7 @@ what each kind holds, which fact lives where and what a new device needs are in 
 
 `sdk/sdk.toml` is the one source of the runtime version (0.1.0, packed `major<<16|minor<<8|patch`; runtimes 1 to 5 read as 0.0.1 to 0.0.5), the
 contract versions (api, machine, fx, service) and the log kinds. `gen` writes the SDK headers in `sdk/include/dk/gen/` (`api.h`, `machine.h`, `fx.h`
-and their constants) and the SHARC+ includes in `sdk/asm/`, `modules/core/runtime/sdk/src/gen_sdk.rs` and
+and their constants) and the SHARC+ includes in `sdk/dsp/contract/`, `modules/core/runtime/sdk/src/gen_sdk.rs` and
 `tools/device/dklog_kinds.py` from it, and the per-type limits (`[limits]` in `devices/*.toml`: modules, machine_rows, arena_bytes,
 stage_bytes) into the runtime's `device.rs`. The patchkit tests fail on a stale file. `runtime_min` (header byte 0x30) is informational;
 a module is refused only on a contract mismatch (`E_CONTRACT` -48: rebuild the module). The runtime refuses further loads when its
@@ -506,7 +506,7 @@ The machine is declared in C (`src/module.c`: `DK_MACHINE`, `DK_PARAM`, `DK_PAGE
 ### An effect: `[[entry]] registry = "fx"`
 
 An effect module requires `core/fx` (the effects adapter, `modules/core/adapters/fx/`) and adds one row to its registry `fx`; the chain runs in module order, at most
-`DK_FX_MAX` (4) effects. The routine, its `dk_fx_desc` and its state block are symbols of the module's DSP object (`<dk/fx.h>`,
+`DK_FX_MAX` (4) effects. The routine, its `dk_fx_desc` and its state block are symbols of the module's DSP object (`<dk/fx/fx.h>`,
 [docs/MODULE-AUTHORING.md](../docs/MODULE-AUTHORING.md), section 7.2):
 
 ```toml

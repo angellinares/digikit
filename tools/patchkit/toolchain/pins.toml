@@ -14,4 +14,4 @@ cf = [
   "modules/core/adapters/ui/include",
   "sdk/include",
 ]
-sharc = ["sdk/asm", "sdk"]
+sharc = ["sdk/dsp/contract", "sdk"]

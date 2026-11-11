@@ -1,4 +1,4 @@
-// The store path of a module's own file (moduleFilePath in src/modules/dktransfer.ts): the rule of dk_data_path in sdk/include/dk/data.h.
+// The store path of a module's own file (moduleFilePath in src/modules/dktransfer.ts): the rule of dk_data_path in sdk/include/dk/platform/data.h.
 import assert from 'node:assert/strict';
 import { test } from 'vitest';
 import { moduleFilePath } from '../src/modules/dktransfer.ts';

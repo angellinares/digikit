@@ -6,7 +6,7 @@ import pytest
 
 from tools.patchkit import pk_new
 
-EXPECTED_TYPE = {"machine": "machine", "fx": "fx", "service": "service"}
+EXPECTED_TYPE = {"machine": "machine", "fx": "fx", "tool": "service"}
 
 
 @pytest.mark.parametrize("kind", sorted(pk_new.KIND_DIRS))

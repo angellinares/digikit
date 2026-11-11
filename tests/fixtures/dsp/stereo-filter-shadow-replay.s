@@ -1,6 +1,6 @@
 // Stock callees use byte-space pointers and normal-word accesses.
 // Synthetic leaf replay only. Case-5 scratch ownership/blend is not exercised.
-#include "dsp/call.inc"
+#include "dsp/contract/call.inc"
 .SECTION/PM seg_pmco;
 #define COPY_WORD(n) R0 = DM(n, I4); DM(n, I0) = R0
 

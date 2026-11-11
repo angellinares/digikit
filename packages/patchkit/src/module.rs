@@ -77,7 +77,7 @@ impl Manifest {
         }
         if self.fx.is_some() {
             return Err(err!(
-                "[[fx]] is no longer read: declare effects with DK_FX in C (sdk/include/dk/fx.h)"
+                "[[fx]] is no longer read: declare effects with DK_FX in C (sdk/include/dk/fx/fx.h)"
             ));
         }
         for (name, old) in [
@@ -88,7 +88,7 @@ impl Manifest {
         ] {
             if old.is_some() {
                 return Err(err!(
-                    "[[{name}]] is no longer read: declare machines with DK_MACHINE in C (sdk/include/dk/machine.h)"
+                    "[[{name}]] is no longer read: declare machines with DK_MACHINE in C (sdk/include/dk/machine/machine.h)"
                 ));
             }
         }

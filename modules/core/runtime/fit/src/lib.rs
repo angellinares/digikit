@@ -4,7 +4,7 @@
 //! "Needs are inferred from the contents") gives what a load takes. `fits_now` compares them and names the first short resource; `take` takes a module's needs out of a capacity,
 //! so a set is checked by loading its modules in turn (the sum rule: fragmentation is not modelled, so it is conservative). The rule exists only here:
 //! the web app uses it through patchkit.wasm and the device tools through `patchkit fit` (packages/patchkit/src/fit.rs).
-//! `sdk/vectors/fit-vectors.json` holds its test vectors.
+//! `modules/core/runtime/vectors/fit-vectors.json` holds its test vectors.
 //!
 //! The runtime's module set is fixed per session, so the menu checks a selection against the limits with the other ticked modules taken out
 //! (the next boot loads them into an empty runtime), and a host checks against CAPACITY as the device reports it.

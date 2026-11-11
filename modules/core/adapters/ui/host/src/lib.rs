@@ -1,4 +1,4 @@
-//! Host fake of `<dk/ui.h>`. The `dk_ui_*` functions below keep a model of menus, the view stack,
+//! Host fake of `<dk/platform/ui.h>`. The `dk_ui_*` functions below keep a model of menus, the view stack,
 //! the open dialog and the toasts. `driver` acts like the user on that model.
 //! The model is per thread; `session()` serialises tests, because the C code under test has statics.
 use std::cell::RefCell;

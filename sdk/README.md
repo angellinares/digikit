@@ -9,13 +9,30 @@ and the device profiles (`devices/*.toml`).
 | Path | What | Edit |
 | --- | --- | --- |
 | `sdk.toml` | The contract spec: versions, the `dk_api` table, imports, machine and effect layouts, log kinds, protocol numbers, limits, settings. | yes |
-| `include/dk/` | Public C headers. Modules include these: `<dk/api.h>` (the `dk_api` table and run-time imports; provides `DK_API_HAS(api, field)`, true when the table is long enough to hold the field and the field is set), `<dk/chooser.h>` (slot list chooser for numbered slots that files load into), `<dk/files.h>` (read-only file listing, API 1.4), `<dk/fx.h>` (effect contract), `<dk/job.h>` (background jobs, API 1.8), `<dk/machine.h>` (machine contract), `<dk/page.h>` (`DK_PAGE` and `DK_KNOB`, shared by fx and machine), `<dk/params.h>` (read and write a machine parameter from a `DK_PARAM_ACTION` callback), `<dk/sample.h>` (module-owned mono float sample banks, API 1.3), `<dk/sample_picker.h>` (on-device sample picker for a 16-entry pool), `<dk/sample_region.h>` (sample-region drawing for native pages), `<dk/sample_track.h>` (per-module stereo sample pool, API 1.5 to 1.7), `<dk/trace.h>` (trace marks), `<dk/ui.h>` (menus, lists and dialogs on the device screen) and `<dk/widgets.h>` (small page widgets). | yes |
-| `src/` | Compiled SDK sources. A module lists them in the `sources` of its `module.toml`: `chooser.c`, `picker_logic.c`, `sample_picker.c`. | yes |
-| `include/dk/gen/` | C layouts and constants generated from `sdk.toml`. | no |
-| `asm/` | SHARC+ includes generated from `sdk.toml`: `dk_fx.inc`, `dk_machine.inc`. `dk_trace.inc` is hand-written (see Tracing). | partly |
-| `dsp/` | SHARC+ DSP kernels (macros and block routines). See [dsp/README.md](dsp/README.md). | yes |
-| `templates/` | Module templates for `mise run module:new`. | yes |
-| `vectors/` | Test vectors shared by the Rust, Python and web tests. | no |
+| `include/dk/core/` | The module contract: `<dk/core/api.h>` (the `dk_api` table and run-time imports; provides `DK_API_HAS(api, field)`, true when the table is long enough to hold the field and the field is set), `<dk/core/trace.h>` (trace marks) and `<dk/core/status.h>` (the `DK_E_*` status codes; generated, do not edit). No device access. | `api.h`, `trace.h` yes; `status.h` no |
+| `include/dk/platform/` | What the device provides, one header per service group: `ui.h` (menus, lists and dialogs on the screen), `param.h` (read and write a machine parameter from a `DK_PARAM_ACTION` callback), `settings.h`, `files.h` (read-only file listing, API 1.4), `file.h`, `io.h`, `job.h` (background jobs, API 1.8), `hash32.h`, `usb_bulk.h`, `intro.h`, `data.h`. | yes |
+| `include/dk/page/` | Pages: `page.h` (`DK_PAGE` and `DK_KNOB`, shared by fx and machine) and `widgets.h` (small page widgets). | yes |
+| `include/dk/machine/`, `include/dk/fx/` | The machine contract (`machine.h`) and the effect contract (`fx.h`). | yes |
+| `include/dk/chooser/` | The slot list chooser (`chooser.h`) and its pure functions of sort order, text and paths (`logic.h`). | yes |
+| `include/dk/sample/` | Sample components: `bank.h` (module-owned mono float sample banks, API 1.3), `pool.h` (per-module stereo sample pool, API 1.5 to 1.7), `view.h` (waveform drawing for native pages) and `picker.h` (on-device sample picker for a 16-entry pool). | yes |
+| `include/dk/gen/` | C layouts and constants generated from `sdk.toml` (including `sample.h`, the word layout of a sample pool entry). Included by the headers above, not by modules. | no |
+| `src/` | Compiled SDK sources, in the folders of `include/dk/`: `chooser/chooser.c`, `chooser/logic.c`, `sample/picker.c`. A module lists them in the `sources` of its `module.toml`. | yes |
+| `dsp/` | SHARC+ code by concept (`osc/`, `filter/`, `dynamics/`, `delay/`, `util/`, `sample/`). See [dsp/README.md](dsp/README.md). `dsp/contract/` is on the SHARC+ include path and holds the call convention (`call.inc`), the includes generated from `sdk.toml` (`dk_fx.inc`, `dk_machine.inc`, `dk_sample_pool.inc`) and the hand-written `dk_trace.inc` (see Tracing). | yes |
+| `templates/` | Module templates for `mise run module:new`: `machine/`, `fx/`, `tool/`. | yes |
+| `tests/` | Host C tests, in the folders of `include/dk/` (`sdk:test-host`). | yes |
+| `../modules/core/runtime/vectors/` | Fit and settings expected results shared by the Rust, Python and web tests. They belong to the runtime, not to the SDK. | no |
+
+### Where a new thing goes
+
+Include direction: `core` <- `platform` <- components (`page`, `machine`, `fx`, `chooser`, `sample`). A component may include
+another component, without cycles.
+
+- `core/` is the module contract: entry point, status, log, small helpers. No device access.
+- `platform/` is the only layer that declares imports. A component never declares an import: it calls `platform/`.
+- A new concept is a new component folder in `include/dk/`, with `src/<concept>/` for compiled code, `tests/<concept>/` for its host
+  test and `dsp/<concept>/` for SHARC+ code. If it needs the device, its imports go in `platform/<name>.h`.
+- Generated files go in `include/dk/gen/`, `dsp/contract/` and `include/dk/core/status.h` only.
+- Names: functions `dk_<area>_<verb>`, types `dk_<thing>`, constants `DK_<AREA>_<NAME>`.
 
 `patchkit gen` writes every generated file. `patchkit gen --check` fails when one is stale
 (`mise run gen:modules -- --check`).
@@ -31,17 +48,17 @@ conformance checks; this fast SDK check does not replace them.
 The build passes these search paths, in this order:
 
 - ColdFire C and assembly: the module's `build/gen/`, the module's `src/`, `modules/core/fw/inc`, then `sdk/include`.
-- SHARC+ assembly: the module's `build/gen/`, the module's `src/`, `sdk/asm`, `sdk` (for `dsp/*.inc`), then the directories of the module's sources.
+- SHARC+ assembly: the module's `build/gen/`, the module's `src/`, `sdk/dsp/contract`, `sdk` (for `#include "dsp/<concept>/<name>.inc"`), then the directories of the module's sources.
 
 A header in the module's `src/` is shared by C and SHARC+ sources. Use only decimal `#define`s and `//` comments on their own line: the SHARC+ assembler keeps a trailing comment in the macro text.
 
 ## Declaring an effect
 
 An effect declares itself, its parameters and its page in a C file of the module, with `DK_FX`, `DK_FX_PARAM` and `DK_PAGE`
-from `<dk/fx.h>`. This is `modules/fx/freqshift/src/module.c`:
+from `<dk/fx/fx.h>`. This is `modules/fx/freqshift/src/module.c`:
 
 ```c
-#include <dk/fx.h>
+#include <dk/fx/fx.h>
 #include "freqshift.h"
 
 DK_FX(fshift, .process = "_fs_process", .desc = "_fs_desc",
@@ -56,11 +73,11 @@ List the file as an `[[object]]` in `module.toml`. `patchkit pack` reads the rec
 
 ## Declaring a machine
 
-A machine is declared the same way, with `DK_MACHINE`, `DK_PARAM` and `DK_PAGE` from `<dk/machine.h>`.
+A machine is declared the same way, with `DK_MACHINE`, `DK_PARAM` and `DK_PAGE` from `<dk/machine/machine.h>`.
 This is `modules/machines/pluck/src/module.c`:
 
 ```c
-#include <dk/machine.h>
+#include <dk/machine/machine.h>
 
 DK_MACHINE(pluck, .name = "Pluck", .short_name = "PLK", .render = "_pk_render",
            .note_on = "_pk_note_on", .desc = "_pk_desc");
@@ -76,7 +93,7 @@ A machine has at most 6 parameters on the Digitakt II and 4 on the Digitone II, 
 places word w on a fixed knob.
 The rules are in [docs/MODULE-AUTHORING.md](../docs/MODULE-AUTHORING.md), sections 5.2 and 5.3.
 
-`DK_PARAM_GLYPH(machine, word, GLYPH)` (in `<dk/page.h>`) sets the knob look of a parameter. Without it the glyph is `DK_GLYPH_ENCODER`:
+`DK_PARAM_GLYPH(machine, word, GLYPH)` (in `<dk/page/page.h>`) sets the knob look of a parameter. Without it the glyph is `DK_GLYPH_ENCODER`:
 
 | Glyph | Range |
 | --- | --- |
@@ -93,7 +110,7 @@ Trace marks tell you where a module was when it faulted or hung. They are opt-in
 
 | Side | Include | Macro | What it does when on |
 | --- | --- | --- | --- |
-| ColdFire C | `<dk/trace.h>` | `DK_TRACE_INIT(api);` once per source file in `dkm_init`, then `DK_TRACE_LOG("msg", value);` | Calls `api->log(msg, value)`: the message (24 bytes kept) and a word go to the runtime's log ring (`dk:log`). |
+| ColdFire C | `<dk/core/trace.h>` | `DK_TRACE_INIT(api);` once per source file in `dkm_init`, then `DK_TRACE_LOG("msg", value);` | Calls `api->log(msg, value)`: the message (24 bytes kept) and a word go to the runtime's log ring (`dk:log`). |
 | SHARC+ | `#include "dk_trace.inc"` | `DK_STEP(3, R0);` | Loads the step number 3 into the scratch register `R0` and stores it in the word `_dk_step`. Pick a register that is free at that point: SHARC+ cannot store an immediate to memory. |
 
 The C macro is `DK_TRACE_LOG` because the build define is `DK_TRACE` and a function-like macro of that name would clash with it.

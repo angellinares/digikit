@@ -37,10 +37,10 @@ it('rejects inherited or external Cargo dependency paths instead of omitting the
 
 it('keeps explicit sources outside module and Cargo owners file-level with private headers', () => {
   write('sdk/project.json', '{"name":"sdk"}');
-  const external = new Map([['example/module', { file, objects: [{ sources: ['../../sdk/src/picker.c'] }] }]]);
+  const external = new Map([['example/module', { file, objects: [{ sources: ['../../sdk/src/sample/picker.c'] }] }]]);
   expect(packSourceInputs(root, external, [file])).toEqual([
     { input: 'production', projects: ['example/module'] },
-    '{workspaceRoot}/sdk/src/**/*.{h,hh,hpp,hxx}',
-    '{workspaceRoot}/sdk/src/picker.c',
+    '{workspaceRoot}/sdk/src/sample/**/*.{h,hh,hpp,hxx}',
+    '{workspaceRoot}/sdk/src/sample/picker.c',
   ]);
 });

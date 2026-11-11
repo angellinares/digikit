@@ -1,5 +1,5 @@
 /* Public SDK only, no slot0, firmware symbols, or backend assumptions. */
-#include <dk/files.h>
+#include <dk/platform/files.h>
 _Static_assert(__builtin_offsetof(dk_api, sample_status) == 76, "old API prefix");
 _Static_assert(__builtin_offsetof(dk_api, files_client) == 80, "append-only API1.4");
 _Static_assert(__builtin_offsetof(dk_api, files_cancel) == 92, "API1.4 tail");

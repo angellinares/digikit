@@ -58,7 +58,7 @@ that selection closes the old track and does not expose unvalidated audio.
 ## DSP reader boundary
 
 Use the existing admission, epoch, count, close and drain operations in
-`sdk/dsp/sample_bank.inc`. They are useful primitives, not a complete allocator
+`sdk/dsp/sample/bank.inc`. They are useful primitives, not a complete allocator
 or cross-processor handshake. A reader must acquire before its first descriptor
 or PCM access and release after its last possible backing access. Check and
 count updates use short local interrupt-mask scopes; do not mask interrupts for

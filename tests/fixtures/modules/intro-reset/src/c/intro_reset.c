@@ -1,7 +1,7 @@
 /* test/intro-reset: takes the boot animation and resets the machine in the first frame callback (on the intro task): it writes SOFTRST (0x80)
  * into RCM.RCR (0xEC090000), as test/dyn-fault does. A frame callback makes no dk_api call. */
 
-#include <dk/intro.h>
+#include <dk/platform/intro.h>
 
 static uint8_t blank[DK_INTRO_BYTES] __attribute__((aligned(4)));
 

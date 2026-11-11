@@ -1,5 +1,5 @@
 /* Explicit opt-in, private two-track diagnostic. */
-#include <dk/machine.h>
+#include <dk/machine/machine.h>
 DK_MACHINE(lp_sampler, .name = "LP0 sampler", .short_name = "LP0",
            .render = "_lp_play_render", .note_on = "_lp_play_note_on",
            .desc = "_lp_play_desc");

@@ -1,7 +1,7 @@
 /* digikit/usb-fast: file uploads on the USB bulk interface of core/usb-bulk (docs/plans/usb-fast.md section 5, usb-fast-hardware.md "Step 4").
  *
- * One I/O job (<dk/io.h>) enables the interface, takes the received buffers, cuts the byte stream into frames by their own length field, runs each
- * request on file_create / file_write / file_close / file_abort (<dk/file.h>) and sends the reply on EP2 IN. The numbers are those of sdk/sdk.toml
+ * One I/O job (<dk/platform/io.h>) enables the interface, takes the received buffers, cuts the byte stream into frames by their own length field, runs each
+ * request on file_create / file_write / file_close / file_abort (<dk/platform/file.h>) and sends the reply on EP2 IN. The numbers are those of sdk/sdk.toml
  * [protocol.bulk] (request: 'DKB1' | cmd u8 | seq u8 | flags u16 | len u32 | body; reply: 'DKB1' | cmd|0x40 | seq | status i16 | len u32 | body;
  * big-endian). SysEx stays the runtime's channel for everything else; this module adds three SysEx commands: SET_NONCE (0x36), by which the host proves
  * which USB device is on its MIDI port, and TAKEOVER (0x1e) and RELEASE (0x1f), by which the host has core/usb-bulk switch a device in USB AUDIO/MIDI to USB MIDI
@@ -34,11 +34,11 @@
  * VERIFY is reserved: the reply is E_PROTO (the host verifies over SysEx: both devices are CPU bound there with tiny replies). */
 /* the code is placed as it is: no jump tables (data in the code) */
 #pragma GCC optimize("no-jump-tables")
-#include <dk/api.h>
-#include <dk/file.h>
-#include <dk/hash32.h>
-#include <dk/io.h>
-#include <dk/usb_bulk.h>
+#include <dk/core/api.h>
+#include <dk/platform/file.h>
+#include <dk/platform/hash32.h>
+#include <dk/platform/io.h>
+#include <dk/platform/usb_bulk.h>
 #include "uf.h"
 
 typedef uint8_t u8;

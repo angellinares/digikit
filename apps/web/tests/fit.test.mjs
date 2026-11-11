@@ -1,4 +1,4 @@
-// The fit rule through patchkit.wasm (`pk_fit`, packages/patchkit/src/fit.rs): a round trip over a few shared vectors of sdk/vectors/fit-vectors.json.
+// The fit rule through patchkit.wasm (`pk_fit`, packages/patchkit/src/fit.rs): a round trip over a few shared vectors of modules/core/runtime/vectors/fit-vectors.json.
 // The rule itself is tested once, in Rust (modules/core/runtime/fit). Skips when patchkit.wasm is not built.
 import assert from 'node:assert/strict';
 import { existsSync, readFileSync } from 'node:fs';
@@ -6,7 +6,9 @@ import test from 'node:test';
 import { DkNeeds } from '../src/modules/dkneeds.ts';
 import { WASM } from './fit-wasm.ts';
 
-const V = JSON.parse(readFileSync(new URL('../../../sdk/vectors/fit-vectors.json', import.meta.url), 'utf8'));
+const V = JSON.parse(
+  readFileSync(new URL('../../../modules/core/runtime/vectors/fit-vectors.json', import.meta.url), 'utf8'),
+);
 const capsOf = (over) =>
   Object.fromEntries(
     Object.entries({ ...V.caps_base, ...over })

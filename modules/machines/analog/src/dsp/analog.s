@@ -1,4 +1,4 @@
-// machinedev/analog: a virtual-analog synth voice of the SDK contract (<dk/machine.h>).
+// machinedev/analog: a virtual-analog synth voice of the SDK contract (<dk/machine/machine.h>).
 //
 // The machine contract supplies pitch (semitones << 8, the device's tune folded in), velocity and an output block, and the
 // track's own AMP and FLTR stages run on what we write. So a subtractive voice only has to supply oscillators: the

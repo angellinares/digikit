@@ -6,7 +6,7 @@ Status: built for Digitakt II 1.16 and 1.17 (2026-10-16) and Digitone II 1.11 an
 `packages/patchkit/src/register.rs` (records, packer).
 
 Note (2026-10-27): the typed manifest sections named below (`[[machine]]`, `[[param]]`, `[[voice]]`, `[[page]]`) are replaced by `DK_MACHINE`,
-`DK_PARAM` and `DK_PAGE` in C (`sdk/include/dk/machine.h`). The registry records and rows are unchanged. `clone_of` is fixed by the device
+`DK_PARAM` and `DK_PAGE` in C (`sdk/include/dk/machine/machine.h`). The registry records and rows are unchanged. `clone_of` is fixed by the device
 profile and not written by authors.
 
 ## What it does
@@ -53,7 +53,7 @@ device's knob model), for a module with `dynamic = true`. Big endian; format and
   knob (0 to 127), `id` the effect's 16-bit ID (1 to 0xffff; the packer's `register::effect_id` of module id and effect id; the kit stores it with the values), `tab` the page's tab label (1 to 3 characters), `title` the page title (1 to 23), then 7 knob entries of which the first `n_knobs` are used: knob i is parameter word p_i
   of the effect's row, shown at `position` (0 to 7, distinct) with `display` 0 (0 .. 127) or 1 (-64 .. +63), `min`, `max` and `default` are IEEE single floats (`min < max`, the default
   inside), `name` the long name shown while the knob turns (1 to 23 characters), `short` the label under the knob (1 to 6). At most 4 per file, one for each effect; a file with one
-  needs `core/fxpages` (`E_NO_REGISTRY` otherwise). The packer writes it from a `DK_FX` record with `tab` (`sdk/include/dk/fx.h`; formerly `[[fx]]`) (`docs/design/module-sdk.md`, "Define an effect with its own page").
+  needs `core/fxpages` (`E_NO_REGISTRY` otherwise). The packer writes it from a `DK_FX` record with `tab` (`sdk/include/dk/fx/fx.h`; formerly `[[fx]]`) (`docs/design/module-sdk.md`, "Define an effect with its own page").
 - Not carried yet: DSP code and `[[voice]]` records. The packer refuses a voice; the runtime refuses any record it does not know (`E_FORMAT`).
 - `patchkit pack` of a module without code writes a four-byte image (`moveq #0,d0; rts` as `dkm_init`) so that the loader's rules stay as they are.
 

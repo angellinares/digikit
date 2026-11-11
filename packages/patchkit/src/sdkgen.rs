@@ -14,9 +14,9 @@ pub const RUST_OUT: &str = "modules/core/runtime/sdk/src/gen_sdk.rs";
 /// The generated Python file, relative to the repository root.
 pub const PY_OUT: &str = "tools/device/dklog_kinds.py";
 /// The generated SHARC+ include of the machine contract, relative to the repository root.
-pub const INC_OUT: &str = "sdk/asm/dk_machine.inc";
+pub const INC_OUT: &str = "sdk/dsp/contract/dk_machine.inc";
 /// The generated SHARC+ include of the FX contract, relative to the repository root.
-pub const FX_INC_OUT: &str = "sdk/asm/dk_fx.inc";
+pub const FX_INC_OUT: &str = "sdk/dsp/contract/dk_fx.inc";
 /// The generated C header of the machine contract's numbers, relative to the repository root.
 pub const C_MACHINE_OUT: &str = "sdk/include/dk/gen/machine_consts.h";
 /// The generated C header of the FX contract's numbers, relative to the repository root.
@@ -31,6 +31,12 @@ pub const C_API_OUT: &str = "sdk/include/dk/gen/api.h";
 pub const C_DESC_OUT: &str = "sdk/include/dk/gen/desc.h";
 /// The generated C header of the format limits, relative to the repository root.
 pub const C_LIMITS_OUT: &str = "sdk/include/dk/gen/limits.h";
+/// The generated C header of the status codes (`DK_E_*`), relative to the repository root.
+pub const C_STATUS_OUT: &str = "sdk/include/dk/core/status.h";
+/// The generated C header of the sample pool numbers, relative to the repository root.
+pub const C_SAMPLE_OUT: &str = "sdk/include/dk/gen/sample.h";
+/// The generated SHARC+ include of the sample pool record layout, relative to the repository root.
+pub const SAMPLE_INC_OUT: &str = "sdk/dsp/contract/dk_sample_pool.inc";
 /// The generated Rust format limits of the `.dkm` loader (re-exported by `dkneeds`), relative to the repository root.
 pub const LIMITS_RS_OUT: &str = "packages/dkneeds/src/gen_limits.rs";
 /// The generated Python protocol numbers, relative to the repository root.
@@ -63,6 +69,7 @@ struct Sdk {
     capacity: Capacity,
     settings: Settings,
     load: Load,
+    sample: SampleToml,
     api: Api,
     import: Vec<Import>,
     dkm: Dkm,
@@ -364,6 +371,23 @@ pub fn limits_max_of(text: &str) -> Result<LimitsMax> {
 struct Load {
     status: BTreeMap<String, Status>,
 }
+/// The sample pool numbers: `[sample]` of `sdk/sdk.toml`.
+#[derive(Deserialize)]
+#[serde(deny_unknown_fields)]
+struct SampleToml {
+    /// Bins of `sample_pool_peaks`.
+    peak_bins: u32,
+    /// Most columns of `sample_pool_peaks_window`.
+    window_max: u32,
+    /// Entries of one pool.
+    pool_entries: u32,
+    /// The 32-bit words of `dk_sample_pool_entry`, in order.
+    pool_entry: Vec<String>,
+    /// The words of one control set, in order.
+    pool_ctl: Vec<String>,
+    /// The words reserved for one control set (at least `pool_ctl`).
+    pool_ctl_words: u32,
+}
 #[derive(Deserialize)]
 #[serde(deny_unknown_fields)]
 struct Status {
@@ -546,6 +570,7 @@ fn parse(text: &str) -> Result<Sdk> {
     }
     runtime_parts(&sdk)?;
     guards(&sdk)?;
+    sample_checked(&sdk)?;
     let p = &sdk.protocol;
     for (i, (n, v)) in p.commands.iter().enumerate() {
         if p.commands.iter().skip(i + 1).any(|(_, w)| w == v) {
@@ -773,6 +798,7 @@ fn rust(sdk: &Sdk) -> String {
         page_knobs_of(sdk)
     );
     s.push_str("}\n\n");
+    s.push_str(&rust_sample_pool(sdk));
     s.push_str(&rust_settings(sdk));
     s.push_str("\npub mod proto {\n");
     s.push_str(&proto_consts(sdk, "    ", "i32"));
@@ -781,6 +807,29 @@ fn rust(sdk: &Sdk) -> String {
         let _ = writeln!(s, "    pub const {n}: i32 = {};", st.code);
     }
     s.push_str("}\n");
+    s
+}
+
+/// The sample pool layout (`[sample]`), for `gen_sdk.rs`: word offsets of `dk_sample_pool_entry` and of one control set.
+fn rust_sample_pool(sdk: &Sdk) -> String {
+    let m = &sdk.sample;
+    let mut s = String::from(
+        "/// The sample pool layout (`[sample]`): entries, word offsets of an entry and of a control set.\npub mod sample_pool {\n",
+    );
+    let _ = writeln!(s, "    pub const ENTRIES: usize = {};", m.pool_entries);
+    let _ = writeln!(
+        s,
+        "    pub const ENTRY_WORDS: usize = {};",
+        m.pool_entry.len()
+    );
+    for (i, f) in m.pool_entry.iter().enumerate() {
+        let _ = writeln!(s, "    pub const W_{}: usize = {i};", f.to_uppercase());
+    }
+    for (i, f) in m.pool_ctl.iter().enumerate() {
+        let _ = writeln!(s, "    pub const CTL_{}: usize = {i};", f.to_uppercase());
+    }
+    let _ = writeln!(s, "    pub const CTL_WORDS: usize = {};", m.pool_ctl_words);
+    s.push_str("}\n\n");
     s
 }
 
@@ -1115,7 +1164,7 @@ fn python(sdk: &Sdk) -> Result<String> {
     Ok(s)
 }
 
-/// `sdk/asm/dk_machine.inc`: `#define` lines, decimal values (the assembler upper-cases macro text, which breaks `0x` literals).
+/// `sdk/dsp/contract/dk_machine.inc`: `#define` lines, decimal values (the assembler upper-cases macro text, which breaks `0x` literals).
 fn machine_inc(sdk: &Sdk) -> String {
     let m = &sdk.machine;
     let mut s = format!(
@@ -1137,7 +1186,7 @@ fn machine_inc(sdk: &Sdk) -> String {
     s
 }
 
-/// `sdk/asm/dk_fx.inc`: the same form as `dk_machine.inc` (`DK_FX_IN_*`, `DK_FX_DESC_*`).
+/// `sdk/dsp/contract/dk_fx.inc`: the same form as `dk_machine.inc` (`DK_FX_IN_*`, `DK_FX_DESC_*`).
 fn fx_inc(sdk: &Sdk) -> String {
     let m = &sdk.fx;
     let mut s = format!(
@@ -1217,6 +1266,123 @@ fn limits_h(sdk: &Sdk) -> String {
     }
     s.push_str("\n#endif /* DK_GEN_LIMITS_H */\n");
     s
+}
+
+/// The C name of a status: `DK_E_` plus the name without its `E_`. The protocol status that repeats a load status name
+/// (`E_READ`) gets the suffix `_PROTO`.
+fn status_name(sdk: &Sdk, protocol: bool, n: &str) -> String {
+    let base = n.strip_prefix("E_").unwrap_or(n);
+    if protocol && sdk.load.status.contains_key(n) {
+        format!("DK_E_{base}_PROTO")
+    } else {
+        format!("DK_E_{base}")
+    }
+}
+
+/// `sdk/include/dk/core/status.h`: the status codes of `[load.status]` and `[protocol.status]` as `DK_E_*`.
+fn status_h(sdk: &Sdk) -> String {
+    let mut s = format!("/* {HEADER} */\n#ifndef DK_CORE_STATUS_H\n#define DK_CORE_STATUS_H\n");
+    for (title, protocol, table) in [
+        (
+            "Results of loading and of the module calls ([load.status])",
+            false,
+            &sdk.load.status,
+        ),
+        (
+            "Replies of the upload commands ([protocol.status])",
+            true,
+            &sdk.protocol.status,
+        ),
+    ] {
+        let _ = writeln!(s, "\n/* {title}. */");
+        for (n, st) in by_code(table) {
+            let text = st.text.replace("*/", "* /");
+            let _ = writeln!(
+                s,
+                "#define {} ({}) /* {text} */",
+                status_name(sdk, protocol, n),
+                st.code
+            );
+        }
+    }
+    s.push_str("\n#endif /* DK_CORE_STATUS_H */\n");
+    s
+}
+
+/// The field names that the generated layouts, `dsp/sample/pool.inc` and the runtime's `Strack` rely on.
+const POOL_ENTRY_NAMES: [&str; 8] = [
+    "ready", "token", "frames", "rate", "channels", "fmt", "base_l", "base_r",
+];
+const POOL_CTL_NAMES: [&str; 3] = ["closed", "count", "fault"];
+
+fn sample_checked(sdk: &Sdk) -> Result<&SampleToml> {
+    let m = &sdk.sample;
+    if m.pool_entries == 0 || m.pool_ctl.len() > m.pool_ctl_words as usize {
+        return Err(err!(
+            "{SOURCE}: [sample] pool_entries is 0 or pool_ctl is longer than pool_ctl_words"
+        ));
+    }
+    for (key, names, want) in [
+        ("pool_entry", &m.pool_entry, &POOL_ENTRY_NAMES[..]),
+        ("pool_ctl", &m.pool_ctl, &POOL_CTL_NAMES[..]),
+    ] {
+        let mut sorted: Vec<&str> = names.iter().map(String::as_str).collect();
+        sorted.sort_unstable();
+        let mut want: Vec<&str> = want.to_vec();
+        want.sort_unstable();
+        if sorted != want {
+            return Err(err!(
+                "{SOURCE}: [sample] {key} must name exactly {want:?} (each once, in any order): the layout asserts, pool.inc and the runtime use them"
+            ));
+        }
+    }
+    Ok(m)
+}
+
+/// `sdk/include/dk/gen/sample.h`: the sample pool numbers as C `#define`s.
+fn sample_h(sdk: &Sdk) -> Result<String> {
+    let m = sample_checked(sdk)?;
+    let mut s = format!("/* {HEADER} */\n#ifndef DK_GEN_SAMPLE_H\n#define DK_GEN_SAMPLE_H\n\n");
+    let _ = writeln!(s, "#define DK_SAMPLE_PEAK_BINS {}u", m.peak_bins);
+    let _ = writeln!(s, "#define DK_SAMPLE_WINDOW_MAX {}u", m.window_max);
+    let _ = writeln!(s, "#define DK_SAMPLE_POOL_ENTRIES {}u", m.pool_entries);
+    let _ = writeln!(
+        s,
+        "#define DK_SAMPLE_POOL_ENTRY_WORDS {}u",
+        m.pool_entry.len()
+    );
+    for (i, f) in m.pool_entry.iter().enumerate() {
+        let _ = writeln!(s, "#define DK_SAMPLE_POOL_W_{} {i}u", f.to_uppercase());
+    }
+    for (i, f) in m.pool_ctl.iter().enumerate() {
+        let _ = writeln!(s, "#define DK_SAMPLE_POOL_CTL_{} {i}u", f.to_uppercase());
+    }
+    let _ = writeln!(s, "#define DK_SAMPLE_POOL_CTL_WORDS {}u", m.pool_ctl_words);
+    s.push_str("\n#endif /* DK_GEN_SAMPLE_H */\n");
+    Ok(s)
+}
+
+/// `sdk/dsp/contract/dk_sample_pool.inc`: the word offsets of `dk_sample_pool_entry` and of the control set, decimal.
+fn sample_inc(sdk: &Sdk) -> Result<String> {
+    let m = sample_checked(sdk)?;
+    let mut s = format!(
+        "// {HEADER}\n// The C view is sdk/include/dk/gen/sample.h.\n#ifndef DK_SAMPLE_POOL_LAYOUT_INC\n#define DK_SAMPLE_POOL_LAYOUT_INC\n"
+    );
+    for (i, f) in m.pool_entry.iter().enumerate() {
+        let _ = writeln!(s, "#define DK_SAMPLE_POOL_W_{} {i}", f.to_uppercase());
+    }
+    let _ = writeln!(s, "#define DK_SAMPLE_POOL_ENTRIES {}", m.pool_entries);
+    let _ = writeln!(
+        s,
+        "#define DK_SAMPLE_POOL_ENTRY_WORDS {}",
+        m.pool_entry.len()
+    );
+    for (i, f) in m.pool_ctl.iter().enumerate() {
+        let _ = writeln!(s, "#define DK_SAMPLE_POOL_CTL_{} {i}", f.to_uppercase());
+    }
+    let _ = writeln!(s, "#define DK_SAMPLE_POOL_CTL_WORDS {}", m.pool_ctl_words);
+    s.push_str("#endif\n");
+    Ok(s)
 }
 
 /// `sdk/include/dk/gen/machine_consts.h`: the numbers of `sdk/include/dk/gen/machine.h`.
@@ -1889,7 +2055,7 @@ fn api_h(sdk: &Sdk) -> Result<String> {
     );
     let _ = writeln!(
         s,
-        "\n/* {} The prototype is in <dk/ui.h> (`DK_MENU(fill)` defines it): `void dkm_menu(dk_ui_menu *m, void *ctx)`. */",
+        "\n/* {} The prototype is in <dk/platform/ui.h> (`DK_MENU(fill)` defines it): `void dkm_menu(dk_ui_menu *m, void *ctx)`. */",
         sdk.dkm.menu.doc
     );
     let _ = writeln!(s, "\n/* {} */", sdk.dkm.slot.doc);
@@ -2198,7 +2364,7 @@ fn desc_layout(d: &DescToml) -> Result<(DescSpec, Vec<Vec<DescText>>)> {
 fn desc_h(sdk: &Sdk) -> Result<String> {
     let (spec, texts) = desc_layout(&sdk.desc)?;
     let mut s = format!(
-        "/* {HEADER} */\n/* sdk/include/dk/gen/desc.h -- the descriptor records a module declares with the DK_* macros of <dk/fx.h>, <dk/machine.h> and <dk/page.h>; `patchkit pack` reads them from the {} section of the object. */\n#ifndef DK_GEN_DESC_H\n#define DK_GEN_DESC_H\n\n#include <stddef.h>\n#include <stdint.h>\n\n",
+        "/* {HEADER} */\n/* sdk/include/dk/gen/desc.h -- the descriptor records a module declares with the DK_* macros of <dk/fx/fx.h>, <dk/machine/machine.h> and <dk/page/page.h>; `patchkit pack` reads them from the {} section of the object. */\n#ifndef DK_GEN_DESC_H\n#define DK_GEN_DESC_H\n\n#include <stddef.h>\n#include <stdint.h>\n\n",
         spec.section
     );
     for c in &sdk.desc.consts {
@@ -2261,6 +2427,9 @@ pub fn render(text: &str) -> Result<Vec<(String, String)>> {
         (C_MACHINE_OUT.to_string(), machine_consts_h(&sdk)),
         (C_FX_OUT.to_string(), fx_consts_h(&sdk)),
         (C_LIMITS_OUT.to_string(), limits_h(&sdk)),
+        (C_STATUS_OUT.to_string(), status_h(&sdk)),
+        (C_SAMPLE_OUT.to_string(), sample_h(&sdk)?),
+        (SAMPLE_INC_OUT.to_string(), sample_inc(&sdk)?),
         (PROTO_PY_OUT.to_string(), python_proto(&sdk)),
         (PROTO_RS_OUT.to_string(), rust_proto(&sdk)),
         (PROTO_TS_OUT.to_string(), ts_proto(&sdk)),

@@ -3,11 +3,11 @@
 // Tests give writes of 4096 page bytes or 10 guard bytes; any overlap retires
 // this whole represented binding. PCM planes are numerical stand-ins, not a
 // claim that their actual bytes fit the small represented overlap span.
-#include "dsp/call.inc"
-#include "dsp/sample.inc"
-#include "dsp/sample_pcm16.inc"
-#include "dsp/sample_pcm16_stereo.inc"
-#include "dsp/sample_bank.inc"
+#include "dsp/contract/call.inc"
+#include "dsp/sample/float.inc"
+#include "dsp/sample/pcm16.inc"
+#include "dsp/sample/pcm16_stereo.inc"
+#include "dsp/sample/bank.inc"
 .SECTION/DM seg_dmda;
 .GLOBAL _sx_open;
 .VAR _sx_open = 1;
