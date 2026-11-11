@@ -26,6 +26,10 @@ usb-fast baseline) is already merged into main.
    MERGED d735ed02). If anything is red, fix before the PR.
 2. Lane `../lanes/usb-host`, branch `speed/fast-hash` (from d735ed02, uncommitted): word-at-a-time hash32 (+ pdw_hash) proven identical,
    instruction counts, 64 KiB readback reads.
+   DONE, all tests green (incl. full upload-faults DN2, plusdrive-write DT2): hash32 was already word-wise; the loop is now 20% cheaper
+   (7.0 -> 5.6 insn/byte on DN2; the rotate-less ColdFire mix is the floor); pdw_hash.h restructured the same way (was ~10 insn/byte);
+   readback uses a temporary 64 KiB fw_alloc buffer for files larger than the caller's buffer (not yet confirmed to run in the emulator;
+   the allocator's real rounding is unknown). Expected ~0.2 s per 8 MB on the DN2; needs a quiet-host A/B and hardware.
 3. Lane `../lanes/zero-dsp`, branch `exp/dn2-unreliable` (uncommitted, EXPERIMENT ONLY, never merge as is): DN2 patch set
    `device-usb-exp`: a RAM flag skips the eMMC reliable-write bit for file-data writes only (store table/headers keep it); cached RX
    reads switchable at run time; usb-fast bench selectors toggle both. Purpose: one flash, two hardware A/Bs.
