@@ -7,6 +7,7 @@ order of their own.
 
 - **R** = [runtime-and-services.md](runtime-and-services.md), section 13 (items) and 13.1 (dependencies).
 - **P** = [profiling.md](profiling.md), section 13 (items and dependencies).
+- **S** = [sdk.md](sdk.md), section 12 (steps). S replaces the SDK parts of R1 and R5.
 
 Goal: a stable SDK contract for modules (machines, FX, LFOs, filters, tools) first, then the runtime refactored under it, then profiling on
 the device. Emulator profiling comes early, because the contract work needs it.
@@ -26,16 +27,19 @@ Status: `todo`, `active`, `done`, `parked`.
 
 | Phase | Item | What | Depends on | Status | Branch / PR |
 | --- | --- | --- | --- | --- | --- |
-| 1 | R1 | SDK cleanup with hash task | - | todo | |
-| 1 | R4 | Spike, static part: can SHARC hooks move into a `.dks` | R1 | todo | |
-| 1 | P1 | Address map v1, emulator only | - | todo | |
+| 1 | S1 | SDK restructure, byte-identical, with hash task | - | todo | |
+| 1 | S2 | SDK entry point (`dk_module`) and named imports; tools migrated | S1 | todo | |
+| 1 | S3 | SDK builders in `init` and the runtime commit path; machines, FX and fixtures migrated | S2 | todo | |
+| 1 | S4 | SDK templates and docs | S3 | todo | |
 | 1 | P7 | Clock audit (static) | - | todo | |
+| 1 | P1 | Address map v1, emulator only (own lane) | - | todo | |
+| 2 | R4 | Spike, static part: can SHARC hooks move into a `.dks` | S4 | todo | |
 | Stop | | Review the R4 answer with Em: it decides the owner of DSP dispatch and where `DK_SPAN` lives | R4 | | |
 | 2 | P2 | Shared Rust library, `wb:cli` profile and addrmap commands, JSON output | P1 | todo | |
 | 2 | P3 | sharcdb tables for module DSP sections | P1 | todo | |
 | 2 | P4 | Per-module cost, machine budget check, fast-tier refusals per module | P2, P3 | todo | |
-| 2 | R5 | SDK contract, with DSP rules, derived cycle cost and `DK_SPAN` shape; existing modules ported | R4, P3, P4 | todo | |
-| 3 | R2 | Runtime deletions and split; sink slots | R5 | todo | |
+| 2 | S5 | SDK DSP contract: DSP rules, derived cycle cost, `DK_SPAN` | R4, P3, P4 | todo | |
+| 3 | R2 | Runtime deletions and split; sink slots | S4 | todo | |
 | 3 | R3 | Platform adapter, layer rule | R2 | todo | |
 | 3 | R6 | DSP transfer queue; dsp-link windows | R3 | todo | |
 | 3 | R7 | Generic records and service registry; then the new-kind proof (an LFO shape, no runtime edits) | R6 | todo | |
@@ -59,3 +63,5 @@ Later, only when a feature needs it: the firmware tooling list in [profiling.md]
 ## Changes
 
 - 2026-11-10: first version. SDK contract (R5) moved before R2 and R3 (runtime-and-services 13.1). Track A parked: the focus is the SDK.
+- 2026-11-12: the SDK design ([sdk.md](sdk.md)) replaces the SDK parts of R1 and R5 with S1-S5. S1-S4 come first; the R4 spike moves
+  after them, because only `DK_SPAN` (S5) depends on its answer.

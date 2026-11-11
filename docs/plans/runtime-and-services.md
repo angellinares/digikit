@@ -4,7 +4,9 @@ Date: 2026-11-06. Base: `main` at 9a849b7b. Targets: DT2 OS 1.17, DN2 OS 1.12.
 
 Status: **draft for Em's review. Nothing is built.** This is the only active plan for this work.
 
-2026-11-10: proposals added for Em's review, each marked **Proposal**: DSP cycles as a resource (5.3), sink slots (5.11), the owner of per-block DSP dispatch (6.1), DSP rules, cycle cost and `DK_SPAN` in the contract (7.2), and the SDK contract earlier in the order (13.1). They come from the [profiling plan](profiling.md). The order across both plans is in [sdk-runtime-roadmap.md](sdk-runtime-roadmap.md).
+2026-11-10: proposals added for Em's review, each marked **Proposal**: DSP cycles as a resource (5.3), sink slots (5.11), the owner of per-block DSP dispatch (6.1), DSP rules, cycle cost and `DK_SPAN` in the contract (now [sdk.md](sdk.md) section 9), and the SDK contract earlier in the order (13.1). They come from the [profiling plan](profiling.md). The order across the plans is in [sdk-runtime-roadmap.md](sdk-runtime-roadmap.md).
+
+2026-11-12: the SDK design moved to [sdk.md](sdk.md). It replaces sections 7.1 and 7.2 and the SDK parts of items 1 and 5.
 
 Evidence: facts come from read-only code reviews on 2026-11-06. Nothing was run. Line counts are approximate. Size figures come from `docs/plans/module-architecture.md` section 4 and `modules/core/runtime/build/runtime.dko.json`, not from a new measurement. Line references are pointers, read around that commit, some from a branch with a Rust format pass. Recheck them when an item starts. `R` means `modules/core/runtime/src/rs/src`.
 
@@ -50,7 +52,7 @@ Done means:
 Word changes:
 
 - "Capability" is dropped as an architecture term. Rename `DK_UI_CAP_*` and the INFO capability bits to feature flags.
-- The `type` and `raw` terms go. `category` says what the user sees, and the packer derives what a module contains from its records (section 7.2). Modules with `type = "service"` today become tool modules. The `service` contract byte goes when the contract bytes go.
+- The `type` and `raw` terms go. `category` says what the user sees, and the packer derives what a module contains from what it declares ([sdk.md](sdk.md) section 7). Modules with `type = "service"` today become tool modules. The `service` contract byte goes when the contract bytes go.
 - SysEx "service commands" become "module commands".
 - A record kind always names its space: register, DSP or desc. Their numbers collide today.
 - Concept names in the code get one name each: tracks, sample_pool, pool and sample_source; files, listing and catalog; worker and sample_job; `dyn*` adapters and their owners.
@@ -188,7 +190,7 @@ One walker for register records and DSP sections, from `dkneeds`, serves the loa
 
 The sticky type-number code is nearly generic. The runtime keeps "assign a number to a key, in a range a service gives"; the map stays an opaque field in the selection record. `machines` owns what the number means.
 
-If kind numbers and the `.dkm` format do not change in this step, modules stay byte-identical across it. This should hold; the hash task (section 7.1) proves it.
+If kind numbers and the `.dkm` format do not change in this step, modules stay byte-identical across it. This should hold; the hash task ([sdk.md](sdk.md) step S1) proves it.
 
 ## 5. Service model
 
@@ -215,7 +217,7 @@ The broker sums uses per resource, checks exclusive keys for duplicates (module 
 
 Dynamic demands stay run-time calls that return errors, such as PCM memory or `dk_alloc`. DSP cycles are unbudgeted today.
 
-**Proposal:** DSP cycles per block become a derived use, like DSP bytes. The packer writes each module's worst-case cycles per block into the header and the report (section 7.2, "Cycle cost"). The device adapter reports the free cycles per block from the profile. The broker refuses a selection that exceeds them, with a reason, and still names no service. Providers count like modules.
+**Proposal:** DSP cycles per block become a derived use, like DSP bytes. The packer writes each module's worst-case cycles per block into the header and the report ([sdk.md](sdk.md) section 9, "Cycle cost"). The device adapter reports the free cycles per block from the profile. The broker refuses a selection that exceeds them, with a reason, and still names no service. Providers count like modules.
 
 Limits today: arena 512 KiB and `.dkm` 64 KiB on both devices; 8 machine rows and 16 param rows on both; 3 FX slots on both; send slots 2 on DT2 and 1 on DN2; page rows 0 on DT2 and 8 on DN2; DSP area 512 KiB on DT2 and 320 KiB on DN2.
 
@@ -336,123 +338,11 @@ Target: `submit(owner, addr, bytes, done)` with one FIFO. Delete all `busy()` cr
 
 Today the per-block calls into machine and FX DSP code sit in the `dsp-voice` and `fx` adapters (26 and 2 SHARC hooks, section 11.1). This plan does not yet say who owns that dispatch in the target.
 
-**Proposal:** each kind's per-block dispatcher belongs to the service that owns the kind: `machines` for voice rows, `fx` for effect rows, and a new kind's service brings its own. If SHARC hooks cannot move (section 11.2), the dispatcher stays in the image as a generic stub that walks the rows services registered. Either way the dispatcher is the one place for `DK_SPAN` (section 7.2) and the DSP stack guard (section 8), so content modules need neither.
+**Proposal:** each kind's per-block dispatcher belongs to the service that owns the kind: `machines` for voice rows, `fx` for effect rows, and a new kind's service brings its own. If SHARC hooks cannot move (section 11.2), the dispatcher stays in the image as a generic stub that walks the rows services registered. Either way the dispatcher is the one place for `DK_SPAN` ([sdk.md](sdk.md) section 9) and the DSP stack guard (section 8), so content modules need neither.
 
 ## 7. SDK
 
-### 7.1 Cleanup
-
-Rule: **every built `.dkm` stays byte-identical.** Clean only what survives the contract change, so nothing is done twice.
-
-Proof: `patchkit pack` and `dkm-info` print a sha256 covering the whole file except the stored hash. Add one small task that records and compares these hashes. It must first answer:
-
-1. Do two builds of the same source match? No timestamps or build ids were found, but no double build has been run.
-2. Does `module:pack-all` include `tests/fixtures/modules`? If not, the task must.
-3. How do we check adapters that include SDK headers, such as `adapters/machines/src/cf/native-page.c`?
-
-Target layout, sorted by concept and not by language:
-
-```text
-sdk/
-  sdk.toml            contract source
-  include/dk/         contract for both CPUs, same name per concept
-    machine.h  machine.inc
-    fx.h       fx.inc
-    sample_track.h  sample_track.inc
-    trace.h    trace.inc
-    page.h  params.h  ui.h  files.h  job.h  ...
-    gen/              generated parts, C and asm
-  lib/                optional code a module builds in
-    dsp/              gain, noise, oscillators, filters
-    samples/          SHARC readers, waveform drawing, sample picker
-    ui/               widgets, chooser
-  templates/          copied by module:new
-  tests/
-```
-
-- `sdk/vectors/` holds expected results for the fit rule and settings format. It moves next to the runtime, because module authors do not need it. Readers: `patchkit/src/fit.rs:211`, `storedump.rs:444`, `runtime/fit/src/tests.rs:11`, `runtime/sdk/src/settings/tests.rs:234`, `apps/web/tests/fit.test.mjs`, `tests/digikit/test_dksettings.py`, `tests/regression/host/settings-record.test.ts:23`, `tests/patchkit/test_patchkit_dkrt_boot.py`, `tools/nx/cargo.mjs`.
-- SHARC include paths come from `tools/patchkit/toolchain/pins.toml:17` (`sharc = ["sdk/asm", "sdk"]`). Check what a change there invalidates.
-- `dk_fx.inc` and `dk_machine.inc` both define `DK_BLOCK` and must not be included together.
-- Modules keep their shape: `src/module.c` plus `src/dsp/`.
-- Update includes directly. No forwarding headers.
-- The word "kernels" goes; `sdk/dsp` is a library.
-- The `service` template becomes `tool`.
-
-Work items:
-
-- Naming: `pk_`/`PK_` to `dk_` (about 107 uses). Read `chooser`, `sample_picker` and `picker_logic` before deciding names; they may be one flow. Sort out `sample`, `sample_track` and `sample_region`.
-- One definition of -40 (`sample.h:21`, `sample_track.h:21`, `chooser.h:31`). Generate `DK_SAMPLE_E_*`, `DK_STRACK_W_*` (`sdk/dsp/sample_track.inc:14-23`), `DK_SAMPLE_PEAK_BINS` and `DK_SAMPLE_WINDOW_MAX` from `sdk.toml`.
-- Delete test-only `dk_sample_region*` wrappers (`sample_region.h:241-256`); move the tests to the draw functions.
-- `DK_API_HAS` in `sample_picker.c:166` and `chooser.c:414`.
-- `sdk/project.json`: add `src`, `dsp` and `asm` to the inputs. This is a cache correctness bug.
-- `sdk/README.md`: remove stale text; document `DK_PARAM_LATCHED`, `DK_SAMPLE_TRACKS` and the native pages.
-- `modules/machines/shot/tests/test_shot_playback.py`: check whether the leftover can go.
-- One SDK helper for number-to-text and text centring, repeated today in SHOT `pages.c`, widgets and fixtures.
-- Other modules' host tests compiled from Python move to the Vitest and C pattern SHOT uses (`tests/pages.test.ts`).
-
-Left for the contract change, because it replaces them: merging native page macros, a macro for DSP descriptor blocks, `uses_api`, spreading the `shot_params.h` pattern (a hand-kept header of parameter word numbers shared by C and assembly, which generation replaces). Left until a second user exists: moving `sample_view.c` into the SDK.
-
-### 7.2 Contract
-
-Plain C const records with well-known names. The packer finds them by symbol.
-
-```c
-const dk_machine dk_machines[] = {
-    { .id = "pluck", .name = "Pluck", .short_name = "PLK" },
-};
-const dk_param dk_params[] = {
-    { .machine = "pluck", .id = "decay", .name = "Decay", .short_name = "DEC",
-      .min = 0, .max = 127, .def = 64 },
-};
-```
-
-Why consts and not registration calls: the menu and Transfer tab can say "does not fit" before restart without running module code; a refusal needs no rollback; the packer can write a report; and modules have no order problems at init. Registration calls stay for resources that are truly dynamic, such as memory through `dk_alloc`. Lifecycle functions say nothing about needs.
-
-Design points:
-
-- `module.toml` holds identity: id, version, name, category, plus `[targets]` (section 3.4). `type`, `status`, `ports`, `conflicts`, `place` and `[[object]]` leave content manifests. `requires` goes once derived (see below). Core modules keep `role`.
-- The packer derives what a module contains from its records: machine records make it a machine module, effect records an effect module, neither a tool. It already infers the contract bytes this way (`dkm.rs:409-414`). Check each reader of `type` (`shipped.mjs:12`, patchkit `main.rs:115`) when this is done.
-- Sources are found by convention (`src/module.c`, `src/dsp/<id>.s`).
-- DSP entry points are found by name (`_<id>_render`, `_<id>_note_on`). The packer refuses when one is missing.
-- The packer fills defaults, so no override pragmas are needed. One parameter unit for machines and FX.
-- Pages list knobs by param id, not word index.
-- `DK_MENU` becomes an exported `dkm_menu`. `DK_PARAM_IS_ERROR` becomes a `static inline` function. `DK_TRACE_INIT` and `DK_TRACE_LOG` stay as compile-time switches, because their arguments must not be evaluated when off.
-- Until this lands: no new `DK_*` macros. The packer reads both `.dk.desc` and the new symbols until the last module moves.
-
-Open design issues this work must solve:
-
-| Issue | Fact | Direction |
-| --- | --- | --- |
-| Array count | No symbol sizes exist: `PSymbol`, `DkoSymbol` (`elf.rs:37`, `dko.rs:41`) | Add `st_size`, or use `-fdata-sections` and the section size. Decide with a small test |
-| Strings in records | Record text is inline arrays today. Pointers would add relocations to `.rodata` | Keep inline char arrays |
-| Callbacks | `.dk.desc` refuses relocations (`desc.rs:379-385`). Callbacks are name strings resolved by the packer (`register.rs:488-511`) | Function pointers give compile errors. The packer must read desc relocations. This is new work |
-| Generated `.inc` | The build is per object with no second phase (`build/mod.rs:343-405`). `patchkit gen` is the only writer of `build/gen/` (`module-architecture.md:607,752`) | Add a build phase; give the file an owner outside `build/gen/`. The hash must include it |
-| `requires` | Real in `remote` (`core/input`) and `probe` (`core/dsp-link`) | Derive from imports before dropping it |
-| Device restriction | `ports` is the only one today (`main.rs:788-799`) | Use `[targets]`: `unsupported` means the module does not apply there |
-| Record size versioning | Kind and size fields carry it today (`desc.rs:391-418`) | Decide with the record format |
-| Asm-only facts | `state_bytes`, `max_cycles_*`, `stack_bytes` | `state_bytes` and `stack_bytes` need a C field or stay in asm. **Proposal:** `max_cycles_*` is derived by the packer ("Cycle cost" below) |
-| Latched params | `DK_PARAM_LATCHED` (`machine.h:60`) | A `.latched` field |
-| Native pages | `DK_NATIVE_PAGE_V1/_V2/_V2_FLAGS` | A const record |
-| Sample tracks | `DK_SAMPLE_TRACKS(0, _shot_rec, _shot_ctl)` names asm symbols | The record needs a C-to-asm reference by name |
-| Constants | `DK_GLYPH_*`, `DK_POS_AUTO`, `DK_ROUTE_*`, `DK_PERCENT`, `DK_BIPOLAR`, `DK_MACHINE_STEREO` | Stay as generated constants |
-
-**Proposal: DSP rules.** What a module's DSP code may do is written down in parts today: `sdk/dsp/README.md` "Block routines" lists clobbered and kept registers, the M5, M6, M7 and M14 values the module contract guarantees, and the I12, I13 and entry I7 rules for machine code; `sdk/dsp/delay.inc` says the module contract keeps MODE1.CBUFEN set. There is no single list, and `pk_conform` checks none of it.
-
-- One rules section in `sdk/` for machine and FX entry points: registers a module may clobber, registers and mode bits it must restore, memory it may touch.
-- Derive the stock side from sharcdb: `regdef`/`reguse` of the interrupt context save (`0x1c02a4`, [finding 68](../findings/68-sharc-runtime-performance.md); image and port to confirm) and of the adapter dispatchers, and `mem_access` for memory stock code owns. No finding records the stock save set yet [O]; record it in `docs/findings/` and have a second agent check it against image bytes before [V].
-- `pk_conform` checks each module against the rules, using sharcdb tables built for the module's own DSP section ([profiling plan](profiling.md) 3.3).
-
-**Proposal: Cycle cost.** `max_cycles_*` stops being written by hand. The packer derives a DSP cycles-per-block use and writes it into the header and the report (5.9, for example `uses ... dsp.cycles 38000`). The source is the `module:check` emulator measurement at the device's voice count, or a static estimate over the module's sharcdb tables (loop trip counts times body cost), scaled by the emulator-to-device calibration factor ([profiling plan](profiling.md) 6 and 7.3). The broker checks it (5.3).
-
-**Proposal: `DK_SPAN`.** `DK_SPAN_BEGIN(owner)` and `DK_SPAN_END(owner)` in `dk/trace.h` and `dk/trace.inc` (section 7.1 layout), for both CPUs. They read the cycle counter and emit `(owner, cycles)` to the `span` sink (5.11). With no sink set they cost one flag test. Only service dispatchers use them (6.1); content modules do not. In the emulator a counter read can change the execution tier (`UNSAFE_READ_NAMES` in `tools/sharc_dev/sharc_rsgen.py`), so the reads run only while a sink is set [O: measure the tier effect].
-
-The Api table becomes named imports, grouped by service in `sdk.toml`. `dkm_init` takes no argument. `uses_api` and `api->size` checks go. `fw_alloc`, `fw_free`, `fw_block_read` go: no content module, template or SDK source uses them (core users not fully checked). The runtime can only stop naming samples and params once this is done, because the Api table thunks name them (`lib.rs:521-579`).
-
-Conversion scope: 37 declaration macros in the 6 content modules, 1 in `remote`, 6 in templates, 6 in proof adapters and 78 in 21 test fixtures. Use a scripted conversion. Update the `digikit-module` skill and docs.
-
-Page canvas v2 with aligned text through the firmware's flags (`dk_fw_text.h:13`) and a text-width query retires SHOT's `text_width`, which uses glyph widths measured from the framebuffer. SDK components are named in the manifest, such as `sdk = ["ui", "samples"]`, instead of relative source paths (`shot/module.toml:25`); the identity-only rule gets this one exception.
-
-Source-breaking changes land together, so modules break once. Runtime is 0.x.
+The SDK design is in [sdk.md](sdk.md): layers and tree, the `dk_module` entry point, builder calls in `init` with a commit after `init`, the boundaries, raw modules, the DSP contract (DSP rules, cycle cost, `DK_SPAN`), style, tests and the steps S1-S5. It replaces the former sections 7.1 (Cleanup) and 7.2 (Contract).
 
 ## 8. Lifecycle
 
@@ -550,7 +440,7 @@ About 20 `dkfw::` lines exist in 6 runtime files today. Remove the runtime's exe
 
 **Shared helpers:** one place each for read and write words, text copy, sector buffer and card write path. Host copies of sha256, the 8-in-7 codec and the native sample format: check, then share.
 
-**Fixed during items 2, 3, 6, 7, 9 and 10:** SDK headers and `sdk/include/dk/gen/*`, except as item 5 changes them; the `.dkm` format; the `dkrt_*` C ABI (`abi.toml`, `dkrt.h`), where internal moves are allowed and exports with no caller may go; the SysEx protocol; settings, store and selection record formats; settings keys.
+**Fixed during items 2, 3, 6, 7, 9 and 10:** SDK headers and `sdk/include/dk/gen/*`, except as the SDK steps change them ([sdk.md](sdk.md) S1-S5); the `.dkm` format; the `dkrt_*` C ABI (`abi.toml`, `dkrt.h`), where internal moves are allowed and exports with no caller may go; the SysEx protocol; settings, store and selection record formats; settings keys.
 
 **Done check for those items:** pluck, shot, freqshift, bd, analog, pd, remote and the test fixtures build and load unchanged; their device tests and the runtime and adapter device tests pass on DT2 1.17 and DN2 1.12; SHARC golden hashes and PCM pins are unchanged; `mise run gen:modules -- --check` passes.
 
@@ -621,12 +511,12 @@ Items 7, 9 and 10 link services into the image as a temporary step, so each boun
 
 | # | Item | Sections | Agent time | Payoff | Confidence |
 | --- | --- | --- | --- | --- | --- |
-| 1 | SDK cleanup with hash task | 7.1 | 2 days | High: navigation, single sources, proof tool | High |
+| 1 | SDK cleanup with hash task: moved to [sdk.md](sdk.md) S1 | 7 | | | |
 | 2 | Runtime deletions and split | 10 | 2-3 days | High: navigation | High |
 | 3 | Platform adapter, layer rule | 10 | 1-2 days | High: no firmware calls in the runtime | Medium |
 | 4 | Spike, static part | 11.1 | 1 day | High: decides how adapters get built | High for the answer |
 | **Stop** | Report to Em; next estimates | | | | |
-| 5 | SDK contract: records, imports, generated DSP facts, manifests, versions | 7.2, 12 | 6-7 days | Medium-high: no hand-kept agreements; runtime no longer names concepts in the Api table | Medium-high |
+| 5 | SDK contract: moved to [sdk.md](sdk.md) S2-S5; versions stay in section 12 | 7, 12 | | | |
 | 6 | DSP transfer queue | 6 | 1-2 days | High: removes the coupling; may fix a bug | Medium-high |
 | 7 | Generic records, service registry, `samples` linked in, storage interface, files memory | 4, 5, 9 | 4-5 days | High: first real proof of the model | Medium |
 | 8 | Spike, whole path | 11.2 | 3-4 days | High: decides item 12 and the small-image goal | Medium for ColdFire; unknown for SHARC |
@@ -645,17 +535,15 @@ Note on payoff: moving code into a `.dks` saves memory only when it is unused, a
 
 **Proposal (2026-11-10, for Em's review).** Goal: fix the module contract first, then refactor the runtime under it, so modules break once and later runtime work does not change them. The resulting order is in [sdk-runtime-roadmap.md](sdk-runtime-roadmap.md). Dependencies checked in this plan:
 
-- 1 stays first. Section 7.1 cleans only what survives the contract change, and its hash task is the proof tool for the later items.
-- 4 stays before 5. Its SHARC answer (11.1 point 2) decides where DSP dispatch and `DK_SPAN` live (6.1, 7.2), so the contract is not frozen before it.
-- 5 does not need 2 or 3. Section 10 already allows item 5 to change the SDK headers while the runtime items keep them fixed. Doing 5 before 2 means the import table changes in `lib.rs` before the split moves it; that costs one extra move, not a blocker.
-- 5 is designed against this plan's target (records, named imports grouped by service, derived needs), not against today's runtime. Where today's runtime lacks something, a small shim fills it until the runtime items land.
-- 5 grows by the DSP rules, cycle cost and `DK_SPAN` proposals in 7.2: about 1-2 more agent days.
-- **Blocked:** the contract's acceptance test, one new kind (an LFO shape) with no runtime edits, needs the generic record walker of item 7 (section 4). Item 5 ports the existing modules and fixtures; the new-kind proof moves to the end of item 7.
+- Items 1 and 5 moved to [sdk.md](sdk.md) as steps S1-S5. They come before items 2 and 3, so modules break once and later runtime items do not change them.
+- 4 only decides where DSP dispatch and `DK_SPAN` live (6.1, [sdk.md](sdk.md) section 9), so it gates S5, not S1-S4.
+- S3 changes the loader and registry (builder calls collected in `init`, commit after `init`, DSP binding at commit) before items 2 and 7. Item 7 builds its generic record walker on that commit path.
+- **Blocked:** the new-kind acceptance test (an LFO shape with no runtime edits) needs the generic record walker of item 7 (section 4). S3 ports the existing modules and fixtures; the new-kind proof stays at the end of item 7.
 - The sink slots (5.11) fit item 2 (the `dlog.rs` and module context split). The dsp-link windows the profiler needs fit item 6.
 
 ## 14. Checks
 
-- Item 1: `.dkm` hashes unchanged, plus `mise run test:changed`.
+- SDK steps: the checks in [sdk.md](sdk.md) section 12.
 - All items: Nx owner targets from `AGENTS.md` during work; `mise run test` once before merge. When the gate selects almost everything, offer a named targeted list with its skips.
 - Items 2, 3, 6, 7, 9, 10: bounded device tests of the moved area on both devices, as selected. `.dkm` hashes stay unchanged where the module contract does not change. SHARC golden hashes and PCM pins stay unchanged.
 - Rust crate split: paired size comparison of runtime text before and after, because `lto = false` limits cross-crate inlining (`Cargo.toml:17-24`).
