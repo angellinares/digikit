@@ -645,6 +645,9 @@ impl Emulator {
         forced.insert(DSPI2_SR, 0x9000_0000);
         // USB ENDPTFLUSH: the controller clears the flush bits at once; the firmware's disconnect callback polls them without a bound (`FUN_4000436e`).
         forced.insert(0xfc0b_01b4, 0);
+        // USB ENDPTPRIME: the controller clears a prime bit as soon as it has read the queue head and set ENDPTSTAT. Priming takes no time in this model
+        // (the USB service reads the lists directly), so a prime bit is never pending. ENDPTSTAT is derived from the queue lists (`Board::usb_ep2_status`).
+        forced.insert(0xfc0b_01b0, 0);
         board
             .install_forced_mmio(forced)
             .expect("install forced status hooks");

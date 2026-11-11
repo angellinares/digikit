@@ -89,6 +89,7 @@ typedef int32_t i32;
 static const dk_api *sdk;
 static i32 job_id;
 static int enabled;
+static int nomem_logged;
 static u32 epoch;
 
 static u8 nonce[NONCE_LEN];
@@ -670,9 +671,26 @@ static i32 step(u8 *ctx)
 {
     (void)ctx;
     st_steps++;
+    /* The adapter frees its buffers when a take-over ends: the session is over (the stream, the open file and the reply are void) and the next enable allocates them again. */
+    if (enabled && !(usb_bulk_state() & DK_USB_BULK_LIVE)) {
+        enabled = 0;
+        wm_logged = 1; /* the wait for the next take-over is not news */
+        clear_stream();
+        rep_len = 0;
+        busy_tries = 0;
+        drop_file();
+    }
     if (!enabled) {
         i32 rc = usb_bulk_enable(job_id);
         enable_rc = rc;
+        if (rc == DK_USB_BULK_E_NOMEM) { /* no memory for the buffers (the adapter's ST_NOMEM): try again at the next wake */
+            if (!nomem_logged) {
+                nomem_logged = 1;
+                sdk->log_lv(1, (const u8 *)"usb-fast: no memory for the USB buffers", (u32)rc);
+            }
+            return DK_IO_WAIT;
+        }
+        nomem_logged = 0;
         if (rc == DK_USB_BULK_E_STATE) {
             /* Not in USB MIDI mode, or a mode switch is settling. The adapter wakes the job about four times a second: it enables as soon as the device is in USB
              * MIDI mode (the user's USB CONFIG, or a take-over). Only a real wrong mode is logged, once, and not while a take-over is on its way. */

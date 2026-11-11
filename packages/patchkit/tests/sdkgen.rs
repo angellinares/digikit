@@ -149,10 +149,12 @@ fn imports_of_other_modules_get_stubs_from_absent() {
     ));
     assert!(rs.contains("pub unsafe extern \"C\" fn dk_ui_close(_a0: *mut u8) { }"));
     assert!(rs.contains(
-        "(\"dk_ui_has\", core::hint::black_box(dk_ui_has as usize), absent::dk_ui_has as usize),"
+        "(\"dk_ui_has\", core::hint::black_box(dk_ui_has as usize), absent::dk_ui_has as usize, \"core/ui\"),"
     ));
-    // core/input has no stub: the import is not found without the module
-    assert!(rs.contains("(\"input_key\", core::hint::black_box(input_key as usize), 0),"));
+    // core/input has no stub: the import is not found without the module, and the row names the module the boot report asks for
+    assert!(rs.contains(
+        "(\"input_key\", core::hint::black_box(input_key as usize), 0, \"core/input\"),"
+    ));
     // the runtime's own table is the imports without `requires`
     assert!(rs.contains("pub const BUILTIN_NAMES"));
     assert!(!rs.contains("\"remote_enabled\""));

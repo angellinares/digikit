@@ -27,6 +27,11 @@
  * claims a pending request under the interrupt mask before it calls the switch (to_pend_port), so a takeover() or giveback() on the MIDI task at that moment is
  * a follow-up request that waits for the guard.
  *
+ * Memory: the descriptor is static; the receive and send buffers are one block from the firmware's allocator (buffers_alloc), allocated when the interface can go
+ * live and freed when the take-over ends (buffers_free). EP2 stays enabled (ENDPTCTRL2) from the host's connect until the disconnect, whether or not the buffers exist:
+ * without them the host gets NAK. usb_bulk_connect always sets the endpoint up and queues the buffers only when they exist; buffers_alloc queues them when the
+ * endpoint is up already; buffers_free takes the transfers back (flush, cancel) and frees only when the controller reports EP2 idle.
+ *
  * Contexts: usb_bulk_connect and usb_bulk_disconnect are called by the firmware (the USB interrupt, the mode switch); usb_bulk_rx_done, usb_bulk_tx_done
  * and usb_bulk_cancel are the dTD callbacks (interrupt, or the cancel path of the disconnect). The others are for modules (usb_bulk_* of sdk.toml),
  * from the I/O task. */
@@ -52,6 +57,8 @@ typedef int i32;
 #define ST_CONNECTED 0x2u
 #define ST_WRONG_MODE 0x4u /* the device's active USB port is not USB MIDI (live) */
 #define ST_TAKEN 0x8u      /* a take-over is active (requested, or the device is switched) */
+#define ST_LIVE 0x10u      /* the buffers are allocated (from the moment the device goes to, or is in, USB MIDI with bulk, until the take-over ends) */
+#define ST_NOMEM 0x20u     /* the last allocation of the buffers failed (cleared by the next success) */
 
 /* ---- the geometry ---- */
 #define PAGE 4096u
@@ -113,6 +120,8 @@ extern u8 *usb_fw_td_alloc(void);
 extern void usb_fw_stop(void);
 extern void usb_fw_restart(void);
 extern u8 usb_restart_delay[]; /* u32 in RAM: 30 down to 0, non-zero while a stop waits to restart */
+extern u8 *usb_fw_mem_new(u32 size); /* the firmware's operator new (the 32 MiB buddy allocator) and its free */
+extern void usb_fw_mem_free(u8 *p);
 extern void usb_fw_mode_switch(u32 port); /* FUN_40006c16: returns when `port` is active; else stop, write the port, restart after about 30 USB ticks. Task context. */
 /* the board: the uncached alias of DDR is this far above the cached window (device.s) */
 extern const u32 usb_alias_delta;
@@ -170,8 +179,15 @@ static const u8 bulk_interface[23] = {
 enum { B_FREE = 0, B_PRIMED, B_FULL, B_TAKEN };
 enum { T_FREE = 0, T_RESERVED, T_QUEUED };
 
-static u8 mem[(RX_BUFS * RX_BYTES) + (TX_SLOTS * TX_BYTES) + DESC_BYTES + PAGE + 16];
-static u8 *area; /* the 4 KiB aligned start of the buffers, as the CPU sees it (cached address) */
+/* The descriptor stays for good (the port table entry points at it until the next boot). The receive and send buffers are allocated while the interface can be
+ * live (buffers_alloc) and freed when the take-over ends (buffers_free); between, the adapter holds only this descriptor. */
+static u8 desc_mem[DESC_BYTES + 16] __attribute__((aligned(16)));
+static u8 *rx_area, *tx_area; /* the 4 KiB aligned buffers, as the CPU sees them (cached address); null while not live */
+static u8 *blk_raw;           /* what the allocator returned (freed as it is) */
+static volatile u32 live, alloc_busy, free_req, nomem;
+/* for the emulator test: the last block allocated (kept after the free) */
+volatile u32 usb_bulk_last_area, usb_bulk_last_bytes;
+volatile u32 usb_bulk_free_why; /* why the last buffers_free refused: 1 a receive buffer is held, 2 a send slot is reserved, 4 EP2 not idle (the flush, ENDPTSTAT and ENDPTPRIME bits are in bits 8 and up), 8 a transfer of ours is queued, 16 allocating; 0 freed */
 static volatile u8 rx_state[RX_BUFS];
 static u32 rx_len[RX_BUFS];
 static u8 order[RX_BUFS]; /* the full buffers in arrival order */
@@ -240,23 +256,25 @@ static u8 *alias_of(u8 *p)
 
 static u8 *rx_buf(u32 i)
 {
-    return alias_of(area + i * RX_BYTES);
+    return alias_of(rx_area + i * RX_BYTES);
 }
 
 static u8 *tx_buf(u32 i)
 {
-    return alias_of(area + RX_BUFS * RX_BYTES + i * TX_BYTES);
+    return alias_of(tx_area + i * TX_BYTES);
 }
 
 static u8 *desc_buf(void)
 {
-    return alias_of(area + RX_BUFS * RX_BYTES + TX_SLOTS * TX_BYTES);
+    return alias_of(desc_mem);
 }
 
 /* the index of the receive buffer that `p` points into (the uncached alias, or the cached address that usb_bulk_take may have returned), or -1 */
 static i32 rx_index(const u8 *p)
 {
     u32 off;
+    if (!live)
+        return -1;
     if ((u32)p < (u32)rx_buf(0))
         p += usb_alias_delta; /* the cached address of the same memory */
     off = (u32)(p - rx_buf(0));
@@ -265,7 +283,10 @@ static i32 rx_index(const u8 *p)
 
 static i32 tx_index(const u8 *p)
 {
-    u32 off = (u32)(p - tx_buf(0));
+    u32 off;
+    if (!live)
+        return -1;
+    off = (u32)(p - tx_buf(0));
     return off < TX_SLOTS * TX_BYTES ? (i32)(off / TX_BYTES) : -1;
 }
 
@@ -294,8 +315,8 @@ void usb_bulk_td_free(u8 *dtd)
  * function sets the interrupt-on-completion bit because a callback is set. Caller: interrupts masked.
  * Page pointers 1-4 always name the four pages after page 0, as RM 24-71 asks. The controller can use the pointer of the page where a transfer ends
  * (a zero-length packet after a full page); a zero pointer there made the DMA fault and wedged the controller on hardware (2026-11-11). The pages past
- * a short transfer are never read or written (the dTD's total bytes bound the data), so pointing them past the buffer is safe; all of them stay in the
- * module's DDR area. */
+ * a short transfer are never read or written (the dTD's total bytes bound the data). The block is allocated with two pages after the area, so the pointers
+ * of the last buffer (the fifth names the page after it) stay inside the block we own. */
 static i32 queue_transfer(u32 index, u8 *data, u32 bytes, void *done, void *cancel)
 {
     u32 *w = (u32 *)usb_fw_td_alloc();
@@ -333,7 +354,7 @@ static int usb_midi_mode(void)
 
 static void prime_one(u32 i)
 {
-    if (stopping || !connected || !usb_midi_mode())
+    if (stopping || !live || !connected || !usb_midi_mode())
         return;
     if (queue_transfer(IDX_OUT, rx_buf(i), RX_BYTES, (void *)usb_bulk_rx_done, (void *)usb_bulk_cancel) == 0)
     {
@@ -346,7 +367,7 @@ static void prime_one(u32 i)
 static void prime_all(void)
 {
     u32 i, left = 0;
-    if (stopping || !connected)
+    if (stopping || !live || !connected)
         return;
     if (!usb_midi_mode()) {
         need_prime = 1; /* resumes when the mode is back and the firmware reconnects */
@@ -450,12 +471,20 @@ static void ep2_lists_clear(void)
     q[0x34 / 4] = 0;
 }
 
-static void ep2_flush(void)
+/* Flush EP2 with a bounded poll. 1 when the controller has finished the flush. */
+static u32 ep2_flush(void)
 {
     u32 spins;
     USB_REG(ENDPTFLUSH) = FLUSH_EP2;
     for (spins = 0; spins < FLUSH_SPINS && (USB_REG(ENDPTFLUSH) & FLUSH_EP2) != 0u; spins++)
         ;
+    return (USB_REG(ENDPTFLUSH) & FLUSH_EP2) == 0u;
+}
+
+/* No transfer of EP2 is flushing, primed or active in the controller (both directions). */
+static u32 ep2_idle(void)
+{
+    return ((USB_REG(ENDPTFLUSH) | USB_REG(ENDPTSTAT) | USB_REG(ENDPTPRIME)) & FLUSH_EP2) == 0u;
 }
 
 /* EP2 off: flush with a bounded poll, cancel both queues (their callbacks run with `stopping` set: they queue nothing), then empty the lists. Every buffer
@@ -479,7 +508,8 @@ static void ep2_stop(void)
             rx_state[i] = B_FREE;
     order_head = order_count = 0;
     for (i = 0; i < TX_SLOTS; i++)
-        tx_state[i] = T_FREE;
+        if (tx_state[i] != T_RESERVED) /* a send is copying into this slot (usb_bulk_send, interrupts on): it frees the slot itself when it sees the reset */
+            tx_state[i] = T_FREE;
     need_prime = 0;
     qh_ready = 1;
     if (connected) {
@@ -487,6 +517,28 @@ static void ep2_stop(void)
         connected = 0;
         wake();
     }
+    stopping = 0;
+}
+
+/* Take every queued transfer of EP2 back without disabling the endpoint (the host gets NAK; the descriptor keeps the interface): flush, cancel, empty lists. Receive
+ * buffers held by the module and send slots being filled stay as they are. Interrupts masked by the caller; EP2 must be ours (`connected`). */
+static void ep2_quiesce(void)
+{
+    u32 i;
+    stopping = 1;
+    ep2_flush();
+    usb_fw_cancel_ep(IDX_OUT);
+    usb_fw_cancel_ep(IDX_IN);
+    ep2_lists_clear();
+    USB_REG(ENDPTCOMPLETE) = FLUSH_EP2;
+    for (i = 0; i < RX_BUFS; i++)
+        if (rx_state[i] != B_TAKEN)
+            rx_state[i] = B_FREE;
+    order_head = order_count = 0;
+    for (i = 0; i < TX_SLOTS; i++)
+        if (tx_state[i] != T_RESERVED)
+            tx_state[i] = T_FREE;
+    need_prime = 0;
     stopping = 0;
 }
 
@@ -549,6 +601,141 @@ static void ub_snapshot(void)
     }
 }
 #endif
+
+/* ---- the buffers: allocated when the interface can go live, freed when the take-over ends ---- */
+
+/* The block: RX_BUFS receive buffers, then TX_SLOTS send slots, 4 KiB aligned, and two pages after them (the dTD page pointers of the last buffer). The firmware's
+ * buddy allocator (heap at 0x44f39c40 on the DT2: not 4 KiB aligned itself) gives a block that is 16 byte aligned: the area is rounded up inside it. The allocator
+ * rounds the size up to a power of two (256 KiB), the cost while live. The firmware's operator new and free take the heap mutex themselves (the anchors
+ * cf.mem.site.heap.lock_lit and unlock_lit lie inside cf.mem.fn.new; finding 01), so they may be called from the I/O, MIDI and UI tasks, never from an interrupt. */
+#define BLOCK_AREA (RX_BUFS * RX_BYTES + TX_SLOTS * TX_BYTES)
+#define BLOCK_BYTES (BLOCK_AREA + 2u * PAGE)
+
+/* Allocate the buffers (task context, never under the mask or in an interrupt). 0 when live (also when it already was). E_STATE: another caller is allocating.
+ * E_NOMEM: no memory, or the block is outside the cached DDR window the alias arithmetic needs (ST_NOMEM shows it; nothing is changed). The area is pushed
+ * out of the data cache (the allocator's earlier owner may have left dirty lines) and used through the alias only. When EP2 is up already (the host connected
+ * before the buffers existed, or after they were freed), the buffers are queued at once, under the mask. */
+static i32 buffers_alloc(void)
+{
+    u32 sr, i;
+    u8 *raw, *a;
+    sr = sr_mask();
+    if (live) {
+        sr_restore(sr);
+        return 0;
+    }
+    if (alloc_busy) {
+        sr_restore(sr);
+        return E_STATE;
+    }
+    alloc_busy = 1;
+    sr_restore(sr);
+    raw = usb_fw_mem_new(BLOCK_BYTES);
+    a = (u8 *)(((u32)raw + PAGE - 1u) & ~(PAGE - 1u));
+    if (raw == 0 || (u32)a < usb_ddr_base || (u32)a + BLOCK_AREA + PAGE > usb_ddr_base + usb_ddr_bytes) {
+        if (raw != 0)
+            usb_fw_mem_free(raw);
+        nomem = 1;
+        alloc_busy = 0;
+        return E_NOMEM;
+    }
+    for (i = 0; i < BLOCK_AREA; i += 16u)
+        __asm__ volatile("cpushl %%bc,(%0)" : : "a"((u32)a + i) : "memory");
+    usb_bulk_last_area = (u32)a;
+    usb_bulk_last_bytes = BLOCK_AREA;
+    sr = sr_mask();
+    blk_raw = raw;
+    rx_area = a;
+    tx_area = a + RX_BUFS * RX_BYTES;
+    for (i = 0; i < RX_BUFS; i++)
+        rx_state[i] = B_FREE;
+    for (i = 0; i < TX_SLOTS; i++)
+        tx_state[i] = T_FREE;
+    order_head = order_count = 0;
+    need_prime = 0;
+    nomem = 0;
+    live = 1;
+    alloc_busy = 0;
+    if (connected && usb_midi_mode())
+        prime_all();
+    sr_restore(sr);
+    return 0;
+}
+
+/* Free the buffers when nothing can touch them (all under the mask, so neither the interrupt nor a task changes anything meanwhile):
+ *  - no receive buffer is held by the module (B_TAKEN) and no send slot is being filled (T_RESERVED): those are the CPU's, nothing is freed yet;
+ *  - EP2 is ours (`connected`: the host configured it and no disconnect ran since): its transfers are taken back without disabling the endpoint (ep2_quiesce:
+ *    flush, cancel, empty lists), and the controller must then report EP2 idle: ENDPTFLUSH clear and neither primed nor active in ENDPTPRIME and ENDPTSTAT,
+ *    both directions. If not, nothing is freed and the tick asks again (`need_prime` re-queues the buffers meanwhile);
+ *  - EP2 is not ours (no connect since the last disconnect, which ran ep2_stop: ENDPTCTRL2 off, queues cancelled): the endpoint is not touched, because it may
+ *    belong to the firmware (the audio clock feedback of USB AUDIO/MIDI); it is enough that none of our transfers is queued.
+ * Then `live` is 0 (every queue path tests it) and the block is freed. Returns 1 when the buffers are gone. A free that waits for the allocation in progress
+ * keeps `free_req`. */
+static u32 buffers_free(void)
+{
+    u32 sr, i;
+    u8 *raw;
+    sr = sr_mask();
+    if (alloc_busy) {
+        usb_bulk_free_why = 16;
+        sr_restore(sr);
+        return 0;
+    }
+    if (!live) {
+        free_req = 0;
+        sr_restore(sr);
+        return 1;
+    }
+    for (i = 0; i < RX_BUFS; i++)
+        if (rx_state[i] == B_TAKEN) {
+            usb_bulk_free_why = 1;
+            sr_restore(sr);
+            return 0;
+        }
+    for (i = 0; i < TX_SLOTS; i++)
+        if (tx_state[i] == T_RESERVED) {
+            usb_bulk_free_why = 2;
+            sr_restore(sr);
+            return 0;
+        }
+    if (connected) {
+        ep2_quiesce();
+        if (!ep2_idle()) {
+            usb_bulk_free_why = 4 | (((USB_REG(ENDPTFLUSH) & FLUSH_EP2) != 0u ? 1u : 0u) | ((USB_REG(ENDPTSTAT) & FLUSH_EP2) != 0u ? 2u : 0u) | ((USB_REG(ENDPTPRIME) & FLUSH_EP2) != 0u ? 4u : 0u)) << 8;
+            need_prime = 1;
+            sr_restore(sr);
+            return 0;
+        }
+    } else {
+        for (i = 0; i < RX_BUFS; i++)
+            if (rx_state[i] == B_PRIMED) {
+                usb_bulk_free_why = 8;
+                sr_restore(sr);
+                return 0;
+            }
+        for (i = 0; i < TX_SLOTS; i++)
+            if (tx_state[i] == T_QUEUED) {
+                usb_bulk_free_why = 8;
+                sr_restore(sr);
+                return 0;
+            }
+    }
+    usb_bulk_free_why = 0;
+    live = 0;
+    raw = blk_raw;
+    blk_raw = 0;
+    rx_area = tx_area = 0;
+    for (i = 0; i < RX_BUFS; i++)
+        rx_state[i] = B_FREE;
+    for (i = 0; i < TX_SLOTS; i++)
+        tx_state[i] = T_FREE;
+    order_head = order_count = 0;
+    need_prime = 0;
+    free_req = 0;
+    sr_restore(sr);
+    usb_fw_mem_free(raw);
+    return 1;
+}
 
 /* ---- take-over ---- */
 
@@ -630,6 +817,7 @@ static void sw_stamp(void)
 /* the take-over ends without a switch (the user changed the mode, or the switch was never needed) */
 static void to_drop(void)
 {
+    free_req = 1; /* the tick frees the buffers once nothing holds them (buffers_free) */
     taken = 0;
     to_req = 0;
     to_gone = 0;
@@ -710,6 +898,17 @@ static void takeover_tick(void)
     u32 per_s, now, sr, port, target;
     if (!taken)
         return;
+    /* the switch to USB MIDI connects port 2 from the USB interrupt, which primes the buffers: they must be there before. A failure ends the take-over (ST_NOMEM) */
+    if (to_req == 1u && !live) {
+        i32 r = buffers_alloc();
+        if (r == E_NOMEM) {
+            sr = sr_mask();
+            to_drop();
+            sr_restore(sr);
+        }
+        if (r != 0)
+            return; /* E_STATE: the job is allocating; the next pass looks again */
+    }
     now = to_clock(&per_s);
     sr = sr_mask();
     port = to_pend_port != 0u ? to_pend_port : *(volatile u32 *)usb_active_port;
@@ -756,6 +955,8 @@ void usb_bulk_tick(void)
     ub_snapshot();
 #endif
     takeover_tick();
+    if (free_req && !taken)
+        buffers_free();
     if (!enabled)
         return;
     housekeeping_wake();
@@ -813,8 +1014,8 @@ static i32 enable_prepare(i32 io_id)
     const u8 *cfg = (const u8 *)e[3];
     u32 sr, i;
     u8 *d;
-    /* the buffers must lie in the cached DDR window: the alias is that window plus a constant */
-    if ((u32)mem < usb_ddr_base || (u32)mem + sizeof mem > usb_ddr_base + usb_ddr_bytes)
+    /* the descriptor must lie in the cached DDR window: the alias is that window plus a constant (the buffers are checked when they are allocated) */
+    if ((u32)desc_mem < usb_ddr_base || (u32)desc_mem + sizeof desc_mem > usb_ddr_base + usb_ddr_bytes)
         return E_CONTRACT;
     /* the stock entry, byte for byte (the firmware writes wTotalLength into its own array at run time, FUN_4000677a, through absolute addresses and not through
      * this table: bytes 2 and 3 are free) */
@@ -825,12 +1026,10 @@ static i32 enable_prepare(i32 io_id)
             return E_CONTRACT;
     if (tick_register() != 0)
         return E_NOMEM;
-    area = (u8 *)(((u32)mem + PAGE - 1u) & ~(PAGE - 1u));
-    /* the buffers are bss: the installer may have zeroed them through the data cache, and a dirty line written back later would overwrite what the
-     * controller stored or the descriptor below. Push and invalidate every line of the area first (the alias is another address for the same memory,
-     * to the cache), then write through the alias only. */
-    for (i = 0; i < sizeof mem; i += 16u)
-        __asm__ volatile("cpushl %%bc,(%0)" : : "a"((u32)mem + i) : "memory");
+    /* the descriptor is bss: the installer may have zeroed it through the data cache, and a dirty line written back later would overwrite the descriptor
+     * below. Push and invalidate every line first (the alias is another address for the same memory, to the cache), then write through the alias only. */
+    for (i = 0; i < sizeof desc_mem; i += 16u)
+        __asm__ volatile("cpushl %%bc,(%0)" : : "a"((u32)desc_mem + i) : "memory");
     d = desc_buf();
     for (i = 0; i < STOCK_CONFIG_BYTES; i++)
         d[i] = cfg[i];
@@ -839,11 +1038,6 @@ static i32 enable_prepare(i32 io_id)
     d[2] = DESC_BYTES; /* wTotalLength, little endian */
     d[3] = 0;
     d[4] = 3; /* bNumInterfaces */
-    for (i = 0; i < RX_BUFS; i++)
-        rx_state[i] = B_FREE;
-    for (i = 0; i < TX_SLOTS; i++)
-        tx_state[i] = T_FREE;
-    order_head = order_count = 0;
     qh_ready = 0;
     io_job = io_id;
     sr = sr_mask();
@@ -877,6 +1071,20 @@ i32 usb_bulk_enable(i32 io_id)
      * (checked also when the interface is enabled already, so a caller never sees success outside USB MIDI mode) */
     if (!usb_midi_mode())
         return E_STATE;
+    /* The device is in USB MIDI mode: the buffers are needed from the next connect on. They are allocated here, not in the AUDIO/MIDI call that only prepared the
+     * entry (a take-over allocates them in the tick before its switch). A device that connected before the buffers existed (the user switched mode, or the
+     * buffers were freed after a take-over) has EP2 up already: buffers_alloc queues them, no re-enumeration. A switch that is settling is refused before
+     * anything is allocated. A failure (E_NOMEM, ST_NOMEM) changes nothing. */
+    sr = sr_mask();
+    ok = sw_guard_open();
+    sr_restore(sr);
+    if (!ok)
+        return E_STATE;
+    r = buffers_alloc();
+    if (r != 0)
+        return r;
+    free_req = 0; /* an enable is a new request for the buffers: a free asked for by an earlier disable or take-over end must not take them back (the tick would free
+                   * the block this call has just allocated) */
     /* a switch is settling: the caller retries. Also when enabled already, so a caller never sees success in the middle of one */
     sr = sr_mask();
     ok = sw_guard_open();
@@ -903,9 +1111,21 @@ i32 usb_bulk_enable(i32 io_id)
 /* the job that enabled the interface goes away (the module's fini): no more wakes. The table stays as it is until the next boot. */
 i32 usb_bulk_disable(i32 io_id)
 {
+    u32 sr, i;
     if (io_id <= 0 || io_job != io_id)
         return E_STATE;
+    sr = sr_mask();
     io_job = 0;
+    /* the job is going away (the runtime waits for its running step before fini, then cancels it): what it still holds is released, so the free can happen */
+    for (i = 0; i < RX_BUFS; i++)
+        if (rx_state[i] == B_TAKEN)
+            rx_state[i] = B_FREE;
+    for (i = 0; i < TX_SLOTS; i++)
+        if (tx_state[i] == T_RESERVED)
+            tx_state[i] = T_FREE;
+    need_prime = 1;
+    free_req = 1; /* the tick frees the buffers (once no take-over is on) */
+    sr_restore(sr);
     return 0;
 }
 
@@ -940,7 +1160,7 @@ i32 usb_bulk_take(u8 **buf, u32 *len)
 i32 usb_bulk_release(u8 *buf)
 {
     u32 sr = sr_mask();
-    i32 i = enabled ? rx_index(buf) : -1;
+    i32 i = rx_index(buf); /* -1 when the buffers are gone */
     i32 r = E_STATE;
     if (i >= 0 && rx_state[i] == B_TAKEN) {
         rx_state[i] = B_FREE;
@@ -960,7 +1180,7 @@ i32 usb_bulk_send(const u8 *buf, u32 len)
     if (len == 0u || len > TX_BYTES)
         return E_LENGTH;
     sr = sr_mask();
-    if (!connected || stopping || !usb_midi_mode()) {
+    if (!live || !connected || stopping || !usb_midi_mode()) {
         sr_restore(sr);
         return E_STATE;
     }
@@ -970,6 +1190,7 @@ i32 usb_bulk_send(const u8 *buf, u32 len)
         if (tx_state[i] == T_FREE) {
             tx_state[i] = T_RESERVED;
             slot = (i32)i;
+            p = tx_buf(i); /* under the mask: the slot is reserved, so the buffers cannot be freed under the copy */
             break;
         }
     }
@@ -977,12 +1198,11 @@ i32 usb_bulk_send(const u8 *buf, u32 len)
     sr_restore(sr);
     if (slot < 0)
         return E_BUSY; /* both slots are in flight: their completion wakes the job */
-    p = tx_buf((u32)slot);
     for (k = 0; k < len; k++)
         p[k] = buf[k];
     sr = sr_mask();
-    if (!connected || stopping || resets != before) {
-        tx_state[slot] = T_FREE; /* the bus was reset while copying */
+    if (!live || !connected || stopping || resets != before) {
+        tx_state[slot] = T_FREE; /* the bus was reset while copying (ep2_stop leaves a reserved slot to us) */
         r = E_STATE;
     } else if (queue_transfer(IDX_IN, p, len, (void *)usb_bulk_tx_done, (void *)usb_bulk_cancel) != 0) {
         tx_state[slot] = T_FREE;
@@ -1014,6 +1234,7 @@ i32 usb_bulk_takeover(void)
         r = E_STATE; /* Overbridge (6) or a service mode */
     } else {
         taken = 1;
+        free_req = 0; /* a new session: keep the buffers if they are still there */
         to_orig = port;
         to_gone = 0;
         to_sus = 0;
@@ -1060,6 +1281,10 @@ u32 usb_bulk_state(void)
         st |= ST_WRONG_MODE;
     if (taken)
         st |= ST_TAKEN;
+    if (live)
+        st |= ST_LIVE;
+    if (nomem)
+        st |= ST_NOMEM;
     for (i = 0; i < TX_SLOTS; i++)
         tx += tx_state[i] != T_FREE ? 1u : 0u;
     st |= (order_count & 0xffu) << 8;

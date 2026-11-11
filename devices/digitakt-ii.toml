@@ -190,11 +190,10 @@ dsp_l2_excludes = [[0x200FA000, 0x200FE000]]
 # today (core/input and core/sample-pool, the stock sample pool adapter, are in both); a module such as digikit/remote is on exactly when its check mark in DIGIKIT > MODULES is set.
 [patch_sets]
 emulator = ["core/dynreg", "core/dyndsp", "core/dynfx", "core/fxpages", "core/ui", "core/digikit-menu", "core/health", "core/input", "core/sample-pool"]
-device = ["core/dynreg", "core/dyndsp", "core/dynfx", "core/fxpages", "core/ui", "core/digikit-menu", "core/health", "core/input", "core/sample-pool"]
+# Real-device image. core/usb-bulk (inert until the usb-fast module is selected) and core/plusdrive-write (the +Drive writes usb-fast uses) are in: usb-fast requires both.
+device = ["core/dynreg", "core/dyndsp", "core/dynfx", "core/fxpages", "core/ui", "core/digikit-menu", "core/health", "core/input", "core/sample-pool", "core/usb-bulk", "core/plusdrive-write"]
 # `device` plus the optional black intro (core/introblank): the Workbench Firmware page picks it with its "Custom boot screen" toggle.
-device-introblank = ["core/dynreg", "core/dyndsp", "core/dynfx", "core/fxpages", "core/ui", "core/digikit-menu", "core/health", "core/input", "core/sample-pool", "core/introblank"]
-# `device` plus fast transfer over USB: the bulk interface (core/usb-bulk; inert until the usb-fast module is selected) and the +Drive writes the usb-fast module uses (core/plusdrive-write).
-device-usb = ["core/dynreg", "core/dyndsp", "core/dynfx", "core/fxpages", "core/ui", "core/digikit-menu", "core/health", "core/input", "core/sample-pool", "core/usb-bulk", "core/plusdrive-write"]
+device-introblank = ["core/dynreg", "core/dyndsp", "core/dynfx", "core/fxpages", "core/ui", "core/digikit-menu", "core/health", "core/input", "core/sample-pool", "core/usb-bulk", "core/plusdrive-write", "core/introblank"]
 # Same roots as `emulator`; the name stays for the per-track sample tests (API 1.5).
 sample-tracks = ["core/dynreg", "core/dyndsp", "core/dynfx", "core/fxpages", "core/ui", "core/digikit-menu", "core/health", "core/input", "core/sample-pool"]
 # `emulator` plus core/overdrive (the OVR TYPE device test).
