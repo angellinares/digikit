@@ -86,3 +86,38 @@ does not show the staging folder after a transfer; a replace of a sample the poo
 
 Deselect the module (SysEx keeps working); or flash the previous patched `.syx`; or flash the stock OS. If USB is unusable: REC safe mode first;
 DIN MIDI OS upgrade last.
+
+## Results
+
+### DN2 run 1 (2026-11-11)
+
+- Flash 1: the `device` set from lane/fast-transfer (image f5fe094ed67dfe1c): boots, plays, debug/remote load, store listing unchanged,
+  SysEx put/delete ok. Flash 2: `device-usb` (device + core/usb-bulk, image 9d686bb778ffd7e8): the adapter is inert while no module asks
+  (USB interfaces unchanged).
+- USB CONFIG matters: the DN2 was in USB AUDIO/MIDI mode (UAC2 uses EP2 IN for the audio clock feedback and EP3 for audio), where v1 cannot
+  add its EP2 bulk pair. In USB MIDI mode, with test/usb-echo selected, **interface 2 (class 0xFF) enumerates on macOS** and `dkbulk list`
+  finds it. (A USB CONFIG change made just before a runtime restart did not stick; set it, then restart.)
+- `dkbulk echo`: 1, 511, 512 and 513 bytes identical. **4096 bytes: no reply, then every bulk send fails with 0xe00002ed and SysEx INFO
+  hangs too: the USB controller wedged; the CPU kept running (buttons, audio); no crash record; a power cycle recovers.**
+- Leading suspect: the first transfer that crosses a 4 KiB page of a multi-page dTD (page pointers 1-4, or the controller's DMA and the
+  uncached alias addresses). The firmware itself only uses single-page 512-byte dTDs, and the emulator model does not apply the
+  controller's page rules, so neither caught it.
+- The device was restored to debug + remote on the device-usb firmware. `dk:run` replaces a selection slot.
+
+### Next
+
+1. Diagnose the 4 KiB wedge: the MCF5441x reference manual (out/refs) USB chapter (dTD page pointers, DMA addressing); firmware-query for
+   any multi-page dTD in the firmware (CDC, Overbridge) and what the firmware's DMA arena (0x4fe3c000) is; the adapter's dTD construction.
+   Make the emulator model enforce the manual's rules so it reproduces the wedge; then fix (correct the pointers, or use single-page
+   4 KiB dTDs as the firmware does). Hardware echo again at 4096, 16384, 65536 and 1 MiB (needs a reflash).
+2. Before the PR: the adapter refuses cleanly outside the USB MIDI configuration ("wrong USB mode" in usb_bulk_state) and the badge's
+   SYSEX tooltip says to set USB CONFIG to USB MIDI; bump the runtime version (still 0.5.6 with SDK 1.10); fix the flash tool's
+   "port did not go away within 240 s" false alarm (macOS keeps the port listed); commit the `device-usb` patch set (now uncommitted in
+   devices/digitone-ii.toml).
+3. DN2 run 2 (usb-fast bench), then the DT2 runs, then `mise run test:full` and a PR to main.
+
+### v2: Fast USB in USB AUDIO/MIDI mode (agreed design, not started)
+
+The workbench takes the device over by SysEx: a RAM-only switch to the USB MIDI configuration with the bulk interface, through the
+firmware's own USB-mode switch (FUN_40006c16), released by SysEx, on unplug and on reboot. USB audio drops while the workbench holds the
+device. The stored USB CONFIG setting is never written (verify statically). Reuses the v1 protocol, adapter, module and host unchanged.
