@@ -62,19 +62,21 @@ try {
   const idle = await rtf(6000);
   result.idle_rtf = round(idle);
   await stats(true);
-  // the panel's open choice outlives a run: start from open
+  // the column's open choice and tab outlive a run: start from the Memory tab, open
   await cdp.send('Page.navigate', { url: `${base}${entry}?page=emulator` });
   const t0 = performance.now();
   const bars = () => evaluate(cdp, "document.querySelectorAll('.memory-panel .mem-bar').length");
   const label = () => evaluate(cdp, "document.querySelector('.memory-panel .acts button')?.textContent ?? ''");
   await sleep(500);
-  if (
-    !(await evaluate(
-      cdp,
-      "document.querySelector('.memory-panel .card-toggle')?.getAttribute('aria-expanded') === 'true'",
-    ))
-  )
-    await evaluate(cdp, "document.querySelector('.memory-panel .card-toggle')?.click()");
+  await evaluate(
+    cdp,
+    "(() => { const f = document.querySelector('.side-fold'); if (f?.getAttribute('aria-expanded') === 'false') f.click(); })()",
+  );
+  await sleep(100);
+  await evaluate(
+    cdp,
+    "[...document.querySelectorAll('.side-tab')].find((t) => t.textContent.trim() === 'Memory')?.click()",
+  );
   // the first read: how long until the bars are there (up to 20 s)
   let firstMs = null;
   while (performance.now() - t0 < 20000) {
@@ -114,10 +116,10 @@ try {
   while (performance.now() - b0 < 20000 && !((await label()) === 'Refresh' && (await bars()) > 0)) await sleep(20);
   result.back_from_transfer_ms = Math.round(performance.now() - b0);
   result.back_from_transfer_bars = await bars();
-  // a collapsed panel reads nothing: both panels closed, 4 s, and the page's control calls (the harness's own `status` poll aside)
+  // a folded column reads nothing: folded, 4 s, and the page's control calls (the harness's own `status` poll aside)
   await evaluate(
     cdp,
-    "document.querySelectorAll('.side-col .card-toggle').forEach((b) => b.getAttribute('aria-expanded') === 'true' && b.click())",
+    "(() => { const f = document.querySelector('.side-fold'); if (f?.getAttribute('aria-expanded') === 'true') f.click(); })()",
   );
   await sleep(300);
   await stats(true);
@@ -127,7 +129,7 @@ try {
   result.collapsed_calls_in_4s = quiet;
   await evaluate(
     cdp,
-    "document.querySelectorAll('.side-col .card-toggle').forEach((b) => b.getAttribute('aria-expanded') === 'false' && b.click())",
+    "(() => { const f = document.querySelector('.side-fold'); if (f?.getAttribute('aria-expanded') === 'false') f.click(); })()",
   );
   await sleep(500);
   if (out) {

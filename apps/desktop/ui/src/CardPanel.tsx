@@ -23,7 +23,6 @@ import {
 import { cardRefresh } from './card-state';
 import { cardEntry, failureEntry, overlayResetEntry } from './log-core';
 import { logInput } from './log-state';
-import { cardOpen as open, setCardOpen } from './panel-open';
 import './card-panel.css';
 
 const POLL_MS = 2000;
@@ -34,7 +33,12 @@ const deviceName = (id: string | undefined) =>
   id && id in panels ? panels[id as keyof typeof panels].name : (id ?? '').toUpperCase();
 
 /** `reload`: start the loaded firmware again (the Restart button's path), which builds the card from the folder in use. */
-export default function CardPanel(props: { visible: boolean; reload?: () => Promise<void> }): JSX.Element {
+export default function CardPanel(props: {
+  visible: boolean;
+  reload?: () => Promise<void>;
+  /** Set when the panel is a tab of the column (SidePanels.tsx): the tabpanel's id and the id of its tab. */
+  tabpanel?: { id: string; labelledBy: string };
+}): JSX.Element {
   const [card, setCard] = createSignal<CardFolder>();
   const [error, setError] = createSignal('');
   const [busy, setBusy] = createSignal(false);
@@ -57,7 +61,7 @@ export default function CardPanel(props: { visible: boolean; reload?: () => Prom
   };
   // Only a change of whether the panel is on screen and open counts, not each change of what `visible` reads (the Console's `status` changes
   // once per display frame): a memo passes on a change of its value only.
-  const active = createMemo(() => props.visible && open());
+  const active = createMemo(() => props.visible);
   // read when the panel is shown and opened, when a Transfer job ended, and on a light poll while it is visible
   createEffect(() => {
     cardRefresh();
@@ -68,7 +72,6 @@ export default function CardPanel(props: { visible: boolean; reload?: () => Prom
   }, POLL_MS);
   onCleanup(() => window.clearInterval(timer));
 
-  const toggle = () => setCardOpen(!open());
   const sync = async () => {
     setBusy(true);
     try {
@@ -143,117 +146,98 @@ export default function CardPanel(props: { visible: boolean; reload?: () => Prom
   };
 
   return (
-    <aside class="card-panel" classList={{ closed: !open() }} aria-label="Card" hidden={!props.visible}>
-      <button
-        type="button"
-        class="card-toggle"
-        aria-expanded={open()}
-        title={open() ? 'Collapse the Card panel' : 'Show the Card panel'}
-        onClick={toggle}
-      >
-        <svg viewBox="0 0 16 16" aria-hidden="true">
-          <path
-            d={open() ? 'M6 3L11 8L6 13' : 'M10 3L5 8L10 13'}
-            fill="none"
-            stroke="currentColor"
-            stroke-width="1.6"
-            stroke-linecap="round"
-            stroke-linejoin="round"
-          />
-        </svg>
-        <strong>Card</strong>
-      </button>
-      <Show when={open()}>
-        <div class="card-body">
-          <Show when={card()?.device}>
-            <h3 class="device">{deviceName(card()!.device)}</h3>
-          </Show>
-          <p class="folder" title={card()?.folder ?? ''}>
-            {card()?.folder ? shortFolder(card()!.folder) : 'No folder'}
-          </p>
-          <div class="acts">
-            <button type="button" class="act small" disabled={!card()?.device || busy()} onClick={() => void choose()}>
-              Choose folder…
+    <aside
+      class="card-panel"
+      id={props.tabpanel?.id}
+      role={props.tabpanel ? 'tabpanel' : undefined}
+      aria-labelledby={props.tabpanel?.labelledBy}
+      aria-label={props.tabpanel ? undefined : 'Card'}
+      hidden={!props.visible}
+    >
+      <div class="card-body">
+        <Show when={card()?.device}>
+          <h3 class="device">{deviceName(card()!.device)}</h3>
+        </Show>
+        <p class="folder" title={card()?.folder ?? ''}>
+          {card()?.folder ? shortFolder(card()!.folder) : 'No folder'}
+        </p>
+        <div class="acts">
+          <button type="button" class="act small" disabled={!card()?.device || busy()} onClick={() => void choose()}>
+            Choose folder…
+          </button>
+          <Show when={card() && canUseDefault(card()!)}>
+            <button type="button" class="act small" disabled={busy()} onClick={() => void useDefault()}>
+              Use default
             </button>
-            <Show when={card() && canUseDefault(card()!)}>
-              <button type="button" class="act small" disabled={busy()} onClick={() => void useDefault()}>
-                Use default
+          </Show>
+          <button type="button" class="act small" disabled={!card()?.folder} onClick={() => void openFolder()}>
+            Show in Finder
+          </button>
+          <button type="button" class="act small" disabled={!card()?.continuous || busy()} onClick={() => void sync()}>
+            {busy() ? 'Working…' : 'Sync now'}
+          </button>
+          <button
+            type="button"
+            class="act small"
+            disabled={!card()?.overlay || busy()}
+            title={
+              card()?.overlay
+                ? 'Set the saved card changes aside and reload the firmware without them'
+                : 'The card has no saved changes'
+            }
+            onClick={() => void resetOverlay()}
+          >
+            Reset card changes
+          </button>
+        </div>
+        <Show when={card() && folderNotice(card()!)}>
+          <div class="notice" role="status">
+            <p>{folderNotice(card()!)}</p>
+            <Show when={card()?.reload_needed && props.reload}>
+              <button type="button" class="act small" disabled={busy()} onClick={() => void reloadNow()}>
+                Reload now
               </button>
             </Show>
-            <button type="button" class="act small" disabled={!card()?.folder} onClick={() => void openFolder()}>
-              Show in Finder
-            </button>
-            <button
-              type="button"
-              class="act small"
-              disabled={!card()?.continuous || busy()}
-              onClick={() => void sync()}
-            >
-              {busy() ? 'Working…' : 'Sync now'}
-            </button>
-            <button
-              type="button"
-              class="act small"
-              disabled={!card()?.overlay || busy()}
-              title={
-                card()?.overlay
-                  ? 'Set the saved card changes aside and reload the firmware without them'
-                  : 'The card has no saved changes'
-              }
-              onClick={() => void resetOverlay()}
-            >
-              Reset card changes
-            </button>
           </div>
-          <Show when={card() && folderNotice(card()!)}>
-            <div class="notice" role="status">
-              <p>{folderNotice(card()!)}</p>
-              <Show when={card()?.reload_needed && props.reload}>
-                <button type="button" class="act small" disabled={busy()} onClick={() => void reloadNow()}>
-                  Reload now
-                </button>
-              </Show>
-            </div>
-          </Show>
-          <Show
-            when={card() && fileRows(card()!).length}
-            fallback={<p class="empty">{card()?.continuous ? 'No files in the folder.' : ''}</p>}
-          >
-            <For each={fileGroups(card()!)}>
-              {(g) => (
-                <div class="group">
-                  <Show when={g.folder}>
-                    <h4 title={`${g.files.length} file${g.files.length === 1 ? '' : 's'}`}>
-                      <span>{g.folder}/</span>
-                      <span class="size">{formatBytes(g.bytes)}</span>
-                    </h4>
-                  </Show>
-                  <ul class="files">
-                    <For each={g.files}>
-                      {(f) => (
-                        <li title={`${f.path}\nhash ${f.hash}`}>
-                          <span class="name">{nameInGroup(f.path, g.folder)}</span>
-                          <span class="size">{formatBytes(f.bytes)}</span>
-                        </li>
-                      )}
-                    </For>
-                  </ul>
-                </div>
-              )}
-            </For>
-          </Show>
-          <Show when={card()}>
-            <p class="status" classList={{ bad: !!card()?.error }}>
-              {statusText(card()!, now())}
-            </p>
-          </Show>
-          <Show when={error()}>
-            <p class="err" role="alert">
-              {error()}
-            </p>
-          </Show>
-        </div>
-      </Show>
+        </Show>
+        <Show
+          when={card() && fileRows(card()!).length}
+          fallback={<p class="empty">{card()?.continuous ? 'No files in the folder.' : ''}</p>}
+        >
+          <For each={fileGroups(card()!)}>
+            {(g) => (
+              <div class="group">
+                <Show when={g.folder}>
+                  <h4 title={`${g.files.length} file${g.files.length === 1 ? '' : 's'}`}>
+                    <span>{g.folder}/</span>
+                    <span class="size">{formatBytes(g.bytes)}</span>
+                  </h4>
+                </Show>
+                <ul class="files">
+                  <For each={g.files}>
+                    {(f) => (
+                      <li title={`${f.path}\nhash ${f.hash}`}>
+                        <span class="name">{nameInGroup(f.path, g.folder)}</span>
+                        <span class="size">{formatBytes(f.bytes)}</span>
+                      </li>
+                    )}
+                  </For>
+                </ul>
+              </div>
+            )}
+          </For>
+        </Show>
+        <Show when={card()}>
+          <p class="status" classList={{ bad: !!card()?.error }}>
+            {statusText(card()!, now())}
+          </p>
+        </Show>
+        <Show when={error()}>
+          <p class="err" role="alert">
+            {error()}
+          </p>
+        </Show>
+      </div>
     </aside>
   );
 }

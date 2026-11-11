@@ -1,6 +1,6 @@
 # Fast USB in USB AUDIO/MIDI mode: the workbench takes over USB
 
-Status: **built 2026-11-11, emulator-tested; the hardware test in USB AUDIO/MIDI is open.** Facts: [finding 121](../findings/121-usb-takeover.md). Follows [usb-fast.md](usb-fast.md) and [usb-fast-hardware.md](usb-fast-hardware.md) (section v2).
+Status: **built 2026-11-11, emulator-tested; the hardware test in USB AUDIO/MIDI is open.** Facts: [finding 123](../findings/123-usb-takeover.md). Follows [usb-fast.md](usb-fast.md) and [usb-fast-hardware.md](usb-fast-hardware.md) (section v2).
 
 ## Goal
 

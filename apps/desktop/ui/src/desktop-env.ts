@@ -10,6 +10,7 @@ import { sampleLink, setSampleLink } from '../../../web/src/transfer/transfer-st
 import { failureLine } from '../../../web/src/transfer/wait-core';
 import './desktop-firmware';
 import { bumpCardRefresh } from './card-state';
+import { reloadWithRuntime } from './emulator-actions';
 import { TauriBulkLink } from './bulk-link';
 import { EmuUsbTransport, emulatorMode, emuCall } from './desktop-transport';
 import { logInput } from './log-state';
@@ -83,6 +84,7 @@ export const desktopEnv: TransferEnv = {
   },
   targets: {
     emulator: true,
+    inHeader: true,
     ports: listMidiPorts,
     async open(t: Target) {
       if (t.kind === 'emulator') return new EmuUsbTransport();
@@ -100,6 +102,7 @@ export const desktopEnv: TransferEnv = {
   logRun: (run) => logInput(transferEntry(run)),
   extras: {
     samples,
+    reloadWithRuntime,
     onJobEnd() {
       // the Card panel reads the folder now and again after the emulator's quiet period (the folder follows the card about 2 s later)
       bumpCardRefresh();

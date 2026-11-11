@@ -1,4 +1,4 @@
-/* The desktop console: a top bar, the panel filling the window, a status bar and a metrics drawer.
+/* The desktop console: a title bar, the pages beside a sidebar, the Log dock and a status bar.
    Tokens and fonts come from the site (apps/web/src/styles/site.css); the panel drawing from panel.css. */
 html,
 body,
@@ -18,34 +18,149 @@ body {
   font-size: 13px;
 }
 /* Toolbar and status icons; the panel drawing sizes itself. */
-.topbar svg,
+.page-head svg,
 .statusbar svg,
-.drawer svg,
+.metrics svg,
 .log-drawer svg {
   width: 13px;
   height: 13px;
   flex-shrink: 0;
 }
 
-.topbar {
+/* The title bar over every page (TitleBar.tsx): the name, then the one target selector the pages share. */
+.titlebar {
   flex-shrink: 0;
   display: flex;
   align-items: center;
-  gap: 8px;
-  padding: 9px 12px 9px 14px;
+  gap: 14px;
+  min-height: 46px;
+  padding: 6px 12px 6px 16px;
   background: #121316;
   border-bottom: 1px solid #222428;
 }
-.topbar .file {
+.titlebar .brand {
+  display: inline-flex;
+  align-items: center;
+  gap: 10px;
+  font-family: var(--font-display);
+  font-stretch: 125%;
+  font-weight: 700;
+  font-size: 15px;
+  letter-spacing: -0.01em;
+  color: var(--ink);
+}
+.titlebar .brand-sub {
+  font-family: var(--font-body);
+  font-stretch: 100%;
+  font-weight: 400;
+  font-size: 13px;
+  letter-spacing: 0;
+  color: var(--ink-3);
+}
+.titlebar .brand-mark {
+  display: grid;
+  grid-template-columns: repeat(2, 5px);
+  gap: 2px;
+}
+.titlebar .brand-mark i {
+  width: 5px;
+  height: 5px;
+  border-radius: 1px;
+  background: var(--ink-3);
+}
+.titlebar .brand-mark i:first-child {
+  background: var(--amber);
+  box-shadow: 0 0 8px var(--amber);
+}
+.titlebar .conn .word,
+.titlebar .conn .part {
+  display: none;
+}
+.titlebar .conn {
+  display: inline-flex;
+  align-items: center;
+}
+.titlebar .target-select {
+  gap: 8px;
+}
+.titlebar .target-select .dim {
+  font-family: var(--font-display);
+  font-stretch: 125%;
+  font-size: 10.5px;
+  font-weight: 600;
+  letter-spacing: 0.14em;
+  text-transform: uppercase;
+  color: var(--ink-3);
+}
+.titlebar .target-select select {
+  height: 30px;
+  min-width: 200px;
+  padding: 0 8px;
+  border-color: #34373d;
+  border-radius: 8px;
+  font-size: 12.5px;
+  font-weight: 600;
+}
+.titlebar .target-select .act {
+  height: 30px;
+  padding: 0 11px;
+  border: 1px solid #34373d;
+  border-radius: 8px;
+  background: transparent;
+  color: var(--ink-2);
+  font-size: 12.5px;
+}
+.titlebar .target-select .act:hover:not(:disabled) {
+  background: #1a1c20;
+  color: var(--ink);
+}
+.titlebar .target-select > .dim:last-child {
+  font-family: var(--font-mono);
+  font-stretch: 100%;
+  font-weight: 400;
+  letter-spacing: 0;
+  text-transform: none;
+  color: var(--amber);
+}
+
+/* A page's own header row (the Emulator page here; Transfer, Remote and Firmware have theirs in their own CSS). */
+.page-head {
+  flex-shrink: 0;
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 8px 10px;
+  padding: 10px 14px 10px 18px;
+  border-bottom: 1px solid #1d1f23;
+}
+.page-head h2 {
+  margin: 0 4px 0 0;
+  font-size: 18px;
+}
+.emu-page {
+  flex: 1;
+  min-height: 0;
+  display: flex;
+  flex-direction: column;
+}
+.emu-page[hidden] {
+  display: none;
+}
+.file-chip {
   display: inline-flex;
   align-items: center;
   gap: 8px;
   min-width: 48px;
-  flex: 0 1 auto;
-  overflow: hidden;
+  max-width: 100%;
+  height: 32px;
+  padding: 0 4px 0 10px;
+  border: 1px solid #24262b;
+  border-radius: 8px;
+  background: #131418;
   color: var(--ink-3);
+  overflow: hidden;
 }
-.topbar .path {
+.file-chip .path {
   min-width: 0;
   font-family: var(--font-mono);
   font-size: 12.5px;
@@ -53,6 +168,37 @@ body {
   white-space: nowrap;
   overflow: hidden;
   text-overflow: ellipsis;
+}
+/* Buttons that belong together share one outline (no overflow clip: the Default modules list opens below its button). */
+.tb-group {
+  flex-shrink: 0;
+  display: inline-flex;
+  border: 1px solid #34373d;
+  border-radius: 8px;
+}
+.tb-group > .tb,
+.tb-group .defmods-btn {
+  height: 30px;
+  border: 0;
+  border-radius: 0;
+}
+.tb-group > * + * {
+  border-left: 1px solid #34373d;
+}
+.tb-group > :first-child,
+.tb-group > :first-child .defmods-btn {
+  border-top-left-radius: 7px;
+  border-bottom-left-radius: 7px;
+}
+.tb-group > :last-child,
+.tb-group > :last-child .defmods-btn {
+  border-top-right-radius: 7px;
+  border-bottom-right-radius: 7px;
+}
+.tb kbd {
+  font-family: var(--font-mono);
+  font-size: 10.5px;
+  color: var(--ink-3);
 }
 .tag {
   flex-shrink: 0;
@@ -84,6 +230,38 @@ body {
 .tag.opt input {
   margin: 0;
   accent-color: var(--accent);
+}
+.tag.opt {
+  height: 32px;
+  padding: 0 10px;
+  border-color: #24262b;
+  border-radius: 8px;
+  font-family: var(--font-body);
+  font-size: 12.5px;
+}
+.tag.opt .rt {
+  font-family: var(--font-mono);
+  font-size: 11px;
+  color: var(--ink-3);
+}
+.tag.opt .rt.on {
+  color: var(--ok);
+}
+.tag.opt .rt.pending {
+  color: var(--amber, #f3b52c);
+}
+.tb.pending {
+  position: relative;
+}
+.tb.pending::after {
+  content: '';
+  position: absolute;
+  top: 4px;
+  right: 4px;
+  width: 6px;
+  height: 6px;
+  border-radius: 50%;
+  background: var(--amber, #f3b52c);
 }
 .tag.watch {
   display: inline-flex;
@@ -137,10 +315,10 @@ body {
 }
 /* a narrow window: the buttons keep their icons and lose their words (the tooltips stay), the runtime option gets short */
 @media (max-width: 1340px) {
-  .topbar .tb .lbl {
+  .emu-head .tb .lbl {
     display: none;
   }
-  .topbar .tb {
+  .emu-head .tb {
     padding-inline: 8px;
   }
   .tag.opt .long {
@@ -224,7 +402,7 @@ body {
   flex-shrink: 0;
 }
 .statusbar .warn,
-.drawer .warn {
+.metrics .warn {
   color: #f0b35a;
 }
 .dot {
@@ -273,54 +451,35 @@ body {
   background: var(--ink);
 }
 
-.drawer {
-  position: absolute;
-  right: 12px;
-  bottom: calc(44px + var(--dock-h, 0px));
-  width: min(400px, calc(100% - 24px));
-  max-height: calc(100% - 120px - var(--dock-h, 0px));
-  overflow-y: auto;
-  background: #15171a;
-  border: 1px solid #2c2f35;
-  border-radius: 12px;
-  box-shadow: 0 24px 60px rgba(0, 0, 0, 0.6);
-  padding: 16px;
-  display: flex;
-  flex-direction: column;
-  gap: 12px;
-  z-index: 5;
-}
-.drawer header {
-  display: flex;
-  justify-content: space-between;
-  align-items: baseline;
-}
-.drawer header span {
+/* The Metrics tab of the right-hand column (Console.tsx, SidePanels.tsx). */
+.metrics .poll {
+  margin: 0;
   font-family: var(--font-mono);
-  font-size: 11.5px;
+  font-size: 11px;
   color: var(--ink-3);
 }
-.drawer dl {
+.metrics dl {
   margin: 0;
   display: grid;
-  grid-template-columns: 120px minmax(0, 1fr);
-  gap: 7px 10px;
+  grid-template-columns: minmax(0, 1fr);
+  gap: 0;
   font-family: var(--font-mono);
   font-size: 12.5px;
   font-variant-numeric: tabular-nums;
 }
-.drawer dt {
+.metrics dt {
   color: var(--ink-3);
+  font-size: 11px;
 }
-.drawer dd {
-  margin: 0;
+.metrics dd {
+  margin: 1px 0 8px;
   overflow-wrap: anywhere;
 }
-.drawer .note {
+.metrics .note {
   font-size: 12.5px;
   color: var(--ink-2);
 }
-.drawer .acts {
+.metrics .acts {
   display: flex;
   gap: 8px;
   flex-wrap: wrap;
@@ -336,7 +495,7 @@ body {
 }
 .sidebar {
   flex-shrink: 0;
-  width: 156px;
+  width: 172px;
   display: flex;
   flex-direction: column;
   gap: 2px;
@@ -347,6 +506,11 @@ body {
 }
 .sidebar.closed {
   width: 46px;
+}
+@media (prefers-reduced-motion: reduce) {
+  .sidebar {
+    transition: none;
+  }
 }
 .sidebar .side {
   display: flex;
@@ -376,6 +540,7 @@ body {
 .sidebar .side.on {
   background: #23262b;
   color: var(--ink);
+  font-weight: 600;
 }
 .sidebar .side:disabled {
   opacity: 0.45;
@@ -384,6 +549,28 @@ body {
 .sidebar .toggle {
   margin-bottom: 6px;
   color: var(--ink-3);
+}
+.sidebar .side-group {
+  padding: 12px 9px 4px;
+  font-family: var(--font-display);
+  font-stretch: 125%;
+  font-size: 10.5px;
+  font-weight: 600;
+  letter-spacing: 0.14em;
+  text-transform: uppercase;
+  color: var(--ink-3);
+  white-space: nowrap;
+}
+.sidebar .side-group:first-of-type {
+  padding-top: 2px;
+}
+.sidebar.closed .side-group {
+  visibility: hidden;
+  height: 10px;
+  padding: 0;
+}
+.sidebar .side.on svg {
+  color: var(--amber);
 }
 .sidebar.closed .side span {
   display: none;

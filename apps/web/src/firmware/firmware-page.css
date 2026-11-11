@@ -6,6 +6,8 @@
   --fp-border: #2c2f35;
   --fp-inset: #101214;
   --fp-track: #1d1f23;
+  --seg-bg: var(--fp-card);
+  --seg-border: var(--fp-border);
   position: relative;
   flex: 1;
   min-height: 0;
@@ -107,6 +109,40 @@
   border-color: #e5594d;
   background: #2a1210;
   color: #ffb4ab;
+}
+/* A done step folds to its header and one line; Show opens it again. */
+.firmware-page .step.folded {
+  padding-bottom: 10px;
+}
+.firmware-page .steph .summary {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  font-size: 12.5px;
+  color: var(--ink-2, #a9adb4);
+}
+.firmware-page .steph .summary .fname {
+  font-family: var(--font-mono);
+  font-size: 12px;
+  color: var(--ink, #eceae5);
+}
+.firmware-page .steph .fold {
+  margin: 0;
+  font-size: 12px;
+}
+.firmware-page .stepb[hidden] {
+  display: none;
+}
+@keyframes fp-in {
+  from {
+    opacity: 0;
+    transform: translateY(-3px);
+  }
+}
+.firmware-page .stepb:not([hidden]),
+.firmware-page .steph .summary {
+  animation: fp-in 0.16s ease-out;
 }
 .firmware-page .stepb {
   display: flex;
@@ -304,6 +340,15 @@
   .firmware-page .stepb {
     padding-left: 0;
   }
+  .firmware-page .head .dim {
+    flex-basis: 100%;
+    min-width: 0;
+  }
+  .firmware-page .steph .summary {
+    order: 1;
+    flex-basis: 100%;
+    padding-left: 32px;
+  }
 }
 .firmware-page .linkbtn {
   display: block;
@@ -320,4 +365,10 @@
 .firmware-page .linkbtn:disabled {
   opacity: 0.5;
   cursor: default;
+}
+@media (prefers-reduced-motion: reduce) {
+  .firmware-page .stepb,
+  .firmware-page .steph .summary {
+    animation: none;
+  }
 }

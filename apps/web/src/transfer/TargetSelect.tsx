@@ -1,5 +1,5 @@
-// The target selector: the emulator (where the app has one), or a MIDI port with a device on it (env.ts). Used in the Transfer page and, in the
-// desktop app, the Remote page. The list of ports is read when the page opens and with the rescan button (a page with its own Refresh passes `reload`: the
+// The target selector: the emulator (where the app has one), or a MIDI port with a device on it (env.ts). Used in the Transfer and Firmware pages
+// of the site, and once in the desktop app's title bar (TitleBar.tsx), which every page shares. The list of ports is read when the page opens and with the rescan button (a page with its own Refresh passes `reload`: the
 // list is read again when that number changes, and the button is left out); the port in use stays in the list.
 import { For, Show, createEffect, createSignal, on, onMount, type JSX } from 'solid-js';
 import { errorLine } from '../modules/backend';
@@ -10,6 +10,10 @@ import './target-select.css';
 
 const VALUE_EMU = 'emulator';
 const VALUE_NONE = '';
+
+/** Read the ports again in every selector shown (the desktop's title bar has the one selector; its pages' Refresh asks through this). */
+const [portScan, setPortScan] = createSignal(0);
+export const rescanTargets = (): void => void setPortScan((n) => n + 1);
 
 export default function TargetSelect(props: {
   disabled?: boolean;
@@ -31,7 +35,7 @@ export default function TargetSelect(props: {
   onMount(() => void rescan());
   createEffect(
     on(
-      () => props.reload?.(),
+      () => [props.reload?.(), portScan()],
       () => void rescan(),
       { defer: true },
     ),

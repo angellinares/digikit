@@ -51,6 +51,8 @@ export interface ModuleFilesSpec {
 export interface TransferTargets {
   /** The app has an emulator target (the site has not: its first target is a MIDI port, or none until one is there). */
   emulator: boolean;
+  /** The app shows the one target selector in its own title bar (the desktop workbench): the pages leave theirs out. */
+  inHeader?: boolean;
   /** The names of the MIDI ports that a device can be on. */
   ports(): Promise<string[]>;
   /** Open the target (a MIDI port is opened here) and give its transport. Called once per use of the target. */
@@ -126,6 +128,8 @@ export interface TransferEnv {
     samples?: SamplesSlot;
     /** A job ended (the Card panel reads the folder now and again after its quiet period). */
     onJobEnd?(): void;
+    /** Reload the emulator with the digikit runtime (the desktop): offered next to an "emulator runs without the runtime" error. */
+    reloadWithRuntime?: () => void;
   };
 }
 

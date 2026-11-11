@@ -5,15 +5,18 @@
 // This file holds what the modes share: the top bar (title, mode), the one busy action, the error line, and the progress bar along the bottom.
 // There is no Refresh button: the page reads by itself (AutoRefresh.tsx, refresh-core.ts). The page speaks the upload protocol itself, in
 // TypeScript, over the controller's USB capture; no process is started and nothing is built.
-import { For, Match, Show, Switch, createEffect, createMemo, createSignal, on, onMount, type JSX } from 'solid-js';
+import { Match, Show, Switch, batch, createEffect, createMemo, createSignal, on, onMount, type JSX } from 'solid-js';
 import { Dynamic } from 'solid-js/web';
-import { isCancelled, isTimeout } from '../modules/backend';
+import Segmented from '../components/Segmented';
+import { isCancelled, isNoRuntime, isTimeout } from '../modules/backend';
 import { noteActivity } from './activity';
 import AutoRefresh from './AutoRefresh';
 import ConnectionBadge from './ConnectionBadge';
+import { connection } from './connection-state';
 import { transferEnv } from './env';
+import { rescanTargets } from './TargetSelect';
 import ModulesMode from './ModulesMode';
-import { cancelPending, target, targetLabel } from './target';
+import { cancelPending, emulatorRuntime, target, targetLabel } from './target';
 import SourcePanel from './SourcePanel';
 import { transferBackend } from './transfer-backend';
 import TransferBar from './TransferBar';
@@ -76,6 +79,15 @@ async function read(): Promise<void> {
   setDeviceInfo({ name: await env.deviceName(v.device), runtime: v.runtime, storage: storageLine(v) });
 }
 
+// After "no reply" or "no runtime" the page does not read by itself; Try again, another target, a change of the emulator's runtime or a
+// reconnect lets it read again.
+const [halted, setHalted] = createSignal(false);
+const [noRuntime, setNoRuntime] = createSignal(false);
+const haltOn = (e: unknown): void => {
+  setHalted(isTimeout(e) || isNoRuntime(e));
+  setNoRuntime(isNoRuntime(e));
+};
+
 /** The one busy action. It is not made by the page: a job goes on when the page is left, and the old and the new page share it. */
 const run = async (what: string, f: () => Promise<void | CancelledRun>) => {
   if (!beginJob(what)) return;
@@ -102,9 +114,12 @@ const run = async (what: string, f: () => Promise<void | CancelledRun>) => {
   try {
     // a job that the user stopped is not a failure: no error line, the log says so, and both sides are read again
     const result = await f();
+    setHalted(false);
+    setNoRuntime(false);
     logRun(undefined, result ? result.cancelled : undefined);
   } catch (e) {
-    skipRead = isCancelled(e) || isTimeout(e);
+    skipRead = isCancelled(e) || isTimeout(e) || isNoRuntime(e);
+    haltOn(e);
     setError(failureLine(e, targetLabel(target())));
     logRun(e);
   } finally {
@@ -112,6 +127,7 @@ const run = async (what: string, f: () => Promise<void | CancelledRun>) => {
       try {
         await read();
       } catch (e) {
+        haltOn(e);
         if (!error()) setError(failureLine(e, targetLabel(target())));
       }
     if (endJob()) void run('Reading', async () => {});
@@ -133,7 +149,32 @@ export default function TransferPage(): JSX.Element {
   const [reload, setReload] = createSignal(0);
 
   const ctx: PageCtx = { busy, run, setError, reload };
-  const readNow = () => void run('Reading', async () => {});
+  const readNow = () => {
+    setHalted(false);
+    void run('Reading', async () => {});
+  };
+  const autoRead = () => {
+    if (!halted()) readNow();
+  };
+  // a change of the emulator's runtime, or a reconnect, lets a halted page read again
+  createEffect(
+    on(
+      emulatorRuntime,
+      () => {
+        if (halted() && target().kind === 'emulator') readNow();
+      },
+      { defer: true },
+    ),
+  );
+  createEffect(
+    on(
+      () => connection().state,
+      (s) => {
+        if (s === 'connected' && halted()) readNow();
+      },
+      { defer: true },
+    ),
+  );
 
   // back on the page during a job: that job's end reads; a read now would only wait behind it
   onMount(() => {
@@ -144,6 +185,7 @@ export default function TransferPage(): JSX.Element {
     on(
       target,
       () => {
+        setHalted(false);
         setLastView(undefined);
         setDeviceInfo(undefined);
         // ticks made before a device was plugged in survive (the list shows the library alone then)
@@ -178,17 +220,13 @@ export default function TransferPage(): JSX.Element {
       <header class="head">
         <h2>Transfer</h2>
         <Show when={samples()}>
-          <label class="target-select">
-            <span class="dim">Mode</span>{' '}
-            <select
-              aria-label="Mode"
-              disabled={writing(busy())}
-              value={activeMode()}
-              onChange={(e) => changeMode(e.currentTarget.value)}
-            >
-              <For each={MODES}>{(m) => <option value={m.id}>{m.label}</option>}</For>
-            </select>
-          </label>
+          <Segmented
+            label="Mode"
+            options={MODES}
+            value={activeMode()}
+            onChange={(m) => changeMode(m)}
+            disabled={writing(busy())}
+          />
         </Show>
         <span class="sp" />
         <ConnectionBadge />
@@ -196,9 +234,20 @@ export default function TransferPage(): JSX.Element {
           <span class="meta">reading…</span>
         </Show>
       </header>
-      <AutoRefresh busy={busy} read={readNow} rescanPorts={() => setReload((n) => n + 1)} />
+      <AutoRefresh
+        busy={busy}
+        read={autoRead}
+        rescanPorts={() => {
+          batch(() => {
+            setReload((n) => n + 1);
+            rescanTargets();
+          });
+        }}
+      />
 
-      <WaitNotice active={!!busy()} cancel={!cancellable(busy())} />
+      <div class="notices">
+        <WaitNotice active={!!busy()} cancel={!cancellable(busy())} />
+      </div>
 
       <Show when={error()}>
         <p class="err" role="alert">
@@ -206,6 +255,11 @@ export default function TransferPage(): JSX.Element {
           <button type="button" class="act small" disabled={!!busy()} onClick={readNow}>
             Try again
           </button>
+          <Show when={noRuntime() && target().kind === 'emulator' && transferEnv().extras?.reloadWithRuntime}>
+            <button type="button" class="act small" onClick={() => transferEnv().extras?.reloadWithRuntime?.()}>
+              Reload with runtime
+            </button>
+          </Show>
         </p>
       </Show>
 

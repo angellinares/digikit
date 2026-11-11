@@ -33,6 +33,7 @@
       "executor": "nx:run-commands",
       "cache": false,
       "parallelism": false,
+      "dependsOn": ["build:ui"],
       "options": {
         "command": "node tools/nx/rust-env.mjs --gen -- cargo test --manifest-path apps/desktop/src-tauri/Cargo.toml --target-dir .nx/target/check-desktop-clean",
         "cwd": "."

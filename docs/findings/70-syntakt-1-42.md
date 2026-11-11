@@ -129,6 +129,35 @@ Controls with the same harness: DT2 1.17 111/111, DN2 1.12 101/101.
 - The caller and gap stages are wrong in places. Example: the DT2 boot thread
   0x400cc9c8 is paired with the Syntakt FPGA status code.
 
+## Emulator boot notes from OS 1.41 [D]
+
+- Source: an old Python-emulator boot of OS 1.41 (PR #42, not merged). Measured
+  once, not verified on 1.42. Re-derive every byte signature on the 1.42 image.
+- The 1.41 boot reached the main screen ("A01") after about 331 M instructions
+  with no FancyErrorView.
+- There was no DSP model. The DSP loader gave up at about 690 M instructions
+  and the UI then showed "OOPS". The audio-frame interrupt was not modelled.
+- The OS busy-waits on DTCN2 (DMA timer 2 counter, loop at 0x40000f78 on 1.41).
+  The bootloader leaves the timer running and the OS never writes DTMR2. The
+  emulator must serve DTCN2 as a free-running counter.
+- Worker pends that must stay real. A faked release ran jobs that were never
+  posted and starved lower-priority tasks (1.41 names from the PR):
+  - `pump_wait2`: second worker pump, prio 7. Waits on a job semaphore.
+  - `hw1_wait`, `hw2_wait`, `hw3_wait`: three prio-5 hardware workers (SPI NOR
+    via GPIO 0xEC0940xx; a FlexBus device at 0x10000000; a copy worker). The PR
+    does not say which name is which worker. Each waits on a semaphore posted
+    by an ISR.
+  - `display_frame_wait`: the display task's per-frame wait on display_sem,
+    posted by the display PIT3 ISR. Faked, the task spins at 100% CPU.
+- Panel wire (measured by use, 1.41):
+  - Button message `2c mask`: `mask` is the whole state of channel c.
+  - Encoder message `3c dd`: `dd` is a signed delta.
+  - Channel 0 bits 0-7 = tracks 1-8. Channel 1 bits 0-3 = tracks 9-12.
+  - Channel 2 bit 7 = LFO page. Channel 3 bit 3 = NO.
+  - Encoders A-H = channels 0-7. LEVEL = 8.
+  - The first encoder message after a page or parameter change only shows the
+    value. Each later one moves by delta/6 positions.
+
 ## Analysis databases
 
 - Ghidra project: `out/ghidra-projects/st-1.42-emac` (language

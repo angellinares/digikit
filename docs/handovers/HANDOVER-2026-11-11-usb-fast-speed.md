@@ -9,7 +9,7 @@ usb-fast baseline) is already merged into main.
   1 MiB write buffer + direct/movem copy, DN2 store single-pass BEGIN + 64 KiB pieces, DN2 device readback at close (CAP READBACK; host
   skips the SysEx verify), DT2 fast close (own hash + readback + firmware tail, byte-identical to the firmware close) + batched hash-table
   rebuild, fast-close fallback, cached RX reads (compiled OFF), the workbench take-over (usb-fast TAKEOVER/RELEASE, one re-enumeration,
-  switch guard, restart-counter anchor, wb.mjs and desktop wiring), findings 121 and 122, AGENTS.md/TESTING.md full-tier rule.
+  switch guard, restart-counter anchor, wb.mjs and desktop wiring), findings 123 and 124, AGENTS.md/TESTING.md full-tier rule.
 - Hardware, merged build (DN2 image `29b91c34123022a6`, DT2 `85cc2533f2de4877`, runtime 0.5.10):
   - Take-over works on BOTH devices from USB AUDIO/MIDI: plain `wb samples put` takes over, uploads over bulk, releases; the stored USB
     CONFIG byte stays unchanged; USB audio checked by ear after (QuickTime record and playback).
@@ -56,4 +56,4 @@ usb-fast baseline) is already merged into main.
 
 - Flash from the lane with its own patchkit (`dist/native-target/nogen/release/patchkit --root <lane>`); auto mode blocks flashing, so Em
   runs it with `!`. Two SysEx clients on one port conflict (dklog follow vs dkupload). Lanes share `out/` (cache objects leak).
-- Hardware-only facts are marked [D] in findings 42/120/121/122; no [V] without a second agent's byte check.
+- Hardware-only facts are marked [D] in findings 42/120/123/124; no [V] without a second agent's byte check.

@@ -120,6 +120,53 @@ fn modules_list_has_one_row_per_file_with_kind_and_size() {
     );
 }
 
+/// Pixels of a row label in the list font: a letter, a digit, '-' and the padding glyph 0x01 take 4, a space 3, '.' 2 and '~' 5.
+fn px(text: &str) -> usize {
+    text.chars()
+        .map(|c| match c {
+            ' ' => 3,
+            '.' => 2,
+            '~' => 5,
+            _ => 4,
+        })
+        .sum()
+}
+
+#[test]
+fn modules_columns_line_up_in_pixels() {
+    let _g = digikit();
+    add("modules/bd.dkm", OK, 2, 0, 1);
+    add("modules/bootscreen.dkm", OK, 7, 0, 0);
+    add("modules/dyn-fx-gain-send.dkm", OK, 1250, 1, 0);
+    open_modules();
+    let rows = labels();
+    assert_eq!(rows.len(), 3);
+    for row in &rows {
+        // the kind starts after 13 letter widths, the size ends after 23, and the row fits
+        let kind = ["MACH", "TOOL", "FX"]
+            .iter()
+            .filter_map(|k| row.rfind(k))
+            .max()
+            .unwrap();
+        assert_eq!(px(&row[..kind]), 13 * 4, "{row:?}");
+        assert_eq!(px(row), 23 * 4, "{row:?}");
+        assert!(row.len() < DK_UI_ROW, "{row:?}");
+    }
+}
+
+#[test]
+fn a_modules_row_that_needs_more_characters_still_fits() {
+    let _g = digikit();
+    // a space in the name and a 5-character size: exact padding would take 24 characters
+    add("modules/a b.dkm", OK, 1250, 0, 1);
+    open_modules();
+    let row = &labels()[0];
+    assert!(row.len() < DK_UI_ROW, "{row:?}");
+    assert!(row.ends_with("1250K"), "{row:?}");
+    // PAD only: each column ends at most 3 pixels short
+    assert!((23 * 4 - 3..=23 * 4).contains(&px(row)), "{row:?}");
+}
+
 #[test]
 fn selected_modules_that_are_loaded_show_a_check_mark() {
     let _g = digikit();

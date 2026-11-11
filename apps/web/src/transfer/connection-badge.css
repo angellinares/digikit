@@ -29,6 +29,13 @@
 .conn.disconnected .word {
   color: #ffb4ab;
 }
+.conn.noruntime .dot {
+  background: var(--ink-3, #868b94);
+  box-shadow: 0 0 0 2px rgb(134 139 148 / 25%);
+}
+.conn.noruntime .word {
+  color: var(--ink-2, #a9adb4);
+}
 .conn.connecting .dot {
   background: var(--amber, #f3b52c);
 }

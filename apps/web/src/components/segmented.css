@@ -1,0 +1,108 @@
+/* Segmented.tsx. Colours come from the page: --seg-bg, --seg-border, --seg-on, else the site tokens. */
+.segmented {
+  position: relative;
+  display: inline-grid;
+  grid-auto-flow: column;
+  grid-auto-columns: 1fr;
+  gap: 2px;
+  padding: 3px;
+  align-self: center;
+  border: 1px solid var(--seg-border, var(--line, #24262b));
+  border-radius: 9px;
+  background: var(--seg-bg, var(--panel, #131418));
+}
+.segmented .seg-thumb {
+  position: absolute;
+  top: 3px;
+  bottom: 3px;
+  left: 3px;
+  width: calc((100% - 6px - (var(--seg-n) - 1) * 2px) / var(--seg-n));
+  border-radius: 6px;
+  background: var(--seg-on, #2a2d33);
+  transform: translateX(calc(var(--seg-i) * (100% + 2px)));
+  transition: transform 0.16s ease;
+}
+.segmented button {
+  position: relative;
+  z-index: 1;
+  height: 26px;
+  padding: 0 12px;
+  border: 0;
+  border-radius: 6px;
+  background: transparent;
+  color: var(--ink-2, #a9adb4);
+  font: inherit;
+  font-size: 12.5px;
+  white-space: nowrap;
+  cursor: pointer;
+  transition: color 0.12s ease;
+}
+.segmented button:hover:not(:disabled) {
+  color: var(--ink, #eceae5);
+}
+.segmented button.on {
+  color: var(--ink, #eceae5);
+  font-weight: 600;
+}
+.segmented button:disabled {
+  cursor: not-allowed;
+}
+.segmented button:focus-visible {
+  outline: 2px solid var(--amber, #f3b52c);
+  outline-offset: 1px;
+}
+/* a toggle switch for an on/off setting: a styled checkbox with role="switch" */
+.toggle {
+  display: inline-flex;
+  align-items: center;
+  gap: 7px;
+  cursor: pointer;
+}
+.toggle input {
+  appearance: none;
+  position: relative;
+  flex-shrink: 0;
+  width: 26px;
+  height: 15px;
+  margin: 0;
+  border: 1px solid var(--seg-border, var(--line-2, #34373d));
+  border-radius: 8px;
+  background: var(--seg-bg, var(--panel, #131418));
+  cursor: pointer;
+  transition:
+    background-color 0.14s ease,
+    border-color 0.14s ease;
+}
+.toggle input::after {
+  content: '';
+  position: absolute;
+  top: 2px;
+  left: 2px;
+  width: 9px;
+  height: 9px;
+  border-radius: 50%;
+  background: var(--ink-3, #868b94);
+  transition:
+    transform 0.14s ease,
+    background-color 0.14s ease;
+}
+.toggle input:checked {
+  border-color: var(--amber, #f3b52c);
+  background: var(--amber-soft, rgba(243, 181, 44, 0.14));
+}
+.toggle input:checked::after {
+  transform: translateX(11px);
+  background: var(--amber, #f3b52c);
+}
+.toggle input:focus-visible {
+  outline: 2px solid var(--amber, #f3b52c);
+  outline-offset: 2px;
+}
+@media (prefers-reduced-motion: reduce) {
+  .segmented .seg-thumb,
+  .segmented button,
+  .toggle input,
+  .toggle input::after {
+    transition: none;
+  }
+}

@@ -185,7 +185,7 @@ button.add {
   gap: 8px;
   margin-bottom: 24px;
 }
-.browse-bar button {
+.browse-bar > button {
   height: 34px;
   padding-inline: 13px;
   border-radius: 8px;
@@ -196,32 +196,33 @@ button.add {
   font-size: 13.5px;
   cursor: pointer;
 }
-.browse-bar button[aria-pressed='true'] {
+.browse-bar > button[aria-pressed='true'] {
   border-color: var(--amber);
   color: var(--amber);
 }
 .browse-spacer {
   flex: 1 1 0;
 }
-.browse-bar label {
-  display: inline-flex;
-  align-items: center;
-  gap: 8px;
-  font-size: 13.5px;
-  color: var(--ink-2);
-}
-.browse-bar select {
+.browse-bar .segmented {
   height: 34px;
-  border-radius: 8px;
-  border: 1px solid var(--line-2);
-  background: var(--panel);
-  color: var(--ink);
-  font: inherit;
-  font-size: 13.5px;
-  padding-inline: 8px;
+  box-sizing: border-box;
+}
+.browse-bar .segmented button {
+  height: 26px;
+  font-size: 13px;
 }
 .browse-empty {
   color: var(--ink-2);
+}
+.browse-clear {
+  margin-left: 6px;
+  padding: 0;
+  border: 0;
+  background: none;
+  color: var(--amber);
+  font: inherit;
+  text-decoration: underline;
+  cursor: pointer;
 }
 .browse-selected {
   position: sticky;
