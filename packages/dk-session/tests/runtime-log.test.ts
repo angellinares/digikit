@@ -3,7 +3,17 @@ import { expect, test } from 'vitest';
 import type { DkLogEvent } from '../src/dkupload-core.ts';
 import { LOG_KIND } from '../src/gen_proto.ts';
 import { decodeFault } from '../src/fault.ts';
-import { asciiOf, eventLine, eventText, faultDetail, moduleNames, runtimeEvent } from '../src/runtime-log.ts';
+import {
+  asciiOf,
+  eventLine,
+  eventText,
+  faultDetail,
+  loadFailures,
+  loadFailureShort,
+  loadFailureText,
+  moduleNames,
+  runtimeEvent,
+} from '../src/runtime-log.ts';
 
 const word = (s: string) => {
   let n = 0;
@@ -128,4 +138,37 @@ test('safe reason 6 reads as a selection read failure', () => {
   const safe = runtimeEvent(ev(1, 'SAFE', [6, 0, 10], 1));
   expect(safe.fields.reason).toBe('read');
   expect(eventText(safe, new Map())).toBe('SAFE  reason=read  boot_counter=0  record_seq=10');
+});
+
+test('a module that needs a missing module is reported once, with the module it needs', () => {
+  const events = [
+    ev(1, 'BOOT_START'),
+    ev(2, 'MOD_LOAD', [0, 0, word('pluc'), word('k.dk'), word('m')]),
+    ev(3, 'MOD_LOAD', [1, 0xfffffff9, word('usb-'), word('fast'), word('.dkm')], 1),
+    ev(4, 'MOD_NEEDS', [1, word('usb-'), word('bulk'), 0], 1),
+  ];
+  expect(runtimeEvent(events[3]!).fields).toEqual({ index: 1, needs: 'usb-bulk' });
+  const [f, ...rest] = loadFailures(events);
+  expect(rest).toEqual([]);
+  expect(f).toEqual({ name: 'usb-fast.dkm', result: -7, needs: 'usb-bulk' });
+  expect(loadFailureText(f!)).toBe(
+    'usb-fast not loaded: this firmware has no core/usb-bulk. Flash firmware from the Firmware page.',
+  );
+  expect(loadFailureShort(f!)).toBe('usb-fast not loaded (needs usb-bulk)');
+});
+
+test('only the last boot counts, and other codes keep the loader text', () => {
+  const events = [
+    ev(1, 'BOOT_START'),
+    ev(2, 'MOD_LOAD', [0, 0xfffffff9, word('a.dk'), word('m'), 0], 1),
+    ev(3, 'BOOT_START'),
+    ev(4, 'MOD_LOAD', [0, 0xfffffff7, word('b.dk'), word('m'), 0], 1),
+    ev(5, 'MOD_LOAD', [1, 1, word('c.dk'), word('m'), 0]),
+  ];
+  const fails = loadFailures(events);
+  expect(fails).toEqual([{ name: 'b.dkm', result: -9 }]);
+  expect(loadFailureText(fails[0]!)).toBe('b not loaded: init returned non-zero');
+  expect(loadFailureText({ name: 'x.dkm', result: -7 })).toBe(
+    "x not loaded: an import name is not in the runtime's table",
+  );
 });

@@ -278,6 +278,9 @@ test('the tags: only what says something; the usual state has none', () => {
   assert.deepEqual(texts(deviceTags(view.card_only[1])), ['not in library']);
   assert.deepEqual(texts(deviceTags(view.card_only[0])), ['loaded', 'not in library']);
   assert.deepEqual(texts(deviceTags(sine)), [], 'a file that is still going there has no tag yet');
+  assert.deepEqual(texts(deviceTags({ ...sine, on_card: 'yes', not_loaded: 'sine not loaded: arena full' })), [
+    'not loaded',
+  ]);
   // no tag says "card"
   for (const r of [...view.modules, ...view.card_only])
     for (const on_card of ['yes', 'no', 'other version'] as const)

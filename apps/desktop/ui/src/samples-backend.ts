@@ -4,7 +4,7 @@
 // Nothing is started and nothing is built here.
 import { invoke } from '@tauri-apps/api/core';
 import { errorLine } from '@web/modules/backend';
-import { fmtVersion, type DkSession } from '@digi/dk-session';
+import { failureModule, fmtVersion, hasCap, type DkSession, type LoadFailure } from '@digi/dk-session';
 import { Sample, prepareUpload, sourceKind, type Prepared } from '@digi/dk-session/dksample';
 import { openSamples, type SamplesBackend } from '@digi/dk-session/samples';
 import { BulkTakeOver, chooseBulk, type BulkChoice, type TakeOverDevice } from '@digi/dk-session/bulk-select';
@@ -13,6 +13,7 @@ import { asked, noteConnection } from '@web/transfer/connection-state';
 import { portLost, resetSession, session as running, target } from '@web/transfer/target';
 import { joinPath, type LocalEntry, type Prepare } from './samples-core';
 import { setDeviceInfo, setSampleLink } from '@web/transfer/transfer-state';
+import type { LinkState } from '@web/transfer/link-core';
 import {
   localFolder,
   localPath,
@@ -64,6 +65,8 @@ let last:
       runtime: string;
       samples: string;
       opened?: OpenedSamples;
+      /** Why usb-fast did not load at the last boot, read once per session when there is no bulk link (`usbFast` unset: it did load, or it is not selected). */
+      failure?: { usbFast?: LoadFailure };
       bulk?: BulkChoice;
       /** The take-over of a device in USB AUDIO/MIDI (made at the first run that needs it). */
       takeover?: BulkTakeOver;
@@ -116,6 +119,17 @@ function takeOverDevice(): TakeOverDevice {
   };
 }
 
+/** The load failure of the usb-fast module (the device's LOADS record), when the last boot selected it and it did not load; undefined when the runtime
+ * cannot say (an older runtime) or the module loaded. */
+async function usbFastFailure(s: DkSession): Promise<LoadFailure | undefined> {
+  try {
+    if (!hasCap(await s.info(true), 'LOADS')) return undefined;
+    return (await s.loadFailures()).find((f) => failureModule(f) === 'usb-fast');
+  } catch {
+    return undefined;
+  }
+}
+
 const note = (why: string) => console.info(`[samples] ${why}`);
 
 /**
@@ -145,6 +159,7 @@ export async function openDeviceSamples(forRun = false): Promise<OpenedSamples> 
     await Promise.resolve(had.link.close()).catch(() => {});
     last.bulk = undefined;
   }
+  if (!last.bulk && !last.failure) last.failure = { usbFast: await usbFastFailure(s) };
   if (!last.bulk) {
     const env = transferEnv().bulk;
     last.bulk = env && target().kind !== 'none' ? await chooseBulk(s, env, note) : undefined;
@@ -159,12 +174,11 @@ export async function openDeviceSamples(forRun = false): Promise<OpenedSamples> 
     const c = await last.takeover.begin();
     if (!c) last.began = false;
     last.bulk = c;
-    if (last.opened && !had === !last.bulk && (!had || had === last.bulk))
-      setSampleLink({ state: last.opened.link, takenOver: !!c });
+    if (last.opened && !had === !last.bulk && (!had || had === last.bulk)) setSampleLink(linkOf(last.opened.link, !!c));
   }
   if (last.opened && !had === !last.bulk && (!had || had === last.bulk)) {
     // a new choice for the run (the last one had failed and the link is the same again): the pill follows it
-    if (forRun) setSampleLink({ state: last.opened.link });
+    if (forRun) setSampleLink(linkOf(last.opened.link));
     return last.opened;
   }
   const conv = await converter();
@@ -182,8 +196,15 @@ export async function openDeviceSamples(forRun = false): Promise<OpenedSamples> 
     prepare: (name, bytes) => prepareUpload(conv, name, bytes),
     link: last.bulk ? 'bulk' : 'sysex',
   };
-  setSampleLink({ state: last.opened.link, takenOver: last.opened.link === 'bulk' && !!last.takeover?.active });
+  setSampleLink(linkOf(last.opened.link, last.opened.link === 'bulk' && !!last.takeover?.active));
   return last.opened;
+}
+
+/** The pill state for a link: a SysEx link says why usb-fast is not in use when the device reported it. */
+function linkOf(link: 'bulk' | 'sysex', takenOver = false): LinkState {
+  if (link === 'bulk') return { state: 'bulk', takenOver };
+  const failure = last?.failure?.usbFast;
+  return failure ? { state: 'sysex', failure } : { state: 'sysex' };
 }
 
 /** A run ended (also a failed one): the take-over, if any, keeps the device for its linger and then gives the USB mode back. */

@@ -7,6 +7,11 @@
         "files": ["tests/fits.device.test.ts"],
         "modules": [],
         "plusdrive": true
+      },
+      {
+        "files": ["tests/needs.device.test.ts"],
+        "modules": ["digikit/usb-fast"],
+        "plusdrive": true
       }
     ]
   }

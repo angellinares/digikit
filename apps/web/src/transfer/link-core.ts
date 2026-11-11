@@ -1,11 +1,14 @@
 // Which link carries the samples (pure; apps/desktop/ui/tests/link-pill.test.ts): the pill after the free space of the Target row and the suffix of the
 // progress line. The desktop backend sets the state (samples-backend.ts); nothing here talks to a device.
+import { loadFailureShort, loadFailureText, type LoadFailure } from '@digi/dk-session';
 import type { RowTag } from './transfer-core.ts';
 
 /** `bulk`: the USB bulk link of usb-fast; `sysex`: no bulk link for this target; `fallback`: bulk failed during the last run (`reason`), SysEx took over. */
 export interface LinkState {
   state: 'bulk' | 'sysex' | 'fallback';
   reason?: string;
+  /** `sysex` only: usb-fast is selected but did not load at the last boot (the device's LOADS record); `loadFailureText` says why. */
+  failure?: LoadFailure;
   /** `bulk` only: the device is taken over (it was in USB AUDIO/MIDI and runs in USB MIDI until the linger ends), so its USB audio is paused. */
   takenOver?: boolean;
 }
@@ -34,6 +37,8 @@ export function linkTag(link: LinkState | undefined): RowTag | undefined {
         title: `The fast USB link stopped during this run (${link.reason || 'no reason logged'}). The rest of the run went over SysEx. The next run tries Fast USB again.`,
       };
     default:
+      if (link.failure)
+        return { text: `SYSEX: ${loadFailureShort(link.failure)}`, tone: 'warn', title: loadFailureText(link.failure) };
       return {
         text: 'SYSEX',
         tone: 'dim',

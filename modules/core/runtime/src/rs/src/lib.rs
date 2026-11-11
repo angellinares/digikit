@@ -524,6 +524,27 @@ pub unsafe fn import_addr(name: *const u8) -> u32 {
     0
 }
 
+/// The module whose absence leaves the import `name` (NUL-terminated) without an address, without the `core/` prefix ("usb-bulk" for
+/// `usb_bulk_enable`); None when the table has no such import, or it has an address or a stub.
+pub unsafe fn import_needs(name: *const u8) -> Option<&'static str> {
+    let t = optional::table();
+    let mut i = 0;
+    while i < t.len() {
+        if cstr_eq_str(name, t[i].0) {
+            if t[i].1 != 0 || t[i].2 != 0 {
+                return None;
+            }
+            let r = t[i].3;
+            return Some(match r.rfind('/') {
+                Some(at) => &r[at + 1..],
+                None => r,
+            });
+        }
+        i += 1;
+    }
+    None
+}
+
 /// Whether the NUL-terminated `a` equals `b`.
 unsafe fn cstr_eq_str(a: *const u8, b: &str) -> bool {
     let b = b.as_bytes();

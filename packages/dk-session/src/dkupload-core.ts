@@ -17,6 +17,7 @@ import {
   SERVICE_CMD,
   STATUS as GSTATUS,
 } from './gen_proto.ts';
+import type { LoadFailure } from './runtime-log.ts';
 
 export interface DkInfo {
   protocol: number;
@@ -1017,6 +1018,28 @@ export class DkSession {
         used: u32(b, at + 5),
         largest: u32(b, at + 9),
       };
+    }
+    return out;
+  }
+
+  /**
+   * LOADS (runtime 0.5.11): the modules of the last boot's selection that did not load, from the runtime's own record (no debug module needed). `name` is the
+   * file name (`usb-fast.dkm`), `result` the negative load code, `needs` (E_IMPORT only) the module its imports need that is not in the image (`usb-bulk`).
+   */
+  async loadFailures(): Promise<LoadFailure[]> {
+    const b = await this.ok(GCMD.LOADS, 'loads');
+    const str = (at: number, len: number) => {
+      let out = '';
+      for (let i = 0; i < len && b[at + i]; i++) out += String.fromCharCode(b[at + i]!);
+      return out;
+    };
+    const out: LoadFailure[] = [];
+    for (let i = 0; i < b[1]!; i++) {
+      const at = 2 + 44 * i;
+      const result = u32(b, at) | 0;
+      if (result >= 0) continue;
+      const needs = str(at + 4, 12);
+      out.push({ name: str(at + 16, 28), result, ...(needs ? { needs } : {}) });
     }
     return out;
   }

@@ -211,7 +211,18 @@ Only what the device needs before any module code runs:
 | DSP section (code, relocations, named imports, voice and FX entries) | Built from `src/dsp/` as today | Voice rows, FX slots, DSP memory |
 
 `module:check` runs the module in the emulator and writes `[uses]` from what `init` declared, like a lock file. Nobody maintains it by
-hand. A generated header gives C the ids from `module.toml`, so each id is written once.
+hand.
+
+Ids are written once. `patchkit gen` writes `build/gen/module_ids.h` from the `module.toml` ids, in the same way it writes other
+committed per-module files (for example `build/gen/dl-limits.h`), and `patchkit gen --check` guards it. Every module has `build/gen`
+first on its include path, so no new build phase is needed. Each constant is the key the runtime already uses: the hash of
+`<module id>:<machine id>` for a machine (`register.rs:88-92`) and of `<module id>:<effect id>` for an effect (`register.rs:76-86`).
+A typo is a compile error. `module.toml` refuses `[[machine]]` and `[[fx]]` tables today (`module.rs:47-57`); S3 allows them again,
+with an id only.
+
+DSP entry points are found by name, so the packer needs no declaration to build the DSP section: machine `analog` has `analog_render`
+and `analog_note_on`, effect `fshift` has `fshift_process`, and a machine's sample pool symbols follow the same rule. The packer refuses
+a module when a symbol is missing.
 
 ```toml
 [module]
@@ -235,8 +246,7 @@ The Transfer tab does not check fit: the card holds as many modules as fit on di
 
 static int analog_init(dk_ctx *ctx)
 {
-    dk_machine *m = dk_machine_add(ctx, DK_MACHINE_ANALOG, "Analog", "ANLG");
-    dk_machine_dsp(m, "va_render", "va_note_on");
+    dk_machine *m = dk_machine_add(ctx, DK_MACHINE_ANALOG, "Analog", "ANLG");   /* DSP: analog_render, analog_note_on */
 
     dk_page *p = dk_machine_page(m, "Analog");
     dk_param_add(p, "Tone",  "TONE",  64);
@@ -271,8 +281,7 @@ if (dk_device_has(ctx, DK_CAP_PAGE_ROWS))        /* device-aware: DN2 has page r
 An FX:
 
 ```c
-dk_fx *fx = dk_fx_add(ctx, DK_FX_FSHIFT, "Freq shift", "FSHF");
-dk_fx_dsp(fx, "fs_process");
+dk_fx *fx = dk_fx_add(ctx, DK_FX_FSHIFT, "Freq shift", "FSHF");     /* DSP: fshift_process */
 dk_fx_routes(fx, DK_ROUTE_SEND | DK_ROUTE_INSERT, DK_ROUTE_SEND);   /* allowed, default */
 dk_page *p = dk_fx_page(fx, "Freq shift");
 dk_fx_param_add(p, "Shift", "SHFT", DK_BIPOLAR, -1.0f, 1.0f, 0.0f);
@@ -297,31 +306,40 @@ placeholder, so chained calls stay safe.
 
 ### 6.3 Commit
 
-The runtime collects the builder calls during `init`. When `init` returns `DK_OK`:
+DSP check and reserve stay before `init`, as today. They read only the static DSP section and the machine and effect keys from the
+header: reserve copies the DSP image into its own arena block and fills the voice and FX row tables (`dsp.rs:842-989`). After reserve
+the staged file is not read again, except for today's register records, which builder calls replace.
 
-1. Check the collected records with the existing `registry::check` rules, against the device limits and against `[uses]`.
-2. Reserve DSP rows (`dsp::reserve`) and bind each machine to its voice row and each effect to its FX row. A voice row's 8 ranges are the
-   min and max of the knob params (a clamp guard, today from `typed.rs:755-771`), so they come from the collected params.
-3. Apply the records (`registry::apply`). FX pages need their FX row, so step 2 comes first.
+The runtime collects the builder calls during `init`, in the module's arena share, bounded by today's `MAX_RECORDS`. When `init`
+returns `DK_OK`:
+
+1. Check the collected records with the existing `registry::check` rules: against the device limits, against `[uses]`, against the
+   machine and effect keys in the header, and against FX ids of modules already loaded (a duplicate FX id is refused with a reason).
+2. Fill each voice row's 8 ranges and its latched mask from the collected params. The ranges are the knob params' min and max, a clamp
+   guard the DSP voice code reads (`typed.rs:755-771` builds them today).
+3. Apply the records (`registry::apply`). FX pages need their FX row, which reserve already claimed.
 4. Start the DSP upload (`dsp::launch`) as today.
 
-If any step fails, nothing is written, the runtime undoes the DSP reservation, and the module is refused with a reason. A refused module
-changes no byte of the firmware tables, as today.
+If any step fails, nothing is written, the runtime undoes the DSP reservation as it does today on a failed `init`, and the module is
+refused with a reason. A refused module changes no byte of the firmware tables, as today.
 
-Facts behind this (review of 2026-11-12):
+Facts behind this (reviews of 2026-11-12):
 
-- Nothing requires DSP check and reserve before `init`. The only order rule is reserve before FX page apply (`fxpage.rs:309`).
-- The CF image holds no DSP addresses; DSP addresses bind through named DSP imports (separate relocation table).
-- Type numbers need every selected module's machine keys up front only for the eviction rule (`sticky.rs:173`). Static machine ids keep
-  `assign.rs` unchanged.
+- `dsp::check` keeps pointers into the staged file only until `dsp::reserve`; `launch` and later passes use the arena copy (`Pending`,
+  `dsp.rs:152-169`). Only `registry::apply` and the page and send handlers read the staged register records (`loader.rs:417`).
+- Type numbers need every selected module's machine keys up front only for the eviction rule (`sticky.rs:173`). Static machine ids in
+  the header keep `assign.rs` unchanged.
+- FX ids are a 16-bit hash with no cross-module check today (`register.rs:78`, `fxpage.rs:183-195`); a clash (about 1 in 65535 per
+  pair) makes one effect load the other's saved kit values. Machines have a sticky map for clashes; FX get a refusal instead.
 - The runtime's firmware views are built after the boot hook, so rows written at commit land before the firmware reads them.
 
 ### 6.4 Users of declaration content off the device
 
 - Conformance (`pk_conform`) builds its cases from params (slot, min, max, default). It reads the committed rows from the emulated device
   after load, instead of from records. This tests what the device actually has.
-- The site gallery takes its card text from `module.toml`. The "Knobs:" line (`ModuleCard.tsx:28-29`) is dropped or moves to
-  `module.toml`; decide when the gallery is touched.
+- The site gallery keeps its "Knobs:" line (`ModuleCard.tsx:28-29`). `module:check`, which already runs each module in the emulator to
+  write `[uses]`, also writes the param names it sees into the committed `build/gen/gallery.json`. This replaces the generator's second
+  pass that builds module objects only to read declarations (`patchkit main.rs:513-514`).
 
 ### 6.5 Rejected
 
@@ -445,18 +463,20 @@ Rule: every built `.dkm` stays byte-identical. What shipped:
 
 ### S3 Builders and the runtime commit path
 
-- Runtime: collect builder calls during `init`; commit as in 6.3; DSP binding at commit. Bounds: the collected list lives in the module's
-  arena share and keeps today's `MAX_RECORDS` (32).
-- DSP section: an export table (entry name to address) so `dk_machine_dsp` and `dk_fx_dsp` can name entry points. Sample tracks name
-  their DSP symbols the same way.
-- Packer: writes the `module.toml` ids and `[uses]` into the header; stops reading `.dk.desc`.
+- Runtime: collect builder calls during `init` in the module's arena share (today's `MAX_RECORDS` bound); commit as in 6.3, with DSP
+  check and reserve unchanged before `init`; refuse a duplicate FX id across loaded modules.
+- Packer: finds DSP entry points by name (6.1); writes the `module.toml` machine and effect keys and `[uses]` into the header; stops
+  reading `.dk.desc`. `module.toml` accepts `[[machine]]` and `[[fx]]` with an id again.
+- `patchkit gen` writes `build/gen/module_ids.h`; `gen --check` guards it.
 - `dkneeds::needs_of` and the device menu read `[uses]` from the header.
-- `module:check` writes `[uses]`. Conformance reads committed rows from the emulated device.
+- `module:check` writes `[uses]` and the gallery param names (`build/gen/gallery.json`). Conformance reads committed rows from the
+  emulated device.
 - Migrate the machines, the FX and the fixtures (scripted for the fixtures). Delete the declaration macros, the declaration object and the
   `.dk.desc` path in `patchkit` (`desc.rs`).
 - Check: every module's and fixture's device tests on both devices; SHARC golden hashes and PCM pins unchanged; refusal cases for "more
-  than `[uses]`", "unknown machine id" and "no free row".
-- Size: about 4 to 6 agent days. Risk: medium, because it changes the boot path.
+  than `[uses]`", "unknown machine id", "missing DSP entry symbol", "duplicate FX id" and "no free row".
+- Size: about 4 agent days. Risk: medium, because it changes the boot path; lower than first planned, because DSP binding stays
+  before `init`.
 
 ### S4 Templates and docs
 
@@ -470,10 +490,5 @@ Rule: every built `.dkm` stays byte-identical. What shipped:
 
 ## 13. Open items
 
-- [O] Where the generated id header is written and how its build phase works. The build is per object today, with no second phase
-  (`build/mod.rs:343-405`).
-- [O] `init` reuses the staging buffer for `store_read` (`loader.rs:416`) while `dsp::check` keeps pointers into the staged file
-  (`dsp.rs:816-824`). Copy what commit needs out of the staging buffer before `init`, or re-stage after.
-- [O] Whether two modules may share an FX `id` (saved with the kit, `fxpage.rs:16,190`). No cross-module check was found.
-- [O] The gallery "Knobs:" line (6.4).
 - [O] `state_bytes` and `stack_bytes` stay in the DSP descriptor block (asm); the packer reads them as today.
+- [O] The value of `MAX_RECORDS` against the largest module's collected records (shot), checked when S3 starts.

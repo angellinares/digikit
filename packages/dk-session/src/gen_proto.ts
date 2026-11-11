@@ -28,6 +28,7 @@ export const CMD = {
   LIST: 0x02,
   MODULES: 0x03,
   CAPACITY: 0x04,
+  LOADS: 0x05,
   BEGIN: 0x10,
   DATA: 0x11,
   END: 0x12,
@@ -148,6 +149,7 @@ export const CAP = {
   FILEHASH: 12,
   RENAME: 13,
   READBACK: 14,
+  LOADS: 15,
 } as const;
 
 /** The command numbers a module may register: [first, last]. */
@@ -224,6 +226,7 @@ export const LOG_KIND = {
   POOL_INVALID: 40,
   INPUT_TAKEN: 41,
   PARAM_CHANGE: 42,
+  MOD_NEEDS: 43,
 } as const;
 
 /** The kind of a LOG event by id: its name and the names of its five arguments ("-": not used). */
@@ -270,6 +273,7 @@ export const LOG_KINDS: Record<number, [string, [string, string, string, string,
   40: ['POOL_INVALID', ['entry', 'reason', 'token', 'count', '-']],
   41: ['INPUT_TAKEN', ['what', 'control', 'delta', '-', '-']],
   42: ['PARAM_CHANGE', ['track', 'index', 'old', 'new', '-']],
+  43: ['MOD_NEEDS', ['index', 'name0', 'name1', 'name2', '-']],
 };
 
 /** `MACHINE_FAULT` argument 1, low byte: what the DSP guard found. */
