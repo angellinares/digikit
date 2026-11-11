@@ -2042,13 +2042,21 @@ fn raw_table(r: &mut Rng, n: u32, table_first: u32) -> (Hdr, Vec<Vec<u8>>) {
     let mut at = table_first + table_sectors(n) + r.below(3);
     let mut ents: Vec<(Vec<u8>, Entry)> = Vec::new();
     for i in 0..n {
-        let kind = if r.below(10) == 0 { KIND_DIR } else { KIND_FILE };
+        let kind = if r.below(10) == 0 {
+            KIND_DIR
+        } else {
+            KIND_FILE
+        };
         let size = if kind == KIND_DIR || r.below(8) == 0 {
             0
         } else {
             1 + r.below(512 * 12)
         };
-        let gap = if r.below(3) == 0 { r.below(30) } else { r.below(2) };
+        let gap = if r.below(3) == 0 {
+            r.below(30)
+        } else {
+            r.below(2)
+        };
         if r.below(25) == 0 && at > 4 {
             at -= r.below(3); // overlaps the previous extent
         }
@@ -2090,7 +2098,13 @@ fn begin_three_passes(
     held_at: Option<(u32, u32)>,
     ex0: &[(u32, u32)],
     need: u32,
-) -> (bool, bool, bool, Result<Option<u32>, i32>, Result<Option<u32>, i32>) {
+) -> (
+    bool,
+    bool,
+    bool,
+    Result<Option<u32>, i32>,
+    Result<Option<u32>, i32>,
+) {
     let (mut conflict, mut exists, mut held) = (false, false, false);
     unsafe {
         scan(&IO, &LAY, h, w.a.0.as_mut_ptr(), cap, |_, e| {
@@ -2120,7 +2134,15 @@ fn begin_three_passes(
         }
     }
     let table = unsafe {
-        first_fit(&IO, &LAY, h, w.a.0.as_mut_ptr(), cap, table_sectors(h.count + 1), &ex1)
+        first_fit(
+            &IO,
+            &LAY,
+            h,
+            w.a.0.as_mut_ptr(),
+            cap,
+            table_sectors(h.count + 1),
+            &ex1,
+        )
     };
     (conflict, exists, held, data, table)
 }
@@ -2172,33 +2194,57 @@ fn begin_fit_gives_what_the_scan_and_the_two_first_fits_gave() {
             let old = begin_three_passes(&mut w, 4096, &h, &path, held_at, &ex0, need);
             let (mut conflict, mut exists, mut held) = (false, false, false);
             let fit = unsafe {
-                begin_fit(&IO, &LAY, &h, w.a.0.as_mut_ptr(), 4096, &ex0, need, table_sectors(h.count + 1), |e| {
-                    let rel = relation(path.as_ptr(), e);
-                    if rel >= 2 || (rel == 1 && entry_of(e).kind == KIND_DIR) {
-                        conflict = true;
-                    } else if rel == 1 {
-                        exists = true;
-                        let en = entry_of(e);
-                        held = held_at.is_some_and(|(s, l)| {
-                            let len = entry_sectors(&en);
-                            len != 0 && en.first < s + l && s < en.first + len
-                        });
-                    }
-                    !conflict
-                })
+                begin_fit(
+                    &IO,
+                    &LAY,
+                    &h,
+                    w.a.0.as_mut_ptr(),
+                    4096,
+                    &ex0,
+                    need,
+                    table_sectors(h.count + 1),
+                    |e| {
+                        let rel = relation(path.as_ptr(), e);
+                        if rel >= 2 || (rel == 1 && entry_of(e).kind == KIND_DIR) {
+                            conflict = true;
+                        } else if rel == 1 {
+                            exists = true;
+                            let en = entry_of(e);
+                            held = held_at.is_some_and(|(s, l)| {
+                                let len = entry_sectors(&en);
+                                len != 0 && en.first < s + l && s < en.first + len
+                            });
+                        }
+                        !conflict
+                    },
+                )
             }
             .unwrap();
-            assert_eq!((conflict, exists, held), (old.0, old.1, old.2), "round {round} path checks");
+            assert_eq!(
+                (conflict, exists, held),
+                (old.0, old.1, old.2),
+                "round {round} path checks"
+            );
             if conflict {
                 continue; // the BEGIN fails with E_PATH whatever the free space is
             }
             let want_data = old.3.clone().unwrap();
-            assert_eq!(fit.data, want_data, "round {round} data extent, n {n} need {need} ex {ex0:?}");
+            assert_eq!(
+                fit.data, want_data,
+                "round {round} data extent, n {n} need {need} ex {ex0:?}"
+            );
             if want_data.is_some() {
-                assert_eq!(fit.table, old.4.clone().unwrap(), "round {round} table extent, n {n} need {need} ex {ex0:?}");
+                assert_eq!(
+                    fit.table,
+                    old.4.clone().unwrap(),
+                    "round {round} table extent, n {n} need {need} ex {ex0:?}"
+                );
                 if fit.table.is_none() {
                     full_table += 1;
-                } else if fit.table != fit.data && need != 0 && fit.table.unwrap() < fit.data.unwrap() {
+                } else if fit.table != fit.data
+                    && need != 0
+                    && fit.table.unwrap() < fit.data.unwrap()
+                {
                     early_table += 1;
                 }
             } else {
@@ -2209,7 +2255,10 @@ fn begin_fit_gives_what_the_scan_and_the_two_first_fits_gave() {
     }
     // the generated cases reach the interesting branches
     assert!(cases > 2000, "{cases}");
-    assert!(full_data > 20 && full_table > 5 && early_table > 20, "{full_data} {full_table} {early_table}");
+    assert!(
+        full_data > 20 && full_table > 5 && early_table > 20,
+        "{full_data} {full_table} {early_table}"
+    );
 }
 
 #[test]
@@ -2226,7 +2275,17 @@ fn begin_reads_the_table_once_not_three_times() {
         let old_reads = reads() - before;
         let before = reads();
         let fit = unsafe {
-            begin_fit(&IO, &LAY, &h, w.a.0.as_mut_ptr(), 8192, &[], 40, table_sectors(h.count + 1), |_| true)
+            begin_fit(
+                &IO,
+                &LAY,
+                &h,
+                w.a.0.as_mut_ptr(),
+                8192,
+                &[],
+                40,
+                table_sectors(h.count + 1),
+                |_| true,
+            )
         }
         .unwrap();
         let new_reads = reads() - before;
@@ -2249,19 +2308,46 @@ fn commit_at_a_hint_writes_the_table_where_the_search_would() {
     let cur = current(&mut w);
     let need_t = table_sectors(cur.count + 1);
     let fit = unsafe {
-        begin_fit(&IO, &LAY, &cur, w.a.0.as_mut_ptr(), 8192, &[], 5, need_t, |_| true)
+        begin_fit(
+            &IO,
+            &LAY,
+            &cur,
+            w.a.0.as_mut_ptr(),
+            8192,
+            &[],
+            5,
+            need_t,
+            |_| true,
+        )
     }
     .unwrap();
     let (start, at) = (fit.data.unwrap(), fit.table.unwrap());
     let ex = [(start, 5)];
     let mut e = [0u8; ENTRY];
     let p = cstr("a/new");
-    unsafe { encode_entry(p.as_ptr(), &entry(start, 512 * 5, KIND_FILE), e.as_mut_ptr()) };
+    unsafe {
+        encode_entry(
+            p.as_ptr(),
+            &entry(start, 512 * 5, KIND_FILE),
+            e.as_mut_ptr(),
+        )
+    };
     let snap = CARD.lock().unwrap().clone();
     let run = |w: &mut Work, hint: Option<u32>| {
         *CARD.lock().unwrap() = snap.clone();
         unsafe {
-            commit_at(&IO, &LAY, &cur, w.a.0.as_mut_ptr(), w.b.0.as_mut_ptr(), 1024, w.s.0.as_mut_ptr(), Edit::Insert(e.as_ptr()), &ex, hint)
+            commit_at(
+                &IO,
+                &LAY,
+                &cur,
+                w.a.0.as_mut_ptr(),
+                w.b.0.as_mut_ptr(),
+                1024,
+                w.s.0.as_mut_ptr(),
+                Edit::Insert(e.as_ptr()),
+                &ex,
+                hint,
+            )
         }
         .unwrap()
         .h
@@ -2274,7 +2360,18 @@ fn commit_at_a_hint_writes_the_table_where_the_search_would() {
     let rm = cstr("a/f0");
     *CARD.lock().unwrap() = snap.clone();
     let h = unsafe {
-        commit_at(&IO, &LAY, &cur, w.a.0.as_mut_ptr(), w.b.0.as_mut_ptr(), 1024, w.s.0.as_mut_ptr(), Edit::Remove(rm.as_ptr()), &[], Some(3999))
+        commit_at(
+            &IO,
+            &LAY,
+            &cur,
+            w.a.0.as_mut_ptr(),
+            w.b.0.as_mut_ptr(),
+            1024,
+            w.s.0.as_mut_ptr(),
+            Edit::Remove(rm.as_ptr()),
+            &[],
+            Some(3999),
+        )
     }
     .unwrap()
     .h;

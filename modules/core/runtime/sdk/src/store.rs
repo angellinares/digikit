@@ -1068,7 +1068,9 @@ pub unsafe fn commit(
     edit: Edit,
     extra: &[(u32, u32)],
 ) -> Result<Committed, i32> {
-    commit_at(io, lay, cur, buf_in, buf_out, cap, scratch, edit, extra, None)
+    commit_at(
+        io, lay, cur, buf_in, buf_out, cap, scratch, edit, extra, None,
+    )
 }
 
 /// `commit`, with the start of the new table when the caller already knows it: `at` is what `first_fit` of the table of an `Edit::Insert` (`table_sectors(cur.count + 1)`
@@ -1095,7 +1097,9 @@ pub unsafe fn commit_at(
     let mut start = 1u32;
     if need != 0 {
         let hinted = match (edit, at) {
-            (Edit::Insert(_), Some(s)) if s >= 1 && s <= lay.limit() && need <= lay.limit() - s => Some(s),
+            (Edit::Insert(_), Some(s)) if s >= 1 && s <= lay.limit() && need <= lay.limit() - s => {
+                Some(s)
+            }
             _ => None,
         };
         start = match hinted {
