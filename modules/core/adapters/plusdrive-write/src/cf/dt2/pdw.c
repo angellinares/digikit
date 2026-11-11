@@ -106,6 +106,8 @@ static u8 cut, dead;
 /* Test knob: bit 7 of the knob byte (DKRT_PD_CUT = 0x80, with or without a cut step in the low bits) closes with the firmware's own hash instead of
  * `hash_fast`; the tests write the same file through both and compare the card and the RAM hash table. */
 static u8 slow;
+/* 1: `hash_fast` wrote hash pages and inode words but did not rebuild the firmware's RAM hash table (`rebuild_table` does, once per upload batch). */
+static u8 rb_pending;
 static u32 total, written;
 static char stage[40], jour[48];
 static char dest[DEST_MAX] __attribute__((aligned(16)));
@@ -355,6 +357,22 @@ static int in_factory(const char *p)
 
 /* ---- write ------------------------------------------------------------------------------------------------------------------- */
 
+/* The firmware's RAM hash table (FUN_4015b0ee reads all 44 hash pages: about 300 ms) is derived data, rebuilt at every mount. `hash_fast` leaves it
+ * stale and sets `rb_pending`; the rebuild runs once when the batch ends (`dkpw_recover`, which the runtime calls after 2 s without a session, and
+ * `dkpw_abort`). A stale table only misses the new files: a lookup by hash (sample references of a project) does not find them yet, and the
+ * removal of an entry (inode free, FUN_4015b032) ignores a (hash, id) pair it does not find. The table is sorted at every rebuild and only shrinks
+ * meanwhile, so it stays sorted. Under the filesystem mutex, as in the firmware (FUN_4015b3aa). */
+static void rebuild_table(void)
+{
+    u32 *mutex;
+    if (!rb_pending || dead || !mounted()) return;
+    mutex = (u32 *)lit(&dk_fw_storage_fs_mutex);
+    dk_fw_rtos_mutex_lock(mutex);
+    dk_fw_storage_hash_table_rebuild();
+    dk_fw_rtos_mutex_unlock(mutex);
+    rb_pending = 0;
+}
+
 void dkpw_abort(void)
 {
     if (dead) return;
@@ -366,6 +384,7 @@ void dkpw_abort(void)
         f_delete(stage);
         st_live = 0;
     }
+    rebuild_table();
 }
 
 /* A number above every one of our names in the folder: a leftover (which only the recovery removes) is never reused. `there` gets 1 when the
@@ -578,7 +597,7 @@ static i32 hash_fast(void)
             }
         }
     }
-    /* the rest of FUN_4015b1e8, in its order: the hash page, the table, the inode word, the event, the inode write-back */
+    /* the rest of FUN_4015b1e8, in its order: the hash page, (the table: `rebuild_table`, later), the inode word, the event, the inode write-back */
     r = HF_FALLBACK;
     sector = hsec + (id >> HASH_PAGE_SHIFT) * HASH_PAGE_SECTORS;
     if (dk_fw_storage_block_read(sector, PAGE_BYTES, pbuf) != 0) goto put;
@@ -592,7 +611,7 @@ static i32 hash_fast(void)
         r = E_WRITE;
         goto put;
     }
-    dk_fw_storage_hash_table_rebuild();
+    rb_pending = 1; /* the table is rebuilt when the batch ends (`rebuild_table`) */
     ino[3] = hv;
     dk_fw_storage_event_post(3, ino[2], id);
     dk_fw_storage_inode_write((u8 *)ino);
@@ -645,7 +664,7 @@ static int32_t close_file(u8 *hash_out)
     if (r == HF_FALLBACK)
 #endif
     {
-        r = dk_fw_storage_file_hash(hnd);
+        r = dk_fw_storage_file_hash(hnd);   /* rebuilds the table itself */
         PW_T1(pw_e_hash);
         if (r != 0) {
             dkpw_abort();
@@ -746,6 +765,7 @@ int32_t dkpw_recover(u32 *out)
     out[0] = out[1] = out[2] = out[3] = 0;
     if (!mounted()) return -1;
     if (dead) return 0;   /* a simulated power cut: nothing runs */
+    rebuild_table();      /* the end of an upload batch */
     for (round = 0; round < 64; round++) {
         u32 progress = 0, left = 0, id;
         i32 n;

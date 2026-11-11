@@ -226,6 +226,7 @@ cardRigs('+Drive writes through core/plusdrive-write', { devices: ['dt2'] , dsp:
   const bothHashes = async (knob: number) => {
     const dk = await rig.pausedBoot(await baseCard());
     await advance(rig.session, 2000);
+    const initial = await hashTable();
     await pokeKnob(rig.session, rig.plan, 'DKRT_PD_CUT', knob);
     const a = pattern(70000); // two pages and a tail
     const b = pattern(5000); // one partial page; the second file's table holds both
@@ -242,13 +243,28 @@ cardRigs('+Drive writes through core/plusdrive-write', { devices: ['dt2'] , dsp:
       expect(files.get(p), p).toEqual({ size: d.length + 16, hash: slot4(d) });
       expect((await cat(card, p)).subarray(0, d.length), `${p} bytes`).toEqual(d);
     }
-    return { writes: fsWrites(card), table: await hashTable() };
+    // the card as the three closes left it, before the end of the batch (the staging folder is still there)
+    const writes = fsWrites(card);
+    const during = await hashTable();
+    await advance(rig.session, IDLE_MS); // the runtime's idle point: the rebuild of the table (and the removal of the staging folder)
+    return { writes, initial, during, table: await hashTable(), hashes: [a, b, c].map((d) => parseInt(slot4(d), 16)) };
   };
+  // The runtime calls the adapter's recovery after 2 s without a write session (PD_STAGE_IDLE): the fast close rebuilds the RAM hash table then.
+  const IDLE_MS = 4000;
   test('the close hash with the adapter\'s own code leaves the card and the RAM hash table as the firmware\'s close hash does', async () => {
     const fast = await bothHashes(0);
     const slow = await bothHashes(0x80);
     expect(fast.table[0], 'the hash table has entries').toBeGreaterThan(3);
-    expect(fast.table, 'the RAM hash table after the rebuild').toEqual(slow.table);
+    expect(slow.during, 'the firmware close rebuilds at every file').toEqual(slow.table);
+    expect(fast.during[0], 'the batch has not rebuilt the table: it lacks the three new files').toBe(fast.table[0]! - 3);
+    expect(fast.during, 'before the idle point the table is the one the boot built').toEqual(fast.initial);
+    // a lookup by hash (the firmware's FUN_4015ac28 searches these pairs): the new files are found after the rebuild only
+    const hashWords = (t: number[]) => t.slice(1).filter((_, i) => i % 2 === 0).map((w) => w >>> 0);
+    for (const h of fast.hashes) {
+      expect(hashWords(fast.during).some((w) => (w >>> 1) === (h >>> 1)), `hash ${h.toString(16)} is not in the table yet`).toBe(false);
+      expect(hashWords(fast.table).some((w) => (w >>> 1) === (h >>> 1)), `hash ${h.toString(16)} is in the table after the rebuild`).toBe(true);
+    }
+    expect(fast.table, 'the RAM hash table after the rebuild at the idle point').toEqual(slow.table);
     expect([...fast.writes.keys()].sort((x, y) => x - y), 'the same sectors were written').toEqual([...slow.writes.keys()].sort((x, y) => x - y));
     expect(fast.writes.size, 'the card was written').toBeGreaterThan(20);
     for (const [sector, data] of fast.writes) expect(data, `sector 0x${sector.toString(16)}`).toBe(slow.writes.get(sector));
@@ -262,6 +278,22 @@ cardRigs('+Drive writes through core/plusdrive-write', { devices: ['dt2'] , dsp:
     expect([...fallback.writes.keys()].sort((x, y) => x - y), 'the same sectors were written').toEqual([...slow.writes.keys()].sort((x, y) => x - y));
     for (const [sector, data] of fallback.writes) expect(data, `sector 0x${sector.toString(16)}`).toBe(slow.writes.get(sector));
     await rig.session.expectNoFault('close hash fallback');
+  }, 1_800_000);
+
+  test('an abort in the middle of a batch rebuilds the RAM hash table at once', async () => {
+    const dk = await rig.pausedBoot(await baseCard());
+    await advance(rig.session, 2000);
+    const initial = await hashTable();
+    const a = pattern(40000);
+    const x = await run(dk, WRITE | SAMPLES, a.length, 'Samples/batch.bin');
+    expect([x.close, x.job]).toEqual([0, 0]);
+    expect(await hashTable(), 'the close left the table as it was').toEqual(initial);
+    const ab = await run(dk, ABORT | SAMPLES, 20000, 'Samples/aborted.bin'); // a second file of the batch is dropped before its close
+    expect([ab.abort, ab.job], 'the session was aborted').toEqual([0, 0]);
+    const t = await hashTable();
+    expect(t[0], 'the abort rebuilt the table: it holds the first file').toBe(initial[0]! + 1);
+    expect(t.slice(1).filter((_, i) => i % 2 === 0).some((w) => (w >>> 1) === (parseInt(slot4(a), 16) >>> 1))).toBe(true);
+    await rig.session.expectNoFault('abort rebuild');
   }, 1_800_000);
 
   // The only part of the fast close that differs from the stock read is the page to card mapping (file_page_find), and a file of one extent does
@@ -290,7 +322,9 @@ cardRigs('+Drive writes through core/plusdrive-write', { devices: ['dt2'] , dsp:
     const area = inodes(out);
     const ids = fileOfSize(area, big.length + 16);
     expect(ids.length, 'one record of that size').toBe(1);
-    return { card: out, writes: fsWrites(out), table: await hashTable(), extents: extentsOf(area, ids[0]!) };
+    const writes = fsWrites(out);
+    await advance(rig.session, IDLE_MS); // the batch ends: the table is rebuilt
+    return { card: out, writes, table: await hashTable(), extents: extentsOf(area, ids[0]!) };
   };
   test('the close hash on a fragmented file (several extents) leaves the card and the RAM hash table as the firmware\'s close hash does', async () => {
     const fast = await fragBig(0);
