@@ -193,6 +193,8 @@ emulator = ["core/dynreg", "core/dyndsp", "core/dynfx", "core/fxpages", "core/ui
 device = ["core/dynreg", "core/dyndsp", "core/dynfx", "core/fxpages", "core/ui", "core/digikit-menu", "core/health", "core/input", "core/sample-pool"]
 # `device` plus the optional black intro (core/introblank): the Workbench Firmware page picks it with its "Custom boot screen" toggle.
 device-introblank = ["core/dynreg", "core/dyndsp", "core/dynfx", "core/fxpages", "core/ui", "core/digikit-menu", "core/health", "core/input", "core/sample-pool", "core/introblank"]
+# `device` plus fast transfer over USB: the bulk interface (core/usb-bulk; inert until the usb-fast module is selected) and the +Drive writes the usb-fast module uses (core/plusdrive-write).
+device-usb = ["core/dynreg", "core/dyndsp", "core/dynfx", "core/fxpages", "core/ui", "core/digikit-menu", "core/health", "core/input", "core/sample-pool", "core/usb-bulk", "core/plusdrive-write"]
 # Same roots as `emulator`; the name stays for the per-track sample tests (API 1.5).
 sample-tracks = ["core/dynreg", "core/dyndsp", "core/dynfx", "core/fxpages", "core/ui", "core/digikit-menu", "core/health", "core/input", "core/sample-pool"]
 # `emulator` plus core/overdrive (the OVR TYPE device test).
