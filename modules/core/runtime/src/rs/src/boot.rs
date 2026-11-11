@@ -37,6 +37,7 @@ pub static mut DKRT_BOOT: DkrtBootInfo = DkrtBootInfo {
     results: [0; SEL_MAX],
     dsp_wait: 0,
     stable: 0,
+    needs: [[0; NEEDS_LEN]; SEL_MAX],
 };
 /// The stable period in DSP blocks (`STABLE_BLOCKS`). A static so that the scenarios can shorten it (they poke it; nothing else writes it).
 #[repr(C, align(4))]
@@ -56,6 +57,16 @@ const DEAD_CLOCK_PASSES: u32 = 1800;
 static mut REC: Record = Record::empty();
 static mut REC_VALID: bool = false;
 static mut REC_COPY: u32 = 0;
+
+/// The file name of each module of this boot's selection (the part of its path after the last `/`, up to `NAME_LEN - 1` bytes, NUL padded): the LOADS
+/// command reports it with the result, and the record may change after the boot (a SELECT).
+pub const NAME_LEN: usize = 28;
+static mut BOOT_NAME: [[u8; NAME_LEN]; SEL_MAX] = [[0; NAME_LEN]; SEL_MAX];
+
+/// The file name of module `k` of this boot's selection (NUL padded, `NAME_LEN` bytes).
+pub unsafe fn boot_name(k: usize) -> *const u8 {
+    addr_of!(BOOT_NAME[k]) as *const u8
+}
 
 /// Paths of the selection this boot loaded (for CAPACITY).
 pub fn selected() -> u32 {
@@ -357,6 +368,7 @@ pub unsafe extern "C" fn dkrt_boot() {
     let mut k = 0;
     while k < r.count as usize {
         loader::BOOT_IDX = k as u32;
+        loader::MISSING = [0; NEEDS_LEN];
         let res = loader::load(r.paths[k].as_ptr());
         st().last_result = res;
         b.results[k] = res;
@@ -378,6 +390,20 @@ pub unsafe extern "C" fn dkrt_boot() {
             bad,
             [k as u32, res as u32, dlog::word_of(p, at, SEL_PATH), dlog::word_of(p, at + 4, SEL_PATH), dlog::word_of(p, at + 8, SEL_PATH)],
         );
+        let mut j = 0;
+        while j < NAME_LEN - 1 && at + j < SEL_PATH && *p.add(at + j) != 0 {
+            BOOT_NAME[k][j] = *p.add(at + j);
+            j += 1;
+        }
+        if res == E_IMPORT && loader::MISSING[0] != 0 {
+            let m = loader::MISSING;
+            b.needs[k] = m;
+            dlog::ev(
+                logk::MOD_NEEDS,
+                logk::F_ERROR,
+                [k as u32, dlog::word_of(m.as_ptr(), 0, NEEDS_LEN), dlog::word_of(m.as_ptr(), 4, NEEDS_LEN), dlog::word_of(m.as_ptr(), 8, NEEDS_LEN), 0],
+            );
+        }
         k += 1;
     }
     loader::EARLY = false;
@@ -465,6 +491,7 @@ pub unsafe fn boot_info(out: *mut DkrtBootInfo) {
         results: b.results,
         dsp_wait: b.dsp_wait,
         stable: b.stable,
+        needs: b.needs,
     };
 }
 

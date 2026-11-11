@@ -1,7 +1,7 @@
 // The events of the runtime's log (LOG) in words: the kind and argument names from sdk/sdk.toml (gen_proto.ts), the readable forms of the
 // arguments, the one-line text, and the text of a fault with the events that belong to it. The same rules as `tools/device/dklog.py`
 // (`event_dict`, `text_of`, `crash_text`, `hang_text`), which tests/digikit/test_dklog.py checks; apps/desktop/ui/src/log-follow*.ts follows the log with it.
-import { GUARD_KINDS, LOG_FLAGS, LOG_KIND, LOG_KINDS, LOG_LEVELS } from './gen_proto.ts';
+import { GUARD_KINDS, LOAD_STATUS, LOG_FLAGS, LOG_KIND, LOG_KINDS, LOG_LEVELS } from './gen_proto.ts';
 import type { DkLogEvent } from './dkupload-core.ts';
 import { faultRows, type Fault } from './fault.ts';
 
@@ -133,6 +133,9 @@ export function fieldsOf(kindId: number, a: number[]): Record<string, FieldValue
       f = Object.fromEntries(Object.entries(f).filter(([k]) => !k.startsWith('name')));
       f.name = asciiOf(a[2]!, a[3]!, a[4]!);
       if (name === 'MOD_LOAD') f.result = signed(a[1]!);
+      break;
+    case 'MOD_NEEDS':
+      f = { index: a[0]!, needs: asciiOf(a[1]!, a[2]!, a[3]!) };
       break;
     case 'CRASH_MOD':
       f =
@@ -273,6 +276,55 @@ export function moduleNames(events: DkLogEvent[]): Map<number, string> {
   for (const e of events)
     if (e.kind === LOG_KIND.MOD_LIST) out.set(e.args[0]! + 1, asciiOf(e.args[2]!, e.args[3]!, e.args[4]!));
   return out;
+}
+
+/** A module of the boot selection that did not load: `name` as MOD_LOAD keeps it (the file name, 12 characters at most, maybe with `.dkm`), the
+ * load `result` (a negative code) and, for E_IMPORT, `needs`: the module its imports need that is not in the image, without the `core/`
+ * prefix (usb-bulk), from the MOD_NEEDS event the runtime logs after it. */
+export interface LoadFailure {
+  name: string;
+  result: number;
+  needs?: string;
+}
+
+const E_IMPORT = -7;
+
+/** The modules that failed to load in the last boot of `events` (an ordered log): every MOD_LOAD with a result below 0 after the last BOOT_START. */
+export function loadFailures(events: DkLogEvent[]): LoadFailure[] {
+  let start = 0;
+  events.forEach((e, i) => {
+    if (e.kind === LOG_KIND.BOOT_START) start = i;
+  });
+  const out = new Map<number, LoadFailure>();
+  for (const e of events.slice(start)) {
+    if (e.kind === LOG_KIND.MOD_LOAD) {
+      const result = signed(e.args[1]!);
+      if (result < 0) out.set(e.args[0]!, { name: asciiOf(e.args[2]!, e.args[3]!, e.args[4]!), result });
+      else out.delete(e.args[0]!);
+    } else if (e.kind === LOG_KIND.MOD_NEEDS) {
+      const f = out.get(e.args[0]!);
+      if (f && f.result === E_IMPORT) f.needs = asciiOf(e.args[1]!, e.args[2]!, e.args[3]!);
+    }
+  }
+  return [...out.values()];
+}
+
+/** The module name of a failure without its `.dkm`: `usb-fast.dkm` is `usb-fast`. */
+export const failureModule = (f: Pick<LoadFailure, 'name'>): string => f.name.replace(/\.dkm$/, '');
+
+/** Why a module is not loaded, in one line: the missing module for E_IMPORT with a name (`usb-fast not loaded: this firmware has no core/usb-bulk. Flash
+ * firmware from the Firmware page.`), else the loader's own text for the code. The one place of these texts; the apps show it. */
+export function loadFailureText(f: LoadFailure): string {
+  const name = failureModule(f);
+  if (f.result === E_IMPORT && f.needs)
+    return `${name} not loaded: this firmware has no core/${f.needs}. Flash firmware from the Firmware page.`;
+  const why = LOAD_STATUS.find(([code]) => code === f.result)?.[2] ?? `error ${f.result}`;
+  return `${name} not loaded: ${why}`;
+}
+
+/** The short form for a badge (`usb-fast not loaded (needs usb-bulk)`); other codes give the long text. */
+export function loadFailureShort(f: LoadFailure): string {
+  return f.result === E_IMPORT && f.needs ? `${failureModule(f)} not loaded (needs ${f.needs})` : loadFailureText(f);
 }
 
 /** The module of an event: its name when known, else `mod#N` (N the record index); '' for the runtime. */

@@ -1726,7 +1726,7 @@ fn rust_api(sdk: &Sdk) -> Result<String> {
 
 /// The macro `optional_imports!` for the runtime crate: the imports that another module provides (`requires`). It declares each as an external
 /// function (patchkit links an `[object] optional` symbol to 0 when its module is not in the image), the stub of each that has `absent`, and
-/// `optional::table()`: per import its name, the address the module gave (0 when absent) and the address of the stub (0 when it has none). It is
+/// `optional::table()`: per import its name, the address the module gave (0 when absent), the address of the stub (0 when it has none) and the module that provides it. It is
 /// a macro because the undefined symbols must belong to the runtime's own object, not to this crate.
 fn rust_optional(imps: &[(&Import, Option<Sig>)]) -> String {
     let opt: Vec<_> = imps
@@ -1788,7 +1788,7 @@ fn rust_optional(imps: &[(&Import, Option<Sig>)]) -> String {
     s.push_str("            }\n\n");
     let _ = writeln!(
         s,
-        "            /// (name, address from the module or 0, address of the stub or 0)\n            pub fn table() -> [(&'static str, usize, usize); {}] {{\n                [",
+        "            /// (name, address from the module or 0, address of the stub or 0, the module that provides it)\n            pub fn table() -> [(&'static str, usize, usize, &'static str); {}] {{\n                [",
         opt.len()
     );
     for (im, _) in &opt {
@@ -1799,8 +1799,10 @@ fn rust_optional(imps: &[(&Import, Option<Sig>)]) -> String {
         };
         let _ = writeln!(
             s,
-            "                    ({:?}, core::hint::black_box({} as usize), {stub}),",
-            im.name, im.name
+            "                    ({:?}, core::hint::black_box({} as usize), {stub}, {:?}),",
+            im.name,
+            im.name,
+            im.requires.as_deref().unwrap_or("")
         );
     }
     s.push_str("                ]\n            }\n        }\n    };\n}\n");

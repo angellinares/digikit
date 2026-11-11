@@ -36,6 +36,8 @@ pub const HEALTH_HEAP_BAD: u32 = 32;
 pub const HEALTH_STORE: u32 = 64;
 /// Bytes of one path of the selection, with the NUL: a store path has at most SEL_PATH - 1 characters.
 pub const SEL_PATH: usize = 56;
+/// Bytes of DkrtBootInfo.needs per selected module: the name of the missing module, 12 characters at most, NUL padded (with 12 there is no NUL).
+pub const NEEDS_LEN: usize = 12;
 /// DkrtBootInfo.reason: this boot is not in safe mode.
 pub const SAFE_NONE: u32 = 0;
 /// DkrtBootInfo.reason: two boots in a row did not reach the UI loop.
@@ -364,8 +366,10 @@ pub struct DkrtBootInfo {
     pub dsp_wait: u32,
     /// 1 once the boot counter is back to 0: after STABLE_BLOCKS DSP blocks of UI loop in a normal boot, at the first UI-loop pass in a safe boot
     pub stable: u32,
+    /// per selected module with result E_IMPORT: the first module its imports need that is not in the image, without the `core/` prefix (usb-bulk); empty otherwise
+    pub needs: [[u8; NEEDS_LEN]; SEL_MAX],
 }
-const _: () = assert!(size_of::<DkrtBootInfo>() == 80, "DkrtBootInfo size");
+const _: () = assert!(size_of::<DkrtBootInfo>() == 176, "DkrtBootInfo size");
 const _: () = assert!(offset_of!(DkrtBootInfo, magic) == 0, "DkrtBootInfo.magic");
 const _: () = assert!(offset_of!(DkrtBootInfo, version) == 4, "DkrtBootInfo.version");
 const _: () = assert!(offset_of!(DkrtBootInfo, safe) == 8, "DkrtBootInfo.safe");
@@ -379,6 +383,7 @@ const _: () = assert!(offset_of!(DkrtBootInfo, ui_reached) == 36, "DkrtBootInfo.
 const _: () = assert!(offset_of!(DkrtBootInfo, results) == 40, "DkrtBootInfo.results");
 const _: () = assert!(offset_of!(DkrtBootInfo, dsp_wait) == 72, "DkrtBootInfo.dsp_wait");
 const _: () = assert!(offset_of!(DkrtBootInfo, stable) == 76, "DkrtBootInfo.stable");
+const _: () = assert!(offset_of!(DkrtBootInfo, needs) == 80, "DkrtBootInfo.needs");
 
 /// dkrt_diag result (finding 46): what the debug log and the card check found. The caller owns the memory; the layout only grows at the end.
 #[repr(C)]

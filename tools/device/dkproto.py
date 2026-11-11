@@ -28,6 +28,7 @@ CMD: dict[str, int] = {
     "LIST": 0x02,
     "MODULES": 0x03,
     "CAPACITY": 0x04,
+    "LOADS": 0x05,
     "BEGIN": 0x10,
     "DATA": 0x11,
     "END": 0x12,
@@ -47,6 +48,7 @@ CMD_INFO = 0x01
 CMD_LIST = 0x02
 CMD_MODULES = 0x03
 CMD_CAPACITY = 0x04
+CMD_LOADS = 0x05
 CMD_BEGIN = 0x10
 CMD_DATA = 0x11
 CMD_END = 0x12
@@ -181,6 +183,7 @@ CAP: dict[str, int] = {
     "FILEHASH": 12,
     "RENAME": 13,
     "READBACK": 14,
+    "LOADS": 15,
 }
 
 RANGES: dict[str, tuple[int, int]] = {

@@ -4,7 +4,7 @@
 # sdk/include/dk/gen/machine_consts.h, fx_consts.h, machine.h, fx.h and api.h from this file (`patchkit gen --check` fails when they are stale).
 
 [runtime]           # the digikit runtime release (semantic version; packed major<<16 | minor<<8 | patch)
-version = "0.5.10"   # 0.x: MINOR may break (contract major, store format, SysEx protocol), PATCH = features and fixes
+version = "0.5.11"   # 0.x: MINOR may break (contract major, store format, SysEx protocol), PATCH = features and fixes
 
 [contract]          # [major, minor] per contract (docs/design/module-sdk.md 11.5 D3). The runtime refuses a module that declares a
                     # contract (major != 0) when its major differs from the runtime's or its minor is above the runtime's. Major 0 = not implemented.
@@ -975,6 +975,13 @@ id = 42
 name = "PARAM_CHANGE"
 args = ["track", "index", "old", "new", "-"]
 
+# a module of the boot selection did not load because a module it imports from is not in the image (right after its MOD_LOAD with result E_IMPORT, error level):
+# the selection index and the name of the missing module without the `core/` prefix (usb-bulk), 12 characters in three words. Also in DkrtBootInfo.needs.
+[[log.kind]]
+id = 43
+name = "MOD_NEEDS"
+args = ["index", "name0", "name1", "name2", "-"]
+
 [protocol]          # the digikit SysEx protocol (F0 7D 64 6B ...); docs/design/digikit-upload.md
 version = 1         # the request version byte; a request with another version gets E_PROTO
 
@@ -990,6 +997,7 @@ INFO = 0x01
 LIST = 0x02
 MODULES = 0x03      # the loaded modules with their ranges, types and faults
 CAPACITY = 0x04     # per resource: the limit, what is used and the largest free piece (kinds in [capacity.kinds])
+LOADS = 0x05        # what this boot's selection did, for a host without the debug module: u8 version (1), u8 n, then per module i32 result (OK, a negative E_*, or LOADING), needs[12] (with E_IMPORT: the missing module, e.g. usb-bulk) and name[28] (file name), NUL padded
 BEGIN = 0x10
 DATA = 0x11
 END = 0x12
@@ -1092,6 +1100,7 @@ SETTINGS = 11       # the SETTINGS command (read the settings record), CAPACITY 
 FILEHASH = 12       # store format 4: the 32-byte hash of BEGIN, END, LIST and VERIFY is the content hash (4 bytes, big-endian, then 28 zeros), not a SHA-256
 RENAME = 13         # the RENAME command (rename or move one store entry)
 READBACK = 14       # END (and the SDK file_close) read the written file back from the card and compare its content hash with the running hash and BEGIN's before the commit: a host may skip its VERIFY after a successful END
+LOADS = 15          # the LOADS command (the result of each module of the boot selection, and the missing module of an E_IMPORT)
 
 [capacity.kinds]   # the `kind` byte of a CAPACITY entry (u8 kind, u32 limit, u32 used, u32 largest); additive: a number is never reused
 MODULES = 1         # module records; used: loaded; largest: 0

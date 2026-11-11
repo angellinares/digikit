@@ -41,6 +41,8 @@
 #define DKRT_HEALTH_STORE 64
 /* Bytes of one path of the selection, with the NUL: a store path has at most SEL_PATH - 1 characters. */
 #define DKRT_SEL_PATH 56
+/* Bytes of DkrtBootInfo.needs per selected module: the name of the missing module, 12 characters at most, NUL padded (with 12 there is no NUL). */
+#define DKRT_NEEDS_LEN 12
 /* DkrtBootInfo.reason: this boot is not in safe mode. */
 #define DKRT_SAFE_NONE 0
 /* DkrtBootInfo.reason: two boots in a row did not reach the UI loop. */
@@ -281,6 +283,7 @@ typedef struct DkrtBootInfo {
     int32_t results[DKRT_SEL_MAX];               /* OK, a negative code, or LOADING (the CF part is live, the DSP part is still going) per selected module, in selection order */
     uint32_t dsp_wait;                           /* reserved (0): the boot does not wait for DSP code */
     uint32_t stable;                             /* 1 once the boot counter is back to 0: after STABLE_BLOCKS DSP blocks of UI loop in a normal boot, at the first UI-loop pass in a safe boot */
+    uint8_t needs[DKRT_SEL_MAX][DKRT_NEEDS_LEN]; /* per selected module with result E_IMPORT: the first module its imports need that is not in the image, without the `core/` prefix (usb-bulk); empty otherwise */
 } DkrtBootInfo;
 
 /* dkrt_diag result (finding 46): what the debug log and the card check found. The caller owns the memory; the layout only grows at the end. */
@@ -428,7 +431,7 @@ _Static_assert(sizeof(DkrtSelection) == 456, "DkrtSelection size");
 _Static_assert(offsetof(DkrtSelection, count) == 0, "DkrtSelection.count");
 _Static_assert(offsetof(DkrtSelection, flags) == 4, "DkrtSelection.flags");
 _Static_assert(offsetof(DkrtSelection, paths) == 8, "DkrtSelection.paths");
-_Static_assert(sizeof(DkrtBootInfo) == 80, "DkrtBootInfo size");
+_Static_assert(sizeof(DkrtBootInfo) == 176, "DkrtBootInfo size");
 _Static_assert(offsetof(DkrtBootInfo, magic) == 0, "DkrtBootInfo.magic");
 _Static_assert(offsetof(DkrtBootInfo, version) == 4, "DkrtBootInfo.version");
 _Static_assert(offsetof(DkrtBootInfo, safe) == 8, "DkrtBootInfo.safe");
@@ -442,6 +445,7 @@ _Static_assert(offsetof(DkrtBootInfo, ui_reached) == 36, "DkrtBootInfo.ui_reache
 _Static_assert(offsetof(DkrtBootInfo, results) == 40, "DkrtBootInfo.results");
 _Static_assert(offsetof(DkrtBootInfo, dsp_wait) == 72, "DkrtBootInfo.dsp_wait");
 _Static_assert(offsetof(DkrtBootInfo, stable) == 76, "DkrtBootInfo.stable");
+_Static_assert(offsetof(DkrtBootInfo, needs) == 80, "DkrtBootInfo.needs");
 _Static_assert(sizeof(DkrtDiag) == 172, "DkrtDiag size");
 _Static_assert(offsetof(DkrtDiag, magic) == 0, "DkrtDiag.magic");
 _Static_assert(offsetof(DkrtDiag, version) == 4, "DkrtDiag.version");

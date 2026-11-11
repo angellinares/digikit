@@ -4,7 +4,17 @@
 // the Python tool prints with --json. Written without TS-only runtime syntax so node can import it for the tests.
 //
 // The app does not build: its modules are built `.dkm` files of a folder (`mise run module:pack-all`).
-import { DkError, DkSession, HEADER_BYTES, fileHashHex, fmtVersion, hasCap, storeFree } from '@digi/dk-session';
+import {
+  DkError,
+  DkSession,
+  HEADER_BYTES,
+  fileHashHex,
+  fmtVersion,
+  hasCap,
+  loadFailureText,
+  storeFree,
+  type LoadFailure,
+} from '@digi/dk-session';
 import { fitsNow, type Caps, type Needs } from './fit.ts';
 import type { DkEntry, DkInfoFull } from '@digi/dk-session';
 
@@ -26,6 +36,8 @@ export interface TransferRow {
   needs?: Needs;
   on_card: 'yes' | 'no' | 'other version';
   loaded: boolean;
+  /** Why the module is not loaded although the last boot selected it (`loadFailureText`); set only for a file that failed to load. */
+  not_loaded?: string;
   fits?: boolean | null;
   warnings?: string[];
   known?: boolean;
@@ -144,7 +156,14 @@ export function mergeView(
   loaded: string[],
   cap: Caps | null,
   headers: Record<string, Uint8Array | null>,
+  failures: LoadFailure[] = [],
 ): Pick<TransferView, 'modules' | 'card_only'> {
+  /** The load failure of the file at `path` (the runtime keeps the file name, 27 characters at most). */
+  const whyNot = (path: string, isLoaded: boolean): { not_loaded?: string } => {
+    const base = (path.split('/').pop() ?? path).slice(0, 27);
+    const f = isLoaded ? undefined : failures.find((x) => x.name === base);
+    return f ? { not_loaded: loadFailureText(f) } : {};
+  };
   const onCard = new Map(card.map((c) => [c.path, c]));
   const seen = new Set<string>();
   const modules: TransferRow[] = library.map((m) => {
@@ -164,6 +183,7 @@ export function mergeView(
       needs: m.needs ?? undefined,
       on_card: !have ? 'no' : have.size === m.file_size && have.hash === m.hash ? 'yes' : 'other version',
       loaded: loaded.includes(m.name),
+      ...whyNot(m.path, loaded.includes(m.name)),
     };
     row.warnings = fitWarnings(row, cap);
     row.fits = cap === null ? null : row.warnings.length === 0;
@@ -190,6 +210,7 @@ export function mergeView(
       test: false,
       on_card: 'yes',
       loaded: h ? loaded.includes(h.name) : false,
+      ...whyNot(c.path, h ? loaded.includes(h.name) : false),
     });
   }
   return { modules, card_only };
@@ -296,6 +317,7 @@ export async function buildView(s: DkSession, library: LibraryModule[]): Promise
   const card = await listModules(s, info);
   const loaded = hasCap(info, 'MODULES') ? (await s.modules()).map((m) => m.name) : [];
   const cap = hasCap(info, 'CAPACITY') ? await s.capacity() : null;
+  const failures = hasCap(info, 'LOADS') ? await s.loadFailures() : [];
   const mine = new Set(library.map((m) => m.path));
   const headers: Record<string, Uint8Array | null> = {};
   if (hasCap(info, 'READ')) {
@@ -313,7 +335,7 @@ export async function buildView(s: DkSession, library: LibraryModule[]): Promise
     free_bytes: storeFree(info, cap).free,
     loaded,
     capacity: cap,
-    ...mergeView(library, card, loaded, cap, headers),
+    ...mergeView(library, card, loaded, cap, headers, failures),
   };
 }
 
