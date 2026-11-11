@@ -258,7 +258,7 @@ for (const device of DEVICES) {
       await rt.session.expectNoFault('reset');
     }, 900_000);
 
-    test('a frame of a multiple of 512 bytes completes only with the zero-length packet (the host\'s duty); the IN side ends such a transfer with one too', async () => {
+    test('a frame of a multiple of 512 bytes completes only with the zero-length packet (the host\'s duty); the IN side sends 64-byte packets and needs no zero-length packet', async () => {
       const rt = await boot('echo-zlp', true);
       await enabled(rt);
       await enumerate(rt);
@@ -271,7 +271,7 @@ for (const device of DEVICES) {
       await rpc(rt.session, 'usb.bulk.in', { zlp: true });
       const back = await collect(rt, data.length);
       expect(back.equals(data), 'the zero-length packet completed the transfer').toBe(true);
-      expect((await out(rt)).status.bulk_out_zlps, 'EP2 IN: each 4096-byte piece is followed by a zero-length packet (ZLT on)').toBeGreaterThan(0);
+      expect((await out(rt)).status.bulk_out_zlps, 'EP2 IN uses 64-byte packets: no zero-length packets').toBe(0);
       await rt.session.expectNoFault('zlp');
     }, 900_000);
 

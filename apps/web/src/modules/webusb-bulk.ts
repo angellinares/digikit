@@ -126,7 +126,7 @@ export class WebUsbBulkLink implements BulkLink {
           continue;
         }
         if (r.status !== 'ok' || !r.data) throw new Error(`bulk IN: ${r.status}`);
-        // a zero-length transfer (ZLT after a reply that is a multiple of 512 bytes) is no bytes: `feed` adds nothing and the loop reads on
+        // the device sends 64-byte IN packets, each a short packet, and no zero-length packets: `feed` returns a frame when it is complete and the loop reads on
         this.ready.push(...this.frames.feed(new Uint8Array(r.data.buffer, r.data.byteOffset, r.data.byteLength)));
       } catch (e) {
         if (!this.closed) this.failure = e instanceof Error ? e : new Error(String(e));

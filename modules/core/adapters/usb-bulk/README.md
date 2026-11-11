@@ -2,7 +2,7 @@
 
 A vendor bulk interface (interface 2, EP2 OUT and IN, 512-byte packets) added to the firmware's USB MIDI mode, for run-time modules: `usb_bulk_enable`,
 `usb_bulk_take`, `usb_bulk_release`, `usb_bulk_send` and `usb_bulk_state` (`sdk/sdk.toml`, `sdk/include/dk/usb_bulk.h`). Plan: `docs/plans/usb-fast.md`
-section 4; facts: `docs/findings/42-usb-transfer-routes.md` section 4.
+section 4; facts: `docs/findings/42-usb-transfer-routes.md` section 4. EP2 IN runs with 64-byte packets and no zero-length termination, like the firmware's EP1 IN, because the controller's TX buffer holds 64 bytes per endpoint and two back-to-back 512-byte IN packets wedged it on the DN2.
 
 - **No firmware patch.** The USB engine is the same code at the same addresses on DT2 1.17 and DN2 1.12. Its port table is RAM: `usb_bulk_enable` checks
   the stock entry 2 (callbacks, length, the 101 descriptor bytes), then writes four words (connect, disconnect, descriptor pointer and length) and

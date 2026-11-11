@@ -29,7 +29,7 @@ impl std::fmt::Display for LinkError {
 impl std::error::Error for LinkError {}
 
 /// One request or reply frame at a time. `send` ends the USB transfer correctly: a frame whose length is a multiple of the packet size is followed by
-/// a zero-length packet (`send_with_zlp`). `recv` skips zero-length IN transfers (the device keeps ZLT on for EP2 IN). A link may queue several sent
+/// a zero-length packet (`send_with_zlp`). `recv` reads until a frame is complete (the device sends 64-byte IN packets, each a short packet for the host, and no zero-length packets). A link may queue several sent
 /// frames before the first reply is read (two DATA requests in flight).
 pub trait Link {
     fn send(&mut self, frame: &[u8], timeout: Duration) -> Result<(), LinkError>;

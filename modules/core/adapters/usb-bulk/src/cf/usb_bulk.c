@@ -10,7 +10,7 @@
  * sends a zero-length packet after any frame whose length is a multiple of 512 bytes. The completion callback runs in the USB interrupt: it marks the buffer
  * full and queues a free one. With no free buffer nothing is queued, the host gets NAK, and that is the whole flow control. The dTDs come from the firmware's
  * pool (the engine's own EP1 callback does the same from the interrupt); its free callback is wrapped to see the status byte, and a halted or error status
- * drops the transfer. TX: usb_bulk_send copies into one of TX_SLOTS slots and queues one dTD on EP2 IN (zero-length termination on); the completion frees it.
+ * drops the transfer. TX: usb_bulk_send copies into one of TX_SLOTS slots and queues one dTD on EP2 IN (64-byte packets, see QH_CAPS_IN); the completion frees it.
  *
  * Buffers are accessed through the uncached alias of DDR, so the DMA and the CPU never see stale cache lines. The stock disconnect callback polls
  * ENDPTFLUSH without a bound; ours flushes EP2 first with a bounded poll. Interrupts are masked (SR 0x2700) around every state change, never around a
@@ -20,6 +20,8 @@
  * Contexts: usb_bulk_connect and usb_bulk_disconnect are called by the firmware (the USB interrupt, the mode switch); usb_bulk_rx_done, usb_bulk_tx_done
  * and usb_bulk_cancel are the dTD callbacks (interrupt, or the cancel path of the disconnect). The others are for modules (usb_bulk_* of sdk.toml),
  * from the I/O task. */
+
+#define UB_TRACE 1 /* debug build for the hardware hunt; 0 removes the log calls */
 
 typedef unsigned int u32;
 typedef unsigned short u16;
@@ -52,6 +54,10 @@ typedef int i32;
 
 /* ---- the MCF5441x USB controller and the firmware's queue heads (the engine's own constants, FUN_400043e2) ---- */
 #define USB_REG(off) (*(volatile u32 *)(0xfc0b0000u + (off)))
+#define USBCMD 0x140u
+#define USBSTS 0x144u
+#define PORTSC 0x184u
+#define ENDPTPRIME 0x1b0u
 #define ENDPTCOMPLETE 0x1bcu
 #define ENDPTSTAT 0x1b8u
 #define ENDPTFLUSH 0x1b4u
@@ -64,7 +70,10 @@ typedef int i32;
 #define IDX_OUT 2u
 #define IDX_IN 6u
 #define QH_CAPS_OUT 0x22000000u /* 512-byte packets, as the firmware sets EP1 OUT */
-#define QH_CAPS_IN 0x02000000u  /* 512-byte packets, zero-length termination on [O] */
+/* 64-byte packets, zero-length termination off, as the firmware sets EP1 IN. The TX buffer holds 64 bytes per endpoint; two back-to-back 512-byte IN
+ * packets wedged the controller on the DN2. Each 64-byte packet is a short packet for the host, so no zero-length packet is needed. The descriptor
+ * still says 512 (USB 2.0 requires it for high-speed bulk). */
+#define QH_CAPS_IN 0x20400000u
 #define TD_END 0xdead0001u
 #define TD_ACTIVE 0x80u
 #define TD_HALTED 0x40u /* status bits of a finished dTD: halted, data buffer error, transaction error */
@@ -94,6 +103,37 @@ extern const u32 usb_ddr_bytes;
 /* the runtime (dkrt.h) */
 extern void dkrt_io_wake(i32 id);
 extern i32 dkrt_poll_add(u32 f); /* the UI loop calls f once a pass */
+extern void dkrt_log_ev(u32 kind, u32 flags, const u32 *a);
+
+#if UB_TRACE
+/* sdk.toml [[log.kind]] 14 MOD_LOG: args msg0..msg3 (16 ASCII chars, big-endian words) and value */
+#define UB_KIND_MOD_LOG 14u
+/* flags: not an error (bit 0 clear), level 3 (debug) in bits 1-3 (sdk.toml level_shift 1) */
+#define UB_FLAGS (3u << 1)
+
+/* `tag`: a string of at most 16 chars, padded with NULs */
+static void ub_log(const char *tag, u32 value)
+{
+    u32 a[5];
+    u32 i;
+    u32 live = 1;
+    for (i = 0; i < 16u; i++) {
+        u32 c = 0;
+        if (live && tag[i] != 0)
+            c = (u8)tag[i];
+        else
+            live = 0;
+        if ((i & 3u) == 0u)
+            a[i >> 2] = 0;
+        a[i >> 2] |= c << (24u - 8u * (i & 3u));
+    }
+    a[4] = value;
+    dkrt_log_ev(UB_KIND_MOD_LOG, UB_FLAGS, a);
+}
+#define UB_LOG(tag, v) ub_log((tag), (v))
+#else
+#define UB_LOG(tag, v) ((void)0)
+#endif
 
 /* the stock configuration descriptor with wTotalLength (bytes 2 and 3, written by the firmware at run time) left out, and the interface appended */
 static const u8 stock_config[STOCK_CONFIG_BYTES] = {
@@ -241,7 +281,10 @@ static void prime_one(u32 i)
     if (stopping || !connected || !usb_midi_mode())
         return;
     if (queue_transfer(IDX_OUT, rx_buf(i), RX_BYTES, (void *)usb_bulk_rx_done, (void *)usb_bulk_cancel) == 0)
+    {
         rx_state[i] = B_PRIMED;
+        UB_LOG("ub.rx.prime", i);
+    }
 }
 
 /* queue every free receive buffer; a buffer the engine refused leaves `need_prime` set for the tick and the module's next call */
@@ -273,9 +316,11 @@ void usb_bulk_rx_done(u32 bytes, u8 *buf)
     i32 i = rx_index(buf);
     u32 bad = td_status & (TD_HALTED | TD_BUFERR | TD_XACTERR);
     td_status = 0;
+    UB_LOG("ub.rx.done", bytes | ((u32)i << 24));
     if (i >= 0 && rx_state[i] == B_PRIMED) {
         if (bad != 0u) {
             usb_bulk_rx_errors++;
+            UB_LOG("ub.rx.err", bad);
             rx_state[i] = B_FREE;
             prime_one((u32)i);
         } else if (bytes == 0) {
@@ -300,7 +345,7 @@ void usb_bulk_tx_done(u32 bytes, u8 *buf)
 {
     u32 sr = sr_mask();
     i32 i = tx_index(buf);
-    (void)bytes;
+    UB_LOG("ub.tx.done", bytes);
     td_status = 0;
     if (i >= 0) {
         tx_state[i] = T_FREE;
@@ -314,7 +359,7 @@ void usb_bulk_cancel(u32 bytes, u8 *buf)
 {
     u32 sr = sr_mask();
     i32 i = rx_index(buf);
-    (void)bytes;
+    UB_LOG("ub.cancel", bytes);
     td_status = 0;
     if (i >= 0) {
         if (rx_state[i] == B_PRIMED)
@@ -360,6 +405,7 @@ static void ep2_flush(void)
 static void ep2_stop(void)
 {
     u32 i;
+    UB_LOG("ub.ep2stop", resets);
     stopping = 1;
     if (!qh_ready)
         ep2_lists_clear(); /* the engine's init cleared the queue heads, but another USB mode (Overbridge also uses EP2) may have left words */
@@ -389,6 +435,7 @@ static void ep2_stop(void)
 void usb_bulk_connect(void)
 {
     u32 sr = sr_mask();
+    UB_LOG("ub.connect", resets);
     ep2_stop();
     stock_connect(1); /* the wrapper reads and sets its argument slot */
     qh(QH_EP2_OUT)[0] = QH_CAPS_OUT;
@@ -405,15 +452,48 @@ void usb_bulk_connect(void)
 void usb_bulk_disconnect(void)
 {
     u32 sr = sr_mask();
+    UB_LOG("ub.disconn", resets);
     ep2_stop();
     sr_restore(sr);
     usb_fw_disconnect();
 }
 
+#if UB_TRACE
+/* the controller registers and the EP2 queue head words, logged when they change (read only: USBSTS is write 1 to clear) */
+#define UB_SNAP_N 10u
+static void ub_snapshot(void)
+{
+    static u32 last[UB_SNAP_N];
+    static const char *const tags[UB_SNAP_N] = {"ub.USBSTS", "ub.PORTSC", "ub.USBCMD", "ub.EPPRIME", "ub.EPSTAT",
+                                                "ub.EPCOMPL", "ub.qhO.tok", "ub.qhI.tok", "ub.qhO.cur", "ub.qhI.cur"};
+    u32 v[UB_SNAP_N];
+    u32 i;
+    v[0] = USB_REG(USBSTS);
+    v[1] = USB_REG(PORTSC);
+    v[2] = USB_REG(USBCMD);
+    v[3] = USB_REG(ENDPTPRIME);
+    v[4] = USB_REG(ENDPTSTAT);
+    v[5] = USB_REG(ENDPTCOMPLETE);
+    v[6] = *(volatile u32 *)(QH_BASE + QH_EP2_OUT + 0x0cu);
+    v[7] = *(volatile u32 *)(QH_BASE + QH_EP2_IN + 0x0cu);
+    v[8] = *(volatile u32 *)(QH_BASE + QH_EP2_OUT + 0x04u);
+    v[9] = *(volatile u32 *)(QH_BASE + QH_EP2_IN + 0x04u);
+    for (i = 0; i < UB_SNAP_N; i++) {
+        if (v[i] != last[i]) {
+            last[i] = v[i];
+            ub_log(tags[i], v[i]);
+        }
+    }
+}
+#endif
+
 /* once a pass of the UI loop (dkrt_poll_add): retry what the engine refused */
 void usb_bulk_tick(void)
 {
     u32 sr, again;
+#if UB_TRACE
+    ub_snapshot();
+#endif
     if (!enabled)
         return;
     sr = sr_mask();
@@ -585,6 +665,7 @@ i32 usb_bulk_send(const u8 *buf, u32 len)
         r = E_AGAIN;
     } else {
         tx_state[slot] = T_QUEUED;
+        UB_LOG("ub.tx.queue", len | ((u32)slot << 24));
         r = 0;
     }
     sr_restore(sr);

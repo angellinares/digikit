@@ -67,6 +67,25 @@ fn dtd_prime_fault(dtd: u32, token: u32, pages: &[u32; 5], out: bool) -> Option<
     None
 }
 
+/// The fault of an EP2 IN transfer of `len` bytes cut into packets of `max_packet`: a packet after the first longer than 64 bytes. The rule is
+/// measured on hardware (1024 = 512 + 512 wedged the controller; 513 = 512 + 1 worked) and kept conservative. `None` when the transfer is fine.
+fn in_packet_fault(max_packet: usize, len: usize) -> Option<String> {
+    let max_packet = max_packet.max(1);
+    let mut start = max_packet;
+    let mut k = 1;
+    while start < len {
+        let n = (len - start).min(max_packet);
+        if n > 64 {
+            return Some(format!(
+                "packet {k} of {n} bytes after a full one: the 64-byte TX buffer cannot stream back-to-back packets (measured on the DN2)"
+            ));
+        }
+        start += max_packet;
+        k += 1;
+    }
+    None
+}
+
 /// The page pointers a packet of `len` bytes at byte `start` of a transfer uses. Inferred from a hardware observation (a 4096-byte EP2 IN transfer
 /// with page pointers 1 to 4 = 0 wedged the controller; 1, 511, 512 and 513 bytes worked), not stated by the manual: every packet, a zero-length
 /// one too, is moved through the pointer of the 4 KiB page its start position falls in, and a data packet that crosses a page boundary also uses
@@ -3237,12 +3256,16 @@ impl Emulator {
             *page = self.bus.board.read32(dtd + 8 + 4 * k as u32).unwrap_or(0);
         }
         let caps = self.bus.board.read32(crate::midi::QH_EP2_IN).unwrap_or(0);
-        let zlp = caps & 0x2000_0000 == 0 && len > 0 && len % 512 == 0;
+        let max_packet = (((caps >> 16) & 0x7ff) as usize).max(1);
+        let zlp = caps & 0x2000_0000 == 0 && len > 0 && len % max_packet == 0;
         let mut fault = dtd_prime_fault(dtd, token, &pages, false);
+        if fault.is_none() {
+            fault = in_packet_fault(max_packet, len);
+        }
         let mut pos = 0;
         while fault.is_none() && pos < len {
-            fault = dtd_packet_fault(&pages, pos, (len - pos).min(512));
-            pos += 512;
+            fault = dtd_packet_fault(&pages, pos, (len - pos).min(max_packet));
+            pos += max_packet;
         }
         if fault.is_none() && (zlp || len == 0) {
             fault = dtd_packet_fault(&pages, len, 0);
@@ -4504,6 +4527,15 @@ mod tests {
         // a 513-byte transfer: packets of 512 and 1 bytes stay in page 0
         assert_eq!(dtd_packet_fault(&pages, 0, 512), None);
         assert_eq!(dtd_packet_fault(&pages, 512, 1), None);
+    }
+
+    #[test]
+    fn ep2_in_packets_after_a_full_one_stay_within_the_tx_buffer() {
+        assert_eq!(in_packet_fault(512, 513), None);
+        assert_eq!(in_packet_fault(512, 512), None);
+        assert!(in_packet_fault(512, 1024).is_some());
+        assert_eq!(in_packet_fault(64, 16384), None);
+        assert_eq!(in_packet_fault(512, 1), None);
     }
 
     #[test]

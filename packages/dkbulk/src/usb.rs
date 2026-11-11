@@ -56,7 +56,7 @@ pub fn list() -> Result<Vec<Candidate>, String> {
 pub struct UsbTx {
     out: Endpoint<Bulk, Out>,
 }
-/// The IN half; `recv` returns whole frames and treats a zero-length transfer (ZLT after a 512-multiple reply) as no bytes.
+/// The IN half; `recv` returns whole frames; the device sends 64-byte IN packets (each a short packet, no zero-length packets), so it reads until a frame is complete.
 pub struct UsbRx {
     inp: Endpoint<Bulk, In>,
     reader: FrameReader,

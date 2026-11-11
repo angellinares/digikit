@@ -1,7 +1,7 @@
 //! A device on the other end of the USB pipes, with the device rules of the plan (docs/plans/usb-fast.md sections 3.1 and 5), for host tests: one write
 //! session, DATA at the next offset only (a multiple of 512 except the last piece), `E_BUSY` while the store is in use, the END hash check, ABORT, VERIFY,
 //! REPLACE (the old file stays until END commits), the nonce of the identity handshake. It models the USB rules too: an OUT transfer that is a multiple of
-//! 512 bytes is not delivered until a short transfer ends it, and a reply that is a multiple of 512 bytes is followed by a zero-length IN transfer (ZLT).
+//! 512 bytes is not delivered until a short transfer ends it, and the device sends 64-byte IN packets, each a short packet for the host, with no zero-length packets (readers loop until a frame is complete).
 //! Faults are switched on by field.
 use std::collections::{HashMap, HashSet, VecDeque};
 use std::time::Duration;

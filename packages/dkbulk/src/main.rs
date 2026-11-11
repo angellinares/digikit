@@ -196,19 +196,26 @@ fn echo(mut args: Vec<String>) {
             .map(|k| (k.wrapping_mul(7) + (k >> 8) + i) as u8)
             .collect();
         let start = Instant::now();
-        if let Err(e) = link.tx.send(&data, Duration::from_secs(10)) {
-            die(1, &format!("send of {size} bytes: {e}"));
-        }
-        let mut back = Vec::with_capacity(size);
-        while back.len() < size {
-            match link.rx.read(Duration::from_secs(10)) {
-                Ok(b) => back.extend_from_slice(&b),
-                Err(e) => die(
-                    1,
-                    &format!("read after {} of {size} bytes: {e}", back.len()),
-                ),
+        // The reads run beside the send, because the device holds only a few buffers and waits for the host to take its replies.
+        let back = std::thread::scope(|scope| {
+            let tx = &mut link.tx;
+            let data = &data;
+            let sender = scope.spawn(move || tx.send(data, Duration::from_secs(10)));
+            let mut back = Vec::with_capacity(size);
+            while back.len() < size {
+                match link.rx.read(Duration::from_secs(10)) {
+                    Ok(b) => back.extend_from_slice(&b),
+                    Err(e) => die(
+                        1,
+                        &format!("read after {} of {size} bytes: {e}", back.len()),
+                    ),
+                }
             }
-        }
+            if let Err(e) = sender.join().expect("sender thread") {
+                die(1, &format!("send of {size} bytes: {e}"));
+            }
+            back
+        });
         let s = start.elapsed().as_secs_f64();
         let same = back == data;
         failed |= !same;
