@@ -81,6 +81,7 @@ static uint32_t g_fx_n, g_fx_slots;
 static uint8_t g_fx_saved[MAX_FXR];
 static int8_t g_row_fx[MAX_ENT]; /* the first effect of a loaded row's module, -1: none */
 static uint8_t g_saved[MAX_ENT];
+static int8_t g_sel_of[MAX_ENT]; /* the index of a row in the saved selection (the boot's results and needs are by that index), -1: not selected */
 static uint32_t g_saved_extra;
 static int32_t g_selection_error;
 static int g_info_row;
@@ -137,6 +138,14 @@ static txt *t_b(txt *t, const uint8_t *s, int max)
 {
     for (int i = 0; i < max && s[i]; i++)
         t_c(t, (char)s[i]);
+    return t;
+}
+
+/* The name of a missing module as the runtime keeps it (usb-bulk), in upper case. */
+static txt *t_needs(txt *t, const uint8_t *s)
+{
+    for (int i = 0; i < DKRT_NEEDS_LEN && s[i]; i++)
+        t_c(t, (char)(s[i] >= 'a' && s[i] <= 'z' ? s[i] - 32 : s[i]));
     return t;
 }
 
@@ -261,14 +270,18 @@ static void status_text(txt *t, int32_t code)
     }
 }
 
-/* The text of a module's result at boot: OK, LOADING (the DSP part is still going) or the code's text. */
-static void result_text(txt *t, int32_t code)
+/* The text of a module's result at boot: OK, LOADING (the DSP part is still going), NEEDS <module> when the load failed because a module it
+   imports from is not in the image (`needs`, the runtime's DkrtBootInfo.needs of that selection index) or the code's text. */
+static void result_text(txt *t, int32_t code, const uint8_t *needs)
 {
     if (code == 1)
         t_s(t, "LOADING");
     else if (code == 0)
         t_s(t, "OK");
-    else
+    else if (code == DKRT_E_IMPORT && needs[0]) {
+        t_s(t, "NEEDS ");
+        t_needs(t, needs);
+    } else
         status_text(t, code);
 }
 
@@ -364,8 +377,10 @@ static void load_selection(void)
         STORE = 3;
         return;
     }
-    for (uint32_t i = 0; i < MAX_ENT; i++)
+    for (uint32_t i = 0; i < MAX_ENT; i++) {
         TICK[i] = 0;
+        g_sel_of[i] = -1;
+    }
     g_saved_extra = 0;
     uint32_t n = g_sel.count > DKRT_SEL_MAX ? DKRT_SEL_MAX : g_sel.count;
     for (uint32_t k = 0; k < n; k++) {
@@ -381,6 +396,7 @@ static void load_selection(void)
                 same &= q[c] == p[c];
             if (same) {
                 TICK[i] = 1;
+                g_sel_of[i] = (int8_t)k;
                 found = 1;
             }
         }
@@ -641,7 +657,7 @@ static void fill_about(dk_ui_menu *m, void *ctx)
         arow(m, t.b);
         t_init(&t);
         t_s(&t, "- ");
-        result_text(&t, g_boot.results[k]);
+        result_text(&t, g_boot.results[k], g_boot.needs[k]);
         if (traced_path(p, path_len(p, DKRT_SEL_PATH - 1)))
             t_s(&t, " TRACE");
         arow(m, t.b);
@@ -941,6 +957,15 @@ static int dashed(int i)
     return TICK[i] && g_saved[i] && !LOADED[i];
 }
 
+/* The missing module of a dashed row (usb-bulk): the boot's load failed with E_IMPORT and the runtime kept the name; 0 when not. */
+static const uint8_t *row_needs(int i)
+{
+    int k = g_sel_of[i];
+    if (!dashed(i) || k < 0 || (uint32_t)k >= DKRT_SEL_MAX || (uint32_t)k >= g_boot.count)
+        return 0;
+    return g_boot.results[k] == DKRT_E_IMPORT && g_boot.needs[k][0] ? g_boot.needs[k] : 0;
+}
+
 /* A row: the name (12), the kind (4) and the memory the module takes, right aligned: 23 letter widths, which fit the list. The columns
    are placed in pixels (t_pad_px), because a space is narrower than a letter. With a mark column the name has 11 characters and the
    other columns stay where they are. */
@@ -1196,6 +1221,17 @@ static void modules_panel(dk_ui_menu *p, int row, void *ctx)
     if (settings_module(row, &mod) >= 0)
         prow(p, "SETTINGS...", panel_settings, row);
     prow(p, "INFO", panel_info, row);
+    /* the detail of a dashed row, last so that the cursor starts on LOAD: why it is not loaded (a text row, no action) */
+    const uint8_t *needs = row_needs(row);
+    if (needs) {
+        txt t;
+        t_init(&t);
+        t_s(&t, "NEEDS ");
+        t_needs(&t, needs);
+        if (DK_PANEL_N < 4)
+            keep(DK_PANEL[DK_PANEL_N++], t.b);
+        dk_ui_text(p, t.b);
+    }
 }
 
 /* ---- INFO ------------------------------------------------------------------------------------------------------------ */
@@ -1280,6 +1316,12 @@ static void fill_info(dk_ui_menu *m, void *ctx)
     t_s(&t, "STATUS ");
     t_s(&t, e->flags & DKRT_SCAN_LOADING ? "LOADING" : e->flags & DKRT_SCAN_LOADED ? "LOADED" : "NOT LOADED");
     irow(m, &t);
+    if (row_needs(i)) {
+        t_init(&t);
+        t_s(&t, "NEEDS ");
+        t_needs(&t, row_needs(i));
+        irow(m, &t);
+    }
     if ((TICK[i] != 0) != (LOADED[i] != 0)) {
         t_init(&t);
         t_s(&t, TICK[i] ? "LOADS AT RESTART" : "UNLOADS AT RESTART");

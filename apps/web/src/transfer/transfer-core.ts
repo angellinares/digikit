@@ -164,11 +164,12 @@ export function tickedLoad(view: TransferView, ticks: Set<string>): string | nul
   return answer.set || !answer.line ? null : answer.line;
 }
 
-/** The tags of a file of the "On device" list: a loaded module says so first; a file the library does not have, and one that differs from
+/** The tags of a file of the "On device" list: a loaded module says so first, a selected one that failed to load says why (`not_loaded`); a file the library does not have, and one that differs from
  * the library's build. A file that matches the library has no tag (that is the usual state), and one that is only going there has none yet. */
 export function deviceTags(r: TransferRow): RowTag[] {
   const out: RowTag[] = [];
   if (r.loaded) out.push({ text: 'loaded', title: 'Loaded by the device until the next restart', tone: 'ok' });
+  if (r.not_loaded) out.push({ text: 'not loaded', title: r.not_loaded, tone: 'warn' });
   if (!r.id)
     out.push({
       text: 'not in library',

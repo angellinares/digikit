@@ -29,6 +29,7 @@ export class FakeDevice {
     this.free = 1 << 20; // INFO's u32 free_bytes
     this.storeKib = null; // CAPACITY's STORE limit in KiB (null: the entry is left out); 1024 KiB are used
     this.caps = null; // INFO's capability word (null: every capability)
+    this.loadFailures = []; // LOADS: the modules of the boot selection that failed, `{ name, result, needs? }`
     this.imageId = null; // INFO's image id as 16 hex digits (null: the runtime before 0.5.2, which sends none)
     this.arenaLimit = 1000; // CAPACITY's ARENA and DSP_AREA limits (bytes)
     this.dspLimit = 1000;
@@ -219,6 +220,15 @@ export class FakeDevice {
             be32(70),
             [this.loaded.length, this.loaded.length],
             ...this.loaded.map(entry),
+          ),
+        );
+      }
+      case CMD.LOADS: {
+        const fixed = (str, n) => Uint8Array.from({ length: n }, (_, i) => str.charCodeAt(i) || 0);
+        return ok(
+          concat(
+            [1, this.loadFailures.length],
+            ...this.loadFailures.flatMap((f) => [be32(f.result >>> 0), fixed(f.needs ?? '', 12), fixed(f.name, 28)]),
           ),
         );
       }

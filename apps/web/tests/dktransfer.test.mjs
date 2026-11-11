@@ -243,6 +243,19 @@ test('header, library module, the merged list', async () => {
     by['test/sine'].warnings[0],
     /DSP memory 350 bytes short; fits when the modules loaded now are not selected/,
   );
+  // a file the last boot selected and the loader refused says why; a loaded one and an unrelated one do not
+  const failed = [{ name: 'tool.dkm', result: -7, needs: 'usb-bulk' }];
+  const why = mergeView(library, card, ['someone/machine', 'someone/effect'], cap, headers, failed);
+  assert.equal(
+    why.modules.find((r) => r.id === 'someone/tool').not_loaded,
+    'tool not loaded: this firmware has no core/usb-bulk. Flash firmware from the Firmware page.',
+  );
+  assert.equal(why.modules.filter((r) => r.not_loaded).length, 1);
+  assert.equal(
+    mergeView(library, card, ['someone/tool'], cap, headers, failed).modules.find((r) => r.id === 'someone/tool')
+      .not_loaded,
+    undefined,
+  );
   // more than the device has at all: no way out by deselecting
   const huge = await libraryModule(dkm('test/huge', { machine: 1, dsp: 2000, size: 800 }), needsOf);
   assert.match(
@@ -324,6 +337,19 @@ test('free space above 4 GiB: INFO saturates at 2^32 - 1, CAPACITY STORE (KiB) d
   dev.storeKib = null;
   assert.deepEqual(await storeSpace(s), { free: 4294967295, total: null });
   assert.equal((await buildView(s, [])).free_bytes, 4294967295);
+});
+
+test('LOADS: the view says why a selected module is not loaded (the file name the runtime kept, the module it needs)', async () => {
+  const dev = new FakeDevice();
+  dev.files.set('modules/usb-fast.dkm', dkm('digikit/usb-fast', { size: 900 }));
+  dev.loadFailures = [{ name: 'usb-fast.dkm', result: -7, needs: 'usb-bulk' }];
+  const s = session(dev);
+  assert.deepEqual(await s.loadFailures(), [{ name: 'usb-fast.dkm', result: -7, needs: 'usb-bulk' }]);
+  const row = (await buildView(s, [])).card_only.find((r) => r.path === 'modules/usb-fast.dkm');
+  assert.equal(
+    row.not_loaded,
+    'usb-fast not loaded: this firmware has no core/usb-bulk. Flash firmware from the Firmware page.',
+  );
 });
 
 test('install: skip the same file hash, upload the rest with capped progress, VERIFY each, no SELECT', async () => {

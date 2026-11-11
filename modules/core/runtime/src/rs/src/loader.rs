@@ -214,6 +214,15 @@ unsafe fn load_inner(path: *const u8) -> i32 {
         }
         let a = import_addr(p);
         if a == 0 {
+            // the first import that belongs to a module that is not in the image: the boot keeps its name (`MISSING`)
+            if let (Some(n), true) = (crate::import_needs(p), MISSING[0] == 0) {
+                let b = n.as_bytes();
+                let mut k = 0;
+                while k < b.len() && k < NEEDS_LEN {
+                    MISSING[k] = b[k];
+                    k += 1;
+                }
+            }
             return E_IMPORT;
         }
         import_addrs[i] = a;
@@ -458,6 +467,9 @@ pub unsafe fn undo_early(rec: usize) -> i32 {
 /// While the boot hook loads the selection: the CF part of a module with DSP code is published at once (the machine view is built
 /// soon after the hook, and the frames that carry DSP code do not flow yet); the DSP part follows over the UI-loop passes.
 pub static mut EARLY: bool = false;
+/// The name of the missing module of the last load that failed with E_IMPORT (`import_needs`), NUL padded; empty when none. The boot clears it
+/// before each load and takes it after.
+pub static mut MISSING: [u8; NEEDS_LEN] = [0; NEEDS_LEN];
 /// The selection index of the module being loaded by the boot hook (`u32::MAX`: none).
 pub static mut BOOT_IDX: u32 = u32::MAX;
 
