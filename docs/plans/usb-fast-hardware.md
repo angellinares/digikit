@@ -99,25 +99,34 @@ DIN MIDI OS upgrade last.
   finds it. (A USB CONFIG change made just before a runtime restart did not stick; set it, then restart.)
 - `dkbulk echo`: 1, 511, 512 and 513 bytes identical. **4096 bytes: no reply, then every bulk send fails with 0xe00002ed and SysEx INFO
   hangs too: the USB controller wedged; the CPU kept running (buttons, audio); no crash record; a power cycle recovers.**
-- Leading suspect: the first transfer that crosses a 4 KiB page of a multi-page dTD (page pointers 1-4, or the controller's DMA and the
-  uncached alias addresses). The firmware itself only uses single-page 512-byte dTDs, and the emulator model does not apply the
-  controller's page rules, so neither caught it.
+- Diagnosis: the adapter set the dTD page pointers past the used pages to 0. The 4096-byte EP2 IN echo (zero-length termination on) sends
+  its closing zero-length packet at byte 4096 through page pointer 1, which is 0. The DMA faults (system bus error, USBSTS SEI) and the
+  firmware never resets the controller, so it stays wedged until a power cycle. 513 bytes never reached a page boundary. The firmware's own
+  dTDs never write page pointers 2-4 and its largest is one 4 KiB page; its USB DMA buffers use the same uncached DDR alias as the adapter
+  (finding 42).
 - The device was restored to debug + remote on the device-usb firmware. `dk:run` replaces a selection slot.
+
+### Fix (2026-11-11, commit 26c4022c)
+
+The adapter fills page pointers 1-4 with the next four pages (RM 24-71 step 7). The emulator's EP2 model applies the manual's dTD rules and
+models the system error (all USB traffic stops; `usb_sys_error` in `usb.bulk.out` status). Before the fix the DN2 usb-bulk device test failed
+with "EP2 IN: packet at byte 4096 uses page pointer 1 = 0x00000000"; after it, usb-bulk and usb-fast pass on DN2 and DT2. The model's packet
+rule (a zero-length packet uses the pointer of the page it starts in) is inferred [O] until the hardware rerun. `patchkit flash` no longer
+reports the false "port did not go away" on macOS (it asks the device by INFO after 10 s and ignores old-image answers).
 
 ### Next
 
-1. Diagnose the 4 KiB wedge: the MCF5441x reference manual (out/refs) USB chapter (dTD page pointers, DMA addressing); firmware-query for
-   any multi-page dTD in the firmware (CDC, Overbridge) and what the firmware's DMA arena (0x4fe3c000) is; the adapter's dTD construction.
-   Make the emulator model enforce the manual's rules so it reproduces the wedge; then fix (correct the pointers, or use single-page
-   4 KiB dTDs as the firmware does). Hardware echo again at 4096, 16384, 65536 and 1 MiB (needs a reflash).
-2. Before the PR: the adapter refuses cleanly outside the USB MIDI configuration ("wrong USB mode" in usb_bulk_state) and the badge's
-   SYSEX tooltip says to set USB CONFIG to USB MIDI; bump the runtime version (still 0.5.6 with SDK 1.10); fix the flash tool's
-   "port did not go away within 240 s" false alarm (macOS keeps the port listed); commit the `device-usb` patch set (now uncommitted in
-   devices/digitone-ii.toml).
-3. DN2 run 2 (usb-fast bench), then the DT2 runs, then `mise run test:full` and a PR to main.
+1. In progress, uncommitted: the adapter refuses `usb_bulk_enable` with E_STATE outside USB MIDI mode (anchor `cf.usb.value.active_port`:
+   DT2 1.17 0x40965a60, DN2 1.12 0x4058f2a8; 2 = USB MIDI) and `usb_bulk_state` bit 2 shows the wrong mode live; usb-fast logs it; the
+   SYSEX tooltip says to install usb-fast and set USB CONFIG to USB MIDI; runtime 0.5.7; commit the `device-usb` patch set in
+   devices/digitone-ii.toml.
+2. DN2 run 2 (needs a reflash, Em's OK first): `dkbulk echo` at 4096, 16384, 65536 and 1 MiB, then the usb-fast bench; USB CONFIG = USB MIDI.
+3. DT2 runs, then `mise run test:full` and a PR to main.
+4. Then scope v2 (below).
 
 ### v2: Fast USB in USB AUDIO/MIDI mode (agreed design, not started)
 
 The workbench takes the device over by SysEx: a RAM-only switch to the USB MIDI configuration with the bulk interface, through the
 firmware's own USB-mode switch (FUN_40006c16), released by SysEx, on unplug and on reboot. USB audio drops while the workbench holds the
-device. The stored USB CONFIG setting is never written (verify statically). Reuses the v1 protocol, adapter, module and host unchanged.
+device. The stored USB CONFIG setting is never written (verify statically). Reuses the v1 protocol, adapter, module and host unchanged. The controller has 4 device endpoints (EP0-EP3, RM DCCPARAMS DEN = 4) and
+USB AUDIO/MIDI uses EP2 IN and EP3, so a bulk pair beside live USB audio is not possible; the take-over is the route.
