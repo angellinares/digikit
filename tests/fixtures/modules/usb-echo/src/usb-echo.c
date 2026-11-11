@@ -10,8 +10,8 @@
  * after a take-over: REENABLE does, once the device is in USB MIDI mode).
  * ECHO_CMD (0x2c): STATUS, reply: i32 result of usb_bulk_enable, u32 usb_bulk_state, u32 steps, u32 buffers taken, u32 bytes taken, u32 bytes sent,
  * u32 times a send was busy, i32 job id, u32 the reset count seen by the job. */
-#include <dk/api.h>
-#include <dk/io.h>
+#include <dk/core/api.h>
+#include <dk/platform/io.h>
 
 #ifndef ECHO_CMD
 #define ECHO_CMD 0x2c
@@ -21,7 +21,7 @@ typedef uint32_t u32;
 typedef int32_t i32;
 
 #define E_BUSY (-12)
-#define E_AGAIN (-72) /* <dk/usb_bulk.h> DK_USB_BULK_E_AGAIN */
+#define E_AGAIN (-72) /* <dk/platform/usb_bulk.h> DK_USB_BULK_E_AGAIN */
 #define PIECE 4096u
 
 static const dk_api *sdk;

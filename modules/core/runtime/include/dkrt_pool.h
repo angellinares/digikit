@@ -48,7 +48,7 @@ typedef struct dk_file_id {
 typedef struct dkpool_handle {
     uint32_t id;      /* adapter-private (DT2: slot; DN2: block index) */
     uint32_t token;   /* nonzero, unique per load, never reused */
-    uint32_t base_l;  /* DSP normal-word address of plane L, as dk_strack.base_l: NW32 alias of DDR, 0x10000000 + (phys - 0x80000000) / 4 */
+    uint32_t base_l;  /* DSP normal-word address of plane L, as dk_sample_pool_entry.base_l: NW32 alias of DDR, 0x10000000 + (phys - 0x80000000) / 4 */
     uint32_t base_r;  /* plane R; == base_l for mono */
     uint32_t frames;
     uint32_t rate;    /* Hz */

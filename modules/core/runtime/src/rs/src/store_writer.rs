@@ -899,10 +899,10 @@ pub unsafe fn delete(b: &Bufs, path: *const u8, drop_sysex: bool) -> i32 {
 
 // ---- the SDK front end (`file_*`, api 1.10) -----------------------------------------------------------------------------------
 
-/// `DK_FILES_*` of `<dk/files.h>`.
+/// `DK_FILES_*` of `<dk/platform/files.h>`.
 const ROOT_SAMPLES: u32 = 1;
 const ROOT_STORE: u32 = 2;
-/// `DK_FILE_REPLACE` of `<dk/file.h>`.
+/// `DK_FILE_REPLACE` of `<dk/platform/file.h>`.
 pub const FILE_REPLACE: u32 = 1;
 /// A store path with its root prefix: at most `store::PATH_MAX` bytes and the NUL.
 const FULL_MAX: usize = 168;

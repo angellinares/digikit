@@ -1,6 +1,16 @@
 name: Pages
 
 on:
+  # Every merge to main deploys. The ignore list names only paths the site cannot read, so a missed
+  # input costs an extra deploy, never a stale site.
+  push:
+    branches: [main]
+    paths-ignore:
+      - 'docs/**'
+      - 'tests/**'
+      - 'apps/desktop/**'
+      - '*.md'
+      - '.vscode/**'
   workflow_dispatch:
 
 permissions:
@@ -8,7 +18,8 @@ permissions:
 
 concurrency:
   group: pages
-  cancel-in-progress: true
+  # GitHub keeps only the newest pending run; a started deploy is never cancelled.
+  cancel-in-progress: false
 
 jobs:
   build:

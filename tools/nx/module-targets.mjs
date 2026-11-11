@@ -11,9 +11,9 @@ export const DEVICE_BYTES = 'patchkit:device-bytes';
 export const SHARED_SDK_INPUTS = [
   '{workspaceRoot}/sdk/sdk.toml',
   '{workspaceRoot}/sdk/include/**/*',
-  '{workspaceRoot}/sdk/asm/**/*',
+  '{workspaceRoot}/sdk/dsp/contract/**/*',
   '{workspaceRoot}/sdk/dsp/**/*',
-  '{workspaceRoot}/sdk/vectors/**/*',
+  '{workspaceRoot}/modules/core/runtime/vectors/**/*',
 ];
 // Build/pack producers do not read acceptance tests. Nx's implicit ^default input would
 // otherwise turn a harness-only edit into a changed image output for every consumer.

@@ -1,8 +1,8 @@
 /* Host test of dk_ui_tick. Part 1 runs the timer table of core/ui (src/tick.h, the same header ui.c uses) with a clock the test moves.
-   Part 2 is a content module's use of the call through the fake <dk/ui.h> (src/lib.rs): a screen that redraws while a "load" runs. */
+   Part 2 is a content module's use of the call through the fake <dk/platform/ui.h> (src/lib.rs): a screen that redraws while a "load" runs. */
 #include <stddef.h>
 #include <stdint.h>
-#include <dk/ui.h>
+#include <dk/platform/ui.h>
 #include "../../../src/tick.h"
 
 /* ---- part 1: the table ---- */

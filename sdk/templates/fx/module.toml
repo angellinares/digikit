@@ -18,7 +18,7 @@ conflicts = []
 
 # `patchkit pack __ID__ --device dt2 -o __NAME__.dkm` makes the .dkm. The digikit runtime sends the DSP object to the DSP and
 # publishes a free effect row of core/dynfx for the effect.
-# The effect declaration (DK_FX, DK_FX_PARAM and DK_PAGE in src/module.c): its process routine, `dk_fx_desc` (<dk/fx.h>) and its page in the FX view
+# The effect declaration (DK_FX, DK_FX_PARAM and DK_PAGE in src/module.c): its process routine, `dk_fx_desc` (<dk/fx/fx.h>) and its page in the FX view
 # (the tab, the title, one knob and the MIX knob). It holds only .dk.desc records; patchkit pack reads them and leaves them out of the .dkm.
 [[object]]
 path = "build/__NAME__-cf.dko.json"

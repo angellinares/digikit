@@ -9,7 +9,7 @@ Sources: sdk/include/dk/{ui,files,sample_track,sample_picker,chooser,params}.h, 
 - Keys in a list: UP/DOWN move, YES runs the row, RIGHT opens the side panel, LEFT/NO closes it, NO on the list calls `desc.back` (return 1 = stay open) or closes the list.
 - `sample_pool_set(h, index, path)` copies the path, replaces the slot's file in place and returns 0 at once (or an error); the load runs in the runtime UI task. Errors that happen later are sticky in `sample_pool_status` until the slot is loaded again or cleared.
 - DT2 has a sample backing (`core/sample-pool`); DN2 has it in the `sample-tracks` patch set only. Without a backing `sample_pool_set` returns E_CONTRACT.
-- The picker is shared source compiled into the machine (`sdk/src/sample_picker.c` on the chooser `sdk/src/chooser.c`), so it gets the machine's pool handle in `dk_picker_init`.
+- The picker is shared source compiled into the machine (`sdk/src/sample/picker.c` on the chooser `sdk/src/chooser/chooser.c`), so it gets the machine's pool handle in `dk_sample_picker_init`.
 - A content module has no UI timer of its own; `dk_ui_tick` (core/ui) refreshes the list while a load runs.
 
 ## 1. Entry: the click on SMP
@@ -21,7 +21,7 @@ DK_PARAM_ACTION(shot, 0, shot_smp_click)
 void shot_smp_click(uint32_t track);
 ```
 
-`track` is the track of the page. The action reads the SMP value with `param_get(track, 0)` (raw, unit * 256: the entry is `raw >> 8`) and opens the list with `dk_picker_open_pool(entry, smp_pick, 0)`: that slot is marked and the cursor starts on it. YES on a file loaded into a slot calls `smp_pick(ctx, slot)` after every list has closed; it writes `param_set(track, 0, slot << 8)`, the stock setter of a knob turn. `param_get` and `param_set` work from the click callback until the page gets its next key or turn (the flow of the click; a held TRIG or FUNC refuses the write). The picker cannot write a parameter itself: the machine does it in `smp_pick`. The module-settings entry of SHOT is gone.
+`track` is the track of the page. The action reads the SMP value with `param_get(track, 0)` (raw, unit * 256: the entry is `raw >> 8`) and opens the list with `dk_sample_picker_open_pool(entry, smp_pick, 0)`: that slot is marked and the cursor starts on it. YES on a file loaded into a slot calls `smp_pick(ctx, slot)` after every list has closed; it writes `param_set(track, 0, slot << 8)`, the stock setter of a knob turn. `param_get` and `param_set` work from the click callback until the page gets its next key or turn (the flow of the click; a held TRIG or FUNC refuses the write). The picker cannot write a parameter itself: the machine does it in `smp_pick`. The module-settings entry of SHOT is gone.
 
 ## 2. Screens and keys
 
@@ -121,7 +121,7 @@ An error entry shows its INFO text in `STATE`; an empty entry shows `EMPTY`. Fro
 
 | Call | From | Purpose |
 | --- | --- | --- |
-| `files_client` | `dk_picker_init` (in `dkm_init`) | listing client, positive handle |
+| `files_client` | `dk_sample_picker_init` (in `dkm_init`) | listing client, positive handle |
 | `files_list`, `files_cancel` | browser actions, `back` | start/replace a listing |
 | `files_poll` | files notify callback (UI task) | copy rows, then `dk_ui_refresh` |
 | `sample_pool_set(h, index, path)` | file row action | load into a slot, section 2.3 |
@@ -130,18 +130,18 @@ An error entry shows its INFO text in `STATE`; an empty entry shows `EMPTY`. Fro
 | `sample_pool_path` (API 1.6) | fill of screen 1 and 4 | the name of an entry |
 | `dk_ui_tick` (core/ui) | fill of screen 1 | refresh while a load runs |
 
-The picker checks that the Api `size` covers `sample_pool_set` (the last entry; it covers `sample_pool_info`, `sample_pool_path` and the files calls) before use. The handle is the machine's own (`api->sample_tracks(local_id)`), passed to `dk_picker_init`; the runtime does not check ownership, so a picker never guesses `handle = 1`. A stand-alone picker module would need a find call (`sample_tracks_find`); not built.
+The picker checks that the Api `size` covers `sample_pool_set` (the last entry; it covers `sample_pool_info`, `sample_pool_path` and the files calls) before use. The handle is the machine's own (`api->sample_tracks(local_id)`), passed to `dk_sample_picker_init`; the runtime does not check ownership, so a picker never guesses `handle = 1`. A stand-alone picker module would need a find call (`sample_tracks_find`); not built.
 
 Paths: `sample_pool_set` takes the root-relative path of a listing row; the runtime adds the device root (sample-api-1.5.md 6.2).
 
 ## 4. Module layout, limits, tests
 
 Files:
-- `sdk/include/dk/chooser.h` and `sdk/src/chooser.c`: the generic component (list, browser, file INFO page, timer): `dk_chooser_init`, `dk_chooser_open(desc, current)`, `dk_chooser_refresh`, `dk_chooser_wrap`, `dk_chooser_fini`; the descriptor `dk_chooser_desc` has the row callback, `busy`, `root`, `fill(ctx, slot, path)`, `error_text`, `panel` and `done(ctx, slot)`.
-- `sdk/include/dk/sample_picker.h`: `dk_picker_init`, `dk_picker_open_pool(current, pick, ctx)`, `dk_picker_fini`.
-- `sdk/src/sample_picker.c`: the pool's descriptor for the chooser, CLEAR and INFO, the entry INFO page.
-- `sdk/src/picker_logic.h` and `sdk/src/picker_logic.c`: pure functions, no API calls: sort order, leaf-name truncation, path join/parent, size/length text, error text for a code, `pk_pool_row`.
-- `modules/machines/shot/src/module.c`: lists the three sources, calls `dk_picker_init` in `dkm_init`, exports `shot_smp_click` (`DK_PARAM_ACTION`) and sets SMP in `smp_pick`.
+- `sdk/include/dk/chooser/chooser.h` and `sdk/src/chooser/chooser.c`: the generic component (list, browser, file INFO page, timer): `dk_chooser_init`, `dk_chooser_open(desc, current)`, `dk_chooser_refresh`, `dk_chooser_wrap`, `dk_chooser_fini`; the descriptor `dk_chooser_desc` has the row callback, `busy`, `root`, `fill(ctx, slot, path)`, `error_text`, `panel` and `done(ctx, slot)`.
+- `sdk/include/dk/sample/picker.h`: `dk_sample_picker_init`, `dk_sample_picker_open_pool(current, pick, ctx)`, `dk_sample_picker_fini`.
+- `sdk/src/sample/picker.c`: the pool's descriptor for the chooser, CLEAR and INFO, the entry INFO page.
+- `sdk/include/dk/chooser/logic.h` and `sdk/src/chooser/logic.c`: pure functions, no API calls: sort order, leaf-name truncation, path join/parent, size/length text, error text for a code, `dk_sample_pool_row_text`.
+- `modules/machines/shot/src/module.c`: lists the three sources, calls `dk_sample_picker_init` in `dkm_init`, exports `shot_smp_click` (`DK_PARAM_ACTION`) and sets SMP in `smp_pick`.
 
 Limits: statics about 8 KB (128 rows x 56 bytes, path buffers 256 bytes x 2). Menus are never freed: each is built once (pool list, browser, INFO page) and kept. All ctx and descriptors in module memory. Rows 23 characters. One browser instance (not re-entrant): a second open reuses it.
 
@@ -162,7 +162,7 @@ Tests:
 
 ## 5b. As built
 
-- Two calls plus the fini: `dk_picker_init(api, handle)` in `dkm_init` (the listing client is init-only), `dk_picker_open_pool(current, pick, ctx)` from the SMP click, `dk_picker_fini()`.
+- Two calls plus the fini: `dk_sample_picker_init(api, handle)` in `dkm_init` (the listing client is init-only), `dk_sample_picker_open_pool(current, pick, ctx)` from the SMP click, `dk_sample_picker_fini()`.
 - The 128-row table keeps the first 128 rows in sort order while the listing arrives (insertion by index), so the cap does not depend on the provider order. A name over 47 bytes is not shown and counts in `+N MORE`.
 - A path over 255 bytes is refused by the chooser itself (toast `PATH TOO LONG OR BAD`); there are no disabled rows, because the picker does not know the device limit.
 - The lists use a `check` callback and take the mark off at once. A list without it is closed by the stock handler after the row action, and a list that opens another view is not on the stack when that view closes (seen on the DN2 screen). On NO at the browser's root the chooser closes the browser itself and opens the pool list again; YES closes the browser, then the list **[O]**: the order and the toast on the page after the closes are for the emulator proof.

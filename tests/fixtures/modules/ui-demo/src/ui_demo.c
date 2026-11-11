@@ -1,6 +1,6 @@
-/* test/ui-demo: every kind of row and view of <dk/ui.h>, to see core/ui on the screen. */
+/* test/ui-demo: every kind of row and view of <dk/platform/ui.h>, to see core/ui on the screen. */
 #include <stdint.h>
-#include <dk/ui.h>
+#include <dk/platform/ui.h>
 #include <dk_ui_core.h>
 
 static int g_toggle = 1;

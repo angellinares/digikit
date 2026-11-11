@@ -1,4 +1,4 @@
-// test/dyn-fx-nan: an effect of the FX contract (<dk/fx.h>) whose output block is NaN in every sample. core/fx's output check counts it as a fault
+// test/dyn-fx-nan: an effect of the FX contract (<dk/fx/fx.h>) whose output block is NaN in every sample. core/fx's output check counts it as a fault
 // (the master or send block stays as it was), the 8th fault within 1500 blocks switches the row off.
 
 #include "dk_fx.inc"

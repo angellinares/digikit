@@ -80,6 +80,24 @@ pub mod limits {
     pub const PAGE_KNOBS: usize = 8;
 }
 
+/// The sample pool layout (`[sample]`): entries, word offsets of an entry and of a control set.
+pub mod sample_pool {
+    pub const ENTRIES: usize = 16;
+    pub const ENTRY_WORDS: usize = 8;
+    pub const W_READY: usize = 0;
+    pub const W_TOKEN: usize = 1;
+    pub const W_FRAMES: usize = 2;
+    pub const W_RATE: usize = 3;
+    pub const W_CHANNELS: usize = 4;
+    pub const W_FMT: usize = 5;
+    pub const W_BASE_L: usize = 6;
+    pub const W_BASE_R: usize = 7;
+    pub const CTL_CLOSED: usize = 0;
+    pub const CTL_COUNT: usize = 1;
+    pub const CTL_FAULT: usize = 2;
+    pub const CTL_WORDS: usize = 4;
+}
+
 /// The settings record (`[settings]`): the area of one copy, the key and value limits and the keys by owner.
 pub mod settings {
     pub const SECTORS: u32 = 16;
@@ -335,7 +353,7 @@ pub mod api {
         pub sample_pool_clear: unsafe extern "C" fn(handle: u32, index: u32) -> i32,
         /// (api 1.5) Return DK_SAMPLE_UNUSED, QUEUED, LOADING, READY or a negative DK_SAMPLE_E_* error; an error is sticky until the entry is added again or cleared.
         pub sample_pool_status: unsafe extern "C" fn(handle: u32, index: u32) -> i32,
-        /// (api 1.5) Copy a 16-byte dk_sample_info (frames, rate, channels, token; <dk/sample_track.h>) of a READY entry; otherwise a negative error and `out` is untouched.
+        /// (api 1.5) Copy a 16-byte dk_sample_info (frames, rate, channels, token; <dk/sample/pool.h>) of a READY entry; otherwise a negative error and `out` is untouched.
         pub sample_pool_info: unsafe extern "C" fn(handle: u32, index: u32, out: *mut u8) -> i32,
         /// (api 1.6) Copy the root-relative path (as a DK_FILES_SAMPLES listing row gives it, NUL-terminated) of the entry into `buf` and return its length without the NUL. Works in every state except UNUSED (E_NOT_FOUND), so a sticky error still names its file. `cap` too small (length + 1 does not fit): DK_SAMPLE_E_SEL_PATH and `buf` is untouched.
         pub sample_pool_path: unsafe extern "C" fn(handle: u32, index: u32, buf: *mut u8, cap: u32) -> i32,
@@ -345,13 +363,13 @@ pub mod api {
         pub param_set: unsafe extern "C" fn(track: u32, word: u32, raw: i32) -> i32,
         /// (api 1.6) Load a sample file into pool entry `index` (0..15), replacing what was there: the old file is released, the new one queues like sample_pool_add (copies the path, no file IO here). Other indexes never move. A file already held by another entry is shared, not loaded twice. Returns 0; DK_SAMPLE_E_CONTRACT for an index above 15 or no sample backing in the image; DK_SAMPLE_E_SEL_PATH for an empty or too long path.
         pub sample_pool_set: unsafe extern "C" fn(handle: u32, index: u32, path: *const u8) -> i32,
-        /// (api 1.7) Copy bounded PCM16 min/max overview pairs of a READY pool entry matching token. Returns bin count (1..512), negative error otherwise; capacity is bytes, output unchanged on refusal. Each bin spans ceil(frames/512) frames, combines channels and includes zero. No file IO or PCM scan. UI task only. See dk/sample_track.h.
+        /// (api 1.7) Copy bounded PCM16 min/max overview pairs of a READY pool entry matching token. Returns bin count (1..512), negative error otherwise; capacity is bytes, output unchanged on refusal. Each bin spans ceil(frames/512) frames, combines channels and includes zero. No file IO or PCM scan. UI task only. See dk/sample/pool.h.
         pub sample_pool_peaks: unsafe extern "C" fn(handle: u32, index: u32, token: u32, out: *mut u8, capacity: u32) -> i32,
-        /// (api 1.8) Run `step(ctx)` on the background worker until it returns 0 or a negative error (DK_JOB_MORE: call again; <dk/job.h>). `done(ctx, status)` is called once in the UI task with the final status, or DK_JOB_E_CANCELLED. Returns a job id > 0, or a negative error (E_BUSY when 8 jobs are queued, E_CONTRACT for a null step).
+        /// (api 1.8) Run `step(ctx)` on the background worker until it returns 0 or a negative error (DK_JOB_MORE: call again; <dk/platform/job.h>). `done(ctx, status)` is called once in the UI task with the final status, or DK_JOB_E_CANCELLED. Returns a job id > 0, or a negative error (E_BUSY when 8 jobs are queued, E_CONTRACT for a null step).
         pub job_post: unsafe extern "C" fn(step: Option<JobStep>, done: Option<JobDone>, ctx: *mut u8) -> i32,
         /// (api 1.8) Cancel a job of this module: a queued job never runs and a running one stops after its current step; `done` gets DK_JOB_E_CANCELLED. Returns 0, or E_NOT_FOUND for an unknown id.
         pub job_cancel: unsafe extern "C" fn(id: u32) -> i32,
-        /// (api 1.8) Min/max of `columns` equal parts of the frames [first, first + frames) of a READY pool entry matching token, computed in the background. Returns `columns` when ready (out holds int16 min, max pairs; capacity is bytes, at least columns * 4; columns is 1..DK_SAMPLE_WINDOW_MAX), 0 while it is computed, or a negative error. Another request replaces a pending one. Poll from the draw callback. UI task only. See dk/sample_track.h.
+        /// (api 1.8) Min/max of `columns` equal parts of the frames [first, first + frames) of a READY pool entry matching token, computed in the background. Returns `columns` when ready (out holds int16 min, max pairs; capacity is bytes, at least columns * 4; columns is 1..DK_SAMPLE_WINDOW_MAX), 0 while it is computed, or a negative error. Another request replaces a pending one. Poll from the draw callback. UI task only. See dk/sample/pool.h.
         pub sample_pool_peaks_window: unsafe extern "C" fn(handle: u32, index: u32, token: u32, first: u32, frames: u32, columns: u32, out: *mut u8, capacity: u32) -> i32,
         /// (api 1.9) Init-only: acquire this module's settings handle; positive handle, or a negative error outside `dkm_init`. The same module always gets the same handle.
         pub settings_client: unsafe extern "C" fn() -> i32,
@@ -361,9 +379,9 @@ pub mod api {
         pub settings_put: unsafe extern "C" fn(client: u32, key: *const u8, value: *const u8, len: u32) -> i32,
         /// (api 1.9) Remove `key`: returns 0 (also when it was not there), E_SET_KEY (stale handle or bad key) or E_SET_OFF. UI task only, not a service command handler.
         pub settings_remove: unsafe extern "C" fn(client: u32, key: *const u8) -> i32,
-        /// (api 1.9) Init-only: replace the stock boot animation. `frame(tick, ctx)` returns the 1024-byte native bitmap of tick 0 .. ticks-1 (30 ticks a second), or NULL to end the animation (the last frame stays); it runs on the intro task, must not block and must not call any dk_api function. `done(ctx)` (may be NULL) runs once in the UI task at the first UI pass: free the buffer there. `ticks` is 1 to 300. Returns 0, E_NOT_FOUND outside `dkm_init`, E_CONTRACT (no frame, bad ticks), E_BUSY (taken already) or E_BOOT_ONLY (the intro is over). See dk/intro.h.
+        /// (api 1.9) Init-only: replace the stock boot animation. `frame(tick, ctx)` returns the 1024-byte native bitmap of tick 0 .. ticks-1 (30 ticks a second), or NULL to end the animation (the last frame stays); it runs on the intro task, must not block and must not call any dk_api function. `done(ctx)` (may be NULL) runs once in the UI task at the first UI pass: free the buffer there. `ticks` is 1 to 300. Returns 0, E_NOT_FOUND outside `dkm_init`, E_CONTRACT (no frame, bad ticks), E_BUSY (taken already) or E_BOOT_ONLY (the intro is over). See dk/platform/intro.h.
         pub intro_take: unsafe extern "C" fn(frame: Option<IntroFrame>, done: Option<IntroDone>, ctx: *mut u8, ticks: u32) -> i32,
-        /// (api 1.10) I/O step only (E_CONTEXT in any other task, including a module's code running in the UI or MIDI task while a step waits): open the one write session for the file `path` of `size` bytes under `root` (DK_FILES_STORE; DK_FILES_SAMPLES is the store's samples/ folder on the Digitone II and the stock +Drive on the Digitakt II, which needs core/plusdrive-write: E_CONTRACT without it). `hash4`: NULL, or the expected file hash (`hash|1`, 4 bytes big-endian: dk/hash32.h); file_close then checks it. `flags`: 0 or DK_FILE_REPLACE (1). Without DK_FILE_REPLACE an existing file is E_EXISTS. With it the old file stays readable until file_close swaps in the new one (a power cut or file_abort leaves the old file); E_FILE_IN_USE while a reader still reads the old file. Returns a handle > 0 owned by this module, or E_BUSY (a write session is open, or the store stayed in use for about 3 s: try again). A session with no write for 20 s is aborted by the runtime, E_PATH, E_FULL, E_NOSTORE, E_INUSE, E_WRITE. See dk/file.h.
+        /// (api 1.10) I/O step only (E_CONTEXT in any other task, including a module's code running in the UI or MIDI task while a step waits): open the one write session for the file `path` of `size` bytes under `root` (DK_FILES_STORE; DK_FILES_SAMPLES is the store's samples/ folder on the Digitone II and the stock +Drive on the Digitakt II, which needs core/plusdrive-write: E_CONTRACT without it). `hash4`: NULL, or the expected file hash (`hash|1`, 4 bytes big-endian: dk/platform/hash32.h); file_close then checks it. `flags`: 0 or DK_FILE_REPLACE (1). Without DK_FILE_REPLACE an existing file is E_EXISTS. With it the old file stays readable until file_close swaps in the new one (a power cut or file_abort leaves the old file); E_FILE_IN_USE while a reader still reads the old file. Returns a handle > 0 owned by this module, or E_BUSY (a write session is open, or the store stayed in use for about 3 s: try again). A session with no write for 20 s is aborted by the runtime, E_PATH, E_FULL, E_NOSTORE, E_INUSE, E_WRITE. See dk/platform/file.h.
         pub file_create: unsafe extern "C" fn(root: u32, path: *const u8, size: u32, hash4: *const u8, flags: u32) -> i32,
         /// (api 1.10) I/O step only: write `len` bytes at `offset`, the next byte of the file. `buf` is 16-byte aligned; `len` a multiple of 512 except for the last piece of the file (the tail sector is padded with zeros). Any length: it is split into 32 KiB writes. Returns 0, E_STATE (no such session), E_OFFSET, E_LENGTH (past `size`, or a short piece before the end), E_WRITE, E_CONTRACT (unaligned buf), or E_BUSY (the store stayed in use for about 3 s: nothing of this call was written; call again). The store lock is held for the whole call, so once a piece is written E_BUSY is never returned.
         pub file_write: unsafe extern "C" fn(h: i32, offset: u32, buf: *const u8, len: u32) -> i32,
@@ -373,13 +391,13 @@ pub mod api {
         pub file_abort: unsafe extern "C" fn(h: i32) -> i32,
         /// (api 1.10) I/O step only: remove a file or folder entry. Returns 0, E_NOFILE, E_FILE_IN_USE (a reader, such as the sample pool loading it, still reads the file: try again later), E_BUSY (a write session is open, or the store is in use) or a path or store status.
         pub file_delete: unsafe extern "C" fn(root: u32, path: *const u8) -> i32,
-        /// (api 1.10) Run `step(ctx)` on the runtime's I/O task (priority 3, its own stack; <dk/io.h>). The step may block and call file_*. It returns DK_IO_MORE (run again), DK_IO_WAIT (sleep until io_wake), 0 (done) or a negative error. `done(ctx, status)` runs once in the UI task. Task context only (not an ISR). Returns a job id > 0, E_CONTRACT (no step) or E_BUSY (8 jobs).
+        /// (api 1.10) Run `step(ctx)` on the runtime's I/O task (priority 3, its own stack; <dk/platform/io.h>). The step may block and call file_*. It returns DK_IO_MORE (run again), DK_IO_WAIT (sleep until io_wake), 0 (done) or a negative error. `done(ctx, status)` runs once in the UI task. Task context only (not an ISR). Returns a job id > 0, E_CONTRACT (no step) or E_BUSY (8 jobs).
         pub io_post: unsafe extern "C" fn(step: Option<IoStep>, done: Option<IoDone>, ctx: *mut u8) -> i32,
         /// (api 1.10) Cancel a job of this module: a queued job never runs, a running one stops after its step returns; `done` gets DK_IO_E_CANCELLED. Returns 0 or E_NOT_FOUND.
         pub io_cancel: unsafe extern "C" fn(id: i32) -> i32,
         /// (api 1.10) Wake a job whose step returned DK_IO_WAIT. Callable from an interrupt handler, an adapter or any task. Unknown ids are ignored.
         pub io_wake: unsafe extern "C" fn(id: i32),
-        /// (api 1.10) Start the file hash (the Elektron +Drive content hash, dk/hash32.h) in the caller's 28-byte `dk_hash32`.
+        /// (api 1.10) Start the file hash (the Elektron +Drive content hash, dk/platform/hash32.h) in the caller's 28-byte `dk_hash32`.
         pub hash32_init: unsafe extern "C" fn(state: *mut u8),
         /// (api 1.10) Feed `n` bytes.
         pub hash32_update: unsafe extern "C" fn(state: *mut u8, p: *const u8, n: u32),
@@ -460,7 +478,7 @@ pub mod api {
     /// `input_turn`: Turn an encoder by `delta`.
     pub type InputTurnFn = unsafe extern "C" fn(encoder: u32, delta: i32) -> i32;
 
-    /// `usb_bulk_enable`: Add the vendor bulk interface (interface 2, EP2 OUT and IN, 512-byte packets) to the USB MIDI configuration. In USB MIDI mode the device re-enumerates once; in another mode only the configuration is prepared, and the next switch to USB MIDI (usb_bulk_takeover, or the user's menu) enumerates with the interface in place. `io_id` is the I/O job that usb_bulk_* wakes when a receive buffer is full. Call it until it returns 0: the same job may call again. Another job gets E_BUSY (one owner). Task context. 0, or a negative error (E_STATE: the device is not in USB MIDI mode (USB CONFIG), or a mode switch is settling (about a second); call again later, E_CONTRACT: the firmware's USB tables are not the stock ones, E_NOMEM: no free slot on the runtime's per-pass list). See <dk/usb_bulk.h>.
+    /// `usb_bulk_enable`: Add the vendor bulk interface (interface 2, EP2 OUT and IN, 512-byte packets) to the USB MIDI configuration. In USB MIDI mode the device re-enumerates once; in another mode only the configuration is prepared, and the next switch to USB MIDI (usb_bulk_takeover, or the user's menu) enumerates with the interface in place. `io_id` is the I/O job that usb_bulk_* wakes when a receive buffer is full. Call it until it returns 0: the same job may call again. Another job gets E_BUSY (one owner). Task context. 0, or a negative error (E_STATE: the device is not in USB MIDI mode (USB CONFIG), or a mode switch is settling (about a second); call again later, E_CONTRACT: the firmware's USB tables are not the stock ones, E_NOMEM: no free slot on the runtime's per-pass list). See <dk/platform/usb_bulk.h>.
     pub type UsbBulkEnableFn = unsafe extern "C" fn(io_id: i32) -> i32;
 
     /// `usb_bulk_disable`: The job that called usb_bulk_enable goes away (call it in dkm_fini): the adapter stops waking it and another job may enable the interface. The interface stays in the USB configuration until the next boot. 0, or E_STATE for another job.
@@ -499,7 +517,7 @@ pub mod api {
     /// `dkrt_selected_params`: The selected track and its Sound parameter words (read-only, from the firmware's own accessors). Writes the first `n` s16 words of that track's Sound array to `out` (words past the device's count are 0) and returns the track, 0 to 15. Returns -2 when there is no project yet and -3 when the track has no Sound record (a kit is loading): `out` is not written then. The index of a word is the mirror index of the firmware's parameter table, not a parameter code. Used by digikit/debug.
     pub type DkrtSelectedParamsFn = unsafe extern "C" fn(out: *mut i16, n: u32) -> i32;
 
-    /// `usb_bulk_takeover`: Take the USB port over for the bulk link, or renew a take-over (call it again at least every 20 s while the host works: any bulk transfer counts too). In USB AUDIO/MIDI the adapter switches the device to USB MIDI in RAM about 50 ms later, from its tick (USB audio pauses; the USB CONFIG setting is not written, so a reboot returns to it); in USB MIDI it succeeds at once without a switch. 0, E_STATE in Overbridge or another USB mode, E_NOMEM (no free slot on the runtime's per-pass list). Callable from a command handler: it only records the request. Then call usb_bulk_enable until it stops returning E_STATE. The adapter gives back by itself after the host's disconnect or suspend, after 30 s without host activity, and drops the take-over when the USB mode changes by another route (the user's menu choice wins). See <dk/usb_bulk.h>.
+    /// `usb_bulk_takeover`: Take the USB port over for the bulk link, or renew a take-over (call it again at least every 20 s while the host works: any bulk transfer counts too). In USB AUDIO/MIDI the adapter switches the device to USB MIDI in RAM about 50 ms later, from its tick (USB audio pauses; the USB CONFIG setting is not written, so a reboot returns to it); in USB MIDI it succeeds at once without a switch. 0, E_STATE in Overbridge or another USB mode, E_NOMEM (no free slot on the runtime's per-pass list). Callable from a command handler: it only records the request. Then call usb_bulk_enable until it stops returning E_STATE. The adapter gives back by itself after the host's disconnect or suspend, after 30 s without host activity, and drops the take-over when the USB mode changes by another route (the user's menu choice wins). See <dk/platform/usb_bulk.h>.
     pub type UsbBulkTakeoverFn = unsafe extern "C" fn() -> i32;
 
     /// `usb_bulk_giveback`: End a take-over: about 50 ms later the adapter switches back to the USB mode the device had. 0, also when nothing is taken over. Callable from a command handler.

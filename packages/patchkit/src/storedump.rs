@@ -3,7 +3,7 @@
 //! What it shows (docs/design/digikit-store.md): the store header (the copy in use, its sequence number, the sectors used), the file table, the selection
 //! record (both copies and the one the runtime uses), and the settings record (both copies, the valid one with the higher sequence number, every entry
 //! decoded; the keys of `sdk/sdk.toml [settings.key]` are printed as what they hold, for example the 16 send amounts of an effect as 16 numbers).
-//! The settings decoder is `dkrt_sdk::settings`, the code the runtime uses; `sdk/vectors/settings-vectors.json` checks it and the Python reader.
+//! The settings decoder is `dkrt_sdk::settings`, the code the runtime uses; `modules/core/runtime/vectors/settings-vectors.json` checks it and the Python reader.
 //!
 //! The card is a regular file (a card image of the emulator, sparse, 512-byte sectors), optionally with a `card.overlay` file of the guest's writes laid
 //! over it (as `plusdrive export --overlay`), or a raw dump of part of a card whose first byte is the sector `--base-sector N`. `--record FILE` reads one
@@ -441,7 +441,10 @@ mod tests {
     use super::*;
 
     fn vectors() -> Value {
-        serde_json::from_str(include_str!("../../../sdk/vectors/settings-vectors.json")).unwrap()
+        serde_json::from_str(include_str!(
+            "../../../modules/core/runtime/vectors/settings-vectors.json"
+        ))
+        .unwrap()
     }
 
     fn unhex(s: &str) -> Vec<u8> {

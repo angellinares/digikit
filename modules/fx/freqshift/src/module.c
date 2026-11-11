@@ -5,7 +5,7 @@
    The user may move it to the master; there MIX 127 is the fully shifted sound. MIX is one value for both routes.
    SHIFT is bipolar: the shown value -64 .. +63 is the float the routine reads. 0 is no shift; |v| = 1 is about 0.1 Hz,
    the ends are about +-2 kHz, exponential in between (the table is in docs/findings/54-module-cookbook.md). */
-#include <dk/fx.h>
+#include <dk/fx/fx.h>
 #include "freqshift.h"
 
 DK_FX(fshift, .process = "_fs_process", .desc = "_fs_desc",

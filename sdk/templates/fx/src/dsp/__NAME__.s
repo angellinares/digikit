@@ -1,4 +1,4 @@
-// __ID__: an effect of the FX contract (<dk/fx.h>): out = in * gain, and one state word that counts the calls.
+// __ID__: an effect of the FX contract (<dk/fx/fx.h>): out = in * gain, and one state word that counts the calls.
 // The effect is loaded at run time: the runtime places and relocates this object, reserves the state behind it and
 // publishes a free row of the chain with the knob at its default.
 

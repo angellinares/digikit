@@ -1,6 +1,6 @@
 // Private source-continuation proof. Original b8251b is loaded at runtime.
 // SISD entry; the positive path owns SIMD companion scratch and clears PEYEN.
-#include "dsp/call.inc"
+#include "dsp/contract/call.inc"
 .SECTION/PM seg_pmco;
 #define SOURCE_STAGE(state, audio, label) \
     R4 = state; R8 = audio; R12 = audio; \

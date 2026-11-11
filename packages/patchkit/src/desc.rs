@@ -1,4 +1,4 @@
-//! Descriptor records: what a content module declares in C with the `DK_*` macros of `<dk/fx.h>`, `<dk/machine.h>` and `<dk/page.h>`.
+//! Descriptor records: what a content module declares in C with the `DK_*` macros of `<dk/fx/fx.h>`, `<dk/machine/machine.h>` and `<dk/page/page.h>`.
 //!
 //! The macros put fixed-layout records in the `.dk.desc` section of the module's ColdFire object. `read_objects` decodes them to
 //! the typed values of `typed` (`FxDef`, `MachineDef`, `ParamDef`, `PageDef`, `VoiceDef`); `Module` loading puts them in the

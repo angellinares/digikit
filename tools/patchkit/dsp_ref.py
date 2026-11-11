@@ -1,4 +1,4 @@
-"""Float32 reference models of the SDK DSP step macros (sdk/dsp/*.inc) over one block of 32 samples.
+"""Float32 reference models of the SDK DSP step macros (sdk/dsp/**/*.inc) over one block of 32 samples.
 
 Each model does the macro's operations in its order, with one float32 rounding per SHARC+ operation and no fused
 multiply-add, so the kernel on the concrete core equals the model bit for bit: gain, mix, ramp, onepole, sat, biquad, delay,
@@ -70,7 +70,7 @@ def onepole(x, a, y0) -> np.ndarray:
 
 
 def biquad(x, b0, b1, b2, a1, a2, s1, s2):
-    """_dk_biquad (sdk/dsp/biquad.inc), per sample: p0 = b0 x; p1 = b1 x; p2 = b2 x; y = p0 + s1; u = s2 + p1; q = a1 y;
+    """_dk_biquad (sdk/dsp/filter/biquad.inc), per sample: p0 = b0 x; p1 = b1 x; p2 = b2 x; y = p0 + s1; u = s2 + p1; q = a1 y;
     s1 = u - q; q = a2 y; s2 = p2 - q. Returns (y, s1, s2) with the state after the last sample."""
     x = _v(x)
     b0, b1, b2, a1, a2 = (f32(c) for c in (b0, b1, b2, a1, a2))
@@ -91,7 +91,7 @@ def biquad(x, b0, b1, b2, a1, a2, s1, s2):
 
 
 def delay(x, ring, w, d):
-    """_dk_delay (sdk/dsp/delay.inc), per sample: k = trunc(d); f = d - k; g = 1 - f; ring[w] = x; a = ring[w - k];
+    """_dk_delay (sdk/dsp/delay/delay.inc), per sample: k = trunc(d); f = d - k; g = 1 - f; ring[w] = x; a = ring[w - k];
     b = ring[w - k - 1]; p = g a; q = f b; y = p + q; w = w + 1 (indices mod len(ring)). Returns (y, ring, w) with the ring and
     the write offset after the block; `ring` is not changed."""
     x = _v(x)
@@ -115,7 +115,7 @@ def delay(x, ring, w, d):
 
 
 def halfband_design() -> np.ndarray:
-    """The odd taps c1, c3, c5, c7, c9, c11 (float64) of the 23-tap half-band in sdk/dsp/halfband.inc: the ideal half-band
+    """The odd taps c1, c3, c5, c7, c9, c11 (float64) of the 23-tap half-band in sdk/dsp/filter/halfband.inc: the ideal half-band
     h[n] = sin(pi n / 2) / (pi n) times a Kaiser window of length 23 (np.kaiser(23, HALFBAND_BETA), n = -11 .. 11), scaled so that
     the DC gain 0.5 + 2 (c1 + c3 + ... + c11) is exactly 1.0 in float64. The centre tap is exactly 0.5 and the even taps are 0.
     beta 3.4 puts the edges of the transition band (Kaiser's estimate, 22 x 2.285 x d(omega) = A - 8) at about 0.2 and 0.3 fs for
@@ -138,7 +138,7 @@ HALFBAND_RING = 32
 
 
 def halfband_down(x, hist, off):
-    """_dk_halfband_down (sdk/dsp/halfband.inc) over 2 n inputs. Per output m: write x[2m], x[2m + 1] at ring cells o, o + 1
+    """_dk_halfband_down (sdk/dsp/filter/halfband.inc) over 2 n inputs. Per output m: write x[2m], x[2m + 1] at ring cells o, o + 1
     (o = the offset, then o += 2); with the cell of x[2m - q] at o - q (o before the writes): s1 = x[2m-10] + x[2m-12];
     s3 = x[2m-8] + x[2m-14]; s5 = x[2m-6] + x[2m-16]; s7 = x[2m-4] + x[2m-18]; s9 = x[2m-2] + x[2m-20]; s11 = x[2m] + x[2m-22];
     p_j = d_j s_j (d_j = HALFBAND_C = 2 c_j); t = ((((p1 + p3) + p5) + p7) + p11) + p9; y = (x[2m-11] + t) / 2 (one rounding

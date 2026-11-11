@@ -1,4 +1,4 @@
-/* core/digikit-menu: SETTINGS > DIGIKIT, written in C on <dk/ui.h> (core/ui draws it with the firmware's own views).
+/* core/digikit-menu: SETTINGS > DIGIKIT, written in C on <dk/platform/ui.h> (core/ui draws it with the firmware's own views).
  *
  * DIGIKIT is a menu: ABOUT, HEALTH and MEMORY (text pages), and MODULES (a list). MODULES has one
  * row per .dkm file of the store. The check mark of a row means "load at the next restart"; it starts from the saved selection.
@@ -13,7 +13,7 @@
  * The module links without memcpy and memset: no struct copies, no aggregate initialisers of large objects. */
 #include <stdint.h>
 #include <stddef.h>
-#include <dk/ui.h>
+#include <dk/platform/ui.h>
 #include <dk_ui_core.h>
 #include <dk/gen/limits.h>
 #include "dkrt.h"

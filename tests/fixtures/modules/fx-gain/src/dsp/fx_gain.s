@@ -1,4 +1,4 @@
-// test/fx-gain: the FX contract's smallest effect (<dk/fx.h>): out = in * gain, gain 0.5 as built. It is the fixture of core/fx's tests: the
+// test/fx-gain: the FX contract's smallest effect (<dk/fx/fx.h>): out = in * gain, gain 0.5 as built. It is the fixture of core/fx's tests: the
 // emulator proof checks that the master block, the DAC ring and the USB ring all carry the scaled signal. `_fg_gain` is a data word (an IEEE
 // float) that the emulator's dsp.patch can change at run time, like a parameter.
 

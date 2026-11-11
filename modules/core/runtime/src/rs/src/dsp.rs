@@ -70,7 +70,7 @@ const FXW_WCOUNT: u32 = 16;
 pub const FXW_ROUTE: u32 = 18;
 pub const FXW_AMT0: u32 = 19;
 const FX_STEP_ROUTE: u32 = 12;
-/// `dk_fx_desc` (<dk/fx.h>): magic "DKFX", contract, and its size in bytes.
+/// `dk_fx_desc` (<dk/fx/fx.h>): magic "DKFX", contract, and its size in bytes.
 const FX_DESC_MAGIC: u32 = 0x444b_4658;
 const FX_DESC_BYTES: u32 = 28;
 const FX_MAX_PARAMS: u32 = 8;

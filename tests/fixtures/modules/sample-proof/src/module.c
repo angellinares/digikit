@@ -1,8 +1,8 @@
 /* Test-only service: upload first, then 0x3e queues the fixed source path;
    0x3f returns one signed BE32 status word. No file IO in the MIDI callback. */
-#include <dk/api.h>
-#include <dk/machine.h>
-#include <dk/sample.h>
+#include <dk/core/api.h>
+#include <dk/machine/machine.h>
+#include <dk/sample/bank.h>
 
 DK_MACHINE(sample_proof, .name = "Sample proof", .short_name = "SMP",
            .render = "_sp_render", .note_on = "_sp_note_on", .desc = "_sp_desc");

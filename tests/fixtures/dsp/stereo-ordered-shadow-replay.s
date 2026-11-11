@@ -1,6 +1,6 @@
 // Synthetic selected route only. Scalar/later ramps are unity; other
 // conditionals/fade and shared cleanup are excluded, not replayed twice.
-#include "dsp/call.inc"
+#include "dsp/contract/call.inc"
 .SECTION/PM seg_pmco;
 #define COPY_ORDERED(n) R0 = DM(n, I4); DM(n, I0) = R0
 .GLOBAL _prepare_ordered;

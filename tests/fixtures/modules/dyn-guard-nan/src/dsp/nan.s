@@ -1,4 +1,4 @@
-// test/dyn-guard-nan: a machine of the SDK contract (<dk/machine.h>) whose render outputs NaN, one body for both devices (fixture of the runtime
+// test/dyn-guard-nan: a machine of the SDK contract (<dk/machine/machine.h>) whose render outputs NaN, one body for both devices (fixture of the runtime
 // guard of core/dsp-voice, docs/findings/51-pluck-tune-guard.md). The adapter calls note_on once per note and render once per block while the
 // voice runs; the guard zeroes the block, ends the voice and counts the fault.
 

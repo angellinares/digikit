@@ -11,7 +11,7 @@ use crate::{
     E_TOO_BIG,
 };
 
-pub const TRACKS: usize = 16;
+pub const TRACKS: usize = crate::sample_pool::ENTRIES;
 pub const PATH: usize = 256;
 /// Selection paths kept per project (store paths are at most 159 bytes; longer ones are not remembered).
 pub const SEL_PATH: usize = 160;
@@ -84,8 +84,9 @@ pub struct Handle {
     pub channels: u32,
 }
 
-/// `dk_strack` of dk/sample_track.h, in this order.
+/// `dk_sample_pool_entry` of dk/sample/pool.h, in this order.
 #[derive(Clone, Copy, Default, PartialEq, Eq, Debug)]
+#[repr(C)]
 pub struct Strack {
     pub ready: u32,
     pub token: u32,
@@ -96,6 +97,21 @@ pub struct Strack {
     pub base_l: u32,
     pub base_r: u32,
 }
+
+// The layout is `[sample] pool_entry` of sdk/sdk.toml (`gen_sdk.rs`, `sample_pool`): a reorder there fails this build.
+const _: () = {
+    use crate::sample_pool as p;
+    use core::mem::{offset_of, size_of};
+    assert!(size_of::<Strack>() == p::ENTRY_WORDS * 4);
+    assert!(offset_of!(Strack, ready) == p::W_READY * 4);
+    assert!(offset_of!(Strack, token) == p::W_TOKEN * 4);
+    assert!(offset_of!(Strack, frames) == p::W_FRAMES * 4);
+    assert!(offset_of!(Strack, rate) == p::W_RATE * 4);
+    assert!(offset_of!(Strack, channels) == p::W_CHANNELS * 4);
+    assert!(offset_of!(Strack, fmt) == p::W_FMT * 4);
+    assert!(offset_of!(Strack, base_l) == p::W_BASE_L * 4);
+    assert!(offset_of!(Strack, base_r) == p::W_BASE_R * 4);
+};
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub enum Load {

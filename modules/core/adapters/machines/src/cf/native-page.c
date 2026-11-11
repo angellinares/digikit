@@ -2,7 +2,7 @@
  * The runtime validates owner, callback offsets and bindings before registration.
  * Content sees an ephemeral bounded canvas and LOCAL events, never a Bitmap or view. */
 #include <stdint.h>
-#include <dk/page.h>
+#include <dk/page/page.h>
 #include "dk_fw_page.h"
 #include "dk_fw_draw.h"
 #include "dk_fw_text.h"

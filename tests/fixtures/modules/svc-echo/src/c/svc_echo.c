@@ -7,7 +7,7 @@
  *   0x3f  the refusals: three bytes, the low byte of each result of register_cmds (0xc0 is -64, E_CMD_RANGE)
  */
 
-#include <dk/api.h>
+#include <dk/core/api.h>
 
 typedef uint32_t u32;
 typedef uint8_t u8;

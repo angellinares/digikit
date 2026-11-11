@@ -1,4 +1,4 @@
-// test/dyn-fx-gain-send: the FX contract's smallest run-time effect (<dk/fx.h>): out = in * p0, and one state word that counts the calls. The effect is
+// test/dyn-fx-gain-send: the FX contract's smallest run-time effect (<dk/fx/fx.h>): out = in * p0, and one state word that counts the calls. The effect is
 // loaded at run time (a .dkm with a DSP section of version 4): the runtime places and relocates this object, reserves the state behind it and
 // publishes a free row of the chain with p0 = 0.5 (the DK_FX knob default).
 

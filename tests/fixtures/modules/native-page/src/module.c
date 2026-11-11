@@ -1,7 +1,7 @@
 /* Neutral SDK fixture: the second native page reuses two saved words.
  * LOCAL zoom is UI-only state, independent per source track. No firmware calls. */
-#include <dk/machine.h>
-#include <dk/api.h>
+#include <dk/machine/machine.h>
+#include <dk/core/api.h>
 
 DK_MACHINE(native, .name = "NATIVE", .short_name = "NAT", .render = "_np_render",
            .note_on = "_np_note_on", .desc = "_np_desc");

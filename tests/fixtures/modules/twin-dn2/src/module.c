@@ -1,6 +1,6 @@
 /* The machine declaration of test/twin-dn2: the static twin of test/dyn-dn2, the same declaration. patchkit reads these records;
    the device never sees them. The DSP is test/sine's: it reads parameter word 0 only. */
-#include <dk/machine.h>
+#include <dk/machine/machine.h>
 
 DK_MACHINE(dyn_pluck, .name = "DynSyn", .short_name = "DSY", .render = "_sn_render",
            .note_on = "_sn_note_on", .desc = "_sn_desc");

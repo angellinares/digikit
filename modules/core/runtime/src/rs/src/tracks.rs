@@ -5,7 +5,7 @@
 //! No firmware address and no `cf.*` anchor is used here. Without the backing adapter every
 //! `sample_pool_add` returns E_CONTRACT.
 //!
-//! The track table of a module travels in its .dkm DSP section (version 5, record kind 2: the byte offsets of the 16 `dk_strack`
+//! The track table of a module travels in its .dkm DSP section (version 5, record kind 2: the byte offsets of the 16 `dk_sample_pool_entry`
 //! records and the 16 control sets in the module's DSP data). `dsp::reserve` calls `reserve` with their L2 byte addresses and
 //! `ready` when the DSP image is in; before that no DSP write is made.
 //!

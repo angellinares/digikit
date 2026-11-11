@@ -1,4 +1,4 @@
-// Test effects of the FX contract (<dk/fx.h>) for tests/support/fx_rig.py: small routines that the adapter core/fx must call, check and
+// Test effects of the FX contract (<dk/fx/fx.h>) for tests/support/fx_rig.py: small routines that the adapter core/fx must call, check and
 // crossfade. Entered with I13 = return; R4 = state, R8 = dk_fx_in, R12 = parameter words. One description for all of them.
 
 #include "dk_fx.inc"

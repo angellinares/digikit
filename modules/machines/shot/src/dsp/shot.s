@@ -1,9 +1,9 @@
-// digikit/shot: one-shot playback of the stereo sample bound to the track, a stereo machine of the SDK contract (<dk/machine.h>, contract 1.3),
+// digikit/shot: one-shot playback of the stereo sample bound to the track, a stereo machine of the SDK contract (<dk/machine/machine.h>, contract 1.3),
 // one body for both devices. The adapter of core/dsp-voice calls `_shot_note_on` once per note and `_shot_render` once per block with
 // R4 = this voice's state, R8 = the `dk_voice_in` (pitch in semitones << 8 with the tune folded in, the track, the outputs `out` (L) and `out_r` (R)),
 // R12 = the five parameter words SMP, START, END, PLAY, PITCH (unit << 8: 0 .. 0x7f00 = UI 0 .. 127; SMP is 0 .. 15, 0 .. 0x0f00).
 //
-// The sample is a pool entry's `dk_strack` record (<dk/sample_track.h>), written by the runtime into `_shot_rec` (16 records of 8 words, one for
+// The sample is a pool entry's `dk_sample_pool_entry` record (<dk/sample/pool.h>), written by the runtime into `_shot_rec` (16 records of 8 words, one for
 // each pool index; the control sets of 4 words are in `_shot_ctl`). `note_on` takes the pool index from the SMP word (word >> 8, so a p-lock of
 // SMP picks the entry of that step) and, in one masked scope, checks the admission (the record
 // is ready, not closed, count in range), latches the epoch (the record's token) in the voice and acquires the track. It copies the plane
@@ -30,13 +30,13 @@
 // across the kernel call, 15 the frame count of the sample, 16 out, 17 out_r (the output pointer pair for the stereo kernel).
 
 #include "dk_machine.inc"
-#include "dsp/call.inc"
-#include "dsp/gain_ramp.inc"
-#include "dsp/sample.inc"
-#include "dsp/sample_pcm16.inc"
-#include "dsp/sample_pcm16_stereo.inc"
-#include "dsp/sample_bank.inc"
-#include "dsp/sample_track.inc"
+#include "dsp/contract/call.inc"
+#include "dsp/dynamics/gain_ramp.inc"
+#include "dsp/sample/float.inc"
+#include "dsp/sample/pcm16.inc"
+#include "dsp/sample/pcm16_stereo.inc"
+#include "dsp/sample/bank.inc"
+#include "dsp/sample/pool.inc"
 #include "shot_params.h"
 
 // Voice state word indices (DM(n, I3) with I3 = the state), as in the layout comment above.
@@ -158,9 +158,9 @@ _shot_render:
     SHOT_TRACK_PTRS;
     NOP; NOP; NOP;
     DK_SAMPLE_BANK_LOCK(R13);
-    DK_STRACK_CHECK_ADMISSION(I5, I1, R0, R1, _shot_render_denied, _shot_render_fault);
-    DK_STRACK_CHECK_EPOCH(I5, I3, SHOT_ST_EPOCH, R0, R1, _shot_render_denied);
-    DK_STRACK_ACQUIRE(I1, R0);
+    DK_SAMPLE_POOL_CHECK_ADMISSION(I5, I1, R0, R1, _shot_render_denied, _shot_render_fault);
+    DK_SAMPLE_POOL_CHECK_EPOCH(I5, I3, SHOT_ST_EPOCH, R0, R1, _shot_render_denied);
+    DK_SAMPLE_POOL_ACQUIRE(I1, R0);
     DK_SAMPLE_BANK_UNLOCK(R13);
     // The kernel range from the live START, END and PLAY, as the stock one-shot does every block: FWD [0, END), REV [START, END).
     // The cursor stays. A cursor outside the range, or an empty range, renders this block over the whole sample and forces the end of the voice
@@ -243,13 +243,13 @@ _shot_render_ranged:
     DK_CALL(_dk_sample_pcm16_stereo_linear, _shot_after_stereo);
     MODIFY(I7, 1) (NW);
     DK_SAMPLE_BANK_LOCK(R13);
-    DK_STRACK_RELEASE(I1, R0, _shot_render_release_fault, _shot_render_released);
+    DK_SAMPLE_POOL_RELEASE(I1, R0, _shot_render_release_fault, _shot_render_released);
 _shot_render_release_fault:
-    DK_STRACK_FAIL_CLOSED(I5, I1, R0);
-    DK_STRACK_POISON_COUNT(I1, R0);
+    DK_SAMPLE_POOL_FAIL_CLOSED(I5, I1, R0);
+    DK_SAMPLE_POOL_POISON_COUNT(I1, R0);
 _shot_render_released:
     DK_SAMPLE_BANK_UNLOCK(R13);
-    // Level and end ramp (dsp/gain_ramp.inc). Every block gets the gain of the stock one-shot, DK_SAMPLE_STOCK_GAIN (0.4045, the DC gain of the
+    // Level and end ramp (dsp/dynamics/gain_ramp.inc). Every block gets the gain of the stock one-shot, DK_SAMPLE_STOCK_GAIN (0.4045, the DC gain of the
     // stock interpolator). In the block where the voice becomes done, the gain also falls by G / 31 per sample, as the stock end ramp does
     // (finding 06, stock sample reader), so the sample does not end with a click: one block long, later blocks are silent.
     // The pair [start, step] is state words 9, 10. A voice that was already done before the block is silent: nothing to shape.
@@ -284,8 +284,8 @@ _shot_render_faded:
     NOP; NOP; NOP;
     JUMP (M13, I13);
 _shot_render_fault:
-    DK_STRACK_FAIL_CLOSED(I5, I1, R0);
-    DK_STRACK_POISON_COUNT(I1, R0);
+    DK_SAMPLE_POOL_FAIL_CLOSED(I5, I1, R0);
+    DK_SAMPLE_POOL_POISON_COUNT(I1, R0);
 _shot_render_denied:
     DK_SAMPLE_BANK_UNLOCK(R13);
     R1 = DM(DK_IN_W_OUT, I2);             // a silent block on both outputs, the voice ends
@@ -323,24 +323,24 @@ _shot_note_on:
     SHOT_TRACK_PTRS;
     NOP; NOP; NOP;
     DK_SAMPLE_BANK_LOCK(R13);
-    DK_STRACK_CHECK_ADMISSION(I5, I1, R0, R1, _shot_note_denied, _shot_note_fault);
-    DK_STRACK_LATCH_EPOCH(I5, I3, SHOT_ST_EPOCH, R0, R1, _shot_note_denied);
-    DK_STRACK_ACQUIRE(I1, R0);
+    DK_SAMPLE_POOL_CHECK_ADMISSION(I5, I1, R0, R1, _shot_note_denied, _shot_note_fault);
+    DK_SAMPLE_POOL_LATCH_EPOCH(I5, I3, SHOT_ST_EPOCH, R0, R1, _shot_note_denied);
+    DK_SAMPLE_POOL_ACQUIRE(I1, R0);
     DK_SAMPLE_BANK_UNLOCK(R13);
-    R0 = DM(DK_STRACK_W_FRAMES, I5);      // frames
+    R0 = DM(DK_SAMPLE_POOL_W_FRAMES, I5);      // frames
     DM(SHOT_ST_FRAMES, I3) = R0;          // kept for the live START and END
-    R1 = DM(DK_STRACK_W_RATE, I5);        // source rate
-    R2 = DM(DK_STRACK_W_CHANNELS, I5);    // channels
-    R3 = DM(DK_STRACK_W_FMT, I5);         // fmt
-    R9 = DM(DK_STRACK_W_BASE_L, I5);      // base_l
-    R10 = DM(DK_STRACK_W_BASE_R, I5);     // base_r
+    R1 = DM(DK_SAMPLE_POOL_W_RATE, I5);        // source rate
+    R2 = DM(DK_SAMPLE_POOL_W_CHANNELS, I5);    // channels
+    R3 = DM(DK_SAMPLE_POOL_W_FMT, I5);         // fmt
+    R9 = DM(DK_SAMPLE_POOL_W_BASE_L, I5);      // base_l
+    R10 = DM(DK_SAMPLE_POOL_W_BASE_R, I5);     // base_r
     DM(SHOT_ST_BASE_L, I3) = R9;
     DM(SHOT_ST_RATE_HZ, I3) = R1;
     R1 = 1;
     COMP(R2, R1);
     IF EQ R10 = PASS R9;                  // mono: both outputs read the one plane
     DM(SHOT_ST_BASE_R, I3) = R10;
-    R1 = 1;                               // DK_STRACK_FMT_PCM16
+    R1 = 1;                               // DK_SAMPLE_POOL_FMT_PCM16
     COMP(R3, R1);
     IF NE JUMP _shot_note_release;       // not PCM16: stay done
     SHOT_START_END_FRAMES;                // R2 = start frame, R3 = end frame (frames in R0)
@@ -361,16 +361,16 @@ _shot_note_forward:
     DM(SHOT_ST_DONE, I3) = R0;                      // playing
 _shot_note_release:
     DK_SAMPLE_BANK_LOCK(R13);
-    DK_STRACK_RELEASE(I1, R0, _shot_note_release_fault, _shot_note_released);
+    DK_SAMPLE_POOL_RELEASE(I1, R0, _shot_note_release_fault, _shot_note_released);
 _shot_note_release_fault:
-    DK_STRACK_FAIL_CLOSED(I5, I1, R0);
-    DK_STRACK_POISON_COUNT(I1, R0);
+    DK_SAMPLE_POOL_FAIL_CLOSED(I5, I1, R0);
+    DK_SAMPLE_POOL_POISON_COUNT(I1, R0);
 _shot_note_released:
     DK_SAMPLE_BANK_UNLOCK(R13);
     JUMP _shot_note_return;
 _shot_note_fault:
-    DK_STRACK_FAIL_CLOSED(I5, I1, R0);
-    DK_STRACK_POISON_COUNT(I1, R0);
+    DK_SAMPLE_POOL_FAIL_CLOSED(I5, I1, R0);
+    DK_SAMPLE_POOL_POISON_COUNT(I1, R0);
 _shot_note_denied:
     DK_SAMPLE_BANK_UNLOCK(R13);
 _shot_note_return:
@@ -379,8 +379,8 @@ _shot_note_return:
     JUMP (M13, I13);
 
 .SECTION/DM seg_dmda;
-// The pool table (<dk/sample_track.h>): the runtime fills the records and moves the control words; the module only reads them.
-.PKDATA _shot_rec, 512;                  // 16 dk_strack records of 8 words, one for each pool index
+// The pool table (<dk/sample/pool.h>): the runtime fills the records and moves the control words; the module only reads them.
+.PKDATA _shot_rec, 512;                  // 16 dk_sample_pool_entry records of 8 words, one for each pool index
 .PKDATA _shot_ctl, 256;                  // 16 control sets of 4 words: closed, count, fault, reserved
 // dk_machine_desc: magic, contract (machine contract 1.2: stereo), n_params, voices, state_bytes, state_clear_bytes, max_cycles_block,
 // max_cycles_note_on, max_call_depth, stack_bytes. Cycles are instruction ceilings: the stereo kernel's 5,428 with its call (with the loop option), the rate (exp2 and

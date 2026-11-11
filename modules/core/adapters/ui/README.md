@@ -1,6 +1,6 @@
 # core/ui
 
-The device adapter behind `<dk/ui.h>` (`sdk/include/dk/ui.h`): menus, text pages, lists with a title bar, check marks and a side panel, rows
+The device adapter behind `<dk/platform/ui.h>` (`sdk/include/dk/platform/ui.h`): menus, text pages, lists with a title bar, check marks and a side panel, rows
 (action, submenu, text, toggle, value), confirm and choice dialogs and toasts. C, one source for the Digitone II and the Digitakt II; every firmware
 call is a generated anchor (`modules/core/fw/include/dk_fw_*.h`). The host fake of the same API, with its tests, is in `host/`; it also compiles the menu of `core/digikit-menu` against a fake runtime (`host/tests/menu.rs`).
 

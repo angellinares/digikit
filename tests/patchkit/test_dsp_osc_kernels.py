@@ -15,7 +15,7 @@ assembled = pytest.mark.skipif(
 
 def run(source, *, regs=None, dm=None, count=32):
     source = pk_sharc.expand_includes(
-        source, [REPO_ROOT / "sdk" / "asm", REPO_ROOT / "sdk"]
+        source, [REPO_ROOT / "sdk" / "dsp" / "contract", REPO_ROOT / "sdk"]
     )
     _, linked = pk_sharc.build(source, BASE)
     result = pk_sharc.run_call(
@@ -47,7 +47,7 @@ def test_xorshift_concrete(seed, load_shift):
     )
     result = run(
         f"""
-#include "dsp/noise.inc"
+#include "dsp/osc/noise.inc"
 .SECTION/PM seg_pmco;
 .GLOBAL _t;
 _t:
@@ -99,7 +99,7 @@ def test_sine_concrete_operation_order():
     dm = {IN + i: int(w) for i, w in enumerate(x.view(np.uint32))}
     result = run(
         f"""
-#include "dsp/oscillator.inc"
+#include "dsp/osc/oscillator.inc"
 .SECTION/PM seg_pmco;
 .GLOBAL _t;
 _t:

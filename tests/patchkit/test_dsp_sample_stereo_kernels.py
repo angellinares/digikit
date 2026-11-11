@@ -84,10 +84,10 @@ def linked():
         pytest.fail("assembled stereo checks require selache")
     text = "\n".join(
         [
-            '#include "dsp/call.inc"',
-            '#include "dsp/sample.inc"',
-            '#include "dsp/sample_pcm16.inc"',
-            '#include "dsp/sample_pcm16_stereo.inc"',
+            '#include "dsp/contract/call.inc"',
+            '#include "dsp/sample/float.inc"',
+            '#include "dsp/sample/pcm16.inc"',
+            '#include "dsp/sample/pcm16_stereo.inc"',
             ".SECTION/PM seg_pmco;",
             ".GLOBAL _stereo_h;",
             "_stereo_h:",

@@ -20,7 +20,7 @@ path = "build/fx-gain-dsp.dko.json"
 sources = ["src/dsp/fx_gain.s"]
 place = "dsp.l2"
 
-# One row in the chain of core/fx: the process routine, its dk_fx_desc and its state block (<dk/fx.h>).
+# One row in the chain of core/fx: the process routine, its dk_fx_desc and its state block (<dk/fx/fx.h>).
 [[entry]]
 registry = "fx"
 id = "gain"

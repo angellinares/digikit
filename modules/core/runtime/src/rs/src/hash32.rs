@@ -71,7 +71,7 @@ pub struct Hash32 {
     buf: [u8; 12],
 }
 
-/// `dk_hash32` of <dk/hash32.h> (the SDK's `hash32_*` calls work on a caller-owned state of this layout).
+/// `dk_hash32` of <dk/platform/hash32.h> (the SDK's `hash32_*` calls work on a caller-owned state of this layout).
 const _: () = assert!(core::mem::size_of::<Hash32>() == 28);
 
 impl Hash32 {

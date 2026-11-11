@@ -1,4 +1,4 @@
-//! The logic of core/digikit-menu on the fake <dk/ui.h>: the menu's own C source (modules/core/adapters/ui/host/tests/c/menu_fake.c) with a fake runtime.
+//! The logic of core/digikit-menu on the fake <dk/platform/ui.h>: the menu's own C source (modules/core/adapters/ui/host/tests/c/menu_fake.c) with a fake runtime.
 use dkui_host::driver::*;
 use dkui_host::*;
 use std::ffi::{c_char, c_int, CStr, CString};

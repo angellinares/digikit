@@ -1,4 +1,4 @@
-#include "dsp/call.inc"
+#include "dsp/contract/call.inc"
 // Private DN2 1.12 U/Y identity/polarity observer, shared by BOTH engine placements. Left state/output stay authoritative.
 // Wrapper scratch Dregs are caller-clobbered R0/R1/R2/R4/R8/R12 only.
 // No previously untouched callee-saved floating register is narrowed.

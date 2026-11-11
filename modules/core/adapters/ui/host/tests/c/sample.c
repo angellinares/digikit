@@ -1,5 +1,5 @@
-/* A sample module on <dk/ui.h> that uses every call. The Rust tests drive it. */
-#include <dk/ui.h>
+/* A sample module on <dk/platform/ui.h> that uses every call. The Rust tests drive it. */
+#include <dk/platform/ui.h>
 #include <stdio.h>
 
 static dk_ui_menu *main_menu, *tools_menu, *info_page, *files_list, *empty_list;
