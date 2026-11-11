@@ -404,6 +404,24 @@ class StoreSamples implements SamplesBackend {
   }
 }
 
+/**
+ * Does `samples put` skip its SysEx VERIFY after a successful bulk END? Only for `auto` and a put that went over the bulk link, on a device that
+ * checked the file itself at close: the Digitakt II +Drive (the firmware's END hash comes from a readback) or a runtime whose INFO caps include
+ * READBACK (the Digitone II store). `always` never skips, `never` always does; an unidentified device is verified.
+ */
+export function skipVerifyAfterBulk(
+  mode: 'auto' | 'always' | 'never',
+  link: 'bulk' | 'sysex',
+  kind: SamplesKind,
+  info: DkInfoFull | null,
+  isDt2: boolean,
+): boolean {
+  if (mode === 'never') return true;
+  if (mode === 'always' || link !== 'bulk') return false;
+  if (kind === 'stock-rpc') return isDt2;
+  return info !== null && hasCap(info, 'READBACK');
+}
+
 // ---- file bytes over the USB bulk link ----------------------------------------------------------------------------------------------
 
 /** `DK_FILES_SAMPLES` (<dk/files.h>): the `samples/` folder of the store on the Digitone II, the +Drive on the Digitakt II. */

@@ -26,7 +26,7 @@ import { fileURLToPath } from 'node:url';
 import { BulkTakeOver, DkSession, ProcessBulkLink, chooseBulk } from '../../packages/dk-session/src/index.ts';
 import { ProcessTransport } from '../../packages/dk-session/src/process-transport.ts';
 import { Sample, prepareUpload } from '../../packages/dk-session/src/dksample.ts';
-import { openSamples } from '../../packages/dk-session/src/samples.ts';
+import { openSamples, skipVerifyAfterBulk } from '../../packages/dk-session/src/samples.ts';
 
 const root = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '../..');
 // the patchkit rule (tools/emulator/native_target.py): a worktree builds into its own target dir; no generated core is the "nogen" key
@@ -221,8 +221,10 @@ if (cmd === 'ports') {
       // the profile names the backend (`[storage] samples`); the Digitakt II is the stock +Drive, the Digitone II the digikit store
       // (a stock Digitakt II has no runtime to answer INFO: the +Drive then)
       let isDt2 = false;
+      let devInfo = null;
       const kind = await session.info().then(
         (i) => {
+          devInfo = i;
           isDt2 = i.port === 'dt2';
           return i.port === 'dn2' ? 'digikit' : 'stock-rpc';
         },
@@ -257,11 +259,9 @@ if (cmd === 'ports') {
           const s = putMs / 1000;
           const n = prepared.stored.length;
           total += n;
-          // the Digitakt II bulk put compares the hash the firmware read back from the written file (END reply); the Digitone II hash is computed
-          // while writing, so it keeps the SysEx verify
-          // an unidentified device is verified, because only the DT2's END hash comes from a readback
-          const skip =
-            opts.verify === 'never' || (opts.verify === 'auto' && isDt2 && kind === 'stock-rpc' && link() === 'bulk');
+          // the bulk END of the Digitakt II +Drive and of a runtime with the READBACK capability compares a hash the device computed from the written
+          // file; the SysEx verify is skipped then (see skipVerifyAfterBulk)
+          const skip = skipVerifyAfterBulk(opts.verify, link(), kind, devInfo, isDt2);
           t = performance.now();
           const v = skip
             ? { ok: true, message: opts.verify === 'never' ? 'verify skipped' : 'device hash checked at END' }
