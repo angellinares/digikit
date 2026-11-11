@@ -170,7 +170,29 @@ struct Up {
     last_len: u32,
     /// First sector of the file's extent, relative to the store (a gap of the store at BEGIN; 0 for a file with no data).
     start: u32,
+    /// What BEGIN found for the commit (`Hint`).
+    hint: Hint,
 }
+
+/// The table's place that BEGIN found for the commit of the session. It is used only when the commit sees the same header (every commit changes
+/// `seq`, so any other writer in between makes it differ) and the same kept-out extents (a lease, the capacity knob or the file's extent that
+/// changed): then the table, the extents and the size of the table are those BEGIN looked at, so the gap BEGIN found is what a new search gives.
+#[derive(Clone, Copy)]
+struct Hint {
+    valid: bool,
+    h: Hdr,
+    extra: [(u32, u32); EXTRA_MAX],
+    n: usize,
+    at: u32,
+}
+
+const NO_HINT: Hint = Hint {
+    valid: false,
+    h: Hdr { count: 0, table_sectors: 0, table_first: 0, table_crc: 0, seq: 0, used: 0, area: 0 },
+    extra: [(0, 0); EXTRA_MAX],
+    n: 0,
+    at: 0,
+};
 
 static mut UP: Up = Up {
     kind: NONE,
@@ -189,6 +211,7 @@ static mut UP: Up = Up {
     last_off: 0,
     last_len: 0,
     start: 0,
+    hint: NO_HINT,
 };
 static mut NEXT_HANDLE: i32 = 0;
 
@@ -517,15 +540,35 @@ pub unsafe fn sync_headers(b: &Bufs, t: &Table) -> bool {
 
 /// Commit an edit of the table `cur`; the runtime's store cache learns the new table. A status.
 pub unsafe fn do_commit(b: &Bufs, cur: &Hdr, edit: Edit, pend: Option<(u32, u32)>) -> i32 {
+    do_commit_hinted(b, cur, edit, pend, None)
+}
+
+/// `do_commit`; `hint`: what the session's BEGIN found, used when it still holds (`Hint`).
+unsafe fn do_commit_hinted(b: &Bufs, cur: &Hdr, edit: Edit, pend: Option<(u32, u32)>, hint: Option<&Hint>) -> i32 {
     let mut ex = [(0, 0); EXTRA_MAX];
     let extra = extras(&mut ex, pend);
-    match store::commit(&io(), &lay(), cur, b.tin, b.tout, TBL_CAP, b.scr, edit, extra) {
+    let at = match hint {
+        Some(k) if k.valid && k.h == *cur && k.n == extra.len() && same_extents(&k.extra[..k.n], extra) => Some(k.at),
+        _ => None,
+    };
+    match store::commit_at(&io(), &lay(), cur, b.tin, b.tout, TBL_CAP, b.scr, edit, extra, at) {
         Ok(c) => {
             crate::store::note_commit(&c.h);
             OK
         }
         Err(e) => pe(e),
     }
+}
+
+fn same_extents(a: &[(u32, u32)], b: &[(u32, u32)]) -> bool {
+    let mut i = 0;
+    while i < a.len() {
+        if a[i] != b[i] {
+            return false;
+        }
+        i += 1;
+    }
+    true
 }
 
 // ---- begin, write, close, abort, delete ---------------------------------------------------------------------------------------
@@ -558,11 +601,16 @@ pub unsafe fn begin(
         return E_WRITE;
     }
     let (io, lay) = (io(), lay());
+    up().hint.valid = false;
     // the path may replace a file (unless `no_overwrite`), but not a folder, and may not lie inside a file or over a folder that has entries
     let mut conflict = false;
     let mut exists = false;
     let mut held = false;
-    let r = store::scan(&io, &lay, &t.h, b.tin, TBL_CAP, |_, e| {
+    // one pass over the table: the path checks, the file's extent (the first gap that holds it) and whether the table of one more entry still has
+    // room beside it (`store::begin_fit`)
+    let need = sectors_of(size);
+    let mut ex0 = [(0, 0); EXTRA_MAX];
+    let fit = match store::begin_fit(&io, &lay, &t.h, b.tin, TBL_CAP, extras(&mut ex0, None), need, store::table_sectors(t.h.count + 1), |e| {
         let rel = store::relation(path, e);
         if rel >= 2 || (rel == 1 && store::entry_of(e).kind == KIND_DIR) {
             conflict = true;
@@ -571,10 +619,10 @@ pub unsafe fn begin(
             held = leased(&store::entry_of(e));
         }
         !conflict
-    });
-    if r != OK {
-        return pe(r);
-    }
+    }) {
+        Ok(f) => f,
+        Err(r) => return pe(r),
+    };
     if conflict {
         return E_PATH;
     }
@@ -585,31 +633,35 @@ pub unsafe fn begin(
     if held {
         return E_FILE_IN_USE;
     }
-    // the file's extent: the first gap that holds it, and room beside it for the table of one more entry
-    let need = sectors_of(size);
-    let mut ex0 = [(0, 0); EXTRA_MAX];
-    let start = if need == 0 {
-        0
-    } else {
-        match store::first_fit(&io, &lay, &t.h, b.tin, TBL_CAP, need, extras(&mut ex0, None)) {
-            Ok(Some(s)) => s,
-            Ok(None) => {
-                *free = free_bytes(&t.h);
-                return E_FULL;
-            }
-            Err(e) => return pe(e),
-        }
-    };
-    let pend = if need == 0 { None } else { Some((start, need)) };
-    let mut ex1 = [(0, 0); EXTRA_MAX];
-    match store::first_fit(&io, &lay, &t.h, b.tin, TBL_CAP, store::table_sectors(t.h.count + 1), extras(&mut ex1, pend)) {
-        Ok(Some(_)) => {}
-        Ok(None) => {
+    let start = match fit.data {
+        Some(s) => s,
+        None => {
             *free = free_bytes(&t.h);
             return E_FULL;
         }
-        Err(e) => return pe(e),
+    };
+    let table_at = match fit.table {
+        Some(a) => a,
+        None => {
+            *free = free_bytes(&t.h);
+            return E_FULL;
+        }
+    };
+    let pend = if need == 0 { None } else { Some((start, need)) };
+    // the commit looks for the table's gap again only when the store or the kept-out extents changed (`Hint`)
+    let mut ex1 = [(0, 0); EXTRA_MAX];
+    let kept = extras(&mut ex1, pend);
+    let hint = &mut up().hint;
+    hint.h = t.h;
+    hint.n = kept.len();
+    hint.extra = [(0, 0); EXTRA_MAX];
+    let mut i = 0;
+    while i < kept.len() {
+        hint.extra[i] = kept[i];
+        i += 1;
     }
+    hint.at = table_at;
+    hint.valid = true;
     let u = up();
     zero(u.path.as_mut_ptr(), 160);
     copy(u.path.as_mut_ptr(), path, pl);
@@ -746,7 +798,9 @@ unsafe fn close_inner(b: &Bufs, out: *mut u8) -> i32 {
     let e = Entry { first: u.start, size: u.size, kind: KIND_FILE, sha: got };
     store::encode_entry(u.path.as_ptr(), &e, ent.as_mut_ptr());
     let pend = if u.size == 0 { None } else { Some((u.start, sectors_of(u.size))) };
-    do_commit(b, &t.h, Edit::Insert(ent.as_ptr()), pend)
+    let hint = u.hint;
+    u.hint.valid = false;
+    do_commit_hinted(b, &t.h, Edit::Insert(ent.as_ptr()), pend, Some(&hint))
 }
 
 /// Drop the session of `kind` (the partial file was never in the table). `E_STATE`: no such session.

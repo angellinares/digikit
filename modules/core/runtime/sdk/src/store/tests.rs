@@ -22,7 +22,11 @@ fn lock() -> std::sync::MutexGuard<'static, ()> {
 /// Writes allowed before every further one fails (`u32::MAX`: no limit) and writes done.
 static CUT: Mutex<(u32, u32)> = Mutex::new((u32::MAX, 0));
 
+/// Card reads done (calls of `rd`).
+static READS: core::sync::atomic::AtomicU32 = core::sync::atomic::AtomicU32::new(0);
+
 unsafe extern "C" fn rd(sector: u32, bytes: u32, buf: *mut u8) -> i32 {
+    READS.fetch_add(1, core::sync::atomic::Ordering::Relaxed);
     let c = CARD.lock().unwrap();
     let at = (sector - FIRST) as usize * 512;
     core::ptr::copy_nonoverlapping(c.as_ptr().add(at), buf, bytes as usize);
@@ -74,7 +78,7 @@ fn entry(first: u32, size: u32, kind: u8) -> Entry {
 
 /// A scratch set: 16-byte aligned buffers.
 struct Work {
-    a: Box<Buf<4096>>,
+    a: Box<Buf<8192>>,
     b: Box<Buf<4096>>,
     s: Box<Buf<512>>,
 }
@@ -83,7 +87,7 @@ use std::boxed::Box;
 
 fn work() -> Work {
     Work {
-        a: Box::new(Buf([0; 4096])),
+        a: Box::new(Buf([0; 8192])),
         b: Box::new(Buf([0; 4096])),
         s: Box::new(Buf([0; 512])),
     }
@@ -2015,4 +2019,264 @@ fn the_free_space_code_keeps_a_full_lease_table_a_file_and_the_capacity_apart() 
         .unwrap()
         .unwrap();
     assert!(at2 >= 100 + LEASE_MAX as u32 * 5 + 50, "{at2}");
+}
+
+// ---- BEGIN in one pass (`begin_fit`) ----------------------------------------------------------------------------------------
+
+struct Rng(u64);
+impl Rng {
+    fn next(&mut self) -> u32 {
+        self.0 ^= self.0 << 13;
+        self.0 ^= self.0 >> 7;
+        self.0 ^= self.0 << 17;
+        (self.0 >> 16) as u32
+    }
+    fn below(&mut self, n: u32) -> u32 {
+        self.next() % n
+    }
+}
+
+/// A table of `n` entries written to the card without a commit (the free-space code reads the table and the header only): entries sorted by first
+/// sector, with small gaps, some folders and empty files, and now and then an extent that overlaps the one before. Returns the header and the paths.
+fn raw_table(r: &mut Rng, n: u32, table_first: u32) -> (Hdr, Vec<Vec<u8>>) {
+    let mut at = table_first + table_sectors(n) + r.below(3);
+    let mut ents: Vec<(Vec<u8>, Entry)> = Vec::new();
+    for i in 0..n {
+        let kind = if r.below(10) == 0 { KIND_DIR } else { KIND_FILE };
+        let size = if kind == KIND_DIR || r.below(8) == 0 {
+            0
+        } else {
+            1 + r.below(512 * 12)
+        };
+        let gap = if r.below(3) == 0 { r.below(30) } else { r.below(2) };
+        if r.below(25) == 0 && at > 4 {
+            at -= r.below(3); // overlaps the previous extent
+        }
+        let first = if size == 0 { 0 } else { at + gap };
+        let path = cstr(&std::format!("d{}/f{:04}", r.below(4), i));
+        let e = entry(first, size, kind);
+        if size != 0 {
+            at = first + sectors_of(size);
+        }
+        ents.push((path, e));
+    }
+    // table order: first sector, then path
+    ents.sort_by(|a, b| (a.1.first, &a.0).cmp(&(b.1.first, &b.0)));
+    let ts = table_sectors(n);
+    let mut c = CARD.lock().unwrap();
+    for (i, (p, e)) in ents.iter().enumerate() {
+        let at = (table_first as usize * 512) + i * ENTRY;
+        unsafe { encode_entry(p.as_ptr(), e, c.as_mut_ptr().add(at)) };
+    }
+    let used = 1 + ts + ents.iter().map(|(_, e)| entry_sectors(e)).sum::<u32>();
+    let h = Hdr {
+        count: n,
+        table_sectors: ts,
+        table_first,
+        table_crc: 0,
+        seq: 7,
+        used,
+        area: SECTORS,
+    };
+    (h, ents.into_iter().map(|(p, _)| p).collect())
+}
+
+/// The three passes of the BEGIN before the change, as they were: the path scan, the first fit of the data extent and the first fit of the table.
+fn begin_three_passes(
+    w: &mut Work,
+    cap: usize,
+    h: &Hdr,
+    path: &[u8],
+    held_at: Option<(u32, u32)>,
+    ex0: &[(u32, u32)],
+    need: u32,
+) -> (bool, bool, bool, Result<Option<u32>, i32>, Result<Option<u32>, i32>) {
+    let (mut conflict, mut exists, mut held) = (false, false, false);
+    unsafe {
+        scan(&IO, &LAY, h, w.a.0.as_mut_ptr(), cap, |_, e| {
+            let rel = relation(path.as_ptr(), e);
+            if rel >= 2 || (rel == 1 && entry_of(e).kind == KIND_DIR) {
+                conflict = true;
+            } else if rel == 1 {
+                exists = true;
+                let en = entry_of(e);
+                held = held_at.is_some_and(|(s, l)| {
+                    let len = entry_sectors(&en);
+                    len != 0 && en.first < s + l && s < en.first + len
+                });
+            }
+            !conflict
+        });
+    }
+    let data = if need == 0 {
+        Ok(Some(0))
+    } else {
+        unsafe { first_fit(&IO, &LAY, h, w.a.0.as_mut_ptr(), cap, need, ex0) }
+    };
+    let mut ex1: Vec<(u32, u32)> = ex0.to_vec();
+    if let Ok(Some(s)) = data {
+        if need != 0 {
+            ex1.push((s, need));
+        }
+    }
+    let table = unsafe {
+        first_fit(&IO, &LAY, h, w.a.0.as_mut_ptr(), cap, table_sectors(h.count + 1), &ex1)
+    };
+    (conflict, exists, held, data, table)
+}
+
+#[test]
+fn begin_fit_gives_what_the_scan_and_the_two_first_fits_gave() {
+    let _g = lock();
+    let mut w = work();
+    let mut r = Rng(0x9e37_79b9_7f4a_7c15);
+    let mut cases = 0;
+    let mut full_data = 0;
+    let mut full_table = 0;
+    let mut early_table = 0;
+    for round in 0..600 {
+        fresh();
+        let n = [0, 1, 2, 3, 7, 20, 60, 150, 300][round % 9] + r.below(3);
+        let table_first = 1 + r.below(40);
+        let (h, paths) = raw_table(&mut r, n, table_first);
+        for _ in 0..6 {
+            // kept-out extents: a capacity knob now and then, a file being written, leases
+            let mut ex0: Vec<(u32, u32)> = Vec::new();
+            if r.below(4) == 0 {
+                let lim = 200 + r.below(SECTORS - TAIL - 200);
+                ex0.push((lim, LAY.limit() - lim));
+            }
+            for _ in 0..r.below(5) {
+                ex0.push((1 + r.below(SECTORS - TAIL - 20), r.below(18)));
+            }
+            let need = [0, 0, 1, 2, 5, 12, 40, 200, 700][r.below(9) as usize];
+            // the path: new, an existing file, a folder prefix of entries, inside a file, a folder entry
+            let path = match r.below(5) {
+                0 => cstr("new/file"),
+                1 if !paths.is_empty() => paths[r.below(paths.len() as u32) as usize].clone(),
+                2 => cstr(&std::format!("d{}", r.below(5))),
+                3 if !paths.is_empty() => {
+                    let mut p = paths[r.below(paths.len() as u32) as usize].clone();
+                    p.pop();
+                    p.extend_from_slice(b"/inner");
+                    p.push(0);
+                    p
+                }
+                _ => cstr(&std::format!("d{}/zz{}", r.below(4), r.below(9))),
+            };
+            let held_at = if r.below(3) == 0 {
+                Some((1 + r.below(SECTORS - TAIL - 20), 1 + r.below(2000)))
+            } else {
+                None
+            };
+            let old = begin_three_passes(&mut w, 4096, &h, &path, held_at, &ex0, need);
+            let (mut conflict, mut exists, mut held) = (false, false, false);
+            let fit = unsafe {
+                begin_fit(&IO, &LAY, &h, w.a.0.as_mut_ptr(), 4096, &ex0, need, table_sectors(h.count + 1), |e| {
+                    let rel = relation(path.as_ptr(), e);
+                    if rel >= 2 || (rel == 1 && entry_of(e).kind == KIND_DIR) {
+                        conflict = true;
+                    } else if rel == 1 {
+                        exists = true;
+                        let en = entry_of(e);
+                        held = held_at.is_some_and(|(s, l)| {
+                            let len = entry_sectors(&en);
+                            len != 0 && en.first < s + l && s < en.first + len
+                        });
+                    }
+                    !conflict
+                })
+            }
+            .unwrap();
+            assert_eq!((conflict, exists, held), (old.0, old.1, old.2), "round {round} path checks");
+            if conflict {
+                continue; // the BEGIN fails with E_PATH whatever the free space is
+            }
+            let want_data = old.3.clone().unwrap();
+            assert_eq!(fit.data, want_data, "round {round} data extent, n {n} need {need} ex {ex0:?}");
+            if want_data.is_some() {
+                assert_eq!(fit.table, old.4.clone().unwrap(), "round {round} table extent, n {n} need {need} ex {ex0:?}");
+                if fit.table.is_none() {
+                    full_table += 1;
+                } else if fit.table != fit.data && need != 0 && fit.table.unwrap() < fit.data.unwrap() {
+                    early_table += 1;
+                }
+            } else {
+                full_data += 1;
+            }
+            cases += 1;
+        }
+    }
+    // the generated cases reach the interesting branches
+    assert!(cases > 2000, "{cases}");
+    assert!(full_data > 20 && full_table > 5 && early_table > 20, "{full_data} {full_table} {early_table}");
+}
+
+#[test]
+fn begin_reads_the_table_once_not_three_times() {
+    let _g = lock();
+    let mut w = work();
+    let mut r = Rng(12345);
+    for n in [50u32, 200] {
+        fresh();
+        let (h, _) = raw_table(&mut r, n, 1);
+        let reads = || READS.load(core::sync::atomic::Ordering::Relaxed);
+        let before = reads();
+        let old = begin_three_passes(&mut w, 8192, &h, b"new/file\0", None, &[], 40);
+        let old_reads = reads() - before;
+        let before = reads();
+        let fit = unsafe {
+            begin_fit(&IO, &LAY, &h, w.a.0.as_mut_ptr(), 8192, &[], 40, table_sectors(h.count + 1), |_| true)
+        }
+        .unwrap();
+        let new_reads = reads() - before;
+        assert_eq!((fit.data, fit.table), (old.3.unwrap(), old.4.unwrap()));
+        std::println!("BEGIN card reads, {n} entries ({} table sectors, 8 KiB buffer): before {old_reads}, after {new_reads}", h.table_sectors);
+        assert_eq!(new_reads, table_sectors(n).div_ceil(16));
+        assert!(old_reads >= 2 * new_reads);
+    }
+}
+
+#[test]
+fn commit_at_a_hint_writes_the_table_where_the_search_would() {
+    let _g = lock();
+    fresh();
+    let mut w = work();
+    for k in 0..6u32 {
+        insert(&mut w, &std::format!("a/f{k}"), 100 + k * 40, 512 * 10, &[]).unwrap();
+    }
+    remove(&mut w, "a/f2").unwrap();
+    let cur = current(&mut w);
+    let need_t = table_sectors(cur.count + 1);
+    let fit = unsafe {
+        begin_fit(&IO, &LAY, &cur, w.a.0.as_mut_ptr(), 8192, &[], 5, need_t, |_| true)
+    }
+    .unwrap();
+    let (start, at) = (fit.data.unwrap(), fit.table.unwrap());
+    let ex = [(start, 5)];
+    let mut e = [0u8; ENTRY];
+    let p = cstr("a/new");
+    unsafe { encode_entry(p.as_ptr(), &entry(start, 512 * 5, KIND_FILE), e.as_mut_ptr()) };
+    let snap = CARD.lock().unwrap().clone();
+    let run = |w: &mut Work, hint: Option<u32>| {
+        *CARD.lock().unwrap() = snap.clone();
+        unsafe {
+            commit_at(&IO, &LAY, &cur, w.a.0.as_mut_ptr(), w.b.0.as_mut_ptr(), 1024, w.s.0.as_mut_ptr(), Edit::Insert(e.as_ptr()), &ex, hint)
+        }
+        .unwrap()
+        .h
+    };
+    let searched = run(&mut w, None);
+    assert_eq!(searched.table_first, at);
+    let hinted_run = run(&mut w, Some(at));
+    assert_eq!(hinted_run, searched);
+    // the hint is for an insert only; a remove searches
+    let rm = cstr("a/f0");
+    *CARD.lock().unwrap() = snap.clone();
+    let h = unsafe {
+        commit_at(&IO, &LAY, &cur, w.a.0.as_mut_ptr(), w.b.0.as_mut_ptr(), 1024, w.s.0.as_mut_ptr(), Edit::Remove(rm.as_ptr()), &[], Some(3999))
+    }
+    .unwrap()
+    .h;
+    assert_ne!(h.table_first, 3999);
 }
