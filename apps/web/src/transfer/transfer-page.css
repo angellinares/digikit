@@ -64,37 +64,6 @@
   margin: 0;
   font-size: 16px;
 }
-/* Modules or Samples: a two-way switch in the header (desktop: the Samples mode is the app's). */
-.transfer-page .modes {
-  display: inline-flex;
-  gap: 2px;
-  padding: 3px;
-  border: 1px solid #24262b;
-  border-radius: 9px;
-  background: #131418;
-}
-.transfer-page .modes button {
-  height: 26px;
-  padding: 0 12px;
-  border: 0;
-  border-radius: 6px;
-  background: transparent;
-  color: var(--ink-2, #a9adb4);
-  font: inherit;
-  font-size: 12.5px;
-  cursor: pointer;
-}
-.transfer-page .modes button:hover:not(:disabled) {
-  color: var(--ink, #eceae5);
-}
-.transfer-page .modes button.on {
-  background: #2a2d33;
-  color: var(--ink, #eceae5);
-  font-weight: 600;
-}
-.transfer-page .modes button:disabled {
-  cursor: not-allowed;
-}
 .transfer-page h3 {
   margin: 0 0 6px;
   font-size: 12px;
@@ -141,6 +110,16 @@
   gap: 8px;
   height: 30px;
 }
+.transfer-page .hl .selcount {
+  order: 1;
+  padding: 1px 6px;
+  border-radius: 5px;
+  background: var(--panel-2, #1a1c20);
+  color: var(--ink-3, #868b94);
+  font-family: var(--font-mono);
+  font-size: 11px;
+  font-variant-numeric: tabular-nums;
+}
 .transfer-page .colhead .acts {
   flex: 1 1 auto;
   display: flex;
@@ -149,7 +128,7 @@
   justify-content: flex-end;
   gap: 6px 12px;
 }
-.transfer-page input[type='checkbox'] {
+.transfer-page input[type='checkbox']:not([role='switch']) {
   width: 14px;
   height: 14px;
   margin: 0;
@@ -333,8 +312,19 @@
   color: #ffc1bc;
   background: rgba(255, 139, 130, 0.12);
 }
+/* the notice lies over the top of the lists, so they do not move when it comes and goes */
+.transfer-page .notices {
+  position: relative;
+  height: 0;
+  z-index: 5;
+}
 /* "Waiting for <target>…" with Cancel (WaitNotice.tsx) */
 .transfer-page .wait {
+  position: absolute;
+  top: 0;
+  left: 0;
+  right: 0;
+  box-shadow: 0 6px 16px rgb(0 0 0 / 35%);
   display: flex;
   align-items: center;
   gap: 12px;

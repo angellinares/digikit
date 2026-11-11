@@ -6,6 +6,8 @@
   --fp-border: #2c2f35;
   --fp-inset: #101214;
   --fp-track: #1d1f23;
+  --seg-bg: var(--fp-card);
+  --seg-border: var(--fp-border);
   position: relative;
   flex: 1;
   min-height: 0;
@@ -126,42 +128,21 @@
   color: var(--ink, #eceae5);
 }
 .firmware-page .steph .fold {
+  margin: 0;
   font-size: 12px;
 }
 .firmware-page .stepb[hidden] {
   display: none;
 }
-/* Patch and flash, or Restore stock: a two-way switch in the header. */
-.firmware-page .modes {
-  display: inline-flex;
-  align-self: center;
-  gap: 2px;
-  padding: 3px;
-  border: 1px solid var(--fp-border);
-  border-radius: 9px;
-  background: var(--fp-card);
+@keyframes fp-in {
+  from {
+    opacity: 0;
+    transform: translateY(-3px);
+  }
 }
-.firmware-page .modes button {
-  height: 26px;
-  padding: 0 12px;
-  border: 0;
-  border-radius: 6px;
-  background: transparent;
-  color: var(--ink-2, #a9adb4);
-  font: inherit;
-  font-size: 12.5px;
-  cursor: pointer;
-}
-.firmware-page .modes button:hover:not(:disabled) {
-  color: var(--ink, #eceae5);
-}
-.firmware-page .modes button.on {
-  background: #2a2d33;
-  color: var(--ink, #eceae5);
-  font-weight: 600;
-}
-.firmware-page .modes button:disabled {
-  cursor: not-allowed;
+.firmware-page .stepb:not([hidden]),
+.firmware-page .steph .summary {
+  animation: fp-in 0.16s ease-out;
 }
 .firmware-page .stepb {
   display: flex;
@@ -359,6 +340,15 @@
   .firmware-page .stepb {
     padding-left: 0;
   }
+  .firmware-page .head .dim {
+    flex-basis: 100%;
+    min-width: 0;
+  }
+  .firmware-page .steph .summary {
+    order: 1;
+    flex-basis: 100%;
+    padding-left: 32px;
+  }
 }
 .firmware-page .linkbtn {
   display: block;
@@ -375,4 +365,10 @@
 .firmware-page .linkbtn:disabled {
   opacity: 0.5;
   cursor: default;
+}
+@media (prefers-reduced-motion: reduce) {
+  .firmware-page .stepb,
+  .firmware-page .steph .summary {
+    animation: none;
+  }
 }

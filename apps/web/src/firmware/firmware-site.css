@@ -5,4 +5,5 @@
   --fp-border: var(--line-2);
   --fp-inset: var(--ground);
   --fp-track: var(--panel-2);
+  padding-top: 28px;
 }

@@ -2,7 +2,20 @@
 // device running the new image. Step by step, nothing is sent until the checks have passed, the device is the image's model, and the user
 // has said that the device shows WAITING FOR SYSEX. The rules are in firmware-core.ts, the run in firmware-flow.ts, the state in
 // firmware-state.ts. The MIDI port, the connection indicator and the target selector are the Transfer pane's.
-import { For, Match, Show, Switch, createSignal, onCleanup, onMount, type JSX } from 'solid-js';
+import {
+  For,
+  Match,
+  Show,
+  Switch,
+  batch,
+  createEffect,
+  createSignal,
+  on,
+  onCleanup,
+  onMount,
+  type JSX,
+} from 'solid-js';
+import Segmented from '../components/Segmented';
 import AutoRefresh from '../transfer/AutoRefresh';
 import ConnectionBadge from '../transfer/ConnectionBadge';
 import TargetSelect, { rescanTargets } from '../transfer/TargetSelect';
@@ -56,6 +69,11 @@ import {
 } from './firmware-state';
 import './firmware-page.css';
 
+const SEND_OPTIONS = [
+  { id: 'patch', label: 'Patch and flash' },
+  { id: 'restore', label: 'Restore stock', title: 'Send the stock file itself, to take digikit off the device' },
+] as const;
+
 /**
  * One step of the page. A done step that has a `summary` folds to its header with that one line (the steps before the current one stay out of
  * the way); its Show button opens it again. `aside` stays in the header either way.
@@ -67,9 +85,19 @@ function Step(props: {
   children: JSX.Element;
   aside?: JSX.Element;
   summary?: JSX.Element;
+  /** The step stays open while true, e.g. step 1 until the flash starts, so its controls stay in reach. */
+  hold?: boolean;
 }): JSX.Element {
   const [shown, setShown] = createSignal(false);
-  const folded = () => props.mark === 'done' && props.summary !== undefined && !shown();
+  const folded = () => props.mark === 'done' && props.summary !== undefined && !props.hold && !shown();
+  // a new file or a failed check: the user's Show is forgotten
+  createEffect(
+    on(
+      () => props.mark,
+      (m) => m !== 'done' && setShown(false),
+      { defer: true },
+    ),
+  );
   return (
     <section class="step" classList={{ [props.mark]: true, folded: folded() }} aria-labelledby={`fw-step-${props.n}`}>
       <header class="steph">
@@ -82,7 +110,7 @@ function Step(props: {
         </Show>
         <span class="sp" />
         {props.aside}
-        <Show when={props.mark === 'done' && props.summary !== undefined}>
+        <Show when={props.mark === 'done' && props.summary !== undefined && !props.hold}>
           <button
             type="button"
             class="linkbtn fold"
@@ -190,29 +218,13 @@ export default function FirmwarePage(): JSX.Element {
     <section class="firmware-page" aria-label="Firmware">
       <header class="head">
         <h2>Firmware</h2>
-        <span class="modes" role="radiogroup" aria-label="What to send">
-          <button
-            type="button"
-            role="radio"
-            aria-checked={!restore()}
-            classList={{ on: !restore() }}
-            disabled={running(run())}
-            onClick={() => restore() && setRestore(false)}
-          >
-            Patch and flash
-          </button>
-          <button
-            type="button"
-            role="radio"
-            aria-checked={restore()}
-            classList={{ on: restore() }}
-            disabled={running(run())}
-            title="Send the stock file itself, to take digikit off the device"
-            onClick={() => !restore() && setRestore(true)}
-          >
-            Restore stock
-          </button>
-        </span>
+        <Segmented
+          label="What to send"
+          options={SEND_OPTIONS}
+          value={restore() ? 'restore' : 'patch'}
+          onChange={(v) => setRestore(v === 'restore')}
+          disabled={running(run())}
+        />
         <span class="dim">
           {restore()
             ? 'Send the stock file itself, to take digikit off the device.'
@@ -223,8 +235,10 @@ export default function FirmwarePage(): JSX.Element {
         busy={() => (running(run()) ? 'Flashing' : '')}
         read={() => void read()}
         rescanPorts={() => {
-          setReload((n) => n + 1);
-          rescanTargets();
+          batch(() => {
+            setReload((n) => n + 1);
+            rescanTargets();
+          });
         }}
       />
 
@@ -234,6 +248,7 @@ export default function FirmwarePage(): JSX.Element {
           n={1}
           title="Firmware"
           mark={marks()[0]!}
+          hold={run().phase === 'idle'}
           summary={
             ready() ? (
               <>
@@ -336,9 +351,7 @@ export default function FirmwarePage(): JSX.Element {
           n={2}
           title="Checks"
           mark={marks()[1]!}
-          summary={
-            ready()?.p.ok ? `${checkRows(ready()!.p).length} of ${checkRows(ready()!.p).length} passed` : undefined
-          }
+          summary={ready()?.p.ok ? `${checkRows(ready()!.p).length} checks passed` : undefined}
           aside={
             <Show when={ready()?.p.ok}>
               <>
@@ -423,7 +436,13 @@ export default function FirmwarePage(): JSX.Element {
         </Step>
 
         {/* 4 */}
-        <Step n={4} title="Prepare the device" mark={marks()[3]!}>
+        <Step
+          n={4}
+          title="Prepare the device"
+          mark={marks()[3]!}
+          hold={run().phase === 'idle'}
+          summary={route() === 'rpc' ? 'Power adapter in, USB cable stays in' : 'The device shows WAITING FOR SYSEX'}
+        >
           <Show
             when={route() === 'rpc'}
             fallback={

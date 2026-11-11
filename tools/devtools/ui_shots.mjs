@@ -50,9 +50,19 @@ const upload3 = async (p) => {
   await p.click(/^Upload/);
   await p.wait(2300);
 };
+/** Wait (up to 10 s) until the Transfer page has read the device: no "reading…" or "Connecting…" text and a module row. */
+const modulesReady = async (p) => {
+  for (let i = 0; i < 100; i++) {
+    const ready = await p.eval(
+      '!/reading…|Connecting…/.test(document.body.innerText) && !!document.querySelector(\'input[aria-label^="Install "]\')',
+    );
+    if (ready) return;
+    await p.wait(100);
+  }
+};
 /** Page helpers: `p.eval(js)`, `p.click(text)`, `p.tick(labelRegexSource)`, `p.hover(selector)`, `p.wait(ms)`. */
 const SCENES = [
-  { name: 'modules', q: 'mode=modules', size: WIDE },
+  { name: 'modules', q: 'mode=modules', size: WIDE, steps: modulesReady },
   {
     name: 'modules-select-partial',
     q: 'mode=modules',
@@ -69,7 +79,19 @@ const SCENES = [
     q: 'mode=modules',
     size: WIDE,
     steps: async (p) => {
+      await modulesReady(p);
       await p.tick('^Install (Pluck|Wavetable)');
+    },
+  },
+  // Sine and Pluck fit together (200 + 259 KiB of the 512 KiB DSP area), so the line above the list ends with the load after the next boot
+  {
+    name: 'modules-fit-load',
+    q: 'mode=modules',
+    size: WIDE,
+    steps: async (p) => {
+      await modulesReady(p);
+      await p.tick('^Install (Sine|Pluck)$');
+      await p.wait(300);
     },
   },
   {
@@ -721,6 +743,7 @@ const SCENES = [
     q: 'page=emulator&card=dn2&mem=pluck',
     size: WIDE,
     steps: async (p) => {
+      await openMemory(p);
       await p.wait(700);
       p.say(
         'segment titles: ' +
@@ -730,11 +753,43 @@ const SCENES = [
       );
     },
   },
-  { name: 'memory-dn2-full', q: 'page=emulator&card=dn2&mem=full', size: WIDE, steps: async (p) => p.wait(700) },
-  { name: 'memory-dn2-dsp-full', q: 'page=emulator&card=dn2&mem=dsp', size: WIDE, steps: async (p) => p.wait(700) },
+  {
+    name: 'memory-dn2-full',
+    q: 'page=emulator&card=dn2&mem=full',
+    size: WIDE,
+    steps: async (p) => {
+      await openMemory(p);
+      await p.wait(700);
+    },
+  },
+  {
+    name: 'memory-dn2-dsp-full',
+    q: 'page=emulator&card=dn2&mem=dsp',
+    size: WIDE,
+    steps: async (p) => {
+      await openMemory(p);
+      await p.wait(700);
+    },
+  },
   // the Digitakt II has no page rows: no Pages bar
-  { name: 'memory-dt2', q: 'page=emulator&card=dt2&mem=pluck', size: WIDE, steps: async (p) => p.wait(700) },
-  { name: 'memory-empty', q: 'page=emulator&card=dn2&mem=empty', size: WIDE, steps: async (p) => p.wait(700) },
+  {
+    name: 'memory-dt2',
+    q: 'page=emulator&card=dt2&mem=pluck',
+    size: WIDE,
+    steps: async (p) => {
+      await openMemory(p);
+      await p.wait(700);
+    },
+  },
+  {
+    name: 'memory-empty',
+    q: 'page=emulator&card=dn2&mem=empty',
+    size: WIDE,
+    steps: async (p) => {
+      await openMemory(p);
+      await p.wait(700);
+    },
+  },
   { name: 'memory-narrow', q: 'page=emulator&card=dn2&mem=pluck', size: MIN, steps: async (p) => p.wait(700) }, // closed by default at this width
   {
     name: 'memory-narrow-open',
@@ -803,6 +858,16 @@ const SCENES = [
     size: WIDE,
     steps: async (p) => {
       await p.wait(400);
+      await showTab(p, 'Metrics');
+      await p.wait(400);
+    },
+  },
+  // the column stays while the emulator boots; Metrics says it is not running
+  {
+    name: 'side-booting',
+    q: 'page=emulator&boot=loading',
+    size: WIDE,
+    steps: async (p) => {
       await showTab(p, 'Metrics');
       await p.wait(400);
     },
@@ -1143,6 +1208,8 @@ try {
       deviceScaleFactor: scale,
       mobile: false,
     });
+    // each scene starts from the defaults; the tab and fold choices would otherwise carry over from the scene before
+    await cdp.send('Page.addScriptToEvaluateOnNewDocument', { source: 'try { localStorage.clear(); } catch {}' });
     await cdp.send('Page.navigate', { url: `${base}?${scene.q}` });
     await sleep(1500);
     let note = '';

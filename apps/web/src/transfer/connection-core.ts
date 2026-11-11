@@ -2,7 +2,7 @@
 // selected target: an INFO that was answered is "connected"; a request that fails after its retries (no reply, a closed port, a paused
 // emulator) or a port that has gone is "not connected"; a request on its way, or a new target, is "connecting". A device that answers with an
 // error status is still there, and a cancel by the user says nothing about the device.
-import { isCancelled, isTimeout } from '../modules/backend.ts';
+import { isCancelled, isNoRuntime, isTimeout } from '../modules/backend.ts';
 
 /** What INFO says about the device (the runtime has no serial number and no OS version; see docs/design/digikit-upload.md, INFO). */
 export interface DeviceFacts {
@@ -17,12 +17,16 @@ export interface DeviceFacts {
 }
 
 export type Connection =
-  { state: 'connecting' } | { state: 'connected'; device: DeviceFacts } | { state: 'disconnected'; reason: string };
+  | { state: 'connecting' }
+  | { state: 'connected'; device: DeviceFacts }
+  | { state: 'noruntime'; reason: string; os?: string }
+  | { state: 'disconnected'; reason: string };
 
 export type ConnectionEvent =
   | { type: 'target' }
   | { type: 'asking' }
   | { type: 'answered'; device: DeviceFacts }
+  | { type: 'noruntime'; reason: string; os?: string }
   | { type: 'lost'; reason: string }
   | { type: 'cancelled' }
   | { type: 'closed'; reason?: string };
@@ -34,10 +38,12 @@ export function step(c: Connection, e: ConnectionEvent): Connection {
     case 'target':
       return CONNECTING;
     case 'asking':
-      // a read while connected does not flicker the indicator
-      return c.state === 'connected' ? c : CONNECTING;
+      // a read does not flicker the indicator
+      return c.state === 'connected' || c.state === 'noruntime' ? c : CONNECTING;
     case 'answered':
       return { state: 'connected', device: e.device };
+    case 'noruntime':
+      return { state: 'noruntime', reason: e.reason, ...(e.os ? { os: e.os } : {}) };
     case 'lost':
       return { state: 'disconnected', reason: e.reason };
     case 'cancelled':
@@ -51,6 +57,7 @@ export function step(c: Connection, e: ConnectionEvent): Connection {
 /** Does this error mean the device cannot be reached (and not: the user cancelled, or the device answered with an error)? */
 export function isLost(e: unknown): boolean {
   if (isCancelled(e)) return false;
+  if (isNoRuntime(e)) return false; // it answered
   if (isTimeout(e)) return true;
   const kind = (e as { kind?: string } | null)?.kind;
   return !(kind === 'device' || kind === 'protocol' || kind === 'request');
@@ -102,6 +109,14 @@ export function connectionView(c: Connection, port: string): ConnectionView {
   }
   if (c.state === 'connecting') {
     return { state: c.state, label: 'Connecting…', parts: [port], title: `Asking ${port}` };
+  }
+  if (c.state === 'noruntime') {
+    return {
+      state: c.state,
+      label: 'No runtime',
+      parts: [...(c.os ? [`OS ${c.os}`] : []), port],
+      title: `${port}: ${c.reason}`,
+    };
   }
   return { state: c.state, label: 'Not connected', parts: [port], title: `${port}: ${c.reason}` };
 }

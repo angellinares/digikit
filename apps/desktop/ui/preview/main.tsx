@@ -7,9 +7,12 @@ import '@fontsource/jetbrains-mono/500.css';
 import '@web/styles/site.css';
 import '../src/console.css';
 import '../src/native.css';
+import '../src/tooltip.css';
 import '../src/desktop-env';
 import { desktopDefaultModules } from '../src/default-modules';
+import { CHART, FOLDER, Icon, MODULES, PAUSE, RELOAD, RESTART } from '../src/icons';
 import { installNativeFeel } from '../src/native';
+import { installTooltips } from '../src/tooltip';
 import DefaultModules from '@web/firmware/DefaultModules';
 import { DefaultModuleError } from '@web/firmware/default-modules-core';
 import { firmwareEnv, setFirmwareEnv } from '@web/firmware/env';
@@ -54,6 +57,20 @@ const emulatorFaceplate = () =>
           />
         </div>
       </main>
+      <SidePanels
+        visible
+        active={false}
+        card
+        reload={reloadCard}
+        metrics={
+          <div class="card-body metrics">
+            <p class="poll">1 s poll</p>
+            <p class="note">The emulator is not running: no readings yet.</p>
+          </div>
+        }
+        session={() => Promise.resolve({} as never)}
+        where={() => 'the emulator'}
+      />
     </div>
   ) : (
     <div class="emu-row">
@@ -89,11 +106,6 @@ const emulatorFaceplate = () =>
               <dt>DSP load (est.)</dt>
               <dd>52 % est. (worst 61 %), model 47 %</dd>
             </dl>
-            <div class="acts">
-              <button type="button" class="tb">
-                Audition Trig 1
-              </button>
-            </div>
           </div>
         }
         session={() => Promise.resolve({} as never)}
@@ -154,6 +166,7 @@ setFirmwareEnv({
 });
 
 installNativeFeel();
+installTooltips();
 setMode(sim.mode);
 setLocalFolder(sim.folder === 'none' ? '' : SAMPLES_ROOT);
 (window as unknown as { __sim: typeof control }).__sim = control;
@@ -211,19 +224,58 @@ render(
                   {bootState ? null : <span class="rt on">core/dynreg</span>}
                 </label>
                 <span class="tb-group">
-                  <button type="button" class="tb">
+                  <button type="button" class="tb" aria-label="Open firmware file" title="Open a firmware file">
+                    <Icon d={FOLDER} />
                     <span class="lbl">Open…</span>
                   </button>
                   <DefaultModules device="dn2" note="Uploaded and enabled in the emulator after the firmware loads." />
                 </span>
                 <span class="tb-group">
-                  <button type="button" class="tb">
+                  <button type="button" class="tb" aria-label="Reload" title="Reload the startup file (⌘R)">
+                    <Icon d={RELOAD} />
                     <span class="lbl">Reload</span>
                     <kbd class="lbl">⌘R</kbd>
                   </button>
-                  <button type="button" class="tb">
+                  <button
+                    type="button"
+                    class="tb"
+                    disabled={!!bootState}
+                    aria-label="Reload modules"
+                    title="Build the stale module objects, then apply the modules (⇧⌘R)"
+                  >
+                    <Icon d={MODULES} />
                     <span class="lbl">Modules</span>
                     <kbd class="lbl">⇧⌘R</kbd>
+                  </button>
+                </span>
+                {/* no status while booting: the three buttons are disabled, as in the app */}
+                <span class="tb-group">
+                  <button
+                    type="button"
+                    class="tb icon"
+                    disabled={!!bootState}
+                    aria-label="Pause"
+                    title="Pause the emulator"
+                  >
+                    <Icon d={PAUSE} />
+                  </button>
+                  <button
+                    type="button"
+                    class="tb icon"
+                    disabled={!!bootState}
+                    aria-label="Reset (emulator)"
+                    title="Reset the running firmware to its ready state"
+                  >
+                    <Icon d={RESTART} />
+                  </button>
+                  <button
+                    type="button"
+                    class="tb icon"
+                    disabled={!!bootState}
+                    aria-label="Save diagnostics"
+                    title="Save diagnostics"
+                  >
+                    <Icon d={CHART} />
                   </button>
                 </span>
               </header>

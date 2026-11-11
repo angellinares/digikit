@@ -128,6 +128,8 @@ export interface TransferEnv {
     samples?: SamplesSlot;
     /** A job ended (the Card panel reads the folder now and again after its quiet period). */
     onJobEnd?(): void;
+    /** Reload the emulator with the digikit runtime (the desktop): offered next to an "emulator runs without the runtime" error. */
+    reloadWithRuntime?: () => void;
   };
 }
 

@@ -61,6 +61,17 @@
 .memory-panel .cell.over {
   outline: 1px solid var(--bad, #e5736b);
 }
+/* No runtime: the usual rows, greyed and empty. */
+.memory-panel .skeleton {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  opacity: 0.45;
+}
+.memory-panel .skeleton .bar .seg,
+.memory-panel .skeleton .bar .seg.free {
+  background: transparent;
+}
 /* a segment or cell is coloured by its module's type */
 .memory-panel .seg.machine,
 .memory-panel .cell.machine,

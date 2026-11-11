@@ -203,17 +203,25 @@ export function SelectAll(props: {
   createEffect(() => {
     if (box) box.indeterminate = state() === 'some';
   });
+  const count = () => props.keys.filter((k) => props.ticked.has(k)).length;
   return (
-    <input
-      ref={box}
-      type="checkbox"
-      class="all"
-      aria-label={props.label}
-      title={state() === 'all' ? 'Clear the selection' : 'Select all'}
-      checked={state() === 'all'}
-      disabled={props.disabled || props.keys.length === 0}
-      onChange={() => props.onChange(toggleAll(props.keys, props.ticked))}
-    />
+    <>
+      <input
+        ref={box}
+        type="checkbox"
+        class="all"
+        aria-label={props.label}
+        title={state() === 'all' ? 'Clear the selection' : 'Select all'}
+        checked={state() === 'all'}
+        disabled={props.disabled || props.keys.length === 0}
+        onChange={() => props.onChange(toggleAll(props.keys, props.ticked))}
+      />
+      <Show when={count() > 0}>
+        <span class="selcount" title={`${count()} of ${props.keys.length} ticked`}>
+          {count()} / {props.keys.length}
+        </span>
+      </Show>
+    </>
   );
 }
 

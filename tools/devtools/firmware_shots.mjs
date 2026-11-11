@@ -47,10 +47,15 @@ const OS = { dn2: '1.12', dt2: '1.17' };
 const tick = (label) =>
   `(() => { const c = document.querySelector('input[aria-label=${JSON.stringify(label)}]') || [...document.querySelectorAll('label.tick')].find((l) => l.textContent.includes(${JSON.stringify(label)}))?.querySelector('input'); if (!c) throw new Error('no box ${label}'); c.click(); })()`;
 const click = (text) =>
-  `(() => { const b = [...document.querySelectorAll('button')].find((e) => e.textContent.trim() === ${JSON.stringify(text)}); if (!b) throw new Error('no button ' + ${JSON.stringify(text)}); b.click(); })()`;
+  `(() => { const b = [...document.querySelectorAll('button')].find((e) => !e.matches('[role=radio]') && e.textContent.trim() === ${JSON.stringify(text)}); if (!b) throw new Error('no button ' + ${JSON.stringify(text)}); b.click(); })()`;
+// the mode switch is a radio button, not a tick box
+const radio = (text) =>
+  `(() => { const b = [...document.querySelectorAll('button[role=radio]')].find((e) => e.textContent.trim() === ${JSON.stringify(text)}); if (!b) throw new Error('no switch ' + ${JSON.stringify(text)}); b.click(); })()`;
 
 const clickStarting = (text) =>
-  `(() => { const b = [...document.querySelectorAll('button')].find((e) => e.textContent.trim().startsWith(${JSON.stringify(text)})); if (!b) throw new Error('no button ' + ${JSON.stringify(text)}); b.click(); })()`;
+  `(() => { const b = [...document.querySelectorAll('button')].find((e) => !e.matches('[role=radio]') && e.textContent.trim().startsWith(${JSON.stringify(text)})); if (!b) throw new Error('no button ' + ${JSON.stringify(text)}); b.click(); })()`;
+// the Checks step has finished (passed or failed); its text may be folded away, so wait on its mark
+const checksDone = "!!document.querySelector('section.step[aria-labelledby=\"fw-step-2\"]')?.matches('.done, .bad')";
 const menuLink = click('Use the OS UPGRADE menu instead');
 const SCENES = [
   { name: 'step1-empty', size: WIDE, dev: 'dn2', file: null, wait: 'Connected' },
@@ -223,7 +228,7 @@ const SCENES = [
     state: 'runtime',
     wait: 'Connected',
     ready: true,
-    steps: [tick('Restore stock'), 'wait:Stock image'],
+    steps: [radio('Restore stock'), 'sleep:300', 'checks'],
   },
   {
     name: 'restore-done',
@@ -234,7 +239,7 @@ const SCENES = [
     state: 'runtime',
     wait: 'Connected',
     ready: true,
-    steps: [tick('Restore stock'), 'wait:Stock image', click('Restore stock')],
+    steps: [radio('Restore stock'), 'sleep:300', 'checks', click('Restore stock')],
     until: 'stock OS',
     within: 240_000,
   },
@@ -306,6 +311,12 @@ const shim = (cfg) => `(() => {
   navigator.requestMIDIAccess = async () => access;
 })();`;
 
+/** A runtime version as INFO's word: 0x00AABBCC for A.B.C. */
+const packed = (v) => {
+  const [a = 0, b = 0, c = 0] = v.split('.').map(Number);
+  return (a << 16) | (b << 8) | c;
+};
+
 /** The digikit device and the stock firmware's OS UPGRADE screen in one: SoftwareVersion always, INFO only with the runtime. */
 class FwDevice extends FakeDevice {
   constructor(model, os, stock) {
@@ -315,6 +326,7 @@ class FwDevice extends FakeDevice {
     this.runtime = !stock;
     this.imageId = null;
     this.count = 0;
+    this.version = '0.5.2'; // the runtime version INFO reports; a flash sets the patch's
   }
   send(msg) {
     if (msg[1] === 0x7d && !this.runtime) return; // the stock firmware does not know INFO
@@ -334,7 +346,7 @@ class FwDevice extends FakeDevice {
         [0],
         be32(1),
         be32(1),
-        be32(0x000502),
+        be32(packed(this.version)),
         be32(Object.values(CAP).reduce((a, bit) => a | (1 << bit), 0)),
         this.imageId ? Uint8Array.from(Buffer.from(this.imageId, 'hex')) : [],
       ),
@@ -414,6 +426,7 @@ try {
           setTimeout(async () => {
             dev.runtime = !p.restore;
             dev.imageId = p.imageId;
+            if (p.runtime) dev.version = String(p.runtime);
             await cdp.send('Runtime.evaluate', { expression: 'window.__replug()' }).catch(() => {});
           }, goneFor);
         }, flashAfter);
@@ -481,11 +494,12 @@ try {
       await sleep(500);
       if (scene.file === 'junk') await chooseFile(cdp, junk);
       else if (scene.file) await chooseFile(cdp, fwPath(scene.file));
-      if (scene.ready) await waitFor(cdp, hasText('stock ✓'), 'the checks', 90_000);
+      if (scene.ready) await waitFor(cdp, checksDone, 'the checks', 90_000);
       await sleep(400);
       for (const step of scene.steps ?? []) {
         if (step.startsWith('sleep:')) await sleep(Number(step.slice(6)));
         else if (step.startsWith('eval:')) await evaluate(cdp, step.slice(5));
+        else if (step === 'checks') await waitFor(cdp, checksDone, step, 90_000);
         else if (step.startsWith('wait:')) await waitFor(cdp, hasText(step.slice(5)), step, 90_000);
         else await evaluate(cdp, step);
         await sleep(200);

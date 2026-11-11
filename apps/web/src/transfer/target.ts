@@ -4,6 +4,7 @@
 import { createSignal } from 'solid-js';
 import { DkSession } from '@digi/dk-session';
 import type { DkTransport } from '@digi/dk-session';
+import { NoRuntimeError } from '../modules/backend';
 import { instrument } from './activity';
 import { noteConnection } from './connection-state';
 import { transferEnv } from './env';
@@ -52,6 +53,15 @@ export function startOn(t: Target): void {
   opened = undefined;
   setTargetSignal(t);
   noteConnection({ type: 'target' });
+}
+
+/** The digikit runtime of the emulator as the app knows it from the last boot (the desktop sets it; the site has no emulator): 'unknown' while booting. */
+export const [emulatorRuntime, setEmulatorRuntime] = createSignal<'unknown' | 'yes' | 'no'>('unknown');
+export const EMULATOR_NO_RUNTIME =
+  'The emulator runs without the digikit runtime: tick Boot with runtime and reload it.';
+/** Throws NoRuntimeError for a target known to have no runtime (an emulator booted without it), before any request. */
+export function checkRuntime(t: Target): void {
+  if (t.kind === 'emulator' && emulatorRuntime() === 'no') throw new NoRuntimeError(EMULATOR_NO_RUNTIME);
 }
 
 /** The transport of each target in use (made once and instrumented once, so a new session of the same port reuses it). */

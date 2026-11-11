@@ -18,7 +18,16 @@ import {
 } from './remote-core';
 import { windowShown } from './log-follow-core';
 import SidePanels from './SidePanels';
-import { cancelPending, resetSession, session, target, targetLabel } from '@web/transfer/target';
+import { asked, noteReply } from '@web/transfer/connection-state';
+import {
+  cancelPending,
+  checkRuntime,
+  resetSession,
+  sameTarget,
+  session,
+  target,
+  targetLabel,
+} from '@web/transfer/target';
 import { busy } from '@web/transfer/transfer-state';
 import { failureLine } from '@web/transfer/wait-core';
 import './remote-page.css';
@@ -75,7 +84,9 @@ export default function RemotePage(props: { fallbackDevice: 'dt2' | 'dn2' }): JS
         await new Promise((r) => setTimeout(r, HIDDEN_MS));
         continue;
       }
+      const t = target();
       try {
+        await asked(async () => checkRuntime(target()));
         const s = await session();
         const key = targetLabel(target());
         if (infoDue(infoAt, Date.now(), key !== infoKey)) {
@@ -90,6 +101,7 @@ export default function RemotePage(props: { fallbackDevice: 'dt2' | 'dn2' }): JS
           setState(await s.remoteState());
           setStateError(undefined);
           missing = false;
+          void noteReply(s, () => sameTarget(t, target()));
         }
       } catch (e) {
         missing = isRemoteMissing(e);

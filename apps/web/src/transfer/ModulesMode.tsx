@@ -5,6 +5,7 @@
 // in MODULES on the device, then applies and restarts there. Restart only restarts the device and reports what loaded. Delete removes the
 // ticked files from the card; a loaded module stays loaded until the restart.
 import { For, Show, createSignal, type JSX } from 'solid-js';
+import Segmented, { type SegmentedOption } from '../components/Segmented';
 import { errorLine, formatBytes } from '../modules/backend';
 import {
   ListRow,
@@ -209,6 +210,9 @@ export default function ModulesMode(props: { ctx: PageCtx }): JSX.Element {
     return id && transferEnv().moduleFiles?.(id) ? id : undefined;
   };
 
+  const browseOptions = (): SegmentedOption<string>[] =>
+    (transferEnv().libraryDevices ?? []).map((d) => ({ id: d, label: BROWSE_NAMES[d] ?? d }));
+
   const lists = (
     <SplitPane id="transfer">
       <LocalPane
@@ -226,21 +230,16 @@ export default function ModulesMode(props: { ctx: PageCtx }): JSX.Element {
         actions={
           <>
             <Show when={browsing()}>
-              <span class="target-select">
-                <select
-                  aria-label="Show modules for"
-                  value={browseDevice()}
-                  disabled={!!busy()}
-                  onChange={(e) => {
-                    setBrowseDevice(e.currentTarget.value === 'dn2' ? 'dn2' : 'dt2');
-                    void run('Reading', async () => {});
-                  }}
-                >
-                  <For each={transferEnv().libraryDevices ?? []}>
-                    {(d) => <option value={d}>{BROWSE_NAMES[d] ?? d}</option>}
-                  </For>
-                </select>
-              </span>
+              <Segmented
+                label="Show modules for"
+                options={browseOptions()}
+                value={browseDevice()}
+                disabled={!!busy()}
+                onChange={(d) => {
+                  setBrowseDevice(d === 'dn2' ? 'dn2' : 'dt2');
+                  void run('Reading', async () => {});
+                }}
+              />
             </Show>
             <input
               ref={input}
@@ -269,8 +268,13 @@ export default function ModulesMode(props: { ctx: PageCtx }): JSX.Element {
             </button>
             <span class="drop">or drop files</span>
             <Show when={lastView()?.modules.some((r) => r.test)}>
-              <label class="tests">
-                <input type="checkbox" checked={showTests()} onChange={(e) => setShowTests(e.currentTarget.checked)} />{' '}
+              <label class="tests toggle">
+                <input
+                  type="checkbox"
+                  role="switch"
+                  checked={showTests()}
+                  onChange={(e) => setShowTests(e.currentTarget.checked)}
+                />{' '}
                 show test modules
               </label>
             </Show>

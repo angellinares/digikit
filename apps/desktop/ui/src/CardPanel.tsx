@@ -33,7 +33,12 @@ const deviceName = (id: string | undefined) =>
   id && id in panels ? panels[id as keyof typeof panels].name : (id ?? '').toUpperCase();
 
 /** `reload`: start the loaded firmware again (the Restart button's path), which builds the card from the folder in use. */
-export default function CardPanel(props: { visible: boolean; reload?: () => Promise<void> }): JSX.Element {
+export default function CardPanel(props: {
+  visible: boolean;
+  reload?: () => Promise<void>;
+  /** Set when the panel is a tab of the column (SidePanels.tsx): the tabpanel's id and the id of its tab. */
+  tabpanel?: { id: string; labelledBy: string };
+}): JSX.Element {
   const [card, setCard] = createSignal<CardFolder>();
   const [error, setError] = createSignal('');
   const [busy, setBusy] = createSignal(false);
@@ -141,7 +146,14 @@ export default function CardPanel(props: { visible: boolean; reload?: () => Prom
   };
 
   return (
-    <aside class="card-panel" aria-label="Card" hidden={!props.visible}>
+    <aside
+      class="card-panel"
+      id={props.tabpanel?.id}
+      role={props.tabpanel ? 'tabpanel' : undefined}
+      aria-labelledby={props.tabpanel?.labelledBy}
+      aria-label={props.tabpanel ? undefined : 'Card'}
+      hidden={!props.visible}
+    >
       <div class="card-body">
         <Show when={card()?.device}>
           <h3 class="device">{deviceName(card()!.device)}</h3>

@@ -15,6 +15,22 @@ import {
 } from '@web/runtime/runtime';
 import { booting as startBoot, bootingScreen, bootingStatus, loadFailure, type Booting } from './boot-core';
 import { bumpCardRefresh } from './card-state';
+import {
+  CHART,
+  DOWN,
+  FIRMWARE,
+  FOLDER,
+  Icon,
+  MODULES,
+  PAUSE,
+  PLAY,
+  RELOAD,
+  REMOTE,
+  RESTART,
+  SPEAKER,
+  UP,
+  WARNING,
+} from './icons';
 import { DOCK_KEY_STEP, clampDock, dockAt, parseDock, startDock } from './dock-core';
 import {
   duration,
@@ -36,7 +52,17 @@ import SidePanels from './SidePanels';
 import TitleBar from './TitleBar';
 import { setInspectorOpen, setInspectorTab } from './panel-open';
 import RemotePage from './RemotePage';
-import { emulatorSession, lastMidiPort, lastMidiSession, target } from '@web/transfer/target';
+import {
+  EMULATOR_NO_RUNTIME,
+  emulatorRuntime,
+  emulatorSession,
+  lastMidiPort,
+  lastMidiSession,
+  setEmulatorRuntime,
+  target,
+} from '@web/transfer/target';
+import { noteConnection } from '@web/transfer/connection-state';
+import { setReloadWithRuntime } from './emulator-actions';
 import { transferEnv } from '@web/transfer/env';
 import { run as flashRun } from '@web/firmware/firmware-state';
 import { running as flashRunning } from '@web/firmware/firmware-core';
@@ -105,36 +131,6 @@ const writeSidebarPref = (open: boolean) => {
   }
 };
 
-function Icon(props: { d: string }) {
-  return (
-    <svg viewBox="0 0 16 16" aria-hidden="true">
-      <path
-        d={props.d}
-        fill="none"
-        stroke="currentColor"
-        stroke-width="1.6"
-        stroke-linecap="round"
-        stroke-linejoin="round"
-      />
-    </svg>
-  );
-}
-const FOLDER = 'M1.5 4V12.5H14.5V5.5H7.5L6 4Z';
-const RELOAD = 'M13 3V6.5H9.5M13 6.5A5.2 5.2 0 1 0 13.4 10';
-const PAUSE = 'M5.5 3V13M10.5 3V13';
-const PLAY = 'M4.5 2.5L12.5 8L4.5 13.5Z';
-const RESTART = 'M3 2.5V6H6.5M3 6A5.2 5.2 0 1 1 2.8 9.8';
-const CHART = 'M2 12.5L5.5 7.5L8.5 10L13.5 3.5M10.5 3.5H13.5V6.5';
-const SPEAKER = 'M2.5 6H5L8.5 3V13L5 10H2.5ZM11 5.5a3.5 3.5 0 0 1 0 5';
-const WARNING = 'M8 2.5L14.5 13.5H1.5ZM8 6.5V9.5M8 11.5V11.6';
-const UP = 'M4 10L8 6L12 10';
-const REMOTE = 'M2.5 3.5H13.5V10.5H2.5ZM6 13H10M8 10.5V13';
-// a chip with pins
-const FIRMWARE =
-  'M4.5 4.5H11.5V11.5H4.5ZM6.5 2.5V4.5M9.5 2.5V4.5M6.5 11.5V13.5M9.5 11.5V13.5M2.5 6.5H4.5M2.5 9.5H4.5M11.5 6.5H13.5M11.5 9.5H13.5';
-const MODULES = 'M2.5 5L8 2.5L13.5 5V11L8 13.5L2.5 11ZM2.5 5L8 7.5L13.5 5M8 7.5V13.5';
-const DOWN = 'M4 6L8 10L12 6';
-
 function Meter(props: { value: number; worst?: number; tone?: 'teal' | 'amber' }) {
   const pct = (v: number) => `${Math.max(0, Math.min(100, v))}%`;
   return (
@@ -190,7 +186,8 @@ export default function Console() {
   const timers: number[] = [];
 
   // a memo: `status` is set once per display frame, and the panels must hear of a change of this value only
-  const sidePanelsShown = createMemo(() => page() === 'emulator' && !!status());
+  const sidePanelsShown = createMemo(() => page() === 'emulator');
+  const panelsActive = createMemo(() => !!status());
   const device = () => {
     const d = status()?.device ?? booting()?.device ?? failed()?.device ?? lastDevice();
     return d === 'dt2' || d === 'dn2' ? d : 'dn2';
@@ -234,6 +231,19 @@ export default function Console() {
     seen.entries.forEach(logInput);
   };
 
+  // The emulator has the runtime when the image has a runtime record (patched now, from the cache, or a patched file loaded as it is);
+  // unknown while booting.
+  createEffect(() => {
+    const i = info();
+    setEmulatorRuntime(i === undefined ? 'unknown' : i.runtime ? 'yes' : 'no');
+  });
+  /** The tick differs from what the running image has: it applies at the next Reload or Open. Tick on: pending when the image has no
+   * runtime. Tick off: pending when this boot patched the runtime in (a file loaded as it is, with its own runtime, keeps it either way). */
+  const runtimePending = () => {
+    const i = info();
+    if (i === undefined) return false;
+    return bootRuntime() ? !i.runtime : !!i.runtime?.patched;
+  };
   /** What the running image got from the runtime patch, for the header. */
   const refreshInfo = async () => {
     try {
@@ -276,6 +286,8 @@ export default function Console() {
     setError('');
     setStatus(undefined);
     setInfo(undefined);
+    // a boot or reset of the emulator: the indicator asks again
+    if (target().kind === 'emulator') noteConnection({ type: 'target' });
     setReloadNote('');
     setBooting(startBoot(name));
     logInput({ source: 'firmware', level: 'info', text: bootingScreen(startBoot(name)) });
@@ -286,6 +298,8 @@ export default function Console() {
       update({ type: 'snapshot', snapshot: await start(r) });
       setPaused(false);
       await refreshInfo();
+      if (target().kind === 'emulator' && emulatorRuntime() === 'no')
+        noteConnection({ type: 'noruntime', reason: EMULATOR_NO_RUNTIME });
       const s = status();
       if (s)
         logInput(
@@ -357,6 +371,12 @@ export default function Console() {
       setModulesBusy(false);
     }
   };
+  // the "Boot with runtime" tick of other pages' "Reload with runtime" button
+  setReloadWithRuntime(() => {
+    setBootRuntime(true);
+    writeRuntimePref(true);
+    void reload('Reloaded with the runtime at');
+  });
   const pollSource = async () => {
     try {
       const file = await invoke<Source | null>('emu_source_info');
@@ -400,6 +420,7 @@ export default function Console() {
     setPage('emulator');
     setInspectorTab('metrics');
     setInspectorOpen(true);
+    requestAnimationFrame(() => document.getElementById('side-tab-metrics')?.focus());
   };
   const dockPx = () => startDock(dockSaved(), windowPx());
   const dockDragTo = (clientY: number) => {
@@ -467,6 +488,8 @@ export default function Console() {
     logEvent('emulator', 'info', paused() ? 'paused' : 'resumed');
   };
   const restart = async () => {
+    // a boot or reset of the emulator: the indicator asks again
+    if (target().kind === 'emulator') noteConnection({ type: 'target' });
     health = healthStart();
     const began = performance.now();
     try {
@@ -474,6 +497,8 @@ export default function Console() {
       if (s) update({ type: 'snapshot', snapshot: s });
       setPaused(false);
       await refreshInfo();
+      if (target().kind === 'emulator' && emulatorRuntime() === 'no')
+        noteConnection({ type: 'noruntime', reason: EMULATOR_NO_RUNTIME });
       logEvent('reset', 'info', `emulator reset · ${duration(performance.now() - began)}`);
       bumpCardRefresh();
       window.setTimeout(bumpCardRefresh, 2500);
@@ -577,6 +602,9 @@ export default function Console() {
   const metrics = (
     <div class="card-body metrics">
       <p class="poll">1 s poll</p>
+      <Show when={!status()}>
+        <p class="note">The emulator is not running: no readings yet.</p>
+      </Show>
       <dl>
         <dt>Firmware</dt>
         <dd>{status() ? `${status()!.device} ${status()!.version} · ${phase()}` : '—'}</dd>
@@ -615,20 +643,8 @@ export default function Console() {
       <Show when={card()}>
         <p class="note">{cardLine(card())}</p>
       </Show>
-      <div class="acts">
-        <button
-          type="button"
-          class="tb"
-          disabled={!status() || !audio()?.flow_started}
-          onClick={() =>
-            void runtime()
-              ?.tap?.(25)
-              .catch((e) => setError(message(e)))
-          }
-        >
-          Audition Trig 1
-        </button>
-        <Show when={device() === 'dt2' && runtime()?.cards}>
+      <Show when={device() === 'dt2' && runtime()?.cards}>
+        <div class="acts">
           <input
             ref={(el) => {
               folderInput = el;
@@ -648,8 +664,8 @@ export default function Console() {
           >
             Sample folder…
           </button>
-        </Show>
-      </div>
+        </div>
+      </Show>
     </div>
   );
 
@@ -786,20 +802,24 @@ export default function Console() {
                   {(i) => (
                     <span
                       class="rt"
-                      classList={{ on: !!i().runtime?.patched }}
+                      classList={{ on: !!i().runtime?.patched, pending: runtimePending() }}
                       title={
-                        i().runtime?.patched
-                          ? `${i().runtime?.modules?.length ?? 0} modules of the "${i().runtime?.set}" set, ${i().runtime?.cache_hit ? 'from the image cache' : 'patched now'}`
-                          : i().runtime
-                            ? 'The image has a patch record: it is loaded as it is'
-                            : 'The image is loaded as it is'
+                        runtimePending()
+                          ? `The running image ${i().runtime ? 'has' : 'has no'} runtime; the tick applies at the next Reload (${reloadKey}) or Open`
+                          : i().runtime?.patched
+                            ? `${i().runtime?.modules?.length ?? 0} modules of the "${i().runtime?.set}" set, ${i().runtime?.cache_hit ? 'from the image cache' : 'patched now'}`
+                            : i().runtime
+                              ? 'The image has a patch record: it is loaded as it is'
+                              : 'The image is loaded as it is'
                       }
                     >
-                      {i().runtime?.patched
-                        ? `${i().runtime?.set}${i().runtime?.cache_hit ? ' (cached)' : ''}`
-                        : i().runtime
-                          ? 'patched image'
-                          : 'stock'}
+                      {runtimePending()
+                        ? 'on next Reload'
+                        : i().runtime?.patched
+                          ? `${i().runtime?.set}${i().runtime?.cache_hit ? ' (cached)' : ''}`
+                          : i().runtime
+                            ? 'patched image'
+                            : 'stock'}
                     </span>
                   )}
                 </Show>
@@ -838,9 +858,10 @@ export default function Console() {
                 <button
                   type="button"
                   class="tb"
+                  classList={{ pending: runtimePending() }}
                   disabled={!source()}
                   aria-label="Reload"
-                  title={`Reload the startup file (${reloadKey})`}
+                  title={`Reload the startup file (${reloadKey})${runtimePending() ? ' · applies the Runtime choice' : ''}`}
                   onClick={() => void reload('Reloaded at')}
                 >
                   <Icon d={RELOAD} />
@@ -906,6 +927,7 @@ export default function Console() {
               </main>
               <SidePanels
                 visible={sidePanelsShown()}
+                active={panelsActive()}
                 card
                 reload={restart}
                 metrics={metrics}

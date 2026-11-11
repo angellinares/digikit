@@ -10,7 +10,7 @@
 // ticked is shown.
 import { For, Show, createEffect, createMemo, createSignal, onCleanup, onMount, untrack, type JSX } from 'solid-js';
 import { panels } from '@web/data/faceplates';
-import { isCancelled } from '@web/modules/backend';
+import { isCancelled, isNoRuntime } from '@web/modules/backend';
 import type { DkSession } from '@digi/dk-session';
 import { cardRefresh } from './card-state';
 import { deviceOfPort } from './remote-core';
@@ -18,7 +18,10 @@ import { freeTitle, noteText, segmentTitle, slotCells, usedText, widthPct } from
 import { readMemory, type MemoryReading } from './memory-backend';
 import { createReadGate } from './read-gate-core';
 import { focusReadDue } from '@web/transfer/refresh-core';
+import { asked, noteReply } from '@web/transfer/connection-state';
+import { checkRuntime, emulatorRuntime, sameTarget, target } from '@web/transfer/target';
 import { failureLine } from '@web/transfer/wait-core';
+import { reloadWithRuntime } from './emulator-actions';
 import './card-panel.css';
 import './memory-panel.css';
 
@@ -29,6 +32,9 @@ const LEGEND = [
   { kind: 'other', text: 'Other' },
 ] as const;
 
+// The rows of a reading (memory-core.ts), shown greyed and empty while the emulator has no runtime.
+const SKELETON_ROWS = ['DSP memory', 'CPU memory', 'Machines', 'Parameters', 'Pages', 'Modules'];
+
 /**
  * `session`: the device to read (the emulator, or the selected target). `track`: read again when this changes (the selected target).
  * `where`: its name for an error line ("No reply from Emulator").
@@ -38,25 +44,46 @@ export default function MemoryPanel(props: {
   session: () => Promise<DkSession>;
   where: () => string;
   track?: () => unknown;
+  /** Set when the panel is a tab of the column (SidePanels.tsx): the tabpanel's id and the id of its tab. */
+  tabpanel?: { id: string; labelledBy: string };
 }): JSX.Element {
   const [reading, setReading] = createSignal<MemoryReading>();
   const [error, setError] = createSignal('');
   const [busy, setBusy] = createSignal(false);
+  const [noRuntime, setNoRuntime] = createSignal(false);
 
+  // the Emulator page passes the emulator's session; the Remote page passes the selected target's
+  const readsEmulator = () => props.where() === 'the emulator';
+  // The Emulator page's panel reads the emulator whatever the target is; only a read of the selected target may move the connection indicator.
+  const readsTarget = () => !readsEmulator() || target().kind === 'emulator';
+  const emulatorRead = () => readsEmulator() || target().kind === 'emulator';
   const gate = createReadGate({
     run: async (current) => {
       setBusy(true);
+      const t0 = target();
       try {
-        const r = await readMemory(await props.session());
+        const check = () => checkRuntime(readsEmulator() ? { kind: 'emulator' } : target());
+        if (readsTarget()) await asked(async () => check());
+        else check();
+        const s = await props.session();
+        const r = readsTarget() ? await asked(() => readMemory(s)) : await readMemory(s);
         if (current()) {
           setReading(r);
           setError('');
+          setNoRuntime(false);
+          if (readsTarget()) void noteReply(s, () => sameTarget(t0, target()));
         }
         return true;
       } catch (e) {
         if (!current()) return true;
         // the Cancel button ended it: nothing is wrong, and nothing tries again by itself
         if (isCancelled(e)) return true;
+        // nothing changes until the emulator boots again: no retry
+        if (isNoRuntime(e)) {
+          setError(failureLine(e, props.where()));
+          setNoRuntime(true);
+          return true;
+        }
         setError(failureLine(e, props.where()));
         return false;
       } finally {
@@ -71,6 +98,7 @@ export default function MemoryPanel(props: {
   createEffect(() => {
     cardRefresh();
     props.track?.();
+    emulatorRuntime();
     if (active()) untrack(() => gate.request());
     else untrack(() => gate.stop());
   });
@@ -98,7 +126,14 @@ export default function MemoryPanel(props: {
   };
 
   return (
-    <aside class="card-panel memory-panel" aria-label="Memory" hidden={!props.visible}>
+    <aside
+      class="card-panel memory-panel"
+      id={props.tabpanel?.id}
+      role={props.tabpanel ? 'tabpanel' : undefined}
+      aria-labelledby={props.tabpanel?.labelledBy}
+      aria-label={props.tabpanel ? undefined : 'Memory'}
+      hidden={!props.visible}
+    >
       <div class="card-body">
         <Show when={device()}>
           <h3 class="device">{device()}</h3>
@@ -178,6 +213,30 @@ export default function MemoryPanel(props: {
           <p class="err" role="alert">
             {error()}
           </p>
+        </Show>
+        <Show when={noRuntime() && !reading()}>
+          <div class="skeleton" aria-hidden="true">
+            <For each={SKELETON_ROWS}>
+              {(label) => (
+                <div class="mem-bar">
+                  <div class="mem-head">
+                    <span>{label}</span>
+                    <span class="used">—</span>
+                  </div>
+                  <div class="bar">
+                    <span class="seg free" />
+                  </div>
+                </div>
+              )}
+            </For>
+          </div>
+        </Show>
+        <Show when={noRuntime() && emulatorRead()}>
+          <div class="acts">
+            <button type="button" class="act small" onClick={() => reloadWithRuntime()}>
+              Reload with runtime
+            </button>
+          </div>
         </Show>
         <div class="acts">
           <button type="button" class="act small" disabled={busy()} onClick={() => gate.request()}>
