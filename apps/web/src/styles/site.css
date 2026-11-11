@@ -222,6 +222,16 @@ button {
   width: 16px;
   height: 16px;
 }
+.sitefoot {
+  border-top: 1px solid var(--line);
+  padding: 20px 0 28px;
+  color: var(--ink-3);
+  font-family: var(--font-mono);
+  font-size: var(--t-xs);
+}
+.sitefoot a {
+  color: var(--ink-2);
+}
 @media (max-width: 560px) {
   .sitenav .wrap {
     gap: 12px;
