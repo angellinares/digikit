@@ -143,7 +143,11 @@ fn modules_columns_line_up_in_pixels() {
     assert_eq!(rows.len(), 3);
     for row in &rows {
         // the kind starts after 13 letter widths, the size ends after 23, and the row fits
-        let kind = ["MACH", "TOOL", "FX"].iter().filter_map(|k| row.rfind(k)).max().unwrap();
+        let kind = ["MACH", "TOOL", "FX"]
+            .iter()
+            .filter_map(|k| row.rfind(k))
+            .max()
+            .unwrap();
         assert_eq!(px(&row[..kind]), 13 * 4, "{row:?}");
         assert_eq!(px(row), 23 * 4, "{row:?}");
         assert!(row.len() < DK_UI_ROW, "{row:?}");
