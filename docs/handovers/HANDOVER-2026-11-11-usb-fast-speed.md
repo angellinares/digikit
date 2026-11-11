@@ -41,7 +41,7 @@ usb-fast baseline) is already merged into main.
 
 ## Next
 
-1. PR: when (1) is green, push `speed/usb-fast` and open the PR (targeted list as above; full tier after merge). Ask Em before merging.
+1. PR #407 is OPEN (pushed c189d9d0) but CONFLICTS with main (6 new commits): merge origin/main into speed/usb-fast (regenerate generated files, never hand-merge them), rerun the affected device tests, push; ask Em before merging; full tier after merge.
 2. DN2 A/B with the experiment image (reliable write on/off, cached reads on/off), then decide.
 3. Merge fast-hash; measure; DN2 readback must beat the old verify.
 4. Larger card commands (firmware 64 KiB clamp in the eSDHC write/read, DN2 0x4012ca8a / DT2 0x4012e3c4; check the bounce buffer
