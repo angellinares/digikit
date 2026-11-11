@@ -1,4 +1,4 @@
-"""Numerical reference for sdk/dsp/sample.inc; no storage or resource policy."""
+"""Numerical reference for sdk/dsp/sample/float.inc; no storage or resource policy."""
 
 from collections.abc import Mapping, Sequence
 from dataclasses import dataclass, replace

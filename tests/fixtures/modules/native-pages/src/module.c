@@ -1,7 +1,7 @@
 /* Neutral replacement pair. A's click action follows its new binding; E/H are
  * saved words, G on page one is local, and LEVEL stays independent. */
-#include <dk/api.h>
-#include <dk/machine.h>
+#include <dk/core/api.h>
+#include <dk/machine/machine.h>
 DK_MACHINE(twin, .name = "TWIN", .short_name = "TWN", .render = "_np_render",
            .note_on = "_np_note_on", .desc = "_np_desc");
 DK_PARAM(twin, 0, twin_smp, "Sample", "SMP", 0, 15, 0);

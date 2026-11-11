@@ -1,5 +1,5 @@
-//! The sample picker (sdk/src/sample_picker.c) on the fake <dk/ui.h> and a fake dk_api: the SMP pool list, the browser, the INFO page, keys
-//! and texts. The pure functions (sdk/src/picker_logic.c) have their own tests at the end.
+//! The sample picker (sdk/src/sample/picker.c) on the fake <dk/platform/ui.h> and a fake dk_api: the SMP pool list, the browser, the INFO page, keys
+//! and texts. The pure functions (sdk/src/chooser/logic.c) have their own tests at the end.
 use dkui_host::driver::*;
 use dkui_host::*;
 use std::ffi::{c_char, c_int, CStr, CString};
@@ -40,14 +40,15 @@ extern "C" {
     fn cf_last_fill() -> *const c_char;
     fn cf_panel_entry() -> c_int;
 
-    fn pk_trunc(out: *mut c_char, name: *const c_char, max: c_int);
-    fn pk_size_text(out: *mut c_char, bytes: u32);
-    fn pk_secs_text(out: *mut c_char, frames: u32, rate: u32);
-    fn pk_join(out: *mut c_char, cap: c_int, dir: *const c_char, leaf: *const c_char) -> c_int;
-    fn pk_parent(dir: *mut c_char) -> c_int;
-    fn pk_err_tail(out: *mut c_char, code: c_int);
-    fn pk_err_info(out: *mut c_char, code: c_int);
-    fn pk_pool_row(
+    fn dk_text_trunc(out: *mut c_char, name: *const c_char, max: c_int);
+    fn dk_text_size(out: *mut c_char, bytes: u32);
+    fn dk_text_secs(out: *mut c_char, frames: u32, rate: u32);
+    fn dk_path_join(out: *mut c_char, cap: c_int, dir: *const c_char, leaf: *const c_char)
+        -> c_int;
+    fn dk_path_parent(dir: *mut c_char) -> c_int;
+    fn dk_sample_pool_err_tail(out: *mut c_char, code: c_int);
+    fn dk_sample_pool_err_info(out: *mut c_char, code: c_int);
+    fn dk_sample_pool_row_text(
         out: *mut c_char,
         index: c_int,
         current: c_int,
@@ -229,19 +230,21 @@ fn row_text_per_state_and_error_code() {
     ];
     for (code, tail, info) in cases {
         let mut b = [0 as c_char; 32];
-        unsafe { pk_err_tail(b.as_mut_ptr(), code) };
+        unsafe { dk_sample_pool_err_tail(b.as_mut_ptr(), code) };
         assert_eq!(
             unsafe { CStr::from_ptr(b.as_ptr()) }.to_str().unwrap(),
             tail
         );
-        unsafe { pk_err_info(b.as_mut_ptr(), code) };
+        unsafe { dk_sample_pool_err_info(b.as_mut_ptr(), code) };
         assert_eq!(
             unsafe { CStr::from_ptr(b.as_ptr()) }.to_str().unwrap(),
             info
         );
         assert!(tail.len() <= 14);
         let mut row = [0 as c_char; 24];
-        unsafe { pk_pool_row(row.as_mut_ptr(), 4, 0, code, c("LOOP").as_ptr(), 0, 0, 0) };
+        unsafe {
+            dk_sample_pool_row_text(row.as_mut_ptr(), 4, 0, code, c("LOOP").as_ptr(), 0, 0, 0)
+        };
         let s = unsafe { CStr::from_ptr(row.as_ptr()) }.to_str().unwrap();
         assert!(s.ends_with(tail) && s.len() <= 23, "{s}");
     }
@@ -251,7 +254,7 @@ fn row_text_per_state_and_error_code() {
 fn a_long_name_gives_way_to_the_error_text_and_holes_show_a_dash() {
     let mut row = [0 as c_char; 24];
     unsafe {
-        pk_pool_row(
+        dk_sample_pool_row_text(
             row.as_mut_ptr(),
             0,
             0,
@@ -264,10 +267,10 @@ fn a_long_name_gives_way_to_the_error_text_and_holes_show_a_dash() {
     };
     let s = unsafe { CStr::from_ptr(row.as_ptr()) }.to_str().unwrap();
     assert_eq!(s, "00 KICK_~NAL !POOL FULL");
-    unsafe { pk_pool_row(row.as_mut_ptr(), 9, 0, E_CONTRACT, c("").as_ptr(), 0, 0, 0) };
+    unsafe { dk_sample_pool_row_text(row.as_mut_ptr(), 9, 0, E_CONTRACT, c("").as_ptr(), 0, 0, 0) };
     let s = unsafe { CStr::from_ptr(row.as_ptr()) }.to_str().unwrap();
     assert_eq!(s, "09 NO SAMPLE POOL");
-    unsafe { pk_pool_row(row.as_mut_ptr(), 15, 1, 0, c("").as_ptr(), 0, 0, 0) };
+    unsafe { dk_sample_pool_row_text(row.as_mut_ptr(), 15, 1, 0, c("").as_ptr(), 0, 0, 0) };
     let s = unsafe { CStr::from_ptr(row.as_ptr()) }.to_str().unwrap();
     assert_eq!(s, "15>-");
 }
@@ -933,7 +936,7 @@ fn text(f: impl FnOnce(*mut c_char)) -> String {
 
 #[test]
 fn truncation_keeps_start_and_end() {
-    let t = |n: &str, max| text(|o| unsafe { pk_trunc(o, c(n).as_ptr(), max) });
+    let t = |n: &str, max| text(|o| unsafe { dk_text_trunc(o, c(n).as_ptr(), max) });
     assert_eq!(t("KICK", 10), "KICK");
     assert_eq!(t("ABCDEFGHIJ", 10), "ABCDEFGHIJ");
     assert_eq!(t("ABCDEFGHIJK", 10), "ABCDE~HIJK");
@@ -944,7 +947,7 @@ fn truncation_keeps_start_and_end() {
 
 #[test]
 fn size_and_length_text() {
-    let s = |b| text(|o| unsafe { pk_size_text(o, b) });
+    let s = |b| text(|o| unsafe { dk_text_size(o, b) });
     assert_eq!(
         (
             s(0).as_str(),
@@ -958,7 +961,7 @@ fn size_and_length_text() {
     assert_eq!(s(1024 * 1024), "1.0M");
     assert_eq!(s(5 * 1024 * 1024 / 2), "2.5M");
     assert_eq!(s(u32::MAX), "4096.0M");
-    let l = |f, r| text(|o| unsafe { pk_secs_text(o, f, r) });
+    let l = |f, r| text(|o| unsafe { dk_text_secs(o, f, r) });
     assert_eq!(l(57600, 48000), "1.2s");
     assert_eq!(l(0, 48000), "0.0s");
     assert_eq!(l(48000 * 99, 48000), "99.0s");
@@ -970,7 +973,7 @@ fn size_and_length_text() {
 fn path_join_and_parent() {
     let j = |d: &str, l: &str| {
         let mut b = [0 as c_char; 300];
-        let n = unsafe { pk_join(b.as_mut_ptr(), 300, c(d).as_ptr(), c(l).as_ptr()) };
+        let n = unsafe { dk_path_join(b.as_mut_ptr(), 300, c(d).as_ptr(), c(l).as_ptr()) };
         (
             n,
             unsafe { CStr::from_ptr(b.as_ptr()) }
@@ -988,7 +991,7 @@ fn path_join_and_parent() {
     assert_eq!(j("A", "").0, -1);
     let mut b = [0 as c_char; 8];
     assert_eq!(
-        unsafe { pk_join(b.as_mut_ptr(), 4, c("AB").as_ptr(), c("C").as_ptr()) },
+        unsafe { dk_path_join(b.as_mut_ptr(), 4, c("AB").as_ptr(), c("C").as_ptr()) },
         -1,
         "cap"
     );
@@ -998,7 +1001,7 @@ fn path_join_and_parent() {
         for (i, ch) in s.bytes().enumerate() {
             b[i] = ch as c_char;
         }
-        let r = unsafe { pk_parent(b.as_mut_ptr()) };
+        let r = unsafe { dk_path_parent(b.as_mut_ptr()) };
         (
             r,
             unsafe { CStr::from_ptr(b.as_ptr()) }

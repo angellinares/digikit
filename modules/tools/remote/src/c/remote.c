@@ -19,8 +19,8 @@
  * 2 turn), the key code or encoder, and the delta taken (a key: 1 down, 0 up). The firmware applies a turn at its next tick, so the event says "accepted
  * by the decoder", not "applied". */
 
-#include <dk/api.h>
-#include <dk/ui.h>
+#include <dk/core/api.h>
+#include <dk/platform/ui.h>
 
 typedef uint32_t u32;
 typedef uint8_t u8;

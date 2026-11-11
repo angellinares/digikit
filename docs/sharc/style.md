@@ -3,7 +3,7 @@
 Status: draft for step 7. Marks: **[D]** read once in the repo, **[O]** proposal or guess. The assembler accepts what
 `modules/machines/pluck/src/dsp/pluck.s` uses (`//` comments, `#include`, `#define`, `.SECTION`, `.VAR`, `.GLOBAL`,
 `.EXTERN`, `LCNTR = n, DO label UNTIL LCE`). Anything beyond that (for example `#define` as a register alias, `.equ`)
-must be tried once with the assembler before the guide makes it a rule **[O]**. Note from `sdk/asm/dk_machine.inc`: the
+must be tried once with the assembler before the guide makes it a rule **[O]**. Note from `sdk/dsp/contract/dk_machine.inc`: the
 assembler upper-cases macro text, so write numbers as decimal after `+` (the generator already does this).
 
 ## 1. File layout
@@ -85,7 +85,7 @@ _xx_loop: last body instruction;     // the label is on the last instruction of 
 
 ## 5. The module register contract
 
-From `<dk/machine.h>`, `<dk/fx.h>` and finding 45 **[D]**:
+From `<dk/machine/machine.h>`, `<dk/fx/fx.h>` and finding 45 **[D]**:
 
 - Entry: the adapter sets `I13` to the return address and jumps through `JUMP (M13, I12)`. The module returns with
   `JUMP (M13, I13)`. Do not use `RTS` or the frame helpers unless the module builds its own frame.
@@ -207,7 +207,7 @@ After the loop, write F1 (not F0) to the state so rounding drift does not accumu
     plus setup, so the descriptor has a wide margin.
   - `DM(I1, M5)` as "read without modify" rather than `DM(0, I1)`.
   - the voice end check after the loop uses compare and conditional jumps; fine.
-- `<dk/machine.h>` / `<dk/fx.h>`: the contract is specified for entry and return. It lists clobbered and preserved
+- `<dk/machine/machine.h>` / `<dk/fx/fx.h>`: the contract is specified for entry and return. It lists clobbered and preserved
   registers but not MODE1 bit values, SIMD state, or whether loops/stacks are clear at entry. Add one sentence each
   (section 5). It does not say that B registers other than B3 are preserved: say whether they are **[O]**.
 - `dk_machine.inc` provides `DK_IN_W_*` (word offsets) and `DK_DESC_*`. It has no names for register roles or

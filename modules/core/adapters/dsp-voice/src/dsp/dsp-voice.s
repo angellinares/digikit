@@ -41,7 +41,7 @@
 // Registers: R0-R2, I4 are free on the stock fall-through path (the stock code assigns them before it reads them).
 //
 // Two kinds of registered row (docs/design/module-sdk.md 4.1 and 5): a row whose word 16 (note_on) is 0 is a routine of the form above (the raw row of a `raw` module, module-sdk.md 11.5 D12: no contract) and
-// runs as described. A row with a note_on pc is a machine of the SDK contract (<dk/machine.h>): the adapter below (`_dv_contract`)
+// runs as described. A row with a note_on pc is a machine of the SDK contract (<dk/machine/machine.h>): the adapter below (`_dv_contract`)
 // does what each machine's prologue used to do. It finds the note-on (record +0x1b8 ACTIVE != 0 and +0x1b9 mark == 0, and writes the
 // mark), zeroes the first `clear` bytes of the voice's state (row words 17 state base, 18 stride, 19 clear; the state of track t is
 // base + t stride) and calls note_on, then render, with R4 = state, R8 = a `dk_voice_in` of its own (pitch with the tune knob folded

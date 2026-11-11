@@ -1,7 +1,7 @@
-/* Module settings API fixture (<dk/settings.h>). `dkm_init` takes the handle and reads the key "boot"; a service command queues one put, get or remove
+/* Module settings API fixture (<dk/platform/settings.h>). `dkm_init` takes the handle and reads the key "boot"; a service command queues one put, get or remove
    request and `dkm_slot_0` runs it in the UI task (the settings API is not for the MIDI task, where service commands run).
    test/settings-b builds this file with another command number and PROOF_VIA_JOB, so two module names use the same key. */
-#include <dk/settings.h>
+#include <dk/platform/settings.h>
 #ifndef PROOF_CMD
 #define PROOF_CMD 0x38 /* request; PROOF_CMD + 1 reads the result */
 #endif

@@ -12,7 +12,7 @@ loaded like any other from the card store; it needs `core/input` in the image (b
 
 - **Codes** are the device file's `[panel]` codes (`devices/*.toml`); the host lays the keys out from them. The module knows no device.
 - **No switch.** There is no REMOTE switch and no guarded range: a loaded module answers its commands, an unloaded one gives `E_PROTO` (-60). To turn it off, uncheck its row in MODULES, apply and restart.
-- **Settings.** The MODULES side panel of the loaded module has SETTINGS... (`dkm_menu`, `DK_MENU` of `<dk/ui.h>`): KEYS HELD (the keys the module holds), LAST (the last command it ran and its result) and the action RELEASE ALL KEYS, which lets go of every held key at once. Without `core/ui` in the image the module still loads (the `dk_ui_*` imports are stubs) and has no page.
+- **Settings.** The MODULES side panel of the loaded module has SETTINGS... (`dkm_menu`, `DK_MENU` of `<dk/platform/ui.h>`): KEYS HELD (the keys the module holds), LAST (the last command it ran and its result) and the action RELEASE ALL KEYS, which lets go of every held key at once. Without `core/ui` in the image the module still loads (the `dk_ui_*` imports are stubs) and has no page.
 - **Pacing.** The firmware flushes a turn at most 30 detents every 4 ticks. The module keeps an estimate of what is still pending per encoder and takes only what fits, capped at ±30 per request even when direction reverses.
 - **Held keys.** The module remembers the keys it holds. RELEASE lets go of all of them (a host sends it when its Remote page closes).
 

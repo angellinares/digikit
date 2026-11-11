@@ -1,4 +1,4 @@
-// test/fx-nan: a negative fixture of the FX contract (<dk/fx.h>). It passes the input on and writes a NaN into sample 5 of its output. The
+// test/fx-nan: a negative fixture of the FX contract (<dk/fx/fx.h>). It passes the input on and writes a NaN into sample 5 of its output. The
 // adapter of core/fx must refuse the block (it plays dry and counts a fault); the conformance suite fails this module on purpose
 // (pk_conform.FX_NEGATIVE) to show that the validator catches it.
 

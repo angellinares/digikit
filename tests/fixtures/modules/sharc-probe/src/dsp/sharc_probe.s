@@ -1,4 +1,4 @@
-// test/sharc-probe: an effect of the FX contract (<dk/fx.h>) that measures RECIPS and RSQRTS on the real core and reports through the module step word.
+// test/sharc-probe: an effect of the FX contract (<dk/fx/fx.h>) that measures RECIPS and RSQRTS on the real core and reports through the module step word.
 //
 // The audio passes unchanged (the block is copied). Each block the routine stores ONE 32-bit word in `DM(_dk_step)`, diagnostic word 25 of the DSP reply
 // (`core/dsp-link`), which the ColdFire reads: the block tail copies it into that block's record, so every word arrives once, at 1500 words a second

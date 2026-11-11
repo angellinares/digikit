@@ -71,7 +71,7 @@ def test_the_sdk_record_code_passes_its_own_tests(tmp_path):
     )
     assert r.returncode == 0, r.stderr
     r = subprocess.run([str(exe)], capture_output=True, text=True)
-    # the record, the version 3 store and the settings record (the shared vectors included: the test reads sdk/vectors/settings-vectors.json)
+    # the record, the version 3 store and the settings record (the shared vectors included: the test reads modules/core/runtime/vectors/settings-vectors.json)
     m = re.search(r"test result: ok\. (\d+) passed; 0 failed", r.stdout)
     assert r.returncode == 0 and m and int(m.group(1)) > 0, r.stdout
 

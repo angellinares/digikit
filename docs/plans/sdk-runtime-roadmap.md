@@ -27,7 +27,7 @@ Status: `todo`, `active`, `done`, `parked`.
 
 | Phase | Item | What | Depends on | Status | Branch / PR |
 | --- | --- | --- | --- | --- | --- |
-| 1 | S1 | SDK restructure, byte-identical, with hash task | - | todo | |
+| 1 | S1 | SDK restructure, byte-identical, with hash task | - | done | lane/sdk-design |
 | 1 | S2 | SDK entry point (`dk_module`) and named imports; tools migrated | S1 | todo | |
 | 1 | S3 | SDK builders in `init` and the runtime commit path; machines, FX and fixtures migrated | S2 | todo | |
 | 1 | S4 | SDK templates and docs | S3 | todo | |

@@ -1,4 +1,4 @@
-// test/dsp-facts: an effect of the FX contract (<dk/fx.h>) that measures the SHARC+ core it runs on and reports through the module step word.
+// test/dsp-facts: an effect of the FX contract (<dk/fx/fx.h>) that measures the SHARC+ core it runs on and reports through the module step word.
 //
 // The audio passes unchanged (the block is copied). Each block the routine stores ONE 32-bit word in `DM(_dk_step)`, diagnostic word 25 of the DSP reply
 // (`core/dsp-link`), which the ColdFire collector keeps (modules/tools/probe). The words form frames exactly as in test/sharc-probe: a header (0xB0, payload

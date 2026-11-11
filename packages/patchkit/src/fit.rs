@@ -208,7 +208,10 @@ mod tests {
     use super::*;
 
     fn vectors() -> Value {
-        serde_json::from_str(include_str!("../../../sdk/vectors/fit-vectors.json")).unwrap()
+        serde_json::from_str(include_str!(
+            "../../../modules/core/runtime/vectors/fit-vectors.json"
+        ))
+        .unwrap()
     }
 
     /// A vector capacity (`[limit, used, largest]` per kind, null: left out) as a request's `caps`.

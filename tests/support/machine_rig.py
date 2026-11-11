@@ -535,7 +535,7 @@ class MachineRig:
 
     # -- the write set -----------------------------------------------------------------------------------------------------
     def _allowed(self, out_addr: int) -> list[tuple[int, int, str]]:
-        """The DM a routine of the module may store to in a call of the current voice (docs/design/module-sdk.md 11.5 D6, <dk/machine.h>):
+        """The DM a routine of the module may store to in a call of the current voice (docs/design/module-sdk.md 11.5 D6, <dk/machine/machine.h>):
         the output block, the voice's own state block (base + stride * track, `state_bytes`), its data stack and its own data and bss (shared by all voices) (`stack_bytes` bytes below the device's actual module-entry I7). A routine without a description (the raw form) has no state; it gets DEFAULT_STACK_BYTES of stack."""
         b = self.built
         out = [(out_addr, 4 * 32, "output block")]

@@ -52,13 +52,13 @@ def linked(request):
     text = "\n".join(
         [
             '#include "dk_machine.inc"',
-            '#include "dsp/call.inc"',
-            '#include "dsp/sample.inc"',
+            '#include "dsp/contract/call.inc"',
+            '#include "dsp/sample/float.inc"',
             '#include "playback.inc"',
         ]
     )
     expanded = pk_sharc.expand_includes(
-        text, [ROOT / "sdk/asm", ROOT / "sdk", HERE / "src/dsp"]
+        text, [ROOT / "sdk/dsp/contract", ROOT / "sdk", HERE / "src/dsp"]
     )
     return pk_sharc.build(expanded, 0xB90000, {"_sp_view": VIEW})[1], request.param
 

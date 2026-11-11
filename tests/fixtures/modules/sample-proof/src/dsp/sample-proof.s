@@ -1,6 +1,6 @@
 #include "dk_machine.inc"
-#include "dsp/call.inc"
-#include "dsp/sample.inc"
+#include "dsp/contract/call.inc"
+#include "dsp/sample/float.inc"
 #include "playback.inc"
 
 // Initialized READY=0 descriptor is sent with the module image; bank is BSS.

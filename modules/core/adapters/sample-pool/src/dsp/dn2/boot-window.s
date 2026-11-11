@@ -1,4 +1,4 @@
-#include "dsp/call.inc"
+#include "dsp/contract/call.inc"
 // core/sample-pool on the Digitone II 1.12: the boot-time cache window for the LP0 receive buffer.
 // Unchanged from the private proof (core/dsp-lp0-proof, finding 95) except for the names (_lp_ -> _sp_): it runs at boot, before the stock cache
 // enable, and puts one 4,352-byte window around the LP0 descriptor, driver state and receive buffer into the noncacheable range RR4

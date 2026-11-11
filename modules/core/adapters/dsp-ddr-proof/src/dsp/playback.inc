@@ -1,4 +1,4 @@
-#include "dsp/sample_bank.inc"
+#include "dsp/sample/bank.inc"
 // Six SDK cursor words followed by a private admitted-generation token.
 // Machine-adapter entry is JUMP. Preserve I12/I13 across the kernel's CJUMP ABI.
 .SECTION/PM seg_pmco;

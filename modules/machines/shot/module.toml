@@ -22,7 +22,7 @@ uses_api = ["files_client", "files_list", "files_poll", "files_cancel", "sample_
 # the .dkm. The machine declaration, the parameters and the track table are in src/module.c; the DSP in src/dsp/shot.s.
 [[object]]
 path = "build/shot-cf.dko.json"
-sources = ["src/module.c", "src/pages.c", "src/sample_view.c", "../../../sdk/src/sample_picker.c", "../../../sdk/src/chooser.c", "../../../sdk/src/picker_logic.c"]
+sources = ["src/module.c", "src/pages.c", "src/sample_view.c", "../../../sdk/src/sample/picker.c", "../../../sdk/src/chooser/chooser.c", "../../../sdk/src/chooser/logic.c"]
 place = "cf.expansion"
 
 [[object]]

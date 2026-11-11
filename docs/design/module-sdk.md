@@ -6,7 +6,7 @@ Related: `docs/plans/digikit-runtime.md` (Phase 11), `docs/design/digikit-dkm.md
 `digikit-store.md`, `digikit-upload.md`, `device-data.md`, finding 27 (typed schema), finding 51 (guard).
 
 Note (2026-10-27): this document is history for the manifest sections. Machines are now declared in C with `DK_MACHINE`, `DK_PARAM` and
-`DK_PAGE` (`sdk/include/dk/machine.h`), and effects with `DK_FX`, `DK_FX_PARAM` and `DK_PAGE`. The manifest sections `[[voice]]`, `[[machine]]`,
+`DK_PAGE` (`sdk/include/dk/machine/machine.h`), and effects with `DK_FX`, `DK_FX_PARAM` and `DK_PAGE`. The manifest sections `[[voice]]`, `[[machine]]`,
 `[[param]]` and `[[page]]` are refused, and `build/gen/consts.rs`, `dt2.inc`, `dn2.inc` and `module.h` are gone. Current rules:
 `docs/MODULE-AUTHORING.md`, section 5.
 
@@ -250,7 +250,7 @@ Notes on the header:
 
 #### 4.2.1 An effect with a page of its own (Digitakt II, F4 step 2)
 
-Note: effects are now declared with `DK_FX` in C (`sdk/include/dk/fx.h`); the `[[fx]]` and `[[fx.knob]]` names below are the fields of that record.
+Note: effects are now declared with `DK_FX` in C (`sdk/include/dk/fx/fx.h`); the `[[fx]]` and `[[fx.knob]]` names below are the fields of that record.
 
 An `[[fx]]` with a `tab` has a page in the FX view; the runtime builds the page and its knob rows from the module's records, with no effect-specific code (finding 61,
 `docs/design/digikit-registry.md` "Effect pages"; the cookbook is `.agents/skills/digikit-module/references/contract-fx.md`, "Define an effect with its own page").
@@ -429,7 +429,7 @@ dsp range, state bytes, voices, health state, faults) and the free/largest figur
 
 A module does not say what a load takes: the needs are inferred from the file's contents by one function (`dkneeds::needs_of`, docs/design/digikit-dkm.md, "Needs are inferred from the contents"), so a contributed or hand-built `.dkm` cannot misreport them;
 the runtime checks the same limits at load anyway. The menu runs it on the card's files, patchkit and its wasm on the host (`patchkit needs`, `pk_needs`). One rule, `fits_now(needs, capacity)`, compares them with the device's CAPACITY and names the first short resource
-(`dkrt_fit` for the menu; the host app calls the same code through `pk_fit` of patchkit.wasm and the tools through `patchkit fit --json -`; the vectors are `sdk/vectors/fit-vectors.json`). The DIGIKIT menu's MODULES rows show the memory a module takes and `x` when it will not fit
+(`dkrt_fit` for the menu; the host app calls the same code through `pk_fit` of patchkit.wasm and the tools through `patchkit fit --json -`; the vectors are `modules/core/runtime/vectors/fit-vectors.json`). The DIGIKIT menu's MODULES rows show the memory a module takes and `x` when it will not fit
 next to the ticked ones; the line above APPLY & RESTART gives the DSP and the CPU memory of the ticked set (`DSP 85% CPU 1%`); the Transfer page tags each library module `fits` or `won't fit` and says whether the ticked set fits together; the Memory panel of the desktop app (Emulator and Remote pages) shows what each loaded module takes of each resource the device limits; `dk run` refuses a module that does not fit unless `--force`; `module:check` prints the needs
 and whether the module fits an empty device. Because the module set is fixed per session, a selection is checked against the limits with the other ticked modules taken out, not against what is loaded now.
 
@@ -532,11 +532,11 @@ mise run module:emu NAME              the same through the emulator Target (Phas
 | `module:check` | exists for machines (`pk_modcheck.py`, `mise.toml:98-100`) | add the static checks of section 8; non-machine modules get their type's checks |
 | emulator run | `tests/digikit` scenarios; `menu-dkrun-pluck` drives `dk run` in the emulator | the Target abstraction (Phase 11 item 6, `plans/digikit-runtime.md:455`): emulator and device backends behind one API, so one system scenario runs on both |
 | device run | `tools/device/dkrun.py`, INFO, PUT, SELECT, RESTART, LOG (`digikit-upload.md:165-166`) | unchanged; the guard's `MACHINE_FAULT` events become a pass/fail line in the report |
-| guide | `docs/MODULE-AUTHORING.md` (Phase 11 item 5) | one page: the contract header, the manifest, four commands, a worked example (pluck), the failure messages and what they mean. It is generated in part from `<dk/machine.h>` and the schema, so it cannot drift. Plain, short, with tables: written for a human and for a model reading it cold |
+| guide | `docs/MODULE-AUTHORING.md` (Phase 11 item 5) | one page: the contract header, the manifest, four commands, a worked example (pluck), the failure messages and what they mean. It is generated in part from `<dk/machine/machine.h>` and the schema, so it cannot drift. Plain, short, with tables: written for a human and for a model reading it cold |
 | C modules | not supported on SHARC (finding 20 recommends assembly for the hot path) | allowed by the contract; `module:new machine NAME --lang c` is offered only after the measurement in section 11 |
 | ColdFire side | Rust (`rust-demo`) and C (`c-demo`) | the `dkrt-sdk` crate stays the SDK of the service type |
 
-The SDK a module author sees: `<dk/machine.h>` (or `sdk/asm/dk_machine.inc`), the template, the four commands, the guide. No firmware knowledge, no hook, no frame offset.
+The SDK a module author sees: `<dk/machine/machine.h>` (or `sdk/dsp/contract/dk_machine.inc`), the template, the four commands, the guide. No firmware knowledge, no hook, no frame offset.
 
 ## 10. Migration
 

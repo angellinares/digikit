@@ -143,7 +143,7 @@ Change:
 Tests:
 - Host (`modules/core/adapters/sample-pool/tests/test_sample_pool_dn2.py` compiles `pool_alloc.h`, `pool_wire.h` and the real `pool.c`, `xfer.c` and `send.c` against `tests/fixtures/sample-pool-dn2/harness.c`, which runs the block interrupt, the UI task and the worker job on one simulated clock; `test_sample_pool_dsp_dn2.py` runs the assembled receiver against stand-ins of the stock driver): first fit and coalescing; stereo R follows L and plane arithmetic; range and 66-extent bounds; CACHED eviction order; dedup refcount and token uniqueness (no wrap); `free_frames` as largest run; `sp_nw32(0x80531000) == 0x1014C400`; page tag encode/decode and seq rule; stereo deinterleave and last-page zero padding against a Python reference; ACK decode torn-read cases (reuse the stand-in harness of `test_dsp_lp0_proof.py`).
 - One DN2 emulator test (a new Vitest file `sample-pool-dn2.test.ts` in `tests/regression/runtime`, bounded by `--seconds`, existing ready-pair cache): upload one stereo file (about 3 s) and one mono file to the store, select on two tracks, assert:
-  1. status goes QUEUED, then READY, with the right token; `dk_strack` words (frames, channels, `base_l`, `base_r`) match;
+  1. status goes QUEUED, then READY, with the right token; `dk_sample_pool_entry` words (frames, channels, `base_l`, `base_r`) match;
   2. DDR planes read back byte-equal to the file's L and R planes (via the daemon DDR peek), and pad bytes after the last frame are zero;
   3. dedup: the same file on a second track gives equal bases and no new pages (page counter unchanged);
   4. release then reselect: the second select returns READY without transfer (counter unchanged), content unchanged;

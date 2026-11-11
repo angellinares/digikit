@@ -1,7 +1,7 @@
 /* The machine declaration of test/patched-pluck: the same machine as digikit/pluck, patched in. The DSP reads the words in this order:
    DECAY, PICK, BRIGHT, COLOR. The defaults give a medium-length, slightly damped, lightly combed pluck.
    patchkit reads these records; the device never sees them. */
-#include <dk/machine.h>
+#include <dk/machine/machine.h>
 
 DK_MACHINE(pluck, .name = "Pluck", .short_name = "PLK", .render = "_pk_render",
            .note_on = "_pk_note_on", .desc = "_pk_desc");

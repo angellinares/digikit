@@ -1,4 +1,4 @@
-// test/sine: a pitched sine machine of the SDK contract (<dk/machine.h>), one body for both devices. It is the template of a machine module:
+// test/sine: a pitched sine machine of the SDK contract (<dk/machine/machine.h>), one body for both devices. It is the template of a machine module:
 // `note_on` has nothing to do, `render` writes one block and returns DK_OK; after 96,000 samples (2 s) it returns DK_DONE.
 // State per voice (8 bytes, cleared at note-on): word 0 the phase (float, 0 .. 1), word 1 the sample count.
 // pitch (semitones << 8, the tune folded in): f = 440 * 2^((n - 69) / 12). Level: velocity / (127 << 8) * parameter 0 / 0x7f00 * 0.5.

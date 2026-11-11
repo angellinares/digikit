@@ -1,4 +1,4 @@
-#include "dsp/call.inc"
+#include "dsp/contract/call.inc"
 .SECTION/PM seg_pmco;
 .GLOBAL _test_callback;
 .EXTERN _lp_callback;

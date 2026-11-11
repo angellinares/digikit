@@ -8,7 +8,7 @@ use std::{vec, vec::Vec};
 use serde_json::Value;
 
 fn vectors() -> Value {
-    serde_json::from_str(include_str!("../../../../../sdk/vectors/fit-vectors.json")).unwrap()
+    serde_json::from_str(include_str!("../../vectors/fit-vectors.json")).unwrap()
 }
 
 /// kind name of `[capacity.kinds]` -> CAPK number

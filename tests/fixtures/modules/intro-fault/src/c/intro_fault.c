@@ -1,6 +1,6 @@
 /* test/intro-fault: takes the boot animation and faults in the first frame callback (on the intro task). */
 
-#include <dk/intro.h>
+#include <dk/platform/intro.h>
 
 static uint8_t blank[DK_INTRO_BYTES] __attribute__((aligned(4)));
 

@@ -22,7 +22,7 @@ POISON = 0xDEADBEEF
 def linked():
     source = "\n".join(
         [
-            '#include "dsp/call.inc"',
+            '#include "dsp/contract/call.inc"',
             ".SECTION/PM seg_pmco;",
             ".GLOBAL _call_test;",
             "_call_test:",
@@ -141,7 +141,7 @@ def test_one_argument_call_is_rejected():
     source = pk_sharc.expand_includes(
         "\n".join(
             [
-                '#include "dsp/call.inc"',
+                '#include "dsp/contract/call.inc"',
                 ".SECTION/PM seg_pmco;",
                 "_old: DK_CALL(_callee);",
                 "_callee: RTS;",

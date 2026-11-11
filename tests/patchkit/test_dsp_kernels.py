@@ -1,4 +1,4 @@
-"""SDK DSP step macros (sdk/dsp/*.inc): each macro in a 32-sample block loop on the concrete core, against the float32
+"""SDK DSP step macros (sdk/dsp/**/*.inc): each macro in a 32-sample block loop on the concrete core, against the float32
 models of tools/patchkit/dsp_ref.py, plus the instruction count of the loop.
 
 recip, div and rsqrt run with the core's measured seed tables (8-bit seeds), so they are compared within the bounds stated in
@@ -52,6 +52,18 @@ WIDE = np.concatenate(
 POS = np.geomspace(1e-3, 1e3, N).astype(f32)
 
 
+INC_PATH = {
+    "gain": "dynamics/gain",
+    "sat": "dynamics/sat",
+    "ramp": "util/ramp",
+    "recip": "util/recip",
+    "onepole": "filter/onepole",
+    "biquad": "filter/biquad",
+    "halfband": "filter/halfband",
+    "delay": "delay/delay",
+}
+
+
 def kernel(inc, setup, setup_n, macro, macro_n, consts, inputs, out_reg="F8"):
     """Build and run one loop: load the inputs (F0, F1), the macro, the store of `out_reg`; 32 samples.
 
@@ -67,7 +79,7 @@ def kernel(inc, setup, setup_n, macro, macro_n, consts, inputs, out_reg="F8"):
         pointers.append("I2 = %d;" % IN1)
     text = "\n".join(
         [
-            '#include "dsp/%s.inc"' % inc,
+            '#include "dsp/%s.inc"' % INC_PATH[inc],
             ".SECTION/PM seg_pmco;",
             ".GLOBAL _t;",
             "_t:",
@@ -83,7 +95,9 @@ def kernel(inc, setup, setup_n, macro, macro_n, consts, inputs, out_reg="F8"):
             "",
         ]
     )
-    text = pk_sharc.expand_includes(text, [ROOT / "sdk" / "asm", ROOT / "sdk"])
+    text = pk_sharc.expand_includes(
+        text, [ROOT / "sdk" / "dsp" / "contract", ROOT / "sdk"]
+    )
     _, linked = pk_sharc.build(text, BASE)
     dm = {}
     for base, vec in zip((IN0, IN1), inputs, strict=False):
@@ -153,7 +167,7 @@ def test_onepole():
     assert n <= ceiling
 
 
-# --- block routines (sdk/dsp/call.inc, biquad.inc): the C convention, called from assembly and from selcc C ---
+# --- block routines (sdk/dsp/contract/call.inc, biquad.inc): the C convention, called from assembly and from selcc C ---
 
 BQ = BUF + 0x200
 BQ_IN = (
@@ -229,8 +243,8 @@ def test_biquad_from_assembly_two_blocks_in_a_row():
             text = "\n".join(
                 [
                     "#define DK_BLOCK 32",
-                    '#include "dsp/call.inc"',
-                    '#include "dsp/biquad.inc"',
+                    '#include "dsp/contract/call.inc"',
+                    '#include "dsp/filter/biquad.inc"',
                     ".SECTION/PM seg_pmco;",
                     ".GLOBAL _bq_h;",
                     "_bq_h:",
@@ -249,7 +263,9 @@ def test_biquad_from_assembly_two_blocks_in_a_row():
                 ]
             )
             _, linked = pk_sharc.build(
-                pk_sharc.expand_includes(text, [ROOT / "sdk" / "asm", ROOT / "sdk"]),
+                pk_sharc.expand_includes(
+                    text, [ROOT / "sdk" / "dsp" / "contract", ROOT / "sdk"]
+                ),
                 BASE,
             )
             regs = {**BQ_SAVED, **BQ_CONSTS, "I6": BQ_STACK, "I7": BQ_STACK}
@@ -282,8 +298,8 @@ def test_biquad_never_reads_past_the_input_block():
     text = "\n".join(
         [
             "#define DK_BLOCK 32",
-            '#include "dsp/call.inc"',
-            '#include "dsp/biquad.inc"',
+            '#include "dsp/contract/call.inc"',
+            '#include "dsp/filter/biquad.inc"',
             ".SECTION/PM seg_pmco;",
             ".GLOBAL _bq_h;",
             "_bq_h:",
@@ -296,7 +312,10 @@ def test_biquad_never_reads_past_the_input_block():
         ]
     )
     _, linked = pk_sharc.build(
-        pk_sharc.expand_includes(text, [ROOT / "sdk" / "asm", ROOT / "sdk"]), BASE
+        pk_sharc.expand_includes(
+            text, [ROOT / "sdk" / "dsp" / "contract", ROOT / "sdk"]
+        ),
+        BASE,
     )
     regs = {**BQ_SAVED, **BQ_CONSTS, "I6": BQ_STACK, "I7": BQ_STACK}
     # the watch is a read watchpoint of the core's driver (CallSession.record_reads); the control range proves that it fires
@@ -318,14 +337,16 @@ void run(int x, int y, int st) { dk_biquad(x, y, st); }
     kernel_text = "\n".join(
         [
             "#define DK_BLOCK 32",
-            '#include "dsp/call.inc"',
-            '#include "dsp/biquad.inc"',
+            '#include "dsp/contract/call.inc"',
+            '#include "dsp/filter/biquad.inc"',
             "",
         ]
     )
     kbase = BASE + 0x1000
     _, kernel = pk_sharc.build(
-        pk_sharc.expand_includes(kernel_text, [ROOT / "sdk" / "asm", ROOT / "sdk"]),
+        pk_sharc.expand_includes(
+            kernel_text, [ROOT / "sdk" / "dsp" / "contract", ROOT / "sdk"]
+        ),
         kbase,
     )
     caller = pk_sharc.link(
@@ -356,7 +377,7 @@ void run(int x, int y, int st) { dk_biquad(x, y, st); }
         assert np.array_equal(np.array(r["y"], dtype=np.uint32), bits(y1))
 
 
-# --- delay and half-band block routines (sdk/dsp/delay.inc, halfband.inc): circular buffers on the C convention ---
+# --- delay and half-band block routines (sdk/dsp/delay/delay.inc, halfband.inc): circular buffers on the C convention ---
 
 KR = (
     BUF + 0x600
@@ -383,8 +404,8 @@ def block_calls(inc, name, args, entry):
     """A harness that calls `name` once for every (R4, R8, R12) of `args`, then returns."""
     lines = [
         "#define DK_BLOCK 32",
-        '#include "dsp/call.inc"',
-        '#include "dsp/%s.inc"' % inc,
+        '#include "dsp/contract/call.inc"',
+        '#include "dsp/%s.inc"' % INC_PATH[inc],
         ".SECTION/PM seg_pmco;",
         ".GLOBAL %s;" % entry,
         "%s:" % entry,
@@ -402,7 +423,9 @@ def block_calls(inc, name, args, entry):
 def build_calls(inc, name, args, externs=None):
     text = block_calls(inc, name, args, "_h")
     return pk_sharc.build(
-        pk_sharc.expand_includes(text, [ROOT / "sdk" / "asm", ROOT / "sdk"]),
+        pk_sharc.expand_includes(
+            text, [ROOT / "sdk" / "dsp" / "contract", ROOT / "sdk"]
+        ),
         BASE,
         externs,
     )[1]
@@ -610,7 +633,7 @@ def test_halfband_table_is_the_model():
     words at HB_TABLE, so this is the only check of the include's own table)."""
     import re
 
-    text = (ROOT / "sdk" / "dsp" / "halfband.inc").read_text()
+    text = (ROOT / "sdk" / "dsp" / "filter" / "halfband.inc").read_text()
     words = [
         int(m.group(2), 16)
         for m in re.finditer(

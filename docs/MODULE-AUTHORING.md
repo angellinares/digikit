@@ -15,7 +15,7 @@ There are three kinds of content module. The kind is `[module] type` in `module.
 | --- | --- | --- | --- | --- |
 | `machine` | A new sound source. It renders one voice. | SHARC+ assembly, declared in C | `render`, `note_on`, `desc` | `sdk/templates/machine` |
 | `fx` | An effect on the master block or on a send bus. It has its own FX page. | SHARC+ assembly, declared in C | `process`, `desc` | `sdk/templates/fx` |
-| `service` | ColdFire code. It adds commands, reads the store or reacts to the UI loop. | C | `dkm_init`, `dkm_fini`, `dkm_slot_N` | `sdk/templates/service` |
+| `tool` | ColdFire code. It adds commands, reads the store or reacts to the UI loop. | C | `dkm_init`, `dkm_fini`, `dkm_slot_N` | `sdk/templates/tool` |
 
 Two more types exist. `raw` is code with no contract and only the generic load checks. The menu shows it as unchecked. `framework` is
 the internal type of the `core/*` modules.
@@ -52,7 +52,7 @@ mise run module:new -- KIND AUTHOR/NAME [--dir DIR] [--title T] [--short S] [--n
 
 | Part | Meaning |
 | --- | --- |
-| `KIND` | `machine`, `fx` or `service`. |
+| `KIND` | `machine`, `fx` or `tool`. |
 | `AUTHOR/NAME` | The module id. The author has lowercase letters, digits and dashes. The name is lower snake case. `core` and `framework` are refused. |
 | `--dir DIR` | Write `DIR/NAME` instead of the repository folder. |
 | `--title T` | Display name, 1 to 23 characters. Default: the name in Title Case. |
@@ -64,7 +64,7 @@ Examples:
 ```sh
 mise run module:new -- machine alice/drone
 mise run module:new -- fx alice/crunch --title Crunch --short CRU
-mise run module:new -- service alice/hello --dir ~/my-modules
+mise run module:new -- tool alice/hello --dir ~/my-modules
 ```
 
 The command copies the template, replaces the names and builds it. You start from code that compiles.
@@ -73,7 +73,7 @@ The command copies the template, replaces the names and builds it. You start fro
 | --- | --- | --- |
 | `machine` | `modules/machines/NAME` | `module.toml`, `README.md`, `src/module.c` (the declaration), `src/dsp/NAME.s` (a sine voice with one level parameter) |
 | `fx` | `modules/fx/NAME` | `module.toml`, `README.md`, `src/module.c` (the declaration), `src/dsp/NAME.s` (a gain effect with one knob and a page) |
-| `service` | `modules/tools/NAME` | `module.toml`, `README.md`, `src/c/NAME.c` (`dkm_init` logs a line, `dkm_fini` is empty) |
+| `tool` | `modules/tools/NAME` | `module.toml`, `README.md`, `src/c/NAME.c` (`dkm_init` logs a line, `dkm_fini` is empty) |
 
 The command ends with the next commands: `module:check`, `module:pack` and `dk:run -- AUTHOR/NAME --emu --seconds 10` (section 8).
 `dk:run --emu` needs a running emulator: start `mise run workbench` in another shell first.
@@ -148,10 +148,10 @@ A manifest with `[[voice]]`, `[[machine]]`, `[[param]]`, `[[page]]` or `[[fx]]` 
 
 ### 5.2 Declaring a machine
 
-A machine is declared in C, in `src/module.c`, with the macros of `<dk/machine.h>`. This is `modules/machines/pluck/src/module.c`:
+A machine is declared in C, in `src/module.c`, with the macros of `<dk/machine/machine.h>`. This is `modules/machines/pluck/src/module.c`:
 
 ```c
-#include <dk/machine.h>
+#include <dk/machine/machine.h>
 
 DK_MACHINE(pluck, .name = "Pluck", .short_name = "PLK", .render = "_pk_render",
            .note_on = "_pk_note_on", .desc = "_pk_desc");
@@ -169,7 +169,7 @@ DK_PAGE(pluck, "PLUCK", "Pluck", DK_KNOB(0), DK_KNOB(1), DK_KNOB(2), DK_KNOB(3))
 | `.name` | Display name, 23 characters at most. |
 | `.short_name` | Label in the machine list. |
 | `.render`, `.note_on` | The global symbols of the DSP routines. Strings. Both are required. |
-| `.desc` | The data symbol of the `dk_machine_desc` (`<dk/machine.h>`). String. |
+| `.desc` | The data symbol of the `dk_machine_desc` (`<dk/machine/machine.h>`). String. |
 
 A machine needs DSP routines. A machine with no DSP code (a data-only clone of a stock machine) cannot be declared.
 
@@ -217,7 +217,7 @@ this feature requires machine contract 1.3 and is refused by older runtimes. SHO
 for the callback boundary and validation limits.
 
 `DK_PARAM_ACTION(MACHINE, WORD, FN)` makes a click on the knob of that parameter (press and release of the encoder, no turn between) call
-`void FN(uint32_t track)`, a global function of the module, in the UI task. It may open a `<dk/ui.h>` menu over the page. A parameter has at most
+`void FN(uint32_t track)`, a global function of the module, in the UI task. It may open a `<dk/platform/ui.h>` menu over the page. A parameter has at most
 one action; a knob without one keeps the stock click. Only a `dynamic` module can declare it. Details: `docs/design/machine-page-click.md`.
 
 Scaling the word: the stock DSP converts a word to a float with the scale 1/32512 (0x7f00 = 1.0). Your routine may use any scale. Document
@@ -257,10 +257,10 @@ Rules that follow:
 
 ### 5.4 Declaring an effect
 
-An effect is declared in C too, in `src/module.c`, with the macros of `<dk/fx.h>` (`DK_FX`, `DK_FX_PARAM`) and `DK_PAGE` from `<dk/page.h>`.
+An effect is declared in C too, in `src/module.c`, with the macros of `<dk/fx/fx.h>` (`DK_FX`, `DK_FX_PARAM`) and `DK_PAGE` from `<dk/page/page.h>`.
 
 ```c
-#include <dk/fx.h>
+#include <dk/fx/fx.h>
 #include "freqshift.h"
 
 DK_FX(fshift, .process = "_fs_process", .desc = "_fs_desc", .mix = 127,
@@ -350,7 +350,7 @@ Patching a stock machine will become a separate module type. It is not part of t
 
 ### 5.8 Module settings
 
-A run-time module keeps its own values with the settings API of `<dk/settings.h>` (API 1.9): `dk_settings_client` (only in `dkm_init`, gives the handle),
+A run-time module keeps its own values with the settings API of `<dk/platform/settings.h>` (API 1.9): `dk_settings_client` (only in `dkm_init`, gives the handle),
 `dk_settings_get`, `dk_settings_put` and `dk_settings_remove`. A module on a runtime older than API 1.9 must check `api->size` before it calls them.
 
 - The runtime stores the key as `<module name>/<key>`. A module reaches its own keys only; the prefix stops mistakes, not hostile code.
@@ -364,11 +364,11 @@ A run-time module keeps its own values with the settings API of `<dk/settings.h>
 
 ### 5.9 Module files and `intro_take`
 
-A module's own files live under `data/<module id>/` in the store, not next to the `.dkm`: the `modules/` list holds at most 32 entries. `dk_data_path` (`<dk/data.h>`)
+A module's own files live under `data/<module id>/` in the store, not next to the `.dkm`: the `modules/` list holds at most 32 entries. `dk_data_path` (`<dk/platform/data.h>`)
 builds the path and refuses a name that is empty or holds `/` or `..`. Read a file with `store_read` in `dkm_init`, or list the folder with the `files_*` calls (root
 `DK_FILES_STORE`). Only the host writes these files for now. `store_read` runs one at a time and in `dkm_init` only.
 
-`dk_intro_take` (`<dk/intro.h>`, API 1.9) replaces the boot animation. It runs after the REC, safe-mode and boot-counter checks and does no storage I/O: read the frames
+`dk_intro_take` (`<dk/platform/intro.h>`, API 1.9) replaces the boot animation. It runs after the REC, safe-mode and boot-counter checks and does no storage I/O: read the frames
 in `dkm_init`, then call it.
 
 - `frame(tick, ctx)` returns the 1024-byte native bitmap of tick 0 .. `ticks`-1 (30 a second), or NULL to end the animation. It runs on the intro task (priority 7, more urgent than the main-OS task, priority 6): it must return quickly, because it blocks every lower-priority task, and a callback that never returns starves the main OS until power-off. It must not block and
@@ -388,19 +388,22 @@ knobs and parameters, for each device, for the web gallery. It holds no firmware
 There is no generated header for the module. The module declares its numbers in C and in its own `src/` header (section 5.4).
 
 The SDK headers are generated from `sdk/sdk.toml`. Modules include the public headers in `sdk/include/dk/`.
-The generated files are in `sdk/include/dk/gen/` and `sdk/asm/`.
+The generated files are in `sdk/include/dk/gen/`, `sdk/dsp/contract/` and `sdk/include/dk/core/status.h`.
 
 | File | What it holds | Who includes it |
 | --- | --- | --- |
-| `<dk/api.h>` | The `dk_api` table, the import names and the entry points of a `.dkm`. | Service modules in C. |
-| `<dk/machine.h>` | The machine contract and `DK_MACHINE`, `DK_PARAM`. | The machine's `module.c`. Includes `gen/machine.h`. |
-| `<dk/fx.h>` | The effect contract and `DK_FX`, `DK_FX_PARAM`. | The effect's `module.c`. Includes `gen/fx.h`. |
-| `<dk/page.h>` | `DK_PAGE`, `DK_KNOB`, `DK_KNOB_AT`. Shared by both. Includes `gen/desc.h`, the record layouts from `[desc]` in `sdk/sdk.toml`. | `<dk/machine.h>`, `<dk/fx.h>`. |
-| `sdk/include/dk/gen/machine_consts.h` | The machine constants as C `#define`s. | `<dk/machine.h>`. |
-| `sdk/asm/dk_machine.inc` | The machine constants and field offsets for assembly. | The machine's `.s`. |
-| `sdk/include/dk/gen/fx_consts.h` | The effect constants as C `#define`s. | `<dk/fx.h>`. |
-| `sdk/asm/dk_fx.inc` | The effect constants and field offsets for assembly. | The effect's `.s`. |
+| `<dk/core/api.h>` | The `dk_api` table, the import names and the entry points of a `.dkm`. | Service modules in C. |
+| `<dk/machine/machine.h>` | The machine contract and `DK_MACHINE`, `DK_PARAM`. | The machine's `module.c`. Includes `gen/machine.h`. |
+| `<dk/fx/fx.h>` | The effect contract and `DK_FX`, `DK_FX_PARAM`. | The effect's `module.c`. Includes `gen/fx.h`. |
+| `<dk/page/page.h>` | `DK_PAGE`, `DK_KNOB`, `DK_KNOB_AT`. Shared by both. Includes `gen/desc.h`, the record layouts from `[desc]` in `sdk/sdk.toml`. | `<dk/machine/machine.h>`, `<dk/fx/fx.h>`. |
+| `sdk/include/dk/gen/machine_consts.h` | The machine constants as C `#define`s. | `<dk/machine/machine.h>`. |
+| `sdk/dsp/contract/dk_machine.inc` | The machine constants and field offsets for assembly. | The machine's `.s`. |
+| `sdk/include/dk/gen/fx_consts.h` | The effect constants as C `#define`s. | `<dk/fx/fx.h>`. |
+| `sdk/dsp/contract/dk_fx.inc` | The effect constants and field offsets for assembly. | The effect's `.s`. |
 | `sdk/include/dk/gen/limits.h` | The `.dkm` format limits (`[limits.format]`) as C `#define`s, such as `DK_ARENA_HDR`. | Core apps in C. |
+| `<dk/core/status.h>` | The status codes `DK_E_*` (`[load.status]` in `sdk/sdk.toml`): the results of loading and of module calls. | Modules that check a status. |
+| `sdk/include/dk/gen/sample.h` | The word layout of one sample pool entry, `DK_SAMPLE_POOL_*` (`[sample]`). | `<dk/sample/pool.h>`. |
+| `sdk/dsp/contract/dk_sample_pool.inc` | The same offsets for assembly. | `sdk/dsp/sample/pool.inc`. |
 
 Do not include `dk_fx.inc` and `dk_machine.inc` in one assembly file. `DK_BLOCK` and `DK_LEVEL_BOUND_BITS` are in both.
 
@@ -421,7 +424,7 @@ For a new module with no cached objects, generation skips its gallery until that
 
 The headers are the reference. This section lists what you need to know before you read them.
 
-### 7.1 Machine voice (`<dk/machine.h>`)
+### 7.1 Machine voice (`<dk/machine/machine.h>`)
 
 | Entry | When it runs | Result |
 | --- | --- | --- |
@@ -474,7 +477,7 @@ are shared by all voices. State that differs per voice goes in `state`. The conf
 
 The template `src/dsp/NAME.s` shows all of this in about 90 lines. Read it first. Pitch tests: `tests/patchkit/test_sine.py`.
 
-### 7.2 Effect (`<dk/fx.h>`)
+### 7.2 Effect (`<dk/fx/fx.h>`)
 
 | Entry | When it runs | Result |
 | --- | --- | --- |
@@ -524,7 +527,7 @@ The template `src/dsp/NAME.s` shows all of this in about 90 lines. Read it first
 - The instruction budget of the conformance suite is `pk_conform.fx_budget()` (about 31,000 for the effect today, 900 for the adapter). Read it
   from the report (`-rA`).
 
-### 7.3 Service (`<dk/api.h>`)
+### 7.3 Service (`<dk/core/api.h>`)
 
 A service is C code for the ColdFire CPU. The runtime calls these symbols of your object:
 
@@ -532,7 +535,7 @@ A service is C code for the ColdFire CPU. The runtime calls these symbols of you
 | --- | --- |
 | `int32_t dkm_init(const dk_api *api)` | Once after load. Return 0. Any other value unloads the module. |
 | `void dkm_fini(const dk_api *api)` | When the module is unloaded. |
-| `void dkm_menu(dk_ui_menu *m, void *ctx)` | Optional: the module's settings. `DK_MENU(fill)` of `<dk/ui.h>` defines it. The DIGIKIT menu shows SETTINGS... in the side panel of the loaded module and runs `dkm_menu` only when the user opens it; `fill` adds the rows (`dk_ui_text`, `dk_ui_action`, ...). The menu is built once and kept, and no module is unloaded at run time, so the `ctx` and callbacks of a menu must point at the module's own memory, never at the stack. |
+| `void dkm_menu(dk_ui_menu *m, void *ctx)` | Optional: the module's settings. `DK_MENU(fill)` of `<dk/platform/ui.h>` defines it. The DIGIKIT menu shows SETTINGS... in the side panel of the loaded module and runs `dkm_menu` only when the user opens it; `fill` adds the rows (`dk_ui_text`, `dk_ui_action`, ...). The menu is built once and kept, and no module is unloaded at run time, so the `ctx` and callbacks of a menu must point at the module's own memory, never at the stack. |
 | `void dkm_slot_N(const dk_api *api)` | `N` is 0 to 7. You bind a slot by exporting its symbol. Slot 0 runs once per pass of the UI event loop, about 120 Hz. A taken slot gives `E_SLOT`. |
 
 Export at least one of them.
@@ -552,7 +555,7 @@ The `dk_api` table that `dkm_init` receives. Fields are only appended, each is 4
 | `files_client()`, `files_list(client, root, path, notify, context)`, `files_poll(client, ticket, out, capacity)`, `files_cancel(client, ticket)` | Read-only file/directory listing. API 1.4, runtime 0.5.4; see below. |
 | `memcpy_addr`, `memset_addr`, `memcmp_addr`, `muldi3_addr`, `udivdi3_addr`, `umoddi3_addr` | Addresses of the runtime's helpers. The compiler calls the 64-bit ones by itself. |
 
-For the bounded sample-bank proof, include `<dk/sample.h>` and declare
+For the bounded sample-bank proof, include `<dk/sample/bank.h>` and declare
 `DK_SAMPLE_BANK(LOCAL_ID, BANK, DESCRIPTOR, CAPACITY)` in the module's C declaration. Exactly one bank is supported:
 reserve 1–8,192 mono float32 frames in the module's own DSP BSS and a four-word initialized zero descriptor
 (READY, normal-word source pointer, frame count, sample rate). Check the API 1.3 table `size` covers the appended
@@ -571,8 +574,8 @@ The [sample-proof fixture](../tests/fixtures/modules/sample-proof/README.md) dem
 calls and tested DSP bridge. Transferred-file playback acceptance passes in the emulator on DT2 OS 1.17 and
 DN2 OS 1.12. Hardware behavior and product capacity/replacement/selection remain unproved; this is not a product sampler.
 
-A stereo or mono sample pool (API 1.5, [design](design/sample-api-1.5.md)) uses `<dk/sample_track.h>` and
-`DK_SAMPLE_TRACKS(LOCAL_ID, RECORDS, CONTROL)` instead of a bank (a module has one family): 16 `dk_strack` records (512 bytes), one for each
+A stereo or mono sample pool (API 1.5, [design](design/sample-api-1.5.md)) uses `<dk/sample/pool.h>` and
+`DK_SAMPLE_TRACKS(LOCAL_ID, RECORDS, CONTROL)` instead of a bank (a module has one family): 16 `dk_sample_pool_entry` records (512 bytes), one for each
 pool entry, and 16 control sets (256 bytes) in the DSP data (`.PKDATA`, zero, no relocations in them). `pack` writes them as the kind 2 record of
 the DSP section and declares API 1.5; a module without a table declares 1.4. `sample_tracks(local_id)` gives the handle in init;
 `sample_pool_add(handle, path)` queues a PCM16 native file (mono or stereo, 48 kHz) from a service or UI callback and returns its pool index
@@ -585,14 +588,14 @@ project. The runtime closes an entry's old generation before it publishes a new 
 must check the table `size` before it calls them. `pack` declares the lowest Api minor that has what a module needs; a module that calls a newer
 entry without checking `size` lists it in `[module] uses_api = ["sample_pool_path"]` and is then refused by a runtime that lacks it.
 
-A sampler machine can add the on-device sample picker with `<dk/sample_picker.h>`: list `../../../sdk/src/sample_picker.c` and
-`../../../sdk/src/picker_logic.c` in the `[[object]]` sources, call `dk_picker_init(api, handle)` in `dkm_init` and `dk_picker_fini()` in
-`dkm_fini`, and call `dk_picker_open_pool(current, pick, ctx)` from the click action of the SMP parameter. The picker shows the 16
+A sampler machine can add the on-device sample picker with `<dk/sample/picker.h>`: list `../../../sdk/src/sample/picker.c` and
+`../../../sdk/src/chooser/logic.c` in the `[[object]]` sources, call `dk_sample_picker_init(api, handle)` in `dkm_init` and `dk_sample_picker_fini()` in
+`dkm_fini`, and call `dk_sample_picker_open_pool(current, pick, ctx)` from the click action of the SMP parameter. The picker shows the 16
 slots; YES on a slot opens the file browser for that slot, and YES on a file loads it there (`sample_pool_set`). `pick(ctx, index)` runs after a file was loaded, and the machine sets its SMP value to `index`.
 `modules/machines/shot` is the example (design: [sample picker](design/sample-picker.md)). The picker needs no manifest field: it checks the Api
 `size` before it calls `sample_pool_path`, and without `core/ui` it does nothing.
 
-For reusable browsing, include `<dk/files.h>` and acquire a positive `files_client()` handle during init.
+For reusable browsing, include `<dk/platform/files.h>` and acquire a positive `files_client()` handle during init.
 `files_list` copies a canonical root-relative NUL-terminated path and returns a positive request ticket;
 empty path lists the root. `DK_FILES_SAMPLES` maps to DT2 +Drive or DN2 store `samples/`, and
 `DK_FILES_STORE` lists the runtime store on either device. A new request supersedes the previous one.
@@ -620,7 +623,7 @@ Names a module may import (from `[[import]]` in `sdk/sdk.toml`):
 | `fw_block_read`, `fw_alloc`, `fw_free` | The firmware's eMMC block read and allocator. |
 | `memcpy`, `memset`, `memcmp`, `__muldi3`, `__udivdi3`, `__umoddi3` | Runtime helpers. |
 | `input_key`, `input_turn` | Press a key or turn an encoder. They need `core/input`. Without it the import is not found. |
-| `dk_ui_*` | The calls of `<dk/ui.h>`: menus, lists, rows and dialogs. They need `core/ui`. Without it the module still loads and each call returns its failure value (`dk_ui_menu_new` 0, the int calls -1, `dk_ui_has`, `dk_ui_is_open` and `dk_ui_checked` 0, the void calls nothing). `dk_ui_tick(fn, ctx, period_ms)` is a timer in the UI task (`DK_UI_CAP_TICK`): redraw a screen while a load runs; 0 stops it. |
+| `dk_ui_*` | The calls of `<dk/platform/ui.h>`: menus, lists, rows and dialogs. They need `core/ui`. Without it the module still loads and each call returns its failure value (`dk_ui_menu_new` 0, the int calls -1, `dk_ui_has`, `dk_ui_is_open` and `dk_ui_checked` 0, the void calls nothing). `dk_ui_tick(fn, ctx, period_ms)` is a timer in the UI task (`DK_UI_CAP_TICK`): redraw a screen while a load runs; 0 stops it. |
 | `dkrt_blocks` | The 1500 Hz block clock. |
 | `dl_set_tick_cb` | Sets one per-block callback in the block interrupt (`core/dsp-link`; a stub without it): `void cb(const volatile u16 *rec)` gets the previous DSP reply record. Short C only; clear it in `dkm_fini`. |
 
@@ -708,8 +711,8 @@ Trace marks (`DK_TRACE_LOG`, `DK_STEP`) are switched on with `--trace` on `modul
   | Contract | Version | Covers |
   | --- | --- | --- |
   | `api` | `[1, 5]` | The `dk_api` table. Every module has it, `raw` included. `pack` declares 1.5 only for a module with a pool table, else 1.4. |
-  | `machine` | `[1, 6]` | `<dk/machine.h>`; minor 1: `track`; minor 2: stereo machines; minor 6: `gate`, a machine that reads it sets `DK_MACHINE_GATE` and needs runtime 0.5.6 |
-  | `fx` | `[1, 0]` | `<dk/fx.h>` |
+  | `machine` | `[1, 6]` | `<dk/machine/machine.h>`; minor 1: `track`; minor 2: stereo machines; minor 6: `gate`, a machine that reads it sets `DK_MACHINE_GATE` and needs runtime 0.5.6 |
+  | `fx` | `[1, 0]` | `<dk/fx/fx.h>` |
   | `service` | `[1, 0]` | Service modules |
 
 - `pack` writes the contracts a module uses into the `.dkm` header.
@@ -757,7 +760,7 @@ allows a known id. Without `--dir` it uses the first folder of `PATCHKIT_MODULES
 | Question | Where |
 | --- | --- |
 | Version numbers, imports, log kinds, protocol numbers | `sdk/sdk.toml` |
-| Machine, effect and service contracts | `<dk/machine.h>`, `<dk/fx.h>`, `<dk/page.h>`, `<dk/api.h>` |
+| Machine, effect and service contracts | `<dk/machine/machine.h>`, `<dk/fx/fx.h>`, `<dk/page/page.h>`, `<dk/core/api.h>` |
 | What differs between the devices | `devices/digitakt-ii.toml`, `devices/digitone-ii.toml`, `.agents/skills/digikit-module/references/devices.md` |
 | Knob and parameter rules | Sections 5.2, 5.3 and 5.7, `docs/findings/02-machines-and-parameters.md` |
 | DSP recipes and assembler traps | `.agents/skills/digikit-module/references/dsp-recipes.md`, `selas-pitfalls.md` |
@@ -810,11 +813,11 @@ Replacement page one can opt into `DK_PAGE_WIDE_CANVAS` with
 leaving the track badge and page dots outside it. Ordinary pages and
 `DK_PAGE_STOCK_OVERLAY` retain the 99×53 canvas (global x25..123).
 The wide flag is rejected on page zero and cannot combine with the overlay.
-`dk_sample_region_rect_q8` in `<dk/sample_region.h>` accepts an inclusive
-`dk_sample_region_rect` to place and clip the waveform, rail and handles within
-a smaller plot; `dk_sample_region_q8` remains the full-width helper.
+`dk_sample_view_rect_q8` in `<dk/sample/view.h>` accepts an inclusive
+`dk_sample_view_rect` to place and clip the waveform, rail and handles within
+a plot.
 
-`<dk/widgets.h>` provides code-native display helpers for custom pages:
+`<dk/page/widgets.h>` provides code-native display helpers for custom pages:
 `dk_page_encoder(&frame->canvas, x, y, value)` draws a 17×17 circle/needle,
 and `dk_page_level(...)` draws a 9×17 vertical fader. Coordinates are top-left
 canvas pixels; drawing clips to the reported canvas bounds. Values clamp to

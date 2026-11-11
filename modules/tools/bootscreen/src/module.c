@@ -2,7 +2,7 @@
  *
  * The module runs after the runtime's REC, safe-mode and boot-counter checks. `dkm_init` reads the setting `active` (a file name), reads
  * `data/tools/bootscreen/<name>` (a DKBS file, packages/dkbs), checks the whole file, and gives the firmware's intro one frame per tick
- * (`intro_take`, <dk/intro.h>). Any failure returns with no change: the stock intro runs. The module logs one line per outcome, from init only.
+ * (`intro_take`, <dk/platform/intro.h>). Any failure returns with no change: the stock intro runs. The module logs one line per outcome, from init only.
  *
  * `frame` runs on the intro task: it decodes one tick into the work buffer and calls no dk_api function. `done` runs once in the UI task
  * at the first UI pass and frees the buffer.
@@ -10,14 +10,14 @@
  * DK_MENU: the row SCREEN shows the active name (or STOCK) at the right; it opens a list of STOCK and the files of `data/tools/bootscreen/`,
  * with a check mark on the active one. YES on a row chooses it. The choice is a setting: it takes effect at the next restart, and the page
  * says so while the setting differs from the one the boot used. */
-#include <dk/api.h>
-#include <dk/data.h>
-#include <dk/files.h>
-#include <dk/intro.h>
-#include <dk/settings.h>
-#include <dk/ui.h>
+#include <dk/core/api.h>
+#include <dk/platform/data.h>
+#include <dk/platform/files.h>
+#include <dk/platform/intro.h>
+#include <dk/platform/settings.h>
+#include <dk/platform/ui.h>
 #include "dkbs.h"
-#include "../../../../sdk/src/picker_logic.h"
+#include <dk/chooser/logic.h>
 
 #define MODULE_ID "tools/bootscreen"
 #define NAME_MAX_BYTES 48u /* a file name kept in the setting, NUL included */
@@ -299,7 +299,7 @@ static void open_chooser(void *ctx, int arg)
     dk_ui_tick(poll, 0, LIST_PERIOD_MS);
 }
 
-/* The shown value: the name without ".dkbs"; a longer one keeps its start and its end around a '~' (pk_trunc, as the module list does). */
+/* The shown value: the name without ".dkbs"; a longer one keeps its start and its end around a '~' (dk_text_trunc, as the module list does). */
 static void value_text(char *out, const char *name)
 {
     char v[NAME_MAX_BYTES];
@@ -308,7 +308,7 @@ static void value_text(char *out, const char *name)
     n = length(v);
     if (n > 5u && v[n - 5u] == '.' && (v[n - 4u] | 32) == 'd' && (v[n - 3u] | 32) == 'k' && (v[n - 2u] | 32) == 'b' && (v[n - 1u] | 32) == 's')
         v[n -= 5u] = 0;
-    pk_trunc(out, v, (int)VALUE_COLS);
+    dk_text_trunc(out, v, (int)VALUE_COLS);
 }
 
 /* One row of ROW_COLS characters: the label at the left, the value at the right. The page title already names the module. */

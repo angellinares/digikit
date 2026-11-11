@@ -1,4 +1,4 @@
-#include "dsp/sample_bank.inc"
+#include "dsp/sample/bank.inc"
 // Isolated DN2 1.12 quiet diagnostic. Same byte-address receive/ACK and hook
 // save convention as core/dsp-link. DDR stores explicitly use normal-word DM.
 // Every payload range and checksum is checked before the first destination store.

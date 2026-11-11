@@ -157,8 +157,8 @@ export const HERMETIC = {
   periph: [],
   'emmc-card': [],
   dkneeds: [],
-  'dkrt-sdk': ['{workspaceRoot}/sdk/vectors/settings-vectors.json'],
-  'dkrt-fit': ['{workspaceRoot}/sdk/vectors/fit-vectors.json'],
+  'dkrt-sdk': ['{workspaceRoot}/modules/core/runtime/vectors/settings-vectors.json'],
+  'dkrt-fit': ['{workspaceRoot}/modules/core/runtime/vectors/fit-vectors.json'],
   'device-profile': ['{workspaceRoot}/devices/digitakt-ii.toml', '{workspaceRoot}/devices/digitone-ii.toml'],
   dkupload: [],
   dksample: [],
@@ -176,8 +176,8 @@ const SHARED_SOURCE = { 'sharc-native-2': ['{workspaceRoot}/packages/emulator/sh
 const COMPILE_SOURCE = {
   patchkit: [
     '{workspaceRoot}/sdk/sdk.toml',
-    '{workspaceRoot}/sdk/vectors/fit-vectors.json',
-    '{workspaceRoot}/sdk/vectors/settings-vectors.json',
+    '{workspaceRoot}/modules/core/runtime/vectors/fit-vectors.json',
+    '{workspaceRoot}/modules/core/runtime/vectors/settings-vectors.json',
     '{workspaceRoot}/devices/*.toml',
     '{workspaceRoot}/tools/patchkit/toolchain/pins.toml',
     '{workspaceRoot}/tools/patchkit/toolchain/m68k-cf-none-elf-a2.json',

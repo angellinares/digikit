@@ -10,7 +10,7 @@
  *   0x3b  purge:  u8 flag; the stock purge of unused samples; reply i32 result, u32 task of the command
  * All numbers are big endian. The task id is the word the firmware keeps for the running task (0x47db3f64). */
 
-#include <dk/api.h>
+#include <dk/core/api.h>
 
 typedef uint32_t u32;
 typedef int32_t i32;

@@ -14,7 +14,7 @@ conflicts = []
 "dt2-1.17" = "experimental"
 "dn2-1.12" = "experimental"
 
-# C, packed like test/dyn-crash. `dkm_init` calls `intro_take` (<dk/intro.h>); the first tick of the intro runs `frame`, which writes SOFTRST as test/dyn-fault does
+# C, packed like test/dyn-crash. `dkm_init` calls `intro_take` (<dk/platform/intro.h>); the first tick of the intro runs `frame`, which writes SOFTRST as test/dyn-fault does
 # (no dk_api call: a frame callback must not make one). The boot counter stays raised, so the third boot is safe mode.
 [[object]]
 path = "build/intro-reset.dko.json"

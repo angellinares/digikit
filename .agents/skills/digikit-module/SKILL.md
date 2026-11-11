@@ -15,18 +15,18 @@ The guide is `docs/MODULE-AUTHORING.md`. Read the section you need there; this f
 | --- | --- | --- |
 | `machine` | A SHARC+ voice: `render`, `note_on`, `desc` (guide 5.2, 7.1) | `sdk/templates/machine`; a real one: `modules/machines/pluck` |
 | `fx` | A SHARC+ master or send effect with its own page: `process`, `desc` (guide 5.4, 7.2) | `sdk/templates/fx`; a real one: `modules/fx/freqshift` |
-| `service` | ColdFire C: `dkm_init`, `dkm_fini`, `dkm_slot_N` (guide 5.5, 7.3) | `sdk/templates/service` |
+| `tool` | ColdFire C: `dkm_init`, `dkm_fini`, `dkm_slot_N` (guide 5.5, 7.3) | `sdk/templates/tool` |
 | `raw` | No contract, only the generic load checks | `tests/fixtures/modules/c-demo` |
 
 `framework` is the internal type of the `core/*` modules. Changes to `core/*` are firmware work and need Em.
 
 ## Workflow
 
-1. Create: `mise run module:new -- KIND AUTHOR/NAME [--dir DIR] [--title T] [--short S] [--no-build]` (guide 3). `KIND` is `machine`, `fx` or `service`.
+1. Create: `mise run module:new -- KIND AUTHOR/NAME [--dir DIR] [--title T] [--short S] [--no-build]` (guide 3). `KIND` is `machine`, `fx` or `tool`.
    With `--dir`, set `PATCHKIT_MODULES=DIR`.
 2. Edit `module.toml` and the source (guide 4 to 7). Reuse `references/dsp-recipes.md`, avoid `references/selas-pitfalls.md`, size with `references/devices.md`.
-   A machine and an effect are declared in C in `src/module.c`. Machine: `DK_MACHINE`, `DK_PARAM`, `DK_PAGE` (`<dk/machine.h>`). Effect: `DK_FX`,
-   `DK_FX_PARAM`, `DK_PAGE` (`<dk/fx.h>`). Word numbers go in a shared `src/NAME.h`. `patchkit desc AUTHOR/NAME` prints the records as JSON.
+   A machine and an effect are declared in C in `src/module.c`. Machine: `DK_MACHINE`, `DK_PARAM`, `DK_PAGE` (`<dk/machine/machine.h>`). Effect: `DK_FX`,
+   `DK_FX_PARAM`, `DK_PAGE` (`<dk/fx/fx.h>`). Word numbers go in a shared `src/NAME.h`. `patchkit desc AUTHOR/NAME` prints the records as JSON.
    A manifest with `[[voice]]`, `[[machine]]`, `[[param]]`, `[[page]]` or `[[fx]]` is refused.
 3. After a change to `module.toml`, `src/module.c`, `devices/*.toml` or `sdk/sdk.toml`: `mise run gen:modules` (`-- --check` lists stale files). Never edit `build/gen/`.
 4. Build: `mise run module:build -- PATH [--check]` (`patchkit build`; the objects go to `out/cache/dko/<id>/`, `patchkit dko show FILE` shows one). Pack and `dk:run` build what is stale, so this step is optional.
@@ -61,7 +61,7 @@ Each task takes `-- --help`.
 
 Opt-in marks that compile to nothing without `--trace` (same objects, byte-identical `.dkm`). Full text: `sdk/README.md`, "Tracing".
 
-- C: `#include <dk/trace.h>`, `DK_TRACE_INIT(api);` once per source file in `dkm_init`, then `DK_TRACE_LOG("msg", value);` (calls `api->log`).
+- C: `#include <dk/core/trace.h>`, `DK_TRACE_INIT(api);` once per source file in `dkm_init`, then `DK_TRACE_LOG("msg", value);` (calls `api->log`).
 - SHARC+: `#include "dk_trace.inc"`, then `DK_STEP(3, R0);` stores 3 in `_dk_step` using the scratch register you name (free at that point).
 - Build: `module:pack -- ID --device dt2 --trace`, `module:check -- ID --trace` (size lines), `dk:dev -- ID --store ID --trace`. `--trace` defines
   `DK_TRACE` for C and SHARC+ sources and sets the trace bit in the `.dkm` header (`patchkit dkm-info` shows it).

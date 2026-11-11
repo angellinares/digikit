@@ -1,4 +1,4 @@
-// machines/tb303: Open303 (rosic::Open303) as a voice of the SDK contract (<dk/machine.h>): its oscillator, its TB-303
+// machines/tb303: Open303 (rosic::Open303) as a voice of the SDK contract (<dk/machine/machine.h>): its oscillator, its TB-303
 // filter (TeeBeeFilter, mode TB_303) with the filter envelope and accent, its amp envelope and its output stage.
 //
 // Per block, at its last sample (Open303 does this per sample; these move over 2 ms or more, a block is 0.67 ms):

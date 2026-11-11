@@ -41,7 +41,7 @@ def dsp():
     obj = pk_sharc.assemble(
         pk_sharc.expand_includes(
             (FIX / "sample-binding-close.s").read_text(),
-            [FIX, REPO_ROOT / "sdk/asm", REPO_ROOT / "sdk"],
+            [FIX, REPO_ROOT / "sdk/dsp/contract", REPO_ROOT / "sdk"],
         )
     )
     address, sections, initial = 0x20080000, {}, []

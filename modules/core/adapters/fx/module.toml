@@ -75,11 +75,11 @@ devices = ["dt2", "dn2"]
 #     registry = "fx"
 #     id = "gain"
 #     pc = "_fg_process"        # the process routine's symbol in the module's DSP object
-#     desc = "_fg_desc"         # its dk_fx_desc (<dk/fx.h>)
+#     desc = "_fg_desc"         # its dk_fx_desc (<dk/fx/fx.h>)
 #     state = "_fg_state"       # its state block (state_bytes of the desc)
 #
 # The chain runs in module order. The scan ends at the zero row patchkit appends (terminator); at most DK_FX_MAX (4) effects
-# (packages/patchkit/tests/sdkgen.rs checks this number against <dk/fx.h>).
+# (packages/patchkit/tests/sdkgen.rs checks this number against <dk/fx/fx.h>).
 [[registry]]
 name = "fx"
 first = "0"

@@ -2,9 +2,9 @@
    parameters shown through two opt-in native pages. patchkit pack reads these records; the device never sees them.
    The DSP symbols are in src/dsp/shot.s; the parameter words (src/shot_params.h) are shared with it.
    src/pages.c draws the two pages; src/sample_view.c reads the pool slot they show.
-   The pool (16 entries) is the runtime's per-module table (<dk/sample_track.h>); SMP picks the entry of a note. The module only plays;
+   The pool (16 entries) is the runtime's per-module table (<dk/sample/pool.h>); SMP picks the entry of a note. The module only plays;
    files are loaded into pool slots by the picker (the SMP click list) through the runtime. */
-#include <dk/sample_picker.h>
+#include <dk/sample/picker.h>
 #include "shot.h"
 
 DK_MACHINE(shot, .name = "SHOT", .short_name = "SHT", .render = "_shot_render",
@@ -41,14 +41,14 @@ int32_t dkm_init(const dk_api *api)
         return handle < 0 ? handle : DK_SAMPLE_E_CONTRACT;
     sample_view_init(&shot_samples, api, (uint32_t)handle);
     g_api = api;
-    dk_picker_init(api, (uint32_t)handle); /* the picker is optional: when it cannot start, a click on SMP does nothing */
+    dk_sample_picker_init(api, (uint32_t)handle); /* the picker is optional: when it cannot start, a click on SMP does nothing */
     return 0;
 }
 
 void dkm_fini(const dk_api *api)
 {
     (void)api;
-    dk_picker_fini();
+    dk_sample_picker_fini();
     g_api = 0;
     sample_view_init(&shot_samples, 0, 0);
 }
@@ -69,7 +69,7 @@ static void smp_pick(void *ctx, int index)
 }
 
 /* Click on SMP at D (release without a turn on the custom SHOT page): the runtime's page hook calls this in the UI task with the track of the page.
-   It opens the slot list over the page (sdk/src/sample_picker.c) with the current SMP value marked and the cursor on it. YES on a slot opens
+   It opens the slot list over the page (sdk/src/sample/picker.c) with the current SMP value marked and the cursor on it. YES on a slot opens
    the file browser for it; YES on a file loads it into that slot, sets SMP to the slot and returns to the page in one step
    (docs/design/ui-rules.md); NO goes back one level. */
 DK_PARAM_ACTION(shot, SHOT_P_SMP, shot_smp_click);
@@ -79,5 +79,5 @@ void shot_smp_click(uint32_t track)
     click_track = track;
     if (DK_API_HAS(g_api, param_get))
         raw = g_api->param_get(track, SHOT_P_SMP);
-    dk_picker_open_pool(DK_PARAM_IS_ERROR(raw) || raw < 0 ? -1 : (int)(raw >> 8), smp_pick, 0);
+    dk_sample_picker_open_pool(DK_PARAM_IS_ERROR(raw) || raw < 0 ? -1 : (int)(raw >> 8), smp_pick, 0);
 }

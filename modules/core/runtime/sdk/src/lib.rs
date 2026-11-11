@@ -41,6 +41,7 @@ pub use gen_sdk::load::*;
 // The `Api` table and `ServiceCmd` are written by `patchkit gen` from `[api]` and `[api.types]` of `sdk/sdk.toml` (`gen_sdk.rs`, module `api`).
 pub use gen_sdk::api;
 pub use gen_sdk::api::{Api, ServiceCmd};
+pub use gen_sdk::sample_pool;
 
 // `DkrtStatus`, `DkrtCap`, `DkrtHealth`, `DkrtStoreEntry`, `DkrtModule`, `DkrtFx`, `DkrtSelection`, `DkrtBootInfo`, `DkrtDiag` and the scan and fit
 // structs, with `STATE_*`, `MOD_*`, `CAP_MAX`, `HEALTH_*`, `SEL_PATH`, `SAFE_*`, `CARD_*` and `DIAG_MAGIC`, are in `gen_abi`.

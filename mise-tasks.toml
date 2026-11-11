@@ -283,7 +283,7 @@ description = "Build or inspect a standalone +Drive image"
 
 ["module:new"]
 run = "uv run python -m tools.patchkit.pk_new"
-description = "Create a run-time module from a template in sdk/templates and build it: mise run module:new -- machine|fx|service AUTHOR/NAME [--dir DIR] (docs/MODULE-AUTHORING.md)"
+description = "Create a run-time module from a template in sdk/templates and build it: mise run module:new -- machine|fx|tool AUTHOR/NAME [--dir DIR] (docs/MODULE-AUTHORING.md)"
 
 ["module:build"]
 run = "uv run python -m tools.patchkit.patchkit build"
@@ -407,3 +407,7 @@ description = "The repo's run-time modules on a target and their install: mise r
 ["dk:store"]
 run = "uv run --with python-rtmidi python -m tools.device.dkupload"
 description = "The module store on the card: mise run dk:store -- --port Digitakt info | ls | modules | put FILE.dkm modules/NAME.dkm | rm PATH | clear (or --emu; the target is --emu or --port NAME)"
+
+["sdk:hashes"]
+run = "node tools/devtools/sdk_hashes.mjs"
+description = "Byte-identity proof for SDK changes: mise run sdk:hashes -- record|compare [FILE] [--force]. Hashes every packed .dkm (modules and fixtures, each device), every core object and the two patched images into out/sdk-hashes/baseline.json; compare lists each difference and exits 1 on any. Needs dist/patchkit/patchkit; --force rebuilds every object first"

@@ -1,9 +1,9 @@
 /* Host test of core/digikit-menu: the menu's own C source, compiled here with fakes of the runtime's dkrt_* calls and of
-   dk_ui_stock_row. The fake <dk/ui.h> (src/lib.rs) shows the screens, and modules/core/adapters/ui/host/tests/menu.rs presses the keys.
+   dk_ui_stock_row. The fake <dk/platform/ui.h> (src/lib.rs) shows the screens, and modules/core/adapters/ui/host/tests/menu.rs presses the keys.
    The menu source is included, not linked, so that fk_reset can clear its statics between tests. */
 /* an address of a module's dkm_menu is 32 bits on the device; here the fake modules use 1 for fake_dkm_menu */
 #include <stdint.h>
-#include <dk/ui.h>
+#include <dk/platform/ui.h>
 static void fake_dkm_menu_call(uint32_t a, dk_ui_menu *m);
 #define DK_CALL_MENU(a, m) fake_dkm_menu_call((a), (m))
 #include "../../../../../apps/digikit-menu/src/menu.c"

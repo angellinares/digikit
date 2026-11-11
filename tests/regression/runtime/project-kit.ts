@@ -16,7 +16,7 @@ import { overlayRecords } from './write-safety.ts';
  * Candidates for card-kit.ts: `settingsRecord`, `settingsMailbox`.
  */
 
-// ---- the settings record (port of tools/device/dksettings.py; vectors in sdk/vectors/settings-vectors.json) -------------------------
+// ---- the settings record (port of tools/device/dksettings.py; vectors in modules/core/runtime/vectors/settings-vectors.json) -------------------------
 
 const HEADER = 18;
 /** One settings copy: 16 sectors (sdk/sdk.toml [settings]). */

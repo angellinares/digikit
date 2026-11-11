@@ -3,7 +3,7 @@ name = "dkui-host"
 version = "0.1.0"
 edition = "2021"
 publish = false
-description = "Host test harness for <dk/ui.h>: a fake of every dk_ui_* call with a model, a driver that acts like the user, and a build of the C test sources in tests/c"
+description = "Host test harness for <dk/platform/ui.h>: a fake of every dk_ui_* call with a model, a driver that acts like the user, and a build of the C test sources in tests/c"
 
 [lib]
 path = "src/lib.rs"

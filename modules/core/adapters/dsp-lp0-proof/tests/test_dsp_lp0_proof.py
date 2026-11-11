@@ -16,7 +16,7 @@ from tools.patchkit import patchkit, pk_cfcall, pk_sharc, pk_toolchains
 
 MOD = REPO_ROOT / "modules/core/adapters/dsp-lp0-proof"
 BOOT_DRIVER = """
-#include "dsp/call.inc"
+#include "dsp/contract/call.inc"
 .SECTION/PM seg_pmco;
 .GLOBAL _lp_cache_range;
 _lp_cache_range:
@@ -58,7 +58,7 @@ def dsp_objects():
         pk_sharc.assemble(
             pk_sharc.expand_includes(
                 (path.read_text() + (BOOT_DRIVER if path == FIX else "")),
-                [REPO_ROOT / "sdk/asm", REPO_ROOT / "sdk"],
+                [REPO_ROOT / "sdk/dsp/contract", REPO_ROOT / "sdk"],
             )
         )
         for path in (MOD / "src/dsp/lp0-proof.s", FIX, MOD / "src/dsp/readers.s")

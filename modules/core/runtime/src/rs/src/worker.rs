@@ -12,7 +12,7 @@
 //! it only for `BUDGET_BLOCKS` per submit. Then the job goes to the end of the queue (round robin). Without the block clock
 //! the worker runs exactly one step per submit.
 //!
-//! Values `JOB_MORE` and `JOB_E_CANCELLED` must match sdk/include/dk/job.h.
+//! Values `JOB_MORE` and `JOB_E_CANCELLED` must match sdk/include/dk/platform/job.h.
 use core::ffi::c_void;
 use core::ptr::{addr_of, addr_of_mut, read_volatile, write_volatile};
 use core::sync::atomic::{compiler_fence, Ordering};

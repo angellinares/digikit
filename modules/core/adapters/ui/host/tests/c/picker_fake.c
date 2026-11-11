@@ -1,10 +1,10 @@
-/* Host test of the sample picker (sdk/src/sample_picker.c): its own source, compiled here against a fake dk_api (a listing provider and
-   a 16-entry sample pool) and the fake <dk/ui.h> (src/lib.rs). picker.rs presses the keys. The source is included, not linked, so
-   that pf_reset can clear its statics between tests. The pure functions (picker_logic.c) are linked. */
+/* Host test of the sample picker (sdk/src/sample/picker.c): its own source, compiled here against a fake dk_api (a listing provider and
+   a 16-entry sample pool) and the fake <dk/platform/ui.h> (src/lib.rs). picker.rs presses the keys. The source is included, not linked, so
+   that pf_reset can clear its statics between tests. The pure functions (logic.c) are linked. */
 #include <stdint.h>
 #include <string.h>
-#include "../../../../../../../sdk/src/chooser.c"
-#include "../../../../../../../sdk/src/sample_picker.c"
+#include "../../../../../../../sdk/src/chooser/chooser.c"
+#include "../../../../../../../sdk/src/sample/picker.c"
 
 #define MAXE 400
 
@@ -12,16 +12,16 @@ static dk_api api;
 static struct {
     int n, read, finished, list_calls, cancels, client_calls;
     int32_t ticket, list_result, poll_error;
-    char dir[PK_PATH];
+    char dir[DK_CHOOSER_PATH];
     dk_file_entry e[MAXE];
     dk_file_event *notify;
 } fl;
 static struct {
     int status[TRACKS];
     dk_sample_info info[TRACKS];
-    char path[TRACKS][PK_PATH];
+    char path[TRACKS][DK_CHOOSER_PATH];
     int set_result, sets, clears, last_index, path_calls, picks, last_pick;
-    char last_path[PK_PATH];
+    char last_path[DK_CHOOSER_PATH];
 } sm;
 
 static int32_t f_client(void)
@@ -148,9 +148,9 @@ void pf_reset(void)
 
 void pf_short_api(void) { api.size = offsetof(dk_api, files_client); }
 void pf_api_without_set(void) { api.size = offsetof(dk_api, sample_pool_set); }
-int pf_init(uint32_t handle) { return dk_picker_init(&api, handle); }
-void pf_open_pool(int current, int with_pick) { dk_picker_open_pool(current, with_pick ? on_pick : 0, 0); }
-void pf_fini(void) { dk_picker_fini(); }
+int pf_init(uint32_t handle) { return dk_sample_picker_init(&api, handle); }
+void pf_open_pool(int current, int with_pick) { dk_sample_picker_open_pool(current, with_pick ? on_pick : 0, 0); }
+void pf_fini(void) { dk_sample_picker_fini(); }
 
 /* the fake provider */
 void pf_add(const char *path, int dir, uint32_t size)
@@ -202,7 +202,7 @@ const char *pf_last_path(void) { return sm.last_path; }
 static struct {
     int done_calls, last_done, fill_calls, last_slot, panel_entry, with_text;
     int fill_rc; /* < 0: fill fails with it; otherwise it returns the slot */
-    char last_fill[PK_PATH];
+    char last_fill[DK_CHOOSER_PATH];
     dk_chooser_desc d;
 } cf;
 

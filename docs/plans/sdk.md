@@ -2,7 +2,7 @@
 
 Date: 2026-11-12. Base: `main` at 25378434. Targets: DT2 OS 1.17, DN2 OS 1.12.
 
-Status: **design agreed with Em on 2026-11-12. Nothing built.**
+Status: **design agreed with Em on 2026-11-12. S1 (restructure) shipped; S2 to S5 not built.**
 
 This plan replaces sections 7.1 (Cleanup) and 7.2 (Contract) of [runtime-and-services.md](runtime-and-services.md), that is the SDK
 parts of its items 1 and 5. The order of its steps is in [sdk-runtime-roadmap.md](sdk-runtime-roadmap.md). It links to
@@ -56,25 +56,30 @@ Only the binary contract has to be stable. This is what keeps the SDK stable whi
 
 ```text
 sdk/
-  sdk.toml            binary contract: records, imports grouped by service, status codes, kinds
+  sdk.toml            binary contract: records, imports, status codes, kinds, sample pool layout
   README.md           map of the layers and where to add new things
   include/dk/
-    core/             module.h (dk_module, dk_ctx, lifecycle), status.h (generated), log.h, trace.h,
-                      mem.h, bytes.h (put32/get32), text.h (numbers, centring)
-    platform/         what the device provides; one header per service import group:
-                      ui.h, draw.h, param.h, settings.h, store.h, files.h, file.h, io.h, job.h,
-                      samples.h, input.h, usb_bulk.h, hash32.h, debug.h
-    page/             page.h, canvas.h, widgets.h
+    core/             api.h, trace.h, status.h (generated)
+    platform/         what the device provides, one header per service group:
+                      ui.h, param.h, settings.h, files.h, file.h, io.h, job.h, hash32.h,
+                      usb_bulk.h, intro.h, data.h
+    page/             page.h, widgets.h
     machine/          machine.h
     fx/               fx.h
-    sample/           picker.h, chooser.h, region.h, bank.h, track.h
-    gen/              generated only; included by the headers above, not by modules
-  src/                same folders as include/
-  dsp/                SHARC code by concept: osc/, filter/, env/, dynamics/, sample/, util/,
-                      contract/ (today's sdk/asm)
+    chooser/          chooser.h, logic.h (the slot list chooser and its pure functions)
+    sample/           pool.h, bank.h, view.h, picker.h
+    gen/              generated only (including sample.h); included by the headers above, not by modules
+  src/                compiled sources in the folders of include/: chooser/{chooser,logic}.c, sample/picker.c
+  dsp/                SHARC code by concept: osc/, filter/, dynamics/, delay/, util/, sample/;
+                      contract/ is on the SHARC include path (call.inc, dk_trace.inc and the
+                      generated dk_machine.inc, dk_fx.inc, dk_sample_pool.inc)
   templates/          machine/, fx/, tool/
-  tests/              same folders as include/
+  tests/              host C tests in the folders of include/ (page/, sample/)
+modules/core/runtime/vectors/   fit and settings expected results (moved from sdk/vectors)
 ```
+
+Planned for later steps (not shipped): `core/` gets `module.h`, `log.h`, `mem.h`, `bytes.h` and `text.h` (S2); `platform/` is regrouped
+by service with `draw.h`, `store.h`, `samples.h`, `input.h` and `debug.h` (S2); `page/canvas.h` (S3); `dsp/env/` when a module needs it.
 
 Include direction: `core` <- `platform` <- components (`page`, `machine`, `fx`, `sample`, later `lfo`, `filter`, `mixer`).
 Components may use other components, without cycles.
@@ -85,10 +90,7 @@ Components may use other components, without cycles.
 - There is no vendor directory. Almost everything would end up in it; the layer line does that job.
 - A new concept is a new component folder, plus `dsp/<concept>/` for SHARC code. If it needs the device, its imports go in
   `platform/<name>.h`, owned by a service. The README states this rule.
-- `sdk/vectors/` (fit and settings expected results) moves next to the runtime; module authors do not need it. Readers to update:
-  `patchkit/src/fit.rs:211`, `storedump.rs:444`, `runtime/fit/src/tests.rs:11`, `runtime/sdk/src/settings/tests.rs:234`,
-  `apps/web/tests/fit.test.mjs`, `tests/digikit/test_dksettings.py`, `tests/regression/host/settings-record.test.ts:23`,
-  `tests/patchkit/test_patchkit_dkrt_boot.py`, `tools/nx/cargo.mjs`.
+- `sdk/vectors/` (fit and settings expected results) moved to `modules/core/runtime/vectors/` in S1: module authors do not need it, and every reader uses the new path.
 
 ## 5. Module entry and lifecycle
 
@@ -268,7 +270,7 @@ the SDK grows. Today `type = "raw"` exists only in test fixtures.
 These come from the profiling work and land after the steps in section 12 that they depend on.
 
 - **DSP rules.** One rules section in `sdk/` for machine and FX entry points: registers a module may clobber, registers and mode bits it
-  must restore, memory it may touch. Parts exist today in `sdk/dsp/README.md` "Block routines" and `sdk/dsp/delay.inc` (MODE1.CBUFEN).
+  must restore, memory it may touch. Parts exist today in `sdk/dsp/README.md` "Block routines" and `sdk/dsp/delay/delay.inc` (MODE1.CBUFEN).
   The stock side comes from sharcdb (`regdef`/`reguse` of the interrupt context save at `0x1c02a4`, image and port to confirm, and of the
   adapter dispatchers; `mem_access` for memory stock code owns). No finding records the stock save set yet [O]; record it in
   `docs/findings/` and have a second agent check it against image bytes before [V]. `pk_conform` checks each module against the rules,
@@ -276,7 +278,7 @@ These come from the profiling work and land after the steps in section 12 that t
 - **Cycle cost.** `max_cycles_*` stops being written by hand. The packer writes a DSP cycles-per-block use into the header and the report,
   from the `module:check` emulator measurement at the device's voice count or a static estimate over the module's sharcdb tables, scaled
   by the emulator-to-device calibration ([profiling.md](profiling.md) 6 and 7.3). The broker checks it (runtime-and-services 5.3).
-- **`DK_SPAN`.** `DK_SPAN_BEGIN(owner)` and `DK_SPAN_END(owner)` in `core/trace.h` and `dsp/contract/trace.inc`. They read the cycle
+- **`DK_SPAN`.** `DK_SPAN_BEGIN(owner)` and `DK_SPAN_END(owner)` in `core/trace.h` and `dsp/contract/dk_trace.inc`. They read the cycle
   counter and emit `(owner, cycles)` to the `span` sink (runtime-and-services 5.11). With no sink set they cost one flag test. Only
   service dispatchers use them (runtime-and-services 6.1). In the emulator a counter read can change the execution tier
   (`UNSAFE_READ_NAMES` in `tools/sharc_dev/sharc_rsgen.py`), so the reads run only while a sink is set [O: measure the tier effect].
@@ -305,25 +307,26 @@ These come from the profiling work and land after the steps in section 12 that t
 
 One PR per step. The roadmap names them S1 to S5.
 
-### S1 SDK restructure (byte-identical)
+### S1 SDK restructure (byte-identical): done
 
-Rule: every built `.dkm` stays byte-identical.
+Rule: every built `.dkm` stays byte-identical. What shipped:
 
-- Hash task: record the sha256 that `patchkit pack` and `dkm-info` print for every module and every fixture, and compare before and
-  after. First answer: do two builds of the same source match; does `module:pack-all` include `tests/fixtures/modules` (if not, the task
-  must); how to check adapters that include SDK headers (`adapters/machines/src/cf/native-page.c`).
-- Move files into the tree of section 4, including `sdk/dsp/` by concept. SHARC include paths come from
-  `tools/patchkit/toolchain/pins.toml:17`; check what a change there invalidates.
-- `pk_`/`PK_` to `dk_` (about 107 uses). Read `chooser`, `sample_picker` and `picker_logic` before choosing names; they may be one flow.
-  Settle `sample`, `sample_track` and `sample_region`.
-- Generate status codes into `core/status.h` with the same values. One definition of -40 (`sample.h:21`, `sample_track.h:21`,
-  `chooser.h:31`). Generate `DK_STRACK_W_*` (`sdk/dsp/sample_track.inc:14-23`), `DK_SAMPLE_PEAK_BINS` and `DK_SAMPLE_WINDOW_MAX` from
-  `sdk.toml`.
-- Delete the test-only `dk_sample_region*` wrappers (`sample_region.h:241-256`); move the tests to the draw functions.
-- `sdk/project.json`: add `src`, `dsp` and `asm` to the inputs (cache correctness bug).
-- `sdk/vectors/` moves next to the runtime (section 4). The `service` template becomes `tool`.
-- Update every include directly. No forwarding headers.
-- Check: all hashes unchanged, plus `mise run test:changed`.
+- Hash task `mise run sdk:hashes` (`tools/devtools/sdk_hashes.mjs`: `record`, `compare`, `--force`). It packs every non-core module and
+  fixture (`tests/fixtures/modules` included) for each device, hashes the `.dkm` files and the core objects, and hashes the DT2 1.17 and
+  DN2 1.12 images the device patch set makes. A build failure, a missing firmware image or an unexpected unpackable module is fatal.
+  `compare --force` shows 0 differences against a baseline recorded on the commit before the move.
+- The tree of section 4: `include/dk/{core,platform,page,machine,fx,chooser,sample}`, `src/{chooser,sample}`, `dsp/` by concept with
+  `dsp/contract` (formerly `sdk/asm`) on the SHARC include path, `templates/{machine,fx,tool}` (the `service` template became `tool`) and
+  the vectors in `modules/core/runtime/vectors`. Every include was updated directly; there are no forwarding headers.
+- Names: `chooser` is its own component (`chooser.h`, `logic.h`); `picker_logic` became `chooser/logic`; the `pk_*` helpers became
+  `dk_text_*`, `dk_path_*` and `dk_chooser_row*`; "pool" replaces "track" and "strack" for the 16-entry sample store (`dk_sample_pool_*`,
+  `DK_SAMPLE_POOL_*`); the waveform helpers are `dk_sample_view_*`; `dk_picker_*` is `dk_sample_picker_*`. The test-only region wrappers
+  were deleted and their tests draw through `view.h`.
+- Generated from `sdk.toml`: `core/status.h` (one definition of each `DK_E_*` code; the family error names stay as aliases), `gen/sample.h`
+  and `dsp/contract/dk_sample_pool.inc` (the pool entry and control word offsets, `DK_SAMPLE_POOL_*`, `DK_SAMPLE_PEAK_BINS`,
+  `DK_SAMPLE_WINDOW_MAX`). The runtime's `gen_sdk.rs` carries the same offsets and `sample_tracks.rs` asserts its struct layout against them.
+- `sdk/project.json`: `sdk:check-generated` names the generator's inputs and outputs only; `sdk/src`, `sdk/dsp` (except the generated
+  includes) and `sdk/templates` select no SDK task.
 
 ### S2 Entry point and imports
 

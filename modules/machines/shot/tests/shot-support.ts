@@ -318,7 +318,7 @@ export async function setSmp(
   );
 }
 
-/** The `dk_strack` record of pool entry `track` in the DSP data of the first module with a table (client 0): eight words. `recordsSymbol` is the plan address of
+/** The `dk_sample_pool_entry` record of pool entry `track` in the DSP data of the first module with a table (client 0): eight words. `recordsSymbol` is the plan address of
  * the runtime's RECORDS static (the DSP address of client 0's table). */
 export async function trackRecord(session: PatchedSession['session'], recordsSymbol: number, track: number) {
   const mem = memory(session);

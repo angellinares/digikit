@@ -3,7 +3,7 @@
 **Category:** core  **Devices:** Digitakt II 1.17; Digitone II 1.12 (the send route: both)  **Status:** experimental (emulator only)
 
 A framework module: it lets other modules process the final stereo block of the device with their own DSP routine (the FX contract,
-`<dk/fx.h>`). On its own it changes nothing: a patched image with an empty chain plays exactly the stock audio.
+`<dk/fx/fx.h>`). On its own it changes nothing: a patched image with an empty chain plays exactly the stock audio.
 
 - What changes on the device: the first instruction of a function the DSP calls once per block after the master mix and before the USB pack (finding 55:
   Digitakt II `FUN_1c80f2`, Digitone II `FUN_1c244d`) is replaced by a jump into this module. The effect runs before the USB pack and the DAC converter, so it is in the USB main output and in the

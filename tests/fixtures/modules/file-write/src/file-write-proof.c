@@ -1,4 +1,4 @@
-/* Store file write fixture (<dk/file.h>, <dk/io.h>, <dk/hash32.h>). A service command starts an I/O job that writes a file of a known pattern
+/* Store file write fixture (<dk/platform/file.h>, <dk/platform/io.h>, <dk/platform/hash32.h>). A service command starts an I/O job that writes a file of a known pattern
    (byte i = (i * 7 + (i >> 8)) & 255), a chunk of 4096 bytes a step; another command reports what the job saw. The tests run on both devices.
    Commands (PROOF_CMD = 0x24):
      +0 START   body: u8 case (low 4 bits; bit 5 = the expected hash covers the pattern and 16 zero bytes (the +Drive's files), bit 6 = DK_FILE_REPLACE,
@@ -17,9 +17,9 @@
      +2 RELEASE io_wake the job of case 3 and let the spin of case 7 end.
      +3 CONTEXT file_create called here, in the MIDI task: the reply is its result (E_CONTEXT, -19, is right), then u8 1 while the step of case 7 spins
                 (it is mid-step), then the results of file_write and file_abort on a handle (body: i32 handle, may be empty) called here. */
-#include <dk/file.h>
-#include <dk/io.h>
-#include <dk/hash32.h>
+#include <dk/platform/file.h>
+#include <dk/platform/io.h>
+#include <dk/platform/hash32.h>
 #ifndef PROOF_CMD
 #define PROOF_CMD 0x24
 #endif

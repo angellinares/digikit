@@ -257,7 +257,7 @@ test(
       const dirs = [
         join(root, mod, 'build/gen'),
         join(root, mod, 'src'),
-        join(root, 'sdk/asm'),
+        join(root, 'sdk/dsp/contract'),
         join(root, 'sdk'),
         dirname(join(root, mod, source)),
       ];

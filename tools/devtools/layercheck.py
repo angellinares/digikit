@@ -11,7 +11,7 @@ Rules:
   roles     Every module under modules/core has `role` in [module], and the role fits the folder: adapters/ -> adapter,
             apps/ -> app, runtime/ -> runtime, expansion/ -> installer.
   sources   Content modules (modules/machines, modules/fx, modules/tools, tests/fixtures/modules) and apps include only
-            their own files and the SDK (sdk/include, sdk/asm). Apps may also include dkrt.h (runtime) and dk_ui_core.h
+            their own files and the SDK (sdk/include, sdk/dsp/contract). Apps may also include dkrt.h (runtime) and dk_ui_core.h
             (core/ui). Only runtime, installer and adapters include the firmware bindings (dk_fw_* headers, the dkfw crate).
             C, ColdFire and SHARC assembly (`#include`, `.include`) and Rust (`dkfw`, path dependencies) are read.
   objects   The undefined symbols of the built objects of apps and content modules are SDK imports, dkrt_*, dk_ui_*,
@@ -23,7 +23,7 @@ Rules:
             (`AUTHOR/NAME`) or its path (`machines/NAME`). Allowed: docs/**, any *.md, .agents/**, the fixtures
             (tests/fixtures/modules) and a module with `host = true` in [module] (the workbench speaks
             its protocol).
-  imports   Every function of <dk/ui.h> is an `[[import]]` of sdk/sdk.toml with `requires = "core/ui"`, and every import
+  imports   Every function of <dk/platform/ui.h> is an `[[import]]` of sdk/sdk.toml with `requires = "core/ui"`, and every import
             with `requires` is in the runtime's `optional` list, so the runtime can link it by name (or hand out its stub).
 
 Exceptions are named below with their reason; a new one needs a reason in this file.
@@ -200,14 +200,14 @@ class Resolver:
 
 
 def sdk_symbols(root: Path) -> tuple[set[str], set[str]]:
-    """(the SDK's import names, the SHARC externs that sdk/asm and sdk/templates document)."""
+    """(the SDK's import names, the SHARC externs that sdk/dsp/contract and sdk/templates document)."""
     imports: set[str] = set()
     sdk = root / "sdk/sdk.toml"
     if sdk.is_file():
         data = tomllib.loads(sdk.read_text(encoding="utf-8"))
         imports = {i["name"] for i in data.get("import", [])}
     externs: set[str] = set()
-    for d in ("sdk/asm", "sdk/templates"):
+    for d in ("sdk/dsp/contract", "sdk/templates"):
         for p in sorted((root / d).rglob("*")) if (root / d).is_dir() else []:
             if p.is_file() and p.suffix in {".s", ".inc", ".asm"}:
                 externs |= set(
@@ -490,8 +490,8 @@ UI_FN = re.compile(r"^(?!typedef)[A-Za-z_][A-Za-z0-9_ \*]*?\b(dk_ui_[a-z_]+)\(",
 
 
 def check_imports(root: Path) -> list[Violation]:
-    """The imports of other modules: <dk/ui.h> against sdk/sdk.toml against the runtime's `optional` list."""
-    sdk, ui = root / "sdk/sdk.toml", root / "sdk/include/dk/ui.h"
+    """The imports of other modules: <dk/platform/ui.h> against sdk/sdk.toml against the runtime's `optional` list."""
+    sdk, ui = root / "sdk/sdk.toml", root / "sdk/include/dk/platform/ui.h"
     if not sdk.is_file():
         return []
     sdk_text = sdk.read_text(encoding="utf-8")
@@ -506,9 +506,9 @@ def check_imports(root: Path) -> list[Violation]:
         for n in sorted(declared - ui_imports):
             out.append(
                 Violation(
-                    f"sdk/include/dk/ui.h:{line_of(ui_text, n + '(')}",
+                    f"sdk/include/dk/platform/ui.h:{line_of(ui_text, n + '(')}",
                     "imports",
-                    f'{n} is declared in <dk/ui.h> but is no [[import]] of sdk/sdk.toml with requires = "core/ui"',
+                    f'{n} is declared in <dk/platform/ui.h> but is no [[import]] of sdk/sdk.toml with requires = "core/ui"',
                     "add the [[import]] (with sig and absent), so a content module can call it",
                 )
             )
@@ -518,8 +518,8 @@ def check_imports(root: Path) -> list[Violation]:
                 Violation(
                     f"sdk/sdk.toml:{line_of(sdk_text, name_line)}",
                     "imports",
-                    f"{n} is an import of core/ui but <dk/ui.h> does not declare it",
-                    "declare it in <dk/ui.h> or remove the [[import]]",
+                    f"{n} is an import of core/ui but <dk/platform/ui.h> does not declare it",
+                    "declare it in <dk/platform/ui.h> or remove the [[import]]",
                 )
             )
     runtime = root / CORE / "runtime/module.toml"

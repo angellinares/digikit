@@ -346,7 +346,7 @@ without running it.
   the harness only (see `tests/regression/project.json`). So a change to a stock test, a golden, an FX
   scenario, a host test or another module's tests still selects the dependent modules, but their device
   results replay from the cache. Packs still run (they are not cached).
-- Build and pack inputs share `sdk/sdk.toml`, public `sdk/include`, `sdk/asm`, `sdk/dsp` and `sdk/vectors`. Full-input device tasks do not
+- Build and pack inputs share `sdk/sdk.toml`, public `sdk/include`, `sdk/dsp` (including `sdk/dsp/contract`) and `modules/core/runtime/vectors`. Full-input device tasks do not
   hash them; they hash the built bytes (see "Cached targets"). `tools/devtools/emu-slot.mjs` is no device input: it only schedules.
   Optional implementation sources under `sdk/src` belong to their explicit consumers: pack manifests name the C
   files, with adjacent private headers included, and `dkui-host:rust-tests` names the picker sources and headers
@@ -354,7 +354,9 @@ without running it.
   selects Shot's pack, device and conformance checks and the UI host tests, plus their prerequisites; unrelated
   module packs and conformance are excluded. Public headers and the SDK contract retain broad selection.
   `sdk:check-generated` names the shared generator inputs and all generated output surfaces, including outputs
-  outside `sdk`; changes to generator output paths must update this list. It excludes optional `sdk/src` sources.
+  outside `sdk`; changes to generator output paths must update this list. It excludes `sdk/src`, `sdk/templates` and the hand-written
+  `sdk/dsp` files (only the generated includes `dsp/contract/dk_{machine,fx,sample_pool}.inc` are inputs). `sdk:test-host` does not hash `sdk/src` either:
+  its tests compile public headers and fixtures only.
 - `tools:python-checks` and `tools:python-tests` run on changes to tools, tests, modules, sdk, devices, Python and
   Cargo manifests, and the patchkit, dkneeds, control and plusdrive packages. `python-checks` runs ruff, ruff
   format, mypy, layercheck and `patchkit gen --check`. `python-tests` first runs

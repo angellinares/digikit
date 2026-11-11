@@ -25,7 +25,7 @@
 //  The curve's three numbers live in state words 3, 4 and 5 so the loop does not need three more registers.
 // =====================================================================
 #include "dk_machine.inc"
-#include "dsp/oscillator.inc"
+#include "dsp/osc/oscillator.inc"
 
 .SECTION/PM seg_pmco;
 .GLOBAL _pd_render;

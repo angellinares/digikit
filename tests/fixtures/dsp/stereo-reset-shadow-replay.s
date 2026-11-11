@@ -1,6 +1,6 @@
 // Bounded helper reset mirroring, not event-name or global writer ownership.
 // b82440 is bound specifically to the b8265b held-sample record here.
-#include "dsp/call.inc"
+#include "dsp/contract/call.inc"
 .SECTION/PM seg_pmco;
 #define RESET_STAGE(fn, state, label) \
     R4 = state; DK_CALL(fn, label); RTS

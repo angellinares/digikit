@@ -5,7 +5,7 @@ Status: built, 2026-10-16 (packer `packages/patchkit/src/dkm.rs`, loader `module
 `docs/design/digikit-store.md`.
 
 Note (2026-10-27): where this file says `[[machine]]`, `[[param]]`, `[[page]]` or `[[voice]]` in `module.toml`, machines are now declared in C
-with `DK_MACHINE`, `DK_PARAM` and `DK_PAGE` (`sdk/include/dk/machine.h`). The packer reads these records and the `.dkm` format is unchanged.
+with `DK_MACHINE`, `DK_PARAM` and `DK_PAGE` (`sdk/include/dk/machine/machine.h`). The packer reads these records and the `.dkm` format is unchanged.
 See `docs/MODULE-AUTHORING.md`, section 5.2.
 
 A `.dkm` is one ColdFire module in a form the runtime can load at run time. It holds no firmware address and no host path: the
@@ -76,7 +76,7 @@ the DSP section (16-byte aligned), padding to 16, then the image. A file with a 
   `A` for kind 1.
 
 Exports by name (symbols of the object): `dkm_init(const Api *) -> i32` (0 = ok), `dkm_fini(const Api *)`,
-`dkm_slot_N(const Api *)` and `dkm_menu(dk_ui_menu *, void *)` (the module's settings: `DK_MENU(fill)` of `<dk/ui.h>`; the DIGIKIT menu calls it when the user opens SETTINGS... of the module). At least one must exist. `init` runs once after the copy, relocation and cache flush; if it returns
+`dkm_slot_N(const Api *)` and `dkm_menu(dk_ui_menu *, void *)` (the module's settings: `DK_MENU(fill)` of `<dk/platform/ui.h>`; the DIGIKIT menu calls it when the user opens SETTINGS... of the module). At least one must exist. `init` runs once after the copy, relocation and cache flush; if it returns
 non-zero the load is undone (`E_INIT`).
 
 ## Needs are inferred from the contents
@@ -112,7 +112,7 @@ Names that are capacity kinds (`[capacity.kinds]` of `sdk/sdk.toml`) are in the 
 Who calls it: the DIGIKIT menu (`modules/core/apps/digikit-menu`, on the card's files, once per open of the menu); patchkit (`patchkit needs [--json] FILE.dkm...`, and a `needs` line of `dkm-info`);
 `patchkit.wasm` (`pk_needs`, read by the Transfer page through `apps/web/src/modules/dkneeds.ts`); the Python tools through the command line (`tools/device/dkneeds.py`: `dk run`, `module:check`, `dktransfer`). The arithmetic exists once.
 
-The rule that compares the needs with a device is `fits_now` (docs/plans/what-fits.md; `dkrt_fit` in `modules/core/runtime/fit`, vectors in `sdk/vectors/fit-vectors.json`; the compare and the needs are each written once, in Rust: the web app calls the compare through `pk_fit` and the tools through `patchkit fit --json -`): the staging buffer holds the file, a module record and a selection path are free,
+The rule that compares the needs with a device is `fits_now` (docs/plans/what-fits.md; `dkrt_fit` in `modules/core/runtime/fit`, vectors in `modules/core/runtime/vectors/fit-vectors.json`; the compare and the needs are each written once, in Rust: the web app calls the compare through `pk_fit` and the tools through `patchkit fit --json -`): the staging buffer holds the file, a module record and a selection path are free,
 the DSP range (with up to `DSP_ALIGN - 8` bytes for alignment) is at most the largest free range, the arena holds the module's block and the block of its DSP image together (each block at most the largest free block), and every row count is at most
 limit - used. A kind that a device's CAPACITY lacks is not judged.
 The `inferred needs` tests of `modules/core/runtime/tests/capacity/inferred/inferred-needs.device.test.ts` (full tier) load a set of run-time modules and fixtures alone, coupled, and compare
@@ -145,7 +145,7 @@ All integers are big endian. Offsets are from the start of the section.
 | 0x2c | 4 | `voice_off`; 0x30: `voice_count` (at most 8) |
 | 0x34 | 4 | `fx_off`: offset of the effect records (version 4; 0 before) |
 | 0x38 | 4 | `fx_count`: effect records, at most 4 (`DK_FX_MAX`) (version 4; 0 before) |
-| 0x3c | 4 | `sample_off` (version 5): offset of a 32-byte record of little-endian words, 0 before. Word 0 is the kind: 1 a sample bank (local id, bank byte offset, capacity frames, descriptor byte offset), 2 the per-track sample table of API 1.5 (local id, byte offsets of the 16 `dk_strack` records, 512 bytes, and of the 16 control sets, 256 bytes; four zero words). The blocks lie in the initialized image, are zero and have no relocations in them. Version 5 keeps the voices and effects of version 4 |
+| 0x3c | 4 | `sample_off` (version 5): offset of a 32-byte record of little-endian words, 0 before. Word 0 is the kind: 1 a sample bank (local id, bank byte offset, capacity frames, descriptor byte offset), 2 the per-track sample table of API 1.5 (local id, byte offsets of the 16 `dk_sample_pool_entry` records, 512 bytes, and of the 16 control sets, 256 bytes; four zero words). The blocks lie in the initialized image, are zero and have no relocations in them. Version 5 keeps the voices and effects of version 4 |
 
 - **Imports**: 32-byte NUL padded names of DSP symbols the object references and does not define: today the helpers of `core/dsp-voice`
   (`_dv_exp2`, `_dv_frame_hw`, `_dv_frame_sw`). The runtime resolves them in `dyndsp_info` (module `core/dyndsp`): a name it does not
@@ -163,7 +163,7 @@ All integers are big endian. Offsets are from the start of the section.
   16 `clear_bytes` (zeroed at note-on), 20 to 51 the eight ranges, 52 `voices` (number of voice states to reserve), 56 to 63 reserved 0. The packer
   takes them from `[[voice]] render, note_on, desc` (`desc`: a `dk_machine_desc` data symbol). The runtime reserves
   `align8(image + bss)` plus, per voice record, `voices * align8(state_bytes)` for state, in record order, in the module's range.
-- **Effects** (version 4): 64 bytes each, the effects of the FX contract (`<dk/fx.h>`) that the module brings, from the effect's `DK_FX` record (`sdk/include/dk/fx.h`; this section says `[[fx]]` for its fields) (`id`, `process`: the process
+- **Effects** (version 4): 64 bytes each, the effects of the FX contract (`<dk/fx/fx.h>`) that the module brings, from the effect's `DK_FX` record (`sdk/include/dk/fx/fx.h`; this section says `[[fx]]` for its fields) (`id`, `process`: the process
   routine's global symbol, `desc`: the `dk_fx_desc` data symbol, `defaults`: the words p0 ... of the row, at most `n_params`, the words the DSP reads as they are;
   `devices`). Record: 0 `process` (image byte offset of the routine), 4 `desc` (image byte offset of its `dk_fx_desc`), 8 `state_bytes`, 12 `n_params` (both
   from the descriptor, which the packer reads and checks: magic `DKFX`, contract 1, `n_params` at most 8, `state_bytes` a multiple of 4), 16 flags (the routes, below; 0 = master only), 20 to 51 the words

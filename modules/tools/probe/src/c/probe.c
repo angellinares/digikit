@@ -14,7 +14,7 @@
  *   0x34 RESET   body: none            reply: status 0
  */
 
-#include <dk/api.h>
+#include <dk/core/api.h>
 
 typedef uint32_t u32;
 typedef uint16_t u16;

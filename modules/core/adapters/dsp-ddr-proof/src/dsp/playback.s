@@ -1,7 +1,7 @@
 #include "dk_machine.inc"
-#include "dsp/call.inc"
-#include "dsp/sample.inc"
-#include "dsp/sample_pcm16.inc"
+#include "dsp/contract/call.inc"
+#include "dsp/sample/float.inc"
+#include "dsp/sample/pcm16.inc"
 #include "playback.inc"
 
 .SECTION/DM seg_dmda;

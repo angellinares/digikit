@@ -34,7 +34,7 @@ members = [
     # the digikit runtime's SDK (no_std): its tests run on the host
     "modules/core/runtime/sdk",
     "modules/core/runtime/fit",
-    # host test harness for <dk/ui.h> (fake dk_ui_* calls, driver, C sample)
+    # host test harness for <dk/platform/ui.h> (fake dk_ui_* calls, driver, C sample)
     "modules/core/adapters/ui/host",
     "modules/core/fw/rs",
     "packages/patchkit",
