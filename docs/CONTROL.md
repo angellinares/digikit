@@ -223,7 +223,7 @@ With no dTD primed, or EP2 receive off (ENDPTCTRL2), the host is NAKed (`bulk_na
 the address of the adapter's connect callback (`usb_bulk_connect`, from the patch plan), called first, ahead of everything queued (a bus reset does not wait): the bus reset after the enumeration is not modelled. The queue,
 the interrupt and the pacing are those of `midi.usb.in`, so the two interleave. `usb.bulk.out {file?}` returns (and clears) what the guest queued on EP2 IN, as hex, seen where
 the firmware's queue function (`FUN_40005a86`, queue index 6) gets the dTD; the dTD is completed one period later. Both start the capture; The IN data is read through the dTD's page array; with zero-length termination on (QH caps bit 29 clear) a transfer of a multiple of 512 bytes counts one zero-length packet (`bulk_out_zlps`). The counters
-`bulk_in_bytes`, `bulk_out_bytes`, `bulk_out_pending`, `bulk_naks` and `bulk_out_zlps` are in the `status` of `usb.bulk.out`.
+`bulk_in_bytes`, `bulk_out_bytes`, `bulk_out_pending`, `bulk_naks` and `bulk_out_zlps` are in the `status` of `usb.bulk.out`. `usb_sys_error` in the same status is null, or the reason text after a modelled controller system error (a dTD whose page pointer the USB bus master cannot reach, or that breaks a prime rule); all USB traffic stops after it, as on hardware.
 
 The DIN input (`midi.in`) still keeps the one-instruction loop while bytes are queued.
 

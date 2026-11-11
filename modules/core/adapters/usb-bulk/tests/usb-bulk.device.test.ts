@@ -117,6 +117,7 @@ for (const device of DEVICES) {
       for (let t = 0; t < limitMs && have < want; t += 20) {
         await advance(rt.session, 20);
         const r = await out(rt);
+        noSysError(r);
         if (r.bytes > 0) {
           got.push(Buffer.from(r.hex, 'hex'));
           have += r.bytes;
@@ -135,7 +136,15 @@ for (const device of DEVICES) {
       return file;
     };
     const out = (rt: PatchedSession) =>
-      rpc<{ bytes: number; hex: string; status: { bulk_naks: number; bulk_out_zlps: number } }>(rt.session, 'usb.bulk.out', {});
+      rpc<{ bytes: number; hex: string; status: { bulk_naks: number; bulk_out_zlps: number; usb_sys_error: string | null } }>(
+        rt.session,
+        'usb.bulk.out',
+        {},
+      );
+    /** A wedged controller fails the test with its cause instead of a timeout. */
+    const noSysError = (r: { status: { usb_sys_error: string | null } }) => {
+      if (r.status.usb_sys_error !== null) throw new Error(`emulated USB controller system error: ${r.status.usb_sys_error}`);
+    };
     /** Send a host message and collect what comes back until `want` bytes, in emulated time. */
     const echo = async (rt: PatchedSession, data: Buffer, first: boolean, period?: number) => {
       const file = path.join(rt.session.runDir, `bulk-${data.length}.bin`);
@@ -146,6 +155,7 @@ for (const device of DEVICES) {
       for (let i = 0; i < 4000 && have < data.length; i++) {
         await advance(rt.session, 20);
         const r = await out(rt);
+        noSysError(r);
         if (r.bytes > 0) {
           got.push(Buffer.from(r.hex, 'hex'));
           have += r.bytes;
@@ -223,6 +233,7 @@ for (const device of DEVICES) {
         }
       }
       expect(Buffer.concat(got).equals(big), 'the bulk message arrived whole').toBe(true);
+      expect((await out(rt)).status.usb_sys_error, 'no controller system error').toBeNull();
       expect((await rt.session.client.status()).heartbeat.stall_count, 'no UI stall during transfers').toBe(before);
       await rt.session.expectNoFault('echo');
     }, 1_800_000);

@@ -8,7 +8,7 @@ section 4; facts: `docs/findings/42-usb-transfer-routes.md` section 4.
   the stock entry 2 (callbacks, length, the 101 descriptor bytes), then writes four words (connect, disconnect, descriptor pointer and length) and
   re-enumerates with the firmware's own stop and restart pair. Not called, nothing is written and USB is stock.
 - **Anchors** (`devices/fw/usb.toml`): the port table, connect, disconnect, queue, cancel, dTD allocation, stop and restart.
-- **Receive**: four 16 KiB buffers (four 4 KiB pages each: a multi-page dTD is our own work **[O]**) in the uncached alias of DDR, one dTD each on EP2 OUT.
+- **Receive**: four 16 KiB buffers (four 4 KiB pages each: every dTD names all five page pointers) in the uncached alias of DDR, one dTD each on EP2 OUT.
   The completion callback marks a buffer full, queues a free one and wakes the module's I/O job (`dkrt_io_wake`). No free buffer: nothing queued, the host
   gets NAK. **Send**: the bytes are copied into one of two slots and queued on EP2 IN.
 - **Reset**: the connect and disconnect callbacks cancel both EP2 queues with a bounded flush (the stock disconnect polls without a bound), drop buffers

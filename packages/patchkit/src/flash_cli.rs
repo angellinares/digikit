@@ -459,18 +459,27 @@ fn run_rpc(p: &Prepared, chunk: usize, link: &mut impl Transport) -> Result<()> 
 }
 
 fn after_device_flash(p: &Prepared, name: &str, t0: Instant) -> Result<()> {
-    // the device restarts: its port goes away and comes back
-    wait_port(name, false, Duration::from_secs(240))
-        .map_err(|e| Error(format!("{e}: look at the device screen; it still runs the old image unless it shows the flash running")))?;
-    println!("port gone after {:.0} s", t0.elapsed().as_secs_f64());
-    wait_port(name, true, Duration::from_secs(240))?;
-    println!("port back after {:.0} s", t0.elapsed().as_secs_f64());
+    // the device restarts: its port goes away and comes back. A restart can go unseen (macOS keeps the port
+    // listed, or the restart is faster than a poll), so a missing leave is not an error.
+    let left = wait_port(name, false, LEAVE_WAIT).is_ok();
+    if left {
+        println!("port gone after {:.0} s", t0.elapsed().as_secs_f64());
+        wait_port(name, true, Duration::from_secs(240))?;
+        println!("port back after {:.0} s", t0.elapsed().as_secs_f64());
+    } else {
+        println!("the port stayed listed (macOS keeps it); asking the device");
+    }
     if p.restore {
+        if !left {
+            return Err(Error("the restart was not seen (the port stayed listed; macOS keeps it): stock firmware cannot be asked, so look at the device screen to confirm the flash and the restart".into()));
+        }
         println!("stock firmware restored (it has no digikit runtime to ask)");
         return Ok(());
     }
     let mut last = String::from("no answer");
-    let deadline = Instant::now() + Duration::from_secs(90);
+    let mut seen: Option<Info> = None;
+    // without a seen leave the deadline covers the flash write and the restart
+    let deadline = Instant::now() + Duration::from_secs(if left { 90 } else { 240 });
     while Instant::now() < deadline {
         std::thread::sleep(Duration::from_secs(2));
         let r = open(name).and_then(|l| {
@@ -480,13 +489,32 @@ fn after_device_flash(p: &Prepared, name: &str, t0: Instant) -> Result<()> {
             s.info().map_err(|e| Error(e.to_string()))
         });
         match r {
-            Ok(info) => return check_info(p, &info),
+            // an answer of the old image is not the verdict while time remains
+            Ok(info) if is_patched(p, &info) => return check_info(p, &info),
+            Ok(info) => seen = Some(info),
             Err(e) => last = e.0,
         }
     }
-    Err(Error(format!(
-        "the port is back but INFO does not answer ({last}): the new image may not have reached the runtime; look at the screen"
-    )))
+    if let Some(info) = seen {
+        return check_info(p, &info);
+    }
+    Err(Error(if left {
+        format!(
+            "the port is back but INFO does not answer ({last}): the new image may not have reached the runtime; look at the screen"
+        )
+    } else {
+        format!(
+            "the port stayed listed and INFO does not answer ({last}): the device may still be flashing or the new image did not reach the runtime; look at the screen"
+        )
+    }))
+}
+
+/// How long to wait for the port to go away before the device is asked anyway (the web flow's `leaveMs`).
+const LEAVE_WAIT: Duration = Duration::from_secs(10);
+
+/// True when the answer comes from the image the patch made (runtime version and image id).
+fn is_patched(p: &Prepared, info: &Info) -> bool {
+    info.runtime() == patchkit::dkm::runtime_version() && info.image_id == p.image_id
 }
 
 fn wait_port(name: &str, present: bool, within: Duration) -> Result<()> {
@@ -521,7 +549,7 @@ fn check_info(p: &Prepared, info: &Info) -> Result<()> {
             "the runtime version differs from the one patched in".into(),
         ));
     }
-    if info.image_id != p.image_id {
+    if !is_patched(p, info) {
         return Err(Error(format!(
             "the image id differs: the device reports {:?}, the patch made {:?}",
             info.image_id.map(|i| patchkit::error::hex(&i)),

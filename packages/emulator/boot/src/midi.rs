@@ -54,6 +54,8 @@ pub(crate) struct UsbPort {
     pub bulk_naks: u64,
     /// Zero-length packets the controller sent after a transfer of a multiple of 512 bytes on EP2 IN (zero-length termination on).
     pub bulk_out_zlps: u64,
+    /// The controller's system error: set when a dTD made the DMA fault; no USB traffic after it, as on hardware, where only a module reset recovers.
+    pub sys_error: Option<String>,
 }
 
 /// One delivery to the guest at interrupt level, in order (`midi.usb.in` and `usb.bulk.in` share the queue, the period and the interrupt).
@@ -206,6 +208,8 @@ pub struct MidiStatus {
     /// Times EP2 OUT answered NAK: no dTD primed, or the endpoint's receive side is off.
     pub bulk_naks: u64,
     pub bulk_out_zlps: u64,
+    /// The controller's system error (see `UsbPort::sys_error`): the reason, or none.
+    pub usb_sys_error: Option<String>,
 }
 
 #[cfg(test)]

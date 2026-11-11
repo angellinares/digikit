@@ -5,7 +5,7 @@
  * pointer and length of the configuration descriptor. usb_bulk_enable repoints those four words (a 124-byte copy of the stock 101-byte descriptor
  * with interface 2 appended; callbacks of ours that call the stock ones) and re-enumerates through the firmware's own stop and restart pair.
  *
- * RX: RX_BUFS buffers of RX_BYTES (RX_PAGES 4 KiB pages: a multi-page dTD is our own work; the firmware only builds single-page ones). Each is queued
+ * RX: RX_BUFS buffers of RX_BYTES (RX_PAGES 4 KiB pages: the firmware only builds single-page dTDs; ours name all five page pointers, see queue_transfer). Each is queued
  * as one dTD on EP2 OUT. A dTD completes when it is full or when a packet shorter than 512 bytes (a zero-length packet too) ends the transfer: the host
  * sends a zero-length packet after any frame whose length is a multiple of 512 bytes. The completion callback runs in the USB interrupt: it marks the buffer
  * full and queues a free one. With no free buffer nothing is queued, the host gets NAK, and that is the whole flow control. The dTDs come from the firmware's
@@ -42,7 +42,7 @@ typedef int i32;
 /* ---- the geometry ---- */
 #define PAGE 4096u
 #define RX_BUFS 4u
-#define RX_PAGES 4u /* [O] multi-page dTDs: proven in the emulator model only */
+#define RX_PAGES 4u
 #define RX_BYTES (RX_PAGES * PAGE)
 #define TX_SLOTS 2u
 #define TX_PAGES 4u
@@ -194,8 +194,12 @@ void usb_bulk_td_free(u8 *dtd)
 }
 
 /* A dTD for `bytes` of `data` (pages from a 4 KiB aligned address) with our callbacks; queued on queue `index`. 0 when queued. The firmware's queue
- * function sets the interrupt-on-completion bit because a callback is set. Caller: interrupts masked. */
-static i32 queue_transfer(u32 index, u8 *data, u32 bytes, u32 pages, void *done, void *cancel)
+ * function sets the interrupt-on-completion bit because a callback is set. Caller: interrupts masked.
+ * Page pointers 1-4 always name the four pages after page 0, as RM 24-71 asks. The controller can use the pointer of the page where a transfer ends
+ * (a zero-length packet after a full page); a zero pointer there made the DMA fault and wedged the controller on hardware (2026-11-11). The pages past
+ * a short transfer are never read or written (the dTD's total bytes bound the data), so pointing them past the buffer is safe; all of them stay in the
+ * module's DDR area. */
+static i32 queue_transfer(u32 index, u8 *data, u32 bytes, void *done, void *cancel)
 {
     u32 *w = (u32 *)usb_fw_td_alloc();
     u32 k;
@@ -207,7 +211,7 @@ static i32 queue_transfer(u32 index, u8 *data, u32 bytes, u32 pages, void *done,
     w[1] = (bytes << 16) | TD_ACTIVE;
     w[2] = (u32)data;
     for (k = 1; k < 5; k++)
-        w[2 + k] = k < pages ? (u32)data + k * PAGE : 0;
+        w[2 + k] = (u32)data + k * PAGE;
     w[8] = bytes;        /* +0x20: the length the firmware subtracts the remainder from */
     w[9] = (u32)done;    /* +0x24 */
     w[10] = (u32)cancel; /* +0x28 */
@@ -228,7 +232,7 @@ static void prime_one(u32 i)
 {
     if (stopping || !connected)
         return;
-    if (queue_transfer(IDX_OUT, rx_buf(i), RX_BYTES, RX_PAGES, (void *)usb_bulk_rx_done, (void *)usb_bulk_cancel) == 0)
+    if (queue_transfer(IDX_OUT, rx_buf(i), RX_BYTES, (void *)usb_bulk_rx_done, (void *)usb_bulk_cancel) == 0)
         rx_state[i] = B_PRIMED;
 }
 
@@ -559,7 +563,7 @@ i32 usb_bulk_send(const u8 *buf, u32 len)
     if (!connected || stopping || resets != before) {
         tx_state[slot] = T_FREE; /* the bus was reset while copying */
         r = E_STATE;
-    } else if (queue_transfer(IDX_IN, p, len, (len + PAGE - 1u) / PAGE, (void *)usb_bulk_tx_done, (void *)usb_bulk_cancel) != 0) {
+    } else if (queue_transfer(IDX_IN, p, len, (void *)usb_bulk_tx_done, (void *)usb_bulk_cancel) != 0) {
         tx_state[slot] = T_FREE;
         tx_retry = 1;
         r = E_AGAIN;

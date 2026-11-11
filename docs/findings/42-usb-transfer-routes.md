@@ -20,7 +20,7 @@ functions of 1.17 are 0x2e0 above their 1.16 addresses. Manual: out/refs/MCF5441
   EPLISTADDR = 0x80000000 (the QH list sits in the on-chip SRAM, dTDs at 0x80008000+), USBINTR 0x157, then RS.
 - **High speed [D]**: PORTSC bit 24 (PFSC, force full speed) is cleared when the port entry's flag word (+0x24) is 1. Entries 2, 4, 5, 6
   of the port table (DT2 1.17 0x4029ef80, DN2 1.12 0x40287af0, + n*0x28) have flag 1; entries 1 and 3 (flag 0) are full-speed variants and are not selected by the
-  normal boot (`FUN_400cc864` picks 6, 5 or 2; 4 in a service flag mode). The user manual's spec list says "Hi-speed USB 2.0 port".
+  normal boot (the inline mapping in `FUN_400cc9c8` picks 6, 5 or 2; 4 in a service flag mode). The user manual's spec list says "Hi-speed USB 2.0 port".
   All bulk descriptors say 512-byte packets and `FUN_400043e2` sets QH EP1 OUT = 512. DCCPARAMS = 0x184: **only 4 endpoint
   numbers (EP0-EP3)**, 8 QHs at 0x80000000 + {0x00,0x80,0x100,0x180} (OUT) / {0x40,0xC0,0x140,0x1C0} (IN). **Measured:** IOKit
   reports a real Digitone II (OS 1.12) at high speed (Device Speed 2, USBSpeed 3) **[D]**.
@@ -29,15 +29,16 @@ functions of 1.17 are 0x2e0 above their 1.16 addresses. Manual: out/refs/MCF5441
   The configs' wTotalLength bytes are written at run time by `FUN_4000677a` (0x4000677a, immediates 0x65, 0x4b, 0x107, 0x148). Device
   descriptors: bcdUSB 2.00, EP0 max packet 64, VID 0x1935, nconf 1.
 
-  | mode (setting `DAT_4099d5c4`: 1, 2, other) | port | device desc / PID | config | interfaces and endpoints |
+  | mode (setting byte, DT2 `DAT_4099d5c4`, DN2 `DAT_405ce898`: 0, 1, 2) | port | device desc / PID | config | interfaces and endpoints |
   |---|---|---|---|---|
-  | USB MIDI (other) | 2 | 0x40311298 / 0x012b, class 0 | 0x403111ce, 101 B | AudioControl + MIDIStreaming; **EP1 OUT bulk 512, EP1 IN bulk 512**; 2 embedded jacks each way = 2 cables |
+  | USB MIDI (0) | 2 | 0x40311298 / 0x012b, class 0 | 0x403111ce, 101 B | AudioControl + MIDIStreaming; **EP1 OUT bulk 512, EP1 IN bulk 512**; 2 embedded jacks each way = 2 cables |
   | USB AUDIO/MIDI (2) | 5 | 0x4031150b / 0x102b, EF/02/01 | 0x403113c3, 328 B | UAC2 (EP3 OUT iso 56 B, EP2 IN iso feedback, EP3 IN iso 56 B) + MIDI (EP1 bulk 512 pair) |
   | OVERBRIDGE (1) | 6 | 0x403113b1 / 0x0b2b | 0x403112aa, 263 B | **vendor class 0xFF**: if1 EP3 IN interrupt (32/88/1012 B alts), if2 EP3 OUT interrupt (32/88/256 B), if3 **EP2 OUT bulk 512 + EP2 IN interrupt 64**; MIDI pair EP1 bulk 512 |
   | service (4) | 4 | 0x403111bc / 0xffff | 0x40311126, 75 B | CDC-ACM + CDC data (EP2 bulk 512 pair, EP3 IN interrupt) |
 
-  The mode-to-setting mapping is read from `FUN_400cc864` (1 -> port 6, 2 -> port 5, else port 2) and the descriptor classes; the
-  menu order (OVERBRIDGE, USB MIDI, USB AUDIO/MIDI) was not tied to the stored value **[O]**.
+  The setting byte is read at boot by an inline mapping (DT2 `FUN_400cc9c8` 0x400cce0c-0x400cce2e; DN2 `FUN_400cedfc` 0x400cf216-0x400cf238): 0 -> port 2,
+  1 -> port 6, 2 -> port 5. The menu actions (DT2 `FUN_4010331a`, `FUN_40103330`, `FUN_40103348`; DN2 `FUN_40104dc2`, `FUN_40104dd8`, `FUN_40104df0`) each store
+  the value and call `FUN_40006c16` (the third, storing 2 / port 5, is inferred). The setter is `FUN_400bb7ba`. **[D]**
 - EP0 handler `FUN_40005ff6` (0x40005ff6): standard requests plus vendor requests 0xC0/0x40 (0..5), 0xC1 (0x0A, 0x0B, 0x11, 0x12). No BOS
   and no string index 0xEE: Windows will not bind WinUSB by itself **[D]**. DEVICE_QUALIFIER is stalled (HS-only device).
 
@@ -130,15 +131,25 @@ Plan: `docs/plans/usb-fast.md`. Facts below are static, DT2 1.17 and DN2 1.12 **
   EP1's 0xc800c8, and prime dTDs with `FUN_40005a86` (copy `FUN_400041c2`; port 4, CDC, already primes EP2 IN with `FUN_40005a86(6, dtd)`). Queue index
   = ep + 4*dir; QH offsets 0x00 0x80 0x100 0x180 0x40 0xc0 0x140 0x1c0. A completion callback (ISR context) queues the buffer to a task that calls the
   firmware's file API. The engine is endpoint-generic (dTD+0x24 callback): no ISR change. The EP1 IN QH caps are 0x20400000 (64 bytes) even at high speed.
-- **dTD pools**: 32 bulk/interrupt dTDs (`FUN_40005560`, 0x80000200; allocator `FUN_40005764`, non-blocking, ISR-safe) and a separate 4-dTD EP0 pool
-  (`FUN_400054fa`). MIDI mode uses about 4, so there is room.
+- **dTD pools**: 31 dTDs of 0x40 bytes at 0x80000200 (`FUN_40005560`; allocator `FUN_40005764`, non-blocking, ISR-safe) and a separate 4-dTD EP0 pool at
+  0x80000a00 (`FUN_400054fa`); iso rings at 0x80008800 / 0x80008c00. MIDI mode uses about 4, so there is room.
+- **The firmware's own dTDs** **[D]**: every dTD is built inline at its call site (18 callers of `FUN_40005a86`). Page pointers 2-4 are never written. DDR-buffer dTDs set
+  only page pointer 0 with sizes <= 0x1000 (largest: EP0 IN up to 0x1000 at a page-aligned buffer, `FUN_40005be2`), so none crosses a page. SRAM dTDs (audio, iso, e.g.
+  `FUN_40002f84` / `FUN_40003118`, 1012 bytes at 0x80009000 + i*0x3f4) set page pointer 1 = (p0 + 0x1000) & ~0xfff.
+- **USB DMA buffers** **[D]** sit in the uncached DDR alias (DDR + 0x0800_0000; ACR0 = 0x4007e020 makes only 0x40000000-0x47ffffff cacheable). DT2: 0x4fe3c000 (4 KiB MIDI TX
+  ring), 0x4fe3d000 (EP1 RX slots, 32 x 512), 0x4fe4a000 (interrupt RX), 0x4fe53000 (EP0, 4 x 4 KiB), 0x4fe57000 (EP0 status). DN2 has the same layout at -0x1770000 (0x4e6cc000, ...).
+- **Controller setup** **[D]**: USBMODE = 0x1e (device, SLOM, SDIS), BURSTSIZE = 0x204, USBINTR = 0x157 (includes SEI); SBUSCFG and TXFILLTUNING are not written. The SEI
+  (system error) bit is only cleared: the firmware never resets the controller after it. QH caps: EP1/EP2 OUT 0x22000000 (512, ZLT off), EP2/EP3 IN 0x02000000 (512, ZLT on).
 - **Disconnect callback** of port 2 (`FUN_4000436e`) is not a loop: it clears ENDPTCTRL1, flushes EP1 RX and TX through ENDPTFLUSH 0xfc0b01b4 and polls
   the bits (unbounded), cancels both EP1 queues with `FUN_400059aa`, cancels the timer and clears the state words (the decompile loops because it treats
   the register reads as constant). A callback for EP2 must do the same.
 - **EP0** (`FUN_40005ff6`): the BOS request is not answered (silent) and unknown requests stall. Vendor bRequest codes in use: 0xC0: 0, 1, 2, 4, 5;
   0x40: 1, 3, 7; 0xC1: 0x0A, 0x0B, 0x11, 0x12.
-- **Re-enumeration**: the firmware's USB mode switch `FUN_40006c16(port)` -> `FUN_40006bac` (`FUN_40005dcc`: clear USBCMD.RS, USBINTR 0, disconnect
-  callback; then a 30-tick delay) and `FUN_40006bc6` (restart via `FUN_40005cde` when the delay ends). Boot order on DT2 1.17: the boot thread
+- **Re-enumeration**: the firmware's USB mode switch `FUN_40006c16(port)` (same address and bytes on DT2 and DN2) compares `port` with the active port index
+  CUR_PORT (DT2 0x40965a60, DN2 0x4058f2a8, u32) and returns if equal. Otherwise it calls `FUN_40006bac` (`FUN_40005dcc`: clear USBCMD.RS, USBINTR 0, disconnect
+  callback; then a 30-tick delay), writes CUR_PORT (0x40006c28) and CUR_ENTRY = port*0x28 + port table (0x40006c3c; CUR_ENTRY DT2 0x40965a5c, DN2 0x4058f2a4),
+  and calls `FUN_40006bc6` (restart via `FUN_40005cde` when the delay ends). `FUN_40006c52(port)` writes both at boot (0x40006c86, 0x40006c8e/0x40006ca4) and
+  re-initialises the controller. Boot order on DT2 1.17: the boot thread
   `FUN_400cc9c8` initialises storage, loads settings (USB mode byte `DAT_4099d5c4`), calls `FUN_40006c52(port)` at 0x400cce06 / 0x400cce2e, then creates
   tasks. Our runtime loads modules at the main-OS task entry, after USB init.
 - **Engine facts used by `core/usb-bulk`** (static, DT2 1.17 and DN2 1.12; the adapter and its emulator test follow them) **[D]**: the stock configuration bytes have
@@ -160,6 +171,14 @@ Plan: `docs/plans/usb-fast.md`. Facts below are static, DT2 1.17 and DN2 1.12 **
 - **Risks**: no USB model in the emulator (message-level injection only), so enumeration is hardware-only; a bad descriptor leaves USB unusable
   but DIN OS upgrade still works (finding MIDI-SYSEX-RPC 7).
 - DN2 1.12 has no FsSample dispatch, so DN2 needs the vendor route or a new RPC regardless **[O]**.
+
+## 4a. Page pointers of dTDs (hardware, DN2, 2026-11-11)
+
+**[D]** Our `core/usb-bulk` dTDs with the page pointers past the used pages set to 0 wedged the controller at a 4096-byte EP2 IN transfer (1-513 bytes worked). The
+closing zero-length packet starts at byte 4096 and (inferred) is moved through page pointer 1 = 0; the DMA faults (system error) and only a power cycle recovers.
+RM 24-71 step 7: page pointers 1-4 must each be one page above the previous one. The adapter now always fills all five. The emulator model faults a packet whose page
+pointer the USB bus master cannot reach (DDR 0x40000000-0x4fffffff, SRAM backdoor 0x80000000-0x8bffffff). Hardware recheck pending **[O]**. The controller has 4 device
+endpoints (DCCPARAMS DEN = 4, RM): EP0-EP3.
 
 ## 5. Disk mode
 

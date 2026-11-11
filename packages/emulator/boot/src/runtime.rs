@@ -30,6 +30,70 @@ fn dtd_addr(pages: &[u32; 5], at: usize) -> u32 {
     (pages[page] & !0xfff).wrapping_add(abs % 4096)
 }
 
+/// Whether the USB bus master reaches `addr` through the crossbar (MCF5441x memory map): DDR at 0x4000_0000 with its uncached alias
+/// at +0x0800_0000, and the internal SRAM backdoor at 0x8000_0000. Other addresses give a bus error to the DMA.
+fn usb_dma_reachable(addr: u32) -> bool {
+    matches!(addr, 0x4000_0000..=0x4fff_ffff | 0x8000_0000..=0x8bff_ffff)
+}
+
+/// The rules the controller applies when a dTD is primed (manual 24-49, 24-54, 24-71): the dTD is 32-byte aligned and its 28 bytes stay in one
+/// 4 KiB page, page pointer 0 is reachable, the total bytes fit the five pages from the start offset, and an OUT transfer is a multiple of the
+/// bulk max packet (512). `None` when the dTD is fine, else the rule and the values.
+fn dtd_prime_fault(dtd: u32, token: u32, pages: &[u32; 5], out: bool) -> Option<String> {
+    let total = (token >> 16) & 0x7fff;
+    if dtd & 0x1f != 0 || (dtd & 0xfff) + 28 > 0x1000 {
+        return Some(format!(
+            "dTD {dtd:#010x} is not 32-byte aligned or crosses a 4 KiB page"
+        ));
+    }
+    if !usb_dma_reachable(pages[0]) {
+        return Some(format!(
+            "dTD {dtd:#010x} page pointer 0 = {:#010x}: not reachable by the USB bus master",
+            pages[0]
+        ));
+    }
+    let room = 0x5000 - (pages[0] & 0xfff);
+    if total > room {
+        return Some(format!(
+            "dTD {dtd:#010x} total bytes {total:#x} exceed {room:#x}, the room of five pages from offset {:#x}",
+            pages[0] & 0xfff
+        ));
+    }
+    if out && total % 512 != 0 {
+        return Some(format!(
+            "dTD {dtd:#010x} OUT total bytes {total:#x} is not a multiple of 512"
+        ));
+    }
+    None
+}
+
+/// The page pointers a packet of `len` bytes at byte `start` of a transfer uses. Inferred from a hardware observation (a 4096-byte EP2 IN transfer
+/// with page pointers 1 to 4 = 0 wedged the controller; 1, 511, 512 and 513 bytes worked), not stated by the manual: every packet, a zero-length
+/// one too, is moved through the pointer of the 4 KiB page its start position falls in, and a data packet that crosses a page boundary also uses
+/// the next pointer. A pointer in use must be reachable by the USB bus master. `None` when all are, else a message.
+fn dtd_packet_fault(pages: &[u32; 5], start: usize, len: usize) -> Option<String> {
+    let offset = (pages[0] & 0xfff) as usize;
+    let first = (start + offset) / 4096;
+    let last = (start + offset + len.max(1) - 1) / 4096;
+    for k in first..=last {
+        let pointer = if k > 4 {
+            return Some(format!(
+                "packet at byte {start} uses page pointer {k}: a dTD has five"
+            ));
+        } else if k == 0 {
+            pages[0]
+        } else {
+            pages[k] & !0xfff
+        };
+        if !usb_dma_reachable(pointer) {
+            return Some(format!(
+                "packet at byte {start} uses page pointer {k} = {pointer:#010x}: not reachable by the USB bus master"
+            ));
+        }
+    }
+    None
+}
+
 /// `data` stored at byte `at` of the transfer: one write per page it touches.
 fn dtd_segments(pages: &[u32; 5], at: usize, data: &[u8]) -> Vec<(u32, Vec<u8>)> {
     let mut out = vec![];
@@ -2700,6 +2764,9 @@ impl Emulator {
         if !self.midi.busy() {
             self.midi.usb.next_ic = self.cpu.icount;
         }
+        if self.midi.usb.sys_error.is_some() {
+            return Ok(0); // the controller is wedged: the input is dropped
+        }
         for piece in bytes.chunks(chunk) {
             self.midi.usb.queue.push_back(UsbItem::Midi(piece.to_vec()));
         }
@@ -2722,6 +2789,7 @@ impl Emulator {
     fn service_usb(&mut self) -> Result<bool, String> {
         const LEVEL: u8 = USB_LEVEL;
         if !self.midi.usb.enabled
+            || self.midi.usb.sys_error.is_some()
             || self.midi.usb.active.is_some()
             || self.midi.usb.queue.is_empty()
             || self.cpu.icount < self.midi.usb.next_ic
@@ -2840,6 +2908,9 @@ impl Emulator {
             self.rebuild_watch();
         }
         self.midi.usb.period = period.unwrap_or(BULK_PERIOD);
+        if self.midi.usb.sys_error.is_some() {
+            return Ok(0); // the controller is wedged: the message is dropped
+        }
         if !self.midi.busy() {
             self.midi.usb.next_ic = self.cpu.icount;
         }
@@ -2939,6 +3010,10 @@ impl Emulator {
                     for (k, page) in pages.iter_mut().enumerate() {
                         *page = rd(board, head + 8 + 4 * k as u32)?;
                     }
+                    if let Some(fault) = dtd_prime_fault(head, token, &pages, true) {
+                        self.usb_system_error(format!("EP2 OUT: {fault}"));
+                        return Ok(false);
+                    }
                     let mut remaining = ((token >> 16) & 0x7fff) as usize;
                     let total = rd(board, head + 0x20)?;
                     let mut at = total as usize - remaining; // bytes the dTD holds already (a message may span packets and dTDs)
@@ -2949,6 +3024,10 @@ impl Emulator {
                     let mut complete = false;
                     while pos < msg.len() && remaining > 0 {
                         let n = (msg.len() - pos).min(512).min(remaining);
+                        if let Some(fault) = dtd_packet_fault(&pages, at, n) {
+                            self.usb_system_error(format!("EP2 OUT: {fault}"));
+                            return Ok(false);
+                        }
                         pokes.extend(dtd_segments(&pages, at, &msg[pos..pos + n]));
                         pos += n;
                         at += n;
@@ -2960,6 +3039,10 @@ impl Emulator {
                     }
                     let filled_by_size = complete && pos == msg.len() && remaining == 0;
                     if !complete && pos == msg.len() && *zlp {
+                        if let Some(fault) = dtd_packet_fault(&pages, at, 0) {
+                            self.usb_system_error(format!("EP2 OUT: {fault}"));
+                            return Ok(false);
+                        }
                         complete = true; // the zero-length packet ends the transfer
                     }
                     let rest = if pos < msg.len() {
@@ -3144,6 +3227,39 @@ impl Emulator {
         Ok(true)
     }
 
+    /// The fault the controller finds when it moves the EP2 IN dTD at `dtd`: the prime rules, then each packet (512 bytes each, and the
+    /// zero-length packet of the zero-length termination; a 0-byte transfer is one zero-length packet).
+    fn ep2_in_fault(&mut self, dtd: u32) -> Option<String> {
+        let token = self.bus.board.read32(dtd.wrapping_add(4)).unwrap_or(0);
+        let len = ((token >> 16) & 0x7fff) as usize;
+        let mut pages = [0u32; 5];
+        for (k, page) in pages.iter_mut().enumerate() {
+            *page = self.bus.board.read32(dtd + 8 + 4 * k as u32).unwrap_or(0);
+        }
+        let caps = self.bus.board.read32(crate::midi::QH_EP2_IN).unwrap_or(0);
+        let zlp = caps & 0x2000_0000 == 0 && len > 0 && len % 512 == 0;
+        let mut fault = dtd_prime_fault(dtd, token, &pages, false);
+        let mut pos = 0;
+        while fault.is_none() && pos < len {
+            fault = dtd_packet_fault(&pages, pos, (len - pos).min(512));
+            pos += 512;
+        }
+        if fault.is_none() && (zlp || len == 0) {
+            fault = dtd_packet_fault(&pages, len, 0);
+        }
+        fault
+    }
+
+    /// The controller's system error: the first one is kept and logged, the queue is cleared (a callback in flight finishes), and no USB
+    /// traffic follows, as on hardware, where only a module reset recovers.
+    fn usb_system_error(&mut self, msg: String) {
+        if self.midi.usb.sys_error.is_none() {
+            eprintln!("usb: system error: {msg}");
+            self.midi.usb.sys_error = Some(msg);
+        }
+        self.midi.usb.queue.clear();
+    }
+
     /// At the transmit function: record its (length, buffer) arguments. At the callback's return: unwind.
     fn observe_usb(&mut self, pc: u32) {
         if pc != 0 && pc == self.midi.usb.bulk_queue_fn {
@@ -3152,7 +3268,15 @@ impl Emulator {
             let sp = self.cpu.a[7];
             let index = self.bus.board.read32(sp.wrapping_add(4)).unwrap_or(0);
             let dtd = self.bus.board.read32(sp.wrapping_add(8)).unwrap_or(0);
-            if index == 6 && dtd != 0 {
+            if index == 6
+                && dtd != 0
+                && self.midi.usb.sys_error.is_none()
+                && let Some(fault) = self.ep2_in_fault(dtd)
+            {
+                // the controller faults on the dTD: the transfer never completes and the bytes are not captured
+                self.usb_system_error(format!("EP2 IN: {fault}"));
+            }
+            if index == 6 && dtd != 0 && self.midi.usb.sys_error.is_none() {
                 let token = self.bus.board.read32(dtd.wrapping_add(4)).unwrap_or(0);
                 let len = ((token >> 16) & 0x7fff) as usize;
                 let mut pages = [0u32; 5];
@@ -3251,6 +3375,7 @@ impl Emulator {
             bulk_out_pending: self.midi.usb.bulk_out.len(),
             bulk_naks: self.midi.usb.bulk_naks,
             bulk_out_zlps: self.midi.usb.bulk_out_zlps,
+            usb_sys_error: self.midi.usb.sys_error.clone(),
         }
     }
 
@@ -4361,6 +4486,44 @@ mod tests {
             parts.iter().map(|(a, d)| (*a, d.len())).collect::<Vec<_>>(),
             [(0x4800_0f00, 0x100), (0x4900_0000, 0xf00)],
             "a write that crosses a page boundary is split there"
+        );
+    }
+
+    #[test]
+    fn a_zero_length_packet_after_a_full_page_uses_the_next_page_pointer() {
+        let pages = [0x4800_0000, 0, 0, 0, 0];
+        for start in (0..4096).step_by(512) {
+            assert_eq!(
+                dtd_packet_fault(&pages, start, 512),
+                None,
+                "packet at {start}"
+            );
+        }
+        let fault = dtd_packet_fault(&pages, 4096, 0).expect("page pointer 1 is 0");
+        assert!(fault.contains("page pointer 1"), "{fault}");
+        // a 513-byte transfer: packets of 512 and 1 bytes stay in page 0
+        assert_eq!(dtd_packet_fault(&pages, 0, 512), None);
+        assert_eq!(dtd_packet_fault(&pages, 512, 1), None);
+    }
+
+    #[test]
+    fn consecutive_pages_take_a_zero_length_packet_at_16_kib() {
+        let p = 0x4800_0000;
+        let pages = [p, p + 0x1000, p + 0x2000, p + 0x3000, p + 0x4000];
+        assert_eq!(dtd_packet_fault(&pages, 16384, 0), None);
+    }
+
+    #[test]
+    fn a_dtd_the_controller_cannot_prime_is_refused() {
+        let p = 0x4800_0000;
+        let pages = [p, p + 0x1000, p + 0x2000, p + 0x3000, p + 0x4000];
+        let token = |total: u32| (total << 16) | 0x80;
+        assert!(dtd_prime_fault(0x8000_0210, token(512), &pages, true).is_some());
+        assert!(dtd_prime_fault(0x8000_0200, token(0x5001), &pages, false).is_some());
+        assert!(dtd_prime_fault(0x8000_0200, token(513), &pages, true).is_some());
+        assert_eq!(
+            dtd_prime_fault(0x8000_0200, token(0x4000), &pages, true),
+            None
         );
     }
 
