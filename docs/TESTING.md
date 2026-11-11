@@ -348,11 +348,11 @@ without running it.
   results replay from the cache. Packs still run (they are not cached).
 - Build and pack inputs share `sdk/sdk.toml`, public `sdk/include`, `sdk/dsp` (including `sdk/dsp/contract`) and `modules/core/runtime/vectors`. Full-input device tasks do not
   hash them; they hash the built bytes (see "Cached targets"). `tools/devtools/emu-slot.mjs` is no device input: it only schedules.
-  Optional implementation sources under `sdk/src` belong to their explicit consumers: pack manifests name the C
-  files, with adjacent private headers included, and `dkui-host:rust-tests` names the picker sources and headers
-  compiled by its build script. Module and Cargo source ownership remains project-wide. A picker helper edit
-  selects Shot's pack, device and conformance checks and the UI host tests, plus their prerequisites; unrelated
-  module packs and conformance are excluded. Public headers and the SDK contract retain broad selection.
+  The SDK sources under `sdk/src` are linked into every content module with C sources (the packer builds them into one library and
+  keeps the functions the module calls), so `sdk/src/**/*` is an input of the pack of each such module, and the stored object of
+  each content module carries the library digest in its `source_sha256`. A module whose bytes do not change keeps its device
+  results (full-input device tasks hash the built bytes). `dkui-host:rust-tests` names the picker sources and headers compiled by
+  its build script. Module and Cargo source ownership remains project-wide. Public headers and the SDK contract retain broad selection.
   `sdk:check-generated` names the shared generator inputs and all generated output surfaces, including outputs
   outside `sdk`; changes to generator output paths must update this list. It excludes `sdk/src`, `sdk/templates` and the hand-written
   `sdk/dsp` files (only the generated includes `dsp/contract/dk_{machine,fx,sample_pool}.inc` are inputs). `sdk:test-host` does not hash `sdk/src` either:

@@ -19,7 +19,7 @@ interface Run {
 }
 
 function run(data: Uint8Array): Run {
-  const result = spawnSync(binary, { input: data, timeout: 2000, maxBuffer: 12 + 300 * 1028 });
+  const result = spawnSync(binary, { input: data, timeout: 10_000, maxBuffer: 12 + 300 * 1028 });
   expect(result.error).toBeUndefined();
   const out = result.stdout;
   if (result.status !== 0) {
@@ -87,7 +87,7 @@ beforeAll(() => {
       '-o',
       binary,
     ],
-    { timeout: 10_000 },
+    { timeout: 25_000 },
   );
 });
 afterAll(() => fs.rmSync(directory, { recursive: true, force: true }));

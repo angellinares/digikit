@@ -4,6 +4,8 @@
 #include <dk/chooser/chooser.h>
 #include <dk/platform/files.h>
 #include <dk/chooser/logic.h>
+#include <dk/core/path.h>
+#include <dk/core/text.h>
 
 #define TICK_MS 250
 /* A text page shows about 16 characters next to its title column (seen on the DN2 screen). */
@@ -40,19 +42,11 @@ static void check_browser(void *ctx, int row, int on);
 static void on_notify(uint32_t client, uint32_t request, int32_t hint, uint8_t *ctx);
 static void tick(void *ctx);
 
-static int slen(const char *s)
-{
-    int n = 0;
-    while (s[n])
-        n++;
-    return n;
-}
-
 void dk_chooser_wrap(dk_ui_menu *m, const char *s)
 {
     char row[DK_UI_ROW];
     while (*s) {
-        int n = slen(s), cut = n, i;
+        int n = (int)dk_text_len(s), cut = n, i;
         if (n > WRAP) {
             cut = WRAP;
             for (i = WRAP; i > 0; i--)
@@ -116,7 +110,7 @@ static void fail(int code)
         d->error_text(d->ctx, code, text);
     if (!text[0]) {
         dk_text_utoa(num, (uint32_t)(code < 0 ? -code : code));
-        dk_text_cat(text, "ERROR -", num);
+        dk_text_cat(text, DK_CHOOSER_TEXT + 1, "ERROR -", num);
     }
     dk_ui_toast(text);
 }
@@ -214,7 +208,7 @@ static void add_entry(void)
     int i, full;
     if ((g_entry.kind != DK_FILE_FILE && g_entry.kind != DK_FILE_DIRECTORY) || !leaf[0])
         return;
-    if (slen(leaf) >=
+    if (dk_text_len(leaf) >=
         DK_CHOOSER_NAME) { /* a name that does not fit is not shown; it counts as hidden */
         g_more++;
         return;
@@ -260,7 +254,7 @@ static void fill_browser(dk_ui_menu *m, void *ctx)
     char row[DK_UI_ROW], nm[DK_CHOOSER_TEXT + 1], sz[8], tmp[DK_CHOOSER_TEXT + 1];
     int i;
     (void)ctx;
-    dk_text_cat(tmp, "..  /", g_dir);
+    dk_text_cat(tmp, DK_CHOOSER_TEXT + 1, "..  /", g_dir);
     dk_text_trunc(row, tmp, DK_CHOOSER_TEXT);
     dk_ui_text(m, row);
     if (g_state == ST_READING) {
@@ -270,7 +264,7 @@ static void fill_browser(dk_ui_menu *m, void *ctx)
     if (g_state == ST_ERROR) {
         char num[12];
         dk_text_utoa(num, (uint32_t)(g_err < 0 ? -g_err : g_err));
-        dk_text_cat(row, "LIST ERROR -", num);
+        dk_text_cat(row, DK_CHOOSER_TEXT + 1, "LIST ERROR -", num);
         dk_ui_text(m, row);
         return;
     }
@@ -278,16 +272,16 @@ static void fill_browser(dk_ui_menu *m, void *ctx)
         const dk_chooser_row *r = &g_rows[g_idx[i]];
         if (r->dir) {
             dk_text_trunc(nm, r->name, DK_CHOOSER_TEXT - 2);
-            dk_text_cat(row, "> ", nm);
+            dk_text_cat(row, DK_CHOOSER_TEXT + 1, "> ", nm);
         } else if (r->size) {
             dk_text_size(sz, r->size);
-            dk_text_trunc(nm, r->name, DK_CHOOSER_TEXT - 3 - slen(sz));
-            dk_text_cat(tmp, "  ", nm);
-            dk_text_cat(row, tmp, " ");
-            dk_text_cat(row, row, sz);
+            dk_text_trunc(nm, r->name, DK_CHOOSER_TEXT - 3 - dk_text_len(sz));
+            dk_text_cat(tmp, DK_CHOOSER_TEXT + 1, "  ", nm);
+            dk_text_cat(row, DK_CHOOSER_TEXT + 1, tmp, " ");
+            dk_text_cat(row, DK_CHOOSER_TEXT + 1, row, sz);
         } else {
             dk_text_trunc(nm, r->name, DK_CHOOSER_TEXT - 2);
-            dk_text_cat(row, "  ", nm);
+            dk_text_cat(row, DK_CHOOSER_TEXT + 1, "  ", nm);
         }
         dk_ui_text(m, row);
     }
@@ -296,8 +290,8 @@ static void fill_browser(dk_ui_menu *m, void *ctx)
     if (g_more) {
         char num[12];
         dk_text_utoa(num, (uint32_t)g_more);
-        dk_text_cat(tmp, "+", num);
-        dk_text_cat(row, tmp, " MORE");
+        dk_text_cat(tmp, DK_CHOOSER_TEXT + 1, "+", num);
+        dk_text_cat(row, DK_CHOOSER_TEXT + 1, tmp, " MORE");
         dk_ui_text(m, row);
     }
 }
@@ -319,7 +313,7 @@ static int back_browser(void *ctx)
 static void select_file(int at)
 {
     int rc;
-    if (dk_path_join(g_path, sizeof g_path, g_dir, g_rows[g_idx[at]].name) < 0)
+    if (dk_path_join(g_path, sizeof g_path, g_dir, g_rows[g_idx[at]].name) == 0)
         rc = DK_CHOOSER_E_PATH;
     else
         rc = g_d->fill(g_d->ctx, g_slot, g_path);
@@ -332,7 +326,7 @@ static void select_file(int at)
 static void enter_folder(int at)
 {
     int i;
-    if (dk_path_join(g_path, sizeof g_path, g_dir, g_rows[g_idx[at]].name) < 0) {
+    if (dk_path_join(g_path, sizeof g_path, g_dir, g_rows[g_idx[at]].name) == 0) {
         g_state = ST_ERROR;
         g_err = DK_CHOOSER_E_PATH;
     } else {
@@ -395,12 +389,12 @@ static void fill_finfo(dk_ui_menu *m, void *ctx)
     r = &g_rows[g_idx[g_info_at]];
     dk_text_trunc(nm, r->name, WRAP);
     dk_ui_text(m, nm);
-    if (dk_path_join(g_path, sizeof g_path, g_dir, r->name) >= 0)
+    if (dk_path_join(g_path, sizeof g_path, g_dir, r->name) != 0)
         dk_chooser_wrap(m, g_path);
     if (r->size) {
         dk_text_utoa(num, r->size);
-        dk_text_cat(nm, "SIZE ", num);
-        dk_text_cat(row, nm, " BYTES");
+        dk_text_cat(nm, DK_CHOOSER_TEXT + 1, "SIZE ", num);
+        dk_text_cat(row, DK_CHOOSER_TEXT + 1, nm, " BYTES");
         dk_ui_text(m, row);
     }
 }

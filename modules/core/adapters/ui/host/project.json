@@ -10,6 +10,8 @@
         "{workspaceRoot}/modules/core/apps/digikit-menu/src/menu.c",
         "{workspaceRoot}/sdk/include/**/*",
         "{workspaceRoot}/sdk/src/chooser/logic.c",
+        "{workspaceRoot}/sdk/src/core/text.c",
+        "{workspaceRoot}/sdk/src/core/path.c",
         "{workspaceRoot}/sdk/src/sample/picker.c",
         "{workspaceRoot}/sdk/src/chooser/chooser.c"
       ]

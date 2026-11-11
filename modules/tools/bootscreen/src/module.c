@@ -17,7 +17,8 @@
 #include <dk/platform/settings.h>
 #include <dk/platform/ui.h>
 #include "dkbs.h"
-#include <dk/chooser/logic.h>
+#include <dk/core/path.h>
+#include <dk/core/text.h>
 
 #define MODULE_ID "tools/bootscreen"
 #define NAME_MAX_BYTES 48u /* a file name kept in the setting, NUL included */
@@ -35,8 +36,6 @@ static uint8_t *g_buffer; /* DKBS_FILE_MAX bytes of file, then DKBS_FRAME bytes 
 static Dkbs g_dkbs;
 static char g_booted
     [NAME_MAX_BYTES]; /* the setting at boot: a different current value waits for the restart */
-static void copy(char *to, const char *from, uint32_t cap);
-
 static void say(const char *msg, uint32_t value)
 {
     g_api->log((const uint8_t *)msg, value);
@@ -78,7 +77,7 @@ int32_t dkm_init(const dk_api *api)
     n = api->settings_get((uint32_t)g_settings, "active", name, NAME_MAX_BYTES - 1u);
     if (n > 0) {
         name[n] = 0;
-        copy(g_booted, name, NAME_MAX_BYTES);
+        dk_text_copy(g_booted, NAME_MAX_BYTES, name);
     }
     if (n <= 0) {
         say("bootscreen: stock", 0);
@@ -126,33 +125,6 @@ static struct {
 static dk_file_entry entry;
 static dk_ui_menu *g_page, *g_list;
 
-static uint32_t length(const char *s)
-{
-    uint32_t n = 0;
-    while (s[n])
-        n++;
-    return n;
-}
-
-/* Copies at most cap - 1 bytes. */
-static void copy(char *to, const char *from, uint32_t cap)
-{
-    uint32_t i = 0;
-    while (from[i] && i + 1u < cap) {
-        to[i] = from[i];
-        i++;
-    }
-    to[i] = 0;
-}
-
-static int same(const char *a, const char *b)
-{
-    uint32_t i = 0;
-    while (a[i] && a[i] == b[i])
-        i++;
-    return a[i] == b[i];
-}
-
 /* The active name into `out`; "" when there is none. */
 static void active(char *out)
 {
@@ -173,7 +145,7 @@ static int active_row(void)
     if (!name[0])
         return 0;
     for (i = 0; i < list.count; i++)
-        if (same(name, list.full[i]))
+        if (dk_text_equal(name, list.full[i]))
             return (int)i + 1;
     return -1;
 }
@@ -183,15 +155,15 @@ static void list_fill(dk_ui_menu *m, void *ctx)
     uint32_t i, rows = list.count + list.more + 1u;
     int on = active_row();
     (void)ctx;
-    copy(list.shown[0], "STOCK", DK_UI_ROW);
+    dk_text_copy(list.shown[0], DK_UI_ROW, "STOCK");
     dk_ui_text(m, list.shown[0]);
     for (i = 0; i < list.count; i++) {
-        copy(list.shown[i + 1u], list.full[i],
-             DK_UI_ROW); /* display only: the full name is stored */
+        dk_text_copy(list.shown[i + 1u], DK_UI_ROW,
+                     list.full[i]); /* display only: the full name is stored */
         dk_ui_text(m, list.shown[i + 1u]);
     }
     if (list.more) {
-        copy(list.shown[list.count + 1u], "MORE ON CARD", DK_UI_ROW);
+        dk_text_copy(list.shown[list.count + 1u], DK_UI_ROW, "MORE ON CARD");
         dk_ui_text(m, list.shown[list.count + 1u]);
     }
     for (i = 0; i < rows; i++)
@@ -216,7 +188,7 @@ static void list_check(void *ctx, int row, int on)
         rc = g_api->settings_remove((uint32_t)g_settings, "active");
     else
         rc = g_api->settings_put((uint32_t)g_settings, "active", list.full[row - 1],
-                                 length(list.full[row - 1]));
+                                 dk_text_len(list.full[row - 1]));
     if (rc < 0) {
         int back = active_row();
         for (i = 0; i < rows; i++)
@@ -252,16 +224,6 @@ static void show_choice(void)
         dk_ui_toast("LIST FAILED");
 }
 
-/* The file name after the last '/'. */
-static const char *base(const char *path)
-{
-    const char *b = path;
-    for (; *path; path++)
-        if (*path == '/')
-            b = path + 1;
-    return b;
-}
-
 static void poll(void *ctx)
 {
     uint32_t k;
@@ -272,10 +234,10 @@ static void poll(void *ctx)
         if (r == DK_FILES_PENDING)
             return;
         if (r == DK_FILES_ROW) {
-            const char *name = base((const char *)entry.path);
-            if (entry.kind == DK_FILE_FILE && name[0] && length(name) < NAME_MAX_BYTES) {
+            const char *name = dk_path_leaf((const char *)entry.path);
+            if (entry.kind == DK_FILE_FILE && name[0] && dk_text_len(name) < NAME_MAX_BYTES) {
                 if (list.count < MAX_CHOICES)
-                    copy(list.full[list.count++], name, NAME_MAX_BYTES);
+                    dk_text_copy(list.full[list.count++], NAME_MAX_BYTES, name);
                 else
                     list.more = 1;
             }
@@ -316,12 +278,12 @@ static void value_text(char *out, const char *name)
 {
     char v[NAME_MAX_BYTES];
     uint32_t n;
-    copy(v, name[0] ? name : "STOCK", sizeof v);
-    n = length(v);
+    dk_text_copy(v, sizeof v, name[0] ? name : "STOCK");
+    n = dk_text_len(v);
     if (n > 5u && v[n - 5u] == '.' && (v[n - 4u] | 32) == 'd' && (v[n - 3u] | 32) == 'k' &&
         (v[n - 2u] | 32) == 'b' && (v[n - 1u] | 32) == 's')
         v[n -= 5u] = 0;
-    dk_text_trunc(out, v, (int)VALUE_COLS);
+    dk_text_trunc(out, v, VALUE_COLS);
 }
 
 /* One row of ROW_COLS characters: the label at the left, the value at the right. The page title already names the module. */
@@ -333,13 +295,13 @@ static void fill(dk_ui_menu *m, void *ctx)
     g_page = m;
     active(name);
     value_text(value, name);
-    v = length(value);
-    copy(text, "SCREEN", DK_UI_ROW);
-    for (n = length(text); n + v < ROW_COLS; n++)
+    v = dk_text_len(value);
+    dk_text_copy(text, DK_UI_ROW, "SCREEN");
+    for (n = dk_text_len(text); n + v < ROW_COLS; n++)
         text[n] = ' ';
-    copy(text + n, value, DK_UI_ROW - n);
+    dk_text_copy(text + n, DK_UI_ROW - n, value);
     dk_ui_action(m, text, open_chooser, 0, 0);
-    if (!same(name, g_booted))
+    if (!dk_text_equal(name, g_booted))
         dk_ui_text(m, "ON NEXT RESTART");
 }
 DK_MENU(fill)

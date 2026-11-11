@@ -429,7 +429,7 @@ fn a_header_change_changes_the_source_hash() {
     std::fs::write(d.join("b.inc"), ".equ N, 1\n").unwrap();
     std::fs::write(d.join("b.s"), ".include \"b.inc\"\n.text\nnop\n").unwrap();
     let inc = [d.clone()];
-    let hash = |f: &str| cf::source_digest(&env, &[d.join(f)], &inc).unwrap();
+    let hash = |f: &str| cf::source_digest(&env, &[d.join(f)], &inc, false).unwrap();
     let (a, b) = (hash("a.c"), hash("b.s"));
     assert_eq!(a, hash("a.c"));
     std::fs::write(d.join("a.h"), "#define N 2\n").unwrap();

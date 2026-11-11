@@ -1,4 +1,5 @@
 /* Public SDK only, no slot0, firmware symbols, or backend assumptions. */
+#include <dk/core/bytes.h>
 #include <dk/platform/files.h>
 _Static_assert(__builtin_offsetof(dk_api, sample_status) == 76, "old API prefix");
 _Static_assert(__builtin_offsetof(dk_api, files_client) == 80, "append-only API1.4");
@@ -15,17 +16,6 @@ static struct {
     dk_file_entry row;
 } rows[ROWS];
 static uint32_t context_word = 0x46494c45;
-static void put(uint8_t *p, uint32_t v)
-{
-    p[0] = v >> 24;
-    p[1] = v >> 16;
-    p[2] = v >> 8;
-    p[3] = v;
-}
-static uint32_t get(const uint8_t *p)
-{
-    return ((uint32_t)p[0] << 24) | ((uint32_t)p[1] << 16) | ((uint32_t)p[2] << 8) | p[3];
-}
 static void event(uint32_t h, uint32_t t, int32_t hint, uint8_t *context)
 {
     dk_file_entry row;
@@ -79,20 +69,20 @@ command(uint32_t cmd, uint32_t seq, const uint8_t *body, uint32_t len, uint8_t *
         if (t < 0)
             return t;
         ticket = (uint32_t)t;
-        put(out, ticket);
+        dk_bytes_put32(out, ticket);
         return 4;
     }
     if (cmd == 0x39) {
         uint32_t seq = callback_seq;
         if (seq & 1u)
             return -12;
-        put(out, client);
-        put(out + 4, ticket);
-        put(out + 8, count);
-        put(out + 12, terminal_ticket == ticket ? (uint32_t)terminal : 0);
-        put(out + 16, callbacks);
-        put(out + 20, hint_ticket == ticket ? (uint32_t)last_hint : 0);
-        put(out + 24, old_ticket);
+        dk_bytes_put32(out, client);
+        dk_bytes_put32(out + 4, ticket);
+        dk_bytes_put32(out + 8, count);
+        dk_bytes_put32(out + 12, terminal_ticket == ticket ? (uint32_t)terminal : 0);
+        dk_bytes_put32(out + 16, callbacks);
+        dk_bytes_put32(out + 20, hint_ticket == ticket ? (uint32_t)last_hint : 0);
+        dk_bytes_put32(out + 24, old_ticket);
         if (seq != callback_seq)
             return -12;
         return 28;
@@ -100,7 +90,7 @@ command(uint32_t cmd, uint32_t seq, const uint8_t *body, uint32_t len, uint8_t *
     if (cmd == 0x3a) {
         if (len != 1 || body[0] >= count)
             return -1;
-        put(out, rows[body[0]].ticket);
+        dk_bytes_put32(out, rows[body[0]].ticket);
         const uint8_t *p = (const uint8_t *)&rows[body[0]].row;
         for (uint32_t i = 0; i < sizeof(dk_file_entry); ++i)
             out[4 + i] = p[i];
@@ -109,7 +99,7 @@ command(uint32_t cmd, uint32_t seq, const uint8_t *body, uint32_t len, uint8_t *
     if (cmd == 0x3b) {
         if (len != 4)
             return -50;
-        put(out, (uint32_t)sdk->files_cancel(client, get(body)));
+        dk_bytes_put32(out, (uint32_t)sdk->files_cancel(client, dk_bytes_get32(body)));
         return 4;
     }
     if (cmd == 0x3c) {
@@ -119,13 +109,14 @@ command(uint32_t cmd, uint32_t seq, const uint8_t *body, uint32_t len, uint8_t *
         uint8_t *p = (uint8_t *)&row;
         for (uint32_t i = 0; i < sizeof(row); ++i)
             p[i] = 0xa5;
-        int32_t rc = sdk->files_poll(client, get(body), p, body[4] ? sizeof(row) - 1 : sizeof(row));
+        int32_t rc = sdk->files_poll(client, dk_bytes_get32(body), p,
+                                     body[4] ? sizeof(row) - 1 : sizeof(row));
         uint32_t untouched = 1;
         for (uint32_t i = 0; i < sizeof(row); ++i)
             if (p[i] != 0xa5)
                 untouched = 0;
-        put(out, (uint32_t)rc);
-        put(out + 4, untouched);
+        dk_bytes_put32(out, (uint32_t)rc);
+        dk_bytes_put32(out + 4, untouched);
         if (rc == 1) {
             for (uint32_t i = 0; i < sizeof(row); ++i)
                 out[8 + i] = p[i];
@@ -134,10 +125,10 @@ command(uint32_t cmd, uint32_t seq, const uint8_t *body, uint32_t len, uint8_t *
         return 8;
     }
     if (cmd == 0x3d) {
-        put(out, sdk->size);
-        put(out + 4, sdk->runtime);
-        put(out + 8, sizeof(dk_file_entry));
-        put(out + 12, (uint32_t)sdk->files_client());
+        dk_bytes_put32(out, sdk->size);
+        dk_bytes_put32(out + 4, sdk->runtime);
+        dk_bytes_put32(out + 8, sizeof(dk_file_entry));
+        dk_bytes_put32(out + 12, (uint32_t)sdk->files_client());
         return 16; /* getter outside init must fail */
     }
     return -50;

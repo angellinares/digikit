@@ -19,6 +19,7 @@ fn compiled() -> Linked {
         &env,
         &[root.join("modules/core/adapters/storage-fault-proof/src/cf/storage-fault.s")],
         &[],
+        false,
     )
     .unwrap();
     let externs: BTreeMap<_, _> = ['a', 'b', 'c']

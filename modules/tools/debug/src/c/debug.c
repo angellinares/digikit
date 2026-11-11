@@ -14,6 +14,7 @@
  * The tick (once per pass of the UI task, set with the sink) reads the machine type of each of the 16 tracks every 20 ms from the firmware (`dkrt_track_type`) and logs a change (MACHINE_CHANGE). Each pass it also reads the Sound words of the selected track (`dkrt_selected_params`) and logs a changed word (PARAM_CHANGE, level 3). */
 
 #include <dk/core/api.h>
+#include <dk/core/bytes.h>
 
 typedef uint32_t u32;
 typedef uint16_t u16;
@@ -111,19 +112,6 @@ static void sink(const Ev *e)
     count = n;
 }
 
-static void put32(u8 *o, u32 v)
-{
-    o[0] = (u8)(v >> 24);
-    o[1] = (u8)(v >> 16);
-    o[2] = (u8)(v >> 8);
-    o[3] = (u8)v;
-}
-
-static u32 get32(const u8 *b)
-{
-    return ((u32)b[0] << 24) | ((u32)b[1] << 16) | ((u32)b[2] << 8) | b[3];
-}
-
 /* Copy event `seq` to `o` (32 bytes, big endian). False when it is gone, or was overwritten while it was copied (a writer in an interrupt). */
 static int copy_event(u32 seq, u8 *o)
 {
@@ -131,8 +119,8 @@ static int copy_event(u32 seq, u8 *o)
     u32 i, k, f;
     if (e->seq != seq)
         return 0;
-    put32(o, seq);
-    put32(o + 4, e->time);
+    dk_bytes_put32(o, seq);
+    dk_bytes_put32(o + 4, e->time);
     k = e->kind;
     f = e->flags;
     o[8] = (u8)(k >> 8);
@@ -140,7 +128,7 @@ static int copy_event(u32 seq, u8 *o)
     o[10] = (u8)(f >> 8);
     o[11] = (u8)f;
     for (i = 0; i < 5u; i++)
-        put32(o + 12u + 4u * i, e->a[i]);
+        dk_bytes_put32(o + 12u + 4u * i, e->a[i]);
     return e->seq == seq;
 }
 
@@ -149,13 +137,13 @@ static int32_t cmd_log(const u8 *body, u32 len, u8 *out)
     u32 from, newest, oldest, n = 0, s;
     if (len < 4u)
         return E_MSG;
-    from = get32(body);
+    from = dk_bytes_get32(body);
     newest = count;
     oldest = newest > RING ? newest - RING + 1u : (newest ? 1u : 0u);
     if (newest != 0u && oldest <= base)
         oldest = base + 1u;
-    put32(out, oldest);
-    put32(out + 4, newest);
+    dk_bytes_put32(out, oldest);
+    dk_bytes_put32(out + 4, newest);
     if (newest != 0u) {
         s = from < oldest ? oldest : from;
         while (s <= newest && n < LOG_PER_REPLY) {
@@ -190,11 +178,11 @@ static int32_t cmd_peek(const u8 *body, u32 len, u8 *out)
     u32 addr, n, i;
     if (len != 6u)
         return E_MSG;
-    addr = get32(body);
+    addr = dk_bytes_get32(body);
     n = ((u32)body[4] << 8) | body[5];
     if (n == 0u || n > PEEK_MAX || !peek_allowed(addr, n))
         return E_PEEK;
-    put32(out, addr);
+    dk_bytes_put32(out, addr);
     out[4] = body[4];
     out[5] = body[5];
     for (i = 0; i < n; i++)

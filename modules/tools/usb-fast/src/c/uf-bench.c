@@ -4,6 +4,7 @@
 /* the code is placed as it is: no jump tables (data in the code) */
 #pragma GCC optimize("no-jump-tables")
 #include <dk/core/api.h>
+#include <dk/core/bytes.h>
 #include <dk/platform/file.h>
 #include <dk/platform/hash32.h>
 #include <dk/platform/io.h>
@@ -14,14 +15,6 @@ typedef int32_t i32;
 #define E_MSG (-50)
 
 static const dk_api *sdk;
-
-static void put32(u8 *p, u32 v)
-{
-    p[0] = (u8)(v >> 24);
-    p[1] = (u8)(v >> 16);
-    p[2] = (u8)(v >> 8);
-    p[3] = (u8)v;
-}
 
 /* Storage bench (a measurement aid, no USB): STATUS (0x37) with body 'B' [mask [MiB]] starts it, body 'R' returns the last times. It runs in its own I/O
  * job, so the SysEx handler returns at once. Every test moves MiB (default 8) and logs "bn.<name>.ms" and "bn.<name>.kbps" (MOD_LOG, info), timed with
@@ -293,14 +286,14 @@ i32 uf_bench_command(const u8 *body, u32 len, u8 *out)
             bn_mib = 8u;
         bn_req = 1;
         sdk->io_wake(bn_job);
-        put32(out, 1);
+        dk_bytes_put32(out, 1);
         return 4;
     }
     if (body[0] == 'R') {
-        put32(out, bn_running);
-        put32(out + 4, bn_phase);
+        dk_bytes_put32(out, bn_running);
+        dk_bytes_put32(out + 4, bn_phase);
         for (u32 i = 0; i < BN_SLOTS; i++)
-            put32(out + 8 + 4 * i, bn_ms[i]);
+            dk_bytes_put32(out + 8 + 4 * i, bn_ms[i]);
         return 8 + 4 * BN_SLOTS;
     }
     return E_MSG;

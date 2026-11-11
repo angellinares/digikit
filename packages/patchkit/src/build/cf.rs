@@ -8,6 +8,7 @@ use crate::error::*;
 use sha2::{Digest, Sha256};
 use std::collections::{BTreeMap, BTreeSet, HashMap, HashSet};
 use std::path::{Path, PathBuf};
+use std::sync::{Arc, Mutex};
 
 /// Where the check links an object: the module area of the runtime. Placeholder externs follow at `BASE + 0x100 + 8 * i`.
 pub const BASE: u32 = 0x47E8B000;
@@ -217,7 +218,14 @@ pub fn deps(env: &Env, src: &Path, include_dirs: &[PathBuf]) -> Result<Vec<PathB
 
 /// The `source_sha256` of a ColdFire object: the sources, then every header and `.include` file they read (path and bytes), then the
 /// toolchain record.
-pub fn source_digest(env: &Env, sources: &[PathBuf], include_dirs: &[PathBuf]) -> Result<String> {
+///
+/// With `sdk`, the digest of the SDK library (`sdk/src/**/*.c`, see [`sdk_lib`]) is part of it: the object links what it uses.
+pub fn source_digest(
+    env: &Env,
+    sources: &[PathBuf],
+    include_dirs: &[PathBuf],
+    sdk: bool,
+) -> Result<String> {
     let mut h = Sha256::new();
     for p in sources {
         h.update(tc::read(p)?);
@@ -235,6 +243,10 @@ pub fn source_digest(env: &Env, sources: &[PathBuf], include_dirs: &[PathBuf]) -
             h.update(tc::read(&d)?);
         }
         h.update(env.toolchain_id()?.as_bytes());
+        if sdk && let Some(lib) = sdk_lib(env)? {
+            h.update(b"\0sdk");
+            h.update(lib.digest.as_bytes());
+        }
         // the define set is part of the key; an empty set adds nothing, so the hashes of untraced builds stay as they were
         for d in &env.defines {
             h.update(b"\0-D");
@@ -249,7 +261,14 @@ fn hex(b: &[u8]) -> String {
 }
 
 /// The prototype of C and assembly sources: compile each, merge, add the compiler helpers.
-pub fn proto_of_sources(env: &Env, sources: &[PathBuf], include_dirs: &[PathBuf]) -> Result<Proto> {
+///
+/// With `sdk`, the SDK library members the sources call are linked in (`ld -r --gc-sections`); the rest of the library is dropped.
+pub fn proto_of_sources(
+    env: &Env,
+    sources: &[PathBuf],
+    include_dirs: &[PathBuf],
+    sdk: bool,
+) -> Result<Proto> {
     let tmp = TempDir::new("pk-build-")?;
     let mut objs = vec![];
     for (i, src) in sources.iter().enumerate() {
@@ -265,6 +284,29 @@ pub fn proto_of_sources(env: &Env, sources: &[PathBuf], include_dirs: &[PathBuf]
     if objs.len() > 1 {
         merged = tmp.path().join("all.o");
         merge_objects(env, &objs, &merged)?;
+    }
+    if sdk && let Some(lib) = sdk_lib(env)? {
+        let undefined = nm(env, &merged, &["-u"])?;
+        let mut roots: Vec<String> = undefined
+            .into_iter()
+            .filter(|n| lib.globals.contains(n))
+            .collect();
+        if !roots.is_empty() {
+            // Only the library is pruned: the module's own sections (`.dk.desc` has no reference) stay as they are.
+            roots.sort();
+            roots.dedup();
+            let part = tmp.path().join("sdk-part.o");
+            let mut args = tc::strs(&["-r", "--gc-sections", "-o"]);
+            args.push(part.display().to_string());
+            for r in &roots {
+                args.extend(["-u".to_string(), r.clone()]);
+            }
+            args.push(lib.obj.display().to_string());
+            tc::run(&env.m68k("ld")?, &args, None)?;
+            let linked = tmp.path().join("sdk-linked.o");
+            merge_objects(env, &[merged, part], &linked)?;
+            merged = linked;
+        }
     }
     let with_helpers = tmp.path().join("helpers.o");
     if resolve_helpers(env, &merged, &with_helpers)? {
@@ -565,9 +607,137 @@ pub fn dko_from_proto(
 }
 
 /// An object from C and assembly sources.
-pub fn cf_object(env: &Env, sources: &[PathBuf], include_dirs: &[PathBuf]) -> Result<Dko> {
-    let proto = proto_of_sources(env, sources, include_dirs)?;
-    let source_sha256 = source_digest(env, sources, include_dirs)?;
+///
+/// `sdk`: link the SDK components the sources use (a content module does; the core objects do not).
+pub fn cf_object(
+    env: &Env,
+    sources: &[PathBuf],
+    include_dirs: &[PathBuf],
+    sdk: bool,
+) -> Result<Dko> {
+    let proto = proto_of_sources(env, sources, include_dirs, sdk)?;
+    let source_sha256 = source_digest(env, sources, include_dirs, sdk)?;
     let toolchain: BTreeMap<String, String> = env.toolchain_version()?.into_iter().collect();
     dko_from_proto(&proto, source_sha256, toolchain)
+}
+
+/// The SDK's C sources, `sdk/src/**/*.c`, sorted by path.
+fn sdk_sources(root: &Path) -> Vec<PathBuf> {
+    fn walk(dir: &Path, out: &mut Vec<PathBuf>) {
+        let Ok(rd) = std::fs::read_dir(dir) else {
+            return;
+        };
+        for e in rd.flatten() {
+            let p = e.path();
+            if p.is_dir() {
+                walk(&p, out);
+            } else if p.extension().is_some_and(|x| x == "c") {
+                out.push(p);
+            }
+        }
+    }
+    let mut v = vec![];
+    walk(&root.join("sdk/src"), &mut v);
+    v.sort_by_key(|p| rel_of(root, p));
+    v
+}
+
+fn rel_of(root: &Path, p: &Path) -> String {
+    p.strip_prefix(root)
+        .unwrap_or(p)
+        .to_string_lossy()
+        .into_owned()
+}
+
+/// The SDK components as one relocatable object (every `sdk/src/**/*.c`, built once per define set), with its content digest.
+pub struct SdkLib {
+    /// `source_digest` of the SDK sources: they, the headers they read and the toolchain
+    pub digest: String,
+    pub obj: PathBuf,
+    /// the global symbols the object defines
+    pub globals: HashSet<String>,
+}
+
+/// Newest entries kept under `out/cache/dko/_sdk`.
+const SDK_KEEP: usize = 3;
+
+/// The SDK library for `env`: built on first use, kept on disk under its digest and in memory for the process. None when the SDK has
+/// no C sources. The module's include directories do not apply: the SDK sources include only public headers.
+pub fn sdk_lib(env: &Env) -> Result<Option<Arc<SdkLib>>> {
+    type Memo = HashMap<(PathBuf, Vec<String>), Option<Arc<SdkLib>>>;
+    static MEMO: Mutex<Option<Memo>> = Mutex::new(None);
+    let key = (env.root.clone(), env.defines.clone());
+    let mut guard = MEMO.lock().unwrap_or_else(|e| e.into_inner());
+    let memo = guard.get_or_insert_with(HashMap::new);
+    if let Some(hit) = memo.get(&key) {
+        return Ok(hit.clone());
+    }
+    let sources = sdk_sources(&env.root);
+    let lib = if sources.is_empty() {
+        None
+    } else {
+        let inc: Vec<PathBuf> = tc::global_include_dirs(true)
+            .iter()
+            .map(|d| env.root.join(d))
+            .collect();
+        let digest = source_digest(env, &sources, &inc, false)?;
+        let mut name = String::from("sdk");
+        for d in &env.defines {
+            name.push('+');
+            name.push_str(d);
+        }
+        let dir = super::cache_dir(&env.root)
+            .join("_sdk")
+            .join(&name)
+            .join(&digest[..12]);
+        let obj = dir.join("sdk.o");
+        if obj.exists() {
+            if let Ok(f) = std::fs::File::options().append(true).open(&obj) {
+                let _ = f.set_modified(std::time::SystemTime::now());
+            }
+        } else {
+            let tmp = TempDir::new("pk-sdk-")?;
+            let mut objs = vec![];
+            for (i, src) in sources.iter().enumerate() {
+                let o = tmp.path().join(format!("{i}.o"));
+                compile_source(env, src, &o, &inc)?;
+                objs.push(o);
+            }
+            let merged = tmp.path().join("sdk.o");
+            merge_objects(env, &objs, &merged)?;
+            std::fs::create_dir_all(&dir).map_err(|e| err!("{}: {e}", dir.display()))?;
+            let part = dir.join(format!("sdk.o.tmp-{}", std::process::id()));
+            std::fs::copy(&merged, &part).map_err(|e| err!("{}: {e}", part.display()))?;
+            std::fs::rename(&part, &obj).map_err(|e| err!("{}: {e}", obj.display()))?;
+            evict_sdk(dir.parent().unwrap_or(&dir));
+        }
+        let globals = nm(env, &obj, &["-g", "--defined-only"])?
+            .into_iter()
+            .collect();
+        Some(Arc::new(SdkLib {
+            digest,
+            obj,
+            globals,
+        }))
+    };
+    memo.insert(key, lib.clone());
+    Ok(lib)
+}
+
+/// Remove all but the newest [`SDK_KEEP`] digest directories of `parent`.
+fn evict_sdk(parent: &Path) {
+    let Ok(rd) = std::fs::read_dir(parent) else {
+        return;
+    };
+    let mut v: Vec<(std::time::SystemTime, PathBuf)> = rd
+        .flatten()
+        .filter_map(|e| {
+            let p = e.path();
+            Some((p.join("sdk.o").metadata().ok()?.modified().ok()?, p))
+        })
+        .collect();
+    v.sort_by(|a, b| b.0.cmp(&a.0));
+    for (_, p) in v.into_iter().skip(SDK_KEEP) {
+        let _ = std::fs::remove_dir_all(p);
+    }
 }

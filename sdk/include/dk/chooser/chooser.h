@@ -1,6 +1,6 @@
 /* <dk/chooser/chooser.h>: the slot list, a chooser for a module with numbered slots that files are loaded into (docs/design/ui-rules.md, "The
-   chooser component"). Shared source, not a runtime call: the module lists sdk/src/chooser/chooser.c and sdk/src/chooser/logic.c in its [[object]]
-   sources. It sits on <dk/platform/ui.h> (core/ui lists, the firmware font) and the read-only listing of <dk/platform/files.h>.
+   chooser component"). Shared source, not a runtime call: the packer links sdk/src/chooser/chooser.c, logic.c and the core text and path
+   sources when the module calls them. It sits on <dk/platform/ui.h> (core/ui lists, the firmware font) and the read-only listing of <dk/platform/files.h>.
 
    The flow (every slot is a row, an empty slot too):
      list of slots   YES on a slot opens the file browser for that slot (a filled slot is replaced);

@@ -20,6 +20,7 @@
  *                         < 0 error) and, when it is positive, columns * 4 bytes: per column int16 min then int16 max, big endian.
  */
 #include <dk/core/api.h>
+#include <dk/core/bytes.h>
 #include <dk/sample/pool.h>
 #include <dk/platform/ui.h>
 
@@ -41,14 +42,6 @@ static int16_t win_buf[DK_SAMPLE_WINDOW_MAX * 2];
 static u32 be32(const u8 *p)
 {
     return ((u32)p[0] << 24) | ((u32)p[1] << 16) | ((u32)p[2] << 8) | p[3];
-}
-
-static void put32(u8 *p, u32 v)
-{
-    p[0] = (u8)(v >> 24);
-    p[1] = (u8)(v >> 16);
-    p[2] = (u8)(v >> 8);
-    p[3] = (u8)v;
 }
 
 /* UI task: call the API for the current request until it is ready or fails. A result of a replaced request is dropped. */
@@ -83,7 +76,7 @@ static int32_t window_cmd(const u8 *body, u32 len, u8 *out)
     if (len == 2 && body[1] == 'r') {
         int32_t r = win_ret;
         BARRIER();
-        put32(out, (u32)r);
+        dk_bytes_put32(out, (u32)r);
         if (r <= 0 || (u32)r > DK_SAMPLE_WINDOW_MAX)
             return 4;
         for (i = 0; i < (u32)r; i++) {

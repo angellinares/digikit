@@ -35,6 +35,7 @@
 /* the code is placed as it is: no jump tables (data in the code) */
 #pragma GCC optimize("no-jump-tables")
 #include <dk/core/api.h>
+#include <dk/core/bytes.h>
 #include <dk/platform/file.h>
 #include <dk/platform/hash32.h>
 #include <dk/platform/io.h>
@@ -177,18 +178,6 @@ void uf_log(const char *tag, u32 value)
 }
 #endif
 
-static u32 get32(const u8 *p)
-{
-    return ((u32)p[0] << 24) | ((u32)p[1] << 16) | ((u32)p[2] << 8) | p[3];
-}
-static void put32(u8 *p, u32 v)
-{
-    p[0] = (u8)(v >> 24);
-    p[1] = (u8)(v >> 16);
-    p[2] = (u8)(v >> 8);
-    p[3] = (u8)v;
-}
-
 static void copy(u8 *d, const u8 *s, u32 n)
 {
     if (n >= 32 &&
@@ -309,7 +298,7 @@ static void reply(u8 cmd, u8 seq, i32 status, const u8 *body, u32 n)
     rep[5] = seq;
     rep[6] = (u8)((u32)status >> 8);
     rep[7] = (u8)status;
-    put32(rep + 8, n);
+    dk_bytes_put32(rep + 8, n);
     for (u32 i = 0; i < n; i++)
         rep[HDR + i] = body[i];
     rep_len = HDR + n;
@@ -320,7 +309,7 @@ static int dispatch(void)
 {
     u8 cmd = frame[4], seq = frame[5];
     u32 flags = ((u32)frame[6] << 8) | frame[7];
-    u32 len = get32(frame + 8);
+    u32 len = dk_bytes_get32(frame + 8);
     const u8 *body = frame + HDR;
     i32 r;
 
@@ -329,8 +318,8 @@ static int dispatch(void)
         b[0] = BULK_VERSION;
         b[1] = 0;
         b[2] = b[3] = 0;
-        put32(b + 4, DATA_MAX);
-        put32(b + 8, ALIGN);
+        dk_bytes_put32(b + 4, DATA_MAX);
+        dk_bytes_put32(b + 8, ALIGN);
         int stable = 0;
         for (u32 t = 0; t < 8 && !stable;
              t++) { /* SET_NONCE may be writing: read until an even, unchanged generation */
@@ -378,8 +367,9 @@ static int dispatch(void)
         if (busy_tries == 0) /* a retry of the same BEGIN keeps the totals */
             uf_write = uf_copy = uf_wait = uf_begin = uf_end = uf_bytes = uf_datas = 0;
 #endif
-        r = sdk->file_create(get32(body), (const char *)(body + 4), get32(body + p + 1),
-                             none ? 0 : h4, (flags & FLAG_REPLACE) ? DK_FILE_REPLACE : 0);
+        r = sdk->file_create(dk_bytes_get32(body), (const char *)(body + 4),
+                             dk_bytes_get32(body + p + 1), none ? 0 : h4,
+                             (flags & FLAG_REPLACE) ? DK_FILE_REPLACE : 0);
 #if UF_TRACE
         uf_begin += UF_NOW() - t0;
         uf_wait_from = UF_NOW();
@@ -392,7 +382,7 @@ static int dispatch(void)
             handle = r;
             r = 0;
             sess_at = dkrt_blocks();
-            acc_open(get32(body + p + 1));
+            acc_open(dk_bytes_get32(body + p + 1));
 #if UF_TRACE
             uf_log("uf.acc.kib", acc_cap >> 10);
 #endif
@@ -410,7 +400,7 @@ static int dispatch(void)
             return 0;
         }
         if (acc_cap) {
-            u32 n = len - 4, off = get32(body);
+            u32 n = len - 4, off = dk_bytes_get32(body);
             if (acc_err) {
                 reply(cmd, seq, acc_err, 0, 0);
                 return 0;
@@ -477,7 +467,7 @@ static int dispatch(void)
 #if UF_TRACE
         u32 t0 = UF_NOW();
 #endif
-        r = sdk->file_write(handle, get32(body), body + 4, len - 4);
+        r = sdk->file_write(handle, dk_bytes_get32(body), body + 4, len - 4);
 #if UF_TRACE
         uf_write += UF_NOW() - t0;
         if (r == 0) {
@@ -672,14 +662,14 @@ static int pump(void)
             cur = 0;
         }
         if (dstage == 1 && have == HDR + 4u) {
-            u32 off = get32(frame + HDR), body_n = total - (HDR + 4u);
+            u32 off = dk_bytes_get32(frame + HDR), body_n = total - (HDR + 4u);
             direct = body_n > 0 && off == acc_off + acc_fill && body_n <= acc_cap - acc_fill &&
                      off <= file_size && body_n <= file_size - off &&
                      ((body_n & 511u) == 0 || body_n == file_size - off);
             dstage = direct ? 2 : 0;
         }
         if (!total && have == HDR) {
-            u32 len = get32(frame + 8);
+            u32 len = dk_bytes_get32(frame + 8);
             if (frame[0] != 'D' || frame[1] != 'K' || frame[2] != 'B' || frame[3] != '1')
                 return -1;
             if (len > DATA_MAX + 4u + SLACK)
@@ -815,8 +805,8 @@ static i32 command(u32 cmd, u32 seq, const u8 *body, u32 len, u8 *out)
         body[0] ==
             'A') { /* test knob: 'A' [max bytes u32] sets the largest staging buffer of the next BEGIN (0: none); replies the size of the last one */
         if (len >= 5)
-            acc_limit = get32(body + 1);
-        put32(out, acc_got);
+            acc_limit = dk_bytes_get32(body + 1);
+        dk_bytes_put32(out, acc_got);
         return 4;
     }
 #endif
@@ -826,24 +816,24 @@ static i32 command(u32 cmd, u32 seq, const u8 *body, u32 len, u8 *out)
 #endif
     if (cmd ==
         NONCE_CMD + 1) { /* STATUS (a debug aid): what the job has done and where it stands */
-        put32(out, st_steps);
-        put32(out + 4, st_frames);
-        put32(out + 8, st_tx_busy);
-        put32(out + 12, (u32)handle);
-        put32(out + 16, rep_len);
-        put32(out + 20, have);
-        put32(out + 24, total);
-        put32(out + 28, (frame_ready ? 1u : 0u) | (cur ? 2u : 0u) | (enabled ? 4u : 0u));
-        put32(out + 32, usb_bulk_state());
-        put32(out + 36, st_last_rc);
-        put32(out + 40, st_bufs);
-        put32(out + 44, st_bytes);
-        put32(out + 48, st_fatal);
-        put32(out + 52, st_resets);
-        put32(out + 56, (u32)enable_rc);
-        put32(out + 60, st_send_err);
-        put32(out + 64, acc_cap);
-        put32(out + 68, st_expired);
+        dk_bytes_put32(out, st_steps);
+        dk_bytes_put32(out + 4, st_frames);
+        dk_bytes_put32(out + 8, st_tx_busy);
+        dk_bytes_put32(out + 12, (u32)handle);
+        dk_bytes_put32(out + 16, rep_len);
+        dk_bytes_put32(out + 20, have);
+        dk_bytes_put32(out + 24, total);
+        dk_bytes_put32(out + 28, (frame_ready ? 1u : 0u) | (cur ? 2u : 0u) | (enabled ? 4u : 0u));
+        dk_bytes_put32(out + 32, usb_bulk_state());
+        dk_bytes_put32(out + 36, st_last_rc);
+        dk_bytes_put32(out + 40, st_bufs);
+        dk_bytes_put32(out + 44, st_bytes);
+        dk_bytes_put32(out + 48, st_fatal);
+        dk_bytes_put32(out + 52, st_resets);
+        dk_bytes_put32(out + 56, (u32)enable_rc);
+        dk_bytes_put32(out + 60, st_send_err);
+        dk_bytes_put32(out + 64, acc_cap);
+        dk_bytes_put32(out + 68, st_expired);
         return 72;
     }
     if (cmd == TAKEOVER_CMD) { /* also the renew while the host works */

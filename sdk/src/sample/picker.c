@@ -6,6 +6,8 @@
 #include <dk/sample/picker.h>
 #include <dk/sample/pool.h>
 #include <dk/chooser/logic.h>
+#include <dk/core/path.h>
+#include <dk/core/text.h>
 
 #define TRACKS DK_SAMPLE_POOL_ENTRIES
 
@@ -129,8 +131,8 @@ static void number_line(dk_ui_menu *m, const char *a, uint32_t v, const char *b)
 {
     char num[12], row[DK_UI_ROW];
     dk_text_utoa(num, v);
-    dk_text_cat(row, a, num);
-    dk_text_cat(row, row, b);
+    dk_text_cat(row, DK_CHOOSER_TEXT + 1, a, num);
+    dk_text_cat(row, DK_CHOOSER_TEXT + 1, row, b);
     dk_ui_text(m, row);
 }
 
@@ -141,7 +143,7 @@ static void fill_info(dk_ui_menu *m, void *ctx)
     dk_sample_info info = {0, 0, 0, 0};
     (void)ctx;
     dk_text_utoa(num, (uint32_t)t);
-    dk_text_cat(row, "SAMPLE ", num);
+    dk_text_cat(row, DK_CHOOSER_TEXT + 1, "SAMPLE ", num);
     dk_ui_text(m, row);
     if (st == DK_SAMPLE_UNUSED) {
         dk_ui_text(m, "EMPTY");
@@ -157,7 +159,7 @@ static void fill_info(dk_ui_menu *m, void *ctx)
         number_line(m, info.channels == 2 ? "STEREO " : "MONO ", info.rate, " HZ");
         number_line(m, "", info.frames, " FRAMES");
         dk_text_secs(text, info.frames, info.rate);
-        dk_text_cat(row, "LENGTH ", text);
+        dk_text_cat(row, DK_CHOOSER_TEXT + 1, "LENGTH ", text);
         dk_ui_text(m, row);
     }
     if (st < 0) {

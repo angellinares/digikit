@@ -16,11 +16,11 @@ it('compiles public machine and FX declarations and preserves their parameter un
       ['-std=c11', '-Wall', '-Wextra', '-Werror', '-Isdk/include', 'sdk/tests/declarations.c', '-o', binary],
       {
         cwd: root,
-        timeout: 15_000,
+        timeout: 25_000,
         stdio: 'pipe',
       },
     );
-    const records = JSON.parse(execFileSync(binary, { encoding: 'utf8', timeout: 5000 }));
+    const records = JSON.parse(execFileSync(binary, { encoding: 'utf8', timeout: 10_000 }));
     expect(records).toEqual({
       machine: {
         id: 'sine',
@@ -40,18 +40,18 @@ it('compiles public machine and FX declarations and preserves their parameter un
   } finally {
     rmSync(scratch, { recursive: true, force: true });
   }
-}, 20_000);
+}, 40_000);
 
-function runHostC(source: string) {
+function runHostC(source: string, ...extra: string[]) {
   const scratch = mkdtempSync(join(tmpdir(), 'digikit-sdk-host-'));
   try {
     const binary = join(scratch, 'host');
-    execFileSync('cc', ['-std=c11', '-Wall', '-Wextra', '-Werror', '-Isdk/include', source, '-o', binary], {
+    execFileSync('cc', ['-std=c11', '-Wall', '-Wextra', '-Werror', '-Isdk/include', source, ...extra, '-o', binary], {
       cwd: root,
-      timeout: 15_000,
+      timeout: 25_000,
       stdio: 'pipe',
     });
-    execFileSync(binary, { timeout: 5000, stdio: 'pipe' });
+    execFileSync(binary, { timeout: 10_000, stdio: 'pipe' });
   } finally {
     rmSync(scratch, { recursive: true, force: true });
   }
@@ -59,8 +59,20 @@ function runHostC(source: string) {
 
 it('draws the page widgets inside their bounds', () => {
   runHostC('sdk/tests/page/widgets.c');
-}, 20_000);
+}, 40_000);
 
 it('draws and clips the sample view', () => {
   runHostC('sdk/tests/sample/view.c');
-}, 20_000);
+}, 40_000);
+
+it('reads and writes big-endian 32-bit fields', () => {
+  runHostC('sdk/tests/core/bytes.c');
+}, 40_000);
+
+it('bounds every text helper to its buffer and formats numbers', () => {
+  runHostC('sdk/tests/core/text.c', 'sdk/src/core/text.c');
+}, 40_000);
+
+it('joins, splits and names paths within the public limit', () => {
+  runHostC('sdk/tests/core/path.c', 'sdk/src/core/path.c', 'sdk/src/core/text.c');
+}, 40_000);

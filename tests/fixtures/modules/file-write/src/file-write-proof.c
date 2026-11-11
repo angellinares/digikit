@@ -17,6 +17,7 @@
      +2 RELEASE io_wake the job of case 3 and let the spin of case 7 end.
      +3 CONTEXT file_create called here, in the MIDI task: the reply is its result (E_CONTEXT, -19, is right), then u8 1 while the step of case 7 spins
                 (it is mid-step), then the results of file_write and file_abort on a handle (body: i32 handle, may be empty) called here. */
+#include <dk/core/bytes.h>
 #include <dk/platform/file.h>
 #include <dk/platform/io.h>
 #include <dk/platform/hash32.h>
@@ -36,13 +37,6 @@ static uint8_t dev_hash[4];
 static int32_t handle, create_rc, close_rc, abort_rc, job_status, job_id, phase;
 static int32_t aux[3];
 static volatile uint32_t spin_release, in_spin;
-static void put32(uint8_t *p, uint32_t v)
-{
-    p[0] = v >> 24;
-    p[1] = v >> 16;
-    p[2] = v >> 8;
-    p[3] = v;
-}
 static void fill(uint32_t off, uint32_t n)
 {
     for (uint32_t i = 0; i < n; ++i) {
@@ -207,21 +201,21 @@ command(uint32_t cmd, uint32_t seq, const uint8_t *body, uint32_t len, uint8_t *
     }
     if (cmd == PROOF_CMD + 1) {
         out[0] = (uint8_t)state;
-        put32(out + 1, (uint32_t)create_rc);
-        put32(out + 5, (uint32_t)close_rc);
-        put32(out + 9, (uint32_t)abort_rc);
-        put32(out + 13, (uint32_t)job_status);
-        put32(out + 17, mod_hash);
+        dk_bytes_put32(out + 1, (uint32_t)create_rc);
+        dk_bytes_put32(out + 5, (uint32_t)close_rc);
+        dk_bytes_put32(out + 9, (uint32_t)abort_rc);
+        dk_bytes_put32(out + 13, (uint32_t)job_status);
+        dk_bytes_put32(out + 17, mod_hash);
         out[21] = dev_hash[0];
         out[22] = dev_hash[1];
         out[23] = dev_hash[2];
         out[24] = dev_hash[3];
-        put32(out + 25, steps);
-        put32(out + 29, written);
-        put32(out + 33, (uint32_t)job_id);
-        put32(out + 37, (uint32_t)aux[0]);
-        put32(out + 41, (uint32_t)aux[1]);
-        put32(out + 45, (uint32_t)aux[2]);
+        dk_bytes_put32(out + 25, steps);
+        dk_bytes_put32(out + 29, written);
+        dk_bytes_put32(out + 33, (uint32_t)job_id);
+        dk_bytes_put32(out + 37, (uint32_t)aux[0]);
+        dk_bytes_put32(out + 41, (uint32_t)aux[1]);
+        dk_bytes_put32(out + 45, (uint32_t)aux[2]);
         return 49;
     }
     if (cmd == PROOF_CMD + 2) {
@@ -230,13 +224,13 @@ command(uint32_t cmd, uint32_t seq, const uint8_t *body, uint32_t len, uint8_t *
         return 0;
     }
     if (cmd == PROOF_CMD + 3) {
-        put32(out, (uint32_t)sdk->file_create(DK_FILES_STORE, "ctx-probe", 512, 0, 0));
+        dk_bytes_put32(out, (uint32_t)sdk->file_create(DK_FILES_STORE, "ctx-probe", 512, 0, 0));
         out[4] = (uint8_t)in_spin;
         int32_t h = len >= 4 ? (int32_t)(((uint32_t)body[0] << 24) | ((uint32_t)body[1] << 16) |
                                          ((uint32_t)body[2] << 8) | body[3])
                              : 0;
-        put32(out + 5, (uint32_t)sdk->file_write(h, 0, buf, 512));
-        put32(out + 9, (uint32_t)sdk->file_abort(h));
+        dk_bytes_put32(out + 5, (uint32_t)sdk->file_write(h, 0, buf, 512));
+        dk_bytes_put32(out + 9, (uint32_t)sdk->file_abort(h));
         return 13;
     }
     return -50;

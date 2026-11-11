@@ -13,8 +13,9 @@ pub const RUST_TARGET_JSON: &[u8] =
     include_bytes!("../../../../tools/patchkit/toolchain/m68k-cf-none-elf-a2.json");
 pub const RUST_TARGET_NAME: &str = "m68k-cf-none-elf-a2.json";
 
-pub const CFLAGS: [&str; 15] = [
+pub const CFLAGS: [&str; 16] = [
     "-mcpu=54418",
+    "-std=c11",
     "-Os",
     "-ffreestanding",
     "-fno-builtin",

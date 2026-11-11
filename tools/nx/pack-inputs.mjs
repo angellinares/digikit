@@ -72,6 +72,8 @@ export const packSourceInputs = (workspaceRoot, byId, manifests) => {
         const path = bounded(join(dirname(module.file), source));
         include(path);
         if (path.endsWith('/Cargo.toml')) includeCrate(dirname(path));
+        // a content module's C object links the SDK components it uses (patchkit build, sdk_lib): all of sdk/src is an input
+        if (path.endsWith('.c') && module.manifest?.category !== 'core') paths.add('{workspaceRoot}/sdk/src/**/*');
       }
   }
   return [{ input: 'production', projects: [...projects].sort() }, ...[...paths].sort()];
