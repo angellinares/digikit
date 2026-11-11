@@ -2,7 +2,8 @@
 
 Date: 2026-11-12. Base: `main` at 25378434. Targets: DT2 OS 1.17, DN2 OS 1.12.
 
-Status: **design agreed with Em on 2026-11-12. S1 (restructure) shipped; S2 to S5 not built.**
+Status: **design agreed with Em on 2026-11-12, S2 detail (sections 5, 5.1, S2a, S2b) agreed the same day. S1 (restructure) shipped
+(PR 416); S2 to S5 not built.**
 
 This plan replaces sections 7.1 (Cleanup) and 7.2 (Contract) of [runtime-and-services.md](runtime-and-services.md), that is the SDK
 parts of its items 1 and 5. The order of its steps is in [sdk-runtime-roadmap.md](sdk-runtime-roadmap.md). It links to
@@ -78,8 +79,10 @@ sdk/
 modules/core/runtime/vectors/   fit and settings expected results (moved from sdk/vectors)
 ```
 
-Planned for later steps (not shipped): `core/` gets `module.h`, `log.h`, `mem.h`, `bytes.h` and `text.h` (S2); `platform/` is regrouped
-by service with `draw.h`, `store.h`, `samples.h`, `input.h` and `debug.h` (S2); `page/canvas.h` (S3); `dsp/env/` when a module needs it.
+Planned for later steps (not shipped): `core/` gets `bytes.h`, `text.h` and `path.h` (S2a), and `module.h`, `log.h`, `mem.h` and
+`time.h` (S2b; `module.h` replaces `api.h`); `platform/` gets `host.h`, `samples.h`, `input.h`, `dsp_link.h` and `debug.h`, and `file.h`
+merges into `files.h` (S2b, section 5.1); `page/canvas.h` (S3); `platform/draw.h` when a text-width query exists; `dsp/env/` when a module
+needs it.
 
 Include direction: `core` <- `platform` <- components (`page`, `machine`, `fx`, `sample`, later `lfo`, `filter`, `mixer`).
 Components may use other components, without cycles.
@@ -98,21 +101,101 @@ Every module defines one well-known constant, `dk_module`: its single entry poin
 
 ```c
 const dk_module dk_module = {
-    .init = shot_init,   /* int (dk_ctx *ctx): declares content, opens services */
+    .init = shot_init,   /* int  (dk_ctx *ctx): declares content, opens services */
     .fini = shot_fini,   /* void (dk_ctx *ctx) */
-    .tick = shot_tick,   /* UI task, about 120 Hz; today's slot 0 */
-    .menu = shot_menu,   /* SETTINGS... in DIGIKIT > MODULES; today's dkm_menu */
+    .tick = shot_tick,   /* void (dk_ctx *ctx): every module's tick, once per UI pass */
+    .menu = shot_menu,   /* void (dk_ctx *ctx, dk_ui_menu *m): SETTINGS... in DIGIKIT > MODULES */
 };
 ```
 
+- The packer finds `dk_module` by symbol and writes `init`, `fini`, `tick` and `menu` into the `.dkm` header. The runtime calls them as
+  it calls the `dkm_*` entries today.
+- `dk_ctx` is opaque. The runtime passes it to every lifecycle function. It identifies the module (today implicit in a global) and answers
+  `dk_ctx_device()` and `dk_ctx_runtime_version()`; S3 adds `dk_device_has()`. Callbacks (host command handlers, I/O and job steps, intro
+  frames) keep their signatures: none of them needed the Api table either.
 - `dk_module` grows by appended fields: event handlers such as "project changed" or "settings changed" (runtime-and-services section 8,
   ordered event tables).
-- Services: in `init`, a module calls an accessor, for example `dk_usb_bulk_open(ctx, &usb)`. It returns an error if the service is
-  absent, or a handle that can also report resource limits. Underneath these are named imports, so the packer sees what a module needs.
-  The service API itself is designed with the services work.
-- Settings: keys are declared in `init` (`dk_setting_add`), values are read and written with `dk_settings_get/put` as today.
+- Settings: keys are declared in `init` (`dk_setting_add`, S3), values are read and written with `dk_settings_get/put`.
 - Instrumentation: the SDK and runtime own the dispatch into `init`, `tick` and the kind dispatchers. Debug and profiling hooks (`DK_SPAN`,
   log) attach there. Module code does not change.
+
+### 5.1 Services
+
+A module reaches the device through named imports, grouped by service in `sdk.toml`. There is no Api table.
+
+- Stateless functions are plain imports: `dk_alloc`, `dk_log`, `dk_hash32_*`, `dk_io_post`.
+- A service with per-module state, or one that may be absent, has a handle opened in `init`: `dk_settings_open`, `dk_files_open`,
+  `dk_sample_pool_open`, `dk_ui_open`, `dk_input_open`, `dk_usb_bulk_open`, `dk_dsp_link_open`.
+- When an optional provider is not loaded, its imports bind to stubs: `_open` returns `DK_E_MISSING`, the other functions return the same
+  code or do nothing. The module decides whether it can run without the service. Today a missing provider fails the load.
+- Each import has `service`, `since`, `context` and `sig` in `sdk.toml`:
+
+```toml
+[[import]]
+name     = "dk_usb_bulk_open"
+service  = "usb_bulk"
+requires = "core/usb-bulk"
+absent   = "missing"          # stub returns DK_E_MISSING
+sig      = "i32 (ctx *, usb_bulk **)"
+context  = "init"             # init, ui, io-step, any, isr
+since    = 10
+```
+
+- The packer derives the runtime minor version a module needs from the newest `since` among the imports it links, and the services it
+  needs from their `service` tags. `uses_api`, `api->size` and `DK_API_HAS` go.
+- `service` uses the names of runtime-and-services: `runtime`, `samples`, `machines`, `fx`, `ui`, `input`, `usb_bulk`, `dsp_link`. Today
+  every `runtime`, `samples` and `machines` import resolves to code in the runtime image. When runtime-and-services moves `samples`,
+  `machines` and `fx` into `.dks` services, the same names resolve to the service exports and the loader loads a service only when a
+  selected module imports it. Modules do not change.
+
+| Service | Header | Today in | Target (runtime-and-services) |
+| --- | --- | --- | --- |
+| memory, log, time | `core/mem.h`, `core/log.h`, `core/time.h` | runtime | runtime |
+| host commands (SysEx) | `platform/host.h` | runtime | runtime |
+| settings, files (read and write), I/O and jobs, hash, intro | `platform/settings.h`, `files.h`, `io.h`, `hash32.h`, `intro.h` | runtime | runtime |
+| debug reads and log sink | `platform/debug.h` | runtime | runtime |
+| sample pool | `platform/samples.h` (drawing and picker stay in `sample/`) | runtime | `samples` service |
+| params | `platform/param.h` | runtime | `machines` service |
+| UI menus, dialogs, ticks | `platform/ui.h` | `core/ui` module | runtime-and-services decides |
+| input, USB bulk, DSP link | `platform/input.h`, `usb_bulk.h`, `dsp_link.h` | provider modules | provider modules |
+
+Renames that make the names consistent: menu functions become `dk_ui_menu_*` (`dk_ui_menu_new/open/close/select/refresh`), items
+`dk_ui_item_*` (`text`, `action`, `toggle`, `value`, `check`), dialogs keep `dk_ui_toast/confirm/choice`; `register_cmds` becomes
+`dk_host_register`; `dkrt_blocks` becomes `dk_time_blocks`; `dkrt_log_ev` becomes `dk_log_event`; `dkrt_peek_range`, `dkrt_track_type`,
+`dkrt_selected_params` and `dkrt_log_sink_set` move to `platform/debug.h` as `dk_debug_*`. `fw_block_read`, `fw_alloc` and `fw_free` are
+deleted (no users). `DK_TRACE_INIT` goes; `DK_TRACE_LOG` calls `dk_log`.
+
+Limits checked on 2026-11-12: at most 64 imports per module (the largest module, `usb-fast`, needs about 25); runtime import names at most
+27 characters (all proposed names fit).
+
+Example, a tool module:
+
+```c
+#include <dk/core/module.h>
+#include <dk/core/log.h>
+#include <dk/platform/settings.h>
+#include <dk/platform/ui.h>
+
+static dk_settings *settings;
+static dk_ui *ui;                                  /* stays NULL without core/ui */
+
+static int init(dk_ctx *ctx)
+{
+    int32_t r = dk_settings_open(ctx, &settings);
+    if (r != DK_OK)
+        return r;
+    if (dk_ui_open(ctx, &ui) != DK_OK)
+        dk_log(DK_LOG_INFO, "no core/ui: settings menu hidden", 0);
+    return DK_OK;
+}
+
+static void menu(dk_ctx *ctx, dk_ui_menu *m)
+{
+    dk_ui_item_text(m, "BOOT SCREEN");
+}
+
+const dk_module dk_module = { .init = init, .menu = menu };
+```
 
 ## 6. Declarations
 
@@ -328,17 +411,37 @@ Rule: every built `.dkm` stays byte-identical. What shipped:
 - `sdk/project.json`: `sdk:check-generated` names the generator's inputs and outputs only; `sdk/src`, `sdk/dsp` (except the generated
   includes) and `sdk/templates` select no SDK task.
 
-### S2 Entry point and imports
+### S2a C hygiene
 
-- `dk_module` and `dk_ctx` (section 5). `DK_MENU`/`dkm_menu` and slot 0 become `.menu` and `.tick`. Slots 1 to 7 are bound but never
-  called (`lib.rs:1155-1157`); delete them.
-- The Api table becomes named imports grouped by service in `sdk.toml`, with `platform/` accessors. `uses_api`, `api->size` and
-  `DK_API_HAS` go. `fw_alloc`, `fw_free` and `fw_block_read` go (no content module, template or SDK source uses them; check core users).
-  The runtime stops naming samples and params once the Api thunks are gone (`lib.rs:521-579`).
-- Move duplicated helpers into `core/` (`put32`/`get32`, number-to-text, centring). Turn on `-std=c11` and the format check. These can
-  change bytes, so they land here, not in S1.
-- Migrate the tools (`usb-fast`, `debug`, `remote`, `probe`, `bootscreen`) and `shot`'s init.
-- Check: the tools' device tests on both devices; record new hashes.
+- A repository `.clang-format` that matches the dominant style today: 4-space indent, function braces on their own line, control braces
+  on the same line, `*` next to the name, 100 columns. Reformat all C in one whitespace-only commit; `sdk:hashes compare --force` proves it
+  byte-identical. Add a C format check to the static checks.
+- `-std=c11` for ColdFire builds. The 2026-11-12 scan found no GNU extension that strict C11 rejects (`__attribute__` and `__asm__` are
+  accepted). Fall back to `-std=gnu11` if the compiler disagrees.
+- Helpers into `core/`: `core/bytes.h` (big-endian put and get, replacing about 10 copies of `put32`/`get32`), `core/text.h` and
+  `src/core/text.c` (length, bounded copy, equal, unsigned and signed to text, and the `dk_text_*` functions now in `chooser/logic.c`, all
+  with `uint32_t` lengths), `core/path.h` and `src/core/path.c` (`dk_path_*`). Text centring stays in `shot` until `platform/draw` offers a
+  text-width query.
+- SDK sources are linked automatically: the packer builds the SDK sources a module uses and links them with `--gc-sections`. Modules stop
+  listing `sdk/src` files in `module.toml`. A received `.dkmod` (source only) builds against the receiver's SDK, with a version check.
+- Check: hashes for the format commit; device tests of the modules whose bytes change; static checks.
+
+### S2b Entry point and imports
+
+- Runtime: the import table grows from 15 names to the services of 5.1, pointing at the existing functions (the implementations in
+  `settings.rs`, `files.rs`, `tracks.rs`, `io.rs` and the rest stay); `dk_ctx`; stubs for absent providers (`absent = "missing"`); a
+  per-module `tick` called for every loaded module once per UI pass. Slot 0 has one owner today and slots 1 to 7 are never called
+  (`lib.rs:1155-1157`); the slot table goes. Delete the Api table (`lib.rs:521-579`) after the last module moves.
+- Packer: find `dk_module` and write the lifecycle fields; derive the runtime minor version from `since`; report the needed services from
+  `service`.
+- `sdk.toml`: `service`, `since`, `context` and `sig` on every import; `context` is generated into the header comments. The runtime checks
+  that exist stay as they are.
+- Migrate the five tools (`usb-fast`, `debug`, `remote`, `probe`, `bootscreen`), `shot` and its picker, the chooser, the 21 C fixtures,
+  the two Rust fixtures (`dyn-demo`, `dyn-demo-stray`) and the `tool` template.
+- Tests that test the Api mechanism itself (size checks returning -48, `files-api.test.ts` header offsets and "API1.4" text,
+  `offsetof`/`sizeof` checks in `native-page(s)`, `track-select`, `sample-proof`) are rewritten as tests of version refusal and of a
+  missing service. These test changes get an independent review before merge.
+- Check: device tests of every migrated module and fixture on both devices; record new hashes.
 
 ### S3 Builders and the runtime commit path
 
