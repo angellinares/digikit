@@ -17,6 +17,7 @@ function rig(
       log.push(`${name}:nonce`);
       state.bulk.setNonce(n);
     },
+    usbFastWrongMode: async () => !switched,
     usbFastTakeOver: async () => {
       log.push(`${name}:takeover`);
       if (opts.refuse) throw new Error('E_STATE');

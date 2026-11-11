@@ -81,6 +81,8 @@ export async function chooseBulk(
 
 /** The SysEx side of the take-over: `DkSession.usbFastNonce`, `usbFastTakeOver` and `usbFastRelease`. */
 export interface TakeOverSysex extends NonceSender {
+  /** True when the device is not in USB MIDI mode: the app takes over only then (no flag, no question). */
+  usbFastWrongMode(): Promise<boolean>;
   usbFastTakeOver(): Promise<void>;
   usbFastRelease(): Promise<void>;
 }

@@ -13638,6 +13638,49 @@
     },
     {
       "at": {
+        "dn2-1.12": [
+          {
+            "addr": "0x4058f280",
+            "len": 4
+          }
+        ],
+        "dt2-1.17": [
+          {
+            "addr": "0x40965a38",
+            "len": 4
+          }
+        ]
+      },
+      "bindings": {
+        "c": "dk_fw_usb_restart_delay",
+        "rust": "dkfw::usb::RESTART_DELAY"
+      },
+      "cpu": "cf",
+      "doc": "The restart delay of the USB mode switch (u32): the stop (`FUN_40006bac`) sets it to 30, the USB tick `FUN_4000713e` counts it down (one a tick, about 33 ms) and calls the restart (`FUN_40006bc6`) when it reaches 0. Non-zero while a stop waits to restart. The operand of the tick's first read. DT2 1.17 0x40965a38, DN2 1.12 0x4058f280. RAM at run time.",
+      "file": "devices/fw/usb.toml",
+      "kind": "value",
+      "mark": "D",
+      "name": "cf.usb.value.restart_delay",
+      "rule": {
+        "dn2": {
+          "kind": "cf_literal",
+          "len": 4,
+          "offset": 10
+        },
+        "dt2": {
+          "kind": "cf_literal",
+          "len": 4,
+          "offset": 10
+        }
+      },
+      "subsystem": "usb",
+      "users": [
+        "core/usb-bulk"
+      ],
+      "was": []
+    },
+    {
+      "at": {
         "dn2-1.11": [
           {
             "addr": "0x4018c8dc",
@@ -19363,7 +19406,7 @@
       "name": "text"
     },
     {
-      "count": 11,
+      "count": 12,
       "cpu": "cf",
       "file": "devices/fw/usb.toml",
       "meaning": "the USB device engine: port table, connect and disconnect callbacks, endpoint queues, mode switch",

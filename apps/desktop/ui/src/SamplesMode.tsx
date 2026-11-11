@@ -9,7 +9,7 @@
 // local files come through the native `local_*` commands (local.rs); no process is started.
 import { For, Show, createSignal, type JSX } from 'solid-js';
 import { errorLine, formatBytes, isCancelled } from '@web/modules/backend';
-import { openDeviceSamples, labelOf, listLocalAt, pickFolder, readLocalFile } from './samples-backend';
+import { endRun, openDeviceSamples, labelOf, listLocalAt, pickFolder, readLocalFile } from './samples-backend';
 import {
   applyUpload,
   confirmDeleteLabel,
@@ -144,38 +144,42 @@ export default function SamplesMode(props: { ctx: PageCtx }): JSX.Element {
   /** Send `items` (and make `mkdirs` first) into the device; the bar counts them all. */
   const send = async (mkdirs: string[], items: UploadItem[]): Promise<boolean> => {
     let done = false;
-    await run('Uploading', async (): Promise<void | CancelledRun> => {
-      const o = await openDeviceSamples(true);
-      if (mkdirs.length && !(await o.backend.canMkdir())) throw new Error(noFoldersMessage(o.name));
-      setNote('');
-      const base = uploads();
-      setUploadBase(base);
-      setUploadNotes([]);
-      const started = Date.now();
-      setUploadAverage(undefined);
-      await uploadItems(
-        o.backend,
-        o.prepare,
-        mkdirs,
-        items,
-        (e) => {
-          noteActivity();
-          if (e.event === 'note') setUploadNotes((n) => [...n, e.message]);
-          setUploads((u) => applyUpload(u, e));
-        },
-        stopWasAsked,
-      );
-      // the run's bytes over its time, for the end text of the bar
-      const sent = samplesBar(uploads(), base, false)?.sent ?? 0;
-      setUploadAverage(sent > 0 && Date.now() > started ? sent / ((Date.now() - started) / 1000) : undefined);
-      // the real error of a file is on the row only; the run shows and logs it, and the selection stays for a retry
-      const failure = uploadFailure(uploads(), base);
-      if (failure) throw new Error(failure);
-      // stopped by the user: not an error; the bar and the Log say what was done, and the selection stays for a retry
-      const stopped = uploadCancelled(uploads(), base);
-      if (stopped) return { cancelled: stopped };
-      done = true;
-    });
+    try {
+      await run('Uploading', async (): Promise<void | CancelledRun> => {
+        const o = await openDeviceSamples(true);
+        if (mkdirs.length && !(await o.backend.canMkdir())) throw new Error(noFoldersMessage(o.name));
+        setNote('');
+        const base = uploads();
+        setUploadBase(base);
+        setUploadNotes([]);
+        const started = Date.now();
+        setUploadAverage(undefined);
+        await uploadItems(
+          o.backend,
+          o.prepare,
+          mkdirs,
+          items,
+          (e) => {
+            noteActivity();
+            if (e.event === 'note') setUploadNotes((n) => [...n, e.message]);
+            setUploads((u) => applyUpload(u, e));
+          },
+          stopWasAsked,
+        );
+        // the run's bytes over its time, for the end text of the bar
+        const sent = samplesBar(uploads(), base, false)?.sent ?? 0;
+        setUploadAverage(sent > 0 && Date.now() > started ? sent / ((Date.now() - started) / 1000) : undefined);
+        // the real error of a file is on the row only; the run shows and logs it, and the selection stays for a retry
+        const failure = uploadFailure(uploads(), base);
+        if (failure) throw new Error(failure);
+        // stopped by the user: not an error; the bar and the Log say what was done, and the selection stays for a retry
+        const stopped = uploadCancelled(uploads(), base);
+        if (stopped) return { cancelled: stopped };
+        done = true;
+      });
+    } finally {
+      endRun();
+    }
     return done;
   };
   const itemOf = (folder: string, name: string, size: number, read: () => Promise<Uint8Array>): UploadItem => ({

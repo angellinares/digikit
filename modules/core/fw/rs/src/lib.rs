@@ -1031,6 +1031,12 @@ pub mod usb {
         #[link_name = "cf.usb.value.config_mode"]
         pub static CONFIG_MODE: u8;
     }
+
+    unsafe extern "C" {
+        /// The restart delay of the USB mode switch (u32): the stop (`FUN_40006bac`) sets it to 30, the USB tick `FUN_4000713e` counts it down (one a tick, about 33 ms) and calls the restart (`FUN_40006bc6`) when it reaches 0. Non-zero while a stop waits to restart. The operand of the tick's first read. DT2 1.17 0x40965a38, DN2 1.12 0x4058f280. RAM at run time.
+        #[link_name = "cf.usb.value.restart_delay"]
+        pub static RESTART_DELAY: u8;
+    }
 }
 
 pub mod view {
