@@ -12,6 +12,7 @@ import { noteActivity } from './activity';
 import AutoRefresh from './AutoRefresh';
 import ConnectionBadge from './ConnectionBadge';
 import { transferEnv } from './env';
+import { rescanTargets } from './TargetSelect';
 import ModulesMode from './ModulesMode';
 import { cancelPending, target, targetLabel } from './target';
 import SourcePanel from './SourcePanel';
@@ -196,7 +197,14 @@ export default function TransferPage(): JSX.Element {
           <span class="meta">reading…</span>
         </Show>
       </header>
-      <AutoRefresh busy={busy} read={readNow} rescanPorts={() => setReload((n) => n + 1)} />
+      <AutoRefresh
+        busy={busy}
+        read={readNow}
+        rescanPorts={() => {
+          setReload((n) => n + 1);
+          rescanTargets();
+        }}
+      />
 
       <WaitNotice active={!!busy()} cancel={!cancellable(busy())} />
 

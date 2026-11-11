@@ -33,6 +33,7 @@ import { windowShown } from './log-follow-core';
 import { followOn, logEvent, logInput, logOpen, logState, setLogOpen } from './log-state';
 import LogPanel from './LogPanel';
 import SidePanels from './SidePanels';
+import TitleBar from './TitleBar';
 import RemotePage from './RemotePage';
 import { emulatorSession, lastMidiPort, lastMidiSession, target } from '@web/transfer/target';
 import { transferEnv } from '@web/transfer/env';
@@ -529,6 +530,8 @@ export default function Console() {
   const badge = () => (logOpen() ? 0 : unseenErrors(logState().entries, seenId()));
   const mac = typeof navigator !== 'undefined' && /Mac/.test(navigator.platform);
   const logKey = mac ? '⌘J' : 'Ctrl+J';
+  const reloadKey = mac ? '⌘R' : 'Ctrl+R';
+  const modulesKey = mac ? '⇧⌘R' : 'Ctrl+Shift+R';
   // an open drawer has seen everything logged so far
   createEffect(() => {
     const entries = logState().entries;
@@ -576,154 +579,7 @@ export default function Console() {
         '--dock-h': logOpen() ? `${dockPx()}px` : '0px',
       }}
     >
-      <header class="topbar">
-        <span class="file" title={fileLabel()}>
-          <Icon d={FOLDER} />
-          <span class="path">{shortPath()}</span>
-        </span>
-        <Show when={status()}>
-          <span class="tag device">
-            {status()!.device} {status()!.version}
-          </span>
-        </Show>
-        <Show when={info()}>
-          {(i) => (
-            <span
-              class="tag runtime"
-              classList={{ on: !!i().runtime?.patched }}
-              title={
-                i().runtime?.patched
-                  ? `${i().runtime?.modules?.length ?? 0} modules of the "${i().runtime?.set}" set, ${i().runtime?.cache_hit ? 'from the image cache' : 'patched now'}`
-                  : i().runtime
-                    ? 'The image has a patch record: it is loaded as it is'
-                    : 'The image is loaded as it is'
-              }
-            >
-              {i().runtime?.patched
-                ? `runtime ${i().runtime?.set}${i().runtime?.cache_hit ? ' (cached)' : ''}`
-                : i().runtime
-                  ? 'patched image'
-                  : 'stock'}
-            </span>
-          )}
-        </Show>
-        <Show when={source() && !opened()}>
-          <button
-            type="button"
-            class="tag watch"
-            classList={{ off: !watching() }}
-            aria-pressed={watching()}
-            title="Reload when the file changes on disk"
-            onClick={() => setWatching(!watching())}
-          >
-            <i />
-            {watching() ? 'watching' : 'not watching'}
-          </button>
-        </Show>
-        <Show when={opened()}>
-          <span class="tag" title="Opened from the file picker; only the startup file is watched">
-            opened
-          </span>
-        </Show>
-        <span class="sp" />
-        <label
-          class="tag opt"
-          title="Patch the digikit runtime into a stock firmware when it is opened or reloaded (the next Open or Reload)"
-        >
-          <input
-            type="checkbox"
-            checked={bootRuntime()}
-            onChange={(e) => {
-              setBootRuntime(e.currentTarget.checked);
-              writeRuntimePref(e.currentTarget.checked);
-            }}
-          />
-          <span class="long">Boot with digikit runtime</span>
-          <span class="short">Runtime</span>
-        </label>
-        <input
-          ref={fileInput}
-          type="file"
-          accept=".syx,application/octet-stream"
-          hidden
-          onChange={async (e) => {
-            const f = e.currentTarget.files?.[0];
-            e.currentTarget.value = '';
-            if (!f) return;
-            setOpened(f.name);
-            await load(new Uint8Array(await f.arrayBuffer()), f.name);
-          }}
-        />
-        <button
-          type="button"
-          class="tb"
-          aria-label="Open firmware file"
-          title="Open a firmware file"
-          onClick={() => fileInput?.click()}
-        >
-          <Icon d={FOLDER} />
-          <span class="lbl">Open…</span>
-        </button>
-        <DefaultModules
-          device={device()}
-          off={bootRuntime() ? '' : 'Boot with digikit runtime is off: no module can be installed'}
-          note="Uploaded and enabled in the emulator after the firmware loads."
-        />
-        <button
-          type="button"
-          class="tb"
-          disabled={!source()}
-          aria-label="Reload"
-          title="Reload the startup file (⌘R)"
-          onClick={() => void reload('Reloaded at')}
-        >
-          <Icon d={RELOAD} />
-          <span class="lbl">Reload</span>
-        </button>
-        <button
-          type="button"
-          class="tb"
-          disabled={!status() || modulesBusy()}
-          aria-label="Reload modules"
-          title="Build the stale module objects, then apply the modules into the running session, without a boot when only UI modules changed (⇧⌘R). A changed SHARC+ source still needs mise run dk:dev."
-          onClick={() => void reloadModules()}
-        >
-          <Icon d={MODULES} />
-          <span class="lbl">Reload modules</span>
-        </button>
-        <button
-          type="button"
-          class="tb"
-          disabled={!status()}
-          aria-label={paused() ? 'Resume' : 'Pause'}
-          title={paused() ? 'Resume the emulator' : 'Pause the emulator'}
-          onClick={togglePause}
-        >
-          <Icon d={paused() ? PLAY : PAUSE} />
-          <span class="lbl">{paused() ? 'Resume' : 'Pause'}</span>
-        </button>
-        <button
-          type="button"
-          class="tb"
-          disabled={!status()}
-          aria-label="Reset (emulator)"
-          title="Reset the running firmware to its ready state (the emulator's reset; not the device's RESTART command)"
-          onClick={() => void restart()}
-        >
-          <Icon d={RESTART} />
-          <span class="lbl">Reset (emulator)</span>
-        </button>
-        <button
-          type="button"
-          class="tb icon"
-          disabled={!status()}
-          aria-label="Save diagnostics"
-          title="Save diagnostics"
-          onClick={() => void saveDiagnostics()}
-        >
-          <Icon d={CHART} />
-        </button>
-      </header>
+      <TitleBar onError={(m) => setError(m)} />
 
       <Show when={error() || outsideApp()}>
         <p class="alert" role="alert">
@@ -746,6 +602,7 @@ export default function Console() {
           >
             <Icon d={sidebarOpen() ? 'M10 3L5 8L10 13' : 'M6 3L11 8L6 13'} />
           </button>
+          <span class="side-group">Run</span>
           <button
             type="button"
             class="side"
@@ -757,6 +614,7 @@ export default function Console() {
             <Icon d={PLAY} />
             <span>Emulator</span>
           </button>
+          <span class="side-group">Device</span>
           <button
             type="button"
             class="side"
@@ -795,19 +653,181 @@ export default function Console() {
         </nav>
         <div class="content">
           {/* The faceplate stays mounted behind the Transfer and Remote pages: the emulator, its audio and the snapshot pump run on. */}
-          <div class="emu-row" hidden={page() !== 'emulator'}>
-            <main class="stage" aria-label={`${panel().name} front panel`}>
-              <div class="surface">
-                <LivePanel panel={panel()} runtime={runtime} onError={(e) => setError(e)} ref={(api) => (live = api)} />
-              </div>
-            </main>
-            <SidePanels
-              visible={sidePanelsShown()}
-              card
-              reload={restart}
-              session={emulatorSession}
-              where={() => 'the emulator'}
-            />
+          <div class="emu-page" hidden={page() !== 'emulator'}>
+            <header class="page-head emu-head">
+              <h2>Emulator</h2>
+              <span class="file-chip" title={fileLabel()}>
+                <Icon d={FOLDER} />
+                <span class="path">{shortPath()}</span>
+                <Show when={status()}>
+                  <span class="tag device">
+                    {status()!.device} {status()!.version}
+                  </span>
+                </Show>
+                <Show when={source() && !opened()}>
+                  <button
+                    type="button"
+                    class="tag watch"
+                    classList={{ off: !watching() }}
+                    aria-pressed={watching()}
+                    title="Reload when the file changes on disk"
+                    onClick={() => setWatching(!watching())}
+                  >
+                    <i />
+                    {watching() ? 'watching' : 'not watching'}
+                  </button>
+                </Show>
+                <Show when={opened()}>
+                  <span class="tag" title="Opened from the file picker; only the startup file is watched">
+                    opened
+                  </span>
+                </Show>
+              </span>
+              <span class="sp" />
+              <label
+                class="tag opt"
+                title="Patch the digikit runtime into a stock firmware when it is opened or reloaded (the next Open or Reload)"
+              >
+                <input
+                  type="checkbox"
+                  checked={bootRuntime()}
+                  onChange={(e) => {
+                    setBootRuntime(e.currentTarget.checked);
+                    writeRuntimePref(e.currentTarget.checked);
+                  }}
+                />
+                <span class="long">Boot with runtime</span>
+                <span class="short">Runtime</span>
+                <Show when={info()}>
+                  {(i) => (
+                    <span
+                      class="rt"
+                      classList={{ on: !!i().runtime?.patched }}
+                      title={
+                        i().runtime?.patched
+                          ? `${i().runtime?.modules?.length ?? 0} modules of the "${i().runtime?.set}" set, ${i().runtime?.cache_hit ? 'from the image cache' : 'patched now'}`
+                          : i().runtime
+                            ? 'The image has a patch record: it is loaded as it is'
+                            : 'The image is loaded as it is'
+                      }
+                    >
+                      {i().runtime?.patched
+                        ? `${i().runtime?.set}${i().runtime?.cache_hit ? ' (cached)' : ''}`
+                        : i().runtime
+                          ? 'patched image'
+                          : 'stock'}
+                    </span>
+                  )}
+                </Show>
+              </label>
+              <input
+                ref={fileInput}
+                type="file"
+                accept=".syx,application/octet-stream"
+                hidden
+                onChange={async (e) => {
+                  const f = e.currentTarget.files?.[0];
+                  e.currentTarget.value = '';
+                  if (!f) return;
+                  setOpened(f.name);
+                  await load(new Uint8Array(await f.arrayBuffer()), f.name);
+                }}
+              />
+              <span class="tb-group">
+                <button
+                  type="button"
+                  class="tb"
+                  aria-label="Open firmware file"
+                  title="Open a firmware file"
+                  onClick={() => fileInput?.click()}
+                >
+                  <Icon d={FOLDER} />
+                  <span class="lbl">Open…</span>
+                </button>
+                <DefaultModules
+                  device={device()}
+                  off={bootRuntime() ? '' : 'Boot with digikit runtime is off: no module can be installed'}
+                  note="Uploaded and enabled in the emulator after the firmware loads."
+                />
+              </span>
+              <span class="tb-group">
+                <button
+                  type="button"
+                  class="tb"
+                  disabled={!source()}
+                  aria-label="Reload"
+                  title={`Reload the startup file (${reloadKey})`}
+                  onClick={() => void reload('Reloaded at')}
+                >
+                  <Icon d={RELOAD} />
+                  <span class="lbl">Reload</span>
+                  <kbd class="lbl">{reloadKey}</kbd>
+                </button>
+                <button
+                  type="button"
+                  class="tb"
+                  disabled={!status() || modulesBusy()}
+                  aria-label="Reload modules"
+                  title={`Build the stale module objects, then apply the modules into the running session, without a boot when only UI modules changed (${modulesKey}). A changed SHARC+ source still needs mise run dk:dev.`}
+                  onClick={() => void reloadModules()}
+                >
+                  <Icon d={MODULES} />
+                  <span class="lbl">Modules</span>
+                  <kbd class="lbl">{modulesKey}</kbd>
+                </button>
+              </span>
+              <span class="tb-group">
+                <button
+                  type="button"
+                  class="tb icon"
+                  disabled={!status()}
+                  aria-label={paused() ? 'Resume' : 'Pause'}
+                  title={paused() ? 'Resume the emulator' : 'Pause the emulator'}
+                  onClick={togglePause}
+                >
+                  <Icon d={paused() ? PLAY : PAUSE} />
+                </button>
+                <button
+                  type="button"
+                  class="tb icon"
+                  disabled={!status()}
+                  aria-label="Reset (emulator)"
+                  title="Reset the running firmware to its ready state (the emulator's reset; not the device's RESTART command)"
+                  onClick={() => void restart()}
+                >
+                  <Icon d={RESTART} />
+                </button>
+                <button
+                  type="button"
+                  class="tb icon"
+                  disabled={!status()}
+                  aria-label="Save diagnostics"
+                  title="Save diagnostics"
+                  onClick={() => void saveDiagnostics()}
+                >
+                  <Icon d={CHART} />
+                </button>
+              </span>
+            </header>
+            <div class="emu-row">
+              <main class="stage" aria-label={`${panel().name} front panel`}>
+                <div class="surface">
+                  <LivePanel
+                    panel={panel()}
+                    runtime={runtime}
+                    onError={(e) => setError(e)}
+                    ref={(api) => (live = api)}
+                  />
+                </div>
+              </main>
+              <SidePanels
+                visible={sidePanelsShown()}
+                card
+                reload={restart}
+                session={emulatorSession}
+                where={() => 'the emulator'}
+              />
+            </div>
           </div>
           <Show when={page() === 'transfer'}>
             <TransferPage />

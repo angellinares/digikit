@@ -18,7 +18,6 @@ import {
 } from './remote-core';
 import { windowShown } from './log-follow-core';
 import SidePanels from './SidePanels';
-import TargetSelect from '@web/transfer/TargetSelect';
 import { cancelPending, resetSession, session, target, targetLabel } from '@web/transfer/target';
 import { busy } from '@web/transfer/transfer-state';
 import { failureLine } from '@web/transfer/wait-core';
@@ -125,11 +124,17 @@ export default function RemotePage(props: { fallbackDevice: 'dt2' | 'dn2' }): JS
         <span class="meta">
           {targetLabel(target())} · {device()}
         </span>
-        <span class="hint" title={HINT}>
-          {HINT}
+        <span class="hints" title={HINT}>
+          <span>
+            <kbd>Click</kbd> keys
+          </span>
+          <span>
+            <kbd>Drag</kbd> or <kbd>Scroll</kbd> knobs
+          </span>
+          <span>
+            <kbd>⇧</kbd> ×10
+          </span>
         </span>
-        <span class="sp" />
-        <TargetSelect onError={setScreenError} />
       </header>
       <Show when={remotePaused(busy())}>
         <p class="note" role="status">

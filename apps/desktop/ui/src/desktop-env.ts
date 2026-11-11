@@ -83,6 +83,7 @@ export const desktopEnv: TransferEnv = {
   },
   targets: {
     emulator: true,
+    inHeader: true,
     ports: listMidiPorts,
     async open(t: Target) {
       if (t.kind === 'emulator') return new EmuUsbTransport();

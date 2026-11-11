@@ -5,7 +5,8 @@
 import { For, Match, Show, Switch, createSignal, onCleanup, onMount, type JSX } from 'solid-js';
 import AutoRefresh from '../transfer/AutoRefresh';
 import ConnectionBadge from '../transfer/ConnectionBadge';
-import TargetSelect from '../transfer/TargetSelect';
+import TargetSelect, { rescanTargets } from '../transfer/TargetSelect';
+import { transferEnv } from '../transfer/env';
 import { target } from '../transfer/target';
 import DefaultModules from './DefaultModules';
 import { CUSTOM_BOOT_SCREEN_HELP } from './default-modules-core';
@@ -171,7 +172,10 @@ export default function FirmwarePage(): JSX.Element {
       <AutoRefresh
         busy={() => (running(run()) ? 'Flashing' : '')}
         read={() => void read()}
-        rescanPorts={() => setReload((n) => n + 1)}
+        rescanPorts={() => {
+          setReload((n) => n + 1);
+          rescanTargets();
+        }}
       />
 
       <div class="steps">
@@ -340,7 +344,12 @@ export default function FirmwarePage(): JSX.Element {
         </Step>
 
         {/* 3 */}
-        <Step n={3} title="Device" mark={marks()[2]!} aside={<TargetSelect reload={reload} />}>
+        <Step
+          n={3}
+          title="Device"
+          mark={marks()[2]!}
+          aside={transferEnv().targets.inHeader ? undefined : <TargetSelect reload={reload} />}
+        >
           <div class="devrow">
             <ConnectionBadge />
             <Show when={match().state === 'match'}>

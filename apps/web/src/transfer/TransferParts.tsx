@@ -2,6 +2,7 @@
 // progress bar or verified/failed chip, the breadcrumb, and the two-click Delete button.
 import { For, Show, createEffect, createSignal, type JSX } from 'solid-js';
 import TargetSelect from './TargetSelect';
+import { transferEnv } from './env';
 import { fmtRate } from './rate-core';
 import type { PaneSelect } from './pane-select';
 import { dragKind, selectState, toggleAll } from './select-core';
@@ -439,7 +440,9 @@ export function DevicePane(props: {
       </div>
       <Show when={!props.hideTarget}>
         <div class="devhead">
-          <TargetSelect disabled={writing(props.ctx.busy())} onError={props.ctx.setError} reload={props.ctx.reload} />
+          <Show when={!transferEnv().targets.inHeader}>
+            <TargetSelect disabled={writing(props.ctx.busy())} onError={props.ctx.setError} reload={props.ctx.reload} />
+          </Show>
           <Show when={deviceInfo()}>
             {(d) => (
               <>

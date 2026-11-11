@@ -51,6 +51,8 @@ export interface ModuleFilesSpec {
 export interface TransferTargets {
   /** The app has an emulator target (the site has not: its first target is a MIDI port, or none until one is there). */
   emulator: boolean;
+  /** The app shows the one target selector in its own title bar (the desktop workbench): the pages leave theirs out. */
+  inHeader?: boolean;
   /** The names of the MIDI ports that a device can be on. */
   ports(): Promise<string[]>;
   /** Open the target (a MIDI port is opened here) and give its transport. Called once per use of the target. */
