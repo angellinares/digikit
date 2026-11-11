@@ -39,7 +39,6 @@ typedef uint8_t u8;
 #define DEST_MAX 256u
 #define NAMES 24u
 #define ZERO_TAIL 16u
-#define CHUNK 0x8000u
 /* a staged name: 's' and 8 hex digits, optionally followed by ".dest" (the journal) */
 #define STAGE_LEN 9u
 #define JOUR_LEN 14u
@@ -86,6 +85,72 @@ static char stage[40], jour[48];
 static char dest[DEST_MAX] __attribute__((aligned(16)));
 static char lp[DEST_MAX];
 static const u8 zeros[ZERO_TAIL] __attribute__((aligned(16)));
+
+#define PDW_TRACE 0 /* 1 for hardware measurement builds: per-step times in the log at close */
+#if PDW_TRACE
+/* the runtime (dkrt.h) */
+extern u32 dkrt_blocks(void); /* the 1500 Hz block counter: 1 unit = 0.667 ms */
+extern void dkrt_log_ev(u32 kind, u32 flags, const u32 *a);
+/* sdk.toml [[log.kind]] 14 MOD_LOG: args msg0..msg3 (16 ASCII chars, big-endian words) and value; flags: not an error, level 2 (info) */
+#define PW_KIND_MOD_LOG 14u
+#define PW_FLAGS (2u << 1)
+/* Times in blocks, summed over the calls of one file; a short call often reads 0, so only the sums mean something. */
+static u32 pw_b_parent, pw_b_lookup, pw_b_mkdir, pw_b_open, pw_b_reserve;
+static u32 pw_e_tail, pw_e_hash, pw_e_close, pw_e_info, pw_e_place, pw_e_rename, pw_e_journal;
+static u32 pw_w_blk, pw_w_n;
+static u32 pw_t;
+#define PW_START() (pw_t = dkrt_blocks())
+#define PW_STOP(c) ((c) += dkrt_blocks() - pw_t)
+
+/* `tag`: a string of at most 16 chars, padded with NULs */
+static void pw_log(const char *tag, u32 value)
+{
+    u32 a[5];
+    u32 i;
+    u32 live = 1;
+    for (i = 0; i < 16u; i++) {
+        u32 c = 0;
+        if (live && tag[i] != 0)
+            c = (u8)tag[i];
+        else
+            live = 0;
+        if ((i & 3u) == 0u)
+            a[i >> 2] = 0;
+        a[i >> 2] |= c << (24u - 8u * (i & 3u));
+    }
+    a[4] = value;
+    dkrt_log_ev(PW_KIND_MOD_LOG, PW_FLAGS, a);
+}
+
+static void pw_emit(void)
+{
+    pw_log("pw.b.parent", pw_b_parent);
+    pw_log("pw.b.lookup", pw_b_lookup);
+    pw_log("pw.b.mkdir", pw_b_mkdir);
+    pw_log("pw.b.open", pw_b_open);
+    pw_log("pw.b.reserve", pw_b_reserve);
+    pw_log("pw.e.tail", pw_e_tail);
+    pw_log("pw.e.hash", pw_e_hash);
+    pw_log("pw.e.close", pw_e_close);
+    pw_log("pw.e.info", pw_e_info);
+    pw_log("pw.e.place", pw_e_place);
+    pw_log("pw.e.rename", pw_e_rename);
+    pw_log("pw.e.journal", pw_e_journal);
+    pw_log("pw.w.blk", pw_w_blk);
+    pw_log("pw.w.n", pw_w_n);
+}
+static u32 pw_t2; /* the clock of the steps inside `place` (pw_t times place as a whole) */
+#define PW_T0() PW_START()
+#define PW_T1(c) PW_STOP(c)
+#define PW_I0() (pw_t2 = dkrt_blocks())
+#define PW_I1(c) ((c) += dkrt_blocks() - pw_t2)
+#else
+#define PW_T0() ((void)0)
+#define PW_T1(c) ((void)0)
+#define PW_I0() ((void)0)
+#define PW_I1(c) ((void)0)
+#define pw_emit() ((void)0)
+#endif
 
 static int cut_at(u8 step)
 {
@@ -244,7 +309,8 @@ static int staging_empty(void)
     return !dir_next();
 }
 
-/* The folder exists only while something is staged. */
+/* Remove the folder when it is empty. Only the boot recovery and the runtime's idle call (`dkpw_recover`) do it: the folder lives for a whole
+ * upload session, because its creation (about 420 ms) and removal (about 150 ms) cost more than a small file. */
 static void tidy(void)
 {
     if (!dead && staging_empty()) dk_fw_storage_file_rmdir((const u8 *)STAGE_DIR);
@@ -274,15 +340,16 @@ void dkpw_abort(void)
         f_delete(stage);
         st_live = 0;
     }
-    tidy();
 }
 
-/* A number above every one of our names in the folder: a leftover (which only the recovery removes) is never reused. */
-static u32 next_number(void)
+/* A number above every one of our names in the folder: a leftover (which only the recovery removes) is never reused. `there` gets 1 when the
+ * folder exists. */
+static u32 next_number(int *there)
 {
     u32 top = 0;
     int any = 0, j;
-    if (dir_open(STAGE_DIR)) {
+    *there = dir_open(STAGE_DIR);
+    if (*there) {
         while (dir_next()) {
             if (ours(ENT_NAME, &j)) {
                 u32 v = hexval(ENT_NAME);
@@ -297,7 +364,8 @@ static u32 next_number(void)
 int32_t dkpw_begin(const u8 *path, u32 size, const u8 *hash4, u32 flags)
 {
     u32 n = slen((const char *)path), i, id;
-    int at;
+    int at, there;
+    u32 num;
     if (n == 0 || n + 1 >= DEST_MAX || in_factory((const char *)path)) return E_PATH;
     if (st_live || st_open) dkpw_abort();
     dest[0] = '/';
@@ -306,17 +374,32 @@ int32_t dkpw_begin(const u8 *path, u32 size, const u8 *hash4, u32 flags)
     cut = (u8)(flags >> 8);
     dead = 0;
     broken = 0;
-    if (parent_is_file(dest)) return E_PATH;
+#if PDW_TRACE
+    pw_b_parent = pw_b_lookup = pw_b_mkdir = pw_b_open = pw_b_reserve = 0;
+    pw_e_tail = pw_e_hash = pw_e_close = pw_e_info = pw_e_place = pw_e_rename = pw_e_journal = 0;
+    pw_w_blk = pw_w_n = 0;
+#endif
+    PW_T0();
+    at = parent_is_file(dest);
+    PW_T1(pw_b_parent);
+    if (at) return E_PATH;
+    PW_T0();
     at = lookup(dest, &id);
+    PW_T1(pw_b_lookup);
     if (at == 2) return E_PATH;
     if (at == 1) {
         if (!replace) return E_EXISTS;
         if (dk_fw_storage_file_id_open(id)) return E_FILE_IN_USE;
     }
-    f_mkdir(STAGE_DIR);
-    names_for(next_number());
-    if (dk_fw_storage_path_open((const u8 *)stage, (const u8 *)"w", hnd) != 0) {
-        tidy();
+    PW_T0();
+    num = next_number(&there);   /* the folder of an earlier file of the session is reused */
+    if (!there) f_mkdir(STAGE_DIR);
+    PW_T1(pw_b_mkdir);
+    names_for(num);
+    PW_T0();
+    i = (u32)dk_fw_storage_path_open((const u8 *)stage, (const u8 *)"w", hnd);
+    PW_T1(pw_b_open);
+    if (i != 0) {
         return E_WRITE;
     }
     st_open = 1;
@@ -325,7 +408,10 @@ int32_t dkpw_begin(const u8 *path, u32 size, const u8 *hash4, u32 flags)
     written = 0;
     have_want = hash4 != 0;
     if (hash4) for (i = 0; i < 4; i++) want[i] = hash4[i];
-    if (dk_fw_storage_file_reserve(hnd, 0, total) != 0) {
+    PW_T0();
+    i = (u32)dk_fw_storage_file_reserve(hnd, 0, total);
+    PW_T1(pw_b_reserve);
+    if (i != 0) {
         dkpw_abort();
         return E_FULL;
     }
@@ -335,15 +421,21 @@ int32_t dkpw_begin(const u8 *path, u32 size, const u8 *hash4, u32 flags)
 int32_t dkpw_write(const u8 *buf, u32 len)
 {
     if (!st_open || dead || broken) return E_WRITE;
-    while (len) {
-        u32 n = len > CHUNK ? CHUNK : len;
-        if (dk_fw_storage_file_write(buf, n, hnd) != (i32)n) {
-            broken = 1; /* a retry would write the piece again after a partial one */
+    if (len) {
+        /* One firmware call per SDK write: the call has no size limit and ends with one inode write-back, and whole aligned 32 KiB pages go
+         * straight to the card. A buffer that is not 16-byte aligned is bounced by the firmware (correct, only slower). */
+        i32 wr;
+        PW_T0();
+        wr = dk_fw_storage_file_write(buf, len, hnd);
+        PW_T1(pw_w_blk);
+#if PDW_TRACE
+        pw_w_n++;
+#endif
+        if (wr != (i32)len) {
+            broken = 1; /* a retry would write the data again after a partial write */
             return E_WRITE;
         }
-        buf += n;
-        len -= n;
-        written += n;
+        written += len;
         if (cut_at(1)) return E_WRITE;
     }
     return 0;
@@ -354,10 +446,15 @@ static int journal_write(void)
 {
     int ok;
     u32 n = slen(dest) + 1;
-    if (dk_fw_storage_path_open((const u8 *)jour, (const u8 *)"w", jh) != 0) return 0;
+    PW_I0();
+    if (dk_fw_storage_path_open((const u8 *)jour, (const u8 *)"w", jh) != 0) {
+        PW_I1(pw_e_journal);
+        return 0;
+    }
     ok = dk_fw_storage_file_write((const u8 *)dest, n, jh) == (i32)n && dk_fw_storage_file_hash(jh) == 0;
     dk_fw_storage_path_close(jh);
     if (!ok) f_delete(jour);
+    PW_I1(pw_e_journal);
     return ok;
 }
 
@@ -399,7 +496,11 @@ static i32 place(void)
         return E_WRITE;
     }
     for (tries = 0; tries < 3; tries++) {
-        if (cut != 7 && dk_fw_storage_file_rename((const u8 *)stage, (const u8 *)dest) == 0) {
+        int renamed;
+        PW_I0();
+        renamed = cut != 7 && dk_fw_storage_file_rename((const u8 *)stage, (const u8 *)dest) == 0;
+        PW_I1(pw_e_rename);
+        if (renamed) {
             if (cut_at(5)) return E_WRITE;
             if (journaled) f_delete(jour);
             return 0;
@@ -410,7 +511,7 @@ static i32 place(void)
     return E_WRITE;
 }
 
-int32_t dkpw_close(u8 *hash_out)
+static int32_t close_file(u8 *hash_out)
 {
     i32 r;
     u32 i;
@@ -420,7 +521,10 @@ int32_t dkpw_close(u8 *hash_out)
         dkpw_abort();
         return bad ? E_WRITE : E_LENGTH;
     }
-    if (dk_fw_storage_file_write(zeros, ZERO_TAIL, hnd) != (i32)ZERO_TAIL) {
+    PW_T0();
+    r = dk_fw_storage_file_write(zeros, ZERO_TAIL, hnd);
+    PW_T1(pw_e_tail);
+    if (r != (i32)ZERO_TAIL) {
         dkpw_abort();
         return E_WRITE;
     }
@@ -433,13 +537,21 @@ int32_t dkpw_close(u8 *hash_out)
         dead = 1;
         return E_WRITE;
     }
-    if (dk_fw_storage_file_hash(hnd) != 0) {
+    PW_T0();
+    r = dk_fw_storage_file_hash(hnd);
+    PW_T1(pw_e_hash);
+    if (r != 0) {
         dkpw_abort();
         return E_WRITE;
     }
+    PW_T0();
     dk_fw_storage_path_close(hnd);
+    PW_T1(pw_e_close);
     st_open = 0;
-    if (f_info(stage, inf) != 0 || inf[2] != total) {
+    PW_T0();
+    r = f_info(stage, inf);
+    PW_T1(pw_e_info);
+    if (r != 0 || inf[2] != total) {
         dkpw_abort();
         return E_WRITE;
     }
@@ -453,9 +565,17 @@ int32_t dkpw_close(u8 *hash_out)
         }
     }
     if (cut_at(2)) return E_WRITE;
+    PW_T0();
     r = place();
+    PW_T1(pw_e_place);
     st_live = 0;   /* moved into place, or removed by `place`, or left for the recovery */
-    tidy();
+    return r;
+}
+
+int32_t dkpw_close(u8 *hash_out)
+{
+    int32_t r = close_file(hash_out);
+    pw_emit();
     return r;
 }
 

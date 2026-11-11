@@ -120,7 +120,11 @@ cardRigs('+Drive writes through core/plusdrive-write', { devices: ['dt2'] , dsp:
     expect(s.files.get('Samples/Kits/new.bin'), 'size N+16, the hash of data + 16 zeros').toEqual({ size: big.length + 16, hash: slot4(big) });
     expect((await cat(s.card, 'Samples/Kits/new.bin')).subarray(0, big.length), 'the bytes').toEqual(big);
     expect(staged(s.files), 'the staging folder is empty').toEqual([]);
-    expect(noStagingFolder(s.files), 'and gone: it exists only during a transfer').toBe(true);
+    // the folder stays for the upload session (a second file reuses it); the runtime removes the empty folder 2 s after the last session
+    expect(noStagingFolder(s.files), 'the staging folder is still there right after the session').toBe(false);
+    await advance(rig.session, 3000);
+    s = await snapshot('pd1b');
+    expect(noStagingFolder(s.files), 'and gone after the idle time: it exists only during an upload session').toBe(true);
     same(before, s.files, ['Samples/Kits/new.bin', 'Samples/Kits/']);
 
     // no REPLACE: the existing file is E_EXISTS before any data is written
@@ -138,7 +142,6 @@ cardRigs('+Drive writes through core/plusdrive-write', { devices: ['dt2'] , dsp:
     expect(s.files.get('Samples/old.bin')).toEqual({ size: fresh.length + 16, hash: slot4(fresh) });
     expect((await cat(s.card, 'Samples/old.bin')).subarray(0, fresh.length)).toEqual(fresh);
     expect(staged(s.files)).toEqual([]);
-    expect(noStagingFolder(s.files)).toBe(true);
     same(before, s.files, ['Samples/old.bin', 'Samples/Kits/new.bin', 'Samples/Kits/']);
 
     // an abort (one chunk written, then file_abort) leaves nothing, for a new path and for a replace

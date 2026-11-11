@@ -1061,6 +1061,13 @@ static mut PD_ACTIVE: bool = false;
 pub static mut DKRT_PD_CUT: u32 = 0;
 /// The boot recovery of the staging folder ran.
 static mut PD_RECOVERED: bool = false;
+/// The staging folder may exist: the adapter keeps it for a whole upload session. `pd_tick` removes it (the adapter's recovery call removes an
+/// empty folder) once no write session has run for `PD_STAGE_IDLE` blocks.
+static mut PD_STAGE: bool = false;
+/// Block clock at the last start or end of a +Drive write session.
+static mut PD_STAGE_AT: u32 = 0;
+/// 2 s (1500 blocks a second): longer than the gap between the files of one upload, short enough that the folder is gone soon after it.
+const PD_STAGE_IDLE: u32 = 2 * 1500;
 
 unsafe fn pd_present() -> bool {
     if read_volatile(addr_of!(PD_STATE)) == 0 {
@@ -1148,13 +1155,17 @@ unsafe fn pd_tick() {
         dkpw_abort();
         write_volatile(addr_of_mut!(PD_DIRTY), false);
         write_volatile(addr_of_mut!(PD_ACTIVE), false);
+        write_volatile(addr_of_mut!(PD_STAGE_AT), now());
         pd_leave();
     }
-    if !read_volatile(addr_of!(PD_RECOVERED)) && pd_enter_idle() {
+    // The upload session is over: remove the empty staging folder. `pd_enter_idle` holds the adapter and checks that no write session is open.
+    let idle = read_volatile(addr_of!(PD_STAGE)) && now().wrapping_sub(read_volatile(addr_of!(PD_STAGE_AT))) >= PD_STAGE_IDLE;
+    if (!read_volatile(addr_of!(PD_RECOVERED)) || idle) && pd_enter_idle() {
         let mut out = [0u32; 4];
         let r = dkpw_recover(out.as_mut_ptr());
         pd_leave();
         if r >= 0 {
+            write_volatile(addr_of_mut!(PD_STAGE), false);
             write_volatile(addr_of_mut!(PD_RECOVERED), true);
             if out[0] != 0 || out[1] != 0 || out[2] != 0 || out[3] != 0 {
                 // renamed into place, deleted, our leftovers that stayed, entries that are not ours (left alone)
@@ -1193,6 +1204,7 @@ unsafe fn pd_create(owner: u8, path: *const u8, size: u32, hash4: *const u8, fla
     unlock();
     if !pd_enter() {
         u.kind = NONE;
+        u.pd = false;
         return busy(E_BUSY);
     }
     if read_volatile(addr_of!(PD_ACTIVE)) {
@@ -1203,6 +1215,9 @@ unsafe fn pd_create(owner: u8, path: *const u8, size: u32, hash4: *const u8, fla
     if r == OK {
         write_volatile(addr_of_mut!(PD_ACTIVE), true);
     }
+    // the adapter may have created the folder, also when the BEGIN failed
+    write_volatile(addr_of_mut!(PD_STAGE), true);
+    write_volatile(addr_of_mut!(PD_STAGE_AT), now());
     pd_leave();
     if r != OK {
         u.kind = NONE;
@@ -1255,6 +1270,7 @@ unsafe fn pd_close(owner: u8, h: i32, out: *mut u8) -> i32 {
         dkpw_close(out)
     };
     write_volatile(addr_of_mut!(PD_ACTIVE), false);
+    write_volatile(addr_of_mut!(PD_STAGE_AT), now());
     pd_leave();
     u.kind = NONE;
     u.pd = false;
@@ -1275,6 +1291,7 @@ unsafe fn pd_abort(owner: u8, h: i32) -> i32 {
     }
     dkpw_abort();
     write_volatile(addr_of_mut!(PD_ACTIVE), false);
+    write_volatile(addr_of_mut!(PD_STAGE_AT), now());
     pd_leave();
     let u = up();
     u.kind = NONE;
