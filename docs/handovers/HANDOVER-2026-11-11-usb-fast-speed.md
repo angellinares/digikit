@@ -23,7 +23,7 @@ usb-fast baseline) is already merged into main.
 
 1. Integration test run of `d735ed02` (combined targeted list incl. `DIGIKIT_TIER=full` upload-faults on DN2 and DT2, smoke, conformance).
    Logs: `/private/tmp/claude-501/-Users-em-src-digi-digitakt2/66b53e39-72d5-45e2-acc7-fdcdc5231b84/scratchpad/` (merge2-ready.txt says
-   MERGED d735ed02; device results in dev-summary.log). If anything is red, fix before the PR. NOTE: `digikit/usb-fast:test-conformance` failed (rc=1, 620 s) in that run, under very high machine load (usb-bulk DN2 took 1634 s): rerun it on a quiet machine and investigate before the PR.
+   MERGED d735ed02; device results in dev-summary.log). If anything is red, fix before the PR. RESULT: all green; the first conformance run timed out under load (no new boot within 90 s at load 40-80) and its rerun passed in 38 s.
 2. Lane `../lanes/usb-host`, branch `speed/fast-hash` (from d735ed02, uncommitted): word-at-a-time hash32 (+ pdw_hash) proven identical,
    instruction counts, 64 KiB readback reads.
    DONE, all tests green (incl. full upload-faults DN2, plusdrive-write DT2): hash32 was already word-wise; the loop is now 20% cheaper
