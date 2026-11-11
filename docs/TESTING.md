@@ -437,7 +437,7 @@ and a table named like the kind. Kinds:
 | `pages` | Parameter pages of a machine on track 1: the run-time module's frames equal the patched-in twin's. |
 
 Every scenario ends with the write-watch over `cf.expansion` (0 stray writes), the flush check (0 hits)
-and the card-sector check. Tiers: `DIGIKIT_TIER=quick` is the default. The default `mise run test` gate does not select full-tier tests. `mise run test:full` selects the separate `core/runtime-inferred-needs-tests:test-device-full` target and sets `DIGIKIT_TIER=full`; `mise run module:check` sets it for a module's own scenarios.
+and the card-sector check. Tiers: `DIGIKIT_TIER=quick` is the default. The store's cut and tear tests (`modules/core/runtime/tests/upload-faults.device.test.ts`: upload cuts, torn headers, the CLEAR double fault) are full tier: the default gate skips them. Run them with `DIGIKIT_TIER=full pnpm nx:pilot run core/runtime-tests:test-device--upload-faults` (add `--dt2` or `--dn2` for one device). The default `mise run test` gate does not select full-tier tests. `mise run test:full` selects the separate `core/runtime-inferred-needs-tests:test-device-full` target and sets `DIGIKIT_TIER=full`; `mise run module:check` sets it for a module's own scenarios.
 Both use the newest image of each device. Cards are cached by content in `out/cache/digikit/cards/`.
 Jobs: `DIGI_JOBS`. `DIGIKIT_PROFILE=1` prints the phase table,
 `DIGIKIT_RUN_SALT=x` forces cold boots.

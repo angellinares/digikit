@@ -31,6 +31,10 @@ pub const SCRATCH_AT: usize = 16 + MAX_CHUNK + 16;
 /// Largest chunk of one write (the protocol's DATA chunk).
 const MAX_CHUNK: usize = dkrt_sdk::proto::MAX_CHUNK as usize;
 
+/// Largest piece of one SDK write: `store::MAX_IO_SECTORS` sectors, the most that one firmware block write takes without splitting. The SDK
+/// path writes from the caller's buffer, so this needs no scratch (the SysEx path stays at `MAX_CHUNK`, the size of its body region).
+const WRITE_PIECE: usize = store::MAX_IO_SECTORS as usize * 512;
+
 /// The three buffers of a store operation: the table's input and output streams (`TBL_CAP` bytes each) and a scratch (at least 512 bytes);
 /// all 16-byte aligned and apart.
 #[derive(Clone, Copy)]
@@ -38,12 +42,15 @@ pub struct Bufs {
     pub tin: *mut u8,
     pub tout: *mut u8,
     pub scr: *mut u8,
+    /// The close's card read-back buffer (16-byte aligned, a multiple of 512 bytes): it overlaps the table buffers, which are free until the commit.
+    pub rb: *mut u8,
+    pub rb_cap: usize,
 }
 
 impl Bufs {
     /// The regions of the SysEx upload buffer `buf`.
     pub unsafe fn sysex(buf: *mut u8) -> Bufs {
-        Bufs { tin: buf.add(IN_AT), tout: buf.add(OUT_AT), scr: buf.add(SCRATCH_AT) }
+        Bufs { tin: buf.add(IN_AT), tout: buf.add(OUT_AT), scr: buf.add(SCRATCH_AT), rb: buf.add(16), rb_cap: MAX_CHUNK }
     }
 }
 
@@ -61,7 +68,9 @@ pub static mut DKRT_SDK_BUF: SdkBuf = SdkBuf { tin: [0; TBL_CAP], tout: [0; TBL_
 
 pub(crate) unsafe fn sdk_bufs() -> Bufs {
     let b = addr_of_mut!(DKRT_SDK_BUF);
-    Bufs { tin: addr_of_mut!((*b).tin) as *mut u8, tout: addr_of_mut!((*b).tout) as *mut u8, scr: addr_of_mut!((*b).scr) as *mut u8 }
+    let tin = addr_of_mut!((*b).tin) as *mut u8;
+    // `tin` and `tout` are adjacent (repr(C), 16-byte aligned): one 16 KiB read-back buffer
+    Bufs { tin, tout: addr_of_mut!((*b).tout) as *mut u8, scr: addr_of_mut!((*b).scr) as *mut u8, rb: tin, rb_cap: 2 * TBL_CAP }
 }
 
 // ---- the lock -----------------------------------------------------------------------------------------------------------------
@@ -170,7 +179,29 @@ struct Up {
     last_len: u32,
     /// First sector of the file's extent, relative to the store (a gap of the store at BEGIN; 0 for a file with no data).
     start: u32,
+    /// What BEGIN found for the commit (`Hint`).
+    hint: Hint,
 }
+
+/// The table's place that BEGIN found for the commit of the session. It is used only when the commit sees the same header (every commit changes
+/// `seq`, so any other writer in between makes it differ) and the same kept-out extents (a lease, the capacity knob or the file's extent that
+/// changed): then the table, the extents and the size of the table are those BEGIN looked at, so the gap BEGIN found is what a new search gives.
+#[derive(Clone, Copy)]
+struct Hint {
+    valid: bool,
+    h: Hdr,
+    extra: [(u32, u32); EXTRA_MAX],
+    n: usize,
+    at: u32,
+}
+
+const NO_HINT: Hint = Hint {
+    valid: false,
+    h: Hdr { count: 0, table_sectors: 0, table_first: 0, table_crc: 0, seq: 0, used: 0, area: 0 },
+    extra: [(0, 0); EXTRA_MAX],
+    n: 0,
+    at: 0,
+};
 
 static mut UP: Up = Up {
     kind: NONE,
@@ -189,6 +220,7 @@ static mut UP: Up = Up {
     last_off: 0,
     last_len: 0,
     start: 0,
+    hint: NO_HINT,
 };
 static mut NEXT_HANDLE: i32 = 0;
 
@@ -341,6 +373,10 @@ pub static mut DKRT_UPLOAD_WRITES: u32 = 0;
 /// 256 bytes reach the card (a header then fails its CRC), and every later write is refused as with `DKRT_UPLOAD_CUT`.
 #[no_mangle]
 pub static mut DKRT_UPLOAD_TEAR: crate::boot::Knob = crate::boot::Knob(0);
+/// Test knob: when not 0, the Nth card write since boot (counted in `DKRT_UPLOAD_WRITES`) succeeds, then the first byte of its first sector on the card is
+/// flipped: a card that holds other bytes than the host sent (the close's read-back must refuse it).
+#[no_mangle]
+pub static mut DKRT_UPLOAD_FLIP: crate::boot::Knob = crate::boot::Knob(0);
 #[repr(C, align(16))]
 struct Sec([u8; 512]);
 static mut TEAR_BUF: Sec = Sec([0; 512]);
@@ -442,7 +478,15 @@ unsafe fn card_write(sector: u32, bytes: u32, buf: *const u8) -> bool {
         write_volatile(addr_of_mut!(DKRT_UPLOAD_CUT), DKRT_UPLOAD_WRITES);
         return false;
     }
-    block_write(sector, bytes, buf) == 0
+    let ok = block_write(sector, bytes, buf) == 0;
+    let flip = read_volatile(addr_of!(DKRT_UPLOAD_FLIP.0));
+    if ok && flip != 0 && DKRT_UPLOAD_WRITES == flip {
+        let t = addr_of_mut!(TEAR_BUF) as *mut u8;
+        copy(t, buf, 512);
+        *t ^= 0xff;
+        block_write(sector, 512, t);
+    }
+    ok
 }
 
 pub fn sectors_of(bytes: u32) -> u32 {
@@ -517,15 +561,35 @@ pub unsafe fn sync_headers(b: &Bufs, t: &Table) -> bool {
 
 /// Commit an edit of the table `cur`; the runtime's store cache learns the new table. A status.
 pub unsafe fn do_commit(b: &Bufs, cur: &Hdr, edit: Edit, pend: Option<(u32, u32)>) -> i32 {
+    do_commit_hinted(b, cur, edit, pend, None)
+}
+
+/// `do_commit`; `hint`: what the session's BEGIN found, used when it still holds (`Hint`).
+unsafe fn do_commit_hinted(b: &Bufs, cur: &Hdr, edit: Edit, pend: Option<(u32, u32)>, hint: Option<&Hint>) -> i32 {
     let mut ex = [(0, 0); EXTRA_MAX];
     let extra = extras(&mut ex, pend);
-    match store::commit(&io(), &lay(), cur, b.tin, b.tout, TBL_CAP, b.scr, edit, extra) {
+    let at = match hint {
+        Some(k) if k.valid && k.h == *cur && k.n == extra.len() && same_extents(&k.extra[..k.n], extra) => Some(k.at),
+        _ => None,
+    };
+    match store::commit_at(&io(), &lay(), cur, b.tin, b.tout, TBL_CAP, b.scr, edit, extra, at) {
         Ok(c) => {
             crate::store::note_commit(&c.h);
             OK
         }
         Err(e) => pe(e),
     }
+}
+
+fn same_extents(a: &[(u32, u32)], b: &[(u32, u32)]) -> bool {
+    let mut i = 0;
+    while i < a.len() {
+        if a[i] != b[i] {
+            return false;
+        }
+        i += 1;
+    }
+    true
 }
 
 // ---- begin, write, close, abort, delete ---------------------------------------------------------------------------------------
@@ -558,11 +622,16 @@ pub unsafe fn begin(
         return E_WRITE;
     }
     let (io, lay) = (io(), lay());
+    up().hint.valid = false;
     // the path may replace a file (unless `no_overwrite`), but not a folder, and may not lie inside a file or over a folder that has entries
     let mut conflict = false;
     let mut exists = false;
     let mut held = false;
-    let r = store::scan(&io, &lay, &t.h, b.tin, TBL_CAP, |_, e| {
+    // one pass over the table: the path checks, the file's extent (the first gap that holds it) and whether the table of one more entry still has
+    // room beside it (`store::begin_fit`)
+    let need = sectors_of(size);
+    let mut ex0 = [(0, 0); EXTRA_MAX];
+    let fit = match store::begin_fit(&io, &lay, &t.h, b.tin, TBL_CAP, extras(&mut ex0, None), need, store::table_sectors(t.h.count + 1), |e| {
         let rel = store::relation(path, e);
         if rel >= 2 || (rel == 1 && store::entry_of(e).kind == KIND_DIR) {
             conflict = true;
@@ -571,10 +640,10 @@ pub unsafe fn begin(
             held = leased(&store::entry_of(e));
         }
         !conflict
-    });
-    if r != OK {
-        return pe(r);
-    }
+    }) {
+        Ok(f) => f,
+        Err(r) => return pe(r),
+    };
     if conflict {
         return E_PATH;
     }
@@ -585,31 +654,35 @@ pub unsafe fn begin(
     if held {
         return E_FILE_IN_USE;
     }
-    // the file's extent: the first gap that holds it, and room beside it for the table of one more entry
-    let need = sectors_of(size);
-    let mut ex0 = [(0, 0); EXTRA_MAX];
-    let start = if need == 0 {
-        0
-    } else {
-        match store::first_fit(&io, &lay, &t.h, b.tin, TBL_CAP, need, extras(&mut ex0, None)) {
-            Ok(Some(s)) => s,
-            Ok(None) => {
-                *free = free_bytes(&t.h);
-                return E_FULL;
-            }
-            Err(e) => return pe(e),
-        }
-    };
-    let pend = if need == 0 { None } else { Some((start, need)) };
-    let mut ex1 = [(0, 0); EXTRA_MAX];
-    match store::first_fit(&io, &lay, &t.h, b.tin, TBL_CAP, store::table_sectors(t.h.count + 1), extras(&mut ex1, pend)) {
-        Ok(Some(_)) => {}
-        Ok(None) => {
+    let start = match fit.data {
+        Some(s) => s,
+        None => {
             *free = free_bytes(&t.h);
             return E_FULL;
         }
-        Err(e) => return pe(e),
+    };
+    let table_at = match fit.table {
+        Some(a) => a,
+        None => {
+            *free = free_bytes(&t.h);
+            return E_FULL;
+        }
+    };
+    let pend = if need == 0 { None } else { Some((start, need)) };
+    // the commit looks for the table's gap again only when the store or the kept-out extents changed (`Hint`)
+    let mut ex1 = [(0, 0); EXTRA_MAX];
+    let kept = extras(&mut ex1, pend);
+    let hint = &mut up().hint;
+    hint.h = t.h;
+    hint.n = kept.len();
+    hint.extra = [(0, 0); EXTRA_MAX];
+    let mut i = 0;
+    while i < kept.len() {
+        hint.extra[i] = kept[i];
+        i += 1;
     }
+    hint.at = table_at;
+    hint.valid = true;
     let u = up();
     zero(u.path.as_mut_ptr(), 160);
     copy(u.path.as_mut_ptr(), path, pl);
@@ -711,7 +784,7 @@ unsafe fn close_inner(b: &Bufs, out: *mut u8) -> i32 {
     if u.next != u.size {
         return E_LENGTH;
     }
-    // the hash of the bytes received (`write` fed it as they came: close does not read a large file back from the card; VERIFY does)
+    // the hash of the bytes received (`write` fed it as they came)
     let got = hash32::slot(core::mem::replace(&mut u.run, Hash32::new()).finish());
     if !out.is_null() {
         copy(out, got.as_ptr(), 4);
@@ -723,6 +796,14 @@ unsafe fn close_inner(b: &Bufs, out: *mut u8) -> i32 {
                 return E_HASH;
             }
             i += 1;
+        }
+    }
+    // the card holds what was received: read the file back and hash it (the end-to-end check; capability READBACK of INFO)
+    if u.size != 0 {
+        let l = lay();
+        let r = readback(|s, n, p| block_read(l.first + s, n, p), u.start, u.size, b.rb, b.rb_cap, &got);
+        if r != OK {
+            return r;
         }
     }
     // the new table: the current one with the entry replaced or inserted
@@ -746,7 +827,31 @@ unsafe fn close_inner(b: &Bufs, out: *mut u8) -> i32 {
     let e = Entry { first: u.start, size: u.size, kind: KIND_FILE, sha: got };
     store::encode_entry(u.path.as_ptr(), &e, ent.as_mut_ptr());
     let pend = if u.size == 0 { None } else { Some((u.start, sectors_of(u.size))) };
-    do_commit(b, &t.h, Edit::Insert(ent.as_ptr()), pend)
+    let hint = u.hint;
+    u.hint.valid = false;
+    do_commit_hinted(b, &t.h, Edit::Insert(ent.as_ptr()), pend, Some(&hint))
+}
+
+/// Read `size` bytes of the file at store sector `start` back through `rd(sector, bytes, buf)` into `buf` (`cap` bytes, a multiple of 512), in
+/// pieces of at most `store::MAX_IO_SECTORS` sectors, and compare their hash slot with `want`: `E_READ` when a read fails, `E_HASH` when the card's bytes differ.
+unsafe fn readback(mut rd: impl FnMut(u32, u32, *mut u8) -> i32, start: u32, size: u32, buf: *mut u8, cap: usize, want: &[u8; 32]) -> i32 {
+    let piece = core::cmp::min(cap / 512, store::MAX_IO_SECTORS as usize) as u32;
+    let mut h = Hash32::new();
+    let (mut left, mut sector) = (size, start);
+    while left > 0 {
+        let n = core::cmp::min(left, piece * 512);
+        let secs = sectors_of(n);
+        if rd(sector, secs * 512, buf) != 0 {
+            return E_READ;
+        }
+        h.update(buf, n);
+        left -= n;
+        sector += secs;
+    }
+    if hash32::slot(h.finish()) != *want {
+        return E_HASH;
+    }
+    OK
 }
 
 /// Drop the session of `kind` (the partial file was never in the table). `E_STATE`: no such session.
@@ -898,7 +1003,7 @@ pub unsafe fn sdk_create(root: u32, path: *const u8, size: u32, hash4: *const u8
     handle()
 }
 
-/// `file_write`: `len` bytes of `buf` (16-byte aligned) at `offset`, the next byte, in pieces of the protocol's chunk. The store lock is taken once for the
+/// `file_write`: `len` bytes of `buf` (16-byte aligned) at `offset`, the next byte, in pieces of `WRITE_PIECE`. The store lock is taken once for the
 /// whole call: `E_BUSY` only when it could not be taken, before anything was written. A status, 0 when all went in.
 pub unsafe fn sdk_write(h: i32, offset: u32, buf: *const u8, len: u32) -> i32 {
     let owner = match sdk_owner() {
@@ -917,7 +1022,7 @@ pub unsafe fn sdk_write(h: i32, offset: u32, buf: *const u8, len: u32) -> i32 {
     let mut done = 0u32;
     let mut r = OK;
     while done < len && r == OK {
-        let n = if len - done > MAX_CHUNK as u32 { MAX_CHUNK as u32 } else { len - done };
+        let n = if len - done > WRITE_PIECE as u32 { WRITE_PIECE as u32 } else { len - done };
         r = write(&sdk_bufs(), SDK, owner, h, offset.wrapping_add(done), buf.add(done as usize) as *mut u8, n, false);
         done += n;
     }
@@ -1007,6 +1112,13 @@ static mut PD_ACTIVE: bool = false;
 pub static mut DKRT_PD_CUT: u32 = 0;
 /// The boot recovery of the staging folder ran.
 static mut PD_RECOVERED: bool = false;
+/// The staging folder may exist: the adapter keeps it for a whole upload session. `pd_tick` removes it (the adapter's recovery call removes an
+/// empty folder) once no write session has run for `PD_STAGE_IDLE` blocks.
+static mut PD_STAGE: bool = false;
+/// Block clock at the last start or end of a +Drive write session.
+static mut PD_STAGE_AT: u32 = 0;
+/// 2 s (1500 blocks a second): longer than the gap between the files of one upload, short enough that the folder is gone soon after it.
+const PD_STAGE_IDLE: u32 = 2 * 1500;
 
 unsafe fn pd_present() -> bool {
     if read_volatile(addr_of!(PD_STATE)) == 0 {
@@ -1094,13 +1206,17 @@ unsafe fn pd_tick() {
         dkpw_abort();
         write_volatile(addr_of_mut!(PD_DIRTY), false);
         write_volatile(addr_of_mut!(PD_ACTIVE), false);
+        write_volatile(addr_of_mut!(PD_STAGE_AT), now());
         pd_leave();
     }
-    if !read_volatile(addr_of!(PD_RECOVERED)) && pd_enter_idle() {
+    // The upload session is over: remove the empty staging folder. `pd_enter_idle` holds the adapter and checks that no write session is open.
+    let idle = read_volatile(addr_of!(PD_STAGE)) && now().wrapping_sub(read_volatile(addr_of!(PD_STAGE_AT))) >= PD_STAGE_IDLE;
+    if (!read_volatile(addr_of!(PD_RECOVERED)) || idle) && pd_enter_idle() {
         let mut out = [0u32; 4];
         let r = dkpw_recover(out.as_mut_ptr());
         pd_leave();
         if r >= 0 {
+            write_volatile(addr_of_mut!(PD_STAGE), false);
             write_volatile(addr_of_mut!(PD_RECOVERED), true);
             if out[0] != 0 || out[1] != 0 || out[2] != 0 || out[3] != 0 {
                 // renamed into place, deleted, our leftovers that stayed, entries that are not ours (left alone)
@@ -1139,6 +1255,7 @@ unsafe fn pd_create(owner: u8, path: *const u8, size: u32, hash4: *const u8, fla
     unlock();
     if !pd_enter() {
         u.kind = NONE;
+        u.pd = false;
         return busy(E_BUSY);
     }
     if read_volatile(addr_of!(PD_ACTIVE)) {
@@ -1149,6 +1266,9 @@ unsafe fn pd_create(owner: u8, path: *const u8, size: u32, hash4: *const u8, fla
     if r == OK {
         write_volatile(addr_of_mut!(PD_ACTIVE), true);
     }
+    // the adapter may have created the folder, also when the BEGIN failed
+    write_volatile(addr_of_mut!(PD_STAGE), true);
+    write_volatile(addr_of_mut!(PD_STAGE_AT), now());
     pd_leave();
     if r != OK {
         u.kind = NONE;
@@ -1201,6 +1321,7 @@ unsafe fn pd_close(owner: u8, h: i32, out: *mut u8) -> i32 {
         dkpw_close(out)
     };
     write_volatile(addr_of_mut!(PD_ACTIVE), false);
+    write_volatile(addr_of_mut!(PD_STAGE_AT), now());
     pd_leave();
     u.kind = NONE;
     u.pd = false;
@@ -1221,6 +1342,7 @@ unsafe fn pd_abort(owner: u8, h: i32) -> i32 {
     }
     dkpw_abort();
     write_volatile(addr_of_mut!(PD_ACTIVE), false);
+    write_volatile(addr_of_mut!(PD_STAGE_AT), now());
     pd_leave();
     let u = up();
     u.kind = NONE;
@@ -1302,6 +1424,68 @@ mod tests {
             tick();
             assert!(!is_open());
             write_volatile(addr_of_mut!(DKRT_SESSION_IDLE), 0);
+        }
+    }
+
+    /// A fake card: sectors of `data` from sector 100; `fail_at` makes a read of that sector fail.
+    fn fake(data: &'static [u8], fail_at: Option<u32>) -> impl FnMut(u32, u32, *mut u8) -> i32 {
+        move |sector, bytes, p| unsafe {
+            if fail_at.map_or(false, |f| sector <= f && f < sector + bytes / 512) {
+                return 1;
+            }
+            let off = (sector - 100) as usize * 512;
+            for i in 0..bytes as usize {
+                *p.add(i) = *data.get(off + i).unwrap_or(&0);
+            }
+            0
+        }
+    }
+
+    #[test]
+    fn the_readback_accepts_the_card_bytes_and_refuses_a_flipped_bit_or_a_failed_read() {
+        static GOOD: [u8; 100_000] = {
+            let mut a = [0u8; 100_000];
+            let mut i = 0;
+            while i < a.len() {
+                a[i] = (i * 7 + 3) as u8;
+                i += 1;
+            }
+            a
+        };
+        static BAD: [u8; 100_000] = {
+            let mut a = GOOD;
+            a[99_999] ^= 1; // the last byte, in the partial last sector
+            a
+        };
+        static BAD_MID: [u8; 100_000] = {
+            let mut a = GOOD;
+            a[40_000] ^= 0x80; // in the second piece of a 32 KiB read-back
+            a
+        };
+        #[repr(C, align(16))]
+        struct Buf([u8; 32768]);
+        let mut buf = Buf([0; 32768]);
+        let want = hash32::slot(unsafe {
+            let mut h = Hash32::new();
+            h.update(GOOD.as_ptr(), GOOD.len() as u32);
+            h.finish()
+        });
+        unsafe {
+            let p = buf.0.as_mut_ptr();
+            for cap in [32768usize, 16384, 512] {
+                assert_eq!(readback(fake(&GOOD, None), 100, GOOD.len() as u32, p, cap, &want), OK, "cap {cap}");
+            }
+            assert_eq!(readback(fake(&BAD, None), 100, GOOD.len() as u32, p, 32768, &want), E_HASH);
+            assert_eq!(readback(fake(&BAD_MID, None), 100, GOOD.len() as u32, p, 16384, &want), E_HASH);
+            assert_eq!(readback(fake(&GOOD, Some(150)), 100, GOOD.len() as u32, p, 32768, &want), E_READ);
+            // a size in whole sectors, and one byte
+            let w1 = hash32::slot({
+                let mut h = Hash32::new();
+                h.update(GOOD.as_ptr(), 1);
+                h.finish()
+            });
+            assert_eq!(readback(fake(&GOOD, None), 100, 1, p, 32768, &w1), OK);
+            assert_eq!(readback(fake(&GOOD, None), 100, 1, p, 32768, &want), E_HASH);
         }
     }
 

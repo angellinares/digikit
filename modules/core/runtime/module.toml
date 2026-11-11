@@ -1,6 +1,6 @@
 [module]
 id = "core/runtime"
-version = "0.5.8"
+version = "0.5.10"
 name = "digikit runtime"
 category = "core"
 role = "runtime"
@@ -27,7 +27,7 @@ place = "cf.expansion"
 # The run-time registry's table of addresses (core/dynreg), the DSP code channel (core/dsp-link: dl_send, dl_send_win, dl_poll) and
 # the table of DSP addresses (core/dyndsp) and the effect chain's table (core/dynfx) and the effect pages' (core/fxpages); each is 0 when its module is not in the image.
 # `input_key`, `input_turn` and the `dk_ui_*` calls are the imports of sdk/sdk.toml with `requires` (the runtime links them to modules by name; `optional_imports!` in lib.rs).
-optional = ["mf_native_register", "mf_native_register_v2", "mf_native_remove", "mf_native_turn", "dynreg_info", "dl_send", "dl_send_win", "dl_poll", "dl_diag", "dl_set_tick_cb", "dl_tick_cb_drop", "dyndsp_info", "dynfx_info", "fxpages_info", "dkpool_version", "dkpool_load", "dkpool_release", "dkpool_check", "dkpool_free_frames", "dkpool_tick", "dkpool_cancel", "dkpool_peaks", "dkpool_window_step", "dkpw_version", "dkpw_begin", "dkpw_write", "dkpw_close", "dkpw_abort", "dkpw_delete", "dkpw_recover", "dkpw_staging", "health_read", "health_heap", "introblank_table", "input_key", "input_turn", "usb_bulk_enable", "usb_bulk_disable", "usb_bulk_take", "usb_bulk_release", "usb_bulk_send", "usb_bulk_state", "dk_ui_has", "dk_ui_menu_new", "dk_ui_open", "dk_ui_close", "dk_ui_select", "dk_ui_is_open", "dk_ui_refresh", "dk_ui_action", "dk_ui_submenu", "dk_ui_text", "dk_ui_toggle", "dk_ui_value", "dk_ui_check", "dk_ui_checked", "dk_ui_confirm", "dk_ui_choice", "dk_ui_toast", "dk_ui_tick"]
+optional = ["mf_native_register", "mf_native_register_v2", "mf_native_remove", "mf_native_turn", "dynreg_info", "dl_send", "dl_send_win", "dl_poll", "dl_diag", "dl_set_tick_cb", "dl_tick_cb_drop", "dyndsp_info", "dynfx_info", "fxpages_info", "dkpool_version", "dkpool_load", "dkpool_release", "dkpool_check", "dkpool_free_frames", "dkpool_tick", "dkpool_cancel", "dkpool_peaks", "dkpool_window_step", "dkpw_version", "dkpw_begin", "dkpw_write", "dkpw_close", "dkpw_abort", "dkpw_delete", "dkpw_recover", "dkpw_staging", "health_read", "health_heap", "introblank_table", "input_key", "input_turn", "usb_bulk_enable", "usb_bulk_disable", "usb_bulk_take", "usb_bulk_release", "usb_bulk_send", "usb_bulk_state", "usb_bulk_takeover", "usb_bulk_giveback", "dk_ui_has", "dk_ui_menu_new", "dk_ui_open", "dk_ui_close", "dk_ui_select", "dk_ui_is_open", "dk_ui_refresh", "dk_ui_action", "dk_ui_submenu", "dk_ui_text", "dk_ui_toggle", "dk_ui_value", "dk_ui_check", "dk_ui_checked", "dk_ui_confirm", "dk_ui_choice", "dk_ui_toast", "dk_ui_tick"]
 
 # Constants from the device files (devices/*.toml, core/machines types.toml), written by `patchkit gen`; docs/design/device-data.md.
 # The runtime is one image for all devices: `rust` and `gas-shared` hold what every device agrees on (gen refuses a difference), `gas`

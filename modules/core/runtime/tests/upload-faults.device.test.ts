@@ -112,6 +112,30 @@ uploadTests(
   },
 );
 
+// ---- a card that holds other bytes than the host sent -------------------------------------------------------------------------------
+
+/**
+ * END reads the file back from the card before the commit (INFO capability READBACK). The knob `DKRT_UPLOAD_FLIP` flips the first byte of the
+ * Nth write on the card, after the write reported success: END must refuse with the hash error and commit no entry (the old store stays).
+ */
+uploadTests(
+  'upload-readback: END refuses a file that the card holds with a flipped byte',
+  async (rig) => {
+    const old = blob(3000, 31);
+    const added = blob(70_000, 32); // three DATA chunks: writes 1 to 3
+    const base = await cardWithOld(rig, 'flip-base', old);
+    const oldFiles: Files = { 'modules/old.dkm': old };
+    for (const [k, write] of [1, 2, 3].entries()) {
+      const { status, card } = await faultSession(rig, `flip${k}`, base, { DKRT_UPLOAD_FLIP: write }, (dk) =>
+        statusOf(() => dk.put('modules/new.dkm', added)),
+      );
+      check(`flip in write ${write}: END is refused with the hash error`, status === -56, String(status));
+      await expectStoreAfterFault(rig, `flip ${write}`, card, oldFiles, { path: 'modules/more.dkm', data: blob(700, 33) });
+    }
+  },
+  { symbols: ['DKRT_UPLOAD_FLIP'] },
+);
+
 // ---- CLEAR: two faults in a row -----------------------------------------------------------------------------------------------------
 
 /**

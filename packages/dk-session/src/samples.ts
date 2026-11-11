@@ -96,6 +96,8 @@ export interface SamplesBackend {
 export interface PutOptions {
   signal?: AbortSignal;
   exists?: boolean;
+  /** The caller made the folder already (the bulk `put` on the +Drive skips its `mkdir`). */
+  folderReady?: boolean;
 }
 
 /** What the digikit backend needs of the store session (`DkSession`). */
@@ -402,6 +404,24 @@ class StoreSamples implements SamplesBackend {
   }
 }
 
+/**
+ * Does `samples put` skip its SysEx VERIFY after a successful bulk END? Only for `auto` and a put that went over the bulk link, on a device that
+ * checked the file itself at close: the Digitakt II +Drive (the firmware's END hash comes from a readback) or a runtime whose INFO caps include
+ * READBACK (the Digitone II store). `always` never skips, `never` always does; an unidentified device is verified.
+ */
+export function skipVerifyAfterBulk(
+  mode: 'auto' | 'always' | 'never',
+  link: 'bulk' | 'sysex',
+  kind: SamplesKind,
+  info: DkInfoFull | null,
+  isDt2: boolean,
+): boolean {
+  if (mode === 'never') return true;
+  if (mode === 'always' || link !== 'bulk') return false;
+  if (kind === 'stock-rpc') return isDt2;
+  return info !== null && hasCap(info, 'READBACK');
+}
+
 // ---- file bytes over the USB bulk link ----------------------------------------------------------------------------------------------
 
 /** `DK_FILES_SAMPLES` (<dk/files.h>): the `samples/` folder of the store on the Digitone II, the +Drive on the Digitakt II. */
@@ -477,7 +497,7 @@ class BulkSamples implements SamplesBackend {
     if (this.failed) return this.base.put(folder, file, onProgress, opts);
     const path = join(folder, file.name);
     // the +Drive needs the folder; the store's folders follow from the paths
-    if (!this.store && clean(folder)) await this.base.mkdir(folder);
+    if (!this.store && clean(folder) && !opts.folderReady) await this.base.mkdir(folder);
     const bytes = this.store ? file.stored : file.bytes;
     // the caller's listing says whether the file exists: then the device replaces it atomically (a failed upload keeps the old file). Without a hint
     // the backend looks once. A file that appeared after the listing is refused (E_EXISTS) and reported.

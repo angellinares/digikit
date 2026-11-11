@@ -1055,7 +1055,7 @@ fn python(sdk: &Sdk) -> Result<String> {
     let mut s = format!("# {HEADER}\n\n");
     let rv = runtime_parts(sdk)?;
     let _ = writeln!(s, "RUNTIME_VERSION = ({}, {}, {})", rv.0, rv.1, rv.2);
-    let _ = writeln!(s, "RUNTIME_PACKED = {:#08x}\n", pack_runtime(rv));
+    let _ = writeln!(s, "RUNTIME_PACKED = 0x{:06X}\n", pack_runtime(rv));
     s.push_str("KINDS: dict[int, tuple[str, tuple[str, str, str, str, str]]] = {\n");
     for k in &sdk.log.kind {
         let args: Vec<String> = k.args.iter().map(|a| format!("{a:?}")).collect();

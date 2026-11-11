@@ -17,6 +17,7 @@ import { repoRoot } from '@digi/test-support';
 import { describe, expect, test } from 'vitest';
 import { overlayArgs, plusdriveBinary, pokeKnob } from '@digi/regression/runtime/card-kit.ts';
 import { cardRig, RT, type CardRig } from '@digi/regression/runtime/card-rig.ts';
+import { portFile } from '@digi/regression/runtime/device-data.ts';
 import { DEVICES, FIRMWARE } from '@digi/regression/runtime/devices.ts';
 import { planSymbol } from '@digi/regression/runtime/runtime-plan.ts';
 import { advance, rpc, word } from '@digi/regression/runtime/fx-live.ts';
@@ -67,7 +68,7 @@ for (const device of DEVICES) {
     const rig: CardRig = cardRig(device, 'usb-fast', {
       dsp: 'zero',
       roots: [...RT, 'core/usb-bulk', ...(dt2 ? ['core/plusdrive-write'] : [])],
-      symbols: ['DKRT_MAILBOX', 'DKRT_SESSION_IDLE', 'DKRT_UPLOAD_CUT', 'DKRT_UPLOAD_TEAR', 'DKRT_UPLOAD_WRITES', ...(dt2 ? ['DKRT_PD_CUT'] : [])],
+      symbols: ['DKRT_MAILBOX', 'usb_bulk_switches', 'DKRT_SESSION_IDLE', 'DKRT_UPLOAD_CUT', 'DKRT_UPLOAD_TEAR', 'DKRT_UPLOAD_WRITES', ...(dt2 ? ['DKRT_PD_CUT'] : [])],
       project: true,
       uploads: true,
       relaxFs: true,
@@ -529,6 +530,189 @@ for (const device of DEVICES) {
         expect(t.files.get(target), `${label}: the destination is unchanged by it`).toEqual(s.files.get(target));
       }
     }, 3_600_000);
+
+    /** STATUS 'A' [limit]: sets the largest staging buffer of the next BEGIN (0: none) and returns the size the last BEGIN got. */
+    const accKnob = async (dk: DkSession, limit?: number) => {
+      const body = limit === undefined ? [0x41] : [0x41, ...be32(limit)];
+      return Buffer.from((await dk.request(0x37, Uint8Array.from(body))).body).readUInt32BE(0);
+    };
+
+    test('the staging buffer: sizes around its edges, abort and bus reset across a flush, and a small or no buffer, all with the device hash equal to the host hash', async () => {
+      const { dk, bulk } = await boot();
+      const MIB = 1 << 20;
+      // STATUS 'A' exists only in a module built with UF_KNOBS 1 (src/c/uf.h); the default build answers the plain status (72 bytes): then the sizes run with the buffer
+      // the module chooses, and the forced small and no-buffer cases are skipped
+      const knobs = (await dk.request(0x37, Uint8Array.from([0x41]))).body.length === 4;
+      // 0 and 1, a sector short, 64 KiB, one byte under, at and over one buffer, and three buffers with a tail
+      const sizes = [0, 1, 511, 65_536, MIB - 1, MIB, MIB + 512, 3 * MIB + 777];
+      const obtained: Record<string, number> = {};
+      const run = async (session: BulkChoice['session'], tag: string, list: number[], limit?: number) => {
+        for (const size of list) {
+          if (limit !== undefined && knobs) await accKnob(dk, limit); // the knob lasts one BEGIN
+          const data = pattern(size, size + 3);
+          const got = await session.put(SAMPLES, rp(`acc-${tag}-${size}.bin`), data, { expected: hashU32(data, dt2) });
+          expect(got, `${tag} ${size} bytes: the device hash is the host hash`).toBe(hashU32(data, dt2));
+          obtained[`${tag}-${size}`] = knobs ? await accKnob(dk) : 0;
+        }
+      };
+      await run(bulk.session, 'big', sizes);
+      let s = await state(dk, 'ub0');
+      for (const size of [511, MIB + 512, 3 * MIB + 777]) await expectFile(dk, s, `acc-big-${size}.bin`, pattern(size, size + 3), `${size} bytes`);
+
+      if (knobs) {
+        // a forced small buffer (64 KiB), then none (one file_write per DATA, as before): the same bytes arrive
+        expect(await accKnob(dk, 65_536), 'the knob returns the size of the last BEGIN').toBe(obtained[`big-${3 * MIB + 777}`]);
+        await run(bulk.session, 'small', [1, 65_536 + 512, MIB + 5], 65_536);
+        expect(obtained[`small-${MIB + 5}`], 'a forced 64 KiB buffer').toBe(65_536);
+        await run(bulk.session, 'none', [511, 200_003], 0);
+        expect(obtained['none-200003'], 'no buffer').toBe(0);
+        s = await state(dk, 'ub1');
+        await expectFile(dk, s, `acc-small-${MIB + 5}.bin`, pattern(MIB + 5, MIB + 5 + 3), 'small buffer');
+        await expectFile(dk, s, 'acc-none-200003.bin', pattern(200_003, 200_003 + 3), 'no buffer');
+
+      }
+      // the protocol rules of file_write stay: a wrong offset, a part-sector DATA that is not the last, bytes past the size (none of them takes the file down)
+      const link = bulk.link;
+      const a = pattern(4096, 91);
+      await link.send(req(BULK_CMD.BEGIN, 1, beginBody('acc-rules.bin', a.length, be32(hashU32(a, dt2)))));
+      await replies(link, 1);
+      await link.send(dataFrame(2, 512, a.subarray(512, 1024)));
+      await link.send(dataFrame(3, 0, a.subarray(0, 100)));
+      await link.send(dataFrame(4, 0, Buffer.concat([a, Buffer.alloc(1)])));
+      expect((await replies(link, 3)).map((x) => x.status), 'offset, length, past the size').toEqual([BULK_STATUS.E_OFFSET, BULK_STATUS.E_LENGTH, BULK_STATUS.E_LENGTH]);
+      await link.send(Buffer.concat([dataFrame(5, 0, a.subarray(0, 1024)), dataFrame(6, 1024, a.subarray(1024)), req(BULK_CMD.END, 7)]));
+      const rr = await replies(link, 3);
+      expect(rr.map((x) => x.status), 'the file goes on and ends').toEqual([0, 0, 0]);
+      expect(rr[2]!.body.readUInt32BE(0)).toBe(hashU32(a, dt2));
+
+      // a cancel after the first buffer was flushed: the destination is not created; a bus reset after it leaves no file and the next upload works
+      const before = (await state(dk, 'ub2')).files;
+      const long = pattern(3 * MIB, 7);
+      const stop = new AbortController();
+      const e = await bulk.session
+        .put(SAMPLES, rp('acc-cancel.bin'), long, { signal: stop.signal, onProgress: (sent) => sent >= MIB + MIB / 2 && stop.abort() })
+        .catch((x) => x);
+      expect((e as { kind?: string }).kind, 'cancelled after a flush').toBe('cancelled');
+      expect((await state(dk, 'ub3')).files.has('acc-cancel.bin'), 'nothing at the aborted path').toBe(false);
+      const reset = await connect(dk, { timeoutMs: 1500 });
+      const connectAddr = await EmuBulkLink.connectCallback(call);
+      let cut = false;
+      const failed = await reset.session
+        .put(SAMPLES, rp('acc-reset.bin'), long, {
+          onProgress: (sent) => {
+            if (!cut && sent >= MIB + MIB / 4) {
+              cut = true;
+              void rpc(rig.session, 'usb.bulk.in', { connect: connectAddr });
+            }
+          },
+        })
+        .catch((x) => x);
+      expect(cut, 'the reset came after a flush').toBe(true);
+      expect(failed, 'the upload fails').toBeInstanceOf(Error);
+      s = await state(dk, 'ub4');
+      expect(s.files.has('acc-reset.bin'), 'no partial file').toBe(false);
+      expect([...s.files.keys()].sort(), 'the other files are as before').toEqual([...before.keys()].sort());
+      const again = await connect(dk);
+      const ok = pattern(MIB + 100, 12);
+      expect(await again.session.put(SAMPLES, rp('acc-reset.bin'), ok, { expected: hashU32(ok, dt2) }), 'the next upload after the reset').toBe(hashU32(ok, dt2));
+      await rig.session.expectNoFault('usb-fast staging buffer');
+      // eslint-disable-next-line no-console
+      console.log(`ACC buffer sizes obtained (bytes): ${JSON.stringify(obtained)}`);
+    }, 3_600_000);
+
+    test('storage bench: STATUS "B" runs every test, "R" returns the times, and no bench file is left', async () => {
+      const { dk } = await boot();
+      const before = (await state(dk, 'bn0')).files;
+      const b = await dk.request(0x37, Uint8Array.from([0x42, 0x3f, 1])); // 'B', all tests, 1 MiB
+      if (b.body.length !== 4) {
+        console.log('storage bench skipped: the module is built without UF_BENCH (STATUS answers the 64-byte status)');
+        return;
+      }
+      expect(Buffer.from(b.body).readUInt32BE(0), 'started').toBe(1);
+      let r = Buffer.alloc(0);
+      for (let i = 0; i < 400; i++) {
+        await advance(rig.session, 500);
+        r = Buffer.from((await dk.request(0x37, Uint8Array.from([0x52]))).body); // 'R'
+        if (r.readUInt32BE(4) === 10 && r.readUInt32BE(0) === 0) break;
+      }
+      expect([r.readUInt32BE(0), r.readUInt32BE(4)], 'the run is over').toEqual([0, 10]);
+      const ms = Array.from({ length: 14 }, (_, i) => r.readUInt32BE(8 + 4 * i));
+      // slots: s64 s1m d64 d256 d1m dcl dcl.cls dcl.del r64 r1m h32 scl scl.cls scl.del
+      for (const slot of [0, 1, 8, 9, 10, 11, 12, 13]) expect(ms[slot], `slot ${slot} has a time`).toBeGreaterThan(0);
+      if (dt2) for (const slot of [2, 3, 4, 5, 6, 7]) expect(ms[slot], `+Drive slot ${slot} has a time`).toBeGreaterThan(0);
+      const after = await state(dk, 'bn1');
+      unchanged(before, after.files, []);
+      expect(after.files.has('dkbench.bin'), 'no store bench file').toBe(false);
+      await rig.session.expectNoFault('usb-fast storage bench');
+    }, 1_800_000);
+
+    /** The firmware's active USB port and the stored USB CONFIG byte, by their anchors. */
+    const usbAnchors = () => {
+      const anchor = (name: string) => {
+        const a = (portFile(device, FIRMWARE[device]).anchor ?? []).filter((x) => x.name === name);
+        expect(a.length, name).toBe(1);
+        return a[0]!.addr as number;
+      };
+      return { port: anchor('cf.usb.value.active_port'), mode: anchor('cf.usb.value.config_mode'), table: anchor('cf.usb.data.port_table') };
+    };
+
+    test('take-over: TAKEOVER over SysEx switches USB AUDIO/MIDI to USB MIDI with one mode switch, the bulk link works, RELEASE gives the mode back, the stored mode is never written', async () => {
+      const { dk } = await boot();
+      const a = usbAnchors();
+      const switches = () => word(rig.session, planSymbol(rig.plan, 'usb_bulk_switches'));
+      const setPort = async (value: number) => {
+        await rpc(rig.session, 'mem.cf.poke', { addr: a.port - 4, value: a.table + value * 0x28 });
+        await rpc(rig.session, 'mem.cf.poke', { addr: a.port, value });
+      };
+      const port = () => word(rig.session, a.port);
+      const stored = (await word(rig.session, a.mode)) >>> 24;
+      try {
+        await advance(rig.session, 2500); // the boot's enable is a switch: its guard first
+        await setPort(5); // the user's USB CONFIG is USB AUDIO/MIDI
+        const s0 = await switches();
+        expect((await dk.request(0x1e)).status, 'TAKEOVER').toBe(0);
+        for (let t = 0; t < 4000 && (await port()) !== 2; t += 100) await advance(rig.session, 100);
+        expect(await port(), 'switched to USB MIDI').toBe(2);
+        await advance(rig.session, 2500);
+        expect(await switches(), 'one mode switch, no second stop and restart').toBe(s0 + 1);
+        // the bus reset after the new enumeration (the emulator does not model it): the adapter's connect callback
+        await rpc(rig.session, 'usb.bulk.in', { connect: await EmuBulkLink.connectCallback(call) });
+        await advance(rig.session, 50);
+        const bulk = await connect(dk);
+        const f = pattern(70_000, 4);
+        expect(await bulk.session.put(SAMPLES, rp('takeover.bin'), f, { expected: hashU32(f, dt2) }), 'the bulk link works after the take-over').toBe(hashU32(f, dt2));
+        expect((await dk.request(0x1e)).status, 'the renew').toBe(0);
+        expect((await dk.request(0x1f)).status, 'RELEASE').toBe(0);
+        for (let t = 0; t < 4000 && (await port()) !== 5; t += 100) await advance(rig.session, 100);
+        expect(await port(), 'the mode is back').toBe(5);
+        expect((await word(rig.session, a.mode)) >>> 24, 'the stored USB CONFIG is unchanged').toBe(stored);
+        await setPort(6); // Overbridge: refused
+        expect((await dk.request(0x1e)).status, 'refused in Overbridge').toBe(-53);
+        await rig.session.expectNoFault('usb-fast take-over');
+      } finally {
+        await setPort(2);
+      }
+    }, 1_800_000);
+
+    test('the staging buffer is freed when the runtime expires the session (the host is gone)', async () => {
+      const { dk, bulk } = await boot();
+      const link = bulk.link;
+      const status = async () => {
+        const b = Buffer.from((await dk.request(0x37)).body);
+        return { cap: b.readUInt32BE(64), expired: b.readUInt32BE(68) };
+      };
+      const f = pattern(3 << 20, 9);
+      await link.send(req(BULK_CMD.BEGIN, 1, beginBody('expire.bin', f.length, be32(hashU32(f, dt2)))));
+      expect((await replies(link, 1))[0]!.status).toBe(0);
+      await link.send(dataFrame(2, 0, f.subarray(0, 65_536)));
+      expect((await replies(link, 1))[0]!.status).toBe(0);
+      expect((await status()).cap, 'a staging buffer is held').toBeGreaterThan(0);
+      for (let t = 0; t < 23_000; t += 1000) await advance(rig.session, 1000);
+      expect(await status(), 'freed, one session dropped').toEqual({ cap: 0, expired: 1 });
+      await link.send(dataFrame(3, 65_536, f.subarray(65_536, 131_072)));
+      expect((await replies(link, 1))[0]!.status, 'the host sees the session gone').toBe(BULK_STATUS.E_STATE);
+      await rig.session.expectNoFault('usb-fast session expiry');
+    }, 1_800_000);
 
     test('bench: MB/s in emulated time, bulk against SysEx', async () => {
       const { dk } = await boot();

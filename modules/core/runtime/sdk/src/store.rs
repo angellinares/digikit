@@ -771,6 +771,22 @@ pub unsafe fn gaps<F: FnMut(u32, u32) -> bool>(
     buf: *mut u8,
     cap: usize,
     extra: &[(u32, u32)],
+    f: F,
+) -> i32 {
+    gaps_hook(io, lay, h, buf, cap, extra, |_| true, f)
+}
+
+/// `gaps`, and `on_entry(entry)` is called for every table entry of the same pass, before the entry's extent is used (so a caller that needs both
+/// the entries and the free space reads the table once). `on_entry` returning false ends the pass at once (no further entry, no further gap).
+#[allow(clippy::too_many_arguments)]
+unsafe fn gaps_hook<E: FnMut(*const u8) -> bool, F: FnMut(u32, u32) -> bool>(
+    io: &Io,
+    lay: &Layout,
+    h: &Hdr,
+    buf: *mut u8,
+    cap: usize,
+    extra: &[(u32, u32)],
+    mut on_entry: E,
     mut f: F,
 ) -> i32 {
     let mut fx = Fixed::new();
@@ -787,6 +803,7 @@ pub unsafe fn gaps<F: FnMut(u32, u32) -> bool>(
     let mut cursor = 0u32;
     let mut fi = 0usize;
     let mut stop = false;
+    let mut aborted = false;
     // one used extent at a time: a gap is what lies between the cursor and the extent's start
     let mut take = |start: u32, len: u32, cursor: &mut u32, stop: &mut bool, f: &mut F| {
         // once `f` said stop it is not asked again (a later fixed extent of the same entry would overwrite the first fit)
@@ -799,6 +816,10 @@ pub unsafe fn gaps<F: FnMut(u32, u32) -> bool>(
         }
     };
     let r = scan(io, lay, h, buf, cap, |_, e| {
+        if !on_entry(e) {
+            aborted = true;
+            return false;
+        }
         let ent = entry_of(e);
         let len = entry_sectors(&ent);
         if len == 0 {
@@ -811,7 +832,7 @@ pub unsafe fn gaps<F: FnMut(u32, u32) -> bool>(
         take(ent.first, len, &mut cursor, &mut stop, &mut f);
         !stop
     });
-    if r != OK || stop {
+    if r != OK || stop || aborted {
         return r;
     }
     while fi < fx.n && !stop {
@@ -843,6 +864,57 @@ pub unsafe fn first_fit(
         return Err(r);
     }
     Ok(at)
+}
+
+/// What a BEGIN learns from the free space.
+#[derive(Clone, Copy, PartialEq, Eq, Debug)]
+pub struct BeginFit {
+    /// Start of the file's data extent (`first_fit` of `need`); `None`: no gap holds it. 0 when `need` is 0.
+    pub data: Option<u32>,
+    /// Start of the table of the next commit (`first_fit` of `need_table` with the data extent kept out); `None`: no gap holds it.
+    pub table: Option<u32>,
+}
+
+/// One pass over the table for a BEGIN: `on_entry(entry)` sees every entry (the path checks; false ends the pass at once and the fit is
+/// meaningless), and the free space is read once for both extents that `first_fit` would give in two passes: the data extent of `need` sectors
+/// (none when 0) in `extra`, then the table of `need_table` sectors in `extra` plus that data extent. The second answer needs no second pass:
+/// the data extent starts at the start of the first gap that holds it, so it takes the front of that gap and leaves the rest as a gap; every
+/// other gap is as it was. The first gap that holds `need_table` in that view is the first such gap in position order, the rest of the data
+/// gap counting at its new start. The entries are in order of their first sector (the table's rule), so the gaps do not depend on the extents
+/// that are added.
+#[allow(clippy::too_many_arguments)]
+pub unsafe fn begin_fit<E: FnMut(*const u8) -> bool>(
+    io: &Io,
+    lay: &Layout,
+    h: &Hdr,
+    buf: *mut u8,
+    cap: usize,
+    extra: &[(u32, u32)],
+    need: u32,
+    need_table: u32,
+    on_entry: E,
+) -> Result<BeginFit, i32> {
+    let mut data: Option<u32> = if need == 0 { Some(0) } else { None };
+    let mut table: Option<u32> = None;
+    let r = gaps_hook(io, lay, h, buf, cap, extra, on_entry, |s, l| {
+        if data.is_none() && l >= need {
+            data = Some(s);
+            if table.is_none() && l - need >= need_table {
+                table = Some(s + need);
+            }
+        } else if table.is_none() && l >= need_table {
+            table = Some(s);
+        }
+        true
+    });
+    if r != OK {
+        return Err(r);
+    }
+    // no data extent: the table is not asked for either (BEGIN fails with E_FULL first)
+    if data.is_none() {
+        table = None;
+    }
+    Ok(BeginFit { data, table })
 }
 
 /// The largest gap in sectors.
@@ -996,6 +1068,27 @@ pub unsafe fn commit(
     edit: Edit,
     extra: &[(u32, u32)],
 ) -> Result<Committed, i32> {
+    commit_at(
+        io, lay, cur, buf_in, buf_out, cap, scratch, edit, extra, None,
+    )
+}
+
+/// `commit`, with the start of the new table when the caller already knows it: `at` is what `first_fit` of the table of an `Edit::Insert` (`table_sectors(cur.count + 1)`
+/// sectors) returns for `cur` and `extra`, from `begin_fit`. The caller guarantees that `cur`, the table behind it and `extra` are the ones it asked
+/// with; any other edit, or a start that is not inside the store, ignores the hint and looks for the gap.
+#[allow(clippy::too_many_arguments)]
+pub unsafe fn commit_at(
+    io: &Io,
+    lay: &Layout,
+    cur: &Hdr,
+    buf_in: *mut u8,
+    buf_out: *mut u8,
+    cap: usize,
+    scratch: *mut u8,
+    edit: Edit,
+    extra: &[(u32, u32)],
+    at: Option<u32>,
+) -> Result<Committed, i32> {
     let need = match edit {
         Edit::Insert(_) | Edit::Rename(..) => table_sectors(cur.count + 1),
         Edit::Remove(_) => table_sectors(cur.count),
@@ -1003,9 +1096,18 @@ pub unsafe fn commit(
     };
     let mut start = 1u32;
     if need != 0 {
-        start = match first_fit(io, lay, cur, buf_in, cap, need, extra)? {
+        let hinted = match (edit, at) {
+            (Edit::Insert(_), Some(s)) if s >= 1 && s <= lay.limit() && need <= lay.limit() - s => {
+                Some(s)
+            }
+            _ => None,
+        };
+        start = match hinted {
             Some(s) => s,
-            None => return Err(E_FULL),
+            None => match first_fit(io, lay, cur, buf_in, cap, need, extra)? {
+                Some(s) => s,
+                None => return Err(E_FULL),
+            },
         };
     }
     let mut out = Out {

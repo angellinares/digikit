@@ -5,7 +5,8 @@
  * and moved into place with the firmware's rename (the inode and its hash stay). A cut at any point leaves a half-written file only in the
  * staging folder; the boot recovery removes it. A replace is: write a hashed journal record naming the destination, delete the destination,
  * rename the staged file, delete the journal. The recovery finishes a replace whose destination is missing and drops one whose destination is
- * still there. The folder exists only while something is staged: it is removed whenever it is empty.
+ * still there. The folder is created at the first write; the runtime removes it (`dkpw_recover`) once it is empty and no write session has run for 2 s,
+ * not at the end of each file.
  *
  * Facts the order of steps relies on (finding 120, static, firmware 1.17):
  *  - Every inode, directory page and bitmap update is written through to the eMMC by the firmware's block write before the file call returns
@@ -15,12 +16,20 @@
  *    data, and a cut inside a rename leaves two names with count 2.
  *  - Names are compared byte for byte (case-sensitive).
  *
- * The filesystem mutex of the firmware protects every call; this adapter keeps one set of state and the runtime makes one call at a time. */
+ * The filesystem mutex of the firmware protects every call; this adapter keeps one set of state and the runtime makes one call at a time.
+ *
+ * Close hash (finding 120, "Close without the re-read"): the firmware's close hash FUN_4015b1e8 reads the whole file back through the page cache in
+ * 32 KiB pieces (4.2 MB/s). `hash_fast` reads the same pages from the card with the firmware's block read (the card sector of a file page comes from
+ * the firmware's extent lookup), hashes them with `pdw_hash.h`, compares the result with the host's hash (BEGIN's hash4) before it writes anything,
+ * and then runs the rest of FUN_4015b1e8 in its order with the firmware's own functions under its mutex. PDW_FAST_CLOSE 0 builds the adapter with
+ * the firmware's hash only. */
 
 #include <stddef.h>
 #include <stdint.h>
 #include "dkrt_pdw.h"
 #include "dk_fw_storage.h"
+#include "dk_fw_rtos.h"
+#include "pdw_hash.h"
 
 typedef uint32_t u32;
 typedef int32_t i32;
@@ -35,11 +44,23 @@ typedef uint8_t u8;
 #define E_NOFILE (-59)
 #define E_FILE_IN_USE (-71)
 
+/* 1: the close hash reads the card directly (`hash_fast`); 0: the firmware's own close hash only. */
+#define PDW_FAST_CLOSE 1
 #define STAGE_DIR "/.dkstage"
 #define DEST_MAX 256u
 #define NAMES 24u
 #define ZERO_TAIL 16u
-#define CHUNK 0x8000u
+/* The firmware's file geometry (finding 120): a file page is 32 KiB (64 sectors of 512 bytes) and a hash page holds the 8192 inode hash words of 32 KiB */
+#define SECTOR_BYTES 512u
+#define PAGE_SHIFT 15u
+#define PAGE_BYTES 0x8000u
+#define PAGE_SECTOR_SHIFT 6u /* sectors per page, as a shift */
+#define PAGE_FIND_STATUS 0xffu /* the low byte of the result of the page lookup: 0 when the page was found */
+#define HASH_PAGE_SHIFT 13u
+#define HASH_PAGE_WORDS 0x2000u
+#define HASH_PAGE_SECTORS 0x40u
+/* hash_fast: the card's pages could not be read the way it needs (nothing was changed): the close hash falls back to the firmware's own */
+#define HF_FALLBACK 1
 /* a staged name: 's' and 8 hex digits, optionally followed by ".dest" (the journal) */
 #define STAGE_LEN 9u
 #define JOUR_LEN 14u
@@ -54,7 +75,8 @@ struct dma {
     u32 inf[4], inf2[4]; /* file_info results */
     u32 dstate[4];       /* directory state */
     u32 dout[0x114 / 4]; /* one directory entry */
-    u8 pad[640 - 256 - 96 - 0x114];
+    u32 phys;            /* the card page of a file page (page_find) */
+    u8 pad[640 - 256 - 96 - 0x114 - 4];
 };
 struct dma DKPW_DMA __attribute__((aligned(16)));
 _Static_assert(sizeof(struct dma) == 640, "DKPW_DMA is 640 bytes (tests/regression/runtime/write-safety.ts)");
@@ -79,13 +101,84 @@ static u8 want[4];
  * power cut would: 1 after the first data write, 2 after the hash and close, 3 after the journal, 4 after the destination is deleted, 5 after
  * the rename, 6 between the two halves of the rename (a second name added, the staged name still there). From then on every call answers E_WRITE
  * and touches nothing, so that the card is the state a cut leaves. 7 is no cut: the rename fails (as the firmware could refuse it) and the
- * recovery must finish the replace. 8 leaves an unhashed file at the destination (a stock writer that died): no hash, rename, dead. */
+ * recovery must finish the replace. 9 fails after the hash page was written (then restored; the close hash only). 10 makes `hash_fast` give up before it reads or writes anything (as a page lookup that fails would), so the close runs the firmware's own hash. 8 leaves an unhashed file at the destination (a stock writer that died): no hash, rename, dead. */
 static u8 cut, dead;
+/* Test knob: bit 7 of the knob byte (DKRT_PD_CUT = 0x80, with or without a cut step in the low bits) closes with the firmware's own hash instead of
+ * `hash_fast`; the tests write the same file through both and compare the card and the RAM hash table. */
+static u8 slow;
+/* 1: `hash_fast` wrote hash pages and inode words but did not rebuild the firmware's RAM hash table (`rebuild_table` does, once per upload batch). */
+static u8 rb_pending;
 static u32 total, written;
 static char stage[40], jour[48];
 static char dest[DEST_MAX] __attribute__((aligned(16)));
 static char lp[DEST_MAX];
 static const u8 zeros[ZERO_TAIL] __attribute__((aligned(16)));
+
+#define PDW_TRACE 0 /* 1 for hardware measurement builds: per-step times in the log at close */
+#if PDW_TRACE
+/* the runtime (dkrt.h) */
+extern u32 dkrt_blocks(void); /* the 1500 Hz block counter: 1 unit = 0.667 ms */
+extern void dkrt_log_ev(u32 kind, u32 flags, const u32 *a);
+/* sdk.toml [[log.kind]] 14 MOD_LOG: args msg0..msg3 (16 ASCII chars, big-endian words) and value; flags: not an error, level 2 (info) */
+#define PW_KIND_MOD_LOG 14u
+#define PW_FLAGS (2u << 1)
+/* Times in blocks, summed over the calls of one file; a short call often reads 0, so only the sums mean something. */
+static u32 pw_b_parent, pw_b_lookup, pw_b_mkdir, pw_b_open, pw_b_reserve;
+static u32 pw_e_tail, pw_e_hash, pw_e_close, pw_e_info, pw_e_place, pw_e_rename, pw_e_journal;
+static u32 pw_w_blk, pw_w_n;
+static u32 pw_t;
+#define PW_START() (pw_t = dkrt_blocks())
+#define PW_STOP(c) ((c) += dkrt_blocks() - pw_t)
+
+/* `tag`: a string of at most 16 chars, padded with NULs */
+static void pw_log(const char *tag, u32 value)
+{
+    u32 a[5];
+    u32 i;
+    u32 live = 1;
+    for (i = 0; i < 16u; i++) {
+        u32 c = 0;
+        if (live && tag[i] != 0)
+            c = (u8)tag[i];
+        else
+            live = 0;
+        if ((i & 3u) == 0u)
+            a[i >> 2] = 0;
+        a[i >> 2] |= c << (24u - 8u * (i & 3u));
+    }
+    a[4] = value;
+    dkrt_log_ev(PW_KIND_MOD_LOG, PW_FLAGS, a);
+}
+
+static void pw_emit(void)
+{
+    pw_log("pw.b.parent", pw_b_parent);
+    pw_log("pw.b.lookup", pw_b_lookup);
+    pw_log("pw.b.mkdir", pw_b_mkdir);
+    pw_log("pw.b.open", pw_b_open);
+    pw_log("pw.b.reserve", pw_b_reserve);
+    pw_log("pw.e.tail", pw_e_tail);
+    pw_log("pw.e.hash", pw_e_hash);
+    pw_log("pw.e.close", pw_e_close);
+    pw_log("pw.e.info", pw_e_info);
+    pw_log("pw.e.place", pw_e_place);
+    pw_log("pw.e.rename", pw_e_rename);
+    pw_log("pw.e.journal", pw_e_journal);
+    pw_log("pw.w.blk", pw_w_blk);
+    pw_log("pw.w.n", pw_w_n);
+}
+static u32 pw_t2; /* the clock of the steps inside `place` (pw_t times place as a whole) */
+#define PW_T0() PW_START()
+#define PW_T1(c) PW_STOP(c)
+#define PW_I0() (pw_t2 = dkrt_blocks())
+#define PW_I1(c) ((c) += dkrt_blocks() - pw_t2)
+#else
+#define PW_T0() ((void)0)
+#define PW_T1(c) ((void)0)
+#define PW_I0() ((void)0)
+#define PW_I1(c) ((void)0)
+#define pw_emit() ((void)0)
+#endif
 
 static int cut_at(u8 step)
 {
@@ -244,7 +337,8 @@ static int staging_empty(void)
     return !dir_next();
 }
 
-/* The folder exists only while something is staged. */
+/* Remove the folder when it is empty. Only the boot recovery and the runtime's idle call (`dkpw_recover`) do it: the folder lives for a whole
+ * upload session, because its creation (about 420 ms) and removal (about 150 ms) cost more than a small file. */
 static void tidy(void)
 {
     if (!dead && staging_empty()) dk_fw_storage_file_rmdir((const u8 *)STAGE_DIR);
@@ -263,6 +357,22 @@ static int in_factory(const char *p)
 
 /* ---- write ------------------------------------------------------------------------------------------------------------------- */
 
+/* The firmware's RAM hash table (FUN_4015b0ee reads all 44 hash pages: about 300 ms) is derived data, rebuilt at every mount. `hash_fast` leaves it
+ * stale and sets `rb_pending`; the rebuild runs once when the batch ends (`dkpw_recover`, which the runtime calls after 2 s without a session, and
+ * `dkpw_abort`). A stale table only misses the new files: a lookup by hash (sample references of a project) does not find them yet, and the
+ * removal of an entry (inode free, FUN_4015b032) ignores a (hash, id) pair it does not find. The table is sorted at every rebuild and only shrinks
+ * meanwhile, so it stays sorted. Under the filesystem mutex, as in the firmware (FUN_4015b3aa). */
+static void rebuild_table(void)
+{
+    u32 *mutex;
+    if (!rb_pending || dead || !mounted()) return;
+    mutex = (u32 *)lit(&dk_fw_storage_fs_mutex);
+    dk_fw_rtos_mutex_lock(mutex);
+    dk_fw_storage_hash_table_rebuild();
+    dk_fw_rtos_mutex_unlock(mutex);
+    rb_pending = 0;
+}
+
 void dkpw_abort(void)
 {
     if (dead) return;
@@ -274,15 +384,17 @@ void dkpw_abort(void)
         f_delete(stage);
         st_live = 0;
     }
-    tidy();
+    rebuild_table();
 }
 
-/* A number above every one of our names in the folder: a leftover (which only the recovery removes) is never reused. */
-static u32 next_number(void)
+/* A number above every one of our names in the folder: a leftover (which only the recovery removes) is never reused. `there` gets 1 when the
+ * folder exists. */
+static u32 next_number(int *there)
 {
     u32 top = 0;
     int any = 0, j;
-    if (dir_open(STAGE_DIR)) {
+    *there = dir_open(STAGE_DIR);
+    if (*there) {
         while (dir_next()) {
             if (ours(ENT_NAME, &j)) {
                 u32 v = hexval(ENT_NAME);
@@ -297,26 +409,44 @@ static u32 next_number(void)
 int32_t dkpw_begin(const u8 *path, u32 size, const u8 *hash4, u32 flags)
 {
     u32 n = slen((const char *)path), i, id;
-    int at;
+    int at, there;
+    u32 num;
     if (n == 0 || n + 1 >= DEST_MAX || in_factory((const char *)path)) return E_PATH;
     if (st_live || st_open) dkpw_abort();
     dest[0] = '/';
     for (i = 0; i <= n; i++) dest[1 + i] = (char)path[i];
     replace = (flags & DKPW_REPLACE) != 0;
     cut = (u8)(flags >> 8);
+    slow = (cut & 0x80u) != 0;
+    cut &= 0x7fu;
     dead = 0;
     broken = 0;
-    if (parent_is_file(dest)) return E_PATH;
+#if PDW_TRACE
+    pw_b_parent = pw_b_lookup = pw_b_mkdir = pw_b_open = pw_b_reserve = 0;
+    pw_e_tail = pw_e_hash = pw_e_close = pw_e_info = pw_e_place = pw_e_rename = pw_e_journal = 0;
+    pw_w_blk = pw_w_n = 0;
+#endif
+    PW_T0();
+    at = parent_is_file(dest);
+    PW_T1(pw_b_parent);
+    if (at) return E_PATH;
+    PW_T0();
     at = lookup(dest, &id);
+    PW_T1(pw_b_lookup);
     if (at == 2) return E_PATH;
     if (at == 1) {
         if (!replace) return E_EXISTS;
         if (dk_fw_storage_file_id_open(id)) return E_FILE_IN_USE;
     }
-    f_mkdir(STAGE_DIR);
-    names_for(next_number());
-    if (dk_fw_storage_path_open((const u8 *)stage, (const u8 *)"w", hnd) != 0) {
-        tidy();
+    PW_T0();
+    num = next_number(&there);   /* the folder of an earlier file of the session is reused */
+    if (!there) f_mkdir(STAGE_DIR);
+    PW_T1(pw_b_mkdir);
+    names_for(num);
+    PW_T0();
+    i = (u32)dk_fw_storage_path_open((const u8 *)stage, (const u8 *)"w", hnd);
+    PW_T1(pw_b_open);
+    if (i != 0) {
         return E_WRITE;
     }
     st_open = 1;
@@ -325,7 +455,10 @@ int32_t dkpw_begin(const u8 *path, u32 size, const u8 *hash4, u32 flags)
     written = 0;
     have_want = hash4 != 0;
     if (hash4) for (i = 0; i < 4; i++) want[i] = hash4[i];
-    if (dk_fw_storage_file_reserve(hnd, 0, total) != 0) {
+    PW_T0();
+    i = (u32)dk_fw_storage_file_reserve(hnd, 0, total);
+    PW_T1(pw_b_reserve);
+    if (i != 0) {
         dkpw_abort();
         return E_FULL;
     }
@@ -335,15 +468,21 @@ int32_t dkpw_begin(const u8 *path, u32 size, const u8 *hash4, u32 flags)
 int32_t dkpw_write(const u8 *buf, u32 len)
 {
     if (!st_open || dead || broken) return E_WRITE;
-    while (len) {
-        u32 n = len > CHUNK ? CHUNK : len;
-        if (dk_fw_storage_file_write(buf, n, hnd) != (i32)n) {
-            broken = 1; /* a retry would write the piece again after a partial one */
+    if (len) {
+        /* One firmware call per SDK write: the call has no size limit and ends with one inode write-back, and whole aligned 32 KiB pages go
+         * straight to the card. A buffer that is not 16-byte aligned is bounced by the firmware (correct, only slower). */
+        i32 wr;
+        PW_T0();
+        wr = dk_fw_storage_file_write(buf, len, hnd);
+        PW_T1(pw_w_blk);
+#if PDW_TRACE
+        pw_w_n++;
+#endif
+        if (wr != (i32)len) {
+            broken = 1; /* a retry would write the data again after a partial write */
             return E_WRITE;
         }
-        buf += n;
-        len -= n;
-        written += n;
+        written += len;
         if (cut_at(1)) return E_WRITE;
     }
     return 0;
@@ -354,10 +493,15 @@ static int journal_write(void)
 {
     int ok;
     u32 n = slen(dest) + 1;
-    if (dk_fw_storage_path_open((const u8 *)jour, (const u8 *)"w", jh) != 0) return 0;
+    PW_I0();
+    if (dk_fw_storage_path_open((const u8 *)jour, (const u8 *)"w", jh) != 0) {
+        PW_I1(pw_e_journal);
+        return 0;
+    }
     ok = dk_fw_storage_file_write((const u8 *)dest, n, jh) == (i32)n && dk_fw_storage_file_hash(jh) == 0;
     dk_fw_storage_path_close(jh);
     if (!ok) f_delete(jour);
+    PW_I1(pw_e_journal);
     return ok;
 }
 
@@ -399,7 +543,11 @@ static i32 place(void)
         return E_WRITE;
     }
     for (tries = 0; tries < 3; tries++) {
-        if (cut != 7 && dk_fw_storage_file_rename((const u8 *)stage, (const u8 *)dest) == 0) {
+        int renamed;
+        PW_I0();
+        renamed = cut != 7 && dk_fw_storage_file_rename((const u8 *)stage, (const u8 *)dest) == 0;
+        PW_I1(pw_e_rename);
+        if (renamed) {
             if (cut_at(5)) return E_WRITE;
             if (journaled) f_delete(jour);
             return 0;
@@ -410,7 +558,73 @@ static i32 place(void)
     return E_WRITE;
 }
 
-int32_t dkpw_close(u8 *hash_out)
+#if PDW_FAST_CLOSE
+/* The firmware's close hash of the staged file (FUN_4015b1e8) without its re-read through the page cache. 0; E_HASH when the card's data differs from
+ * the host's hash (nothing is changed then); HF_FALLBACK when the card cannot be read the way this function needs (not mounted, no inode, a size that is not what
+ * was written, a page that the extent lookup misses, a failed block read; nothing is changed yet), and the caller closes with the firmware's own hash;
+ * E_WRITE when the hash page could not be written (the page is restored; the table, the inode and the event are not touched). Everything runs under the filesystem
+ * mutex, as in the firmware (FUN_4015b3aa). The firmware's own scratch buffers are used: both are 32 KiB, 16-byte aligned and used only under that mutex. */
+static i32 hash_fast(void)
+{
+    struct pdw_hash h;
+    u32 *mutex = (u32 *)lit(&dk_fw_storage_fs_mutex);
+    u8 *rbuf = (u8 *)lit(&dk_fw_storage_hash_read_buf);
+    u8 *pbuf = (u8 *)lit(&dk_fw_storage_hash_page_buf);
+    u32 hsec = lit(&dk_fw_storage_hash_page_sector);
+    u32 dsec = lit(&dk_fw_storage_data_sector_base);
+    u32 id = hnd[0], pages = (total + (PAGE_BYTES - 1u)) >> PAGE_SHIFT, p, hv, i, sector, old;
+    u32 *ino;
+    i32 r = HF_FALLBACK;
+    if (!mounted()) return HF_FALLBACK;
+    dk_fw_rtos_mutex_lock(mutex);
+    ino = (u32 *)dk_fw_storage_inode_get(id);
+    if (!ino) goto unlock;
+    if (ino[1] != total || cut == 10) goto put; /* the inode size is what was written (knob 10 acts as a size mismatch) */
+    pdw_hash_init(&h);
+    for (p = 0; p < pages; p++) {
+        u32 n = total - (p << PAGE_SHIFT);
+        if (n > PAGE_BYTES) n = PAGE_BYTES;
+        if ((dk_fw_storage_file_page_find((u8 *)ino, p, &DKPW_DMA.phys) & PAGE_FIND_STATUS) == 0) goto put;
+        if (dk_fw_storage_block_read(dsec + (DKPW_DMA.phys << PAGE_SECTOR_SHIFT), (n + (SECTOR_BYTES - 1u)) & ~(SECTOR_BYTES - 1u), rbuf) != 0) goto put;
+        pdw_hash_update(&h, rbuf, n);
+    }
+    hv = pdw_hash_finish(&h) | 1u;
+    if (have_want) {
+        for (i = 0; i < 4; i++) {
+            if (want[i] != (u8)(hv >> (24 - 8 * i))) {
+                r = E_HASH;
+                goto put;
+            }
+        }
+    }
+    /* the rest of FUN_4015b1e8, in its order: the hash page, (the table: `rebuild_table`, later), the inode word, the event, the inode write-back */
+    r = HF_FALLBACK;
+    sector = hsec + (id >> HASH_PAGE_SHIFT) * HASH_PAGE_SECTORS;
+    if (dk_fw_storage_block_read(sector, PAGE_BYTES, pbuf) != 0) goto put;
+    old = ((u32 *)pbuf)[id & (HASH_PAGE_WORDS - 1u)];
+    ((u32 *)pbuf)[id & (HASH_PAGE_WORDS - 1u)] = hv;
+    if (dk_fw_storage_block_write(sector, PAGE_BYTES, pbuf) != 0 || cut == 9) {
+        /* The staged file is deleted by the caller: no hash entry may point at its inode. Write the page back with the word as it was
+         * (a failed write may have reached the card in part). The table, the inode and the event are not touched yet. */
+        ((u32 *)pbuf)[id & (HASH_PAGE_WORDS - 1u)] = old;
+        dk_fw_storage_block_write(sector, PAGE_BYTES, pbuf);
+        r = E_WRITE;
+        goto put;
+    }
+    rb_pending = 1; /* the table is rebuilt when the batch ends (`rebuild_table`) */
+    ino[3] = hv;
+    dk_fw_storage_event_post(3, ino[2], id);
+    dk_fw_storage_inode_write((u8 *)ino);
+    r = 0;
+put:
+    dk_fw_storage_inode_put((u8 *)ino);
+unlock:
+    dk_fw_rtos_mutex_unlock(mutex);
+    return r;
+}
+#endif
+
+static int32_t close_file(u8 *hash_out)
 {
     i32 r;
     u32 i;
@@ -420,7 +634,10 @@ int32_t dkpw_close(u8 *hash_out)
         dkpw_abort();
         return bad ? E_WRITE : E_LENGTH;
     }
-    if (dk_fw_storage_file_write(zeros, ZERO_TAIL, hnd) != (i32)ZERO_TAIL) {
+    PW_T0();
+    r = dk_fw_storage_file_write(zeros, ZERO_TAIL, hnd);
+    PW_T1(pw_e_tail);
+    if (r != (i32)ZERO_TAIL) {
         dkpw_abort();
         return E_WRITE;
     }
@@ -433,13 +650,35 @@ int32_t dkpw_close(u8 *hash_out)
         dead = 1;
         return E_WRITE;
     }
-    if (dk_fw_storage_file_hash(hnd) != 0) {
-        dkpw_abort();
-        return E_WRITE;
+    PW_T0();
+#if PDW_FAST_CLOSE
+    r = HF_FALLBACK;
+    if (!slow) {
+        r = hash_fast();
+        PW_T1(pw_e_hash);
+        if (r != 0 && r != HF_FALLBACK) {
+            dkpw_abort();
+            return (int32_t)r;
+        }
     }
+    if (r == HF_FALLBACK)
+#endif
+    {
+        r = dk_fw_storage_file_hash(hnd);   /* rebuilds the table itself */
+        PW_T1(pw_e_hash);
+        if (r != 0) {
+            dkpw_abort();
+            return E_WRITE;
+        }
+    }
+    PW_T0();
     dk_fw_storage_path_close(hnd);
+    PW_T1(pw_e_close);
     st_open = 0;
-    if (f_info(stage, inf) != 0 || inf[2] != total) {
+    PW_T0();
+    r = f_info(stage, inf);
+    PW_T1(pw_e_info);
+    if (r != 0 || inf[2] != total) {
         dkpw_abort();
         return E_WRITE;
     }
@@ -453,9 +692,17 @@ int32_t dkpw_close(u8 *hash_out)
         }
     }
     if (cut_at(2)) return E_WRITE;
+    PW_T0();
     r = place();
+    PW_T1(pw_e_place);
     st_live = 0;   /* moved into place, or removed by `place`, or left for the recovery */
-    tidy();
+    return r;
+}
+
+int32_t dkpw_close(u8 *hash_out)
+{
+    int32_t r = close_file(hash_out);
+    pw_emit();
     return r;
 }
 
@@ -518,6 +765,7 @@ int32_t dkpw_recover(u32 *out)
     out[0] = out[1] = out[2] = out[3] = 0;
     if (!mounted()) return -1;
     if (dead) return 0;   /* a simulated power cut: nothing runs */
+    rebuild_table();      /* the end of an upload batch */
     for (round = 0; round < 64; round++) {
         u32 progress = 0, left = 0, id;
         i32 n;

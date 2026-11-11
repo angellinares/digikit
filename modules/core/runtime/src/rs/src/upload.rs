@@ -219,7 +219,7 @@ unsafe fn cmd_info(seq: u32, buf: *mut u8) -> i32 {
     // appended after the log range: the whole packed runtime version (bytes 2-3 keep its low 16 bits) and the capability bits
     wr32(rb.add(25), RUNTIME_VERSION);
     let log_caps = if dlog::sink_present() { CAP_LOG | CAP_PEEK | CAP_LOGCFG } else { 0 };
-    wr32(rb.add(29), log_caps | CAP_SELECT | CAP_RESTART | CAP_MODULES | CAP_CAPACITY | CAP_READ | CAP_VERIFY | CAP_SERVICE_CMDS | CAP_FOLDERS | CAP_SETTINGS | CAP_FILEHASH | CAP_RENAME);
+    wr32(rb.add(29), log_caps | CAP_SELECT | CAP_RESTART | CAP_MODULES | CAP_CAPACITY | CAP_READ | CAP_VERIFY | CAP_SERVICE_CMDS | CAP_FOLDERS | CAP_SETTINGS | CAP_FILEHASH | CAP_RENAME | CAP_READBACK);
     // appended after the capability bits: the id of the flashed image (patchkit stamps it; zeros when there is none)
     let id = crate::image_id();
     let mut i = 0;

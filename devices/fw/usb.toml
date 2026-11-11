@@ -19,6 +19,22 @@ mark = "D"
 users = ["core/usb-bulk"]
 doc = "The active USB port index (u32): 2 USB MIDI, 5 USB AUDIO/MIDI, 6 Overbridge; written by the mode switch `FUN_40006c16` and at boot by `FUN_40006c52`. DT2 1.17 0x40965a60, DN2 1.12 0x4058f2a8. RAM at run time."
 
+[[value]]
+name = "cf.usb.value.restart_delay"
+cpu = "cf"
+rule = { kind = "cf_literal", hash = "1759e0389e0bfbf090d237eae15fbc8a", offset = 0xa, len = 4 }
+mark = "D"
+users = ["core/usb-bulk"]
+doc = "The restart delay of the USB mode switch (u32): the stop (`FUN_40006bac`) sets it to 30, the USB tick `FUN_4000713e` counts it down (one a tick, about 33 ms) and calls the restart (`FUN_40006bc6`) when it reaches 0. Non-zero while a stop waits to restart. The operand of the tick's first read. DT2 1.17 0x40965a38, DN2 1.12 0x4058f280. RAM at run time."
+
+[[value]]
+name = "cf.usb.value.config_mode"
+cpu = "cf"
+rule = { kind = "cf_literal", hash = "4171d95c0525874c42f53a0a7247bc39", offset = 0x2, len = 4 }
+mark = "D"
+users = ["core/usb-bulk"]
+doc = "The USB CONFIG setting byte (u8: 0 USB MIDI, 1 Overbridge, 2 USB AUDIO/MIDI), the operand of its getter (`FUN_400c1168`). The stored mode: the mode switch never writes it, only the three menu actions, the settings load and the factory defaults do. Tests read it to prove a take-over leaves it alone. DT2 1.17 0x4099d5c4, DN2 1.12 0x405ce898. RAM at run time."
+
 [[fn]]
 name = "cf.usb.fn.connect"
 cpu = "cf"
@@ -81,3 +97,12 @@ rule = { kind = "cf_func", hash = "f6c30c569e250564446808c0d8b0aa51", offset = 0
 mark = "D"
 users = ["core/usb-bulk"]
 doc = "Start the USB device again when the stop delay has ended (`FUN_40006bc6`, 0x40006bc6); the second half of a re-enumeration."
+
+[[fn]]
+name = "cf.usb.fn.mode_switch"
+cpu = "cf"
+sig = "void (u32 port)"
+rule = { kind = "cf_func", hash = "6ca45a25378d0a0f22d18114089f4984", offset = 0x0, len = 4 }
+mark = "D"
+users = ["core/usb-bulk"]
+doc = "The USB mode switch (`FUN_40006c16`, 0x40006c16): returns when `port` is the active port; else stops USB (the old port's disconnect callback runs), writes the active port and starts again about 30 USB ticks later. It never writes the USB CONFIG setting byte. Task context, not an ISR; the stop cuts a reply in flight on EP1."

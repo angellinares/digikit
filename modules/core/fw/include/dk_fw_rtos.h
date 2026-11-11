@@ -7,6 +7,10 @@
 #include <stddef.h>
 
 /* cf.rtos.fn.create_main: no sig yet */
+/* Lock a recursive owner-aware mutex (FUN_400015a0 on DT2 1.17): a task that holds it takes it again without blocking. Task context only. */
+void dk_fw_rtos_mutex_lock(uint32_t *mutex) __asm__("cf.rtos.fn.mutex_lock");
+/* Unlock a mutex of mutex_lock (FUN_400016d2 on DT2 1.17). Task context only. */
+void dk_fw_rtos_mutex_unlock(uint32_t *mutex) __asm__("cf.rtos.fn.mutex_unlock");
 /* cf.rtos.fn.queue_pop: no sig yet */
 /* cf.rtos.fn.reset.init_calls: no sig yet */
 /* Semaphore init (0x40001398 on all three images). A semaphore is 8 bytes: +0 count or flag, +4 the one waiting TCB (one waiter only). No static initialiser. */

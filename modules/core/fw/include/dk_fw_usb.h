@@ -12,6 +12,8 @@ void dk_fw_usb_cancel_ep(uint32_t index) __asm__("cf.usb.fn.cancel_ep");
 void dk_fw_usb_connect(uint32_t hs) __asm__("cf.usb.fn.connect");
 /* The disconnect callback of the USB MIDI port (`FUN_4000436e`, 0x4000436e): clears ENDPTCTRL1, flushes EP1 (an unbounded poll on ENDPTFLUSH), cancels both EP1 queues. */
 void dk_fw_usb_disconnect(void) __asm__("cf.usb.fn.disconnect");
+/* The USB mode switch (`FUN_40006c16`, 0x40006c16): returns when `port` is the active port; else stops USB (the old port's disconnect callback runs), writes the active port and starts again about 30 USB ticks later. It never writes the USB CONFIG setting byte. Task context, not an ISR; the stop cuts a reply in flight on EP1. */
+void dk_fw_usb_mode_switch(uint32_t port) __asm__("cf.usb.fn.mode_switch");
 /* Queue a transfer descriptor on endpoint queue `index` = endpoint + 4 * direction (IN = 1) and prime it (`FUN_40005a86`, 0x40005a86). */
 int32_t dk_fw_usb_queue_td(uint32_t index, uint8_t *dtd) __asm__("cf.usb.fn.queue_td");
 /* Start the USB device again when the stop delay has ended (`FUN_40006bc6`, 0x40006bc6); the second half of a re-enumeration. */
@@ -24,5 +26,9 @@ uint8_t * dk_fw_usb_td_alloc(void) __asm__("cf.usb.fn.td_alloc");
 extern const uint8_t dk_fw_usb_port_table __asm__("cf.usb.data.port_table");
 /* The active USB port index (u32): 2 USB MIDI, 5 USB AUDIO/MIDI, 6 Overbridge; written by the mode switch `FUN_40006c16` and at boot by `FUN_40006c52`. DT2 1.17 0x40965a60, DN2 1.12 0x4058f2a8. RAM at run time. */
 extern const uint8_t dk_fw_usb_active_port __asm__("cf.usb.value.active_port");
+/* The USB CONFIG setting byte (u8: 0 USB MIDI, 1 Overbridge, 2 USB AUDIO/MIDI), the operand of its getter (`FUN_400c1168`). The stored mode: the mode switch never writes it, only the three menu actions, the settings load and the factory defaults do. Tests read it to prove a take-over leaves it alone. DT2 1.17 0x4099d5c4, DN2 1.12 0x405ce898. RAM at run time. */
+extern const uint8_t dk_fw_usb_config_mode __asm__("cf.usb.value.config_mode");
+/* The restart delay of the USB mode switch (u32): the stop (`FUN_40006bac`) sets it to 30, the USB tick `FUN_4000713e` counts it down (one a tick, about 33 ms) and calls the restart (`FUN_40006bc6`) when it reaches 0. Non-zero while a stop waits to restart. The operand of the tick's first read. DT2 1.17 0x40965a38, DN2 1.12 0x4058f280. RAM at run time. */
+extern const uint8_t dk_fw_usb_restart_delay __asm__("cf.usb.value.restart_delay");
 
 #endif

@@ -9773,6 +9773,78 @@
     },
     {
       "at": {
+        "dt2-1.17": [
+          {
+            "addr": "0x400015a0",
+            "len": 4
+          }
+        ]
+      },
+      "bindings": {
+        "c": "dk_fw_rtos_mutex_lock",
+        "rust": "dkfw::rtos::mutex_lock"
+      },
+      "cpu": "cf",
+      "devices": [
+        "dt2"
+      ],
+      "doc": "Lock a recursive owner-aware mutex (FUN_400015a0 on DT2 1.17): a task that holds it takes it again without blocking. Task context only.",
+      "file": "devices/fw/rtos.toml",
+      "kind": "fn",
+      "mark": "D",
+      "name": "cf.rtos.fn.mutex_lock",
+      "rule": {
+        "dt2": {
+          "kind": "cf_func",
+          "len": 4,
+          "offset": 0
+        }
+      },
+      "sig": "void (u32 *mutex)",
+      "subsystem": "rtos",
+      "users": [
+        "core/plusdrive-write"
+      ],
+      "was": []
+    },
+    {
+      "at": {
+        "dt2-1.17": [
+          {
+            "addr": "0x400016d2",
+            "len": 4
+          }
+        ]
+      },
+      "bindings": {
+        "c": "dk_fw_rtos_mutex_unlock",
+        "rust": "dkfw::rtos::mutex_unlock"
+      },
+      "cpu": "cf",
+      "devices": [
+        "dt2"
+      ],
+      "doc": "Unlock a mutex of mutex_lock (FUN_400016d2 on DT2 1.17). Task context only.",
+      "file": "devices/fw/rtos.toml",
+      "kind": "fn",
+      "mark": "D",
+      "name": "cf.rtos.fn.mutex_unlock",
+      "rule": {
+        "dt2": {
+          "kind": "cf_func",
+          "len": 4,
+          "offset": 0
+        }
+      },
+      "sig": "void (u32 *mutex)",
+      "subsystem": "rtos",
+      "users": [
+        "core/plusdrive-write"
+      ],
+      "was": []
+    },
+    {
+      "at": {
         "dn2-1.11": [
           {
             "addr": "0x40001928",
@@ -11276,6 +11348,42 @@
       "at": {
         "dt2-1.17": [
           {
+            "addr": "0x4015a6aa",
+            "len": 4
+          }
+        ]
+      },
+      "bindings": {
+        "c": "dk_fw_storage_event_post",
+        "rust": "dkfw::storage::event_post"
+      },
+      "cpu": "cf",
+      "devices": [
+        "dt2"
+      ],
+      "doc": "Post a file-system event (FUN_4015a6aa) into the 32-entry ring and wake its consumer: kind 2 after a write, kind 3 after the close hash (a = inode word +8, b = inode id) (finding 120).",
+      "file": "devices/fw/storage.toml",
+      "kind": "fn",
+      "mark": "D",
+      "name": "cf.storage.fn.event.post",
+      "rule": {
+        "dt2": {
+          "kind": "cf_func",
+          "len": 4,
+          "offset": 0
+        }
+      },
+      "sig": "void (u32 kind, u32 a, u32 b)",
+      "subsystem": "storage",
+      "users": [
+        "core/plusdrive-write"
+      ],
+      "was": []
+    },
+    {
+      "at": {
+        "dt2-1.17": [
+          {
             "addr": "0x4015bfc4",
             "len": 4
           }
@@ -11528,6 +11636,42 @@
       "at": {
         "dt2-1.17": [
           {
+            "addr": "0x4015813c",
+            "len": 4
+          }
+        ]
+      },
+      "bindings": {
+        "c": "dk_fw_storage_file_page_find",
+        "rust": "dkfw::storage::file_page_find"
+      },
+      "cpu": "cf",
+      "devices": [
+        "dt2"
+      ],
+      "doc": "Extent lookup FUN_4015813c: the low byte is 1 and *phys is the card page of file page `page` (32 KiB units; card sector = phys * 0x40 + the data base site); 0 when the page is past the extents. No mutex (finding 120).",
+      "file": "devices/fw/storage.toml",
+      "kind": "fn",
+      "mark": "D",
+      "name": "cf.storage.fn.file.page_find",
+      "rule": {
+        "dt2": {
+          "kind": "cf_func",
+          "len": 4,
+          "offset": 0
+        }
+      },
+      "sig": "u32 (u8 *inode, u32 page, u32 *phys)",
+      "subsystem": "storage",
+      "users": [
+        "core/plusdrive-write"
+      ],
+      "was": []
+    },
+    {
+      "at": {
+        "dt2-1.17": [
+          {
             "addr": "0x40156f6c",
             "len": 4
           }
@@ -11662,6 +11806,150 @@
         }
       },
       "sig": "i32 (const u8 *buf, u32 bytes, u32 *handle)",
+      "subsystem": "storage",
+      "users": [
+        "core/plusdrive-write"
+      ],
+      "was": []
+    },
+    {
+      "at": {
+        "dt2-1.17": [
+          {
+            "addr": "0x4015b0ee",
+            "len": 4
+          }
+        ]
+      },
+      "bindings": {
+        "c": "dk_fw_storage_hash_table_rebuild",
+        "rust": "dkfw::storage::hash_table_rebuild"
+      },
+      "cpu": "cf",
+      "devices": [
+        "dt2"
+      ],
+      "doc": "Rebuild the RAM content-hash table (FUN_4015b0ee) from the 44 hash pages on the card and the RAM inodes, and sort it; the close hash calls it after each hash page update. Call under the filesystem mutex (finding 120).",
+      "file": "devices/fw/storage.toml",
+      "kind": "fn",
+      "mark": "D",
+      "name": "cf.storage.fn.hash_table.rebuild",
+      "rule": {
+        "dt2": {
+          "kind": "cf_func",
+          "len": 4,
+          "offset": 0
+        }
+      },
+      "sig": "void ()",
+      "subsystem": "storage",
+      "users": [
+        "core/plusdrive-write"
+      ],
+      "was": []
+    },
+    {
+      "at": {
+        "dt2-1.17": [
+          {
+            "addr": "0x4015b92a",
+            "len": 4
+          }
+        ]
+      },
+      "bindings": {
+        "c": "dk_fw_storage_inode_get",
+        "rust": "dkfw::storage::inode_get"
+      },
+      "cpu": "cf",
+      "devices": [
+        "dt2"
+      ],
+      "doc": "Inode cache lookup FUN_4015b92a (DT2 1.17): the cached 0x80-byte inode of inode_id with its use count raised, read from the card when it is not cached; 0 for an id out of range. No mutex: call it under the filesystem mutex and release it with inode.put (finding 120).",
+      "file": "devices/fw/storage.toml",
+      "kind": "fn",
+      "mark": "D",
+      "name": "cf.storage.fn.inode.get",
+      "rule": {
+        "dt2": {
+          "kind": "cf_func",
+          "len": 4,
+          "offset": 0
+        }
+      },
+      "sig": "u8 *(u32 inode_id)",
+      "subsystem": "storage",
+      "users": [
+        "core/plusdrive-write"
+      ],
+      "was": []
+    },
+    {
+      "at": {
+        "dt2-1.17": [
+          {
+            "addr": "0x4015b846",
+            "len": 4
+          }
+        ]
+      },
+      "bindings": {
+        "c": "dk_fw_storage_inode_put",
+        "rust": "dkfw::storage::inode_put"
+      },
+      "cpu": "cf",
+      "devices": [
+        "dt2"
+      ],
+      "doc": "Release an inode of inode.get (FUN_4015b846): lowers its use count. No mutex (finding 120).",
+      "file": "devices/fw/storage.toml",
+      "kind": "fn",
+      "mark": "D",
+      "name": "cf.storage.fn.inode.put",
+      "rule": {
+        "dt2": {
+          "kind": "cf_func",
+          "len": 4,
+          "offset": 0
+        }
+      },
+      "sig": "void (u8 *inode)",
+      "subsystem": "storage",
+      "users": [
+        "core/plusdrive-write"
+      ],
+      "was": []
+    },
+    {
+      "at": {
+        "dt2-1.17": [
+          {
+            "addr": "0x4015b868",
+            "len": 4
+          }
+        ]
+      },
+      "bindings": {
+        "c": "dk_fw_storage_inode_write",
+        "rust": "dkfw::storage::inode_write"
+      },
+      "cpu": "cf",
+      "devices": [
+        "dt2"
+      ],
+      "doc": "Inode write-back FUN_4015b868: reads the inode's 32 KiB card page, replaces the 0x80-byte inode and writes the page through (synchronous). No mutex (finding 120).",
+      "file": "devices/fw/storage.toml",
+      "kind": "fn",
+      "mark": "D",
+      "name": "cf.storage.fn.inode.write",
+      "rule": {
+        "dt2": {
+          "kind": "cf_func",
+          "len": 4,
+          "offset": 0
+        }
+      },
+      "sig": "void (u8 *inode)",
       "subsystem": "storage",
       "users": [
         "core/plusdrive-write"
@@ -11916,6 +12204,42 @@
       "at": {
         "dt2-1.17": [
           {
+            "addr": "0x40155cb6",
+            "len": 4
+          }
+        ]
+      },
+      "bind": "static",
+      "bindings": {
+        "c": "dk_fw_storage_data_sector_base",
+        "rust": "dkfw::storage::DATA_SECTOR_BASE"
+      },
+      "cpu": "cf",
+      "devices": [
+        "dt2"
+      ],
+      "doc": "The 4-byte literal of the card sector of data page 0 (0x5ee180 on 1.17): page p of the +Drive is at sector base + p * 0x40 (the page write-back FUN_40155c34) (finding 120).",
+      "file": "devices/fw/storage.toml",
+      "kind": "site",
+      "mark": "D",
+      "name": "cf.storage.site.data_sector_base",
+      "rule": {
+        "dt2": {
+          "kind": "cf_func",
+          "len": 4,
+          "offset": 130
+        }
+      },
+      "subsystem": "storage",
+      "users": [
+        "core/plusdrive-write"
+      ],
+      "was": []
+    },
+    {
+      "at": {
+        "dt2-1.17": [
+          {
             "addr": "0x4012d5c2",
             "len": 6
           }
@@ -12002,6 +12326,150 @@
       "subsystem": "storage",
       "users": [
         "core/storage-fault-proof"
+      ],
+      "was": []
+    },
+    {
+      "at": {
+        "dt2-1.17": [
+          {
+            "addr": "0x4015b3be",
+            "len": 4
+          }
+        ]
+      },
+      "bind": "static",
+      "bindings": {
+        "c": "dk_fw_storage_fs_mutex",
+        "rust": "dkfw::storage::FS_MUTEX"
+      },
+      "cpu": "cf",
+      "devices": [
+        "dt2"
+      ],
+      "doc": "The 4-byte literal of the filesystem mutex address (0x46f4deb0 on 1.17), the `pea` before the lock call in file.hash (finding 120).",
+      "file": "devices/fw/storage.toml",
+      "kind": "site",
+      "mark": "D",
+      "name": "cf.storage.site.fs_mutex",
+      "rule": {
+        "dt2": {
+          "kind": "cf_func",
+          "len": 4,
+          "offset": 20
+        }
+      },
+      "subsystem": "storage",
+      "users": [
+        "core/plusdrive-write"
+      ],
+      "was": []
+    },
+    {
+      "at": {
+        "dt2-1.17": [
+          {
+            "addr": "0x4015b26e",
+            "len": 4
+          }
+        ]
+      },
+      "bind": "static",
+      "bindings": {
+        "c": "dk_fw_storage_hash_page_buf",
+        "rust": "dkfw::storage::HASH_PAGE_BUF"
+      },
+      "cpu": "cf",
+      "devices": [
+        "dt2"
+      ],
+      "doc": "The 4-byte literal of the 32 KiB scratch buffer (0x406658c0 on 1.17) in which the close hash FUN_4015b1e8 updates a hash page; used under the filesystem mutex (finding 120).",
+      "file": "devices/fw/storage.toml",
+      "kind": "site",
+      "mark": "D",
+      "name": "cf.storage.site.hash_page_buf",
+      "rule": {
+        "dt2": {
+          "kind": "cf_func",
+          "len": 4,
+          "offset": 134
+        }
+      },
+      "subsystem": "storage",
+      "users": [
+        "core/plusdrive-write"
+      ],
+      "was": []
+    },
+    {
+      "at": {
+        "dt2-1.17": [
+          {
+            "addr": "0x4015b286",
+            "len": 4
+          }
+        ]
+      },
+      "bind": "static",
+      "bindings": {
+        "c": "dk_fw_storage_hash_page_sector",
+        "rust": "dkfw::storage::HASH_PAGE_SECTOR"
+      },
+      "cpu": "cf",
+      "devices": [
+        "dt2"
+      ],
+      "doc": "The 4-byte literal of the card sector of the first hash page (0x5ee980 on 1.17): the page of inode id is at sector + (id >> 13) * 0x40, word id & 0x1fff holds hash|1 (finding 120).",
+      "file": "devices/fw/storage.toml",
+      "kind": "site",
+      "mark": "D",
+      "name": "cf.storage.site.hash_page_sector",
+      "rule": {
+        "dt2": {
+          "kind": "cf_func",
+          "len": 4,
+          "offset": 158
+        }
+      },
+      "subsystem": "storage",
+      "users": [
+        "core/plusdrive-write"
+      ],
+      "was": []
+    },
+    {
+      "at": {
+        "dt2-1.17": [
+          {
+            "addr": "0x4015b246",
+            "len": 4
+          }
+        ]
+      },
+      "bind": "static",
+      "bindings": {
+        "c": "dk_fw_storage_hash_read_buf",
+        "rust": "dkfw::storage::HASH_READ_BUF"
+      },
+      "cpu": "cf",
+      "devices": [
+        "dt2"
+      ],
+      "doc": "The 4-byte literal of the 32 KiB scratch buffer (0x4066d8c0 on 1.17) that the close hash FUN_4015b1e8 reads the file into; free for a caller that holds the filesystem mutex (finding 120).",
+      "file": "devices/fw/storage.toml",
+      "kind": "site",
+      "mark": "D",
+      "name": "cf.storage.site.hash_read_buf",
+      "rule": {
+        "dt2": {
+          "kind": "cf_func",
+          "len": 4,
+          "offset": 94
+        }
+      },
+      "subsystem": "storage",
+      "users": [
+        "core/plusdrive-write"
       ],
       "was": []
     },
@@ -12866,6 +13334,50 @@
       "at": {
         "dn2-1.12": [
           {
+            "addr": "0x40006c16",
+            "len": 4
+          }
+        ],
+        "dt2-1.17": [
+          {
+            "addr": "0x40006c16",
+            "len": 4
+          }
+        ]
+      },
+      "bindings": {
+        "c": "dk_fw_usb_mode_switch",
+        "rust": "dkfw::usb::mode_switch"
+      },
+      "cpu": "cf",
+      "doc": "The USB mode switch (`FUN_40006c16`, 0x40006c16): returns when `port` is the active port; else stops USB (the old port's disconnect callback runs), writes the active port and starts again about 30 USB ticks later. It never writes the USB CONFIG setting byte. Task context, not an ISR; the stop cuts a reply in flight on EP1.",
+      "file": "devices/fw/usb.toml",
+      "kind": "fn",
+      "mark": "D",
+      "name": "cf.usb.fn.mode_switch",
+      "rule": {
+        "dn2": {
+          "kind": "cf_func",
+          "len": 4,
+          "offset": 0
+        },
+        "dt2": {
+          "kind": "cf_func",
+          "len": 4,
+          "offset": 0
+        }
+      },
+      "sig": "void (u32 port)",
+      "subsystem": "usb",
+      "users": [
+        "core/usb-bulk"
+      ],
+      "was": []
+    },
+    {
+      "at": {
+        "dn2-1.12": [
+          {
             "addr": "0x40005a86",
             "len": 4
           }
@@ -13073,6 +13585,92 @@
           "kind": "cf_literal",
           "len": 4,
           "offset": 20
+        }
+      },
+      "subsystem": "usb",
+      "users": [
+        "core/usb-bulk"
+      ],
+      "was": []
+    },
+    {
+      "at": {
+        "dn2-1.12": [
+          {
+            "addr": "0x405ce898",
+            "len": 4
+          }
+        ],
+        "dt2-1.17": [
+          {
+            "addr": "0x4099d5c4",
+            "len": 4
+          }
+        ]
+      },
+      "bindings": {
+        "c": "dk_fw_usb_config_mode",
+        "rust": "dkfw::usb::CONFIG_MODE"
+      },
+      "cpu": "cf",
+      "doc": "The USB CONFIG setting byte (u8: 0 USB MIDI, 1 Overbridge, 2 USB AUDIO/MIDI), the operand of its getter (`FUN_400c1168`). The stored mode: the mode switch never writes it, only the three menu actions, the settings load and the factory defaults do. Tests read it to prove a take-over leaves it alone. DT2 1.17 0x4099d5c4, DN2 1.12 0x405ce898. RAM at run time.",
+      "file": "devices/fw/usb.toml",
+      "kind": "value",
+      "mark": "D",
+      "name": "cf.usb.value.config_mode",
+      "rule": {
+        "dn2": {
+          "kind": "cf_literal",
+          "len": 4,
+          "offset": 2
+        },
+        "dt2": {
+          "kind": "cf_literal",
+          "len": 4,
+          "offset": 2
+        }
+      },
+      "subsystem": "usb",
+      "users": [
+        "core/usb-bulk"
+      ],
+      "was": []
+    },
+    {
+      "at": {
+        "dn2-1.12": [
+          {
+            "addr": "0x4058f280",
+            "len": 4
+          }
+        ],
+        "dt2-1.17": [
+          {
+            "addr": "0x40965a38",
+            "len": 4
+          }
+        ]
+      },
+      "bindings": {
+        "c": "dk_fw_usb_restart_delay",
+        "rust": "dkfw::usb::RESTART_DELAY"
+      },
+      "cpu": "cf",
+      "doc": "The restart delay of the USB mode switch (u32): the stop (`FUN_40006bac`) sets it to 30, the USB tick `FUN_4000713e` counts it down (one a tick, about 33 ms) and calls the restart (`FUN_40006bc6`) when it reaches 0. Non-zero while a stop waits to restart. The operand of the tick's first read. DT2 1.17 0x40965a38, DN2 1.12 0x4058f280. RAM at run time.",
+      "file": "devices/fw/usb.toml",
+      "kind": "value",
+      "mark": "D",
+      "name": "cf.usb.value.restart_delay",
+      "rule": {
+        "dn2": {
+          "kind": "cf_literal",
+          "len": 4,
+          "offset": 10
+        },
+        "dt2": {
+          "kind": "cf_literal",
+          "len": 4,
+          "offset": 10
         }
       },
       "subsystem": "usb",
@@ -18766,7 +19364,7 @@
       "name": "project"
     },
     {
-      "count": 20,
+      "count": 22,
       "cpu": "cf",
       "file": "devices/fw/rtos.toml",
       "meaning": "tasks, queues, mutexes, idle, interrupts, the reset and boot path",
@@ -18780,7 +19378,7 @@
       "name": "samples"
     },
     {
-      "count": 28,
+      "count": 39,
       "cpu": "cf",
       "file": "devices/fw/storage.toml",
       "meaning": "block device reads and writes, the boot record",
@@ -18808,7 +19406,7 @@
       "name": "text"
     },
     {
-      "count": 9,
+      "count": 12,
       "cpu": "cf",
       "file": "devices/fw/usb.toml",
       "meaning": "the USB device engine: port table, connect and disconnect callbacks, endpoint queues, mode switch",

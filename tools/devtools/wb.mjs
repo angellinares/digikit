@@ -5,7 +5,8 @@
 //     node tools/devtools/wb.mjs [--port SUB] [--bin PATH] ports
 //     node tools/devtools/wb.mjs [--port SUB] [--bin PATH] info
 //     node tools/devtools/wb.mjs [--port SUB] [--bin PATH] samples ls [FOLDER]
-//     node tools/devtools/wb.mjs [--port SUB] [--bin PATH] samples put FILE... [--folder F] [--bulk auto|off|force] [--bulk-bin PATH]
+//     node tools/devtools/wb.mjs [--port SUB] [--bin PATH] samples put FILE... [--folder F] [--bulk auto|off|force] [--bulk-bin PATH] [--verify auto|always|never]
+//     node tools/devtools/wb.mjs [--port SUB] [--bin PATH] samples rm FOLDER...
 //     node tools/devtools/wb.mjs [--port SUB] [--bin PATH] store ls [PREFIX]
 //     node tools/devtools/wb.mjs [--port SUB] [--bin PATH] store put LOCAL REMOTE
 //     node tools/devtools/wb.mjs [--port SUB] [--bin PATH] store rm REMOTE
@@ -15,15 +16,17 @@
 // `mise run dkmidi:build` builds it). `samples put` needs apps/web/public/dksample.wasm (`mise run wasm:dksample`).
 // `samples put` sends the file bytes over the USB bulk link when the device offers its interface (usb-fast; the `dkbulk` bridge, `mise run dkbulk:build`,
 // $DKBULK_BIN or --bulk-bin) and over SysEx or MidiRpc otherwise; --bulk off forces SysEx, --bulk force fails when there is no bulk link. It prints the
+// When the device is in USB AUDIO/MIDI (no bulk interface there) and usb-fast is loaded, `samples put` takes USB over for the run (the device switches to USB
+// MIDI in RAM, USB audio pauses) and gives it back when the run ends: no flag; --bulk off never touches the USB mode.
 // link and MB/s of every file and of the run: the repeatable bench (docs/plans/usb-fast.md step 6): run it once with --bulk off and once with auto.
 import { spawn, spawnSync } from 'node:child_process';
 import { existsSync, readFileSync, statSync } from 'node:fs';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
-import { DkSession, ProcessBulkLink, chooseBulk } from '../../packages/dk-session/src/index.ts';
+import { BulkTakeOver, DkSession, ProcessBulkLink, chooseBulk } from '../../packages/dk-session/src/index.ts';
 import { ProcessTransport } from '../../packages/dk-session/src/process-transport.ts';
 import { Sample, prepareUpload } from '../../packages/dk-session/src/dksample.ts';
-import { openSamples } from '../../packages/dk-session/src/samples.ts';
+import { openSamples, skipVerifyAfterBulk } from '../../packages/dk-session/src/samples.ts';
 
 const root = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '../..');
 // the patchkit rule (tools/emulator/native_target.py): a worktree builds into its own target dir; no generated core is the "nogen" key
@@ -31,7 +34,7 @@ const targetRoot = existsSync(path.join(root, '.git', 'HEAD'))
   ? path.join(root, 'out/native/target')
   : path.join(root, 'dist/native-target');
 const usage =
-  'usage: node tools/devtools/wb.mjs [--port SUB] [--bin PATH] ports | info | samples ls [FOLDER] | samples put FILE... [--folder F] | store ls [PREFIX] | store put LOCAL REMOTE | store rm REMOTE';
+  'usage: node tools/devtools/wb.mjs [--port SUB] [--bin PATH] ports | info | samples ls [FOLDER] | samples put FILE... [--folder F] | samples rm FOLDER... | store ls [PREFIX] | store put LOCAL REMOTE | store rm REMOTE';
 
 // options anywhere on the line; the rest are the command words
 const args = process.argv.slice(2);
@@ -40,12 +43,13 @@ const opts = {
   bin: process.env.DKMIDI_BIN || path.join(targetRoot, 'nogen/release/dkmidi'),
   folder: '',
   bulk: 'auto',
+  verify: 'auto',
   'bulk-bin': process.env.DKBULK_BIN || path.join(targetRoot, 'nogen/release/dkbulk'),
 };
 const words = [];
 for (let i = 0; i < args.length; i++) {
   const a = args[i];
-  if (a === '--port' || a === '--bin' || a === '--folder' || a === '--bulk' || a === '--bulk-bin') {
+  if (a === '--port' || a === '--bin' || a === '--folder' || a === '--bulk' || a === '--verify' || a === '--bulk-bin') {
     if (i + 1 >= args.length) fail(`${a} needs a value`);
     opts[a.slice(2)] = args[++i];
   } else words.push(a);
@@ -59,7 +63,7 @@ function fail(msg, code = 2) {
 if (!existsSync(opts.bin)) fail(`no dkmidi binary at ${opts.bin} (run: mise run dkmidi:build)`);
 
 /** Start the bridge on the port and open a session on it. */
-function connect() {
+function connect(timeoutMs = 60000) {
   const child = spawn(opts.bin, ['open', opts.port], { stdio: ['pipe', 'pipe', 'inherit'] });
   const exited = new Promise((resolve) => child.on('exit', resolve));
   child.on('error', (e) => fail(`cannot start ${opts.bin}: ${e.message}`, 1));
@@ -68,12 +72,15 @@ function connect() {
     (b) => child.stdin.write(b),
     (cb) => child.stdout.on('data', (d) => cb(new Uint8Array(d))),
   );
-  const session = new DkSession(transport, { timeoutMs: 60000 });
+  const session = new DkSession(transport, { timeoutMs });
   return {
     session,
     async close() {
       child.stdin.end();
+      // the bridge of a port that vanished may not exit by itself
+      const timer = setTimeout(() => child.kill(), 3000);
       await exited;
+      clearTimeout(timer);
     },
   };
 }
@@ -91,8 +98,11 @@ async function withSession(run) {
  * The bulk session for the device on the MIDI port (--port), or undefined (--bulk off, no dkbulk binary, no candidate, no candidate with this device's nonce).
  * The selection is the dk-session `chooseBulk` the desktop app uses: SET_NONCE over SysEx to the MIDI target, then each `dkbulk list` candidate is opened
  * (`dkbulk open ID`, a child process) and asked INFO; only the one that returns the nonce is used. --bulk force: those are errors.
+ * When no device offers the interface and usb-fast reports that the device is not in USB MIDI mode (USB AUDIO/MIDI), the device is taken over (`BulkTakeOver`
+ * of dk-session: TAKEOVER, the device re-enumerates in USB MIDI mode, the handshake) and given back by `close`, at once. `holder.link` is the SysEx link; the
+ * take-over replaces it (the MIDI port goes away and returns), so callers read `holder.link.session` after this returns.
  */
-async function connectBulk(sysex) {
+async function connectBulk(holder) {
   const force = opts.bulk === 'force';
   if (!['auto', 'off', 'force'].includes(opts.bulk)) fail('--bulk is auto, off or force');
   if (opts.bulk === 'off') return undefined;
@@ -125,7 +135,37 @@ async function connectBulk(sysex) {
     },
   };
   const notes = [];
-  const choice = await chooseBulk(sysex, opener, (n) => notes.push(n), { timeoutMs: 20000 });
+  let choice = await chooseBulk(holder.link.session, opener, (n) => notes.push(n), { timeoutMs: 20000 });
+  let takeover;
+  if (!choice && (await holder.link.session.usbFastWrongMode())) {
+    console.error('wb: the device is in USB AUDIO/MIDI: taking USB over for this run (USB audio pauses)');
+    takeover = new BulkTakeOver(
+      {
+        sysex: () => holder.link.session,
+        // the device leaves the bus about 50 ms after the reply and returns in USB MIDI mode: reopen the MIDI port until it answers
+        async reenumerated(timeoutMs) {
+          const deadline = Date.now() + timeoutMs;
+          await new Promise((r) => setTimeout(r, 1500));
+          await holder.link.close();
+          for (;;) {
+            const link = connect(2000);
+            try {
+              await link.session.info();
+              holder.link = link;
+              return;
+            } catch (e) {
+              await link.close();
+              if (Date.now() > deadline) throw e;
+              await new Promise((r) => setTimeout(r, 500));
+            }
+          }
+        },
+      },
+      opener,
+      { lingerMs: 0, note: (n) => notes.push(n), bulk: { timeoutMs: 20000 } },
+    );
+    choice = await takeover.begin();
+  }
   if (!choice) {
     await Promise.all(children);
     return none(notes.at(-1) ?? 'no device offers a bulk interface; is usb-fast loaded?');
@@ -133,9 +173,15 @@ async function connectBulk(sysex) {
   for (const n of notes) console.error(`wb: ${n}`);
   return {
     session: choice.session,
+    takenOver: takeover !== undefined,
     async close() {
       await choice.link.close();
       await Promise.all(children);
+      if (takeover) {
+        // wb exits: the mode goes back at once (RELEASE; the device switches about 50 ms after the reply)
+        takeover.end();
+        await takeover.close();
+      }
     },
   };
 }
@@ -164,15 +210,24 @@ if (cmd === 'ports') {
   });
 } else if (cmd === 'samples' && sub === 'put') {
   if (rest.length === 0) fail(usage);
+  if (!['auto', 'always', 'never'].includes(opts.verify)) fail('--verify is auto, always or never');
   const sample = await loadSample();
   let bulk;
+  const holder = { link: connect() };
   try {
-    await withSession(async (session) => {
-      bulk = await connectBulk(session);
+    await (async () => {
+      bulk = await connectBulk(holder);
+      const session = holder.link.session;
       // the profile names the backend (`[storage] samples`); the Digitakt II is the stock +Drive, the Digitone II the digikit store
       // (a stock Digitakt II has no runtime to answer INFO: the +Drive then)
+      let isDt2 = false;
+      let devInfo = null;
       const kind = await session.info().then(
-        (i) => (i.port === 'dn2' ? 'digikit' : 'stock-rpc'),
+        (i) => {
+          devInfo = i;
+          isDt2 = i.port === 'dt2';
+          return i.port === 'dn2' ? 'digikit' : 'stock-rpc';
+        },
         () => 'stock-rpc',
       );
       const backend = openSamples(kind, {
@@ -183,20 +238,41 @@ if (cmd === 'ports') {
       });
       const link = () => (backend.bulkState === 'bulk' ? 'bulk' : 'sysex');
       if (opts.folder) await backend.mkdir(opts.folder);
+      // one listing of the folder for the whole run: the `exists` hint of every put (REPLACE when the name is there); each put adds its name
+      const names = new Set((await backend.list(opts.folder)).filter((e) => e.kind === 'file').map((e) => e.name));
       let total = 0;
+      let tPrep = 0;
+      let tPut = 0;
+      let tVerify = 0;
+      let count = 0;
       const t0 = performance.now();
       for (const file of rest) {
         try {
           if (!statSync(file).isFile()) throw new Error('not a file');
+          let t = performance.now();
           const prepared = prepareUpload(sample, path.basename(file), Uint8Array.from(readFileSync(file)));
-          const t = performance.now();
-          await backend.put(opts.folder, prepared);
-          const s = (performance.now() - t) / 1000;
+          const prep = performance.now() - t;
+          t = performance.now();
+          await backend.put(opts.folder, prepared, undefined, { exists: names.has(prepared.name), folderReady: true });
+          names.add(prepared.name);
+          const putMs = performance.now() - t;
+          const s = putMs / 1000;
           const n = prepared.stored.length;
           total += n;
-          const v = await backend.verify(opts.folder, prepared);
+          // the bulk END of the Digitakt II +Drive and of a runtime with the READBACK capability compares a hash the device computed from the written
+          // file; the SysEx verify is skipped then (see skipVerifyAfterBulk)
+          const skip = skipVerifyAfterBulk(opts.verify, link(), kind, devInfo, isDt2);
+          t = performance.now();
+          const v = skip
+            ? { ok: true, message: opts.verify === 'never' ? 'verify skipped' : 'device hash checked at END' }
+            : await backend.verify(opts.folder, prepared);
+          const ver = performance.now() - t;
+          tPrep += prep;
+          tPut += putMs;
+          tVerify += ver;
+          count++;
           console.log(
-            `${v.ok ? 'ok  ' : 'FAIL'} ${kind === 'digikit' ? 'samples' : '+Drive'}/${opts.folder ? `${opts.folder}/` : ''}${prepared.name}  ${v.message}  ${n} bytes ${s.toFixed(2)} s ${(n / 1e6 / s).toFixed(2)} MB/s via ${link()}`,
+            `${v.ok ? 'ok  ' : 'FAIL'} ${kind === 'digikit' ? 'samples' : '+Drive'}/${opts.folder ? `${opts.folder}/` : ''}${prepared.name}  ${v.message}  ${n} bytes ${s.toFixed(2)} s ${(n / 1e6 / s).toFixed(2)} MB/s via ${link()} prep ${prep.toFixed(0)} ms put ${putMs.toFixed(0)} ms verify ${ver.toFixed(0)} ms`,
           );
           if (!v.ok) status = 1;
         } catch (e) {
@@ -208,10 +284,50 @@ if (cmd === 'ports') {
       console.log(
         `total ${total} bytes ${s.toFixed(2)} s ${(total / 1e6 / s).toFixed(2)} MB/s via ${link()} (put and verify)`,
       );
-    });
+      console.log(
+        `phases prep ${tPrep.toFixed(0)} ms put ${tPut.toFixed(0)} ms verify ${tVerify.toFixed(0)} ms, ${count} files ${(count / s).toFixed(2)} files/s`,
+      );
+    })();
   } finally {
+    // the bulk link first: a take-over is released over the SysEx link, which stays open until then
     await bulk?.close();
+    await holder.link.close();
   }
+} else if (cmd === 'samples' && sub === 'rm') {
+  if (rest.length === 0) fail(usage);
+  // the folders are cleaned first: a bad name stops the run before the device is touched
+  const folders = rest.map((arg) => {
+    const f = arg.replace(/\/+$/, '');
+    if (f === '' || f === '.' || arg.split('/').includes('..')) fail(`refusing to remove "${arg}"`);
+    return f.replace(/^\/+/, '');
+  });
+  const sample = await loadSample();
+  await withSession(async (session) => {
+    const kind = await session.info().then(
+      (i) => (i.port === 'dn2' ? 'digikit' : 'stock-rpc'),
+      () => 'stock-rpc',
+    );
+    const backend = openSamples(kind, {
+      session,
+      hashOf: (d) => sample.hash(d),
+      note: (n) => console.error(`wb: ${n}`),
+    });
+    for (const folder of folders) {
+      try {
+        const cut = folder.lastIndexOf('/');
+        const parent = cut < 0 ? '' : folder.slice(0, cut);
+        const name = folder.slice(cut + 1);
+        const listed = await backend.list(parent);
+        if (!listed.some((e) => e.kind === 'folder' && e.name === name)) throw new Error('no such folder');
+        const r = await backend.removeTree(folder);
+        if (r.stopped) throw new Error(`stopped after ${r.removed} of ${r.total} files`);
+        console.log(`removed ${folder} (${r.removed} files)`);
+      } catch (e) {
+        console.error(`FAIL ${folder}: ${e instanceof Error ? e.message : e}`);
+        status = 1;
+      }
+    }
+  });
 } else if (cmd === 'store' && sub === 'ls') {
   await withSession(async (session) => {
     for (const e of await session.list(rest[0] || undefined)) console.log(`${e.path}\t${e.size}`);
