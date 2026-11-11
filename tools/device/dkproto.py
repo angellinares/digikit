@@ -63,6 +63,8 @@ CMD_SELECT = 0x30
 CMD_RESTART = 0x31
 
 SERVICE_CMD: dict[str, int] = {
+    "USB_FAST_TAKEOVER": 0x1E,
+    "USB_FAST_RELEASE": 0x1F,
     "LOG": 0x20,
     "PEEK": 0x21,
     "LOGCFG": 0x22,
@@ -187,8 +189,9 @@ RANGES: dict[str, tuple[int, int]] = {
     "probe": (0x32, 0x35),
     "remote": (0x38, 0x3D),
     "remote_state": (0x3E, 0x3F),
-    "usb_echo_test": (0x2C, 0x2E),
+    "usb_echo_test": (0x2C, 0x2F),
     "usb_fast": (0x36, 0x37),
+    "usb_fast_takeover": (0x1E, 0x1F),
 }
 
 CAPACITY_KINDS: dict[str, int] = {

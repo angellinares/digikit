@@ -45,7 +45,7 @@ for (const device of DEVICES) {
     const kit = cardRig(device, 'usb-bulk', {
       dsp: 'zero',
       roots: [...RT, 'core/usb-bulk'],
-      symbols: ['DKRT_MAILBOX', 'usb_bulk_connect', 'usb_bulk_disconnect'],
+      symbols: ['DKRT_MAILBOX', 'usb_bulk_connect', 'usb_bulk_disconnect', 'usb_bulk_switches', 'usb_bulk_switch_gap_ms'],
       initial: () => ({ selection: [] }),
       project: true,
       uploads: true,
@@ -354,6 +354,178 @@ for (const device of DEVICES) {
         const data = pattern(4096, 31);
         expect((await echo(rt, data, false)).equals(data), 'echo after the mode returned to USB MIDI').toBe(true);
         await rt.session.expectNoFault('usb mode');
+      } finally {
+        await setPort(2);
+      }
+    }, 1_800_000);
+
+    /** The take-over tests' helpers: the firmware's active port (a menu-style change pokes it), the stored mode byte, the echo module's TAKEOVER command. */
+    const takeoverKit = (rt: PatchedSession) => {
+      const anchor = (name: string) => {
+        const a = (portFile(device, FIRMWARE[device]).anchor ?? []).filter((x) => x.name === name);
+        expect(a.length, name).toBe(1);
+        return a[0]!.addr as number;
+      };
+      const portAddr = anchor('cf.usb.value.active_port');
+      const modeAddr = anchor('cf.usb.value.config_mode');
+      /** A menu-style change of the mode: the active port and the firmware's pointer to its table entry (the word below the port), as the mode switch leaves them. */
+      const setPort = async (value: number) => {
+        await rpc(rt.session, 'mem.cf.poke', { addr: portAddr - 4, value: tableBase() + value * 0x28 });
+        await rpc(rt.session, 'mem.cf.poke', { addr: portAddr, value });
+      };
+      const port = () => word(rt, portAddr);
+      /** The USB CONFIG setting byte (the most significant byte of its aligned word). */
+      const mode = async () => (await word(rt, modeAddr)) >>> 24;
+      const takeover = async (op: number) => {
+        const r = await usb(rt, (dk) => dk.request(ECHO_CMD + 3, Buffer.from([op])));
+        expect(r.status, `takeover op ${op}`).toBe(0);
+        return Buffer.from(r.body).readInt32BE(0);
+      };
+      const taken = async () => ((await echoStatus(rt)).state & 0x8) !== 0;
+      const run = async (ms: number) => {
+        for (let t = 0; t < ms; t += 1000) await advance(rt.session, Math.min(1000, ms - t));
+      };
+      return { setPort, port, mode, takeover, taken, run };
+    };
+
+    test('take-over: USB AUDIO/MIDI to USB MIDI from the tick and back; the stored mode is never written; the watchdog, the renew and the menu rule', async () => {
+      const rt = await boot('echo-takeover', true);
+      await enabled(rt);
+      const { setPort, port, mode, takeover, taken, run } = takeoverKit(rt);
+      const stored = await mode();
+      try {
+        // Overbridge: refused, nothing changes
+        await setPort(6);
+        expect(await takeover(0), 'refused in Overbridge').toBe(-53);
+        await run(300);
+        expect([await port(), await taken()], 'Overbridge untouched').toEqual([6, false]);
+
+        // USB AUDIO/MIDI: the switch runs from the tick, not in the command
+        await setPort(5);
+        expect(await takeover(0), 'takeover').toBe(0);
+        expect(await port(), 'the command itself does not switch').toBe(5);
+        expect(await taken(), 'the state shows the take-over at once').toBe(true);
+        await run(2500); // the boot's enable counts as a switch: the guard (2 s) runs first
+        expect(await port(), 'switched to USB MIDI').toBe(2);
+        expect(await taken(), 'still taken').toBe(true);
+        expect(await mode(), 'the stored mode is unchanged').toBe(stored);
+        expect(await takeover(1), 'giveback').toBe(0);
+        await run(2500); // the guard after the take-over switch
+        expect([await port(), await taken()], 'back in USB AUDIO/MIDI').toEqual([5, false]);
+        expect(await mode(), 'the stored mode is unchanged after the give-back').toBe(stored);
+
+        // the watchdog: 30 s without activity, a renew in between keeps it
+        expect(await takeover(0)).toBe(0);
+        await run(20_000);
+        expect(await takeover(0), 'renew').toBe(0);
+        await run(20_000);
+        expect([await port(), await taken()], 'renewed: still taken after 40 s').toEqual([2, true]);
+        await run(12_000);
+        expect([await port(), await taken()], 'no activity for 30 s: given back').toEqual([5, false]);
+
+        // the user's choice wins: a menu change drops the take-over and nothing switches back
+        expect(await takeover(0)).toBe(0);
+        await run(2500); // after the watchdog's give-back switch
+        expect(await port()).toBe(2);
+        await setPort(5);
+        await run(1000);
+        expect([await port(), await taken()], 'menu change: dropped, no switch back').toEqual([5, false]);
+
+        // already in USB MIDI: no switch
+        await setPort(2);
+        expect(await takeover(0), 'takeover in USB MIDI').toBe(0);
+        await run(500);
+        expect([await port(), await taken()], 'USB MIDI: taken, no switch').toEqual([2, true]);
+        expect(await takeover(1)).toBe(0);
+        await run(500);
+        expect([await port(), await taken()], 'given back without a switch').toEqual([2, false]);
+        expect(await mode(), 'the stored mode is unchanged at the end').toBe(stored);
+        await rt.session.expectNoFault('takeover');
+      } finally {
+        await setPort(2);
+      }
+    }, 1_800_000);
+
+    test('switch guard: one firmware mode switch at a time (enable waits, release then take-over and a give-back racing the tick make two spaced switches, never overlapping ones)', async () => {
+      const GUARD_MS = 500; // the adapter's floor on its own clock; the firmware's restart (about 1 s) is waited for through its delay counter
+      const rt = await boot('echo-guard', true);
+      await enabled(rt);
+      const { setPort, port, mode, takeover } = takeoverKit(rt);
+      /** Emulated time that this test has advanced, ms. */
+      let now = 0;
+      const adv = async (ms: number) => {
+        await advance(rt.session, ms);
+        now += ms;
+      };
+      const run = async (ms: number) => {
+        for (let t = 0; t < ms; t += 1000) await adv(Math.min(1000, ms - t));
+      };
+      const switches = () => word(rt, planSymbol(kit.plan, 'usb_bulk_switches'));
+      const gap = () => word(rt, planSymbol(kit.plan, 'usb_bulk_switch_gap_ms'));
+      const reenableOnce = async () => {
+        expect((await usb(rt, (dk) => dk.request(ECHO_CMD + 2))).status, 'reenable').toBe(0);
+        await adv(100);
+        return (await echoStatus(rt)).enable;
+      };
+      /** Advance in small steps until the active port is `want`, then return at once with the time (the switch has just run). */
+      const until = async (want: number, limitMs = 4000) => {
+        for (let t = 0; t < limitMs; t += 5) {
+          if ((await port()) === want) return now;
+          await adv(5);
+        }
+        throw new Error(`the active port never became ${want}`);
+      };
+      const stored = await mode();
+      try {
+        await setPort(5);
+        const s0 = await switches();
+        expect(await takeover(0), 'takeover').toBe(0);
+        await until(2);
+        await until(2);
+        expect(await switches(), 'the take-over made one switch').toBe(s0 + 1);
+
+        // enable inside the guard: retry (E_STATE), no stop or restart of its own; after the guard it succeeds
+        expect(await reenableOnce(), 'enable inside the guard').toBe(-53);
+        expect(await reenableOnce(), 'enable inside the guard, again').toBe(-53);
+        expect(await switches(), 'a refused enable made no switch').toBe(s0 + 1);
+        let enableRc = -53;
+        for (let i = 0; i < 40 && enableRc !== 0; i++) enableRc = await reenableOnce();
+        expect(enableRc, 'enable succeeds once the guard has passed').toBe(0);
+        expect(await switches(), 'the adapter was enabled already: no second restart').toBe(s0 + 1);
+        await run(1000);
+
+        // release, then a take-over after the give-back switch ran: two switches at least the guard apart
+        const s1 = await switches();
+        expect(await takeover(1), 'giveback').toBe(0);
+        const back = await until(5);
+        expect(await switches(), 'the give-back switched').toBe(s1 + 1);
+        expect(await takeover(0), 'take-over right after the give-back').toBe(0);
+        await adv(100);
+        expect([await port(), await switches()], 'the second switch waits for the restart').toEqual([5, s1 + 1]);
+        const again = await until(2);
+        expect(await switches(), 'then the take-over switches').toBe(s1 + 2);
+        expect(again - back, 'two switches at least the firmware restart delay (about 1 s) apart').toBeGreaterThanOrEqual(900);
+        expect(await gap(), 'and the adapter floor on its own clock').toBeGreaterThanOrEqual(GUARD_MS);
+
+        // a give-back requested at the moment the tick switched (the closest the test can get): one switch for each request, spaced
+        expect(await takeover(1)).toBe(0);
+        await run(3000);
+        expect(await port(), 'back in USB AUDIO/MIDI').toBe(5);
+        const s2 = await switches();
+        expect(await takeover(0)).toBe(0);
+        await until(2);
+        const took = now;
+        expect(await takeover(1), 'giveback right after the switch').toBe(0);
+        await adv(300);
+        expect([await port(), await switches()], 'the give-back waits').toEqual([2, s2 + 1]);
+        const gave = await until(5);
+        expect(await switches(), 'one give-back switch, after the restart').toBe(s2 + 2);
+        expect(gave - took, 'spaced by the firmware restart delay').toBeGreaterThanOrEqual(900);
+        expect(await gap(), 'spaced by the floor').toBeGreaterThanOrEqual(GUARD_MS);
+        await run(3000);
+        expect(await switches(), 'nothing else switched').toBe(s2 + 2);
+        expect(await mode(), 'the stored mode is unchanged').toBe(stored);
+        await rt.session.expectNoFault('switch guard');
       } finally {
         await setPort(2);
       }

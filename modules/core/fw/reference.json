@@ -13334,6 +13334,50 @@
       "at": {
         "dn2-1.12": [
           {
+            "addr": "0x40006c16",
+            "len": 4
+          }
+        ],
+        "dt2-1.17": [
+          {
+            "addr": "0x40006c16",
+            "len": 4
+          }
+        ]
+      },
+      "bindings": {
+        "c": "dk_fw_usb_mode_switch",
+        "rust": "dkfw::usb::mode_switch"
+      },
+      "cpu": "cf",
+      "doc": "The USB mode switch (`FUN_40006c16`, 0x40006c16): returns when `port` is the active port; else stops USB (the old port's disconnect callback runs), writes the active port and starts again about 30 USB ticks later. It never writes the USB CONFIG setting byte. Task context, not an ISR; the stop cuts a reply in flight on EP1.",
+      "file": "devices/fw/usb.toml",
+      "kind": "fn",
+      "mark": "D",
+      "name": "cf.usb.fn.mode_switch",
+      "rule": {
+        "dn2": {
+          "kind": "cf_func",
+          "len": 4,
+          "offset": 0
+        },
+        "dt2": {
+          "kind": "cf_func",
+          "len": 4,
+          "offset": 0
+        }
+      },
+      "sig": "void (u32 port)",
+      "subsystem": "usb",
+      "users": [
+        "core/usb-bulk"
+      ],
+      "was": []
+    },
+    {
+      "at": {
+        "dn2-1.12": [
+          {
             "addr": "0x40005a86",
             "len": 4
           }
@@ -13541,6 +13585,49 @@
           "kind": "cf_literal",
           "len": 4,
           "offset": 20
+        }
+      },
+      "subsystem": "usb",
+      "users": [
+        "core/usb-bulk"
+      ],
+      "was": []
+    },
+    {
+      "at": {
+        "dn2-1.12": [
+          {
+            "addr": "0x405ce898",
+            "len": 4
+          }
+        ],
+        "dt2-1.17": [
+          {
+            "addr": "0x4099d5c4",
+            "len": 4
+          }
+        ]
+      },
+      "bindings": {
+        "c": "dk_fw_usb_config_mode",
+        "rust": "dkfw::usb::CONFIG_MODE"
+      },
+      "cpu": "cf",
+      "doc": "The USB CONFIG setting byte (u8: 0 USB MIDI, 1 Overbridge, 2 USB AUDIO/MIDI), the operand of its getter (`FUN_400c1168`). The stored mode: the mode switch never writes it, only the three menu actions, the settings load and the factory defaults do. Tests read it to prove a take-over leaves it alone. DT2 1.17 0x4099d5c4, DN2 1.12 0x405ce898. RAM at run time.",
+      "file": "devices/fw/usb.toml",
+      "kind": "value",
+      "mark": "D",
+      "name": "cf.usb.value.config_mode",
+      "rule": {
+        "dn2": {
+          "kind": "cf_literal",
+          "len": 4,
+          "offset": 2
+        },
+        "dt2": {
+          "kind": "cf_literal",
+          "len": 4,
+          "offset": 2
         }
       },
       "subsystem": "usb",
@@ -19276,7 +19363,7 @@
       "name": "text"
     },
     {
-      "count": 9,
+      "count": 11,
       "cpu": "cf",
       "file": "devices/fw/usb.toml",
       "meaning": "the USB device engine: port table, connect and disconnect callbacks, endpoint queues, mode switch",

@@ -33,6 +33,8 @@ export interface BulkLink {
   /** The next whole reply frame, or null after `timeoutMs` or when `signal` aborts. */
   recv(timeoutMs: number, signal?: AbortSignal): Promise<Uint8Array | null>;
   close(): Promise<void> | void;
+  /** True once the link has ended (closed by us or lost: the device was unplugged or the interface went away). Optional: a link without it is judged by a request. */
+  readonly closed?: boolean;
 }
 
 /** The ZLP rule: `out` is one OUT transfer. */
@@ -215,6 +217,11 @@ export class BulkSession {
         error: `bulk chunk ${this.o.chunk}: a multiple of ${BULK_ALIGN} up to ${BULK_DATA_MAX}`,
         kind: 'usage',
       });
+  }
+
+  /** True once a protocol error ended the session (it closed the link). */
+  get failed(): boolean {
+    return this.fatalError !== null;
   }
 
   /** The number of requests whose reply is still owed (tests). */
