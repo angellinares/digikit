@@ -2348,6 +2348,26 @@ mark = "D"
 rule = "fw/rtos:cf_ptr"
 
 [[anchor]]
+name = "cf.rtos.fn.mutex_lock"
+cpu = "cf"
+kind = "code"
+addr = 0x400015a0
+len = 4
+sha256 = "22fa7fb41970cac158504ca01c7a417ded71b60ff0d8466961d19ff2332567a7"
+mark = "D"
+rule = "fw/rtos:cf_func"
+
+[[anchor]]
+name = "cf.rtos.fn.mutex_unlock"
+cpu = "cf"
+kind = "code"
+addr = 0x400016d2
+len = 4
+sha256 = "22fa7fb41970cac158504ca01c7a417ded71b60ff0d8466961d19ff2332567a7"
+mark = "D"
+rule = "fw/rtos:cf_func"
+
+[[anchor]]
 name = "cf.rtos.fn.queue_pop"
 cpu = "cf"
 kind = "code"
@@ -2652,6 +2672,16 @@ mark = "D"
 rule = "fw/storage:cf_func"
 
 [[anchor]]
+name = "cf.storage.fn.event.post"
+cpu = "cf"
+kind = "code"
+addr = 0x4015a6aa
+len = 4
+sha256 = "ee696eaa331b6be4f2843e2a0c8b7eee72b1e185187d86d9c896935a3d24b98a"
+mark = "D"
+rule = "fw/storage:cf_func"
+
+[[anchor]]
 name = "cf.storage.fn.file.any_open"
 cpu = "cf"
 kind = "code"
@@ -2722,6 +2752,16 @@ mark = "D"
 rule = "fw/storage:cf_func"
 
 [[anchor]]
+name = "cf.storage.fn.file.page_find"
+cpu = "cf"
+kind = "code"
+addr = 0x4015813c
+len = 4
+sha256 = "7694646addf9bf72b639ece8ba990d8e101955de2d4cecd4d9e1bd66b670ef41"
+mark = "D"
+rule = "fw/storage:cf_func"
+
+[[anchor]]
 name = "cf.storage.fn.file.rename"
 cpu = "cf"
 kind = "code"
@@ -2758,6 +2798,46 @@ kind = "code"
 addr = 0x4015866a
 len = 4
 sha256 = "113d7d273d960e160432424a308cfa6f91d9afba235ff28c03bfb0aea8198d9e"
+mark = "D"
+rule = "fw/storage:cf_func"
+
+[[anchor]]
+name = "cf.storage.fn.hash_table.rebuild"
+cpu = "cf"
+kind = "code"
+addr = 0x4015b0ee
+len = 4
+sha256 = "8c532fe588d875e129a1fbdda2d83ead4577a118ea3f1fad8d75b63983c1d9bc"
+mark = "D"
+rule = "fw/storage:cf_func"
+
+[[anchor]]
+name = "cf.storage.fn.inode.get"
+cpu = "cf"
+kind = "code"
+addr = 0x4015b92a
+len = 4
+sha256 = "23201b350b902ad73d89ce6a89eee29dfa14dd42612057eede16e4b546dc6759"
+mark = "D"
+rule = "fw/storage:cf_func"
+
+[[anchor]]
+name = "cf.storage.fn.inode.put"
+cpu = "cf"
+kind = "code"
+addr = 0x4015b846
+len = 4
+sha256 = "7f284fb65360c6f575800b1a7f6020278ea44dcfb08684ee639a5b361437086c"
+mark = "D"
+rule = "fw/storage:cf_func"
+
+[[anchor]]
+name = "cf.storage.fn.inode.write"
+cpu = "cf"
+kind = "code"
+addr = 0x4015b868
+len = 4
+sha256 = "23201b350b902ad73d89ce6a89eee29dfa14dd42612057eede16e4b546dc6759"
 mark = "D"
 rule = "fw/storage:cf_func"
 
@@ -2802,6 +2882,16 @@ mark = "D"
 rule = "fw/storage:cf_func"
 
 [[anchor]]
+name = "cf.storage.site.data_sector_base"
+cpu = "cf"
+kind = "code"
+addr = 0x40155cb6
+len = 4
+sha256 = "a65e61539d06f6e481feb51778a1236d5d45a76ad8a20b14047634fb4c6d96b5"
+mark = "D"
+rule = "fw/storage:cf_func"
+
+[[anchor]]
 name = "cf.storage.site.fault_irqstat_a"
 cpu = "cf"
 kind = "code"
@@ -2828,6 +2918,46 @@ kind = "code"
 addr = 0x4012d642
 len = 6
 sha256 = "ecda53f8ded4ab291974386fad6a07fc3d8672509f611233aff4a9c2560b15f9"
+mark = "D"
+rule = "fw/storage:cf_func"
+
+[[anchor]]
+name = "cf.storage.site.fs_mutex"
+cpu = "cf"
+kind = "code"
+addr = 0x4015b3be
+len = 4
+sha256 = "210b948798dad861da6086f1e3f11141a5025e161df8c117c4fc3e01c793377e"
+mark = "D"
+rule = "fw/storage:cf_func"
+
+[[anchor]]
+name = "cf.storage.site.hash_page_buf"
+cpu = "cf"
+kind = "code"
+addr = 0x4015b26e
+len = 4
+sha256 = "3ec76bed02c4c614553927cbc9050ea8eef5adf47114ab25f29e851ee66d5a24"
+mark = "D"
+rule = "fw/storage:cf_func"
+
+[[anchor]]
+name = "cf.storage.site.hash_page_sector"
+cpu = "cf"
+kind = "code"
+addr = 0x4015b286
+len = 4
+sha256 = "3ad0b2e6298bb5e5cb05cd741c5c21facf376f848725d748daa4470fd826192a"
+mark = "D"
+rule = "fw/storage:cf_func"
+
+[[anchor]]
+name = "cf.storage.site.hash_read_buf"
+cpu = "cf"
+kind = "code"
+addr = 0x4015b246
+len = 4
+sha256 = "cef5e44309dcdc6ef688a35f88efe8a97ba940369a1a456d045f24724f788999"
 mark = "D"
 rule = "fw/storage:cf_func"
 

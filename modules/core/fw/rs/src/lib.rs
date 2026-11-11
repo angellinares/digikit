@@ -538,6 +538,18 @@ pub mod project {
 pub mod rtos {
     // cf.rtos.fn.create_main: no sig yet
 
+    unsafe extern "C" {
+        /// Lock a recursive owner-aware mutex (FUN_400015a0 on DT2 1.17): a task that holds it takes it again without blocking. Task context only.
+        #[link_name = "cf.rtos.fn.mutex_lock"]
+        pub fn mutex_lock(mutex: *mut u32);
+    }
+
+    unsafe extern "C" {
+        /// Unlock a mutex of mutex_lock (FUN_400016d2 on DT2 1.17). Task context only.
+        #[link_name = "cf.rtos.fn.mutex_unlock"]
+        pub fn mutex_unlock(mutex: *mut u32);
+    }
+
     // cf.rtos.fn.queue_pop: no sig yet
 
     // cf.rtos.fn.reset.init_calls: no sig yet
@@ -700,6 +712,12 @@ pub mod storage {
     }
 
     unsafe extern "C" {
+        /// Post a file-system event (FUN_4015a6aa) into the 32-entry ring and wake its consumer: kind 2 after a write, kind 3 after the close hash (a = inode word +8, b = inode id) (finding 120).
+        #[link_name = "cf.storage.fn.event.post"]
+        pub fn event_post(kind: u32, a: u32, b: u32);
+    }
+
+    unsafe extern "C" {
         /// Nonzero when any inode's bit is set in the open-file bitmap (finding 120).
         #[link_name = "cf.storage.fn.file.any_open"]
         pub fn file_any_open() -> i32;
@@ -742,6 +760,12 @@ pub mod storage {
     }
 
     unsafe extern "C" {
+        /// Extent lookup FUN_4015813c: the low byte is 1 and *phys is the card page of file page `page` (32 KiB units; card sector = phys * 0x40 + the data base site); 0 when the page is past the extents. No mutex (finding 120).
+        #[link_name = "cf.storage.fn.file.page_find"]
+        pub fn file_page_find(inode: *mut u8, page: u32, phys: *mut u32) -> u32;
+    }
+
+    unsafe extern "C" {
         /// Path rename under the filesystem mutex (FUN_40156b00 adds the new directory entry for the same inode, then FUN_40156e94 removes the old one): 0, -1 when the source is missing, a folder or open (a destination that exists was not tested: callers delete it first). The inode id and hash stay (finding 120).
         #[link_name = "cf.storage.fn.file.rename"]
         pub fn file_rename(old_path: *const u8, new_path: *const u8) -> i32;
@@ -766,6 +790,30 @@ pub mod storage {
     }
 
     unsafe extern "C" {
+        /// Rebuild the RAM content-hash table (FUN_4015b0ee) from the 44 hash pages on the card and the RAM inodes, and sort it; the close hash calls it after each hash page update. Call under the filesystem mutex (finding 120).
+        #[link_name = "cf.storage.fn.hash_table.rebuild"]
+        pub fn hash_table_rebuild();
+    }
+
+    unsafe extern "C" {
+        /// Inode cache lookup FUN_4015b92a (DT2 1.17): the cached 0x80-byte inode of inode_id with its use count raised, read from the card when it is not cached; 0 for an id out of range. No mutex: call it under the filesystem mutex and release it with inode.put (finding 120).
+        #[link_name = "cf.storage.fn.inode.get"]
+        pub fn inode_get(inode_id: u32) -> *mut u8;
+    }
+
+    unsafe extern "C" {
+        /// Release an inode of inode.get (FUN_4015b846): lowers its use count. No mutex (finding 120).
+        #[link_name = "cf.storage.fn.inode.put"]
+        pub fn inode_put(inode: *mut u8);
+    }
+
+    unsafe extern "C" {
+        /// Inode write-back FUN_4015b868: reads the inode's 32 KiB card page, replaces the 0x80-byte inode and writes the page through (synchronous). No mutex (finding 120).
+        #[link_name = "cf.storage.fn.inode.write"]
+        pub fn inode_write(inode: *mut u8);
+    }
+
+    unsafe extern "C" {
         /// Close a successfully opened four-word handle; 0 succeeds. Takes the filesystem mutex internally (finding 105).
         #[link_name = "cf.storage.fn.path.close"]
         pub fn path_close(handle: *mut u32) -> i32;
@@ -787,6 +835,36 @@ pub mod storage {
         /// File byte length by internal entry id (handle word 0), NOT by handle pointer; 0xffffffff on error (finding 105).
         #[link_name = "cf.storage.fn.path.size"]
         pub fn path_size(entry_id: u32) -> u32;
+    }
+
+    unsafe extern "C" {
+        /// The 4-byte literal of the card sector of data page 0 (0x5ee180 on 1.17): page p of the +Drive is at sector base + p * 0x40 (the page write-back FUN_40155c34) (finding 120).
+        #[link_name = "cf.storage.site.data_sector_base"]
+        pub static DATA_SECTOR_BASE: u8;
+    }
+
+    unsafe extern "C" {
+        /// The 4-byte literal of the filesystem mutex address (0x46f4deb0 on 1.17), the `pea` before the lock call in file.hash (finding 120).
+        #[link_name = "cf.storage.site.fs_mutex"]
+        pub static FS_MUTEX: u8;
+    }
+
+    unsafe extern "C" {
+        /// The 4-byte literal of the 32 KiB scratch buffer (0x406658c0 on 1.17) in which the close hash FUN_4015b1e8 updates a hash page; used under the filesystem mutex (finding 120).
+        #[link_name = "cf.storage.site.hash_page_buf"]
+        pub static HASH_PAGE_BUF: u8;
+    }
+
+    unsafe extern "C" {
+        /// The 4-byte literal of the card sector of the first hash page (0x5ee980 on 1.17): the page of inode id is at sector + (id >> 13) * 0x40, word id & 0x1fff holds hash|1 (finding 120).
+        #[link_name = "cf.storage.site.hash_page_sector"]
+        pub static HASH_PAGE_SECTOR: u8;
+    }
+
+    unsafe extern "C" {
+        /// The 4-byte literal of the 32 KiB scratch buffer (0x4066d8c0 on 1.17) that the close hash FUN_4015b1e8 reads the file into; free for a caller that holds the filesystem mutex (finding 120).
+        #[link_name = "cf.storage.site.hash_read_buf"]
+        pub static HASH_READ_BUF: u8;
     }
 
     unsafe extern "C" {

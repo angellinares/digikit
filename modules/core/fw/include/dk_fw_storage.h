@@ -18,6 +18,8 @@ int32_t dk_fw_storage_directory_metadata(uint32_t entry_id, uint32_t *output) __
 int32_t dk_fw_storage_directory_next(uint32_t *state, uint8_t *output) __asm__("cf.storage.fn.directory.next");
 /* DT2 1.17 read-only path directory open, 0 success/-1 failure; caller-owned four-word state. Task context; may block under filesystem locking (finding 93). */
 int32_t dk_fw_storage_directory_open(const uint8_t *path, uint32_t *state) __asm__("cf.storage.fn.directory.open");
+/* Post a file-system event (FUN_4015a6aa) into the 32-entry ring and wake its consumer: kind 2 after a write, kind 3 after the close hash (a = inode word +8, b = inode id) (finding 120). */
+void dk_fw_storage_event_post(uint32_t kind, uint32_t a, uint32_t b) __asm__("cf.storage.fn.event.post");
 /* Nonzero when any inode's bit is set in the open-file bitmap (finding 120). */
 int32_t dk_fw_storage_file_any_open(void) __asm__("cf.storage.fn.file.any_open");
 /* Delete a file and free its pages: 0, -1 for a missing path or an open file (open bitmap) (finding 120). */
@@ -32,6 +34,8 @@ int32_t dk_fw_storage_file_info(const uint8_t *path, uint32_t *out) __asm__("cf.
 int32_t dk_fw_storage_file_link(const uint8_t *old_path, const uint8_t *new_path) __asm__("cf.storage.fn.file.link");
 /* Create one folder level; the parent must exist: 0, -1 when the leaf exists or a name character is invalid (finding 120). */
 int32_t dk_fw_storage_file_mkdir(const uint8_t *path) __asm__("cf.storage.fn.file.mkdir");
+/* Extent lookup FUN_4015813c: the low byte is 1 and *phys is the card page of file page `page` (32 KiB units; card sector = phys * 0x40 + the data base site); 0 when the page is past the extents. No mutex (finding 120). */
+uint32_t dk_fw_storage_file_page_find(uint8_t *inode, uint32_t page, uint32_t *phys) __asm__("cf.storage.fn.file.page_find");
 /* Path rename under the filesystem mutex (FUN_40156b00 adds the new directory entry for the same inode, then FUN_40156e94 removes the old one): 0, -1 when the source is missing, a folder or open (a destination that exists was not tested: callers delete it first). The inode id and hash stay (finding 120). */
 int32_t dk_fw_storage_file_rename(const uint8_t *old_path, const uint8_t *new_path) __asm__("cf.storage.fn.file.rename");
 /* Reserve pages for [offset, offset+bytes) of an open file: 0, -1 when the card cannot hold them (finding 120). */
@@ -40,6 +44,14 @@ int32_t dk_fw_storage_file_reserve(uint32_t *handle, uint32_t offset, uint32_t b
 int32_t dk_fw_storage_file_rmdir(const uint8_t *path) __asm__("cf.storage.fn.file.rmdir");
 /* Write `bytes` at handle.pos and advance it; the byte count, -1 when the card is full. Reserves 32 KiB pages, a whole page goes straight from a 16-byte aligned `buf`. Task context; takes the filesystem mutex (finding 120). */
 int32_t dk_fw_storage_file_write(const uint8_t *buf, uint32_t bytes, uint32_t *handle) __asm__("cf.storage.fn.file.write");
+/* Rebuild the RAM content-hash table (FUN_4015b0ee) from the 44 hash pages on the card and the RAM inodes, and sort it; the close hash calls it after each hash page update. Call under the filesystem mutex (finding 120). */
+void dk_fw_storage_hash_table_rebuild(void) __asm__("cf.storage.fn.hash_table.rebuild");
+/* Inode cache lookup FUN_4015b92a (DT2 1.17): the cached 0x80-byte inode of inode_id with its use count raised, read from the card when it is not cached; 0 for an id out of range. No mutex: call it under the filesystem mutex and release it with inode.put (finding 120). */
+uint8_t * dk_fw_storage_inode_get(uint32_t inode_id) __asm__("cf.storage.fn.inode.get");
+/* Release an inode of inode.get (FUN_4015b846): lowers its use count. No mutex (finding 120). */
+void dk_fw_storage_inode_put(uint8_t *inode) __asm__("cf.storage.fn.inode.put");
+/* Inode write-back FUN_4015b868: reads the inode's 32 KiB card page, replaces the 0x80-byte inode and writes the page through (synchronous). No mutex (finding 120). */
+void dk_fw_storage_inode_write(uint8_t *inode) __asm__("cf.storage.fn.inode.write");
 /* Close a successfully opened four-word handle; 0 succeeds. Takes the filesystem mutex internally (finding 105). */
 int32_t dk_fw_storage_path_close(uint32_t *handle) __asm__("cf.storage.fn.path.close");
 /* Path open; 0 succeeds. Handle is four words (entry id, position, write mode, open). The sample adapter passes only mode r; task context, internal filesystem locking (finding 105). */
@@ -48,6 +60,16 @@ int32_t dk_fw_storage_path_open(const uint8_t *path, const uint8_t *mode, uint32
 int32_t dk_fw_storage_path_read(uint8_t *buf, uint32_t bytes, uint32_t *handle) __asm__("cf.storage.fn.path.read");
 /* File byte length by internal entry id (handle word 0), NOT by handle pointer; 0xffffffff on error (finding 105). */
 uint32_t dk_fw_storage_path_size(uint32_t entry_id) __asm__("cf.storage.fn.path.size");
+/* The 4-byte literal of the card sector of data page 0 (0x5ee180 on 1.17): page p of the +Drive is at sector base + p * 0x40 (the page write-back FUN_40155c34) (finding 120). */
+extern const uint8_t dk_fw_storage_data_sector_base __asm__("cf.storage.site.data_sector_base");
+/* The 4-byte literal of the filesystem mutex address (0x46f4deb0 on 1.17), the `pea` before the lock call in file.hash (finding 120). */
+extern const uint8_t dk_fw_storage_fs_mutex __asm__("cf.storage.site.fs_mutex");
+/* The 4-byte literal of the 32 KiB scratch buffer (0x406658c0 on 1.17) in which the close hash FUN_4015b1e8 updates a hash page; used under the filesystem mutex (finding 120). */
+extern const uint8_t dk_fw_storage_hash_page_buf __asm__("cf.storage.site.hash_page_buf");
+/* The 4-byte literal of the card sector of the first hash page (0x5ee980 on 1.17): the page of inode id is at sector + (id >> 13) * 0x40, word id & 0x1fff holds hash|1 (finding 120). */
+extern const uint8_t dk_fw_storage_hash_page_sector __asm__("cf.storage.site.hash_page_sector");
+/* The 4-byte literal of the 32 KiB scratch buffer (0x4066d8c0 on 1.17) that the close hash FUN_4015b1e8 reads the file into; free for a caller that holds the filesystem mutex (finding 120). */
+extern const uint8_t dk_fw_storage_hash_read_buf __asm__("cf.storage.site.hash_read_buf");
 /* The 4-byte address literal of the filesystem's mounted flag (0x44f2bd68 on 1.17): every path function starts with `tst.l (flag)`; nonzero after FUN_4015a72c mounted the +Drive (finding 120). */
 extern const uint8_t dk_fw_storage_mounted __asm__("cf.storage.site.mounted");
 
