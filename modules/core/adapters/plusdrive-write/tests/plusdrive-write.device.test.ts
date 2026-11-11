@@ -255,6 +255,15 @@ cardRigs('+Drive writes through core/plusdrive-write', { devices: ['dt2'] , dsp:
     await rig.session.expectNoFault('close hash');
   }, 1_800_000);
 
+  test('a structural failure of the fast close hash (knob 10) falls back to the firmware\'s hash and leaves the same card and table', async () => {
+    const fallback = await bothHashes(10);
+    const slow = await bothHashes(0x80);
+    expect(fallback.table, 'the RAM hash table after the rebuild').toEqual(slow.table);
+    expect([...fallback.writes.keys()].sort((x, y) => x - y), 'the same sectors were written').toEqual([...slow.writes.keys()].sort((x, y) => x - y));
+    for (const [sector, data] of fallback.writes) expect(data, `sector 0x${sector.toString(16)}`).toBe(slow.writes.get(sector));
+    await rig.session.expectNoFault('close hash fallback');
+  }, 1_800_000);
+
   // The only part of the fast close that differs from the stock read is the page to card mapping (file_page_find), and a file of one extent does
   // not test it. The adapter reserves the whole file in one call; the firmware's allocator (FUN_40155974, FUN_4015583c) takes the first free run of
   // that length, else the longest runs it finds, one extent each. So the free space is fragmented in RAM before the write: in the page occupancy
