@@ -10,8 +10,44 @@ use patchkit::module::Library;
 use patchkit::port::Registry;
 use serde_json::{Value, json};
 use std::io::{BufRead, BufReader, Write};
+#[cfg(unix)]
 use std::os::unix::net::UnixStream;
 use std::time::{Duration, Instant};
+
+/// The emulator's control socket is a Unix socket. On another platform `--emulator` stops at the connect with this error, and the
+/// `--port` route builds and runs as before.
+#[cfg(not(unix))]
+struct UnixStream;
+
+#[cfg(not(unix))]
+impl UnixStream {
+    fn connect(_path: &str) -> std::io::Result<UnixStream> {
+        Err(std::io::Error::new(
+            std::io::ErrorKind::Unsupported,
+            "--emulator needs a Unix control socket: run it on Linux, macOS or WSL",
+        ))
+    }
+    fn try_clone(&self) -> std::io::Result<UnixStream> {
+        Ok(UnixStream)
+    }
+}
+
+#[cfg(not(unix))]
+impl std::io::Read for UnixStream {
+    fn read(&mut self, _buf: &mut [u8]) -> std::io::Result<usize> {
+        Err(std::io::ErrorKind::Unsupported.into())
+    }
+}
+
+#[cfg(not(unix))]
+impl Write for UnixStream {
+    fn write(&mut self, _buf: &[u8]) -> std::io::Result<usize> {
+        Err(std::io::ErrorKind::Unsupported.into())
+    }
+    fn flush(&mut self) -> std::io::Result<()> {
+        Ok(())
+    }
+}
 
 pub const USAGE: &str = "usage: patchkit flash STOCK.syx (--port NAME | --emulator SOCKET) [--route rpc|menu] [--chunk N] [--restore] [--set NAME] [--dry-run] [--save OUT.syx] [--yes]
   STOCK.syx   the stock firmware file of the device (it is identified by its SHA-256; a patched file is refused)
