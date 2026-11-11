@@ -46,6 +46,7 @@ pub fn title() -> String {
 
 /// The rows of the top view as drawn. A toggle ends in ON or OFF, a value in three digits.
 /// A list row starts with "* " when checked and "  " when not. An empty list shows its empty text.
+/// The blank glyph 0x01 that pads a column reads as a space (`labels` keeps it).
 pub fn render() -> Vec<String> {
     let id = top();
     let list = is_list(id);
@@ -71,6 +72,7 @@ pub fn render() -> Vec<String> {
                     }
                     _ => r.text.clone(),
                 };
+                let body = body.replace('\u{1}', " ");
                 if list {
                     let c = s.menus[id].checks.get(i).copied().unwrap_or(false);
                     format!("{}{}", if c { "* " } else { "  " }, body)
@@ -86,6 +88,12 @@ pub fn render() -> Vec<String> {
         }
     }
     lines
+}
+
+/// The labels of the top view's rows as the menu wrote them, with the padding glyph 0x01.
+pub fn labels() -> Vec<String> {
+    let id = top();
+    with(|s| s.menus[id].rows.iter().map(|r| r.text.clone()).collect())
 }
 
 fn activate(id: usize, row: usize) {

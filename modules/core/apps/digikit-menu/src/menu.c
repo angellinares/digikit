@@ -162,11 +162,29 @@ static txt *t_int(txt *t, int32_t v)
     return t_num(t, (uint32_t)v);
 }
 
-/* Spaces up to n characters. */
-static txt *t_pad(txt *t, int n)
+/* The list font is not monospace: a letter, a digit, '-' or '_' takes 4 pixels, a space 3, '.' 2 and '~' 5 (measured on the DT2 1.16 list
+   font). Character 0x01 draws nothing and takes 4 pixels, so it pads a column the width of one letter. */
+#define PAD '\x01'
+
+static int px_of(const char *s)
 {
-    while (t->n < n && t->n < 47)
+    int w = 0;
+    for (; *s; s++)
+        w += *s == ' ' ? 3 : *s == '.' ? 2 : *s == '~' ? 5 : 4;
+    return w;
+}
+
+/* Pads to `px` pixels. `exact`: spaces until the rest is a multiple of 4, then PAD; a rest of 1 or 2 pixels stays (only after a '.' or
+   a '~'). Not `exact`: PAD only, which ends up to 3 pixels short but takes no more characters than the letters it stands for. */
+static txt *t_pad_px(txt *t, int px, int exact)
+{
+    int rest = px - px_of(t->b);
+    while (exact && rest >= 3 && rest % 4) {
         t_c(t, ' ');
+        rest -= 3;
+    }
+    for (; rest >= 4; rest -= 4)
+        t_c(t, PAD);
     return t;
 }
 
@@ -185,7 +203,7 @@ static void keep(uint8_t *dst, const char *s)
 {
     int n = 0;
     while (n < 23 && s[n]) {
-        dst[n] = (uint8_t)s[n];
+        dst[n] = (uint8_t)(s[n] == PAD ? ' ' : s[n]);
         n++;
     }
     while (n < 24)
@@ -923,28 +941,38 @@ static int dashed(int i)
     return TICK[i] && g_saved[i] && !LOADED[i];
 }
 
-/* A row: the name (12), the kind (4) and the memory the module takes, right aligned: 22 characters, which fit the list (23 at most). With
-   a mark column the name has 11 characters and the other columns stay where they are. */
-static void module_row(dk_ui_menu *m, int i)
+/* A row: the name (12), the kind (4) and the memory the module takes, right aligned: 23 letter widths, which fit the list. The columns
+   are placed in pixels (t_pad_px), because a space is narrower than a letter. With a mark column the name has 11 characters and the
+   other columns stay where they are. */
+static void module_text(int i, int exact, txt *t)
 {
-    txt t;
-    t_init(&t);
+    t_init(t);
     if (g_lead) {
-        t_c(&t, dashed(i) ? '-' : ' ');
-        row_name(i, NAME_COLS - 1, &t);
+        t_c(t, dashed(i) ? '-' : PAD);
+        row_name(i, NAME_COLS - 1, t);
     } else {
-        row_name(i, NAME_COLS, &t);
+        row_name(i, NAME_COLS, t);
     }
-    t_pad(&t, NAME_COLS + 1);
-    t_s(&t, kind_text(i));
+    t_pad_px(t, (NAME_COLS + 1) * 4, exact);
+    t_s(t, kind_text(i));
     txt sz;
     t_init(&sz);
     if (g_ent[i].flags & DKRT_SCAN_NEEDS)
         t_b(&sz, g_fit.rows[i].mem, DKRT_FIT_MEM);
     else
         bytes_text(&sz, g_ent[i].size);
-    t_pad(&t, NAME_COLS + 1 + 4 + 1 + 5 - sz.n);
-    t_s(&t, sz.b);
+    t_pad_px(t, (NAME_COLS + 1 + 4 + 1 + 5) * 4 - px_of(sz.b), exact);
+    t_s(t, sz.b);
+}
+
+/* Exact padding needs more characters than the letters it stands for (three spaces for 9 pixels); when the row would then pass the
+   23 characters a list row keeps, it is padded with PAD only. */
+static void module_row(dk_ui_menu *m, int i)
+{
+    txt t;
+    module_text(i, 1, &t);
+    if (t.n > DK_UI_ROW - 1)
+        module_text(i, 0, &t);
     if (DK_LOAD_N < 40)
         keep(DK_LOAD[DK_LOAD_N++], t.b);
     dk_ui_text(m, t.b);
