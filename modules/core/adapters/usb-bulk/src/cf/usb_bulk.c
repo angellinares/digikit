@@ -12,7 +12,8 @@
  * pool (the engine's own EP1 callback does the same from the interrupt); its free callback is wrapped to see the status byte, and a halted or error status
  * drops the transfer. TX: usb_bulk_send copies into one of TX_SLOTS slots and queues one dTD on EP2 IN (64-byte packets, see QH_CAPS_IN); the completion frees it.
  *
- * Buffers are accessed through the uncached alias of DDR, so the DMA and the CPU never see stale cache lines. The stock disconnect callback polls
+ * Buffers are accessed through the uncached alias of DDR, so the DMA and the CPU never see stale cache lines; only the receive reads of a module use the
+ * cached address, after an invalidate (UB_CACHED_RX). The stock disconnect callback polls
  * ENDPTFLUSH without a bound; ours flushes EP2 first with a bounded poll. Interrupts are masked (SR 0x2700) around every state change, never around a
  * copy: the state is touched by the I/O task, the UI loop tick and the USB interrupt. A refused dTD leaves `need_prime`, retried from the module's calls
  * and from usb_bulk_tick (dkrt_poll_add).
@@ -199,6 +200,24 @@ static volatile u32 td_status; /* the status byte of the dTD whose free callback
 /* Counters for the emulator test (read through the plan's symbols): the mode switches and restarts made so far, and the time between the last two in ms. */
 volatile u32 usb_bulk_switches, usb_bulk_switch_gap_ms;
 volatile u32 usb_bulk_rx_errors; /* transfers dropped for a halted, buffer-error or transaction-error status */
+volatile u32 usb_bulk_rx_inval_lines; /* data cache lines invalidated by usb_bulk_take (0 with UB_CACHED_RX 0); the emulator has no data cache model */
+
+/* UB_CACHED_RX 1: usb_bulk_take hands out the CACHED address of a receive buffer, after it invalidated the buffer's data cache lines, so the module's reads
+ * fill whole 16-byte lines in bursts (the uncached alias costs one bus access per longword). 0: the uncached alias, as before (the A/B switch).
+ * DEFAULT 0 until the emulator aliases DDR: its board keeps the cached window 0x40000000 and the uncached alias +0x08000000 in separate pages
+ * (packages/emulator/machine/src/board.rs page_index), so the emulator's DMA data (written at the alias) reads as zeros at the cached address. Hardware: -DUB_CACHED_RX=1.
+ * Rules, all in this file:
+ *  1. The CPU never writes a receive buffer through its cached address. Only the USB DMA writes these buffers (enable writes only the descriptor, through the
+ *     alias; the receive buffers are never written by the CPU). A dirty line could be written back over DMA data later. The cached address exists only as the
+ *     result of rx_cached(), which only usb_bulk_take returns, and the module reads it (its parameter is documented read-only).
+ *  2. usb_bulk_take invalidates the lines of the received bytes after the DMA completed (the completion callback marked the buffer full) and before the
+ *     first CPU read. `cpushl dc,(Ax)` pushes a line if modified and invalidates it (CACR[DDPI] = 0, CFPRM CPUSHL p.8-2, MCF5441x RM 6.4.8 Table 6-10). The firmware
+ *     writes CACR = 0xa50ce100 once (finding 07-emulator): SPA (bit 14) = 1 so Ax is a physical address and only the line that holds it is touched, IVO = 0,
+ *     DDPI = 0. The lines are clean (rule 1), so the push writes nothing. The caches do not snoop DMA (RM 6.1).
+ *  3. The cached address is returned only after the invalidate; usb_bulk_release takes either address. */
+#ifndef UB_CACHED_RX
+#define UB_CACHED_RX 0
+#endif
 
 static inline u32 sr_mask(void)
 {
@@ -232,10 +251,13 @@ static u8 *desc_buf(void)
     return alias_of(area + RX_BUFS * RX_BYTES + TX_SLOTS * TX_BYTES);
 }
 
-/* the index of the receive buffer or send slot that `p` (alias address) points into, or -1 */
+/* the index of the receive buffer that `p` points into (the uncached alias, or the cached address that usb_bulk_take may have returned), or -1 */
 static i32 rx_index(const u8 *p)
 {
-    u32 off = (u32)(p - rx_buf(0));
+    u32 off;
+    if ((u32)p < (u32)rx_buf(0))
+        p += usb_alias_delta; /* the cached address of the same memory */
+    off = (u32)(p - rx_buf(0));
     return off < RX_BUFS * RX_BYTES ? (i32)(off / RX_BYTES) : -1;
 }
 
@@ -860,6 +882,15 @@ i32 usb_bulk_take(u8 **buf, u32 *len)
         r = 1;
     }
     sr_restore(sr);
+#if UB_CACHED_RX
+    if (r == 1) { /* the buffer is ours (B_TAKEN, the DMA is done): invalidate with interrupts on, then hand out the cached address (rules 2 and 3) */
+        u32 a = (u32)*buf - usb_alias_delta, n = (*len + 15u) & ~15u, k;
+        for (k = 0; k < n; k += 16u)
+            __asm__ volatile("cpushl %%dc,(%0)" : : "a"(a + k) : "memory");
+        usb_bulk_rx_inval_lines += n / 16u;
+        *buf = (u8 *)a;
+    }
+#endif
     return r;
 }
 

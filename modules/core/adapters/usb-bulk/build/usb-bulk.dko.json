@@ -4,16 +4,16 @@
  "relocs": [
   {
    "addend": 0,
-   "offset": 2,
+   "offset": 6,
    "section": ".text.rx_index",
-   "symbol": ".sec..bss.area",
+   "symbol": "usb_alias_delta",
    "type": "cf.32"
   },
   {
    "addend": 0,
    "offset": 12,
    "section": ".text.rx_index",
-   "symbol": "usb_alias_delta",
+   "symbol": ".sec..bss.area",
    "type": "cf.32"
   },
   {
@@ -1966,10 +1966,10 @@
   },
   {
    "align": 2,
-   "hex": "223900000000202f0004d2b90000000090810c80000200006406720ee2a84e7570ff60fa",
+   "hex": "202f0004207900000000223900000000d288b0816402d08890810c80000200006406720ee2a84e7570ff60fa",
    "kind": "text",
    "name": ".text.rx_index",
-   "size": 36
+   "size": 44
   },
   {
    "align": 2,
@@ -2158,6 +2158,13 @@
    "hex": "",
    "kind": "bss",
    "name": ".bss.tick_added",
+   "size": 4
+  },
+  {
+   "align": 2,
+   "hex": "",
+   "kind": "bss",
+   "name": ".bss.usb_bulk_rx_inval_lines",
    "size": 4
   },
   {
@@ -2455,7 +2462,7 @@
    "size": 101
   }
  ],
- "source_sha256": "fa82d77b814d2bc507276d7d1bb318e955d3da077e24da377a85da13c6ebe042",
+ "source_sha256": "153328c9e750f1d761030adbed506ab8aa932f6744c74317b84504bb67011025",
  "symbols": [
   {
    "global": false,
@@ -3221,6 +3228,12 @@
   },
   {
    "global": true,
+   "name": "usb_bulk_rx_inval_lines",
+   "section": ".bss.usb_bulk_rx_inval_lines",
+   "value": 0
+  },
+  {
+   "global": true,
    "name": "usb_bulk_send",
    "section": ".text.usb_bulk_send",
    "value": 0
@@ -3350,8 +3363,8 @@
   "as": "GNU assembler (GNU Binutils) 2.47.20260726",
   "cflags": "-mcpu=54418 -Os -ffreestanding -fno-builtin -nostdlib -fno-pic -fno-pie -ffunction-sections -fdata-sections -fno-asynchronous-unwind-tables -fno-unwind-tables -fno-stack-protector -Wall -Wextra -Werror",
   "gcc": "m68k-elf-gcc (GCC) 16.2.0",
-  "instructions_redecoded": "1097",
-  "isa_check": "747d86e56ec375a2268473ab60dde50aa74e41bdaa9e280e43b76e687a333f34",
+  "instructions_redecoded": "1101",
+  "isa_check": "cd095c5e00c7cbcab682778d0a0e0aabf96b353067f66fb744338fc4d1070a35",
   "ld": "GNU ld (GNU Binutils) 2.47.20260726"
  }
 }
