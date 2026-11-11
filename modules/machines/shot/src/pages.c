@@ -82,7 +82,7 @@ void shot_controls_draw(const dk_page_frame_v1 *f)
     c->fill_rect(0, 0, 22, 19, 0);
     dk_page_tune(c, 0, 0, ((int)unit(f->word_values[SHOT_P_PITCH])-64)*3);
     c->fill_rect(24, 0, 47, 19, 0);
-    dk_sample_play_glyph(c, 29, 7, unit(f->word_values[SHOT_P_PLAY]));
+    dk_sample_view_play_glyph(c, 29, 7, unit(f->word_values[SHOT_P_PLAY]));
     c->fill_rect(76, 0, 98, 19, 0);
     int status = ready == 0 ? DK_SAMPLE_READY : sample_view_status(&shot_samples, slot);
     dk_page_sample(c, 76, 0, slot, sample_visual(ready, status));
@@ -122,7 +122,7 @@ static unsigned zoom_ratio(unsigned z)
 /* The DSP maps a START/END word to a frame: frames * word / 32512, word = unit << 8. */
 static uint32_t word_frame(uint32_t frames, unsigned unit_value)
 {
-    uint32_t frame = dk_region_fraction(frames, unit_value << 8, 32512);
+    uint32_t frame = dk_sample_view_fraction(frames, unit_value << 8, 32512);
     return frame > frames ? frames : frame;
 }
 
@@ -138,10 +138,10 @@ void shot_range_draw(const dk_page_frame_v1 *f)
     if (real) {
         /* At most one frame per column. */
         uint32_t least = frames < PLOT_WIDTH ? frames : PLOT_WIDTH;
-        uint32_t cap = dk_region_fraction(frames, DK_SAMPLE_ZOOM_ONE, least);
+        uint32_t cap = dk_sample_view_fraction(frames, DK_SAMPLE_ZOOM_ONE, least);
         if (ratio > cap) ratio = cap;
     }
-    dk_sample_region_rect plot = {0, 6, PLOT_WIDTH - 1, 36};
+    dk_sample_view_rect plot = {0, 6, PLOT_WIDTH - 1, 36};
     unsigned bins = 0;
     const dk_sample_peak *peaks = ready == 0 ? sample_view_peaks(&shot_samples, &bins) : 0;
     unsigned start_unit = unit(f->word_values[SHOT_P_START]), end_unit = unit(f->word_values[SHOT_P_END]);
@@ -162,7 +162,7 @@ void shot_range_draw(const dk_page_frame_v1 *f)
     uint32_t start_frame = word_frame(frames, start_unit), end_frame = word_frame(frames, end_unit);
     uint32_t anchor = focus_end[f->track] ? end_frame : start_frame;
     uint32_t first, span;
-    dk_sample_viewport(frames, 0, ratio, PLOT_WIDTH, &first, &span); /* span only */
+    dk_sample_view_viewport(frames, 0, ratio, PLOT_WIDTH, &first, &span); /* span only */
     /* A zoom or a new sample keeps the active marker at its screen position (a new sample
        starts from the whole-sample view). Then an edited marker pans the view into sight. */
     if (view_frames[f->track] != frames) {
@@ -184,7 +184,7 @@ void shot_range_draw(const dk_page_frame_v1 *f)
     unsigned pcols = 0;
     /* Exact window not ready: keep drawing the last ready one (rescaled) where it covers the viewport. */
     if (real && !window) prev = sample_view_last_window(&shot_samples, slot, info.token, &pfirst, &pspan, &pcols);
-    dk_sample_region_draw_detail(&f->canvas, plot, frames, first, span, peaks, bins, window, count,
+    dk_sample_view_draw_detail(&f->canvas, plot, frames, first, span, peaks, bins, window, count,
         prev, pfirst, pspan, pcols, start_frame, end_frame, 2048);
     region_values(f, focus_end[f->track]);
     f->canvas.text(58, 52, "ZOOM");

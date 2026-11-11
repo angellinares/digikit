@@ -59,7 +59,7 @@ must succeed before provider or notification dispatch begins.
 ## Public contract
 
 Runtime 0.5.4 appends four calls to the existing API table (minor version 1.4),
-retaining the pinned-bank entries. Include `<dk/files.h>`:
+retaining the pinned-bank entries. Include `<dk/platform/files.h>`:
 
 - `files_client()` obtains the module's client during initialization.
 - `files_list(client, root, path, notify, context)` copies a request and returns

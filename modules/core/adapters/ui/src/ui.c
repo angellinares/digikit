@@ -1,4 +1,4 @@
-/* core/ui: the device adapter behind <dk/ui.h> (docs/plans/sdk-api.md phase 3, docs/findings/71-ui-components-1-17.md).
+/* core/ui: the device adapter behind <dk/platform/ui.h> (docs/plans/sdk-api.md phase 3, docs/findings/71-ui-components-1-17.md).
  *
  * The same source runs on the Digitakt II and the Digitone II: every firmware call is a generated anchor (dk_fw_*.h).
  *
@@ -21,7 +21,7 @@
  * Module RAM is written only by this code, never by the firmware (the menu proof checks stray writes). */
 #include <stdint.h>
 #include <stddef.h>
-#include <dk/ui.h>
+#include <dk/platform/ui.h>
 #include "dk_ui_core.h"
 #include "tick.h"
 #include "dkrt.h"

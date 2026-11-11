@@ -80,8 +80,8 @@ def banks():
     # Repeated inclusion exercises the guard in the same assembled object.
     text = "\n".join(
         [
-            '#include "dsp/sample_bank.inc"',
-            '#include "dsp/sample_bank.inc"',
+            '#include "dsp/sample/bank.inc"',
+            '#include "dsp/sample/bank.inc"',
             ".SECTION/PM seg_pmco;",
             *(source(name, *regs[1:]) for name, regs in BANKS.items()),
         ]

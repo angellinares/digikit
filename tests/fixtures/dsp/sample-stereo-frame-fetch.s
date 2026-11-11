@@ -1,11 +1,11 @@
 // Private exclusion experiment only. Original guard helper is supplied from a
 // hash-bound runtime DT2 1.17 image; no original instruction bytes are embedded.
-#include "dsp/call.inc"
-#include "dsp/sample.inc"
-#include "dsp/sample_pcm16.inc"
-#include "dsp/sample_pcm16_fetch.inc"
-#include "dsp/sample_pcm16_stereo.inc"
-#include "dsp/sample_bank.inc"
+#include "dsp/contract/call.inc"
+#include "dsp/sample/float.inc"
+#include "dsp/sample/pcm16.inc"
+#include "dsp/sample/pcm16_fetch.inc"
+#include "dsp/sample/pcm16_stereo.inc"
+#include "dsp/sample/bank.inc"
 .SECTION/PM seg_pmco;
 .EXTERN _ff_original_guard;
 .GLOBAL _ff_guard_h;

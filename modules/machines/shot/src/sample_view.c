@@ -4,21 +4,21 @@ void sample_view_init(sample_view *v, const dk_api *api, uint32_t pool)
 {
     v->api = api;
     v->pool = pool;
-    v->slot = DK_STRACKS;
+    v->slot = DK_SAMPLE_POOL_ENTRIES;
     v->token = 0;
     v->peak_count = 0;
     v->win_state = SAMPLE_VIEW_WIN_NONE;
     v->win_count = 0;
     v->last_valid = 0;
-    for (unsigned i = 0; i < DK_STRACKS; i++) v->peak_failed[i] = 0;
+    for (unsigned i = 0; i < DK_SAMPLE_POOL_ENTRIES; i++) v->peak_failed[i] = 0;
 }
 
 int sample_view_update(sample_view *v, unsigned slot, dk_sample_info *info, int want_peaks)
 {
-    if (slot >= DK_STRACKS) return DK_SAMPLE_E_CONTRACT;
+    if (slot >= DK_SAMPLE_POOL_ENTRIES) return DK_SAMPLE_E_CONTRACT;
     int ready = v->api && v->api->sample_pool_info ?
         v->api->sample_pool_info(v->pool, slot, (uint8_t *)info) : DK_SAMPLE_E_CONTRACT;
-    if (ready != 0) { v->slot = DK_STRACKS; v->token = 0; v->peak_count = 0; return ready; }
+    if (ready != 0) { v->slot = DK_SAMPLE_POOL_ENTRIES; v->token = 0; v->peak_count = 0; return ready; }
     if (slot != v->slot || info->token != v->token) {
         v->slot = slot; v->token = info->token; v->peak_count = 0;
     }

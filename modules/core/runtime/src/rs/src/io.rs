@@ -10,7 +10,7 @@
 //! never deleted. It sleeps on a semaphore that every post and wake posts (ISR-safe); one wake may stand for several events, so after each
 //! wake it runs the jobs until none is runnable (round robin between them, one step each time round).
 //!
-//! The values `IO_MORE`, `IO_WAIT` and `IO_E_CANCELLED` must match sdk/include/dk/io.h.
+//! The values `IO_MORE`, `IO_WAIT` and `IO_E_CANCELLED` must match sdk/include/dk/platform/io.h.
 //!
 //! Rules: no `match` on integers, no `core::fmt`, no slice indexing; a step runs on a 16 KiB stack.
 

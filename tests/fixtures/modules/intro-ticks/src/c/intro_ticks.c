@@ -2,7 +2,7 @@
  * h = h * 31 + tick + 1 and counts the calls. `done` (UI task, first pass) logs the count and the hash, so a test can prove that every tick
  * ran once and in order: a skipped, repeated or swapped tick changes the hash. */
 
-#include <dk/intro.h>
+#include <dk/platform/intro.h>
 
 #define TICKS 40u
 

@@ -33,7 +33,7 @@ fn stripped_root(dir: &Path) {
                     !(l.contains("DK_STEP(")
                         || l.contains("DK_TRACE_LOG(")
                         || l.contains("dk_trace.inc")
-                        || l.contains("<dk/trace.h>"))
+                        || l.contains("<dk/core/trace.h>"))
                 })
                 .map(|l| l.replace("DK_TRACE_INIT(api);", "(void)api;"))
                 .collect::<Vec<_>>()

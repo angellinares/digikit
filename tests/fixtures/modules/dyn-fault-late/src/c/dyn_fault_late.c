@@ -5,7 +5,7 @@
  * The delay and the kind of failure come from the store file `cfg/fault-after.bin` (5 bytes: u32 big endian blocks, then 0 = reset the
  * machine, as the firmware's exception path ends, 1 = hang in the UI task with the other tasks running); no file: never fails. */
 
-#include <dk/api.h>
+#include <dk/core/api.h>
 
 typedef uint32_t u32;
 

@@ -23,8 +23,8 @@
 //    per-sample scratch: F0 F1 F2 F3
 // =====================================================================
 #include "dk_machine.inc"
-#include "dsp/oscillator.inc"
-#include "dsp/noise.inc"
+#include "dsp/osc/oscillator.inc"
+#include "dsp/osc/noise.inc"
 
 .SECTION/PM seg_pmco;
 .GLOBAL _bd_render;

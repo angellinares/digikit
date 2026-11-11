@@ -1,4 +1,4 @@
-// digikit/freqshift: a frequency shifter, an effect of the FX contract (<dk/fx.h>), loaded at run time on the Digitakt II (docs/findings/55-fx-adapter.md,
+// digikit/freqshift: a frequency shifter, an effect of the FX contract (<dk/fx/fx.h>), loaded at run time on the Digitakt II (docs/findings/55-fx-adapter.md,
 // 61-fx-pages.md). It moves every frequency of the master up or down by the same number of Hz (single sideband modulation, not a pitch shift). The float32
 // reference, which defines the arithmetic operation for operation, is modules/fx/freqshift/tests/freqshift_ref.py; the notes below say what the routine does.
 //

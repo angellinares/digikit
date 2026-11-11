@@ -1,4 +1,4 @@
-// test/dyn-dsp-hang: a machine of the SDK contract (<dk/machine.h>) that stops the SHARC on purpose (docs/findings/48-dsp-breadcrumbs.md).
+// test/dyn-dsp-hang: a machine of the SDK contract (<dk/machine/machine.h>) that stops the SHARC on purpose (docs/findings/48-dsp-breadcrumbs.md).
 // `render` writes silence for HANG_AFTER - 1 blocks of a note; on the HANG_AFTER-th block it enters an endless loop and never returns: the core is
 // halted for the engine, the block handler never reaches its tail, the heartbeats freeze. The point of the module is the diagnosis: the ColdFire's
 // debug log must name the step (routine called), the voice and the machine type. A negative conformance fixture (tools/patchkit/pk_conform.py NEGATIVE).

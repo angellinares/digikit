@@ -20,7 +20,7 @@ interface Vectors {
 }
 
 const vectors: Vectors = JSON.parse(
-  fs.readFileSync(path.join(repoRoot(), 'sdk/vectors/settings-vectors.json'), 'utf8'),
+  fs.readFileSync(path.join(repoRoot(), 'modules/core/runtime/vectors/settings-vectors.json'), 'utf8'),
 );
 
 describe('settings record against the shared vectors', () => {

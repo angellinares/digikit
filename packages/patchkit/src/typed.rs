@@ -1,10 +1,10 @@
 //! Typed module sections and their lowering.
 //!
 //! A machine module declares what it adds in C, not in the manifest: `DK_MACHINE`, `DK_PARAM` and `DK_PAGE` records
-//! (sdk/include/dk/machine.h), read by `desc` when the module loads. The values here (`MachineDef`, `ParamDef`, `PageDef`,
+//! (sdk/include/dk/machine/machine.h), read by `desc` when the module loads. The values here (`MachineDef`, `ParamDef`, `PageDef`,
 //! `VoiceDef`) are what `desc` makes of them; `Manifest` holds them in its `machine`, `param`, `page` and `voice` lists.
 //!
-//! A run-time effect (`FxDef`) is a `DK_FX` record in C (sdk/include/dk/fx.h), read by `desc`.
+//! A run-time effect (`FxDef`) is a `DK_FX` record in C (sdk/include/dk/fx/fx.h), read by `desc`.
 //!
 //! `lower` turns them, per device, into the `[[entry]]` rows the frameworks (`core/machines`, `core/params`,
 //! `core/dsp-voice`) take. What a knob means on a device is device data: `[modules.knobs]` and `[modules.frame]` in
@@ -301,7 +301,7 @@ pub struct VoiceDef {
 }
 
 /// A run-time effect (a `DK_FX` record, DSP section version 4 of a `.dkm`; docs/design/digikit-dkm.md): `process` is the global text symbol of its process routine
-/// (<dk/fx.h>), `desc` the data symbol of its `dk_fx_desc` (n_params and state_bytes come from it), `defaults` the words p0 ... of its row (at most
+/// (<dk/fx/fx.h>), `desc` the data symbol of its `dk_fx_desc` (n_params and state_bytes come from it), `defaults` the words p0 ... of its row (at most
 /// `n_params`, the words the DSP reads as they are; none: all 0). Only the packer reads it: a patched-in effect is an `[[entry]]` row of the registry `fx`.
 ///
 /// An effect with a `tab` has a page of its own in the FX view (docs/design/digikit-registry.md "Effect pages"): `tab` is the label of the page's tab
@@ -1297,7 +1297,7 @@ summary = "t."
     }
 }
 
-/// A module-owned table of 16 per-track sample records, declared by DK_SAMPLE_TRACKS (<dk/sample_track.h>, API 1.5): the symbols of the
+/// A module-owned table of 16 per-track sample records, declared by DK_SAMPLE_TRACKS (<dk/sample/pool.h>, API 1.5): the symbols of the
 /// records and of the control sets in the module's DSP data.
 #[derive(Clone, Debug, serde::Serialize)]
 pub struct SampleTracksDef {

@@ -15,7 +15,7 @@ conflicts = []
 "dt2-1.17" = "experimental"
 "dn2-1.12" = "experimental"
 
-# The menu is written in C on <dk/ui.h> (core/ui draws it with the firmware's own views) and calls the runtime's exported
+# The menu is written in C on <dk/platform/ui.h> (core/ui draws it with the firmware's own views) and calls the runtime's exported
 # functions (dkrt_scan, dkrt_fit, dkrt_selection_get and _set, dkrt_restart, dkrt_boot_info, dkrt_status, dkrt_module, dkrt_fx, ...) by symbol:
 # the module requires core/runtime and core/ui. It patches no firmware: core/ui owns the hook at the end of the SETTINGS item list
 # rebuild and calls dk_app_settings_rows, which adds the DIGIKIT row after SYSTEM (dk_ui_stock_row).

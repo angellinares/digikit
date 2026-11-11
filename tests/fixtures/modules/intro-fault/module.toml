@@ -14,7 +14,7 @@ conflicts = []
 "dt2-1.17" = "experimental"
 "dn2-1.12" = "experimental"
 
-# C, packed like test/dyn-crash. `dkm_init` calls `intro_take` (<dk/intro.h>); the first tick of the intro runs `frame`, which raises the exception
+# C, packed like test/dyn-crash. `dkm_init` calls `intro_take` (<dk/platform/intro.h>); the first tick of the intro runs `frame`, which raises the exception
 # (the firmware's own handler gets it: the runtime's handler is set only from the UI loop). The boot counter stays raised, so repeated boots end in safe mode.
 [[object]]
 path = "build/intro-fault.dko.json"

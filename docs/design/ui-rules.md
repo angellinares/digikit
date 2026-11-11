@@ -17,9 +17,9 @@ Stock reference: the Digitakt II pool list (manual 9.7). YES selects the sample 
 
 ## The chooser component (SDK)
 
-A reusable list-and-browse component built on dk/ui.h. It is generalised from the sample picker (sdk/src/sample_picker.c, picker_logic.c).
+A reusable list-and-browse component built on dk/platform/ui.h. It is generalised from the sample picker (sdk/src/sample/picker.c, logic.c).
 
-- Slot-list mode (`<dk/chooser.h>`): a list of numbered slots with a title, one row per slot (an empty slot has a row too, for example `-`), a marked current slot, an optional side panel per slot, and a browser level (folder browser on the SDK file listing).
+- Slot-list mode (`<dk/chooser/chooser.h>`): a list of numbered slots with a title, one row per slot (an empty slot has a row too, for example `-`), a marked current slot, an optional side panel per slot, and a browser level (folder browser on the SDK file listing).
 - YES on a slot, empty or filled, opens the browser for that slot. YES on a file calls `fill(ctx, slot, path)`: the module loads the file into that slot (a filled slot is replaced) and returns the slot, or a negative error.
 - Result callback: `done(ctx, slot)` is called once after `fill` succeeded. It is not called on NO or on an error.
 - "YES closes the flow": after `fill`, the chooser closes all its levels in one step, then runs `done`.

@@ -1,6 +1,6 @@
 /* The machine declaration of test/sine: one machine `sine` with one level parameter and a page of one knob.
    patchkit pack reads these records; the device never sees them. */
-#include <dk/machine.h>
+#include <dk/machine/machine.h>
 
 DK_MACHINE(sine, .name = "Sine", .short_name = "SIN", .render = "_sn_render",
            .note_on = "_sn_note_on", .desc = "_sn_desc");

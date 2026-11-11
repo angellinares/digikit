@@ -68,7 +68,7 @@ def prebuilt_tools():
 def dsp_objects():
     if pk_toolchains.selache_dir() is None:
         pytest.skip("assembler absent")
-    paths = [REPO_ROOT / "sdk/asm", REPO_ROOT / "sdk", MOD / "build/gen"]
+    paths = [REPO_ROOT / "sdk/dsp/contract", REPO_ROOT / "sdk", MOD / "build/gen"]
     return [
         pk_sharc.assemble(
             pk_sharc.expand_includes(

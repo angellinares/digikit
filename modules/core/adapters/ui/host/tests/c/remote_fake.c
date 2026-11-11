@@ -1,5 +1,5 @@
 /* Host test of digikit/remote's settings: the module's own C source, compiled here with fakes of core/input and of the runtime's
-   Api table. The fake <dk/ui.h> (src/lib.rs) shows the page, and modules/core/adapters/ui/host/tests/remote.rs presses the keys. */
+   Api table. The fake <dk/platform/ui.h> (src/lib.rs) shows the page, and modules/core/adapters/ui/host/tests/remote.rs presses the keys. */
 #include "../../../../../../tools/remote/src/c/remote.c"
 
 static dk_service_cmd *handlers[256];

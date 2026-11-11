@@ -1,9 +1,9 @@
 // Private two-track consumer/producer proof; no public resource ABI.
 #include "dk_machine.inc"
-#include "dsp/call.inc"
-#include "dsp/sample.inc"
-#include "dsp/sample_pcm16.inc"
-#include "dsp/sample_bank.inc"
+#include "dsp/contract/call.inc"
+#include "dsp/sample/float.inc"
+#include "dsp/sample/pcm16.inc"
+#include "dsp/sample/bank.inc"
 .SECTION/DM seg_dmda;
 .GLOBAL _bind_a_open;
 .VAR _bind_a_open = 0;

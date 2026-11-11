@@ -16,7 +16,7 @@ import {
 import { RING_SYMBOLS } from '@digi/regression/runtime/runtime-menu.ts';
 
 /**
- * The module settings API (api 1.9, <dk/settings.h>). The fixtures test/settings-a and test/settings-b are one source: a service command queues a put, get
+ * The module settings API (api 1.9, <dk/platform/settings.h>). The fixtures test/settings-a and test/settings-b are one source: a service command queues a put, get
  * or remove request, slot 0 runs it in the UI task, and `dkm_init` reads the key "boot". Keys are stored as `<module name>/<key>`.
  */
 

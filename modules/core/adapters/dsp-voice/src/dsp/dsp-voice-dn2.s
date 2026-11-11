@@ -39,7 +39,7 @@
 // Called once per DSP block and slot. A slot with the same type is called with the same arguments every block.
 //
 // Two kinds of registered row (docs/design/module-sdk.md 4.1 and 5): a row whose word 16 (note_on) is 0 is a routine of the form above (the raw row of a `raw` module, module-sdk.md 11.5 D12: no contract). A row
-// with a note_on pc is a machine of the SDK contract (<dk/machine.h>) and runs through `_dv_contract` below: the adapter finds the note-on
+// with a note_on pc is a machine of the SDK contract (<dk/machine/machine.h>) and runs through `_dv_contract` below: the adapter finds the note-on
 // (the rising edge of bit v of frame halfword ADM_TRIG_HW: the edge block is silent, the next block runs note_on and render), zeroes the first
 // `clear` bytes of the slot's state (row words 17 state base, 18 stride, 19 clear), builds the `dk_voice_in` and the parameter words (the knobs
 // of `ADM_PARAM_SLOT*`, clamped to the row's ranges, in a buffer of its own), calls the module, ends the voice on DK_DONE or a fault, and

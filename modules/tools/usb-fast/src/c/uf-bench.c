@@ -3,10 +3,10 @@
 #if UF_BENCH
 /* the code is placed as it is: no jump tables (data in the code) */
 #pragma GCC optimize("no-jump-tables")
-#include <dk/api.h>
-#include <dk/file.h>
-#include <dk/hash32.h>
-#include <dk/io.h>
+#include <dk/core/api.h>
+#include <dk/platform/file.h>
+#include <dk/platform/hash32.h>
+#include <dk/platform/io.h>
 
 typedef uint8_t u8;
 typedef uint32_t u32;

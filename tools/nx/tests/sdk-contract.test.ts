@@ -58,9 +58,9 @@ function runHostC(source: string) {
 }
 
 it('draws the page widgets inside their bounds', () => {
-  runHostC('sdk/tests/widgets.c');
+  runHostC('sdk/tests/page/widgets.c');
 }, 20_000);
 
-it('draws and clips the sample region', () => {
-  runHostC('sdk/tests/sample_region.c');
+it('draws and clips the sample view', () => {
+  runHostC('sdk/tests/sample/view.c');
 }, 20_000);

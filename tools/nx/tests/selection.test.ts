@@ -242,7 +242,7 @@ describe('workspace selection', () => {
   }, 30_000);
 
   it('keeps shared SDK contract edits on the SDK host, pack, runtime device and conformance selection', () => {
-    const graph = selected('sdk/include/dk/api.h', 'test-host,pack,test-device,test-conformance');
+    const graph = selected('sdk/include/dk/core/api.h', 'test-host,pack,test-device,test-conformance');
     for (const target of [
       'sdk:test-host',
       `${imageConsumer()}:pack`,

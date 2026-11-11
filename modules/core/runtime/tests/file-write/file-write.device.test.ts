@@ -9,7 +9,7 @@ import { DEVICES, FIRMWARE } from '@digi/regression/runtime/devices.ts';
 import { RING_SYMBOLS } from '@digi/regression/runtime/runtime-menu.ts';
 
 /**
- * Store file writes from a module (api 1.10: <dk/file.h>, <dk/io.h>, <dk/hash32.h>). The fixture test/file-write starts an I/O job from a service
+ * Store file writes from a module (api 1.10: <dk/platform/file.h>, <dk/platform/io.h>, <dk/platform/hash32.h>). The fixture test/file-write starts an I/O job from a service
  * command: it writes a file of a known pattern, 4096 bytes a step, and reports what the job saw (tests/fixtures/modules/file-write).
  */
 

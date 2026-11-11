@@ -9,7 +9,7 @@ This file says how the modules are layered, what each layer may depend on, and h
  app                menus and screens               (modules/core/apps)
        |  <dk/...> headers and imports               the SDK contract: sdk/
        v
- SDK contract       sdk/sdk.toml, sdk/include, sdk/asm: what a module may call and must provide
+ SDK contract       sdk/sdk.toml, sdk/include, sdk/dsp/contract: what a module may call and must provide
        |
        v
  runtime            loads .dkm files, links their imports, owns store, selection and policy (modules/core/runtime)
@@ -42,7 +42,7 @@ A module never reaches past the layer under it. Everything that depends on the d
 `layercheck` reads manifests, sources and built objects. It builds nothing; for the objects of content modules it asks patchkit where the objects of this tree's sources are stored (`patchkit build --paths`, about 10 s), so a cache entry another worktree built is never read.
 
 1. **Roles.** Every module under `modules/core` has `role` in `[module]`, and the role fits the folder: `adapters/` is `adapter`, `apps/` is `app`, `runtime/` is `runtime`, `expansion/` is `installer`.
-2. **Sources.** Content modules and apps include only their own files and the SDK (`<dk/...>`, `sdk/asm`). An app may also include `dkrt.h` and `dk_ui_core.h`. Only runtime, installer and adapters include `dk_fw_*` headers or depend on the `dkfw` crate. C, ColdFire and SHARC assembly (`#include`, `.include`) and Rust (`dkfw`, path dependencies) are checked.
+2. **Sources.** Content modules and apps include only their own files and the SDK (`<dk/...>`, `sdk/dsp/contract`). An app may also include `dkrt.h` and `dk_ui_core.h`. Only runtime, installer and adapters include `dk_fw_*` headers or depend on the `dkfw` crate. C, ColdFire and SHARC assembly (`#include`, `.include`) and Rust (`dkfw`, path dependencies) are checked.
 3. **Objects.** The undefined symbols of the built objects of apps and content modules are SDK imports (`sdk/sdk.toml` `[[import]]`), `dkrt_*`, `dk_ui_*`, `dk_app_*` or the SHARC externs the SDK documents. They never name a firmware anchor (`cf.*`, `dsp.*`, `hook.*`, `pk.*`), and `[object.externs]` never maps a symbol to one.
 4. **Apps do not patch.** An app has no `[[op]]` and no `[[claim]]`. If an app needs a firmware hook, the adapter that owns that plug-in point installs the hook and calls the app through an optional symbol (`dk_app_*`).
 5. **Capabilities cost nothing unused.** A module asks for capabilities; adapters implement them per device. Prefer data (a field an adapter already passes) to a new firmware hook. A hook must cost at most one flag check on a hot path when no loaded module asks for its capability ([capabilities plan](plans/capabilities.md)).
@@ -85,16 +85,16 @@ A new device:
 
 A menu or screen of an app or module goes through these steps:
 
-1. **Module.** A module calls `dk_ui_menu_new`, `dk_ui_text`, `dk_ui_open` and the other calls of `<dk/ui.h>` (`sdk/include/dk/ui.h`). It knows no firmware.
+1. **Module.** A module calls `dk_ui_menu_new`, `dk_ui_text`, `dk_ui_open` and the other calls of `<dk/platform/ui.h>` (`sdk/include/dk/platform/ui.h`). It knows no firmware.
 2. **Runtime.** The runtime links the module's imports when it loads the `.dkm`. The `dk_ui_*` calls are `[[import]]` entries of `sdk/sdk.toml` with `requires = "core/ui"`: the runtime's object names them as `optional` symbols, and patchkit resolves them to the functions of `core/ui`, or to 0 when `core/ui` is not in the image. For 0 the runtime hands out a stub that returns the API's failure value (the entry's `absent`: null, -1 or 0, or nothing for a void call), so a module that uses the UI still loads. An app (a core module) links the same symbols directly through patchkit.
 3. **Adapter `core/ui`.** `modules/core/adapters/ui` implements the calls. It builds the firmware's own views (`VerticalMenuView`, list and text views) through the generated bindings (`dk_fw_view.h`, `dk_fw_menu.h`) and keeps their state.
 4. **Firmware views.** The firmware draws and handles the keys.
 
 The SETTINGS entry shows the rule for hooks. `core/ui` owns the hook at the end of the SETTINGS list rebuild (`cf.menu.hook.settings_list.tail`). It calls the optional symbol `dk_app_settings_rows(settings_menu)` (declared in `dk_ui_core.h`). The app `core/digikit-menu` implements it with `dk_ui_stock_row` and adds the DIGIKIT row. The app has no hook, no claim and no firmware include. When no app is in the image, patchkit resolves the symbol to 0 and the hook does nothing.
 
-A module with settings exports `dkm_menu` (`DK_MENU(fill)` of `<dk/ui.h>`; the `.dkm` header carries its address and `DkrtModule.menu` gives it to the app). The MODULES list of `core/digikit-menu` shows SETTINGS... in the side panel of a loaded module that has one, builds a menu once for it (titled with the module's name) and calls `dkm_menu` to fill it only when the user opens it. The check mark of the row stays the only on/off of a module; the runtime owns it, and the module owns only its own settings.
+A module with settings exports `dkm_menu` (`DK_MENU(fill)` of `<dk/platform/ui.h>`; the `.dkm` header carries its address and `DkrtModule.menu` gives it to the app). The MODULES list of `core/digikit-menu` shows SETTINGS... in the side panel of a loaded module that has one, builds a menu once for it (titled with the module's name) and calls `dkm_menu` to fill it only when the user opens it. The check mark of the row stays the only on/off of a module; the runtime owns it, and the module owns only its own settings.
 
-**Lifetime rule.** No module is unloaded at run time, and menus are never freed. So every `ctx`, callback and descriptor that a module hands to `<dk/ui.h>` must point at the module's own static data or code, never at the stack, and menus are built when the user opens them, after all modules are loaded. Then no UI pointer outlives the module that owns it.
+**Lifetime rule.** No module is unloaded at run time, and menus are never freed. So every `ctx`, callback and descriptor that a module hands to `<dk/platform/ui.h>` must point at the module's own static data or code, never at the stack, and menus are built when the user opens them, after all modules are loaded. Then no UI pointer outlives the module that owns it.
 
 The same holds for card reads: the INFO page of the menu gets the module header from `dkrt_module_header` of the runtime, which does the card read in its own buffer.
 

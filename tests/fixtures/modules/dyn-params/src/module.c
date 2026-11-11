@@ -1,6 +1,6 @@
 /* The machine declaration of test/dyn-params: one machine `dynp` with four parameters (words 0 .. 3), to check the parameter rows
    the registry writes. The ranges differ per word. The DSP is test/sine's. patchkit reads these records; the device never sees them. */
-#include <dk/machine.h>
+#include <dk/machine/machine.h>
 
 DK_MACHINE(dynp, .name = "DynP", .short_name = "DYP", .render = "_sn_render",
            .note_on = "_sn_note_on", .desc = "_sn_desc");

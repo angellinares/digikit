@@ -49,10 +49,10 @@ typedef int i32;
 #define E_CONTRACT (-48)
 #define E_STATE (-53)
 #define E_LENGTH (-55)
-/* adapter status (<dk/usb_bulk.h>): nothing is in flight and the queue refused; the adapter's tick wakes the job to try again */
+/* adapter status (<dk/platform/usb_bulk.h>): nothing is in flight and the queue refused; the adapter's tick wakes the job to try again */
 #define E_AGAIN (-72)
 
-/* what a module sees: <dk/usb_bulk.h> */
+/* what a module sees: <dk/platform/usb_bulk.h> */
 #define ST_ENABLED 0x1u
 #define ST_CONNECTED 0x2u
 #define ST_WRONG_MODE 0x4u /* the device's active USB port is not USB MIDI (live) */

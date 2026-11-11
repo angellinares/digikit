@@ -1,4 +1,4 @@
-//! The settings page of digikit/remote (modules/tools/remote/src/c/remote.c) on the fake <dk/ui.h>, with a fake core/input.
+//! The settings page of digikit/remote (modules/tools/remote/src/c/remote.c) on the fake <dk/platform/ui.h>, with a fake core/input.
 use dkui_host::driver::*;
 use dkui_host::*;
 use std::ffi::c_int;

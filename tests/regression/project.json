@@ -49,7 +49,7 @@
         "^hostTests",
         "{workspaceRoot}/config/emulator.json",
         "{workspaceRoot}/devices/*.toml",
-        "{workspaceRoot}/sdk/vectors/**/*",
+        "{workspaceRoot}/modules/core/runtime/vectors/**/*",
         {
           "runtime": "shasum -a 256 dist/plusdrive/plusdrive 2>/dev/null || echo no-plusdrive"
         }

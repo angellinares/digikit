@@ -17,6 +17,8 @@ interface Props {
 const { title, description, active, fill = false } = Astro.props;
 const base = import.meta.env.BASE_URL.replace(/\/?$/, '/');
 const current = (page: Props['active']) => (active === page ? 'page' : undefined);
+// The commit this site was built from. Actions sets GITHUB_SHA; local builds have none and show no footer.
+const commit = process.env.GITHUB_SHA;
 ---
 
 <!doctype html>
@@ -74,5 +76,12 @@ const current = (page: Props['active']) => (active === page ? 'page' : undefined
       </div>
     </header>
     <slot />
+    {commit && !fill && (
+      <footer class="sitefoot">
+        <div class="wrap">
+          Built from <a href={`https://github.com/ElekLabs/digikit/commit/${commit}`}>{commit.slice(0, 8)}</a>
+        </div>
+      </footer>
+    )}
   </body>
 </html>

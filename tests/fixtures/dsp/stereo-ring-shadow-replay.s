@@ -1,5 +1,5 @@
 // Private synthetic backings; no claim about production ring allocation.
-#include "dsp/call.inc"
+#include "dsp/contract/call.inc"
 .SECTION/PM seg_pmco;
 .GLOBAL _prepare_ring;
 _prepare_ring:

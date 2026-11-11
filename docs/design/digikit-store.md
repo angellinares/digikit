@@ -201,7 +201,7 @@ The runtime reads the placement from the layout (`store::Layout::set_a`, `set_b`
 
 The bytes after `used` are not part of the record (a shorter record written over a longer one leaves old bytes there; the crc32 ignores them). A copy is **valid** when its magic, version, `used` (18 to 8192),
 crc32 and entries hold (every entry inside `used`, every key legal, no key twice). A reader takes the valid copy with the higher `seq` (equal: A); no valid copy is an empty record. The shared vectors
-`sdk/vectors/settings-vectors.json` (valid records with their decoded entries and a refused record for each rule, with the first rule it breaks) are checked by the Rust SDK tests, by `patchkit store dump` and by the Python reader.
+`modules/core/runtime/vectors/settings-vectors.json` (valid records with their decoded entries and a refused record for each rule, with the first rule it breaks) are checked by the Rust SDK tests, by `patchkit store dump` and by the Python reader.
 
 **Keys by owner.** A key is `<owner prefix><module id>` or, later, `<module id>/...`. Now: `fx/route/<module id>` (1 byte: 0 master, 1 send; absent, or a route the effect's manifest does not allow: the manifest's default `route`; written by DIGIKIT > FX ROUTES) and `fx/send/<module id>` (16 bytes: the amount 0 to 127 of each track). The
 prefixes and how a reader prints their values are `[[settings.key]]` of `sdk/sdk.toml` (generated). A key of another shape is stored and printed as text or hex. **Reserved, not built:** a run-time module (a `.dkm`) will

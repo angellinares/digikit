@@ -50,8 +50,8 @@ def tree(tmp_path: Path) -> Path:
     """A tree that holds: runtime, installer, one adapter, one app, one content module."""
     r = tmp_path
     write(r, "sdk/sdk.toml", '[[import]]\nname = "fw_alloc"\nsig = "u8 *(u32 size)"\n')
-    write(r, "sdk/include/dk/api.h", "/* sdk */\n")
-    write(r, "sdk/asm/dk_machine.inc", "/* sdk asm */\n")
+    write(r, "sdk/include/dk/core/api.h", "/* sdk */\n")
+    write(r, "sdk/dsp/contract/dk_machine.inc", "/* sdk asm */\n")
     write(r, "sdk/templates/m/src/dsp/m.s", ".EXTERN _dv_exp2;\n")
     module(r, "modules/core/runtime", "core/runtime", "core", "runtime")
     write(r, "modules/core/runtime/include/dkrt.h", "/* runtime */\n")
@@ -69,7 +69,7 @@ def tree(tmp_path: Path) -> Path:
     write(
         r,
         "modules/core/apps/menu/src/menu.c",
-        '#include <stdint.h>\n#include <dk/api.h>\n#include "dkrt.h"\n#include <dk_ui_core.h>\n#include "own.h"\n',
+        '#include <stdint.h>\n#include <dk/core/api.h>\n#include "dkrt.h"\n#include <dk_ui_core.h>\n#include "own.h"\n',
     )
     write(r, "modules/core/apps/menu/src/own.h", "/* own */\n")
     module(
@@ -91,7 +91,7 @@ def tree(tmp_path: Path) -> Path:
         "modules/fx/gain/src/dsp/gain.s",
         '#include "dk_machine.inc"\n.EXTERN _dv_exp2;\n',
     )
-    write(r, "modules/fx/gain/src/cf/gain.c", "#include <dk/api.h>\n")
+    write(r, "modules/fx/gain/src/cf/gain.c", "#include <dk/core/api.h>\n")
     return r
 
 
@@ -142,7 +142,7 @@ def test_content_module_may_not_include_runtime_or_adapter_headers(tree: Path) -
     write(
         tree,
         "modules/fx/gain/src/cf/gain.c",
-        '#include <dk/api.h>\n#include "dkrt.h"\n#include "dk_ui_core.h"\n',
+        '#include <dk/core/api.h>\n#include "dkrt.h"\n#include "dk_ui_core.h"\n',
     )
     found = layercheck.check(tree)
     assert [v.rule for v in found] == ["sources", "sources"]
@@ -267,7 +267,7 @@ def test_a_content_module_may_not_commit_an_object(tree: Path) -> None:
 
 def test_ui_functions_must_be_imports_the_runtime_links(tree: Path) -> None:
     ui = "typedef void dk_ui_act_fn(void *ctx, int arg);\nint dk_ui_open(dk_ui_menu *m);\n"
-    write(tree, "sdk/include/dk/ui.h", ui)
+    write(tree, "sdk/include/dk/platform/ui.h", ui)
     imp = '[[import]]\nname = "dk_ui_open"\nsig = "i32 (u8 *menu)"\nrequires = "core/ui"\n'
     write(tree, "sdk/sdk.toml", (tree / "sdk/sdk.toml").read_text() + imp)
     runtime = (
@@ -278,16 +278,18 @@ def test_ui_functions_must_be_imports_the_runtime_links(tree: Path) -> None:
     # a typedef is no function; the import, the header and the optional list agree
     assert layercheck.check(tree) == []
     # a function that is not an import
-    write(tree, "sdk/include/dk/ui.h", ui + "void dk_ui_close(dk_ui_menu *m);\n")
+    write(
+        tree, "sdk/include/dk/platform/ui.h", ui + "void dk_ui_close(dk_ui_menu *m);\n"
+    )
     (v,) = layercheck.check(tree)
     assert v.rule == "imports" and "dk_ui_close" in v.message
-    assert v.where == "sdk/include/dk/ui.h:3"
+    assert v.where == "sdk/include/dk/platform/ui.h:3"
     # an import that the header does not declare
-    write(tree, "sdk/include/dk/ui.h", "typedef int dk_ui_t;\n")
+    write(tree, "sdk/include/dk/platform/ui.h", "typedef int dk_ui_t;\n")
     (v,) = layercheck.check(tree)
     assert v.rule == "imports" and "dk_ui_open" in v.message
     # an import the runtime does not link
-    write(tree, "sdk/include/dk/ui.h", ui)
+    write(tree, "sdk/include/dk/platform/ui.h", ui)
     module(tree, "modules/core/runtime", "core/runtime", "core", "runtime")
     (v,) = layercheck.check(tree)
     assert v.rule == "imports" and "optional list" in v.message

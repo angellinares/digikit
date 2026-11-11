@@ -1,6 +1,6 @@
 // Private synthetic replay of b80345, not the stock routing or a stereo ABI.
 // Call arguments are control, byte control, count; audio pointers are bytes.
-#include "dsp/call.inc"
+#include "dsp/contract/call.inc"
 .SECTION/PM seg_pmco;
 .GLOBAL _prepare_gain;
 _prepare_gain:

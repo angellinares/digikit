@@ -219,14 +219,14 @@ export async function listModules(s: DkSession, info: DkInfoFull): Promise<DkEnt
   return (await s.list()).filter((e) => e.path.startsWith(MODULES_FOLDER));
 }
 
-/** The store folder of a module's own files (sdk/include/dk/data.h): `data/<module id>/`. */
+/** The store folder of a module's own files (sdk/include/dk/platform/data.h): `data/<module id>/`. */
 export const moduleFilesFolder = (moduleId: string): string => `data/${moduleId}/`;
 
 /** The module chooser keeps a file name in 48 bytes, NUL included (modules/tools/bootscreen/src/module.c, NAME_MAX_BYTES). */
 export const MODULE_FILE_NAME_LIMIT = 48;
 
 /**
- * The store path of a file of a module: `data/<module id>/<name>`. The rule of `dk_data_path` (sdk/include/dk/data.h): `name` is not empty
+ * The store path of a file of a module: `data/<module id>/<name>`. The rule of `dk_data_path` (sdk/include/dk/platform/data.h): `name` is not empty
  * and holds neither '/' nor "..". Throws otherwise.
  */
 export function moduleFilePath(moduleId: string, name: string): string {

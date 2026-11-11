@@ -1,4 +1,4 @@
-// digikit/pluck: a Karplus-Strong plucked string, a machine of the SDK contract (<dk/machine.h>, docs/design/module-sdk.md 4.1). One source for
+// digikit/pluck: a Karplus-Strong plucked string, a machine of the SDK contract (<dk/machine/machine.h>, docs/design/module-sdk.md 4.1). One source for
 // both devices: the adapter of core/dsp-voice calls `_pk_note_on` once per note and `_pk_render` once per block with R4 = this voice's state,
 // R8 = the `dk_voice_in` (pitch in semitones << 8 with the tune folded in, velocity << 8, the output block), R12 = the four parameter words
 // DECAY, PICK, BRIGHT, COLOR (0 .. 0x7f00 = UI 0 .. 127, clamped by the adapter), and finds the note-on and the voice's end itself. State per voice
@@ -26,7 +26,7 @@
 // continues the sequence of the last).
 
 #include "dk_machine.inc"
-#include "dsp/noise.inc"
+#include "dsp/osc/noise.inc"
 #define PK_LINE 128
 #define PK_STATE 16512
 #define PK_VOICES 16
@@ -375,7 +375,7 @@ _pk_return:
 
 .SECTION/DM seg_dmda;
 .VAR _pk_rng = 0x2545f491;
-// dk_machine_desc (<dk/machine.h>): magic, contract, n_params, voices, state_bytes, state_clear_bytes, max_cycles_block, max_cycles_note_on,
+// dk_machine_desc (<dk/machine/machine.h>): magic, contract, n_params, voices, state_bytes, state_clear_bytes, max_cycles_block, max_cycles_note_on,
 // max_call_depth, stack_bytes.
 .GLOBAL _pk_desc;
 .VAR _pk_desc = DK_MAGIC;

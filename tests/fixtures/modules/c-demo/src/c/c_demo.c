@@ -4,7 +4,7 @@
  * The inputs sit in `c_demo_in` (initialised data, read through volatile) so the compiler cannot fold anything; the
  * results are stored as big-endian word pairs (high, low) in `c_demo_out`, which `dkm_init` logs the address of. */
 
-#include <dk/api.h>
+#include <dk/core/api.h>
 
 typedef uint32_t u32;
 typedef unsigned long long u64;

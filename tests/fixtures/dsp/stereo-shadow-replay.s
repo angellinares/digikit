@@ -1,7 +1,7 @@
 // Synthetic audited subset, NOT the stock default route or a public SDK ABI.
 // Normal-word L2 addresses: controls 0x08040000/100, first-order
 // 0x08040200/300, U/Y 0x08040400/500, audio 0x08041000/100.
-#include "dsp/call.inc"
+#include "dsp/contract/call.inc"
 .SECTION/PM seg_pmco;
 .GLOBAL _prepare;
 _prepare:

@@ -78,7 +78,7 @@ export class WebUsbBulkLink implements BulkLink {
   private frames = new BulkFrames();
   private ready: Uint8Array[] = [];
   private waiter: (() => void) | null = null;
-  /** BulkLink.closed: true once the link has ended (closed by us or lost). */
+  /** True once the link has ended: closed by us, or the device or interface went away (`BulkLink.closed`). */
   closed = false;
   private failure: Error | null = null;
 

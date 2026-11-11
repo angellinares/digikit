@@ -28,7 +28,7 @@ def dsp():
         pytest.skip("assembler absent")
     obj = pk_sharc.assemble(
         pk_sharc.expand_includes(
-            SOURCE.read_text(), [REPO_ROOT / "sdk/asm", REPO_ROOT / "sdk"]
+            SOURCE.read_text(), [REPO_ROOT / "sdk/dsp/contract", REPO_ROOT / "sdk"]
         )
     )
     address, sections, initial = 0x20080000, {}, []

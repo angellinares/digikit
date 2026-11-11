@@ -1,4 +1,4 @@
-#include "dsp/call.inc"
+#include "dsp/contract/call.inc"
 #include "sample-pool-dsp-dn2.inc"
 // core/sample-pool on the Digitone II 1.12: the DSP end of the page transport (docs/design/dn2-sample-pool.md section 2).
 //
