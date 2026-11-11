@@ -185,7 +185,7 @@ DT2 OS 1.17, image bacc88eae0a2bfdf, patch set `device-usb` (device + core/usb-b
 - Planned: measure each stage on hardware (device timing events, host phase times, discard and write-only ceilings), then fix by measured gain.
   The emulator is not a speed reference (it predicted DN2 5.6 and DT2 2.1 MB/s).
 
-### v2: Fast USB in USB AUDIO/MIDI mode (agreed design, not started)
+### v2: Fast USB in USB AUDIO/MIDI mode (plan: [usb-fast-takeover.md](usb-fast-takeover.md))
 
 The workbench takes the device over by SysEx: a RAM-only switch to the USB MIDI configuration with the bulk interface, through the
 firmware's own USB-mode switch (FUN_40006c16), released by SysEx, on unplug and on reboot. USB audio drops while the workbench holds the
