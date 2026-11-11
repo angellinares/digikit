@@ -422,6 +422,45 @@ async function folders(rig: CardRig): Promise<void> {
   await dk.delete('tmp/x');
   await verify('DELETE of a folder entry', []);
 
+  // RENAME: a file moves with its sectors and its hash (no data is copied), the folder it leaves stays, and an empty folder renames
+  check('INFO: capability RENAME', hasCap(await dk.info(), 'RENAME'));
+  const move = async (from: string, to: string) => {
+    await dk.rename(from, to);
+    files[to] = files[from]!;
+    delete files[from];
+  };
+  await move('holes/small.bin', 'shifted/small.bin');
+  rows = await verify('RENAME into a new folder (holes keeps f0 and f2: no entry)', []);
+  check(
+    'RENAME keeps the file sectors: the moved file starts where it was',
+    rows['shifted/small.bin'] === small,
+    `${rows['shifted/small.bin']} vs ${small}`,
+  );
+  await move('holes/f0.bin', 'holes/F0 renamed.bin');
+  await verify('RENAME in the same folder', []);
+  await move('holes/f2.bin', 'shifted/f2.bin');
+  await move('holes/F0 renamed.bin', 'shifted/f0.bin');
+  await verify('the folder the last file left stays, as a folder entry', ['holes']);
+  for (const [from, to, want] of [
+    ['shifted/nope', 'shifted/x', -59],
+    ['shifted/f0.bin', 'shifted/f2.bin', -51],
+    ['shifted/f0.bin', 'shifted', -51],
+    ['shifted/f0.bin', 'shifted/f0.bin/x', -51],
+    ['holes', 'holes/in', -51],
+    ['shifted', 'elsewhere', -59],
+    ['shifted/f0.bin', 'a//b', -51],
+  ] as const) {
+    const st = await status(GCMD.RENAME, concat(cstr(from), cstr(to)));
+    check(`RENAME ${JSON.stringify(from)} -> ${JSON.stringify(to)}: refused (${want})`, st === want, String(st));
+  }
+  const oneArg = await status(GCMD.RENAME, cstr('shifted/f0.bin'));
+  check('RENAME with no second path: E_MSG or E_PATH', oneArg === -50 || oneArg === -51, String(oneArg));
+  await verify('refused renames change nothing', ['holes']);
+  await dk.rename('holes', 'empty');
+  await verify('RENAME of an empty folder', ['empty']);
+  await dk.delete('empty');
+  await verify('DELETE of the renamed folder', []);
+
   // LIST paging: many entries, several replies
   for (let i = 0; i < 40; i++) {
     await put(dk, files, `many/s${String(i).padStart(2, '0')}.wav`, blob(1 + i, 100 + i));

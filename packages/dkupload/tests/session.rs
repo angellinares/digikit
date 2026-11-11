@@ -376,6 +376,46 @@ fn folders_list_by_prefix_and_mkdir() {
 }
 
 #[test]
+fn rename_moves_a_file_and_keeps_the_folder_it_leaves() {
+    let mut s = session(1 << 20);
+    put(&mut s, "samples/drums/kick", data(1000, 1)).unwrap();
+    s.mkdir("samples/loops").unwrap();
+    s.rename("samples/drums/kick", "samples/loops/Kick 909")
+        .unwrap();
+    let mut all: Vec<_> = s
+        .list()
+        .unwrap()
+        .into_iter()
+        .map(|e| (e.path, e.size))
+        .collect();
+    all.sort();
+    // the file keeps its bytes, the folder it left stays, the folder entry it entered goes
+    assert_eq!(
+        all,
+        [
+            ("samples/drums".to_string(), 0),
+            ("samples/loops/Kick 909".to_string(), 1000)
+        ]
+    );
+    let refused = |r: Result<(), Error>| match r {
+        Err(Error::Device { status, .. }) => status,
+        _ => panic!("not refused"),
+    };
+    assert_eq!(
+        refused(s.rename("samples/nope", "samples/x")),
+        Status::NoFile
+    );
+    assert_eq!(
+        refused(s.rename("samples/loops/Kick 909", "samples/drums")),
+        Status::Path
+    );
+    assert_eq!(
+        refused(s.rename("samples/loops/Kick 909", "samples/loops/Kick 909/x")),
+        Status::Path
+    );
+}
+
+#[test]
 fn cancel_aborts() {
     let mut s = session(1 << 20);
     let mut n = 0;

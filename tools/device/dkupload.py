@@ -53,6 +53,7 @@ from tools.device.dkproto import (
     CMD_MKDIR,
     CMD_MODULES,
     CMD_READ,
+    CMD_RENAME,
     CMD_RESTART,
     CMD_SELECT,
     CMD_SETTINGS,
@@ -721,6 +722,11 @@ class Uploader:
         """MKDIR (runtime 0.3.0, capability FOLDERS): make a folder. Ok when it exists; E_PATH when the path is a file or inside one."""
         self._ok(CMD_MKDIR, "mkdir", path.encode() + b"\0")
 
+    def rename(self, src: str, dst: str) -> None:
+        """RENAME (runtime 0.5.7, capability RENAME): rename or move a file or an empty folder. The data and its hash stay; the folder it
+        leaves stays. E_NOFILE: no such entry; E_PATH: the new path is taken, inside a file, inside the entry itself, or breaks the rules."""
+        self._ok(CMD_RENAME, "rename", src.encode() + b"\0" + dst.encode() + b"\0")
+
     def clear(self) -> None:
         self._ok(CMD_CLEAR, "clear", struct.pack(">I", CLEAR_MAGIC))
 
@@ -892,6 +898,9 @@ def main(argv: list[str] | None = None) -> int:
     p.add_argument("prefix", nargs="?")
     p = sub.add_parser("mkdir", help="make a folder in the store")
     p.add_argument("path")
+    p = sub.add_parser("mv", help="rename or move a file or an empty folder in the store")
+    p.add_argument("src")
+    p.add_argument("dst")
     sub.add_parser("modules")
     p = sub.add_parser("put")
     p.add_argument("file", type=Path)
@@ -983,6 +992,8 @@ def main(argv: list[str] | None = None) -> int:
                 print(f"{path}\t{size}\t{sha}")
         elif args.cmd == "mkdir":
             up.mkdir(args.path)
+        elif args.cmd == "mv":
+            up.rename(args.src, args.dst)
         elif args.cmd == "modules":
             for line in modules_lines(up.modules()):
                 print(line)

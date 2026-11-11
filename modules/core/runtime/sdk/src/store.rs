@@ -16,7 +16,7 @@
 //! commit, and the headers switch to it (B first, then A, `seq + 1`). Nothing in use is ever overwritten, so a power cut leaves the old store
 //! or the new one. The table is streamed through small buffers: no table is held whole in RAM, so a store holds as many entries as the card has
 //! room for.
-use crate::proto::{E_FULL, E_WRITE};
+use crate::proto::{E_FULL, E_NOFILE, E_PATH, E_WRITE};
 use crate::{E_BAD_STORE, E_NOT_FOUND, E_READ, OK};
 
 pub const MAGIC: u32 = 0x444b_5354; // "DKST"
@@ -871,6 +871,9 @@ pub enum Edit {
     Insert(*const u8),
     /// Remove the entry with this NUL-terminated path.
     Remove(*const u8),
+    /// Rename or move: remove the entry with the NUL-terminated path `.0` and add the entry at `.1` (256 bytes: the same entry with its new
+    /// path), and the folder entry at `.2` when it is not null (the folder `.0` leaves, so that folder stays). From `plan_rename`.
+    Rename(*const u8, *const u8, *const u8),
     /// An empty table.
     Clear,
 }
@@ -989,7 +992,7 @@ pub unsafe fn commit(
     extra: &[(u32, u32)],
 ) -> Result<Committed, i32> {
     let need = match edit {
-        Edit::Insert(_) => table_sectors(cur.count + 1),
+        Edit::Insert(_) | Edit::Rename(..) => table_sectors(cur.count + 1),
         Edit::Remove(_) => table_sectors(cur.count),
         Edit::Clear => 0,
     };
@@ -1011,7 +1014,16 @@ pub unsafe fn commit(
         start,
     };
     let mut removed: Option<Entry> = None;
-    let mut inserted = false;
+    // the entries the edit adds, in table order: each goes in before the first old entry it sorts before
+    let null = core::ptr::null::<u8>();
+    let (adds, n_adds) = match edit {
+        Edit::Insert(ne) => ([ne, null], 1),
+        Edit::Rename(_, ne, keep) if keep.is_null() => ([ne, null], 1),
+        Edit::Rename(_, ne, keep) if before(keep, ne) => ([keep, ne], 2),
+        Edit::Rename(_, ne, keep) => ([ne, keep], 2),
+        _ => ([null, null], 0),
+    };
+    let mut next = 0usize;
     let mut err = OK;
     if !matches!(edit, Edit::Clear) {
         let r = scan(io, lay, cur, buf_in, cap, |_, e| {
@@ -1025,12 +1037,14 @@ pub unsafe fn commit(
                         removed = Some(entry_of(e));
                         return true;
                     }
-                    if !inserted && before(ne, e) {
-                        err = out.put(io, lay, ne);
-                        inserted = true;
-                        if err != OK {
-                            return false;
-                        }
+                }
+                Edit::Rename(from, ne, _) => {
+                    if cstr_eq(e, from) {
+                        removed = Some(entry_of(e));
+                        return true;
+                    }
+                    if *e.add(O_KIND) == KIND_DIR && relation(e, ne) == 2 {
+                        return true;
                     }
                 }
                 Edit::Remove(path) => {
@@ -1040,6 +1054,13 @@ pub unsafe fn commit(
                     }
                 }
                 Edit::Clear => {}
+            }
+            while next < n_adds && before(adds[next], e) {
+                err = out.put(io, lay, adds[next]);
+                next += 1;
+                if err != OK {
+                    return false;
+                }
             }
             err = out.put(io, lay, e);
             err == OK
@@ -1051,12 +1072,11 @@ pub unsafe fn commit(
             return Err(err);
         }
     }
-    if let Edit::Insert(ne) = edit {
-        if !inserted {
-            let r = out.put(io, lay, ne);
-            if r != OK {
-                return Err(r);
-            }
+    while next < n_adds {
+        let r = out.put(io, lay, adds[next]);
+        next += 1;
+        if r != OK {
+            return Err(r);
         }
     }
     let r = out.flush(io, lay);
@@ -1094,6 +1114,129 @@ pub unsafe fn commit(
         return Err(E_WRITE);
     }
     Ok(Committed { h, removed })
+}
+
+/// A rename or move checked against a table (`plan_rename`): the entries of `Edit::Rename`.
+pub struct Rename {
+    /// The entry with its new path.
+    pub to: [u8; ENTRY],
+    /// The folder the entry leaves, as a folder entry, when nothing else is in it (`has_keep`).
+    pub keep: [u8; ENTRY],
+    pub has_keep: bool,
+}
+
+impl Rename {
+    /// The edit to commit. The pointers are into `self`: keep it alive until the commit returns.
+    pub fn edit(&self, from: *const u8) -> Edit {
+        Edit::Rename(
+            from,
+            self.to.as_ptr(),
+            if self.has_keep {
+                self.keep.as_ptr()
+            } else {
+                core::ptr::null()
+            },
+        )
+    }
+}
+
+/// Is the path `inner` inside the folder `outer` (both NUL-terminated paths, not entries): `outer`, then '/', then more?
+unsafe fn inside(outer: *const u8, inner: *const u8) -> bool {
+    let mut i = 0;
+    while i < PATH_MAX && *outer.add(i) != 0 {
+        if *inner.add(i) != *outer.add(i) {
+            return false;
+        }
+        i += 1;
+    }
+    i > 0 && *inner.add(i) == b'/'
+}
+
+/// Check a rename or move of the entry `from` to the path `to` (both NUL-terminated) against the table of `h`, and build the entries of the
+/// commit. `from` is a file or a folder with nothing in it (a folder with files would move every file: not done here). `to` is free: no entry
+/// has that path, it is no folder (a folder entry, or implied by an entry inside it), no file is a folder of it, and a folder does not go into
+/// itself. The entry keeps its data, size and sha256, so whatever names a file by its sha256 still finds it. When nothing else is in the folder
+/// that `from` leaves, that folder gets a folder entry, so a move or a rename never makes a folder go (a store of samples keeps its folders, as
+/// a sampler's +Drive does). `Err(E_NOFILE)`: no entry `from`; `Err(E_PATH)`: `to` (or `from`) breaks a rule.
+pub unsafe fn plan_rename(
+    io: &Io,
+    lay: &Layout,
+    h: &Hdr,
+    buf: *mut u8,
+    cap: usize,
+    from: *const u8,
+    to: *const u8,
+) -> Result<Rename, i32> {
+    if path_ok(from, PATH_BYTES).is_none() || path_ok(to, PATH_BYTES).is_none() || cstr_eq(from, to)
+    {
+        return Err(E_PATH);
+    }
+    // the folder `from` is in: its path up to the last '/' (none at the top)
+    let mut parent = [0u8; PATH_BYTES];
+    let mut cut = 0usize;
+    let mut i = 0usize;
+    while i < PATH_MAX && *from.add(i) != 0 {
+        if *from.add(i) == b'/' {
+            cut = i;
+        }
+        i += 1;
+    }
+    i = 0;
+    while i < cut {
+        parent[i] = *from.add(i);
+        i += 1;
+    }
+    let mut found: Option<Entry> = None;
+    let mut conflict = false;
+    let mut others = cut == 0 || inside(parent.as_ptr(), to); // nothing to keep: the top, or `to` stays in that folder
+    let r = scan(io, lay, h, buf, cap, |_, e| {
+        if cstr_eq(e, from) {
+            found = Some(entry_of(e));
+            return true;
+        }
+        let rel = relation(to, e);
+        if rel == 1 || rel == 2 || rel == 3 {
+            conflict = true;
+            return false;
+        }
+        if !others && relation(parent.as_ptr(), e) == 2 {
+            others = true;
+        }
+        true
+    });
+    if r != OK {
+        return Err(r);
+    }
+    if conflict {
+        return Err(E_PATH);
+    }
+    let old = match found {
+        Some(e) => e,
+        None => return Err(E_NOFILE),
+    };
+    // into itself: `to` inside `from` (a folder, or a file that would become one)
+    if inside(from, to) {
+        return Err(E_PATH);
+    }
+    let mut out = Rename {
+        to: [0; ENTRY],
+        keep: [0; ENTRY],
+        has_keep: !others,
+    };
+    encode_entry(to, &old, out.to.as_mut_ptr());
+    if out.has_keep {
+        encode_entry(
+            parent.as_ptr(),
+            &Entry {
+                first: 0,
+                size: 0,
+                kind: KIND_DIR,
+                sha: [0; 32],
+            },
+            out.keep.as_mut_ptr(),
+        );
+    }
+    Ok(out)
 }
 
 // ---- paths ------------------------------------------------------------------------------------------------------------------

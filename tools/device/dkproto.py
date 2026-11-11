@@ -38,6 +38,7 @@ CMD: dict[str, int] = {
     "VERIFY": 0x17,
     "MKDIR": 0x18,
     "SETTINGS": 0x19,
+    "RENAME": 0x1A,
     "FAULT": 0x23,
     "SELECT": 0x30,
     "RESTART": 0x31,
@@ -56,6 +57,7 @@ CMD_READ = 0x16
 CMD_VERIFY = 0x17
 CMD_MKDIR = 0x18
 CMD_SETTINGS = 0x19
+CMD_RENAME = 0x1A
 CMD_FAULT = 0x23
 CMD_SELECT = 0x30
 CMD_RESTART = 0x31
@@ -158,6 +160,7 @@ CAP: dict[str, int] = {
     "FOLDERS": 10,
     "SETTINGS": 11,
     "FILEHASH": 12,
+    "RENAME": 13,
 }
 
 RANGES: dict[str, tuple[int, int]] = {

@@ -155,6 +155,54 @@ fn remove(w: &mut Work, path: &str) -> Result<Committed, i32> {
     }
 }
 
+/// Plan and commit a rename of `from` to `to`.
+fn rename(w: &mut Work, from: &str, to: &str) -> Result<Committed, i32> {
+    let cur = current(w);
+    let (f, t) = (cstr(from), cstr(to));
+    let plan = unsafe {
+        plan_rename(
+            &IO,
+            &LAY,
+            &cur,
+            w.a.0.as_mut_ptr(),
+            4096,
+            f.as_ptr(),
+            t.as_ptr(),
+        )
+    }?;
+    unsafe {
+        commit(
+            &IO,
+            &LAY,
+            &cur,
+            w.a.0.as_mut_ptr(),
+            w.b.0.as_mut_ptr(),
+            1024,
+            w.s.0.as_mut_ptr(),
+            plan.edit(f.as_ptr()),
+            &[],
+        )
+    }
+}
+
+/// Every entry: path, first sector, size, kind, sha256.
+fn entries(w: &mut Work) -> Vec<(std::string::String, Entry)> {
+    let h = current(w);
+    let mut out = Vec::new();
+    unsafe {
+        scan(&IO, &LAY, &h, w.a.0.as_mut_ptr(), 4096, |_, e| {
+            let n = path_len(e);
+            out.push((
+                std::string::String::from_utf8_lossy(core::slice::from_raw_parts(e, n))
+                    .into_owned(),
+                entry_of(e),
+            ));
+            true
+        });
+    }
+    out
+}
+
 fn paths(w: &mut Work) -> Vec<(std::string::String, u32)> {
     let h = current(w);
     let mut out = Vec::new();
@@ -479,7 +527,7 @@ fn a_full_area_refuses_the_table_with_e_full() {
 #[test]
 fn a_power_cut_at_any_write_leaves_the_old_store_or_the_new_one() {
     let _g = lock();
-    for case in 0..3 {
+    for case in 0..4 {
         for cut in 0..40u32 {
             fresh();
             let mut w = work();
@@ -490,6 +538,7 @@ fn a_power_cut_at_any_write_leaves_the_old_store_or_the_new_one() {
             let r = match case {
                 0 => insert(&mut w, "c", 12, 512, &[]).map(|_| ()),
                 1 => remove(&mut w, "a").map(|_| ()),
+                3 => rename(&mut w, "a", "d/a").map(|_| ()),
                 _ => {
                     let cur = current(&mut w);
                     unsafe {
@@ -522,6 +571,7 @@ fn a_power_cut_at_any_write_leaves_the_old_store_or_the_new_one() {
                 let new_ok = match case {
                     0 => now.len() == 3,
                     1 => now.len() == 1,
+                    3 => now == [("d/a".into(), 10), ("b".into(), 11)],
                     _ => now.is_empty(),
                 };
                 assert!(now == old || new_ok, "case {case} cut {cut}: {now:?}");
@@ -752,6 +802,119 @@ fn a_store_that_reaches_into_the_tail_is_not_used() {
         ..t.h
     };
     assert!(unsafe { reaches_tail(&IO, &LAY, &moved, w.a.0.as_mut_ptr(), 4096) }.unwrap());
+}
+
+#[test]
+fn a_rename_keeps_the_data_and_the_hash_and_the_table_order() {
+    let _g = lock();
+    fresh();
+    let mut w = work();
+    insert(&mut w, "samples/kick", 10, 1000, &[]).unwrap();
+    insert(&mut w, "samples/snare", 20, 2000, &[]).unwrap();
+    mkdir(&mut w, "aaa").unwrap();
+    let before: Vec<_> = entries(&mut w);
+    let kick = before.iter().find(|x| x.0 == "samples/kick").unwrap().1;
+    let c = rename(&mut w, "samples/kick", "samples/Kick 909").unwrap();
+    assert_eq!(c.removed, Some(kick));
+    let now = entries(&mut w);
+    assert_eq!(now.len(), 3);
+    let moved = now.iter().find(|x| x.0 == "samples/Kick 909").unwrap().1;
+    assert_eq!(moved, kick, "the same data, size, kind and hash");
+    assert!(!now.iter().any(|x| x.0 == "samples/kick"));
+    // sorted by first sector, then path: the folder entry (no data) first, then the files at 10 and 20
+    let order: Vec<_> = now.iter().map(|x| x.0.as_str()).collect();
+    assert_eq!(order, ["aaa", "samples/Kick 909", "samples/snare"]);
+    let h = current(&mut w);
+    assert_eq!(
+        h.used,
+        1 + h.table_sectors + 2 + 4,
+        "the files' sectors are counted once"
+    );
+    assert!(state(&mut w).is_ok());
+}
+
+#[test]
+fn a_move_keeps_the_folder_it_leaves_and_drops_the_folder_entry_it_enters() {
+    let _g = lock();
+    fresh();
+    let mut w = work();
+    insert(&mut w, "samples/drums/kick", 10, 1000, &[]).unwrap();
+    mkdir(&mut w, "samples/loops").unwrap();
+    // into an empty folder: its folder entry goes (the folder is implied by the file now), and the folder the file left stays
+    rename(&mut w, "samples/drums/kick", "samples/loops/kick").unwrap();
+    let now: Vec<_> = entries(&mut w)
+        .into_iter()
+        .map(|x| (x.0, x.1.kind))
+        .collect();
+    assert_eq!(
+        now,
+        [
+            ("samples/drums".into(), KIND_DIR),
+            ("samples/loops/kick".into(), KIND_FILE)
+        ]
+    );
+    // a folder with another file left in it needs no folder entry
+    insert(&mut w, "samples/loops/hat", 20, 1000, &[]).unwrap();
+    rename(&mut w, "samples/loops/hat", "samples/drums/hat").unwrap();
+    let now: Vec<_> = entries(&mut w).into_iter().map(|x| x.0).collect();
+    assert_eq!(now, ["samples/loops/kick", "samples/drums/hat"]);
+    // to the top: nothing to keep at the top, and the folder left behind stays
+    rename(&mut w, "samples/drums/hat", "hat").unwrap();
+    let now: Vec<_> = entries(&mut w).into_iter().map(|x| x.0).collect();
+    assert_eq!(now, ["samples/drums", "samples/loops/kick", "hat"]);
+    assert!(state(&mut w).is_ok());
+}
+
+#[test]
+fn an_empty_folder_can_be_renamed() {
+    let _g = lock();
+    fresh();
+    let mut w = work();
+    mkdir(&mut w, "samples/new").unwrap();
+    insert(&mut w, "samples/kick", 10, 1000, &[]).unwrap();
+    rename(&mut w, "samples/new", "samples/Field rec").unwrap();
+    let now: Vec<_> = entries(&mut w)
+        .into_iter()
+        .map(|x| (x.0, x.1.kind))
+        .collect();
+    assert_eq!(
+        now,
+        [
+            ("samples/Field rec".into(), KIND_DIR),
+            ("samples/kick".into(), KIND_FILE)
+        ]
+    );
+}
+
+#[test]
+fn a_rename_that_breaks_a_rule_is_refused_and_changes_nothing() {
+    let _g = lock();
+    fresh();
+    let mut w = work();
+    insert(&mut w, "samples/kick", 10, 1000, &[]).unwrap();
+    insert(&mut w, "samples/drums/snare", 20, 1000, &[]).unwrap();
+    mkdir(&mut w, "samples/empty").unwrap();
+    let old = entries(&mut w);
+    let seq = current(&mut w).seq;
+    for (from, to, want) in [
+        ("samples/nope", "samples/x", E_NOFILE),  // no such entry
+        ("samples/drums", "samples/x", E_NOFILE), // a folder with files is not an entry: not moved here
+        ("samples/kick", "samples/kick", E_PATH), // the same path
+        ("samples/kick", "samples/drums/snare", E_PATH), // a file has that path
+        ("samples/kick", "samples/drums", E_PATH), // an implied folder has that path
+        ("samples/kick", "samples/empty", E_PATH), // a folder entry has that path
+        ("samples/drums/snare", "samples/kick/snare", E_PATH), // inside a file
+        ("samples/kick", "samples/kick/x", E_PATH), // a file into itself
+        ("samples/empty", "samples/empty/in", E_PATH), // a folder into itself
+        ("samples/kick", "samples//x", E_PATH),   // not a store path
+        ("samples/kick", "samples/../x", E_PATH),
+    ] {
+        assert_eq!(rename(&mut w, from, to).err(), Some(want), "{from} -> {to}");
+    }
+    assert_eq!(entries(&mut w), old);
+    assert_eq!(current(&mut w).seq, seq, "no commit was made");
+    // a name that only starts like a file is free: "samples/kick2" is not inside "samples/kick"
+    rename(&mut w, "samples/drums/snare", "samples/kick2").unwrap();
 }
 
 // A deterministic digest seam: the runtime supplies its file hash (`hash32::slot_of`).

@@ -61,7 +61,7 @@ table: entry_count entries of 256 bytes, sorted by (first_sector, path in byte o
 
 Rules: a path is 1 to 159 bytes of printable text (0x20 to 0x7E, no NUL), with no empty, `.` or `..` part; two entries may not have the same path; a path that is a
 file may not also be the folder of another entry (`a` and `a/b`). A **folder entry** (kind 1, size 0) exists only for a folder with nothing in it (made by the
-host with MKDIR; the commit that stores a file or a folder inside it drops it, and a folder whose last file is deleted is gone, since folders with files are implied); a folder that has files is implied by their paths. A file or folder with no data (an empty file, a folder) has `first_sector` 0 and takes no sector; it sorts before every file with data. A file is at
+host with MKDIR; the commit that stores a file or a folder inside it drops it, and a folder whose last file is deleted is gone, since folders with files are implied; a RENAME that moves the last entry out of a folder gives that folder a folder entry instead, so a move never makes a folder go); a folder that has files is implied by their paths. A file or folder with no data (an empty file, a folder) has `first_sector` 0 and takes no sector; it sorts before every file with data. A file is at
 most 4 GiB - 1 bytes; each file starts on a sector boundary and takes `ceil(size / 512)` sectors.
 
 The tail, `store::TAIL` = 35 sectors (header copy B, the settings record's 32, the selection record's 2), is never a file's: `limit` = `sectors - 35` (`store::Layout::limit`, `header_b`), the allocator
@@ -88,7 +88,7 @@ free-space figure (`used_sectors`, INFO's free bytes) is the sum of the gaps les
 
 ## Commits and power cuts
 
-A commit (the end of an upload, a delete, a clear) streams the old table through two small buffers into a gap, with the entry inserted, replaced or removed, reads the new
+A commit (the end of an upload, a delete, a clear, a rename) streams the old table through two small buffers into a gap, with the entry inserted, replaced or removed, reads the new
 table back and checks its CRC, and then writes header B and header A with `seq + 1`. Nothing in use is overwritten before the headers move, so a cut at any point leaves the old store or
 the new one, never a mix (`dkrt_sdk::store` tests cut a commit after every write). A file's data is written to its extent before the commit; an upload that is cut is a gap that nothing names.
 

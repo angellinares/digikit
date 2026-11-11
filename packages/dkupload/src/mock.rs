@@ -306,6 +306,61 @@ impl MockDevice {
                 }
                 r(Status::Ok)
             }
+            CMD_RENAME => {
+                // from NUL to NUL, as the runtime's `store::plan_rename` checks it
+                let mut parts = body.splitn(3, |&b| b == 0);
+                let (Some(f), Some(t), Some(rest)) = (parts.next(), parts.next(), parts.next())
+                else {
+                    return r(Status::Msg);
+                };
+                let (Ok(from), Ok(to)) = (std::str::from_utf8(f), std::str::from_utf8(t)) else {
+                    return r(Status::Path);
+                };
+                if !rest.is_empty() || !path_ok(from) || !path_ok(to) || from == to {
+                    return r(Status::Path);
+                }
+                let (fi, di) = (
+                    self.files.iter().position(|(p, _)| p == from),
+                    self.dirs.iter().position(|d| d == from),
+                );
+                let inside = |outer: &str, inner: &str| inner.starts_with(&format!("{outer}/"));
+                let taken = self
+                    .files
+                    .iter()
+                    .any(|(p, _)| p == to || inside(to, p) || inside(p, to))
+                    || self.dirs.iter().any(|d| d == to || inside(to, d));
+                if taken {
+                    return r(Status::Path);
+                }
+                if fi.is_none() && di.is_none() {
+                    return r(Status::NoFile);
+                }
+                if inside(from, to) {
+                    return r(Status::Path);
+                }
+                match (fi, di) {
+                    (Some(i), _) => {
+                        self.files[i].0 = to.into();
+                        self.files.sort_by(|a, b| a.0.cmp(&b.0));
+                    }
+                    (_, Some(i)) => {
+                        self.dirs.remove(i);
+                        self.dirs.push(to.into());
+                    }
+                    _ => {}
+                }
+                // a folder entry that `to` is inside goes; the folder `from` leaves stays
+                self.dirs.retain(|d| !inside(d, to));
+                if let Some(cut) = from.rfind('/') {
+                    let parent = &from[..cut];
+                    let others = self.files.iter().any(|(p, _)| inside(parent, p))
+                        || self.dirs.iter().any(|d| inside(parent, d));
+                    if !others {
+                        self.dirs.push(parent.into());
+                    }
+                }
+                r(Status::Ok)
+            }
             CMD_READ => {
                 let Some(nul) = body.iter().position(|&b| b == 0) else {
                     return r(Status::Msg);

@@ -429,7 +429,7 @@ unsafe fn cmd_info(seq: u32, buf: *mut u8) -> i32 {
     // appended after the log range: the whole packed runtime version (bytes 2-3 keep its low 16 bits) and the capability bits
     wr32(rb.add(25), RUNTIME_VERSION);
     let log_caps = if dlog::sink_present() { CAP_LOG | CAP_PEEK | CAP_LOGCFG } else { 0 };
-    wr32(rb.add(29), log_caps | CAP_SELECT | CAP_RESTART | CAP_MODULES | CAP_CAPACITY | CAP_READ | CAP_VERIFY | CAP_SERVICE_CMDS | CAP_FOLDERS | CAP_SETTINGS | CAP_FILEHASH);
+    wr32(rb.add(29), log_caps | CAP_SELECT | CAP_RESTART | CAP_MODULES | CAP_CAPACITY | CAP_READ | CAP_VERIFY | CAP_SERVICE_CMDS | CAP_FOLDERS | CAP_SETTINGS | CAP_FILEHASH | CAP_RENAME);
     // appended after the capability bits: the id of the flashed image (patchkit stamps it; zeros when there is none)
     let id = crate::image_id();
     let mut i = 0;
@@ -668,6 +668,39 @@ unsafe fn cmd_mkdir(seq: u32, buf: *mut u8, body: *const u8, blen: usize) -> i32
     store::encode_entry(body, &e, ent.as_mut_ptr());
     let r = do_commit(buf, &t.h, Edit::Insert(ent.as_ptr()), None);
     reply(CMD_MKDIR, seq, r, 0)
+}
+
+/// RENAME: `from NUL to NUL`. Renames or moves one entry, a file or a folder with nothing in it, in one commit (`store::plan_rename`): the entry
+/// keeps its data, size and sha256; a folder entry that `to` is inside goes; the folder `from` leaves gets a folder entry when nothing else is in it.
+/// E_NOFILE: `from` is not an entry (a folder with files is not one); E_PATH: `to` is taken (a file, a folder, or inside a file), `from` itself, inside
+/// `from`, or breaks the path rules. An upload in progress is aborted.
+unsafe fn cmd_rename(seq: u32, buf: *mut u8, body: *const u8, blen: usize) -> i32 {
+    up().open = false;
+    if !card::writable() {
+        return reply(CMD_RENAME, seq, if card::state() == CARD_TOO_SMALL { E_NOSTORE } else { E_INUSE }, 0);
+    }
+    let fl = match path_ok(body, blen) {
+        Some(n) => n,
+        None => return reply(CMD_RENAME, seq, if blen < 4 { E_MSG } else { E_PATH }, 0),
+    };
+    let to = body.add(fl + 1);
+    match path_ok(to, blen - fl - 1) {
+        Some(n) if fl + 1 + n + 1 == blen => {}
+        _ => return reply(CMD_RENAME, seq, if blen < fl + 3 { E_MSG } else { E_PATH }, 0),
+    }
+    let t = match state(buf) {
+        Ok(t) => t,
+        Err(e) => return reply(CMD_RENAME, seq, e, 0),
+    };
+    let plan = match store::plan_rename(&io(), &lay(), &t.h, buf.add(IN_AT), TBL_CAP, body, to) {
+        Ok(p) => p,
+        Err(e) => return reply(CMD_RENAME, seq, pe(e), 0),
+    };
+    if !sync_headers(buf, &t) {
+        return reply(CMD_RENAME, seq, E_WRITE, 0);
+    }
+    let r = do_commit(buf, &t.h, plan.edit(body), None);
+    reply(CMD_RENAME, seq, r, 0)
 }
 
 unsafe fn cmd_begin(seq: u32, buf: *mut u8, body: *const u8, blen: usize) -> i32 {
@@ -1214,6 +1247,9 @@ unsafe fn h_end(seq: u32, buf: *mut u8, _body: *const u8, _blen: usize) -> i32 {
 unsafe fn h_mkdir(seq: u32, buf: *mut u8, body: *const u8, blen: usize) -> i32 {
     cmd_mkdir(seq, buf, body, blen)
 }
+unsafe fn h_rename(seq: u32, buf: *mut u8, body: *const u8, blen: usize) -> i32 {
+    cmd_rename(seq, buf, body, blen)
+}
 unsafe fn h_delete(seq: u32, buf: *mut u8, body: *const u8, blen: usize) -> i32 {
     cmd_delete(seq, buf, body, blen)
 }
@@ -1244,7 +1280,7 @@ unsafe fn h_restart(seq: u32, _buf: *mut u8, _body: *const u8, _blen: usize) -> 
 }
 
 /// The built-in commands, looked up one after the other (a jump table is not ColdFire code).
-static CMDS: [Cmd; 17] = [
+static CMDS: [Cmd; 18] = [
     Cmd { cmd: CMD_INFO, flags: NOLOG, h: h_info },
     Cmd { cmd: CMD_LIST, flags: 0, h: h_list },
     Cmd { cmd: CMD_MODULES, flags: NOLOG, h: h_modules },
@@ -1254,6 +1290,7 @@ static CMDS: [Cmd; 17] = [
     Cmd { cmd: CMD_END, flags: 0, h: h_end },
     Cmd { cmd: CMD_DELETE, flags: 0, h: h_delete },
     Cmd { cmd: CMD_MKDIR, flags: 0, h: h_mkdir },
+    Cmd { cmd: CMD_RENAME, flags: 0, h: h_rename },
     Cmd { cmd: CMD_READ, flags: NOLOG, h: h_read },
     Cmd { cmd: CMD_VERIFY, flags: NOLOG, h: h_verify },
     Cmd { cmd: CMD_SETTINGS, flags: NOLOG, h: h_settings },

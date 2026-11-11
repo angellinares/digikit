@@ -118,6 +118,14 @@ impl<T: Transport> Session<T> {
         self.request(CMD_MKDIR, &path_body(path)?).map(drop)
     }
 
+    /// RENAME (runtime 0.5.7, capability `CAP_RENAME`): rename or move a file or an empty folder. The data and its hash stay; the
+    /// folder it leaves stays. `NoFile`: no such entry; `Path`: `to` is taken, inside a file or inside `from`, or a path breaks the rules.
+    pub fn rename(&mut self, from: &str, to: &str) -> Result<(), Error> {
+        let mut body = path_body(from)?;
+        body.extend(path_body(to)?);
+        self.request(CMD_RENAME, &body).map(drop)
+    }
+
     /// READ (runtime 0.2.4, capability `CAP_READ`): (file size, the bytes) of a store file from `offset`. The device returns at
     /// most `READ_MAX` (768) bytes and none past the end, so the bytes may be fewer than `length`. Errors: `NoFile`,
     /// `Offset` (at or past the end), `Length` (0).

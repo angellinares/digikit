@@ -74,10 +74,17 @@ export interface SamplesBackend {
   /** Compare the stored file with `file` (a device that does not have it, or has other bytes, reports `ok` false). */
   verify(folder: string, file: Prepared): Promise<SampleVerified>;
   remove(folder: string, name: string): Promise<void>;
+  /** Whether `rename` works (the digikit store needs the runtime's RENAME capability). */
+  canRename(): Promise<boolean>;
+  /** Rename or move the file or empty folder `name` of `folder` to `toName` in `toFolder`. Whatever links a sample by its hash still finds it. */
+  rename(folder: string, name: string, toFolder: string, toName: string): Promise<void>;
 }
 
 /** What the digikit backend needs of the store session (`DkSession`). */
-export type StorePort = Pick<DkSession, 'info' | 'list' | 'mkdir' | 'put' | 'delete' | 'verify' | 'capacity'>;
+export type StorePort = Pick<
+  DkSession,
+  'info' | 'list' | 'mkdir' | 'rename' | 'put' | 'delete' | 'verify' | 'capacity'
+>;
 
 export interface SamplesOptions {
   /** The transport of the commands: one `DkSession` serves both backends. */
@@ -207,6 +214,12 @@ class RpcSamples implements SamplesBackend {
   }
   async remove(folder: string, name: string) {
     return this.files.remove(join(folder, name));
+  }
+  async canRename() {
+    return true;
+  }
+  rename(folder: string, name: string, toFolder: string, toName: string) {
+    return this.files.rename(join(folder, name), join(toFolder, toName));
   }
 }
 
@@ -346,5 +359,12 @@ class StoreSamples implements SamplesBackend {
   }
   async remove(folder: string, name: string) {
     return this.s.delete(this.path(join(folder, name)));
+  }
+  async canRename() {
+    return hasCap(await this.info(), 'RENAME'); // runtime 0.5.7
+  }
+  async rename(folder: string, name: string, toFolder: string, toName: string) {
+    if (!(await this.canRename())) throw new DkError({ error: 'this runtime cannot rename', kind: 'usage' });
+    await this.s.rename(this.path(join(folder, name)), this.path(join(toFolder, toName)));
   }
 }
