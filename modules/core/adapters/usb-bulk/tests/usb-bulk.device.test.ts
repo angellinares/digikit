@@ -198,17 +198,17 @@ for (const device of DEVICES) {
       await enabled(rt);
       let first = true;
       // 1, one packet short of 512, exactly one packet (needs the zero-length packet), several dTDs of 16 KiB, a multiple of 16 KiB (the zero-length packet goes to a dTD of
-      // its own), and far more than the four buffers hold (the host is NAKed until the module has released one)
+      // its own), and far more than the eight buffers hold (the host is NAKed until the module has released one)
       for (const [i, size] of [1, 511, 512, 513, 1024, 4096, 16384, 65536, 100_000, 262_144, 1_048_576].entries()) {
         const data = pattern(size, i);
-        // the host sends a dTD's worth every 8,000 instructions, faster than the module copies one back: the four buffers fill and the host is NAKed
+        // the host sends a dTD's worth every 8,000 instructions, faster than the module copies one back: the eight buffers fill and the host is NAKed
         const back = await echo(rt, data, first, 8_000);
         first = false;
         expect(back.length, `echo of ${size} bytes: length`).toBe(size);
         expect(back.equals(data), `echo of ${size} bytes: content`).toBe(true);
       }
       const naks = (await out(rt)).status.bulk_naks;
-      expect(naks, 'the host was NAKed while all four buffers were full or taken (flow control)').toBeGreaterThan(0);
+      expect(naks, 'the host was NAKed while all eight buffers were full or taken (flow control)').toBeGreaterThan(0);
       // a slow EP2 IN (a completion every 600,000 instructions): both send slots are in flight, usb_bulk_send says E_BUSY and the job sleeps until the completion wakes it
       const slow = pattern(65_536, 77);
       expect((await echo(rt, slow, false, 600_000)).equals(slow), 'echo with slow send completions').toBe(true);
@@ -279,15 +279,15 @@ for (const device of DEVICES) {
       const rt = await boot('echo-reset-hold', true);
       await enabled(rt);
       await enumerate(rt);
-      /** All four buffers are usable: one is taken (held by the job), and three fill; the fourth dTD of 16 KiB is NAKed. */
+      /** All eight buffers are usable: one is taken (held by the job), and seven fill; the eighth dTD of 16 KiB is NAKed. */
       const capacity = async (tag: string) => {
         await out(rt);
         await hold(rt, 1);
-        const data = pattern(4 * 16_384, 20);
+        const data = pattern(8 * 16_384, 20);
         await rpc(rt.session, 'usb.bulk.in', { file: hostFile(rt, `cap-${tag}.bin`, data), period: 20_000 });
         await advance(rt.session, 300);
         const s = await echoStatus(rt);
-        expect(full(s.state), `${tag}: one buffer is held, three are full: none was lost`).toBe(3);
+        expect(full(s.state), `${tag}: one buffer is held, seven are full: none was lost`).toBe(7);
         await hold(rt, 0);
         const back = await collect(rt, data.length);
         expect(back.equals(data), `${tag}: and the stream is whole once they are released`).toBe(true);

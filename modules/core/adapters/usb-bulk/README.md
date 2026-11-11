@@ -9,7 +9,7 @@ section 4; facts: `docs/findings/42-usb-transfer-routes.md` section 4. EP2 IN ru
   re-enumerates with the firmware's own stop and restart pair. Not called, nothing is written and USB is stock. Outside USB MIDI mode (USB CONFIG) enable
   refuses with E_STATE and changes nothing; bit 2 of `usb_bulk_state` shows the wrong mode live.
 - **Anchors** (`devices/fw/usb.toml`): the port table, connect, disconnect, queue, cancel, dTD allocation, stop and restart.
-- **Receive**: four 16 KiB buffers (four 4 KiB pages each: every dTD names all five page pointers) in the uncached alias of DDR, one dTD each on EP2 OUT.
+- **Receive**: eight 16 KiB buffers (128 KiB: two 64 KiB frames of the usb-fast protocol, so the next frame arrives while the CPU writes the last one; four 4 KiB pages each: every dTD names all five page pointers) in the uncached alias of DDR, one dTD each on EP2 OUT.
   The completion callback marks a buffer full, queues a free one and wakes the module's I/O job (`dkrt_io_wake`). No free buffer: nothing queued, the host
   gets NAK. **Send**: the bytes are copied into one of two slots and queued on EP2 IN.
 - **Reset**: the connect and disconnect callbacks cancel both EP2 queues with a bounded flush (the stock disconnect polls without a bound), drop buffers

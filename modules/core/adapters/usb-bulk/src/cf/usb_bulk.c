@@ -21,7 +21,7 @@
  * and usb_bulk_cancel are the dTD callbacks (interrupt, or the cancel path of the disconnect). The others are for modules (usb_bulk_* of sdk.toml),
  * from the I/O task. */
 
-#define UB_TRACE 1 /* debug build for the hardware hunt; 0 removes the log calls */
+#define UB_TRACE 0 /* 1 for hardware debug builds: log calls */
 
 typedef unsigned int u32;
 typedef unsigned short u16;
@@ -44,7 +44,9 @@ typedef int i32;
 
 /* ---- the geometry ---- */
 #define PAGE 4096u
-#define RX_BUFS 4u
+/* 128 KiB of receive buffers: two 64 KiB frames of the usb-fast protocol, so the host can send the next frame while the CPU writes the last one.
+ * dTDs in flight from the firmware's pool of 31 (finding 42): 8 RX + 2 TX = 10, leaving 21 for the firmware's own (EP0, EP1 MIDI: a few). */
+#define RX_BUFS 8u
 #define RX_PAGES 4u
 #define RX_BYTES (RX_PAGES * PAGE)
 #define TX_SLOTS 2u
@@ -345,6 +347,7 @@ void usb_bulk_tx_done(u32 bytes, u8 *buf)
 {
     u32 sr = sr_mask();
     i32 i = tx_index(buf);
+    (void)bytes;
     UB_LOG("ub.tx.done", bytes);
     td_status = 0;
     if (i >= 0) {
@@ -359,6 +362,7 @@ void usb_bulk_cancel(u32 bytes, u8 *buf)
 {
     u32 sr = sr_mask();
     i32 i = rx_index(buf);
+    (void)bytes;
     UB_LOG("ub.cancel", bytes);
     td_status = 0;
     if (i >= 0) {
