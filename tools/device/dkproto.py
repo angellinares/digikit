@@ -180,6 +180,7 @@ CAP: dict[str, int] = {
     "SETTINGS": 11,
     "FILEHASH": 12,
     "RENAME": 13,
+    "READBACK": 14,
 }
 
 RANGES: dict[str, tuple[int, int]] = {

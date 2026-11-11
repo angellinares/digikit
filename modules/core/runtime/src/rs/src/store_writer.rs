@@ -42,12 +42,15 @@ pub struct Bufs {
     pub tin: *mut u8,
     pub tout: *mut u8,
     pub scr: *mut u8,
+    /// The close's card read-back buffer (16-byte aligned, a multiple of 512 bytes): it overlaps the table buffers, which are free until the commit.
+    pub rb: *mut u8,
+    pub rb_cap: usize,
 }
 
 impl Bufs {
     /// The regions of the SysEx upload buffer `buf`.
     pub unsafe fn sysex(buf: *mut u8) -> Bufs {
-        Bufs { tin: buf.add(IN_AT), tout: buf.add(OUT_AT), scr: buf.add(SCRATCH_AT) }
+        Bufs { tin: buf.add(IN_AT), tout: buf.add(OUT_AT), scr: buf.add(SCRATCH_AT), rb: buf.add(16), rb_cap: MAX_CHUNK }
     }
 }
 
@@ -65,7 +68,9 @@ pub static mut DKRT_SDK_BUF: SdkBuf = SdkBuf { tin: [0; TBL_CAP], tout: [0; TBL_
 
 pub(crate) unsafe fn sdk_bufs() -> Bufs {
     let b = addr_of_mut!(DKRT_SDK_BUF);
-    Bufs { tin: addr_of_mut!((*b).tin) as *mut u8, tout: addr_of_mut!((*b).tout) as *mut u8, scr: addr_of_mut!((*b).scr) as *mut u8 }
+    let tin = addr_of_mut!((*b).tin) as *mut u8;
+    // `tin` and `tout` are adjacent (repr(C), 16-byte aligned): one 16 KiB read-back buffer
+    Bufs { tin, tout: addr_of_mut!((*b).tout) as *mut u8, scr: addr_of_mut!((*b).scr) as *mut u8, rb: tin, rb_cap: 2 * TBL_CAP }
 }
 
 // ---- the lock -----------------------------------------------------------------------------------------------------------------
@@ -368,6 +373,10 @@ pub static mut DKRT_UPLOAD_WRITES: u32 = 0;
 /// 256 bytes reach the card (a header then fails its CRC), and every later write is refused as with `DKRT_UPLOAD_CUT`.
 #[no_mangle]
 pub static mut DKRT_UPLOAD_TEAR: crate::boot::Knob = crate::boot::Knob(0);
+/// Test knob: when not 0, the Nth card write since boot (counted in `DKRT_UPLOAD_WRITES`) succeeds, then the first byte of its first sector on the card is
+/// flipped: a card that holds other bytes than the host sent (the close's read-back must refuse it).
+#[no_mangle]
+pub static mut DKRT_UPLOAD_FLIP: crate::boot::Knob = crate::boot::Knob(0);
 #[repr(C, align(16))]
 struct Sec([u8; 512]);
 static mut TEAR_BUF: Sec = Sec([0; 512]);
@@ -469,7 +478,15 @@ unsafe fn card_write(sector: u32, bytes: u32, buf: *const u8) -> bool {
         write_volatile(addr_of_mut!(DKRT_UPLOAD_CUT), DKRT_UPLOAD_WRITES);
         return false;
     }
-    block_write(sector, bytes, buf) == 0
+    let ok = block_write(sector, bytes, buf) == 0;
+    let flip = read_volatile(addr_of!(DKRT_UPLOAD_FLIP.0));
+    if ok && flip != 0 && DKRT_UPLOAD_WRITES == flip {
+        let t = addr_of_mut!(TEAR_BUF) as *mut u8;
+        copy(t, buf, 512);
+        *t ^= 0xff;
+        block_write(sector, 512, t);
+    }
+    ok
 }
 
 pub fn sectors_of(bytes: u32) -> u32 {
@@ -767,7 +784,7 @@ unsafe fn close_inner(b: &Bufs, out: *mut u8) -> i32 {
     if u.next != u.size {
         return E_LENGTH;
     }
-    // the hash of the bytes received (`write` fed it as they came: close does not read a large file back from the card; VERIFY does)
+    // the hash of the bytes received (`write` fed it as they came)
     let got = hash32::slot(core::mem::replace(&mut u.run, Hash32::new()).finish());
     if !out.is_null() {
         copy(out, got.as_ptr(), 4);
@@ -779,6 +796,14 @@ unsafe fn close_inner(b: &Bufs, out: *mut u8) -> i32 {
                 return E_HASH;
             }
             i += 1;
+        }
+    }
+    // the card holds what was received: read the file back and hash it (the end-to-end check; capability READBACK of INFO)
+    if u.size != 0 {
+        let l = lay();
+        let r = readback(|s, n, p| block_read(l.first + s, n, p), u.start, u.size, b.rb, b.rb_cap, &got);
+        if r != OK {
+            return r;
         }
     }
     // the new table: the current one with the entry replaced or inserted
@@ -805,6 +830,28 @@ unsafe fn close_inner(b: &Bufs, out: *mut u8) -> i32 {
     let hint = u.hint;
     u.hint.valid = false;
     do_commit_hinted(b, &t.h, Edit::Insert(ent.as_ptr()), pend, Some(&hint))
+}
+
+/// Read `size` bytes of the file at store sector `start` back through `rd(sector, bytes, buf)` into `buf` (`cap` bytes, a multiple of 512), in
+/// pieces of at most `store::MAX_IO_SECTORS` sectors, and compare their hash slot with `want`: `E_READ` when a read fails, `E_HASH` when the card's bytes differ.
+unsafe fn readback(mut rd: impl FnMut(u32, u32, *mut u8) -> i32, start: u32, size: u32, buf: *mut u8, cap: usize, want: &[u8; 32]) -> i32 {
+    let piece = core::cmp::min(cap / 512, store::MAX_IO_SECTORS as usize) as u32;
+    let mut h = Hash32::new();
+    let (mut left, mut sector) = (size, start);
+    while left > 0 {
+        let n = core::cmp::min(left, piece * 512);
+        let secs = sectors_of(n);
+        if rd(sector, secs * 512, buf) != 0 {
+            return E_READ;
+        }
+        h.update(buf, n);
+        left -= n;
+        sector += secs;
+    }
+    if hash32::slot(h.finish()) != *want {
+        return E_HASH;
+    }
+    OK
 }
 
 /// Drop the session of `kind` (the partial file was never in the table). `E_STATE`: no such session.
@@ -1377,6 +1424,68 @@ mod tests {
             tick();
             assert!(!is_open());
             write_volatile(addr_of_mut!(DKRT_SESSION_IDLE), 0);
+        }
+    }
+
+    /// A fake card: sectors of `data` from sector 100; `fail_at` makes a read of that sector fail.
+    fn fake(data: &'static [u8], fail_at: Option<u32>) -> impl FnMut(u32, u32, *mut u8) -> i32 {
+        move |sector, bytes, p| unsafe {
+            if fail_at.map_or(false, |f| sector <= f && f < sector + bytes / 512) {
+                return 1;
+            }
+            let off = (sector - 100) as usize * 512;
+            for i in 0..bytes as usize {
+                *p.add(i) = *data.get(off + i).unwrap_or(&0);
+            }
+            0
+        }
+    }
+
+    #[test]
+    fn the_readback_accepts_the_card_bytes_and_refuses_a_flipped_bit_or_a_failed_read() {
+        static GOOD: [u8; 100_000] = {
+            let mut a = [0u8; 100_000];
+            let mut i = 0;
+            while i < a.len() {
+                a[i] = (i * 7 + 3) as u8;
+                i += 1;
+            }
+            a
+        };
+        static BAD: [u8; 100_000] = {
+            let mut a = GOOD;
+            a[99_999] ^= 1; // the last byte, in the partial last sector
+            a
+        };
+        static BAD_MID: [u8; 100_000] = {
+            let mut a = GOOD;
+            a[40_000] ^= 0x80; // in the second piece of a 32 KiB read-back
+            a
+        };
+        #[repr(C, align(16))]
+        struct Buf([u8; 32768]);
+        let mut buf = Buf([0; 32768]);
+        let want = hash32::slot(unsafe {
+            let mut h = Hash32::new();
+            h.update(GOOD.as_ptr(), GOOD.len() as u32);
+            h.finish()
+        });
+        unsafe {
+            let p = buf.0.as_mut_ptr();
+            for cap in [32768usize, 16384, 512] {
+                assert_eq!(readback(fake(&GOOD, None), 100, GOOD.len() as u32, p, cap, &want), OK, "cap {cap}");
+            }
+            assert_eq!(readback(fake(&BAD, None), 100, GOOD.len() as u32, p, 32768, &want), E_HASH);
+            assert_eq!(readback(fake(&BAD_MID, None), 100, GOOD.len() as u32, p, 16384, &want), E_HASH);
+            assert_eq!(readback(fake(&GOOD, Some(150)), 100, GOOD.len() as u32, p, 32768, &want), E_READ);
+            // a size in whole sectors, and one byte
+            let w1 = hash32::slot({
+                let mut h = Hash32::new();
+                h.update(GOOD.as_ptr(), 1);
+                h.finish()
+            });
+            assert_eq!(readback(fake(&GOOD, None), 100, 1, p, 32768, &w1), OK);
+            assert_eq!(readback(fake(&GOOD, None), 100, 1, p, 32768, &want), E_HASH);
         }
     }
 
