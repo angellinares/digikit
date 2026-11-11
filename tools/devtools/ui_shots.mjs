@@ -1045,16 +1045,16 @@ const SCENES = [
   { name: 'emulator-boot-failed', q: 'page=emulator&boot=failed', size: WIDE },
   { name: 'emulator-faceplate-wide', q: 'page=emulator', size: WIDE },
   { name: 'emulator-faceplate-narrow', q: 'page=emulator', size: MIN },
-  // README shots: the site's modules and its device screens, no preview banner
+  // README shots: the site's modules and its device screens
   {
     name: 'readme-emulator',
-    q: 'page=emulator&card=dn2&frame=device-modules&banner=0',
+    q: 'page=emulator&card=dn2&frame=device-modules',
     size: WIDE,
     steps: async (p) => p.wait(700),
   },
   {
     name: 'readme-transfer',
-    q: 'mode=modules&lib=site&banner=0',
+    q: 'mode=modules&lib=site',
     size: WIDE,
     steps: async (p) => {
       await p.wait(500);
@@ -1066,7 +1066,7 @@ const SCENES = [
   },
   {
     name: 'readme-remote',
-    q: 'page=remote&frame=device-digikit&banner=0',
+    q: 'page=remote&frame=device-digikit',
     size: WIDE,
     steps: async (p) => p.wait(800),
   },
@@ -1220,6 +1220,16 @@ try {
       note = ` (step failed: ${e.message})`;
       failed++;
     }
+    // a page that failed to build shows Vite's error overlay: no picture of it
+    const viteError = await p
+      .eval("document.querySelector('vite-error-overlay')?.shadowRoot?.querySelector('.message')?.textContent ?? ''")
+      .catch(() => '');
+    if (viteError) {
+      console.error(`${scene.name}: the page failed to build: ${viteError.trim()}`);
+      failed++;
+      await closeTab(port, tab);
+      continue;
+    }
     // the bar's text, when the scene shows one (a speed is only proof if it reads right)
     const stats = await p.eval("document.querySelector('.bar .stats')?.textContent ?? ''").catch(() => '');
     if (stats) note += ` [.stats: ${stats}]`;
@@ -1232,4 +1242,5 @@ try {
 } finally {
   await chrome.stop();
 }
-process.exit(0);
+// a failed step or a failed page makes the run fail, so readme_shots.mjs does not copy a wrong picture
+process.exit(failed ? 1 : 0);

@@ -699,6 +699,8 @@ Type checks do not show a misaligned row. `mise run ui:preview` serves the deskt
 `node tools/devtools/ui_shots.mjs --out DIR [--prefix before] [scene ...]` writes one PNG per scene at
 1440x900 and at 700 px wide (`--list` lists scenes). Look at the pictures before and after a UI change.
 
+`mise run readme:shots` regenerates the workbench screenshots in README.md: it runs the `readme-*` scenes at full size and as thumbnails, writes `docs/images/workbench-*.png` and rewrites the table between the `readme-shots` markers in README.md. The Emulator and Remote shots draw `apps/web/public/images/device-*.png` on the faceplate screen. `mise run readme:shots -- --device` first recaptures those device screens from a booted DT2 emulator (`mise run site:shots`, about 2.5 min); the site uses the same images.
+
 The Firmware page (`?page=firmware&fwdev=dt2|dn2&fwstate=stock|runtime|noreply|none`) runs the real patchkit checks (`patchkit.wasm`) over a fake
 device that restarts after the last message. `node tools/devtools/firmware_shots.mjs --app desktop|web [--url URL] [--out DIR] [scene ...]` takes its
 pictures for the workbench (this preview) and for the site (`astro dev` or `astro preview`, with a fake Web MIDI port); it needs the stock files in
