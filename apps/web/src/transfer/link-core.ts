@@ -28,7 +28,8 @@ export function linkTag(link: LinkState | undefined): RowTag | undefined {
       return {
         text: 'SYSEX',
         tone: 'dim',
-        title: 'Samples go over MIDI SysEx. Install the usb-fast module on the device for faster transfers.',
+        title:
+          'Samples go over MIDI SysEx. For faster transfers, install the usb-fast module on the device and set USB CONFIG to USB MIDI.',
       };
   }
 }

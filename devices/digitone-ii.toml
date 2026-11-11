@@ -182,6 +182,8 @@ emulator = ["core/dynreg", "core/dyndsp", "core/dynfx", "core/fxpages", "core/ui
 device = ["core/dynreg", "core/dyndsp", "core/dynfx", "core/fxpages", "core/ui", "core/digikit-menu", "core/health", "core/input"]
 # `device` plus the optional black intro (core/introblank): the Workbench Firmware page picks it with its "Custom boot screen" toggle.
 device-introblank = ["core/dynreg", "core/dyndsp", "core/dynfx", "core/fxpages", "core/ui", "core/digikit-menu", "core/health", "core/input", "core/introblank"]
+# `device` plus the USB bulk interface for fast transfer (core/usb-bulk; inert until the usb-fast module is selected).
+device-usb = ["core/dynreg", "core/dyndsp", "core/dynfx", "core/fxpages", "core/ui", "core/digikit-menu", "core/health", "core/input", "core/usb-bulk"]
 # `emulator` plus the sample pool (core/sample-pool), core/dsp-link (the pool's DSP tail needs it) and the dsp-voice stereo hooks, for the per-track sample tests (API 1.5).
 sample-tracks = ["core/dynreg", "core/dyndsp", "core/dynfx", "core/fxpages", "core/ui", "core/digikit-menu", "core/health", "core/input", "core/sample-pool", "core/dsp-link", "core/dsp-voice"]
 

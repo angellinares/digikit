@@ -22,5 +22,7 @@ void dk_fw_usb_stop(void) __asm__("cf.usb.fn.stop");
 uint8_t * dk_fw_usb_td_alloc(void) __asm__("cf.usb.fn.td_alloc");
 /* The USB port table, 0x28 bytes an entry (+0 connect callback, +4 disconnect callback, +8 device descriptor, +0xC configuration pointer, +0x10 its length, +0x24 high-speed flag), the pointer operand at +0x22 of the mode switch `FUN_40006c16`. Entry 2 is USB MIDI. DT2 1.17 0x4029ef80, DN2 1.12 0x40287af0. RAM at run time. */
 extern const uint8_t dk_fw_usb_port_table __asm__("cf.usb.data.port_table");
+/* The active USB port index (u32): 2 USB MIDI, 5 USB AUDIO/MIDI, 6 Overbridge; written by the mode switch `FUN_40006c16` and at boot by `FUN_40006c52`. DT2 1.17 0x40965a60, DN2 1.12 0x4058f2a8. RAM at run time. */
+extern const uint8_t dk_fw_usb_active_port __asm__("cf.usb.value.active_port");
 
 #endif

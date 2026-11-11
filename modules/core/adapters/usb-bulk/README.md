@@ -6,7 +6,8 @@ section 4; facts: `docs/findings/42-usb-transfer-routes.md` section 4.
 
 - **No firmware patch.** The USB engine is the same code at the same addresses on DT2 1.17 and DN2 1.12. Its port table is RAM: `usb_bulk_enable` checks
   the stock entry 2 (callbacks, length, the 101 descriptor bytes), then writes four words (connect, disconnect, descriptor pointer and length) and
-  re-enumerates with the firmware's own stop and restart pair. Not called, nothing is written and USB is stock.
+  re-enumerates with the firmware's own stop and restart pair. Not called, nothing is written and USB is stock. Outside USB MIDI mode (USB CONFIG) enable
+  refuses with E_STATE and changes nothing; bit 2 of `usb_bulk_state` shows the wrong mode live.
 - **Anchors** (`devices/fw/usb.toml`): the port table, connect, disconnect, queue, cancel, dTD allocation, stop and restart.
 - **Receive**: four 16 KiB buffers (four 4 KiB pages each: every dTD names all five page pointers) in the uncached alias of DDR, one dTD each on EP2 OUT.
   The completion callback marks a buffer full, queues a free one and wakes the module's I/O job (`dkrt_io_wake`). No free buffer: nothing queued, the host

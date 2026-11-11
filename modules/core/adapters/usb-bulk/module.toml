@@ -35,6 +35,7 @@ place = "cf.expansion"
 
 [object.externs]
 usb_port_table = "cf.usb.data.port_table"
+usb_active_port = "cf.usb.value.active_port"
 usb_fw_connect_body = "cf.usb.fn.connect"
 usb_fw_disconnect = "cf.usb.fn.disconnect"
 usb_fw_queue_td = "cf.usb.fn.queue_td"

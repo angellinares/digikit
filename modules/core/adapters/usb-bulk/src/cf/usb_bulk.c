@@ -38,6 +38,7 @@ typedef int i32;
 /* what a module sees: <dk/usb_bulk.h> */
 #define ST_ENABLED 0x1u
 #define ST_CONNECTED 0x2u
+#define ST_WRONG_MODE 0x4u /* the device's active USB port is not USB MIDI (live) */
 
 /* ---- the geometry ---- */
 #define PAGE 4096u
@@ -78,6 +79,7 @@ typedef int i32;
 
 /* firmware (anchors by hash in the port files) */
 extern u8 usb_port_table[];
+extern u8 usb_active_port[]; /* u32 in RAM: 2 USB MIDI, 5 USB AUDIO/MIDI, 6 Overbridge */
 extern void usb_fw_connect_body(u32 hs);
 extern void usb_fw_disconnect(void);
 extern i32 usb_fw_queue_td(u32 index, u8 *dtd);
@@ -228,9 +230,15 @@ void usb_bulk_rx_done(u32 bytes, u8 *buf);
 void usb_bulk_tx_done(u32 bytes, u8 *buf);
 void usb_bulk_cancel(u32 bytes, u8 *buf);
 
+/* EP2 IN is the audio clock feedback in USB AUDIO/MIDI: a dTD of ours there could fault the controller, so nothing is queued outside USB MIDI mode */
+static int usb_midi_mode(void)
+{
+    return *(volatile u32 *)usb_active_port == PORT_ENTRY;
+}
+
 static void prime_one(u32 i)
 {
-    if (stopping || !connected)
+    if (stopping || !connected || !usb_midi_mode())
         return;
     if (queue_transfer(IDX_OUT, rx_buf(i), RX_BYTES, (void *)usb_bulk_rx_done, (void *)usb_bulk_cancel) == 0)
         rx_state[i] = B_PRIMED;
@@ -242,6 +250,10 @@ static void prime_all(void)
     u32 i, left = 0;
     if (stopping || !connected)
         return;
+    if (!usb_midi_mode()) {
+        need_prime = 1; /* resumes when the mode is back and the firmware reconnects */
+        return;
+    }
     for (i = 0; i < RX_BUFS; i++) {
         if (rx_state[i] == B_FREE)
             prime_one(i);
@@ -436,6 +448,10 @@ i32 usb_bulk_enable(i32 io_id)
     u8 *d;
     if (io_job > 0 && io_job != io_id)
         return E_BUSY; /* one owner */
+    /* the bulk pair lives in the USB MIDI configuration; USB AUDIO/MIDI uses EP2 IN for the audio clock feedback
+     * (checked also when the interface is already enabled, so a caller never sees success outside USB MIDI mode) */
+    if (!usb_midi_mode())
+        return E_STATE;
     if (enabled) {
         io_job = io_id;
         return 0;
@@ -539,7 +555,7 @@ i32 usb_bulk_send(const u8 *buf, u32 len)
     if (len == 0u || len > TX_BYTES)
         return E_LENGTH;
     sr = sr_mask();
-    if (!connected || stopping) {
+    if (!connected || stopping || !usb_midi_mode()) {
         sr_restore(sr);
         return E_STATE;
     }
@@ -580,6 +596,9 @@ u32 usb_bulk_state(void)
     u32 sr = sr_mask();
     u32 i, tx = 0;
     u32 st = (enabled ? ST_ENABLED : 0u) | (connected ? ST_CONNECTED : 0u);
+    /* bit 2: a live read of the active port, so a mode change after enable shows too */
+    if (!usb_midi_mode())
+        st |= ST_WRONG_MODE;
     for (i = 0; i < TX_SLOTS; i++)
         tx += tx_state[i] != T_FREE ? 1u : 0u;
     st |= (order_count & 0xffu) << 8;

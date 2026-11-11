@@ -17,7 +17,8 @@ test('bulk is a green FAST USB pill, sysex a neutral SYSEX pill', () => {
   const sysex = linkTag({ state: 'sysex' });
   assert.equal(sysex?.text, 'SYSEX');
   assert.equal(sysex?.tone, 'dim');
-  assert.match(sysex?.title ?? '', /Install the usb-fast module/);
+  assert.match(sysex?.title ?? '', /install the usb-fast module/i);
+  assert.match(sysex?.title ?? '', /USB CONFIG to USB MIDI/);
 });
 
 test('a fallback is an amber pill whose tooltip names the logged reason', () => {

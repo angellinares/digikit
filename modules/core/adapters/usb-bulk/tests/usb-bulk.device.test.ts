@@ -323,5 +323,40 @@ for (const device of DEVICES) {
       await capacity('after reset with a send in flight');
       await rt.session.expectNoFault('reset with traffic');
     }, 1_800_000);
+
+    test('outside USB MIDI mode enable is refused and the state shows the wrong mode; back in USB MIDI it enables again', async () => {
+      const rt = await boot('echo-mode', true);
+      await enabled(rt);
+      const anchors = (portFile(device, FIRMWARE[device]).anchor ?? []).filter((a) => a.name === 'cf.usb.value.active_port');
+      expect(anchors.length, 'the active port anchor').toBe(1);
+      const portAddr = anchors[0]!.addr as number;
+      const setPort = (value: number) => rpc(rt.session, 'mem.cf.poke', { addr: portAddr, value });
+      /** REENABLE, then run until the job has stored a new enable result. */
+      const reenable = async (want: number) => {
+        expect((await usb(rt, (dk) => dk.request(ECHO_CMD + 2))).status, 'reenable').toBe(0);
+        for (let i = 0; i < 100; i++) {
+          await advance(rt.session, 100);
+          const s = await echoStatus(rt);
+          if (s.enable === want) return s;
+        }
+        throw new Error(`usb_bulk_enable never returned ${want}`);
+      };
+      try {
+        expect(await word(rt, portAddr), 'the firmware is in USB MIDI mode').toBe(2);
+        await setPort(5);
+        const refused = await reenable(-53);
+        expect(refused.state & 0x4, 'wrong USB mode').toBe(0x4);
+        await setPort(2);
+        const again = await reenable(0);
+        expect(again.state & 0x1, 'enabled').toBe(0x1);
+        expect(again.state & 0x4, 'USB MIDI mode').toBe(0);
+        await enumerate(rt);
+        const data = pattern(4096, 31);
+        expect((await echo(rt, data, false)).equals(data), 'echo after the mode returned to USB MIDI').toBe(true);
+        await rt.session.expectNoFault('usb mode');
+      } finally {
+        await setPort(2);
+      }
+    }, 1_800_000);
   });
 }

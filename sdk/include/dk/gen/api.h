@@ -162,7 +162,7 @@ int32_t input_key(uint32_t code, uint32_t down);
 /* Turn an encoder by `delta`. Needs core/input: the import is not found without it. */
 int32_t input_turn(uint32_t encoder, int32_t delta);
 
-/* Add the vendor bulk interface (interface 2, EP2 OUT and IN, 512-byte packets) to USB MIDI mode and re-enumerate. `io_id` is the I/O job that usb_bulk_* wakes when a receive buffer is full. Idempotent for the same job; another job gets E_BUSY (one owner). Task context. 0, or a negative error (E_CONTRACT: the firmware's USB tables are not the stock ones, E_NOMEM: no free slot on the runtime's per-pass list). See <dk/usb_bulk.h>. Needs core/usb-bulk: the import is not found without it. */
+/* Add the vendor bulk interface (interface 2, EP2 OUT and IN, 512-byte packets) to USB MIDI mode and re-enumerate. `io_id` is the I/O job that usb_bulk_* wakes when a receive buffer is full. Idempotent for the same job; another job gets E_BUSY (one owner). Task context. 0, or a negative error (E_STATE: the device is not in USB MIDI mode (USB CONFIG), nothing was changed, E_CONTRACT: the firmware's USB tables are not the stock ones, E_NOMEM: no free slot on the runtime's per-pass list). See <dk/usb_bulk.h>. Needs core/usb-bulk: the import is not found without it. */
 int32_t usb_bulk_enable(int32_t io_id);
 
 /* The job that called usb_bulk_enable goes away (call it in dkm_fini): the adapter stops waking it and another job may enable the interface. The interface stays in the USB configuration until the next boot. 0, or E_STATE for another job. Needs core/usb-bulk: the import is not found without it. */
@@ -177,7 +177,7 @@ int32_t usb_bulk_release(uint8_t *buf);
 /* Send `len` bytes (1 to 16384) to the host on EP2 IN. The bytes are copied: `buf` is free when the call returns. 0, E_BUSY when both send slots are in flight (the job is woken when one completes), E_AGAIN (-72) when nothing is in flight and the engine refused the transfer (the job is woken within a few milliseconds to try again), E_STATE when the host is not connected or the bus was reset during the call, E_LENGTH. Needs core/usb-bulk: the import is not found without it. */
 int32_t usb_bulk_send(const uint8_t *buf, uint32_t len);
 
-/* State word: bit 0 enabled, bit 1 connected (the host configured interface 2), bits 8..15 receive buffers full, bits 16..23 send slots in flight, bits 24..31 the reset count (it changes when the USB bus is reset or the host disconnects; a transfer in progress is void then). Needs core/usb-bulk: the import is not found without it. */
+/* State word: bit 0 enabled, bit 1 connected (the host configured interface 2), bit 2 wrong mode (the device is not in USB MIDI mode; read live), bits 8..15 receive buffers full, bits 16..23 send slots in flight, bits 24..31 the reset count (it changes when the USB bus is reset or the host disconnects; a transfer in progress is void then). Needs core/usb-bulk: the import is not found without it. */
 uint32_t usb_bulk_state(void);
 
 /* Set the one per-block callback of core/dsp-link (0: off): `void cb(const volatile u16 *rec)`, called every block in the block interrupt with the copy of the previous DSP reply record. Keep it short: a plain C function, no allocation, no logging. Clear it in `fini`. Without core/dsp-link the call does nothing. Needs core/dsp-link: the import is not found without it. */

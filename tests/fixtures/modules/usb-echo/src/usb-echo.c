@@ -4,6 +4,8 @@
  *
  * Commands: ECHO_CMD + 1 (0x2d) HOLD, body u8 mode, and an io_wake of the job: 0 echo as usual; 1 hold every taken buffer (nothing is sent or released while the mode
  * is 1); 2 send the first piece of a buffer, then hold it. A bus reset (the reset count changes) ends a hold: the buffer is released at once.
+ * ECHO_CMD + 2 (0x2e) REENABLE, no body: usb_bulk_disable, forget the buffer and the hold mode, and an io_wake of the job: its next step calls usb_bulk_enable again and
+ * stores the result (a refused enable leaves the job waiting, so a later REENABLE can enable again).
  * ECHO_CMD (0x2c): STATUS, reply: i32 result of usb_bulk_enable, u32 usb_bulk_state, u32 steps, u32 buffers taken, u32 bytes taken, u32 bytes sent,
  * u32 times a send was busy, i32 job id, u32 the reset count seen by the job. */
 #include <dk/api.h>
@@ -43,9 +45,7 @@ static i32 step(u8 *ctx)
     if (!enabled_done) {
         enabled_done = 1;
         enable_rc = usb_bulk_enable(job_id);
-        if (enable_rc < 0)
-            return enable_rc;
-        return DK_IO_WAIT;
+        return DK_IO_WAIT; /* also after a refused enable: REENABLE wakes the job again */
     }
     for (;;) {
         u32 epoch = (usb_bulk_state() >> 24) & 0xffu;
@@ -99,6 +99,18 @@ static i32 command(u32 cmd, u32 seq, const u8 *body, u32 len, u8 *out)
         sdk->io_wake(job_id);
         return 0;
     }
+    if (cmd == ECHO_CMD + 2) {
+        (void)usb_bulk_disable(job_id);
+        enabled_done = 0;
+        if (cur != 0)
+            (void)usb_bulk_release(cur);
+        cur = 0;
+        cur_len = 0;
+        cur_off = 0;
+        hold = 0;
+        sdk->io_wake(job_id);
+        return 0;
+    }
     if (cmd != ECHO_CMD)
         return -50;
     put32(out, (u32)enable_rc);
@@ -127,5 +139,5 @@ i32 dkm_init(const dk_api *api)
     job_id = api->io_post(step, finished, 0);
     if (job_id <= 0)
         return job_id ? job_id : -1;
-    return api->register_cmds(ECHO_CMD, 2, command);
+    return api->register_cmds(ECHO_CMD, 3, command);
 }

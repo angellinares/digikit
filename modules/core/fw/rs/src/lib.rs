@@ -935,6 +935,12 @@ pub mod usb {
         #[link_name = "cf.usb.data.port_table"]
         pub static PORT_TABLE: u8;
     }
+
+    unsafe extern "C" {
+        /// The active USB port index (u32): 2 USB MIDI, 5 USB AUDIO/MIDI, 6 Overbridge; written by the mode switch `FUN_40006c16` and at boot by `FUN_40006c52`. DT2 1.17 0x40965a60, DN2 1.12 0x4058f2a8. RAM at run time.
+        #[link_name = "cf.usb.value.active_port"]
+        pub static ACTIVE_PORT: u8;
+    }
 }
 
 pub mod view {

@@ -351,7 +351,10 @@ static i32 step(u8 *ctx)
         i32 rc = usb_bulk_enable(job_id);
         enable_rc = rc;
         if (rc < 0) {
-            sdk->log_lv(0, (const u8 *)"usb-fast: enable failed", (u32)rc);
+            if (rc == DK_USB_BULK_E_STATE)
+                sdk->log_lv(0, (const u8 *)"usb-fast: the device is not in USB MIDI mode (USB CONFIG); bulk off, SysEx only", (u32)rc);
+            else
+                sdk->log_lv(0, (const u8 *)"usb-fast: enable failed", (u32)rc);
             return rc;
         }
         epoch = DK_USB_BULK_RESETS(usb_bulk_state());

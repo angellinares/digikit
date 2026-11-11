@@ -92,7 +92,7 @@ pub const RANGES: [(u8, u8); 8] = [
     (0x32, 0x35), // probe
     (0x38, 0x3d), // remote
     (0x3e, 0x3f), // remote_state
-    (0x2c, 0x2d), // usb_echo_test
+    (0x2c, 0x2e), // usb_echo_test
     (0x36, 0x37), // usb_fast
 ];
 pub const RANGE_DEBUG: (u8, u8) = (0x20, 0x22);
@@ -101,5 +101,5 @@ pub const RANGE_FILE_WRITE_TEST_B: (u8, u8) = (0x28, 0x2b);
 pub const RANGE_PROBE: (u8, u8) = (0x32, 0x35);
 pub const RANGE_REMOTE: (u8, u8) = (0x38, 0x3d);
 pub const RANGE_REMOTE_STATE: (u8, u8) = (0x3e, 0x3f);
-pub const RANGE_USB_ECHO_TEST: (u8, u8) = (0x2c, 0x2d);
+pub const RANGE_USB_ECHO_TEST: (u8, u8) = (0x2c, 0x2e);
 pub const RANGE_USB_FAST: (u8, u8) = (0x36, 0x37);

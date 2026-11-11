@@ -183,7 +183,7 @@ pub mod proto {
         (0x32, 0x35), // probe
         (0x38, 0x3d), // remote
         (0x3e, 0x3f), // remote_state
-        (0x2c, 0x2d), // usb_echo_test
+        (0x2c, 0x2e), // usb_echo_test
         (0x36, 0x37), // usb_fast
     ];
     pub const RANGE_DEBUG: (u8, u8) = (0x20, 0x22);
@@ -192,7 +192,7 @@ pub mod proto {
     pub const RANGE_PROBE: (u8, u8) = (0x32, 0x35);
     pub const RANGE_REMOTE: (u8, u8) = (0x38, 0x3d);
     pub const RANGE_REMOTE_STATE: (u8, u8) = (0x3e, 0x3f);
-    pub const RANGE_USB_ECHO_TEST: (u8, u8) = (0x2c, 0x2d);
+    pub const RANGE_USB_ECHO_TEST: (u8, u8) = (0x2c, 0x2e);
     pub const RANGE_USB_FAST: (u8, u8) = (0x36, 0x37);
 }
 
@@ -450,7 +450,7 @@ pub mod api {
     /// `input_turn`: Turn an encoder by `delta`.
     pub type InputTurnFn = unsafe extern "C" fn(encoder: u32, delta: i32) -> i32;
 
-    /// `usb_bulk_enable`: Add the vendor bulk interface (interface 2, EP2 OUT and IN, 512-byte packets) to USB MIDI mode and re-enumerate. `io_id` is the I/O job that usb_bulk_* wakes when a receive buffer is full. Idempotent for the same job; another job gets E_BUSY (one owner). Task context. 0, or a negative error (E_CONTRACT: the firmware's USB tables are not the stock ones, E_NOMEM: no free slot on the runtime's per-pass list). See <dk/usb_bulk.h>.
+    /// `usb_bulk_enable`: Add the vendor bulk interface (interface 2, EP2 OUT and IN, 512-byte packets) to USB MIDI mode and re-enumerate. `io_id` is the I/O job that usb_bulk_* wakes when a receive buffer is full. Idempotent for the same job; another job gets E_BUSY (one owner). Task context. 0, or a negative error (E_STATE: the device is not in USB MIDI mode (USB CONFIG), nothing was changed, E_CONTRACT: the firmware's USB tables are not the stock ones, E_NOMEM: no free slot on the runtime's per-pass list). See <dk/usb_bulk.h>.
     pub type UsbBulkEnableFn = unsafe extern "C" fn(io_id: i32) -> i32;
 
     /// `usb_bulk_disable`: The job that called usb_bulk_enable goes away (call it in dkm_fini): the adapter stops waking it and another job may enable the interface. The interface stays in the USB configuration until the next boot. 0, or E_STATE for another job.
@@ -465,7 +465,7 @@ pub mod api {
     /// `usb_bulk_send`: Send `len` bytes (1 to 16384) to the host on EP2 IN. The bytes are copied: `buf` is free when the call returns. 0, E_BUSY when both send slots are in flight (the job is woken when one completes), E_AGAIN (-72) when nothing is in flight and the engine refused the transfer (the job is woken within a few milliseconds to try again), E_STATE when the host is not connected or the bus was reset during the call, E_LENGTH.
     pub type UsbBulkSendFn = unsafe extern "C" fn(buf: *const u8, len: u32) -> i32;
 
-    /// `usb_bulk_state`: State word: bit 0 enabled, bit 1 connected (the host configured interface 2), bits 8..15 receive buffers full, bits 16..23 send slots in flight, bits 24..31 the reset count (it changes when the USB bus is reset or the host disconnects; a transfer in progress is void then).
+    /// `usb_bulk_state`: State word: bit 0 enabled, bit 1 connected (the host configured interface 2), bit 2 wrong mode (the device is not in USB MIDI mode; read live), bits 8..15 receive buffers full, bits 16..23 send slots in flight, bits 24..31 the reset count (it changes when the USB bus is reset or the host disconnects; a transfer in progress is void then).
     pub type UsbBulkStateFn = unsafe extern "C" fn() -> u32;
 
     /// `dl_set_tick_cb`: Set the one per-block callback of core/dsp-link (0: off): `void cb(const volatile u16 *rec)`, called every block in the block interrupt with the copy of the previous DSP reply record. Keep it short: a plain C function, no allocation, no logging. Clear it in `fini`. Without core/dsp-link the call does nothing.

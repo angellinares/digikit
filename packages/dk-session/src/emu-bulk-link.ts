@@ -110,7 +110,9 @@ export class EmuBulkLink implements BulkLink {
       const next = this.ready.shift();
       if (next) return next;
       if (signal?.aborted) return null;
-      const { hex: got, status } = await this.call<{ hex?: string; status?: { usb_sys_error?: string | null } }>('usb.bulk.out');
+      const { hex: got, status } = await this.call<{ hex?: string; status?: { usb_sys_error?: string | null } }>(
+        'usb.bulk.out',
+      );
       if (typeof status?.usb_sys_error === 'string' && status.usb_sys_error !== '') {
         throw new Error(`emulated USB controller system error: ${status.usb_sys_error}`);
       }

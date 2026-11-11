@@ -11,6 +11,14 @@ mark = "D"
 users = ["core/usb-bulk"]
 doc = "The USB port table, 0x28 bytes an entry (+0 connect callback, +4 disconnect callback, +8 device descriptor, +0xC configuration pointer, +0x10 its length, +0x24 high-speed flag), the pointer operand at +0x22 of the mode switch `FUN_40006c16`. Entry 2 is USB MIDI. DT2 1.17 0x4029ef80, DN2 1.12 0x40287af0. RAM at run time."
 
+[[value]]
+name = "cf.usb.value.active_port"
+cpu = "cf"
+rule = { kind = "cf_literal", hash = "6ca45a25378d0a0f22d18114089f4984", offset = 0x14, len = 4 }
+mark = "D"
+users = ["core/usb-bulk"]
+doc = "The active USB port index (u32): 2 USB MIDI, 5 USB AUDIO/MIDI, 6 Overbridge; written by the mode switch `FUN_40006c16` and at boot by `FUN_40006c52`. DT2 1.17 0x40965a60, DN2 1.12 0x4058f2a8. RAM at run time."
+
 [[fn]]
 name = "cf.usb.fn.connect"
 cpu = "cf"

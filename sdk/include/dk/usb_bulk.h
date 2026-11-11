@@ -18,6 +18,9 @@
  * usb_bulk_send copies up to 16 KiB into one of two send slots and returns at once (E_BUSY when both are in flight: return DK_IO_WAIT and try again
  * when woken; DK_USB_BULK_E_AGAIN when nothing is in flight and the engine refused: the adapter wakes the job within a few milliseconds).
  *
+ * usb_bulk_enable returns E_STATE (-53) and changes nothing when the device is not in USB MIDI mode (USB CONFIG; USB AUDIO/MIDI uses EP2 IN for the
+ * audio clock feedback). Bit 2 of the state word shows that live.
+ *
  * One job owns the interface (usb_bulk_enable from another job is E_BUSY); call usb_bulk_disable(id) in dkm_fini. The job is also woken when the bus is reset.
  *
  * A USB bus reset or a disconnect cancels every queued transfer and drops the buffers that were full and not taken; the reset count in usb_bulk_state
@@ -31,10 +34,12 @@
 
 #define DK_USB_BULK_ENABLED 0x1u   /* usb_bulk_enable was called */
 #define DK_USB_BULK_CONNECTED 0x2u /* the host configured the device and EP2 is on */
+#define DK_USB_BULK_WRONG_MODE 0x4u /* the device is not in USB MIDI mode (USB CONFIG); live, also after enable */
 #define DK_USB_BULK_FULL(st) (((st) >> 8) & 0xffu)  /* receive buffers full and not taken */
 #define DK_USB_BULK_TX_BUSY(st) (((st) >> 16) & 0xffu) /* send slots in flight */
 #define DK_USB_BULK_RESETS(st) (((st) >> 24) & 0xffu)  /* changes with every bus reset or disconnect */
 
+#define DK_USB_BULK_E_STATE (-53) /* usb_bulk_enable: the device is not in USB MIDI mode (USB CONFIG); nothing was changed */
 #define DK_USB_BULK_E_AGAIN (-72) /* usb_bulk_send: nothing in flight, the engine refused; wait for the wake and call again */
 
 #define DK_USB_BULK_RX_BYTES 16384u /* the largest buffer usb_bulk_take gives */

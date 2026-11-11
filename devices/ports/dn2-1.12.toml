@@ -2714,6 +2714,17 @@ mark = "D"
 rule = "fw/usb:cf_func"
 
 [[anchor]]
+name = "cf.usb.value.active_port"
+cpu = "cf"
+kind = "value"
+addr = 0x4058f2a8
+src = 0x40006c2a
+len = 4
+sha256 = "40afc15d7d77730db166a29cee0b8f8e6f8954402417624b5494cd58d6111a18"
+mark = "D"
+rule = "fw/usb:cf_literal"
+
+[[anchor]]
 name = "cf.view.fn.brain.instance"
 cpu = "cf"
 kind = "data"

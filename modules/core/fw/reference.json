@@ -13040,6 +13040,49 @@
     },
     {
       "at": {
+        "dn2-1.12": [
+          {
+            "addr": "0x4058f2a8",
+            "len": 4
+          }
+        ],
+        "dt2-1.17": [
+          {
+            "addr": "0x40965a60",
+            "len": 4
+          }
+        ]
+      },
+      "bindings": {
+        "c": "dk_fw_usb_active_port",
+        "rust": "dkfw::usb::ACTIVE_PORT"
+      },
+      "cpu": "cf",
+      "doc": "The active USB port index (u32): 2 USB MIDI, 5 USB AUDIO/MIDI, 6 Overbridge; written by the mode switch `FUN_40006c16` and at boot by `FUN_40006c52`. DT2 1.17 0x40965a60, DN2 1.12 0x4058f2a8. RAM at run time.",
+      "file": "devices/fw/usb.toml",
+      "kind": "value",
+      "mark": "D",
+      "name": "cf.usb.value.active_port",
+      "rule": {
+        "dn2": {
+          "kind": "cf_literal",
+          "len": 4,
+          "offset": 20
+        },
+        "dt2": {
+          "kind": "cf_literal",
+          "len": 4,
+          "offset": 20
+        }
+      },
+      "subsystem": "usb",
+      "users": [
+        "core/usb-bulk"
+      ],
+      "was": []
+    },
+    {
+      "at": {
         "dn2-1.11": [
           {
             "addr": "0x4018c8dc",
@@ -18765,7 +18808,7 @@
       "name": "text"
     },
     {
-      "count": 8,
+      "count": 9,
       "cpu": "cf",
       "file": "devices/fw/usb.toml",
       "meaning": "the USB device engine: port table, connect and disconnect callbacks, endpoint queues, mode switch",
