@@ -823,63 +823,63 @@
   },
   {
    "addend": 0,
-   "offset": 582,
+   "offset": 624,
    "section": ".text.dkpw_close",
    "symbol": ".sec..bss.have_want",
    "type": "cf.32"
   },
   {
    "addend": 0,
-   "offset": 706,
-   "section": ".text.dkpw_close",
-   "symbol": ".sec..bss.st_open",
-   "type": "cf.32"
-  },
-  {
-   "addend": 312,
-   "offset": 734,
-   "section": ".text.dkpw_close",
-   "symbol": ".sec..bss.DKPW_DMA",
-   "type": "cf.32"
-  },
-  {
-   "addend": 0,
-   "offset": 790,
-   "section": ".text.dkpw_close",
-   "symbol": ".sec..bss.have_want",
-   "type": "cf.32"
-  },
-  {
-   "addend": 0,
-   "offset": 1396,
+   "offset": 1208,
    "section": ".text.dkpw_close",
    "symbol": ".sec..bss.rb_pending",
    "type": "cf.32"
   },
   {
    "addend": 0,
-   "offset": 1526,
+   "offset": 1298,
    "section": ".text.dkpw_close",
-   "symbol": ".sec..bss.st_live",
+   "symbol": ".sec..bss.st_open",
    "type": "cf.32"
   },
   {
-   "addend": 0,
-   "offset": 1544,
-   "section": ".text.dkpw_close",
-   "symbol": ".sec..bss.replace",
-   "type": "cf.32"
-  },
-  {
-   "addend": 272,
-   "offset": 1600,
+   "addend": 312,
+   "offset": 1326,
    "section": ".text.dkpw_close",
    "symbol": ".sec..bss.DKPW_DMA",
    "type": "cf.32"
   },
   {
    "addend": 0,
-   "offset": 1830,
+   "offset": 1382,
+   "section": ".text.dkpw_close",
+   "symbol": ".sec..bss.have_want",
+   "type": "cf.32"
+  },
+  {
+   "addend": 0,
+   "offset": 1540,
+   "section": ".text.dkpw_close",
+   "symbol": ".sec..bss.st_live",
+   "type": "cf.32"
+  },
+  {
+   "addend": 0,
+   "offset": 1558,
+   "section": ".text.dkpw_close",
+   "symbol": ".sec..bss.replace",
+   "type": "cf.32"
+  },
+  {
+   "addend": 272,
+   "offset": 1614,
+   "section": ".text.dkpw_close",
+   "symbol": ".sec..bss.DKPW_DMA",
+   "type": "cf.32"
+  },
+  {
+   "addend": 0,
+   "offset": 1844,
    "section": ".text.dkpw_close",
    "symbol": ".sec..bss.dead",
    "type": "cf.32"
@@ -1039,365 +1039,365 @@
    "type": "cf.32"
   },
   {
-   "addend": 0,
-   "offset": 278,
-   "section": ".text.dkpw_close",
-   "symbol": ".sec..text.dkpw_abort",
-   "type": "cf.32"
-  },
-  {
    "addend": 256,
-   "offset": 288,
+   "offset": 278,
    "section": ".text.dkpw_close",
    "symbol": ".sec..bss.DKPW_DMA",
    "type": "cf.32"
   },
   {
    "addend": 0,
-   "offset": 296,
+   "offset": 286,
    "section": ".text.dkpw_close",
    "symbol": ".sec..bss.total",
    "type": "cf.32"
   },
   {
    "addend": 0,
-   "offset": 302,
+   "offset": 292,
    "section": ".text.dkpw_close",
    "symbol": "cf.rtos.fn.mutex_lock",
    "type": "cf.32"
   },
   {
    "addend": 0,
-   "offset": 310,
+   "offset": 300,
    "section": ".text.dkpw_close",
    "symbol": "cf.storage.fn.inode.get",
    "type": "cf.32"
   },
   {
    "addend": 0,
-   "offset": 328,
+   "offset": 318,
    "section": ".text.dkpw_close",
    "symbol": ".sec..bss.total",
    "type": "cf.32"
   },
   {
    "addend": 0,
-   "offset": 438,
-   "section": ".text.dkpw_close",
-   "symbol": ".sec..text.pdw_tail",
-   "type": "cf.32"
-  },
-  {
-   "addend": 0,
-   "offset": 598,
-   "section": ".text.dkpw_close",
-   "symbol": ".sec..bss.want",
-   "type": "cf.32"
-  },
-  {
-   "addend": 628,
-   "offset": 614,
-   "section": ".text.dkpw_close",
-   "symbol": ".sec..bss.DKPW_DMA",
-   "type": "cf.32"
-  },
-  {
-   "addend": 0,
-   "offset": 626,
-   "section": ".text.dkpw_close",
-   "symbol": ".sec..bss.total",
-   "type": "cf.32"
-  },
-  {
-   "addend": 0,
-   "offset": 632,
-   "section": ".text.dkpw_close",
-   "symbol": "cf.storage.fn.file.page_find",
-   "type": "cf.32"
-  },
-  {
-   "addend": 0,
-   "offset": 654,
-   "section": ".text.dkpw_close",
-   "symbol": "cf.storage.fn.inode.put",
-   "type": "cf.32"
-  },
-  {
-   "addend": 0,
-   "offset": 664,
-   "section": ".text.dkpw_close",
-   "symbol": "cf.rtos.fn.mutex_unlock",
-   "type": "cf.32"
-  },
-  {
-   "addend": 256,
-   "offset": 678,
-   "section": ".text.dkpw_close",
-   "symbol": ".sec..bss.DKPW_DMA",
-   "type": "cf.32"
-  },
-  {
-   "addend": 0,
-   "offset": 684,
-   "section": ".text.dkpw_close",
-   "symbol": "cf.storage.fn.path.close",
-   "type": "cf.32"
-  },
-  {
-   "addend": 304,
-   "offset": 694,
-   "section": ".text.dkpw_close",
-   "symbol": ".sec..bss.DKPW_DMA",
-   "type": "cf.32"
-  },
-  {
-   "addend": 0,
-   "offset": 700,
-   "section": ".text.dkpw_close",
-   "symbol": ".sec..bss.stage",
-   "type": "cf.32"
-  },
-  {
-   "addend": 0,
-   "offset": 712,
-   "section": ".text.dkpw_close",
-   "symbol": "cf.storage.fn.file.info",
-   "type": "cf.32"
-  },
-  {
-   "addend": 0,
-   "offset": 728,
-   "section": ".text.dkpw_close",
-   "symbol": ".sec..bss.total",
-   "type": "cf.32"
-  },
-  {
-   "addend": 309,
-   "offset": 754,
-   "section": ".text.dkpw_close",
-   "symbol": ".sec..bss.DKPW_DMA",
-   "type": "cf.32"
-  },
-  {
-   "addend": 310,
-   "offset": 760,
-   "section": ".text.dkpw_close",
-   "symbol": ".sec..bss.DKPW_DMA",
-   "type": "cf.32"
-  },
-  {
-   "addend": 308,
-   "offset": 766,
-   "section": ".text.dkpw_close",
-   "symbol": ".sec..bss.DKPW_DMA",
-   "type": "cf.32"
-  },
-  {
-   "addend": 311,
-   "offset": 772,
-   "section": ".text.dkpw_close",
-   "symbol": ".sec..bss.DKPW_DMA",
-   "type": "cf.32"
-  },
-  {
-   "addend": 308,
-   "offset": 802,
-   "section": ".text.dkpw_close",
-   "symbol": ".sec..bss.DKPW_DMA",
-   "type": "cf.32"
-  },
-  {
-   "addend": 0,
-   "offset": 810,
-   "section": ".text.dkpw_close",
-   "symbol": ".sec..bss.want",
-   "type": "cf.32"
-  },
-  {
-   "addend": 1,
-   "offset": 828,
-   "section": ".text.dkpw_close",
-   "symbol": ".sec..bss.want",
-   "type": "cf.32"
-  },
-  {
-   "addend": 2,
-   "offset": 844,
-   "section": ".text.dkpw_close",
-   "symbol": ".sec..bss.want",
-   "type": "cf.32"
-  },
-  {
-   "addend": 3,
-   "offset": 856,
-   "section": ".text.dkpw_close",
-   "symbol": ".sec..bss.want",
-   "type": "cf.32"
-  },
-  {
-   "addend": 0,
-   "offset": 870,
-   "section": ".text.dkpw_close",
-   "symbol": ".sec..text.dkpw_abort",
-   "type": "cf.32"
-  },
-  {
-   "addend": 628,
-   "offset": 928,
-   "section": ".text.dkpw_close",
-   "symbol": ".sec..bss.DKPW_DMA",
-   "type": "cf.32"
-  },
-  {
-   "addend": 0,
-   "offset": 944,
-   "section": ".text.dkpw_close",
-   "symbol": "cf.storage.fn.block.read",
-   "type": "cf.32"
-  },
-  {
-   "addend": 0,
-   "offset": 1038,
-   "section": ".text.dkpw_close",
-   "symbol": ".sec..text.pdw_hash_block",
-   "type": "cf.32"
-  },
-  {
-   "addend": 0,
-   "offset": 1082,
-   "section": ".text.dkpw_close",
-   "symbol": ".sec..text.pdw_hash_block",
-   "type": "cf.32"
-  },
-  {
-   "addend": 0,
-   "offset": 1140,
-   "section": ".text.dkpw_close",
-   "symbol": ".sec..text.pdw_word",
-   "type": "cf.32"
-  },
-  {
-   "addend": 0,
-   "offset": 1178,
-   "section": ".text.dkpw_close",
-   "symbol": ".sec..text.pdw_word",
-   "type": "cf.32"
-  },
-  {
-   "addend": 1,
-   "offset": 1212,
-   "section": ".text.dkpw_close",
-   "symbol": ".sec..bss.want",
-   "type": "cf.32"
-  },
-  {
-   "addend": 2,
-   "offset": 1230,
-   "section": ".text.dkpw_close",
-   "symbol": ".sec..bss.want",
-   "type": "cf.32"
-  },
-  {
-   "addend": 3,
-   "offset": 1244,
-   "section": ".text.dkpw_close",
-   "symbol": ".sec..bss.want",
-   "type": "cf.32"
-  },
-  {
-   "addend": 0,
-   "offset": 1282,
-   "section": ".text.dkpw_close",
-   "symbol": "cf.storage.fn.block.read",
-   "type": "cf.32"
-  },
-  {
-   "addend": 0,
-   "offset": 1306,
-   "section": ".text.dkpw_close",
-   "symbol": "cf.storage.fn.block.write",
-   "type": "cf.32"
-  },
-  {
-   "addend": 0,
-   "offset": 1342,
+   "offset": 332,
    "section": ".text.dkpw_close",
    "symbol": ".sec..bss.cut",
    "type": "cf.32"
   },
   {
    "addend": 0,
-   "offset": 1402,
+   "offset": 350,
    "section": ".text.dkpw_close",
-   "symbol": "cf.storage.fn.event.post",
+   "symbol": "cf.storage.fn.inode.put",
    "type": "cf.32"
   },
   {
    "addend": 0,
-   "offset": 1412,
+   "offset": 360,
    "section": ".text.dkpw_close",
-   "symbol": "cf.storage.fn.inode.write",
+   "symbol": "cf.rtos.fn.mutex_unlock",
    "type": "cf.32"
   },
   {
-   "addend": 256,
-   "offset": 1432,
+   "addend": 0,
+   "offset": 376,
+   "section": ".text.dkpw_close",
+   "symbol": ".sec..text.dkpw_abort",
+   "type": "cf.32"
+  },
+  {
+   "addend": 0,
+   "offset": 480,
+   "section": ".text.dkpw_close",
+   "symbol": ".sec..text.pdw_tail",
+   "type": "cf.32"
+  },
+  {
+   "addend": 0,
+   "offset": 640,
+   "section": ".text.dkpw_close",
+   "symbol": ".sec..bss.want",
+   "type": "cf.32"
+  },
+  {
+   "addend": 628,
+   "offset": 658,
    "section": ".text.dkpw_close",
    "symbol": ".sec..bss.DKPW_DMA",
    "type": "cf.32"
   },
   {
    "addend": 0,
-   "offset": 1438,
+   "offset": 670,
+   "section": ".text.dkpw_close",
+   "symbol": ".sec..bss.total",
+   "type": "cf.32"
+  },
+  {
+   "addend": 0,
+   "offset": 676,
+   "section": ".text.dkpw_close",
+   "symbol": "cf.storage.fn.file.page_find",
+   "type": "cf.32"
+  },
+  {
+   "addend": 628,
+   "offset": 738,
+   "section": ".text.dkpw_close",
+   "symbol": ".sec..bss.DKPW_DMA",
+   "type": "cf.32"
+  },
+  {
+   "addend": 0,
+   "offset": 754,
+   "section": ".text.dkpw_close",
+   "symbol": "cf.storage.fn.block.read",
+   "type": "cf.32"
+  },
+  {
+   "addend": 0,
+   "offset": 848,
+   "section": ".text.dkpw_close",
+   "symbol": ".sec..text.pdw_hash_block",
+   "type": "cf.32"
+  },
+  {
+   "addend": 0,
+   "offset": 892,
+   "section": ".text.dkpw_close",
+   "symbol": ".sec..text.pdw_hash_block",
+   "type": "cf.32"
+  },
+  {
+   "addend": 0,
+   "offset": 950,
+   "section": ".text.dkpw_close",
+   "symbol": ".sec..text.pdw_word",
+   "type": "cf.32"
+  },
+  {
+   "addend": 0,
+   "offset": 988,
+   "section": ".text.dkpw_close",
+   "symbol": ".sec..text.pdw_word",
+   "type": "cf.32"
+  },
+  {
+   "addend": 1,
+   "offset": 1022,
+   "section": ".text.dkpw_close",
+   "symbol": ".sec..bss.want",
+   "type": "cf.32"
+  },
+  {
+   "addend": 2,
+   "offset": 1040,
+   "section": ".text.dkpw_close",
+   "symbol": ".sec..bss.want",
+   "type": "cf.32"
+  },
+  {
+   "addend": 3,
+   "offset": 1054,
+   "section": ".text.dkpw_close",
+   "symbol": ".sec..bss.want",
+   "type": "cf.32"
+  },
+  {
+   "addend": 0,
+   "offset": 1092,
+   "section": ".text.dkpw_close",
+   "symbol": "cf.storage.fn.block.read",
+   "type": "cf.32"
+  },
+  {
+   "addend": 0,
+   "offset": 1116,
+   "section": ".text.dkpw_close",
+   "symbol": "cf.storage.fn.block.write",
+   "type": "cf.32"
+  },
+  {
+   "addend": 0,
+   "offset": 1152,
+   "section": ".text.dkpw_close",
+   "symbol": ".sec..bss.cut",
+   "type": "cf.32"
+  },
+  {
+   "addend": 0,
+   "offset": 1214,
+   "section": ".text.dkpw_close",
+   "symbol": "cf.storage.fn.event.post",
+   "type": "cf.32"
+  },
+  {
+   "addend": 0,
+   "offset": 1224,
+   "section": ".text.dkpw_close",
+   "symbol": "cf.storage.fn.inode.write",
+   "type": "cf.32"
+  },
+  {
+   "addend": 256,
+   "offset": 1250,
+   "section": ".text.dkpw_close",
+   "symbol": ".sec..bss.DKPW_DMA",
+   "type": "cf.32"
+  },
+  {
+   "addend": 0,
+   "offset": 1256,
    "section": ".text.dkpw_close",
    "symbol": "cf.storage.fn.file.hash",
    "type": "cf.32"
   },
   {
+   "addend": 256,
+   "offset": 1272,
+   "section": ".text.dkpw_close",
+   "symbol": ".sec..bss.DKPW_DMA",
+   "type": "cf.32"
+  },
+  {
    "addend": 0,
-   "offset": 1460,
+   "offset": 1278,
+   "section": ".text.dkpw_close",
+   "symbol": "cf.storage.fn.path.close",
+   "type": "cf.32"
+  },
+  {
+   "addend": 304,
+   "offset": 1286,
+   "section": ".text.dkpw_close",
+   "symbol": ".sec..bss.DKPW_DMA",
+   "type": "cf.32"
+  },
+  {
+   "addend": 0,
+   "offset": 1292,
+   "section": ".text.dkpw_close",
+   "symbol": ".sec..bss.stage",
+   "type": "cf.32"
+  },
+  {
+   "addend": 0,
+   "offset": 1304,
+   "section": ".text.dkpw_close",
+   "symbol": "cf.storage.fn.file.info",
+   "type": "cf.32"
+  },
+  {
+   "addend": 0,
+   "offset": 1320,
+   "section": ".text.dkpw_close",
+   "symbol": ".sec..bss.total",
+   "type": "cf.32"
+  },
+  {
+   "addend": 309,
+   "offset": 1346,
+   "section": ".text.dkpw_close",
+   "symbol": ".sec..bss.DKPW_DMA",
+   "type": "cf.32"
+  },
+  {
+   "addend": 310,
+   "offset": 1352,
+   "section": ".text.dkpw_close",
+   "symbol": ".sec..bss.DKPW_DMA",
+   "type": "cf.32"
+  },
+  {
+   "addend": 308,
+   "offset": 1358,
+   "section": ".text.dkpw_close",
+   "symbol": ".sec..bss.DKPW_DMA",
+   "type": "cf.32"
+  },
+  {
+   "addend": 311,
+   "offset": 1364,
+   "section": ".text.dkpw_close",
+   "symbol": ".sec..bss.DKPW_DMA",
+   "type": "cf.32"
+  },
+  {
+   "addend": 308,
+   "offset": 1392,
+   "section": ".text.dkpw_close",
+   "symbol": ".sec..bss.DKPW_DMA",
+   "type": "cf.32"
+  },
+  {
+   "addend": 0,
+   "offset": 1400,
+   "section": ".text.dkpw_close",
+   "symbol": ".sec..bss.want",
+   "type": "cf.32"
+  },
+  {
+   "addend": 1,
+   "offset": 1418,
+   "section": ".text.dkpw_close",
+   "symbol": ".sec..bss.want",
+   "type": "cf.32"
+  },
+  {
+   "addend": 2,
+   "offset": 1434,
+   "section": ".text.dkpw_close",
+   "symbol": ".sec..bss.want",
+   "type": "cf.32"
+  },
+  {
+   "addend": 3,
+   "offset": 1446,
+   "section": ".text.dkpw_close",
+   "symbol": ".sec..bss.want",
+   "type": "cf.32"
+  },
+  {
+   "addend": 0,
+   "offset": 1458,
+   "section": ".text.dkpw_close",
+   "symbol": ".sec..text.dkpw_abort",
+   "type": "cf.32"
+  },
+  {
+   "addend": 0,
+   "offset": 1474,
    "section": ".text.dkpw_close",
    "symbol": ".sec..text.cut_at",
    "type": "cf.32"
   },
   {
    "addend": 0,
-   "offset": 1478,
+   "offset": 1492,
    "section": ".text.dkpw_close",
    "symbol": ".sec..bss.dest",
    "type": "cf.32"
   },
   {
    "addend": 0,
-   "offset": 1486,
+   "offset": 1500,
    "section": ".text.dkpw_close",
    "symbol": ".sec..text.parents",
    "type": "cf.32"
   },
   {
    "addend": 0,
-   "offset": 1496,
+   "offset": 1510,
    "section": ".text.dkpw_close",
    "symbol": ".sec..bss.dest",
    "type": "cf.32"
   },
   {
    "addend": 0,
-   "offset": 1502,
+   "offset": 1516,
    "section": ".text.dkpw_close",
    "symbol": ".sec..text.lookup",
    "type": "cf.32"
   },
   {
    "addend": 0,
-   "offset": 1516,
-   "section": ".text.dkpw_close",
-   "symbol": ".sec..text.f_delete.constprop.0.isra.0",
-   "type": "cf.32"
-  },
-  {
-   "addend": 0,
-   "offset": 1552,
+   "offset": 1530,
    "section": ".text.dkpw_close",
    "symbol": ".sec..text.f_delete.constprop.0.isra.0",
    "type": "cf.32"
@@ -1406,208 +1406,215 @@
    "addend": 0,
    "offset": 1566,
    "section": ".text.dkpw_close",
+   "symbol": ".sec..text.f_delete.constprop.0.isra.0",
+   "type": "cf.32"
+  },
+  {
+   "addend": 0,
+   "offset": 1580,
+   "section": ".text.dkpw_close",
    "symbol": "cf.storage.fn.file.id_open",
    "type": "cf.32"
   },
   {
    "addend": 0,
-   "offset": 1578,
+   "offset": 1592,
    "section": ".text.dkpw_close",
    "symbol": ".sec..text.f_delete.constprop.0.isra.0",
    "type": "cf.32"
   },
   {
    "addend": 0,
-   "offset": 1588,
+   "offset": 1602,
    "section": ".text.dkpw_close",
    "symbol": ".sec..bss.dest",
    "type": "cf.32"
   },
   {
    "addend": 0,
-   "offset": 1594,
+   "offset": 1608,
    "section": ".text.dkpw_close",
    "symbol": ".sec..text.slen",
    "type": "cf.32"
   },
   {
    "addend": 12,
-   "offset": 1606,
+   "offset": 1620,
    "section": ".text.dkpw_close",
    "symbol": ".sec..rodata.dkpw_begin.str1.1",
    "type": "cf.32"
   },
   {
    "addend": 0,
-   "offset": 1612,
+   "offset": 1626,
    "section": ".text.dkpw_close",
    "symbol": ".sec..bss.jour",
    "type": "cf.32"
   },
   {
    "addend": 0,
-   "offset": 1620,
+   "offset": 1634,
    "section": ".text.dkpw_close",
    "symbol": "cf.storage.fn.path.open",
    "type": "cf.32"
   },
   {
    "addend": 272,
-   "offset": 1636,
+   "offset": 1650,
    "section": ".text.dkpw_close",
    "symbol": ".sec..bss.DKPW_DMA",
    "type": "cf.32"
   },
   {
    "addend": 0,
-   "offset": 1646,
+   "offset": 1660,
    "section": ".text.dkpw_close",
    "symbol": ".sec..bss.dest",
    "type": "cf.32"
   },
   {
    "addend": 0,
-   "offset": 1652,
+   "offset": 1666,
    "section": ".text.dkpw_close",
    "symbol": "cf.storage.fn.file.write",
    "type": "cf.32"
   },
   {
    "addend": 272,
-   "offset": 1666,
+   "offset": 1680,
    "section": ".text.dkpw_close",
    "symbol": ".sec..bss.DKPW_DMA",
    "type": "cf.32"
   },
   {
    "addend": 0,
-   "offset": 1672,
+   "offset": 1686,
    "section": ".text.dkpw_close",
    "symbol": "cf.storage.fn.file.hash",
    "type": "cf.32"
   },
   {
    "addend": 272,
-   "offset": 1688,
+   "offset": 1702,
    "section": ".text.dkpw_close",
    "symbol": ".sec..bss.DKPW_DMA",
    "type": "cf.32"
   },
   {
    "addend": 0,
-   "offset": 1702,
+   "offset": 1716,
    "section": ".text.dkpw_close",
    "symbol": ".sec..bss.jour",
    "type": "cf.32"
   },
   {
    "addend": 0,
-   "offset": 1708,
+   "offset": 1722,
    "section": ".text.dkpw_close",
    "symbol": "cf.storage.fn.file.delete",
    "type": "cf.32"
   },
   {
    "addend": 0,
-   "offset": 1716,
+   "offset": 1730,
    "section": ".text.dkpw_close",
    "symbol": ".sec..text.f_delete.constprop.0.isra.0",
    "type": "cf.32"
   },
   {
    "addend": 0,
-   "offset": 1742,
+   "offset": 1756,
    "section": ".text.dkpw_close",
    "symbol": ".sec..bss.dest",
-   "type": "cf.32"
-  },
-  {
-   "addend": 0,
-   "offset": 1748,
-   "section": ".text.dkpw_close",
-   "symbol": "cf.storage.fn.file.delete",
    "type": "cf.32"
   },
   {
    "addend": 0,
    "offset": 1762,
    "section": ".text.dkpw_close",
+   "symbol": "cf.storage.fn.file.delete",
+   "type": "cf.32"
+  },
+  {
+   "addend": 0,
+   "offset": 1776,
+   "section": ".text.dkpw_close",
    "symbol": ".sec..bss.jour",
    "type": "cf.32"
   },
   {
    "addend": 0,
-   "offset": 1770,
+   "offset": 1784,
    "section": ".text.dkpw_close",
    "symbol": ".sec..text.f_delete.constprop.0.isra.0",
    "type": "cf.32"
   },
   {
    "addend": 0,
-   "offset": 1794,
+   "offset": 1808,
    "section": ".text.dkpw_close",
    "symbol": ".sec..bss.cut",
    "type": "cf.32"
   },
   {
    "addend": 0,
-   "offset": 1810,
+   "offset": 1824,
    "section": ".text.dkpw_close",
    "symbol": ".sec..bss.dest",
    "type": "cf.32"
   },
   {
    "addend": 0,
-   "offset": 1816,
+   "offset": 1830,
    "section": ".text.dkpw_close",
    "symbol": ".sec..bss.stage",
    "type": "cf.32"
   },
   {
    "addend": 0,
-   "offset": 1822,
+   "offset": 1836,
    "section": ".text.dkpw_close",
    "symbol": "cf.storage.fn.file.link",
    "type": "cf.32"
   },
   {
    "addend": 0,
-   "offset": 1838,
+   "offset": 1852,
    "section": ".text.dkpw_close",
    "symbol": ".sec..bss.cut",
    "type": "cf.32"
   },
   {
    "addend": 0,
-   "offset": 1850,
+   "offset": 1864,
    "section": ".text.dkpw_close",
    "symbol": ".sec..bss.dest",
    "type": "cf.32"
   },
   {
    "addend": 0,
-   "offset": 1856,
+   "offset": 1870,
    "section": ".text.dkpw_close",
    "symbol": ".sec..bss.stage",
    "type": "cf.32"
   },
   {
    "addend": 0,
-   "offset": 1862,
+   "offset": 1876,
    "section": ".text.dkpw_close",
    "symbol": "cf.storage.fn.file.rename",
    "type": "cf.32"
   },
   {
    "addend": 0,
-   "offset": 1894,
+   "offset": 1908,
    "section": ".text.dkpw_close",
    "symbol": ".sec..bss.jour",
    "type": "cf.32"
   },
   {
    "addend": 0,
-   "offset": 1900,
+   "offset": 1914,
    "section": ".text.dkpw_close",
    "symbol": "cf.storage.fn.file.delete",
    "type": "cf.32"
@@ -2162,10 +2169,10 @@
   },
   {
    "align": 2,
-   "hex": "4e56ffa848d73cfc4a3900000000670474c760361439000000004a390000000067344a0267084eb90000000060e2203900000000068000000010b0b90000000067204eb90000000074c920024cee3cfcffa84e5e4e754eb9000000004a0266b060e6487900000000487800104879000000004eb9000000004fef000c7210b28066a471b90000000051804a80664242037c014879000000004eb90000000048790000000013c3000000004eb9000000004879000000004879000000004eb90000000013c6000000004fef00106000ff424a3900000000660004be41f9000000002a1041f900000000265041f900000000285041f9000000002d50ffd841f9000000002d50ffdc41f90000000020504a90660c74c74eb9000000006000ff2e2639000000002f052439000000004eb9000000002f034eb900000000508f2d40ffd04a806700044c2279000000002040b3e8000466000132068200007fff700fe0aa223c43fa243a280e2c0e2d41ffec2d42ffe02d41ffe82d41ffe442aefff042820684ffffffe40686fffffff4b4aeffe0660000d2266efff0282effec4a8b670000a0200e7204242effe40680fffffff42c2effe84bf900000000b28b650002b22f0b2f004e95508fd48072127e0e2006e2a82206efa9bd847e0bd081988020042204b5807415e4a92404efaa7e19d282908122062c00efaeb1812400ee8a7e122042d1c69288b384240148427c1c98822404ecaa2c04e98eb9802042d1c69088b18124007c0eeda8eeaa7e182042d1c020019088b1842200e089efa8d0819880700188804a39000000006700029c74182004e4a873b900000000b0816700025674c860244879000000002f022f2effd02e39000000004eb9000000004fef000c4a00660000ec74c72f2effd04eb900000000588f2f054eb900000000588f4a826600fe7248790000000047f9000000004e93420048790000000048790000000013c0000000004eb9000000004fef000c4a806600fd52223900000000b2b9000000006600fd424aae00086728206e000843f90000000045f90000000010b9000000004bf9000000001151000111520002115500034a3900000000670002927618203900000000220075b900000000e6a9b282663022004241484175b9000000007381b282661e2200e08975b9000000007381b282660e73b9000000007180b0816700024c4eb90000000074c86000fcdc2202700fe1a92a479bc1bbfc0000800063062a7c00008000200d0680000001ff0280fffffe002f0b206effdc2f00203900000000ed88487008002d41ffd44eb9000000004fef000c4a806600fecabeaeffd46728226efff0220d700cd289b081652091c845f14800600a43f3880052881191a80fb1cd66f22d41fff052826000fd9c4a8967687e0c91c822049e89d289b1c766202f062f042d49ffd44eb900000000de8b508f226effd44bf598f4204dde8d602445f3880052881192180f60d02f092f042d48ffd44eb900000000508f206effd441e8fff42247700c93c8b08865de4280b088660a2d48fff0608e2e0b60bc4bf10800244615950800528060e42f004eb900000000588f7208d480200e5180b28b6510486bfffc2f004e95508fdc806000fd362f004eb900000000588f486bfff8486efffcdc804e95508fd8806000fd1820044240484073b9000000007180b0816600fd9a2004e08873b9000000007180b0816600fd8873b9000000007184b0816600fd7a7c0d2003eca82f0c2f3c000080002c2effd8ed88dc802f064eb9000000004fef000c4a806600fd782003028000001fff4bf90000000047f40c002e1326842f0c2f3c000080002f064e954fef000c24004a80660c71b9000000007209b280661626872f0c2f3c000080002f064e954fef000c6000fd2a7c01206effd02144000c2f032f2800084878000313c6000000004eb9000000002f2effd04eb9000000004fef00106000fcfa74c76000fd004879000000004eb900000000588f4a806700fcfc6000fa7a4878000245f9000000004e92588f24004a806600fa4e4879000000007c024eb900000000486effe44879000000004eb9000000004fef000cbc8066144eb90000000074cd420713c7000000006000fa4e53804a80660000fc4a3900000000660a4eb90000000074ee60da2f2effe44eb900000000588f4a80670a4eb90000000074b960c04879000000004eb9000000002ebc0000000048790000000048790000000026004eb9000000004fef000c24004a80665048790000000052832f034879000000004eb9000000004fef000cb68066164879000000004eb900000000588f4a8057c2750244824879000000004e93588f4a8266164879000000004eb900000000588f4eb900000000600c487800034e92588f4a80670674c76000ff2848790000000047f9000000004e93588f4a8067144879000000004e934eb900000000588f6000ff3c487800044e92588f4a8066c671b90000000076035d804a80661e74014879000000004879000000004eb900000000508f13c200000000609a71b9000000005f804a8067404879000000004879000000004eb900000000508f4a806628487800054e92588f4a806600ff6a4a826700fe904879000000004eb900000000588f42826000fe7c53834a8366ae4a826600ff446000ff2c",
+   "hex": "4e56ffa848d73cfc4a3900000000670474c760361439000000004a390000000067344a0267084eb90000000060e2203900000000068000000010b0b90000000067204eb90000000074c920024cee3cfcffa84e5e4e754eb9000000004a0266b060e6487900000000487800104879000000004eb9000000004fef000c7210b28066a471b90000000051804a80664242037c014879000000004eb90000000048790000000013c3000000004eb9000000004879000000004879000000004eb90000000013c6000000004fef00106000ff424a39000000006600040841f9000000002a1041f900000000265041f900000000285041f9000000002d50ffd841f9000000002d50ffdc41f90000000020504a90670003ce2639000000002f052439000000004eb9000000002f034eb900000000508f2d40ffd04a806700039a2279000000002040b3e80004660c71b900000000720ab280662a74012f2effd04eb900000000588f2f054eb900000000588f7001b082640003664eb9000000006000fecc7c0f068200007fffecaa2e3c43fa243a280e2c0e2d47ffec2d42ffe02d47ffe82d47ffe442aefff042820684ffffffe40686fffffff4b4aeffe0660000d4266efff0282effec4a8b670000a0200e7204242effe40680fffffff42c2effe84bf900000000b28b650001ca2f0b2f004e95508fd48072127e0e2006e2a82206efa9bd847e0bd081988020042204b5807415e4a92404efaa7e19d282908122062c00efaeb1812400ee8a7e122042d1c69288b384240148427c1c98822404ecaa2c04e98eb9802042d1c69088b18124007c0eeda8eeaa7e182042d1c020019088b1842200e089efa8d0819880700188804a3900000000670001b474182004e4a873b900000000b0816700016e74c86000feca4879000000002f022f2effd02e39000000004eb9000000004fef000c4a006700fea62202700fe1a92a479bc1bbfc0000800063062a7c00008000200d0680000001ff0280fffffe002f0b206effdc2f00203900000000ed88487008002d41ffd44eb9000000004fef000c4a806600fe58beaeffd46728226efff0220d700cd289b081652091c845f14800600a43f3880052881191a80fb1cd66f22d41fff052826000fe844a8967687e0c91c822049e89d289b1c766202f062f042d49ffd44eb900000000de8b508f226effd44bf598f4204dde8d602445f3880052881192180f60d02f092f042d48ffd44eb900000000508f206effd441e8fff42247700c93c8b08865de4280b088660a2d48fff0608e2e0b60bc4bf10800244615950800528060e42f004eb900000000588f7208d480200e5180b28b6510486bfffc2f004e95508fdc806000fe1e2f004eb900000000588f486bfff8486efffcdc804e95508fd8806000fe0020044240484073b9000000007180b0816600fe822004e08873b9000000007180b0816600fe7073b9000000007184b0816600fe627c0d2003eca82f0c2f3c000080002c2effd8ed88dc802f064eb9000000004fef000c4a806600fd062003028000001fff4bf90000000047f40c002e1326842f0c2f3c000080002f064e954fef000c24004a80660c71b9000000007209b2806618268774c72f0c2f3c000080002f064e954fef000c6000fcb87c01206effd02144000c2f032f2800084878000313c6000000004eb9000000002f2effd04eb9000000004fef00106000fc8674016000fc8c53824a8266144879000000004eb900000000588f4a806600fb34420248790000000047f9000000004e9348790000000048790000000013c2000000004eb9000000004fef000c4a806600fb02263900000000b6b9000000006600faf24aae00086728206e000843f90000000045f90000000010b9000000004bf9000000001151000111520002115500034a390000000067507618203900000000220075b900000000e6a9b282662e22004241484175b9000000007381b282661c2200e08975b9000000007381b282660c73b9000000007180b081670c4eb90000000074c86000fa904878000245f9000000004e92588f24004a806600fa404879000000007c024eb900000000486effe44879000000004eb9000000004fef000cbc8066144eb90000000074cd420713c7000000006000fa4053804a80660000fc4a3900000000660a4eb90000000074ee60da2f2effe44eb900000000588f4a80670a4eb90000000074b960c04879000000004eb9000000002ebc0000000048790000000048790000000026004eb9000000004fef000c24004a80665048790000000052832f034879000000004eb9000000004fef000cb68066164879000000004eb900000000588f4a8057c2750244824879000000004e93588f4a8266164879000000004eb900000000588f4eb900000000600c487800034e92588f4a80670674c76000ff2848790000000047f9000000004e93588f4a8067144879000000004e934eb900000000588f6000ff3c487800044e92588f4a8066c671b90000000076035d804a80661e74014879000000004879000000004eb900000000508f13c200000000609a71b9000000005f804a8067404879000000004879000000004eb900000000508f4a806628487800054e92588f4a806600ff6a4a826700fe904879000000004eb900000000588f42826000fe7c53834a8366ae4a826600ff446000ff2c",
    "kind": "text",
    "name": ".text.dkpw_close",
-   "size": 1928
+   "size": 1942
   },
   {
    "align": 2,
@@ -2343,7 +2350,7 @@
    "size": 640
   }
  ],
- "source_sha256": "c7c26328bb1698bead4598fde6a91477733ee6172ec88a3a3c0f3b6e6c553a67",
+ "source_sha256": "b0ade53d660567a0802fd764a49aa6abad9359371521ad196843cb540c4aa9a5",
  "symbols": [
   {
    "global": false,
@@ -3058,8 +3065,8 @@
   "as": "GNU assembler (GNU Binutils) 2.47.20260726",
   "cflags": "-mcpu=54418 -Os -ffreestanding -fno-builtin -nostdlib -fno-pic -fno-pie -ffunction-sections -fdata-sections -fno-asynchronous-unwind-tables -fno-unwind-tables -fno-stack-protector -Wall -Wextra -Werror",
   "gcc": "m68k-elf-gcc (GCC) 16.2.0",
-  "instructions_redecoded": "1520",
-  "isa_check": "3741f5fdab33e1590b51fa0332108dd0172d8344d33bfc730ad9328071a096f9",
+  "instructions_redecoded": "1527",
+  "isa_check": "c42d35a66f3c21aa4998c6a9ba4a42b28a25b7d494e8b0cd626d98bda93fead9",
   "ld": "GNU ld (GNU Binutils) 2.47.20260726"
  }
 }
