@@ -217,6 +217,12 @@ value = 0x44494147
 doc = "DkrtDiag.magic, \"DIAG\"."
 
 [[const]]
+name = "STORE_LEASES"
+type = "usize"
+value = 24
+doc = "Store leases (dkrt_store_lease) that can be live at once, RAM only: a reboot clears them. The sample pool takes one per request and one per peak-window step (one at a time); its request count plus a reserve of 8 must fit (checked at compile time in the adapter)."
+
+[[const]]
 name = "SCAN_MAX"
 type = "usize"
 value = 32
@@ -564,10 +570,28 @@ doc = "Look a store file up by path (NUL-terminated) and fill out: OK, E_NOT_FOU
 at = "store"
 
 [[fn]]
+name = "dkrt_store_lease"
+sig = "i32 dkrt_store_lease(const u8 *path, DkrtStoreFile *out)"
+doc = "dkrt_store_stat that also leases the file's sectors for the caller until dkrt_store_unlease: the lease is taken in the same store-lock hold that finds the file, so out is the committed file. While the lease lives, an upload (SysEx or SDK) that would replace or delete the file, or CLEAR the store, is refused with E_FILE_IN_USE, and no new file is given its sectors. Returns the lease id (> 0), E_NOT_FOUND (no store, no such file, a folder), E_NOMEM (the table is full: fail the load, do not wait) or E_BUSY (the store stayed in use for about 3 s). Any task may call it (it does not use the staging buffer). Release the lease when the load ends, whatever its result."
+at = "store"
+
+[[fn]]
+name = "dkrt_store_unlease"
+sig = "void dkrt_store_unlease(i32 id)"
+doc = "End a lease of dkrt_store_lease. Any task, never waits; an id that is not live is ignored."
+at = "store"
+
+[[fn]]
 name = "dkrt_store_read"
 sig = "i32 dkrt_store_read(const DkrtStoreFile *f, u32 sector, u32 count, u8 *dst)"
 doc = "Read count sectors of the file f, starting at its sector `sector`, into dst (512 bytes per sector). dst must be 16-byte aligned (E_CONTRACT otherwise). count is 1 to 128 and the range lies inside the file, rounded up to whole sectors (E_RANGE otherwise). No sha check, no staging buffer: the caller owns dst. OK or E_READ."
 at = "store"
+
+[[fn]]
+name = "dkrt_io_wake"
+sig = "void dkrt_io_wake(i32 id)"
+doc = "Wake the I/O job `id` (api->io_wake for an adapter): the job's next step runs, or, when it has not yet reached its DK_IO_WAIT, that wait does not sleep. Unknown ids are ignored. Safe in an interrupt handler. core/usb-bulk calls it when a receive buffer is full."
+at = "io"
 
 [[fn]]
 name = "dkrt_module_header"

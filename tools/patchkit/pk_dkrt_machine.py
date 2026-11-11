@@ -176,6 +176,12 @@ def runtime_watch_env(
         ProofError
     ):  # nor the upload buffer (36,896 bytes, card reads of the store land in it)
         holes.append((sym(plan, "core/runtime", "DKRT_UPLOAD_BUF"), 36896))
+    with contextlib.suppress(ProofError):  # the SDK file calls' table streams
+        holes.append((sym(plan, "core/runtime", "DKRT_SDK_BUF"), 17408))
+    with contextlib.suppress(
+        ProofError
+    ):  # the I/O task's stack, TCB and semaphore: the kernel writes them
+        holes.append((sym(plan, "core/runtime", "DKRT_IO_TASK"), 16496))
     with contextlib.suppress(
         ProofError
     ):  # nor the store-peek sector (the card read of the store's header DMAs into it)

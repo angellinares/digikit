@@ -70,6 +70,8 @@ pub const CARD_UNREADABLE: u32 = 4;
 pub const CARD_TOO_SMALL: u32 = 5;
 /// DkrtDiag.magic, "DIAG".
 pub const DIAG_MAGIC: u32 = 0x44494147;
+/// Store leases (dkrt_store_lease) that can be live at once, RAM only: a reboot clears them. The sample pool takes one per request and one per peak-window step (one at a time); its request count plus a reserve of 8 must fit (checked at compile time in the adapter).
+pub const STORE_LEASES: usize = 24;
 /// Entries of a dkrt_scan and rows of a dkrt_fit.
 pub const SCAN_MAX: usize = 32;
 /// DkrtScan.flags: the file's header does not refuse this runtime or device (a file that is not a .dkm or cannot be read passes: the runtime names the reason at boot).
@@ -577,8 +579,17 @@ pub mod sig {
     /// Look a store file up by path (NUL-terminated) and fill out: OK, E_NOT_FOUND (no store, no such file, a folder), or a card error. It reads the store headers and scans the table through the runtime's staging buffer, so call it only at the start of a load, not while a staged module read is in progress. A file of size 0 is found.
     pub type dkrt_store_stat = unsafe extern "C" fn(path: *const u8, out: *mut DkrtStoreFile) -> i32;
 
+    /// dkrt_store_stat that also leases the file's sectors for the caller until dkrt_store_unlease: the lease is taken in the same store-lock hold that finds the file, so out is the committed file. While the lease lives, an upload (SysEx or SDK) that would replace or delete the file, or CLEAR the store, is refused with E_FILE_IN_USE, and no new file is given its sectors. Returns the lease id (> 0), E_NOT_FOUND (no store, no such file, a folder), E_NOMEM (the table is full: fail the load, do not wait) or E_BUSY (the store stayed in use for about 3 s). Any task may call it (it does not use the staging buffer). Release the lease when the load ends, whatever its result.
+    pub type dkrt_store_lease = unsafe extern "C" fn(path: *const u8, out: *mut DkrtStoreFile) -> i32;
+
+    /// End a lease of dkrt_store_lease. Any task, never waits; an id that is not live is ignored.
+    pub type dkrt_store_unlease = unsafe extern "C" fn(id: i32);
+
     /// Read count sectors of the file f, starting at its sector `sector`, into dst (512 bytes per sector). dst must be 16-byte aligned (E_CONTRACT otherwise). count is 1 to 128 and the range lies inside the file, rounded up to whole sectors (E_RANGE otherwise). No sha check, no staging buffer: the caller owns dst. OK or E_READ.
     pub type dkrt_store_read = unsafe extern "C" fn(f: *const DkrtStoreFile, sector: u32, count: u32, dst: *mut u8) -> i32;
+
+    /// Wake the I/O job `id` (api->io_wake for an adapter): the job's next step runs, or, when it has not yet reached its DK_IO_WAIT, that wait does not sleep. Unknown ids are ignored. Safe in an interrupt handler. core/usb-bulk calls it when a receive buffer is full.
+    pub type dkrt_io_wake = unsafe extern "C" fn(id: i32);
 
     /// The header fields of the .dkm that starts at store sector first (DkrtScan.first) into out: OK, E_FORMAT when the file is not a .dkm, or E_READ / E_NOT_FOUND when its first sector cannot be read. The runtime does the card read itself.
     pub type dkrt_module_header = unsafe extern "C" fn(first: u32, out: *mut DkrtModuleHeader) -> i32;

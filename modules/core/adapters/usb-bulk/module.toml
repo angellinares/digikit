@@ -1,0 +1,45 @@
+[module]
+id = "core/usb-bulk"
+version = "0.1.0"
+name = "USB bulk"
+category = "core"
+role = "adapter"
+type = "framework"
+author = "digikit"
+status = "experimental"
+summary = "A vendor bulk interface (EP2 OUT and IN) in USB MIDI mode for modules: usb_bulk_enable, usb_bulk_take, usb_bulk_release, usb_bulk_send, usb_bulk_state"
+requires = ["core/runtime"]
+conflicts = []
+ports = ["dt2-1.17", "dn2-1.12"]
+
+[targets]
+"dt2-1.17" = "experimental"
+"dn2-1.12" = "experimental"
+
+# The firmware's USB engine is not patched (docs/plans/usb-fast.md section 4, docs/findings/42-usb-transfer-routes.md section 4): entry 2 of its RAM port
+# table (USB MIDI) gets a longer configuration descriptor and our connect and disconnect callbacks when a module calls usb_bulk_enable, and the firmware's
+# own stop and restart pair re-enumerates. Without a module that calls it, nothing is written and USB is stock. The code is the same on both devices
+# (the engine is identical code at the same addresses); the anchors give the data address and the engine entries.
+# The module imports usb_bulk_* are the `[[import]] requires = "core/usb-bulk"` entries of sdk/sdk.toml; the runtime lists them as optional.
+
+# DDR's cached window and its uncached alias (the DMA buffers are used through the alias).
+[[gen]]
+kind = "gas-shared"
+path = "build/gen/device.inc"
+uses = ["DDR_CACHED_BASE", "DDR_BYTES", "DDR_UNCACHED_ALIAS"]
+
+[[object]]
+path = "build/usb-bulk.dko.json"
+sources = ["src/cf/usb_bulk.c", "src/cf/device.s"]
+place = "cf.expansion"
+
+[object.externs]
+usb_port_table = "cf.usb.data.port_table"
+usb_active_port = "cf.usb.value.active_port"
+usb_fw_connect_body = "cf.usb.fn.connect"
+usb_fw_disconnect = "cf.usb.fn.disconnect"
+usb_fw_queue_td = "cf.usb.fn.queue_td"
+usb_fw_cancel_ep = "cf.usb.fn.cancel_ep"
+usb_fw_td_alloc = "cf.usb.fn.td_alloc"
+usb_fw_stop = "cf.usb.fn.stop"
+usb_fw_restart = "cf.usb.fn.restart"

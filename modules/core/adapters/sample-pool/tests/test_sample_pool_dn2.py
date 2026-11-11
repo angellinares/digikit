@@ -553,6 +553,36 @@ def test_transport_cancel(xfer_exe):
     assert scenario(xfer_exe, "settle") == ["done 1 -15 sends 1 count 1"]
 
 
+def test_transport_store_leases(xfer_exe):
+    # a store lease from dkpool_load to the end of its request: held while queued and running, ended by DONE, a failed header, a read error and a
+    # cancel (queued, or running); a missing file and a full lease table take none and the full table fails the load cleanly (E_POOL, no request
+    # kept: the next load works); every end names a live lease (bad ends 0)
+    assert scenario(xfer_exe, "lease") == [
+        "queued rc 1 live 1",
+        "done 0 live 0",
+        "missing rc -1 live 0",
+        "bad rc -5 live 0",
+        "two queued live 2",
+        "after cancel of a queued one live 0",
+        "running live 1",
+        "cancelled running live 0",
+        "read fail -3 live 0",
+        "table full rc -16 live 0",
+        "then ok rc 1 done 0 live 0 bad ends 0",
+    ]
+
+
+def test_window_step_after_the_file_changed(xfer_exe):
+    # the load's lease is over, so the file may be replaced: the window step leases the path for its reads, compares extent, size and hash with the
+    # loaded file, and reads nothing at the old extent when they differ (the sectors may be another file's now); the lease ends on every path
+    assert scenario(xfer_exe, "window") == [
+        "same file rc 0 cursor 3000 live 0",
+        "replaced rc -17 reads 0 live 0",
+        "deleted rc -17 reads 0 live 0",
+        "pool still ready 0",
+    ]
+
+
 def test_transport_job_and_worker(xfer_exe):
     # one job per load, queued on the worker with the std::function layout, run one at a time; every completion comes from the UI tick
     # (not from the job and not from dkpool_load); the port sees only whole, well-formed words

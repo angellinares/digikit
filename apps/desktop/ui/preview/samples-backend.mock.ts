@@ -5,7 +5,7 @@ import { asked, noteConnection } from '@web/transfer/connection-state';
 import { sourceKind, type Prepared } from '@digi/dk-session/dksample';
 import type { SampleEntry, SamplesBackend } from '@digi/dk-session/samples';
 import { joinPath, type LocalEntry, type Prepare } from '../src/samples-core';
-import { setDeviceInfo } from '@web/transfer/transfer-state';
+import { setDeviceInfo, setSampleLink } from '@web/transfer/transfer-state';
 import {
   localFolder,
   localPath,
@@ -30,6 +30,7 @@ export interface OpenedSamples {
 }
 
 let puts = 0;
+let sent = 0;
 const clean = (folder: string) => folder.replace(/^\/+|\/+$/g, '');
 const backend: SamplesBackend = {
   kind: 'stock-rpc',
@@ -93,6 +94,8 @@ const backend: SamplesBackend = {
     return sim.skip.split(',').includes(file.name);
   },
   async put(folder, file, onProgress) {
+    if (sim.link === 'fallback' && sent++ === 1)
+      setSampleLink({ state: 'fallback', reason: 'the device did not answer within 2 s' });
     if (sim.putfail && puts++ === 1) throw new Error(`open /tst/${file.name}: the device answered status 0`);
     const total = file.stored.length;
     const step = Math.max(1, Math.round(sim.speed * 1024 * 1024 * 0.1));
@@ -137,13 +140,18 @@ const backend: SamplesBackend = {
     const [f, t] = [clean(folder), clean(toFolder)];
     const entry = (sampleTree.get(f) ?? []).find((e) => e.name === name);
     if (!entry) return;
-    sampleTree.set(f, (sampleTree.get(f) ?? []).filter((e) => e.name !== name));
+    sampleTree.set(
+      f,
+      (sampleTree.get(f) ?? []).filter((e) => e.name !== name),
+    );
     sampleTree.set(t, [...(sampleTree.get(t) ?? []).filter((e) => e.name !== toName), { ...entry, name: toName }]);
   },
 };
 
-export async function openDeviceSamples(): Promise<OpenedSamples> {
+export async function openDeviceSamples(_forRun = false): Promise<OpenedSamples> {
   await asked(deviceRead);
+  if (sim.link !== 'none' && !(sim.link === 'fallback' && sent > 1))
+    setSampleLink({ state: sim.link === 'sysex' ? 'sysex' : 'bulk' });
   noteConnection({ type: 'answered', device: { id: 'dt2', name: NAME, runtime: '0.5.2' } });
   return {
     name: NAME,

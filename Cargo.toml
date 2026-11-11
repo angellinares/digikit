@@ -29,6 +29,7 @@ members = [
     "packages/dkneeds",
     "packages/dkupload",
     "packages/dkmidi",
+    "packages/dkbulk",
     "packages/dksample",
     # the digikit runtime's SDK (no_std): its tests run on the host
     "modules/core/runtime/sdk",

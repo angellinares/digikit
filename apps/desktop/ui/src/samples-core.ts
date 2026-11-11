@@ -4,6 +4,7 @@
 import { errorLine, isCancelled } from '../../../web/src/modules/backend.ts';
 import type { Prepared } from '@digi/dk-session/dksample';
 import type { SampleEntry, SamplesBackend } from '@digi/dk-session/samples';
+import { viaSuffix, type LinkState } from '../../../web/src/transfer/link-core.ts';
 import { fmtRate } from '../../../web/src/transfer/rate-core.ts';
 import type { BarInfo, RowStatus, RowTag } from '../../../web/src/transfer/transfer-core.ts';
 
@@ -240,7 +241,13 @@ export const cancelledCounts = (ok: number, n: number, same = 0): string =>
 /** The bar of an upload run: the uploads that this run touched (`base` is what `uploads` held when the run started; an entry that is the very
  * same object was not touched). `running`: the run is still going, so the message names the file. `average`: bytes per second of the whole
  * run, for the end text. A cancelled run is not red, and the bar shows the bytes that went, never more. No entry: no bar (undefined). */
-export function samplesBar(uploads: Uploads, base: Uploads, running: boolean, average?: number): BarInfo | undefined {
+export function samplesBar(
+  uploads: Uploads,
+  base: Uploads,
+  running: boolean,
+  average?: number,
+  link?: LinkState,
+): BarInfo | undefined {
   const mine = Object.entries(uploads).filter(([key, u]) => base[key] !== u);
   if (!mine.length) return undefined;
   // `sent` and `total` are the bytes this run really sends: they give the speed and the time left, so a file that was on the device already
@@ -271,7 +278,7 @@ export function samplesBar(uploads: Uploads, base: Uploads, running: boolean, av
   let message: string;
   if (running)
     message = current
-      ? `${current.state === 'verifying' ? 'Verifying' : 'Uploading'} ${current.name} (${ok + same + failed + cancelled + 1} of ${n})`
+      ? `${current.state === 'verifying' ? 'Verifying' : 'Uploading'} ${current.name} (${ok + same + failed + cancelled + 1} of ${n})${viaSuffix(link)}`
       : 'Preparing…';
   else if (failed)
     message = `${ok} of ${n} uploaded, ${same ? `${same} already on the device, ` : ''}${failed} failed.`;
@@ -642,8 +649,17 @@ export async function uploadItems(
         continue;
       }
     }
+    // what the listing says about the destination (the bulk path replaces an existing file atomically); the user's stop reaches a send in flight
+    const exists = listings.get(folder)?.some((e) => e.name === p.name && e.kind === 'file');
+    const abort = new AbortController();
+    const watch = setInterval(() => {
+      if (stop()) abort.abort();
+    }, 50);
     try {
-      await backend.put(folder, p, (sent, bytes) => emit({ event: 'progress', folder, name: p.name, sent, bytes }));
+      await backend.put(folder, p, (sent, bytes) => emit({ event: 'progress', folder, name: p.name, sent, bytes }), {
+        signal: abort.signal,
+        exists,
+      });
     } catch (e) {
       if (isCancelled(e)) {
         cancelled = true;
@@ -653,6 +669,8 @@ export async function uploadItems(
       emit({ event: 'failed', folder, name: p.name, message: errorLine(e) });
       stopped = `the upload of ${p.name} failed`;
       continue;
+    } finally {
+      clearInterval(watch);
     }
     emit({ event: 'verifying', folder, name: p.name });
     try {

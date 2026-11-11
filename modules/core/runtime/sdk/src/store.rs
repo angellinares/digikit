@@ -721,6 +721,9 @@ pub unsafe fn snapshot<F: FnMut(&[u8]) -> [u8; 32]>(
     }
 }
 
+/// Read leases: extents a reader still reads, kept out of every allocation.
+pub mod lease;
+
 /// Internal bounded metadata enumeration; no public C SDK contract.
 pub mod catalog;
 
@@ -729,7 +732,8 @@ pub mod directory;
 
 // ---- free space -------------------------------------------------------------------------------------------------------------
 
-const FIXED_MAX: usize = 6;
+/// Header A, the table and the tail, two extents of the caller (a file being written, the capacity knob) and every lease (`lease::MAX`).
+const FIXED_MAX: usize = 3 + 2 + lease::MAX;
 
 /// The extents that are not files: header A, the table, the tail and what the caller says is reserved (a file being uploaded), sorted by start.
 struct Fixed {
@@ -785,7 +789,8 @@ pub unsafe fn gaps<F: FnMut(u32, u32) -> bool>(
     let mut stop = false;
     // one used extent at a time: a gap is what lies between the cursor and the extent's start
     let mut take = |start: u32, len: u32, cursor: &mut u32, stop: &mut bool, f: &mut F| {
-        if start > *cursor && !f(*cursor, start - *cursor) {
+        // once `f` said stop it is not asked again (a later fixed extent of the same entry would overwrite the first fit)
+        if !*stop && start > *cursor && !f(*cursor, start - *cursor) {
             *stop = true;
         }
         let end = start.saturating_add(len);

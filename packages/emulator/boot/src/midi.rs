@@ -37,13 +37,62 @@ pub(crate) struct UsbPort {
     pub tx_fn: u32,
     /// An `rte` the callback returns to (resolved from the MIDI receive ISR).
     pub ret_pc: u32,
-    pub queue: VecDeque<Vec<u8>>,
+    pub queue: VecDeque<UsbItem>,
     pub next_ic: u64,
     pub period: u64,
     pub active: Option<UsbCall>,
     pub out: Vec<u8>,
     pub in_bytes: u64,
     pub calls: u64,
+    /// The vendor bulk interface of `core/usb-bulk` (EP2): the firmware's dTD queue function, watched for transfers queued on EP2 IN. 0: not armed.
+    pub bulk_queue_fn: u32,
+    /// What the guest queued on EP2 IN, in order, not yet taken.
+    pub bulk_out: Vec<u8>,
+    pub bulk_in_bytes: u64,
+    pub bulk_out_bytes: u64,
+    /// Times the host found no dTD queued on EP2 OUT and tried again a period later (the controller's NAK).
+    pub bulk_naks: u64,
+    /// Zero-length packets the controller sent after a transfer of a multiple of 512 bytes on EP2 IN (zero-length termination on).
+    pub bulk_out_zlps: u64,
+    /// The controller's system error: set when a dTD made the DMA fault; no USB traffic after it, as on hardware, where only a module reset recovers.
+    pub sys_error: Option<String>,
+}
+
+/// One delivery to the guest at interrupt level, in order (`midi.usb.in` and `usb.bulk.in` share the queue, the period and the interrupt).
+pub(crate) enum UsbItem {
+    /// MIDI bytes for the callback of the stock USB MIDI port.
+    Midi(Vec<u8>),
+    /// The rest of a host message on EP2 OUT: it fills the dTD at the head of the endpoint's queue (as many bytes as the dTD takes), and what is
+    /// left stays queued for the next dTD. The flag: the message is a multiple of 512 bytes, so the host ends it with a zero-length packet. An empty message is that packet.
+    Bulk(Vec<u8>, bool),
+    /// A transfer the guest queued on EP2 IN (this dTD) is complete: the controller would have sent it.
+    BulkTxDone(u32),
+    /// A call of a guest function with arguments (`usb.bulk.in connect`: the bus reset the host causes, a callback's second half).
+    Call(u32, Vec<u32>),
+}
+
+impl UsbItem {
+    pub fn len(&self) -> usize {
+        match self {
+            UsbItem::Midi(b) | UsbItem::Bulk(b, _) => b.len(),
+            _ => 0,
+        }
+    }
+}
+
+/// The firmware's USB queue function (`FUN_40005a86`: queue index, dTD), the same code at the same address on DT2 1.16, 1.17 and DN2 1.11, 1.12.
+pub(crate) const QUEUE_TD_ENTRY: u32 = 0x4000_5a86;
+const QUEUE_TD_SIG: [u8; 8] = [0x4f, 0xef, 0xff, 0xec, 0x20, 0x2f, 0x00, 0x18];
+/// The queue heads sit in the controller's SRAM at this base: the head of EP2 OUT's list of dTDs is a pointer at +0x30 of its queue head, its tail at +0x34.
+pub(crate) const QH_BASE: u32 = 0x8000_0000;
+pub(crate) const QH_EP2_OUT: u32 = QH_BASE + 0x100;
+pub(crate) const QH_EP2_IN: u32 = QH_BASE + 0x140;
+
+/// True when the image has the firmware's USB queue function at its address.
+pub(crate) fn resolve_queue_td(main: &[u8], load: u32) -> bool {
+    main.get((QUEUE_TD_ENTRY - load) as usize..)
+        .and_then(|m| m.get(..QUEUE_TD_SIG.len()))
+        .is_some_and(|m| m == QUEUE_TD_SIG)
 }
 
 pub(crate) struct UsbCall {
@@ -152,6 +201,15 @@ pub struct MidiStatus {
     pub usb_in_bytes: u64,
     pub usb_calls: u64,
     pub usb_out_bytes: usize,
+    /// The vendor bulk interface: bytes the host sent (taken by the guest or pending), bytes the guest queued on EP2 IN, and the part not yet taken.
+    pub bulk_in_bytes: u64,
+    pub bulk_out_bytes: u64,
+    pub bulk_out_pending: usize,
+    /// Times EP2 OUT answered NAK: no dTD primed, or the endpoint's receive side is off.
+    pub bulk_naks: u64,
+    pub bulk_out_zlps: u64,
+    /// The controller's system error (see `UsbPort::sys_error`): the reason, or none.
+    pub usb_sys_error: Option<String>,
 }
 
 #[cfg(test)]
@@ -190,7 +248,7 @@ mod tests {
         let mut port = MidiPort::default();
         assert_eq!(port.usb_due_in(100), None, "nothing queued");
         assert!(!port.busy() && !port.din_busy());
-        port.usb.queue.push_back(vec![0xf0]);
+        port.usb.queue.push_back(UsbItem::Midi(vec![0xf0]));
         port.usb.next_ic = 1_000;
         assert_eq!(port.usb_due_in(100), Some(900));
         assert_eq!(port.usb_due_in(1_000), Some(0), "due now");
@@ -232,7 +290,7 @@ mod tests {
         port.queue.push_back(0xf0);
         assert!(port.busy());
         port.queue.clear();
-        port.usb.queue.push_back(vec![1]);
+        port.usb.queue.push_back(UsbItem::Midi(vec![1]));
         assert!(port.busy());
     }
 

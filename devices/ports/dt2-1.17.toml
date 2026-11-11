@@ -2368,6 +2368,66 @@ mark = "D"
 rule = "fw/rtos:cf_reset_init_calls"
 
 [[anchor]]
+name = "cf.rtos.fn.sem_init"
+cpu = "cf"
+kind = "code"
+addr = 0x40001398
+len = 4
+sha256 = "1f6b50a3616f922607a92f5ea30e249ecfae4035c48517445d22acbd059dd2ec"
+mark = "D"
+rule = "fw/rtos:cf_func"
+
+[[anchor]]
+name = "cf.rtos.fn.sem_pend"
+cpu = "cf"
+kind = "code"
+addr = 0x4000141a
+len = 4
+sha256 = "bdf14071c21c6e97ed12d3dc87c4e743ee390ae73ccae37a43008bf368cd043d"
+mark = "D"
+rule = "fw/rtos:cf_func"
+
+[[anchor]]
+name = "cf.rtos.fn.sem_post"
+cpu = "cf"
+kind = "code"
+addr = 0x4000155c
+len = 4
+sha256 = "f3a94b54a3d17d40fead7d93cf515e08249de46c1dd8eec9950c44fa7af8b070"
+mark = "D"
+rule = "fw/rtos:cf_func"
+
+[[anchor]]
+name = "cf.rtos.fn.sleep_us"
+cpu = "cf"
+kind = "code"
+addr = 0x40136544
+len = 4
+sha256 = "4588d2f3db332715f3deb955e001dc741b54e633be8ffc3c2a4da9948cf6274d"
+mark = "D"
+rule = "fw/rtos:cf_func"
+
+[[anchor]]
+name = "cf.rtos.fn.task_create"
+cpu = "cf"
+kind = "code"
+addr = 0x400012c8
+len = 4
+sha256 = "ca5b67b44e7bce64824b12125557dff767ee441b8a62d2964595749b96b6ad81"
+mark = "D"
+rule = "fw/rtos:cf_func"
+
+[[anchor]]
+name = "cf.rtos.fn.task_start"
+cpu = "cf"
+kind = "code"
+addr = 0x40001314
+len = 4
+sha256 = "f3a94b54a3d17d40fead7d93cf515e08249de46c1dd8eec9950c44fa7af8b070"
+mark = "D"
+rule = "fw/rtos:cf_func"
+
+[[anchor]]
 name = "cf.rtos.site.exc_hook_lit"
 cpu = "cf"
 kind = "code"
@@ -2406,6 +2466,17 @@ len = 8
 sha256 = "f446b70c3829f8c05b4cb484c6f85e777d19f62557951248a5c622fe97d11223"
 mark = "D"
 rule = "fw/rtos:cf_words"
+
+[[anchor]]
+name = "cf.rtos.value.current_tcb"
+cpu = "cf"
+kind = "value"
+addr = 0x47db3f64
+src = 0x4000142e
+len = 4
+sha256 = "d2d82883152d69d33ab1c424cc3ea2844f94715576518449a4e98778f83e8a27"
+mark = "D"
+rule = "fw/rtos:cf_literal"
 
 [[anchor]]
 name = "cf.rtos.value.intro_entry"
@@ -2581,6 +2652,116 @@ mark = "D"
 rule = "fw/storage:cf_func"
 
 [[anchor]]
+name = "cf.storage.fn.file.any_open"
+cpu = "cf"
+kind = "code"
+addr = 0x4015bfc4
+len = 4
+sha256 = "7b1239ef680499a1f8003a769d0a0dfa1e3650cd77d962f0388c771679389375"
+mark = "D"
+rule = "fw/storage:cf_func"
+
+[[anchor]]
+name = "cf.storage.fn.file.delete"
+cpu = "cf"
+kind = "code"
+addr = 0x40157078
+len = 4
+sha256 = "e55cb9eb6848781ac430a42dab0c41908a214ea6edea999929995e5df4c3a358"
+mark = "D"
+rule = "fw/storage:cf_func"
+
+[[anchor]]
+name = "cf.storage.fn.file.hash"
+cpu = "cf"
+kind = "code"
+addr = 0x4015b3aa
+len = 4
+sha256 = "945e33bb4b14d28a5813755f8106ac0c2dbec82302f81140d3b1bf6fc964d321"
+mark = "D"
+rule = "fw/storage:cf_func"
+
+[[anchor]]
+name = "cf.storage.fn.file.id_open"
+cpu = "cf"
+kind = "code"
+addr = 0x4015bf92
+len = 4
+sha256 = "722ca8039c8eebdf90cbebf597b0c144a2c7979c379def4f7d87b953df4f5b50"
+mark = "D"
+rule = "fw/storage:cf_func"
+
+[[anchor]]
+name = "cf.storage.fn.file.info"
+cpu = "cf"
+kind = "code"
+addr = 0x4015af4c
+len = 4
+sha256 = "763c9ca825a3c90532f3d216b86b386464ff32c1f1c2085ebcb3e40ea3c692ad"
+mark = "D"
+rule = "fw/storage:cf_func"
+
+[[anchor]]
+name = "cf.storage.fn.file.link"
+cpu = "cf"
+kind = "code"
+addr = 0x40156ffc
+len = 4
+sha256 = "e59cdca0d536f67a27bdb308b1683f2c5d97565cb4d2dfe566afb0c8f6dae402"
+mark = "D"
+rule = "fw/storage:cf_func"
+
+[[anchor]]
+name = "cf.storage.fn.file.mkdir"
+cpu = "cf"
+kind = "code"
+addr = 0x4015746e
+len = 4
+sha256 = "9c3e7cb4c05995a95716e3b7da8a68bb9cf1f169764e2fd1d98fbbacbd6cc0c8"
+mark = "D"
+rule = "fw/storage:cf_func"
+
+[[anchor]]
+name = "cf.storage.fn.file.rename"
+cpu = "cf"
+kind = "code"
+addr = 0x40156f6c
+len = 4
+sha256 = "e59cdca0d536f67a27bdb308b1683f2c5d97565cb4d2dfe566afb0c8f6dae402"
+mark = "D"
+rule = "fw/storage:cf_func"
+
+[[anchor]]
+name = "cf.storage.fn.file.reserve"
+cpu = "cf"
+kind = "code"
+addr = 0x40158810
+len = 4
+sha256 = "945e33bb4b14d28a5813755f8106ac0c2dbec82302f81140d3b1bf6fc964d321"
+mark = "D"
+rule = "fw/storage:cf_func"
+
+[[anchor]]
+name = "cf.storage.fn.file.rmdir"
+cpu = "cf"
+kind = "code"
+addr = 0x40157192
+len = 4
+sha256 = "6240ed2cbe7b6b6b8b2f0e7fd4de1ee3c458134434d8e29ef7acf254b42fcf12"
+mark = "D"
+rule = "fw/storage:cf_func"
+
+[[anchor]]
+name = "cf.storage.fn.file.write"
+cpu = "cf"
+kind = "code"
+addr = 0x4015866a
+len = 4
+sha256 = "113d7d273d960e160432424a308cfa6f91d9afba235ff28c03bfb0aea8198d9e"
+mark = "D"
+rule = "fw/storage:cf_func"
+
+[[anchor]]
 name = "cf.storage.fn.path.close"
 cpu = "cf"
 kind = "code"
@@ -2647,6 +2828,16 @@ kind = "code"
 addr = 0x4012d642
 len = 6
 sha256 = "ecda53f8ded4ab291974386fad6a07fc3d8672509f611233aff4a9c2560b15f9"
+mark = "D"
+rule = "fw/storage:cf_func"
+
+[[anchor]]
+name = "cf.storage.site.mounted"
+cpu = "cf"
+kind = "code"
+addr = 0x4015af5e
+len = 4
+sha256 = "c6c7f1c74f7be630032892c1a1f671ab0984257c7a9ee416aa2e0d29b362805b"
 mark = "D"
 rule = "fw/storage:cf_func"
 
@@ -2761,6 +2952,98 @@ len = 4
 sha256 = "f88a5638ad9d3568653cf1237c4f5dfbaa69278b8fef4895f61411923397600d"
 mark = "D"
 rule = "fw/text:cf_func"
+
+[[anchor]]
+name = "cf.usb.data.port_table"
+cpu = "cf"
+kind = "data"
+addr = 0x4029ef80
+src = 0x40006c38
+len = 280
+sha256 = "ab516d86279febda1811929633ab4858f3e12c216eb6f460753752341f153632"
+mark = "D"
+rule = "fw/usb:cf_ptr"
+
+[[anchor]]
+name = "cf.usb.fn.cancel_ep"
+cpu = "cf"
+kind = "code"
+addr = 0x400059aa
+len = 4
+sha256 = "23201b350b902ad73d89ce6a89eee29dfa14dd42612057eede16e4b546dc6759"
+mark = "D"
+rule = "fw/usb:cf_func"
+
+[[anchor]]
+name = "cf.usb.fn.connect"
+cpu = "cf"
+kind = "code"
+addr = 0x400043e2
+len = 4
+sha256 = "e55cb9eb6848781ac430a42dab0c41908a214ea6edea999929995e5df4c3a358"
+mark = "D"
+rule = "fw/usb:cf_func"
+
+[[anchor]]
+name = "cf.usb.fn.disconnect"
+cpu = "cf"
+kind = "code"
+addr = 0x4000436e
+len = 4
+sha256 = "5e810c823bb544822d24d98c905479353560ff883c6dd403552049b42289f0e9"
+mark = "D"
+rule = "fw/usb:cf_func"
+
+[[anchor]]
+name = "cf.usb.fn.queue_td"
+cpu = "cf"
+kind = "code"
+addr = 0x40005a86
+len = 4
+sha256 = "23201b350b902ad73d89ce6a89eee29dfa14dd42612057eede16e4b546dc6759"
+mark = "D"
+rule = "fw/usb:cf_func"
+
+[[anchor]]
+name = "cf.usb.fn.restart"
+cpu = "cf"
+kind = "code"
+addr = 0x40006bc6
+len = 4
+sha256 = "7b2e2bc127b724457a8211e62247f55ef096ce64d527fa7baccab49340311cc6"
+mark = "D"
+rule = "fw/usb:cf_func"
+
+[[anchor]]
+name = "cf.usb.fn.stop"
+cpu = "cf"
+kind = "code"
+addr = 0x40006bac
+len = 4
+sha256 = "66fb6aa70a3ab11766d0ec0e18dbc215fa0deeaef233550a73065648591141a2"
+mark = "D"
+rule = "fw/usb:cf_func"
+
+[[anchor]]
+name = "cf.usb.fn.td_alloc"
+cpu = "cf"
+kind = "code"
+addr = 0x40005764
+len = 4
+sha256 = "91673f1118ec58de1e2dc4ed4c11c3157d2e128f625921ce583102c5231318a6"
+mark = "D"
+rule = "fw/usb:cf_func"
+
+[[anchor]]
+name = "cf.usb.value.active_port"
+cpu = "cf"
+kind = "value"
+addr = 0x40965a60
+src = 0x40006c2a
+len = 4
+sha256 = "f88176fbb7ddc7220793fd8114c0031b3beed3ab72dd5aecb95e9caf88871fb6"
+mark = "D"
+rule = "fw/usb:cf_literal"
 
 [[anchor]]
 name = "cf.view.fn.brain.instance"

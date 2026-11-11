@@ -543,15 +543,51 @@ pub mod rtos {
     // cf.rtos.fn.reset.init_calls: no sig yet
 
     unsafe extern "C" {
-        /// DN2 1.12 stock short sleep (DT2 pair 0x40136544): locks its own mutex, loads timer DTIM1 (prescaler 0x84, about 1 MHz) with `us` and blocks the task on a semaphore until the timer interrupt. Task context only. Eight stock callers; the LP0 sender waits 100 after each page with it.
+        /// Semaphore init (0x40001398 on all three images). A semaphore is 8 bytes: +0 count or flag, +4 the one waiting TCB (one waiter only). No static initialiser.
+        #[link_name = "cf.rtos.fn.sem_init"]
+        pub fn sem_init(sem: *mut u32, count: u32);
+    }
+
+    unsafe extern "C" {
+        /// Binary semaphore pend (0x4000141a on all three images): if the flag is set it clears it and returns, else the task blocks (trap #0). No timeout; task context only.
+        #[link_name = "cf.rtos.fn.sem_pend"]
+        pub fn sem_pend(sem: *mut u32);
+    }
+
+    unsafe extern "C" {
+        /// Binary semaphore post (0x4000155c on all three images): masks SR, sets the flag, readies the waiter and forces the reschedule interrupt. ISR-safe (the DTIM1 interrupt posts the sleep semaphore this way). Posts coalesce: the waiter must drain its work after each wake. Shares its hash with cf.rtos.fn.task_start (ordinal 2).
+        #[link_name = "cf.rtos.fn.sem_post"]
+        pub fn sem_post(sem: *mut u32);
+    }
+
+    unsafe extern "C" {
+        /// Stock short sleep (DT2 1.17 0x40136544, DN2 1.12 0x4013492c, DN2 1.11 0x4013464c; DT2 stock name dtim1_sleep_100us): locks its own mutex, loads timer DTIM1 (prescaler 0x84, about 1 MHz) with `us` and blocks the task on a semaphore until the timer interrupt. Task context only. The LP0 sender waits 100 after each page with it; the runtime's I/O task uses it for delays (the kernel has no timed pend).
         #[link_name = "cf.rtos.fn.sleep_us"]
         pub fn sleep_us(us: u32);
+    }
+
+    unsafe extern "C" {
+        /// Kernel task init (0x400012c8 on DT2 1.17, DN2 1.12 and DN2 1.11; the kernel is byte-identical): fills the caller's TCB (at least 0x54 bytes) for priority `prio` (0 to 15, higher wins; above 15 overwrites the current-TCB pointer) and builds the first RTE frame at the top of the caller's stack (entry gets no argument and must never return). Writes only the TCB and the stack; returns 1. The task runs after cf.rtos.fn.task_start. Stock creates tasks this way from the boot thread and, after the scheduler runs, from the main-OS task (the progress screen).
+        #[link_name = "cf.rtos.fn.task_create"]
+        pub fn task_create(tcb: u32, entry: u32, prio: u32, stack: u32, size: u32) -> i32;
+    }
+
+    unsafe extern "C" {
+        /// Kernel task start (0x40001314 on all three images): links the TCB into its priority's ready ring under SR 0x2700; does not reschedule. The hash is shared by three identical wrappers (0x40001314, 0x4000132c, 0x4000155c), hence the ordinal.
+        #[link_name = "cf.rtos.fn.task_start"]
+        pub fn task_start(tcb: u32);
     }
 
     unsafe extern "C" {
         /// The firmware's default exception handler (the code every vector points at until a specific handler is installed; DT2 1.16 0x40001252, not a function of its own): `move #0x2700,sr; move.l sp,<save>; lea -16(sp),sp; movem.l d0-d1/a0-a1,(sp); movea.l <hook word>,a0; tst.l a0; beq +10; move.l <save>,-(sp); jsr (a0); ...; rte`.
         #[link_name = "cf.rtos.site.exc_hook_lit"]
         pub static EXC_HOOK_LIT: u8;
+    }
+
+    unsafe extern "C" {
+        /// The kernel's current-TCB pointer variable (DT2 1.17 0x47db3f64, DN2 1.12 0x4664bcdc: the literal that cf.rtos.fn.sem_pend loads first; it stores the value as the semaphore's waiting task). Read the word at this address to learn which task runs now; the kernel is byte-identical on all three images.
+        #[link_name = "cf.rtos.value.current_tcb"]
+        pub static CURRENT_TCB: u8;
     }
 
     unsafe extern "C" {
@@ -664,6 +700,72 @@ pub mod storage {
     }
 
     unsafe extern "C" {
+        /// Nonzero when any inode's bit is set in the open-file bitmap (finding 120).
+        #[link_name = "cf.storage.fn.file.any_open"]
+        pub fn file_any_open() -> i32;
+    }
+
+    unsafe extern "C" {
+        /// Delete a file and free its pages: 0, -1 for a missing path or an open file (open bitmap) (finding 120).
+        #[link_name = "cf.storage.fn.file.delete"]
+        pub fn file_delete(path: *const u8) -> i32;
+    }
+
+    unsafe extern "C" {
+        /// Read the whole open file back and store its hash (hashlittle, seed 0x43fa243a; hash|1 in the inode) and hash-table page: 0 or -1. Holds the filesystem mutex for the read-back; call before path.close (finding 120).
+        #[link_name = "cf.storage.fn.file.hash"]
+        pub fn file_hash(handle: *mut u32) -> i32;
+    }
+
+    unsafe extern "C" {
+        /// Nonzero when the inode's bit is set in the open-file bitmap 0x46f4ded0 (any reader or writer holds it open). No mutex (finding 120).
+        #[link_name = "cf.storage.fn.file.id_open"]
+        pub fn file_id_open(inode_id: u32) -> i32;
+    }
+
+    unsafe extern "C" {
+        /// Four words: id, stored hash|1, size incl. the 16-byte trailer, record counter. -1 when the leaf is missing or not hashed (finding 120).
+        #[link_name = "cf.storage.fn.file.info"]
+        pub fn file_info(path: *const u8, out: *mut u32) -> i32;
+    }
+
+    unsafe extern "C" {
+        /// Add a second directory entry for an existing file (FUN_40156b00 with limit check 1; the sibling of file.rename that does not remove the old entry): the inode's link count goes 1 to 2 and is written through before the entry. 0 or -1. A name of a file whose count is 2 can be deleted with file.delete without freeing the data (finding 120). The adapter calls it only to make the two-names state for its power-cut test.
+        #[link_name = "cf.storage.fn.file.link"]
+        pub fn file_link(old_path: *const u8, new_path: *const u8) -> i32;
+    }
+
+    unsafe extern "C" {
+        /// Create one folder level; the parent must exist: 0, -1 when the leaf exists or a name character is invalid (finding 120).
+        #[link_name = "cf.storage.fn.file.mkdir"]
+        pub fn file_mkdir(path: *const u8) -> i32;
+    }
+
+    unsafe extern "C" {
+        /// Path rename under the filesystem mutex (FUN_40156b00 adds the new directory entry for the same inode, then FUN_40156e94 removes the old one): 0, -1 when the source is missing, a folder or open (a destination that exists was not tested: callers delete it first). The inode id and hash stay (finding 120).
+        #[link_name = "cf.storage.fn.file.rename"]
+        pub fn file_rename(old_path: *const u8, new_path: *const u8) -> i32;
+    }
+
+    unsafe extern "C" {
+        /// Reserve pages for [offset, offset+bytes) of an open file: 0, -1 when the card cannot hold them (finding 120).
+        #[link_name = "cf.storage.fn.file.reserve"]
+        pub fn file_reserve(handle: *mut u32, offset: u32, bytes: u32) -> i32;
+    }
+
+    unsafe extern "C" {
+        /// Remove an empty folder: 0 or -1 (finding 120).
+        #[link_name = "cf.storage.fn.file.rmdir"]
+        pub fn file_rmdir(path: *const u8) -> i32;
+    }
+
+    unsafe extern "C" {
+        /// Write `bytes` at handle.pos and advance it; the byte count, -1 when the card is full. Reserves 32 KiB pages, a whole page goes straight from a 16-byte aligned `buf`. Task context; takes the filesystem mutex (finding 120).
+        #[link_name = "cf.storage.fn.file.write"]
+        pub fn file_write(buf: *const u8, bytes: u32, handle: *mut u32) -> i32;
+    }
+
+    unsafe extern "C" {
         /// Close a successfully opened four-word handle; 0 succeeds. Takes the filesystem mutex internally (finding 105).
         #[link_name = "cf.storage.fn.path.close"]
         pub fn path_close(handle: *mut u32) -> i32;
@@ -685,6 +787,12 @@ pub mod storage {
         /// File byte length by internal entry id (handle word 0), NOT by handle pointer; 0xffffffff on error (finding 105).
         #[link_name = "cf.storage.fn.path.size"]
         pub fn path_size(entry_id: u32) -> u32;
+    }
+
+    unsafe extern "C" {
+        /// The 4-byte address literal of the filesystem's mounted flag (0x44f2bd68 on 1.17): every path function starts with `tst.l (flag)`; nonzero after FUN_4015a72c mounted the +Drive (finding 120).
+        #[link_name = "cf.storage.site.mounted"]
+        pub static MOUNTED: u8;
     }
 }
 
@@ -776,6 +884,62 @@ pub mod text {
         /// Draws printf-formatted text (vsnprintf into 128 bytes) and returns the advance. `flags`: bit 0 proportional path, 1 centre, 2 right-align, 3 outline after, 4 clear box before (bits 3 and 4 = 0x18), 5 centre vertically, 6 bottom-align, 7 translate (finding 71 section 3).
         #[link_name = "cf.text.fn.draw_fmt"]
         pub fn draw_fmt(bitmap: *mut u8, font: *mut u8, x: i32, y: i32, flags: u32, fmt: *const u8, ...) -> i32;
+    }
+}
+
+pub mod usb {
+    unsafe extern "C" {
+        /// Cancel and free every transfer descriptor queued on endpoint queue `index` (`FUN_400059aa`, 0x400059aa); each one's cancel callback (+0x28) is called.
+        #[link_name = "cf.usb.fn.cancel_ep"]
+        pub fn cancel_ep(index: u32);
+    }
+
+    unsafe extern "C" {
+        /// The connect body of the USB MIDI port (`FUN_400043e2`, 0x400043e2): sets the EP1 queue heads, ENDPTCTRL1 and primes EP1 OUT.
+        #[link_name = "cf.usb.fn.connect"]
+        pub fn connect(hs: u32);
+    }
+
+    unsafe extern "C" {
+        /// The disconnect callback of the USB MIDI port (`FUN_4000436e`, 0x4000436e): clears ENDPTCTRL1, flushes EP1 (an unbounded poll on ENDPTFLUSH), cancels both EP1 queues.
+        #[link_name = "cf.usb.fn.disconnect"]
+        pub fn disconnect();
+    }
+
+    unsafe extern "C" {
+        /// Queue a transfer descriptor on endpoint queue `index` = endpoint + 4 * direction (IN = 1) and prime it (`FUN_40005a86`, 0x40005a86).
+        #[link_name = "cf.usb.fn.queue_td"]
+        pub fn queue_td(index: u32, dtd: *mut u8) -> i32;
+    }
+
+    unsafe extern "C" {
+        /// Start the USB device again when the stop delay has ended (`FUN_40006bc6`, 0x40006bc6); the second half of a re-enumeration.
+        #[link_name = "cf.usb.fn.restart"]
+        pub fn restart();
+    }
+
+    unsafe extern "C" {
+        /// Stop the USB device (`FUN_40006bac`, 0x40006bac): clears USBCMD.RS, calls the port's disconnect callback and starts a 30-tick delay; the first half of a re-enumeration.
+        #[link_name = "cf.usb.fn.stop"]
+        pub fn stop();
+    }
+
+    unsafe extern "C" {
+        /// Take a dTD from the pool of 32 bulk and interrupt descriptors (`FUN_40005764`, 0x40005764); non-blocking, safe in the ISR; 0 when the pool is empty. Its hash is shared with `FUN_400056be`: the ordinal picks this one.
+        #[link_name = "cf.usb.fn.td_alloc"]
+        pub fn td_alloc() -> *mut u8;
+    }
+
+    unsafe extern "C" {
+        /// The USB port table, 0x28 bytes an entry (+0 connect callback, +4 disconnect callback, +8 device descriptor, +0xC configuration pointer, +0x10 its length, +0x24 high-speed flag), the pointer operand at +0x22 of the mode switch `FUN_40006c16`. Entry 2 is USB MIDI. DT2 1.17 0x4029ef80, DN2 1.12 0x40287af0. RAM at run time.
+        #[link_name = "cf.usb.data.port_table"]
+        pub static PORT_TABLE: u8;
+    }
+
+    unsafe extern "C" {
+        /// The active USB port index (u32): 2 USB MIDI, 5 USB AUDIO/MIDI, 6 Overbridge; written by the mode switch `FUN_40006c16` and at boot by `FUN_40006c52`. DT2 1.17 0x40965a60, DN2 1.12 0x4058f2a8. RAM at run time.
+        #[link_name = "cf.usb.value.active_port"]
+        pub static ACTIVE_PORT: u8;
     }
 }
 

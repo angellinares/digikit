@@ -91,6 +91,16 @@ pub unsafe fn open() -> Result<Table, i32> {
 
 /// Look `path` up. Leaves garbage in the staging buffer (the table is scanned through it); the result is by value.
 pub unsafe fn find(path: *const u8) -> Result<File, i32> {
+    if !crate::store_writer::acquire() {
+        return Err(E_BUSY);
+    }
+    let r = find_unlocked(path);
+    crate::store_writer::unlock();
+    r
+}
+
+/// `find` for a caller that holds the store lock.
+unsafe fn find_unlocked(path: *const u8) -> Result<File, i32> {
     let t = open()?;
     let (io, lay) = (reader(), layout());
     match store::find(&io, &lay, &t.h, stage(), STAGE_BYTES, path)? {
@@ -125,7 +135,11 @@ pub unsafe fn load_to_stage(f: &File) -> i32 {
     let sectors = (f.size + 511) / 512;
     let buf = stage();
     // `first` is relative to the start of the store
+    if !crate::store_writer::acquire() {
+        return E_BUSY;
+    }
     let r = store::read_sectors(&reader(), &layout(), f.first, sectors, buf, STAGE_BYTES);
+    crate::store_writer::unlock();
     if r != OK {
         return r;
     }
@@ -192,6 +206,10 @@ pub unsafe fn seen() -> Option<(u32, u32)> {
         return None;
     }
     if core::ptr::read_volatile(addr_of!(STORE_DIRTY)) {
+        // an SDK write or a SysEx command is inside the store: keep the last figures, the flag stays set for the next refresh
+        if !crate::store_writer::try_lock() {
+            return STORE_SEEN;
+        }
         // clear first: a header written while we read leaves the flag set for the next refresh
         core::ptr::write_volatile(addr_of_mut!(STORE_DIRTY), false);
         STORE_SEEN = match store::open_headers(&reader(), &lay, scratch()) {
@@ -201,6 +219,7 @@ pub unsafe fn seen() -> Option<(u32, u32)> {
             }
             Err(_) => None,
         };
+        crate::store_writer::unlock();
     }
     STORE_SEEN
 }
@@ -209,6 +228,16 @@ pub unsafe fn seen() -> Option<(u32, u32)> {
 /// into `out`; returns how many, or a negative code (`E_NOT_FOUND`: no store). A path that does not fit 63 bytes, a folder and an empty file are
 /// left out. A commit of an upload running at the same time makes the list start again (it is one header's table).
 pub unsafe fn list(prefix: *const u8, out: *mut DkrtStoreEntry, max: u32) -> i32 {
+    if !crate::store_writer::acquire() {
+        return E_BUSY;
+    }
+    let r = list_unlocked(prefix, out, max);
+    crate::store_writer::unlock();
+    r
+}
+
+/// `list` for a caller that holds the store lock.
+unsafe fn list_unlocked(prefix: *const u8, out: *mut DkrtStoreEntry, max: u32) -> i32 {
     let (io, lay) = (reader(), layout());
     let fp = addr_of_mut!(DKRT_STORE_FP) as *mut u8;
     let mut plen = 0;
@@ -272,7 +301,12 @@ pub unsafe fn read_sector(rel: u32, out: *mut u8) -> i32 {
     if crate::card::state() == CARD_TOO_SMALL {
         return E_NOT_FOUND;
     }
-    store::read_sectors(&reader(), &layout(), rel, 1, out, 512)
+    if !crate::store_writer::acquire() {
+        return E_BUSY;
+    }
+    let r = store::read_sectors(&reader(), &layout(), rel, 1, out, 512);
+    crate::store_writer::unlock();
+    r
 }
 
 /// `dkrt_store_stat(path, out)`: where a store file is, for an adapter that streams it. `E_NOT_FOUND` for no store, no such file and a folder.
@@ -311,5 +345,61 @@ pub unsafe extern "C" fn dkrt_store_read(f: *const DkrtStoreFile, sector: u32, c
         Ok(r) => r,
         Err(e) => return e,
     };
-    store::read_sectors(&reader(), &layout(), rel, count, dst, count as usize * 512)
+    if !crate::store_writer::acquire() {
+        return E_BUSY;
+    }
+    let r = store::read_sectors(&reader(), &layout(), rel, count, dst, count as usize * 512);
+    crate::store_writer::unlock();
+    r
+}
+
+/// `lease(owner, path, out)`: look the store file `path` up and lease its extent, in one store-lock hold, so that the extent in `out` is the
+/// committed one and stays unchanged until the lease ends: the writer refuses to replace or delete the file and never gives its sectors to another
+/// file. The id (> 0), `E_NOT_FOUND` (no store, no such file, a folder), `E_NOMEM` (the table is full: fail the load, do not wait) or `E_BUSY`.
+/// The table is scanned through the SDK buffers of the store writer, which the store lock guards: the staging buffer is not touched, so any task
+/// may lease (the sample pool's window step does, in the worker task).
+pub unsafe fn lease(owner: u8, path: *const u8, out: &mut DkrtStoreFile) -> i32 {
+    if !crate::store_writer::acquire() {
+        return E_BUSY;
+    }
+    let b = crate::store_writer::sdk_bufs();
+    let found = match open_in(b.scr, b.tin, crate::store_writer::TBL_CAP) {
+        Ok(t) => match store::find(&reader(), &layout(), &t.h, b.tin, crate::store_writer::TBL_CAP, path) {
+            Ok(Some((_, e))) if e.kind == KIND_FILE => Ok(e),
+            Ok(_) => Err(E_NOT_FOUND),
+            Err(e) => Err(e),
+        },
+        Err(e) => Err(e),
+    };
+    let r = match found {
+        Ok(e) => {
+            let id = crate::store_writer::lease_take(owner, e.first, e.size);
+            if id > 0 {
+                out.first = e.first;
+                out.size = e.size;
+                out.sha = e.sha;
+            }
+            id
+        }
+        Err(e) => e,
+    };
+    crate::store_writer::unlock();
+    r
+}
+
+/// `dkrt_store_lease(path, out)`: `dkrt_store_stat` that also leases the file's extent for the caller (an adapter, owner 0) until
+/// `dkrt_store_unlease(id)`. The id (> 0) or a negative code (see `lease`).
+#[no_mangle]
+pub unsafe extern "C" fn dkrt_store_lease(path: *const u8, out: *mut DkrtStoreFile) -> i32 {
+    if path.is_null() || out.is_null() {
+        return E_CONTRACT;
+    }
+    crate::init_once();
+    lease(0, path, &mut *out)
+}
+
+/// `dkrt_store_unlease(id)`: end a lease (any task, no waiting). An id that is not live is ignored.
+#[no_mangle]
+pub unsafe extern "C" fn dkrt_store_unlease(id: i32) {
+    crate::store_writer::lease_end(id);
 }

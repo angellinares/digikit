@@ -165,6 +165,7 @@ export const HERMETIC = {
   machine: [],
   'sharc-rt': [],
   dkmidi: [],
+  dkbulk: [],
 };
 
 // Crates that compile another crate's sources by path (sharc-2 builds packages/emulator/sharc/src);

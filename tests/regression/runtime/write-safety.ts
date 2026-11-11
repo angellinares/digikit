@@ -173,8 +173,12 @@ export function dmaHoles(plan: RuntimePlan): [number, number][] {
   if (!hole('DKRT_STAGE', 64 * 1024)) throw new Error('no symbol core/runtime:DKRT_STAGE');
   hole('DKRT_SECBUF', 512);
   hole('DKRT_UPLOAD_BUF', 36896);
+  hole('DKRT_SDK_BUF', 17408); // the SDK file calls' table streams (card reads land by DMA)
+  hole('DKRT_IO_TASK', 16496); // the I/O task's stack, TCB and semaphore (the kernel writes them)
   hole('DKRT_STORE_PEEK', 512);
   hole('DKRT_STORE_FP', 512);
+  const pdw = ownedSymbol(plan, 'core/plusdrive-write', 'DKPW_DMA'); // the +Drive adapter's buffers that the firmware's file code writes
+  if (pdw !== undefined) holes.push([pdw, 640]);
   // The header sector of the settings record is a hole only together with the record.
   if (hole('DKRT_SETTINGS', SETTINGS_SECTORS * SECTOR)) hole('DKRT_SETTINGS_HDR', 512);
   return holes.sort((a, b) => a[0] - b[0] || a[1] - b[1]);

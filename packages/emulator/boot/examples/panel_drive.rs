@@ -232,7 +232,9 @@ fn main() -> ExitCode {
     let pcs = |name: &str| -> Result<Vec<u32>, String> {
         let mut out = Vec::new();
         for (i, _) in args.iter().enumerate().filter(|(_, a)| *a == name) {
-            let list = args.get(i + 1).ok_or(format!("{name} needs a comma list"))?;
+            let list = args
+                .get(i + 1)
+                .ok_or(format!("{name} needs a comma list"))?;
             for pc in list.split(',') {
                 let pc = number(pc)
                     .and_then(|v| u32::try_from(v).ok())

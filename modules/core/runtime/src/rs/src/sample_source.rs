@@ -40,7 +40,10 @@ pub unsafe fn load(path: *const u8) -> Result<Source, i32> {
             if crate::card::state() == dkrt_sdk::CARD_TOO_SMALL {
                 return Err(E_NOT_FOUND);
             }
-            let entry = dkrt_sdk::store::snapshot(
+            if !crate::store_writer::acquire() {
+                return Err(dkrt_sdk::E_BUSY);
+            }
+            let snap = dkrt_sdk::store::snapshot(
                 &store::reader(),
                 &store::layout(),
                 path,
@@ -51,7 +54,9 @@ pub unsafe fn load(path: *const u8) -> Result<Source, i32> {
                 INPUT_CAP,
                 sample::MAX_FILE_BYTES as u32,
                 |bytes| hash32::slot_of(bytes.as_ptr(), bytes.len() as u32),
-            )?;
+            );
+            crate::store_writer::unlock();
+            let entry = snap?;
             entry.size as usize
         };
         let file = core::slice::from_raw_parts(input, bytes);

@@ -27,9 +27,11 @@ export interface SimState {
   putfail: boolean;
   /** Names (comma separated) of files that the fake device holds already with the same bytes: an upload skips them (skip=kick,snare). */
   skip: string;
+  /** The link of the samples: none (no pill), bulk, sysex, fallback (bulk until the second file, then SysEx). */
+  link: 'none' | 'bulk' | 'sysex' | 'fallback';
 }
 
-export const PARAMS = ['dev', 'folder', 'speed', 'paused', 'mode', 'mkdir', 'putfail', 'skip'] as const;
+export const PARAMS = ['dev', 'folder', 'speed', 'paused', 'mode', 'mkdir', 'putfail', 'skip', 'link'] as const;
 
 const query = new URLSearchParams(location.search);
 export const sim: SimState = {
@@ -41,6 +43,7 @@ export const sim: SimState = {
   mkdir: query.get('mkdir') !== '0',
   putfail: query.get('putfail') === '1',
   skip: query.get('skip') ?? '',
+  link: (query.get('link') as SimState['link']) ?? 'none',
 };
 
 export const delay = (ms: number) => new Promise<void>((r) => setTimeout(r, ms));

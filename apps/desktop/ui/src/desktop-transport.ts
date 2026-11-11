@@ -4,8 +4,9 @@ import { EmuUsbTransport as RpcUsbTransport } from '@digi/dk-session';
 
 export { EMU_RPC_CHUNK } from '@digi/dk-session';
 
-const call = <T>(method: string, params: Record<string, unknown> = {}) =>
+export const emuCall = <T>(method: string, params: Record<string, unknown> = {}) =>
   invoke<T>('emu_call', { method, params, session: null });
+const call = emuCall;
 
 export class EmuUsbTransport extends RpcUsbTransport {
   constructor() {

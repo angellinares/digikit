@@ -1,0 +1,83 @@
+# usb: the USB device engine: port table, connect and disconnect callbacks, endpoint queues, mode switch
+# Names follow <cpu>.<subsystem>.<kind>.<name>; was = former names, for reading older docs, never resolved (docs/design/firmware-decls.md).
+# Facts: docs/findings/42-usb-transfer-routes.md section 4 (static, marked [D]). The engine is the same code at the same addresses on DT2 1.17 and
+# DN2 1.12 (strict hashes equal); only the data addresses differ.
+
+[[data]]
+name = "cf.usb.data.port_table"
+cpu = "cf"
+rule = { kind = "cf_ptr", hash = "6ca45a25378d0a0f22d18114089f4984", offset = 0x22, len = 0x118 }
+mark = "D"
+users = ["core/usb-bulk"]
+doc = "The USB port table, 0x28 bytes an entry (+0 connect callback, +4 disconnect callback, +8 device descriptor, +0xC configuration pointer, +0x10 its length, +0x24 high-speed flag), the pointer operand at +0x22 of the mode switch `FUN_40006c16`. Entry 2 is USB MIDI. DT2 1.17 0x4029ef80, DN2 1.12 0x40287af0. RAM at run time."
+
+[[value]]
+name = "cf.usb.value.active_port"
+cpu = "cf"
+rule = { kind = "cf_literal", hash = "6ca45a25378d0a0f22d18114089f4984", offset = 0x14, len = 4 }
+mark = "D"
+users = ["core/usb-bulk"]
+doc = "The active USB port index (u32): 2 USB MIDI, 5 USB AUDIO/MIDI, 6 Overbridge; written by the mode switch `FUN_40006c16` and at boot by `FUN_40006c52`. DT2 1.17 0x40965a60, DN2 1.12 0x4058f2a8. RAM at run time."
+
+[[fn]]
+name = "cf.usb.fn.connect"
+cpu = "cf"
+sig = "void (u32 hs)"
+rule = { kind = "cf_func", hash = "bb700ddb6198cdea1276e325b627e28b", offset = 0x0, len = 4 }
+mark = "D"
+users = ["core/usb-bulk"]
+doc = "The connect body of the USB MIDI port (`FUN_400043e2`, 0x400043e2): sets the EP1 queue heads, ENDPTCTRL1 and primes EP1 OUT."
+
+[[fn]]
+name = "cf.usb.fn.disconnect"
+cpu = "cf"
+sig = "void ()"
+rule = { kind = "cf_func", hash = "88890b3ba8d3f35a7d9bf4595745ec6e", offset = 0x0, len = 4 }
+mark = "D"
+users = ["core/usb-bulk"]
+doc = "The disconnect callback of the USB MIDI port (`FUN_4000436e`, 0x4000436e): clears ENDPTCTRL1, flushes EP1 (an unbounded poll on ENDPTFLUSH), cancels both EP1 queues."
+
+[[fn]]
+name = "cf.usb.fn.queue_td"
+cpu = "cf"
+sig = "i32 (u32 index, u8 *dtd)"
+rule = { kind = "cf_func", hash = "acfcf7d3502645bc708805c97d0450de", offset = 0x0, len = 4 }
+mark = "D"
+users = ["core/usb-bulk"]
+doc = "Queue a transfer descriptor on endpoint queue `index` = endpoint + 4 * direction (IN = 1) and prime it (`FUN_40005a86`, 0x40005a86)."
+
+[[fn]]
+name = "cf.usb.fn.cancel_ep"
+cpu = "cf"
+sig = "void (u32 index)"
+rule = { kind = "cf_func", hash = "ceab1936e5dc859647d0067ef16568f9", offset = 0x0, len = 4 }
+mark = "D"
+users = ["core/usb-bulk"]
+doc = "Cancel and free every transfer descriptor queued on endpoint queue `index` (`FUN_400059aa`, 0x400059aa); each one's cancel callback (+0x28) is called."
+
+[[fn]]
+name = "cf.usb.fn.td_alloc"
+cpu = "cf"
+sig = "u8 *()"
+rule = { kind = "cf_func", hash = "d00c6b5516d846d2d2a225d1e82ac43f", ordinal = 1, offset = 0x0, len = 4 }
+mark = "D"
+users = ["core/usb-bulk"]
+doc = "Take a dTD from the pool of 32 bulk and interrupt descriptors (`FUN_40005764`, 0x40005764); non-blocking, safe in the ISR; 0 when the pool is empty. Its hash is shared with `FUN_400056be`: the ordinal picks this one."
+
+[[fn]]
+name = "cf.usb.fn.stop"
+cpu = "cf"
+sig = "void ()"
+rule = { kind = "cf_func", hash = "5fdf1d84546e2273468bc4ddff436e4f", offset = 0x0, len = 4 }
+mark = "D"
+users = ["core/usb-bulk"]
+doc = "Stop the USB device (`FUN_40006bac`, 0x40006bac): clears USBCMD.RS, calls the port's disconnect callback and starts a 30-tick delay; the first half of a re-enumeration."
+
+[[fn]]
+name = "cf.usb.fn.restart"
+cpu = "cf"
+sig = "void ()"
+rule = { kind = "cf_func", hash = "f6c30c569e250564446808c0d8b0aa51", offset = 0x0, len = 4 }
+mark = "D"
+users = ["core/usb-bulk"]
+doc = "Start the USB device again when the stop delay has ended (`FUN_40006bc6`, 0x40006bc6); the second half of a re-enumeration."

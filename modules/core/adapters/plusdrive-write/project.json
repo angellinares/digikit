@@ -1,0 +1,15 @@
+{
+  "$schema": "../../../../node_modules/nx/schemas/project-schema.json",
+  "name": "core/plusdrive-write",
+  "implicitDependencies": ["core/runtime"],
+  "metadata": {
+    "runtimeAcceptance": [
+      {
+        "files": ["tests/plusdrive-write.device.test.ts"],
+        "modules": ["test/file-write"],
+        "plusdrive": true
+      }
+    ],
+    "mergeTests": ["tests/plusdrive-write.device.test.ts"]
+  }
+}

@@ -1,0 +1,13 @@
+{
+  "$schema": "../../../../node_modules/nx/schemas/project-schema.json",
+  "name": "core/usb-bulk",
+  "metadata": {
+    "runtimeAcceptance": [
+      {
+        "files": ["tests/usb-bulk.device.test.ts"],
+        "modules": ["test/usb-echo"],
+        "plusdrive": true
+      }
+    ]
+  }
+}

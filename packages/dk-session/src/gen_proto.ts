@@ -49,6 +49,7 @@ export const SERVICE_CMD = {
   LOG: 0x20,
   PEEK: 0x21,
   LOGCFG: 0x22,
+  USB_FAST_NONCE: 0x36,
   REMOTE_KEY: 0x38,
   REMOTE_TURN: 0x39,
   REMOTE_RELEASE: 0x3a,
@@ -77,6 +78,8 @@ export const STATUS: [number, string, string][] = [
   [-68, 'E_SET_NOKEY', 'no such settings key (or no settings record)'],
   [-69, 'E_SET_VALUE', 'a settings value is too long, or the buffer is too small'],
   [-70, 'E_SET_OFF', 'settings store off: an older store reaches its area, or no store'],
+  [-71, 'E_FILE_IN_USE', 'a sample is still loading from that file: wait and try again'],
+  [-72, 'E_AGAIN', 'usb_bulk_send: the engine refused and nothing is in flight; wait for the wake, retry'],
 ];
 
 /** [code, name, text] */
@@ -92,12 +95,14 @@ export const LOAD_STATUS: [number, string, string][] = [
   [-9, 'E_INIT', 'init returned non-zero'],
   [-10, 'E_LOADED', 'a module of that name is loaded'],
   [-11, 'E_SLOT', 'a slot it binds is taken'],
-  [-12, 'E_BUSY', 'a task is still inside the module'],
+  [-12, 'E_BUSY', 'a task is still inside the module, or the store is in use (try again)'],
   [-13, 'E_TOO_BIG', 'larger than the staging buffer'],
   [-14, 'E_TABLE_FULL', 'no free module record'],
   [-15, 'E_LOST', 'the sample backing was lost and the reload failed'],
   [-16, 'E_POOL', 'the sample pool is full'],
   [-17, 'E_CHANGED', 'the sample file differs from the selection snapshot'],
+  [-18, 'E_EXISTS', 'the file exists already (file_create does not overwrite)'],
+  [-19, 'E_CONTEXT', 'the call is not allowed in this context (file_* run in an I/O step)'],
   [-20, 'E_NO_REGISTRY', 'register records, but the image has no registry'],
   [-21, 'E_REG_DEVICE', 'the records are for another device'],
   [-22, 'E_TYPE_RANGE', 'machine type outside the range, or bad clone_of'],
@@ -145,9 +150,13 @@ export const CAP = {
 /** The command numbers a module may register: [first, last]. */
 export const RANGES = {
   debug: [0x20, 0x22],
+  file_write_test: [0x24, 0x27],
+  file_write_test_b: [0x28, 0x2b],
   probe: [0x32, 0x35],
   remote: [0x38, 0x3d],
   remote_state: [0x3e, 0x3f],
+  usb_echo_test: [0x2c, 0x2e],
+  usb_fast: [0x36, 0x37],
 } as const;
 
 export const CAPACITY_KINDS = {

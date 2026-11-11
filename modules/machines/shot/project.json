@@ -16,6 +16,12 @@
         "dksampleWasm": true
       },
       {
+        "files": ["tests/shot-dn2-lease.device.test.ts"],
+        "modules": ["digikit/shot", "digikit/debug", "test/track-select"],
+        "plusdrive": true,
+        "dksampleWasm": true
+      },
+      {
         "files": ["tests/shot-dn2-audio.device.test.ts"],
         "modules": ["digikit/shot", "digikit/debug", "test/track-select"],
         "plusdrive": true,

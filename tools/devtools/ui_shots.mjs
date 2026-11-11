@@ -42,6 +42,12 @@ const setPanel = (p, which, want) =>
   p.eval(
     `(() => { const b = document.querySelector('${which === 'memory' ? '.memory-panel' : '.card-panel:not(.memory-panel)'} .card-toggle'); if (b && (b.getAttribute('aria-expanded') === 'true') !== (${want === 'open'})) b.click(); })()`,
   );
+/** Three files uploaded in a row (the fallback scenes switch the link at the second). */
+const upload3 = async (p) => {
+  for (const n of ['kick', 'snare', 'hat']) await p.tick(`^Upload ${n}`);
+  await p.click(/^Upload/);
+  await p.wait(2300);
+};
 /** Page helpers: `p.eval(js)`, `p.click(text)`, `p.tick(labelRegexSource)`, `p.hover(selector)`, `p.wait(ms)`. */
 const SCENES = [
   { name: 'modules', q: 'mode=modules', size: WIDE },
@@ -181,6 +187,22 @@ const SCENES = [
       await p.wait(3000);
     },
   },
+  // the link pill after the free space (FAST USB / SYSEX / SYSEX: FALLBACK) and the "via" end of the progress line
+  { name: 'samples-link-bulk', q: 'mode=samples&link=bulk', size: WIDE },
+  { name: 'samples-link-sysex', q: 'mode=samples&link=sysex', size: WIDE },
+  { name: 'samples-link-bulk-narrow', q: 'mode=samples&link=bulk', size: MIN },
+  { name: 'samples-link-fallback-narrow', q: 'mode=samples&link=fallback&speed=3', size: MIN, steps: upload3 },
+  {
+    name: 'samples-link-bulk-uploading',
+    q: 'mode=samples&link=bulk&speed=1.2',
+    size: WIDE,
+    steps: async (p) => {
+      await p.tick('^Upload (kick|snare|hat)');
+      await p.click(/^Upload/);
+      await p.wait(2000);
+    },
+  },
+  { name: 'samples-link-fallback', q: 'mode=samples&link=fallback&speed=3', size: WIDE, steps: upload3 },
   { name: 'samples-no-folder', q: 'mode=samples&folder=none', size: WIDE },
 
   // ---- the explorer: selection, navigation, upload of folders, drag and drop (Samples mode) ----

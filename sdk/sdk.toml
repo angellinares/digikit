@@ -4,12 +4,12 @@
 # sdk/include/dk/gen/machine_consts.h, fx_consts.h, machine.h, fx.h and api.h from this file (`patchkit gen --check` fails when they are stale).
 
 [runtime]           # the digikit runtime release (semantic version; packed major<<16 | minor<<8 | patch)
-version = "0.5.7"   # 0.x: MINOR may break (contract major, store format, SysEx protocol), PATCH = features and fixes
+version = "0.5.8"   # 0.x: MINOR may break (contract major, store format, SysEx protocol), PATCH = features and fixes
 
 [contract]          # [major, minor] per contract (docs/design/module-sdk.md 11.5 D3). The runtime refuses a module that declares a
                     # contract (major != 0) when its major differs from the runtime's or its minor is above the runtime's. Major 0 = not implemented.
                     # An appended Api function is a minor bump; a changed or removed one is a major bump.
-api = [1, 9]        # the ColdFire Api table (every module, `raw` included); minor 9: settings_client/get/put/remove (module settings), intro_take (boot animation); minor 1: `log_lv` appended; minor 2: `register_cmds` appended; minor 3: sample bank API appended; minor 4: read-only listing; minor 5: stereo sample pool (per module, 16 entries); minor 6: sample_pool_path/param_get/param_set/sample_pool_set; minor 7: sample_pool_peaks; minor 8: job_post/job_cancel (background jobs)
+api = [1, 10]       # the ColdFire Api table (every module, `raw` included); minor 10: file_create/write/close/abort/delete (store files), io_post/io_cancel/io_wake (the I/O task), hash32_init/update/finish; minor 9: settings_client/get/put/remove (module settings), intro_take (boot animation); minor 1: `log_lv` appended; minor 2: `register_cmds` appended; minor 3: sample bank API appended; minor 4: read-only listing; minor 5: stereo sample pool (per module, 16 entries); minor 6: sample_pool_path/param_get/param_set/sample_pool_set; minor 7: sample_pool_peaks; minor 8: job_post/job_cancel (background jobs)
 machine = [1, 6]    # minor 1: source track; 2: stereo; 3: executable parameter latches; 4: opt-in native callback page v1; 5: two replacement callback pages v2; 6: note gate appended to voice_in (DK_MACHINE_GATE); voice states start zeroed after a load
 fx = [1, 0]         # run-time effects (sdk/include/dk/gen/fx.h, DSP section version 4 of a .dkm); 0.4.0; effect pages (register kind 4) 0.5.0
 service = [1, 0]
@@ -62,6 +62,17 @@ fields = [
     { name = "settings_put", type = "i32 (u32 client, const char *key, const void *value, u32 len)", doc = "Set `key` to the `len` bytes (0 to 1024) at `value`; the card is written 2 s after the last change. Returns 0, E_SET_KEY (stale handle or bad key), E_SET_VALUE, E_SET_FULL or E_SET_OFF. The runtime stores the key as `<module name>/<key>`; the module name and the key together are at most 47 characters. UI task only, not a service command handler.", since = 9 },
     { name = "settings_remove", type = "i32 (u32 client, const char *key)", doc = "Remove `key`: returns 0 (also when it was not there), E_SET_KEY (stale handle or bad key) or E_SET_OFF. UI task only, not a service command handler.", since = 9 },
     { name = "intro_take", type = "i32 (intro_frame frame, intro_done done, void *ctx, u32 ticks)", doc = "Init-only: replace the stock boot animation. `frame(tick, ctx)` returns the 1024-byte native bitmap of tick 0 .. ticks-1 (30 ticks a second), or NULL to end the animation (the last frame stays); it runs on the intro task, must not block and must not call any dk_api function. `done(ctx)` (may be NULL) runs once in the UI task at the first UI pass: free the buffer there. `ticks` is 1 to 300. Returns 0, E_NOT_FOUND outside `dkm_init`, E_CONTRACT (no frame, bad ticks), E_BUSY (taken already) or E_BOOT_ONLY (the intro is over). See dk/intro.h.", since = 9 },
+    { name = "file_create", type = "i32 (u32 root, const char *path, u32 size, const u8 *hash4, u32 flags)", doc = "I/O step only (E_CONTEXT in any other task, including a module's code running in the UI or MIDI task while a step waits): open the one write session for the file `path` of `size` bytes under `root` (DK_FILES_STORE; DK_FILES_SAMPLES is the store's samples/ folder on the Digitone II and the stock +Drive on the Digitakt II, which needs core/plusdrive-write: E_CONTRACT without it). `hash4`: NULL, or the expected file hash (`hash|1`, 4 bytes big-endian: dk/hash32.h); file_close then checks it. `flags`: 0 or DK_FILE_REPLACE (1). Without DK_FILE_REPLACE an existing file is E_EXISTS. With it the old file stays readable until file_close swaps in the new one (a power cut or file_abort leaves the old file); E_FILE_IN_USE while a reader still reads the old file. Returns a handle > 0 owned by this module, or E_BUSY (a write session is open, or the store stayed in use for about 3 s: try again). A session with no write for 20 s is aborted by the runtime, E_PATH, E_FULL, E_NOSTORE, E_INUSE, E_WRITE. See dk/file.h.", since = 10 },
+    { name = "file_write", type = "i32 (i32 h, u32 offset, const u8 *buf, u32 len)", doc = "I/O step only: write `len` bytes at `offset`, the next byte of the file. `buf` is 16-byte aligned; `len` a multiple of 512 except for the last piece of the file (the tail sector is padded with zeros). Any length: it is split into 32 KiB writes. Returns 0, E_STATE (no such session), E_OFFSET, E_LENGTH (past `size`, or a short piece before the end), E_WRITE, E_CONTRACT (unaligned buf), or E_BUSY (the store stayed in use for about 3 s: nothing of this call was written; call again). The store lock is held for the whole call, so once a piece is written E_BUSY is never returned.", since = 10 },
+    { name = "file_close", type = "i32 (i32 h, u8 *hash_out)", doc = "I/O step only: end the file. All `size` bytes must have been written (E_LENGTH) and match `hash4` when it was given (E_HASH); the table is committed (power-cut safe). `hash_out` (4 bytes, may be NULL) gets the file hash of the bytes written, checks or not. The session is closed whatever the result, except for E_BUSY (try again). Returns 0 or a status.", since = 10 },
+    { name = "file_abort", type = "i32 (i32 h)", doc = "I/O step only: drop the session and the partial file (it was never in the table). Returns 0 or E_STATE.", since = 10 },
+    { name = "file_delete", type = "i32 (u32 root, const char *path)", doc = "I/O step only: remove a file or folder entry. Returns 0, E_NOFILE, E_FILE_IN_USE (a reader, such as the sample pool loading it, still reads the file: try again later), E_BUSY (a write session is open, or the store is in use) or a path or store status.", since = 10 },
+    { name = "io_post", type = "i32 (io_step step, io_done done, u8 *ctx)", doc = "Run `step(ctx)` on the runtime's I/O task (priority 3, its own stack; <dk/io.h>). The step may block and call file_*. It returns DK_IO_MORE (run again), DK_IO_WAIT (sleep until io_wake), 0 (done) or a negative error. `done(ctx, status)` runs once in the UI task. Task context only (not an ISR). Returns a job id > 0, E_CONTRACT (no step) or E_BUSY (8 jobs).", since = 10 },
+    { name = "io_cancel", type = "i32 (i32 id)", doc = "Cancel a job of this module: a queued job never runs, a running one stops after its step returns; `done` gets DK_IO_E_CANCELLED. Returns 0 or E_NOT_FOUND.", since = 10 },
+    { name = "io_wake", type = "void (i32 id)", doc = "Wake a job whose step returned DK_IO_WAIT. Callable from an interrupt handler, an adapter or any task. Unknown ids are ignored.", since = 10 },
+    { name = "hash32_init", type = "void (u8 *state)", doc = "Start the file hash (the Elektron +Drive content hash, dk/hash32.h) in the caller's 28-byte `dk_hash32`.", since = 10 },
+    { name = "hash32_update", type = "void (u8 *state, const u8 *p, u32 n)", doc = "Feed `n` bytes.", since = 10 },
+    { name = "hash32_finish", type = "u32 (u8 *state)", doc = "The file hash `hash|1`: the value the store keeps (4 bytes big-endian in a table slot). The state is spent.", since = 10 },
 ]
 
 # Function types by name. As a parameter or field a name is a nullable pointer to the function (`Option<ServiceCmd>` in Rust, `dk_service_cmd *` in C).
@@ -80,6 +91,10 @@ job_done = "void (u8 *ctx, i32 status)"
 intro_frame = "const u8 *(u32 tick, void *ctx)"
 # The end of a boot animation, in the UI task, once, at the first UI pass.
 intro_done = "void (void *ctx)"
+# A step of an I/O job (`Api.io_post`), in the runtime's I/O task: it may block and call file_*. Returns DK_IO_MORE (1), DK_IO_WAIT (2), 0 or a negative error.
+io_step = "i32 (u8 *ctx)"
+# The end of an I/O job, in the UI task, once. `status` is the last step's result, or DK_IO_E_CANCELLED.
+io_done = "void (u8 *ctx, i32 status)"
 
 # The machine contract's numbers (sdk/include/dk/gen/machine.h is the generated C view; it includes the generated sdk/include/dk/gen/machine_consts.h).
 # `patchkit gen` writes sdk/asm/dk_machine.inc and sdk/include/dk/gen/machine_consts.h from this table: the constants, then the byte and word offsets of the fields (all 4 bytes).
@@ -478,6 +493,42 @@ name = "input_turn"
 sig = "i32 (u32 encoder, i32 delta)"
 doc = "Turn an encoder by `delta`."
 requires = "core/input"
+
+[[import]]
+name = "usb_bulk_enable"
+sig = "i32 (i32 io_id)"
+doc = "Add the vendor bulk interface (interface 2, EP2 OUT and IN, 512-byte packets) to USB MIDI mode and re-enumerate. `io_id` is the I/O job that usb_bulk_* wakes when a receive buffer is full. Idempotent for the same job; another job gets E_BUSY (one owner). Task context. 0, or a negative error (E_STATE: the device is not in USB MIDI mode (USB CONFIG), nothing was changed, E_CONTRACT: the firmware's USB tables are not the stock ones, E_NOMEM: no free slot on the runtime's per-pass list). See <dk/usb_bulk.h>."
+requires = "core/usb-bulk"
+
+[[import]]
+name = "usb_bulk_disable"
+sig = "i32 (i32 io_id)"
+doc = "The job that called usb_bulk_enable goes away (call it in dkm_fini): the adapter stops waking it and another job may enable the interface. The interface stays in the USB configuration until the next boot. 0, or E_STATE for another job."
+requires = "core/usb-bulk"
+
+[[import]]
+name = "usb_bulk_take"
+sig = "i32 (u8 **buf, u32 *len)"
+doc = "The next full receive buffer, in arrival order: 1 and `*buf`, `*len` set (the buffer is yours until usb_bulk_release), or 0 when none is full. Never blocks. A buffer holds the bytes of one USB transfer: up to 16 KiB, ended by a short packet or a full buffer, so a message of a multiple of 512 bytes must be followed by a zero-length packet from the host."
+requires = "core/usb-bulk"
+
+[[import]]
+name = "usb_bulk_release"
+sig = "i32 (u8 *buf)"
+doc = "Give a buffer from usb_bulk_take back: it is queued for the next transfer. 0, or E_STATE for a pointer that is not a taken buffer."
+requires = "core/usb-bulk"
+
+[[import]]
+name = "usb_bulk_send"
+sig = "i32 (const u8 *buf, u32 len)"
+doc = "Send `len` bytes (1 to 16384) to the host on EP2 IN. The bytes are copied: `buf` is free when the call returns. 0, E_BUSY when both send slots are in flight (the job is woken when one completes), E_AGAIN (-72) when nothing is in flight and the engine refused the transfer (the job is woken within a few milliseconds to try again), E_STATE when the host is not connected or the bus was reset during the call, E_LENGTH."
+requires = "core/usb-bulk"
+
+[[import]]
+name = "usb_bulk_state"
+sig = "u32 ()"
+doc = "State word: bit 0 enabled, bit 1 connected (the host configured interface 2), bit 2 wrong mode (the device is not in USB MIDI mode; read live), bits 8..15 receive buffers full, bits 16..23 send slots in flight, bits 24..31 the reset count (it changes when the USB bus is reset or the host disconnects; a transfer in progress is void then)."
+requires = "core/usb-bulk"
 
 [[import]]
 name = "dk_ui_has"
@@ -947,6 +998,10 @@ remote = [0x38, 0x3d]   # digikit/remote: key and turn of the panel (docs/plans/
 remote_state = [0x3e, 0x3f]   # digikit/remote: the state
 probe = [0x32, 0x35]   # digikit/probe: collector status, raw reads, reset (docs/plans/debug-mode-and-probes.md)
 debug = [0x20, 0x22]   # digikit/debug: LOG, PEEK, LOGCFG (docs/findings/46-digikit-debug.md)
+file_write_test = [0x24, 0x27]   # test/file-write: start an I/O job that writes a file, its status, wake it, a file call outside an I/O step
+usb_fast = [0x36, 0x37]   # usb-fast: SET_NONCE (the host proves which USB device is on its MIDI port, docs/plans/usb-fast.md section 5)
+file_write_test_b = [0x28, 0x2b]   # test/file-write-b: the same commands for a second module
+usb_echo_test = [0x2c, 0x2e]   # test/usb-echo: its status, hold, reenable
 
 [protocol.service]  # the commands of run-time service modules, by name; each lies in a range above (a module registers them with Api.register_cmds)
 REMOTE_KEY = 0x38      # digikit/remote: code (u8), down (u8)
@@ -955,7 +1010,32 @@ REMOTE_RELEASE = 0x3a  # release every key the module holds
 LOG = 0x20             # digikit/debug: body u32 from_seq; reply u32 oldest, u32 newest, u8 n, then n events of 32 bytes
 PEEK = 0x21            # digikit/debug: body u32 addr, u16 len (1 to 512, inside the device file's `[digikit] peek` ranges); reply u32 addr, u16 len, the bytes
 LOGCFG = 0x22          # digikit/debug: body u8 op (0 get, 1 set: u8 default, 8 module levels); reply u8 default, 8 module levels, u8 debug_on (1 while loaded)
+USB_FAST_NONCE = 0x36  # usb-fast: body nonce[8]; the module keeps it and returns it in the INFO reply of the bulk link; reply empty
 REMOTE_STATE = 0x3e    # reply: enabled (u8, always 1 while the module is loaded), state format (u8), turn limit (u8)
+
+[protocol.bulk]     # the bulk link: a vendor interface 2 (class 0xFF) on EP2 OUT/IN, no SysEx framing, big-endian (docs/plans/usb-fast.md section 5)
+# request: magic[4] | cmd u8 | seq u8 | flags u16 | len u32 | body[len];  reply: magic[4] | cmd|reply_flag u8 | seq u8 | status i16 | len u32 | body[len]
+magic = "DKB1"
+reply_flag = 0x40   # set in the command byte of a reply
+header = 12         # bytes of a request header and of a reply header
+data_max = 65536    # bytes of one DATA request (offset u32 + up to this many data bytes, a multiple of 512 except the last)
+align = 512         # DATA offsets and lengths are multiples of this, except the last piece
+vid = 0x1935        # USB vendor id of Elektron
+class = 0xFF        # interface class of the bulk interface
+packet = 512        # the bulk packet size (high speed). An OUT transfer whose length is a multiple of this is followed by a zero-length OUT transfer (ZLP): the device RX buffers (16 KiB multi-page dTDs) complete only when full or on a short packet. The device keeps ZLT on for EP2 IN: after a reply that is a multiple of this the host receives a zero-length IN transfer, which means "no bytes", never end or error
+nonce_len = 8       # bytes of the nonce of the identity handshake: SET_NONCE over SysEx, then INFO returns it (body: version u8, flags u8, reserved u16, data_max u32, align u32, nonce[8])
+frame_slack = 64    # a frame whose body length exceeds data_max + 4 + this is a protocol error: fatal, the link is closed, no resync
+
+[protocol.bulk.flags]     # bits of the `flags` u16 of a request header (BEGIN)
+REPLACE = 0x0001    # the destination may exist: the device replaces it atomically at END (DN2: the store's replace commit; DT2: temp file, then rename); a failed or aborted upload keeps the old file. Clear: an existing file gives E_EXISTS
+
+[protocol.bulk.commands]  # never reuse or renumber (additive only)
+INFO = 0x01         # reply body: version u8, flags u8, u16 reserved, u32 data_max, u32 align, nonce[8] (20 bytes)
+BEGIN = 0x02        # body: root u32, path (NUL-terminated), size u32, expected hash 4 bytes (all zero: none)
+DATA = 0x03         # body: offset u32, then the bytes; the next offset only
+END = 0x04          # reply body: the device's hash|1 of the file (4 bytes, big-endian)
+ABORT = 0x05        # drop the open file
+VERIFY = 0x06       # reserved, not implemented by usb-fast: the reply is E_PROTO (the host verifies over SysEx: DN2 VERIFY, DT2 file info; both are device-CPU bound with tiny replies)
 
 [protocol.status]   # reply status codes of the upload commands (0 = ok); never renumber
 E_MSG = { code = -50, text = "body too short or malformed" }
@@ -978,6 +1058,8 @@ E_SET_FULL = { code = -67, text = "the settings area is full" }
 E_SET_NOKEY = { code = -68, text = "no such settings key (or no settings record)" }
 E_SET_VALUE = { code = -69, text = "a settings value is too long, or the buffer is too small" }
 E_SET_OFF = { code = -70, text = "settings store off: an older store reaches its area, or no store" }
+E_FILE_IN_USE = { code = -71, text = "a sample is still loading from that file: wait and try again" }
+E_AGAIN = { code = -72, text = "usb_bulk_send: the engine refused and nothing is in flight; wait for the wake, retry" }
 
 [protocol.caps]     # INFO capability bits (bit numbers of the `caps` word)
 LOG = 0
@@ -1070,12 +1152,14 @@ E_NOMEM = { code = -8, text = "arena full" }
 E_INIT = { code = -9, text = "init returned non-zero" }
 E_LOADED = { code = -10, text = "a module of that name is loaded" }
 E_SLOT = { code = -11, text = "a slot it binds is taken" }
-E_BUSY = { code = -12, text = "a task is still inside the module" }
+E_BUSY = { code = -12, text = "a task is still inside the module, or the store is in use (try again)" }
 E_TOO_BIG = { code = -13, text = "larger than the staging buffer" }
 E_TABLE_FULL = { code = -14, text = "no free module record" }
 E_LOST = { code = -15, text = "the sample backing was lost and the reload failed" }
 E_POOL = { code = -16, text = "the sample pool is full" }
 E_CHANGED = { code = -17, text = "the sample file differs from the selection snapshot" }
+E_EXISTS = { code = -18, text = "the file exists already (file_create does not overwrite)" }
+E_CONTEXT = { code = -19, text = "the call is not allowed in this context (file_* run in an I/O step)" }
 E_NO_REGISTRY = { code = -20, text = "register records, but the image has no registry" }
 E_REG_DEVICE = { code = -21, text = "the records are for another device" }
 E_TYPE_RANGE = { code = -22, text = "machine type outside the range, or bad clone_of" }

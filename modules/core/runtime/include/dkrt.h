@@ -75,6 +75,8 @@
 #define DKRT_CARD_TOO_SMALL 5
 /* DkrtDiag.magic, "DIAG". */
 #define DKRT_DIAG_MAGIC 0x44494147u
+/* Store leases (dkrt_store_lease) that can be live at once, RAM only: a reboot clears them. The sample pool takes one per request and one per peak-window step (one at a time); its request count plus a reserve of 8 must fit (checked at compile time in the adapter). */
+#define DKRT_STORE_LEASES 24
 /* Entries of a dkrt_scan and rows of a dkrt_fit. */
 #define DKRT_SCAN_MAX 32
 /* DkrtScan.flags: the file's header does not refuse this runtime or device (a file that is not a .dkm or cannot be read passes: the runtime names the reason at boot). */
@@ -110,12 +112,14 @@
 #define DKRT_E_INIT (-9)                 /* init returned non-zero */
 #define DKRT_E_LOADED (-10)              /* a module of that name is loaded */
 #define DKRT_E_SLOT (-11)                /* a slot it binds is taken */
-#define DKRT_E_BUSY (-12)                /* a task is still inside the module */
+#define DKRT_E_BUSY (-12)                /* a task is still inside the module, or the store is in use (try again) */
 #define DKRT_E_TOO_BIG (-13)             /* larger than the staging buffer */
 #define DKRT_E_TABLE_FULL (-14)          /* no free module record */
 #define DKRT_E_LOST (-15)                /* the sample backing was lost and the reload failed */
 #define DKRT_E_POOL (-16)                /* the sample pool is full */
 #define DKRT_E_CHANGED (-17)             /* the sample file differs from the selection snapshot */
+#define DKRT_E_EXISTS (-18)              /* the file exists already (file_create does not overwrite) */
+#define DKRT_E_CONTEXT (-19)             /* the call is not allowed in this context (file_* run in an I/O step) */
 #define DKRT_E_NO_REGISTRY (-20)         /* register records, but the image has no registry */
 #define DKRT_E_REG_DEVICE (-21)          /* the records are for another device */
 #define DKRT_E_TYPE_RANGE (-22)          /* machine type outside the range, or bad clone_of */
@@ -530,8 +534,17 @@ void dkrt_poll_remove(uintptr_t f);
 /* Look a store file up by path (NUL-terminated) and fill out: OK, E_NOT_FOUND (no store, no such file, a folder), or a card error. It reads the store headers and scans the table through the runtime's staging buffer, so call it only at the start of a load, not while a staged module read is in progress. A file of size 0 is found. */
 int32_t dkrt_store_stat(const uint8_t *path, DkrtStoreFile *out);
 
+/* dkrt_store_stat that also leases the file's sectors for the caller until dkrt_store_unlease: the lease is taken in the same store-lock hold that finds the file, so out is the committed file. While the lease lives, an upload (SysEx or SDK) that would replace or delete the file, or CLEAR the store, is refused with E_FILE_IN_USE, and no new file is given its sectors. Returns the lease id (> 0), E_NOT_FOUND (no store, no such file, a folder), E_NOMEM (the table is full: fail the load, do not wait) or E_BUSY (the store stayed in use for about 3 s). Any task may call it (it does not use the staging buffer). Release the lease when the load ends, whatever its result. */
+int32_t dkrt_store_lease(const uint8_t *path, DkrtStoreFile *out);
+
+/* End a lease of dkrt_store_lease. Any task, never waits; an id that is not live is ignored. */
+void dkrt_store_unlease(int32_t id);
+
 /* Read count sectors of the file f, starting at its sector `sector`, into dst (512 bytes per sector). dst must be 16-byte aligned (E_CONTRACT otherwise). count is 1 to 128 and the range lies inside the file, rounded up to whole sectors (E_RANGE otherwise). No sha check, no staging buffer: the caller owns dst. OK or E_READ. */
 int32_t dkrt_store_read(const DkrtStoreFile *f, uint32_t sector, uint32_t count, uint8_t *dst);
+
+/* Wake the I/O job `id` (api->io_wake for an adapter): the job's next step runs, or, when it has not yet reached its DK_IO_WAIT, that wait does not sleep. Unknown ids are ignored. Safe in an interrupt handler. core/usb-bulk calls it when a receive buffer is full. */
+void dkrt_io_wake(int32_t id);
 
 /* The header fields of the .dkm that starts at store sector first (DkrtScan.first) into out: OK, E_FORMAT when the file is not a .dkm, or E_READ / E_NOT_FOUND when its first sector cannot be read. The runtime does the card read itself. */
 int32_t dkrt_module_header(uint32_t first, DkrtModuleHeader *out);

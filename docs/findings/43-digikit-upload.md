@@ -2,9 +2,9 @@
 
 Lane r4, 2026-10-18. Spec: `docs/design/digikit-upload.md`; store format version 2: `docs/design/digikit-store.md`; routes and the receive
 path: finding 42. Marks: **[V]** verified here, **[D]** measured or read once, **[O]** open, **[C]** corrects an earlier claim. The hook sites and the step 7 call site
-are **[V]** (a second agent checked them against the image bytes, 2026-10-18); nothing ran on a device. What is **[D]** was run in the
-emulator by the kept scenarios below. The emulator models USB at message level (it hands bytes to the firmware's cable 0 receive callback,
-finding 42 stage 3), so no rate here is a device rate.
+are **[V]** (a second agent checked them against the image bytes, 2026-10-18). What is **[D]** was run in the emulator by the kept scenarios below,
+except the section "On a real Digitone II (2026-11-10)", which is the only hardware measurement. The emulator models USB at message level (it hands
+bytes to the firmware's cable 0 receive callback, finding 42 stage 3), so its rates are model rates.
 
 ## What was built
 
@@ -108,7 +108,7 @@ the scenario is 12 to 21 s of one process.
 ## Rate in the emulator **[D]**
 
 The runtime hashes the bytes as DATA brings them, and END does not read the file back. The current figures are in "Upload speed in the emulator" below: DATA about 51 instructions a byte, VERIFY 7
-(store version 4, the +Drive content hash; with SHA-256 they were 143 and 99). A 1 MiB file at 132 M instructions per second and a real core's 190 M: delivery of 384 bytes per 16,500 instructions (a high-speed
+(store version 4, the +Drive content hash; with SHA-256 they were 143 and 99). A 1 MiB file at 132 M instructions per second: delivery of 384 bytes per 16,500 instructions (a high-speed
 microframe) and 384 per 1,500 give the same count, so the device's work is the limit, not the delivery. The first implementation (a bytewise SHA-256) took about 570 instructions a byte, 91 % of it the hash.
 
 **This is not a device rate**: the emulator does not model the eMMC program time, the cache misses, the USB packet split (stage 2) or the
@@ -119,12 +119,12 @@ that the card holds the file).
 
 Verdict: **possible, not needed for modules, worth it only for samples; two to three agent days, medium risk, hardware-only proof.**
 
-- **Need.** 1.4 MB/s of file data is 1.6 MB/s of MIDI bytes (8-in-7) and 2.13 MB/s on the wire (USB-MIDI event packing, 3 of 4 bytes):
+- **Need.** (planning figure; the measured cap is lower) 1.4 MB/s of file data is 1.6 MB/s of MIDI bytes (8-in-7) and 2.13 MB/s on the wire (USB-MIDI event packing, 3 of 4 bytes):
   17 Mbit/s, about 4,200 packets of 512 bytes per second. High speed carries that easily; full speed (64-byte packets, 1 ms) does not.
-  Whether the port runs at high speed is **[O]** (finding 42 section 1).
+  The port runs at high speed (measured, finding 42 section 1).
 - **Stock cost.** Per packet: the deferred-call task `FUN_40004504` (about 95 instructions per 4-byte event, 12.2 k per packet), the
-  assembler (about 24 per byte), then gather and unpack (about 30 per byte): about 100 instructions per payload byte, 74 % of a core at
-  1.4 MB/s with no other load. That is the 1.0 to 1.4 MB/s ceiling of finding 42.
+  assembler (about 18 per byte), then gather and unpack (about 30 per byte). The measured cap on a Digitone II is 0.857 MB/s of SysEx bytes (section
+  "On a real Digitone II").
 - **Own path.** An event unpack that keeps 3 payload bytes per event (6 to 8 instructions per event), an 8-in-7 unpack (20 to 25 per 8
   bytes) and a store into a ring: about 2.5 k instructions per packet, **8 to 10 per data byte**, 7 % of the core at 1.4 MB/s. The CPU
   ceiling is then 15 to 19 MB/s; the limits become the host's MIDI driver and the eMMC write rate (both **[O]**).
@@ -167,18 +167,15 @@ instructions per second) and the controller thread's CPU seconds.
   of the store", below). That is a ceiling of about **1.0 MB/s in model time**; the 8 MB run at one request in flight reached 0.80 (9.97 model seconds), the rest being the wait between two requests
   (about 10 ms of 41 ms for a 32 KiB chunk); with two in flight it reaches 1.14 (section "Two requests in flight", below), so the 1.0 is about 10 % low. VERIFY (read back and hash) is 7.1 per byte: 7.4 MB/s in model time. Before version 4 the file hash was SHA-256 at 99 per byte
   (ColdFire has no rotate: 6,300 instructions a block): DATA 143, 0.32 MB/s, VERIFY 99, 0.53 MB/s.
-- **The real device** has 190 M instructions per second and 37 to 47 % firmware load (finding 42), so 101 to 120 M are free: estimates (the eMMC program time and the
-  USB path were not measured), for the digikit store about 2.0 to 2.3 MB/s for the guest's work alone and 1.2 to 1.4 MB/s with the 10 ms a chunk of wait that the model shows
-  (1.4 to 1.6 if that wait scales with the clock); VERIFY 14 to 17 MB/s; upload and VERIFY together 1.7 to 2.0 MB/s. Before version 4: 0.7 to 0.8 MB/s (0.57 to 0.65 with the wait),
-  VERIFY 1.0 to 1.2, together 0.42 to 0.49. The stock +Drive write takes 2.76 model seconds a MB at 16 KiB requests (5.4 at 2 KiB): 0.36 MB/s of model time, 0.52 MB/s at the real clock, and the 0.5 MB/s that
-  finding 42 measured on a real DT2 is the same. USB high-speed bulk (35 MB/s) is not the limit; if the port ran at full speed it would be (about 0.8 MB/s of payload
-  after the 3/4 event packing and 7/8).
+- **The real device** (measured, section "On a real Digitone II"): the digikit store takes 0.60 MB/s at depth 1 and 2; VERIFY runs at 7.4 MB/s, as in the model. The device leaves about
+  53 M instructions per second free (inferred from VERIFY), not the 101 to 120 M an earlier estimate used. The stock +Drive write takes 2.76 model seconds a MB at 16 KiB requests (5.4 at 2 KiB):
+  0.36 MB/s of model time, 0.52 MB/s at the real clock, and the 0.5 MB/s that finding 42 measured on a real DT2 is the same. USB high-speed bulk (35 MB/s) is not the limit.
 
 ### Two requests in flight (lane upload-depth, 2026-11-07) **[D]**
 
 `DkSession.put` (TypeScript: the desktop app, the web page, the tools and the device tests) keeps `depth` DATA requests in flight. The depth comes from the transport (`dkupload-core.ts`
 `DkTransport.dataDepth`, default 1; `EmuUsbTransport` sets `EMU_DATA_DEPTH = 2`, the one place to change it; `DkSessionOptions.depth` overrides). A transport to a device leaves it out: depth 2 is
-**not enabled on hardware**. The Rust `packages/dkupload` `Session` already kept two in flight (`put.rs`) and was not changed. DT2 samples use the stock MidiRpc and were not touched.
+not enabled on hardware by default (it ran without errors on a Digitone II and gave no gain: section "On a real Digitone II"). The Rust `packages/dkupload` `Session` already kept two in flight (`put.rs`) and was not changed. DT2 samples use the stock MidiRpc and were not touched.
 
 **Does depth 2 stall the main loop? No [D].** DN2 1.12, 8,000,000 bytes, 32 KiB chunks, hash verified, a fresh daemon for each run, `stall.mjs` and `stall2.mjs` in `out/native/runs/20261107-depth/`
 (a `status` poll every 100 ms for the heartbeat): depth 1, 319 heartbeat passes in 10.0 model seconds (31.9 a second), no `stall` event; depth 2 (two runs), 205 and 198 passes in 6.74 and 6.71
@@ -196,7 +193,7 @@ and the firmware's other tasks run when it pends; the UI loop passes at the same
 two of ours: `tx_room` drops a reply only when the host does not read (finding 43, "No unbounded spin on a reply"); a dropped reply is a lost reply, which the host handles (below). The runtime's DATA rule
 (next offset, or the exact repeat of the last chunk) is what makes it safe: a request that arrives after a failed one gets `E_OFFSET`, and nothing out of order is written.
 
-**Decision: safe on the emulator, not provable for hardware.** What the emulator does not show: the real USB MIDI driver of the host may hand both messages to EP1 OUT at once (the emulator's delivery,
+**Decision: safe on the emulator; on hardware it ran without errors (4 runs) and gives no gain.** What the emulator does not show: the real USB MIDI driver of the host may hand both messages to EP1 OUT at once (the emulator's delivery,
 384 bytes per microframe, is gentler); whether the eMMC program time of the real block write pends the MIDI task (yielding) or spins; whether the real DPC task shares work with the assembler. The memory
 argument (half the pool) and the in-order rule hold on any link, so a protocol failure is not expected, but nothing ran on a device. Hence the flag: depth 2 on `EmuUsbTransport`, depth 1 on the
 real MIDI transports until a device run (set `dataDepth = 2` on that transport, or `depth` in the session options, to try it; the Rust host's two in flight is the same experiment). No runtime change.
@@ -231,9 +228,33 @@ Depth 2 is 43 % faster in model time and 29 % in wall time for the large file; 2
 1.22 at depth 2: the difference, about 4 %, is the drain between windows (31 of them, one wait each); a window of 16 would halve it and make another request wait longer. END (the time of a commit) and the
 VERIFY figures did not change.
 
-**Estimate for the device (not measured; the method of "The ceiling").** At depth 2 the wait of 10 ms a chunk is gone, so the rate is the guest's work alone: 2.0 to 2.3 MB/s for the digikit store
-(before: 1.2 to 1.4, with the wait), less the eMMC program time and the USB path that nothing here measured. A 50 MB sample would take about 25 s rather than 40 s; a module of 100 kB is the same
-(one chunk of three, END dominates).
+**On the device** depth 2 gives no gain (0.600 against 0.595 MB/s): the device CPU is the limit, not the wait between requests (next section but one). A 50 MB sample takes about 85 s; a module of
+100 kB is below 0.2 s of DATA, and END dominates.
+
+### On a real Digitone II (2026-11-10) **[D]**
+
+Digitone II OS 1.12 with runtime 0.5.6, macOS, the workbench dkmidi bridge (`packages/dkmidi`, `DkSession` over `ProcessTransport`). IOKit reports high speed (Device Speed 2, USBSpeed 3).
+This is the first hardware run of depth 2.
+
+| measurement | result |
+|---|---|
+| digikit store upload, 8,000,000 bytes, 32 KiB chunks, depth 1 | 13.44 and 13.43 s, 0.595 and 0.596 MB/s, median 54.6 ms between acks |
+| the same at depth 2 (4 runs, no errors, all VERIFY ok) | 13.33 s twice, 0.600 MB/s, median 54.0 ms: no gain |
+| VERIFY in 1 MiB ranges | 1.07 to 1.08 s per 8 MB, 7.4 MB/s, equal to the emulator's model-time figure |
+| round trip of INFO | 2.0 to 2.1 ms (first one 24.8 ms) |
+| ignored SysEx (`F0 7D 00 00 0x11... F7`, no handler), 8 MB back to back, then one INFO | 0.857 MB/s of SysEx bytes for 37,500-byte messages (twice), 0.831 for 4,096-byte messages |
+| DATA, as SysEx bytes | 0.694 MB/s (0.60 MB/s of payload): our handler (unpack, hash, card write, reply) adds about 19 % |
+| overlap test: (A) 8 MB ignored SysEx alone / (B) 8 ranged VERIFYs of 1 MiB alone / (C) both queued at once | 9.81 s / 1.05 s / 10.88 s; A + B = 10.86 s: no overlap (twice) |
+
+Cause: the deferred-call task (priority 9) splits the USB-MIDI events and assembles the SysEx, and it uses all free CPU. Work in the MIDI task (priority 7, our handler and VERIFY) cannot overlap with it. The device CPU
+is the limit, not the host and not the protocol.
+
+Emulator counts for comparison (`upload_bench` daemons, `midi.usb.in` 384 bytes per 16,500 instructions): an ignored SysEx costs 20.5 work instructions per SysEx byte on DN2 1.12 and DT2 1.17, the same for 37,500 and
+4,096-byte messages (background load 79.4 M/s on DN2, 71.3 M/s on DT2); DATA costs 43.8 per payload byte (38.3 per SysEx byte). The emulator injects at the firmware's EP1 callback and skips the ISR, the dTD callback and the
+deferred-call event split `FUN_40004504` (about 32 instructions per SysEx byte by the static count, about 95 per 4-byte event). With the split added and about 53 M instructions per second free on the device (inferred
+from VERIFY matching the model), the predicted caps are 1.0 MB/s for ignored SysEx and 0.76 MB/s for DATA, against 0.857 and 0.694 measured.
+
+Conclusions: the SysEx path is CPU-bound in the firmware's receive chain; verification is about 8 % of the time; request depth does not help. The way forward is `docs/plans/usb-fast.md` (a vendor bulk endpoint).
 
 ### Left **[O]**
 
@@ -242,7 +263,7 @@ VERIFY figures did not change.
 - Guest work: the firmware's own SysEx chain (event task, assembler, gather: about 40 to 60 instructions a byte) needs the tier-1 hook of step 7 above (hardware-only
   proof). With the file hash at 7 it is now most of the 51 instructions a byte. The wait between chunks is hidden by two requests in flight (done, section "Two requests in flight").
 - A host-side shortcut (writing the store through the card model, no guest) would be instant in the workbench but tests nothing of the protocol; not done.
-- On a device nothing was measured: the real USB MIDI path, a larger RPC chunk on hardware, and the eMMC program time.
+- On a device, not measured: a larger RPC chunk (the fixed cost per request is small against the cap) and the eMMC program time as a separate share.
 
 ### The file hash of the store (store version 4, lane fast-hash, 2026-11-07) **[D]**
 
@@ -274,12 +295,10 @@ FILEHASH, bit 12). `.dkm` files keep their own header SHA-256 (the loader checks
 
 ## Open **[O]**
 
-- Nothing ran on a device (depth 2 included: the real MIDI transports stay at one request in flight, "Two requests in flight"). The python-rtmidi transport is untested against hardware. Whether the real MIDI task handles a 37 kB SysEx
-  without the host's pacing (the 160 KiB block pool and the DPC queue) is a hardware question; the emulator's delivery is gentler than a
-  host driver.
+- Hardware: the workbench dkmidi bridge ran on one Digitone II (section "On a real Digitone II"); the Digitakt II and the python-rtmidi transport were not run. The real MIDI transports stay at depth 1 by default.
 - **[C]** The three items that stood here (a reply into a full TX ring, the menu's reader against a commit, the CLEAR double fault) are
   closed in the last section ("Phase 8 safety"). What stays open from them: the TX analysis is static and the emulator does not model the
-  USB IN endpoint, so a host that really never reads has not been run **[O]**; nothing ran on a device.
+  USB IN endpoint, so a host that really never reads has not been run **[O]**.
 - A store is limited to 256 files for upload commands.
 - The exporter treats a store file named like a deleted folder file by the three-way rule only; a card built from an older folder than
   the one the export meets is reported as `kept`.

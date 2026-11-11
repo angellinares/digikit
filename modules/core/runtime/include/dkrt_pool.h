@@ -27,7 +27,7 @@ uint32_t dkpool_version(void);
 #define DKPOOL_E_FORMAT (-5)
 #define DKPOOL_E_LOST (-15)
 #define DKPOOL_E_POOL (-16)
-#define DKPOOL_E_CHANGED (-17) /* runtime only: the file differs from the selection snapshot */
+#define DKPOOL_E_CHANGED (-17) /* the file differs from the selection snapshot (runtime), or the store file changed after the load (dkpool_window_step) */
 #define DKPOOL_E_CONTRACT (-48) /* the caller broke the contract (no free request, token counter exhausted) */
 #define DKPOOL_DONE 0   /* dkpool_load finished, `out` is filled */
 #define DKPOOL_QUEUED 1 /* dkrt_pool_done(req, result) follows later */

@@ -314,7 +314,20 @@ impl Backend {
         }
         Ok(())
     }
+    /// One step. The store phases (open, read a page, rewind) hold the store lock for the step; when an SDK write or a SysEx command holds it, the step
+    /// is `Pending` and the next UI pass asks again (the caller's contract is unchanged).
     unsafe fn step(&mut self) -> Result<Outcome<FileEntry>, i32> {
+        let store = self.phase >= 1 && self.phase <= 3;
+        if store && !crate::store_writer::try_lock() {
+            return Ok(Outcome::Pending);
+        }
+        let r = self.step_inner();
+        if store {
+            crate::store_writer::unlock();
+        }
+        r
+    }
+    unsafe fn step_inner(&mut self) -> Result<Outcome<FileEntry>, i32> {
         let fp = addr_of_mut!(FP) as *mut u8;
         let scratch = addr_of_mut!(SCRATCH) as *mut u8;
         if self.phase == 1 {

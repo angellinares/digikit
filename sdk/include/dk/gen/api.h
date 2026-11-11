@@ -16,6 +16,12 @@ typedef void dk_intro_done(void *ctx);
 /* The function type `intro_frame` of [api.types]. */
 typedef const uint8_t *dk_intro_frame(uint32_t tick, void *ctx);
 
+/* The function type `io_done` of [api.types]. */
+typedef void dk_io_done(uint8_t *ctx, int32_t status);
+
+/* The function type `io_step` of [api.types]. */
+typedef int32_t dk_io_step(uint8_t *ctx);
+
 /* The function type `job_done` of [api.types]. */
 typedef void dk_job_done(uint8_t *ctx, int32_t status);
 
@@ -69,10 +75,21 @@ typedef struct dk_api {
     int32_t (*settings_put)(uint32_t client, const char *key, const void *value, uint32_t len); /* (api 1.9) Set `key` to the `len` bytes (0 to 1024) at `value`; the card is written 2 s after the last change. Returns 0, E_SET_KEY (stale handle or bad key), E_SET_VALUE, E_SET_FULL or E_SET_OFF. The runtime stores the key as `<module name>/<key>`; the module name and the key together are at most 47 characters. UI task only, not a service command handler. */
     int32_t (*settings_remove)(uint32_t client, const char *key); /* (api 1.9) Remove `key`: returns 0 (also when it was not there), E_SET_KEY (stale handle or bad key) or E_SET_OFF. UI task only, not a service command handler. */
     int32_t (*intro_take)(dk_intro_frame *frame, dk_intro_done *done, void *ctx, uint32_t ticks); /* (api 1.9) Init-only: replace the stock boot animation. `frame(tick, ctx)` returns the 1024-byte native bitmap of tick 0 .. ticks-1 (30 ticks a second), or NULL to end the animation (the last frame stays); it runs on the intro task, must not block and must not call any dk_api function. `done(ctx)` (may be NULL) runs once in the UI task at the first UI pass: free the buffer there. `ticks` is 1 to 300. Returns 0, E_NOT_FOUND outside `dkm_init`, E_CONTRACT (no frame, bad ticks), E_BUSY (taken already) or E_BOOT_ONLY (the intro is over). See dk/intro.h. */
+    int32_t (*file_create)(uint32_t root, const char *path, uint32_t size, const uint8_t *hash4, uint32_t flags); /* (api 1.10) I/O step only (E_CONTEXT in any other task, including a module's code running in the UI or MIDI task while a step waits): open the one write session for the file `path` of `size` bytes under `root` (DK_FILES_STORE; DK_FILES_SAMPLES is the store's samples/ folder on the Digitone II and the stock +Drive on the Digitakt II, which needs core/plusdrive-write: E_CONTRACT without it). `hash4`: NULL, or the expected file hash (`hash|1`, 4 bytes big-endian: dk/hash32.h); file_close then checks it. `flags`: 0 or DK_FILE_REPLACE (1). Without DK_FILE_REPLACE an existing file is E_EXISTS. With it the old file stays readable until file_close swaps in the new one (a power cut or file_abort leaves the old file); E_FILE_IN_USE while a reader still reads the old file. Returns a handle > 0 owned by this module, or E_BUSY (a write session is open, or the store stayed in use for about 3 s: try again). A session with no write for 20 s is aborted by the runtime, E_PATH, E_FULL, E_NOSTORE, E_INUSE, E_WRITE. See dk/file.h. */
+    int32_t (*file_write)(int32_t h, uint32_t offset, const uint8_t *buf, uint32_t len); /* (api 1.10) I/O step only: write `len` bytes at `offset`, the next byte of the file. `buf` is 16-byte aligned; `len` a multiple of 512 except for the last piece of the file (the tail sector is padded with zeros). Any length: it is split into 32 KiB writes. Returns 0, E_STATE (no such session), E_OFFSET, E_LENGTH (past `size`, or a short piece before the end), E_WRITE, E_CONTRACT (unaligned buf), or E_BUSY (the store stayed in use for about 3 s: nothing of this call was written; call again). The store lock is held for the whole call, so once a piece is written E_BUSY is never returned. */
+    int32_t (*file_close)(int32_t h, uint8_t *hash_out); /* (api 1.10) I/O step only: end the file. All `size` bytes must have been written (E_LENGTH) and match `hash4` when it was given (E_HASH); the table is committed (power-cut safe). `hash_out` (4 bytes, may be NULL) gets the file hash of the bytes written, checks or not. The session is closed whatever the result, except for E_BUSY (try again). Returns 0 or a status. */
+    int32_t (*file_abort)(int32_t h);        /* (api 1.10) I/O step only: drop the session and the partial file (it was never in the table). Returns 0 or E_STATE. */
+    int32_t (*file_delete)(uint32_t root, const char *path); /* (api 1.10) I/O step only: remove a file or folder entry. Returns 0, E_NOFILE, E_FILE_IN_USE (a reader, such as the sample pool loading it, still reads the file: try again later), E_BUSY (a write session is open, or the store is in use) or a path or store status. */
+    int32_t (*io_post)(dk_io_step *step, dk_io_done *done, uint8_t *ctx); /* (api 1.10) Run `step(ctx)` on the runtime's I/O task (priority 3, its own stack; <dk/io.h>). The step may block and call file_*. It returns DK_IO_MORE (run again), DK_IO_WAIT (sleep until io_wake), 0 (done) or a negative error. `done(ctx, status)` runs once in the UI task. Task context only (not an ISR). Returns a job id > 0, E_CONTRACT (no step) or E_BUSY (8 jobs). */
+    int32_t (*io_cancel)(int32_t id);        /* (api 1.10) Cancel a job of this module: a queued job never runs, a running one stops after its step returns; `done` gets DK_IO_E_CANCELLED. Returns 0 or E_NOT_FOUND. */
+    void (*io_wake)(int32_t id);             /* (api 1.10) Wake a job whose step returned DK_IO_WAIT. Callable from an interrupt handler, an adapter or any task. Unknown ids are ignored. */
+    void (*hash32_init)(uint8_t *state);     /* (api 1.10) Start the file hash (the Elektron +Drive content hash, dk/hash32.h) in the caller's 28-byte `dk_hash32`. */
+    void (*hash32_update)(uint8_t *state, const uint8_t *p, uint32_t n); /* (api 1.10) Feed `n` bytes. */
+    uint32_t (*hash32_finish)(uint8_t *state); /* (api 1.10) The file hash `hash|1`: the value the store keeps (4 bytes big-endian in a table slot). The state is spent. */
 } dk_api;
 
 #if UINTPTR_MAX == 0xffffffffu
-_Static_assert(sizeof(dk_api) == 168, "dk_api size");
+_Static_assert(sizeof(dk_api) == 212, "dk_api size");
 _Static_assert(offsetof(dk_api, version) == 0, "dk_api.version");
 _Static_assert(offsetof(dk_api, size) == 4, "dk_api.size");
 _Static_assert(offsetof(dk_api, device) == 8, "dk_api.device");
@@ -115,6 +132,17 @@ _Static_assert(offsetof(dk_api, settings_get) == 152, "dk_api.settings_get");
 _Static_assert(offsetof(dk_api, settings_put) == 156, "dk_api.settings_put");
 _Static_assert(offsetof(dk_api, settings_remove) == 160, "dk_api.settings_remove");
 _Static_assert(offsetof(dk_api, intro_take) == 164, "dk_api.intro_take");
+_Static_assert(offsetof(dk_api, file_create) == 168, "dk_api.file_create");
+_Static_assert(offsetof(dk_api, file_write) == 172, "dk_api.file_write");
+_Static_assert(offsetof(dk_api, file_close) == 176, "dk_api.file_close");
+_Static_assert(offsetof(dk_api, file_abort) == 180, "dk_api.file_abort");
+_Static_assert(offsetof(dk_api, file_delete) == 184, "dk_api.file_delete");
+_Static_assert(offsetof(dk_api, io_post) == 188, "dk_api.io_post");
+_Static_assert(offsetof(dk_api, io_cancel) == 192, "dk_api.io_cancel");
+_Static_assert(offsetof(dk_api, io_wake) == 196, "dk_api.io_wake");
+_Static_assert(offsetof(dk_api, hash32_init) == 200, "dk_api.hash32_init");
+_Static_assert(offsetof(dk_api, hash32_update) == 204, "dk_api.hash32_update");
+_Static_assert(offsetof(dk_api, hash32_finish) == 208, "dk_api.hash32_finish");
 #endif
 
 /* Imports: names the loader resolves in the runtime's table (Api.import gives the address at run time). */
@@ -133,6 +161,24 @@ int32_t input_key(uint32_t code, uint32_t down);
 
 /* Turn an encoder by `delta`. Needs core/input: the import is not found without it. */
 int32_t input_turn(uint32_t encoder, int32_t delta);
+
+/* Add the vendor bulk interface (interface 2, EP2 OUT and IN, 512-byte packets) to USB MIDI mode and re-enumerate. `io_id` is the I/O job that usb_bulk_* wakes when a receive buffer is full. Idempotent for the same job; another job gets E_BUSY (one owner). Task context. 0, or a negative error (E_STATE: the device is not in USB MIDI mode (USB CONFIG), nothing was changed, E_CONTRACT: the firmware's USB tables are not the stock ones, E_NOMEM: no free slot on the runtime's per-pass list). See <dk/usb_bulk.h>. Needs core/usb-bulk: the import is not found without it. */
+int32_t usb_bulk_enable(int32_t io_id);
+
+/* The job that called usb_bulk_enable goes away (call it in dkm_fini): the adapter stops waking it and another job may enable the interface. The interface stays in the USB configuration until the next boot. 0, or E_STATE for another job. Needs core/usb-bulk: the import is not found without it. */
+int32_t usb_bulk_disable(int32_t io_id);
+
+/* The next full receive buffer, in arrival order: 1 and `*buf`, `*len` set (the buffer is yours until usb_bulk_release), or 0 when none is full. Never blocks. A buffer holds the bytes of one USB transfer: up to 16 KiB, ended by a short packet or a full buffer, so a message of a multiple of 512 bytes must be followed by a zero-length packet from the host. Needs core/usb-bulk: the import is not found without it. */
+int32_t usb_bulk_take(uint8_t **buf, uint32_t *len);
+
+/* Give a buffer from usb_bulk_take back: it is queued for the next transfer. 0, or E_STATE for a pointer that is not a taken buffer. Needs core/usb-bulk: the import is not found without it. */
+int32_t usb_bulk_release(uint8_t *buf);
+
+/* Send `len` bytes (1 to 16384) to the host on EP2 IN. The bytes are copied: `buf` is free when the call returns. 0, E_BUSY when both send slots are in flight (the job is woken when one completes), E_AGAIN (-72) when nothing is in flight and the engine refused the transfer (the job is woken within a few milliseconds to try again), E_STATE when the host is not connected or the bus was reset during the call, E_LENGTH. Needs core/usb-bulk: the import is not found without it. */
+int32_t usb_bulk_send(const uint8_t *buf, uint32_t len);
+
+/* State word: bit 0 enabled, bit 1 connected (the host configured interface 2), bit 2 wrong mode (the device is not in USB MIDI mode; read live), bits 8..15 receive buffers full, bits 16..23 send slots in flight, bits 24..31 the reset count (it changes when the USB bus is reset or the host disconnects; a transfer in progress is void then). Needs core/usb-bulk: the import is not found without it. */
+uint32_t usb_bulk_state(void);
 
 /* Set the one per-block callback of core/dsp-link (0: off): `void cb(const volatile u16 *rec)`, called every block in the block interrupt with the copy of the previous DSP reply record. Keep it short: a plain C function, no allocation, no logging. Clear it in `fini`. Without core/dsp-link the call does nothing. Needs core/dsp-link: the import is not found without it. */
 void dl_set_tick_cb(uint8_t *cb);
@@ -175,6 +221,6 @@ void dkm_slot_5(const dk_api *api);
 void dkm_slot_6(const dk_api *api);
 void dkm_slot_7(const dk_api *api);
 
-#define DK_API_MINOR 9
+#define DK_API_MINOR 10
 
 #endif /* DK_GEN_API_H */

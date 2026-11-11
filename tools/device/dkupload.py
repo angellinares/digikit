@@ -16,6 +16,7 @@
     uv run python -m tools.device.dkupload --emu remote state              # digikit/remote (docs/plans/remote-control.md): the module state
     uv run python -m tools.device.dkupload --emu remote key 10             # press and release a key (the device file's panel code); --hold S keeps it down
     uv run python -m tools.device.dkupload --emu remote turn 1 -5          # turn encoder 1 by -5 detents
+    uv run --with python-rtmidi python -m tools.device.dkupload --port Digitone cmd 0x2c   # a module command: number, hex body ("01 02"); prints the reply
 
 `put FILE [PATH]` streams FILE (read from disk in chunks, so a large sample is not held in memory) to PATH (default: `modules/<file name>`) in chunks of at most 32 KiB, two requests in flight, and
 checks the file's hash on the device (END reads the staged file back from the card). `--chunk` and `--depth` set the chunk size and the
@@ -854,6 +855,19 @@ def hex_lines(data: bytes, base: int = 0) -> list[str]:
     return out
 
 
+def reply_lines(status: int, body: bytes) -> list[str]:
+    """The `cmd` subcommand's output: the status, the body as hex lines with offsets, and (body length a multiple of 4) its big-endian u32 words
+    in hex and signed decimal."""
+    out = [f"status: {STATUS.get(status, status)}", f"body: {len(body)} bytes"]
+    out += hex_lines(body)
+    if body and len(body) % 4 == 0:
+        for i in range(0, len(body), 4):
+            (u,) = struct.unpack_from(">I", body, i)
+            (s,) = struct.unpack_from(">i", body, i)
+            out.append(f"word {i // 4}: {u:#010x}  {s}")
+    return out
+
+
 def _emu(run_dir: Path | None = None) -> Any:
     from tools.control.digi_client import Emu
 
@@ -898,7 +912,9 @@ def main(argv: list[str] | None = None) -> int:
     p.add_argument("prefix", nargs="?")
     p = sub.add_parser("mkdir", help="make a folder in the store")
     p.add_argument("path")
-    p = sub.add_parser("mv", help="rename or move a file or an empty folder in the store")
+    p = sub.add_parser(
+        "mv", help="rename or move a file or an empty folder in the store"
+    )
     p.add_argument("src")
     p.add_argument("dst")
     sub.add_parser("modules")
@@ -946,6 +962,13 @@ def main(argv: list[str] | None = None) -> int:
     p.add_argument("--length", type=int, help="default: to the end of the file")
     p.add_argument(
         "-o", "--output", type=Path, help="write the bytes here (default: a hex dump)"
+    )
+    p = sub.add_parser(
+        "cmd", help="send one request (a module command) and print the reply"
+    )
+    p.add_argument("number", help="the command number, decimal or 0x-hex")
+    p.add_argument(
+        "hexbody", nargs="?", default="", help='the body as hex, e.g. "01 02"'
     )
     p = sub.add_parser(
         "remote", help="digikit/remote: state, key, turn, release (needs the module)"
@@ -1041,6 +1064,22 @@ def main(argv: list[str] | None = None) -> int:
             up.rm(args.path)
         elif args.cmd == "clear":
             up.clear()
+        elif args.cmd == "cmd":
+            try:
+                number = int(args.number, 0)
+                body = bytes.fromhex(args.hexbody)
+            except ValueError as e:
+                print(f"error: {e}", file=sys.stderr)
+                return 2
+            try:
+                status, rb = up.request(number, body)
+            except TimeoutError as e:
+                print(f"error: {e}", file=sys.stderr)
+                return 1
+            for line in reply_lines(status, rb):
+                print(line)
+            if status != 0:
+                return 1
         elif args.cmd == "remote":
             if args.rcmd == "state":
                 print(up.remote_state())

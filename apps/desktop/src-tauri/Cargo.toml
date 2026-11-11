@@ -29,6 +29,7 @@ digi-control = { path = "../../../packages/emulator/control" }
 device-profile = { path = "../../../packages/emulator/device-profile" }
 patchkit = { path = "../../../packages/patchkit" }
 dkmidi = { path = "../../../packages/dkmidi" }
+dkbulk = { path = "../../../packages/dkbulk" }
 
 [dev-dependencies]
 sha2 = "0.10"

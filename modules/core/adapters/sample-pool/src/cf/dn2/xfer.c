@@ -184,10 +184,19 @@ static void done(u8 *ctx, i32 status)
 
 /* ---- The UI task ------------------------------------------------------------------------------------------------------------------------ */
 
+void sp_unlease(SpReq *r)
+{
+    if (r->lease > 0) {
+        dkrt_store_unlease(r->lease);
+        r->lease = 0;
+    }
+}
+
 static void finish(i32 result)
 {
     SpReq *r = job.r;
     u32 req = r->req;
+    sp_unlease(r);   /* the job has read its last sector (it ended, or never ran) */
     if (result == 0) {
         DkrtStoreFile *f = &sp_files[r->blk];
         u32 i;
@@ -236,6 +245,7 @@ static SpReq *next_queued(void)
             continue;
         if (r->cancelled) {
             spa_abort(&sp_pool, r->blk);
+            sp_unlease(r);
             r->state = RQ_FREE;
             dkrt_pool_done(r->req, DKPOOL_E_LOST);
             continue;

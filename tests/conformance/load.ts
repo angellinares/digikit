@@ -20,6 +20,9 @@ export const runtimeModules: readonly RuntimeModule[] = loadRuntimeModules(repoR
   ids: process.env.DIGI_CONFORMANCE_MODULES,
 });
 
+// A module that needs a patched-in core module the `emulator` set does not carry loads on the set that does (its `requires`).
+const PATCH_SET: Record<string, string> = { 'digikit/usb-fast': 'device-usb' };
+
 // Each cell starts its own daemon. Sessions of a worker reuse one cached run dir (fast boot);
 // the store starts empty in every cell.
 export function conformanceSuite(device: Device): void {
@@ -36,7 +39,7 @@ export function conformanceSuite(device: Device): void {
     test(name, async () => {
       const options = liveOptions(device);
       const artifact = moduleArtifact(device, module.id);
-      const runtime = await startPatchedSession({ ...options, dsp: module.dsp ? 'sharc' : 'zero' }, name);
+      const runtime = await startPatchedSession({ ...options, patchSet: PATCH_SET[module.id], dsp: module.dsp ? 'sharc' : 'zero' }, name);
       try {
         await expectRuntimeBoot(runtime);
         await timePhase(

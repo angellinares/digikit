@@ -371,7 +371,7 @@ unsafe fn load_inner(path: *const u8) -> i32 {
         if r != OK {
             if dsp::retained() { return E_BUSY; }
             dsp::cancel(rec);
-            if !crate::files::retire(rec) { return E_BUSY; }
+            if !crate::files::retire(rec) || !retire_sdk(rec) { return E_BUSY; }
             arena::free(mem);
             m.used = 0;
             return r;
@@ -393,7 +393,7 @@ unsafe fn load_inner(path: *const u8) -> i32 {
     }
     let r = complete(rec, reg, reg_size, initaddr, mask, &fns);
     if r != OK {
-        if dsp::retained() || !crate::files::retire(rec) { return E_BUSY; }
+        if dsp::retained() || !crate::files::retire(rec) || !retire_sdk(rec) { return E_BUSY; }
         arena::free(mem);
         m.used = 0;
     }
@@ -417,8 +417,8 @@ unsafe fn complete(
     let r = crate::registry::apply(owner, reg, reg_size, s.modules[rec].base);
     if r != OK {
         crate::registry::remove(owner);
-        crate::files::retire(rec);
-        if !dsp::release(rec) { return E_BUSY; }
+        let held = !crate::files::retire(rec) | !retire_sdk(rec);
+        if !dsp::release(rec) || held { return E_BUSY; }
         return r;
     }
     if init != 0 {
@@ -426,10 +426,10 @@ unsafe fn complete(
         let r = crate::dlog::call_init(rec as usize, call, addr_of!(dkrt_api));
         if r != 0 {
             crate::intro::discard(rec);
-            crate::files::retire(rec);
+            let held = !crate::files::retire(rec) | !retire_sdk(rec);
             crate::upload::release_cmds(owner);
             crate::registry::remove(owner);
-            if !dsp::release(rec) { return E_BUSY; }
+            if !dsp::release(rec) || held { return E_BUSY; }
             return E_INIT;
         }
     }
@@ -485,9 +485,20 @@ pub unsafe fn unload_rec(rec: usize) -> i32 {
     r
 }
 
+/// The module `rec` is going away (an unload or a rollback): its I/O jobs end without `done`, and a file it was writing is dropped. False: an
+/// I/O step of it is running (it is cancelled); the caller keeps the module's memory (`E_BUSY`) until a later call returns true.
+pub(crate) unsafe fn retire_sdk(rec: usize) -> bool {
+    if !crate::io::retire(rec) {
+        return false;
+    }
+    crate::store_writer::retire(rec as u8 + 1);
+    true
+}
+
 unsafe fn unload_rec_inner(rec: usize) -> i32 {
     if !crate::files::retire(rec) { return E_BUSY; }
     if !crate::worker::retire(rec) { return E_BUSY; }
+    if !retire_sdk(rec) { return E_BUSY; }
     // an intro of this module that has not run `done` yet: `done` must not point into freed code
     crate::intro::discard(rec);
     let s = st();
