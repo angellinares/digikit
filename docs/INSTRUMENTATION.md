@@ -123,11 +123,13 @@ Two instruments for the native ColdFire core, off by default. They extend the wr
 | `DIGI_FLUSH_CHECK=1` | the flush check (below). Independent of `DIGI_WRITE_WATCH`. |
 | `DIGI_WRITE_WATCH_OUT=PATH` | JSONL log; default `$DIGI_DIAG_DIR/writewatch.jsonl`, else stderr. The summary goes to `PATH` with the extension `summary.json`. |
 | `DIGI_WRITE_WATCH_LIMIT=N` | log at most N events (default 100000); the counts go on. |
+| `DIGI_READ_WATCH=LO-HI[,..]` | the read-watch: report every CPU load from these ranges (same syntax and alias folding as `DIGI_WRITE_WATCH`), and count per byte the loads that read it and the first 8 PCs. It starts with `DIGI_WRITE_WATCH_AFTER` and logs to the same file. The summary adds `read_events`, `loads_checked` (every load the watch was offered) and `reads` (per byte: `addr`, `loads`, `pcs`). Each load then takes one more branch, as each store does. |
 
 Events (JSONL), `ic` = guest instruction count:
 
 ```
 {"t":"w","ic":19811920,"pc":"0x400004d2","addr":"0x44e4a5b8","size":4,"value":"0x0"}   CPU store
+{"t":"r","ic":..,"pc":"0x..","addr":"0x..","size":2}                                    CPU load (read-watch)
 {"t":"dma","ic":..,"src":"esdhc-dma59","addr":"0x..","size":512}                       DMA into RAM
 {"t":"flush","ic":..,"fetch_pc":"0x..","line":"0x..","writer":{"pc":"0x.."},"write_ic":..,"dcache_pending":true,"mask":"0x000f"}
 ```

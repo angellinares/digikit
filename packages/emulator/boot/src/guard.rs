@@ -133,6 +133,15 @@ impl WriteGuards {
         }
     }
 
+    /// A CPU load (the read-watch). Only called when armed; out of line, as `note_store`.
+    #[cold]
+    #[inline(never)]
+    pub(crate) fn note_load(&mut self, pc: u32, addr: u32, size: u8, icount: u64) {
+        if let Some(w) = self.watch.as_mut() {
+            w.load(pc, addr, size, icount);
+        }
+    }
+
     pub(crate) fn note_dma(&mut self, src: &'static str, addr: u32, len: usize, icount: u64) {
         if let Some(w) = self.watch.as_mut() {
             w.dma(src, addr, len, icount);
