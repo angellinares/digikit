@@ -122,6 +122,10 @@ static void test_trunc_size_secs(void)
     trunc_is("ABCDEFGHIJ", 10, "ABCDEFGHIJ");
     trunc_is("ABCDEFGHIJK", 10, "ABCDE~HIJK");
     trunc_is("ABCDEFGHIJK", 2, "AB");
+    trunc_is("ABCDEFGHIJK", 3, "AB~");
+    trunc_is("ABCDEFGHIJK", 4, "AB~K");
+    trunc_is("ABCD", 3, "AB~");
+    trunc_is("ABC", 3, "ABC");
     trunc_is("ABCDEFGHIJK", 0, "");
     trunc_is("", 5, "");
 
@@ -140,6 +144,15 @@ static void test_trunc_size_secs(void)
     dk_text_size(b, 1258291u); /* 1.2 MiB */
     assert(strcmp(b, "1.2M") == 0);
 
+    dk_text_size(b, 1023001u); /* 999.0 KiB + 1: rounds up to 1000K, which shows as megabytes */
+    assert(strcmp(b, "1.0M") == 0);
+    dk_text_size(b, 999u * 1024u + 1u);
+    assert(strcmp(b, "1.0M") == 0);
+    fill(b, 8);
+    dk_text_size(b, 4294967295u); /* the longest text: 8 bytes with the NUL */
+    assert(strcmp(b, "4096.0M") == 0);
+    guard_ok(b, 8);
+
     dk_text_secs(b, 0, 48000);
     assert(strcmp(b, "0.0s") == 0);
     dk_text_secs(b, 57600, 48000);
@@ -148,6 +161,20 @@ static void test_trunc_size_secs(void)
     assert(strcmp(b, "123s") == 0);
     dk_text_secs(b, 100, 0); /* no rate: zero */
     assert(strcmp(b, "0.0s") == 0);
+    fill(b, 8); /* 99.94 s rounds down, 99.95 s up into the whole-second form */
+    dk_text_secs(b, 99940, 1000);
+    assert(strcmp(b, "99.9s") == 0);
+    dk_text_secs(b, 99950, 1000);
+    assert(strcmp(b, "100s") == 0);
+    dk_text_secs(b, 4294967295u, 48000); /* 24.8 hours of frames: no 32-bit wrap */
+    assert(strcmp(b, "9999s") == 0);
+    dk_text_secs(b, 4294967295u, 1); /* tiny rate: clamped, within the 8 bytes */
+    assert(strcmp(b, "9999s") == 0);
+    dk_text_secs(b, 4294967295u, 4294967295u);
+    assert(strcmp(b, "1.0s") == 0);
+    dk_text_secs(b, 9999u * 48000u, 48000);
+    assert(strcmp(b, "9999s") == 0);
+    guard_ok(b, 8);
 }
 
 int main(void)

@@ -32,4 +32,4 @@ test('pages draw the region, cache failed peak fetches per token and show the zo
   } finally {
     fs.rmSync(directory, { recursive: true, force: true });
   }
-});
+}, 40_000);

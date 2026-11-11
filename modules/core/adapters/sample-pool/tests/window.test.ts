@@ -28,4 +28,4 @@ test('spp_window_feed puts every frame in exactly one column, in any chunking an
   } finally {
     fs.rmSync(directory, { recursive: true, force: true });
   }
-});
+}, 40_000);

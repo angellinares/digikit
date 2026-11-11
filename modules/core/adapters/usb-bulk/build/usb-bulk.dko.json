@@ -3309,7 +3309,7 @@
    "size": 101
   }
  ],
- "source_sha256": "98ea5501155a0a9e7decf287a869d7309a864ed4857a2c422415909355ff670b",
+ "source_sha256": "dbff7fa4f188a7082496efec1e1d39b59ca605bb80fa69ea774d272bc02d8654",
  "symbols": [
   {
    "global": false,
@@ -4430,7 +4430,7 @@
  ],
  "toolchain": {
   "as": "GNU assembler (GNU Binutils) 2.47.20260726",
-  "cflags": "-mcpu=54418 -Os -ffreestanding -fno-builtin -nostdlib -fno-pic -fno-pie -ffunction-sections -fdata-sections -fno-asynchronous-unwind-tables -fno-unwind-tables -fno-stack-protector -Wall -Wextra -Werror",
+  "cflags": "-mcpu=54418 -std=c11 -Os -ffreestanding -fno-builtin -nostdlib -fno-pic -fno-pie -ffunction-sections -fdata-sections -fno-asynchronous-unwind-tables -fno-unwind-tables -fno-stack-protector -Wall -Wextra -Werror",
   "gcc": "m68k-elf-gcc (GCC) 16.2.0",
   "instructions_redecoded": "1441",
   "isa_check": "2fb1bba31fdc851e0cc56822df6c58d0209235928f9a5b8effc7983d0232fc67",

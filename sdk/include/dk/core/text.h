@@ -25,6 +25,6 @@ uint32_t dk_text_itoa(char *out, int32_t v);
 void dk_text_trunc(char *out, const char *name, uint32_t max);
 /* "92K" (kilobytes rounded up, to 999K), then "1.2M". out holds 8 bytes. */
 void dk_text_size(char *out, uint32_t bytes);
-/* "1.2s" below 100 s, then "123s". out holds 8 bytes. */
+/* "1.2s" below 100 s, then "123s", at most "9999s" (longer sounds show 9999s). Writes 7 bytes at most; out holds 8 bytes. */
 void dk_text_secs(char *out, uint32_t frames, uint32_t rate);
 #endif

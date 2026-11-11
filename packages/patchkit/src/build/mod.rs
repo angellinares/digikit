@@ -169,11 +169,11 @@ fn object_file_at(env: &Env, moddir: &Path, m: &ModuleToml, o: &ObjectToml, hash
     }
 }
 
-/// The stored file of the object for the sources now (see [`object_file_at`]); an object whose sources cannot be hashed has the key `unhashed`.
-fn object_file(env: &Env, moddir: &Path, m: &ModuleToml, o: &ObjectToml) -> PathBuf {
-    let hash =
-        source_hash(env, moddir, &o.sources, m.is_content()).unwrap_or_else(|_| "unhashed".into());
-    object_file_at(env, moddir, m, o, &hash)
+/// The stored file of the object for the sources now (see [`object_file_at`]); an error when the sources cannot be hashed (a missing
+/// source, or the SDK library does not compile).
+fn object_file(env: &Env, moddir: &Path, m: &ModuleToml, o: &ObjectToml) -> Result<PathBuf> {
+    let hash = source_hash(env, moddir, &o.sources, m.is_content())?;
+    Ok(object_file_at(env, moddir, m, o, &hash))
 }
 
 /// Mark a cache entry as used now.
@@ -263,40 +263,36 @@ fn committed_hash(path: &Path) -> Option<String> {
     v.get("source_sha256")?.as_str().map(String::from)
 }
 
-fn object_unchanged(env: &Env, moddir: &Path, m: &ModuleToml, o: &ObjectToml) -> bool {
-    match source_hash(env, moddir, &o.sources, m.is_content()) {
-        Ok(want) => {
-            let out = object_file_at(env, moddir, m, o, &want);
-            let same = committed_hash(&out).is_some_and(|h| h == want);
-            if same && m.is_content() {
-                touch(&out);
-            }
-            same
-        }
-        Err(_) => false,
+fn object_unchanged(env: &Env, moddir: &Path, m: &ModuleToml, o: &ObjectToml) -> Result<bool> {
+    let want = source_hash(env, moddir, &o.sources, m.is_content())?;
+    let out = object_file_at(env, moddir, m, o, &want);
+    let same = committed_hash(&out).is_some_and(|h| h == want);
+    if same && m.is_content() {
+        touch(&out);
     }
+    Ok(same)
 }
 
 /// Is the stored object of every object with sources current with its sources? One entry per such object: (its path, unchanged).
 pub fn module_status(root: &Path, moddir: &Path) -> Result<Vec<(String, bool)>> {
     let env = Env::new(root);
     let m = manifest(moddir)?;
-    Ok(m.object
+    m.object
         .iter()
         .filter(|o| !o.sources.is_empty())
-        .map(|o| (o.path.clone(), object_unchanged(&env, moddir, &m, o)))
-        .collect())
+        .map(|o| Ok((o.path.clone(), object_unchanged(&env, moddir, &m, o)?)))
+        .collect()
 }
 
 /// The stored file of every object of the module that lists sources, for the sources now: (its path, the file). Nothing is built.
 pub fn object_files(root: &Path, moddir: &Path) -> Result<Vec<(String, PathBuf)>> {
     let env = Env::new(root);
     let m = manifest(moddir)?;
-    Ok(m.object
+    m.object
         .iter()
         .filter(|o| !o.sources.is_empty())
-        .map(|o| (o.path.clone(), object_file(&env, moddir, &m, o)))
-        .collect())
+        .map(|o| Ok((o.path.clone(), object_file(&env, moddir, &m, o)?)))
+        .collect()
 }
 
 /// Canonical JSON: keys sorted (the map of `serde_json::Value` is ordered), one space of indent per level, a newline at the end.
@@ -441,15 +437,15 @@ pub fn build_module(moddir: &Path, opts: &BuildOptions) -> Result<BuildReport> {
     let m = manifest(moddir)?;
     let mut report = BuildReport::default();
     for o in m.object.iter().filter(|o| !o.sources.is_empty()) {
-        let hash = source_hash(&env, moddir, &o.sources, m.is_content()).ok();
+        let hash = source_hash(&env, moddir, &o.sources, m.is_content())?;
         let stored = |h: &str| object_file_at(&env, moddir, &m, o, h);
         if !opts.check
             && opts.defines.is_empty()
             && !opts.force
-            && object_unchanged(&env, moddir, &m, o)
+            && object_unchanged(&env, moddir, &m, o)?
         {
             report.objects.push(ObjectReport {
-                path: stored(hash.as_deref().unwrap_or("unhashed")),
+                path: stored(&hash),
                 status: Status::Unchanged,
                 instructions: None,
             });
@@ -458,7 +454,7 @@ pub fn build_module(moddir: &Path, opts: &BuildOptions) -> Result<BuildReport> {
         let obj = build_object(&env, moddir, o, &opts.defines, m.is_content())?;
         let out = match &opts.out {
             Some(d) => d.join(&o.path),
-            None => stored(hash.as_deref().unwrap_or(&obj.source_sha256)),
+            None => stored(&hash),
         };
         let n = obj
             .toolchain
@@ -600,6 +596,7 @@ pub fn link_sources(
     include_dirs: &[PathBuf],
 ) -> Result<(cf::Linked, std::collections::BTreeMap<String, u32>)> {
     let env = Env::new(root);
+    // no SDK link (`sdk` false): a unit test that needs SDK code (dk_text_*, dk_path_*) must opt in
     let proto = cf::proto_of_sources(&env, sources, include_dirs, false)?;
     let linked = cf::link(&proto, base, symmap)?;
     let hist = cf::check_isa(&linked)?;

@@ -9,6 +9,7 @@ use sha2::{Digest, Sha256};
 use std::collections::{BTreeMap, BTreeSet, HashMap, HashSet};
 use std::path::{Path, PathBuf};
 use std::sync::{Arc, Mutex};
+use std::time::{Duration, SystemTime};
 
 /// Where the check links an object: the module area of the runtime. Placeholder externs follow at `BASE + 0x100 + 8 * i`.
 pub const BASE: u32 = 0x47E8B000;
@@ -21,8 +22,12 @@ fn is_asm(p: &Path) -> bool {
     matches!(p.extension().and_then(|e| e.to_str()), Some("s" | "S"))
 }
 
+fn is_c(p: &Path) -> bool {
+    p.extension().is_some_and(|e| e == "c")
+}
+
 fn is_c_or_asm(p: &Path) -> bool {
-    is_asm(p) || p.extension().is_some_and(|e| e == "c")
+    is_asm(p) || is_c(p)
 }
 
 fn inc_flags(dirs: &[PathBuf]) -> Vec<String> {
@@ -243,9 +248,12 @@ pub fn source_digest(
             h.update(tc::read(&d)?);
         }
         h.update(env.toolchain_id()?.as_bytes());
-        if sdk && let Some(lib) = sdk_lib(env)? {
+        if sdk
+            && sources.iter().any(|p| is_c(p))
+            && let Some(digest) = sdk_digest(env)?
+        {
             h.update(b"\0sdk");
-            h.update(lib.digest.as_bytes());
+            h.update(digest.as_bytes());
         }
         // the define set is part of the key; an empty set adds nothing, so the hashes of untraced builds stay as they were
         for d in &env.defines {
@@ -285,7 +293,11 @@ pub fn proto_of_sources(
         merged = tmp.path().join("all.o");
         merge_objects(env, &objs, &merged)?;
     }
-    if sdk && let Some(lib) = sdk_lib(env)? {
+    // assembly-only objects do not link the SDK (tools/nx/pack-inputs.mjs adds sdk/src for modules with C sources only)
+    if sdk
+        && sources.iter().any(|p| is_c(p))
+        && let Some(lib) = sdk_lib(env)?
+    {
         let undefined = nm(env, &merged, &["-u"])?;
         let mut roots: Vec<String> = undefined
             .into_iter()
@@ -658,86 +670,191 @@ pub struct SdkLib {
     pub globals: HashSet<String>,
 }
 
-/// Newest entries kept under `out/cache/dko/_sdk`.
-const SDK_KEEP: usize = 3;
+/// Cached SDK library directories not used for this long are removed. Every use sets the modification time of `sdk.o`, so a directory
+/// that other worktrees (sharing `out/`) still use stays.
+const SDK_MAX_AGE: Duration = Duration::from_secs(14 * 24 * 3600);
+/// A directory without `sdk.o` (a build that stopped) is removed after this time.
+const SDK_INCOMPLETE_AGE: Duration = Duration::from_secs(3600);
 
-/// The SDK library for `env`: built on first use, kept on disk under its digest and in memory for the process. None when the SDK has
-/// no C sources. The module's include directories do not apply: the SDK sources include only public headers.
-pub fn sdk_lib(env: &Env) -> Result<Option<Arc<SdkLib>>> {
-    type Memo = HashMap<(PathBuf, Vec<String>), Option<Arc<SdkLib>>>;
+type Stamp = Vec<(PathBuf, Option<SystemTime>, u64)>;
+
+/// The size and modification time of every file the SDK library reads: `sdk/src` and the global include directories. A change in
+/// the stamp makes [`sdk_digest`] hash again.
+fn sdk_stamp(env: &Env) -> Stamp {
+    fn walk(dir: &Path, out: &mut Stamp) {
+        let Ok(rd) = std::fs::read_dir(dir) else {
+            return;
+        };
+        let mut entries: Vec<_> = rd.flatten().map(|e| e.path()).collect();
+        entries.sort();
+        for p in entries {
+            if p.is_dir() {
+                walk(&p, out);
+            } else if let Ok(m) = p.metadata() {
+                out.push((p, m.modified().ok(), m.len()));
+            }
+        }
+    }
+    let mut v = vec![];
+    walk(&env.root.join("sdk/src"), &mut v);
+    for d in tc::global_include_dirs(true) {
+        walk(&env.root.join(d), &mut v);
+    }
+    v
+}
+
+fn sdk_include_dirs(env: &Env) -> Vec<PathBuf> {
+    tc::global_include_dirs(true)
+        .iter()
+        .map(|d| env.root.join(d))
+        .collect()
+}
+
+/// The digest of the SDK library (`source_digest` of `sdk/src/**/*.c`), or None when the SDK has no C sources. Nothing is compiled.
+/// The process keeps it while the files keep their size and modification time.
+pub fn sdk_digest(env: &Env) -> Result<Option<String>> {
+    type Memo = HashMap<(PathBuf, Vec<String>), (Stamp, Option<String>)>;
     static MEMO: Mutex<Option<Memo>> = Mutex::new(None);
     let key = (env.root.clone(), env.defines.clone());
+    let stamp = sdk_stamp(env);
+    let mut guard = MEMO.lock().unwrap_or_else(|e| e.into_inner());
+    let memo = guard.get_or_insert_with(HashMap::new);
+    if let Some((s, d)) = memo.get(&key)
+        && *s == stamp
+    {
+        return Ok(d.clone());
+    }
+    let sources = sdk_sources(&env.root);
+    let digest = if sources.is_empty() {
+        None
+    } else {
+        Some(source_digest(env, &sources, &sdk_include_dirs(env), false)?)
+    };
+    memo.insert(key, (stamp, digest.clone()));
+    Ok(digest)
+}
+
+/// The SDK library for `env`: built on first use, kept on disk under its digest and in memory for the process (keyed by the digest, so
+/// a changed SDK is never served from memory). None when the SDK has no C sources. The module's include directories do not apply: the
+/// SDK sources include only public headers.
+pub fn sdk_lib(env: &Env) -> Result<Option<Arc<SdkLib>>> {
+    type Memo = HashMap<(PathBuf, Vec<String>, String), Arc<SdkLib>>;
+    static MEMO: Mutex<Option<Memo>> = Mutex::new(None);
+    let Some(digest) = sdk_digest(env)? else {
+        return Ok(None);
+    };
+    let key = (env.root.clone(), env.defines.clone(), digest.clone());
     let mut guard = MEMO.lock().unwrap_or_else(|e| e.into_inner());
     let memo = guard.get_or_insert_with(HashMap::new);
     if let Some(hit) = memo.get(&key) {
-        return Ok(hit.clone());
+        return Ok(Some(hit.clone()));
     }
     let sources = sdk_sources(&env.root);
-    let lib = if sources.is_empty() {
-        None
+    let inc = sdk_include_dirs(env);
+    let mut name = String::from("sdk");
+    for d in &env.defines {
+        name.push('+');
+        name.push_str(d);
+    }
+    let base = super::cache_dir(&env.root).join("_sdk");
+    let dir = base.join(&name).join(&digest[..12]);
+    let obj = dir.join("sdk.o");
+    if obj.exists() {
+        if let Ok(f) = std::fs::File::options().append(true).open(&obj) {
+            let _ = f.set_modified(SystemTime::now()); // in use: keeps it out of the age eviction
+        }
     } else {
-        let inc: Vec<PathBuf> = tc::global_include_dirs(true)
-            .iter()
-            .map(|d| env.root.join(d))
-            .collect();
-        let digest = source_digest(env, &sources, &inc, false)?;
-        let mut name = String::from("sdk");
-        for d in &env.defines {
-            name.push('+');
-            name.push_str(d);
+        let tmp = TempDir::new("pk-sdk-")?;
+        let mut objs = vec![];
+        for (i, src) in sources.iter().enumerate() {
+            let o = tmp.path().join(format!("{i}.o"));
+            compile_source(env, src, &o, &inc)?;
+            objs.push(o);
         }
-        let dir = super::cache_dir(&env.root)
-            .join("_sdk")
-            .join(&name)
-            .join(&digest[..12]);
-        let obj = dir.join("sdk.o");
-        if obj.exists() {
-            if let Ok(f) = std::fs::File::options().append(true).open(&obj) {
-                let _ = f.set_modified(std::time::SystemTime::now());
-            }
-        } else {
-            let tmp = TempDir::new("pk-sdk-")?;
-            let mut objs = vec![];
-            for (i, src) in sources.iter().enumerate() {
-                let o = tmp.path().join(format!("{i}.o"));
-                compile_source(env, src, &o, &inc)?;
-                objs.push(o);
-            }
-            let merged = tmp.path().join("sdk.o");
-            merge_objects(env, &objs, &merged)?;
-            std::fs::create_dir_all(&dir).map_err(|e| err!("{}: {e}", dir.display()))?;
-            let part = dir.join(format!("sdk.o.tmp-{}", std::process::id()));
-            std::fs::copy(&merged, &part).map_err(|e| err!("{}: {e}", part.display()))?;
-            std::fs::rename(&part, &obj).map_err(|e| err!("{}: {e}", obj.display()))?;
-            evict_sdk(dir.parent().unwrap_or(&dir));
-        }
-        let globals = nm(env, &obj, &["-g", "--defined-only"])?
-            .into_iter()
-            .collect();
-        Some(Arc::new(SdkLib {
-            digest,
-            obj,
-            globals,
-        }))
-    };
+        let merged = tmp.path().join("sdk.o");
+        merge_objects(env, &objs, &merged)?;
+        std::fs::create_dir_all(&dir).map_err(|e| err!("{}: {e}", dir.display()))?;
+        let part = dir.join(format!("sdk.o.tmp-{}", std::process::id()));
+        std::fs::copy(&merged, &part).map_err(|e| err!("{}: {e}", part.display()))?;
+        std::fs::rename(&part, &obj).map_err(|e| err!("{}: {e}", obj.display()))?;
+    }
+    evict_sdk(&base, &dir, SystemTime::now());
+    let globals = nm(env, &obj, &["-g", "--defined-only"])?
+        .into_iter()
+        .collect();
+    let lib = Arc::new(SdkLib {
+        digest,
+        obj,
+        globals,
+    });
     memo.insert(key, lib.clone());
-    Ok(lib)
+    Ok(Some(lib))
 }
 
-/// Remove all but the newest [`SDK_KEEP`] digest directories of `parent`.
-fn evict_sdk(parent: &Path) {
-    let Ok(rd) = std::fs::read_dir(parent) else {
+/// Remove the digest directories under `base` (`_sdk/<define set>/<digest>`) that were not used for [`SDK_MAX_AGE`], and those without
+/// `sdk.o` older than [`SDK_INCOMPLETE_AGE`]. Never `keep`. Age counts from `now`.
+fn evict_sdk(base: &Path, keep: &Path, now: SystemTime) {
+    let age = |t: SystemTime| now.duration_since(t).unwrap_or_default();
+    let Ok(sets) = std::fs::read_dir(base) else {
         return;
     };
-    let mut v: Vec<(std::time::SystemTime, PathBuf)> = rd
-        .flatten()
-        .filter_map(|e| {
-            let p = e.path();
-            Some((p.join("sdk.o").metadata().ok()?.modified().ok()?, p))
-        })
-        .collect();
-    v.sort_by(|a, b| b.0.cmp(&a.0));
-    for (_, p) in v.into_iter().skip(SDK_KEEP) {
-        let _ = std::fs::remove_dir_all(p);
+    for set in sets.flatten() {
+        let Ok(digests) = std::fs::read_dir(set.path()) else {
+            continue;
+        };
+        for d in digests.flatten() {
+            let p = d.path();
+            if p == keep || !p.is_dir() {
+                continue;
+            }
+            let (stamp, limit) = match p.join("sdk.o").metadata().and_then(|m| m.modified()) {
+                Ok(t) => (t, SDK_MAX_AGE),
+                Err(_) => match p.metadata().and_then(|m| m.modified()) {
+                    Ok(t) => (t, SDK_INCOMPLETE_AGE),
+                    Err(_) => continue,
+                },
+            };
+            if age(stamp) > limit {
+                let _ = std::fs::remove_dir_all(&p);
+            }
+        }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn sdk_cache_eviction_is_by_age_and_keeps_the_current_directory() {
+        let base = std::env::temp_dir().join(format!("pk-sdk-evict-{}", std::process::id()));
+        let _ = std::fs::remove_dir_all(&base);
+        let set = base.join("sdk");
+        for d in ["current", "recent", "old", "half"] {
+            std::fs::create_dir_all(set.join(d)).unwrap();
+        }
+        for d in ["current", "recent", "old"] {
+            std::fs::write(set.join(d).join("sdk.o"), b"x").unwrap();
+        }
+        // "now" is 20 days ahead of the files: `recent` was used 1 day before then
+        let day = Duration::from_secs(24 * 3600);
+        let now = SystemTime::now() + 20 * day;
+        let used = |d: &str, t: SystemTime| {
+            let f = std::fs::File::options()
+                .append(true)
+                .open(set.join(d).join("sdk.o"))
+                .unwrap();
+            f.set_modified(t).unwrap();
+        };
+        used("recent", now - day);
+        evict_sdk(&base, &set.join("current"), now);
+        assert!(set.join("current").exists(), "the current digest stays");
+        assert!(set.join("recent").exists(), "used within 14 days");
+        assert!(!set.join("old").exists(), "unused for 20 days");
+        assert!(
+            !set.join("half").exists(),
+            "no sdk.o and older than an hour"
+        );
+        let _ = std::fs::remove_dir_all(&base);
     }
 }

@@ -120,14 +120,17 @@ void dk_text_size(char *out, uint32_t bytes)
 
 void dk_text_secs(char *out, uint32_t frames, uint32_t rate)
 {
-    uint32_t tenths = rate ? (frames * 10u + rate / 2) / rate : 0;
+    /* 64-bit: frames * 10 does not fit 32 bits for long sounds. Above 9999 s the text stays "9999s" (at most 6 characters and the NUL). */
+    uint64_t tenths = rate ? ((uint64_t)frames * 10u + rate / 2u) / rate : 0;
     uint32_t n;
     if (tenths < 1000) {
-        n = dk_text_utoa(out, tenths / 10);
+        n = dk_text_utoa(out, (uint32_t)(tenths / 10));
         out[n++] = '.';
         out[n++] = (char)('0' + tenths % 10);
-    } else
-        n = dk_text_utoa(out, (tenths + 5) / 10);
+    } else {
+        uint64_t secs = (tenths + 5) / 10;
+        n = dk_text_utoa(out, secs > 9999u ? 9999u : (uint32_t)secs);
+    }
     out[n++] = 's';
     out[n] = 0;
 }

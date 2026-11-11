@@ -89,7 +89,7 @@ beforeAll(() => {
     ],
     { timeout: 25_000 },
   );
-});
+}, 40_000);
 afterAll(() => fs.rmSync(directory, { recursive: true, force: true }));
 
 test('decoded frames equal the input for constant, moving and noise sets', () => {

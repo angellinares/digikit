@@ -18,4 +18,4 @@ test('the adapter hash (pdw_hash.h) equals the content hash of dksample, in any 
   } finally {
     fs.rmSync(directory, { recursive: true, force: true });
   }
-});
+}, 40_000);

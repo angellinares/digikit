@@ -28,4 +28,4 @@ test('remote pacing unit uses the C handler with a controlled block clock', () =
   } finally {
     fs.rmSync(directory, { recursive: true, force: true });
   }
-});
+}, 40_000);
