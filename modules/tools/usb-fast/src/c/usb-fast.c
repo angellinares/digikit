@@ -25,6 +25,7 @@
 #pragma GCC optimize("no-jump-tables")
 #include <dk/api.h>
 #include <dk/file.h>
+#include <dk/hash32.h>
 #include <dk/io.h>
 #include <dk/usb_bulk.h>
 
@@ -89,6 +90,38 @@ static u32 busy_tries;
 static u32 st_steps, st_frames, st_tx_busy, st_last_rc, st_bufs, st_bytes, st_fatal, st_resets, st_send_err;
 static i32 enable_rc;
 static i32 abort_h; /* a handle to abort after a reset (file_abort may need several steps) */
+
+#define UF_TRACE 0 /* per-file time totals in the log at END (hardware hunt); 0 removes them */
+#define UF_BENCH 0 /* 1 for measurement builds: STATUS body 'B' runs the storage bench, 'R' reads its results */
+#if UF_TRACE
+/* The only clock a module can call is dkrt_blocks(), the 1500 Hz block counter (1 unit = 0.667 ms). A short call often reads 0 and a long one is
+ * rounded, so only the totals of whole calls (per file) are meaningful, not one call. Units: "blk" tags are blocks; uf.bytes and uf.datas are counts. */
+#define UF_NOW() dkrt_blocks()
+#define UF_KIND_MOD_LOG 14u    /* sdk/sdk.toml [[log.kind]] 14 MOD_LOG: args msg0..msg3 (16 ASCII chars, big-endian words) and value */
+#define UF_FLAGS (2u << 1)     /* level 2 (info) in bits 1-3 (level_shift 1): passes the default log level */
+static u32 uf_write, uf_copy, uf_wait, uf_begin, uf_end, uf_bytes, uf_datas;
+static u32 uf_wait_from;
+static int uf_waiting; /* uf_wait_from is valid: the last request of this file was answered and no DATA has arrived since */
+
+/* `tag`: a string of at most 16 chars, padded with NULs */
+static void uf_log(const char *tag, u32 value)
+{
+    u32 a[5];
+    u32 live = 1;
+    for (u32 i = 0; i < 16u; i++) {
+        u32 c = 0;
+        if (live && tag[i] != 0)
+            c = (u8)tag[i];
+        else
+            live = 0;
+        if ((i & 3u) == 0u)
+            a[i >> 2] = 0;
+        a[i >> 2] |= c << (24u - 8u * (i & 3u));
+    }
+    a[4] = value;
+    dkrt_log_ev(UF_KIND_MOD_LOG, UF_FLAGS, a);
+}
+#endif
 
 static u32 get32(const u8 *p) { return ((u32)p[0] << 24) | ((u32)p[1] << 16) | ((u32)p[2] << 8) | p[3]; }
 static void put32(u8 *p, u32 v)
@@ -189,8 +222,18 @@ static int dispatch(void)
         }
         const u8 *h4 = body + p + 1 + 4;
         int none = (h4[0] | h4[1] | h4[2] | h4[3]) == 0;
+#if UF_TRACE
+        u32 t0 = UF_NOW();
+        if (busy_tries == 0) /* a retry of the same BEGIN keeps the totals */
+            uf_write = uf_copy = uf_wait = uf_begin = uf_end = uf_bytes = uf_datas = 0;
+#endif
         r = sdk->file_create(get32(body), (const char *)(body + 4), get32(body + p + 1), none ? 0 : h4,
                              (flags & FLAG_REPLACE) ? DK_FILE_REPLACE : 0);
+#if UF_TRACE
+        uf_begin += UF_NOW() - t0;
+        uf_wait_from = UF_NOW();
+        uf_waiting = 1;
+#endif
         if (r == DK_FILE_E_BUSY && ++busy_tries < BUSY_TRIES)
             return 1;
         busy_tries = 0;
@@ -211,7 +254,19 @@ static int dispatch(void)
             return 0;
         }
         /* frame is 16-byte aligned and the data starts at HDR + 4 = 16: file_write gets an aligned pointer */
+#if UF_TRACE
+        u32 t0 = UF_NOW();
+#endif
         r = sdk->file_write(handle, get32(body), body + 4, len - 4);
+#if UF_TRACE
+        uf_write += UF_NOW() - t0;
+        if (r == 0) {
+            uf_bytes += len - 4;
+            uf_datas++;
+        }
+        uf_wait_from = UF_NOW();
+        uf_waiting = 1;
+#endif
         st_last_rc = (u32)r;
         if (r == DK_FILE_E_BUSY && ++busy_tries < BUSY_TRIES)
             return 1;
@@ -227,10 +282,27 @@ static int dispatch(void)
             reply(cmd, seq, E_STATE, 0, 0);
             return 0;
         }
+#if UF_TRACE
+        u32 t0 = UF_NOW();
+#endif
         r = sdk->file_close(handle, hash);
+#if UF_TRACE
+        uf_end += UF_NOW() - t0;
+#endif
         if (r == DK_FILE_E_BUSY && ++busy_tries < BUSY_TRIES)
             return 1;
         busy_tries = 0;
+#if UF_TRACE
+        if (r != DK_FILE_E_BUSY) {
+            uf_log("uf.t.write.blk", uf_write);
+            uf_log("uf.t.copy.blk", uf_copy);
+            uf_log("uf.t.wait.blk", uf_wait);
+            uf_log("uf.t.begin.blk", uf_begin);
+            uf_log("uf.t.end.blk", uf_end);
+            uf_log("uf.bytes", uf_bytes);
+            uf_log("uf.datas", uf_datas);
+        }
+#endif
         if (r != DK_FILE_E_BUSY) /* the session is closed whatever the result */
             handle = 0;
         reply(cmd, seq, r, hash, r == 0 || r == DK_FILE_E_HASH ? 4u : 0u);
@@ -324,7 +396,13 @@ static int pump(void)
         u32 n = cur_len - cur_off;
         if (n > want - have)
             n = want - have;
+#if UF_TRACE
+        u32 t0 = UF_NOW();
+#endif
         copy(frame + have, cur + cur_off, n);
+#if UF_TRACE
+        uf_copy += UF_NOW() - t0;
+#endif
         have += n;
         cur_off += n;
         if (cur_off >= cur_len) {
@@ -410,8 +488,254 @@ static i32 step(u8 *ctx)
             return DK_IO_WAIT;
         frame_ready = 1;
         st_frames++;
+#if UF_TRACE
+        if (uf_waiting && frame[4] == CMD_DATA) { /* the wait for the host ends when the next DATA frame is complete */
+            uf_wait += UF_NOW() - uf_wait_from;
+            uf_waiting = 0;
+        }
+#endif
     }
 }
+
+#if UF_BENCH
+/* Storage bench (a measurement aid, no USB): STATUS (0x37) with body 'B' [mask [MiB]] starts it, body 'R' returns the last times. It runs in its own I/O
+ * job, so the SysEx handler returns at once. Every test moves MiB (default 8) and logs "bn.<name>.ms" and "bn.<name>.kbps" (MOD_LOG, info), timed with
+ * dkrt_blocks() (1 block = 2/3 ms). The source buffer is never initialised: the content does not matter.
+ * mask bit 0: store writes with 64 KiB and 1 MiB calls (s64, s1m); the file is aborted: nothing is committed;
+ *      bit 1: writes to DK_FILES_SAMPLES (the +Drive on the DT2, the store's samples/ folder on the DN2) with 64 KiB, 256 KiB and 1 MiB calls (d64,
+ *             d256, d1m); each file is aborted;
+ *      bit 2: the same with 1 MiB calls, then file_close (dcl.cls: on the DT2 the firmware's hash re-read) and file_delete (dcl.del); the file exists
+ *             between the two;
+ *      bit 3: reads of the card with the firmware block read, sector 0 upward, 64 KiB and 1 MiB per call (r64, r1m); reads only, nothing is written;
+ *      bit 4: the CPU rate of the file hash, api->hash32_* over the bytes (h32);
+ *      bit 5: store write with 64 KiB calls, file_close (the store's hash check and commit: scl.cls) and file_delete (scl.del).
+ * The bench writes only the one file it creates through file_create (a store file or a +Drive file; the runtime reserves its space) and never raw
+ * sectors. A failed call logs "bn.<name>.err" with its status and aborts the file. */
+#define BN_STORE_FILE "dkbench.bin"
+#define BN_DRIVE_FILE "Samples/dkbench.bin"
+#define BN_SLOTS 14u
+#define BN_PHASES 10u
+enum { S_S64, S_S1M, S_D64, S_D256, S_D1M, S_DCL, S_DCL_CLS, S_DCL_DEL, S_R64, S_R1M, S_H32, S_SCL, S_SCL_CLS, S_SCL_DEL };
+static i32 bn_job;
+static volatile u32 bn_req;
+static u32 bn_mask, bn_mib, bn_phase, bn_running;
+static u32 bn_ms[BN_SLOTS]; /* the last results, in ms, by slot (0 = not run or failed) */
+static u8 *bn_raw, *bn_buf;
+static u32 bn_buf_len;
+static int bn_fw; /* bn_raw came from fw_alloc */
+
+/* "bn." name suffix (names are at most 7 chars, so the tag fits 16) */
+static void bn_tag(char *t, const char *name, const char *suffix)
+{
+    u32 i = 0;
+    t[i++] = 'b';
+    t[i++] = 'n';
+    t[i++] = '.';
+    while (*name && i < 11u)
+        t[i++] = *name++;
+    while (*suffix && i < 16u)
+        t[i++] = *suffix++;
+    t[i] = 0;
+}
+
+/* `mib` 0: a time only (no rate) */
+static void bn_result(const char *name, u32 slot, u32 blocks, u32 mib)
+{
+    char t[17];
+    u32 ms = blocks * 2u / 3u;
+    bn_tag(t, name, ".ms");
+    uf_log(t, ms);
+    if (mib) {
+        bn_tag(t, name, ".kbps");
+        uf_log(t, ms ? (mib << 10) * 1000u / ms : 0);
+    }
+    bn_ms[slot] = ms ? ms : 1u;
+}
+
+static void bn_err(const char *name, i32 rc)
+{
+    char t[17];
+    bn_tag(t, name, ".err");
+    uf_log(t, (u32)rc);
+}
+
+/* Write `bn_mib` MiB to a new file with calls of `call` bytes. close 0: abort the file. close 1: file_close, then file_delete. */
+static void bn_write(const char *name, u32 root, const char *path, u32 call, int close, u32 slot)
+{
+    u32 size = bn_mib << 20, off = 0, tries;
+    i32 r = DK_FILE_E_BUSY, h = 0;
+    u8 hash[4];
+    if (call > bn_buf_len)
+        call = bn_buf_len;
+    for (tries = 0; tries < 5u && r == DK_FILE_E_BUSY; tries++) {
+        r = sdk->file_create(root, path, size, 0, DK_FILE_REPLACE);
+        if (r > 0) {
+            h = r;
+            r = 0;
+        }
+    }
+    if (r != 0) {
+        bn_err(name, r);
+        return;
+    }
+    u32 t0 = dkrt_blocks();
+    while (off < size) {
+        u32 n = size - off < call ? size - off : call;
+        r = DK_FILE_E_BUSY;
+        for (tries = 0; tries < 3u && r == DK_FILE_E_BUSY; tries++)
+            r = sdk->file_write(h, off, bn_buf, n);
+        if (r != 0) {
+            bn_err(name, r);
+            sdk->file_abort(h);
+            return;
+        }
+        off += n;
+    }
+    u32 t1 = dkrt_blocks();
+    bn_result(name, slot, t1 - t0, bn_mib);
+    if (!close) {
+        sdk->file_abort(h);
+        return;
+    }
+    r = sdk->file_close(h, hash);
+    u32 t2 = dkrt_blocks();
+    /* name is 3 chars here ("dcl", "scl"): the close and the delete are logged as "<name>.cls" and "<name>.del" */
+    char n2[8] = {name[0], name[1], name[2], '.', 'c', 'l', 's', 0};
+    if (r != 0) {
+        bn_err(n2, r);
+        return;
+    }
+    bn_result(n2, slot + 1u, t2 - t1, 0);
+    n2[4] = 'd';
+    n2[5] = 'e';
+    n2[6] = 'l';
+    r = sdk->file_delete(root, path);
+    bn_result(n2, slot + 2u, dkrt_blocks() - t2, 0);
+    if (r != 0)
+        bn_err(n2, r);
+}
+
+static void bn_read(const char *name, u32 call, u32 slot)
+{
+    u32 total = bn_mib << 20, off = 0, sector = 0;
+    if (call > bn_buf_len)
+        call = bn_buf_len;
+    u32 t0 = dkrt_blocks();
+    while (off < total) {
+        u32 n = total - off < call ? total - off : call;
+        i32 r = fw_block_read(sector, n, bn_buf);
+        if (r != 0) {
+            bn_err(name, r);
+            return;
+        }
+        off += n;
+        sector += n >> 9;
+    }
+    bn_result(name, slot, dkrt_blocks() - t0, bn_mib);
+}
+
+static void bn_hash(void)
+{
+    dk_hash32 st;
+    u32 t0 = dkrt_blocks();
+    sdk->hash32_init((uint8_t *)&st);
+    for (u32 left = bn_mib << 20; left;) {
+        u32 n = left < bn_buf_len ? left : bn_buf_len;
+        sdk->hash32_update((uint8_t *)&st, bn_buf, n);
+        left -= n;
+    }
+    (void)sdk->hash32_finish((uint8_t *)&st);
+    bn_result("h32", S_H32, dkrt_blocks() - t0, bn_mib);
+}
+
+/* One phase per step: a file call blocks for seconds, so the job returns between phases. */
+static i32 bn_step(u8 *ctx)
+{
+    (void)ctx;
+    if (!bn_running) {
+        if (!bn_req)
+            return DK_IO_WAIT;
+        bn_req = 0;
+        bn_running = 1;
+        bn_phase = 0;
+        for (u32 i = 0; i < BN_SLOTS; i++)
+            bn_ms[i] = 0;
+        bn_fw = 0;
+        bn_buf_len = 1u << 20;
+        bn_raw = sdk->alloc(bn_buf_len + 16u);
+        if (!bn_raw) {
+            bn_raw = fw_alloc(bn_buf_len + 16u);
+            bn_fw = bn_raw != 0;
+        }
+        if (!bn_raw) {
+            bn_buf_len = 65536u;
+            bn_raw = sdk->alloc(bn_buf_len + 16u);
+        }
+        if (!bn_raw) {
+            uf_log("bn.noalloc", 0);
+            bn_running = 0;
+            return DK_IO_WAIT;
+        }
+        bn_buf = (u8 *)(((u32)bn_raw + 15u) & ~15u);
+        uf_log("bn.buf.kib", bn_buf_len >> 10);
+        uf_log("bn.mib", bn_mib);
+    }
+    u32 m = bn_mask;
+    switch (bn_phase) {
+    case 0: if (m & 1u) bn_write("s64", DK_FILES_STORE, BN_STORE_FILE, 65536u, 0, S_S64); break;
+    case 1: if (m & 1u) bn_write("s1m", DK_FILES_STORE, BN_STORE_FILE, 1u << 20, 0, S_S1M); break;
+    case 2: if (m & 2u) bn_write("d64", DK_FILES_SAMPLES, BN_DRIVE_FILE, 65536u, 0, S_D64); break;
+    case 3: if (m & 2u) bn_write("d256", DK_FILES_SAMPLES, BN_DRIVE_FILE, 262144u, 0, S_D256); break;
+    case 4: if (m & 2u) bn_write("d1m", DK_FILES_SAMPLES, BN_DRIVE_FILE, 1u << 20, 0, S_D1M); break;
+    case 5: if (m & 4u) bn_write("dcl", DK_FILES_SAMPLES, BN_DRIVE_FILE, 1u << 20, 1, S_DCL); break;
+    case 6: if (m & 8u) bn_read("r64", 65536u, S_R64); break;
+    case 7: if (m & 8u) bn_read("r1m", 1u << 20, S_R1M); break;
+    case 8: if (m & 16u) bn_hash(); break;
+    default: if (m & 32u) bn_write("scl", DK_FILES_STORE, BN_STORE_FILE, 65536u, 1, S_SCL); break;
+    }
+    if (++bn_phase < BN_PHASES)
+        return DK_IO_MORE;
+    if (bn_fw)
+        fw_free(bn_raw);
+    else
+        sdk->free(bn_raw);
+    bn_raw = bn_buf = 0;
+    uf_log("bn.done", 0);
+    bn_running = 0;
+    return DK_IO_WAIT;
+}
+
+static void bn_finished(u8 *ctx, i32 status)
+{
+    (void)ctx;
+    (void)status;
+}
+
+/* STATUS body 'B' [mask [MiB]]: start (E_BUSY while a run is going); 'R': running, phase and the BN_SLOTS times in ms. Returns the reply length, or a status. */
+static i32 bn_command(const u8 *body, u32 len, u8 *out)
+{
+    if (body[0] == 'B') {
+        if (bn_running || bn_req)
+            return DK_FILE_E_BUSY;
+        bn_mask = len > 1 ? body[1] : 0x3fu;
+        bn_mib = len > 2 ? body[2] : 8u;
+        if (bn_mib < 1u || bn_mib > 64u)
+            bn_mib = 8u;
+        bn_req = 1;
+        sdk->io_wake(bn_job);
+        put32(out, 1);
+        return 4;
+    }
+    if (body[0] == 'R') {
+        put32(out, bn_running);
+        put32(out + 4, bn_phase);
+        for (u32 i = 0; i < BN_SLOTS; i++)
+            put32(out + 8 + 4 * i, bn_ms[i]);
+        return 8 + 4 * BN_SLOTS;
+    }
+    return E_MSG;
+}
+#endif
 
 static void finished(u8 *ctx, i32 status)
 {
@@ -424,6 +748,10 @@ static void finished(u8 *ctx, i32 status)
 static i32 command(u32 cmd, u32 seq, const u8 *body, u32 len, u8 *out)
 {
     (void)seq;
+#if UF_BENCH
+    if (cmd == NONCE_CMD + 1 && len > 0)
+        return bn_command(body, len, out);
+#endif
     if (cmd == NONCE_CMD + 1) { /* STATUS (a debug aid): what the job has done and where it stands */
         put32(out, st_steps);
         put32(out + 4, st_frames);
@@ -457,6 +785,9 @@ static i32 command(u32 cmd, u32 seq, const u8 *body, u32 len, u8 *out)
 void dkm_fini(const dk_api *api)
 {
     usb_bulk_disable(job_id);
+#if UF_BENCH
+    api->io_cancel(bn_job);
+#endif
     api->io_cancel(job_id); /* the runtime aborts a file session the job leaves open */
 }
 
@@ -469,5 +800,12 @@ i32 dkm_init(const dk_api *api)
     job_id = api->io_post(step, finished, 0);
     if (job_id <= 0)
         return job_id ? job_id : -1;
+#if UF_BENCH
+    bn_job = api->io_post(bn_step, bn_finished, 0);
+    if (bn_job <= 0) {
+        api->io_cancel(job_id);
+        return bn_job ? bn_job : -1;
+    }
+#endif
     return api->register_cmds(NONCE_CMD, NONCE_RANGE, command);
 }

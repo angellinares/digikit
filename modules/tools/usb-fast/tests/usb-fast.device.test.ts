@@ -530,6 +530,32 @@ for (const device of DEVICES) {
       }
     }, 3_600_000);
 
+    test('storage bench: STATUS "B" runs every test, "R" returns the times, and no bench file is left', async () => {
+      const { dk } = await boot();
+      const before = (await state(dk, 'bn0')).files;
+      const b = await dk.request(0x37, Uint8Array.from([0x42, 0x3f, 1])); // 'B', all tests, 1 MiB
+      if (b.body.length !== 4) {
+        console.log('storage bench skipped: the module is built without UF_BENCH (STATUS answers the 64-byte status)');
+        return;
+      }
+      expect(Buffer.from(b.body).readUInt32BE(0), 'started').toBe(1);
+      let r = Buffer.alloc(0);
+      for (let i = 0; i < 400; i++) {
+        await advance(rig.session, 500);
+        r = Buffer.from((await dk.request(0x37, Uint8Array.from([0x52]))).body); // 'R'
+        if (r.readUInt32BE(4) === 10 && r.readUInt32BE(0) === 0) break;
+      }
+      expect([r.readUInt32BE(0), r.readUInt32BE(4)], 'the run is over').toEqual([0, 10]);
+      const ms = Array.from({ length: 14 }, (_, i) => r.readUInt32BE(8 + 4 * i));
+      // slots: s64 s1m d64 d256 d1m dcl dcl.cls dcl.del r64 r1m h32 scl scl.cls scl.del
+      for (const slot of [0, 1, 8, 9, 10, 11, 12, 13]) expect(ms[slot], `slot ${slot} has a time`).toBeGreaterThan(0);
+      if (dt2) for (const slot of [2, 3, 4, 5, 6, 7]) expect(ms[slot], `+Drive slot ${slot} has a time`).toBeGreaterThan(0);
+      const after = await state(dk, 'bn1');
+      unchanged(before, after.files, []);
+      expect(after.files.has('dkbench.bin'), 'no store bench file').toBe(false);
+      await rig.session.expectNoFault('usb-fast storage bench');
+    }, 1_800_000);
+
     test('bench: MB/s in emulated time, bulk against SysEx', async () => {
       const { dk } = await boot();
       const size = 1 << 20;
