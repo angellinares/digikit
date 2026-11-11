@@ -140,14 +140,14 @@ For the 100 small files per-file overhead dominates: open, verify over SysEx, cl
 
 Unplug mid-file **[D]**: a 60 MB upload over Fast USB with the USB cable pulled mid-file. The bulk link failed (macOS 0xe00002ed). `wb` printed "USB bulk link failed ...; the rest of this run goes over SysEx" and sent the whole file again over SysEx (0.46 MB/s, device hash matches). Afterwards the store held only complete files (no staging or partial entries). The next upload used Fast USB again (3.68 MB/s, hash matches). The source file limit is 64 MiB (dksample `MAX_SOURCE_BYTES`), so a 64 MB WAV is refused before sending.
 
-Open **[O]**: REC drill.
+REC drill with usb-fast selected **[D]**: a boot holding REC (safe mode) loaded 0 modules, the bulk interface was gone, INFO and the module list answered over SysEx (without the debug module's LOG/PEEK/LOGCFG capabilities). A normal boot loaded debug and usb-fast again (no faults), the interface came back and an 8 MB upload went over Fast USB (2.41 MB/s with verify).
 
 Open **[O]**: `wb.mjs samples ls` gets no reply ("no reply to MidiRpc 10") on the DN2, while `store ls` and `dkupload ls` work. Not related to bulk; to look at.
 
 ### Next
 
 1. Done: the wrong-mode refusal (E_STATE outside USB MIDI mode) is committed in 71ba9e29.
-2. Finish DN2 run 2: REC drill.
+2. Done: DN2 run 2 (including the REC drill).
 3. DT2 runs, then `mise run test:full` and a PR to main.
 4. Then scope v2 (below).
 5. Speed lever: per-file overhead for small files (open, verify over SysEx, close).
