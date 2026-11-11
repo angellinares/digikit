@@ -2,9 +2,11 @@
 // runtime object the faceplate presses keys on. Pure, so host tests can run it (apps/desktop/ui/tests/remote-page.test.ts).
 import { DkError, type DkSession, type RemoteState } from '@digi/dk-session';
 import { writing } from '../../../web/src/transfer/transfer-core.ts';
+import { isNoRuntime } from '../../../web/src/modules/backend.ts';
 
 /** The message under the faceplate for the state of digikit/remote (or for the error that asking for it gave). */
 export function remoteNotice(state: RemoteState | undefined, error?: unknown): string {
+  if (isNoRuntime(error)) return (error as Error).message;
   if (error instanceof DkError) {
     if (error.status === 'E_PROTO')
       return 'digikit/remote is not loaded on this device. Install it on the Transfer page, select it in MODULES on the device, apply and restart.';

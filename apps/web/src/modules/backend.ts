@@ -25,6 +25,14 @@ export function isTimeout(e: unknown): boolean {
   return (e as { kind?: string })?.kind === 'timeout' || /"kind":\s*"timeout"/.test(raw);
 }
 
+/** The target answers, or is known to run, without the digikit runtime: no digikit request can succeed until it has one. */
+export class NoRuntimeError extends Error {
+  readonly kind = 'noruntime';
+}
+export function isNoRuntime(e: unknown): boolean {
+  return (e as { kind?: string } | null)?.kind === 'noruntime';
+}
+
 export function formatBytes(n: number): string {
   if (n < 1024) return `${n} B`;
   if (n < 1024 * 1024) return `${(n / 1024).toFixed(1)} KiB`;

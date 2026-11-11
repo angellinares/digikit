@@ -18,10 +18,20 @@ export interface DefaultModulesProps {
 
 export default function DefaultModules(props: DefaultModulesProps): JSX.Element {
   const [open, setOpen] = createSignal(false);
+  const [left, setLeft] = createSignal(false);
   let root: HTMLSpanElement | undefined;
+  let pop: HTMLDivElement | undefined;
   const entries = () => (props.device ? entriesFor(props.device) : []);
   const ticked = () => (props.device ? tickedFor(props.device).length : 0);
   const off = () => props.off || (props.device ? '' : 'Choose the firmware file first: the list is the device’s');
+  // The list opens to the left of the button, or to its right when that would leave the window.
+  createEffect(() => {
+    if (!open()) return;
+    setLeft(false);
+    requestAnimationFrame(() => {
+      if (pop && pop.getBoundingClientRect().left < 8) setLeft(true);
+    });
+  });
   createEffect(() => {
     if (!open()) return;
     const away = (e: Event) => {
@@ -54,7 +64,7 @@ export default function DefaultModules(props: DefaultModulesProps): JSX.Element 
         </button>
         <Show when={open() && props.device}>
           {(device) => (
-            <div class="defmods-pop" role="dialog" aria-label="Default modules">
+            <div class="defmods-pop" ref={pop} classList={{ left: left() }} role="dialog" aria-label="Default modules">
               <For each={entries()} fallback={<p class="defmods-note">This device has no default modules.</p>}>
                 {(e) => (
                   <label class="defmods-row">

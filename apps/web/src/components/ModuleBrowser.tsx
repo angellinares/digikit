@@ -3,6 +3,7 @@ import { For, Show, createMemo, createSignal } from 'solid-js';
 import type { Category } from '../data/module-labels';
 import type { ModuleInfo } from '../data/modules';
 import ModuleCard from './ModuleCard';
+import Segmented from './Segmented';
 import './module-card.css';
 
 export interface ModuleBrowserProps {
@@ -17,6 +18,12 @@ const FILTER_LABEL: Partial<Record<Category, string>> = {
   fx: 'Effects',
   tools: 'Tools',
 };
+
+const DEVICE_OPTIONS = [
+  { id: 'any', label: 'Any device' },
+  { id: 'dt2', label: 'Digitakt II' },
+  { id: 'dn2', label: 'Digitone II' },
+] as const;
 
 export default function ModuleBrowser(props: ModuleBrowserProps) {
   const [category, setCategory] = createSignal<'all' | Category>('all');
@@ -55,16 +62,26 @@ export default function ModuleBrowser(props: ModuleBrowserProps) {
           )}
         </For>
         <span class="browse-spacer" />
-        <label>
-          Device
-          <select value={device()} onChange={(e) => setDevice(e.currentTarget.value as 'any' | 'dt2' | 'dn2')}>
-            <option value="any">Any device</option>
-            <option value="dt2">Digitakt II</option>
-            <option value="dn2">Digitone II</option>
-          </select>
-        </label>
+        <Segmented label="Device" options={DEVICE_OPTIONS} value={device()} onChange={setDevice} />
       </div>
-      <Show when={shown().length > 0} fallback={<p class="browse-empty">No modules match.</p>}>
+      <Show
+        when={shown().length > 0}
+        fallback={
+          <p class="browse-empty">
+            No modules match.{' '}
+            <button
+              type="button"
+              class="browse-clear"
+              onClick={() => {
+                setCategory('all');
+                setDevice('any');
+              }}
+            >
+              Clear filters
+            </button>
+          </p>
+        }
+      >
         <ul class="cards">
           <For each={shown()}>
             {(m) => (

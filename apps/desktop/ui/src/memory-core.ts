@@ -146,3 +146,25 @@ export const widthPct = (bar: Bar, n: number): number => {
   const span = Math.max(bar.limit, bar.used);
   return span ? (100 * n) / span : 0;
 };
+
+/** A count bar is drawn as one cell per slot when it has at most this many (Machines 8, Parameters 16): slots, not a length. */
+export const MAX_CELLS = 32;
+
+/** One cell of a count bar: the kind of the module that holds the slot (`free` when none), its hover text, and whether it is past the limit. */
+export interface SlotCell {
+  kind: SegmentKind | 'free';
+  title: string;
+  over: boolean;
+}
+
+/** The cells of a count bar, in the order of its segments then the free slots; null for a byte bar or one with too many slots. */
+export function slotCells(bar: Bar): SlotCell[] | null {
+  const span = Math.max(bar.limit, bar.used);
+  if (bar.bytes || span === 0 || span > MAX_CELLS) return null;
+  const cells: SlotCell[] = [];
+  for (const s of bar.segments)
+    for (let i = 0; i < s.amount; i++)
+      cells.push({ kind: s.kind, title: segmentTitle(bar, s), over: cells.length >= bar.limit });
+  while (cells.length < bar.limit) cells.push({ kind: 'free', title: freeTitle(bar), over: false });
+  return cells;
+}

@@ -25,11 +25,28 @@
   flex: 1;
 }
 .remote-page .meta,
-.remote-page .hint,
 .remote-page .head .dim {
   font-family: var(--font-mono);
   font-size: 11.5px;
   color: var(--ink-3, #868b94);
+}
+/* How to play the faceplate, as key caps. */
+.remote-page .hints {
+  display: inline-flex;
+  flex-wrap: wrap;
+  gap: 4px 14px;
+  font-size: 12px;
+  color: var(--ink-2, #a9adb4);
+}
+.remote-page .hints kbd {
+  padding: 1px 6px;
+  border: 1px solid #34373d;
+  border-bottom-width: 2px;
+  border-radius: 5px;
+  background: #1a1c20;
+  color: var(--ink, #eceae5);
+  font-family: var(--font-mono);
+  font-size: 11px;
 }
 .remote-page .note {
   margin: 0;

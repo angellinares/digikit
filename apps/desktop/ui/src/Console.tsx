@@ -15,6 +15,22 @@ import {
 } from '@web/runtime/runtime';
 import { booting as startBoot, bootingScreen, bootingStatus, loadFailure, type Booting } from './boot-core';
 import { bumpCardRefresh } from './card-state';
+import {
+  CHART,
+  DOWN,
+  FIRMWARE,
+  FOLDER,
+  Icon,
+  MODULES,
+  PAUSE,
+  PLAY,
+  RELOAD,
+  REMOTE,
+  RESTART,
+  SPEAKER,
+  UP,
+  WARNING,
+} from './icons';
 import { DOCK_KEY_STEP, clampDock, dockAt, parseDock, startDock } from './dock-core';
 import {
   duration,
@@ -33,8 +49,20 @@ import { windowShown } from './log-follow-core';
 import { followOn, logEvent, logInput, logOpen, logState, setLogOpen } from './log-state';
 import LogPanel from './LogPanel';
 import SidePanels from './SidePanels';
+import TitleBar from './TitleBar';
+import { setInspectorOpen, setInspectorTab } from './panel-open';
 import RemotePage from './RemotePage';
-import { emulatorSession, lastMidiPort, lastMidiSession, target } from '@web/transfer/target';
+import {
+  EMULATOR_NO_RUNTIME,
+  emulatorRuntime,
+  emulatorSession,
+  lastMidiPort,
+  lastMidiSession,
+  setEmulatorRuntime,
+  target,
+} from '@web/transfer/target';
+import { noteConnection } from '@web/transfer/connection-state';
+import { setReloadWithRuntime } from './emulator-actions';
 import { transferEnv } from '@web/transfer/env';
 import { run as flashRun } from '@web/firmware/firmware-state';
 import { running as flashRunning } from '@web/firmware/firmware-core';
@@ -103,36 +131,6 @@ const writeSidebarPref = (open: boolean) => {
   }
 };
 
-function Icon(props: { d: string }) {
-  return (
-    <svg viewBox="0 0 16 16" aria-hidden="true">
-      <path
-        d={props.d}
-        fill="none"
-        stroke="currentColor"
-        stroke-width="1.6"
-        stroke-linecap="round"
-        stroke-linejoin="round"
-      />
-    </svg>
-  );
-}
-const FOLDER = 'M1.5 4V12.5H14.5V5.5H7.5L6 4Z';
-const RELOAD = 'M13 3V6.5H9.5M13 6.5A5.2 5.2 0 1 0 13.4 10';
-const PAUSE = 'M5.5 3V13M10.5 3V13';
-const PLAY = 'M4.5 2.5L12.5 8L4.5 13.5Z';
-const RESTART = 'M3 2.5V6H6.5M3 6A5.2 5.2 0 1 1 2.8 9.8';
-const CHART = 'M2 12.5L5.5 7.5L8.5 10L13.5 3.5M10.5 3.5H13.5V6.5';
-const SPEAKER = 'M2.5 6H5L8.5 3V13L5 10H2.5ZM11 5.5a3.5 3.5 0 0 1 0 5';
-const WARNING = 'M8 2.5L14.5 13.5H1.5ZM8 6.5V9.5M8 11.5V11.6';
-const UP = 'M4 10L8 6L12 10';
-const REMOTE = 'M2.5 3.5H13.5V10.5H2.5ZM6 13H10M8 10.5V13';
-// a chip with pins
-const FIRMWARE =
-  'M4.5 4.5H11.5V11.5H4.5ZM6.5 2.5V4.5M9.5 2.5V4.5M6.5 11.5V13.5M9.5 11.5V13.5M2.5 6.5H4.5M2.5 9.5H4.5M11.5 6.5H13.5M11.5 9.5H13.5';
-const MODULES = 'M2.5 5L8 2.5L13.5 5V11L8 13.5L2.5 11ZM2.5 5L8 7.5L13.5 5M8 7.5V13.5';
-const DOWN = 'M4 6L8 10L12 6';
-
 function Meter(props: { value: number; worst?: number; tone?: 'teal' | 'amber' }) {
   const pct = (v: number) => `${Math.max(0, Math.min(100, v))}%`;
   return (
@@ -165,7 +163,6 @@ export default function Console() {
   const [audio, setAudio] = createSignal<NativeAudioStatus>();
   const [buildInfo, setBuildInfo] = createSignal<BuildInfo>();
   const [rate, setRate] = createSignal<number>();
-  const [drawer, setDrawer] = createSignal(false);
   // the Log drawer: the last entry seen (the badge counts the errors after it); the filter and the list are in LogPanel.tsx
   const [seenId, setSeenId] = createSignal(0);
   // the Log dock: its height (undefined: the default share of the window), the window height, and a drag in progress
@@ -189,7 +186,8 @@ export default function Console() {
   const timers: number[] = [];
 
   // a memo: `status` is set once per display frame, and the panels must hear of a change of this value only
-  const sidePanelsShown = createMemo(() => page() === 'emulator' && !!status());
+  const sidePanelsShown = createMemo(() => page() === 'emulator');
+  const panelsActive = createMemo(() => !!status());
   const device = () => {
     const d = status()?.device ?? booting()?.device ?? failed()?.device ?? lastDevice();
     return d === 'dt2' || d === 'dn2' ? d : 'dn2';
@@ -233,6 +231,19 @@ export default function Console() {
     seen.entries.forEach(logInput);
   };
 
+  // The emulator has the runtime when the image has a runtime record (patched now, from the cache, or a patched file loaded as it is);
+  // unknown while booting.
+  createEffect(() => {
+    const i = info();
+    setEmulatorRuntime(i === undefined ? 'unknown' : i.runtime ? 'yes' : 'no');
+  });
+  /** The tick differs from what the running image has: it applies at the next Reload or Open. Tick on: pending when the image has no
+   * runtime. Tick off: pending when this boot patched the runtime in (a file loaded as it is, with its own runtime, keeps it either way). */
+  const runtimePending = () => {
+    const i = info();
+    if (i === undefined) return false;
+    return bootRuntime() ? !i.runtime : !!i.runtime?.patched;
+  };
   /** What the running image got from the runtime patch, for the header. */
   const refreshInfo = async () => {
     try {
@@ -275,6 +286,8 @@ export default function Console() {
     setError('');
     setStatus(undefined);
     setInfo(undefined);
+    // a boot or reset of the emulator: the indicator asks again
+    if (target().kind === 'emulator') noteConnection({ type: 'target' });
     setReloadNote('');
     setBooting(startBoot(name));
     logInput({ source: 'firmware', level: 'info', text: bootingScreen(startBoot(name)) });
@@ -285,6 +298,8 @@ export default function Console() {
       update({ type: 'snapshot', snapshot: await start(r) });
       setPaused(false);
       await refreshInfo();
+      if (target().kind === 'emulator' && emulatorRuntime() === 'no')
+        noteConnection({ type: 'noruntime', reason: EMULATOR_NO_RUNTIME });
       const s = status();
       if (s)
         logInput(
@@ -356,6 +371,12 @@ export default function Console() {
       setModulesBusy(false);
     }
   };
+  // the "Boot with runtime" tick of other pages' "Reload with runtime" button
+  setReloadWithRuntime(() => {
+    setBootRuntime(true);
+    writeRuntimePref(true);
+    void reload('Reloaded with the runtime at');
+  });
   const pollSource = async () => {
     try {
       const file = await invoke<Source | null>('emu_source_info');
@@ -395,7 +416,12 @@ export default function Console() {
   };
 
   const toggleLog = () => setLogOpen(!logOpen());
-  const toggleMetrics = () => setDrawer(!drawer());
+  const showMetrics = () => {
+    setPage('emulator');
+    setInspectorTab('metrics');
+    setInspectorOpen(true);
+    requestAnimationFrame(() => document.getElementById('side-tab-metrics')?.focus());
+  };
   const dockPx = () => startDock(dockSaved(), windowPx());
   const dockDragTo = (clientY: number) => {
     if (!dockEl) return;
@@ -462,6 +488,8 @@ export default function Console() {
     logEvent('emulator', 'info', paused() ? 'paused' : 'resumed');
   };
   const restart = async () => {
+    // a boot or reset of the emulator: the indicator asks again
+    if (target().kind === 'emulator') noteConnection({ type: 'target' });
     health = healthStart();
     const began = performance.now();
     try {
@@ -469,6 +497,8 @@ export default function Console() {
       if (s) update({ type: 'snapshot', snapshot: s });
       setPaused(false);
       await refreshInfo();
+      if (target().kind === 'emulator' && emulatorRuntime() === 'no')
+        noteConnection({ type: 'noruntime', reason: EMULATOR_NO_RUNTIME });
       logEvent('reset', 'info', `emulator reset · ${duration(performance.now() - began)}`);
       bumpCardRefresh();
       window.setTimeout(bumpCardRefresh, 2500);
@@ -529,6 +559,8 @@ export default function Console() {
   const badge = () => (logOpen() ? 0 : unseenErrors(logState().entries, seenId()));
   const mac = typeof navigator !== 'undefined' && /Mac/.test(navigator.platform);
   const logKey = mac ? '⌘J' : 'Ctrl+J';
+  const reloadKey = mac ? '⌘R' : 'Ctrl+R';
+  const modulesKey = mac ? '⇧⌘R' : 'Ctrl+Shift+R';
   // an open drawer has seen everything logged so far
   createEffect(() => {
     const entries = logState().entries;
@@ -566,6 +598,77 @@ export default function Console() {
   const load_ = () => audio()?.load ?? undefined;
   const sink = () => audio()?.sink ?? undefined;
 
+  /** The Metrics tab of the right-hand column: what the emulator measures, polled once a second, and two test actions. */
+  const metrics = (
+    <div class="card-body metrics">
+      <p class="poll">1 s poll</p>
+      <Show when={!status()}>
+        <p class="note">The emulator is not running: no readings yet.</p>
+      </Show>
+      <dl>
+        <dt>Firmware</dt>
+        <dd>{status() ? `${status()!.device} ${status()!.version} · ${phase()}` : '—'}</dd>
+        <dt>Instructions</dt>
+        <dd>{status()?.icount.toLocaleString() ?? '—'}</dd>
+        <dt>Audio output</dt>
+        <dd>{audio()?.output_device ?? (audio()?.setup_needed ? 'no audio for this firmware' : '—')}</dd>
+        <dt>Speed</dt>
+        <dd>{rate() !== undefined ? `${rate()!.toFixed(2)}× real time (recent)` : '—'}</dd>
+        <dt>Underruns</dt>
+        <dd classList={{ warn: (sink()?.underrun_events ?? 0) > 0 }}>{sink()?.underrun_events ?? 0}</dd>
+        <dt>DSP cost</dt>
+        <dd>
+          {typeof audio()?.dsp_tiers?.dsp_cpu_per_audio_s === 'number'
+            ? `${audio()!.dsp_tiers!.dsp_cpu_per_audio_s!.toFixed(2)} CPU s / audio s`
+            : '—'}
+        </dd>
+        <dt>Produced</dt>
+        <dd>{audio() ? `${audio()!.source_audio_seconds.toFixed(2)} s` : '—'}</dd>
+        <dt>CF load</dt>
+        <dd>{load_() ? `${Math.round(load_()!.cf.real_pct)} %` : '—'}</dd>
+        <dt title="Estimate for the real chip. The model figure counts one cycle per instruction, as the on-device HEALTH page does in the emulator.">
+          DSP load (est.)
+        </dt>
+        <dd>
+          {load_()?.dsp
+            ? `${Math.round(load_()!.dsp!.real_pct)} % est. (worst ${Math.round(load_()!.dsp!.real_high_pct)} %), model ${Math.round(load_()!.dsp!.model_pct)} %`
+            : '—'}
+        </dd>
+        <dt title="Largest estimated DSP load of any window since the meter was reset">DSP window peak</dt>
+        <dd>{load_()?.dsp?.peak_pct !== undefined ? `${Math.round(load_()!.dsp!.peak_pct!)} % est.` : '—'}</dd>
+      </dl>
+      <Show when={reloadNote()}>
+        <p class="note">{reloadNote()}</p>
+      </Show>
+      <Show when={card()}>
+        <p class="note">{cardLine(card())}</p>
+      </Show>
+      <Show when={device() === 'dt2' && runtime()?.cards}>
+        <div class="acts">
+          <input
+            ref={(el) => {
+              folderInput = el;
+              el.setAttribute('webkitdirectory', '');
+            }}
+            type="file"
+            multiple
+            hidden
+            onChange={(e) => void chooseSamples(e.currentTarget.files)}
+          />
+          <button
+            type="button"
+            class="tb"
+            disabled={!status() || cardBusy()}
+            title="Pick a plus_drive-style folder: WAVs become samples (track N plays file N, sorted by name), .mmcfs/ and digikit/ are used as they are"
+            onClick={() => folderInput?.click()}
+          >
+            Sample folder…
+          </button>
+        </div>
+      </Show>
+    </div>
+  );
+
   return (
     <div
       class="console"
@@ -576,154 +679,7 @@ export default function Console() {
         '--dock-h': logOpen() ? `${dockPx()}px` : '0px',
       }}
     >
-      <header class="topbar">
-        <span class="file" title={fileLabel()}>
-          <Icon d={FOLDER} />
-          <span class="path">{shortPath()}</span>
-        </span>
-        <Show when={status()}>
-          <span class="tag device">
-            {status()!.device} {status()!.version}
-          </span>
-        </Show>
-        <Show when={info()}>
-          {(i) => (
-            <span
-              class="tag runtime"
-              classList={{ on: !!i().runtime?.patched }}
-              title={
-                i().runtime?.patched
-                  ? `${i().runtime?.modules?.length ?? 0} modules of the "${i().runtime?.set}" set, ${i().runtime?.cache_hit ? 'from the image cache' : 'patched now'}`
-                  : i().runtime
-                    ? 'The image has a patch record: it is loaded as it is'
-                    : 'The image is loaded as it is'
-              }
-            >
-              {i().runtime?.patched
-                ? `runtime ${i().runtime?.set}${i().runtime?.cache_hit ? ' (cached)' : ''}`
-                : i().runtime
-                  ? 'patched image'
-                  : 'stock'}
-            </span>
-          )}
-        </Show>
-        <Show when={source() && !opened()}>
-          <button
-            type="button"
-            class="tag watch"
-            classList={{ off: !watching() }}
-            aria-pressed={watching()}
-            title="Reload when the file changes on disk"
-            onClick={() => setWatching(!watching())}
-          >
-            <i />
-            {watching() ? 'watching' : 'not watching'}
-          </button>
-        </Show>
-        <Show when={opened()}>
-          <span class="tag" title="Opened from the file picker; only the startup file is watched">
-            opened
-          </span>
-        </Show>
-        <span class="sp" />
-        <label
-          class="tag opt"
-          title="Patch the digikit runtime into a stock firmware when it is opened or reloaded (the next Open or Reload)"
-        >
-          <input
-            type="checkbox"
-            checked={bootRuntime()}
-            onChange={(e) => {
-              setBootRuntime(e.currentTarget.checked);
-              writeRuntimePref(e.currentTarget.checked);
-            }}
-          />
-          <span class="long">Boot with digikit runtime</span>
-          <span class="short">Runtime</span>
-        </label>
-        <input
-          ref={fileInput}
-          type="file"
-          accept=".syx,application/octet-stream"
-          hidden
-          onChange={async (e) => {
-            const f = e.currentTarget.files?.[0];
-            e.currentTarget.value = '';
-            if (!f) return;
-            setOpened(f.name);
-            await load(new Uint8Array(await f.arrayBuffer()), f.name);
-          }}
-        />
-        <button
-          type="button"
-          class="tb"
-          aria-label="Open firmware file"
-          title="Open a firmware file"
-          onClick={() => fileInput?.click()}
-        >
-          <Icon d={FOLDER} />
-          <span class="lbl">Open…</span>
-        </button>
-        <DefaultModules
-          device={device()}
-          off={bootRuntime() ? '' : 'Boot with digikit runtime is off: no module can be installed'}
-          note="Uploaded and enabled in the emulator after the firmware loads."
-        />
-        <button
-          type="button"
-          class="tb"
-          disabled={!source()}
-          aria-label="Reload"
-          title="Reload the startup file (⌘R)"
-          onClick={() => void reload('Reloaded at')}
-        >
-          <Icon d={RELOAD} />
-          <span class="lbl">Reload</span>
-        </button>
-        <button
-          type="button"
-          class="tb"
-          disabled={!status() || modulesBusy()}
-          aria-label="Reload modules"
-          title="Build the stale module objects, then apply the modules into the running session, without a boot when only UI modules changed (⇧⌘R). A changed SHARC+ source still needs mise run dk:dev."
-          onClick={() => void reloadModules()}
-        >
-          <Icon d={MODULES} />
-          <span class="lbl">Reload modules</span>
-        </button>
-        <button
-          type="button"
-          class="tb"
-          disabled={!status()}
-          aria-label={paused() ? 'Resume' : 'Pause'}
-          title={paused() ? 'Resume the emulator' : 'Pause the emulator'}
-          onClick={togglePause}
-        >
-          <Icon d={paused() ? PLAY : PAUSE} />
-          <span class="lbl">{paused() ? 'Resume' : 'Pause'}</span>
-        </button>
-        <button
-          type="button"
-          class="tb"
-          disabled={!status()}
-          aria-label="Reset (emulator)"
-          title="Reset the running firmware to its ready state (the emulator's reset; not the device's RESTART command)"
-          onClick={() => void restart()}
-        >
-          <Icon d={RESTART} />
-          <span class="lbl">Reset (emulator)</span>
-        </button>
-        <button
-          type="button"
-          class="tb icon"
-          disabled={!status()}
-          aria-label="Save diagnostics"
-          title="Save diagnostics"
-          onClick={() => void saveDiagnostics()}
-        >
-          <Icon d={CHART} />
-        </button>
-      </header>
+      <TitleBar onError={(m) => setError(m)} />
 
       <Show when={error() || outsideApp()}>
         <p class="alert" role="alert">
@@ -746,6 +702,7 @@ export default function Console() {
           >
             <Icon d={sidebarOpen() ? 'M10 3L5 8L10 13' : 'M6 3L11 8L6 13'} />
           </button>
+          <span class="side-group">Run</span>
           <button
             type="button"
             class="side"
@@ -757,6 +714,7 @@ export default function Console() {
             <Icon d={PLAY} />
             <span>Emulator</span>
           </button>
+          <span class="side-group">Device</span>
           <button
             type="button"
             class="side"
@@ -795,19 +753,188 @@ export default function Console() {
         </nav>
         <div class="content">
           {/* The faceplate stays mounted behind the Transfer and Remote pages: the emulator, its audio and the snapshot pump run on. */}
-          <div class="emu-row" hidden={page() !== 'emulator'}>
-            <main class="stage" aria-label={`${panel().name} front panel`}>
-              <div class="surface">
-                <LivePanel panel={panel()} runtime={runtime} onError={(e) => setError(e)} ref={(api) => (live = api)} />
-              </div>
-            </main>
-            <SidePanels
-              visible={sidePanelsShown()}
-              card
-              reload={restart}
-              session={emulatorSession}
-              where={() => 'the emulator'}
-            />
+          <div class="emu-page" hidden={page() !== 'emulator'}>
+            <header class="page-head emu-head">
+              <h2>Emulator</h2>
+              <span class="file-chip" title={fileLabel()}>
+                <Icon d={FOLDER} />
+                <span class="path">{shortPath()}</span>
+                <Show when={status()}>
+                  <span class="tag device">
+                    {status()!.device} {status()!.version}
+                  </span>
+                </Show>
+                <Show when={source() && !opened()}>
+                  <button
+                    type="button"
+                    class="tag watch"
+                    classList={{ off: !watching() }}
+                    aria-pressed={watching()}
+                    title="Reload when the file changes on disk"
+                    onClick={() => setWatching(!watching())}
+                  >
+                    <i />
+                    {watching() ? 'watching' : 'not watching'}
+                  </button>
+                </Show>
+                <Show when={opened()}>
+                  <span class="tag" title="Opened from the file picker; only the startup file is watched">
+                    opened
+                  </span>
+                </Show>
+              </span>
+              <span class="sp" />
+              <label
+                class="tag opt"
+                title="Patch the digikit runtime into a stock firmware when it is opened or reloaded (the next Open or Reload)"
+              >
+                <input
+                  type="checkbox"
+                  checked={bootRuntime()}
+                  onChange={(e) => {
+                    setBootRuntime(e.currentTarget.checked);
+                    writeRuntimePref(e.currentTarget.checked);
+                  }}
+                />
+                <span class="long">Boot with runtime</span>
+                <span class="short">Runtime</span>
+                <Show when={info()}>
+                  {(i) => (
+                    <span
+                      class="rt"
+                      classList={{ on: !!i().runtime?.patched, pending: runtimePending() }}
+                      title={
+                        runtimePending()
+                          ? `The running image ${i().runtime ? 'has' : 'has no'} runtime; the tick applies at the next Reload (${reloadKey}) or Open`
+                          : i().runtime?.patched
+                            ? `${i().runtime?.modules?.length ?? 0} modules of the "${i().runtime?.set}" set, ${i().runtime?.cache_hit ? 'from the image cache' : 'patched now'}`
+                            : i().runtime
+                              ? 'The image has a patch record: it is loaded as it is'
+                              : 'The image is loaded as it is'
+                      }
+                    >
+                      {runtimePending()
+                        ? 'on next Reload'
+                        : i().runtime?.patched
+                          ? `${i().runtime?.set}${i().runtime?.cache_hit ? ' (cached)' : ''}`
+                          : i().runtime
+                            ? 'patched image'
+                            : 'stock'}
+                    </span>
+                  )}
+                </Show>
+              </label>
+              <input
+                ref={fileInput}
+                type="file"
+                accept=".syx,application/octet-stream"
+                hidden
+                onChange={async (e) => {
+                  const f = e.currentTarget.files?.[0];
+                  e.currentTarget.value = '';
+                  if (!f) return;
+                  setOpened(f.name);
+                  await load(new Uint8Array(await f.arrayBuffer()), f.name);
+                }}
+              />
+              <span class="tb-group">
+                <button
+                  type="button"
+                  class="tb"
+                  aria-label="Open firmware file"
+                  title="Open a firmware file"
+                  onClick={() => fileInput?.click()}
+                >
+                  <Icon d={FOLDER} />
+                  <span class="lbl">Open…</span>
+                </button>
+                <DefaultModules
+                  device={device()}
+                  off={bootRuntime() ? '' : 'Boot with digikit runtime is off: no module can be installed'}
+                  note="Uploaded and enabled in the emulator after the firmware loads."
+                />
+              </span>
+              <span class="tb-group">
+                <button
+                  type="button"
+                  class="tb"
+                  classList={{ pending: runtimePending() }}
+                  disabled={!source()}
+                  aria-label="Reload"
+                  title={`Reload the startup file (${reloadKey})${runtimePending() ? ' · applies the Runtime choice' : ''}`}
+                  onClick={() => void reload('Reloaded at')}
+                >
+                  <Icon d={RELOAD} />
+                  <span class="lbl">Reload</span>
+                  <kbd class="lbl">{reloadKey}</kbd>
+                </button>
+                <button
+                  type="button"
+                  class="tb"
+                  disabled={!status() || modulesBusy()}
+                  aria-label="Reload modules"
+                  title={`Build the stale module objects, then apply the modules into the running session, without a boot when only UI modules changed (${modulesKey}). A changed SHARC+ source still needs mise run dk:dev.`}
+                  onClick={() => void reloadModules()}
+                >
+                  <Icon d={MODULES} />
+                  <span class="lbl">Modules</span>
+                  <kbd class="lbl">{modulesKey}</kbd>
+                </button>
+              </span>
+              <span class="tb-group">
+                <button
+                  type="button"
+                  class="tb icon"
+                  disabled={!status()}
+                  aria-label={paused() ? 'Resume' : 'Pause'}
+                  title={paused() ? 'Resume the emulator' : 'Pause the emulator'}
+                  onClick={togglePause}
+                >
+                  <Icon d={paused() ? PLAY : PAUSE} />
+                </button>
+                <button
+                  type="button"
+                  class="tb icon"
+                  disabled={!status()}
+                  aria-label="Reset (emulator)"
+                  title="Reset the running firmware to its ready state (the emulator's reset; not the device's RESTART command)"
+                  onClick={() => void restart()}
+                >
+                  <Icon d={RESTART} />
+                </button>
+                <button
+                  type="button"
+                  class="tb icon"
+                  disabled={!status()}
+                  aria-label="Save diagnostics"
+                  title="Save diagnostics"
+                  onClick={() => void saveDiagnostics()}
+                >
+                  <Icon d={CHART} />
+                </button>
+              </span>
+            </header>
+            <div class="emu-row">
+              <main class="stage" aria-label={`${panel().name} front panel`}>
+                <div class="surface">
+                  <LivePanel
+                    panel={panel()}
+                    runtime={runtime}
+                    onError={(e) => setError(e)}
+                    ref={(api) => (live = api)}
+                  />
+                </div>
+              </main>
+              <SidePanels
+                visible={sidePanelsShown()}
+                active={panelsActive()}
+                card
+                reload={restart}
+                metrics={metrics}
+                session={emulatorSession}
+                where={() => 'the emulator'}
+              />
+            </div>
           </div>
           <Show when={page() === 'transfer'}>
             <TransferPage />
@@ -862,88 +989,6 @@ export default function Console() {
         </section>
       </Show>
 
-      <Show when={drawer()}>
-        <section class="drawer" aria-label="Metrics">
-          <header>
-            <strong>Metrics</strong>
-            <span>1 s poll</span>
-          </header>
-          <dl>
-            <dt>Firmware</dt>
-            <dd>{status() ? `${status()!.device} ${status()!.version} · ${phase()}` : '—'}</dd>
-            <dt>Instructions</dt>
-            <dd>{status()?.icount.toLocaleString() ?? '—'}</dd>
-            <dt>Audio output</dt>
-            <dd>{audio()?.output_device ?? (audio()?.setup_needed ? 'no audio for this firmware' : '—')}</dd>
-            <dt>Speed</dt>
-            <dd>{rate() !== undefined ? `${rate()!.toFixed(2)}× real time (recent)` : '—'}</dd>
-            <dt>Underruns</dt>
-            <dd classList={{ warn: (sink()?.underrun_events ?? 0) > 0 }}>{sink()?.underrun_events ?? 0}</dd>
-            <dt>DSP cost</dt>
-            <dd>
-              {typeof audio()?.dsp_tiers?.dsp_cpu_per_audio_s === 'number'
-                ? `${audio()!.dsp_tiers!.dsp_cpu_per_audio_s!.toFixed(2)} CPU s / audio s`
-                : '—'}
-            </dd>
-            <dt>Produced</dt>
-            <dd>{audio() ? `${audio()!.source_audio_seconds.toFixed(2)} s` : '—'}</dd>
-            <dt>CF load</dt>
-            <dd>{load_() ? `${Math.round(load_()!.cf.real_pct)} %` : '—'}</dd>
-            <dt title="Estimate for the real chip. The model figure counts one cycle per instruction, as the on-device HEALTH page does in the emulator.">
-              DSP load (est.)
-            </dt>
-            <dd>
-              {load_()?.dsp
-                ? `${Math.round(load_()!.dsp!.real_pct)} % est. (worst ${Math.round(load_()!.dsp!.real_high_pct)} %), model ${Math.round(load_()!.dsp!.model_pct)} %`
-                : '—'}
-            </dd>
-            <dt title="Largest estimated DSP load of any window since the meter was reset">DSP window peak</dt>
-            <dd>{load_()?.dsp?.peak_pct !== undefined ? `${Math.round(load_()!.dsp!.peak_pct!)} % est.` : '—'}</dd>
-          </dl>
-          <Show when={reloadNote()}>
-            <p class="note">{reloadNote()}</p>
-          </Show>
-          <Show when={card()}>
-            <p class="note">{cardLine(card())}</p>
-          </Show>
-          <div class="acts">
-            <button
-              type="button"
-              class="tb"
-              disabled={!status() || !audio()?.flow_started}
-              onClick={() =>
-                void runtime()
-                  ?.tap?.(25)
-                  .catch((e) => setError(message(e)))
-              }
-            >
-              Audition Trig 1
-            </button>
-            <Show when={device() === 'dt2' && runtime()?.cards}>
-              <input
-                ref={(el) => {
-                  folderInput = el;
-                  el.setAttribute('webkitdirectory', '');
-                }}
-                type="file"
-                multiple
-                hidden
-                onChange={(e) => void chooseSamples(e.currentTarget.files)}
-              />
-              <button
-                type="button"
-                class="tb"
-                disabled={!status() || cardBusy()}
-                title="Pick a plus_drive-style folder: WAVs become samples (track N plays file N, sorted by name), .mmcfs/ and digikit/ are used as they are"
-                onClick={() => folderInput?.click()}
-              >
-                Sample folder…
-              </button>
-            </Show>
-          </div>
-        </section>
-      </Show>
-
       <footer class="statusbar">
         <span>
           <i class="dot" classList={{ paused: paused() || !status() || !!booting() }} />
@@ -984,14 +1029,14 @@ export default function Console() {
             <Meter value={load_()!.cf.real_pct} />
           </span>
           <Show when={load_()!.dsp}>
-            <span title="Estimated DSP load of the real chip. Model figure (as the HEALTH page shows in the emulator) and window peak are in the drawer">
+            <span title="Estimated DSP load of the real chip. Model figure (as the HEALTH page shows in the emulator) and window peak are in the Metrics tab">
               DSP est. {Math.round(load_()!.dsp!.real_pct)}%
               <Meter value={load_()!.dsp!.real_pct} worst={load_()!.dsp!.real_high_pct} />
             </span>
           </Show>
         </Show>
         <span class="sp" />
-        <Show when={reloadNote() && !drawer()}>
+        <Show when={reloadNote()}>
           <span class="muted" title={reloadNote()}>
             {reloadNote()}
           </span>
@@ -1005,9 +1050,8 @@ export default function Console() {
           </Show>
           <Icon d={logOpen() ? DOWN : UP} />
         </button>
-        <button type="button" class="sb" aria-expanded={drawer()} onClick={toggleMetrics}>
+        <button type="button" class="sb" title="Show the Metrics tab of the Emulator page" onClick={showMetrics}>
           Metrics
-          <Icon d={drawer() ? DOWN : UP} />
         </button>
       </footer>
     </div>

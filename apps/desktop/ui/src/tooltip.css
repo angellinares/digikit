@@ -1,0 +1,29 @@
+.tip {
+  position: fixed;
+  z-index: 1000;
+  max-width: 320px;
+  padding: 5px 8px;
+  border: 1px solid #34373d;
+  border-radius: 6px;
+  background: #1a1c20;
+  color: var(--ink, #eceae5);
+  font-size: 12px;
+  line-height: 1.35;
+  box-shadow: 0 6px 18px rgb(0 0 0 / 40%);
+  pointer-events: none;
+  animation: tip-in 0.12s ease-out;
+}
+.tip[hidden] {
+  display: none;
+}
+@keyframes tip-in {
+  from {
+    opacity: 0;
+    transform: translateY(-2px);
+  }
+}
+@media (prefers-reduced-motion: reduce) {
+  .tip {
+    animation: none;
+  }
+}

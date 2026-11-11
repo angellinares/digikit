@@ -2,6 +2,7 @@
 // progress bar or verified/failed chip, the breadcrumb, and the two-click Delete button.
 import { For, Show, createEffect, createSignal, type JSX } from 'solid-js';
 import TargetSelect from './TargetSelect';
+import { transferEnv } from './env';
 import { fmtRate } from './rate-core';
 import type { PaneSelect } from './pane-select';
 import { dragKind, selectState, toggleAll } from './select-core';
@@ -202,17 +203,25 @@ export function SelectAll(props: {
   createEffect(() => {
     if (box) box.indeterminate = state() === 'some';
   });
+  const count = () => props.keys.filter((k) => props.ticked.has(k)).length;
   return (
-    <input
-      ref={box}
-      type="checkbox"
-      class="all"
-      aria-label={props.label}
-      title={state() === 'all' ? 'Clear the selection' : 'Select all'}
-      checked={state() === 'all'}
-      disabled={props.disabled || props.keys.length === 0}
-      onChange={() => props.onChange(toggleAll(props.keys, props.ticked))}
-    />
+    <>
+      <input
+        ref={box}
+        type="checkbox"
+        class="all"
+        aria-label={props.label}
+        title={state() === 'all' ? 'Clear the selection' : 'Select all'}
+        checked={state() === 'all'}
+        disabled={props.disabled || props.keys.length === 0}
+        onChange={() => props.onChange(toggleAll(props.keys, props.ticked))}
+      />
+      <Show when={count() > 0}>
+        <span class="selcount" title={`${count()} of ${props.keys.length} ticked`}>
+          {count()} / {props.keys.length}
+        </span>
+      </Show>
+    </>
   );
 }
 
@@ -439,7 +448,9 @@ export function DevicePane(props: {
       </div>
       <Show when={!props.hideTarget}>
         <div class="devhead">
-          <TargetSelect disabled={writing(props.ctx.busy())} onError={props.ctx.setError} reload={props.ctx.reload} />
+          <Show when={!transferEnv().targets.inHeader}>
+            <TargetSelect disabled={writing(props.ctx.busy())} onError={props.ctx.setError} reload={props.ctx.reload} />
+          </Show>
           <Show when={deviceInfo()}>
             {(d) => (
               <>

@@ -5,7 +5,7 @@
 // selection, made in SETTINGS > DIGIKIT > MODULES on the device and applied there.
 
 import { formatBytes } from '../modules/backend.ts';
-import { fitsSet } from '../modules/fit.ts';
+import { fit, fitsSet } from '../modules/fit.ts';
 import type { Group, TransferEvent, TransferRow, TransferView } from '../modules/dktransfer.ts';
 export type { Group, TransferEvent, TransferRow, TransferView };
 export const GROUPS: Group[] = ['Machines', 'Effects', 'Tools'];
@@ -109,8 +109,9 @@ export interface RowTag {
   tone: 'ok' | 'warn' | 'dim';
 }
 
-/** The tags of a library module in the "On your computer" list: a test module, what the device holds of it, and whether it fits the device
- * (from the needs inferred from its contents, next to the modules loaded now; the tooltip says what is short). A loaded module says nothing of fit. */
+/** The tags of a library module in the "On your computer" list: a test module, what the device holds of it, and a module that does not fit the
+ * device (from the needs inferred from its contents, next to the modules loaded now; the tooltip says what is short). Fitting is the usual
+ * state and says nothing; the line above the list says how the ticked ones fit together. */
 export function localTags(r: TransferRow): RowTag[] {
   const out: RowTag[] = [];
   if (r.test) out.push({ text: 'test', tone: 'dim' });
@@ -119,8 +120,6 @@ export function localTags(r: TransferRow): RowTag[] {
     out.push({ text: 'differs', title: 'A different build is on the device; Install replaces it', tone: 'warn' });
   const w = warningText(r);
   if (w) out.push({ text: "won't fit", title: w, tone: 'warn' });
-  else if (r.fits === true && !r.loaded)
-    out.push({ text: 'fits', title: 'Fits the device next to the modules loaded now', tone: 'dim' });
   return out;
 }
 
@@ -154,6 +153,15 @@ export function tickedFit(view: TransferView, ticks: Set<string>): { text: strin
         : `${name} does not fit with the ticked modules before it: ${short.describe}`,
     tone: 'warn',
   };
+}
+
+/** The load of the device after the next boot with the ticked modules (`DSP 52% CPU 1%`, the fit rule's load line), or null when nothing is
+ * ticked, the device gave no CAPACITY or the ticked modules do not fit together (tickedFit says which). */
+export function tickedLoad(view: TransferView, ticks: Set<string>): string | null {
+  const rows = view.modules.filter((r) => r.id && ticks.has(rowKey(r)) && r.needs);
+  if (!rows.length || !view.capacity) return null;
+  const answer = fit({ caps: view.capacity, needs: rows.map((r) => r.needs!), empty: true });
+  return answer.set || !answer.line ? null : answer.line;
 }
 
 /** The tags of a file of the "On device" list: a loaded module says so first; a file the library does not have, and one that differs from

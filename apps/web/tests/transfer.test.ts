@@ -25,6 +25,7 @@ import {
   freeText,
   freeLine,
   localTags,
+  tickedLoad,
   MODES,
   parseMode,
   storageLine,
@@ -260,7 +261,11 @@ test('the tags: only what says something; the usual state has none', () => {
     [fit[0].text, fit[0].tone, fit[0].title],
     ["won't fit", 'warn', 'arena 2 MiB is more than the free 1 MiB'],
   );
-  assert.deepEqual(texts(localTags({ ...sine, fits: true })), ['fits'], 'a module that fits says so');
+  assert.deepEqual(
+    texts(localTags({ ...sine, fits: true })),
+    [],
+    'fitting is the usual state: only a module that does not fit says so',
+  );
   assert.deepEqual(
     texts(localTags({ ...sine, fits: true, loaded: true, on_card: 'yes' })),
     ['on device'],
@@ -332,6 +337,10 @@ test('the ticked modules together: the sum rule against the device limits, in li
   assert.match(two.text, /^b does not fit with the ticked modules before it: DSP memory 293 KiB needed, 219 KiB free$/);
   const alone = tickedFit({ ...v, modules: [m('big', 600000)] }, new Set(['big']))!;
   assert.match(alone.text, /^big does not fit the device: DSP memory 586 KiB needed, 511 KiB free$/);
+  // the load after the next boot, shown beside a set that fits; none for a set that does not
+  assert.match(tickedLoad(v, new Set(['a', 'c']))!, /^DSP \d+%/);
+  assert.equal(tickedLoad(v, new Set(['a', 'b'])), null);
+  assert.equal(tickedLoad(v, new Set()), null);
 });
 
 test('the storage line of Modules mode: files on the card, their size and the free space; no memory wording', () => {

@@ -4,6 +4,8 @@
 import { DkNeeds } from '../modules/dkneeds';
 import { setFitReader } from '../modules/fit';
 import { fileHashHex, fmtVersion, storePath } from '@digi/dk-session';
+import type { DkInfoFull, DkSession } from '@digi/dk-session';
+import { NoRuntimeError, isCancelled, isTimeout } from '../modules/backend';
 import {
   buildView,
   deleteFiles,
@@ -24,7 +26,7 @@ import {
 import { RPC_SOFTWARE_VERSION, parseSoftwareVersion } from './connection-core';
 import { asked, noteConnection } from './connection-state';
 import { transferEnv } from './env';
-import { session as running, target, targetLabel } from './target';
+import { checkRuntime, session as running, target, targetLabel } from './target';
 
 let needsReader: Promise<DkNeeds> | undefined;
 /** What a .dkm takes of the device and whether it fits: patchkit.wasm's `pk_needs` and `pk_fit`, loaded once (a failed load is tried again at the next use). */
@@ -69,10 +71,41 @@ function osVersion(s: {
   return known;
 }
 
+/** INFO, telling "no runtime" from "no reply". Only a timeout counts as no answer (E_BUSY or a protocol error prove the runtime answered,
+ * so they are thrown). After a quick INFO times out, the stock SoftwareVersion (every firmware answers it, with or without the runtime)
+ * says whether the device is there at all. When it is, a runtime may still be starting or busy: two more quick INFOs, 1 s apart, before
+ * "no runtime". With no answer to SoftwareVersion either, the full INFO with its retries decides. */
+async function probeInfo(s: DkSession): Promise<DkInfoFull> {
+  const quick = async (): Promise<DkInfoFull | undefined> => {
+    try {
+      return await s.info(true);
+    } catch (e) {
+      if (isTimeout(e)) return undefined;
+      throw e;
+    }
+  };
+  const first = await quick();
+  if (first) return first;
+  const os = await s.rpc(RPC_SOFTWARE_VERSION, undefined, 1500).then(parseSoftwareVersion, (e: unknown) => {
+    if (isCancelled(e)) throw e;
+    return undefined;
+  });
+  if (!os) return s.info();
+  for (let i = 0; i < 2; i++) {
+    await new Promise((r) => setTimeout(r, 1000));
+    const again = await quick();
+    if (again) return again;
+  }
+  throw new NoRuntimeError(
+    `${targetLabel(target())} answers (OS ${os}) but runs no digikit runtime. Flash it on the Firmware page.`,
+  );
+}
+
 /** The session, and its INFO: the answer is what the connection indicator shows. */
 async function opened() {
+  await asked(async () => checkRuntime(target()));
   const s = await asked(running);
-  const info = await asked(() => s.info());
+  const info = await asked(() => probeInfo(s));
   const os = await osVersion(s);
   noteConnection({
     type: 'answered',
@@ -106,6 +139,7 @@ export const transferBackend = {
   },
   /** DELETE the files from the card (one request each, confirmed with LIST). The device's selection is not touched. */
   async remove(paths: string[], onEvent: (e: TransferEvent) => void): Promise<void> {
+    await asked(async () => checkRuntime(target()));
     const s = await asked(running);
     await asked(() => deleteFiles(s, paths, onEvent));
   },
