@@ -912,7 +912,9 @@ def main(argv: list[str] | None = None) -> int:
     p.add_argument("prefix", nargs="?")
     p = sub.add_parser("mkdir", help="make a folder in the store")
     p.add_argument("path")
-    p = sub.add_parser("mv", help="rename or move a file or an empty folder in the store")
+    p = sub.add_parser(
+        "mv", help="rename or move a file or an empty folder in the store"
+    )
     p.add_argument("src")
     p.add_argument("dst")
     sub.add_parser("modules")

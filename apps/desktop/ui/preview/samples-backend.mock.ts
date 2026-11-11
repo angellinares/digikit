@@ -140,7 +140,10 @@ const backend: SamplesBackend = {
     const [f, t] = [clean(folder), clean(toFolder)];
     const entry = (sampleTree.get(f) ?? []).find((e) => e.name === name);
     if (!entry) return;
-    sampleTree.set(f, (sampleTree.get(f) ?? []).filter((e) => e.name !== name));
+    sampleTree.set(
+      f,
+      (sampleTree.get(f) ?? []).filter((e) => e.name !== name),
+    );
     sampleTree.set(t, [...(sampleTree.get(t) ?? []).filter((e) => e.name !== toName), { ...entry, name: toName }]);
   },
 };

@@ -4,7 +4,7 @@
 # sdk/include/dk/gen/machine_consts.h, fx_consts.h, machine.h, fx.h and api.h from this file (`patchkit gen --check` fails when they are stale).
 
 [runtime]           # the digikit runtime release (semantic version; packed major<<16 | minor<<8 | patch)
-version = "0.5.7"   # 0.x: MINOR may break (contract major, store format, SysEx protocol), PATCH = features and fixes
+version = "0.5.8"   # 0.x: MINOR may break (contract major, store format, SysEx protocol), PATCH = features and fixes
 
 [contract]          # [major, minor] per contract (docs/design/module-sdk.md 11.5 D3). The runtime refuses a module that declares a
                     # contract (major != 0) when its major differs from the runtime's or its minor is above the runtime's. Major 0 = not implemented.

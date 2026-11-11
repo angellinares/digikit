@@ -377,6 +377,10 @@
    "owner": "rust:packages/emulator",
    "purpose": "Root of the plus_drive device folders for the control daemon (default the repository's plus_drive/)."
   },
+  "DIGI_READ_WATCH": {
+   "owner": "rust:packages/emulator",
+   "purpose": "Hex guest ranges LO-HI or LO+LEN; logs CPU loads from them with the PC and per-byte load counts (read-watch instrument)."
+  },
   "DIGI_RENDER_CACHE": {
    "owner": "python:tests/devtools",
    "purpose": "Set to 0 to turn off the render cache of tools/devtools/render_cache.py."

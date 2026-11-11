@@ -452,6 +452,12 @@ class BulkSamples implements SamplesBackend {
   mkdir(folder: string) {
     return this.base.mkdir(folder);
   }
+  canRename() {
+    return this.base.canRename();
+  }
+  rename(folder: string, name: string, toFolder: string, toName: string) {
+    return this.base.rename(folder, name, toFolder, toName);
+  }
   rmdir(folder: string) {
     return this.base.rmdir(folder);
   }
