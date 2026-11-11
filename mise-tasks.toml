@@ -240,7 +240,7 @@ description = "Retrain the DN2, DT2 and two-core PGO profiles, then rebuild the 
 
 ["perf:aot"]
 run = "uv run python -m tools.sharc_dev.aot_gen"
-description = "Generate a firmware block library (AOT core) and register it by DSP image: mise run perf:aot -- dt2 --card-image IMG"
+description = "Generate a firmware block library (AOT core) and register it by DSP image: mise run perf:aot -- dn2, or -- dt2 --card-image IMG"
 
 # --- generated SHARC core ---
 

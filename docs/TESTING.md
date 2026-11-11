@@ -200,6 +200,7 @@ Tests that lack an input skip with a reason; `pytest -rs` lists them.
 | Module toolchains in `out/tools` | `mise run patch:toolchains` (about 15 min); `uv run python -m tools.patchkit.pk_toolchains status`. |
 | Objects of content modules and fixtures in `out/cache/dko` | Not committed. The Rust tests that scan the repository (`Library::scan_repo`), `module:pack`, `module:pack-all`, `dk:run`, `dk:dev` and the web gallery build the stale ones on demand (`patchkit build` does it by hand). Without the m68k-elf toolchain the Rust tests that need them print `SKIP` and return. A checkout with an empty `out/` passes after the first build. |
 | Ready inputs | `mise run emu:ready -- dt2` or `-- dn2` (about 2 min). |
+| Device generated cores `out/native/{dn2,dt2}-audio/gen` (AOT blocks) | `mise run perf:aot -- dn2` (about 4 min, then about 6 min for the first coupled build against it) or `-- dt2 --card-image IMG`; from the ready inputs, the SHARC database is built when missing. A DN2 core made otherwise (`sharc_dn2_aot`, from a capture) is kept: the tool refuses to overwrite it. Regenerate after a `CORE_FINGERPRINT` change. |
 | Captures `out/captures/*.dt2cap` | Not reproducible from the repository; those tests stay skipped. |
 | Opt-in switches | `LIVE_AUDIO_DEVICE_TESTS=1` opens a real audio device; `--slow` runs long firmware runs. |
 
