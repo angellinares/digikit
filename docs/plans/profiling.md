@@ -70,7 +70,7 @@ In the emulator, the daemon can read it directly (`mem.cf.peek`, `dsp.peek`).
 
 Run the sharcdb builder on each module's DSP section, with the `.dko` symbols as names. A module then gets blocks, loops, register use, memory
 accesses and a call graph from the same tables we use for the firmware. Uses: static loop cost, the DSP rule check
-(runtime-and-services 7.2), and naming in profiles. First test: does the builder accept a relocatable L2 section? [O]
+([sdk.md](sdk.md) section 9), and naming in profiles. First test: does the builder accept a relocatable L2 section? [O]
 
 ### 3.4 Export
 
@@ -129,7 +129,7 @@ TCOUNT in `UNSAFE_READ_NAMES`. Per-function detail comes from PC counts plus the
    counts repeat. These are instruction counts, not hardware cycles; section 7.3 calibrates them.
 3. **Machine budget check in `module:check`.** Run the machine at 16 voices on both devices and compare its worst block with the device
    headroom (about 450k instructions on DT2, 330k on DN2, `digikit-module` skill `references/devices.md`). Effects already have
-   `fx_budget`. The measured number feeds the packer-derived cycle need (runtime-and-services 7.2).
+   `fx_budget`. The measured number feeds the packer-derived cycle need ([sdk.md](sdk.md) section 9).
 4. **Fast-tier refusals per module.** List the module instructions the fast tier refuses, which keep it in the interpreter. This matters
    for emulator and browser speed, not for hardware. Input for an SDK warning and for fast-tier lowering work.
 
