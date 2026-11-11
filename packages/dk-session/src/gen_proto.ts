@@ -147,6 +147,7 @@ export const CAP = {
   SETTINGS: 11,
   FILEHASH: 12,
   RENAME: 13,
+  READBACK: 14,
 } as const;
 
 /** The command numbers a module may register: [first, last]. */
