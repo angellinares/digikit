@@ -64,6 +64,37 @@
   margin: 0;
   font-size: 16px;
 }
+/* Modules or Samples: a two-way switch in the header (desktop: the Samples mode is the app's). */
+.transfer-page .modes {
+  display: inline-flex;
+  gap: 2px;
+  padding: 3px;
+  border: 1px solid #24262b;
+  border-radius: 9px;
+  background: #131418;
+}
+.transfer-page .modes button {
+  height: 26px;
+  padding: 0 12px;
+  border: 0;
+  border-radius: 6px;
+  background: transparent;
+  color: var(--ink-2, #a9adb4);
+  font: inherit;
+  font-size: 12.5px;
+  cursor: pointer;
+}
+.transfer-page .modes button:hover:not(:disabled) {
+  color: var(--ink, #eceae5);
+}
+.transfer-page .modes button.on {
+  background: #2a2d33;
+  color: var(--ink, #eceae5);
+  font-weight: 600;
+}
+.transfer-page .modes button:disabled {
+  cursor: not-allowed;
+}
 .transfer-page h3 {
   margin: 0 0 6px;
   font-size: 12px;
@@ -266,6 +297,16 @@
 .transfer-page .fitline.warn {
   color: #f0b35a;
   background: #2a2010;
+}
+.transfer-page .fitline {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 2px 14px;
+}
+.transfer-page .fitline .load {
+  font-family: var(--font-mono);
+  font-size: 11.5px;
+  color: var(--ink-2, #a9adb4);
 }
 .transfer-page .check {
   flex: none;

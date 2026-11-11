@@ -36,6 +36,7 @@ import {
   installModules,
   localTags,
   tickedFit,
+  tickedLoad,
   onDeviceWithPending,
   rowKey,
   rowStatus,
@@ -302,6 +303,9 @@ export default function ModulesMode(props: { ctx: PageCtx }): JSX.Element {
                     title="The ticked modules together against the device's limits, as the next boot loads them (nothing else counted)"
                   >
                     {f().text}
+                    <Show when={tickedLoad(v(), ticks())}>
+                      {(load) => <span class="load">After the next boot: {load()}</span>}
+                    </Show>
                   </p>
                 )}
               </Show>

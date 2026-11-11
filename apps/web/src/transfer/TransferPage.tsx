@@ -179,17 +179,22 @@ export default function TransferPage(): JSX.Element {
       <header class="head">
         <h2>Transfer</h2>
         <Show when={samples()}>
-          <label class="target-select">
-            <span class="dim">Mode</span>{' '}
-            <select
-              aria-label="Mode"
-              disabled={writing(busy())}
-              value={activeMode()}
-              onChange={(e) => changeMode(e.currentTarget.value)}
-            >
-              <For each={MODES}>{(m) => <option value={m.id}>{m.label}</option>}</For>
-            </select>
-          </label>
+          <span class="modes" role="radiogroup" aria-label="Mode">
+            <For each={MODES}>
+              {(m) => (
+                <button
+                  type="button"
+                  role="radio"
+                  aria-checked={activeMode() === m.id}
+                  classList={{ on: activeMode() === m.id }}
+                  disabled={writing(busy())}
+                  onClick={() => activeMode() !== m.id && changeMode(m.id)}
+                >
+                  {m.label}
+                </button>
+              )}
+            </For>
+          </span>
         </Show>
         <span class="sp" />
         <ConnectionBadge />
