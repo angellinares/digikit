@@ -45,7 +45,7 @@ for (const device of DEVICES) {
     const kit = cardRig(device, 'usb-bulk', {
       dsp: 'zero',
       roots: [...RT, 'core/usb-bulk'],
-      symbols: ['DKRT_MAILBOX', 'usb_bulk_connect', 'usb_bulk_disconnect', 'usb_bulk_switches', 'usb_bulk_switch_gap_ms'],
+      symbols: ['DKRT_MAILBOX', 'usb_bulk_connect', 'usb_bulk_disconnect', 'usb_bulk_switches', 'usb_bulk_switch_gap_ms', 'usb_bulk_last_area', 'usb_bulk_last_bytes', 'usb_bulk_free_why'],
       initial: () => ({ selection: [] }),
       project: true,
       uploads: true,
@@ -441,6 +441,101 @@ for (const device of DEVICES) {
         expect([await port(), await taken()], 'given back without a switch').toEqual([2, false]);
         expect(await mode(), 'the stored mode is unchanged at the end').toBe(stored);
         await rt.session.expectNoFault('takeover');
+      } finally {
+        await setPort(2);
+      }
+    }, 1_800_000);
+
+    test('the buffers exist only for a session: freed at the give-back (EP2 stays up, the host is NAKed, nothing lands in the freed block), allocated again by enable without a re-enumeration; a take-over from USB AUDIO/MIDI allocates before its one switch and frees after the give-back', async () => {
+      const LIVE = 0x10;
+      const rt = await boot('echo-free', true);
+      await enabled(rt);
+      const { setPort, port, takeover, run } = takeoverKit(rt);
+      const state = async () => (await echoStatus(rt)).state;
+      const switches = () => word(rt, planSymbol(kit.plan, 'usb_bulk_switches'));
+      const block = async () => ({
+        addr: await word(rt, planSymbol(kit.plan, 'usb_bulk_last_area')),
+        bytes: await word(rt, planSymbol(kit.plan, 'usb_bulk_last_bytes')),
+      });
+      /** REENABLE, then run until the job has stored an enable result of 0 (a refused one is retried: the guard after a switch). */
+      const reenable = async () => {
+        for (let i = 0; i < 100; i++) {
+          expect((await usb(rt, (dk) => dk.request(ECHO_CMD + 2))).status, 'reenable').toBe(0);
+          await advance(rt.session, 100);
+          const s = await echoStatus(rt);
+          if (s.enable === 0) return s;
+        }
+        throw new Error('usb_bulk_enable never returned 0');
+      };
+      try {
+        expect((await state()) & LIVE, 'the buffers are allocated by the enable in USB MIDI mode').toBe(LIVE);
+        const area = await block();
+        expect([area.addr % 4096, area.bytes], 'the block: 4 KiB aligned, 128 KiB + 32 KiB').toEqual([0, 160 * 1024]);
+        const first = pattern(70_000, 41);
+        expect((await echo(rt, first, true)).equals(first), 'transfer 1').toBe(true);
+
+        // a session in USB MIDI mode: take over (no switch), give back: the tick frees the buffers; EP2 stays enabled
+        // the job holds a receive buffer while the session ends: the free waits for it (CPU-owned memory), then happens once it is released
+        const freeWhy = async () => word(rt, planSymbol(kit.plan, 'usb_bulk_free_why'));
+        const taken0 = (await echoStatus(rt)).taken;
+        await hold(rt, 1);
+        await rpc(rt.session, 'usb.bulk.in', { bytes: pattern(3000, 45).toString('hex') });
+        await advance(rt.session, 100);
+        expect((await echoStatus(rt)).taken, 'the job holds a buffer').toBe(taken0 + 1);
+        expect(await takeover(0), 'takeover in USB MIDI').toBe(0);
+        expect(await takeover(1), 'giveback').toBe(0);
+        await run(1500);
+        expect([(await state()) & LIVE, await freeWhy()], 'not freed while a buffer is held (reason 1)').toEqual([LIVE, 1]);
+        await hold(rt, 0);
+        expect((await collect(rt, 3000)).length, 'the held buffer is echoed once released').toBe(3000);
+        await run(1500);
+        const freed = await state();
+        expect(await freeWhy(), 'freed').toBe(0);
+        const why = (await freeWhy()).toString(16);
+        expect([freed & LIVE, freed & 2, freed & 1], `freed (refused for: 0x${why}); EP2 still up (connected); still prepared`).toEqual([0, 2, 1]);
+
+        // the host sends while there are no buffers: nothing lands in the freed block (poisoned here), the host is NAKed
+        const poison = 0xa5a5a5a5;
+        const spots = [0, 16_384, 8 * 16_384, 8 * 16_384 + 16_384].map((o) => area.addr + ALIAS + o);
+        for (const a of spots) for (let k = 0; k < 8; k++) await rpc(rt.session, 'mem.cf.poke', { addr: a + 4 * k, value: poison });
+        const held = pattern(5000, 44);
+        await rpc(rt.session, 'usb.bulk.in', { file: hostFile(rt, 'while-freed.bin', held) });
+        await advance(rt.session, 500);
+        expect((await out(rt)).bytes, 'nothing is echoed while there are no buffers').toBe(0);
+        expect(full((await state())), 'no buffer was filled').toBe(0);
+        for (const a of spots) for (let k = 0; k < 8; k++) expect(await word(rt, a + 4 * k), `the freed block at ${(a + 4 * k).toString(16)} is untouched`).toBe(poison);
+
+        // enable again: allocated again, the waiting data arrives whole, and enable made no switch of its own (EP2 was up: no re-enumeration)
+        const s0 = await switches();
+        const again = await reenable();
+        expect((await state()) & LIVE, 'allocated again').toBe(LIVE);
+        expect(again.enable).toBe(0);
+        expect(await switches(), 'no stop and restart for a session in USB MIDI mode').toBe(s0);
+        expect((await collect(rt, held.length)).equals(held), 'the data the host had waiting arrives whole').toBe(true);
+        const second = pattern(70_001, 42);
+        expect((await echo(rt, second, false)).equals(second), 'transfer 2 is the new data, whole: no stale DMA of the first session').toBe(true);
+
+        // a take-over from USB AUDIO/MIDI: the buffers exist before the switch connects port 2 (one switch, one enumeration), and are gone after the give-back
+        expect(await takeover(0)).toBe(0);
+        expect(await takeover(1)).toBe(0);
+        await run(1500);
+        expect((await state()) & LIVE, 'freed after the second give-back').toBe(0);
+        await setPort(5);
+        await run(2500); // the guard after the enable's restart
+        const s1 = await switches();
+        expect(await takeover(0), 'takeover from USB AUDIO/MIDI').toBe(0);
+        await run(2500);
+        expect(await port(), 'switched to USB MIDI').toBe(2);
+        expect(await switches(), 'the take-over made exactly one switch').toBe(s1 + 1);
+        expect((await state()) & LIVE, 'the tick allocated before the switch').toBe(LIVE);
+        await enumerate(rt);
+        const third = pattern(40_000, 43);
+        expect((await echo(rt, third, false)).equals(third), 'transfer 3 after a take-over').toBe(true);
+        expect(await takeover(1), 'giveback').toBe(0);
+        await run(2500);
+        expect(await port(), 'back in USB AUDIO/MIDI').toBe(5);
+        expect((await state()) & LIVE, 'freed again; EP2 untouched in USB AUDIO/MIDI').toBe(0);
+        await rt.session.expectNoFault('buffers freed and allocated');
       } finally {
         await setPort(2);
       }

@@ -50,8 +50,8 @@ before it runs; results go to findings 42 and 43.
 
 ### Build and flash (the device restarts)
 
-1. Patch set: the set the device runs today plus `core/usb-bulk` (add a `device-usb` set to `devices/<device>.toml` if none fits).
-   `mise run patch -- --firmware firmware/<stock>.syx --set device-usb -o out/patch/<dev>-usb.syx`.
+1. Patch set: `device` (or `device-introblank`); both carry `core/usb-bulk` (and `core/plusdrive-write` on DT2). The runs below used a `device-usb` set, since merged into `device`.
+   `mise run patch -- --firmware firmware/<stock>.syx --set device -o out/patch/<dev>-usb.syx`.
 2. `mise run patch:preflight -- out/patch/<dev>-usb.syx` must pass.
 3. Flash from the workbench Firmware page (one click). The device restarts.
 

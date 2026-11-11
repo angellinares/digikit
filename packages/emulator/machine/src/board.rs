@@ -1549,8 +1549,41 @@ impl Board {
         self.read_inner_slow(addr, size)
     }
 
+    /// USB ENDPTSTAT, EP2 bits, derived from the queue state the firmware keeps (the controller is not modelled register by register: the runtime's USB
+    /// service plays it, from the same lists). RM ch 24: a direction's bit is set while the endpoint is enabled (ENDPTCTRL2) and its queue head holds
+    /// an active dTD, and clear when the queue empties, completes, is flushed or cancelled (the firmware's cancel and the flush leave the list empty) or the
+    /// endpoint is disabled. Priming is instantaneous here, so ENDPTPRIME never shows a pending prime (forced to 0 by the Oracle boot).
+    fn usb_ep2_status(&mut self) -> u32 {
+        const CTRL2: u32 = 0xfc0b_01c8;
+        const QH_OUT: u32 = 0x8000_0100;
+        const QH_IN: u32 = 0x8000_0140;
+        let ctrl = self.read_inner_unforced(CTRL2, 4).unwrap_or(0);
+        let mut bits = 0;
+        for (qh, enable, bit) in [(QH_OUT, 0x80u32, 1u32 << 2), (QH_IN, 0x80_0000, 1 << 18)] {
+            if ctrl & enable == 0 {
+                continue;
+            }
+            let head = self.read_inner_unforced(qh + 0x30, 4).unwrap_or(0);
+            if head != 0
+                && self
+                    .read_inner_unforced(head.wrapping_add(4), 4)
+                    .unwrap_or(0)
+                    & 0x80
+                    != 0
+            {
+                bits |= bit;
+            }
+        }
+        bits
+    }
+
     #[inline(never)]
     fn read_inner_slow(&mut self, addr: u32, size: u8) -> Result<u32, BusError> {
+        const ENDPTSTAT: u32 = 0xfc0b_01b8;
+        if addr == ENDPTSTAT && size == 4 {
+            let stored = self.read_inner_unforced(addr, 4)?;
+            return Ok((stored & !((1 << 2) | (1 << 18))) | self.usb_ep2_status());
+        }
         if let Some((mut value, prefix)) = self.forced_prefix(addr, size) {
             for offset in prefix..size {
                 value = (value << 8) | self.read_inner_unforced(addr + u32::from(offset), 1)?;

@@ -565,6 +565,13 @@ fn the_patch_sets_are_the_rt021_flash_modules() {
             if dev.short == "dt2" || set == "emulator" {
                 want.push("core/sample-pool");
             }
+            // the flashed set carries the fast-transfer adapters, inert until usb-fast asks: USB bulk on both devices, +Drive writes on the Digitakt II
+            if set == "device" {
+                want.push("core/usb-bulk");
+                if dev.short == "dt2" {
+                    want.push("core/plusdrive-write");
+                }
+            }
             want.sort();
             assert_eq!(all, want, "{} set {set}", dev.short);
         }
