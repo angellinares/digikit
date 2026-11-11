@@ -7,12 +7,13 @@ section 4; facts: `docs/findings/42-usb-transfer-routes.md` section 4. EP2 IN ru
 - **No firmware patch.** The USB engine is the same code at the same addresses on DT2 1.17 and DN2 1.12. Its port table is RAM: `usb_bulk_enable` checks
   the stock entry 2 (callbacks, length, the 101 descriptor bytes), then writes four words (connect, disconnect, descriptor pointer and length) and
   re-enumerates with the firmware's own stop and restart pair. Not called, nothing is written and USB is stock. Outside USB MIDI mode (USB CONFIG) enable
-  refuses with E_STATE and changes nothing; bit 2 of `usb_bulk_state` shows the wrong mode live.
+  prepares the entry only (the next switch to USB MIDI enumerates with interface 2: one enumeration for a take-over) and returns E_STATE until the device is in USB MIDI mode and no
+  switch is settling; bit 2 of `usb_bulk_state` shows the wrong mode live. While enabled, the adapter wakes the module's job four times a second (a timer for the module).
 - **Take-over** (`docs/plans/usb-fast-takeover.md`): `usb_bulk_takeover` records the original port (USB AUDIO/MIDI, port 5) and a request; `usb_bulk_tick` (UI task, on the runtime's
   `dkrt_poll_add` list from the first take-over call on, also while bulk is not enabled) calls the firmware's mode switch (`cf.usb.fn.mode_switch`) with port 2 at least 50 ms
   later. `usb_bulk_giveback` and the automatic give-back (the disconnect callback, a bus suspend of 0.5 s, 30 s without a transfer or renew) switch back the same way. Refused in
   Overbridge. A port change by another route drops the state without a switch. The USB CONFIG setting byte is never written (test: `cf.usb.value.config_mode`). Bit 3 of the state word.
-- **Anchors** (`devices/fw/usb.toml`): the port table, the active port, the USB CONFIG setting byte, connect, disconnect, queue, cancel, dTD allocation, stop, restart and the mode switch.
+- **Anchors** (`devices/fw/usb.toml`): the port table, the active port, the USB CONFIG setting byte, the firmware's restart delay counter, connect, disconnect, queue, cancel, dTD allocation, stop, restart and the mode switch.
 - **Receive**: eight 16 KiB buffers (128 KiB: two 64 KiB frames of the usb-fast protocol, so the next frame arrives while the CPU writes the last one; four 4 KiB pages each: every dTD names all five page pointers) in the uncached alias of DDR, one dTD each on EP2 OUT.
   The completion callback marks a buffer full, queues a free one and wakes the module's I/O job (`dkrt_io_wake`). No free buffer: nothing queued, the host
   gets NAK. **Send**: the bytes are copied into one of two slots and queued on EP2 IN.
