@@ -3,7 +3,7 @@
 
     uv run python -m tools.devtools.layercheck [--root DIR]        (mise run check:layers)
 
-It reads manifests, sources and the built objects of the repository; it builds nothing and takes well under a second.
+It reads manifests, sources and the built objects of the repository; it builds nothing; for the built objects of content modules it asks patchkit where the objects of this tree's sources are stored (`patchkit build --paths`).
 Every violation prints as `file:line: rule: what is wrong. Instead: what to do.` The exit status is 1 when there is one.
 
 Rules:
@@ -354,16 +354,50 @@ def check_sources(root: Path, mods: list[Module]) -> list[Violation]:
     return out
 
 
-def object_path(root: Path, m: Module, rel_path: str) -> Path:
-    """Where the built object `rel_path` of the module is: in the module for `core/*`, else in the cache (packages/patchkit/src/build/mod.rs)."""
+def stored_objects(root: Path) -> dict[str, dict[str, Path]] | None:
+    """`patchkit build --paths`: the cache entry of each object for the sources of this tree (nothing is built), by module
+    directory (the resolved path, as patchkit names it). None when ROOT is not this checkout (the tests' trees) or patchkit
+    cannot answer; then a note says the objects of content modules are not checked."""
+    from tools.patchkit import modroots, patchkit
+
+    if root.resolve() != modroots.ROOT.resolve():
+        return None
+    try:
+        done = patchkit._build_cmd(["build", "--paths"])
+        if done.returncode != 0:
+            lines = (done.stderr or done.stdout or "").strip().splitlines()
+            raise RuntimeError(lines[0] if lines else f"exit status {done.returncode}")
+        data = json.loads(done.stdout)
+    except (
+        OSError,
+        subprocess.SubprocessError,
+        patchkit.BuildError,
+        RuntimeError,
+        ValueError,
+    ) as e:
+        print(
+            f"layercheck: the objects of content modules are not checked: patchkit build --paths failed: {e}",
+            file=sys.stderr,
+        )
+        return None
+    return {
+        str((root / key).resolve()): {p: Path(f) for p, f in files.items()}
+        for key, files in data.items()
+    }
+
+
+def object_path(
+    root: Path, m: Module, rel_path: str, stored: dict[str, dict[str, Path]] | None
+) -> Path | None:
+    """Where the built object `rel_path` of the module is: in the module for `core/*`. For a content module it is the cache entry
+    of this tree's sources from `stored` (None when not built for them), or, without `stored`, `out/cache/dko/<id>/<path>`
+    (packages/patchkit/src/build/mod.rs)."""
     if classify(root, m) == "core":
         return m.dir / rel_path
-    # entries are `<id>/<src12>/<path>`: read the newest one (no hashing here)
-    found = sorted(
-        (root / "out/cache/dko" / m.id).glob(f"*/{rel_path}"),
-        key=lambda p: p.stat().st_mtime,
-    )
-    return found[-1] if found else root / "out/cache/dko" / m.id / rel_path
+    if stored is not None:
+        # an entry of other sources (another worktree shares out/) is never read
+        return stored.get(str(m.dir.resolve()), {}).get(rel_path)
+    return root / "out/cache/dko" / m.id / rel_path
 
 
 def check_committed_objects(root: Path, mods: list[Module]) -> list[Violation]:
@@ -387,6 +421,7 @@ def check_committed_objects(root: Path, mods: list[Module]) -> list[Violation]:
 def check_objects(root: Path, mods: list[Module]) -> list[Violation]:
     out = []
     imports, sdk_externs = sdk_symbols(root)
+    stored = stored_objects(root)
     for m in mods:
         kind = classify(root, m)
         is_app = (kind == "core" and m.mod.get("role") == "app") or m.id in APP_LIKE
@@ -403,7 +438,9 @@ def check_objects(root: Path, mods: list[Module]) -> list[Violation]:
                         "call an SDK import or an adapter export; anchors are resolved only by adapters",
                     )
                 )
-            path = object_path(root, m, obj.get("path", ""))
+            path = object_path(root, m, obj.get("path", ""), stored)
+            if path is None:
+                continue  # not built for these sources: nothing to read
             if not path.is_file():
                 continue  # not built: nothing to read
             try:

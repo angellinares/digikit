@@ -39,7 +39,7 @@ A module never reaches past the layer under it. Everything that depends on the d
 
 ## Rules
 
-`layercheck` reads manifests, sources and built objects. It builds nothing and takes well under a second.
+`layercheck` reads manifests, sources and built objects. It builds nothing; for the objects of content modules it asks patchkit where the objects of this tree's sources are stored (`patchkit build --paths`, about 10 s), so a cache entry another worktree built is never read.
 
 1. **Roles.** Every module under `modules/core` has `role` in `[module]`, and the role fits the folder: `adapters/` is `adapter`, `apps/` is `app`, `runtime/` is `runtime`, `expansion/` is `installer`.
 2. **Sources.** Content modules and apps include only their own files and the SDK (`<dk/...>`, `sdk/asm`). An app may also include `dkrt.h` and `dk_ui_core.h`. Only runtime, installer and adapters include `dk_fw_*` headers or depend on the `dkfw` crate. C, ColdFire and SHARC assembly (`#include`, `.include`) and Rust (`dkfw`, path dependencies) are checked.
