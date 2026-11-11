@@ -31,6 +31,10 @@ pub const SCRATCH_AT: usize = 16 + MAX_CHUNK + 16;
 /// Largest chunk of one write (the protocol's DATA chunk).
 const MAX_CHUNK: usize = dkrt_sdk::proto::MAX_CHUNK as usize;
 
+/// Largest piece of one SDK write: `store::MAX_IO_SECTORS` sectors, the most that one firmware block write takes without splitting. The SDK
+/// path writes from the caller's buffer, so this needs no scratch (the SysEx path stays at `MAX_CHUNK`, the size of its body region).
+const WRITE_PIECE: usize = store::MAX_IO_SECTORS as usize * 512;
+
 /// The three buffers of a store operation: the table's input and output streams (`TBL_CAP` bytes each) and a scratch (at least 512 bytes);
 /// all 16-byte aligned and apart.
 #[derive(Clone, Copy)]
@@ -952,7 +956,7 @@ pub unsafe fn sdk_create(root: u32, path: *const u8, size: u32, hash4: *const u8
     handle()
 }
 
-/// `file_write`: `len` bytes of `buf` (16-byte aligned) at `offset`, the next byte, in pieces of the protocol's chunk. The store lock is taken once for the
+/// `file_write`: `len` bytes of `buf` (16-byte aligned) at `offset`, the next byte, in pieces of `WRITE_PIECE`. The store lock is taken once for the
 /// whole call: `E_BUSY` only when it could not be taken, before anything was written. A status, 0 when all went in.
 pub unsafe fn sdk_write(h: i32, offset: u32, buf: *const u8, len: u32) -> i32 {
     let owner = match sdk_owner() {
@@ -971,7 +975,7 @@ pub unsafe fn sdk_write(h: i32, offset: u32, buf: *const u8, len: u32) -> i32 {
     let mut done = 0u32;
     let mut r = OK;
     while done < len && r == OK {
-        let n = if len - done > MAX_CHUNK as u32 { MAX_CHUNK as u32 } else { len - done };
+        let n = if len - done > WRITE_PIECE as u32 { WRITE_PIECE as u32 } else { len - done };
         r = write(&sdk_bufs(), SDK, owner, h, offset.wrapping_add(done), buf.add(done as usize) as *mut u8, n, false);
         done += n;
     }
