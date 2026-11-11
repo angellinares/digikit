@@ -7,10 +7,10 @@ import { errorLine } from '@web/modules/backend';
 import { fmtVersion, type DkSession } from '@digi/dk-session';
 import { Sample, prepareUpload, sourceKind, type Prepared } from '@digi/dk-session/dksample';
 import { openSamples, type SamplesBackend } from '@digi/dk-session/samples';
-import { chooseBulk, type BulkChoice } from '@digi/dk-session/bulk-select';
+import { BulkTakeOver, chooseBulk, type BulkChoice, type TakeOverDevice } from '@digi/dk-session/bulk-select';
 import { transferEnv } from '@web/transfer/env';
 import { asked, noteConnection } from '@web/transfer/connection-state';
-import { session as running, target } from '@web/transfer/target';
+import { portLost, resetSession, session as running, target } from '@web/transfer/target';
 import { joinPath, type LocalEntry, type Prepare } from './samples-core';
 import { setDeviceInfo, setSampleLink } from '@web/transfer/transfer-state';
 import {
@@ -58,8 +58,63 @@ function converter(): Promise<Sample> {
 }
 
 let last:
-  | { s: DkSession; name: string; runtime: string; samples: string; opened?: OpenedSamples; bulk?: BulkChoice }
+  | {
+      s: DkSession;
+      name: string;
+      runtime: string;
+      samples: string;
+      opened?: OpenedSamples;
+      bulk?: BulkChoice;
+      /** The take-over of a device in USB AUDIO/MIDI (made at the first run that needs it). */
+      takeover?: BulkTakeOver;
+      /** The current run called `takeover.begin`: `endRun` calls `end`. */
+      began?: boolean;
+    }
   | undefined;
+
+/**
+ * The device across a take-over: the MIDI port goes away when the device switches to USB MIDI and returns, so the session is read again each time (`running`
+ * opens the port) and `reenumerated` waits until the device answers on it. [O] whether the port keeps its name on every host.
+ */
+function takeOverDevice(): TakeOverDevice {
+  const port = () => {
+    const t = target();
+    return t.kind === 'midi' ? t.port : undefined;
+  };
+  const via =
+    <T>(f: (s: DkSession) => Promise<T>) =>
+    async (): Promise<T> =>
+      f(await running());
+  return {
+    sysex: () => ({
+      usbFastNonce: async (n) => (await running()).usbFastNonce(n),
+      usbFastWrongMode: via((s) => s.usbFastWrongMode()),
+      usbFastTakeOver: via((s) => s.usbFastTakeOver()),
+      usbFastRelease: async () => {
+        await (await running()).usbFastRelease();
+        // the device switches back about 50 ms after the reply and the port goes away again: the next request opens it fresh
+        const p = port();
+        setTimeout(() => p && portLost(p), 300);
+      },
+    }),
+    async reenumerated(timeoutMs) {
+      const deadline = Date.now() + timeoutMs;
+      await new Promise((r) => setTimeout(r, 1500));
+      for (;;) {
+        const p = port();
+        if (p) portLost(p);
+        resetSession();
+        try {
+          await (await running()).info();
+          return;
+        } catch (e) {
+          if (Date.now() > deadline) throw e;
+          await new Promise((r) => setTimeout(r, 500));
+        }
+      }
+    },
+  };
+}
 
 const note = (why: string) => console.info(`[samples] ${why}`);
 
@@ -93,6 +148,19 @@ export async function openDeviceSamples(forRun = false): Promise<OpenedSamples> 
   if (!last.bulk) {
     const env = transferEnv().bulk;
     last.bulk = env && target().kind !== 'none' ? await chooseBulk(s, env, note) : undefined;
+    // a device in USB AUDIO/MIDI has no bulk interface: a run takes USB over (no question; USB audio pauses until the linger after the run ends)
+    if (forRun && env && !last.bulk && target().kind === 'midi' && (await s.usbFastWrongMode())) {
+      last.takeover = new BulkTakeOver(takeOverDevice(), env, { note });
+    }
+  }
+  if (forRun && last.takeover && !last.began) {
+    // `begin` returns the held link at once when the device is still ours, and takes over again when the device gave the mode back
+    last.began = true;
+    const c = await last.takeover.begin();
+    if (!c) last.began = false;
+    last.bulk = c;
+    if (last.opened && !had === !last.bulk && (!had || had === last.bulk))
+      setSampleLink({ state: last.opened.link, takenOver: !!c });
   }
   if (last.opened && !had === !last.bulk && (!had || had === last.bulk)) {
     // a new choice for the run (the last one had failed and the link is the same again): the pill follows it
@@ -114,8 +182,16 @@ export async function openDeviceSamples(forRun = false): Promise<OpenedSamples> 
     prepare: (name, bytes) => prepareUpload(conv, name, bytes),
     link: last.bulk ? 'bulk' : 'sysex',
   };
-  setSampleLink({ state: last.opened.link });
+  setSampleLink({ state: last.opened.link, takenOver: last.opened.link === 'bulk' && !!last.takeover?.active });
   return last.opened;
+}
+
+/** A run ended (also a failed one): the take-over, if any, keeps the device for its linger and then gives the USB mode back. */
+export function endRun(): void {
+  if (last?.takeover && last.began) {
+    last.began = false;
+    last.takeover.end();
+  }
 }
 
 /** Read the device's open folder, its free space and what the backend can do (the On device column of Samples mode). */

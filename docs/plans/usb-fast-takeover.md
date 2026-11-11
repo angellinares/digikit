@@ -1,6 +1,6 @@
 # Fast USB in USB AUDIO/MIDI mode: the workbench takes over USB
 
-Status: **agreed 2026-11-11; not started.** Follows [usb-fast.md](usb-fast.md) and [usb-fast-hardware.md](usb-fast-hardware.md) (section v2).
+Status: **built 2026-11-11, emulator-tested; the hardware test in USB AUDIO/MIDI is open.** Facts: [finding 121](../findings/121-usb-takeover.md). Follows [usb-fast.md](usb-fast.md) and [usb-fast-hardware.md](usb-fast-hardware.md) (section v2).
 
 ## Goal
 
@@ -35,15 +35,15 @@ workbench switches the device to the USB MIDI configuration in RAM for the trans
 - Only one firmware path re-applies the stored mode by itself: an Overbridge (port 6) disconnect (`FUN_400f2ce0`). The USB CONFIG menu shows the
   stored setting. Changing it during a take-over stores the new value and switches: the user's choice wins.
 
-## Design
+## Design (as built)
 
-| Part | Change |
+| Part | What it does |
 |---|---|
-| Firmware anchor | `cf.usb.fn.mode_switch` (cf_func on `FUN_40006c16`, same hash as `cf.usb.data.port_table`) |
-| core/usb-bulk adapter | API `usb_bulk_takeover()` and `usb_bulk_giveback()`; a "taken over" state bit. Refuse in Overbridge (port 6). Remember the original port. Switch from the adapter tick about 50 ms after the reply. Give back on RELEASE, on unplug or suspend (from the tick, not the interrupt), and after 30 s idle. Drop the take-over when the active port changes by other means. |
-| usb-fast module | Commands TAKEOVER and RELEASE. The I/O job waits for USB MIDI mode instead of ending on E_STATE, and enables the bulk link when it appears. |
-| Host (`packages/dk-session`) | A `takeOver()` step next to `chooseBulk`: send TAKEOVER, wait for re-enumeration, nonce handshake, transfer, linger 10 s, RELEASE. Used by `tools/devtools/wb.mjs` and the desktop app. |
-| Desktop UI | The link pill shows the take-over. |
+| Firmware anchors | `cf.usb.fn.mode_switch` (cf_func on `FUN_40006c16`), `cf.usb.value.active_port`, `cf.usb.value.config_mode` (read by the tests only), `cf.usb.value.restart_delay` (the firmware's 30-tick restart counter) |
+| core/usb-bulk adapter | `usb_bulk_takeover()` and `usb_bulk_giveback()`; state bit 3 "taken". Refused (E_STATE) in Overbridge and other modes. Remembers the original port. The UI-pass tick (`takeover_decide`, then the switch) switches to port 2 at least 50 ms after the request. Gives back on RELEASE, after the host's disconnect, after a bus suspend of 0.5 s and after 30 s without host activity (any bulk transfer or a renewed TAKEOVER counts). Drops the take-over without switching when the active port changes by other means. One switch at a time (the switch guard: the restart counter, and 500 ms on its own clock). `usb_bulk_enable` prepares port entry 2 in any mode, so the switch enumerates once. It wakes the I/O job four times a second while enabled (the module has no timer). |
+| usb-fast module | SysEx TAKEOVER (0x1e, also the renew) and RELEASE (0x1f), range `usb_fast_takeover`. The I/O job calls `usb_bulk_enable` until it succeeds (it no longer ends on E_STATE), so it also covers a quick reload and a switch that is settling. The wrong-mode line is logged once, only for a real wrong mode. BEGIN retries a busy store for about 0.4 s. The staging buffer is freed when the runtime has dropped the session (21 s without a write). |
+| Host (`packages/dk-session`) | `BulkTakeOver` (`bulk-select.ts`): `usbFastWrongMode`, TAKEOVER, wait for the device on its MIDI port, nonce handshake, batches, linger, RELEASE. `tools/devtools/wb.mjs samples put` takes over automatically when usb-fast says the device is not in USB MIDI mode (no flag; `--bulk off` never touches the USB mode) and releases at the end of the run. The desktop (`samples-backend.ts`) does the same for an upload run and keeps the take-over 10 s after the last run. |
+| Desktop UI | The link pill shows "FAST USB (USB audio paused)" during a take-over; the SYSEX tooltip no longer names USB CONFIG. |
 | Web (WebUSB) | Later: re-pairing is needed after re-enumeration. |
 
 ## Tests
@@ -67,6 +67,11 @@ Hardware (DN2 and DT2 in USB AUDIO/MIDI):
 - Whether the MIDI port name and the CoreMIDI connection survive the configuration change.
 - macOS re-enumeration time each way (expected 1 to 2 s).
 - The audio side's reaction to a stop mid-stream (same path as an unplug: likely fine).
+
+## Not covered by the emulator tests
+
+- The first `usb_bulk_enable` in USB AUDIO/MIDI followed by a take-over (the emulated boot is in USB MIDI mode): the single enumeration is shown by the switch count of a take-over from an enabled adapter, and by reading the code.
+- The desktop re-enumeration wait (`takeOverDevice` in `samples-backend.ts`) has no test: it needs a MIDI port that vanishes.
 
 ## Steps and effort
 

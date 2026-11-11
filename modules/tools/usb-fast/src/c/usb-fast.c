@@ -3,8 +3,10 @@
  * One I/O job (<dk/io.h>) enables the interface, takes the received buffers, cuts the byte stream into frames by their own length field, runs each
  * request on file_create / file_write / file_close / file_abort (<dk/file.h>) and sends the reply on EP2 IN. The numbers are those of sdk/sdk.toml
  * [protocol.bulk] (request: 'DKB1' | cmd u8 | seq u8 | flags u16 | len u32 | body; reply: 'DKB1' | cmd|0x40 | seq | status i16 | len u32 | body;
- * big-endian). SysEx stays the runtime's channel for everything else; this module adds one SysEx command, SET_NONCE (0x36), by which the host proves
- * which USB device is on its MIDI port.
+ * big-endian). SysEx stays the runtime's channel for everything else; this module adds three SysEx commands: SET_NONCE (0x36), by which the host proves
+ * which USB device is on its MIDI port, and TAKEOVER (0x1e) and RELEASE (0x1f), by which the host has core/usb-bulk switch a device in USB AUDIO/MIDI to USB MIDI
+ * for a transfer and back (docs/plans/usb-fast-takeover.md). The job calls usb_bulk_enable at its start and, while the device is not in USB MIDI mode (or a mode
+ * switch is settling), again at every wake of the adapter (about four a second): it enables when the take-over, or the user's USB CONFIG, brings USB MIDI mode.
  *
  * Stream: a frame may span receive buffers and a buffer may hold several frames. Every frame is copied into one 16-byte-aligned frame buffer (header 12 +
  * DATA offset 4 + data_max), so a DATA request hands file_write an aligned pointer; each receive buffer is released as soon as its bytes are copied, so
@@ -37,6 +39,7 @@
 #include <dk/hash32.h>
 #include <dk/io.h>
 #include <dk/usb_bulk.h>
+#include "uf.h"
 
 typedef uint8_t u8;
 typedef uint16_t u16;
@@ -63,6 +66,10 @@ typedef int32_t i32;
 /* [protocol.service] USB_FAST_NONCE; [protocol.ranges] usb_fast = [0x36, 0x37] */
 #define NONCE_CMD 0x36u
 #define NONCE_RANGE 2u
+/* [protocol.service] USB_FAST_TAKEOVER and USB_FAST_RELEASE; [protocol.ranges] usb_fast_takeover = [0x1e, 0x1f] */
+#define TAKEOVER_CMD 0x1eu
+#define RELEASE_CMD 0x1fu
+#define TAKEOVER_RANGE 2u
 /* sdk/sdk.toml [protocol.status] */
 #define E_MSG (-50)
 #define E_STATE (-53)
@@ -72,6 +79,12 @@ typedef int32_t i32;
 #define ACC_MID 262144u
 /* a file_* call that answers E_BUSY (after waiting about 3 s for the store) is called again once or twice, then the host is told: tries 1 and 2 retry, the third replies */
 #define BUSY_TRIES 3u
+/* BEGIN waits longer: the store, or the +Drive's staging folder (removed once its upload session has been idle for 2 s), may be busy for a few hundred ms. A
+ * file_* call that answers E_BUSY makes the I/O task sleep 1 ms before the step that returns DK_IO_MORE runs again (a timed wait, no spin), so 400 tries
+ * cover about 0.4 s and more. */
+#define BEGIN_TRIES 400u
+/* The runtime drops a write session that has had no BEGIN or write for 20 s (1500 blocks a second); the job frees its staging buffer 1 s later. */
+#define SESS_IDLE_BLOCKS (21u * 1500u)
 
 static const dk_api *sdk;
 static i32 job_id;
@@ -101,6 +114,9 @@ static i32 handle; /* > 0 while a file is open */
 static u32 busy_tries;
 static u32 st_steps, st_frames, st_tx_busy, st_last_rc, st_bufs, st_bytes, st_fatal, st_resets, st_send_err;
 static i32 enable_rc;
+static int wm_logged;  /* the wrong-mode line is logged once per wait */
+static u32 sess_at;    /* the block clock at the last file_create or successful file_write of the open file */
+static u32 st_expired; /* sessions the job dropped for the runtime's idle expiry */
 
 /* the staging buffer of the open file */
 static u8 *acc_raw, *acc_buf; /* acc_buf: acc_raw rounded up to 16 bytes */
@@ -110,15 +126,15 @@ static u32 acc_fill;          /* bytes in it */
 static u32 acc_off;           /* file offset of its first byte */
 static i32 acc_err;           /* sticky status of a failed flush */
 static u32 file_size;
-static u32 acc_limit = ACC_BIG; /* a test knob (STATUS 'A'): the largest buffer the next BEGIN asks for (one-shot: acc_open resets it) */
-static u32 acc_got;             /* the size the last BEGIN got */
+static u32 acc_limit = ACC_BIG; /* the largest buffer the next BEGIN asks for (a one-shot test knob, STATUS 'A' with UF_KNOBS; acc_open resets it) */
+#if UF_KNOBS
+static u32 acc_got; /* the size the last BEGIN got */
+#endif
 static int d_acc;               /* the DATA frame in `frame` is in the buffer already (a flush is retried) */
 static int dstage;              /* pump: 1 = the DATA offset is still to come, 2 = the body goes straight into the buffer */
 static int direct;              /* the DATA frame ready has its body in the buffer */
 static i32 abort_h; /* a handle to abort after a reset (file_abort may need several steps) */
 
-#define UF_TRACE 0 /* per-file time totals in the log at END (hardware hunt); 0 removes them */
-#define UF_BENCH 0 /* 1 for measurement builds: STATUS body 'B' runs the storage bench, 'R' reads its results */
 #if UF_TRACE || UF_BENCH
 /* The only clock a module can call is dkrt_blocks(), the 1500 Hz block counter (1 unit = 0.667 ms). A short call often reads 0 and a long one is
  * rounded, so only the totals of whole calls (per file) are meaningful, not one call. Units: "blk" tags are blocks; uf.bytes and uf.datas are counts. */
@@ -132,7 +148,7 @@ static int uf_waiting; /* uf_wait_from is valid: the last request of this file w
 #endif
 
 /* `tag`: a string of at most 16 chars, padded with NULs */
-static void uf_log(const char *tag, u32 value)
+void uf_log(const char *tag, u32 value)
 {
     u32 a[5];
     u32 live = 1;
@@ -240,7 +256,9 @@ static void acc_open(u32 size)
         acc_buf = (u8 *)(((u32)acc_raw + 15u) & ~15u);
         acc_cap = want;
     }
+#if UF_KNOBS
     acc_got = acc_cap;
+#endif
 }
 
 /* One file_write of what the buffer holds. A status; on 0 the buffer is empty. */
@@ -262,6 +280,7 @@ static i32 acc_flush(void)
     if (r == 0) {
         acc_off += acc_fill;
         acc_fill = 0;
+        sess_at = dkrt_blocks();
     }
     return r;
 }
@@ -326,7 +345,7 @@ static int dispatch(void)
         if (handle > 0) { /* the module is the only bulk client: a new BEGIN means the host gave the old file up */
             r = sdk->file_abort(handle);
             if (r == DK_FILE_E_BUSY) {
-                if (++busy_tries < BUSY_TRIES)
+                if (++busy_tries < BEGIN_TRIES)
                     return 1;
                 busy_tries = 0;
                 reply(cmd, seq, DK_FILE_E_BUSY, 0, 0);
@@ -350,12 +369,13 @@ static int dispatch(void)
         uf_wait_from = UF_NOW();
         uf_waiting = 1;
 #endif
-        if (r == DK_FILE_E_BUSY && ++busy_tries < BUSY_TRIES)
+        if (r == DK_FILE_E_BUSY && ++busy_tries < BEGIN_TRIES)
             return 1;
         busy_tries = 0;
         if (r > 0) {
             handle = r;
             r = 0;
+            sess_at = dkrt_blocks();
             acc_open(get32(body + p + 1));
 #if UF_TRACE
             uf_log("uf.acc.kib", acc_cap >> 10);
@@ -452,6 +472,8 @@ static int dispatch(void)
         if (r == DK_FILE_E_BUSY && ++busy_tries < BUSY_TRIES)
             return 1;
         busy_tries = 0;
+        if (r == 0)
+            sess_at = dkrt_blocks();
         if (r == DK_FILE_E_STATE) /* the runtime ended the session (no write for 20 s) */
             handle = 0;
         reply(cmd, seq, r, 0, 0);
@@ -649,16 +671,24 @@ static i32 step(u8 *ctx)
     (void)ctx;
     st_steps++;
     if (!enabled) {
-        enabled = 1;
         i32 rc = usb_bulk_enable(job_id);
         enable_rc = rc;
+        if (rc == DK_USB_BULK_E_STATE) {
+            /* Not in USB MIDI mode, or a mode switch is settling. The adapter wakes the job about four times a second: it enables as soon as the device is in USB
+             * MIDI mode (the user's USB CONFIG, or a take-over). Only a real wrong mode is logged, once, and not while a take-over is on its way. */
+            u32 st = usb_bulk_state();
+            if ((st & DK_USB_BULK_WRONG_MODE) && !(st & DK_USB_BULK_TAKEN) && !wm_logged) {
+                wm_logged = 1;
+                sdk->log_lv(2, (const u8 *)"usb-fast: not in USB MIDI mode; bulk waits for a take-over", (u32)rc);
+            }
+            return DK_IO_WAIT;
+        }
         if (rc < 0) {
-            if (rc == DK_USB_BULK_E_STATE)
-                sdk->log_lv(0, (const u8 *)"usb-fast: the device is not in USB MIDI mode (USB CONFIG); bulk off, SysEx only", (u32)rc);
-            else
-                sdk->log_lv(0, (const u8 *)"usb-fast: enable failed", (u32)rc);
+            sdk->log_lv(0, (const u8 *)"usb-fast: enable failed", (u32)rc);
             return rc;
         }
+        enabled = 1;
+        wm_logged = 0;
         epoch = DK_USB_BULK_RESETS(usb_bulk_state());
         return DK_IO_WAIT;
     }
@@ -670,6 +700,10 @@ static i32 step(u8 *ctx)
             clear_stream();
             rep_len = 0;
             busy_tries = 0;
+            drop_file();
+        }
+        if (handle > 0 && dkrt_blocks() != 0u && dkrt_blocks() - sess_at >= SESS_IDLE_BLOCKS) { /* the runtime has dropped the session: free the buffer, the host is gone */
+            st_expired++;
             drop_file();
         }
         if (abort_h > 0) {
@@ -716,246 +750,6 @@ static i32 step(u8 *ctx)
     }
 }
 
-#if UF_BENCH
-/* Storage bench (a measurement aid, no USB): STATUS (0x37) with body 'B' [mask [MiB]] starts it, body 'R' returns the last times. It runs in its own I/O
- * job, so the SysEx handler returns at once. Every test moves MiB (default 8) and logs "bn.<name>.ms" and "bn.<name>.kbps" (MOD_LOG, info), timed with
- * dkrt_blocks() (1 block = 2/3 ms). The source buffer is never initialised: the content does not matter.
- * mask bit 0: store writes with 64 KiB and 1 MiB calls (s64, s1m); the file is aborted: nothing is committed;
- *      bit 1: writes to DK_FILES_SAMPLES (the +Drive on the DT2, the store's samples/ folder on the DN2) with 64 KiB, 256 KiB and 1 MiB calls (d64,
- *             d256, d1m); each file is aborted;
- *      bit 2: the same with 1 MiB calls, then file_close (dcl.cls: on the DT2 the firmware's hash re-read) and file_delete (dcl.del); the file exists
- *             between the two;
- *      bit 3: reads of the card with the firmware block read, sector 0 upward, 64 KiB and 1 MiB per call (r64, r1m); reads only, nothing is written;
- *      bit 4: the CPU rate of the file hash, api->hash32_* over the bytes (h32);
- *      bit 5: store write with 64 KiB calls, file_close (the store's hash check and commit: scl.cls) and file_delete (scl.del).
- * The bench writes only the one file it creates through file_create (a store file or a +Drive file; the runtime reserves its space) and never raw
- * sectors. A failed call logs "bn.<name>.err" with its status and aborts the file. */
-#define BN_STORE_FILE "dkbench.bin"
-#define BN_DRIVE_FILE "Samples/dkbench.bin"
-#define BN_SLOTS 14u
-#define BN_PHASES 10u
-enum { S_S64, S_S1M, S_D64, S_D256, S_D1M, S_DCL, S_DCL_CLS, S_DCL_DEL, S_R64, S_R1M, S_H32, S_SCL, S_SCL_CLS, S_SCL_DEL };
-static i32 bn_job;
-static volatile u32 bn_req;
-static u32 bn_mask, bn_mib, bn_phase, bn_running;
-static u32 bn_ms[BN_SLOTS]; /* the last results, in ms, by slot (0 = not run or failed) */
-static u8 *bn_raw, *bn_buf;
-static u32 bn_buf_len;
-static int bn_fw; /* bn_raw came from fw_alloc */
-
-/* "bn." name suffix (names are at most 7 chars, so the tag fits 16) */
-static void bn_tag(char *t, const char *name, const char *suffix)
-{
-    u32 i = 0;
-    t[i++] = 'b';
-    t[i++] = 'n';
-    t[i++] = '.';
-    while (*name && i < 11u)
-        t[i++] = *name++;
-    while (*suffix && i < 16u)
-        t[i++] = *suffix++;
-    t[i] = 0;
-}
-
-/* `mib` 0: a time only (no rate) */
-static void bn_result(const char *name, u32 slot, u32 blocks, u32 mib)
-{
-    char t[17];
-    u32 ms = blocks * 2u / 3u;
-    bn_tag(t, name, ".ms");
-    uf_log(t, ms);
-    if (mib) {
-        bn_tag(t, name, ".kbps");
-        uf_log(t, ms ? (mib << 10) * 1000u / ms : 0);
-    }
-    bn_ms[slot] = ms ? ms : 1u;
-}
-
-static void bn_err(const char *name, i32 rc)
-{
-    char t[17];
-    bn_tag(t, name, ".err");
-    uf_log(t, (u32)rc);
-}
-
-/* Write `bn_mib` MiB to a new file with calls of `call` bytes. close 0: abort the file. close 1: file_close, then file_delete. */
-static void bn_write(const char *name, u32 root, const char *path, u32 call, int close, u32 slot)
-{
-    u32 size = bn_mib << 20, off = 0, tries;
-    i32 r = DK_FILE_E_BUSY, h = 0;
-    u8 hash[4];
-    if (call > bn_buf_len)
-        call = bn_buf_len;
-    for (tries = 0; tries < 5u && r == DK_FILE_E_BUSY; tries++) {
-        r = sdk->file_create(root, path, size, 0, DK_FILE_REPLACE);
-        if (r > 0) {
-            h = r;
-            r = 0;
-        }
-    }
-    if (r != 0) {
-        bn_err(name, r);
-        return;
-    }
-    u32 t0 = dkrt_blocks();
-    while (off < size) {
-        u32 n = size - off < call ? size - off : call;
-        r = DK_FILE_E_BUSY;
-        for (tries = 0; tries < 3u && r == DK_FILE_E_BUSY; tries++)
-            r = sdk->file_write(h, off, bn_buf, n);
-        if (r != 0) {
-            bn_err(name, r);
-            sdk->file_abort(h);
-            return;
-        }
-        off += n;
-    }
-    u32 t1 = dkrt_blocks();
-    bn_result(name, slot, t1 - t0, bn_mib);
-    if (!close) {
-        sdk->file_abort(h);
-        return;
-    }
-    r = sdk->file_close(h, hash);
-    u32 t2 = dkrt_blocks();
-    /* name is 3 chars here ("dcl", "scl"): the close and the delete are logged as "<name>.cls" and "<name>.del" */
-    char n2[8] = {name[0], name[1], name[2], '.', 'c', 'l', 's', 0};
-    if (r != 0) {
-        bn_err(n2, r);
-        return;
-    }
-    bn_result(n2, slot + 1u, t2 - t1, 0);
-    n2[4] = 'd';
-    n2[5] = 'e';
-    n2[6] = 'l';
-    r = sdk->file_delete(root, path);
-    bn_result(n2, slot + 2u, dkrt_blocks() - t2, 0);
-    if (r != 0)
-        bn_err(n2, r);
-}
-
-static void bn_read(const char *name, u32 call, u32 slot)
-{
-    u32 total = bn_mib << 20, off = 0, sector = 0;
-    if (call > bn_buf_len)
-        call = bn_buf_len;
-    u32 t0 = dkrt_blocks();
-    while (off < total) {
-        u32 n = total - off < call ? total - off : call;
-        i32 r = fw_block_read(sector, n, bn_buf);
-        if (r != 0) {
-            bn_err(name, r);
-            return;
-        }
-        off += n;
-        sector += n >> 9;
-    }
-    bn_result(name, slot, dkrt_blocks() - t0, bn_mib);
-}
-
-static void bn_hash(void)
-{
-    dk_hash32 st;
-    u32 t0 = dkrt_blocks();
-    sdk->hash32_init((uint8_t *)&st);
-    for (u32 left = bn_mib << 20; left;) {
-        u32 n = left < bn_buf_len ? left : bn_buf_len;
-        sdk->hash32_update((uint8_t *)&st, bn_buf, n);
-        left -= n;
-    }
-    (void)sdk->hash32_finish((uint8_t *)&st);
-    bn_result("h32", S_H32, dkrt_blocks() - t0, bn_mib);
-}
-
-/* One phase per step: a file call blocks for seconds, so the job returns between phases. */
-static i32 bn_step(u8 *ctx)
-{
-    (void)ctx;
-    if (!bn_running) {
-        if (!bn_req)
-            return DK_IO_WAIT;
-        bn_req = 0;
-        bn_running = 1;
-        bn_phase = 0;
-        for (u32 i = 0; i < BN_SLOTS; i++)
-            bn_ms[i] = 0;
-        bn_fw = 0;
-        bn_buf_len = 1u << 20;
-        bn_raw = sdk->alloc(bn_buf_len + 16u);
-        if (!bn_raw) {
-            bn_raw = fw_alloc(bn_buf_len + 16u);
-            bn_fw = bn_raw != 0;
-        }
-        if (!bn_raw) {
-            bn_buf_len = 65536u;
-            bn_raw = sdk->alloc(bn_buf_len + 16u);
-        }
-        if (!bn_raw) {
-            uf_log("bn.noalloc", 0);
-            bn_running = 0;
-            return DK_IO_WAIT;
-        }
-        bn_buf = (u8 *)(((u32)bn_raw + 15u) & ~15u);
-        uf_log("bn.buf.kib", bn_buf_len >> 10);
-        uf_log("bn.mib", bn_mib);
-    }
-    u32 m = bn_mask;
-    switch (bn_phase) {
-    case 0: if (m & 1u) bn_write("s64", DK_FILES_STORE, BN_STORE_FILE, 65536u, 0, S_S64); break;
-    case 1: if (m & 1u) bn_write("s1m", DK_FILES_STORE, BN_STORE_FILE, 1u << 20, 0, S_S1M); break;
-    case 2: if (m & 2u) bn_write("d64", DK_FILES_SAMPLES, BN_DRIVE_FILE, 65536u, 0, S_D64); break;
-    case 3: if (m & 2u) bn_write("d256", DK_FILES_SAMPLES, BN_DRIVE_FILE, 262144u, 0, S_D256); break;
-    case 4: if (m & 2u) bn_write("d1m", DK_FILES_SAMPLES, BN_DRIVE_FILE, 1u << 20, 0, S_D1M); break;
-    case 5: if (m & 4u) bn_write("dcl", DK_FILES_SAMPLES, BN_DRIVE_FILE, 1u << 20, 1, S_DCL); break;
-    case 6: if (m & 8u) bn_read("r64", 65536u, S_R64); break;
-    case 7: if (m & 8u) bn_read("r1m", 1u << 20, S_R1M); break;
-    case 8: if (m & 16u) bn_hash(); break;
-    default: if (m & 32u) bn_write("scl", DK_FILES_STORE, BN_STORE_FILE, 65536u, 1, S_SCL); break;
-    }
-    if (++bn_phase < BN_PHASES)
-        return DK_IO_MORE;
-    if (bn_fw)
-        fw_free(bn_raw);
-    else
-        sdk->free(bn_raw);
-    bn_raw = bn_buf = 0;
-    uf_log("bn.done", 0);
-    bn_running = 0;
-    return DK_IO_WAIT;
-}
-
-static void bn_finished(u8 *ctx, i32 status)
-{
-    (void)ctx;
-    (void)status;
-}
-
-/* STATUS body 'B' [mask [MiB]]: start (E_BUSY while a run is going); 'R': running, phase and the BN_SLOTS times in ms. Returns the reply length, or a status. */
-static i32 bn_command(const u8 *body, u32 len, u8 *out)
-{
-    if (body[0] == 'B') {
-        if (bn_running || bn_req)
-            return DK_FILE_E_BUSY;
-        bn_mask = len > 1 ? body[1] : 0x3fu;
-        bn_mib = len > 2 ? body[2] : 8u;
-        if (bn_mib < 1u || bn_mib > 64u)
-            bn_mib = 8u;
-        bn_req = 1;
-        sdk->io_wake(bn_job);
-        put32(out, 1);
-        return 4;
-    }
-    if (body[0] == 'R') {
-        put32(out, bn_running);
-        put32(out + 4, bn_phase);
-        for (u32 i = 0; i < BN_SLOTS; i++)
-            put32(out + 8 + 4 * i, bn_ms[i]);
-        return 8 + 4 * BN_SLOTS;
-    }
-    return E_MSG;
-}
-#endif
-
 static void finished(u8 *ctx, i32 status)
 {
     (void)ctx;
@@ -967,15 +761,17 @@ static void finished(u8 *ctx, i32 status)
 static i32 command(u32 cmd, u32 seq, const u8 *body, u32 len, u8 *out)
 {
     (void)seq;
+#if UF_KNOBS
     if (cmd == NONCE_CMD + 1 && len > 0 && body[0] == 'A') { /* test knob: 'A' [max bytes u32] sets the largest staging buffer of the next BEGIN (0: none); replies the size of the last one */
         if (len >= 5)
             acc_limit = get32(body + 1);
         put32(out, acc_got);
         return 4;
     }
+#endif
 #if UF_BENCH
     if (cmd == NONCE_CMD + 1 && len > 0)
-        return bn_command(body, len, out);
+        return uf_bench_command(body, len, out);
 #endif
     if (cmd == NONCE_CMD + 1) { /* STATUS (a debug aid): what the job has done and where it stands */
         put32(out, st_steps);
@@ -994,7 +790,17 @@ static i32 command(u32 cmd, u32 seq, const u8 *body, u32 len, u8 *out)
         put32(out + 52, st_resets);
         put32(out + 56, (u32)enable_rc);
         put32(out + 60, st_send_err);
-        return 64;
+        put32(out + 64, acc_cap);
+        put32(out + 68, st_expired);
+        return 72;
+    }
+    if (cmd == TAKEOVER_CMD) { /* also the renew while the host works */
+        i32 r = usb_bulk_takeover();
+        return r < 0 ? r : 0;
+    }
+    if (cmd == RELEASE_CMD) {
+        (void)usb_bulk_giveback();
+        return 0;
     }
     if (cmd != NONCE_CMD)
         return E_PROTO;
@@ -1011,7 +817,7 @@ void dkm_fini(const dk_api *api)
 {
     usb_bulk_disable(job_id);
 #if UF_BENCH
-    api->io_cancel(bn_job);
+    uf_bench_fini(api);
 #endif
     api->io_cancel(job_id); /* the runtime aborts a file session the job leaves open */
     acc_release();
@@ -1027,11 +833,12 @@ i32 dkm_init(const dk_api *api)
     if (job_id <= 0)
         return job_id ? job_id : -1;
 #if UF_BENCH
-    bn_job = api->io_post(bn_step, bn_finished, 0);
-    if (bn_job <= 0) {
+    i32 bench = uf_bench_init(api);
+    if (bench != 0) {
         api->io_cancel(job_id);
-        return bn_job ? bn_job : -1;
+        return bench;
     }
 #endif
-    return api->register_cmds(NONCE_CMD, NONCE_RANGE, command);
+    i32 rc = api->register_cmds(TAKEOVER_CMD, TAKEOVER_RANGE, command);
+    return rc != 0 ? rc : api->register_cmds(NONCE_CMD, NONCE_RANGE, command);
 }

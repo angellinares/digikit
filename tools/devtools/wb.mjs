@@ -16,12 +16,14 @@
 // `mise run dkmidi:build` builds it). `samples put` needs apps/web/public/dksample.wasm (`mise run wasm:dksample`).
 // `samples put` sends the file bytes over the USB bulk link when the device offers its interface (usb-fast; the `dkbulk` bridge, `mise run dkbulk:build`,
 // $DKBULK_BIN or --bulk-bin) and over SysEx or MidiRpc otherwise; --bulk off forces SysEx, --bulk force fails when there is no bulk link. It prints the
+// When the device is in USB AUDIO/MIDI (no bulk interface there) and usb-fast is loaded, `samples put` takes USB over for the run (the device switches to USB
+// MIDI in RAM, USB audio pauses) and gives it back when the run ends: no flag; --bulk off never touches the USB mode.
 // link and MB/s of every file and of the run: the repeatable bench (docs/plans/usb-fast.md step 6): run it once with --bulk off and once with auto.
 import { spawn, spawnSync } from 'node:child_process';
 import { existsSync, readFileSync, statSync } from 'node:fs';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
-import { DkSession, ProcessBulkLink, chooseBulk } from '../../packages/dk-session/src/index.ts';
+import { BulkTakeOver, DkSession, ProcessBulkLink, chooseBulk } from '../../packages/dk-session/src/index.ts';
 import { ProcessTransport } from '../../packages/dk-session/src/process-transport.ts';
 import { Sample, prepareUpload } from '../../packages/dk-session/src/dksample.ts';
 import { openSamples } from '../../packages/dk-session/src/samples.ts';
@@ -61,7 +63,7 @@ function fail(msg, code = 2) {
 if (!existsSync(opts.bin)) fail(`no dkmidi binary at ${opts.bin} (run: mise run dkmidi:build)`);
 
 /** Start the bridge on the port and open a session on it. */
-function connect() {
+function connect(timeoutMs = 60000) {
   const child = spawn(opts.bin, ['open', opts.port], { stdio: ['pipe', 'pipe', 'inherit'] });
   const exited = new Promise((resolve) => child.on('exit', resolve));
   child.on('error', (e) => fail(`cannot start ${opts.bin}: ${e.message}`, 1));
@@ -70,12 +72,15 @@ function connect() {
     (b) => child.stdin.write(b),
     (cb) => child.stdout.on('data', (d) => cb(new Uint8Array(d))),
   );
-  const session = new DkSession(transport, { timeoutMs: 60000 });
+  const session = new DkSession(transport, { timeoutMs });
   return {
     session,
     async close() {
       child.stdin.end();
+      // the bridge of a port that vanished may not exit by itself
+      const timer = setTimeout(() => child.kill(), 3000);
       await exited;
+      clearTimeout(timer);
     },
   };
 }
@@ -93,8 +98,11 @@ async function withSession(run) {
  * The bulk session for the device on the MIDI port (--port), or undefined (--bulk off, no dkbulk binary, no candidate, no candidate with this device's nonce).
  * The selection is the dk-session `chooseBulk` the desktop app uses: SET_NONCE over SysEx to the MIDI target, then each `dkbulk list` candidate is opened
  * (`dkbulk open ID`, a child process) and asked INFO; only the one that returns the nonce is used. --bulk force: those are errors.
+ * When no device offers the interface and usb-fast reports that the device is not in USB MIDI mode (USB AUDIO/MIDI), the device is taken over (`BulkTakeOver`
+ * of dk-session: TAKEOVER, the device re-enumerates in USB MIDI mode, the handshake) and given back by `close`, at once. `holder.link` is the SysEx link; the
+ * take-over replaces it (the MIDI port goes away and returns), so callers read `holder.link.session` after this returns.
  */
-async function connectBulk(sysex) {
+async function connectBulk(holder) {
   const force = opts.bulk === 'force';
   if (!['auto', 'off', 'force'].includes(opts.bulk)) fail('--bulk is auto, off or force');
   if (opts.bulk === 'off') return undefined;
@@ -127,7 +135,37 @@ async function connectBulk(sysex) {
     },
   };
   const notes = [];
-  const choice = await chooseBulk(sysex, opener, (n) => notes.push(n), { timeoutMs: 20000 });
+  let choice = await chooseBulk(holder.link.session, opener, (n) => notes.push(n), { timeoutMs: 20000 });
+  let takeover;
+  if (!choice && (await holder.link.session.usbFastWrongMode())) {
+    console.error('wb: the device is in USB AUDIO/MIDI: taking USB over for this run (USB audio pauses)');
+    takeover = new BulkTakeOver(
+      {
+        sysex: () => holder.link.session,
+        // the device leaves the bus about 50 ms after the reply and returns in USB MIDI mode: reopen the MIDI port until it answers
+        async reenumerated(timeoutMs) {
+          const deadline = Date.now() + timeoutMs;
+          await new Promise((r) => setTimeout(r, 1500));
+          await holder.link.close();
+          for (;;) {
+            const link = connect(2000);
+            try {
+              await link.session.info();
+              holder.link = link;
+              return;
+            } catch (e) {
+              await link.close();
+              if (Date.now() > deadline) throw e;
+              await new Promise((r) => setTimeout(r, 500));
+            }
+          }
+        },
+      },
+      opener,
+      { lingerMs: 0, note: (n) => notes.push(n), bulk: { timeoutMs: 20000 } },
+    );
+    choice = await takeover.begin();
+  }
   if (!choice) {
     await Promise.all(children);
     return none(notes.at(-1) ?? 'no device offers a bulk interface; is usb-fast loaded?');
@@ -135,9 +173,15 @@ async function connectBulk(sysex) {
   for (const n of notes) console.error(`wb: ${n}`);
   return {
     session: choice.session,
+    takenOver: takeover !== undefined,
     async close() {
       await choice.link.close();
       await Promise.all(children);
+      if (takeover) {
+        // wb exits: the mode goes back at once (RELEASE; the device switches about 50 ms after the reply)
+        takeover.end();
+        await takeover.close();
+      }
     },
   };
 }
@@ -169,9 +213,11 @@ if (cmd === 'ports') {
   if (!['auto', 'always', 'never'].includes(opts.verify)) fail('--verify is auto, always or never');
   const sample = await loadSample();
   let bulk;
+  const holder = { link: connect() };
   try {
-    await withSession(async (session) => {
-      bulk = await connectBulk(session);
+    await (async () => {
+      bulk = await connectBulk(holder);
+      const session = holder.link.session;
       // the profile names the backend (`[storage] samples`); the Digitakt II is the stock +Drive, the Digitone II the digikit store
       // (a stock Digitakt II has no runtime to answer INFO: the +Drive then)
       let isDt2 = false;
@@ -241,9 +287,11 @@ if (cmd === 'ports') {
       console.log(
         `phases prep ${tPrep.toFixed(0)} ms put ${tPut.toFixed(0)} ms verify ${tVerify.toFixed(0)} ms, ${count} files ${(count / s).toFixed(2)} files/s`,
       );
-    });
+    })();
   } finally {
+    // the bulk link first: a take-over is released over the SysEx link, which stays open until then
     await bulk?.close();
+    await holder.link.close();
   }
 } else if (cmd === 'samples' && sub === 'rm') {
   if (rest.length === 0) fail(usage);

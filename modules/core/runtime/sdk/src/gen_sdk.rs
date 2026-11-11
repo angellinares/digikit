@@ -401,8 +401,6 @@ pub mod api {
         "usb_bulk_take",
         "usb_bulk_release",
         "usb_bulk_send",
-        "usb_bulk_takeover",
-        "usb_bulk_giveback",
         "usb_bulk_state",
         "dk_ui_has",
         "dk_ui_menu_new",
@@ -429,6 +427,8 @@ pub mod api {
         "dkrt_peek_range",
         "dkrt_track_type",
         "dkrt_selected_params",
+        "usb_bulk_takeover",
+        "usb_bulk_giveback",
     ];
 
     /// The names the runtime's own table holds (`IMPORTS`), in order: the imports without `requires`.
@@ -456,7 +456,7 @@ pub mod api {
     /// `input_turn`: Turn an encoder by `delta`.
     pub type InputTurnFn = unsafe extern "C" fn(encoder: u32, delta: i32) -> i32;
 
-    /// `usb_bulk_enable`: Add the vendor bulk interface (interface 2, EP2 OUT and IN, 512-byte packets) to USB MIDI mode and re-enumerate. `io_id` is the I/O job that usb_bulk_* wakes when a receive buffer is full. Idempotent for the same job; another job gets E_BUSY (one owner). Task context. 0, or a negative error (E_STATE: the device is not in USB MIDI mode (USB CONFIG), nothing was changed, E_CONTRACT: the firmware's USB tables are not the stock ones, E_NOMEM: no free slot on the runtime's per-pass list). See <dk/usb_bulk.h>.
+    /// `usb_bulk_enable`: Add the vendor bulk interface (interface 2, EP2 OUT and IN, 512-byte packets) to the USB MIDI configuration. In USB MIDI mode the device re-enumerates once; in another mode only the configuration is prepared, and the next switch to USB MIDI (usb_bulk_takeover, or the user's menu) enumerates with the interface in place. `io_id` is the I/O job that usb_bulk_* wakes when a receive buffer is full. Call it until it returns 0: the same job may call again. Another job gets E_BUSY (one owner). Task context. 0, or a negative error (E_STATE: the device is not in USB MIDI mode (USB CONFIG), or a mode switch is settling (about a second); call again later, E_CONTRACT: the firmware's USB tables are not the stock ones, E_NOMEM: no free slot on the runtime's per-pass list). See <dk/usb_bulk.h>.
     pub type UsbBulkEnableFn = unsafe extern "C" fn(io_id: i32) -> i32;
 
     /// `usb_bulk_disable`: The job that called usb_bulk_enable goes away (call it in dkm_fini): the adapter stops waking it and another job may enable the interface. The interface stays in the USB configuration until the next boot. 0, or E_STATE for another job.
@@ -470,12 +470,6 @@ pub mod api {
 
     /// `usb_bulk_send`: Send `len` bytes (1 to 16384) to the host on EP2 IN. The bytes are copied: `buf` is free when the call returns. 0, E_BUSY when both send slots are in flight (the job is woken when one completes), E_AGAIN (-72) when nothing is in flight and the engine refused the transfer (the job is woken within a few milliseconds to try again), E_STATE when the host is not connected or the bus was reset during the call, E_LENGTH.
     pub type UsbBulkSendFn = unsafe extern "C" fn(buf: *const u8, len: u32) -> i32;
-
-    /// `usb_bulk_takeover`: Take the USB port over for the bulk link, or renew a take-over (call it again at least every 20 s while the host works: any bulk transfer counts too). In USB AUDIO/MIDI the adapter switches the device to USB MIDI in RAM about 50 ms later, from its tick (USB audio pauses; the USB CONFIG setting is not written, so a reboot returns to it); in USB MIDI it succeeds at once without a switch. 0, E_STATE in Overbridge or another USB mode, E_NOMEM (no free slot on the runtime's per-pass list). Callable from a command handler: it only records the request. Then call usb_bulk_enable until it stops returning E_STATE. The adapter gives back by itself after the host's disconnect or suspend, after 30 s without host activity, and drops the take-over when the USB mode changes by another route (the user's menu choice wins). See <dk/usb_bulk.h>.
-    pub type UsbBulkTakeoverFn = unsafe extern "C" fn() -> i32;
-
-    /// `usb_bulk_giveback`: End a take-over: about 50 ms later the adapter switches back to the USB mode the device had. 0, also when nothing is taken over. Callable from a command handler.
-    pub type UsbBulkGivebackFn = unsafe extern "C" fn() -> i32;
 
     /// `usb_bulk_state`: State word: bit 0 enabled, bit 1 connected (the host configured interface 2), bit 2 wrong mode (the device is not in USB MIDI mode; read live), bit 3 taken over (usb_bulk_takeover is active), bits 8..15 receive buffers full, bits 16..23 send slots in flight, bits 24..31 the reset count (it changes when the USB bus is reset or the host disconnects; a transfer in progress is void then).
     pub type UsbBulkStateFn = unsafe extern "C" fn() -> u32;
@@ -500,6 +494,12 @@ pub mod api {
 
     /// `dkrt_selected_params`: The selected track and its Sound parameter words (read-only, from the firmware's own accessors). Writes the first `n` s16 words of that track's Sound array to `out` (words past the device's count are 0) and returns the track, 0 to 15. Returns -2 when there is no project yet and -3 when the track has no Sound record (a kit is loading): `out` is not written then. The index of a word is the mirror index of the firmware's parameter table, not a parameter code. Used by digikit/debug.
     pub type DkrtSelectedParamsFn = unsafe extern "C" fn(out: *mut i16, n: u32) -> i32;
+
+    /// `usb_bulk_takeover`: Take the USB port over for the bulk link, or renew a take-over (call it again at least every 20 s while the host works: any bulk transfer counts too). In USB AUDIO/MIDI the adapter switches the device to USB MIDI in RAM about 50 ms later, from its tick (USB audio pauses; the USB CONFIG setting is not written, so a reboot returns to it); in USB MIDI it succeeds at once without a switch. 0, E_STATE in Overbridge or another USB mode, E_NOMEM (no free slot on the runtime's per-pass list). Callable from a command handler: it only records the request. Then call usb_bulk_enable until it stops returning E_STATE. The adapter gives back by itself after the host's disconnect or suspend, after 30 s without host activity, and drops the take-over when the USB mode changes by another route (the user's menu choice wins). See <dk/usb_bulk.h>.
+    pub type UsbBulkTakeoverFn = unsafe extern "C" fn() -> i32;
+
+    /// `usb_bulk_giveback`: End a take-over: about 50 ms later the adapter switches back to the USB mode the device had. 0, also when nothing is taken over. Callable from a command handler.
+    pub type UsbBulkGivebackFn = unsafe extern "C" fn() -> i32;
 }
 
 /// The imports that another module provides (`[[import]] requires`): the external functions, the stubs for an absent module and
@@ -517,8 +517,6 @@ macro_rules! optional_imports {
                 pub fn usb_bulk_take(buf: *mut *mut u8, len: *mut u32) -> i32;
                 pub fn usb_bulk_release(buf: *mut u8) -> i32;
                 pub fn usb_bulk_send(buf: *const u8, len: u32) -> i32;
-                pub fn usb_bulk_takeover() -> i32;
-                pub fn usb_bulk_giveback() -> i32;
                 pub fn usb_bulk_state() -> u32;
                 pub fn dk_ui_has(cap: i32) -> i32;
                 pub fn dk_ui_menu_new(desc: *const u8) -> *mut u8;
@@ -539,6 +537,8 @@ macro_rules! optional_imports {
                 pub fn dk_ui_toast(text: *const u8) -> i32;
                 pub fn dk_ui_tick(cb: *mut u8, ctx: *mut u8, period_ms: u32) -> i32;
                 pub fn dl_set_tick_cb(cb: *mut u8);
+                pub fn usb_bulk_takeover() -> i32;
+                pub fn usb_bulk_giveback() -> i32;
             }
 
             /// What an absent module's import calls: the failure value of the API.
@@ -574,8 +574,6 @@ macro_rules! optional_imports {
                     ("usb_bulk_take", core::hint::black_box(usb_bulk_take as usize), 0),
                     ("usb_bulk_release", core::hint::black_box(usb_bulk_release as usize), 0),
                     ("usb_bulk_send", core::hint::black_box(usb_bulk_send as usize), 0),
-                    ("usb_bulk_takeover", core::hint::black_box(usb_bulk_takeover as usize), 0),
-                    ("usb_bulk_giveback", core::hint::black_box(usb_bulk_giveback as usize), 0),
                     ("usb_bulk_state", core::hint::black_box(usb_bulk_state as usize), 0),
                     ("dk_ui_has", core::hint::black_box(dk_ui_has as usize), absent::dk_ui_has as usize),
                     ("dk_ui_menu_new", core::hint::black_box(dk_ui_menu_new as usize), absent::dk_ui_menu_new as usize),
@@ -596,6 +594,8 @@ macro_rules! optional_imports {
                     ("dk_ui_toast", core::hint::black_box(dk_ui_toast as usize), absent::dk_ui_toast as usize),
                     ("dk_ui_tick", core::hint::black_box(dk_ui_tick as usize), absent::dk_ui_tick as usize),
                     ("dl_set_tick_cb", core::hint::black_box(dl_set_tick_cb as usize), absent::dl_set_tick_cb as usize),
+                    ("usb_bulk_takeover", core::hint::black_box(usb_bulk_takeover as usize), 0),
+                    ("usb_bulk_giveback", core::hint::black_box(usb_bulk_giveback as usize), 0),
                 ]
             }
         }

@@ -28,5 +28,7 @@ extern const uint8_t dk_fw_usb_port_table __asm__("cf.usb.data.port_table");
 extern const uint8_t dk_fw_usb_active_port __asm__("cf.usb.value.active_port");
 /* The USB CONFIG setting byte (u8: 0 USB MIDI, 1 Overbridge, 2 USB AUDIO/MIDI), the operand of its getter (`FUN_400c1168`). The stored mode: the mode switch never writes it, only the three menu actions, the settings load and the factory defaults do. Tests read it to prove a take-over leaves it alone. DT2 1.17 0x4099d5c4, DN2 1.12 0x405ce898. RAM at run time. */
 extern const uint8_t dk_fw_usb_config_mode __asm__("cf.usb.value.config_mode");
+/* The restart delay of the USB mode switch (u32): the stop (`FUN_40006bac`) sets it to 30, the USB tick `FUN_4000713e` counts it down (one a tick, about 33 ms) and calls the restart (`FUN_40006bc6`) when it reaches 0. Non-zero while a stop waits to restart. The operand of the tick's first read. DT2 1.17 0x40965a38, DN2 1.12 0x4058f280. RAM at run time. */
+extern const uint8_t dk_fw_usb_restart_delay __asm__("cf.usb.value.restart_delay");
 
 #endif

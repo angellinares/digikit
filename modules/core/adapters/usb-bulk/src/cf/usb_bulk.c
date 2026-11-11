@@ -111,6 +111,7 @@ extern void usb_fw_cancel_ep(u32 index);
 extern u8 *usb_fw_td_alloc(void);
 extern void usb_fw_stop(void);
 extern void usb_fw_restart(void);
+extern u8 usb_restart_delay[]; /* u32 in RAM: 30 down to 0, non-zero while a stop waits to restart */
 extern void usb_fw_mode_switch(u32 port); /* FUN_40006c16: returns when `port` is active; else stop, write the port, restart after about 30 USB ticks. Task context. */
 /* the board: the uncached alias of DDR is this far above the cached window (device.s) */
 extern const u32 usb_alias_delta;
@@ -180,6 +181,7 @@ static volatile u32 enabled, connected, resets;
  * engine refused its dTD (the pool was empty); the tick retries. `tx_retry`: a send was refused; the tick wakes the job. `qh_ready`: the EP2 queue
  * heads were set up by this adapter. */
 static volatile u32 stopping, need_prime, tx_retry, qh_ready;
+static u32 restart_due; /* enable_prepare found the device in USB MIDI mode: the first enable re-enumerates */
 static volatile i32 io_job;
 /* Take-over state. `taken`: a take-over is active. `to_req`: 0 none, 1 the switch to port 2 is requested, 2 the switch back is requested; the tick runs it when
  * `to_due_ms` have passed since it first saw the request. `to_orig`: the port to give back to. `to_active`: set by any transfer or renew (interrupt or task),
@@ -528,8 +530,8 @@ static void ub_snapshot(void)
 
 /* ---- take-over ---- */
 
-/* Guard after every mode switch. The firmware restarts the device after a delay of 30 ticks of its USB tick (FUN_4000713e counts the word 0x28 bytes below the
- * active port down from 30 and restarts at 0). Measured in the emulator on both images: about 1 s (33 ms a tick). That word is the exact answer to "is a restart
+/* Guard after every mode switch. The firmware restarts the device after a delay of 30 ticks of its USB tick (FUN_4000713e counts the word of
+ * cf.usb.value.restart_delay down from 30 and restarts at 0). Measured in the emulator on both images: about 1 s (33 ms a tick). That word is the exact answer to "is a restart
  * pending" and does not depend on any clock of ours, so the guard is open only when it is 0 (fw_restart_pending). TO_GUARD_MS is a floor on our own clock from the
  * stamp: it covers the moment between the stamp and the firmware setting the word, and a word that cannot be read. */
 #define TO_GUARD_MS 500u
@@ -563,14 +565,13 @@ static u32 to_elapsed_ms(u32 since, u32 now, u32 per_s)
     return d / per_s * 1000u + d % per_s * 1000u / per_s;
 }
 
-/* The firmware's restart delay (u32, 30 down to 0; DT2 0x40965a38, DN2 1.12 0x4058f280): non-zero while a stop is waiting to restart. It lies 0x28 bytes below the
- * active port on both images (static, and seen counting down in the emulator test); a value over 30 is not the counter and counts as no restart pending. */
-#define FW_RESTART_DELAY_BELOW 0x28u
+/* The firmware's restart delay (anchor cf.usb.value.restart_delay): 30 down to 0 by the USB tick, non-zero while a stop is waiting to restart. A value over
+ * 30 is not the counter and counts as no restart pending. */
 #define FW_RESTART_TICKS 30u
 
 static u32 fw_restart_pending(void)
 {
-    u32 d = *(volatile u32 *)((u32)usb_active_port - FW_RESTART_DELAY_BELOW);
+    u32 d = *(volatile u32 *)usb_restart_delay;
     return d != 0u && d <= FW_RESTART_TICKS;
 }
 
@@ -600,6 +601,7 @@ static void sw_stamp(void)
     to_sw_set = 1;
     to_sw_at = now;
     to_sw_per = per;
+    restart_due = 0; /* every switch connects the port again with entry 2 as it is now */
     usb_bulk_switches++;
 }
 
@@ -612,14 +614,11 @@ static void to_drop(void)
     to_sus = 0;
 }
 
-/* Called from usb_bulk_tick, the UI task. Runs the requested switch, the watchdog and the automatic give-back. */
-static void takeover_tick(void)
+/* The take-over's decision for this tick: updates the intervals and the request, and returns the port to switch to, or 0 for no switch. `port` is the active
+ * port (or the target of a claimed switch), `guard` the result of sw_guard_open. A target equal to `port` is a request that needs no switch (it is dropped).
+ * Interrupts masked by the caller. */
+static u32 takeover_decide(u32 now, u32 per_s, u32 port, u32 guard)
 {
-    u32 per_s, now, sr, port, target, guard;
-    if (!taken)
-        return;
-    now = to_clock(&per_s);
-    sr = sr_mask();
     if (per_s != to_per_s) { /* the clock source changed: restart the intervals */
         to_per_s = per_s;
         to_act_at = now;
@@ -630,21 +629,17 @@ static void takeover_tick(void)
         to_active = 0;
         to_act_at = now;
     }
-    port = to_pend_port != 0u ? to_pend_port : *(volatile u32 *)usb_active_port;
-    guard = sw_guard_open();
     /* once switched, the active port stays USB MIDI until we switch back: any other value is the user's choice and wins */
     if (to_req != 1u && port != PORT_ENTRY) {
         to_drop();
-        sr_restore(sr);
-        return;
+        return 0;
     }
     if (to_req == 0u && !guard) { /* our own switch is settling: its disconnects and the bus suspend are not a host leaving */
         to_gone = 0;
         to_sus = 0;
-        sr_restore(sr);
-        return;
+        return 0;
     }
-    if (to_req == 0u) {
+    if (to_req == 0u) { /* the automatic give-back: the host left, no activity for TO_IDLE_MS, or the bus stayed suspended */
         if (to_gone) {
             to_gone = 0;
             to_req = 2;
@@ -660,47 +655,75 @@ static void takeover_tick(void)
         } else {
             to_sus = 0;
         }
-        if (to_req == 2u) { /* automatic give-back: no delay */
+        if (to_req == 2u) { /* no delay */
             to_due_ms = 0;
             to_due_set = 0;
         }
     }
-    if (to_req == 0u) {
-        sr_restore(sr);
-        return;
-    }
+    if (to_req == 0u)
+        return 0;
     if (!to_due_set) {
         to_due_set = 1;
         to_due_at = now;
     }
-    if (to_elapsed_ms(to_due_at, now, per_s) < to_due_ms || !guard) { /* a request waits for the guard: one switch at a time */
-        sr_restore(sr);
-        return;
-    }
+    if (to_elapsed_ms(to_due_at, now, per_s) < to_due_ms || !guard) /* a request waits for its delay and for the guard: one switch at a time */
+        return 0;
     if (to_req == 1u) {
         if (port != to_orig) { /* the mode changed before the switch ran: nothing to take over */
             to_drop();
-            sr_restore(sr);
-            return;
+            return 0;
         }
-        target = PORT_ENTRY;
         to_req = 0;
         to_active = 1; /* the switch counts as activity */
         to_sus = 0;
-    } else {
-        target = to_orig;
-        to_drop();
+        return PORT_ENTRY;
     }
-    if (target != port) {
+    to_drop();
+    return to_orig;
+}
+
+/* Called from usb_bulk_tick, the UI task: decide under the mask, then run the switch. */
+static void takeover_tick(void)
+{
+    u32 per_s, now, sr, port, target;
+    if (!taken)
+        return;
+    now = to_clock(&per_s);
+    sr = sr_mask();
+    port = to_pend_port != 0u ? to_pend_port : *(volatile u32 *)usb_active_port;
+    target = takeover_decide(now, per_s, port, sw_guard_open());
+    if (target != 0u && target != port) {
         /* claimed under the mask: from here a takeover() or giveback() on the MIDI task sees the new state, and any further request waits for the guard */
         sw_stamp();
         to_pend_port = target;
     }
     sr_restore(sr);
-    if (target != port) {
+    if (target != 0u && target != port) {
         usb_fw_mode_switch(target); /* interrupts on, task context: the firmware's own menu action does the same */
         to_pend_port = 0; /* the firmware has written the active port */
     }
+}
+
+/* The job is woken every HK_WAKE_MS while the interface is enabled: the module has no timer of its own (a retry of usb_bulk_enable while the mode switch settles,
+ * a check for an idle session). */
+#define HK_WAKE_MS 250u
+static u32 hk_set, hk_at, hk_per, hk_passes;
+
+static void housekeeping_wake(void)
+{
+    u32 per = 1500u, now = dkrt_blocks();
+    if (io_job <= 0)
+        return;
+    if (now == 0u) { /* no block clock: count the passes of the UI loop (about 120 a second) */
+        per = 120u;
+        now = ++hk_passes;
+    }
+    if (hk_set && per == hk_per && to_elapsed_ms(hk_at, now, per) < HK_WAKE_MS)
+        return;
+    hk_set = 1;
+    hk_at = now;
+    hk_per = per;
+    wake();
 }
 
 /* once a pass of the UI loop (dkrt_poll_add): the take-over, then retry what the engine refused */
@@ -713,6 +736,7 @@ void usb_bulk_tick(void)
     takeover_tick();
     if (!enabled)
         return;
+    housekeeping_wake();
     sr = sr_mask();
     if (need_prime)
         prime_all();
@@ -757,28 +781,16 @@ static i32 tick_register(void)
     return r;
 }
 
-i32 usb_bulk_enable(i32 io_id)
+/* Make entry 2 (USB MIDI) ours: the 124-byte descriptor, our connect and disconnect callbacks, the buffers. Writes only the port table entry and our own state,
+ * so it is safe whatever the active port is: the firmware reads the entry when it connects. `restart_due`: the device is in USB MIDI mode and no switch is
+ * settling, so the host has seen the stock descriptor and the caller must re-enumerate; in any other case the next connect of port 2 (a switch that is
+ * settling, or a later one) already uses the new entry. */
+static i32 enable_prepare(i32 io_id)
 {
     u32 *e = (u32 *)(usb_port_table + PORT_ENTRY * PORT_ENTRY_BYTES);
     const u8 *cfg = (const u8 *)e[3];
     u32 sr, i;
     u8 *d;
-    if (io_job > 0 && io_job != io_id)
-        return E_BUSY; /* one owner */
-    /* the bulk pair lives in the USB MIDI configuration; USB AUDIO/MIDI uses EP2 IN for the audio clock feedback
-     * (checked also when the interface is already enabled, so a caller never sees success outside USB MIDI mode) */
-    if (!usb_midi_mode())
-        return E_STATE;
-    /* a switch is settling (the device restarts a little after it): the caller retries. Also when enabled already, so a caller never sees success in the middle of one */
-    sr = sr_mask();
-    i = sw_guard_open();
-    sr_restore(sr);
-    if (!i)
-        return E_STATE;
-    if (enabled) {
-        io_job = io_id;
-        return 0;
-    }
     /* the buffers must lie in the cached DDR window: the alias is that window plus a constant */
     if ((u32)mem < usb_ddr_base || (u32)mem + sizeof mem > usb_ddr_base + usb_ddr_bytes)
         return E_CONTRACT;
@@ -813,19 +825,50 @@ i32 usb_bulk_enable(i32 io_id)
     qh_ready = 0;
     io_job = io_id;
     sr = sr_mask();
-    if (!sw_guard_open()) { /* a switch ran since the check above (the tick, on the UI task) */
-        sr_restore(sr);
-        return E_STATE;
-    }
-    sw_stamp(); /* enable's own stop and restart is a switch */
+    restart_due = usb_midi_mode() && sw_guard_open();
     stock_connect = (void (*)(u32))e[0];
-    to_quiet = 1; /* the stop below runs our disconnect callback: not a host leaving */
     e[3] = (u32)d;
     e[4] = DESC_BYTES;
     e[0] = (u32)usb_bulk_connect;
     e[1] = (u32)usb_bulk_disconnect;
     enabled = 1;
     sr_restore(sr);
+    return 0;
+}
+
+/* The caller (the module's I/O job) calls this until it returns 0. The first call prepares entry 2 whatever the mode (see enable_prepare), so a take-over
+ * from USB AUDIO/MIDI enumerates once, with the bulk interface already in the descriptor. E_STATE: the device is not in USB MIDI mode, or a switch is
+ * settling (the firmware restarts the device a second after it, and the guard keeps a second stop out); call again later. */
+i32 usb_bulk_enable(i32 io_id)
+{
+    u32 sr, ok;
+    i32 r;
+    if (io_job > 0 && io_job != io_id)
+        return E_BUSY; /* one owner */
+    if (!enabled) {
+        r = enable_prepare(io_id);
+        if (r != 0)
+            return r;
+    }
+    io_job = io_id;
+    /* the bulk pair lives in the USB MIDI configuration; USB AUDIO/MIDI uses EP2 IN for the audio clock feedback
+     * (checked also when the interface is enabled already, so a caller never sees success outside USB MIDI mode) */
+    if (!usb_midi_mode())
+        return E_STATE;
+    /* a switch is settling: the caller retries. Also when enabled already, so a caller never sees success in the middle of one */
+    sr = sr_mask();
+    ok = sw_guard_open();
+    if (ok && restart_due) {
+        restart_due = 0;
+        sw_stamp(); /* the stop and restart below are a switch */
+        to_quiet = 1; /* the stop runs our disconnect callback: not a host leaving */
+    } else if (ok) {
+        sr_restore(sr);
+        return 0;
+    }
+    sr_restore(sr);
+    if (!ok)
+        return E_STATE;
     /* the firmware's own USB mode switch (FUN_40006c16 does the same from the task context, interrupts on): stop (calls the disconnect callback and
      * starts a delay), restart (the tick restarts the device when the delay has run); the host sees the device go and come back with interface 2 */
     usb_fw_stop();

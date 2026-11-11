@@ -2746,6 +2746,17 @@ mark = "D"
 rule = "fw/usb:cf_literal"
 
 [[anchor]]
+name = "cf.usb.value.restart_delay"
+cpu = "cf"
+kind = "value"
+addr = 0x4058f280
+src = 0x40007148
+len = 4
+sha256 = "762346dbdd73193aad33d5036e31599571e2b2024403d7f5237cae95d83051e1"
+mark = "D"
+rule = "fw/usb:cf_literal"
+
+[[anchor]]
 name = "cf.view.fn.brain.instance"
 cpu = "cf"
 kind = "data"

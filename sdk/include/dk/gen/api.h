@@ -162,7 +162,7 @@ int32_t input_key(uint32_t code, uint32_t down);
 /* Turn an encoder by `delta`. Needs core/input: the import is not found without it. */
 int32_t input_turn(uint32_t encoder, int32_t delta);
 
-/* Add the vendor bulk interface (interface 2, EP2 OUT and IN, 512-byte packets) to USB MIDI mode and re-enumerate. `io_id` is the I/O job that usb_bulk_* wakes when a receive buffer is full. Idempotent for the same job; another job gets E_BUSY (one owner). Task context. 0, or a negative error (E_STATE: the device is not in USB MIDI mode (USB CONFIG), nothing was changed, E_CONTRACT: the firmware's USB tables are not the stock ones, E_NOMEM: no free slot on the runtime's per-pass list). See <dk/usb_bulk.h>. Needs core/usb-bulk: the import is not found without it. */
+/* Add the vendor bulk interface (interface 2, EP2 OUT and IN, 512-byte packets) to the USB MIDI configuration. In USB MIDI mode the device re-enumerates once; in another mode only the configuration is prepared, and the next switch to USB MIDI (usb_bulk_takeover, or the user's menu) enumerates with the interface in place. `io_id` is the I/O job that usb_bulk_* wakes when a receive buffer is full. Call it until it returns 0: the same job may call again. Another job gets E_BUSY (one owner). Task context. 0, or a negative error (E_STATE: the device is not in USB MIDI mode (USB CONFIG), or a mode switch is settling (about a second); call again later, E_CONTRACT: the firmware's USB tables are not the stock ones, E_NOMEM: no free slot on the runtime's per-pass list). See <dk/usb_bulk.h>. Needs core/usb-bulk: the import is not found without it. */
 int32_t usb_bulk_enable(int32_t io_id);
 
 /* The job that called usb_bulk_enable goes away (call it in dkm_fini): the adapter stops waking it and another job may enable the interface. The interface stays in the USB configuration until the next boot. 0, or E_STATE for another job. Needs core/usb-bulk: the import is not found without it. */
@@ -176,12 +176,6 @@ int32_t usb_bulk_release(uint8_t *buf);
 
 /* Send `len` bytes (1 to 16384) to the host on EP2 IN. The bytes are copied: `buf` is free when the call returns. 0, E_BUSY when both send slots are in flight (the job is woken when one completes), E_AGAIN (-72) when nothing is in flight and the engine refused the transfer (the job is woken within a few milliseconds to try again), E_STATE when the host is not connected or the bus was reset during the call, E_LENGTH. Needs core/usb-bulk: the import is not found without it. */
 int32_t usb_bulk_send(const uint8_t *buf, uint32_t len);
-
-/* Take the USB port over for the bulk link, or renew a take-over (call it again at least every 20 s while the host works: any bulk transfer counts too). In USB AUDIO/MIDI the adapter switches the device to USB MIDI in RAM about 50 ms later, from its tick (USB audio pauses; the USB CONFIG setting is not written, so a reboot returns to it); in USB MIDI it succeeds at once without a switch. 0, E_STATE in Overbridge or another USB mode, E_NOMEM (no free slot on the runtime's per-pass list). Callable from a command handler: it only records the request. Then call usb_bulk_enable until it stops returning E_STATE. The adapter gives back by itself after the host's disconnect or suspend, after 30 s without host activity, and drops the take-over when the USB mode changes by another route (the user's menu choice wins). See <dk/usb_bulk.h>. Needs core/usb-bulk: the import is not found without it. */
-int32_t usb_bulk_takeover(void);
-
-/* End a take-over: about 50 ms later the adapter switches back to the USB mode the device had. 0, also when nothing is taken over. Callable from a command handler. Needs core/usb-bulk: the import is not found without it. */
-int32_t usb_bulk_giveback(void);
 
 /* State word: bit 0 enabled, bit 1 connected (the host configured interface 2), bit 2 wrong mode (the device is not in USB MIDI mode; read live), bit 3 taken over (usb_bulk_takeover is active), bits 8..15 receive buffers full, bits 16..23 send slots in flight, bits 24..31 the reset count (it changes when the USB bus is reset or the host disconnects; a transfer in progress is void then). Needs core/usb-bulk: the import is not found without it. */
 uint32_t usb_bulk_state(void);
@@ -206,6 +200,12 @@ int32_t dkrt_track_type(uint32_t track);
 
 /* The selected track and its Sound parameter words (read-only, from the firmware's own accessors). Writes the first `n` s16 words of that track's Sound array to `out` (words past the device's count are 0) and returns the track, 0 to 15. Returns -2 when there is no project yet and -3 when the track has no Sound record (a kit is loading): `out` is not written then. The index of a word is the mirror index of the firmware's parameter table, not a parameter code. Used by digikit/debug. */
 int32_t dkrt_selected_params(int16_t *out, uint32_t n);
+
+/* Take the USB port over for the bulk link, or renew a take-over (call it again at least every 20 s while the host works: any bulk transfer counts too). In USB AUDIO/MIDI the adapter switches the device to USB MIDI in RAM about 50 ms later, from its tick (USB audio pauses; the USB CONFIG setting is not written, so a reboot returns to it); in USB MIDI it succeeds at once without a switch. 0, E_STATE in Overbridge or another USB mode, E_NOMEM (no free slot on the runtime's per-pass list). Callable from a command handler: it only records the request. Then call usb_bulk_enable until it stops returning E_STATE. The adapter gives back by itself after the host's disconnect or suspend, after 30 s without host activity, and drops the take-over when the USB mode changes by another route (the user's menu choice wins). See <dk/usb_bulk.h>. Needs core/usb-bulk: the import is not found without it. */
+int32_t usb_bulk_takeover(void);
+
+/* End a take-over: about 50 ms later the adapter switches back to the USB mode the device had. 0, also when nothing is taken over. Callable from a command handler. Needs core/usb-bulk: the import is not found without it. */
+int32_t usb_bulk_giveback(void);
 
 /* Entry points of a .dkm (symbols of its object). */
 
