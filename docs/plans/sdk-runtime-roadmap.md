@@ -27,9 +27,10 @@ Status: `todo`, `active`, `done`, `parked`.
 
 | Phase | Item | What | Depends on | Status | Branch / PR |
 | --- | --- | --- | --- | --- | --- |
-| 1 | S1 | SDK restructure, byte-identical, with hash task | - | done | lane/sdk-design |
-| 1 | S2 | SDK entry point (`dk_module`) and named imports; tools migrated | S1 | todo | |
-| 1 | S3 | SDK builders in `init` and the runtime commit path; machines, FX and fixtures migrated | S2 | todo | |
+| 1 | S1 | SDK restructure, byte-identical, with hash task | - | done | PR 416 |
+| 1 | S2a | SDK C hygiene: clang-format, `-std=c11`, helpers into `core/`, SDK sources linked automatically | S1 | todo | |
+| 1 | S2b | SDK entry point (`dk_module`, `dk_ctx`) and named imports by service; tools and fixtures migrated | S2a | todo | |
+| 1 | S3 | SDK builders in `init` and the runtime commit path; machines, FX and fixtures migrated | S2b | todo | |
 | 1 | S4 | SDK templates and docs | S3 | todo | |
 | 1 | P7 | Clock audit (static) | - | todo | |
 | 1 | P1 | Address map v1, emulator only (own lane) | - | todo | |
@@ -65,3 +66,5 @@ Later, only when a feature needs it: the firmware tooling list in [profiling.md]
 - 2026-11-10: first version. SDK contract (R5) moved before R2 and R3 (runtime-and-services 13.1). Track A parked: the focus is the SDK.
 - 2026-11-12: the SDK design ([sdk.md](sdk.md)) replaces the SDK parts of R1 and R5 with S1-S5. S1-S4 come first; the R4 spike moves
   after them, because only `DK_SPAN` (S5) depends on its answer.
+- 2026-11-12: S2 split into S2a (C hygiene) and S2b (entry point and imports), so the whitespace-only format commit and the binding change
+  are reviewed apart.
