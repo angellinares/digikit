@@ -12,15 +12,17 @@
 #include "cf/pool_nw32.h"
 
 #if defined(__GNUC__) && !defined(__clang__)
-#pragma GCC optimize("no-tree-loop-distribute-patterns") /* a patched-in object has no libc: no memset or memcpy calls from loops */
+#pragma GCC optimize(                                                                              \
+    "no-tree-loop-distribute-patterns") /* a patched-in object has no libc: no memset or memcpy calls from loops */
 #endif
 
 #define SPA_PAGE_BYTES 4096u
-#define SPA_PAGE_FRAMES 2048u                     /* mono PCM16 frames of one page */
-#define SPA_MAX_PAGES (1u << 20)                  /* the page index of the wire tag has 20 bits */
+#define SPA_PAGE_FRAMES 2048u    /* mono PCM16 frames of one page */
+#define SPA_MAX_PAGES (1u << 20) /* the page index of the wire tag has 20 bits */
 #define SPA_BLOCKS 64u
-#define SPA_EXTENTS (SPA_BLOCKS + 2u)             /* at most 64 blocks leave 65 holes; one spare */
-#define SPA_STOCK_END 0x80531000u                 /* the end of the last stock write seen (finding 106); a range starts at or above it */
+#define SPA_EXTENTS (SPA_BLOCKS + 2u) /* at most 64 blocks leave 65 holes; one spare */
+#define SPA_STOCK_END                                                                              \
+    0x80531000u /* the end of the last stock write seen (finding 106); a range starts at or above it */
 
 #define SPA_FREE 0u
 #define SPA_LOADING 1u
@@ -32,10 +34,11 @@
 #define SPA_E_RANGE (-1)
 
 /* Results of spa_open. */
-#define SPA_NEW 0                                 /* a block was reserved: LOADING, write the pages */
-#define SPA_HIT 1                                 /* an equal block is READY now: no transfer */
-#define SPA_E_NOSPACE (-2)                        /* no contiguous run of pages, no table entry (after evicting all cached blocks) */
-#define SPA_E_TOKENS (-3)                         /* the token counter is exhausted: it never wraps */
+#define SPA_NEW 0 /* a block was reserved: LOADING, write the pages */
+#define SPA_HIT 1 /* an equal block is READY now: no transfer */
+#define SPA_E_NOSPACE                                                                              \
+    (-2) /* no contiguous run of pages, no table entry (after evicting all cached blocks) */
+#define SPA_E_TOKENS (-3) /* the token counter is exhausted: it never wraps */
 
 typedef struct spa_extent {
     uint32_t start; /* first page */
@@ -50,19 +53,19 @@ typedef struct spa_block {
     uint32_t frames;
     uint32_t refs;
     uint32_t token;
-    uint32_t lru;          /* CACHED: the clock value when it was released; the smallest is evicted first */
-    uint32_t has_id;       /* the identity below is valid: the block may be shared */
+    uint32_t lru; /* CACHED: the clock value when it was released; the smallest is evicted first */
+    uint32_t has_id; /* the identity below is valid: the block may be shared */
     uint32_t size;
     uint32_t hash_kind;
     uint8_t hash[32];
 } spa_block;
 
 typedef struct spa_pool {
-    uint32_t base;         /* physical byte address of page 0 */
-    uint32_t pages;        /* pages in the range */
+    uint32_t base;  /* physical byte address of page 0 */
+    uint32_t pages; /* pages in the range */
     uint32_t n_ext;
-    uint32_t clock;        /* LRU clock */
-    uint32_t tokens;       /* tokens issued so far */
+    uint32_t clock;  /* LRU clock */
+    uint32_t tokens; /* tokens issued so far */
     spa_extent ext[SPA_EXTENTS];
     spa_block blk[SPA_BLOCKS];
 } spa_pool;
@@ -86,8 +89,8 @@ static inline int32_t spa_init(spa_pool *p, uint32_t base, uint32_t bytes)
 {
     uint32_t end = base + bytes;
     spa_zero(p, (uint32_t)sizeof *p);
-    if (bytes == 0 || (base & 0xfffu) || (bytes & 0xfffu) || base < SPA_STOCK_END || end < base || end > SP_DDR_PHYS_END ||
-        bytes / SPA_PAGE_BYTES > SPA_MAX_PAGES)
+    if (bytes == 0 || (base & 0xfffu) || (bytes & 0xfffu) || base < SPA_STOCK_END || end < base ||
+        end > SP_DDR_PHYS_END || bytes / SPA_PAGE_BYTES > SPA_MAX_PAGES)
         return SPA_E_RANGE;
     p->base = base;
     p->pages = bytes / SPA_PAGE_BYTES;
@@ -105,7 +108,7 @@ static inline void spa_free_pages(spa_pool *p, uint32_t start, uint32_t count)
         return;
     while (i < p->n_ext && p->ext[i].start < start)
         i++;
-    if (i > 0 && p->ext[i - 1].start + p->ext[i - 1].count == start) {   /* joins the extent before */
+    if (i > 0 && p->ext[i - 1].start + p->ext[i - 1].count == start) { /* joins the extent before */
         p->ext[i - 1].count += count;
         if (i < p->n_ext && p->ext[i - 1].start + p->ext[i - 1].count == p->ext[i].start) {
             p->ext[i - 1].count += p->ext[i].count;
@@ -115,7 +118,7 @@ static inline void spa_free_pages(spa_pool *p, uint32_t start, uint32_t count)
         }
         return;
     }
-    if (i < p->n_ext && start + count == p->ext[i].start) {   /* joins the extent after */
+    if (i < p->n_ext && start + count == p->ext[i].start) { /* joins the extent after */
         p->ext[i].start = start;
         p->ext[i].count += count;
         return;
@@ -160,7 +163,8 @@ static inline int spa_evict_oldest(spa_pool *p)
 {
     uint32_t i, best = SPA_BLOCKS;
     for (i = 0; i < SPA_BLOCKS; i++)
-        if (p->blk[i].state == SPA_CACHED && (best == SPA_BLOCKS || p->blk[i].lru < p->blk[best].lru))
+        if (p->blk[i].state == SPA_CACHED &&
+            (best == SPA_BLOCKS || p->blk[i].lru < p->blk[best].lru))
             best = i;
     if (best == SPA_BLOCKS)
         return 0;
@@ -168,7 +172,8 @@ static inline int spa_evict_oldest(spa_pool *p)
     return 1;
 }
 
-static inline int spa_same_id(const spa_block *b, uint32_t size, uint32_t hash_kind, const uint8_t *hash)
+static inline int spa_same_id(const spa_block *b, uint32_t size, uint32_t hash_kind,
+                              const uint8_t *hash)
 {
     uint32_t i;
     if (!b->has_id || b->size != size || b->hash_kind != hash_kind)
@@ -192,13 +197,15 @@ static inline int32_t spa_find_free_entry(const spa_pool *p)
  * READY: the block gains a reference and keeps its token (a second holder of the same backing; the first handle stays valid).
  * CACHED: it becomes READY with refs 1 and a new token (a new life: handles of the earlier life stay stale).
  * Returns 1 and the table index in *out, or 0 (also when the token counter is exhausted, which spa_open then reports). */
-static inline int spa_hit(spa_pool *p, uint32_t size, uint32_t hash_kind, const uint8_t *hash, uint32_t *out)
+static inline int spa_hit(spa_pool *p, uint32_t size, uint32_t hash_kind, const uint8_t *hash,
+                          uint32_t *out)
 {
     uint32_t i;
     spa_block *b;
     for (i = 0; i < SPA_BLOCKS; i++) {
         b = &p->blk[i];
-        if ((b->state != SPA_READY && b->state != SPA_CACHED) || !spa_same_id(b, size, hash_kind, hash))
+        if ((b->state != SPA_READY && b->state != SPA_CACHED) ||
+            !spa_same_id(b, size, hash_kind, hash))
             continue;
         if (b->state == SPA_READY) {
             b->refs++;
@@ -220,8 +227,8 @@ static inline int spa_hit(spa_pool *p, uint32_t size, uint32_t hash_kind, const 
  *  - Otherwise the pages are reserved first fit; when no run fits, CACHED blocks are evicted oldest first, one at a time, and the search
  *    repeats. A block table entry is found the same way. The block is LOADING with refs 1 and a new token: NEW.
  * *out is the table index. A failure changes nothing except the cached blocks that were evicted. */
-static inline int32_t spa_open(spa_pool *p, uint32_t frames, uint32_t channels, uint32_t size, uint32_t hash_kind, const uint8_t *hash,
-                               uint32_t *out)
+static inline int32_t spa_open(spa_pool *p, uint32_t frames, uint32_t channels, uint32_t size,
+                               uint32_t hash_kind, const uint8_t *hash, uint32_t *out)
 {
     uint32_t i, plane = spa_plane_pages(frames), need;
     int32_t page, ent;
@@ -309,7 +316,8 @@ static inline void spa_release(spa_pool *p, uint32_t idx, uint32_t token)
  * for both planes and PCM never moves, so total free space would promise too much). */
 static inline uint32_t spa_free_frames(const spa_pool *p)
 {
-    uint32_t start[SPA_EXTENTS + SPA_BLOCKS], count[SPA_EXTENTS + SPA_BLOCKS], n = 0, i, j, best = 0, run_start, run_end;
+    uint32_t start[SPA_EXTENTS + SPA_BLOCKS], count[SPA_EXTENTS + SPA_BLOCKS],
+        n = 0, i, j, best = 0, run_start, run_end;
     for (i = 0; i < p->n_ext; i++) {
         start[n] = p->ext[i].start;
         count[n++] = p->ext[i].count;
@@ -319,7 +327,7 @@ static inline uint32_t spa_free_frames(const spa_pool *p)
             start[n] = p->blk[i].first_page;
             count[n++] = p->blk[i].channels * p->blk[i].plane_pages;
         }
-    for (i = 1; i < n; i++) {   /* insertion sort by start */
+    for (i = 1; i < n; i++) { /* insertion sort by start */
         uint32_t s = start[i], c = count[i];
         for (j = i; j > 0 && start[j - 1] > s; j--) {
             start[j] = start[j - 1];

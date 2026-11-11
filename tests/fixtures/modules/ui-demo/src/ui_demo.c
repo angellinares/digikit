@@ -105,11 +105,23 @@ static int list_back(void *ctx)
     return dk_demo_checks[2];
 }
 
-static const dk_ui_menu_desc page_desc = {.name = "UiDemoPage", .title = "TEXT PAGE", .flags = DK_UI_TEXT_PAGE, .fill = fill_page};
-static const dk_ui_menu_desc list_desc = {.name = "UiDemoList", .title = "DEMO LIST", .flags = DK_UI_LIST, .fill = fill_list,
-                                          .empty = "NO ROWS", .panel = list_panel, .check = list_check, .back = list_back};
-static const dk_ui_menu_desc empty_desc = {.name = "UiDemoEmpty", .title = "EMPTY LIST", .flags = DK_UI_LIST, .fill = fill_none,
-                                           .empty = "NOTHING HERE", .panel = list_panel, .check = list_check};
+static const dk_ui_menu_desc page_desc = {
+    .name = "UiDemoPage", .title = "TEXT PAGE", .flags = DK_UI_TEXT_PAGE, .fill = fill_page};
+static const dk_ui_menu_desc list_desc = {.name = "UiDemoList",
+                                          .title = "DEMO LIST",
+                                          .flags = DK_UI_LIST,
+                                          .fill = fill_list,
+                                          .empty = "NO ROWS",
+                                          .panel = list_panel,
+                                          .check = list_check,
+                                          .back = list_back};
+static const dk_ui_menu_desc empty_desc = {.name = "UiDemoEmpty",
+                                           .title = "EMPTY LIST",
+                                           .flags = DK_UI_LIST,
+                                           .fill = fill_none,
+                                           .empty = "NOTHING HERE",
+                                           .panel = list_panel,
+                                           .check = list_check};
 
 static void fill_main(dk_ui_menu *m, void *ctx)
 {
@@ -125,7 +137,8 @@ static void fill_main(dk_ui_menu *m, void *ctx)
     dk_ui_text(m, "A TEXT ROW");
 }
 
-static const dk_ui_menu_desc main_desc = {.name = "UiDemoMenu", .title = "UI DEMO", .fill = fill_main};
+static const dk_ui_menu_desc main_desc = {
+    .name = "UiDemoMenu", .title = "UI DEMO", .fill = fill_main};
 
 static void open_main(void *ctx, int arg)
 {

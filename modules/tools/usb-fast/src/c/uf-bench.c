@@ -40,7 +40,22 @@ static void put32(u8 *p, u32 v)
 #define BN_DRIVE_FILE "Samples/dkbench.bin"
 #define BN_SLOTS 14u
 #define BN_PHASES 10u
-enum { S_S64, S_S1M, S_D64, S_D256, S_D1M, S_DCL, S_DCL_CLS, S_DCL_DEL, S_R64, S_R1M, S_H32, S_SCL, S_SCL_CLS, S_SCL_DEL };
+enum {
+    S_S64,
+    S_S1M,
+    S_D64,
+    S_D256,
+    S_D1M,
+    S_DCL,
+    S_DCL_CLS,
+    S_DCL_DEL,
+    S_R64,
+    S_R1M,
+    S_H32,
+    S_SCL,
+    S_SCL_CLS,
+    S_SCL_DEL
+};
 static i32 bn_job;
 static volatile u32 bn_req;
 static u32 bn_mask, bn_mib, bn_phase, bn_running;
@@ -207,16 +222,46 @@ static i32 bn_step(u8 *ctx)
     }
     u32 m = bn_mask;
     switch (bn_phase) {
-    case 0: if (m & 1u) bn_write("s64", DK_FILES_STORE, BN_STORE_FILE, 65536u, 0, S_S64); break;
-    case 1: if (m & 1u) bn_write("s1m", DK_FILES_STORE, BN_STORE_FILE, 1u << 20, 0, S_S1M); break;
-    case 2: if (m & 2u) bn_write("d64", DK_FILES_SAMPLES, BN_DRIVE_FILE, 65536u, 0, S_D64); break;
-    case 3: if (m & 2u) bn_write("d256", DK_FILES_SAMPLES, BN_DRIVE_FILE, 262144u, 0, S_D256); break;
-    case 4: if (m & 2u) bn_write("d1m", DK_FILES_SAMPLES, BN_DRIVE_FILE, 1u << 20, 0, S_D1M); break;
-    case 5: if (m & 4u) bn_write("dcl", DK_FILES_SAMPLES, BN_DRIVE_FILE, 1u << 20, 1, S_DCL); break;
-    case 6: if (m & 8u) bn_read("r64", 65536u, S_R64); break;
-    case 7: if (m & 8u) bn_read("r1m", 1u << 20, S_R1M); break;
-    case 8: if (m & 16u) bn_hash(); break;
-    default: if (m & 32u) bn_write("scl", DK_FILES_STORE, BN_STORE_FILE, 65536u, 1, S_SCL); break;
+    case 0:
+        if (m & 1u)
+            bn_write("s64", DK_FILES_STORE, BN_STORE_FILE, 65536u, 0, S_S64);
+        break;
+    case 1:
+        if (m & 1u)
+            bn_write("s1m", DK_FILES_STORE, BN_STORE_FILE, 1u << 20, 0, S_S1M);
+        break;
+    case 2:
+        if (m & 2u)
+            bn_write("d64", DK_FILES_SAMPLES, BN_DRIVE_FILE, 65536u, 0, S_D64);
+        break;
+    case 3:
+        if (m & 2u)
+            bn_write("d256", DK_FILES_SAMPLES, BN_DRIVE_FILE, 262144u, 0, S_D256);
+        break;
+    case 4:
+        if (m & 2u)
+            bn_write("d1m", DK_FILES_SAMPLES, BN_DRIVE_FILE, 1u << 20, 0, S_D1M);
+        break;
+    case 5:
+        if (m & 4u)
+            bn_write("dcl", DK_FILES_SAMPLES, BN_DRIVE_FILE, 1u << 20, 1, S_DCL);
+        break;
+    case 6:
+        if (m & 8u)
+            bn_read("r64", 65536u, S_R64);
+        break;
+    case 7:
+        if (m & 8u)
+            bn_read("r1m", 1u << 20, S_R1M);
+        break;
+    case 8:
+        if (m & 16u)
+            bn_hash();
+        break;
+    default:
+        if (m & 32u)
+            bn_write("scl", DK_FILES_STORE, BN_STORE_FILE, 65536u, 1, S_SCL);
+        break;
     }
     if (++bn_phase < BN_PHASES)
         return DK_IO_MORE;

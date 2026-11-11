@@ -1,7 +1,10 @@
 #include <dk/chooser/logic.h>
 #include <dk/sample/pool.h>
 
-static char lower(char c) { return c >= 'A' && c <= 'Z' ? (char)(c + 32) : c; }
+static char lower(char c)
+{
+    return c >= 'A' && c <= 'Z' ? (char)(c + 32) : c;
+}
 
 static int slen(const char *s)
 {
@@ -60,7 +63,8 @@ int dk_chooser_row_before(const dk_chooser_row *a, const dk_chooser_row *b)
     return 0;
 }
 
-int dk_chooser_row_insert(dk_chooser_row *rows, uint8_t *idx, int *n, int cap, const dk_chooser_row *r)
+int dk_chooser_row_insert(dk_chooser_row *rows, uint8_t *idx, int *n, int cap,
+                          const dk_chooser_row *r)
 {
     int slot, j, i;
     if (*n < cap)
@@ -224,7 +228,8 @@ void dk_sample_pool_err_info(char *out, int code)
     err_other(out, code);
 }
 
-void dk_sample_pool_row_text(char *out, int index, int current, int status, const char *name, uint32_t frames, uint32_t rate, uint32_t channels)
+void dk_sample_pool_row_text(char *out, int index, int current, int status, const char *name,
+                             uint32_t frames, uint32_t rate, uint32_t channels)
 {
     char tail[20], nm[DK_CHOOSER_TEXT + 1], secs[8];
     int n = 0, tn = 0, room, code = status < 0 ? status : 0;

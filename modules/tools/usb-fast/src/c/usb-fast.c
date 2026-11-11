@@ -93,11 +93,13 @@ static int nomem_logged;
 static u32 epoch;
 
 static u8 nonce[NONCE_LEN];
-static volatile u32 nonce_gen; /* a seqlock: odd while SET_NONCE writes (MIDI task), INFO (I/O task) reads until it sees an even, unchanged value */
+static volatile u32
+    nonce_gen; /* a seqlock: odd while SET_NONCE writes (MIDI task), INFO (I/O task) reads until it sees an even, unchanged value */
 
 /* the stream parser */
 static u8 frame_raw[FRAME_MAX + 16u];
-static u8 *frame; /* frame_raw rounded up to 16 bytes at run time: the loader's bss alignment is not relied on */
+static u8 *
+    frame; /* frame_raw rounded up to 16 bytes at run time: the loader's bss alignment is not relied on */
 static u32 have;  /* bytes of the frame in `frame` */
 static u32 total; /* its length once the header is in, else 0 */
 static u8 *cur;   /* the receive buffer being copied, or 0 */
@@ -113,10 +115,12 @@ static u32 rep_len;
 /* the file */
 static i32 handle; /* > 0 while a file is open */
 static u32 busy_tries;
-static u32 st_steps, st_frames, st_tx_busy, st_last_rc, st_bufs, st_bytes, st_fatal, st_resets, st_send_err;
+static u32 st_steps, st_frames, st_tx_busy, st_last_rc, st_bufs, st_bytes, st_fatal, st_resets,
+    st_send_err;
 static i32 enable_rc;
-static int wm_logged;  /* the wrong-mode line is logged once per wait */
-static u32 sess_at;    /* the block clock at the last file_create or successful file_write of the open file */
+static int wm_logged; /* the wrong-mode line is logged once per wait */
+static u32
+    sess_at; /* the block clock at the last file_create or successful file_write of the open file */
 static u32 st_expired; /* sessions the job dropped for the runtime's idle expiry */
 
 /* the staging buffer of the open file */
@@ -127,25 +131,30 @@ static u32 acc_fill;          /* bytes in it */
 static u32 acc_off;           /* file offset of its first byte */
 static i32 acc_err;           /* sticky status of a failed flush */
 static u32 file_size;
-static u32 acc_limit = ACC_BIG; /* the largest buffer the next BEGIN asks for (a one-shot test knob, STATUS 'A' with UF_KNOBS; acc_open resets it) */
+static u32 acc_limit =
+    ACC_BIG; /* the largest buffer the next BEGIN asks for (a one-shot test knob, STATUS 'A' with UF_KNOBS; acc_open resets it) */
 #if UF_KNOBS
 static u32 acc_got; /* the size the last BEGIN got */
 #endif
-static int d_acc;               /* the DATA frame in `frame` is in the buffer already (a flush is retried) */
-static int dstage;              /* pump: 1 = the DATA offset is still to come, 2 = the body goes straight into the buffer */
-static int direct;              /* the DATA frame ready has its body in the buffer */
+static int d_acc; /* the DATA frame in `frame` is in the buffer already (a flush is retried) */
+static int
+    dstage; /* pump: 1 = the DATA offset is still to come, 2 = the body goes straight into the buffer */
+static int direct;  /* the DATA frame ready has its body in the buffer */
 static i32 abort_h; /* a handle to abort after a reset (file_abort may need several steps) */
 
 #if UF_TRACE || UF_BENCH
 /* The only clock a module can call is dkrt_blocks(), the 1500 Hz block counter (1 unit = 0.667 ms). A short call often reads 0 and a long one is
  * rounded, so only the totals of whole calls (per file) are meaningful, not one call. Units: "blk" tags are blocks; uf.bytes and uf.datas are counts. */
 #define UF_NOW() dkrt_blocks()
-#define UF_KIND_MOD_LOG 14u    /* sdk/sdk.toml [[log.kind]] 14 MOD_LOG: args msg0..msg3 (16 ASCII chars, big-endian words) and value */
-#define UF_FLAGS (2u << 1)     /* level 2 (info) in bits 1-3 (level_shift 1): passes the default log level */
+#define UF_KIND_MOD_LOG                                                                            \
+    14u /* sdk/sdk.toml [[log.kind]] 14 MOD_LOG: args msg0..msg3 (16 ASCII chars, big-endian words) and value */
+#define UF_FLAGS                                                                                   \
+    (2u << 1) /* level 2 (info) in bits 1-3 (level_shift 1): passes the default log level */
 #if UF_TRACE
 static u32 uf_write, uf_copy, uf_wait, uf_begin, uf_end, uf_bytes, uf_datas;
 static u32 uf_wait_from;
-static int uf_waiting; /* uf_wait_from is valid: the last request of this file was answered and no byte of the next one has been copied yet (the wait is the host's stall; the copy is uf_copy) */
+static int
+    uf_waiting; /* uf_wait_from is valid: the last request of this file was answered and no byte of the next one has been copied yet (the wait is the host's stall; the copy is uf_copy) */
 #endif
 
 /* `tag`: a string of at most 16 chars, padded with NULs */
@@ -168,7 +177,10 @@ void uf_log(const char *tag, u32 value)
 }
 #endif
 
-static u32 get32(const u8 *p) { return ((u32)p[0] << 24) | ((u32)p[1] << 16) | ((u32)p[2] << 8) | p[3]; }
+static u32 get32(const u8 *p)
+{
+    return ((u32)p[0] << 24) | ((u32)p[1] << 16) | ((u32)p[2] << 8) | p[3];
+}
 static void put32(u8 *p, u32 v)
 {
     p[0] = (u8)(v >> 24);
@@ -179,7 +191,8 @@ static void put32(u8 *p, u32 v)
 
 static void copy(u8 *d, const u8 *s, u32 n)
 {
-    if (n >= 32 && (((u32)d | (u32)s) & 15u) == 0) { /* movem.l: bursts from the uncached receive buffers */
+    if (n >= 32 &&
+        (((u32)d | (u32)s) & 15u) == 0) { /* movem.l: bursts from the uncached receive buffers */
         for (u32 k = n >> 5; k; k--) {
             __asm__ volatile("movem.l (%1),%%d0-%%d3\n\t"
                              "movem.l 16(%1),%%d4-%%d7\n\t"
@@ -319,7 +332,8 @@ static int dispatch(void)
         put32(b + 4, DATA_MAX);
         put32(b + 8, ALIGN);
         int stable = 0;
-        for (u32 t = 0; t < 8 && !stable; t++) { /* SET_NONCE may be writing: read until an even, unchanged generation */
+        for (u32 t = 0; t < 8 && !stable;
+             t++) { /* SET_NONCE may be writing: read until an even, unchanged generation */
             u32 g = nonce_gen;
             if (g & 1u)
                 continue;
@@ -343,7 +357,8 @@ static int dispatch(void)
             reply(cmd, seq, E_MSG, 0, 0);
             return 0;
         }
-        if (handle > 0) { /* the module is the only bulk client: a new BEGIN means the host gave the old file up */
+        if (handle >
+            0) { /* the module is the only bulk client: a new BEGIN means the host gave the old file up */
             r = sdk->file_abort(handle);
             if (r == DK_FILE_E_BUSY) {
                 if (++busy_tries < BEGIN_TRIES)
@@ -363,8 +378,8 @@ static int dispatch(void)
         if (busy_tries == 0) /* a retry of the same BEGIN keeps the totals */
             uf_write = uf_copy = uf_wait = uf_begin = uf_end = uf_bytes = uf_datas = 0;
 #endif
-        r = sdk->file_create(get32(body), (const char *)(body + 4), get32(body + p + 1), none ? 0 : h4,
-                             (flags & FLAG_REPLACE) ? DK_FILE_REPLACE : 0);
+        r = sdk->file_create(get32(body), (const char *)(body + 4), get32(body + p + 1),
+                             none ? 0 : h4, (flags & FLAG_REPLACE) ? DK_FILE_REPLACE : 0);
 #if UF_TRACE
         uf_begin += UF_NOW() - t0;
         uf_wait_from = UF_NOW();
@@ -405,11 +420,14 @@ static int dispatch(void)
                     reply(cmd, seq, DK_FILE_E_OFFSET, 0, 0);
                     return 0;
                 }
-                if (off > file_size || n > file_size - off || ((n & 511u) != 0 && n != file_size - off)) {
+                if (off > file_size || n > file_size - off ||
+                    ((n & 511u) != 0 && n != file_size - off)) {
                     reply(cmd, seq, DK_FILE_E_LENGTH, 0, 0);
                     return 0;
                 }
-                if (!direct && n > acc_cap - acc_fill) { /* the frame does not fit: flush first (nothing of the frame is taken yet) */
+                if (!direct &&
+                    n > acc_cap -
+                            acc_fill) { /* the frame does not fit: flush first (nothing of the frame is taken yet) */
                     r = acc_flush();
                     if (r == DK_FILE_E_BUSY && ++busy_tries < BUSY_TRIES)
                         return 1;
@@ -543,7 +561,9 @@ static int dispatch(void)
         if (r == DK_FILE_E_BUSY && ++busy_tries < BUSY_TRIES)
             return 1;
         busy_tries = 0;
-        if (r == 0 || r == DK_FILE_E_STATE) { /* only then is the session gone; on any other error the host asks again */
+        if (r == 0 ||
+            r ==
+                DK_FILE_E_STATE) { /* only then is the session gone; on any other error the host asks again */
             handle = 0;
             acc_release();
         }
@@ -592,7 +612,9 @@ static void fatal_stream(void)
     have = total = 0;
     frame_ready = 0;
     dstage = direct = 0;
-    skipping = last_len >= DK_USB_BULK_RX_BYTES; /* the buffer with the bad header was full: the transfer goes on in the next one */
+    skipping =
+        last_len >=
+        DK_USB_BULK_RX_BYTES; /* the buffer with the bad header was full: the transfer goes on in the next one */
     if (cur) {
         usb_bulk_release(cur); /* the rest of this buffer is garbage too */
         cur = 0;
@@ -651,7 +673,8 @@ static int pump(void)
         }
         if (dstage == 1 && have == HDR + 4u) {
             u32 off = get32(frame + HDR), body_n = total - (HDR + 4u);
-            direct = body_n > 0 && off == acc_off + acc_fill && body_n <= acc_cap - acc_fill && off <= file_size && body_n <= file_size - off &&
+            direct = body_n > 0 && off == acc_off + acc_fill && body_n <= acc_cap - acc_fill &&
+                     off <= file_size && body_n <= file_size - off &&
                      ((body_n & 511u) == 0 || body_n == file_size - off);
             dstage = direct ? 2 : 0;
         }
@@ -662,7 +685,8 @@ static int pump(void)
             if (len > DATA_MAX + 4u + SLACK)
                 return -1;
             total = HDR + len;
-            dstage = (frame[4] == CMD_DATA && acc_cap && handle > 0 && !acc_err && len >= 4u) ? 1 : 0;
+            dstage =
+                (frame[4] == CMD_DATA && acc_cap && handle > 0 && !acc_err && len >= 4u) ? 1 : 0;
         }
     }
 }
@@ -683,7 +707,8 @@ static i32 step(u8 *ctx)
     if (!enabled) {
         i32 rc = usb_bulk_enable(job_id);
         enable_rc = rc;
-        if (rc == DK_USB_BULK_E_NOMEM) { /* no memory for the buffers (the adapter's ST_NOMEM): try again at the next wake */
+        if (rc ==
+            DK_USB_BULK_E_NOMEM) { /* no memory for the buffers (the adapter's ST_NOMEM): try again at the next wake */
             if (!nomem_logged) {
                 nomem_logged = 1;
                 sdk->log_lv(1, (const u8 *)"usb-fast: no memory for the USB buffers", (u32)rc);
@@ -697,7 +722,9 @@ static i32 step(u8 *ctx)
             u32 st = usb_bulk_state();
             if ((st & DK_USB_BULK_WRONG_MODE) && !(st & DK_USB_BULK_TAKEN) && !wm_logged) {
                 wm_logged = 1;
-                sdk->log_lv(2, (const u8 *)"usb-fast: not in USB MIDI mode; bulk waits for a take-over", (u32)rc);
+                sdk->log_lv(
+                    2, (const u8 *)"usb-fast: not in USB MIDI mode; bulk waits for a take-over",
+                    (u32)rc);
             }
             return DK_IO_WAIT;
         }
@@ -720,7 +747,9 @@ static i32 step(u8 *ctx)
             busy_tries = 0;
             drop_file();
         }
-        if (handle > 0 && dkrt_blocks() != 0u && dkrt_blocks() - sess_at >= SESS_IDLE_BLOCKS) { /* the runtime has dropped the session: free the buffer, the host is gone */
+        if (handle > 0 && dkrt_blocks() != 0u &&
+            dkrt_blocks() - sess_at >=
+                SESS_IDLE_BLOCKS) { /* the runtime has dropped the session: free the buffer, the host is gone */
             st_expired++;
             drop_file();
         }
@@ -737,9 +766,11 @@ static i32 step(u8 *ctx)
                 st_tx_busy++;
                 return DK_IO_WAIT;
             }
-            if (r == DK_USB_BULK_E_AGAIN) /* the engine refused and nothing is in flight: the adapter's tick wakes the job */
+            if (r ==
+                DK_USB_BULK_E_AGAIN) /* the engine refused and nothing is in flight: the adapter's tick wakes the job */
                 return DK_IO_WAIT;
-            if (r < 0) { /* the reply cannot go out: the host's view of the stream is lost, so start over */
+            if (r <
+                0) { /* the reply cannot go out: the host's view of the stream is lost, so start over */
                 st_send_err++;
                 rep_len = 0;
                 clear_stream();
@@ -780,7 +811,9 @@ static i32 command(u32 cmd, u32 seq, const u8 *body, u32 len, u8 *out)
 {
     (void)seq;
 #if UF_KNOBS
-    if (cmd == NONCE_CMD + 1 && len > 0 && body[0] == 'A') { /* test knob: 'A' [max bytes u32] sets the largest staging buffer of the next BEGIN (0: none); replies the size of the last one */
+    if (cmd == NONCE_CMD + 1 && len > 0 &&
+        body[0] ==
+            'A') { /* test knob: 'A' [max bytes u32] sets the largest staging buffer of the next BEGIN (0: none); replies the size of the last one */
         if (len >= 5)
             acc_limit = get32(body + 1);
         put32(out, acc_got);
@@ -791,7 +824,8 @@ static i32 command(u32 cmd, u32 seq, const u8 *body, u32 len, u8 *out)
     if (cmd == NONCE_CMD + 1 && len > 0)
         return uf_bench_command(body, len, out);
 #endif
-    if (cmd == NONCE_CMD + 1) { /* STATUS (a debug aid): what the job has done and where it stands */
+    if (cmd ==
+        NONCE_CMD + 1) { /* STATUS (a debug aid): what the job has done and where it stands */
         put32(out, st_steps);
         put32(out + 4, st_frames);
         put32(out + 8, st_tx_busy);

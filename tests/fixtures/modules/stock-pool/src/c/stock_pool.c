@@ -35,17 +35,17 @@ static const Fn FNS[] = {
     {0x4015aec2, 0x2f02242f}, /* stored metadata of an entry id */
     {0x4004b502, 0x4e56ffe4}, /* stock assign wrapper: project entry + loader */
 };
-#define sp_load ((i32(*)(const u32 *, u32))0x4015481c)
-#define sp_worker ((u32(*)(void))0x4019e65c)
-#define sp_queue ((u32(*)(u32, const char *, void *, void *))0x400f0c1c)
+#define sp_load ((i32 (*)(const u32 *, u32))0x4015481c)
+#define sp_worker ((u32 (*)(void))0x4019e65c)
+#define sp_queue ((u32 (*)(u32, const char *, void *, void *))0x400f0c1c)
 #define sp_reload ((void (*)(u32, u32))0x4004e8be)
-#define sp_settings ((u32(*)(u32))0x40041d18)
-#define sp_purge ((i32(*)(u32, u32))0x40043d9a)
-#define sp_project ((u32(*)(void))0x40198b7e)
-#define sp_open ((i32(*)(const u8 *, const u8 *, u32 *))0x40158902)
-#define sp_close ((i32(*)(u32 *))0x401588c0)
-#define sp_meta ((i32(*)(u32, u32 *))0x4015aec2)
-#define sp_assign ((i32(*)(u32, const u32 *, u32))0x4004b502)
+#define sp_settings ((u32 (*)(u32))0x40041d18)
+#define sp_purge ((i32 (*)(u32, u32))0x40043d9a)
+#define sp_project ((u32 (*)(void))0x40198b7e)
+#define sp_open ((i32 (*)(const u8 *, const u8 *, u32 *))0x40158902)
+#define sp_close ((i32 (*)(u32 *))0x401588c0)
+#define sp_meta ((i32 (*)(u32, u32 *))0x4015aec2)
+#define sp_assign ((i32 (*)(u32, const u32 *, u32))0x4004b502)
 
 #define TASK (*(volatile u32 *)0x47db3f64u)
 
@@ -100,7 +100,7 @@ static void run_job(void)
 
 /* std::function job for the worker: an invoker taking the function's storage, and a manager that only copies the pointer. */
 static u32 functor_word;
-static u32 job_fn[4]; /* storage (2 words), manager, invoker */
+static u32 job_fn[4];  /* storage (2 words), manager, invoker */
 static u32 done_fn[8]; /* an empty std::function */
 
 static void invoker(const void *storage)
@@ -155,8 +155,8 @@ static int32_t load_cmd(const u8 *body, u32 len, u8 *out)
     return 0;
 }
 
-__attribute__((optimize("no-jump-tables")))
-static int32_t command(u32 cmd, u32 seq, const u8 *body, u32 len, u8 *out)
+__attribute__((optimize("no-jump-tables"))) static int32_t command(u32 cmd, u32 seq, const u8 *body,
+                                                                   u32 len, u8 *out)
 {
     (void)seq;
     if (cmd == 0x38)

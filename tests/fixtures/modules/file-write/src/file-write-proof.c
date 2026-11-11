@@ -36,11 +36,22 @@ static uint8_t dev_hash[4];
 static int32_t handle, create_rc, close_rc, abort_rc, job_status, job_id, phase;
 static int32_t aux[3];
 static volatile uint32_t spin_release, in_spin;
-static void put32(uint8_t *p, uint32_t v) { p[0] = v >> 24; p[1] = v >> 16; p[2] = v >> 8; p[3] = v; }
-static void fill(uint32_t off, uint32_t n) {
-    for (uint32_t i = 0; i < n; ++i) { uint32_t k = off + i; buf[i] = (uint8_t)((k * 7u) + (k >> 8)); }
+static void put32(uint8_t *p, uint32_t v)
+{
+    p[0] = v >> 24;
+    p[1] = v >> 16;
+    p[2] = v >> 8;
+    p[3] = v;
 }
-static int32_t step(uint8_t *ctx) {
+static void fill(uint32_t off, uint32_t n)
+{
+    for (uint32_t i = 0; i < n; ++i) {
+        uint32_t k = off + i;
+        buf[i] = (uint8_t)((k * 7u) + (k >> 8));
+    }
+}
+static int32_t step(uint8_t *ctx)
+{
     (void)ctx;
     const dk_api *a = sdk;
     steps++;
@@ -52,7 +63,8 @@ static int32_t step(uint8_t *ctx) {
     }
     if (job_case == 6) {
         int32_t rc = a->file_delete(root, path);
-        if (rc == DK_FILE_E_BUSY) return DK_IO_MORE;
+        if (rc == DK_FILE_E_BUSY)
+            return DK_IO_MORE;
         close_rc = rc;
         return rc;
     }
@@ -72,12 +84,20 @@ static int32_t step(uint8_t *ctx) {
         mod_hash = a->hash32_finish((uint8_t *)&hs);
         uint8_t h4[4];
         dk_hash32_bytes(job_case == 5 ? mod_hash ^ 0x100u : mod_hash, h4);
-        handle = a->file_create(root, path, size, job_case == 4 || job_case == 2 || job_case == 3 || job_case == 7 || job_case == 8 || job_case == 10 ? 0 : h4, flags);
+        handle = a->file_create(root, path, size,
+                                job_case == 4 || job_case == 2 || job_case == 3 || job_case == 7 ||
+                                        job_case == 8 || job_case == 10
+                                    ? 0
+                                    : h4,
+                                flags);
         create_rc = handle;
-        if (handle <= 0) return handle ? handle : -1;
+        if (handle <= 0)
+            return handle ? handle : -1;
         if (job_case == 7) {
             in_spin = 1;
-            while (!spin_release) { __asm__ volatile("" ::: "memory"); }
+            while (!spin_release) {
+                __asm__ volatile("" ::: "memory");
+            }
             in_spin = 0;
             abort_rc = a->file_abort(handle);
             return 0;
@@ -97,22 +117,38 @@ static int32_t step(uint8_t *ctx) {
         uint32_t n = size - written < BIG ? size - written : BIG;
         fill(written, n);
         int32_t rc = a->file_write(handle, written, buf, n);
-        if (rc == DK_FILE_E_BUSY) return DK_IO_MORE;
-        if (rc < 0) { a->file_abort(handle); return rc; }
+        if (rc == DK_FILE_E_BUSY)
+            return DK_IO_MORE;
+        if (rc < 0) {
+            a->file_abort(handle);
+            return rc;
+        }
         written += n;
-        if (written >= size) phase = 3;
+        if (written >= size)
+            phase = 3;
         return DK_IO_MORE;
     }
     if (phase == 1) {
         uint32_t n = size - written < CHUNK ? size - written : CHUNK;
         fill(written, n);
         int32_t rc = a->file_write(handle, written, buf, n);
-        if (rc == DK_FILE_E_BUSY) return DK_IO_MORE;
-        if (rc < 0) { a->file_abort(handle); return rc; }
+        if (rc == DK_FILE_E_BUSY)
+            return DK_IO_MORE;
+        if (rc < 0) {
+            a->file_abort(handle);
+            return rc;
+        }
         written += n;
-        if (job_case == 2 && written >= CHUNK) { abort_rc = a->file_abort(handle); return 0; }
-        if (job_case == 3 && written >= CHUNK) { phase = 2; return DK_IO_WAIT; }
-        if (written >= size) phase = 3;
+        if (job_case == 2 && written >= CHUNK) {
+            abort_rc = a->file_abort(handle);
+            return 0;
+        }
+        if (job_case == 3 && written >= CHUNK) {
+            phase = 2;
+            return DK_IO_WAIT;
+        }
+        if (written >= size)
+            phase = 3;
         return DK_IO_MORE;
     }
     if (phase == 2) {
@@ -121,32 +157,41 @@ static int32_t step(uint8_t *ctx) {
     }
     {
         int32_t rc = a->file_close(handle, dev_hash);
-        if (rc == DK_FILE_E_BUSY) return DK_IO_MORE;
+        if (rc == DK_FILE_E_BUSY)
+            return DK_IO_MORE;
         close_rc = rc;
         return rc;
     }
 }
-static void finished(uint8_t *ctx, int32_t status) {
+static void finished(uint8_t *ctx, int32_t status)
+{
     (void)ctx;
     job_status = status;
     __asm__ volatile("" ::: "memory");
     state = 2;
 }
-__attribute__((optimize("no-jump-tables")))
-static int32_t command(uint32_t cmd, uint32_t seq, const uint8_t *body, uint32_t len, uint8_t *out) {
+__attribute__((optimize("no-jump-tables"))) static int32_t
+command(uint32_t cmd, uint32_t seq, const uint8_t *body, uint32_t len, uint8_t *out)
+{
     (void)seq;
     if (cmd == PROOF_CMD) {
-        if (state == 1) return -12;
-        if (len < 7 || (body[0] & 0x1f) < 1 || (body[0] & 0x1f) > 10) return -50;
+        if (state == 1)
+            return -12;
+        if (len < 7 || (body[0] & 0x1f) < 1 || (body[0] & 0x1f) > 10)
+            return -50;
         uint32_t i = 5;
-        while (i < len && body[i] != 0) i++;
-        if (i >= len || i - 5 >= sizeof path) return -50;
+        while (i < len && body[i] != 0)
+            i++;
+        if (i >= len || i - 5 >= sizeof path)
+            return -50;
         job_case = body[0] & 0x1f;
         tail16 = (body[0] & 0x20) != 0;
         flags = (body[0] & 0x40) ? DK_FILE_REPLACE : 0;
         root = (body[0] & 0x80) ? DK_FILES_SAMPLES : DK_FILES_STORE;
-        size = ((uint32_t)body[1] << 24) | ((uint32_t)body[2] << 16) | ((uint32_t)body[3] << 8) | body[4];
-        for (uint32_t k = 0; k <= i - 5; ++k) path[k] = (char)body[5 + k];
+        size = ((uint32_t)body[1] << 24) | ((uint32_t)body[2] << 16) | ((uint32_t)body[3] << 8) |
+               body[4];
+        for (uint32_t k = 0; k <= i - 5; ++k)
+            path[k] = (char)body[5 + k];
         written = steps = mod_hash = 0;
         handle = create_rc = close_rc = abort_rc = job_status = phase = 0;
         aux[0] = aux[1] = aux[2] = 0;
@@ -154,7 +199,10 @@ static int32_t command(uint32_t cmd, uint32_t seq, const uint8_t *body, uint32_t
         dev_hash[0] = dev_hash[1] = dev_hash[2] = dev_hash[3] = 0;
         state = 1;
         job_id = sdk->io_post(step, finished, 0);
-        if (job_id <= 0) { state = 0; return job_id ? job_id : -1; }
+        if (job_id <= 0) {
+            state = 0;
+            return job_id ? job_id : -1;
+        }
         return 0;
     }
     if (cmd == PROOF_CMD + 1) {
@@ -164,7 +212,10 @@ static int32_t command(uint32_t cmd, uint32_t seq, const uint8_t *body, uint32_t
         put32(out + 9, (uint32_t)abort_rc);
         put32(out + 13, (uint32_t)job_status);
         put32(out + 17, mod_hash);
-        out[21] = dev_hash[0]; out[22] = dev_hash[1]; out[23] = dev_hash[2]; out[24] = dev_hash[3];
+        out[21] = dev_hash[0];
+        out[22] = dev_hash[1];
+        out[23] = dev_hash[2];
+        out[24] = dev_hash[3];
         put32(out + 25, steps);
         put32(out + 29, written);
         put32(out + 33, (uint32_t)job_id);
@@ -181,15 +232,19 @@ static int32_t command(uint32_t cmd, uint32_t seq, const uint8_t *body, uint32_t
     if (cmd == PROOF_CMD + 3) {
         put32(out, (uint32_t)sdk->file_create(DK_FILES_STORE, "ctx-probe", 512, 0, 0));
         out[4] = (uint8_t)in_spin;
-        int32_t h = len >= 4 ? (int32_t)(((uint32_t)body[0] << 24) | ((uint32_t)body[1] << 16) | ((uint32_t)body[2] << 8) | body[3]) : 0;
+        int32_t h = len >= 4 ? (int32_t)(((uint32_t)body[0] << 24) | ((uint32_t)body[1] << 16) |
+                                         ((uint32_t)body[2] << 8) | body[3])
+                             : 0;
         put32(out + 5, (uint32_t)sdk->file_write(h, 0, buf, 512));
         put32(out + 9, (uint32_t)sdk->file_abort(h));
         return 13;
     }
     return -50;
 }
-int32_t dkm_init(const dk_api *api) {
-    if (api->size < sizeof(dk_api)) return -48;
+int32_t dkm_init(const dk_api *api)
+{
+    if (api->size < sizeof(dk_api))
+        return -48;
     sdk = api;
     return api->register_cmds(PROOF_CMD, 4, command);
 }

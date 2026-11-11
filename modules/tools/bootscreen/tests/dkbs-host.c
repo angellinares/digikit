@@ -47,7 +47,8 @@ int main(void)
         at += 4 + DKBS_FRAME;
         ticks++;
     }
-    if (!guards() || !guarded.state.valid || ticks != guarded.state.total_ticks || dkbs_next(&guarded.state))
+    if (!guards() || !guarded.state.valid || ticks != guarded.state.total_ticks ||
+        dkbs_next(&guarded.state))
         return 2;
     be32(output, guarded.state.records);
     be32(output + 4, ticks);

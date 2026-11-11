@@ -33,7 +33,8 @@ static int32_t g_settings;
 static int32_t g_files;
 static uint8_t *g_buffer; /* DKBS_FILE_MAX bytes of file, then DKBS_FRAME bytes of work */
 static Dkbs g_dkbs;
-static char g_booted[NAME_MAX_BYTES]; /* the setting at boot: a different current value waits for the restart */
+static char g_booted
+    [NAME_MAX_BYTES]; /* the setting at boot: a different current value waits for the restart */
 static void copy(char *to, const char *from, uint32_t cap);
 
 static void say(const char *msg, uint32_t value)
@@ -67,7 +68,8 @@ int32_t dkm_init(const dk_api *api)
     char name[NAME_MAX_BYTES], path[PATH_MAX_BYTES];
     int32_t n, size;
     g_api = api;
-    if (!DK_API_HAS(api, settings_client) || !DK_API_HAS(api, files_client) || !DK_API_HAS(api, intro_take))
+    if (!DK_API_HAS(api, settings_client) || !DK_API_HAS(api, files_client) ||
+        !DK_API_HAS(api, intro_take))
         return 0;
     g_files = api->files_client();
     g_settings = api->settings_client();
@@ -154,7 +156,9 @@ static int same(const char *a, const char *b)
 /* The active name into `out`; "" when there is none. */
 static void active(char *out)
 {
-    int32_t n = g_settings > 0 ? g_api->settings_get((uint32_t)g_settings, "active", out, NAME_MAX_BYTES - 1u) : -1;
+    int32_t n = g_settings > 0
+                    ? g_api->settings_get((uint32_t)g_settings, "active", out, NAME_MAX_BYTES - 1u)
+                    : -1;
     out[n > 0 ? n : 0] = 0;
 }
 
@@ -182,7 +186,8 @@ static void list_fill(dk_ui_menu *m, void *ctx)
     copy(list.shown[0], "STOCK", DK_UI_ROW);
     dk_ui_text(m, list.shown[0]);
     for (i = 0; i < list.count; i++) {
-        copy(list.shown[i + 1u], list.full[i], DK_UI_ROW); /* display only: the full name is stored */
+        copy(list.shown[i + 1u], list.full[i],
+             DK_UI_ROW); /* display only: the full name is stored */
         dk_ui_text(m, list.shown[i + 1u]);
     }
     if (list.more) {
@@ -210,7 +215,8 @@ static void list_check(void *ctx, int row, int on)
     if (row == 0)
         rc = g_api->settings_remove((uint32_t)g_settings, "active");
     else
-        rc = g_api->settings_put((uint32_t)g_settings, "active", list.full[row - 1], length(list.full[row - 1]));
+        rc = g_api->settings_put((uint32_t)g_settings, "active", list.full[row - 1],
+                                 length(list.full[row - 1]));
     if (rc < 0) {
         int back = active_row();
         for (i = 0; i < rows; i++)
@@ -226,7 +232,11 @@ static void list_check(void *ctx, int row, int on)
         dk_ui_refresh(g_page);
 }
 
-static const dk_ui_menu_desc list_desc = {.name = "BootscreenChooser", .title = "BOOT SCREEN", .flags = DK_UI_LIST, .fill = list_fill, .check = list_check};
+static const dk_ui_menu_desc list_desc = {.name = "BootscreenChooser",
+                                          .title = "BOOT SCREEN",
+                                          .flags = DK_UI_LIST,
+                                          .fill = list_fill,
+                                          .check = list_check};
 
 static void show_choice(void)
 {
@@ -257,7 +267,8 @@ static void poll(void *ctx)
     uint32_t k;
     (void)ctx;
     for (k = 0; k < POLLS_PER_TICK; k++) {
-        int32_t r = g_api->files_poll((uint32_t)g_files, list.ticket, (uint8_t *)&entry, sizeof entry);
+        int32_t r =
+            g_api->files_poll((uint32_t)g_files, list.ticket, (uint8_t *)&entry, sizeof entry);
         if (r == DK_FILES_PENDING)
             return;
         if (r == DK_FILES_ROW) {
@@ -290,7 +301,8 @@ static void open_chooser(void *ctx, int arg)
     }
     list.count = 0;
     list.more = 0;
-    t = g_api->files_list((uint32_t)g_files, DK_FILES_STORE, (const uint8_t *)"data/tools/bootscreen", 0, 0);
+    t = g_api->files_list((uint32_t)g_files, DK_FILES_STORE,
+                          (const uint8_t *)"data/tools/bootscreen", 0, 0);
     if (t <= 0) {
         dk_ui_toast("LIST FAILED");
         return;
@@ -306,7 +318,8 @@ static void value_text(char *out, const char *name)
     uint32_t n;
     copy(v, name[0] ? name : "STOCK", sizeof v);
     n = length(v);
-    if (n > 5u && v[n - 5u] == '.' && (v[n - 4u] | 32) == 'd' && (v[n - 3u] | 32) == 'k' && (v[n - 2u] | 32) == 'b' && (v[n - 1u] | 32) == 's')
+    if (n > 5u && v[n - 5u] == '.' && (v[n - 4u] | 32) == 'd' && (v[n - 3u] | 32) == 'k' &&
+        (v[n - 2u] | 32) == 'b' && (v[n - 1u] | 32) == 's')
         v[n -= 5u] = 0;
     dk_text_trunc(out, v, (int)VALUE_COLS);
 }

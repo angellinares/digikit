@@ -26,7 +26,7 @@ typedef unsigned char u8;
 #define HEALTH_VERSION 1u
 #define HEALTH_WINDOW 1500u /* blocks per window: one second */
 #define HEALTH_BAD 4000000u /* a cycle count above this is not a block time (no frame yet) */
-#define HEALTH_WALK 4096u /* free-list nodes visited per call at most */
+#define HEALTH_WALK 4096u   /* free-list nodes visited per call at most */
 
 /* HealthRaw: 28 words. The runtime copies it; fields only grow at the end. */
 typedef struct HealthRaw {
@@ -41,7 +41,7 @@ typedef struct HealthRaw {
     u32 dsp_max;    /* its maximum */
     u32 dsp_n;      /* blocks with a valid count in it */
     u32 dsp_last;   /* the count read in the last block */
-    u32 flags;      /* bit 0: a window is closed; bit 1: the heap figures are valid; bit 2: the walk was cut short; bit 3: bad list */
+    u32 flags; /* bit 0: a window is closed; bit 1: the heap figures are valid; bit 2: the walk was cut short; bit 3: bad list */
     u32 heap_total;
     u32 heap_free;
     u32 heap_largest;
@@ -92,7 +92,8 @@ volatile HealthState health_hs __attribute__((aligned(16)));
 extern volatile u32 health_rec_lit;   /* the literal: address of the record copy */
 extern volatile u32 health_desc_lit;  /* the literal: address of the allocator descriptor */
 extern volatile u32 health_mutex_lit; /* the literal: address of the allocator mutex */
-extern volatile u32 health_lock_lit;  /* the literal: address of the firmware's mutex lock function */
+extern volatile u32
+    health_lock_lit; /* the literal: address of the firmware's mutex lock function */
 extern volatile u32 health_unlock_lit;
 
 /* called from the block interrupt, at the entry of its handler (tramp.s); d0/d1/a0/a1 are saved there */

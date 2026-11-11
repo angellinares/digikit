@@ -20,29 +20,35 @@ typedef uint8_t u8;
 typedef uint16_t u16;
 
 extern void *sp_stock_copy(void *destination, const void *source, u32 length);
-extern void sp_stock_sleep(u32 us);                                                         /* task context; blocks the task */
+extern void sp_stock_sleep(u32 us); /* task context; blocks the task */
 
-#define SP_STOCK_REPLY 0xabcu  /* the stock reply copy is this long; the extension follows it (the wire is 0xacc bytes long) */
-#define SP_SLEEP_US 100u       /* between two looks at the acknowledgement (stock sleeps 100 after each page) */
-#define SP_WAIT_SLEEPS 6000u   /* sleeps in one wait (an armed receiver, one page's acknowledgement with its resends): a hard bound when the block clock stands still */
+#define SP_STOCK_REPLY                                                                             \
+    0xabcu /* the stock reply copy is this long; the extension follows it (the wire is 0xacc bytes long) */
+#define SP_SLEEP_US                                                                                \
+    100u /* between two looks at the acknowledgement (stock sleeps 100 after each page) */
+#define SP_WAIT_SLEEPS                                                                             \
+    6000u /* sleeps in one wait (an armed receiver, one page's acknowledgement with its resends): a hard bound when the block clock stands still */
 
 #define J_IDLE 0u
-#define J_RUN 1u    /* posted to the worker, or running there */
-#define J_DONE 2u   /* the job ended; sp_xfer_tick delivers `result` */
+#define J_RUN 1u  /* posted to the worker, or running there */
+#define J_DONE 2u /* the job ended; sp_xfer_tick delivers `result` */
 
-static u8 rbuf[SPW_RBUF_SECTORS * SPW_SECTOR] __attribute__((aligned(16)));   /* one card read: whole chunks as they are in the file */
-static u8 pages[2][SPA_PAGE_BYTES] __attribute__((aligned(16)));              /* the converted pages of one chunk */
+static u8 rbuf[SPW_RBUF_SECTORS * SPW_SECTOR]
+    __attribute__((aligned(16))); /* one card read: whole chunks as they are in the file */
+static u8 pages[2][SPA_PAGE_BYTES]
+    __attribute__((aligned(16))); /* the converted pages of one chunk */
 
-static spw_snap snap;           /* the last good acknowledgement; written by sp_copy_reply in the interrupt */
+static spw_snap snap; /* the last good acknowledgement; written by sp_copy_reply in the interrupt */
 
-volatile u32 sp_stuck_sends;    /* pages whose send ended on the port-ready bound (a diagnostic; xfer.h) */
+volatile u32
+    sp_stuck_sends; /* pages whose send ended on the port-ready bound (a diagnostic; xfer.h) */
 
 static struct {
-    volatile u32 state;         /* J_*: the hand-over between the UI task and the job */
-    volatile i32 result;        /* valid when state == J_DONE */
+    volatile u32 state;  /* J_*: the hand-over between the UI task and the job */
+    volatile i32 result; /* valid when state == J_DONE */
     SpReq *r;
-    spw_x x;                    /* the page state machine: the job only */
-    u32 armed;                  /* the receiver was seen armed and idle (set on READY, kept by an acknowledgement) */
+    spw_x x;   /* the page state machine: the job only */
+    u32 armed; /* the receiver was seen armed and idle (set on READY, kept by an acknowledgement) */
     u32 channels, plane_pages, first_page, frames;
 } job;
 
@@ -50,7 +56,10 @@ static struct {
 
 /* Boot-only replacement for the wire length getter: the DSP builds all its SPI2 descriptors with this length too (patched in the same
  * op list, `dsp.link.site.boot_wire_size`). */
-u32 sp_wire_size(void) { return SP_STOCK_REPLY + 16u; }
+u32 sp_wire_size(void)
+{
+    return SP_STOCK_REPLY + 16u;
+}
 
 /* The stock reply copy (0xabc bytes) with the extension read after it. Interrupt context; the only writer of `snap`. */
 void *sp_copy_reply(void *destination, const void *source, u32 length)
@@ -61,20 +70,23 @@ void *sp_copy_reply(void *destination, const void *source, u32 length)
     if (length == SP_STOCK_REPLY && source && destination)
         ok = spw_ack_decode((const volatile u16 *)((const u8 *)source + SP_STOCK_REPLY), &a);
     if (!ok) {
-        if (snap.valid)   /* fail closed, once */
+        if (snap.valid) /* fail closed, once */
             spw_snap_store(&snap, 0, &a);
         return result;
     }
-    if (snap.valid && snap.status == a.status && snap.error == a.error && snap.errcount == a.errcount && snap.count == a.count &&
-        snap.last == a.last)
-        return result;   /* the same observation again keeps the sequence */
+    if (snap.valid && snap.status == a.status && snap.error == a.error &&
+        snap.errcount == a.errcount && snap.count == a.count && snap.last == a.last)
+        return result; /* the same observation again keeps the sequence */
     spw_snap_store(&snap, 1, &a);
     return result;
 }
 
 /* ---- The job, in the worker task ------------------------------------------------------------------------------------------------------- */
 
-static int cancelled(void) { return job.r->cancelled != 0; }
+static int cancelled(void)
+{
+    return job.r->cancelled != 0;
+}
 
 static i32 map_error(i32 poll)
 {
@@ -114,7 +126,7 @@ static i32 send_page(const u8 *page, u32 index)
         return DKPOOL_E_LOST;
     tag = spw_next_tag(&job.x, index);
     if (sp_raw_send(tag, page))
-        sp_stuck_sends++;   /* the page is lost: the acknowledgement times out and the page is sent again */
+        sp_stuck_sends++; /* the page is lost: the acknowledgement times out and the page is sent again */
     spw_sent(&job.x, tag, dkrt_blocks());
     for (n = 0; n < SP_WAIT_SLEEPS; n++) {
         sp_stock_sleep(SP_SLEEP_US);
@@ -196,11 +208,13 @@ static void finish(i32 result)
 {
     SpReq *r = job.r;
     u32 req = r->req;
-    sp_unlease(r);   /* the job has read its last sector (it ended, or never ran) */
+    sp_unlease(r); /* the job has read its last sector (it ended, or never ran) */
     if (result == 0) {
         DkrtStoreFile *f = &sp_files[r->blk];
         u32 i;
-        f->first = r->file.first;   /* field copies: a struct assignment may call memcpy, which this object cannot link */
+        f->first =
+            r->file
+                .first; /* field copies: a struct assignment may call memcpy, which this object cannot link */
         f->size = r->file.size;
         for (i = 0; i < 32; i++)
             ((volatile u8 *)f->sha)[i] = r->file.sha[i];
@@ -228,7 +242,8 @@ static void start_job(SpReq *r)
     job.frames = b->frames;
     r->state = RQ_ACTIVE;
     job.state = J_RUN;
-    if (dkrt_job_post((uintptr_t)step, (uintptr_t)done, 0) <= 0) {   /* nothing was posted: finish with an error */
+    if (dkrt_job_post((uintptr_t)step, (uintptr_t)done, 0) <=
+        0) { /* nothing was posted: finish with an error */
         job.result = DKPOOL_E_READ;
         job.state = J_DONE;
     }
@@ -268,4 +283,7 @@ void sp_xfer_tick(void)
 }
 
 /* dkpool_cancel found the request: nothing to do here beyond the flag, which the job reads between pages. */
-void sp_xfer_cancel(SpReq *r) { r->cancelled = 1; }
+void sp_xfer_cancel(SpReq *r)
+{
+    r->cancelled = 1;
+}

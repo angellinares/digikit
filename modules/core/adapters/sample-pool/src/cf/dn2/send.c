@@ -21,12 +21,21 @@ extern void sp_port_cmd(uint16_t v);
 extern uint16_t sp_port_status(void);
 extern void sp_port_data(uint16_t v);
 #else
-static inline void sp_port_cmd(uint16_t v) { *(volatile uint16_t *)0x8c00000au = v; }
-static inline uint16_t sp_port_status(void) { return *(volatile uint16_t *)0x8c000002u; }
-static inline void sp_port_data(uint16_t v) { *(volatile uint16_t *)0x8c000002u = v; }
+static inline void sp_port_cmd(uint16_t v)
+{
+    *(volatile uint16_t *)0x8c00000au = v;
+}
+static inline uint16_t sp_port_status(void)
+{
+    return *(volatile uint16_t *)0x8c000002u;
+}
+static inline void sp_port_data(uint16_t v)
+{
+    *(volatile uint16_t *)0x8c000002u = v;
+}
 #endif
 
-#define SP_PORT_POLLS 8192u   /* readiness reads per word before the page is given up */
+#define SP_PORT_POLLS 8192u /* readiness reads per word before the page is given up */
 
 /* One word, given as its bytes in memory order (b0 first). 0, or -1 when the port was not ready in time. */
 static int send_word(u32 b0, u32 b1, u32 b2, u32 b3)

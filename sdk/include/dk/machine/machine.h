@@ -29,37 +29,45 @@
 #include <dk/page/page.h>
 
 /* A machine: ID is a C identifier and becomes the machine id. The rest are dk_desc_machine field initializers. */
-#define DK_MACHINE(ID, ...)                                                      \
-    DK_DESC_OVERRIDE_BEGIN                                                       \
-    static const dk_desc_machine dk_desc_machine_##ID DK_DESC = {                \
-        .kind = DK_DESC_MACHINE, .size = sizeof(dk_desc_machine), .id = #ID,     \
-        __VA_ARGS__};                                                            \
+#define DK_MACHINE(ID, ...)                                                                        \
+    DK_DESC_OVERRIDE_BEGIN                                                                         \
+    static const dk_desc_machine dk_desc_machine_##ID DK_DESC = {                                  \
+        .kind = DK_DESC_MACHINE, .size = sizeof(dk_desc_machine), .id = #ID, __VA_ARGS__};         \
     DK_DESC_OVERRIDE_END
 
 /* Parameter word WORD of MACHINE. ID is a C identifier, unique in the module. */
-#define DK_PARAM(MACHINE, WORD, ID, NAME, SHORT, MIN, MAX, DEF)                      \
-    static const dk_desc_param dk_desc_param_##MACHINE##_##WORD DK_DESC = {          \
-        .kind = DK_DESC_PARAM, .size = sizeof(dk_desc_param), .machine = #MACHINE,   \
-        .id = #ID, .word = (WORD),                                                   \
-        .min = (int32_t)((MIN) * 256 + ((MIN) < 0 ? -0.5 : 0.5)),                    \
-        .max = (int32_t)((MAX) * 256 + ((MAX) < 0 ? -0.5 : 0.5)),                    \
-        .def = (int32_t)((DEF) * 256 + ((DEF) < 0 ? -0.5 : 0.5)),                    \
-        .name = NAME, .short_name = SHORT}
+#define DK_PARAM(MACHINE, WORD, ID, NAME, SHORT, MIN, MAX, DEF)                                    \
+    static const dk_desc_param dk_desc_param_##MACHINE##_##WORD DK_DESC = {                        \
+        .kind = DK_DESC_PARAM,                                                                     \
+        .size = sizeof(dk_desc_param),                                                             \
+        .machine = #MACHINE,                                                                       \
+        .id = #ID,                                                                                 \
+        .word = (WORD),                                                                            \
+        .min = (int32_t)((MIN) * 256 + ((MIN) < 0 ? -0.5 : 0.5)),                                  \
+        .max = (int32_t)((MAX) * 256 + ((MAX) < 0 ? -0.5 : 0.5)),                                  \
+        .def = (int32_t)((DEF) * 256 + ((DEF) < 0 ? -0.5 : 0.5)),                                  \
+        .name = NAME,                                                                              \
+        .short_name = SHORT}
 
 /* The click action of parameter word WORD of MACHINE: `void FN(uint32_t track)` runs when the knob of that parameter is clicked on the machine's page.
    FN is a C identifier; the macro declares it. */
-#define DK_PARAM_ACTION(MACHINE, WORD, FN)                                               \
-    void FN(uint32_t track);                                                             \
-    static const dk_desc_param_action dk_desc_param_action_##MACHINE##_##WORD DK_DESC = { \
-        .kind = DK_DESC_PARAM_ACTION, .size = sizeof(dk_desc_param_action),              \
-        .machine = #MACHINE, .word = (WORD), .fn = #FN}
+#define DK_PARAM_ACTION(MACHINE, WORD, FN)                                                         \
+    void FN(uint32_t track);                                                                       \
+    static const dk_desc_param_action dk_desc_param_action_##MACHINE##_##WORD DK_DESC = {          \
+        .kind = DK_DESC_PARAM_ACTION,                                                              \
+        .size = sizeof(dk_desc_param_action),                                                      \
+        .machine = #MACHINE,                                                                       \
+        .word = (WORD),                                                                            \
+        .fn = #FN}
 
 /* Machine contract 1.3: snapshot this parameter's effective, clamped value at actual note_on.
    Both note_on and render receive it in the existing params array until the next note_on.
    Other words remain live. The snapshot belongs to the adapter voice/slot, not the source track. */
-#define DK_PARAM_LATCHED(OWNER, WORD)                                                   \
-    static const dk_desc_param_latched dk_desc_param_latched_##OWNER##_##WORD DK_DESC = { \
-        .kind = DK_DESC_PARAM_LATCHED, .size = sizeof(dk_desc_param_latched),           \
-        .owner = #OWNER, .word = (WORD)}
+#define DK_PARAM_LATCHED(OWNER, WORD)                                                              \
+    static const dk_desc_param_latched dk_desc_param_latched_##OWNER##_##WORD DK_DESC = {          \
+        .kind = DK_DESC_PARAM_LATCHED,                                                             \
+        .size = sizeof(dk_desc_param_latched),                                                     \
+        .owner = #OWNER,                                                                           \
+        .word = (WORD)}
 
 #endif

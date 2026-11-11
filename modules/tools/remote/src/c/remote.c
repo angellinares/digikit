@@ -80,7 +80,7 @@ static int32_t key(u32 cmd, u32 seq, const u8 *body, u32 len, u8 *out)
         if (body[1])
             held[body[0] >> 3] |= (u8)(1u << (body[0] & 7u));
         else
-            held[body[0] >> 3] &= (u8)~(1u << (body[0] & 7u));
+            held[body[0] >> 3] &= (u8) ~(1u << (body[0] & 7u));
     }
     return r;
 }
@@ -139,7 +139,7 @@ static int release_all(void)
         if (held[c >> 3] & (1u << (c & 7u))) {
             int r = input_key(c, 0);
             if (r == 0)
-                held[c >> 3] &= (u8)~(1u << (c & 7u));
+                held[c >> 3] &= (u8) ~(1u << (c & 7u));
             else
                 worst = r;
         }

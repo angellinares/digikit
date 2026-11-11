@@ -25,32 +25,33 @@ typedef uint32_t u32;
 typedef int32_t i32;
 typedef uint8_t u8;
 
-extern const u32 sp_dev_slot_floor;   /* device.s, from [adapter.sample_pool] slot_floor */
-extern const u8 sp_dsp_pool_base;     /* anchor: its address is the pool origin in the DSP's view (0x8422b9c8) */
+extern const u32 sp_dev_slot_floor; /* device.s, from [adapter.sample_pool] slot_floor */
+extern const u8
+    sp_dsp_pool_base; /* anchor: its address is the pool origin in the DSP's view (0x8422b9c8) */
 
 #define SP_REQS 16u
 #define SP_PATH 256u
 
 /* slot states */
 #define SL_FREE 0u
-#define SL_LOADING 1u    /* reserved by a queued load */
+#define SL_LOADING 1u /* reserved by a queued load */
 #define SL_OWNED 2u
-#define SL_RELEASE_WAIT 3u  /* to be released, no request free yet */
-#define SL_RELEASING 4u  /* a release job is queued */
+#define SL_RELEASE_WAIT 3u /* to be released, no request free yet */
+#define SL_RELEASING 4u    /* a release job is queued */
 
 /* request states */
 #define RQ_FREE 0u
-#define RQ_QUEUED 1u     /* posted to the worker */
-#define RQ_DONE 2u       /* the job finished; dkpool_tick delivers it */
+#define RQ_QUEUED 1u /* posted to the worker */
+#define RQ_DONE 2u   /* the job finished; dkpool_tick delivers it */
 #define RQ_LOAD 0u
 #define RQ_RELEASE 1u
 
 typedef struct Req {
     volatile u32 state;
     volatile i32 result;
-    volatile u32 cancelled;   /* dkpool_cancel: nobody waits for this load any more */
+    volatile u32 cancelled; /* dkpool_cancel: nobody waits for this load any more */
     u32 kind, slot, token, req;
-    u32 pcm;      /* PCM byte length from the file header (bytes 4..8), read before the stock loader runs */
+    u32 pcm; /* PCM byte length from the file header (bytes 4..8), read before the stock loader runs */
     dkpool_handle *out;
     u8 path[SP_PATH];
 } Req;
@@ -60,11 +61,13 @@ static Req reqs[SP_REQS];
 static spp_peak peaks[SP_REQS][SPP_BINS];
 static u8 peak_ready[SP_REQS];
 static u8 peak_read[4096];
-static u8 win_read[4096];   /* one read of dkpool_window_step */
-static u8 slot_state[SP_SLOTS];  /* SL_* by stock slot */
-static u8 slot_busy[SP_SLOTS];   /* nonzero for every slot this adapter holds (the argument of sp_pick_slot) */
+static u8 win_read[4096];       /* one read of dkpool_window_step */
+static u8 slot_state[SP_SLOTS]; /* SL_* by stock slot */
+static u8 slot_busy
+    [SP_SLOTS]; /* nonzero for every slot this adapter holds (the argument of sp_pick_slot) */
 static u32 slot_token[SP_SLOTS];
-static u32 tokens_issued;   /* the token of a load is the count so far, from 1; the count never wraps */
+static u32
+    tokens_issued; /* the token of a load is the count so far, from 1; the count never wraps */
 
 /* The value of a 4-byte address literal that a generated site names (the site is one byte as far as the compiler knows). */
 static u32 lit(const u8 *site)
@@ -72,12 +75,27 @@ static u32 lit(const u8 *site)
     __asm__("" : "+r"(site));
     return *(const volatile u32 *)site;
 }
-static const u32 *keys(void) { return (const u32 *)lit(&dk_fw_samples_slot_keys); }
-static const i32 *slot_map(void) { return (const i32 *)lit(&dk_fw_samples_slot_map); }
-static const u8 *stereo_flags(void) { return (const u8 *)lit(&dk_fw_samples_slot_stereo); }
-static const u32 *vector(void) { return (const u32 *)lit(&dk_fw_samples_record_vector); }
+static const u32 *keys(void)
+{
+    return (const u32 *)lit(&dk_fw_samples_slot_keys);
+}
+static const i32 *slot_map(void)
+{
+    return (const i32 *)lit(&dk_fw_samples_slot_map);
+}
+static const u8 *stereo_flags(void)
+{
+    return (const u8 *)lit(&dk_fw_samples_slot_stereo);
+}
+static const u32 *vector(void)
+{
+    return (const u32 *)lit(&dk_fw_samples_record_vector);
+}
 
-u32 dkpool_version(void) { return DKPOOL_VERSION; }
+u32 dkpool_version(void)
+{
+    return DKPOOL_VERSION;
+}
 
 static void set_slot(u32 slot, u32 state)
 {
@@ -95,7 +113,8 @@ static i32 describe(u32 slot, const u32 *key, u32 pcm, dkpool_handle *out)
     if (idx < 0 || (u32)idx >= count)
         return DKPOOL_E_FORMAT;
     rec = (const u32 *)(vec[0] + (u32)idx * SP_REC_BYTES);
-    return sp_geometry((u32)&sp_dsp_pool_base, rec[SP_REC_BLOCK / 4], rec[SP_REC_EXTENT / 4], stereo_flags()[slot] != 0, pcm, key[2], out);
+    return sp_geometry((u32)&sp_dsp_pool_base, rec[SP_REC_BLOCK / 4], rec[SP_REC_EXTENT / 4],
+                       stereo_flags()[slot] != 0, pcm, key[2], out);
 }
 
 /* A sequential source scan on the same worker as the stock loader: 4 KiB
@@ -108,7 +127,8 @@ static i32 read_peaks(Req *r)
         return DKPOOL_E_FORMAT;
     p = peaks[SP_SLOTS - 1u - r->slot];
     spp_clear(p);
-    for (i = 0; i < 4; i++) ((volatile u32 *)file)[i] = 0;
+    for (i = 0; i < 4; i++)
+        ((volatile u32 *)file)[i] = 0;
     if (dk_fw_storage_path_open(r->path, (const u8 *)"r", file) != 0)
         return DKPOOL_E_READ;
     if (dk_fw_storage_path_read(peak_read, 64, file) != 64) {
@@ -117,10 +137,13 @@ static i32 read_peaks(Req *r)
     }
     while (first < frames) {
         u32 n = frames - first, bytes;
-        if (r->cancelled) break;
-        if (n > sizeof(peak_read) / (ch * 2u)) n = sizeof(peak_read) / (ch * 2u);
+        if (r->cancelled)
+            break;
+        if (n > sizeof(peak_read) / (ch * 2u))
+            n = sizeof(peak_read) / (ch * 2u);
         bytes = n * ch * 2u;
-        if (dk_fw_storage_path_read(peak_read, bytes, file) != (i32)bytes) break;
+        if (dk_fw_storage_path_read(peak_read, bytes, file) != (i32)bytes)
+            break;
         spp_feed(p, frames, first, peak_read, n, ch);
         first += n;
     }
@@ -134,17 +157,21 @@ static void run_load(Req *r)
     u32 handle[4], key[4], i;
     u8 head[12];
     i32 rc, got;
-    if (r->cancelled) {   /* still queued when the runtime gave up on it: do nothing, the slot stays free */
+    if (r->cancelled) { /* still queued when the runtime gave up on it: do nothing, the slot stays free */
         r->result = DKPOOL_E_LOST;
         return;
     }
-    for (i = 0; i < 4; i++)   /* volatile: an initialiser would call memset, which a patched-in object cannot link */
+    for (
+        i = 0; i < 4;
+        i++) /* volatile: an initialiser would call memset, which a patched-in object cannot link */
         ((volatile u32 *)handle)[i] = ((volatile u32 *)key)[i] = 0;
     if (dk_fw_storage_path_open(r->path, (const u8 *)"r", handle) != 0) {
         r->result = DKPOOL_E_NOT_FOUND;
         return;
     }
-    got = dk_fw_storage_path_read(head, 12, handle);   /* the loader takes the key, not this handle, so the read cannot disturb it */
+    got = dk_fw_storage_path_read(
+        head, 12,
+        handle); /* the loader takes the key, not this handle, so the read cannot disturb it */
     rc = dk_fw_storage_directory_metadata(handle[0], key);
     dk_fw_storage_path_close(handle);
     if (got != 12 || rc != 0) {
@@ -169,7 +196,7 @@ static void run_load(Req *r)
            when the second source read fails. A new token gets one new attempt. */
         peak_ready[SP_SLOTS - 1u - r->slot] = read_peaks(r) == 0;
     } else {
-        dk_fw_samples_slot_release(r->slot);   /* a block we cannot describe is of no use */
+        dk_fw_samples_slot_release(r->slot); /* a block we cannot describe is of no use */
     }
 }
 
@@ -202,7 +229,8 @@ static void done(u8 *ctx, i32 status)
 static void post(Req *r)
 {
     r->state = RQ_QUEUED;
-    if (dkrt_job_post((uintptr_t)step, (uintptr_t)done, (u8 *)r) <= 0) {   /* no queue entry: finish the request at once, dkpool_tick delivers it */
+    if (dkrt_job_post((uintptr_t)step, (uintptr_t)done, (u8 *)r) <=
+        0) { /* no queue entry: finish the request at once, dkpool_tick delivers it */
         r->result = DKPOOL_E_READ;
         r->state = RQ_DONE;
     }
@@ -261,14 +289,15 @@ void dkpool_cancel(u32 req)
 
 static int current(const dkpool_handle *h)
 {
-    return h && h->id >= sp_dev_slot_floor && h->id < SP_SLOTS && slot_state[h->id] == SL_OWNED && slot_token[h->id] == h->token;
+    return h && h->id >= sp_dev_slot_floor && h->id < SP_SLOTS && slot_state[h->id] == SL_OWNED &&
+           slot_token[h->id] == h->token;
 }
 
 static void queue_release(u32 slot)
 {
     Req *r = take_req();
     if (!r) {
-        set_slot(slot, SL_RELEASE_WAIT);   /* dkpool_tick retries when a request is free */
+        set_slot(slot, SL_RELEASE_WAIT); /* dkpool_tick retries when a request is free */
         return;
     }
     set_slot(slot, SL_RELEASING);
@@ -281,7 +310,8 @@ static void queue_release(u32 slot)
 
 void dkpool_release(const dkpool_handle *h)
 {
-    if (current(h))   /* a stale handle (after a reset or a repeat) is ignored: its slot may belong to a newer load */
+    if (current(
+            h)) /* a stale handle (after a reset or a repeat) is ignored: its slot may belong to a newer load */
         queue_release(h->id);
 }
 
@@ -316,7 +346,7 @@ void dkpool_tick(void)
             set_slot(slot_of, r->result == 0 ? SL_OWNED : SL_FREE);
             r->state = RQ_FREE;
             if (release)
-                queue_release(slot_of);   /* loaded for nobody */
+                queue_release(slot_of); /* loaded for nobody */
             dkrt_pool_done(req, result);
         }
     }
@@ -338,8 +368,10 @@ void dkpool_tick(void)
 
 i32 dkpool_peaks(const dkpool_handle *h, u8 *out, u32 cap)
 {
-    if (dkpool_check(h) != 0 || h->id < SP_SLOTS - SP_REQS) return DKPOOL_E_LOST;
-    if (!peak_ready[SP_SLOTS - 1u - h->id]) return DKPOOL_E_READ;
+    if (dkpool_check(h) != 0 || h->id < SP_SLOTS - SP_REQS)
+        return DKPOOL_E_LOST;
+    if (!peak_ready[SP_SLOTS - 1u - h->id])
+        return DKPOOL_E_READ;
     return spp_copy(peaks[SP_SLOTS - 1u - h->id], h->frames, out, cap);
 }
 
@@ -352,14 +384,16 @@ static void seek_to(u32 *handle, u32 offset)
 
 /* One step of a peak window (dkrt_pool.h), in the worker task: opens the file by `path`, seeks to the PCM at frame *cursor and reads
  * at most DKPOOL_WINDOW_CHUNK bytes in 4 KiB reads. Each read is a whole number of frames, so no partial frame is carried. */
-i32 dkpool_window_step(const dkpool_handle *h, const u8 *path, u32 first, u32 frames, u32 columns, int16_t *out, u32 *cursor)
+i32 dkpool_window_step(const dkpool_handle *h, const u8 *path, u32 first, u32 frames, u32 columns,
+                       int16_t *out, u32 *cursor)
 {
     u32 file[4], i, at, end, fb, per_read;
     if (dkpool_check(h) != 0)
         return DKPOOL_E_LOST;
     if (!path || !out || !cursor || !columns || !frames || (h->channels != 1 && h->channels != 2))
         return DKPOOL_E_CONTRACT;
-    if (first > h->frames || frames > h->frames - first || *cursor < first || *cursor > first + frames)
+    if (first > h->frames || frames > h->frames - first || *cursor < first ||
+        *cursor > first + frames)
         return DKPOOL_E_CONTRACT;
     fb = h->channels * 2u;
     per_read = sizeof(win_read) / fb;
@@ -367,13 +401,15 @@ i32 dkpool_window_step(const dkpool_handle *h, const u8 *path, u32 first, u32 fr
     end = first + frames;
     if (end - at > DKPOOL_WINDOW_CHUNK / fb)
         end = at + DKPOOL_WINDOW_CHUNK / fb;
-    for (i = 0; i < 4; i++) ((volatile u32 *)file)[i] = 0;
+    for (i = 0; i < 4; i++)
+        ((volatile u32 *)file)[i] = 0;
     if (dk_fw_storage_path_open(path, (const u8 *)"r", file) != 0)
         return DKPOOL_E_READ;
     seek_to(file, 64u + at * fb);
     while (at < end) {
         u32 n = end - at, bytes;
-        if (n > per_read) n = per_read;
+        if (n > per_read)
+            n = per_read;
         bytes = n * fb;
         if (dk_fw_storage_path_read(win_read, bytes, file) != (i32)bytes) {
             dk_fw_storage_path_close(file);

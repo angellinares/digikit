@@ -29,7 +29,8 @@
 #include <dk/core/status.h>
 #include <dk/platform/ui.h>
 
-#define DK_CHOOSER_E_PATH DK_E_SEL_PATH /* the browser's path does not fit 255 bytes: fill is not called, the flow fails with this code */
+#define DK_CHOOSER_E_PATH                                                                          \
+    DK_E_SEL_PATH /* the browser's path does not fit 255 bytes: fill is not called, the flow fails with this code */
 
 typedef struct dk_chooser_desc {
     const char *title; /* list title */
@@ -37,8 +38,10 @@ typedef struct dk_chooser_desc {
     /* Writes the text of slot i (at most DK_UI_ROW - 1 characters). is_current: the slot is the current one; mark it in the text. An
        empty slot gets a row too (for example "-"). */
     void (*row)(void *ctx, int i, int is_current, char *text);
-    int (*busy)(void *ctx); /* optional: 1 while any row changes without a key (a load); the list then refreshes every 250 ms */
-    uint32_t root;          /* DK_FILES_* root of the browser */
+    int (*busy)(
+        void *
+            ctx); /* optional: 1 while any row changes without a key (a load); the list then refreshes every 250 ms */
+    uint32_t root; /* DK_FILES_* root of the browser */
     /* YES on a file (root-relative path, at most 255 bytes) for `slot`: the module loads it there. Returns the slot for done (>= 0), or a
        negative error. Required. */
     int (*fill)(void *ctx, int slot, const char *path);

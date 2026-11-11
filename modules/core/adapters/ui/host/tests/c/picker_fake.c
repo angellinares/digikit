@@ -29,7 +29,8 @@ static int32_t f_client(void)
     fl.client_calls++;
     return 7;
 }
-static int32_t f_list(uint32_t c, uint32_t root, const uint8_t *path, dk_file_event *notify, uint8_t *ctx)
+static int32_t f_list(uint32_t c, uint32_t root, const uint8_t *path, dk_file_event *notify,
+                      uint8_t *ctx)
 {
     (void)c;
     (void)ctx;
@@ -146,11 +147,26 @@ void pf_reset(void)
     api.sample_pool_path = s_path;
 }
 
-void pf_short_api(void) { api.size = offsetof(dk_api, files_client); }
-void pf_api_without_set(void) { api.size = offsetof(dk_api, sample_pool_set); }
-int pf_init(uint32_t handle) { return dk_sample_picker_init(&api, handle); }
-void pf_open_pool(int current, int with_pick) { dk_sample_picker_open_pool(current, with_pick ? on_pick : 0, 0); }
-void pf_fini(void) { dk_sample_picker_fini(); }
+void pf_short_api(void)
+{
+    api.size = offsetof(dk_api, files_client);
+}
+void pf_api_without_set(void)
+{
+    api.size = offsetof(dk_api, sample_pool_set);
+}
+int pf_init(uint32_t handle)
+{
+    return dk_sample_picker_init(&api, handle);
+}
+void pf_open_pool(int current, int with_pick)
+{
+    dk_sample_picker_open_pool(current, with_pick ? on_pick : 0, 0);
+}
+void pf_fini(void)
+{
+    dk_sample_picker_fini();
+}
 
 /* the fake provider */
 void pf_add(const char *path, int dir, uint32_t size)
@@ -162,26 +178,49 @@ void pf_add(const char *path, int dir, uint32_t size)
     e->size_bytes = size;
     strcpy((char *)e->path, path);
 }
-void pf_finish(void) /* the listing is complete: the notify callback runs, as the UI task would run it */
+void pf_finish(
+    void) /* the listing is complete: the notify callback runs, as the UI task would run it */
 {
     fl.finished = 1;
     fl.notify(7, (uint32_t)fl.ticket, 0, 0);
 }
-void pf_partial(void) { fl.notify(7, (uint32_t)fl.ticket, 0, 0); } /* rows are ready, the end is not */
-void pf_stale_notify(void) { fl.notify(7, (uint32_t)fl.ticket - 1, 0, 0); }
+void pf_partial(void)
+{
+    fl.notify(7, (uint32_t)fl.ticket, 0, 0);
+} /* rows are ready, the end is not */
+void pf_stale_notify(void)
+{
+    fl.notify(7, (uint32_t)fl.ticket - 1, 0, 0);
+}
 void pf_fail(int rc)
 {
     fl.poll_error = rc;
     fl.notify(7, (uint32_t)fl.ticket, 0, 0);
 }
-void pf_list_result(int rc) { fl.list_result = rc; }
-int pf_list_calls(void) { return fl.list_calls; }
-int pf_cancels(void) { return fl.cancels; }
-const char *pf_list_dir(void) { return fl.dir; }
-int pf_client_calls(void) { return fl.client_calls; }
+void pf_list_result(int rc)
+{
+    fl.list_result = rc;
+}
+int pf_list_calls(void)
+{
+    return fl.list_calls;
+}
+int pf_cancels(void)
+{
+    return fl.cancels;
+}
+const char *pf_list_dir(void)
+{
+    return fl.dir;
+}
+int pf_client_calls(void)
+{
+    return fl.client_calls;
+}
 
 /* the fake sample table */
-void pf_track(int t, int status, const char *path, uint32_t frames, uint32_t rate, uint32_t channels)
+void pf_track(int t, int status, const char *path, uint32_t frames, uint32_t rate,
+              uint32_t channels)
 {
     sm.status[t] = status;
     strcpy(sm.path[t], path);
@@ -189,14 +228,38 @@ void pf_track(int t, int status, const char *path, uint32_t frames, uint32_t rat
     sm.info[t].rate = rate;
     sm.info[t].channels = channels;
 }
-void pf_status(int t, int status) { sm.status[t] = status; }
-void pf_set_result(int rc) { sm.set_result = rc; }
-int pf_sets(void) { return sm.sets; }
-int pf_clears(void) { return sm.clears; }
-int pf_last_index(void) { return sm.last_index; }
-int pf_picks(void) { return sm.picks; }
-int pf_last_pick(void) { return sm.last_pick; }
-const char *pf_last_path(void) { return sm.last_path; }
+void pf_status(int t, int status)
+{
+    sm.status[t] = status;
+}
+void pf_set_result(int rc)
+{
+    sm.set_result = rc;
+}
+int pf_sets(void)
+{
+    return sm.sets;
+}
+int pf_clears(void)
+{
+    return sm.clears;
+}
+int pf_last_index(void)
+{
+    return sm.last_index;
+}
+int pf_picks(void)
+{
+    return sm.picks;
+}
+int pf_last_pick(void)
+{
+    return sm.last_pick;
+}
+const char *pf_last_path(void)
+{
+    return sm.last_path;
+}
 
 /* ---- a toy chooser: five slots, to test the component without the sample pool ---- */
 static struct {
@@ -242,13 +305,22 @@ static void toy_done(void *ctx, int result)
     cf.last_done = result;
 }
 
-int cf_init(void) { return dk_chooser_init(&api); }
+int cf_init(void)
+{
+    return dk_chooser_init(&api);
+}
 int cf_open(int current, int with_text)
 {
     memset(&cf, 0, sizeof cf);
     cf.with_text = with_text;
-    cf.d = (dk_chooser_desc){.title = "TOY", .count = 5, .row = toy_row, .root = DK_FILES_SAMPLES, .fill = toy_fill,
-                             .error_text = toy_error, .panel = toy_panel, .done = toy_done};
+    cf.d = (dk_chooser_desc){.title = "TOY",
+                             .count = 5,
+                             .row = toy_row,
+                             .root = DK_FILES_SAMPLES,
+                             .fill = toy_fill,
+                             .error_text = toy_error,
+                             .panel = toy_panel,
+                             .done = toy_done};
     return dk_chooser_open(&cf.d, current);
 }
 int cf_open_without_fill(void)
@@ -257,10 +329,31 @@ int cf_open_without_fill(void)
     cf.d = (dk_chooser_desc){.title = "TOY", .count = 5, .row = toy_row, .root = DK_FILES_SAMPLES};
     return dk_chooser_open(&cf.d, 0);
 }
-void cf_fill_result(int rc) { cf.fill_rc = rc; }
-int cf_done_calls(void) { return cf.done_calls; }
-int cf_last_done(void) { return cf.last_done; }
-int cf_fill_calls(void) { return cf.fill_calls; }
-int cf_last_slot(void) { return cf.last_slot; }
-const char *cf_last_fill(void) { return cf.last_fill; }
-int cf_panel_entry(void) { return cf.panel_entry; }
+void cf_fill_result(int rc)
+{
+    cf.fill_rc = rc;
+}
+int cf_done_calls(void)
+{
+    return cf.done_calls;
+}
+int cf_last_done(void)
+{
+    return cf.last_done;
+}
+int cf_fill_calls(void)
+{
+    return cf.fill_calls;
+}
+int cf_last_slot(void)
+{
+    return cf.last_slot;
+}
+const char *cf_last_fill(void)
+{
+    return cf.last_fill;
+}
+int cf_panel_entry(void)
+{
+    return cf.panel_entry;
+}

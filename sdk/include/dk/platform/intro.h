@@ -25,16 +25,18 @@
 #define DK_INTRO_BYTES 1024u /* the native bitmap of one tick */
 
 /* The runtime's results (sdk/sdk.toml [load.status]) named above. */
-#define DK_INTRO_E_NOT_FOUND DK_E_NOT_FOUND  /* E_NOT_FOUND: outside dkm_init */
-#define DK_INTRO_E_BUSY      DK_E_BUSY /* E_BUSY: taken already */
+#define DK_INTRO_E_NOT_FOUND DK_E_NOT_FOUND /* E_NOT_FOUND: outside dkm_init */
+#define DK_INTRO_E_BUSY DK_E_BUSY           /* E_BUSY: taken already */
 #define DK_INTRO_E_BOOT_ONLY DK_E_BOOT_ONLY /* E_BOOT_ONLY: the intro is over */
-#define DK_INTRO_E_CONTRACT  DK_E_CONTRACT /* E_CONTRACT: no frame, or ticks out of range */
+#define DK_INTRO_E_CONTRACT DK_E_CONTRACT   /* E_CONTRACT: no frame, or ticks out of range */
 
 typedef dk_intro_frame *dk_intro_frame_fn;
 typedef dk_intro_done *dk_intro_done_fn;
 
 /* Takes over the boot animation; call in dkm_init. 0 or a negative error. */
-static inline int32_t dk_intro_take(const dk_api *api, dk_intro_frame_fn frame, dk_intro_done_fn done, void *ctx, uint32_t ticks) {
+static inline int32_t dk_intro_take(const dk_api *api, dk_intro_frame_fn frame,
+                                    dk_intro_done_fn done, void *ctx, uint32_t ticks)
+{
     return api->intro_take(frame, done, ctx, ticks);
 }
 #endif

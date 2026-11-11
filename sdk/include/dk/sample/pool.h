@@ -14,7 +14,8 @@
 /* States are DK_SAMPLE_UNUSED/QUEUED/LOADING/READY (0..3); errors are negative.
    Reused errors: NOT_FOUND -1, READ -3, FORMAT -5, TOO_BIG -13, CONTRACT -48.
    In this family TOO_BIG means "does not fit the live pool". */
-#define DK_SAMPLE_E_LOST DK_E_LOST       /* the backing was lost (DT2 stock reset) and the reload failed */
+#define DK_SAMPLE_E_LOST                                                                           \
+    DK_E_LOST /* the backing was lost (DT2 stock reset) and the reload failed */
 #define DK_SAMPLE_E_POOL DK_E_POOL       /* the pool is full */
 #define DK_SAMPLE_E_CHANGED DK_E_CHANGED /* the file differs from the selection snapshot */
 /* DK_SAMPLE_E_SEL_PATH (bank.h) also means: sample_pool_path: buf too small. */
@@ -23,26 +24,36 @@
    writes and the module reads. `ready` is published last. `token` is nonzero,
    changes on every load and never wraps or repeats. */
 typedef struct dk_sample_pool_entry {
-    uint32_t ready;    /* 0 or 1 */
+    uint32_t ready; /* 0 or 1 */
     uint32_t token;
     uint32_t frames;
     uint32_t rate;     /* Hz */
     uint32_t channels; /* 1 or 2 */
     uint32_t fmt;      /* DK_SAMPLE_POOL_FMT_PCM16 */
-    uint32_t base_l;   /* DSP normal-word address of plane L; DDR PCM uses the NW32 alias 0x10000000 + (phys - 0x80000000) / 4 (finding 99) */
-    uint32_t base_r;   /* plane R, same form; == base_l when channels == 1 */
+    uint32_t
+        base_l; /* DSP normal-word address of plane L; DDR PCM uses the NW32 alias 0x10000000 + (phys - 0x80000000) / 4 (finding 99) */
+    uint32_t base_r; /* plane R, same form; == base_l when channels == 1 */
 } dk_sample_pool_entry;
 /* The word offsets DK_SAMPLE_POOL_W_* and DK_SAMPLE_POOL_ENTRY_WORDS come from sdk.toml [sample] (<dk/gen/sample.h>); the assembly
    include dsp/contract/dk_sample_pool.inc has the same numbers. These checks tie the struct to them. */
-_Static_assert(sizeof(dk_sample_pool_entry) == DK_SAMPLE_POOL_ENTRY_WORDS * 4u, "dk_sample_pool_entry layout");
-_Static_assert(offsetof(dk_sample_pool_entry, ready) == DK_SAMPLE_POOL_W_READY * 4u, "dk_sample_pool_entry.ready");
-_Static_assert(offsetof(dk_sample_pool_entry, token) == DK_SAMPLE_POOL_W_TOKEN * 4u, "dk_sample_pool_entry.token");
-_Static_assert(offsetof(dk_sample_pool_entry, frames) == DK_SAMPLE_POOL_W_FRAMES * 4u, "dk_sample_pool_entry.frames");
-_Static_assert(offsetof(dk_sample_pool_entry, rate) == DK_SAMPLE_POOL_W_RATE * 4u, "dk_sample_pool_entry.rate");
-_Static_assert(offsetof(dk_sample_pool_entry, channels) == DK_SAMPLE_POOL_W_CHANNELS * 4u, "dk_sample_pool_entry.channels");
-_Static_assert(offsetof(dk_sample_pool_entry, fmt) == DK_SAMPLE_POOL_W_FMT * 4u, "dk_sample_pool_entry.fmt");
-_Static_assert(offsetof(dk_sample_pool_entry, base_l) == DK_SAMPLE_POOL_W_BASE_L * 4u, "dk_sample_pool_entry.base_l");
-_Static_assert(offsetof(dk_sample_pool_entry, base_r) == DK_SAMPLE_POOL_W_BASE_R * 4u, "dk_sample_pool_entry.base_r");
+_Static_assert(sizeof(dk_sample_pool_entry) == DK_SAMPLE_POOL_ENTRY_WORDS * 4u,
+               "dk_sample_pool_entry layout");
+_Static_assert(offsetof(dk_sample_pool_entry, ready) == DK_SAMPLE_POOL_W_READY * 4u,
+               "dk_sample_pool_entry.ready");
+_Static_assert(offsetof(dk_sample_pool_entry, token) == DK_SAMPLE_POOL_W_TOKEN * 4u,
+               "dk_sample_pool_entry.token");
+_Static_assert(offsetof(dk_sample_pool_entry, frames) == DK_SAMPLE_POOL_W_FRAMES * 4u,
+               "dk_sample_pool_entry.frames");
+_Static_assert(offsetof(dk_sample_pool_entry, rate) == DK_SAMPLE_POOL_W_RATE * 4u,
+               "dk_sample_pool_entry.rate");
+_Static_assert(offsetof(dk_sample_pool_entry, channels) == DK_SAMPLE_POOL_W_CHANNELS * 4u,
+               "dk_sample_pool_entry.channels");
+_Static_assert(offsetof(dk_sample_pool_entry, fmt) == DK_SAMPLE_POOL_W_FMT * 4u,
+               "dk_sample_pool_entry.fmt");
+_Static_assert(offsetof(dk_sample_pool_entry, base_l) == DK_SAMPLE_POOL_W_BASE_L * 4u,
+               "dk_sample_pool_entry.base_l");
+_Static_assert(offsetof(dk_sample_pool_entry, base_r) == DK_SAMPLE_POOL_W_BASE_R * 4u,
+               "dk_sample_pool_entry.base_r");
 #define DK_SAMPLE_POOL_FMT_PCM16 1u /* packed PCM16 (finding 87); float is not offered */
 
 /* The per-entry control set the runtime and the bank macros of sdk/dsp/sample/bank.inc
@@ -62,7 +73,9 @@ _Static_assert(sizeof(dk_sample_info) == 16, "dk_sample_info layout");
    stale token or non-READY entry without touching out. Peaks may be unavailable
    even while the sample stays READY/playable. No PCM scan or IO occurs.
    Check api->size covers sample_pool_peaks before calling; UI task only. */
-typedef struct dk_sample_peak { int16_t min, max; } dk_sample_peak;
+typedef struct dk_sample_peak {
+    int16_t min, max;
+} dk_sample_peak;
 
 /* API 1.8: sample_pool_peaks_window(h, index, token, first, frames, columns, out, capacity) gives min/max pairs (dk_sample_peak) of
    `columns` equal parts of the frames [first, first + frames) of a READY entry. The runtime reads the PCM in the background. It returns
@@ -73,10 +86,13 @@ typedef struct dk_sample_peak { int16_t min, max; } dk_sample_peak;
 /* Declares the table: RECORDS names 16 zeroed dk_sample_pool_entry in the module's DSP data
    (DK_SAMPLE_POOL_ENTRIES * 8 words); CONTROL names 16 control sets of 4 zeroed words.
    The runtime fills the records; the module never writes them. */
-#define DK_SAMPLE_TRACKS(LOCAL_ID, RECORDS, CONTROL)                                \
-    static const dk_desc_sample_tracks DK_CAT(dk_sample_tracks_, __LINE__) DK_DESC = { \
-        .kind = DK_DESC_SAMPLE_TRACKS, .size = sizeof(dk_desc_sample_tracks),      \
-        .local_id = (LOCAL_ID), .records = #RECORDS, .control = #CONTROL}
+#define DK_SAMPLE_TRACKS(LOCAL_ID, RECORDS, CONTROL)                                               \
+    static const dk_desc_sample_tracks DK_CAT(dk_sample_tracks_, __LINE__)                         \
+        DK_DESC = {.kind = DK_DESC_SAMPLE_TRACKS,                                                  \
+                   .size = sizeof(dk_desc_sample_tracks),                                          \
+                   .local_id = (LOCAL_ID),                                                         \
+                   .records = #RECORDS,                                                            \
+                   .control = #CONTROL}
 
 /* Api entries (resolved in init like sample_bank; see <dk/gen/api.h>). The module owns one pool of DK_SAMPLE_POOL_ENTRIES (16) entries; the entry
    index is the record index the DSP reads (a machine picks it with a parameter, for example SHOT's SMP):

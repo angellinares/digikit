@@ -154,15 +154,16 @@ int32_t dkrt_fit(const DkrtScan *entries, uint32_t n, const uint8_t *ticked, Dkr
         if (!ticked[i] && used + fk.arena[i] > fk.arena_free)
             out->rows[i].wont = 1;
         if (out->rows[i].wont) {
-            snprintf((char *)out->rows[i].reason, DKRT_FIT_REASON, "CPU %uK > %uK FREE", (unsigned)(fk.arena[i] / 1024),
-                     (unsigned)((fk.arena_free - used) / 1024));
+            snprintf((char *)out->rows[i].reason, DKRT_FIT_REASON, "CPU %uK > %uK FREE",
+                     (unsigned)(fk.arena[i] / 1024), (unsigned)((fk.arena_free - used) / 1024));
         }
         if (fk.e[i].flags & DKRT_SCAN_NEEDS)
             kb_text(out->rows[i].mem, fk.arena[i]);
     }
     out->count = n;
     if (used)
-        snprintf((char *)out->line, DKRT_FIT_LINE, "DSP 0%% CPU %u%%", (unsigned)(used * 100 / fk.arena_free));
+        snprintf((char *)out->line, DKRT_FIT_LINE, "DSP 0%% CPU %u%%",
+                 (unsigned)(used * 100 / fk.arena_free));
     return DKRT_OK;
 }
 
@@ -275,10 +276,17 @@ static void fake_dkm_menu(dk_ui_menu *m, void *ctx)
 void fk_loaded_menu(const char *path, const char *name)
 {
     fk_loaded(path, name);
-    fk.mod[fk.mod_n - 1].menu = 1; /* an address on the host is a small number: DK_CALL_MENU maps it */
+    fk.mod[fk.mod_n - 1].menu =
+        1; /* an address on the host is a small number: DK_CALL_MENU maps it */
 }
-int fk_settings_runs(void) { return settings_runs; }
-int fk_settings_acts(void) { return settings_acts; }
+int fk_settings_runs(void)
+{
+    return settings_runs;
+}
+int fk_settings_acts(void)
+{
+    return settings_acts;
+}
 
 static void fake_dkm_menu_call(uint32_t a, dk_ui_menu *m)
 {
@@ -317,19 +325,64 @@ int fk_open_digikit(void)
     return g_main ? 0 : -1;
 }
 
-int fk_restarts(void) { return fk.restarts; }
-int fk_selection_sets(void) { return fk.selection_sets; }
-int fk_set_count(void) { return (int)fk.set_sel.count; }
-const char *fk_set_path(int i) { return (const char *)fk.set_sel.paths[i]; }
-int fk_puts(void) { return fk.puts; }
-const char *fk_put_key(int i) { return fk.put_key[i]; }
-int fk_put_val(int i) { return fk.put_val[i]; }
-int fk_flushes(void) { return fk.flushes; }
-int fk_tick(int i) { return TICK[i]; }
+int fk_restarts(void)
+{
+    return fk.restarts;
+}
+int fk_selection_sets(void)
+{
+    return fk.selection_sets;
+}
+int fk_set_count(void)
+{
+    return (int)fk.set_sel.count;
+}
+const char *fk_set_path(int i)
+{
+    return (const char *)fk.set_sel.paths[i];
+}
+int fk_puts(void)
+{
+    return fk.puts;
+}
+const char *fk_put_key(int i)
+{
+    return fk.put_key[i];
+}
+int fk_put_val(int i)
+{
+    return fk.put_val[i];
+}
+int fk_flushes(void)
+{
+    return fk.flushes;
+}
+int fk_tick(int i)
+{
+    return TICK[i];
+}
 
-void fk_get_result(int r) { fk.get_result = r; }
-void fk_apply(void) { apply(); }
-void fk_boot_safe(void) { fk.boot.safe = 1; fk.boot.reason = DKRT_SAFE_COUNTER; }
-void fk_boot_read_failure(void) { fk.boot.safe = 1; fk.boot.reason = DKRT_SAFE_READ; fk.boot.count = 1; }
+void fk_get_result(int r)
+{
+    fk.get_result = r;
+}
+void fk_apply(void)
+{
+    apply();
+}
+void fk_boot_safe(void)
+{
+    fk.boot.safe = 1;
+    fk.boot.reason = DKRT_SAFE_COUNTER;
+}
+void fk_boot_read_failure(void)
+{
+    fk.boot.safe = 1;
+    fk.boot.reason = DKRT_SAFE_READ;
+    fk.boot.count = 1;
+}
 
-void fk_set_tick(int row, int on) { set_tick(row, on); }
+void fk_set_tick(int row, int on)
+{
+    set_tick(row, on);
+}

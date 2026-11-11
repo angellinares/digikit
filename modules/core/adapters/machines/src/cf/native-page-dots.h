@@ -5,9 +5,11 @@
 #define NATIVE_PAGE_DOTS_H
 #include <stdint.h>
 static inline void native_page_dots(uint8_t *canvas, uint32_t page,
-    void (*rect)(uint8_t *, int32_t, int32_t, int32_t, int32_t, int32_t))
+                                    void (*rect)(uint8_t *, int32_t, int32_t, int32_t, int32_t,
+                                                 int32_t))
 {
-    if (page > 1) return;
+    if (page > 1)
+        return;
     if (page == 0) {
         rect(canvas, 124, 31, 127, 34, -1);
         rect(canvas, 125, 24, 126, 25, -1);

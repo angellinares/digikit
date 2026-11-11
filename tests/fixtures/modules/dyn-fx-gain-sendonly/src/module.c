@@ -3,7 +3,7 @@
    The MIX knob starts at 127 (wet). The effect starts as a send and can only be a send. */
 #include <dk/fx/fx.h>
 
-DK_FX(gain, .process = "_gso_process", .desc = "_gso_desc", .mix = 127,
-      .route = DK_ROUTE_SEND, .routes = DK_ROUTE_SEND);
+DK_FX(gain, .process = "_gso_process", .desc = "_gso_desc", .mix = 127, .route = DK_ROUTE_SEND,
+      .routes = DK_ROUTE_SEND);
 DK_FX_PARAM(gain, 0, "Gain", "GAIN", DK_PERCENT, 0, 1.27, 0.5);
 DK_PAGE(gain, "GSO", "Test Gain Send Only", DK_KNOB_AT(0, 0));

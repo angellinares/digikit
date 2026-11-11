@@ -39,7 +39,8 @@ typedef unsigned char u8;
 #define DL_ACK_OFF 0x60u
 #define DL_DG_MAGIC 0xD1A6u /* low half of diagnostic word 0; the high half is the word count */
 #define DL_DG_WORDS 32u
-#define DL_AREA_BYTES DL_AREA_MAX_BYTES /* the largest area the 17-bit offset reaches (generated, sdk.toml); the DSP knows the real size (status 3) */
+#define DL_AREA_BYTES                                                                              \
+    DL_AREA_MAX_BYTES /* the largest area the 17-bit offset reaches (generated, sdk.toml); the DSP knows the real size (status 3) */
 #define DL_WINDOW 12u
 #define DL_STALL_FRAMES 900u /* 0.6 s without progress */
 #define DL_END_FRAMES 6u
@@ -72,7 +73,7 @@ typedef struct DlLink {
     u32 dst_off; /* destination, words from the start of _dl_area */
     u32 nwords;
     u32 xid;
-    u32 cap;     /* payload words per chunk (from the frame geometry) */
+    u32 cap; /* payload words per chunk (from the frame geometry) */
     u32 nchunks;
     u32 acked;
     u32 next;
@@ -84,7 +85,8 @@ typedef struct DlLink {
     u32 ending;
     u32 dirty;
     u32 win; /* the window of the transfer (appended: the order of the fields above is read by tests) */
-    u32 pad[2]; /* 80 bytes: the state fills whole 16-byte cache lines, no code shares a line it writes to (flush check) */
+    u32 pad
+        [2]; /* 80 bytes: the state fills whole 16-byte cache lines, no code shares a line it writes to (flush check) */
 } DlLink;
 
 DlLink dl_link __attribute__((aligned(16)));
@@ -105,8 +107,10 @@ void dl_tick_cb_drop(u32 lo, u32 hi)
 }
 
 extern char _dl_area[]; /* the DSP object's reserved area (a DSP address) */
-extern volatile u32 dl_tx_lit; /* the literal of the driver's `lea tx_queue,a0`: the queue's address */
-extern volatile u32 dl_rec_lit; /* the literal of the handler's first `pea`: the address of the reply record copy (dl_diag) */
+extern volatile u32
+    dl_tx_lit; /* the literal of the driver's `lea tx_queue,a0`: the queue's address */
+extern volatile u32
+    dl_rec_lit; /* the literal of the handler's first `pea`: the address of the reply record copy (dl_diag) */
 
 static u32 word_at(const u8 *p)
 {
@@ -152,7 +156,8 @@ int dl_send_win(u32 win, u32 dst_word, const void *buf, u32 len)
     u32 st = l->state;
     if (st == DL_BUSY || st == DL_START || l->ending)
         return -1;
-    if (win == 0u || win > 2u || (len & 3u) || len == 0u || dst_word >= DL_AREA_MAX_WORDS || buf == 0)
+    if (win == 0u || win > 2u || (len & 3u) || len == 0u || dst_word >= DL_AREA_MAX_WORDS ||
+        buf == 0)
         return -2;
     l->win = win;
     l->buf = (u32)buf;
@@ -225,7 +230,8 @@ static void write_chunk(DlLink *l, u32 tx, u32 e0, u32 idx, int end)
     if (n > cap)
         n = cap;
     w0 = DL_MAGIC | (idx << 16) | (l->win << 30);
-    w1 = end ? (1u << 26) : ((l->dst_off + first) | (n << 17) | ((idx + 1u == l->nchunks) ? (1u << 25) : 0u));
+    w1 = end ? (1u << 26)
+             : ((l->dst_off + first) | (n << 17) | ((idx + 1u == l->nchunks) ? (1u << 25) : 0u));
     w1 |= l->xid << 27;
     s1 = w0 + w1;
     s2 = w0 + s1;
@@ -303,7 +309,8 @@ void dl_tick(int len, const u16 *src, int reclen, const volatile u16 *rec)
                 finish(l, DL_ERROR, DL_E_TIMEOUT);
             } else {
                 l->since++;
-                if (l->next > l->acked + DL_WINDOW || (l->next >= l->nchunks && (l->since % 24u) == 23u)) {
+                if (l->next > l->acked + DL_WINDOW ||
+                    (l->next >= l->nchunks && (l->since % 24u) == 23u)) {
                     l->next = l->acked;
                     l->resent++;
                 }

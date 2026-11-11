@@ -27,7 +27,8 @@ typedef uint8_t u8;
 #define CMD_READ 0x33u
 #define CMD_RESET 0x34u
 
-#define RING_WORDS 24576u /* one run of the SHARC probe is 23,436 words; the rest is the margin for a start inside a frame */
+#define RING_WORDS                                                                                 \
+    24576u /* one run of the SHARC probe is 23,436 words; the rest is the margin for a start inside a frame */
 #define READ_MAX 200u
 #define PARSE_BUDGET 4096u /* words looked at per STATUS */
 #define MAGIC 0xB0u
@@ -57,8 +58,8 @@ typedef struct Probe {
     u32 last_beat;
     u32 last_calls;
     /* the checker's state (STATUS) */
-    u32 parsed;      /* the next word to look at */
-    u32 synced;      /* a frame was accepted since RESET */
+    u32 parsed; /* the next word to look at */
+    u32 synced; /* a frame was accepted since RESET */
     u32 have_seq;
     u32 last_seq;
     u32 frames_ok;

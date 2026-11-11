@@ -27,9 +27,11 @@ uint32_t dkpool_version(void);
 #define DKPOOL_E_FORMAT (-5)
 #define DKPOOL_E_LOST (-15)
 #define DKPOOL_E_POOL (-16)
-#define DKPOOL_E_CHANGED (-17) /* the file differs from the selection snapshot (runtime), or the store file changed after the load (dkpool_window_step) */
-#define DKPOOL_E_CONTRACT (-48) /* the caller broke the contract (no free request, token counter exhausted) */
-#define DKPOOL_DONE 0   /* dkpool_load finished, `out` is filled */
+#define DKPOOL_E_CHANGED                                                                           \
+    (-17) /* the file differs from the selection snapshot (runtime), or the store file changed after the load (dkpool_window_step) */
+#define DKPOOL_E_CONTRACT                                                                          \
+    (-48)             /* the caller broke the contract (no free request, token counter exhausted) */
+#define DKPOOL_DONE 0 /* dkpool_load finished, `out` is filled */
 #define DKPOOL_QUEUED 1 /* dkrt_pool_done(req, result) follows later */
 
 /* File identity snapshot taken by the runtime at select. Two selections with equal
@@ -46,13 +48,14 @@ typedef struct dk_file_id {
 
 /* What the runtime stores per dedup entry. */
 typedef struct dkpool_handle {
-    uint32_t id;      /* adapter-private (DT2: slot; DN2: block index) */
-    uint32_t token;   /* nonzero, unique per load, never reused */
-    uint32_t base_l;  /* DSP normal-word address of plane L, as dk_sample_pool_entry.base_l: NW32 alias of DDR, 0x10000000 + (phys - 0x80000000) / 4 */
-    uint32_t base_r;  /* plane R; == base_l for mono */
+    uint32_t id;    /* adapter-private (DT2: slot; DN2: block index) */
+    uint32_t token; /* nonzero, unique per load, never reused */
+    uint32_t
+        base_l; /* DSP normal-word address of plane L, as dk_sample_pool_entry.base_l: NW32 alias of DDR, 0x10000000 + (phys - 0x80000000) / 4 */
+    uint32_t base_r; /* plane R; == base_l for mono */
     uint32_t frames;
-    uint32_t rate;    /* Hz */
-    uint32_t channels;/* 1 or 2 */
+    uint32_t rate;     /* Hz */
+    uint32_t channels; /* 1 or 2 */
 } dkpool_handle;
 
 /* Alloc, read, convert, make DSP-visible. `req` is chosen by the runtime and returned by
@@ -89,8 +92,8 @@ int32_t dkpool_peaks(const dkpool_handle *h, uint8_t *out, uint32_t capacity);
    step. out is `columns` pairs {min, max} of int16 (the layout of dkpool_peaks). Returns 1: call again; 0: done
    (*cursor == first + frames); or a negative DKPOOL_E_*. */
 #define DKPOOL_WINDOW_CHUNK 65536u
-int32_t dkpool_window_step(const dkpool_handle *h, const uint8_t *path, uint32_t first, uint32_t frames, uint32_t columns,
-                           int16_t *out, uint32_t *cursor);
+int32_t dkpool_window_step(const dkpool_handle *h, const uint8_t *path, uint32_t first,
+                           uint32_t frames, uint32_t columns, int16_t *out, uint32_t *cursor);
 
 /* Adapter to runtime. result: 0, DKPOOL_E_POOL, DKPOOL_E_READ or DKPOOL_E_FORMAT. */
 void dkrt_pool_done(uint32_t req, int32_t result);

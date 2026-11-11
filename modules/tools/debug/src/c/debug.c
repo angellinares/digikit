@@ -52,9 +52,10 @@ typedef uint8_t u8;
 
 #define K_MACHINE_CHANGE 26u
 #define K_PARAM_CHANGE 42u
-#define PARAMS 101u /* Sound words of the larger device (Digitone II); the runtime zeroes the words a device does not have */
+#define PARAMS                                                                                     \
+    101u /* Sound words of the larger device (Digitone II); the runtime zeroes the words a device does not have */
 #define TRACKS 16u
-#define TRACKS_EVERY 30u /* blocks: 20 ms */
+#define TRACKS_EVERY 30u  /* blocks: 20 ms */
 #define TRACKS_FROM 3000u /* blocks after the first pass: the project exists by then */
 
 typedef struct Ev {
@@ -68,7 +69,8 @@ typedef struct Ev {
 /* The ring is module bss, not an `Api.alloc` block: the arena need is then what `dkneeds` reads from the file (docs/design/digikit-dkm.md, "Needs are inferred from the contents"). */
 static Ev ring[RING];
 static volatile u32 count; /* events appended: the newest sequence number */
-static volatile u32 base; /* sequence numbers up to here were lost before this module loaded (the runtime's small ring overflowed) */
+static volatile u32
+    base; /* sequence numbers up to here were lost before this module loaded (the runtime's small ring overflowed) */
 static volatile u32 level_default = L_INFO;
 static volatile u8 level_module[MODULES];
 
@@ -92,7 +94,9 @@ static void sink(const Ev *e)
             return;
     }
     n = count + 1u;
-    if (e->seq > n && count == 0u) { /* the runtime's replay starts after lost events: keep its numbering, so the reader sees the gap */
+    if (e->seq > n &&
+        count ==
+            0u) { /* the runtime's replay starts after lost events: keep its numbering, so the reader sees the gap */
         n = e->seq;
         base = n - 1u;
     }

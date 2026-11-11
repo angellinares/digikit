@@ -55,7 +55,8 @@ typedef uint8_t u8;
 #define PAGE_SHIFT 15u
 #define PAGE_BYTES 0x8000u
 #define PAGE_SECTOR_SHIFT 6u /* sectors per page, as a shift */
-#define PAGE_FIND_STATUS 0xffu /* the low byte of the result of the page lookup: 0 when the page was found */
+#define PAGE_FIND_STATUS                                                                           \
+    0xffu /* the low byte of the result of the page lookup: 0 when the page was found */
 #define HASH_PAGE_SHIFT 13u
 #define HASH_PAGE_WORDS 0x2000u
 #define HASH_PAGE_SECTORS 0x40u
@@ -79,9 +80,11 @@ struct dma {
     u8 pad[640 - 256 - 96 - 0x114 - 4];
 };
 struct dma DKPW_DMA __attribute__((aligned(16)));
-_Static_assert(sizeof(struct dma) == 640, "DKPW_DMA is 640 bytes (tests/regression/runtime/write-safety.ts)");
-_Static_assert(offsetof(struct dma, jbuf) % 16 == 0 && offsetof(struct dma, hnd) % 16 == 0 && offsetof(struct dma, jh) % 16 == 0 &&
-                   offsetof(struct dma, rh) % 16 == 0 && offsetof(struct dma, inf) % 16 == 0 && offsetof(struct dma, inf2) % 16 == 0 &&
+_Static_assert(sizeof(struct dma) == 640,
+               "DKPW_DMA is 640 bytes (tests/regression/runtime/write-safety.ts)");
+_Static_assert(offsetof(struct dma, jbuf) % 16 == 0 && offsetof(struct dma, hnd) % 16 == 0 &&
+                   offsetof(struct dma, jh) % 16 == 0 && offsetof(struct dma, rh) % 16 == 0 &&
+                   offsetof(struct dma, inf) % 16 == 0 && offsetof(struct dma, inf2) % 16 == 0 &&
                    offsetof(struct dma, dstate) % 16 == 0 && offsetof(struct dma, dout) % 16 == 0,
                "buffers handed to the firmware are 16-byte aligned");
 #define hnd (DKPW_DMA.hnd)
@@ -92,9 +95,9 @@ _Static_assert(offsetof(struct dma, jbuf) % 16 == 0 && offsetof(struct dma, hnd)
 #define dout (DKPW_DMA.dout)
 #define jbuf (DKPW_DMA.jbuf)
 
-static u8 st_open;   /* `hnd` is an open staged file */
-static u8 st_live;   /* a staged file exists and the caller still owns it */
-static u8 broken;    /* a write failed: nothing more is written to this file */
+static u8 st_open; /* `hnd` is an open staged file */
+static u8 st_live; /* a staged file exists and the caller still owns it */
+static u8 broken;  /* a write failed: nothing more is written to this file */
 static u8 have_want, replace;
 static u8 want[4];
 /* Test knob (bits 8 to 15 of the flags of dkpw_begin, set by the runtime's DKRT_PD_CUT): the adapter stops dead at this step of the write, as a
@@ -182,31 +185,41 @@ static u32 pw_t2; /* the clock of the steps inside `place` (pw_t times place as 
 
 static int cut_at(u8 step)
 {
-    if (cut == step) dead = 1;
+    if (cut == step)
+        dead = 1;
     return dead;
 }
 
-u32 dkpw_version(void) { return DKPW_VERSION; }
-const u8 *dkpw_staging(void) { return (const u8 *)STAGE_DIR; }
+u32 dkpw_version(void)
+{
+    return DKPW_VERSION;
+}
+const u8 *dkpw_staging(void)
+{
+    return (const u8 *)STAGE_DIR;
+}
 
 static u32 slen(const char *s)
 {
     u32 n = 0;
-    while (s[n]) n++;
+    while (s[n])
+        n++;
     return n;
 }
 
 static void scopy(char *d, const char *s)
 {
     u32 i = 0;
-    while ((d[i] = s[i]) != 0) i++;
+    while ((d[i] = s[i]) != 0)
+        i++;
 }
 
 static int seq(const char *a, const char *b)
 {
     u32 i = 0;
     while (a[i] == b[i]) {
-        if (!a[i]) return 1;
+        if (!a[i])
+            return 1;
         i++;
     }
     return 0;
@@ -219,12 +232,24 @@ static u32 lit(const u8 *site)
     return *(const volatile u32 *)site;
 }
 
-static i32 f_delete(const char *p) { return dk_fw_storage_file_delete((const u8 *)p); }
-static i32 f_info(const char *p, u32 *out) { return dk_fw_storage_file_info((const u8 *)p, out); }
-static i32 f_mkdir(const char *p) { return dk_fw_storage_file_mkdir((const u8 *)p); }
+static i32 f_delete(const char *p)
+{
+    return dk_fw_storage_file_delete((const u8 *)p);
+}
+static i32 f_info(const char *p, u32 *out)
+{
+    return dk_fw_storage_file_info((const u8 *)p, out);
+}
+static i32 f_mkdir(const char *p)
+{
+    return dk_fw_storage_file_mkdir((const u8 *)p);
+}
 
 /* The firmware's mounted flag: every path function of the filesystem starts by testing it. */
-static int mounted(void) { return *(const volatile u32 *)lit(&dk_fw_storage_mounted) != 0; }
+static int mounted(void)
+{
+    return *(const volatile u32 *)lit(&dk_fw_storage_mounted) != 0;
+}
 
 /* ---- directory scans ---------------------------------------------------------------------------------------------------------- */
 
@@ -233,7 +258,10 @@ static int mounted(void) { return *(const volatile u32 *)lit(&dk_fw_storage_moun
 #define ENT_FOLDER (*(const volatile uint16_t *)((const u8 *)dout + 4) == 1)
 
 /* Open directory `p`; 1 when it is there. */
-static int dir_open(const char *p) { return dk_fw_storage_directory_open((const u8 *)p, dstate) == 0; }
+static int dir_open(const char *p)
+{
+    return dk_fw_storage_directory_open((const u8 *)p, dstate) == 0;
+}
 
 /* The next entry in `dout` (never "." or ".."); 0 at the end. */
 static int dir_next(void)
@@ -241,10 +269,13 @@ static int dir_next(void)
     u32 i;
     for (;;) {
         const char *nm;
-        for (i = 0; i < 0x114 / 4; i++) dout[i] = 0;
-        if (dk_fw_storage_directory_next(dstate, (u8 *)dout) != 1) return 0;
+        for (i = 0; i < 0x114 / 4; i++)
+            dout[i] = 0;
+        if (dk_fw_storage_directory_next(dstate, (u8 *)dout) != 1)
+            return 0;
         nm = ENT_NAME;
-        if (nm[0] == '.' && (nm[1] == 0 || (nm[1] == '.' && nm[2] == 0))) continue;
+        if (nm[0] == '.' && (nm[1] == 0 || (nm[1] == '.' && nm[2] == 0)))
+            continue;
         return 1;
     }
 }
@@ -254,13 +285,18 @@ static int dir_next(void)
 static int lookup(const char *p, u32 *id)
 {
     u32 n = slen(p), last = 0, i;
-    if (n >= DEST_MAX) return 0;
+    if (n >= DEST_MAX)
+        return 0;
     for (i = 0; i < n; i++)
-        if (p[i] == '/') last = i;
+        if (p[i] == '/')
+            last = i;
     scopy(lp, p);
-    if (last == 0) scopy(lp, "/");
-    else lp[last] = 0;
-    if (!dir_open(lp)) return 0;
+    if (last == 0)
+        scopy(lp, "/");
+    else
+        lp[last] = 0;
+    if (!dir_open(lp))
+        return 0;
     while (dir_next()) {
         if (seq(ENT_NAME, p + last + 1)) {
             *id = ENT_ID;
@@ -298,16 +334,22 @@ static int parent_is_file(char *p)
     return r;
 }
 
-static int hexv(char c) { return (c >= '0' && c <= '9') || (c >= 'a' && c <= 'f'); }
+static int hexv(char c)
+{
+    return (c >= '0' && c <= '9') || (c >= 'a' && c <= 'f');
+}
 
 /* Is `s` one of our names: "s" and 8 hex digits, or that and ".dest" (`is_journal`)? */
 static int ours(const char *s, int *is_journal)
 {
     u32 i, n = slen(s);
-    if (n != STAGE_LEN && n != JOUR_LEN) return 0;
-    if (s[0] != 's') return 0;
+    if (n != STAGE_LEN && n != JOUR_LEN)
+        return 0;
+    if (s[0] != 's')
+        return 0;
     for (i = 1; i < STAGE_LEN; i++)
-        if (!hexv(s[i])) return 0;
+        if (!hexv(s[i]))
+            return 0;
     *is_journal = n == JOUR_LEN;
     return n == STAGE_LEN || seq(s + STAGE_LEN, ".dest");
 }
@@ -315,7 +357,8 @@ static int ours(const char *s, int *is_journal)
 static u32 hexval(const char *s)
 {
     u32 v = 0, i;
-    for (i = 1; i < STAGE_LEN; i++) v = (v << 4) | (u32)(s[i] <= '9' ? s[i] - '0' : s[i] - 'a' + 10);
+    for (i = 1; i < STAGE_LEN; i++)
+        v = (v << 4) | (u32)(s[i] <= '9' ? s[i] - '0' : s[i] - 'a' + 10);
     return v;
 }
 
@@ -324,7 +367,8 @@ static void names_for(u32 n)
     static const char hex[] = "0123456789abcdef";
     u32 i;
     scopy(stage, STAGE_DIR "/s");
-    for (i = 0; i < 8; i++) stage[11 + i] = hex[(n >> (28 - 4 * i)) & 15];
+    for (i = 0; i < 8; i++)
+        stage[11 + i] = hex[(n >> (28 - 4 * i)) & 15];
     stage[19] = 0;
     scopy(jour, stage);
     scopy(jour + 19, ".dest");
@@ -333,7 +377,8 @@ static void names_for(u32 n)
 /* The staging folder is empty (or not there)? */
 static int staging_empty(void)
 {
-    if (!dir_open(STAGE_DIR)) return 1;
+    if (!dir_open(STAGE_DIR))
+        return 1;
     return !dir_next();
 }
 
@@ -341,7 +386,8 @@ static int staging_empty(void)
  * upload session, because its creation (about 420 ms) and removal (about 150 ms) cost more than a small file. */
 static void tidy(void)
 {
-    if (!dead && staging_empty()) dk_fw_storage_file_rmdir((const u8 *)STAGE_DIR);
+    if (!dead && staging_empty())
+        dk_fw_storage_file_rmdir((const u8 *)STAGE_DIR);
 }
 
 /* The folder /factory (and what is under it) is the firmware's own read-only ROM tree: its inodes and directory pages are RAM tables built at every
@@ -351,7 +397,8 @@ static int in_factory(const char *p)
     static const char f[] = "factory";
     u32 i;
     for (i = 0; f[i]; i++)
-        if (p[i] != f[i]) return 0;
+        if (p[i] != f[i])
+            return 0;
     return p[i] == 0 || p[i] == '/';
 }
 
@@ -365,7 +412,8 @@ static int in_factory(const char *p)
 static void rebuild_table(void)
 {
     u32 *mutex;
-    if (!rb_pending || dead || !mounted()) return;
+    if (!rb_pending || dead || !mounted())
+        return;
     mutex = (u32 *)lit(&dk_fw_storage_fs_mutex);
     dk_fw_rtos_mutex_lock(mutex);
     dk_fw_storage_hash_table_rebuild();
@@ -375,7 +423,8 @@ static void rebuild_table(void)
 
 void dkpw_abort(void)
 {
-    if (dead) return;
+    if (dead)
+        return;
     if (st_open) {
         dk_fw_storage_path_close(hnd);
         st_open = 0;
@@ -398,7 +447,8 @@ static u32 next_number(int *there)
         while (dir_next()) {
             if (ours(ENT_NAME, &j)) {
                 u32 v = hexval(ENT_NAME);
-                if (!any || v > top) top = v;
+                if (!any || v > top)
+                    top = v;
                 any = 1;
             }
         }
@@ -411,10 +461,13 @@ int32_t dkpw_begin(const u8 *path, u32 size, const u8 *hash4, u32 flags)
     u32 n = slen((const char *)path), i, id;
     int at, there;
     u32 num;
-    if (n == 0 || n + 1 >= DEST_MAX || in_factory((const char *)path)) return E_PATH;
-    if (st_live || st_open) dkpw_abort();
+    if (n == 0 || n + 1 >= DEST_MAX || in_factory((const char *)path))
+        return E_PATH;
+    if (st_live || st_open)
+        dkpw_abort();
     dest[0] = '/';
-    for (i = 0; i <= n; i++) dest[1 + i] = (char)path[i];
+    for (i = 0; i <= n; i++)
+        dest[1 + i] = (char)path[i];
     replace = (flags & DKPW_REPLACE) != 0;
     cut = (u8)(flags >> 8);
     slow = (cut & 0x80u) != 0;
@@ -429,18 +482,23 @@ int32_t dkpw_begin(const u8 *path, u32 size, const u8 *hash4, u32 flags)
     PW_T0();
     at = parent_is_file(dest);
     PW_T1(pw_b_parent);
-    if (at) return E_PATH;
+    if (at)
+        return E_PATH;
     PW_T0();
     at = lookup(dest, &id);
     PW_T1(pw_b_lookup);
-    if (at == 2) return E_PATH;
+    if (at == 2)
+        return E_PATH;
     if (at == 1) {
-        if (!replace) return E_EXISTS;
-        if (dk_fw_storage_file_id_open(id)) return E_FILE_IN_USE;
+        if (!replace)
+            return E_EXISTS;
+        if (dk_fw_storage_file_id_open(id))
+            return E_FILE_IN_USE;
     }
     PW_T0();
-    num = next_number(&there);   /* the folder of an earlier file of the session is reused */
-    if (!there) f_mkdir(STAGE_DIR);
+    num = next_number(&there); /* the folder of an earlier file of the session is reused */
+    if (!there)
+        f_mkdir(STAGE_DIR);
     PW_T1(pw_b_mkdir);
     names_for(num);
     PW_T0();
@@ -454,7 +512,9 @@ int32_t dkpw_begin(const u8 *path, u32 size, const u8 *hash4, u32 flags)
     total = size + ZERO_TAIL;
     written = 0;
     have_want = hash4 != 0;
-    if (hash4) for (i = 0; i < 4; i++) want[i] = hash4[i];
+    if (hash4)
+        for (i = 0; i < 4; i++)
+            want[i] = hash4[i];
     PW_T0();
     i = (u32)dk_fw_storage_file_reserve(hnd, 0, total);
     PW_T1(pw_b_reserve);
@@ -467,7 +527,8 @@ int32_t dkpw_begin(const u8 *path, u32 size, const u8 *hash4, u32 flags)
 
 int32_t dkpw_write(const u8 *buf, u32 len)
 {
-    if (!st_open || dead || broken) return E_WRITE;
+    if (!st_open || dead || broken)
+        return E_WRITE;
     if (len) {
         /* One firmware call per SDK write: the call has no size limit and ends with one inode write-back, and whole aligned 32 KiB pages go
          * straight to the card. A buffer that is not 16-byte aligned is bounced by the firmware (correct, only slower). */
@@ -483,7 +544,8 @@ int32_t dkpw_write(const u8 *buf, u32 len)
             return E_WRITE;
         }
         written += len;
-        if (cut_at(1)) return E_WRITE;
+        if (cut_at(1))
+            return E_WRITE;
     }
     return 0;
 }
@@ -498,9 +560,11 @@ static int journal_write(void)
         PW_I1(pw_e_journal);
         return 0;
     }
-    ok = dk_fw_storage_file_write((const u8 *)dest, n, jh) == (i32)n && dk_fw_storage_file_hash(jh) == 0;
+    ok = dk_fw_storage_file_write((const u8 *)dest, n, jh) == (i32)n &&
+         dk_fw_storage_file_hash(jh) == 0;
     dk_fw_storage_path_close(jh);
-    if (!ok) f_delete(jour);
+    if (!ok)
+        f_delete(jour);
     PW_I1(pw_e_journal);
     return ok;
 }
@@ -529,13 +593,15 @@ static i32 place(void)
             return E_WRITE;
         }
         journaled = 1;
-        if (cut_at(3)) return E_WRITE;
-        if (f_delete(dest) != 0) {   /* the stock firmware opened it meanwhile */
+        if (cut_at(3))
+            return E_WRITE;
+        if (f_delete(dest) != 0) { /* the stock firmware opened it meanwhile */
             f_delete(jour);
             f_delete(stage);
             return E_FILE_IN_USE;
         }
-        if (cut_at(4)) return E_WRITE;
+        if (cut_at(4))
+            return E_WRITE;
     }
     if (cut == 6) {
         dk_fw_storage_file_link((const u8 *)stage, (const u8 *)dest);
@@ -548,13 +614,16 @@ static i32 place(void)
         renamed = cut != 7 && dk_fw_storage_file_rename((const u8 *)stage, (const u8 *)dest) == 0;
         PW_I1(pw_e_rename);
         if (renamed) {
-            if (cut_at(5)) return E_WRITE;
-            if (journaled) f_delete(jour);
+            if (cut_at(5))
+                return E_WRITE;
+            if (journaled)
+                f_delete(jour);
             return 0;
         }
     }
     /* A rename that failed after the destination was deleted: the journal and the staged file stay, and the runtime runs the recovery now. */
-    if (!journaled) f_delete(stage);
+    if (!journaled)
+        f_delete(stage);
     return E_WRITE;
 }
 
@@ -575,17 +644,24 @@ static i32 hash_fast(void)
     u32 id = hnd[0], pages = (total + (PAGE_BYTES - 1u)) >> PAGE_SHIFT, p, hv, i, sector, old;
     u32 *ino;
     i32 r = HF_FALLBACK;
-    if (!mounted()) return HF_FALLBACK;
+    if (!mounted())
+        return HF_FALLBACK;
     dk_fw_rtos_mutex_lock(mutex);
     ino = (u32 *)dk_fw_storage_inode_get(id);
-    if (!ino) goto unlock;
-    if (ino[1] != total || cut == 10) goto put; /* the inode size is what was written (knob 10 acts as a size mismatch) */
+    if (!ino)
+        goto unlock;
+    if (ino[1] != total || cut == 10)
+        goto put; /* the inode size is what was written (knob 10 acts as a size mismatch) */
     pdw_hash_init(&h);
     for (p = 0; p < pages; p++) {
         u32 n = total - (p << PAGE_SHIFT);
-        if (n > PAGE_BYTES) n = PAGE_BYTES;
-        if ((dk_fw_storage_file_page_find((u8 *)ino, p, &DKPW_DMA.phys) & PAGE_FIND_STATUS) == 0) goto put;
-        if (dk_fw_storage_block_read(dsec + (DKPW_DMA.phys << PAGE_SECTOR_SHIFT), (n + (SECTOR_BYTES - 1u)) & ~(SECTOR_BYTES - 1u), rbuf) != 0) goto put;
+        if (n > PAGE_BYTES)
+            n = PAGE_BYTES;
+        if ((dk_fw_storage_file_page_find((u8 *)ino, p, &DKPW_DMA.phys) & PAGE_FIND_STATUS) == 0)
+            goto put;
+        if (dk_fw_storage_block_read(dsec + (DKPW_DMA.phys << PAGE_SECTOR_SHIFT),
+                                     (n + (SECTOR_BYTES - 1u)) & ~(SECTOR_BYTES - 1u), rbuf) != 0)
+            goto put;
         pdw_hash_update(&h, rbuf, n);
     }
     hv = pdw_hash_finish(&h) | 1u;
@@ -600,7 +676,8 @@ static i32 hash_fast(void)
     /* the rest of FUN_4015b1e8, in its order: the hash page, (the table: `rebuild_table`, later), the inode word, the event, the inode write-back */
     r = HF_FALLBACK;
     sector = hsec + (id >> HASH_PAGE_SHIFT) * HASH_PAGE_SECTORS;
-    if (dk_fw_storage_block_read(sector, PAGE_BYTES, pbuf) != 0) goto put;
+    if (dk_fw_storage_block_read(sector, PAGE_BYTES, pbuf) != 0)
+        goto put;
     old = ((u32 *)pbuf)[id & (HASH_PAGE_WORDS - 1u)];
     ((u32 *)pbuf)[id & (HASH_PAGE_WORDS - 1u)] = hv;
     if (dk_fw_storage_block_write(sector, PAGE_BYTES, pbuf) != 0 || cut == 9) {
@@ -628,7 +705,8 @@ static int32_t close_file(u8 *hash_out)
 {
     i32 r;
     u32 i;
-    if (dead) return E_WRITE;
+    if (dead)
+        return E_WRITE;
     if (!st_open || broken || written + ZERO_TAIL != total) {
         int bad = broken;
         dkpw_abort();
@@ -664,7 +742,7 @@ static int32_t close_file(u8 *hash_out)
     if (r == HF_FALLBACK)
 #endif
     {
-        r = dk_fw_storage_file_hash(hnd);   /* rebuilds the table itself */
+        r = dk_fw_storage_file_hash(hnd); /* rebuilds the table itself */
         PW_T1(pw_e_hash);
         if (r != 0) {
             dkpw_abort();
@@ -682,7 +760,9 @@ static int32_t close_file(u8 *hash_out)
         dkpw_abort();
         return E_WRITE;
     }
-    if (hash_out) for (i = 0; i < 4; i++) hash_out[i] = (u8)(inf[1] >> (24 - 8 * i));
+    if (hash_out)
+        for (i = 0; i < 4; i++)
+            hash_out[i] = (u8)(inf[1] >> (24 - 8 * i));
     if (have_want) {
         for (i = 0; i < 4; i++) {
             if (want[i] != (u8)(inf[1] >> (24 - 8 * i))) {
@@ -691,11 +771,12 @@ static int32_t close_file(u8 *hash_out)
             }
         }
     }
-    if (cut_at(2)) return E_WRITE;
+    if (cut_at(2))
+        return E_WRITE;
     PW_T0();
     r = place();
     PW_T1(pw_e_place);
-    st_live = 0;   /* moved into place, or removed by `place`, or left for the recovery */
+    st_live = 0; /* moved into place, or removed by `place`, or left for the recovery */
     return r;
 }
 
@@ -710,13 +791,18 @@ int32_t dkpw_delete(const u8 *path)
 {
     u32 n = slen((const char *)path), i, id;
     int at;
-    if (n == 0 || n + 1 >= DEST_MAX || in_factory((const char *)path)) return E_PATH;
+    if (n == 0 || n + 1 >= DEST_MAX || in_factory((const char *)path))
+        return E_PATH;
     dest[0] = '/';
-    for (i = 0; i <= n; i++) dest[1 + i] = (char)path[i];
+    for (i = 0; i <= n; i++)
+        dest[1 + i] = (char)path[i];
     at = lookup(dest, &id);
-    if (at == 0) return E_NOFILE;
-    if (at == 2) return E_PATH;
-    if (dk_fw_storage_file_id_open(id)) return E_FILE_IN_USE;
+    if (at == 0)
+        return E_NOFILE;
+    if (at == 2)
+        return E_PATH;
+    if (dk_fw_storage_file_id_open(id))
+        return E_FILE_IN_USE;
     return f_delete(dest) == 0 ? 0 : E_FILE_IN_USE;
 }
 
@@ -737,10 +823,13 @@ static i32 collect(u32 *foreign)
 {
     u32 n = 0;
     int j;
-    if (!dir_open(STAGE_DIR)) return -1;
+    if (!dir_open(STAGE_DIR))
+        return -1;
     while (n < NAMES && dir_next()) {
-        if (ours(ENT_NAME, &j)) scopy(names[n++], ENT_NAME);
-        else (*foreign)++;
+        if (ours(ENT_NAME, &j))
+            scopy(names[n++], ENT_NAME);
+        else
+            (*foreign)++;
     }
     return (i32)n;
 }
@@ -750,12 +839,16 @@ static int journal_read(const char *jp)
 {
     i32 got;
     u32 i;
-    if (f_info(jp, inf) != 0) return 0;
-    if (dk_fw_storage_path_open((const u8 *)jp, (const u8 *)"r", rh) != 0) return 0;
+    if (f_info(jp, inf) != 0)
+        return 0;
+    if (dk_fw_storage_path_open((const u8 *)jp, (const u8 *)"r", rh) != 0)
+        return 0;
     got = dk_fw_storage_path_read(jbuf, 256, rh);
     dk_fw_storage_path_close(rh);
-    if (got < 3 || got >= 256 || jbuf[got - 1] != 0 || jbuf[0] != '/') return 0;
-    for (i = 0; i < (u32)got; i++) recpath[i] = (char)jbuf[i];
+    if (got < 3 || got >= 256 || jbuf[got - 1] != 0 || jbuf[0] != '/')
+        return 0;
+    for (i = 0; i < (u32)got; i++)
+        recpath[i] = (char)jbuf[i];
     return slen(recpath) + 1 == (u32)got;
 }
 
@@ -763,15 +856,18 @@ int32_t dkpw_recover(u32 *out)
 {
     u32 round, k, foreign = 0;
     out[0] = out[1] = out[2] = out[3] = 0;
-    if (!mounted()) return -1;
-    if (dead) return 0;   /* a simulated power cut: nothing runs */
-    rebuild_table();      /* the end of an upload batch */
+    if (!mounted())
+        return -1;
+    if (dead)
+        return 0;    /* a simulated power cut: nothing runs */
+    rebuild_table(); /* the end of an upload batch */
     for (round = 0; round < 64; round++) {
         u32 progress = 0, left = 0, id;
         i32 n;
         foreign = 0;
         n = collect(&foreign);
-        if (n <= 0) break;
+        if (n <= 0)
+            break;
         for (k = 0; k < (u32)n; k++) {
             char sp[48], jp[56];
             int is_j = 0;
@@ -779,7 +875,7 @@ int32_t dkpw_recover(u32 *out)
             in_stage(sp, names[k]);
             if (is_j) {
                 in_stage(jp, names[k]);
-                sp[slen(sp) - 5] = 0;   /* the staged file of this journal */
+                sp[slen(sp) - 5] = 0; /* the staged file of this journal */
                 if (journal_read(jp) && f_info(sp, inf) == 0 && lookup(recpath, &id) == 0) {
                     /* a hashed staged file and a destination that is gone: finish the replace */
                     parents(recpath);
@@ -795,20 +891,25 @@ int32_t dkpw_recover(u32 *out)
                 /* Anything else: the destination is there, or the journal or the staged file is not whole. The destination is either the old
                  * file (a cut before its delete) or the new file under two names (a cut inside the rename; the link count is 2). Deleting
                  * the staged name drops the new data in the first case and only the extra name in the second, never the destination's data. */
-                if (f_delete(sp) == 0) out[1]++;
-                if (f_delete(jp) == 0) out[1]++;
+                if (f_delete(sp) == 0)
+                    out[1]++;
+                if (f_delete(jp) == 0)
+                    out[1]++;
                 progress++;
             } else {
                 char jn[56];
                 scopy(jn, sp);
                 scopy(jn + slen(jn), ".dest");
-                if (lookup(jn, &id)) continue;   /* its journal decides */
-                if (f_delete(sp) == 0) out[1]++;
+                if (lookup(jn, &id))
+                    continue; /* its journal decides */
+                if (f_delete(sp) == 0)
+                    out[1]++;
                 progress++;
             }
         }
         out[2] += left;
-        if (!progress || n < (i32)NAMES) break;
+        if (!progress || n < (i32)NAMES)
+            break;
     }
     out[3] = foreign;
     tidy();

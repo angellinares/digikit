@@ -6,20 +6,22 @@
 #include "dkrt_pool.h"
 #include "cf/pool_nw32.h"
 
-#define SP_SLOTS 0x400u           /* stock sample slots 0 .. 0x3ff */
-#define SP_KEY_WORDS 4u           /* key: 16 bytes per slot */
-#define SP_KEY_FREE 0xffffffffu   /* word 0 of the key of a released or reset slot */
-#define SP_REC_BYTES 0x34u        /* record stride of the stock record vector */
-#define SP_REC_BLOCK 0x10u        /* record +0x10: pool block offset */
-#define SP_REC_EXTENT 0x14u       /* record +0x14: rounded extent A */
-#define SP_POOL_LIMIT 0x19000400u /* the loader's append limit on the block offset space (finding 109 section 2) */
+#define SP_SLOTS 0x400u         /* stock sample slots 0 .. 0x3ff */
+#define SP_KEY_WORDS 4u         /* key: 16 bytes per slot */
+#define SP_KEY_FREE 0xffffffffu /* word 0 of the key of a released or reset slot */
+#define SP_REC_BYTES 0x34u      /* record stride of the stock record vector */
+#define SP_REC_BLOCK 0x10u      /* record +0x10: pool block offset */
+#define SP_REC_EXTENT 0x14u     /* record +0x14: rounded extent A */
+#define SP_POOL_LIMIT                                                                              \
+    0x19000400u /* the loader's append limit on the block offset space (finding 109 section 2) */
 
 /* Fill the handle's planes and frame count for a loaded block (finding 81 "Stereo storage"):
  * block = record +0x10, extent = record +0x14 (A, the loader's own rounded size), pcm = P from the file header (bytes 4..8; the frames
  * come from it, the 16-byte trailer is optional), file_bytes = key word 2 (must hold 64 + P), pool_base = the DSP view of the pool origin.
  * Mono: PCM at block + 64, both planes the same. Stereo: left at block + 32, right at block + A/2 + 32. Frames = P / (2 * channels).
  * Also sets rate (SP_NATIVE_RATE) and channels. Returns 0, or DKPOOL_E_FORMAT when the numbers do not describe a PCM16 block that lies inside its extent. */
-static inline int32_t sp_geometry(uint32_t pool_base, uint32_t block, uint32_t extent, uint32_t stereo, uint32_t pcm, uint32_t file_bytes,
+static inline int32_t sp_geometry(uint32_t pool_base, uint32_t block, uint32_t extent,
+                                  uint32_t stereo, uint32_t pcm, uint32_t file_bytes,
                                   dkpool_handle *out)
 {
     uint32_t chan = stereo ? 2u : 1u, plane, frame_bytes = 2u * chan, l, r;
@@ -27,7 +29,8 @@ static inline int32_t sp_geometry(uint32_t pool_base, uint32_t block, uint32_t e
         return DKPOOL_E_FORMAT;
     plane = pcm / chan;
     /* the left plane ends before the right one starts, and the right one ends inside the extent */
-    if (extent == 0 || (stereo ? (plane > extent / 2u || extent / 2u + 32u + plane > extent) : (64u + plane > extent)))
+    if (extent == 0 || (stereo ? (plane > extent / 2u || extent / 2u + 32u + plane > extent)
+                               : (64u + plane > extent)))
         return DKPOOL_E_FORMAT;
     l = pool_base + block + (stereo ? 32u : 64u);
     r = stereo ? pool_base + block + extent / 2u + 32u : l;

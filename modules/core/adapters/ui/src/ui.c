@@ -73,13 +73,13 @@ typedef struct row {
 
 struct dk_ui_menu {
     const dk_ui_menu_desc *d;
-    uint8_t *obj;        /* the Menu object; the View sub-object is at +0x38 */
-    shared_ptr *sp;      /* kept for the session; in the firmware heap */
+    uint8_t *obj;   /* the Menu object; the View sub-object is at +0x38 */
+    shared_ptr *sp; /* kept for the session; in the firmware heap */
     uint8_t *font;
     uint8_t kind;
     uint8_t filling;
-    dk_ui_menu *owner;   /* a panel: its list */
-    dk_ui_menu *panel;   /* a list: its side panel */
+    dk_ui_menu *owner; /* a panel: its list */
+    dk_ui_menu *panel; /* a list: its side panel */
     row *rows;
     int n, cap;
 };
@@ -241,14 +241,16 @@ static row *add_row(dk_ui_menu *m)
 
 /* One MenuItem with a text label and an action. `adj` is an empty or an encoder function, `draw` 0 (no value drawn) or the function
    that draws the value. `keep_icon`: keep the stock icon the builder gives every item (a row among the stock SETTINGS rows). */
-static uint8_t *make_item(const char *text, const fn *act, const fn *adj, const fn *draw, int keep_icon)
+static uint8_t *make_item(const char *text, const fn *act, const fn *adj, const fn *draw,
+                          int keep_icon)
 {
     char label[DK_UI_ROW];
     cut(label, sizeof label, text);
     uint8_t *item = fw_new(sizeof(MenuItem));
     if (!item)
         return 0;
-    dk_fw_menu_item_builder(item, label, (const std_function *)act, stock_icon(), (const std_function *)adj);
+    dk_fw_menu_item_builder(item, label, (const std_function *)act, stock_icon(),
+                            (const std_function *)adj);
     if (keep_icon)
         return item;
     /* the builder gave the item the stock icon's draw function; drop it (its manager frees the copied bitmap) */
@@ -309,7 +311,8 @@ static void value_changed(dk_ui_menu *m)
 static void add_item(dk_ui_menu *m, const char *text, int i, int with_value)
 {
     char label[DK_UI_ROW];
-    int in_list = m->kind == K_LIST && with_value && (m->rows[i].kind == R_TOGGLE || m->rows[i].kind == R_VALUE);
+    int in_list = m->kind == K_LIST && with_value &&
+                  (m->rows[i].kind == R_TOGGLE || m->rows[i].kind == R_VALUE);
     if (in_list) {
         value_label(label, text, &m->rows[i]);
         text = label;
@@ -341,7 +344,8 @@ void dk_ui_stock_row(uint8_t *stock_menu, const char *text, dk_ui_act_fn *fn_, v
         dk_fw_menu_add_item(stock_menu, item);
 }
 
-static void add(dk_ui_menu *m, const char *text, uint8_t kind, dk_ui_act_fn *fn_, void *ctx, int arg, int with_value)
+static void add(dk_ui_menu *m, const char *text, uint8_t kind, dk_ui_act_fn *fn_, void *ctx,
+                int arg, int with_value)
 {
     if (!m)
         return;
@@ -467,7 +471,8 @@ void dk_ui_toggle(dk_ui_menu *m, const char *text, int *value, dk_ui_act_fn *cha
     invalidate(m);
 }
 
-void dk_ui_value(dk_ui_menu *m, const char *text, int *value, int min, int max, dk_ui_act_fn *changed, void *ctx)
+void dk_ui_value(dk_ui_menu *m, const char *text, int *value, int min, int max,
+                 dk_ui_act_fn *changed, void *ctx)
 {
     if (!m)
         return;
@@ -501,7 +506,9 @@ static int is_thunk(uint32_t addr)
 
 static int rows_of(const uint8_t *obj)
 {
-    return (int)((read_u32(obj + offsetof(CompactVerticalMenuView, items_end)) - read_u32(obj + offsetof(CompactVerticalMenuView, items_begin))) >> 3);
+    return (int)((read_u32(obj + offsetof(CompactVerticalMenuView, items_end)) -
+                  read_u32(obj + offsetof(CompactVerticalMenuView, items_begin))) >>
+                 3);
 }
 
 /* A text page paints without the highlighted row: the cursor is set out of range around the stock paint. */
@@ -569,7 +576,8 @@ static uint32_t list_key(uint8_t *view, uint8_t *ev)
         if (id == KEY_NO && (fl & 16) && m->d->back && m->d->back(m->d->ctx) == 1)
             return 1;
         if (m->n == 0) /* only the hidden item: nothing to move on or act on; NO closes */
-            return id == KEY_NO ? ((uint32_t(*)(uint8_t *, uint8_t *))g_list_stock_key)(view, ev) : 1;
+            return id == KEY_NO ? ((uint32_t (*)(uint8_t *, uint8_t *))g_list_stock_key)(view, ev)
+                                : 1;
         if (id == KEY_RIGHT && (fl & 1) && m->d->panel && p->has_right) {
             open_panel(m);
             return 1;
@@ -581,11 +589,12 @@ static uint32_t list_key(uint8_t *view, uint8_t *ev)
             return 1;
         }
     }
-    return ((uint32_t(*)(uint8_t *, uint8_t *))g_list_stock_key)(view, ev);
+    return ((uint32_t (*)(uint8_t *, uint8_t *))g_list_stock_key)(view, ev);
 }
 
 /* Copies the View vtable of `obj` into `copy` and replaces slot 4 (and slot 2 when key is not 0). 0 when a slot is not the thunk. */
-static int own_vtable(uint8_t *obj, uint32_t *copy, uint32_t *stock_paint, uint32_t *stock_key, void *paint, void *key)
+static int own_vtable(uint8_t *obj, uint32_t *copy, uint32_t *stock_paint, uint32_t *stock_key,
+                      void *paint, void *key)
 {
     uint32_t *old = *(uint32_t **)(obj + VIEW_AT);
     if (old == &copy[2])
@@ -623,7 +632,8 @@ static int build_menu(dk_ui_menu *m, const dk_ui_menu_desc *d)
         m->font = obj + CMP_FONT_AT;
         *(dk_ui_menu **)(obj + POP_EXT_AT) = m;
         m->obj = obj;
-        if (!own_vtable(obj, g_list_vt, &g_list_stock_paint, &g_list_stock_key, (void *)list_paint, (void *)list_key))
+        if (!own_vtable(obj, g_list_vt, &g_list_stock_paint, &g_list_stock_key, (void *)list_paint,
+                        (void *)list_key))
             goto fail;
         dk_ui_menu *pm = (dk_ui_menu *)fw_new(sizeof(dk_ui_menu));
         if (!pm)
@@ -640,7 +650,8 @@ static int build_menu(dk_ui_menu *m, const dk_ui_menu_desc *d)
         dk_fw_menu_vertical_menu_view_ctor(obj, d->name, 8, &title, 0);
         m->obj = obj;
         m->font = *(uint8_t **)(obj + VMV_FONT_AT);
-        if (m->kind == K_TEXT && !own_vtable(obj, g_text_vt, &g_text_stock_paint, 0, (void *)text_paint, 0))
+        if (m->kind == K_TEXT &&
+            !own_vtable(obj, g_text_vt, &g_text_stock_paint, 0, (void *)text_paint, 0))
             goto fail;
     }
     dk_fw_string_std_string_dtor(&title);
@@ -672,7 +683,9 @@ dk_ui_menu *dk_ui_menu_new(const dk_ui_menu_desc *d)
     if (!m)
         return 0;
     m->d = d;
-    m->kind = d->flags & (DK_UI_LIST | DK_UI_WIDE) ? K_LIST : d->flags & DK_UI_TEXT_PAGE ? K_TEXT : K_MENU;
+    m->kind = d->flags & (DK_UI_LIST | DK_UI_WIDE) ? K_LIST
+              : d->flags & DK_UI_TEXT_PAGE         ? K_TEXT
+                                                   : K_MENU;
     if (!build_menu(m, d))
         return 0; /* the partly built objects stay: the firmware heap is not given back */
     return m;
@@ -691,7 +704,8 @@ static void refill(dk_ui_menu *m, int top)
         m->d->fill(m, m->d->ctx);
     m->filling = 0;
     if (m->n == 0 && m->kind == K_LIST)
-        add_item(m, "", 0, 0); /* the hidden item of an empty list: m->n stays 0, so run_row ignores it */
+        add_item(m, "", 0,
+                 0); /* the hidden item of an empty list: m->n stays 0, so run_row ignores it */
     int count = rows_of(m->obj);
     if (count > 0) {
         if (sel >= count)
@@ -731,7 +745,8 @@ void dk_ui_select(dk_ui_menu *m, int row_)
 {
     if (!m || !m->obj || !m->d || m->kind == K_PANEL || row_ < 0)
         return;
-    ((CompactVerticalMenuView *)m->obj)->selected = (uint32_t)row_; /* the next fill puts the cursor there (clamped to the rows) */
+    ((CompactVerticalMenuView *)m->obj)->selected =
+        (uint32_t)row_; /* the next fill puts the cursor there (clamped to the rows) */
     if (dk_ui_is_open(m))
         refill(m, 0);
 }
@@ -853,7 +868,8 @@ int dk_ui_confirm(const char *title, const char *text, void (*done)(void *, int)
     return 0;
 }
 
-int dk_ui_choice(const char *title, const char *const *items, int n, void (*done)(void *, int), void *ctx)
+int dk_ui_choice(const char *title, const char *const *items, int n, void (*done)(void *, int),
+                 void *ctx)
 {
     if (g_open || !items || n <= 0 || n > MAX_CHOICE)
         return -1;

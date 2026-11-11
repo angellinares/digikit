@@ -17,17 +17,17 @@ static const dk_chooser_desc *g_d;
 static dk_ui_menu *g_list, *g_browser, *g_finfo;
 static dk_ui_menu_desc g_list_desc, g_browser_desc, g_finfo_desc;
 
-static int g_cur;              /* the slot marked in the list; -1 none */
-static int g_slot;             /* the slot the browser loads into */
-static char g_dir[DK_CHOOSER_PATH];    /* the folder shown, root-relative, "" is the root */
-static char g_path[DK_CHOOSER_PATH];   /* scratch: a path to fill or show */
+static int g_cur;                    /* the slot marked in the list; -1 none */
+static int g_slot;                   /* the slot the browser loads into */
+static char g_dir[DK_CHOOSER_PATH];  /* the folder shown, root-relative, "" is the root */
+static char g_path[DK_CHOOSER_PATH]; /* scratch: a path to fill or show */
 static dk_chooser_row g_rows[DK_CHOOSER_ROWS];
 static uint8_t g_idx[DK_CHOOSER_ROWS]; /* g_rows in sort order */
 static int g_n, g_more, g_state, g_err;
 static int32_t g_ticket;
 static dk_file_entry g_entry;
 static int g_ticking;
-static int g_info_at;          /* the file INFO page shows the file at this sorted index */
+static int g_info_at; /* the file INFO page shows the file at this sorted index */
 
 static void fill_list(dk_ui_menu *m, void *ctx);
 static void fill_browser(dk_ui_menu *m, void *ctx);
@@ -214,7 +214,8 @@ static void add_entry(void)
     int i, full;
     if ((g_entry.kind != DK_FILE_FILE && g_entry.kind != DK_FILE_DIRECTORY) || !leaf[0])
         return;
-    if (slen(leaf) >= DK_CHOOSER_NAME) { /* a name that does not fit is not shown; it counts as hidden */
+    if (slen(leaf) >=
+        DK_CHOOSER_NAME) { /* a name that does not fit is not shown; it counts as hidden */
         g_more++;
         return;
     }
@@ -411,8 +412,8 @@ int dk_chooser_init(const dk_api *api)
     g_client = 0;
     g_api = api;
     g_d = 0;
-    if (!api || api->size < offsetof(dk_api, files_cancel) + sizeof api->files_cancel || !api->files_client || !api->files_list
-        || !api->files_poll || !api->files_cancel)
+    if (!api || api->size < offsetof(dk_api, files_cancel) + sizeof api->files_cancel ||
+        !api->files_client || !api->files_list || !api->files_poll || !api->files_cancel)
         return -1;
     {
         int32_t c = api->files_client();
@@ -425,16 +426,27 @@ int dk_chooser_init(const dk_api *api)
 
 int dk_chooser_open(const dk_chooser_desc *d, int current)
 {
-    if (!g_api || !g_client || !d || !d->row || !d->fill || !dk_ui_has(DK_UI_CAP_LIST) || !dk_ui_has(DK_UI_CAP_TEXT_PAGE))
+    if (!g_api || !g_client || !d || !d->row || !d->fill || !dk_ui_has(DK_UI_CAP_LIST) ||
+        !dk_ui_has(DK_UI_CAP_TEXT_PAGE))
         return -1;
     g_d = d;
     g_cur = current;
     if (!g_list) {
-        g_list_desc = (dk_ui_menu_desc){.name = "Chooser", .title = d->title, .flags = DK_UI_LIST, .fill = fill_list,
-                                        .panel = panel_list, .check = check_list};
-        g_browser_desc = (dk_ui_menu_desc){.name = "ChooserBrowse", .title = d->title, .flags = DK_UI_LIST, .fill = fill_browser,
-                                           .panel = panel_browser, .check = check_browser, .back = back_browser};
-        g_finfo_desc = (dk_ui_menu_desc){.name = "ChooserFile", .title = "INFO", .flags = DK_UI_TEXT_PAGE, .fill = fill_finfo};
+        g_list_desc = (dk_ui_menu_desc){.name = "Chooser",
+                                        .title = d->title,
+                                        .flags = DK_UI_LIST,
+                                        .fill = fill_list,
+                                        .panel = panel_list,
+                                        .check = check_list};
+        g_browser_desc = (dk_ui_menu_desc){.name = "ChooserBrowse",
+                                           .title = d->title,
+                                           .flags = DK_UI_LIST,
+                                           .fill = fill_browser,
+                                           .panel = panel_browser,
+                                           .check = check_browser,
+                                           .back = back_browser};
+        g_finfo_desc = (dk_ui_menu_desc){
+            .name = "ChooserFile", .title = "INFO", .flags = DK_UI_TEXT_PAGE, .fill = fill_finfo};
         g_list = dk_ui_menu_new(&g_list_desc);
         g_browser = dk_ui_menu_new(&g_browser_desc);
         g_finfo = dk_ui_menu_new(&g_finfo_desc);

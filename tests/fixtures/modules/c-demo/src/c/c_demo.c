@@ -34,15 +34,15 @@ int32_t dkm_init(const dk_api *api)
     s64 c = (s64)c_demo_in[2], d = (s64)c_demo_in[3];
     u32 n0 = c_demo_n[0], n1 = c_demo_n[1], n2 = c_demo_n[2];
 
-    put(0, a / b);          /* __udivdi3 */
-    put(1, a % b);          /* __umoddi3 */
-    put(2, (u64)(c / d));   /* __divdi3 */
-    put(3, (u64)(c % d));   /* __moddi3 */
-    put(4, a * b);          /* __muldi3 */
-    put(5, a << n0);        /* __ashldi3 */
-    put(6, a >> n1);        /* __lshrdi3 */
-    put(7, (u64)(c >> n2)); /* __ashrdi3 */
-    put(8, (u64)(c * d));   /* __muldi3, signed */
+    put(0, a / b);              /* __udivdi3 */
+    put(1, a % b);              /* __umoddi3 */
+    put(2, (u64)(c / d));       /* __divdi3 */
+    put(3, (u64)(c % d));       /* __moddi3 */
+    put(4, a * b);              /* __muldi3 */
+    put(5, a << n0);            /* __ashldi3 */
+    put(6, a >> n1);            /* __lshrdi3 */
+    put(7, (u64)(c >> n2));     /* __ashrdi3 */
+    put(8, (u64)(c * d));       /* __muldi3, signed */
     c_demo_out[0] = 0x43444D4F; /* "CDMO" */
     api->log((const uint8_t *)"c-demo results", (u32)c_demo_out);
     return 0;

@@ -47,18 +47,18 @@
 #include <dk/core/status.h>
 #include <dk/platform/files.h>
 
-#define DK_FILE_REPLACE   1u  /* file_create flag: replace an existing file atomically */
-#define DK_FILE_E_BUSY    DK_E_BUSY
-#define DK_FILE_E_EXISTS  DK_E_EXISTS
+#define DK_FILE_REPLACE 1u /* file_create flag: replace an existing file atomically */
+#define DK_FILE_E_BUSY DK_E_BUSY
+#define DK_FILE_E_EXISTS DK_E_EXISTS
 #define DK_FILE_E_CONTEXT DK_E_CONTEXT
-#define DK_FILE_E_PATH    DK_E_PATH
-#define DK_FILE_E_FULL    DK_E_FULL
-#define DK_FILE_E_STATE   DK_E_STATE
-#define DK_FILE_E_OFFSET  DK_E_OFFSET
-#define DK_FILE_E_LENGTH  DK_E_LENGTH
-#define DK_FILE_E_HASH    DK_E_HASH
-#define DK_FILE_E_WRITE   DK_E_WRITE
-#define DK_FILE_E_NOFILE  DK_E_NOFILE
+#define DK_FILE_E_PATH DK_E_PATH
+#define DK_FILE_E_FULL DK_E_FULL
+#define DK_FILE_E_STATE DK_E_STATE
+#define DK_FILE_E_OFFSET DK_E_OFFSET
+#define DK_FILE_E_LENGTH DK_E_LENGTH
+#define DK_FILE_E_HASH DK_E_HASH
+#define DK_FILE_E_WRITE DK_E_WRITE
+#define DK_FILE_E_NOFILE DK_E_NOFILE
 #define DK_FILE_E_FILE_IN_USE DK_E_FILE_IN_USE
 
 #endif

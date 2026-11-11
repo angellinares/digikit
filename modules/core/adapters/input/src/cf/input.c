@@ -36,13 +36,14 @@ extern const u32 input_cfg[];
 #define CFG_LINEAR 1
 #define CFG_ENCODERS 2
 #define CFG_EXC_N 3
-#define CFG_EXC 4 /* 8 x (code, channel, bit) */
+#define CFG_EXC 4        /* 8 x (code, channel, bit) */
 #define CFG_BUTTON_CH 28 /* the channels the button decoder has tables for */
 
 /* firmware (anchors by hash in the port files): the decoders, and the literals that locate their state */
 extern void input_fw_key(u32 channel, u32 mask);
 extern void input_fw_turn(u32 encoder0, int delta);
-extern volatile u32 input_mask_lit;  /* the literal: address of the previous mask of channel 0 (one byte per channel) */
+extern volatile u32
+    input_mask_lit; /* the literal: address of the previous mask of channel 0 (one byte per channel) */
 extern volatile u32 input_queue_lit; /* the literal: address of the UI queue object's pointer */
 
 /* events one decoder call may add at most (a key: one per changed bit, here one bit; a turn: one) plus a margin */

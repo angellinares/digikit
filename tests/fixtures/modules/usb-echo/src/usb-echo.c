@@ -71,7 +71,9 @@ static i32 step(u8 *ctx)
                 return DK_IO_WAIT;
             u32 n = cur_len - cur_off < PIECE ? cur_len - cur_off : PIECE;
             i32 r = usb_bulk_send(cur + cur_off, n);
-            if (r == E_BUSY || r == E_AGAIN) { /* both slots in flight, or the engine refused: the adapter wakes the job */
+            if (r == E_BUSY ||
+                r ==
+                    E_AGAIN) { /* both slots in flight, or the engine refused: the adapter wakes the job */
                 busy_count++;
                 return DK_IO_WAIT;
             }

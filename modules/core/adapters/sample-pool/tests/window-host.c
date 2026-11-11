@@ -28,7 +28,8 @@ static int fail(const char *what, uint32_t a, uint32_t b)
 }
 
 /* Feed the window in pieces of `piece` frames (0: all at once). pcm holds frames from `window_first`, so frame f is at index f - window_first. */
-static void run(int16_t *out, uint32_t columns, uint32_t first, uint32_t frames, uint32_t channels, uint32_t piece)
+static void run(int16_t *out, uint32_t columns, uint32_t first, uint32_t frames, uint32_t channels,
+                uint32_t piece)
 {
     uint32_t at = first;
     memset(out, 0, columns * 4u);
@@ -36,14 +37,16 @@ static void run(int16_t *out, uint32_t columns, uint32_t first, uint32_t frames,
         uint32_t n = first + frames - at;
         if (piece && n > piece)
             n = piece;
-        spp_window_feed(out, columns, first, frames, at, pcm + (at - first) * channels * 2u, n, channels);
+        spp_window_feed(out, columns, first, frames, at, pcm + (at - first) * channels * 2u, n,
+                        channels);
         at += n;
         if (piece && piece > 1u)
-            piece = piece % 7u + 1u;   /* odd, changing sizes */
+            piece = piece % 7u + 1u; /* odd, changing sizes */
     }
 }
 
-static int check(uint32_t columns, uint32_t first, uint32_t frames, uint32_t channels, uint32_t piece)
+static int check(uint32_t columns, uint32_t first, uint32_t frames, uint32_t channels,
+                 uint32_t piece)
 {
     int16_t out[MAXC * 2u], ref[MAXC * 2u];
     uint32_t col, f;
@@ -55,14 +58,16 @@ static int check(uint32_t columns, uint32_t first, uint32_t frames, uint32_t cha
         for (f = 0; f < frames; f++)
             if ((uint64_t)f * columns / frames == col) {
                 int32_t a = (int32_t)(f + 1u), b = channels == 2 ? -a : a;
-                if (a > hi) hi = a;
-                if (b < lo) lo = b;
+                if (a > hi)
+                    hi = a;
+                if (b < lo)
+                    lo = b;
             }
         ref[col * 2u] = (int16_t)lo;
         ref[col * 2u + 1u] = (int16_t)hi;
         if (out[col * 2u] != ref[col * 2u] || out[col * 2u + 1u] != ref[col * 2u + 1u]) {
-            fprintf(stderr, "column %u: got {%d, %d} want {%d, %d}\n", col, out[col * 2u], out[col * 2u + 1u], ref[col * 2u],
-                    ref[col * 2u + 1u]);
+            fprintf(stderr, "column %u: got {%d, %d} want {%d, %d}\n", col, out[col * 2u],
+                    out[col * 2u + 1u], ref[col * 2u], ref[col * 2u + 1u]);
             return fail("column", columns, frames);
         }
     }
@@ -81,7 +86,8 @@ int main(void)
             for (j = 0; j < sizeof frs / sizeof *frs; j++)
                 for (k = 0; k < sizeof pieces / sizeof *pieces; k++) {
                     /* a window that does not start at frame 0 gives the same columns: only the frame indices shift */
-                    if (check(cols[i], 0, frs[j], ch, pieces[k]) || check(cols[i], 12345u, frs[j], ch, pieces[k]))
+                    if (check(cols[i], 0, frs[j], ch, pieces[k]) ||
+                        check(cols[i], 12345u, frs[j], ch, pieces[k]))
                         return 1;
                 }
     /* more columns than frames: every frame lands in one column, the others stay empty */
