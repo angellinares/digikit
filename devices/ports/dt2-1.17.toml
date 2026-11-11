@@ -2995,6 +2995,16 @@ mark = "D"
 rule = "fw/usb:cf_func"
 
 [[anchor]]
+name = "cf.usb.fn.mode_switch"
+cpu = "cf"
+kind = "code"
+addr = 0x40006c16
+len = 4
+sha256 = "e55cb9eb6848781ac430a42dab0c41908a214ea6edea999929995e5df4c3a358"
+mark = "D"
+rule = "fw/usb:cf_func"
+
+[[anchor]]
 name = "cf.usb.fn.queue_td"
 cpu = "cf"
 kind = "code"
@@ -3042,6 +3052,17 @@ addr = 0x40965a60
 src = 0x40006c2a
 len = 4
 sha256 = "f88176fbb7ddc7220793fd8114c0031b3beed3ab72dd5aecb95e9caf88871fb6"
+mark = "D"
+rule = "fw/usb:cf_literal"
+
+[[anchor]]
+name = "cf.usb.value.config_mode"
+cpu = "cf"
+kind = "value"
+addr = 0x4099d5c4
+src = 0x400c116a
+len = 4
+sha256 = "fb3ce5d2338bee93bf1db597f8cf5684f8fe110aef99d1af76de6d8f3f5cdbb0"
 mark = "D"
 rule = "fw/usb:cf_literal"
 

@@ -6,6 +6,8 @@
  * is 1); 2 send the first piece of a buffer, then hold it. A bus reset (the reset count changes) ends a hold: the buffer is released at once.
  * ECHO_CMD + 2 (0x2e) REENABLE, no body: usb_bulk_disable, forget the buffer and the hold mode, and an io_wake of the job: its next step calls usb_bulk_enable again and
  * stores the result (a refused enable leaves the job waiting, so a later REENABLE can enable again).
+ * ECHO_CMD + 3 (0x2f) TAKEOVER, body u8 op: 0 usb_bulk_takeover (also the renew), 1 usb_bulk_giveback; reply: i32 result (the module does not enable the interface itself
+ * after a take-over: REENABLE does, once the device is in USB MIDI mode).
  * ECHO_CMD (0x2c): STATUS, reply: i32 result of usb_bulk_enable, u32 usb_bulk_state, u32 steps, u32 buffers taken, u32 bytes taken, u32 bytes sent,
  * u32 times a send was busy, i32 job id, u32 the reset count seen by the job. */
 #include <dk/api.h>
@@ -111,6 +113,10 @@ static i32 command(u32 cmd, u32 seq, const u8 *body, u32 len, u8 *out)
         sdk->io_wake(job_id);
         return 0;
     }
+    if (cmd == ECHO_CMD + 3) {
+        put32(out, (u32)(len > 0 && body[0] == 1 ? usb_bulk_giveback() : usb_bulk_takeover()));
+        return 4;
+    }
     if (cmd != ECHO_CMD)
         return -50;
     put32(out, (u32)enable_rc);
@@ -139,5 +145,5 @@ i32 dkm_init(const dk_api *api)
     job_id = api->io_post(step, finished, 0);
     if (job_id <= 0)
         return job_id ? job_id : -1;
-    return api->register_cmds(ECHO_CMD, 3, command);
+    return api->register_cmds(ECHO_CMD, 4, command);
 }

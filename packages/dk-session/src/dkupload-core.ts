@@ -1124,6 +1124,15 @@ export class DkSession {
     await this.ok(SERVICE_CMD.USB_FAST_NONCE, 'usb-fast nonce', nonce);
   }
 
+  /** USB_FAST_TAKEOVER (docs/plans/usb-fast-takeover.md): ask core/usb-bulk to switch USB AUDIO/MIDI to USB MIDI about 50 ms after the reply; also the renew. E_STATE: Overbridge. */
+  async usbFastTakeOver(): Promise<void> {
+    await this.ok(SERVICE_CMD.USB_FAST_TAKEOVER, 'usb-fast take-over');
+  }
+  /** USB_FAST_RELEASE: give the USB mode back (about 50 ms after the reply). OK when nothing is taken over. */
+  async usbFastRelease(): Promise<void> {
+    await this.ok(SERVICE_CMD.USB_FAST_RELEASE, 'usb-fast release');
+  }
+
   // ---- digikit/remote (docs/plans/remote-control.md): the commands of a run-time service module -----------------------------------
   /** REMOTE_STATE: E_PROTO when digikit/remote is not loaded. */
   async remoteState(): Promise<RemoteState> {
