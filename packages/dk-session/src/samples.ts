@@ -96,6 +96,8 @@ export interface SamplesBackend {
 export interface PutOptions {
   signal?: AbortSignal;
   exists?: boolean;
+  /** The caller made the folder already (the bulk `put` on the +Drive skips its `mkdir`). */
+  folderReady?: boolean;
 }
 
 /** What the digikit backend needs of the store session (`DkSession`). */
@@ -477,7 +479,7 @@ class BulkSamples implements SamplesBackend {
     if (this.failed) return this.base.put(folder, file, onProgress, opts);
     const path = join(folder, file.name);
     // the +Drive needs the folder; the store's folders follow from the paths
-    if (!this.store && clean(folder)) await this.base.mkdir(folder);
+    if (!this.store && clean(folder) && !opts.folderReady) await this.base.mkdir(folder);
     const bytes = this.store ? file.stored : file.bytes;
     // the caller's listing says whether the file exists: then the device replaces it atomically (a failed upload keeps the old file). Without a hint
     // the backend looks once. A file that appeared after the listing is refused (E_EXISTS) and reported.

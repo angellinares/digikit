@@ -5,7 +5,8 @@
 //     node tools/devtools/wb.mjs [--port SUB] [--bin PATH] ports
 //     node tools/devtools/wb.mjs [--port SUB] [--bin PATH] info
 //     node tools/devtools/wb.mjs [--port SUB] [--bin PATH] samples ls [FOLDER]
-//     node tools/devtools/wb.mjs [--port SUB] [--bin PATH] samples put FILE... [--folder F] [--bulk auto|off|force] [--bulk-bin PATH]
+//     node tools/devtools/wb.mjs [--port SUB] [--bin PATH] samples put FILE... [--folder F] [--bulk auto|off|force] [--bulk-bin PATH] [--verify auto|always|never]
+//     node tools/devtools/wb.mjs [--port SUB] [--bin PATH] samples rm FOLDER...
 //     node tools/devtools/wb.mjs [--port SUB] [--bin PATH] store ls [PREFIX]
 //     node tools/devtools/wb.mjs [--port SUB] [--bin PATH] store put LOCAL REMOTE
 //     node tools/devtools/wb.mjs [--port SUB] [--bin PATH] store rm REMOTE
@@ -31,7 +32,7 @@ const targetRoot = existsSync(path.join(root, '.git', 'HEAD'))
   ? path.join(root, 'out/native/target')
   : path.join(root, 'dist/native-target');
 const usage =
-  'usage: node tools/devtools/wb.mjs [--port SUB] [--bin PATH] ports | info | samples ls [FOLDER] | samples put FILE... [--folder F] | store ls [PREFIX] | store put LOCAL REMOTE | store rm REMOTE';
+  'usage: node tools/devtools/wb.mjs [--port SUB] [--bin PATH] ports | info | samples ls [FOLDER] | samples put FILE... [--folder F] | samples rm FOLDER... | store ls [PREFIX] | store put LOCAL REMOTE | store rm REMOTE';
 
 // options anywhere on the line; the rest are the command words
 const args = process.argv.slice(2);
@@ -40,12 +41,13 @@ const opts = {
   bin: process.env.DKMIDI_BIN || path.join(targetRoot, 'nogen/release/dkmidi'),
   folder: '',
   bulk: 'auto',
+  verify: 'auto',
   'bulk-bin': process.env.DKBULK_BIN || path.join(targetRoot, 'nogen/release/dkbulk'),
 };
 const words = [];
 for (let i = 0; i < args.length; i++) {
   const a = args[i];
-  if (a === '--port' || a === '--bin' || a === '--folder' || a === '--bulk' || a === '--bulk-bin') {
+  if (a === '--port' || a === '--bin' || a === '--folder' || a === '--bulk' || a === '--verify' || a === '--bulk-bin') {
     if (i + 1 >= args.length) fail(`${a} needs a value`);
     opts[a.slice(2)] = args[++i];
   } else words.push(a);
@@ -164,6 +166,7 @@ if (cmd === 'ports') {
   });
 } else if (cmd === 'samples' && sub === 'put') {
   if (rest.length === 0) fail(usage);
+  if (!['auto', 'always', 'never'].includes(opts.verify)) fail('--verify is auto, always or never');
   const sample = await loadSample();
   let bulk;
   try {
@@ -171,8 +174,12 @@ if (cmd === 'ports') {
       bulk = await connectBulk(session);
       // the profile names the backend (`[storage] samples`); the Digitakt II is the stock +Drive, the Digitone II the digikit store
       // (a stock Digitakt II has no runtime to answer INFO: the +Drive then)
+      let isDt2 = false;
       const kind = await session.info().then(
-        (i) => (i.port === 'dn2' ? 'digikit' : 'stock-rpc'),
+        (i) => {
+          isDt2 = i.port === 'dt2';
+          return i.port === 'dn2' ? 'digikit' : 'stock-rpc';
+        },
         () => 'stock-rpc',
       );
       const backend = openSamples(kind, {
@@ -183,20 +190,43 @@ if (cmd === 'ports') {
       });
       const link = () => (backend.bulkState === 'bulk' ? 'bulk' : 'sysex');
       if (opts.folder) await backend.mkdir(opts.folder);
+      // one listing of the folder for the whole run: the `exists` hint of every put (REPLACE when the name is there); each put adds its name
+      const names = new Set((await backend.list(opts.folder)).filter((e) => e.kind === 'file').map((e) => e.name));
       let total = 0;
+      let tPrep = 0;
+      let tPut = 0;
+      let tVerify = 0;
+      let count = 0;
       const t0 = performance.now();
       for (const file of rest) {
         try {
           if (!statSync(file).isFile()) throw new Error('not a file');
+          let t = performance.now();
           const prepared = prepareUpload(sample, path.basename(file), Uint8Array.from(readFileSync(file)));
-          const t = performance.now();
-          await backend.put(opts.folder, prepared);
-          const s = (performance.now() - t) / 1000;
+          const prep = performance.now() - t;
+          t = performance.now();
+          await backend.put(opts.folder, prepared, undefined, { exists: names.has(prepared.name), folderReady: true });
+          names.add(prepared.name);
+          const putMs = performance.now() - t;
+          const s = putMs / 1000;
           const n = prepared.stored.length;
           total += n;
-          const v = await backend.verify(opts.folder, prepared);
+          // the Digitakt II bulk put compares the hash the firmware read back from the written file (END reply); the Digitone II hash is computed
+          // while writing, so it keeps the SysEx verify
+          // an unidentified device is verified, because only the DT2's END hash comes from a readback
+          const skip =
+            opts.verify === 'never' || (opts.verify === 'auto' && isDt2 && kind === 'stock-rpc' && link() === 'bulk');
+          t = performance.now();
+          const v = skip
+            ? { ok: true, message: opts.verify === 'never' ? 'verify skipped' : 'device hash checked at END' }
+            : await backend.verify(opts.folder, prepared);
+          const ver = performance.now() - t;
+          tPrep += prep;
+          tPut += putMs;
+          tVerify += ver;
+          count++;
           console.log(
-            `${v.ok ? 'ok  ' : 'FAIL'} ${kind === 'digikit' ? 'samples' : '+Drive'}/${opts.folder ? `${opts.folder}/` : ''}${prepared.name}  ${v.message}  ${n} bytes ${s.toFixed(2)} s ${(n / 1e6 / s).toFixed(2)} MB/s via ${link()}`,
+            `${v.ok ? 'ok  ' : 'FAIL'} ${kind === 'digikit' ? 'samples' : '+Drive'}/${opts.folder ? `${opts.folder}/` : ''}${prepared.name}  ${v.message}  ${n} bytes ${s.toFixed(2)} s ${(n / 1e6 / s).toFixed(2)} MB/s via ${link()} prep ${prep.toFixed(0)} ms put ${putMs.toFixed(0)} ms verify ${ver.toFixed(0)} ms`,
           );
           if (!v.ok) status = 1;
         } catch (e) {
@@ -208,10 +238,48 @@ if (cmd === 'ports') {
       console.log(
         `total ${total} bytes ${s.toFixed(2)} s ${(total / 1e6 / s).toFixed(2)} MB/s via ${link()} (put and verify)`,
       );
+      console.log(
+        `phases prep ${tPrep.toFixed(0)} ms put ${tPut.toFixed(0)} ms verify ${tVerify.toFixed(0)} ms, ${count} files ${(count / s).toFixed(2)} files/s`,
+      );
     });
   } finally {
     await bulk?.close();
   }
+} else if (cmd === 'samples' && sub === 'rm') {
+  if (rest.length === 0) fail(usage);
+  // the folders are cleaned first: a bad name stops the run before the device is touched
+  const folders = rest.map((arg) => {
+    const f = arg.replace(/\/+$/, '');
+    if (f === '' || f === '.' || arg.split('/').includes('..')) fail(`refusing to remove "${arg}"`);
+    return f.replace(/^\/+/, '');
+  });
+  const sample = await loadSample();
+  await withSession(async (session) => {
+    const kind = await session.info().then(
+      (i) => (i.port === 'dn2' ? 'digikit' : 'stock-rpc'),
+      () => 'stock-rpc',
+    );
+    const backend = openSamples(kind, {
+      session,
+      hashOf: (d) => sample.hash(d),
+      note: (n) => console.error(`wb: ${n}`),
+    });
+    for (const folder of folders) {
+      try {
+        const cut = folder.lastIndexOf('/');
+        const parent = cut < 0 ? '' : folder.slice(0, cut);
+        const name = folder.slice(cut + 1);
+        const listed = await backend.list(parent);
+        if (!listed.some((e) => e.kind === 'folder' && e.name === name)) throw new Error('no such folder');
+        const r = await backend.removeTree(folder);
+        if (r.stopped) throw new Error(`stopped after ${r.removed} of ${r.total} files`);
+        console.log(`removed ${folder} (${r.removed} files)`);
+      } catch (e) {
+        console.error(`FAIL ${folder}: ${e instanceof Error ? e.message : e}`);
+        status = 1;
+      }
+    }
+  });
 } else if (cmd === 'store' && sub === 'ls') {
   await withSession(async (session) => {
     for (const e of await session.list(rest[0] || undefined)) console.log(`${e.path}\t${e.size}`);
