@@ -80,7 +80,8 @@ before it runs; results go to findings 42 and 43.
 ### DT2 (after DN2 run 2)
 
 The same as DN2 runs 1 and 2, with the +Drive backup first and a cut of USB (never power) for the mid-file case. Also: the stock sample browser
-does not show the staging folder after a transfer; a replace of a sample the pool has loaded is refused (E_FILE_IN_USE).
+does not show the staging folder after a transfer; a replace of a sample loaded on a track is allowed and the loaded sample keeps playing
+(the DT2 plays from its sample RAM). The adapter's E_FILE_IN_USE only applies to a file the firmware has open at that moment.
 
 ### Rollback
 
@@ -144,13 +145,45 @@ REC drill with usb-fast selected **[D]**: a boot holding REC (safe mode) loaded 
 
 Open **[O]**: `wb.mjs samples ls` gets no reply ("no reply to MidiRpc 10") on the DN2, while `store ls` and `dkupload ls` work. Not related to bulk; to look at.
 
+### DT2 runs (2026-11-11)
+
+DT2 OS 1.17, image bacc88eae0a2bfdf, patch set `device-usb` (device + core/usb-bulk + core/plusdrive-write), commit 90c314ea. All **[D]**.
+
+- USB CONFIG was USB AUDIO/MIDI: usb-echo loaded, the adapter refused (enable -53, state bit 4), no interface, SysEx fine. After switching to
+  USB MIDI live, the usb-echo REENABLE command enabled the interface without a restart. A USB CONFIG change is not stored before a runtime
+  restart (the restart by `dk:run` reverted it): set it, wait or leave the menu, then power-cycle.
+- `dkbulk echo` identical for 1, 511, 512, 513, 1023, 1025, 2048, 4096, 16384, 65536, 262144 and 1048576 bytes; about 2.9 MB/s each way at once.
+- usb-fast to the +Drive (`wb.mjs samples put`, synthetic WAVs, all device content hashes match):
+  - 8 MB: SysEx 0.11 MB/s, Fast USB 0.94 MB/s (with verify). Later runs of the same 8 MB over Fast USB gave 1.26-1.60 MB/s: the +Drive
+    speed varies between runs, so measure several runs.
+  - 100 files of 50-500 KB (28 MB): SysEx 0.10 MB/s, Fast USB 0.25 MB/s.
+  - Uploads went to new folders only; the top-level listing before and after differs only by the new bench folders.
+- Replace of a sample loaded on a track (one-shot machine): allowed, and the loaded sample keeps playing (the DT2 plays from its 400 MB sample
+  RAM, not from the +Drive). The adapter's E_FILE_IN_USE refusal only applies to a file the firmware has open at that moment.
+- USB cut (cable only) mid-file during a 60 MB upload: the bulk link failed and no partial file exists under the real name. `wb` then fell back
+  to MidiRpc for the rest of the run even with `--bulk force` (force only decides at the start) **[O]**: a tool bug. Stopping that fallback left
+  a 0-byte file from the stock MidiRpc path (not ours). The next upload went over Fast USB (1.60 MB/s, hash matches).
+- The stock sample browser does not show the staging folder (`.dkstage`).
+- REC safe mode: no interface, 0 modules, INFO over SysEx. A normal boot loads debug and usb-fast again and an upload goes over Fast USB.
+- `wb.mjs samples ls` works on the DT2. On the DN2 it still gets no reply **[O]**.
+
 ### Next
 
 1. Done: the wrong-mode refusal (E_STATE outside USB MIDI mode) is committed in 71ba9e29.
-2. Done: DN2 run 2 (including the REC drill).
-3. DT2 runs, then `mise run test:full` and a PR to main.
-4. Then scope v2 (below).
-5. Speed lever: per-file overhead for small files (open, verify over SysEx, close).
+2. Done: DN2 run 2 (including the REC drill) and the DT2 runs.
+3. Next: the speed work. Measure the stages on hardware first: per-file overhead and storage are the costs, not USB (see the speed notes below).
+4. Then `mise run test:full`, a PR to main, then v2 (below).
+
+### Speed: where the time goes (code reading, to measure)
+
+- DN2, large file: serial copy + hash + card write on the priority-3 I/O task, plus a redundant SysEx VERIFY readback after each file (about
+  35% of the time).
+- DN2, small files, about 180 ms per file: store table rewrite + readback + 2 header writes per commit (grows with file count) + host SysEx list
+  before and list + verify after each file.
+- DT2: firmware +Drive file API in 32 KiB pieces + a firmware hash re-read at END. Per file 10-15 firmware filesystem calls (staging mkdir, open,
+  reserve, write, hash, close, info, lookup, rename, tidy, journal on replace) + host SysEx mkdir and list per file.
+- Planned: measure each stage on hardware (device timing events, host phase times, discard and write-only ceilings), then fix by measured gain.
+  The emulator is not a speed reference (it predicted DN2 5.6 and DT2 2.1 MB/s).
 
 ### v2: Fast USB in USB AUDIO/MIDI mode (agreed design, not started)
 
