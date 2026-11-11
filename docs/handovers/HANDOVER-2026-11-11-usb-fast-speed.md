@@ -29,6 +29,11 @@ usb-fast baseline) is already merged into main.
 3. Lane `../lanes/zero-dsp`, branch `exp/dn2-unreliable` (uncommitted, EXPERIMENT ONLY, never merge as is): DN2 patch set
    `device-usb-exp`: a RAM flag skips the eMMC reliable-write bit for file-data writes only (store table/headers keep it); cached RX
    reads switchable at run time; usb-fast bench selectors toggle both. Purpose: one flash, two hardware A/Bs.
+   READY (emulator-proven: with the switch on only data CMD23s lose the bit, table/header keep it; existing DN2 store tests incl. full
+   upload-faults pass). Image `out/patch/exp-unrel-dn2-1.12.syx`, module `out/patch/exp-usb-fast-dn2.dkm`. Switches: usb-fast STATUS 0x37
+   body `55 <unrel> <cached>` (reply: unrel, cached, rx_inval_lines, n_cmd23_reliable, n_cmd23_unreliable); bench `42 21 08`, results
+   `52`. Run each of the 4 combinations 3x (alternating), then 8 MB `wb samples put` stock / unrel / unrel+cached; check the END hash and
+   that n_skip and rx_inval_lines grow. Static checks and DT2 tests were not run on that branch.
 
 ## Next
 
