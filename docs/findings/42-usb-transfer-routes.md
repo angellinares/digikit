@@ -139,7 +139,8 @@ Plan: `docs/plans/usb-fast.md`. Facts below are static, DT2 1.17 and DN2 1.12 **
 - **USB DMA buffers** **[D]** sit in the uncached DDR alias (DDR + 0x0800_0000; ACR0 = 0x4007e020 makes only 0x40000000-0x47ffffff cacheable). DT2: 0x4fe3c000 (4 KiB MIDI TX
   ring), 0x4fe3d000 (EP1 RX slots, 32 x 512), 0x4fe4a000 (interrupt RX), 0x4fe53000 (EP0, 4 x 4 KiB), 0x4fe57000 (EP0 status). DN2 has the same layout at -0x1770000 (0x4e6cc000, ...).
 - **Controller setup** **[D]**: USBMODE = 0x1e (device, SLOM, SDIS), BURSTSIZE = 0x204, USBINTR = 0x157 (includes SEI); SBUSCFG and TXFILLTUNING are not written. The SEI
-  (system error) bit is only cleared: the firmware never resets the controller after it. QH caps: EP1/EP2 OUT 0x22000000 (512, ZLT off), EP2/EP3 IN 0x02000000 (512, ZLT on).
+  (system error) bit is only cleared: the firmware never resets the controller after it. Firmware QH caps: OUT EP1 (MIDI) 0x22000000 (512, ZLT off); EP1 IN in MIDI mode 0x20400000 (64, ZLT off); audio and Overbridge IN 64 bytes; only the CDC service mode
+  programs EP2 IN 0x02000000 (512, ZLT on) and EP2 OUT 0x22000000.
 - **Disconnect callback** of port 2 (`FUN_4000436e`) is not a loop: it clears ENDPTCTRL1, flushes EP1 RX and TX through ENDPTFLUSH 0xfc0b01b4 and polls
   the bits (unbounded), cancels both EP1 queues with `FUN_400059aa`, cancels the timer and clears the state words (the decompile loops because it treats
   the register reads as constant). A callback for EP2 must do the same.
@@ -172,13 +173,20 @@ Plan: `docs/plans/usb-fast.md`. Facts below are static, DT2 1.17 and DN2 1.12 **
   but DIN OS upgrade still works (finding MIDI-SYSEX-RPC 7).
 - DN2 1.12 has no FsSample dispatch, so DN2 needs the vendor route or a new RPC regardless **[O]**.
 
-## 4a. Page pointers of dTDs (hardware, DN2, 2026-11-11)
+## 4a. IN packets and the TX buffer (hardware, DN2, 2026-11-11)
 
-**[D]** Our `core/usb-bulk` dTDs with the page pointers past the used pages set to 0 wedged the controller at a 4096-byte EP2 IN transfer (1-513 bytes worked). The
-closing zero-length packet starts at byte 4096 and (inferred) is moved through page pointer 1 = 0; the DMA faults (system error) and only a power cycle recovers.
-RM 24-71 step 7: page pointers 1-4 must each be one page above the previous one. The adapter now always fills all five. The emulator model faults a packet whose page
-pointer the USB bus master cannot reach (DDR 0x40000000-0x4fffffff, SRAM backdoor 0x80000000-0x8bffffff). Hardware recheck pending **[O]**. The controller has 4 device
-endpoints (DCCPARAMS DEN = 4, RM): EP0-EP3.
+- **[D]** A 1024-byte EP2 IN send (two back-to-back 512-byte packets) wedged the controller the moment the host read it; 1, 511, 512 and 513 bytes
+  worked, and OUT with two 512-byte packets worked. A USB unplug and replug does not recover the device; only a power cycle does.
+- **[D]** Cause: the controller's TX buffer is 64 bytes per endpoint (RM HWTXBUF: TXCHANADD = 4, 16 x 32-bit entries; TXADD = 6, 256 bytes total).
+- **[D]** Firmware precedent: it declares EP1 IN as bulk 512 but programs the dQH with caps 0x20400000 (64 bytes, ZLT off; `FUN_400043e2`). Its
+  audio and Overbridge modes also use 64-byte IN dQHs; only the CDC service mode programs a 512-byte IN dQH.
+- **[D]** Fix: the EP2 IN dQH caps are 0x20400000, the descriptor keeps 512. Each 64-byte packet is a short packet for the host, so host readers
+  loop until a frame is complete. The emulator faults an IN transfer whose packets after the first exceed 64 bytes (measured rule).
+- **[D]** After the fix, `dkbulk echo` is identical for 1, 511, 512, 513, 1023, 1025, 2048, 4096, 16384, 65536, 262144 and 1048576 bytes, about
+  2.3 MB/s each way at once (IN is limited by the 64-byte packets). A USB bus reset frees the buffers again.
+- dTD page pointers 1-4 follow RM 24-71 step 7 (each one page above the previous): a manual rule, not the cause. The emulator model faults a packet
+  whose page pointer the USB bus master cannot reach (DDR 0x40000000-0x4fffffff, SRAM backdoor 0x80000000-0x8bffffff). The controller has 4 device
+  endpoints (DCCPARAMS DEN = 4, RM): EP0-EP3.
 
 ## 5. Disk mode
 

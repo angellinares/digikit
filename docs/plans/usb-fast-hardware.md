@@ -99,30 +99,58 @@ DIN MIDI OS upgrade last.
   finds it. (A USB CONFIG change made just before a runtime restart did not stick; set it, then restart.)
 - `dkbulk echo`: 1, 511, 512 and 513 bytes identical. **4096 bytes: no reply, then every bulk send fails with 0xe00002ed and SysEx INFO
   hangs too: the USB controller wedged; the CPU kept running (buttons, audio); no crash record; a power cycle recovers.**
-- Diagnosis: the adapter set the dTD page pointers past the used pages to 0. The 4096-byte EP2 IN echo (zero-length termination on) sends
-  its closing zero-length packet at byte 4096 through page pointer 1, which is 0. The DMA faults (system bus error, USBSTS SEI) and the
-  firmware never resets the controller, so it stays wedged until a power cycle. 513 bytes never reached a page boundary. The firmware's own
-  dTDs never write page pointers 2-4 and its largest is one 4 KiB page; its USB DMA buffers use the same uncached DDR alias as the adapter
-  (finding 42).
+- Diagnosis: see run 1b. The first guess (page pointer 1 = 0) was not the cause.
 - The device was restored to debug + remote on the device-usb firmware. `dk:run` replaces a selection slot.
 
 ### Fix (2026-11-11, commit 26c4022c)
 
-The adapter fills page pointers 1-4 with the next four pages (RM 24-71 step 7). The emulator's EP2 model applies the manual's dTD rules and
-models the system error (all USB traffic stops; `usb_sys_error` in `usb.bulk.out` status). Before the fix the DN2 usb-bulk device test failed
-with "EP2 IN: packet at byte 4096 uses page pointer 1 = 0x00000000"; after it, usb-bulk and usb-fast pass on DN2 and DT2. The model's packet
-rule (a zero-length packet uses the pointer of the page it starts in) is inferred [O] until the hardware rerun. `patchkit flash` no longer
+Page pointers made to follow the RM (not the cause). The adapter fills page pointers 1-4 with the next four pages (RM 24-71 step 7). The
+emulator keeps this rule, but it did not reproduce the real fault: the hardware still wedged after the commit. `patchkit flash` no longer
 reports the false "port did not go away" on macOS (it asks the device by INFO after 10 s and ignores old-image answers).
+
+### DN2 run 1b: the real cause (2026-11-11)
+
+- Bisect **[D]**: 1024 bytes wedged as the first transfer after a power cycle; 1, 511, 512 and 513 worked.
+- HOLD split **[D]**: with the adapter's debug log events (MOD_LOG at debug level, UB_TRACE) and the usb-echo HOLD mode (`dkupload cmd`), OUT
+  with two full 512-byte packets worked (rx.done 1024, controller healthy, SysEx alive). The IN send of the same 1024 bytes (two back-to-back
+  512-byte packets) wedged the controller the moment the host read it. After a wedge, a USB unplug and replug does not bring the device back
+  (it does not attach again); only a power cycle does.
+- Cause **[D]**: the controller's TX buffer is 64 bytes per endpoint (RM HWTXBUF: TXCHANADD = 4, 16 x 32-bit entries; TXADD = 6, 256 bytes
+  total). The stock firmware declares EP1 IN as bulk 512 in the USB MIDI descriptor but programs its dQH with caps 0x20400000 (max packet 64,
+  ZLT off; `FUN_400043e2`). Its audio and Overbridge modes also use 64-byte IN dQHs; only the CDC service mode programs a 512-byte IN dQH.
+- Fix (commit 9ae0380a): the EP2 IN dQH caps are 0x20400000 (64-byte packets, ZLT off); the descriptor keeps 512. Each 64-byte packet is a
+  short packet for the host; host readers already loop until a frame is complete; usb-fast replies are at most 32 bytes. The emulator faults an
+  IN transfer whose packets after the first exceed 64 bytes (measured rule).
+- Hardware after the fix **[D]**: `dkbulk echo` identical for 1, 511, 512, 513, 1023, 1025, 2048, 4096, 16384, 65536, 262144 and 1048576 bytes,
+  about 2.3 MB/s each way at once (IN is limited by the 64-byte packets). A USB unplug and replug (bus reset) frees the buffers and the
+  interface works again. `dkbulk echo` now reads beside the send (write-then-read deadlocked at 64 KiB against the device's buffers).
+
+### DN2 run 2 (2026-11-11)
+
+`wb.mjs samples put`, synthetic WAVs, usb-fast selected; all files verified by device hash **[D]**.
+
+| case | SysEx | Fast USB |
+|---|---|---|
+| one 8 MB file, put | 0.68 MB/s | 3.86 MB/s (5.7x) |
+| one 8 MB file, put with verify | 0.62 MB/s | 2.53 MB/s (4.1x) |
+| 100 files of 50-500 KB (28 MB), with verify | 0.57 MB/s | 1.11 MB/s |
+| 8 MB replace of an existing sample | | 3.64 MB/s put, hash matches |
+
+For the 100 small files per-file overhead dominates: open, verify over SysEx, close.
+
+Unplug mid-file **[D]**: a 60 MB upload over Fast USB with the USB cable pulled mid-file. The bulk link failed (macOS 0xe00002ed). `wb` printed "USB bulk link failed ...; the rest of this run goes over SysEx" and sent the whole file again over SysEx (0.46 MB/s, device hash matches). Afterwards the store held only complete files (no staging or partial entries). The next upload used Fast USB again (3.68 MB/s, hash matches). The source file limit is 64 MiB (dksample `MAX_SOURCE_BYTES`), so a 64 MB WAV is refused before sending.
+
+Open **[O]**: REC drill.
+
+Open **[O]**: `wb.mjs samples ls` gets no reply ("no reply to MidiRpc 10") on the DN2, while `store ls` and `dkupload ls` work. Not related to bulk; to look at.
 
 ### Next
 
-1. In progress, uncommitted: the adapter refuses `usb_bulk_enable` with E_STATE outside USB MIDI mode (anchor `cf.usb.value.active_port`:
-   DT2 1.17 0x40965a60, DN2 1.12 0x4058f2a8; 2 = USB MIDI) and `usb_bulk_state` bit 2 shows the wrong mode live; usb-fast logs it; the
-   SYSEX tooltip says to install usb-fast and set USB CONFIG to USB MIDI; runtime 0.5.7; commit the `device-usb` patch set in
-   devices/digitone-ii.toml.
-2. DN2 run 2 (needs a reflash, Em's OK first): `dkbulk echo` at 4096, 16384, 65536 and 1 MiB, then the usb-fast bench; USB CONFIG = USB MIDI.
+1. Done: the wrong-mode refusal (E_STATE outside USB MIDI mode) is committed in 71ba9e29.
+2. Finish DN2 run 2: REC drill.
 3. DT2 runs, then `mise run test:full` and a PR to main.
 4. Then scope v2 (below).
+5. Speed lever: per-file overhead for small files (open, verify over SysEx, close).
 
 ### v2: Fast USB in USB AUDIO/MIDI mode (agreed design, not started)
 
