@@ -167,12 +167,46 @@ DT2 OS 1.17, image bacc88eae0a2bfdf, patch set `device-usb` (device + core/usb-b
 - REC safe mode: no interface, 0 modules, INFO over SysEx. A normal boot loads debug and usb-fast again and an upload goes over Fast USB.
 - `wb.mjs samples ls` works on the DT2. On the DN2 it still gets no reply **[O]**.
 
+### Speed work, merged build (2026-11-11, branch speed/usb-fast 6760f16c)
+
+All **[D]**.
+
+Device-only storage ceilings (usb-fast storage bench, UF_BENCH build, 8 MiB):
+
+| what | rate |
+|---|---|
+| DT2 +Drive firmware `file_write`, 64 KiB calls | 2.6 MB/s |
+| DT2 +Drive firmware `file_write`, 256 KiB calls | 7.8 MB/s |
+| DT2 +Drive firmware `file_write`, 1 MiB calls | 10.3 MB/s |
+| DT2 firmware hash re-read at close | 4.2 MB/s |
+| DT2 store | ~7.2 MB/s |
+| DN2 store | 6.3 MB/s |
+| raw card reads (both devices) | 15.3 MB/s |
+| CPU hash | 16-18.7 MB/s |
+
+- Timing split (UF_TRACE): the old "USB wait" counted the copy twice. The real host stall is about 0.01 s per 8 MB. The copy from the USB
+  buffers went from about 10 MB/s to about 18 MB/s with the movem loop.
+- 1 MiB accumulation buffer A/B (new files): DT2 8 MB 4.20 s -> 3.32 s (card writes 1.83 s -> 0.77 s = 10.8 MB/s, 9 calls instead of 129).
+  DN2: no change (its store already writes efficiently).
+- Merged build (images DT2 3a2a7e234b9e74a5, DN2 fe16005306b0b454, runtime 0.5.9; shipping usb-fast, UF_TRACE and UF_BENCH off):
+
+| Device | 8 MB | 100 small files (28 MB) | SysEx |
+|---|---|---|---|
+| DT2 +Drive | 2.99-6.15 s over three runs (best 2.80 MB/s); first runs slower: card warm-up and the staging folder's first mkdir | 0.51 MB/s (55.7 s, ~0.55 s per file; the per-file hash-table rebuild of ~300 ms remains) | 0.11 / 0.10 MB/s |
+| DN2 store | upload 1.75 s (4.8 MB/s); with SysEx verify 2.92 s (2.87 MB/s; verify 1.1 s) | 1.17 MB/s with verify (upload 18.7 s, verify 5.3 s) | 0.62 / 0.57 MB/s |
+
+- DT2 checks with the merged build: the stock browser lists the uploaded files; a sample loads and plays; a project that references an
+  uploaded sample reloads and plays it (the firmware finds files from the fast close path).
+
 ### Next
 
-1. Done: the wrong-mode refusal (E_STATE outside USB MIDI mode) is committed in 71ba9e29.
-2. Done: DN2 run 2 (including the REC drill) and the DT2 runs.
-3. Next: the speed work. Measure the stages on hardware first: per-file overhead and storage are the costs, not USB (see the speed notes below).
-4. Then `mise run test:full`, a PR to main, then v2 (below).
+1. Pre-PR work in progress: take-over finished in usb-fast, single re-enumeration, restart-counter anchor, wb/desktop wiring; stability
+   fixes; knobs behind flags; fast-close run-time fallback; cleanup; findings and AGENTS.md.
+2. DN2 device-side readback replacing the SysEx verify (expected 8 MB 2.9 -> ~2.3 s).
+3. DT2 batched hash-table rebuild (c1; expected small files ~2x).
+4. Overlap the copy with card writes (about -0.45 s per 8 MB).
+5. Take-over hardware test in USB AUDIO/MIDI mode.
+6. Full tier (`mise run test:full`) and the PR.
 
 ### Speed: where the time goes (code reading, to measure)
 
