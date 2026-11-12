@@ -1,0 +1,21 @@
+[module]
+id = "test/entry-demo"
+version = "0.1.0"
+name = "Entry point demo"
+category = "test"
+type = "raw"
+author = "digikit"
+status = "experimental"
+summary = "Test fixture: a module that uses only the new contract (dk_module with init, tick, fini and menu, dk_settings_*, dk_log, dk_time_blocks, an absent optional service)."
+requires = []
+conflicts = []
+
+[targets]
+"dt2-1.17" = "experimental"
+"dn2-1.12" = "experimental"
+
+# C, built by `patchkit build`. Loaded by the digikit runtime from the card store (`patchkit pack test/entry-demo`).
+[[object]]
+path = "build/entry-demo.dko.json"
+sources = ["src/c/entry_demo.c"]
+place = "cf.expansion"

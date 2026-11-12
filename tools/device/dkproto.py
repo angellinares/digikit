@@ -165,6 +165,10 @@ LOAD_STATUS: dict[int, tuple[str, str]] = {
     -47: ("E_CARD_RO", "the card's store area is not ours and not blank"),
     -48: ("E_CONTRACT", "the module was built for another SDK contract"),
     -49: ("E_TABLE", "the runtime's tables failed their check"),
+    -73: (
+        "E_MISSING",
+        "the service is not in the image (the module that provides it is not loaded)",
+    ),
 }
 
 CAP: dict[str, int] = {
@@ -188,6 +192,7 @@ CAP: dict[str, int] = {
 
 RANGES: dict[str, tuple[int, int]] = {
     "debug": (0x20, 0x22),
+    "entry_demo_test": (0x1C, 0x1D),
     "file_write_test": (0x24, 0x27),
     "file_write_test_b": (0x28, 0x2B),
     "probe": (0x32, 0x35),

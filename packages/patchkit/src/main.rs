@@ -966,6 +966,31 @@ plan.json {}",
                 d.sha256
             );
             println!("size     {out}: {}", d.size_summary(file.len()));
+            if d.entry {
+                // the entry point and what the module needs of the runtime, from the imports it links (docs/plans/sdk.md section 5.1)
+                let at = |v: Option<u32>| v.map_or("-".to_string(), |o| format!("{o:#x}"));
+                println!(
+                    "entry    {out}: dk_module init {} fini {} tick {} menu {}; needs api 1.{}",
+                    at(d.init),
+                    at(d.fini),
+                    at(d.tick),
+                    at(d.menu),
+                    file[patchkit::dkm::H_CONTRACT + 1]
+                );
+                let services = patchkit::dkm::services_of(d.imports.iter().map(String::as_str));
+                println!(
+                    "services {out}: {}",
+                    if services.is_empty() {
+                        "none".to_string()
+                    } else {
+                        services
+                            .iter()
+                            .map(|(s, names)| format!("{s} ({})", names.join(", ")))
+                            .collect::<Vec<_>>()
+                            .join("; ")
+                    }
+                );
+            }
             if ui_preview {
                 println!(
                     "UI preview only: no module DSP or ColdFire hooks; use only in an isolated zero-DSP emulator run"

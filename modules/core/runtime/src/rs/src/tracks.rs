@@ -507,6 +507,28 @@ pub unsafe fn tracks(local_id: u32) -> i32 {
     E_NOT_FOUND
 }
 
+/// `dk_sample_pool_open`: the handle of the module's pool table with the lowest local id (the one table a module declares), as `tracks` gives it for
+/// that id; E_NOT_FOUND without a table, E_CONTRACT when the module also declares a bank.
+pub unsafe fn open_first() -> i32 {
+    let owner = crate::dlog::current_source();
+    if owner == 0 {
+        return E_NOT_FOUND;
+    }
+    let rec = owner as usize - 1;
+    let mut best = usize::MAX;
+    let mut i = 0;
+    while i < CLIENTS {
+        if OWNER[i] == rec && (best == usize::MAX || LOCAL[i] < LOCAL[best]) {
+            best = i;
+        }
+        i += 1;
+    }
+    if best == usize::MAX {
+        return E_NOT_FOUND;
+    }
+    tracks(LOCAL[best])
+}
+
 /// The device-rooted copy of a module's root-relative path (a listing row) in `full`, and its length; or a negative error.
 unsafe fn rooted_path(path: *const u8, full: &mut [u8; dkrt_sdk::sample_tracks::PATH]) -> Result<usize, i32> {
     if path.is_null() {

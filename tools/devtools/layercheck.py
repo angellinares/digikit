@@ -497,8 +497,11 @@ def check_imports(root: Path) -> list[Violation]:
     sdk_text = sdk.read_text(encoding="utf-8")
     data = tomllib.loads(sdk_text)
     out = []
+    # A service import without `kind` has its prototype generated into <dk/gen/imports.h>; the others are declared by hand in <dk/platform/ui.h>.
     ui_imports = {
-        i["name"] for i in data.get("import", []) if i.get("requires") == "core/ui"
+        i["name"]
+        for i in data.get("import", [])
+        if i.get("requires") == "core/ui" and (i.get("kind") or not i.get("service"))
     }
     if ui.is_file():
         ui_text = ui.read_text(encoding="utf-8")

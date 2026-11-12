@@ -530,7 +530,60 @@ The template `src/dsp/NAME.s` shows all of this in about 90 lines. Read it first
 - The instruction budget of the conformance suite is `pk_conform.fx_budget()` (about 31,000 for the effect today, 900 for the adapter). Read it
   from the report (`-rA`).
 
-### 7.3 Service (`<dk/core/api.h>`)
+### 7.3 Service (`<dk/core/module.h>`, and the old `<dk/core/api.h>`)
+
+#### The entry point (the way for new modules)
+
+A service module defines one constant, `dk_module` (`<dk/core/module.h>`; docs/plans/sdk.md section 5). `patchkit pack` finds it by its
+symbol and writes its four function pointers into the `.dkm` header. All four are optional.
+
+```c
+#include <dk/core/module.h>              /* first */
+#include <dk/core/log.h>
+#include <dk/platform/settings.h>
+
+static dk_settings *settings;
+
+static int32_t init(dk_ctx *ctx)
+{
+    int32_t r = dk_settings_open(ctx, &settings);
+    if (r != DK_OK)
+        return r;
+    dk_log(DK_LOG_INFO, "ready", 0);
+    return DK_OK;
+}
+
+static void tick(dk_ctx *ctx) { (void)ctx; }
+
+const struct dk_module dk_module = {.init = init, .tick = tick};
+```
+
+| Field | When it runs |
+| --- | --- |
+| `int32_t init(dk_ctx *ctx)` | Once after load. Opens the services, registers host commands. `DK_OK` (0), or the load fails and the module unloads. |
+| `void fini(dk_ctx *ctx)` | When the module is unloaded. |
+| `void tick(dk_ctx *ctx)` | Once per UI pass (about 120 Hz), for every loaded module that has one. Keep it short; no waiting. |
+| `void menu(dk_ctx *ctx, dk_ui_menu *m)` | Optional: the module's settings, as `dkm_menu` is today. The DIGIKIT menu shows SETTINGS... and calls it when the user opens it. |
+
+`struct dk_module` has no typedef, because the constant has the same name. The device is reached through named imports grouped by service
+(`<dk/gen/imports.h>`, generated from `sdk/sdk.toml`; the comment of each prototype gives its context and the api minor that added it):
+
+- Without a handle: `dk_alloc`, `dk_free`, `dk_log`, `dk_log_event`, `dk_time_blocks`, `dk_store_read`, `dk_host_register`, `dk_ctx_device`,
+  `dk_ctx_runtime_version`, `dk_hash32_*`, `dk_io_*`, `dk_job_*`, `dk_file_*`, `dk_intro_take`, `dk_param_get/set`, `dk_debug_*`.
+- With a handle opened in `init`: `dk_settings_open`, `dk_files_open`, `dk_sample_pool_open`, `dk_ui_open_ctx`, `dk_input_open`,
+  `dk_usb_bulk_open`, `dk_dsp_link_open`. The service functions take the handle first (`dk_settings_get(s, key, out, cap)`).
+- A service that another module provides (`core/ui`, `core/input`, `core/usb-bulk`, `core/dsp-link`) may be absent. Its `_open` returns
+  `DK_E_MISSING` and leaves the handle NULL; the module loads and decides whether it can run without. The other calls of an absent service
+  return `DK_E_MISSING` or do nothing. Today a missing provider still fails the load of a module that uses the old entry.
+- `patchkit pack` takes the runtime minor of the file from the newest `since` of the imports it links (1.11 or more) and prints the
+  services it needs (`services <file>: usb_bulk (dk_usb_bulk_open); runtime (...)`). It refuses a module that defines `dk_module` and also
+  `dkm_init`, `dkm_fini`, `dkm_menu` or a slot.
+- The include order matters while the old entry exists: include `<dk/core/module.h>` first. It stops the build if `<dk/platform/settings.h>` or
+  `<dk/platform/intro.h>` already defined their old wrappers.
+
+The test fixture `tests/fixtures/modules/entry-demo` uses only this contract. The old entry below goes away in S2b-2; the templates still show it.
+
+#### The old entry (`<dk/core/api.h>`; goes away in S2b-2)
 
 A service is C code for the ColdFire CPU. The runtime calls these symbols of your object:
 

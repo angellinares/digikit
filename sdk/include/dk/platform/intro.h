@@ -1,4 +1,5 @@
-/* <dk/platform/intro.h>: a module's own boot animation (API 1.9: api->intro_take). The firmware's intro runs at 30 ticks a second; the module gives one
+/* <dk/platform/intro.h>: a module's own boot animation (api 1.9; the import dk_intro_take since 1.11: `dk_intro_take(frame, done, ctx, ticks)` in `init`,
+   with <dk/core/module.h> included first, the old wrapper below is not defined then). The firmware's intro runs at 30 ticks a second; the module gives one
    128 x 64 native bitmap per tick. It runs after the boot checks (REC, safe mode, boot counter) and uses no storage: read the frames in dkm_init.
 
      frame:   `const uint8_t *frame(uint32_t tick, void *ctx)` returns the 1024-byte native bitmap of this tick (0 .. ticks - 1), or NULL to end the
@@ -30,6 +31,9 @@
 #define DK_INTRO_E_BOOT_ONLY DK_E_BOOT_ONLY /* E_BOOT_ONLY: the intro is over */
 #define DK_INTRO_E_CONTRACT DK_E_CONTRACT   /* E_CONTRACT: no frame, or ticks out of range */
 
+#ifndef DK_MODULE_H
+#define DK_INTRO_LEGACY
+
 typedef dk_intro_frame *dk_intro_frame_fn;
 typedef dk_intro_done *dk_intro_done_fn;
 
@@ -39,4 +43,7 @@ static inline int32_t dk_intro_take(const dk_api *api, dk_intro_frame_fn frame,
 {
     return api->intro_take(frame, done, ctx, ticks);
 }
+
+#endif /* DK_MODULE_H */
+
 #endif

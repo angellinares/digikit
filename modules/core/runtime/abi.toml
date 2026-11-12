@@ -386,7 +386,8 @@ fields = [
     "u8 path[64] // store path the module was loaded from (NUL-terminated, at most 63 bytes kept), for example modules/dyn-demo.dkm",
     "u32 state // MOD_LOADED or MOD_LOADING",
     "u32 dsp_size // bytes of the module's range in the DSP area (0: none)",
-    "u32 menu // address of the module's dkm_menu(dk_ui_menu *, void *) settings entry point (0: none)",
+    "u32 menu // address of the module's settings entry point (0: none): dkm_menu(dk_ui_menu *, void *), or menu(dk_ctx *, dk_ui_menu *) when ctx is not 0",
+    "u32 ctx // the module's dk_ctx (a module of the new entry, dk_module); 0 for a module of the old entry",
 ]
 
 [[struct]]

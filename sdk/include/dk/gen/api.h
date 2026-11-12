@@ -31,6 +31,9 @@ typedef int32_t dk_job_step(uint8_t *ctx);
 /* The function type `service_cmd` of [api.types]. */
 typedef int32_t dk_service_cmd(uint32_t cmd, uint32_t seq, const uint8_t *body, uint32_t len, uint8_t *out);
 
+/* The function type `ui_act` of [api.types]. */
+typedef void dk_ui_act(void *ctx, int32_t arg);
+
 /* The table `dkm_init` receives. Appended-to only; check `size`. */
 typedef struct dk_api {
     uint32_t version;                        /* Version of the `Api` table layout (`API_VERSION`). */
@@ -227,6 +230,6 @@ void dkm_slot_5(const dk_api *api);
 void dkm_slot_6(const dk_api *api);
 void dkm_slot_7(const dk_api *api);
 
-#define DK_API_MINOR 10
+#define DK_API_MINOR 11
 
 #endif /* DK_GEN_API_H */

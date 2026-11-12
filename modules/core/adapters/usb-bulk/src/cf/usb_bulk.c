@@ -38,6 +38,12 @@
 
 #define UB_TRACE 0 /* 1 for hardware debug builds: log calls */
 
+#include <stdint.h>
+
+/* The opaque handle types of the service imports (sdk/sdk.toml [handle]); <dk/gen/imports.h> is not included: it also declares the old import names with the SDK's integer types. */
+typedef struct dk_ctx dk_ctx;
+typedef struct dk_usb_bulk dk_usb_bulk;
+
 typedef unsigned int u32;
 typedef unsigned short u16;
 typedef unsigned char u8;
@@ -1334,4 +1340,66 @@ u32 usb_bulk_state(void)
     st |= (resets & 0xffu) << 24;
     sr_restore(sr);
     return st;
+}
+
+/* ---- the service imports of <dk/gen/imports.h> (docs/plans/sdk.md section 5.1) ----
+   The new names of the calls above, with the handle that dk_usb_bulk_open gives out. The service has one owner (the I/O job of usb_bulk_enable), so the
+   handle is only a token. */
+
+static int usb_bulk_token;
+
+int32_t dk_usb_bulk_open(dk_ctx *ctx, dk_usb_bulk **out)
+{
+    if (!ctx || !out)
+        return -48; /* DK_E_CONTRACT */
+    *out = (dk_usb_bulk *)&usb_bulk_token;
+    return 0;
+}
+
+int32_t dk_usb_bulk_enable(dk_usb_bulk *ub, int32_t io_id)
+{
+    (void)ub;
+    return usb_bulk_enable(io_id);
+}
+
+int32_t dk_usb_bulk_disable(dk_usb_bulk *ub, int32_t io_id)
+{
+    (void)ub;
+    return usb_bulk_disable(io_id);
+}
+
+int32_t dk_usb_bulk_take(dk_usb_bulk *ub, uint8_t **buf, uint32_t *len)
+{
+    (void)ub;
+    return usb_bulk_take((u8 **)buf, (u32 *)len);
+}
+
+int32_t dk_usb_bulk_release(dk_usb_bulk *ub, uint8_t *buf)
+{
+    (void)ub;
+    return usb_bulk_release((u8 *)buf);
+}
+
+int32_t dk_usb_bulk_send(dk_usb_bulk *ub, const uint8_t *buf, uint32_t len)
+{
+    (void)ub;
+    return usb_bulk_send((const u8 *)buf, len);
+}
+
+uint32_t dk_usb_bulk_state(dk_usb_bulk *ub)
+{
+    (void)ub;
+    return usb_bulk_state();
+}
+
+int32_t dk_usb_bulk_takeover(dk_usb_bulk *ub)
+{
+    (void)ub;
+    return usb_bulk_takeover();
+}
+
+int32_t dk_usb_bulk_giveback(dk_usb_bulk *ub)
+{
+    (void)ub;
+    return usb_bulk_giveback();
 }

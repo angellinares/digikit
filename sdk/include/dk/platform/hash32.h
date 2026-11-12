@@ -1,5 +1,5 @@
 /* <dk/platform/hash32.h> (API 1.10): the file hash of the store and of the Elektron +Drive (a lookup3 variant over big-endian words, seed 0x43fa243a).
- * One implementation in the runtime (api->hash32_*); the host's dksample::content_hash gives the same value.
+ * One implementation in the runtime (api->hash32_*; the imports dk_hash32_init, dk_hash32_update and dk_hash32_finish since api 1.11); the host's dksample::content_hash gives the same value.
  *
  *   dk_hash32 s;  api->hash32_init(&s);  api->hash32_update(&s, p, n);  ...  uint32_t h = api->hash32_finish(&s);
  *

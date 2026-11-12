@@ -1,5 +1,14 @@
-/* <dk/platform/settings.h>: a module's own persistent values (API 1.9: api->settings_client, settings_get, settings_put, settings_remove). The values are
-   kept in digikit's settings record on the card (8 KiB shared by all modules and the runtime; a value is 0 to 1024 bytes).
+/* <dk/platform/settings.h>: a module's own persistent values (api 1.9; the imports dk_settings_open, dk_settings_get, dk_settings_put and dk_settings_remove
+   since 1.11). The values are kept in digikit's settings record on the card (8 KiB shared by all modules and the runtime; a value is 0 to 1024 bytes).
+
+   The new entry (<dk/core/module.h>, include it first):
+
+     init:  r = dk_settings_open(ctx, &settings);                    the same handle every time; DK_E_NOT_FOUND outside init
+            n = dk_settings_get(settings, "volume", &v, 1);          n = 1: the value saved by an earlier boot; DK_E_SET_NOKEY: none yet
+     later: dk_settings_put(settings, "volume", &v, 1);               in the UI task (tick, a menu callback)
+
+   The rules below hold for both entries; only the way to the handle differs. The text that follows is the old entry (the Api table), kept for the
+   modules that have not moved (S2b-2): its wrappers are defined only when <dk/core/module.h> was not included.
 
    The runtime stores the key as "<module name>/<key>". A module reaches its own key space only: the module name and the key together are at most
    47 printable ASCII characters (no space), the key is not empty, does not hold "/" and does not hold "..". A key that breaks a rule is
@@ -33,6 +42,9 @@
 #define DK_SET_E_VALUE DK_E_SET_VALUE /* E_SET_VALUE */
 #define DK_SET_E_OFF DK_E_SET_OFF     /* E_SET_OFF */
 
+#ifndef DK_MODULE_H
+#define DK_SETTINGS_LEGACY
+
 /* Acquires the handle; call in dkm_init. Positive handle, or a negative error outside dkm_init. */
 static inline int32_t dk_settings_client(const dk_api *api)
 {
@@ -55,4 +67,7 @@ static inline int32_t dk_settings_remove(const dk_api *api, int32_t client, cons
 {
     return api->settings_remove((uint32_t)client, key);
 }
+
+#endif /* DK_MODULE_H */
+
 #endif

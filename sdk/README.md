@@ -8,14 +8,14 @@ and the device profiles (`devices/*.toml`).
 
 | Path | What | Edit |
 | --- | --- | --- |
-| `sdk.toml` | The contract spec: versions, the `dk_api` table, imports, machine and effect layouts, log kinds, protocol numbers, limits, settings. | yes |
+| `sdk.toml` | The contract spec: versions, the `dk_api` table (old entry), the imports with their `service`, `since` and `context`, machine and effect layouts, log kinds, protocol numbers, limits, settings. | yes |
 | `include/dk/core/` | The module contract: `<dk/core/api.h>` (the `dk_api` table and run-time imports; provides `DK_API_HAS(api, field)`, true when the table is long enough to hold the field and the field is set), `<dk/core/trace.h>` (trace marks), `<dk/core/bytes.h>` (big-endian 32-bit access, header only), `<dk/core/text.h>` (bounded text: length, copy, equal, append, concatenate, number text, truncation, size and time text), `<dk/core/path.h>` (join, parent, leaf) and `<dk/core/status.h>` (the `DK_E_*` status codes; generated, do not edit). No device access. | `api.h`, `trace.h`, `bytes.h`, `text.h`, `path.h` yes; `status.h` no |
 | `include/dk/platform/` | What the device provides, one header per service group: `ui.h` (menus, lists and dialogs on the screen), `param.h` (read and write a machine parameter from a `DK_PARAM_ACTION` callback), `settings.h`, `files.h` (read-only file listing, API 1.4), `file.h`, `io.h`, `job.h` (background jobs, API 1.8), `hash32.h`, `usb_bulk.h`, `intro.h`, `data.h`. | yes |
 | `include/dk/page/` | Pages: `page.h` (`DK_PAGE` and `DK_KNOB`, shared by fx and machine) and `widgets.h` (small page widgets). | yes |
 | `include/dk/machine/`, `include/dk/fx/` | The machine contract (`machine.h`) and the effect contract (`fx.h`). | yes |
 | `include/dk/chooser/` | The slot list chooser (`chooser.h`) and its pure functions of row sort order and pool row text (`logic.h`). | yes |
 | `include/dk/sample/` | Sample components: `bank.h` (module-owned mono float sample banks, API 1.3), `pool.h` (per-module stereo sample pool, API 1.5 to 1.7), `view.h` (waveform drawing for native pages) and `picker.h` (on-device sample picker for a 16-entry pool). | yes |
-| `include/dk/gen/` | C layouts and constants generated from `sdk.toml` (including `sample.h`, the word layout of a sample pool entry). Included by the headers above, not by modules. | no |
+| `include/dk/gen/` | C layouts and constants generated from `sdk.toml` (including `imports.h`, the prototypes of the service imports, and `sample.h`, the word layout of a sample pool entry). Included by the headers above, not by modules. | no |
 | `src/` | Compiled SDK sources, in the folders of `include/dk/`: `chooser/chooser.c`, `chooser/logic.c`, `core/text.c`, `core/path.c`, `sample/picker.c`. The packer builds them into one SDK library and links the functions a module calls (`--gc-sections` drops the rest); a module does not list them in its `module.toml`. | yes |
 | `dsp/` | SHARC+ code by concept (`osc/`, `filter/`, `dynamics/`, `delay/`, `util/`, `sample/`). See [dsp/README.md](dsp/README.md). `dsp/contract/` is on the SHARC+ include path and holds the call convention (`call.inc`), the includes generated from `sdk.toml` (`dk_fx.inc`, `dk_machine.inc`, `dk_sample_pool.inc`) and the hand-written `dk_trace.inc` (see Tracing). | yes |
 | `templates/` | Module templates for `mise run module:new`: `machine/`, `fx/`, `tool/`. | yes |
@@ -42,6 +42,50 @@ declarations with the host `cc` compiler and checks their public-header records:
 machine parameter units, effect parameter values, DSP symbols and routing.
 It needs no firmware or DSP toolchain. Each shipped module still owns its device
 conformance checks; this fast SDK check does not replace them.
+
+## The entry point and the services
+
+A module of the new contract defines one constant, `dk_module`, and calls the device through named imports grouped by service. There is no
+Api table and no `dkm_*` symbol (docs/plans/sdk.md section 5). `include/dk/core/module.h` has the struct and `dk_ctx`; the prototypes of the
+imports are generated into `include/dk/gen/imports.h` from the `[[import]]` entries of `sdk.toml` that have a `service`.
+
+```c
+#include <dk/core/module.h>              /* first */
+#include <dk/core/log.h>
+#include <dk/platform/settings.h>
+
+static dk_settings *settings;
+
+static int32_t init(dk_ctx *ctx)
+{
+    int32_t r = dk_settings_open(ctx, &settings);   /* a handle per service, opened in init */
+    if (r != DK_OK)
+        return r;
+    dk_log(DK_LOG_INFO, "ready", 0);
+    return DK_OK;
+}
+
+const struct dk_module dk_module = {.init = init};  /* init, fini, tick, menu: all optional */
+```
+
+- `tick(ctx)` runs once per UI pass for every loaded module. `menu(ctx, m)` adds the rows of the module's SETTINGS... menu.
+- `struct dk_module` has no typedef, because a typedef named `dk_module` clashes with the constant.
+- Each import has a `service` (`runtime`, `samples`, `machines`, `fx`, `ui`, `input`, `usb_bulk`, `dsp_link`), a `since` (the api minor
+  that added it) and a `context` (`init`, `ui`, `io-step`, `any`, `isr`). The generated header repeats the last two in the comment of each
+  prototype. `patchkit pack` takes the runtime minor a module needs from the newest `since` it links and prints the services it needs
+  (`services <file>: ...`).
+- A service that another module provides (`ui`, `input`, `usb_bulk`, `dsp_link`) may be absent: its `_open` returns `DK_E_MISSING`, the other
+  calls return the same code or do nothing, and the module still loads. Without `dk_ui_open_ctx` returning `DK_OK` a module does not call
+  the menu functions.
+- The headers of the services are `core/log.h`, `core/mem.h`, `core/time.h`, `platform/host.h`, `settings.h`, `files.h` (listing and writing),
+  `io.h`, `hash32.h`, `intro.h`, `param.h`, `samples.h`, `ui.h`, `input.h`, `usb_bulk.h`, `dsp_link.h` and `debug.h`.
+
+The old entry (`dkm_init(const dk_api *api)`, the `dk_api` table, `DK_API_HAS`, `uses_api`, the `dkm_slot_<n>` functions and the
+`dkm_menu` export) still works in this version and goes away in S2b-2 when the modules and templates move. A module uses one entry or the
+other, never both (the packer refuses it). The old headers keep their old declarations for it; where an old name is the new name of
+another call (`dk_settings_get`, `dk_settings_put`, `dk_settings_remove`, `dk_intro_take`) the old wrapper is defined only when
+`<dk/core/module.h>` was not included before the header, and `module.h` stops the build if the old wrapper is already there. `dk_ui_open` is
+still the old call that opens a menu; the service accessor is `dk_ui_open_ctx` until then. The templates and the module guide still show the old entry.
 
 ## Include paths
 

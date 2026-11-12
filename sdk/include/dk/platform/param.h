@@ -1,4 +1,4 @@
-/* Read and write a machine parameter from a DK_PARAM_ACTION callback (API 1.6: param_get, param_set; docs/design/ui-rules.md).
+/* Read and write a machine parameter from a DK_PARAM_ACTION callback (api 1.6: param_get, param_set; the imports dk_param_get and dk_param_set since 1.11; docs/design/ui-rules.md).
    Both calls work only in the UI task and in the flow of a click: from the callback until the page gets its next key or turn, so a list that
    the callback opened (the chooser) may call them when the user picks. WORD counts the module's DK_PARAM rows in declaration order. Values are raw
    (unit * 256, like DK_PARAM min/max/default): a 0..15 parameter is 0..0x0f00. */

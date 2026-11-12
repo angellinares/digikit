@@ -100,7 +100,7 @@ Components may use other components, without cycles.
 Every module defines one well-known constant, `dk_module`: its single entry point.
 
 ```c
-const dk_module dk_module = {
+const struct dk_module dk_module = {
     .init = shot_init,   /* int  (dk_ctx *ctx): declares content, opens services */
     .fini = shot_fini,   /* void (dk_ctx *ctx) */
     .tick = shot_tick,   /* void (dk_ctx *ctx): every module's tick, once per UI pass */
@@ -108,6 +108,8 @@ const dk_module dk_module = {
 };
 ```
 
+- The type is `struct dk_module` and has no typedef: C keeps a typedef and an object in one namespace, so `typedef ... dk_module;` and a constant
+  named `dk_module` cannot both exist. Modules write `const struct dk_module dk_module = {...}`.
 - The packer finds `dk_module` by symbol and writes `init`, `fini`, `tick` and `menu` into the `.dkm` header. The runtime calls them as
   it calls the `dkm_*` entries today.
 - `dk_ctx` is opaque. The runtime passes it to every lifecycle function. It identifies the module (today implicit in a global) and answers
@@ -194,7 +196,7 @@ static void menu(dk_ctx *ctx, dk_ui_menu *m)
     dk_ui_item_text(m, "BOOT SCREEN");
 }
 
-const dk_module dk_module = { .init = init, .menu = menu };
+const struct dk_module dk_module = { .init = init, .menu = menu };
 ```
 
 ## 6. Declarations
@@ -256,7 +258,7 @@ static int analog_init(dk_ctx *ctx)
     return DK_OK;
 }
 
-const dk_module dk_module = { .init = analog_init };
+const struct dk_module dk_module = { .init = analog_init };
 ```
 
 Optional properties are setters with sensible defaults (range 0 to 127, no glyph, not latched):
@@ -298,7 +300,7 @@ static int init(dk_ctx *ctx)
     return DK_OK;
 }
 
-const dk_module dk_module = { .init = init, .fini = fini, .tick = tick, .menu = menu };
+const struct dk_module dk_module = { .init = init, .fini = fini, .tick = tick, .menu = menu };
 ```
 
 Builder calls never fail one by one. They record what was asked; errors are reported at commit (6.3). On overflow a call returns a
@@ -460,6 +462,24 @@ Rule: every built `.dkm` stays byte-identical. What shipped:
   `offsetof`/`sizeof` checks in `native-page(s)`, `track-select`, `sample-proof`) are rewritten as tests of version refusal and of a
   missing service. These test changes get an independent review before merge.
 - Check: device tests of every migrated module and fixture on both devices; record new hashes.
+
+#### S2b-1 (done, uncommitted at the time of writing): the new contract beside the old one
+
+Every existing module is byte-identical (`sdk:hashes compare`). What S2b-2 inherits:
+
+- `dk_module` is `struct dk_module` with no typedef: `const dk_module dk_module = {...}` (the first form of sections 5 and 5.1) does not compile, because a typedef and an
+  object of one name share a namespace in C; those sections now use `const struct dk_module dk_module`. The `.dkm` header is 0xa8 bytes for such a module (`menu` at 0xa0, `tick` at 0xa4); `DkrtModule` has a new `ctx`
+  field, and the DIGIKIT menu calls `menu(ctx, m)` when it is not 0.
+- Names that clash with an old name of another meaning: `dk_ui_open` (old: open a menu; new: the service accessor) is `dk_ui_open_ctx` until the
+  old call goes; `dk_settings_get/put/remove` and `dk_intro_take` are old inline wrappers in their headers, defined only when
+  `<dk/core/module.h>` was not included first. `dk_ui_menu_new`, `dk_ui_toast`, `dk_ui_confirm`, `dk_ui_choice` and `dk_ui_tick` are one import
+  with the same signature in both entries (the `service`, `since` and `context` fields were added to those entries). S2b-2 renames
+  `dk_ui_open_ctx`, deletes the old ui entries and the legacy branches of `settings.h` and `intro.h`, and folds `file.h` away (it only
+  includes `files.h` now).
+- The service providers (`core/ui`, `core/input`, `core/usb-bulk`, `core/dsp-link`) export the new names as thin functions over the old ones.
+- The old imports without `service` have no `since`; the packer derives the minor from `since` only for a module that defines `dk_module`.
+  A module of the old entry still gets its minor from `uses_api`.
+- The runtime version in `sdk.toml` is not bumped: a bump changes every `.dkm`. Bump it when the contract ships.
 
 ### S3 Builders and the runtime commit path
 

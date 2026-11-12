@@ -21,6 +21,8 @@
  * Module RAM is written only by this code, never by the firmware (the menu proof checks stray writes). */
 #include <stdint.h>
 #include <stddef.h>
+#include <dk/core/status.h>
+#include <dk/gen/imports.h>
 #include <dk/platform/ui.h>
 #include "dk_ui_core.h"
 #include "tick.h"
@@ -952,4 +954,79 @@ int dk_ui_tick(dk_ui_tick_fn *fn, void *ctx, uint32_t period_ms)
         g_polling = 1;
     }
     return r;
+}
+
+/* ---- the service imports of <dk/gen/imports.h> (docs/plans/sdk.md section 5.1) ----
+   The new names of the calls above, for the modules of the new entry. The old names stay until the modules move (S2b-2). */
+
+static int ui_token; /* the dk_ui handle: only a token, there is one UI service per image */
+
+int32_t dk_ui_open_ctx(dk_ctx *ctx, dk_ui **out)
+{
+    if (!ctx || !out)
+        return DK_E_CONTRACT;
+    *out = (dk_ui *)&ui_token;
+    return 0;
+}
+
+int32_t dk_ui_menu_open(dk_ui_menu *m)
+{
+    return dk_ui_open(m);
+}
+
+void dk_ui_menu_close(dk_ui_menu *m)
+{
+    dk_ui_close(m);
+}
+
+void dk_ui_menu_select(dk_ui_menu *m, int32_t row)
+{
+    dk_ui_select(m, (int)row);
+}
+
+void dk_ui_menu_refresh(dk_ui_menu *m)
+{
+    dk_ui_refresh(m);
+}
+
+int32_t dk_ui_menu_is_open(const dk_ui_menu *m)
+{
+    return dk_ui_is_open(m);
+}
+
+void dk_ui_item_text(dk_ui_menu *m, const char *text)
+{
+    dk_ui_text(m, text);
+}
+
+void dk_ui_item_action(dk_ui_menu *m, const char *text, dk_ui_act *run, void *ctx, int32_t arg)
+{
+    dk_ui_action(m, text, (dk_ui_act_fn *)run, ctx, (int)arg);
+}
+
+void dk_ui_item_submenu(dk_ui_menu *m, const char *text, dk_ui_menu *sub)
+{
+    dk_ui_submenu(m, text, sub);
+}
+
+void dk_ui_item_toggle(dk_ui_menu *m, const char *text, int32_t *value, dk_ui_act *changed,
+                       void *ctx)
+{
+    dk_ui_toggle(m, text, (int *)value, (dk_ui_act_fn *)changed, ctx);
+}
+
+void dk_ui_item_value(dk_ui_menu *m, const char *text, int32_t *value, int32_t min, int32_t max,
+                      dk_ui_act *changed, void *ctx)
+{
+    dk_ui_value(m, text, (int *)value, (int)min, (int)max, (dk_ui_act_fn *)changed, ctx);
+}
+
+void dk_ui_item_check(dk_ui_menu *list, int32_t row, int32_t on)
+{
+    dk_ui_check(list, (int)row, (int)on);
+}
+
+int32_t dk_ui_item_checked(const dk_ui_menu *list, int32_t row)
+{
+    return dk_ui_checked(list, (int)row);
 }

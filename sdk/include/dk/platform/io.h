@@ -1,4 +1,4 @@
-/* <dk/platform/io.h> (API 1.10): api->io_post / io_cancel / io_wake run work on the runtime's own I/O task.
+/* <dk/platform/io.h> (api 1.10; the imports dk_io_post, dk_io_cancel and dk_io_wake since 1.11, written api->io_post etc. in the old entry): run work on the runtime's own I/O task.
  *
  * step(ctx) runs on that task (priority 3: below the UI task, so a long transfer does not slow the UI). It may block and it may call
  * api->file_* (<dk/platform/file.h>), which answer E_CONTEXT anywhere else. It returns:

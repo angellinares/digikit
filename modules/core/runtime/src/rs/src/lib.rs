@@ -22,6 +22,7 @@ pub mod card;
 pub mod crash;
 pub mod dlog;
 mod dsp;
+pub mod entry;
 mod gen_abi_check;
 pub mod fxpage;
 mod fxsend;
@@ -306,7 +307,7 @@ pub struct Import {
     pub name: [u8; 28],
     pub addr: *const (),
 }
-pub struct Imports(pub [Import; 15]);
+pub struct Imports(pub [Import; dkrt_sdk::api::BUILTIN_NAMES.len()]);
 unsafe impl Sync for Imports {}
 
 const fn nm(s: &[u8]) -> [u8; 28] {
@@ -318,25 +319,6 @@ const fn nm(s: &[u8]) -> [u8; 28] {
     }
     o
 }
-
-/// The names of `IMPORTS`, in its order; checked against the `[[import]]` entries of `sdk/sdk.toml` without `requires` below.
-const NAMES: [&[u8]; 15] = [
-    b"fw_block_read",
-    b"fw_alloc",
-    b"fw_free",
-    b"memcpy",
-    b"memset",
-    b"memcmp",
-    b"__muldi3",
-    b"__udivdi3",
-    b"__umoddi3",
-    b"dkrt_blocks",
-    b"dkrt_log_sink_set",
-    b"dkrt_log_ev",
-    b"dkrt_peek_range",
-    b"dkrt_track_type",
-    b"dkrt_selected_params",
-];
 
 const fn names_match(ours: &[&[u8]], sdk: &[&str]) -> bool {
     if ours.len() != sdk.len() {
@@ -360,6 +342,83 @@ const fn names_match(ours: &[&[u8]], sdk: &[&str]) -> bool {
     true
 }
 
+/// `NAMES` (the names of `IMPORTS`, in its order) and `IMPORTS` from one list, so a name and its address cannot drift apart; the names are checked against
+/// the `[[import]]` entries of `sdk/sdk.toml` without `requires`.
+macro_rules! import_table {
+    ($(($name:literal, $addr:expr)),* $(,)?) => {
+        const NAMES: [&[u8]; dkrt_sdk::api::BUILTIN_NAMES.len()] = [$($name.as_bytes()),*];
+        /// The names a module may import. Firmware functions come from patch-time anchors (`dkfw`); the helpers are this object's own copies, so a module
+        /// need not carry them. The `dk_*` services are the runtime's own functions (`entry.rs` for the ones that take a handle).
+        pub static IMPORTS: Imports = Imports([$(Import { name: nm($name.as_bytes()), addr: $addr as *const () }),*]);
+    };
+}
+
+import_table! {
+    ("fw_block_read", dkfw::storage::block_read),
+    ("fw_alloc", dkfw::mem::new),
+    ("fw_free", dkfw::mem::free),
+    ("memcpy", memcpy),
+    ("memset", memset),
+    ("memcmp", memcmp),
+    ("__muldi3", __muldi3),
+    ("__udivdi3", __udivdi3),
+    ("__umoddi3", __umoddi3),
+    // the 1500 Hz block clock (`dkrt_blocks`), for a module that wants to measure time
+    ("dkrt_blocks", dkrt_blocks),
+    ("dkrt_log_sink_set", dlog::dkrt_log_sink_set),
+    ("dkrt_log_ev", dlog::dkrt_log_ev),
+    ("dkrt_peek_range", dkrt_peek_range),
+    ("dkrt_track_type", dkrt_track_type),
+    ("dkrt_selected_params", dkrt_selected_params),
+    // the service imports (docs/plans/sdk.md section 5.1)
+    ("dk_alloc", api_alloc),
+    ("dk_free", api_free),
+    ("dk_log", api_log_lv),
+    ("dk_log_event", dlog::dkrt_log_ev),
+    ("dk_time_blocks", dkrt_blocks),
+    ("dk_store_read", api_store_read),
+    ("dk_host_register", api_register_cmds),
+    ("dk_ctx_device", entry::dk_ctx_device),
+    ("dk_ctx_runtime_version", entry::dk_ctx_runtime_version),
+    ("dk_settings_open", entry::dk_settings_open),
+    ("dk_settings_get", entry::dk_settings_get),
+    ("dk_settings_put", entry::dk_settings_put),
+    ("dk_settings_remove", entry::dk_settings_remove),
+    ("dk_files_open", entry::dk_files_open),
+    ("dk_files_list", entry::dk_files_list),
+    ("dk_files_poll", entry::dk_files_poll),
+    ("dk_files_cancel", entry::dk_files_cancel),
+    ("dk_file_create", api_file_create),
+    ("dk_file_write", api_file_write),
+    ("dk_file_close", api_file_close),
+    ("dk_file_abort", api_file_abort),
+    ("dk_file_delete", api_file_delete),
+    ("dk_io_post", api_io_post),
+    ("dk_io_cancel", api_io_cancel),
+    ("dk_io_wake", api_io_wake),
+    ("dk_job_post", api_job_post),
+    ("dk_job_cancel", api_job_cancel),
+    ("dk_hash32_init", api_hash32_init),
+    ("dk_hash32_update", api_hash32_update),
+    ("dk_hash32_finish", api_hash32_finish),
+    ("dk_intro_take", api_intro_take),
+    ("dk_param_get", api_param_get),
+    ("dk_param_set", api_param_set),
+    ("dk_sample_pool_open", entry::dk_sample_pool_open),
+    ("dk_sample_pool_add", entry::dk_sample_pool_add),
+    ("dk_sample_pool_clear", entry::dk_sample_pool_clear),
+    ("dk_sample_pool_status", entry::dk_sample_pool_status),
+    ("dk_sample_pool_info", entry::dk_sample_pool_info),
+    ("dk_sample_pool_path", entry::dk_sample_pool_path),
+    ("dk_sample_pool_set", entry::dk_sample_pool_set),
+    ("dk_sample_pool_peaks", entry::dk_sample_pool_peaks),
+    ("dk_sample_pool_peaks_window", entry::dk_sample_pool_peaks_window),
+    ("dk_debug_peek", dkrt_peek_range),
+    ("dk_debug_track_type", dkrt_track_type),
+    ("dk_debug_selected_params", dkrt_selected_params),
+    ("dk_debug_log_sink_set", dlog::dkrt_log_sink_set),
+}
+
 const _: () = assert!(names_match(&NAMES, &dkrt_sdk::api::BUILTIN_NAMES), "IMPORTS names differ from [[import]] of sdk/sdk.toml");
 const _: dkrt_sdk::api::DkrtBlocksFn = dkrt_blocks;
 const _: dkrt_sdk::api::DkrtLogSinkSetFn = dlog::dkrt_log_sink_set;
@@ -367,72 +426,53 @@ const _: dkrt_sdk::api::DkrtLogEvFn = dlog::dkrt_log_ev;
 const _: dkrt_sdk::api::DkrtPeekRangeFn = dkrt_peek_range;
 const _: dkrt_sdk::api::DkrtTrackTypeFn = dkrt_track_type;
 const _: dkrt_sdk::api::DkrtSelectedParamsFn = dkrt_selected_params;
-
-/// The names a module may import. Firmware functions come from patch-time anchors (`dkfw`); the helpers are this
-/// object's own copies, so a module need not carry them.
-pub static IMPORTS: Imports = Imports([
-    Import {
-        name: nm(NAMES[0]),
-        addr: dkfw::storage::block_read as *const (),
-    },
-    Import {
-        name: nm(NAMES[1]),
-        addr: dkfw::mem::new as *const (),
-    },
-    Import {
-        name: nm(NAMES[2]),
-        addr: dkfw::mem::free as *const (),
-    },
-    Import {
-        name: nm(NAMES[3]),
-        addr: memcpy as *const (),
-    },
-    Import {
-        name: nm(NAMES[4]),
-        addr: memset as *const (),
-    },
-    Import {
-        name: nm(NAMES[5]),
-        addr: memcmp as *const (),
-    },
-    Import {
-        name: nm(NAMES[6]),
-        addr: __muldi3 as *const (),
-    },
-    Import {
-        name: nm(NAMES[7]),
-        addr: __udivdi3 as *const (),
-    },
-    Import {
-        name: nm(NAMES[8]),
-        addr: __umoddi3 as *const (),
-    },
-    // the 1500 Hz block clock (`dkrt_blocks`), for a module that wants to measure time
-    Import {
-        name: nm(NAMES[9]),
-        addr: dkrt_blocks as *const (),
-    },
-    Import {
-        name: nm(NAMES[10]),
-        addr: dlog::dkrt_log_sink_set as *const (),
-    },
-    Import {
-        name: nm(NAMES[11]),
-        addr: dlog::dkrt_log_ev as *const (),
-    },
-    Import {
-        name: nm(NAMES[12]),
-        addr: dkrt_peek_range as *const (),
-    },
-    Import {
-        name: nm(NAMES[13]),
-        addr: dkrt_track_type as *const (),
-    },
-    Import {
-        name: nm(NAMES[14]),
-        addr: dkrt_selected_params as *const (),
-    },
-]);
+// the service imports have the types sdk/sdk.toml gives them
+const _: dkrt_sdk::api::DkAllocFn = api_alloc;
+const _: dkrt_sdk::api::DkFreeFn = api_free;
+const _: dkrt_sdk::api::DkLogFn = api_log_lv;
+const _: dkrt_sdk::api::DkLogEventFn = dlog::dkrt_log_ev;
+const _: dkrt_sdk::api::DkTimeBlocksFn = dkrt_blocks;
+const _: dkrt_sdk::api::DkStoreReadFn = api_store_read;
+const _: dkrt_sdk::api::DkHostRegisterFn = api_register_cmds;
+const _: dkrt_sdk::api::DkCtxDeviceFn = entry::dk_ctx_device;
+const _: dkrt_sdk::api::DkCtxRuntimeVersionFn = entry::dk_ctx_runtime_version;
+const _: dkrt_sdk::api::DkSettingsOpenFn = entry::dk_settings_open;
+const _: dkrt_sdk::api::DkSettingsGetFn = entry::dk_settings_get;
+const _: dkrt_sdk::api::DkSettingsPutFn = entry::dk_settings_put;
+const _: dkrt_sdk::api::DkSettingsRemoveFn = entry::dk_settings_remove;
+const _: dkrt_sdk::api::DkFilesOpenFn = entry::dk_files_open;
+const _: dkrt_sdk::api::DkFilesListFn = entry::dk_files_list;
+const _: dkrt_sdk::api::DkFilesPollFn = entry::dk_files_poll;
+const _: dkrt_sdk::api::DkFilesCancelFn = entry::dk_files_cancel;
+const _: dkrt_sdk::api::DkFileCreateFn = api_file_create;
+const _: dkrt_sdk::api::DkFileWriteFn = api_file_write;
+const _: dkrt_sdk::api::DkFileCloseFn = api_file_close;
+const _: dkrt_sdk::api::DkFileAbortFn = api_file_abort;
+const _: dkrt_sdk::api::DkFileDeleteFn = api_file_delete;
+const _: dkrt_sdk::api::DkIoPostFn = api_io_post;
+const _: dkrt_sdk::api::DkIoCancelFn = api_io_cancel;
+const _: dkrt_sdk::api::DkIoWakeFn = api_io_wake;
+const _: dkrt_sdk::api::DkJobPostFn = api_job_post;
+const _: dkrt_sdk::api::DkJobCancelFn = api_job_cancel;
+const _: dkrt_sdk::api::DkHash32InitFn = api_hash32_init;
+const _: dkrt_sdk::api::DkHash32UpdateFn = api_hash32_update;
+const _: dkrt_sdk::api::DkHash32FinishFn = api_hash32_finish;
+const _: dkrt_sdk::api::DkIntroTakeFn = api_intro_take;
+const _: dkrt_sdk::api::DkParamGetFn = api_param_get;
+const _: dkrt_sdk::api::DkParamSetFn = api_param_set;
+const _: dkrt_sdk::api::DkSamplePoolOpenFn = entry::dk_sample_pool_open;
+const _: dkrt_sdk::api::DkSamplePoolAddFn = entry::dk_sample_pool_add;
+const _: dkrt_sdk::api::DkSamplePoolClearFn = entry::dk_sample_pool_clear;
+const _: dkrt_sdk::api::DkSamplePoolStatusFn = entry::dk_sample_pool_status;
+const _: dkrt_sdk::api::DkSamplePoolInfoFn = entry::dk_sample_pool_info;
+const _: dkrt_sdk::api::DkSamplePoolPathFn = entry::dk_sample_pool_path;
+const _: dkrt_sdk::api::DkSamplePoolSetFn = entry::dk_sample_pool_set;
+const _: dkrt_sdk::api::DkSamplePoolPeaksFn = entry::dk_sample_pool_peaks;
+const _: dkrt_sdk::api::DkSamplePoolPeaksWindowFn = entry::dk_sample_pool_peaks_window;
+const _: dkrt_sdk::api::DkDebugPeekFn = dkrt_peek_range;
+const _: dkrt_sdk::api::DkDebugTrackTypeFn = dkrt_track_type;
+const _: dkrt_sdk::api::DkDebugSelectedParamsFn = dkrt_selected_params;
+const _: dkrt_sdk::api::DkDebugLogSinkSetFn = dlog::dkrt_log_sink_set;
 
 extern "C" {
     /// Per-device data from the device file (`[digikit] peek`), defined by `src/cf/<dev>/device.s`: the number of ranges and `lo, hi` pairs.
@@ -1110,6 +1150,7 @@ pub unsafe extern "C" fn dkrt_module(index: u32, out: *mut DkrtModule) -> i32 {
                 o.state = if m.used == 2 { MOD_LOADING } else { MOD_LOADED };
                 o.dsp_size = dsp::ds().mod_len[i];
                 o.menu = (*addr_of!(DKRT_MENUS))[i];
+                o.ctx = entry::ctx_addr(i);
                 return OK;
             }
             seen += 1;
@@ -1268,6 +1309,8 @@ pub unsafe extern "C" fn dkrt_tick() {
         write_volatile(addr_of_mut!(s.entered[0]), s.entered[0] - 1);
         s.slot_calls = s.slot_calls.wrapping_add(1);
     }
+    // the tick of every module of the new entry (`dk_module.tick`)
+    entry::tick_all();
     let p = read_volatile(addr_of!(DKRT_POLL));
     if p != 0 {
         let call: unsafe extern "C" fn() = core::mem::transmute(p);

@@ -28,6 +28,12 @@
  * buf must stay valid until the state is DL_DONE or DL_ERROR. DL_DONE means the DSP has taken every chunk, has the bytes
  * in L2 and has invalidated its instruction caches. */
 
+#include <stdint.h>
+
+/* The opaque handle types of the service imports (sdk/sdk.toml [handle]); <dk/gen/imports.h> is not included: it also declares the old import names with the SDK's integer types. */
+typedef struct dk_ctx dk_ctx;
+typedef struct dk_dsp_link dk_dsp_link;
+
 #include "dl-limits.h"
 
 typedef unsigned int u32;
@@ -336,4 +342,23 @@ void dl_tick(int len, const u16 *src, int reclen, const volatile u16 *rec)
         put_word(tx, e0, 0, 0); /* no magic: the DSP sees stock frames again */
         l->dirty = 0;
     }
+}
+
+/* ---- the service imports of <dk/gen/imports.h> (docs/plans/sdk.md section 5.1) ---- */
+
+static int dl_token; /* the dk_dsp_link handle: only a token */
+
+int32_t dk_dsp_link_open(dk_ctx *ctx, dk_dsp_link **out)
+{
+    if (!ctx || !out)
+        return -48; /* DK_E_CONTRACT */
+    *out = (dk_dsp_link *)&dl_token;
+    return 0;
+}
+
+int32_t dk_dsp_link_set_tick(dk_dsp_link *dl, uint8_t *cb)
+{
+    (void)dl;
+    dl_set_tick_cb((void (*)(const volatile u16 *))cb);
+    return 0;
 }

@@ -29,7 +29,7 @@ file; the loaded image starts at a 16-byte aligned file offset.
 | 0x00 | 4 | magic `DKMF` (0x444b4d46) |
 | 0x04 | 4 | format version = 1 |
 | 0x08 | 4 | file size in bytes |
-| 0x0c | 4 | header size = 0xa0, or 0xa4 when the file has the `menu` field (below) |
+| 0x0c | 4 | header size = 0xa0, 0xa4 when the file has the `menu` field (below), or 0xa8 for a module with the entry point `dk_module` (menu and tick) |
 | 0x10 | 32 | sha256 of the whole file with these 32 bytes read as zeros |
 | 0x30 | 4 | `runtime_min`: informational, the runtime version the module was built for (packed semantic version; informational; `dkrt_sdk::RUNTIME_VERSION`, now 0.1.0); since runtime 0.1.0 the loader does not refuse on it (the contract bytes at 0x38 decide). Bit 31 is the **trace flag**: the module was packed with `patchkit pack --trace` (built with `DK_TRACE`); the loader ignores it, the DIGIKIT menu shows `TRACE` for the module (`dkrt_module_header` `flags`), `dkm-info` prints it. A version never reaches bit 31 |
 | 0x34 | 4 | module version, `major << 16 \| minor << 8 \| patch` |
@@ -51,7 +51,8 @@ file; the loaded image starts at a 16-byte aligned file offset.
 | 0x94 | 4 | `register_size` (0: none) |
 | 0x98 | 4 | `dsp_off`: offset of the DSP section (0: none) |
 | 0x9c | 4 | `dsp_size`: its size in bytes |
-| 0xa0 | 4 | `menu`: image offset of `dkm_menu`. Only a module that exports `dkm_menu` has this field: its header size (0x0c) is 0xa4 instead of 0xa0, and the tables follow the header. Readers take the header size from the file and accept both |
+| 0xa0 | 4 | `menu`: image offset of `dkm_menu`. Only a module that exports `dkm_menu` has this field: its header size (0x0c) is 0xa4 instead of 0xa0, and the tables follow the header. Readers take the header size from the file and accept 0xa0, 0xa4 and 0xa8 |
+| 0xa4 | 4 | `tick`: image offset of `dk_module.tick` (`0xffffffff`: none). Only a module that defines `dk_module` has this field: its header size is 0xa8, `menu` (0xa0) holds `dk_module.menu` or `0xffffffff`, `init` and `fini` (0x80, 0x84) hold `dk_module.init` and `dk_module.fini`, the slot table is empty, and the runtime calls `init`, `fini`, `tick` and `menu` with a `dk_ctx *` instead of the Api table (docs/plans/sdk.md section 5). The Api minor in the header (0x39) is the newest `since` of the imports the module links, at least 11 |
 
 After the header, in this order, each table where its offset says: imports, relocations, slot bindings, the `register` records,
 the DSP section (16-byte aligned), padding to 16, then the image. A file with a DSP section carries the machine contract at 0x38 (a section of version 2; runtime 5 and later also load version 1).
@@ -84,7 +85,7 @@ non-zero the load is undone (`E_INIT`).
 A module does not say what a load of it takes of the device. The needs are worked out from the file's own contents, by one function, `needs_of(source)` of
 the crate `packages/dkneeds` (no_std, no dependency). Why: a module that reported its own needs could misreport them, by mistake or on purpose, and every reader
 (the menu, the host app, the tools) would have to trust it; a contributed or hand-built `.dkm` has no field to lie in. The runtime enforces the same limits when it
-loads (its loader reads the real tables), so the inferred needs are the answer before the load, never the check itself. There is no needs block in the header: the header is the 0xa0-byte (or, with a menu, 0xa4-byte)
+loads (its loader reads the real tables), so the inferred needs are the answer before the load, never the check itself. There is no needs block in the header: the header is the 0xa0-byte (with a menu 0xa4-byte, with `dk_module` 0xa8-byte)
 header of format 1, and every format 1 file has needs.
 
 `needs_of` reads the file through a byte source (`dkneeds::Bytes`: a size and a read at an offset), so the device can feed it from store sector reads without staging the file and a host from a

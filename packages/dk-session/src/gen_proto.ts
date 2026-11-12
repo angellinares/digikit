@@ -131,6 +131,7 @@ export const LOAD_STATUS: [number, string, string][] = [
   [-47, 'E_CARD_RO', "the card's store area is not ours and not blank"],
   [-48, 'E_CONTRACT', 'the module was built for another SDK contract'],
   [-49, 'E_TABLE', "the runtime's tables failed their check"],
+  [-73, 'E_MISSING', 'the service is not in the image (the module that provides it is not loaded)'],
 ];
 
 export const CAP = {
@@ -155,6 +156,7 @@ export const CAP = {
 /** The command numbers a module may register: [first, last]. */
 export const RANGES = {
   debug: [0x20, 0x22],
+  entry_demo_test: [0x1c, 0x1d],
   file_write_test: [0x24, 0x27],
   file_write_test_b: [0x28, 0x2b],
   probe: [0x32, 0x35],

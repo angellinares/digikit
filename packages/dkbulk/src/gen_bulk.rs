@@ -85,3 +85,4 @@ pub const L_E_RANGE: i16 = -46;
 pub const L_E_CARD_RO: i16 = -47;
 pub const L_E_CONTRACT: i16 = -48;
 pub const L_E_TABLE: i16 = -49;
+pub const L_E_MISSING: i16 = -73;
