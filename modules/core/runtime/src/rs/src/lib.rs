@@ -378,8 +378,8 @@ import_table! {
     ("dk_time_blocks", dkrt_blocks),
     ("dk_store_read", api_store_read),
     ("dk_host_register", api_register_cmds),
-    ("dk_ctx_device", entry::dk_ctx_device),
-    ("dk_ctx_runtime_version", entry::dk_ctx_runtime_version),
+    ("dk_module_ctx_device", entry::dk_module_ctx_device),
+    ("dk_module_ctx_runtime", entry::dk_module_ctx_runtime),
     ("dk_settings_open", entry::dk_settings_open),
     ("dk_settings_get", entry::dk_settings_get),
     ("dk_settings_put", entry::dk_settings_put),
@@ -388,11 +388,11 @@ import_table! {
     ("dk_files_list", entry::dk_files_list),
     ("dk_files_poll", entry::dk_files_poll),
     ("dk_files_cancel", entry::dk_files_cancel),
-    ("dk_file_create", api_file_create),
-    ("dk_file_write", api_file_write),
-    ("dk_file_close", api_file_close),
-    ("dk_file_abort", api_file_abort),
-    ("dk_file_delete", api_file_delete),
+    ("dk_files_create", entry::dk_files_create),
+    ("dk_files_write", entry::dk_files_write),
+    ("dk_files_close", entry::dk_files_close),
+    ("dk_files_abort", entry::dk_files_abort),
+    ("dk_files_delete", entry::dk_files_delete),
     ("dk_io_post", api_io_post),
     ("dk_io_cancel", api_io_cancel),
     ("dk_io_wake", api_io_wake),
@@ -434,8 +434,8 @@ const _: dkrt_sdk::api::DkLogEventFn = dlog::dkrt_log_ev;
 const _: dkrt_sdk::api::DkTimeBlocksFn = dkrt_blocks;
 const _: dkrt_sdk::api::DkStoreReadFn = api_store_read;
 const _: dkrt_sdk::api::DkHostRegisterFn = api_register_cmds;
-const _: dkrt_sdk::api::DkCtxDeviceFn = entry::dk_ctx_device;
-const _: dkrt_sdk::api::DkCtxRuntimeVersionFn = entry::dk_ctx_runtime_version;
+const _: dkrt_sdk::api::DkModuleCtxDeviceFn = entry::dk_module_ctx_device;
+const _: dkrt_sdk::api::DkModuleCtxRuntimeFn = entry::dk_module_ctx_runtime;
 const _: dkrt_sdk::api::DkSettingsOpenFn = entry::dk_settings_open;
 const _: dkrt_sdk::api::DkSettingsGetFn = entry::dk_settings_get;
 const _: dkrt_sdk::api::DkSettingsPutFn = entry::dk_settings_put;
@@ -444,11 +444,11 @@ const _: dkrt_sdk::api::DkFilesOpenFn = entry::dk_files_open;
 const _: dkrt_sdk::api::DkFilesListFn = entry::dk_files_list;
 const _: dkrt_sdk::api::DkFilesPollFn = entry::dk_files_poll;
 const _: dkrt_sdk::api::DkFilesCancelFn = entry::dk_files_cancel;
-const _: dkrt_sdk::api::DkFileCreateFn = api_file_create;
-const _: dkrt_sdk::api::DkFileWriteFn = api_file_write;
-const _: dkrt_sdk::api::DkFileCloseFn = api_file_close;
-const _: dkrt_sdk::api::DkFileAbortFn = api_file_abort;
-const _: dkrt_sdk::api::DkFileDeleteFn = api_file_delete;
+const _: dkrt_sdk::api::DkFilesCreateFn = entry::dk_files_create;
+const _: dkrt_sdk::api::DkFilesWriteFn = entry::dk_files_write;
+const _: dkrt_sdk::api::DkFilesCloseFn = entry::dk_files_close;
+const _: dkrt_sdk::api::DkFilesAbortFn = entry::dk_files_abort;
+const _: dkrt_sdk::api::DkFilesDeleteFn = entry::dk_files_delete;
 const _: dkrt_sdk::api::DkIoPostFn = api_io_post;
 const _: dkrt_sdk::api::DkIoCancelFn = api_io_cancel;
 const _: dkrt_sdk::api::DkIoWakeFn = api_io_wake;

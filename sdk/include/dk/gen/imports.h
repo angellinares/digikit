@@ -8,7 +8,7 @@
 #include <dk/gen/api.h>
 
 /* Opaque handles ([handle] types): the runtime or the provider module gives one out in `init`. */
-typedef struct dk_ctx dk_ctx;
+typedef struct dk_module_ctx dk_module_ctx;
 typedef struct dk_settings dk_settings;
 typedef struct dk_files dk_files;
 typedef struct dk_sample_pool dk_sample_pool;
@@ -18,13 +18,24 @@ typedef struct dk_input dk_input;
 typedef struct dk_usb_bulk dk_usb_bulk;
 typedef struct dk_dsp_link dk_dsp_link;
 
+/* Callback types ([handle.callbacks]): `arg` is the user-data pointer the module gave with the callback. */
+typedef void dk_files_event_fn(uint32_t client, uint32_t request, int32_t state, void *arg);
+typedef int32_t dk_host_cmd_fn(uint32_t cmd, uint32_t seq, const void *body, uint32_t len, void *out);
+typedef void dk_intro_done_fn(void *arg);
+typedef const uint8_t *dk_intro_frame_fn(uint32_t tick, void *arg);
+typedef void dk_io_done_fn(void *arg, int32_t status);
+typedef int32_t dk_io_step_fn(void *arg);
+typedef void dk_job_done_fn(void *arg, int32_t status);
+typedef int32_t dk_job_step_fn(void *arg);
+typedef void dk_ui_action_fn(void *arg, int32_t value);
+
 /* ---- service runtime ---- */
 
 /* A 16-byte aligned block from the module arena (zero is not guaranteed); null when it is full. Context: any. Since api 1.11. */
-uint8_t *dk_alloc(uint32_t size);
+void *dk_alloc(uint32_t size);
 
 /* Give back a block of dk_alloc. Context: any. Since api 1.11. */
-void dk_free(uint8_t *p);
+void dk_free(void *p);
 
 /* Append `msg` (NUL-terminated, 24 bytes kept) and `value` to the runtime's log ring at `level` (0 error, 1 warn, 2 info, 3 debug, 4 trace; above 4 is 4). See <dk/core/log.h>. Context: any. Since api 1.11. */
 void dk_log(uint32_t level, const char *msg, uint32_t value);
@@ -36,19 +47,19 @@ void dk_log_event(uint32_t kind, uint32_t flags, const uint32_t *a);
 uint32_t dk_time_blocks(void);
 
 /* Read a store file into `dst` (at most `cap` bytes); returns the file size, or a negative code. It uses the runtime's staging buffer. Context: init. Since api 1.11. */
-int32_t dk_store_read(const char *path, uint8_t *dst, uint32_t cap);
+int32_t dk_store_read(const char *path, void *dst, uint32_t cap);
 
-/* Register the SysEx commands `first .. first + count` with `handler`. The range must lie inside one of the ranges sdk/sdk.toml [protocol.ranges] reserves and overlap no registered one; else it returns DK_E_CMD_RANGE. The range is released with the module. Returns 0. See <dk/platform/host.h>. Context: init. Since api 1.11. */
-int32_t dk_host_register(uint32_t first, uint32_t count, dk_service_cmd *handler);
+/* Register the SysEx commands `first .. first + count` with `fn`. The range must lie inside one of the ranges sdk/sdk.toml [protocol.ranges] reserves and overlap no registered one; else it returns DK_E_CMD_RANGE. The range is released with the module. Returns 0. See <dk/platform/host.h>. Context: init. Since api 1.11. */
+int32_t dk_host_register(uint32_t first, uint32_t count, dk_host_cmd_fn *fn);
 
 /* The device's `[digikit] id` (DT2 or DN2); 0 for a pointer that is not a context. Context: any. Since api 1.11. */
-uint32_t dk_ctx_device(dk_ctx *ctx);
+uint32_t dk_module_ctx_device(dk_module_ctx *ctx);
 
 /* The runtime version, packed major << 16 | minor << 8 | patch; 0 for a pointer that is not a context. Context: any. Since api 1.11. */
-uint32_t dk_ctx_runtime_version(dk_ctx *ctx);
+uint32_t dk_module_ctx_runtime(dk_module_ctx *ctx);
 
 /* Open this module's settings: `*out` is the handle (the same one every time), the result 0. A negative result outside init (DK_E_NOT_FOUND) or for a bad context (DK_E_CONTRACT); `*out` is untouched then. Context: init. Since api 1.11. */
-int32_t dk_settings_open(dk_ctx *ctx, dk_settings **out);
+int32_t dk_settings_open(dk_module_ctx *ctx, dk_settings **out);
 
 /* Read the value of `key` (NUL-terminated, own key space) into `out` (`cap` bytes): returns its length (0 is valid), DK_E_SET_NOKEY when there is none, DK_E_SET_VALUE when `cap` is too small (nothing is written), DK_E_SET_KEY for a bad handle or key, DK_E_SET_OFF when the settings store is off. Context: ui. Since api 1.11. */
 int32_t dk_settings_get(dk_settings *s, const char *key, void *out, uint32_t cap);
@@ -60,34 +71,34 @@ int32_t dk_settings_put(dk_settings *s, const char *key, const void *value, uint
 int32_t dk_settings_remove(dk_settings *s, const char *key);
 
 /* Open this module's listing client: `*out` is the handle, the result 0. A negative result outside init or when the client table is full; `*out` is untouched then. Context: init. Since api 1.11. */
-int32_t dk_files_open(dk_ctx *ctx, dk_files **out);
+int32_t dk_files_open(dk_module_ctx *ctx, dk_files **out);
 
 /* Copy a canonical root-relative directory request; positive ticket or negative error. Supersedes prior results. The optional deferred UI-task notify and its context stay module-owned. No I/O here. Context: ui. Since api 1.11. */
-int32_t dk_files_list(dk_files *f, uint32_t root, const char *path, dk_file_event *notify, uint8_t *context);
+int32_t dk_files_list(dk_files *f, uint32_t root, const char *path, dk_files_event_fn *notify, void *arg);
 
 /* No I/O: 0 pending, 1 copied 304-byte dk_file_entry, 2 end, negative error. The output is unchanged unless 1. Context: ui. Since api 1.11. */
-int32_t dk_files_poll(dk_files *f, uint32_t ticket, uint8_t *out, uint32_t capacity);
+int32_t dk_files_poll(dk_files *f, uint32_t ticket, void *out, uint32_t capacity);
 
 /* Invalidate the matching request, its results and its queued notification without waiting for active work or a callback. Context: ui. Since api 1.11. */
 int32_t dk_files_cancel(dk_files *f, uint32_t ticket);
 
-/* Open the one write session for the file `path` of `size` bytes under `root` (DK_FILES_STORE or DK_FILES_SAMPLES). `hash4`: NULL, or the expected file hash; dk_file_close then checks it. `flags`: 0 or DK_FILE_REPLACE (1). Returns a handle > 0 owned by this module, or a negative status (DK_E_BUSY: try again; DK_E_EXISTS, DK_E_FILE_IN_USE, DK_E_PATH, DK_E_FULL, DK_E_NOSTORE, DK_E_INUSE, DK_E_WRITE; DK_E_CONTEXT outside an I/O step). See <dk/platform/files.h>. Context: io-step. Since api 1.11. */
-int32_t dk_file_create(uint32_t root, const char *path, uint32_t size, const uint8_t *hash4, uint32_t flags);
+/* Open the one write session for the file `path` of `size` bytes under `root` (DK_FILES_STORE or DK_FILES_SAMPLES). `hash4`: NULL, or the expected file hash; dk_files_close then checks it. `flags`: 0 or DK_FILE_REPLACE (1). Returns a handle > 0 owned by this module, or a negative status (DK_E_BUSY: try again; DK_E_EXISTS, DK_E_FILE_IN_USE, DK_E_PATH, DK_E_FULL, DK_E_NOSTORE, DK_E_INUSE, DK_E_WRITE; DK_E_CONTEXT outside an I/O step). See <dk/platform/files.h>. Context: io-step. Since api 1.11. */
+int32_t dk_files_create(dk_files *f, uint32_t root, const char *path, uint32_t size, const void *hash4, uint32_t flags);
 
 /* Write `len` bytes at `offset`, the next byte of the file. `buf` is 16-byte aligned; `len` a multiple of 512 except for the last piece (the tail sector is padded with zeros). Returns 0 or DK_E_STATE, DK_E_OFFSET, DK_E_LENGTH, DK_E_WRITE, DK_E_CONTRACT (unaligned buf), DK_E_BUSY (nothing was written: call again). Context: io-step. Since api 1.11. */
-int32_t dk_file_write(int32_t h, uint32_t offset, const uint8_t *buf, uint32_t len);
+int32_t dk_files_write(dk_files *f, int32_t h, uint32_t offset, const void *buf, uint32_t len);
 
 /* End the file. All `size` bytes must have been written (DK_E_LENGTH) and match `hash4` when it was given (DK_E_HASH); the table is committed (power-cut safe). `hash_out` (4 bytes, may be NULL) gets the file hash of the bytes written. The session is closed whatever the result, except for DK_E_BUSY (try again). Context: io-step. Since api 1.11. */
-int32_t dk_file_close(int32_t h, uint8_t *hash_out);
+int32_t dk_files_close(dk_files *f, int32_t h, void *hash_out);
 
 /* Drop the session and the partial file. Returns 0 or DK_E_STATE. Context: io-step. Since api 1.11. */
-int32_t dk_file_abort(int32_t h);
+int32_t dk_files_abort(dk_files *f, int32_t h);
 
 /* Remove a file or folder entry. Returns 0, DK_E_NOFILE, DK_E_FILE_IN_USE (a reader still reads it: try again later), DK_E_BUSY or a path or store status. Context: io-step. Since api 1.11. */
-int32_t dk_file_delete(uint32_t root, const char *path);
+int32_t dk_files_delete(dk_files *f, uint32_t root, const char *path);
 
-/* Run `step(ctx)` on the runtime's I/O task (<dk/platform/io.h>). The step may block and call dk_file_*. It returns DK_IO_MORE (run again), DK_IO_WAIT (sleep until dk_io_wake), 0 (done) or a negative error. `done(ctx, status)` runs once in the UI task. Returns a job id > 0, DK_E_CONTRACT (no step) or DK_E_BUSY (8 jobs). Context: any. Since api 1.11. */
-int32_t dk_io_post(dk_io_step *step, dk_io_done *done, uint8_t *ctx);
+/* Run `step(arg)` on the runtime's I/O task (<dk/platform/io.h>). The step may block and call dk_files_create, dk_files_write, dk_files_close, dk_files_abort and dk_files_delete. It returns DK_IO_MORE (run again), DK_IO_WAIT (sleep until dk_io_wake), 0 (done) or a negative error. `done(arg, status)` runs once in the UI task. Returns a job id > 0, DK_E_CONTRACT (no step) or DK_E_BUSY (8 jobs). Context: any. Since api 1.11. */
+int32_t dk_io_post(dk_io_step_fn *step, dk_io_done_fn *done, void *arg);
 
 /* Cancel a job of this module: a queued job never runs, a running one stops after its step returns; `done` gets DK_IO_E_CANCELLED. Returns 0 or DK_E_NOT_FOUND. Context: any. Since api 1.11. */
 int32_t dk_io_cancel(int32_t id);
@@ -95,23 +106,23 @@ int32_t dk_io_cancel(int32_t id);
 /* Wake a job whose step returned DK_IO_WAIT. Callable from an interrupt handler, an adapter or any task. Unknown ids are ignored. Context: isr. Since api 1.11. */
 void dk_io_wake(int32_t id);
 
-/* Run `step(ctx)` on the background worker until it returns 0 or a negative error (DK_JOB_MORE: call again; <dk/platform/job.h>). `done(ctx, status)` is called once in the UI task. Returns a job id > 0, DK_E_BUSY (8 jobs are queued) or DK_E_CONTRACT (no step). Context: ui. Since api 1.11. */
-int32_t dk_job_post(dk_job_step *step, dk_job_done *done, uint8_t *ctx);
+/* Run `step(arg)` on the background worker until it returns 0 or a negative error (DK_JOB_MORE: call again; <dk/platform/job.h>). `done(arg, status)` is called once in the UI task. Returns a job id > 0, DK_E_BUSY (8 jobs are queued) or DK_E_CONTRACT (no step). Context: ui. Since api 1.11. */
+int32_t dk_job_post(dk_job_step_fn *step, dk_job_done_fn *done, void *arg);
 
 /* Cancel a job of this module: a queued job never runs and a running one stops after its current step; `done` gets DK_JOB_E_CANCELLED. Returns 0, or DK_E_NOT_FOUND for an unknown id. Context: ui. Since api 1.11. */
 int32_t dk_job_cancel(uint32_t id);
 
 /* Start the file hash (the Elektron +Drive content hash, <dk/platform/hash32.h>) in the caller's 28-byte `dk_hash32`. Context: any. Since api 1.11. */
-void dk_hash32_init(uint8_t *state);
+void dk_hash32_init(void *state);
 
 /* Feed `n` bytes. Context: any. Since api 1.11. */
-void dk_hash32_update(uint8_t *state, const uint8_t *p, uint32_t n);
+void dk_hash32_update(void *state, const void *p, uint32_t n);
 
 /* The file hash `hash|1`: the value the store keeps (4 bytes big-endian in a table slot). The state is spent. Context: any. Since api 1.11. */
-uint32_t dk_hash32_finish(uint8_t *state);
+uint32_t dk_hash32_finish(void *state);
 
-/* Replace the stock boot animation. `frame(tick, ctx)` returns the 1024-byte native bitmap of tick 0 .. ticks-1 (30 ticks a second), or NULL to end the animation; it runs on the intro task, must not block and must not call any import. `done(ctx)` (may be NULL) runs once in the UI task at the first UI pass. `ticks` is 1 to 300. Returns 0, DK_E_NOT_FOUND outside init, DK_E_CONTRACT, DK_E_BUSY (taken already) or DK_E_BOOT_ONLY. See <dk/platform/intro.h>. Context: init. Since api 1.11. */
-int32_t dk_intro_take(dk_intro_frame *frame, dk_intro_done *done, void *ctx, uint32_t ticks);
+/* Replace the stock boot animation. `frame(tick, arg)` returns the 1024-byte native bitmap of tick 0 .. ticks-1 (30 ticks a second), or NULL to end the animation; it runs on the intro task, must not block and must not call any import. `done(arg)` (may be NULL) runs once in the UI task at the first UI pass. `ticks` is 1 to 300. Returns 0, DK_E_NOT_FOUND outside init, DK_E_CONTRACT, DK_E_BUSY (taken already) or DK_E_BOOT_ONLY. See <dk/platform/intro.h>. Context: init. Since api 1.11. */
+int32_t dk_intro_take(dk_intro_frame_fn *frame, dk_intro_done_fn *done, void *arg, uint32_t ticks);
 
 /* The RAM ranges `[lo, hi)` of the device file's `[digikit] peek`: returns how many there are, and for `i` below that writes `lo, hi` to `out[0..2]`. For a module that implements PEEK. See <dk/platform/debug.h>. Context: any. Since api 1.11. */
 uint32_t dk_debug_peek(uint32_t i, uint32_t *out);
@@ -128,7 +139,7 @@ void dk_debug_log_sink_set(uint8_t *sink, uint8_t *tick);
 /* ---- service samples ---- */
 
 /* Open the module's 16-entry sample pool table (its lowest DK_SAMPLE_TRACKS id): `*out` is the handle, the result 0. A negative DK_E_* result when the module has none, declares a bank too, or this is not init; `*out` is untouched then. Context: init. Since api 1.11. */
-int32_t dk_sample_pool_open(dk_ctx *ctx, dk_sample_pool **out);
+int32_t dk_sample_pool_open(dk_module_ctx *ctx, dk_sample_pool **out);
 
 /* Add a stereo-capable sample file to the pool (copies the path, no file IO here). Returns the pool index 0..15: the first free entry, or the entry that already holds this path. DK_E_POOL when all 16 are in use; DK_E_SEL_PATH for an empty or too long path. See <dk/sample/pool.h>. Context: ui. Since api 1.11. */
 int32_t dk_sample_pool_add(dk_sample_pool *p, const char *path);
@@ -140,7 +151,7 @@ int32_t dk_sample_pool_clear(dk_sample_pool *p, uint32_t index);
 int32_t dk_sample_pool_status(dk_sample_pool *p, uint32_t index);
 
 /* Copy a 16-byte dk_sample_info (frames, rate, channels, token) of a READY entry; otherwise a negative error and `out` is untouched. Context: ui. Since api 1.11. */
-int32_t dk_sample_pool_info(dk_sample_pool *p, uint32_t index, uint8_t *out);
+int32_t dk_sample_pool_info(dk_sample_pool *p, uint32_t index, void *out);
 
 /* Copy the root-relative path of the entry into `buf` and return its length without the NUL. `cap` too small: DK_E_SEL_PATH and `buf` is untouched. Context: ui. Since api 1.11. */
 int32_t dk_sample_pool_path(dk_sample_pool *p, uint32_t index, char *buf, uint32_t cap);
@@ -149,10 +160,10 @@ int32_t dk_sample_pool_path(dk_sample_pool *p, uint32_t index, char *buf, uint32
 int32_t dk_sample_pool_set(dk_sample_pool *p, uint32_t index, const char *path);
 
 /* Copy bounded PCM16 min/max overview pairs of a READY pool entry matching token. Returns the bin count (1..512), or a negative error; capacity is bytes, the output is unchanged on refusal. Context: ui. Since api 1.11. */
-int32_t dk_sample_pool_peaks(dk_sample_pool *p, uint32_t index, uint32_t token, uint8_t *out, uint32_t capacity);
+int32_t dk_sample_pool_peaks(dk_sample_pool *p, uint32_t index, uint32_t token, void *out, uint32_t capacity);
 
 /* Min/max of `columns` equal parts of the frames [first, first + frames) of a READY pool entry matching token, computed in the background. Returns `columns` when ready, 0 while it is computed, or a negative error. Poll from the draw callback. Context: ui. Since api 1.11. */
-int32_t dk_sample_pool_peaks_window(dk_sample_pool *p, uint32_t index, uint32_t token, uint32_t first, uint32_t frames, uint32_t columns, uint8_t *out, uint32_t capacity);
+int32_t dk_sample_pool_peaks_window(dk_sample_pool *p, uint32_t index, uint32_t token, uint32_t first, uint32_t frames, uint32_t columns, void *out, uint32_t capacity);
 
 /* ---- service machines ---- */
 
@@ -164,8 +175,8 @@ int32_t dk_param_set(uint32_t track, uint32_t word, int32_t raw);
 
 /* ---- service ui ---- */
 
-/* Open the UI service: `*out` is the handle, the result 0. Without core/ui the result is DK_E_MISSING and `*out` is untouched. Transitional name: it becomes `dk_ui_open` when the old menu call of that name goes (docs/plans/sdk.md S2b-2). Context: init. Since api 1.11. Needs core/ui: without it the import binds to a stub that returns DK_E_MISSING. */
-int32_t dk_ui_open_ctx(dk_ctx *ctx, dk_ui **out);
+/* Open the UI service: `*out` is the handle, the result 0. Without core/ui the result is DK_E_MISSING and `*out` is untouched. Transitional name: renamed to `dk_ui_open` in S2b-2, when the old menu call of that name goes (docs/plans/sdk.md). Context: init. Since api 1.11. Needs core/ui: without it the import binds to a stub that returns DK_E_MISSING. */
+int32_t dk_ui_service_open(dk_module_ctx *ctx, dk_ui **out);
 
 /* Fill and show a menu on top of the current view; negative when it cannot be. Context: ui. Since api 1.11. Needs core/ui: without it the import binds to a stub that returns DK_E_MISSING. */
 int32_t dk_ui_menu_open(dk_ui_menu *m);
@@ -185,17 +196,17 @@ int32_t dk_ui_menu_is_open(const dk_ui_menu *m);
 /* Add a row of text without an action. Context: ui. Since api 1.11. Needs core/ui: without it the import binds to a stub that does nothing. */
 void dk_ui_item_text(dk_ui_menu *m, const char *text);
 
-/* Add a row that runs `run(ctx, arg)` on YES. Context: ui. Since api 1.11. Needs core/ui: without it the import binds to a stub that does nothing. */
-void dk_ui_item_action(dk_ui_menu *m, const char *text, dk_ui_act *run, void *ctx, int32_t arg);
+/* Add a row that runs `run(arg, value)` on YES. Context: ui. Since api 1.11. Needs core/ui: without it the import binds to a stub that does nothing. */
+void dk_ui_item_action(dk_ui_menu *m, const char *text, dk_ui_action_fn *run, void *arg, int32_t value);
 
 /* Add a row that opens another menu. Context: ui. Since api 1.11. Needs core/ui: without it the import binds to a stub that does nothing. */
 void dk_ui_item_submenu(dk_ui_menu *m, const char *text, dk_ui_menu *sub);
 
 /* Add an ON/OFF row. Context: ui. Since api 1.11. Needs core/ui: without it the import binds to a stub that does nothing. */
-void dk_ui_item_toggle(dk_ui_menu *m, const char *text, int32_t *value, dk_ui_act *changed, void *ctx);
+void dk_ui_item_toggle(dk_ui_menu *m, const char *text, int32_t *value, dk_ui_action_fn *changed, void *arg);
 
 /* Add a number row changed by the encoder. Context: ui. Since api 1.11. Needs core/ui: without it the import binds to a stub that does nothing. */
-void dk_ui_item_value(dk_ui_menu *m, const char *text, int32_t *value, int32_t min, int32_t max, dk_ui_act *changed, void *ctx);
+void dk_ui_item_value(dk_ui_menu *m, const char *text, int32_t *value, int32_t min, int32_t max, dk_ui_action_fn *changed, void *arg);
 
 /* Set the check mark of a list row. Context: ui. Since api 1.11. Needs core/ui: without it the import binds to a stub that does nothing. */
 void dk_ui_item_check(dk_ui_menu *list, int32_t row, int32_t on);
@@ -206,7 +217,7 @@ int32_t dk_ui_item_checked(const dk_ui_menu *list, int32_t row);
 /* ---- service input ---- */
 
 /* Open the panel input service: `*out` is the handle, the result 0. Without core/input the result is DK_E_MISSING and `*out` is untouched. Context: init. Since api 1.11. Needs core/input: without it the import binds to a stub that returns DK_E_MISSING. */
-int32_t dk_input_open(dk_ctx *ctx, dk_input **out);
+int32_t dk_input_open(dk_module_ctx *ctx, dk_input **out);
 
 /* Press or release a panel key. See <dk/platform/input.h>. Context: ui. Since api 1.11. Needs core/input: without it the import binds to a stub that returns DK_E_MISSING. */
 int32_t dk_input_key(dk_input *inp, uint32_t code, uint32_t down);
@@ -217,7 +228,7 @@ int32_t dk_input_turn(dk_input *inp, uint32_t encoder, int32_t delta);
 /* ---- service usb_bulk ---- */
 
 /* Open the USB bulk service: `*out` is the handle, the result 0. Without core/usb-bulk the result is DK_E_MISSING and `*out` is untouched. See <dk/platform/usb_bulk.h>. Context: init. Since api 1.11. Needs core/usb-bulk: without it the import binds to a stub that returns DK_E_MISSING. */
-int32_t dk_usb_bulk_open(dk_ctx *ctx, dk_usb_bulk **out);
+int32_t dk_usb_bulk_open(dk_module_ctx *ctx, dk_usb_bulk **out);
 
 /* Add the vendor bulk interface (interface 2, EP2 OUT and IN, 512-byte packets) to the USB MIDI configuration, as usb_bulk_enable did. `io_id` is the I/O job that the service wakes when a receive buffer is full. Call it until it returns 0. Another job gets DK_E_BUSY (one owner). Context: any. Since api 1.11. Needs core/usb-bulk: without it the import binds to a stub that returns DK_E_MISSING. */
 int32_t dk_usb_bulk_enable(dk_usb_bulk *ub, int32_t io_id);
@@ -226,13 +237,13 @@ int32_t dk_usb_bulk_enable(dk_usb_bulk *ub, int32_t io_id);
 int32_t dk_usb_bulk_disable(dk_usb_bulk *ub, int32_t io_id);
 
 /* The next full receive buffer, in arrival order: 1 and `*buf`, `*len` set (the buffer is yours until dk_usb_bulk_release), or 0 when none is full. Never blocks. Context: any. Since api 1.11. Needs core/usb-bulk: without it the import binds to a stub that returns DK_E_MISSING. */
-int32_t dk_usb_bulk_take(dk_usb_bulk *ub, uint8_t **buf, uint32_t *len);
+int32_t dk_usb_bulk_take(dk_usb_bulk *ub, void **buf, uint32_t *len);
 
 /* Give a buffer from dk_usb_bulk_take back: it is queued for the next transfer. 0, or DK_E_STATE for a pointer that is not a taken buffer. Context: any. Since api 1.11. Needs core/usb-bulk: without it the import binds to a stub that returns DK_E_MISSING. */
-int32_t dk_usb_bulk_release(dk_usb_bulk *ub, uint8_t *buf);
+int32_t dk_usb_bulk_release(dk_usb_bulk *ub, void *buf);
 
 /* Send `len` bytes (1 to 16384) to the host on EP2 IN. The bytes are copied. 0, DK_E_BUSY when both send slots are in flight (the job is woken when one completes), DK_E_AGAIN when nothing is in flight and the engine refused, or another status. Context: any. Since api 1.11. Needs core/usb-bulk: without it the import binds to a stub that returns DK_E_MISSING. */
-int32_t dk_usb_bulk_send(dk_usb_bulk *ub, const uint8_t *buf, uint32_t len);
+int32_t dk_usb_bulk_send(dk_usb_bulk *ub, const void *buf, uint32_t len);
 
 /* State word: bit 0 enabled, bit 1 connected, bit 2 wrong mode, bit 3 taken over, bits 8..15 receive buffers full, bits 16..23 send slots in flight. 0 without core/usb-bulk. Context: any. Since api 1.11. Needs core/usb-bulk: without it the import binds to a stub that returns 0. */
 uint32_t dk_usb_bulk_state(dk_usb_bulk *ub);
@@ -246,7 +257,7 @@ int32_t dk_usb_bulk_giveback(dk_usb_bulk *ub);
 /* ---- service dsp_link ---- */
 
 /* Open the DSP link service: `*out` is the handle, the result 0. Without core/dsp-link the result is DK_E_MISSING and `*out` is untouched. Context: init. Since api 1.11. Needs core/dsp-link: without it the import binds to a stub that returns DK_E_MISSING. */
-int32_t dk_dsp_link_open(dk_ctx *ctx, dk_dsp_link **out);
+int32_t dk_dsp_link_open(dk_module_ctx *ctx, dk_dsp_link **out);
 
 /* Set the one per-block callback of core/dsp-link (0: off): `void cb(const volatile u16 *rec)`, called every block in the block interrupt with the copy of the previous DSP reply record. Keep it short; clear it in fini. See <dk/platform/dsp_link.h>. Context: ui. Since api 1.11. Needs core/dsp-link: without it the import binds to a stub that returns DK_E_MISSING. */
 int32_t dk_dsp_link_set_tick(dk_dsp_link *dl, uint8_t *cb);

@@ -179,7 +179,8 @@ fn service_imports_have_a_service_a_context_a_since_and_a_missing_stub() {
         .1;
     // the prototype, the context and the minor come from the toml; a handle is an opaque type
     assert!(h.contains("typedef struct dk_settings dk_settings;"));
-    assert!(h.contains("int32_t dk_settings_open(dk_ctx *ctx, dk_settings **out);"));
+    assert!(h.contains("int32_t dk_settings_open(dk_module_ctx *ctx, dk_settings **out);"));
+    assert!(h.contains("typedef int32_t dk_io_step_fn(void *arg);"));
     assert!(h.contains("Context: init. Since api 1.11."));
     assert!(h.contains("Context: io-step. Since api 1.11."));
     assert!(h.contains(
@@ -197,7 +198,7 @@ fn service_imports_have_a_service_a_context_a_since_and_a_missing_stub() {
     // the packer's table
     let infos = sdkgen::import_infos();
     assert_eq!(infos["dk_usb_bulk_open"].service, "usb_bulk");
-    assert_eq!(infos["dk_file_write"].context, "io-step");
+    assert_eq!(infos["dk_files_write"].context, "io-step");
     assert!(!infos.contains_key("memcpy"));
     // service, since and context come together, with names the toml lists, and since is a minor that exists
     for (from, to) in [

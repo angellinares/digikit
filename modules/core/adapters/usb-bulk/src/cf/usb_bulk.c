@@ -41,7 +41,7 @@
 #include <stdint.h>
 
 /* The opaque handle types of the service imports (sdk/sdk.toml [handle]); <dk/gen/imports.h> is not included: it also declares the old import names with the SDK's integer types. */
-typedef struct dk_ctx dk_ctx;
+typedef struct dk_module_ctx dk_module_ctx;
 typedef struct dk_usb_bulk dk_usb_bulk;
 
 typedef unsigned int u32;
@@ -1348,7 +1348,7 @@ u32 usb_bulk_state(void)
 
 static int usb_bulk_token;
 
-int32_t dk_usb_bulk_open(dk_ctx *ctx, dk_usb_bulk **out)
+int32_t dk_usb_bulk_open(dk_module_ctx *ctx, dk_usb_bulk **out)
 {
     if (!ctx || !out)
         return -48; /* DK_E_CONTRACT */
@@ -1368,19 +1368,19 @@ int32_t dk_usb_bulk_disable(dk_usb_bulk *ub, int32_t io_id)
     return usb_bulk_disable(io_id);
 }
 
-int32_t dk_usb_bulk_take(dk_usb_bulk *ub, uint8_t **buf, uint32_t *len)
+int32_t dk_usb_bulk_take(dk_usb_bulk *ub, void **buf, uint32_t *len)
 {
     (void)ub;
     return usb_bulk_take((u8 **)buf, (u32 *)len);
 }
 
-int32_t dk_usb_bulk_release(dk_usb_bulk *ub, uint8_t *buf)
+int32_t dk_usb_bulk_release(dk_usb_bulk *ub, void *buf)
 {
     (void)ub;
     return usb_bulk_release((u8 *)buf);
 }
 
-int32_t dk_usb_bulk_send(dk_usb_bulk *ub, const uint8_t *buf, uint32_t len)
+int32_t dk_usb_bulk_send(dk_usb_bulk *ub, const void *buf, uint32_t len)
 {
     (void)ub;
     return usb_bulk_send((const u8 *)buf, len);

@@ -22,7 +22,7 @@
 #include <stdint.h>
 
 /* The opaque handle types of the service imports (sdk/sdk.toml [handle]); <dk/gen/imports.h> is not included: it also declares the old import names with the SDK's integer types. */
-typedef struct dk_ctx dk_ctx;
+typedef struct dk_module_ctx dk_module_ctx;
 typedef struct dk_input dk_input;
 
 typedef unsigned int u32;
@@ -164,7 +164,7 @@ int input_turn(u32 encoder, int delta)
 
 static int input_token; /* the dk_input handle: only a token */
 
-int32_t dk_input_open(dk_ctx *ctx, dk_input **out)
+int32_t dk_input_open(dk_module_ctx *ctx, dk_input **out)
 {
     if (!ctx || !out)
         return -48; /* DK_E_CONTRACT */

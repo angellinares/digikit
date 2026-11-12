@@ -248,8 +248,8 @@ typedef struct DkrtModule {
     uint8_t path[64];                            /* store path the module was loaded from (NUL-terminated, at most 63 bytes kept), for example modules/dyn-demo.dkm */
     uint32_t state;                              /* MOD_LOADED or MOD_LOADING */
     uint32_t dsp_size;                           /* bytes of the module's range in the DSP area (0: none) */
-    uint32_t menu;                               /* address of the module's settings entry point (0: none): dkm_menu(dk_ui_menu *, void *), or menu(dk_ctx *, dk_ui_menu *) when ctx is not 0 */
-    uint32_t ctx;                                /* the module's dk_ctx (a module of the new entry, dk_module); 0 for a module of the old entry */
+    uint32_t menu;                               /* address of the module's settings entry point (0: none): dkm_menu(dk_ui_menu *, void *), or menu(dk_module_ctx *, dk_ui_menu *) when ctx is not 0 */
+    uint32_t ctx;                                /* the module's dk_module_ctx (a module of the new entry, dk_module); 0 for a module of the old entry */
 } DkrtModule;
 
 /* dkrt_fx result: one effect with a page (FX routing, finding 62 to 65). Routes are bit masks: 1 master, 2 send. */

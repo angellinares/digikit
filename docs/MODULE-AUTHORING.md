@@ -544,7 +544,7 @@ symbol and writes its four function pointers into the `.dkm` header. All four ar
 
 static dk_settings *settings;
 
-static int32_t init(dk_ctx *ctx)
+static int32_t init(dk_module_ctx *ctx)
 {
     int32_t r = dk_settings_open(ctx, &settings);
     if (r != DK_OK)
@@ -553,24 +553,24 @@ static int32_t init(dk_ctx *ctx)
     return DK_OK;
 }
 
-static void tick(dk_ctx *ctx) { (void)ctx; }
+static void tick(dk_module_ctx *ctx) { (void)ctx; }
 
-const struct dk_module dk_module = {.init = init, .tick = tick};
+const dk_module_def dk_module = {.init = init, .tick = tick};
 ```
 
 | Field | When it runs |
 | --- | --- |
-| `int32_t init(dk_ctx *ctx)` | Once after load. Opens the services, registers host commands. `DK_OK` (0), or the load fails and the module unloads. |
-| `void fini(dk_ctx *ctx)` | When the module is unloaded. |
-| `void tick(dk_ctx *ctx)` | Once per UI pass (about 120 Hz), for every loaded module that has one. Keep it short; no waiting. |
-| `void menu(dk_ctx *ctx, dk_ui_menu *m)` | Optional: the module's settings, as `dkm_menu` is today. The DIGIKIT menu shows SETTINGS... and calls it when the user opens it. |
+| `int32_t init(dk_module_ctx *ctx)` | Once after load. Opens the services, registers host commands. `DK_OK` (0), or the load fails and the module unloads. |
+| `void fini(dk_module_ctx *ctx)` | When the module is unloaded. |
+| `void tick(dk_module_ctx *ctx)` | Once per UI pass (about 120 Hz), for every loaded module that has one. Keep it short; no waiting. |
+| `void menu(dk_module_ctx *ctx, dk_ui_menu *menu)` | Optional: the module's settings, as `dkm_menu` is today. The DIGIKIT menu shows SETTINGS... and calls it when the user opens it. |
 
-`struct dk_module` has no typedef, because the constant has the same name. The device is reached through named imports grouped by service
+The type is `dk_module_def`; the constant keeps the name `dk_module`, which the packer looks up. `ctx` is only the module context; the user-data pointer of a callback is `arg`. The device is reached through named imports grouped by service
 (`<dk/gen/imports.h>`, generated from `sdk/sdk.toml`; the comment of each prototype gives its context and the api minor that added it):
 
-- Without a handle: `dk_alloc`, `dk_free`, `dk_log`, `dk_log_event`, `dk_time_blocks`, `dk_store_read`, `dk_host_register`, `dk_ctx_device`,
-  `dk_ctx_runtime_version`, `dk_hash32_*`, `dk_io_*`, `dk_job_*`, `dk_file_*`, `dk_intro_take`, `dk_param_get/set`, `dk_debug_*`.
-- With a handle opened in `init`: `dk_settings_open`, `dk_files_open`, `dk_sample_pool_open`, `dk_ui_open_ctx`, `dk_input_open`,
+- Without a handle: `dk_alloc`, `dk_free`, `dk_log`, `dk_log_event`, `dk_time_blocks`, `dk_store_read`, `dk_host_register`, `dk_module_ctx_device`,
+  `dk_module_ctx_runtime`, `dk_hash32_*`, `dk_io_*`, `dk_job_*`, `dk_intro_take`, `dk_param_get/set`, `dk_debug_*`.
+- With a handle opened in `init`: `dk_settings_open`, `dk_files_open` (one handle for listing and for `dk_files_create`, `_write`, `_close`, `_abort` and `_delete`), `dk_sample_pool_open`, `dk_ui_service_open` (`dk_ui_open` from S2b-2), `dk_input_open`,
   `dk_usb_bulk_open`, `dk_dsp_link_open`. The service functions take the handle first (`dk_settings_get(s, key, out, cap)`).
 - A service that another module provides (`core/ui`, `core/input`, `core/usb-bulk`, `core/dsp-link`) may be absent. Its `_open` returns
   `DK_E_MISSING` and leaves the handle NULL; the module loads and decides whether it can run without. The other calls of an absent service

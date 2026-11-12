@@ -14,7 +14,7 @@ const HEADER: u32 = 0xa0;
 /// The header of a module with a `dkm_menu`: the menu address follows the 0xa0 bytes.
 const HEADER_MENU: u32 = 0xa4;
 /// The header of a module of the new entry (`dk_module`): the menu address and the tick address follow the 0xa0 bytes (NONE for a missing one). Its
-/// `init`, `fini`, `tick` and `menu` take a `dk_ctx *` (`entry.rs`).
+/// `init`, `fini`, `tick` and `menu` take a `dk_module_ctx *` (`entry.rs`).
 const HEADER_TICK: u32 = 0xa8;
 const NONE: u32 = 0xffff_ffff;
 const SPIN: u32 = 2_000_000;
@@ -451,7 +451,7 @@ unsafe fn complete(
     }
     if init != 0 {
         let call: unsafe extern "C" fn(*const Api) -> i32 = core::mem::transmute(init as usize);
-        // a module of the new entry gets its `dk_ctx`, the others the Api table
+        // a module of the new entry gets its `dk_module_ctx`, the others the Api table
         let ctx = crate::entry::ctx_addr(rec);
         let arg = if ctx != 0 { ctx as usize as *const Api } else { addr_of!(dkrt_api) };
         let r = crate::dlog::call_init(rec as usize, call, arg);

@@ -31,7 +31,7 @@
 #include <stdint.h>
 
 /* The opaque handle types of the service imports (sdk/sdk.toml [handle]); <dk/gen/imports.h> is not included: it also declares the old import names with the SDK's integer types. */
-typedef struct dk_ctx dk_ctx;
+typedef struct dk_module_ctx dk_module_ctx;
 typedef struct dk_dsp_link dk_dsp_link;
 
 #include "dl-limits.h"
@@ -348,7 +348,7 @@ void dl_tick(int len, const u16 *src, int reclen, const volatile u16 *rec)
 
 static int dl_token; /* the dk_dsp_link handle: only a token */
 
-int32_t dk_dsp_link_open(dk_ctx *ctx, dk_dsp_link **out)
+int32_t dk_dsp_link_open(dk_module_ctx *ctx, dk_dsp_link **out)
 {
     if (!ctx || !out)
         return -48; /* DK_E_CONTRACT */

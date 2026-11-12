@@ -1,6 +1,6 @@
 //! The module entry point and the service imports of docs/plans/sdk.md section 5.
 //!
-//! A module that defines `dk_module` (header size 0xa8) gets `init(ctx)`, `fini(ctx)`, `tick(ctx)` and `menu(ctx, menu)`, with a `dk_ctx`: a pointer to
+//! A module that defines `dk_module` (header size 0xa8) gets `init(ctx)`, `fini(ctx)`, `tick(ctx)` and `menu(ctx, menu)`, with a `dk_module_ctx`: a pointer to
 //! its record in `DKRT_CTXS`. `tick` runs once per pass of the UI task for every loaded module, in `dkrt_tick`. The Api table and the slots stay for the
 //! modules of the old entry (`dkm_init(api)`) until S2b-2.
 //!
@@ -9,14 +9,14 @@
 //! handle is that number as a pointer: it wraps the client the existing code (`settings.rs`, `files.rs`, `tracks.rs`) keeps. The imports that need no
 //! handle point at the same functions as the Api table (`lib.rs`).
 
-use crate::{dlog, files, peakwin, settings, tracks, MAX_MODULES};
+use crate::{dlog, files, peakwin, settings, store_writer, tracks, MAX_MODULES};
 use core::ptr::{addr_of, addr_of_mut, read_volatile, write_volatile};
 use dkrt_sdk::*;
 
 /// "DKCX": the first word of a live context.
 pub const CTX_MAGIC: u32 = 0x444b_4358;
 
-/// What a `dk_ctx *` points to: the record of the module that `init`, `fini`, `tick` and `menu` belong to.
+/// What a `dk_module_ctx *` points to: the record of the module that `init`, `fini`, `tick` and `menu` belong to.
 #[repr(C)]
 #[derive(Clone, Copy)]
 pub struct Ctx {
@@ -71,7 +71,7 @@ pub unsafe fn ctx_addr(rec: usize) -> u32 {
     }
 }
 
-/// The record a `dk_ctx *` belongs to; None for a pointer that is not one of `DKRT_CTXS`' live entries.
+/// The record a `dk_module_ctx *` belongs to; None for a pointer that is not one of `DKRT_CTXS`' live entries.
 unsafe fn ctx_rec(ctx: *mut u8) -> Option<usize> {
     let base = addr_of!(DKRT_CTXS) as usize;
     let at = ctx as usize;
@@ -132,7 +132,7 @@ unsafe fn give(out: *mut *mut u8, client: i32) -> i32 {
 
 // ---- the context -------------------------------------------------------------------------------------------------------------
 
-pub unsafe extern "C" fn dk_ctx_device(ctx: *mut u8) -> u32 {
+pub unsafe extern "C" fn dk_module_ctx_device(ctx: *mut u8) -> u32 {
     if ctx_rec(ctx).is_some() {
         crate::device()
     } else {
@@ -140,7 +140,7 @@ pub unsafe extern "C" fn dk_ctx_device(ctx: *mut u8) -> u32 {
     }
 }
 
-pub unsafe extern "C" fn dk_ctx_runtime_version(ctx: *mut u8) -> u32 {
+pub unsafe extern "C" fn dk_module_ctx_runtime(ctx: *mut u8) -> u32 {
     if ctx_rec(ctx).is_some() {
         RUNTIME_VERSION
     } else {
@@ -178,8 +178,8 @@ pub unsafe extern "C" fn dk_files_open(ctx: *mut u8, out: *mut *mut u8) -> i32 {
     give(out, files::client())
 }
 
-pub unsafe extern "C" fn dk_files_list(f: *mut u8, root: u32, path: *const u8, notify: Option<api::FileEvent>, context: *mut u8) -> i32 {
-    files::list(client(f), root, path, notify, context)
+pub unsafe extern "C" fn dk_files_list(f: *mut u8, root: u32, path: *const u8, notify: Option<api::FilesEventFn>, arg: *mut u8) -> i32 {
+    files::list(client(f), root, path, notify, arg)
 }
 
 pub unsafe extern "C" fn dk_files_poll(f: *mut u8, ticket: u32, out: *mut u8, capacity: u32) -> i32 {
@@ -188,6 +188,28 @@ pub unsafe extern "C" fn dk_files_poll(f: *mut u8, ticket: u32, out: *mut u8, ca
 
 pub unsafe extern "C" fn dk_files_cancel(f: *mut u8, ticket: u32) -> i32 {
     files::cancel(client(f), ticket)
+}
+
+// The write calls take the same handle. The store has one write session in all, so the handle only names the owner: it is not looked up yet.
+
+pub unsafe extern "C" fn dk_files_create(_f: *mut u8, root: u32, path: *const u8, size: u32, hash4: *const u8, flags: u32) -> i32 {
+    store_writer::sdk_create(root, path, size, hash4, flags)
+}
+
+pub unsafe extern "C" fn dk_files_write(_f: *mut u8, h: i32, offset: u32, buf: *const u8, len: u32) -> i32 {
+    store_writer::sdk_write(h, offset, buf, len)
+}
+
+pub unsafe extern "C" fn dk_files_close(_f: *mut u8, h: i32, hash_out: *mut u8) -> i32 {
+    store_writer::sdk_close(h, hash_out)
+}
+
+pub unsafe extern "C" fn dk_files_abort(_f: *mut u8, h: i32) -> i32 {
+    store_writer::sdk_abort(h)
+}
+
+pub unsafe extern "C" fn dk_files_delete(_f: *mut u8, root: u32, path: *const u8) -> i32 {
+    store_writer::sdk_delete(root, path)
 }
 
 // ---- the sample pool --------------------------------------------------------------------------------------------------------
@@ -251,7 +273,7 @@ mod tests {
             unbind(rec);
             let before = addr_of!(DKRT_CTXS[rec]) as usize as *mut u8;
             assert!(ctx_rec(before).is_none(), "an unbound record is not a context");
-            assert_eq!(dk_ctx_device(before), 0);
+            assert_eq!(dk_module_ctx_device(before), 0);
             let c = bind(rec);
             assert_eq!(c as usize, before as usize);
             assert_eq!(ctx_rec(before), Some(rec));

@@ -15,7 +15,7 @@ pub const HEADER: usize = 0xa0;
 /// The header of a module that exports `dkm_menu`: the menu address (image offset) follows the 0xa0 bytes.
 pub const HEADER_MENU: usize = 0xa4;
 /// The header of a module with the entry point `dk_module` (docs/plans/sdk.md section 5): the `menu` address and the `tick` address follow the 0xa0
-/// bytes; [`NONE`] marks a missing one. The runtime calls `init`, `fini`, `tick` and `menu` of such a module with a `dk_ctx`, not the Api table.
+/// bytes; [`NONE`] marks a missing one. The runtime calls `init`, `fini`, `tick` and `menu` of such a module with a `dk_module_ctx`, not the Api table.
 pub const HEADER_TICK: usize = 0xa8;
 pub const NONE: u32 = 0xffff_ffff;
 pub const SLOTS: u32 = 8;
@@ -640,7 +640,7 @@ pub struct Dkm {
     pub menu: Option<u32>,
     /// The image offset of `dk_module.tick`.
     pub tick: Option<u32>,
-    /// A module with the entry point `dk_module` (header size [`HEADER_TICK`]): `init`, `fini`, `tick` and `menu` take a `dk_ctx`, not the Api table.
+    /// A module with the entry point `dk_module` (header size [`HEADER_TICK`]): `init`, `fini`, `tick` and `menu` take a `dk_module_ctx`, not the Api table.
     pub entry: bool,
     pub slots: Vec<(u32, u32)>,
     pub register: Vec<u8>,

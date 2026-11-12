@@ -1237,7 +1237,7 @@
   {
    "addend": 0,
    "offset": 20,
-   "section": ".text.dk_ui_open_ctx",
+   "section": ".text.dk_ui_service_open",
    "symbol": ".sec..bss.ui_token",
    "type": "cf.32"
   },
@@ -1625,7 +1625,7 @@
    "align": 2,
    "hex": "206f00084aaf0004660470d04e754a8867f820bc00000000428060f0",
    "kind": "text",
-   "name": ".text.dk_ui_open_ctx",
+   "name": ".text.dk_ui_service_open",
    "size": 28
   },
   {
@@ -1804,7 +1804,7 @@
    "size": 4
   }
  ],
- "source_sha256": "15b306dab71bcb9a73c1b3b17d387fe18d3430253ead6d374b57cfa493de8a1b",
+ "source_sha256": "6d55548aafd44206171309f107ae4704cfac086ec565252ce53f1ccfd58ae966",
  "symbols": [
   {
    "global": false,
@@ -2444,12 +2444,6 @@
   },
   {
    "global": true,
-   "name": "dk_ui_open_ctx",
-   "section": ".text.dk_ui_open_ctx",
-   "value": 0
-  },
-  {
-   "global": true,
    "name": "dk_ui_refresh",
    "section": ".text.dk_ui_refresh",
    "value": 0
@@ -2470,6 +2464,12 @@
    "global": false,
    "name": "dk_ui_select.part.0",
    "section": ".text.value_changed.part.0",
+   "value": 0
+  },
+  {
+   "global": true,
+   "name": "dk_ui_service_open",
+   "section": ".text.dk_ui_service_open",
    "value": 0
   },
   {
@@ -2718,7 +2718,7 @@
   "cflags": "-mcpu=54418 -std=c11 -Os -ffreestanding -fno-builtin -nostdlib -fno-pic -fno-pie -ffunction-sections -fdata-sections -fno-asynchronous-unwind-tables -fno-unwind-tables -fno-stack-protector -Wall -Wextra -Werror",
   "gcc": "m68k-elf-gcc (GCC) 16.2.0",
   "instructions_redecoded": "1880",
-  "isa_check": "0325ea2357cd361ae2741ab22d121466a3fdccb33334df0262e8b38d45befb24",
+  "isa_check": "e7f202499d175423ebddcdc142dee53122f3b0538d11b814f573baec7f9ee377",
   "ld": "GNU ld (GNU Binutils) 2.47.20260726"
  }
 }

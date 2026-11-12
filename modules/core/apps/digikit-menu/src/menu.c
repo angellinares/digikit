@@ -104,7 +104,7 @@ static dk_ui_menu *g_main, *g_about, *g_mem, *g_modules, *g_info;
 #ifndef DK_CALL_MENU
 #define DK_CALL_MENU(a, m) ((void (*)(dk_ui_menu *, void *))(uintptr_t)(a))((m), 0)
 #endif
-/* The same for a module of the new entry (dk_module.menu, DkrtModule.ctx not 0): menu(ctx, m). */
+/* The same for a module of the new entry (dk_module.menu, DkrtModule.ctx not 0): menu(ctx, menu). */
 #ifndef DK_CALL_MENU_CTX
 #define DK_CALL_MENU_CTX(a, c, m)                                                                  \
     ((void (*)(void *, dk_ui_menu *))(uintptr_t)(a))((void *)(uintptr_t)(c), (m))

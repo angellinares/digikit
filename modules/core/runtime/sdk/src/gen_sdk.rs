@@ -301,6 +301,33 @@ pub mod api {
     /// The function type `ui_act` of `[api.types]`.
     pub type UiAct = unsafe extern "C" fn(ctx: *mut u8, arg: i32);
 
+    /// The callback type `files_event_fn` of `[handle.callbacks]`.
+    pub type FilesEventFn = unsafe extern "C" fn(client: u32, request: u32, state: i32, arg: *mut u8);
+
+    /// The callback type `host_cmd_fn` of `[handle.callbacks]`.
+    pub type HostCmdFn = unsafe extern "C" fn(cmd: u32, seq: u32, body: *const u8, len: u32, out: *mut u8) -> i32;
+
+    /// The callback type `intro_done_fn` of `[handle.callbacks]`.
+    pub type IntroDoneFn = unsafe extern "C" fn(arg: *mut u8);
+
+    /// The callback type `intro_frame_fn` of `[handle.callbacks]`.
+    pub type IntroFrameFn = unsafe extern "C" fn(tick: u32, arg: *mut u8) -> *const u8;
+
+    /// The callback type `io_done_fn` of `[handle.callbacks]`.
+    pub type IoDoneFn = unsafe extern "C" fn(arg: *mut u8, status: i32);
+
+    /// The callback type `io_step_fn` of `[handle.callbacks]`.
+    pub type IoStepFn = unsafe extern "C" fn(arg: *mut u8) -> i32;
+
+    /// The callback type `job_done_fn` of `[handle.callbacks]`.
+    pub type JobDoneFn = unsafe extern "C" fn(arg: *mut u8, status: i32);
+
+    /// The callback type `job_step_fn` of `[handle.callbacks]`.
+    pub type JobStepFn = unsafe extern "C" fn(arg: *mut u8) -> i32;
+
+    /// The callback type `ui_action_fn` of `[handle.callbacks]`.
+    pub type UiActionFn = unsafe extern "C" fn(arg: *mut u8, value: i32);
+
     #[repr(C)]
     pub struct Api {
         /// Version of the `Api` table layout (`API_VERSION`).
@@ -464,8 +491,8 @@ pub mod api {
         "dk_time_blocks",
         "dk_store_read",
         "dk_host_register",
-        "dk_ctx_device",
-        "dk_ctx_runtime_version",
+        "dk_module_ctx_device",
+        "dk_module_ctx_runtime",
         "dk_settings_open",
         "dk_settings_get",
         "dk_settings_put",
@@ -474,11 +501,11 @@ pub mod api {
         "dk_files_list",
         "dk_files_poll",
         "dk_files_cancel",
-        "dk_file_create",
-        "dk_file_write",
-        "dk_file_close",
-        "dk_file_abort",
-        "dk_file_delete",
+        "dk_files_create",
+        "dk_files_write",
+        "dk_files_close",
+        "dk_files_abort",
+        "dk_files_delete",
         "dk_io_post",
         "dk_io_cancel",
         "dk_io_wake",
@@ -499,7 +526,7 @@ pub mod api {
         "dk_sample_pool_set",
         "dk_sample_pool_peaks",
         "dk_sample_pool_peaks_window",
-        "dk_ui_open_ctx",
+        "dk_ui_service_open",
         "dk_ui_menu_open",
         "dk_ui_menu_close",
         "dk_ui_menu_select",
@@ -556,8 +583,8 @@ pub mod api {
         "dk_time_blocks",
         "dk_store_read",
         "dk_host_register",
-        "dk_ctx_device",
-        "dk_ctx_runtime_version",
+        "dk_module_ctx_device",
+        "dk_module_ctx_runtime",
         "dk_settings_open",
         "dk_settings_get",
         "dk_settings_put",
@@ -566,11 +593,11 @@ pub mod api {
         "dk_files_list",
         "dk_files_poll",
         "dk_files_cancel",
-        "dk_file_create",
-        "dk_file_write",
-        "dk_file_close",
-        "dk_file_abort",
-        "dk_file_delete",
+        "dk_files_create",
+        "dk_files_write",
+        "dk_files_close",
+        "dk_files_abort",
+        "dk_files_delete",
         "dk_io_post",
         "dk_io_cancel",
         "dk_io_wake",
@@ -666,14 +693,14 @@ pub mod api {
     /// `dk_store_read`: Read a store file into `dst` (at most `cap` bytes); returns the file size, or a negative code. It uses the runtime's staging buffer.
     pub type DkStoreReadFn = unsafe extern "C" fn(path: *const u8, dst: *mut u8, cap: u32) -> i32;
 
-    /// `dk_host_register`: Register the SysEx commands `first .. first + count` with `handler`. The range must lie inside one of the ranges sdk/sdk.toml [protocol.ranges] reserves and overlap no registered one; else it returns DK_E_CMD_RANGE. The range is released with the module. Returns 0. See <dk/platform/host.h>.
-    pub type DkHostRegisterFn = unsafe extern "C" fn(first: u32, count: u32, handler: Option<ServiceCmd>) -> i32;
+    /// `dk_host_register`: Register the SysEx commands `first .. first + count` with `fn`. The range must lie inside one of the ranges sdk/sdk.toml [protocol.ranges] reserves and overlap no registered one; else it returns DK_E_CMD_RANGE. The range is released with the module. Returns 0. See <dk/platform/host.h>.
+    pub type DkHostRegisterFn = unsafe extern "C" fn(first: u32, count: u32, r#fn: Option<HostCmdFn>) -> i32;
 
-    /// `dk_ctx_device`: The device's `[digikit] id` (DT2 or DN2); 0 for a pointer that is not a context.
-    pub type DkCtxDeviceFn = unsafe extern "C" fn(ctx: *mut u8) -> u32;
+    /// `dk_module_ctx_device`: The device's `[digikit] id` (DT2 or DN2); 0 for a pointer that is not a context.
+    pub type DkModuleCtxDeviceFn = unsafe extern "C" fn(ctx: *mut u8) -> u32;
 
-    /// `dk_ctx_runtime_version`: The runtime version, packed major << 16 | minor << 8 | patch; 0 for a pointer that is not a context.
-    pub type DkCtxRuntimeVersionFn = unsafe extern "C" fn(ctx: *mut u8) -> u32;
+    /// `dk_module_ctx_runtime`: The runtime version, packed major << 16 | minor << 8 | patch; 0 for a pointer that is not a context.
+    pub type DkModuleCtxRuntimeFn = unsafe extern "C" fn(ctx: *mut u8) -> u32;
 
     /// `dk_settings_open`: Open this module's settings: `*out` is the handle (the same one every time), the result 0. A negative result outside init (DK_E_NOT_FOUND) or for a bad context (DK_E_CONTRACT); `*out` is untouched then.
     pub type DkSettingsOpenFn = unsafe extern "C" fn(ctx: *mut u8, out: *mut *mut u8) -> i32;
@@ -691,7 +718,7 @@ pub mod api {
     pub type DkFilesOpenFn = unsafe extern "C" fn(ctx: *mut u8, out: *mut *mut u8) -> i32;
 
     /// `dk_files_list`: Copy a canonical root-relative directory request; positive ticket or negative error. Supersedes prior results. The optional deferred UI-task notify and its context stay module-owned. No I/O here.
-    pub type DkFilesListFn = unsafe extern "C" fn(f: *mut u8, root: u32, path: *const u8, notify: Option<FileEvent>, context: *mut u8) -> i32;
+    pub type DkFilesListFn = unsafe extern "C" fn(f: *mut u8, root: u32, path: *const u8, notify: Option<FilesEventFn>, arg: *mut u8) -> i32;
 
     /// `dk_files_poll`: No I/O: 0 pending, 1 copied 304-byte dk_file_entry, 2 end, negative error. The output is unchanged unless 1.
     pub type DkFilesPollFn = unsafe extern "C" fn(f: *mut u8, ticket: u32, out: *mut u8, capacity: u32) -> i32;
@@ -699,23 +726,23 @@ pub mod api {
     /// `dk_files_cancel`: Invalidate the matching request, its results and its queued notification without waiting for active work or a callback.
     pub type DkFilesCancelFn = unsafe extern "C" fn(f: *mut u8, ticket: u32) -> i32;
 
-    /// `dk_file_create`: Open the one write session for the file `path` of `size` bytes under `root` (DK_FILES_STORE or DK_FILES_SAMPLES). `hash4`: NULL, or the expected file hash; dk_file_close then checks it. `flags`: 0 or DK_FILE_REPLACE (1). Returns a handle > 0 owned by this module, or a negative status (DK_E_BUSY: try again; DK_E_EXISTS, DK_E_FILE_IN_USE, DK_E_PATH, DK_E_FULL, DK_E_NOSTORE, DK_E_INUSE, DK_E_WRITE; DK_E_CONTEXT outside an I/O step). See <dk/platform/files.h>.
-    pub type DkFileCreateFn = unsafe extern "C" fn(root: u32, path: *const u8, size: u32, hash4: *const u8, flags: u32) -> i32;
+    /// `dk_files_create`: Open the one write session for the file `path` of `size` bytes under `root` (DK_FILES_STORE or DK_FILES_SAMPLES). `hash4`: NULL, or the expected file hash; dk_files_close then checks it. `flags`: 0 or DK_FILE_REPLACE (1). Returns a handle > 0 owned by this module, or a negative status (DK_E_BUSY: try again; DK_E_EXISTS, DK_E_FILE_IN_USE, DK_E_PATH, DK_E_FULL, DK_E_NOSTORE, DK_E_INUSE, DK_E_WRITE; DK_E_CONTEXT outside an I/O step). See <dk/platform/files.h>.
+    pub type DkFilesCreateFn = unsafe extern "C" fn(f: *mut u8, root: u32, path: *const u8, size: u32, hash4: *const u8, flags: u32) -> i32;
 
-    /// `dk_file_write`: Write `len` bytes at `offset`, the next byte of the file. `buf` is 16-byte aligned; `len` a multiple of 512 except for the last piece (the tail sector is padded with zeros). Returns 0 or DK_E_STATE, DK_E_OFFSET, DK_E_LENGTH, DK_E_WRITE, DK_E_CONTRACT (unaligned buf), DK_E_BUSY (nothing was written: call again).
-    pub type DkFileWriteFn = unsafe extern "C" fn(h: i32, offset: u32, buf: *const u8, len: u32) -> i32;
+    /// `dk_files_write`: Write `len` bytes at `offset`, the next byte of the file. `buf` is 16-byte aligned; `len` a multiple of 512 except for the last piece (the tail sector is padded with zeros). Returns 0 or DK_E_STATE, DK_E_OFFSET, DK_E_LENGTH, DK_E_WRITE, DK_E_CONTRACT (unaligned buf), DK_E_BUSY (nothing was written: call again).
+    pub type DkFilesWriteFn = unsafe extern "C" fn(f: *mut u8, h: i32, offset: u32, buf: *const u8, len: u32) -> i32;
 
-    /// `dk_file_close`: End the file. All `size` bytes must have been written (DK_E_LENGTH) and match `hash4` when it was given (DK_E_HASH); the table is committed (power-cut safe). `hash_out` (4 bytes, may be NULL) gets the file hash of the bytes written. The session is closed whatever the result, except for DK_E_BUSY (try again).
-    pub type DkFileCloseFn = unsafe extern "C" fn(h: i32, hash_out: *mut u8) -> i32;
+    /// `dk_files_close`: End the file. All `size` bytes must have been written (DK_E_LENGTH) and match `hash4` when it was given (DK_E_HASH); the table is committed (power-cut safe). `hash_out` (4 bytes, may be NULL) gets the file hash of the bytes written. The session is closed whatever the result, except for DK_E_BUSY (try again).
+    pub type DkFilesCloseFn = unsafe extern "C" fn(f: *mut u8, h: i32, hash_out: *mut u8) -> i32;
 
-    /// `dk_file_abort`: Drop the session and the partial file. Returns 0 or DK_E_STATE.
-    pub type DkFileAbortFn = unsafe extern "C" fn(h: i32) -> i32;
+    /// `dk_files_abort`: Drop the session and the partial file. Returns 0 or DK_E_STATE.
+    pub type DkFilesAbortFn = unsafe extern "C" fn(f: *mut u8, h: i32) -> i32;
 
-    /// `dk_file_delete`: Remove a file or folder entry. Returns 0, DK_E_NOFILE, DK_E_FILE_IN_USE (a reader still reads it: try again later), DK_E_BUSY or a path or store status.
-    pub type DkFileDeleteFn = unsafe extern "C" fn(root: u32, path: *const u8) -> i32;
+    /// `dk_files_delete`: Remove a file or folder entry. Returns 0, DK_E_NOFILE, DK_E_FILE_IN_USE (a reader still reads it: try again later), DK_E_BUSY or a path or store status.
+    pub type DkFilesDeleteFn = unsafe extern "C" fn(f: *mut u8, root: u32, path: *const u8) -> i32;
 
-    /// `dk_io_post`: Run `step(ctx)` on the runtime's I/O task (<dk/platform/io.h>). The step may block and call dk_file_*. It returns DK_IO_MORE (run again), DK_IO_WAIT (sleep until dk_io_wake), 0 (done) or a negative error. `done(ctx, status)` runs once in the UI task. Returns a job id > 0, DK_E_CONTRACT (no step) or DK_E_BUSY (8 jobs).
-    pub type DkIoPostFn = unsafe extern "C" fn(step: Option<IoStep>, done: Option<IoDone>, ctx: *mut u8) -> i32;
+    /// `dk_io_post`: Run `step(arg)` on the runtime's I/O task (<dk/platform/io.h>). The step may block and call dk_files_create, dk_files_write, dk_files_close, dk_files_abort and dk_files_delete. It returns DK_IO_MORE (run again), DK_IO_WAIT (sleep until dk_io_wake), 0 (done) or a negative error. `done(arg, status)` runs once in the UI task. Returns a job id > 0, DK_E_CONTRACT (no step) or DK_E_BUSY (8 jobs).
+    pub type DkIoPostFn = unsafe extern "C" fn(step: Option<IoStepFn>, done: Option<IoDoneFn>, arg: *mut u8) -> i32;
 
     /// `dk_io_cancel`: Cancel a job of this module: a queued job never runs, a running one stops after its step returns; `done` gets DK_IO_E_CANCELLED. Returns 0 or DK_E_NOT_FOUND.
     pub type DkIoCancelFn = unsafe extern "C" fn(id: i32) -> i32;
@@ -723,8 +750,8 @@ pub mod api {
     /// `dk_io_wake`: Wake a job whose step returned DK_IO_WAIT. Callable from an interrupt handler, an adapter or any task. Unknown ids are ignored.
     pub type DkIoWakeFn = unsafe extern "C" fn(id: i32);
 
-    /// `dk_job_post`: Run `step(ctx)` on the background worker until it returns 0 or a negative error (DK_JOB_MORE: call again; <dk/platform/job.h>). `done(ctx, status)` is called once in the UI task. Returns a job id > 0, DK_E_BUSY (8 jobs are queued) or DK_E_CONTRACT (no step).
-    pub type DkJobPostFn = unsafe extern "C" fn(step: Option<JobStep>, done: Option<JobDone>, ctx: *mut u8) -> i32;
+    /// `dk_job_post`: Run `step(arg)` on the background worker until it returns 0 or a negative error (DK_JOB_MORE: call again; <dk/platform/job.h>). `done(arg, status)` is called once in the UI task. Returns a job id > 0, DK_E_BUSY (8 jobs are queued) or DK_E_CONTRACT (no step).
+    pub type DkJobPostFn = unsafe extern "C" fn(step: Option<JobStepFn>, done: Option<JobDoneFn>, arg: *mut u8) -> i32;
 
     /// `dk_job_cancel`: Cancel a job of this module: a queued job never runs and a running one stops after its current step; `done` gets DK_JOB_E_CANCELLED. Returns 0, or DK_E_NOT_FOUND for an unknown id.
     pub type DkJobCancelFn = unsafe extern "C" fn(id: u32) -> i32;
@@ -738,8 +765,8 @@ pub mod api {
     /// `dk_hash32_finish`: The file hash `hash|1`: the value the store keeps (4 bytes big-endian in a table slot). The state is spent.
     pub type DkHash32FinishFn = unsafe extern "C" fn(state: *mut u8) -> u32;
 
-    /// `dk_intro_take`: Replace the stock boot animation. `frame(tick, ctx)` returns the 1024-byte native bitmap of tick 0 .. ticks-1 (30 ticks a second), or NULL to end the animation; it runs on the intro task, must not block and must not call any import. `done(ctx)` (may be NULL) runs once in the UI task at the first UI pass. `ticks` is 1 to 300. Returns 0, DK_E_NOT_FOUND outside init, DK_E_CONTRACT, DK_E_BUSY (taken already) or DK_E_BOOT_ONLY. See <dk/platform/intro.h>.
-    pub type DkIntroTakeFn = unsafe extern "C" fn(frame: Option<IntroFrame>, done: Option<IntroDone>, ctx: *mut u8, ticks: u32) -> i32;
+    /// `dk_intro_take`: Replace the stock boot animation. `frame(tick, arg)` returns the 1024-byte native bitmap of tick 0 .. ticks-1 (30 ticks a second), or NULL to end the animation; it runs on the intro task, must not block and must not call any import. `done(arg)` (may be NULL) runs once in the UI task at the first UI pass. `ticks` is 1 to 300. Returns 0, DK_E_NOT_FOUND outside init, DK_E_CONTRACT, DK_E_BUSY (taken already) or DK_E_BOOT_ONLY. See <dk/platform/intro.h>.
+    pub type DkIntroTakeFn = unsafe extern "C" fn(frame: Option<IntroFrameFn>, done: Option<IntroDoneFn>, arg: *mut u8, ticks: u32) -> i32;
 
     /// `dk_param_get`: Raw value (unit * 256) of parameter word `word` of the calling module on `track` (0 to 15). Only in the flow of a click (from a DK_PARAM_ACTION callback until the page gets its next key or turn), else DK_PARAM_E_STATE. See <dk/platform/param.h>.
     pub type DkParamGetFn = unsafe extern "C" fn(track: u32, word: u32) -> i32;
@@ -774,8 +801,8 @@ pub mod api {
     /// `dk_sample_pool_peaks_window`: Min/max of `columns` equal parts of the frames [first, first + frames) of a READY pool entry matching token, computed in the background. Returns `columns` when ready, 0 while it is computed, or a negative error. Poll from the draw callback.
     pub type DkSamplePoolPeaksWindowFn = unsafe extern "C" fn(p: *mut u8, index: u32, token: u32, first: u32, frames: u32, columns: u32, out: *mut u8, capacity: u32) -> i32;
 
-    /// `dk_ui_open_ctx`: Open the UI service: `*out` is the handle, the result 0. Without core/ui the result is DK_E_MISSING and `*out` is untouched. Transitional name: it becomes `dk_ui_open` when the old menu call of that name goes (docs/plans/sdk.md S2b-2).
-    pub type DkUiOpenCtxFn = unsafe extern "C" fn(ctx: *mut u8, out: *mut *mut u8) -> i32;
+    /// `dk_ui_service_open`: Open the UI service: `*out` is the handle, the result 0. Without core/ui the result is DK_E_MISSING and `*out` is untouched. Transitional name: renamed to `dk_ui_open` in S2b-2, when the old menu call of that name goes (docs/plans/sdk.md).
+    pub type DkUiServiceOpenFn = unsafe extern "C" fn(ctx: *mut u8, out: *mut *mut u8) -> i32;
 
     /// `dk_ui_menu_open`: Fill and show a menu on top of the current view; negative when it cannot be.
     pub type DkUiMenuOpenFn = unsafe extern "C" fn(m: *mut u8) -> i32;
@@ -795,17 +822,17 @@ pub mod api {
     /// `dk_ui_item_text`: Add a row of text without an action.
     pub type DkUiItemTextFn = unsafe extern "C" fn(m: *mut u8, text: *const u8);
 
-    /// `dk_ui_item_action`: Add a row that runs `run(ctx, arg)` on YES.
-    pub type DkUiItemActionFn = unsafe extern "C" fn(m: *mut u8, text: *const u8, run: Option<UiAct>, ctx: *mut u8, arg: i32);
+    /// `dk_ui_item_action`: Add a row that runs `run(arg, value)` on YES.
+    pub type DkUiItemActionFn = unsafe extern "C" fn(m: *mut u8, text: *const u8, run: Option<UiActionFn>, arg: *mut u8, value: i32);
 
     /// `dk_ui_item_submenu`: Add a row that opens another menu.
     pub type DkUiItemSubmenuFn = unsafe extern "C" fn(m: *mut u8, text: *const u8, sub: *mut u8);
 
     /// `dk_ui_item_toggle`: Add an ON/OFF row.
-    pub type DkUiItemToggleFn = unsafe extern "C" fn(m: *mut u8, text: *const u8, value: *mut i32, changed: Option<UiAct>, ctx: *mut u8);
+    pub type DkUiItemToggleFn = unsafe extern "C" fn(m: *mut u8, text: *const u8, value: *mut i32, changed: Option<UiActionFn>, arg: *mut u8);
 
     /// `dk_ui_item_value`: Add a number row changed by the encoder.
-    pub type DkUiItemValueFn = unsafe extern "C" fn(m: *mut u8, text: *const u8, value: *mut i32, min: i32, max: i32, changed: Option<UiAct>, ctx: *mut u8);
+    pub type DkUiItemValueFn = unsafe extern "C" fn(m: *mut u8, text: *const u8, value: *mut i32, min: i32, max: i32, changed: Option<UiActionFn>, arg: *mut u8);
 
     /// `dk_ui_item_check`: Set the check mark of a list row.
     pub type DkUiItemCheckFn = unsafe extern "C" fn(list: *mut u8, row: i32, on: i32);
@@ -907,17 +934,17 @@ macro_rules! optional_imports {
                 pub fn dl_set_tick_cb(cb: *mut u8);
                 pub fn usb_bulk_takeover() -> i32;
                 pub fn usb_bulk_giveback() -> i32;
-                pub fn dk_ui_open_ctx(ctx: *mut u8, out: *mut *mut u8) -> i32;
+                pub fn dk_ui_service_open(ctx: *mut u8, out: *mut *mut u8) -> i32;
                 pub fn dk_ui_menu_open(m: *mut u8) -> i32;
                 pub fn dk_ui_menu_close(m: *mut u8);
                 pub fn dk_ui_menu_select(m: *mut u8, row: i32);
                 pub fn dk_ui_menu_refresh(m: *mut u8);
                 pub fn dk_ui_menu_is_open(m: *const u8) -> i32;
                 pub fn dk_ui_item_text(m: *mut u8, text: *const u8);
-                pub fn dk_ui_item_action(m: *mut u8, text: *const u8, run: Option<UiAct>, ctx: *mut u8, arg: i32);
+                pub fn dk_ui_item_action(m: *mut u8, text: *const u8, run: Option<UiActionFn>, arg: *mut u8, value: i32);
                 pub fn dk_ui_item_submenu(m: *mut u8, text: *const u8, sub: *mut u8);
-                pub fn dk_ui_item_toggle(m: *mut u8, text: *const u8, value: *mut i32, changed: Option<UiAct>, ctx: *mut u8);
-                pub fn dk_ui_item_value(m: *mut u8, text: *const u8, value: *mut i32, min: i32, max: i32, changed: Option<UiAct>, ctx: *mut u8);
+                pub fn dk_ui_item_toggle(m: *mut u8, text: *const u8, value: *mut i32, changed: Option<UiActionFn>, arg: *mut u8);
+                pub fn dk_ui_item_value(m: *mut u8, text: *const u8, value: *mut i32, min: i32, max: i32, changed: Option<UiActionFn>, arg: *mut u8);
                 pub fn dk_ui_item_check(list: *mut u8, row: i32, on: i32);
                 pub fn dk_ui_item_checked(list: *const u8, row: i32) -> i32;
                 pub fn dk_input_open(ctx: *mut u8, out: *mut *mut u8) -> i32;
@@ -959,17 +986,17 @@ macro_rules! optional_imports {
                 pub unsafe extern "C" fn dk_ui_toast(_a0: *const u8) -> i32 { -1 as _ }
                 pub unsafe extern "C" fn dk_ui_tick(_a0: *mut u8, _a1: *mut u8, _a2: u32) -> i32 { -1 as _ }
                 pub unsafe extern "C" fn dl_set_tick_cb(_a0: *mut u8) { }
-                pub unsafe extern "C" fn dk_ui_open_ctx(_a0: *mut u8, _a1: *mut *mut u8) -> i32 { -73 as _ }
+                pub unsafe extern "C" fn dk_ui_service_open(_a0: *mut u8, _a1: *mut *mut u8) -> i32 { -73 as _ }
                 pub unsafe extern "C" fn dk_ui_menu_open(_a0: *mut u8) -> i32 { -73 as _ }
                 pub unsafe extern "C" fn dk_ui_menu_close(_a0: *mut u8) { }
                 pub unsafe extern "C" fn dk_ui_menu_select(_a0: *mut u8, _a1: i32) { }
                 pub unsafe extern "C" fn dk_ui_menu_refresh(_a0: *mut u8) { }
                 pub unsafe extern "C" fn dk_ui_menu_is_open(_a0: *const u8) -> i32 { 0 as _ }
                 pub unsafe extern "C" fn dk_ui_item_text(_a0: *mut u8, _a1: *const u8) { }
-                pub unsafe extern "C" fn dk_ui_item_action(_a0: *mut u8, _a1: *const u8, _a2: Option<UiAct>, _a3: *mut u8, _a4: i32) { }
+                pub unsafe extern "C" fn dk_ui_item_action(_a0: *mut u8, _a1: *const u8, _a2: Option<UiActionFn>, _a3: *mut u8, _a4: i32) { }
                 pub unsafe extern "C" fn dk_ui_item_submenu(_a0: *mut u8, _a1: *const u8, _a2: *mut u8) { }
-                pub unsafe extern "C" fn dk_ui_item_toggle(_a0: *mut u8, _a1: *const u8, _a2: *mut i32, _a3: Option<UiAct>, _a4: *mut u8) { }
-                pub unsafe extern "C" fn dk_ui_item_value(_a0: *mut u8, _a1: *const u8, _a2: *mut i32, _a3: i32, _a4: i32, _a5: Option<UiAct>, _a6: *mut u8) { }
+                pub unsafe extern "C" fn dk_ui_item_toggle(_a0: *mut u8, _a1: *const u8, _a2: *mut i32, _a3: Option<UiActionFn>, _a4: *mut u8) { }
+                pub unsafe extern "C" fn dk_ui_item_value(_a0: *mut u8, _a1: *const u8, _a2: *mut i32, _a3: i32, _a4: i32, _a5: Option<UiActionFn>, _a6: *mut u8) { }
                 pub unsafe extern "C" fn dk_ui_item_check(_a0: *mut u8, _a1: i32, _a2: i32) { }
                 pub unsafe extern "C" fn dk_ui_item_checked(_a0: *const u8, _a1: i32) -> i32 { 0 as _ }
                 pub unsafe extern "C" fn dk_input_open(_a0: *mut u8, _a1: *mut *mut u8) -> i32 { -73 as _ }
@@ -1020,7 +1047,7 @@ macro_rules! optional_imports {
                     ("dl_set_tick_cb", core::hint::black_box(dl_set_tick_cb as usize), absent::dl_set_tick_cb as usize, "core/dsp-link"),
                     ("usb_bulk_takeover", core::hint::black_box(usb_bulk_takeover as usize), 0, "core/usb-bulk"),
                     ("usb_bulk_giveback", core::hint::black_box(usb_bulk_giveback as usize), 0, "core/usb-bulk"),
-                    ("dk_ui_open_ctx", core::hint::black_box(dk_ui_open_ctx as usize), absent::dk_ui_open_ctx as usize, "core/ui"),
+                    ("dk_ui_service_open", core::hint::black_box(dk_ui_service_open as usize), absent::dk_ui_service_open as usize, "core/ui"),
                     ("dk_ui_menu_open", core::hint::black_box(dk_ui_menu_open as usize), absent::dk_ui_menu_open as usize, "core/ui"),
                     ("dk_ui_menu_close", core::hint::black_box(dk_ui_menu_close as usize), absent::dk_ui_menu_close as usize, "core/ui"),
                     ("dk_ui_menu_select", core::hint::black_box(dk_ui_menu_select as usize), absent::dk_ui_menu_select as usize, "core/ui"),

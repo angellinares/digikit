@@ -9,7 +9,7 @@ import { pollEmulated, waitEmulated } from '@digi/regression/runtime/waits.ts';
 
 /**
  * The entry point `dk_module` and the service imports (docs/plans/sdk.md section 5; the fixture test/entry-demo uses only the new contract).
- * `init` gets a `dk_ctx` and opens the settings; the optional USB bulk service is not in the image, so its `_open` answers DK_E_MISSING and the module
+ * `init` gets a `dk_module_ctx` and opens the settings; the optional USB bulk service is not in the image, so its `_open` answers DK_E_MISSING and the module
  * still loads; `tick` runs once per UI pass; a settings write queued by a host command runs in `tick`.
  */
 const REPORT = 0x1c;
@@ -48,8 +48,8 @@ async function expectEntryPoint({ session, dk }: PatchedSession): Promise<void> 
   expect(first.bootRead, 'a fresh card has no "boot" value').toBe(E_SET_NOKEY);
   expect(first.usbOpen, 'dk_usb_bulk_open without core/usb-bulk is DK_E_MISSING').toBe(E_MISSING);
   expect(first.usbHandleNull, 'the absent service leaves the handle NULL').toBe(1);
-  expect(first.device, 'dk_ctx_device').toBe(DEVICE_ID[session.options.device]);
-  expect(first.runtime, 'dk_ctx_runtime_version').toBe(runtimeVersion());
+  expect(first.device, 'dk_module_ctx_device').toBe(DEVICE_ID[session.options.device]);
+  expect(first.runtime, 'dk_module_ctx_runtime').toBe(runtimeVersion());
 
   // The UI loop (and with it `tick`) starts some emulated seconds after the boot finished and the module registered: wait for the first tick (firmware
   // state), then let a second of emulated time pass.

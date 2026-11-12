@@ -99,12 +99,37 @@ io_done = "void (u8 *ctx, i32 status)"
 # A menu row action or change (`dk_ui_item_action`, `dk_ui_item_toggle`, `dk_ui_item_value`), in the UI task: `arg` is the value the row was added with (an action) or the new value.
 ui_act = "void (void *ctx, i32 arg)"
 
-# The opaque handle types of the service imports (`dk_ctx *ctx`, `dk_settings **out`). `patchkit gen` writes `typedef struct <name> <name>;` for each into
+# The opaque handle types of the service imports (`dk_module_ctx *ctx`, `dk_settings **out`). `patchkit gen` writes `typedef struct <name> <name>;` for each into
 # sdk/include/dk/gen/imports.h; in Rust a handle is a `u8` pointer. The runtime, or the provider module, gives one out in `init`.
 [handle]
-types = ["dk_ctx", "dk_settings", "dk_files", "dk_sample_pool", "dk_ui", "dk_ui_menu", "dk_input", "dk_usb_bulk", "dk_dsp_link"]
+types = ["dk_module_ctx", "dk_settings", "dk_files", "dk_sample_pool", "dk_ui", "dk_ui_menu", "dk_input", "dk_usb_bulk", "dk_dsp_link"]
 services = ["runtime", "samples", "machines", "fx", "ui", "input", "usb_bulk", "dsp_link"]
 contexts = ["init", "ui", "io-step", "any", "isr"]
+
+# The callback types of the service imports (docs/plans/sdk.md section 10, Naming). The key ends in `_fn`; the C type is `dk_<key>` (the generated
+# imports header writes the typedef) and the Rust type `<Key>Fn`. A user-data pointer is `arg`; `ctx` is only the module context. The older names of
+# [api.types] stay for the Api table until S2b-2.
+[handle.callbacks]
+# A host command handler (`dk_host_register`), in the firmware's MIDI task: short, no waiting. `body` is the request body (`len` bytes, at most 160); the reply body goes to
+# `out` (at most 879 bytes). Returns the number of reply bytes (0 or more: status ok), or a negative status (sent as the reply's status with no body).
+host_cmd_fn = "i32 (u32 cmd, u32 seq, const void *body, u32 len, void *out)"
+# The deferred notification of a listing request (`dk_files_list`), in the UI task: a coalesced readiness hint; poll `request`.
+files_event_fn = "void (u32 client, u32 request, i32 state, void *arg)"
+# A background job step (`dk_job_post`), in the worker task: it computes on its own memory and calls no import. Returns DK_JOB_MORE (1) to be called again, 0 when finished, or a negative error.
+job_step_fn = "i32 (void *arg)"
+# The end of a background job, in the UI task, once. `status` is the last step's result, or DK_JOB_E_CANCELLED.
+job_done_fn = "void (void *arg, i32 status)"
+# One frame of a boot animation (`dk_intro_take`), on the intro task: the 1024-byte native bitmap of `tick`, or NULL to end the animation. No import calls.
+intro_frame_fn = "const u8 *(u32 tick, void *arg)"
+# The end of a boot animation, in the UI task, once, at the first UI pass.
+intro_done_fn = "void (void *arg)"
+# A step of an I/O job (`dk_io_post`), in the runtime's I/O task: it may block and call dk_files_*. Returns DK_IO_MORE (1), DK_IO_WAIT (2), 0 or a negative error.
+io_step_fn = "i32 (void *arg)"
+# The end of an I/O job, in the UI task, once. `status` is the last step's result, or DK_IO_E_CANCELLED.
+io_done_fn = "void (void *arg, i32 status)"
+# A menu row action or change (`dk_ui_item_action`, `dk_ui_item_toggle`, `dk_ui_item_value`), in the UI task: `arg` is the pointer the row was added with, `value` the
+# value the row was added with (an action) or the new value.
+ui_action_fn = "void (void *arg, i32 value)"
 
 # The machine contract's numbers (sdk/include/dk/gen/machine.h is the generated C view; it includes the generated sdk/include/dk/gen/machine_consts.h).
 # `patchkit gen` writes sdk/dsp/contract/dk_machine.inc and sdk/include/dk/gen/machine_consts.h from this table: the constants, then the byte and word offsets of the fields (all 4 bytes).
@@ -753,7 +778,7 @@ requires = "core/usb-bulk"
 # `service`: runtime, samples, machines, fx, ui, input, usb_bulk, dsp_link. `since`: the api minor that added the import; a module with the entry
 # point `dk_module` needs the newest `since` among the imports it links (`patchkit pack`). `context`: where the call may run. `init`: only inside the
 # module's `init`. `ui`: the UI task, which includes init, fini, tick, menu and the callbacks that run there. `io-step`: only inside an I/O step.
-# `any`: any task, never an interrupt. `isr`: also from an interrupt handler. A handle type (`dk_ctx`, `dk_settings`, ...) is opaque: the runtime or
+# `any`: any task, never an interrupt. `isr`: also from an interrupt handler. A handle type (`dk_module_ctx`, `dk_settings`, ...) is opaque: the runtime or
 # the provider module gives it out in `init`. The prototypes of the imports that have `service` and no `kind` are written into
 # sdk/include/dk/gen/imports.h. An import with `requires` binds to a stub when its provider is not in the image: `absent = "missing"` makes
 # the stub return DK_E_MISSING.
@@ -763,7 +788,7 @@ name = "dk_alloc"
 service = "runtime"
 since = 11
 context = "any"
-sig = "u8 *(u32 size)"
+sig = "void *(u32 size)"
 doc = "A 16-byte aligned block from the module arena (zero is not guaranteed); null when it is full."
 
 [[import]]
@@ -771,7 +796,7 @@ name = "dk_free"
 service = "runtime"
 since = 11
 context = "any"
-sig = "void (u8 *p)"
+sig = "void (void *p)"
 doc = "Give back a block of dk_alloc."
 
 [[import]]
@@ -803,7 +828,7 @@ name = "dk_store_read"
 service = "runtime"
 since = 11
 context = "init"
-sig = "i32 (const char *path, u8 *dst, u32 cap)"
+sig = "i32 (const char *path, void *dst, u32 cap)"
 doc = "Read a store file into `dst` (at most `cap` bytes); returns the file size, or a negative code. It uses the runtime's staging buffer."
 
 [[import]]
@@ -811,23 +836,23 @@ name = "dk_host_register"
 service = "runtime"
 since = 11
 context = "init"
-sig = "i32 (u32 first, u32 count, service_cmd handler)"
-doc = "Register the SysEx commands `first .. first + count` with `handler`. The range must lie inside one of the ranges sdk/sdk.toml [protocol.ranges] reserves and overlap no registered one; else it returns DK_E_CMD_RANGE. The range is released with the module. Returns 0. See <dk/platform/host.h>."
+sig = "i32 (u32 first, u32 count, host_cmd_fn fn)"
+doc = "Register the SysEx commands `first .. first + count` with `fn`. The range must lie inside one of the ranges sdk/sdk.toml [protocol.ranges] reserves and overlap no registered one; else it returns DK_E_CMD_RANGE. The range is released with the module. Returns 0. See <dk/platform/host.h>."
 
 [[import]]
-name = "dk_ctx_device"
+name = "dk_module_ctx_device"
 service = "runtime"
 since = 11
 context = "any"
-sig = "u32 (dk_ctx *ctx)"
+sig = "u32 (dk_module_ctx *ctx)"
 doc = "The device's `[digikit] id` (DT2 or DN2); 0 for a pointer that is not a context."
 
 [[import]]
-name = "dk_ctx_runtime_version"
+name = "dk_module_ctx_runtime"
 service = "runtime"
 since = 11
 context = "any"
-sig = "u32 (dk_ctx *ctx)"
+sig = "u32 (dk_module_ctx *ctx)"
 doc = "The runtime version, packed major << 16 | minor << 8 | patch; 0 for a pointer that is not a context."
 
 [[import]]
@@ -835,7 +860,7 @@ name = "dk_settings_open"
 service = "runtime"
 since = 11
 context = "init"
-sig = "i32 (dk_ctx *ctx, dk_settings **out)"
+sig = "i32 (dk_module_ctx *ctx, dk_settings **out)"
 doc = "Open this module's settings: `*out` is the handle (the same one every time), the result 0. A negative result outside init (DK_E_NOT_FOUND) or for a bad context (DK_E_CONTRACT); `*out` is untouched then."
 
 [[import]]
@@ -867,7 +892,7 @@ name = "dk_files_open"
 service = "runtime"
 since = 11
 context = "init"
-sig = "i32 (dk_ctx *ctx, dk_files **out)"
+sig = "i32 (dk_module_ctx *ctx, dk_files **out)"
 doc = "Open this module's listing client: `*out` is the handle, the result 0. A negative result outside init or when the client table is full; `*out` is untouched then."
 
 [[import]]
@@ -875,7 +900,7 @@ name = "dk_files_list"
 service = "runtime"
 since = 11
 context = "ui"
-sig = "i32 (dk_files *f, u32 root, const char *path, file_event notify, u8 *context)"
+sig = "i32 (dk_files *f, u32 root, const char *path, files_event_fn notify, void *arg)"
 doc = "Copy a canonical root-relative directory request; positive ticket or negative error. Supersedes prior results. The optional deferred UI-task notify and its context stay module-owned. No I/O here."
 
 [[import]]
@@ -883,7 +908,7 @@ name = "dk_files_poll"
 service = "runtime"
 since = 11
 context = "ui"
-sig = "i32 (dk_files *f, u32 ticket, u8 *out, u32 capacity)"
+sig = "i32 (dk_files *f, u32 ticket, void *out, u32 capacity)"
 doc = "No I/O: 0 pending, 1 copied 304-byte dk_file_entry, 2 end, negative error. The output is unchanged unless 1."
 
 [[import]]
@@ -895,43 +920,43 @@ sig = "i32 (dk_files *f, u32 ticket)"
 doc = "Invalidate the matching request, its results and its queued notification without waiting for active work or a callback."
 
 [[import]]
-name = "dk_file_create"
+name = "dk_files_create"
 service = "runtime"
 since = 11
 context = "io-step"
-sig = "i32 (u32 root, const char *path, u32 size, const u8 *hash4, u32 flags)"
-doc = "Open the one write session for the file `path` of `size` bytes under `root` (DK_FILES_STORE or DK_FILES_SAMPLES). `hash4`: NULL, or the expected file hash; dk_file_close then checks it. `flags`: 0 or DK_FILE_REPLACE (1). Returns a handle > 0 owned by this module, or a negative status (DK_E_BUSY: try again; DK_E_EXISTS, DK_E_FILE_IN_USE, DK_E_PATH, DK_E_FULL, DK_E_NOSTORE, DK_E_INUSE, DK_E_WRITE; DK_E_CONTEXT outside an I/O step). See <dk/platform/files.h>."
+sig = "i32 (dk_files *f, u32 root, const char *path, u32 size, const void *hash4, u32 flags)"
+doc = "Open the one write session for the file `path` of `size` bytes under `root` (DK_FILES_STORE or DK_FILES_SAMPLES). `hash4`: NULL, or the expected file hash; dk_files_close then checks it. `flags`: 0 or DK_FILE_REPLACE (1). Returns a handle > 0 owned by this module, or a negative status (DK_E_BUSY: try again; DK_E_EXISTS, DK_E_FILE_IN_USE, DK_E_PATH, DK_E_FULL, DK_E_NOSTORE, DK_E_INUSE, DK_E_WRITE; DK_E_CONTEXT outside an I/O step). See <dk/platform/files.h>."
 
 [[import]]
-name = "dk_file_write"
+name = "dk_files_write"
 service = "runtime"
 since = 11
 context = "io-step"
-sig = "i32 (i32 h, u32 offset, const u8 *buf, u32 len)"
+sig = "i32 (dk_files *f, i32 h, u32 offset, const void *buf, u32 len)"
 doc = "Write `len` bytes at `offset`, the next byte of the file. `buf` is 16-byte aligned; `len` a multiple of 512 except for the last piece (the tail sector is padded with zeros). Returns 0 or DK_E_STATE, DK_E_OFFSET, DK_E_LENGTH, DK_E_WRITE, DK_E_CONTRACT (unaligned buf), DK_E_BUSY (nothing was written: call again)."
 
 [[import]]
-name = "dk_file_close"
+name = "dk_files_close"
 service = "runtime"
 since = 11
 context = "io-step"
-sig = "i32 (i32 h, u8 *hash_out)"
+sig = "i32 (dk_files *f, i32 h, void *hash_out)"
 doc = "End the file. All `size` bytes must have been written (DK_E_LENGTH) and match `hash4` when it was given (DK_E_HASH); the table is committed (power-cut safe). `hash_out` (4 bytes, may be NULL) gets the file hash of the bytes written. The session is closed whatever the result, except for DK_E_BUSY (try again)."
 
 [[import]]
-name = "dk_file_abort"
+name = "dk_files_abort"
 service = "runtime"
 since = 11
 context = "io-step"
-sig = "i32 (i32 h)"
+sig = "i32 (dk_files *f, i32 h)"
 doc = "Drop the session and the partial file. Returns 0 or DK_E_STATE."
 
 [[import]]
-name = "dk_file_delete"
+name = "dk_files_delete"
 service = "runtime"
 since = 11
 context = "io-step"
-sig = "i32 (u32 root, const char *path)"
+sig = "i32 (dk_files *f, u32 root, const char *path)"
 doc = "Remove a file or folder entry. Returns 0, DK_E_NOFILE, DK_E_FILE_IN_USE (a reader still reads it: try again later), DK_E_BUSY or a path or store status."
 
 [[import]]
@@ -939,8 +964,8 @@ name = "dk_io_post"
 service = "runtime"
 since = 11
 context = "any"
-sig = "i32 (io_step step, io_done done, u8 *ctx)"
-doc = "Run `step(ctx)` on the runtime's I/O task (<dk/platform/io.h>). The step may block and call dk_file_*. It returns DK_IO_MORE (run again), DK_IO_WAIT (sleep until dk_io_wake), 0 (done) or a negative error. `done(ctx, status)` runs once in the UI task. Returns a job id > 0, DK_E_CONTRACT (no step) or DK_E_BUSY (8 jobs)."
+sig = "i32 (io_step_fn step, io_done_fn done, void *arg)"
+doc = "Run `step(arg)` on the runtime's I/O task (<dk/platform/io.h>). The step may block and call dk_files_create, dk_files_write, dk_files_close, dk_files_abort and dk_files_delete. It returns DK_IO_MORE (run again), DK_IO_WAIT (sleep until dk_io_wake), 0 (done) or a negative error. `done(arg, status)` runs once in the UI task. Returns a job id > 0, DK_E_CONTRACT (no step) or DK_E_BUSY (8 jobs)."
 
 [[import]]
 name = "dk_io_cancel"
@@ -963,8 +988,8 @@ name = "dk_job_post"
 service = "runtime"
 since = 11
 context = "ui"
-sig = "i32 (job_step step, job_done done, u8 *ctx)"
-doc = "Run `step(ctx)` on the background worker until it returns 0 or a negative error (DK_JOB_MORE: call again; <dk/platform/job.h>). `done(ctx, status)` is called once in the UI task. Returns a job id > 0, DK_E_BUSY (8 jobs are queued) or DK_E_CONTRACT (no step)."
+sig = "i32 (job_step_fn step, job_done_fn done, void *arg)"
+doc = "Run `step(arg)` on the background worker until it returns 0 or a negative error (DK_JOB_MORE: call again; <dk/platform/job.h>). `done(arg, status)` is called once in the UI task. Returns a job id > 0, DK_E_BUSY (8 jobs are queued) or DK_E_CONTRACT (no step)."
 
 [[import]]
 name = "dk_job_cancel"
@@ -979,7 +1004,7 @@ name = "dk_hash32_init"
 service = "runtime"
 since = 11
 context = "any"
-sig = "void (u8 *state)"
+sig = "void (void *state)"
 doc = "Start the file hash (the Elektron +Drive content hash, <dk/platform/hash32.h>) in the caller's 28-byte `dk_hash32`."
 
 [[import]]
@@ -987,7 +1012,7 @@ name = "dk_hash32_update"
 service = "runtime"
 since = 11
 context = "any"
-sig = "void (u8 *state, const u8 *p, u32 n)"
+sig = "void (void *state, const void *p, u32 n)"
 doc = "Feed `n` bytes."
 
 [[import]]
@@ -995,7 +1020,7 @@ name = "dk_hash32_finish"
 service = "runtime"
 since = 11
 context = "any"
-sig = "u32 (u8 *state)"
+sig = "u32 (void *state)"
 doc = "The file hash `hash|1`: the value the store keeps (4 bytes big-endian in a table slot). The state is spent."
 
 [[import]]
@@ -1003,8 +1028,8 @@ name = "dk_intro_take"
 service = "runtime"
 since = 11
 context = "init"
-sig = "i32 (intro_frame frame, intro_done done, void *ctx, u32 ticks)"
-doc = "Replace the stock boot animation. `frame(tick, ctx)` returns the 1024-byte native bitmap of tick 0 .. ticks-1 (30 ticks a second), or NULL to end the animation; it runs on the intro task, must not block and must not call any import. `done(ctx)` (may be NULL) runs once in the UI task at the first UI pass. `ticks` is 1 to 300. Returns 0, DK_E_NOT_FOUND outside init, DK_E_CONTRACT, DK_E_BUSY (taken already) or DK_E_BOOT_ONLY. See <dk/platform/intro.h>."
+sig = "i32 (intro_frame_fn frame, intro_done_fn done, void *arg, u32 ticks)"
+doc = "Replace the stock boot animation. `frame(tick, arg)` returns the 1024-byte native bitmap of tick 0 .. ticks-1 (30 ticks a second), or NULL to end the animation; it runs on the intro task, must not block and must not call any import. `done(arg)` (may be NULL) runs once in the UI task at the first UI pass. `ticks` is 1 to 300. Returns 0, DK_E_NOT_FOUND outside init, DK_E_CONTRACT, DK_E_BUSY (taken already) or DK_E_BOOT_ONLY. See <dk/platform/intro.h>."
 
 [[import]]
 name = "dk_param_get"
@@ -1027,7 +1052,7 @@ name = "dk_sample_pool_open"
 service = "samples"
 since = 11
 context = "init"
-sig = "i32 (dk_ctx *ctx, dk_sample_pool **out)"
+sig = "i32 (dk_module_ctx *ctx, dk_sample_pool **out)"
 doc = "Open the module's 16-entry sample pool table (its lowest DK_SAMPLE_TRACKS id): `*out` is the handle, the result 0. A negative DK_E_* result when the module has none, declares a bank too, or this is not init; `*out` is untouched then."
 
 [[import]]
@@ -1059,7 +1084,7 @@ name = "dk_sample_pool_info"
 service = "samples"
 since = 11
 context = "ui"
-sig = "i32 (dk_sample_pool *p, u32 index, u8 *out)"
+sig = "i32 (dk_sample_pool *p, u32 index, void *out)"
 doc = "Copy a 16-byte dk_sample_info (frames, rate, channels, token) of a READY entry; otherwise a negative error and `out` is untouched."
 
 [[import]]
@@ -1083,7 +1108,7 @@ name = "dk_sample_pool_peaks"
 service = "samples"
 since = 11
 context = "ui"
-sig = "i32 (dk_sample_pool *p, u32 index, u32 token, u8 *out, u32 capacity)"
+sig = "i32 (dk_sample_pool *p, u32 index, u32 token, void *out, u32 capacity)"
 doc = "Copy bounded PCM16 min/max overview pairs of a READY pool entry matching token. Returns the bin count (1..512), or a negative error; capacity is bytes, the output is unchanged on refusal."
 
 [[import]]
@@ -1091,16 +1116,16 @@ name = "dk_sample_pool_peaks_window"
 service = "samples"
 since = 11
 context = "ui"
-sig = "i32 (dk_sample_pool *p, u32 index, u32 token, u32 first, u32 frames, u32 columns, u8 *out, u32 capacity)"
+sig = "i32 (dk_sample_pool *p, u32 index, u32 token, u32 first, u32 frames, u32 columns, void *out, u32 capacity)"
 doc = "Min/max of `columns` equal parts of the frames [first, first + frames) of a READY pool entry matching token, computed in the background. Returns `columns` when ready, 0 while it is computed, or a negative error. Poll from the draw callback."
 
 [[import]]
-name = "dk_ui_open_ctx"
+name = "dk_ui_service_open"
 service = "ui"
 since = 11
 context = "init"
-sig = "i32 (dk_ctx *ctx, dk_ui **out)"
-doc = "Open the UI service: `*out` is the handle, the result 0. Without core/ui the result is DK_E_MISSING and `*out` is untouched. Transitional name: it becomes `dk_ui_open` when the old menu call of that name goes (docs/plans/sdk.md S2b-2)."
+sig = "i32 (dk_module_ctx *ctx, dk_ui **out)"
+doc = "Open the UI service: `*out` is the handle, the result 0. Without core/ui the result is DK_E_MISSING and `*out` is untouched. Transitional name: renamed to `dk_ui_open` in S2b-2, when the old menu call of that name goes (docs/plans/sdk.md)."
 requires = "core/ui"
 absent = "missing"
 
@@ -1169,8 +1194,8 @@ name = "dk_ui_item_action"
 service = "ui"
 since = 11
 context = "ui"
-sig = "void (dk_ui_menu *m, const char *text, ui_act run, void *ctx, i32 arg)"
-doc = "Add a row that runs `run(ctx, arg)` on YES."
+sig = "void (dk_ui_menu *m, const char *text, ui_action_fn run, void *arg, i32 value)"
+doc = "Add a row that runs `run(arg, value)` on YES."
 requires = "core/ui"
 absent = "void"
 
@@ -1189,7 +1214,7 @@ name = "dk_ui_item_toggle"
 service = "ui"
 since = 11
 context = "ui"
-sig = "void (dk_ui_menu *m, const char *text, i32 *value, ui_act changed, void *ctx)"
+sig = "void (dk_ui_menu *m, const char *text, i32 *value, ui_action_fn changed, void *arg)"
 doc = "Add an ON/OFF row."
 requires = "core/ui"
 absent = "void"
@@ -1199,7 +1224,7 @@ name = "dk_ui_item_value"
 service = "ui"
 since = 11
 context = "ui"
-sig = "void (dk_ui_menu *m, const char *text, i32 *value, i32 min, i32 max, ui_act changed, void *ctx)"
+sig = "void (dk_ui_menu *m, const char *text, i32 *value, i32 min, i32 max, ui_action_fn changed, void *arg)"
 doc = "Add a number row changed by the encoder."
 requires = "core/ui"
 absent = "void"
@@ -1229,7 +1254,7 @@ name = "dk_input_open"
 service = "input"
 since = 11
 context = "init"
-sig = "i32 (dk_ctx *ctx, dk_input **out)"
+sig = "i32 (dk_module_ctx *ctx, dk_input **out)"
 doc = "Open the panel input service: `*out` is the handle, the result 0. Without core/input the result is DK_E_MISSING and `*out` is untouched."
 requires = "core/input"
 absent = "missing"
@@ -1259,7 +1284,7 @@ name = "dk_usb_bulk_open"
 service = "usb_bulk"
 since = 11
 context = "init"
-sig = "i32 (dk_ctx *ctx, dk_usb_bulk **out)"
+sig = "i32 (dk_module_ctx *ctx, dk_usb_bulk **out)"
 doc = "Open the USB bulk service: `*out` is the handle, the result 0. Without core/usb-bulk the result is DK_E_MISSING and `*out` is untouched. See <dk/platform/usb_bulk.h>."
 requires = "core/usb-bulk"
 absent = "missing"
@@ -1289,7 +1314,7 @@ name = "dk_usb_bulk_take"
 service = "usb_bulk"
 since = 11
 context = "any"
-sig = "i32 (dk_usb_bulk *ub, u8 **buf, u32 *len)"
+sig = "i32 (dk_usb_bulk *ub, void **buf, u32 *len)"
 doc = "The next full receive buffer, in arrival order: 1 and `*buf`, `*len` set (the buffer is yours until dk_usb_bulk_release), or 0 when none is full. Never blocks."
 requires = "core/usb-bulk"
 absent = "missing"
@@ -1299,7 +1324,7 @@ name = "dk_usb_bulk_release"
 service = "usb_bulk"
 since = 11
 context = "any"
-sig = "i32 (dk_usb_bulk *ub, u8 *buf)"
+sig = "i32 (dk_usb_bulk *ub, void *buf)"
 doc = "Give a buffer from dk_usb_bulk_take back: it is queued for the next transfer. 0, or DK_E_STATE for a pointer that is not a taken buffer."
 requires = "core/usb-bulk"
 absent = "missing"
@@ -1309,7 +1334,7 @@ name = "dk_usb_bulk_send"
 service = "usb_bulk"
 since = 11
 context = "any"
-sig = "i32 (dk_usb_bulk *ub, const u8 *buf, u32 len)"
+sig = "i32 (dk_usb_bulk *ub, const void *buf, u32 len)"
 doc = "Send `len` bytes (1 to 16384) to the host on EP2 IN. The bytes are copied. 0, DK_E_BUSY when both send slots are in flight (the job is woken when one completes), DK_E_AGAIN when nothing is in flight and the engine refused, or another status."
 requires = "core/usb-bulk"
 absent = "missing"
@@ -1349,7 +1374,7 @@ name = "dk_dsp_link_open"
 service = "dsp_link"
 since = 11
 context = "init"
-sig = "i32 (dk_ctx *ctx, dk_dsp_link **out)"
+sig = "i32 (dk_module_ctx *ctx, dk_dsp_link **out)"
 doc = "Open the DSP link service: `*out` is the handle, the result 0. Without core/dsp-link the result is DK_E_MISSING and `*out` is untouched."
 requires = "core/dsp-link"
 absent = "missing"

@@ -46,7 +46,7 @@ conformance checks; this fast SDK check does not replace them.
 ## The entry point and the services
 
 A module of the new contract defines one constant, `dk_module`, and calls the device through named imports grouped by service. There is no
-Api table and no `dkm_*` symbol (docs/plans/sdk.md section 5). `include/dk/core/module.h` has the struct and `dk_ctx`; the prototypes of the
+Api table and no `dkm_*` symbol (docs/plans/sdk.md section 5). `include/dk/core/module.h` has `dk_module_def` and `dk_module_ctx`; the prototypes of the
 imports are generated into `include/dk/gen/imports.h` from the `[[import]]` entries of `sdk.toml` that have a `service`.
 
 ```c
@@ -56,7 +56,7 @@ imports are generated into `include/dk/gen/imports.h` from the `[[import]]` entr
 
 static dk_settings *settings;
 
-static int32_t init(dk_ctx *ctx)
+static int32_t init(dk_module_ctx *ctx)
 {
     int32_t r = dk_settings_open(ctx, &settings);   /* a handle per service, opened in init */
     if (r != DK_OK)
@@ -65,17 +65,17 @@ static int32_t init(dk_ctx *ctx)
     return DK_OK;
 }
 
-const struct dk_module dk_module = {.init = init};  /* init, fini, tick, menu: all optional */
+const dk_module_def dk_module = {.init = init};  /* init, fini, tick, menu: all optional */
 ```
 
-- `tick(ctx)` runs once per UI pass for every loaded module. `menu(ctx, m)` adds the rows of the module's SETTINGS... menu.
-- `struct dk_module` has no typedef, because a typedef named `dk_module` clashes with the constant.
+- `tick(ctx)` runs once per UI pass for every loaded module. `menu(ctx, menu)` adds the rows of the module's SETTINGS... menu.
+- The type is `dk_module_def` and the constant is `dk_module` (the packer looks the symbol up). `ctx` is only the module context; the user-data pointer of a callback is `arg`, and callback types end in `_fn` (`dk_io_step_fn`). The naming rules are in docs/plans/sdk.md section 10.
 - Each import has a `service` (`runtime`, `samples`, `machines`, `fx`, `ui`, `input`, `usb_bulk`, `dsp_link`), a `since` (the api minor
   that added it) and a `context` (`init`, `ui`, `io-step`, `any`, `isr`). The generated header repeats the last two in the comment of each
   prototype. `patchkit pack` takes the runtime minor a module needs from the newest `since` it links and prints the services it needs
   (`services <file>: ...`).
 - A service that another module provides (`ui`, `input`, `usb_bulk`, `dsp_link`) may be absent: its `_open` returns `DK_E_MISSING`, the other
-  calls return the same code or do nothing, and the module still loads. Without `dk_ui_open_ctx` returning `DK_OK` a module does not call
+  calls return the same code or do nothing, and the module still loads. Without `dk_ui_service_open` returning `DK_OK` a module does not call
   the menu functions.
 - The headers of the services are `core/log.h`, `core/mem.h`, `core/time.h`, `platform/host.h`, `settings.h`, `files.h` (listing and writing),
   `io.h`, `hash32.h`, `intro.h`, `param.h`, `samples.h`, `ui.h`, `input.h`, `usb_bulk.h`, `dsp_link.h` and `debug.h`.
@@ -85,7 +85,7 @@ The old entry (`dkm_init(const dk_api *api)`, the `dk_api` table, `DK_API_HAS`, 
 other, never both (the packer refuses it). The old headers keep their old declarations for it; where an old name is the new name of
 another call (`dk_settings_get`, `dk_settings_put`, `dk_settings_remove`, `dk_intro_take`) the old wrapper is defined only when
 `<dk/core/module.h>` was not included before the header, and `module.h` stops the build if the old wrapper is already there. `dk_ui_open` is
-still the old call that opens a menu; the service accessor is `dk_ui_open_ctx` until then. The templates and the module guide still show the old entry.
+still the old call that opens a menu; the service accessor is `dk_ui_service_open` until then, when it is renamed `dk_ui_open`. The templates and the module guide still show the old entry.
 
 ## Include paths
 

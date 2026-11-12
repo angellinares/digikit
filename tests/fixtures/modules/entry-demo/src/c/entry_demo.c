@@ -9,7 +9,7 @@
  *   0x1c  report (no body); reply, big-endian words:
  *           0  result of dk_settings_open        4  result of the read of "boot" in init (DK_E_SET_NOKEY on a fresh card)
  *           8  result of dk_usb_bulk_open       12  1 when the handle it gave is still NULL
- *          16  dk_ctx_device                    20  dk_ctx_runtime_version
+ *          16  dk_module_ctx_device                 20  dk_module_ctx_runtime
  *          24  ticks so far                     28  block clock of the last tick minus the first
  *          32  result of the last dk_settings_put   36  result of the read back after it (the length, 1)
  *          40  the value read back (1 byte)     41  1 while a write is queued
@@ -31,8 +31,10 @@ static uint32_t device, version, ticks, t_first, t_last;
 static uint8_t back, want;
 static volatile uint32_t pending;
 
-static int32_t command(uint32_t cmd, uint32_t seq, const uint8_t *body, uint32_t len, uint8_t *out)
+static int32_t command(uint32_t cmd, uint32_t seq, const void *request, uint32_t len, void *reply)
 {
+    const uint8_t *body = request;
+    uint8_t *out = reply;
     (void)seq;
     if (cmd == 0x1d) {
         if (len != 1 || pending)
@@ -59,7 +61,7 @@ static int32_t command(uint32_t cmd, uint32_t seq, const uint8_t *body, uint32_t
     return 42;
 }
 
-static int32_t init(dk_ctx *ctx)
+static int32_t init(dk_module_ctx *ctx)
 {
     uint8_t v = 0;
     r_settings = dk_settings_open(ctx, &settings);
@@ -68,14 +70,14 @@ static int32_t init(dk_ctx *ctx)
     r_boot = dk_settings_get(settings, "boot", &v, 1);
     back = v;
     r_usb = dk_usb_bulk_open(ctx, &usb);
-    device = dk_ctx_device(ctx);
-    version = dk_ctx_runtime_version(ctx);
+    device = dk_module_ctx_device(ctx);
+    version = dk_module_ctx_runtime(ctx);
     dk_host_register(0x1c, 2, command);
     dk_log(DK_LOG_INFO, "entry-demo init", (uint32_t)r_usb);
     return DK_OK;
 }
 
-static void tick(dk_ctx *ctx)
+static void tick(dk_module_ctx *ctx)
 {
     (void)ctx;
     t_last = dk_time_blocks();
@@ -91,16 +93,16 @@ static void tick(dk_ctx *ctx)
     }
 }
 
-static void fini(dk_ctx *ctx)
+static void fini(dk_module_ctx *ctx)
 {
     (void)ctx;
     dk_log(DK_LOG_INFO, "entry-demo fini", ticks);
 }
 
-static void menu(dk_ctx *ctx, dk_ui_menu *m)
+static void menu(dk_module_ctx *ctx, dk_ui_menu *menu)
 {
     (void)ctx;
-    dk_ui_item_text(m, "ENTRY DEMO");
+    dk_ui_item_text(menu, "ENTRY DEMO");
 }
 
-const struct dk_module dk_module = {.init = init, .fini = fini, .tick = tick, .menu = menu};
+const dk_module_def dk_module = {.init = init, .fini = fini, .tick = tick, .menu = menu};

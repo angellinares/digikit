@@ -961,7 +961,7 @@ int dk_ui_tick(dk_ui_tick_fn *fn, void *ctx, uint32_t period_ms)
 
 static int ui_token; /* the dk_ui handle: only a token, there is one UI service per image */
 
-int32_t dk_ui_open_ctx(dk_ctx *ctx, dk_ui **out)
+int32_t dk_ui_service_open(dk_module_ctx *ctx, dk_ui **out)
 {
     if (!ctx || !out)
         return DK_E_CONTRACT;
@@ -999,9 +999,10 @@ void dk_ui_item_text(dk_ui_menu *m, const char *text)
     dk_ui_text(m, text);
 }
 
-void dk_ui_item_action(dk_ui_menu *m, const char *text, dk_ui_act *run, void *ctx, int32_t arg)
+void dk_ui_item_action(dk_ui_menu *m, const char *text, dk_ui_action_fn *run, void *arg,
+                       int32_t value)
 {
-    dk_ui_action(m, text, (dk_ui_act_fn *)run, ctx, (int)arg);
+    dk_ui_action(m, text, (dk_ui_act_fn *)run, arg, (int)value);
 }
 
 void dk_ui_item_submenu(dk_ui_menu *m, const char *text, dk_ui_menu *sub)
@@ -1009,16 +1010,16 @@ void dk_ui_item_submenu(dk_ui_menu *m, const char *text, dk_ui_menu *sub)
     dk_ui_submenu(m, text, sub);
 }
 
-void dk_ui_item_toggle(dk_ui_menu *m, const char *text, int32_t *value, dk_ui_act *changed,
-                       void *ctx)
+void dk_ui_item_toggle(dk_ui_menu *m, const char *text, int32_t *value, dk_ui_action_fn *changed,
+                       void *arg)
 {
-    dk_ui_toggle(m, text, (int *)value, (dk_ui_act_fn *)changed, ctx);
+    dk_ui_toggle(m, text, (int *)value, (dk_ui_act_fn *)changed, arg);
 }
 
 void dk_ui_item_value(dk_ui_menu *m, const char *text, int32_t *value, int32_t min, int32_t max,
-                      dk_ui_act *changed, void *ctx)
+                      dk_ui_action_fn *changed, void *arg)
 {
-    dk_ui_value(m, text, (int *)value, (int)min, (int)max, (dk_ui_act_fn *)changed, ctx);
+    dk_ui_value(m, text, (int *)value, (int)min, (int)max, (dk_ui_act_fn *)changed, arg);
 }
 
 void dk_ui_item_check(dk_ui_menu *list, int32_t row, int32_t on)

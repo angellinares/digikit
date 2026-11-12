@@ -143,10 +143,12 @@ struct Import {
 #[derive(Deserialize)]
 #[serde(deny_unknown_fields)]
 struct Handle {
-    /// C names (`dk_ctx`): `typedef struct <name> <name>;` in the generated imports header; a `u8` pointer in Rust.
+    /// C names (`dk_module_ctx`): `typedef struct <name> <name>;` in the generated imports header; a `u8` pointer in Rust.
     types: Vec<String>,
     services: Vec<String>,
     contexts: Vec<String>,
+    /// The callback types of the service imports, by name (`io_step_fn`): the C type is `dk_<name>`, the Rust type `<Name>`. The names end in `_fn`.
+    callbacks: BTreeMap<String, String>,
 }
 /// The entry points of a `.dkm`: `[dkm]`.
 #[derive(Deserialize)]
@@ -1593,12 +1595,21 @@ fn rust_ty(t: &Ty) -> String {
     s
 }
 
+/// A parameter name as Rust text: `fn` is a keyword there.
+fn rust_name(n: &str) -> String {
+    if n == "fn" {
+        "r#fn".to_string()
+    } else {
+        n.to_string()
+    }
+}
+
 /// `unsafe extern "C" fn(a: u32) -> i32` (the result is left out for `void`).
 pub(crate) fn rust_fn(sig: &Sig) -> String {
     let args: Vec<String> = sig
         .args
         .iter()
-        .map(|(t, n)| format!("{n}: {}", rust_ty(t)))
+        .map(|(t, n)| format!("{}: {}", rust_name(n), rust_ty(t)))
         .collect();
     let ret = if sig.ret.base == "void" && sig.ret.ptr == 0 {
         String::new()
@@ -1667,6 +1678,35 @@ fn api_types(sdk: &Sdk) -> Result<Vec<(&String, Sig)>> {
     Ok(v)
 }
 
+/// The `[handle.callbacks]`: (name, signature). Their names end in `_fn` and differ from every `[api.types]` name.
+fn callback_types(sdk: &Sdk) -> Result<Vec<(&String, Sig)>> {
+    let none = BTreeMap::new();
+    let mut v = Vec::new();
+    for (n, s) in &sdk.handle.callbacks {
+        let what = format!("[handle.callbacks] {n}");
+        let (name, sig) = parse_fn(&what, s, &none, &[])?;
+        if name.is_some()
+            || !is_ident(n)
+            || !n.ends_with("_fn")
+            || BASES.contains(&n.as_str())
+            || sdk.api.types.contains_key(n)
+        {
+            return Err(err!(
+                "{SOURCE}: {what}: bad name (it ends in _fn) or signature"
+            ));
+        }
+        v.push((n, sig));
+    }
+    Ok(v)
+}
+
+/// The function types an import signature may name: `[api.types]` and `[handle.callbacks]`.
+fn import_types(sdk: &Sdk) -> BTreeMap<String, String> {
+    let mut t = sdk.api.types.clone();
+    t.extend(sdk.handle.callbacks.clone());
+    t
+}
+
 /// The fields of the Api table with their kinds, checked.
 fn api_fields(sdk: &Sdk) -> Result<Vec<(&ApiField, FieldKind)>> {
     api_types(sdk)?;
@@ -1710,6 +1750,8 @@ fn api_fields(sdk: &Sdk) -> Result<Vec<(&ApiField, FieldKind)>> {
 fn imports(sdk: &Sdk) -> Result<Vec<(&Import, Option<Sig>)>> {
     let mut v = Vec::new();
     let handles: Vec<&str> = sdk.handle.types.iter().map(String::as_str).collect();
+    callback_types(sdk)?;
+    let types = import_types(sdk);
     for h in &sdk.handle.types {
         if !is_ident(h) || !h.starts_with("dk_") || BASES.contains(&h.as_str()) {
             return Err(err!("{SOURCE}: [handle] types: {h:?} is not a dk_ name"));
@@ -1733,7 +1775,7 @@ fn imports(sdk: &Sdk) -> Result<Vec<(&Import, Option<Sig>)>> {
         }
         let sig = match &im.sig {
             Some(s) => {
-                let (name, sig) = parse_fn(&what, s, &sdk.api.types, &handles)?;
+                let (name, sig) = parse_fn(&what, s, &types, &handles)?;
                 if name.is_some() {
                     return Err(err!("{SOURCE}: {what}: a signature has no function name"));
                 }
@@ -1928,6 +1970,13 @@ fn rust_api(sdk: &Sdk) -> Result<String> {
         let _ = writeln!(s, "    /// The function type `{n}` of `[api.types]`.");
         let _ = writeln!(s, "    pub type {} = {};\n", camel(n), rust_fn(&sig));
     }
+    for (n, sig) in callback_types(sdk)? {
+        let _ = writeln!(
+            s,
+            "    /// The callback type `{n}` of `[handle.callbacks]`."
+        );
+        let _ = writeln!(s, "    pub type {} = {};\n", camel(n), rust_fn(&sig));
+    }
     s.push_str("    #[repr(C)]\n    pub struct Api {\n");
     for (f, kind) in api_fields(sdk)? {
         match f.since {
@@ -1999,7 +2048,7 @@ fn rust_optional(imps: &[(&Import, Option<Sig>)], missing: i32) -> String {
             .enumerate()
             .map(|(i, (t, n))| {
                 if keep {
-                    format!("{n}: {}", rust_ty(t))
+                    format!("{}: {}", rust_name(n), rust_ty(t))
                 } else {
                     format!("_a{i}: {}", rust_ty(t))
                 }
@@ -2178,6 +2227,14 @@ fn imports_h(sdk: &Sdk) -> Result<String> {
     );
     for h in &sdk.handle.types {
         let _ = writeln!(s, "typedef struct {h} {h};");
+    }
+    s.push_str("\n/* Callback types ([handle.callbacks]): `arg` is the user-data pointer the module gave with the callback. */\n");
+    for (n, sig) in callback_types(sdk)? {
+        let _ = writeln!(
+            s,
+            "typedef {};",
+            c_decl(&sig.ret, &format!("dk_{n}({})", c_args(&sig)))
+        );
     }
     for svc in &sdk.handle.services {
         let own: Vec<_> = imps
