@@ -26,6 +26,8 @@ pub const MAGIC: u32 = 0x444b_4d46;
 pub const FORMAT: u32 = 1;
 /// The header size of a module with a `dkm_menu` (a menu address follows the 0xa0 bytes).
 pub const HEADER_MENU: u32 = 0xa4;
+/// The header size of a module with the entry point `dk_module` (the menu and tick addresses follow the 0xa0 bytes).
+pub const HEADER_TICK: u32 = 0xa8;
 /// Header offsets read.
 pub const H_SIZE: u32 = 0x08;
 pub const H_HDRSIZE: u32 = 0x0c;
@@ -198,7 +200,10 @@ pub fn needs_of<B: Bytes>(src: &mut B) -> Result<Needs, Error> {
         return Err(Error::Header);
     }
     let hdr = word(src, H_HDRSIZE)?;
-    if word(src, H_SIZE)? != size || (hdr != HEADER && hdr != HEADER_MENU) || size < hdr {
+    if word(src, H_SIZE)? != size
+        || (hdr != HEADER && hdr != HEADER_MENU && hdr != HEADER_TICK)
+        || size < hdr
+    {
         return Err(Error::Header);
     }
     let image = word(src, H_IMAGE_SIZE)?;

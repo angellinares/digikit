@@ -283,10 +283,12 @@ pub struct DkrtModule {
     pub state: u32,
     /// bytes of the module's range in the DSP area (0: none)
     pub dsp_size: u32,
-    /// address of the module's dkm_menu(dk_ui_menu *, void *) settings entry point (0: none)
+    /// address of the module's settings entry point (0: none): dkm_menu(dk_ui_menu *, void *), or menu(dk_module_ctx *, dk_ui_menu *) when ctx is not 0
     pub menu: u32,
+    /// the module's dk_module_ctx (a module of the new entry, dk_module); 0 for a module of the old entry
+    pub ctx: u32,
 }
-const _: () = assert!(size_of::<DkrtModule>() == 124, "DkrtModule size");
+const _: () = assert!(size_of::<DkrtModule>() == 128, "DkrtModule size");
 const _: () = assert!(offset_of!(DkrtModule, name) == 0, "DkrtModule.name");
 const _: () = assert!(offset_of!(DkrtModule, version) == 32, "DkrtModule.version");
 const _: () = assert!(offset_of!(DkrtModule, base) == 36, "DkrtModule.base");
@@ -296,6 +298,7 @@ const _: () = assert!(offset_of!(DkrtModule, path) == 48, "DkrtModule.path");
 const _: () = assert!(offset_of!(DkrtModule, state) == 112, "DkrtModule.state");
 const _: () = assert!(offset_of!(DkrtModule, dsp_size) == 116, "DkrtModule.dsp_size");
 const _: () = assert!(offset_of!(DkrtModule, menu) == 120, "DkrtModule.menu");
+const _: () = assert!(offset_of!(DkrtModule, ctx) == 124, "DkrtModule.ctx");
 
 /// dkrt_fx result: one effect with a page (FX routing, finding 62 to 65). Routes are bit masks: 1 master, 2 send.
 #[repr(C)]

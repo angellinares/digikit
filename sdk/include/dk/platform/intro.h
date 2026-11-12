@@ -1,10 +1,11 @@
-/* <dk/platform/intro.h>: a module's own boot animation (API 1.9: api->intro_take). The firmware's intro runs at 30 ticks a second; the module gives one
+/* <dk/platform/intro.h>: a module's own boot animation (api 1.9; the import dk_intro_take since 1.11: `dk_intro_take(frame, done, arg, ticks)` in `init`,
+   with <dk/core/module.h> included first, the old wrapper below is not defined then). The firmware's intro runs at 30 ticks a second; the module gives one
    128 x 64 native bitmap per tick. It runs after the boot checks (REC, safe mode, boot counter) and uses no storage: read the frames in dkm_init.
 
-     frame:   `const uint8_t *frame(uint32_t tick, void *ctx)` returns the 1024-byte native bitmap of this tick (0 .. ticks - 1), or NULL to end the
+     frame:   `const uint8_t *frame(uint32_t tick, void *arg)` returns the 1024-byte native bitmap of this tick (0 .. ticks - 1), or NULL to end the
               animation (the last frame stays on the screen). It runs on the intro task, not on the UI task: it must not block and must not call
               any dk_api function. The bitmap must stay valid until the next call of frame.
-     done:    `void done(void *ctx)`, may be NULL. Called once on the UI task at the first UI pass, after the intro has ended. Free the
+     done:    `void done(void *arg)`, may be NULL. Called once on the UI task at the first UI pass, after the intro has ended. Free the
               buffers here: never allocate or free inside frame.
      ticks:   1 to 300.
 
@@ -30,6 +31,11 @@
 #define DK_INTRO_E_BOOT_ONLY DK_E_BOOT_ONLY /* E_BOOT_ONLY: the intro is over */
 #define DK_INTRO_E_CONTRACT DK_E_CONTRACT   /* E_CONTRACT: no frame, or ticks out of range */
 
+#ifndef DK_MODULE_H
+#define DK_INTRO_LEGACY
+
+/* The old names are pointer types; the new entry's dk_intro_frame_fn and dk_intro_done_fn (<dk/gen/imports.h>) are function types and exist only when
+   <dk/core/module.h> was included. */
 typedef dk_intro_frame *dk_intro_frame_fn;
 typedef dk_intro_done *dk_intro_done_fn;
 
@@ -39,4 +45,7 @@ static inline int32_t dk_intro_take(const dk_api *api, dk_intro_frame_fn frame,
 {
     return api->intro_take(frame, done, ctx, ticks);
 }
+
+#endif /* DK_MODULE_H */
+
 #endif

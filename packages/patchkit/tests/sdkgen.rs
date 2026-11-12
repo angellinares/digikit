@@ -166,3 +166,72 @@ fn imports_of_other_modules_get_stubs_from_absent() {
     assert_ne!(broken, text);
     assert!(sdkgen::render(&broken).is_err());
 }
+
+#[test]
+fn service_imports_have_a_service_a_context_a_since_and_a_missing_stub() {
+    let text = std::fs::read_to_string(root().join("sdk/sdk.toml")).unwrap();
+    let files = sdkgen::render(&text).unwrap();
+    let rs = &files.iter().find(|f| f.0 == sdkgen::RUST_OUT).unwrap().1;
+    let h = &files
+        .iter()
+        .find(|f| f.0 == sdkgen::C_IMPORTS_OUT)
+        .unwrap()
+        .1;
+    // the prototype, the context and the minor come from the toml; a handle is an opaque type
+    assert!(h.contains("typedef struct dk_settings dk_settings;"));
+    assert!(h.contains("int32_t dk_settings_open(dk_module_ctx *ctx, dk_settings **out);"));
+    assert!(h.contains("typedef int32_t dk_io_step_fn(void *arg);"));
+    assert!(h.contains("Context: init. Since api 1.11."));
+    assert!(h.contains("Context: io-step. Since api 1.11."));
+    assert!(h.contains(
+        "Needs core/usb-bulk: without it the import binds to a stub that returns DK_E_MISSING."
+    ));
+    // a module that is not in the image gives DK_E_MISSING (E_MISSING of [load.status]) from `_open`; a void call does nothing
+    assert!(rs.contains(
+        "pub unsafe extern \"C\" fn dk_usb_bulk_open(_a0: *mut u8, _a1: *mut *mut u8) -> i32 { -73 as _ }"
+    ));
+    assert!(rs.contains("pub unsafe extern \"C\" fn dk_ui_menu_close(_a0: *mut u8) { }"));
+    // the old entries have no service and stay out of the new header; the Api header does not declare the new ones
+    assert!(!h.contains("usb_bulk_enable(int32_t io_id)"));
+    let api = &files.iter().find(|f| f.0 == sdkgen::C_API_OUT).unwrap().1;
+    assert!(!api.contains("dk_settings_open"));
+    // the packer's table
+    let infos = sdkgen::import_infos();
+    assert_eq!(infos["dk_usb_bulk_open"].service, "usb_bulk");
+    assert_eq!(infos["dk_files_write"].context, "io-step");
+    assert!(!infos.contains_key("memcpy"));
+    // service, since and context come together, with names the toml lists, and since is a minor that exists
+    for (from, to) in [
+        (
+            "service = \"usb_bulk\"\nsince = 11\ncontext = \"init\"",
+            "service = \"usb_bulk\"\nsince = 11",
+        ),
+        ("service = \"usb_bulk\"", "service = \"modem\""),
+        ("context = \"io-step\"", "context = \"anywhere\""),
+        (
+            "since = 11\ncontext = \"isr\"",
+            "since = 12\ncontext = \"isr\"",
+        ),
+        (
+            "requires = \"core/ui\"\nabsent = \"missing\"",
+            "requires = \"core/ui\"\nabsent = \"nope\"",
+        ),
+    ] {
+        let broken = text.replacen(from, to, 1);
+        assert_ne!(broken, text, "{from}");
+        assert!(sdkgen::render(&broken).is_err(), "{from}");
+    }
+    // a void call has no `missing` stub
+    let broken = text.replacen(
+        "doc = \"Close a menu.\"\nrequires = \"core/ui\"\nabsent = \"void\"",
+        "doc = \"Close a menu.\"\nrequires = \"core/ui\"\nabsent = \"missing\"",
+        1,
+    );
+    assert_ne!(broken, text);
+    assert!(
+        sdkgen::render(&broken)
+            .unwrap_err()
+            .0
+            .contains("does not fit the return type")
+    );
+}

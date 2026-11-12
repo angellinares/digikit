@@ -14,6 +14,9 @@ pub const FORMAT: u32 = 1;
 pub const HEADER: usize = 0xa0;
 /// The header of a module that exports `dkm_menu`: the menu address (image offset) follows the 0xa0 bytes.
 pub const HEADER_MENU: usize = 0xa4;
+/// The header of a module with the entry point `dk_module` (docs/plans/sdk.md section 5): the `menu` address and the `tick` address follow the 0xa0
+/// bytes; [`NONE`] marks a missing one. The runtime calls `init`, `fini`, `tick` and `menu` of such a module with a `dk_module_ctx`, not the Api table.
+pub const HEADER_TICK: usize = 0xa8;
 pub const NONE: u32 = 0xffff_ffff;
 pub const SLOTS: u32 = 8;
 pub const NAME_LEN: usize = 32;
@@ -76,7 +79,8 @@ pub const H_REG_OFF: usize = 0x90;
 pub const H_REG_SIZE: usize = 0x94;
 pub const H_DSP_OFF: usize = 0x98;
 pub const H_DSP_SIZE: usize = 0x9c;
-pub const H_MENU: usize = 0xa0; // only when the header size is HEADER_MENU
+pub const H_MENU: usize = 0xa0; // only when the header size is HEADER_MENU or HEADER_TICK
+pub const H_TICK: usize = 0xa4; // only when the header size is HEADER_TICK
 /// Bit 31 of the word at [`H_RUNTIME`]: the module was built with `DK_TRACE`. The word is informational for the loader (it does not refuse
 /// on it), so a runtime that does not know the bit loads the file as before; a version never reaches this bit.
 pub const FLAG_TRACE: u32 = 1 << 31;
@@ -96,6 +100,75 @@ pub const MACHINE_GATE_MINOR: u8 = 6;
 pub const API_PRE_TRACKS_MINOR: u8 = 4;
 /// The Api minor of the per-track sample table (1.5).
 pub const API_TRACKS_MINOR: u8 = 5;
+/// The Api minor that added the entry point `dk_module` and the service imports (1.11): a module that defines `dk_module` declares at least this.
+pub const API_ENTRY_MINOR: u8 = 11;
+/// The names of the fields of the `dk_module` record, in order (`sdk/include/dk/core/module.h`): the function offsets the packer reads from it.
+const MODULE_FIELDS: [&str; 4] = ["init", "fini", "tick", "menu"];
+
+/// The function offsets of the `dk_module` record at image offset `at`, by field (init, fini, tick, menu). A field is the offset of a function of the
+/// image (a base-relative relocation puts it there) or NULL (no relocation, value 0). `relocs` are the module's relocations (image offset, kind).
+fn module_record(image: &[u8], relocs: &[(u32, u32)], at: u32) -> Result<[Option<u32>; 4]> {
+    let mut v = [None; 4];
+    for (i, f) in v.iter_mut().enumerate() {
+        let name = MODULE_FIELDS[i];
+        let off = at as usize + 4 * i;
+        let word = image
+            .get(off..off + 4)
+            .map(|b| u32::from_be_bytes(b.try_into().unwrap()))
+            .ok_or_else(|| {
+                err!(
+                    "dk_module is shorter than its {} fields",
+                    MODULE_FIELDS.len()
+                )
+            })?;
+        match relocs.iter().find(|(o, _)| *o as usize == off) {
+            Some((_, 0)) if (word as usize) < image.len() => *f = Some(word),
+            Some((_, 0)) => {
+                return Err(err!(
+                    "dk_module.{name} = {word:#x} is outside the loaded image"
+                ));
+            }
+            Some(_) => {
+                return Err(err!(
+                    "dk_module.{name} is an import: it must be a function of the module"
+                ));
+            }
+            None if word == 0 => {}
+            None => {
+                return Err(err!(
+                    "dk_module.{name} = {word:#x} is no function of the module (a function pointer carries a relocation)"
+                ));
+            }
+        }
+    }
+    Ok(v)
+}
+
+/// The Api minor a module with the entry point needs: the newest `since` of the service imports it links, and at least [`API_ENTRY_MINOR`].
+pub fn entry_api_minor<'a>(imports: impl IntoIterator<Item = &'a str>) -> u8 {
+    let table = crate::sdkgen::import_infos();
+    imports
+        .into_iter()
+        .filter_map(|n| table.get(n))
+        .map(|i| i.since)
+        .max()
+        .unwrap_or(0)
+        .max(API_ENTRY_MINOR)
+}
+
+/// The services the imports name (`service` of `[[import]]`), each with the imports of it, sorted; an import of the Api table's time names none.
+pub fn services_of<'a>(
+    imports: impl IntoIterator<Item = &'a str>,
+) -> BTreeMap<String, Vec<String>> {
+    let table = crate::sdkgen::import_infos();
+    let mut v: BTreeMap<String, Vec<String>> = BTreeMap::new();
+    for n in imports {
+        if let Some(i) = table.get(n) {
+            v.entry(i.service.clone()).or_default().push(n.to_string());
+        }
+    }
+    v
+}
 
 /// The Api minor a module declares: the lowest that has everything it needs. 1.4 for a module that needs nothing newer; 1.5 when its DSP
 /// section holds a track table; the newest `since` of the entries its manifest lists in `uses_api` (`Options::api_minor`) when that is
@@ -344,9 +417,10 @@ pub fn pack_full_max(
             Some(v) => Err(err!("{n} = {v:#x} is outside the loaded image")),
         }
     };
-    let init = sym("dkm_init")?;
-    let fini = sym("dkm_fini")?;
-    let menu = sym("dkm_menu")?;
+    let mut init = sym("dkm_init")?;
+    let mut fini = sym("dkm_fini")?;
+    let mut menu = sym("dkm_menu")?;
+    let mut tick = None;
     let mut slots: Vec<(u32, u32)> = vec![];
     for n in 0..SLOTS {
         if let Some(v) = sym(&format!("dkm_slot_{n}"))? {
@@ -361,9 +435,22 @@ pub fn pack_full_max(
             return Err(err!("{}: slot numbers are 0 to {}", s.name, SLOTS - 1));
         }
     }
-    if init.is_none() && fini.is_none() && slots.is_empty() && menu.is_none() {
+    // the entry point: the constant `dk_module` (init, fini, tick, menu) replaces dkm_init, dkm_fini, dkm_menu and the slots
+    let entry = match sym("dk_module")? {
+        None => false,
+        Some(at) => {
+            if init.is_some() || fini.is_some() || menu.is_some() || !slots.is_empty() {
+                return Err(err!(
+                    "the object defines dk_module and dkm_init, dkm_fini, dkm_menu or dkm_slot_<n>: use one entry point"
+                ));
+            }
+            [init, fini, tick, menu] = module_record(&image, &relocs, at)?;
+            true
+        }
+    };
+    if !entry && init.is_none() && fini.is_none() && slots.is_empty() && menu.is_none() {
         return Err(err!(
-            "the object exports none of dkm_init, dkm_fini, dkm_slot_<n>, dkm_menu"
+            "the object exports none of dk_module, dkm_init, dkm_fini, dkm_slot_<n>, dkm_menu"
         ));
     }
     let align = obj
@@ -378,7 +465,13 @@ pub fn pack_full_max(
         return Err(err!("a section needs alignment over 16 (the arena's)"));
     }
 
-    let header = if menu.is_some() { HEADER_MENU } else { HEADER };
+    let header = if entry {
+        HEADER_TICK
+    } else if menu.is_some() {
+        HEADER_MENU
+    } else {
+        HEADER
+    };
     let import_off = header;
     let reloc_off = import_off + imports.len() * IMPORT_LEN;
     let slot_off = reloc_off + relocs.len() * 8;
@@ -397,7 +490,10 @@ pub fn pack_full_max(
     put(&mut f, 4, FORMAT);
     put(&mut f, H_SIZE, total as u32);
     put(&mut f, H_HDRSIZE, header as u32);
-    if let Some(m) = menu {
+    if entry {
+        put(&mut f, H_MENU, menu.unwrap_or(NONE));
+        put(&mut f, H_TICK, tick.unwrap_or(NONE));
+    } else if let Some(m) = menu {
         put(&mut f, H_MENU, m);
     }
     put(
@@ -412,8 +508,8 @@ pub fn pack_full_max(
     put(&mut f, H_VERSION, o.version);
     // contracts: api always; machine with a DSP section (that is not only effects) or a machine record; fx with an effect record; service with slot functions or a real `dkm_init`/`dkm_fini` (not the stub)
     let sdk = crate::sdkgen::embedded();
-    let has_service =
-        !slots.is_empty() || has_obj && (init.is_some() || fini.is_some() || menu.is_some());
+    let has_service = !slots.is_empty()
+        || has_obj && (init.is_some() || fini.is_some() || tick.is_some() || menu.is_some());
     let none = (0, 0);
     // a DSP section of version 4 with effects and no voice implements the fx contract and not the machine contract (a machine needs a voice or a record)
     let word = |off: usize| {
@@ -441,7 +537,19 @@ pub fn pack_full_max(
             .any(|v| u32::from_be_bytes(v[56..60].try_into().unwrap()) != 0)
     });
     let pairs = [
-        (sdk.api.0, api_minor(sdk.api.1, uses_tracks, o.api_minor)),
+        (
+            sdk.api.0,
+            api_minor(
+                sdk.api.1,
+                uses_tracks,
+                // a module with the entry point needs the newest service import it links (a module of the old entry: `uses_api`)
+                if entry {
+                    o.api_minor.max(entry_api_minor(imports.iter().copied()))
+                } else {
+                    o.api_minor
+                },
+            ),
+        ),
         if (dsp.is_empty() || fx_only) && !has_machine_record(reg) {
             none
         } else if o.gate {
@@ -528,8 +636,12 @@ pub struct Dkm {
     pub imports: Vec<String>,
     pub init: Option<u32>,
     pub fini: Option<u32>,
-    /// The image offset of `dkm_menu`.
+    /// The image offset of `dkm_menu` (or of `dk_module.menu`).
     pub menu: Option<u32>,
+    /// The image offset of `dk_module.tick`.
+    pub tick: Option<u32>,
+    /// A module with the entry point `dk_module` (header size [`HEADER_TICK`]): `init`, `fini`, `tick` and `menu` take a `dk_module_ctx`, not the Api table.
+    pub entry: bool,
     pub slots: Vec<(u32, u32)>,
     pub register: Vec<u8>,
     /// The DSP section, as bytes (empty: none); parse it with [`crate::dkmdsp::DspSection::parse`].
@@ -564,7 +676,7 @@ impl Dkm {
         }
         let header = get(f, H_HDRSIZE) as usize;
         if get(f, H_SIZE) as usize != f.len()
-            || (header != HEADER && header != HEADER_MENU)
+            || (header != HEADER && header != HEADER_MENU && header != HEADER_TICK)
             || f.len() < header
         {
             return Err(err!("size fields do not match the file"));
@@ -633,11 +745,17 @@ impl Dkm {
             imports,
             init: opt(get(f, H_INIT)),
             fini: opt(get(f, H_FINI)),
-            menu: if header == HEADER_MENU {
+            menu: if header == HEADER_MENU || header == HEADER_TICK {
                 opt(get(f, H_MENU))
             } else {
                 None
             },
+            tick: if header == HEADER_TICK {
+                opt(get(f, H_TICK))
+            } else {
+                None
+            },
+            entry: header == HEADER_TICK,
             slots,
             register: rng(get(f, H_REG_OFF) as usize, get(f, H_REG_SIZE) as usize)?.to_vec(),
             dsp: rng(get(f, H_DSP_OFF) as usize, get(f, H_DSP_SIZE) as usize)?.to_vec(),
@@ -1217,5 +1335,146 @@ mod tests {
         assert!(pack(&o, &opts()).is_err());
         // the untouched object packs
         assert!(pack(&object(), &opts()).is_ok());
+    }
+
+    /// An object with the entry point: four `rts` functions and a 16-byte `dk_module` in the data. `fields` are the data offsets (0, 4, 8, 12 =
+    /// init, fini, tick, menu) that point to a function (`init_fn`, `fini_fn`, `tick_fn`, `menu_fn` at 0, 2, 4, 6).
+    fn entry_object(fields: &[u64]) -> Dko {
+        let funs = ["init_fn", "fini_fn", "tick_fn", "menu_fn"];
+        let mut o = unstamped();
+        o.sections = vec![
+            sec(
+                ".text",
+                "text",
+                2,
+                &[0x4e, 0x75, 0x4e, 0x75, 0x4e, 0x75, 0x4e, 0x75],
+            ),
+            sec(".data", "data", 4, &[0; 16]),
+        ];
+        o.symbols = vec![sym("dk_module", Some(".data"), 0)];
+        for (i, f) in funs.iter().enumerate() {
+            o.symbols.push(sym(f, Some(".text"), 2 * i as u64));
+        }
+        o.relocs = fields
+            .iter()
+            .map(|at| rel(".data", *at, "cf.32", funs[(*at / 4) as usize], 0))
+            .collect();
+        o.stamp_isa();
+        o
+    }
+
+    #[test]
+    fn dk_module_gives_the_entry_points_and_a_missing_field_is_none() {
+        // init, tick and menu are set; fini is NULL (no relocation, value 0)
+        let o = entry_object(&[0, 8, 12]);
+        let syms = image_symbols(&o).unwrap();
+        let f = pack(&o, &opts()).unwrap();
+        assert_eq!(get(&f, H_HDRSIZE) as usize, HEADER_TICK);
+        let d = Dkm::parse(&f).unwrap();
+        assert!(d.entry);
+        assert_eq!(d.init, Some(syms["init_fn"]));
+        assert_eq!(d.fini, None);
+        assert_eq!(d.tick, Some(syms["tick_fn"]));
+        assert_eq!(d.menu, Some(syms["menu_fn"]));
+        assert!(d.slots.is_empty());
+        // a module of the old entry keeps its header, with no tick
+        let old = Dkm::parse(&pack(&object(), &opts()).unwrap()).unwrap();
+        assert!(!old.entry && old.tick.is_none());
+        // no menu: the field is NONE
+        let f = pack(&entry_object(&[0, 4, 8]), &opts()).unwrap();
+        assert_eq!(get(&f, H_MENU), NONE);
+        assert_eq!(Dkm::parse(&f).unwrap().menu, None);
+    }
+
+    #[test]
+    fn dk_module_is_refused_when_it_is_not_made_of_functions_of_the_module() {
+        let mut o = entry_object(&[0, 8]);
+        o.symbols.push(sym("dkm_init", Some(".text"), 0));
+        o.stamp_isa();
+        assert!(pack(&o, &opts()).unwrap_err().0.contains("one entry point"));
+        let mut o = entry_object(&[0, 8]);
+        o.symbols.push(sym("dkm_slot_0", Some(".text"), 0));
+        o.stamp_isa();
+        assert!(pack(&o, &opts()).unwrap_err().0.contains("one entry point"));
+        // a field that is an import
+        let mut o = entry_object(&[0, 8]);
+        o.relocs[0].symbol = "fw_thing".into();
+        o.stamp_isa();
+        assert!(
+            pack(&o, &opts())
+                .unwrap_err()
+                .0
+                .contains("dk_module.init is an import")
+        );
+        // a field that holds a number and no relocation
+        let mut o = entry_object(&[0, 8]);
+        o.sections[1] = sec(
+            ".data",
+            "data",
+            4,
+            &[0, 0, 0, 0, 0, 0, 0, 7, 0, 0, 0, 0, 0, 0, 0, 0],
+        );
+        o.stamp_isa();
+        assert!(
+            pack(&o, &opts())
+                .unwrap_err()
+                .0
+                .contains("dk_module.fini = 0x7 is no function")
+        );
+    }
+
+    #[test]
+    fn a_module_with_the_entry_point_needs_the_newest_since_of_its_imports() {
+        let minor = |f: &[u8]| f[H_CONTRACT + 1];
+        let sdk_minor = crate::sdkgen::embedded().api.1;
+        assert_eq!(
+            sdk_minor, API_ENTRY_MINOR,
+            "the entry point is the newest api minor"
+        );
+        // the imports of the old time and no import: the entry point alone is 1.11
+        assert_eq!(entry_api_minor(["memcpy", "fw_alloc"]), API_ENTRY_MINOR);
+        assert_eq!(entry_api_minor([]), API_ENTRY_MINOR);
+        // a service import: its own `since`
+        let table = crate::sdkgen::import_infos();
+        assert_eq!(table["dk_settings_open"].since, 11);
+        assert_eq!(
+            entry_api_minor(["dk_settings_open", "memcpy"]),
+            table["dk_settings_open"].since.max(API_ENTRY_MINOR)
+        );
+        // a packed module declares it; a module of the old entry with an import of the new table is not changed by it
+        let mut o = entry_object(&[0, 8]);
+        o.symbols.push(sym("dk_settings_open", None, 0));
+        o.relocs
+            .push(rel(".text", 0, "cf.32", "dk_settings_open", 0));
+        o.stamp_isa();
+        let f = pack(&o, &opts()).unwrap();
+        assert_eq!(minor(&f), API_ENTRY_MINOR);
+        assert_eq!(Dkm::parse(&f).unwrap().imports, vec!["dk_settings_open"]);
+        let old = pack(&object(), &opts()).unwrap();
+        assert_eq!(
+            minor(&old),
+            API_PRE_TRACKS_MINOR,
+            "an old module stays at 1.4"
+        );
+        // `uses_api` still lifts a module of the old entry, and never above the SDK
+        let mut with = opts();
+        with.api_minor = 6;
+        assert_eq!(minor(&pack(&object(), &with).unwrap()), 6);
+    }
+
+    #[test]
+    fn services_are_the_service_tags_of_the_imports() {
+        let s = services_of([
+            "dk_settings_open",
+            "dk_usb_bulk_open",
+            "dk_usb_bulk_state",
+            "memcpy",
+            "fw_alloc",
+            "usb_bulk_enable",
+        ]);
+        assert_eq!(s["runtime"], vec!["dk_settings_open"]);
+        assert_eq!(s["usb_bulk"], vec!["dk_usb_bulk_open", "dk_usb_bulk_state"]);
+        assert_eq!(s.len(), 2, "an import of the old time names no service");
+        assert!(services_of(["memcpy"]).is_empty());
     }
 }

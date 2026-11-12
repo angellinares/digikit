@@ -104,6 +104,11 @@ static dk_ui_menu *g_main, *g_about, *g_mem, *g_modules, *g_info;
 #ifndef DK_CALL_MENU
 #define DK_CALL_MENU(a, m) ((void (*)(dk_ui_menu *, void *))(uintptr_t)(a))((m), 0)
 #endif
+/* The same for a module of the new entry (dk_module.menu, DkrtModule.ctx not 0): menu(ctx, menu). */
+#ifndef DK_CALL_MENU_CTX
+#define DK_CALL_MENU_CTX(a, c, m)                                                                  \
+    ((void (*)(void *, dk_ui_menu *))(uintptr_t)(a))((void *)(uintptr_t)(c), (m))
+#endif
 static dk_ui_menu *g_set[MAX_SET];
 static char g_set_title[MAX_SET][NAME_ROW];
 static dk_ui_menu_desc g_set_desc[MAX_SET];
@@ -1206,8 +1211,12 @@ static int settings_module(int row, DkrtModule *mod)
 static void fill_settings(dk_ui_menu *m, void *ctx)
 {
     static DkrtModule mod;
-    if (dkrt_module((uint32_t)(uintptr_t)ctx, &mod) == DKRT_OK && mod.menu)
-        DK_CALL_MENU(mod.menu, m);
+    if (dkrt_module((uint32_t)(uintptr_t)ctx, &mod) == DKRT_OK && mod.menu) {
+        if (mod.ctx)
+            DK_CALL_MENU_CTX(mod.menu, mod.ctx, m);
+        else
+            DK_CALL_MENU(mod.menu, m);
+    }
 }
 
 static void panel_settings(void *ctx, int row)

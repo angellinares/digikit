@@ -19,6 +19,12 @@
  * overrides what this module set; on the emulator no panel sends any. A turn is accumulated by the firmware and flushed by its periodic tick, which
  * clamps a flush to +-30: the caller paces large turns. */
 
+#include <stdint.h>
+
+/* The opaque handle types of the service imports (sdk/sdk.toml [handle]); <dk/gen/imports.h> is not included: it also declares the old import names with the SDK's integer types. */
+typedef struct dk_module_ctx dk_module_ctx;
+typedef struct dk_input dk_input;
+
 typedef unsigned int u32;
 typedef unsigned char u8;
 
@@ -152,4 +158,28 @@ int input_turn(u32 encoder, int delta)
     if (input_cfg[CFG_BACKEND] == BACKEND_PANEL_UART)
         return panel_turn(encoder, delta);
     return IN_NO_BACKEND;
+}
+
+/* ---- the service imports of <dk/gen/imports.h> (docs/plans/sdk.md section 5.1) ---- */
+
+static int input_token; /* the dk_input handle: only a token */
+
+int32_t dk_input_open(dk_module_ctx *ctx, dk_input **out)
+{
+    if (!ctx || !out)
+        return -48; /* DK_E_CONTRACT */
+    *out = (dk_input *)&input_token;
+    return 0;
+}
+
+int32_t dk_input_key(dk_input *inp, uint32_t code, uint32_t down)
+{
+    (void)inp;
+    return input_key(code, down);
+}
+
+int32_t dk_input_turn(dk_input *inp, uint32_t encoder, int32_t delta)
+{
+    (void)inp;
+    return input_turn(encoder, delta);
 }

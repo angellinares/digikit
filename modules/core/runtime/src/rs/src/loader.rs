@@ -13,6 +13,9 @@ const MAGIC: u32 = 0x444b_4d46; // "DKMF"
 const HEADER: u32 = 0xa0;
 /// The header of a module with a `dkm_menu`: the menu address follows the 0xa0 bytes.
 const HEADER_MENU: u32 = 0xa4;
+/// The header of a module of the new entry (`dk_module`): the menu address and the tick address follow the 0xa0 bytes (NONE for a missing one). Its
+/// `init`, `fini`, `tick` and `menu` take a `dk_module_ctx *` (`entry.rs`).
+const HEADER_TICK: u32 = 0xa8;
 const NONE: u32 = 0xffff_ffff;
 const SPIN: u32 = 2_000_000;
 
@@ -41,7 +44,8 @@ const H_REG_OFF: usize = 0x90;
 const H_REG_SIZE: usize = 0x94;
 const H_DSP_OFF: usize = 0x98;
 const H_DSP_SIZE: usize = 0x9c;
-const H_MENU: usize = 0xa0; // only when the header size is HEADER_MENU
+const H_MENU: usize = 0xa0; // only when the header size is HEADER_MENU or HEADER_TICK
+const H_TICK: usize = 0xa4; // only when the header size is HEADER_TICK
 
 unsafe fn in_file(off: u32, len: u32, size: u32) -> bool {
     off <= size && len <= size - off
@@ -126,7 +130,7 @@ unsafe fn load_inner(path: *const u8) -> i32 {
         return E_FORMAT;
     }
     let hdr = rd32(f.add(H_HDRSIZE));
-    if rd32(f.add(H_SIZE)) != size || (hdr != HEADER && hdr != HEADER_MENU) || size < hdr {
+    if rd32(f.add(H_SIZE)) != size || (hdr != HEADER && hdr != HEADER_MENU && hdr != HEADER_TICK) || size < hdr {
         return E_FORMAT;
     }
     // the file's own sha256, over the file with the sha field read as zeros
@@ -177,7 +181,9 @@ unsafe fn load_inner(path: *const u8) -> i32 {
     let import_n = rd32(f.add(H_IMPORT_N));
     let init = rd32(f.add(H_INIT));
     let fini = rd32(f.add(H_FINI));
-    let menu = if hdr == HEADER_MENU { rd32(f.add(H_MENU)) } else { NONE };
+    let entry = hdr == HEADER_TICK;
+    let menu = if hdr == HEADER_MENU || entry { rd32(f.add(H_MENU)) } else { NONE };
+    let tick = if entry { rd32(f.add(H_TICK)) } else { NONE };
     let slot_off = rd32(f.add(H_SLOT_OFF));
     let slot_n = rd32(f.add(H_SLOT_N));
     if align == 0
@@ -201,7 +207,13 @@ unsafe fn load_inner(path: *const u8) -> i32 {
         return E_FORMAT;
     }
     let total = image_size + bss;
-    if (init != NONE && init >= image_size) || (fini != NONE && fini >= image_size) || (menu != NONE && menu >= image_size) {
+    if (init != NONE && init >= image_size)
+        || (fini != NONE && fini >= image_size)
+        || (menu != NONE && menu >= image_size)
+        || (tick != NONE && tick >= image_size)
+        // the entry point replaces the slots
+        || (entry && slot_n != 0)
+    {
         return E_FORMAT;
     }
     // imports: every name must be in the runtime's table
@@ -351,6 +363,9 @@ unsafe fn load_inner(path: *const u8) -> i32 {
     m.base = base;
     m.size = total;
     m.fini = if fini == NONE { 0 } else { base + fini };
+    if entry {
+        crate::entry::bind(rec);
+    }
     (*addr_of_mut!(crate::DKRT_MENUS))[rec] = if menu == NONE { 0 } else { base + menu };
     m.slot_mask = 0;
     let mut fns = [0u32; SLOTS];
@@ -372,17 +387,19 @@ unsafe fn load_inner(path: *const u8) -> i32 {
     }
     m.slot_mask = 0;
     let initaddr = if init == NONE { 0 } else { base + init };
+    let tickaddr = if tick == NONE { 0 } else { base + tick };
     if dsp_size != 0 {
         // the CF part goes live now (rows in place before the machine view is built); the DSP code and the voice rows follow
         // when the frames flow
         m.used = 1;
-        let r = complete(rec, reg, reg_size, initaddr, mask, &fns);
+        let r = complete(rec, reg, reg_size, initaddr, tickaddr, mask, &fns);
         if r != OK {
             if dsp::retained() { return E_BUSY; }
             dsp::cancel(rec);
             if !crate::files::retire(rec) || !retire_sdk(rec) { return E_BUSY; }
             arena::free(mem);
             m.used = 0;
+            crate::entry::unbind(rec);
             return r;
         }
         dsp::launch(dsp::Pending {
@@ -400,11 +417,12 @@ unsafe fn load_inner(path: *const u8) -> i32 {
         });
         return LOADING;
     }
-    let r = complete(rec, reg, reg_size, initaddr, mask, &fns);
+    let r = complete(rec, reg, reg_size, initaddr, tickaddr, mask, &fns);
     if r != OK {
         if dsp::retained() || !crate::files::retire(rec) || !retire_sdk(rec) { return E_BUSY; }
         arena::free(mem);
         m.used = 0;
+        crate::entry::unbind(rec);
     }
     r
 }
@@ -416,6 +434,7 @@ unsafe fn complete(
     reg: *const u8,
     reg_size: u32,
     init: u32,
+    tick: u32,
     mask: u32,
     fns: &[u32; SLOTS],
 ) -> i32 {
@@ -432,7 +451,10 @@ unsafe fn complete(
     }
     if init != 0 {
         let call: unsafe extern "C" fn(*const Api) -> i32 = core::mem::transmute(init as usize);
-        let r = crate::dlog::call_init(rec as usize, call, addr_of!(dkrt_api));
+        // a module of the new entry gets its `dk_module_ctx`, the others the Api table
+        let ctx = crate::entry::ctx_addr(rec);
+        let arg = if ctx != 0 { ctx as usize as *const Api } else { addr_of!(dkrt_api) };
+        let r = crate::dlog::call_init(rec as usize, call, arg);
         if r != 0 {
             crate::intro::discard(rec);
             let held = !crate::files::retire(rec) | !retire_sdk(rec);
@@ -448,6 +470,9 @@ unsafe fn complete(
             write_volatile(addr_of_mut!(s.slots[idx]), fns[idx]);
         }
         idx += 1;
+    }
+    if tick != 0 {
+        crate::entry::publish_tick(rec, tick);
     }
     let m: &mut Module = &mut s.modules[rec];
     m.slot_mask = mask;
@@ -515,7 +540,8 @@ unsafe fn unload_rec_inner(rec: usize) -> i32 {
     crate::intro::discard(rec);
     let s = st();
     let m: &mut Module = &mut s.modules[rec];
-    // 1. clear the slots (one aligned store each) so no new call starts
+    // 1. clear the slots and the tick (one aligned store each) so no new call starts
+    crate::entry::stop_tick(rec);
     let mut idx = 0;
     while idx < SLOTS {
         if m.slot_mask & (1 << idx) != 0 {
@@ -550,7 +576,9 @@ unsafe fn unload_rec_inner(rec: usize) -> i32 {
         #[cfg(test)] crate::cleanup_tests::fini(rec, m.fini);
         #[cfg(not(test))] {
             let call: unsafe extern "C" fn(*const Api) = core::mem::transmute(m.fini as usize);
-            crate::dlog::call_fini(rec as usize, call, addr_of!(dkrt_api));
+            let ctx = crate::entry::ctx_addr(rec);
+            let arg = if ctx != 0 { ctx as usize as *const Api } else { addr_of!(dkrt_api) };
+            crate::dlog::call_fini(rec as usize, call, arg);
         }
     }
     // the SysEx commands it registered are released with it
@@ -564,5 +592,6 @@ unsafe fn unload_rec_inner(rec: usize) -> i32 {
     m.used = 0;
     m.slot_mask = 0;
     (*addr_of_mut!(crate::DKRT_MENUS))[rec] = 0;
+    crate::entry::unbind(rec);
     OK
 }

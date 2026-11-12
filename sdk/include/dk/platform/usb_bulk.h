@@ -1,4 +1,10 @@
-/* <dk/platform/usb_bulk.h> (needs core/usb-bulk): a vendor bulk interface to the host, beside the stock USB MIDI. The calls are imports of the runtime
+/* <dk/platform/usb_bulk.h> (needs core/usb-bulk): a vendor bulk interface to the host, beside the stock USB MIDI.
+
+ * The new entry (<dk/core/module.h>, include it first): `dk_usb_bulk_open(ctx, &ub)` in `init` gives the handle, or DK_E_MISSING when core/usb-bulk is not
+ * in the image (the module then loads and decides what to do). dk_usb_bulk_enable, _disable, _take, _release, _send, _state, _takeover and _giveback are the
+ * calls below with the handle as the first argument; the rules are the same. The text below uses the old names (usb_bulk_*), which stay until S2b-2.
+ *
+ * The old calls are imports of the runtime
  * (sdk/sdk.toml, `requires = "core/usb-bulk"`): usb_bulk_enable, usb_bulk_take, usb_bulk_release, usb_bulk_send, usb_bulk_state, usb_bulk_takeover and usb_bulk_giveback. A module that uses
  * them lists `requires = ["core/usb-bulk"]`; without the adapter in the image the module does not load.
  *

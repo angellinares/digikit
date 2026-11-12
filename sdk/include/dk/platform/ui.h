@@ -1,6 +1,15 @@
 /* <dk/platform/ui.h>: menus, lists and dialogs on the device screen. Hand-written.
    The calls are device-agnostic. core/ui implements them for each device with the firmware's own views.
 
+   The new entry (<dk/core/module.h>, include it first; the prototypes are in <dk/gen/imports.h>): `dk_ui_service_open(ctx, &ui)` in `init` gives the UI handle,
+   or DK_E_MISSING when core/ui is not in the image; the module then loads and decides whether it can run without menus. The menu calls have new names
+   and the same rules as the old ones: dk_ui_menu_open/close/select/refresh/is_open and the rows dk_ui_menu_add_text/add_action/add_submenu/add_toggle/add_value and dk_ui_menu_check/checked
+   (an action or change callback is a `dk_ui_action_fn`: `void (void *arg, int32_t value)`; `dk_ui_menu_add_action(menu, text, run, arg, value)` gives it the pointer `arg`
+   and the `value` the row was added with). dk_ui_menu_new, dk_ui_toast, dk_ui_confirm, dk_ui_choice and dk_ui_tick
+   keep their names and are declared below. The module's settings menu is the `menu` field of `dk_module`: `void menu(dk_module_ctx *ctx, dk_ui_menu *menu)`.
+   Transitional: `dk_ui_service_open` is the accessor that becomes `dk_ui_open` (docs/plans/sdk.md section 5.1); the name `dk_ui_open` is still the old call that opens a
+   menu (below), and S2b-2 renames `dk_ui_service_open` to `dk_ui_open`. The text below is the old entry and the calls both entries share.
+
    A menu is built once and kept. Its fill function adds the rows each time the menu opens or is
    refreshed:
 

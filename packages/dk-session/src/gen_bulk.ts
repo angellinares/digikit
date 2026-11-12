@@ -93,4 +93,5 @@ export const BULK_STATUS = {
   L_E_CARD_RO: -47,
   L_E_CONTRACT: -48,
   L_E_TABLE: -49,
+  L_E_MISSING: -73,
 } as const;

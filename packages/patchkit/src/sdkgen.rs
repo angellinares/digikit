@@ -27,6 +27,8 @@ pub const C_MACHINE_VIEW_OUT: &str = "sdk/include/dk/gen/machine.h";
 pub const C_FX_VIEW_OUT: &str = "sdk/include/dk/gen/fx.h";
 /// The generated C header of the Api table, the imports and the `.dkm` entry points, relative to the repository root.
 pub const C_API_OUT: &str = "sdk/include/dk/gen/api.h";
+/// The generated C header of the service imports (`[[import]]` with `service`), relative to the repository root.
+pub const C_IMPORTS_OUT: &str = "sdk/include/dk/gen/imports.h";
 /// The generated C header of the descriptor records, relative to the repository root.
 pub const C_DESC_OUT: &str = "sdk/include/dk/gen/desc.h";
 /// The generated C header of the format limits, relative to the repository root.
@@ -71,6 +73,7 @@ struct Sdk {
     load: Load,
     sample: SampleToml,
     api: Api,
+    handle: Handle,
     import: Vec<Import>,
     dkm: Dkm,
     desc: DescToml,
@@ -125,8 +128,27 @@ struct Import {
     requires: Option<String>,
     /// `helper`: a compiler helper or a call declared in another header (no prototype in <dk/gen/api.h>); `fw`: a firmware function.
     kind: Option<String>,
-    /// With `requires`: the runtime hands out a stub when that module is absent. The stub returns this value (`"0"`, `"-1"`) or nothing (`"void"`).
+    /// With `requires`: the runtime hands out a stub when that module is absent. The stub returns this value (`"0"`, `"-1"`), the status
+    /// `DK_E_MISSING` (`"missing"`, for an `i32` result) or nothing (`"void"`).
     absent: Option<String>,
+    /// The service the import belongs to (`[handle] services`). `service`, `since` and `context` are set together; an import without them is
+    /// one of the Api table's time (a firmware function, a helper, `usb_bulk_enable`, ...).
+    service: Option<String>,
+    /// The api minor that added the import (1..=`[contract] api` minor).
+    since: Option<u8>,
+    /// Where the import may be called (`[handle] contexts`).
+    context: Option<String>,
+}
+/// The opaque handle types, services and call contexts of the service imports: `[handle]` of `sdk/sdk.toml`.
+#[derive(Deserialize)]
+#[serde(deny_unknown_fields)]
+struct Handle {
+    /// C names (`dk_module_ctx`): `typedef struct <name> <name>;` in the generated imports header; a `u8` pointer in Rust.
+    types: Vec<String>,
+    services: Vec<String>,
+    contexts: Vec<String>,
+    /// The callback types of the service imports, by name (`io_step_fn`): the C type is `dk_<name>`, the Rust type `<Name>`. The names end in `_fn`.
+    callbacks: BTreeMap<String, String>,
 }
 /// The entry points of a `.dkm`: `[dkm]`.
 #[derive(Deserialize)]
@@ -1429,8 +1451,8 @@ fn is_fx_status(n: &str) -> bool {
 const BASES: [&str; 11] = [
     "u8", "u16", "u32", "i8", "i16", "i32", "bool", "void", "char", "float", "api",
 ];
-/// The import name field of the runtime's table is 28 bytes, NUL-terminated.
-const IMPORT_NAME_MAX: usize = 27;
+/// The import name field of the runtime's table is 32 bytes (as in the .dkm), NUL-terminated.
+const IMPORT_NAME_MAX: usize = 31;
 
 /// A type of a signature: `const`, a base, the number of `*`; `td` marks a name of `[api.types]` (a function type).
 #[derive(Clone)]
@@ -1554,6 +1576,7 @@ fn rust_ty(t: &Ty) -> String {
         "bool" => "bool".to_string(),
         "float" => "f32".to_string(),
         "api" => "Api".to_string(),
+        b if t.ptr > 0 && b.starts_with("dk_") => "u8".to_string(),
         b if t.td => {
             if t.ptr == 0 {
                 return format!("Option<{}>", camel(b));
@@ -1572,12 +1595,21 @@ fn rust_ty(t: &Ty) -> String {
     s
 }
 
+/// A parameter name as Rust text: `fn` is a keyword there.
+fn rust_name(n: &str) -> String {
+    if n == "fn" {
+        "r#fn".to_string()
+    } else {
+        n.to_string()
+    }
+}
+
 /// `unsafe extern "C" fn(a: u32) -> i32` (the result is left out for `void`).
 pub(crate) fn rust_fn(sig: &Sig) -> String {
     let args: Vec<String> = sig
         .args
         .iter()
-        .map(|(t, n)| format!("{n}: {}", rust_ty(t)))
+        .map(|(t, n)| format!("{}: {}", rust_name(n), rust_ty(t)))
         .collect();
     let ret = if sig.ret.base == "void" && sig.ret.ptr == 0 {
         String::new()
@@ -1646,6 +1678,35 @@ fn api_types(sdk: &Sdk) -> Result<Vec<(&String, Sig)>> {
     Ok(v)
 }
 
+/// The `[handle.callbacks]`: (name, signature). Their names end in `_fn` and differ from every `[api.types]` name.
+fn callback_types(sdk: &Sdk) -> Result<Vec<(&String, Sig)>> {
+    let none = BTreeMap::new();
+    let mut v = Vec::new();
+    for (n, s) in &sdk.handle.callbacks {
+        let what = format!("[handle.callbacks] {n}");
+        let (name, sig) = parse_fn(&what, s, &none, &[])?;
+        if name.is_some()
+            || !is_ident(n)
+            || !n.ends_with("_fn")
+            || BASES.contains(&n.as_str())
+            || sdk.api.types.contains_key(n)
+        {
+            return Err(err!(
+                "{SOURCE}: {what}: bad name (it ends in _fn) or signature"
+            ));
+        }
+        v.push((n, sig));
+    }
+    Ok(v)
+}
+
+/// The function types an import signature may name: `[api.types]` and `[handle.callbacks]`.
+fn import_types(sdk: &Sdk) -> BTreeMap<String, String> {
+    let mut t = sdk.api.types.clone();
+    t.extend(sdk.handle.callbacks.clone());
+    t
+}
+
 /// The fields of the Api table with their kinds, checked.
 fn api_fields(sdk: &Sdk) -> Result<Vec<(&ApiField, FieldKind)>> {
     api_types(sdk)?;
@@ -1688,6 +1749,14 @@ fn api_fields(sdk: &Sdk) -> Result<Vec<(&ApiField, FieldKind)>> {
 /// The imports with their signatures, checked.
 fn imports(sdk: &Sdk) -> Result<Vec<(&Import, Option<Sig>)>> {
     let mut v = Vec::new();
+    let handles: Vec<&str> = sdk.handle.types.iter().map(String::as_str).collect();
+    callback_types(sdk)?;
+    let types = import_types(sdk);
+    for h in &sdk.handle.types {
+        if !is_ident(h) || !h.starts_with("dk_") || BASES.contains(&h.as_str()) {
+            return Err(err!("{SOURCE}: [handle] types: {h:?} is not a dk_ name"));
+        }
+    }
     for (i, im) in sdk.import.iter().enumerate() {
         let what = format!("[[import]] {}", im.name);
         if !is_ident(&im.name)
@@ -1706,7 +1775,7 @@ fn imports(sdk: &Sdk) -> Result<Vec<(&Import, Option<Sig>)>> {
         }
         let sig = match &im.sig {
             Some(s) => {
-                let (name, sig) = parse_fn(&what, s, &sdk.api.types, &[])?;
+                let (name, sig) = parse_fn(&what, s, &types, &handles)?;
                 if name.is_some() {
                     return Err(err!("{SOURCE}: {what}: a signature has no function name"));
                 }
@@ -1725,21 +1794,79 @@ fn imports(sdk: &Sdk) -> Result<Vec<(&Import, Option<Sig>)>> {
             let is_void = sig.ret.base == "void" && sig.ret.ptr == 0;
             let ok = if is_void {
                 a == "void"
+            } else if a == "missing" {
+                sig.ret.base == "i32" && sig.ret.ptr == 0
             } else {
                 a.parse::<i32>().is_ok()
             };
             if !ok {
                 return Err(err!(
-                    "{SOURCE}: {what}: absent {a:?} does not fit the return type (\"void\" for void, else a number)"
+                    "{SOURCE}: {what}: absent {a:?} does not fit the return type (\"void\" for void, \"missing\" for i32, else a number)"
                 ));
             }
         }
         if im.requires.is_some() && im.kind.as_deref() == Some("fw") {
             return Err(err!("{SOURCE}: {what}: a fw import has no requires"));
         }
+        match (&im.service, im.since, &im.context) {
+            (None, None, None) => {}
+            (Some(svc), Some(since), Some(ctx)) => {
+                if !sdk.handle.services.contains(svc) {
+                    return Err(err!("{SOURCE}: {what}: unknown service {svc:?}"));
+                }
+                if !sdk.handle.contexts.contains(ctx) {
+                    return Err(err!("{SOURCE}: {what}: unknown context {ctx:?}"));
+                }
+                if since == 0 || since > sdk.contract.api[1] {
+                    return Err(err!(
+                        "{SOURCE}: {what}: since {since} is not in 1..=[contract] api minor"
+                    ));
+                }
+                if sig.is_none() {
+                    return Err(err!("{SOURCE}: {what}: a service import needs a sig"));
+                }
+            }
+            _ => {
+                return Err(err!(
+                    "{SOURCE}: {what}: service, since and context are set together"
+                ));
+            }
+        }
         v.push((im, sig));
     }
     Ok(v)
+}
+
+/// What the packer needs of a service import (`[[import]]` with `service`).
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub struct ImportInfo {
+    pub service: String,
+    pub since: u8,
+    pub context: String,
+}
+
+/// `service`, `since` and `context` of every import that has them (`[[import]]` with `service`) in the `sdk/sdk.toml` this crate was built with, by name.
+/// An import of the Api table's time (a firmware function, a helper, `usb_bulk_enable`, ...) has none and is not in the map.
+pub fn import_infos() -> BTreeMap<String, ImportInfo> {
+    sdk_embedded()
+        .import
+        .iter()
+        .filter_map(|i| match (&i.service, i.since, &i.context) {
+            (Some(s), Some(since), Some(c)) => Some((
+                i.name.clone(),
+                ImportInfo {
+                    service: s.clone(),
+                    since,
+                    context: c.clone(),
+                },
+            )),
+            _ => None,
+        })
+        .collect()
+}
+
+fn sdk_embedded() -> Sdk {
+    parse(include_str!("../../../sdk/sdk.toml")).expect("sdk/sdk.toml parses")
 }
 
 /// The signatures of `[dkm]`: init, fini, slot.
@@ -1843,6 +1970,13 @@ fn rust_api(sdk: &Sdk) -> Result<String> {
         let _ = writeln!(s, "    /// The function type `{n}` of `[api.types]`.");
         let _ = writeln!(s, "    pub type {} = {};\n", camel(n), rust_fn(&sig));
     }
+    for (n, sig) in callback_types(sdk)? {
+        let _ = writeln!(
+            s,
+            "    /// The callback type `{n}` of `[handle.callbacks]`."
+        );
+        let _ = writeln!(s, "    pub type {} = {};\n", camel(n), rust_fn(&sig));
+    }
     s.push_str("    #[repr(C)]\n    pub struct Api {\n");
     for (f, kind) in api_fields(sdk)? {
         match f.since {
@@ -1886,7 +2020,13 @@ fn rust_api(sdk: &Sdk) -> Result<String> {
         let _ = writeln!(s, "    pub type {}Fn = {};", camel(&im.name), rust_fn(sig));
     }
     s.push_str("}\n");
-    s.push_str(&rust_optional(&imps));
+    let missing = sdk
+        .load
+        .status
+        .get("E_MISSING")
+        .map(|m| m.code)
+        .ok_or_else(|| err!("{SOURCE}: [load.status] has no E_MISSING"))?;
+    s.push_str(&rust_optional(&imps, missing));
     Ok(s)
 }
 
@@ -1894,13 +2034,13 @@ fn rust_api(sdk: &Sdk) -> Result<String> {
 /// function (patchkit links an `[object] optional` symbol to 0 when its module is not in the image), the stub of each that has `absent`, and
 /// `optional::table()`: per import its name, the address the module gave (0 when absent), the address of the stub (0 when it has none) and the module that provides it. It is
 /// a macro because the undefined symbols must belong to the runtime's own object, not to this crate.
-fn rust_optional(imps: &[(&Import, Option<Sig>)]) -> String {
+fn rust_optional(imps: &[(&Import, Option<Sig>)], missing: i32) -> String {
     let opt: Vec<_> = imps
         .iter()
         .filter(|(im, _)| im.requires.is_some())
         .collect();
     let mut s = String::from(
-        "\n/// The imports that another module provides (`[[import]] requires`): the external functions, the stubs for an absent module and\n/// the table of both. Expand it once in the runtime's object; its symbols must be in the `optional` list of the runtime's module.toml.\n#[macro_export]\nmacro_rules! optional_imports {\n    () => {\n        #[allow(dead_code, trivial_numeric_casts)]\n        pub mod optional {\n            extern \"C\" {\n",
+        "\n/// The imports that another module provides (`[[import]] requires`): the external functions, the stubs for an absent module and\n/// the table of both. Expand it once in the runtime's object; its symbols must be in the `optional` list of the runtime's module.toml.\n#[macro_export]\nmacro_rules! optional_imports {\n    () => {\n        #[allow(dead_code, trivial_numeric_casts)]\n        pub mod optional {\n            #[allow(unused_imports)]\n            use $crate::api::*;\n            extern \"C\" {\n",
     );
     let decl = |sig: &Sig, keep: bool| -> String {
         sig.args
@@ -1908,7 +2048,7 @@ fn rust_optional(imps: &[(&Import, Option<Sig>)]) -> String {
             .enumerate()
             .map(|(i, (t, n))| {
                 if keep {
-                    format!("{n}: {}", rust_ty(t))
+                    format!("{}: {}", rust_name(n), rust_ty(t))
                 } else {
                     format!("_a{i}: {}", rust_ty(t))
                 }
@@ -1933,13 +2073,15 @@ fn rust_optional(imps: &[(&Import, Option<Sig>)]) -> String {
             ret(sig)
         );
     }
-    s.push_str("            }\n\n            /// What an absent module's import calls: the failure value of the API.\n            pub mod absent {\n");
+    s.push_str("            }\n\n            /// What an absent module's import calls: the failure value of the API.\n            pub mod absent {\n                #[allow(unused_imports)]\n                use $crate::api::*;\n");
     for (im, sig) in &opt {
         let (Some(a), Some(sig)) = (&im.absent, sig) else {
             continue;
         };
         let body = if a == "void" {
             String::new()
+        } else if a == "missing" {
+            format!(" {missing} as _")
         } else {
             format!(" {a} as _")
         };
@@ -2027,7 +2169,9 @@ fn api_h(sdk: &Sdk) -> Result<String> {
     }
     s.push_str("#endif\n\n/* Imports: names the loader resolves in the runtime's table (Api.import gives the address at run time). */\n");
     for (im, sig) in imports(sdk)? {
-        let Some(sig) = sig.filter(|_| im.kind.as_deref() != Some("helper")) else {
+        let Some(sig) =
+            sig.filter(|_| im.kind.as_deref() != Some("helper") && im.service.is_none())
+        else {
             continue;
         };
         let need = match &im.requires {
@@ -2070,6 +2214,68 @@ fn api_h(sdk: &Sdk) -> Result<String> {
     }
     let _ = writeln!(s, "\n#define DK_API_MINOR {}", sdk.contract.api[1]);
     s.push_str("\n#endif /* DK_GEN_API_H */\n");
+    Ok(s)
+}
+
+/// `sdk/include/dk/gen/imports.h`: the prototypes of the service imports (`[[import]]` with `service`; the ones with `kind = "helper"` keep
+/// the prototype of their hand-written header), grouped by service, with the context and the api minor in the comment.
+fn imports_h(sdk: &Sdk) -> Result<String> {
+    let imps = imports(sdk)?;
+    let major = sdk.contract.api[0];
+    let mut s = format!(
+        "/* {HEADER} */\n/* sdk/include/dk/gen/imports.h -- the service imports of a module (docs/plans/sdk.md section 5.1): one prototype per [[import]] with `service`.\n   Each comment gives the context the call may run in and the api minor that added it; `patchkit pack` takes the runtime version a module needs from the newest. */\n#ifndef DK_GEN_IMPORTS_H\n#define DK_GEN_IMPORTS_H\n\n#include <stdint.h>\n#include <dk/gen/api.h>\n\n/* Opaque handles ([handle] types): the runtime or the provider module gives one out in `init`. */\n"
+    );
+    for h in &sdk.handle.types {
+        let _ = writeln!(s, "typedef struct {h} {h};");
+    }
+    s.push_str("\n/* Callback types ([handle.callbacks]): `arg` is the user-data pointer the module gave with the callback. */\n");
+    for (n, sig) in callback_types(sdk)? {
+        let _ = writeln!(
+            s,
+            "typedef {};",
+            c_decl(&sig.ret, &format!("dk_{n}({})", c_args(&sig)))
+        );
+    }
+    for svc in &sdk.handle.services {
+        let own: Vec<_> = imps
+            .iter()
+            .filter(|(im, sig)| {
+                im.service.as_deref() == Some(svc.as_str()) && im.kind.is_none() && sig.is_some()
+            })
+            .collect();
+        if own.is_empty() {
+            continue;
+        }
+        let _ = writeln!(s, "\n/* ---- service {svc} ---- */");
+        for (im, sig) in own {
+            let sig = sig.as_ref().expect("a service import has a sig");
+            let need = match (&im.requires, im.absent.as_deref()) {
+                (Some(r), Some(a)) => {
+                    let what = match a {
+                        "void" => "does nothing".to_string(),
+                        "missing" => "returns DK_E_MISSING".to_string(),
+                        n => format!("returns {n}"),
+                    };
+                    format!(" Needs {r}: without it the import binds to a stub that {what}.")
+                }
+                (Some(r), None) => format!(" Needs {r}: the import is not found without it."),
+                _ => String::new(),
+            };
+            let _ = writeln!(
+                s,
+                "\n/* {} Context: {}. Since api {major}.{}.{need} */",
+                im.doc,
+                im.context.as_deref().unwrap_or_default(),
+                im.since.unwrap_or_default()
+            );
+            let _ = writeln!(
+                s,
+                "{};",
+                c_decl(&sig.ret, &format!("{}({})", im.name, c_args(sig)))
+            );
+        }
+    }
+    s.push_str("\n#endif /* DK_GEN_IMPORTS_H */\n");
     Ok(s)
 }
 
@@ -2441,6 +2647,7 @@ pub fn render(text: &str) -> Result<Vec<(String, String)>> {
         (C_MACHINE_VIEW_OUT.to_string(), machine_h(&sdk)?),
         (C_FX_VIEW_OUT.to_string(), fx_h(&sdk)?),
         (C_API_OUT.to_string(), api_h(&sdk)?),
+        (C_IMPORTS_OUT.to_string(), imports_h(&sdk)?),
         (C_DESC_OUT.to_string(), desc_h(&sdk)?),
     ])
 }

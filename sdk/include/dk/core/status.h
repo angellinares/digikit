@@ -47,6 +47,7 @@
 #define DK_E_CARD_RO (-47) /* the card's store area is not ours and not blank */
 #define DK_E_CONTRACT (-48) /* the module was built for another SDK contract */
 #define DK_E_TABLE (-49) /* the runtime's tables failed their check */
+#define DK_E_MISSING (-73) /* the service is not in the image (the module that provides it is not loaded) */
 
 /* Replies of the upload commands ([protocol.status]). */
 #define DK_E_MSG (-50) /* body too short or malformed */

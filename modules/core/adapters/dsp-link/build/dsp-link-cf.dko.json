@@ -708,6 +708,20 @@
    "section": ".text.dl_tick",
    "symbol": ".sec..bss.dl_link",
    "type": "cf.32"
+  },
+  {
+   "addend": 0,
+   "offset": 20,
+   "section": ".text.dk_dsp_link_open",
+   "symbol": ".sec..bss.dl_token",
+   "type": "cf.32"
+  },
+  {
+   "addend": 0,
+   "offset": 8,
+   "section": ".text.dk_dsp_link_set_tick",
+   "symbol": ".sec..bss.dl_tick_cb",
+   "type": "cf.32"
   }
  ],
  "sections": [
@@ -783,6 +797,27 @@
   },
   {
    "align": 2,
+   "hex": "206f00084aaf0004660470d04e754a8867f820bc00000000428060f0",
+   "kind": "text",
+   "name": ".text.dk_dsp_link_open",
+   "size": 28
+  },
+  {
+   "align": 2,
+   "hex": "41ef0008428023d0000000004e75",
+   "kind": "text",
+   "name": ".text.dk_dsp_link_set_tick",
+   "size": 14
+  },
+  {
+   "align": 2,
+   "hex": "",
+   "kind": "bss",
+   "name": ".bss.dl_token",
+   "size": 4
+  },
+  {
+   "align": 2,
    "hex": "",
    "kind": "bss",
    "name": ".bss.dl_tick_cb",
@@ -796,7 +831,7 @@
    "size": 80
   }
  ],
- "source_sha256": "aaacc52b9d4ee8e0b7cfdfa72290c90c304e56949c9f82bb727d7904cc71a640",
+ "source_sha256": "e86d98608b01305cc9c62a456bf397c76680f5ba3eab015a20cb5a975cfa54c0",
  "symbols": [
   {
    "global": false,
@@ -808,6 +843,12 @@
    "global": false,
    "name": ".sec..bss.dl_tick_cb",
    "section": ".bss.dl_tick_cb",
+   "value": 0
+  },
+  {
+   "global": false,
+   "name": ".sec..bss.dl_token",
+   "section": ".bss.dl_token",
    "value": 0
   },
   {
@@ -826,6 +867,18 @@
    "global": true,
    "name": "_dl_area",
    "section": null,
+   "value": 0
+  },
+  {
+   "global": true,
+   "name": "dk_dsp_link_open",
+   "section": ".text.dk_dsp_link_open",
+   "value": 0
+  },
+  {
+   "global": true,
+   "name": "dk_dsp_link_set_tick",
+   "section": ".text.dk_dsp_link_set_tick",
    "value": 0
   },
   {
@@ -901,6 +954,12 @@
    "value": 0
   },
   {
+   "global": false,
+   "name": "dl_token",
+   "section": ".bss.dl_token",
+   "value": 0
+  },
+  {
    "global": true,
    "name": "dl_tx_lit",
    "section": null,
@@ -923,8 +982,8 @@
   "as": "GNU assembler (GNU Binutils) 2.47.20260726",
   "cflags": "-mcpu=54418 -std=c11 -Os -ffreestanding -fno-builtin -nostdlib -fno-pic -fno-pie -ffunction-sections -fdata-sections -fno-asynchronous-unwind-tables -fno-unwind-tables -fno-stack-protector -Wall -Wextra -Werror",
   "gcc": "m68k-elf-gcc (GCC) 16.2.0",
-  "instructions_redecoded": "512",
-  "isa_check": "01598166f1596daf71f33ba0d7e14b190aba3b182f77c521f62c138a9538c9cd",
+  "instructions_redecoded": "526",
+  "isa_check": "00fe55ee81b53dc71f6447d6c5cab89a3d2ce86ad6cfad2786da1289d06a19ab",
   "ld": "GNU ld (GNU Binutils) 2.47.20260726"
  }
 }

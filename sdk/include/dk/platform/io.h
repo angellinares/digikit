@@ -1,12 +1,12 @@
-/* <dk/platform/io.h> (API 1.10): api->io_post / io_cancel / io_wake run work on the runtime's own I/O task.
+/* <dk/platform/io.h> (api 1.10; the imports dk_io_post, dk_io_cancel and dk_io_wake since 1.11, written api->io_post etc. in the old entry): run work on the runtime's own I/O task.
  *
- * step(ctx) runs on that task (priority 3: below the UI task, so a long transfer does not slow the UI). It may block and it may call
+ * step(arg) runs on that task (priority 3: below the UI task, so a long transfer does not slow the UI). It may block and it may call
  * api->file_* (<dk/platform/file.h>), which answer E_CONTEXT anywhere else. It returns:
  *   DK_IO_MORE  call me again (other jobs get their turn first: round robin),
  *   DK_IO_WAIT  sleep until api->io_wake(id), from an interrupt handler, an adapter or any task,
  *   0           finished,
  *   < 0         failed (the error is the status of `done`).
- * done(ctx, status) is called once in the UI task with the last result, or DK_IO_E_CANCELLED after io_cancel. A module that is unloaded
+ * done(arg, status) is called once in the UI task with the last result, or DK_IO_E_CANCELLED after io_cancel. A module that is unloaded
  * gets no `done`; its running step is cancelled and the runtime keeps the module's memory until the step has returned.
  *
  * The task wakes once for several posts and wakes: after each wake it runs jobs until none is runnable, so a step must find all its

@@ -106,6 +106,27 @@
    "section": ".text.input_turn",
    "symbol": ".sec..text.queue_room",
    "type": "cf.32"
+  },
+  {
+   "addend": 0,
+   "offset": 20,
+   "section": ".text.dk_input_open",
+   "symbol": ".sec..bss.input_token",
+   "type": "cf.32"
+  },
+  {
+   "addend": 0,
+   "offset": 16,
+   "section": ".text.dk_input_key",
+   "symbol": ".sec..text.input_key",
+   "type": "cf.32"
+  },
+  {
+   "addend": 0,
+   "offset": 16,
+   "section": ".text.dk_input_turn",
+   "symbol": ".sec..text.input_turn",
+   "type": "cf.32"
   }
  ],
  "sections": [
@@ -129,14 +150,78 @@
    "kind": "text",
    "name": ".text.input_turn",
    "size": 128
+  },
+  {
+   "align": 2,
+   "hex": "206f00084aaf0004660470d04e754a8867f820bc00000000428060f0",
+   "kind": "text",
+   "name": ".text.dk_input_open",
+   "size": 28
+  },
+  {
+   "align": 2,
+   "hex": "202f00082f6f000c00082f4000044ef900000000",
+   "kind": "text",
+   "name": ".text.dk_input_key",
+   "size": 20
+  },
+  {
+   "align": 2,
+   "hex": "202f00082f6f000c00082f4000044ef900000000",
+   "kind": "text",
+   "name": ".text.dk_input_turn",
+   "size": 20
+  },
+  {
+   "align": 2,
+   "hex": "",
+   "kind": "bss",
+   "name": ".bss.input_token",
+   "size": 4
   }
  ],
- "source_sha256": "4b0f0336f63b587c739b990388831b0484ba5a1f4697c870532bf09810371162",
+ "source_sha256": "2b223829e3476b52848d8f3ed065c84422ec28a3b097a62284dee08090f411f7",
  "symbols": [
+  {
+   "global": false,
+   "name": ".sec..bss.input_token",
+   "section": ".bss.input_token",
+   "value": 0
+  },
+  {
+   "global": false,
+   "name": ".sec..text.input_key",
+   "section": ".text.input_key",
+   "value": 0
+  },
+  {
+   "global": false,
+   "name": ".sec..text.input_turn",
+   "section": ".text.input_turn",
+   "value": 0
+  },
   {
    "global": false,
    "name": ".sec..text.queue_room",
    "section": ".text.queue_room",
+   "value": 0
+  },
+  {
+   "global": true,
+   "name": "dk_input_key",
+   "section": ".text.dk_input_key",
+   "value": 0
+  },
+  {
+   "global": true,
+   "name": "dk_input_open",
+   "section": ".text.dk_input_open",
+   "value": 0
+  },
+  {
+   "global": true,
+   "name": "dk_input_turn",
+   "section": ".text.dk_input_turn",
    "value": 0
   },
   {
@@ -176,6 +261,12 @@
    "value": 0
   },
   {
+   "global": false,
+   "name": "input_token",
+   "section": ".bss.input_token",
+   "value": 0
+  },
+  {
    "global": true,
    "name": "input_turn",
    "section": ".text.input_turn",
@@ -192,8 +283,8 @@
   "as": "GNU assembler (GNU Binutils) 2.47.20260726",
   "cflags": "-mcpu=54418 -std=c11 -Os -ffreestanding -fno-builtin -nostdlib -fno-pic -fno-pie -ffunction-sections -fdata-sections -fno-asynchronous-unwind-tables -fno-unwind-tables -fno-stack-protector -Wall -Wextra -Werror",
   "gcc": "m68k-elf-gcc (GCC) 16.2.0",
-  "instructions_redecoded": "142",
-  "isa_check": "09f3ccce91cc32e5283de9de4eab58a419ab312089965525179d604d169fac81",
+  "instructions_redecoded": "160",
+  "isa_check": "a1dc678107e832f51bdd2ecceabeb5d576d023be982276b76e01da2b0bda1eda",
   "ld": "GNU ld (GNU Binutils) 2.47.20260726"
  }
 }
