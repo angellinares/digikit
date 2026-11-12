@@ -106,6 +106,8 @@ def codegen_gcc_env(extra_rustflags: str = "") -> dict[str, str]:
     env = dict(os.environ)
     env.pop("RUSTUP_TOOLCHAIN", None)  # it would override the channel
     env["PATH"] = f"{M68K_PREFIX / 'bin'}:{env['PATH']}"
+    # libgccjit's built-in driver holds the absolute --with-as path; COMPILER_PATH finds `as` after a move
+    env["COMPILER_PATH"] = str(M68K_PREFIX / "m68k-elf" / "bin")
     env["CG_GCCJIT_LIBRARY_PATH"] = str(CG_DIR / "jitlib" / "libgccjit.so")
     flags = f"-Zcodegen-backend={codegen_gcc_backend()} -Cllvm-args=-mcpu=54418 -Cpanic=abort {extra_rustflags}"
     env["RUSTFLAGS"] = flags.strip()
@@ -385,7 +387,8 @@ def build_codegen_gcc() -> None:
         for n in names:
             link = jitlib / n
             link.unlink(missing_ok=True)
-            link.symlink_to(built)
+            # relative, so out/tools can move
+            link.symlink_to(os.path.relpath(built, jitlib))
     # 3. the back end, with the -mcpu patch; the clone sits inside the repository's cargo workspace, so each of
     #    its manifests gets an empty [workspace]
     be = CG_DIR / "rustc_codegen_gcc"

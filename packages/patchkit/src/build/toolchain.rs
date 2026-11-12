@@ -157,6 +157,16 @@ impl Env {
             env.push((k.into(), v));
         };
         set(&mut env, "PATH", new_path);
+        // libgccjit runs its built-in gcc driver to assemble, and the driver holds the absolute `--with-as` path of
+        // the install. COMPILER_PATH lets it find `as` in the m68k-elf tooldir, so out/tools still works after a move.
+        set(
+            &mut env,
+            "COMPILER_PATH",
+            self.m68k_prefix()
+                .join("m68k-elf/bin")
+                .display()
+                .to_string(),
+        );
         set(
             &mut env,
             "CG_GCCJIT_LIBRARY_PATH",
