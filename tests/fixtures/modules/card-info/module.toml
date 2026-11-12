@@ -1,0 +1,22 @@
+[module]
+id = "test/card-info"
+version = "0.1.0"
+name = "Card info"
+category = "test"
+type = "raw"
+author = "digikit"
+status = "experimental"
+summary = "Test fixture: read-only diagnostic. Returns the firmware's copy of the eMMC EXT_CSD and a fixed list of eSDHC, PLL, USB OTG, crossbar and eDMA registers (tools/device/dkcardinfo.py decodes them)."
+# tools/device/dkcardinfo.py speaks its protocol (host = true: it names the module's commands)
+host = true
+requires = []
+conflicts = ["test/file-write-b"]
+
+[targets]
+"dt2-1.17" = "experimental"
+"dn2-1.12" = "experimental"
+
+[[object]]
+path = "build/card-info.dko.json"
+sources = ["src/card-info.c"]
+place = "cf.expansion"
