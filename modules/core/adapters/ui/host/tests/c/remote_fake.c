@@ -51,7 +51,8 @@ static void fill_page(dk_ui_menu *m, void *ctx)
     dkm_menu(m, ctx);
 }
 
-static const dk_ui_menu_desc page = {.name = "RemoteSettings", .title = "REMOTE CONTROL", .fill = fill_page};
+static const dk_ui_menu_desc page = {
+    .name = "RemoteSettings", .title = "REMOTE CONTROL", .fill = fill_page};
 
 int r_init(void)
 {
@@ -67,7 +68,19 @@ int r_cmd(int cmd, const uint8_t *body, int len)
     return handlers[cmd & 255]((uint32_t)cmd, 1, body, (uint32_t)len, out);
 }
 
-dk_ui_menu *r_page(void) { return dk_ui_menu_new(&page); }
-int r_key_down(int code) { return key_state[code & 127]; }
-int r_key_calls(void) { return key_calls; }
-void r_fail_next(int result) { next_result = result; }
+dk_ui_menu *r_page(void)
+{
+    return dk_ui_menu_new(&page);
+}
+int r_key_down(int code)
+{
+    return key_state[code & 127];
+}
+int r_key_calls(void)
+{
+    return key_calls;
+}
+void r_fail_next(int result)
+{
+    next_result = result;
+}

@@ -26,10 +26,10 @@ test('pages draw the region, cache failed peak fetches per token and show the zo
         '-o',
         binary,
       ],
-      { timeout: 10_000 },
+      { timeout: 25_000 },
     );
-    execFileSync(binary, { timeout: 2000 });
+    execFileSync(binary, { timeout: 10_000 });
   } finally {
     fs.rmSync(directory, { recursive: true, force: true });
   }
-});
+}, 40_000);

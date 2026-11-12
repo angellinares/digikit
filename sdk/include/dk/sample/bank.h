@@ -28,9 +28,12 @@
    Exactly one bank is supported. Resolve its handle in init; queue its single
    load from init or a service callback (the runtime copies the path);
    the destination remains owned until restart once delivery begins. */
-#define DK_SAMPLE_BANK(LOCAL_ID, BANK, DESCRIPTOR, CAPACITY)                      \
-    static const dk_desc_sample_bank DK_CAT(dk_sample_bank_, __LINE__) DK_DESC = { \
-        .kind = DK_DESC_SAMPLE_BANK, .size = sizeof(dk_desc_sample_bank),         \
-        .local_id = (LOCAL_ID), .bank = #BANK, .descriptor = #DESCRIPTOR,          \
-        .capacity_frames = (CAPACITY)}
+#define DK_SAMPLE_BANK(LOCAL_ID, BANK, DESCRIPTOR, CAPACITY)                                       \
+    static const dk_desc_sample_bank DK_CAT(dk_sample_bank_, __LINE__)                             \
+        DK_DESC = {.kind = DK_DESC_SAMPLE_BANK,                                                    \
+                   .size = sizeof(dk_desc_sample_bank),                                            \
+                   .local_id = (LOCAL_ID),                                                         \
+                   .bank = #BANK,                                                                  \
+                   .descriptor = #DESCRIPTOR,                                                      \
+                   .capacity_frames = (CAPACITY)}
 #endif

@@ -25,28 +25,39 @@
 
 #define SPW_ST_UNARMED 0u
 #define SPW_ST_ARMED 1u
-#define SPW_ST_ERROR 2u   /* armed again, the last page was rejected */
+#define SPW_ST_ERROR 2u /* armed again, the last page was rejected */
 #define SPW_ST_DEAD 3u
 
-#define SPW_ERR_TAG 4u    /* tag prefix or page index out of range: nothing was written */
-#define SPW_ERR_SEQ 5u    /* sequence number is neither the next one nor the last one */
+#define SPW_ERR_TAG 4u /* tag prefix or page index out of range: nothing was written */
+#define SPW_ERR_SEQ 5u /* sequence number is neither the next one nor the last one */
 
 /* Wall time is the firmware's DSP block counter, 1500 per second. */
-#define SPW_ARMED_BLOCKS 300u   /* 200 ms: the receiver must be armed before the first page of a load */
-#define SPW_ACK_BLOCKS 75u      /* 50 ms: one page must be acknowledged */
+#define SPW_ARMED_BLOCKS                                                                           \
+    300u                   /* 200 ms: the receiver must be armed before the first page of a load */
+#define SPW_ACK_BLOCKS 75u /* 50 ms: one page must be acknowledged */
 #define SPW_RESENDS 3u
 
 #define SPW_HEADER_BYTES 64u
 #define SPW_SECTOR 512u
-#define SPW_RBUF_SECTORS 128u   /* one card read: 64 KiB, the most dkrt_store_read takes (15 mono or 7 stereo chunks) */
+#define SPW_RBUF_SECTORS                                                                           \
+    128u /* one card read: 64 KiB, the most dkrt_store_read takes (15 mono or 7 stereo chunks) */
 
 static inline uint32_t spw_tag(uint32_t seq, uint32_t page)
 {
     return SPW_TAG_MAGIC | ((seq & 0xffu) << 20) | (page & 0xfffffu);
 }
-static inline uint32_t spw_tag_seq(uint32_t tag) { return (tag >> 20) & 0xffu; }
-static inline uint32_t spw_tag_page(uint32_t tag) { return tag & 0xfffffu; }
-static inline uint32_t spw_tag_last(uint32_t tag) { return (spw_tag_seq(tag) << 8) | (tag & 0xffu); }   /* the ack's h6 */
+static inline uint32_t spw_tag_seq(uint32_t tag)
+{
+    return (tag >> 20) & 0xffu;
+}
+static inline uint32_t spw_tag_page(uint32_t tag)
+{
+    return tag & 0xfffffu;
+}
+static inline uint32_t spw_tag_last(uint32_t tag)
+{
+    return (spw_tag_seq(tag) << 8) | (tag & 0xffu);
+} /* the ack's h6 */
 
 /* The receiver's decision on a tag (the DSP implements this): 0 accept (new page), 1 repeat of the last tag (copy again, no count),
  * SPW_ERR_TAG, SPW_ERR_SEQ. `last_tag` starts as spw_tag(0, 0) after boot. */
@@ -77,7 +88,8 @@ static inline int spw_ack_decode(const volatile uint16_t *e, spw_ack *a)
     uint32_t i;
     for (i = 0; i < 8; i++)
         h[i] = e[i];
-    if (h[0] != SPW_ACK_MAGIC || h[1] != SPW_ACK_VERSION || h[2] > SPW_ST_DEAD || h[7] != ((spw_ack_sum(h) ^ SPW_ACK_XOR) & 0xffffu))
+    if (h[0] != SPW_ACK_MAGIC || h[1] != SPW_ACK_VERSION || h[2] > SPW_ST_DEAD ||
+        h[7] != ((spw_ack_sum(h) ^ SPW_ACK_XOR) & 0xffffu))
         return 0;
     a->status = h[2];
     a->error = h[3] & 0xffu;
@@ -126,22 +138,23 @@ static inline int spw_snap_read(const spw_snap *s, spw_ack *a)
 /* ---- The page state machine of one transfer: stop and wait, bounded --------------------------------------------------------------------- */
 
 #define SPW_WAIT 0
-#define SPW_READY 1    /* the receiver is armed: a new page may go */
-#define SPW_ACKED 2    /* the page in flight is acknowledged */
-#define SPW_RESEND 3   /* the ack is late: send the same page again */
+#define SPW_READY 1  /* the receiver is armed: a new page may go */
+#define SPW_ACKED 2  /* the page in flight is acknowledged */
+#define SPW_RESEND 3 /* the ack is late: send the same page again */
 #define SPW_E_TIMEOUT (-1)
 #define SPW_E_DEAD (-2)
-#define SPW_E_TAG (-3)   /* the receiver rejected a tag (error 4 or 5) */
-#define SPW_E_DSP (-4)   /* any other receiver error */
+#define SPW_E_TAG (-3) /* the receiver rejected a tag (error 4 or 5) */
+#define SPW_E_DSP (-4) /* any other receiver error */
 
 typedef struct spw_x {
-    uint32_t inflight;      /* a page was sent and is not acknowledged */
-    uint32_t tag;           /* the tag in flight */
-    uint32_t base_count;    /* pages accepted, as of the last READY or ACKED snapshot */
+    uint32_t inflight;   /* a page was sent and is not acknowledged */
+    uint32_t tag;        /* the tag in flight */
+    uint32_t base_count; /* pages accepted, as of the last READY or ACKED snapshot */
     uint32_t base_errcount;
-    uint32_t base_last;     /* h6 of that snapshot */
-    uint32_t sent_at;       /* block clock of the last send */
-    uint32_t wait_since;    /* block clock of the last progress (the start, an armed receiver, an acknowledgement) */
+    uint32_t base_last; /* h6 of that snapshot */
+    uint32_t sent_at;   /* block clock of the last send */
+    uint32_t
+        wait_since; /* block clock of the last progress (the start, an armed receiver, an acknowledgement) */
     uint32_t resends;
 } spw_x;
 
@@ -194,7 +207,8 @@ static inline int32_t spw_poll(spw_x *x, uint32_t now, const spw_ack *ack)
     if (ack) {
         if (ack->status == SPW_ST_ERROR && ack->errcount != x->base_errcount)
             return (ack->error == SPW_ERR_TAG || ack->error == SPW_ERR_SEQ) ? SPW_E_TAG : SPW_E_DSP;
-        if (ack->status == SPW_ST_ARMED && ack->count == x->base_count + 1u && ack->last == spw_tag_last(x->tag)) {
+        if (ack->status == SPW_ST_ARMED && ack->count == x->base_count + 1u &&
+            ack->last == spw_tag_last(x->tag)) {
             x->inflight = 0;
             x->base_count = ack->count;
             x->base_errcount = ack->errcount;
@@ -213,7 +227,8 @@ static inline int32_t spw_poll(spw_x *x, uint32_t now, const spw_ack *ack)
 /* The 64-byte header of a native file (dkrt_sdk::sample::native_header): byte 1 is 0 mono or 1 stereo, rate 48 kHz at 8, PCM length at 4,
  * rate 48 kHz at 8, PCM length at 4; the PCM length is a whole number of frames and the file holds 64 + PCM bytes. The trailer is optional
  * and the other header bytes are ignored (as in native_header). 0 or DKPOOL_E_FORMAT. */
-static inline int32_t spw_header(const uint8_t *h, uint32_t size, uint32_t *frames, uint32_t *channels)
+static inline int32_t spw_header(const uint8_t *h, uint32_t size, uint32_t *frames,
+                                 uint32_t *channels)
 {
     uint32_t ch, pcm, rate;
     if (size < SPW_HEADER_BYTES || h[1] > 1)
@@ -231,15 +246,16 @@ static inline int32_t spw_header(const uint8_t *h, uint32_t size, uint32_t *fram
 /* Chunk c of a sample is 2,048 frames: one mono page, or one page of each stereo plane. Where it is, for the frame count of a chunk
  * (spw_span_of is the read). */
 typedef struct spw_chunk {
-    uint32_t sector;    /* first file sector */
-    uint32_t sectors;   /* sectors to read (at most SPW_RBUF_SECTORS) */
-    uint32_t skip;      /* byte offset of the PCM in the first sector (always 64) */
-    uint32_t frames;    /* frames in this chunk: 2,048, less in the last one */
+    uint32_t sector;  /* first file sector */
+    uint32_t sectors; /* sectors to read (at most SPW_RBUF_SECTORS) */
+    uint32_t skip;    /* byte offset of the PCM in the first sector (always 64) */
+    uint32_t frames;  /* frames in this chunk: 2,048, less in the last one */
 } spw_chunk;
 
 static inline void spw_chunk_of(uint32_t channels, uint32_t frames, uint32_t c, spw_chunk *o)
 {
-    uint32_t left = frames - c * SPA_PAGE_FRAMES, n = left < SPA_PAGE_FRAMES ? left : SPA_PAGE_FRAMES;
+    uint32_t left = frames - c * SPA_PAGE_FRAMES,
+             n = left < SPA_PAGE_FRAMES ? left : SPA_PAGE_FRAMES;
     o->sector = (SPW_HEADER_BYTES + SPA_PAGE_BYTES * channels * c) / SPW_SECTOR;
     o->skip = SPW_HEADER_BYTES;
     o->frames = n;
@@ -249,16 +265,18 @@ static inline void spw_chunk_of(uint32_t channels, uint32_t frames, uint32_t c, 
 /* One card read covers whole chunks from chunk c on: as many as fit in SPW_RBUF_SECTORS, fewer at the end of the sample. Chunk c + j starts
  * at byte `skip + j * chunk_bytes` of the buffer: a chunk is a multiple of 512 bytes, so every read starts on the 64-byte header offset. */
 typedef struct spw_span {
-    uint32_t sector;    /* first file sector */
-    uint32_t sectors;   /* sectors to read (at most SPW_RBUF_SECTORS) */
-    uint32_t skip;      /* byte offset of chunk c in the buffer (always 64) */
-    uint32_t chunks;    /* whole chunks in the read */
+    uint32_t sector;  /* first file sector */
+    uint32_t sectors; /* sectors to read (at most SPW_RBUF_SECTORS) */
+    uint32_t skip;    /* byte offset of chunk c in the buffer (always 64) */
+    uint32_t chunks;  /* whole chunks in the read */
 } spw_span;
 
 static inline void spw_span_of(uint32_t channels, uint32_t frames, uint32_t c, spw_span *o)
 {
-    uint32_t chunk_bytes = SPA_PAGE_BYTES * channels, total = (frames + SPA_PAGE_FRAMES - 1u) / SPA_PAGE_FRAMES;
-    uint32_t most = (SPW_RBUF_SECTORS * SPW_SECTOR - SPW_HEADER_BYTES) / chunk_bytes, k = total - c, last, bytes;
+    uint32_t chunk_bytes = SPA_PAGE_BYTES * channels,
+             total = (frames + SPA_PAGE_FRAMES - 1u) / SPA_PAGE_FRAMES;
+    uint32_t most = (SPW_RBUF_SECTORS * SPW_SECTOR - SPW_HEADER_BYTES) / chunk_bytes, k = total - c,
+             last, bytes;
     if (k > most)
         k = most;
     last = frames - (c + k - 1u) * SPA_PAGE_FRAMES;
@@ -289,7 +307,8 @@ static inline void spw_page_mono(const uint8_t *pcm, uint32_t frames, uint8_t *p
 }
 
 /* Stereo: file order is L R L R (halves); planar output, each plane's halves stay as they are. */
-static inline void spw_page_stereo(const uint8_t *pcm, uint32_t frames, uint8_t *left, uint8_t *right)
+static inline void spw_page_stereo(const uint8_t *pcm, uint32_t frames, uint8_t *left,
+                                   uint8_t *right)
 {
     uint32_t i;
     for (i = 0; i < frames; i++) {

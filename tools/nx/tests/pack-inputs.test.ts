@@ -40,7 +40,16 @@ it('keeps explicit sources outside module and Cargo owners file-level with priva
   const external = new Map([['example/module', { file, objects: [{ sources: ['../../sdk/src/sample/picker.c'] }] }]]);
   expect(packSourceInputs(root, external, [file])).toEqual([
     { input: 'production', projects: ['example/module'] },
+    '{workspaceRoot}/sdk/src/**/*',
     '{workspaceRoot}/sdk/src/sample/**/*.{h,hh,hpp,hxx}',
     '{workspaceRoot}/sdk/src/sample/picker.c',
+  ]);
+});
+
+it('makes the SDK sources an input of a module with C sources, which link them automatically', () => {
+  const c = new Map([['example/module', { file, objects: [{ sources: ['src/module.c', 'src/dsp/x.s'] }] }]]);
+  expect(packSourceInputs(root, c, [file])).toEqual([
+    { input: 'production', projects: ['example/module'] },
+    '{workspaceRoot}/sdk/src/**/*',
   ]);
 });

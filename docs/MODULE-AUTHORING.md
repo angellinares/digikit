@@ -393,6 +393,9 @@ The generated files are in `sdk/include/dk/gen/`, `sdk/dsp/contract/` and `sdk/i
 | File | What it holds | Who includes it |
 | --- | --- | --- |
 | `<dk/core/api.h>` | The `dk_api` table, the import names and the entry points of a `.dkm`. | Service modules in C. |
+| `<dk/core/bytes.h>` | `dk_bytes_put32`, `dk_bytes_get32`: big-endian 32-bit fields of protocols and files. Header only. | Modules that read or write wire fields. |
+| `<dk/core/text.h>` | Bounded text without a C library: `dk_text_len`, `dk_text_copy`, `dk_text_equal`, `dk_text_append`, `dk_text_cat`, `dk_text_utoa`, `dk_text_itoa`, `dk_text_trunc`, `dk_text_size`, `dk_text_secs`. Every writer takes the buffer size and ends with a NUL. The packer links the source (`sdk/src/core/text.c`) when a module calls one. | Modules that build row text or names. |
+| `<dk/core/path.h>` | `dk_path_join` (refuses over 255 bytes), `dk_path_parent`, `dk_path_leaf`. The packer links `sdk/src/core/path.c`. | Modules that handle file paths. |
 | `<dk/machine/machine.h>` | The machine contract and `DK_MACHINE`, `DK_PARAM`. | The machine's `module.c`. Includes `gen/machine.h`. |
 | `<dk/fx/fx.h>` | The effect contract and `DK_FX`, `DK_FX_PARAM`. | The effect's `module.c`. Includes `gen/fx.h`. |
 | `<dk/page/page.h>` | `DK_PAGE`, `DK_KNOB`, `DK_KNOB_AT`. Shared by both. Includes `gen/desc.h`, the record layouts from `[desc]` in `sdk/sdk.toml`. | `<dk/machine/machine.h>`, `<dk/fx/fx.h>`. |
@@ -588,8 +591,7 @@ project. The runtime closes an entry's old generation before it publishes a new 
 must check the table `size` before it calls them. `pack` declares the lowest Api minor that has what a module needs; a module that calls a newer
 entry without checking `size` lists it in `[module] uses_api = ["sample_pool_path"]` and is then refused by a runtime that lacks it.
 
-A sampler machine can add the on-device sample picker with `<dk/sample/picker.h>`: list `../../../sdk/src/sample/picker.c` and
-`../../../sdk/src/chooser/logic.c` in the `[[object]]` sources, call `dk_sample_picker_init(api, handle)` in `dkm_init` and `dk_sample_picker_fini()` in
+A sampler machine can add the on-device sample picker with `<dk/sample/picker.h>`: include the header and call `dk_sample_picker_init(api, handle)` in `dkm_init` and `dk_sample_picker_fini()` in
 `dkm_fini`, and call `dk_sample_picker_open_pool(current, pick, ctx)` from the click action of the SMP parameter. The picker shows the 16
 slots; YES on a slot opens the file browser for that slot, and YES on a file loads it there (`sample_pool_set`). `pick(ctx, index)` runs after a file was loaded, and the machine sets its SMP value to `index`.
 `modules/machines/shot` is the example (design: [sample picker](design/sample-picker.md)). The picker needs no manifest field: it checks the Api
@@ -733,6 +735,7 @@ mise run module:import -- FILE.dkmod --dir ~/my-modules  # unpack into ~/my-modu
 
 A `.dkmod` is a deterministic zip. It holds the module folder without `build/` and without OS junk files. Entries are sorted and share one time
 stamp. A top-level `package.toml` lists id, version, author, type and the SHA-256 of every file. Two exports of one tree are byte-identical.
+A `.dkmod` holds no SDK code: it builds against the SDK of the machine that imports it (the packer links the SDK components the module calls). Build it again after an SDK update.
 
 `import` checks every hash. It refuses extra or missing files, the author `core`, the type `framework` and an id that is already known. `--replace`
 allows a known id. Without `--dir` it uses the first folder of `PATCHKIT_MODULES`. After an import, run `module:check` before you trust the code.

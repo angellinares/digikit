@@ -4,8 +4,10 @@
 #define SP_NW32_H
 #include <stdint.h>
 
-#define SP_NW32_BASE 0x10000000u  /* NW32 alias of the DSP's DDR; physical byte = 0x80000000 + 4 * (w - 0x10000000) (finding 99) */
-#define SP_NATIVE_RATE 48000u     /* every stock native file is 48 kHz: the writer sets it (finding 81) and the pool has no other rate */
+#define SP_NW32_BASE                                                                               \
+    0x10000000u /* NW32 alias of the DSP's DDR; physical byte = 0x80000000 + 4 * (w - 0x10000000) (finding 99) */
+#define SP_NATIVE_RATE                                                                             \
+    48000u /* every stock native file is 48 kHz: the writer sets it (finding 81) and the pool has no other rate */
 #define SP_DDR_PHYS 0x80000000u
 #define SP_DDR_PHYS_END 0xa0000000u
 

@@ -57,8 +57,9 @@ typedef int i32;
 #define ST_CONNECTED 0x2u
 #define ST_WRONG_MODE 0x4u /* the device's active USB port is not USB MIDI (live) */
 #define ST_TAKEN 0x8u      /* a take-over is active (requested, or the device is switched) */
-#define ST_LIVE 0x10u      /* the buffers are allocated (from the moment the device goes to, or is in, USB MIDI with bulk, until the take-over ends) */
-#define ST_NOMEM 0x20u     /* the last allocation of the buffers failed (cleared by the next success) */
+#define ST_LIVE                                                                                    \
+    0x10u /* the buffers are allocated (from the moment the device goes to, or is in, USB MIDI with bulk, until the take-over ends) */
+#define ST_NOMEM 0x20u /* the last allocation of the buffers failed (cleared by the next success) */
 
 /* ---- the geometry ---- */
 #define PAGE 4096u
@@ -97,14 +98,16 @@ typedef int i32;
 #define QH_CAPS_IN 0x20400000u
 #define TD_END 0xdead0001u
 #define TD_ACTIVE 0x80u
-#define TD_HALTED 0x40u /* status bits of a finished dTD: halted, data buffer error, transaction error */
+#define TD_HALTED                                                                                  \
+    0x40u /* status bits of a finished dTD: halted, data buffer error, transaction error */
 #define TD_BUFERR 0x20u
 #define TD_XACTERR 0x08u
-#define CTRL_BULK 0x00c800c8u /* enable, data toggle reset, bulk, both directions: the value the firmware writes to ENDPTCTRL1 */
+#define CTRL_BULK                                                                                  \
+    0x00c800c8u /* enable, data toggle reset, bulk, both directions: the value the firmware writes to ENDPTCTRL1 */
 
 /* the port table entry of USB MIDI (docs/findings/42 section 4) */
 #define PORT_ENTRY 2u
-#define PORT_AUDIO 5u      /* USB AUDIO/MIDI */
+#define PORT_AUDIO 5u /* USB AUDIO/MIDI */
 #define PORT_OVERBRIDGE 6u
 #define PORT_ENTRY_BYTES 0x28u
 #define STOCK_CONFIG_BYTES 101u
@@ -119,10 +122,13 @@ extern void usb_fw_cancel_ep(u32 index);
 extern u8 *usb_fw_td_alloc(void);
 extern void usb_fw_stop(void);
 extern void usb_fw_restart(void);
-extern u8 usb_restart_delay[]; /* u32 in RAM: 30 down to 0, non-zero while a stop waits to restart */
-extern u8 *usb_fw_mem_new(u32 size); /* the firmware's operator new (the 32 MiB buddy allocator) and its free */
+extern u8
+    usb_restart_delay[]; /* u32 in RAM: 30 down to 0, non-zero while a stop waits to restart */
+extern u8 *usb_fw_mem_new(
+    u32 size); /* the firmware's operator new (the 32 MiB buddy allocator) and its free */
 extern void usb_fw_mem_free(u8 *p);
-extern void usb_fw_mode_switch(u32 port); /* FUN_40006c16: returns when `port` is active; else stop, write the port, restart after about 30 USB ticks. Task context. */
+extern void usb_fw_mode_switch(
+    u32 port); /* FUN_40006c16: returns when `port` is active; else stop, write the port, restart after about 30 USB ticks. Task context. */
 /* the board: the uncached alias of DDR is this far above the cached window (device.s) */
 extern const u32 usb_alias_delta;
 extern const u32 usb_ddr_base; /* the cached DDR window: base and size */
@@ -165,15 +171,18 @@ static void ub_log(const char *tag, u32 value)
 
 /* the stock configuration descriptor with wTotalLength (bytes 2 and 3, written by the firmware at run time) left out, and the interface appended */
 static const u8 stock_config[STOCK_CONFIG_BYTES] = {
-    0x09, 0x02, 0x00, 0x00, 0x02, 0x01, 0x00, 0xc0, 0x03, 0x09, 0x04, 0x00, 0x00, 0x00, 0x01, 0x01, 0x00, 0x00, 0x09, 0x24, 0x01,
-    0x00, 0x01, 0x09, 0x00, 0x01, 0x01, 0x09, 0x04, 0x01, 0x00, 0x02, 0x01, 0x03, 0x00, 0x00, 0x07, 0x24, 0x01, 0x00, 0x01, 0x41,
-    0x00, 0x06, 0x24, 0x02, 0x01, 0x01, 0x00, 0x06, 0x24, 0x02, 0x02, 0x02, 0x00, 0x09, 0x24, 0x03, 0x01, 0x03, 0x01, 0x02, 0x01,
-    0x00, 0x09, 0x24, 0x03, 0x02, 0x04, 0x01, 0x01, 0x01, 0x00, 0x09, 0x05, 0x01, 0x02, 0x00, 0x02, 0x00, 0x00, 0x00, 0x05, 0x25,
-    0x01, 0x01, 0x01, 0x09, 0x05, 0x81, 0x02, 0x00, 0x02, 0x00, 0x00, 0x00, 0x05, 0x25, 0x01, 0x01, 0x03};
+    0x09, 0x02, 0x00, 0x00, 0x02, 0x01, 0x00, 0xc0, 0x03, 0x09, 0x04, 0x00, 0x00, 0x00, 0x01,
+    0x01, 0x00, 0x00, 0x09, 0x24, 0x01, 0x00, 0x01, 0x09, 0x00, 0x01, 0x01, 0x09, 0x04, 0x01,
+    0x00, 0x02, 0x01, 0x03, 0x00, 0x00, 0x07, 0x24, 0x01, 0x00, 0x01, 0x41, 0x00, 0x06, 0x24,
+    0x02, 0x01, 0x01, 0x00, 0x06, 0x24, 0x02, 0x02, 0x02, 0x00, 0x09, 0x24, 0x03, 0x01, 0x03,
+    0x01, 0x02, 0x01, 0x00, 0x09, 0x24, 0x03, 0x02, 0x04, 0x01, 0x01, 0x01, 0x00, 0x09, 0x05,
+    0x01, 0x02, 0x00, 0x02, 0x00, 0x00, 0x00, 0x05, 0x25, 0x01, 0x01, 0x01, 0x09, 0x05, 0x81,
+    0x02, 0x00, 0x02, 0x00, 0x00, 0x00, 0x05, 0x25, 0x01, 0x01, 0x03};
 static const u8 bulk_interface[23] = {
-    0x09, 0x04, 0x02, 0x00, 0x02, 0xff, 0x00, 0x00, 0x00, /* interface 2, vendor class, two endpoints */
-    0x07, 0x05, 0x02, 0x02, 0x00, 0x02, 0x00,             /* EP2 OUT, bulk, 512 */
-    0x07, 0x05, 0x82, 0x02, 0x00, 0x02, 0x00};            /* EP2 IN, bulk, 512 */
+    0x09, 0x04, 0x02, 0x00, 0x02, 0xff, 0x00,
+    0x00, 0x00,                                /* interface 2, vendor class, two endpoints */
+    0x07, 0x05, 0x02, 0x02, 0x00, 0x02, 0x00,  /* EP2 OUT, bulk, 512 */
+    0x07, 0x05, 0x82, 0x02, 0x00, 0x02, 0x00}; /* EP2 IN, bulk, 512 */
 
 /* ---- state ---- */
 enum { B_FREE = 0, B_PRIMED, B_FULL, B_TAKEN };
@@ -182,12 +191,14 @@ enum { T_FREE = 0, T_RESERVED, T_QUEUED };
 /* The descriptor stays for good (the port table entry points at it until the next boot). The receive and send buffers are allocated while the interface can be
  * live (buffers_alloc) and freed when the take-over ends (buffers_free); between, the adapter holds only this descriptor. */
 static u8 desc_mem[DESC_BYTES + 16] __attribute__((aligned(16)));
-static u8 *rx_area, *tx_area; /* the 4 KiB aligned buffers, as the CPU sees them (cached address); null while not live */
-static u8 *blk_raw;           /* what the allocator returned (freed as it is) */
+static u8 *rx_area,
+    *tx_area; /* the 4 KiB aligned buffers, as the CPU sees them (cached address); null while not live */
+static u8 *blk_raw; /* what the allocator returned (freed as it is) */
 static volatile u32 live, alloc_busy, free_req, nomem;
 /* for the emulator test: the last block allocated (kept after the free) */
 volatile u32 usb_bulk_last_area, usb_bulk_last_bytes;
-volatile u32 usb_bulk_free_why; /* why the last buffers_free refused: 1 a receive buffer is held, 2 a send slot is reserved, 4 EP2 not idle (the flush, ENDPTSTAT and ENDPTPRIME bits are in bits 8 and up), 8 a transfer of ours is queued, 16 allocating; 0 freed */
+volatile u32
+    usb_bulk_free_why; /* why the last buffers_free refused: 1 a receive buffer is held, 2 a send slot is reserved, 4 EP2 not idle (the flush, ENDPTSTAT and ENDPTPRIME bits are in bits 8 and up), 8 a transfer of ours is queued, 16 allocating; 0 freed */
 static volatile u8 rx_state[RX_BUFS];
 static u32 rx_len[RX_BUFS];
 static u8 order[RX_BUFS]; /* the full buffers in arrival order */
@@ -198,14 +209,16 @@ static volatile u32 enabled, connected, resets;
  * engine refused its dTD (the pool was empty); the tick retries. `tx_retry`: a send was refused; the tick wakes the job. `qh_ready`: the EP2 queue
  * heads were set up by this adapter. */
 static volatile u32 stopping, need_prime, tx_retry, qh_ready;
-static u32 restart_due; /* enable_prepare found the device in USB MIDI mode: the first enable re-enumerates */
+static u32
+    restart_due; /* enable_prepare found the device in USB MIDI mode: the first enable re-enumerates */
 static volatile i32 io_job;
 /* Take-over state. `taken`: a take-over is active. `to_req`: 0 none, 1 the switch to port 2 is requested, 2 the switch back is requested; the tick runs it when
  * `to_due_ms` have passed since it first saw the request. `to_orig`: the port to give back to. `to_active`: set by any transfer or renew (interrupt or task),
  * consumed by the tick, which stamps `to_act_at`. `to_gone`: the disconnect callback ran while taken over. `to_quiet`: usb_bulk_enable is re-enumerating
  * (its own stop runs our disconnect callback). Times are in clock units of the tick (blocks, or tick passes without a block clock; `to_per_s` per second). */
 static volatile u32 taken, to_req, to_active, to_gone, to_quiet;
-static u32 to_orig, to_due_ms, to_due_set, to_due_at, to_act_at, to_sus, to_sus_at, to_per_s, to_passes;
+static u32 to_orig, to_due_ms, to_due_set, to_due_at, to_act_at, to_sus, to_sus_at, to_per_s,
+    to_passes;
 /* The switch guard. The firmware's mode switch has no lock: it writes the active port at once and restarts the device about 30 USB ticks later, and a second
  * stop or restart in that window is not safe. `to_sw_set`: a switch (the firmware's mode switch, or enable's own stop and restart) was made at `to_sw_at`
  * (clock units of `to_sw_per` a second). No further switch runs, and our disconnect callback records no host leaving, until TO_GUARD_MS have passed. All under
@@ -214,11 +227,14 @@ static u32 to_sw_set, to_sw_at, to_sw_per;
 static volatile u32 to_pend_port;
 static void (*stock_connect)(u32);
 static u32 stock_free; /* the firmware's own free callback of a dTD (+0x38), which ours wraps */
-static volatile u32 td_status; /* the status byte of the dTD whose free callback ran last (read by the completion callback that follows) */
+static volatile u32
+    td_status; /* the status byte of the dTD whose free callback ran last (read by the completion callback that follows) */
 /* Counters for the emulator test (read through the plan's symbols): the mode switches and restarts made so far, and the time between the last two in ms. */
 volatile u32 usb_bulk_switches, usb_bulk_switch_gap_ms;
-volatile u32 usb_bulk_rx_errors; /* transfers dropped for a halted, buffer-error or transaction-error status */
-volatile u32 usb_bulk_rx_inval_lines; /* data cache lines invalidated by usb_bulk_take (0 with UB_CACHED_RX 0); the emulator has no data cache model */
+volatile u32
+    usb_bulk_rx_errors; /* transfers dropped for a halted, buffer-error or transaction-error status */
+volatile u32
+    usb_bulk_rx_inval_lines; /* data cache lines invalidated by usb_bulk_take (0 with UB_CACHED_RX 0); the emulator has no data cache model */
 
 /* UB_CACHED_RX 1: usb_bulk_take hands out the CACHED address of a receive buffer, after it invalidated the buffer's data cache lines, so the module's reads
  * fill whole 16-byte lines in bursts (the uncached alias costs one bus access per longword). 0: the uncached alias, as before (the A/B switch).
@@ -330,9 +346,9 @@ static i32 queue_transfer(u32 index, u8 *data, u32 bytes, void *done, void *canc
     w[2] = (u32)data;
     for (k = 1; k < 5; k++)
         w[2 + k] = (u32)data + k * PAGE;
-    w[8] = bytes;        /* +0x20: the length the firmware subtracts the remainder from */
-    w[9] = (u32)done;    /* +0x24 */
-    w[10] = (u32)cancel; /* +0x28 */
+    w[8] = bytes;                  /* +0x20: the length the firmware subtracts the remainder from */
+    w[9] = (u32)done;              /* +0x24 */
+    w[10] = (u32)cancel;           /* +0x28 */
     w[14] = (u32)usb_bulk_td_free; /* +0x38 */
     if (usb_fw_queue_td(index, (u8 *)w) < 0) {
         /* the engine refused (the endpoint is stalled): give the dTD back through the firmware's own free callback */
@@ -356,8 +372,8 @@ static void prime_one(u32 i)
 {
     if (stopping || !live || !connected || !usb_midi_mode())
         return;
-    if (queue_transfer(IDX_OUT, rx_buf(i), RX_BYTES, (void *)usb_bulk_rx_done, (void *)usb_bulk_cancel) == 0)
-    {
+    if (queue_transfer(IDX_OUT, rx_buf(i), RX_BYTES, (void *)usb_bulk_rx_done,
+                       (void *)usb_bulk_cancel) == 0) {
         rx_state[i] = B_PRIMED;
         UB_LOG("ub.rx.prime", i);
     }
@@ -502,13 +518,15 @@ static void ep2_stop(void)
     usb_fw_cancel_ep(IDX_OUT);
     usb_fw_cancel_ep(IDX_IN);
     ep2_lists_clear();
-    USB_REG(ENDPTCOMPLETE) = FLUSH_EP2; /* write 1 to clear: a completion of the old connection must not be seen by the engine's loop */
+    USB_REG(ENDPTCOMPLETE) =
+        FLUSH_EP2; /* write 1 to clear: a completion of the old connection must not be seen by the engine's loop */
     for (i = 0; i < RX_BUFS; i++)
         if (rx_state[i] != B_TAKEN)
             rx_state[i] = B_FREE;
     order_head = order_count = 0;
     for (i = 0; i < TX_SLOTS; i++)
-        if (tx_state[i] != T_RESERVED) /* a send is copying into this slot (usb_bulk_send, interrupts on): it frees the slot itself when it sees the reset */
+        if (tx_state[i] !=
+            T_RESERVED) /* a send is copying into this slot (usb_bulk_send, interrupts on): it frees the slot itself when it sees the reset */
             tx_state[i] = T_FREE;
     need_prime = 0;
     qh_ready = 1;
@@ -567,7 +585,8 @@ void usb_bulk_disconnect(void)
     u32 sr = sr_mask();
     UB_LOG("ub.disconn", resets);
     if (taken && !to_quiet && sw_guard_open())
-        to_gone = 1; /* unplug, suspend or a mode change while taken over: the tick decides (this runs in the USB interrupt) */
+        to_gone =
+            1; /* unplug, suspend or a mode change while taken over: the tick decides (this runs in the USB interrupt) */
     ep2_stop();
     sr_restore(sr);
     usb_fw_disconnect();
@@ -579,8 +598,9 @@ void usb_bulk_disconnect(void)
 static void ub_snapshot(void)
 {
     static u32 last[UB_SNAP_N];
-    static const char *const tags[UB_SNAP_N] = {"ub.USBSTS", "ub.PORTSC", "ub.USBCMD", "ub.EPPRIME", "ub.EPSTAT",
-                                                "ub.EPCOMPL", "ub.qhO.tok", "ub.qhI.tok", "ub.qhO.cur", "ub.qhI.cur"};
+    static const char *const tags[UB_SNAP_N] = {
+        "ub.USBSTS",  "ub.PORTSC",  "ub.USBCMD",  "ub.EPPRIME", "ub.EPSTAT",
+        "ub.EPCOMPL", "ub.qhO.tok", "ub.qhI.tok", "ub.qhO.cur", "ub.qhI.cur"};
     u32 v[UB_SNAP_N];
     u32 i;
     v[0] = USB_REG(USBSTS);
@@ -632,7 +652,8 @@ static i32 buffers_alloc(void)
     sr_restore(sr);
     raw = usb_fw_mem_new(BLOCK_BYTES);
     a = (u8 *)(((u32)raw + PAGE - 1u) & ~(PAGE - 1u));
-    if (raw == 0 || (u32)a < usb_ddr_base || (u32)a + BLOCK_AREA + PAGE > usb_ddr_base + usb_ddr_bytes) {
+    if (raw == 0 || (u32)a < usb_ddr_base ||
+        (u32)a + BLOCK_AREA + PAGE > usb_ddr_base + usb_ddr_bytes) {
         if (raw != 0)
             usb_fw_mem_free(raw);
         nomem = 1;
@@ -701,7 +722,10 @@ static u32 buffers_free(void)
     if (connected) {
         ep2_quiesce();
         if (!ep2_idle()) {
-            usb_bulk_free_why = 4 | (((USB_REG(ENDPTFLUSH) & FLUSH_EP2) != 0u ? 1u : 0u) | ((USB_REG(ENDPTSTAT) & FLUSH_EP2) != 0u ? 2u : 0u) | ((USB_REG(ENDPTPRIME) & FLUSH_EP2) != 0u ? 4u : 0u)) << 8;
+            usb_bulk_free_why = 4 | (((USB_REG(ENDPTFLUSH) & FLUSH_EP2) != 0u ? 1u : 0u) |
+                                     ((USB_REG(ENDPTSTAT) & FLUSH_EP2) != 0u ? 2u : 0u) |
+                                     ((USB_REG(ENDPTPRIME) & FLUSH_EP2) != 0u ? 4u : 0u))
+                                        << 8;
             need_prime = 1;
             sr_restore(sr);
             return 0;
@@ -744,10 +768,12 @@ static u32 buffers_free(void)
  * pending" and does not depend on any clock of ours, so the guard is open only when it is 0 (fw_restart_pending). TO_GUARD_MS is a floor on our own clock from the
  * stamp: it covers the moment between the stamp and the firmware setting the word, and a word that cannot be read. */
 #define TO_GUARD_MS 500u
-#define TO_DELAY_MS 50u      /* a requested switch runs this long after the tick first saw it (the reply is out by then) */
-#define TO_IDLE_MS 30000u    /* no host activity for this long: give back */
-#define TO_SUSPEND_MS 500u   /* the bus stayed suspended this long: give back */
-#define TO_QUIET_MS 2000u    /* the suspend check starts this long after the last activity (a switch counts as activity) */
+#define TO_DELAY_MS                                                                                \
+    50u /* a requested switch runs this long after the tick first saw it (the reply is out by then) */
+#define TO_IDLE_MS 30000u  /* no host activity for this long: give back */
+#define TO_SUSPEND_MS 500u /* the bus stayed suspended this long: give back */
+#define TO_QUIET_MS                                                                                \
+    2000u /* the suspend check starts this long after the last activity (a switch counts as activity) */
 
 /* the tick clock: the runtime's block clock (1500 a second), or the passes of the UI loop (about 120 a second) without one, as core/ui does */
 static u32 to_peek(u32 *per_s)
@@ -844,18 +870,21 @@ static u32 takeover_decide(u32 now, u32 per_s, u32 port, u32 guard)
         to_drop();
         return 0;
     }
-    if (to_req == 0u && !guard) { /* our own switch is settling: its disconnects and the bus suspend are not a host leaving */
+    if (to_req == 0u &&
+        !guard) { /* our own switch is settling: its disconnects and the bus suspend are not a host leaving */
         to_gone = 0;
         to_sus = 0;
         return 0;
     }
-    if (to_req == 0u) { /* the automatic give-back: the host left, no activity for TO_IDLE_MS, or the bus stayed suspended */
+    if (to_req ==
+        0u) { /* the automatic give-back: the host left, no activity for TO_IDLE_MS, or the bus stayed suspended */
         if (to_gone) {
             to_gone = 0;
             to_req = 2;
         } else if (to_elapsed_ms(to_act_at, now, per_s) >= TO_IDLE_MS) {
             to_req = 2;
-        } else if ((USB_REG(PORTSC) & PORTSC_SUSP) != 0u && to_elapsed_ms(to_act_at, now, per_s) >= TO_QUIET_MS) {
+        } else if ((USB_REG(PORTSC) & PORTSC_SUSP) != 0u &&
+                   to_elapsed_ms(to_act_at, now, per_s) >= TO_QUIET_MS) {
             if (!to_sus) {
                 to_sus = 1;
                 to_sus_at = now;
@@ -876,7 +905,8 @@ static u32 takeover_decide(u32 now, u32 per_s, u32 port, u32 guard)
         to_due_set = 1;
         to_due_at = now;
     }
-    if (to_elapsed_ms(to_due_at, now, per_s) < to_due_ms || !guard) /* a request waits for its delay and for the guard: one switch at a time */
+    if (to_elapsed_ms(to_due_at, now, per_s) < to_due_ms ||
+        !guard) /* a request waits for its delay and for the guard: one switch at a time */
         return 0;
     if (to_req == 1u) {
         if (port != to_orig) { /* the mode changed before the switch ran: nothing to take over */
@@ -920,7 +950,8 @@ static void takeover_tick(void)
     }
     sr_restore(sr);
     if (target != 0u && target != port) {
-        usb_fw_mode_switch(target); /* interrupts on, task context: the firmware's own menu action does the same */
+        usb_fw_mode_switch(
+            target); /* interrupts on, task context: the firmware's own menu action does the same */
         to_pend_port = 0; /* the firmware has written the active port */
     }
 }
@@ -978,7 +1009,8 @@ static int stock_connect_ok(u32 fn)
 {
     const u8 *c = (const u8 *)fn;
     i32 disp;
-    if (c[0] != 0x70 || c[1] != 0x01 || c[2] != 0x2f || c[3] != 0x40 || c[4] != 0x00 || c[5] != 0x04 || c[6] != 0x60 || c[7] != 0x00)
+    if (c[0] != 0x70 || c[1] != 0x01 || c[2] != 0x2f || c[3] != 0x40 || c[4] != 0x00 ||
+        c[5] != 0x04 || c[6] != 0x60 || c[7] != 0x00)
         return 0;
     disp = (i32)(short)((c[8] << 8) | c[9]);
     return fn + 8u + (u32)disp == (u32)usb_fw_connect_body; /* bra.w: from the displacement word */
@@ -1015,11 +1047,13 @@ static i32 enable_prepare(i32 io_id)
     u32 sr, i;
     u8 *d;
     /* the descriptor must lie in the cached DDR window: the alias is that window plus a constant (the buffers are checked when they are allocated) */
-    if ((u32)desc_mem < usb_ddr_base || (u32)desc_mem + sizeof desc_mem > usb_ddr_base + usb_ddr_bytes)
+    if ((u32)desc_mem < usb_ddr_base ||
+        (u32)desc_mem + sizeof desc_mem > usb_ddr_base + usb_ddr_bytes)
         return E_CONTRACT;
     /* the stock entry, byte for byte (the firmware writes wTotalLength into its own array at run time, FUN_4000677a, through absolute addresses and not through
      * this table: bytes 2 and 3 are free) */
-    if (e[4] != STOCK_CONFIG_BYTES || e[9] != 1u || e[1] != (u32)usb_fw_disconnect || !stock_connect_ok(e[0]))
+    if (e[4] != STOCK_CONFIG_BYTES || e[9] != 1u || e[1] != (u32)usb_fw_disconnect ||
+        !stock_connect_ok(e[0]))
         return E_CONTRACT;
     for (i = 0; i < STOCK_CONFIG_BYTES; i++)
         if (i != 2u && i != 3u && cfg[i] != stock_config[i])
@@ -1083,14 +1117,15 @@ i32 usb_bulk_enable(i32 io_id)
     r = buffers_alloc();
     if (r != 0)
         return r;
-    free_req = 0; /* an enable is a new request for the buffers: a free asked for by an earlier disable or take-over end must not take them back (the tick would free
+    free_req =
+        0; /* an enable is a new request for the buffers: a free asked for by an earlier disable or take-over end must not take them back (the tick would free
                    * the block this call has just allocated) */
     /* a switch is settling: the caller retries. Also when enabled already, so a caller never sees success in the middle of one */
     sr = sr_mask();
     ok = sw_guard_open();
     if (ok && restart_due) {
         restart_due = 0;
-        sw_stamp(); /* the stop and restart below are a switch */
+        sw_stamp();   /* the stop and restart below are a switch */
         to_quiet = 1; /* the stop runs our disconnect callback: not a host leaving */
     } else if (ok) {
         sr_restore(sr);
@@ -1102,7 +1137,8 @@ i32 usb_bulk_enable(i32 io_id)
     /* the firmware's own USB mode switch (FUN_40006c16 does the same from the task context, interrupts on): stop (calls the disconnect callback and
      * starts a delay), restart (the tick restarts the device when the delay has run); the host sees the device go and come back with interface 2 */
     usb_fw_stop();
-    to_quiet = 0; /* only the stop above is our own: a real unplug from here on counts (after the guard) */
+    to_quiet =
+        0; /* only the stop above is our own: a real unplug from here on counts (after the guard) */
     usb_fw_restart();
     to_active = 1;
     return 0;
@@ -1146,7 +1182,8 @@ i32 usb_bulk_take(u8 **buf, u32 *len)
     }
     sr_restore(sr);
 #if UB_CACHED_RX
-    if (r == 1) { /* the buffer is ours (B_TAKEN, the DMA is done): invalidate with interrupts on, then hand out the cached address (rules 2 and 3) */
+    if (r ==
+        1) { /* the buffer is ours (B_TAKEN, the DMA is done): invalidate with interrupts on, then hand out the cached address (rules 2 and 3) */
         u32 a = (u32)*buf - usb_alias_delta, n = (*len + 15u) & ~15u, k;
         for (k = 0; k < n; k += 16u)
             __asm__ volatile("cpushl %%dc,(%0)" : : "a"(a + k) : "memory");
@@ -1190,7 +1227,8 @@ i32 usb_bulk_send(const u8 *buf, u32 len)
         if (tx_state[i] == T_FREE) {
             tx_state[i] = T_RESERVED;
             slot = (i32)i;
-            p = tx_buf(i); /* under the mask: the slot is reserved, so the buffers cannot be freed under the copy */
+            p = tx_buf(
+                i); /* under the mask: the slot is reserved, so the buffers cannot be freed under the copy */
             break;
         }
     }
@@ -1202,9 +1240,11 @@ i32 usb_bulk_send(const u8 *buf, u32 len)
         p[k] = buf[k];
     sr = sr_mask();
     if (!live || !connected || stopping || resets != before) {
-        tx_state[slot] = T_FREE; /* the bus was reset while copying (ep2_stop leaves a reserved slot to us) */
+        tx_state[slot] =
+            T_FREE; /* the bus was reset while copying (ep2_stop leaves a reserved slot to us) */
         r = E_STATE;
-    } else if (queue_transfer(IDX_IN, p, len, (void *)usb_bulk_tx_done, (void *)usb_bulk_cancel) != 0) {
+    } else if (queue_transfer(IDX_IN, p, len, (void *)usb_bulk_tx_done, (void *)usb_bulk_cancel) !=
+               0) {
         tx_state[slot] = T_FREE;
         tx_retry = 1;
         r = E_AGAIN;
@@ -1224,7 +1264,9 @@ i32 usb_bulk_send(const u8 *buf, u32 len)
 i32 usb_bulk_takeover(void)
 {
     u32 sr = sr_mask();
-    u32 port = to_pend_port != 0u ? to_pend_port : *(volatile u32 *)usb_active_port; /* the port a claimed switch leaves */
+    u32 port = to_pend_port != 0u
+                   ? to_pend_port
+                   : *(volatile u32 *)usb_active_port; /* the port a claimed switch leaves */
     i32 r = 0;
     if (taken) {
         if (to_req == 2u)

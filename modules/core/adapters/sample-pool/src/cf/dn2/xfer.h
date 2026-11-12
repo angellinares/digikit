@@ -15,16 +15,18 @@ typedef char sp_leases_fit[(SP_REQS + 8u <= DKRT_STORE_LEASES) ? 1 : -1];
 
 /* request states */
 #define RQ_FREE 0u
-#define RQ_QUEUED 1u   /* waits for the link */
-#define RQ_ACTIVE 2u   /* its pages are being sent, by the job on the worker task */
+#define RQ_QUEUED 1u /* waits for the link */
+#define RQ_ACTIVE 2u /* its pages are being sent, by the job on the worker task */
 
 typedef struct SpReq {
     uint32_t state;
-    uint32_t req;         /* the runtime's request number */
-    uint32_t blk;         /* index in sp_pool */
-    uint32_t age;         /* order of arrival */
-    int32_t lease;        /* the store lease of `file` (dkrt_store_lease), > 0 from dkpool_load until the request ends */
-    volatile uint32_t cancelled;   /* dkpool_cancel (UI task): nobody waits for the result any more; the job reads it between pages */
+    uint32_t req; /* the runtime's request number */
+    uint32_t blk; /* index in sp_pool */
+    uint32_t age; /* order of arrival */
+    int32_t
+        lease; /* the store lease of `file` (dkrt_store_lease), > 0 from dkpool_load until the request ends */
+    volatile uint32_t
+        cancelled; /* dkpool_cancel (UI task): nobody waits for the result any more; the job reads it between pages */
     dkpool_handle *out;
     DkrtStoreFile file;
 } SpReq;
@@ -32,10 +34,13 @@ typedef struct SpReq {
 extern spa_pool sp_pool;
 extern spp_peak sp_peaks[SPA_BLOCKS][SPP_BINS];
 extern SpReq sp_reqs[SP_REQS];
-extern DkrtStoreFile sp_files[SPA_BLOCKS];   /* the store file of each loaded block, kept for dkpool_window_step */
-extern volatile uint32_t sp_link_dead;   /* the receiver reported status 3: no new load can succeed until a boot */
+extern DkrtStoreFile
+    sp_files[SPA_BLOCKS]; /* the store file of each loaded block, kept for dkpool_window_step */
+extern volatile uint32_t
+    sp_link_dead; /* the receiver reported status 3: no new load can succeed until a boot */
 
-extern volatile uint32_t sp_stuck_sends;   /* pages whose send ended on the port-ready bound (xfer.c) */
+extern volatile uint32_t
+    sp_stuck_sends; /* pages whose send ended on the port-ready bound (xfer.c) */
 
 /* send.c: a tag word and the 4 KiB page to the DSP over LP0, bounded; 0, or -1 when the port was not ready in time (task context) */
 int sp_raw_send(uint32_t tag, const uint8_t *page);

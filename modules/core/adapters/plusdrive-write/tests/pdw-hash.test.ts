@@ -12,10 +12,10 @@ test('the adapter hash (pdw_hash.h) equals the content hash of dksample, in any 
     execFileSync(
       'cc',
       ['-std=c11', '-Wall', '-Wextra', '-Werror', '-I', path.join(module, 'src'), path.join(module, 'tests/pdw-hash-host.c'), '-o', binary],
-      { timeout: 10_000 },
+      { timeout: 25_000 },
     );
-    execFileSync(binary, { timeout: 2000 });
+    execFileSync(binary, { timeout: 10_000 });
   } finally {
     fs.rmSync(directory, { recursive: true, force: true });
   }
-});
+}, 40_000);

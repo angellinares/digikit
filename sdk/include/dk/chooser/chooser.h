@@ -1,6 +1,6 @@
 /* <dk/chooser/chooser.h>: the slot list, a chooser for a module with numbered slots that files are loaded into (docs/design/ui-rules.md, "The
-   chooser component"). Shared source, not a runtime call: the module lists sdk/src/chooser/chooser.c and sdk/src/chooser/logic.c in its [[object]]
-   sources. It sits on <dk/platform/ui.h> (core/ui lists, the firmware font) and the read-only listing of <dk/platform/files.h>.
+   chooser component"). Shared source, not a runtime call: the packer links sdk/src/chooser/chooser.c, logic.c and the core text and path
+   sources when the module calls them. It sits on <dk/platform/ui.h> (core/ui lists, the firmware font) and the read-only listing of <dk/platform/files.h>.
 
    The flow (every slot is a row, an empty slot too):
      list of slots   YES on a slot opens the file browser for that slot (a filled slot is replaced);
@@ -29,7 +29,8 @@
 #include <dk/core/status.h>
 #include <dk/platform/ui.h>
 
-#define DK_CHOOSER_E_PATH DK_E_SEL_PATH /* the browser's path does not fit 255 bytes: fill is not called, the flow fails with this code */
+#define DK_CHOOSER_E_PATH                                                                          \
+    DK_E_SEL_PATH /* the browser's path does not fit 255 bytes: fill is not called, the flow fails with this code */
 
 typedef struct dk_chooser_desc {
     const char *title; /* list title */
@@ -37,8 +38,10 @@ typedef struct dk_chooser_desc {
     /* Writes the text of slot i (at most DK_UI_ROW - 1 characters). is_current: the slot is the current one; mark it in the text. An
        empty slot gets a row too (for example "-"). */
     void (*row)(void *ctx, int i, int is_current, char *text);
-    int (*busy)(void *ctx); /* optional: 1 while any row changes without a key (a load); the list then refreshes every 250 ms */
-    uint32_t root;          /* DK_FILES_* root of the browser */
+    int (*busy)(
+        void *
+            ctx); /* optional: 1 while any row changes without a key (a load); the list then refreshes every 250 ms */
+    uint32_t root; /* DK_FILES_* root of the browser */
     /* YES on a file (root-relative path, at most 255 bytes) for `slot`: the module loads it there. Returns the slot for done (>= 0), or a
        negative error. Required. */
     int (*fill)(void *ctx, int slot, const char *path);

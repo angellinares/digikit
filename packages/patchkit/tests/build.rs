@@ -429,7 +429,7 @@ fn a_header_change_changes_the_source_hash() {
     std::fs::write(d.join("b.inc"), ".equ N, 1\n").unwrap();
     std::fs::write(d.join("b.s"), ".include \"b.inc\"\n.text\nnop\n").unwrap();
     let inc = [d.clone()];
-    let hash = |f: &str| cf::source_digest(&env, &[d.join(f)], &inc).unwrap();
+    let hash = |f: &str| cf::source_digest(&env, &[d.join(f)], &inc, false).unwrap();
     let (a, b) = (hash("a.c"), hash("b.s"));
     assert_eq!(a, hash("a.c"));
     std::fs::write(d.join("a.h"), "#define N 2\n").unwrap();
@@ -603,6 +603,53 @@ fn a_content_module_builds_into_the_cache_on_demand() {
         std::fs::canonicalize(&cached).unwrap()
     );
     let _ = std::fs::remove_dir_all(build::cache_dir(&root()).join(&id));
+    let _ = std::fs::remove_dir_all(&d);
+}
+
+/// A C object of a content module links the SDK functions it calls and what they call, and nothing else of the SDK.
+#[test]
+fn a_content_c_object_links_only_the_sdk_functions_it_uses() {
+    let Some(env) = toolchain() else { return };
+    let d = build_dir("sdk-prune");
+    std::fs::write(
+        d.join("t.c"),
+        "#include <dk/core/text.h>\nvoid f(char *out, const char *name) { dk_text_trunc(out, name, 5); }\n",
+    )
+    .unwrap();
+    let inc = [root().join("sdk/include")];
+    let defined = |sdk: bool| -> Vec<String> {
+        let proto = cf::proto_of_sources(&env, &[d.join("t.c")], &inc, sdk).unwrap();
+        proto
+            .symbols
+            .iter()
+            .filter(|s| s.global && s.section.is_some())
+            .map(|s| s.name.clone())
+            .collect()
+    };
+    let without = defined(false);
+    assert!(
+        !without.iter().any(|n| n.contains("dk_text_")),
+        "{without:?}"
+    );
+    let with = defined(true);
+    // the function it calls, and its callee in the SDK
+    assert!(
+        with.iter().any(|n| n.ends_with("dk_text_trunc")),
+        "{with:?}"
+    );
+    assert!(with.iter().any(|n| n.ends_with("dk_text_len")), "{with:?}");
+    // an SDK function nothing reaches is not there
+    for unused in [
+        "dk_text_secs",
+        "dk_text_size",
+        "dk_text_itoa",
+        "dk_path_join",
+    ] {
+        assert!(
+            !with.iter().any(|n| n.ends_with(unused)),
+            "{unused} in {with:?}"
+        );
+    }
     let _ = std::fs::remove_dir_all(&d);
 }
 

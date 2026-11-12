@@ -11,7 +11,7 @@ fn main() {
     ];
     let menu_dir = root.join("../../../apps/digikit-menu/src");
     let src_dir = root.join("tests/c");
-    // The pure functions of the sample picker (sdk/src/chooser/logic.c) are linked; its screens (sdk/src/sample/picker.c) are included by tests/c/picker_fake.c.
+    // The pure functions of the chooser and the sample picker (sdk/src/chooser/logic.c, core/text.c, core/path.c) are linked; its screens (sdk/src/sample/picker.c) are included by tests/c/picker_fake.c.
     let sdk_src = root.join("../../../../../sdk/src");
     println!("cargo:rerun-if-changed={}", sdk_src.display());
     for dir in includes.iter().chain([&menu_dir, &src_dir]) {
@@ -34,6 +34,8 @@ fn main() {
         .opt_level(1)
         .includes(&includes)
         .files(&sources)
-        .file(sdk_src.join("chooser/logic.c"));
+        .file(sdk_src.join("chooser/logic.c"))
+        .file(sdk_src.join("core/text.c"))
+        .file(sdk_src.join("core/path.c"));
     build.compile("dkuisample");
 }

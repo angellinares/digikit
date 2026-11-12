@@ -15,6 +15,7 @@
  */
 
 #include <dk/core/api.h>
+#include <dk/core/bytes.h>
 
 typedef uint32_t u32;
 typedef uint16_t u16;
@@ -27,7 +28,8 @@ typedef uint8_t u8;
 #define CMD_READ 0x33u
 #define CMD_RESET 0x34u
 
-#define RING_WORDS 24576u /* one run of the SHARC probe is 23,436 words; the rest is the margin for a start inside a frame */
+#define RING_WORDS                                                                                 \
+    24576u /* one run of the SHARC probe is 23,436 words; the rest is the margin for a start inside a frame */
 #define READ_MAX 200u
 #define PARSE_BUDGET 4096u /* words looked at per STATUS */
 #define MAGIC 0xB0u
@@ -57,8 +59,8 @@ typedef struct Probe {
     u32 last_beat;
     u32 last_calls;
     /* the checker's state (STATUS) */
-    u32 parsed;      /* the next word to look at */
-    u32 synced;      /* a frame was accepted since RESET */
+    u32 parsed; /* the next word to look at */
+    u32 synced; /* a frame was accepted since RESET */
     u32 have_seq;
     u32 last_seq;
     u32 frames_ok;
@@ -151,36 +153,28 @@ static void check_frames(void)
     pr.parsed = p;
 }
 
-static void put32(u8 *o, u32 v)
-{
-    o[0] = (u8)(v >> 24);
-    o[1] = (u8)(v >> 16);
-    o[2] = (u8)(v >> 8);
-    o[3] = (u8)v;
-}
-
 static int32_t cmd(u32 c, u32 seq, const u8 *body, u32 len, u8 *out)
 {
     u32 i;
     (void)seq;
     if (c == CMD_STATUS) {
         check_frames();
-        put32(out + 0, 3u); /* format */
-        put32(out + 4, pr.blocks);
-        put32(out + 8, pr.records);
-        put32(out + 12, pr.drops);
-        put32(out + 16, pr.repeats);
-        put32(out + 20, pr.idle);
-        put32(out + 24, pr.n);
-        put32(out + 28, pr.overruns);
-        put32(out + 32, RING_WORDS);
-        put32(out + 36, pr.parsed);
-        put32(out + 40, pr.frames_ok);
-        put32(out + 44, pr.seq_errors);
-        put32(out + 48, pr.cks_errors);
-        put32(out + 52, pr.have_seq ? pr.last_seq : 0xffffffffu);
-        put32(out + 56, pr.last_beat);
-        put32(out + 60, pr.synced);
+        dk_bytes_put32(out + 0, 3u); /* format */
+        dk_bytes_put32(out + 4, pr.blocks);
+        dk_bytes_put32(out + 8, pr.records);
+        dk_bytes_put32(out + 12, pr.drops);
+        dk_bytes_put32(out + 16, pr.repeats);
+        dk_bytes_put32(out + 20, pr.idle);
+        dk_bytes_put32(out + 24, pr.n);
+        dk_bytes_put32(out + 28, pr.overruns);
+        dk_bytes_put32(out + 32, RING_WORDS);
+        dk_bytes_put32(out + 36, pr.parsed);
+        dk_bytes_put32(out + 40, pr.frames_ok);
+        dk_bytes_put32(out + 44, pr.seq_errors);
+        dk_bytes_put32(out + 48, pr.cks_errors);
+        dk_bytes_put32(out + 52, pr.have_seq ? pr.last_seq : 0xffffffffu);
+        dk_bytes_put32(out + 56, pr.last_beat);
+        dk_bytes_put32(out + 60, pr.synced);
         return 64;
     }
     if (c == CMD_READ) {
@@ -195,10 +189,10 @@ static int32_t cmd(u32 c, u32 seq, const u8 *body, u32 len, u8 *out)
             count = 0;
         else if (count > n - first)
             count = n - first;
-        put32(out, n);
-        put32(out + 4, first);
+        dk_bytes_put32(out, n);
+        dk_bytes_put32(out + 4, first);
         for (i = 0; i < count; i++)
-            put32(out + 8u + 4u * i, pr.ring[first + i]);
+            dk_bytes_put32(out + 8u + 4u * i, pr.ring[first + i]);
         return (int32_t)(8u + 4u * count);
     }
     if (c == CMD_RESET) {

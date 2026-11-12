@@ -1,5 +1,5 @@
 //! The sample picker (sdk/src/sample/picker.c) on the fake <dk/platform/ui.h> and a fake dk_api: the SMP pool list, the browser, the INFO page, keys
-//! and texts. The pure functions (sdk/src/chooser/logic.c) have their own tests at the end.
+//! and texts. The pure functions (sdk/src/chooser/logic.c, core/text.c, core/path.c) have their own tests at the end.
 use dkui_host::driver::*;
 use dkui_host::*;
 use std::ffi::{c_char, c_int, CStr, CString};
@@ -40,11 +40,10 @@ extern "C" {
     fn cf_last_fill() -> *const c_char;
     fn cf_panel_entry() -> c_int;
 
-    fn dk_text_trunc(out: *mut c_char, name: *const c_char, max: c_int);
+    fn dk_text_trunc(out: *mut c_char, name: *const c_char, max: u32);
     fn dk_text_size(out: *mut c_char, bytes: u32);
     fn dk_text_secs(out: *mut c_char, frames: u32, rate: u32);
-    fn dk_path_join(out: *mut c_char, cap: c_int, dir: *const c_char, leaf: *const c_char)
-        -> c_int;
+    fn dk_path_join(out: *mut c_char, cap: u32, dir: *const c_char, leaf: *const c_char) -> u32;
     fn dk_path_parent(dir: *mut c_char) -> c_int;
     fn dk_sample_pool_err_tail(out: *mut c_char, code: c_int);
     fn dk_sample_pool_err_info(out: *mut c_char, code: c_int);
@@ -987,12 +986,12 @@ fn path_join_and_parent() {
     // 255 bytes fit, 256 do not
     let d = "d".repeat(200);
     assert_eq!(j(&d, &"f".repeat(54)).0, 255);
-    assert_eq!(j(&d, &"f".repeat(55)).0, -1);
-    assert_eq!(j("A", "").0, -1);
+    assert_eq!(j(&d, &"f".repeat(55)).0, 0);
+    assert_eq!(j("A", "").0, 0);
     let mut b = [0 as c_char; 8];
     assert_eq!(
         unsafe { dk_path_join(b.as_mut_ptr(), 4, c("AB").as_ptr(), c("C").as_ptr()) },
-        -1,
+        0,
         "cap"
     );
 

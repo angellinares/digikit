@@ -18,6 +18,9 @@ A `.dkmod` is a deterministic zip of a module folder without `build/`, plus a to
 Deterministic: entries sorted by path (`package.toml` first), modification time 1980-01-01, fixed permissions, no OS junk files
 (`.DS_Store`, `__pycache__`, ...). Two exports of one tree are byte-identical.
 
+A `.dkmod` carries no SDK code and no SDK version: the module builds against the SDK of the repository that imports it (`patchkit build`
+links the `sdk/src` components the module calls). Rebuild it after an SDK update.
+
 `import` checks the sha256 of every file against `package.toml` (and refuses extra or missing files), refuses the author `core` and
 the type `framework`, refuses an id that the module roots already know unless `--replace`, and unpacks into `DIR/<name>`. Without
 `--dir` it uses the first entry of PATCHKIT_MODULES; with neither it fails. It never writes into the repository's modules/ unless

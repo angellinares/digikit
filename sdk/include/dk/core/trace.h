@@ -13,7 +13,7 @@
 #ifdef DK_TRACE
 static const dk_api *dk_trace_api __attribute__((unused));
 #define DK_TRACE_INIT(api) ((void)(dk_trace_api = (api)))
-#define DK_TRACE_LOG(msg, value) \
+#define DK_TRACE_LOG(msg, value)                                                                   \
     ((void)(dk_trace_api ? (dk_trace_api->log((const uint8_t *)(msg), (uint32_t)(value)), 0) : 0))
 #else
 #define DK_TRACE_INIT(api) ((void)(api))

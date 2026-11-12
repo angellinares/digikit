@@ -17,18 +17,24 @@
 #include <dk/page/page.h>
 
 /* An effect: ID is a C identifier and becomes the effect id. The rest are dk_desc_fx field initializers. */
-#define DK_FX(ID, ...)                                                         \
-    DK_DESC_OVERRIDE_BEGIN                                                     \
-    static const dk_desc_fx dk_desc_fx_##ID DK_DESC = {                        \
-        .kind = DK_DESC_FX, .size = sizeof(dk_desc_fx), .id = #ID, .mix = 127, \
-        __VA_ARGS__};                                                          \
+#define DK_FX(ID, ...)                                                                             \
+    DK_DESC_OVERRIDE_BEGIN                                                                         \
+    static const dk_desc_fx dk_desc_fx_##ID DK_DESC = {                                            \
+        .kind = DK_DESC_FX, .size = sizeof(dk_desc_fx), .id = #ID, .mix = 127, __VA_ARGS__};       \
     DK_DESC_OVERRIDE_END
 
 /* Parameter word WORD of effect FX. The effect reads a float from MIN to MAX. DISPLAY is DK_PERCENT or DK_BIPOLAR. */
-#define DK_FX_PARAM(FX, WORD, NAME, SHORT, DISPLAY, MIN, MAX, DEF)                    \
-    static const dk_desc_fx_param dk_desc_fx_param_##FX##_##WORD DK_DESC = {          \
-        .kind = DK_DESC_FX_PARAM, .size = sizeof(dk_desc_fx_param), .fx = #FX,        \
-        .word = (WORD), .display = (DISPLAY), .min = (MIN), .max = (MAX),             \
-        .def = (DEF), .name = NAME, .short_name = SHORT}
+#define DK_FX_PARAM(FX, WORD, NAME, SHORT, DISPLAY, MIN, MAX, DEF)                                 \
+    static const dk_desc_fx_param dk_desc_fx_param_##FX##_##WORD DK_DESC = {                       \
+        .kind = DK_DESC_FX_PARAM,                                                                  \
+        .size = sizeof(dk_desc_fx_param),                                                          \
+        .fx = #FX,                                                                                 \
+        .word = (WORD),                                                                            \
+        .display = (DISPLAY),                                                                      \
+        .min = (MIN),                                                                              \
+        .max = (MAX),                                                                              \
+        .def = (DEF),                                                                              \
+        .name = NAME,                                                                              \
+        .short_name = SHORT}
 
 #endif

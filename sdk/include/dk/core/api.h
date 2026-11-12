@@ -5,6 +5,6 @@
 #include <dk/gen/api.h>
 
 /* True when the table is long enough to hold FIELD and FIELD is set. */
-#define DK_API_HAS(api, field) \
+#define DK_API_HAS(api, field)                                                                     \
     ((api) && (api)->size >= offsetof(dk_api, field) + sizeof((api)->field) && (api)->field)
 #endif

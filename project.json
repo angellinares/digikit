@@ -46,6 +46,11 @@
         "{workspaceRoot}/**/*.html",
         "{workspaceRoot}/**/*.yml",
         "{workspaceRoot}/**/*.yaml",
+        "{workspaceRoot}/**/*.c",
+        "{workspaceRoot}/**/*.h",
+        "{workspaceRoot}/.clang-format",
+        "{workspaceRoot}/.clang-format-ignore",
+        "{workspaceRoot}/mise.toml",
         "{workspaceRoot}/.prettierrc.json",
         "{workspaceRoot}/.prettierignore",
         "{workspaceRoot}/.oxlintrc.json",
@@ -55,7 +60,7 @@
         "command": "pnpm fmt:check",
         "cwd": "."
       },
-      "description": "Not cached: prettier also opens files it never formats (.py, .rs), and nested .gitignore and .editorconfig files change its result."
+      "description": "Prettier for web files and clang-format for C (tools/nx/c-format.mjs). Not cached: prettier also opens files it never formats (.py, .rs), and nested .gitignore and .editorconfig files change its result."
     },
     "rust-fmt": {
       "executor": "nx:run-commands",

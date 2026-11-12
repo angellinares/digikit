@@ -11,6 +11,7 @@
  * ECHO_CMD (0x2c): STATUS, reply: i32 result of usb_bulk_enable, u32 usb_bulk_state, u32 steps, u32 buffers taken, u32 bytes taken, u32 bytes sent,
  * u32 times a send was busy, i32 job id, u32 the reset count seen by the job. */
 #include <dk/core/api.h>
+#include <dk/core/bytes.h>
 #include <dk/platform/io.h>
 
 #ifndef ECHO_CMD
@@ -31,14 +32,6 @@ static int enabled_done;
 static volatile u32 hold;
 static u8 *cur;
 static u32 cur_len, cur_off;
-
-static void put32(u8 *p, u32 v)
-{
-    p[0] = (u8)(v >> 24);
-    p[1] = (u8)(v >> 16);
-    p[2] = (u8)(v >> 8);
-    p[3] = (u8)v;
-}
 
 static i32 step(u8 *ctx)
 {
@@ -71,7 +64,9 @@ static i32 step(u8 *ctx)
                 return DK_IO_WAIT;
             u32 n = cur_len - cur_off < PIECE ? cur_len - cur_off : PIECE;
             i32 r = usb_bulk_send(cur + cur_off, n);
-            if (r == E_BUSY || r == E_AGAIN) { /* both slots in flight, or the engine refused: the adapter wakes the job */
+            if (r == E_BUSY ||
+                r ==
+                    E_AGAIN) { /* both slots in flight, or the engine refused: the adapter wakes the job */
                 busy_count++;
                 return DK_IO_WAIT;
             }
@@ -114,20 +109,21 @@ static i32 command(u32 cmd, u32 seq, const u8 *body, u32 len, u8 *out)
         return 0;
     }
     if (cmd == ECHO_CMD + 3) {
-        put32(out, (u32)(len > 0 && body[0] == 1 ? usb_bulk_giveback() : usb_bulk_takeover()));
+        dk_bytes_put32(out,
+                       (u32)(len > 0 && body[0] == 1 ? usb_bulk_giveback() : usb_bulk_takeover()));
         return 4;
     }
     if (cmd != ECHO_CMD)
         return -50;
-    put32(out, (u32)enable_rc);
-    put32(out + 4, usb_bulk_state());
-    put32(out + 8, steps);
-    put32(out + 12, taken);
-    put32(out + 16, bytes_in);
-    put32(out + 20, bytes_out);
-    put32(out + 24, busy_count);
-    put32(out + 28, (u32)job_id);
-    put32(out + 32, last_epoch);
+    dk_bytes_put32(out, (u32)enable_rc);
+    dk_bytes_put32(out + 4, usb_bulk_state());
+    dk_bytes_put32(out + 8, steps);
+    dk_bytes_put32(out + 12, taken);
+    dk_bytes_put32(out + 16, bytes_in);
+    dk_bytes_put32(out + 20, bytes_out);
+    dk_bytes_put32(out + 24, busy_count);
+    dk_bytes_put32(out + 28, (u32)job_id);
+    dk_bytes_put32(out + 32, last_epoch);
     return 36;
 }
 

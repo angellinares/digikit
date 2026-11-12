@@ -59,20 +59,22 @@ typedef void dk_ui_act_fn(void *ctx, int arg);
 enum {
     DK_UI_TEXT_PAGE = 1, /* rows are text to read: no highlighted row, the keys scroll */
     DK_UI_LIST = 2,      /* a dense list with a title bar, a check column and a side panel */
-    DK_UI_WIDE = 4,      /* a menu page with a full-width title bar and full-width rows (a list without check marks or side panel) */
+    DK_UI_WIDE =
+        4, /* a menu page with a full-width title bar and full-width rows (a list without check marks or side panel) */
 };
 
 typedef struct dk_ui_menu_desc {
-    const char *name;   /* view name, for logs */
-    const char *title;  /* shown in the title */
-    uint32_t flags;     /* DK_UI_* */
+    const char *name;  /* view name, for logs */
+    const char *title; /* shown in the title */
+    uint32_t flags;    /* DK_UI_* */
     dk_ui_fill_fn *fill;
     void *ctx;
     /* DK_UI_LIST only. Each may be 0. */
-    const char *empty;                                    /* text shown when the list has no rows */
-    void (*panel)(dk_ui_menu *panel, int row, void *ctx); /* RIGHT on row: add the side-panel rows */
-    void (*check)(void *ctx, int row, int on);            /* YES on row toggled its check mark */
-    int (*back)(void *ctx);                               /* NO on the list: return 1 to stay open */
+    const char *empty; /* text shown when the list has no rows */
+    void (*panel)(dk_ui_menu *panel, int row,
+                  void *ctx);                  /* RIGHT on row: add the side-panel rows */
+    void (*check)(void *ctx, int row, int on); /* YES on row toggled its check mark */
+    int (*back)(void *ctx);                    /* NO on the list: return 1 to stay open */
 } dk_ui_menu_desc;
 
 /* Capabilities for dk_ui_has. */
@@ -93,7 +95,9 @@ int dk_ui_has(int cap);
 
 /* Menus and lists. */
 dk_ui_menu *dk_ui_menu_new(const dk_ui_menu_desc *d); /* 0 when out of memory; d must stay valid */
-int dk_ui_open(dk_ui_menu *m); /* fill, then show on top of the current view; if open, refresh. A menu or list keeps its selected row
+int dk_ui_open(
+    dk_ui_menu *
+        m); /* fill, then show on top of the current view; if open, refresh. A menu or list keeps its selected row
                                   from the last time; a text page opens at its first row. */
 void dk_ui_close(dk_ui_menu *m);
 /* Puts the cursor of a list or menu on row `row` (counted as the rows are added; clamped to the rows). Call it before dk_ui_open to start a
@@ -110,8 +114,8 @@ void dk_ui_text(dk_ui_menu *m, const char *text); /* no action */
 /* ON/OFF. *value is read when drawn; changed gets the new value after *value is written. */
 void dk_ui_toggle(dk_ui_menu *m, const char *text, int *value, dk_ui_act_fn *changed, void *ctx);
 /* A number from min to max, changed by the encoder. */
-void dk_ui_value(dk_ui_menu *m, const char *text, int *value, int min, int max, dk_ui_act_fn *changed,
-                 void *ctx);
+void dk_ui_value(dk_ui_menu *m, const char *text, int *value, int min, int max,
+                 dk_ui_act_fn *changed, void *ctx);
 
 /* The check marks of a DK_UI_LIST. */
 void dk_ui_check(dk_ui_menu *list, int row, int on);
@@ -122,8 +126,8 @@ int dk_ui_checked(const dk_ui_menu *list, int row);
 /* YES or NO. done gets 1 for YES, 0 for NO. title and text: up to 80 characters each. */
 int dk_ui_confirm(const char *title, const char *text, void (*done)(void *ctx, int yes), void *ctx);
 /* One of n items. done gets the index; NO closes the dialog without calling done. */
-int dk_ui_choice(const char *title, const char *const *items, int n, void (*done)(void *ctx, int index),
-                 void *ctx);
+int dk_ui_choice(const char *title, const char *const *items, int n,
+                 void (*done)(void *ctx, int index), void *ctx);
 /* A short message on the main screen that goes away by itself. */
 int dk_ui_toast(const char *text);
 
@@ -143,10 +147,10 @@ int dk_ui_tick(dk_ui_tick_fn *fn, void *ctx, uint32_t period_ms);
 
 /* The module settings entry point: defines dkm_menu (docs/design/digikit-dkm.md) with fill as its body. The DIGIKIT
    menu passes the menu to fill and 0 as ctx. */
-#define DK_MENU(fill) \
-    void dkm_menu(dk_ui_menu *m, void *ctx) \
-    {                                       \
-        fill(m, ctx);                       \
+#define DK_MENU(fill)                                                                              \
+    void dkm_menu(dk_ui_menu *m, void *ctx)                                                        \
+    {                                                                                              \
+        fill(m, ctx);                                                                              \
     }
 
 #endif

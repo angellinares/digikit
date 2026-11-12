@@ -42,9 +42,9 @@ int32_t dkm_init(const dk_api *api)
 {
     int ok = api->register_cmds(0x3e, 1, echo);
     api->register_cmds(0x3f, 1, refusals);
-    svc_refused[0] = (u8)api->register_cmds(0x10, 1, echo);  /* outside every reserved range */
-    svc_refused[1] = (u8)api->register_cmds(0x3e, 1, echo);  /* over a registered one */
-    svc_refused[2] = (u8)api->register_cmds(0x38, 0, echo);  /* empty */
+    svc_refused[0] = (u8)api->register_cmds(0x10, 1, echo); /* outside every reserved range */
+    svc_refused[1] = (u8)api->register_cmds(0x3e, 1, echo); /* over a registered one */
+    svc_refused[2] = (u8)api->register_cmds(0x38, 0, echo); /* empty */
     api->log((const u8 *)"svc-echo registered", (u32)ok);
     return 0;
 }

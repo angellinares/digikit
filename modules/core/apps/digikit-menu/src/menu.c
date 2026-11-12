@@ -81,15 +81,18 @@ static uint32_t g_fx_n, g_fx_slots;
 static uint8_t g_fx_saved[MAX_FXR];
 static int8_t g_row_fx[MAX_ENT]; /* the first effect of a loaded row's module, -1: none */
 static uint8_t g_saved[MAX_ENT];
-static int8_t g_sel_of[MAX_ENT]; /* the index of a row in the saved selection (the boot's results and needs are by that index), -1: not selected */
+static int8_t g_sel_of
+    [MAX_ENT]; /* the index of a row in the saved selection (the boot's results and needs are by that index), -1: not selected */
 static uint32_t g_saved_extra;
 static int32_t g_selection_error;
 static int g_info_row;
 static int g_route_row;
 static uint32_t g_safe_shown, g_seen, g_last, g_calls;
 static char g_empty_text[24];
-static int g_hdr;  /* 1: the MODULES list starts with the safe-mode header, so row r of the list is module r - 1 */
-static int g_lead; /* 1: the rows start with a mark column, ticked as " " and a selected module that is not loaded as "-" */
+static int
+    g_hdr; /* 1: the MODULES list starts with the safe-mode header, so row r of the list is module r - 1 */
+static int
+    g_lead; /* 1: the rows start with a mark column, ticked as " " and a selected module that is not loaded as "-" */
 
 static dk_ui_menu *g_main, *g_about, *g_mem, *g_modules, *g_info;
 
@@ -235,17 +238,46 @@ static void copy_text(uint8_t *dst, int max, const char *s)
 /* A short text (upper case, at most 14 characters) for each runtime result code, one table per owner range: the loader's -1..-19,
    the registry's -20..-29, the DSP loader's -30..-39, boot-time loading's -40..-49. A code without text shows as ERROR n. */
 static const char *const text_runtime[20] = {
-    "OK", "NOT FOUND", "BAD STORE", "READ ERROR", "BAD SHA", "BAD FORMAT", "RUNTIME OLD", "NO IMPORT", "NO MEMORY",
-    "INIT FAILED", "ALREADY LOADED", "SLOT TAKEN", "BUSY", "TOO BIG", "TABLE FULL", "", "", "", "", "",
+    "OK",
+    "NOT FOUND",
+    "BAD STORE",
+    "READ ERROR",
+    "BAD SHA",
+    "BAD FORMAT",
+    "RUNTIME OLD",
+    "NO IMPORT",
+    "NO MEMORY",
+    "INIT FAILED",
+    "ALREADY LOADED",
+    "SLOT TAKEN",
+    "BUSY",
+    "TOO BIG",
+    "TABLE FULL",
+    "",
+    "",
+    "",
+    "",
+    "",
 };
 static const char *const text_registry[10] = {
-    "NO REGISTRY", "OTHER DEVICE", "BAD TYPE", "TYPE USED", "NO PARAM ROW", "NO PAGE ROW", "TYPE IN USE", "", "", "",
+    "NO REGISTRY", "OTHER DEVICE", "BAD TYPE", "TYPE USED", "NO PARAM ROW",
+    "NO PAGE ROW", "TYPE IN USE",  "",         "",          "",
 };
 static const char *const text_dsp[10] = {
-    "NO DSP LINK", "BAD DSP CODE", "DSP IMPORT", "NO DSP SPACE", "NO VOICE ROW", "DSP XFER", "OTHER DEVICE", "BAD VOICE TYPE", "", "",
+    "NO DSP LINK",
+    "BAD DSP CODE",
+    "DSP IMPORT",
+    "NO DSP SPACE",
+    "NO VOICE ROW",
+    "DSP XFER",
+    "OTHER DEVICE",
+    "BAD VOICE TYPE",
+    "",
+    "",
 };
 static const char *const text_boot[10] = {
-    "BAD PATH", "TOO MANY", "WRITE FAILED", "CARD BUSY", "SAFE MODE", "", "OUT OF RANGE", "READ ONLY", "", "",
+    "BAD PATH", "TOO MANY",     "WRITE FAILED", "CARD BUSY", "SAFE MODE",
+    "",         "OUT OF RANGE", "READ ONLY",    "",          "",
 };
 
 static void status_text(txt *t, int32_t code)
@@ -288,9 +320,10 @@ static void result_text(txt *t, int32_t code, const uint8_t *needs)
 static void safe_reason(txt *t, uint32_t reason)
 {
     // a table, not an if chain: six dense values become a jump table, which is data in the code
-    static const char *const why[7] = {"UNKNOWN", "2 BAD BOOTS", "KEY HELD", "REQUESTED", "DSP STOPPED", "CPU PANIC", "READ FAILED"};
-    _Static_assert(DKRT_SAFE_COUNTER == 1 && DKRT_SAFE_KEY == 2 && DKRT_SAFE_FLAG == 3 && DKRT_SAFE_DSP == 4 && DKRT_SAFE_PANIC == 5 &&
-                       DKRT_SAFE_READ == 6,
+    static const char *const why[7] = {"UNKNOWN",     "2 BAD BOOTS", "KEY HELD",   "REQUESTED",
+                                       "DSP STOPPED", "CPU PANIC",   "READ FAILED"};
+    _Static_assert(DKRT_SAFE_COUNTER == 1 && DKRT_SAFE_KEY == 2 && DKRT_SAFE_FLAG == 3 &&
+                       DKRT_SAFE_DSP == 4 && DKRT_SAFE_PANIC == 5 && DKRT_SAFE_READ == 6,
                    "why[] follows the DKRT_SAFE_* values");
     t_s(t, reason < 7 ? why[reason] : why[0]);
 }
@@ -326,7 +359,8 @@ static void row_name(int i, int max, txt *t)
 {
     const uint8_t *p = g_ent[i].path;
     int l = path_len(p, 63);
-    if (l > 4 && p[l - 4] == '.' && lower((char)p[l - 3]) == 'd' && lower((char)p[l - 2]) == 'k' && lower((char)p[l - 1]) == 'm')
+    if (l > 4 && p[l - 4] == '.' && lower((char)p[l - 3]) == 'd' && lower((char)p[l - 2]) == 'k' &&
+        lower((char)p[l - 1]) == 'm')
         l -= 4;
     txt full;
     t_init(&full);
@@ -616,7 +650,8 @@ static void fill_about(dk_ui_menu *m, void *ctx)
         arow(m, "DSP STOPPED");
         if (d.dsp_crumb != 0) {
             /* the DSP's last breadcrumb: the step, the voice and the machine type (finding 48) */
-            static const char *const step[8] = {"?", "ENTER", "FOUND", "STOCK", "CALL", "RET", "COPY", "DONE"};
+            static const char *const step[8] = {"?",    "ENTER", "FOUND", "STOCK",
+                                                "CALL", "RET",   "COPY",  "DONE"};
             uint32_t s = d.dsp_crumb & 0xff;
             t_init(&t);
             t_s(&t, "LAST: ");
@@ -649,7 +684,9 @@ static void fill_about(dk_ui_menu *m, void *ctx)
     int32_t selection_result = dkrt_selection_get(&g_sel);
     if (selection_result != DKRT_OK)
         arow(m, "SELECTION READ ERROR");
-    uint32_t n = selection_result != DKRT_OK ? 0 : g_boot.count > DKRT_SEL_MAX ? DKRT_SEL_MAX : g_boot.count;
+    uint32_t n = selection_result != DKRT_OK   ? 0
+                 : g_boot.count > DKRT_SEL_MAX ? DKRT_SEL_MAX
+                                               : g_boot.count;
     for (uint32_t k = 0; k < n; k++) {
         const uint8_t *p = g_sel.paths[k];
         t_init(&t);
@@ -674,9 +711,11 @@ static void fill_about(dk_ui_menu *m, void *ctx)
 
 /* The resources the page shows, in order: the CAPACITY kind, the row label and 1 when the row shows a percent (bytes), 0 for used/limit.
    Left out: the staging buffer, the selection, the effect slots and the map entries (they say nothing a user can act on). */
-static const uint8_t mem_kind[7] = {DKRT_CAPK_DSP_AREA, DKRT_CAPK_ARENA, DKRT_CAPK_MODULES, DKRT_CAPK_MACHINE_ROWS,
-                                    DKRT_CAPK_VOICE_ROWS, DKRT_CAPK_PARAM_ROWS, DKRT_CAPK_PAGE_ROWS};
-static const char *const mem_label[7] = {"DSP   ", "CPU   ", "MODS  ", "MACH  ", "VOICE ", "PARAM ", "PAGE  "};
+static const uint8_t mem_kind[7] = {
+    DKRT_CAPK_DSP_AREA,   DKRT_CAPK_ARENA,      DKRT_CAPK_MODULES,  DKRT_CAPK_MACHINE_ROWS,
+    DKRT_CAPK_VOICE_ROWS, DKRT_CAPK_PARAM_ROWS, DKRT_CAPK_PAGE_ROWS};
+static const char *const mem_label[7] = {"DSP   ", "CPU   ", "MODS  ", "MACH  ",
+                                         "VOICE ", "PARAM ", "PAGE  "};
 static const uint8_t mem_pct[7] = {1, 1, 0, 0, 0, 0, 0};
 
 /* One MEMORY row: the label, a ten-character bar (| used, . free: both are 2 pixels wide, so the bar keeps its width; # is 6 pixels
@@ -1010,7 +1049,10 @@ static void fill_modules(dk_ui_menu *m, void *ctx)
     g_hdr = 0;
     g_empty_text[0] = 0;
     if (STORE != 1) {
-        copy_text((uint8_t *)g_empty_text, sizeof g_empty_text, STORE == 2 ? "NO STORE" : STORE == 3 ? "STORE READ ERROR" : "BAD STORE");
+        copy_text((uint8_t *)g_empty_text, sizeof g_empty_text,
+                  STORE == 2   ? "NO STORE"
+                  : STORE == 3 ? "STORE READ ERROR"
+                               : "BAD STORE");
         keep(DK_LOAD[DK_LOAD_N++], g_empty_text);
         return;
     }
@@ -1100,7 +1142,8 @@ static void modules_check(void *ctx, int row, int on)
         dk_ui_check(g_modules, 0, 0);
         return;
     }
-    if (row < (int)NENT && dashed(row)) /* the check mark is off for it, so YES came as "on": it means off */
+    if (row < (int)NENT &&
+        dashed(row)) /* the check mark is off for it, so YES came as "on": it means off */
         on = 0;
     set_tick(row, on);
 }
@@ -1135,7 +1178,8 @@ static void panel_route(void *ctx, int row)
     static const char *items[2];
     DK_ROUTE_N = 0;
     g_route_row = row;
-    if ((g_fx[j].allowed & ROUTE_SEND) && (DK_FXR_PEND[j] == ROUTE_SEND || sends_except(j) < g_fx_slots)) {
+    if ((g_fx[j].allowed & ROUTE_SEND) &&
+        (DK_FXR_PEND[j] == ROUTE_SEND || sends_except(j) < g_fx_slots)) {
         items[DK_ROUTE_N] = "SEND";
         DK_ROUTE_ITEM[DK_ROUTE_N++] = ROUTE_SEND;
     }
@@ -1314,7 +1358,9 @@ static void fill_info(dk_ui_menu *m, void *ctx)
     irow(m, &t);
     t_init(&t);
     t_s(&t, "STATUS ");
-    t_s(&t, e->flags & DKRT_SCAN_LOADING ? "LOADING" : e->flags & DKRT_SCAN_LOADED ? "LOADED" : "NOT LOADED");
+    t_s(&t, e->flags & DKRT_SCAN_LOADING  ? "LOADING"
+            : e->flags & DKRT_SCAN_LOADED ? "LOADED"
+                                          : "NOT LOADED");
     irow(m, &t);
     if (row_needs(i)) {
         t_init(&t);
@@ -1449,19 +1495,32 @@ static void open_modules(void *ctx, int arg)
     scan_store();
     read_fx();
     match_fx();
-    dk_ui_select(g_modules, STORE == 1 && NENT > 0 && g_boot.safe != 0); /* the first module, below the safe-mode header */
+    dk_ui_select(g_modules,
+                 STORE == 1 && NENT > 0 &&
+                     g_boot.safe != 0); /* the first module, below the safe-mode header */
     dk_ui_open(g_modules);
 }
 
 /* ---- the SETTINGS row ------------------------------------------------------------------------------------------------ */
 
-static const dk_ui_menu_desc main_desc = {.name = "DigikitMenu", .title = "DIGIKIT", .fill = fill_main};
-static const dk_ui_menu_desc about_desc = {.name = "DigikitAboutMenu", .title = "ABOUT", .flags = DK_UI_TEXT_PAGE, .fill = fill_about};
-static const dk_ui_menu_desc health_desc = {.name = "DigikitHealthMenu", .title = "HEALTH", .flags = DK_UI_TEXT_PAGE, .fill = fill_health};
-static const dk_ui_menu_desc mem_desc = {.name = "DigikitMemoryMenu", .title = "MEMORY", .flags = DK_UI_TEXT_PAGE, .fill = fill_mem};
-static const dk_ui_menu_desc info_desc = {.name = "DigikitInfoMenu", .title = "INFO", .flags = DK_UI_TEXT_PAGE, .fill = fill_info};
-static const dk_ui_menu_desc modules_desc = {.name = "DigikitModulesMenu", .title = "MODULES", .flags = DK_UI_LIST, .fill = fill_modules,
-                                             .empty = g_empty_text, .panel = modules_panel, .check = modules_check, .back = modules_back};
+static const dk_ui_menu_desc main_desc = {
+    .name = "DigikitMenu", .title = "DIGIKIT", .fill = fill_main};
+static const dk_ui_menu_desc about_desc = {
+    .name = "DigikitAboutMenu", .title = "ABOUT", .flags = DK_UI_TEXT_PAGE, .fill = fill_about};
+static const dk_ui_menu_desc health_desc = {
+    .name = "DigikitHealthMenu", .title = "HEALTH", .flags = DK_UI_TEXT_PAGE, .fill = fill_health};
+static const dk_ui_menu_desc mem_desc = {
+    .name = "DigikitMemoryMenu", .title = "MEMORY", .flags = DK_UI_TEXT_PAGE, .fill = fill_mem};
+static const dk_ui_menu_desc info_desc = {
+    .name = "DigikitInfoMenu", .title = "INFO", .flags = DK_UI_TEXT_PAGE, .fill = fill_info};
+static const dk_ui_menu_desc modules_desc = {.name = "DigikitModulesMenu",
+                                             .title = "MODULES",
+                                             .flags = DK_UI_LIST,
+                                             .fill = fill_modules,
+                                             .empty = g_empty_text,
+                                             .panel = modules_panel,
+                                             .check = modules_check,
+                                             .back = modules_back};
 
 static void open_main(void *ctx, int arg)
 {

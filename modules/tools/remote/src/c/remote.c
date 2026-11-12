@@ -20,6 +20,7 @@
  * by the decoder", not "applied". */
 
 #include <dk/core/api.h>
+#include <dk/core/text.h>
 #include <dk/platform/ui.h>
 
 typedef uint32_t u32;
@@ -80,7 +81,7 @@ static int32_t key(u32 cmd, u32 seq, const u8 *body, u32 len, u8 *out)
         if (body[1])
             held[body[0] >> 3] |= (u8)(1u << (body[0] & 7u));
         else
-            held[body[0] >> 3] &= (u8)~(1u << (body[0] & 7u));
+            held[body[0] >> 3] &= (u8) ~(1u << (body[0] & 7u));
     }
     return r;
 }
@@ -139,7 +140,7 @@ static int release_all(void)
         if (held[c >> 3] & (1u << (c & 7u))) {
             int r = input_key(c, 0);
             if (r == 0)
-                held[c >> 3] &= (u8)~(1u << (c & 7u));
+                held[c >> 3] &= (u8) ~(1u << (c & 7u));
             else
                 worst = r;
         }
@@ -199,24 +200,6 @@ static int held_count(void)
     return n;
 }
 
-/* Appends the decimal text of v at s[n]; returns the new length. */
-static int put_num(char *s, int n, int v)
-{
-    char tmp[12];
-    int k = 0;
-    if (v < 0) {
-        s[n++] = '-';
-        v = -v;
-    }
-    do {
-        tmp[k++] = (char)('0' + v % 10);
-        v /= 10;
-    } while (v);
-    while (k)
-        s[n++] = tmp[--k];
-    return n;
-}
-
 static int put_str(char *s, int n, const char *t)
 {
     while (*t)
@@ -240,7 +223,7 @@ static void fill(dk_ui_menu *m, void *ctx)
     (void)ctx;
     settings_menu = m;
     n = put_str(t, 0, "KEYS HELD ");
-    n = put_num(t, n, held_count());
+    n += (int)dk_text_itoa(t + n, held_count());
     t[n] = 0;
     dk_ui_text(m, t);
     if (last_what == 0) {
@@ -251,16 +234,16 @@ static void fill(dk_ui_menu *m, void *ctx)
         dk_ui_text(m, t);
     } else {
         n = put_str(t, 0, last_what == 1 ? "LAST: KEY " : "LAST: TURN ");
-        n = put_num(t, n, last_a);
+        n += (int)dk_text_itoa(t + n, last_a);
         t[n++] = last_what == 1 ? (last_b ? 'D' : 'U') : ' ';
         if (last_what == 2)
-            n = put_num(t, n, last_b);
+            n += (int)dk_text_itoa(t + n, last_b);
         t[n] = 0;
         dk_ui_text(m, t);
     }
     if (last_what && last_r) {
         n = put_str(t, 0, "ERROR ");
-        n = put_num(t, n, last_r);
+        n += (int)dk_text_itoa(t + n, last_r);
         t[n] = 0;
         dk_ui_text(m, t);
     }

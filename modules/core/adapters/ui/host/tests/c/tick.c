@@ -33,13 +33,34 @@ void tk_reset(void)
     }
     ts = (ui_ticks){0};
 }
-int tk_set(int id, uint32_t ms, uint32_t now) { return ui_ticks_set(&ts, cb, (void *)(intptr_t)id, ms, now); }
-int tk_set_other(uint32_t ms, uint32_t now) { return ui_ticks_set(&ts, cb_other, 0, ms, now); }
-int tk_set_null(void) { return ui_ticks_set(&ts, 0, 0, 10, 0); }
-uint32_t tk_run(uint32_t now, uint32_t per_s) { return ui_ticks_run(&ts, now, per_s); }
-int tk_calls(int id) { return calls[id]; }
-void tk_stop_after(int id, uint32_t n) { stop_after[id] = n; }
-uint32_t tk_active(void) { return ui_ticks_active(&ts); }
+int tk_set(int id, uint32_t ms, uint32_t now)
+{
+    return ui_ticks_set(&ts, cb, (void *)(intptr_t)id, ms, now);
+}
+int tk_set_other(uint32_t ms, uint32_t now)
+{
+    return ui_ticks_set(&ts, cb_other, 0, ms, now);
+}
+int tk_set_null(void)
+{
+    return ui_ticks_set(&ts, 0, 0, 10, 0);
+}
+uint32_t tk_run(uint32_t now, uint32_t per_s)
+{
+    return ui_ticks_run(&ts, now, per_s);
+}
+int tk_calls(int id)
+{
+    return calls[id];
+}
+void tk_stop_after(int id, uint32_t n)
+{
+    stop_after[id] = n;
+}
+uint32_t tk_active(void)
+{
+    return ui_ticks_active(&ts);
+}
 
 /* ---- part 2: a module that redraws while a load runs ---- */
 
@@ -74,9 +95,27 @@ int tk_module_open(void)
         return -1;
     return dk_ui_tick(poll, 0, 100);
 }
-void tk_module_finish(void) { load_done = 1; }
-int tk_module_polls(void) { return loading_polls; }
-int tk_module_fills(void) { return fills; }
-int tk_module_stop(void) { return dk_ui_tick(poll, 0, 0); }
-int tk_module_restart(uint32_t ms) { return dk_ui_tick(poll, 0, ms); }
-int tk_module_has_cap(void) { return dk_ui_has(DK_UI_CAP_TICK); }
+void tk_module_finish(void)
+{
+    load_done = 1;
+}
+int tk_module_polls(void)
+{
+    return loading_polls;
+}
+int tk_module_fills(void)
+{
+    return fills;
+}
+int tk_module_stop(void)
+{
+    return dk_ui_tick(poll, 0, 0);
+}
+int tk_module_restart(uint32_t ms)
+{
+    return dk_ui_tick(poll, 0, ms);
+}
+int tk_module_has_cap(void)
+{
+    return dk_ui_has(DK_UI_CAP_TICK);
+}

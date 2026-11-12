@@ -33,7 +33,8 @@ static inline uint32_t ui_ticks_active(const ui_ticks *ts)
 
 /* Set, change or remove the timer of (fn, ctx): `ms` 0 removes it (0 even when there is none). A new or changed timer first fires one period
    after `now`. -1 when fn is 0 or the table is full. */
-static inline int ui_ticks_set(ui_ticks *ts, dk_ui_tick_fn *fn, void *ctx, uint32_t ms, uint32_t now)
+static inline int ui_ticks_set(ui_ticks *ts, dk_ui_tick_fn *fn, void *ctx, uint32_t ms,
+                               uint32_t now)
 {
     uint32_t i;
     ui_tick *free_slot = 0;

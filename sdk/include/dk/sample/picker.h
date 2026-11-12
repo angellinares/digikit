@@ -1,6 +1,6 @@
 /* <dk/sample/picker.h>: the on-device sample picker of a sampler machine that owns a 16-entry sample pool (<dk/sample/pool.h>): the
-   chooser (<dk/chooser/chooser.h>) filled with the pool. Shared source, not a runtime call: the module lists sdk/src/sample/picker.c,
-   sdk/src/chooser/chooser.c and sdk/src/chooser/logic.c in its [[object]] sources (design: docs/design/sample-picker.md, docs/design/ui-rules.md).
+   chooser (<dk/chooser/chooser.h>) filled with the pool. Shared source, not a runtime call: the packer links sdk/src/sample/picker.c and the chooser and core
+   sources it needs (design: docs/design/sample-picker.md, docs/design/ui-rules.md).
 
    The module calls three functions:
 

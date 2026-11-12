@@ -11,11 +11,14 @@
 
 struct pdw_hash {
     uint32_t a, b, c;
-    uint32_t n;    /* bytes carried in buf (0 to 12) */
+    uint32_t n; /* bytes carried in buf (0 to 12) */
     uint8_t buf[12];
 };
 
-static inline uint32_t pdw_rot(uint32_t x, uint32_t k) { return (x << k) | (x >> (32u - k)); }
+static inline uint32_t pdw_rot(uint32_t x, uint32_t k)
+{
+    return (x << k) | (x >> (32u - k));
+}
 
 static inline void pdw_hash_init(struct pdw_hash *h)
 {
@@ -37,12 +40,24 @@ static inline uint32_t pdw_word(const uint8_t *p)
 static inline void pdw_hash_block(struct pdw_hash *h, const uint8_t *p)
 {
     uint32_t a = h->a + pdw_word(p), b = h->b + pdw_word(p + 4), c = h->c + pdw_word(p + 8);
-    a -= c; a ^= pdw_rot(c, 4);  c += b;
-    b -= a; b ^= pdw_rot(a, 6);  a += c;
-    c -= b; c ^= pdw_rot(b, 8);  b += a;
-    a -= c; a ^= pdw_rot(c, 16); c += b;
-    b -= a; b ^= pdw_rot(a, 19); a += c;
-    c -= b; c ^= pdw_rot(b, 4);  b += a;
+    a -= c;
+    a ^= pdw_rot(c, 4);
+    c += b;
+    b -= a;
+    b ^= pdw_rot(a, 6);
+    a += c;
+    c -= b;
+    c ^= pdw_rot(b, 8);
+    b += a;
+    a -= c;
+    a ^= pdw_rot(c, 16);
+    c += b;
+    b -= a;
+    b ^= pdw_rot(a, 19);
+    a += c;
+    c -= b;
+    c ^= pdw_rot(b, 4);
+    b += a;
     h->a = a;
     h->b = b;
     h->c = c;
@@ -52,7 +67,8 @@ static inline void pdw_hash_block(struct pdw_hash *h, const uint8_t *p)
 static inline uint32_t pdw_tail(const uint8_t *p, uint32_t n)
 {
     uint32_t w = 0, i;
-    for (i = 0; i < n; i++) w |= (uint32_t)p[i] << (24u - 8u * i);
+    for (i = 0; i < n; i++)
+        w |= (uint32_t)p[i] << (24u - 8u * i);
     return w;
 }
 
@@ -60,15 +76,18 @@ static inline uint32_t pdw_tail(const uint8_t *p, uint32_t n)
 static inline void pdw_hash_update(struct pdw_hash *h, const uint8_t *p, uint32_t n)
 {
     uint32_t have = h->n, i;
-    if (n == 0) return;
+    if (n == 0)
+        return;
     if (have + n <= 12u) {
-        for (i = 0; i < n; i++) h->buf[have + i] = p[i];
+        for (i = 0; i < n; i++)
+            h->buf[have + i] = p[i];
         h->n = have + n;
         return;
     }
     if (have > 0) {
         uint32_t take = 12u - have;
-        for (i = 0; i < take; i++) h->buf[have + i] = p[i];
+        for (i = 0; i < take; i++)
+            h->buf[have + i] = p[i];
         pdw_hash_block(h, h->buf);
         p += take;
         n -= take;
@@ -78,7 +97,8 @@ static inline void pdw_hash_update(struct pdw_hash *h, const uint8_t *p, uint32_
         p += 12;
         n -= 12;
     }
-    for (i = 0; i < n; i++) h->buf[i] = p[i];
+    for (i = 0; i < n; i++)
+        h->buf[i] = p[i];
     h->n = n;
 }
 
@@ -87,7 +107,8 @@ static inline uint32_t pdw_hash_finish(const struct pdw_hash *h)
 {
     uint32_t a = h->a, b = h->b, c = h->c, n = h->n;
     const uint8_t *p = h->buf;
-    if (n == 0) return c;
+    if (n == 0)
+        return c;
     if (n <= 4u) {
         a += pdw_tail(p, n);
     } else if (n <= 8u) {
@@ -98,13 +119,20 @@ static inline uint32_t pdw_hash_finish(const struct pdw_hash *h)
         b += pdw_word(p + 4);
         c += pdw_tail(p + 8, n - 8u);
     }
-    c ^= b; c -= pdw_rot(b, 14);
-    a ^= c; a -= pdw_rot(c, 11);
-    b ^= a; b -= pdw_rot(a, 25);
-    c ^= b; c -= pdw_rot(b, 16);
-    a ^= c; a -= pdw_rot(c, 4);
-    b ^= a; b -= pdw_rot(a, 14);
-    c ^= b; c -= pdw_rot(b, 24);
+    c ^= b;
+    c -= pdw_rot(b, 14);
+    a ^= c;
+    a -= pdw_rot(c, 11);
+    b ^= a;
+    b -= pdw_rot(a, 25);
+    c ^= b;
+    c -= pdw_rot(b, 16);
+    a ^= c;
+    a -= pdw_rot(c, 4);
+    b ^= a;
+    b -= pdw_rot(a, 14);
+    c ^= b;
+    c -= pdw_rot(b, 24);
     return c;
 }
 

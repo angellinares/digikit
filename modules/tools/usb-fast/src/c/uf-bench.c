@@ -4,6 +4,7 @@
 /* the code is placed as it is: no jump tables (data in the code) */
 #pragma GCC optimize("no-jump-tables")
 #include <dk/core/api.h>
+#include <dk/core/bytes.h>
 #include <dk/platform/file.h>
 #include <dk/platform/hash32.h>
 #include <dk/platform/io.h>
@@ -14,14 +15,6 @@ typedef int32_t i32;
 #define E_MSG (-50)
 
 static const dk_api *sdk;
-
-static void put32(u8 *p, u32 v)
-{
-    p[0] = (u8)(v >> 24);
-    p[1] = (u8)(v >> 16);
-    p[2] = (u8)(v >> 8);
-    p[3] = (u8)v;
-}
 
 /* Storage bench (a measurement aid, no USB): STATUS (0x37) with body 'B' [mask [MiB]] starts it, body 'R' returns the last times. It runs in its own I/O
  * job, so the SysEx handler returns at once. Every test moves MiB (default 8) and logs "bn.<name>.ms" and "bn.<name>.kbps" (MOD_LOG, info), timed with
@@ -40,7 +33,22 @@ static void put32(u8 *p, u32 v)
 #define BN_DRIVE_FILE "Samples/dkbench.bin"
 #define BN_SLOTS 14u
 #define BN_PHASES 10u
-enum { S_S64, S_S1M, S_D64, S_D256, S_D1M, S_DCL, S_DCL_CLS, S_DCL_DEL, S_R64, S_R1M, S_H32, S_SCL, S_SCL_CLS, S_SCL_DEL };
+enum {
+    S_S64,
+    S_S1M,
+    S_D64,
+    S_D256,
+    S_D1M,
+    S_DCL,
+    S_DCL_CLS,
+    S_DCL_DEL,
+    S_R64,
+    S_R1M,
+    S_H32,
+    S_SCL,
+    S_SCL_CLS,
+    S_SCL_DEL
+};
 static i32 bn_job;
 static volatile u32 bn_req;
 static u32 bn_mask, bn_mib, bn_phase, bn_running;
@@ -207,16 +215,46 @@ static i32 bn_step(u8 *ctx)
     }
     u32 m = bn_mask;
     switch (bn_phase) {
-    case 0: if (m & 1u) bn_write("s64", DK_FILES_STORE, BN_STORE_FILE, 65536u, 0, S_S64); break;
-    case 1: if (m & 1u) bn_write("s1m", DK_FILES_STORE, BN_STORE_FILE, 1u << 20, 0, S_S1M); break;
-    case 2: if (m & 2u) bn_write("d64", DK_FILES_SAMPLES, BN_DRIVE_FILE, 65536u, 0, S_D64); break;
-    case 3: if (m & 2u) bn_write("d256", DK_FILES_SAMPLES, BN_DRIVE_FILE, 262144u, 0, S_D256); break;
-    case 4: if (m & 2u) bn_write("d1m", DK_FILES_SAMPLES, BN_DRIVE_FILE, 1u << 20, 0, S_D1M); break;
-    case 5: if (m & 4u) bn_write("dcl", DK_FILES_SAMPLES, BN_DRIVE_FILE, 1u << 20, 1, S_DCL); break;
-    case 6: if (m & 8u) bn_read("r64", 65536u, S_R64); break;
-    case 7: if (m & 8u) bn_read("r1m", 1u << 20, S_R1M); break;
-    case 8: if (m & 16u) bn_hash(); break;
-    default: if (m & 32u) bn_write("scl", DK_FILES_STORE, BN_STORE_FILE, 65536u, 1, S_SCL); break;
+    case 0:
+        if (m & 1u)
+            bn_write("s64", DK_FILES_STORE, BN_STORE_FILE, 65536u, 0, S_S64);
+        break;
+    case 1:
+        if (m & 1u)
+            bn_write("s1m", DK_FILES_STORE, BN_STORE_FILE, 1u << 20, 0, S_S1M);
+        break;
+    case 2:
+        if (m & 2u)
+            bn_write("d64", DK_FILES_SAMPLES, BN_DRIVE_FILE, 65536u, 0, S_D64);
+        break;
+    case 3:
+        if (m & 2u)
+            bn_write("d256", DK_FILES_SAMPLES, BN_DRIVE_FILE, 262144u, 0, S_D256);
+        break;
+    case 4:
+        if (m & 2u)
+            bn_write("d1m", DK_FILES_SAMPLES, BN_DRIVE_FILE, 1u << 20, 0, S_D1M);
+        break;
+    case 5:
+        if (m & 4u)
+            bn_write("dcl", DK_FILES_SAMPLES, BN_DRIVE_FILE, 1u << 20, 1, S_DCL);
+        break;
+    case 6:
+        if (m & 8u)
+            bn_read("r64", 65536u, S_R64);
+        break;
+    case 7:
+        if (m & 8u)
+            bn_read("r1m", 1u << 20, S_R1M);
+        break;
+    case 8:
+        if (m & 16u)
+            bn_hash();
+        break;
+    default:
+        if (m & 32u)
+            bn_write("scl", DK_FILES_STORE, BN_STORE_FILE, 65536u, 1, S_SCL);
+        break;
     }
     if (++bn_phase < BN_PHASES)
         return DK_IO_MORE;
@@ -248,14 +286,14 @@ i32 uf_bench_command(const u8 *body, u32 len, u8 *out)
             bn_mib = 8u;
         bn_req = 1;
         sdk->io_wake(bn_job);
-        put32(out, 1);
+        dk_bytes_put32(out, 1);
         return 4;
     }
     if (body[0] == 'R') {
-        put32(out, bn_running);
-        put32(out + 4, bn_phase);
+        dk_bytes_put32(out, bn_running);
+        dk_bytes_put32(out + 4, bn_phase);
         for (u32 i = 0; i < BN_SLOTS; i++)
-            put32(out + 8 + 4 * i, bn_ms[i]);
+            dk_bytes_put32(out + 8 + 4 * i, bn_ms[i]);
         return 8 + 4 * BN_SLOTS;
     }
     return E_MSG;

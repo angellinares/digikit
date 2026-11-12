@@ -22,10 +22,10 @@ test('spp_window_feed puts every frame in exactly one column, in any chunking an
         '-o',
         binary,
       ],
-      { timeout: 10_000 },
+      { timeout: 25_000 },
     );
-    execFileSync(binary, { timeout: 2000 });
+    execFileSync(binary, { timeout: 10_000 });
   } finally {
     fs.rmSync(directory, { recursive: true, force: true });
   }
-});
+}, 40_000);

@@ -5,8 +5,10 @@
 #include <dk/core/api.h>
 
 #define UF_TRACE 0 /* per-file time totals in the log at END (hardware hunt); 0 removes them */
-#define UF_BENCH 0 /* 1 for measurement builds: STATUS body 'B' runs the storage bench, 'R' reads its results (uf-bench.c) */
-#define UF_KNOBS 0 /* 1 for the staging buffer test: STATUS body 'A' [bytes u32] sets the largest staging buffer of the next BEGIN */
+#define UF_BENCH                                                                                   \
+    0 /* 1 for measurement builds: STATUS body 'B' runs the storage bench, 'R' reads its results (uf-bench.c) */
+#define UF_KNOBS                                                                                   \
+    0 /* 1 for the staging buffer test: STATUS body 'A' [bytes u32] sets the largest staging buffer of the next BEGIN */
 
 #if UF_TRACE || UF_BENCH
 /* a line of the runtime log: `tag` is at most 16 chars (usb-fast.c) */

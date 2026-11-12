@@ -8,13 +8,47 @@
 #ifdef __cplusplus
 extern "C" {
 #endif
-static inline char *mktemp(char *t) { return t; }
-static inline mode_t umask(mode_t m) { (void)m; return 022; }
-static inline pid_t fork(void) { errno = ENOSYS; return -1; }
-static inline pid_t wait(int *s) { (void)s; errno = ENOSYS; return -1; }
-static inline int execv(const char *p, char *const a[]) { (void)p; (void)a; errno = ENOSYS; return -1; }
-static inline int execvp(const char *p, char *const a[]) { (void)p; (void)a; errno = ENOSYS; return -1; }
-static inline int kill(pid_t p, int s) { (void)p; (void)s; errno = ENOSYS; return -1; }
+static inline char *mktemp(char *t)
+{
+    return t;
+}
+static inline mode_t umask(mode_t m)
+{
+    (void)m;
+    return 022;
+}
+static inline pid_t fork(void)
+{
+    errno = ENOSYS;
+    return -1;
+}
+static inline pid_t wait(int *s)
+{
+    (void)s;
+    errno = ENOSYS;
+    return -1;
+}
+static inline int execv(const char *p, char *const a[])
+{
+    (void)p;
+    (void)a;
+    errno = ENOSYS;
+    return -1;
+}
+static inline int execvp(const char *p, char *const a[])
+{
+    (void)p;
+    (void)a;
+    errno = ENOSYS;
+    return -1;
+}
+static inline int kill(pid_t p, int s)
+{
+    (void)p;
+    (void)s;
+    errno = ENOSYS;
+    return -1;
+}
 #ifdef __cplusplus
 }
 #endif

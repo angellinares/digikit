@@ -27,24 +27,32 @@
 #include <dk/core/status.h>
 
 /* The runtime's E_SET_* results (sdk/sdk.toml [protocol.status]) named in the comment above. */
-#define DK_SET_E_KEY   DK_E_SET_KEY /* E_SET_KEY: stale handle or a key that breaks the rules */
-#define DK_SET_E_FULL  DK_E_SET_FULL /* E_SET_FULL */
+#define DK_SET_E_KEY DK_E_SET_KEY     /* E_SET_KEY: stale handle or a key that breaks the rules */
+#define DK_SET_E_FULL DK_E_SET_FULL   /* E_SET_FULL */
 #define DK_SET_E_NOKEY DK_E_SET_NOKEY /* E_SET_NOKEY */
 #define DK_SET_E_VALUE DK_E_SET_VALUE /* E_SET_VALUE */
-#define DK_SET_E_OFF   DK_E_SET_OFF /* E_SET_OFF */
+#define DK_SET_E_OFF DK_E_SET_OFF     /* E_SET_OFF */
 
 /* Acquires the handle; call in dkm_init. Positive handle, or a negative error outside dkm_init. */
-static inline int32_t dk_settings_client(const dk_api *api) { return api->settings_client(); }
+static inline int32_t dk_settings_client(const dk_api *api)
+{
+    return api->settings_client();
+}
 /* Reads the value of `key` (NUL-terminated) into `out` (`cap` bytes): its length, or a negative error. */
-static inline int32_t dk_settings_get(const dk_api *api, int32_t client, const char *key, void *out, uint32_t cap) {
+static inline int32_t dk_settings_get(const dk_api *api, int32_t client, const char *key, void *out,
+                                      uint32_t cap)
+{
     return api->settings_get((uint32_t)client, key, out, cap);
 }
 /* Sets `key` to the `len` bytes at `value`: 0, or a negative error. UI task. */
-static inline int32_t dk_settings_put(const dk_api *api, int32_t client, const char *key, const void *value, uint32_t len) {
+static inline int32_t dk_settings_put(const dk_api *api, int32_t client, const char *key,
+                                      const void *value, uint32_t len)
+{
     return api->settings_put((uint32_t)client, key, value, len);
 }
 /* Removes `key`: 0, or a negative error. UI task. */
-static inline int32_t dk_settings_remove(const dk_api *api, int32_t client, const char *key) {
+static inline int32_t dk_settings_remove(const dk_api *api, int32_t client, const char *key)
+{
     return api->settings_remove((uint32_t)client, key);
 }
 #endif

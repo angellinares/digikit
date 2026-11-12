@@ -20,18 +20,38 @@ void dkrt_log_ev(uint32_t kind, uint32_t flags, const uint32_t *a)
     events++;
     ev_kind = kind;
     ev_flags = flags;
-    for (int i = 0; i < 5; i++) ev_a[i] = a[i];
+    for (int i = 0; i < 5; i++)
+        ev_a[i] = a[i];
 }
 
-u32 dkrt_blocks(void) { return blocks; }
-int input_key(u32 code, u32 down) { (void)code; (void)down; return 0; }
+u32 dkrt_blocks(void)
+{
+    return blocks;
+}
+int input_key(u32 code, u32 down)
+{
+    (void)code;
+    (void)down;
+    return 0;
+}
 /* The settings page of the module is tested on the host UI model (modules/core/adapters/ui/host); here its calls do nothing. */
-void dk_ui_text(dk_ui_menu *m, const char *text) { (void)m; (void)text; }
+void dk_ui_text(dk_ui_menu *m, const char *text)
+{
+    (void)m;
+    (void)text;
+}
 void dk_ui_action(dk_ui_menu *m, const char *text, dk_ui_act_fn *run, void *ctx, int arg)
 {
-    (void)m; (void)text; (void)run; (void)ctx; (void)arg;
+    (void)m;
+    (void)text;
+    (void)run;
+    (void)ctx;
+    (void)arg;
 }
-void dk_ui_refresh(dk_ui_menu *m) { (void)m; }
+void dk_ui_refresh(dk_ui_menu *m)
+{
+    (void)m;
+}
 int input_turn(u32 encoder, int delta)
 {
     calls++;
@@ -49,7 +69,11 @@ static int32_t register_cmds(u32 first, u32 count, dk_service_cmd *handler)
     }
     return 0;
 }
-static void log_message(const u8 *message, u32 value) { (void)message; assert(value == 0); }
+static void log_message(const u8 *message, u32 value)
+{
+    (void)message;
+    assert(value == 0);
+}
 
 static void accepted(u32 encoder, int delta, int expected)
 {
@@ -58,8 +82,8 @@ static void accepted(u32 encoder, int delta, int expected)
     assert(handlers[0x39](0x39, 1, body, 2, out) == 1);
     int taken = (s8)out[0];
     if (taken != expected)
-        fprintf(stderr, "encoder %u delta %d at %u: expected %d, got %d\n",
-                encoder, delta, blocks, expected, taken);
+        fprintf(stderr, "encoder %u delta %d at %u: expected %d, got %d\n", encoder, delta, blocks,
+                expected, taken);
     assert(taken >= -30 && taken <= 30);
     assert(taken == expected);
     assert(calls == before + (expected != 0));
@@ -68,7 +92,8 @@ static void accepted(u32 encoder, int delta, int expected)
     if (expected) {
         assert(last_encoder == encoder);
         assert(last_delta == expected);
-        assert(ev_kind == 41u && ev_flags == (3u << 1) && ev_a[0] == 2u && ev_a[1] == encoder && (int)ev_a[2] == expected);
+        assert(ev_kind == 41u && ev_flags == (3u << 1) && ev_a[0] == 2u && ev_a[1] == encoder &&
+               (int)ev_a[2] == expected);
     }
 }
 

@@ -6,8 +6,8 @@
 #define DK_PARAM_H
 
 #define DK_PARAM_E_STATE (-0x10001) /* called outside the flow of a click */
-#define DK_PARAM_E_ARG   (-0x10002) /* a track above 15, or a word the module does not have */
-#define DK_PARAM_E_HELD  (-0x10003) /* a mode key (TRIG, FUNC) is held: nothing was written */
+#define DK_PARAM_E_ARG (-0x10002)   /* a track above 15, or a word the module does not have */
+#define DK_PARAM_E_HELD (-0x10003)  /* a mode key (TRIG, FUNC) is held: nothing was written */
 
 /* param_get returns a halfword (-0x8000 to 0x7fff) or a status below -0x8000. */
 #define DK_PARAM_IS_ERROR(v) ((v) < -0x8000)

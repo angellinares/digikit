@@ -9,6 +9,7 @@
         "{projectRoot}/project.json",
         "{projectRoot}/tests/**/*",
         "{projectRoot}/include/**/*",
+        "{projectRoot}/src/core/**/*",
         "jsToolchain",
         "{workspaceRoot}/vitest.host.config.ts",
         "{workspaceRoot}/vitest.host.projects.json",

@@ -19,8 +19,12 @@ typedef struct dk_hash32 {
 _Static_assert(sizeof(dk_hash32) == 28, "dk_hash32 layout");
 
 /* The 4 bytes of the file hash `h` as the store and `file_close` write them. */
-static inline void dk_hash32_bytes(uint32_t h, uint8_t out[4]) {
-    out[0] = (uint8_t)(h >> 24); out[1] = (uint8_t)(h >> 16); out[2] = (uint8_t)(h >> 8); out[3] = (uint8_t)h;
+static inline void dk_hash32_bytes(uint32_t h, uint8_t out[4])
+{
+    out[0] = (uint8_t)(h >> 24);
+    out[1] = (uint8_t)(h >> 16);
+    out[2] = (uint8_t)(h >> 8);
+    out[3] = (uint8_t)h;
 }
 
 #endif

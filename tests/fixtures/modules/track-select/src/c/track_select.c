@@ -20,6 +20,7 @@
  *                         < 0 error) and, when it is positive, columns * 4 bytes: per column int16 min then int16 max, big endian.
  */
 #include <dk/core/api.h>
+#include <dk/core/bytes.h>
 #include <dk/sample/pool.h>
 #include <dk/platform/ui.h>
 
@@ -43,14 +44,6 @@ static u32 be32(const u8 *p)
     return ((u32)p[0] << 24) | ((u32)p[1] << 16) | ((u32)p[2] << 8) | p[3];
 }
 
-static void put32(u8 *p, u32 v)
-{
-    p[0] = (u8)(v >> 24);
-    p[1] = (u8)(v >> 16);
-    p[2] = (u8)(v >> 8);
-    p[3] = (u8)v;
-}
-
 /* UI task: call the API for the current request until it is ready or fails. A result of a replaced request is dropped. */
 static void window_tick(void *ctx)
 {
@@ -70,7 +63,8 @@ static void window_tick(void *ctx)
     BARRIER();
     if (req == 0 || req != win_req)
         return;
-    r = runtime->sample_pool_peaks_window(handle, index, token, first, frames, columns, (u8 *)win_buf, sizeof win_buf);
+    r = runtime->sample_pool_peaks_window(handle, index, token, first, frames, columns,
+                                          (u8 *)win_buf, sizeof win_buf);
     BARRIER();
     if (r != 0 && req == win_req)
         win_ret = r;
@@ -82,7 +76,7 @@ static int32_t window_cmd(const u8 *body, u32 len, u8 *out)
     if (len == 2 && body[1] == 'r') {
         int32_t r = win_ret;
         BARRIER();
-        put32(out, (u32)r);
+        dk_bytes_put32(out, (u32)r);
         if (r <= 0 || (u32)r > DK_SAMPLE_WINDOW_MAX)
             return 4;
         for (i = 0; i < (u32)r; i++) {
@@ -159,13 +153,17 @@ static int32_t status_cmd(u32 cmd, u32 seq, const u8 *body, u32 len, u8 *out)
 
 int32_t dkm_init(const dk_api *api)
 {
-    if (api->version != 1 || api->size < offsetof(dk_api, sample_pool_info) + sizeof(api->sample_pool_info)
-        || !api->sample_pool_add || !api->sample_pool_clear || !api->sample_pool_status || !api->sample_pool_info)
+    if (api->version != 1 ||
+        api->size < offsetof(dk_api, sample_pool_info) + sizeof(api->sample_pool_info) ||
+        !api->sample_pool_add || !api->sample_pool_clear || !api->sample_pool_status ||
+        !api->sample_pool_info)
         return DK_SAMPLE_E_CONTRACT;
     runtime = api;
     /* The window command is optional: without the API field or the UI timer 'w' returns an error status. */
-    if (api->size >= offsetof(dk_api, sample_pool_peaks_window) + sizeof(api->sample_pool_peaks_window)
-        && api->sample_pool_peaks_window && dk_ui_has(DK_UI_CAP_TICK) && dk_ui_tick(window_tick, 0, TICK_MS) == 0)
+    if (api->size >=
+            offsetof(dk_api, sample_pool_peaks_window) + sizeof(api->sample_pool_peaks_window) &&
+        api->sample_pool_peaks_window && dk_ui_has(DK_UI_CAP_TICK) &&
+        dk_ui_tick(window_tick, 0, TICK_MS) == 0)
         win_ok = 1;
     api->register_cmds(0x3e, 1, pool_cmd);
     api->register_cmds(0x3f, 1, status_cmd);

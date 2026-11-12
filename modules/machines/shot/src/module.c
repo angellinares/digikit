@@ -20,16 +20,21 @@ DK_PARAM(shot, SHOT_P_END, shot_end, "End", "END", 0, 127, 127);
 DK_PARAM(shot, SHOT_P_PLAY, shot_play, "Play", "PLAY", 0, 3, 3);
 DK_PARAM_GLYPH(shot, SHOT_P_PLAY, DK_GLYPH_PLAY);
 DK_PARAM(shot, SHOT_P_PITCH, shot_pitch, "Pitch", "TUNE", 0, 127, 64);
-DK_PAGE(shot, "SHT", "SHOT", DK_KNOB(SHOT_P_SMP), DK_KNOB(SHOT_P_START), DK_KNOB(SHOT_P_END), DK_KNOB(SHOT_P_PLAY), DK_KNOB(SHOT_P_PITCH));
-DK_NATIVE_PAGE_V2_FLAGS(shot, 0, DK_PAGE_STOCK_OVERLAY, "SHOT", shot_controls_draw, shot_range_event,
-                 DK_PAGE_PARAM(SHOT_P_PITCH, 0), DK_PAGE_PARAM(SHOT_P_PLAY, 1), DK_PAGE_PARAM(SHOT_P_SMP, 3), DK_PAGE_PARAM(SHOT_P_START, 4), DK_PAGE_PARAM(SHOT_P_END, 7));
-DK_NATIVE_PAGE_V2_FLAGS(shot, 1, DK_PAGE_WIDE_CANVAS, "SHOT WAVE", shot_range_draw, shot_range_event,
-                 DK_PAGE_PARAM(SHOT_P_START, 4), DK_PAGE_LOCAL(0, 6), DK_PAGE_PARAM(SHOT_P_END, 7));
+DK_PAGE(shot, "SHT", "SHOT", DK_KNOB(SHOT_P_SMP), DK_KNOB(SHOT_P_START), DK_KNOB(SHOT_P_END),
+        DK_KNOB(SHOT_P_PLAY), DK_KNOB(SHOT_P_PITCH));
+DK_NATIVE_PAGE_V2_FLAGS(shot, 0, DK_PAGE_STOCK_OVERLAY, "SHOT", shot_controls_draw,
+                        shot_range_event, DK_PAGE_PARAM(SHOT_P_PITCH, 0),
+                        DK_PAGE_PARAM(SHOT_P_PLAY, 1), DK_PAGE_PARAM(SHOT_P_SMP, 3),
+                        DK_PAGE_PARAM(SHOT_P_START, 4), DK_PAGE_PARAM(SHOT_P_END, 7));
+DK_NATIVE_PAGE_V2_FLAGS(shot, 1, DK_PAGE_WIDE_CANVAS, "SHOT WAVE", shot_range_draw,
+                        shot_range_event, DK_PAGE_PARAM(SHOT_P_START, 4), DK_PAGE_LOCAL(0, 6),
+                        DK_PAGE_PARAM(SHOT_P_END, 7));
 DK_SAMPLE_TRACKS(0, _shot_rec, _shot_ctl);
 
 sample_view shot_samples;
 static const dk_api *g_api;
-static uint32_t click_track; /* the track of the page the SMP click came from: where the pick sets SMP */
+static uint32_t
+    click_track; /* the track of the page the SMP click came from: where the pick sets SMP */
 
 int32_t dkm_init(const dk_api *api)
 {
@@ -41,7 +46,10 @@ int32_t dkm_init(const dk_api *api)
         return handle < 0 ? handle : DK_SAMPLE_E_CONTRACT;
     sample_view_init(&shot_samples, api, (uint32_t)handle);
     g_api = api;
-    dk_sample_picker_init(api, (uint32_t)handle); /* the picker is optional: when it cannot start, a click on SMP does nothing */
+    dk_sample_picker_init(
+        api,
+        (uint32_t)
+            handle); /* the picker is optional: when it cannot start, a click on SMP does nothing */
     return 0;
 }
 
@@ -79,5 +87,6 @@ void shot_smp_click(uint32_t track)
     click_track = track;
     if (DK_API_HAS(g_api, param_get))
         raw = g_api->param_get(track, SHOT_P_SMP);
-    dk_sample_picker_open_pool(DK_PARAM_IS_ERROR(raw) || raw < 0 ? -1 : (int)(raw >> 8), smp_pick, 0);
+    dk_sample_picker_open_pool(DK_PARAM_IS_ERROR(raw) || raw < 0 ? -1 : (int)(raw >> 8), smp_pick,
+                               0);
 }
