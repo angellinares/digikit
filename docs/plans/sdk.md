@@ -113,7 +113,7 @@ const dk_module_def dk_module = {
 - The packer finds `dk_module` by symbol and writes `init`, `fini`, `tick` and `menu` into the `.dkm` header. The runtime calls them as
   it calls the `dkm_*` entries today.
 - `dk_module_ctx` is opaque. The runtime passes it to every lifecycle function, always as the parameter `ctx`. It identifies the module (today implicit in
-  a global) and answers `dk_module_ctx_device()` and `dk_module_ctx_runtime()` (the runtime version; `dk_module_ctx_runtime_version` is 29 characters, over the 27 of an import name); S3 adds `dk_module_ctx_has()`. Callbacks (host command handlers, I/O and job steps, intro
+  a global) and answers `dk_module_ctx_device()` and `dk_module_ctx_runtime_version()` (the runtime version); S3 adds `dk_module_ctx_has()`. Callbacks (host command handlers, I/O and job steps, intro
   frames) keep their signatures: none of them needed the Api table either.
 - `dk_module` grows by appended fields: event handlers such as "project changed" or "settings changed" (runtime-and-services section 8,
   ordered event tables).
@@ -163,13 +163,13 @@ since    = 11
 
 Renames that make the names consistent (the naming rules are in section 10): the file calls are one service, `dk_files_*` (`dk_files_open` gives one handle for
 listing and writing; `dk_file_create/write/close/abort/delete` become `dk_files_create/write/close/abort/delete` and take that handle first); menu functions become `dk_ui_menu_*` (`dk_ui_menu_new/open/close/select/refresh`), items
-`dk_ui_item_*` (`text`, `action`, `toggle`, `value`, `check`), dialogs keep `dk_ui_toast/confirm/choice`; `register_cmds` becomes
+`dk_ui_menu_add_*` (`text`, `action`, `toggle`, `value`, `submenu`) and `dk_ui_menu_check`/`dk_ui_menu_checked`, dialogs keep `dk_ui_toast/confirm/choice`; `register_cmds` becomes
 `dk_host_register`; `dkrt_blocks` becomes `dk_time_blocks`; `dkrt_log_ev` becomes `dk_log_event`; `dkrt_peek_range`, `dkrt_track_type`,
 `dkrt_selected_params` and `dkrt_log_sink_set` move to `platform/debug.h` as `dk_debug_*`. `fw_block_read`, `fw_alloc` and `fw_free` are
 deleted (no users). `DK_TRACE_INIT` goes; `DK_TRACE_LOG` calls `dk_log`.
 
 Limits checked on 2026-11-12: at most 64 imports per module (the largest module, `usb-fast`, needs about 25); runtime import names at most
-27 characters (all proposed names fit).
+31 characters (the table field is 32 bytes, as in the `.dkm`; all proposed names fit). `dk_store_read` becomes `dk_files_read(files, path, buf, cap)`.
 
 Example, a tool module:
 
@@ -194,7 +194,7 @@ static int32_t init(dk_module_ctx *ctx)
 
 static void menu(dk_module_ctx *ctx, dk_ui_menu *menu)
 {
-    dk_ui_item_text(menu, "BOOT SCREEN");
+    dk_ui_menu_add_text(menu, "BOOT SCREEN");
 }
 
 const dk_module_def dk_module = { .init = init, .menu = menu };
@@ -399,8 +399,10 @@ These come from the profiling work and land after the steps in section 12 that t
 | --- | --- | --- |
 | The module context is `ctx` and only that | type `dk_module_ctx`; parameter `ctx` | `int32_t init(dk_module_ctx *ctx)`, `void fini(...)`, `void tick(...)`, `void menu(dk_module_ctx *ctx, dk_ui_menu *menu)` |
 | Entry point | type `dk_module_def`, constant `dk_module` (the packer looks the symbol up) | `const dk_module_def dk_module = { .init = init };` |
-| A function is named after the handle type it works on | `dk_<type>_<verb>`; the `_open` accessors are named after the service they open: `dk_settings_open(ctx, &s)` returns a `dk_settings` | `dk_settings_get` works on `dk_settings`; `dk_module_ctx_device(ctx)` and `dk_module_ctx_runtime(ctx)` (the runtime version) work on `dk_module_ctx`; S3 adds `dk_module_ctx_has(ctx, cap)` |
-| A user-data pointer is `arg` | in sdk.toml `sig` strings, generated and hand-written headers | `dk_io_post(step, done, arg)`, `dk_job_post`, `dk_intro_take`, `dk_files_list(f, root, path, notify, arg)`, `dk_ui_item_action(menu, text, run, arg, value)` |
+| A function is named after the handle type it works on | `dk_<type>_<verb>`; the `_open` accessors are named after the service they open: `dk_settings_open(ctx, &s)` returns a `dk_settings` | `dk_settings_get` works on `dk_settings`; `dk_module_ctx_device(ctx)` and `dk_module_ctx_runtime_version(ctx)` (the runtime version) work on `dk_module_ctx`; S3 adds `dk_module_ctx_has(ctx, cap)` |
+| A function with no handle is named after its service | `dk_<service>_<verb>` (stateless calls, or calls that act on the calling module) | `dk_log_event`, `dk_time_blocks`, `dk_hash32_init`, `dk_param_get`, `dk_debug_peek`, `dk_host_register` |
+| Rows of a menu belong to `dk_ui_menu` | `dk_ui_menu_<verb>`; adding a row is `dk_ui_menu_add_<kind>` | `dk_ui_menu_add_text/action/toggle/value/submenu`, `dk_ui_menu_check`, `dk_ui_menu_checked` |
+| A user-data pointer is `arg` | in sdk.toml `sig` strings, generated and hand-written headers | `dk_io_post(step, done, arg)`, `dk_job_post`, `dk_intro_take`, `dk_files_list(f, root, path, notify, arg)`, `dk_ui_menu_add_action(menu, text, run, arg, value)` |
 | Callback types end in `_fn` | `dk_<service>_<what>_fn` | `dk_host_cmd_fn`, `dk_io_step_fn`, `dk_io_done_fn`, `dk_job_step_fn`, `dk_job_done_fn`, `dk_intro_frame_fn`, `dk_intro_done_fn`, `dk_files_event_fn`, `dk_ui_action_fn` |
 | Raw bytes | `void *` and `const void *`; lengths `uint32_t` | `void *dk_alloc(uint32_t size)`, `void dk_free(void *p)`, `dk_files_write(f, h, offset, const void *buf, len)` |
 | One handle per service | `dk_<service>_open(ctx, &handle)` gives it; every other call takes the handle first | `dk_files_open`, then `dk_files_list/poll/cancel/create/write/close/abort/delete(files, ...)` |
@@ -491,7 +493,7 @@ Every existing module is byte-identical (`sdk:hashes compare`). What S2b-2 inher
   old call goes; `dk_settings_get/put/remove` and `dk_intro_take` are old inline wrappers in their headers, defined only when
   `<dk/core/module.h>` was not included first. `dk_ui_menu_new`, `dk_ui_toast`, `dk_ui_confirm`, `dk_ui_choice` and `dk_ui_tick` are one import
   with the same signature in both entries (the `service`, `since` and `context` fields were added to those entries). S2b-2 renames
-  `dk_ui_service_open` to `dk_ui_open`, deletes the old ui entries, the old typedef names (`dk_service_cmd`, `dk_file_event`, `dk_ui_act` and the other types of `[api.types]`) and the
+  `dk_ui_service_open` to `dk_ui_open`, makes the UI functions that old modules share (`dk_ui_menu_new`, `dk_ui_toast`, `dk_ui_confirm`, `dk_ui_choice`, `dk_ui_tick`) take the `dk_ui *ui` handle as first argument, deletes the old ui entries, the old typedef names (`dk_service_cmd`, `dk_file_event`, `dk_ui_act` and the other types of `[api.types]`) and the
   Api-table names, deletes the legacy branches of `settings.h` and `intro.h`, and folds `file.h` away (it only includes `files.h` now).
 - The callback types of the new contract are `[handle.callbacks]` of `sdk.toml` (C `dk_<name>`, Rust `<Name>`); the old ones stay in `[api.types]`. The write calls take the `dk_files *` handle first; the runtime does not look it up yet.
 - The service providers (`core/ui`, `core/input`, `core/usb-bulk`, `core/dsp-link`) export the new names as thin functions over the old ones.

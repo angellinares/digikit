@@ -9,7 +9,7 @@
 //! handle is that number as a pointer: it wraps the client the existing code (`settings.rs`, `files.rs`, `tracks.rs`) keeps. The imports that need no
 //! handle point at the same functions as the Api table (`lib.rs`).
 
-use crate::{dlog, files, peakwin, settings, store_writer, tracks, MAX_MODULES};
+use crate::{dlog, files, peakwin, settings, store, store_writer, tracks, MAX_MODULES};
 use core::ptr::{addr_of, addr_of_mut, read_volatile, write_volatile};
 use dkrt_sdk::*;
 
@@ -140,7 +140,7 @@ pub unsafe extern "C" fn dk_module_ctx_device(ctx: *mut u8) -> u32 {
     }
 }
 
-pub unsafe extern "C" fn dk_module_ctx_runtime(ctx: *mut u8) -> u32 {
+pub unsafe extern "C" fn dk_module_ctx_runtime_version(ctx: *mut u8) -> u32 {
     if ctx_rec(ctx).is_some() {
         RUNTIME_VERSION
     } else {
@@ -188,6 +188,11 @@ pub unsafe extern "C" fn dk_files_poll(f: *mut u8, ticket: u32, out: *mut u8, ca
 
 pub unsafe extern "C" fn dk_files_cancel(f: *mut u8, ticket: u32) -> i32 {
     files::cancel(client(f), ticket)
+}
+
+/// Read a store file into `buf` (init only, through the runtime's staging buffer). The handle names the owner and is not looked up yet.
+pub unsafe extern "C" fn dk_files_read(_f: *mut u8, path: *const u8, buf: *mut u8, cap: u32) -> i32 {
+    store::read_file(path, buf, cap)
 }
 
 // The write calls take the same handle. The store has one write session in all, so the handle only names the owner: it is not looked up yet.

@@ -96,7 +96,7 @@ intro_done = "void (void *ctx)"
 io_step = "i32 (u8 *ctx)"
 # The end of an I/O job, in the UI task, once. `status` is the last step's result, or DK_IO_E_CANCELLED.
 io_done = "void (u8 *ctx, i32 status)"
-# A menu row action or change (`dk_ui_item_action`, `dk_ui_item_toggle`, `dk_ui_item_value`), in the UI task: `arg` is the value the row was added with (an action) or the new value.
+# A menu row action or change (`dk_ui_action`, `dk_ui_toggle`, `dk_ui_value`), in the UI task: `arg` is the value the row was added with (an action) or the new value.
 ui_act = "void (void *ctx, i32 arg)"
 
 # The opaque handle types of the service imports (`dk_module_ctx *ctx`, `dk_settings **out`). `patchkit gen` writes `typedef struct <name> <name>;` for each into
@@ -127,7 +127,7 @@ intro_done_fn = "void (void *arg)"
 io_step_fn = "i32 (void *arg)"
 # The end of an I/O job, in the UI task, once. `status` is the last step's result, or DK_IO_E_CANCELLED.
 io_done_fn = "void (void *arg, i32 status)"
-# A menu row action or change (`dk_ui_item_action`, `dk_ui_item_toggle`, `dk_ui_item_value`), in the UI task: `arg` is the pointer the row was added with, `value` the
+# A menu row action or change (`dk_ui_menu_add_action`, `dk_ui_menu_add_toggle`, `dk_ui_menu_add_value`), in the UI task: `arg` is the pointer the row was added with, `value` the
 # value the row was added with (an action) or the new value.
 ui_action_fn = "void (void *arg, i32 value)"
 
@@ -824,12 +824,12 @@ sig = "u32 ()"
 doc = "The 1500 Hz block clock (wraps), for a module that wants to measure time; 0 when the image has no counter. See <dk/core/time.h>."
 
 [[import]]
-name = "dk_store_read"
+name = "dk_files_read"
 service = "runtime"
 since = 11
 context = "init"
-sig = "i32 (const char *path, void *dst, u32 cap)"
-doc = "Read a store file into `dst` (at most `cap` bytes); returns the file size, or a negative code. It uses the runtime's staging buffer."
+sig = "i32 (dk_files *files, const char *path, void *buf, u32 cap)"
+doc = "Read a store file into `buf` (at most `cap` bytes); returns the file size, or a negative code. It uses the runtime's staging buffer. `files` is the handle of `dk_files_open`."
 
 [[import]]
 name = "dk_host_register"
@@ -848,7 +848,7 @@ sig = "u32 (dk_module_ctx *ctx)"
 doc = "The device's `[digikit] id` (DT2 or DN2); 0 for a pointer that is not a context."
 
 [[import]]
-name = "dk_module_ctx_runtime"
+name = "dk_module_ctx_runtime_version"
 service = "runtime"
 since = 11
 context = "any"
@@ -1180,7 +1180,7 @@ requires = "core/ui"
 absent = "0"
 
 [[import]]
-name = "dk_ui_item_text"
+name = "dk_ui_menu_add_text"
 service = "ui"
 since = 11
 context = "ui"
@@ -1190,7 +1190,7 @@ requires = "core/ui"
 absent = "void"
 
 [[import]]
-name = "dk_ui_item_action"
+name = "dk_ui_menu_add_action"
 service = "ui"
 since = 11
 context = "ui"
@@ -1200,7 +1200,7 @@ requires = "core/ui"
 absent = "void"
 
 [[import]]
-name = "dk_ui_item_submenu"
+name = "dk_ui_menu_add_submenu"
 service = "ui"
 since = 11
 context = "ui"
@@ -1210,7 +1210,7 @@ requires = "core/ui"
 absent = "void"
 
 [[import]]
-name = "dk_ui_item_toggle"
+name = "dk_ui_menu_add_toggle"
 service = "ui"
 since = 11
 context = "ui"
@@ -1220,7 +1220,7 @@ requires = "core/ui"
 absent = "void"
 
 [[import]]
-name = "dk_ui_item_value"
+name = "dk_ui_menu_add_value"
 service = "ui"
 since = 11
 context = "ui"
@@ -1230,7 +1230,7 @@ requires = "core/ui"
 absent = "void"
 
 [[import]]
-name = "dk_ui_item_check"
+name = "dk_ui_menu_check"
 service = "ui"
 since = 11
 context = "ui"
@@ -1240,7 +1240,7 @@ requires = "core/ui"
 absent = "void"
 
 [[import]]
-name = "dk_ui_item_checked"
+name = "dk_ui_menu_checked"
 service = "ui"
 since = 11
 context = "ui"

@@ -304,14 +304,14 @@ pub unsafe fn cstr_len(a: *const u8, max: usize) -> usize {
 
 #[repr(C)]
 pub struct Import {
-    pub name: [u8; 28],
+    pub name: [u8; 32],
     pub addr: *const (),
 }
 pub struct Imports(pub [Import; dkrt_sdk::api::BUILTIN_NAMES.len()]);
 unsafe impl Sync for Imports {}
 
-const fn nm(s: &[u8]) -> [u8; 28] {
-    let mut o = [0u8; 28];
+const fn nm(s: &[u8]) -> [u8; 32] {
+    let mut o = [0u8; 32];
     let mut i = 0;
     while i < s.len() {
         o[i] = s[i];
@@ -376,10 +376,10 @@ import_table! {
     ("dk_log", api_log_lv),
     ("dk_log_event", dlog::dkrt_log_ev),
     ("dk_time_blocks", dkrt_blocks),
-    ("dk_store_read", api_store_read),
+    ("dk_files_read", entry::dk_files_read),
     ("dk_host_register", api_register_cmds),
     ("dk_module_ctx_device", entry::dk_module_ctx_device),
-    ("dk_module_ctx_runtime", entry::dk_module_ctx_runtime),
+    ("dk_module_ctx_runtime_version", entry::dk_module_ctx_runtime_version),
     ("dk_settings_open", entry::dk_settings_open),
     ("dk_settings_get", entry::dk_settings_get),
     ("dk_settings_put", entry::dk_settings_put),
@@ -432,10 +432,10 @@ const _: dkrt_sdk::api::DkFreeFn = api_free;
 const _: dkrt_sdk::api::DkLogFn = api_log_lv;
 const _: dkrt_sdk::api::DkLogEventFn = dlog::dkrt_log_ev;
 const _: dkrt_sdk::api::DkTimeBlocksFn = dkrt_blocks;
-const _: dkrt_sdk::api::DkStoreReadFn = api_store_read;
+const _: dkrt_sdk::api::DkFilesReadFn = entry::dk_files_read;
 const _: dkrt_sdk::api::DkHostRegisterFn = api_register_cmds;
 const _: dkrt_sdk::api::DkModuleCtxDeviceFn = entry::dk_module_ctx_device;
-const _: dkrt_sdk::api::DkModuleCtxRuntimeFn = entry::dk_module_ctx_runtime;
+const _: dkrt_sdk::api::DkModuleCtxRuntimeVersionFn = entry::dk_module_ctx_runtime_version;
 const _: dkrt_sdk::api::DkSettingsOpenFn = entry::dk_settings_open;
 const _: dkrt_sdk::api::DkSettingsGetFn = entry::dk_settings_get;
 const _: dkrt_sdk::api::DkSettingsPutFn = entry::dk_settings_put;

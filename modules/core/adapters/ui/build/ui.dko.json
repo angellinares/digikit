@@ -1279,49 +1279,49 @@
   {
    "addend": 0,
    "offset": 2,
-   "section": ".text.dk_ui_item_text",
+   "section": ".text.dk_ui_menu_add_text",
    "symbol": ".sec..text.dk_ui_text",
    "type": "cf.32"
   },
   {
    "addend": 0,
    "offset": 2,
-   "section": ".text.dk_ui_item_action",
+   "section": ".text.dk_ui_menu_add_action",
    "symbol": ".sec..text.dk_ui_action",
    "type": "cf.32"
   },
   {
    "addend": 0,
    "offset": 2,
-   "section": ".text.dk_ui_item_submenu",
+   "section": ".text.dk_ui_menu_add_submenu",
    "symbol": ".sec..text.dk_ui_submenu",
    "type": "cf.32"
   },
   {
    "addend": 0,
    "offset": 2,
-   "section": ".text.dk_ui_item_toggle",
+   "section": ".text.dk_ui_menu_add_toggle",
    "symbol": ".sec..text.dk_ui_toggle",
    "type": "cf.32"
   },
   {
    "addend": 0,
    "offset": 2,
-   "section": ".text.dk_ui_item_value",
+   "section": ".text.dk_ui_menu_add_value",
    "symbol": ".sec..text.dk_ui_value",
    "type": "cf.32"
   },
   {
    "addend": 0,
    "offset": 2,
-   "section": ".text.dk_ui_item_check",
+   "section": ".text.dk_ui_menu_check",
    "symbol": ".sec..text.dk_ui_check",
    "type": "cf.32"
   },
   {
    "addend": 0,
    "offset": 2,
-   "section": ".text.dk_ui_item_checked",
+   "section": ".text.dk_ui_menu_checked",
    "symbol": ".sec..text.dk_ui_checked",
    "type": "cf.32"
   }
@@ -1667,49 +1667,49 @@
    "align": 2,
    "hex": "4ef900000000",
    "kind": "text",
-   "name": ".text.dk_ui_item_text",
+   "name": ".text.dk_ui_menu_add_text",
    "size": 6
   },
   {
    "align": 2,
    "hex": "4ef900000000",
    "kind": "text",
-   "name": ".text.dk_ui_item_action",
+   "name": ".text.dk_ui_menu_add_action",
    "size": 6
   },
   {
    "align": 2,
    "hex": "4ef900000000",
    "kind": "text",
-   "name": ".text.dk_ui_item_submenu",
+   "name": ".text.dk_ui_menu_add_submenu",
    "size": 6
   },
   {
    "align": 2,
    "hex": "4ef900000000",
    "kind": "text",
-   "name": ".text.dk_ui_item_toggle",
+   "name": ".text.dk_ui_menu_add_toggle",
    "size": 6
   },
   {
    "align": 2,
    "hex": "4ef900000000",
    "kind": "text",
-   "name": ".text.dk_ui_item_value",
+   "name": ".text.dk_ui_menu_add_value",
    "size": 6
   },
   {
    "align": 2,
    "hex": "4ef900000000",
    "kind": "text",
-   "name": ".text.dk_ui_item_check",
+   "name": ".text.dk_ui_menu_check",
    "size": 6
   },
   {
    "align": 2,
    "hex": "4ef900000000",
    "kind": "text",
-   "name": ".text.dk_ui_item_checked",
+   "name": ".text.dk_ui_menu_checked",
    "size": 6
   },
   {
@@ -1804,7 +1804,7 @@
    "size": 4
   }
  ],
- "source_sha256": "6d55548aafd44206171309f107ae4704cfac086ec565252ce53f1ccfd58ae966",
+ "source_sha256": "57595012f6474e88f23b78398c8380837ccd5057508b35f29aaefe8154a54f3e",
  "symbols": [
   {
    "global": false,
@@ -2360,44 +2360,44 @@
   },
   {
    "global": true,
-   "name": "dk_ui_item_action",
-   "section": ".text.dk_ui_item_action",
+   "name": "dk_ui_menu_add_action",
+   "section": ".text.dk_ui_menu_add_action",
    "value": 0
   },
   {
    "global": true,
-   "name": "dk_ui_item_check",
-   "section": ".text.dk_ui_item_check",
+   "name": "dk_ui_menu_add_submenu",
+   "section": ".text.dk_ui_menu_add_submenu",
    "value": 0
   },
   {
    "global": true,
-   "name": "dk_ui_item_checked",
-   "section": ".text.dk_ui_item_checked",
+   "name": "dk_ui_menu_add_text",
+   "section": ".text.dk_ui_menu_add_text",
    "value": 0
   },
   {
    "global": true,
-   "name": "dk_ui_item_submenu",
-   "section": ".text.dk_ui_item_submenu",
+   "name": "dk_ui_menu_add_toggle",
+   "section": ".text.dk_ui_menu_add_toggle",
    "value": 0
   },
   {
    "global": true,
-   "name": "dk_ui_item_text",
-   "section": ".text.dk_ui_item_text",
+   "name": "dk_ui_menu_add_value",
+   "section": ".text.dk_ui_menu_add_value",
    "value": 0
   },
   {
    "global": true,
-   "name": "dk_ui_item_toggle",
-   "section": ".text.dk_ui_item_toggle",
+   "name": "dk_ui_menu_check",
+   "section": ".text.dk_ui_menu_check",
    "value": 0
   },
   {
    "global": true,
-   "name": "dk_ui_item_value",
-   "section": ".text.dk_ui_item_value",
+   "name": "dk_ui_menu_checked",
+   "section": ".text.dk_ui_menu_checked",
    "value": 0
   },
   {
@@ -2718,7 +2718,7 @@
   "cflags": "-mcpu=54418 -std=c11 -Os -ffreestanding -fno-builtin -nostdlib -fno-pic -fno-pie -ffunction-sections -fdata-sections -fno-asynchronous-unwind-tables -fno-unwind-tables -fno-stack-protector -Wall -Wextra -Werror",
   "gcc": "m68k-elf-gcc (GCC) 16.2.0",
   "instructions_redecoded": "1880",
-  "isa_check": "e7f202499d175423ebddcdc142dee53122f3b0538d11b814f573baec7f9ee377",
+  "isa_check": "1ef9d35c128f6bef085bb1568502f255b3717f8b1683a3ba7240df3adcbe7965",
   "ld": "GNU ld (GNU Binutils) 2.47.20260726"
  }
 }

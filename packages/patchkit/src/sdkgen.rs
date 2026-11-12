@@ -1451,8 +1451,8 @@ fn is_fx_status(n: &str) -> bool {
 const BASES: [&str; 11] = [
     "u8", "u16", "u32", "i8", "i16", "i32", "bool", "void", "char", "float", "api",
 ];
-/// The import name field of the runtime's table is 28 bytes, NUL-terminated.
-const IMPORT_NAME_MAX: usize = 27;
+/// The import name field of the runtime's table is 32 bytes (as in the .dkm), NUL-terminated.
+const IMPORT_NAME_MAX: usize = 31;
 
 /// A type of a signature: `const`, a base, the number of `*`; `td` marks a name of `[api.types]` (a function type).
 #[derive(Clone)]

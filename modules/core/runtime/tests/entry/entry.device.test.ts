@@ -49,7 +49,7 @@ async function expectEntryPoint({ session, dk }: PatchedSession): Promise<void> 
   expect(first.usbOpen, 'dk_usb_bulk_open without core/usb-bulk is DK_E_MISSING').toBe(E_MISSING);
   expect(first.usbHandleNull, 'the absent service leaves the handle NULL').toBe(1);
   expect(first.device, 'dk_module_ctx_device').toBe(DEVICE_ID[session.options.device]);
-  expect(first.runtime, 'dk_module_ctx_runtime').toBe(runtimeVersion());
+  expect(first.runtime, 'dk_module_ctx_runtime_version').toBe(runtimeVersion());
 
   // The UI loop (and with it `tick`) starts some emulated seconds after the boot finished and the module registered: wait for the first tick (firmware
   // state), then let a second of emulated time pass.

@@ -489,10 +489,10 @@ pub mod api {
         "dk_log",
         "dk_log_event",
         "dk_time_blocks",
-        "dk_store_read",
+        "dk_files_read",
         "dk_host_register",
         "dk_module_ctx_device",
-        "dk_module_ctx_runtime",
+        "dk_module_ctx_runtime_version",
         "dk_settings_open",
         "dk_settings_get",
         "dk_settings_put",
@@ -532,13 +532,13 @@ pub mod api {
         "dk_ui_menu_select",
         "dk_ui_menu_refresh",
         "dk_ui_menu_is_open",
-        "dk_ui_item_text",
-        "dk_ui_item_action",
-        "dk_ui_item_submenu",
-        "dk_ui_item_toggle",
-        "dk_ui_item_value",
-        "dk_ui_item_check",
-        "dk_ui_item_checked",
+        "dk_ui_menu_add_text",
+        "dk_ui_menu_add_action",
+        "dk_ui_menu_add_submenu",
+        "dk_ui_menu_add_toggle",
+        "dk_ui_menu_add_value",
+        "dk_ui_menu_check",
+        "dk_ui_menu_checked",
         "dk_input_open",
         "dk_input_key",
         "dk_input_turn",
@@ -581,10 +581,10 @@ pub mod api {
         "dk_log",
         "dk_log_event",
         "dk_time_blocks",
-        "dk_store_read",
+        "dk_files_read",
         "dk_host_register",
         "dk_module_ctx_device",
-        "dk_module_ctx_runtime",
+        "dk_module_ctx_runtime_version",
         "dk_settings_open",
         "dk_settings_get",
         "dk_settings_put",
@@ -690,8 +690,8 @@ pub mod api {
     /// `dk_time_blocks`: The 1500 Hz block clock (wraps), for a module that wants to measure time; 0 when the image has no counter. See <dk/core/time.h>.
     pub type DkTimeBlocksFn = unsafe extern "C" fn() -> u32;
 
-    /// `dk_store_read`: Read a store file into `dst` (at most `cap` bytes); returns the file size, or a negative code. It uses the runtime's staging buffer.
-    pub type DkStoreReadFn = unsafe extern "C" fn(path: *const u8, dst: *mut u8, cap: u32) -> i32;
+    /// `dk_files_read`: Read a store file into `buf` (at most `cap` bytes); returns the file size, or a negative code. It uses the runtime's staging buffer. `files` is the handle of `dk_files_open`.
+    pub type DkFilesReadFn = unsafe extern "C" fn(files: *mut u8, path: *const u8, buf: *mut u8, cap: u32) -> i32;
 
     /// `dk_host_register`: Register the SysEx commands `first .. first + count` with `fn`. The range must lie inside one of the ranges sdk/sdk.toml [protocol.ranges] reserves and overlap no registered one; else it returns DK_E_CMD_RANGE. The range is released with the module. Returns 0. See <dk/platform/host.h>.
     pub type DkHostRegisterFn = unsafe extern "C" fn(first: u32, count: u32, r#fn: Option<HostCmdFn>) -> i32;
@@ -699,8 +699,8 @@ pub mod api {
     /// `dk_module_ctx_device`: The device's `[digikit] id` (DT2 or DN2); 0 for a pointer that is not a context.
     pub type DkModuleCtxDeviceFn = unsafe extern "C" fn(ctx: *mut u8) -> u32;
 
-    /// `dk_module_ctx_runtime`: The runtime version, packed major << 16 | minor << 8 | patch; 0 for a pointer that is not a context.
-    pub type DkModuleCtxRuntimeFn = unsafe extern "C" fn(ctx: *mut u8) -> u32;
+    /// `dk_module_ctx_runtime_version`: The runtime version, packed major << 16 | minor << 8 | patch; 0 for a pointer that is not a context.
+    pub type DkModuleCtxRuntimeVersionFn = unsafe extern "C" fn(ctx: *mut u8) -> u32;
 
     /// `dk_settings_open`: Open this module's settings: `*out` is the handle (the same one every time), the result 0. A negative result outside init (DK_E_NOT_FOUND) or for a bad context (DK_E_CONTRACT); `*out` is untouched then.
     pub type DkSettingsOpenFn = unsafe extern "C" fn(ctx: *mut u8, out: *mut *mut u8) -> i32;
@@ -819,26 +819,26 @@ pub mod api {
     /// `dk_ui_menu_is_open`: 1 when the menu is open.
     pub type DkUiMenuIsOpenFn = unsafe extern "C" fn(m: *const u8) -> i32;
 
-    /// `dk_ui_item_text`: Add a row of text without an action.
-    pub type DkUiItemTextFn = unsafe extern "C" fn(m: *mut u8, text: *const u8);
+    /// `dk_ui_menu_add_text`: Add a row of text without an action.
+    pub type DkUiMenuAddTextFn = unsafe extern "C" fn(m: *mut u8, text: *const u8);
 
-    /// `dk_ui_item_action`: Add a row that runs `run(arg, value)` on YES.
-    pub type DkUiItemActionFn = unsafe extern "C" fn(m: *mut u8, text: *const u8, run: Option<UiActionFn>, arg: *mut u8, value: i32);
+    /// `dk_ui_menu_add_action`: Add a row that runs `run(arg, value)` on YES.
+    pub type DkUiMenuAddActionFn = unsafe extern "C" fn(m: *mut u8, text: *const u8, run: Option<UiActionFn>, arg: *mut u8, value: i32);
 
-    /// `dk_ui_item_submenu`: Add a row that opens another menu.
-    pub type DkUiItemSubmenuFn = unsafe extern "C" fn(m: *mut u8, text: *const u8, sub: *mut u8);
+    /// `dk_ui_menu_add_submenu`: Add a row that opens another menu.
+    pub type DkUiMenuAddSubmenuFn = unsafe extern "C" fn(m: *mut u8, text: *const u8, sub: *mut u8);
 
-    /// `dk_ui_item_toggle`: Add an ON/OFF row.
-    pub type DkUiItemToggleFn = unsafe extern "C" fn(m: *mut u8, text: *const u8, value: *mut i32, changed: Option<UiActionFn>, arg: *mut u8);
+    /// `dk_ui_menu_add_toggle`: Add an ON/OFF row.
+    pub type DkUiMenuAddToggleFn = unsafe extern "C" fn(m: *mut u8, text: *const u8, value: *mut i32, changed: Option<UiActionFn>, arg: *mut u8);
 
-    /// `dk_ui_item_value`: Add a number row changed by the encoder.
-    pub type DkUiItemValueFn = unsafe extern "C" fn(m: *mut u8, text: *const u8, value: *mut i32, min: i32, max: i32, changed: Option<UiActionFn>, arg: *mut u8);
+    /// `dk_ui_menu_add_value`: Add a number row changed by the encoder.
+    pub type DkUiMenuAddValueFn = unsafe extern "C" fn(m: *mut u8, text: *const u8, value: *mut i32, min: i32, max: i32, changed: Option<UiActionFn>, arg: *mut u8);
 
-    /// `dk_ui_item_check`: Set the check mark of a list row.
-    pub type DkUiItemCheckFn = unsafe extern "C" fn(list: *mut u8, row: i32, on: i32);
+    /// `dk_ui_menu_check`: Set the check mark of a list row.
+    pub type DkUiMenuCheckFn = unsafe extern "C" fn(list: *mut u8, row: i32, on: i32);
 
-    /// `dk_ui_item_checked`: 1 when the list row is checked.
-    pub type DkUiItemCheckedFn = unsafe extern "C" fn(list: *const u8, row: i32) -> i32;
+    /// `dk_ui_menu_checked`: 1 when the list row is checked.
+    pub type DkUiMenuCheckedFn = unsafe extern "C" fn(list: *const u8, row: i32) -> i32;
 
     /// `dk_input_open`: Open the panel input service: `*out` is the handle, the result 0. Without core/input the result is DK_E_MISSING and `*out` is untouched.
     pub type DkInputOpenFn = unsafe extern "C" fn(ctx: *mut u8, out: *mut *mut u8) -> i32;
@@ -940,13 +940,13 @@ macro_rules! optional_imports {
                 pub fn dk_ui_menu_select(m: *mut u8, row: i32);
                 pub fn dk_ui_menu_refresh(m: *mut u8);
                 pub fn dk_ui_menu_is_open(m: *const u8) -> i32;
-                pub fn dk_ui_item_text(m: *mut u8, text: *const u8);
-                pub fn dk_ui_item_action(m: *mut u8, text: *const u8, run: Option<UiActionFn>, arg: *mut u8, value: i32);
-                pub fn dk_ui_item_submenu(m: *mut u8, text: *const u8, sub: *mut u8);
-                pub fn dk_ui_item_toggle(m: *mut u8, text: *const u8, value: *mut i32, changed: Option<UiActionFn>, arg: *mut u8);
-                pub fn dk_ui_item_value(m: *mut u8, text: *const u8, value: *mut i32, min: i32, max: i32, changed: Option<UiActionFn>, arg: *mut u8);
-                pub fn dk_ui_item_check(list: *mut u8, row: i32, on: i32);
-                pub fn dk_ui_item_checked(list: *const u8, row: i32) -> i32;
+                pub fn dk_ui_menu_add_text(m: *mut u8, text: *const u8);
+                pub fn dk_ui_menu_add_action(m: *mut u8, text: *const u8, run: Option<UiActionFn>, arg: *mut u8, value: i32);
+                pub fn dk_ui_menu_add_submenu(m: *mut u8, text: *const u8, sub: *mut u8);
+                pub fn dk_ui_menu_add_toggle(m: *mut u8, text: *const u8, value: *mut i32, changed: Option<UiActionFn>, arg: *mut u8);
+                pub fn dk_ui_menu_add_value(m: *mut u8, text: *const u8, value: *mut i32, min: i32, max: i32, changed: Option<UiActionFn>, arg: *mut u8);
+                pub fn dk_ui_menu_check(list: *mut u8, row: i32, on: i32);
+                pub fn dk_ui_menu_checked(list: *const u8, row: i32) -> i32;
                 pub fn dk_input_open(ctx: *mut u8, out: *mut *mut u8) -> i32;
                 pub fn dk_input_key(inp: *mut u8, code: u32, down: u32) -> i32;
                 pub fn dk_input_turn(inp: *mut u8, encoder: u32, delta: i32) -> i32;
@@ -992,13 +992,13 @@ macro_rules! optional_imports {
                 pub unsafe extern "C" fn dk_ui_menu_select(_a0: *mut u8, _a1: i32) { }
                 pub unsafe extern "C" fn dk_ui_menu_refresh(_a0: *mut u8) { }
                 pub unsafe extern "C" fn dk_ui_menu_is_open(_a0: *const u8) -> i32 { 0 as _ }
-                pub unsafe extern "C" fn dk_ui_item_text(_a0: *mut u8, _a1: *const u8) { }
-                pub unsafe extern "C" fn dk_ui_item_action(_a0: *mut u8, _a1: *const u8, _a2: Option<UiActionFn>, _a3: *mut u8, _a4: i32) { }
-                pub unsafe extern "C" fn dk_ui_item_submenu(_a0: *mut u8, _a1: *const u8, _a2: *mut u8) { }
-                pub unsafe extern "C" fn dk_ui_item_toggle(_a0: *mut u8, _a1: *const u8, _a2: *mut i32, _a3: Option<UiActionFn>, _a4: *mut u8) { }
-                pub unsafe extern "C" fn dk_ui_item_value(_a0: *mut u8, _a1: *const u8, _a2: *mut i32, _a3: i32, _a4: i32, _a5: Option<UiActionFn>, _a6: *mut u8) { }
-                pub unsafe extern "C" fn dk_ui_item_check(_a0: *mut u8, _a1: i32, _a2: i32) { }
-                pub unsafe extern "C" fn dk_ui_item_checked(_a0: *const u8, _a1: i32) -> i32 { 0 as _ }
+                pub unsafe extern "C" fn dk_ui_menu_add_text(_a0: *mut u8, _a1: *const u8) { }
+                pub unsafe extern "C" fn dk_ui_menu_add_action(_a0: *mut u8, _a1: *const u8, _a2: Option<UiActionFn>, _a3: *mut u8, _a4: i32) { }
+                pub unsafe extern "C" fn dk_ui_menu_add_submenu(_a0: *mut u8, _a1: *const u8, _a2: *mut u8) { }
+                pub unsafe extern "C" fn dk_ui_menu_add_toggle(_a0: *mut u8, _a1: *const u8, _a2: *mut i32, _a3: Option<UiActionFn>, _a4: *mut u8) { }
+                pub unsafe extern "C" fn dk_ui_menu_add_value(_a0: *mut u8, _a1: *const u8, _a2: *mut i32, _a3: i32, _a4: i32, _a5: Option<UiActionFn>, _a6: *mut u8) { }
+                pub unsafe extern "C" fn dk_ui_menu_check(_a0: *mut u8, _a1: i32, _a2: i32) { }
+                pub unsafe extern "C" fn dk_ui_menu_checked(_a0: *const u8, _a1: i32) -> i32 { 0 as _ }
                 pub unsafe extern "C" fn dk_input_open(_a0: *mut u8, _a1: *mut *mut u8) -> i32 { -73 as _ }
                 pub unsafe extern "C" fn dk_input_key(_a0: *mut u8, _a1: u32, _a2: u32) -> i32 { -73 as _ }
                 pub unsafe extern "C" fn dk_input_turn(_a0: *mut u8, _a1: u32, _a2: i32) -> i32 { -73 as _ }
@@ -1053,13 +1053,13 @@ macro_rules! optional_imports {
                     ("dk_ui_menu_select", core::hint::black_box(dk_ui_menu_select as usize), absent::dk_ui_menu_select as usize, "core/ui"),
                     ("dk_ui_menu_refresh", core::hint::black_box(dk_ui_menu_refresh as usize), absent::dk_ui_menu_refresh as usize, "core/ui"),
                     ("dk_ui_menu_is_open", core::hint::black_box(dk_ui_menu_is_open as usize), absent::dk_ui_menu_is_open as usize, "core/ui"),
-                    ("dk_ui_item_text", core::hint::black_box(dk_ui_item_text as usize), absent::dk_ui_item_text as usize, "core/ui"),
-                    ("dk_ui_item_action", core::hint::black_box(dk_ui_item_action as usize), absent::dk_ui_item_action as usize, "core/ui"),
-                    ("dk_ui_item_submenu", core::hint::black_box(dk_ui_item_submenu as usize), absent::dk_ui_item_submenu as usize, "core/ui"),
-                    ("dk_ui_item_toggle", core::hint::black_box(dk_ui_item_toggle as usize), absent::dk_ui_item_toggle as usize, "core/ui"),
-                    ("dk_ui_item_value", core::hint::black_box(dk_ui_item_value as usize), absent::dk_ui_item_value as usize, "core/ui"),
-                    ("dk_ui_item_check", core::hint::black_box(dk_ui_item_check as usize), absent::dk_ui_item_check as usize, "core/ui"),
-                    ("dk_ui_item_checked", core::hint::black_box(dk_ui_item_checked as usize), absent::dk_ui_item_checked as usize, "core/ui"),
+                    ("dk_ui_menu_add_text", core::hint::black_box(dk_ui_menu_add_text as usize), absent::dk_ui_menu_add_text as usize, "core/ui"),
+                    ("dk_ui_menu_add_action", core::hint::black_box(dk_ui_menu_add_action as usize), absent::dk_ui_menu_add_action as usize, "core/ui"),
+                    ("dk_ui_menu_add_submenu", core::hint::black_box(dk_ui_menu_add_submenu as usize), absent::dk_ui_menu_add_submenu as usize, "core/ui"),
+                    ("dk_ui_menu_add_toggle", core::hint::black_box(dk_ui_menu_add_toggle as usize), absent::dk_ui_menu_add_toggle as usize, "core/ui"),
+                    ("dk_ui_menu_add_value", core::hint::black_box(dk_ui_menu_add_value as usize), absent::dk_ui_menu_add_value as usize, "core/ui"),
+                    ("dk_ui_menu_check", core::hint::black_box(dk_ui_menu_check as usize), absent::dk_ui_menu_check as usize, "core/ui"),
+                    ("dk_ui_menu_checked", core::hint::black_box(dk_ui_menu_checked as usize), absent::dk_ui_menu_checked as usize, "core/ui"),
                     ("dk_input_open", core::hint::black_box(dk_input_open as usize), absent::dk_input_open as usize, "core/input"),
                     ("dk_input_key", core::hint::black_box(dk_input_key as usize), absent::dk_input_key as usize, "core/input"),
                     ("dk_input_turn", core::hint::black_box(dk_input_turn as usize), absent::dk_input_turn as usize, "core/input"),

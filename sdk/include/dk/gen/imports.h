@@ -46,8 +46,8 @@ void dk_log_event(uint32_t kind, uint32_t flags, const uint32_t *a);
 /* The 1500 Hz block clock (wraps), for a module that wants to measure time; 0 when the image has no counter. See <dk/core/time.h>. Context: any. Since api 1.11. */
 uint32_t dk_time_blocks(void);
 
-/* Read a store file into `dst` (at most `cap` bytes); returns the file size, or a negative code. It uses the runtime's staging buffer. Context: init. Since api 1.11. */
-int32_t dk_store_read(const char *path, void *dst, uint32_t cap);
+/* Read a store file into `buf` (at most `cap` bytes); returns the file size, or a negative code. It uses the runtime's staging buffer. `files` is the handle of `dk_files_open`. Context: init. Since api 1.11. */
+int32_t dk_files_read(dk_files *files, const char *path, void *buf, uint32_t cap);
 
 /* Register the SysEx commands `first .. first + count` with `fn`. The range must lie inside one of the ranges sdk/sdk.toml [protocol.ranges] reserves and overlap no registered one; else it returns DK_E_CMD_RANGE. The range is released with the module. Returns 0. See <dk/platform/host.h>. Context: init. Since api 1.11. */
 int32_t dk_host_register(uint32_t first, uint32_t count, dk_host_cmd_fn *fn);
@@ -56,7 +56,7 @@ int32_t dk_host_register(uint32_t first, uint32_t count, dk_host_cmd_fn *fn);
 uint32_t dk_module_ctx_device(dk_module_ctx *ctx);
 
 /* The runtime version, packed major << 16 | minor << 8 | patch; 0 for a pointer that is not a context. Context: any. Since api 1.11. */
-uint32_t dk_module_ctx_runtime(dk_module_ctx *ctx);
+uint32_t dk_module_ctx_runtime_version(dk_module_ctx *ctx);
 
 /* Open this module's settings: `*out` is the handle (the same one every time), the result 0. A negative result outside init (DK_E_NOT_FOUND) or for a bad context (DK_E_CONTRACT); `*out` is untouched then. Context: init. Since api 1.11. */
 int32_t dk_settings_open(dk_module_ctx *ctx, dk_settings **out);
@@ -194,25 +194,25 @@ void dk_ui_menu_refresh(dk_ui_menu *m);
 int32_t dk_ui_menu_is_open(const dk_ui_menu *m);
 
 /* Add a row of text without an action. Context: ui. Since api 1.11. Needs core/ui: without it the import binds to a stub that does nothing. */
-void dk_ui_item_text(dk_ui_menu *m, const char *text);
+void dk_ui_menu_add_text(dk_ui_menu *m, const char *text);
 
 /* Add a row that runs `run(arg, value)` on YES. Context: ui. Since api 1.11. Needs core/ui: without it the import binds to a stub that does nothing. */
-void dk_ui_item_action(dk_ui_menu *m, const char *text, dk_ui_action_fn *run, void *arg, int32_t value);
+void dk_ui_menu_add_action(dk_ui_menu *m, const char *text, dk_ui_action_fn *run, void *arg, int32_t value);
 
 /* Add a row that opens another menu. Context: ui. Since api 1.11. Needs core/ui: without it the import binds to a stub that does nothing. */
-void dk_ui_item_submenu(dk_ui_menu *m, const char *text, dk_ui_menu *sub);
+void dk_ui_menu_add_submenu(dk_ui_menu *m, const char *text, dk_ui_menu *sub);
 
 /* Add an ON/OFF row. Context: ui. Since api 1.11. Needs core/ui: without it the import binds to a stub that does nothing. */
-void dk_ui_item_toggle(dk_ui_menu *m, const char *text, int32_t *value, dk_ui_action_fn *changed, void *arg);
+void dk_ui_menu_add_toggle(dk_ui_menu *m, const char *text, int32_t *value, dk_ui_action_fn *changed, void *arg);
 
 /* Add a number row changed by the encoder. Context: ui. Since api 1.11. Needs core/ui: without it the import binds to a stub that does nothing. */
-void dk_ui_item_value(dk_ui_menu *m, const char *text, int32_t *value, int32_t min, int32_t max, dk_ui_action_fn *changed, void *arg);
+void dk_ui_menu_add_value(dk_ui_menu *m, const char *text, int32_t *value, int32_t min, int32_t max, dk_ui_action_fn *changed, void *arg);
 
 /* Set the check mark of a list row. Context: ui. Since api 1.11. Needs core/ui: without it the import binds to a stub that does nothing. */
-void dk_ui_item_check(dk_ui_menu *list, int32_t row, int32_t on);
+void dk_ui_menu_check(dk_ui_menu *list, int32_t row, int32_t on);
 
 /* 1 when the list row is checked. Context: ui. Since api 1.11. Needs core/ui: without it the import binds to a stub that returns 0. */
-int32_t dk_ui_item_checked(const dk_ui_menu *list, int32_t row);
+int32_t dk_ui_menu_checked(const dk_ui_menu *list, int32_t row);
 
 /* ---- service input ---- */
 

@@ -994,40 +994,40 @@ int32_t dk_ui_menu_is_open(const dk_ui_menu *m)
     return dk_ui_is_open(m);
 }
 
-void dk_ui_item_text(dk_ui_menu *m, const char *text)
+void dk_ui_menu_add_text(dk_ui_menu *m, const char *text)
 {
     dk_ui_text(m, text);
 }
 
-void dk_ui_item_action(dk_ui_menu *m, const char *text, dk_ui_action_fn *run, void *arg,
-                       int32_t value)
+void dk_ui_menu_add_action(dk_ui_menu *m, const char *text, dk_ui_action_fn *run, void *arg,
+                           int32_t value)
 {
     dk_ui_action(m, text, (dk_ui_act_fn *)run, arg, (int)value);
 }
 
-void dk_ui_item_submenu(dk_ui_menu *m, const char *text, dk_ui_menu *sub)
+void dk_ui_menu_add_submenu(dk_ui_menu *m, const char *text, dk_ui_menu *sub)
 {
     dk_ui_submenu(m, text, sub);
 }
 
-void dk_ui_item_toggle(dk_ui_menu *m, const char *text, int32_t *value, dk_ui_action_fn *changed,
-                       void *arg)
+void dk_ui_menu_add_toggle(dk_ui_menu *m, const char *text, int32_t *value,
+                           dk_ui_action_fn *changed, void *arg)
 {
     dk_ui_toggle(m, text, (int *)value, (dk_ui_act_fn *)changed, arg);
 }
 
-void dk_ui_item_value(dk_ui_menu *m, const char *text, int32_t *value, int32_t min, int32_t max,
-                      dk_ui_action_fn *changed, void *arg)
+void dk_ui_menu_add_value(dk_ui_menu *m, const char *text, int32_t *value, int32_t min, int32_t max,
+                          dk_ui_action_fn *changed, void *arg)
 {
     dk_ui_value(m, text, (int *)value, (int)min, (int)max, (dk_ui_act_fn *)changed, arg);
 }
 
-void dk_ui_item_check(dk_ui_menu *list, int32_t row, int32_t on)
+void dk_ui_menu_check(dk_ui_menu *list, int32_t row, int32_t on)
 {
     dk_ui_check(list, (int)row, (int)on);
 }
 
-int32_t dk_ui_item_checked(const dk_ui_menu *list, int32_t row)
+int32_t dk_ui_menu_checked(const dk_ui_menu *list, int32_t row)
 {
     return dk_ui_checked(list, (int)row);
 }

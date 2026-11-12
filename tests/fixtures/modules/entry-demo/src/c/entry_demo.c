@@ -9,7 +9,7 @@
  *   0x1c  report (no body); reply, big-endian words:
  *           0  result of dk_settings_open        4  result of the read of "boot" in init (DK_E_SET_NOKEY on a fresh card)
  *           8  result of dk_usb_bulk_open       12  1 when the handle it gave is still NULL
- *          16  dk_module_ctx_device                 20  dk_module_ctx_runtime
+ *          16  dk_module_ctx_device        20  dk_module_ctx_runtime_version
  *          24  ticks so far                     28  block clock of the last tick minus the first
  *          32  result of the last dk_settings_put   36  result of the read back after it (the length, 1)
  *          40  the value read back (1 byte)     41  1 while a write is queued
@@ -71,7 +71,7 @@ static int32_t init(dk_module_ctx *ctx)
     back = v;
     r_usb = dk_usb_bulk_open(ctx, &usb);
     device = dk_module_ctx_device(ctx);
-    version = dk_module_ctx_runtime(ctx);
+    version = dk_module_ctx_runtime_version(ctx);
     dk_host_register(0x1c, 2, command);
     dk_log(DK_LOG_INFO, "entry-demo init", (uint32_t)r_usb);
     return DK_OK;
@@ -102,7 +102,7 @@ static void fini(dk_module_ctx *ctx)
 static void menu(dk_module_ctx *ctx, dk_ui_menu *menu)
 {
     (void)ctx;
-    dk_ui_item_text(menu, "ENTRY DEMO");
+    dk_ui_menu_add_text(menu, "ENTRY DEMO");
 }
 
 const dk_module_def dk_module = {.init = init, .fini = fini, .tick = tick, .menu = menu};
