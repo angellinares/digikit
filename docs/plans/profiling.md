@@ -291,4 +291,4 @@ Before each item over a day: state payoff and confidence, and stop when they are
 - [O] Load addresses: a new event field or a PEEK of the runtime's module table?
 - [O] Host transport for the DSP stats window: `dkrt_peek_range` or a new command?
 - [O] The device transport (`dklog`, `dkupload`) has not run on hardware.
-- [O] Do any EMUCLK reads affect control, or only reporting (clock audit)?
+- Answered by the clock audit ([finding 125](../findings/125-dsp-cycle-counter-consumers.md), [D]): EMUCLK reads only report. One reader per image, the SHARC block handler; its low-word cycle delta feeds the HEALTH page through `core/health`. Nothing branches on it.
