@@ -265,6 +265,33 @@ class BuildWritesSuperblockTest(unittest.TestCase):
             self.assertIn(version, (3, 4))
 
 
+@unittest.skipUnless(os.name == "nt", "NTFS sparse files: Windows only")
+class SparseImageWindowsTest(unittest.TestCase):
+    def test_image_takes_only_the_written_bytes_on_disk(self):
+        import ctypes
+        from ctypes import wintypes
+
+        size_on_disk = ctypes.WinDLL("kernel32").GetCompressedFileSizeW
+        size_on_disk.restype = wintypes.DWORD
+        size_on_disk.argtypes = [wintypes.LPCWSTR, ctypes.POINTER(wintypes.DWORD)]
+        with tempfile.TemporaryDirectory() as tmp:
+            path = os.path.join(tmp, "card.img")
+            img = pd.Image(path, 1 << 21)  # 1 GiB
+            img.write(1 << 12, b"\xa5" * pd.SECTOR)
+            img.close()
+            high = wintypes.DWORD(0)
+            low = size_on_disk(path, ctypes.byref(high))
+            self.assertEqual(os.path.getsize(path), 1 << 30)
+            sparse_attr = 0x200  # FILE_ATTRIBUTE_SPARSE_FILE
+            self.assertTrue(os.stat(path).st_file_attributes & sparse_attr)
+            self.assertLess((high.value << 32) | low, 16 << 20)
+            with open(path, "rb") as f:
+                f.seek((1 << 12) * pd.SECTOR)
+                self.assertEqual(f.read(pd.SECTOR), b"\xa5" * pd.SECTOR)
+                f.seek(1 << 29)
+                self.assertEqual(f.read(pd.SECTOR), bytes(pd.SECTOR))
+
+
 class NativeSampleTest(unittest.TestCase):
     """The file layout FUN_40153994 writes and FUN_40154540 reads."""
 

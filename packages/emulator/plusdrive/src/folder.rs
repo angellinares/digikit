@@ -273,6 +273,45 @@ fn scan_store(dir: &Path, layout: &CardLayout, out: &mut FolderScan) -> Result<(
     Ok(())
 }
 
+/// Give the new, empty `file` the NTFS sparse flag. Without it NTFS gives a file all of its clusters at `set_len`,
+/// and a 3.7 GB card takes 3.7 GB of disk. Linux and macOS make a hole at `set_len` with no flag. A file system
+/// without sparse files (FAT32, exFAT) refuses the call, and the file is then written in full as before.
+#[cfg(windows)]
+fn mark_sparse(file: &fs::File) {
+    use std::os::windows::io::AsRawHandle;
+    #[link(name = "kernel32")]
+    unsafe extern "system" {
+        fn DeviceIoControl(
+            device: *mut std::ffi::c_void,
+            code: u32,
+            in_buf: *mut std::ffi::c_void,
+            in_len: u32,
+            out_buf: *mut std::ffi::c_void,
+            out_len: u32,
+            returned: *mut u32,
+            overlapped: *mut std::ffi::c_void,
+        ) -> i32;
+    }
+    const FSCTL_SET_SPARSE: u32 = 0x0009_00C4;
+    let mut returned = 0u32;
+    // SAFETY: the handle is open for the life of `file`, and the call takes no buffers.
+    unsafe {
+        DeviceIoControl(
+            file.as_raw_handle(),
+            FSCTL_SET_SPARSE,
+            std::ptr::null_mut(),
+            0,
+            std::ptr::null_mut(),
+            0,
+            &mut returned,
+            std::ptr::null_mut(),
+        );
+    }
+}
+
+#[cfg(not(windows))]
+fn mark_sparse(_file: &fs::File) {}
+
 /// Write `image` to a new file `path` (sparse: only the written ranges are written); the number of bytes written.
 /// Goes through `<path>.part` and a rename, so a crash never leaves a half image under the final name. `path` must
 /// not exist.
@@ -292,6 +331,7 @@ pub fn write_image_file(image: &SparseImage, path: &Path) -> Result<u64, String>
             .create_new(true)
             .open(&partial)
             .map_err(|e| format!("{}: {e}", partial.display()))?;
+        mark_sparse(&file);
         file.set_len(image.logical_len())
             .map_err(|e| e.to_string())?;
         let mut bytes = 0u64;
@@ -327,6 +367,32 @@ mod tests {
         let _ = fs::remove_dir_all(&dir);
         fs::create_dir_all(&dir).unwrap();
         dir
+    }
+
+    #[cfg(windows)]
+    #[test]
+    fn image_file_is_sparse_on_ntfs() {
+        use std::os::windows::fs::MetadataExt;
+        let dir = scratch("sparse");
+        let path = dir.join("card.img");
+        let mut image = SparseImage::new(1 << 30);
+        image.write_at(1 << 21, &[0xa5; 512]).unwrap();
+        assert_eq!(write_image_file(&image, &path).unwrap(), 512);
+        let meta = fs::metadata(&path).unwrap();
+        assert_eq!(meta.len(), 1 << 30);
+        assert_ne!(
+            meta.file_attributes() & 0x200,
+            0,
+            "FILE_ATTRIBUTE_SPARSE_FILE"
+        );
+        let mut file = fs::File::open(&path).unwrap();
+        let mut sector = [0u8; 512];
+        for (at, want) in [(1u64 << 21, 0xa5u8), (1 << 29, 0)] {
+            file.seek(SeekFrom::Start(at)).unwrap();
+            std::io::Read::read_exact(&mut file, &mut sector).unwrap();
+            assert!(sector.iter().all(|&b| b == want), "sector at {at:#x}");
+        }
+        let _ = fs::remove_dir_all(&dir);
     }
 
     #[test]

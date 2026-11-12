@@ -907,6 +907,59 @@ def build_project_record(main_os, ref, seq=0):
     return record + bytes(PROJECT_RECORD_SIZE - len(record)), summary
 
 
+def _set_sparse_len(f, length):
+    """Extend the new, empty file `f` to `length` bytes with no data written.
+
+    On Linux and macOS `truncate()` makes a hole. On Windows it does not:
+    CPython extends the file through the C runtime's `_chsize_s`, which
+    writes every zero byte, and NTFS gives a file without the sparse flag
+    all of its clusters. A 3.7 GB card then takes 3.7 GB of disk. So on
+    Windows the file gets FSCTL_SET_SPARSE and SetEndOfFile instead, and
+    takes only the bytes written to it. A file system without sparse files
+    (FAT32, exFAT) falls back to `truncate()`.
+    """
+    if sys.platform != "win32":
+        f.truncate(length)
+        return
+    import ctypes
+    import msvcrt
+    from ctypes import wintypes
+
+    kernel32 = ctypes.WinDLL("kernel32", use_last_error=True)
+    kernel32.DeviceIoControl.argtypes = [
+        wintypes.HANDLE,
+        wintypes.DWORD,
+        wintypes.LPVOID,
+        wintypes.DWORD,
+        wintypes.LPVOID,
+        wintypes.DWORD,
+        ctypes.POINTER(wintypes.DWORD),
+        wintypes.LPVOID,
+    ]
+    kernel32.SetFilePointerEx.argtypes = [
+        wintypes.HANDLE,
+        ctypes.c_longlong,
+        ctypes.c_void_p,
+        wintypes.DWORD,
+    ]
+    kernel32.SetEndOfFile.argtypes = [wintypes.HANDLE]
+    fsctl_set_sparse = 0x000900C4
+    handle = wintypes.HANDLE(msvcrt.get_osfhandle(f.fileno()))
+    returned = wintypes.DWORD()
+    f.flush()
+    if not kernel32.DeviceIoControl(
+        handle, fsctl_set_sparse, None, 0, None, 0, ctypes.byref(returned), None
+    ):
+        f.truncate(length)
+        return
+    if not (
+        kernel32.SetFilePointerEx(handle, length, None, 0)
+        and kernel32.SetEndOfFile(handle)
+    ):
+        raise ctypes.WinError(ctypes.get_last_error())
+    f.seek(0)
+
+
 class Image:
     """An in-progress (or already-built) +Drive card image, as a sparse file.
 
@@ -919,7 +972,7 @@ class Image:
         self.path = path
         self.capacity_blocks = capacity_blocks
         self._f = open(path, "w+b")  # noqa: SIM115 -- kept open for the object's life
-        self._f.truncate(capacity_blocks * SECTOR)
+        _set_sparse_len(self._f, capacity_blocks * SECTOR)
 
     def close(self):
         self._f.close()
