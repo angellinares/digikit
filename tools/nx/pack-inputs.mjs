@@ -4,17 +4,18 @@ import { dirname, isAbsolute, join, normalize } from 'node:path';
 import { pathDeps } from './cargo.mjs';
 import { read } from './module-manifests.mjs';
 
-// Headers of sdk/include that a build reads. A textual scan of `#include` and `.include` over the build's sources and the
-// headers they reach (conditional includes count: the scan is wider than the preprocessor). A name is looked up like the
-// patchkit build does: beside the including file, in the modules' own include, src and build/gen directories, then the pinned
-// include directories (tools/patchkit/toolchain/pins.toml). A name that no directory holds is not an input.
+// Headers that a build reads. A textual scan of `#include` and `.include` over the build's sources and the
+// headers they reach (conditional includes count: the scan is wider than the preprocessor). A name is looked up in the
+// directories of the patchkit include list (cf_include_dirs in packages/patchkit/src/build/mod.rs:249 and include_dirs in
+// build/sharc.rs:14): the module's build/gen and src directories, then the pinned include directories
+// (tools/patchkit/toolchain/pins.toml), and beside the including file. Every directory that holds the name counts.
+// A name that no directory holds is not an input. Every header found is an input, whatever its directory.
 // Limit: a computed include (`#include MACRO`) is not seen.
 const INCLUDE = /^[ \t]*(?:#[ \t]*include|\.include)[ \t]*[<"]([^>"\n]+)[>"]/gm;
-const SDK_INCLUDE = 'sdk/include/';
 const sdkHeaders = (workspaceRoot, sources, moduleDirs) => {
   const pins = read(workspaceRoot, 'tools/patchkit/toolchain/pins.toml').include;
   const dirs = [
-    ...moduleDirs.flatMap((dir) => [`${dir}/build/gen`, `${dir}/src`, `${dir}/include`, dir]),
+    ...moduleDirs.flatMap((dir) => [`${dir}/build/gen`, `${dir}/src`]),
     ...new Set([...pins.cf, ...pins.sharc]),
   ];
   const seen = new Set();
@@ -25,12 +26,11 @@ const sdkHeaders = (workspaceRoot, sources, moduleDirs) => {
     const path = join(workspaceRoot, file);
     if (!existsSync(path) || !statSync(path).isFile()) return;
     for (const [, name] of readFileSync(path, 'utf8').matchAll(INCLUDE)) {
-      for (const dir of [dirname(file), ...dirs]) {
+      for (const dir of new Set([dirname(file), ...dirs])) {
         const candidate = normalize(join(dir, name));
         if (existsSync(join(workspaceRoot, candidate)) && statSync(join(workspaceRoot, candidate)).isFile()) {
-          if (candidate.startsWith(SDK_INCLUDE)) found.add(candidate);
+          found.add(candidate);
           visit(candidate);
-          break;
         }
       }
     }
@@ -111,6 +111,8 @@ export const packSourceInputs = (workspaceRoot, byId, manifests) => {
         include(path);
         buildSources.add(path);
         if (path.endsWith('/Cargo.toml')) includeCrate(dirname(path));
+        // Rust sources are not scanned for includes: a Rust object keeps all SDK headers as inputs
+        if (path.endsWith('/Cargo.toml') || path.endsWith('.rs')) paths.add('{workspaceRoot}/sdk/include/**/*');
         // a content module's C object links the SDK components it uses (patchkit build, sdk_lib): all of sdk/src is an input
         if (path.endsWith('.c') && module.manifest?.category !== 'core') {
           paths.add('{workspaceRoot}/sdk/src/**/*');

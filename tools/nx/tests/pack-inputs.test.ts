@@ -25,6 +25,7 @@ it('includes Cargo path-dependency project sources and exact unowned object sour
   write('library/project.json', '{"name":"helper"}');
   expect(packSourceInputs(root, modules, [file])).toEqual([
     { input: 'production', projects: ['example/module', 'helper'] },
+    '{workspaceRoot}/sdk/include/**/*',
     '{workspaceRoot}/shared/dsp.s',
   ]);
 });
