@@ -46,6 +46,8 @@
         "{workspaceRoot}/sdk/dsp/contract/dk_machine.inc",
         "{workspaceRoot}/sdk/dsp/contract/dk_fx.inc",
         "{workspaceRoot}/sdk/dsp/contract/dk_sample_pool.inc",
+        "{workspaceRoot}/sdk/dsp/REGISTERS.md",
+        "{workspaceRoot}/packages/dksharc/src/rules_table.rs",
         "{workspaceRoot}/sdk/include/dk/gen/**/*",
         "{workspaceRoot}/sdk/include/dk/core/status.h",
         "{workspaceRoot}/devices/**/*",
