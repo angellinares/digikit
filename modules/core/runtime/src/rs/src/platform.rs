@@ -288,6 +288,35 @@ impl SamplePool for RealPlatform {
     }
 }
 
+// R13 step 3 and 4 fill this in: only the limits are real, every read says "not found".
+impl dkrt_abi::storage::Storage for RealPlatform {
+    fn path_max(&self, root: u32) -> u32 {
+        match root {
+            dkrt_abi::storage::ROOT_SAMPLES => Platform::sample_path_max(self),
+            dkrt_abi::storage::ROOT_STORE => dkrt_sdk::store::PATH_MAX as u32,
+            _ => 0,
+        }
+    }
+    unsafe fn stat(&self, _root: u32, _path: &[u8]) -> Result<dkrt_abi::storage::Stat, i32> {
+        Err(E_NOT_FOUND)
+    }
+    unsafe fn read_head(&self, _root: u32, _path: &[u8], _out: &mut [u8; 64]) -> Result<(), i32> {
+        Err(E_NOT_FOUND)
+    }
+    unsafe fn read_range(&self, _root: u32, _path: &[u8], _offset: u32, _out: &mut [u8]) -> Result<usize, i32> {
+        Err(E_NOT_FOUND)
+    }
+    unsafe fn read_all(&self, _root: u32, _path: &[u8], _dst: *mut u8, _cap: u32) -> Result<u32, i32> {
+        Err(E_NOT_FOUND)
+    }
+    unsafe fn list_open(&self, _root: u32, _dir: &[u8], _cur: *mut dkrt_abi::storage::ListCursor) -> Result<(), i32> {
+        Err(E_NOT_FOUND)
+    }
+    unsafe fn list_next(&self, _cur: *mut dkrt_abi::storage::ListCursor, _out: &mut dkrt_abi::storage::DirEntry) -> Result<bool, i32> {
+        Err(E_NOT_FOUND)
+    }
+}
+
 impl StagedWriter for RealPlatform {
     /// Is an adapter of the right version in the image?
     fn present(&self) -> bool {

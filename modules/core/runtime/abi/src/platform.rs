@@ -77,7 +77,7 @@ pub trait StagedWriter {
     fn present(&self) -> bool;
 }
 
-pub trait Platform: Tasking + SamplePool + StagedWriter {
+pub trait Platform: Tasking + SamplePool + StagedWriter + crate::storage::Storage {
     // ---- who the device is -----------------------------------------------------------------------------------------------
     fn profile(&self) -> DeviceProfile;
     /// The 8-byte id of this image as patchkit stamped it (zeros in an unpatched object).

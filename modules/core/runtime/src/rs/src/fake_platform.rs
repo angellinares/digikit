@@ -6,6 +6,7 @@
 //! The contract table `tests/platform/contract.toml` names a host test for each check; `every_contract_row_names_a_host_test` keeps the names real.
 
 use crate::card;
+use crate::fake_storage::FakeStorage;
 use crate::files::path_too_big;
 use crate::platform::block_write_with;
 use crate::store::TEST_LAYOUT;
@@ -14,6 +15,7 @@ use core::cell::{Cell, RefCell};
 use core::ffi::c_void;
 use dkrt_abi::platform::{blocks_since, locked, DeviceProfile, Platform, SamplePool, StagedWriter, Tasking};
 use dkrt_abi::profiles;
+use dkrt_abi::storage::{DirEntry, ListCursor, Stat, Storage, ROOT_SAMPLES};
 use dkrt_sdk::store::Layout;
 use dkrt_sdk::*;
 use std::collections::BTreeMap;
@@ -56,6 +58,8 @@ pub struct FakePlatform {
     pub tasks: RefCell<Vec<u32>>,
     pub refuse_task: Cell<bool>,
     pub sems: RefCell<Vec<(u32, &'static str)>>,
+    /// The files of the two roots (`Storage`).
+    pub storage: FakeStorage,
 }
 
 impl FakePlatform {
@@ -86,6 +90,7 @@ impl FakePlatform {
             tasks: RefCell::new(Vec::new()),
             refuse_task: Cell::new(false),
             sems: RefCell::new(Vec::new()),
+            storage: FakeStorage::new(),
         }
     }
     pub fn sector(&self, s: u32) -> [u8; 512] {
@@ -218,6 +223,33 @@ impl SamplePool for FakePlatform {
 impl StagedWriter for FakePlatform {
     fn present(&self) -> bool {
         self.staged.get()
+    }
+}
+
+impl Storage for FakePlatform {
+    fn path_max(&self, root: u32) -> u32 {
+        match root {
+            ROOT_SAMPLES => self.profile.sample_path_max,
+            _ => self.storage.path_max(root),
+        }
+    }
+    unsafe fn stat(&self, root: u32, path: &[u8]) -> Result<Stat, i32> {
+        self.storage.stat(root, path)
+    }
+    unsafe fn read_head(&self, root: u32, path: &[u8], out: &mut [u8; 64]) -> Result<(), i32> {
+        self.storage.read_head(root, path, out)
+    }
+    unsafe fn read_range(&self, root: u32, path: &[u8], offset: u32, out: &mut [u8]) -> Result<usize, i32> {
+        self.storage.read_range(root, path, offset, out)
+    }
+    unsafe fn read_all(&self, root: u32, path: &[u8], dst: *mut u8, cap: u32) -> Result<u32, i32> {
+        self.storage.read_all(root, path, dst, cap)
+    }
+    unsafe fn list_open(&self, root: u32, dir: &[u8], cur: *mut ListCursor) -> Result<(), i32> {
+        self.storage.list_open(root, dir, cur)
+    }
+    unsafe fn list_next(&self, cur: *mut ListCursor, out: &mut DirEntry) -> Result<bool, i32> {
+        self.storage.list_next(cur, out)
     }
 }
 
