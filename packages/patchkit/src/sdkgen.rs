@@ -1485,6 +1485,8 @@ fn limits_h(sdk: &Sdk) -> String {
     for (n, v) in format_limits(sdk) {
         let _ = writeln!(s, "#define DK_{n} {v}");
     }
+    // The module record count (`[limits.max] modules`): the debug module sizes its span table with it.
+    let _ = writeln!(s, "#define DK_MAX_MODULES {}", sdk.limits.max.modules);
     s.push_str("\n#endif /* DK_GEN_LIMITS_H */\n");
     s
 }
