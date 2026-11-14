@@ -1,6 +1,6 @@
 """PCM planes and pool records for the machine rigs, written the way the runtime does: planes in free L2, then the record, with `ready` last.
 
-Used by modules that play a sample from the pool (digikit/shot): their playback tests and the conformance worker."""
+Used by modules that play a sample from the pool (a sample machine): their playback tests and the conformance worker."""
 
 import random
 
