@@ -346,7 +346,7 @@ without running it.
   the harness only (see `tests/regression/project.json`). So a change to a stock test, a golden, an FX
   scenario, a host test or another module's tests still selects the dependent modules, but their device
   results replay from the cache. Packs still run (they are not cached).
-- Build and pack inputs share `sdk/sdk.toml`, public `sdk/include`, `sdk/dsp` (including `sdk/dsp/contract`) and `modules/core/runtime/vectors`. Full-input device tasks do not
+- Build and pack inputs share `sdk/sdk.toml`, `sdk/dsp` (including `sdk/dsp/contract`) and `modules/core/runtime/vectors`. From `sdk/include` a pack or object build reads only the headers its sources include: `packSourceInputs` (`tools/nx/pack-inputs.mjs`) scans `#include` and `.include` over the build sources and the headers they reach, with the lookup order of the build (the including file's directory, the modules' `build/gen`, `src`, `include`, then the dirs of `tools/patchkit/toolchain/pins.toml`). A computed include is not seen. An object build (`build-objects`) reads the same source inputs plus the patchkit production, not the production of every graph dependency. Full-input device tasks do not
   hash them; they hash the built bytes (see "Cached targets"). `tools/devtools/emu-slot.mjs` is no device input: it only schedules.
   The SDK sources under `sdk/src` are linked into every content module with C sources (the packer builds them into one library and
   keeps the functions the module calls), so `sdk/src/**/*` is an input of the pack of each such module, and the stored object of
@@ -719,8 +719,8 @@ Three keys exist:
 `mise run test` selects affected targets with merge keys. `mise run test:full` runs every file with full keys.
 
 Inputs computed from code:
-- The TypeScript import closure of the test file.
-- The Python import closure of the `.py` tools that a record lists in `sources`. A test that runs a new Python tool must list it in the `sources` of its record.
+- The TypeScript import closure of the test file. A barrel (a file of only `export ... from`, for example `packages/dk-session/src/index.ts`) is followed per imported name: `import { A } from '@digi/dk-session'` reaches the file that exports A. A namespace, default, side-effect, dynamic or `require` import takes the whole file. A file that a test loads through a barrel without using one of its names is not an input.
+- The Python import closure of the `.py` tools that a record lists in `sources`. A test that runs a new Python tool must list it in the `sources` of its record. `tools.devtools.benchlock` is skipped (`NO_RESULT_MODULES` in `tools/nx/py-imports.mjs`): it only serialises runs and changes no result. The gate roots (`tools/gate/*/project.json`) list their Python by hand and leave it out too.
 
 Inputs listed by hand are files that a test reads by path. No import walk sees them. They are in `READ_BY_TESTS` and `TEST_READS` in `tools/nx/device-test-keys.mjs`. Add an entry when a test reads a new file by path.
 

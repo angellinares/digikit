@@ -1,8 +1,43 @@
 // Pack reads its explicit manifest library and builds the selected objects, not acceptance graph edges.
-import { existsSync, readFileSync } from 'node:fs';
+import { existsSync, globSync, readFileSync, statSync } from 'node:fs';
 import { dirname, isAbsolute, join, normalize } from 'node:path';
 import { pathDeps } from './cargo.mjs';
 import { read } from './module-manifests.mjs';
+
+// Headers that a build reads. A textual scan of `#include` and `.include` over the build's sources and the
+// headers they reach (conditional includes count: the scan is wider than the preprocessor). A name is looked up in the
+// directories of the patchkit include list (cf_include_dirs in packages/patchkit/src/build/mod.rs:249 and include_dirs in
+// build/sharc.rs:14): the module's build/gen and src directories, then the pinned include directories
+// (tools/patchkit/toolchain/pins.toml), and beside the including file. Every directory that holds the name counts.
+// A name that no directory holds is not an input. Every header found is an input, whatever its directory.
+// Limit: a computed include (`#include MACRO`) is not seen.
+const INCLUDE = /^[ \t]*(?:#[ \t]*include|\.include)[ \t]*[<"]([^>"\n]+)[>"]/gm;
+const sdkHeaders = (workspaceRoot, sources, moduleDirs) => {
+  const pins = read(workspaceRoot, 'tools/patchkit/toolchain/pins.toml').include;
+  const dirs = [
+    ...moduleDirs.flatMap((dir) => [`${dir}/build/gen`, `${dir}/src`]),
+    ...new Set([...pins.cf, ...pins.sharc]),
+  ];
+  const seen = new Set();
+  const found = new Set();
+  const visit = (file) => {
+    if (seen.has(file)) return;
+    seen.add(file);
+    const path = join(workspaceRoot, file);
+    if (!existsSync(path) || !statSync(path).isFile()) return;
+    for (const [, name] of readFileSync(path, 'utf8').matchAll(INCLUDE)) {
+      for (const dir of new Set([dirname(file), ...dirs])) {
+        const candidate = normalize(join(dir, name));
+        if (existsSync(join(workspaceRoot, candidate)) && statSync(join(workspaceRoot, candidate)).isFile()) {
+          found.add(candidate);
+          visit(candidate);
+        }
+      }
+    }
+  };
+  for (const source of sources) visit(source);
+  return [...found].sort().map((file) => `{workspaceRoot}/${file}`);
+};
 
 export const packSourceInputs = (workspaceRoot, byId, manifests) => {
   const bounded = (path) => {
@@ -63,18 +98,31 @@ export const packSourceInputs = (workspaceRoot, byId, manifests) => {
         }
     for (const dependency of pathDeps(workspaceRoot, root)) includeCrate(dependency);
   };
+  const buildSources = new Set();
+  const buildDirs = new Set();
   for (const [id, module] of byId) {
     if (!manifests.includes(module.file)) continue;
     projects.add(id);
+    buildDirs.add(dirname(module.file));
     for (const object of module.objects)
       for (const source of object.sources ?? []) {
         if (isAbsolute(source) || /[?*[]/.test(source)) throw new Error(`Ambiguous pack source path: ${source}`);
         const path = bounded(join(dirname(module.file), source));
         include(path);
+        buildSources.add(path);
         if (path.endsWith('/Cargo.toml')) includeCrate(dirname(path));
+        // Rust sources are not scanned for includes: a Rust object keeps all SDK headers as inputs
+        if (path.endsWith('/Cargo.toml') || path.endsWith('.rs')) paths.add('{workspaceRoot}/sdk/include/**/*');
         // a content module's C object links the SDK components it uses (patchkit build, sdk_lib): all of sdk/src is an input
-        if (path.endsWith('.c') && module.manifest?.category !== 'core') paths.add('{workspaceRoot}/sdk/src/**/*');
+        if (path.endsWith('.c') && module.manifest?.category !== 'core') {
+          paths.add('{workspaceRoot}/sdk/src/**/*');
+          for (const file of globSync('sdk/src/**/*', { cwd: workspaceRoot })) buildSources.add(file);
+        }
       }
   }
-  return [{ input: 'production', projects: [...projects].sort() }, ...[...paths].sort()];
+  return [
+    { input: 'production', projects: [...projects].sort() },
+    ...[...paths].sort(),
+    ...sdkHeaders(workspaceRoot, buildSources, [...buildDirs].sort()),
+  ];
 };

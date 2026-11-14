@@ -29,7 +29,6 @@
         "{workspaceRoot}/tools/firmware/config.py",
         "{workspaceRoot}/tools/firmware/device.py",
         "{workspaceRoot}/tools/device/dklog_kinds.py",
-        "{workspaceRoot}/tools/devtools/benchlock.py",
         "{workspaceRoot}/tools/devtools/portable_flock.py",
         "{workspaceRoot}/tools/devtools/stablebin.py",
         "{workspaceRoot}/tools/devtools/emud_key.py",

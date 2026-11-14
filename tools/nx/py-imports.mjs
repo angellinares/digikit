@@ -3,6 +3,9 @@
 // An edge is found by regex over the whole file text, so imports inside functions count: `from tools.a import b` (and
 // `tools.a.b` when that is a module), `import tools.a`, and any string literal that holds a `tools.x.y` name (`-m tools.x`
 // spawns, importlib with a literal name).
+// Lock-only modules (NO_RESULT_MODULES) are skipped: `tools.devtools.benchlock` only serialises runs and changes no result,
+// so an edit of it must not reselect the device suite. The gate roots (tools/gate/*/project.json) list their Python by hand
+// and leave it out too.
 // Limits: relative imports (`from .`, used only in tools/sharc_dev) are not followed; computed module names are not seen;
 // only files that exist are returned; data files and non-Python tools a script runs are not inputs.
 import { existsSync, readFileSync } from 'node:fs';
@@ -11,6 +14,7 @@ import { join } from 'node:path';
 const FROM_IMPORT = /^\s*from\s+(tools(?:\.\w+)+)\s+import\s+([\w, ()]+)/gm;
 const IMPORT = /^\s*import\s+(tools(?:\.\w+)+)/gm;
 const LITERAL = /['"](tools(?:\.\w+)+)['"]/g;
+const NO_RESULT_MODULES = new Set(['tools.devtools.benchlock']);
 
 export const pythonImportInputs = (workspaceRoot) => {
   const cache = new Map();
@@ -53,7 +57,7 @@ export const pythonImportInputs = (workspaceRoot) => {
     const seen = new Set();
     const files = new Set();
     const visit = (name) => {
-      if (seen.has(name)) return;
+      if (seen.has(name) || NO_RESULT_MODULES.has(name)) return;
       seen.add(name);
       for (const file of filesOf(name)) {
         files.add(file);
