@@ -192,7 +192,7 @@ The packer finds the SHARC entry points by name, with the toolchain's leading un
 
 ### `[uses]` is written, not authored
 
-`module:check` runs the module in the emulator and writes `[uses.<device>]` from what `init` declared: `machine_rows`, `param_rows`, `page_rows` and `record_bytes`. It is like a lock file. Nobody edits it. The tables are per device because the rows differ (the Digitone II has page rows, the Digitakt II has none). Analog needs 444 record bytes on DT2 and 540 on DN2.
+`module:check` runs the module in the emulator and writes `[uses.<device>]` from what `init` declared: `machine_rows`, `param_rows`, `page_rows` and `record_bytes`. After its conformance run it adds the DSP cost: `dsp_cost_voice` (a machine: the worst steady block of one voice) or `dsp_cost_fx` (an effect: its worst process call), in instructions per block. Nobody declares a cost by hand; the DSP descriptor has no cycle words. It is like a lock file. Nobody edits it. The tables are per device because the rows differ (the Digitone II has page rows, the Digitakt II has none). Analog needs 444 record bytes on DT2 and 540 on DN2.
 
 The packer copies the counts into the header table. The device menu check (`dkrt_scan`, `dkrt_fit`) and `dkneeds::needs_of` read only counts and sizes. So "does it fit" needs no module code. `record_bytes` goes into the `ARENA` need, rounded to 16 plus the block header.
 
@@ -203,7 +203,7 @@ The header pair at 0x90 and 0x94 is `table_off` and `table_size`. The table is v
 | Entry | What it holds |
 | --- | --- |
 | NEEDS | the services the linked imports name, the newest `since` of each, hard or optional (the packer derives them) |
-| USES | `(resource id, count)`: the `[uses]` rows and `record_bytes` (resource ids are in `sdk.toml` `[records.resources]`; `dsp_cost` is reserved) |
+| USES | `(resource id, count)`: the `[uses]` rows and `record_bytes` (resource ids are in `sdk.toml` `[records.resources]`; `DSP_COST_VOICE` and `DSP_COST_FX` are the measured DSP cost; the broker takes the largest voice cost times the voices plus the sum of the effect costs, [sdk.md](plans/sdk.md) section 9) |
 | KEYS | `(kind, n, keys)`: the machine keys, the effect ids, and the keys of `[[record]]` entries (the shape id of an `lfo_shape`) |
 | KINDS, SLOTS, HOOKS, EXPORTS, RESOURCES | what a service module provides (R12; the runtime compares the `dk_service_declare_*` calls of `init` with them) |
 
