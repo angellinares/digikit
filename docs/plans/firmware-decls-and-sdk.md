@@ -253,7 +253,7 @@ Proof: kernel tests against the reference models and instruction ceilings on the
 measured (the emulator counts instructions, not stalls).
 
 Rules (kernels, from the public manuals and the firmware, see docs/sharc/style.md): block loops of 4 or more
-instructions; B/L only on I0-I5 with L back to 0 on every exit, L6/L7/B6/B7 untouched, B3 saved if written; no DAG
+instructions; B/L only on I0-I5 with L back to 0 on every exit; register classes in sdk/dsp/REGISTERS.md; no DAG
 register load within 4 instructions of its use; data in DM only.
 
 Decision: offer `--lang c` for SHARC glue, or keep assembly only.

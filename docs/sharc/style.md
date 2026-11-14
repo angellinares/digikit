@@ -45,7 +45,7 @@ Rules:
 - Load coefficients into registers before the loop. Keep state in registers across the loop and store it after.
 - Prefer `DM(offset, Ireg)` (immediate offset, no modify) for fixed fields. Pluck also uses `DM(I1, M5)` as "read, modify by
   0"; both work because M5 = 0. The immediate form does not depend on M5 and is easier to read.
-- Do not write I6 to I15, M0, M5 to M15, L0 to L7, or MODE1 (see section 5). B3 and M1-M4 may be changed.
+- Which registers a module may change, must keep and never writes: sdk/dsp/REGISTERS.md (see section 5).
 
 ## 3. Comments
 
@@ -91,8 +91,7 @@ From `<dk/machine/machine.h>`, `<dk/fx/fx.h>` and finding 45 **[D]**:
   `JUMP (M13, I13)`. Do not use `RTS` or the frame helpers unless the module builds its own frame.
 - Arguments: R4 = state, R8 = input record (`dk_voice_in` or `dk_fx_in`), R12 = parameter words. Result R0
   (`DK_OK`, `DK_DONE` or a negative fault).
-- May clobber: R0-R15, I0-I5, M1-M4, B3.
-- Must keep: I6-I15 (frame and stack), M0, M5-M15, L0-L7, MODE1.
+- Registers: the classes clobber, keep and never_write are in sdk/dsp/REGISTERS.md.
 - Constants: M5 = 0, M6 = 1, M7 = -1, M13 = 0, M14 = 1, M15 = -1 hold at entry. The wrapper guarantees them (the
   stock code never writes them; finding 45). Never write them; use them for post-modify.
 - MODE1 (entry value 0x39011cf8 on both devices): SIMD (PEYEN, bit 21) is off, TRUNCATE and ALUSAT are off,
@@ -101,8 +100,8 @@ From `<dk/machine/machine.h>`, `<dk/fx/fx.h>` and finding 45 **[D]**:
   - To use SIMD: set PEYEN, wait the pipeline gap (a `NOP`-class instruction after a MODE1 write), run, clear PEYEN
     before return. Manual: "SIMD Mode"; the stock copy clears it before the return.
   - Do not clear RND32 (the float result rounding assumed by the rest of the DSP).
-- Circular buffers: set B and L of the DAG register you use, restore L = 0 at the end. L0-L7 are preserved by contract,
-  so save them if you change them **[O]**. **[C]** Earlier text said the stock code never writes B or L. The stock voice
+- Circular buffers: set B and L of the DAG register you use, restore L = 0 at the end. Which L registers a module may
+  write: sdk/dsp/REGISTERS.md. **[C]** Earlier text said the stock code never writes B or L. The stock voice
   renderer sets B3/L3 and B4/L4 and restores L = 0 and B3 (DT2 1.17 around 0x1c508a-0x1c532b); only the FX units
   avoid them (finding 53).
 - Hardware loops: no loop may be active at entry (H2/H3 hooks: no DO loop is active). Do not leave a loop with
@@ -116,8 +115,8 @@ From `<dk/machine/machine.h>`, `<dk/fx/fx.h>` and finding 45 **[D]**:
 Read in the SHARC+ programming reference **[D]**. Items marked **[O]** are not measured in the emulator or on hardware.
 
 - Loops: a block loop has 4 or more instructions **[D]**. Shorter loops have extra restrictions; test them first **[O]**.
-- Circular buffers: set B/L only on I0-I5. Set L back to 0 on every exit. Do not touch L6, L7, B6, B7. Save B3 if the
-  module writes it **[D]**.
+- Circular buffers: set B/L only on I0-I5. Set L back to 0 on every exit. Which B and L registers a module may
+  write: sdk/dsp/REGISTERS.md **[D]**.
 - DAG load-to-use: do not use a DAG register within 4 instructions of loading it; each instruction short of that
   costs a stall, up to 4 **[D]**.
 - Multiplier: if both inputs come from the previous instruction, 2 stalls; one input from one instruction back, 1
@@ -209,6 +208,6 @@ After the loop, write F1 (not F0) to the state so rounding drift does not accumu
   - the voice end check after the loop uses compare and conditional jumps; fine.
 - `<dk/machine/machine.h>` / `<dk/fx/fx.h>`: the contract is specified for entry and return. It lists clobbered and preserved
   registers but not MODE1 bit values, SIMD state, or whether loops/stacks are clear at entry. Add one sentence each
-  (section 5). It does not say that B registers other than B3 are preserved: say whether they are **[O]**.
+  (section 5).
 - `dk_machine.inc` provides `DK_IN_W_*` (word offsets) and `DK_DESC_*`. It has no names for register roles or
   state words; that is left to each module.
