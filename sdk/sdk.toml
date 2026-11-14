@@ -119,13 +119,18 @@ fns = [
 # The register contract of module DSP code, machine and FX entry points alike, in one table. `patchkit gen` writes the rule comments of
 # sdk/include/dk/gen/machine.h and fx.h, sdk/dsp/REGISTERS.md and packages/dksharc/src/rules_table.rs from it. Entries are names, ranges (`R0-R15`)
 # or groups: MR = MRF, MRB, MSF, MSB; ASTAT = ASTATX, ASTATY; STKY = STKYX, STKYY; LCNTR also covers the loop registers CURLCNTR and LADDR.
-# clobber: free to use. keep: save before the first write, restore before every return. never_write: the stock interrupt code reads these at any
-# instruction, so no write at all, not even with a save and restore. entry: I12 is the entry address, I13 the return address; return with
-# `JUMP (M13, I13)`; both are treated as keep. The check is `dksharc::rules`, run by `patchkit build`; it only warns for now.
+# clobber: free to use. keep: save before the first write, restore before every return (I6 is the frame pointer; B6 goes with it).
+# stack: the stack pointer I7; it changes only through balanced pushes and pops (post-modify with M6 or M7, or MODIFY by a constant), holds its
+# entry value at every return and is never loaded with another address. never_write: the stock interrupt code addresses through I6 and I7 with
+# L6 = L7 = 0, takes M5, M6, M7 and M13 as constants, and a write to B7 also moves I7; so none of these may be written, not even with a save and
+# restore. entry: the entry address arrives in I12 (it may be overwritten: both adapters restore it, the machine adapter from the stock frame, the
+# fx adapter from its own copy); the return address arrives in I13 (keep: the module returns with `JUMP (M13, I13)`).
+# The check is `dksharc::rules`, run by `patchkit build` for content modules; it only warns for now.
 [dsp.registers]
-clobber     = ["R0-R15","I0-I5","M1-M4","B3","MR","PX","ASTAT","STKY","LCNTR"]
-keep        = ["I8-I11","I14","I15","M0","M8-M12","M14","M15","B0-B2","B4","B5","B8-B15","L0-L5","L8-L15","S0-S15","MODE1","MODE2"]
-never_write = ["I6","I7","B6","B7","L6","L7","M5","M6","M7","M13"]
+clobber     = ["R0-R15","I0-I5","I12","M1-M4","B3","MR","PX","ASTAT","STKY","LCNTR"]
+keep        = ["I6","I8-I11","I14","I15","M0","M8-M12","M14","M15","B0-B2","B4-B6","B8-B15","L0-L5","L8-L15","S0-S15","MODE1","MODE2"]
+stack       = ["I7"]
+never_write = ["B7","L6","L7","M5","M6","M7","M13"]
 entry       = { entry = "I12", return = "I13" }
 
 # The FX contract's numbers (sdk/include/dk/gen/fx.h is the generated C view; it includes the generated sdk/include/dk/gen/fx_consts.h).

@@ -63,7 +63,7 @@ R3, R5-R7, R9-R11, R13-R15 and their PEx twins are **not** saved on path A: the 
 
 ## What the chain assumes at the interrupt (live-in registers)
 
-**[D]** Read before written, with no save: I6, I7, L7, B7, M5, M6, M7, M13 (the wrapper's pushes and the delayed jump need M7 = -1, M6 = +1, M5 = 0, M13 = 0 and linear addressing of the stack I7). MODE1 bit 16 selects the path. The wrapper reads M5 as the constant 0 (`R0 = M5` at `0x1c048c`). B6 is also read, but the stub saves and converts it, so it is not required to hold a fixed value.
+**[D]** Read before written, with no save: I6, I7, L7, B7, M5, M6, M7, M13 (the wrapper's pushes and the delayed jump need M7 = -1, M6 = +1, M5 = 0, M13 = 0 and linear addressing of the stack I7). MODE1 bit 16 selects the path. The wrapper reads M5 as the constant 0 (`R0 = M5` at `0x1c048c`). B6 is also read, but the stub saves and converts it, so it is not required to hold a fixed value. I6 is copied and saved by the wrapper, so it need not hold a fixed value either; what the chain needs is a valid stack in I7 with L6 = L7 = 0.
 
 **[D]** What the handler sees: L0-L5 and L8-L15 are 0; I4 = the frame area pointer; R8 = the argument word; M4 = selector; I12 = handler; the frame and the saved copies are below I6.
 

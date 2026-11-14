@@ -342,9 +342,12 @@ fn build_object(
         Kind::Sharc => {
             let text = sharc::source_text(&env.root, moddir, &paths, defines)?;
             let obj = sharc::sharc_object(&text)?;
-            // The register contract (sdk/dsp/REGISTERS.md): a warning for now, never a failed build.
-            for p in sharc::rule_problems(&obj) {
-                eprintln!("{}", sharc::rule_warning_line(module, &p));
+            // The register contract (sdk/dsp/REGISTERS.md): a warning for now, never a failed build. Only content modules are checked
+            // (`sdk` is `is_content()`): a `core/*` module implements the contract (the adapters, the stock-code hooks), so it is not held to it.
+            if sdk {
+                for p in sharc::rule_problems(&obj) {
+                    eprintln!("{}", sharc::rule_warning_line(module, &p));
+                }
             }
             Ok(obj)
         }

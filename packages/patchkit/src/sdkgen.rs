@@ -96,10 +96,11 @@ struct DspToml {
 struct DspRegisters {
     clobber: Vec<String>,
     keep: Vec<String>,
+    stack: Vec<String>,
     never_write: Vec<String>,
     entry: DspEntry,
 }
-/// The registers of the entry convention: the entry address and the return address.
+/// The registers of the entry convention: the entry address (free to use: both adapters restore it) and the return address (keep).
 #[derive(Deserialize)]
 #[serde(deny_unknown_fields)]
 struct DspEntry {
@@ -109,13 +110,18 @@ struct DspEntry {
 }
 impl DspRegisters {
     /// (class, rule, entries) in table order.
-    fn classes(&self) -> [(&'static str, &'static str, &Vec<String>); 3] {
+    fn classes(&self) -> [(&'static str, &'static str, &Vec<String>); 4] {
         [
             ("clobber", "free to use", &self.clobber),
             (
                 "keep",
                 "save before the first write, restore before every return",
                 &self.keep,
+            ),
+            (
+                "stack",
+                "the stack pointer: changes only by balanced pushes and pops (post-modify with M6 or M7, or MODIFY by a constant), holds its entry value at every return, is never loaded with another address",
+                &self.stack,
             ),
             (
                 "never_write",
@@ -2471,7 +2477,8 @@ fn expand_registers(what: &str, specs: &[String]) -> Result<Vec<String>> {
     Ok(out)
 }
 
-/// `[dsp.registers]` checked once at the parse: known names, no register in two classes, the entry registers in none.
+/// `[dsp.registers]` checked once at the parse: known names, no register in two classes, the entry address register in `clobber` and the
+/// return address register in no class (it is keep by the entry convention).
 fn registers_checked(sdk: &Sdk) -> Result<()> {
     let r = &sdk.dsp.registers;
     let mut seen: Vec<(&str, Vec<String>)> = vec![];
@@ -2486,13 +2493,19 @@ fn registers_checked(sdk: &Sdk) -> Result<()> {
         }
         seen.push((name, names));
     }
-    let entry = expand_registers("entry", &[r.entry.entry.clone(), r.entry.ret.clone()])?;
+    let entry = expand_registers("entry", std::slice::from_ref(&r.entry.entry))?;
+    let ret = expand_registers("entry", std::slice::from_ref(&r.entry.ret))?;
     if let Some(n) = entry
         .iter()
-        .find(|n| seen.iter().any(|(_, v)| v.contains(n)))
+        .find(|n| !seen.iter().any(|(c, v)| *c == "clobber" && v.contains(n)))
     {
         return Err(err!(
-            "{SOURCE}: [dsp.registers] {n} is an entry register and in a class"
+            "{SOURCE}: [dsp.registers] {n} is the entry address register and not in clobber"
+        ));
+    }
+    if let Some(n) = ret.iter().find(|n| seen.iter().any(|(_, v)| v.contains(n))) {
+        return Err(err!(
+            "{SOURCE}: [dsp.registers] {n} is the return address register and in a class"
         ));
     }
     Ok(())
@@ -2507,7 +2520,7 @@ fn register_comment(sdk: &Sdk) -> String {
     }
     let _ = write!(
         s,
-        "\n   entry: {} is the entry address, {} the return address (both are keep).",
+        "\n   entry: {} is the entry address (it may be overwritten), {} the return address (keep).",
         r.entry.entry, r.entry.ret
     );
     s
@@ -2533,7 +2546,7 @@ fn rules_rs(sdk: &Sdk) -> Result<String> {
     }
     let _ = write!(
         s,
-        "\n/// The register that holds the entry address.\npub const ENTRY: &str = {:?};\n\n/// The register that holds the return address.\npub const RETURN: &str = {:?};\n",
+        "\n/// The register that holds the entry address (it is in clobber).\npub const ENTRY: &str = {:?};\n\n/// The register that holds the return address (it is keep).\npub const RETURN: &str = {:?};\n",
         r.entry.entry, r.entry.ret
     );
     Ok(s)
@@ -2554,7 +2567,7 @@ fn registers_md(sdk: &Sdk) -> String {
     }
     let _ = write!(
         s,
-        "\n## Entry\n\nThe adapter enters a module function with `{e}` = the entry address and `{t}` = the return address, and the module returns with `JUMP (M13, {t})`. Both registers are treated as keep.\n\n\
+        "\n## Entry\n\nThe adapter enters a module function with `{e}` = the entry address and `{t}` = the return address, and the module returns with `JUMP (M13, {t})`. `{e}` may be overwritten (both adapters restore it); `{t}` is treated as keep.\n\n\
          ## Why never_write\n\nThe stock interrupt code reads {list} at any instruction. A save before the write and a restore after it do not help: an interrupt between the two reads the changed value. So a module does not write these registers at all.\n\n\
          ## Names\n\nA range such as `R0-R15` stands for the registers one by one. A group stands for the registers that `dksharc` names separately: `MR` is MRF, MRB, MSF and MSB; `ASTAT` is ASTATX and ASTATY; `STKY` is STKYX and STKYY; `LCNTR` is LCNTR, CURLCNTR and LADDR (the loop registers).\n",
         e = r.entry.entry,

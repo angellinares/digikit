@@ -8,17 +8,18 @@ The check in `dksharc::rules` runs in `patchkit build` for module code. It only 
 
 | Class | Registers | Rule |
 | --- | --- | --- |
-| clobber | `R0-R15, I0-I5, M1-M4, B3, MR, PX, ASTAT, STKY, LCNTR` | free to use |
-| keep | `I8-I11, I14, I15, M0, M8-M12, M14, M15, B0-B2, B4, B5, B8-B15, L0-L5, L8-L15, S0-S15, MODE1, MODE2` | save before the first write, restore before every return |
-| never_write | `I6, I7, B6, B7, L6, L7, M5, M6, M7, M13` | no write at all: the stock interrupt code reads these at any instruction |
+| clobber | `R0-R15, I0-I5, I12, M1-M4, B3, MR, PX, ASTAT, STKY, LCNTR` | free to use |
+| keep | `I6, I8-I11, I14, I15, M0, M8-M12, M14, M15, B0-B2, B4-B6, B8-B15, L0-L5, L8-L15, S0-S15, MODE1, MODE2` | save before the first write, restore before every return |
+| stack | `I7` | the stack pointer: changes only by balanced pushes and pops (post-modify with M6 or M7, or MODIFY by a constant), holds its entry value at every return, is never loaded with another address |
+| never_write | `B7, L6, L7, M5, M6, M7, M13` | no write at all: the stock interrupt code reads these at any instruction |
 
 ## Entry
 
-The adapter enters a module function with `I12` = the entry address and `I13` = the return address, and the module returns with `JUMP (M13, I13)`. Both registers are treated as keep.
+The adapter enters a module function with `I12` = the entry address and `I13` = the return address, and the module returns with `JUMP (M13, I13)`. `I12` may be overwritten (both adapters restore it); `I13` is treated as keep.
 
 ## Why never_write
 
-The stock interrupt code reads I6, I7, B6, B7, L6, L7, M5, M6, M7, M13 at any instruction. A save before the write and a restore after it do not help: an interrupt between the two reads the changed value. So a module does not write these registers at all.
+The stock interrupt code reads B7, L6, L7, M5, M6, M7, M13 at any instruction. A save before the write and a restore after it do not help: an interrupt between the two reads the changed value. So a module does not write these registers at all.
 
 ## Names
 
