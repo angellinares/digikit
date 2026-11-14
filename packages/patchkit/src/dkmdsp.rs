@@ -1233,7 +1233,7 @@ mod tests {
     /// An effect: a process routine in the text, a `dk_fx_desc` (magic, contract 1, n_params, state_bytes, ...) in the data and a state-less bss.
     fn fx_object(n_params: u32, state_bytes: u32) -> Dko {
         let mut o = object();
-        let words = [FX_DESC_MAGIC, 1, n_params, state_bytes, 200, 0, 0];
+        let words = [FX_DESC_MAGIC, 1, n_params, state_bytes, 0, 0];
         let desc: Vec<u8> = words.iter().flat_map(|w| w.to_le_bytes()).collect();
         o.sections[1] = sec("d", "data", 4, &desc);
         o.symbols.push(sym("dkdesc", Some("d"), 0, true));
@@ -1426,7 +1426,7 @@ mod tests {
         assert!(e(&fx_object(9, 4), fx_spec(vec![])).contains("n_params 9"));
         assert!(e(&fx_object(1, 6), fx_spec(vec![])).contains("multiple of 4"));
         let mut c = fx_object(1, 4);
-        let words = [FX_DESC_MAGIC, 2, 1, 4, 0, 0, 0];
+        let words = [FX_DESC_MAGIC, 2, 1, 4, 0, 0];
         let desc: Vec<u8> = words.iter().flat_map(|w| w.to_le_bytes()).collect();
         c.sections[1] = sec("d", "data", 4, &desc);
         assert!(e(&c, fx_spec(vec![])).contains("contract 2"));

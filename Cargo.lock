@@ -1167,6 +1167,7 @@ name = "dkprof"
 version = "0.1.0"
 dependencies = [
  "dkaddrmap",
+ "dkrt-fit",
  "dksharc",
  "serde",
  "serde_json",

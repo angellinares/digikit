@@ -36,9 +36,11 @@ machine_rows = 1
 param_rows = 5
 page_rows = 0
 record_bytes = 844
+dsp_cost_voice = 475
 
 [uses.dn2]
 machine_rows = 1
 param_rows = 5
 page_rows = 1
 record_bytes = 940
+dsp_cost_voice = 353

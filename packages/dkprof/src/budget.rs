@@ -151,38 +151,20 @@ pub fn check_machine(b: &Budget, worst_block: u64, worst_note_on: u64) -> Machin
     }
 }
 
-/// What a selection of modules takes of one block, in instructions the modules themselves run (the stock firmware is the device's baseline).
-#[derive(Clone, Debug, Default, PartialEq, Eq)]
-pub struct Selection {
-    /// The steady worst block of each selected machine module, for one voice. Every voice may run any of them, so the worst one counts for all voices.
-    pub machines: Vec<u64>,
-    /// The worst process call of each selected effect.
-    pub fx: Vec<u64>,
-}
+/// The selection rule is one integer function for the runtime's boot planner, the DIGIKIT menu, `patchkit fit` and this crate (`dkrt_fit::check_selection`):
+/// `max(machine costs) * voices + sum(effect costs) <= headroom`, in instructions per block, with the stock baseline and the safety margin already out of the headroom.
+pub use dkrt_fit::{DspCheck, check_selection, dsp_own};
 
-#[derive(Clone, Debug, PartialEq, Serialize)]
-pub struct SelectionCheck {
-    /// `max(machines) * voices + sum(fx)`, instructions per block.
-    pub own: u64,
-    /// The device's headroom (after the stock baseline and the safety margin).
-    pub headroom: u64,
-    /// The whole block: stock baseline plus `own`, projected with the high factor, in percent of the block; the limit is the budget percent.
-    pub load_pct: f64,
-    pub fits: bool,
-}
-
-/// The selection rule: the largest machine cost times the device's voices, plus the sum of the effect costs, plus the stock baseline, stays
-/// within the block at `budget_pct`. This is the rule that holds until the calibration (P9); the broker applies it when it admits a selection.
-/// `stock + own <= block at budget_pct` is the same test as `own <= headroom`.
-pub fn check_selection(dev: &DeviceCost, budget_pct: f64, sel: &Selection) -> SelectionCheck {
-    let machine = sel.machines.iter().copied().max().unwrap_or(0);
-    let own = machine * dev.voices + sel.fx.iter().sum::<u64>();
-    let headroom = dev.headroom(budget_pct);
-    SelectionCheck {
-        own,
-        headroom,
-        load_pct: dev.load_pct(dev.stock_busy + own),
-        fits: own <= headroom,
+impl DeviceCost {
+    /// `check_selection` for this device: its voices and its headroom at `budget_pct`.
+    pub fn check_selection(&self, budget_pct: f64, machines: &[u32], fx: &[u32]) -> DspCheck {
+        let clamp = |n: u64| u32::try_from(n).unwrap_or(u32::MAX);
+        check_selection(
+            clamp(self.voices),
+            clamp(self.headroom(budget_pct)),
+            machines,
+            fx,
+        )
     }
 }
 
@@ -261,31 +243,19 @@ mod tests {
     #[test]
     fn the_selection_rule_takes_the_largest_machine_for_every_voice_plus_the_effects() {
         let d = dn2();
-        let h = d.headroom(DEFAULT_BUDGET_PCT);
+        let h = d.headroom(DEFAULT_BUDGET_PCT) as u32;
         let each = h / 16;
-        let ok = Selection {
-            machines: vec![each / 2, each],
-            fx: vec![],
-        };
-        let c = check_selection(&d, DEFAULT_BUDGET_PCT, &ok);
-        assert_eq!(c.own, each * 16);
-        assert!(c.fits);
-        assert!(c.load_pct <= DEFAULT_BUDGET_PCT + 0.001);
+        let ok = d.check_selection(DEFAULT_BUDGET_PCT, &[each / 2, each], &[]);
+        assert_eq!(ok.own, each * 16);
+        assert!(ok.fits);
+        assert!(d.load_pct(d.stock_busy + u64::from(ok.own)) <= DEFAULT_BUDGET_PCT + 0.001);
         // one instruction per voice more, or an effect on top, does not fit
-        let over = Selection {
-            machines: vec![each + 1],
-            fx: vec![],
-        };
-        assert!(!check_selection(&d, DEFAULT_BUDGET_PCT, &over).fits);
-        let with_fx = Selection {
-            machines: vec![each],
-            fx: vec![h - each * 16 + 1],
-        };
-        let c = check_selection(&d, DEFAULT_BUDGET_PCT, &with_fx);
-        assert!(!c.fits);
-        assert!(c.load_pct > DEFAULT_BUDGET_PCT);
+        assert!(!d.check_selection(DEFAULT_BUDGET_PCT, &[each + 1], &[]).fits);
+        let with_fx = d.check_selection(DEFAULT_BUDGET_PCT, &[each], &[h - each * 16 + 1]);
+        assert!(!with_fx.fits);
+        assert!(d.load_pct(d.stock_busy + u64::from(with_fx.own)) > DEFAULT_BUDGET_PCT);
         // no module: only the stock baseline
-        let none = check_selection(&d, DEFAULT_BUDGET_PCT, &Selection::default());
+        let none = d.check_selection(DEFAULT_BUDGET_PCT, &[], &[]);
         assert!(none.fits && none.own == 0);
     }
 

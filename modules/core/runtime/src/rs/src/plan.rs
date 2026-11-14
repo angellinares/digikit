@@ -13,8 +13,10 @@
 //! - Exclusive: one owner for each kind (a service of the table, or a module's `KINDS`), slot and hook site; keys of a *generic* kind (`[records.kinds]`
 //!   `generic`) are unique across the selection. The keys of the typed kinds (machines, effects) keep their own rules: a machine key twice takes a fresh type
 //!   number, an effect id twice is `E_FX_ID_DUP` at the load.
-//! - Fit: the module's `USES` (machine, parameter and page rows, the record block) against the capacity the earlier accepted modules left, with the same
-//!   function the menu uses (`dkrt_fit::fits_now` and `take`).
+//! - Fit: the module's `USES` (machine, parameter and page rows, the record block, the DSP cost) against the capacity the earlier accepted modules left, with the
+//!   same function the menu uses (`dkrt_fit::fits_now` and `take`). The DSP load is `max(per-voice machine cost) * voices + sum(effect costs)` against the
+//!   headroom of the device profile; the capacity's DSP entry keeps the running maximum and the sum. A module that takes the load over the headroom is
+//!   refused with `Reason::Fit(CAPK_DSP_COST)`.
 use dkneeds::keys::{name_hash, tag, Keys};
 use dkrt_abi::plan::{Reason, Verdict};
 use dkrt_abi::service::ServiceTable;
@@ -37,6 +39,8 @@ pub struct Plan {
     pub verdicts: [Verdict; SEL_MAX],
     /// The selection indices in load order (a refused module is in it too: the loader reports its verdict).
     pub order: [u8; SEL_MAX],
+    /// The DSP load of the accepted modules (`used`) and the largest per-voice machine cost among them (`largest`): the DSP entry of the capacity after the plan.
+    pub dsp_load: (u32, u32),
 }
 
 fn is_runtime_service(h: u32, services: &ServiceTable) -> bool {
@@ -186,9 +190,18 @@ static mut TABLES: [[u8; TABLE_MAX]; SEL_MAX] = [[0; TABLE_MAX]; SEL_MAX];
 /// Bytes of the table kept for selection index `k`; 0: none (the file is missing, torn, of the old format or has a larger table).
 static mut TABLE_LEN: [usize; SEL_MAX] = [0; SEL_MAX];
 
+/// The DSP load of the accepted modules of the last plan: (load, largest per-voice cost). What `dkrt_capacity` reports as used and largest of `CAPK_DSP_COST`;
+/// the module set is fixed per session, so the plan is the load.
+static mut PLANNED_DSP: (u32, u32) = (0, 0);
+
+pub unsafe fn planned_dsp() -> (u32, u32) {
+    *addr_of!(PLANNED_DSP)
+}
+
 /// Forget the tables (the start of a boot's planning).
 pub unsafe fn reset() {
     *addr_of_mut!(TABLE_LEN) = [0; SEL_MAX];
+    *addr_of_mut!(PLANNED_DSP) = (0, 0);
 }
 
 /// Keep the header table of the `.dkm` `file` (the whole file in the staging buffer) for selection index `k`.
@@ -216,6 +229,11 @@ pub unsafe fn run(count: usize) -> Plan {
             caps[c].used = 0;
             caps[c].largest = caps[c].limit;
         }
+        // the plan starts with nothing loaded (the report counts the plan's own result from its end)
+        if caps[c].kind == dkrt_sdk::proto::CAPK_DSP_COST as u32 {
+            caps[c].used = 0;
+            caps[c].largest = 0;
+        }
         c += 1;
     }
     let tables = &*addr_of!(TABLES);
@@ -229,7 +247,9 @@ pub unsafe fn run(count: usize) -> Plan {
         i += 1;
     }
     let env = Env { services: crate::handlers::services(), runtime: dkrt_sdk::RUNTIME_VERSION, caps: &caps[..k] };
-    plan(&env, &mods[..count.min(SEL_MAX)])
+    let p = plan(&env, &mods[..count.min(SEL_MAX)]);
+    *addr_of_mut!(PLANNED_DSP) = p.dsp_load;
+    p
 }
 
 /// The needs of a module, as the fit function counts them.
@@ -239,6 +259,8 @@ fn needs_of_uses(t: &Keys) -> fit::Needs {
         machine_rows: t.machine_rows(),
         param_rows: t.param_rows(),
         page_rows: t.page_rows(),
+        dsp_cost_voice: t.dsp_cost_voice(),
+        dsp_cost_fx: t.dsp_cost_fx(),
         arena: if rb != 0 { dkneeds::arena_block(rb).unwrap_or(u32::MAX) } else { 0 },
         ..fit::Needs::default()
     }
@@ -359,7 +381,7 @@ fn judge(env: &Env, mods: &[Option<Keys>], j: usize, done: &[bool; SEL_MAX], cap
 pub fn plan(env: &Env, mods: &[Option<Keys>]) -> Plan {
     let n = mods.len().min(SEL_MAX);
     let mods = &mods[..n];
-    let mut p = Plan { n, verdicts: [Verdict::Accepted; SEL_MAX], order: [0; SEL_MAX] };
+    let mut p = Plan { n, verdicts: [Verdict::Accepted; SEL_MAX], order: [0; SEL_MAX], dsp_load: (0, 0) };
     let mut cyclic = [false; SEL_MAX];
     order_of(mods, &mut p.order, &mut cyclic);
     let mut caps = [DkrtCap { kind: 0, limit: 0, used: 0, largest: 0 }; CAP_MAX];
@@ -374,6 +396,13 @@ pub fn plan(env: &Env, mods: &[Option<Keys>]) -> Plan {
         done[j] = v.is_accepted();
         at += 1;
     }
+    let mut c = 0;
+    while c < k {
+        if caps[c].kind == dkrt_sdk::proto::CAPK_DSP_COST as u32 {
+            p.dsp_load = (caps[c].used, caps[c].largest);
+        }
+        c += 1;
+    }
     p
 }
 
@@ -381,7 +410,7 @@ pub fn plan(env: &Env, mods: &[Option<Keys>]) -> Plan {
 mod tests {
     use super::*;
     use dkneeds::keys::{write_table, KeyGroup, KindDecl, Need, Pair, Table, Use};
-    use dkneeds::{KIND_EFFECT, KIND_MACHINE, RES_MACHINE_ROWS};
+    use dkneeds::{KIND_EFFECT, KIND_MACHINE, RES_DSP_COST_FX, RES_DSP_COST_VOICE, RES_MACHINE_ROWS};
     use dkrt_abi::service::{Service, ServiceRow};
     use dkrt_sdk::proto::*;
     use dkrt_sdk::{E_CONTRACT, E_MISSING, E_PLAN_FIT, E_PLAN_KIND, E_PLAN_OWNER};
@@ -404,7 +433,18 @@ mod tests {
     }
 
     fn run(tables: &[Option<Vec<u8>>]) -> Plan {
-        let c = caps();
+        run_with(tables, caps())
+    }
+
+    /// The capacity of a device with 4 voices and a DSP headroom of 1000 instructions per block.
+    fn dsp_caps() -> Vec<DkrtCap> {
+        let mut c = caps();
+        c.push(DkrtCap { kind: CAPK_DSP_COST as u32, limit: 1000, used: 0, largest: 0 });
+        c.push(DkrtCap { kind: CAPK_DSP_VOICES as u32, limit: 4, used: 0, largest: 0 });
+        c
+    }
+
+    fn run_with(tables: &[Option<Vec<u8>>], c: Vec<DkrtCap>) -> Plan {
         let env = Env { services: ServiceTable { rows: &ROWS, failed: 0 }, runtime: 0x000800, caps: &c };
         let keys: Vec<Option<Keys>> = tables.iter().map(|t| t.as_ref().map(|b| Keys::parse(b).unwrap())).collect();
         plan(&env, &keys)
@@ -497,6 +537,36 @@ mod tests {
         let tables: Vec<Option<Vec<u8>>> = (0..8).map(|_| Some(bytes(&KEEP))).collect();
         let p = run(&tables);
         assert_eq!(p.verdicts[..8], [Verdict::Accepted; 8]);
+    }
+
+    #[test]
+    fn the_dsp_load_is_the_largest_machine_for_every_voice_plus_the_effects() {
+        let voice = |n| bytes(&Table { uses: &[Use { resource: RES_DSP_COST_VOICE, count: n }], ..KEEP });
+        let fx = |n| bytes(&Table { uses: &[Use { resource: RES_DSP_COST_FX, count: n }], ..KEEP });
+        // 4 voices, headroom 1000: machines of 100 and 250 share the voices (250 * 4 = 1000), a third of 60 adds nothing
+        let (m1, m2, m3) = (voice(100), voice(250), voice(60));
+        let p = run_with(&[Some(m1.clone()), Some(m2.clone()), Some(m3.clone())], dsp_caps());
+        assert_eq!(p.verdicts[..3], [Verdict::Accepted; 3]);
+        assert_eq!(p.dsp_load, (1000, 250));
+        // a machine of 251 takes 1004: refused with the DSP load as the reason, and it takes nothing
+        let big = voice(251);
+        let p = run_with(&[Some(m1.clone()), Some(big.clone())], dsp_caps());
+        assert_eq!(p.verdicts[..2], [Verdict::Accepted, Verdict::Refused(Reason::Fit(CAPK_DSP_COST))]);
+        assert_eq!(p.verdicts[1].result(), E_PLAN_FIT);
+        assert_eq!(p.dsp_load, (400, 100));
+        // effects add up on top of the voices: 800 for the voices, then 100 and 100 fit and one more instruction does not
+        let (e1, e2, e3) = (fx(100), fx(100), fx(1));
+        let m = voice(200);
+        let p = run_with(&[Some(m.clone()), Some(e1.clone()), Some(e2.clone()), Some(e3.clone())], dsp_caps());
+        assert_eq!(
+            p.verdicts[..4],
+            [Verdict::Accepted, Verdict::Accepted, Verdict::Accepted, Verdict::Refused(Reason::Fit(CAPK_DSP_COST))]
+        );
+        // a selection of effects only
+        let p = run_with(&[Some(fx(1000)), Some(fx(1))], dsp_caps());
+        assert_eq!(p.verdicts[..2], [Verdict::Accepted, Verdict::Refused(Reason::Fit(CAPK_DSP_COST))]);
+        // a capacity without the DSP entries (an older runtime) is not judged
+        assert_eq!(run(&[Some(voice(u32::MAX))]).verdicts[0], Verdict::Accepted);
     }
 
     #[test]
