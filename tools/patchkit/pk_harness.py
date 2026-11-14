@@ -74,7 +74,7 @@ ROOT = HERE.parent.parent
 
 from tools import python_env  # noqa: E402
 from tools.control.digi_client import Emu, EmuError  # noqa: E402
-from tools.emulator import card_check  # noqa: E402
+from tools.emulator import card_check, digi_env  # noqa: E402
 from tools.firmware import config  # noqa: E402
 from tools.patchkit import modroots, pk_dsp_budget  # noqa: E402
 
@@ -129,11 +129,13 @@ def default_jobs(n: int) -> int:
     return max(1, min(n, max(int(free // 2), floor), MAX_JOBS))
 
 
-# firmware: (device, version) -> base .syx and the ready directory (override: DIGI_PK_READY_<DEV>_<VER>)
+# firmware: (device, version) -> base .syx and the ready directory (override: DIGI_PK_READY_<DEV>_<VER>).
+# DT2 1.17 and DN2 1.12 use the dirs of tools/emulator/ready_inputs.json (written by `mise run emu:ready`);
+# DN2 1.11 is a patch port with its own dir.
 FIRMWARE: dict[tuple[str, str], dict[str, str]] = {
     ("dt2", "1.17"): {
         "syx": "Digitakt_II_OS1.17.syx",
-        "ready": "out/ready-pk-dt2-117",
+        "ready": digi_env.READY_JSON_DIRS["dt2"],
     },
     ("dn2", "1.11"): {
         "syx": "Digitone_II_OS1.11.syx",
@@ -141,7 +143,7 @@ FIRMWARE: dict[tuple[str, str], dict[str, str]] = {
     },
     ("dn2", "1.12"): {
         "syx": "Digitone_II_OS1.12.syx",
-        "ready": "out/ready-fix-dn2-112",
+        "ready": digi_env.READY_JSON_DIRS["dn2"],
     },
 }
 

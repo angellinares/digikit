@@ -346,21 +346,51 @@ def own_device_targets(mid: str) -> list[str]:
     return [f"{owner}:test-device-all" for owner in sorted(owners)]
 
 
-def run_device_targets(mid: str, targets: list[str]) -> int:
-    """Resolve both-device inputs once, then schedule all owned suites serially through Nx."""
+def run_device_targets(mid: str, targets: list[str], device: str | None = None) -> int:
+    """Resolve the device inputs once, then schedule all owned suites serially through Nx. Without DEVICE both devices run through each
+    project's `test-device-all`. With DEVICE only that device's inputs are resolved (a missing image of the other device does not matter) and
+    only the per-file run halves `test-device-all--<file>--<device>` of the owners run; with none, there is nothing to run and the result is 0."""
     from tools.devtools import benchlock
     from tools.patchkit import pk_harness
 
+    pairs = (("dt2", "1.17"), ("dn2", "1.12"))
+    selected = [p for p in pairs if device is None or p[0] == device]
     binaries = {}
     # The plain daemon build needs the same shared protection as the legacy harness path.
     # Nested shared resolution is supported; release this span before the target owns its work.
     with benchlock.hold("shared", f"module:check {mid} daemon resolution"):
-        for device, version in (("dt2", "1.17"), ("dn2", "1.12")):
-            syx, _ready = pk_harness.firmware_inputs(pk_harness.Cell(device, version))
-            binaries[f"DIGI_EMUD_{device.upper()}"] = str(
-                pk_harness.daemon_binary(device, syx, pgo=None)
+        for dev, version in selected:
+            syx, _ready = pk_harness.firmware_inputs(pk_harness.Cell(dev, version))
+            binaries[f"DIGI_EMUD_{dev.upper()}"] = str(
+                pk_harness.daemon_binary(dev, syx, pgo=None)
             )
-    print(f"{mid}: device acceptance {', '.join(targets)} (DT2 and DN2)", flush=True)
+    projects = [t.rsplit(":", 1)[0] for t in targets]
+    names = ["test-device-all"]
+    if device is not None:
+        pattern = re.compile(rf"^test-device-all--.+--{re.escape(device)}$")
+        found: set[str] = set()
+        for project in projects:
+            r = subprocess.run(
+                ["pnpm", "nx:pilot", "show", "project", project, "--json"],
+                cwd=ROOT,
+                env=python_env(dict(os.environ)),
+                capture_output=True,
+                text=True,
+                check=True,
+            )
+            lines = r.stdout.splitlines()
+            start = next(i for i, ln in enumerate(lines) if ln.startswith("{"))
+            tgts = json.loads("\n".join(lines[start:])).get("targets", {})
+            found.update(n for n in tgts if pattern.match(n))
+        if not found:
+            print(
+                f"{mid}: no {device.upper()} device tests in {', '.join(projects)}",
+                flush=True,
+            )
+            return 0
+        names = sorted(found)
+    which = "DT2 and DN2" if device is None else f"{device.upper()} only"
+    print(f"{mid}: device acceptance {', '.join(targets)} ({which})", flush=True)
     # The launcher sets no-daemon and the job budget and takes the shared lock, so the hold above must end first.
     return subprocess.run(
         [
@@ -368,9 +398,9 @@ def run_device_targets(mid: str, targets: list[str]) -> int:
             "nx:pilot",
             "run-many",
             "-t",
-            "test-device-all",
+            ",".join(names),
             "--projects",
-            ",".join(t.rsplit(":", 1)[0] for t in targets),
+            ",".join(projects),
             "--parallel=1",
         ],
         cwd=ROOT,
@@ -530,7 +560,7 @@ def main() -> int:
             return rc
         write_costs(mid, devices, started)
     if targets:
-        rc = run_device_targets(mid, targets)
+        rc = run_device_targets(mid, targets, a.device)
         if rc:
             return rc
     for line in size_lines(mid, devices, a.trace):

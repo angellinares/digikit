@@ -90,7 +90,7 @@ CELL_CAP_S = 300.0  # wall seconds before a cell is cut short and marked partial
 DEVICES: dict[str, dict[str, Any]] = {
     "dn2": {
         "syx": "firmware/Digitone_II_OS1.12.syx",
-        "ready": "out/ready-fix-dn2-112",
+        "ready": digi_env.READY_JSON_DIRS["dn2"],
         "mirror": 0x8000487C,
         "tx_type": 0x80005E60 + 0x94,
         "db": "out/sharcdb/dn2-1.12.sqlite",

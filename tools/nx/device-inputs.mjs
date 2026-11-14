@@ -3,16 +3,18 @@
 // Mirrors packages/test-support/src/inputs.ts (FIRMWARE table, ready files,
 // DIGI_PK_READY_<DEV>_<VER> override) and tests/regression/runtime/devices.ts (DT2 card dir
 // out/runs/patchkit/samples); a change there must change this file.
+// The ready dirs come from tools/emulator/ready_inputs.json, as there.
 import { createHash, randomUUID } from 'node:crypto';
-import { createReadStream, readdirSync, statSync } from 'node:fs';
+import { createReadStream, readFileSync, readdirSync, statSync } from 'node:fs';
 import { dirname, join, relative, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
 
 const root = resolve(dirname(fileURLToPath(import.meta.url)), '../..');
+const readyJson = JSON.parse(readFileSync(join(root, 'tools/emulator/ready_inputs.json'), 'utf8'));
 
 export const CELLS = [
-  { dev: 'dt2', ver: '1.17', syx: 'firmware/Digitakt_II_OS1.17.syx', ready: 'out/ready-pk-dt2-117', samples: true },
-  { dev: 'dn2', ver: '1.12', syx: 'firmware/Digitone_II_OS1.12.syx', ready: 'out/ready-fix-dn2-112', samples: false },
+  { dev: 'dt2', ver: '1.17', syx: 'firmware/Digitakt_II_OS1.17.syx', ready: readyJson.ready_dirs.dt2, samples: true },
+  { dev: 'dn2', ver: '1.12', syx: 'firmware/Digitone_II_OS1.12.syx', ready: readyJson.ready_dir, samples: false },
 ];
 const READY_FILES = ['digi-audio-m5.snap', 'digi-audio-dn2-image.bin', 'digi-audio-m5.snap.dsp', 'SOURCE.json'];
 

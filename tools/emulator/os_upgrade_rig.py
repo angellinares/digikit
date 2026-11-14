@@ -9,7 +9,7 @@ until the flash write ends in the soft reset.
 Every run is bounded by `--limit` (guest instructions in total). It starts one private `digi-emud` and stops only that
 PID. Example:
 
-    uv run python -m tools.emulator.os_upgrade_rig dt2 --binary BIN --ready out/ready-pk-dt2-117 \
+    uv run python -m tools.emulator.os_upgrade_rig dt2 --binary BIN --ready out/snapshots/dt2-audio-ready-cold-2026-10-20 \
         --syx firmware/Digitakt_II_OS1.17.syx --out out/runs/os-upgrade --yes --limit 12000000000
 
 With `--patchkit BIN` the rig does not send the stream itself: after the panel steps it runs `patchkit flash STOCK --emulator SOCKET`, which sends

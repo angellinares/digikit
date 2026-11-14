@@ -58,6 +58,8 @@ def test_scale_buffer_runs_and_every_word_redecodes():
 def selcc_module():
     if pk_toolchains.selache_dir() is None:
         pytest.skip("selache not built (tools/patchkit/pk_toolchains.py selache)")
+    if pk_toolchains.selcc_bin() is None:
+        pytest.skip("selcc not built (not part of pk_toolchains selache)")
     return pk_sharc.link(pk_sharc.compile_c((SRC / "scale_c.c").read_text()), BASE)
 
 

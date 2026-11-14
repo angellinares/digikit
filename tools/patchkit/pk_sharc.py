@@ -138,7 +138,12 @@ def compile_c(source: str) -> SharcObject:
         raise PkSharcError(
             "selache is not built (uv run python -m tools.patchkit.pk_toolchains selache)"
         )
-    selcc = str(sel / "target" / "release" / "selcc")
+    selcc_path = sel / "target" / "release" / "selcc"
+    if not selcc_path.exists():
+        raise PkSharcError(
+            f"{selcc_path} does not exist: selcc is not built by `pk_toolchains selache`"
+        )
+    selcc = str(selcc_path)
     with tempfile.TemporaryDirectory(prefix="pk-sharc-") as d:
         src, obj = Path(d) / "m.c", Path(d) / "m.doj"
         src.write_text(source)
