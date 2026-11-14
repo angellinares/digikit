@@ -57,13 +57,24 @@ export const packInputs = (workspaceRoot, byId, manifests) => [
   ...packSourceInputs(workspaceRoot, byId, manifests),
 ];
 
-export const buildObjectsTarget = (m, root, objects, coreBuilds, coreManifests) => ({
+// Like pack, build-objects reads the sources of the module's manifest closure (packSourceInputs) and the patchkit binary it
+// runs, not the production files of every graph dependency (`^production` reached the test harness and its packages).
+export const buildObjectsTarget = (workspaceRoot, byId, m, root, objects, coreBuilds, coreManifests) => ({
   executor: 'nx:run-commands',
   cache: false,
-  inputs: scopedManifestInputs(BUILD_INPUTS, coreManifests),
+  inputs: [
+    ...scopedManifestInputs(
+      BUILD_INPUTS.filter((input) => input !== '^production'),
+      coreManifests,
+    ),
+    ...packSourceInputs(workspaceRoot, byId, manifestClosure(byId, [m.id])),
+    // The build is not cached: a patchkit source edit must still run it (a changed generator changes the objects).
+    { input: 'production', projects: ['patchkit'] },
+  ],
   description: 'Check generated sources, then incrementally build committed core objects; may update tracked outputs.',
   dependsOn: [
     'sdk:check-generated',
+    'patchkit:cli',
     ...(m.requires ?? []).filter((id) => coreBuilds.has(id)).map((id) => `${id}:build-objects`),
   ],
   outputs: objects.filter((o) => o.sources?.length).map((o) => `{workspaceRoot}/${root}/${o.path}`),
