@@ -10,6 +10,7 @@ const write = (file: string, text: string) => {
   mkdirSync(dirname(join(root, file)), { recursive: true });
   writeFileSync(join(root, file), text);
 };
+write('tools/patchkit/toolchain/pins.toml', '[include]\ncf = ["sdk/include"]\nsharc = ["sdk/dsp/contract"]\n');
 const file = 'modules/example/module.toml';
 const modules = new Map([
   ['example/module', { file, manifest: {}, objects: [{ sources: ['src/Cargo.toml', '../../shared/dsp.s'] }] }],
