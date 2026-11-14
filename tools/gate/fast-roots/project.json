@@ -63,7 +63,6 @@
         "{workspaceRoot}/tools/firmware/config.py",
         "{workspaceRoot}/tools/firmware/device.py",
         "{workspaceRoot}/tools/devtools/render_cache.py",
-        "{workspaceRoot}/tools/devtools/benchlock.py",
         "{workspaceRoot}/tools/devtools/portable_flock.py",
         "{workspaceRoot}/tools/devtools/fast_roots.py",
         "{workspaceRoot}/tools/sharc_dev/sharc_core/**/*.py",
