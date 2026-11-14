@@ -79,7 +79,7 @@ consts = [
 voice_in = ["pitch", "velocity", "block", "out", "track", "out_r", "gate"]           # struct dk_voice_in, DK_IN_*
 desc = [
     "magic", "contract", "n_params", "voices", "state_bytes",
-    "state_clear_bytes", "max_cycles_block", "max_cycles_note_on", "max_call_depth", "stack_bytes",
+    "state_clear_bytes", "max_call_depth", "stack_bytes",
 ]                                                          # struct dk_machine_desc, DK_DESC_*
 
 # The typed C view that `patchkit gen` writes sdk/include/dk/gen/machine.h from: `"<type> <name> // doc"` per field (4 bytes each; the names must equal
@@ -107,8 +107,6 @@ desc = [
     "u32 voices // 1 .. DK_MAX_VOICES the module supports",
     "u32 state_bytes // per voice, a multiple of 4; a voice's state is zeroed when its track first plays a note after the module loads (contract 1.6), then only state_clear_bytes at each note-on",
     "u32 state_clear_bytes // leading bytes zeroed at note-on, <= state_bytes",
-    "u32 max_cycles_block // worst-case instructions of one render call",
-    "u32 max_cycles_note_on // the same for the note-on block (note_on + render)",
     "u32 max_call_depth // nested CALLs the module uses",
     "u32 stack_bytes // data stack the module uses",
 ]
@@ -132,7 +130,7 @@ consts = [
 ]
 fx_in = ["in", "out", "block"]                             # struct dk_fx_in, DK_FX_IN_*
 desc = [
-    "magic", "contract", "n_params", "state_bytes", "max_cycles_block", "max_call_depth", "stack_bytes",
+    "magic", "contract", "n_params", "state_bytes", "max_call_depth", "stack_bytes",
 ]                                                          # struct dk_fx_desc, DK_FX_DESC_*
 
 # The typed C view of sdk/include/dk/gen/fx.h (as [machine.c]).
@@ -156,7 +154,6 @@ desc = [
     "u32 contract // DK_FX_V1",
     "u32 n_params // 0 .. DK_FX_MAX_PARAMS",
     "u32 state_bytes // one instance, a multiple of 4; zeroed when the effect switches on",
-    "u32 max_cycles_block // worst-case instructions of one process call",
     "u32 max_call_depth // nested CALLs the module uses",
     "u32 stack_bytes // data stack the module uses",
 ]

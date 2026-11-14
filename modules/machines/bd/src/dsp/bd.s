@@ -252,7 +252,5 @@ _bd_note_on:
 .VAR _bd_desc3 = DK_MAX_VOICES;
 .VAR _bd_desc4 = 32;                      // 8 words: carrier phase, counter, mod phase, index, mod value, noise state, noise env, noise level
 .VAR _bd_desc5 = 12;                      // phase, counter, modulator phase zeroed at note-on
-.VAR _bd_desc6 = 1200;
-.VAR _bd_desc7 = 200;
-.VAR _bd_desc8 = 2;
-.VAR _bd_desc9 = 0;
+.VAR _bd_desc6 = 2;
+.VAR _bd_desc7 = 0;

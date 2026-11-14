@@ -325,12 +325,11 @@ _fs_pq: DM(I1, M6) = R12;
     RTS;
 
 .SECTION/DM seg_dmda;
-// dk_fx_desc: magic, contract, n_params, state_bytes, max_cycles_block, max_call_depth, stack_bytes.
+// dk_fx_desc: magic, contract, n_params, state_bytes, max_call_depth, stack_bytes.
 .GLOBAL _fs_desc;
 .VAR _fs_desc = DK_FX_MAGIC;
 .VAR _fs_desc1 = DK_FX_V1;
 .VAR _fs_desc2 = FSHIFT_KNOBS;
 .VAR _fs_desc3 = FS_STATE_BYTES;
-.VAR _fs_desc4 = 4200;
-.VAR _fs_desc5 = 1;
-.VAR _fs_desc6 = 0;
+.VAR _fs_desc4 = 1;
+.VAR _fs_desc5 = 0;

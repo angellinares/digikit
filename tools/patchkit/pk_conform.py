@@ -19,8 +19,9 @@ stays under DEFAULT_BUDGET_PCT (85) of the block (packages/dkprof/src/budget.rs,
     voice-block budget  = headroom / voices        (every block that is not a note-on)
     note-on budget      = headroom                 (the block of a trigger may take the whole headroom once)
 
-The manifest may declare `[conformance] voice_block = N` and `note_on_block = M` (instructions) to replace either number; no
-manifest does yet (the schema of module.toml does not know the table).
+No manifest replaces either number. `module:check` writes the module's own cost (the worst steady block of one voice, or of one effect
+call) into the manifest's `[uses.<device>]` (`dsp_cost_voice`, `dsp_cost_fx`), and the broker checks the selection with it
+(docs/plans/sdk.md section 9).
 """
 
 from __future__ import annotations
@@ -30,7 +31,7 @@ import json
 import random
 import struct
 import tomllib
-from dataclasses import dataclass, field
+from dataclasses import dataclass
 from functools import cache
 from pathlib import Path
 
@@ -124,7 +125,6 @@ class MachineSpec:
     machine_type: int
     params: tuple[Param, ...]
     frame: Frame
-    declared: dict = field(default_factory=dict)  # the manifest's [conformance] table
     note_on: str | None = (
         None  # a contract voice (docs/design/module-sdk.md 4.1): the note_on routine's symbol and the `dk_machine_desc` symbol
     )
@@ -317,7 +317,6 @@ def spec(mid: str, device: str) -> MachineSpec | None:
         _type_number(mid, man, device, row[1]),
         _params(moddir, man, device),
         frame,
-        dict(man.get("conformance", {})),
         *_contract(mid, man),
     )
 
@@ -379,14 +378,9 @@ def _device_budgets() -> dict:
     return json.loads(r.stdout)
 
 
-def budget(device: str, sp: MachineSpec | None = None) -> Budget:
+def budget(device: str) -> Budget:
     d = _device_budgets()["devices"][device]
-    declared = sp.declared if sp else {}
-    return Budget(
-        int(declared.get("voice_block", d["voice_block"])),
-        int(declared.get("note_on_block", d["note_on_block"])),
-        d["headroom"],
-    )
+    return Budget(int(d["voice_block"]), int(d["note_on_block"]), d["headroom"])
 
 
 # ---- cases ----------------------------------------------------------------------------------------------------------------

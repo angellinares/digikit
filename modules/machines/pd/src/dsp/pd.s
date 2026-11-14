@@ -359,7 +359,5 @@ _pd_note_on:
 .VAR _pd_desc3 = DK_MAX_VOICES;
 .VAR _pd_desc4 = 36;                      // state bytes (9 words: 2 phases, spare, 3 curve numbers, magic, snap flag, fold gain)
 .VAR _pd_desc5 = 8;                       // the two phases are zeroed at note-on (see _pd_note_on)
-.VAR _pd_desc6 = 1200;                    // max cycles per block
-.VAR _pd_desc7 = 200;
-.VAR _pd_desc8 = 2;
-.VAR _pd_desc9 = 0;
+.VAR _pd_desc6 = 2;
+.VAR _pd_desc7 = 0;

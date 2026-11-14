@@ -28,12 +28,11 @@ ___NAME___loop: DM(I1, M6) = R0;
     JUMP (M13, I13);
 
 .SECTION/DM seg_dmda;
-// dk_fx_desc: magic, contract, n_params, state_bytes, max_cycles_block, max_call_depth, stack_bytes.
+// dk_fx_desc: magic, contract, n_params, state_bytes, max_call_depth, stack_bytes.
 .GLOBAL ___NAME___desc;
 .VAR ___NAME___desc = DK_FX_MAGIC;
 .VAR ___NAME___desc1 = DK_FX_V1;
 .VAR ___NAME___desc2 = __UPPER___KNOBS;
 .VAR ___NAME___desc3 = 4;
-.VAR ___NAME___desc4 = 220;
+.VAR ___NAME___desc4 = 0;
 .VAR ___NAME___desc5 = 0;
-.VAR ___NAME___desc6 = 0;

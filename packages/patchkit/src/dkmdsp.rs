@@ -68,7 +68,7 @@ pub const DESC_CONTRACT: u32 = 1;
 pub const DESC_STEREO: u32 = 0x100;
 /// Bit 9 of the desc's contract word: a machine that reads `gate` in `dk_voice_in` (contract 1.6, `DK_MACHINE_GATE`).
 pub const DESC_GATE: u32 = 0x200;
-pub const DESC_WORDS: usize = 10;
+pub const DESC_WORDS: usize = 8;
 /// The routes of an effect (the manifest's `route` and `routes`): the master chain and a send bus. `Effect::routes` is a mask of them.
 pub const ROUTE_MASTER: u32 = 1;
 pub const ROUTE_SEND: u32 = 2;
@@ -81,7 +81,7 @@ pub const MAX_FX: usize = dkneeds::MAX_FX as usize;
 /// `dk_fx_desc` (<dk/fx/fx.h>): magic "DKFX", the contract number the packer accepts, its size in u32 words and the most parameter words.
 pub const FX_DESC_MAGIC: u32 = 0x444b_4658;
 pub const FX_DESC_CONTRACT: u32 = 1;
-pub const FX_DESC_WORDS: usize = 7;
+pub const FX_DESC_WORDS: usize = 6;
 pub const FX_MAX_PARAMS: u32 = 8;
 pub const MAX_RELOCS: usize = dkneeds::MAX_RELOCS as usize;
 pub const MAX_IMPORTS: usize = dkneeds::MAX_IMPORTS as usize;

@@ -168,7 +168,7 @@ def main() -> int:
             )
         )
         return 2
-    bud = pk_conform.budget(a.device, sp)
+    bud = pk_conform.budget(a.device)
     t0 = time.time()
     MachineRig(a.module, a.device)  # builds (assembles, links) once; the cases reuse it
     built = time.time() - t0

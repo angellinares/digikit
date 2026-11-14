@@ -63,7 +63,7 @@ pub fn budget_json(only: &[&str], fx_max: Option<u64>, pct: f64) -> Result<Value
     }
     let mut devs = serde_json::Map::new();
     for d in &all {
-        let b = d.budget(pct, None, None);
+        let b = d.budget(pct);
         devs.insert(
             d.device.clone(),
             json!({

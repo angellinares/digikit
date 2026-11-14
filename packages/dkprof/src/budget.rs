@@ -96,17 +96,12 @@ impl DeviceCost {
         if h > 0.0 { h as u64 } else { 0 }
     }
 
-    /// The budget of one machine module. `voice_block` and `note_on_block` replace the computed numbers (a manifest may declare them).
-    pub fn budget(
-        &self,
-        budget_pct: f64,
-        voice_block: Option<u64>,
-        note_on_block: Option<u64>,
-    ) -> Budget {
+    /// The budget of one machine module: the headroom shared by the voices, and the whole headroom for a note-on block.
+    pub fn budget(&self, budget_pct: f64) -> Budget {
         let headroom = self.headroom(budget_pct);
         Budget {
-            voice_block: voice_block.unwrap_or(headroom / self.voices.max(1)),
-            note_on_block: note_on_block.unwrap_or(headroom),
+            voice_block: headroom / self.voices.max(1),
+            note_on_block: headroom,
             headroom,
         }
     }
@@ -235,14 +230,9 @@ mod tests {
     #[test]
     fn the_voices_share_the_headroom_and_a_note_on_may_take_all_of_it() {
         let d = dn2();
-        let b = d.budget(DEFAULT_BUDGET_PCT, None, None);
+        let b = d.budget(DEFAULT_BUDGET_PCT);
         assert_eq!(b.voice_block, b.headroom / 16);
         assert_eq!(b.note_on_block, b.headroom);
-        let b2 = d.budget(DEFAULT_BUDGET_PCT, Some(7), Some(9));
-        assert_eq!(
-            (b2.voice_block, b2.note_on_block, b2.headroom),
-            (7, 9, b.headroom)
-        );
     }
 
     #[test]
@@ -257,7 +247,7 @@ mod tests {
 
     #[test]
     fn a_machine_is_checked_per_voice_and_the_note_on_apart() {
-        let b = dn2().budget(DEFAULT_BUDGET_PCT, None, None);
+        let b = dn2().budget(DEFAULT_BUDGET_PCT);
         assert!(check_machine(&b, b.voice_block, b.note_on_block).ok);
         let v = check_machine(&b, b.voice_block + 1, b.note_on_block + 1);
         assert!(!v.ok);

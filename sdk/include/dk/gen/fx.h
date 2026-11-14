@@ -24,7 +24,6 @@ typedef struct dk_fx_desc {
     uint32_t contract;                  /* DK_FX_V1 */
     uint32_t n_params;                  /* 0 .. DK_FX_MAX_PARAMS */
     uint32_t state_bytes;               /* one instance, a multiple of 4; zeroed when the effect switches on */
-    uint32_t max_cycles_block;          /* worst-case instructions of one process call */
     uint32_t max_call_depth;            /* nested CALLs the module uses */
     uint32_t stack_bytes;               /* data stack the module uses */
 } dk_fx_desc;

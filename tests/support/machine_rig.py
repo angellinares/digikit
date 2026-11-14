@@ -198,8 +198,8 @@ def _build(sp: pk_conform.MachineSpec) -> _Built:
         at = data[sp.desc]
         for a0, raw, _bss in inits:
             if a0 <= at < a0 + len(raw):
-                desc = struct.unpack("<10I", raw[at - a0 : at - a0 + 40])
-        if len(desc) != 10 or desc[0] != 0x444B4D41:
+                desc = struct.unpack("<8I", raw[at - a0 : at - a0 + 32])
+        if len(desc) != 8 or desc[0] != 0x444B4D41:
             raise pk_conform.ConformError(f"{module}: {sp.desc} is no dk_machine_desc")
         stride = (desc[4] + 7) & ~7
         clear = desc[5]
@@ -561,7 +561,7 @@ class MachineRig:
             )
         out += [(a, n, "module data") for a, n in b.module_data]  # shared by all voices
         frame = ADAPTER_FRAME_WORDS[self.device]
-        stack = b.desc[9] if b.desc else DEFAULT_STACK_BYTES
+        stack = b.desc[7] if b.desc else DEFAULT_STACK_BYTES
         out.append((dv.STACK - 4 * frame - stack, stack, "module stack"))
         return out
 
