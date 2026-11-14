@@ -129,6 +129,12 @@ class MachineSpec:
         None  # a contract voice (docs/design/module-sdk.md 4.1): the note_on routine's symbol and the `dk_machine_desc` symbol
     )
     desc: str | None = None
+    fixtures: tuple[
+        str, ...
+    ] = ()  # `[conformance] fixtures` of module.toml: what the rig sets up before a case
+    sample_records: str | None = (
+        None  # `[conformance] sample_records`: the data symbol of the module's sample pool records
+    )
 
     @property
     def label(self) -> str:
@@ -318,6 +324,8 @@ def spec(mid: str, device: str) -> MachineSpec | None:
         _params(moddir, man, device),
         frame,
         *_contract(mid, man),
+        tuple(man.get("conformance", {}).get("fixtures", ())),
+        man.get("conformance", {}).get("sample_records"),
     )
 
 
@@ -399,6 +407,12 @@ class Case:
     ]  # per block: (param id, word) pairs set before the block
     blocks: int
     trig: tuple[int, ...] = (0,)
+    setup: str | None = (
+        None  # a fixture the worker sets up before the first block ("sample-pool")
+    )
+    sample: tuple[int, int, int] | None = (
+        None  # (frames, source rate in Hz, channels) of the sample the "sample-pool" setup publishes
+    )
 
 
 def _defaults(sp: MachineSpec) -> dict[str, int]:
@@ -484,6 +498,105 @@ def cases(sp: MachineSpec) -> list[Case]:
                 tuple(range(0, RETRIG_BLOCKS, RETRIG_EVERY)),
             )
         )
+    # 5. a machine that plays a pool sample: the same shapes with a sample published (setup "sample-pool"), so the render path runs
+    if "sample-pool" in sp.fixtures and sp.sample_records:
+        out += _sample_cases(sp, dflt)
+    return out
+
+
+# The `sample` group. PLAY words are mode * 256 (the module README): REV 0, REV.L 1, FWD.L 2, FWD 3.
+SAMPLE_RATE_HZ = 48000
+SAMPLE_FRAMES = (
+    16000  # 8000 packed words per plane: the two test planes are 0x8000 bytes apart
+)
+SAMPLE_PLAY = {"rev-loop": 1 << 8, "fwd-loop": 2 << 8, "fwd": 3 << 8}
+
+
+def _sample_cases(sp: MachineSpec, dflt: dict[str, int]) -> list[Case]:
+    by_id = {p.id: p for p in sp.params}
+    if not {"sample", "start", "end", "play", "pitch"} <= by_id.keys():
+        return []
+    out: list[Case] = []
+
+    def case(
+        name: str,
+        note: int,
+        words: tuple[tuple[tuple[str, int], ...], ...],
+        blocks: int,
+        vel: int = 100,
+        trig: tuple[int, ...] = (0,),
+        channels: int = 2,
+        frames: int = SAMPLE_FRAMES,
+    ) -> None:
+        out.append(
+            Case(
+                "sample",
+                name,
+                note,
+                vel,
+                words,
+                blocks,
+                trig,
+                "sample-pool",
+                (frames, SAMPLE_RATE_HZ, channels),
+            )
+        )
+
+    def one(blocks_words: dict[str, int]) -> tuple[tuple[tuple[str, int], ...], ...]:
+        # sample 0 (the pool index the worker publishes), the rest of the module's parameters at their defaults
+        return (tuple({**dflt, "sample": 0, **blocks_words}.items()),)
+
+    end = by_id["end"].hi
+    fwd = {"start": 0, "end": end, "play": SAMPLE_PLAY["fwd"], "pitch": 0x4000}
+    case("stereo-fwd-oneshot/note60", 60, one(fwd), 300)
+    case("mono-fwd-oneshot/note60", 60, one(fwd), 300, channels=1)
+    # frame = round(frames * word / 0x7f00); a block is 32 frames. END 2000 is frame 984: the cursor passes it after about 31 blocks, so the end ramp runs
+    case("fwd-end-reached/note60", 60, one({**fwd, "end": 2000}), 120)
+    # START 256..END 512 is frames 126..252: the cursor wraps every 4 blocks
+    loop = {"start": 256, "end": 512}
+    case(
+        "fwd-loop/note60",
+        60,
+        one({**fwd, **loop, "play": SAMPLE_PLAY["fwd-loop"]}),
+        300,
+    )
+    case(
+        "rev-loop/note60",
+        60,
+        one({**fwd, **loop, "play": SAMPLE_PLAY["rev-loop"]}),
+        300,
+    )
+    pitch = by_id["pitch"]
+    case("pitch-min/note0", 0, one({**fwd, "pitch": pitch.lo}), 200)
+    case("pitch-max/note127", 127, one({**fwd, "pitch": pitch.hi}), 200)
+    for vel in (1, 127):
+        case(
+            f"retrigger-every-{RETRIG_EVERY}/vel{vel}",
+            60,
+            one(fwd),
+            RETRIG_BLOCKS,
+            vel,
+            tuple(range(0, RETRIG_BLOCKS, RETRIG_EVERY)),
+        )
+    # the random walk of group 3, over every parameter but the sample index (a walk of it would leave the published pool entry)
+    for note in (24, 100):
+        rng = random.Random(0xC0FFEE + note)
+        pos = {p.id: float(p.default) for p in sp.params}
+        walk = []
+        for _ in range(WALK_BLOCKS):
+            row = [("sample", 0)]
+            for p in sp.params:
+                if p.id == "sample":
+                    continue
+                pos[p.id] += rng.uniform(-0.6, 0.6) * (p.hi - p.lo)
+                if pos[p.id] < p.lo:
+                    pos[p.id] = 2 * p.lo - pos[p.id]
+                if pos[p.id] > p.hi:
+                    pos[p.id] = 2 * p.hi - pos[p.id]
+                pos[p.id] = min(max(pos[p.id], p.lo), p.hi)
+                row.append((p.id, int(pos[p.id])))
+            walk.append(tuple(row))
+        case(f"random-walk/note{note}", note, tuple(walk), WALK_BLOCKS)
     return out
 
 
