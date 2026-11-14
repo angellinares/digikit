@@ -17,7 +17,9 @@ export type Needs = { file_size?: number } & Partial<
     | 'VOICE_ROWS'
     | 'PARAM_ROWS'
     | 'PAGE_ROWS'
-    | 'FX_SLOTS',
+    | 'FX_SLOTS'
+    | 'DSP_COST_VOICE'
+    | 'DSP_COST_FX',
     number
   >
 >;

@@ -147,6 +147,8 @@ kind is appended, never renumbered. `used` and `largest` come from the same tabl
 | 12 | STORE | the store area in **KiB** (a store can be 22 GiB; 0 when the card is too small for it) | KiB the headers say are used (header A, the table, the files); a card with no header: 0 | 0 (BEGIN answers E_FULL with the free bytes; a fragmented store can refuse a file smaller than the sum of its gaps) |
 | 13 | SETTINGS | the settings record's area of one copy, in **bytes** (`[settings] sectors` x 512: 8192) | the record's bytes, header included (an empty record: 18) | 0 |
 | 14 | SEND_SLOTS | effects that can run on a send bus: the send page's cells (`[limits] send_slots`: 2 on the Digitakt II; 0 on an image without the send page, so on the Digitone II for now) | loaded effects on the send route (the setting `fx/route/<module id>`, finding 64) | 0 |
+| 15 | DSP_COST | DSP instructions per block: the device's headroom (the block at 85 percent less the stock firmware's load; `patchkit budget`) | the load of the boot's modules: `max(per-voice machine cost) * DSP_VOICES + sum(effect costs)` | the largest per-voice machine cost loaded |
+| 16 | DSP_VOICES | the voices the machine cost counts for (`[adapter.machine] voices`) | 0 | 0 |
 
 `Uploader.capacity()` returns `{name: {limit, used, largest}}`; `mise run dk:store -- --emu info` prints one line per kind (and says "not reported" for a runtime without the bit). The Rust client (`packages/dkupload`) has no MODULES
 or CAPACITY request yet; it gets the generated numbers only (P5).

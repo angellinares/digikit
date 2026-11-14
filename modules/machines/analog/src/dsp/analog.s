@@ -329,8 +329,7 @@ _va_note_on:
     JUMP (M13, I13);
 
 .SECTION/DM seg_dmda;
-// magic, contract, n_params, voices, state_bytes, state_clear_bytes, max_cycles_block, max_cycles_note_on,
-// max_call_depth, stack_bytes
+// magic, contract, n_params, voices, state_bytes, state_clear_bytes, max_call_depth, stack_bytes
 .GLOBAL _va_desc;
 .VAR _va_desc = DK_MAGIC;
 .VAR _va_desc1 = DK_MACHINE_V1;
@@ -338,7 +337,5 @@ _va_note_on:
 .VAR _va_desc3 = DK_MAX_VOICES;
 .VAR _va_desc4 = 24;
 .VAR _va_desc5 = 0;   // nothing is cleared at note-on: the phases free-run
-.VAR _va_desc6 = 1200;
-.VAR _va_desc7 = 200;
-.VAR _va_desc8 = 2;
-.VAR _va_desc9 = 0;
+.VAR _va_desc6 = 2;
+.VAR _va_desc7 = 0;

@@ -36,10 +36,8 @@ _tk_note_on:
 .VAR _tk_desc3 = DK_MAX_VOICES;
 .VAR _tk_desc4 = 8;
 .VAR _tk_desc5 = 0;
-.VAR _tk_desc6 = 200;
-.VAR _tk_desc7 = 300;
-.VAR _tk_desc8 = 0;
-.VAR _tk_desc9 = 0;
+.VAR _tk_desc6 = 0;
+.VAR _tk_desc7 = 0;
 .VAR _tk_notes = 0;
 .VAR _tk_renders = 0;
 .VAR _tk_note_track = 0;

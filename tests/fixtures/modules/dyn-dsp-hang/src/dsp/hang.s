@@ -39,7 +39,7 @@ _hg_note_on:
     JUMP (M13, I13);
 
 .SECTION/DM seg_dmda;
-// dk_machine_desc: magic, contract, n_params, voices, state_bytes, state_clear_bytes, max_cycles_block, max_cycles_note_on, max_call_depth, stack_bytes.
+// dk_machine_desc: magic, contract, n_params, voices, state_bytes, state_clear_bytes, max_call_depth, stack_bytes.
 .GLOBAL _hg_desc;
 .VAR _hg_desc = DK_MAGIC;
 .VAR _hg_desc1 = DK_MACHINE_V1;
@@ -47,7 +47,5 @@ _hg_note_on:
 .VAR _hg_desc3 = DK_MAX_VOICES;
 .VAR _hg_desc4 = 8;
 .VAR _hg_desc5 = 8;
-.VAR _hg_desc6 = 100;
-.VAR _hg_desc7 = 100;
-.VAR _hg_desc8 = 0;
-.VAR _hg_desc9 = 0;
+.VAR _hg_desc6 = 0;
+.VAR _hg_desc7 = 0;

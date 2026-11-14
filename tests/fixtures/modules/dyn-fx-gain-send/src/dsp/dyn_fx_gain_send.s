@@ -25,12 +25,11 @@ _gs_loop: DM(I1, M6) = R0;
     JUMP (M13, I13);
 
 .SECTION/DM seg_dmda;
-// dk_fx_desc: magic, contract, n_params, state_bytes, max_cycles_block, max_call_depth, stack_bytes.
+// dk_fx_desc: magic, contract, n_params, state_bytes, max_call_depth, stack_bytes.
 .GLOBAL _gs_desc;
 .VAR _gs_desc = DK_FX_MAGIC;
 .VAR _gs_desc1 = DK_FX_V1;
 .VAR _gs_desc2 = 1;
 .VAR _gs_desc3 = 4;
-.VAR _gs_desc4 = 220;
+.VAR _gs_desc4 = 0;
 .VAR _gs_desc5 = 0;
-.VAR _gs_desc6 = 0;

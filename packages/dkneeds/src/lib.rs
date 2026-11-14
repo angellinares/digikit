@@ -121,12 +121,17 @@ pub struct Needs {
     pub page_rows: u32,
     /// Effect slots: the effect records of the DSP section (version 4).
     pub fx_slots: u32,
+    /// DSP instructions per block of one voice of the module's machines (the header table's `DSP_COST_VOICE`; 0: none). The broker takes the largest of the selection.
+    pub dsp_cost_voice: u32,
+    /// DSP instructions per block of the module's effects (the header table's `DSP_COST_FX`; 0: none). The broker adds them up.
+    pub dsp_cost_fx: u32,
 }
 
 impl Needs {
     /// (name, value) of every field except `file_size`, the names of CAPACITY's kinds with their rows: `ARENA`, `ARENA_XFER`, `DSP_AREA`,
-    /// `DSP_ALIGN`, `MACHINE_ROWS`, `VOICE_ROWS`, `PARAM_ROWS`, `PAGE_ROWS`, `FX_SLOTS`. The hosts (the wasm export, the command line) say them so.
-    pub fn fields(&self) -> [(&'static str, u32); 9] {
+    /// `DSP_ALIGN`, `MACHINE_ROWS`, `VOICE_ROWS`, `PARAM_ROWS`, `PAGE_ROWS`, `FX_SLOTS`, `DSP_COST_VOICE`, `DSP_COST_FX` (the last two are the module's own
+    /// cost, [records.resources]). The hosts (the wasm export, the command line) say them so.
+    pub fn fields(&self) -> [(&'static str, u32); 11] {
         [
             ("ARENA", self.arena),
             ("ARENA_XFER", self.arena_xfer),
@@ -137,6 +142,8 @@ impl Needs {
             ("PARAM_ROWS", self.param_rows),
             ("PAGE_ROWS", self.page_rows),
             ("FX_SLOTS", self.fx_slots),
+            ("DSP_COST_VOICE", self.dsp_cost_voice),
+            ("DSP_COST_FX", self.dsp_cost_fx),
         ]
     }
 
@@ -278,6 +285,10 @@ fn keys_table<B: Bytes>(src: &mut B, off: u32, size: u32, n: &mut Needs) -> Resu
                     n.param_rows = n.param_rows.saturating_add(c);
                 } else if id == RES_PAGE_ROWS {
                     n.page_rows = n.page_rows.saturating_add(c);
+                } else if id == RES_DSP_COST_VOICE {
+                    n.dsp_cost_voice = n.dsp_cost_voice.saturating_add(c);
+                } else if id == RES_DSP_COST_FX {
+                    n.dsp_cost_fx = n.dsp_cost_fx.saturating_add(c);
                 } else if id == RES_RECORD_BYTES && c != 0 {
                     // the record block the module keeps after `init` is one more arena block (the loader's `arena::alloc` of the records)
                     n.arena = n

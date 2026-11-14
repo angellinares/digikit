@@ -79,7 +79,7 @@ consts = [
 voice_in = ["pitch", "velocity", "block", "out", "track", "out_r", "gate"]           # struct dk_voice_in, DK_IN_*
 desc = [
     "magic", "contract", "n_params", "voices", "state_bytes",
-    "state_clear_bytes", "max_cycles_block", "max_cycles_note_on", "max_call_depth", "stack_bytes",
+    "state_clear_bytes", "max_call_depth", "stack_bytes",
 ]                                                          # struct dk_machine_desc, DK_DESC_*
 
 # The typed C view that `patchkit gen` writes sdk/include/dk/gen/machine.h from: `"<type> <name> // doc"` per field (4 bytes each; the names must equal
@@ -107,8 +107,6 @@ desc = [
     "u32 voices // 1 .. DK_MAX_VOICES the module supports",
     "u32 state_bytes // per voice, a multiple of 4; a voice's state is zeroed when its track first plays a note after the module loads (contract 1.6), then only state_clear_bytes at each note-on",
     "u32 state_clear_bytes // leading bytes zeroed at note-on, <= state_bytes",
-    "u32 max_cycles_block // worst-case instructions of one render call",
-    "u32 max_cycles_note_on // the same for the note-on block (note_on + render)",
     "u32 max_call_depth // nested CALLs the module uses",
     "u32 stack_bytes // data stack the module uses",
 ]
@@ -132,7 +130,7 @@ consts = [
 ]
 fx_in = ["in", "out", "block"]                             # struct dk_fx_in, DK_FX_IN_*
 desc = [
-    "magic", "contract", "n_params", "state_bytes", "max_cycles_block", "max_call_depth", "stack_bytes",
+    "magic", "contract", "n_params", "state_bytes", "max_call_depth", "stack_bytes",
 ]                                                          # struct dk_fx_desc, DK_FX_DESC_*
 
 # The typed C view of sdk/include/dk/gen/fx.h (as [machine.c]).
@@ -156,7 +154,6 @@ desc = [
     "u32 contract // DK_FX_V1",
     "u32 n_params // 0 .. DK_FX_MAX_PARAMS",
     "u32 state_bytes // one instance, a multiple of 4; zeroed when the effect switches on",
-    "u32 max_cycles_block // worst-case instructions of one process call",
     "u32 max_call_depth // nested CALLs the module uses",
     "u32 stack_bytes // data stack the module uses",
 ]
@@ -1569,6 +1566,8 @@ MAP_ENTRIES = { id = 11 }   # sticky machine-type map entries in use
 STORE = { id = 12 }   # the module and sample store, in KiB (a store can be 22 GiB); used: KiB taken; largest: 0 (BEGIN says E_FULL with the free bytes)
 SETTINGS = { id = 13 }   # the settings record, in bytes: limit: the area of one copy (`[settings]`); used: the record's bytes (header and entries); largest: 0
 SEND_SLOTS = { id = 14 }   # effects that run on a send bus: the device's limit (`[limits] send_slots`, 0 when the image has no send page); used: loaded effects with the send route; largest: 0
+DSP_COST = { id = 15, fit = true, label = "DSP load" }   # DSP instructions per block: limit: the headroom of the device (the generated profile: the stock firmware's load and the safety margin taken out of the block); used: the load of the loaded modules, `max(per-voice machine cost) * DSP_VOICES + sum(effect costs)`; largest: the largest per-voice machine cost loaded (the state of that maximum)
+DSP_VOICES = { id = 16, fit = true, label = "DSP voices" }   # voices the machine cost counts for (the generated profile); used and largest: 0; a fit reads the limit, it is not short of it
 
 # The in-crate services of the runtime, in the order the core calls them (samples first: its DSP-section checks and its track-table claim ran before the
 # voice and effect parts, and the unreserve of its table before theirs; machines before fx: the registry applies machines, pages and native pages before
@@ -1608,13 +1607,14 @@ NATIVE_PAGE_V2 = { id = 7, len = 0x98, service = "machines" }
 LFO_SHAPE = { id = 8, len = 76, service = "lfo", generic = true }   # u32 shape id (not 0), 32 samples of i16 (big-endian)
 
 # The resources a module counts in its `uses` (R7, the header table of a `.dkm`): one id each. `capacity` names the [capacity.kinds] entry the
-# runtime reports for it. `reserved = true`: the id is taken and no module counts it yet.
+# runtime reports for it.
 [records.resources]
 MACHINE_ROWS = { id = 1, capacity = "MACHINE_ROWS" }
 PARAM_ROWS = { id = 2, capacity = "PARAM_ROWS" }
 PAGE_ROWS = { id = 3, capacity = "PAGE_ROWS" }
 RECORD_BYTES = { id = 4 }     # arena bytes of the record block `init` commits
-DSP_COST = { id = 5, reserved = true }   # DSP cycles of a module (S5, docs/plans/sdk.md); not counted yet
+DSP_COST_VOICE = { id = 5, capacity = "DSP_COST" }   # DSP instructions per block of one voice of a machine: the worst steady block `module:check` measured (docs/plans/sdk.md section 9)
+DSP_COST_FX = { id = 6, capacity = "DSP_COST" }   # DSP instructions per block of the effects of a module (their worst process calls, summed)
 
 [limits.max]        # contract maxima (capacity plan, docs/plans/capacity-isolation.md): a device's `[limits]` value in devices/*.toml may not exceed them
                     # (`patchkit gen` refuses it). Names are the keys of `[limits]` and, for dsp_area_bytes, of `[digikit]`.

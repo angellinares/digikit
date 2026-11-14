@@ -140,6 +140,31 @@ fn the_rows_come_from_the_keys_table() {
 }
 
 #[test]
+fn the_dsp_cost_comes_from_the_uses_of_the_keys_table() {
+    let uses = [
+        keys::Use {
+            resource: crate::RES_DSP_COST_VOICE,
+            count: 6239,
+        },
+        keys::Use {
+            resource: crate::RES_DSP_COST_FX,
+            count: 5282,
+        },
+    ];
+    let table = keys::Table {
+        uses: &uses,
+        ..Default::default()
+    };
+    let mut t = vec![0u8; keys::table_size(&table)];
+    keys::write_table(&table, &mut t).unwrap();
+    let n = of(&dkm(4, 0, &t, &[])).unwrap();
+    assert_eq!((n.dsp_cost_voice, n.dsp_cost_fx), (6239, 5282));
+    // a module that lists none has no cost
+    let n = of(&dkm(4, 0, &[], &[])).unwrap();
+    assert_eq!((n.dsp_cost_voice, n.dsp_cost_fx), (0, 0));
+}
+
+#[test]
 fn a_dsp_section_takes_a_range_a_block_and_voice_rows() {
     // image 8, bss 100, three states of 20 (24 each) of one voice record: 108 -> 112, + 72 = 184, granule 192
     let f = dkm(4, 0, &[], &dsp_section(3, 8, 100, &[(20, 3)]));
@@ -247,13 +272,16 @@ fn the_fields_have_the_capacity_names() {
         param_rows: 8,
         page_rows: 9,
         fx_slots: 10,
+        dsp_cost_voice: 11,
+        dsp_cost_fx: 12,
     };
     let f = n.fields();
     assert_eq!(f[0], ("ARENA", 2));
     assert_eq!(f[8], ("FX_SLOTS", 10));
+    assert_eq!((f[9], f[10]), (("DSP_COST_VOICE", 11), ("DSP_COST_FX", 12)));
     assert_eq!(
         f.iter().map(|x| x.1).sum::<u32>(),
-        2 + 3 + 4 + 5 + 6 + 7 + 8 + 9 + 10
+        2 + 3 + 4 + 5 + 6 + 7 + 8 + 9 + 10 + 11 + 12
     );
 }
 

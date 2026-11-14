@@ -27,12 +27,14 @@ machine_rows = 1
 param_rows = 4
 page_rows = 0
 record_bytes = 444
+dsp_cost_voice = 5546
 
 [uses.dn2]
 machine_rows = 1
 param_rows = 4
 page_rows = 1
 record_bytes = 540
+dsp_cost_voice = 5700
 
 [[object]]
 path = "build/analog-cf.dko.json"

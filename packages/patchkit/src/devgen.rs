@@ -220,6 +220,19 @@ struct Entry {
     input: InputF,
     fx: FxF,
     profile: ProfileF,
+    /// DSP instructions per block left for modules (`dkprof::budget`: the block at the default margin, less the stock firmware's load). 0 where `devices/cycle-factors.json`
+    /// has no entry for the device, and in the wasm build (which has no `dkprof`).
+    dsp_headroom: u64,
+}
+
+/// The DSP headroom of a device: see `Entry::dsp_headroom`.
+#[cfg(not(target_arch = "wasm32"))]
+fn dsp_headroom(short: &str, b: &Board, voices: u64) -> u64 {
+    crate::budget_cli::headroom(short, b.dsp_clock_hz, b.dsp_blocks_per_second, voices).unwrap_or(0)
+}
+#[cfg(target_arch = "wasm32")]
+fn dsp_headroom(_short: &str, _b: &Board, _voices: u64) -> u64 {
+    0
 }
 /// The device facts of the builder commit (`core/runtime` reads them from `dynreg_info` version 3): what the packer took from `[modules]` and
 /// `[adapter.machine]` before modules declared through builder calls. All 0 on a device without `[modules]`.
@@ -446,6 +459,7 @@ impl Facts {
             let sample_pool = sample_pool_facts(&short, sample_pool)?;
             let adapter =
                 adapter_facts(&short, adapter_machine, d.modules.and_then(|m| m.frame), &b)?;
+            let dsp_headroom = dsp_headroom(&short, &b, adapter.as_ref().map_or(0, |a| a.voices));
             if docs
                 .insert(
                     short.clone(),
@@ -494,6 +508,7 @@ impl Facts {
                         input,
                         fx,
                         profile: profile_facts(&short, models.by_device.get(&short))?,
+                        dsp_headroom,
                     },
                 )
                 .is_some()
@@ -1174,6 +1189,18 @@ fn constants(lib: &Library, dev: &str, e: &Entry) -> Result<Vec<C>> {
             "[board] dsp_clock_hz / dsp_blocks_per_second, rounded (the clock is open, finding 41)",
         ),
         c(
+            "DSP_HEADROOM",
+            e.dsp_headroom,
+            PerDevice,
+            "DSP instructions per block left for modules: the block at 85 percent (projected with the high cycle factor) less the stock firmware's load (devices/cycle-factors.json, dkprof::budget)",
+        ),
+        c(
+            "DSP_VOICES",
+            e.adapter.as_ref().map_or(0, |a| a.voices),
+            PerDevice,
+            "[adapter.machine] voices: the voices a machine's per-voice DSP cost counts for",
+        ),
+        c(
             "DL_AREA_BYTES",
             k.dsp_area_bytes,
             PerDevice,
@@ -1617,11 +1644,13 @@ fn rust_profiles(module: &str, docs: &BTreeMap<String, Entry>) -> String {
         let up = dev.to_uppercase();
         let _ = writeln!(
             s,
-            "\n/// `{dev}`: [digikit] id, name, sample_path_max and [capabilities] card.\npub const {up}: DeviceProfile = DeviceProfile {{\n    id: {},\n    name: {},\n    samples_in_store: {},\n    sample_path_max: {},\n}};",
+            "\n/// `{dev}`: [digikit] id, name, sample_path_max, [capabilities] card, and the DSP headroom and voices.\npub const {up}: DeviceProfile = DeviceProfile {{\n    id: {},\n    name: {},\n    samples_in_store: {},\n    sample_path_max: {},\n    dsp_headroom: {},\n    dsp_voices: {},\n}};",
             k.id,
             hex(name_word as i64),
             k.samples_in_store,
-            k.sample_path_max
+            k.sample_path_max,
+            e.dsp_headroom,
+            e.adapter.as_ref().map_or(0, |a| a.voices)
         );
         names.push(up);
     }

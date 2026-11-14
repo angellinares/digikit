@@ -17,6 +17,13 @@ dkrt_samples_in_store:
     .globl dkrt_sample_path_max
 dkrt_sample_path_max:
     .long SAMPLE_PATH_MAX
+    /* the DSP load the broker checks a selection against: [adapter.machine] voices and the headroom (instructions per block) of dkprof::budget */
+    .globl dkrt_dsp_headroom
+dkrt_dsp_headroom:
+    .long DSP_HEADROOM
+    .globl dkrt_dsp_voices
+dkrt_dsp_voices:
+    .long DSP_VOICES
     .globl dkrt_peek_n
 dkrt_peek_n:
     .long PEEK_N

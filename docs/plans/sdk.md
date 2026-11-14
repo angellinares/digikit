@@ -459,22 +459,40 @@ These come from the profiling work and land after the steps in section 12 that t
   adapter dispatchers; `mem_access` for memory stock code owns). No finding records the stock save set yet [O]; record it in
   `docs/findings/` and have a second agent check it against image bytes before [V]. `pk_conform` checks each module against the rules,
   using sharcdb tables built for the module's own DSP section ([profiling.md](profiling.md) 3.3).
-- **Cycle cost.** `max_cycles_*` stops being written by hand. The packer writes a DSP cycles-per-block use into the header and the report,
-  from the `module:check` emulator measurement at the device's voice count or a static estimate over the module's sharcdb tables, scaled
-  by the emulator-to-device calibration ([profiling.md](profiling.md) 6 and 7.3). The broker checks it (runtime-and-services 5.3).
-  P4 measures and names the cost; this item puts it into the header and the broker. The unit is **instructions** per block (SHARC+
-  instructions the emulator counts) until the device calibration (P9); the name "cycles" waits for it. `dkprof::budget` holds the rule,
-  filled from `devices/*.toml` and `devices/cycle-factors.json` (`patchkit budget` prints it; `module:check` reads that). The headroom of a
-  device is what is left of the block between the stock firmware (`stock_busy`) and 85 percent of the block, with instructions projected to
-  cycles by the "high" factor (the 15 percent are the safety margin until P9). A machine's cost is its own worst steady block for one
-  voice, measured by `module:check`; the check is `voice-block <= headroom / voices`. The note-on block is checked on its own against the
-  whole headroom, never added to the other voices' steady blocks. The selection rule the broker applies (`dkprof::budget::check_selection`):
-  `max(machine costs) * voices + sum(FX costs) + stock baseline <= block at 85 percent`, which is `own <= headroom`. Every voice may run
-  any selected machine, so the largest one counts for all voices.
-- **`DK_SPAN`.** `DK_SPAN_BEGIN(owner)` and `DK_SPAN_END(owner)` in `core/trace.h` and `dsp/contract/dk_trace.inc`. They read the cycle
-  counter and emit `(owner, cycles)` to the `span` sink (runtime-and-services 5.11). With no sink set they cost one flag test. Only
-  service dispatchers use them (runtime-and-services 6.1). In the emulator a counter read can change the execution tier
-  (`UNSAFE_READ_NAMES` in `tools/sharc_dev/sharc_rsgen.py`), so the reads run only while a sink is set [O: measure the tier effect].
+- **Cycle cost (S5a, built).** Nobody declares a cost: the DSP descriptors have no `max_cycles_*` words (the machine descriptor is 8 words, the effect
+  descriptor 6) and the manifest has no `[conformance]` overrides. `module:check` runs the conformance suite and writes the module's own cost into
+  `[uses.<device>]` of `module.toml`, like the row counts: `dsp_cost_voice` for a machine (the worst steady block of one voice, over every conformance case)
+  and `dsp_cost_fx` for an effect (its worst process call, the `core/fx` adapter around it included). The packer copies them into the header table as the
+  two resources `DSP_COST_VOICE` (id 5) and `DSP_COST_FX` (id 6) of `[records.resources]`; `dkneeds` reads them into `Needs`. The unit is **instructions**
+  per block (SHARC+ instructions the concrete core counts) until the device calibration (P9); the name "cycles" waits for it. A module that was not
+  measured has cost 0 and passes any headroom. The note-on block has no resource: the conformance suite checks it for each module alone against the whole
+  headroom, never added to the other voices' steady blocks. Today's costs are a floor for a module whose worst case the conformance cases do not drive
+  (`digikit/shot` plays no sample in the suite, so its cost is far below its worst block); the cases are the place to fix that.
+- **Voice rule and broker (S5a, built).** The rule is one integer function, `check_selection(voices, headroom, machines, fx)` in `dkrt-fit` (`no_std`):
+  `max(machine costs) * voices + sum(effect costs) <= headroom`. Every voice may run any selected machine, so the largest per-voice cost counts for all voices;
+  the effects add up. The same code runs in the boot planner (`plan.rs`, `judge`), the DIGIKIT menu (`fit_set`), `patchkit fit` (and `patchkit.wasm`, so the
+  Transfer tab) and `module:check`; `dkprof::budget` re-exports it for the host. A capacity carries the load as two kinds of `[capacity.kinds]`:
+  `DSP_COST` (limit: the device's headroom; used: the load so far; largest: the largest per-voice machine cost so far, the state of that maximum) and
+  `DSP_VOICES` (limit: the device's voices). The planner keeps no state of its own: `fits_now` and `take` update those two entries. A module that takes the
+  load over the headroom is refused with `E_PLAN_FIT` and the kind `DSP_COST`; the menu shows `DSP LOAD need > free FREE` (instructions per block).
+- **Headroom, voices and the margin come from the generated device profile.** `patchkit gen` writes `DSP_HEADROOM` and `DSP_VOICES` for each device
+  (`modules/core/runtime/build/gen/device-<dev>.inc`, and `DeviceProfile.dsp_headroom` and `dsp_voices`); the runtime reads two words, no float, no table
+  on the device. The headroom is what `dkprof::budget` computes from `[board]`, `[adapter.machine] voices` and `devices/cycle-factors.json`: the block at 85
+  percent (the safety margin until P9), with instructions projected to cycles by the "high" factor, less the stock firmware's load (`stock_busy`). Today
+  194,244 instructions on the Digitakt II and 92,796 on the Digitone II (`patchkit budget`). Both devices have 16 voices.
+- **`DK_SPAN` (S5a, defined; producers are P8a).** `DK_SPAN_BEGIN(owner)` and `DK_SPAN_END(owner)` in `<dk/core/trace.h>` (ColdFire C) and
+  `DK_SPAN_BEGIN(SKIP, RA, RB)` and `DK_SPAN_END(SKIP, ROW, RA, RB, RC)` in `dsp/contract/dk_trace.inc` (SHARC+). They are always compiled in: they test
+  the sink's pointer (C) or the stats window's pointer slot `_dk_stats_ptr` (SHARC+), and only when it is set read the cycle counter and report
+  `(owner, cycles)` to the `span` sink (C: `dk_span_emit`, runtime-and-services 5.11) or to the stub's `_dk_span_add` (SHARC+). With no sink the cost is one
+  load, one test and one branch for each macro, and the arguments are not evaluated; the SHARC+ counter read (`EMUCLK`, which takes the emulator out of the
+  fast tiers, `UNSAFE_READ_NAMES` in `tools/sharc_dev/sharc_rsgen.py`) runs only while a window is registered. Only service dispatchers and the image
+  stub use them; `mise run check:layers` (rule spans) refuses them in content modules and apps. Checked by reading the disassembly of a test use (ColdFire
+  `tstl`/`bnes` on the sink word before any call; SHARC+ load, `PASS`, `IF EQ JUMP` before the `EMUCLK` read). The no-sink cost of the real dispatchers (a paired
+  A/B of instruction counts within 0.02 percent) is measured with the first producer (P8a).
+  The **stats window** is words in DSP data memory: a header of 4 words (magic `DKSW` 0x444b5357, version 1, rows 16, blocks measured since the window was
+  cleared), then 16 rows of 4 words (owner row number, calls, cycles summed, largest span), all 32-bit and wrapping; the reader takes differences. The
+  pointer slot `_dk_stats_ptr` holds the window's word address (0: no window, nothing is measured). The numbers are defined twice, in `dk_trace.inc` and in
+  `trace.h` (the ColdFire reader); the third reader (P8b, dsp-link) takes them from `sdk.toml` if the copies drift.
 
 ## 10. Style and enforcement
 
@@ -624,6 +642,9 @@ Work packages, in this order:
 
 - DSP rules, cycle cost and `DK_SPAN` (section 9). Depends on profiling P3 sharcdb tables for module DSP sections, P4 per-module cost,
   and runtime-and-services R4 spike (static part).
+- **S5a (done):** the derived cost in the header (`DSP_COST_VOICE`, `DSP_COST_FX`), the shared `check_selection` in the planner, the menu and `patchkit fit`,
+  the headroom and voices in the device profile, the `max_cycles_*` words and the `[conformance]` overrides deleted, and the `DK_SPAN` definition.
+- **S5b (in progress):** the DSP rules section and its check (dksharc slice 2, the stock save-set finding), see section 9, "DSP rules".
 
 ## 13. Open items
 

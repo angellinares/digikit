@@ -10,12 +10,11 @@ _cfx_process:                             // R4 = state, R8 = dk_fx_in, R12 = th
     JUMP (M13, I13);
 
 .SECTION/DM seg_dmda;
-// dk_fx_desc: magic, contract, n_params, state_bytes, max_cycles_block, max_call_depth, stack_bytes.
+// dk_fx_desc: magic, contract, n_params, state_bytes, max_call_depth, stack_bytes.
 .GLOBAL _cfx_desc;
 .VAR _cfx_desc = DK_FX_MAGIC;
 .VAR _cfx_desc1 = DK_FX_V1;
 .VAR _cfx_desc2 = 1;
 .VAR _cfx_desc3 = 4;
-.VAR _cfx_desc4 = 100;
+.VAR _cfx_desc4 = 0;
 .VAR _cfx_desc5 = 0;
-.VAR _cfx_desc6 = 0;

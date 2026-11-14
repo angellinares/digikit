@@ -6,6 +6,11 @@
 //! the web app uses it through patchkit.wasm and the device tools through `patchkit fit` (packages/patchkit/src/fit.rs).
 //! `modules/core/runtime/vectors/fit-vectors.json` holds its test vectors.
 //!
+//! DSP load is not a sum: every voice may run any selected machine, so the largest per-voice cost counts for all voices, and the effects add up. The rule is
+//! [`check_selection`]: `max(machine costs) * voices + sum(effect costs) <= headroom` (instructions per block; docs/plans/sdk.md section 9). A capacity carries it
+//! as `CAPK_DSP_COST` (limit: the headroom, used: the load so far, largest: the largest per-voice cost so far) and `CAPK_DSP_VOICES` (limit: the voices), so
+//! the planner, the menu and the host tools check a selection in the same way with the same integers.
+//!
 //! The runtime's module set is fixed per session, so the menu checks a selection against the limits with the other ticked modules taken out
 //! (the next boot loads them into an empty runtime), and a host checks against CAPACITY as the device reports it.
 #![no_std]
@@ -24,7 +29,7 @@ pub struct Short {
 }
 
 /// The order the first short resource is looked for in: the loader's own order of refusals, with the slots first.
-const ORDER: [u8; 10] = [
+const ORDER: [u8; 11] = [
     CAPK_STAGE,
     CAPK_MODULES,
     CAPK_SELECTION,
@@ -35,7 +40,57 @@ const ORDER: [u8; 10] = [
     CAPK_PARAM_ROWS,
     CAPK_PAGE_ROWS,
     CAPK_FX_SLOTS,
+    CAPK_DSP_COST,
 ];
+
+/// What a selection takes of the DSP block, in instructions per block, and whether it fits the headroom.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub struct DspCheck {
+    /// `max(machines) * voices + sum(fx)`.
+    pub own: u32,
+    pub headroom: u32,
+    pub fits: bool,
+}
+
+/// The load of a selection of `voices` voices: the largest per-voice machine cost counts for every voice, the effect costs add up (saturating).
+pub fn dsp_own(voices: u32, voice_max: u32, fx_sum: u32) -> u32 {
+    voice_max.saturating_mul(voices).saturating_add(fx_sum)
+}
+
+/// The selection rule: `max(machines) * voices + sum(fx) <= headroom`. `machines` are the per-voice costs of the selected machine modules (the worst steady
+/// block of one voice), `fx` the costs of the effects. The stock firmware's load and the safety margin are already out of `headroom`.
+pub fn check_selection(voices: u32, headroom: u32, machines: &[u32], fx: &[u32]) -> DspCheck {
+    let mut voice_max = 0;
+    for &m in machines {
+        if m > voice_max {
+            voice_max = m;
+        }
+    }
+    let mut fx_sum = 0u32;
+    for &f in fx {
+        fx_sum = fx_sum.saturating_add(f);
+    }
+    let own = dsp_own(voices, voice_max, fx_sum);
+    DspCheck {
+        own,
+        headroom,
+        fits: own <= headroom,
+    }
+}
+
+/// The DSP state of `caps`: (voices, headroom, used, largest). None when the capacity has no DSP load entry or no voices (an older runtime: not judged).
+fn dsp_state(caps: &[DkrtCap]) -> Option<(u32, u32, u32, u32)> {
+    let c = cap(caps, CAPK_DSP_COST)?;
+    let v = cap(caps, CAPK_DSP_VOICES)?;
+    Some((v.limit, c.limit, c.used, c.largest))
+}
+
+/// The load once a module with these costs is taken: (load, largest per-voice cost). The effects are what `used` holds beyond `largest * voices`.
+fn dsp_after(voices: u32, used: u32, largest: u32, voice: u32, fx: u32) -> (u32, u32) {
+    let fx_sum = used.saturating_sub(largest.saturating_mul(voices));
+    let top = if voice > largest { voice } else { largest };
+    (dsp_own(voices, top, fx_sum.saturating_add(fx)), top)
+}
 
 /// The entry of `kind`; None when the capacity has none (an older runtime without that kind): it is not judged.
 fn cap(caps: &[DkrtCap], kind: u8) -> Option<DkrtCap> {
@@ -83,8 +138,15 @@ pub fn fits_now(n: &Needs, caps: &[DkrtCap]) -> Option<Short> {
             (n.param_rows, free(&c))
         } else if kind == CAPK_PAGE_ROWS {
             (n.page_rows, free(&c))
-        } else {
+        } else if kind == CAPK_FX_SLOTS {
             (n.fx_slots, free(&c))
+        } else {
+            // the DSP load: what this module adds, against what the headroom has left
+            let Some((voices, headroom, used, largest)) = dsp_state(caps) else {
+                continue;
+            };
+            let (load, _) = dsp_after(voices, used, largest, n.dsp_cost_voice, n.dsp_cost_fx);
+            (load.saturating_sub(used), headroom.saturating_sub(used))
         };
         if need > room {
             return Some(Short {
@@ -106,7 +168,9 @@ pub fn empty(caps: &mut [DkrtCap]) {
             continue;
         }
         c.used = 0;
-        c.largest = if c.kind == CAPK_ARENA as u32 {
+        c.largest = if c.kind == CAPK_DSP_COST as u32 {
+            0
+        } else if c.kind == CAPK_ARENA as u32 {
             c.limit.saturating_sub(ARENA_HDR)
         } else if c.kind == CAPK_DSP_AREA as u32 {
             c.limit.saturating_sub(dkneeds::DSP_SLACK)
@@ -135,6 +199,16 @@ pub fn take(n: &Needs, caps: &mut [DkrtCap]) {
     use_(CAPK_PARAM_ROWS, n.param_rows);
     use_(CAPK_PAGE_ROWS, n.page_rows);
     use_(CAPK_FX_SLOTS, n.fx_slots);
+    // the DSP load: `largest` is the state of the per-voice maximum, `used` the whole load
+    if let Some((voices, _, used, largest)) = dsp_state(caps) {
+        let (load, top) = dsp_after(voices, used, largest, n.dsp_cost_voice, n.dsp_cost_fx);
+        for c in caps.iter_mut() {
+            if c.kind == CAPK_DSP_COST as u32 {
+                c.used = load;
+                c.largest = top;
+            }
+        }
+    }
 }
 
 /// Load the modules of a set in order: None when all fit, else the index of the first that does not and what it is short of. `caps` is left as
@@ -218,6 +292,8 @@ pub fn scan_needs(e: &DkrtScan) -> Needs {
         param_rows: e.need_param_rows,
         page_rows: e.need_page_rows,
         fx_slots: e.need_fx_slots,
+        dsp_cost_voice: e.need_dsp_cost_voice,
+        dsp_cost_fx: e.need_dsp_cost_fx,
     }
 }
 
@@ -233,6 +309,8 @@ pub fn set_scan_needs(e: &mut DkrtScan, n: &Needs) {
     e.need_param_rows = n.param_rows;
     e.need_page_rows = n.page_rows;
     e.need_fx_slots = n.fx_slots;
+    e.need_dsp_cost_voice = n.dsp_cost_voice;
+    e.need_dsp_cost_fx = n.dsp_cost_fx;
     e.flags |= SCAN_NEEDS;
 }
 
@@ -285,9 +363,9 @@ pub fn size_k(out: &mut [u8], n: u32) {
 }
 
 /// The names of the CAPACITY kinds a fit can be short of, by kind number (0 and the kinds that cannot be short: empty).
-const SHORT_NAME: [&str; 13] = [
+const SHORT_NAME: [&str; 17] = [
     "", "MODULES", "SELECTED", "CPU", "FILE", "DSP", "MACHINES", "VOICES", "PARAMS", "PAGES", "FX",
-    "", "",
+    "", "", "", "", "DSP LOAD", "",
 ];
 
 /// What is short, in K for bytes and as numbers for rows and slots (the need rounded up, what is free rounded down): `DSP 400K > 254K FREE`, in a
@@ -298,7 +376,7 @@ pub fn short_text(out: &mut [u8], s: &Short, compact: bool) {
     }
     let mut t = Out { b: out, n: 0 };
     let k = s.kind as usize;
-    t.s(if k < 13 {
+    t.s(if k < SHORT_NAME.len() {
         SHORT_NAME[k].as_bytes()
     } else {
         b""

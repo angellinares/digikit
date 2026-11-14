@@ -51,6 +51,8 @@ fn needs(v: &Value) -> Needs {
         param_rows: g("PARAM_ROWS"),
         page_rows: g("PAGE_ROWS"),
         fx_slots: g("FX_SLOTS"),
+        dsp_cost_voice: g("DSP_COST_VOICE"),
+        dsp_cost_fx: g("DSP_COST_FX"),
     }
 }
 
@@ -67,6 +69,7 @@ fn short_name(s: &Short) -> &'static str {
         "PARAM_ROWS",
         "PAGE_ROWS",
         "FX_SLOTS",
+        "DSP_COST",
     ]
     .into_iter()
     .find(|n| kind(n) == s.kind)
@@ -246,4 +249,70 @@ fn the_load_line_of_a_selection_is_the_empty_capacity_with_the_ticked_modules_ta
         "{}",
         line(&c)
     );
+}
+
+#[test]
+fn the_voice_rule_takes_the_largest_machine_for_every_voice() {
+    // headroom 1000, 4 voices: 250 per voice at most
+    let c = check_selection(4, 1000, &[100, 250, 60], &[]);
+    assert_eq!((c.own, c.headroom, c.fits), (1000, 1000, true));
+    let c = check_selection(4, 1000, &[100, 251], &[]);
+    assert_eq!((c.own, c.fits), (1004, false));
+}
+
+#[test]
+fn a_full_selection_adds_the_effects_to_the_voices() {
+    // 200 per voice * 4 voices = 800, and 200 for two effects: exactly full
+    assert!(check_selection(4, 1000, &[200, 150], &[120, 80]).fits);
+    // one instruction more in an effect, and it does not
+    let c = check_selection(4, 1000, &[200, 150], &[120, 81]);
+    assert_eq!((c.own, c.fits), (1001, false));
+}
+
+#[test]
+fn a_selection_of_effects_only_is_the_sum_of_the_effects() {
+    assert_eq!(check_selection(16, 500, &[], &[300, 200]).own, 500);
+    assert!(check_selection(16, 500, &[], &[300, 200]).fits);
+    assert!(!check_selection(16, 500, &[], &[300, 201]).fits);
+    // nothing selected: nothing to fit
+    assert!(check_selection(16, 0, &[], &[]).fits);
+}
+
+#[test]
+fn the_capacity_check_and_the_pure_rule_agree_for_any_order_of_the_modules() {
+    let v = vectors();
+    let machines = [90u32, 240, 10];
+    let fx = [25u32, 15];
+    let want = check_selection(4, 1000, &machines, &fx);
+    // every order of loading the five modules ends at the same load
+    let mut orders: Vec<Vec<usize>> = vec![];
+    for a in 0..5 {
+        for b in 0..5 {
+            if b != a {
+                orders.push(vec![a, b]);
+            }
+        }
+    }
+    for first in orders {
+        let mut c = caps(&v["caps_base"], None);
+        let mut idx: Vec<usize> = first.clone();
+        idx.extend((0..5).filter(|i| !first.contains(i)));
+        for i in idx {
+            let n = if i < 3 {
+                Needs {
+                    dsp_cost_voice: machines[i],
+                    ..Needs::default()
+                }
+            } else {
+                Needs {
+                    dsp_cost_fx: fx[i - 3],
+                    ..Needs::default()
+                }
+            };
+            assert!(fits_now(&n, &c).is_none(), "{i} in {first:?}");
+            take(&n, &mut c);
+        }
+        let dsp = c.iter().find(|e| e.kind == CAPK_DSP_COST as u32).unwrap();
+        assert_eq!((dsp.used, dsp.largest), (want.own, 240), "{first:?}");
+    }
 }

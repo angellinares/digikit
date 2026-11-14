@@ -3,20 +3,24 @@
 
 use crate::platform::DeviceProfile;
 
-/// `dn2`: [digikit] id, name, sample_path_max and [capabilities] card.
+/// `dn2`: [digikit] id, name, sample_path_max, [capabilities] card, and the DSP headroom and voices.
 pub const DN2: DeviceProfile = DeviceProfile {
     id: 2,
     name: 0x646e3200,
     samples_in_store: true,
     sample_path_max: 151,
+    dsp_headroom: 92796,
+    dsp_voices: 16,
 };
 
-/// `dt2`: [digikit] id, name, sample_path_max and [capabilities] card.
+/// `dt2`: [digikit] id, name, sample_path_max, [capabilities] card, and the DSP headroom and voices.
 pub const DT2: DeviceProfile = DeviceProfile {
     id: 1,
     name: 0x64743200,
     samples_in_store: false,
     sample_path_max: 254,
+    dsp_headroom: 194244,
+    dsp_voices: 16,
 };
 
 /// Every device file's profile.

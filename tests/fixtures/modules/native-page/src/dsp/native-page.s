@@ -22,7 +22,5 @@ _np_note_on:
 .VAR _np_d3 = DK_MAX_VOICES;
 .VAR _np_d4 = 0;
 .VAR _np_d5 = 0;
-.VAR _np_d6 = 100;
-.VAR _np_d7 = 100;
-.VAR _np_d8 = 0;
-.VAR _np_d9 = 0;
+.VAR _np_d6 = 0;
+.VAR _np_d7 = 0;

@@ -16,7 +16,7 @@ listed under "Voices".
 | Per voice of 16 (`voice_block`) | 12,140 | 5,799 |
 | Reference cost | pluck: about 900 per ringing voice per block; adapter and guard about 700 of that | similar |
 
-Plan a machine for 16 voices at once: 16 x your `max_cycles_block` must fit with room for the other modules.
+Plan a machine for 16 voices at once: 16 x its per-voice cost (`dsp_cost_voice`, the worst steady block `module:check` measures and writes into `[uses.<device>]`) must fit with room for the other modules and the effects. The broker checks `max(machine costs) x voices + sum(effect costs) <= headroom` for the whole selection.
 
 ## Voices
 
@@ -83,7 +83,7 @@ the pages from `core/fxpages`, which the Digitone II image needs in its module l
 - **Instruction budget of the conformance suite.** `module:check` allows each effect `pk_conform.fx_budget()` instructions in the worst block: the
   headroom of the tighter device divided by the 3 slots (about 31,000 today, set by the Digitone II), plus 900 for the `core/fx` adapter
   (`FX_ADAPTER_MAX`). The number follows the measured stock load, so read it from the report (`-rA`) and not from this file.
-  Size `max_cycles_block` in your `dk_fx_desc` below it.
+  `module:check` measures the effect's worst call and writes it as `dsp_cost_fx`; the broker sums the effects of a selection against the headroom.
 - **Digitone II.** Its stock DSP load is higher, so the free time per block is smaller (see "Time and budget"); the effect hook costs the
   emulator about x2.4 DSP CPU there (finding 55). A send effect there gets the sum of the voice slots of the track as its send input (finding 67).
 - Send amounts, MIX and routes are framework-owned (docs/MODULE-AUTHORING.md, section 7.2).

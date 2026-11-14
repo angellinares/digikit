@@ -68,7 +68,7 @@ pub const DESC_CONTRACT: u32 = 1;
 pub const DESC_STEREO: u32 = 0x100;
 /// Bit 9 of the desc's contract word: a machine that reads `gate` in `dk_voice_in` (contract 1.6, `DK_MACHINE_GATE`).
 pub const DESC_GATE: u32 = 0x200;
-pub const DESC_WORDS: usize = 10;
+pub const DESC_WORDS: usize = 8;
 /// The routes of an effect (the manifest's `route` and `routes`): the master chain and a send bus. `Effect::routes` is a mask of them.
 pub const ROUTE_MASTER: u32 = 1;
 pub const ROUTE_SEND: u32 = 2;
@@ -81,7 +81,7 @@ pub const MAX_FX: usize = dkneeds::MAX_FX as usize;
 /// `dk_fx_desc` (<dk/fx/fx.h>): magic "DKFX", the contract number the packer accepts, its size in u32 words and the most parameter words.
 pub const FX_DESC_MAGIC: u32 = 0x444b_4658;
 pub const FX_DESC_CONTRACT: u32 = 1;
-pub const FX_DESC_WORDS: usize = 7;
+pub const FX_DESC_WORDS: usize = 6;
 pub const FX_MAX_PARAMS: u32 = 8;
 pub const MAX_RELOCS: usize = dkneeds::MAX_RELOCS as usize;
 pub const MAX_IMPORTS: usize = dkneeds::MAX_IMPORTS as usize;
@@ -1233,7 +1233,7 @@ mod tests {
     /// An effect: a process routine in the text, a `dk_fx_desc` (magic, contract 1, n_params, state_bytes, ...) in the data and a state-less bss.
     fn fx_object(n_params: u32, state_bytes: u32) -> Dko {
         let mut o = object();
-        let words = [FX_DESC_MAGIC, 1, n_params, state_bytes, 200, 0, 0];
+        let words = [FX_DESC_MAGIC, 1, n_params, state_bytes, 0, 0];
         let desc: Vec<u8> = words.iter().flat_map(|w| w.to_le_bytes()).collect();
         o.sections[1] = sec("d", "data", 4, &desc);
         o.symbols.push(sym("dkdesc", Some("d"), 0, true));
@@ -1426,7 +1426,7 @@ mod tests {
         assert!(e(&fx_object(9, 4), fx_spec(vec![])).contains("n_params 9"));
         assert!(e(&fx_object(1, 6), fx_spec(vec![])).contains("multiple of 4"));
         let mut c = fx_object(1, 4);
-        let words = [FX_DESC_MAGIC, 2, 1, 4, 0, 0, 0];
+        let words = [FX_DESC_MAGIC, 2, 1, 4, 0, 0];
         let desc: Vec<u8> = words.iter().flat_map(|w| w.to_le_bytes()).collect();
         c.sections[1] = sec("d", "data", 4, &desc);
         assert!(e(&c, fx_spec(vec![])).contains("contract 2"));

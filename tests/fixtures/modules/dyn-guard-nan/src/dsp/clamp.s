@@ -35,7 +35,5 @@ _cp_note_on:
 .VAR _cp_desc3 = DK_MAX_VOICES;
 .VAR _cp_desc4 = 8;
 .VAR _cp_desc5 = 0;
-.VAR _cp_desc6 = 100;
-.VAR _cp_desc7 = 100;
-.VAR _cp_desc8 = 0;
-.VAR _cp_desc9 = 0;
+.VAR _cp_desc6 = 0;
+.VAR _cp_desc7 = 0;

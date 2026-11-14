@@ -40,12 +40,11 @@ _hf_spin:
     JUMP _hf_spin;
 
 .SECTION/DM seg_dmda;
-// dk_fx_desc: magic, contract, n_params, state_bytes, max_cycles_block, max_call_depth, stack_bytes.
+// dk_fx_desc: magic, contract, n_params, state_bytes, max_call_depth, stack_bytes.
 .GLOBAL _hf_desc;
 .VAR _hf_desc = DK_FX_MAGIC;
 .VAR _hf_desc1 = DK_FX_V1;
 .VAR _hf_desc2 = 1;
 .VAR _hf_desc3 = 4;
-.VAR _hf_desc4 = 220;
+.VAR _hf_desc4 = 0;
 .VAR _hf_desc5 = 0;
-.VAR _hf_desc6 = 0;

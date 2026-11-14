@@ -27,6 +27,10 @@ pub struct DeviceProfile {
     pub samples_in_store: bool,
     /// `[digikit] sample_path_max`: the longest sample path (bytes, relative to the samples root) a transfer or a `select` may name.
     pub sample_path_max: u32,
+    /// DSP instructions per block left for modules (`dkprof::budget`, written by `patchkit gen` as `DSP_HEADROOM`): what the broker checks the selection's DSP load against.
+    pub dsp_headroom: u32,
+    /// `[adapter.machine] voices`: the voices a machine's per-voice DSP cost counts for (`DSP_VOICES`).
+    pub dsp_voices: u32,
 }
 
 /// The firmware's task kernel and its heap.
@@ -128,6 +132,12 @@ pub trait Platform: Tasking + SamplePool + StagedWriter {
     }
     fn sample_path_max(&self) -> u32 {
         self.profile().sample_path_max
+    }
+    fn dsp_headroom(&self) -> u32 {
+        self.profile().dsp_headroom
+    }
+    fn dsp_voices(&self) -> u32 {
+        self.profile().dsp_voices
     }
 }
 

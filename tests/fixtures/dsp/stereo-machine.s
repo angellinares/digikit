@@ -47,7 +47,5 @@ _sm_note_on:
 .VAR _sm_desc3 = DK_MAX_VOICES;
 .VAR _sm_desc4 = 4;
 .VAR _sm_desc5 = 4;
-.VAR _sm_desc6 = 200;
-.VAR _sm_desc7 = 200;
-.VAR _sm_desc8 = 0;
-.VAR _sm_desc9 = 0;
+.VAR _sm_desc6 = 0;
+.VAR _sm_desc7 = 0;

@@ -561,7 +561,7 @@ checked in every block of every case:
 - M5, M6, M7, M13, M14, M15, L0 to L5 and MODE1 are preserved;
 - all 32 output samples are finite and at most 8.0 in magnitude;
 - instructions per block stay within the DSP budget headroom: `headroom / 16` per block, `headroom`
-  for a note-on block. A manifest `[conformance] voice_block`, `note_on_block` replaces either number.
+  for a note-on block. No manifest replaces either number. After the run `module:check` writes the worst steady block as the module's `dsp_cost_voice` (a machine) or `dsp_cost_fx` (an effect) into `[uses.<device>]`; the boot planner, the menu and `patchkit fit` check a selection with it.
 
 FX rules (`tests/modules/test_fx_conformance.py`, rig `tests/support/fx_rig.py`): the hook returns
 within 200,000 instructions; registers the stock function expects are preserved; the core/fx fault

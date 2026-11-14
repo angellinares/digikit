@@ -35,6 +35,26 @@ pub fn devices() -> Result<Vec<DeviceCost>> {
     Ok(out)
 }
 
+/// The headroom of the device `short` in instructions per block at the default margin (`DEFAULT_BUDGET_PCT`), from its clock, block rate and voices and the cycle
+/// factors of the same name; None when `devices/cycle-factors.json` has no entry for it. `patchkit gen` writes it into the device profile (`DSP_HEADROOM`), so the
+/// broker on the device compares integers and does no float arithmetic.
+pub fn headroom(short: &str, clock: u64, blocks: u64, voices: u64) -> Option<u64> {
+    let f = *budget::parse_cycle_factors(CYCLE_FACTORS)
+        .ok()?
+        .get(short)?;
+    Some(
+        DeviceCost {
+            device: short.to_string(),
+            dsp_clock_hz: clock,
+            dsp_blocks_per_second: blocks,
+            voices,
+            dsp_high: f.high,
+            stock_busy: f.stock_busy,
+        }
+        .headroom(DEFAULT_BUDGET_PCT),
+    )
+}
+
 fn flag_values<'a>(rest: &'a [String], name: &str) -> Vec<&'a str> {
     rest.windows(2)
         .filter(|w| w[0] == name)
@@ -63,7 +83,7 @@ pub fn budget_json(only: &[&str], fx_max: Option<u64>, pct: f64) -> Result<Value
     }
     let mut devs = serde_json::Map::new();
     for d in &all {
-        let b = d.budget(pct, None, None);
+        let b = d.budget(pct);
         devs.insert(
             d.device.clone(),
             json!({
