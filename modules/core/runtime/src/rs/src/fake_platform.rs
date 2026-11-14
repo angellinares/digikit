@@ -19,11 +19,10 @@ use dkrt_abi::storage::{DirEntry, Stat, Storage, ROOT_SAMPLES};
 use dkrt_sdk::store::Layout;
 use dkrt_sdk::*;
 use std::collections::BTreeMap;
-use std::sync::Mutex;
 use std::vec::Vec;
 
-/// The card, the card state and the transport buffers are statics: the tests that drive them run one at a time.
-static LOCK: Mutex<()> = Mutex::new(());
+// The card, the card state and the transport buffers are statics: the tests that drive them hold the shared test lock.
+use crate::test_lock::LOCK;
 
 pub struct FakePlatform {
     pub profile: DeviceProfile,

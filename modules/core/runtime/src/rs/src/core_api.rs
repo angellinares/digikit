@@ -301,3 +301,7 @@ mod fake {
         }
     }
 }
+
+/// The shared lock of the tests that drive the runtime statics, for tests inside services.
+#[cfg(test)]
+pub(crate) use crate::test_lock::LOCK as TEST_LOCK;

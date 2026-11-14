@@ -527,11 +527,9 @@ mod tests {
     use crate::fake_platform::FakePlatform;
     use dkrt_abi::profiles;
     use dkrt_abi::storage::{HASH_ELEKTRON32 as FAKE_K32, HASH_NONE as FAKE_NONE};
-    use std::sync::Mutex;
+    use crate::test_lock::LOCK;
     use std::vec::Vec;
 
-    /// The listing statics and the host block counter are shared: the tests of this file run one at a time.
-    static LOCK: Mutex<()> = Mutex::new(());
     const H: [u8; 32] = [7; 32];
 
     unsafe fn reset() {

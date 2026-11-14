@@ -654,9 +654,7 @@ pub unsafe fn peaks(handle: u32, track: u32, token: u32, out: *mut u8, capacity:
 mod tests {
     use super::*;
     use crate::core_api::FakeCore;
-    use std::sync::Mutex;
-
-    static LOCK: Mutex<()> = Mutex::new(());
+    use crate::core_api::TEST_LOCK as LOCK;
 
     /// Client 0, track 1 has an op `kind`; its records and control sets are at fixed L2 addresses.
     unsafe fn seed(kind: u8, rec: [u32; 8]) {

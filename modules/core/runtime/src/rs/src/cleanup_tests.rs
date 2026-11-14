@@ -4,10 +4,9 @@
 use super::*;
 use crate::core_api::{CoreApi, REAL_CORE};
 use dkrt_abi::link::{Owner, Sequence};
-use std::sync::Mutex;
+use crate::test_lock::LOCK;
 use std::vec::Vec;
 
-static LOCK: Mutex<()> = Mutex::new(());
 const CF: u32 = 0x8000;
 const IMAGE: u32 = 0xd000;
 const PUB_PC: u32 = 0xc000;
@@ -182,7 +181,7 @@ unsafe fn seed(completion: Completion, fx: bool, published: bool, queued: bool) 
 
 #[test]
 fn voice_latch_mask_is_published_before_the_type() {
-    let _lock = LOCK.lock().unwrap();
+    let _lock = LOCK.lock().unwrap_or_else(|e| e.into_inner());
     unsafe {
         seed(Completion::Ack, false, true, false);
         LINK.original_failure = false;
@@ -278,7 +277,7 @@ unsafe fn failure_case(completion: Completion) {
 }
 #[test]
 fn dsp_step_reports_a_failure_without_acting_on_it() {
-    let _g = LOCK.lock().unwrap();
+    let _g = LOCK.lock().unwrap_or_else(|e| e.into_inner());
     unsafe {
         seed(Completion::Ack, false, true, true);
         let d = dsp::ds();
@@ -294,7 +293,7 @@ fn dsp_step_reports_a_failure_without_acting_on_it() {
 }
 #[test]
 fn invalidation_refusal_retains_and_stops() {
-    let _g = LOCK.lock().unwrap();
+    let _g = LOCK.lock().unwrap_or_else(|e| e.into_inner());
     unsafe {
         failure_case(Completion::Refuse);
         assert_eq!(LINK.accepted, 0);
@@ -302,7 +301,7 @@ fn invalidation_refusal_retains_and_stops() {
 }
 #[test]
 fn invalidation_error_retains_and_stops() {
-    let _g = LOCK.lock().unwrap();
+    let _g = LOCK.lock().unwrap_or_else(|e| e.into_inner());
     unsafe {
         failure_case(Completion::ErrorAt(1));
         assert_eq!(LINK.accepted, 1);
@@ -310,7 +309,7 @@ fn invalidation_error_retains_and_stops() {
 }
 #[test]
 fn invalidation_missing_ack_retains_and_stops() {
-    let _g = LOCK.lock().unwrap();
+    let _g = LOCK.lock().unwrap_or_else(|e| e.into_inner());
     unsafe {
         failure_case(Completion::Missing);
         assert_eq!(LINK.accepted, 1);
@@ -318,7 +317,7 @@ fn invalidation_missing_ack_retains_and_stops() {
 }
 #[test]
 fn fx_partial_cleanup_does_not_discard_publication() {
-    let _g = LOCK.lock().unwrap();
+    let _g = LOCK.lock().unwrap_or_else(|e| e.into_inner());
     unsafe {
         seed(Completion::ErrorAt(3), true, true, true);
         pass();
@@ -328,7 +327,7 @@ fn fx_partial_cleanup_does_not_discard_publication() {
 }
 #[test]
 fn missing_fx_info_retains_published_row() {
-    let _g = LOCK.lock().unwrap();
+    let _g = LOCK.lock().unwrap_or_else(|e| e.into_inner());
     unsafe {
         seed(Completion::Ack, true, true, true);
         LINK.no_fx_info = true;
@@ -359,7 +358,7 @@ unsafe fn successful_case(fx: bool, published: bool) {
 }
 #[test]
 fn acknowledged_voice_cleanup_reclaims_and_advances_queue() {
-    let _g = LOCK.lock().unwrap();
+    let _g = LOCK.lock().unwrap_or_else(|e| e.into_inner());
     unsafe {
         successful_case(false, true);
         assert_eq!(LINK.accepted, 1);
@@ -367,7 +366,7 @@ fn acknowledged_voice_cleanup_reclaims_and_advances_queue() {
 }
 #[test]
 fn acknowledged_fx_cleanup_reclaims_after_all_words() {
-    let _g = LOCK.lock().unwrap();
+    let _g = LOCK.lock().unwrap_or_else(|e| e.into_inner());
     unsafe {
         successful_case(true, true);
         assert_eq!(LINK.accepted, 11);
@@ -375,7 +374,7 @@ fn acknowledged_fx_cleanup_reclaims_after_all_words() {
 }
 #[test]
 fn before_publication_failure_is_reclaimable() {
-    let _g = LOCK.lock().unwrap();
+    let _g = LOCK.lock().unwrap_or_else(|e| e.into_inner());
     unsafe {
         successful_case(false, false);
         assert_eq!(LINK.accepted, 0);
@@ -383,7 +382,7 @@ fn before_publication_failure_is_reclaimable() {
 }
 #[test]
 fn never_started_cancel_is_reclaimable() {
-    let _g = LOCK.lock().unwrap();
+    let _g = LOCK.lock().unwrap_or_else(|e| e.into_inner());
     unsafe {
         seed(Completion::Ack, false, false, false);
         dsp::ds().send_buf = IMAGE;
@@ -397,8 +396,8 @@ fn never_started_cancel_is_reclaimable() {
 #[test]
 fn on_loaded_runs_once_per_load_and_after_the_last_row() {
     use crate::handlers::tests::{log, Call, LOCK as FAKE_LOCK, TWO};
-    let _f = FAKE_LOCK.lock().unwrap();
-    let _g = LOCK.lock().unwrap();
+    let _f = FAKE_LOCK.lock().unwrap_or_else(|e| e.into_inner());
+    let _g = LOCK.lock().unwrap_or_else(|e| e.into_inner());
     unsafe {
         seed(Completion::Ack, false, true, false);
         idle_link();
@@ -423,7 +422,7 @@ fn on_loaded_runs_once_per_load_and_after_the_last_row() {
 fn attribution_names_the_module_of_every_site_the_watch_reports() {
     use crate::handlers::services;
     use dkrt_sdk::fault::{SITE_FX_MASTER, SITE_FX_SEND, SITE_NONE, SITE_VOICE};
-    let _g = LOCK.lock().unwrap();
+    let _g = LOCK.lock().unwrap_or_else(|e| e.into_inner());
     unsafe {
         seed(Completion::Ack, false, true, false);
         let d = dsp::ds();
@@ -555,7 +554,7 @@ unsafe extern "C" fn test_sink(_: *const crate::dlog::Ev) {}
 /// A module without `fini` that set a sink: the unload releases the channel (it would point into freed memory).
 #[test]
 fn unload_of_a_module_without_fini_releases_its_sink() {
-    let _g = LOCK.lock().unwrap();
+    let _g = LOCK.lock().unwrap_or_else(|e| e.into_inner());
     unsafe {
         seed(Completion::Ack, false, true, true);
         st().modules[0].fini = 0;
