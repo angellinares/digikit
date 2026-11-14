@@ -16,6 +16,8 @@ export const SHARED_SDK_INPUTS = [
 // Build/pack producers do not read acceptance tests. Nx's implicit ^default input would
 // otherwise turn a harness-only edit into a changed image output for every consumer.
 // Plugin sources are not inputs: Nx hashes each project's resolved configuration, so a plugin edit reaches only targets whose definition changes.
+// A pack or object build reads the SDK headers its sources include, not every header: packSourceInputs lists those.
+const SDK_INCLUDE_GLOB = '{workspaceRoot}/sdk/include/**/*';
 export const BUILD_INPUTS = [
   'production',
   '^production',
@@ -51,7 +53,7 @@ export const scopedManifestInputs = (inputs, manifests) => [
 // Build inputs follow manifest/source ownership, never the module's acceptance relationships.
 export const packInputs = (workspaceRoot, byId, manifests) => [
   ...scopedManifestInputs(
-    BUILD_INPUTS.filter((input) => input !== '^production'),
+    BUILD_INPUTS.filter((input) => input !== '^production' && input !== SDK_INCLUDE_GLOB),
     manifests,
   ),
   ...packSourceInputs(workspaceRoot, byId, manifests),
@@ -64,7 +66,7 @@ export const buildObjectsTarget = (workspaceRoot, byId, m, root, objects, coreBu
   cache: false,
   inputs: [
     ...scopedManifestInputs(
-      BUILD_INPUTS.filter((input) => input !== '^production'),
+      BUILD_INPUTS.filter((input) => input !== '^production' && input !== SDK_INCLUDE_GLOB),
       coreManifests,
     ),
     ...packSourceInputs(workspaceRoot, byId, manifestClosure(byId, [m.id])),
