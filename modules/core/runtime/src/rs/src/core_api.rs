@@ -16,6 +16,7 @@ pub use dkrt_abi::core_api::{CoreApi, JOB_E_CANCELLED, LOG_INFO};
 // The platform facts a service may read (the device profile, the interrupt mask, the sample-pool provider): the only platform names a service has.
 pub use crate::platform::PLATFORM;
 pub use dkrt_abi::platform::{Platform, SamplePool};
+pub use dkrt_abi::storage::Storage;
 
 // The C-API glue of the services' imports (`dk_sample_pool_*`): the handle a module holds and the record behind a context.
 pub(crate) use crate::entry::{client, give, own_rec};
@@ -82,13 +83,6 @@ impl CoreApi for RealCore {
     unsafe fn settings_put(&self, key: &[u8], value: &[u8]) -> i32 {
         settings::put(key, value)
     }
-    unsafe fn store_probe(&self, path: *const u8, head: Option<&mut [u8; 64]>) -> Result<(u32, [u8; 32]), i32> {
-        let f = crate::store::find(path)?;
-        if let Some(h) = head {
-            crate::store::read_head(&f, h)?;
-        }
-        Ok((f.size, f.sha))
-    }
     unsafe fn log(&self, kind: u16, flags: u16, args: [u32; 5]) {
         dlog::ev(kind, flags, args)
     }
@@ -136,6 +130,8 @@ impl CoreApi for RealCore {
     }
 }
 
+#[cfg(test)]
+pub use crate::fake_platform::FakePlatform;
 #[cfg(test)]
 pub use fake::{Call, FakeCore};
 
@@ -254,9 +250,6 @@ mod fake {
         unsafe fn settings_put(&self, key: &[u8], value: &[u8]) -> i32 {
             self.rec(Call::SettingsPut(key.to_vec(), value.to_vec()));
             0
-        }
-        unsafe fn store_probe(&self, _path: *const u8, _head: Option<&mut [u8; 64]>) -> Result<(u32, [u8; 32]), i32> {
-            Err(dkrt_sdk::E_NOT_FOUND)
         }
         unsafe fn log(&self, kind: u16, _flags: u16, args: [u32; 5]) {
             self.rec(Call::Log { kind, args })

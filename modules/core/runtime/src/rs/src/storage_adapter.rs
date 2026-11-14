@@ -9,13 +9,13 @@
 
 use core::ptr::{addr_of, addr_of_mut, read_volatile};
 use dkrt_abi::storage::{DirEntry, EntryKind, ListStep, Stat, HASH_ELEKTRON32, HASH_NONE, ROOT_SAMPLES, ROOT_STORE};
-use dkrt_sdk::store::catalog::{CatalogCursor, CatalogOpen};
+use dkrt_sdk::store::catalog::{CatalogCursor, CatalogEntry, CatalogOpen};
 use dkrt_sdk::store::directory::DirectoryCollector;
 use dkrt_sdk::store::{PATH_BYTES, PATH_MAX};
 use dkrt_sdk::{E_BAD_STORE, E_BUSY, E_FORMAT, E_NOT_FOUND, E_READ, E_SEL_PATH, E_TOO_BIG, OK};
 
 extern "C" {
-    // Per-device tables of the runtime's assembly objects (DT2 1.17 anchors; zeros on DN2). Also declared in tracks.rs and files.rs until those callers move here.
+    // Per-device tables of the runtime's assembly objects (DT2 1.17 anchors; zeros on DN2). Only this file declares them.
     static dkrt_sample_fs: [u32; 4];
     static dkrt_files_fs: [u32; 3];
 }
@@ -100,6 +100,20 @@ fn store_key(root: u32, path: &[u8], out: &mut [u8; PATH_BYTES]) -> Result<usize
 /// 512 bytes, 16-byte aligned: the buffer of one store sector read.
 #[repr(C, align(16))]
 struct Sector([u8; 512]);
+
+#[repr(C, align(16))]
+struct Scratch([u8; 4096]);
+#[repr(C, align(16))]
+struct Fingerprint([u8; 512]);
+static mut SCRATCH: Scratch = Scratch([0; 4096]);
+static mut FP: Fingerprint = Fingerprint([0; 512]);
+const RAW: CatalogEntry = CatalogEntry { path: [0; 160], entry: dkrt_sdk::store::Entry { first: 0, size: 0, kind: 0, sha: [0; 32] } };
+static mut RAW_PAGE: [CatalogEntry; 16] = [RAW; 16];
+/// The store buffers of a catalog read (fingerprint, 4096-byte scratch, raw page). They are shared by all listings, not part of a listing's state: callers
+/// hold the store lock for every step that uses them (`list_next` does).
+fn store_buffers() -> (*mut u8, *mut u8, *mut [CatalogEntry; 16]) {
+    unsafe { (addr_of_mut!(FP) as *mut u8, addr_of_mut!(SCRATCH) as *mut u8, addr_of_mut!(RAW_PAGE)) }
+}
 
 // ---- DT2 firmware file system ------------------------------------------------------------------------------------------------
 
@@ -490,7 +504,7 @@ pub(crate) unsafe fn list_next(state: *mut u8, out: &mut DirEntry) -> Result<Lis
 /// collector, finish, give the page rows one per call, rewind and continue after the last path while `more`. A phase that gives no row returns `Pending`.
 /// A virtual `samples` root that does not exist in the store is an empty listing.
 unsafe fn store_next(l: &mut StoreList, out: &mut DirEntry) -> Result<ListStep, i32> {
-    let (fp, scratch, raw) = crate::files::store_buffers();
+    let (fp, scratch, raw) = store_buffers();
     {
         match l.phase {
             1 => {
