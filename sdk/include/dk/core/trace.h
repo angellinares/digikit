@@ -11,7 +11,8 @@
    It is always compiled in. With no sink set, each of the two macros costs one load and one branch on the sink's pointer, and `owner` is not evaluated
    (the cycle counter is not read either). BEGIN declares the local `dk_span_t0_`, so one pair fits a block: put a second pair in a block of its own, and do
    not nest spans of one block. The cycle counter and the emit are the runtime's: `dk_span_sink` (the span channel's sink pointer, a data import), `dk_span_clock`
-   and `dk_span_emit` become imports of sdk/sdk.toml with their producers (profiling plan, P8a); nothing uses them before that.
+   and `dk_span_emit` are not imports yet; nothing uses them. The runtime's own producers (module ticks, tick phases, poll functions) measure spans
+   for the sink that `dk_span_sink_set(emit, clock)` registers with its clock (<dk/core/sink.h>).
    The DSP side has the same macros in dk_trace.inc and the stats window of the layout below. */
 #ifndef DK_TRACE_H
 #define DK_TRACE_H

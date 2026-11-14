@@ -89,6 +89,8 @@ CMD_SELECT = 0x30
 CMD_RESTART = 0x31
 
 SERVICE_CMD: dict[str, int] = {
+    "PROFILE_STATE": 0x1E,
+    "PROFILE_READ": 0x1F,
     "LOG": 0x20,
     "PEEK": 0x21,
     "LOGCFG": 0x22,
@@ -249,6 +251,7 @@ CAP: dict[str, int] = {
 
 RANGES: dict[str, tuple[int, int]] = {
     "debug": (0x20, 0x22),
+    "debug_profile": (0x1E, 0x1F),
     "entry_demo_test": (0x1C, 0x1D),
     "file_write_test": (0x24, 0x27),
     "file_write_test_b": (0x28, 0x2B),

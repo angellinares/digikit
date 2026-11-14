@@ -6,7 +6,7 @@
 
 [runtime]           # the digikit runtime release: the one version of the SDK (semantic version; packed major<<16 | minor<<8 | patch)
 table = "0.8.0"     # the runtime version that introduced the header table of a `.dkm` (R7): `patchkit pack` writes at least this as the version the module needs, so the loader refuses a module of the 0.7 format with E_CONTRACT
-version = "0.8.0"   # 0.x (stable is 1.0.0): a MINOR may break (an import changed or removed, the module file format, the store format, the SysEx protocol); a PATCH only adds
+version = "0.8.1"   # 0.x (stable is 1.0.0): a MINOR may break (an import changed or removed, the module file format, the store format, the SysEx protocol); a PATCH only adds
 # The one-version rule (docs/plans/sdk.md section 5.1): every `[[import]]` has `since`, the runtime version that added it (a string "0.7.0"; S3 is breaking, so every import has 0.7.0).
 # `patchkit pack` writes the newest `since` among the imports a module links into the `.dkm` header (word 0x30, the runtime version the module needs; bit 31 is the trace flag,
 # 0 when the module links no service import). The runtime loads a module only when that version has the runtime's MAJOR and MINOR and a PATCH at most the runtime's; otherwise
@@ -318,6 +318,14 @@ since = "0.7.1"
 context = "any"
 sig = "i32 (u32 channel, u8 *sink)"
 doc = "Set (or, with 0, clear) the sink of a runtime channel for the calling module: DK_SINK_LOG (0) gets `void sink(const dk_log_ev *e)` for every event the runtime logs, DK_SINK_SPAN (1) gets `void sink(const dk_span *s)`, an (owner, cycles) record. A sink runs in the producer's task with interrupts masked: short, no waiting, no logging. A channel has one owner; the runtime clears it after the owner's fini. Returns 0, DK_E_RANGE (no such channel), DK_E_CONTEXT (no module code is running) or DK_E_BUSY (another module owns the channel). See <dk/core/sink.h>."
+
+[[import]]
+name = "dk_span_sink_set"
+service = "runtime"
+since = "0.8.1"
+context = "any"
+sig = "i32 (u8 *emit, u8 *clock)"
+doc = "Take the span channel like `dk_sink_set(DK_SINK_SPAN, emit)` and also store the clock the runtime reads for the spans: `u32 clock(void)`, a free-running counter that wraps. The runtime reads the clock before and after a call it measures and passes the difference to `emit` as the cycles of the span. (0, 0) clears both. Returns 0, DK_E_CONTEXT (no module code is running) or DK_E_BUSY (another module owns the channel). With no sink or no clock the runtime reads no clock. See <dk/core/sink.h>."
 
 [[import]]
 name = "dk_time_blocks"
@@ -1124,6 +1132,14 @@ sig = "u32 (u32 i, u32 *out)"
 doc = "The RAM ranges `[lo, hi)` of the device file's `[digikit] peek`: returns how many there are, and for `i` below that writes `lo, hi` to `out[0..2]`. For a module that implements PEEK. See <dk/platform/debug.h>."
 
 [[import]]
+name = "dk_debug_span_clock"
+service = "runtime"
+since = "0.8.1"
+context = "any"
+sig = "u32 (u32 *out_hz)"
+doc = "The profiling clock of the device file (`[digikit] span_clock`): returns the address of a read-only 32-bit free-running counter (0 when the device has none) and, when `out_hz` is not null and there is a clock, writes its frequency in Hz to `*out_hz`. The counter is never written. See <dk/platform/debug.h>."
+
+[[import]]
 name = "dk_debug_track_type"
 service = "runtime"
 since = "0.7.0"
@@ -1468,6 +1484,7 @@ remote = [0x38, 0x3d]   # digikit/remote: key and turn of the panel (docs/plans/
 remote_state = [0x3e, 0x3f]   # digikit/remote: the state
 probe = [0x32, 0x35]   # digikit/probe: collector status, raw reads, reset (docs/plans/debug-mode-and-probes.md)
 debug = [0x20, 0x22]   # digikit/debug: LOG, PEEK, LOGCFG (docs/findings/46-digikit-debug.md)
+debug_profile = [0x1e, 0x1f]   # digikit/debug: PROFILE_STATE, PROFILE_READ
 file_write_test = [0x24, 0x27]   # test/file-write: start an I/O job that writes a file, its status, wake it, a file call outside an I/O step
 usb_fast = [0x36, 0x37]   # usb-fast: SET_NONCE (the host proves which USB device is on its MIDI port, docs/plans/usb-fast.md section 5)
 file_write_test_b = [0x28, 0x2b]   # test/file-write-b: the same commands for a second module
@@ -1481,6 +1498,8 @@ REMOTE_RELEASE = 0x3a  # release every key the module holds
 LOG = 0x20             # digikit/debug: body u32 from_seq; reply u32 oldest, u32 newest, u8 n, then n events of 32 bytes
 PEEK = 0x21            # digikit/debug: body u32 addr, u16 len (1 to 512, inside the device file's `[digikit] peek` ranges); reply u32 addr, u16 len, the bytes
 LOGCFG = 0x22          # digikit/debug: body u8 op (0 get, 1 set: u8 default, 8 module levels); reply u8 default, 8 module levels, u8 debug_on (1 while loaded); op 2 = card log get (no more body), op 3 = card log set (body: u8 op=3, u8 on); reply for op 2 and op 3 (16 bytes): u8 on, u8 file (0 a, 1 b), u8 state (0 off, 1 on, 2 full, 3 error), u8 0, u32 writes (this boot), i32 last_status, u32 ms_since_write (0xffffffff = none yet); a debug module without the card log replies to op 2 with an error status
+PROFILE_STATE = 0x1e   # digikit/debug: profiling start and stop, and its state
+PROFILE_READ = 0x1f    # digikit/debug: read the span records
 USB_FAST_NONCE = 0x36  # usb-fast: body nonce[8]; the module keeps it and returns it in the INFO reply of the bulk link; reply empty
 REMOTE_STATE = 0x3e    # reply: enabled (u8, always 1 while the module is loaded), state format (u8), turn limit (u8)
 

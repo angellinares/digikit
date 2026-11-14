@@ -71,6 +71,8 @@ export const CMD = {
 
 /** The commands of run-time service modules (`[protocol.service]`). */
 export const SERVICE_CMD = {
+  PROFILE_STATE: 0x1e,
+  PROFILE_READ: 0x1f,
   LOG: 0x20,
   PEEK: 0x21,
   LOGCFG: 0x22,
@@ -194,6 +196,7 @@ export const CAP = {
 /** The command numbers a module may register: [first, last]. */
 export const RANGES = {
   debug: [0x20, 0x22],
+  debug_profile: [0x1e, 0x1f],
   entry_demo_test: [0x1c, 0x1d],
   file_write_test: [0x24, 0x27],
   file_write_test_b: [0x28, 0x2b],
