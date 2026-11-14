@@ -20,7 +20,17 @@
     ]
   },
   "targets": {
-    "typecheck": { "cache": false },
+    "typecheck": {
+      "cache": false,
+      "inputs": [
+        "default",
+        {
+          "input": "production",
+          "projects": ["control-client", "@digi/test-support", "@digi/dk-session", "@digi/dkbs"]
+        },
+        "jsToolchain"
+      ]
+    },
     "test-device": {
       "executor": "nx:run-commands",
       "cache": false,
