@@ -116,11 +116,11 @@ Claims 1-7 are **[V]**. Claim 8 is **[D]**: derived by hand; no read-before-writ
 
 ## Decoder disagreements
 
-**[D]** The two decoders differ in three places.
+**[D]** The two decoders differ in two places; a third difference was a printing error.
 
 - `0x1c0c08` (DN2 `0x1c0b5a`), words `0bfe 9828 0b85`: selache reads one 48-bit `rti, r11=exp r8`. Our decoder reads RTI (DB) plus two delay slots. The frame offsets pair up only with our reading, and R11 is not saved, which also supports it. Selache cannot confirm the RTI.
 - `bf04 80xx` words: our decoder reads ACONV (doc 06, from the manual). Selache reads `modify(Ix, Mx) (NW)`.
-- The `dksharc` text output prints the jump at `0x1c04b1` as `PM(I4,M5)`. The bytes (`083f 2c3f`, also assembled by `selas`) are `JUMP (M13, I12) (DB)`. Whether the def/use table records I12 and M13 here is being checked separately.
+- The jump at `0x1c04b1` (`083f 2c3f`) is `JUMP (M13, I12) (DB)`; both decoders and dksharc's def/use (reads I12, M13) agree. The Python renderer `tools/sharc_dev/sharcfn/render.py` printed it as `PM(I4,M5)` because it left out the DAG2 offset; that is fixed.
 
 ## Open
 

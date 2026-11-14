@@ -724,14 +724,14 @@ class DualMemDirectionRenderingTest(unittest.TestCase):
         mnemonic = self.render(
             dmd=1, dmi=0, dmm=1, dmdreg=2, pmd=0, pmi=4, pmm=7, pmdreg=10
         )
-        self.assertIn("R10 = PM(I4, M7)", mnemonic)
-        self.assertNotIn("PM(I4, M7) <-", mnemonic)
+        self.assertIn("R10 = PM(I12, M15)", mnemonic)
+        self.assertNotIn("PM(I12, M15) <-", mnemonic)
 
     def test_pm_write_puts_register_on_the_right(self):
         mnemonic = self.render(
             dmd=1, dmi=0, dmm=1, dmdreg=2, pmd=1, pmi=4, pmm=7, pmdreg=10
         )
-        self.assertIn("PM(I4, M7) = R10", mnemonic)
+        self.assertIn("PM(I12, M15) = R10", mnemonic)
 
 
 _DT2_116_BLOB = os.path.join(
