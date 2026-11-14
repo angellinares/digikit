@@ -119,7 +119,7 @@ fn data(d: &DefUse) -> (Vec<&str>, Vec<&str>) {
     (keep(&d.reads), keep(&d.writes))
 }
 
-/// The body of the 32 sample loop of `_pk_render`, line by line from `modules/machines/pluck/src/dsp/pluck.s`.
+/// The body of the 32 sample loop of `_pk_render`, line by line from the assembler source of the pluck machine.
 #[test]
 fn pluck_render_loop_body() {
     let a = pluck();
