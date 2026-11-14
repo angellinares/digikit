@@ -113,7 +113,7 @@ pub unsafe fn tick_all() {
         if t != 0 {
             let call: unsafe extern "C" fn(*const Ctx) = core::mem::transmute(t as usize);
             let prev = dlog::enter_module(rec, dlog::PHASE_TICK);
-            call(addr_of!(DKRT_CTXS[rec]));
+            dlog::spanned(rec as u32, || call(addr_of!(DKRT_CTXS[rec])));
             dlog::leave_module(prev);
             let s = crate::st();
             s.tick_calls = s.tick_calls.wrapping_add(1);

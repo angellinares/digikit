@@ -7,7 +7,7 @@ use dkrt_abi::link::{Owner, Sequence};
 use std::sync::Mutex;
 use std::vec::Vec;
 
-static LOCK: Mutex<()> = Mutex::new(());
+pub(crate) static LOCK: Mutex<()> = Mutex::new(());
 const CF: u32 = 0x8000;
 const IMAGE: u32 = 0xd000;
 const PUB_PC: u32 = 0xc000;

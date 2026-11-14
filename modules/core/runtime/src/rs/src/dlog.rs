@@ -55,6 +55,13 @@ struct Chan {
     owner: u8,
 }
 static mut CHAN: [Chan; SINKS] = [Chan { f: 0, owner: 0 }; SINKS];
+/// The clock of the span channel (`unsafe extern "C" fn() -> u32`, 0: none), set with the emit function by `dk_span_sink_set`. Spans are measured only while the
+/// span sink and this clock are both set.
+static mut SPAN_CLOCK: usize = 0;
+
+/// Span owner ids of the runtime's own producers (a module's span uses its record index, which is below these).
+pub const SPAN_PHASE: u32 = 0x100;
+pub const SPAN_POLL: u32 = 0x200;
 
 /// The record of the `span` channel: the owner id the producer gave (opaque to the runtime, `owner_of_row`) and the cycles it measured.
 #[repr(C)]
@@ -219,6 +226,28 @@ pub unsafe extern "C" fn dk_sink_set(channel: u32, sink: *mut u8) -> i32 {
     r
 }
 
+/// `dk_span_sink_set(emit, clock)`, an import of the modules (sdk/sdk.toml): take the span channel as `dk_sink_set(SINK_SPAN, emit)` does and store the clock
+/// with it. `(0, 0)` clears both. Returns 0, `E_CONTEXT` (no module code is running) or `E_BUSY` (another module owns the channel; it is not changed).
+#[no_mangle]
+pub unsafe extern "C" fn dk_span_sink_set(emit: *mut u8, clock: *mut u8) -> i32 {
+    let owner = current_source();
+    if owner == 0 {
+        return E_CONTEXT;
+    }
+    let sr = irq_mask();
+    let c = &mut (*addr_of_mut!(CHAN))[SINK_SPAN as usize];
+    let r = if c.owner != 0 && c.owner != owner {
+        E_BUSY
+    } else {
+        write_volatile(addr_of_mut!(c.owner), if emit.is_null() { 0 } else { owner });
+        write_volatile(addr_of_mut!(c.f), emit as usize);
+        write_volatile(addr_of_mut!(SPAN_CLOCK), if emit.is_null() { 0 } else { clock as usize });
+        OK
+    };
+    irq_restore(sr);
+    r
+}
+
 /// The module with record index `idx` is gone (after its `fini`, or a failed `init`): it owns no channel any more.
 pub unsafe fn release_sinks(idx: usize) {
     let owner = idx as u8 + 1;
@@ -229,6 +258,9 @@ pub unsafe fn release_sinks(idx: usize) {
         if c.owner == owner {
             write_volatile(addr_of_mut!(c.f), 0);
             write_volatile(addr_of_mut!(c.owner), 0);
+            if i == SINK_SPAN as usize {
+                write_volatile(addr_of_mut!(SPAN_CLOCK), 0);
+            }
         }
         i += 1;
     }
@@ -255,6 +287,43 @@ pub unsafe fn span_emit(owner: u32, cycles: u32) {
     irq_restore(sr);
 }
 
+/// The start of a measured span: the span clock's value, only when the span sink and the clock are both set (one test of the channel word first). A
+/// producer keeps it and calls `span_end` after the measured code.
+pub fn span_t0() -> Option<u32> {
+    if !sink_on(SINK_SPAN) {
+        return None;
+    }
+    unsafe {
+        let k = read_volatile(addr_of!(SPAN_CLOCK));
+        if k == 0 {
+            return None;
+        }
+        let clock: unsafe extern "C" fn() -> u32 = core::mem::transmute(k);
+        Some(clock())
+    }
+}
+
+/// The end of a span that `span_t0` started: hand `(owner, cycles)` to the span sink, `cycles` the clock's difference (a wrap of the counter is fine).
+pub unsafe fn span_end(owner: u32, t0: u32) {
+    let k = read_volatile(addr_of!(SPAN_CLOCK));
+    if k == 0 {
+        return;
+    }
+    let clock: unsafe extern "C" fn() -> u32 = core::mem::transmute(k);
+    span_emit(owner, clock().wrapping_sub(t0));
+}
+
+/// Run `f` as a measured span of `owner`: the clock is read before and after only while a span sink and clock are set.
+#[inline]
+pub unsafe fn spanned<R>(owner: u32, f: impl FnOnce() -> R) -> R {
+    let t0 = span_t0();
+    let r = f();
+    if let Some(t) = t0 {
+        span_end(owner, t);
+    }
+    r
+}
+
 /// After a module's `fini`, or when its range is freed: the sink, the tick and the channels may not point into its memory [lo, hi) (a module that forgot to clear them).
 pub unsafe fn sink_drop(lo: u32, hi: u32) {
     let sr = irq_mask();
@@ -264,8 +333,15 @@ pub unsafe fn sink_drop(lo: u32, hi: u32) {
         if c.f as u32 >= lo && (c.f as u32) < hi {
             write_volatile(addr_of_mut!(c.f), 0);
             write_volatile(addr_of_mut!(c.owner), 0);
+            if i == SINK_SPAN as usize {
+                write_volatile(addr_of_mut!(SPAN_CLOCK), 0);
+            }
         }
         i += 1;
+    }
+    let k = read_volatile(addr_of!(SPAN_CLOCK)) as u32;
+    if k != 0 && k >= lo && k < hi {
+        write_volatile(addr_of_mut!(SPAN_CLOCK), 0);
     }
     let f = read_volatile(addr_of!(SINK)) as u32;
     if f >= lo && f < hi {
