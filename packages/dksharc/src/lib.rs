@@ -16,6 +16,9 @@ mod forms;
 mod fxsum;
 mod input;
 mod model;
+pub mod rules;
+#[rustfmt::skip]
+pub mod rules_table;
 
 pub use analyze::analyze;
 pub use input::{Entry, Input, L2_BYTE_BASE, L2_SW_BASE, TextReloc, TextSymbol};

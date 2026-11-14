@@ -233,3 +233,56 @@ pub fn source_text_from(
 pub fn sharc_object(text: &str) -> Result<Dko> {
     super::sharc_obj::object_from_text(text)
 }
+
+/// The register contract problems (`dksharc::rules`, sdk/dsp/REGISTERS.md) of a SHARC+ object. The object is not linked, so the
+/// analysis does not follow calls and jumps to symbols; the rules look at the instructions of each function and at its returns.
+pub fn rule_problems(obj: &Dko) -> Vec<dksharc::rules::RuleProblem> {
+    let Some(sec) = obj.sections.iter().find(|s| s.kind == "text") else {
+        return vec![];
+    };
+    let Ok(bytes) = unhex(&sec.hex) else {
+        return vec![];
+    };
+    let text: Vec<u16> = bytes
+        .chunks_exact(2)
+        .map(|c| u16::from_le_bytes([c[0], c[1]]))
+        .collect();
+    let n = text.len() as u64;
+    let symbols = obj
+        .symbols
+        .iter()
+        .filter(|s| s.section.as_deref() == Some(sec.name.as_str()) && s.value < n)
+        .map(|s| dksharc::TextSymbol {
+            name: s.name.clone(),
+            parcel: s.value as u32,
+            global: s.global,
+        })
+        .collect();
+    let input = dksharc::Input {
+        text,
+        base_sw: dksharc::L2_SW_BASE,
+        symbols,
+        ..dksharc::Input::default()
+    };
+    dksharc::rules::check_all(&dksharc::analyze(&input))
+}
+
+/// One problem as a line for stderr: `warn  <module id>  <func>+0x<off>  writes <REG>  (<rule>: <reason>)`. The offset counts short words.
+pub fn rule_warning_line(module: &str, p: &dksharc::rules::RuleProblem) -> String {
+    let level = match p.level {
+        dksharc::rules::Level::Warn => "warn",
+        dksharc::rules::Level::Refuse => "error",
+    };
+    let what = if p.rule == "uncertain" {
+        p.reg.clone()
+    } else {
+        format!("writes {}", p.reg)
+    };
+    format!(
+        "{level}  {module}  {}+{:#x}  {what}  ({}: {})",
+        p.func,
+        p.addr - p.entry,
+        p.rule,
+        dksharc::rules::reason(p.rule)
+    )
+}
