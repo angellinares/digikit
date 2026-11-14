@@ -455,9 +455,9 @@ These come from the profiling work and land after the steps in section 12 that t
 
 - **DSP rules.** One rules section in `sdk/` for machine and FX entry points: registers a module may clobber, registers and mode bits it
   must restore, memory it may touch. Parts exist today in `sdk/dsp/README.md` "Block routines" and `sdk/dsp/delay/delay.inc` (MODE1.CBUFEN).
-  The stock side comes from sharcdb (`regdef`/`reguse` of the interrupt context save at `0x1c02a4`, image and port to confirm, and of the
-  adapter dispatchers; `mem_access` for memory stock code owns). No finding records the stock save set yet [O]; record it in
-  `docs/findings/` and have a second agent check it against image bytes before [V]. `pk_conform` checks each module against the rules,
+  The stock side comes from sharcdb (`regdef`/`reguse` of the interrupt context save at `0x1c02a4`, the same code on DT2 1.17 and DN2 1.12, and of the
+  adapter dispatchers; `mem_access` for memory stock code owns). [Finding 130](../findings/130-sharc-interrupt-save-set.md) records the stock save set [D]; a second agent checks it against image
+  bytes before [V]. `pk_conform` checks each module against the rules,
   using sharcdb tables built for the module's own DSP section ([profiling.md](profiling.md) 3.3).
 - **Cycle cost.** `max_cycles_*` stops being written by hand. The packer writes a DSP cycles-per-block use into the header and the report,
   from the `module:check` emulator measurement at the device's voice count or a static estimate over the module's sharcdb tables, scaled
