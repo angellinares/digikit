@@ -566,6 +566,18 @@ node tools/devtools/wb.mjs profile record --seconds 4 --image out/try/rt.syx --o
 # out/try/real.profile.json: 371 counters over 4 s
 ```
 
+`wb profile spans [--start|--stop|--reset] [--out FILE]` reads the runtime span counters of a device (or an emulator with a MIDI port) over the dk-session link: the flag sets the counting first, then it reads the spans (modules, the phases `early`, `late`, `last`, and polls) and prints one row each. With `--out` it writes a `dk.profile/1` with `spans` (`owner`, `kind`, `name`, `calls`, `sum_ticks`, `max_ticks`) and `span_clock_hz`; `raw` stays empty and `wb profile report` ignores the spans. It takes `--port` and `--bin` like the other device commands. The numbers below are an example:
+
+```sh
+node tools/devtools/wb.mjs profile spans --start                    # start counting
+node tools/devtools/wb.mjs profile spans --out out/try/spans.profile.json
+# running, 1000000 Hz
+# name         calls  total ms  mean us  max us
+# early        812    41.200    50.7     91.0
+# digikit/pluck 812   120.500   148.4    210.0
+# out/try/spans.profile.json: 2 spans
+```
+
 `cf.profile` keeps the 400 heaviest rows of its cumulative tables, which the artifact records under `loss`.
 
 **DSP profile (`--cpu sharc`).** A daemon built with `--features sharc-profile` (a DSP core, as for `coupled-audio`) answers `sharc.profile` ([CONTROL.md](CONTROL.md)).

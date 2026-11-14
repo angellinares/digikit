@@ -5,6 +5,7 @@
 //     wb [--format json|text] module analyse MODULE.dkm DSP.dko.json
 //     wb [--format json|text] profile report FILE [--top N] [--map F]... [--image X.syx] [--loads F] [--analyse ID=MODULE.dkm:DSP.dko.json]...
 //     wb profile record --seconds N --out FILE [--image X.syx] [--run-dir DIR] [--since-boot] [--cpu cf|sharc]
+//     wb [--port SUB] [--bin PATH] profile spans [--start|--stop|--reset] [--out FILE]   (a device command, run from wb.mjs: profSpans)
 //
 // `record` reads `cf.profile` before and after N seconds and keeps the difference; `--since-boot` keeps the cumulative counters (the state of a paused emulator).
 // `--cpu sharc` records `sharc.profile` (the daemon needs the `sharc-profile` cargo feature): it starts the DSP counting, waits N seconds and reads it;
@@ -106,7 +107,57 @@ export async function profCommand({ cmd, sub, rest, opts, root, fail }) {
     return 0;
   }
   if (cmd === 'profile' && sub === 'record') return record({ opts, root, fail });
-  fail('usage: wb addrmap lookup | module analyse | profile report | profile record (see tools/devtools/wb_prof.mjs)');
+  fail(
+    'usage: wb addrmap lookup | module analyse | profile report | profile record | profile spans (see tools/devtools/wb_prof.mjs)',
+  );
+}
+
+const PHASES = ['early', 'late', 'last'];
+
+/** `profile spans`: the runtime span counters of a device (dk-session `profileAll`) as a dk.profile/1 with `spans`, and a table. */
+export async function profSpans({ opts, session, fail }) {
+  if (opts.op) await session.profileState(opts.op);
+  const all = await session.profileAll();
+  const modules = await session.modules();
+  const hz = all.hz;
+  const nameOf = (s) => {
+    if (s.kind === 'module') return modules.find((m) => m.index === s.index)?.name ?? `module ${s.index}`;
+    if (s.kind === 'phase') return PHASES[s.index] ?? `phase ${s.index}`;
+    return `poll ${s.index}`;
+  };
+  const ownerOf = (s) => (s.kind === 'module' ? s.index : s.kind === 'phase' ? 0x100 | s.index : 0x200 | s.index);
+  const spans = all.spans.map((s) => ({
+    owner: ownerOf(s),
+    kind: s.kind,
+    name: nameOf(s),
+    calls: Number(s.calls),
+    sum_ticks: Number(s.sumTicks),
+    max_ticks: Number(s.maxTicks),
+  }));
+  if (spans.length > 0 && !(hz > 0)) fail('the device reported spans without a clock rate', 1);
+  const profile = {
+    schema: 'dk.profile/1',
+    run: { id: `dev-${new Date().toISOString().replace(/[-:]/g, '').slice(0, 15)}`, target: 'unknown' },
+    clock: { source: 'runtime.span', unit: 'tick', sampling: 'runtime span counters (calls, sum and max of ticks)' },
+    raw: [],
+    metrics: [],
+    markers: [],
+    loss: [],
+    overhead: [],
+    ...(spans.length > 0 ? { spans, span_clock_hz: hz } : {}),
+  };
+  if (opts.out) writeFileSync(opts.out, `${JSON.stringify(profile)}\n`);
+  console.log(`${all.running ? 'running' : 'stopped'}, ${hz} Hz`);
+  console.log('name\tcalls\ttotal ms\tmean us\tmax us');
+  for (const s of spans) {
+    const us = (t) => (t * 1e6) / hz;
+    const mean = s.calls > 0 ? us(s.sum_ticks) / s.calls : 0;
+    console.log(
+      `${s.name}\t${s.calls}\t${(us(s.sum_ticks) / 1000).toFixed(3)}\t${mean.toFixed(1)}\t${us(s.max_ticks).toFixed(1)}`,
+    );
+  }
+  if (opts.out) console.log(`${opts.out}: ${spans.length} spans`);
+  return 0;
 }
 
 const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
