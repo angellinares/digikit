@@ -189,6 +189,10 @@ struct Digikit {
     keep_bytes: u64,
     sample_path_max: u64,
     peek: Vec<[u64; 2]>,
+    #[serde(default)]
+    span_clock: u64,
+    #[serde(default)]
+    span_clock_hz: u64,
 }
 #[derive(Deserialize)]
 struct Card {
@@ -384,6 +388,8 @@ struct DigikitF {
     sample_path_max: u64,
     samples_in_store: bool,
     peek: Vec<[u64; 2]>,
+    span_clock: u64,
+    span_clock_hz: u64,
 }
 #[derive(Debug)]
 struct StoreF {
@@ -485,6 +491,8 @@ impl Facts {
                             sample_path_max: k.sample_path_max,
                             samples_in_store,
                             peek: k.peek,
+                            span_clock: k.span_clock,
+                            span_clock_hz: k.span_clock_hz,
                         },
                         store: StoreF {
                             first: s.first_sector,
@@ -1266,6 +1274,18 @@ fn constants(lib: &Library, dev: &str, e: &Entry) -> Result<Vec<C>> {
             k.peek.len() as u64,
             PerDevice,
             "[digikit] peek: number of ranges",
+        ),
+        c(
+            "SPAN_CLOCK",
+            k.span_clock,
+            PerDevice,
+            "[digikit] span_clock (address of the profiling clock; 0 none)",
+        ),
+        c(
+            "SPAN_CLOCK_HZ",
+            k.span_clock_hz,
+            PerDevice,
+            "[digikit] span_clock_hz (its frequency)",
         ),
     ];
     let inp = &e.input;
