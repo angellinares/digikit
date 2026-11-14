@@ -71,6 +71,6 @@ Later, only when a feature needs it: the firmware tooling list in [profiling.md]
   after them, because only `DK_SPAN` (S5) depends on its answer.
 - 2026-11-12: S2 split into S2a (C hygiene) and S2b (entry point and imports), so the whitespace-only format commit and the binding change
   are reviewed apart.
-- P3 was done in Rust (dksharc) instead of the Python sharcdb builder, because the workbench uses it through wasm. The sharcdb module mode was an oracle only and was not merged. Register def/use is dksharc slice 2, needed by S5.
+- P3 was done in Rust (dksharc) instead of the Python sharcdb builder, because the workbench uses it through wasm. The sharcdb module mode was an oracle only and was not merged. Register def/use is dksharc slice 2 (done, S5b), needed by the S5b rules check.
 - R2b was split into moves only (proven identical with `patchkit objdiff`); the interfaces and the body splits (registry `check`/`apply`/`remove`, dsp `check`/`reserve`/`step`) are in R2c.
 - T1 (test architecture) was added: layers and fakes exist now, so test selection can follow layers ([test-architecture.md](test-architecture.md)).
