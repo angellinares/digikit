@@ -183,6 +183,10 @@ pub struct Insn {
     pub import: Option<String>,
     pub mem: Vec<MemOp>,
     pub defuse: DefUse,
+    /// The immediate of a MODIFY by an immediate (forms `19a` and `19a_scaled`), in words (the decoded `data` field, sign-extended
+    /// from 32 bits).
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub imm: Option<i64>,
 }
 
 #[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]

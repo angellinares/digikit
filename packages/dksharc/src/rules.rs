@@ -69,11 +69,13 @@ fn stores(insn: &Insn, reg: &str) -> bool {
 
 /// The instruction loads `reg` from memory.
 fn loads(insn: &Insn, reg: &str) -> bool {
-    insn.defuse.writes.iter().any(|r| r == reg)
-        && insn
-            .mem
-            .iter()
-            .any(|m| m.dir == Direction::Load && !is_written_address(m, reg))
+    // RFRAME (`I6 = DM(0, I6)`) reloads I6 from the frame that the caller's CJUMP pushed.
+    (reg == "I6" && insn.form == "25c_rframe")
+        || (insn.defuse.writes.iter().any(|r| r == reg)
+            && insn
+                .mem
+                .iter()
+                .any(|m| m.dir == Direction::Load && !is_written_address(m, reg)))
 }
 
 /// A data register name (`R0` to `R15`).
@@ -105,8 +107,8 @@ enum Sp {
     No,
     /// A push or pop, or a modify by a known constant: the change of the register (in words).
     Delta(i64),
-    /// An allowed kind of change whose size is not known here: a conditional one, or a modify by an immediate (the analysis keeps
-    /// no immediate of a modify).
+    /// An allowed kind of change whose size is not known here: a conditional one, or a modify by an immediate whose value the
+    /// analysis did not keep (`Insn::imm`).
     Unknown,
     /// Any other write.
     Bad,
@@ -146,7 +148,10 @@ fn sp_step(insn: &Insn, sp: &str, idx: u8) -> Sp {
                     _ => return Sp::Bad,
                 }
             }
-            "19a" => Sp::Unknown,
+            "19a" | "19a_scaled" => match insn.imm {
+                Some(d) => Sp::Delta(d),
+                None => Sp::Unknown,
+            },
             _ => return Sp::Bad,
         }
     };
@@ -156,17 +161,35 @@ fn sp_step(insn: &Insn, sp: &str, idx: u8) -> Sp {
     }
 }
 
-/// A step of the stack data flow: a change of the depth, the frame setup `I6 = I7` (records the depth) or the frame exit `I7 = I6`
-/// (restores the recorded depth).
+/// The words the caller's `DK_CALL` pushes (I6 and the return address) before the callee runs: a DK routine is entered with I7 this
+/// far below the I7 of its caller (sdk/dsp/contract/call.inc).
+const CALL_PUSHES: i64 = 2;
+
+/// A step of the stack data flow: a change of the depth, the frame setup `I6 = I7` (records the depth), the frame exit `I7 = I6`
+/// (restores the recorded depth), the first instruction `DK_ENTER` of a DK routine, or a `CJUMP` (`DK_CALL`).
+///
+/// The depth is counted from the entry of the function. `Enter` is the frame setup of a DK routine: the frame pointer I6 that the
+/// caller's `CJUMP` set is the caller's I7, `CALL_PUSHES` words above the entry, so `Enter` moves the origin of the depth to the
+/// caller's I7 (the entry is then at -`CALL_PUSHES`), records that origin as the frame and applies the modify. `RFRAME` (`I7 = I6`)
+/// then returns to depth 0, the value the check expects at a return. `Call` is the frame setup for the callee: the callee's `RFRAME` returns I7 and I6 to their values at the
+/// `CJUMP`, before its two delayed pushes, so the block of the call ends with the depth and frame it had at the `CJUMP`.
 #[derive(Clone, Copy)]
 enum St {
     Delta(i64),
     Save,
     Restore,
+    Enter(i64),
+    Call,
 }
 
-/// The frame setup or exit of a C function: a register copy that writes only I6 (from I7) or only I7 (from I6).
+/// The frame setup or exit of a C function: a register copy that writes only I6 (from I7) or only I7 (from I6). `RFRAME` (form
+/// `25c_rframe`, `I7 = I6; I6 = DM(0, I6)`) is a frame exit, and `CJUMP` (form `25a_direct`) is the frame setup for a callee.
 fn frame_step(insn: &Insn) -> Option<St> {
+    match insn.form.as_str() {
+        "25c_rframe" => return Some(St::Restore),
+        "25a_direct" => return Some(St::Call),
+        _ => {}
+    }
     if !insn.mem.is_empty() || insn.defuse.writes.len() != 1 || insn.defuse.conditional {
         return None;
     }
@@ -205,6 +228,12 @@ fn stack_problems(
             }
             match sp_step(insn, sp, idx) {
                 Sp::No => {}
+                // The first instruction of the routine, `MODIFY(I7, -N) (NW)`: `DK_ENTER`.
+                Sp::Delta(d)
+                    if sp == "I7" && insn.pc == f.entry && insn.form.starts_with("19a") =>
+                {
+                    step.insert(insn.pc, Some(St::Enter(d)));
+                }
                 Sp::Delta(d) => {
                     step.insert(insn.pc, Some(St::Delta(d)));
                 }
@@ -225,10 +254,18 @@ fn stack_problems(
                 if b.start >= b.end {
                     return Some((d, fr));
                 }
+                let mut at_call = None;
                 for (pc, s) in step.range(b.start..b.end) {
                     match (*s)? {
                         St::Delta(x) => d += x,
                         St::Save => fr = Some(d),
+                        St::Enter(x) => {
+                            // The new origin is the caller's I7, CALL_PUSHES above the current depth.
+                            let origin = d + CALL_PUSHES;
+                            d += x - origin;
+                            fr = Some(0);
+                        }
+                        St::Call => at_call = Some((d, fr)),
                         St::Restore => match fr {
                             Some(x) => d = x,
                             None => {
@@ -240,7 +277,11 @@ fn stack_problems(
                         },
                     }
                 }
-                Some((d, fr))
+                // The return edge of a call: the callee's RFRAME undoes the delayed pushes of the CJUMP.
+                match at_call {
+                    Some(state) if matches!(b.term, Terminator::Call { .. }) => Some(state),
+                    _ => Some((d, fr)),
+                }
             };
         let by_start: BTreeMap<u32, &Block> = f.blocks.iter().map(|b| (b.start, b)).collect();
         if !by_start.contains_key(&f.entry) {
@@ -328,6 +369,8 @@ pub fn check(a: &Analysis, f: &Function) -> Vec<RuleProblem> {
         for r in &insn.defuse.writes {
             if NEVER_WRITE.contains(&r.as_str()) {
                 out.push(problem("never_write", insn.pc, r.clone()));
+            } else if r == "I6" && insn.form == "25a_direct" {
+                // The CJUMP of a call sets I6 for the callee; the callee's RFRAME restores it.
             } else if is_keep(r) {
                 writes.entry(r.as_str()).or_default().push(insn);
             }
@@ -355,9 +398,11 @@ pub fn check(a: &Analysis, f: &Function) -> Vec<RuleProblem> {
     }
     for (reg, w) in writes {
         let first = w[0].pc;
-        let saved = body
-            .iter()
-            .any(|i| i.pc < first && (stores(i, reg) || copies_out(i, reg).is_some()));
+        // A routine that ends in RFRAME finds the caller's I6 saved in its frame (pushed by the caller's CJUMP delay slot).
+        let saved = body.iter().any(|i| {
+            (i.pc < first && (stores(i, reg) || copies_out(i, reg).is_some()))
+                || (reg == "I6" && i.form == "25c_rframe")
+        });
         // `w` is a copy back of a data register that an earlier copy filled and no instruction wrote again.
         let copied_back = |w: &Insn| {
             body.iter().any(|s| {

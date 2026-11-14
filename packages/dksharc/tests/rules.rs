@@ -18,7 +18,61 @@ fn insn(pc: u32, reads: &[&str], writes: &[&str]) -> Insn {
             writes: writes.iter().map(|r| r.to_string()).collect(),
             ..DefUse::default()
         },
+        imm: None,
     }
+}
+
+/// A MODIFY of I7 by an immediate (form `19a_scaled`, as `MODIFY(I7, imm) (NW)`).
+fn modify_i7(pc: u32, imm: i64) -> Insn {
+    let mut i = insn(pc, &["I7"], &["I7"]);
+    i.form = "19a_scaled".to_string();
+    i.imm = Some(imm);
+    i
+}
+
+/// `RFRAME`: `I7 = I6; I6 = DM(0, I6)`.
+fn rframe(pc: u32) -> Insn {
+    let mut i = insn(pc, &["I6"], &["I7", "I6"]);
+    i.form = "25c_rframe".to_string();
+    i
+}
+
+/// `CJUMP`: `R2 = I6; I6 = I7`.
+fn cjump(pc: u32) -> Insn {
+    let mut i = insn(pc, &["I7"], &["R2", "I6"]);
+    i.form = "25a_direct".to_string();
+    i
+}
+
+/// The problems of a function whose last three instructions are a return jump and its two delay slots: (rule, register).
+fn problems_delayed_return(insns: Vec<Insn>) -> Vec<(&'static str, String)> {
+    let n = insns.len() as u32;
+    let f = Function {
+        name: "f".to_string(),
+        entry: BASE,
+        end: BASE + n,
+        global: true,
+        origin: vec![],
+        complete: true,
+        blocks: vec![Block {
+            start: BASE,
+            end: BASE + n,
+            term_pc: Some(BASE + n - 3),
+            term: Terminator::Return {
+                conditional: false,
+                delayed: true,
+            },
+            delay_slots: vec![BASE + n - 2, BASE + n - 1],
+            succ: vec![],
+        }],
+        effects: FunctionEffects::default(),
+    };
+    let a = Analysis {
+        insns,
+        functions: vec![f.clone()],
+        ..Analysis::default()
+    };
+    check(&a, &f).into_iter().map(|p| (p.rule, p.reg)).collect()
 }
 
 /// An access through I7 (the stack) with a post-modify by M6 or M7.
@@ -175,6 +229,87 @@ fn frame_exit_restores_the_depth_of_the_frame_setup() {
         pop(BASE + 5, "I6"),
     ]);
     assert_eq!(p, vec![]);
+}
+
+#[test]
+fn dk_enter_and_dk_leave_are_balanced() {
+    // DK_ENTER(1), a body, DK_LEAVE: JUMP (DB), a reload, RFRAME.
+    let p = problems_delayed_return(vec![
+        modify_i7(BASE, -1),
+        insn(BASE + 1, &["R0"], &[]),
+        insn(BASE + 2, &[], &[]),
+        insn(BASE + 3, &[], &[]),
+        rframe(BASE + 4),
+    ]);
+    assert_eq!(p, vec![]);
+}
+
+#[test]
+fn dk_call_between_modifies_of_the_stack_pointer_is_balanced() {
+    // MODIFY(I7, -1); CJUMP (DB) with two delayed pushes; MODIFY(I7, 1); return.
+    let insns = vec![
+        insn(BASE, &[], &[]),
+        modify_i7(BASE + 1, -1),
+        cjump(BASE + 2),
+        push(BASE + 3, "R2"),
+        push(BASE + 4, "R0"),
+        modify_i7(BASE + 5, 1),
+        insn(BASE + 6, &[], &[]),
+    ];
+    let f = Function {
+        name: "f".to_string(),
+        entry: BASE,
+        end: BASE + 7,
+        global: true,
+        origin: vec![],
+        complete: true,
+        blocks: vec![
+            Block {
+                start: BASE,
+                end: BASE + 5,
+                term_pc: Some(BASE + 2),
+                term: Terminator::Call {
+                    conditional: false,
+                    delayed: true,
+                },
+                delay_slots: vec![BASE + 3, BASE + 4],
+                succ: vec![Edge {
+                    to: BASE + 5,
+                    kind: EdgeKind::ReturnSite,
+                }],
+            },
+            Block {
+                start: BASE + 5,
+                end: BASE + 7,
+                term_pc: Some(BASE + 6),
+                term: Terminator::Return {
+                    conditional: false,
+                    delayed: false,
+                },
+                delay_slots: vec![],
+                succ: vec![],
+            },
+        ],
+        effects: FunctionEffects::default(),
+    };
+    let a = Analysis {
+        insns,
+        functions: vec![f.clone()],
+        ..Analysis::default()
+    };
+    assert_eq!(check(&a, &f), vec![]);
+}
+
+#[test]
+fn modify_of_the_stack_pointer_without_its_counterpart_is_a_problem() {
+    let p = problems(vec![insn(BASE, &[], &[]), modify_i7(BASE + 1, -1)]);
+    assert_eq!(p, one("stack", "I7"));
+}
+
+#[test]
+fn rframe_without_a_frame_setup_is_a_problem() {
+    let p = problems(vec![insn(BASE, &[], &[]), rframe(BASE + 1)]);
+    assert_eq!(p, one("stack", "I7"));
 }
 
 #[test]

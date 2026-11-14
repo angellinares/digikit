@@ -92,6 +92,9 @@ fn sweep(input: &Input, out: &mut Analysis) -> Vec<Swept> {
                         import,
                         mem,
                         defuse,
+                        imm: matches!(d.type_name, "19a" | "19a_scaled")
+                            .then(|| Fields::new(&d).get("data").map(|v| v as i32 as i64))
+                            .flatten(),
                     },
                     flow: forms::flow(&d, pc),
                     decoded: d,
