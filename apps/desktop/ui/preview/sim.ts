@@ -268,6 +268,8 @@ function capacity(): Caps {
     PARAM_ROWS: c(16, used.PARAM_ROWS, 0),
     PAGE_ROWS: c(0, 0, 0),
     FX_SLOTS: c(0, 0, 0),
+    DSP_COST: c(92796, 0, 0),
+    DSP_VOICES: c(16, 0, 0),
   };
 }
 

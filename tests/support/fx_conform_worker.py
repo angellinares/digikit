@@ -76,7 +76,7 @@ def run_case(sp, case, bud: int, desc: tuple[int, ...], seed: int) -> dict:
         record_stores=True,
     )
     rng = random.Random(seed)
-    stack = desc[6]
+    stack = desc[5]
     worst = 0
     failure = None
     k = 0

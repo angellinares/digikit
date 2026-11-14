@@ -7,7 +7,10 @@
       "cache": true,
       "inputs": [
         "default",
-        "^production",
+        {
+          "input": "production",
+          "projects": ["@digi/workbench-core", "@digi/dk-session", "@digi/dkbs", "control-client"]
+        },
         "jsToolchain",
         "{workspaceRoot}/modules/*/*/module.toml",
         "{workspaceRoot}/config/emulator.json",
@@ -29,7 +32,10 @@
       "cache": true,
       "inputs": [
         "default",
-        "^production",
+        {
+          "input": "production",
+          "projects": ["@digi/workbench-core", "@digi/dk-session", "@digi/dkbs", "control-client"]
+        },
         "jsToolchain",
         "{workspaceRoot}/modules/*/*/module.toml",
         "{workspaceRoot}/config/emulator.json",
@@ -77,6 +83,16 @@
         "command": "pnpm exec vitest run --config vitest.host.config.ts --project desktop-host",
         "cwd": "."
       }
+    },
+    "typecheck": {
+      "inputs": [
+        "default",
+        {
+          "input": "production",
+          "projects": ["@digi/workbench-core", "@digi/dk-session", "@digi/dkbs", "control-client"]
+        },
+        "jsToolchain"
+      ]
     }
   }
 }

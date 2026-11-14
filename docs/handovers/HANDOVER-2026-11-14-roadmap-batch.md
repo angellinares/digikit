@@ -99,3 +99,17 @@ The batch gate passed after fixes. Main now has #474 (noise fixes), #475 (R6a), 
 - a boot-planner selection-count bug that would refuse full selections;
 - runtime_patch listing bare ids on a cache hit.
 Practice now: run a host pre-stage (all merge-gate targets except device and conformance tests, plus daemons and patchkit:wasm) before every device gate. The PGO profiles are being retrained on the new main. Next: S5a, P8a, the Profile pane, S5b static parts, and the T1a over-selection fixes.
+
+## State at end of session (2026-11-15)
+
+Main: #479 (this handover). PGO profiles retrained for DT2 and DN2 on the post-batch main.
+
+Three branches are built but not pushed; each needs the step named:
+
+| Branch (lane) | Contents | Verified | Next step |
+| --- | --- | --- | --- |
+| `sdk/s5a-cost` (sdk-design, 6 commits) | S5a: max_cycles_* and overrides deleted; DSP_COST_VOICE (5) and DSP_COST_FX (6) measured by module:check into [uses] and the header; no_std `check_selection` in dkrt-fit, used by the planner (E_PLAN_FIT, "DSP LOAD need > free"), the menu and patchkit fit; DSP_COST/DSP_VOICES capacity kinds from the generated profile; DK_SPAN macros and stats-window layout, refused in content modules | host tests, conformance suite, gen check, check:layers, test:changed; dkm-identity: only the deleted descriptor words differ; sdk:hashes baseline re-recorded on purpose | 1. Add a sample-driven conformance case for shot (its derived cost 475/353 is a floor; the rig plays no sample; the old hand value was ~7000). 2. Host pre-stage. 3. Device gate: capacity, commit, modules-capacity, inferred-needs, menu fits/needs, dyn* and machine loads, machine/FX conformance, `test:stock`. |
+| `sdk/s5b-defuse` (sdk-fixtures, 3 commits) | S5b static: dksharc slice 2, register def/use generated from sharc_core (CORE_FINGERPRINT unchanged); finding 130 (stock interrupt save set) [D] | 600 golden insns, pluck by hand, cross-check 5457/5463 with fast/lower; wasm32 check; test:changed | 1. A second agent checks finding 130's 8 claims against image bytes before [V]. 2. Then the rules section in sdk/ and the Rust rules check (warn first): B7 to add, unnamed groups, the I13 contradiction in the machine adapter header. |
+| `test/t1a-overselect` (sdk-gen, 7 commits) | T1a fixes: benchlock 67 to 2 tasks; dk-session bulk.ts 289 to 50 (ts-imports follows named re-exports); TS targets no longer selected by patchkit or control-crate Rust; per-pack #include scan (mem.h 93 to 19). Items 21 and 25 checked and left with reasons | test:changed, test:plan, static checks | An independent soundness review of the key changes (named-import tracing must never miss a real input), then merge (config only; no device gate). |
+
+Then: P8a (debug-module profiling) and the Profile pane; T1e service-scoped selection (T1d tags); R8 whole-path spike; storage interface and files memory; the review stop with Em after R8.

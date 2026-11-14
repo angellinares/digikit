@@ -34,7 +34,5 @@ _ov_note_on:
 .VAR _ov_desc3 = DK_MAX_VOICES;
 .VAR _ov_desc4 = 8;
 .VAR _ov_desc5 = 0;
-.VAR _ov_desc6 = 100;
-.VAR _ov_desc7 = 100;
-.VAR _ov_desc8 = 0;
-.VAR _ov_desc9 = 0;
+.VAR _ov_desc6 = 0;
+.VAR _ov_desc7 = 0;

@@ -31,6 +31,8 @@ it('infers core producers from category and source-backed objects, independently
     );
     return file;
   });
+  mkdirSync(join(root, 'tools/patchkit/toolchain'), { recursive: true });
+  writeFileSync(join(root, 'tools/patchkit/toolchain/pins.toml'), '[include]\ncf = ["sdk/include"]\nsharc = []\n');
   mkdirSync(join(root, 'devices'));
   writeFileSync(join(root, 'devices/example.toml'), '[patch_sets]\nemulator = ["example/owner"]\n');
   const inferred = createNodesV2[1](files, {}, { workspaceRoot: root });
@@ -47,7 +49,7 @@ it('infers core producers from category and source-backed objects, independently
   expect(producer.inputs).not.toContain('{workspaceRoot}/tests/fixtures/modules/**/module.toml');
 
   expect(producer.outputs).toEqual([`{workspaceRoot}/${modules[0].dir}/build/object.dko.json`]);
-  expect(producer.dependsOn).toEqual(['sdk:check-generated', 'example/dep:build-objects']);
+  expect(producer.dependsOn).toEqual(['sdk:check-generated', 'patchkit:cli', 'example/dep:build-objects']);
   expect(projects[modules[1].dir].tags).toContain('acceptance-image');
   expect(projects[modules[2].dir].targets?.['build-objects']).toBeUndefined();
   expect(projects[modules[3].dir].targets?.['build-objects']).toBeUndefined();

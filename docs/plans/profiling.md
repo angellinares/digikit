@@ -36,7 +36,7 @@ Native and browser speed are separate questions. A native gain proves no browser
   every 64 instructions). No exact coverage, no breakpoints, no symbol lookup in the daemon.
 - **Names:** `fastcov` and `perf_calls.py` name stock SHARC PCs only; module PCs print as `?`. `snapread.py` names ColdFire addresses from the
   hand-made 1.16 `cf_names` list. Many hot SHARC functions have no name ([finding 18](../findings/18-dsp-performance.md)).
-- **Module cost:** authors declare `max_cycles_*` by hand. `module:check` checks a worst-block limit for effects only (`pk_conform.fx_budget`).
+- **Module cost:** derived since S5a. `module:check` writes the worst steady block (a machine, per voice) or process call (an effect) into the header as `DSP_COST_VOICE` and `DSP_COST_FX`; the `max_cycles_*` descriptor words are gone.
   HEALTH shows the whole DSP block time, not per module.
 - **Module DSP code is never AOT.** It loads into L2 at run time and runs in the fast tier or the interpreter.
 - **Device:** the debug module answers host polls (LOG, PEEK, LOGCFG); a 512-event ring, at most 27 events per read. The probe module owns
@@ -154,7 +154,7 @@ TCOUNT in `UNSAFE_READ_NAMES`. Per-function detail comes from PC counts plus the
 3. **Machine budget check (P4, done).** The rule is Rust: `dkprof::budget`, run by `patchkit budget` and read by `module:check` (`pk_conform.budget`, `fx_budget`; the numbers equal the former
    Python's). Units are instructions per block. Per device the headroom is the block at 85 percent (projected with the "high" factor of `devices/cycle-factors.json`) minus the stock baseline
    (`stock_busy`); today 194,244 instructions on DT2 and 92,796 on DN2 (`patchkit budget`, from `devices/*.toml` and `devices/cycle-factors.json`). The machine check is
-   `voice-block <= headroom / voices` for the steady worst block and `note-on <= headroom` apart; `check_selection` is the rule S5's broker uses ([sdk.md](sdk.md) section 9).
+   `voice-block <= headroom / voices` for the steady worst block and `note-on <= headroom` apart; `dkrt_fit::check_selection` (integers, `no_std`; `dkprof` re-exports it) is the rule the broker applies since S5a: the planner, the menu and `patchkit fit` use it with the cost that `module:check` writes into the header ([sdk.md](sdk.md) section 9).
 4. **Fast-tier refusals per module: moved to P5** (emulator speed track, parked). It lists the module instructions the fast tier refuses, which keep it in the interpreter. This matters
    for emulator and browser speed, not for hardware; it is input for an SDK warning and for fast-tier lowering work.
 
@@ -249,8 +249,8 @@ Every artifact has: schema version, run id, firmware, runtime and module hashes,
 binary hash, source revision, PGO treatment, target, phase markers, loss and overhead. Keep raw counters. Never add overlapping inclusive
 costs, or host wall waits to thread CPU, as if they were separate work.
 
-Known limits: HEALTH rejects block deltas of 0 or at least 4,000,000; report the invalid count. SDK `max_cycles` values are budgets, not
-measurements. Sink underrun events are not DSP missed deadlines.
+Known limits: HEALTH rejects block deltas of 0 or at least 4,000,000; report the invalid count. The cost in a header is the worst case of the conformance cases, not a
+measurement of a real song. Sink underrun events are not DSP missed deadlines.
 
 ## 10. Proof discipline for optimisations
 

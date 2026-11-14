@@ -202,8 +202,8 @@ After the loop, write F1 (not F0) to the state so rounding drift does not accumu
   - the string loop: 23 instructions per sample, with `R1 = R3 + R14; I1 = R1` address rebuilds (8 instructions),
     three `PASS` copies, no multifunction packing (a multiply and an add are never in one instruction), and no
     circular buffer (masking with `AND 0x3fff` on a byte index). A packed version with hardware circular buffer is
-    about 8 to 10 instructions per sample **[O]**. Its `max_cycles_block` of 2200 is above the count 23 x 32 = 736
-    plus setup, so the descriptor has a wide margin.
+    about 8 to 10 instructions per sample **[O]**. The measured steady block is about 2,000 instructions
+    (the adapter and the guard are in it), far above 23 x 32 = 736.
   - `DM(I1, M5)` as "read without modify" rather than `DM(0, I1)`.
   - the voice end check after the loop uses compare and conditional jumps; fine.
 - `<dk/machine/machine.h>` / `<dk/fx/fx.h>`: the contract is specified for entry and return. It lists clobbered and preserved

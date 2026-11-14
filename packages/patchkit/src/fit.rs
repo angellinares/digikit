@@ -73,6 +73,8 @@ fn needs_of(v: &Value) -> Result<Needs> {
         param_rows: g("PARAM_ROWS")?,
         page_rows: g("PAGE_ROWS")?,
         fx_slots: g("FX_SLOTS")?,
+        dsp_cost_voice: g("DSP_COST_VOICE")?,
+        dsp_cost_fx: g("DSP_COST_FX")?,
     })
 }
 

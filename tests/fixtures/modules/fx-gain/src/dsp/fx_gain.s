@@ -22,13 +22,12 @@ _fg_loop: DM(I1, M6) = R0;
 .SECTION/DM seg_dmda;
 .GLOBAL _fg_gain;
 .VAR _fg_gain = 0x3f000000;
-// dk_fx_desc: magic, contract, n_params, state_bytes, max_cycles_block, max_call_depth, stack_bytes.
+// dk_fx_desc: magic, contract, n_params, state_bytes, max_call_depth, stack_bytes.
 .GLOBAL _fg_desc;
 .VAR _fg_desc = DK_FX_MAGIC;
 .VAR _fg_desc1 = DK_FX_V1;
 .VAR _fg_desc2 = 0;
 .VAR _fg_desc3 = 4;
-.VAR _fg_desc4 = 210;
+.VAR _fg_desc4 = 0;
 .VAR _fg_desc5 = 0;
-.VAR _fg_desc6 = 0;
 .PKBSS _fg_state, 4;

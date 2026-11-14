@@ -154,7 +154,7 @@ Rules in words, then the header.
 | adapter, every call | `params[i]` is inside the declared `[min, max]` of parameter i (clamped, so the module never sees an out-of-range word); `pitch` is in `[0, 127 << 8]` after tune; `out` is 32 floats, 4-byte aligned, written by the module in full; the block size is 32 samples at 48 kHz on both devices; context registers are pinned as in section 1.4; one call at a time per voice; calls for one voice come in order |
 | adapter, note-on | `state` is clean for `state_clear_bytes` bytes (zero) before `dk_machine_note_on`; `note_on` is followed by `render` in the same block; a voice that returned `DK_DONE` gets no call until the next note-on |
 | adapter, after the call | the output is checked (finite, bounded); a fault zeroes the block, ends the voice, resets the state and counts (finding 51); 8 faults in 1500 blocks disable the machine |
-| module | `render` returns within `max_cycles_block` (declared); the output is finite and within `+-DK_LEVEL_BOUND` (8.0); it writes only `state`, `out`, its own stack and its own data and bss (shared by all voices); it keeps the register set it must keep; it reads no frame word and no address it did not get; it needs no value of `state` beyond `state_clear_bytes` before it is written; idle voice (before note-on or after `DK_DONE`) is never called, so it has no idle path |
+| module | `render` returns within the budget (the per-voice share of the device's headroom, `module:check` measures it); the output is finite and within `+-DK_LEVEL_BOUND` (8.0); it writes only `state`, `out`, its own stack and its own data and bss (shared by all voices); it keeps the register set it must keep; it reads no frame word and no address it did not get; it needs no value of `state` beyond `state_clear_bytes` before it is written; idle voice (before note-on or after `DK_DONE`) is never called, so it has no idle path |
 
 `state` outside `state_clear_bytes` is scratch: it is written before it is read. The rig poisons it with NaN, as it poisons `.PKBSS` today
 (`machine_rig.py:11-13`), so a violation shows as a non-finite sample. Pluck's delay line fits this: the line is filled at note-on before the loop reads it.
@@ -197,8 +197,6 @@ typedef struct dk_machine_desc {
     uint32_t voices;                    /* 1 .. DK_MAX_VOICES the module supports (the adapter uses min(this, device)) */
     uint32_t state_bytes;               /* per voice, multiple of 4                                               */
     uint32_t state_clear_bytes;         /* leading bytes the adapter zeroes at note-on, <= state_bytes            */
-    uint32_t max_cycles_block;          /* worst-case instructions of one render call, from the rig, rounded up   */
-    uint32_t max_cycles_note_on;        /* the same for the note-on block (note_on + render)                      */
     uint32_t max_call_depth;            /* nested CALLs the module uses (SHARC call stack)                        */
     uint32_t stack_bytes;               /* data stack the module uses (0 for assembly without a frame)            */
 } dk_machine_desc;
@@ -227,8 +225,8 @@ Notes on the header:
   (`tools/patchkit/pk_sdkgen.py`, reads the header's enums and structs; no C parser beyond that subset) and carries the manifest types, the kind enum with its
   default ranges, `dk_machine_desc` for the packer, and the status codes.
 - Register rules (SHARC+): `sdk/dsp/REGISTERS.md` (pinned values in section 1.4). A C build adds the frame discipline: I6 and I7 change only by the frame instructions. Checked statically (section 8).
-- Cycles: `max_cycles_block` is a declared number. The conformance rig measures the maximum over its cases and fails when it exceeds the declaration or the budget
-  (`pk_conform.py:13-23`); the declaration is what the runtime reports and what the adapter's budget table sums (section 6).
+- Cycles: nothing is declared. The conformance rig measures the maximum over its cases and fails when it exceeds the budget (`pk_conform.py`); `module:check` writes that
+  maximum into the module's header as `DSP_COST_VOICE` (a machine) or `DSP_COST_FX` (an effect), and the broker checks the selection with it ([sdk.md](../plans/sdk.md) section 9).
 
 ### 4.2 Other types (outlines; to be designed when the first module of the type is built)
 
@@ -413,7 +411,7 @@ The manifest and the declarations of a module are described in `docs/MODULES.md`
 | call depth | none | build, static | call graph from the object; indirect calls refused; `max_call_depth` must equal or exceed it |
 | writable absolute data | none | build | a store whose address comes from a data relocation outside the `state` argument path is hard to prove; v1 rule: no `.PKDATA`/`.PKBSS`/`.VAR` writable symbol at all (constants are read-only), and the rig's write-set check below |
 | writes only own state | the rig, `tests/support/machine_rig.py` (`record_stores`, `_allowed`) | conformance rig | **exists**: the concrete core logs every store through the driver's write watchpoints (`sharc_run.Watchpoint`, switched on per call by `pk_sharc.CallSession`); a store by the module's code outside this call's output block, the calling voice's `state_bytes`, the module stack (`stack_bytes` below the adapter's frame) and the module's own data and bss fails (that data is shared by all voices: state that must differ per voice goes in `state`) (group `writes` adds two voices at once; negative fixture `test/dyn-guard-nan#overrun`). The `dk_voice_in` and `params` copies are the adapter's data and are read-only for the module |
-| worst-case cycles | a sample of cases | rig, with declaration | `max_cycles_block` declared; the rig's observed maximum must be at most the declared one and at most the device budget; adversarial cases stay (limits, modulation, retrig: `pk_conform.py:48-53`) |
+| worst-case cycles | a sample of cases | rig, with declaration | the rig's observed maximum must be at most the device budget, and is written to the header as the module's cost; adversarial cases stay (limits, modulation, retrig: `pk_conform.py:48-53`) |
 | parameter ranges | partial | build | `min <= default <= max`, inside the kind's range, `n_params <= param_slots` for each target device |
 | state size | none | build | `state_bytes x voices` fits `[limits] dsp_state_max` of each device |
 | device list | `ports` by hand | build | every listed device passes the rig |

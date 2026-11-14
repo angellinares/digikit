@@ -304,8 +304,6 @@ struct RecKind {
 struct Resource {
     id: u32,
     capacity: Option<String>,
-    #[serde(default)]
-    reserved: bool,
 }
 /// The kind numbers by name.
 fn kind_ids(sdk: &Sdk) -> BTreeMap<String, u8> {
@@ -480,20 +478,15 @@ fn records_consts(sdk: &Sdk, indent: &str) -> String {
     }
     let _ = writeln!(
         s,
-        "{indent}/// The resources of a module's `uses` in the order of their ids: (id, name, reserved: no module counts it yet)."
+        "{indent}/// The resources of a module's `uses` in the order of their ids: (id, name)."
     );
     let _ = writeln!(
         s,
-        "{indent}pub const RESOURCES: [(u32, &str, bool); {}] = [",
+        "{indent}pub const RESOURCES: [(u32, &str); {}] = [",
         res.len()
     );
-    for (n, r) in &res {
-        let _ = writeln!(
-            s,
-            "{indent}    (RES_{n}, {:?}, {}),",
-            n.to_lowercase(),
-            r.reserved
-        );
+    for (n, _) in &res {
+        let _ = writeln!(s, "{indent}    (RES_{n}, {:?}),", n.to_lowercase());
     }
     let _ = writeln!(s, "{indent}];");
     s

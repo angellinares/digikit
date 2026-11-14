@@ -29,7 +29,8 @@ import math
 import sys
 import time
 
-from support.machine_rig import MachineRig
+from support import sample_pool
+from support.machine_rig import MachineRig, nw
 from tools.patchkit import pk_conform
 
 
@@ -42,11 +43,32 @@ def describe(case: pk_conform.Case, k: int, words: dict[str, int], vel: int) -> 
     return f"case {case.group}/{case.name} block {k}: note {case.note} velocity {vel} words [{ws}]"
 
 
+def publish_sample(
+    rig: MachineRig, sp: pk_conform.MachineSpec, case: pk_conform.Case
+) -> None:
+    """The "sample-pool" setup: the PCM planes of the case's sample (a fixed seed) and its record at pool index 0. The case's words select index 0."""
+    assert case.sample is not None and sp.sample_records
+    frames, rate, channels = case.sample
+    left = sample_pool.noise(1, frames)
+    right = left if channels == 1 else sample_pool.noise(2, frames)
+    sample_pool.write_planes(rig.sess.poke, left, right)
+    sample_pool.publish(
+        rig.sess.poke,
+        nw(rig.built.data[sp.sample_records]),
+        0,
+        frames,
+        rate,
+        channels,
+    )
+
+
 def run_case(
     sp: pk_conform.MachineSpec, case: pk_conform.Case, bud: pk_conform.Budget, seed: int
 ) -> dict:
     t0 = time.time()
     rig = MachineRig(sp.module, sp.device, seed=seed, record_stores=True)
+    if case.setup == "sample-pool":
+        publish_sample(rig, sp, case)
     rig.set_note(case.note, case.vel)
     words: dict[str, int] = {}
     vel = case.vel
@@ -168,7 +190,7 @@ def main() -> int:
             )
         )
         return 2
-    bud = pk_conform.budget(a.device, sp)
+    bud = pk_conform.budget(a.device)
     t0 = time.time()
     MachineRig(a.module, a.device)  # builds (assembles, links) once; the cases reuse it
     built = time.time() - t0

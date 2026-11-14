@@ -51,7 +51,7 @@ pub const FXW_AMT0: u32 = 19;
 pub const FX_STEP_ROUTE: u32 = 12;
 /// `dk_fx_desc` (<dk/fx/fx.h>): magic "DKFX", contract, and its size in bytes.
 pub const FX_DESC_MAGIC: u32 = 0x444b_4658;
-pub const FX_DESC_BYTES: u32 = 28;
+pub const FX_DESC_BYTES: u32 = 24; // DK_FX_DESC_BYTES in sdk/include/dk/gen/fx_consts.h
 pub const FX_MAX_PARAMS: u32 = 8;
 /// The windows of `core/dsp-link`.
 pub const WIN_VOICES: u32 = 1;

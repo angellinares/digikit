@@ -8,12 +8,13 @@
 // `module:check` (tools/patchkit/pk_modcheck.py) writes `[uses]` and the gallery params from it; conformance reads its cases from it.
 // The event's encoding is isolated in `decodeCommitEvent` (packages/test-support/src/commit-records.ts). Not run end to end yet: it needs
 // a module and the runtime's `MODULE_COMMIT` event.
+import { spawn } from 'node:child_process';
 import fs from 'node:fs';
 import path from 'node:path';
 import { parseArgs } from 'node:util';
 import { DkSession, EmuUsbTransport } from '../../packages/dk-session/src/index.ts';
 import { LOG_KIND } from '../../packages/dk-session/src/gen_proto.ts';
-import { committedRecords } from '../../packages/test-support/src/commit-records.ts';
+import { committedRecords, type RecordsExec } from '../../packages/test-support/src/commit-records.ts';
 import { Events } from '../../packages/test-support/src/events.ts';
 import { repoRoot, type Device } from '../../packages/test-support/src/inputs.ts';
 import { Session } from '../../packages/test-support/src/session.ts';
@@ -37,6 +38,25 @@ if ((values.device !== 'dn2' && values.device !== 'dt2') || !values.module || !v
   throw new Error(usage);
 }
 const device: Device = values.device;
+
+/** Runs the patchkit binary BIN with stdin input (this tool is no Nx task, so it spawns the binary itself). */
+const patchkitExec =
+  (bin: string): RecordsExec =>
+  (args, { input }) =>
+    new Promise((resolve, reject) => {
+      const child = spawn(bin, args, { stdio: ['pipe', 'pipe', 'pipe'] });
+      const out: Buffer[] = [];
+      const err: Buffer[] = [];
+      child.stdout.on('data', (b: Buffer) => out.push(b));
+      child.stderr.on('data', (b: Buffer) => err.push(b));
+      child.on('error', reject);
+      child.on('close', (code) =>
+        code === 0
+          ? resolve({ stdout: Buffer.concat(out).toString('utf8') })
+          : reject(new Error(`${bin} ${args.join(' ')} failed (${code}): ${Buffer.concat(err).toString('utf8')}`)),
+      );
+      child.stdin.end(input);
+    });
 const root = repoRoot();
 const binary = values.binary ?? process.env[`DIGI_EMUD_${device.toUpperCase()}`];
 if (!binary) throw new Error(`no daemon: pass --binary or set DIGI_EMUD_${device.toUpperCase()}`);
@@ -86,7 +106,7 @@ try {
   const event = await events.until(commitKind, (e) => e.args[0] === index, {
     emulatedMs: Number(values['emulated-ms']),
   });
-  const result = await committedRecords(event, (addr) => s.client.memPeek(addr), values.patchkit);
+  const result = await committedRecords(event, (addr) => s.client.memPeek(addr), patchkitExec(values.patchkit));
   // the latch masks of the module's machines (the record block has no latched flag): one MODULE_LATCH event per machine that latches,
   // logged before the commit event; `latched[n]` is machine n's mask, bit w for its parameter word w
   const latchKind = (LOG_KIND as Record<string, number>).MODULE_LATCH;

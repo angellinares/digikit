@@ -95,7 +95,15 @@ export const createNodesV2 = [
       const recs = records(join(ctx.workspaceRoot, root));
       const devices = packDevices(m);
       if (coreBuilds.has(m.id))
-        targets['build-objects'] = buildObjectsTarget(m, root, objects, coreBuilds, coreManifests);
+        targets['build-objects'] = buildObjectsTarget(
+          ctx.workspaceRoot,
+          byId,
+          m,
+          root,
+          objects,
+          coreBuilds,
+          coreManifests,
+        );
       if (devices.length && packable.has(m.id)) targets.pack = packTarget(ctx.workspaceRoot, byId, m, devices);
       const aliasesTarget = packAliasesTarget(ctx.workspaceRoot, byId, recs);
       if (aliasesTarget) targets['pack-aliases'] = aliasesTarget;

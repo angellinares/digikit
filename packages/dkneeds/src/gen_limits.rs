@@ -95,12 +95,14 @@ pub const RES_MACHINE_ROWS: u32 = 1;
 pub const RES_PARAM_ROWS: u32 = 2;
 pub const RES_PAGE_ROWS: u32 = 3;
 pub const RES_RECORD_BYTES: u32 = 4;
-pub const RES_DSP_COST: u32 = 5;
-/// The resources of a module's `uses` in the order of their ids: (id, name, reserved: no module counts it yet).
-pub const RESOURCES: [(u32, &str, bool); 5] = [
-    (RES_MACHINE_ROWS, "machine_rows", false),
-    (RES_PARAM_ROWS, "param_rows", false),
-    (RES_PAGE_ROWS, "page_rows", false),
-    (RES_RECORD_BYTES, "record_bytes", false),
-    (RES_DSP_COST, "dsp_cost", true),
+pub const RES_DSP_COST_VOICE: u32 = 5;
+pub const RES_DSP_COST_FX: u32 = 6;
+/// The resources of a module's `uses` in the order of their ids: (id, name).
+pub const RESOURCES: [(u32, &str); 6] = [
+    (RES_MACHINE_ROWS, "machine_rows"),
+    (RES_PARAM_ROWS, "param_rows"),
+    (RES_PAGE_ROWS, "page_rows"),
+    (RES_RECORD_BYTES, "record_bytes"),
+    (RES_DSP_COST_VOICE, "dsp_cost_voice"),
+    (RES_DSP_COST_FX, "dsp_cost_fx"),
 ];

@@ -27,8 +27,6 @@ typedef struct dk_machine_desc {
     uint32_t voices;                    /* 1 .. DK_MAX_VOICES the module supports */
     uint32_t state_bytes;               /* per voice, a multiple of 4; a voice's state is zeroed when its track first plays a note after the module loads (contract 1.6), then only state_clear_bytes at each note-on */
     uint32_t state_clear_bytes;         /* leading bytes zeroed at note-on, <= state_bytes */
-    uint32_t max_cycles_block;          /* worst-case instructions of one render call */
-    uint32_t max_cycles_note_on;        /* the same for the note-on block (note_on + render) */
     uint32_t max_call_depth;            /* nested CALLs the module uses */
     uint32_t stack_bytes;               /* data stack the module uses */
 } dk_machine_desc;

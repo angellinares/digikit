@@ -149,8 +149,9 @@ release. A tool has neither list.
 
 `[[record]]` lists a record of a generic kind that `init` emits with `dk_record_add` (a kind that a service owns and that has no builder, such as `lfo_shape`): `kind` is the kind's lower-case name from `sdk/sdk.toml` `[records.kinds]` and `key` the identity of the record (the shape id of an `lfo_shape`). The packer writes the keys into the header table, so the boot planner refuses a kind no service owns and a key that another module of the selection has before the module loads. Machines and effects are builder calls, not `[[record]]`.
 
-`[uses.dt2]` and `[uses.dn2]` hold the rows the module takes on each device: `machine_rows`, `param_rows`, `page_rows`, `record_bytes`.
-`module:check` runs `init` in the emulator and writes them. Never write them by hand. The device menu and the packer use them to tell whether the
+`[uses.dt2]` and `[uses.dn2]` hold the rows the module takes on each device: `machine_rows`, `param_rows`, `page_rows`, `record_bytes`, and the DSP cost
+(`dsp_cost_voice` for a machine, `dsp_cost_fx` for an effect: instructions per block). `module:check` runs `init` in the emulator and the conformance
+suite, and writes them. Never write them by hand. The device menu and the packer use them to tell whether the
 module fits.
 
 `[[object]]` names a built object:
@@ -500,7 +501,7 @@ of a module: the routines that the runtime calls.
 | --- | --- | --- |
 | `note_on(state, in, params)` | Once per note, before the first `render`. It makes no sound. | `0`, or a negative number (a fault). |
 | `render(state, in, params)` | Once per block of `DK_BLOCK` (32) samples while the voice runs. | `DK_OK`, or `DK_DONE` when the voice has ended. |
-| `desc` | A `dk_machine_desc` in read-only data: magic, contract word, parameter count, voices, state bytes, bytes cleared at note-on, cycle budgets. | Read by the adapter. |
+| `desc` | A `dk_machine_desc` in read-only data: magic, contract word, parameter count, voices, state bytes, bytes cleared at note-on, call depth and stack bytes. The DSP cost is not in it: `module:check` measures it. | Read by the adapter. |
 
 `render` writes `DK_BLOCK` floats to `in->out`. `in` also holds `pitch` (semitones shifted left by 8, the tune included), `velocity`, `block` and the source `track`.
 `params` holds `DK_MAX_PARAMS` words. The words after your parameters are 0.
@@ -524,8 +525,9 @@ machine and the pan a second time on R ([DN2 stereo](design/dn2-stereo.md)). At 
 A stereo slot costs about 2,900 to 5,500 more DSP instructions per block than a mono slot (design section 3). `digikit/shot` is the example.
 Do not place `note_on` at offset 0 of the image: an offset of 0 reads as "no note_on".
 
-The `dk_machine_desc` has 10 words: magic, contract, parameter count, voices (1 to 16), state bytes per voice (a multiple of 4), bytes cleared at
-note-on, max cycles of a block, max cycles of the note-on block, max call depth, stack bytes.
+The `dk_machine_desc` has 8 words: magic, contract, parameter count, voices (1 to 16), state bytes per voice (a multiple of 4), bytes cleared at
+note-on, max call depth, stack bytes. It carries no cycle count: `module:check` measures the worst steady block of one voice and writes it as
+`dsp_cost_voice` into `[uses.<device>]`. The broker accepts a selection when `max(per-voice costs) x voices + sum(effect costs)` stays within the device's headroom.
 
 The adapter in `core/dsp-voice` zeroes `state_clear_bytes` at note-on (the first note-on of a track after the module loads zeroes its whole state: voice states start zeroed; unload and load again zeroes again) and clamps the parameter words to your ranges. After each call it checks the
 output. A block with a sample that is not finite or is louder than 8.0 is zeroed. The voice ends. After 8 faults in a second the machine is
@@ -550,7 +552,7 @@ The template `src/dsp/NAME.s` shows all of this in about 90 lines. Read it first
 | Entry | When it runs | Result |
 | --- | --- | --- |
 | `process(state, in, params)` | Once per block while the effect is on. | `DK_FX_OK` (0), or a negative number. A negative number is a fault: the block plays dry. |
-| `desc` | A `dk_fx_desc` in read-only data: magic, contract word, `n_params`, `state_bytes`, cycle budget, call depth, stack bytes. | Read by the loader. |
+| `desc` | A `dk_fx_desc` in read-only data: magic, contract word, `n_params`, `state_bytes`, call depth, stack bytes (6 words). | Read by the loader. |
 
 - `in->in` is the input block: `DK_FX_BLOCK` (64) floats, planar. 32 left, then 32 right. It is read only.
 - `in->out` is the output block of 64 floats. Write all of them.
@@ -593,7 +595,7 @@ The template `src/dsp/NAME.s` shows all of this in about 90 lines. Read it first
 - Fixtures: `tests/fixtures/modules/dyn-fx-gain` (insert), `dyn-fx-gain-send`, `dyn-fx-gain-both`, `dyn-fx-gain-sendonly`. A real effect with a
   float32 reference model: `modules/fx/freqshift`.
 - The instruction budget of the conformance suite is `pk_conform.fx_budget()` (about 31,000 for the effect today, 900 for the adapter). Read it
-  from the report (`-rA`).
+  from the report (`-rA`). The worst call it measures is written as `dsp_cost_fx`.
 
 
 ### 7.3 Entry point and services (`<dk/core/module.h>`)

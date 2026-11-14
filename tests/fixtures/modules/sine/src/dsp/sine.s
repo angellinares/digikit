@@ -88,7 +88,7 @@ _sn_note_on:
     JUMP (M13, I13);
 
 .SECTION/DM seg_dmda;
-// dk_machine_desc: magic, contract, n_params, voices, state_bytes, state_clear_bytes, max_cycles_block, max_cycles_note_on, max_call_depth, stack_bytes.
+// dk_machine_desc: magic, contract, n_params, voices, state_bytes, state_clear_bytes, max_call_depth, stack_bytes.
 .GLOBAL _sn_desc;
 .VAR _sn_desc = DK_MAGIC;
 .VAR _sn_desc1 = DK_MACHINE_V1;
@@ -96,7 +96,5 @@ _sn_note_on:
 .VAR _sn_desc3 = DK_MAX_VOICES;
 .VAR _sn_desc4 = 8;
 .VAR _sn_desc5 = 8;
-.VAR _sn_desc6 = 1600;
-.VAR _sn_desc7 = 1700;
-.VAR _sn_desc8 = 2;
-.VAR _sn_desc9 = 0;
+.VAR _sn_desc6 = 2;
+.VAR _sn_desc7 = 0;

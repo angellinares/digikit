@@ -701,8 +701,7 @@ _tb_word01:
     RTS;
 
 .SECTION/DM seg_dmda;
-// magic, contract, n_params, voices, state_bytes, state_clear_bytes, max_cycles_block, max_cycles_note_on,
-// max_call_depth, stack_bytes
+// magic, contract, n_params, voices, state_bytes, state_clear_bytes, max_call_depth, stack_bytes
 .GLOBAL _tb_desc;
 .VAR _tb_desc = DK_MAGIC;
 .VAR _tb_desc1 = 513;  // DK_MACHINE_V1 | DK_MACHINE_GATE (an expression is not accepted here)
@@ -710,7 +709,5 @@ _tb_word01:
 .VAR _tb_desc3 = DK_MAX_VOICES;
 .VAR _tb_desc4 = 256;
 .VAR _tb_desc5 = 0;
-.VAR _tb_desc6 = 7500;
-.VAR _tb_desc7 = 400;
-.VAR _tb_desc8 = 2;
-.VAR _tb_desc9 = 0;
+.VAR _tb_desc6 = 2;
+.VAR _tb_desc7 = 0;

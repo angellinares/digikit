@@ -49,15 +49,14 @@ _sb_out:
     JUMP (M13, I13);
 
 .SECTION/DM seg_dmda;
-// dk_fx_desc: magic, contract, n_params, state_bytes, max_cycles_block, max_call_depth, stack_bytes.
+// dk_fx_desc: magic, contract, n_params, state_bytes, max_call_depth, stack_bytes.
 .GLOBAL _sb_desc;
 .VAR _sb_desc = DK_FX_MAGIC;
 .VAR _sb_desc1 = DK_FX_V1;
 .VAR _sb_desc2 = 0;
 .VAR _sb_desc3 = 4;
-.VAR _sb_desc4 = 40000;
+.VAR _sb_desc4 = 0;
 .VAR _sb_desc5 = 0;
-.VAR _sb_desc6 = 0;
 .VAR _sb_cnt = 0;
 .VAR _sb_k1 = 0x5A5A1234;
 .VAR _sb_k2 = 0xC0DE0001;

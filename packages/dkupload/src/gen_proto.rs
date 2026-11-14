@@ -87,8 +87,10 @@ pub const CAPK_MAP_ENTRIES: u8 = 11;
 pub const CAPK_STORE: u8 = 12;
 pub const CAPK_SETTINGS: u8 = 13;
 pub const CAPK_SEND_SLOTS: u8 = 14;
+pub const CAPK_DSP_COST: u8 = 15;
+pub const CAPK_DSP_VOICES: u8 = 16;
 /// Every CAPACITY kind in the order of its number: the runtime answers each one.
-pub const CAP_KINDS: [u8; 14] = [
+pub const CAP_KINDS: [u8; 16] = [
     CAPK_MODULES,
     CAPK_SELECTION,
     CAPK_ARENA,
@@ -103,9 +105,11 @@ pub const CAP_KINDS: [u8; 14] = [
     CAPK_STORE,
     CAPK_SETTINGS,
     CAPK_SEND_SLOTS,
+    CAPK_DSP_COST,
+    CAPK_DSP_VOICES,
 ];
 /// The resources a fit looks at: name, kind and what a person calls it.
-pub const CAP_FIT: [(&str, u8, &str); 10] = [
+pub const CAP_FIT: [(&str, u8, &str); 12] = [
     ("MODULES", CAPK_MODULES, "module records"),
     ("SELECTION", CAPK_SELECTION, "selection paths"),
     ("ARENA", CAPK_ARENA, "CPU memory"),
@@ -116,6 +120,8 @@ pub const CAP_FIT: [(&str, u8, &str); 10] = [
     ("PARAM_ROWS", CAPK_PARAM_ROWS, "parameter rows"),
     ("PAGE_ROWS", CAPK_PAGE_ROWS, "page rows"),
     ("FX_SLOTS", CAPK_FX_SLOTS, "effect slots"),
+    ("DSP_COST", CAPK_DSP_COST, "DSP load"),
+    ("DSP_VOICES", CAPK_DSP_VOICES, "DSP voices"),
 ];
 /// The command ranges a module may register, as (first, last).
 pub const RANGES: [(u8, u8); 9] = [
