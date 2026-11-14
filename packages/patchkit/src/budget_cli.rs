@@ -39,7 +39,9 @@ pub fn devices() -> Result<Vec<DeviceCost>> {
 /// factors of the same name; None when `devices/cycle-factors.json` has no entry for it. `patchkit gen` writes it into the device profile (`DSP_HEADROOM`), so the
 /// broker on the device compares integers and does no float arithmetic.
 pub fn headroom(short: &str, clock: u64, blocks: u64, voices: u64) -> Option<u64> {
-    let f = *budget::parse_cycle_factors(CYCLE_FACTORS).ok()?.get(short)?;
+    let f = *budget::parse_cycle_factors(CYCLE_FACTORS)
+        .ok()?
+        .get(short)?;
     Some(
         DeviceCost {
             device: short.to_string(),

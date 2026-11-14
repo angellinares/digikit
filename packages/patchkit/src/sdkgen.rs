@@ -427,11 +427,7 @@ fn records_consts(sdk: &Sdk, indent: &str) -> String {
         res.len()
     );
     for (n, _) in &res {
-        let _ = writeln!(
-            s,
-            "{indent}    (RES_{n}, {:?}),",
-            n.to_lowercase()
-        );
+        let _ = writeln!(s, "{indent}    (RES_{n}, {:?}),", n.to_lowercase());
     }
     let _ = writeln!(s, "{indent}];");
     s

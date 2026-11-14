@@ -142,10 +142,19 @@ fn the_rows_come_from_the_keys_table() {
 #[test]
 fn the_dsp_cost_comes_from_the_uses_of_the_keys_table() {
     let uses = [
-        keys::Use { resource: crate::RES_DSP_COST_VOICE, count: 6239 },
-        keys::Use { resource: crate::RES_DSP_COST_FX, count: 5282 },
+        keys::Use {
+            resource: crate::RES_DSP_COST_VOICE,
+            count: 6239,
+        },
+        keys::Use {
+            resource: crate::RES_DSP_COST_FX,
+            count: 5282,
+        },
     ];
-    let table = keys::Table { uses: &uses, ..Default::default() };
+    let table = keys::Table {
+        uses: &uses,
+        ..Default::default()
+    };
     let mut t = vec![0u8; keys::table_size(&table)];
     keys::write_table(&table, &mut t).unwrap();
     let n = of(&dkm(4, 0, &t, &[])).unwrap();

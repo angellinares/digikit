@@ -22,15 +22,15 @@ extern volatile uint32_t dk_span_sink;
 uint32_t dk_span_clock(void);
 void dk_span_emit(uint32_t owner, uint32_t cycles);
 
-#define DK_SPAN_BEGIN(owner)                                                                                                \
-    uint32_t dk_span_t0_ = 0;                                                                                               \
-    if (dk_span_sink)                                                                                                       \
-        dk_span_t0_ = dk_span_clock();                                                                                      \
+#define DK_SPAN_BEGIN(owner)                                                                       \
+    uint32_t dk_span_t0_ = 0;                                                                      \
+    if (dk_span_sink)                                                                              \
+        dk_span_t0_ = dk_span_clock();                                                             \
     (void)sizeof(owner)
-#define DK_SPAN_END(owner)                                                                                                  \
-    do {                                                                                                                    \
-        if (dk_span_sink)                                                                                                   \
-            dk_span_emit((owner), dk_span_clock() - dk_span_t0_);                                                           \
+#define DK_SPAN_END(owner)                                                                         \
+    do {                                                                                           \
+        if (dk_span_sink)                                                                          \
+            dk_span_emit((owner), dk_span_clock() - dk_span_t0_);                                  \
     } while (0)
 
 /* The stats window of the DSP side (the layout of dk_trace.inc, the same numbers): words in DSP data memory, written by the stub's `_dk_span_add`, read from the

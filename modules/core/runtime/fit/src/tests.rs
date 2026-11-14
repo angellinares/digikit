@@ -299,9 +299,15 @@ fn the_capacity_check_and_the_pure_rule_agree_for_any_order_of_the_modules() {
         idx.extend((0..5).filter(|i| !first.contains(i)));
         for i in idx {
             let n = if i < 3 {
-                Needs { dsp_cost_voice: machines[i], ..Needs::default() }
+                Needs {
+                    dsp_cost_voice: machines[i],
+                    ..Needs::default()
+                }
             } else {
-                Needs { dsp_cost_fx: fx[i - 3], ..Needs::default() }
+                Needs {
+                    dsp_cost_fx: fx[i - 3],
+                    ..Needs::default()
+                }
             };
             assert!(fits_now(&n, &c).is_none(), "{i} in {first:?}");
             take(&n, &mut c);

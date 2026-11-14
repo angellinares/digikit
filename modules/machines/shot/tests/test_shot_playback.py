@@ -407,7 +407,9 @@ def test_instruction_count_is_inside_the_ceiling(device):
     steady = s.rig.block("friendly")
     # worst block measured 6239 on DT2 and 6851 on DN2 (a looping 1-frame region at high pitch that wraps on every output); the ceilings are that and the
     # adapter's own share, with a margin
-    assert first.instructions < 8700, first.instructions  # note_on + render + the adapter
+    assert first.instructions < 8700, (
+        first.instructions
+    )  # note_on + render + the adapter
     assert steady.instructions < 8500, steady.instructions
 
 
