@@ -152,16 +152,15 @@ def test_the_output_stays_below_the_level_bound_and_the_adapter_never_refuses_a_
 def test_writes_stay_in_the_output_block_and_the_state_and_the_cost_matches_the_description():
     rig = rig_for(25.0)
     desc = rig.desc_words("_fs_desc")
-    assert desc[:3] == (0x444B4658, 1, 1) and desc[3] == 664 and desc[5:] == (1, 0)
+    assert desc[:3] == (0x444B4658, 1, 1) and desc[3] == 664 and desc[4:] == (1, 0)
     costs = []
     for k in range(6):
         b = rig.block([0.25 * np.sin(k + i) for i in range(64)], ctx="friendly")
-        assert rig.foreign_stores(desc[6]) == [], k
+        assert rig.foreign_stores(desc[5]) == [], k
         costs.append(b.instructions)
     steady = costs[-1]
-    # core/fx around one call is about 520 instructions (finding 55); the declared worst case of the effect is above its own cost
+    # core/fx around one call is about 520 instructions (finding 55)
     assert 3000 < steady < 4800, costs
-    assert steady - 900 <= desc[4] <= 5000, (steady, desc[4])
 
 
 def test_the_state_is_the_description_state_and_nothing_else():

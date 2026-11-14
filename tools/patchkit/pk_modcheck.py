@@ -17,6 +17,7 @@ import re
 import subprocess
 import sys
 import tempfile
+import time
 import tomllib
 from pathlib import Path
 
@@ -32,10 +33,17 @@ FX_CONFORMANCE = "tests/modules/test_fx_conformance.py"
 USES_KEYS = ("machine_rows", "param_rows", "page_rows", "record_bytes")
 
 
+# The DSP cost of a module (docs/plans/sdk.md section 9), instructions per block, from the conformance run: the worst steady block of one voice of a machine and the
+# worst process call of an effect. They are keys of the same `[uses.<device>]` tables and become the `DSP_COST_VOICE` and `DSP_COST_FX` entries of the header table.
+COST_VOICE = "dsp_cost_voice"
+COST_FX = "dsp_cost_fx"
+
+
 def write_uses(toml_path: Path, uses: dict[str, dict[str, int]]) -> bool:
     """Write the `[uses.<device>]` tables of a module.toml like a lock file (docs/plans/sdk.md 6.1): USES maps a device to the counts of
-    USES_KEYS, committed rows read from that device's emulated run. The file changes only when a count differs, and then only the table lines:
-    other text, comments and the order of the tables stay. Returns True when the file was written."""
+    its keys (USES_KEYS: committed rows read from that device's emulated run; COST_VOICE and COST_FX: the measured DSP cost). The file changes
+    only when a count differs, and then only the lines of the keys given: other text, comments, other keys and the order of the tables stay.
+    Returns True when the file was written."""
     text = toml_path.read_text(encoding="utf-8")
     for dev, counts in uses.items():
         text = _write_table(text, dev, counts)
@@ -47,7 +55,8 @@ def write_uses(toml_path: Path, uses: dict[str, dict[str, int]]) -> bool:
 
 def _write_table(text: str, dev: str, uses: dict[str, int]) -> str:
     head = f"[uses.{dev}]"
-    want = [f"{k} = {int(uses[k])}" for k in USES_KEYS]
+    keys = tuple(uses)
+    want = [f"{k} = {int(uses[k])}" for k in keys]
     lines = text.split("\n")
     start = next((i for i, ln in enumerate(lines) if ln.strip() == head), None)
     if start is None:
@@ -70,13 +79,13 @@ def _write_table(text: str, dev: str, uses: dict[str, int]) -> str:
         for ln in body
         if (m := re.match(r"\s*(\w+)\s*=\s*(\d+)\s*(?:#.*)?$", ln))
     }
-    if all(have.get(k) == str(int(uses[k])) for k in USES_KEYS):
+    if all(have.get(k) == str(int(uses[k])) for k in keys):
         return text
     # keep comments and blank lines of the table; the count lines take their place, missing ones follow the last count
     out, seen = [], set()
     for ln in body:
         m = re.match(r"\s*(\w+)\s*=", ln)
-        if m and m.group(1) in USES_KEYS:
+        if m and m.group(1) in keys:
             seen.add(m.group(1))
             out.append(f"{m.group(1)} = {int(uses[m.group(1)])}")
         else:
@@ -134,6 +143,52 @@ def commit_stage(mid: str, devices: list[str]) -> bool:
         },
     )
     return _write_measured(mid, moddir, per, original)
+
+
+CONFORMANCE_REPORTS = ROOT / "out" / "runs" / "conformance"
+
+
+def measured_costs(
+    mid: str, devices: list[str], since: float
+) -> dict[str, dict[str, int]]:
+    """The DSP cost of module MID per device from the reports of the conformance run that started at `since` (tests/modules/test_machine_conformance.py and
+    test_fx_conformance.py write them): the worst steady block over every case. A machine's cost is per voice; an effect's is the whole process call (the effect and
+    core/fx around it, which every slot takes), measured once for both devices. A report older than the run, or none, leaves that cost out."""
+    out: dict[str, dict[str, int]] = {}
+
+    def worst(path: Path) -> int | None:
+        if not path.is_file() or path.stat().st_mtime < since:
+            return None
+        cases = json.loads(path.read_text(encoding="utf-8")).get("cases") or []
+        return max((int(c["steady"]) for c in cases), default=None)
+
+    stem = mid.replace("/", "__")
+    if pk_conform.is_machine_module(mid):
+        for dev in devices:
+            cost = worst(CONFORMANCE_REPORTS / f"{stem}@{dev}.json")
+            if cost:
+                out.setdefault(dev, {})[COST_VOICE] = cost
+    if pk_conform.is_fx_module(mid):
+        cost = worst(CONFORMANCE_REPORTS / f"{stem}@fx.json")
+        if cost:
+            for dev in devices:
+                out.setdefault(dev, {})[COST_FX] = cost
+    return out
+
+
+def write_costs(
+    mid: str, devices: list[str], since: float
+) -> dict[str, dict[str, int]]:
+    """Write the measured DSP cost of MID into `[uses.<device>]` of its module.toml (the lock-file step after the conformance run: the next `pack` puts it into the header)."""
+    costs = measured_costs(mid, devices, since)
+    if costs:
+        write_uses(modroots.module_dir(mid) / "module.toml", costs)
+        for dev, c in sorted(costs.items()):
+            print(
+                f"{mid}: {dev} DSP cost {', '.join(f'{k} {v}' for k, v in c.items())} instructions per block",
+                flush=True,
+            )
+    return costs
 
 
 def seed_uses(dev: str) -> dict[str, int]:
@@ -344,6 +399,8 @@ def device_caps(dev: str) -> dict[str, dict[str, int]]:
         "PARAM_ROWS": cap(lim.param_rows),
         "PAGE_ROWS": cap(lim.page_rows),
         "FX_SLOTS": cap(lim.fx_slots),
+        "DSP_COST": cap(pk_conform.budget(dev).headroom),
+        "DSP_VOICES": cap(pk_device.load(dev)["adapter"]["machine"]["voices"]),
     }
 
 
@@ -369,6 +426,8 @@ def needs_lines(dkm: bytes, dev: str) -> list[str]:
             ("voices", "VOICE_ROWS"),
             ("params", "PARAM_ROWS"),
             ("pages", "PAGE_ROWS"),
+            ("DSP load per voice", "DSP_COST_VOICE"),
+            ("DSP load of effects", "DSP_COST_FX"),
         )
         if n[k]
     )
@@ -453,6 +512,7 @@ def main() -> int:
             print(f"{mid}: {e}", file=sys.stderr)
             return 1
     else:
+        started = time.time()
         cmd = [
             sys.executable,
             "-m",
@@ -468,6 +528,7 @@ def main() -> int:
         ).returncode
         if rc:
             return rc
+        write_costs(mid, devices, started)
     if targets:
         rc = run_device_targets(mid, targets)
         if rc:

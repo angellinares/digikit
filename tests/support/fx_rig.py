@@ -421,7 +421,7 @@ class FxRig:
         )
 
     # -- the module's view ------------------------------------------------------------------------------------------------
-    def desc_words(self, sym: str, n: int = 7) -> tuple[int, ...]:
+    def desc_words(self, sym: str, n: int = 6) -> tuple[int, ...]:
         """The words of a `dk_fx_desc` data symbol as built (before any call)."""
         at = self.built.data[sym]
         for a0, raw, _bss in self.built.inits:

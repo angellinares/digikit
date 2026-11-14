@@ -5,13 +5,13 @@
  "sections": [
   {
    "align": 4,
-   "hex": "00000002646e32000000000100000097000000020000006540000000466c00004671200047fe100000000000000000000000000000000000008000000261a000444b494d47494431000000000000000000000000000000000000000000000000000000000000000000000000",
+   "hex": "00000002646e3200000000010000009700016a7c00000010000000020000006540000000466c00004671200047fe100000000000000000000000000000000000008000000261a000444b494d47494431000000000000000000000000000000000000000000000000000000000000000000000000",
    "kind": "data",
    "name": ".rodata",
-   "size": 108
+   "size": 116
   }
  ],
- "source_sha256": "f59f131a9c30952e6c0f97617f18b612b53a882de2524f132f6364a85b30dd6f",
+ "source_sha256": "421f68867c25cf4ebb2aec0799a3fdf82b6c76fb97697eb00faeec4af4a8b284",
  "symbols": [
   {
    "global": true,
@@ -27,33 +27,45 @@
   },
   {
    "global": true,
-   "name": "dkrt_files_fs",
-   "section": ".rodata",
-   "value": 96
-  },
-  {
-   "global": true,
-   "name": "dkrt_image_id",
-   "section": ".rodata",
-   "value": 72
-  },
-  {
-   "global": true,
-   "name": "dkrt_peek_n",
+   "name": "dkrt_dsp_headroom",
    "section": ".rodata",
    "value": 16
   },
   {
    "global": true,
-   "name": "dkrt_peek_ranges",
+   "name": "dkrt_dsp_voices",
+   "section": ".rodata",
+   "value": 20
+  },
+  {
+   "global": true,
+   "name": "dkrt_files_fs",
+   "section": ".rodata",
+   "value": 104
+  },
+  {
+   "global": true,
+   "name": "dkrt_image_id",
+   "section": ".rodata",
+   "value": 80
+  },
+  {
+   "global": true,
+   "name": "dkrt_peek_n",
    "section": ".rodata",
    "value": 24
   },
   {
    "global": true,
+   "name": "dkrt_peek_ranges",
+   "section": ".rodata",
+   "value": 32
+  },
+  {
+   "global": true,
    "name": "dkrt_sample_fs",
    "section": ".rodata",
-   "value": 80
+   "value": 88
   },
   {
    "global": true,
@@ -71,19 +83,19 @@
    "global": true,
    "name": "dkrt_sound_words",
    "section": ".rodata",
-   "value": 20
+   "value": 28
   },
   {
    "global": true,
    "name": "dkrt_store_first",
    "section": ".rodata",
-   "value": 56
+   "value": 64
   },
   {
    "global": true,
    "name": "dkrt_store_sectors",
    "section": ".rodata",
-   "value": 60
+   "value": 68
   }
  ],
  "toolchain": {
@@ -91,7 +103,7 @@
   "cflags": "-mcpu=54418 -std=c11 -Os -ffreestanding -fno-builtin -nostdlib -fno-pic -fno-pie -ffunction-sections -fdata-sections -fno-asynchronous-unwind-tables -fno-unwind-tables -fno-stack-protector -Wall -Wextra -Werror",
   "gcc": "m68k-elf-gcc (GCC) 16.2.0",
   "instructions_redecoded": "0",
-  "isa_check": "b057d0e004396679f10b9eab40ad885bef0008a062218d537067eaae2870ce8b",
+  "isa_check": "53570245e52c4eeae00294f290f2234e6e1a8b56742a0737c49f6f970db89449",
   "ld": "GNU ld (GNU Binutils) 2.47.20260726"
  }
 }

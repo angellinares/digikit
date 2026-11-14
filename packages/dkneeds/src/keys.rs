@@ -450,6 +450,16 @@ impl<'a> Keys<'a> {
         self.use_of(crate::RES_RECORD_BYTES)
     }
 
+    /// The DSP instructions per block of one voice of the module's machines (0: not measured).
+    pub fn dsp_cost_voice(&self) -> u32 {
+        self.use_of(crate::RES_DSP_COST_VOICE)
+    }
+
+    /// The DSP instructions per block of the module's effects, summed (0: not measured).
+    pub fn dsp_cost_fx(&self) -> u32 {
+        self.use_of(crate::RES_DSP_COST_FX)
+    }
+
     /// The key groups, in file order: (record kind, its keys).
     pub fn key_groups(&self) -> impl Iterator<Item = (u32, impl Iterator<Item = u32> + 'a)> + 'a {
         let me = *self;
@@ -617,7 +627,7 @@ pub fn keys_size(
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::{KIND_MACHINE, RES_DSP_COST, RES_MACHINE_ROWS};
+    use crate::{KIND_MACHINE, RES_DSP_COST_FX, RES_DSP_COST_VOICE, RES_MACHINE_ROWS};
 
     #[test]
     fn a_table_of_every_entry_round_trips() {
@@ -642,8 +652,12 @@ mod tests {
                     count: 2,
                 },
                 Use {
-                    resource: RES_DSP_COST,
+                    resource: RES_DSP_COST_VOICE,
                     count: 9,
+                },
+                Use {
+                    resource: RES_DSP_COST_FX,
+                    count: 11,
                 },
             ],
             keys: &[
@@ -678,7 +692,7 @@ mod tests {
         assert!(k.needs().eq(t.needs.iter().copied()));
         assert!(k.uses().eq(t.uses.iter().copied()));
         assert_eq!(k.use_of(RES_MACHINE_ROWS), 2);
-        assert_eq!(k.use_of(RES_DSP_COST), 9);
+        assert_eq!((k.dsp_cost_voice(), k.dsp_cost_fx()), (9, 11));
         assert!(k.machine_keys().eq(k1));
         assert!(k.keys_of(99).eq(k2));
         assert!(k.keys_of(1234).next().is_none());

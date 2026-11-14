@@ -238,9 +238,9 @@ There is one rule for all. A service offers capacities. Every module and provide
 
 The broker sums uses per resource, checks exclusive keys for duplicates (module id, `<module>:<machine>`, effect id, settings prefix) and checks versions. It names no service. The same function runs in the packer, Transfer tab (wasm), menu and loader; it extends `dkrt-fit`. Today the loader enforces limits with separate code that shares constants and a few helpers (`loader.rs:183-262`, `dkrt_sdk::capacity`).
 
-Dynamic demands stay run-time calls that return errors, such as PCM memory or `dk_alloc`. DSP cycles are unbudgeted today.
+Dynamic demands stay run-time calls that return errors, such as PCM memory or `dk_alloc`.
 
-**Proposal:** DSP cycles per block become a derived use, like DSP bytes. The packer writes each module's worst-case cycles per block into the header and the report ([sdk.md](sdk.md) section 9, "Cycle cost"). The device adapter reports the free cycles per block from the profile. The broker refuses a selection that exceeds them, with a reason, and still names no service. Providers count like modules.
+**Built (S5a, [sdk.md](sdk.md) section 9):** DSP cost per block is a derived use. `module:check` writes each module's worst steady block into `[uses.<device>]`, and the packer puts it into the header as `DSP_COST_VOICE` (a machine, per voice) and `DSP_COST_FX` (effects, summed). The broker (one no_std function, `dkrt_fit::check_selection`, in the boot planner, the menu and `patchkit fit`) accepts a selection when `max(per-voice costs) * voices + sum(effect costs)` stays within the headroom of the generated device profile; a module that goes over is refused with `E_PLAN_FIT` and the kind `DSP_COST`. It names no service.
 
 Limits today: arena 512 KiB and `.dkm` 64 KiB on both devices; 8 machine rows and 16 param rows on both; 3 FX slots on both; send slots 2 on DT2 and 1 on DN2; page rows 0 on DT2 and 8 on DN2; DSP area 512 KiB on DT2 and 320 KiB on DN2.
 

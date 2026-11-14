@@ -17,6 +17,8 @@ Rules:
   objects   The undefined symbols of the built objects of apps and content modules are SDK imports, dkrt_*, dk_ui_*,
             dk_app_* or the SHARC externs the SDK documents. A symbol never names a firmware anchor, and `[object.externs]`
             never maps one to an anchor.
+  spans     No content module and no app uses `DK_SPAN_BEGIN` or `DK_SPAN_END` (<dk/core/trace.h>, dk_trace.inc). A span is a measurement the owner of a kind's
+            dispatcher takes around its per-row call: the runtime's services and the image's stub (adapters) use them, and the runtime measures every module that way.
   apps      An app has no `[[op]]` and no `[[claim]]`: it never patches the firmware.
   self-contained
             No tracked file outside a user content module's own directory (modules/machines|fx|tools) names its id
@@ -81,6 +83,7 @@ INC_ASM = re.compile(r'^\s*\.include\s+"([^"]+)"')
 RS_FW = re.compile(r"\bdkfw\s*::|\bextern\s+crate\s+dkfw\b")
 EXTERN_DOC = re.compile(r"\.EXTERN\s+([A-Za-z_][A-Za-z0-9_]*)")
 SOURCE_SUFFIXES = {".c", ".h", ".s", ".S", ".inc", ".rs"}
+SPAN = re.compile(r"\bDK_SPAN_(?:BEGIN|END)\b")
 
 
 @dataclass(frozen=True)
@@ -360,6 +363,28 @@ def check_sources(root: Path, mods: list[Module]) -> list[Violation]:
                                 "depend only on dkrt-sdk (the Rust view of the SDK); firmware bindings belong to adapters",
                             )
                         )
+    return out
+
+
+def check_spans(root: Path, mods: list[Module]) -> list[Violation]:
+    """Content modules and apps do not measure spans: the dispatcher of each kind does (docs/plans/sdk.md section 9)."""
+    out = []
+    for m in mods:
+        if classify(root, m) == "core" and m.mod.get("role") != "app":
+            continue
+        for f in module_sources(m):
+            for n, line in enumerate(
+                f.read_text(encoding="utf-8", errors="replace").splitlines(), 1
+            ):
+                if SPAN.search(line):
+                    out.append(
+                        Violation(
+                            f"{rel(root, f)}:{n}",
+                            "spans",
+                            f"{m.id} uses DK_SPAN_*",
+                            "leave the measurement to the service that owns the kind: its dispatcher already takes a span around each call of a module",
+                        )
+                    )
     return out
 
 
@@ -814,6 +839,7 @@ def check(root: Path = ROOT) -> list[Violation]:
         *check_committed_objects(root, mods),
         *check_objects(root, mods),
         *check_apps(root, mods),
+        *check_spans(root, mods),
         *check_imports(root),
         *check_runtime_arrows(root),
         *check_runtime_platform(root),

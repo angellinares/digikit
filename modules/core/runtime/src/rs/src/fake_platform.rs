@@ -256,7 +256,7 @@ impl Storage for FakePlatform {
 }
 
 /// An invented device: samples in the store, a path limit no device file has.
-const INVENTED: DeviceProfile = DeviceProfile { id: 9, name: 0x78797a00, samples_in_store: true, sample_path_max: 100 };
+const INVENTED: DeviceProfile = DeviceProfile { id: 9, name: 0x78797a00, samples_in_store: true, sample_path_max: 100, dsp_headroom: 50_000, dsp_voices: 8 };
 
 const L: Layout = Layout { first: 1000, sectors: 4096 };
 

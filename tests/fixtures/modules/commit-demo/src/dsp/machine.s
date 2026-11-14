@@ -17,7 +17,7 @@ _cmach_note_on:
     JUMP (M13, I13);
 
 .SECTION/DM seg_dmda;
-// dk_machine_desc: magic, contract, n_params, voices, state_bytes, state_clear_bytes, max_cycles_block, max_cycles_note_on, max_call_depth, stack_bytes.
+// dk_machine_desc: magic, contract, n_params, voices, state_bytes, state_clear_bytes, max_call_depth, stack_bytes.
 .GLOBAL _cmach_desc;
 .VAR _cmach_desc = DK_MAGIC;
 .VAR _cmach_desc1 = DK_MACHINE_V1;
@@ -25,7 +25,5 @@ _cmach_note_on:
 .VAR _cmach_desc3 = DK_MAX_VOICES;
 .VAR _cmach_desc4 = 8;
 .VAR _cmach_desc5 = 8;
-.VAR _cmach_desc6 = 100;
-.VAR _cmach_desc7 = 100;
-.VAR _cmach_desc8 = 2;
-.VAR _cmach_desc9 = 0;
+.VAR _cmach_desc6 = 2;
+.VAR _cmach_desc7 = 0;

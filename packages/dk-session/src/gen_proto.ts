@@ -43,7 +43,8 @@ export const RESOURCE = {
   PARAM_ROWS: 2,
   PAGE_ROWS: 3,
   RECORD_BYTES: 4,
-  DSP_COST: 5,
+  DSP_COST_VOICE: 5,
+  DSP_COST_FX: 6,
 } as const;
 
 export const CMD = {
@@ -218,6 +219,8 @@ export const CAPACITY_KINDS = {
   STORE: 12,
   SETTINGS: 13,
   SEND_SLOTS: 14,
+  DSP_COST: 15,
+  DSP_VOICES: 16,
 } as const;
 
 /** The `kind` of a LOG event. */

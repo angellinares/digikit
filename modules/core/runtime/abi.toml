@@ -57,8 +57,8 @@ doc = "DkrtModule.state: its DSP part is still being sent."
 [[const]]
 name = "CAP_MAX"
 type = "usize"
-value = 16
-doc = "Room for the entries a caller of dkrt_capacity gives (the runtime has 14 kinds; new kinds are appended)."
+value = 20
+doc = "Room for the entries a caller of dkrt_capacity gives (the runtime has 16 kinds; new kinds are appended)."
 
 [[const]]
 name = "HEALTH_MAGIC"
@@ -483,6 +483,8 @@ fields = [
     "u32 need_param_rows",
     "u32 need_page_rows",
     "u32 need_fx_slots",
+    "u32 need_dsp_cost_voice // the module's DSP cost of one voice, instructions per block (header table, USES; 0: none)",
+    "u32 need_dsp_cost_fx // the module's DSP cost of its effects, instructions per block (0: none)",
 ]
 
 [[struct]]

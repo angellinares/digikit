@@ -20,6 +20,8 @@ def needs(**n):
         "PARAM_ROWS",
         "PAGE_ROWS",
         "FX_SLOTS",
+        "DSP_COST_VOICE",
+        "DSP_COST_FX",
     )
     return {"file_size": 600, **dict.fromkeys(names, 0), **n}
 

@@ -10,7 +10,9 @@
     "VOICE_ROWS": [8, 0, 0],
     "PARAM_ROWS": [16, 0, 0],
     "PAGE_ROWS": [0, 0, 0],
-    "FX_SLOTS": [0, 0, 0]
+    "FX_SLOTS": [0, 0, 0],
+    "DSP_COST": [1000, 0, 0],
+    "DSP_VOICES": [4, 0, 0]
   },
   "cases": [
     {"name": "a small ColdFire module", "needs": {"file_size": 300, "ARENA": 48}, "want": null},
@@ -47,6 +49,16 @@
     {"name": "an effect fits a free slot", "needs": {"FX_SLOTS": 1}, "caps": {"FX_SLOTS": [3, 2, 0]}, "want": null},
     {"name": "a fourth effect is refused: the three slots are taken", "needs": {"FX_SLOTS": 1}, "caps": {"FX_SLOTS": [3, 3, 0]}, "want": ["FX_SLOTS", 1, 0]},
     {"name": "two effects in one module need two slots", "needs": {"FX_SLOTS": 2}, "caps": {"FX_SLOTS": [3, 2, 0]}, "want": ["FX_SLOTS", 2, 1]},
+    {"name": "DSP load: a machine at the per-voice limit (headroom 1000, 4 voices) fits", "needs": {"DSP_COST_VOICE": 250}, "want": null},
+    {"name": "DSP load: one instruction per voice more does not", "needs": {"DSP_COST_VOICE": 251}, "want": ["DSP_COST", 1004, 1000]},
+    {"name": "DSP load: a smaller machine next to a larger one adds nothing (the largest counts for every voice)", "needs": {"DSP_COST_VOICE": 100}, "caps": {"DSP_COST": [1000, 800, 200]}, "want": null},
+    {"name": "DSP load: a larger machine raises the load of every voice", "needs": {"DSP_COST_VOICE": 200}, "caps": {"DSP_COST": [1000, 400, 100]}, "want": null},
+    {"name": "DSP load: a larger machine that no longer fits", "needs": {"DSP_COST_VOICE": 251}, "caps": {"DSP_COST": [1000, 400, 100]}, "want": ["DSP_COST", 604, 600]},
+    {"name": "DSP load: an effect alone fits up to the headroom", "needs": {"DSP_COST_FX": 1000}, "want": null},
+    {"name": "DSP load: an effect alone over the headroom", "needs": {"DSP_COST_FX": 1001}, "want": ["DSP_COST", 1001, 1000]},
+    {"name": "DSP load: effects add to the voices' load", "needs": {"DSP_COST_FX": 201}, "caps": {"DSP_COST": [1000, 800, 200]}, "want": ["DSP_COST", 201, 200]},
+    {"name": "DSP load: a module without a measured cost passes even on a full headroom", "needs": {"ARENA": 32}, "caps": {"DSP_COST": [1000, 1000, 250]}, "want": null},
+    {"name": "DSP load: a capacity without the voices is not judged", "needs": {"DSP_COST_VOICE": 9999}, "caps": {"DSP_VOICES": null}, "want": null},
     {
       "name": "the first short resource is reported: the module record before the DSP area",
       "needs": {"DSP_AREA": 524288, "DSP_ALIGN": 8, "PARAM_ROWS": 17},
@@ -96,6 +108,21 @@
       "want": [3, "FX_SLOTS", 1, 0]
     },
     {
+      "name": "DSP load: the machines share the voices, the largest counts for all of them",
+      "needs": [{"DSP_COST_VOICE": 100}, {"DSP_COST_VOICE": 250}, {"DSP_COST_VOICE": 60}],
+      "want": null
+    },
+    {
+      "name": "DSP load: an effect after a machine at the limit finds nothing left",
+      "needs": [{"DSP_COST_VOICE": 250}, {"DSP_COST_FX": 1}],
+      "want": [1, "DSP_COST", 1, 0]
+    },
+    {
+      "name": "DSP load: effects of several modules are summed",
+      "needs": [{"DSP_COST_FX": 400}, {"DSP_COST_FX": 400}, {"DSP_COST_FX": 201}],
+      "want": [2, "DSP_COST", 201, 200]
+    },
+    {
       "name": "the capacity left by modules already loaded is the start",
       "caps": {"MODULES": [8, 7, 0]},
       "needs": [{"ARENA": 48, "times": 2}],
@@ -111,6 +138,7 @@
     {"resource": "ARENA", "need": 600000, "free": 100, "text": "CPU 586K > 0K FREE", "brief": "CPU 586K>0K", "describe": "CPU memory 586 KiB needed, 100 bytes free", "describe_by": "CPU memory 586 KiB short"},
     {"resource": "ARENA", "need": 5120, "free": 2049, "text": "CPU 5K > 2K FREE", "brief": "CPU 5K>2K", "describe": "CPU memory 5 KiB needed, 2 KiB free", "describe_by": "CPU memory 3 KiB short"},
     {"resource": "PARAM_ROWS", "need": 3, "free": 2, "text": "PARAMS 3 > 2 FREE", "brief": "PARAMS 3>2", "describe": "parameter rows 3 needed, 2 free", "describe_by": "parameter rows 1 short"},
+    {"resource": "DSP_COST", "need": 2000, "free": 1000, "text": "DSP LOAD 2000 > 1000 FREE", "brief": "DSP LOAD 2000>1000", "describe": "DSP load 2000 needed, 1000 free", "describe_by": "DSP load 1000 short"},
     {"resource": "STAGE", "need": 70000, "free": 65536, "text": "FILE 69K > 64K MAX", "brief": "FILE 69K>64K", "describe": "file 69 KiB needed, 64 KiB at most", "describe_by": "file 5 KiB too large"}
   ],
   "load_lines": [

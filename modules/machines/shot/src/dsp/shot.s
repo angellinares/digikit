@@ -382,10 +382,7 @@ _shot_note_return:
 // The pool table (<dk/sample/pool.h>): the runtime fills the records and moves the control words; the module only reads them.
 .PKDATA _shot_sample_rec, 512;                 // 16 dk_sample_pool_entry records of 8 words, one for each pool index
 .PKDATA _shot_sample_ctl, 256;                 // 16 control sets of 4 words: closed, count, fault, reserved
-// dk_machine_desc: magic, contract (machine contract 1.2: stereo), n_params, voices, state_bytes, state_clear_bytes, max_cycles_block,
-// max_cycles_note_on, max_call_depth, stack_bytes. Cycles are instruction ceilings: the stereo kernel's 5,428 with its call (with the loop option), the rate (exp2 and
-// about 60 more), the gain ramp (254 with its call and a dozen setup instructions), the two masked scopes and the live range and direction
-// (about 60 more, an estimate), the play mode and the loop bit (about 40 more, an estimate); note-on adds about 150 and one render.
+// dk_machine_desc: magic, contract (machine contract 1.2: stereo), n_params, voices, state_bytes, state_clear_bytes, max_call_depth, stack_bytes.
 .GLOBAL _shot_desc;
 .VAR _shot_desc = DK_MAGIC;
 .VAR _shot_desc1 = 257;                  // DK_MACHINE_V1 | DK_MACHINE_STEREO (an expression is not accepted here)
@@ -393,8 +390,5 @@ _shot_note_return:
 .VAR _shot_desc3 = DK_MAX_VOICES;
 .VAR _shot_desc4 = SHOT_ST_BYTES;
 .VAR _shot_desc5 = SHOT_ST_BYTES;
-// Measured worst block (adapter included): 6239 on DT2 and 6851 on DN2, a looping 1-frame region at high pitch that wraps on every output; margin about 2%.
-.VAR _shot_desc6 = 7000;
-.VAR _shot_desc7 = 7200;
-.VAR _shot_desc8 = 3;
-.VAR _shot_desc9 = 192;
+.VAR _shot_desc6 = 3;
+.VAR _shot_desc7 = 192;

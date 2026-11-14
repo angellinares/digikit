@@ -133,6 +133,8 @@ fn header_table(
         (dkneeds::RES_PARAM_ROWS, rows.1),
         (dkneeds::RES_PAGE_ROWS, rows.2),
         (dkneeds::RES_RECORD_BYTES, u32::from(u.record_bytes)),
+        (dkneeds::RES_DSP_COST_VOICE, u.dsp_cost_voice),
+        (dkneeds::RES_DSP_COST_FX, u.dsp_cost_fx),
     ]
     .into_iter()
     .filter(|(_, count)| *count != 0)
@@ -305,7 +307,7 @@ mod tests {
     /// A DSP object with the given global text symbols (one parcel apart), a data section holding a machine desc with `contract` and
     /// the given global data symbols, and bss.
     fn dsp_object(text: &[&str], data: &[&str], bss: &[&str], contract: u32) -> Dko {
-        let words = [dkmdsp::DESC_MAGIC, contract, 1, 1, 8, 8, 100, 100, 0, 0];
+        let words = [dkmdsp::DESC_MAGIC, contract, 1, 1, 8, 8, 0, 0];
         let desc: Vec<u8> = words.iter().flat_map(|w| w.to_le_bytes()).collect();
         let hex = |b: &[u8]| b.iter().map(|x| format!("{x:02x}")).collect::<String>();
         let mut symbols = vec![];
@@ -351,7 +353,7 @@ mod tests {
         }
     }
 
-    const MACHINE: &str = "[[machine]]\nid = \"foo\"\n[uses.dn2]\nmachine_rows = 1\nparam_rows = 4\npage_rows = 1\nrecord_bytes = 560\n";
+    const MACHINE: &str = "[[machine]]\nid = \"foo\"\n[uses.dn2]\nmachine_rows = 1\nparam_rows = 4\npage_rows = 1\nrecord_bytes = 560\ndsp_cost_voice = 6239\n";
 
     #[test]
     fn a_tool_without_tables_has_a_head_only_header_table_and_no_dsp() {
@@ -390,6 +392,7 @@ mod tests {
         let k = dkneeds::keys::Keys::parse(&s.keys).unwrap();
         assert_eq!((k.machine_rows(), k.param_rows(), k.page_rows()), (1, 4, 1));
         assert_eq!(k.record_bytes(), 560);
+        assert_eq!((k.dsp_cost_voice(), k.dsp_cost_fx()), (6239, 0));
         assert!(
             k.machine_keys()
                 .eq([crate::register::machine_key("test/m", "foo")])

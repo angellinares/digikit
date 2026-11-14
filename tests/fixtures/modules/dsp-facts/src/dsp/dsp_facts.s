@@ -104,15 +104,14 @@ _fc_emit:                                 // one word of the frame goes out
     JUMP (M13, I13);
 
 .SECTION/DM seg_dmda;
-// dk_fx_desc: magic, contract, n_params, state_bytes, max_cycles_block, max_call_depth, stack_bytes.
+// dk_fx_desc: magic, contract, n_params, state_bytes, max_call_depth, stack_bytes.
 .GLOBAL _fc_desc;
 .VAR _fc_desc = DK_FX_MAGIC;
 .VAR _fc_desc1 = DK_FX_V1;
 .VAR _fc_desc2 = 0;
 .VAR _fc_desc3 = FC_STATE_BYTES;
-.VAR _fc_desc4 = 120000;
+.VAR _fc_desc4 = 0;
 .VAR _fc_desc5 = 0;
-.VAR _fc_desc6 = 0;
 // the call stamps, the stream state, the saved flags, the statistics of the item that runs
 .VAR _fc_prev1 = 0;
 .VAR _fc_prev2 = 0;

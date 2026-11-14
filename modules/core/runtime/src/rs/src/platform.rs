@@ -22,6 +22,9 @@ extern "C" {
     static dkrt_device_name: u32;
     static dkrt_samples_in_store: u32;
     static dkrt_sample_path_max: u32;
+    /// The DSP headroom (instructions per block) and the voices (`DSP_HEADROOM`, `DSP_VOICES`).
+    static dkrt_dsp_headroom: u32;
+    static dkrt_dsp_voices: u32;
     /// The image id patchkit stamps into the image (`src/cf/<dev>/device.s`; `packages/patchkit/src/imageid.rs`): 8 bytes, zero in an object.
     static dkrt_image_id: [u8; 8];
     /// `cpushl` over a byte range (both caches), `src/cf/tramp.s`.
@@ -93,6 +96,8 @@ impl Platform for RealPlatform {
                 name: read_volatile(addr_of!(dkrt_device_name)),
                 samples_in_store: read_volatile(addr_of!(dkrt_samples_in_store)) != 0,
                 sample_path_max: read_volatile(addr_of!(dkrt_sample_path_max)),
+                dsp_headroom: read_volatile(addr_of!(dkrt_dsp_headroom)),
+                dsp_voices: read_volatile(addr_of!(dkrt_dsp_voices)),
             }
         }
     }
@@ -117,6 +122,14 @@ impl Platform for RealPlatform {
     #[cfg(not(test))]
     fn sample_path_max(&self) -> u32 {
         unsafe { read_volatile(addr_of!(dkrt_sample_path_max)) }
+    }
+    #[cfg(not(test))]
+    fn dsp_headroom(&self) -> u32 {
+        unsafe { read_volatile(addr_of!(dkrt_dsp_headroom)) }
+    }
+    #[cfg(not(test))]
+    fn dsp_voices(&self) -> u32 {
+        unsafe { read_volatile(addr_of!(dkrt_dsp_voices)) }
     }
 
     #[cfg(not(test))]

@@ -375,8 +375,7 @@ _pk_return:
 
 .SECTION/DM seg_dmda;
 .VAR _pk_rng = 0x2545f491;
-// dk_machine_desc (<dk/machine/machine.h>): magic, contract, n_params, voices, state_bytes, state_clear_bytes, max_cycles_block, max_cycles_note_on,
-// max_call_depth, stack_bytes.
+// dk_machine_desc (<dk/machine/machine.h>): magic, contract, n_params, voices, state_bytes, state_clear_bytes, max_call_depth, stack_bytes.
 .GLOBAL _pk_desc;
 .VAR _pk_desc = DK_MAGIC;
 .VAR _pk_desc1 = DK_MACHINE_V1;
@@ -384,7 +383,5 @@ _pk_return:
 .VAR _pk_desc3 = PK_VOICES;
 .VAR _pk_desc4 = PK_STATE;
 .VAR _pk_desc5 = PK_STATE;
-.VAR _pk_desc6 = 2200;
-.VAR _pk_desc7 = 9000;
-.VAR _pk_desc8 = 2;
-.VAR _pk_desc9 = 0;
+.VAR _pk_desc6 = 2;
+.VAR _pk_desc7 = 0;

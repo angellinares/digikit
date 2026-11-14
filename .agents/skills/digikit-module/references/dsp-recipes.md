@@ -52,7 +52,7 @@ _pk_loop: DM(I0, M6) = R8;
     DM(0, I3) = R15;
 ```
 The last instruction of the loop carries the label and stores the sample to `out` (I0, post-increment M6 = 1). Save state words after the loop.
-Cost of pluck's loop body: 23 instruction lines per sample (counted in P:333-355). Declared budget: `max_cycles_block` 2200, `max_cycles_note_on` 9000 (P:391-392).
+Cost of pluck's loop body: 23 instruction lines per sample (counted in P:333-355).
 Adapt: an effect reads its input with `R0 = DM(I4, M5);` and writes back with `DM(I4, M6) = R0;` (D:102, 115).
 
 ## 4. Pitch to frequency and period with `_dv_exp2` (P:53-73)
@@ -242,12 +242,10 @@ Then P:290-292 sets word 1 to `0x4b50` (the source does not explain it) and retu
 .VAR _pk_desc3 = PK_VOICES;
 .VAR _pk_desc4 = PK_STATE;
 .VAR _pk_desc5 = PK_STATE;
-.VAR _pk_desc6 = 2200;
-.VAR _pk_desc7 = 9000;
-.VAR _pk_desc8 = 2;
-.VAR _pk_desc9 = 0;
+.VAR _pk_desc6 = 2;
+.VAR _pk_desc7 = 0;
 ```
-Order: magic, contract, params, voices, state bytes, clear bytes, max cycles block, max cycles note-on, call depth (2 here: `_pk_coef` calls `_dv_exp2`), stack bytes.
+Order: magic, contract, params, voices, state bytes, clear bytes, call depth (2 here: `_pk_coef` calls `_dv_exp2`), stack bytes. The cost of a block is not declared: `module:check` measures it.
 Here the clear bytes equal the state bytes, so the line starts silent. Code sections use `.SECTION/PM seg_pmco;`.
 
 ## 12. Per-sample linear ramp across a block (D:66-115)
