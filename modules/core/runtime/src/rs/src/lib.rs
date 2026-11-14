@@ -55,6 +55,7 @@ mod imports;
 mod mailbox;
 mod plan;
 mod platform;
+mod storage_adapter;
 mod safe_mode;
 mod selection;
 mod report;

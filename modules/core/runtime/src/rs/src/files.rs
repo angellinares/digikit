@@ -233,6 +233,11 @@ const RAW: CatalogEntry = CatalogEntry {
 };
 static mut RAW_PAGE: [CatalogEntry; 16] = [RAW; 16];
 static mut BACKENDS: [Backend; crate::MAX_MODULES] = [const { Backend::new() }; crate::MAX_MODULES];
+/// The store buffers of a catalog read (fingerprint, 4096-byte scratch, raw page). Callers hold the store lock for every step that uses them
+/// (storage_adapter.rs listing does, as the phases here do).
+pub(crate) fn store_buffers() -> (*mut u8, *mut u8, *mut [CatalogEntry; 16]) {
+    unsafe { (addr_of_mut!(FP) as *mut u8, addr_of_mut!(SCRATCH) as *mut u8, addr_of_mut!(RAW_PAGE)) }
+}
 extern "C" {
     static dkrt_files_fs: [u32; 3];
 }

@@ -288,7 +288,14 @@ impl SamplePool for RealPlatform {
     }
 }
 
-// R13 step 3 and 4 fill this in: only the limits are real, every read says "not found".
+impl RealPlatform {
+    /// The profile facts the storage routes need.
+    fn storage_facts(&self) -> crate::storage_adapter::Facts {
+        crate::storage_adapter::Facts { in_store: Platform::samples_in_store(self), sample_path_max: Platform::sample_path_max(self) }
+    }
+}
+
+// The routes (store, DT2 firmware file system) are in storage_adapter.rs.
 impl dkrt_abi::storage::Storage for RealPlatform {
     fn path_max(&self, root: u32) -> u32 {
         match root {
@@ -297,23 +304,26 @@ impl dkrt_abi::storage::Storage for RealPlatform {
             _ => 0,
         }
     }
-    unsafe fn stat(&self, _root: u32, _path: &[u8]) -> Result<dkrt_abi::storage::Stat, i32> {
-        Err(E_NOT_FOUND)
+    unsafe fn stat(&self, root: u32, path: &[u8]) -> Result<dkrt_abi::storage::Stat, i32> {
+        crate::storage_adapter::stat(root, &self.storage_facts(), path)
     }
-    unsafe fn read_head(&self, _root: u32, _path: &[u8], _out: &mut [u8; 64]) -> Result<(), i32> {
-        Err(E_NOT_FOUND)
+    unsafe fn read_head(&self, root: u32, path: &[u8], out: &mut [u8; 64]) -> Result<(), i32> {
+        crate::storage_adapter::read_head(root, &self.storage_facts(), path, out)
     }
-    unsafe fn read_range(&self, _root: u32, _path: &[u8], _offset: u32, _out: &mut [u8]) -> Result<usize, i32> {
-        Err(E_NOT_FOUND)
+    unsafe fn read_range(&self, root: u32, path: &[u8], offset: u32, out: &mut [u8]) -> Result<usize, i32> {
+        crate::storage_adapter::read_range(root, &self.storage_facts(), path, offset, out)
     }
-    unsafe fn read_all(&self, _root: u32, _path: &[u8], _dst: *mut u8, _cap: u32) -> Result<u32, i32> {
-        Err(E_NOT_FOUND)
+    unsafe fn read_all(&self, root: u32, path: &[u8], dst: *mut u8, cap: u32) -> Result<u32, i32> {
+        crate::storage_adapter::read_all(root, &self.storage_facts(), path, dst, cap)
     }
-    unsafe fn list_open(&self, _root: u32, _dir: &[u8], _cur: *mut dkrt_abi::storage::ListCursor) -> Result<(), i32> {
-        Err(E_NOT_FOUND)
+    fn list_state_bytes(&self, _root: u32) -> usize {
+        crate::storage_adapter::list_state_bytes()
     }
-    unsafe fn list_next(&self, _cur: *mut dkrt_abi::storage::ListCursor, _out: &mut dkrt_abi::storage::DirEntry) -> Result<bool, i32> {
-        Err(E_NOT_FOUND)
+    unsafe fn list_open(&self, root: u32, dir: &[u8], state: *mut u8) -> Result<(), i32> {
+        crate::storage_adapter::list_open(root, &self.storage_facts(), dir, state)
+    }
+    unsafe fn list_next(&self, state: *mut u8, out: &mut dkrt_abi::storage::DirEntry) -> Result<dkrt_abi::storage::ListStep, i32> {
+        crate::storage_adapter::list_next(state, out)
     }
 }
 

@@ -1,7 +1,7 @@
 //! Host tests of `Storage`. `FakeStorage` implements `dkrt_abi::storage::Storage` over memory: two roots, each a map of root-relative path to a file or a
 //! directory. `FakePlatform` holds one and delegates to it.
 
-use core::cell::RefCell;
+use core::cell::{Cell, RefCell};
 use dkrt_abi::storage::*;
 use dkrt_sdk::*;
 use std::collections::BTreeMap;
@@ -15,19 +15,25 @@ struct Node {
     hash: [u8; 32],
 }
 
-/// The words of a `ListCursor` this provider uses: the root, the index of the next child, the length of the directory path, then the path one byte per word.
-const W_ROOT: usize = 0;
-const W_NEXT: usize = 1;
-const W_DIR_LEN: usize = 2;
-const W_DIR: usize = 3;
+/// The listing state this provider keeps in the caller's block: the root, the index of the next child, the directory path and its length.
+#[repr(C)]
+struct FakeList {
+    root: u32,
+    next: u32,
+    dir_len: u32,
+    pended: bool,
+    dir: [u8; 256],
+}
 
 pub struct FakeStorage {
     roots: [RefCell<BTreeMap<Vec<u8>, Node>>; 2],
+    /// When not 0, `list_next` gives one `Pending` before each entry (so caller code can be tested against `Pending`).
+    pub pending_every: Cell<u32>,
 }
 
 impl FakeStorage {
     pub fn new() -> Self {
-        FakeStorage { roots: [RefCell::new(BTreeMap::new()), RefCell::new(BTreeMap::new())] }
+        FakeStorage { roots: [RefCell::new(BTreeMap::new()), RefCell::new(BTreeMap::new())], pending_every: Cell::new(0) }
     }
     fn map(&self, root: u32) -> Result<&RefCell<BTreeMap<Vec<u8>, Node>>, i32> {
         match root {
@@ -111,37 +117,42 @@ impl Storage for FakeStorage {
         core::ptr::copy_nonoverlapping(n.bytes.as_ptr(), dst, n.bytes.len());
         Ok(n.bytes.len() as u32)
     }
-    unsafe fn list_open(&self, root: u32, dir: &[u8], cur: *mut ListCursor) -> Result<(), i32> {
-        if dir.len() > LIST_CURSOR_WORDS - W_DIR {
+    fn list_state_bytes(&self, _root: u32) -> usize {
+        (core::mem::size_of::<FakeList>() + 15) & !15
+    }
+    unsafe fn list_open(&self, root: u32, dir: &[u8], state: *mut u8) -> Result<(), i32> {
+        if dir.len() > 256 {
             return Err(E_TOO_BIG);
         }
         if !dir.is_empty() && self.node(root, dir)?.kind != EntryKind::Dir {
             return Err(E_FORMAT);
         }
         self.map(root)?;
-        let w = &mut (*cur).words;
-        w[W_ROOT] = root;
-        w[W_NEXT] = 0;
-        w[W_DIR_LEN] = dir.len() as u32;
-        for (i, b) in dir.iter().enumerate() {
-            w[W_DIR + i] = *b as u32;
-        }
+        let mut copy = [0u8; 256];
+        copy[..dir.len()].copy_from_slice(dir);
+        core::ptr::write(state as *mut FakeList, FakeList { root, next: 0, dir_len: dir.len() as u32, pended: false, dir: copy });
         Ok(())
     }
-    unsafe fn list_next(&self, cur: *mut ListCursor, out: &mut DirEntry) -> Result<bool, i32> {
-        let w = &mut (*cur).words;
-        let dir: Vec<u8> = (0..w[W_DIR_LEN] as usize).map(|i| w[W_DIR + i] as u8).collect();
-        let map = self.map(w[W_ROOT])?.borrow();
-        let found = map.iter().filter_map(|(p, n)| child_name(&dir, p).map(|name| (name, n))).nth(w[W_NEXT] as usize);
+    unsafe fn list_next(&self, state: *mut u8, out: &mut DirEntry) -> Result<ListStep, i32> {
+        let w = &mut *(state as *mut FakeList);
+        let dir: Vec<u8> = w.dir[..w.dir_len as usize].to_vec();
+        let map = self.map(w.root)?.borrow();
+        let found = map.iter().filter_map(|(p, n)| child_name(&dir, p).map(|name| (name, n))).nth(w.next as usize);
         match found {
-            None => Ok(false),
+            None => Ok(ListStep::End),
             Some((name, n)) => {
-                w[W_NEXT] += 1;
+                let every = self.pending_every.get();
+                if every != 0 && !w.pended {
+                    w.pended = true;
+                    return Ok(ListStep::Pending);
+                }
+                w.pended = false;
+                w.next += 1;
                 out.name = [0; 256];
                 out.name[..name.len()].copy_from_slice(name);
                 out.name_len = name.len() as u16;
                 out.stat = Self::stat_of(n);
-                Ok(true)
+                Ok(ListStep::Entry)
             }
         }
     }
@@ -162,14 +173,24 @@ fn sample_store() -> FakeStorage {
     s
 }
 
+/// A 16-byte aligned block as the arena gives it.
+#[repr(C, align(16))]
+struct Block([u8; 512]);
+
 fn list(s: &FakeStorage, root: u32, dir: &[u8]) -> Vec<(Vec<u8>, Stat)> {
-    let mut cur = ListCursor::new();
+    let mut block = Block([0; 512]);
+    assert!(s.list_state_bytes(root) <= block.0.len());
+    let cur = block.0.as_mut_ptr();
     let mut e = DirEntry::empty();
     let mut rows = Vec::new();
     unsafe {
-        s.list_open(root, dir, &mut cur).unwrap();
-        while s.list_next(&mut cur, &mut e).unwrap() {
-            rows.push((e.name().to_vec(), e.stat));
+        s.list_open(root, dir, cur).unwrap();
+        loop {
+            match s.list_next(cur, &mut e).unwrap() {
+                ListStep::Entry => rows.push((e.name().to_vec(), e.stat)),
+                ListStep::Pending => {}
+                ListStep::End => break,
+            }
         }
     }
     rows
@@ -252,14 +273,34 @@ fn list_gives_the_children_in_path_order_then_the_end() {
     let top: Vec<Vec<u8>> = list(&s, ROOT_SAMPLES, b"").into_iter().map(|r| r.0).collect();
     assert_eq!(top, [b"EMPTY".to_vec(), b"KICKS".to_vec()]);
     // the end stays the end
-    let mut cur = ListCursor::new();
+    let mut block = Block([0; 512]);
+    let cur = block.0.as_mut_ptr();
     let mut e = DirEntry::empty();
     unsafe {
-        s.list_open(ROOT_SAMPLES, b"EMPTY", &mut cur).unwrap();
-        assert_eq!(s.list_next(&mut cur, &mut e), Ok(false));
-        assert_eq!(s.list_next(&mut cur, &mut e), Ok(false));
-        assert_eq!(s.list_open(ROOT_SAMPLES, b"KICKS/K1", &mut cur), Err(E_FORMAT));
-        assert_eq!(s.list_open(ROOT_SAMPLES, b"NOPE", &mut cur), Err(E_NOT_FOUND));
+        s.list_open(ROOT_SAMPLES, b"EMPTY", cur).unwrap();
+        assert_eq!(s.list_next(cur, &mut e), Ok(ListStep::End));
+        assert_eq!(s.list_next(cur, &mut e), Ok(ListStep::End));
+        assert_eq!(s.list_open(ROOT_SAMPLES, b"KICKS/K1", cur), Err(E_FORMAT));
+        assert_eq!(s.list_open(ROOT_SAMPLES, b"NOPE", cur), Err(E_NOT_FOUND));
+    }
+}
+
+#[test]
+fn list_with_pending_gives_pending_before_each_entry() {
+    let s = sample_store();
+    s.pending_every.set(1);
+    let mut block = Block([0; 512]);
+    let cur = block.0.as_mut_ptr();
+    let mut e = DirEntry::empty();
+    unsafe {
+        s.list_open(ROOT_SAMPLES, b"EMPTY", cur).unwrap();
+        assert_eq!(s.list_next(cur, &mut e), Ok(ListStep::End));
+        s.add_file(ROOT_SAMPLES, b"EMPTY/a", b"1", HASH_NONE, [0; 32]);
+        s.add_file(ROOT_SAMPLES, b"EMPTY/b", b"2", HASH_NONE, [0; 32]);
+        s.list_open(ROOT_SAMPLES, b"EMPTY", cur).unwrap();
+        let steps: Vec<ListStep> = (0..5).map(|_| s.list_next(cur, &mut e).unwrap()).collect();
+        assert_eq!(steps, [ListStep::Pending, ListStep::Entry, ListStep::Pending, ListStep::Entry, ListStep::End]);
+        assert_eq!(e.name(), b"b");
     }
 }
 

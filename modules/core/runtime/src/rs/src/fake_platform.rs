@@ -15,7 +15,7 @@ use core::cell::{Cell, RefCell};
 use core::ffi::c_void;
 use dkrt_abi::platform::{blocks_since, locked, DeviceProfile, Platform, SamplePool, StagedWriter, Tasking};
 use dkrt_abi::profiles;
-use dkrt_abi::storage::{DirEntry, ListCursor, Stat, Storage, ROOT_SAMPLES};
+use dkrt_abi::storage::{DirEntry, Stat, Storage, ROOT_SAMPLES};
 use dkrt_sdk::store::Layout;
 use dkrt_sdk::*;
 use std::collections::BTreeMap;
@@ -245,11 +245,14 @@ impl Storage for FakePlatform {
     unsafe fn read_all(&self, root: u32, path: &[u8], dst: *mut u8, cap: u32) -> Result<u32, i32> {
         self.storage.read_all(root, path, dst, cap)
     }
-    unsafe fn list_open(&self, root: u32, dir: &[u8], cur: *mut ListCursor) -> Result<(), i32> {
-        self.storage.list_open(root, dir, cur)
+    fn list_state_bytes(&self, root: u32) -> usize {
+        self.storage.list_state_bytes(root)
     }
-    unsafe fn list_next(&self, cur: *mut ListCursor, out: &mut DirEntry) -> Result<bool, i32> {
-        self.storage.list_next(cur, out)
+    unsafe fn list_open(&self, root: u32, dir: &[u8], state: *mut u8) -> Result<(), i32> {
+        self.storage.list_open(root, dir, state)
+    }
+    unsafe fn list_next(&self, state: *mut u8, out: &mut DirEntry) -> Result<dkrt_abi::storage::ListStep, i32> {
+        self.storage.list_next(state, out)
     }
 }
 

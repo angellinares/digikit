@@ -58,26 +58,6 @@ impl DirEntry {
     }
 }
 
-/// Words of a `ListCursor`. The DT2 firmware directory state is 4 words (its 0x114-byte output buffer stays with the provider); the store catalog cursor
-/// (`Io` 2 pointers, `Layout` 2 words, `Hdr` 7 words, generation 4 words, next and error: 17 words on the device, 19 on a 64-bit host) needs the most.
-/// 32 words leave room for an index and flags next to it.
-pub const LIST_CURSOR_WORDS: usize = 32;
-
-/// Opaque listing state owned by the caller (it lives in the caller's arena block). Only the provider reads or writes the words.
-#[repr(C)]
-#[derive(Clone, Copy)]
-pub struct ListCursor {
-    pub words: [u32; LIST_CURSOR_WORDS],
-}
-
-impl ListCursor {
-    pub const fn new() -> Self {
-        ListCursor {
-            words: [0; LIST_CURSOR_WORDS],
-        }
-    }
-}
-
 pub trait Storage {
     /// Longest root-relative path of `root`: the device's `sample_path_max` for `ROOT_SAMPLES`, the store path limit for `ROOT_STORE`; 0 for another root.
     fn path_max(&self, root: u32) -> u32;
@@ -96,8 +76,20 @@ pub trait Storage {
     /// Read a whole file into `dst`, which holds `cap` bytes; the file size. The caller takes the buffer from the arena after `stat`; a file larger than `cap`
     /// gives `E_TOO_BIG` and writes nothing.
     unsafe fn read_all(&self, root: u32, path: &[u8], dst: *mut u8, cap: u32) -> Result<u32, i32>;
-    /// Start listing `dir` into the caller's cursor.
-    unsafe fn list_open(&self, root: u32, dir: &[u8], cur: *mut ListCursor) -> Result<(), i32>;
-    /// One provider step. Ok(true) = `out` holds an entry, Ok(false) = end of listing.
-    unsafe fn list_next(&self, cur: *mut ListCursor, out: &mut DirEntry) -> Result<bool, i32>;
+    /// Bytes of listing state for `root`; the caller provides a block of at least this size, 16-byte aligned (an arena block), for the whole listing. The
+    /// block starts with a small header the provider writes (a route tag): the caller must not touch it.
+    fn list_state_bytes(&self, root: u32) -> usize;
+    /// Starts a listing of `dir`; all provider state lives in `state` (no other memory is kept between calls).
+    unsafe fn list_open(&self, root: u32, dir: &[u8], state: *mut u8) -> Result<(), i32>;
+    /// One bounded provider step. `Entry` = `out` holds an entry. `Pending` = progress made, no entry yet: call again on a later step. `End` = the listing
+    /// is finished (further calls return `End`). Err(`E_BUSY`) = the store lock was taken: call again later.
+    unsafe fn list_next(&self, state: *mut u8, out: &mut DirEntry) -> Result<ListStep, i32>;
+}
+
+/// The result of one `Storage::list_next` step.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum ListStep {
+    Entry,
+    Pending,
+    End,
 }

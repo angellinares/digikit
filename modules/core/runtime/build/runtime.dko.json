@@ -3757,84 +3757,84 @@
   {
    "addend": 0,
    "offset": 6,
-   "section": ".text._RNvXs2_NtCsgcDcFTrzdSb_4dkrt8platformNtB5_12RealPlatformNtNtCsaGmOzcP47sg_8dkrt_abi8platform12StagedWriter7present",
+   "section": ".text._RNvXs3_NtCsgcDcFTrzdSb_4dkrt8platformNtB5_12RealPlatformNtNtCsaGmOzcP47sg_8dkrt_abi8platform12StagedWriter7present",
    "symbol": ".sec..bss._RNvNtCsgcDcFTrzdSb_4dkrt8platform8PD_STATE",
    "type": "cf.32"
   },
   {
    "addend": 0,
    "offset": 16,
-   "section": ".text._RNvXs2_NtCsgcDcFTrzdSb_4dkrt8platformNtB5_12RealPlatformNtNtCsaGmOzcP47sg_8dkrt_abi8platform12StagedWriter7present",
+   "section": ".text._RNvXs3_NtCsgcDcFTrzdSb_4dkrt8platformNtB5_12RealPlatformNtNtCsaGmOzcP47sg_8dkrt_abi8platform12StagedWriter7present",
    "symbol": "dkpw_begin",
    "type": "cf.32"
   },
   {
    "addend": 0,
    "offset": 28,
-   "section": ".text._RNvXs2_NtCsgcDcFTrzdSb_4dkrt8platformNtB5_12RealPlatformNtNtCsaGmOzcP47sg_8dkrt_abi8platform12StagedWriter7present",
+   "section": ".text._RNvXs3_NtCsgcDcFTrzdSb_4dkrt8platformNtB5_12RealPlatformNtNtCsaGmOzcP47sg_8dkrt_abi8platform12StagedWriter7present",
    "symbol": "dkpw_write",
    "type": "cf.32"
   },
   {
    "addend": 0,
    "offset": 48,
-   "section": ".text._RNvXs2_NtCsgcDcFTrzdSb_4dkrt8platformNtB5_12RealPlatformNtNtCsaGmOzcP47sg_8dkrt_abi8platform12StagedWriter7present",
+   "section": ".text._RNvXs3_NtCsgcDcFTrzdSb_4dkrt8platformNtB5_12RealPlatformNtNtCsaGmOzcP47sg_8dkrt_abi8platform12StagedWriter7present",
    "symbol": "dkpw_close",
    "type": "cf.32"
   },
   {
    "addend": 0,
    "offset": 66,
-   "section": ".text._RNvXs2_NtCsgcDcFTrzdSb_4dkrt8platformNtB5_12RealPlatformNtNtCsaGmOzcP47sg_8dkrt_abi8platform12StagedWriter7present",
+   "section": ".text._RNvXs3_NtCsgcDcFTrzdSb_4dkrt8platformNtB5_12RealPlatformNtNtCsaGmOzcP47sg_8dkrt_abi8platform12StagedWriter7present",
    "symbol": "dkpw_abort",
    "type": "cf.32"
   },
   {
    "addend": 0,
    "offset": 90,
-   "section": ".text._RNvXs2_NtCsgcDcFTrzdSb_4dkrt8platformNtB5_12RealPlatformNtNtCsaGmOzcP47sg_8dkrt_abi8platform12StagedWriter7present",
+   "section": ".text._RNvXs3_NtCsgcDcFTrzdSb_4dkrt8platformNtB5_12RealPlatformNtNtCsaGmOzcP47sg_8dkrt_abi8platform12StagedWriter7present",
    "symbol": "dkpw_delete",
    "type": "cf.32"
   },
   {
    "addend": 0,
    "offset": 108,
-   "section": ".text._RNvXs2_NtCsgcDcFTrzdSb_4dkrt8platformNtB5_12RealPlatformNtNtCsaGmOzcP47sg_8dkrt_abi8platform12StagedWriter7present",
+   "section": ".text._RNvXs3_NtCsgcDcFTrzdSb_4dkrt8platformNtB5_12RealPlatformNtNtCsaGmOzcP47sg_8dkrt_abi8platform12StagedWriter7present",
    "symbol": "dkpw_recover",
    "type": "cf.32"
   },
   {
    "addend": 0,
    "offset": 132,
-   "section": ".text._RNvXs2_NtCsgcDcFTrzdSb_4dkrt8platformNtB5_12RealPlatformNtNtCsaGmOzcP47sg_8dkrt_abi8platform12StagedWriter7present",
+   "section": ".text._RNvXs3_NtCsgcDcFTrzdSb_4dkrt8platformNtB5_12RealPlatformNtNtCsaGmOzcP47sg_8dkrt_abi8platform12StagedWriter7present",
    "symbol": "dkpw_version",
    "type": "cf.32"
   },
   {
    "addend": 0,
    "offset": 150,
-   "section": ".text._RNvXs2_NtCsgcDcFTrzdSb_4dkrt8platformNtB5_12RealPlatformNtNtCsaGmOzcP47sg_8dkrt_abi8platform12StagedWriter7present",
+   "section": ".text._RNvXs3_NtCsgcDcFTrzdSb_4dkrt8platformNtB5_12RealPlatformNtNtCsaGmOzcP47sg_8dkrt_abi8platform12StagedWriter7present",
    "symbol": "dkpw_staging",
    "type": "cf.32"
   },
   {
    "addend": 0,
    "offset": 176,
-   "section": ".text._RNvXs2_NtCsgcDcFTrzdSb_4dkrt8platformNtB5_12RealPlatformNtNtCsaGmOzcP47sg_8dkrt_abi8platform12StagedWriter7present",
+   "section": ".text._RNvXs3_NtCsgcDcFTrzdSb_4dkrt8platformNtB5_12RealPlatformNtNtCsaGmOzcP47sg_8dkrt_abi8platform12StagedWriter7present",
    "symbol": ".sec..bss._RNvNtCsgcDcFTrzdSb_4dkrt8platform8PD_STATE",
    "type": "cf.32"
   },
   {
    "addend": 0,
    "offset": 182,
-   "section": ".text._RNvXs2_NtCsgcDcFTrzdSb_4dkrt8platformNtB5_12RealPlatformNtNtCsaGmOzcP47sg_8dkrt_abi8platform12StagedWriter7present",
+   "section": ".text._RNvXs3_NtCsgcDcFTrzdSb_4dkrt8platformNtB5_12RealPlatformNtNtCsaGmOzcP47sg_8dkrt_abi8platform12StagedWriter7present",
    "symbol": ".sec..bss._RNvNtCsgcDcFTrzdSb_4dkrt8platform8PD_STATE",
    "type": "cf.32"
   },
   {
    "addend": 0,
    "offset": 204,
-   "section": ".text._RNvXs2_NtCsgcDcFTrzdSb_4dkrt8platformNtB5_12RealPlatformNtNtCsaGmOzcP47sg_8dkrt_abi8platform12StagedWriter7present",
+   "section": ".text._RNvXs3_NtCsgcDcFTrzdSb_4dkrt8platformNtB5_12RealPlatformNtNtCsaGmOzcP47sg_8dkrt_abi8platform12StagedWriter7present",
    "symbol": "dkpw_version",
    "type": "cf.32"
   },
@@ -4850,7 +4850,7 @@
    "addend": 0,
    "offset": 98,
    "section": ".text._RNvNtCsgcDcFTrzdSb_4dkrt12store_writer8sdk_path",
-   "symbol": ".sec..text._RNvXs2_NtCsgcDcFTrzdSb_4dkrt8platformNtB5_12RealPlatformNtNtCsaGmOzcP47sg_8dkrt_abi8platform12StagedWriter7present",
+   "symbol": ".sec..text._RNvXs3_NtCsgcDcFTrzdSb_4dkrt8platformNtB5_12RealPlatformNtNtCsaGmOzcP47sg_8dkrt_abi8platform12StagedWriter7present",
    "type": "cf.32"
   },
   {
@@ -20131,7 +20131,7 @@
    "addend": 0,
    "offset": 142,
    "section": ".text._RNvNtCsgcDcFTrzdSb_4dkrt5entry15dk_files_delete",
-   "symbol": ".sec..text._RNvXs2_NtCsgcDcFTrzdSb_4dkrt8platformNtB5_12RealPlatformNtNtCsaGmOzcP47sg_8dkrt_abi8platform12StagedWriter7present",
+   "symbol": ".sec..text._RNvXs3_NtCsgcDcFTrzdSb_4dkrt8platformNtB5_12RealPlatformNtNtCsaGmOzcP47sg_8dkrt_abi8platform12StagedWriter7present",
    "type": "cf.32"
   },
   {
@@ -21314,7 +21314,7 @@
    "addend": 0,
    "offset": 278,
    "section": ".text._RNvNtCsgcDcFTrzdSb_4dkrt12store_writer10sdk_create",
-   "symbol": ".sec..text._RNvXs2_NtCsgcDcFTrzdSb_4dkrt8platformNtB5_12RealPlatformNtNtCsaGmOzcP47sg_8dkrt_abi8platform12StagedWriter7present",
+   "symbol": ".sec..text._RNvXs3_NtCsgcDcFTrzdSb_4dkrt8platformNtB5_12RealPlatformNtNtCsaGmOzcP47sg_8dkrt_abi8platform12StagedWriter7present",
    "type": "cf.32"
   },
   {
@@ -33732,7 +33732,7 @@
    "addend": 0,
    "offset": 498,
    "section": ".text.dkrt_tick",
-   "symbol": ".sec..text._RNvXs2_NtCsgcDcFTrzdSb_4dkrt8platformNtB5_12RealPlatformNtNtCsaGmOzcP47sg_8dkrt_abi8platform12StagedWriter7present",
+   "symbol": ".sec..text._RNvXs3_NtCsgcDcFTrzdSb_4dkrt8platformNtB5_12RealPlatformNtNtCsaGmOzcP47sg_8dkrt_abi8platform12StagedWriter7present",
    "type": "cf.32"
   },
   {
@@ -43968,7 +43968,7 @@
    "align": 2,
    "hex": "4fefffe04a3900000000660000a82ebc000000004a9767000094203c000000002f400004200f58804aaf0004677e223c000000002f41000858804aaf0008676c203c000000002f40000c200f06800000000c4aaf000c6754223c000000002f41001058804aaf00106742203c000000002f400014200f0680000000144aaf0014672a223c000000002f41001858804aaf00186718203c000000002f40001c200f06800000001c4aaf001c661e700213c0000000001039000000007201b3804a0057c044804fef00204e754eb9000000007201b2806704700260d4700160d0",
    "kind": "text",
-   "name": ".text._RNvXs2_NtCsgcDcFTrzdSb_4dkrt8platformNtB5_12RealPlatformNtNtCsaGmOzcP47sg_8dkrt_abi8platform12StagedWriter7present",
+   "name": ".text._RNvXs3_NtCsgcDcFTrzdSb_4dkrt8platformNtB5_12RealPlatformNtNtCsaGmOzcP47sg_8dkrt_abi8platform12StagedWriter7present",
    "size": 222
   },
   {
@@ -50433,7 +50433,7 @@
    "size": 24
   }
  ],
- "source_sha256": "d14fdbfcdb264b45df0bf6e4eb04d5ff25367ae2bc5d02333cbb45e947f95677",
+ "source_sha256": "d15fdb69885f4ff1537c73ced2e8d1c8f3a11e953a2606be26e4f45856231ea1",
  "symbols": [
   {
    "global": false,
@@ -55879,14 +55879,14 @@
   },
   {
    "global": false,
-   "name": ".sec..text._RNvXs2_NtCsgcDcFTrzdSb_4dkrt8platformNtB5_12RealPlatformNtNtCsaGmOzcP47sg_8dkrt_abi8platform12StagedWriter7present",
-   "section": ".text._RNvXs2_NtCsgcDcFTrzdSb_4dkrt8platformNtB5_12RealPlatformNtNtCsaGmOzcP47sg_8dkrt_abi8platform12StagedWriter7present",
+   "name": ".sec..text._RNvXs2_NtNtCs6uNbiqmv1Ak_4core5slice5indexINtNtNtB9_3ops5range5RangejEINtB5_10SliceIndexShE5indexCsgcDcFTrzdSb_4dkrt",
+   "section": ".text._RNvXs2_NtNtCs6uNbiqmv1Ak_4core5slice5indexINtNtNtB9_3ops5range5RangejEINtB5_10SliceIndexShE5indexCsgcDcFTrzdSb_4dkrt",
    "value": 0
   },
   {
    "global": false,
-   "name": ".sec..text._RNvXs2_NtNtCs6uNbiqmv1Ak_4core5slice5indexINtNtNtB9_3ops5range5RangejEINtB5_10SliceIndexShE5indexCsgcDcFTrzdSb_4dkrt",
-   "section": ".text._RNvXs2_NtNtCs6uNbiqmv1Ak_4core5slice5indexINtNtNtB9_3ops5range5RangejEINtB5_10SliceIndexShE5indexCsgcDcFTrzdSb_4dkrt",
+   "name": ".sec..text._RNvXs3_NtCsgcDcFTrzdSb_4dkrt8platformNtB5_12RealPlatformNtNtCsaGmOzcP47sg_8dkrt_abi8platform12StagedWriter7present",
+   "section": ".text._RNvXs3_NtCsgcDcFTrzdSb_4dkrt8platformNtB5_12RealPlatformNtNtCsaGmOzcP47sg_8dkrt_abi8platform12StagedWriter7present",
    "value": 0
   },
   {
@@ -58341,7 +58341,7 @@
  "toolchain": {
   "exports": "DKRT_ARENA DKRT_ASSIGN DKRT_AUX_TASK DKRT_BOOT DKRT_CARD DKRT_CRASH DKRT_CTXS DKRT_DSP DKRT_DSP_STOPPED DKRT_FXP DKRT_FXS DKRT_HEALTH DKRT_IO_TASK DKRT_LOG DKRT_LOG_COUNT DKRT_MAILBOX DKRT_MENUS DKRT_MODULE_RUNTIME DKRT_PATHS DKRT_PD_CUT DKRT_POLLS DKRT_REG DKRT_SAVE_MODE DKRT_SDK_BUF DKRT_SECBUF DKRT_SESSION_IDLE DKRT_SET DKRT_SETTINGS DKRT_SETTINGS_HDR DKRT_STABLE_BLOCKS DKRT_STAGE DKRT_STATE DKRT_STORE_CAP DKRT_STORE_FP DKRT_STORE_PEEK DKRT_TABLE_BAD DKRT_TICKS DKRT_UI_START DKRT_UPLOAD_BUF DKRT_UPLOAD_COUNT DKRT_UPLOAD_CUT DKRT_UPLOAD_DROPPED DKRT_UPLOAD_FLIP DKRT_UPLOAD_LAST DKRT_UPLOAD_TEAR DKRT_UPLOAD_WRITES dk_debug_log_sink_set dk_log_event dk_sink_set dkrt_aux_run dkrt_aux_wait dkrt_blocks dkrt_boot dkrt_boot_info dkrt_capacity dkrt_diag dkrt_exc dkrt_fit dkrt_fx dkrt_health dkrt_io_wake dkrt_job_cancel dkrt_job_post dkrt_load dkrt_midi_rx dkrt_module dkrt_module_header dkrt_page_key dkrt_page_turn dkrt_poll_add dkrt_poll_remove dkrt_pool_done dkrt_pool_lost dkrt_project_changed dkrt_restart dkrt_scan dkrt_scan_reads dkrt_selection_get dkrt_selection_set dkrt_settings_flush dkrt_settings_put dkrt_speed_flags dkrt_status dkrt_store_lease dkrt_store_read dkrt_store_stat dkrt_store_unlease dkrt_tick",
   "instructions_redecoded": "63732",
-  "isa_check": "cd6acf725c6424f7f4b7021428059ca5ff99fc62f41eb606f8b7ee663475e4b8",
+  "isa_check": "fced846160060ff8f8f18fd36b081c61976eb8ab858f051c23464ccbd8596bba",
   "libgccjit_gcc": "37ea7cd851f04ee6a313c5067c9fde9328f876aa",
   "rustc": "rustc 1.101.0-nightly (6f5da406b 2026-10-10)",
   "rustc_codegen_gcc": "a7d8a5227b520187e3d93c1f7fc01dd1ba8659cf",
