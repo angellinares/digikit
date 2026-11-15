@@ -343,3 +343,9 @@ export const LOG_FLAGS = {
 
 /** The level names, by number. */
 export const LOG_LEVELS = ['error', 'warn', 'info', 'debug', 'trace'] as const;
+
+/** The service tick phases of the profiling spans (owner `0x100 | p`), by number. */
+export const SPAN_PHASES = ['early', 'late', 'last'] as const;
+
+/** The poll slots of the profiling spans (owner `0x200 | i`). */
+export const SPAN_POLLS = 4;

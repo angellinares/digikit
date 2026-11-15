@@ -209,3 +209,32 @@ fn service_imports_have_a_service_a_context_a_since_and_a_missing_stub() {
             .contains("does not fit the return type")
     );
 }
+
+#[test]
+fn the_span_owners_are_the_runtimes_phases_and_poll_slots() {
+    // `[spans]` of the contract names what the debug module's span table and the host show: it must match the runtime's own constants
+    let toml = std::fs::read_to_string(root().join(sdkgen::SOURCE)).unwrap();
+    let line = |key: &str| {
+        toml.lines()
+            .find(|l| l.starts_with(key))
+            .unwrap_or_else(|| panic!("sdk.toml has no {key}"))
+            .split('#')
+            .next()
+            .unwrap()
+            .split('=')
+            .nth(1)
+            .unwrap()
+            .trim()
+            .to_string()
+    };
+    let phases = line("phases = [");
+    let n_phases = phases.matches('"').count() / 2;
+    let abi =
+        std::fs::read_to_string(root().join("modules/core/runtime/abi/src/service.rs")).unwrap();
+    let block = abi.split("pub mod tick_phase {").nth(1).unwrap();
+    let block = block.split('}').next().unwrap();
+    assert_eq!(block.matches("pub const ").count(), n_phases);
+    let state =
+        std::fs::read_to_string(root().join("modules/core/runtime/src/rs/src/state.rs")).unwrap();
+    assert!(state.contains(&format!("pub const POLLS: usize = {};", line("polls = "))));
+}

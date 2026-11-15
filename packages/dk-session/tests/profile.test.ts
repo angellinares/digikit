@@ -44,12 +44,12 @@ const session = (replies: { status?: number; body?: number[] }[]) => {
 test('profileState sends the op byte and decodes state, clock and rows', async () => {
   const ops = { get: 0, start: 1, stop: 2, reset: 3 } as const;
   for (const [op, code] of Object.entries(ops)) {
-    const { dev, s } = session([{ body: [1, ...be(120_000_000, 4), ...be(15, 2)] }]);
+    const { dev, s } = session([{ body: [1, ...be(120_000_000, 4), ...be(15, 2), ...be(2n ** 40n + 5n, 8)] }]);
     const st = await s.profileState(op as keyof typeof ops);
-    assert.deepEqual(st, { running: true, hz: 120_000_000, rows: 15 });
+    assert.deepEqual(st, { running: true, hz: 120_000_000, rows: 15, elapsedTicks: 2n ** 40n + 5n });
     assert.deepEqual(dev.requests, [{ cmd: SERVICE_CMD.PROFILE_STATE, body: [code] }]);
   }
-  const { s } = session([{ body: [0, ...be(1000, 4), ...be(7, 2)] }]);
+  const { s } = session([{ body: [0, ...be(1000, 4), ...be(7, 2), ...be(0, 8)] }]);
   assert.equal((await s.profileState('get')).running, false);
 });
 
@@ -68,7 +68,7 @@ test('profileRead sends the first row and decodes rows with a u64 sum', async ()
 test('profileAll pages over two READ replies and maps row kinds', async () => {
   const rows = Array.from({ length: 15 }, (_, i) => row(i + 1, BigInt(i), i));
   const { dev, s } = session([
-    { body: [1, ...be(1000, 4), ...be(15, 2)] },
+    { body: [1, ...be(1000, 4), ...be(15, 2), ...be(777, 8)] },
     { body: [...be(0, 2), 10, ...rows.slice(0, 10).flat()] },
     { body: [...be(10, 2), 5, ...rows.slice(10).flat()] },
   ]);
@@ -83,6 +83,7 @@ test('profileAll pages over two READ replies and maps row kinds', async () => {
   );
   assert.equal(all.running, true);
   assert.equal(all.hz, 1000);
+  assert.equal(all.elapsedTicks, 777n);
   assert.deepEqual(
     all.spans.map((x) => [x.row, x.kind, x.index, x.calls]),
     [
@@ -96,6 +97,11 @@ test('profileAll pages over two READ replies and maps row kinds', async () => {
 test('a short reply is a protocol error', async () => {
   await assert.rejects(
     session([{ body: [1, 0, 0] }]).s.profileState('get'),
+    (e) => e instanceof DkError && e.kind === 'protocol',
+  );
+  // the 7-byte reply of a debug module without the elapsed window
+  await assert.rejects(
+    session([{ body: [1, ...be(1000, 4), ...be(7, 2)] }]).s.profileState('get'),
     (e) => e instanceof DkError && e.kind === 'protocol',
   );
   await assert.rejects(

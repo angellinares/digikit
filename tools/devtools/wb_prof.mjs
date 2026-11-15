@@ -19,6 +19,7 @@ import { createHash } from 'node:crypto';
 import { existsSync, readFileSync, writeFileSync } from 'node:fs';
 import path from 'node:path';
 import { DkProf } from '../../packages/dk-session/src/dkprof.ts';
+import { SPAN_PHASES } from '../../packages/dk-session/src/gen_proto.ts';
 
 function readJson(file) {
   try {
@@ -112,8 +113,6 @@ export async function profCommand({ cmd, sub, rest, opts, root, fail }) {
   );
 }
 
-const PHASES = ['early', 'late', 'last'];
-
 /** `profile spans`: the runtime span counters of a device (dk-session `profileAll`) as a dk.profile/1 with `spans`, and a table. */
 export async function profSpans({ opts, session, fail }) {
   // --start resets the counters first, so a run starts from zero.
@@ -124,7 +123,7 @@ export async function profSpans({ opts, session, fail }) {
   const hz = all.hz;
   const nameOf = (s) => {
     if (s.kind === 'module') return modules.find((m) => m.index === s.index)?.name ?? `module ${s.index}`;
-    if (s.kind === 'phase') return PHASES[s.index] ?? `phase ${s.index}`;
+    if (s.kind === 'phase') return SPAN_PHASES[s.index] ?? `phase ${s.index}`;
     return `poll ${s.index}`;
   };
   const ownerOf = (s) => (s.kind === 'module' ? s.index : s.kind === 'phase' ? 0x100 | s.index : 0x200 | s.index);
