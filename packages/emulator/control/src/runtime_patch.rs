@@ -445,7 +445,7 @@ mod tests {
         // an instruction the ISA excludes is refused with the check's text; the old object stays
         std::fs::write(
             &src,
-            ".SECTION/PM seg_pmco;\n.GLOBAL _f;\n_f:\n    DM(15, I4) = I0;\n    RTS;\n",
+            ".SECTION/PM seg_pmco;\n.GLOBAL _f;\n_f:\n    DM(I4, M5) = L1;\n    RTS;\n",
         )
         .unwrap();
         let err = build_dirs(&root(), &dirs).unwrap_err();
