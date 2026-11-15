@@ -46,34 +46,36 @@ beforeAll(async () => {
   }
 }, 7_200_000);
 
-describe.each(GROUPS)('machine conformance, group %s', (group) => {
-  it.each(specs.map(machineLabel))('%s', (label) => {
-    const cases = reports.get(label)!.cases.filter((c) => c.group === group);
-    expect(cases.length, `${label}: no cases in group ${group}`).toBeGreaterThan(0);
-    const bad = cases.filter((c) => c.failure);
-    if (bad.length) {
-      const shown = bad
-        .slice(0, MAX_SHOWN)
-        .map((c) => `  ${c.failure}`)
-        .join('\n');
-      const more = bad.length > MAX_SHOWN ? `\n  ... and ${bad.length - MAX_SHOWN} more` : '';
-      expect.fail(`${label} group ${group}: ${bad.length} of ${cases.length} cases failed\n${shown}${more}`);
-    }
+if (specs.length > 0) {
+  describe.each(GROUPS)('machine conformance, group %s', (group) => {
+    it.each(specs.map(machineLabel))('%s', (label) => {
+      const cases = reports.get(label)!.cases.filter((c) => c.group === group);
+      expect(cases.length, `${label}: no cases in group ${group}`).toBeGreaterThan(0);
+      const bad = cases.filter((c) => c.failure);
+      if (bad.length) {
+        const shown = bad
+          .slice(0, MAX_SHOWN)
+          .map((c) => `  ${c.failure}`)
+          .join('\n');
+        const more = bad.length > MAX_SHOWN ? `\n  ... and ${bad.length - MAX_SHOWN} more` : '';
+        expect.fail(`${label} group ${group}: ${bad.length} of ${cases.length} cases failed\n${shown}${more}`);
+      }
+    });
   });
-});
 
-describe('the worst block', () => {
-  it.each(specs.map(machineLabel))('%s stays within the budget', (label) => {
-    const r = reports.get(label)!;
-    const steady = Math.max(...r.cases.map((c) => c.steady));
-    const noteon = Math.max(...r.cases.map((c) => c.noteon));
-    console.log(
-      `${label}: worst block ${steady} instructions (budget ${r.budget.voice_block}), worst note-on block ${noteon} (budget ${r.budget.note_on_block})`,
-    );
-    expect(steady).toBeLessThanOrEqual(r.budget.voice_block);
-    expect(noteon).toBeLessThanOrEqual(r.budget.note_on_block);
+  describe('the worst block', () => {
+    it.each(specs.map(machineLabel))('%s stays within the budget', (label) => {
+      const r = reports.get(label)!;
+      const steady = Math.max(...r.cases.map((c) => c.steady));
+      const noteon = Math.max(...r.cases.map((c) => c.noteon));
+      console.log(
+        `${label}: worst block ${steady} instructions (budget ${r.budget.voice_block}), worst note-on block ${noteon} (budget ${r.budget.note_on_block})`,
+      );
+      expect(steady).toBeLessThanOrEqual(r.budget.voice_block);
+      expect(noteon).toBeLessThanOrEqual(r.budget.note_on_block);
+    });
   });
-});
+}
 
 it('finds machine modules', () => {
   expect(specs.length > 0 || wanted.size > 0 || device !== '', 'no machine module found').toBe(true);

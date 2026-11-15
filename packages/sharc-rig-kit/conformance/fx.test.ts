@@ -40,32 +40,34 @@ beforeAll(async () => {
   });
 }, 7_200_000);
 
-describe.each(GROUPS)('effect conformance, group %s', (group) => {
-  it.each(specs.map(fxLabel))('%s', (label) => {
-    const cases = reports.get(label)!.cases.filter((c) => c.group === group);
-    expect(cases.length, `${label}: no cases in group ${group}`).toBeGreaterThan(0);
-    const bad = cases.filter((c) => c.failure);
-    if (bad.length) {
-      const shown = bad
-        .slice(0, MAX_SHOWN)
-        .map((c) => `  ${c.failure}`)
-        .join('\n');
-      const more = bad.length > MAX_SHOWN ? `\n  ... and ${bad.length - MAX_SHOWN} more` : '';
-      expect.fail(`${label} group ${group}: ${bad.length} of ${cases.length} cases failed\n${shown}${more}`);
-    }
+if (specs.length > 0) {
+  describe.each(GROUPS)('effect conformance, group %s', (group) => {
+    it.each(specs.map(fxLabel))('%s', (label) => {
+      const cases = reports.get(label)!.cases.filter((c) => c.group === group);
+      expect(cases.length, `${label}: no cases in group ${group}`).toBeGreaterThan(0);
+      const bad = cases.filter((c) => c.failure);
+      if (bad.length) {
+        const shown = bad
+          .slice(0, MAX_SHOWN)
+          .map((c) => `  ${c.failure}`)
+          .join('\n');
+        const more = bad.length > MAX_SHOWN ? `\n  ... and ${bad.length - MAX_SHOWN} more` : '';
+        expect.fail(`${label} group ${group}: ${bad.length} of ${cases.length} cases failed\n${shown}${more}`);
+      }
+    });
   });
-});
 
-describe('the worst block', () => {
-  it.each(specs.map(fxLabel))('%s stays within the budget', (label) => {
-    const r = reports.get(label)!;
-    const steady = Math.max(...r.cases.map((c) => c.steady));
-    console.log(
-      `${label}: worst block ${steady} instructions (budget ${r.budget.effect} for the effect + ${FX_ADAPTER_MAX} for core/fx)`,
-    );
-    expect(steady).toBeLessThanOrEqual(r.budget.effect + r.budget.adapter);
+  describe('the worst block', () => {
+    it.each(specs.map(fxLabel))('%s stays within the budget', (label) => {
+      const r = reports.get(label)!;
+      const steady = Math.max(...r.cases.map((c) => c.steady));
+      console.log(
+        `${label}: worst block ${steady} instructions (budget ${r.budget.effect} for the effect + ${FX_ADAPTER_MAX} for core/fx)`,
+      );
+      expect(steady).toBeLessThanOrEqual(r.budget.effect + r.budget.adapter);
+    });
   });
-});
+}
 
 it('finds effect modules', () => {
   expect(specs.length > 0 || wanted.size > 0, 'no effect module found').toBe(true);

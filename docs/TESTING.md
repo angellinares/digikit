@@ -566,6 +566,7 @@ use the existing harness resolution/overrides; only resolution holds a shared be
 before the target. The target does not run the broad gate. Its bounded source inputs are conservative affected-selection inputs, not a cache-closure or
 fine-routing claim. This does not replace automatic gate routing. The suite alone:
 `DIGI_CONFORM_MODULES=<author/name> uv run python -m pytest tests/modules/test_machine_conformance.py -rf`.
+`module:check` runs the conformance suite on the SHARC-only rig ("The Vitest kit") and writes `dsp_cost_*` with `patchkit uses set`; `--python-conformance` runs the Python suite above instead (kept until the retirement phase of [the plan](plans/t1g-sharc-rig-kit.md)).
 
 Machine rules (`pk_conform.py`, rig `tests/support/machine_rig.py`, workers `tests/support/conform_worker.py`),
 checked in every block of every case:
