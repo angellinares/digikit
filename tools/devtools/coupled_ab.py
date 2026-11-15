@@ -292,7 +292,10 @@ def prepare_image(
             "--seconds", "0.5",
             "--out", str(folder / "cold-report.json"),
         ]  # fmt: skip
-        process(prep, coupled.run_env(ENV, syx=stock), folder / "cold-log", 3600)
+        # The 0.5 s scenario run only exists to make coupled-run write the pair; its
+        # gates (exit 2) cannot pass in that time, so only a missing pair is an error.
+        with contextlib.suppress(Invalid):
+            process(prep, coupled.run_env(ENV, syx=stock), folder / "cold-log", 3600)
         if not all(p.is_file() for p in pair):
             raise Invalid(f"cold boot of {label} left no ready pair: {cold}")
     return {
