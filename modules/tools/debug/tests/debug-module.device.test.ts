@@ -11,6 +11,7 @@ import { DEBUG_MODULE, installModules, installWithDebug, moduleArtifact } from '
 import { expectRuntimeReady, runtimeTests } from '@digi/regression/runtime/ready.ts';
 import { ofKind, readSmallRing, RING_SYMBOLS } from '@digi/regression/runtime/runtime-menu.ts';
 import { planSymbol, prepareRuntimePlan } from '@digi/regression/runtime/runtime-plan.ts';
+import { tap } from '@digi/regression/runtime/fx-session.ts';
 import { expectPollEmulated } from '@digi/regression/runtime/waits.ts';
 
 const text = (words: number[]) =>
@@ -322,6 +323,34 @@ async function expectProfileSpans(runtime: PatchedSession): Promise<void> {
   await session.expectNoFault('profile spans');
 }
 
+/** The DIGIKIT menu's HEALTH page registers a poll function (`dkrt_poll_add`) while it is open. The menu is patched into the image, so PROFILE_STATE names
+ * the runtime as the owner (0xff) and the function lies in the code the patchkit placed for core/digikit-menu. */
+async function expectPollOwner(runtime: PatchedSession): Promise<void> {
+  const { session, dk } = runtime;
+  await expectRuntimeReady(session);
+  const plan = await prepareRuntimePlan(session, liveArtifacts(session, 'debug-poll-owner'), []);
+  await installWithDebug(runtime);
+  expect((await dk.profileAll()).polls.filter(Boolean), 'no poll before the page is open').toEqual([]);
+  // NO leaves any popup, SETTINGS, eight rows down is DIGIKIT, YES opens it, DOWN is HEALTH, YES opens it
+  await tap(session, 'NO', 600);
+  await tap(session, 'SETTINGS', 800);
+  for (let i = 0; i < 8; i++) await tap(session, 'DOWN', 300);
+  await tap(session, 'YES', 800);
+  await tap(session, 'DOWN', 300);
+  await tap(session, 'YES', 800);
+  const polls = (await dk.profileAll()).polls.flatMap((p, slot) => (p ? [{ slot, ...p }] : []));
+  console.log('poll slots', JSON.stringify(polls.map((p) => ({ ...p, fn: p.fn.toString(16) }))));
+  expect(polls.length, 'the HEALTH page registered a poll').toBeGreaterThan(0);
+  const placed = (plan.writes ?? []).filter((w) => w.cpu === 'cf' && w.code !== undefined && w.owner.includes('digikit-menu'));
+  for (const p of polls) {
+    expect(p.owner, 'a patched-in core module belongs to the firmware image').toBe('runtime');
+    const at = placed.find((w) => p.fn >= w.addr && p.fn < w.addr + w.len);
+    expect(at, `poll ${p.slot} function ${p.fn.toString(16)} is in the code placed for core/digikit-menu`).toBeDefined();
+  }
+  await session.expectNoFault('poll owner');
+}
+
+runtimeTests('the HEALTH page poll is owned by the runtime and lies in the menu code', expectPollOwner, { dsp: 'sharc' });
 runtimeTests('the span table counts the debug module tick and holds still when stopped', expectProfileSpans, { dsp: 'sharc' });
 runtimeTests('the card log is written to the store and reads back', expectCardLog, { dsp: 'sharc' });
 runtimeTests(
