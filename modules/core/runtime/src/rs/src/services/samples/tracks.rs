@@ -22,17 +22,18 @@
 //!
 //! TODO (not wired yet): persistence of the selections to the digikit store (they live in memory per project now); a request mailbox
 //! so API calls from the MIDI task cannot interleave with a tick step of the same track (an idle track is safe today).
-use crate::core_api::{CoreApi, Platform, SamplePool, PLATFORM, REAL_CORE};
+use crate::core_api::{CoreApi, Platform, SamplePool, Storage, PLATFORM, REAL_CORE};
 use dkrt_abi::dsp::PH_IDLE;
 use dkrt_abi::link::{LinkResult, Owner, Stream, Ticket};
+use dkrt_abi::storage::EntryKind;
 use core::hint::black_box;
 use core::ptr::{addr_of, addr_of_mut, read_volatile};
-use dkrt_sdk::files::{HASH_ELEKTRON32, SAMPLES};
+use dkrt_sdk::files::SAMPLES;
 use dkrt_sdk::sample_tracks::{
-    rooted, store_identity, store_inspect, unrooted, Core, Env, FileId, Handle, Inspect, Load, Note, Strack, ID_HASH_VALID, ROOT_DN2, ROOT_DT2,
+    rooted, store_inspect, unrooted, Core, Env, FileId, Handle, Inspect, Load, Note, Strack, ID_HASH_VALID, ROOT_DN2, ROOT_DT2,
     TRACKS,
 };
-use dkrt_sdk::{logk, E_CONTRACT, E_DSP_XFER, E_NOT_FOUND, E_READ, E_SEL_PATH};
+use dkrt_sdk::{logk, E_CONTRACT, E_DSP_XFER, E_NOT_FOUND, E_SEL_PATH};
 
 pub(crate) const CLIENTS: usize = 2;
 const ENTRIES: usize = 16;
@@ -50,9 +51,6 @@ extern "C" {
     fn dkpool_cancel(req: u32);
     fn dkpool_peaks(h: *const Handle, out: *mut u8, capacity: u32) -> i32;
     fn dkpool_window_step(h: *const Handle, path: *const u8, first: u32, frames: u32, columns: u32, out: *mut i16, cursor: *mut u32) -> i32;
-    // Per-device tables of the runtime's assembly objects (DT2 1.17 anchors; zeros on DN2). Both are declared in sample_source.rs and files.rs too.
-    static dkrt_sample_fs: [u32; 4];
-    static dkrt_files_fs: [u32; 3];
 }
 
 static mut CORE: Core<CLIENTS, ENTRIES, PROJECTS> = Core::new();
@@ -199,88 +197,49 @@ unsafe fn pump<C: CoreApi>(api: &C) {
     }
 }
 
-// ---- native file header and identity (DT2) --------------------------------------------------------------------------------
-
-type FsOpen = unsafe extern "C" fn(*const u8, *const u8, *mut u32) -> i32;
-type FsRead = unsafe extern "C" fn(*mut u8, u32, *mut u32) -> i32;
-type FsClose = unsafe extern "C" fn(*mut u32) -> i32;
-type FsSize = unsafe extern "C" fn(u32) -> u32;
-type FsMeta = unsafe extern "C" fn(u32, *mut u32) -> i32;
+// ---- file header and identity ---------------------------------------------------------------------------------------------
 
 /// The device's sample root (`select` paths are root-relative; the runtime keeps the rooted form).
 fn root() -> &'static [u8] {
-    if PLATFORM.samples_in_store() {
+    root_of(&PLATFORM)
+}
+fn root_of<P: Platform>(p: &P) -> &'static [u8] {
+    if p.samples_in_store() {
         ROOT_DN2
     } else {
         ROOT_DT2
     }
 }
 
-/// DN2: a `samples/...` file of the digikit store. Identity is its size and the file hash of its table entry (the listing row's), and `head` is
-/// the first 64 bytes of the file. `path` is not NUL-terminated.
-unsafe fn probe_store(path: &[u8], head: Option<&mut [u8; 64]>) -> Result<FileId, i32> {
+/// The identity of the sample file `path` (device-rooted, not NUL-terminated) from `Storage::stat`: its size and, when the storage gives one, the
+/// file hash of its table entry (the listing row's). No mtime exists on either device (`mtime` 0): without a hash the identity is size and path. When
+/// `head` is given, the first 64 bytes of the file. The storage routes (store, firmware file system) are the platform's.
+unsafe fn probe_with<P: Platform + Storage>(p: &P, path: &[u8], head: Option<&mut [u8; 64]>) -> Result<FileId, i32> {
     if path.is_empty() || path.len() >= dkrt_sdk::sample_tracks::PATH {
         return Err(E_SEL_PATH);
     }
-    let mut z = [0u8; dkrt_sdk::sample_tracks::PATH + 1];
-    z[..path.len()].copy_from_slice(path);
-    let (size, sha) = REAL_CORE.store_probe(z.as_ptr(), head)?;
-    Ok(store_identity(size, &sha))
+    let rel = unrooted(root_of(p), path);
+    if rel.is_empty() {
+        return Err(E_SEL_PATH);
+    }
+    let st = match head {
+        Some(h) => p.stat_head(SAMPLES, rel, h)?.0,
+        None => p.stat(SAMPLES, rel)?,
+    };
+    if st.kind != EntryKind::File {
+        return Err(E_SEL_PATH);
+    }
+    let mut id = FileId { root: SAMPLES, size: st.size, mtime: 0, flags: 0, hash_kind: 0, hash: [0; 32] };
+    if st.hash_valid {
+        id.flags = ID_HASH_VALID;
+        id.hash_kind = st.hash_kind as u32;
+        id.hash = st.hash;
+    }
+    Ok(id)
 }
 
-/// Open `path` (not NUL-terminated), take the identity of its listing row (size and the stored hash by entry id, as `files.rs` lists it)
-/// and, when `head` is given, read the 64 header bytes. DT2 only: the store route of DN2 is `probe_store`.
 unsafe fn probe(path: &[u8], head: Option<&mut [u8; 64]>) -> Result<FileId, i32> {
-    if PLATFORM.samples_in_store() {
-        return probe_store(path, head);
-    }
-    if path.is_empty() || path.len() >= dkrt_sdk::sample_tracks::PATH {
-        return Err(E_SEL_PATH);
-    }
-    let mut z = [0u8; dkrt_sdk::sample_tracks::PATH + 1];
-    z[..path.len()].copy_from_slice(path);
-    let table = addr_of!(dkrt_sample_fs) as *const u32;
-    let (open_addr, read_addr, close_addr, size_addr) =
-        (read_volatile(table), read_volatile(table.add(1)), read_volatile(table.add(2)), read_volatile(table.add(3)));
-    let meta_addr = read_volatile((addr_of!(dkrt_files_fs) as *const u32).add(2));
-    if open_addr == 0 || read_addr == 0 || close_addr == 0 || size_addr == 0 {
-        return Err(E_NOT_FOUND);
-    }
-    let open: FsOpen = core::mem::transmute(open_addr as usize);
-    let read: FsRead = core::mem::transmute(read_addr as usize);
-    let close: FsClose = core::mem::transmute(close_addr as usize);
-    let size_of: FsSize = core::mem::transmute(size_addr as usize);
-    let mut handle = [0u32; 4];
-    if open(z.as_ptr(), b"r\0".as_ptr(), handle.as_mut_ptr()) != 0 {
-        return Err(E_NOT_FOUND);
-    }
-    let result = (|| {
-        let size = size_of(handle[0]);
-        if size == u32::MAX {
-            return Err(E_READ);
-        }
-        if let Some(h) = head {
-            if size < 64 || read(h.as_mut_ptr(), 64, handle.as_mut_ptr()) != 64 {
-                return Err(E_READ);
-            }
-        }
-        let mut id = FileId { root: SAMPLES, size, mtime: 0, flags: 0, hash_kind: 0, hash: [0; 32] };
-        // The stored hash of the entry (words: id, odd hash, physical size, node). No mtime exists on DT2: without a hash the identity is size and path.
-        if meta_addr != 0 {
-            let meta: FsMeta = core::mem::transmute(meta_addr as usize);
-            let mut values = [0u32; 4];
-            if meta(handle[0], values.as_mut_ptr()) == 0 && values[2] == size {
-                id.flags = ID_HASH_VALID;
-                id.hash_kind = HASH_ELEKTRON32;
-                id.hash[..4].copy_from_slice(&values[1].to_be_bytes());
-            }
-        }
-        Ok(id)
-    })();
-    if close(handle.as_mut_ptr()) != 0 {
-        return Err(E_READ);
-    }
-    result
+    probe_with(&PLATFORM, path, head)
 }
 
 struct Device;
@@ -289,6 +248,7 @@ impl Env for Device {
         let mut head = [0u8; 64];
         let id = unsafe { probe(path, Some(&mut head))? };
         // Size and format only: no PCM is read here (it can be megabytes), the pool adapter reads it.
+        // This branch is a format choice (the store identity and header check, or the native header alone), not a storage route: `probe` reads both the same way.
         if PLATFORM.samples_in_store() {
             return store_inspect(id.size, &id.hash, &head);
         }
@@ -694,9 +654,7 @@ pub unsafe fn peaks(handle: u32, track: u32, token: u32, out: *mut u8, capacity:
 mod tests {
     use super::*;
     use crate::core_api::FakeCore;
-    use std::sync::Mutex;
-
-    static LOCK: Mutex<()> = Mutex::new(());
+    use crate::core_api::TEST_LOCK as LOCK;
 
     /// Client 0, track 1 has an op `kind`; its records and control sets are at fixed L2 addresses.
     unsafe fn seed(kind: u8, rec: [u32; 8]) {
@@ -768,6 +726,43 @@ mod tests {
             fake.link.borrow_mut().t.script.extend(std::iter::repeat(Some(92)).take(TRIES as usize));
             passes(&fake, 400);
             assert_eq!((*addr_of!(OPS))[0][1].kind, OP_FAILED);
+        }
+    }
+
+    const H: [u8; 32] = [7; 32];
+
+    fn sample_files(f: &crate::core_api::FakePlatform) {
+        f.storage.add_file(SAMPLES, b"KICKS/K1", &[3u8; 100], dkrt_abi::storage::HASH_ELEKTRON32, H);
+        f.storage.add_file(SAMPLES, b"KICKS/K2", &[4u8; 100], dkrt_abi::storage::HASH_NONE, [0; 32]);
+        f.storage.add_dir(SAMPLES, b"KICKS/SUB");
+    }
+
+    #[test]
+    fn a_store_route_device_gives_the_hash_of_the_table_entry() {
+        let f = crate::core_api::FakePlatform::new(dkrt_abi::profiles::DN2);
+        sample_files(&f);
+        let mut head = [0u8; 64];
+        unsafe {
+            let id = probe_with(&f, b"samples/KICKS/K1", Some(&mut head)).unwrap();
+            assert_eq!(id, FileId { root: SAMPLES, size: 100, mtime: 0, flags: ID_HASH_VALID, hash_kind: 2, hash: H });
+            assert_eq!(&head[..4], [3, 3, 3, 3]);
+            assert_eq!(probe_with(&f, b"samples/KICKS/none", None), Err(E_NOT_FOUND));
+            assert_eq!(probe_with(&f, b"samples/", None), Err(E_SEL_PATH));
+            assert_eq!(probe_with(&f, b"samples/KICKS/SUB", None), Err(E_SEL_PATH), "a folder is no sample");
+        }
+    }
+
+    #[test]
+    fn a_firmware_fs_device_has_a_hash_only_when_the_storage_gives_one() {
+        let f = crate::core_api::FakePlatform::new(dkrt_abi::profiles::DT2);
+        sample_files(&f);
+        unsafe {
+            let hashed = probe_with(&f, b"/KICKS/K1", None).unwrap();
+            assert_eq!(hashed, FileId { root: SAMPLES, size: 100, mtime: 0, flags: ID_HASH_VALID, hash_kind: 2, hash: H });
+            let plain = probe_with(&f, b"/KICKS/K2", None).unwrap();
+            assert_eq!(plain, FileId { root: SAMPLES, size: 100, mtime: 0, flags: 0, hash_kind: 0, hash: [0; 32] });
+            assert!(!plain.same(&FileId { hash_kind: 2, flags: ID_HASH_VALID, hash: H, ..plain }));
+            assert_eq!(probe_with(&f, b"/", None), Err(E_SEL_PATH));
         }
     }
 }

@@ -100,7 +100,7 @@ int32_t dk_files_open(dk_module_ctx *ctx, dk_files **out);
 /* Copy a canonical root-relative directory request; positive ticket or negative error. Supersedes prior results. The optional deferred UI-task notify and its context stay module-owned. No I/O here. Context: ui. Since runtime 0.7.0. */
 int32_t dk_files_list(dk_files *f, uint32_t root, const char *path, dk_files_event_fn *notify, void *arg);
 
-/* No I/O: 0 pending, 1 copied 304-byte dk_file_entry, 2 end, negative error. The output is unchanged unless 1. Context: ui. Since runtime 0.7.0. */
+/* No I/O: 0 pending, 1 copied 304-byte dk_file_entry, 2 end, negative error. The output is unchanged unless 1. A listing that is not polled for 10 s is released and its next poll returns E_LOST. Context: ui. Since runtime 0.7.0. */
 int32_t dk_files_poll(dk_files *f, uint32_t ticket, void *out, uint32_t capacity);
 
 /* Invalidate the matching request, its results and its queued notification without waiting for active work or a callback. Context: ui. Since runtime 0.7.0. */

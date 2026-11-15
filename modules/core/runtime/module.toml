@@ -66,13 +66,13 @@ dkrt_pageturn_next = "hook.cf.page.fn.source_turn.tail"
 
 [[object]]
 path = "build/device-dt2.dko.json"
-sources = ["src/cf/dt2/device.s"]
+sources = ["src/cf/dt2/device.s", "src/cf/dt2/storage.s"]
 place = "cf.expansion"
 devices = ["dt2"]
 
 [[object]]
 path = "build/device-dn2.dko.json"
-sources = ["src/cf/dn2/device.s"]
+sources = ["src/cf/dn2/device.s", "src/cf/dn2/storage.s"]
 place = "cf.expansion"
 devices = ["dn2"]
 
