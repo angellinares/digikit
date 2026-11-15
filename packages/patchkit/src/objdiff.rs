@@ -36,6 +36,8 @@ pub struct Report {
     pub ignored_locations_old: usize,
     pub ignored_locations_new: usize,
     pub differences: Vec<Difference>,
+    /// Names that `--erase` merged into one (`old: f, f::<T>`): their pairing is by content, not by name.
+    pub warnings: Vec<String>,
 }
 
 impl Report {
@@ -50,14 +52,19 @@ impl Report {
                 self.ignored_locations_new, self.ignored_locations_old
             )
         };
+        let warned: String = self
+            .warnings
+            .iter()
+            .map(|w| format!("warning: {w}\n"))
+            .collect();
         if self.identical {
             return format!(
-                "identical: {} functions, {} data objects\n{ignored}",
+                "identical: {} functions, {} data objects\n{ignored}{warned}",
                 self.functions, self.data_objects
             );
         }
         let mut s = format!(
-            "differences: {} ({} functions and {} data objects match)\n{ignored}",
+            "differences: {} ({} functions and {} data objects match)\n{ignored}{warned}",
             self.differences.len(),
             self.functions,
             self.data_objects
@@ -78,6 +85,11 @@ static ERASE: std::sync::OnceLock<Vec<String>> = std::sync::OnceLock::new();
 /// A name without crate and module path: `_RNvNtCs..4dkrt3foo4rd32` is `rd32`, `<dkrt::a::T>::m` is `<T>::m`. A name that is not Rust-mangled
 /// (a C symbol, `#[no_mangle]`) stays exact.
 pub fn norm_name(name: &str) -> String {
+    norm_name_with(name, ERASE.get().map(|v| v.as_slice()).unwrap_or(&[]))
+}
+
+/// `norm_name` with an explicit list of erased type names.
+fn norm_name_with(name: &str, erase: &[String]) -> String {
     if !name.starts_with("_R") {
         return name.to_string();
     }
@@ -112,7 +124,7 @@ pub fn norm_name(name: &str) -> String {
         out.push(c as char);
         i += 1;
     }
-    for t in ERASE.get().map(|v| v.as_slice()).unwrap_or(&[]) {
+    for t in erase {
         // `f::<T>` is `f`, `Fx<T>` is `Fx` (the module path of `T` is already gone)
         out = out
             .replace(&format!("::<{t}>"), "")
@@ -464,6 +476,28 @@ fn describe(i: &Item) -> String {
     }
 }
 
+/// The names that `--erase` merged within one object: two items of one class whose names differ without the erase and agree with it.
+fn erase_collisions(side: &str, items: &[Item]) -> Vec<String> {
+    let mut by: BTreeMap<(u8, String), BTreeSet<String>> = BTreeMap::new();
+    for i in items.iter().filter(|i| i.class != Class::Anon) {
+        let (_, rest) = split_prefix(&i.raw);
+        by.entry((i.class as u8, i.name.clone()))
+            .or_default()
+            .insert(norm_name_with(rest, &[]));
+    }
+    by.into_iter()
+        .filter(|(_, v)| v.len() > 1)
+        .map(|((_, name), v)| {
+            let all: Vec<String> = v.into_iter().collect();
+            format!(
+                "{side}: --erase merged {} names into `{name}`: {}",
+                all.len(),
+                all.join(", ")
+            )
+        })
+        .collect()
+}
+
 fn c_visible(i: &Item) -> bool {
     i.class != Class::Anon && !i.raw.contains("._R")
 }
@@ -594,6 +628,10 @@ pub fn diff_with(old: &Dko, new: &Dko, strict: bool) -> Result<Report> {
         ignored_locations_new: lb,
         ..Report::default()
     };
+    if ERASE.get().is_some_and(|e| !e.is_empty()) {
+        rep.warnings.extend(erase_collisions("old", &a));
+        rep.warnings.extend(erase_collisions("new", &b));
+    }
     let mut push = |kind: &str, name: String, detail: String| {
         rep.differences.push(Difference {
             kind: kind.into(),

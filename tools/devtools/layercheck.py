@@ -755,7 +755,57 @@ SERVICE_DEPS = {"dkrt-abi", "dkrt-sdk", "dkneeds"}
 SERVICE_DEV_DEPS = SERVICE_DEPS | {"dkrt-test-support"}
 SERVICE_CRATE_REF = re.compile(r"\bdkrt_svc_\w+")
 SERVICE_RUNTIME_FILES = ("handlers.rs", "gen_services.rs")
-SERVICE_RUNTIME_REF = re.compile(r"\bdkrt::")
+SERVICE_RUNTIME_REF = re.compile(r"\bdkrt::|\bextern\s+crate\s+dkrt\b")
+RUNTIME_MANIFEST = "modules/core/runtime/src/rs/Cargo.toml"
+DEP_TABLES = ("dependencies", "build-dependencies", "dev-dependencies")
+
+
+def manifest_deps(data: dict) -> list[tuple[str, str, str, object]]:
+    """(table label, key, crate name, spec) of every dependency of a manifest: the three tables and the same tables under `[target.CFG.*]`.
+    A renamed dependency (`alias = { package = "dkrt-abi" }`) has its real crate name, not its key."""
+    out: list[tuple[str, str, str, object]] = []
+
+    def take(label: str, table: dict) -> None:
+        for key, spec in table.items():
+            real = spec.get("package", key) if isinstance(spec, dict) else key
+            out.append((label, key, real, spec))
+
+    for t in DEP_TABLES:
+        take(t, data.get(t, {}))
+    for cfg, tables in data.get("target", {}).items():
+        for t in DEP_TABLES:
+            take(f"target.{cfg}.{t}", tables.get(t, {}))
+    return out
+
+
+def check_test_only_deps(
+    root: Path, manifest: Path, data: dict, text: str
+) -> list[Violation]:
+    """dkrt-test-support and the `fake` feature of dkrt-link are for tests: dev-dependencies only."""
+    out = []
+    for label, key, real, spec in manifest_deps(data):
+        if label.endswith("dev-dependencies"):
+            continue
+        fake = (
+            real == "dkrt-link"
+            and isinstance(spec, dict)
+            and "fake" in spec.get("features", [])
+        )
+        if real == "dkrt-test-support" or fake:
+            what = (
+                "dkrt-test-support"
+                if real == "dkrt-test-support"
+                else "the fake feature of dkrt-link"
+            )
+            out.append(
+                Violation(
+                    f"{rel(root, manifest)}:{line_of(text, key)}",
+                    "service-crates",
+                    f"{what} is a [{label}] entry",
+                    "test fakes may be dev-dependencies of the runtime crate and of services only; they never reach the runtime object",
+                )
+            )
+    return out
 
 
 def check_service_crates(root: Path) -> list[Violation]:
@@ -765,21 +815,21 @@ def check_service_crates(root: Path) -> list[Violation]:
     for manifest in sorted(base.glob("*/Cargo.toml")) if base.is_dir() else []:
         text = manifest.read_text(encoding="utf-8")
         data = tomllib.loads(text)
-        for table, allowed in (
-            ("dependencies", SERVICE_DEPS),
-            ("build-dependencies", SERVICE_DEPS),
-            ("dev-dependencies", SERVICE_DEV_DEPS),
-        ):
-            for name in data.get(table, {}):
-                if name not in allowed:
-                    out.append(
-                        Violation(
-                            f"{rel(root, manifest)}:{line_of(text, name)}",
-                            "service-crates",
-                            f"the service crate depends on {name} ([{table}])",
-                            f"a service crate depends only on {', '.join(sorted(allowed))}; reach the core through CoreApi (dkrt-abi), and put test fakes in dkrt-test-support",
-                        )
+        for label, key, real, _ in manifest_deps(data):
+            allowed = (
+                SERVICE_DEV_DEPS if label.endswith("dev-dependencies") else SERVICE_DEPS
+            )
+            if real not in allowed:
+                alias = f" (as {key})" if key != real else ""
+                out.append(
+                    Violation(
+                        f"{rel(root, manifest)}:{line_of(text, key)}",
+                        "service-crates",
+                        f"the service crate depends on {real}{alias} ([{label}])",
+                        f"a service crate depends only on {', '.join(sorted(allowed))}; reach the core through CoreApi (dkrt-abi), and put test fakes in dkrt-test-support",
                     )
+                )
+        out.extend(check_test_only_deps(root, manifest, data, text))
         for f in sorted(manifest.parent.rglob("*.rs")):
             if "target" in f.relative_to(manifest.parent).parts:
                 continue
@@ -811,9 +861,15 @@ def check_service_crates(root: Path) -> list[Violation]:
                             where,
                             "service-crates",
                             "the service crate names the runtime crate",
-                            "take the core as a type parameter (StaticCore) or a CoreApi argument",
+                            "take the core as a `&C` argument with `C: CoreApi`",
                         )
                     )
+    rt_manifest = root / RUNTIME_MANIFEST
+    if rt_manifest.is_file():
+        rt_text = rt_manifest.read_text(encoding="utf-8")
+        out.extend(
+            check_test_only_deps(root, rt_manifest, tomllib.loads(rt_text), rt_text)
+        )
     src = root / RT_SRC
     for f in sorted(src.rglob("*.rs")) if src.is_dir() else []:
         r = f.relative_to(src).as_posix()
