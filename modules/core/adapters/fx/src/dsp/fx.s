@@ -28,7 +28,7 @@
 //   plain copy (the wet signal bit for bit); mix == 0 leaves the master as it was (the dry signal bit for bit; the effect still runs and is checked).
 //   A run-time effect gets its mix from the knob on its page (docs/design/digikit-registry.md).
 //   * process(R4 = state, R8 = dk_fx_in {in = master, out = scratch, block}, R12 = the row's parameter words) is entered with
-//     `I13 = return; JUMP (M13, I12)`. It may clobber R0-R15, I0-I5, M1-M4, B3 and must keep the rest (<dk/fx/fx.h>).
+//     `I13 = return; JUMP (M13, I12)`. Register rules for the effect: sdk/dsp/REGISTERS.md.
 //   * the output is checked: a negative result, a non-finite sample or a magnitude above 8.0 is a fault: the master block stays as it was (dry,
 //     no fade), the effect's state is zeroed and `was` is cleared. The 8th fault within 1500 blocks sets `dis` until the next start.
 // Context: the firmware restores M5-M7, M13-M15, the L registers and MODE1 per DSP context (finding 45), so the adapter saves them and pins

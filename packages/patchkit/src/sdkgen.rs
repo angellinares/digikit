@@ -39,6 +39,10 @@ pub const C_RECORDS_OUT: &str = "sdk/include/dk/gen/records.h";
 pub const C_SAMPLE_OUT: &str = "sdk/include/dk/gen/sample.h";
 /// The generated SHARC+ include of the sample pool record layout, relative to the repository root.
 pub const SAMPLE_INC_OUT: &str = "sdk/dsp/contract/dk_sample_pool.inc";
+/// The generated register classes of the DSP contract for the rules check of `dksharc`, relative to the repository root.
+pub const RULES_RS_OUT: &str = "packages/dksharc/src/rules_table.rs";
+/// The generated document of the DSP register contract, relative to the repository root.
+pub const REGISTERS_MD_OUT: &str = "sdk/dsp/REGISTERS.md";
 /// The generated Rust format limits of the `.dkm` loader (re-exported by `dkneeds`), relative to the repository root.
 pub const LIMITS_RS_OUT: &str = "packages/dkneeds/src/gen_limits.rs";
 /// The generated static table of the runtime's in-crate services, relative to the repository root.
@@ -78,7 +82,62 @@ struct Sdk {
     handle: Handle,
     import: Vec<Import>,
     page: PageToml,
+    dsp: DspToml,
 }
+/// `[dsp]` of `sdk/sdk.toml`.
+#[derive(Deserialize)]
+#[serde(deny_unknown_fields)]
+struct DspToml {
+    registers: DspRegisters,
+}
+/// `[dsp.registers]`: the register contract of module DSP code. Entries are names (`B3`), ranges (`R0-R15`) or groups (`MR`, `ASTAT`, `STKY`, `LCNTR`).
+#[derive(Deserialize)]
+#[serde(deny_unknown_fields)]
+struct DspRegisters {
+    clobber: Vec<String>,
+    keep: Vec<String>,
+    stack: Vec<String>,
+    never_write: Vec<String>,
+    entry: DspEntry,
+}
+/// The registers of the entry convention: the entry address (free to use: both adapters restore it) and the return address (keep).
+#[derive(Deserialize)]
+#[serde(deny_unknown_fields)]
+struct DspEntry {
+    entry: String,
+    #[serde(rename = "return")]
+    ret: String,
+}
+impl DspRegisters {
+    /// (class, rule, entries) in table order.
+    fn classes(&self) -> [(&'static str, &'static str, &Vec<String>); 4] {
+        [
+            ("clobber", "free to use", &self.clobber),
+            (
+                "keep",
+                "save before the first write, restore before every return",
+                &self.keep,
+            ),
+            (
+                "stack",
+                "the stack pointer: changes only by balanced pushes and pops (post-modify with M6 or M7, or MODIFY by a constant), holds its entry value at every return, is never loaded with another address",
+                &self.stack,
+            ),
+            (
+                "never_write",
+                "no write at all: the stock interrupt code reads these at any instruction",
+                &self.never_write,
+            ),
+        ]
+    }
+}
+/// Group names of `[dsp.registers]`: the registers `dksharc::defuse::reg_name` prints for one name of the manual.
+const REG_GROUPS: [(&str, &[&str]); 4] = [
+    ("MR", &["MRF", "MRB", "MSF", "MSB"]),
+    ("ASTAT", &["ASTATX", "ASTATY"]),
+    ("STKY", &["STKYX", "STKYY"]),
+    ("LCNTR", &["LCNTR", "CURLCNTR", "LADDR"]),
+];
 /// The page constants: `[page]` of `sdk/sdk.toml`.
 #[derive(Deserialize)]
 #[serde(deny_unknown_fields)]
@@ -684,6 +743,7 @@ fn parse(text: &str) -> Result<Sdk> {
     runtime_parts(&sdk)?;
     guards(&sdk)?;
     sample_checked(&sdk)?;
+    registers_checked(&sdk)?;
     let p = &sdk.protocol;
     for (i, (n, v)) in p.commands.iter().enumerate() {
         if p.commands.iter().skip(i + 1).any(|(_, w)| w == v) {
@@ -2288,6 +2348,7 @@ fn view_h(
     structs: [(&str, &str, &[CField]); 2],
     fns: &[(String, Sig, String)],
     c: &CView,
+    regs: &str,
 ) -> String {
     let mut s = format!("/* {HEADER} */\n/* sdk/include/dk/gen/{file} -- {purpose} */\n");
     if let Some(t) = &c.intro {
@@ -2304,9 +2365,11 @@ fn view_h(
         };
         c_struct(&mut s, name, comment, fields);
     }
-    if let Some(t) = &c.rules {
-        let _ = writeln!(s, "/* {} */\n", t.trim());
-    }
+    let rules = match &c.rules {
+        Some(t) => format!("{}\n{regs}", t.trim()),
+        None => regs.trim_start().to_string(),
+    };
+    let _ = writeln!(s, "/* {rules} */\n");
     for (name, sig, doc) in fns {
         let _ = writeln!(s, "/* {doc} */");
         let _ = writeln!(
@@ -2337,6 +2400,7 @@ fn machine_h(sdk: &Sdk) -> Result<String> {
         ],
         &v.fns,
         &sdk.machine.c,
+        &register_comment(sdk),
     ))
 }
 
@@ -2354,7 +2418,156 @@ fn fx_h(sdk: &Sdk) -> Result<String> {
         ],
         &v.fns,
         &sdk.fx.c,
+        &register_comment(sdk),
     ))
+}
+
+/// One name, range (`R0-R15`) or group (`MR`) of `[dsp.registers]` as register names.
+fn expand_register(spec: &str) -> std::result::Result<Vec<String>, String> {
+    if let Some((_, names)) = REG_GROUPS.iter().find(|(g, _)| *g == spec) {
+        return Ok(names.iter().map(|n| n.to_string()).collect());
+    }
+    let Some((lo, hi)) = spec.split_once('-') else {
+        return Ok(vec![spec.to_string()]);
+    };
+    let at = lo.trim_end_matches(|c: char| c.is_ascii_digit()).len();
+    let (prefix, from, to) = (
+        &lo[..at],
+        lo[at..].parse::<u32>(),
+        hi.strip_prefix(&lo[..at]).unwrap_or(hi).parse::<u32>(),
+    );
+    match (from, to) {
+        (Ok(a), Ok(b)) if !prefix.is_empty() && a <= b => {
+            Ok((a..=b).map(|n| format!("{prefix}{n}")).collect())
+        }
+        _ => Err(format!("bad register range {spec:?}")),
+    }
+}
+
+/// The register names of a list of `[dsp.registers]` entries, in order. The one expansion of ranges and groups: every name must be one
+/// that `dksharc::defuse::reg_name` prints, and none may appear twice.
+fn expand_registers(what: &str, specs: &[String]) -> Result<Vec<String>> {
+    let known: std::collections::BTreeSet<String> = (0..dksharc::defuse_table::NUREG
+        + dksharc::defuse_table::SPECIAL_NAMES.len())
+        .map(|c| dksharc::defuse::reg_name(c as u8))
+        .collect();
+    let mut out: Vec<String> = vec![];
+    for spec in specs {
+        let names =
+            expand_register(spec).map_err(|e| err!("{SOURCE}: [dsp.registers] {what}: {e}"))?;
+        for n in names {
+            if !known.contains(&n) {
+                return Err(err!(
+                    "{SOURCE}: [dsp.registers] {what}: {n} is not a register name of dksharc"
+                ));
+            }
+            if out.contains(&n) {
+                return Err(err!("{SOURCE}: [dsp.registers] {what}: {n} twice"));
+            }
+            out.push(n);
+        }
+    }
+    Ok(out)
+}
+
+/// `[dsp.registers]` checked once at the parse: known names, no register in two classes, the entry address register in `clobber` and the
+/// return address register in no class (it is keep by the entry convention).
+fn registers_checked(sdk: &Sdk) -> Result<()> {
+    let r = &sdk.dsp.registers;
+    let mut seen: Vec<(&str, Vec<String>)> = vec![];
+    for (name, _, specs) in r.classes() {
+        let names = expand_registers(name, specs)?;
+        for (other, o) in &seen {
+            if let Some(n) = names.iter().find(|n| o.contains(n)) {
+                return Err(err!(
+                    "{SOURCE}: [dsp.registers] {n} is in {other} and in {name}"
+                ));
+            }
+        }
+        seen.push((name, names));
+    }
+    let entry = expand_registers("entry", std::slice::from_ref(&r.entry.entry))?;
+    let ret = expand_registers("entry", std::slice::from_ref(&r.entry.ret))?;
+    if let Some(n) = entry
+        .iter()
+        .find(|n| !seen.iter().any(|(c, v)| *c == "clobber" && v.contains(n)))
+    {
+        return Err(err!(
+            "{SOURCE}: [dsp.registers] {n} is the entry address register and not in clobber"
+        ));
+    }
+    if let Some(n) = ret.iter().find(|n| seen.iter().any(|(_, v)| v.contains(n))) {
+        return Err(err!(
+            "{SOURCE}: [dsp.registers] {n} is the return address register and in a class"
+        ));
+    }
+    Ok(())
+}
+
+/// The register rules as lines of the block comment of the generated C views, one line per class.
+fn register_comment(sdk: &Sdk) -> String {
+    let r = &sdk.dsp.registers;
+    let mut s = String::from("   Registers (the table is sdk/dsp/REGISTERS.md):");
+    for (name, rule, specs) in r.classes() {
+        let _ = write!(s, "\n   {name} ({rule}): {}", specs.join(", "));
+    }
+    let _ = write!(
+        s,
+        "\n   entry: {} is the entry address (it may be overwritten), {} the return address (keep).",
+        r.entry.entry, r.entry.ret
+    );
+    s
+}
+
+/// `packages/dksharc/src/rules_table.rs`: the classes as expanded register names.
+fn rules_rs(sdk: &Sdk) -> Result<String> {
+    let r = &sdk.dsp.registers;
+    let mut s = String::from(
+        "//! Generated by `patchkit gen` from sdk/sdk.toml ([dsp.registers]). Do not edit.\n//! The register classes of the DSP contract (sdk/dsp/REGISTERS.md) as the names `defuse::reg_name` prints.\n",
+    );
+    for (name, rule, specs) in r.classes() {
+        let list = expand_registers(name, specs)?
+            .iter()
+            .map(|n| format!("{n:?}"))
+            .collect::<Vec<_>>()
+            .join(", ");
+        let _ = write!(
+            s,
+            "\n/// {name}: {rule}.\npub const {}: &[&str] = &[{list}];\n",
+            name.to_uppercase()
+        );
+    }
+    let _ = write!(
+        s,
+        "\n/// The register that holds the entry address (it is in clobber).\npub const ENTRY: &str = {:?};\n\n/// The register that holds the return address (it is keep).\npub const RETURN: &str = {:?};\n",
+        r.entry.entry, r.entry.ret
+    );
+    Ok(s)
+}
+
+/// `sdk/dsp/REGISTERS.md`: the table of the register contract.
+fn registers_md(sdk: &Sdk) -> String {
+    let r = &sdk.dsp.registers;
+    let mut s = format!(
+        "<!-- {HEADER} -->\n\n# DSP register contract\n\n\
+         The one register contract for module DSP code, on both devices. The table is `[dsp.registers]` in `sdk/sdk.toml`.\n\
+         `patchkit gen` writes this file, the rule comments of `sdk/include/dk/gen/machine.h` and `fx.h`, and `packages/dksharc/src/rules_table.rs`.\n\
+         The check in `dksharc::rules` runs in `patchkit build` for module code. It only warns for now.\n\n\
+         | Class | Registers | Rule |\n| --- | --- | --- |\n"
+    );
+    for (name, rule, specs) in r.classes() {
+        let _ = writeln!(s, "| {name} | `{}` | {rule} |", specs.join(", "));
+    }
+    let _ = write!(
+        s,
+        "\n## Entry\n\nThe adapter enters a module function with `{e}` = the entry address and `{t}` = the return address, and the module returns with `JUMP (M13, {t})`. `{e}` may be overwritten (both adapters restore it); `{t}` is treated as keep.\n\n\
+         ## Why never_write\n\nThe stock interrupt code reads {list} at any instruction. A save before the write and a restore after it do not help: an interrupt between the two reads the changed value. So a module does not write these registers at all.\n\n\
+         ## Names\n\nA range such as `R0-R15` stands for the registers one by one. A group stands for the registers that `dksharc` names separately: `MR` is MRF, MRB, MSF and MSB; `ASTAT` is ASTATX and ASTATY; `STKY` is STKYX and STKYY; `LCNTR` is LCNTR, CURLCNTR and LADDR (the loop registers).\n",
+        e = r.entry.entry,
+        t = r.entry.ret,
+        list = r.never_write.join(", ")
+    );
+    s
 }
 
 /// `sdk/include/dk/gen/records.h`: the record kinds (`[records.kinds]`) for `dk_record_add`.
@@ -2429,6 +2642,8 @@ pub fn render(text: &str) -> Result<Vec<(String, String)>> {
         (C_IMPORTS_OUT.to_string(), imports_h(&sdk)?),
         (C_PAGE_CONSTS_OUT.to_string(), page_consts_h(&sdk)),
         (C_RECORDS_OUT.to_string(), records_h(&sdk)),
+        (RULES_RS_OUT.to_string(), rules_rs(&sdk)?),
+        (REGISTERS_MD_OUT.to_string(), registers_md(&sdk)),
     ])
 }
 

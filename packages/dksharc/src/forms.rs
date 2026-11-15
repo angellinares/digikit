@@ -8,7 +8,10 @@ use sharc_rt::decode::Decoded;
 /// The fields of one decoded instruction.
 pub struct Fields<'a>(&'a Decoded);
 
-impl Fields<'_> {
+impl<'a> Fields<'a> {
+    pub fn new(d: &'a Decoded) -> Self {
+        Fields(d)
+    }
     pub fn form(&self) -> &'static str {
         self.0.type_name
     }

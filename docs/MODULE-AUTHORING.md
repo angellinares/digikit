@@ -535,8 +535,7 @@ switched off.
 
 Registers:
 
-- You may change R0-R15, I0-I5, M1-M4 and B3.
-- Keep I6-I15, M0, M5-M15, L0-L7 and MODE1.
+- Which registers you may change, keep or never write: `sdk/dsp/REGISTERS.md`.
 - The adapter pins M5 = 0, M6 = 1, M7 = -1, M13 = 0, M14 = 1 and M15 = -1, L0-L5 = 0, SIMD off and RND32 set. Return with `JUMP (M13, I13)`.
 - `_dv_exp2` (F0 = 2^F0) is a helper of `core/dsp-voice`. Declare it with `.EXTERN _dv_exp2;`. It clobbers R0 to R3.
 - A 16-bit form `Rn = Rn op Rx` can be read differently by the emulator and the silicon. The build refuses it. Use three distinct registers.
