@@ -46,8 +46,16 @@ static mut LINK: Link = Link {
     events: Vec::new(),
 };
 
+/// A `dyndsp_info` table that replaces `VOICE_INFO` while a test holds the lock (null: none).
+pub static mut VOICE_INFO_OVERRIDE: *const u32 = core::ptr::null();
 pub fn voice_info() -> *const u32 {
-    VOICE_INFO.as_ptr()
+    unsafe {
+        if VOICE_INFO_OVERRIDE.is_null() {
+            VOICE_INFO.as_ptr()
+        } else {
+            VOICE_INFO_OVERRIDE
+        }
+    }
 }
 pub unsafe fn fx_info() -> *const u32 {
     if LINK.no_fx_info {

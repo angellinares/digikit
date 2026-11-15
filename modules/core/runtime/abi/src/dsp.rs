@@ -15,11 +15,19 @@ pub const GRANULE: u32 = dkneeds::GRANULE;
 /// Words of a voice row of `core/dsp-voice`: 0 type, 1 pc, 2 to 9 the range of knob 0 to 7 (min | max << 16), 10 the type the guard disabled, then its counters,
 /// 16 note_on pc, 17 state base, 18 state stride, 19 clear bytes, 20 generation, 21 log level, 22 parameter latch mask, 23 the tracks whose state the adapter has zeroed since the load (bit t; the runtime writes 0).
 pub const ROW_WORDS: u32 = 24;
+/// The layout of a DSP section (`[format]` of sdk/sdk.toml): magic, versions, header words, entry sizes and the fields of a voice and an effect record.
+pub use dkneeds::{
+    DSP_HEADER, DSP_H_ALIGN, DSP_H_BANK_OFF, DSP_H_BSS, DSP_H_DEVICE, DSP_H_FX_N, DSP_H_FX_OFF,
+    DSP_H_IMAGE_OFF, DSP_H_IMAGE_SIZE, DSP_H_IMPORT_N, DSP_H_IMPORT_OFF, DSP_H_MAGIC,
+    DSP_H_RELOC_N, DSP_H_RELOC_OFF, DSP_H_VERSION, DSP_H_VOICE_N, DSP_H_VOICE_OFF, DSP_IMPORT_ADDR,
+    DSP_IMPORT_LEN, DSP_MAGIC, DSP_V1, DSP_V2, DSP_V3, DSP_V4, DSP_V5, RELOC_LEN, RELOC_OFFSET,
+    RELOC_WORD, VOICE_CLEAR_BYTES, VOICE_ENTRY, VOICE_LATCH, VOICE_NOTE_ON, VOICE_STATE_BYTES,
+    VOICE_TYPE, VOICE_V2_RANGES, VOICE_V3_RANGES, VOICE_V3_RESERVED, VOICE_VOICES,
+};
+pub use dkneeds::{FX_DESC, FX_FLAGS, FX_NPARAMS, FX_PARAMS, FX_PROCESS, FX_STATE};
 /// Bytes of a voice entry in a DSP section: version 1 16 (type, entry), version 2 48 (type, entry, 8 ranges, 2 reserved),
 /// version 3 64 (type, render, note_on, state_bytes, clear_bytes, 8 ranges, voices, latch mask, reserved).
-pub const VOICE_V1: u32 = 16;
-pub const VOICE_V2: u32 = 48;
-pub const VOICE_V3: u32 = 64;
+pub use dkneeds::{VOICE_V1, VOICE_V2, VOICE_V3};
 /// Most voice states a module may reserve.
 pub const MAX_STATE_VOICES: u32 = dkneeds::MAX_STATE_VOICES;
 /// Steps to publish a row: 8 ranges, the pc, note_on, state base, stride, clear, the latch mask, the zeroed-tracks mask, the cleared disabled word, the type.
@@ -27,7 +35,7 @@ pub const ROW_STEPS: u32 = 17;
 /// Effect rows: the most a chain takes (`DK_FX_MAX`), the bytes of an effect record in a DSP section of version 4, the words of a row of `core/fx`, the pc of
 /// a free row and the steps to publish a row: 8 parameter words, desc, state, mix, enabled, the 4 amount words and the route (finding 62), the pc.
 pub const MAX_FX: usize = dkneeds::MAX_FX as usize;
-pub const FX_REC: u32 = 64;
+pub use dkneeds::FX_LEN as FX_REC;
 pub const FX_ROW_WORDS: u32 = 24;
 pub const FX_FREE_PC: u32 = 0xffff_ffff;
 pub const FX_STEPS: u32 = 18;
@@ -50,9 +58,10 @@ pub const FXW_ROUTE: u32 = 18;
 pub const FXW_AMT0: u32 = 19;
 pub const FX_STEP_ROUTE: u32 = 12;
 /// `dk_fx_desc` (<dk/fx/fx.h>): magic "DKFX", contract, and its size in bytes.
-pub const FX_DESC_MAGIC: u32 = 0x444b_4658;
-pub const FX_DESC_BYTES: u32 = 24; // DK_FX_DESC_BYTES in sdk/include/dk/gen/fx_consts.h
-pub const FX_MAX_PARAMS: u32 = 8;
+pub use dkneeds::fx::{
+    DK_FX_DESC_BYTES as FX_DESC_BYTES, DK_FX_MAGIC as FX_DESC_MAGIC,
+    DK_FX_MAX_PARAMS as FX_MAX_PARAMS,
+};
 /// The windows of `core/dsp-link`.
 pub const WIN_VOICES: u32 = 1;
 pub const WIN_FX: u32 = 2;
