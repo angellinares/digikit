@@ -300,6 +300,15 @@ async function expectProfileSpans(runtime: PatchedSession): Promise<void> {
   const row = running.spans.find((s) => s.kind === 'module' && s.index === debug.index)!;
   expect(row.calls, "the debug module's tick ran").toBeGreaterThan(0);
   expect(BigInt(row.maxTicks), 'max is at most the sum').toBeLessThanOrEqual(row.sumTicks);
+  // the poll slots name their owner: a loaded module record, or the firmware image (a patched-in core module)
+  const records = (await dk.modules()).map((m) => m.index);
+  expect(running.polls, 'one entry per poll slot').toHaveLength(4);
+  const used = running.polls.flatMap((p, slot) => (p ? [{ slot, ...p }] : []));
+  for (const p of used) {
+    expect(p.owner === 'runtime' || records.includes(p.owner), `poll ${p.slot} owner ${p.owner}`).toBe(true);
+    expect(p.fn, `poll ${p.slot} function`).toBeGreaterThan(0);
+  }
+  console.log('poll owners', JSON.stringify(used.map((p) => ({ ...p, fn: p.fn.toString(16) }))));
 
   expect((await dk.profileState('stop')).running).toBe(false);
   const first = await dk.profileAll();
