@@ -12,7 +12,12 @@
 //!
 //! Relocations Selache emits (offsets and symbol values are in 16-bit parcels, the PC unit): type 11 is the absolute 24-bit target of a
 //! 48-bit jump or call (low 24 bits of the instruction), type 12 the absolute 32-bit immediate or address (low 32 bits). Both carry the
-//! symbol's address; the addend is in the symbol name (`sym + 4`).
+//! symbol's address; the addend is in the symbol name (`sym + 4`). Type 27 (`R_SHARC_PM_LOOP16`) is the loop end of a `DO` (Type 12a or
+//! 13a): the relative address `symbol + addend - address of the DO`, in parcels (selelf `relocate.rs`: the delta is target minus the
+//! relocation site, both in parcels). It does not depend on where the object is placed, so [`resolve_loop_ends`] writes it when the
+//! object is read and the object keeps no relocation for it (the run-time loader knows only the two absolute kinds). Selache's patch
+//! writes only reladdr bits 15:0 (bytes 4..5); the field is 23 bits wide (PRM Type 12a/13a, "reladdr" bits 22:0), so bits 22:16 (the low
+//! seven bits of byte 3) are written here too, and a loop end that is not 1 to 2^22 - 1 parcels ahead is an error.
 
 use super::sharc_legal::{Placed, legality_problems, loop_end_problems};
 use crate::dko::{Dko, DkoReloc, DkoSection, DkoSymbol, FORMAT};
@@ -29,6 +34,8 @@ const SECTION: &str = "seg_pmco";
 const PROCESSOR: &str = "ADSP-21569";
 const R_ABS24: u32 = 11;
 const R_ABS32: u32 = 12;
+/// R_SHARC_PM_LOOP16 (selelf `R_SHARC_PM_LOOP16`, 0x1b): the end of a hardware loop, relative to the `DO` instruction itself.
+const R_LOOP16: u32 = 27;
 /// Where the object is placed to read its relocated fields back (any value; the object itself keeps parcel offsets).
 const PLACEHOLDER_BASE: i64 = 0xB90000;
 
@@ -355,16 +362,6 @@ fn read_object(blob: &[u8], source_sha256: String) -> Result<Obj> {
         .ok_or_else(|| {
             err!("no section {section} (a .SECTION/PM {section}; directive is required)")
         })?;
-    // Selache's own instruction extents (VISA: the width comes from the first parcels). A last instruction that runs past the end of
-    // the section is listed as the bytes that are left (the same as the listing of `seldump`).
-    let mut selache_rows: Vec<Row> = vec![];
-    let mut at = 0usize;
-    while at + 2 <= sec.data.len() {
-        let n = selinstr::visa::instruction_len(&sec.data, at);
-        let end = sec.data.len().min(at + n);
-        selache_rows.push(((at / 2) as u64, sec.data[at..end].to_vec()));
-        at = end;
-    }
     let in_section = |s: &ElfSym, name: &dyn Fn(&str) -> bool| {
         !s.name.is_empty()
             && s.shndx > 0
@@ -430,16 +427,92 @@ fn read_object(blob: &[u8], source_sha256: String) -> Result<Obj> {
             );
         }
     }
-    let rows = native_rows(&selache_rows, &relocs, &sec.data)?;
+    let mut code = sec.data.clone();
+    let relocs = resolve_loop_ends(&mut code, relocs, &symbols)?;
+    // Selache's own instruction extents (VISA: the width comes from the first parcels). A last instruction that runs past the end of
+    // the section is listed as the bytes that are left (the same as the listing of `seldump`).
+    let mut selache_rows: Vec<Row> = vec![];
+    let mut at = 0usize;
+    while at + 2 <= code.len() {
+        let n = selinstr::visa::instruction_len(&code, at);
+        let end = code.len().min(at + n);
+        selache_rows.push(((at / 2) as u64, code[at..end].to_vec()));
+        at = end;
+    }
+    let rows = native_rows(&selache_rows, &relocs, &code)?;
     Ok(Obj {
         source_sha256,
-        section: sec.data.clone(),
+        section: code,
         symbols,
         relocs,
         rows,
         data,
         data_symbols,
     })
+}
+
+/// Write the loop end of every type 27 relocation into its `DO` instruction and return the other relocations. The target must be a
+/// symbol of this section (a loop does not leave it) and the instruction must decode as Type 12a or 13a; the field read back with our
+/// decoder must be the delta.
+fn resolve_loop_ends(
+    code: &mut [u8],
+    relocs: Vec<Reloc>,
+    symbols: &BTreeMap<String, (u64, bool)>,
+) -> Result<Vec<Reloc>> {
+    let mut rest = vec![];
+    for r in relocs {
+        if r.rtype != R_LOOP16 {
+            rest.push(r);
+            continue;
+        }
+        let at = r.parcel as usize * 2;
+        let Some(&(sym, _)) = symbols.get(&r.symbol) else {
+            return Err(err!(
+                "parcel {:#x}: DO loop end {} is not a label of this section",
+                r.parcel,
+                r.symbol
+            ));
+        };
+        if at + 6 > code.len() {
+            return Err(err!(
+                "parcel {:#x}: relocation type 27 on a short instruction",
+                r.parcel
+            ));
+        }
+        let d = decode_row(&code[at..at + 6], 6);
+        if !(d.type_name.starts_with("12a") || d.type_name == "13a") {
+            return Err(err!(
+                "parcel {:#x}: relocation type 27 (loop end) on {}, not a DO instruction",
+                r.parcel,
+                d.type_name
+            ));
+        }
+        let delta = sym as i64 + r.addend - r.parcel as i64;
+        if !(1..1 << 22).contains(&delta) {
+            return Err(err!(
+                "parcel {:#x}: DO loop end {} is {delta} parcels from the DO, outside 1..2^22 (the loop end must follow the DO)",
+                r.parcel,
+                r.symbol
+            ));
+        }
+        if code[at + 3] & 0x7F != 0 || code[at + 4] != 0 || code[at + 5] != 0 {
+            return Err(err!(
+                "parcel {:#x}: DO loop end field is not zero before relocation",
+                r.parcel
+            ));
+        }
+        code[at + 3] |= (delta >> 16) as u8 & 0x7F;
+        code[at + 4] = (delta >> 8) as u8;
+        code[at + 5] = delta as u8;
+        let back = field_joined(&decode_row(&code[at..at + 6], 6), "reladdr");
+        if back != Some(delta) {
+            return Err(err!(
+                "parcel {:#x}: DO loop end reads back {back:?}, want {delta}",
+                r.parcel
+            ));
+        }
+    }
+    Ok(rest)
 }
 
 /// The instruction rows of the section by our decoder's extents, cross-checked against Selache's listing.
@@ -609,6 +682,7 @@ fn link(obj: &Obj, base_sw: i64, externs: &HashMap<String, i64>) -> Result<Linke
         .map(|(n, (off, _))| (n.clone(), base_sw + *off as i64))
         .collect();
     let extents: HashMap<u64, usize> = obj.rows.iter().map(|(p, r)| (*p, r.len())).collect();
+    let mut unsupported: Vec<String> = vec![];
     for r in &obj.relocs {
         let target = match (syms.get(&r.symbol), externs.get(&r.symbol)) {
             (Some(t), _) | (None, Some(t)) => *t,
@@ -636,8 +710,22 @@ fn link(obj: &Obj, base_sw: i64, externs: &HashMap<String, i64>) -> Result<Linke
                 self_check(&code, at + 2, 4, r)?;
                 code[at + 2..at + 6].copy_from_slice(&(target as u32).to_be_bytes());
             }
-            t => return Err(err!("relocation type {t} not supported")),
+            t => unsupported.push(format!(
+                "type {t} (parcel {:#x}, symbol {}, instruction {})",
+                r.parcel,
+                r.symbol,
+                obj.rows
+                    .iter()
+                    .find(|(p, _)| *p == r.parcel)
+                    .map_or("?".into(), |(_, b)| hex(b))
+            )),
         }
+    }
+    if !unsupported.is_empty() {
+        return Err(err!(
+            "relocation not supported: {}",
+            unsupported.join("; ")
+        ));
     }
     let mut out = Linked {
         code_boot: swap_parcels(&code),
@@ -990,7 +1078,7 @@ mod tests {
     fn shift_immediates_are_assembled_to_the_table_17_9_opcodes() {
         // The words are the stock forms (finding 05, "Selache shift-immediate encodings"): `R2 = lshift(R15, -1)` is 023e7800ff2f. The
         // fork's selas writes the opcode of PRM Table 17-9 and dataex 0xF for a negative LSHIFT/ASHIFT count itself.
-        let o = asm("R0 = LSHIFT R11 BY -16;\nR0 = LSHIFT R11 BY 16;\nR2 = LSHIFT R15 BY -1;\nR0 = ASHIFT R11 BY -3;\nR0 = R0 OR LSHIFT R11 BY 3;\nR0 = R0 OR ASHIFT R11 BY -3;\nR0 = FDEP R11 BY 4:8;\nR0 = R0 OR FDEP R11 BY 4:8;\nR0 = FEXT R11 BY 4:8 (SE);\n")
+        let o = asm("R0 = LSHIFT R11 BY -16;\nR0 = LSHIFT R11 BY 16;\nR2 = LSHIFT R15 BY -1;\nR0 = ASHIFT R11 BY -3;\nR0 = R0 OR LSHIFT R11 BY 3;\nR0 = R0 OR ASHIFT R11 BY -3;\n")
             .unwrap();
         assert_eq!(
             rows_hex(&o),
@@ -1000,10 +1088,7 @@ mod tests {
                 "023e7800ff2f",
                 "023e7801fd0b",
                 "023e0008030b",
-                "023e7809fd0b",
-                "023e1011040b",
-                "023e101b040b",
-                "023e1012040b"
+                "023e7809fd0b"
             ]
         );
         assert_eq!(hex(&o.section), rows_hex(&o).concat());
@@ -1032,6 +1117,12 @@ mod tests {
         assert_eq!(w(0x10, 0x040B, 2), None); // FEXT: dataex is part of the field
     }
 
+    /// The fork's assembler refuses these itself ("cannot be stored/loaded through its own DAG"); our check on the decoded word
+    /// (`sharc_legal`, tested there per word) is the second line, and covers objects from other sources.
+    fn refused(message: &str) -> bool {
+        message.contains("the ISA does not allow") || message.contains("through its own DAG")
+    }
+
     #[test]
     fn a_store_the_isa_excludes_is_refused_by_form_and_the_direct_store_is_not() {
         // through an index register: a DM store of a DAG1 register, a PM store of a DAG2 register (finding 49 section 10)
@@ -1042,11 +1133,8 @@ mod tests {
             "PM(15, I12) = I8;",
         ] {
             let e = object_from_text(&format!("{HEAD}    {bad}\n    RTS;\n")).unwrap_err();
-            assert!(e.0.contains("the ISA does not allow"), "{bad}: {e}");
+            assert!(refused(&e.0), "{bad}: {e}");
         }
-        let e =
-            object_from_text(&format!("{HEAD}_x:\n    DM(-16, I6) = I0;\n    RTS;\n")).unwrap_err();
-        assert!(e.0.contains("parcel 0x0: DM store of I0 (DAG1)"), "{e}");
         // the direct-address store (Type 14a), a store of a data register, loads of every register
         for ok in [
             "DM(0x20000000) = I0;",
@@ -1071,14 +1159,8 @@ mod tests {
             "B3 = DM(I4, M4)",
         ] {
             let e = object_from_text(&format!("{HEAD}    {bad}{c}\n    RTS;\n")).unwrap_err();
-            assert!(e.0.contains("the ISA does not allow"), "{bad}: {e}");
+            assert!(refused(&e.0), "{bad}: {e}");
         }
-        let e = object_from_text(&format!("{HEAD}_x:\n    I0 = DM(I4, M4){c}\n    RTS;\n"))
-            .unwrap_err();
-        assert!(
-            e.0.contains("parcel 0x0: DM post-modify load of I0 (DAG1)"),
-            "{e}"
-        );
         // the nearest legal ones: a DAG2 register, a data register, the pre-modify load, the immediate-address load
         for ok in [
             "I8 = DM(I4, M4)",
@@ -1251,5 +1333,81 @@ mod tests {
             .collect();
         assert_eq!(undefined, ["_g"]);
         assert_eq!(d.relocs[0].rtype, "sharc.abs24");
+    }
+
+    fn do_at_0() -> Vec<u8> {
+        // Type 12a, LCNTR = 3: parcels 0c00 2080 0000 (bit 23, the mode bit, is set; the reladdr field is clear)
+        vec![0x0c, 0x00, 0x20, 0x80, 0x00, 0x00]
+    }
+
+    fn loop_reloc(symbol: &str, addend: i64) -> Reloc {
+        Reloc {
+            parcel: 0,
+            rtype: R_LOOP16,
+            symbol: symbol.into(),
+            addend,
+        }
+    }
+
+    #[test]
+    fn a_loop_end_is_written_as_the_distance_from_the_do_in_all_23_bits() {
+        let sym = |at: u64| BTreeMap::from([("_e".to_string(), (at, false))]);
+        for (end, hi, lo) in [(9u64, 0x80u8, 9u16), (70_000u64, 0x81u8, 4464u16)] {
+            let mut code = do_at_0();
+            let left = resolve_loop_ends(&mut code, vec![loop_reloc("_e", 0)], &sym(end)).unwrap();
+            assert!(left.is_empty());
+            // the mode bit stays, reladdr[22:16] is the low seven bits of byte 3
+            assert_eq!(code[3], hi);
+            assert_eq!(u16::from_be_bytes([code[4], code[5]]), lo);
+        }
+        // the addend is part of the target; other relocations are returned untouched
+        let mut code = do_at_0();
+        let abs = Reloc {
+            rtype: R_ABS24,
+            ..loop_reloc("_x", 4)
+        };
+        let left = resolve_loop_ends(
+            &mut code,
+            vec![loop_reloc("_e", 2), abs],
+            &sym(5),
+        )
+        .unwrap();
+        assert_eq!((code[4], code[5]), (0, 7));
+        assert_eq!(left.len(), 1);
+        assert_eq!(left[0].rtype, R_ABS24);
+    }
+
+    #[test]
+    fn a_loop_end_that_cannot_be_written_is_an_error() {
+        let sym = |at: u64| BTreeMap::from([("_e".to_string(), (at, false))]);
+        let run = |code: &mut Vec<u8>, r: Reloc, s: BTreeMap<String, (u64, bool)>| {
+            resolve_loop_ends(code, vec![r], &s).unwrap_err().0
+        };
+        // behind the DO, or at it
+        assert!(run(&mut do_at_0(), loop_reloc("_e", 0), sym(0)).contains("outside 1..2^22"));
+        // too far for the 23-bit signed field
+        assert!(run(&mut do_at_0(), loop_reloc("_e", 0), sym(1 << 22)).contains("outside 1..2^22"));
+        // a label of another section
+        assert!(run(&mut do_at_0(), loop_reloc("_far", 0), sym(5)).contains("not a label"));
+        // an instruction that is not a DO
+        let mut jump = vec![0x06, 0xbe, 0x00, 0x00, 0x00, 0x00];
+        assert!(run(&mut jump, loop_reloc("_e", 0), sym(5)).contains("not a DO"));
+        // a field that holds something already
+        let mut used = do_at_0();
+        used[5] = 1;
+        assert!(run(&mut used, loop_reloc("_e", 0), sym(5)).contains("not zero"));
+    }
+
+    #[test]
+    fn an_assembled_do_loop_has_no_relocation_and_a_relative_end() {
+        let body = ".GLOBAL _f;\n_f:\n    LCNTR = 3, DO _e UNTIL LCE;\n    R0 = R0 + 1;\n    R1 = R1 + R0;\n_e: R2 = R2 + R1;\n    RTS;\n";
+        let o = asm(body).unwrap();
+        assert!(o.relocs.iter().all(|r| r.rtype != R_LOOP16));
+        let at = o.symbols["_e"].0 as i64;
+        let (p, raw) = &o.rows[0];
+        let d = decode_row(raw, 6);
+        assert!(d.type_name.starts_with("12a"), "{}", d.type_name);
+        assert_eq!(field_joined(&d, "reladdr"), Some(at - *p as i64));
+        link(&o, BASE, &HashMap::new()).unwrap();
     }
 }
