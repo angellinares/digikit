@@ -14,9 +14,10 @@ import {
   fileHashHex,
   fmtVersion,
   hasCap,
-  loadFailureText,
+  moduleStateText,
   storeFree,
-  type LoadFailure,
+  type ModuleState,
+  type ModuleStateName,
 } from '@digi/dk-session';
 import { fitsNow, type Caps, type Needs } from './fit.ts';
 import type { DkEntry, DkInfoFull } from '@digi/dk-session';
@@ -39,8 +40,10 @@ export interface TransferRow {
   needs?: Needs;
   on_card: 'yes' | 'no' | 'other version';
   loaded: boolean;
-  /** Why the module is not loaded although the last boot selected it (`loadFailureText`); set only for a file that failed to load. */
+  /** Why the module is not loaded although the last boot selected it (`moduleStateText`): the boot plan's refusal or the load's failure; set only for such a file. */
   not_loaded?: string;
+  /** The module's state at the last boot (REFUSED, FAILED or SKIPPED) when `not_loaded` is set. */
+  load_state?: ModuleStateName;
   fits?: boolean | null;
   warnings?: string[];
   known?: boolean;
@@ -193,13 +196,14 @@ export function mergeView(
   loaded: string[],
   cap: Caps | null,
   headers: Record<string, Uint8Array | null>,
-  failures: LoadFailure[] = [],
+  states: ModuleState[] = [],
 ): Pick<TransferView, 'modules' | 'card_only'> {
-  /** The load failure of the file at `path` (the runtime keeps the file name, 27 characters at most). */
-  const whyNot = (path: string, isLoaded: boolean): { not_loaded?: string } => {
+  /** The refusal or load failure of the file at `path` (the runtime keeps the file name, 27 characters at most). */
+  const whyNot = (path: string, isLoaded: boolean): { not_loaded?: string; load_state?: ModuleStateName } => {
     const base = (path.split('/').pop() ?? path).slice(0, 27);
-    const f = isLoaded ? undefined : failures.find((x) => x.name === base);
-    return f ? { not_loaded: loadFailureText(f) } : {};
+    const f = isLoaded ? undefined : states.find((x) => x.name === base);
+    const text = f && moduleStateText(f);
+    return f && text ? { not_loaded: text, load_state: f.state } : {};
   };
   const onCard = new Map(card.map((c) => [c.path, c]));
   const seen = new Set<string>();
@@ -356,7 +360,7 @@ export async function buildView(s: DkSession, library: LibraryModule[]): Promise
   const card = await listModules(s, info);
   const loaded = hasCap(info, 'MODULES') ? (await s.modules()).map((m) => m.name) : [];
   const cap = hasCap(info, 'CAPACITY') ? await s.capacity() : null;
-  const failures = hasCap(info, 'LOADS') ? await s.loadFailures() : [];
+  const states = hasCap(info, 'LOADS') ? await s.loadStates() : [];
   const mine = new Set(library.map((m) => m.path));
   const headers: Record<string, Uint8Array | null> = {};
   if (hasCap(info, 'READ')) {
@@ -374,7 +378,7 @@ export async function buildView(s: DkSession, library: LibraryModule[]): Promise
     free_bytes: storeFree(info, cap).free,
     loaded,
     capacity: cap,
-    ...mergeView(library, card, loaded, cap, headers, failures),
+    ...mergeView(library, card, loaded, cap, headers, states),
   };
 }
 

@@ -2,6 +2,7 @@
 // the warnings with their texts, the load failures. The rest of the Transfer logic runs in dktransfer.test.ts with a fit stand-in.
 import assert from 'node:assert/strict';
 import { test } from 'vitest';
+import type { ModuleState } from '@digi/dk-session';
 import { headerInfo, libraryModule, mergeView } from '@digi/workbench-core/modules/dktransfer.ts';
 import { dkm, needsOf } from './support/dkm.ts';
 import { hex, sha } from './support/fakedevice.ts';
@@ -70,7 +71,9 @@ test('header, library module, the merged list (the real fit rule)', async () => 
     /DSP memory 350 bytes short; fits when the modules loaded now are not selected/,
   );
   // a file the last boot selected and the loader refused says why; a loaded one and an unrelated one do not
-  const failed = [{ name: 'tool.dkm', result: -7, needs: 'usb-bulk' }];
+  const failed: ModuleState[] = [
+    { index: 0, name: 'tool.dkm', state: 'FAILED', result: -7, detail: [0, 0], needs: 'usb-bulk' },
+  ];
   const why = mergeView(library, card, ['someone/machine', 'someone/effect'], cap, headers, failed);
   assert.equal(
     why.modules.find((r) => r.id === 'someone/tool')!.not_loaded,

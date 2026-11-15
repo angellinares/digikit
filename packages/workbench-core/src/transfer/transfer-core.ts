@@ -169,7 +169,12 @@ export function tickedLoad(view: TransferView, ticks: Set<string>): string | nul
 export function deviceTags(r: TransferRow): RowTag[] {
   const out: RowTag[] = [];
   if (r.loaded) out.push({ text: 'loaded', title: 'Loaded by the device until the next restart', tone: 'ok' });
-  if (r.not_loaded) out.push({ text: 'not loaded', title: r.not_loaded, tone: 'warn' });
+  if (r.not_loaded)
+    out.push({
+      text: r.load_state === 'REFUSED' ? 'refused' : r.load_state === 'SKIPPED' ? 'skipped' : 'not loaded',
+      title: r.not_loaded,
+      tone: 'warn',
+    });
   if (!r.id)
     out.push({
       text: 'not in library',

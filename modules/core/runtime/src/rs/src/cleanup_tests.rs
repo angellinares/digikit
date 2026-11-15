@@ -600,3 +600,43 @@ fn unload_of_a_module_without_fini_releases_its_sink() {
         assert!(!crate::dlog::sink_on(0));
     }
 }
+
+/// Module 0 of the boot selection has been planned, started and answered LOADING: its ColdFire part is live and its DSP part is going.
+unsafe fn dsp_loading() {
+    boot::states().begin();
+    assert!(boot::states().planned(0, dkrt_abi::plan::Verdict::Accepted));
+    assert!(boot::states().init(0));
+    assert!(boot::states().finished(0, LOADING));
+    assert_eq!(boot::info().states[0], STATE_DSP_LOADING);
+}
+
+#[test]
+fn a_failed_dsp_part_makes_its_module_failed_with_the_dsp_code() {
+    let _g = LOCK.lock().unwrap_or_else(|e| e.into_inner());
+    unsafe {
+        seed(Completion::Refuse, false, true, true);
+        dsp_loading();
+        pass();
+        assert_eq!(boot::info().results[0], E_DSP_XFER);
+        assert_eq!(boot::info().states[0], STATE_FAILED);
+    }
+}
+
+#[test]
+fn a_loaded_dsp_part_makes_its_module_active() {
+    use crate::handlers::tests::{LOCK as FAKE_LOCK, TWO};
+    let _f = FAKE_LOCK.lock().unwrap_or_else(|e| e.into_inner());
+    let _g = LOCK.lock().unwrap_or_else(|e| e.into_inner());
+    unsafe {
+        seed(Completion::Ack, false, true, false);
+        idle_link();
+        let d = dsp::ds();
+        d.row_owner = [0; dsp::MAX_ROWS];
+        d.fx_owner = [0; dsp::MAX_FX];
+        d.step = 0;
+        dsp_loading();
+        crate::loader::dsp_step_with(TWO);
+        assert_eq!(boot::info().results[0], OK);
+        assert_eq!(boot::info().states[0], STATE_ACTIVE);
+    }
+}
