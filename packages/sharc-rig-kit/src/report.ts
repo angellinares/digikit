@@ -37,8 +37,8 @@ export interface FxReport {
 
 export const RUNNER = 'sharc-rig-kit';
 
-/** The directory of the reports: `DIGI_CONFORM_REPORTS`, else out/runs/conformance. */
-export const reportsDir = (): string => process.env.DIGI_CONFORM_REPORTS || path.join(ROOT, 'out/runs/conformance');
+/** The directory of the reports: `DIGI_CONFORM_REPORTS`, else out/runs/conformance-rig (the Python suite keeps out/runs/conformance). */
+export const reportsDir = (): string => process.env.DIGI_CONFORM_REPORTS || path.join(ROOT, 'out/runs/conformance-rig');
 
 /** The file name of a report: `<id with / as __>@<device or fx>.json`. */
 export const reportName = (label: string): string => `${label.replaceAll('/', '__')}.json`;

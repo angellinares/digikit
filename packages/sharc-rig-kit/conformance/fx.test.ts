@@ -7,7 +7,7 @@
  * wrote only memory it owns, the master stays bounded and the instruction count is within the budget (src/checks.ts).
  *
  * One run per module with `DIGI_JOBS` at a time. Select with DIGI_CONFORM_MODULES=test/fx-gain,... (`mise run module:check NAME` sets it). Reports go to
- * `DIGI_CONFORM_REPORTS`, else out/runs/conformance/ (never committed).
+ * `DIGI_CONFORM_REPORTS`, else out/runs/conformance-rig/ (never committed).
  */
 import path from 'node:path';
 import { beforeAll, describe, expect, it } from 'vitest';

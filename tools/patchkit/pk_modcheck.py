@@ -147,10 +147,13 @@ def commit_stage(mid: str, devices: list[str]) -> bool:
 
 
 CONFORMANCE_REPORTS = ROOT / "out" / "runs" / "conformance"
+RIG_REPORTS = (
+    ROOT / "out" / "runs" / "conformance-rig"
+)  # the SHARC-only rig writes here (packages/sharc-rig-kit/src/report.ts)
 
 
 def measured_costs(
-    mid: str, devices: list[str], since: float
+    mid: str, devices: list[str], since: float, reports: Path = CONFORMANCE_REPORTS
 ) -> dict[str, dict[str, int]]:
     """The DSP cost of module MID per device from the reports of the conformance run that started at `since` (tests/modules/test_machine_conformance.py and
     test_fx_conformance.py write them): the worst steady block over every case. A machine's cost is per voice; an effect's is the whole process call (the effect and
@@ -166,11 +169,11 @@ def measured_costs(
     stem = mid.replace("/", "__")
     if pk_conform.is_machine_module(mid):
         for dev in devices:
-            cost = worst(CONFORMANCE_REPORTS / f"{stem}@{dev}.json")
+            cost = worst(reports / f"{stem}@{dev}.json")
             if cost:
                 out.setdefault(dev, {})[COST_VOICE] = cost
     if pk_conform.is_fx_module(mid):
-        cost = worst(CONFORMANCE_REPORTS / f"{stem}@fx.json")
+        cost = worst(reports / f"{stem}@fx.json")
         if cost:
             for dev in devices:
                 out.setdefault(dev, {})[COST_FX] = cost
@@ -179,7 +182,7 @@ def measured_costs(
 
 def rig_conformance(mid: str, env: dict[str, str]) -> int:
     """The conformance suites on the SHARC-only rig (packages/sharc-rig-kit): builds the rig, then runs the Vitest project with the selection in ENV.
-    The kit writes the reports to out/runs/conformance, the files `measured_costs` reads."""
+    The kit writes the reports to out/runs/conformance-rig (`RIG_REPORTS`), which `write_costs_rust` reads; the Python suite keeps out/runs/conformance."""
     from tools.patchkit import patchkit
 
     r = subprocess.run(
@@ -189,7 +192,12 @@ def rig_conformance(mid: str, env: dict[str, str]) -> int:
     )
     if r.returncode:
         return r.returncode
-    kit_env = {**os.environ, **env, "DIGI_PATCHKIT": str(patchkit.binary())}
+    kit_env = {
+        **os.environ,
+        **env,
+        "DIGI_PATCHKIT": str(patchkit.binary()),
+        "DIGI_CONFORM_REPORTS": str(RIG_REPORTS),
+    }
     return subprocess.run(
         [
             "pnpm",
@@ -212,7 +220,7 @@ def write_costs_rust(
     """`write_costs` through `patchkit uses set` (packages/patchkit/src/uses.rs): the same lines change as with `write_uses`."""
     from tools.patchkit import patchkit
 
-    costs = measured_costs(mid, devices, since)
+    costs = measured_costs(mid, devices, since, RIG_REPORTS)
     for dev, c in sorted(costs.items()):
         flags = [x for k, v in c.items() for x in (f"--{k.replace('_', '-')}", str(v))]
         r = patchkit.run(

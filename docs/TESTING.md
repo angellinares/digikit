@@ -566,7 +566,7 @@ use the existing harness resolution/overrides; only resolution holds a shared be
 before the target. The target does not run the broad gate. Its bounded source inputs are conservative affected-selection inputs, not a cache-closure or
 fine-routing claim. This does not replace automatic gate routing. The suite alone:
 `DIGI_CONFORM_MODULES=<author/name> uv run python -m pytest tests/modules/test_machine_conformance.py -rf`.
-`module:check` runs the conformance suite on the SHARC-only rig ("The Vitest kit") and writes `dsp_cost_*` with `patchkit uses set`; `--python-conformance` runs the Python suite above instead (kept until the retirement phase of [the plan](plans/t1g-sharc-rig-kit.md)).
+`module:check` runs the conformance suite on the SHARC-only rig (reports in `out/runs/conformance-rig`) ("The Vitest kit") and writes `dsp_cost_*` with `patchkit uses set`; `--python-conformance` runs the Python suite above instead (kept until the retirement phase of [the plan](plans/t1g-sharc-rig-kit.md)).
 
 Machine rules (`pk_conform.py`, rig `tests/support/machine_rig.py`, workers `tests/support/conform_worker.py`),
 checked in every block of every case:
@@ -635,7 +635,7 @@ DIGI_CONFORM_MODULES=fadedlimes/analog DIGI_CONFORM_DEVICE=dt2 DIGI_JOBS=4 DIGI_
 It runs the same cases as `tests/modules/test_machine_conformance.py` and `test_fx_conformance.py` (the Python suites stay until the
 retirement phase of [the plan](plans/t1g-sharc-rig-kit.md)): same case list, same pass set, the same failure messages for the negative
 fixtures, and the worst steady block of each (module, device) is the `dsp_cost_voice` or `dsp_cost_fx` of module.toml. Reports have the
-shape of the Python reports (`out/runs/conformance/<id>@<device|fx>.json`, `DIGI_CONFORM_REPORTS` moves them).
+shape of the Python reports (`out/runs/conformance-rig/<id>@<device|fx>.json`, `DIGI_CONFORM_REPORTS` moves them; the Python suite keeps `out/runs/conformance`).
 
 The cost writer, `patchkit uses set --id MODULE --device dt2 --dsp-cost-voice N` (or `--dsp-cost-fx N`), edits `[uses.<device>]` of the
 module.toml like `pk_modcheck.write_uses` does: only the lines of the keys given change, comments and other keys stay, and the file
