@@ -1,8 +1,6 @@
 use super::*;
 use std::boxed::Box;
-use std::sync::Mutex;
-
-static LOCK: Mutex<()> = Mutex::new(());
+use crate::test_lock::LOCK;
 
 fn c(s: &'static [u8]) -> *const u8 {
     assert_eq!(s.last(), Some(&0));

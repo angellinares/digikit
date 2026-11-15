@@ -13,12 +13,14 @@ import type { RpcPort } from './rpcfiles.ts';
 
 export type SamplesKind = 'stock-rpc' | 'digikit';
 
-/** A file or a folder of the listing; `size` is what the device reports. `hash` is the device's content hash of a file as the backend lists it
- * (opaque: only `sameOnDevice` of the same backend reads it); absent for a folder. */
+/** A file or a folder of the listing; `size` is the payload size on both backends (without the firmware's 16-byte trailer). `stored` is the size the
+ * digikit store keeps (payload plus trailer, what the file takes of the free space); absent on the +Drive. `hash` is the device's content hash of a file
+ * as the backend lists it (opaque: only `sameOnDevice` of the same backend reads it); absent for a folder. */
 export interface SampleEntry {
   name: string;
   kind: 'file' | 'folder';
   size: number;
+  stored?: number;
   hash?: string;
 }
 export interface SampleSpace {
@@ -298,13 +300,21 @@ class StoreSamples implements SamplesBackend {
       const slash = rest.indexOf('/');
       if (slash >= 0) out.set(rest.slice(0, slash), { name: rest.slice(0, slash), kind: 'folder', size: 0 });
       else if (isFolderEntry(e)) out.set(rest, { name: rest, kind: 'folder', size: 0 });
-      else out.set(rest, { name: rest, kind: 'file', size: e.size, hash: e.hash });
+      else
+        out.set(rest, {
+          name: rest,
+          kind: 'file',
+          size: Math.max(0, e.size - TRAILER.length),
+          stored: e.size,
+          hash: e.hash,
+        });
     }
     return [...out.values()];
   }
   sameOnDevice(file: Prepared, listing: readonly SampleEntry[]) {
     const e = listing.find((x) => x.name === file.name && x.kind === 'file');
-    return !!e && e.size === file.stored.length && e.hash === fileHashHex(file.stored);
+    // `size` of the listing is the payload; the stored size is what the file we send holds
+    return !!e && e.stored === file.stored.length && e.hash === fileHashHex(file.stored);
   }
   async space() {
     return storeSpace(this.s);
@@ -378,12 +388,12 @@ class StoreSamples implements SamplesBackend {
         break;
       }
     }
-    const ok = mismatchAt === null && entry.size === want.length;
+    const ok = mismatchAt === null && entry.size === want.length; // the store's own size: payload plus trailer
     return {
       ...base,
       ok,
       device,
-      size: entry.size,
+      size: Math.max(0, entry.size - TRAILER.length),
       mismatchAt,
       message: ok
         ? 'device hash matches'

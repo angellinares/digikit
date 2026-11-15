@@ -44,7 +44,9 @@ def generated_core(device: str) -> Path:
     from tools.patchkit import pk_harness as H
 
     syx, ready = H.firmware_inputs(H.Cell(device, FIRMWARE[device]))
-    return digi_env.generated_dir(image=ready / "digi-audio-dn2-image.bin")
+    return digi_env.generated_dir(
+        image=ready / "digi-audio-dn2-image.bin", device=device
+    )
 
 
 def target_dir(device: str) -> Path:

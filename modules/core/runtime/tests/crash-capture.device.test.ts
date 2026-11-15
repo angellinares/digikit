@@ -8,15 +8,21 @@ import { rpc } from '@digi/regression/runtime/fx-live.ts';
 /**
  * CPU exception capture (DT2, full tier; the Python scenario crash-capture is deleted). A module raises an exception some blocks into the
  * session (an illegal instruction for the early crash, a division by zero for the late one); the firmware's default handler calls the runtime's hook, which
- * records the fault in RAM that the soft reset keeps, and resets; the next boot logs the record. The stable period is shortened to 12,000 blocks. EARLY: the crash
- * is before the period (the boot counter stays raised); LATE: after it (the counter was cleared, the crashed boot is counted bad at the next boot).
- * The delays lie 2,500 blocks (1.7 s) or more above the ready point of the coupled cold boot, so a boot is read before the next crash.
+ * records the fault in RAM that the soft reset keeps, and resets; the next boot logs the record. EARLY: the crash is before the stable period ends (the boot
+ * counter stays raised); LATE: after it (the counter was cleared, the crashed boot is counted bad at the next boot).
+ *
+ * Both clocks start at the same block: the stable period counts from the first UI-loop pass of the runtime (`ui_pass`, modules/core/runtime/src/rs/src/safe_mode.rs,
+ * `DKRT_UI_START`), the card's selection record shortens it to STABLE_BLOCKS (`DKRT_STABLE_BLOCKS`), and dyn-crash counts its delay from its first tick, which
+ * is in the same pass (UI_FIRST and the first tick lie at the same block in the log). The cold boot is ready about 3,300 blocks after that block, and the test pauses
+ * there, so the early delay must be above that with room for a slower boot (1,200 blocks, about 0.8 s); the late delay lies 1,000 blocks above the period, the
+ * early one 1,000 below. A wait for the crash needs at most (LATE - 3,300) / 4.5 = 720 steps of the emulator (WAIT_STEPS has some room).
  */
 
-const STABLE_BLOCKS = 12_000;
+const STABLE_BLOCKS = 5500;
+const WAIT_STEPS = 1000;
 const KINDS = {
-  early: { blocks: 9500, mode: 0, vector: 4 }, // illegal instruction
-  late: { blocks: 13_500, mode: 1, vector: 5 }, // divide by zero
+  early: { blocks: 4500, mode: 0, vector: 4 }, // illegal instruction
+  late: { blocks: 6500, mode: 1, vector: 5 }, // divide by zero
 } as const;
 
 /** What a test looks at after a boot, read while the run is paused. */
@@ -55,7 +61,7 @@ cardRigs(
           await rpc(runtime.session, 'run.mode', { mode: 'paused' });
           const seen: Awaited<ReturnType<typeof observe>>[] = [];
           for (let boot = 0; boot < 3; boot++) {
-            if (boot) await h.waitReset();
+            if (boot) await h.waitReset(WAIT_STEPS);
             seen.push(await observe(h));
             // the boot that finds the record keeps it on the card as the settings key dk/fault: store writes on purpose
             h.allowStoreWrites(await h.storeWrites());

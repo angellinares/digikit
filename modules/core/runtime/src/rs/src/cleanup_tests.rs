@@ -427,8 +427,7 @@ fn never_started_cancel_is_reclaimable() {
 
 #[test]
 fn on_loaded_runs_once_per_load_and_after_the_last_row() {
-    use crate::handlers::tests::{log, Call, LOCK as FAKE_LOCK, TWO};
-    let _f = FAKE_LOCK.lock().unwrap_or_else(|e| e.into_inner());
+    use crate::handlers::tests::{log, Call, TWO};
     let _g = LOCK.lock().unwrap_or_else(|e| e.into_inner());
     unsafe {
         seed(Completion::Ack, false, true, false);
@@ -589,6 +588,7 @@ fn unload_of_a_module_without_fini_releases_its_sink() {
     let _g = LOCK.lock().unwrap_or_else(|e| e.into_inner());
     unsafe {
         seed(Completion::Ack, false, true, true);
+        crate::dlog::test_reset_sinks(); // a test before may have left channel 0 to another owner (E_BUSY)
         st().modules[0].fini = 0;
         LINK.events.push(Event::Fini); // the registry hook of this harness expects a fini before it; none runs
         let prev = crate::dlog::enter_module(0, crate::dlog::PHASE_INIT);

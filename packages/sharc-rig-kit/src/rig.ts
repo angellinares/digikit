@@ -9,7 +9,10 @@ import path from 'node:path';
 import { createInterface } from 'node:readline';
 import { fileURLToPath } from 'node:url';
 
-export const ROOT = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '../../..');
+/** The repository the kit reads sources, SDK headers and device files from: this one, or `DIGI_RIG_ROOT` (another checkout, read only: a profile of a branch that lives in a lane). */
+export const ROOT = process.env.DIGI_RIG_ROOT
+  ? path.resolve(process.env.DIGI_RIG_ROOT)
+  : path.resolve(path.dirname(fileURLToPath(import.meta.url)), '../../..');
 
 export type Poke = [address: number, word: number];
 /** A read-modify-write of a DM word: `(old & ~mask) | (value & mask)`; a word that nothing wrote reads as 0. */
@@ -21,6 +24,8 @@ export interface CallSpec {
   max_steps: number;
   reads: [address: number, count: number][];
   read_regs: string[];
+  /** count the instructions executed at each pc (the result's `profile`) */
+  profile?: boolean;
 }
 
 export type Op = { poke: Poke[] } | { pokem: MaskedPoke[] } | { call: CallSpec };
@@ -35,6 +40,8 @@ export interface CallResult {
   reads: (number | null)[][];
   /** runs `[pc, address, width]` stored by instructions at `watch` pcs */
   stores: [pc: number, address: number, width: number][];
+  /** `[pc, count]` per executed pc, in pc order; only for a call with `profile` */
+  profile?: [pc: number, count: number][];
 }
 
 export interface RigSetup {

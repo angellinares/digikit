@@ -14,7 +14,7 @@ and an effect that says nothing is an insert that cannot move. `routes = ["send"
 ## The record **[D]**
 
 The effect record's flags word (offset 16, always 0 before) carries both: bit 0 `FXF_SEND` (send allowed), bit 1 `FXF_NOMASTER` (master not allowed), bit 2 `FXF_DEFAULT_SEND`. The word 0 that every earlier record has means master only, default master, so an old `.dkm` loads as it did and a module that
-leaves the fields out packs to the same bytes as before (the unit test pins word 0 for master only). Values the packer writes: 0 master only; 1 both, default master; 5 both, default send; 7 send only. The packer's parser and the runtime's loader refuse other combinations (`E_DSP_FORMAT`): an unknown bit, a default
+leaves the fields out packs to the same bytes as before (the unit test pins word 0 for master only). Values: 0 is the legacy master-only value; 1 both, default master; 5 both, default send; 7 send only. The packer writes the placeholder 1 (MASTER|SEND, `FXF_SEND`); the runtime overrides it at commit with the declared routes (master only, 0, when none are declared). The packer's parser and the runtime's loader refuse other combinations (`E_DSP_FORMAT`): an unknown bit, a default
 that is not allowed. No contract bump: the contract is still fx 1.0, because the layout only gives meaning to a word that was 0 (a runtime older than the flags ignores them and runs the effect on the master; **[O]** a send-only effect on such a runtime is an insert). The runtime keeps the flags per effect row (`DKRT_DSP.fx_flags`) and the allowed routes and the default per row in `DKRT_FXS` (`allow`, `dflt`).
 
 ## What the runtime does with it **[D]**

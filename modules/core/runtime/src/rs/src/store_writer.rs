@@ -1531,14 +1531,10 @@ unsafe fn pd_delete(path: *const u8) -> i32 {
     r
 }
 
-/// Host tests of other files share the one session and lock: they hold this lock.
-#[cfg(test)]
-pub(crate) static TEST_LOCK: std::sync::Mutex<()> = std::sync::Mutex::new(());
-
 #[cfg(test)]
 mod tests {
     use super::*;
-    use super::TEST_LOCK as LOCK;
+    use crate::test_lock::LOCK;
 
     unsafe fn open_session(kind: u8, last: u32) {
         let u = up();

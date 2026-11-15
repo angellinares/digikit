@@ -143,7 +143,11 @@ pub unsafe fn cstr_cmp(a: *const u8, b: *const u8) -> i32 {
 }
 
 /// CRC-32 (IEEE, reflected) before the final inversion; `crc32_of` is the finished value (zlib's).
-pub fn crc32(mut crc: u32, p: *const u8, n: usize) -> u32 {
+///
+/// # Safety
+///
+/// `p` must be valid for reads of `n` bytes.
+pub unsafe fn crc32(mut crc: u32, p: *const u8, n: usize) -> u32 {
     let mut i = 0;
     while i < n {
         crc ^= unsafe { *p.add(i) } as u32;
@@ -157,8 +161,12 @@ pub fn crc32(mut crc: u32, p: *const u8, n: usize) -> u32 {
     crc
 }
 
-pub fn crc32_of(p: *const u8, n: usize) -> u32 {
-    !crc32(0xffff_ffff, p, n)
+/// # Safety
+///
+/// As for `crc32`.
+pub unsafe fn crc32_of(p: *const u8, n: usize) -> u32 {
+    // SAFETY: the caller keeps the contract of `crc32`.
+    !unsafe { crc32(0xffff_ffff, p, n) }
 }
 
 pub const fn sectors_of(bytes: u32) -> u32 {

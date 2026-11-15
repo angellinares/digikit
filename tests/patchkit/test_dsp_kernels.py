@@ -179,8 +179,8 @@ BQ_ST = BQ + 0x100
 BQ_STACK = BQ + 0x300  # I6 = I7 at the call; the frames grow down from here
 BQ_CALL, BQ_ROUTINE = (
     3,
-    200,
-)  # DK_CALL; _dk_biquad: 25 before the loop, 5 x 32 in and after it, 15 after (counted in biquad.inc)
+    201,
+)  # DK_CALL; _dk_biquad: 26 before the loop, 5 x 32 in and after it, 15 after (counted in biquad.inc)
 BQ_SAVED = {f"R{n}": 0x7000 + n for n in (3, 5, 6, 7, 9, 10, 11, 13, 14, 15)}
 BQ_SAVED.update(
     {"I0": 0x08021000, "I1": 0x08021010, "I2": 0x08021020, "I3": 0x08021030}
@@ -447,8 +447,8 @@ DL_OUT = (KR + 0x180, KR + 0x1C0)
 DL_ST = KR + 0x200
 DL_CALL, DL_ROUTINE = (
     3,
-    172,
-)  # DK_CALL; _dk_delay: 30 before the loop, 8 x 16 in it, 14 after (measured)
+    175,
+)  # DK_CALL; _dk_delay: 33 before the loop, 8 x 16 in it, 14 after (measured)
 DL_RNG = np.random.default_rng(11)
 DL_RING0 = DL_RNG.uniform(-1.0, 1.0, DL_L).astype(f32)
 DL_X = DL_RNG.uniform(-1.0, 1.0, 2 * N).astype(f32)
@@ -538,8 +538,8 @@ HB_L = 32  # history ring cells
 HB_OFF = 25  # the history offset: the writes and reads wrap inside the first calls
 HB_CALL, HB_ROUTINE = (
     3,
-    698,
-)  # DK_CALL; _dk_halfband_down: 39 before the loop, 20 x 31 in it, 21 for the last output, 18 after (measured)
+    702,
+)  # DK_CALL; _dk_halfband_down: 43 before the loop, 20 x 31 in it, 21 for the last output, 18 after (measured)
 HB_RNG = np.random.default_rng(13)
 HB_RING0 = HB_RNG.uniform(-1.0, 1.0, HB_L).astype(f32)
 _T = np.arange(3 * 2 * N)

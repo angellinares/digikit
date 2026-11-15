@@ -61,6 +61,12 @@ fn fresh() {
     *CUT.lock().unwrap() = (u32::MAX, 0);
 }
 
+/// `crc32_of` over a slice.
+fn crc_of(b: &[u8]) -> u32 {
+    // SAFETY: the pointer and the length come from one slice.
+    unsafe { crc32_of(b.as_ptr(), b.len()) }
+}
+
 fn cstr(p: &str) -> Vec<u8> {
     let mut v = p.as_bytes().to_vec();
     v.push(0);
@@ -226,7 +232,7 @@ fn paths(w: &mut Work) -> Vec<(std::string::String, u32)> {
 
 #[test]
 fn crc32_matches_the_zlib_check_value() {
-    assert_eq!(crc32_of(b"123456789".as_ptr(), 9), 0xcbf4_3926);
+    assert_eq!(crc_of(b"123456789"), 0xcbf4_3926);
 }
 
 #[test]
@@ -1109,7 +1115,7 @@ fn catalog_table(count: u32) -> Vec<CatalogEntry> {
         used: 1 + table_sectors(count) + count,
         area: SECTORS,
     };
-    h.table_crc = crc32_of(card[10 * 512..].as_ptr(), h.table_sectors as usize * 512);
+    h.table_crc = crc_of(&card[10 * 512..][..h.table_sectors as usize * 512]);
     unsafe {
         encode_header(&h, card.as_mut_ptr());
         encode_header(&h, card.as_mut_ptr().add(LAY.header_b() as usize * 512));
@@ -1367,7 +1373,7 @@ fn catalog_crc_verified_but_malformed_entries_are_rejected() {
                 card[10 * 512..10 * 512 + PATH_BYTES].fill(b'x');
             }
             let mut h = unsafe { parse_header(card.as_ptr()) }.unwrap();
-            h.table_crc = crc32_of(card[10 * 512..].as_ptr(), h.table_sectors as usize * 512);
+            h.table_crc = crc_of(&card[10 * 512..][..h.table_sectors as usize * 512]);
             unsafe {
                 encode_header(&h, card.as_mut_ptr());
                 encode_header(&h, card.as_mut_ptr().add(LAY.header_b() as usize * 512));
@@ -1534,7 +1540,7 @@ fn incremental_catalog_falls_back_for_crc_tail_read_failure_and_identical_copies
                 unsafe {
                     put32(card.as_mut_ptr().add(200 * 512 + O_FIRST), LAY.limit());
                 }
-                h.table_crc = crc32_of(card[200 * 512..].as_ptr(), 1024);
+                h.table_crc = crc_of(&card[200 * 512..][..1024]);
             }
             unsafe {
                 encode_header(&h, card.as_mut_ptr());
@@ -1784,7 +1790,7 @@ fn catalog_rewind_header_failure_is_sticky_and_incremental_padding_is_not_an_ent
             put32(card.as_mut_ptr().add(padding + O_SIZE), 512);
         }
         let mut h = unsafe { parse_header(card.as_ptr()) }.unwrap();
-        h.table_crc = crc32_of(card[10 * 512..].as_ptr(), 1024);
+        h.table_crc = crc_of(&card[10 * 512..][..1024]);
         unsafe {
             encode_header(&h, card.as_mut_ptr());
             encode_header(&h, card.as_mut_ptr().add(LAY.header_b() as usize * 512));

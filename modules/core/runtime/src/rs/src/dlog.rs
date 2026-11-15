@@ -252,6 +252,14 @@ pub unsafe extern "C" fn dk_span_sink_set(emit: *mut u8, clock: *mut u8) -> i32 
     r
 }
 
+/// Host tests: no sink channel, no old sink and no span clock, whoever a test before left owning them.
+#[cfg(test)]
+pub(crate) unsafe fn test_reset_sinks() {
+    *addr_of_mut!(CHAN) = [Chan { f: 0, owner: 0 }; SINKS];
+    *addr_of_mut!(SINK) = 0;
+    write_volatile(addr_of_mut!(SPAN_CLOCK), 0);
+}
+
 /// The module with record index `idx` is gone (after its `fini`, or a failed `init`): it owns no channel any more.
 pub unsafe fn release_sinks(idx: usize) {
     let owner = idx as u8 + 1;
@@ -469,9 +477,8 @@ pub unsafe fn copy_event(seq: u32, dst: *mut u8) -> bool {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use std::sync::Mutex;
+    use crate::test_lock::LOCK;
 
-    static LOCK: Mutex<()> = Mutex::new(());
     static mut LOGGED: u32 = 0;
     static mut LAST_KIND: u16 = 0;
     static mut SPANS: u32 = 0;
@@ -486,14 +493,22 @@ mod tests {
         LAST_SPAN = ((*s).owner, (*s).cycles);
     }
 
+    /// Holds the test lock; the channels a test set are cleared when it ends, so the next test of any file starts without an owner.
+    struct Fresh(#[allow(dead_code)] std::sync::MutexGuard<'static, ()>);
+
+    impl Drop for Fresh {
+        fn drop(&mut self) {
+            unsafe { test_reset_sinks() }
+        }
+    }
+
     /// A clean channel table and counters; the guard serializes the tests that share the statics.
-    unsafe fn fresh() -> std::sync::MutexGuard<'static, ()> {
+    unsafe fn fresh() -> Fresh {
         let g = LOCK.lock().unwrap_or_else(|e| e.into_inner());
-        *addr_of_mut!(CHAN) = [Chan { f: 0, owner: 0 }; SINKS];
-        *addr_of_mut!(SINK) = 0;
+        test_reset_sinks();
         LOGGED = 0;
         SPANS = 0;
-        g
+        Fresh(g)
     }
 
     unsafe fn set_as(idx: usize, channel: u32, f: usize) -> i32 {

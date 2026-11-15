@@ -25,7 +25,7 @@ def test_dsp_section_layout(tmp_path):
     name = MODULE_ID.split("/")[1]
     h = pk_dkrt_machine.machine_hash(MODULE_ID, name)
     assert (
-        f"voice type h{h:06x} entry +0x3ce note_on +0x1fa state 16x16512 clear 16512"
+        f"voice type h{h:06x} entry +0x3b6 note_on +0x1ee state 16x16512 clear 16512"
         in info
         and "imports _dv_exp2" in info
     )

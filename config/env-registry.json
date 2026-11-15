@@ -397,6 +397,10 @@
    "owner": "python:tests/emulator",
    "purpose": "Set to 1 to make a stale or missing PGO profile a fatal error in native_pgo.py."
   },
+  "DIGI_RIG_ROOT": {
+   "owner": "ts:packages/sharc-rig-kit",
+   "purpose": "Root of the checkout whose module sources the rig kit reads (read-only); default: this checkout."
+  },
   "DIGI_RUNTIME_MODULES": {
    "owner": "ts:tests/regression",
    "purpose": "Directory of the built runtime modules installed by device tests (default dist/modules)."
@@ -651,7 +655,15 @@
   },
   "SHARC_GEN_DIR_2": {
    "owner": "rust:packages/emulator",
-   "purpose": "Directory of the generated SHARC core for the second core (sharc-gen-2)."
+   "purpose": "internal: slot-2 core of a two-core build, set by native_emu from SHARC_GEN_DIR_DT2; not a user setting."
+  },
+  "SHARC_GEN_DIR_DN2": {
+   "owner": "python:tools/emulator",
+   "purpose": "Directory of the generated SHARC core of the Digitone II; wins over SHARC_GEN_DIR for DN2."
+  },
+  "SHARC_GEN_DIR_DT2": {
+   "owner": "python:tools/emulator",
+   "purpose": "Directory of the generated SHARC core of the Digitakt II; wins over SHARC_GEN_DIR for DT2."
   },
   "SHARC_IRQ_PROBE": {
    "owner": "rust:packages/emulator",

@@ -1,5 +1,4 @@
 import path from 'node:path';
-import { DkSession, EmuUsbTransport } from '@digi/dk-session';
 import { describe, expect, test } from 'vitest';
 import type { PatchedSession } from '@digi/regression/support.ts';
 import { advance, analysisJson, bounded, frames, rows, rpc, word } from '@digi/regression/runtime/fx-live.ts';
@@ -31,6 +30,7 @@ import { DEVICES, FIRMWARE } from '@digi/regression/runtime/devices.ts';
 import { expectRuntimeUi } from '@digi/regression/runtime/ready.ts';
 import { planSymbol } from '@digi/regression/runtime/runtime-plan.ts';
 import { rootsOf } from '@digi/regression/runtime/image-roots.ts';
+import { emulatorDk } from '@digi/regression/runtime/waits.ts';
 
 const RT = rootsOf('rt-dynfx');
 const inventory = [SINE, GAIN];
@@ -282,7 +282,7 @@ for (const device of DEVICES) {
         await rpc(effect.session, 'run.mode', { mode: 'free' });
         await bounded(() => effect.dk.restart());
         effect.dk.cancelPending();
-        const dk = new DkSession(new EmuUsbTransport((method, params) => effect.session.client.call(method, params)));
+        const dk = emulatorDk(effect.session);
         const reboot = { session: effect.session, dk, close: effect.close };
         try {
           await expectRuntimeUi(effect.session, plan, artifacts, { afterEpoch: Number(epoch) });
