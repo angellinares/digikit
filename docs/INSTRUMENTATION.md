@@ -194,6 +194,96 @@ inside LOAD/UNLOAD requests; `--stack-stock` does it for the stock SETTINGS and 
 tools.coldfire.frame_depth modules/core/runtime/build/runtime.dko.json dkrt_load` adds the other side: the static worst-case depth of a
 module's functions from their frame sizes and calls (findings 34).
 
+## PC probe (ColdFire)
+
+The PC probe records what the guest does at chosen PCs. It is off by default and costs nothing then: the bus takes no extra
+path, and the probe adds only its own PCs to the observed set (`boot/src/pcprobe.rs`, `Emulator::set_pc_probe`). It changes no
+guest state. A probe made for a task switch or a hook site settles questions that static reach cannot, such as whether an
+interrupt can enter the code of a patched site (R12 design, `docs/plans/runtime-and-services.md` section 13.2).
+
+For each hit of a probed PC, before its instruction runs, the probe counts the hit per (task, IPL) and, for the first `keep`
+hits (default 8), records: the instruction count (`icount`), SR and its IPL, SP, the task word, `words` (guest longs at given
+addresses; null when unmapped) and `stack` (longs from SP: at a function's first instruction, the return address and the
+arguments). "Task" is the long at the address `task_ptr`, the current-task pointer, which the caller gives (DT2 1.17
+`0x47db3f64`, DN2 1.12 `0x4664bcdc`; anchor `cf.rtos.value.current_tcb`). With `frame: true` the probe also decodes the exception
+frame at SP and counts per (vector, stacked IPL). That is meaningful only at the first instruction of exception code: the long at
+SP holds the vector in `(long >> 18) & 0xff` and the stacked SR in the low 16 bits. Spec:
+
+```json
+{"task_ptr": "0x47db3f64", "keep": 8,
+ "probes": [{"pc": "0x40000410", "label": "task_switch", "words": ["0x47db3f64"], "stack": 2, "frame": true}]}
+```
+
+Addresses are integers or `"0x..."` strings. `stack` is at most 64. A spec with no probes removes the probe.
+
+Report (`pc_probe`; the `pc.probe.report` answer):
+
+```json
+{"task_ptr": "0x47db3f64", "keep": 8, "probes": [{
+  "pc": "0x40000410", "label": "task_switch", "count": 1234,
+  "by_task_ipl": [{"task": "0x47dc1000", "ipl": 0, "count": 600}],
+  "by_frame": [{"vector": 32, "stacked_ipl": 0, "count": 600}],
+  "hits": [{"n": 1, "icount": 851000000, "sr": "0x2000", "ipl": 0, "sp": "0x47dc0ff8", "task": "0x47dc1000",
+            "words": [], "stack": ["0x40362000", "0x00002000"],
+            "frame": {"long": "0x40802000", "vector": 32, "stacked_sr": "0x2000", "stacked_ipl": 0}}]}]}
+```
+
+(`by_frame` and `frame` are there only with `frame: true`; the numbers above show the shape, not a measurement.)
+
+Two ways to run it:
+
+- `coupled-run --pc-probe FILE[:NAME]` (FILE is a spec, or an object of specs with NAME picking one). With `--cold-base` and
+  `--dsp zero` the probe is armed before the cold boot, so it is active from reset and keeps counting through the scenarios.
+  Every other start arms it at the ready point. The report has `pc_probe`.
+- The control daemon: RPC `pc.probe.set {...spec}` or `{file, name?}`, `pc.probe.report`, `pc.probe.clear` (hits only)
+  ([CONTROL.md](CONTROL.md)); the TypeScript client has `pcProbeSet`, `pcProbeReport` and `pcProbeClear`. The spec is kept
+  and armed in every runtime installed later. A runtime that a cold boot worker builds and snapshots (a patched load, a
+  snapshot restore) never sees it: use `coupled-run` for a probe from reset.
+
+### R12 checks 1 and 2
+
+The inputs are `tools/emulator/pc_probe_r12.json` (four specs: `dt2-check1`, `dn2-check1`, `dt2-check2`, `dn2-check2`; the PCs
+are the hook sites of `devices/ports/dt2-1.17.toml` and `dn2-1.12.toml`, listed in each spec's `note`) and
+`tests/scenarios/r12-probe.json` (`r12-check1-*` and `r12-check2-*`). Build `coupled-run` once for each device, then run the
+four commands from the repository root. The stock images are `firmware/Digitakt_II_OS1.17.syx` and
+`firmware/Digitone_II_OS1.12.syx`; `--cold-base` takes the image's own SHA-256.
+
+```text
+DT2=$(uv run python -m tools.emulator.coupled build --device dt2 | tail -1)
+DN2=$(uv run python -m tools.emulator.coupled build --device dn2 | tail -1)
+D=firmware/Digitakt_II_OS1.17.syx; N=firmware/Digitone_II_OS1.12.syx
+SC="--scenarios tests/scenarios/r12-probe.json"; PP=tools/emulator/pc_probe_r12.json
+
+# check 1: stacked IPL of every task switch
+$DT2 --syx $D --dsp zero --cold-base $(shasum -a 256 $D | cut -d' ' -f1) $SC --scenario r12-check1-dt2 \
+     --pc-probe $PP:dt2-check1 --out out/runs/r12-probe/dt2-check1.json
+$DN2 --syx $N --dsp zero --cold-base $(shasum -a 256 $N | cut -d' ' -f1) $SC --scenario r12-check1-dn2 \
+     --pc-probe $PP:dn2-check1 --out out/runs/r12-probe/dn2-check1.json
+
+# check 2: first fire of the vtable-only hooks, value_class, main-OS entry, UI sites, param_code callers
+$DT2 --syx $D --dsp zero --cold-base $(shasum -a 256 $D | cut -d' ' -f1) $SC --scenario r12-check2-dt2 \
+     --pc-probe $PP:dt2-check2 --out out/runs/r12-probe/dt2-check2.json
+$DN2 --syx $N --dsp zero --cold-base $(shasum -a 256 $N | cut -d' ' -f1) $SC --scenario r12-check2-dn2 \
+     --pc-probe $PP:dn2-check2 --out out/runs/r12-probe/dn2-check2.json
+```
+
+Each run boots the stock image from reset with SSI paced (about 850 million instructions to ready), then plays its scenario.
+Estimate, not measured: a zero-DSP run is about 2.2 times real time, so a run takes 1 to 2 minutes (the boot about 15 s, check 1
+about 15 s of play, check 2 about 6 s), and the build of `coupled-run` comes first when it is not built. A probe on a PC
+that is hit about 1,500 times per second (check 1) costs one observed-PC call per hit and keeps the fast paths. Read the result in `pc_probe` of each report:
+
+- Check 1: `probes[0].by_frame` is the histogram by (vector, stacked IPL). Controls: `count` above 0, and vector 191 present.
+  A row with `stacked_ipl` of 2 or more means a task switch can enter from an interrupt handler (design outcome in section
+  13.2). No such row: the stub is load-test-jump and the unload rule holds.
+- Check 2: per probe, `hits[].icount` against the `main_os_task` probe's first `icount` (before or after main-OS entry), and
+  `by_task_ipl` for the task and IPL of each hit. `param_code.entry` has the return address in `hits[].stack[0]` of each of the
+  first 8 callers.
+
+Scenario limits against the design text: the scenarios drive the panel and MIDI DIN. USB MIDI and a card load after ready are
+not scenario events, so check 1 has the MIDI DIN note and the card of the boot only (add `--card-image FILE` for a card).
+Check 2 uses FUNC+SRC for the machine list; on a device where that is not the list, the SRC page and the hooks of the list
+still fire from the page, and the report shows which probes had no hit.
+
 ## Instruction spans (ColdFire)
 
 `coupled-run --span NAME=ENTRY:EXIT` (repeatable) counts the ColdFire instructions from the PC ENTRY to the PC EXIT on each pass.

@@ -1,0 +1,438 @@
+{
+ "scenarios": [
+  {
+   "exact_events": true,
+   "name": "r12-check1-dn2",
+   "description": "R12 check 1 (DN2): the dn2-rec-play inputs (NO, RECORD, trigs 1/5/9/13, RECORD, PLAY) and a MIDI DIN note, then play on to 30 s. Run with --pc-probe tools/emulator/pc_probe_r12.json:dn2-check1. Not a pin.",
+   "seconds": 30,
+   "events": [
+    {
+     "at_instr": 0,
+     "button": 12,
+     "down": true
+    },
+    {
+     "at_instr": 1000000,
+     "button": 12,
+     "down": false
+    },
+    {
+     "at_instr": 60000000,
+     "button": 19,
+     "down": true
+    },
+    {
+     "at_instr": 62000000,
+     "button": 19,
+     "down": false
+    },
+    {
+     "at_instr": 64000000,
+     "button": 25,
+     "down": true
+    },
+    {
+     "at_instr": 66000000,
+     "button": 25,
+     "down": false
+    },
+    {
+     "at_instr": 68000000,
+     "button": 29,
+     "down": true
+    },
+    {
+     "at_instr": 70000000,
+     "button": 29,
+     "down": false
+    },
+    {
+     "at_instr": 72000000,
+     "button": 33,
+     "down": true
+    },
+    {
+     "at_instr": 74000000,
+     "button": 33,
+     "down": false
+    },
+    {
+     "at_instr": 76000000,
+     "button": 37,
+     "down": true
+    },
+    {
+     "at_instr": 78000000,
+     "button": 37,
+     "down": false
+    },
+    {
+     "at_instr": 80000000,
+     "button": 19,
+     "down": true
+    },
+    {
+     "at_instr": 82000000,
+     "button": 19,
+     "down": false
+    },
+    {
+     "at_instr": 84000000,
+     "button": 20,
+     "down": true
+    },
+    {
+     "at_instr": 86000000,
+     "button": 20,
+     "down": false
+    },
+    {
+     "at_instr": 120000000,
+     "midi": [
+      144,
+      60,
+      100
+     ]
+    },
+    {
+     "at_instr": 600000000,
+     "midi": [
+      128,
+      60,
+      0
+     ]
+    }
+   ]
+  },
+  {
+   "exact_events": true,
+   "name": "r12-check2-dn2",
+   "description": "R12 check 2 (DN2): NO, SRC page, FUNC+SRC (machine list), NO, FX page, one knob turn (encoder A, 6 detents), RECORD, trig 1, RECORD, PLAY; 12 s. Run with --pc-probe tools/emulator/pc_probe_r12.json:dn2-check2. Not a pin.",
+   "seconds": 12,
+   "events": [
+    {
+     "at_instr": 0,
+     "button": 12,
+     "down": true
+    },
+    {
+     "at_instr": 1000000,
+     "button": 12,
+     "down": false
+    },
+    {
+     "at_instr": 60000000,
+     "button": 2,
+     "down": true
+    },
+    {
+     "at_instr": 62640000,
+     "button": 2,
+     "down": false
+    },
+    {
+     "at_instr": 100000000,
+     "button": 17,
+     "down": true
+    },
+    {
+     "at_instr": 100660000,
+     "button": 2,
+     "down": true
+    },
+    {
+     "at_instr": 103300000,
+     "button": 2,
+     "down": false
+    },
+    {
+     "at_instr": 103960000,
+     "button": 17,
+     "down": false
+    },
+    {
+     "at_instr": 160000000,
+     "button": 12,
+     "down": true
+    },
+    {
+     "at_instr": 161000000,
+     "button": 12,
+     "down": false
+    },
+    {
+     "at_instr": 200000000,
+     "button": 5,
+     "down": true
+    },
+    {
+     "at_instr": 202640000,
+     "button": 5,
+     "down": false
+    },
+    {
+     "at_instr": 240000000,
+     "turn": 1,
+     "detents": 6
+    },
+    {
+     "at_instr": 300000000,
+     "button": 19,
+     "down": true
+    },
+    {
+     "at_instr": 302000000,
+     "button": 19,
+     "down": false
+    },
+    {
+     "at_instr": 310000000,
+     "button": 25,
+     "down": true
+    },
+    {
+     "at_instr": 312000000,
+     "button": 25,
+     "down": false
+    },
+    {
+     "at_instr": 320000000,
+     "button": 19,
+     "down": true
+    },
+    {
+     "at_instr": 322000000,
+     "button": 19,
+     "down": false
+    },
+    {
+     "at_instr": 400000000,
+     "button": 20,
+     "down": true
+    },
+    {
+     "at_instr": 402000000,
+     "button": 20,
+     "down": false
+    }
+   ]
+  },
+  {
+   "exact_events": true,
+   "name": "r12-check1-dt2",
+   "description": "R12 check 1 (DT2): the dt2-rec-play inputs (NO, RECORD, trigs 1/5/9/13, RECORD, PLAY) and a MIDI DIN note, then play on to 30 s. Run with --pc-probe tools/emulator/pc_probe_r12.json:dt2-check1. Not a pin.",
+   "seconds": 30,
+   "events": [
+    {
+     "at_instr": 0,
+     "button": 12,
+     "down": true
+    },
+    {
+     "at_instr": 1000000,
+     "button": 12,
+     "down": false
+    },
+    {
+     "at_instr": 60000000,
+     "button": 19,
+     "down": true
+    },
+    {
+     "at_instr": 62000000,
+     "button": 19,
+     "down": false
+    },
+    {
+     "at_instr": 64000000,
+     "button": 25,
+     "down": true
+    },
+    {
+     "at_instr": 66000000,
+     "button": 25,
+     "down": false
+    },
+    {
+     "at_instr": 68000000,
+     "button": 29,
+     "down": true
+    },
+    {
+     "at_instr": 70000000,
+     "button": 29,
+     "down": false
+    },
+    {
+     "at_instr": 72000000,
+     "button": 33,
+     "down": true
+    },
+    {
+     "at_instr": 74000000,
+     "button": 33,
+     "down": false
+    },
+    {
+     "at_instr": 76000000,
+     "button": 37,
+     "down": true
+    },
+    {
+     "at_instr": 78000000,
+     "button": 37,
+     "down": false
+    },
+    {
+     "at_instr": 80000000,
+     "button": 19,
+     "down": true
+    },
+    {
+     "at_instr": 82000000,
+     "button": 19,
+     "down": false
+    },
+    {
+     "at_instr": 84000000,
+     "button": 20,
+     "down": true
+    },
+    {
+     "at_instr": 86000000,
+     "button": 20,
+     "down": false
+    },
+    {
+     "at_instr": 120000000,
+     "midi": [
+      144,
+      60,
+      100
+     ]
+    },
+    {
+     "at_instr": 600000000,
+     "midi": [
+      128,
+      60,
+      0
+     ]
+    }
+   ]
+  },
+  {
+   "exact_events": true,
+   "name": "r12-check2-dt2",
+   "description": "R12 check 2 (DT2): NO, SRC page, FUNC+SRC (machine list), NO, FX page, one knob turn (encoder A, 6 detents), RECORD, trig 1, RECORD, PLAY; 12 s. Run with --pc-probe tools/emulator/pc_probe_r12.json:dt2-check2. Not a pin.",
+   "seconds": 12,
+   "events": [
+    {
+     "at_instr": 0,
+     "button": 12,
+     "down": true
+    },
+    {
+     "at_instr": 1000000,
+     "button": 12,
+     "down": false
+    },
+    {
+     "at_instr": 60000000,
+     "button": 2,
+     "down": true
+    },
+    {
+     "at_instr": 62640000,
+     "button": 2,
+     "down": false
+    },
+    {
+     "at_instr": 100000000,
+     "button": 17,
+     "down": true
+    },
+    {
+     "at_instr": 100660000,
+     "button": 2,
+     "down": true
+    },
+    {
+     "at_instr": 103300000,
+     "button": 2,
+     "down": false
+    },
+    {
+     "at_instr": 103960000,
+     "button": 17,
+     "down": false
+    },
+    {
+     "at_instr": 160000000,
+     "button": 12,
+     "down": true
+    },
+    {
+     "at_instr": 161000000,
+     "button": 12,
+     "down": false
+    },
+    {
+     "at_instr": 200000000,
+     "button": 5,
+     "down": true
+    },
+    {
+     "at_instr": 202640000,
+     "button": 5,
+     "down": false
+    },
+    {
+     "at_instr": 240000000,
+     "turn": 1,
+     "detents": 6
+    },
+    {
+     "at_instr": 300000000,
+     "button": 19,
+     "down": true
+    },
+    {
+     "at_instr": 302000000,
+     "button": 19,
+     "down": false
+    },
+    {
+     "at_instr": 310000000,
+     "button": 25,
+     "down": true
+    },
+    {
+     "at_instr": 312000000,
+     "button": 25,
+     "down": false
+    },
+    {
+     "at_instr": 320000000,
+     "button": 19,
+     "down": true
+    },
+    {
+     "at_instr": 322000000,
+     "button": 19,
+     "down": false
+    },
+    {
+     "at_instr": 400000000,
+     "button": 20,
+     "down": true
+    },
+    {
+     "at_instr": 402000000,
+     "button": 20,
+     "down": false
+    }
+   ]
+  }
+ ]
+}
