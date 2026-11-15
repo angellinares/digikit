@@ -21,8 +21,8 @@
 //                  the callee-saved list of call.inc holds B3 only). L1 and L2 are 0 on return, as on entry: the routine sets
 //                  them to the ring length and puts them back to 0 on its one exit.
 //   instructions:  4 per sample in the loop (4 memory accesses on one bus: x load, ring store, ring load, y store; the multiplies
-//                  and the add ride in those instructions). Per call 172 in the routine: 30 before the loop, 128 in it
-//                  (8 x 16 pairs), 14 after; 175 with DK_CALL. Average 5.5 per sample with the call. Measured by the test [D].
+//                  and the add ride in those instructions). Per call 175 in the routine: 33 before the loop, 128 in it
+//                  (8 x 16 pairs), 14 after; 178 with DK_CALL. Average 5.6 per sample with the call. Measured by the test [D].
 //   loop schedule: one sample, 4 instructions, no software pipelining across samples; a(n+1) is loaded after the ring store of
 //                  sample n, so d = 1.0 (a(n+1) = x[n]) is correct. b(n+1) = a(n) stays in its register (the register names swap).
 //                    slot 0: p = g a;  load x
@@ -47,9 +47,12 @@ _dk_delay:
 dk_delay.:
     DK_ENTER(4);
     I4 = R12;                          // state pointer
-    DK_SAVE(2, I0);
-    DK_SAVE(3, I1);
-    DK_SAVE(4, I2);
+    R2 = I0;
+    DK_SAVE(2, R2);
+    R2 = I1;
+    DK_SAVE(3, R2);
+    R2 = I2;
+    DK_SAVE(4, R2);
     DK_SAVE(5, R5);
     I0 = R8;                           // output pointer (R8 is free now)
     R1 = DM(0, I4);                    // ring base
