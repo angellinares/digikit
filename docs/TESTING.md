@@ -248,7 +248,6 @@ under `modules/` and `tests/conformance/`.
 | `tests/sharc/{semantics,trace,generation,analysis,integration}` | SHARC+ semantics, tracer, assembler and generator, loader and sharcdb, firmware-backed harness and golden hashes |
 | `tests/patchkit` | Patchkit's own tests and module primitives. `smoke/` holds the smoke matrix (`matrix.toml`, `tours/`, `goldens.json`). |
 | `modules/<kind>/<name>/tests/test_*.py` | Python tests whose subject is one module (DSP voice rig, FX, sample pool, proofs, PLUCK); an edit to the module selects them |
-| `tests/modules` | Machine and FX conformance for every module |
 | `modules/**/tests` | A module's own tests, `*.device.test.ts` included (below, "Module-owned tests") |
 | `tests/coldfire` | ColdFire analysis tools |
 | `tests/emulator` | Launcher, PGO, coupled runner helpers, live audio, bootstrap |
@@ -554,7 +553,7 @@ the reference module's DSP bytes. The separate full-tier `modules/core/runtime/t
 by `patchkit needs` against real modules and fixtures. `modules/core/apps/digikit-menu/tests/fits.device.test.ts` checks the MODULES page.
 `tests/patchkit/test_limits.py` keeps tools from repeating a limit as a number.
 
-### Machine and FX conformance (`tests/modules`)
+### Machine and FX conformance
 
 `mise run module:check NAME [--device dt2|dn2]` (NAME: `<author/name>` or the name alone) selects the suite by
 module type and runs the module's own Python tests. A module with `tests/**/*.device.test.ts` files gets
@@ -564,12 +563,11 @@ check still precedes the owned targets. Frequency shifter owns the exact existin
 suite on both devices, including when `--device` limits other checks. Its daemons and ready inputs
 use the existing harness resolution/overrides; only resolution holds a shared benchlock, released
 before the target. The target does not run the broad gate. Its bounded source inputs are conservative affected-selection inputs, not a cache-closure or
-fine-routing claim. This does not replace automatic gate routing. The suite alone:
-`DIGI_CONFORM_MODULES=<author/name> uv run python -m pytest tests/modules/test_machine_conformance.py -rf`.
-`module:check` runs the conformance suite on the SHARC-only rig (reports in `out/runs/conformance-rig`) ("The Vitest kit") and writes `dsp_cost_*` with `patchkit uses set`; `--python-conformance` runs the Python suite above instead (kept until the retirement phase of [the plan](plans/t1g-sharc-rig-kit.md)).
+fine-routing claim. This does not replace automatic gate routing.
+`module:check` runs the conformance suite on the SHARC-only rig (reports in `dist/conformance-rig` of the worktree) ("The Vitest kit") and writes `dsp_cost_*` with `patchkit uses set`.
+`pnpm nx:pilot run @digi/sharc-rig-kit:test-conformance-rig` runs it for every module.
 
-Machine rules (`pk_conform.py`, rig `tests/support/machine_rig.py`, workers `tests/support/conform_worker.py`),
-checked in every block of every case:
+Machine rules (`packages/sharc-rig-kit/src/spec.ts`, `cases.ts`, `checks.ts`), checked in every block of every case:
 
 - the call returns within 400,000 instructions;
 - M5, M6, M7, M13, M14, M15, L0 to L5 and MODE1 are preserved;
@@ -577,12 +575,12 @@ checked in every block of every case:
 - instructions per block stay within the DSP budget headroom: `headroom / 16` per block, `headroom`
   for a note-on block. No manifest replaces either number. After the run `module:check` writes the worst steady block as the module's `dsp_cost_voice` (a machine) or `dsp_cost_fx` (an effect) into `[uses.<device>]`; the boot planner, the menu and `patchkit fit` check a selection with it.
 
-FX rules (`tests/modules/test_fx_conformance.py`, rig `tests/support/fx_rig.py`): the hook returns
+FX rules (the same kit files, `fx.ts` for the master chain): the hook returns
 within 200,000 instructions; registers the stock function expects are preserved; the core/fx fault
 count stays 0; the module stores only to its output block, data, bss and stack; the master stays finite
 within 8.0; the effect stays within `min(headroom) / 4` plus 900 for core/fx. Negative fixtures:
 `test/dyn-dsp-hang` (machine), `test/fx-nan` (effect). `DIGI_JOBS` sets the worker count.
-A change in a machine or effect module, `core/dsp-voice`, `core/fx`, `pk_conform.py` or the rigs selects the suite.
+A change in a machine or effect module, `core/dsp-voice`, `core/fx` or the kit selects the suite.
 
 ### SHARC-only rig (`sharc-rig`, T1g slice)
 
@@ -609,7 +607,7 @@ later line is `{"ops": [...]}` and gets one answer line, so a rig runs a case bl
 pnpm nx:pilot run sharc-rig:build        # dist/bin/sharc-rig and dist/bytes/sharc-rig.sha256 (shared generated core)
 ```
 
-Measured against the Python rigs (`machine_rig.py`, `fx_rig.py`) on `test/sine`, `fadedlimes/analog` (DT2 and DN2), `tom/tb303`,
+When it was built, measured against the Python rigs (`machine_rig.py`, `fx_rig.py`, which still serve the adapter tests) on `test/sine`, `fadedlimes/analog` (DT2 and DN2), `tom/tb303`,
 `digikit/pluck`, the FX `digikit/freqshift` and the negative fixture `test/dyn-guard-nan#overrun` (hostile contexts): bit-identical
 output words, identical instruction counts in every block, the same store bytes and the same foreign-store texts. On 300 to
 500 block cases the harness (process start and 64k setup pokes included) is 45 to 110 times faster.
@@ -632,10 +630,9 @@ DIGI_CONFORM_MODULES=fadedlimes/analog DIGI_CONFORM_DEVICE=dt2 DIGI_JOBS=4 DIGI_
   pnpm exec vitest run --config vitest.host.config.ts --project sharc-rig-conformance conformance/machine.test.ts
 ```
 
-It runs the same cases as `tests/modules/test_machine_conformance.py` and `test_fx_conformance.py` (the Python suites stay until the
-retirement phase of [the plan](plans/t1g-sharc-rig-kit.md)): same case list, same pass set, the same failure messages for the negative
-fixtures, and the worst steady block of each (module, device) is the `dsp_cost_voice` or `dsp_cost_fx` of module.toml. Reports have the
-shape of the Python reports (`out/runs/conformance-rig/<id>@<device|fx>.json`, `DIGI_CONFORM_REPORTS` moves them; the Python suite keeps `out/runs/conformance`).
+It replaced the Python suites (`tests/modules`, retired in T1g phase 6, [ledger](plans/ledgers/t1g-retirement.md)) with the same case list, the same pass set and the same failure messages for the negative
+fixtures. The worst steady block of each (module, device) is the `dsp_cost_voice` or `dsp_cost_fx` of module.toml. Reports are
+`dist/conformance-rig/<id>@<device|fx>.json` (`DIGI_CONFORM_REPORTS` moves them). Reports sit in the worktree's own `dist/`, not in `out/`, which every worktree shares, and each records its `worktree`: `module:check` refuses to write a cost from a report of another worktree.
 
 The cost writer, `patchkit uses set --id MODULE --device dt2 --dsp-cost-voice N` (or `--dsp-cost-fx N`), edits `[uses.<device>]` of the
 module.toml like `pk_modcheck.write_uses` does: only the lines of the keys given change, comments and other keys stay, and the file

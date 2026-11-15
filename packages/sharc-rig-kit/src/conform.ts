@@ -1,6 +1,5 @@
 /**
- * Runs the conformance cases of one machine or effect module and returns the report (port of tests/support/conform_worker.py and
- * fx_conform_worker.py). The cases come from cases.ts and run on a fresh rig each; the rules of every block are in checks.ts.
+ * Runs the conformance cases of one machine or effect module and returns the report (the port of the retired Python workers, docs/plans/ledgers/t1g-retirement.md). The cases come from cases.ts and run on a fresh rig each; the rules of every block are in checks.ts.
  * A case stops at its first failure.
  */
 import {
