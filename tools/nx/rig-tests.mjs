@@ -5,7 +5,7 @@
 // shadow replay test.
 const STEREO_PROOF_ROOT = 'modules/core/adapters/dsp-stereo-proof';
 
-export const rigTarget =(root) => ({
+export const rigTarget = (root) => ({
   executor: 'nx:run-commands',
   cache: true,
   dependsOn: ['patchkit:cli', 'sharc-rig:build'],
