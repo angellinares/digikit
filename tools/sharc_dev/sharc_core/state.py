@@ -680,7 +680,7 @@ def _b_write_loads_i(state: State, code: int, value: Value) -> None:
     """A write of Bn also loads In with the same value (PRM p.6-25: "When the B register is loaded, the
     corresponding I register is simultaneously loaded with the same value. When I is loaded, B is not changed."),
     whatever MODE1.CBUFEN says. Stock code relies on it: the DN2 1.12 context switch reloads I7 straight
-    after it restores B7."""
+    after it restores B7. Bd = B2W(Bs) and Bd = W2B(Bs) (Type 7d) do not load I (PRM p.6-15)."""
     if UREG_CODES["B0"] <= code <= UREG_CODES["B15"]:
         state.uregs[code - UREG_CODES["B0"] + UREG_CODES["I0"]] = value
 
