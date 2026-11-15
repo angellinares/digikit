@@ -1273,15 +1273,16 @@ export class DkSession {
     }
     return out;
   }
-  /** PROFILE_STATE (debug module): `get` the state, `start` or `stop` the spans, or `reset` the counters. The reply is the state after the op. */
+  /** PROFILE_STATE (debug module): `get` the state, `start` or `stop` the spans, or `reset` the counters. The reply is the state after the op, with the ticks of the span clock that passed while running since the last reset (the window the sums belong to). */
   async profileState(
     op: 'get' | 'start' | 'stop' | 'reset',
     quick: Quick = false,
-  ): Promise<{ running: boolean; hz: number; rows: number }> {
+  ): Promise<{ running: boolean; hz: number; rows: number; elapsedTicks: bigint }> {
     const code = { get: 0, start: 1, stop: 2, reset: 3 }[op];
     const b = await this.ok(SERVICE_CMD.PROFILE_STATE, 'profile state', Uint8Array.of(code), quick);
-    if (b.length < 7) throw new DkError({ error: 'profile state: malformed reply', kind: 'protocol' });
-    return { running: b[0] === 1, hz: u32(b, 1), rows: u16(b, 5) };
+    if (b.length < 15) throw new DkError({ error: 'profile state: malformed reply', kind: 'protocol' });
+    const elapsedTicks = new DataView(b.buffer, b.byteOffset, b.length).getBigUint64(7);
+    return { running: b[0] === 1, hz: u32(b, 1), rows: u16(b, 5), elapsedTicks };
   }
   /** PROFILE_READ (debug module): the span rows from row `first`; the device may return fewer rows than a page holds. */
   async profileRead(
@@ -1308,6 +1309,7 @@ export class DkSession {
   async profileAll(quick: Quick = false): Promise<{
     running: boolean;
     hz: number;
+    elapsedTicks: bigint;
     spans: ProfileSpan[];
   }> {
     const st = await this.profileState('get', quick);
@@ -1325,7 +1327,7 @@ export class DkSession {
         spans.push({ row, kind: kind as 'module' | 'phase' | 'poll', index, ...r });
       }
     }
-    return { running: st.running, hz: st.hz, spans };
+    return { running: st.running, hz: st.hz, elapsedTicks: st.elapsedTicks, spans };
   }
   /** LOGCFG (read): the default log level, the level of each module record (0xff: the default), and whether the debug module is loaded. */
   async logConfig(quick: Quick = false): Promise<LogConfig> {

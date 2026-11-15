@@ -16,7 +16,8 @@ export function createTauriHost(): Host {
       pickFolder: ({ start, title }) => invoke('local_pick_folder', { start, title }),
       list: (root, rel) => invoke('local_list', { root, rel }),
       read: (root, rel, head) => invoke('local_read', { root, rel, head }),
-      saveLog: (bytes, name) => invoke('log_save', bytes, { headers: { 'x-name': encodeURIComponent(name) } }),
+      saveLog: (bytes, name, kind = 'log') =>
+        invoke('log_save', bytes, { headers: { 'x-name': encodeURIComponent(name), 'x-kind': kind } }),
     },
     library: {
       build: (device) => invoke('lib_build', { device }),

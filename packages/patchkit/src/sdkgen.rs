@@ -71,6 +71,7 @@ struct Sdk {
     machine: Machine,
     fx: Fx,
     log: Log,
+    spans: Spans,
     protocol: Protocol,
     limits: LimitsSection,
     capacity: Capacity,
@@ -697,6 +698,14 @@ pub fn embedded_runtime() -> u32 {
     pack_runtime(runtime_parts(&sdk).expect("sdk/sdk.toml runtime version"))
 }
 
+/// `[spans]`: the non-module owners of the runtime's profiling spans.
+#[derive(Deserialize)]
+#[serde(deny_unknown_fields)]
+struct Spans {
+    phases: Vec<String>,
+    polls: usize,
+}
+
 #[derive(Deserialize)]
 #[serde(deny_unknown_fields)]
 struct Log {
@@ -1315,6 +1324,13 @@ fn ts_proto(sdk: &Sdk) -> String {
         s,
         "/** The level names, by number. */\nexport const LOG_LEVELS = [{}] as const;",
         levels.join(", ")
+    );
+    let phases: Vec<String> = sdk.spans.phases.iter().map(|n| ts_str(n)).collect();
+    let _ = write!(
+        s,
+        "\n/** The service tick phases of the profiling spans (owner `0x100 | p`), by number. */\nexport const SPAN_PHASES = [{}] as const;\n\n/** The poll slots of the profiling spans (owner `0x200 | i`). */\nexport const SPAN_POLLS = {};\n",
+        phases.join(", "),
+        sdk.spans.polls
     );
     s
 }

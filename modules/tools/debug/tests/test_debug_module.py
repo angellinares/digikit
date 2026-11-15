@@ -130,6 +130,8 @@ int main(int argc, char **argv)
             project = 0;
         } else if (!strncmp(line, "project", 7)) {
             project = 1;
+        } else if (!strncmp(line, "modtick", 7)) {
+            dk_module.tick(NULL);
         } else if (!strncmp(line, "slot", 4)) {
             the_tick();
         } else if (sscanf(line, "cmd %u %2047s", &a, hex) == 2 || sscanf(line, "cmd %u", &a) == 1) {
@@ -223,8 +225,12 @@ POLL = 0x200
 
 def profile_state(reply: str):
     raw = bytes.fromhex(reply.split()[2])
-    assert len(raw) == 7
-    return struct.unpack(">BIH", raw)
+    assert len(raw) == 15
+    return struct.unpack(">BIH", raw[:7])
+
+
+def profile_elapsed(reply: str):
+    return struct.unpack(">Q", bytes.fromhex(reply.split()[2])[7:15])[0]
 
 
 def profile_rows(reply: str):
@@ -521,3 +527,28 @@ def test_param_watch_logs_a_changed_word_and_takes_the_snapshot_again_on_a_new_t
         (4, B, 0, 0, 0),
         (4, 5, 8, 9, 0),
     ]
+
+
+def test_profile_elapsed_counts_clock_ticks_across_wraps_while_running(harness):
+    out = run(
+        harness,
+        [
+            "setclk 4000000000",
+            "cmd 30 01",
+            "cmd 30 00",  # 0
+            "setclk 4000000100",
+            "cmd 30 00",  # 100
+            "setclk 3000000000",  # wrapped, then 3000000000 - 4000000100 mod 2^32
+            "modtick",
+            "setclk 3000000010",
+            "cmd 30 02",  # stop reads the clock once more
+            "setclk 5",
+            "cmd 30 00",  # stopped: frozen
+            "cmd 30 03",  # reset zeroes it
+        ],
+    )
+    wrapped = (3000000000 - 4000000100) % 2**32
+    assert [profile_elapsed(out[i]) for i in (3, 4)] == [0, 100]
+    assert profile_elapsed(out[5]) == 100 + wrapped + 10
+    assert profile_elapsed(out[6]) == 100 + wrapped + 10
+    assert profile_elapsed(out[7]) == 0
