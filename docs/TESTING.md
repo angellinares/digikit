@@ -583,6 +583,25 @@ within 8.0; the effect stays within `min(headroom) / 4` plus 900 for core/fx. Ne
 `test/dyn-dsp-hang` (machine), `test/fx-nan` (effect). `DIGI_JOBS` sets the worker count.
 A change in a machine or effect module, `core/dsp-voice`, `core/fx`, `pk_conform.py` or the rigs selects the suite.
 
+### SHARC-only rig (`sharc-rig`, T1g slice)
+
+`sharc-rig` is a call harness for module routines on the generated native core (crate `packages/emulator/sharc`,
+`src/rig/`, `src/bin/sharc_rig.rs`). It decodes and runs the loaded code with the generated core, like
+`tools/patchkit/pk_sharc.py` `CallSession` does on the Python core. A JSON request lists code to load, DM writes and
+calls; the caller assembles and places the code (`patchkit sharc`) and decides which words a note or a block sets. The format is in the
+module comment of `packages/emulator/sharc/src/rig/mod.rs`.
+
+```sh
+mise run gen:native-lib                # also builds out/native/shared-core/target/release/sharc-rig (needs `mise run gen:core`)
+sharc-rig request.json > response.json # or the request on standard input
+```
+
+A call returns `instructions`, `halt` (`breakpoint`, `max-steps` or `trap: ...`), `final_pc`, the registers and
+the DM words asked for. Measured against the Python rig on `test/sine`, `fadedlimes/analog` (DT2 and DN2), `tom/tb303`,
+`digikit/pluck` and the FX `digikit/freqshift`: bit-identical output words and identical instruction counts in every
+block; on 300 to 500 block cases the harness (process start and 64k setup pokes included) is 45 to 110 times faster. Not in the slice: recording of stores (the write-set check), the Vitest kit.
+Unit tests: `cargo test --release --lib rig::` with `SHARC_GEN_DIR` set.
+
 ### DSP budget gate (patchkit smoke)
 
 Every `pk_harness run` cell ends with a DSP measurement: TRIG 1 held for 1 s of audio, the mean busy

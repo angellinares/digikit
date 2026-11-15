@@ -1,0 +1,452 @@
+//! The SHARC-only rig: a call harness for module routines on the generated native core.
+//!
+//! A request (JSON, see [`run_request`]) names code to load, DM writes to make and calls to run. The caller does the
+//! work that needs a toolchain (assembling, linking, placing sections) and the work that is module logic (which words
+//! a note sets, which context a block gets); the rig only runs what it is told on the core and answers with what the
+//! calls left. The instruction semantics are the generated core's: nothing is decoded or executed here.
+//!
+//! ```text
+//! request  {"return_sw": 12120320,                          // pc a routine returns to (ends the call, not executed)
+//!           "breaks":    [12120064],                         // more pcs that end a call (not executed)
+//!           "code": [{"address": 671088640, "hex": "..."}],  // loader byte address, code in boot-stream order
+//!           "ops": [ {"poke": [[word_address, word], ...]},  // DM writes, normal-word addresses
+//!                    {"call": {"pc": 1, "regs": {"R4": 5}, "max_steps": 400000,
+//!                              "reads": [[word_address, count]], "read_regs": ["I6"]}} ]}
+//! response {"build": "...", "results": [{"instructions": n, "halt": "breakpoint", "final_pc": pc,
+//!                                        "regs": {"I6": v|null}, "reads": [[v|null, ...]]}]}
+//! ```
+//!
+//! A call is the same as `CallSession.call` of tools/patchkit/pk_sharc.py: the named registers are set, every other
+//! register and all of DM stay as the last call left them, a call at `pc` returns to `return_sw`, and
+//! the run stops before it executes an instruction at `return_sw` or in `breaks`. `instructions` counts the
+//! instructions executed. `halt` is `breakpoint`, `max-steps` or `trap: <reason>`.
+
+mod json;
+
+use crate::mem::Mem;
+use crate::rt::bnd;
+use crate::rt::{Int, V, VI};
+use crate::{Engine, vectors};
+use json::Json;
+
+/// Registers a fresh core holds (tools/sharc_dev/sharc_run.py `make_state`: every register 0, then these).
+const START_REGS: [(&str, i64); 6] = [
+    ("M5", 0),
+    ("M6", 1),
+    ("M7", -1),
+    ("M13", 0),
+    ("M14", 1),
+    ("M15", -1),
+];
+/// The core MMRs that reset to 0 (`CORE_MMR_RESET_VALUES`).
+const RESET_MMRS: [u32; 6] = [0x30024, 0x31400, 0x31401, 0x31402, 0x3e000, 0x3e002];
+
+#[derive(Debug)]
+pub struct Call {
+    pub pc: u32,
+    pub regs: Vec<(usize, u32)>,
+    pub max_steps: u64,
+    pub reads: Vec<(u32, u32)>,
+    pub read_regs: Vec<(String, usize)>,
+}
+
+#[derive(Debug)]
+pub enum Op {
+    Poke(Vec<(u32, u32)>),
+    Call(Call),
+}
+
+#[derive(Debug)]
+pub struct Request {
+    pub return_sw: u32,
+    pub breaks: Vec<u32>,
+    pub code: Vec<(u32, Vec<u8>)>,
+    pub ops: Vec<Op>,
+}
+
+pub struct CallResult {
+    pub instructions: u64,
+    pub halt: String,
+    pub final_pc: u32,
+    pub regs: Vec<(String, Option<u32>)>,
+    pub reads: Vec<Vec<Option<u32>>>,
+}
+
+fn reg_code(name: &str) -> Result<usize, String> {
+    (0..128)
+        .find(|&c| vectors::ureg_name(c) == name)
+        .ok_or_else(|| format!("unknown register {name}"))
+}
+
+fn hex_bytes(text: &str) -> Result<Vec<u8>, String> {
+    if text.len() % 2 != 0 {
+        return Err("hex string of odd length".into());
+    }
+    (0..text.len() / 2)
+        .map(|i| {
+            u8::from_str_radix(&text[2 * i..2 * i + 2], 16).map_err(|_| "bad hex digit".to_string())
+        })
+        .collect()
+}
+
+fn u32_of(v: &Json) -> Result<u32, String> {
+    let n = v.int()?;
+    // words arrive as unsigned or as signed 32-bit values
+    if (i32::MIN as i64..=u32::MAX as i64).contains(&n) {
+        Ok(n as u32)
+    } else {
+        Err(format!("{n} is not a 32-bit word"))
+    }
+}
+
+pub fn parse_request(text: &str) -> Result<Request, String> {
+    let root = json::parse(text)?;
+    let need = |key: &str| root.get(key).ok_or_else(|| format!("request has no {key}"));
+    let return_sw = u32_of(need("return_sw")?)?;
+    let breaks = match root.get("breaks") {
+        Some(b) => b.arr()?.iter().map(u32_of).collect::<Result<_, _>>()?,
+        None => Vec::new(),
+    };
+    let mut code = Vec::new();
+    for seg in need("code")?.arr()? {
+        let address = u32_of(seg.get("address").ok_or("code segment has no address")?)?;
+        let hex = seg.get("hex").ok_or("code segment has no hex")?.str()?;
+        code.push((address, hex_bytes(hex)?));
+    }
+    let mut ops = Vec::new();
+    for op in need("ops")?.arr()? {
+        if let Some(p) = op.get("poke") {
+            let mut pairs = Vec::new();
+            for pair in p.arr()? {
+                let pair = pair.arr()?;
+                if pair.len() != 2 {
+                    return Err("a poke is [word_address, word]".into());
+                }
+                pairs.push((u32_of(&pair[0])?, u32_of(&pair[1])?));
+            }
+            ops.push(Op::Poke(pairs));
+        } else if let Some(c) = op.get("call") {
+            let mut regs = Vec::new();
+            if let Some(r) = c.get("regs") {
+                for (name, v) in r.obj()? {
+                    regs.push((reg_code(name)?, u32_of(v)?));
+                }
+            }
+            let mut reads = Vec::new();
+            if let Some(r) = c.get("reads") {
+                for pair in r.arr()? {
+                    let pair = pair.arr()?;
+                    if pair.len() != 2 {
+                        return Err("a read is [word_address, count]".into());
+                    }
+                    reads.push((u32_of(&pair[0])?, u32_of(&pair[1])?));
+                }
+            }
+            let mut read_regs = Vec::new();
+            if let Some(r) = c.get("read_regs") {
+                for n in r.arr()? {
+                    let n = n.str()?;
+                    read_regs.push((n.to_string(), reg_code(n)?));
+                }
+            }
+            ops.push(Op::Call(Call {
+                pc: u32_of(c.get("pc").ok_or("call has no pc")?)?,
+                regs,
+                max_steps: c.get("max_steps").map_or(Ok(100_000), Json::int)? as u64,
+                reads,
+                read_regs,
+            }));
+        } else {
+            return Err("an op is {\"poke\": ...} or {\"call\": ...}".into());
+        }
+    }
+    Ok(Request {
+        return_sw,
+        breaks,
+        code,
+        ops,
+    })
+}
+
+/// A core configured like the concrete Python core of `sharc_run.Runner` (no generated blocks, runtime decoding of the
+/// loaded code, every register 0, the core MMRs at their reset values).
+pub fn new_engine(code: &[(u32, Vec<u8>)]) -> Result<Engine, String> {
+    let mut mem = Mem::new();
+    for (address, bytes) in code {
+        mem.load(*address, bytes);
+    }
+    mem.reset();
+    let mut e = Engine::new(mem);
+    e.use_blocks = false;
+    // options of tools/sharc_dev/sharc_transpile_run.py `to_native` for a fresh `Runner`
+    for (key, value) in [
+        (4, 1),
+        (10, 0),
+        (12, 1),
+        (13, 1),
+        (14, 64),
+        (15, 0),
+        (16, 0),
+        (17, 1),
+        (18, 0),
+        (19, 0),
+        (20, 0),
+        (9, 0),
+        (21, 0),
+        (22, 0),
+    ] {
+        if e.set_option(key, value) != 0 {
+            return Err(format!("the core refused option {key}"));
+        }
+    }
+    for code in 0..128 {
+        e.set_reg(code, V::c(0));
+    }
+    for (name, value) in START_REGS {
+        e.set_reg(reg_code(name)?, V::c(value as u32 as Int));
+    }
+    for a in RESET_MMRS {
+        e.s.mmr_put(a, V::c(0));
+        e.s.core_mmr_reset.push(a);
+    }
+    e.s.set_mmr_windows();
+    Ok(e)
+}
+
+fn poke_word(e: &mut Engine, word_address: u32, word: u32) -> Result<(), String> {
+    e.s.begin();
+    let done = bnd::_dm_write(
+        &mut e.s,
+        VI::I(word_address as Int),
+        4,
+        V::c(word as Int),
+        true,
+    );
+    match done {
+        Ok(true) => {
+            e.s.commit_host();
+            Ok(())
+        }
+        _ => {
+            e.s.rollback();
+            Err(format!("cannot poke DM word {word_address:#x}"))
+        }
+    }
+}
+
+fn peek_word(e: &Engine, word_address: u32) -> Option<u32> {
+    match bnd::_dm_read(&e.s, VI::I(word_address as Int), 4, false, true) {
+        Ok(Some(v)) if v.is_c() => Some(v.b),
+        _ => None,
+    }
+}
+
+pub fn run_call(e: &mut Engine, req: &Request, call: &Call) -> CallResult {
+    for &(code, value) in &call.regs {
+        e.set_reg(code, V::c(value as Int));
+    }
+    e.fresh_call(call.pc, Some(req.return_sw as Int));
+    let start = e.s.icount;
+    let mut halt = String::from("max-steps");
+    while e.s.icount - start < call.max_steps {
+        let pc = e.s.pc_sw as u32;
+        if pc == req.return_sw || req.breaks.contains(&pc) {
+            halt = "breakpoint".into();
+            break;
+        }
+        if e.step(1) == 0 {
+            halt = format!("trap: {}", e.halt.clone().unwrap_or_default());
+            break;
+        }
+    }
+    CallResult {
+        instructions: e.s.icount - start,
+        halt,
+        final_pc: e.s.pc_sw as u32,
+        regs: call
+            .read_regs
+            .iter()
+            .map(|(n, c)| {
+                let v = e.s.r[*c];
+                (n.clone(), v.is_c().then_some(v.b))
+            })
+            .collect(),
+        reads: call
+            .reads
+            .iter()
+            .map(|&(a, n)| (0..n).map(|k| peek_word(e, a + k)).collect())
+            .collect(),
+    }
+}
+
+pub fn run(req: &Request) -> Result<Vec<CallResult>, String> {
+    let mut e = new_engine(&req.code)?;
+    let mut out = Vec::new();
+    for op in &req.ops {
+        match op {
+            Op::Poke(pairs) => {
+                for &(a, w) in pairs {
+                    poke_word(&mut e, a, w)?;
+                }
+            }
+            Op::Call(c) => out.push(run_call(&mut e, req, c)),
+        }
+    }
+    Ok(out)
+}
+
+fn opt(v: Option<u32>) -> Json {
+    v.map_or(Json::Null, |w| Json::Int(w as i64))
+}
+
+/// Parse a request, run it and write the response JSON.
+pub fn run_request(text: &str) -> Result<String, String> {
+    let req = parse_request(text)?;
+    let results = run(&req)?;
+    let results = results
+        .into_iter()
+        .map(|r| {
+            Json::Obj(vec![
+                ("instructions".into(), Json::Int(r.instructions as i64)),
+                ("halt".into(), Json::Str(r.halt)),
+                ("final_pc".into(), Json::Int(r.final_pc as i64)),
+                (
+                    "regs".into(),
+                    Json::Obj(r.regs.into_iter().map(|(n, v)| (n, opt(v))).collect()),
+                ),
+                (
+                    "reads".into(),
+                    Json::Arr(
+                        r.reads
+                            .into_iter()
+                            .map(|row| Json::Arr(row.into_iter().map(opt).collect()))
+                            .collect(),
+                    ),
+                ),
+            ])
+        })
+        .collect();
+    let mut out = String::new();
+    Json::Obj(vec![
+        ("build".into(), Json::Str(crate::build_info())),
+        ("results".into(), Json::Arr(results)),
+    ])
+    .write(&mut out);
+    out.push('\n');
+    Ok(out)
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    const BASE: u32 = 0xB9_0000;
+    const ALIAS: i64 = 0x2800_0000 + 2 * BASE as i64;
+
+    fn request(ops: &str) -> String {
+        // R1 = 3; R2 = 4 (two 32-bit instructions: four short words), then the return point
+        format!(
+            r#"{{"return_sw": {ret}, "breaks": [], "code": [{{"address": {ALIAS}, "hex": "810f0300820f0400"}}], "ops": [{ops}]}}"#,
+            ret = BASE + 4
+        )
+    }
+
+    #[test]
+    fn json_round_trips_and_rejects_garbage() {
+        let v = json::parse(r#"{"a": [1, -2, null, true], "b": "x\n\"y\""}"#).unwrap();
+        let mut out = String::new();
+        v.write(&mut out);
+        assert_eq!(out, r#"{"a":[1,-2,null,true],"b":"x\n\"y\""}"#);
+        assert!(json::parse("{\"a\": 1.5}").is_err());
+        assert!(json::parse("[1, 2").is_err());
+        assert!(json::parse("[1] x").is_err());
+    }
+
+    #[test]
+    fn a_request_names_what_is_missing() {
+        assert!(parse_request("{}").unwrap_err().contains("return_sw"));
+        let bad =
+            r#"{"return_sw": 1, "code": [], "ops": [{"call": {"pc": 1, "regs": {"NOPE": 1}}}]}"#;
+        assert!(parse_request(bad).unwrap_err().contains("NOPE"));
+        let odd = r#"{"return_sw": 1, "code": [{"address": 0, "hex": "abc"}], "ops": []}"#;
+        assert!(parse_request(odd).is_err());
+    }
+
+    #[cfg(sharc_gen)]
+    fn call(text: &str) -> Vec<CallResult> {
+        run(&parse_request(text).unwrap()).unwrap()
+    }
+
+    #[cfg(sharc_gen)]
+    #[test]
+    fn a_call_runs_to_its_return_point_and_stops_before_it() {
+        let ops = format!(
+            r#"{{"call": {{"pc": {BASE}, "regs": {{"R5": 9}}, "read_regs": ["R1", "R2", "R5"]}}}}"#
+        );
+        let r = &call(&request(&ops))[0];
+        assert_eq!(r.halt, "breakpoint");
+        assert_eq!(r.instructions, 2);
+        assert_eq!(r.final_pc, BASE + 4);
+        assert_eq!(
+            r.regs,
+            vec![
+                ("R1".to_string(), Some(3)),
+                ("R2".to_string(), Some(4)),
+                ("R5".to_string(), Some(9))
+            ]
+        );
+    }
+
+    #[cfg(sharc_gen)]
+    #[test]
+    fn registers_and_memory_stay_between_calls() {
+        let first = format!(r#"{{"call": {{"pc": {BASE}, "regs": {{"R7": 11}}}}}}"#);
+        // the second call starts after the first instruction: R1 keeps 3, R7 keeps 11, one instruction runs
+        let second = format!(
+            r#"{{"call": {{"pc": {pc}, "reads": [[134217728, 2], [134217730, 1]], "read_regs": ["R1", "R7"]}}}}"#,
+            pc = BASE + 2
+        );
+        let ops =
+            format!(r#"{first}, {{"poke": [[134217728, 4294967295], [134217729, 5]]}}, {second}"#);
+        let rs = call(&request(&ops));
+        assert_eq!(rs[1].instructions, 1);
+        assert_eq!(
+            rs[1].regs,
+            vec![("R1".to_string(), Some(3)), ("R7".to_string(), Some(11))]
+        );
+        // poked words read back; a word nothing wrote is unknown, not 0
+        assert_eq!(rs[1].reads[0], vec![Some(0xFFFF_FFFF), Some(5)]);
+        assert_eq!(rs[1].reads[1], vec![None]);
+    }
+
+    #[cfg(sharc_gen)]
+    #[test]
+    fn a_call_stops_at_its_step_limit_and_at_a_break() {
+        let limit = format!(r#"{{"call": {{"pc": {BASE}, "max_steps": 1}}}}"#);
+        let r = &call(&request(&limit))[0];
+        assert_eq!((r.halt.as_str(), r.instructions), ("max-steps", 1));
+        let text = request(&format!(r#"{{"call": {{"pc": {BASE}}}}}"#))
+            .replace(r#""breaks": []"#, &format!(r#""breaks": [{}]"#, BASE + 2));
+        let r = &call(&text)[0];
+        assert_eq!(
+            (r.halt.as_str(), r.instructions, r.final_pc),
+            ("breakpoint", 1, BASE + 2)
+        );
+    }
+
+    #[cfg(sharc_gen)]
+    #[test]
+    fn code_that_was_not_loaded_traps_without_counting() {
+        let text = request(&format!(r#"{{"call": {{"pc": {}}}}}"#, BASE + 0x100));
+        let r = &call(&text)[0];
+        assert!(r.halt.starts_with("trap:"), "{}", r.halt);
+        assert_eq!(r.instructions, 0);
+    }
+
+    #[cfg(sharc_gen)]
+    #[test]
+    fn a_poke_outside_mapped_memory_is_an_error() {
+        let text = request(r#"{"poke": [[4294967295, 1]]}"#);
+        assert!(run(&parse_request(&text).unwrap()).is_err());
+    }
+}
