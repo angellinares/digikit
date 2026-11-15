@@ -82,7 +82,13 @@ fn patched_zero_keeps_the_block_clock_through_cache_fallback_and_restart() {
         return;
     };
     let root = PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("../../..");
-    let snapshot = root.join("out/ready-pk-dt2-117/digi-audio-m5.snap");
+    let ready: serde_json::Value = serde_json::from_slice(
+        &std::fs::read(root.join("tools/emulator/ready_inputs.json")).unwrap(),
+    )
+    .unwrap();
+    let snapshot = root
+        .join(ready["ready_dirs"]["dt2"].as_str().unwrap())
+        .join("digi-audio-m5.snap");
     if !snapshot.is_file() {
         return;
     }

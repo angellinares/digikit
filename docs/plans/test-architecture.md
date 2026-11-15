@@ -84,6 +84,7 @@ Reading the table:
 ### T1c Host contract tests
 
 - Scope: contract suites for `CoreApi` and `Service` now, and `Platform` with R3. Fake and real pass the same suite.
+- First cases: load SDK-built FX and machine fixtures through the runtime's descriptor parsers on the host and check sizes and offsets against the generated SDK constants; one Storage contract suite run against FakeStorage on the host and the real adapter once on the device.
 - Proof: both implementations run the suite.
 - Depends on: R2c (`CoreApi`, `Service`), R3 (`Platform`).
 

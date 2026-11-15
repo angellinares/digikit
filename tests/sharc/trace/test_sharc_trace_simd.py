@@ -1067,9 +1067,9 @@ class SimdMemoryCompanionTest(TraceHelpers):
                 sentinel = T.Const(0xA5A5A5A5)
                 self.assertTrue(T._dm_write(state, base, 4, sentinel))
                 out = self.run_one(state, insn(form, fields, length))
-                self.assertIsInstance(
-                    out.uregs[86], T.Unknown
-                )  # PM has no concrete backing.
+                # A broadcast load through I9 gives S6 the word R6 gets, from the
+                # same address, with PEYEN on or off (PRM Table 6-9, p.6-27).
+                self.assertEqual((out.uregs[6], out.uregs[86]), (sentinel, sentinel))
                 self.assertEqual(T._dm_read(out, base, 4), sentinel)
         wrong = self.run_one(
             T.State(
@@ -1484,6 +1484,97 @@ class RealBlobSimdRegionTest(unittest.TestCase):
             mode1 = state.uregs.get(T.UREG_CODES["MODE1"])
             if isinstance(mode1, T.Const):
                 self.assertEqual(mode1.value & (1 << 21), 0)
+
+
+class BroadcastLoadTest(TraceHelpers):
+    """MODE1.BDCST1/BDCST9 broadcast loads (PRM pp.6-26 to 6-28, Tables 6-9
+    and 6-10, Fig 7-28; issue #187): a load through I1 (BDCST1) or I9
+    (BDCST9) into a Dreg or CDreg writes the same word to the complement
+    register. PEYEN does not matter. Stores and Ureg loads do not broadcast."""
+
+    BASE = 0x30005000
+    BDCST1, BDCST9, PEYEN = 1 << 23, 1 << 22, 1 << 21
+
+    def _state(self, index, mode1, extra=None):
+        regs = {
+            16 + index: T.Const(self.BASE),
+            32 + 6: T.Const(1),
+            32 + 14: T.Const(1),
+            2: T.Const(0),
+            3: T.Const(0),
+            82: T.Const(0x5),
+            83: T.Const(0x6),
+            T.UREG_CODES["MODE1"]: T.Const(mode1),
+        }
+        regs.update(extra or {})
+        state = T.State(1, regs, concrete=loader_memory(), assume_nw32=True)
+        for k, word in enumerate((0x11111111, 0x22222222, 0x33333333)):
+            self.assertTrue(T._dm_write(state, self.BASE + 4 * k, 4, T.Const(word)))
+        return state
+
+    def _3a(self, index, store=0, long_word=0, ureg=2):
+        bank = 8 if index >= 8 else 0
+        return insn(
+            "3a",
+            {
+                "u": 1,
+                "i": index - bank,
+                "m": 6,
+                "cond": 31,
+                "g": 1 if bank else 0,
+                "d": store,
+                "l": long_word,
+                "ureg": ureg,
+                "compute": 0,
+            },
+            6,
+        )
+
+    def test_type3a_dm_broadcast_through_i1(self):
+        for pey in (0, self.PEYEN):
+            with self.subTest(peyen=bool(pey)):
+                out = self.run_one(self._state(1, self.BDCST1 | pey), self._3a(1))
+                self.assertEqual(out.uregs[2], T.Const(0x11111111))
+                self.assertEqual(out.uregs[82], T.Const(0x11111111))
+                self.assertEqual(out.uregs[17], T.Const(self.BASE + 4))
+
+    def test_type3a_other_index_keeps_simd_and_sisd(self):
+        # Control: I2 is not a broadcast index. SIMD moves the next word into S2.
+        out = self.run_one(self._state(2, self.BDCST1 | self.PEYEN), self._3a(2))
+        self.assertEqual(out.uregs[82], T.Const(0x22222222))
+        # SISD: S2 does not change.
+        out = self.run_one(self._state(2, self.BDCST1), self._3a(2))
+        self.assertEqual(out.uregs[82], T.Const(0x5))
+
+    def test_type3a_pm_broadcast_through_i9(self):
+        out = self.run_one(self._state(9, self.BDCST9), self._3a(9))
+        self.assertEqual((out.uregs[2], out.uregs[82]), (T.Const(0x11111111),) * 2)
+        # BDCST1 alone does not broadcast an I9 load.
+        out = self.run_one(self._state(9, self.BDCST1), self._3a(9))
+        self.assertEqual(out.uregs[82], T.Const(0x5))
+
+    def test_store_does_not_broadcast(self):
+        out = self.run_one(
+            self._state(1, self.BDCST1, {2: T.Const(0xABCD)}), self._3a(1, store=1)
+        )
+        self.assertEqual(T._dm_read(out, self.BASE, 4), T.Const(0xABCD))
+        self.assertEqual(T._dm_read(out, self.BASE + 4, 4), T.Const(0x22222222))
+
+    def test_long_word_broadcast_fills_both_pairs(self):
+        # PRM Fig 7-28: RX = DM(LW) fills RX, RY and SX, SY with the same 64 bits.
+        out = self.run_one(self._state(1, self.BDCST1), self._3a(1, long_word=1))
+        self.assertEqual((out.uregs[2], out.uregs[82]), (T.Const(0x11111111),) * 2)
+        self.assertEqual((out.uregs[3], out.uregs[83]), (T.Const(0x22222222),) * 2)
+
+    def test_ureg_load_does_not_broadcast(self):
+        ustat1 = T.UREG_CODES["USTAT1"]
+        mate = import_module("tools.sharc_dev.sharc_core.state")._cureg_code(ustat1)
+        self.assertIsNotNone(mate)
+        out = self.run_one(
+            self._state(1, self.BDCST1, {mate: T.Const(0x77)}), self._3a(1, ureg=ustat1)
+        )
+        self.assertEqual(out.uregs[ustat1], T.Const(0x11111111))
+        self.assertEqual(out.uregs[mate], T.Const(0x77))
 
 
 if __name__ == "__main__":

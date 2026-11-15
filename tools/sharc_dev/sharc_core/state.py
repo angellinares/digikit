@@ -676,6 +676,15 @@ def _restore_packed_loop(state: State, value: Value, counter: Value) -> None:
     )
 
 
+def _b_write_loads_i(state: State, code: int, value: Value) -> None:
+    """A write of Bn also loads In with the same value (PRM p.6-25: "When the B register is loaded, the
+    corresponding I register is simultaneously loaded with the same value. When I is loaded, B is not changed."),
+    whatever MODE1.CBUFEN says. Stock code relies on it: the DN2 1.12 context switch reloads I7 straight
+    after it restores B7."""
+    if UREG_CODES["B0"] <= code <= UREG_CODES["B15"]:
+        state.uregs[code - UREG_CODES["B0"] + UREG_CODES["I0"]] = value
+
+
 def _write_ureg(state: State, code: int, value: Value) -> None:
     """Guest register write, including architectural PCSTK effects.
 
@@ -756,6 +765,7 @@ def _write_ureg(state: State, code: int, value: Value) -> None:
     if code == UREG_CODES["MODE1"]:
         _bank_request(state, value)
     state.uregs[code] = value
+    _b_write_loads_i(state, code, value)
 
 
 _BANK_MASK = 0x4F8

@@ -186,6 +186,13 @@ A short sequence (a register pair's two addresses) is a list built by
 (`comprehension`). No `sorted`, `round`, `pow`, `divmod`, `hash` or `**`
 on a non-literal (`host-builtin`).
 
+**Names.** A local name has one native type in a function. The translator
+gives the name the type of its first assignment. A later assignment of an
+optional result (`_load_normal_ureg`, `_dm_read`) to that name is unwrapped to
+fit, and the native core panics when the result is None. Give each type its
+own name: `_type_3a_transfer` uses `word` for the long-word loads and `loaded`
+for the optional normal-word result. The lint does not check this rule.
+
 **Traps.** `raise` (usually `ValueError` for an unsupported encoding, or
 `UnmodeledMMR`) is a trap. The only `try` is the trap-to-stop form: every
 handler catches `ValueError` or `UnmodeledMMR` and just returns

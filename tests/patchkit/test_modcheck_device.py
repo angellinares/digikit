@@ -1,5 +1,6 @@
 """Module-owned device acceptance survives retiring Python scenario dispatch."""
 
+import json
 import os
 import sys
 from contextlib import contextmanager
@@ -172,11 +173,12 @@ def test_owned_device_stage_follows_python_and_gates_size(
         assert folder == tmp_path and check
         observed.append("sources")
 
-    def device(mid, targets):
+    def device(mid, targets, selected=None):
         assert mid == "owned/module" and targets == [
             "owned-effect:test-device",
             "owned-service:test-device",
         ]
+        assert selected == "dt2"
         observed.append("device")
         return device_result
 
@@ -264,3 +266,74 @@ def test_owned_target_preserves_both_current_devices_and_legacy_overrides(
         == 11
     )
     assert cells == [("dt2", "1.17"), ("dn2", "1.12")]
+
+
+def test_device_option_resolves_and_runs_only_that_device(tmp_path, monkeypatch):
+    for key in ("DIGI_EMUD", "DIGI_EMUD_DT2", "DIGI_EMUD_DN2"):
+        monkeypatch.delenv(key, raising=False)
+    held = False
+    cells = []
+
+    @contextmanager
+    def lock(mode, _label):
+        nonlocal held
+        assert mode == "shared"
+        held = True
+        try:
+            yield
+        finally:
+            held = False
+
+    def inputs(cell):
+        cells.append((cell.device, cell.firmware))
+        return tmp_path / f"{cell.device}.syx", tmp_path
+
+    def binary(device, _syx, pgo):
+        assert pgo is None
+        return tmp_path / f"emud-{device}"
+
+    # owned-effect has several test files (per-file halves), owned-service one (halves of test-device-all itself)
+    listings = {
+        "owned-effect": [
+            "test-device-all",
+            "test-device-all--a",
+            "test-device-all--a--dt2",
+            "test-device-all--a--dn2",
+        ],
+        "owned-service": [
+            "test-device-all",
+            "test-device-all--dt2",
+            "test-device-all--dn2",
+        ],
+    }
+
+    def child(command, **kwargs):
+        assert not held
+        if "show" in command:
+            project = command[command.index("project") + 1]
+            listing = json.dumps({"targets": {n: {} for n in listings[project]}})
+            return SimpleNamespace(
+                returncode=0,
+                stdout=f"$ node tools/nx/nx.mjs show project {project} --json\n{listing}\n",
+            )
+        assert (
+            command[command.index("-t") + 1]
+            == "test-device-all--a--dn2,test-device-all--dn2"
+        )
+        assert kwargs["env"]["DIGI_EMUD_DN2"] == str(tmp_path / "emud-dn2")
+        assert "DIGI_EMUD_DT2" not in kwargs["env"]
+        return SimpleNamespace(returncode=7)
+
+    monkeypatch.setattr(benchlock, "hold", lock)
+    monkeypatch.setattr(pk_harness, "firmware_inputs", inputs)
+    monkeypatch.setattr(pk_harness, "daemon_binary", binary)
+    monkeypatch.setattr(pk_modcheck.subprocess, "run", child)
+    assert (
+        pk_modcheck.run_device_targets(
+            "owned/module",
+            ["owned-effect:test-device", "owned-service:test-device"],
+            "dn2",
+        )
+        == 7
+    )
+    assert cells == [("dn2", "1.12")]

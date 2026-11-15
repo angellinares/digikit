@@ -39,6 +39,8 @@ pub mod scan;
 pub mod settings;
 mod files;
 mod hash32;
+// The file is not aux.rs: Windows does not allow a file named AUX, with any extension.
+#[path = "aux_task.rs"]
 pub mod aux;
 pub mod speed;
 mod intro;

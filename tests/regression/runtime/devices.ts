@@ -114,6 +114,9 @@ export function daemonBinary(device: Device): string {
   if (fs.existsSync(file)) {
     const value = (JSON.parse(fs.readFileSync(file, 'utf8')) as Record<string, string>)[key];
     if (value) return value;
+    throw new Error(
+      `${key} unset and dist/daemons.json has no ${key} (no ${device} firmware or ready inputs when the daemons were built): run mise run emu:ready -- ${device}, then pnpm nx:pilot run digi-control:daemons`,
+    );
   }
   throw new Error(`${key} unset and dist/daemons.json missing: run pnpm nx:pilot run digi-control:daemons`);
 }

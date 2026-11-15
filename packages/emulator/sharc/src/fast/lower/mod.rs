@@ -62,6 +62,9 @@ const LIM: i64 = 1 << 40;
 
 /// MODE1.CBUFEN (circular buffering of data loads and stores).
 pub const MODE1_CBUFEN: u32 = 1 << 24;
+/// The register codes of I0 and B0 (I0..I15 are 16..31, B0..B15 are 64..79).
+const UREG_I0: u32 = 16;
+const UREG_B0: u32 = 64;
 
 impl Abs {
     pub fn konst(c: i64) -> Abs {
@@ -1349,6 +1352,10 @@ impl Lower {
         // lowering bakes their entry values, so a region that writes them
         // does not lower circular updates of that index (`lb_stale`).
         self.pending.writes.push((c as u8, v));
+        if (UREG_B0..UREG_B0 + 16).contains(&(c as u32)) {
+            // A write of Bn also loads In (PRM p.6-25, `state._b_write_loads_i`).
+            return self.wr_i(c as u32 - UREG_B0 + UREG_I0, v);
+        }
         Ok(())
     }
 
@@ -2123,6 +2130,32 @@ mod tests {
         assert_eq!(l.pending.writes[0].0, crate::rt::UREG_PX1 as u8);
         assert_eq!(l.konst_of(l.pending.writes[0].1), Some(0));
         assert_eq!(l.pending.writes[1], (crate::rt::UREG_PX2 as u8, value));
+    }
+
+    #[test]
+    fn mode1_write_that_enables_a_broadcast_load_refuses() {
+        for bit in [1u32 << 22, 1 << 23] {
+            let mut l = Lower::new(env(), Plan::default(), 0);
+            let value = l.ci(bit);
+            assert!(l.g_wr(sysops::MODE1_CODE, value).is_err());
+        }
+    }
+
+    #[test]
+    fn b_write_also_loads_i() {
+        // PRM p.6-25: a write of Bn loads In with the same value; a write of In leaves Bn.
+        let (b7, i7) = (UREG_B0 + 7, UREG_I0 + 7);
+        let mut l = Lower::new(env(), Plan::default(), 0);
+        let value = l.ci(0x2d_08c0);
+        l.g_wr(b7, value).unwrap();
+        assert_eq!(
+            &l.pending.writes[..],
+            &[(b7 as u8, value), (i7 as u8, value)]
+        );
+        let mut l = Lower::new(env(), Plan::default(), 0);
+        let value = l.ci(0x2d_0900);
+        l.g_wr(i7, value).unwrap();
+        assert_eq!(&l.pending.writes[..], &[(i7 as u8, value)]);
     }
 
     #[test]

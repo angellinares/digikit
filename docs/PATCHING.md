@@ -159,16 +159,16 @@ has a patch record is loaded as it is. Details: docs/CONTROL.md.
 Headless daemon with DSP audio (the flags `tools/control/digi_client.py` uses for its own daemons):
 
 ```sh
-R=out/ready-pk-dt2-117
+R=out/snapshots/dt2-audio-ready-cold-2026-10-20
 mise run emu:serve -- --auto-coupled --audio-profile-syx firmware/Digitakt_II_OS1.17.syx \
   --dsp-image $R/digi-audio-dn2-image.bin --dsp-state $R/digi-audio-m5.snap.dsp \
   --cf-snapshot $R/digi-audio-m5.snap --no-audio firmware/Digitakt_II_OS1.17.syx
 mise run emu:ctl status       # from another shell; `mise run emu:ctl quit` stops the daemon
 ```
 
-The ready inputs come from `uv run python -m tools.emulator.ready dt2 --syx firmware/Digitakt_II_OS1.17.syx --out out/ready-pk-dt2-117
---force` (about 2 minutes). The test harness looks for them in the table at the top of `tools/patchkit/pk_harness.py`;
-`DIGI_PK_READY_<DEV>_<VER>` (for example `DIGI_PK_READY_DT2_117`) overrides the directory. The harness refuses ready
+The ready inputs come from `mise run emu:ready -- dt2` (about 2 minutes). It writes them to the directory in
+`tools/emulator/ready_inputs.json`, where the test harness reads them; `DIGI_PK_READY_<DEV>_<VER>` (for example
+`DIGI_PK_READY_DT2_117`) overrides the directory. The harness refuses ready
 inputs that are stale or belong to another `.syx`.
 
 ### Test a run-time module in the emulator
