@@ -27,11 +27,9 @@ use core::ptr::addr_of_mut;
 use dkrt_sdk::*;
 
 /// The routes of an effect (`dkrt_sdk::DkrtFx`), and the bits of the flags word of its record (docs/design/digikit-dkm.md).
-const ROUTE_MASTER: u8 = 1;
-const ROUTE_SEND: u8 = 2;
-const FXF_SEND: u32 = 1;
-const FXF_NOMASTER: u32 = 2;
-const FXF_DEFAULT_SEND: u32 = 4;
+const ROUTE_MASTER: u8 = dkneeds::page::DK_ROUTE_MASTER as u8;
+const ROUTE_SEND: u8 = dkneeds::page::DK_ROUTE_SEND as u8;
+use dkneeds::{FXF_DEFAULT_SEND, FXF_NOMASTER, FXF_SEND};
 
 /// Cells of the send page the image can have at most (`[limits.max] send_slots`).
 pub const SEND_MAX: usize = 2;
