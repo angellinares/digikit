@@ -23,6 +23,14 @@ pub unsafe fn init() {
 
 /// A block of at least `n` bytes, 16-byte aligned; null when none fits.
 pub unsafe fn alloc(n: u32) -> *mut u8 {
+    // dk_alloc runs in any task: the free list walk is one critical section (the mask nests).
+    let sr = crate::irq_mask();
+    let p = alloc_walk(n);
+    crate::irq_restore(sr);
+    p
+}
+
+unsafe fn alloc_walk(n: u32) -> *mut u8 {
     let s = st();
     if n == 0 || n > ARENA_BYTES as u32 {
         return null_mut();
@@ -63,6 +71,16 @@ pub unsafe fn alloc(n: u32) -> *mut u8 {
 pub unsafe fn free(p: *mut u8) -> bool {
     #[cfg(test)] { return crate::cleanup_tests::arena_free(p); }
     #[cfg(not(test))]
+    {
+    let sr = crate::irq_mask();
+    let freed = free_walk(p);
+    crate::irq_restore(sr);
+    freed
+    }
+}
+
+#[cfg(not(test))]
+unsafe fn free_walk(p: *mut u8) -> bool {
     {
     let s = st();
     let a = p as u32;
