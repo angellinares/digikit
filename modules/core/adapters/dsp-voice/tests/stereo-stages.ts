@@ -1,5 +1,5 @@
 /**
- * The stage table and the harness of the DN2 R twins (port of tests/support/dn2_stereo_stages.py), for dsp-voice-stereo-twins.rig.test.ts,
+ * The stage table and the harness of the DN2 R twins, for dsp-voice-stereo-twins.rig.test.ts,
  * dsp-voice-stereo-identity.rig.test.ts and dsp-voice-stereo-cost.rig.test.ts.
  *
  * A `Stage` names a twin, the stock stage behind it, the L record, the words the stage shares between the channels (`controls`, copied

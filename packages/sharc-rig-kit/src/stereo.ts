@@ -1,6 +1,5 @@
 /**
- * A rig for dsp-voice-dn2-stereo.s: the stock DN2 1.12 DSP image with the stereo object linked beside it (port of
- * tests/support/dn2_stereo_rig.py).
+ * A rig for dsp-voice-dn2-stereo.s: the stock DN2 1.12 DSP image with the stereo object linked beside it.
  *
  * The original firmware is the base core of the rig (`RigSetup.image`, read at run time from out/sections/dn2-1.12, never copied into a
  * fixture). The stock stages and sites are the image's: the wrappers call and jump to the real functions, and the pan hook is patched

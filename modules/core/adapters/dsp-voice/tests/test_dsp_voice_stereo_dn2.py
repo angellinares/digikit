@@ -4,7 +4,7 @@ docs/design/dn2-stereo.md.
 A stereo machine returns DK_STEREO and writes R through `out_r`, the slot's R buffer (`_gs_rbuf`). After the guard the adapter checks R, multiplies it by the
 engine's constant gain (the stock loop at 0x1c9478 does that to L right after the render hook), and stamps the slot with the block counter. The stamp, the clear
 of the R stage records at a note-on and after a gap, and the cap of 8 stereo slots per block are the adapter's. The twins and the pan hook are in
-test_dsp_stereo_twins.py and test_dsp_stereo_gain_slot.py. A mono 1.1 machine is unchanged. Skips when Selache is not built."""
+dsp-stereo-twins.rig.test.ts and dsp-stereo-gain-slot.rig.test.ts. A mono 1.1 machine is unchanged. Skips when Selache is not built."""
 
 import dataclasses
 import struct
