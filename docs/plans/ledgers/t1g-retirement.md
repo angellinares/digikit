@@ -138,3 +138,42 @@ Known gap, in both versions: the hostile-register twins test is vacuous (the hos
 | `test_dsp_stereo_uy_proof.py` (10 functions, 36 cases) | `dsp-stereo-uy-proof.rig.test.ts` (37 cases: 36 ported and one fixture check) | same, 36 of 36 | the fixture check also asserts that the first stage object is a prefix of the linked U/Y build. The 3a site (0x1c96aa) is `DM(I7, M7) = R2, R4 = R5 + R10` in its delay slot (assembled text equals the stock bytes) | Deleted (this PR) |
 
 Time for the five dsp-voice files (239 cases): Python 51.6 s, Vitest 46.5 s (each case opens one to four rig processes; the 817 KB image loads in 0.1 s per process). The two proof files (75 Python cases, 76 Vitest cases): Python 9.9 s, Vitest 15.5 s: the rig is slower here because every case starts one or two processes and the Python cases are short (the rig's gain is in long runs, not in 0.2 s cases).
+
+## Shadow replay (the stereo shadow stages of finding 96)
+
+`tests/patchkit/test_dsp_stereo_shadow_replay.py` (44 cases) is the evidence of finding 96 for the shadow right-channel stages: the right channel runs as a shadow of the left (a private copy of the
+state, the same stock stages) and must equal an isolated mono run of the same channel on a separate core. Store watchpoints bound the writes of each call, including the nested stock frames, and
+count the writes per state word. Ported to `modules/core/adapters/dsp-stereo-proof/tests/dsp-stereo-shadow-replay.rig.test.ts` (43 cases; rig and helper `shadow-rig.ts` beside it), on the rig with
+the stock DN2 1.12 image; it skips with its describe title when `out/sections/dn2-1.12/section_7_BLOB.bin` is missing. The synthetic fixtures `tests/fixtures/dsp/stereo-*-shadow-replay.s` stay where
+they are (finding 96 cites them); `tools/nx/rig-tests.mjs` now lists them as inputs of the `test-rig` targets. Kit change: `RawCallOptions.profile` (the rig's per-pc execution count). The rig crate is unchanged.
+
+The Python file is **not deleted** here; its retirement needs the independent review.
+
+Python on main (this branch, `uv run pytest tests/patchkit/test_dsp_stereo_shadow_replay.py -rf`): 23 failed, 21 passed, 44.3 s. The failures are not only `max-steps`: the Python core halts on
+`unsupported full compute opcode 0xe3` (recurrences), `fork (2 successors)` (prepared, 3 + 2 reset cases), `no form matches` (gain, 4), `unsupported full compute opcode 0xc3` (ring, 2), and `max-steps` at 12000
+(source, 5; ordered, 6). Rig: 43 cases pass in 10.8 s (about 985 calls, each case opens 1 to 3 rig processes). The longest call is `_init_*_ring` with 4302 instructions; every call is far inside
+the Python limit of 12000, so no bound was raised.
+
+| Group (Python test) | Cases | Rig | Python on main | Mutation (fixture, restored) |
+| --- | --- | --- | --- | --- |
+| multiblock (`test_multiblock_shadow_matches_isolated_mono`) | 1 | match: shadow equals mono on words, controls and histories, 4 blocks, reset reproduces block 0; stores 4 per audio word, 2 per history word | pass | `_right`: the U/Y stage on the left state (`0x08040400`) fails it and the 3 fault cases |
+| recurrences (`test_recurrences_default_core_matches_independent_channels`) | 1 | match | fails (opcode 0xe3) | `_right_recurrences`: U/Y on the left state fails it |
+| fault injection (`test_shadow_corruption_is_observable`) | 3 | match: each fault differs from the reference | pass | same as multiblock |
+| filter leaves (`test_filter_leaf_shadow_matches_isolated_mono`: snapshots, nine, six, with and without a corrupt history) | 6 | match: independent equal, bad-history differs in audio and state | pass | `_prepare_snapshots` without `COPY_WORD(14)` fails 2 snapshot cases |
+| prepared stages (`test_prepared_shadow_matches_isolated_mono`: held, prepared, 3 faults each) | 6 | match | `held` pass, `prepared` 3 fail (fork) | `_prepare_held` without `COPY_WORD(3)` fails 3 |
+| gain (`test_gain_shadow_matches_isolated_mono`) | 4 | match: phases `[2, 2, 1|4]`, markers, table loads reached | 4 fail (no form) | `_prepare_gain` with 10 copied words fails 4 |
+| ring (`test_ring_shadow_matches_isolated_mono`: private rings, shared pointer) | 2 | match; the shared pointer breaks the store bounds ("ring store bounds") and changes the left backing | 2 fail (opcode 0xc3) | `_prepare_ring` without `COPY_RING(15)` fails 2 |
+| source (`test_source_continuation_matches_isolated_mono`: depth 0, 8, 4, 2, 1) | 5 | match; S registers as pinned | 5 fail (max-steps) | right source stage writing the left audio plane fails 5 |
+| ordered route (`test_ordered_route_matches_isolated_mono`: none and 5 faults) | 6 | match; phases `[2, 2, 1, 1]` | 6 fail (max-steps) | `_prepare_ordered` without `COPY_ORDERED(114)` fails 6 |
+| helper reset (`test_helper_reset_mirroring_matches_isolated_mono`: 4 families, missed reset, blanket snapshots) | 9 | match | `prepared` 2 fail (fork), 7 pass | right held reset on the left record fails 1; right snapshots reset on the left record fails 2 |
+
+Not ported: `test_base_image_overlay_and_decode_cache_isolation` (passes in Python). It tests the Python `CallSession` (overlay order of a hand-made `LoadedMemory`, decode cache per session); the rig
+places every object over the stock image and every case runs one core per process. One observation from the mutations: `_prepare` with 13 instead of 14 control words does not fail the base
+cases (word 13 is not read before the stage writes it), so the Python test does not pin that copy either.
+
+**Not reproduced: the load checks.** The Python core logs every DM read; the rig records stores only (`watch`). The Python test uses reads in six groups (prepared, gain, ring, source, ordered, helper reset)
+to check that the table and audio loads stay in range (address range of each load at its PC) and that the loaded values are finite (held period `1 < p < 32`). The port keeps what the rig can say:
+the number of times the load instructions run, which equals the Python count of loads (held 1 load = 4 bytes, prepared 64, ring 128, source 16 double-word sample loads and 2 table loads; the counts
+are the Python byte counts divided by the width of the load) and which of the gain table loads ran. The address ranges, the ordered-route and reset read bounds and the held period are **open**:
+they need a read record in the rig (a read analogue of `watch`, i.e. a read hook in the SHARC runtime `_dm_read` paths, which is a change to `packages/emulator/sharc-rt` and so to the generated-core key).
+Store checks are complete: the rig reports one run per instruction, split here into words (a long-word or SIMD store of two words is one run of 8 bytes).
