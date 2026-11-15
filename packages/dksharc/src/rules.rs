@@ -115,10 +115,19 @@ fn mode1_states(body: &[&Insn]) -> BTreeMap<u32, (bool, bool)> {
     out
 }
 
+/// True when a write of Bn by `insn` also loads In (PRM p.6-25). Type 7d (`Bd = B2W(Bs)`, `Bd = W2B(Bs)`) does not load I
+/// (PRM p.6-15: "the corresponding I register is not implicitly updated").
+fn b_write_loads_i(insn: &Insn) -> bool {
+    insn.form != "7d"
+}
+
 /// The registers an instruction writes. A write of Bn also loads In (the DAG sets the index register to the new base), so In is
-/// added to the writes of the analysis.
+/// added to the writes of the analysis. Type 7d is the exception ([`b_write_loads_i`]).
 fn writes_of(insn: &Insn) -> Vec<String> {
     let mut v = insn.defuse.writes.clone();
+    if !b_write_loads_i(insn) {
+        return v;
+    }
     for r in &insn.defuse.writes {
         if let Some(n) = r.strip_prefix('B').filter(|n| n.parse::<u8>().is_ok()) {
             let i = format!("I{n}");
@@ -214,8 +223,8 @@ enum Sp {
 /// of the register modifies and `DefUse::reads` holds M6 or M7); a MODIFY by an immediate (form `19a`). The registers an instruction
 /// writes are `Insn::defuse.writes`.
 fn sp_step(insn: &Insn, sp: &str, idx: u8) -> Sp {
-    // A write of Bn also loads In: never a push, pop or modify.
-    if insn.defuse.writes.iter().any(|r| *r == format!("B{idx}")) {
+    // A write of Bn also loads In: never a push, pop or modify. Type 7d does not load In.
+    if b_write_loads_i(insn) && insn.defuse.writes.iter().any(|r| *r == format!("B{idx}")) {
         return Sp::Bad;
     }
     if !insn.defuse.writes.iter().any(|r| r == sp) {
@@ -457,6 +466,7 @@ fn stack_problems(
 ///   return is not told apart. MODE1 has its own rule: it passes when it holds its entry value at every return, by the value
 ///   tracking of [`mode1_states`] (a save, clear, restore window may repeat).
 /// - Write sets: a write of Bn also writes In (so a B7 write is a `stack` problem on I7, a restored B8 also writes I8 for `keep`).
+///   Type 7d (`Bd = B2W(Bs)`, `Bd = W2B(Bs)`) writes Bn only (PRM p.6-15).
 ///   While MODE1 may have PEYEN set (from an instruction that may set it until a restore of the entry value), the SIMD companions
 ///   (`DefUse::simd_writes`, S0-S15 for R0-R15) count as writes for `never_write` and `keep`; the order is the pc order, not the paths.
 /// - `unclassified`: an instruction writes a register that is in no class of the table.
