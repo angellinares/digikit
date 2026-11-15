@@ -24,11 +24,11 @@
 //!            voice states to reserve behind the image and bss), 56 u32 parameter-word latch mask (contract 1.3), 60 reserved 0. The packer writes version 3 only when a voice has a
 //!            note_on entry or a state; otherwise version 2 (the runtime parses all three; v1 and v2 voices have note_on 0 and no state)
 //! fx     : version 4: 64 bytes each: 0 u32 process (image byte offset of the process routine), 4 u32 desc (image byte offset of its `dk_fx_desc`),
-//!            8 u32 state_bytes (from the desc: reserved behind the image, bss and voice states), 12 u32 n_params (from the desc), 16 u32 flags (the routes, below; 0 = master only),
+//!            8 u32 state_bytes (from the desc: reserved behind the image, bss and voice states), 12 u32 n_params (from the desc), 16 u32 flags (the routes, below; 0 is the legacy master-only value; the packer writes the placeholder pair MASTER|SEND, `FXF_SEND`, which the runtime overrides at commit),
 //!            20..51 8 x u32 the words p0 .. p7 of the effect's row (the DSP reads them as they are), 52..63 reserved 0. A version 4 section has voices of 64
 //!            bytes (as version 3); the packer writes it only when the module has an effect
 //!            flags: bit 0 `FXF_SEND` the effect may run on a send bus, bit 1 `FXF_NOMASTER` it may not run on the master chain, bit 2 `FXF_DEFAULT_SEND` its default
-//!            route is the send bus (the settings key `fx/route/<module id>` decides when it is there). 0, what every record before the routes has: master only.
+//!            route is the send bus (the settings key `fx/route/<module id>` decides when it is there). 0 is the legacy master-only value that every record before the routes has. The packer writes a valid placeholder pair (MASTER|SEND, flag `FXF_SEND`); the runtime replaces it at commit with the declared routes (master only when none are declared).
 //!            Allowed combinations: 0; 1; 1 | 4; 1 | 2 | 4 (send only)
 //! image  : the linked bytes at the nominal base `L2_BYTE_BASE`; every relocated field holds `S + A` at that base
 //! ```
@@ -72,7 +72,7 @@ pub const DESC_WORDS: usize = dkneeds::machine::DK_DESC_WORDS as usize;
 /// The routes of an effect (the manifest's `route` and `routes`): the master chain and a send bus. `Effect::routes` is a mask of them.
 pub const ROUTE_MASTER: u32 = dkneeds::page::DK_ROUTE_MASTER;
 pub const ROUTE_SEND: u32 = dkneeds::page::DK_ROUTE_SEND;
-/// Bits of the effect record's flags word (offset 16); 0 = master only, the default route master (a record of the version before the routes).
+/// Bits of the effect record's flags word (offset 16); 0 is the legacy master-only value (default route master, a record of the version before the routes). The packer writes the placeholder pair MASTER|SEND (`FXF_SEND`); the runtime overrides it at commit with the declared routes (master only when none are declared).
 pub const FXF_SEND: u32 = dkneeds::FXF_SEND;
 pub const FXF_NOMASTER: u32 = dkneeds::FXF_NOMASTER;
 pub const FXF_DEFAULT_SEND: u32 = dkneeds::FXF_DEFAULT_SEND;
