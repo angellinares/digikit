@@ -29,6 +29,10 @@ Rules:
             module except `crate::core_api` (the interface to the core: CoreApi, RealCore, FakeCore and the few core functions it re-exports); pure types
             come from the crate dkrt-abi. The core reaches a service only through `handlers.rs` (`exports`) and the generated table `gen_services.rs`. A service's own
             host tests (`tests.rs` or a `tests/` folder in the service) may name core modules: they drive the walkers and the planner over the service.
+  service-crates
+            A service crate (modules/core/services/NAME, linked into the runtime object) depends only on dkrt-abi, dkrt-sdk and dkneeds, and on
+            dkrt-test-support as a dev-dependency; it names no firmware crate and no device id, and has no path into the runtime crate. The runtime
+            names a service crate (`dkrt_svc_*`) only in `gen_services.rs` and `handlers.rs`.
   platform  Inside the runtime crate, only `platform.rs` (the real platform, L1) and an adapter file named `fw.rs` name the firmware crate dkfw; the rest
             of the core and the services use the `Platform` trait (`dkrt-abi`). No runtime file but `platform.rs` compares the device id with a number
             (`device() == 1`): the code asks the device profile (`samples_in_store()`), whose values come from the device files. The runtime
@@ -746,6 +750,146 @@ def check_runtime_platform(root: Path) -> list[Violation]:
     return out
 
 
+SERVICE_CRATES = "modules/core/services"
+SERVICE_DEPS = {"dkrt-abi", "dkrt-sdk", "dkneeds"}
+SERVICE_DEV_DEPS = SERVICE_DEPS | {"dkrt-test-support"}
+SERVICE_CRATE_REF = re.compile(r"\bdkrt_svc_\w+")
+SERVICE_RUNTIME_FILES = ("handlers.rs", "gen_services.rs")
+SERVICE_RUNTIME_REF = re.compile(r"\bdkrt::|\bextern\s+crate\s+dkrt\b")
+RUNTIME_MANIFEST = "modules/core/runtime/src/rs/Cargo.toml"
+DEP_TABLES = ("dependencies", "build-dependencies", "dev-dependencies")
+
+
+def manifest_deps(data: dict) -> list[tuple[str, str, str, object]]:
+    """(table label, key, crate name, spec) of every dependency of a manifest: the three tables and the same tables under `[target.CFG.*]`.
+    A renamed dependency (`alias = { package = "dkrt-abi" }`) has its real crate name, not its key."""
+    out: list[tuple[str, str, str, object]] = []
+
+    def take(label: str, table: dict) -> None:
+        for key, spec in table.items():
+            real = spec.get("package", key) if isinstance(spec, dict) else key
+            out.append((label, key, real, spec))
+
+    for t in DEP_TABLES:
+        take(t, data.get(t, {}))
+    for cfg, tables in data.get("target", {}).items():
+        for t in DEP_TABLES:
+            take(f"target.{cfg}.{t}", tables.get(t, {}))
+    return out
+
+
+def check_test_only_deps(
+    root: Path, manifest: Path, data: dict, text: str
+) -> list[Violation]:
+    """dkrt-test-support and the `fake` feature of dkrt-link are for tests: dev-dependencies only."""
+    out = []
+    for label, key, real, spec in manifest_deps(data):
+        if label.endswith("dev-dependencies"):
+            continue
+        fake = (
+            real == "dkrt-link"
+            and isinstance(spec, dict)
+            and "fake" in spec.get("features", [])
+        )
+        if real == "dkrt-test-support" or fake:
+            what = (
+                "dkrt-test-support"
+                if real == "dkrt-test-support"
+                else "the fake feature of dkrt-link"
+            )
+            out.append(
+                Violation(
+                    f"{rel(root, manifest)}:{line_of(text, key)}",
+                    "service-crates",
+                    f"{what} is a [{label}] entry",
+                    "test fakes may be dev-dependencies of the runtime crate and of services only; they never reach the runtime object",
+                )
+            )
+    return out
+
+
+def check_service_crates(root: Path) -> list[Violation]:
+    """Service crates reach the runtime only through dkrt-abi, and the runtime reaches them only through its service table and `handlers::exports`."""
+    out: list[Violation] = []
+    base = root / SERVICE_CRATES
+    for manifest in sorted(base.glob("*/Cargo.toml")) if base.is_dir() else []:
+        text = manifest.read_text(encoding="utf-8")
+        data = tomllib.loads(text)
+        for label, key, real, _ in manifest_deps(data):
+            allowed = (
+                SERVICE_DEV_DEPS if label.endswith("dev-dependencies") else SERVICE_DEPS
+            )
+            if real not in allowed:
+                alias = f" (as {key})" if key != real else ""
+                out.append(
+                    Violation(
+                        f"{rel(root, manifest)}:{line_of(text, key)}",
+                        "service-crates",
+                        f"the service crate depends on {real}{alias} ([{label}])",
+                        f"a service crate depends only on {', '.join(sorted(allowed))}; reach the core through CoreApi (dkrt-abi), and put test fakes in dkrt-test-support",
+                    )
+                )
+        out.extend(check_test_only_deps(root, manifest, data, text))
+        for f in sorted(manifest.parent.rglob("*.rs")):
+            if "target" in f.relative_to(manifest.parent).parts:
+                continue
+            for n, line in enumerate(
+                rust_without_comments(f.read_text(encoding="utf-8")).splitlines(), 1
+            ):
+                where = f"{rel(root, f)}:{n}"
+                if RS_FW.search(line):
+                    out.append(
+                        Violation(
+                            where,
+                            "service-crates",
+                            "the service crate names the firmware crate dkfw",
+                            "use the Platform trait or CoreApi (dkrt-abi)",
+                        )
+                    )
+                if RT_DEVICE_COMPARE.search(line):
+                    out.append(
+                        Violation(
+                            where,
+                            "service-crates",
+                            "the service crate compares the device id with a number",
+                            "ask the device profile through CoreApi or Platform",
+                        )
+                    )
+                if SERVICE_RUNTIME_REF.search(line):
+                    out.append(
+                        Violation(
+                            where,
+                            "service-crates",
+                            "the service crate names the runtime crate",
+                            "take the core as a `&C` argument with `C: CoreApi`",
+                        )
+                    )
+    rt_manifest = root / RUNTIME_MANIFEST
+    if rt_manifest.is_file():
+        rt_text = rt_manifest.read_text(encoding="utf-8")
+        out.extend(
+            check_test_only_deps(root, rt_manifest, tomllib.loads(rt_text), rt_text)
+        )
+    src = root / RT_SRC
+    for f in sorted(src.rglob("*.rs")) if src.is_dir() else []:
+        r = f.relative_to(src).as_posix()
+        if r in SERVICE_RUNTIME_FILES:
+            continue
+        for n, line in enumerate(
+            rust_without_comments(f.read_text(encoding="utf-8")).splitlines(), 1
+        ):
+            if SERVICE_CRATE_REF.search(line):
+                out.append(
+                    Violation(
+                        f"{RT_SRC}/{r}:{n}",
+                        "service-crates",
+                        "the core names a service crate outside handlers.rs and gen_services.rs",
+                        ARROW_CORE_HINT,
+                    )
+                )
+    return out
+
+
 def tracked_files(root: Path) -> list[str]:
     """Tracked files (`git ls-files`); outside a git repository, every file except build output."""
     try:
@@ -843,6 +987,7 @@ def check(root: Path = ROOT) -> list[Violation]:
         *check_imports(root),
         *check_runtime_arrows(root),
         *check_runtime_platform(root),
+        *check_service_crates(root),
         *check_self_contained(root, mods),
     ]
 

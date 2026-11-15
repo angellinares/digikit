@@ -75,6 +75,10 @@ pub trait CoreApi {
     unsafe fn guard_faults(&self, ty: u32) -> u32;
     unsafe fn guard_disabled(&self, ty: u32) -> bool;
 
+    // ---- the device ------------------------------------------------------------------------------------------------------
+    /// The device id of the profile the runtime was built for (`Platform::device_id`), to compare with what an adapter table records.
+    fn device_id(&self) -> u32;
+
     // ---- the module table ------------------------------------------------------------------------------------------------
     /// The NUL-terminated id of module record `owner - 1` (`owner` is 1 or more).
     unsafe fn module_name(&self, owner: u8) -> *const u8;

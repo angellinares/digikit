@@ -71,7 +71,7 @@ const USAGE: &str = "usage: patchkit [--root DIR] COMMAND ...
                                          stay). --status prints {module: \"unchanged\"|\"needs build\"} as JSON and builds nothing.
                                          --paths prints {module: {object path: stored file}} for the sources now and builds nothing.
                                          --tree DIR: every module under DIR only.
-  objdiff OLD.dko.json NEW.dko.json [--format text|json] [--strict]
+  objdiff OLD.dko.json NEW.dko.json [--format text|json] [--strict] [--erase TYPE]...
                                          do two objects hold the same code up to names, order and addresses? (proof for moves of Rust items;
                                          docs/PATCHING.md); exit 1 and the differences when not
   dko show FILE.dko.json [--relocs]      arch, toolchain record, sections, symbols and relocations of an object
