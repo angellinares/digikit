@@ -954,7 +954,9 @@ T1e keys a device test on the bytes of the service or area that it proves, not o
 set (the standard library, `dkrt_abi`, `dkrt_sdk`, the entry points, the platform and others). The longest prefix at a `::` boundary wins.
 A C symbol is shared. An anonymous constant (a string, a table) belongs to the owner of the items that use it when they have one owner,
 and is shared otherwise. The tags of a test are the `tags` of its `metadata.runtimeAcceptance` record (vocabulary and check:
-`tools/nx/acceptance-tags.mjs`; assignments: [ledger](plans/ledgers/device-test-audit.md#tags-t1e-step-1)). No cache key reads the owner hashes yet.
+`tools/nx/acceptance-tags.mjs`; assignments: [ledger](plans/ledgers/device-test-audit.md#tags-t1e-step-1)). Device test keys do not use owner hashes yet (measured: [test-architecture](plans/test-architecture.md#t1e-service-scoped-selection)).
+
+`pnpm nx:pilot run patchkit:runtime-owners` (cached; depends on `patchkit:cli`) writes `dist/bytes/owners/`: one `<tag>.sha256` per owner of the runtime object and `shared.sha256` (from `patchkit owners`), `other-objects.sha256` (the other objects of the runtime module) and `layout.sha256` (the whole runtime object).
 
 ```text
 $ patchkit owners modules/core/runtime/build/runtime.dko.json --out out/owners

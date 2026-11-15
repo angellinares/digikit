@@ -37,7 +37,7 @@ shared = [
 ]
 
 "S:fx" = ["dkrt_svc_fx"]
-"S:machines" = ["dkrt::services::machines"]
+"S:machines" = ["dkrt::services::machines", "dkrt_svc_machines"]
 "S:samples" = ["dkrt::services::samples"]
 "S:lfo" = ["dkrt::services::lfo"]
 
