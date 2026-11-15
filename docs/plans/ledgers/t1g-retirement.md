@@ -147,7 +147,9 @@ count the writes per state word. Ported to `modules/core/adapters/dsp-stereo-pro
 the stock DN2 1.12 image; it skips with its describe title when `out/sections/dn2-1.12/section_7_BLOB.bin` is missing. The synthetic fixtures `tests/fixtures/dsp/stereo-*-shadow-replay.s` stay where
 they are (finding 96 cites them); `tools/nx/rig-tests.mjs` now lists them as inputs of the `test-rig` targets. Kit change: `RawCallOptions.profile` (the rig's per-pc execution count). The rig crate is unchanged.
 
-The Python file is **not deleted** here; its retirement needs the independent review.
+The Python file is deleted (this PR) after independent review.
+
+Gap: the rig checks load counts, not load addresses, so a load with the right count and a wrong address passes. The ordered-route and helper-reset read bounds and the held period have no substitute; the held period is partly covered by the repeated-word check. The rig core runs with `assume_nw32` on by default (`packages/emulator/sharc-rt`), the setting Python enabled per group. The Python step bound of 12000 is kept, though the two cores may count steps differently (longest rig call 4302). Follow-up: roadmap item T1i (rig read hook).
 
 Python on main (this branch, `uv run pytest tests/patchkit/test_dsp_stereo_shadow_replay.py -rf`): 23 failed, 21 passed, 44.3 s. The failures are not only `max-steps`: the Python core halts on
 `unsupported full compute opcode 0xe3` (recurrences), `fork (2 successors)` (prepared, 3 + 2 reset cases), `no form matches` (gain, 4), `unsupported full compute opcode 0xc3` (ring, 2), and `max-steps` at 12000

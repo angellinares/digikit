@@ -135,7 +135,7 @@ pre-merge routed gate are not claimed. No dependencies were changed to bypass it
 Numerical tests use immutable patchkit
 `out/native/target-wt/digikit-dsp-sampler/nogen/stable/patchkit-344b899674ac`
 through `tools.patchkit.patchkit._BUILT`, then run the named file
-`tests/patchkit/test_dsp_stereo_shadow_replay.py`. This avoids rebuilding patchkit.
+`modules/core/adapters/dsp-stereo-proof/tests/dsp-stereo-shadow-replay.rig.test.ts` (the Python file was retired). This avoids rebuilding patchkit.
 The original firmware bytes load at runtime from ignored section artifacts;
 no firmware or sample audio is committed.
 
