@@ -23,7 +23,7 @@ import { cachedCard, cachedCardId, cardKey, fileSha } from './card-cache.ts';
 import { uploadStore } from './device-data.ts';
 import { advance, bounded, options, rpc } from './fx-live.ts';
 import { drainInputs, withPausedFxProtocol } from './fx-session.ts';
-import { pollEmulated } from './waits.ts';
+import { emulatorDk, pollEmulated } from './waits.ts';
 import { record } from './artifacts.ts';
 import { FIRMWARE, FULL_TIER, claimRunDir, selectDevices, skipEmptyHalf } from './devices.ts';
 import { moduleArtifact } from './install.ts';
@@ -451,7 +451,7 @@ export function cardRig(device: Device, scope: string, o: CardRigOptions = {}): 
       await rpc(session, 'run.mode', { mode: 'free' });
       await bounded(() => runtime.dk.restart());
       runtime.dk.cancelPending();
-      const dk = new DkSession(new EmuUsbTransport((method, params) => session.client.call(method, params)));
+      const dk = emulatorDk(session);
       // This controller can answer throughout the guest reset: settle proves the fresh ready epoch/UI hook.
       cap = undefined;
       return settle({ session, dk, close: runtime.close }, before);
@@ -533,6 +533,7 @@ export function cardRig(device: Device, scope: string, o: CardRigOptions = {}): 
       await advance(runtime.session, 300);
       if (previous && previous !== path.dirname(next)) fs.rmSync(previous, { recursive: true, force: true });
       clone = next;
+      // Wall-time wait: a stepping transport advances the emulator itself, with a 60 s timeout.
       const transport = new EmuUsbTransport((method, params) => runtime.session.client.call(method, params), {
         stepInstructions: 400_000,
       });
