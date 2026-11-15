@@ -104,10 +104,11 @@ Reading the table:
 
 ### T1f SDK-surface fixtures and coverage
 
-- Scope: fixtures cover every `sdk.toml` import and builder call. Measure it: imports linked per fixture against `sdk.toml`, and ColdFire PC coverage with `cf.profile`.
+- Scope: fixtures cover every `sdk.toml` import and builder call. Measure it: imports linked per packed module against `sdk.toml` (`patchkit imports`, `patchkit coverage`; [TESTING.md](../TESTING.md#sdk-surface-coverage)). ColdFire PC coverage with `cf.profile` is dropped.
 - A conforming module then needs the static checks (packer, `module:check`, needs and fit) plus one load-and-smoke test. Module-specific emulator tests remain for DSP behaviour.
 - Proof: the coverage numbers.
 - Depends on: nothing (own lane).
+- [x] Command, report and fixture gaps: 96 of 116 imports covered before, 106 covered and 10 allowed (removed or not packable yet) after; `test/entry-demo` calls the rest. Nx target `patchkit:sdk-coverage`.
 
 ### T1g SHARC-only rig
 

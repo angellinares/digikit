@@ -27,6 +27,8 @@ pub mod bootrom;
 #[cfg(not(target_arch = "wasm32"))]
 pub mod budget_cli;
 pub mod build;
+#[cfg(not(target_arch = "wasm32"))]
+pub mod coverage_cli;
 pub mod dkm;
 pub mod dkm_identity;
 pub mod dkmdsp;

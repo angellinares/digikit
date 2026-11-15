@@ -592,6 +592,27 @@ OS (cached in `out/runs/patchkit/dsp/`). Projected load = busy x factor / 666,66
 (default 85 %); `--no-dsp-budget` skips it. Results go to `out/runs/patchkit/dsp-budget.json`. Unit
 test: `tests/patchkit/test_pk_dsp_budget.py`.
 
+### SDK-surface coverage
+
+`patchkit imports` lists the SDK imports each `.dkm` links (its import table; the builder calls of `init`, such as `dk_machine_add_page`, `dk_page_add_param` and `dk_fx_routes`, are imports too, so one table covers them). `patchkit coverage` compares the union over the packed modules with the `[[import]]` list of `sdk/sdk.toml`, by service. An import that no packed module links fails the run, unless `sdk/coverage-allow.toml` lists it with a reason; an allow-list entry that a module links, or that is not in `sdk.toml`, fails too. Not observable from a pack: the values a call passes (glyphs, routes, parameter kinds, the constants of `[machine]`, `[fx]` and `[page]`) and whether a linked call runs. The fixture calls that close a gap are compiled and linked, and some never run (the `probe` flag of `test/entry-demo`).
+
+```sh
+pnpm nx:pilot run patchkit:sdk-coverage     # packs every module (cached), then the report; not cached itself
+dist/patchkit/patchkit imports [--json] dist/modules/dt2/entry-demo.dkm
+dist/patchkit/patchkit coverage --sdk sdk/sdk.toml --allow sdk/coverage-allow.toml [--json] dist/modules/*/*.dkm
+```
+
+```text
+sdk imports: 116 total, 106 covered, 10 allowed, 0 uncovered (108 modules)
+  dsp_link   2/2 covered, 0 allowed, 0 uncovered
+  helper     3/6 covered, 3 allowed, 0 uncovered
+  ui         18/18 covered, 0 allowed, 0 uncovered
+  usb_bulk   8/10 covered, 2 allowed, 0 uncovered
+    allowed    dk_usb_bulk_takeover (removed: always returns DK_USB_BULK_E_STATE, kept for the import table)
+```
+
+Without `--allow` the same files give 106 of 116 covered. A new `[[import]]` needs a call in a fixture or a module, or an allow-list entry with a reason; the exit code is 1 otherwise. Unit tests: `cargo test -p patchkit --lib coverage_cli`.
+
 ### AOT versus interpreter equality
 
 The no-AOT halves of `tier-quick` and `tier-sweep` use `NO_AOT_SUBSET` in `tools/devtools/fx_tier.py`:
