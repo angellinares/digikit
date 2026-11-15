@@ -46,11 +46,24 @@ test('profileState sends the op byte and decodes state, clock and rows', async (
   for (const [op, code] of Object.entries(ops)) {
     const { dev, s } = session([{ body: [1, ...be(120_000_000, 4), ...be(15, 2), ...be(2n ** 40n + 5n, 8)] }]);
     const st = await s.profileState(op as keyof typeof ops);
-    assert.deepEqual(st, { running: true, hz: 120_000_000, rows: 15, elapsedTicks: 2n ** 40n + 5n });
+    assert.deepEqual(st, { running: true, hz: 120_000_000, rows: 15, elapsedTicks: 2n ** 40n + 5n, polls: [] });
     assert.deepEqual(dev.requests, [{ cmd: SERVICE_CMD.PROFILE_STATE, body: [code] }]);
   }
   const { s } = session([{ body: [0, ...be(1000, 4), ...be(7, 2), ...be(0, 8)] }]);
   assert.equal((await s.profileState('get')).running, false);
+});
+
+test('profileState decodes the poll slots: empty, a module record and the firmware image', async () => {
+  const polls = [0, ...be(0, 4), 3, ...be(0x47e10040, 4), 0xff, ...be(0x40101000, 4), 1, ...be(0x47e00010, 4)];
+  const { s } = session([{ body: [1, ...be(1000, 4), ...be(15, 2), ...be(5, 8), ...polls] }]);
+  assert.deepEqual((await s.profileState('get')).polls, [
+    undefined,
+    { owner: 2, fn: 0x47e10040 },
+    { owner: 'runtime', fn: 0x40101000 },
+    { owner: 0, fn: 0x47e00010 },
+  ]);
+  const old = session([{ body: [1, ...be(1000, 4), ...be(15, 2), ...be(5, 8)] }]);
+  assert.deepEqual((await old.s.profileState('get')).polls, [], 'a debug module without the slots');
 });
 
 test('profileRead sends the first row and decodes rows with a u64 sum', async () => {

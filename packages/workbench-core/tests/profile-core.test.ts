@@ -35,11 +35,12 @@ const span = (kind: SpanIn['kind'], index: number, calls: number, sum: number, m
   sumTicks: BigInt(sum),
   maxTicks: max,
 });
-const snap = (elapsed: number, spans: SpanIn[], running = true): Snapshot => ({
+const snap = (elapsed: number, spans: SpanIn[], running = true, polls?: Snapshot['polls']): Snapshot => ({
   running,
   hz: HZ,
   elapsedTicks: BigInt(elapsed),
   spans,
+  polls,
 });
 
 describe('rows', () => {
@@ -54,25 +55,40 @@ describe('rows', () => {
     assert.ok(Math.abs(rows[0]!.maxUs - 210) < 0.01);
   });
 
-  test('owners that never ran are left out; names come from the module list, the phase table and the poll names', () => {
+  test('owners that never ran are left out; names come from the module list, the phase table and the poll slots', () => {
     const rows = buildRows(
-      snap(HZ, [
-        span('module', 0, 0, 0, 0),
-        span('module', 5, 2, 2000, 1500),
-        span('phase', 1, 3, 300, 100),
-        span('poll', 0, 3, 300, 100),
-        span('poll', 1, 3, 300, 100),
-      ]),
+      snap(
+        HZ,
+        [
+          span('module', 0, 0, 0, 0),
+          span('module', 5, 2, 2000, 1500),
+          span('phase', 1, 3, 300, 100),
+          span('poll', 0, 3, 300, 100),
+          span('poll', 1, 3, 300, 100),
+          span('poll', 2, 3, 300, 100),
+          span('poll', 3, 3, 300, 100),
+          span('poll', 4, 3, 300, 100),
+        ],
+        true,
+        [
+          { owner: 1, fn: 0x100, name: 'tick' },
+          { owner: 2, fn: 0x200 },
+          { owner: 'runtime', fn: 0x300, name: 'usb_bulk_tick' },
+          { owner: 'runtime', fn: 0x400 },
+        ],
+      ),
       MODS,
-      ['ui_tick'],
     );
     assert.deepEqual(
       rows.map((r) => [r.group, r.name, r.kind]),
       [
         ['modules', 'module 5', 'other'],
         ['phases', 'late', 'runtime'],
-        ['polls', 'ui_tick', 'runtime'],
-        ['polls', 'poll 1', 'runtime'],
+        ['polls', 'test/verb poll: tick', 'runtime'],
+        ['polls', 'test/mon poll', 'runtime'],
+        ['polls', 'runtime poll: usb_bulk_tick', 'runtime'],
+        ['polls', 'runtime poll', 'runtime'],
+        ['polls', 'poll 4', 'runtime'],
       ],
     );
   });
