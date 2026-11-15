@@ -604,6 +604,7 @@ unsafe fn unload_rec_inner(rec: usize) -> i32 {
     // the SysEx commands it registered are released with it
     crate::module_cmds::release_cmds(rec as u8 + 1);
     drop_tick_cb(m.base, m.size);
+    crate::api::poll_drop_range(m.base, m.size);
     // the machine row first, then the DSP voice rows, then the range in the DSP area
     #[cfg(test)] crate::cleanup_tests::registry_remove(rec as u8 + 1);
     #[cfg(not(test))] crate::registry::remove(rec as u8 + 1);

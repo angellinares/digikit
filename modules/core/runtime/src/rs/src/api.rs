@@ -3,7 +3,7 @@
 use crate::platform::st;
 use crate::PLATFORM;
 use dkrt_abi::platform::Platform;
-use crate::state::{init_once, DKRT_POLLS, MAX_MODULES, POLLS, DKRT_MENUS, DKRT_PATHS};
+use crate::state::{init_once, DKRT_POLLS, DKRT_POLL_OWNER, MAX_MODULES, POLLS, POLL_OWNER_RUNTIME, DKRT_MENUS, DKRT_PATHS};
 use crate::{boot, dlog, dsp, entry, loader, scan, settings};
 use core::ptr::{addr_of, addr_of_mut, read_volatile};
 use dkrt_sdk::*;
@@ -47,7 +47,36 @@ pub unsafe extern "C" fn dkrt_poll_add(f: usize) -> i32 {
         return E_NOMEM;
     }
     t[free] = f;
+    (*addr_of_mut!(DKRT_POLL_OWNER))[free] = poll_owner(f);
     OK
+}
+
+/// The module record whose loaded range holds `f`, or `POLL_OWNER_RUNTIME`.
+unsafe fn poll_owner(f: usize) -> u8 {
+    let s = st();
+    let mut rec = 0;
+    while rec < MAX_MODULES {
+        let m = &s.modules[rec];
+        let off = (f as u64).wrapping_sub(m.base as u64);
+        if m.used != 0 && off < m.size as u64 {
+            return rec as u8;
+        }
+        rec += 1;
+    }
+    POLL_OWNER_RUNTIME
+}
+
+/// Free the poll slots whose function lies in `[base, base + size)` (a module that is released).
+pub(crate) unsafe fn poll_drop_range(base: u32, size: u32) {
+    let t = &mut *addr_of_mut!(DKRT_POLLS);
+    let mut i = 0;
+    while i < POLLS {
+        if t[i] != 0 && (t[i] as u64).wrapping_sub(base as u64) < size as u64 {
+            t[i] = 0;
+            (*addr_of_mut!(DKRT_POLL_OWNER))[i] = POLL_OWNER_RUNTIME;
+        }
+        i += 1;
+    }
 }
 
 /// Remove a function added with `dkrt_poll_add` (no effect when it is not there). Task context.
@@ -58,6 +87,7 @@ pub unsafe extern "C" fn dkrt_poll_remove(f: usize) {
     while i < POLLS {
         if f != 0 && t[i] == f {
             t[i] = 0;
+            (*addr_of_mut!(DKRT_POLL_OWNER))[i] = POLL_OWNER_RUNTIME;
         }
         i += 1;
     }
