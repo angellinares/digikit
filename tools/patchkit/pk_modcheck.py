@@ -141,8 +141,9 @@ def commit_stage(mid: str, devices: list[str]) -> bool:
     return _write_measured(mid, moddir, per, original)
 
 
+# Reports live in this worktree's dist/ (out/ is shared by every worktree: a report of another lane's run must never reach `write_costs_rust`).
 RIG_REPORTS = (
-    ROOT / "out" / "runs" / "conformance-rig"
+    ROOT / "dist" / "conformance-rig"
 )  # the SHARC-only rig writes here (packages/sharc-rig-kit/src/report.ts)
 
 
@@ -150,13 +151,20 @@ def measured_costs(
     mid: str, devices: list[str], since: float, reports: Path = RIG_REPORTS
 ) -> dict[str, dict[str, int]]:
     """The DSP cost of module MID per device from the reports of the conformance run that started at `since` (the kit writes them, `RIG_REPORTS`): the worst steady block over every case. A machine's cost is per voice; an effect's is the whole process call (the effect and
-    core/fx around it, which every slot takes), measured once for both devices. A report older than the run, or none, leaves that cost out."""
+    core/fx around it, which every slot takes), measured once for both devices. A report older than the run, or none, leaves that cost out; a report of another worktree is an error."""
     out: dict[str, dict[str, int]] = {}
 
     def worst(path: Path) -> int | None:
         if not path.is_file() or path.stat().st_mtime < since:
             return None
-        cases = json.loads(path.read_text(encoding="utf-8")).get("cases") or []
+        report = json.loads(path.read_text(encoding="utf-8"))
+        owner = report.get("worktree")
+        if owner != str(ROOT.resolve()):
+            raise RuntimeError(
+                f"{path} was written by the worktree {owner!r}, not by this one ({ROOT}): "
+                "refusing to write its DSP cost into a module.toml; run the conformance suite here"
+            )
+        cases = report.get("cases") or []
         return max((int(c["steady"]) for c in cases), default=None)
 
     stem = mid.replace("/", "__")
@@ -175,7 +183,7 @@ def measured_costs(
 
 def rig_conformance(mid: str, env: dict[str, str]) -> int:
     """The conformance suites on the SHARC-only rig (packages/sharc-rig-kit): builds the rig, then runs the Vitest project with the selection in ENV.
-    The kit writes the reports to out/runs/conformance-rig (`RIG_REPORTS`), which `write_costs_rust` reads."""
+    The kit writes the reports to dist/conformance-rig (`RIG_REPORTS`), which `write_costs_rust` reads."""
     from tools.patchkit import patchkit
 
     r = subprocess.run(

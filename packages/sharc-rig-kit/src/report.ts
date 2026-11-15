@@ -1,8 +1,9 @@
 /**
  * The report of a conformance run, in the JSON shape the retired Python workers wrote (<id>@<device>.json, `<id>@fx.json`):
- * `module:check` reads `cases[].steady` to write `dsp_cost_voice` and `dsp_cost_fx`.
+ * `module:check` reads `cases[].steady` to write `dsp_cost_voice` and `dsp_cost_fx`. Every report records the `worktree` that wrote it: the cost writer
+ * (tools/patchkit/pk_modcheck.py) refuses a report of another worktree.
  */
-import { mkdirSync, writeFileSync } from 'node:fs';
+import { mkdirSync, realpathSync, writeFileSync } from 'node:fs';
 import path from 'node:path';
 import { ROOT } from './rig.ts';
 
@@ -18,6 +19,8 @@ export interface CaseResult {
 }
 
 export interface MachineReport {
+  /** the real path of the worktree whose run wrote the report */
+  worktree?: string;
   label: string;
   runner: string;
   build_seconds: number;
@@ -27,6 +30,7 @@ export interface MachineReport {
 }
 
 export interface FxReport {
+  worktree?: string;
   label: string;
   runner: string;
   build_seconds: number;
@@ -37,8 +41,11 @@ export interface FxReport {
 
 export const RUNNER = 'sharc-rig-kit';
 
-/** The directory of the reports: `DIGI_CONFORM_REPORTS`, else out/runs/conformance-rig. */
-export const reportsDir = (): string => process.env.DIGI_CONFORM_REPORTS || path.join(ROOT, 'out/runs/conformance-rig');
+/** The real path of the worktree this run belongs to (out/ is shared between worktrees, so reports do not go there). */
+export const worktreeRoot = (): string => realpathSync(ROOT);
+
+/** The directory of the reports: `DIGI_CONFORM_REPORTS`, else dist/conformance-rig of this worktree. */
+export const reportsDir = (): string => process.env.DIGI_CONFORM_REPORTS || path.join(ROOT, 'dist/conformance-rig');
 
 /** The file name of a report: `<id with / as __>@<device or fx>.json`. */
 export const reportName = (label: string): string => `${label.replaceAll('/', '__')}.json`;
@@ -47,7 +54,7 @@ export const reportName = (label: string): string => `${label.replaceAll('/', '_
 export function writeReport(report: MachineReport | FxReport, dir = reportsDir()): string {
   mkdirSync(dir, { recursive: true });
   const file = path.join(dir, reportName(report.label));
-  writeFileSync(file, JSON.stringify(report, null, 1));
+  writeFileSync(file, JSON.stringify({ ...report, worktree: worktreeRoot() }, null, 1));
   return file;
 }
 

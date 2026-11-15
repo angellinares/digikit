@@ -17,7 +17,7 @@
     "test-conformance-rig": {
       "executor": "nx:run-commands",
       "cache": true,
-      "description": "The machine and effect conformance suites (every module, both devices) on the SHARC-only rig: no daemon, no firmware, no emulator. Reports: DIGI_CONFORM_REPORTS or out/runs/conformance-rig. Select: DIGI_CONFORM_MODULES, DIGI_CONFORM_DEVICE.",
+      "description": "The machine and effect conformance suites (every module, both devices) on the SHARC-only rig: no daemon, no firmware, no emulator. Reports: DIGI_CONFORM_REPORTS or dist/conformance-rig of the worktree. Select: DIGI_CONFORM_MODULES, DIGI_CONFORM_DEVICE.",
       "dependsOn": ["patchkit:cli", "sharc-rig:build"],
       "inputs": [
         "hostTests",

@@ -8,7 +8,7 @@
  *
  * One run per (module, device) with `DIGI_JOBS` at a time; the tests below read its report, one test per case group. Select with
  * DIGI_CONFORM_MODULES=<author/name>,... and DIGI_CONFORM_DEVICE=dt2|dn2 (`mise run module:check NAME` sets them). Reports go to
- * `DIGI_CONFORM_REPORTS`, else out/runs/conformance-rig/ (never committed).
+ * `DIGI_CONFORM_REPORTS`, else dist/conformance-rig/ of the worktree (never committed).
  */
 import { beforeAll, describe, expect, it } from 'vitest';
 import {

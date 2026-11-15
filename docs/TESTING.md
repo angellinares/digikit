@@ -564,7 +564,7 @@ suite on both devices, including when `--device` limits other checks. Its daemon
 use the existing harness resolution/overrides; only resolution holds a shared benchlock, released
 before the target. The target does not run the broad gate. Its bounded source inputs are conservative affected-selection inputs, not a cache-closure or
 fine-routing claim. This does not replace automatic gate routing.
-`module:check` runs the conformance suite on the SHARC-only rig (reports in `out/runs/conformance-rig`) ("The Vitest kit") and writes `dsp_cost_*` with `patchkit uses set`.
+`module:check` runs the conformance suite on the SHARC-only rig (reports in `dist/conformance-rig` of the worktree) ("The Vitest kit") and writes `dsp_cost_*` with `patchkit uses set`.
 `pnpm nx:pilot run @digi/sharc-rig-kit:test-conformance-rig` runs it for every module.
 
 Machine rules (`packages/sharc-rig-kit/src/spec.ts`, `cases.ts`, `checks.ts`), checked in every block of every case:
@@ -632,7 +632,7 @@ DIGI_CONFORM_MODULES=fadedlimes/analog DIGI_CONFORM_DEVICE=dt2 DIGI_JOBS=4 DIGI_
 
 It replaced the Python suites (`tests/modules`, retired in T1g phase 6, [ledger](plans/ledgers/t1g-retirement.md)) with the same case list, the same pass set and the same failure messages for the negative
 fixtures. The worst steady block of each (module, device) is the `dsp_cost_voice` or `dsp_cost_fx` of module.toml. Reports are
-`out/runs/conformance-rig/<id>@<device|fx>.json` (`DIGI_CONFORM_REPORTS` moves them).
+`dist/conformance-rig/<id>@<device|fx>.json` (`DIGI_CONFORM_REPORTS` moves them). Reports sit in the worktree's own `dist/`, not in `out/`, which every worktree shares, and each records its `worktree`: `module:check` refuses to write a cost from a report of another worktree.
 
 The cost writer, `patchkit uses set --id MODULE --device dt2 --dsp-cost-voice N` (or `--dsp-cost-fx N`), edits `[uses.<device>]` of the
 module.toml like `pk_modcheck.write_uses` does: only the lines of the keys given change, comments and other keys stay, and the file

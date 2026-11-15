@@ -59,7 +59,7 @@
   },
   "DIGI_CONFORM_REPORTS": {
    "owner": "ts:packages/sharc-rig-kit",
-   "purpose": "Directory of the conformance reports of the SHARC-only rig (default out/runs/conformance)"
+   "purpose": "Directory of the conformance reports of the SHARC-only rig (default dist/conformance-rig of the worktree)"
   },
   "DIGI_COUPLED_DSP_EXPORT": {
    "owner": "rust:packages/emulator",

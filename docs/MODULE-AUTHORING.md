@@ -595,7 +595,7 @@ The template `src/dsp/NAME.s` shows all of this in about 90 lines. Read it first
 - Fixtures: `tests/fixtures/modules/dyn-fx-gain` (insert), `dyn-fx-gain-send`, `dyn-fx-gain-both`, `dyn-fx-gain-sendonly`. A real effect with a
   float32 reference model: `modules/fx/freqshift`.
 - The instruction budget of the conformance suite is `patchkit budget` (about 31,000 for the effect today, 900 for the adapter). Read it
-  from the report in `out/runs/conformance-rig`. The worst call it measures is written as `dsp_cost_fx`.
+  from the report in `dist/conformance-rig`. The worst call it measures is written as `dsp_cost_fx`.
 
 
 ### 7.3 Entry point and services (`<dk/core/module.h>`)
