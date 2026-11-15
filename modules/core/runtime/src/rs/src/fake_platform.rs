@@ -63,6 +63,8 @@ pub struct FakePlatform {
 
 impl FakePlatform {
     pub fn new(profile: DeviceProfile) -> Self {
+        let storage = FakeStorage::new();
+        storage.samples_path_max.set(profile.sample_path_max);
         FakePlatform {
             profile,
             card: RefCell::new(BTreeMap::new()),
@@ -89,7 +91,7 @@ impl FakePlatform {
             tasks: RefCell::new(Vec::new()),
             refuse_task: Cell::new(false),
             sems: RefCell::new(Vec::new()),
-            storage: FakeStorage::new(),
+            storage,
         }
     }
     pub fn sector(&self, s: u32) -> [u8; 512] {
@@ -227,10 +229,7 @@ impl StagedWriter for FakePlatform {
 
 impl Storage for FakePlatform {
     fn path_max(&self, root: u32) -> u32 {
-        match root {
-            ROOT_SAMPLES => self.profile.sample_path_max,
-            _ => self.storage.path_max(root),
-        }
+        self.storage.path_max(root)
     }
     unsafe fn stat(&self, root: u32, path: &[u8]) -> Result<Stat, i32> {
         self.storage.stat(root, path)

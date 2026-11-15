@@ -940,9 +940,11 @@ pub fn run(
     // lowering's range analysis. Guarded read windows are resolved here and
     // each dynamic address is checked before its load and instruction commit.
     // The kernel was lowered for this engine state layout.
-    let cap = super::dump::before(&r.kernel, ctx.ptr(), std::ptr::from_mut(s).cast());
+    // The dump hooks read the same context buffer and `St`, which stay live
+    // for the call.
+    let cap = unsafe { super::dump::before(&r.kernel, ctx.ptr(), std::ptr::from_mut(s).cast()) };
     let code = unsafe { kernel.run(ctx.ptr(), std::ptr::from_mut(s).cast()) };
-    super::dump::after(cap, code, ctx.ptr(), std::ptr::from_mut(s).cast());
+    unsafe { super::dump::after(cap, code, ctx.ptr(), std::ptr::from_mut(s).cast()) };
     let done = ctx.get32(CTX_DONE) as u64;
     let kk = if code == 0 {
         k
@@ -1701,9 +1703,11 @@ pub fn run_cfg(
     // analysis. Guarded read windows are resolved here and each dynamic
     // address is checked before its load and instruction commit. The kernel
     // was lowered for this engine state layout.
-    let cap = super::dump::before(&r.kernel, ctx.ptr(), std::ptr::from_mut(s).cast());
+    // The dump hooks read the same context buffer and `St`, which stay live
+    // for the call.
+    let cap = unsafe { super::dump::before(&r.kernel, ctx.ptr(), std::ptr::from_mut(s).cast()) };
     let code = unsafe { kernel.run(ctx.ptr(), std::ptr::from_mut(s).cast()) };
-    super::dump::after(cap, code, ctx.ptr(), std::ptr::from_mut(s).cast());
+    unsafe { super::dump::after(cap, code, ctx.ptr(), std::ptr::from_mut(s).cast()) };
     if code == RUN_ENTRY_FAILED {
         // The kernel's own entry checks failed before it did anything.
         return Err(Decline::Req);

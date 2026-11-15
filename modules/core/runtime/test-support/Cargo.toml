@@ -1,0 +1,14 @@
+[package]
+name = "dkrt-test-support"
+version = "0.1.0"
+edition = "2021"
+publish = false
+description = "Host-test fakes of the digikit runtime interfaces: FakeCore (CoreApi) over the real link queue and a model of the link"
+
+[lib]
+path = "src/lib.rs"
+
+[dependencies]
+dkrt-abi = { path = "../abi" }
+dkrt-sdk = { path = "../sdk" }
+dkrt-link = { path = "../link", features = ["fake"] }

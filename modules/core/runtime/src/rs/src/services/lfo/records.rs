@@ -4,6 +4,7 @@
 use core::ptr::{addr_of, addr_of_mut};
 use dkrt_abi::mem::rd32;
 use dkrt_abi::registry::each;
+use crate::core_api::RealCore;
 use dkrt_abi::service::{check_step, ApplyCtx, CheckCtx, Declare, Service};
 use dkrt_sdk::records::{KIND_LFO_SHAPE, LEN_LFO_SHAPE};
 use dkrt_sdk::*;
@@ -71,12 +72,12 @@ pub fn used() -> usize {
 /// The lfo service.
 pub struct Lfo;
 
-impl Service for Lfo {
+impl Service<RealCore> for Lfo {
     unsafe fn declare(d: &mut Declare) {
         d.kind(KIND_LFO_SHAPE, LEN_LFO_SHAPE);
     }
 
-    unsafe fn check(step: u32, c: &CheckCtx) -> i32 {
+    unsafe fn check(_core: &RealCore, step: u32, c: &CheckCtx) -> i32 {
         if step == check_step::RECORDS {
             // each shape has an id, and an id is once in the file
             let mut r = OK;
@@ -122,7 +123,7 @@ impl Service for Lfo {
         }
     }
 
-    unsafe fn apply_record(kind: u32, body: *const u8, c: &ApplyCtx) -> i32 {
+    unsafe fn apply_record(_core: &RealCore, kind: u32, body: *const u8, c: &ApplyCtx) -> i32 {
         if kind != KIND_LFO_SHAPE {
             return OK;
         }
@@ -144,7 +145,7 @@ impl Service for Lfo {
         E_TABLE_FULL
     }
 
-    unsafe fn remove(owner: u8) {
+    unsafe fn remove(_core: &RealCore, owner: u8) {
         let t = shapes();
         let mut i = 0;
         while i < MAX_SHAPES {

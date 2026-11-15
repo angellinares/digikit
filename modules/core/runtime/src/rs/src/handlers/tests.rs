@@ -4,6 +4,7 @@ use super::*;
 use dkrt_sdk::*;
 use crate::registry::{apply_with, check_with, each, remove_with, DKRT_REG};
 use dkrt_sdk::proto::CAPK_FX_SLOTS;
+use crate::core_api::{CoreApi, RealCore, REAL_CORE};
 use dkrt_abi::service::ServiceRow;
 use std::sync::Mutex;
 use std::vec::Vec;
@@ -46,9 +47,9 @@ unsafe fn body(reg: *const u8, kind: u32, b: *const u8) -> Vec<u8> {
     core::slice::from_raw_parts(b, 4 * (kind as usize - 100)).to_vec()
 }
 
-impl<const N: u8> Service for Fake<N> {
+impl<const N: u8, C: CoreApi> Service<C> for Fake<N> {
     /// Service 1 checks its records at the step of native pages, service 2 at the step of effects: the order of the old body.
-    unsafe fn check(step: u32, c: &CheckCtx) -> i32 {
+    unsafe fn check(_: &C, step: u32, c: &CheckCtx) -> i32 {
         let mine = if N == 1 { check_step::NATIVE } else { check_step::EFFECTS };
         let mut r = OK;
         if step != mine {
@@ -65,12 +66,12 @@ impl<const N: u8> Service for Fake<N> {
         r
     }
 
-    unsafe fn apply(c: &ApplyCtx) -> i32 {
+    unsafe fn apply(_: &C, c: &ApplyCtx) -> i32 {
         log().push(Call::Bulk { svc: N, owner: c.owner });
         OK
     }
 
-    unsafe fn apply_record(kind: u32, b: *const u8, c: &ApplyCtx) -> i32 {
+    unsafe fn apply_record(_: &C, kind: u32, b: *const u8, c: &ApplyCtx) -> i32 {
         if kind != kind_of(N) {
             return OK;
         }
@@ -82,15 +83,15 @@ impl<const N: u8> Service for Fake<N> {
         }
     }
 
-    unsafe fn remove(owner: u8) {
+    unsafe fn remove(_: &C, owner: u8) {
         log().push(Call::Remove { svc: N, owner });
     }
 
-    unsafe fn cap(kind: u8) -> Option<(u32, u32)> {
+    unsafe fn cap(_: &C, kind: u8) -> Option<(u32, u32)> {
         (kind == CAPK_FX_SLOTS).then_some((10 * N as u32, N as u32))
     }
 
-    unsafe fn attribute(site: u32, id: u32) -> Option<usize> {
+    unsafe fn attribute(_: &C, site: u32, id: u32) -> Option<usize> {
         log().push(Call::Attribute { svc: N, site, id });
         if site == N as u32 {
             Some(id as usize + 100 * N as usize)
@@ -99,15 +100,15 @@ impl<const N: u8> Service for Fake<N> {
         }
     }
 
-    unsafe fn on_loaded(rec: usize) {
+    unsafe fn on_loaded(_: &C, rec: usize) {
         log().push(Call::OnLoaded { svc: N, rec });
     }
 
-    unsafe fn tick(phase: u32) {
+    unsafe fn tick(_: &C, phase: u32) {
         log().push(Call::Tick { svc: N, phase });
     }
 
-    unsafe fn declare_voice(rec: usize, ty: u32, _: [u32; 8], _: u32) -> Option<i32> {
+    unsafe fn declare_voice(_: &C, rec: usize, ty: u32, _: [u32; 8], _: u32) -> Option<i32> {
         log().push(Call::DeclareVoice { svc: N, rec, ty });
         if ty == N as u32 {
             Some(OK)
@@ -120,8 +121,8 @@ impl<const N: u8> Service for Fake<N> {
 /// Fake service `N` owns record kind `100 + N`, a record of `8 + 4 * N` bytes.
 static KINDS_1: [(u32, u32); 1] = [(101, 12)];
 static KINDS_2: [(u32, u32); 1] = [(102, 16)];
-static TWO_ROWS: [ServiceRow; 2] = [ServiceRow::of::<Fake<1>>("fake1", &KINDS_1), ServiceRow::of::<Fake<2>>("fake2", &KINDS_2)];
-pub(crate) const TWO: ServiceTable = ServiceTable { rows: &TWO_ROWS, failed: 0 };
+static TWO_ROWS: [ServiceRow<RealCore>; 2] = [ServiceRow::of::<Fake<1>>("fake1", &KINDS_1), ServiceRow::of::<Fake<2>>("fake2", &KINDS_2)];
+pub(crate) const TWO: ServiceTable = ServiceTable { rows: &TWO_ROWS, failed: 0, core: &REAL_CORE };
 
 /// The words of a `dynreg_info` that the walker reads: the magic and the device.
 static TABLE: [u32; 100] = {
@@ -293,28 +294,28 @@ fn a_tick_phase_reaches_every_service_in_list_order() {
 
 /// A service that declares a kind its table does not carry, one that declares a wrong length, and one that matches.
 struct Good;
-impl Service for Good {
+impl<C: CoreApi> Service<C> for Good {
     unsafe fn declare(d: &mut Declare) {
         d.kind(70, 16);
     }
 }
 struct WrongLen;
-impl Service for WrongLen {
+impl<C: CoreApi> Service<C> for WrongLen {
     unsafe fn declare(d: &mut Declare) {
         d.kind(71, 20);
     }
 }
 struct Extra;
-impl Service for Extra {
+impl<C: CoreApi> Service<C> for Extra {
     unsafe fn declare(d: &mut Declare) {
         d.kind(72, 8);
         d.slot(1, 0);
     }
 }
 struct Silent;
-impl Service for Silent {}
+impl<C: CoreApi> Service<C> for Silent {}
 
-static DECL_ROWS: [ServiceRow; 4] = [
+static DECL_ROWS: [ServiceRow<RealCore>; 4] = [
     ServiceRow::of::<Good>("good", &[(70, 16)]),
     ServiceRow::of::<WrongLen>("wronglen", &[(71, 16)]),
     ServiceRow::of::<Extra>("extra", &[(72, 8)]),
@@ -323,7 +324,7 @@ static DECL_ROWS: [ServiceRow; 4] = [
 
 #[test]
 fn a_service_whose_declarations_differ_from_its_table_is_failed_and_its_kinds_are_unknown() {
-    let t = ServiceTable { rows: &DECL_ROWS, failed: 0 };
+    let t = ServiceTable { rows: &DECL_ROWS, failed: 0, core: &REAL_CORE };
     let failed = unsafe { t.check_declarations() };
     assert_eq!(failed, 0b1110, "the matching service passes; a wrong length, an extra item and a missing declaration fail");
     let t = ServiceTable { failed, ..t };
@@ -338,4 +339,46 @@ fn a_service_whose_declarations_differ_from_its_table_is_failed_and_its_kinds_ar
 fn the_in_crate_services_declare_what_the_generated_table_carries() {
     // the real rows: samples owns none, machines six kinds, fx one
     assert_eq!(unsafe { crate::gen_services::TABLE.check_declarations() }, 0);
+}
+
+mod table {
+    use super::*;
+
+    struct A;
+    impl<C: CoreApi> Service<C> for A {}
+    struct B;
+    impl<C: CoreApi> Service<C> for B {
+        unsafe fn dsp_clear(_: &C, _: usize) -> bool {
+            false
+        }
+        unsafe fn cap(_: &C, kind: u8) -> Option<(u32, u32)> {
+            (kind == 3).then_some((6, 1))
+        }
+    }
+
+    static ROWS: [ServiceRow<RealCore>; 2] = [ServiceRow::of::<A>("a", &[(1, 8)]), ServiceRow::of::<B>("b", &[(2, 12)])];
+    const T: ServiceTable = ServiceTable { rows: &ROWS, failed: 0, core: &REAL_CORE };
+
+    #[test]
+    fn a_table_asks_each_service_and_ands_the_clears() {
+        assert_eq!(T.len(1), Some(8));
+        assert_eq!(T.len(2), Some(12));
+        assert_eq!(T.len(3), None);
+        assert_eq!(T.owner(2).map(|r| r.name), Some("b"));
+        assert!(T.owner(9).is_none());
+        unsafe {
+            assert!(!T.dsp_clear(0));
+            assert!(ServiceTable { rows: &ROWS[..1], ..T }.dsp_clear(0));
+        }
+    }
+
+    #[test]
+    fn a_kind_two_services_count_is_the_sum_of_their_counts() {
+        static TWO_B: [ServiceRow<RealCore>; 2] = [ServiceRow::of::<B>("b1", &[]), ServiceRow::of::<B>("b2", &[])];
+        unsafe {
+            assert_eq!(ServiceTable { rows: &TWO_B, ..T }.cap(3), Some((12, 2)));
+            assert_eq!(T.cap(3), Some((6, 1)));
+            assert_eq!(T.cap(4), None);
+        }
+    }
 }

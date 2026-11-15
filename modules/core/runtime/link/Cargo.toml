@@ -1,0 +1,17 @@
+[package]
+name = "dkrt-link"
+version = "0.1.0"
+edition = "2021"
+publish = false
+description = "The DSP link queue of the digikit runtime: live values and owned requests over a Transport trait, with a model of the link for host tests"
+
+[lib]
+path = "src/lib.rs"
+
+[features]
+# `fake`: the model of the link (`fake::FakeLink`) for the host tests of other crates (dkrt-test-support).
+fake = []
+
+[dependencies]
+dkrt-abi = { path = "../abi" }
+dkrt-sdk = { path = "../sdk" }
