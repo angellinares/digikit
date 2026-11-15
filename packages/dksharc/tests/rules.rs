@@ -363,6 +363,95 @@ fn simd_companion_written_after_peyen_is_a_keep_problem() {
     assert_eq!(p, one("keep", "S0"));
 }
 
+/// A MODE1 instruction with the effect `op` on `mask` (`BIT CLR MODE1 0x1000`).
+fn mode1_bit(pc: u32, op: Mode1Op, mask: u32) -> Insn {
+    let mut i = insn(pc, &["MODE1"], &["MODE1"]);
+    i.defuse.mode1 = Some(Mode1Effect {
+        op,
+        mask,
+        value: None,
+    });
+    i
+}
+
+/// `MODE1 = Rn`.
+fn mode1_from(pc: u32, rn: &str) -> Insn {
+    let mut i = insn(pc, &[rn], &["MODE1"]);
+    i.defuse.mode1 = Some(Mode1Effect {
+        op: Mode1Op::Full,
+        mask: u32::MAX,
+        value: None,
+    });
+    i
+}
+
+#[test]
+fn repeated_save_clear_restore_windows_of_mode1_are_fine() {
+    let p = problems(vec![
+        insn(BASE, &["MODE1"], &["R13"]),
+        mode1_bit(BASE + 1, Mode1Op::Clear, 0x1000),
+        mode1_from(BASE + 2, "R13"),
+        insn(BASE + 3, &["MODE1"], &["R13"]),
+        mode1_bit(BASE + 4, Mode1Op::Clear, 0x1000),
+        mode1_from(BASE + 5, "R13"),
+    ]);
+    assert_eq!(p, vec![]);
+}
+
+#[test]
+fn simd_companion_after_the_restore_of_mode1_is_not_a_write() {
+    let mut w = insn(BASE + 3, &["R1"], &["R0"]);
+    w.defuse.simd_writes = vec!["S0".to_string()];
+    let p = problems(vec![
+        insn(BASE, &["MODE1"], &["R13"]),
+        mode1_bit(BASE + 1, Mode1Op::Clear, 0x1000),
+        mode1_from(BASE + 2, "R13"),
+        w,
+    ]);
+    assert_eq!(p, vec![]);
+}
+
+#[test]
+fn peyen_window_is_a_keep_problem_on_the_simd_register_only() {
+    let mut w = insn(BASE + 2, &["R1"], &["R0"]);
+    w.defuse.simd_writes = vec!["S0".to_string()];
+    let p = problems(vec![
+        insn(BASE, &["MODE1"], &["R13"]),
+        mode1_bit(BASE + 1, Mode1Op::Set, 1 << 21),
+        w,
+        mode1_from(BASE + 3, "R13"),
+    ]);
+    assert_eq!(p, one("keep", "S0"));
+}
+
+#[test]
+fn mode1_pushed_changed_and_popped_is_restored() {
+    let mut w = insn(BASE + 3, &["R1"], &["R0"]);
+    w.defuse.simd_writes = vec!["S0".to_string()];
+    let p = problems(vec![
+        push(BASE, "MODE1"),
+        mode1_bit(BASE + 1, Mode1Op::Set, 1 << 21),
+        pop(BASE + 2, "MODE1"),
+        w,
+    ]);
+    assert_eq!(p, vec![]);
+}
+
+#[test]
+fn mode1_bit_cleared_and_not_restored_is_a_keep_problem() {
+    let p = problems(vec![
+        insn(BASE, &["MODE1"], &["R13"]),
+        mode1_bit(BASE + 1, Mode1Op::Clear, 0x1000),
+    ]);
+    assert_eq!(p, one("keep", "MODE1"));
+}
+
+#[test]
+fn mode1_loaded_from_a_register_that_never_copied_it_is_a_keep_problem() {
+    let p = problems(vec![mode1_from(BASE, "R5")]);
+    assert_eq!(p, one("keep", "MODE1"));
+}
+
 #[test]
 fn simd_companion_before_peyen_is_not_a_write() {
     let mut w = insn(BASE, &["R1"], &["R0"]);

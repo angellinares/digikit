@@ -44,18 +44,75 @@ pub fn reason(rule: &str) -> &'static str {
 /// MODE1.PEYEN (bit 21): with it set, a compute instruction on R also writes the S register (the SIMD companion).
 const PEYEN: u32 = 1 << 21;
 
-/// The instruction may set MODE1.PEYEN: a `BIT SET` or `BIT TGL` of the bit, a write of the whole register with an unknown value or a
-/// value with the bit set, or a `POP STS`. A MODE1 write whose effect the analysis did not keep counts as one.
-fn may_set_peyen(insn: &Insn) -> bool {
-    match insn.defuse.mode1 {
-        Some(e) => match e.op {
-            Mode1Op::Set | Mode1Op::Toggle => e.mask & PEYEN != 0,
-            Mode1Op::Full => e.value.is_none_or(|v| v & PEYEN != 0),
-            Mode1Op::PopSts => true,
-            Mode1Op::Clear | Mode1Op::PushSts => false,
-        },
-        None => insn.defuse.writes.iter().any(|r| r == "MODE1"),
+/// What the rules know about MODE1 after each instruction, in pc order (not along the paths): pc -> (MODE1 holds its entry value,
+/// MODE1 may have PEYEN set).
+///
+/// MODE1 holds its entry value at the entry. A copy `Rn = MODE1` while it does marks `Rn` as holding the entry value until `Rn` is
+/// written again. A store of MODE1 to memory while it does lets a later load into MODE1 from memory restore it (same pc-order
+/// simplification as the copy). A copy `MODE1 = Rn` of such an `Rn` is a restore: MODE1 holds its entry value again and PEYEN is not set. Any other
+/// write of MODE1 ends the entry value. PEYEN may be set from a `BIT SET` or `BIT TGL` of the bit, a write of the whole register with
+/// an unknown value or a value with the bit set, or a `POP STS` (or a write the analysis did not keep), until a restore.
+/// `BIT CLR` and a `PUSH STS` do not set PEYEN.
+fn mode1_states(body: &[&Insn]) -> BTreeMap<u32, (bool, bool)> {
+    let mut sorted: Vec<&Insn> = body.to_vec();
+    sorted.sort_by_key(|i| i.pc);
+    let mut out = BTreeMap::new();
+    let mut entry = true;
+    let mut peyen = false;
+    let mut copies: Vec<String> = vec![];
+    let mut saved_in_memory = false;
+    for insn in sorted {
+        let d = &insn.defuse;
+        let writes_mode1 = d.writes.iter().any(|r| r == "MODE1");
+        let was_entry = entry;
+        let copy_out = copies_out(insn, "MODE1").map(|r| r.to_string());
+        if writes_mode1 || d.mode1.is_some() {
+            let restore = writes_mode1
+                && if insn.mem.is_empty() {
+                    d.reads.iter().any(|r| copies.contains(r))
+                } else {
+                    saved_in_memory && loads(insn, "MODE1")
+                };
+            if restore {
+                entry = true;
+                peyen = false;
+            } else {
+                match d.mode1 {
+                    Some(e) => match e.op {
+                        Mode1Op::Set | Mode1Op::Toggle => {
+                            entry = false;
+                            peyen |= e.mask & PEYEN != 0;
+                        }
+                        Mode1Op::Full => {
+                            entry = false;
+                            peyen |= e.value.is_none_or(|v| v & PEYEN != 0);
+                        }
+                        Mode1Op::PopSts => {
+                            entry = false;
+                            peyen = true;
+                        }
+                        Mode1Op::Clear => entry = false,
+                        Mode1Op::PushSts => {}
+                    },
+                    None => {
+                        entry = false;
+                        peyen = true;
+                    }
+                }
+            }
+        }
+        if stores(insn, "MODE1") && was_entry {
+            saved_in_memory = true;
+        }
+        // The entry state before this instruction fills a copy; a copy out does not write MODE1.
+        let filled = copy_out.filter(|_| entry);
+        copies.retain(|r| !d.writes.contains(r));
+        if let Some(r) = filled {
+            copies.push(r);
+        }
+        out.insert(insn.pc, (entry, peyen));
     }
+    out
 }
 
 /// The registers an instruction writes. A write of Bn also loads In (the DAG sets the index register to the new base), so In is
@@ -397,10 +454,11 @@ fn stack_problems(
 ///   data register (`R0 = MODE1`); and at each return the last write at or before the return pc (in pc order, delay slots included)
 ///   is a load of the register from memory, or a copy of that data register back into it (`MODE1 = R0`) when no instruction between
 ///   the two copies writes the data register. It looks at pc order, not at the paths, so a restore in a branch that does not reach a
-///   return is not told apart.
+///   return is not told apart. MODE1 has its own rule: it passes when it holds its entry value at every return, by the value
+///   tracking of [`mode1_states`] (a save, clear, restore window may repeat).
 /// - Write sets: a write of Bn also writes In (so a B7 write is a `stack` problem on I7, a restored B8 also writes I8 for `keep`).
-///   From the first instruction (in pc order) that may set MODE1.PEYEN, the SIMD companions (`DefUse::simd_writes`, S0-S15 for R0-R15)
-///   count as writes for `never_write` and `keep`; the order is the pc order, not the paths.
+///   While MODE1 may have PEYEN set (from an instruction that may set it until a restore of the entry value), the SIMD companions
+///   (`DefUse::simd_writes`, S0-S15 for R0-R15) count as writes for `never_write` and `keep`; the order is the pc order, not the paths.
 /// - `unclassified`: an instruction writes a register that is in no class of the table.
 /// - `uncertain`: an instruction whose register effect the analysis does not know; a stack check that is skipped (a stack step of
 ///   unknown size, a merge with different depths); a write of PCSTK or PCSTKP (push and pop are not told apart); a function with no
@@ -421,14 +479,14 @@ pub fn check(a: &Analysis, f: &Function) -> Vec<RuleProblem> {
     };
     let mut out = vec![];
     let mut writes: BTreeMap<String, Vec<&Insn>> = BTreeMap::new();
-    let peyen = body.iter().find(|i| may_set_peyen(i)).map(|i| i.pc);
+    let mode1 = mode1_states(&body);
     for insn in &body {
         if let Some(why) = insn.defuse.uncertain.first() {
             out.push(problem("uncertain", insn.pc, why.clone()));
         }
         let mut names = writes_of(insn);
-        // From the first instruction that may set PEYEN (in pc order), the SIMD companions are written too.
-        if peyen.is_some_and(|p| insn.pc >= p) {
+        // While MODE1 may have PEYEN set (in pc order), the SIMD companions are written too.
+        if mode1.get(&insn.pc).is_some_and(|s| s.1) {
             for r in &insn.defuse.simd_writes {
                 if !names.contains(r) {
                     names.push(r.clone());
@@ -490,6 +548,16 @@ pub fn check(a: &Analysis, f: &Function) -> Vec<RuleProblem> {
     for (reg, w) in writes {
         let reg = reg.as_str();
         let first = w[0].pc;
+        if reg == "MODE1" {
+            // MODE1 passes when it holds its entry value at every return; see `mode1_states`.
+            let at_entry = ends
+                .iter()
+                .all(|&e| mode1.range(..=e).next_back().is_none_or(|(_, s)| s.0));
+            if !at_entry {
+                out.push(problem("keep", first, reg.to_string()));
+            }
+            continue;
+        }
         // A routine that ends in RFRAME finds the caller's I6 saved in its frame (pushed by the caller's CJUMP delay slot).
         let saved = body.iter().any(|i| {
             (i.pc < first && (stores(i, reg) || copies_out(i, reg).is_some()))
