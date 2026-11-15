@@ -19,7 +19,7 @@ const SYMBOLS = ['DK_ABOUT', 'DK_ABOUT_N', 'DK_PANEL', 'DK_PANEL_N'];
 const BOOT_NEEDS_OFFSET = 80; // DkrtBootInfo.needs (modules/core/runtime/abi.toml)
 const NEEDS_LEN = 12;
 
-cardRigs('a module that needs a missing module', { dsp: 'sharc', roots: [...RT, 'core/digikit-menu'], symbols: SYMBOLS }, (rig) => {
+cardRigs('a module that needs a missing module', { roots: [...RT, 'core/digikit-menu'], symbols: SYMBOLS }, (rig) => {
   test('usb-fast without core/usb-bulk: the missing module is stored, logged, in LOADS, on the BOOT page and in the module row', async () => {
     await rig.first();
     const mod = rig.mod('digikit/usb-fast');
