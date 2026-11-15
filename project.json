@@ -71,6 +71,16 @@
         "cwd": "."
       },
       "description": "Workspace crates except dkfw, whose crate root is generated."
+    },
+    "rust-clippy": {
+      "executor": "nx:run-commands",
+      "cache": false,
+      "inputs": ["{workspaceRoot}/**/*.rs", "{workspaceRoot}/Cargo.toml", "{workspaceRoot}/Cargo.lock", "{workspaceRoot}/mise.toml"],
+      "options": {
+        "command": "node tools/nx/rust-env.mjs -- cargo clippy --no-deps --all-targets -p coldfire -p dt2-firmware-loader -p emmc-card -p dkupload -p sharc-gen -p sharc-stats -p sharc-gen-2 -p bootstrap-emu -p dkmidi -p dkbulk -p dkui-host -- -D warnings",
+        "cwd": "."
+      },
+      "description": "cargo clippy with -D warnings on the workspace crates that have no clippy warnings. Add a crate when its warnings are fixed."
     }
   }
 }

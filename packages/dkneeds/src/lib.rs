@@ -20,32 +20,7 @@ mod gen_limits;
 /// `MAX_CF_IMPORTS`, `MAX_VOICES`, `MAX_FX`, `MAX_STATE_VOICES`, `MAX_STATE_BYTES`, `GRANULE`, `DSP_SLACK`, `ARENA_HDR`).
 pub use gen_limits::*;
 
-/// Magic of a `.dkm`, "DKMF".
-pub const MAGIC: u32 = 0x444b_4d46;
-/// The only `.dkm` format.
-pub const FORMAT: u32 = 1;
-/// Header offsets read.
-pub const H_SIZE: u32 = 0x08;
-pub const H_HDRSIZE: u32 = 0x0c;
-pub const H_IMAGE_OFF: u32 = 0x60;
-pub const H_IMAGE_SIZE: u32 = 0x64;
-pub const H_BSS: u32 = 0x68;
-pub const H_ALIGN: u32 = 0x6c;
-pub const H_RELOC_OFF: u32 = 0x70;
-pub const H_RELOC_N: u32 = 0x74;
-pub const H_IMPORT_OFF: u32 = 0x78;
-pub const H_IMPORT_N: u32 = 0x7c;
-pub const H_MENU: u32 = 0x88;
-pub const H_TICK: u32 = 0x8c;
-pub const H_REG_OFF: u32 = 0x90;
-pub const H_REG_SIZE: u32 = 0x94;
-pub const H_DSP_OFF: u32 = 0x98;
-pub const H_DSP_SIZE: u32 = 0x9c;
-
-/// The DSP section: magic "DKDS", versions 1 to 5, header 0x40 bytes, voices of 16, 48 or 64 bytes (version 4: voices of 64 bytes and effect records).
-pub const DSP_MAGIC: u32 = 0x444b_4453;
-/// The size of an effect record of a version 4 section (the most the loader takes is `MAX_FX`).
-pub const FX_LEN: u32 = 64;
+// The layout of the `.dkm` header and of its DSP section (`MAGIC`, `FORMAT`, `H_*`, `DSP_*`, `VOICE_*`, `FX_*`) is `[format]` of sdk/sdk.toml, in `gen_limits`.
 
 /// A source of the file's bytes: a slice on a host, the store's sector reads on the device.
 pub trait Bytes {
@@ -179,7 +154,7 @@ fn inside(off: u32, len: u32, size: u32) -> bool {
 /// The needs of the file `src` reads: see the module's text. `Err` for a file the loader would refuse for its format, or one that cannot be read.
 pub fn needs_of<B: Bytes>(src: &mut B) -> Result<Needs, Error> {
     let size = src.size();
-    if size < HEADER || word(src, 0)? != MAGIC || word(src, 4)? != FORMAT {
+    if size < HEADER || word(src, H_MAGIC)? != MAGIC || word(src, H_FORMAT)? != FORMAT {
         return Err(Error::Header);
     }
     let hdr = word(src, H_HDRSIZE)?;
@@ -205,8 +180,8 @@ pub fn needs_of<B: Bytes>(src: &mut B) -> Result<Needs, Error> {
         || reloc_n > MAX_RELOCS
         || import_n > MAX_CF_IMPORTS
         || !inside(image_off, image, size)
-        || !inside(reloc_off, reloc_n * 8, size)
-        || !inside(import_off, import_n * 32, size)
+        || !inside(reloc_off, reloc_n * CF_RELOC_LEN, size)
+        || !inside(import_off, import_n * CF_IMPORT_LEN, size)
     {
         return Err(Error::Sizes);
     }
@@ -314,28 +289,34 @@ fn dsp<B: Bytes>(src: &mut B, off: u32, size: u32, n: &mut Needs) -> Result<(), 
     if size < DSP_HEADER || word(src, off)? != DSP_MAGIC {
         return Err(Error::Dsp);
     }
-    let version = word(src, off + 4)?;
-    let stride = if version == 1 {
-        16
-    } else if version == 2 {
-        48
-    } else if (3..=5).contains(&version) {
-        64
+    let version = word(src, off + DSP_H_VERSION)?;
+    let stride = if version == DSP_V1 {
+        VOICE_V1
+    } else if version == DSP_V2 {
+        VOICE_V2
+    } else if (DSP_V3..=DSP_V5).contains(&version) {
+        VOICE_V3
     } else {
         return Err(Error::Dsp);
     };
-    let image = word(src, off + 0x0c)?;
-    let bss = word(src, off + 0x10)?;
-    let align = word(src, off + 0x14)?;
+    let image = word(src, off + DSP_H_IMAGE_SIZE)?;
+    let bss = word(src, off + DSP_H_BSS)?;
+    let align = word(src, off + DSP_H_ALIGN)?;
     let (image_off, reloc_off, nreloc) = (
-        word(src, off + 0x18)?,
-        word(src, off + 0x1c)?,
-        word(src, off + 0x20)?,
+        word(src, off + DSP_H_IMAGE_OFF)?,
+        word(src, off + DSP_H_RELOC_OFF)?,
+        word(src, off + DSP_H_RELOC_N)?,
     );
-    let (import_off, nimport) = (word(src, off + 0x24)?, word(src, off + 0x28)?);
-    let (voice_off, nvoice) = (word(src, off + 0x2c)?, word(src, off + 0x30)?);
+    let (import_off, nimport) = (
+        word(src, off + DSP_H_IMPORT_OFF)?,
+        word(src, off + DSP_H_IMPORT_N)?,
+    );
+    let (voice_off, nvoice) = (
+        word(src, off + DSP_H_VOICE_OFF)?,
+        word(src, off + DSP_H_VOICE_N)?,
+    );
     let (fx_off, nfx) = if version >= 4 {
-        (word(src, off + 0x34)?, word(src, off + 0x38)?)
+        (word(src, off + DSP_H_FX_OFF)?, word(src, off + DSP_H_FX_N)?)
     } else {
         (0, 0)
     };
@@ -349,21 +330,21 @@ fn dsp<B: Bytes>(src: &mut B, off: u32, size: u32, n: &mut Needs) -> Result<(), 
         || nvoice > MAX_VOICES
         || nfx > MAX_FX
         || !inside(image_off, image, size)
-        || !inside(reloc_off, nreloc * 8, size)
-        || !inside(import_off, nimport * 32, size)
+        || !inside(reloc_off, nreloc * RELOC_LEN, size)
+        || !inside(import_off, nimport * DSP_IMPORT_LEN, size)
         || !inside(voice_off, nvoice * stride, size)
         || !inside(fx_off, nfx * FX_LEN, size)
     {
         return Err(Error::Dsp);
     }
     if version == 5 {
-        let record_off = word(src, off + 0x3c)?;
+        let record_off = word(src, off + DSP_H_BANK_OFF)?;
         if record_off < DSP_HEADER || record_off & 3 != 0 || !inside(record_off, 32, image_off) {
             return Err(Error::Dsp);
         }
         for (table, len) in [
-            (reloc_off, nreloc * 8),
-            (import_off, nimport * 32),
+            (reloc_off, nreloc * RELOC_LEN),
+            (import_off, nimport * DSP_IMPORT_LEN),
             (voice_off, nvoice * stride),
             (fx_off, nfx * FX_LEN),
         ] {
@@ -395,7 +376,7 @@ fn dsp<B: Bytes>(src: &mut B, off: u32, size: u32, n: &mut Needs) -> Result<(), 
                 }
             }
             for i in 0..nreloc {
-                let r = word(src, off + reloc_off + i * 8)?;
+                let r = word(src, off + reloc_off + i * RELOC_LEN + RELOC_OFFSET)?;
                 if u64::from(r) < u64::from(b) + u64::from(len) && u64::from(r) + 6 > u64::from(b) {
                     return Err(Error::Dsp);
                 }
@@ -415,7 +396,10 @@ fn dsp<B: Bytes>(src: &mut B, off: u32, size: u32, n: &mut Needs) -> Result<(), 
         let mut i = 0;
         while i < nvoice {
             let at = off + voice_off + stride * i;
-            let (state, count) = (word(src, at + 12)?, word(src, at + 52)?);
+            let (state, count) = (
+                word(src, at + VOICE_STATE_BYTES)?,
+                word(src, at + VOICE_VOICES)?,
+            );
             if state > MAX_STATE_BYTES || count > MAX_STATE_VOICES {
                 return Err(Error::Dsp);
             }
@@ -429,7 +413,7 @@ fn dsp<B: Bytes>(src: &mut B, off: u32, size: u32, n: &mut Needs) -> Result<(), 
     // version 4: the state of every effect (state_bytes at +8 of its record), rounded to 8
     let mut i = 0;
     while i < nfx {
-        let state = word(src, off + fx_off + FX_LEN * i + 8)?;
+        let state = word(src, off + fx_off + FX_LEN * i + FX_STATE)?;
         if state > MAX_STATE_BYTES {
             return Err(Error::Dsp);
         }

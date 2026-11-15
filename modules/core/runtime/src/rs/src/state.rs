@@ -93,6 +93,11 @@ pub static mut DKRT_MAILBOX: Mailbox = Mailbox {
 pub const POLLS: usize = 4;
 #[no_mangle]
 pub static mut DKRT_POLLS: [usize; POLLS] = [0; POLLS];
+/// The owner of each poll slot, set by `dkrt_poll_add`: the module record whose loaded range holds the function, or `POLL_OWNER_RUNTIME` for a
+/// function outside every module (the firmware image: the patched-in core modules). Meaningful while the slot's function is not 0.
+#[no_mangle]
+pub static mut DKRT_POLL_OWNER: [u8; POLLS] = [POLL_OWNER_RUNTIME; POLLS];
+pub const POLL_OWNER_RUNTIME: u8 = 0xff;
 
 pub unsafe fn log(msg: *const u8, value: u32) {
     log_at(logk::L_INFO as u32, msg, value);

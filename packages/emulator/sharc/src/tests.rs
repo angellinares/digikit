@@ -2407,7 +2407,7 @@ fn fast_mode1_write_that_enables_interrupts_matches_the_interpreter() {
         // Regions at every instruction, and one only at the write.
         let all: Vec<u32> = (0..5).map(lp_pc).collect();
         lp_compare(&format!("mode1 enable {name}"), &code, &all, 12, &setup);
-        let ran = lp_compare(
+        lp_compare(
             &format!("mode1 enable {name}, at the write"),
             &code,
             &[0],
@@ -2415,10 +2415,16 @@ fn fast_mode1_write_that_enables_interrupts_matches_the_interpreter() {
             &setup,
         );
         // The enabling write is never lowered (the generated core of a
-        // firmware image may run its own blocks at these PCs instead).
-        if name != "unchanged" {
-            assert_eq!(ran, 0, "{name}: the fast tier ran the enabling write");
-        }
+        // firmware image may run its own blocks at these PCs instead): the
+        // region at the write is refused, and the interpreter runs the write.
+        // The fast tier can still run the instructions after the write, in a
+        // region that it chases at the next PC. So the test counts the
+        // refusals, not the instructions that the fast tier ran.
+        let mut f = lp_engine(&code, &[0], true, &setup);
+        assert_eq!(f.step(12), 12);
+        let st = f.fast.as_ref().unwrap().fast_stats().unwrap();
+        let refused = u64::from(name != "unchanged");
+        assert_eq!(st.refused, refused, "{name}: {:?}", st.reasons);
     }
 }
 

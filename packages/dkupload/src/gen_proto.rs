@@ -27,6 +27,8 @@ pub const CMD_RENAME: u8 = 0x1a;
 pub const CMD_FAULT: u8 = 0x23;
 pub const CMD_SELECT: u8 = 0x30;
 pub const CMD_RESTART: u8 = 0x31;
+pub const SVC_PROFILE_STATE: u8 = 0x1e;
+pub const SVC_PROFILE_READ: u8 = 0x1f;
 pub const SVC_LOG: u8 = 0x20;
 pub const SVC_PEEK: u8 = 0x21;
 pub const SVC_LOGCFG: u8 = 0x22;
@@ -124,8 +126,9 @@ pub const CAP_FIT: [(&str, u8, &str); 12] = [
     ("DSP_VOICES", CAPK_DSP_VOICES, "DSP voices"),
 ];
 /// The command ranges a module may register, as (first, last).
-pub const RANGES: [(u8, u8); 9] = [
+pub const RANGES: [(u8, u8); 10] = [
     (0x20, 0x22), // debug
+    (0x1e, 0x1f), // debug_profile
     (0x1c, 0x1d), // entry_demo_test
     (0x24, 0x27), // file_write_test
     (0x28, 0x2b), // file_write_test_b
@@ -136,6 +139,7 @@ pub const RANGES: [(u8, u8); 9] = [
     (0x36, 0x37), // usb_fast
 ];
 pub const RANGE_DEBUG: (u8, u8) = (0x20, 0x22);
+pub const RANGE_DEBUG_PROFILE: (u8, u8) = (0x1e, 0x1f);
 pub const RANGE_ENTRY_DEMO_TEST: (u8, u8) = (0x1c, 0x1d);
 pub const RANGE_FILE_WRITE_TEST: (u8, u8) = (0x24, 0x27);
 pub const RANGE_FILE_WRITE_TEST_B: (u8, u8) = (0x28, 0x2b);

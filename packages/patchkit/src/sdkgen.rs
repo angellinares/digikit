@@ -71,8 +71,10 @@ struct Sdk {
     machine: Machine,
     fx: Fx,
     log: Log,
+    spans: Spans,
     protocol: Protocol,
     limits: LimitsSection,
+    format: FormatLayout,
     capacity: Capacity,
     records: Records,
     service: Vec<ServiceDecl>,
@@ -347,6 +349,12 @@ struct LimitsSection {
     max: LimitsMax,
     format: FormatLimits,
 }
+/// `[format]`: the layout of the `.dkm` header and of its DSP section, as named `u32` constants.
+#[derive(Deserialize)]
+#[serde(deny_unknown_fields)]
+struct FormatLayout {
+    consts: Vec<MachineConst>,
+}
 /// `[limits.format]`: the format limits of the `.dkm` loader that every host tool and the runtime share (`dkneeds`).
 #[derive(Deserialize)]
 #[serde(deny_unknown_fields)]
@@ -525,7 +533,87 @@ fn rust_limits(sdk: &Sdk) -> String {
         let _ = writeln!(s, "pub const {n}: u32 = {v};");
     }
     s.push('\n');
+    for c in &sdk.format.consts {
+        if let Some(d) = &c.doc {
+            let _ = writeln!(s, "/// {d}");
+        }
+        let _ = writeln!(s, "pub const {}: u32 = {};", c.name, c.value);
+    }
+    s.push('\n');
     s.push_str(&records_consts(sdk, ""));
+    s.push('\n');
+    s.push_str(&contract_mod(
+        "fx",
+        "DK_FX",
+        &sdk.fx.consts,
+        &sdk.fx.fx_in,
+        &sdk.fx.desc,
+    ));
+    s.push('\n');
+    s.push_str(&contract_mod(
+        "machine",
+        "DK",
+        &sdk.machine.consts,
+        &sdk.machine.voice_in,
+        &sdk.machine.desc,
+    ));
+    s.push('\n');
+    s.push_str("/// The effect routes of `[page] consts` (`DK_ROUTE_*`), the ones a `.dkm` records.\npub mod page {\n");
+    for c in sdk
+        .page
+        .consts
+        .iter()
+        .filter(|c| c.name.starts_with("DK_ROUTE_"))
+    {
+        let _ = writeln!(s, "    pub const {}: u32 = {};", c.name, c.value);
+    }
+    s.push_str("}\n");
+    s
+}
+
+/// One module of the contract's numbers for Rust: the constants of `[fx]` or `[machine]`, then the byte and word offsets of the input
+/// and desc fields (the names and values of the C header, `DK_FX_DESC_N_PARAMS`, `DK_FX_DESC_W_N_PARAMS`, ...).
+fn contract_mod(
+    name: &str,
+    prefix: &str,
+    consts: &[MachineConst],
+    input: &[String],
+    desc: &[String],
+) -> String {
+    let mut s = format!(
+        "/// The `[{name}]` contract of sdk/sdk.toml (the numbers of <dk/gen/{name}_consts.h>).\npub mod {name} {{\n"
+    );
+    for c in consts {
+        let _ = writeln!(s, "    pub const {}: u32 = {};", c.name, c.value);
+    }
+    for (kind, fields) in [("IN", input), ("DESC", desc)] {
+        for (i, f) in fields.iter().enumerate() {
+            let _ = writeln!(
+                s,
+                "    pub const {prefix}_{kind}_{}: u32 = {};",
+                f.to_uppercase(),
+                i * 4
+            );
+        }
+        let _ = writeln!(
+            s,
+            "    pub const {prefix}_{kind}_BYTES: u32 = {};",
+            fields.len() * 4
+        );
+        for (i, f) in fields.iter().enumerate() {
+            let _ = writeln!(
+                s,
+                "    pub const {prefix}_{kind}_W_{}: u32 = {i};",
+                f.to_uppercase()
+            );
+        }
+        let _ = writeln!(
+            s,
+            "    pub const {prefix}_{kind}_WORDS: u32 = {};",
+            fields.len()
+        );
+    }
+    s.push_str("}\n");
     s
 }
 /// The contract maxima of the capacity limits: `[limits.max]` of `sdk/sdk.toml`. A device's `[limits]` value (and its `[digikit]`
@@ -695,6 +783,14 @@ pub fn table_runtime() -> u32 {
 pub fn embedded_runtime() -> u32 {
     let sdk = parse(include_str!("../../../sdk/sdk.toml")).expect("sdk/sdk.toml parses");
     pack_runtime(runtime_parts(&sdk).expect("sdk/sdk.toml runtime version"))
+}
+
+/// `[spans]`: the non-module owners of the runtime's profiling spans.
+#[derive(Deserialize)]
+#[serde(deny_unknown_fields)]
+struct Spans {
+    phases: Vec<String>,
+    polls: usize,
 }
 
 #[derive(Deserialize)]
@@ -1316,6 +1412,13 @@ fn ts_proto(sdk: &Sdk) -> String {
         "/** The level names, by number. */\nexport const LOG_LEVELS = [{}] as const;",
         levels.join(", ")
     );
+    let phases: Vec<String> = sdk.spans.phases.iter().map(|n| ts_str(n)).collect();
+    let _ = write!(
+        s,
+        "\n/** The service tick phases of the profiling spans (owner `0x100 | p`), by number. */\nexport const SPAN_PHASES = [{}] as const;\n\n/** The poll slots of the profiling spans (owner `0x200 | i`). */\nexport const SPAN_POLLS = {};\n",
+        phases.join(", "),
+        sdk.spans.polls
+    );
     s
 }
 
@@ -1545,6 +1648,8 @@ fn limits_h(sdk: &Sdk) -> String {
     for (n, v) in format_limits(sdk) {
         let _ = writeln!(s, "#define DK_{n} {v}");
     }
+    // The module record count (`[limits.max] modules`): the debug module sizes its span table with it.
+    let _ = writeln!(s, "#define DK_MAX_MODULES {}", sdk.limits.max.modules);
     s.push_str("\n#endif /* DK_GEN_LIMITS_H */\n");
     s
 }

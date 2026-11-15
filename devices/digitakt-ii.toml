@@ -123,6 +123,9 @@ keep_bytes = 0x1000
 # RAM ranges [lo, hi) the PEEK command of the upload protocol may read (docs/design/digikit-upload.md): the firmware's data, then the
 # runtime's own region with the keep range. No peripheral registers; at most 4 ranges.
 peek = [[0x40000000, 0x47e30000], [0x47e8b000, 0x47fe1000]]
+# The profiling clock: DTIM0 DTCN0, bus clock, started before the main OS, read only, never written.
+span_clock = 0xfc07000c
+span_clock_hz = 132000000
 
 # The runtime's per-type limits (docs/design/module-sdk.md 11.5 D8); generated into the runtime's device.rs.
 [limits]

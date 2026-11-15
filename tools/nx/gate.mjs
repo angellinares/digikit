@@ -9,6 +9,7 @@ const MERGE_TARGETS = [
   'lint',
   'fmt-check',
   'rust-fmt',
+  'rust-clippy',
   'typecheck',
   'test-host',
   'test-wasm',

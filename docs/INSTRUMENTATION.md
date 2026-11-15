@@ -470,8 +470,9 @@ a channel by calling `dk_sink_set(channel, sink)` (an import, runtime 0.7.1). Th
 
 - `log`: the sink gets `void sink(const dk_log_ev *e)` for every event the runtime logs, before any filter. The old `dk_debug_log_sink_set` still works and
   is independent; the debug module may move to this channel later (it is not changed now).
-- `span`: the sink gets `void sink(const dk_span *s)`, a record `{owner, cycles}`. The runtime has the channel and the emit function (`dlog::span_emit`); no
-  producer calls it yet (`DK_SPAN` is sdk.md section 9).
+- `span`: the sink gets `void sink(const dk_span *s)`, a record `{owner, cycles}`. The runtime emits it from its ColdFire call sites (module ticks, service phases, polls), and the debug module owns the channel
+  (clock: the stock DTIM0 counter). The host reads the debug module's span table with the debug commands PROFILE_STATE (0x1e) and PROFILE_READ (0x1f), next to
+  LOG, PEEK and LOGCFG.
 - A sink runs in the producer's task with interrupts masked: short, no waiting, no logging, no imports.
 - One owner per channel. `dk_sink_set` returns 0, `DK_E_BUSY` (another module owns it, nothing changes), `DK_E_RANGE` (no such channel) or `DK_E_CONTEXT`
   (called outside module code). Setting 0 clears the channel (only its owner may).
@@ -566,7 +567,21 @@ node tools/devtools/wb.mjs profile record --seconds 4 --image out/try/rt.syx --o
 # out/try/real.profile.json: 371 counters over 4 s
 ```
 
+`wb profile spans [--start|--stop|--reset] [--out FILE]` reads the runtime span counters of a device (or an emulator with a MIDI port) over the dk-session link: the flag sets the counting first (`--start` resets the counters, then starts), then it reads the spans (modules, the phases `early`, `late`, `last`, and polls) and prints one row each. With `--out` it writes a `dk.profile/1` with `spans` (`owner`, `kind`, `name`, `calls`, `sum_ticks`, `max_ticks`) `span_clock_hz` and `span_elapsed_ticks` (the ticks the counters were gathered over: `sum_ticks / span_elapsed_ticks` is the share of the CPU); `raw` stays empty and `wb profile report` ignores the spans. It takes `--port` and `--bin` like the other device commands. The numbers below are an example:
+
+```sh
+node tools/devtools/wb.mjs profile spans --start                    # start counting
+node tools/devtools/wb.mjs profile spans --out out/try/spans.profile.json
+# running, 132000000 Hz
+# name         calls  total ms  mean us  max us
+# early        812    41.200    50.7     91.0
+# digikit/pluck 812   120.500   148.4    210.0
+# out/try/spans.profile.json: 2 spans
+```
+
 `cf.profile` keeps the 400 heaviest rows of its cumulative tables, which the artifact records under `loss`.
+
+**Profile pane (desktop workbench).** The Profile tab of the right-hand column (Emulator page and Remote page; `apps/desktop/ui/src/ProfilePanel.tsx`) shows the same span counters live. Start resets the counters and starts the spans (`PROFILE_STATE`); on the emulator it also starts `sharc.profile` and takes a `cf.profile` baseline, so one button records spans and instruction profiles, and on a device it records spans only. While the tab is shown and the target records, the pane reads once per second (`profileAll`, one read at a time). Shares are `sum_ticks / elapsed`: `PROFILE_STATE` reports the elapsed ticks of the span clock (a u64 after the row count; the module adds the 32-bit counter difference at every UI pass and every `PROFILE_STATE`, so one read per wrap period, about 32.5 s at 132 MHz, keeps it exact). The graph keeps the last 60 readings, coloured by the owner type (machine, effect, tool, runtime). A maximum of at least 100 µs and more than 4 times the mean shows red. The DSP section on the emulator lists the modules' instructions per DSP block against the device headroom (`DSP_COST` of CAPACITY), from `sharc.profile` named with the maps of the running image; on a device it shows the whole-block load of the newest HEALTH event. Export writes one `dk.profile/1` (spans, `cf.profile`, `sharc.profile`) with the same builder as `wb profile` (`packages/workbench-core/src/profile/profile-artifact.ts`); Open profile… shows the shares of an exported file as one more column. Phase names come from `[spans]` of `sdk/sdk.toml`. The poll set changes at run time (`dkrt_poll_add`), so the runtime records the owner of each slot (the module record whose code holds the function, or the firmware image) and `PROFILE_STATE` reports it with the function address (`dk_debug_poll`); a row reads `<module> poll` or `runtime poll`, with `: <function>` when the address maps name the function (the Log pane's maps), and `poll N` only when the debug module is too old to say. Without the debug module the pane offers to add it (Transfer upload, one restart). `node tools/devtools/ui_shots.mjs profile-emulator profile-device profile-nodebug` draws the three states over the preview (`preview/profile-backend.mock.ts`; the first two take a minute for the 60 s graph).
 
 **DSP profile (`--cpu sharc`).** A daemon built with `--features sharc-profile` (a DSP core, as for `coupled-audio`) answers `sharc.profile` ([CONTROL.md](CONTROL.md)).
 `wb profile record --cpu sharc --seconds N --out FILE [--image X.syx] [--run-dir DIR]` starts the counting, waits N seconds (a live emulator) and writes the counts as a profile

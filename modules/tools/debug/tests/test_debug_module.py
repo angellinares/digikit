@@ -17,11 +17,28 @@ HARNESS = r"""
 #include <string.h>
 static unsigned char peek_mem[64];
 #define DEBUG_READ8(a) (peek_mem[(a) - 4096u])
+static unsigned int fake_clk;
+#define DEBUG_READ32(a) (fake_clk)
 #include "debug.c"
+
+static void (*the_span)(const dk_span *);
+static uint32_t (*the_span_clock)(void);
+static int span_busy, span_noclock;
+int32_t dk_span_sink_set(uint8_t *emit, uint8_t *clock)
+{
+    if (span_busy && emit) return DK_E_BUSY;
+    the_span = (void (*)(const dk_span *))emit;
+    the_span_clock = (uint32_t (*)(void))clock;
+    return 0;
+}
+static uint32_t poll_owner[4], poll_fn[4];
+uint32_t dk_debug_poll(uint32_t slot, uint32_t *fn) { if (slot > 3 || !poll_owner[slot]) return 0; if (fn) *fn = poll_fn[slot]; return poll_owner[slot]; }
+uint32_t dk_debug_span_clock(uint32_t *hz) { *hz = 150000000u; return span_noclock ? 0u : 0x1000u; }
 
 static void (*the_sink)(const Ev *);
 static void (*the_tick)(void);
 static dk_host_cmd_fn *the_cmd;
+static dk_host_cmd_fn *the_profile;
 static u32 clock_blocks;
 static int32_t track_ty[16];
 static int project = 1;
@@ -63,11 +80,23 @@ void dk_ui_menu_add_toggle(dk_ui_menu *m, const char *t, int32_t *v, dk_ui_actio
 void dk_ui_menu_add_text(dk_ui_menu *m, const char *t) { (void)m; (void)t; }
 uint32_t dk_text_itoa(char *o, int32_t v) { (void)o; (void)v; return 0; }
 uint32_t dk_text_utoa(char *o, uint32_t v) { (void)o; (void)v; return 0; }
-int32_t dk_host_register(uint32_t first, uint32_t count, dk_host_cmd_fn *h) { the_cmd = h; printf("reg %u %u\n", first, count); return 0; }
+static unsigned reg_first, reg_count;
+int32_t dk_host_register(uint32_t first, uint32_t count, dk_host_cmd_fn *h)
+{
+    /* the first range is the log commands, the second the profiling commands; both print as one line */
+    if (!the_cmd) { the_cmd = h; reg_first = first; reg_count = count; return 0; }
+    the_profile = h;
+    printf("reg %u %u %u %u\n", reg_first, reg_count, first, count);
+    return 0;
+}
 
-int main(void)
+int main(int argc, char **argv)
 {
     char line[4096];
+    for (int k = 1; k < argc; k++) {
+        if (!strcmp(argv[k], "noclock")) span_noclock = 1;
+        if (!strcmp(argv[k], "busy")) span_busy = 1;
+    }
     printf("init %d %d\n", (int)dk_module.init(NULL), the_sink != NULL);
     while (fgets(line, sizeof line, stdin)) {
         unsigned a, b, c, d;
@@ -78,6 +107,16 @@ int main(void)
             the_sink(&e);
         } else if (sscanf(line, "clock %u", &a) == 1) {
             clock_blocks = a;
+        } else if (sscanf(line, "span %u %u %u", &a, &b, &c) == 3) {
+            /* owner, ticks, number of spans */
+            dk_span s = { a, b };
+            while (c--) the_span(&s);
+        } else if (sscanf(line, "setclk %u", &a) == 1) {
+            fake_clk = a;
+        } else if (!strncmp(line, "readclk", 7)) {
+            printf("clk %u\n", the_span_clock());
+        } else if (!strncmp(line, "sinkstat", 8)) {
+            printf("sink %d %d\n", the_span != NULL, the_span_clock != NULL);
         } else if (sscanf(line, "range %u %u", &a, &b) == 2) {
             ranges[n_ranges][0] = a; ranges[n_ranges][1] = b; n_ranges++;
         } else if (sscanf(line, "peekmem %u", &a) == 1) {
@@ -89,10 +128,15 @@ int main(void)
             sel_track = (int32_t)c;
         } else if (sscanf(line, "word %u %d", &a, &c) == 2) {
             sel_words[a] = (int16_t)c;
+        } else if (sscanf(line, "poll %u %u %x", &a, &b, &c) == 3) {
+            poll_owner[a] = b;
+            poll_fn[a] = (uint32_t)c;
         } else if (!strncmp(line, "noproject", 9)) {
             project = 0;
         } else if (!strncmp(line, "project", 7)) {
             project = 1;
+        } else if (!strncmp(line, "modtick", 7)) {
+            dk_module.tick(NULL);
         } else if (!strncmp(line, "slot", 4)) {
             the_tick();
         } else if (sscanf(line, "cmd %u %2047s", &a, hex) == 2 || sscanf(line, "cmd %u", &a) == 1) {
@@ -100,13 +144,13 @@ int main(void)
             u32 len = 0, i;
             if (sscanf(line, "cmd %u %2047s", &a, hex) != 2) hex[0] = 0;
             for (i = 0; hex[2 * i] && hex[2 * i + 1]; i++) { unsigned v; sscanf(hex + 2 * i, "%2x", &v); body[len++] = (u8)v; }
-            int32_t r = the_cmd(a, 0, body, len, out);
+            int32_t r = (a >= 0x1eu && a <= 0x1fu ? the_profile : the_cmd)(a, 0, body, len, out);
             printf("reply %d ", r);
             for (i = 0; r > 0 && i < (u32)r; i++) printf("%02x", out[i]);
             printf("\n");
         } else if (!strncmp(line, "fini", 4)) {
             dk_module.fini(NULL);
-            printf("fini %d\n", the_sink == NULL && the_tick == NULL);
+            printf("fini %d %d\n", the_sink == NULL && the_tick == NULL, the_span == NULL && the_span_clock == NULL);
         }
         (void)d;
     }
@@ -149,9 +193,9 @@ def harness(tmp_path_factory):
     return exe
 
 
-def run(exe, lines):
+def run(exe, lines, args=()):
     done = subprocess.run(
-        [str(exe)],
+        [str(exe), *args],
         input="\n".join(lines) + "\n",
         capture_output=True,
         text=True,
@@ -176,7 +220,149 @@ def ev(kind, flags, a=0):
 
 def test_init_registers_the_range_and_the_sink_and_fini_clears_it(harness):
     out = run(harness, ["fini"])
-    assert out == ["reg 32 3", "init 0 1", "fini 1"]
+    assert out == ["reg 32 3 30 2", "init 0 1", "fini 1 1"]
+
+
+ROWS = 8 + 3 + 4  # module records (limits.max modules), service phases, polls
+PHASE = 0x100
+POLL = 0x200
+
+
+def profile_state(reply: str):
+    raw = bytes.fromhex(reply.split()[2])
+    assert len(raw) == 35
+    return struct.unpack(">BIH", raw[:7])
+
+
+def profile_elapsed(reply: str):
+    return struct.unpack(">Q", bytes.fromhex(reply.split()[2])[7:15])[0]
+
+
+def profile_rows(reply: str):
+    raw = bytes.fromhex(reply.split()[2])
+    first, n = struct.unpack(">HB", raw[:3])
+    assert len(raw) == 3 + 16 * n
+    rows = [struct.unpack(">IQI", raw[3 + 16 * i : 19 + 16 * i]) for i in range(n)]
+    return first, rows
+
+
+def test_profile_start_sets_the_span_sink_and_stop_clears_it(harness):
+    out = run(
+        harness,
+        ["sinkstat", "cmd 30 00", "cmd 30 01", "sinkstat", "cmd 30 02", "sinkstat"],
+    )
+    assert out[2] == "sink 0 0"
+    assert profile_state(out[3]) == (0, 150000000, ROWS)
+    assert profile_state(out[4]) == (1, 150000000, ROWS)
+    assert out[5] == "sink 1 1"
+    assert profile_state(out[6]) == (0, 150000000, ROWS)
+    assert out[7] == "sink 0 0"
+
+
+def test_profile_state_names_the_poll_owners(harness):
+    out = run(harness, ["poll 0 3 12345678", "poll 2 255 4000", "cmd 30 00"])
+    raw = bytes.fromhex(out[2].split()[2])
+    assert len(raw) == 35
+    assert struct.unpack(">BI", raw[15:20]) == (3, 0x12345678)
+    assert struct.unpack(">BI", raw[20:25]) == (0, 0), "an empty slot"
+    assert struct.unpack(">BI", raw[25:30]) == (255, 0x4000)
+    assert raw[30:35] == bytes(5)
+
+
+def test_profile_span_clock_reads_the_counter_and_fini_clears_the_sink(harness):
+    out = run(harness, ["cmd 30 01", "setclk 12345", "readclk", "fini"])
+    assert out[3] == "clk 12345"
+    assert out[4] == "fini 1 1"
+
+
+def test_profile_start_without_a_clock_is_refused(harness):
+    out = run(harness, ["cmd 30 01", "cmd 30 00", "sinkstat"], args=["noclock"])
+    assert out[2].split()[1] == "-60"
+    assert profile_state(out[3])[0] == 0
+    assert out[4] == "sink 0 0"
+
+
+def test_profile_start_gets_the_runtime_busy_code(harness):
+    out = run(harness, ["cmd 30 01", "cmd 30 00"], args=["busy"])
+    assert out[2].split()[1] == "-12"
+    assert profile_state(out[3])[0] == 0
+
+
+def test_profile_bad_op_and_body(harness):
+    out = run(harness, ["cmd 30 04", "cmd 30", "cmd 31 00", "cmd 31 00000000"])
+    assert [o.split()[1] for o in out[2:]] == ["-60", "-50", "-50", "-50"]
+
+
+def test_profile_spans_add_up_per_owner_and_unknown_owners_are_ignored(harness):
+    out = run(
+        harness,
+        [
+            "cmd 30 01",
+            "span 3 100 1",
+            "span 3 40 1",
+            "span 3 70 2",
+            f"span {PHASE + 1} 9 3",
+            f"span {POLL + 2} 5 1",
+            f"span {POLL + 4} 99 1",  # no such poll
+            f"span {PHASE + 3} 99 1",  # no such phase
+            "span 8 99 1",  # between the modules and the phases
+            "span 4096 99 1",
+            "cmd 31 0000",
+        ],
+    )
+    first, rows = profile_rows(out[3])
+    assert first == 0 and len(rows) == ROWS
+    assert rows[3] == (4, 280, 100)
+    assert rows[8 + 1] == (3, 27, 9)
+    assert rows[8 + 3 + 2] == (1, 5, 5)
+    others = [r for i, r in enumerate(rows) if i not in (3, 9, 13)]
+    assert all(r == (0, 0, 0) for r in others)
+
+
+def test_profile_sum_is_64_bits(harness):
+    big = 0xF0000000
+    out = run(harness, ["cmd 30 01", f"span 0 {big} 3", "cmd 31 0000"])
+    _, rows = profile_rows(out[3])
+    assert rows[0] == (3, 3 * big, big)
+    assert rows[0][1] > 2**32
+
+
+def test_profile_reset_zeroes_the_table_in_both_states(harness):
+    out = run(
+        harness,
+        [
+            "cmd 30 01",
+            "span 1 7 2",
+            "cmd 30 03",  # running
+            "cmd 31 0000",
+            "cmd 30 02",
+            "cmd 30 03",  # stopped
+            "cmd 31 0000",
+        ],
+    )
+    assert all(r == (0, 0, 0) for r in profile_rows(out[4])[1])
+    assert profile_state(out[3])[0] == 1
+    assert all(r == (0, 0, 0) for r in profile_rows(out[-1])[1])
+
+
+def test_profile_read_pages_and_refuses_a_first_row_past_the_end(harness):
+    out = run(
+        harness,
+        [
+            "cmd 30 01",
+            "span 5 11 1",
+            "span 9999 1 1",
+            "cmd 31 0004",
+            "cmd 31 000e",
+            f"cmd 31 {ROWS:04x}",
+            f"cmd 31 {ROWS + 1:04x}",
+        ],
+    )
+    first, rows = profile_rows(out[3])
+    assert first == 4 and len(rows) == ROWS - 4 and rows[1] == (1, 11, 11)
+    first, rows = profile_rows(out[4])
+    assert first == ROWS - 1 and len(rows) == 1
+    assert out[5].split()[1] == "-63" and out[6].split()[1] == "-63"
 
 
 def test_events_are_numbered_from_one_and_read_back_in_order(harness):
@@ -356,3 +542,28 @@ def test_param_watch_logs_a_changed_word_and_takes_the_snapshot_again_on_a_new_t
         (4, B, 0, 0, 0),
         (4, 5, 8, 9, 0),
     ]
+
+
+def test_profile_elapsed_counts_clock_ticks_across_wraps_while_running(harness):
+    out = run(
+        harness,
+        [
+            "setclk 4000000000",
+            "cmd 30 01",
+            "cmd 30 00",  # 0
+            "setclk 4000000100",
+            "cmd 30 00",  # 100
+            "setclk 3000000000",  # wrapped, then 3000000000 - 4000000100 mod 2^32
+            "modtick",
+            "setclk 3000000010",
+            "cmd 30 02",  # stop reads the clock once more
+            "setclk 5",
+            "cmd 30 00",  # stopped: frozen
+            "cmd 30 03",  # reset zeroes it
+        ],
+    )
+    wrapped = (3000000000 - 4000000100) % 2**32
+    assert [profile_elapsed(out[i]) for i in (3, 4)] == [0, 100]
+    assert profile_elapsed(out[5]) == 100 + wrapped + 10
+    assert profile_elapsed(out[6]) == 100 + wrapped + 10
+    assert profile_elapsed(out[7]) == 0

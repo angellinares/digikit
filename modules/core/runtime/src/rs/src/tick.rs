@@ -6,9 +6,27 @@ use crate::mailbox::mailbox_select;
 use crate::platform::st;
 use crate::state::{init_once, DKRT_MAILBOX, DKRT_POLLS, POLLS};
 use crate::handlers::{services, tick_phase};
-use crate::{admin_cmds, boot, card, fault, entry, files, intro, io, loader, settings, store_writer, watch, worker};
+use crate::{admin_cmds, boot, card, dlog, fault, entry, files, intro, io, loader, settings, store_writer, watch, worker};
 use core::ptr::{addr_of, addr_of_mut, read_volatile, write_volatile};
 use dkrt_sdk::*;
+
+/// One tick phase of the services, measured as a span (owner `SPAN_PHASE | p`) while a span sink and clock are set.
+pub(crate) unsafe fn phase(p: u32) {
+    dlog::spanned(dlog::SPAN_PHASE | p, || services().tick(p));
+}
+
+/// Every registered poll function, each measured as a span (owner `SPAN_POLL | i`, `i` its slot) while a span sink and clock are set.
+pub(crate) unsafe fn poll_all() {
+    let mut i = 0;
+    while i < POLLS {
+        let f = read_volatile(addr_of!(DKRT_POLLS[i]));
+        if f != 0 {
+            let call: unsafe extern "C" fn() = core::mem::transmute(f);
+            dlog::spanned(dlog::SPAN_POLL | i as u32, || call());
+        }
+        i += 1;
+    }
+}
 
 /// Called from the UI task's event loop (`dkrt_loop_hook`, src/cf/tramp.s) once per pass, before it waits for the next
 /// event. Registers d0, d1, a0, a1 are saved by the hook. Polls the mailbox, then calls the tick of every module.
@@ -26,10 +44,10 @@ pub unsafe extern "C" fn dkrt_tick() {
     loader::dsp_step();
     worker::tick();
     io::tick();
-    services().tick(tick_phase::EARLY);
+    phase(tick_phase::EARLY);
     files::tick();
-    services().tick(tick_phase::LATE);
-    services().tick(tick_phase::LAST);
+    phase(tick_phase::LATE);
+    phase(tick_phase::LAST);
     settings::tick();
     watch::tick();
     let mb = &mut *addr_of_mut!(DKRT_MAILBOX);
@@ -60,13 +78,5 @@ pub unsafe extern "C" fn dkrt_tick() {
     }
     // the tick of every loaded module (`dk_module.tick`)
     entry::tick_all();
-    let mut i = 0;
-    while i < POLLS {
-        let f = read_volatile(addr_of!(DKRT_POLLS[i]));
-        if f != 0 {
-            let call: unsafe extern "C" fn() = core::mem::transmute(f);
-            call();
-        }
-        i += 1;
-    }
+    poll_all();
 }

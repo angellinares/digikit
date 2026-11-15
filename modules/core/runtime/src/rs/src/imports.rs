@@ -6,7 +6,7 @@ use crate::state::log_at;
 use crate::{arena, collect, dlog, entry, hash32, intro, io, worker};
 use crate::{debug_selected_params, imp_param_get, imp_param_set};
 use crate::health::dkrt_blocks;
-use crate::report::{debug_peek, debug_speed_flags, debug_track_type};
+use crate::report::{debug_peek, debug_poll, debug_span_clock, debug_speed_flags, debug_track_type};
 
 extern "C" {
     // Helpers from compiler_builtins, linked into this object.
@@ -84,6 +84,7 @@ import_table! {
     ("dk_log", imp_log),
     ("dk_log_event", dlog::dk_log_event),
     ("dk_sink_set", dlog::dk_sink_set),
+    ("dk_span_sink_set", dlog::dk_span_sink_set),
     ("dk_time_blocks", dkrt_blocks),
     ("dk_fw_alloc", crate::platform::fw_alloc),
     ("dk_fw_free", crate::platform::fw_free),
@@ -147,6 +148,8 @@ import_table! {
     ("dk_sample_pool_peaks", crate::handlers::exports::dk_sample_pool_peaks),
     ("dk_sample_pool_peaks_window", crate::handlers::exports::dk_sample_pool_peaks_window),
     ("dk_debug_peek", debug_peek),
+    ("dk_debug_span_clock", debug_span_clock),
+    ("dk_debug_poll", debug_poll),
     ("dk_debug_track_type", debug_track_type),
     ("dk_debug_selected_params", debug_selected_params),
     ("dk_debug_log_sink_set", dlog::dk_debug_log_sink_set),
@@ -160,6 +163,7 @@ const _: dkrt_sdk::api::DkFreeFn = imp_free;
 const _: dkrt_sdk::api::DkLogFn = imp_log;
 const _: dkrt_sdk::api::DkLogEventFn = dlog::dk_log_event;
 const _: dkrt_sdk::api::DkSinkSetFn = dlog::dk_sink_set;
+const _: dkrt_sdk::api::DkSpanSinkSetFn = dlog::dk_span_sink_set;
 const _: dkrt_sdk::api::DkTimeBlocksFn = dkrt_blocks;
 const _: dkrt_sdk::api::DkFwAllocFn = crate::platform::fw_alloc;
 const _: dkrt_sdk::api::DkFwFreeFn = crate::platform::fw_free;
@@ -223,6 +227,8 @@ const _: dkrt_sdk::api::DkSamplePoolSetFn = crate::handlers::exports::dk_sample_
 const _: dkrt_sdk::api::DkSamplePoolPeaksFn = crate::handlers::exports::dk_sample_pool_peaks;
 const _: dkrt_sdk::api::DkSamplePoolPeaksWindowFn = crate::handlers::exports::dk_sample_pool_peaks_window;
 const _: dkrt_sdk::api::DkDebugPeekFn = debug_peek;
+const _: dkrt_sdk::api::DkDebugSpanClockFn = debug_span_clock;
+const _: dkrt_sdk::api::DkDebugPollFn = debug_poll;
 const _: dkrt_sdk::api::DkDebugTrackTypeFn = debug_track_type;
 const _: dkrt_sdk::api::DkDebugSelectedParamsFn = debug_selected_params;
 const _: dkrt_sdk::api::DkDebugLogSinkSetFn = dlog::dk_debug_log_sink_set;

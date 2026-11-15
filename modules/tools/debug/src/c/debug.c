@@ -13,12 +13,19 @@
  *                op 2 get the card log, op 3 set it (adds u8 on); reply: u8 on, u8 file (0 a, 1 b), u8 state (0 off, 1 on, 2 full, 3 error), u8 0, u32 writes,
  *                i32 last status, u32 ms since the last write (0xffffffff: none yet). The card log writes the ring to a file of the store (see the card log below).
  *
+ *   0x1e PROFILE_STATE  body: u8 op (0 get, 1 start, 2 stop, 3 reset)   reply: u8 state (0 stopped, 1 running), u32 clock Hz, u16 rows, u64 elapsed ticks of the span clock while running since the last reset,
+ *                       then the 4 poll slots, each u8 owner (0 empty, 1 + module record, 0xff firmware image) and u32 function address
+ *   0x1f PROFILE_READ   body: u16 first row   reply: u16 first, u8 n, then n rows of u32 calls, u64 sum, u32 max (ticks of the span clock; big endian)
+ * Start sets the span sink and clock (`dk_span_sink_set`); stop, and fini, clear them. The table has one row per module record, per service phase (3) and per poll (4).
+ *
  * The tick (once per pass of the UI task, set with the sink) reads the machine type of each of the 16 tracks every 20 ms from the firmware (`dk_debug_track_type`) and logs a change (MACHINE_CHANGE). Each pass it also reads the Sound words of the selected track (`dk_debug_selected_params`) and logs a changed word (PARAM_CHANGE, level 3). The card log decisions run in the module's own tick (`dk_module.tick`, once per UI pass). */
 
 #include <dk/core/module.h>
 #include <dk/core/bytes.h>
 #include <dk/core/log.h>
+#include <dk/core/sink.h>
 #include <dk/core/text.h>
+#include <dk/gen/limits.h>
 #include <dk/core/time.h>
 #include <dk/platform/debug.h>
 #include <dk/platform/files.h>
@@ -36,6 +43,11 @@ typedef uint8_t u8;
 #define DEBUG_READ8(a) (*(const volatile u8 *)(uintptr_t)(a))
 #endif
 
+/* The span clock counter (a device address); the host test reads a fake counter instead. */
+#ifndef DEBUG_READ32
+#define DEBUG_READ32(a) (*(volatile u32 *)(uintptr_t)(a))
+#endif
+
 #define E_MSG (-50)
 #define E_PROTO (-60)
 #define E_PEEK (-63)
@@ -45,6 +57,22 @@ typedef uint8_t u8;
 #define CMD_LOG 0x20u
 #define CMD_PEEK 0x21u
 #define CMD_LOGCFG 0x22u
+
+/* The profiling commands: the `debug_profile` range of sdk/sdk.toml (PROFILE_STATE, PROFILE_READ). */
+#define CMD_PROFILE_FIRST 0x1eu
+#define CMD_PROFILE_COUNT 2u
+#define CMD_PROFILE_STATE 0x1eu
+#define CMD_PROFILE_READ 0x1fu
+
+#if !defined(DK_MAX_MODULES)
+#error                                                                                             \
+    "DK_MAX_MODULES (module records) is not in <dk/gen/limits.h>: generate it from [limits.max] modules in sdk/sdk.toml"
+#endif
+#define SPAN_MODULES ((u32)DK_MAX_MODULES)
+#define SPAN_PHASES 3u /* owner 0x100 | p: the service phases */
+#define SPAN_POLLS 4u  /* owner 0x200 | i: the polls */
+#define SPAN_ROWS (SPAN_MODULES + SPAN_PHASES + SPAN_POLLS)
+#define SPAN_PER_REPLY ((REPLY_MAX - 3u) / 16u)
 
 #define RING 512u
 #define REPLY_MAX 879u /* the reply body of a service command */
@@ -547,10 +575,13 @@ static void menu(dk_module_ctx *ctx, dk_ui_menu *m)
     dk_ui_menu_add_text(m, t);
 }
 
-/* The module tick (once per UI pass): the card log decisions. */
+static void span_elapse(void);
+
+/* The module tick (once per UI pass): the elapsed window of the profile, then the card log decisions. */
 static void mod_tick(dk_module_ctx *ctx)
 {
     (void)ctx;
+    span_elapse();
     cl_tick(now());
 }
 
@@ -591,6 +622,157 @@ static int32_t cmd_logcfg(const u8 *body, u32 len, u8 *out)
         out[1u + i] = level_module[i];
     out[9] = 1u; /* the debug log is on while this module is loaded */
     return 10;
+}
+
+/* ---- the span table (profiling) ------------------------------------------------------------------------------------------------------ */
+
+/* One row per owner id of the runtime's spans: a module record (0 to MAX_MODULES - 1), a service phase (0x100 | p) or a poll (0x200 | i). */
+typedef struct SpanRow {
+    u32 calls;
+    uint64_t sum; /* ticks; 64 bits, so a long run does not wrap */
+    u32 max;
+} SpanRow;
+
+static SpanRow span_rows[SPAN_ROWS];
+static u32 clk_addr, clk_hz; /* the span clock counter (a device address, 0: none) and its rate */
+static u8 profiling;
+/* The elapsed window: ticks of the span clock while profiling, since the last reset. The counter is 32 bits and wraps (about 32.5 s at 132 MHz), so the
+ * module adds the 32-bit difference to the last read each time it reads the clock: at every UI pass (mod_tick) and every PROFILE_STATE. This is exact when
+ * at least one read happens per wrap period; a UI that stops for longer loses whole wraps. */
+static uint64_t el_ticks;
+static u32 el_last;
+
+static void span_elapse(void)
+{
+    u32 n;
+    if (!profiling)
+        return;
+    n = DEBUG_READ32(clk_addr);
+    el_ticks += (u32)(n - el_last);
+    el_last = n;
+}
+
+static u32 span_row(u32 owner)
+{
+    if (owner < SPAN_MODULES)
+        return owner;
+    if ((owner & ~0xffu) == 0x100u && (owner & 0xffu) < SPAN_PHASES)
+        return SPAN_MODULES + (owner & 0xffu);
+    if ((owner & ~0xffu) == 0x200u && (owner & 0xffu) < SPAN_POLLS)
+        return SPAN_MODULES + SPAN_PHASES + (owner & 0xffu);
+    return SPAN_ROWS;
+}
+
+/* The span sink: interrupts are masked, so the update needs no lock. */
+static void span_sink(const dk_span *s)
+{
+    u32 r = span_row(s->owner);
+    SpanRow *w;
+    if (r >= SPAN_ROWS)
+        return;
+    w = &span_rows[r];
+    w->calls++;
+    w->sum += s->cycles;
+    if (s->cycles > w->max)
+        w->max = s->cycles;
+}
+
+/* The runtime reads the clock before and after a span. The module only reads the counter; it never writes a timer register. */
+static u32 span_clock(void)
+{
+    return DEBUG_READ32(clk_addr);
+}
+
+static void span_reset(void)
+{
+    u32 i;
+    el_ticks = 0;
+    if (profiling)
+        el_last = DEBUG_READ32(clk_addr);
+    for (i = 0; i < SPAN_ROWS; i++) {
+        span_rows[i].calls = 0;
+        span_rows[i].sum = 0;
+        span_rows[i].max = 0;
+    }
+}
+
+static void span_stop(void)
+{
+    span_elapse();
+    dk_span_sink_set(0, 0);
+    profiling = 0;
+}
+
+static int32_t cmd_profile_state(const u8 *body, u32 len, u8 *out)
+{
+    u32 i;
+    if (len != 1u)
+        return E_MSG;
+    if (body[0] == 1u && !profiling) {
+        int32_t r;
+        if (clk_addr == 0u)
+            return E_PROTO; /* no clock on this device */
+        r = dk_span_sink_set((uint8_t *)span_sink, (uint8_t *)span_clock);
+        if (r != 0)
+            return r; /* DK_E_BUSY: another module owns the span channel */
+        profiling = 1;
+        el_last = DEBUG_READ32(clk_addr);
+    } else if (body[0] == 2u) {
+        if (profiling)
+            span_stop();
+    } else if (body[0] == 3u) {
+        span_reset();
+    } else if (body[0] > 3u) {
+        return E_PROTO;
+    }
+    span_elapse();
+    out[0] = profiling;
+    dk_bytes_put32(out + 1, clk_hz);
+    out[5] = (u8)(SPAN_ROWS >> 8);
+    out[6] = (u8)SPAN_ROWS;
+    dk_bytes_put32(out + 7, (u32)(el_ticks >> 32));
+    dk_bytes_put32(out + 11, (u32)el_ticks);
+    for (i = 0; i < SPAN_POLLS; i++) {
+        u32 fn = 0;
+        out[15u + 5u * i] = (u8)dk_debug_poll(i, &fn);
+        dk_bytes_put32(out + 16u + 5u * i, fn);
+    }
+    return (int32_t)(15u + 5u * SPAN_POLLS);
+}
+
+static int32_t cmd_profile_read(const u8 *body, u32 len, u8 *out)
+{
+    u32 first, n, i;
+    if (len != 2u)
+        return E_MSG;
+    first = ((u32)body[0] << 8) | body[1];
+    if (first >= SPAN_ROWS)
+        return E_PEEK;
+    n = SPAN_ROWS - first;
+    if (n > SPAN_PER_REPLY)
+        n = SPAN_PER_REPLY;
+    out[0] = body[0];
+    out[1] = body[1];
+    out[2] = (u8)n;
+    for (i = 0; i < n; i++) {
+        const SpanRow *w = &span_rows[first + i];
+        u8 *o = out + 3u + 16u * i;
+        dk_bytes_put32(o, w->calls);
+        dk_bytes_put32(o + 4, (u32)(w->sum >> 32));
+        dk_bytes_put32(o + 8, (u32)w->sum);
+        dk_bytes_put32(o + 12, w->max);
+    }
+    return (int32_t)(3u + 16u * n);
+}
+
+static int32_t cmd_profile(u32 c, u32 seq, const void *body, u32 len, void *out)
+{
+    (void)seq;
+    if (c == CMD_PROFILE_STATE)
+        return cmd_profile_state(body, len, out);
+    if (c == CMD_PROFILE_READ)
+        return cmd_profile_read(body, len, out);
+    return E_PROTO;
 }
 
 static int32_t cmd(u32 c, u32 seq, const void *body, u32 len, void *out)
@@ -695,6 +877,11 @@ static int32_t init(dk_module_ctx *ctx)
         dk_log(DK_LOG_INFO, "debug: dk_host_register refused", 0);
         return DK_E_CMD_RANGE;
     }
+    if (dk_host_register(CMD_PROFILE_FIRST, CMD_PROFILE_COUNT, cmd_profile) != 0) {
+        dk_log(DK_LOG_INFO, "debug: dk_host_register refused (profile)", 0);
+        return DK_E_CMD_RANGE;
+    }
+    clk_addr = dk_debug_span_clock(&clk_hz);
     cl_init(ctx);
     dk_debug_log_sink_set((uint8_t *)sink, (uint8_t *)tick);
     return DK_OK;
@@ -704,6 +891,8 @@ static void fini(dk_module_ctx *ctx)
 {
     (void)ctx;
     dk_debug_log_sink_set(0, 0);
+    if (profiling)
+        span_stop();
     if (job_id > 0)
         dk_io_cancel(job_id); /* the runtime aborts a session the job leaves open */
     job_id = 0;

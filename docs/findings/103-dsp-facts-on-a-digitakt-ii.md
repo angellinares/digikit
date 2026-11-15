@@ -36,7 +36,7 @@ The core reproduces 59 of 59 value items (`tests/sharc/semantics/test_sharc_dsp_
 | Fixed-point add, subtract, negate and abs set the sticky AOS (STKY bit 2, 0x4) with AV, with or without ALUSAT. | `add`, `sub`, `neg`, `abs` of the overflow cases: STKY 0x4. |
 | With MODE1.ALUSAT set the same operations saturate: a positive overflow returns `0x7FFFFFFF`, a negative one `0x80000000`. AN and AZ describe the returned word; AC and AV stay those of the adder. | `add_sat` 0x7fffffff + 1: `0x7FFFFFFF`, ASTAT 0x2 (emulator wrapped, 0x6). `add_sat` 0x80000000 + 0x80000000: `0x80000000`, 0xe. `sub_sat`, `neg_sat`, `abs_sat` (0x12: AV and AS) the same way. |
 | The float multiplier's invalid result (a NaN operand, infinity times zero) is `0x7FFFFFFF` with MI set and **MN clear** (not all ones). Measured with positive operands only. | `fmul` +inf * 0, NaN * 1: ASTAT 0x200, STKY 0x200; emulator `0x7FC00000` and `0xFFFFFFFF` with MN. |
-| Reading an MR word into a register leaves the multiplier flags. [C] PRM p.493 says MU, MN, MI and MV are cleared for every direction. | `MRF = R1 * R2 (SSFR); R0 = MR1F;` with -1.0 * -1.0: ASTAT 0x80 (MV), emulator 0. |
+| Reading an MR word into a register and the multiplier flags. **[O]** PRM p.493 says MU, MN, MI and MV are cleared for every direction. | Not measured: the probe's `MRF = R1 * R2 (SSFR)` was encoded without the rounding modifier, so its ASTAT 0x80 (MV) is no evidence. |
 
 Operation names: the sticky latch compares the operation name of a compute. The underflow cases have their own literal names (`float-add-underflow`, `float-subtract-underflow`, `fix-underflow`, `fix-scaled-underflow`) and `float-min`/`float-max` are literals now; the translator erases a name built at run time (the lesson of finding 102).
 
@@ -49,10 +49,10 @@ Two reads of each register gave the same value (the registers are stable while t
 | IMASK | `0x8040801b` | `0x80408018` | bits 0 and 1 are set on the device |
 | IMASKP | `0x00000000` | same | |
 | IRPTL | `0x07a00800` | `0x00000800` | pending bits change with timing; not worth modelling |
-| LIRPTL | `0x8040801b` | `0x80408018` | equals IMASK on both |
 | MODE2 | `0x42000021` | `0x00000021` | the device has bits 25 and 30 set |
-| MMASK | `0x00000000` | same | |
-| TPERIOD, TCOUNT | `0x0025f280`, `0x2009ce58` | same on the DT2 emulator | the timer does not run in the probe (TCOUNT is the same in both reads) |
+| MMASK | **[O]** not measured | | the probe read IMASKP: the assembler at that time encoded this register name wrongly |
+| TPERIOD, TCOUNT | **[O]** not measured | | the probe read I0 and I1: the assembler at that time encoded these register names wrongly |
+| LIRPTL | **[O]** not measured | | the probe read IMASK: the assembler at that time encoded the name wrongly; SHARC+ has no LIRPTL register (Core Programming Reference, "Unlike previous SHARC processors, the SHARC+ core does not have an LIRPTL register") |
 | SHDBG_REVID (0x30026) | `0x00000020` | `0x00000021` | |
 | SHDBG_CORE_ID (0x300ED) | `0x00000000` | same | |
 | SHDBG_OSPID (0x30023) | `0x00224601` | the TPERIOD value | the emulator aliases the address to the timer period |
@@ -64,7 +64,7 @@ Two reads of each register gave the same value (the registers are stable while t
 | SHL1C_RANGE 4 to 7 | all `0x00000000` | garbage for 4 and 5, 0 for 6 and 7 | |
 | CMMR_PFB_NOCHRT0_START, _END, CMMR_GPERR_STAT, CMMR_PWR_L1_SD_CTL, _GLB_CTL, _L1_LS_CTL, PFM_CFG | all `0x00000000` | same | |
 
-What matters for the model: the non-cacheable ranges (range registers 2 and 3, each from start up to but not including end: `0x200fa000`-`0x200fe000` and `0x28240000`-`0x283a0000`; SHL1C_CFG2 `0xf0` sets RR2EN, RR2SEL, RR3EN and RR3SEL, and RRnSEL = 1 means non-cacheable, SHARC+ Core Programming Reference, Table 32-3; L2 and DDR outside them are cached), the ID registers (REVID `0x20`, OSPID `0x00224601`), IMASK and MODE2. A register read costs 2 to 5 cycles, IMASK and IRPTL 27, TPERIOD 22, CMMR_PWR_L1_SD_CTL 28 (the emulator: 2 for all).
+What matters for the model: the non-cacheable ranges (range registers 2 and 3, each from start up to but not including end: `0x200fa000`-`0x200fe000` and `0x28240000`-`0x283a0000`; SHL1C_CFG2 `0xf0` sets RR2EN, RR2SEL, RR3EN and RR3SEL, and RRnSEL = 1 means non-cacheable, SHARC+ Core Programming Reference, Table 32-3; L2 and DDR outside them are cached), the ID registers (REVID `0x20`, OSPID `0x00224601`), IMASK and MODE2. A register read costs 2 to 5 cycles, IMASK and IRPTL 27, CMMR_PWR_L1_SD_CTL 28 (the emulator: 2 for all). **[O]** The costs of the SHL1C_CFG, SHL1C_CFG2 and range register reads (records 118 to 135) are not verified: their two cycle-counter reads were 48-bit moves, which the assembler at that time encoded as reads of LCNTR.
 
 ## 5. The emulator against the device **[D]**
 
@@ -94,6 +94,8 @@ The unchanged hashes show that these scenarios do not reach a changed case (a sa
 
 ## 8. Cycles of the device against the emulator **[D]**
 
+**[O]** The "float multiply with parallel add" item measured a plain float multiply: the assembler at that time did not encode the source's dual form (`F8 = F0 * F1, F12 = F4 + F5`, whose ALU operands are invalid) as a dual operation. The cost of the dual operation is not measured.
+
 For later cycle-model work. Cycles are net of the cost of the pair of cycle-counter reads (1 cycle). `min` is the smallest of 8 repeats over 48 runs, `cold` the extra cost of the first repeat (cold caches and predictors). The emulator column is the capture before the change (the emulator counts one cycle per instruction plus the jump costs it models).
 
 | Snippet | Units | Device (cycles per unit) | Cold extra | Emulator |
@@ -101,7 +103,7 @@ For later cycle-model work. Cycles are net of the cost of the pair of cycle-coun
 | NOP, independent ALU ops, 48-bit encodings | 16 or 64 | 1.0 | 0 to 150 | 1.0 |
 | float multiply, independent | 32 | 1.0 | 42 | 1.0 |
 | float multiply, dependent chain | 32 | **1.5** | 35 | 1.0 |
-| fixed MAC, float multiply with parallel add | 32 | 1.0 | 43, 66 | 1.0 |
+| fixed MAC; float multiply with parallel add | 32 | 1.0 | 43, 66 | 1.0 |
 | hardware loop of 1 instruction, per pass | 64 or 256 | 1.0, start cost 12 | 0 to 25 | 1.0, start cost 1 |
 | hardware loop of 4 and of 16 instructions | 64 passes | 4.19 and 16.19 per pass (slope 16.0, start cost 12) | 18, 41 | 4.02 and 16.02 |
 | conditional jump not taken | 32 | 1.0 | 72 | 1.0 |
@@ -141,7 +143,7 @@ The L2 conflict case shows that L2 data is cached in a 16 KiB cache that maps li
 2026-11-01, real Digitone II, OS 1.12, image `44c2d5d6d0341420` (runtime with `digikit/debug`): `out/probe/facts-dn2-device.json`, 143 of 143 items, 48 runs, no sequence or checksum errors, compared with the Digitakt II capture.
 
 - Value items: all 59 equal the Digitakt II (masked as in section 1).
-- Registers: equal except three that the firmware sets, not the core: the core timer period `0x00268538` (DT2 `0x0025f280`), the timer count `0x200da318` (DT2 `0x2009ce58`) and OSPID `0x07674700` (DT2 `0x00224601`).
+- Registers: equal except OSPID `0x07674700` (DT2 `0x00224601`), which the firmware sets, not the core. TPERIOD, TCOUNT, MMASK and LIRPTL are not measured (section 4).
 - Cycles: every snippet costs the same as on the Digitakt II (the L2 conflict loads 2769 against 2803 cycles for 4096 loads).
 - One block: median 666784 cycles, standard deviation 3730 (DT2: 666582, 3459).
 

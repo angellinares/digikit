@@ -854,6 +854,43 @@ const SCENES = [
       await p.wait(300);
     },
   },
+  // ---- the Profile pane (preview/profile-backend.mock.ts): prof=rec|stopped|nodebug; the graph needs a minute of readings ----
+  {
+    // the emulator while recording: header, a full 60 s graph with the effect loaded at 19 s, the table, the DSP per block
+    name: 'profile-emulator',
+    q: 'page=emulator&card=dn2&prof=rec',
+    size: [1440, 1100],
+    steps: async (p) => {
+      await p.wait(500);
+      await showTab(p, 'Profile');
+      await p.wait(62000);
+    },
+  },
+  {
+    // a device (the Remote page) after Stop: spans only, the whole-block DSP bar from HEALTH
+    name: 'profile-device',
+    q: 'page=remote&card=dt2&prof=rec',
+    size: [1440, 1100],
+    steps: async (p) => {
+      await p.wait(500);
+      await showTab(p, 'Profile');
+      await p.wait(62000);
+      await p.eval(
+        "(() => { for (const b of document.querySelectorAll('.profile-panel .act')) if (b.textContent.trim() === 'Stop') b.click(); })()",
+      );
+      await p.wait(1500);
+    },
+  },
+  {
+    name: 'profile-nodebug',
+    q: 'page=remote&card=dt2&prof=nodebug',
+    size: WIDE,
+    steps: async (p) => {
+      await p.wait(500);
+      await showTab(p, 'Profile');
+      await p.wait(800);
+    },
+  },
   // ---- the right-hand column of the Emulator page: tabs (Card, Memory, Metrics) over one panel; folded, a rail ----
   ...['dn2', 'dt2'].map((dev) => ({
     name: `side-${dev}`,
@@ -1009,7 +1046,7 @@ const SCENES = [
       async (p) => {
         await p.click(/^Level/);
         await p.wait(400);
-        // the module row of freqshift: error; the default row: trace
+        // the module row of chorus: error; the default row: trace
         await p.eval(
           "(() => { const rows = [...document.querySelectorAll('.level-row')]; const pick = (row, name) => [...row.querySelectorAll('button')].find((b) => b.textContent === name)?.click(); pick(rows[0], 'trace'); pick(rows[2], 'error'); })()",
         );

@@ -46,8 +46,39 @@ static mut LINK: Link = Link {
     events: Vec::new(),
 };
 
+/// A `dyndsp_info` table that replaces `VOICE_INFO` while a test holds the lock (null: none).
+pub static mut VOICE_INFO_OVERRIDE: *const u32 = core::ptr::null();
+
+/// Sets `VOICE_INFO_OVERRIDE` for its lifetime and clears it on drop, also when the test panics. Hold it under `LOCK`.
+pub(crate) struct VoiceInfoGuard;
+impl VoiceInfoGuard {
+    pub(crate) unsafe fn set(info: *const u32) -> Self {
+        VOICE_INFO_OVERRIDE = info;
+        VoiceInfoGuard
+    }
+}
+impl Drop for VoiceInfoGuard {
+    fn drop(&mut self) {
+        unsafe { VOICE_INFO_OVERRIDE = core::ptr::null() }
+    }
+}
+
+/// Clears `LINK.no_fx_info` on drop: the flag outlives the test that sets it and made the effect check of a later test refuse with `E_NO_DSP`.
+struct NoFxInfoGuard;
+impl Drop for NoFxInfoGuard {
+    fn drop(&mut self) {
+        unsafe { LINK.no_fx_info = false }
+    }
+}
+
 pub fn voice_info() -> *const u32 {
-    VOICE_INFO.as_ptr()
+    unsafe {
+        if VOICE_INFO_OVERRIDE.is_null() {
+            VOICE_INFO.as_ptr()
+        } else {
+            VOICE_INFO_OVERRIDE
+        }
+    }
 }
 pub unsafe fn fx_info() -> *const u32 {
     if LINK.no_fx_info {
@@ -330,6 +361,7 @@ fn missing_fx_info_retains_published_row() {
     let _g = LOCK.lock().unwrap_or_else(|e| e.into_inner());
     unsafe {
         seed(Completion::Ack, true, true, true);
+        let _reset = NoFxInfoGuard;
         LINK.no_fx_info = true;
         pass();
         assert_retained(true, 0);

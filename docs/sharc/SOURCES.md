@@ -25,6 +25,7 @@ Public software used as an independent decoder/corpus cross-check:
 | Repository | Revision | Used for |
 |---|---|---|
 | [`js216/selache`](https://github.com/js216/selache) | `2b26d3b75c53063575bc5c820fa0d38879335187` | SHARC+ VISA width and `0x02`-prefixed immediate-shift decode; the decoded ShiftImm field and operation semantics were checked independently against the public programming reference |
+| [`ElekLabs/selache`](https://github.com/ElekLabs/selache) (fork of `js216/selache`) | `967c1d1e4d02e41f483181964f0ba333558a1fa7` | The SHARC+ assembler and linker libraries that patchkit links (`selas`, `selelf`, `selinstr`) and the command-line tools of `tools/patchkit/pk_toolchains.py`. Pinned in `packages/patchkit/Cargo.toml`, `packages/patchkit/src/build/sharc_obj.rs`, `tools/patchkit/pk_toolchains.py` and `tools/sharc_dev/sharc_selache.py`; the fork's relocation definitions (`selelf`) are the reference for the relocation rules in `sharc_obj.rs` |
 | [`analogdevicesinc/runtime-sharc-loader`](https://github.com/analogdevicesinc/runtime-sharc-loader) | `bbb85bb59b203f4219a831814a721f7646f27498` | Public SHARC+ source/loader corpus containing aligned matching byte sequences; executable placement and source-line association are not established |
 
 `tools/firmware/elz.py`, the section decompressor, follows the format of `aplib.c` in

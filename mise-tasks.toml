@@ -192,8 +192,8 @@ run = "uv run --no-project --python pypy3.11 --with pytest --with networkx pytho
 description = "The SHARC core's tests under PyPy 3.11 (slow; needs uv and a PyPy download)"
 
 ["lint:rust"]
-run = "pnpm nx:pilot run workspace:rust-fmt"
-description = "cargo fmt --check on the crates listed in the workspace rust-fmt target"
+run = ["pnpm nx:pilot run workspace:rust-fmt", "pnpm nx:pilot run workspace:rust-clippy"]
+description = "cargo fmt --check and cargo clippy on the crates listed in the workspace rust-fmt and rust-clippy targets"
 
 ["fmt:c"]
 run = "pnpm fmt:c"

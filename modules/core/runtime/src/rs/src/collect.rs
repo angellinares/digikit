@@ -39,11 +39,9 @@ const REG_MAGIC: u32 = 0x444b_5247;
 const HEADER: usize = 16;
 const POS_END: u32 = 255;
 
-pub const ROUTE_MASTER: u32 = 1;
-pub const ROUTE_SEND: u32 = 2;
-const FXF_SEND: u32 = 1;
-const FXF_NOMASTER: u32 = 2;
-const FXF_DEFAULT_SEND: u32 = 4;
+pub const ROUTE_MASTER: u32 = dkneeds::page::DK_ROUTE_MASTER;
+pub const ROUTE_SEND: u32 = dkneeds::page::DK_ROUTE_SEND;
+use dkneeds::{FXF_DEFAULT_SEND, FXF_NOMASTER, FXF_SEND};
 /// `DK_BIPOLAR` of the display kind of `dk_page_add_fx_param` (`DK_PERCENT` is 1).
 const DK_BIPOLAR: u32 = 2;
 
@@ -690,11 +688,11 @@ impl KeysCopy {
 
 /// Header fields of a `.dkm` that the keys table lookup needs (the loader reads the rest; offsets are big endian).
 pub(crate) mod dkm {
-    pub const MAGIC: u32 = 0x444b_4d46; // "DKMF"
-    pub const HEADER: u32 = 0xa0;
-    pub const H_SIZE: usize = 0x08;
-    pub const H_REG_OFF: usize = 0x90;
-    pub const H_REG_SIZE: usize = 0x94;
+    pub use dkneeds::{HEADER, MAGIC};
+    pub const H_MAGIC: usize = dkneeds::H_MAGIC as usize;
+    pub const H_SIZE: usize = dkneeds::H_SIZE as usize;
+    pub const H_REG_OFF: usize = dkneeds::H_REG_OFF as usize;
+    pub const H_REG_SIZE: usize = dkneeds::H_REG_SIZE as usize;
 }
 
 /// The machine keys of the keys table of a whole `.dkm` file, for the boot's type assignment (`assign::plan`): at most 8, the count returned.
@@ -702,7 +700,7 @@ pub(crate) mod dkm {
 pub fn machine_keys(file: &[u8], out: &mut [u32; 8]) -> usize {
     let be = |at: usize| u32::from_be_bytes([file[at], file[at + 1], file[at + 2], file[at + 3]]);
     let size = file.len() as u32;
-    if size < dkm::HEADER || be(0) != dkm::MAGIC || be(dkm::H_SIZE) != size {
+    if size < dkm::HEADER || be(dkm::H_MAGIC) != dkm::MAGIC || be(dkm::H_SIZE) != size {
         return 0;
     }
     let (off, len) = (be(dkm::H_REG_OFF), be(dkm::H_REG_SIZE));
