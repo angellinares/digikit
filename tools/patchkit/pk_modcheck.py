@@ -217,8 +217,18 @@ def _measure(mid: str, devices: list[str]) -> dict[str, dict]:
             )
             if r.returncode:
                 continue  # not packed for this device (ports); the size lines say why
+            # module:check packs the debug module itself so it needs no Nx pack output
+            dbg = Path(tmp) / f"debug-{dev}.dkm"
+            d = patchkit.run(
+                ["pack", "digikit/debug", "--device", dev, "-o", str(dbg)],
+                capture=True,
+            )
+            if d.returncode:
+                raise RuntimeError(
+                    f"packing digikit/debug for {dev} failed:\n{(d.stderr or '').strip()}"
+                )
             per[dev] = pk_committed.committed(
-                mid, dev, out, str(patchkit.binary()), _daemon(dev)
+                mid, dev, out, str(patchkit.binary()), _daemon(dev), debug_dkm=dbg
             )
     return per
 
@@ -349,7 +359,8 @@ def own_device_targets(mid: str) -> list[str]:
 def run_device_targets(mid: str, targets: list[str], device: str | None = None) -> int:
     """Resolve the device inputs once, then schedule all owned suites serially through Nx. Without DEVICE both devices run through each
     project's `test-device-all`. With DEVICE only that device's inputs are resolved (a missing image of the other device does not matter) and
-    only the per-file run halves `test-device-all--<file>--<device>` of the owners run; with none, there is nothing to run and the result is 0."""
+    only the run halves of the owners run: `test-device-all--<file>--<device>`, or `test-device-all--<device>` in a project with one test file;
+    with none, there is nothing to run and the result is 0."""
     from tools.devtools import benchlock
     from tools.patchkit import pk_harness
 
@@ -367,7 +378,7 @@ def run_device_targets(mid: str, targets: list[str], device: str | None = None) 
     projects = [t.rsplit(":", 1)[0] for t in targets]
     names = ["test-device-all"]
     if device is not None:
-        pattern = re.compile(rf"^test-device-all--.+--{re.escape(device)}$")
+        pattern = re.compile(rf"^test-device-all(--.+)?--{re.escape(device)}$")
         found: set[str] = set()
         for project in projects:
             r = subprocess.run(

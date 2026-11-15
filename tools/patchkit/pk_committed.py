@@ -28,12 +28,19 @@ CLI = "tools/devtools/commit_records.ts"
 
 
 def committed(
-    mid: str, device: str, dkm: Path, patchkit: str, binary: str | None = None
+    mid: str,
+    device: str,
+    dkm: Path,
+    patchkit: str,
+    binary: str | None = None,
+    debug_dkm: Path | None = None,
 ) -> dict[str, Any]:
-    """The decoded records of module MID (packed as DKM) on DEVICE: `{module, commit, records}` of `commit_records.ts`."""
+    """The decoded records of module MID (packed as DKM) on DEVICE: `{module, commit, records}` of `commit_records.ts`.
+    DEBUG_DKM is the packed debug module the device boots with; without it the tool reads `dist/modules/<device>/debug.dkm`."""
     cmd = [
         "node", CLI, "--device", device, "--module", mid, "--dkm", str(dkm), "--patchkit", patchkit,
         *(["--binary", binary] if binary else []),
+        *(["--debug-dkm", str(debug_dkm)] if debug_dkm else []),
     ]  # fmt: skip
     r = subprocess.run(cmd, cwd=ROOT, capture_output=True, text=True)
     if r.returncode:
