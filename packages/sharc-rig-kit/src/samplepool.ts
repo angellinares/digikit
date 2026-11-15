@@ -48,9 +48,11 @@ export function publish(
   srcRate: number,
   channels: number,
   token = TOKEN,
+  planeL = PLANE_L,
+  planeR = PLANE_R,
 ): void {
   const rec = base + 8 * index;
-  const baseR = channels === 1 ? PLANE_L : PLANE_R;
-  [0, token, frames, srcRate, channels, 1, PLANE_L, baseR].forEach((w, k) => poke(rec + k, w));
+  const baseR = channels === 1 ? planeL : planeR;
+  [0, token, frames, srcRate, channels, 1, planeL, baseR].forEach((w, k) => poke(rec + k, w));
   poke(rec, 1); // ready last
 }

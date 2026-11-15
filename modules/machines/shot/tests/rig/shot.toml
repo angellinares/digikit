@@ -1,0 +1,1672 @@
+# digikit/shot on the SHARC-only rig (replaces modules/machines/shot/tests/test_shot_playback.py).
+# The tables ref/*.f32 are the output of the Python reader model of that test for the same scenarios (tools/devtools/rig_refs.py shot); the PCM of
+# the pool entries is ref/pcm-*.i16 (the numpy generator's int16 words). The count word of the pool's control set is checked after every block.
+
+[[case]]
+name = "default parameters play the whole sample (dt2)"
+device = ["dt2"]
+context = "friendly"
+pool_ctl = "_shot_sample_ctl"
+right = true
+
+[[case.pool]]
+index = 0
+frames = 200
+rate = 48000
+channels = 2
+token = 7
+planes = "ref/pcm-1-2.i16"
+
+
+[[case.step]]
+note = 60
+vel = 100
+params = { sample = 0, start = 0, end = 32512, play = 768, pitch = 16384 }
+blocks = 8
+
+[[case.check]]
+kind = "matches-table"
+file = "ref/default-dt2-l.f32"
+blocks = [0, 8]
+atol = 0
+
+[[case.check]]
+kind = "peak"
+min = 0.04
+
+[[case.check]]
+kind = "cursor"
+block = 7
+index = 4
+equals = 65536
+tol = 2
+signed = true
+
+[[case.check]]
+kind = "matches-table"
+file = "ref/default-dt2-r.f32"
+channel = "right"
+atol = 0
+
+
+[[case]]
+name = "default parameters play the whole sample (dn2)"
+device = ["dn2"]
+context = "friendly"
+pool_ctl = "_shot_sample_ctl"
+right = false
+
+[[case.pool]]
+index = 0
+frames = 200
+rate = 48000
+channels = 2
+token = 7
+planes = "ref/pcm-1-2.i16"
+
+
+[[case.step]]
+note = 60
+vel = 100
+params = { sample = 0, start = 0, end = 32512, play = 768, pitch = 16384 }
+blocks = 9
+
+[[case.check]]
+kind = "matches-table"
+file = "ref/default-dn2-l.f32"
+blocks = [1, 9]
+atol = 0
+
+[[case.check]]
+kind = "peak"
+min = 0.04
+
+[[case.check]]
+kind = "cursor"
+block = 8
+index = 4
+equals = 65536
+tol = 2
+signed = true
+
+
+[[case]]
+name = "start end and play select the frames: window"
+device = ["dt2"]
+context = "friendly"
+pool_ctl = "_shot_sample_ctl"
+right = true
+
+[[case.pool]]
+index = 0
+frames = 200
+rate = 48000
+channels = 2
+token = 7
+planes = "ref/pcm-1-2.i16"
+
+
+[[case.step]]
+note = 60
+vel = 100
+params = { sample = 0, start = 10240, end = 25600, play = 768, pitch = 16384 }
+blocks = 8
+
+[[case.check]]
+kind = "matches-table"
+file = "ref/start-end-and-play-select-the-frames-window-l.f32"
+atol = 0
+
+[[case.check]]
+kind = "matches-table"
+file = "ref/start-end-and-play-select-the-frames-window-r.f32"
+channel = "right"
+atol = 0
+
+[[case.check]]
+kind = "cursor"
+block = 7
+index = 4
+equals = 65536
+tol = 2
+signed = true
+
+
+[[case]]
+name = "start end and play select the frames: end-only"
+device = ["dt2"]
+context = "friendly"
+pool_ctl = "_shot_sample_ctl"
+right = true
+
+[[case.pool]]
+index = 0
+frames = 200
+rate = 48000
+channels = 2
+token = 7
+planes = "ref/pcm-1-2.i16"
+
+
+[[case.step]]
+note = 60
+vel = 100
+params = { sample = 0, start = 0, end = 12800, play = 768, pitch = 16384 }
+blocks = 8
+
+[[case.check]]
+kind = "matches-table"
+file = "ref/start-end-and-play-select-the-frames-end-only-l.f32"
+atol = 0
+
+[[case.check]]
+kind = "matches-table"
+file = "ref/start-end-and-play-select-the-frames-end-only-r.f32"
+channel = "right"
+atol = 0
+
+[[case.check]]
+kind = "cursor"
+block = 7
+index = 4
+equals = 65536
+tol = 2
+signed = true
+
+
+[[case]]
+name = "start end and play select the frames: reverse"
+device = ["dt2"]
+context = "friendly"
+pool_ctl = "_shot_sample_ctl"
+right = true
+
+[[case.pool]]
+index = 0
+frames = 200
+rate = 48000
+channels = 2
+token = 7
+planes = "ref/pcm-1-2.i16"
+
+
+[[case.step]]
+note = 60
+vel = 100
+params = { sample = 0, start = 0, end = 23040, play = 0, pitch = 16384 }
+blocks = 8
+
+[[case.check]]
+kind = "matches-table"
+file = "ref/start-end-and-play-select-the-frames-reverse-l.f32"
+atol = 0
+
+[[case.check]]
+kind = "matches-table"
+file = "ref/start-end-and-play-select-the-frames-reverse-r.f32"
+channel = "right"
+atol = 0
+
+[[case.check]]
+kind = "cursor"
+block = 7
+index = 4
+equals = -65536
+tol = 2
+signed = true
+
+
+[[case]]
+name = "start end and play select the frames: reverse-start"
+device = ["dt2"]
+context = "friendly"
+pool_ctl = "_shot_sample_ctl"
+right = true
+
+[[case.pool]]
+index = 0
+frames = 200
+rate = 48000
+channels = 2
+token = 7
+planes = "ref/pcm-1-2.i16"
+
+
+[[case.step]]
+note = 60
+vel = 100
+params = { sample = 0, start = 5120, end = 32512, play = 0, pitch = 16384 }
+blocks = 8
+
+[[case.check]]
+kind = "matches-table"
+file = "ref/start-end-and-play-select-the-frames-reverse-start-l.f32"
+atol = 0
+
+[[case.check]]
+kind = "matches-table"
+file = "ref/start-end-and-play-select-the-frames-reverse-start-r.f32"
+channel = "right"
+atol = 0
+
+[[case.check]]
+kind = "cursor"
+block = 7
+index = 4
+equals = -65536
+tol = 2
+signed = true
+
+
+[[case]]
+name = "pitch is the note plus the pitch parameter: note+12"
+device = ["dt2"]
+context = "friendly"
+pool_ctl = "_shot_sample_ctl"
+right = true
+
+[[case.pool]]
+index = 0
+frames = 200
+rate = 48000
+channels = 2
+token = 7
+planes = "ref/pcm-1-2.i16"
+
+
+[[case.step]]
+note = 72
+vel = 100
+params = { sample = 0, start = 0, end = 32512, play = 768, pitch = 16384 }
+blocks = 8
+
+[[case.check]]
+kind = "matches-table"
+file = "ref/pitch-is-the-note-plus-the-pitch-parameter-notep12-l.f32"
+atol = 0
+
+[[case.check]]
+kind = "matches-table"
+file = "ref/pitch-is-the-note-plus-the-pitch-parameter-notep12-r.f32"
+channel = "right"
+atol = 0
+
+[[case.check]]
+kind = "cursor"
+block = 7
+index = 4
+equals = 131072
+tol = 2
+signed = true
+
+
+[[case]]
+name = "pitch is the note plus the pitch parameter: note-12"
+device = ["dt2"]
+context = "friendly"
+pool_ctl = "_shot_sample_ctl"
+right = true
+
+[[case.pool]]
+index = 0
+frames = 200
+rate = 48000
+channels = 2
+token = 7
+planes = "ref/pcm-1-2.i16"
+
+
+[[case.step]]
+note = 48
+vel = 100
+params = { sample = 0, start = 0, end = 32512, play = 768, pitch = 16384 }
+blocks = 8
+
+[[case.check]]
+kind = "matches-table"
+file = "ref/pitch-is-the-note-plus-the-pitch-parameter-note-12-l.f32"
+atol = 0
+
+[[case.check]]
+kind = "matches-table"
+file = "ref/pitch-is-the-note-plus-the-pitch-parameter-note-12-r.f32"
+channel = "right"
+atol = 0
+
+[[case.check]]
+kind = "cursor"
+block = 7
+index = 4
+equals = 32768
+tol = 2
+signed = true
+
+
+[[case]]
+name = "pitch is the note plus the pitch parameter: pitch+12"
+device = ["dt2"]
+context = "friendly"
+pool_ctl = "_shot_sample_ctl"
+right = true
+
+[[case.pool]]
+index = 0
+frames = 200
+rate = 48000
+channels = 2
+token = 7
+planes = "ref/pcm-1-2.i16"
+
+
+[[case.step]]
+note = 60
+vel = 100
+params = { sample = 0, start = 0, end = 32512, play = 768, pitch = 24576 }
+blocks = 8
+
+[[case.check]]
+kind = "matches-table"
+file = "ref/pitch-is-the-note-plus-the-pitch-parameter-pitchp12-l.f32"
+atol = 0
+
+[[case.check]]
+kind = "matches-table"
+file = "ref/pitch-is-the-note-plus-the-pitch-parameter-pitchp12-r.f32"
+channel = "right"
+atol = 0
+
+[[case.check]]
+kind = "cursor"
+block = 7
+index = 4
+equals = 131072
+tol = 2
+signed = true
+
+
+[[case]]
+name = "pitch is the note plus the pitch parameter: pitch-12"
+device = ["dt2"]
+context = "friendly"
+pool_ctl = "_shot_sample_ctl"
+right = true
+
+[[case.pool]]
+index = 0
+frames = 200
+rate = 48000
+channels = 2
+token = 7
+planes = "ref/pcm-1-2.i16"
+
+
+[[case.step]]
+note = 60
+vel = 100
+params = { sample = 0, start = 0, end = 32512, play = 768, pitch = 8192 }
+blocks = 8
+
+[[case.check]]
+kind = "matches-table"
+file = "ref/pitch-is-the-note-plus-the-pitch-parameter-pitch-12-l.f32"
+atol = 0
+
+[[case.check]]
+kind = "matches-table"
+file = "ref/pitch-is-the-note-plus-the-pitch-parameter-pitch-12-r.f32"
+channel = "right"
+atol = 0
+
+[[case.check]]
+kind = "cursor"
+block = 7
+index = 4
+equals = 32768
+tol = 2
+signed = true
+
+
+[[case]]
+name = "pitch is the note plus the pitch parameter: note+7,pitch+2.25"
+device = ["dt2"]
+context = "friendly"
+pool_ctl = "_shot_sample_ctl"
+right = true
+
+[[case.pool]]
+index = 0
+frames = 200
+rate = 48000
+channels = 2
+token = 7
+planes = "ref/pcm-1-2.i16"
+
+
+[[case.step]]
+note = 67
+vel = 100
+params = { sample = 0, start = 0, end = 32512, play = 768, pitch = 17920 }
+blocks = 8
+
+[[case.check]]
+kind = "matches-table"
+file = "ref/pitch-is-the-note-plus-the-pitch-parameter-notep7-pitchp2-25-l.f32"
+atol = 0
+
+[[case.check]]
+kind = "matches-table"
+file = "ref/pitch-is-the-note-plus-the-pitch-parameter-notep7-pitchp2-25-r.f32"
+channel = "right"
+atol = 0
+
+[[case.check]]
+kind = "cursor"
+block = 7
+index = 4
+equals = 111821
+tol = 2
+signed = true
+
+
+[[case]]
+name = "a source rate of 24 kHz scales the cursor"
+device = ["dt2"]
+context = "friendly"
+pool_ctl = "_shot_sample_ctl"
+right = true
+
+[[case.pool]]
+index = 0
+frames = 200
+rate = 24000
+channels = 2
+token = 7
+planes = "ref/pcm-1-2.i16"
+
+
+[[case.step]]
+note = 60
+vel = 100
+params = { sample = 0, start = 0, end = 32512, play = 768, pitch = 16384 }
+blocks = 12
+
+[[case.check]]
+kind = "matches-table"
+file = "ref/a-source-rate-of-24-khz-scales-the-cursor-l.f32"
+atol = 0
+
+[[case.check]]
+kind = "matches-table"
+file = "ref/a-source-rate-of-24-khz-scales-the-cursor-r.f32"
+channel = "right"
+atol = 0
+
+[[case.check]]
+kind = "cursor"
+block = 11
+index = 4
+equals = 32768
+tol = 2
+signed = true
+
+
+[[case]]
+name = "a mono sample plays centred"
+device = ["dt2"]
+context = "friendly"
+pool_ctl = "_shot_sample_ctl"
+right = true
+
+[[case.pool]]
+index = 0
+frames = 200
+rate = 48000
+channels = 1
+token = 7
+planes = "ref/pcm-1-2.i16"
+
+
+[[case.step]]
+note = 60
+vel = 100
+params = { sample = 0, start = 0, end = 32512, play = 768, pitch = 16384 }
+blocks = 8
+
+[[case.check]]
+kind = "matches-table"
+file = "ref/a-mono-sample-plays-centred-l.f32"
+atol = 0
+
+[[case.check]]
+kind = "matches-table"
+file = "ref/a-mono-sample-plays-centred-r.f32"
+channel = "right"
+atol = 0
+
+[[case.check]]
+kind = "cursor"
+block = 7
+index = 4
+equals = 65536
+tol = 2
+signed = true
+
+
+[[case]]
+name = "another pool entry reads its own record"
+device = ["dt2"]
+context = "friendly"
+pool_ctl = "_shot_sample_ctl"
+right = true
+
+[[case.pool]]
+index = 3
+frames = 200
+rate = 48000
+channels = 2
+token = 7
+planes = "ref/pcm-1-2.i16"
+
+
+[[case.step]]
+note = 60
+vel = 100
+params = { sample = 768, start = 0, end = 32512, play = 768, pitch = 16384 }
+blocks = 8
+
+[[case.check]]
+kind = "matches-table"
+file = "ref/another-pool-entry-reads-its-own-record-l.f32"
+atol = 0
+
+[[case.check]]
+kind = "matches-table"
+file = "ref/another-pool-entry-reads-its-own-record-r.f32"
+channel = "right"
+atol = 0
+
+[[case.check]]
+kind = "cursor"
+block = 7
+index = 4
+equals = 65536
+tol = 2
+signed = true
+
+
+[[case]]
+name = "two SMP values pick two records (dt2)"
+device = ["dt2"]
+context = "friendly"
+pool_ctl = "_shot_sample_ctl"
+right = false
+
+[[case.pool]]
+index = 2
+frames = 200
+rate = 48000
+channels = 2
+token = 7
+planes = "ref/pcm-1-2.i16"
+
+
+[[case.pool]]
+index = 5
+frames = 200
+rate = 48000
+channels = 2
+token = 8
+planes = "ref/pcm-3-4.i16"
+plane_l = 0x200F4000
+plane_r = 0x200FC000
+
+
+[[case.step]]
+note = 60
+vel = 100
+params = { sample = 512, start = 0, end = 32512, play = 768, pitch = 16384 }
+blocks = 8
+
+[[case.step]]
+note = 60
+vel = 100
+params = { sample = 1280, start = 0, end = 32512, play = 768, pitch = 16384 }
+blocks = 8
+
+[[case.check]]
+kind = "matches-table"
+file = "ref/two-records-dt2-first.f32"
+blocks = [0, 8]
+atol = 0
+
+[[case.check]]
+kind = "matches-table"
+file = "ref/two-records-dt2-second.f32"
+blocks = [8, 16]
+atol = 0
+
+
+[[case]]
+name = "two SMP values pick two records (dn2)"
+device = ["dn2"]
+context = "friendly"
+pool_ctl = "_shot_sample_ctl"
+right = false
+
+[[case.pool]]
+index = 2
+frames = 200
+rate = 48000
+channels = 2
+token = 7
+planes = "ref/pcm-1-2.i16"
+
+
+[[case.pool]]
+index = 5
+frames = 200
+rate = 48000
+channels = 2
+token = 8
+planes = "ref/pcm-3-4.i16"
+plane_l = 0x200F4000
+plane_r = 0x200FC000
+
+
+[[case.step]]
+note = 60
+vel = 100
+params = { sample = 512, start = 0, end = 32512, play = 768, pitch = 16384 }
+blocks = 9
+
+[[case.step]]
+note = 60
+vel = 100
+params = { sample = 1280, start = 0, end = 32512, play = 768, pitch = 16384 }
+blocks = 9
+
+[[case.check]]
+kind = "matches-table"
+file = "ref/two-records-dn2-first.f32"
+blocks = [1, 9]
+atol = 0
+
+[[case.check]]
+kind = "matches-table"
+file = "ref/two-records-dn2-second.f32"
+blocks = [10, 18]
+atol = 0
+
+
+[[case]]
+name = "an empty or out-of-range entry is silent: SMP 7"
+device = ["dt2"]
+context = "friendly"
+pool_ctl = "_shot_sample_ctl"
+right = true
+
+[[case.pool]]
+index = 0
+frames = 200
+rate = 48000
+channels = 2
+token = 7
+planes = "ref/pcm-1-2.i16"
+
+
+[[case.step]]
+note = 60
+vel = 100
+params = { sample = 1792, start = 0, end = 32512, play = 768, pitch = 16384 }
+blocks = 2
+
+[[case.check]]
+kind = "peak"
+max = 0
+
+[[case.check]]
+kind = "peak"
+channel = "right"
+max = 0
+
+
+[[case]]
+name = "an empty or out-of-range entry is silent: SMP 15"
+device = ["dt2"]
+context = "friendly"
+pool_ctl = "_shot_sample_ctl"
+right = true
+
+[[case.pool]]
+index = 0
+frames = 200
+rate = 48000
+channels = 2
+token = 7
+planes = "ref/pcm-1-2.i16"
+
+
+[[case.step]]
+note = 60
+vel = 100
+params = { sample = 3840, start = 0, end = 32512, play = 768, pitch = 16384 }
+blocks = 2
+
+[[case.check]]
+kind = "peak"
+max = 0
+
+[[case.check]]
+kind = "peak"
+channel = "right"
+max = 0
+
+
+[[case]]
+name = "an empty or out-of-range entry is silent: SMP 16"
+device = ["dt2"]
+context = "friendly"
+pool_ctl = "_shot_sample_ctl"
+right = true
+
+[[case.pool]]
+index = 0
+frames = 200
+rate = 48000
+channels = 2
+token = 7
+planes = "ref/pcm-1-2.i16"
+
+
+[[case.step]]
+note = 60
+vel = 100
+params = { sample = 4096, start = 0, end = 32512, play = 768, pitch = 16384 }
+blocks = 2
+
+[[case.check]]
+kind = "peak"
+max = 0
+
+[[case.check]]
+kind = "peak"
+channel = "right"
+max = 0
+
+
+[[case]]
+name = "an empty or out-of-range entry is silent: SMP 127"
+device = ["dt2"]
+context = "friendly"
+pool_ctl = "_shot_sample_ctl"
+right = true
+
+[[case.pool]]
+index = 0
+frames = 200
+rate = 48000
+channels = 2
+token = 7
+planes = "ref/pcm-1-2.i16"
+
+
+[[case.step]]
+note = 60
+vel = 100
+params = { sample = 32512, start = 0, end = 32512, play = 768, pitch = 16384 }
+blocks = 2
+
+[[case.check]]
+kind = "peak"
+max = 0
+
+[[case.check]]
+kind = "peak"
+channel = "right"
+max = 0
+
+
+[[case]]
+name = "the voice ends after the sample"
+device = ["dt2"]
+context = "friendly"
+pool_ctl = "_shot_sample_ctl"
+right = false
+
+[[case.pool]]
+index = 0
+frames = 200
+rate = 48000
+channels = 2
+token = 7
+planes = "ref/pcm-1-2.i16"
+
+
+[[case.step]]
+note = 60
+vel = 100
+params = { sample = 0, start = 0, end = 32512, play = 768, pitch = 16384 }
+blocks = 12
+
+[[case.check]]
+# 200 frames are 7 blocks: DK_DONE ends the voice
+kind = "voice-ends"
+after = 0
+within = 10
+
+[[case.check]]
+kind = "peak"
+blocks = [11, 12]
+max = 0
+
+
+[[case]]
+name = "a stale token is silent and ends the voice (dt2)"
+device = ["dt2"]
+context = "friendly"
+pool_ctl = "_shot_sample_ctl"
+right = true
+
+[[case.pool]]
+index = 0
+frames = 200
+rate = 48000
+channels = 2
+token = 7
+planes = "ref/pcm-1-2.i16"
+
+
+[[case.step]]
+note = 60
+vel = 100
+params = { sample = 0, start = 0, end = 32512, play = 768, pitch = 16384 }
+blocks = 2
+
+[[case.step]]
+blocks = 1
+trigger = false
+pokes = [['rec', 1, 8]]
+
+[[case.check]]
+kind = "peak"
+blocks = [0, 2]
+min = 0.0001
+
+[[case.check]]
+kind = "peak"
+blocks = [2, 3]
+max = 0
+
+[[case.check]]
+kind = "voice-ends"
+after = 1
+within = 2
+
+[[case.check]]
+kind = "peak"
+channel = "right"
+blocks = [2, 3]
+max = 0
+
+
+[[case]]
+name = "a stale token is silent and ends the voice (dn2)"
+device = ["dn2"]
+context = "friendly"
+pool_ctl = "_shot_sample_ctl"
+right = false
+
+[[case.pool]]
+index = 0
+frames = 200
+rate = 48000
+channels = 2
+token = 7
+planes = "ref/pcm-1-2.i16"
+
+
+[[case.step]]
+note = 60
+vel = 100
+params = { sample = 0, start = 0, end = 32512, play = 768, pitch = 16384 }
+blocks = 3
+
+[[case.step]]
+blocks = 1
+trigger = false
+pokes = [['rec', 1, 8]]
+
+[[case.check]]
+kind = "peak"
+blocks = [1, 3]
+min = 0.0001
+
+[[case.check]]
+kind = "peak"
+blocks = [3, 4]
+max = 0
+
+
+[[case]]
+name = "an entry that is not playable is silent with no PCM read: not-ready"
+device = ["dt2"]
+context = "friendly"
+pool_ctl = "_shot_sample_ctl"
+right = true
+
+[[case.pool]]
+index = 0
+frames = 200
+rate = 48000
+channels = 2
+token = 7
+planes = "ref/pcm-1-2.i16"
+
+
+[[case.step]]
+note = 60
+vel = 100
+params = { sample = 0, start = 0, end = 32512, play = 768, pitch = 16384 }
+blocks = 2
+pokes = [['rec', 0, 0], ['rec', 6, 4294967280], ['rec', 7, 4294967280]]
+
+[[case.check]]
+kind = "peak"
+max = 0
+
+[[case.check]]
+kind = "peak"
+channel = "right"
+max = 0
+
+
+[[case]]
+name = "an entry that is not playable is silent with no PCM read: closed"
+device = ["dt2"]
+context = "friendly"
+pool_ctl = "_shot_sample_ctl"
+right = true
+
+[[case.pool]]
+index = 0
+frames = 200
+rate = 48000
+channels = 2
+token = 7
+planes = "ref/pcm-1-2.i16"
+
+
+[[case.step]]
+note = 60
+vel = 100
+params = { sample = 0, start = 0, end = 32512, play = 768, pitch = 16384 }
+blocks = 2
+pokes = [['ctl', 0, 1], ['rec', 6, 4294967280], ['rec', 7, 4294967280]]
+
+[[case.check]]
+kind = "peak"
+max = 0
+
+[[case.check]]
+kind = "peak"
+channel = "right"
+max = 0
+
+
+[[case]]
+name = "an entry that is not playable is silent with no PCM read: bad-fmt"
+device = ["dt2"]
+context = "friendly"
+pool_ctl = "_shot_sample_ctl"
+right = true
+
+[[case.pool]]
+index = 0
+frames = 200
+rate = 48000
+channels = 2
+token = 7
+planes = "ref/pcm-1-2.i16"
+
+
+[[case.step]]
+note = 60
+vel = 100
+params = { sample = 0, start = 0, end = 32512, play = 768, pitch = 16384 }
+blocks = 2
+pokes = [['rec', 5, 2], ['rec', 6, 4294967280], ['rec', 7, 4294967280]]
+
+[[case.check]]
+kind = "peak"
+max = 0
+
+[[case.check]]
+kind = "peak"
+channel = "right"
+max = 0
+
+
+[[case]]
+name = "an entry that is not playable is silent with no PCM read: empty"
+device = ["dt2"]
+context = "friendly"
+pool_ctl = "_shot_sample_ctl"
+right = true
+
+[[case.pool]]
+index = 0
+frames = 200
+rate = 48000
+channels = 2
+token = 7
+planes = "ref/pcm-1-2.i16"
+
+
+[[case.step]]
+note = 60
+vel = 100
+params = { sample = 0, start = 0, end = 32512, play = 768, pitch = 16384 }
+blocks = 2
+pokes = [['rec', 2, 0], ['rec', 6, 4294967280], ['rec', 7, 4294967280]]
+
+[[case.check]]
+kind = "peak"
+max = 0
+
+[[case.check]]
+kind = "peak"
+channel = "right"
+max = 0
+
+
+[[case]]
+name = "instruction count is inside the ceiling (dt2)"
+device = ["dt2"]
+context = "friendly"
+pool_ctl = "_shot_sample_ctl"
+right = false
+
+[[case.pool]]
+index = 0
+frames = 200
+rate = 48000
+channels = 2
+token = 7
+planes = "ref/pcm-1-2.i16"
+
+
+[[case.step]]
+note = 60
+vel = 100
+blocks = 2
+
+[[case.check]]
+# worst block measured 6239 on DT2 and 6851 on DN2 (a looping 1-frame region at high pitch); the adapter's share and a margin
+kind = "instructions"
+of = "first"
+max = 8699
+
+[[case.check]]
+kind = "instructions"
+of = "steady"
+max = 8499
+
+
+[[case]]
+name = "instruction count is inside the ceiling (dn2)"
+device = ["dn2"]
+context = "friendly"
+pool_ctl = "_shot_sample_ctl"
+right = false
+
+[[case.pool]]
+index = 0
+frames = 200
+rate = 48000
+channels = 2
+token = 7
+planes = "ref/pcm-1-2.i16"
+
+
+[[case.step]]
+note = 60
+vel = 100
+blocks = 2
+
+[[case.check]]
+# worst block measured 6239 on DT2 and 6851 on DN2 (a looping 1-frame region at high pitch); the adapter's share and a margin
+kind = "instructions"
+of = "first"
+max = 8699
+
+[[case.check]]
+kind = "instructions"
+of = "steady"
+max = 8499
+
+
+[[case]]
+name = "a live play flip to reverse turns at the current cursor"
+device = ["dt2"]
+context = "friendly"
+pool_ctl = "_shot_sample_ctl"
+right = true
+
+[[case.pool]]
+index = 0
+frames = 200
+rate = 48000
+channels = 2
+token = 7
+planes = "ref/pcm-1-2.i16"
+
+
+[[case.step]]
+note = 60
+vel = 100
+params = { sample = 0, start = 0, end = 32512, play = 768, pitch = 16384 }
+blocks = 3
+
+[[case.step]]
+params = { play = 0 }
+blocks = 8
+trigger = false
+
+[[case.check]]
+kind = "matches-table"
+file = "ref/a-live-play-flip-to-reverse-turns-at-the-current-cursor-l.f32"
+atol = 0
+
+[[case.check]]
+kind = "matches-table"
+file = "ref/a-live-play-flip-to-reverse-turns-at-the-current-cursor-r.f32"
+channel = "right"
+atol = 0
+
+[[case.check]]
+kind = "cursor"
+block = 2
+index = 2
+equals = 96
+
+
+[[case]]
+name = "a live play flip to reverse goes back from the cursor without a reset"
+device = ["dt2"]
+context = "friendly"
+pool_ctl = "_shot_sample_ctl"
+right = true
+
+[[case.pool]]
+index = 0
+frames = 200
+rate = 48000
+channels = 2
+token = 7
+planes = "ref/pcm-1-2.i16"
+
+
+[[case.step]]
+note = 60
+vel = 100
+params = { sample = 0, start = 0, end = 32512, play = 768, pitch = 16384 }
+blocks = 3
+
+[[case.step]]
+params = { play = 0 }
+blocks = 1
+trigger = false
+
+[[case.check]]
+kind = "cursor"
+block = 3
+index = 2
+equals = 64
+
+[[case.check]]
+kind = "cursor"
+block = 3
+index = 3
+equals = 0
+
+
+[[case]]
+name = "a loop mode repeats the region seamlessly: fwd-loop"
+device = ["dt2"]
+context = "friendly"
+pool_ctl = "_shot_sample_ctl"
+right = true
+
+[[case.pool]]
+index = 0
+frames = 200
+rate = 48000
+channels = 2
+token = 7
+planes = "ref/pcm-1-2.i16"
+
+
+[[case.step]]
+note = 60
+vel = 100
+params = { sample = 0, start = 6503, end = 16256, play = 512, pitch = 16384 }
+blocks = 6
+
+[[case.check]]
+kind = "matches-table"
+file = "ref/loop-fwd-loop-l.f32"
+atol = 0
+
+[[case.check]]
+kind = "matches-table"
+file = "ref/loop-fwd-loop-r.f32"
+channel = "right"
+atol = 0
+
+[[case.check]]
+kind = "cursor"
+block = 5
+index = 5
+equals = 0
+
+[[case.check]]
+kind = "voice-active"
+block = 5
+
+
+[[case]]
+name = "a loop mode repeats the region seamlessly: rev-loop"
+device = ["dt2"]
+context = "friendly"
+pool_ctl = "_shot_sample_ctl"
+right = true
+
+[[case.pool]]
+index = 0
+frames = 200
+rate = 48000
+channels = 2
+token = 7
+planes = "ref/pcm-1-2.i16"
+
+
+[[case.step]]
+note = 60
+vel = 100
+params = { sample = 0, start = 6503, end = 16256, play = 256, pitch = 16384 }
+blocks = 6
+
+[[case.check]]
+kind = "matches-table"
+file = "ref/loop-rev-loop-l.f32"
+atol = 0
+
+[[case.check]]
+kind = "matches-table"
+file = "ref/loop-rev-loop-r.f32"
+channel = "right"
+atol = 0
+
+[[case.check]]
+kind = "cursor"
+block = 5
+index = 5
+equals = 0
+
+[[case.check]]
+kind = "voice-active"
+block = 5
+
+
+[[case]]
+name = "a live switch from a loop to fwd ends at end with the ramp"
+device = ["dt2"]
+context = "friendly"
+pool_ctl = "_shot_sample_ctl"
+right = true
+
+[[case.pool]]
+index = 0
+frames = 200
+rate = 48000
+channels = 2
+token = 7
+planes = "ref/pcm-1-2.i16"
+
+
+[[case.step]]
+note = 60
+vel = 100
+params = { sample = 0, start = 6503, end = 16256, play = 512, pitch = 16384 }
+blocks = 3
+
+[[case.step]]
+params = { play = 768 }
+blocks = 3
+trigger = false
+
+[[case.check]]
+kind = "matches-table"
+file = "ref/loop-to-fwd-l.f32"
+atol = 0
+
+[[case.check]]
+kind = "matches-table"
+file = "ref/loop-to-fwd-r.f32"
+channel = "right"
+atol = 0
+
+[[case.check]]
+kind = "voice-ends"
+after = 0
+within = 5
+
+
+[[case]]
+name = "a live end moved behind the cursor fades the block and ends the voice"
+device = ["dt2"]
+context = "friendly"
+pool_ctl = "_shot_sample_ctl"
+right = true
+
+[[case.pool]]
+index = 0
+frames = 200
+rate = 48000
+channels = 2
+token = 7
+planes = "ref/pcm-1-2.i16"
+
+
+[[case.step]]
+note = 60
+vel = 100
+params = { sample = 0, start = 0, end = 32512, play = 768, pitch = 16384 }
+blocks = 3
+
+[[case.step]]
+params = { end = 8128 }
+blocks = 4
+trigger = false
+
+[[case.check]]
+kind = "matches-table"
+file = "ref/a-live-end-moved-behind-the-cursor-fades-the-block-and-ends-the-voice-l.f32"
+atol = 0
+
+[[case.check]]
+kind = "matches-table"
+file = "ref/a-live-end-moved-behind-the-cursor-fades-the-block-and-ends-the-voice-r.f32"
+channel = "right"
+atol = 0
+
+[[case.check]]
+kind = "voice-ends"
+after = 0
+within = 6
+
+
+[[case]]
+name = "a live end moved above the cursor continues to the new end"
+device = ["dt2"]
+context = "friendly"
+pool_ctl = "_shot_sample_ctl"
+right = true
+
+[[case.pool]]
+index = 0
+frames = 200
+rate = 48000
+channels = 2
+token = 7
+planes = "ref/pcm-1-2.i16"
+
+
+[[case.step]]
+note = 60
+vel = 100
+params = { sample = 0, start = 0, end = 16256, play = 768, pitch = 16384 }
+blocks = 2
+
+[[case.step]]
+params = { end = 32512 }
+blocks = 6
+trigger = false
+
+[[case.check]]
+kind = "matches-table"
+file = "ref/a-live-end-moved-above-the-cursor-continues-to-the-new-end-l.f32"
+atol = 0
+
+[[case.check]]
+kind = "matches-table"
+file = "ref/a-live-end-moved-above-the-cursor-continues-to-the-new-end-r.f32"
+channel = "right"
+atol = 0
+
+
+[[case]]
+name = "a live start above the cursor does not change forward play"
+device = ["dt2"]
+context = "friendly"
+pool_ctl = "_shot_sample_ctl"
+right = true
+
+[[case.pool]]
+index = 0
+frames = 200
+rate = 48000
+channels = 2
+token = 7
+planes = "ref/pcm-1-2.i16"
+
+
+[[case.step]]
+note = 60
+vel = 100
+params = { sample = 0, start = 0, end = 32512, play = 768, pitch = 16384 }
+blocks = 3
+
+[[case.step]]
+params = { start = 24384 }
+blocks = 5
+trigger = false
+
+[[case.check]]
+kind = "matches-table"
+file = "ref/a-live-start-above-the-cursor-does-not-change-forward-play-l.f32"
+atol = 0
+
+[[case.check]]
+kind = "matches-table"
+file = "ref/a-live-start-above-the-cursor-does-not-change-forward-play-r.f32"
+channel = "right"
+atol = 0
+
+
+[[case]]
+name = "a live start above the cursor ends reverse play with the ramp"
+device = ["dt2"]
+context = "friendly"
+pool_ctl = "_shot_sample_ctl"
+right = true
+
+[[case.pool]]
+index = 0
+frames = 200
+rate = 48000
+channels = 2
+token = 7
+planes = "ref/pcm-1-2.i16"
+
+
+[[case.step]]
+note = 60
+vel = 100
+params = { sample = 0, start = 0, end = 32512, play = 0, pitch = 16384 }
+blocks = 2
+
+[[case.step]]
+params = { start = 24384 }
+blocks = 3
+trigger = false
+
+[[case.check]]
+kind = "matches-table"
+file = "ref/a-live-start-above-the-cursor-ends-reverse-play-with-the-ramp-l.f32"
+atol = 0
+
+[[case.check]]
+kind = "matches-table"
+file = "ref/a-live-start-above-the-cursor-ends-reverse-play-with-the-ramp-r.f32"
+channel = "right"
+atol = 0
+
+[[case.check]]
+kind = "cursor"
+block = 1
+index = 2
+equals = 135
+
+[[case.check]]
+kind = "voice-ends"
+after = 0
+within = 4
+
+
+[[case]]
+name = "a live end at or below start in reverse ends the voice with the ramp"
+device = ["dt2"]
+context = "friendly"
+pool_ctl = "_shot_sample_ctl"
+right = true
+
+[[case.pool]]
+index = 0
+frames = 200
+rate = 48000
+channels = 2
+token = 7
+planes = "ref/pcm-1-2.i16"
+
+
+[[case.step]]
+note = 60
+vel = 100
+params = { sample = 0, start = 3252, end = 32512, play = 0, pitch = 16384 }
+blocks = 2
+
+[[case.step]]
+params = { start = 19508, end = 16256 }
+blocks = 3
+trigger = false
+
+[[case.check]]
+kind = "matches-table"
+file = "ref/a-live-end-at-or-below-start-in-reverse-ends-the-voice-with-the-ramp-l.f32"
+atol = 0
+
+[[case.check]]
+kind = "matches-table"
+file = "ref/a-live-end-at-or-below-start-in-reverse-ends-the-voice-with-the-ramp-r.f32"
+channel = "right"
+atol = 0
+
+[[case.check]]
+kind = "voice-ends"
+after = 0
+within = 4
+
+
+[[case]]
+name = "a pure tone keeps its level at any pitch: unison"
+device = ["dt2"]
+context = "friendly"
+pool_ctl = "_shot_sample_ctl"
+right = false
+
+[[case.pool]]
+index = 0
+frames = 1600
+rate = 48000
+channels = 2
+token = 7
+planes = "ref/sine-plane.i16"
+
+
+[[case.step]]
+note = 60
+vel = 100
+params = { sample = 0, start = 0, end = 32512, play = 768, pitch = 16384 }
+blocks = 20
+
+[[case.check]]
+# 300 Hz at 48 kHz scaled by the speed; the amplitude 16000 / 32768 * 0.4045 within 2 %
+kind = "tone-fit"
+freq = 300.0
+amp = 0.1975097693502903
+tol = 0.003950195387005806
+blocks = [2, 18]
+
+
+[[case]]
+name = "a pure tone keeps its level at any pitch: octave-up"
+device = ["dt2"]
+context = "friendly"
+pool_ctl = "_shot_sample_ctl"
+right = false
+
+[[case.pool]]
+index = 0
+frames = 1600
+rate = 48000
+channels = 2
+token = 7
+planes = "ref/sine-plane.i16"
+
+
+[[case.step]]
+note = 72
+vel = 100
+params = { sample = 0, start = 0, end = 32512, play = 768, pitch = 16384 }
+blocks = 20
+
+[[case.check]]
+# 300 Hz at 48 kHz scaled by the speed; the amplitude 16000 / 32768 * 0.4045 within 2 %
+kind = "tone-fit"
+freq = 600.0
+amp = 0.1975097693502903
+tol = 0.003950195387005806
+blocks = [2, 18]
+
+
+[[case]]
+name = "a pure tone keeps its level at any pitch: octave-down"
+device = ["dt2"]
+context = "friendly"
+pool_ctl = "_shot_sample_ctl"
+right = false
+
+[[case.pool]]
+index = 0
+frames = 1600
+rate = 48000
+channels = 2
+token = 7
+planes = "ref/sine-plane.i16"
+
+
+[[case.step]]
+note = 48
+vel = 100
+params = { sample = 0, start = 0, end = 32512, play = 768, pitch = 16384 }
+blocks = 20
+
+[[case.check]]
+# 300 Hz at 48 kHz scaled by the speed; the amplitude 16000 / 32768 * 0.4045 within 2 %
+kind = "tone-fit"
+freq = 150.0
+amp = 0.1975097693502903
+tol = 0.003950195387005806
+blocks = [2, 18]
+

@@ -78,3 +78,33 @@ output for them (`uv run python -m tools.devtools.rig_refs freqshift`). The devi
 
 Mutation: `0x3e3a2e8c` (the scale of the shift mapping, x = |v| * c) to `0x3e3a2e9c` in `src/dsp/freqshift.s`: Python `test_the_routine_follows_the_model_while_the_shift_moves`
 fails (error 3.1e-4 against 2e-7); the kit fails 7 cases (five model shifts, the moving shift, the long run).
+
+## digikit/shot (`test_shot_playback.py`, `support/sample_pool.py`; kit: `tests/rig/shot.toml`, tables and PCM in `tests/rig/ref/`)
+
+`shot.toml` has 42 cases; the pool entries are published by the kit (`samplepool.ts`, planes then record, `ready` last) from `ref/pcm-*.i16` (the numpy
+generator's int16 words) and the case's `[[case.pool]]` tables. The tables are the output of the Python reader model `model()` of the test for the same
+scenarios (`uv run python -m tools.devtools.rig_refs shot`; the generator asserts, as the Python test does, that the rig equals the model). Where the test
+took the model's rate from the rig's cursor, the rig's rate is in the model table and the toml checks it against the analytic rate with the Python tolerance.
+All comparisons are exact (atol 0), as `np.array_equal`. After every block the pool's count word must be 0 (`pool_ctl`), and the module's stores must stay in
+its own memory (implicit rule, which also replaces `test_the_module_stores_only_inside_its_own_memory`).
+
+| Python | Kit cases |
+| --- | --- |
+| `test_default_params_play_the_whole_sample_with_distinct_channels` (both devices; DN2 left only) | `default parameters play the whole sample (dt2)` and `(dn2)`: tables, `peak` min 0.04, `cursor` rate 65536 |
+| `test_start_end_and_play_select_the_frames` (4) | `start end and play select the frames: NAME` (4) |
+| `test_pitch_is_the_note_plus_the_pitch_parameter` (5) | `pitch is the note plus the pitch parameter: NAME` (5), tables and the rate check |
+| `test_a_source_rate_other_than_48k_scales_the_cursor`, `test_a_mono_sample_plays_centred`, `test_another_pool_entry_reads_its_own_record` | one case each |
+| `test_two_smp_values_pick_two_records` (both devices) | `two SMP values pick two records (dt2)` and `(dn2)`: two pool entries, two tables |
+| `test_an_empty_or_out_of_range_entry_is_silent` (4) | `an empty or out-of-range entry is silent: SMP N`: `peak` 0 on both channels; the count word read is entry 0's, not entry N's (the Python test read entry N's) |
+| `test_the_voice_ends_after_the_sample` | `the voice ends after the sample`: `voice-ends`, then a silent block |
+| `test_a_stale_token_is_silent_and_ends_the_voice` (both devices) | `a stale token is silent and ends the voice (dt2)` / `(dn2)`: step `pokes` of the record's token word, `voice-ends` (DT2), silent odd voice |
+| `test_an_entry_that_is_not_playable_is_silent_with_no_pcm_read` (4) | `an entry that is not playable ...: NAME`: pokes as in the test (the bad plane address 0xFFFFFFF0 makes a PCM read fault the call, which the implicit rules catch) |
+| `test_instruction_count_is_inside_the_ceiling` (both) | `instruction count is inside the ceiling (DEV)`: first block max 8699, steady max 8499 |
+| `test_the_module_stores_only_inside_its_own_memory` | implicit rule of every case |
+| live parameter tests (7: flip to reverse, loop modes (2), loop to fwd, end behind, end above, start above forward, start above reverse, end below start) | one case each: tables for both channels, `cursor` words where the test asserted them, `voice-ends`, `voice-active` for the loops |
+| `test_a_pure_tone_keeps_its_level_at_any_pitch` (3) | `a pure tone keeps its level at any pitch: NAME`: `tone-fit` (least-squares sine fit over samples 64 to 576, amplitude 16000 / 32768 * 0.4045 within 2 %) |
+| `test_smp_is_latched_but_other_parameter_words_remain_live` | not ported: it reads the adapter's latch words `_dv_params` and `_dv_call_params`, a property of core/dsp-voice (phase 5 adapter tests); the entry-5 part is `an empty or out-of-range entry is silent` |
+
+Mutation: `0x3daaaaab` (1/12, the semitone scale of the pitch) to `0x3dabaaab` in `src/dsp/shot.s`: Python `test_pitch_is_the_note_plus_the_pitch_parameter`
+fails on the rate bound (111821 against 2); the kit fails the 5 pitch cases. Note for the S6a rebase: the tables and the instruction ceilings hold for
+a bit-identical kernel; `dsp_cost_voice` in module.toml is what the conformance run writes.

@@ -69,6 +69,8 @@ export interface MachineBlock {
   right: number[];
   /** DT2: the voice record's word +0x1b8 after the call: byte 0 is ACTIVE, byte 1 the note-on mark (0 on DN2, which has no record) */
   active: number;
+  /** the DM words asked for with `extraReads`, one row each (a word that nothing wrote is null) */
+  extra: (number | null)[][];
 }
 
 export interface MachineRigOptions {
@@ -271,7 +273,7 @@ export class MachineRig {
   }
 
   /** One call the way the engine makes it. `ctx` as in drawContext (undefined draws a hostile context, "friendly" the constants). */
-  async block(ctx?: Context | 'friendly'): Promise<MachineBlock> {
+  async block(ctx?: Context | 'friendly', extraReads: [address: number, count: number][] = []): Promise<MachineBlock> {
     const context = resolveContext(ctx, this.ctxRng);
     this.lastCtx = { ...context };
     const v = this.voice;
@@ -295,6 +297,8 @@ export class MachineRig {
     if (dt2) reads.push([nw(out + 0x80), 32]);
     reads.push([nw(TABLE) + 13, 1]);
     if (dt2) reads.push([nw(RECORDS + v * REC + 0x1b8), 1]);
+    const firstExtra = reads.length;
+    for (const [a, n] of extraReads) reads.push([nw(a), n]);
     q.push({
       call: {
         pc: this.built.symbols._dv_entry!,
@@ -322,6 +326,7 @@ export class MachineRig {
       foreign: this.recordStores ? this.foreignStores(out, res.stores) : [],
       right: dt2 ? words(res.reads[1], 32) : [],
       active: dt2 ? (res.reads[3]?.[0] ?? 0) : 0,
+      extra: extraReads.map((_, i) => res.reads[firstExtra + i] ?? []),
     };
   }
 

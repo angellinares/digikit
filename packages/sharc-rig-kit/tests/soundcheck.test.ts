@@ -172,6 +172,31 @@ describe('references', () => {
   });
 });
 
+describe('machine state checks', () => {
+  it('tell a voice that is still active from one that ended', () => {
+    const t = trace(3, () => 0, { active: [0x101, 1, 0x100] });
+    expect(check(t, { kind: 'voice-active', block: 1 })).toBeNull();
+    expect(check(t, { kind: 'voice-active', block: 2 })).toContain('not active');
+  });
+
+  it('read a word of the cursor and accept a tolerance, with the word read as signed on request', () => {
+    const t = trace(2, () => 0, { cursor: [[0, 0, 96, 0, 0xffff0000, 0], []] });
+    expect(check(t, { kind: 'cursor', block: 0, index: 2, equals: 96 })).toBeNull();
+    expect(check(t, { kind: 'cursor', block: 0, index: 4, equals: -65536, signed: true })).toBeNull();
+    expect(check(t, { kind: 'cursor', block: 0, index: 4, equals: -65534, tol: 2, signed: true })).toBeNull();
+    expect(check(t, { kind: 'cursor', block: 0, index: 2, equals: 95 })).toContain('is 96');
+    expect(check(t, { kind: 'cursor', block: 1, index: 2, equals: 0 })).toContain('no cursor word');
+  });
+
+  it('fit the amplitude of a tone over a window shorter than two periods, where a windowed projection is not exact', () => {
+    const t = trace(20, sine(150, 0.2));
+    expect(check(t, { kind: 'tone-fit', freq: 150, amp: 0.2, tol: 0.001, blocks: [2, 18] })).toBeNull();
+    expect(check(t, { kind: 'tone-fit', freq: 150, amp: 0.25, tol: 0.001, blocks: [2, 18] })).toContain(
+      'fitted amplitude',
+    );
+  });
+});
+
 describe('instruction limits', () => {
   it('hold the first block, the steady blocks or the last block to a limit', () => {
     const t = trace(4, () => 0, { instructions: [5000, 100, 120, 40] });

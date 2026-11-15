@@ -27,6 +27,7 @@ import {
 } from './analysis.ts';
 import { signalBlock } from './checks.ts';
 import { REC, RECORDS, f2w, nw } from './context.ts';
+import { PLANE_L, PLANE_R, TOKEN, publish, writePlanes } from './samplepool.ts';
 import { P0, FxRig } from './fx.ts';
 import { MachineRig } from './machine.ts';
 import type { RigOpener } from './ops.ts';
@@ -48,8 +49,24 @@ export interface Step extends Toml {
   blocks?: number;
   trigger?: boolean;
   release?: boolean;
+  /** poke DM words before the first block: `[target, word offset, value]`, the target `rec` or `ctl` (the record or the control words of the first pool entry) */
+  pokes?: [string, number, number][];
   /** DT2: write the voice record's word +0x1b8 (ACTIVE and the mark) before the first block: 0 makes the voice idle */
   record_word?: number;
+}
+
+/** A sample-pool entry published before the first block (a machine that plays a sample: the planes and the record, `ready` last). */
+export interface Pool extends Toml {
+  index: number;
+  frames: number;
+  rate: number;
+  channels: number;
+  token?: number;
+  /** a file of int16 words: the left plane, then the right plane (none for mono), `frames` each */
+  planes: string;
+  /** byte addresses of the planes (the defaults of samplepool.ts) */
+  plane_l?: number;
+  plane_r?: number;
 }
 
 export interface RigCase {
@@ -57,6 +74,11 @@ export interface RigCase {
   device?: string[];
   context?: 'friendly' | 'hostile';
   track?: number;
+  /** DT2: also render the odd voice of the pair after each block (a stereo machine's right channel) */
+  right?: boolean;
+  pool?: Pool[];
+  /** the data symbol of the pool's control sets: after every block the count word of the first entry must be 0 */
+  pool_ctl?: string;
   step?: Step[];
   input?: Toml;
   check: Check[];
@@ -83,6 +105,10 @@ export interface Trace {
   failure: string | null;
   /** per block, which step it belongs to */
   stepOf: number[];
+  /** a machine's odd voice (DT2, `right = true`): the right channel, 32 samples a block */
+  right?: number[][];
+  /** a machine with a sample pool: the six cursor words of the voice's state block after each block */
+  cursor?: (number | null)[][];
   /** an effect: the words of its `dk_fx_desc` and the first 1024 words of its state block after the last block */
   desc?: number[];
   state?: (number | null)[];
@@ -122,13 +148,15 @@ export interface RunOptions {
 
 const words = (params: Record<string, number>): [string, number][] => Object.entries(params);
 
-async function runMachine(module: string, device: Device, c: RigCase, o: RunOptions): Promise<Trace> {
+async function runMachine(module: string, device: Device, c: RigCase, dir: string, o: RunOptions): Promise<Trace> {
   const spec = machineSpec(module, device);
   if (!spec) throw new Error(`${module} is no machine for ${device}`);
   const rig = await MachineRig.open(spec, { recordStores: true, track: c.track ?? 0, open: o.open });
   const trace: Trace = {
     kind: 'machine',
     out: [],
+    right: [],
+    cursor: [],
     input: [],
     master: [],
     instructions: [],
@@ -138,8 +166,39 @@ async function runMachine(module: string, device: Device, c: RigCase, o: RunOpti
   };
   try {
     const steps: Step[] = c.step ?? [{}];
+    const poolAt = (target: string, off: number): number => {
+      const entry = c.pool?.[0];
+      if (!entry) throw new Error('a poke of rec or ctl needs a pool entry');
+      if (target === 'rec') return nw(rig.built.data[spec.sampleRecords!]!) + 8 * entry.index + off;
+      if (target === 'ctl') return nw(rig.built.data[c.pool_ctl!]!) + 4 * entry.index + off;
+      throw new Error(`unknown poke target ${target}`);
+    };
+    for (const p of c.pool ?? []) {
+      const pcm = readI16(readFileSync(path.join(dir, p.planes)));
+      const left = pcm.slice(0, p.frames);
+      const right = p.channels === 1 ? left : pcm.slice(p.frames, 2 * p.frames);
+      const [pl, pr] = [
+        p.plane_l === undefined ? PLANE_L : nw(p.plane_l),
+        p.plane_r === undefined ? PLANE_R : nw(p.plane_r),
+      ];
+      writePlanes((a, w) => rig.poke(a, w), left, right, pl, pr);
+      publish(
+        (a, w) => rig.poke(a, w),
+        nw(rig.built.data[spec.sampleRecords!]!),
+        p.index,
+        p.frames,
+        p.rate,
+        p.channels,
+        p.token ?? TOKEN,
+        pl,
+        pr,
+      );
+    }
+    const extra: [number, number][] = [[rig.built.state, 6]];
+    if (c.pool_ctl) extra.push([rig.built.data[c.pool_ctl]! + 4 * 4 * (c.pool?.[0]?.index ?? 0) + 4, 1]);
     let first = true;
     for (const [si, step] of steps.entries()) {
+      for (const [target, off, value] of step.pokes ?? []) rig.poke(poolAt(target, off), value);
       if (step.params) rig.setParams(words(step.params));
       if (step.note !== undefined || step.vel !== undefined || first) rig.setNote(step.note ?? 60, step.vel ?? 100);
       first = false;
@@ -148,8 +207,12 @@ async function runMachine(module: string, device: Device, c: RigCase, o: RunOpti
       const trigger = step.trigger ?? !step.release;
       for (let k = 0; k < (step.blocks ?? 1); k++) {
         if (k === 0 && trigger) rig.trigger();
-        const b = await rig.block(c.context === 'friendly' ? 'friendly' : undefined);
+        const b = await rig.block(c.context === 'friendly' ? 'friendly' : undefined, extra);
         trace.out.push(b.samples);
+        trace.cursor!.push(b.extra[0] ?? []);
+        if (c.right) trace.right!.push(await rig.oddBlock());
+        if (c.pool_ctl && (b.extra[1]?.[0] ?? 0) !== 0 && trace.failure === null)
+          trace.failure = `${c.name} block ${trace.out.length - 1}: the pool's count word is ${b.extra[1]![0]}, not 0`;
         trace.instructions.push(b.instructions);
         trace.active.push(b.active);
         trace.stepOf.push(si);
@@ -274,6 +337,12 @@ async function runFx(module: string, c: RigCase, dir: string, o: RunOptions): Pr
 
 // ---- the checks -----------------------------------------------------------------------------------------------------------------
 
+/** int16 little-endian words. */
+function readI16(bytes: Uint8Array): number[] {
+  const view = new DataView(bytes.buffer, bytes.byteOffset, bytes.byteLength);
+  return Array.from({ length: Math.floor(bytes.byteLength / 2) }, (_, i) => view.getInt16(2 * i, true));
+}
+
 function inRange(what: string, value: number, c: Toml): string | null {
   if (hasNum(c, 'min') && value < num(c, 'min')) return `${what} ${value} is below ${num(c, 'min')}`;
   if (hasNum(c, 'max') && value > num(c, 'max')) return `${what} ${value} is above ${num(c, 'max')}`;
@@ -282,7 +351,7 @@ function inRange(what: string, value: number, c: Toml): string | null {
 
 /** The signal a check looks at: the output blocks of its range, one channel of an effect (left unless `channel`). */
 function signal(t: Trace, c: Check): number[] {
-  if (t.kind === 'machine') return slice(t.out, c.blocks);
+  if (t.kind === 'machine') return slice(c.channel === 'right' ? (t.right ?? []) : t.out, c.blocks);
   const ch = String(c.channel ?? 'left');
   const part = (b: number[]) => (ch === 'right' ? b.slice(32) : ch === 'both' ? b : b.slice(0, 32));
   return slice(t.out.map(part), c.blocks);
@@ -385,6 +454,40 @@ export function evaluate(t: Trace, c: Check, dir: string): string | null {
         ? null
         : `the phase drifts by ${drift} rad over the run (limit ${num(c, 'phase_drift')})`;
     }
+    case 'cursor': {
+      // a word of the voice's state block after `block`: `equals`, within `tol` (the word read as signed with `signed`)
+      let v = t.cursor?.[num(c, 'block')]?.[num(c, 'index')];
+      if (v === undefined || v === null) return `no cursor word ${num(c, 'index')} after block ${num(c, 'block')}`;
+      if (c.signed === true && v >= 2 ** 31) v -= 2 ** 32;
+      return Math.abs(v - num(c, 'equals')) <= num(c, 'tol', 0)
+        ? null
+        : `cursor word ${num(c, 'index')} is ${v}, wanted ${num(c, 'equals')} (tolerance ${num(c, 'tol', 0)})`;
+    }
+    case 'voice-active': {
+      const a = t.active[num(c, 'block')];
+      return a !== undefined && (a & 0xff) !== 0 ? null : `the voice is not active after block ${num(c, 'block')}`;
+    }
+    case 'tone-fit': {
+      // the amplitude of a sine of `freq` fitted by least squares (sine and cosine, no window) to the blocks of the range
+      const y = x();
+      const first = (c.blocks?.[0] ?? 0) * 32;
+      const w = (2 * Math.PI * num(c, 'freq')) / FS;
+      let [ss, sc, cc, sy, cy] = [0, 0, 0, 0, 0];
+      y.forEach((v, i) => {
+        const s = Math.sin(w * (first + i));
+        const co = Math.cos(w * (first + i));
+        ss += s * s;
+        sc += s * co;
+        cc += co * co;
+        sy += s * v;
+        cy += co * v;
+      });
+      const det = ss * cc - sc * sc;
+      const amp = Math.hypot((sy * cc - cy * sc) / det, (cy * ss - sy * sc) / det);
+      return Math.abs(amp - num(c, 'amp')) <= num(c, 'tol')
+        ? null
+        : `the fitted amplitude at ${num(c, 'freq')} Hz is ${amp}, wanted ${num(c, 'amp')} (tolerance ${num(c, 'tol')})`;
+    }
     case 'sample-at': {
       const v = t.out[num(c, 'block')]?.[num(c, 'index', 0)];
       if (v === undefined) return `block ${num(c, 'block')} has no sample ${num(c, 'index', 0)}`;
@@ -448,7 +551,7 @@ export async function runRigFile(module: string, file: string, o: RunOptions = {
   for (const c of loadRigFile(file).case) {
     const devices = (c.device ?? [...DEVICES]).filter((d): d is Device => (DEVICES as readonly string[]).includes(d));
     for (const device of isFx ? ['fx' as const] : devices) {
-      const t = isFx ? await runFx(module, c, dir, o) : await runMachine(module, device as Device, c, o);
+      const t = isFx ? await runFx(module, c, dir, o) : await runMachine(module, device as Device, c, dir, o);
       const at = { case: c.name, device };
       results.push({ ...at, kind: 'implicit rules', ok: t.failure === null, message: t.failure ?? '' });
       for (const check of c.check ?? []) {
