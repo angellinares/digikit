@@ -118,3 +118,19 @@ The send route in `FxRig` (`packages/sharc-rig-kit/src/fx.ts`): `Row.amounts`, `
 `VoiceRig` (`packages/sharc-rig-kit/src/voice.ts`) ports `Rig` of `tests/support/dsp_voice_rig.py` and the `CrumbRig` of `test_dsp_voice.py`: a call runs on a fresh core with the DM
 the test built (as `pk_sharc.run_call` does), defines (`#ifdef` options) and a break at any symbol of the wrapper, and `extra_reads` become `reads`.
 `Linked.checked` (instructions re-decoded by the link) and the exports `M6_HOSTILE` and `M13_HOSTILE` were added.
+
+## Phase 5b ports (adapter tests on the rig with the stock DN2 1.12 image)
+
+Rig features for these (PR of this branch): `image`, `stock_reads`, per-call `breaks` and `resume` in `packages/sharc-rig/src/lib.rs`; `StereoRig` and `StereoSession` in `packages/sharc-rig-kit/src/stereo.ts` (port of `tests/support/dn2_stereo_rig.py`);
+the stage table and chain harness in `modules/core/adapters/dsp-voice/tests/stereo-stages.ts` (port of `tests/support/dn2_stereo_stages.py`). The tests need `out/sections/dn2-1.12/section_7_BLOB.bin`
+(sha256 pinned in `stock.ts`) and skip with their describe title when it is missing. The Python files are NOT deleted here: retirement needs an independent review of each row first.
+
+| Python test | Vitest replacement | Values | Notes | Status |
+| --- | --- | --- | --- | --- |
+| `modules/core/adapters/dsp-voice/tests/test_dsp_stereo_gain_slot.py` (9 functions, 24 cases) | `dsp-stereo-gain-slot.rig.test.ts` (24 cases) | same, 24 of 24 (planes, buffers, the one-slot registers I3, I4, I5, I12, I6, I7, R9; the hook costs under 16 x 30 instructions) | Mutation: `LSHIFT R3 BY 5` to `BY 4` in `_gs_slot` fails 10 cases | Python kept for review |
+| `test_dsp_stereo_identity.py` (3 functions, 26 cases) | `dsp-stereo-identity.rig.test.ts` (26 cases) | same, 26 of 26 | Mutation: late shaper scale 0x41800000 to 0x41000000 fails `shaper-late` | Python kept for review |
+| `test_dsp_stereo_twins.py` (10 functions, 66 cases) | `dsp-stereo-twins.rig.test.ts` (66 cases) | same, 66 of 66 | same mutation fails 2 cases here | Python kept for review |
+| `test_dsp_stereo_cost.py` (1 function, 12 cases) | `dsp-stereo-cost.rig.test.ts` (12 cases) | same, 12 of 12: every stage inside its ceiling (the ceilings are the Python values) | | Python kept for review |
+| `test_dsp_stereo_lifecycle.py` (6 functions, 111 cases) | `dsp-stereo-lifecycle.rig.test.ts` (111 cases) | same, 111 of 111 | | Python kept for review |
+
+Time for the five files (239 cases): Python 51.6 s, Vitest 46.5 s (each case opens one to four rig processes; the 817 KB image loads in 0.1 s per process).
