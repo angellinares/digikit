@@ -11,6 +11,17 @@ scenario's PCM hash against the file's pin (or against the first run).
         [--pairs 6] [--scenarios tests/regression/scenarios/dn2-trackfx.ts] [--out OUT.json]
     uv run python -m tools.devtools.coupled_ab A=BIN --pairs 5 -s trig1-taps     # one binary: N runs
     uv run python -m tools.devtools.coupled_ab A=BIN B=BIN --patch B=X.patch ...  # one binary, image B patched
+    uv run python -m tools.devtools.coupled_ab A=BIN B=BIN --image A=MAIN.syx --image B=BRANCH.syx -s trig1-taps
+        # two patched firmware images (a changed ColdFire runtime), same binary
+
+`--image LABEL=SYX` runs a label from a patched image of the stock firmware (`nx run patchkit:device-images`
+writes them to dist/bytes/images/<device>/; run it in each lane and copy the two files away). Give an image to
+every label, so the A/B never compares stock with patched firmware. Before the timed pairs, each image gets its
+cold state once: ready.py makes its DSP image and cold-idle, then one `coupled-run --cold-base <stock sha256>
+--dsp-image .. --dsp-cold-idle .. --cold-save DIR` boot keeps the ready pair. DIR is
+out/runs/coupled_ab/image-<image sha>-<binary sha>/cold and a rerun reuses it. The timed runs restore that
+pair. The fast tier lists come from the stock firmware the images were built from. PCM must stay equal for
+both labels, so a ColdFire-only change must leave the audio unchanged.
 
 The report prints, per scenario and binary, the median DSP CPU per audio s
 (IQR), the CF thread CPU, the real-time factor and the PCM hash; with two
@@ -37,6 +48,7 @@ import time
 from pathlib import Path
 
 ROOT = pathlib.Path(__file__).resolve().parents[2]
+import tools  # noqa: E402
 from tools.devtools import benchlock  # noqa: E402
 from tools.emulator import coupled  # noqa: E402
 
@@ -46,6 +58,8 @@ CARD: tuple[dict[str, pathlib.Path], list[str]] | None = None
 SECONDS: str | None = None
 # Set by --patch LABEL=FILE: a DSP patch file (coupled-run --dsp-patch) for the runs of that label, so one binary can run two images.
 PATCHES: dict[str, str] = {}
+# Set by --image LABEL=SYX: a patched ColdFire image for the runs of that label (cold state prepared once).
+IMAGES: dict[str, str] = {}
 # Set by --env: extra environment for the runs (interpreter-only: SHARC_AOT=0 ...).
 ENV: dict[str, str] = {}
 
@@ -145,6 +159,7 @@ def artifact_run(
     timeout: float,
     card: str | None = None,
     patch: str | None = None,
+    cold: list[str] | None = None,
 ) -> dict:
     folder.mkdir(parents=True, exist_ok=True)
     extra = [
@@ -165,6 +180,8 @@ def artifact_run(
         extra += ["--card-image", str(card)]
     if patch:
         extra += ["--dsp-patch", patch]
+    if cold:
+        extra += cold
     argv = coupled.run_args(
         binary, {k: Path(v).resolve() for k, v in inputs.items()}, extra
     )
@@ -229,29 +246,104 @@ def artifact_run(
     }
 
 
+def prepare_image(
+    label: str, image: str, binary: str, device: str, scenarios: str, scenario: str
+) -> dict:
+    """Cold state of a patched image: DSP image and cold-idle (tools/emulator/ready.py),
+    then one coupled-run boot that keeps the ready pair (`--cold-save`). Kept under
+    out/runs/coupled_ab/image-<image sha>-<binary sha>/ and reused when complete."""
+    stock_ins, card_args = CARD or (coupled.inputs(device), [])
+    stock = Path(stock_ins["firmware"])
+    stock_sha = coupled.file_digest(stock)
+    image_sha = coupled.file_digest(Path(image))
+    key = f"image-{image_sha[:16]}-{coupled.file_digest(Path(binary))[:12]}"
+    folder = ROOT / "out" / "runs" / "coupled_ab" / key
+    ready = folder / "ready"
+    cold = folder / "cold"
+    dsp_image = ready / "digi-audio-dn2-image.bin"
+    pair = (cold / "digi-audio-m5.snap", cold / "digi-audio-m5.snap.dsp")
+    if not all(p.is_file() for p in pair):
+        ready_argv = [
+            sys.executable, "-m", "tools.emulator.ready", device,
+            "--out", str(ready),
+            "--syx", image,
+            "--base-sha256", stock_sha,
+        ]  # fmt: skip
+        if card_args:
+            ready_argv += [
+                "--card-image",
+                card_args[card_args.index("--card-image") + 1],
+            ]
+        # ready.py also boots the ColdFire (its own snapshot, not used here); the
+        # pair below comes from coupled-run, as `--cold-base` expects.
+        process(ready_argv, tools.python_env(), folder / "ready-log", 3600)
+        cold.mkdir(parents=True, exist_ok=True)
+        prep = [
+            binary,
+            "--syx", image,
+            "--cold-base", stock_sha,
+            "--dsp", "sharc",
+            "--dsp-image", str(dsp_image),
+            "--dsp-cold-idle", str(ready / "cold-idle.dsp"),
+            "--cold-save", str(cold),
+            *card_args,
+            "--scenarios", str(coupled.scenario_path(scenarios)),
+            "--scenario", scenario,
+            "--seconds", "0.5",
+            "--out", str(folder / "cold-report.json"),
+        ]  # fmt: skip
+        process(prep, coupled.run_env(ENV, syx=stock), folder / "cold-log", 3600)
+        if not all(p.is_file() for p in pair):
+            raise Invalid(f"cold boot of {label} left no ready pair: {cold}")
+    return {
+        "image": image,
+        "image_sha256": image_sha,
+        "cold_dir": str(cold),
+        "stock": str(stock),
+        "inputs": {
+            "firmware": Path(image),
+            "DSP image": dsp_image,
+            "DSP state": pair[1],
+            "CF snapshot": pair[0],
+        },
+        "args": ["--cold-base", stock_sha, "--dsp", "sharc"],
+    }
+
+
 def one_run(
     binary: str,
     scenario: str,
     scenarios: str | None,
     device: str,
     patch: str | None = None,
+    image: dict | None = None,
 ) -> dict:
-    """One validated native sample; the matrix uses the same persistent helper."""
+    """One validated native sample; the matrix uses the same persistent helper.
+
+    `image` is a prepare_image result: the run boots from that patched image's cold
+    pair. The tier lists come from the stock firmware it was built from, because
+    the patched digest has no entry in config/emulator.json (and both labels must
+    get the same tier)."""
     ins, card_args = CARD or (coupled.inputs(device), [])
     card = card_args[card_args.index("--card-image") + 1] if card_args else None
     scenarios = scenarios or str(ROOT / "tests" / "scenarios" / f"{device}.json")
+    tier_syx = ins["firmware"]
+    if image:
+        ins = image["inputs"]
+        tier_syx = image["stock"]
     with tempfile.TemporaryDirectory() as tmp:
         return artifact_run(
             binary,
             scenario,
             scenarios,
             inputs=ins,
-            env=coupled.run_env(ENV, syx=ins["firmware"]),
+            env=coupled.run_env(ENV, syx=tier_syx),
             seconds=float(SECONDS) if SECONDS else None,
             folder=Path(tmp),
             timeout=600,
             card=card,
             patch=patch,
+            cold=image["args"] if image else None,
         )
 
 
@@ -283,12 +375,24 @@ def main() -> None:
         help="a DSP patch file for the runs of LABEL (tools/patchkit/pk_dsp_diff.py writes one from two images)",
     )
     ap.add_argument(
+        "--image",
+        action="append",
+        default=[],
+        metavar="LABEL=SYX",
+        help="a patched firmware image for the runs of LABEL (nx run patchkit:device-images); "
+        "give one for every label",
+    )
+    ap.add_argument(
         "--env", action="append", default=[], metavar="K=V", help="run environment"
     )
     ap.add_argument("--out")
     args = ap.parse_args()
     global SECONDS
     SECONDS = args.seconds
+    if args.patch and args.image:
+        sys.exit(
+            "--patch cannot be combined with --image: coupled-run refuses --dsp-patch with --cold-base"
+        )
     ENV.update(e.partition("=")[::2] for e in args.env)
     for item in args.patch:
         label, _, path = item.partition("=")
@@ -306,6 +410,37 @@ def main() -> None:
         if not path or not pathlib.Path(path).is_file():
             sys.exit("expected LABEL=BINARY, got %r" % item)
         bins.append((label, path))
+    for item in args.image:
+        label, _, path = item.partition("=")
+        if label not in {b[0] for b in bins} or not pathlib.Path(path).is_file():
+            sys.exit("expected LABEL=SYX with a known label, got %r" % item)
+        IMAGES[label] = str(pathlib.Path(path).resolve())
+    if IMAGES and set(IMAGES) != {b[0] for b in bins}:
+        sys.exit(
+            "--image must be given for every label (%s): an A/B of a patched image "
+            "against stock firmware compares different firmware"
+            % ", ".join(b[0] for b in bins)
+        )
+    prepared: dict[str, dict] = {}
+    # Before the exclusive hold: the cold preparation builds and boots under the shared lock.
+    for label, path in bins:
+        if label in IMAGES:
+            scn = args.scenarios or str(
+                ROOT / "tests" / "scenarios" / f"{args.device}.json"
+            )
+            prepared[label] = prepare_image(
+                label, IMAGES[label], path, args.device, scn, args.scenario[0]
+            )
+            print(
+                "%-3s image %s (sha256 %s)  cold dir %s"
+                % (
+                    label,
+                    prepared[label]["image"],
+                    prepared[label]["image_sha256"][:16],
+                    prepared[label]["cold_dir"],
+                ),
+                flush=True,
+            )
     runs: dict[tuple[str, str], list[dict]] = {}
     with benchlock.hold("exclusive", "coupled_ab"):
         for scenario in args.scenario:
@@ -313,7 +448,12 @@ def main() -> None:
                 order = bins if i % 2 == 0 else list(reversed(bins))
                 for label, path in order:
                     r = one_run(
-                        path, scenario, args.scenarios, args.device, PATCHES.get(label)
+                        path,
+                        scenario,
+                        args.scenarios,
+                        args.device,
+                        PATCHES.get(label),
+                        prepared.get(label),
                     )
                     r["pair"] = i
                     runs.setdefault((scenario, label), []).append(r)
