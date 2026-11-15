@@ -82,6 +82,7 @@ describe('machineBudgetFailure', () => {
 
 const fxGood = (): FxBlock => ({
   master: Array<number>(64).fill(0.5),
+  ret: [],
   instructions: 500,
   returned: true,
   halt: 'breakpoint',

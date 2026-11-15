@@ -321,7 +321,7 @@ export class MachineRig {
       returned,
       halt: res.halt,
       finalPc: res.final_pc,
-      contextBad: returned ? contextBad(res.regs, context) : [],
+      contextBad: returned ? contextBad(res.regs, context, res.final_pc) : [],
       faults: faults & 0xffff,
       foreign: this.recordStores ? this.foreignStores(out, res.stores) : [],
       right: dt2 ? words(res.reads[1], 32) : [],

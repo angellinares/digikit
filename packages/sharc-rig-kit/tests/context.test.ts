@@ -37,11 +37,16 @@ describe('resolveContext', () => {
 });
 
 describe('contextBad', () => {
-  it('names the registers that came back different, comparing as 32-bit words and reading a missing value as 0', () => {
+  it('names the registers that came back different, comparing as 32-bit words', () => {
     const ctx = { ...FRIENDLY, M7: -1, M5: 4 };
-    const back: Record<string, number | null> = { ...ctx, M7: 0xffffffff, M5: 5, L2: null };
+    const back: Record<string, number | null> = { ...ctx, M7: 0xffffffff, M5: 5 };
     expect(contextBad(back, ctx)).toEqual(['M5']);
     expect(contextBad({ ...back, L2: 7 }, ctx)).toEqual(['M5', 'L2']);
+  });
+
+  it('refuses a register the rig did not report', () => {
+    const ctx = { ...FRIENDLY };
+    expect(() => contextBad({ ...ctx, L2: null }, ctx, 0x90000)).toThrow(/did not report register L2/);
   });
 });
 

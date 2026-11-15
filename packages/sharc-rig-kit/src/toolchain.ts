@@ -47,7 +47,7 @@ export interface SharcObject {
   /** defined symbol -> parcel offset */
   symbols: Record<string, number>;
   /** data section -> [bytes in memory order, is bss] */
-  data: Record<string, { bytes: Uint8Array; bss: boolean }>;
+  data: Record<string, { bytes: Uint8Array; bss: boolean; align?: number }>;
   /** data symbol -> [section, byte offset] */
   dataSymbols: Record<string, { section: string; offset: number }>;
 }
@@ -58,6 +58,8 @@ export interface Linked {
   codeBoot: string;
   /** symbol -> short-word address */
   symbols: Record<string, number>;
+  /** instructions the link re-decoded */
+  checked?: number;
 }
 
 /** The include directories of an object of a module: its generated and own sources, then the shared ones of pins.toml. */
@@ -100,7 +102,10 @@ export function assemble(text: string): SharcObject {
     parcels: j.section.length / 4,
     symbols: Object.fromEntries(Object.entries(j.symbols).map(([n, [p]]) => [n, p])),
     data: Object.fromEntries(
-      Object.entries(j.data).map(([n, [hex, , bss]]) => [n, { bytes: Uint8Array.from(Buffer.from(hex, 'hex')), bss }]),
+      Object.entries(j.data).map(([n, [hex, align, bss]]) => [
+        n,
+        { bytes: Uint8Array.from(Buffer.from(hex, 'hex')), bss, align },
+      ]),
     ),
     dataSymbols: Object.fromEntries(
       Object.entries(j.data_symbols).map(([n, [section, offset]]) => [n, { section, offset }]),
@@ -118,8 +123,9 @@ export function link(object: SharcObject, baseSw: number, externs: Record<string
     base_sw: number;
     code_boot: string;
     symbols: Record<string, number>;
+    checked?: number;
   };
-  return { baseSw: j.base_sw, codeBoot: j.code_boot, symbols: j.symbols };
+  return { baseSw: j.base_sw, codeBoot: j.code_boot, symbols: j.symbols, checked: j.checked };
 }
 
 /** A DSP source as `pk_sharc` reads it: `#include` from the include directories and the source's own directory. */
