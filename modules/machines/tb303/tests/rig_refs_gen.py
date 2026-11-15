@@ -19,8 +19,8 @@ HERE = Path(__file__).resolve().parent
 def generate(check: bool) -> None:
     mod = HERE
     sys.path.insert(0, str(mod))
+    import tb303_cases as t  # type: ignore[import-not-found]
     import tb303_ref  # type: ignore[import-not-found]
-    import test_tb303 as t  # type: ignore[import-not-found]
 
     out = mod / "rig/ref"
     for name, (note, vel, params) in t.CASES.items():
