@@ -365,7 +365,7 @@ The contract is the ABI in `sdk.toml`, so a Rust service uses the generated bind
 
 `check:layers` enforces that the rest of the runtime reaches a service only through these interfaces (added in R2c; [ARCHITECTURE.md](../ARCHITECTURE.md) says what it checks today).
 
-**Template.** In the runtime crate a service is a folder `src/services/<name>/` with `mod.rs`, `records.rs`, `slots.rs`, `dsp/` and `tests/`. It maps one to one to `modules/core/services/<name>/{module.toml, src/, adapter/, tests/}` when the services are linked in (R9 and R10: `fx` and `machines` are crates `dkrt-svc-fx` and `dkrt-svc-machines` without `module.toml` and `adapter/` yet), and `module:new service` generates it. The template and its `module:check` structure check land in R12-3 (section 13.2); every service (lfo, fx, machines, later samples) uses it. R2 moves code only: no behaviour change. R7 proves that interface B is generic.
+**Template.** In the runtime crate a service is a folder `src/services/<name>/` with `mod.rs`, `records.rs`, `slots.rs`, `dsp/` and `tests/`. It maps one to one to `modules/core/services/<name>/{module.toml, src/, adapter/, tests/}` when the services are linked in (R9 and R10: `fx` and `machines` are crates `dkrt-svc-fx` and `dkrt-svc-machines` without `module.toml` and `adapter/` yet), and `module:new service` generates it. The template and its `module:check` structure check land in R12-1 (section 13.2), before the `.dks` steps; every service (lfo, fx, machines, samples) uses it. R2 moves code only: no behaviour change. R7 proves that interface B is generic.
 
 ## 6. DSP
 
@@ -657,7 +657,7 @@ Items 7, 9 and 10 link services into the image as a temporary step, so each boun
 | 9 | `fx` linked in (R9 built: crate `dkrt-svc-fx`, branch `rt/r9-fx-linked`), with neutral adapter functions. Check that each service object is a separate input of the device tests (`tools/nx/device-inputs.mjs`), so a service edit selects only the tests that load it. | 3.2, 10 | 4-5 days | High | Medium |
 | 10 | `machines` linked in (R10 built: crate `dkrt-svc-machines`, branch `rt/r10-machines-linked`; the firmware page is `dkrt_abi::fw::Fw`, the native page calls are `CoreApi::native_*`), with neutral adapter functions; layer check final (only `lfo` and `samples` stay in `src/services/`) | 3.2, 10 | 4-5 days | High: done criterion 1 | Medium |
 | 11 | Boot plan with one verdict per module; module states; refusal fixtures | 5, 8 | 2-3 days | High: users see why | Medium-high |
-| 12 | Services as `.dks`, hooks at boot, workbench binding and install (design: section 13.2) | 5, 13.2 | 7-10 days without R12-7 | High: small runtime; done criteria 5, 6 and 7 | Medium |
+| 12 | Services as `.dks`, hooks at boot, workbench binding and install (design: section 13.2) | 5, 13.2 | 7-10 days without R12-8 | High: small runtime; done criteria 5, 6 and 7 | Medium |
 | 13 | Storage interface and files memory (split out of item 7): the `Storage` trait in the Platform composition (stat, read head, read range, read all, paged listing), the store and firmware-fs routes in the adapter chosen by profile data, listing memory from the arena (at most 2), `dkrt_sample_fs` and `dkrt_files_fs` in the adapter's `storage.s` | 9 | 2-3 days | Medium: a clean boundary for the store | Medium |
 | Later | Projects, event tables, DSP stack guard, MISSING placeholder | 8, 12 | Own plans | | |
 
@@ -693,7 +693,7 @@ Prefixes: `S:` = branch `rt/r8-spike`; F131 = `S:docs/findings/131-r8-whole-path
 - Version, `.dks` vs runtime: exact match of a generated fingerprint over the B and C lists. Module vs service: same major, minor not older. Rejected: a pointer struct passed at init (a second mechanism); exact runtime version only (a stale dev `.dks` would pass).
 - Build: as the spike's Rust provider (`S:tests/fixtures/modules/hooktest-rs/module.toml`): crate and adapter objects, packed unbound, then `patchkit bind` against the user's firmware.
 
-**Hooks in scope.** 30 of 54 hooks, not 45: the runtime's own adapters stay in the image (section 3), and `samples` is not a crate yet.
+**Hooks in scope.** 30 of 54 hooks, not 45: the runtime's own adapters stay in the image (section 3), and `samples` becomes `.dks` in a later item.
 
 - `machines.dks`, 21 hooks (`machines/module.toml:352-775`). Movable now: type_page.count, type_page.desc, owner_type_load, clone.5, page.source_code, page.source_draw. Displaced branch dropped: clone.0-3, srcpage, type_reader.load. Position-independent tail: group. Boot-thread: param_code.args, param_code.map. First fire after main-OS entry: list.entry, list_rank_insert. Vtable-only: dispatch, clone.4. Interrupt (stub and slot): clone.6 (DT2), frametype (DN2). It also fills the page key and turn slots (`modules/core/services/machines/src/handlers.rs:78-91`).
 - `fx.dks`, 9 hooks (`fxpages/module.toml:86-138`). Movable: tab_label_test, filter_graph_test. Boot-thread: fx_array.init_exit, fx_array.load, fx_array.save, sound_load_exit. After main-OS entry: fx_key_list.load, fx_view_list.load. Vtable-only: page_desc.
@@ -725,15 +725,16 @@ Prefixes: `S:` = branch `rt/r8-spike`; F131 = `S:docs/findings/131-r8-whole-path
 | Step | Content | Host test | Device test |
 | --- | --- | --- | --- |
 | R12-0 PC probe and checks | probe (documented in INSTRUMENTATION.md), both checks | none; validated by the runs | - |
-| R12-1 Format v2 and provider slots | table v2, role word, provider slots, multi-provider planner, new codes | dkneeds round trip; planner cases; `patchkit dkm-identity` | - |
-| R12-2 Installer and slots | spike installer merged; slot fill, clear, disarm | FakePlatform call order | spike test with a slot, safe mode, a second claimant, `DIGI_FLUSH_CHECK=1` |
-| R12-3 Service ABI, service template and `lfo.dks` | B row in `dk_module_def`, C imports, fingerprint; `module:new service` (generates `modules/core/services/<name>/` with `module.toml` `role = "service"`, `src/` with `lib.rs`, `records.rs`, `slots.rs`, `adapter/`, `dsp/`, `tests/`); `module:check` structure check for services (the layout, exactly one exported entry `dk_module`, declarations equal to the manifest); `lfo.dks` is the first service made from the template | lfo over FakeCore; structure check cases (wrong layout, second export, declaration differing from the manifest) | core/runtime-lfo-tests |
-| R12-4 `fx.dks` | fx crate + fxpages hooks, moved to the template layout | fx crate tests | digikit/freqshift; stock sites with no service |
-| R12-5 `machines.dks` | after R10 merges; moved to the template layout | machines crate tests | digikit/pluck, digikit/shot |
-| R12-6 Transfer installs services | mockup first | resolution behind fakes | transfer-live per device |
-| R12-7 SHARC stubs, dispatch in services | slice proof first: one stub, golden hashes at a zero slot, instruction-ratio A/B | - | - |
+| R12-1 Service crates and template | move the `samples` and `lfo` services out of the runtime crate into their own crates; all four service crates (fx, machines, samples, lfo) use one template layout (`lib.rs`, `records.rs`, `slots.rs`, `dsp/`, `tests/`) with the single `dk_module` entry carrying the `ServiceRow`; `module:new service` (generates `modules/core/services/<name>/` with `module.toml` `role = "service"`); `module:check` structure check for services (the layout, exactly one exported entry `dk_module`, declarations equal to the manifest); no `.dks` format and no installer | every service has the same host tests behind FakeCore; structure check cases (wrong layout, second export, declaration differing from the manifest); object diff of the runtime (identical or explained) | one targeted device batch |
+| R12-2 Format v2 and provider slots | table v2, role word, provider slots, multi-provider planner, new codes | dkneeds round trip; planner cases; `patchkit dkm-identity` | - |
+| R12-3 Installer and slots | spike installer merged; slot fill, clear, disarm | FakePlatform call order | spike test with a slot, safe mode, a second claimant, `DIGI_FLUSH_CHECK=1` |
+| R12-4 Service ABI fingerprint and `lfo.dks` | B row in `dk_module_def`, C imports, fingerprint; `lfo.dks` is the first service built as a `.dks` | lfo over FakeCore | core/runtime-lfo-tests |
+| R12-5 `fx.dks` | fx crate + fxpages hooks | fx crate tests | digikit/freqshift; stock sites with no service |
+| R12-6 `machines.dks` | after R10 merges | machines crate tests | digikit/pluck, digikit/shot |
+| R12-7 Transfer installs services | mockup first | resolution behind fakes | transfer-live per device |
+| R12-8 SHARC stubs, dispatch in services | slice proof first: one stub, golden hashes at a zero slot, instruction-ratio A/B | - | - |
 
-Order: R10, R11, then R12-0..R12-7. R12-6 may run in a UI lane after R12-1. Payoff high (done criteria 5-7 for fx and machines). Confidence: ColdFire medium-high (the spike ran on both devices in the emulator); R12-7 low-medium, with a separate go. Estimate 7-10 agent days without R12-7.
+Order: R10, R11, T1e step 3, then R12-1 to R12-8 (R12-0 any time; R12-7 Transfer may run in a UI lane after R12-2). `samples.dks` is a later item. Payoff high (done criteria 5-7 for fx and machines). Confidence: ColdFire medium-high (the spike ran on both devices in the emulator); R12-8 low-medium, with a separate go. Estimate 7-10 agent days without R12-8.
 
 ## 14. Checks
 
