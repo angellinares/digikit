@@ -426,6 +426,25 @@ def main() -> None:
             % ", ".join(b[0] for b in bins)
         )
     prepared: dict[str, dict] = {}
+    if IMAGES:
+        # The scenario's PCM pin belongs to the stock ready state; the images are
+        # compared with each other (PCM equality is checked after the runs).
+        src = pathlib.Path(
+            args.scenarios or ROOT / "tests" / "scenarios" / f"{args.device}.json"
+        )
+        doc = json.loads(coupled.scenario_path(src).read_text())
+        for sc in doc["scenarios"]:
+            sc.pop("expect_sha256", None)
+        payload = json.dumps(doc, separators=(",", ":"))
+        nopin = (
+            ROOT
+            / "out"
+            / "scenarios"
+            / ("nopin-" + hashlib.sha256(payload.encode()).hexdigest()[:16] + ".json")
+        )
+        nopin.parent.mkdir(parents=True, exist_ok=True)
+        nopin.write_text(payload)
+        args.scenarios = str(nopin)
     # Before the exclusive hold: the cold preparation builds and boots under the shared lock.
     for label, path in bins:
         if label in IMAGES:
@@ -489,6 +508,11 @@ def main() -> None:
                     "%-12s %-3s ns per DSP instruction  median %.1f  min %.1f  max %.1f"
                     % (scenario, label, statistics.median(ns), min(ns), max(ns))
                 )
+            cfs = [r["cf_cpu"] for r in rs]
+            print(
+                "%-12s %-3s cf cpu/audio s   median %.3f  min %.3f  max %.3f"
+                % (scenario, label, statistics.median(cfs), min(cfs), max(cfs))
+            )
             print(
                 "%-12s %-3s dsp cpu/audio s  median %.3f  IQR %.3f  min %.3f  max %.3f  n=%d  pcm %s"
                 % (
@@ -506,6 +530,23 @@ def main() -> None:
             a, b = bins[0][0], bins[1][0]
             ra, rb = runs[(scenario, a)], runs[(scenario, b)]
             ratios = [y["dsp_cpu"] / x["dsp_cpu"] for x, y in zip(ra, rb, strict=True)]
+            cf = [y["cf_cpu"] / x["cf_cpu"] for x, y in zip(ra, rb, strict=True)]
+            print(
+                "%-12s %s/%s CF thread paired ratio  median %.3f  min %.3f  max %.3f"
+                % (scenario, b, a, statistics.median(cf), min(cf), max(cf))
+            )
+            print(
+                "%-12s PCM %s between %s and %s"
+                % (
+                    scenario,
+                    "EQUAL"
+                    if {r["pcm"] for r in ra + rb}
+                    and len({r["pcm"] for r in ra + rb}) == 1
+                    else "DIFFERENT",
+                    a,
+                    b,
+                )
+            )
             print(
                 "%-12s %s/%s paired ratio  median %.3f  min %.3f  max %.3f"
                 % (scenario, b, a, statistics.median(ratios), min(ratios), max(ratios))
