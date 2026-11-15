@@ -38,6 +38,9 @@ members = [
     "modules/core/runtime/sdk",
     "modules/core/runtime/abi",
     "modules/core/runtime/fit",
+    "modules/core/runtime/link",
+    "modules/core/runtime/test-support",
+    "modules/core/services/fx",
     # host test harness for <dk/platform/ui.h> (fake dk_ui_* calls, driver, C sample)
     "modules/core/adapters/ui/host",
     "modules/core/fw/rs",

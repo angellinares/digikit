@@ -3,11 +3,24 @@
   { "name": "control-client", "dir": "packages/control-client", "include": "tests/*.test.ts" },
   { "name": "test-support", "dir": "packages/test-support", "include": "tests/*.test.ts" },
   { "name": "dk-session", "dir": "packages/dk-session", "include": "tests/*.test.ts" },
+  { "name": "sharc-rig-kit", "dir": "packages/sharc-rig-kit", "include": "tests/*.test.ts" },
+  {
+    "name": "sharc-rig-conformance",
+    "dir": "packages/sharc-rig-kit",
+    "include": "conformance/*.test.ts",
+    "testTimeout": 7200000
+  },
   { "name": "web-transfer", "dir": "apps/web", "include": "tests/*.test.ts", "exclude": ["tests/*.wasm.test.ts"] },
   { "name": "web-wasm", "dir": "apps/web", "include": "tests/*.wasm.test.ts", "testTimeout": 120000 },
   { "name": "workbench-core", "dir": "packages/workbench-core", "include": "tests/*.test.ts", "conditions": ["browser"] },
   { "name": "desktop-host", "dir": "apps/desktop", "include": "ui/tests/*.test.ts", "conditions": ["browser"] },
   { "name": "regression-host", "dir": "tests/regression", "include": "host/**/*.test.ts" },
-  { "name": "module-tests", "dir": "modules", "include": "**/tests/**/*.test.ts" },
+  { "name": "module-tests", "dir": "modules", "include": "**/tests/**/*.test.ts", "exclude": ["**/*.rig.test.ts"] },
+  {
+    "name": "module-rig",
+    "dir": ".",
+    "include": "{modules,tests/fixtures/modules}/**/tests/*.rig.test.ts",
+    "testTimeout": 600000
+  },
   { "name": "nx-host", "dir": "tools", "include": "nx/tests/*.test.ts" }
 ]

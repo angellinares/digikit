@@ -1,7 +1,9 @@
 //! `Storage`: the read side of the files the core can see, behind the platform. Device differences (the DT2 firmware file system, the digikit store of
 //! the DN2) live in the implementation; callers name a root and a root-relative path.
 //!
-//! Every call runs in task context (the UI task or the I/O task) and never in an interrupt. Errors are the `dkrt_sdk` `E_*` codes.
+//! Every call runs in task context (the UI task or the I/O task) and never in an interrupt. Errors are the `dkrt_sdk` `E_*` codes. The same rules hold on
+//! every implementation (`modules/core/runtime/tests/storage/contract.toml`): an unknown root is `E_FORMAT`; a path longer than `path_max` of its root is
+//! `E_TOO_BIG`; a path with a NUL is `E_SEL_PATH`. Only the root (the empty path) is a directory for `stat`; below it a directory is not found.
 
 use dkrt_sdk::files::{HASH_ELEKTRON32 as SDK_HASH_ELEKTRON32, SAMPLES, STORE};
 
@@ -61,19 +63,19 @@ impl DirEntry {
 pub trait Storage {
     /// Longest root-relative path of `root`: the device's `sample_path_max` for `ROOT_SAMPLES`, the store path limit for `ROOT_STORE`; 0 for another root.
     fn path_max(&self, root: u32) -> u32;
-    /// Kind, size and hash of `path` (empty: the root itself).
+    /// Kind, size and hash of `path` (empty: the root itself, a `Dir`). A directory below the root and a missing path give `E_NOT_FOUND`.
     unsafe fn stat(&self, root: u32, path: &[u8]) -> Result<Stat, i32>;
-    /// The first 64 bytes of a file.
+    /// The first 64 bytes of a file. An empty path is `E_SEL_PATH`; a missing path or a directory `E_NOT_FOUND`; a file under 64 bytes (0 included) `E_READ`.
     unsafe fn read_head(&self, root: u32, path: &[u8], out: &mut [u8; 64]) -> Result<(), i32>;
-    /// `stat` and `read_head` of a file with one lookup (one find or open). A path that is not a file gives its `Stat` and 0 head bytes; for a file, `out`
-    /// holds the first 64 bytes (zero padded) and the count is the bytes of the file in it. Errors are those of `read_head`.
+    /// `stat` and `read_head` of a file with one lookup (one find or open). The root (empty path) gives its `Stat` and 0 head bytes; for a file, `out` holds
+    /// the first 64 bytes and the count is 64. Errors are those of `read_head`, except that the empty path is the root.
     unsafe fn stat_head(
         &self,
         root: u32,
         path: &[u8],
         out: &mut [u8; 64],
     ) -> Result<(Stat, usize), i32>;
-    /// Read up to `out.len()` bytes from `offset`; the count read (0 at or past the end).
+    /// Read up to `out.len()` bytes from `offset`; the count read (0 at or past the end). Errors of the path are those of `read_head`.
     unsafe fn read_range(
         &self,
         root: u32,
@@ -82,12 +84,13 @@ pub trait Storage {
         out: &mut [u8],
     ) -> Result<usize, i32>;
     /// Read a whole file into `dst`, which holds `cap` bytes; the file size. The caller takes the buffer from the arena after `stat`; a file larger than `cap`
-    /// gives `E_TOO_BIG` and writes nothing.
+    /// gives `E_TOO_BIG` and writes nothing. Errors of the path are those of `read_head`.
     unsafe fn read_all(&self, root: u32, path: &[u8], dst: *mut u8, cap: u32) -> Result<u32, i32>;
     /// Bytes of listing state for `root`; the caller provides a block of at least this size, 16-byte aligned (an arena block), for the whole listing. The
     /// block starts with a small header the provider writes (a route tag): the caller must not touch it.
     fn list_state_bytes(&self, root: u32) -> usize;
-    /// Starts a listing of `dir`; all provider state lives in `state` (no other memory is kept between calls).
+    /// Starts a listing of `dir` (empty: the root); all provider state lives in `state` (no other memory is kept between calls). A directory that is not
+    /// there, and a file, give `E_NOT_FOUND`. The order of the entries is not part of the contract.
     unsafe fn list_open(&self, root: u32, dir: &[u8], state: *mut u8) -> Result<(), i32>;
     /// One bounded provider step. `Entry` = `out` holds an entry. `Pending` = progress made, no entry yet: call again on a later step. `End` = the listing
     /// is finished (further calls return `End`). Err(`E_BUSY`) = the store lock was taken: call again later.

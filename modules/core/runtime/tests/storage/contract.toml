@@ -1,0 +1,609 @@
+# The Storage contract: what the core expects of `Storage` (modules/core/runtime/abi/src/storage.rs). One table, two checkers:
+#   host    `FakeStorage` (src/rs/src/fake_storage.rs) answers every row; the real adapter answers the same rows
+#   device  `storage.device.test.ts` runs the rows with `device = "list"` on the real adapter of each device, through the listing of test/files-proof
+# A row with no device checker says why in `device_pending`. The rows are line based (`key = value`, one per line): the host test reads them without a
+# TOML crate, and a row has no other lines.
+#
+# The tree is the same on both sides. A file holds the ramp: byte i is (i * 31 + 7) & 255. A `[[file]]` with `device = "no"` is for the host only.
+# Order is not part of the contract: a listing is compared as a set. On the DT2 the samples root is the firmware file system, which adds a
+# 16-byte trailer to the size that a listing reports (`dt2_samples_trailer`); the store route (DN2 samples, both store roots) reports the bytes sent.
+#
+# call     stat | read_head | stat_head | read_range | read_all | list | path_max
+# root     samples | store | other (a root the core does not know)
+# devices  (list rows only) the devices that run the row; absent: both
+# path     root-relative; or `path_len` = N (N times "a"), "max" or "max+1" (the root's limit, and one more); or `path_nul` = "yes" (a path with a NUL)
+# expect   the result: `dir`, `file size=N`, `file size=N head=H`, `ok`, `n=N` (bytes read; they are the ramp), `size=N`, `N`, `profile`
+#          (path_max of samples: the device profile's), `list` (with `entries`: all `name:file:size` and `name:dir`; or `includes`: at least these), or `E_*` (the error)
+
+dt2_samples_trailer = 16
+
+[[file]]
+root = "samples"
+path = "KICKS/K1"
+size = 100
+
+[[file]]
+root = "samples"
+path = "KICKS/K2"
+size = 64
+
+[[file]]
+root = "samples"
+path = "KICKS/SUB/deep"
+size = 10
+
+[[file]]
+root = "samples"
+path = "SMALL"
+size = 10
+device = "no"
+
+[[file]]
+root = "samples"
+path = "ZERO"
+size = 0
+device = "no"
+
+[[file]]
+root = "store"
+path = "cases/a"
+size = 100
+
+[[file]]
+root = "store"
+path = "cases/sub/b"
+size = 10
+
+# ---- path_max
+
+[[case]]
+id = "path_max_store"
+what = "the store root's longest path is the store path limit"
+call = "path_max"
+root = "store"
+expect = "159"
+device_pending = "no host-reachable call for stat/read_head/read_range/read_all/path_max"
+
+[[case]]
+id = "path_max_samples"
+what = "the samples root's longest path is the device profile's sample path limit"
+call = "path_max"
+root = "samples"
+expect = "profile"
+device_pending = "no host-reachable call for stat/read_head/read_range/read_all/path_max"
+
+[[case]]
+id = "path_max_other"
+what = "a root the core does not know has no path"
+call = "path_max"
+root = "other"
+expect = "0"
+device_pending = "no host-reachable call for stat/read_head/read_range/read_all/path_max"
+
+# ---- stat
+
+[[case]]
+id = "stat_file_samples"
+what = "a file reports its size"
+call = "stat"
+root = "samples"
+path = "KICKS/K1"
+expect = "file size=100"
+device_pending = "no host-reachable call for stat/read_head/read_range/read_all/path_max"
+
+[[case]]
+id = "stat_file_store"
+what = "a file of the store root reports its size"
+call = "stat"
+root = "store"
+path = "cases/a"
+expect = "file size=100"
+device_pending = "no host-reachable call for stat/read_head/read_range/read_all/path_max"
+
+[[case]]
+id = "stat_root"
+what = "the empty path is the root, a directory"
+call = "stat"
+root = "samples"
+path = ""
+expect = "dir"
+device_pending = "no host-reachable call for stat/read_head/read_range/read_all/path_max"
+
+[[case]]
+id = "stat_root_store"
+what = "the empty path of the store root is a directory too"
+call = "stat"
+root = "store"
+path = ""
+expect = "dir"
+device_pending = "no host-reachable call for stat/read_head/read_range/read_all/path_max"
+
+[[case]]
+id = "stat_directory"
+what = "a directory below the root is not found (only the root is a Dir)"
+call = "stat"
+root = "samples"
+path = "KICKS"
+expect = "E_NOT_FOUND"
+device_pending = "no host-reachable call for stat/read_head/read_range/read_all/path_max"
+
+[[case]]
+id = "stat_missing"
+what = "a missing path is not found"
+call = "stat"
+root = "samples"
+path = "KICKS/none"
+expect = "E_NOT_FOUND"
+device_pending = "no host-reachable call for stat/read_head/read_range/read_all/path_max"
+
+[[case]]
+id = "stat_other_root_path"
+what = "a path of the other root is not found"
+call = "stat"
+root = "store"
+path = "KICKS/K1"
+expect = "E_NOT_FOUND"
+device_pending = "no host-reachable call for stat/read_head/read_range/read_all/path_max"
+
+[[case]]
+id = "stat_unknown_root"
+what = "an unknown root is a format error"
+call = "stat"
+root = "other"
+path = ""
+expect = "E_FORMAT"
+device_pending = "no host-reachable call for stat/read_head/read_range/read_all/path_max"
+
+[[case]]
+id = "stat_at_the_limit"
+what = "a path of exactly the root's limit is looked up"
+call = "stat"
+root = "samples"
+path_len = "max"
+expect = "E_NOT_FOUND"
+device_pending = "no host-reachable call for stat/read_head/read_range/read_all/path_max"
+
+[[case]]
+id = "stat_over_the_limit_samples"
+what = "a path over the samples limit is too big"
+call = "stat"
+root = "samples"
+path_len = "max+1"
+expect = "E_TOO_BIG"
+device_pending = "no host-reachable call for stat/read_head/read_range/read_all/path_max"
+
+[[case]]
+id = "stat_over_the_limit_store"
+what = "a path over the store limit is too big"
+call = "stat"
+root = "store"
+path_len = "max+1"
+expect = "E_TOO_BIG"
+device_pending = "no host-reachable call for stat/read_head/read_range/read_all/path_max"
+
+[[case]]
+id = "stat_nul"
+what = "a path with a NUL is a bad path"
+call = "stat"
+root = "samples"
+path_nul = "yes"
+expect = "E_SEL_PATH"
+device_pending = "no host-reachable call for stat/read_head/read_range/read_all/path_max"
+
+# ---- read_head
+
+[[case]]
+id = "read_head_file"
+what = "the first 64 bytes of a file"
+call = "read_head"
+root = "samples"
+path = "KICKS/K1"
+expect = "ok"
+device_pending = "no host-reachable call for stat/read_head/read_range/read_all/path_max"
+
+[[case]]
+id = "read_head_exact_64"
+what = "a file of exactly 64 bytes has a head"
+call = "read_head"
+root = "samples"
+path = "KICKS/K2"
+expect = "ok"
+device_pending = "no host-reachable call for stat/read_head/read_range/read_all/path_max"
+
+[[case]]
+id = "read_head_short"
+what = "a file under 64 bytes has no head: read error"
+call = "read_head"
+root = "samples"
+path = "SMALL"
+expect = "E_READ"
+device_pending = "no host-reachable call for stat/read_head/read_range/read_all/path_max"
+
+[[case]]
+id = "read_head_empty_file"
+what = "an empty file has no head: read error"
+call = "read_head"
+root = "samples"
+path = "ZERO"
+expect = "E_READ"
+device_pending = "no host-reachable call for stat/read_head/read_range/read_all/path_max"
+
+[[case]]
+id = "read_head_empty_path"
+what = "the empty path is a bad path"
+call = "read_head"
+root = "samples"
+path = ""
+expect = "E_SEL_PATH"
+device_pending = "no host-reachable call for stat/read_head/read_range/read_all/path_max"
+
+[[case]]
+id = "read_head_nul"
+what = "a path with a NUL is a bad path"
+call = "read_head"
+root = "samples"
+path_nul = "yes"
+expect = "E_SEL_PATH"
+device_pending = "no host-reachable call for stat/read_head/read_range/read_all/path_max"
+
+[[case]]
+id = "read_head_directory"
+what = "a directory path is not found"
+call = "read_head"
+root = "samples"
+path = "KICKS"
+expect = "E_NOT_FOUND"
+device_pending = "no host-reachable call for stat/read_head/read_range/read_all/path_max"
+
+[[case]]
+id = "read_head_missing"
+what = "a missing path is not found"
+call = "read_head"
+root = "store"
+path = "cases/none"
+expect = "E_NOT_FOUND"
+device_pending = "no host-reachable call for stat/read_head/read_range/read_all/path_max"
+
+[[case]]
+id = "read_head_over_the_limit"
+what = "a path over the root's limit is too big"
+call = "read_head"
+root = "store"
+path_len = "max+1"
+expect = "E_TOO_BIG"
+device_pending = "no host-reachable call for stat/read_head/read_range/read_all/path_max"
+
+# ---- stat_head
+
+[[case]]
+id = "stat_head_file"
+what = "stat and head of a file with one lookup: the head is 64 bytes"
+call = "stat_head"
+root = "samples"
+path = "KICKS/K1"
+expect = "file size=100 head=64"
+device_pending = "no host-reachable call for stat/read_head/read_range/read_all/path_max"
+
+[[case]]
+id = "stat_head_root"
+what = "the root gives its Stat and no head bytes"
+call = "stat_head"
+root = "samples"
+path = ""
+expect = "dir head=0"
+device_pending = "no host-reachable call for stat/read_head/read_range/read_all/path_max"
+
+[[case]]
+id = "stat_head_directory"
+what = "a directory below the root is not found"
+call = "stat_head"
+root = "samples"
+path = "KICKS"
+expect = "E_NOT_FOUND"
+device_pending = "no host-reachable call for stat/read_head/read_range/read_all/path_max"
+
+[[case]]
+id = "stat_head_short"
+what = "a file under 64 bytes has no head: read error"
+call = "stat_head"
+root = "samples"
+path = "SMALL"
+expect = "E_READ"
+device_pending = "no host-reachable call for stat/read_head/read_range/read_all/path_max"
+
+[[case]]
+id = "stat_head_missing"
+what = "a missing path is not found"
+call = "stat_head"
+root = "samples"
+path = "KICKS/none"
+expect = "E_NOT_FOUND"
+device_pending = "no host-reachable call for stat/read_head/read_range/read_all/path_max"
+
+# ---- read_range
+
+[[case]]
+id = "read_range_inside"
+what = "bytes from the middle of a file"
+call = "read_range"
+root = "samples"
+path = "KICKS/K1"
+offset = 2
+len = 4
+expect = "n=4"
+device_pending = "no host-reachable call for stat/read_head/read_range/read_all/path_max"
+
+[[case]]
+id = "read_range_across_the_end"
+what = "a read that runs over the end gives the bytes that are there"
+call = "read_range"
+root = "samples"
+path = "KICKS/K1"
+offset = 98
+len = 4
+expect = "n=2"
+device_pending = "no host-reachable call for stat/read_head/read_range/read_all/path_max"
+
+[[case]]
+id = "read_range_at_the_end"
+what = "a read at the end gives 0 bytes"
+call = "read_range"
+root = "samples"
+path = "KICKS/K1"
+offset = 100
+len = 4
+expect = "n=0"
+device_pending = "no host-reachable call for stat/read_head/read_range/read_all/path_max"
+
+[[case]]
+id = "read_range_past_the_end"
+what = "a read past the end gives 0 bytes"
+call = "read_range"
+root = "store"
+path = "cases/a"
+offset = 500
+len = 4
+expect = "n=0"
+device_pending = "no host-reachable call for stat/read_head/read_range/read_all/path_max"
+
+[[case]]
+id = "read_range_empty_path"
+what = "the empty path is a bad path"
+call = "read_range"
+root = "samples"
+path = ""
+offset = 0
+len = 4
+expect = "E_SEL_PATH"
+device_pending = "no host-reachable call for stat/read_head/read_range/read_all/path_max"
+
+[[case]]
+id = "read_range_nul"
+what = "a path with a NUL is a bad path"
+call = "read_range"
+root = "samples"
+path_nul = "yes"
+offset = 0
+len = 4
+expect = "E_SEL_PATH"
+device_pending = "no host-reachable call for stat/read_head/read_range/read_all/path_max"
+
+[[case]]
+id = "read_range_directory"
+what = "a directory path is not found"
+call = "read_range"
+root = "samples"
+path = "KICKS"
+offset = 0
+len = 4
+expect = "E_NOT_FOUND"
+device_pending = "no host-reachable call for stat/read_head/read_range/read_all/path_max"
+
+[[case]]
+id = "read_range_over_the_limit"
+what = "a path over the root's limit is too big"
+call = "read_range"
+root = "samples"
+path_len = "max+1"
+offset = 0
+len = 4
+expect = "E_TOO_BIG"
+device_pending = "no host-reachable call for stat/read_head/read_range/read_all/path_max"
+
+# ---- read_all
+
+[[case]]
+id = "read_all_fits"
+what = "a whole file into a buffer that holds it"
+call = "read_all"
+root = "samples"
+path = "KICKS/K1"
+cap = 128
+expect = "size=100"
+device_pending = "no host-reachable call for stat/read_head/read_range/read_all/path_max"
+
+[[case]]
+id = "read_all_exact_cap"
+what = "a buffer of exactly the file size holds it"
+call = "read_all"
+root = "samples"
+path = "KICKS/K1"
+cap = 100
+expect = "size=100"
+device_pending = "no host-reachable call for stat/read_head/read_range/read_all/path_max"
+
+[[case]]
+id = "read_all_too_small"
+what = "a buffer that is too small is too big for the file, and nothing is written"
+call = "read_all"
+root = "samples"
+path = "KICKS/K1"
+cap = 99
+expect = "E_TOO_BIG"
+device_pending = "no host-reachable call for stat/read_head/read_range/read_all/path_max"
+
+[[case]]
+id = "read_all_empty_path"
+what = "the empty path is a bad path"
+call = "read_all"
+root = "samples"
+path = ""
+cap = 128
+expect = "E_SEL_PATH"
+device_pending = "no host-reachable call for stat/read_head/read_range/read_all/path_max"
+
+[[case]]
+id = "read_all_nul"
+what = "a path with a NUL is a bad path"
+call = "read_all"
+root = "samples"
+path_nul = "yes"
+cap = 128
+expect = "E_SEL_PATH"
+device_pending = "no host-reachable call for stat/read_head/read_range/read_all/path_max"
+
+[[case]]
+id = "read_all_directory"
+what = "a directory path is not found"
+call = "read_all"
+root = "samples"
+path = "KICKS"
+cap = 128
+expect = "E_NOT_FOUND"
+device_pending = "no host-reachable call for stat/read_head/read_range/read_all/path_max"
+
+[[case]]
+id = "read_all_missing"
+what = "a missing path is not found"
+call = "read_all"
+root = "store"
+path = "cases/none"
+cap = 128
+expect = "E_NOT_FOUND"
+device_pending = "no host-reachable call for stat/read_head/read_range/read_all/path_max"
+
+[[case]]
+id = "read_all_over_the_limit"
+what = "a path over the root's limit is too big"
+call = "read_all"
+root = "store"
+path_len = "max+1"
+cap = 128
+expect = "E_TOO_BIG"
+device_pending = "no host-reachable call for stat/read_head/read_range/read_all/path_max"
+
+# ---- list
+
+[[case]]
+id = "list_samples_dir"
+what = "a samples directory lists its files and directories, not the files below"
+call = "list"
+root = "samples"
+path = "KICKS"
+expect = "list"
+entries = "K1:file:100,K2:file:64,SUB:dir"
+device = "list"
+
+[[case]]
+id = "list_samples_subdir"
+what = "a directory two levels down lists its file"
+call = "list"
+root = "samples"
+path = "KICKS/SUB"
+expect = "list"
+entries = "deep:file:10"
+device = "list"
+
+[[case]]
+id = "list_samples_root"
+what = "the samples root lists its top directory"
+call = "list"
+root = "samples"
+path = ""
+expect = "list"
+includes = "KICKS:dir"
+device = "list"
+
+[[case]]
+id = "list_store_dir"
+what = "a store directory lists its file and directory"
+call = "list"
+root = "store"
+path = "cases"
+expect = "list"
+entries = "a:file:100,sub:dir"
+device = "list"
+
+[[case]]
+id = "list_store_root"
+what = "the store root lists its top directory"
+call = "list"
+root = "store"
+path = ""
+expect = "list"
+includes = "cases:dir"
+device = "list"
+
+[[case]]
+id = "list_missing_dir"
+what = "a directory that is not there is not found"
+call = "list"
+root = "samples"
+path = "NOPE"
+expect = "E_NOT_FOUND"
+device = "list"
+
+[[case]]
+id = "list_missing_store_dir"
+what = "a store directory that is not there is not found"
+call = "list"
+root = "store"
+path = "nope"
+expect = "E_NOT_FOUND"
+device = "list"
+
+[[case]]
+id = "list_file"
+what = "a file path is not a directory: not found"
+call = "list"
+root = "samples"
+path = "KICKS/K1"
+expect = "E_NOT_FOUND"
+device = "list"
+
+[[case]]
+id = "list_store_file"
+what = "a store file path is not a directory: not found"
+call = "list"
+root = "store"
+path = "cases/a"
+expect = "E_NOT_FOUND"
+device = "list"
+
+[[case]]
+id = "list_over_the_limit_samples"
+what = "a path over the samples limit is too big"
+call = "list"
+root = "samples"
+path_len = "max+1"
+expect = "E_TOO_BIG"
+device = "list"
+devices = "dn2"
+
+[[case]]
+id = "list_over_the_limit_store"
+what = "a path over the store limit is too big"
+call = "list"
+root = "store"
+path_len = "max+1"
+expect = "E_TOO_BIG"
+device_pending = "the files service keeps 159 path bytes: a longer path is E_SEL_PATH before the adapter (the samples limit of the DN2, 151, is reachable; the DT2's 254 is not)"
+
+[[case]]
+id = "list_unknown_root"
+what = "an unknown root is a format error"
+call = "list"
+root = "other"
+path = ""
+expect = "E_FORMAT"
+device = "list"

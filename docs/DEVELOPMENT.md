@@ -189,6 +189,7 @@ pnpm test:host                # host Vitest projects; no device
 pnpm verify:host              # host lint, format, tests and types
 mise run test                 # the gate: Nx targets of the affected projects
 mise run module:check ID      # one module: conformance and its own tests
+pnpm nx:pilot run @digi/sharc-rig-kit:test-conformance-rig   # machine and effect conformance of every module on the SHARC-only rig (docs/TESTING.md "The Vitest kit")
 ```
 
 Pins are valid only for the firmware and ready state they were recorded with.

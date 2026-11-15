@@ -24,6 +24,14 @@
 //! instructions executed. `halt` is `breakpoint`, `max-steps` or `trap: <reason>`. `stores` lists, in execution order, the
 //! runs of bytes that instructions at a `watch` pc stored (addresses as the core keeps them: a byte that nothing loaded
 //! or poked is at 0x2800_0000 + its address). Nothing is recorded, and nothing costs, without `watch`.
+//!
+//! `pokem` changes some bits of a word (a halfword or a byte lane of a frame word): a word that nothing wrote reads as 0, as
+//! `CallSession.peek(addr) or 0` does in the Python rigs.
+//!
+//! One request runs on a fresh core and ends. `sharc-rig --serve` keeps the core: its first line is a request (code, return
+//! point, breaks, watch, optionally ops), every later line is `{"ops": [...]}`, and each line gets one response line
+//! (`{"error": "..."}` for a line it cannot run; the core stays as it was). The caller then runs a case block by block and
+//! stops at the first failing block, as the Python rigs do.
 
 mod json;
 
@@ -57,6 +65,8 @@ pub struct Call {
 #[derive(Debug)]
 pub enum Op {
     Poke(Vec<(u32, u32)>),
+    /// (word address, mask, value): the new word is `(old & !mask) | (value & mask)`
+    PokeMasked(Vec<(u32, u32, u32)>),
     Call(Call),
 }
 
@@ -106,32 +116,10 @@ fn u32_of(v: &Json) -> Result<u32, String> {
     }
 }
 
-pub fn parse_request(text: &str) -> Result<Request, String> {
-    let root = json::parse(text)?;
-    let need = |key: &str| root.get(key).ok_or_else(|| format!("request has no {key}"));
-    let return_sw = u32_of(need("return_sw")?)?;
-    let breaks = match root.get("breaks") {
-        Some(b) => b.arr()?.iter().map(u32_of).collect::<Result<_, _>>()?,
-        None => Vec::new(),
-    };
-    let mut watch = Vec::new();
-    if let Some(w) = root.get("watch") {
-        for pair in w.arr()? {
-            let pair = pair.arr()?;
-            if pair.len() != 2 {
-                return Err("a watch range is [first_pc, end_pc]".into());
-            }
-            watch.push((u32_of(&pair[0])?, u32_of(&pair[1])?));
-        }
-    }
-    let mut code = Vec::new();
-    for seg in need("code")?.arr()? {
-        let address = u32_of(seg.get("address").ok_or("code segment has no address")?)?;
-        let hex = seg.get("hex").ok_or("code segment has no hex")?.str()?;
-        code.push((address, hex_bytes(hex)?));
-    }
+/// The ops of a request, or of a `--serve` line.
+pub fn parse_ops(list: &Json) -> Result<Vec<Op>, String> {
     let mut ops = Vec::new();
-    for op in need("ops")?.arr()? {
+    for op in list.arr()? {
         if let Some(p) = op.get("poke") {
             let mut pairs = Vec::new();
             for pair in p.arr()? {
@@ -142,6 +130,16 @@ pub fn parse_request(text: &str) -> Result<Request, String> {
                 pairs.push((u32_of(&pair[0])?, u32_of(&pair[1])?));
             }
             ops.push(Op::Poke(pairs));
+        } else if let Some(p) = op.get("pokem") {
+            let mut triples = Vec::new();
+            for t in p.arr()? {
+                let t = t.arr()?;
+                if t.len() != 3 {
+                    return Err("a masked poke is [word_address, mask, value]".into());
+                }
+                triples.push((u32_of(&t[0])?, u32_of(&t[1])?, u32_of(&t[2])?));
+            }
+            ops.push(Op::PokeMasked(triples));
         } else if let Some(c) = op.get("call") {
             let mut regs = Vec::new();
             if let Some(r) = c.get("regs") {
@@ -174,9 +172,40 @@ pub fn parse_request(text: &str) -> Result<Request, String> {
                 read_regs,
             }));
         } else {
-            return Err("an op is {\"poke\": ...} or {\"call\": ...}".into());
+            return Err("an op is {\"poke\": ...}, {\"pokem\": ...} or {\"call\": ...}".into());
         }
     }
+    Ok(ops)
+}
+
+pub fn parse_request(text: &str) -> Result<Request, String> {
+    let root = json::parse(text)?;
+    let need = |key: &str| root.get(key).ok_or_else(|| format!("request has no {key}"));
+    let return_sw = u32_of(need("return_sw")?)?;
+    let breaks = match root.get("breaks") {
+        Some(b) => b.arr()?.iter().map(u32_of).collect::<Result<_, _>>()?,
+        None => Vec::new(),
+    };
+    let mut watch = Vec::new();
+    if let Some(w) = root.get("watch") {
+        for pair in w.arr()? {
+            let pair = pair.arr()?;
+            if pair.len() != 2 {
+                return Err("a watch range is [first_pc, end_pc]".into());
+            }
+            watch.push((u32_of(&pair[0])?, u32_of(&pair[1])?));
+        }
+    }
+    let mut code = Vec::new();
+    for seg in need("code")?.arr()? {
+        let address = u32_of(seg.get("address").ok_or("code segment has no address")?)?;
+        let hex = seg.get("hex").ok_or("code segment has no hex")?.str()?;
+        code.push((address, hex_bytes(hex)?));
+    }
+    let ops = match root.get("ops") {
+        Some(o) => parse_ops(o)?,
+        None => Vec::new(),
+    };
     Ok(Request {
         return_sw,
         breaks,
@@ -334,76 +363,148 @@ fn note_stores(out: &mut Vec<(u32, u32, u32)>, pc: u32, bytes: impl Iterator<Ite
     }
 }
 
-pub fn run(req: &Request) -> Result<Vec<CallResult>, String> {
-    let mut e = new_engine(&req.code)?;
-    let mut out = Vec::new();
-    for op in &req.ops {
-        match op {
-            Op::Poke(pairs) => {
-                for &(a, w) in pairs {
-                    poke_word(&mut e, a, w)?;
-                }
-            }
-            Op::Call(c) => out.push(run_call(&mut e, req, c)),
-        }
+/// A core that keeps its state between batches of ops. The request's code, return point, breaks and watch ranges are fixed.
+pub struct Session {
+    e: Engine,
+    req: Request,
+}
+
+impl Session {
+    /// The core of a request and the ops that the request carries.
+    pub fn new(mut req: Request) -> Result<(Session, Vec<Op>), String> {
+        let ops = std::mem::take(&mut req.ops);
+        let e = new_engine(&req.code)?;
+        Ok((Session { e, req }, ops))
     }
-    Ok(out)
+
+    /// Run the ops in order. A poke error ends the batch: the pokes before it stay.
+    pub fn ops(&mut self, ops: &[Op]) -> Result<Vec<CallResult>, String> {
+        let mut out = Vec::new();
+        for op in ops {
+            match op {
+                Op::Poke(pairs) => {
+                    for &(a, w) in pairs {
+                        poke_word(&mut self.e, a, w)?;
+                    }
+                }
+                Op::PokeMasked(triples) => {
+                    for &(a, mask, value) in triples {
+                        let old = peek_word(&self.e, a).unwrap_or(0);
+                        poke_word(&mut self.e, a, (old & !mask) | (value & mask))?;
+                    }
+                }
+                Op::Call(c) => out.push(run_call(&mut self.e, &self.req, c)),
+            }
+        }
+        Ok(out)
+    }
+}
+
+pub fn run(req: Request) -> Result<Vec<CallResult>, String> {
+    let (mut session, ops) = Session::new(req)?;
+    session.ops(&ops)
 }
 
 fn opt(v: Option<u32>) -> Json {
     v.map_or(Json::Null, |w| Json::Int(w as i64))
 }
 
-/// Parse a request, run it and write the response JSON.
-pub fn run_request(text: &str) -> Result<String, String> {
-    let req = parse_request(text)?;
-    let results = run(&req)?;
-    let results = results
-        .into_iter()
-        .map(|r| {
-            Json::Obj(vec![
-                ("instructions".into(), Json::Int(r.instructions as i64)),
-                ("halt".into(), Json::Str(r.halt)),
-                ("final_pc".into(), Json::Int(r.final_pc as i64)),
-                (
-                    "regs".into(),
-                    Json::Obj(r.regs.into_iter().map(|(n, v)| (n, opt(v))).collect()),
-                ),
-                (
-                    "reads".into(),
-                    Json::Arr(
-                        r.reads
-                            .into_iter()
-                            .map(|row| Json::Arr(row.into_iter().map(opt).collect()))
-                            .collect(),
+fn results_json(results: Vec<CallResult>) -> Json {
+    Json::Arr(
+        results
+            .into_iter()
+            .map(|r| {
+                Json::Obj(vec![
+                    ("instructions".into(), Json::Int(r.instructions as i64)),
+                    ("halt".into(), Json::Str(r.halt)),
+                    ("final_pc".into(), Json::Int(r.final_pc as i64)),
+                    (
+                        "regs".into(),
+                        Json::Obj(r.regs.into_iter().map(|(n, v)| (n, opt(v))).collect()),
                     ),
-                ),
-                (
-                    "stores".into(),
-                    Json::Arr(
-                        r.stores
-                            .into_iter()
-                            .map(|(pc, a, w)| {
-                                Json::Arr(vec![
-                                    Json::Int(pc as i64),
-                                    Json::Int(a as i64),
-                                    Json::Int(w as i64),
-                                ])
-                            })
-                            .collect(),
+                    (
+                        "reads".into(),
+                        Json::Arr(
+                            r.reads
+                                .into_iter()
+                                .map(|row| Json::Arr(row.into_iter().map(opt).collect()))
+                                .collect(),
+                        ),
                     ),
-                ),
-            ])
-        })
-        .collect();
+                    (
+                        "stores".into(),
+                        Json::Arr(
+                            r.stores
+                                .into_iter()
+                                .map(|(pc, a, w)| {
+                                    Json::Arr(vec![
+                                        Json::Int(pc as i64),
+                                        Json::Int(a as i64),
+                                        Json::Int(w as i64),
+                                    ])
+                                })
+                                .collect(),
+                        ),
+                    ),
+                ])
+            })
+            .collect(),
+    )
+}
+
+fn response_line(results: Json) -> String {
     let mut out = String::new();
     Json::Obj(vec![
         ("build".into(), Json::Str(sharc_native::build_info())),
-        ("results".into(), Json::Arr(results)),
+        ("results".into(), results),
     ])
     .write(&mut out);
     out.push('\n');
-    Ok(out)
+    out
+}
+
+/// Parse a request, run it and write the response JSON.
+pub fn run_request(text: &str) -> Result<String, String> {
+    let results = run(parse_request(text)?)?;
+    Ok(response_line(results_json(results)))
+}
+
+/// `--serve`: the first line is a request, every later line `{"ops": [...]}`; `reply` gets one line per input line (an error line
+/// is `{"error": "..."}`). The core is made by the first line and kept.
+pub fn serve(
+    lines: impl Iterator<Item = String>,
+    mut reply: impl FnMut(&str),
+) -> Result<(), String> {
+    let mut session: Option<Session> = None;
+    for line in lines {
+        if line.trim().is_empty() {
+            continue;
+        }
+        let answer = (|| -> Result<String, String> {
+            match session.as_mut() {
+                None => {
+                    let (s, ops) = Session::new(parse_request(&line)?)?;
+                    let s = session.insert(s);
+                    Ok(response_line(results_json(s.ops(&ops)?)))
+                }
+                Some(s) => {
+                    let root = json::parse(&line)?;
+                    let ops = parse_ops(root.get("ops").ok_or("line has no ops")?)?;
+                    Ok(response_line(results_json(s.ops(&ops)?)))
+                }
+            }
+        })();
+        match answer {
+            Ok(text) => reply(&text),
+            Err(e) => {
+                let mut out = String::new();
+                Json::Obj(vec![("error".into(), Json::Str(e))]).write(&mut out);
+                out.push('\n');
+                reply(&out);
+            }
+        }
+    }
+    Ok(())
 }
 
 #[cfg(test)]
@@ -443,7 +544,7 @@ mod tests {
     }
 
     fn call(text: &str) -> Vec<CallResult> {
-        run(&parse_request(text).unwrap()).unwrap()
+        run(parse_request(text).unwrap()).unwrap()
     }
 
     #[test]
@@ -511,7 +612,7 @@ mod tests {
     #[test]
     fn a_poke_outside_mapped_memory_is_an_error() {
         let text = request(r#"{"poke": [[4294967295, 1]]}"#);
-        assert!(run(&parse_request(&text).unwrap()).is_err());
+        assert!(run(parse_request(&text).unwrap()).is_err());
     }
 
     #[test]
@@ -530,5 +631,42 @@ mod tests {
             .into_iter(),
         );
         assert_eq!(out, vec![(7, 0x2000_0001, 3), (7, 0x2000_0010, 1)]);
+    }
+
+    #[test]
+    fn a_masked_poke_changes_only_its_bits_and_reads_an_unwritten_word_as_zero() {
+        let ops = format!(
+            r#"{{"poke": [[134217728, 4294967295]]}},
+            {{"pokem": [[134217728, 65535, 4660], [134217729, 4278190080, 2864434397]]}},
+            {{"call": {{"pc": {BASE}, "reads": [[134217728, 2]]}}}}"#
+        );
+        let r = &call(&request(&ops))[0];
+        // the first word keeps its upper half; the second was never written, so its other bits are 0
+        assert_eq!(r.reads[0], vec![Some(0xFFFF_1234), Some(0xAA00_0000)]);
+    }
+
+    #[test]
+    fn a_serve_session_keeps_the_core_between_lines_and_reports_a_bad_line() {
+        let first = request(&format!(
+            r#"{{"call": {{"pc": {BASE}, "regs": {{"R7": 11}}}}}}"#
+        ));
+        let lines = vec![
+            first,
+            "not json".to_string(),
+            format!(
+                r#"{{"ops": [{{"call": {{"pc": {}, "read_regs": ["R1", "R7"]}}}}]}}"#,
+                BASE + 2
+            ),
+        ];
+        let mut replies = Vec::new();
+        serve(lines.into_iter(), |r| replies.push(r.to_string())).unwrap();
+        assert_eq!(replies.len(), 3);
+        assert!(replies[1].starts_with(r#"{"error""#), "{}", replies[1]);
+        // R1 = 3 and R7 = 11 come from the first line's call: the core stayed
+        assert!(
+            replies[2].contains(r#""regs":{"R1":3,"R7":11}"#),
+            "{}",
+            replies[2]
+        );
     }
 }

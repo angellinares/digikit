@@ -18,7 +18,10 @@ dependencies = [
  "dkneeds",
  "dkrt-abi",
  "dkrt-fit",
+ "dkrt-link",
  "dkrt-sdk",
+ "dkrt-svc-fx",
+ "dkrt-test-support",
 ]
 
 [[package]]
@@ -38,5 +41,31 @@ dependencies = [
 ]
 
 [[package]]
+name = "dkrt-link"
+version = "0.1.0"
+dependencies = [
+ "dkrt-abi",
+ "dkrt-sdk",
+]
+
+[[package]]
 name = "dkrt-sdk"
 version = "0.1.0"
+
+[[package]]
+name = "dkrt-svc-fx"
+version = "0.1.0"
+dependencies = [
+ "dkneeds",
+ "dkrt-abi",
+ "dkrt-sdk",
+]
+
+[[package]]
+name = "dkrt-test-support"
+version = "0.1.0"
+dependencies = [
+ "dkrt-abi",
+ "dkrt-link",
+ "dkrt-sdk",
+]

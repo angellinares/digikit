@@ -22,6 +22,8 @@ const MERGE_TARGETS = [
   'pack',
   'test-device',
   'test-conformance',
+  'test-conformance-rig',
+  'test-rig',
   'stock',
   'fx',
   'fx-no-aot',

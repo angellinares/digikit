@@ -12,6 +12,9 @@
 //! - the declarations of a module's DSP rows (`has_voice`, `declare_voice`, `declare_fx`) and `on_loaded`.
 pub use dkrt_abi::service::*;
 
+/// The table over the runtime's own core.
+pub type ServiceTable = dkrt_abi::service::ServiceTable<crate::core_api::RealCore>;
+
 /// The rows whose declare check failed (`check_declarations`): bit `i` for row `i`.
 static mut FAILED: u32 = 0;
 
@@ -37,7 +40,10 @@ pub unsafe fn check_declarations() -> u32 {
 /// The C-ABI entry points of the services that the core links into its own tables (interface A: the imports of `sdk.toml` and the events the adapters
 /// call). This is the one place where the core names a service function; the rest of the core calls `Services` or `CoreApi`.
 pub mod exports {
-    pub use crate::services::fx::fxsend::fx_entry;
+    /// The effect list of DIGIKIT > FX ROUTES over the real core (the fx crate is generic over the core).
+    pub unsafe fn fx_entry(index: u32, out: &mut dkrt_sdk::DkrtFx) -> i32 {
+        dkrt_svc_fx::fxsend::fx_entry(&crate::core_api::REAL_CORE, index, out)
+    }
     pub use crate::services::machines::pageclick::{param_get, param_set};
     pub use crate::services::samples::tracks::{dkrt_pool_done, dkrt_pool_lost, dkrt_project_changed};
     pub use crate::services::samples::{

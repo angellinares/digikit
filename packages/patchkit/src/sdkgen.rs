@@ -286,7 +286,7 @@ struct Records {
 #[serde(deny_unknown_fields)]
 struct ServiceDecl {
     name: String,
-    /// The type that implements `Service`, from the runtime crate's root.
+    /// The full path of the type that implements `Service` (`crate::services::NAME::...`, or a linked service crate).
     rust: String,
 }
 /// One record kind: its number, the whole record's length (header included) and the in-crate service that owns it.
@@ -503,24 +503,24 @@ fn records_consts(sdk: &Sdk, indent: &str) -> String {
 /// `modules/core/runtime/src/rs/src/gen_services.rs`: the static table of the in-crate services (`[[service]]`).
 fn rust_services(sdk: &Sdk) -> String {
     let mut s = format!("// {HEADER}\n\n");
-    s.push_str("use dkrt_abi::service::{ServiceRow, ServiceTable};\n\n");
+    s.push_str("use crate::core_api::{RealCore, REAL_CORE};\nuse dkrt_abi::service::{ServiceRow, ServiceTable};\n\n");
     s.push_str("/// The in-crate services in the order the core calls them (`[[service]]` of sdk/sdk.toml), each with the record kinds it owns.\n");
     let _ = writeln!(
         s,
-        "pub static SERVICES: [ServiceRow; {}] = [",
+        "pub static SERVICES: [ServiceRow<RealCore>; {}] = [",
         sdk.service.len()
     );
     for d in &sdk.service {
         let _ = writeln!(
             s,
-            "    ServiceRow::of::<crate::{}>({:?}, &dkrt_sdk::records::KINDS_{}),",
+            "    ServiceRow::of::<{}>({:?}, &dkrt_sdk::records::KINDS_{}),",
             d.rust,
             d.name,
             d.name.to_uppercase()
         );
     }
     s.push_str(
-        "];\n\npub const TABLE: ServiceTable = ServiceTable { rows: &SERVICES, failed: 0 };\n",
+        "];\n\npub const TABLE: ServiceTable<RealCore> = ServiceTable { rows: &SERVICES, failed: 0, core: &REAL_CORE };\n",
     );
     s
 }

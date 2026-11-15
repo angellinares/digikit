@@ -1,0 +1,211 @@
+# tom/tb303 on the SHARC-only rig (replaces modules/machines/tb303/tests/test_tb303.py; DT2 only, the module has no DN2 port).
+# The tables ref/*.f32 are the output of the float32 model tb303_ref.py that the Python tests compared the routine with (tools/devtools/rig_refs.py).
+
+[[case]]
+name = "the routine matches the model: saw"
+device = ["dt2"]
+
+[[case.step]]
+note = 36
+vel = 80
+params = { tune = 16384, wave = 0, cutoff = 9754, resonance = 22758, env_mod = 19507, decay = 13005, accent = 32512 }
+blocks = 60
+
+[[case.check]]
+kind = "matches-table"
+file = "ref/model-saw.f32"
+atol = 1e-5
+
+[[case.check]]
+kind = "peak"
+min = 0.05
+
+[[case]]
+name = "the routine matches the model: square-accent"
+device = ["dt2"]
+
+[[case.step]]
+note = 48
+vel = 120
+params = { tune = 16384, wave = 256, cutoff = 16256, resonance = 29261, env_mod = 32512, decay = 0, accent = 16256 }
+blocks = 60
+
+[[case.check]]
+kind = "matches-table"
+file = "ref/model-square-accent.f32"
+atol = 1e-5
+
+[[case.check]]
+kind = "peak"
+min = 0.05
+
+[[case]]
+name = "the routine matches the model: closed-no-env"
+device = ["dt2"]
+
+[[case.step]]
+note = 45
+vel = 64
+params = { tune = 16384, wave = 0, cutoff = 0, resonance = 0, env_mod = 0, decay = 32512, accent = 0 }
+blocks = 60
+
+[[case.check]]
+kind = "matches-table"
+file = "ref/model-closed-no-env.f32"
+atol = 1e-5
+
+[[case.check]]
+kind = "peak"
+min = 0.05
+
+[[case]]
+name = "the routine matches the model: open-tuned"
+device = ["dt2"]
+
+[[case.step]]
+note = 60
+vel = 101
+params = { tune = 17920, wave = 0, cutoff = 32512, resonance = 16256, env_mod = 9754, decay = 26010, accent = 9754 }
+blocks = 60
+
+[[case.check]]
+kind = "matches-table"
+file = "ref/model-open-tuned.f32"
+atol = 1e-5
+
+[[case.check]]
+kind = "peak"
+min = 0.05
+
+[[case]]
+name = "the routine matches the model: high"
+device = ["dt2"]
+
+[[case.step]]
+note = 84
+vel = 127
+params = { tune = 16384, wave = 256, cutoff = 26010, resonance = 32512, env_mod = 26010, decay = 6502, accent = 32512 }
+blocks = 60
+
+[[case.check]]
+kind = "matches-table"
+file = "ref/model-high.f32"
+atol = 1e-5
+
+[[case.check]]
+kind = "peak"
+min = 0.05
+
+[[case]]
+name = "a note after a note, held-slides, track 0"
+device = ["dt2"]
+track = 0
+
+[[case.step]]
+note = 41
+vel = 90
+params = { tune = 16384, wave = 0, cutoff = 13005, resonance = 19507, env_mod = 26010, decay = 9754, accent = 32512 }
+blocks = 20
+
+[[case.step]]
+note = 53
+vel = 110
+params = { tune = 16384, wave = 256, cutoff = 13005, resonance = 19507, env_mod = 26010, decay = 9754, accent = 32512 }
+blocks = 30
+
+[[case.check]]
+kind = "matches-table"
+file = "ref/slide-held.f32"
+atol = 1e-5
+
+[[case]]
+name = "a note after a note, released-jumps, track 0"
+device = ["dt2"]
+track = 0
+
+[[case.step]]
+note = 41
+vel = 90
+params = { tune = 16384, wave = 0, cutoff = 13005, resonance = 19507, env_mod = 26010, decay = 9754, accent = 32512 }
+blocks = 20
+
+# the gate goes down in this block and stays down
+[[case.step]]
+release = true
+blocks = 3
+
+[[case.step]]
+note = 53
+vel = 110
+params = { tune = 16384, wave = 256, cutoff = 13005, resonance = 19507, env_mod = 26010, decay = 9754, accent = 32512 }
+blocks = 30
+
+[[case.check]]
+kind = "matches-table"
+file = "ref/slide-released.f32"
+atol = 1e-5
+
+[[case]]
+name = "a note after a note, held-slides, track 5"
+device = ["dt2"]
+track = 5
+
+[[case.step]]
+note = 41
+vel = 90
+params = { tune = 16384, wave = 0, cutoff = 13005, resonance = 19507, env_mod = 26010, decay = 9754, accent = 32512 }
+blocks = 20
+
+[[case.step]]
+note = 53
+vel = 110
+params = { tune = 16384, wave = 256, cutoff = 13005, resonance = 19507, env_mod = 26010, decay = 9754, accent = 32512 }
+blocks = 30
+
+[[case.check]]
+kind = "matches-table"
+file = "ref/slide-held.f32"
+atol = 1e-5
+
+[[case]]
+name = "a note after a note, released-jumps, track 5"
+device = ["dt2"]
+track = 5
+
+[[case.step]]
+note = 41
+vel = 90
+params = { tune = 16384, wave = 0, cutoff = 13005, resonance = 19507, env_mod = 26010, decay = 9754, accent = 32512 }
+blocks = 20
+
+# the gate goes down in this block and stays down
+[[case.step]]
+release = true
+blocks = 3
+
+[[case.step]]
+note = 53
+vel = 110
+params = { tune = 16384, wave = 256, cutoff = 13005, resonance = 19507, env_mod = 26010, decay = 9754, accent = 32512 }
+blocks = 30
+
+[[case.check]]
+kind = "matches-table"
+file = "ref/slide-released.f32"
+atol = 1e-5
+
+[[case]]
+name = "the cost per block"
+device = ["dt2"]
+
+[[case.step]]
+note = 60
+vel = 120
+params = { tune = 16384, wave = 0, cutoff = 16256, resonance = 16256, env_mod = 16256, decay = 16256, accent = 32512 }
+blocks = 4
+
+# the routine's declared budget (7500) plus the adapter and the guard
+[[case.check]]
+kind = "instructions"
+of = "all"
+max = 8399

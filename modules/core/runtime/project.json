@@ -1,7 +1,7 @@
 {
   "$schema": "../../../node_modules/nx/schemas/project-schema.json",
   "name": "core/runtime",
-  "implicitDependencies": ["dkrt-sdk", "dkrt-abi", "dkrt-fit", "dkneeds", "dkfw"],
+  "implicitDependencies": ["dkrt-sdk", "dkrt-abi", "dkrt-fit", "dkrt-link", "dkrt-test-support", "dkrt-svc-fx", "dkneeds", "dkfw"],
   "targets": {
     "rust-tests": {
       "executor": "nx:run-commands",
@@ -10,13 +10,14 @@
         "{projectRoot}/src/rs/**/*",
         {
           "input": "production",
-          "projects": ["dkrt-sdk", "dkrt-abi", "dkrt-fit", "dkneeds", "dkfw"]
+          "projects": ["dkrt-sdk", "dkrt-abi", "dkrt-fit", "dkrt-link", "dkrt-test-support", "dkrt-svc-fx", "dkneeds", "dkfw"]
         },
         "{workspaceRoot}/.cargo/**/*",
         "{workspaceRoot}/rust-toolchain*",
         "{workspaceRoot}/mise.toml",
         "{workspaceRoot}/tools/nx/rust-env.mjs",
         "{workspaceRoot}/modules/core/runtime/tests/platform/contract.toml",
+        "{workspaceRoot}/modules/core/runtime/tests/storage/contract.toml",
         "{workspaceRoot}/tests/fixtures/modules/{dyn-fx-gain,sine}/module.toml",
         "{workspaceRoot}/tests/fixtures/modules/{dyn-fx-gain,sine}/src/**/*",
         { "dependentTasksOutputFiles": "dist/modules/*/{dyn-fx-gain,sine}.*", "transitive": false }
