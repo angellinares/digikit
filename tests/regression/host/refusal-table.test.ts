@@ -49,6 +49,8 @@ test('a module-file fixture is never marked reserved or not-a-load for a code a 
     'E_PLAN_KIND',
     'E_PLAN_KEY',
     'E_PLAN_FIT',
+    'E_INIT',
+    'E_DECL_KIND',
     'E_CONTRACT',
     'E_MISSING',
     'E_DSP_NOSPACE',
@@ -68,9 +70,7 @@ test('the open rows are the known gaps', () => {
     [
       'E_BOOT_ONLY',
       'E_CARD_BUSY',
-      'E_DECL_KIND',
       'E_DSP_IMPORT',
-      'E_INIT',
       'E_NO_REGISTRY',
       'E_READ',
       'E_REG_DEVICE',

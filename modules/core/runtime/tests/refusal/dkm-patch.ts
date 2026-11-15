@@ -6,11 +6,11 @@ import { createHash } from 'node:crypto';
  */
 
 /** Header fields (packages/dkneeds/src/gen_limits.rs). */
-export const H = { MAGIC: 0, SHA: 0x10, RUNTIME: 0x30, NAME: 0x40, KEYS_OFF: 0x90, KEYS_SIZE: 0x94 } as const;
+export const H = { MAGIC: 0, SHA: 0x10, RUNTIME: 0x30, NAME: 0x40, IMAGE_OFF: 0x60, INIT: 0x80, KEYS_OFF: 0x90, KEYS_SIZE: 0x94 } as const;
 /** Bytes of the module name in the header. */
 export const NAME_LEN = 32;
 /** The tags of the header table's entries. */
-export const TAG = { NEEDS: 1, USES: 2, KEYS: 3 } as const;
+export const TAG = { NEEDS: 1, USES: 2, KEYS: 3, KINDS: 4 } as const;
 
 /** The file with its sha256 made right again (the sha field is read as zeros when the hash is made). */
 export function rehash(f: Buffer): Buffer {
@@ -47,6 +47,36 @@ export function nameHash(s: string): number {
   return h;
 }
 
+/** `moveq #-9,%d0; rts`: the code that makes `init` return `E_INIT` (-9) at once. */
+const INIT_FAILS = Buffer.from([0x70, 0xf7, 0x4e, 0x75]);
+
+/**
+ * The header table with its NEEDS entry moved behind the others (entries stay in ascending tag order, so it becomes the entry with tag `KINDS`) and
+ * rewritten as KINDS items `(kind, length 16, handler offset 8)`. The table keeps its size. The module declares no kind in `init`, so the
+ * commit finds a KINDS entry that `init` did not declare.
+ */
+function needsToKinds(f: Buffer, kinds: number[]): void {
+  const table = f.readUInt32BE(H.KEYS_OFF);
+  const count = f.readUInt16BE(table + 6);
+  const parts: { tag: number; raw: Buffer }[] = [];
+  let at = table + 8;
+  for (let i = 0; i < count; i++) {
+    const bytes = f.readUInt32BE(at + 4);
+    parts.push({ tag: f.readUInt16BE(at), raw: Buffer.from(f.subarray(at, at + 8 + bytes)) });
+    at += 8 + bytes;
+  }
+  const needs = parts.find((p) => p.tag === TAG.NEEDS);
+  if (!needs || needs.raw.readUInt16BE(2) !== kinds.length) throw new Error(`the fixture needs ${kinds.length} NEEDS items`);
+  needs.raw.writeUInt16BE(TAG.KINDS, 0);
+  kinds.forEach((kind, k) => {
+    needs.raw.writeUInt32BE(kind, 8 + 12 * k);
+    needs.raw.writeUInt32BE(16, 12 + 12 * k);
+    needs.raw.writeUInt32BE(8, 16 + 12 * k);
+  });
+  at = table + 8;
+  for (const p of [...parts.filter((x) => x !== needs), needs]) at += p.raw.copy(f, at);
+}
+
 /** The offset of the count of resource `id` in the USES entry. */
 export function usesCountAt(f: Buffer, id: number): number {
   const { at, count } = entry(f, TAG.USES);
@@ -76,6 +106,10 @@ export const edits = {
   },
   /** The plan: keys for record kind `kind`, which no service owns (E_PLAN_KIND). The first group of the KEYS entry changes its kind. */
   unownedKind: (kind: number) => (f: Buffer) => void f.writeUInt32BE(kind, entry(f, TAG.KEYS).at),
+  /** The loader: `init` returns -9 at once, so the load fails with E_INIT (state FAILED). The first four bytes of `init` become `moveq #-9,%d0; rts`. */
+  failInit: (f: Buffer) => void INIT_FAILS.copy(f, f.readUInt32BE(H.IMAGE_OFF) + f.readUInt32BE(H.INIT)),
+  /** The commit: the header table owns record kinds that `init` does not declare (E_DECL_KIND, state FAILED; the plan accepts them: no service owns kinds 91 and 92). */
+  undeclaredKinds: (f: Buffer) => needsToKinds(f, [91, 92]),
   /** The plan: the module uses `rows` machine rows, more than the device has (E_PLAN_FIT). */
   machineRows: (resource: number, rows: number) => (f: Buffer) => void f.writeUInt32BE(rows, usesCountAt(f, resource)),
 };

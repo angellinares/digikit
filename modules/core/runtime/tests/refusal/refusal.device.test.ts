@@ -138,6 +138,33 @@ cardRigs('refusal fixtures and module states', { dsp: 'cold', roots: COUPLED_ROO
     expect(moduleStateText(seen.loads[7]!)).toContain('refused: no room: the machine rows');
   });
 
+  // the two failures that come after the plan, each in a boot of its own copy of the good module (they share its machine key and DSP part, so the good module is not in this boot)
+  let failures: Promise<Seen> | undefined;
+  const failuresSeen = (): Promise<Seen> => {
+    failures ??= (async () => {
+      await rig.first();
+      const entries: Entry[] = [
+        entryOf('test/c-init', patched(fixture(), 'test/c-init', edits.failInit), loadCode('E_INIT')),
+        entryOf('test/c-decl', patched(fixture(), 'test/c-decl', edits.undeclaredKinds), loadCode('E_DECL_KIND')),
+      ];
+      return boot(rig, 'refusal-failures', entries);
+    })();
+    return failures;
+  };
+
+  test('an init that returns non-zero is E_INIT: the plan accepts the module, the load fails and leaves nothing', async () => {
+    const seen = await failuresSeen();
+    expectModule(seen, 0, 'FAILED', loadCode('E_INIT'));
+    expect(moduleStateText(seen.loads[0]!)).toContain('not loaded: init returned non-zero');
+    expect(seen.modules, 'MODULES lists neither failed module').toEqual([]);
+  });
+
+  test('kinds in the header table that init does not declare are E_DECL_KIND', async () => {
+    const seen = await failuresSeen();
+    expectModule(seen, 1, 'FAILED', loadCode('E_DECL_KIND'));
+    expect(moduleStateText(seen.loads[1]!)).toContain('not loaded: a service declared a record kind');
+  });
+
   test('a selected file the card does not have is E_NOT_FOUND', async () => {
     await rig.first();
     const rt = await rig.load('refusal-gone', {
