@@ -355,7 +355,7 @@ The contract is the ABI in `sdk.toml`, so a Rust service uses the generated bind
 
 `check:layers` enforces that the rest of the runtime reaches a service only through these interfaces (added in R2c; [ARCHITECTURE.md](../ARCHITECTURE.md) says what it checks today).
 
-**Template.** In the runtime crate a service is a folder `src/services/<name>/` with `mod.rs`, `records.rs`, `slots.rs`, `dsp/` and `tests/`. It maps one to one to `modules/core/services/<name>/{module.toml, src/, adapter/, tests/}` when the services are linked in (R9 and R10), and `module:new service` generates it at R12. R2 moves code only: no behaviour change. R7 proves that interface B is generic.
+**Template.** In the runtime crate a service is a folder `src/services/<name>/` with `mod.rs`, `records.rs`, `slots.rs`, `dsp/` and `tests/`. It maps one to one to `modules/core/services/<name>/{module.toml, src/, adapter/, tests/}` when the services are linked in (R9 and R10; `fx` is the first, as the crate `dkrt-svc-fx` without `module.toml` and `adapter/` yet), and `module:new service` generates it at R12. R2 moves code only: no behaviour change. R7 proves that interface B is generic.
 
 ## 6. DSP
 
@@ -644,7 +644,7 @@ Items 7, 9 and 10 link services into the image as a temporary step, so each boun
 | 7 | Generic records, service registry, `samples` linked in; done (R7, section 4.1). The storage interface and files memory moved to item 13. | 4, 5 | 4-5 days | High: first real proof of the model | Medium |
 | 8 | Spike, whole path | 11.2 | 3-4 days | High: decides item 12 and the small-image goal | Medium for ColdFire; unknown for SHARC |
 | **Stop** | Report to Em; review the model against what was learned | | | | |
-| 9 | `fx` linked in, with neutral adapter functions. Check that each service object is a separate input of the device tests (`tools/nx/device-inputs.mjs`), so a service edit selects only the tests that load it. | 3.2, 10 | 4-5 days | High | Medium |
+| 9 | `fx` linked in (R9 built: crate `dkrt-svc-fx`, branch `rt/r9-fx-linked`), with neutral adapter functions. Check that each service object is a separate input of the device tests (`tools/nx/device-inputs.mjs`), so a service edit selects only the tests that load it. | 3.2, 10 | 4-5 days | High | Medium |
 | 10 | `machines` linked in, with neutral adapter functions; layer check final | 3.2, 10 | 4-5 days | High: done criterion 1 | Medium |
 | 11 | Boot plan with one verdict per module; module states; refusal fixtures | 5, 8 | 2-3 days | High: users see why | Medium-high |
 | 12 | Services as `.dks`, hooks at boot, workbench binding and install | 5 | 6-8 days | High: small runtime; done criteria 5 and 6 | Medium |
