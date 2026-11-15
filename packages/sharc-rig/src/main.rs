@@ -2,7 +2,7 @@
 //!
 //!     sharc-rig REQUEST.json    (or the request on standard input)
 //!
-//! Writes the response JSON to standard output. The format is in `sharc_native::rig`.
+//! Writes the response JSON to standard output. The format is in `sharc_rig`.
 
 use std::io::Read;
 
@@ -21,7 +21,7 @@ fn main() {
             s
         }
     };
-    match sharc_native::rig::run_request(&text) {
+    match sharc_rig::run_request(&text) {
         Ok(out) => print!("{out}"),
         Err(e) => {
             eprintln!("sharc-rig: {e}");
