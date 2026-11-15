@@ -1,5 +1,5 @@
 /**
- * The report of a conformance run, in the JSON shape the Python workers wrote (out/runs/conformance/<id>@<device>.json, `<id>@fx.json`):
+ * The report of a conformance run, in the JSON shape the retired Python workers wrote (<id>@<device>.json, `<id>@fx.json`):
  * `module:check` reads `cases[].steady` to write `dsp_cost_voice` and `dsp_cost_fx`. Every report records the `worktree` that wrote it: the cost writer
  * (tools/patchkit/pk_modcheck.py) refuses a report of another worktree.
  */
@@ -44,7 +44,7 @@ export const RUNNER = 'sharc-rig-kit';
 /** The real path of the worktree this run belongs to (out/ is shared between worktrees, so reports do not go there). */
 export const worktreeRoot = (): string => realpathSync(ROOT);
 
-/** The directory of the reports: `DIGI_CONFORM_REPORTS`, else dist/conformance-rig of this worktree (the Python suite writes dist/conformance). */
+/** The directory of the reports: `DIGI_CONFORM_REPORTS`, else dist/conformance-rig of this worktree. */
 export const reportsDir = (): string => process.env.DIGI_CONFORM_REPORTS || path.join(ROOT, 'dist/conformance-rig');
 
 /** The file name of a report: `<id with / as __>@<device or fx>.json`. */

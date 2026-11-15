@@ -149,7 +149,7 @@ Deletion needs an independent adversarial review (rule); each line names its pro
 3. Done. `spec.ts`, `cases.ts`, `checks.ts`, `report.ts`, negative fixtures, conformance Nx targets, the `patchkit uses` writer: 7 h.
 4. Done (tb303, pluck, freqshift, shot, sine; mapping and mutation proofs in [ledgers/t1g-module-tests.md](ledgers/t1g-module-tests.md)). Sound-check format, analysis library, port of the module tests (tb303, pluck, freqshift, shot with sample pool, sine): 10 h. Largest risk is reading the pins; the reference files may need re-pinning.
 5. Adapter and stereo rigs (`dn2_stereo_*`, send FX, the dsp-voice and fx adapter tests): 12 h. Optional.
-6. Retirement PRs with reviews and the batch `test:full`: 4 h.
+6. Retirement PRs with reviews and the batch `test:full`: 4 h. Prepared for review in [ledgers/t1g-retirement.md](ledgers/t1g-retirement.md) (Python suites, rigs that stay and why, module tests); the batch `test:full` is open.
 
 Phases 1 to 4 and 6: about 30 h; with phase 5: about 42 h. Phases 1 to 3 give the conformance replacement (about 16 h) and
 can merge before phase 4.

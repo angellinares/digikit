@@ -1,5 +1,5 @@
 /**
- * The rules of the conformance run (the checks of tests/support/conform_worker.py and fx_conform_worker.py) as functions of one block:
+ * The rules of the conformance run (the checks of the retired Python workers) as functions of one block:
  *
  *  machine  returned   the call came back to the caller within the rig's step limit
  *           guard      the runtime guard of core/dsp-voice did not step in (DT2: its fault count stays 0; a guarded block is zeroed,

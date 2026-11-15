@@ -30,11 +30,11 @@ FREQSHIFT_STEPS = [0.0, 5.0, -20.0, 40.0, 63.0, -64.0, 0.5, -0.5, 33.0, 0.0]
 
 
 def generate(check: bool) -> None:
-    """Inputs of test_freqshift.py (numpy generators, which TypeScript cannot draw) and the output of `freqshift_ref.Shifter` for them."""
+    """Inputs of the Python tests (numpy generators, which TypeScript cannot draw) and the output of `freqshift_ref.Shifter` for them."""
     mod = HERE
     sys.path.insert(0, str(mod))
+    import freqshift_inputs as t  # type: ignore[import-not-found]
     import freqshift_ref as r  # type: ignore[import-not-found]
-    import test_freqshift as t  # type: ignore[import-not-found]
 
     out = mod / "rig/ref"
     for seed, blocks in ((3, 36), (5, 50), (9, 24)):
