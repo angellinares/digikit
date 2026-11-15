@@ -93,9 +93,13 @@ export function resolveContext(ctx: Context | 'friendly' | undefined, rng: PyRan
 
 const u32 = (n: number): number => n >>> 0;
 
-/** The context registers that did not come back as they went in (a missing value reads as 0). */
-export function contextBad(regs: Record<string, number | null>, ctx: Context): string[] {
-  return CONTEXT_REGS.filter((n) => u32(regs[n] ?? 0) !== u32(ctx[n]!));
+/** The context registers that did not come back as they went in; throws when the rig did not report one (`finalPc` names the call). */
+export function contextBad(regs: Record<string, number | null>, ctx: Context, finalPc?: number): string[] {
+  return CONTEXT_REGS.filter((n) => {
+    const v = regs[n];
+    if (v == null) throw new Error(`the rig did not report register ${n} (call at pc ${finalPc})`);
+    return u32(v) !== u32(ctx[n]!);
+  });
 }
 
 export const f2w = (x: number): number => {

@@ -196,6 +196,7 @@ describe('core/sample-pool DN2 DSP receiver on the rig', () => {
   it(
     'setup once in the stock order and every register returns',
     withPool(async (p) => {
+      expect(DDR_BASE_NW32).toBe(0x1014c400); // stock DDR 0x80531000, as test_sample_pool_dsp_dn2.py pins
       expect(await p.val('_sp_status')).toBe(0);
       await p.init();
       expect(await p.val('_sp_status')).toBe(1);

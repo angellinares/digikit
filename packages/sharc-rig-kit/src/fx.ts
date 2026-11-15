@@ -367,8 +367,16 @@ export class FxRig {
     });
     const [res] = (await this.port.run(q.take())) as [CallResult];
     const returned = res.halt === 'breakpoint' && res.final_pc === STOCK_BP;
-    const regsBad = names.filter((n) => (res.regs[n] ?? 0) >>> 0 !== marks[n]! >>> 0);
-    for (const n of ['I6', 'I7']) if ((res.regs[n] ?? 0) >>> 0 !== STACK) regsBad.push(n);
+    const reported = (n: string): number => {
+      const v = res.regs[n];
+      if (v == null) throw new Error(`the rig did not report register ${n} (call at pc ${res.final_pc})`);
+      return v >>> 0;
+    };
+    const regsBad: string[] = [];
+    if (returned) {
+      regsBad.push(...names.filter((n) => reported(n) !== marks[n]! >>> 0));
+      for (const n of ['I6', 'I7']) if (reported(n) !== STACK) regsBad.push(n);
+    }
     return {
       master: Array.from({ length: 64 }, (_, k) => w2f(res.reads[0]?.[k] ?? 0)),
       ret: Array.from({ length: 64 }, (_, k) => w2f(res.reads[firstExtra + extraReads.length]?.[k] ?? 0)),
@@ -376,8 +384,8 @@ export class FxRig {
       returned,
       halt: res.halt,
       finalPc: res.final_pc,
-      ctxBad: returned ? contextBad(res.regs, context) : [],
-      regsBad: returned ? regsBad : [],
+      ctxBad: returned ? contextBad(res.regs, context, res.final_pc) : [],
+      regsBad,
       faults: Array.from({ length: MAX_ROWS }, (_, i) => res.reads[1 + i]?.[0] ?? 0),
       scratch:
         scratch === undefined ? [] : Array.from({ length: 64 }, (_, k) => w2f(res.reads[1 + MAX_ROWS]?.[k] ?? 0)),

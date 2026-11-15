@@ -360,6 +360,7 @@ export class VoiceRig {
         READ_REGS,
       ),
       regs,
+      READ_REGS,
     );
   }
 
@@ -368,15 +369,22 @@ export class VoiceRig {
     this.dm.set(nw(MASK), mask === undefined ? this.tableMask() : mask);
     const regs = { ...FRIENDLY, R12: track, R8: 2 * track, I6: STACK, I7: STACK };
     const reads: Record<string, [number, number]> = { lev: [nw(FRAME + 0xec + 0x60 * track), 1] };
-    return this.finish(await this.run(this.coreSymbols._dv_unpack!, regs, reads, 20000, [UNPACK_BP], []), regs);
+    return this.finish(await this.run(this.coreSymbols._dv_unpack!, regs, reads, 20000, [UNPACK_BP], []), regs, []);
   }
 
-  private finish({ res, names }: { res: CallResult; names: string[] }, given: Record<string, number>): VoiceCall {
+  private finish(
+    { res, names }: { res: CallResult; names: string[] },
+    given: Record<string, number>,
+    readRegs: readonly string[],
+  ): VoiceCall {
+    for (const n of readRegs) {
+      if (res.regs[n] == null) throw new Error(`the rig did not report register ${n} (call at pc ${res.final_pc})`);
+    }
     return {
       halt: res.halt,
       finalPc: res.final_pc,
       instructions: res.instructions,
-      regs: Object.fromEntries(Object.entries(res.regs).map(([n, v]) => [n, v ?? 0])),
+      regs: Object.fromEntries(Object.entries(res.regs).map(([n, v]) => [n, v as number])),
       in: given,
       reads: Object.fromEntries(names.map((n, i) => [n, res.reads[i] ?? []])),
     };

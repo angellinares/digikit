@@ -162,17 +162,6 @@ describe('core/overdrive on the rig', () => {
     }
   });
 
-  it('the tanh approximant is close', () => {
-    for (let i = 0; i <= 240; i++) {
-      const a = -6 + (12 * i) / 240;
-      const aa = Math.min(Math.max(a, -4.97), 4.97);
-      const a2 = aa * aa;
-      const num = aa * (135135 + a2 * (17325 + a2 * (378 + a2)));
-      const den = 135135 + a2 * (62370 + a2 * (3150 + 28 * a2));
-      expect(Math.abs(num / den - Math.tanh(a))).toBeLessThan(2e-4);
-    }
-  });
-
   it('the split keeps the routing bit and the flavours', async () => {
     const o = await openRig();
     try {

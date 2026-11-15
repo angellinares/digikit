@@ -239,7 +239,7 @@ describe('core/fx send route on the Digitone II', () => {
     }
   });
 
-  it('the slot mix keeps the registers and the stores of the hook', async () => {
+  it('the slot mix keeps the registers of the hook', async () => {
     // 24 hostile contexts give every register back (the send hook's contract on this device too)
     const slotTrack = Array.from({ length: TRACKS }, (_, v) => v % 5);
     const slots = sigs(Array.from({ length: TRACKS }, (_, v) => v));
