@@ -1,7 +1,8 @@
 # T1g SHARC-only rig: the Vitest kit
 
-Status: slice done (`packages/sharc-rig`, [TESTING.md](../TESTING.md) "SHARC-only rig"). This plan is the rest of T1g in
-[test-architecture.md](test-architecture.md). No kit code exists yet.
+Status: slice done (`packages/sharc-rig`, [TESTING.md](../TESTING.md) "SHARC-only rig"); phases 1 to 3 done (`packages/sharc-rig-kit`,
+[TESTING.md](../TESTING.md) "The Vitest kit"): the machine and effect conformance runs on the rig with the same case lists, pass sets
+and recorded costs as the Python suites. This plan is the rest of T1g in [test-architecture.md](test-architecture.md).
 
 ## What the slice proved
 
@@ -56,10 +57,10 @@ set, the kit's request equals the one recorded from the Python rig (code hex, po
 ## Machine and FX cases, contexts
 
 - `cases.ts` ports `cases()` and `fx_cases()` unchanged (limits, corners, modulation walk, long, retrigger; signals, params,
-  modulation, switching, long). The random walks use a seeded PRNG in TypeScript. Python's `random.Random` is not reproduced:
-  the walk values change once, the checks do not depend on exact values. Say so in the PR.
-- `context.ts` ports the context tuples; the draw uses the same PRNG and one seed per rig as today. The proof for the draw is
-  the rules, not equal values: the context registers come back unchanged on every block, for 8 seeds.
+  modulation, switching, long). The random walks use `PyRandom` (`prng.ts`), the Mersenne Twister of Python's `random.Random` with its
+  seeding, `random`, `uniform`, `choice` and `randrange`: the case values are the old ones, so the worst steady block of a module is
+  the recorded `dsp_cost_voice` and the Python and Rust runs are comparable block by block.
+- `context.ts` ports the context tuples; the draw uses `PyRandom` and one seed per rig as today, so the contexts are the old ones too.
 - `machine.ts` reads like `machine_rig.py`: `setParams`, `setNote`, `trigger`, `release`, `block(ctx)`, `use`, `select`, `oddBlock`.
   Each method appends pokes and one call to a request; `block` sends the pending ops and returns the 32 samples (floats from the
   words), instructions, halt, context check, fault word and foreign stores (`watch` = module code ranges; the allowed regions
@@ -101,8 +102,8 @@ The reports keep their shape, so only the writer moves: add `patchkit uses set -
 
 ## Sample pool and DN2 stereo and send FX
 
-- Sample pool (`shot`): `samplepool.ts` is a port of `sample_pool.py` (about 60 lines of pokes). The conformance setup
-  `sample-pool` calls it before the first block. `test_shot_playback.py` becomes a rig test with sound checks.
+- Sample pool (`shot`): `samplepool.ts` is a port of `sample_pool.py` (about 60 lines of pokes; done in phase 3, as the conformance of
+  `shot` needs it). The conformance setup `sample-pool` calls it before the first block. `test_shot_playback.py` becomes a rig test with sound checks.
 - DN2 machine stereo (`dn2_stereo_rig.py`, `dn2_stereo_stages.py`) and the send FX hooks (`fxsend.s`, `fxsend-dn2.s`: track
   buses, slot map, fade flags, return bus): the request format needs no change. They are extra methods of `machine.ts` and
   `fx.ts`. They serve the adapter tests, not the module conformance, so they come in phase 5.
@@ -117,7 +118,9 @@ The reports keep their shape, so only the writer moves: add `patchkit uses set -
   production files, its `tests/rig/**`, the kit source, the two binary hashes, `modules/core/adapters/dsp-voice` and `fx`
   sources (the wrapper is part of the run). It has no `dependsOn` on `digi-control:daemons`, so a daemon key change does
   not select it, and a rig edit does not select device tests (checked: `show target inputs digi-control:daemons --check`).
-- `test-conformance-rig` runs all machines and effects (replaces the Python pytest files in `affected`).
+- `@digi/sharc-rig-kit:test-conformance-rig` (cache true, in the merge gate) runs all machines and effects on the rig; it replaces the Python
+  pytest files in `affected` when they are retired (phase 6). Its inputs are the module manifests, DSP sources (`*.s`, `*.inc`) and
+  `build/gen`, the two adapters, the SDK, the device profiles and the hashes of the two binaries (`dependentTasksOutputFiles`).
 - The slice's root `Cargo.toml` and `Cargo.lock` edit changed the daemon key once; later rig edits do not.
 
 ## Retirement list and proofs
@@ -140,9 +143,10 @@ Deletion needs an independent adversarial review (rule); each line names its pro
 
 ## Phases and estimate (agent hours, one agent per phase, host-only)
 
-1. Kit skeleton, `toolchain.ts`, `place.ts`, `machine.ts`, `context.ts`, parity with the Python request on the slice cases, `sharc-rig:build` target: 6 h.
-2. `fx.ts` (master chain, no send) and parity: 3 h.
-3. `spec.ts`, `cases.ts`, `checks.ts`, `report.ts`, negative fixtures, conformance Nx targets, the `patchkit uses` writer: 7 h.
+1. Done. Kit skeleton, `toolchain.ts`, `place.ts`, `machine.ts`, `context.ts`, parity with the Python request on the slice cases, `sharc-rig:build` target: 6 h.
+   The rig got `--serve` (a core that keeps its state between lines) and the op `pokem` (masked poke), so a rig runs block by block as the Python rigs do.
+2. Done. `fx.ts` (master chain, no send) and parity: 3 h.
+3. Done. `spec.ts`, `cases.ts`, `checks.ts`, `report.ts`, negative fixtures, conformance Nx targets, the `patchkit uses` writer: 7 h.
 4. Sound-check format, analysis library, port of the module tests (tb303, pluck, freqshift, shot with sample pool, sine): 10 h. Largest risk is reading the pins; the reference files may need re-pinning.
 5. Adapter and stereo rigs (`dn2_stereo_*`, send FX, the dsp-voice and fx adapter tests): 12 h. Optional.
 6. Retirement PRs with reviews and the batch `test:full`: 4 h.

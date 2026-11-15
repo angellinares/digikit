@@ -600,12 +600,45 @@ pnpm nx:pilot run sharc-rig:rust-tests             # unit tests (they need the g
 
 A call returns `instructions`, `halt` (`breakpoint`, `max-steps` or `trap: ...`), `final_pc`, the registers and the DM words
 asked for. With `watch` ranges (pcs) it also returns the stores of instructions in them as `[pc, address, width]` runs
-(the engine's undo log of the instruction; nothing is recorded without `watch`).
+(the engine's undo log of the instruction; nothing is recorded without `watch`). The op `pokem` changes some bits of a DM word
+(a frame halfword, the trig bit, a release byte). `sharc-rig --serve` keeps the core between lines: the first line is a request, every
+later line is `{"ops": [...]}` and gets one answer line, so a rig runs a case block by block and stops at its first failure.
+
+```sh
+pnpm nx:pilot run sharc-rig:build        # dist/bin/sharc-rig and dist/bytes/sharc-rig.sha256 (shared generated core)
+```
 
 Measured against the Python rigs (`machine_rig.py`, `fx_rig.py`) on `test/sine`, `fadedlimes/analog` (DT2 and DN2), `tom/tb303`,
 `digikit/pluck`, the FX `digikit/freqshift` and the negative fixture `test/dyn-guard-nan#overrun` (hostile contexts): bit-identical
 output words, identical instruction counts in every block, the same store bytes and the same foreign-store texts. On 300 to
-500 block cases the harness (process start and 64k setup pokes included) is 45 to 110 times faster. Not yet: the Vitest kit.
+500 block cases the harness (process start and 64k setup pokes included) is 45 to 110 times faster.
+
+#### The Vitest kit (`packages/sharc-rig-kit`)
+
+`@digi/sharc-rig-kit` is the TypeScript side: it assembles and links the sources with `patchkit sharc` (`toolchain.ts`), places them
+(`place.ts`), and runs them on `sharc-rig --serve` through `MachineRig` (core/dsp-voice, `machine.ts`) and `FxRig` (core/fx master chain,
+`fx.ts`). `spec.ts` reads what a module declares (module.toml, `build/gen/gallery.json`, `devices/*.toml`), `cases.ts` makes the
+conformance cases, `checks.ts` holds the rules of a block and `conform.ts` runs a case and writes the report. The random walks and
+the hostile contexts come from `PyRandom`, the generator of Python's `random.Random`, so the cases are the ones the Python suite ran
+and the recorded costs stay comparable. Host tests (fake transport, made-up build, no toolchain) run with
+`pnpm nx:pilot run @digi/sharc-rig-kit:test-host`.
+
+The machine and effect conformance on the rig (about 45 s for all 30 specs with 4 workers, no daemon, firmware or emulator):
+
+```sh
+pnpm nx:pilot run @digi/sharc-rig-kit:test-conformance-rig       # cached; needs patchkit:cli and sharc-rig:build, which it runs
+DIGI_CONFORM_MODULES=fadedlimes/analog DIGI_CONFORM_DEVICE=dt2 DIGI_JOBS=4 DIGI_CONFORM_REPORTS=/tmp/reports \
+  pnpm exec vitest run --config vitest.host.config.ts --project sharc-rig-conformance conformance/machine.test.ts
+```
+
+It runs the same cases as `tests/modules/test_machine_conformance.py` and `test_fx_conformance.py` (the Python suites stay until the
+retirement phase of [the plan](plans/t1g-sharc-rig-kit.md)): same case list, same pass set, the same failure messages for the negative
+fixtures, and the worst steady block of each (module, device) is the `dsp_cost_voice` or `dsp_cost_fx` of module.toml. Reports have the
+shape of the Python reports (`out/runs/conformance/<id>@<device|fx>.json`, `DIGI_CONFORM_REPORTS` moves them).
+
+The cost writer, `patchkit uses set --id MODULE --device dt2 --dsp-cost-voice N` (or `--dsp-cost-fx N`), edits `[uses.<device>]` of the
+module.toml like `pk_modcheck.write_uses` does: only the lines of the keys given change, comments and other keys stay, and the file
+is written only when a count differs. It prints `wrote PATH` or `unchanged PATH`.
 
 ### DSP budget gate (patchkit smoke)
 

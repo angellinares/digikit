@@ -113,7 +113,7 @@ Reading the table:
 - Scope: module DSP and PCM tests run on a SHARC-only rig. The rig is a native call harness for module routines: load the module objects, set registers, call `note_on` and `render` for N blocks, return output, cycle counts and recorded stores. Its request format is language neutral (Python now, TypeScript later). A Vitest kit over it checks machines (`render`, `note_on`, `desc`) and FX (`dk_fx_process`) against sound checks that a module declares in its `tests/*.toml`. The Python conformance suite and pluck sweeps are retired when the kit checks the same pins.
 - Proof: the same PCM results as the full-device tests, in less time.
 - Depends on: nothing (own lane).
-- [x] Slice: `packages/sharc-rig` (JSON call harness on the generated native core, stores of watched pcs); same output words, instruction counts and foreign-store texts as the Python rigs on machines and an FX. The rest (Vitest kit, sound checks, retirement) is in [t1g-sharc-rig-kit.md](t1g-sharc-rig-kit.md).
+- [x] Slice: `packages/sharc-rig` (JSON call harness on the generated native core, stores of watched pcs); same output words, instruction counts and foreign-store texts as the Python rigs on machines and an FX. Kit phases 1 to 3 (conformance on the rig, the `patchkit uses` writer) are done; the rest (sound checks, adapter rigs, retirement) is in [t1g-sharc-rig-kit.md](t1g-sharc-rig-kit.md).
 
 ### T1h Workbench and web composability
 
