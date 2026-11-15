@@ -1623,7 +1623,7 @@ rust = "crate::services::machines::records::Machines"
 
 [[service]]
 name = "fx"
-rust = "dkrt_svc_fx::records::Fx<crate::core_api::RealCore>"
+rust = "dkrt_svc_fx::records::Fx"
 
 [[service]]
 name = "lfo"

@@ -24,7 +24,7 @@
 use crate::dsp as fxdsp;
 use crate::fxsend;
 use core::ptr::{addr_of_mut, read_volatile, write_volatile};
-use dkrt_abi::core_api::{CoreApi, StaticCore};
+use dkrt_abi::core_api::CoreApi;
 use dkrt_abi::mem::{cstr_len, iw, rd, rd16, rd32, wr, wr16};
 use dkrt_sdk::*;
 
@@ -116,14 +116,14 @@ fn fs() -> &'static mut FxpState {
     unsafe { &mut *addr_of_mut!(DKRT_FXP) }
 }
 
-pub(crate) unsafe fn info<C: StaticCore>() -> *const u32 {
+pub(crate) unsafe fn info<C: CoreApi>(core: &C) -> *const u32 {
     let a = core::hint::black_box(fxpages_info as usize);
     if a == 0 {
         return core::ptr::null();
     }
     let p = a as *const u32;
     if read_volatile(p.add(w::MAGIC)) != INFO_MAGIC
-        || read_volatile(p.add(w::DEVICE)) != C::CORE.device_id()
+        || read_volatile(p.add(w::DEVICE)) != core.device_id()
     {
         return core::ptr::null();
     }
@@ -165,13 +165,13 @@ unsafe fn copy_text(dst: *mut u8, src: *const u8, n: usize) {
 }
 
 /// Whether this image can show effect pages at all (`core/fxpages` and `core/dynreg` are in it).
-pub unsafe fn available<C: StaticCore>() -> bool {
-    !info::<C>().is_null()
+pub unsafe fn available<C: CoreApi>(core: &C) -> bool {
+    !info(core).is_null()
 }
 
 /// The fixed-size EFFECT record at `b` (its body), checked before anything is written. Pure: the page slots are checked by `apply`.
-pub unsafe fn check_record<C: StaticCore>(b: *const u8) -> i32 {
-    let inf = info::<C>();
+pub unsafe fn check_record<C: CoreApi>(core: &C, b: *const u8) -> i32 {
+    let inf = info(core);
     if inf.is_null() {
         return E_NO_REGISTRY;
     }
@@ -266,8 +266,8 @@ unsafe fn rebuild_list(inf: *const u32) {
 }
 
 /// Build the page list again (a route changed the order).
-pub unsafe fn relist<C: StaticCore>() {
-    let inf = info::<C>();
+pub unsafe fn relist<C: CoreApi>(core: &C) {
+    let inf = info(core);
     if !inf.is_null() {
         rebuild_list(inf);
     }
@@ -298,13 +298,13 @@ pub fn tab_of(k: usize, out: &mut [u8; 8]) {
 
 /// Fill the page, the parameter rows and the list for the EFFECT record at `b` of module `owner` (module record + 1). The effect's row in the chain has been
 /// claimed by `dsp::reserve`; the page and parameter rows belong to that row's number.
-pub unsafe fn apply<C: StaticCore>(owner: u8, b: *const u8) -> i32 {
-    let inf = info::<C>();
+pub unsafe fn apply<C: CoreApi>(core: &C, owner: u8, b: *const u8) -> i32 {
+    let inf = info(core);
     if inf.is_null() {
         return E_NO_REGISTRY;
     }
     let s = fs();
-    let Some(k) = fxdsp::fx_row_of::<C>(owner, rd32(b)) else {
+    let Some(k) = fxdsp::fx_row_of(core, owner, rd32(b)) else {
         return E_FORMAT; // no such effect in the module's DSP section
     };
     if k >= iw(inf, w::PAGES) as usize
@@ -322,8 +322,8 @@ pub unsafe fn apply<C: StaticCore>(owner: u8, b: *const u8) -> i32 {
     // strings
     copy_text(s.tab[k].as_mut_ptr(), b.add(16), 8);
     copy_text(s.title[k].as_mut_ptr(), b.add(24), TEXT);
-    let tab = C::CORE.make_rep(s.rep_tab[k].as_mut_ptr(), s.tab[k].as_ptr(), false);
-    let title = C::CORE.make_rep(s.rep_title[k].as_mut_ptr(), s.title[k].as_ptr(), false);
+    let tab = core.make_rep(s.rep_tab[k].as_mut_ptr(), s.tab[k].as_ptr(), false);
+    let title = core.make_rep(s.rep_title[k].as_mut_ptr(), s.title[k].as_ptr(), false);
     // the page's nine codes: 0 where no knob stands
     let mut codes = [0u32; 9];
     let mut j = 0;
@@ -362,7 +362,7 @@ pub unsafe fn apply<C: StaticCore>(owner: u8, b: *const u8) -> i32 {
             continue; // a word without a knob
         };
         let idx = value_index(inf, k, j);
-        write_knob_row(&C::CORE, s, k, j, code, tpl, idx, def_n);
+        write_knob_row(core, s, k, j, code, tpl, idx, def_n);
         j += 1;
     }
     s.nknob[k] = n as u8;
@@ -374,7 +374,7 @@ pub unsafe fn apply<C: StaticCore>(owner: u8, b: *const u8) -> i32 {
         mark(inf, live + iw(inf, w::ARRAY_OFF));
         s.seeds += 1;
     }
-    fxdsp::fx_set_mix::<C>(k, mix_value(rd32(b.add(4)) as i32 * 256));
+    fxdsp::fx_set_mix(core, k, mix_value(rd32(b.add(4)) as i32 * 256));
     // the page row: codes, then the strings; the owner and the list publish it
     let mut c = 0;
     while c < 9 {
@@ -385,13 +385,13 @@ pub unsafe fn apply<C: StaticCore>(owner: u8, b: *const u8) -> i32 {
     wr(row + 4, title);
     s.owner[k] = owner;
     rebuild_list(inf);
-    fxsend::apply::<C>(k, owner, s.tab[k].as_ptr());
+    fxsend::apply(core, k, owner, s.tab[k].as_ptr());
     OK
 }
 
 /// Give back the pages of module `owner`: out of the list first, then the rows back to the reserved state.
-pub unsafe fn remove<C: StaticCore>(owner: u8) {
-    let inf = info::<C>();
+pub unsafe fn remove<C: CoreApi>(core: &C, owner: u8) {
+    let inf = info(core);
     if inf.is_null() {
         return;
     }
@@ -421,7 +421,7 @@ pub unsafe fn remove<C: StaticCore>(owner: u8) {
             let mut j = 0;
             publish_row(inf, k, 0);
             while j < WORDS {
-                C::CORE.reset_param_row(iw(inf, w::P_FIRST) + (k * WORDS + j) as u32);
+                core.reset_param_row(iw(inf, w::P_FIRST) + (k * WORDS + j) as u32);
                 s.cur[k][j] = 0;
                 s.def[k][j] = 0;
                 s.dsp[k][j] = -1;
@@ -429,8 +429,8 @@ pub unsafe fn remove<C: StaticCore>(owner: u8) {
                 j += 1;
             }
             s.nknob[k] = 0;
-            fxdsp::fx_forget(&C::CORE, k);
-            fxsend::remove::<C>(k);
+            fxdsp::fx_forget(core, k);
+            fxsend::remove(core, k);
         }
         k += 1;
     }
@@ -499,7 +499,7 @@ fn has_word(s: &FxpState, k: usize, j: usize) -> bool {
 }
 
 /// Once per UI-loop pass: note which values the DSP has taken, put the values in a new kit's array, and hand the changed values to the link; then the send effects' amounts.
-pub unsafe fn tick<C: StaticCore>() {
+pub unsafe fn tick<C: CoreApi>(core: &C) {
     let s = fs();
     let mut any = false;
     let mut k = 0;
@@ -510,17 +510,17 @@ pub unsafe fn tick<C: StaticCore>() {
     if !any {
         return;
     }
-    let inf = info::<C>();
+    let inf = info(core);
     if inf.is_null() {
         return;
     }
-    confirm::<C>();
-    values::<C>(inf);
-    fxsend::tick::<C>();
+    confirm(core);
+    values(core, inf);
+    fxsend::tick(core);
 }
 
 /// The effect pages' values: the kit's array against the DSP rows.
-unsafe fn values<C: StaticCore>(inf: *const u32) {
+unsafe fn values<C: CoreApi>(core: &C, inf: *const u32) {
     let s = fs();
     let mut k;
     let kit = kit(inf);
@@ -568,8 +568,8 @@ unsafe fn values<C: StaticCore>(inf: *const u32) {
                         s.changes += 1;
                     }
                     // only when the row is in the DSP and no load is going on; the link sends the newest value of the word when it is free
-                    if n != s.want[k][j] && fxdsp::fx_live::<C>(k) {
-                        set_knob(&C::CORE, s, k, j, n);
+                    if n != s.want[k][j] && fxdsp::fx_live(core, k) {
+                        set_knob(core, s, k, j, n);
                     }
                 }
                 j += 1;
@@ -636,7 +636,7 @@ unsafe fn set_knob<C: CoreApi>(c: &C, s: &mut FxpState, k: usize, j: usize, n: i
 }
 
 /// Note the values the DSP has taken: a word whose live value the link confirms is the DSP's.
-unsafe fn confirm<C: StaticCore>() {
+unsafe fn confirm<C: CoreApi>(core: &C) {
     let s = fs();
     let mut k = 0;
     while k < MAX_FX {
@@ -645,8 +645,8 @@ unsafe fn confirm<C: StaticCore>() {
             while j < WORDS {
                 let n = s.want[k][j];
                 if has_word(s, k, j) && n >= 0 && n != s.dsp[k][j] {
-                    if let Some((slot, bits)) = knob_word(&C::CORE, s, k, j, n) {
-                        if C::CORE.link_confirmed(slot) == Some(bits) {
+                    if let Some((slot, bits)) = knob_word(core, s, k, j, n) {
+                        if core.link_confirmed(slot) == Some(bits) {
                             s.dsp[k][j] = n;
                             s.sent += 1;
                         }
@@ -657,12 +657,12 @@ unsafe fn confirm<C: StaticCore>() {
         }
         k += 1;
     }
-    s.errors = C::CORE.link_errors();
+    s.errors = core.link_errors();
 }
 
 /// Pages in use and the pages the image reserved (for CAPACITY-like reports and tests): (reserved, used).
-pub unsafe fn counts<C: StaticCore>() -> (u32, u32) {
-    let inf = info::<C>();
+pub unsafe fn counts<C: CoreApi>(core: &C) -> (u32, u32) {
+    let inf = info(core);
     if inf.is_null() {
         return (0, 0);
     }

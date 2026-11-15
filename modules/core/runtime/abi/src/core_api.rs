@@ -128,10 +128,3 @@ pub trait CoreApi {
     /// Send `seq` for `owner` and wait for the result (error paths and unload clears). `true` when every step was taken.
     unsafe fn link_run(&self, owner: Owner, seq: &Sequence) -> bool;
 }
-
-/// A core that is one value of a zero-sized type, so a service built over it reaches the core without a parameter (`C::CORE.write_param_row(..)`)
-/// and a call costs what the direct call costs. A service crate is generic over it; the runtime names `RealCore` once, in the generated service table.
-/// Host tests that need to drive a function pass a `&impl CoreApi` instead.
-pub trait StaticCore: CoreApi + Sized {
-    const CORE: Self;
-}

@@ -19,7 +19,7 @@
 //!   refused with `Reason::Fit(CAPK_DSP_COST)`.
 use dkneeds::keys::{name_hash, tag, Keys};
 use dkrt_abi::plan::{Reason, Verdict};
-use dkrt_abi::service::ServiceTable;
+use crate::handlers::ServiceTable;
 use dkrt_fit as fit;
 use dkrt_sdk::{DkrtCap, CAP_MAX, SEL_MAX};
 
@@ -411,6 +411,7 @@ mod tests {
     use super::*;
     use dkneeds::keys::{write_table, KeyGroup, KindDecl, Need, Pair, Table, Use};
     use dkneeds::{KIND_EFFECT, KIND_MACHINE, RES_DSP_COST_FX, RES_DSP_COST_VOICE, RES_MACHINE_ROWS};
+    use crate::core_api::{CoreApi, REAL_CORE};
     use dkrt_abi::service::{Service, ServiceRow};
     use dkrt_sdk::proto::*;
     use dkrt_sdk::{E_CONTRACT, E_MISSING, E_PLAN_FIT, E_PLAN_KIND, E_PLAN_OWNER};
@@ -418,8 +419,8 @@ mod tests {
     use std::vec::Vec;
 
     struct S;
-    impl Service for S {}
-    static ROWS: [ServiceRow; 1] = [ServiceRow::of::<S>("machines", &[(KIND_MACHINE, 0x6c), (KIND_EFFECT, 0x1a4)])];
+    impl<C: CoreApi> Service<C> for S {}
+    static ROWS: [ServiceRow<crate::core_api::RealCore>; 1] = [ServiceRow::of::<S>("machines", &[(KIND_MACHINE, 0x6c), (KIND_EFFECT, 0x1a4)])];
 
     fn bytes(t: &Table) -> Vec<u8> {
         let mut b = vec![0u8; dkneeds::keys::table_size(t)];
@@ -445,7 +446,7 @@ mod tests {
     }
 
     fn run_with(tables: &[Option<Vec<u8>>], c: Vec<DkrtCap>) -> Plan {
-        let env = Env { services: ServiceTable { rows: &ROWS, failed: 0 }, runtime: 0x000800, caps: &c };
+        let env = Env { services: ServiceTable { rows: &ROWS, failed: 0, core: &REAL_CORE }, runtime: 0x000800, caps: &c };
         let keys: Vec<Option<Keys>> = tables.iter().map(|t| t.as_ref().map(|b| Keys::parse(b).unwrap())).collect();
         plan(&env, &keys)
     }

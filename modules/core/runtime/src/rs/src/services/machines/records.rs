@@ -10,6 +10,7 @@ use dkrt_sdk::records::{
     KIND_ACTION, KIND_MACHINE, KIND_NATIVE_PAGE, KIND_NATIVE_PAGE_V2, KIND_PAGE, KIND_PARAM, LEN_ACTION, LEN_MACHINE, LEN_NATIVE_PAGE, LEN_NATIVE_PAGE_V2, LEN_PAGE,
     LEN_PARAM,
 };
+use crate::core_api::RealCore;
 use dkrt_abi::service::{check_step, tick_phase, ApplyCtx, CheckCtx, Claim, Declare, GuardState, RowWrite, Service};
 use core::ptr::{addr_of, addr_of_mut};
 use dkrt_sdk::*;
@@ -65,7 +66,7 @@ const KNOBS: usize = limits::PAGE_KNOBS;
 /// The machines service.
 pub struct Machines;
 
-impl Service for Machines {
+impl Service<RealCore> for Machines {
     unsafe fn declare(d: &mut Declare) {
         d.kind(KIND_PARAM, LEN_PARAM);
         d.kind(KIND_MACHINE, LEN_MACHINE);
@@ -82,7 +83,7 @@ impl Service for Machines {
             || iw(inf, w::PG_DYN_N) as usize > MAX_PAGE)
     }
 
-    unsafe fn check(step: u32, c: &CheckCtx) -> i32 {
+    unsafe fn check(_core: &RealCore, step: u32, c: &CheckCtx) -> i32 {
         use check_step as st;
         if step == st::COUNTS {
             ck_counts(c)
@@ -103,25 +104,25 @@ impl Service for Machines {
         }
     }
 
-    unsafe fn apply(c: &ApplyCtx) -> i32 {
+    unsafe fn apply(_core: &RealCore, c: &ApplyCtx) -> i32 {
         apply(c)
     }
 
-    unsafe fn apply_record(kind: u32, body: *const u8, c: &ApplyCtx) -> i32 {
+    unsafe fn apply_record(_core: &RealCore, kind: u32, body: *const u8, c: &ApplyCtx) -> i32 {
         apply_record(kind, body, c)
     }
 
-    unsafe fn remove(owner: u8) {
+    unsafe fn remove(_core: &RealCore, owner: u8) {
         remove(owner)
     }
 
-    unsafe fn tick(phase: u32) {
+    unsafe fn tick(_core: &RealCore, phase: u32) {
         if phase == tick_phase::LAST {
             pageclick::tick();
         }
     }
 
-    unsafe fn cap(kind: u8) -> Option<(u32, u32)> {
+    unsafe fn cap(_core: &RealCore, kind: u8) -> Option<(u32, u32)> {
         use dkrt_sdk::proto::*;
         // an if chain, not a `match`: a dense match becomes a PC-relative jump table, which is not ColdFire code
         if kind == CAPK_MACHINE_ROWS {
@@ -139,7 +140,7 @@ impl Service for Machines {
         }
     }
 
-    unsafe fn attribute(site: u32, id: u32) -> Option<usize> {
+    unsafe fn attribute(_core: &RealCore, site: u32, id: u32) -> Option<usize> {
         if site == dkrt_sdk::fault::SITE_VOICE {
             super::dsp::module_of_type(id)
         } else {
@@ -147,43 +148,43 @@ impl Service for Machines {
         }
     }
 
-    unsafe fn guard_state(ty: u32) -> Option<GuardState> {
+    unsafe fn guard_state(_core: &RealCore, ty: u32) -> Option<GuardState> {
         Some(GuardState { faults: REAL_CORE.guard_faults(ty), disabled: REAL_CORE.guard_disabled(ty) })
     }
 
-    unsafe fn has_voice(rec: usize, ty: u32) -> bool {
+    unsafe fn has_voice(_core: &RealCore, rec: usize, ty: u32) -> bool {
         super::dsp::voice_row(rec, ty).is_some()
     }
 
-    unsafe fn declare_voice(rec: usize, ty: u32, rng: [u32; 8], latched: u32) -> Option<i32> {
+    unsafe fn declare_voice(_core: &RealCore, rec: usize, ty: u32, rng: [u32; 8], latched: u32) -> Option<i32> {
         super::dsp::voice_row(rec, ty).map(|row| super::dsp::set_declared(row, rng, latched))
     }
 
-    unsafe fn dsp_check_sections(sec: &DspSec) -> i32 {
+    unsafe fn dsp_check_sections(_core: &RealCore, sec: &DspSec) -> i32 {
         super::dsp::check_sections(sec)
     }
 
-    unsafe fn dsp_check_rows(sec: &DspSec) -> i32 {
+    unsafe fn dsp_check_rows(_core: &RealCore, sec: &DspSec) -> i32 {
         super::dsp::check_rows(sec)
     }
 
-    unsafe fn dsp_check_types(sec: &DspSec) -> i32 {
+    unsafe fn dsp_check_types(_core: &RealCore, sec: &DspSec) -> i32 {
         super::dsp::check_types(sec)
     }
 
-    unsafe fn dsp_claim(c: &mut Claim) {
+    unsafe fn dsp_claim(_core: &RealCore, c: &mut Claim) {
         super::dsp::claim(c)
     }
 
-    unsafe fn dsp_release(rec: usize) {
+    unsafe fn dsp_release(_core: &RealCore, rec: usize) {
         super::dsp::release(rec)
     }
 
-    unsafe fn dsp_clear(rec: usize) -> bool {
+    unsafe fn dsp_clear(_core: &RealCore, rec: usize) -> bool {
         super::dsp::clear_rows(rec)
     }
 
-    unsafe fn dsp_row_step(rec: usize, want: &mut u32, write: bool) -> Option<RowWrite> {
+    unsafe fn dsp_row_step(_core: &RealCore, rec: usize, want: &mut u32, write: bool) -> Option<RowWrite> {
         super::dsp::row_step(rec, want, write)
     }
 }

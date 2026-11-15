@@ -503,11 +503,11 @@ fn records_consts(sdk: &Sdk, indent: &str) -> String {
 /// `modules/core/runtime/src/rs/src/gen_services.rs`: the static table of the in-crate services (`[[service]]`).
 fn rust_services(sdk: &Sdk) -> String {
     let mut s = format!("// {HEADER}\n\n");
-    s.push_str("use dkrt_abi::service::{ServiceRow, ServiceTable};\n\n");
+    s.push_str("use crate::core_api::{RealCore, REAL_CORE};\nuse dkrt_abi::service::{ServiceRow, ServiceTable};\n\n");
     s.push_str("/// The in-crate services in the order the core calls them (`[[service]]` of sdk/sdk.toml), each with the record kinds it owns.\n");
     let _ = writeln!(
         s,
-        "pub static SERVICES: [ServiceRow; {}] = [",
+        "pub static SERVICES: [ServiceRow<RealCore>; {}] = [",
         sdk.service.len()
     );
     for d in &sdk.service {
@@ -520,7 +520,7 @@ fn rust_services(sdk: &Sdk) -> String {
         );
     }
     s.push_str(
-        "];\n\npub const TABLE: ServiceTable = ServiceTable { rows: &SERVICES, failed: 0 };\n",
+        "];\n\npub const TABLE: ServiceTable<RealCore> = ServiceTable { rows: &SERVICES, failed: 0, core: &REAL_CORE };\n",
     );
     s
 }
