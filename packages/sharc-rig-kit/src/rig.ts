@@ -9,7 +9,10 @@ import path from 'node:path';
 import { createInterface } from 'node:readline';
 import { fileURLToPath } from 'node:url';
 
-export const ROOT = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '../../..');
+/** The repository the kit reads sources, SDK headers and device files from: this one, or `DIGI_RIG_ROOT` (another checkout, read only: a profile of a branch that lives in a lane). */
+export const ROOT = process.env.DIGI_RIG_ROOT
+  ? path.resolve(process.env.DIGI_RIG_ROOT)
+  : path.resolve(path.dirname(fileURLToPath(import.meta.url)), '../../..');
 
 export type Poke = [address: number, word: number];
 /** A read-modify-write of a DM word: `(old & ~mask) | (value & mask)`; a word that nothing wrote reads as 0. */
@@ -21,6 +24,18 @@ export interface CallSpec {
   max_steps: number;
   reads: [address: number, count: number][];
   read_regs: string[];
+  /** count the instructions executed at each pc (the result's `profile`) */
+  profile?: boolean;
+  /** `[loader byte address, count]` of the stock image as loaded (the result's `stock`); needs `RigSetup.image` */
+  stock_reads?: [address: number, count: number][];
+  /** pcs that end this call instead of the setup's `breaks` */
+  breaks?: number[];
+  /** continue from the pc the last call stopped at: no new frame, the stacks and registers stay (`regs` are still set) */
+  resume?: boolean;
+  /** 80-bit multiplier registers set before the call: `[mask, bits]` as hex strings (`MR`: bits known where the mask is 1) */
+  specials?: Record<string, [mask: string, bits: string]>;
+  /** multiplier registers (MRF, MRB, MSF, MSB) answered after the call (the result's `specials`) */
+  read_specials?: string[];
 }
 
 export type Op = { poke: Poke[] } | { pokem: MaskedPoke[] } | { call: CallSpec };
@@ -35,6 +50,12 @@ export interface CallResult {
   reads: (number | null)[][];
   /** runs `[pc, address, width]` stored by instructions at `watch` pcs */
   stores: [pc: number, address: number, width: number][];
+  /** `[pc, count]` per executed pc, in pc order; only for a call with `profile` */
+  profile?: [pc: number, count: number][];
+  /** one hex string per `stock_reads` entry (`null` when the image does not write every byte); only for a call with `stock_reads` */
+  stock?: (string | null)[];
+  /** `[mask, bits]` hex per `read_specials` name (`null` when the core does not hold the register); only for a call with `read_specials` */
+  specials?: Record<string, [mask: string, bits: string] | null>;
 }
 
 export interface RigSetup {
@@ -42,6 +63,8 @@ export interface RigSetup {
   breaks: number[];
   /** `[first pc, end pc]` ranges whose stores the calls report */
   watch?: [number, number][];
+  /** the stock DSP loader stream (firmware section 7), hex: loaded before `code`, which goes over it */
+  image?: string;
   /** loader byte address and boot-stream hex of each linked object */
   code: { address: number; hex: string }[];
   ops?: Op[];

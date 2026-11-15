@@ -1,5 +1,4 @@
 import path from 'node:path';
-import { DkSession, EmuUsbTransport } from '@digi/dk-session';
 import { button, stepWithProgress } from '@digi/test-support';
 import { describe, expect, test } from 'vitest';
 import type { PatchedSession } from '@digi/regression/support.ts';
@@ -13,6 +12,7 @@ import { patchkit } from '@digi/regression/runtime/patchkit.ts';
 import { DEVICES, FIRMWARE } from '@digi/regression/runtime/devices.ts';
 import { expectRuntimeUi } from '@digi/regression/runtime/ready.ts';
 import { planSymbol } from '@digi/regression/runtime/runtime-plan.ts';
+import { emulatorDk } from '@digi/regression/runtime/waits.ts';
 
 const routeKey = `fx/route/${SEND}`;
 
@@ -160,7 +160,7 @@ for (const device of DEVICES) {
         expect(await word(session, planSymbol(plan, 'DK_FXR_FLUSH'))).toBe(0);
         runtime.dk.cancelPending();
         await rpc(session, 'run.mode', { mode: 'free' });
-        const dk = new DkSession(new EmuUsbTransport((method, params) => session.client.call(method, params)));
+        const dk = emulatorDk(session);
         const reboot = { session, dk, close: runtime.close };
         try {
           await expectRuntimeUi(session, plan, artifacts, { afterEpoch: Number(before) });

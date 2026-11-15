@@ -5,42 +5,49 @@
     "runtimeAcceptance": [
       {
         "files": ["tests/shot-dt2.device.test.ts"],
+        "tags": ["S:machines", "S:samples"],
         "modules": ["digikit/shot", "digikit/debug", "test/stock-pool", "test/track-select"],
         "plusdrive": true,
         "dksampleWasm": true
       },
       {
         "files": ["tests/shot-dn2-pool.device.test.ts"],
+        "tags": ["S:machines", "S:samples"],
         "modules": ["digikit/shot", "digikit/debug", "test/track-select"],
         "plusdrive": true,
         "dksampleWasm": true
       },
       {
         "files": ["tests/shot-dn2-link.device.test.ts"],
+        "tags": ["S:fx", "S:machines", "S:samples"],
         "modules": ["digikit/shot", "digikit/debug", "test/track-select", "test/dyn-fx-gain"],
         "plusdrive": true,
         "dksampleWasm": true
       },
       {
         "files": ["tests/shot-dn2-lease.device.test.ts"],
+        "tags": ["S:machines", "S:samples"],
         "modules": ["digikit/shot", "digikit/debug", "test/track-select"],
         "plusdrive": true,
         "dksampleWasm": true
       },
       {
         "files": ["tests/shot-dn2-audio.device.test.ts"],
+        "tags": ["C:dsp", "S:machines", "S:samples"],
         "modules": ["digikit/shot", "digikit/debug", "test/track-select"],
         "plusdrive": true,
         "dksampleWasm": true
       },
       {
         "files": ["tests/shot-dn2-supersede.device.test.ts"],
+        "tags": ["M:digikit/remote", "S:machines", "S:samples"],
         "modules": ["digikit/shot", "digikit/debug", "digikit/remote", "test/track-select"],
         "plusdrive": true,
         "dksampleWasm": true
       },
       {
         "files": ["tests/shot-picker.device.test.ts"],
+        "tags": ["S:machines", "S:samples"],
         "modules": ["digikit/shot", "digikit/debug", "test/stock-pool", "test/track-select"],
         "plusdrive": true,
         "dksampleWasm": true

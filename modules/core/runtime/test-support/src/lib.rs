@@ -6,6 +6,7 @@ extern crate std;
 use core::cell::{Cell, RefCell};
 use dkrt_abi::core_api::CoreApi;
 use dkrt_abi::dsp::DspState;
+use dkrt_abi::fw::Fw;
 use dkrt_abi::link::{LinkResult, Owner, Sequence, Slot, Stream, Ticket};
 use dkrt_abi::registry::RegState;
 use dkrt_link::fake::{link, FakeLink};
@@ -18,14 +19,52 @@ use std::vec::Vec;
 /// One call the service made, in order.
 #[derive(Clone, Debug, PartialEq)]
 pub enum Call {
-    FxRow { code: u32, mirror: u32, def: u32 },
-    SendRow { code: u32, mirror: u32 },
+    ParamRow {
+        code: u32,
+        min: u32,
+        max: u32,
+        def: u32,
+    },
+    FxRow {
+        code: u32,
+        mirror: u32,
+        def: u32,
+    },
+    SendRow {
+        code: u32,
+        mirror: u32,
+    },
     ResetRow(u32),
     SettingsPut(Vec<u8>, Vec<u8>),
-    Log { kind: u16, args: [u32; 5] },
-    JobPost { owner: u8 },
-    JobCancel { owner: u8, id: u32 },
-    Set { slot: Slot, value: u32 },
+    Log {
+        kind: u16,
+        args: [u32; 5],
+    },
+    JobPost {
+        owner: u8,
+    },
+    JobCancel {
+        owner: u8,
+        id: u32,
+    },
+    Set {
+        slot: Slot,
+        value: u32,
+    },
+    /// A native page registered for machine type `owner`: the callbacks and the snapshot words.
+    NativeRegister {
+        kind: u32,
+        owner: u32,
+        page: u32,
+        flags: u32,
+        draw: u32,
+        event: u32,
+        words: Vec<u32>,
+        arg: u32,
+        with_arg: u32,
+    },
+    NativeRemove(u32),
+    NativeTurn,
 }
 
 /// A core that records what services ask of it. Its link is the real queue over a model of `core/dsp-link` (`link::fake::FakeLink`): the tests read the
@@ -40,6 +79,12 @@ pub struct FakeCore {
     pub name: String,
     pub fx_table: Vec<u32>,
     pub device: u32,
+    /// The words of `dynreg_info` the fake hands out (empty: no registry, `dynreg` is null).
+    pub dynreg_table: Vec<u32>,
+    /// What `native_available` answers, what `native_register` returns and what `native_turn` returns.
+    pub native_available: bool,
+    pub native_status: i32,
+    pub native_consumes: u32,
     reg: *mut RegState,
     dsp: *mut DspState,
 }
@@ -59,6 +104,10 @@ impl FakeCore {
             name: String::from("fake\0"),
             fx_table: std::vec![0; 8],
             device: 0,
+            dynreg_table: Vec::new(),
+            native_available: true,
+            native_status: 0,
+            native_consumes: 0,
             reg,
             dsp,
         }
@@ -73,7 +122,11 @@ impl FakeCore {
 
 impl CoreApi for FakeCore {
     unsafe fn dynreg(&self) -> *const u32 {
-        core::ptr::null()
+        if self.dynreg_table.is_empty() {
+            core::ptr::null()
+        } else {
+            self.dynreg_table.as_ptr()
+        }
     }
     fn reg_state(&self) -> &'static mut RegState {
         unsafe { &mut *self.reg }
@@ -87,15 +140,21 @@ impl CoreApi for FakeCore {
     unsafe fn write_param_row(
         &self,
         _inf: *const u32,
-        _c: u32,
+        code: u32,
         _t: u32,
         _slot: u32,
-        _min: u32,
-        _max: u32,
-        _def: u32,
+        min: u32,
+        max: u32,
+        def: u32,
         _n: u32,
         _s: u32,
     ) {
+        self.rec(Call::ParamRow {
+            code,
+            min,
+            max,
+            def,
+        })
     }
     unsafe fn write_fx_param_row(
         &self,
@@ -178,6 +237,45 @@ impl CoreApi for FakeCore {
         self.rec(Call::JobCancel { owner, id });
         0
     }
+    fn native_available(&self, _kind: u32) -> bool {
+        self.native_available
+    }
+    unsafe fn native_register(
+        &self,
+        kind: u32,
+        owner: u32,
+        page: u32,
+        flags: u32,
+        _title: *const u8,
+        draw: u32,
+        event: u32,
+        _bindings: *const u32,
+        words: *const u32,
+        word_count: u32,
+        arg: u32,
+        with_arg: u32,
+    ) -> i32 {
+        let words = core::slice::from_raw_parts(words, word_count as usize).to_vec();
+        self.rec(Call::NativeRegister {
+            kind,
+            owner,
+            page,
+            flags,
+            draw,
+            event,
+            words,
+            arg,
+            with_arg,
+        });
+        self.native_status
+    }
+    unsafe fn native_remove(&self, kind: u32) {
+        self.rec(Call::NativeRemove(kind))
+    }
+    unsafe fn native_turn(&self, _view: *const u8, _event: *const u8) -> u32 {
+        self.rec(Call::NativeTurn);
+        self.native_consumes
+    }
     fn dsp(&self) -> &'static mut DspState {
         unsafe { &mut *self.dsp }
     }
@@ -211,5 +309,114 @@ impl CoreApi for FakeCore {
     }
     unsafe fn link_run(&self, owner: Owner, seq: &Sequence) -> bool {
         self.link.borrow_mut().run(owner, seq)
+    }
+}
+
+/// One call a service made on the firmware's parameter page, in order.
+#[derive(Clone, Debug, PartialEq)]
+pub enum FwCall {
+    PageValue {
+        view: usize,
+        code: u32,
+    },
+    Object {
+        view: usize,
+        code: u32,
+        track: u32,
+    },
+    ObjectValue {
+        obj: usize,
+        code: u32,
+    },
+    Store {
+        obj: usize,
+        code: u32,
+        raw: i32,
+        track: u32,
+    },
+    ViewTrack {
+        track_ref: usize,
+    },
+    ParamCode {
+        view: usize,
+        enc: u32,
+    },
+}
+
+/// A firmware page that records what a service asks of it (`Fw`). The answers are fields: a test sets them with struct update syntax.
+pub struct FakeFw {
+    /// A mode key (FUNC, a trig or track mode) is held.
+    pub held: bool,
+    /// `object` finds no parameter object (answers 0).
+    pub no_object: bool,
+    /// What `page_value` answers.
+    pub page_value: i32,
+    /// What `object_value` answers.
+    pub object_value: i32,
+    /// What `view_track` answers.
+    pub track: u32,
+    /// What `param_code` answers.
+    pub param_code: i32,
+    pub calls: RefCell<Vec<FwCall>>,
+}
+
+impl Default for FakeFw {
+    fn default() -> Self {
+        FakeFw {
+            held: false,
+            no_object: false,
+            page_value: 0x0500,
+            object_value: 0xffff_f800u32 as i32, // a negative halfword with garbage above
+            track: 0,
+            param_code: -1,
+            calls: RefCell::new(Vec::new()),
+        }
+    }
+}
+
+impl FakeFw {
+    pub fn calls(&self) -> Vec<FwCall> {
+        self.calls.borrow().clone()
+    }
+    fn rec(&self, c: FwCall) {
+        self.calls.borrow_mut().push(c);
+    }
+}
+
+impl Fw for FakeFw {
+    fn mode_key_held(&self) -> bool {
+        self.held
+    }
+    fn page_value(&self, view: usize, code: u32) -> i32 {
+        self.rec(FwCall::PageValue { view, code });
+        self.page_value
+    }
+    fn object(&self, view: usize, code: u32, track: u32) -> usize {
+        self.rec(FwCall::Object { view, code, track });
+        if self.no_object {
+            0
+        } else {
+            0x7000
+        }
+    }
+    fn object_value(&self, obj: usize, code: u32) -> i32 {
+        self.rec(FwCall::ObjectValue { obj, code });
+        self.object_value
+    }
+    fn store(&self, obj: usize, code: u32, raw: i32, track: u32) {
+        self.rec(FwCall::Store {
+            obj,
+            code,
+            raw,
+            track,
+        });
+    }
+    fn view_track(&self, track_ref: usize) -> u32 {
+        self.rec(FwCall::ViewTrack { track_ref });
+        self.track
+    }
+    fn param_code(&self, view: usize, enc: u32) -> i32 {
+        self.rec(FwCall::ParamCode { view, enc });
+        self.param_code
     }
 }

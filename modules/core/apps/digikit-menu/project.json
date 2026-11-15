@@ -5,11 +5,13 @@
     "runtimeAcceptance": [
       {
         "files": ["tests/fits.device.test.ts"],
+        "tags": ["A:core/digikit-menu", "C:loading"],
         "modules": [],
         "plusdrive": true
       },
       {
         "files": ["tests/needs.device.test.ts"],
+        "tags": ["A:core/digikit-menu", "C:loading"],
         "modules": ["digikit/usb-fast"],
         "plusdrive": true
       }

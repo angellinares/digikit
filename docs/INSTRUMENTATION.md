@@ -683,6 +683,7 @@ entry PC, so a count says which region the instructions belong to, not which ins
 A real run (DN2 1.12 with digikit/pluck, 5487 DSP blocks, one note from the module; the daemon with `sharc-profile`, the report with the ship map and the module's map from `patchkit pack --addrmap`): the whole DSP
 takes 332,039 instructions per block (the stock firmware, near the 334,529 of `stock_busy`), the module 247.4 per block; its `_pk_render` loop (32 passes) takes 200.7 per block, its `_pk_coef` 33.5.
 The map holds assembler labels as functions (`_pk_run` inside the render routine), so the function rows follow the map and the loop rows follow `dksharc`.
+The SHARC-only rig is a second producer of `dk.profile/1` (`tools/devtools/rig_profile.ts`: one conformance case, exact instructions per pc, no emulator; [TESTING.md](TESTING.md), "SHARC-only rig").
 `wb addrmap lookup` and `wb module analyse` ([ADDRMAP.md](ADDRMAP.md#usage), [dksharc](../packages/dksharc/README.md#usage)) use the same `dkprof.wasm`.
 
 ## Cargo features

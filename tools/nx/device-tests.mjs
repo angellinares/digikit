@@ -2,6 +2,7 @@
 // conformance, test-only and regression nodes. The cache keys are in device-test-keys.mjs; build and pack targets are in module-build.mjs.
 import { globSync } from 'node:fs';
 import { basename, dirname, join } from 'node:path';
+import { checkAcceptanceTags } from './acceptance-tags.mjs';
 import { mergeTests, manifestClosure, read, records } from './module-manifests.mjs';
 import { DEVICE_INPUTS, VITEST_SETUP, builtSourceExclusions, deviceInputs } from './device-test-keys.mjs';
 
@@ -56,7 +57,11 @@ export const deviceTarget = (
       command: `${EMU_SLOT} pnpm --filter @digi/regression test:runtime ${tests.map((t) => `../../${root}/${t}`).join(' ')}`,
       cwd: '.',
       // the key holds the patchkit binary (a full key, or a live closure): runtime/patchkit-exec.ts runs patchkit only then
-      env: { DIGI_PATCHKIT_LIVE: (!opts.narrow && !opts.merge) || patchkitLive ? '1' : '' },
+      env: {
+        DIGI_PATCHKIT_LIVE: (!opts.narrow && !opts.merge) || patchkitLive ? '1' : '',
+        // the `-all` twins run the full tier: `full: true` tests (tests/regression/runtime/devices.ts FULL_TIER) run too
+        ...(opts.fullTier ? { DIGIKIT_TIER: 'full' } : {}),
+      },
     },
   };
 };
@@ -64,7 +69,7 @@ export const deviceTarget = (
 // One cached target per test file, so an edit or a failure in one file reruns only that file.
 // `name` stays the target everything selects: a no-op parent of the per-file targets.
 // With `opts.twin`, `name` is the merge target (narrow keys for files outside `opts.mergeTests`) and `${name}-all`
-// runs every file with full inputs.
+// runs every file with full inputs and DIGIKIT_TIER=full (the gate's full tier).
 // Each run target is split in two halves, `<name>--dt2` and `<name>--dn2` (env DIGI_DEVICE), so they run in
 // parallel. `<name>` stays as a no-op parent with the inputs of the run target.
 export const deviceTargets = (
@@ -113,12 +118,17 @@ const fileTargets = (
   const merge = opts.mergeTests ?? [];
   const isMerge = (test) => !opts.twin || merge.includes(test);
   // `merge`: the key of the merge target (the target everything selects); the `-all` twins keep the full key.
-  const build = (list, narrow, recList = recs, merge = false) =>
-    deviceTarget(root, list, recList, imageInput, importInputs, pythonInputs, uploadable, { ...opts, narrow, merge });
+  const build = (list, narrow, recList = recs, merge = false, fullTier = false) =>
+    deviceTarget(root, list, recList, imageInput, importInputs, pythonInputs, uploadable, {
+      ...opts,
+      narrow,
+      merge,
+      fullTier,
+    });
   if (tests.length === 1) {
     const [test] = tests;
     const targets = { [name]: build(tests, !isMerge(test), recs, Boolean(opts.twin)) };
-    if (opts.twin) targets[allName] = build(tests, false); // the full key for every test, a merge test included
+    if (opts.twin) targets[allName] = build(tests, false, recs, false, true); // the full key for every test, a merge test included
     return targets;
   }
   const targets = {};
@@ -130,13 +140,13 @@ const fileTargets = (
     const own = recs.filter((rec) => rec.files?.includes(test));
     const narrow = !isMerge(test);
     // A sibling test file is not an input. This file's own closure comes from importInputs.
-    const make = (isNarrow, merge = false) => {
-      const target = build([test], isNarrow, own.length ? own : recs, merge);
+    const make = (isNarrow, merge = false, fullTier = false) => {
+      const target = build([test], isNarrow, own.length ? own : recs, merge, fullTier);
       target.inputs.push('!{projectRoot}/**/*.device.test.ts');
       return target;
     };
     targets[child] = make(narrow, Boolean(opts.twin));
-    if (opts.twin) all[`${allName}--${suffix}`] = make(false);
+    if (opts.twin) all[`${allName}--${suffix}`] = make(false, false, true);
   }
   // Nx selects a target by its inputs, so the parents keep the inputs of the whole project.
   const { inputs } = build(tests, false);
@@ -181,7 +191,16 @@ export const conformanceTarget = (workspaceRoot, root, m, f, importInputs) => ({
 });
 
 // Nodes of the test-only projects (their device targets); appended to `nodes`.
-export const testOnlyNodes = (workspaceRoot, testOwners, byId, coreBuilds, importInputs, pythonInputs, nodes) => {
+export const testOnlyNodes = (
+  workspaceRoot,
+  testOwners,
+  byId,
+  moduleInfo,
+  coreBuilds,
+  importInputs,
+  pythonInputs,
+  nodes,
+) => {
   for (const [file, config] of testOwners) {
     const root = dirname(file);
     const tests = globSync('**/*.device.test.ts', { cwd: join(workspaceRoot, root) })
@@ -194,6 +213,7 @@ export const testOnlyNodes = (workspaceRoot, testOwners, byId, coreBuilds, impor
     checkMergeTests(workspaceRoot, root, tests, config.tags.includes('tier:full'));
     if (!tests.length) continue;
     const recs = records(join(workspaceRoot, root));
+    checkAcceptanceTags(root, recs, tests, moduleInfo);
     if (recs.some((rec) => Object.keys(rec.aliases ?? {}).length))
       throw new Error(`Test-only project ${config.name} needs explicit pack-aliases support`);
     // Explicit fixture images build only their manifest requirements; ordinary owners keep the default image.

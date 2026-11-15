@@ -104,7 +104,7 @@ The reports keep their shape, so only the writer moves: add `patchkit uses set -
 
 - Sample pool (`shot`): `samplepool.ts` is a port of `sample_pool.py` (about 60 lines of pokes; done in phase 3, as the conformance of
   `shot` needs it). The conformance setup `sample-pool` calls it before the first block. `test_shot_playback.py` becomes a rig test with sound checks.
-- DN2 machine stereo (`dn2_stereo_rig.py`, `dn2_stereo_stages.py`) and the send FX hooks (`fxsend.s`, `fxsend-dn2.s`: track
+- DN2 machine stereo (`stereo.ts` and `stereo-stages.ts`; the Python rig files are retired) and the send FX hooks (`fxsend.s`, `fxsend-dn2.s`: track
   buses, slot map, fade flags, return bus): the request format needs no change. They are extra methods of `machine.ts` and
   `fx.ts`. They serve the adapter tests, not the module conformance, so they come in phase 5.
 

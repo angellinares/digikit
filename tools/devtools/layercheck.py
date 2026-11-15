@@ -32,9 +32,11 @@ Rules:
   service-crates
             A service crate (modules/core/services/NAME, linked into the runtime object) depends only on dkrt-abi, dkrt-sdk and dkneeds, and on
             dkrt-test-support as a dev-dependency; it names no firmware crate and no device id, and has no path into the runtime crate. The runtime
-            names a service crate (`dkrt_svc_*`) only in `gen_services.rs` and `handlers.rs`.
-  platform  Inside the runtime crate, only `platform.rs` (the real platform, L1) and an adapter file named `fw.rs` name the firmware crate dkfw; the rest
-            of the core and the services use the `Platform` trait (`dkrt-abi`). No runtime file but `platform.rs` compares the device id with a number
+            names a service crate (`dkrt_svc_*`) only in `gen_services.rs` and `handlers.rs`. Final state (R10): only `lfo` and `samples` are folders of
+            the runtime crate's `services/`; every other service is a crate.
+  platform  Inside the runtime crate, only `platform.rs` (the real platform, L1) and `fw.rs` at the crate's source root (the declared adapter of
+            `dkrt_abi::fw::Fw`: it must contain `impl Fw for`) name the firmware crate dkfw; the rest of the core and the services use the `Platform`
+            trait and the `Fw` trait (`dkrt-abi`). No runtime file but `platform.rs` compares the device id with a number
             (`device() == 1`): the code asks the device profile (`samples_in_store()`), whose values come from the device files. The runtime
             module patches the firmware only with the machine page hooks (finding 128: runtime-owned, with slots); the UI loop, main-OS task and MIDI
             receive hooks and the exception hook install are in the adapter `core/platform`.
@@ -689,9 +691,11 @@ def check_runtime_arrows(root: Path) -> list[Violation]:
     return out
 
 
-# L1 files of the runtime crate: the real platform, and adapter files of a service (`fw.rs`), the only places that name the firmware crate.
+# L1 files of the runtime crate: the real platform and the adapter of `dkrt_abi::fw::Fw` (`fw.rs` at the source root), the only places that name the
+# firmware crate. The adapter file must implement the interface it is declared for.
 RT_PLATFORM_FILE = "platform.rs"
 RT_ADAPTER_FILE = "fw.rs"
+RT_ADAPTER_IMPL = re.compile(r"\bimpl\s+(?:dkrt_abi::fw::)?Fw\s+for\b")
 RT_DEVICE_COMPARE = re.compile(
     r"\b(?:device|device_id)\s*\(\s*\)\s*[!=]=\s*\d|\bprofile\s*\(\s*\)\s*\.\s*id\s*[!=]=\s*\d"
 )
@@ -725,8 +729,26 @@ def check_runtime_platform(root: Path) -> list[Violation]:
                 )
     for f in sorted(src.rglob("*.rs")):
         r = f.relative_to(src)
-        l1 = r.name == RT_ADAPTER_FILE or r.as_posix() == RT_PLATFORM_FILE
+        l1 = r.as_posix() in (RT_ADAPTER_FILE, RT_PLATFORM_FILE)
         text = rust_without_comments(f.read_text(encoding="utf-8"))
+        if r.name == RT_ADAPTER_FILE and r.as_posix() != RT_ADAPTER_FILE:
+            out.append(
+                Violation(
+                    f"{RT_SRC}/{r.as_posix()}:1",
+                    "platform",
+                    "an adapter file fw.rs below the source root of the runtime",
+                    "the only firmware adapter is src/fw.rs (the implementation of dkrt_abi::fw::Fw)",
+                )
+            )
+        if r.as_posix() == RT_ADAPTER_FILE and not RT_ADAPTER_IMPL.search(text):
+            out.append(
+                Violation(
+                    f"{RT_SRC}/{r.as_posix()}:1",
+                    "platform",
+                    "fw.rs does not implement dkrt_abi::fw::Fw",
+                    "fw.rs is exempt from the dkfw rule only as the declared adapter of that interface",
+                )
+            )
         for n, line in enumerate(text.splitlines(), 1):
             where = f"{RT_SRC}/{r.as_posix()}:{n}"
             if not l1 and RS_FW.search(line):
@@ -735,7 +757,7 @@ def check_runtime_platform(root: Path) -> list[Violation]:
                         where,
                         "platform",
                         "the runtime names the firmware crate dkfw outside platform.rs",
-                        "call it through the Platform trait (dkrt-abi), or put it behind the service's adapter interface in its fw.rs",
+                        "call it through the Platform trait or the Fw trait (dkrt-abi); the implementation of Fw is src/fw.rs",
                     )
                 )
             if r.as_posix() != RT_PLATFORM_FILE and RT_DEVICE_COMPARE.search(line):
@@ -755,6 +777,8 @@ SERVICE_DEPS = {"dkrt-abi", "dkrt-sdk", "dkneeds"}
 SERVICE_DEV_DEPS = SERVICE_DEPS | {"dkrt-test-support"}
 SERVICE_CRATE_REF = re.compile(r"\bdkrt_svc_\w+")
 SERVICE_RUNTIME_FILES = ("handlers.rs", "gen_services.rs")
+# The services that are still folders of the runtime crate (`services/NAME`); the others are crates (`modules/core/services/NAME`).
+RT_LOCAL_SERVICES = {"lfo", "samples"}
 SERVICE_RUNTIME_REF = re.compile(r"\bdkrt::|\bextern\s+crate\s+dkrt\b")
 RUNTIME_MANIFEST = "modules/core/runtime/src/rs/Cargo.toml"
 DEP_TABLES = ("dependencies", "build-dependencies", "dev-dependencies")
@@ -871,6 +895,31 @@ def check_service_crates(root: Path) -> list[Violation]:
             check_test_only_deps(root, rt_manifest, tomllib.loads(rt_text), rt_text)
         )
     src = root / RT_SRC
+    local = src / "services"
+    for d in sorted(local.iterdir()) if local.is_dir() else []:
+        if d.is_dir() and d.name not in RT_LOCAL_SERVICES:
+            out.append(
+                Violation(
+                    rel(root, d),
+                    "service-crates",
+                    f"the service {d.name} is a folder of the runtime crate",
+                    f"only {', '.join(sorted(RT_LOCAL_SERVICES))} stay in services/; put a service in a crate modules/core/services/{d.name}",
+                )
+            )
+    mod_rs = local / "mod.rs"
+    if mod_rs.is_file():
+        mod_text = rust_without_comments(mod_rs.read_text(encoding="utf-8"))
+        for n, line in enumerate(mod_text.splitlines(), 1):
+            m = re.match(r"\s*pub\s+mod\s+(\w+)", line)
+            if m and m.group(1) not in RT_LOCAL_SERVICES:
+                out.append(
+                    Violation(
+                        f"{RT_SRC}/services/mod.rs:{n}",
+                        "service-crates",
+                        f"services/mod.rs declares the service {m.group(1)}",
+                        f"only {', '.join(sorted(RT_LOCAL_SERVICES))} stay in services/",
+                    )
+                )
     for f in sorted(src.rglob("*.rs")) if src.is_dir() else []:
         r = f.relative_to(src).as_posix()
         if r in SERVICE_RUNTIME_FILES:

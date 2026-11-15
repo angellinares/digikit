@@ -7,10 +7,12 @@
     "runtimeAcceptance": [
       {
         "files": ["modules-capacity.device.test.ts"],
+        "tags": ["C:loading"],
         "modules": ["digikit/debug", "digikit/probe", "digikit/remote", "test/dyn-params"]
       },
       {
         "files": ["fault-trace.device.test.ts"],
+        "tags": ["C:diagnostics", "C:dsp", "C:layout"],
         "modules": [
           "digikit/debug",
           "test/dyn-crash",
@@ -22,11 +24,13 @@
       },
       {
         "files": ["transfer-live.device.test.ts"],
+        "tags": ["C:storage", "C:transport"],
         "modules": ["digikit/debug", "test/sine"],
         "sources": ["tools/device/dktransfer.py"]
       },
       {
         "files": ["samples-live.device.test.ts"],
+        "tags": ["C:storage", "S:samples"],
         "modules": [],
         "sources": [
           "packages/dk-session/src/dksample.ts",
@@ -39,12 +43,14 @@
       },
       {
         "files": ["store-format.device.test.ts"],
+        "tags": ["C:loading", "C:storage"],
         "modules": ["test/c-demo"],
         "sources": ["packages/workbench-core/src/firmware/default-modules-core.ts", "packages/workbench-core/src/modules/dktransfer.ts"],
         "plusdrive": true
       },
       {
         "files": ["samples-store-live.device.test.ts"],
+        "tags": ["C:storage", "S:samples"],
         "modules": [],
         "sources": [
           "packages/dk-session/src/dksample.ts",
@@ -56,60 +62,72 @@
       },
       {
         "files": ["upload.device.test.ts"],
+        "tags": ["C:storage", "C:transport"],
         "modules": [],
         "plusdrive": true
       },
       {
         "files": ["upload-depth.device.test.ts"],
+        "tags": ["C:transport"],
         "modules": [],
         "plusdrive": true
       },
       {
         "files": ["upload-faults.device.test.ts"],
+        "tags": ["C:layout", "C:storage", "C:transport"],
         "modules": ["test/sine"],
         "sources": ["tools/patchkit/pk_digikit_fxroutes.py"],
         "plusdrive": true
       },
       {
         "files": ["card-safety.device.test.ts"],
+        "tags": ["C:storage"],
         "modules": ["test/c-demo"],
         "plusdrive": true
       },
       {
         "files": ["safe-mode.device.test.ts"],
+        "tags": ["C:boot", "C:layout", "C:storage"],
         "modules": ["test/c-demo", "test/dyn-dn2", "test/dyn-fault", "test/dyn-fault-late", "test/sine"],
         "plusdrive": true
       },
       {
         "files": ["boot-restart.device.test.ts"],
+        "tags": ["C:boot", "C:dsp", "C:loading"],
         "modules": ["test/dyn-dn2", "test/sine"],
         "plusdrive": true
       },
       {
         "files": ["crash-capture.device.test.ts"],
+        "tags": ["C:diagnostics", "C:layout"],
         "modules": ["digikit/debug", "test/dyn-crash"],
         "plusdrive": true
       },
       {
         "files": ["debug-guard.device.test.ts"],
+        "tags": ["C:diagnostics", "C:dsp", "C:layout"],
         "modules": ["digikit/debug", "test/dyn-guard-nan", "test/sine"],
         "plusdrive": true
       },
       {
         "files": ["platform-contract.device.test.ts"],
+        "tags": ["C:boot", "C:storage", "C:tick", "C:transport"],
         "modules": [],
         "sources": ["modules/core/runtime/tests/platform/contract.toml"]
       },
       {
         "files": ["addrmap.device.test.ts"],
+        "tags": ["C:layout"],
         "modules": ["digikit/debug", "test/dyn-demo"]
       },
       {
         "files": ["log-names.device.test.ts"],
+        "tags": ["C:diagnostics", "C:layout"],
         "modules": ["digikit/debug", "test/dyn-demo"]
       },
       {
         "files": ["memaudit.device.test.ts"],
+        "tags": ["C:layout"],
         "modules": ["test/c-demo", "test/dyn-demo", "test/dyn-demo-stray", "test/dyn-dn2", "test/sine"],
         "plusdrive": true
       }

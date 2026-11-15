@@ -7,6 +7,7 @@
     "runtimeAcceptance": [
       {
         "files": ["lfo.device.test.ts"],
+        "tags": ["S:lfo"],
         "modules": ["test/lfo-shape", "test/lfo-shape-dup"]
       }
     ],
