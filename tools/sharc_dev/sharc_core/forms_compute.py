@@ -30,6 +30,7 @@ from .forms_move import (
 )
 from .memory import (
     _access_modifier_scale,
+    _broadcast_load,
     _dm_write,
     _load_normal_ureg,
     _post_modify_index,
@@ -188,9 +189,9 @@ def _type_6a_mem(
             access_width="normal-word",
         )
     if companion is not None and (run_y or (run_x and _simd_active(state) is not True)):
-        if space == "DM":
+        if space == "DM" or _broadcast_load(old, dreg, index, store):
             _companion_transfer(
-                state, insn, companion, store, "normal-word", old, "post-modify"
+                state, insn, companion, store, "normal-word", old, "post-modify", space
             )
         else:
             _pm_companion_transfer(state, insn, companion, store, old, "post-modify")

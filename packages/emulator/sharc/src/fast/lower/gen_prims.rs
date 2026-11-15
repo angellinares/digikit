@@ -18,6 +18,9 @@ use crate::rt::{UREG_PX, UREG_PX1, UREG_PX2};
 /// MODE1's register-bank selection bits (`state._BANK_MASK`).
 const BANK_BITS: u32 = 0x4F8;
 
+/// MODE1.BDCST9 (bit 22) and MODE1.BDCST1 (bit 23).
+const BROADCAST_BITS: u32 = 3 << 22;
+
 /// MODE1.IRPTEN (bit 12) and MODE1.NESTM (bit 11): interrupt delivery and nesting.
 const IRQ_ENABLE_BITS: u32 = 0x1800;
 
@@ -167,6 +170,12 @@ impl Lower {
             // off), so the kernel must not run on past the write: the
             // interpreter enters the interrupt after it.
             return refuse("MODE1 write enables interrupts");
+        }
+        if k & BROADCAST_BITS != 0 {
+            // A broadcast load (BDCST1/BDCST9) loads a second register. The
+            // generated forms leave it out (`sharc_lowergen.i_broadcast_load`),
+            // and a region never starts with it set (`glue`).
+            return refuse("MODE1 write enables a broadcast load");
         }
         if self.env.bank_model && (k ^ self.mode1_cur) & BANK_BITS != 0 {
             // A write that changes the bank selection starts a delayed one.

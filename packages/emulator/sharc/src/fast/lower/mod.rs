@@ -2133,6 +2133,15 @@ mod tests {
     }
 
     #[test]
+    fn mode1_write_that_enables_a_broadcast_load_refuses() {
+        for bit in [1u32 << 22, 1 << 23] {
+            let mut l = Lower::new(env(), Plan::default(), 0);
+            let value = l.ci(bit);
+            assert!(l.g_wr(sysops::MODE1_CODE, value).is_err());
+        }
+    }
+
+    #[test]
     fn b_write_also_loads_i() {
         // PRM p.6-25: a write of Bn loads In with the same value; a write of In leaves Bn.
         let (b7, i7) = (UREG_B0 + 7, UREG_I0 + 7);
