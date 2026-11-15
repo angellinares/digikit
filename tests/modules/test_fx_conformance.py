@@ -6,7 +6,7 @@ SHARC+ core (tests/support/fx_rig.py) and checks, for every block, that the hook
 back, the adapter did not have to refuse the block, the module wrote only memory it owns, and the instruction count is within the budget.
 
 One worker per module (tests/support/fx_conform_worker.py, PyPy when uv can start it); the tests read its report, one test per case group.
-Select with DIGI_CONFORM_MODULES=test/fx-gain,... (`mise run module:check NAME` sets it). Reports go to out/runs/conformance/ (never committed).
+Select with DIGI_CONFORM_MODULES=test/fx-gain,... (`mise run module:check NAME` sets it). Reports go to dist/conformance/ of the worktree (never committed).
 """
 
 import json
@@ -30,7 +30,7 @@ pytestmark = pytest.mark.skipif(
 )
 
 GROUPS = ("signals", "params", "modulation", "switching", "long")
-REPORTS = REPO_ROOT / "out" / "runs" / "conformance"
+REPORTS = REPO_ROOT / "dist" / "conformance"
 WORKER_TIMEOUT = 900
 MAX_SHOWN = 6
 
@@ -92,6 +92,7 @@ def _run_worker(spec: pk_conform.FxSpec, groups: tuple[str, ...] = ()) -> dict:
     report = json.loads(r.stdout.strip().splitlines()[-1])
     if groups:
         return report
+    report["worktree"] = str(REPO_ROOT.resolve())
     REPORTS.mkdir(parents=True, exist_ok=True)
     (REPORTS / f"{spec.module.replace('/', '__')}@fx.json").write_text(
         json.dumps(report, indent=1)

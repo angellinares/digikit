@@ -7,7 +7,7 @@ finite and bounded, and the instruction count is within the budget. A module's o
 
 One worker process per (module, device) runs all cases (tests/support/conform_worker.py, PyPy when uv can start it); the tests below
 read its report, one test per case group. Select with DIGI_CONFORM_MODULES=<author/name>,... and DIGI_CONFORM_DEVICE=dt2|dn2
-(`mise run module:check NAME` sets them). Reports go to out/runs/conformance/ (never committed).
+(`mise run module:check NAME` sets them). Reports go to dist/conformance/ of the worktree (never committed).
 """
 
 import json
@@ -30,7 +30,7 @@ pytestmark = pytest.mark.skipif(
 )
 
 GROUPS = ("limits", "corners", "modulation", "long", "retrigger", "writes")
-REPORTS = REPO_ROOT / "out" / "runs" / "conformance"
+REPORTS = REPO_ROOT / "dist" / "conformance"
 WORKER_TIMEOUT = 900
 MAX_SHOWN = 6
 
@@ -100,6 +100,7 @@ def _run_worker(spec: pk_conform.MachineSpec, groups: tuple[str, ...] = ()) -> d
     report = json.loads(r.stdout.strip().splitlines()[-1])
     if groups:
         return report
+    report["worktree"] = str(REPO_ROOT.resolve())
     REPORTS.mkdir(parents=True, exist_ok=True)
     (REPORTS / f"{spec.module.replace('/', '__')}@{spec.device}.json").write_text(
         json.dumps(report, indent=1)
