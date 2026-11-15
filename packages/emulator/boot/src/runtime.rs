@@ -2805,13 +2805,27 @@ impl Emulator {
         std::mem::take(&mut self.midi.usb.out)
     }
 
+    /// True when the guest has registered the USB callbacks in this boot (the slots of its registration function hold them). An image
+    /// whose registration code is not the known shape is not gated.
+    fn usb_registered(&mut self) -> bool {
+        let Some((slot0, slot1)) = self.midi.usb.slots else {
+            return true;
+        };
+        let slot0 = self.bus.board.read32(slot0).unwrap_or(0);
+        let slot1 = self.bus.board.read32(slot1).unwrap_or(0);
+        crate::midi::usb_registered(slot0, slot1, self.midi.usb.rx_cb)
+    }
+
     /// Hand the next chunk to the USB receive callback: an interrupt frame is pushed as for a hardware interrupt,
     /// the chunk and the callback's arguments are built below it, and the PC goes to the callback. The callback returns
     /// to an `rte` of the firmware; `observe_usb` sees it, pops the arguments and restores d0, d1, a0, a1.
     fn service_usb(&mut self) -> Result<bool, String> {
         const LEVEL: u8 = USB_LEVEL;
-        if !self.midi.usb.enabled
-            || self.midi.usb.sys_error.is_some()
+        if !self.midi.usb.enabled || self.midi.usb.sys_error.is_some() {
+            return Ok(false);
+        }
+        self.midi.usb.unregistered = !self.usb_registered();
+        if self.midi.usb.unregistered
             || self.midi.usb.active.is_some()
             || self.midi.usb.queue.is_empty()
             || self.cpu.icount < self.midi.usb.next_ic
@@ -2900,6 +2914,12 @@ impl Emulator {
                 .ok_or("this image has no USB MIDI callback this emulator knows")?;
             self.midi.usb.rx_cb = rx;
             self.midi.usb.tx_fn = tx;
+            self.midi.usb.slots = crate::midi::resolve_usb_slots(&self.main, MAIN_LOAD);
+            if self.midi.usb.slots.is_none() {
+                eprintln!(
+                    "usb: unknown registration code: USB MIDI delivery is not gated on the registration"
+                );
+            }
             self.midi.usb.period = USB_PERIOD;
             self.midi.usb.enabled = true;
             self.rebuild_watch();
@@ -4257,6 +4277,7 @@ impl Emulator {
         if r.raw(8)? != SNAPSHOT_MAGIC {
             return Err("not a DT2SNP01 snapshot".into());
         }
+        self.midi.usb.reset_boot();
         self.snapshot_time_base();
         let main_sha = r.bytes()?;
         let device = r.bytes()?;
