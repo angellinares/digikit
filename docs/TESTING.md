@@ -920,7 +920,19 @@ under one exclusive benchlock, using the same validated sample helper as
 `coupled_ab.py`. Each timing sample must also match its earlier correctness result.
 The JSON summary records B/A ratios and tier counts; it makes no performance
 acceptance decision or automatic rollback. DSP patch experiments remain available
-through `coupled_ab.py --patch LABEL=FILE`. The matrix requires strict full-state
+through `coupled_ab.py --patch LABEL=FILE`. Two patched ColdFire images (for
+example `main` against a branch with a changed runtime) run with
+`coupled_ab.py --image A=MAIN.syx --image B=BRANCH.syx`: build each with
+`pnpm nx:pilot run patchkit:device-images` in its lane (the files are
+`dist/bytes/images/<device>/<id>.syx`; check `dist/bytes/images/<device>/` for the id), copy them
+away, then
+
+    uv run python -m tools.devtools.coupled_ab A=BIN B=BIN \
+        --image A=out/ab/main.syx --image B=out/ab/branch.syx -s trig1-taps --pairs 6
+
+Both labels need an image. Each image boots once with `coupled-run --cold-base`
+and keeps its ready pair under `out/runs/coupled_ab/image-*/cold`; the timed
+runs restore it. The PCM check stays on. The matrix requires strict full-state
 equivalence and does not support arbitrary firmware patches that intentionally
 change the exported state.
 
