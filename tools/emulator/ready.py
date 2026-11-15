@@ -16,7 +16,7 @@ Steps (each skipped when its output exists and --force is not given):
                                port 0 fed by the ColdFire's sample loads); saves
                                both at ready
 
-The DSP files live in --out (default out/snapshots/<device>-audio-ready-cold-...,
+The DSP files live in --out (the default comes from tools/emulator/ready_inputs.json,
 git-ignored). With --card-image the CF snapshot depends on the card (its
 sample list is in the restored RAM), so it goes to <out>/by-card/<sha12>/
 next to links to the shared DSP files; the last line printed is
@@ -45,12 +45,10 @@ EXTRA_AFTER_READY = "1000000"
 DEVICES = {
     "dn2": {
         "image": "dn2-1.12",
-        "out": "out/snapshots/dn2-audio-ready-cold-2026-10-20",
         "env": {},
     },
     "dt2": {
         "image": "dt2-1.17",
-        "out": "out/snapshots/dt2-audio-ready-cold-2026-10-20",
         "env": {
             "DSP_DEVICE": "dt2",
             "DSP_SAMPLE_LINK": "lp0",
@@ -109,7 +107,7 @@ def main(argv: list[str]) -> int:
         if a.device == "dn2"
         else f"DIGI_EMU_READY_DIR_{a.device.upper()}"
     )
-    out = a.out or pathlib.Path(env_out or cfg["out"])
+    out = a.out or pathlib.Path(env_out or digi_env.READY_JSON_DIRS[a.device])
     out = out if out.is_absolute() else ROOT / out
     out.mkdir(parents=True, exist_ok=True)
     syx_sha = hashlib.sha256(syx.read_bytes()).hexdigest()
@@ -166,7 +164,13 @@ def main(argv: list[str]) -> int:
         state.write_bytes(blob)
         print(f"{state}: entry sw {entry:#x}")
     if todo(idle) or todo(snap):
-        examples = build_examples()
+        # The helpers run interpreter-only, so the shared core is enough and a
+        # fresh clone needs no per-device core first.
+        examples = build_examples(
+            digi_env.generated_dir()
+            if os.environ.get("SHARC_GEN_DIR")
+            else digi_env.SHARED_GENERATED
+        )
     env = {**os.environ, "SHARC_FAST_REGIONS": "", **cfg["env"]}
     if todo(idle):
         with benchlock.hold("shared", "ready cold DSP"):

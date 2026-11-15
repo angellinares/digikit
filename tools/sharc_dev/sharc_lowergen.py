@@ -722,6 +722,8 @@ def i_snapshot(uregs):
 
 def i_write_ureg(state, code, value):
     CTX.emit(("wr", _ce(code), _node_of(value)))
+    # The rest of the core's _write_ureg that a kernel keeps: a write of Bn also loads In.
+    st._b_write_loads_i(state, code, value)
 
 
 def _static_plain(address, normal_word):
@@ -1029,12 +1031,27 @@ def i_concrete_address(address):
     return v
 
 
+def i_broadcast_load(uregs, code, index, store):
+    """No broadcast load in a kernel: the fast tier declines a region that
+    starts with MODE1.BDCST1 or BDCST9 set (glue.rs), and `g_wr_mode1` refuses a
+    write that sets one."""
+    return False
+
+
+def i_broadcast_companion(
+    uregs, code, address, index, store, access_width="normal-word"
+):
+    return None
+
+
 def i_read_px48(state, address):
     raise Stop("combined PX transfer")
 
 
 PATCHES = {
     "_read_px48": i_read_px48,
+    "_broadcast_load": i_broadcast_load,
+    "_broadcast_companion": i_broadcast_companion,
     "_concrete_address": i_concrete_address,
     "_predicate": i_predicate,
     "_predicate_pe": i_predicate_pe,

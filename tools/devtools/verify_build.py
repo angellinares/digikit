@@ -160,7 +160,7 @@ def build_daemons(devices: list[str]) -> tuple[dict[str, str], dict[str, str]]:
         try:
             syx, _ready = pk_harness.firmware_inputs(cell)
         except pk_harness.HarnessError as exc:
-            print(f"SKIP {device}: {exc}", flush=True)
+            print(f"SKIP {device}: {exc}", file=sys.stderr, flush=True)
             continue
         binary = ensure_daemon(device, syx, root)
         env[f"DIGI_EMUD_{device.upper()}"] = str(binary)
@@ -188,6 +188,13 @@ def main(argv: list[str] | None = None) -> int:
         env, test_keys = build_daemons(devices)
     except pk_harness.HarnessError as exc:
         print(f"verify_build: {exc}", file=sys.stderr)
+        return 1
+    if not env:
+        print(
+            "verify_build: no daemon built (missing stock firmware or ready inputs, see SKIP lines above); "
+            "build ready inputs with mise run emu:ready -- <device>",
+            file=sys.stderr,
+        )
         return 1
     if args.env_out:
         args.env_out.write_text(json.dumps(env, indent=2) + "\n")

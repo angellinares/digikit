@@ -32,17 +32,28 @@ ROOT = pathlib.Path(__file__).resolve().parents[2]
 _READY_JSON = json.loads(
     (ROOT / "tools" / "emulator" / "ready_inputs.json").read_text()
 )
-READY = ROOT / (os.environ.get("DIGI_EMU_READY_DIR") or _READY_JSON["ready_dir"])
+# The raw repo-relative ready directories, without env overrides.
+# tools/patchkit/pk_harness.py, packages/test-support/src/inputs.ts and
+# tools/nx/device-inputs.mjs use these same paths.
+READY_JSON_DIRS: dict[str, str] = {
+    "dn2": _READY_JSON["ready_dir"],
+    **_READY_JSON.get("ready_dirs", {}),
+}
+READY = ROOT / (os.environ.get("DIGI_EMU_READY_DIR") or READY_JSON_DIRS["dn2"])
 # The ready directory of the other devices (`ready_dirs` in the same file),
 # overridden per device by DIGI_EMU_READY_DIR_<DEVICE> (DIGI_EMU_READY_DIR_DT2).
 READY_DIRS = {
     "dn2": READY,
     **{
         k: ROOT / (os.environ.get(f"DIGI_EMU_READY_DIR_{k.upper()}") or v)
-        for k, v in _READY_JSON.get("ready_dirs", {}).items()
+        for k, v in READY_JSON_DIRS.items()
+        if k != "dn2"
     },
 }
 DEFAULT_GENERATED = ROOT / "out" / "native" / "dn2-audio" / "gen"
+# The firmware-free core from `mise run gen:core`. Interpreter-only builds (the
+# ready helpers, aot_gen cycle 0) use it so they do not need a per-device core.
+SHARED_GENERATED = ROOT / "out" / "native" / "shared-core" / "gen"
 DEFAULT_SYX = config.stock("Digitone_II_OS1.12.syx")
 FAST_TABLE = ROOT / "config" / "emulator.json"
 TOOLCHAIN: str = tomllib.loads((ROOT / "mise.toml").read_text())["tools"]["rust"]

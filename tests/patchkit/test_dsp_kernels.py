@@ -330,6 +330,8 @@ def test_biquad_never_reads_past_the_input_block():
 
 
 def test_biquad_from_selcc_c():
+    if pk_toolchains.selcc_bin() is None:
+        pytest.skip("selcc not built (not part of pk_toolchains selache)")
     c = """
 void dk_biquad(int x, int y, int st);
 void run(int x, int y, int st) { dk_biquad(x, y, st); }

@@ -37,6 +37,10 @@ pub(crate) struct UsbPort {
     pub tx_fn: u32,
     /// An `rte` the callback returns to (resolved from the MIDI receive ISR).
     pub ret_pc: u32,
+    /// The two .bss slots the registration function stores its callbacks in (`resolve_usb_slots`). `None`: the image has another registration function, delivery is not gated.
+    pub slots: Option<(u32, u32)>,
+    /// The last `service_usb` check found the callbacks not registered: no call is due, so the fast loop does not single-step (false until checked).
+    pub unregistered: bool,
     pub queue: VecDeque<UsbItem>,
     pub next_ic: u64,
     pub period: u64,
@@ -102,6 +106,38 @@ pub(crate) struct UsbCall {
     pub frame_sp: u32,
     /// d0, d1, a0, a1 of the interrupted code.
     pub saved: [u32; 4],
+}
+
+/// The registration function of the USB callbacks (`FUN_4000434a`, the same address on DT2 1.16, 1.17 and DN2 1.11, 1.12) stores its two arguments
+/// in two .bss globals: `lea (4,sp),a0; move.l (a0),slot0.l; lea (8,sp),a0; move.l (a0),slot1.l; ...`. The slot addresses differ per image.
+const USB_REG_ENTRY: u32 = 0x4000_434a;
+const USB_REG_STORE0: [u8; 6] = [0x41, 0xef, 0x00, 0x04, 0x23, 0xd0];
+const USB_REG_STORE1: [u8; 6] = [0x41, 0xef, 0x00, 0x08, 0x23, 0xd0];
+
+/// The addresses of the registration function's two slots, read from its code; `None` when the code is not the known shape.
+pub(crate) fn resolve_usb_slots(main: &[u8], load: u32) -> Option<(u32, u32)> {
+    let at = |addr: u32, n: usize| main.get(addr.checked_sub(load)? as usize..)?.get(..n);
+    if at(USB_REG_ENTRY, 6)? != USB_REG_STORE0 || at(USB_REG_ENTRY + 10, 6)? != USB_REG_STORE1 {
+        return None;
+    }
+    let slot0 = u32::from_be_bytes(at(USB_REG_ENTRY + 6, 4)?.try_into().ok()?);
+    let slot1 = u32::from_be_bytes(at(USB_REG_ENTRY + 16, 4)?.try_into().ok()?);
+    Some((slot0, slot1))
+}
+
+/// The guest registered the callbacks in this boot: slot0 holds the receive callback and slot1 is set (it is stored after slot0, so the stores are done).
+/// The slots are zero after the boot's bss clear.
+pub(crate) fn usb_registered(slot0: u32, slot1: u32, rx_cb: u32) -> bool {
+    rx_cb != 0 && slot0 == rx_cb && slot1 != 0
+}
+
+impl UsbPort {
+    /// The guest restarted: forget what this boot learned (the cached return address, a call in progress).
+    pub fn reset_boot(&mut self) {
+        self.ret_pc = 0;
+        self.active = None;
+        self.unregistered = false;
+    }
 }
 
 /// Longest chunk per callback call (a USB bulk packet).
@@ -174,10 +210,10 @@ impl MidiPort {
     }
 
     /// The USB input is idle until the guest's instruction count reaches the returned value: the next callback call is not due (a call
-    /// in progress, or nothing queued, needs no deadline: `None`). `Some(0)` when a call is due now: step it.
+    /// in progress, nothing queued, or the guest not registered yet, needs no deadline: `None`). `Some(0)` when a call is due now: step it.
     #[inline]
     pub fn usb_due_in(&self, icount: u64) -> Option<u64> {
-        (self.usb.active.is_none() && !self.usb.queue.is_empty())
+        (self.usb.active.is_none() && !self.usb.queue.is_empty() && !self.usb.unregistered)
             .then(|| self.usb.next_ic.saturating_sub(icount))
     }
 }
@@ -270,6 +306,53 @@ mod tests {
         port.usb.active = None;
         port.pending = true;
         assert!(port.din_busy());
+    }
+
+    #[test]
+    fn usb_delivery_waits_for_both_slots() {
+        let cb = 0x4011_d76c;
+        assert!(!usb_registered(0, 0, cb), "bss clear: nothing registered");
+        assert!(!usb_registered(cb, 0, cb), "slot1 is stored after slot0");
+        assert!(
+            !usb_registered(0x4011_0000, 0x4011_0004, cb),
+            "another callback"
+        );
+        assert!(usb_registered(cb, 0x4011_d9a0, cb));
+        assert!(!usb_registered(0, 5, 0), "no callback resolved");
+    }
+
+    #[test]
+    fn usb_slots_are_read_from_the_registration_code() {
+        let mut main = image();
+        let at = (USB_REG_ENTRY - LOAD) as usize;
+        let code = [
+            0x41, 0xef, 0x00, 0x04, 0x23, 0xd0, 0x40, 0x96, 0x59, 0xd0, 0x41, 0xef, 0x00, 0x08,
+            0x23, 0xd0, 0x40, 0x96, 0x59, 0xd4,
+        ];
+        main[at..at + code.len()].copy_from_slice(&code);
+        assert_eq!(
+            resolve_usb_slots(&main, LOAD),
+            Some((0x4096_59d0, 0x4096_59d4))
+        );
+        main[at + 10] = 0;
+        assert_eq!(resolve_usb_slots(&main, LOAD), None);
+        assert_eq!(resolve_usb_slots(&[0; 16], LOAD), None);
+    }
+
+    #[test]
+    fn usb_boot_state_is_cleared_on_a_guest_reset() {
+        let mut usb = UsbPort {
+            ret_pc: 0x4000_2000,
+            ..Default::default()
+        };
+        usb.active = Some(UsbCall {
+            sp_after_rts: 0,
+            frame_sp: 0,
+            saved: [0; 4],
+        });
+        usb.reset_boot();
+        assert_eq!(usb.ret_pc, 0);
+        assert!(usb.active.is_none());
     }
 
     #[test]

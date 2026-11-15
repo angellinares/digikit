@@ -75,6 +75,7 @@ You need [mise](https://mise.jdx.dev/) and [uv](https://docs.astral.sh/uv/). The
 mise install
 mise run setup              # Python and web dependencies
 mise run patch:toolchains   # the compilers for module code
+mise run gen:core           # the shared generated core of the emulator's DSP
 ```
 
 ### Firmware files
