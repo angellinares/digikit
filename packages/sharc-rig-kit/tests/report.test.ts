@@ -10,7 +10,7 @@ afterAll(() => {
 });
 
 const report: MachineReport = {
-  label: 'fadedlimes/analog@dt2',
+  label: 'a/machine@dt2',
   runner: 'sharc-rig-kit',
   build_seconds: 1.5,
   budget: { voice_block: 12140, note_on_block: 194244, headroom: 194244 },
@@ -23,18 +23,18 @@ const report: MachineReport = {
 
 describe('reports', () => {
   it('are named after the module with / as __ and the device or fx after @', () => {
-    expect(reportName('fadedlimes/analog@dt2')).toBe('fadedlimes__analog@dt2.json');
-    expect(reportName('digikit/freqshift@fx')).toBe('digikit__freqshift@fx.json');
+    expect(reportName('a/machine@dt2')).toBe('a__machine@dt2.json');
+    expect(reportName('a/effect@fx')).toBe('a__effect@fx.json');
   });
 
   it('are written as JSON that module:check reads: the cases hold the steady block of each', () => {
     const dir = mkdtempSync(path.join(tmpdir(), 'rig-report-'));
     dirs.push(dir);
     const file = writeReport(report, path.join(dir, 'deeper'));
-    expect(file).toBe(path.join(dir, 'deeper', 'fadedlimes__analog@dt2.json'));
+    expect(file).toBe(path.join(dir, 'deeper', 'a__machine@dt2.json'));
     const text = readFileSync(file, 'utf8');
     expect(JSON.parse(text)).toEqual(report);
-    expect(text).toContain('\n "label": "fadedlimes/analog@dt2"'); // one space of indent, as the Python workers wrote it
+    expect(text).toContain('\n "label": "a/machine@dt2"'); // one space of indent, as the Python workers wrote it
   });
 
   it('give the DSP cost of a module as the worst steady block of any case', () => {

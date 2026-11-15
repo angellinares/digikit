@@ -20,7 +20,7 @@ and `[60-dn2]` fail; the kit fails all 8 pitch cases (note 12 is 9.6 cents off).
 
 ## tom/tb303 (`modules/machines/tb303/tests/test_tb303.py`, `tb303_ref.py`; kit: `tests/rig/tb303.toml`, tables `tests/rig/ref/*.f32`)
 
-The tables are `tb303_ref.Tb303` output (`uv run python -m tools.devtools.rig_refs tb303`), the data the test compared with. DT2 only (the
+The tables are `tb303_ref.Tb303` output (`uv run python -m tools.devtools.rig_refs modules/machines/tb303`), the data the test compared with. DT2 only (the
 module has no DN2 port).
 
 | Python | Kit |
@@ -38,7 +38,7 @@ Python or in the kit.)
 
 ## digikit/pluck (`test_pluck.py`, `test_pluck_range.py`, `test_pluck_tune.py`, `pluck_rig.py`, `pluck_ref.py`; kit: `tests/rig/pluck.toml`, tables `tests/rig/ref/*.f32`)
 
-The tables are `pluck_rig.model_blocks` output (`uv run python -m tools.devtools.rig_refs pluck`); the tolerance of every case is the Python one,
+The tables are `pluck_rig.model_blocks` output (`uv run python -m tools.devtools.rig_refs modules/machines/pluck`); the tolerance of every case is the Python one,
 2e-5 * max(1, model peak) = 2e-5 (every model peak is below 1). DT2 only (the Python rig is DT2).
 
 | Python | Kit |
@@ -58,7 +58,7 @@ Mutation: `0x45b777e3` (P0 = 1 / INC0) to `0x45b787e3` in `src/dsp/pluck.s`: Pyt
 ## digikit/freqshift (`test_freqshift.py`, `test_freqshift_ref.py`, `test_fxshift_analysis.py`, `freqshift_ref.py`, `freqshift_long.py`, `freqshift_tone.py`; kit: `tests/rig/freqshift.toml`, tables `tests/rig/ref/*.f32`)
 
 The input tables hold the numpy-generator inputs of the Python tests (a TypeScript run cannot draw them) and the output tables the float32 model's
-output for them (`uv run python -m tools.devtools.rig_refs freqshift`). The device test `freqshift.device.test.ts` stays.
+output for them (`uv run python -m tools.devtools.rig_refs modules/fx/freqshift`). The device test `freqshift.device.test.ts` stays.
 
 | Python | Kit |
 | --- | --- |
@@ -83,7 +83,7 @@ fails (error 3.1e-4 against 2e-7); the kit fails 7 cases (five model shifts, the
 
 `shot.toml` has 42 cases; the pool entries are published by the kit (`samplepool.ts`, planes then record, `ready` last) from `ref/pcm-*.i16` (the numpy
 generator's int16 words) and the case's `[[case.pool]]` tables. The tables are the output of the Python reader model `model()` of the test for the same
-scenarios (`uv run python -m tools.devtools.rig_refs shot`; the generator asserts, as the Python test does, that the rig equals the model). Where the test
+scenarios (`uv run python -m tools.devtools.rig_refs modules/machines/shot`; the generator asserts, as the Python test does, that the rig equals the model). Where the test
 took the model's rate from the rig's cursor, the rig's rate is in the model table and the toml checks it against the analytic rate with the Python tolerance.
 All comparisons are exact (atol 0), as `np.array_equal`. After every block the pool's count word must be 0 (`pool_ctl`), and the module's stores must stay in
 its own memory (implicit rule, which also replaces `test_the_module_stores_only_inside_its_own_memory`).

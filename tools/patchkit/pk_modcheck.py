@@ -183,13 +183,24 @@ def rig_conformance(mid: str, env: dict[str, str]) -> int:
     from tools.patchkit import patchkit
 
     r = subprocess.run(
-        ["pnpm", "nx:pilot", "run", "sharc-rig:build"], cwd=ROOT, env=python_env(dict(os.environ))
+        ["pnpm", "nx:pilot", "run", "sharc-rig:build"],
+        cwd=ROOT,
+        env=python_env(dict(os.environ)),
     )
     if r.returncode:
         return r.returncode
     kit_env = {**os.environ, **env, "DIGI_PATCHKIT": str(patchkit.binary())}
     return subprocess.run(
-        ["pnpm", "exec", "vitest", "run", "--config", "vitest.host.config.ts", "--project", "sharc-rig-conformance"],
+        [
+            "pnpm",
+            "exec",
+            "vitest",
+            "run",
+            "--config",
+            "vitest.host.config.ts",
+            "--project",
+            "sharc-rig-conformance",
+        ],
         cwd=ROOT,
         env=python_env(kit_env),
     ).returncode
@@ -204,9 +215,13 @@ def write_costs_rust(
     costs = measured_costs(mid, devices, since)
     for dev, c in sorted(costs.items()):
         flags = [x for k, v in c.items() for x in (f"--{k.replace('_', '-')}", str(v))]
-        r = patchkit.run(["uses", "set", "--id", mid, "--device", dev, *flags], capture=True)
+        r = patchkit.run(
+            ["uses", "set", "--id", mid, "--device", dev, *flags], capture=True
+        )
         if r.returncode:
-            raise RuntimeError(f"patchkit uses set {mid} {dev} failed: {(r.stderr or '').strip()}")
+            raise RuntimeError(
+                f"patchkit uses set {mid} {dev} failed: {(r.stderr or '').strip()}"
+            )
         print(
             f"{mid}: {dev} DSP cost {', '.join(f'{k} {v}' for k, v in c.items())} instructions per block",
             flush=True,
@@ -332,7 +347,9 @@ def _scenario_tests(kinds: set[str]) -> list[str]:
     return sorted(files)
 
 
-def plan(mid: str, device: str | None, python_conformance: bool = False) -> tuple[list[str], dict[str, str]]:
+def plan(
+    mid: str, device: str | None, python_conformance: bool = False
+) -> tuple[list[str], dict[str, str]]:
     """(pytest paths, extra environment) for module MID. The conformance suite is a pytest path only with `python_conformance`; the rig runs it otherwise (`rig_conformance`)."""
     paths: list[str] = []
     env: dict[str, str] = {}
@@ -601,7 +618,16 @@ def main() -> int:
             return rc
         if paths:
             rc = subprocess.run(
-                [sys.executable, "-m", "pytest", "-q", "-p", "no:cacheprovider", "-rf", *paths],
+                [
+                    sys.executable,
+                    "-m",
+                    "pytest",
+                    "-q",
+                    "-p",
+                    "no:cacheprovider",
+                    "-rf",
+                    *paths,
+                ],
                 cwd=ROOT,
                 env=python_env({**os.environ, **env}),
             ).returncode
