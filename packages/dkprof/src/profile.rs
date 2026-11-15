@@ -133,6 +133,9 @@ pub struct Profile {
     pub spans: Vec<Span>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub span_clock_hz: Option<u64>,
+    /// The ticks of the span clock the counters were gathered over (the window of the recording): `sum_ticks / span_elapsed_ticks` is the share of the CPU.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub span_elapsed_ticks: Option<u64>,
 }
 
 impl Profile {
@@ -222,7 +225,8 @@ mod tests {
 
     #[test]
     fn spans_round_trip() {
-        let p = with(vec![span("phase", 4, 100, 40)], Some(1_000_000));
+        let mut p = with(vec![span("phase", 4, 100, 40)], Some(1_000_000));
+        p.span_elapsed_ticks = Some(5_000);
         let back = Profile::parse(&p.to_json()).unwrap();
         assert_eq!(back, p);
     }

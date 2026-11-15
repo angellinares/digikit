@@ -90,6 +90,8 @@ export interface LogNames {
   resolve(): AddrNamer | undefined;
   /** Why there are no names (a short reason), after a refresh that made none; undefined while there are. */
   unavailable(): string | undefined;
+  /** The maps and the load table behind `resolve` (the Profile pane names DSP addresses with them), or undefined when there are none. */
+  inputs(): { maps: AddrMapJson[]; loads: LoadTableJson } | undefined;
   refresh(session: NameSession): Promise<void>;
 }
 
@@ -98,14 +100,17 @@ const PEEK_CAP = 'needs the debug module (digikit/debug): its PEEK reads the loa
 /** The names of one target. The same code serves the emulator and a device: they differ in `sources.ship` only. */
 export function createLogNames(sources: NameSources): LogNames {
   let resolver: AddrNamer | undefined;
+  let inputs: { maps: AddrMapJson[]; loads: LoadTableJson } | undefined;
   let why: string | undefined;
   const none = (reason: string) => {
     resolver = undefined;
+    inputs = undefined;
     why = reason;
   };
   return {
     resolve: () => resolver,
     unavailable: () => why,
+    inputs: () => inputs,
     async refresh(session) {
       resolver = undefined;
       const info = await session.info();
@@ -119,7 +124,9 @@ export function createLogNames(sources: NameSources): LogNames {
       const modules = device ? await sources.moduleMaps(device) : [];
       const prof = await sources.prof();
       const loads = await readLoadTable(prof, ship, src.symbols, session.peek.bind(session));
-      resolver = makeResolver(prof, [ship, ...modules.map((m) => JSON.parse(m) as AddrMapJson)], loads);
+      const maps = [ship, ...modules.map((m) => JSON.parse(m) as AddrMapJson)];
+      resolver = makeResolver(prof, maps, loads);
+      inputs = { maps, loads };
       why = undefined;
     },
   };

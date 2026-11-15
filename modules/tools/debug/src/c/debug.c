@@ -13,7 +13,7 @@
  *                op 2 get the card log, op 3 set it (adds u8 on); reply: u8 on, u8 file (0 a, 1 b), u8 state (0 off, 1 on, 2 full, 3 error), u8 0, u32 writes,
  *                i32 last status, u32 ms since the last write (0xffffffff: none yet). The card log writes the ring to a file of the store (see the card log below).
  *
- *   0x1e PROFILE_STATE  body: u8 op (0 get, 1 start, 2 stop, 3 reset)   reply: u8 state (0 stopped, 1 running), u32 clock Hz, u16 rows
+ *   0x1e PROFILE_STATE  body: u8 op (0 get, 1 start, 2 stop, 3 reset)   reply: u8 state (0 stopped, 1 running), u32 clock Hz, u16 rows, u64 elapsed ticks of the span clock while running since the last reset
  *   0x1f PROFILE_READ   body: u16 first row   reply: u16 first, u8 n, then n rows of u32 calls, u64 sum, u32 max (ticks of the span clock; big endian)
  * Start sets the span sink and clock (`dk_span_sink_set`); stop, and fini, clear them. The table has one row per module record, per service phase (3) and per poll (4).
  *
@@ -574,10 +574,13 @@ static void menu(dk_module_ctx *ctx, dk_ui_menu *m)
     dk_ui_menu_add_text(m, t);
 }
 
-/* The module tick (once per UI pass): the card log decisions. */
+static void span_elapse(void);
+
+/* The module tick (once per UI pass): the elapsed window of the profile, then the card log decisions. */
 static void mod_tick(dk_module_ctx *ctx)
 {
     (void)ctx;
+    span_elapse();
     cl_tick(now());
 }
 
@@ -632,6 +635,21 @@ typedef struct SpanRow {
 static SpanRow span_rows[SPAN_ROWS];
 static u32 clk_addr, clk_hz; /* the span clock counter (a device address, 0: none) and its rate */
 static u8 profiling;
+/* The elapsed window: ticks of the span clock while profiling, since the last reset. The counter is 32 bits and wraps (about 32.5 s at 132 MHz), so the
+ * module adds the 32-bit difference to the last read each time it reads the clock: at every UI pass (mod_tick) and every PROFILE_STATE. This is exact when
+ * at least one read happens per wrap period; a UI that stops for longer loses whole wraps. */
+static uint64_t el_ticks;
+static u32 el_last;
+
+static void span_elapse(void)
+{
+    u32 n;
+    if (!profiling)
+        return;
+    n = DEBUG_READ32(clk_addr);
+    el_ticks += (u32)(n - el_last);
+    el_last = n;
+}
 
 static u32 span_row(u32 owner)
 {
@@ -667,6 +685,9 @@ static u32 span_clock(void)
 static void span_reset(void)
 {
     u32 i;
+    el_ticks = 0;
+    if (profiling)
+        el_last = DEBUG_READ32(clk_addr);
     for (i = 0; i < SPAN_ROWS; i++) {
         span_rows[i].calls = 0;
         span_rows[i].sum = 0;
@@ -676,6 +697,7 @@ static void span_reset(void)
 
 static void span_stop(void)
 {
+    span_elapse();
     dk_span_sink_set(0, 0);
     profiling = 0;
 }
@@ -692,6 +714,7 @@ static int32_t cmd_profile_state(const u8 *body, u32 len, u8 *out)
         if (r != 0)
             return r; /* DK_E_BUSY: another module owns the span channel */
         profiling = 1;
+        el_last = DEBUG_READ32(clk_addr);
     } else if (body[0] == 2u) {
         if (profiling)
             span_stop();
@@ -700,11 +723,14 @@ static int32_t cmd_profile_state(const u8 *body, u32 len, u8 *out)
     } else if (body[0] > 3u) {
         return E_PROTO;
     }
+    span_elapse();
     out[0] = profiling;
     dk_bytes_put32(out + 1, clk_hz);
     out[5] = (u8)(SPAN_ROWS >> 8);
     out[6] = (u8)SPAN_ROWS;
-    return 7;
+    dk_bytes_put32(out + 7, (u32)(el_ticks >> 32));
+    dk_bytes_put32(out + 11, (u32)el_ticks);
+    return 15;
 }
 
 static int32_t cmd_profile_read(const u8 *body, u32 len, u8 *out)

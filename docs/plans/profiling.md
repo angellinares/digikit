@@ -97,8 +97,7 @@ workbench call the same code (`mise run wb:cli` runs workbench actions through t
 - **Workbench consumers:**
   - The Log pane ([workbench-device-log.md](workbench-device-log.md)) shows names for addresses in log events and crash records (P6, done: ADDRMAP.md "Workbench"; the same dk-session and debug-module PEEK path serves the emulator and
     hardware, and hardware proof is a later explicit step). The Memory panel lists what each module takes of each resource (P6, done).
-  - The Profile pane (P8): DSP and ColdFire utilisation per module or owner over time, per block, and per function in the emulator. Interval
-    graphs, markers, record and stop, export. The same dk-session path (the debug module and its PEEK, the remote module) will carry the device's profile data; the pane shows "needs P8" for the device until its source exists.
+  - The Profile pane (P8b, desktop; `apps/desktop/ui/src/ProfilePanel.tsx`, logic in `packages/workbench-core/src/profile/`): ColdFire share per module, runtime phase and poll over a 60 s graph with markers, record and stop, export of `dk.profile/1`; on the emulator also the modules' DSP per block (`sharc.profile`) and `cf.profile` with the same Start. The device's spans come over the same dk-session path as the emulator's (the debug module). Use is in [INSTRUMENTATION.md](../INSTRUMENTATION.md#profiles) ("Profile pane"). Per-function ColdFire views on a device wait for P10, per-module DSP on a device for the DSP stats window.
 - The workbench never runs Python.
 
 P2 design:

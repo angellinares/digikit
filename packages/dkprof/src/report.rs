@@ -479,6 +479,7 @@ mod tests {
             overhead: vec![],
             spans: Vec::new(),
             span_clock_hz: None,
+            span_elapsed_ticks: None,
         }
     }
 

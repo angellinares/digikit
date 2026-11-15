@@ -21,7 +21,7 @@ Start registers the span sink and the clock (`dk_span_sink_set`); stop and fini 
 
 | Command | Number | Body | Reply |
 | --- | --- | --- | --- |
-| PROFILE_STATE | 0x1e | u8 op (0 get, 1 start, 2 stop, 3 reset; a reset works in both states) | u8 state (0 stopped, 1 running), u32 clock Hz, u16 rows |
+| PROFILE_STATE | 0x1e | u8 op (0 get, 1 start, 2 stop, 3 reset; a reset works in both states) | u8 state (0 stopped, 1 running), u32 clock Hz, u16 rows, u64 elapsed ticks (the span clock while running, since the last reset; the 32-bit counter is read each UI pass and at each PROFILE_STATE, so at least one read per wrap period, about 32.5 s at 132 MHz, keeps it exact) |
 | PROFILE_READ | 0x1f | u16 first row | u16 first, u8 n, then n rows of u32 calls, u64 sum, u32 max (big endian), at most 54; a first row past the end gives `E_PEEK` |
 
 ## Card log

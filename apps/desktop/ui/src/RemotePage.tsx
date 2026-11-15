@@ -17,6 +17,7 @@ import {
   remoteStateWanted,
 } from './remote-core';
 import { windowShown } from './log-follow-core';
+import type { Host } from '@digi/workbench-core/host/host.ts';
 import SidePanels from './SidePanels';
 import { useTransferApp } from '@digi/workbench-core/transfer/app-context.ts';
 import { sameTarget, targetLabel } from '@digi/workbench-core/transfer/target.ts';
@@ -30,7 +31,11 @@ const HIDDEN_MS = 500;
 // Keys and knobs are LivePanel's (the knobs turn by drag and wheel), so the page has no extra buttons for them.
 const HINT = 'Click keys; drag or scroll knobs. Shift: ×10.';
 
-export default function RemotePage(props: { fallbackDevice: 'dt2' | 'dn2'; emulatorLoaded: boolean }): JSX.Element {
+export default function RemotePage(props: {
+  fallbackDevice: 'dt2' | 'dn2';
+  emulatorLoaded: boolean;
+  host?: Host;
+}): JSX.Element {
   const app = useTransferApp();
   const { asked, noteReply } = app.connection;
   const { cancelPending, checkRuntime, resetSession, session, target } = app.target;
@@ -179,7 +184,7 @@ export default function RemotePage(props: { fallbackDevice: 'dt2' | 'dn2'; emula
               <LivePanel panel={panel()} runtime={() => runtime} onError={setScreenError} ref={(api) => (live = api)} />
             </div>
           </main>
-          <SidePanels visible session={session} where={() => targetLabel(target())} track={target} />
+          <SidePanels host={props.host} visible session={session} where={() => targetLabel(target())} track={target} />
         </div>
       </Show>
     </section>
