@@ -159,8 +159,8 @@ export interface CardRig {
   writes(tag: string): Promise<Set<number>>;
   /** Allow store sectors in the lifetime check (a test that writes them on purpose). */
   allowStoreWrites(sectors: Iterable<number>): void;
-  /** Step until the guest soft-resets and the cold boot is ready (Python `Rig.wait_reset`). */
-  waitReset(): Promise<void>;
+  /** Step until the guest soft-resets and the cold boot is ready (Python `Rig.wait_reset`). `steps`: the bound, in steps of 400k instructions (about 4.5 DSP blocks each). */
+  waitReset(steps?: number): Promise<void>;
 
   // ---- paused protocol sessions (the upload tests) ----
   /** Cold boot on a card of its own that shares the image of `card`, wait for the main UI, pause and settle 300 ms; returns a protocol session that steps the emulator while it waits for a reply. */
@@ -472,7 +472,7 @@ export function cardRig(device: Device, scope: string, o: CardRigOptions = {}): 
     allowStoreWrites(sectors) {
       for (const s of sectors) extra.add(s);
     },
-    async waitReset() {
+    async waitReset(maxSteps = WAIT_RESET_STEPS) {
       const { session } = fixture.runtime;
       const { client } = session;
       client.drainEvents();
@@ -488,8 +488,7 @@ export function cardRig(device: Device, scope: string, o: CardRigOptions = {}): 
             if (!(error instanceof RpcError)) throw error;
           });
         } else {
-          if (steps >= WAIT_RESET_STEPS)
-            throw new Error(`no reset within ${WAIT_RESET_STEPS * WAIT_RESET_STEP_INSNS} instructions`);
+          if (steps >= maxSteps) throw new Error(`no reset within ${maxSteps * WAIT_RESET_STEP_INSNS} instructions`);
           await client.step(WAIT_RESET_STEP_INSNS, { timeout_wall_s: 30 }).then(
             () => void steps++,
             (error) => {
