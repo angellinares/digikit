@@ -205,9 +205,11 @@ def _type_3a_transfer(
                     _dm_read(target, item_address, 4, normal_word=True)
                 )
             for item, mem_value in zip(codes, loaded_values, strict=True):
-                loaded = mem_value or Unknown("memory-address " + rendered)
-                target.uregs[item] = loaded
-                _b_write_loads_i(target, item, loaded)
+                # Not `loaded`: the normal-word load below gives that name an
+                # optional value, and the transpiler keeps one type per name.
+                word = mem_value or Unknown("memory-address " + rendered)
+                target.uregs[item] = word
+                _b_write_loads_i(target, item, word)
             _event(
                 target,
                 insn,
