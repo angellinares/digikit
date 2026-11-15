@@ -81,7 +81,7 @@ export interface CardRigOptions {
   symbols?: string[];
   /** Daemon environment besides the write watch; it overrides the watch's variables. A function gets the prepared runtime plan when the daemon starts. */
   env?: Record<string, string> | ((prepared: PreparedRuntimePlan) => Record<string, string>);
-  /** ColdFire-only daemon ('zero'; 'cold': also without a snapshot) or with the SHARC (default). */
+  /** ColdFire-only daemon ('zero', the default via `resolveDsp`; 'cold': also without a snapshot) or with the SHARC ('sharc'). */
   dsp?: 'zero' | 'sharc' | 'cold';
   /** Configure coupled audio without loading stock firmware before the first explicit baseline. */
   startEmpty?: boolean;

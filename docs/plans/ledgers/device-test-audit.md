@@ -86,3 +86,13 @@ host tests: their checks stay device tests until the logic is split out.
 - **freqshift** and **fx-pages**: drop the adapter re-tests (page metadata, kit round trip) from the module test.
 - **fx-track-route**, **shot-dn2**: split the composite tests so they run in parallel.
 - **bootscreen** "reset from the intro callback": drop if `safe-mode` and `boot.rs` cover the counter.
+
+## SHARC need (T1d, first changes)
+
+The rows above lack a SHARC column; the full column comes with T1e. Rows checked so far:
+
+| File | Test | SHARC | Evidence |
+| --- | --- | --- | --- |
+| `digikit-menu/needs` | usb-fast without core/usb-bulk | no (zero) | usb-fast has no DSP object; the load ends in E_IMPORT; reads only `memPeek`, the small ring and menu rows; no `pcm.*`, `dsp.*`, `audio.*` |
+| `bootscreen-fault` | fault in the intro callback halts | no (zero) | `test/intro-fault` and the runtime have no DSP section; the test ends at the boot error |
+| `bootscreen-safe` | REC held with a valid file | no (zero) | `tools/bootscreen` has no DSP object; reads boot info and the intro framebuffer; the second rig (reset chain) already ran on zero |

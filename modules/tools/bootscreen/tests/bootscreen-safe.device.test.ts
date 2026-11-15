@@ -8,8 +8,7 @@ import { intro, lastFrame, SAFE_COUNTER, SAFE_KEY, spec, valid } from './bootscr
 
 cardRigs(
   'boot screen with REC held',
-  { dsp: 'sharc',
-    relaxFs: true,
+  { relaxFs: true,
     roots: RT,
     symbols: CARD_SYMBOLS,
     initialButtons: [{ code: button('RECORD'), down: true }],

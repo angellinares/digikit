@@ -9,7 +9,7 @@ import { CARD_SYMBOLS, cardRigs, RT } from '@digi/regression/runtime/card-rig.ts
 // (the module's code runs on the intro task, after the module is live), the reset chain in bootscreen-safe that a card with the counter of two failed boots is safe mode.
 cardRigs(
   'boot screen fault halts',
-  { dsp: 'sharc', relaxFs: true, roots: RT, symbols: CARD_SYMBOLS, faults: true, deliverExceptions: true },
+  { relaxFs: true, roots: RT, symbols: CARD_SYMBOLS, faults: true, deliverExceptions: true },
   (h) => {
     test(
       'a fault in the intro callback halts in the stock handler',
