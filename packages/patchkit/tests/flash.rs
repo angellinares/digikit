@@ -317,8 +317,10 @@ fn bad_store_code() -> Vec<u8> {
     .unwrap();
     code.extend([0x08, 0x9d, 0x70, 0x08]);
     code.extend(
-        patchkit::build::sharc_obj::boot_bytes_unchecked_for_tests(".SECTION/PM seg_pmco;\n    RTS;\n")
-            .unwrap(),
+        patchkit::build::sharc_obj::boot_bytes_unchecked_for_tests(
+            ".SECTION/PM seg_pmco;\n    RTS;\n",
+        )
+        .unwrap(),
     );
     code
 }

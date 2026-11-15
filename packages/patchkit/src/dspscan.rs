@@ -237,10 +237,9 @@ mod tests {
 
     fn assembled(stores: &str, raw: &[&str]) -> Vec<u8> {
         let nops = "    NOP;\n".repeat(10);
-        let mut code = boot_bytes_unchecked_for_tests(&format!(
-            ".SECTION/PM seg_pmco;\n_x:\n{nops}{stores}"
-        ))
-        .unwrap();
+        let mut code =
+            boot_bytes_unchecked_for_tests(&format!(".SECTION/PM seg_pmco;\n_x:\n{nops}{stores}"))
+                .unwrap();
         for w in raw {
             code.extend(boot(w));
         }
@@ -250,11 +249,7 @@ mod tests {
 
     #[test]
     fn a_code_block_with_a_same_dag_store_is_refused_and_an_allowed_one_passes() {
-        let bad = scan(
-            &stream_of(&assembled("", &[DM_I0, PM_I8])),
-            None,
-        )
-        .unwrap();
+        let bad = scan(&stream_of(&assembled("", &[DM_I0, PM_I8])), None).unwrap();
         assert_eq!(bad.len(), 2, "{bad:?}");
         assert!(bad[0].starts_with("block 0 pc 0x"), "{bad:?}");
         assert!(bad[0].ends_with(": DM store of I0 (DAG1)"), "{bad:?}");

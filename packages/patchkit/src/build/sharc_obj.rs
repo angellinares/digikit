@@ -731,10 +731,7 @@ fn link(obj: &Obj, base_sw: i64, externs: &HashMap<String, i64>) -> Result<Linke
         }
     }
     if !unsupported.is_empty() {
-        return Err(err!(
-            "relocation not supported: {}",
-            unsupported.join("; ")
-        ));
+        return Err(err!("relocation not supported: {}", unsupported.join("; ")));
     }
     let mut out = Linked {
         code_boot: swap_parcels(&code),
@@ -906,6 +903,132 @@ pub fn assemble(source: &str) -> Result<Obj> {
     Ok(obj)
 }
 
+/// The width a source modifier asks for, as the `(l, w, x)` fields of the transfer forms (PRM access encode tables): `(BW)` byte,
+/// `(BWSE)` byte sign-extended, `(SW)` short word, `(SWSE)` short word sign-extended, `(LW)` long word (`w` and `x` are 1 where the
+/// form has them; Type 14a and 15b have only `l`). `(SE)` alone is sign extension: `x` is 1.
+fn modifier_problem(d: &Decoded, modifier: &str) -> Option<String> {
+    let want = |key: &str, v: i64| field(d, key).filter(|got| *got != v);
+    let (l, x) = match modifier {
+        "BW" => (Some(0), Some(0)),
+        "BWSE" => (Some(0), Some(1)),
+        "SW" => (Some(1), Some(0)),
+        "SWSE" => (Some(1), Some(1)),
+        "LW" => (Some(1), Some(1)),
+        "SE" => (None, Some(1)),
+        _ => return None,
+    };
+    let has = |key: &str| field(d, key).is_some();
+    if !has("l") && !has("x") {
+        return Some(format!(
+            "the decoded {} instruction has no width field",
+            d.type_name
+        ));
+    }
+    let mut wrong = vec![];
+    if let Some(l) = l
+        && let Some(got) = want("l", l)
+    {
+        wrong.push(format!("l={got}, expected {l}"));
+    }
+    if let Some(x) = x
+        && let Some(got) = want("x", x)
+    {
+        wrong.push(format!("x={got}, expected {x}"));
+    }
+    if modifier == "LW"
+        && let Some(got) = want("w", 1)
+    {
+        wrong.push(format!("w={got}, expected 1"));
+    }
+    if matches!(modifier, "BW" | "BWSE" | "SW" | "SWSE")
+        && let Some(got) = want("w", 0)
+    {
+        wrong.push(format!("w={got}, expected 0"));
+    }
+    if wrong.is_empty() {
+        None
+    } else {
+        Some(format!(
+            "the decoded {} instruction does not carry the modifier ({})",
+            d.type_name,
+            wrong.join(", ")
+        ))
+    }
+}
+
+/// Source-level guard against an assembler that drops a width modifier: every statement with `(SW)`, `(SWSE)`, `(BW)`, `(BWSE)`,
+/// `(LW)` or `(SE)` is assembled alone (`row_of` returns the first instruction's bytes in Selache parcel order) and the decoded
+/// instruction must carry the modifier (the width fields, our decoder). The error names the source line.
+fn modifier_guard_with(source: &str, row_of: &dyn Fn(&str) -> Result<Vec<u8>>) -> Result<()> {
+    static M: OnceLock<Regex> = OnceLock::new();
+    static L: OnceLock<Regex> = OnceLock::new();
+    let modifier = rx(&M, r"\(\s*(SWSE|BWSE|SW|BW|LW|SE)\s*\)", "i");
+    let label = rx(&L, r"^\s*[A-Za-z_.$][A-Za-z0-9_.$]*:", "");
+    let mut in_block = false;
+    for (n, raw) in source.lines().enumerate() {
+        let mut line = raw.to_string();
+        // comments: `/* ... */` (also across lines) and `//`
+        let mut text = String::new();
+        loop {
+            if in_block {
+                match line.find("*/") {
+                    Some(e) => {
+                        line = line[e + 2..].to_string();
+                        in_block = false;
+                    }
+                    None => break,
+                }
+            } else {
+                match line.find("/*") {
+                    Some(b) => {
+                        text.push_str(&line[..b]);
+                        line = line[b + 2..].to_string();
+                        in_block = true;
+                    }
+                    None => {
+                        text.push_str(&line);
+                        break;
+                    }
+                }
+            }
+        }
+        let text = text.split("//").next().unwrap_or("");
+        for stmt in text.split(';') {
+            let Some(m) = modifier.captures(stmt) else {
+                continue;
+            };
+            let mut stmt = stmt.trim();
+            while let Some(l) = label.find(stmt) {
+                stmt = stmt[l.end()..].trim();
+            }
+            let name = m[1].to_ascii_uppercase();
+            let alone = format!(".SECTION/PM {SECTION};\n    {stmt};\n");
+            let bytes = row_of(&alone).map_err(|e| {
+                err!(
+                    "source line {}: `{stmt}` does not assemble alone: {e}",
+                    n + 1
+                )
+            })?;
+            let d = decode_row(&bytes, 6);
+            if let Some(p) = modifier_problem(&d, &name) {
+                return Err(err!("source line {}: `{stmt}` has ({name}) but {p}", n + 1));
+            }
+        }
+    }
+    Ok(())
+}
+
+/// [`modifier_guard_with`] with the assembler of this module.
+fn modifier_guard(source: &str) -> Result<()> {
+    modifier_guard_with(source, &|alone| {
+        let o = assemble(alone)?;
+        o.rows
+            .first()
+            .map(|(_, r)| r.clone())
+            .ok_or_else(|| err!("no instruction"))
+    })
+}
+
 /// A relocation against a name that is neither defined here nor declared with `.EXTERN` is an error. The assembler takes any unknown
 /// word for an external symbol, so a register name it does not know (`R0 = LIRPTL`, a register SHARC+ lacks) would load the address of
 /// an undefined symbol. The message names the symbol and the first source line that has it.
@@ -924,7 +1047,8 @@ fn undeclared_symbols(source: &str, obj: &Obj) -> Result<()> {
         {
             continue;
         }
-        let word = Regex::new(&format!(r"\b{}\b", regex_lite::escape(&r.symbol))).map_err(|e| err!("{e}"))?;
+        let word = Regex::new(&format!(r"\b{}\b", regex_lite::escape(&r.symbol)))
+            .map_err(|e| err!("{e}"))?;
         let line = source
             .lines()
             .position(|l| word.is_match(l))
@@ -947,6 +1071,7 @@ pub fn boot_bytes_unchecked_for_tests(source: &str) -> Result<Vec<u8>> {
 pub fn object_from_text(source: &str) -> Result<Dko> {
     let obj = assemble(source)?;
     undeclared_symbols(source, &obj)?;
+    modifier_guard(source)?;
     let mut undefined: Vec<String> = obj
         .relocs
         .iter()
@@ -1432,12 +1557,7 @@ mod tests {
             rtype: R_ABS24,
             ..loop_reloc("_x", 4)
         };
-        let left = resolve_loop_ends(
-            &mut code,
-            vec![loop_reloc("_e", 2), abs],
-            &sym(5),
-        )
-        .unwrap();
+        let left = resolve_loop_ends(&mut code, vec![loop_reloc("_e", 2), abs], &sym(5)).unwrap();
         assert_eq!((code[4], code[5]), (0, 7));
         assert_eq!(left.len(), 1);
         assert_eq!(left[0].rtype, R_ABS24);
@@ -1486,18 +1606,35 @@ mod tests {
         let (blob, _, bss) = &o.data.0.iter().find(|(n, _)| n == "seg_dmda").unwrap().1;
         assert_eq!(hex(blob), "443322110500000006000000");
         assert!(!bss);
-        assert_eq!(o.data_symbols.0.iter().find(|(n, _)| n == "_b").unwrap().1.1, 4);
+        assert_eq!(
+            o.data_symbols
+                .0
+                .iter()
+                .find(|(n, _)| n == "_b")
+                .unwrap()
+                .1
+                .1,
+            4
+        );
         // a section that names its own addressing is left as it is
-        assert_eq!(byte_addressed_data(".SECTION/DM/BW x;"), ".SECTION/DM/BW x;");
+        assert_eq!(
+            byte_addressed_data(".SECTION/DM/BW x;"),
+            ".SECTION/DM/BW x;"
+        );
         assert_eq!(byte_addressed_data(".SECTION/DM x;"), ".SECTION/DM/BW x;");
     }
 
     #[test]
     fn an_undeclared_symbol_fails_the_object_build_with_its_line() {
         // LIRPTL is no register of SHARC+: the assembler would make it an extern symbol
-        let e = object_from_text(&format!("{HEAD}.GLOBAL _f;\n_f:\n    R1 = 1;\n    R0 = LIRPTL;\n    RTS;\n"))
-            .unwrap_err();
-        assert!(e.0.contains("source line 5") && e.0.contains("LIRPTL"), "{e}");
+        let e = object_from_text(&format!(
+            "{HEAD}.GLOBAL _f;\n_f:\n    R1 = 1;\n    R0 = LIRPTL;\n    RTS;\n"
+        ))
+        .unwrap_err();
+        assert!(
+            e.0.contains("source line 5") && e.0.contains("LIRPTL"),
+            "{e}"
+        );
         // declared, defined here, or a data symbol of the source: fine
         for ok in [
             ".EXTERN LIRPTL;\n    R0 = LIRPTL;\n    RTS;",
@@ -1505,19 +1642,59 @@ mod tests {
             "_g: R0 = _g;\n    RTS;",
             ".PKBSS _buf, 8;\n    R0 = _buf;\n    RTS;",
         ] {
-            object_from_text(&format!("{HEAD}.GLOBAL _f;\n_f:\n    {ok}\n")).unwrap_or_else(|e| panic!("{ok}: {e}"));
+            object_from_text(&format!("{HEAD}.GLOBAL _f;\n_f:\n    {ok}\n"))
+                .unwrap_or_else(|e| panic!("{ok}: {e}"));
         }
     }
 
     #[test]
     fn a_do_loop_keeps_the_fast_loop_bit_clear_unless_the_source_asks_for_it() {
         // DO opcode bit 23 (mode): the fork would set it for a loop it finds safe; the old pin never did
-        let body = |f: &str| format!(".GLOBAL _f;\n_f:\n    LCNTR = 3, DO _e UNTIL LCE{f};\n    R0 = R0 + 1;\n    R1 = R1 + R0;\n_e: R2 = R2 + R1;\n    RTS;\n");
+        let body = |f: &str| {
+            format!(
+                ".GLOBAL _f;\n_f:\n    LCNTR = 3, DO _e UNTIL LCE{f};\n    R0 = R0 + 1;\n    R1 = R1 + R0;\n_e: R2 = R2 + R1;\n    RTS;\n"
+            )
+        };
         let mode = |src: String| {
             let o = asm(&src).unwrap();
             field_joined(&decode_row(&o.rows[0].1, 6), "mode").unwrap()
         };
         assert_eq!(mode(body("")), 0);
         assert_eq!(mode(body(" (F)")), 1);
+    }
+
+    #[test]
+    fn a_width_modifier_the_object_carries_passes_the_guard() {
+        let src = format!(
+            "{HEAD}.EXTERN _t;\n    R1 = DM(_t) (SW);\n    R2 = DM(I0, M0) (BWSE);\n    DM(4, I0) = R3 (SW);\n    IF EQ R4 = DM(I1, M1) (LW); // (SE)\n    R5 = DM(_t);\n"
+        );
+        modifier_guard(&src).unwrap();
+    }
+
+    #[test]
+    fn an_assembler_that_drops_the_modifier_fails_the_guard_naming_the_line() {
+        // a fake assembler that writes the bare transfer, as a broken assembler would
+        let bare = |_: &str| -> Result<Vec<u8>> {
+            Ok(asm(".EXTERN _t;\n    R1 = DM(I0, M0);\n")?.rows[0]
+                .1
+                .clone())
+        };
+        let src = format!("{HEAD}    R0 = 1;\n_l:\n    R1 = DM(I0, M0) (SW);\n");
+        let e = modifier_guard_with(&src, &bare).unwrap_err();
+        assert!(e.0.contains("source line 4"), "{e}");
+        assert!(e.0.contains("(SW)"), "{e}");
+        // the right bytes with a wrong width: the normal-word load of the same form
+        let normal = |_: &str| -> Result<Vec<u8>> {
+            Ok(asm("    IF EQ R1 = DM(4, I0);\n")?.rows[0].1.clone())
+        };
+        let src = format!("{HEAD}    IF EQ R1 = DM(4, I0) (BW);\n");
+        let e = modifier_guard_with(&src, &normal).unwrap_err();
+        assert!(e.0.contains("l=1, expected 0"), "{e}");
+        // modifier text in a comment is no statement
+        modifier_guard_with(
+            &format!("{HEAD}    // R1 = DM(I0, M0) (SW);\n    NOP;\n"),
+            &bare,
+        )
+        .unwrap();
     }
 }

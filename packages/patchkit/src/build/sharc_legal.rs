@@ -221,7 +221,11 @@ mod tests {
         for end in ["_e", "(PC, 3)"] {
             let o = object_from_text(&short_loop(end)).unwrap_or_else(|e| panic!("{end}: {e}"));
             // the DO and its three NOPs are 6 bytes each (compressed they would be 6 + 3 * 2), then the RTS
-            assert!(o.sections[0].size >= 24, "{end}: {} bytes", o.sections[0].size);
+            assert!(
+                o.sections[0].size >= 24,
+                "{end}: {} bytes",
+                o.sections[0].size
+            );
         }
     }
 }

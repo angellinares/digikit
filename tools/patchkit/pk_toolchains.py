@@ -431,9 +431,27 @@ def build_codegen_gcc() -> None:
         sys.exit("rustc_codegen_gcc did not build")
 
 
+def point_origin_at(directory: pathlib.Path, url: str) -> bool:
+    """Set `origin` of the clone in `directory` to `url` when it differs; true if it was changed. An older clone may point at the
+    repository the pin came from before the fork: its fetch would not find the pinned commit."""
+    have = subprocess.run(
+        ["git", "remote", "get-url", "origin"],
+        cwd=directory,
+        capture_output=True,
+        text=True,
+        check=False,
+    ).stdout.strip()
+    if have == url:
+        return False
+    print(f"selache: origin of {directory} was {have or '(none)'}, set to {url}")
+    run(["git", "remote", "set-url" if have else "add", "origin", url], cwd=directory)
+    return True
+
+
 def build_selache() -> None:
     if not (SELACHE_DIR / ".git").exists():
         run(["git", "clone", SELACHE_URL, str(SELACHE_DIR)])
+    point_origin_at(SELACHE_DIR, SELACHE_URL)
     have = subprocess.run(
         ["git", "cat-file", "-e", f"{SELACHE_REV}^{{commit}}"],
         cwd=SELACHE_DIR,
