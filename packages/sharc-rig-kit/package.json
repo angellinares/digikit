@@ -5,7 +5,8 @@
   "license": "AGPL-3.0-or-later",
   "type": "module",
   "exports": {
-    ".": "./src/index.ts"
+    ".": "./src/index.ts",
+    "./suite": "./src/suite.ts"
   },
   "scripts": {
     "typecheck": "tsc -p tsconfig.json"

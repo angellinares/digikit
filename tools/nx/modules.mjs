@@ -9,6 +9,7 @@ import { dirname, join } from 'node:path';
 import { read, records, mergeTests, packDevices, isUploadable } from './module-manifests.mjs';
 import { buildObjectsTarget, packTarget, packAliasesTarget } from './module-build.mjs';
 import { deviceTargets, checkMergeTests, conformanceTarget, testOnlyNodes, regressionNode } from './device-tests.mjs';
+import { rigTarget } from './rig-tests.mjs';
 import { testImportInputs } from './ts-imports.mjs';
 import { pythonImportInputs } from './py-imports.mjs';
 
@@ -87,7 +88,8 @@ export const createNodesV2 = [
           !t.endsWith('.manual.device.test.ts') &&
           !testOwners.some(([pf]) => join(root, t).startsWith(dirname(pf) + '/')),
       );
-      const hostTests = tests.filter((t) => !t.endsWith('.device.test.ts'));
+      const hostTests = tests.filter((t) => !t.endsWith('.device.test.ts') && !t.endsWith('.rig.test.ts'));
+      const rigTests = tests.filter((t) => t.endsWith('.rig.test.ts'));
       const deviceTests = tests.filter((t) => t.endsWith('.device.test.ts')).sort();
       const shipped = root.startsWith('modules/');
       const targets = {};
@@ -129,6 +131,8 @@ export const createNodesV2 = [
             base: ctx.workspaceRoot,
           }),
         );
+      // sound checks on the SHARC-only rig (packages/sharc-rig-kit, docs/TESTING.md "Sound checks"): tests/rig/*.toml run by tests/*.rig.test.ts
+      if (rigTests.length) targets['test-rig'] = rigTarget(root);
       if (uploadable) targets['test-conformance'] = conformanceTarget(ctx.workspaceRoot, root, m, f, importInputs);
       if (Object.keys(targets).length) project.targets = targets;
       return [f, { projects: { [root]: project } }];

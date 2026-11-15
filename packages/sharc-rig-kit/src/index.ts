@@ -1,3 +1,4 @@
+export * from './analysis.ts';
 export * from './cases.ts';
 export * from './checks.ts';
 export * from './conform.ts';
@@ -13,3 +14,4 @@ export * from './rig.ts';
 export * from './samplepool.ts';
 export * from './spec.ts';
 export * from './toolchain.ts';
+export * from './soundcheck.ts';

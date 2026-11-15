@@ -157,6 +157,13 @@ function cmpPath(a: string, b: string): number {
   return x.length - y.length;
 }
 
+/** The id of the module whose directory is `dir`. */
+export function moduleIdOfDir(dir: string): string {
+  const real = path.resolve(dir);
+  for (const [id, d] of moduleDirs()) if (path.resolve(d) === real) return id;
+  throw new ConformError(`no module in ${dir}`);
+}
+
 export function moduleDir(id: string): string {
   const dir = moduleDirs().get(id);
   if (!dir) throw new ConformError(`unknown module ${id}`);

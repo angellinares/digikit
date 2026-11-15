@@ -641,6 +641,44 @@ The cost writer, `patchkit uses set --id MODULE --device dt2 --dsp-cost-voice N`
 module.toml like `pk_modcheck.write_uses` does: only the lines of the keys given change, comments and other keys stay, and the file
 is written only when a count differs. It prints `wrote PATH` or `unchanged PATH`.
 
+#### Sound checks (`tests/rig/*.toml`)
+
+A module keeps the checks of how it sounds in `modules/<kind>/<name>/tests/rig/*.toml` and one entry file, `tests/rig.rig.test.ts`
+(`import { rigSuite } from '@digi/sharc-rig-kit/suite'; rigSuite(import.meta.dirname);`). Nx infers `<module id>:test-rig` from that file
+(cached; inputs: the module, the kit, the two adapters, the SDK, the device profiles and the hashes of `patchkit` and `sharc-rig`; no
+daemon, firmware or emulator). `pnpm exec vitest run --config vitest.host.config.ts --project module-rig <module dir>/tests/` runs one.
+
+```toml
+[[case]]
+name = "c4 sounds"
+device = ["dt2", "dn2"]           # default both; an effect has no device
+context = "friendly"              # default: a hostile context for every block
+[[case.step]]                     # a machine case plays steps; note, vel and parameters stay from step to step
+note = 60
+vel = 100
+params = { decay = 0x4000 }       # parameter words by manifest id
+blocks = 200
+trigger = true                    # default; release = true sends a note-off in the first block
+[[case.check]]
+kind = "rms"                      # see below; `blocks = [first, end)` limits a check to some blocks of the case
+min = 0.05
+max = 0.5
+```
+
+An effect case has `[case.input]` (`kind` = `sine` with `freq` and `amp`, `table` with a `file` of float32 words (64 per block: left,
+then right), `square-noise`, or a test signal of the conformance cases), `observe = "scratch"` (the effect's own block, the default) or
+`"master"`, `mix` (a float32 word) and steps with `params_f32 = [..]` (the effect's float parameters) and `blocks`.
+
+Every case also holds the implicit rules of the conformance run (the call returns, the context registers and the runtime guard are
+fine, the module writes only its own memory, the output is finite). Check kinds: `rms`, `peak` (`min`, `max`), `dc` (`max`), `no-clip`
+(`limit`, default 1), `finite`, `silent-after` (`block`, `max`), `decay-time` (`db`, `min`/`max` seconds), `pitch-hz` (`note` or
+`expect`, `cents`, `method = "crossings"` or `"bandpass"`, `skip_periods`), `tone` and `tone-stable` (effects), `sample-at`, `differs`
+(`other = [first, end)`), `voice-ends` (`within`, `after`), `instructions` (`max`, `of` = `first`, `steady` or `idle`),
+`master-equals-input`, `master-equals-scratch` (effects), and the references `matches-table` (`file` of float32 words next to the toml,
+`atol`, `channel`) and `same-as` (`sha256` of the float32 words). The analysis is `packages/sharc-rig-kit/src/analysis.ts`, tested on
+synthetic signals. A reference table is the output of the old float32 model of the module (or of the rig, for a new pin) as float32
+words; changing one is a re-pin and needs review like a PCM pin of `tests/scenarios`.
+
 ### DSP budget gate (patchkit smoke)
 
 Every `pk_harness run` cell ends with a DSP measurement: TRIG 1 held for 1 s of audio, the mean busy

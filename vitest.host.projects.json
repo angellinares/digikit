@@ -15,6 +15,12 @@
   { "name": "workbench-core", "dir": "packages/workbench-core", "include": "tests/*.test.ts", "conditions": ["browser"] },
   { "name": "desktop-host", "dir": "apps/desktop", "include": "ui/tests/*.test.ts", "conditions": ["browser"] },
   { "name": "regression-host", "dir": "tests/regression", "include": "host/**/*.test.ts" },
-  { "name": "module-tests", "dir": "modules", "include": "**/tests/**/*.test.ts" },
+  { "name": "module-tests", "dir": "modules", "include": "**/tests/**/*.test.ts", "exclude": ["**/*.rig.test.ts"] },
+  {
+    "name": "module-rig",
+    "dir": ".",
+    "include": "{modules,tests/fixtures/modules}/**/tests/*.rig.test.ts",
+    "testTimeout": 600000
+  },
   { "name": "nx-host", "dir": "tools", "include": "nx/tests/*.test.ts" }
 ]

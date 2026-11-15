@@ -67,6 +67,8 @@ export interface MachineBlock {
   foreign: string[];
   /** DT2: the odd voice's block after the call (a stereo machine's R; NaN when nothing wrote it) */
   right: number[];
+  /** DT2: the voice record's word +0x1b8 after the call: byte 0 is ACTIVE, byte 1 the note-on mark (0 on DN2, which has no record) */
+  active: number;
 }
 
 export interface MachineRigOptions {
@@ -292,6 +294,7 @@ export class MachineRig {
     const reads: [number, number][] = [[nw(out), 32]];
     if (dt2) reads.push([nw(out + 0x80), 32]);
     reads.push([nw(TABLE) + 13, 1]);
+    if (dt2) reads.push([nw(RECORDS + v * REC + 0x1b8), 1]);
     q.push({
       call: {
         pc: this.built.symbols._dv_entry!,
@@ -318,6 +321,7 @@ export class MachineRig {
       faults: faults & 0xffff,
       foreign: this.recordStores ? this.foreignStores(out, res.stores) : [],
       right: dt2 ? words(res.reads[1], 32) : [],
+      active: dt2 ? (res.reads[3]?.[0] ?? 0) : 0,
     };
   }
 
