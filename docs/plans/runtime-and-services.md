@@ -329,10 +329,10 @@ A new plug-in point starts as an experimental `.dks` with its own hook table, an
 - One owner per channel. A second owner gets `DK_E_BUSY` from `dk_sink_set` at the call, not while planning (a module sets its sink in `init` or later, so the table cannot know it).
 - The channel is cleared after the owner's `fini` and after a failed `init`.
 - `log` receives every event the runtime logs, in addition to the older `dk_debug_log_sink_set` pointer, which is unchanged (the debug module has not moved to the channel; there is no ring replay on the channel).
-- `span` receives `(owner, cycles)` records from `dlog::span_emit`; no producer exists yet (`DK_SPAN`, S5).
+- `span` receives `(owner, cycles)` records from `dlog::span_emit`. The producers are the runtime's ColdFire call sites (module ticks, service phases, polls). The owner of the channel is the debug module.
 - With no sink set, a producer pays one word test per channel and calls nothing.
 
-Users: `digikit/debug` (`log`, later), `profile.dks` (`span`, [profiling plan](profiling.md) section 7). The probe's per-block `dl_set_tick_cb` slot in dsp-link can follow the same rule later. Usage for a sink owner: [INSTRUMENTATION.md](../INSTRUMENTATION.md).
+Users: `digikit/debug` (`log`, later), `digikit/debug` (`span`, [profiling plan](profiling.md) section 7). The probe's per-block `dl_set_tick_cb` slot in dsp-link can follow the same rule later. Usage for a sink owner: [INSTRUMENTATION.md](../INSTRUMENTATION.md).
 
 ### 5.12 Service anatomy
 
