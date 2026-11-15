@@ -57,6 +57,10 @@
    "owner": "python:tests/modules",
    "purpose": "Comma-separated module ids (author/name) that the conformance tests select"
   },
+  "DIGI_CONFORM_REPORTS": {
+   "owner": "ts:packages/sharc-rig-kit",
+   "purpose": "Directory of the conformance reports of the SHARC-only rig (default out/runs/conformance)"
+  },
   "DIGI_COUPLED_DSP_EXPORT": {
    "owner": "rust:packages/emulator",
    "purpose": "Output file path: the pinned coupled ready workload test writes the DSP export there"
@@ -396,6 +400,10 @@
   "DIGI_RUNTIME_MODULES": {
    "owner": "ts:tests/regression",
    "purpose": "Directory of the built runtime modules installed by device tests (default dist/modules)."
+  },
+  "DIGI_SHARC_RIG": {
+   "owner": "ts:packages/sharc-rig-kit",
+   "purpose": "Path to the sharc-rig binary (default dist/bin/sharc-rig)"
   },
   "DIGI_SNAPSHOT_DIR": {
    "owner": "rust:packages/emulator",
