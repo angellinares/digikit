@@ -2,7 +2,7 @@
 //
 //   node tools/devtools/rig_profile.ts MODULE --device dt2|dn2 [--case GROUP/NAME] [--blocks 0,1,50] [--top 20] [--runs] [--json FILE]
 //
-// MODULE is a module id (`digikit/shot`). --case is the case as `group/name` (`sample/stereo-fwd-oneshot/note60`) or only the name
+// MODULE is a module id (`<author/name>`). --case is the case as `group/name` (`sample/stereo-fwd-oneshot/note60`) or only the name
 // (`stereo-fwd-oneshot/note60`); default the first case of the module. --blocks lists the blocks to print (default 0,1: the note-on
 // block and the one after it; DN2 stages the note one block after the trig). The case runs from block 0 up to the last block asked, with
 // the case's parameter words, so a block holds the state the case builds up. --runs adds the table of equal-count runs (loop bodies).

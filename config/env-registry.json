@@ -397,6 +397,10 @@
    "owner": "python:tests/emulator",
    "purpose": "Set to 1 to make a stale or missing PGO profile a fatal error in native_pgo.py."
   },
+  "DIGI_RIG_ROOT": {
+   "owner": "ts:packages/sharc-rig-kit",
+   "purpose": "Root of the checkout whose module sources the rig kit reads (read-only); default: this checkout."
+  },
   "DIGI_RUNTIME_MODULES": {
    "owner": "ts:tests/regression",
    "purpose": "Directory of the built runtime modules installed by device tests (default dist/modules)."
