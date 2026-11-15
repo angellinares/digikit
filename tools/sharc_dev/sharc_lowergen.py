@@ -722,6 +722,8 @@ def i_snapshot(uregs):
 
 def i_write_ureg(state, code, value):
     CTX.emit(("wr", _ce(code), _node_of(value)))
+    # The rest of the core's _write_ureg that a kernel keeps: a write of Bn also loads In.
+    st._b_write_loads_i(state, code, value)
 
 
 def _static_plain(address, normal_word):

@@ -210,7 +210,17 @@ impl Lower {
                                         v12 = self.g_load(v7, 4i128 as u8, false)?;
                                         v13 = self.g_load(v8, 4i128 as u8, false)?;
                                         self.g_wr(f8 as u32, v12)?;
+                                        if (f8 >= 64i128) {
+                                            if (f8 <= 79i128) {
+                                                self.g_wr(((f8 - 64i128) + 16i128) as u32, v12)?;
+                                            }
+                                        }
                                         self.g_wr((f8 ^ 1i128) as u32, v13)?;
+                                        if ((f8 ^ 1i128) >= 64i128) {
+                                            if ((f8 ^ 1i128) <= 79i128) {
+                                                self.g_wr((((f8 ^ 1i128) - 64i128) + 16i128) as u32, v13)?;
+                                            }
+                                        }
                                         v14 = self.g_postmod(((f4 + 8i128) + 16) as u32, v0, v4, 4i128 as i64)?;
                                         self.g_wr((16i128 + (f4 + 8i128)) as u32, v14)?;
                                     } else {
@@ -241,7 +251,17 @@ impl Lower {
                                         v18 = self.g_load(v16, 4i128 as u8, false)?;
                                         v19 = self.g_load(v17, 4i128 as u8, false)?;
                                         self.g_wr(f8 as u32, v18)?;
+                                        if (f8 >= 64i128) {
+                                            if (f8 <= 79i128) {
+                                                self.g_wr(((f8 - 64i128) + 16i128) as u32, v18)?;
+                                            }
+                                        }
                                         self.g_wr((f8 ^ 1i128) as u32, v19)?;
+                                        if ((f8 ^ 1i128) >= 64i128) {
+                                            if ((f8 ^ 1i128) <= 79i128) {
+                                                self.g_wr((((f8 ^ 1i128) - 64i128) + 16i128) as u32, v19)?;
+                                            }
+                                        }
                                     } else {
                                         v18 = self.g_load(v16, 4i128 as u8, false)?;
                                         self.g_wr(f8 as u32, v18)?;
@@ -275,7 +295,17 @@ impl Lower {
                                         v27 = self.g_load(v24, 4i128 as u8, false)?;
                                         v28 = self.g_load(v25, 4i128 as u8, false)?;
                                         self.g_wr(f8 as u32, v27)?;
+                                        if (f8 >= 64i128) {
+                                            if (f8 <= 79i128) {
+                                                self.g_wr(((f8 - 64i128) + 16i128) as u32, v27)?;
+                                            }
+                                        }
                                         self.g_wr((f8 ^ 1i128) as u32, v28)?;
+                                        if ((f8 ^ 1i128) >= 64i128) {
+                                            if ((f8 ^ 1i128) <= 79i128) {
+                                                self.g_wr((((f8 ^ 1i128) - 64i128) + 16i128) as u32, v28)?;
+                                            }
+                                        }
                                         v29 = self.g_postmod(((f4 + 0i128) + 16) as u32, v20, v22, 4i128 as i64)?;
                                         self.g_wr((16i128 + (f4 + 0i128)) as u32, v29)?;
                                     } else {
@@ -306,7 +336,17 @@ impl Lower {
                                         v33 = self.g_load(v31, 4i128 as u8, false)?;
                                         v34 = self.g_load(v32, 4i128 as u8, false)?;
                                         self.g_wr(f8 as u32, v33)?;
+                                        if (f8 >= 64i128) {
+                                            if (f8 <= 79i128) {
+                                                self.g_wr(((f8 - 64i128) + 16i128) as u32, v33)?;
+                                            }
+                                        }
                                         self.g_wr((f8 ^ 1i128) as u32, v34)?;
+                                        if ((f8 ^ 1i128) >= 64i128) {
+                                            if ((f8 ^ 1i128) <= 79i128) {
+                                                self.g_wr((((f8 ^ 1i128) - 64i128) + 16i128) as u32, v34)?;
+                                            }
+                                        }
                                     } else {
                                         v33 = self.g_load(v31, 4i128 as u8, false)?;
                                         self.g_wr(f8 as u32, v33)?;
@@ -340,6 +380,11 @@ impl Lower {
                                         v4 = self.g_bin(Bin::Mul, v2, v3);
                                         v35 = self.g_load(v0, 4i128 as u8, false)?;
                                         self.g_wr(f8 as u32, v35)?;
+                                        if (f8 >= 64i128) {
+                                            if (f8 <= 79i128) {
+                                                self.g_wr(((f8 - 64i128) + 16i128) as u32, v35)?;
+                                            }
+                                        }
                                         v15 = self.g_postmod(((f4 + 8i128) + 16) as u32, v0, v4, 4i128 as i64)?;
                                         self.g_wr((16i128 + (f4 + 8i128)) as u32, v15)?;
                                         self.g_apply(d, "compute", false, false)?;
@@ -368,6 +413,11 @@ impl Lower {
                                         v5 = self.g_bin(Bin::Add, v0, v4);
                                         v36 = self.g_load(v5, 4i128 as u8, false)?;
                                         self.g_wr(f8 as u32, v36)?;
+                                        if (f8 >= 64i128) {
+                                            if (f8 <= 79i128) {
+                                                self.g_wr(((f8 - 64i128) + 16i128) as u32, v36)?;
+                                            }
+                                        }
                                         self.g_apply(d, "compute", false, false)?;
                                     }
                                 }
@@ -432,7 +482,7 @@ impl Lower {
                                         v29 = self.g_postmod(((f4 + 0i128) + 16) as u32, v20, v22, 4i128 as i64)?;
                                         self.g_wr((16i128 + (f4 + 0i128)) as u32, v29)?;
                                         self.g_apply(d, "compute", false, false)?;
-                                    } else if (f8 >= 16i128 && f8 <= 79i128) || (f8 >= 110i128 && f8 <= 111i128) || (f8 >= 114i128 && f8 <= 117i128) || (f8 >= 122i128 && f8 <= 125i128) {
+                                    } else if (f8 >= 16i128 && f8 <= 79i128) {
                                         self.g_cond(f1 as u32, false)?;
                                         v20 = self.g_rd((16i128 + (f4 + 0i128)) as u32)?;
                                         v21 = self.g_rd((32i128 + (f6 + 0i128)) as u32)?;
@@ -440,6 +490,9 @@ impl Lower {
                                         v22 = self.g_bin(Bin::Mul, v21, v3);
                                         v39 = self.g_load(v20, 4i128 as u8, false)?;
                                         self.g_wr(f8 as u32, v39)?;
+                                        if (f8 >= 64i128) {
+                                            self.g_wr(((f8 - 64i128) + 16i128) as u32, v39)?;
+                                        }
                                         v30 = self.g_postmod(((f4 + 0i128) + 16) as u32, v20, v22, 4i128 as i64)?;
                                         self.g_wr((16i128 + (f4 + 0i128)) as u32, v30)?;
                                         self.g_apply(d, "compute", false, false)?;
@@ -472,7 +525,7 @@ impl Lower {
                                             self.g_wr((16i128 + (f4 + 0i128)) as u32, v30)?;
                                             self.g_apply(d, "compute", false, false)?;
                                         }
-                                    } else {
+                                    } else if (f8 >= 108i128 && f8 <= 109i128) || (f8 >= 112i128 && f8 <= 113i128) || (f8 >= 118i128 && f8 <= 121i128) || f8 >= 126i128 {
                                         if ((f8 ^ 1i128) == 107i128) {
                                             return refuse("combined PX transfer");
                                         } else {
@@ -486,10 +539,26 @@ impl Lower {
                                             self.g_wr(f8 as u32, v39)?;
                                             v28 = self.g_load(v25, 4i128 as u8, false)?;
                                             self.g_wr((f8 ^ 1i128) as u32, v28)?;
+                                            if ((f8 ^ 1i128) >= 64i128) {
+                                                if ((f8 ^ 1i128) <= 79i128) {
+                                                    self.g_wr((((f8 ^ 1i128) - 64i128) + 16i128) as u32, v28)?;
+                                                }
+                                            }
                                             v29 = self.g_postmod(((f4 + 0i128) + 16) as u32, v20, v22, 4i128 as i64)?;
                                             self.g_wr((16i128 + (f4 + 0i128)) as u32, v29)?;
                                             self.g_apply(d, "compute", false, false)?;
                                         }
+                                    } else {
+                                        self.g_cond(f1 as u32, false)?;
+                                        v20 = self.g_rd((16i128 + (f4 + 0i128)) as u32)?;
+                                        v21 = self.g_rd((32i128 + (f6 + 0i128)) as u32)?;
+                                        v3 = self.ci(4i128 as u32);
+                                        v22 = self.g_bin(Bin::Mul, v21, v3);
+                                        v39 = self.g_load(v20, 4i128 as u8, false)?;
+                                        self.g_wr(f8 as u32, v39)?;
+                                        v30 = self.g_postmod(((f4 + 0i128) + 16) as u32, v20, v22, 4i128 as i64)?;
+                                        self.g_wr((16i128 + (f4 + 0i128)) as u32, v30)?;
+                                        self.g_apply(d, "compute", false, false)?;
                                     }
                                 }
                             } else {
@@ -549,7 +618,7 @@ impl Lower {
                                         v34 = self.g_load(v32, 4i128 as u8, false)?;
                                         self.g_wr((f8 + 80i128) as u32, v34)?;
                                         self.g_apply(d, "compute", false, false)?;
-                                    } else if (f8 >= 16i128 && f8 <= 79i128) || (f8 >= 110i128 && f8 <= 111i128) || (f8 >= 114i128 && f8 <= 117i128) || (f8 >= 122i128 && f8 <= 125i128) {
+                                    } else if (f8 >= 16i128 && f8 <= 79i128) {
                                         self.g_cond(f1 as u32, false)?;
                                         v20 = self.g_rd((16i128 + (f4 + 0i128)) as u32)?;
                                         v21 = self.g_rd((32i128 + (f6 + 0i128)) as u32)?;
@@ -558,6 +627,9 @@ impl Lower {
                                         v23 = self.g_bin(Bin::Add, v20, v22);
                                         v40 = self.g_load(v23, 4i128 as u8, false)?;
                                         self.g_wr(f8 as u32, v40)?;
+                                        if (f8 >= 64i128) {
+                                            self.g_wr(((f8 - 64i128) + 16i128) as u32, v40)?;
+                                        }
                                         self.g_apply(d, "compute", false, false)?;
                                     } else if (f8 >= 80i128 && f8 <= 95i128) {
                                         self.g_cond(f1 as u32, false)?;
@@ -586,7 +658,7 @@ impl Lower {
                                             self.g_wr(f8 as u32, v40)?;
                                             self.g_apply(d, "compute", false, false)?;
                                         }
-                                    } else {
+                                    } else if (f8 >= 108i128 && f8 <= 109i128) || (f8 >= 112i128 && f8 <= 113i128) || (f8 >= 118i128 && f8 <= 121i128) || f8 >= 126i128 {
                                         if ((f8 ^ 1i128) == 107i128) {
                                             return refuse("combined PX transfer");
                                         } else {
@@ -601,8 +673,23 @@ impl Lower {
                                             self.g_wr(f8 as u32, v40)?;
                                             v34 = self.g_load(v32, 4i128 as u8, false)?;
                                             self.g_wr((f8 ^ 1i128) as u32, v34)?;
+                                            if ((f8 ^ 1i128) >= 64i128) {
+                                                if ((f8 ^ 1i128) <= 79i128) {
+                                                    self.g_wr((((f8 ^ 1i128) - 64i128) + 16i128) as u32, v34)?;
+                                                }
+                                            }
                                             self.g_apply(d, "compute", false, false)?;
                                         }
+                                    } else {
+                                        self.g_cond(f1 as u32, false)?;
+                                        v20 = self.g_rd((16i128 + (f4 + 0i128)) as u32)?;
+                                        v21 = self.g_rd((32i128 + (f6 + 0i128)) as u32)?;
+                                        v3 = self.ci(4i128 as u32);
+                                        v22 = self.g_bin(Bin::Mul, v21, v3);
+                                        v23 = self.g_bin(Bin::Add, v20, v22);
+                                        v40 = self.g_load(v23, 4i128 as u8, false)?;
+                                        self.g_wr(f8 as u32, v40)?;
+                                        self.g_apply(d, "compute", false, false)?;
                                     }
                                 }
                             }
@@ -637,7 +724,17 @@ impl Lower {
                                         v12 = self.g_load(v7, 4i128 as u8, false)?;
                                         v13 = self.g_load(v8, 4i128 as u8, false)?;
                                         self.g_wr(f8 as u32, v12)?;
+                                        if (f8 >= 64i128) {
+                                            if (f8 <= 79i128) {
+                                                self.g_wr(((f8 - 64i128) + 16i128) as u32, v12)?;
+                                            }
+                                        }
                                         self.g_wr((f8 ^ 1i128) as u32, v13)?;
+                                        if ((f8 ^ 1i128) >= 64i128) {
+                                            if ((f8 ^ 1i128) <= 79i128) {
+                                                self.g_wr((((f8 ^ 1i128) - 64i128) + 16i128) as u32, v13)?;
+                                            }
+                                        }
                                         v14 = self.g_postmod(((f4 + 8i128) + 16) as u32, v0, v4, 4i128 as i64)?;
                                         self.g_wr((16i128 + (f4 + 8i128)) as u32, v14)?;
                                     } else {
@@ -668,7 +765,17 @@ impl Lower {
                                         v18 = self.g_load(v16, 4i128 as u8, false)?;
                                         v19 = self.g_load(v17, 4i128 as u8, false)?;
                                         self.g_wr(f8 as u32, v18)?;
+                                        if (f8 >= 64i128) {
+                                            if (f8 <= 79i128) {
+                                                self.g_wr(((f8 - 64i128) + 16i128) as u32, v18)?;
+                                            }
+                                        }
                                         self.g_wr((f8 ^ 1i128) as u32, v19)?;
+                                        if ((f8 ^ 1i128) >= 64i128) {
+                                            if ((f8 ^ 1i128) <= 79i128) {
+                                                self.g_wr((((f8 ^ 1i128) - 64i128) + 16i128) as u32, v19)?;
+                                            }
+                                        }
                                     } else {
                                         v18 = self.g_load(v16, 4i128 as u8, false)?;
                                         self.g_wr(f8 as u32, v18)?;
@@ -702,7 +809,17 @@ impl Lower {
                                         v27 = self.g_load(v24, 4i128 as u8, false)?;
                                         v28 = self.g_load(v25, 4i128 as u8, false)?;
                                         self.g_wr(f8 as u32, v27)?;
+                                        if (f8 >= 64i128) {
+                                            if (f8 <= 79i128) {
+                                                self.g_wr(((f8 - 64i128) + 16i128) as u32, v27)?;
+                                            }
+                                        }
                                         self.g_wr((f8 ^ 1i128) as u32, v28)?;
+                                        if ((f8 ^ 1i128) >= 64i128) {
+                                            if ((f8 ^ 1i128) <= 79i128) {
+                                                self.g_wr((((f8 ^ 1i128) - 64i128) + 16i128) as u32, v28)?;
+                                            }
+                                        }
                                         v29 = self.g_postmod(((f4 + 0i128) + 16) as u32, v20, v22, 4i128 as i64)?;
                                         self.g_wr((16i128 + (f4 + 0i128)) as u32, v29)?;
                                     } else {
@@ -733,7 +850,17 @@ impl Lower {
                                         v33 = self.g_load(v31, 4i128 as u8, false)?;
                                         v34 = self.g_load(v32, 4i128 as u8, false)?;
                                         self.g_wr(f8 as u32, v33)?;
+                                        if (f8 >= 64i128) {
+                                            if (f8 <= 79i128) {
+                                                self.g_wr(((f8 - 64i128) + 16i128) as u32, v33)?;
+                                            }
+                                        }
                                         self.g_wr((f8 ^ 1i128) as u32, v34)?;
+                                        if ((f8 ^ 1i128) >= 64i128) {
+                                            if ((f8 ^ 1i128) <= 79i128) {
+                                                self.g_wr((((f8 ^ 1i128) - 64i128) + 16i128) as u32, v34)?;
+                                            }
+                                        }
                                     } else {
                                         v33 = self.g_load(v31, 4i128 as u8, false)?;
                                         self.g_wr(f8 as u32, v33)?;
@@ -767,6 +894,11 @@ impl Lower {
                                         v4 = self.g_bin(Bin::Mul, v2, v3);
                                         v35 = self.g_load(v0, 4i128 as u8, false)?;
                                         self.g_wr(f8 as u32, v35)?;
+                                        if (f8 >= 64i128) {
+                                            if (f8 <= 79i128) {
+                                                self.g_wr(((f8 - 64i128) + 16i128) as u32, v35)?;
+                                            }
+                                        }
                                         v15 = self.g_postmod(((f4 + 8i128) + 16) as u32, v0, v4, 4i128 as i64)?;
                                         self.g_wr((16i128 + (f4 + 8i128)) as u32, v15)?;
                                         self.g_apply(d, "compute", false, false)?;
@@ -795,6 +927,11 @@ impl Lower {
                                         v5 = self.g_bin(Bin::Add, v0, v4);
                                         v36 = self.g_load(v5, 4i128 as u8, false)?;
                                         self.g_wr(f8 as u32, v36)?;
+                                        if (f8 >= 64i128) {
+                                            if (f8 <= 79i128) {
+                                                self.g_wr(((f8 - 64i128) + 16i128) as u32, v36)?;
+                                            }
+                                        }
                                         self.g_apply(d, "compute", false, false)?;
                                         self.g_apply(d, "compute", true, false)?;
                                     }
@@ -860,13 +997,16 @@ impl Lower {
                                         self.g_wr((16i128 + (f4 + 0i128)) as u32, v29)?;
                                         self.g_apply(d, "compute", false, false)?;
                                         self.g_apply(d, "compute", true, false)?;
-                                    } else if (f8 >= 16i128 && f8 <= 79i128) || (f8 >= 110i128 && f8 <= 111i128) || (f8 >= 114i128 && f8 <= 117i128) || (f8 >= 122i128 && f8 <= 125i128) {
+                                    } else if (f8 >= 16i128 && f8 <= 79i128) {
                                         v20 = self.g_rd((16i128 + (f4 + 0i128)) as u32)?;
                                         v21 = self.g_rd((32i128 + (f6 + 0i128)) as u32)?;
                                         v3 = self.ci(4i128 as u32);
                                         v22 = self.g_bin(Bin::Mul, v21, v3);
                                         v39 = self.g_load(v20, 4i128 as u8, false)?;
                                         self.g_wr(f8 as u32, v39)?;
+                                        if (f8 >= 64i128) {
+                                            self.g_wr(((f8 - 64i128) + 16i128) as u32, v39)?;
+                                        }
                                         v30 = self.g_postmod(((f4 + 0i128) + 16) as u32, v20, v22, 4i128 as i64)?;
                                         self.g_wr((16i128 + (f4 + 0i128)) as u32, v30)?;
                                         self.g_apply(d, "compute", false, false)?;
@@ -900,7 +1040,7 @@ impl Lower {
                                             self.g_apply(d, "compute", false, false)?;
                                             self.g_apply(d, "compute", true, false)?;
                                         }
-                                    } else {
+                                    } else if (f8 >= 108i128 && f8 <= 109i128) || (f8 >= 112i128 && f8 <= 113i128) || (f8 >= 118i128 && f8 <= 121i128) || f8 >= 126i128 {
                                         if ((f8 ^ 1i128) == 107i128) {
                                             return refuse("combined PX transfer");
                                         } else {
@@ -913,11 +1053,27 @@ impl Lower {
                                             self.g_wr(f8 as u32, v39)?;
                                             v28 = self.g_load(v25, 4i128 as u8, false)?;
                                             self.g_wr((f8 ^ 1i128) as u32, v28)?;
+                                            if ((f8 ^ 1i128) >= 64i128) {
+                                                if ((f8 ^ 1i128) <= 79i128) {
+                                                    self.g_wr((((f8 ^ 1i128) - 64i128) + 16i128) as u32, v28)?;
+                                                }
+                                            }
                                             v29 = self.g_postmod(((f4 + 0i128) + 16) as u32, v20, v22, 4i128 as i64)?;
                                             self.g_wr((16i128 + (f4 + 0i128)) as u32, v29)?;
                                             self.g_apply(d, "compute", false, false)?;
                                             self.g_apply(d, "compute", true, false)?;
                                         }
+                                    } else {
+                                        v20 = self.g_rd((16i128 + (f4 + 0i128)) as u32)?;
+                                        v21 = self.g_rd((32i128 + (f6 + 0i128)) as u32)?;
+                                        v3 = self.ci(4i128 as u32);
+                                        v22 = self.g_bin(Bin::Mul, v21, v3);
+                                        v39 = self.g_load(v20, 4i128 as u8, false)?;
+                                        self.g_wr(f8 as u32, v39)?;
+                                        v30 = self.g_postmod(((f4 + 0i128) + 16) as u32, v20, v22, 4i128 as i64)?;
+                                        self.g_wr((16i128 + (f4 + 0i128)) as u32, v30)?;
+                                        self.g_apply(d, "compute", false, false)?;
+                                        self.g_apply(d, "compute", true, false)?;
                                     }
                                 }
                             } else {
@@ -977,7 +1133,7 @@ impl Lower {
                                         self.g_wr((f8 + 80i128) as u32, v34)?;
                                         self.g_apply(d, "compute", false, false)?;
                                         self.g_apply(d, "compute", true, false)?;
-                                    } else if (f8 >= 16i128 && f8 <= 79i128) || (f8 >= 110i128 && f8 <= 111i128) || (f8 >= 114i128 && f8 <= 117i128) || (f8 >= 122i128 && f8 <= 125i128) {
+                                    } else if (f8 >= 16i128 && f8 <= 79i128) {
                                         v20 = self.g_rd((16i128 + (f4 + 0i128)) as u32)?;
                                         v21 = self.g_rd((32i128 + (f6 + 0i128)) as u32)?;
                                         v3 = self.ci(4i128 as u32);
@@ -985,6 +1141,9 @@ impl Lower {
                                         v23 = self.g_bin(Bin::Add, v20, v22);
                                         v40 = self.g_load(v23, 4i128 as u8, false)?;
                                         self.g_wr(f8 as u32, v40)?;
+                                        if (f8 >= 64i128) {
+                                            self.g_wr(((f8 - 64i128) + 16i128) as u32, v40)?;
+                                        }
                                         self.g_apply(d, "compute", false, false)?;
                                         self.g_apply(d, "compute", true, false)?;
                                     } else if (f8 >= 80i128 && f8 <= 95i128) {
@@ -1014,7 +1173,7 @@ impl Lower {
                                             self.g_apply(d, "compute", false, false)?;
                                             self.g_apply(d, "compute", true, false)?;
                                         }
-                                    } else {
+                                    } else if (f8 >= 108i128 && f8 <= 109i128) || (f8 >= 112i128 && f8 <= 113i128) || (f8 >= 118i128 && f8 <= 121i128) || f8 >= 126i128 {
                                         if ((f8 ^ 1i128) == 107i128) {
                                             return refuse("combined PX transfer");
                                         } else {
@@ -1028,9 +1187,24 @@ impl Lower {
                                             self.g_wr(f8 as u32, v40)?;
                                             v34 = self.g_load(v32, 4i128 as u8, false)?;
                                             self.g_wr((f8 ^ 1i128) as u32, v34)?;
+                                            if ((f8 ^ 1i128) >= 64i128) {
+                                                if ((f8 ^ 1i128) <= 79i128) {
+                                                    self.g_wr((((f8 ^ 1i128) - 64i128) + 16i128) as u32, v34)?;
+                                                }
+                                            }
                                             self.g_apply(d, "compute", false, false)?;
                                             self.g_apply(d, "compute", true, false)?;
                                         }
+                                    } else {
+                                        v20 = self.g_rd((16i128 + (f4 + 0i128)) as u32)?;
+                                        v21 = self.g_rd((32i128 + (f6 + 0i128)) as u32)?;
+                                        v3 = self.ci(4i128 as u32);
+                                        v22 = self.g_bin(Bin::Mul, v21, v3);
+                                        v23 = self.g_bin(Bin::Add, v20, v22);
+                                        v40 = self.g_load(v23, 4i128 as u8, false)?;
+                                        self.g_wr(f8 as u32, v40)?;
+                                        self.g_apply(d, "compute", false, false)?;
+                                        self.g_apply(d, "compute", true, false)?;
                                     }
                                 }
                             }
@@ -1068,7 +1242,17 @@ impl Lower {
                                         v12 = self.g_load(v7, 4i128 as u8, false)?;
                                         v13 = self.g_load(v8, 4i128 as u8, false)?;
                                         self.g_wr(f8 as u32, v12)?;
+                                        if (f8 >= 64i128) {
+                                            if (f8 <= 79i128) {
+                                                self.g_wr(((f8 - 64i128) + 16i128) as u32, v12)?;
+                                            }
+                                        }
                                         self.g_wr((f8 ^ 1i128) as u32, v13)?;
+                                        if ((f8 ^ 1i128) >= 64i128) {
+                                            if ((f8 ^ 1i128) <= 79i128) {
+                                                self.g_wr((((f8 ^ 1i128) - 64i128) + 16i128) as u32, v13)?;
+                                            }
+                                        }
                                         v14 = self.g_postmod(((f4 + 8i128) + 16) as u32, v0, v4, 4i128 as i64)?;
                                         self.g_wr((16i128 + (f4 + 8i128)) as u32, v14)?;
                                     } else {
@@ -1099,7 +1283,17 @@ impl Lower {
                                         v18 = self.g_load(v16, 4i128 as u8, false)?;
                                         v19 = self.g_load(v17, 4i128 as u8, false)?;
                                         self.g_wr(f8 as u32, v18)?;
+                                        if (f8 >= 64i128) {
+                                            if (f8 <= 79i128) {
+                                                self.g_wr(((f8 - 64i128) + 16i128) as u32, v18)?;
+                                            }
+                                        }
                                         self.g_wr((f8 ^ 1i128) as u32, v19)?;
+                                        if ((f8 ^ 1i128) >= 64i128) {
+                                            if ((f8 ^ 1i128) <= 79i128) {
+                                                self.g_wr((((f8 ^ 1i128) - 64i128) + 16i128) as u32, v19)?;
+                                            }
+                                        }
                                     } else {
                                         v18 = self.g_load(v16, 4i128 as u8, false)?;
                                         self.g_wr(f8 as u32, v18)?;
@@ -1133,7 +1327,17 @@ impl Lower {
                                         v27 = self.g_load(v24, 4i128 as u8, false)?;
                                         v28 = self.g_load(v25, 4i128 as u8, false)?;
                                         self.g_wr(f8 as u32, v27)?;
+                                        if (f8 >= 64i128) {
+                                            if (f8 <= 79i128) {
+                                                self.g_wr(((f8 - 64i128) + 16i128) as u32, v27)?;
+                                            }
+                                        }
                                         self.g_wr((f8 ^ 1i128) as u32, v28)?;
+                                        if ((f8 ^ 1i128) >= 64i128) {
+                                            if ((f8 ^ 1i128) <= 79i128) {
+                                                self.g_wr((((f8 ^ 1i128) - 64i128) + 16i128) as u32, v28)?;
+                                            }
+                                        }
                                         v29 = self.g_postmod(((f4 + 0i128) + 16) as u32, v20, v22, 4i128 as i64)?;
                                         self.g_wr((16i128 + (f4 + 0i128)) as u32, v29)?;
                                     } else {
@@ -1164,7 +1368,17 @@ impl Lower {
                                         v33 = self.g_load(v31, 4i128 as u8, false)?;
                                         v34 = self.g_load(v32, 4i128 as u8, false)?;
                                         self.g_wr(f8 as u32, v33)?;
+                                        if (f8 >= 64i128) {
+                                            if (f8 <= 79i128) {
+                                                self.g_wr(((f8 - 64i128) + 16i128) as u32, v33)?;
+                                            }
+                                        }
                                         self.g_wr((f8 ^ 1i128) as u32, v34)?;
+                                        if ((f8 ^ 1i128) >= 64i128) {
+                                            if ((f8 ^ 1i128) <= 79i128) {
+                                                self.g_wr((((f8 ^ 1i128) - 64i128) + 16i128) as u32, v34)?;
+                                            }
+                                        }
                                     } else {
                                         v33 = self.g_load(v31, 4i128 as u8, false)?;
                                         self.g_wr(f8 as u32, v33)?;
@@ -1198,6 +1412,11 @@ impl Lower {
                                         v4 = self.g_bin(Bin::Mul, v2, v3);
                                         v35 = self.g_load(v0, 4i128 as u8, false)?;
                                         self.g_wr(f8 as u32, v35)?;
+                                        if (f8 >= 64i128) {
+                                            if (f8 <= 79i128) {
+                                                self.g_wr(((f8 - 64i128) + 16i128) as u32, v35)?;
+                                            }
+                                        }
                                         v15 = self.g_postmod(((f4 + 8i128) + 16) as u32, v0, v4, 4i128 as i64)?;
                                         self.g_wr((16i128 + (f4 + 8i128)) as u32, v15)?;
                                         self.g_apply(d, "compute", false, false)?;
@@ -1226,6 +1445,11 @@ impl Lower {
                                         v5 = self.g_bin(Bin::Add, v0, v4);
                                         v36 = self.g_load(v5, 4i128 as u8, false)?;
                                         self.g_wr(f8 as u32, v36)?;
+                                        if (f8 >= 64i128) {
+                                            if (f8 <= 79i128) {
+                                                self.g_wr(((f8 - 64i128) + 16i128) as u32, v36)?;
+                                            }
+                                        }
                                         self.g_apply(d, "compute", false, false)?;
                                     }
                                 }
@@ -1244,7 +1468,7 @@ impl Lower {
                                     self.g_wr((16i128 + (f4 + 0i128)) as u32, v26)?;
                                     self.g_apply(d, "compute", false, false)?;
                                 } else {
-                                    if f8 <= 15i128 || (f8 >= 16i128 && f8 <= 79i128) || (f8 >= 80i128 && f8 <= 95i128) || (f8 >= 108i128 && f8 <= 109i128) || (f8 >= 110i128 && f8 <= 111i128) || (f8 >= 112i128 && f8 <= 113i128) || (f8 >= 114i128 && f8 <= 117i128) || (f8 >= 118i128 && f8 <= 121i128) || (f8 >= 122i128 && f8 <= 125i128) || f8 >= 126i128 {
+                                    if f8 <= 15i128 || (f8 >= 80i128 && f8 <= 95i128) || (f8 >= 108i128 && f8 <= 109i128) || (f8 >= 110i128 && f8 <= 111i128) || (f8 >= 112i128 && f8 <= 113i128) || (f8 >= 114i128 && f8 <= 117i128) || (f8 >= 118i128 && f8 <= 121i128) || (f8 >= 122i128 && f8 <= 125i128) || f8 >= 126i128 {
                                         self.g_cond(f1 as u32, false)?;
                                         v20 = self.g_rd((16i128 + (f4 + 0i128)) as u32)?;
                                         v21 = self.g_rd((32i128 + (f6 + 0i128)) as u32)?;
@@ -1252,6 +1476,20 @@ impl Lower {
                                         v22 = self.g_bin(Bin::Mul, v21, v3);
                                         v39 = self.g_load(v20, 4i128 as u8, false)?;
                                         self.g_wr(f8 as u32, v39)?;
+                                        v30 = self.g_postmod(((f4 + 0i128) + 16) as u32, v20, v22, 4i128 as i64)?;
+                                        self.g_wr((16i128 + (f4 + 0i128)) as u32, v30)?;
+                                        self.g_apply(d, "compute", false, false)?;
+                                    } else if (f8 >= 16i128 && f8 <= 79i128) {
+                                        self.g_cond(f1 as u32, false)?;
+                                        v20 = self.g_rd((16i128 + (f4 + 0i128)) as u32)?;
+                                        v21 = self.g_rd((32i128 + (f6 + 0i128)) as u32)?;
+                                        v3 = self.ci(4i128 as u32);
+                                        v22 = self.g_bin(Bin::Mul, v21, v3);
+                                        v39 = self.g_load(v20, 4i128 as u8, false)?;
+                                        self.g_wr(f8 as u32, v39)?;
+                                        if (f8 >= 64i128) {
+                                            self.g_wr(((f8 - 64i128) + 16i128) as u32, v39)?;
+                                        }
                                         v30 = self.g_postmod(((f4 + 0i128) + 16) as u32, v20, v22, 4i128 as i64)?;
                                         self.g_wr((16i128 + (f4 + 0i128)) as u32, v30)?;
                                         self.g_apply(d, "compute", false, false)?;
@@ -1284,7 +1522,7 @@ impl Lower {
                                     self.g_store(v23, v9, 4i128 as u8)?;
                                     self.g_apply(d, "compute", false, false)?;
                                 } else {
-                                    if f8 <= 15i128 || (f8 >= 16i128 && f8 <= 79i128) || (f8 >= 80i128 && f8 <= 95i128) || (f8 >= 108i128 && f8 <= 109i128) || (f8 >= 110i128 && f8 <= 111i128) || (f8 >= 112i128 && f8 <= 113i128) || (f8 >= 114i128 && f8 <= 117i128) || (f8 >= 118i128 && f8 <= 121i128) || (f8 >= 122i128 && f8 <= 125i128) || f8 >= 126i128 {
+                                    if f8 <= 15i128 || (f8 >= 80i128 && f8 <= 95i128) || (f8 >= 108i128 && f8 <= 109i128) || (f8 >= 110i128 && f8 <= 111i128) || (f8 >= 112i128 && f8 <= 113i128) || (f8 >= 114i128 && f8 <= 117i128) || (f8 >= 118i128 && f8 <= 121i128) || (f8 >= 122i128 && f8 <= 125i128) || f8 >= 126i128 {
                                         self.g_cond(f1 as u32, false)?;
                                         v20 = self.g_rd((16i128 + (f4 + 0i128)) as u32)?;
                                         v21 = self.g_rd((32i128 + (f6 + 0i128)) as u32)?;
@@ -1293,6 +1531,19 @@ impl Lower {
                                         v23 = self.g_bin(Bin::Add, v20, v22);
                                         v40 = self.g_load(v23, 4i128 as u8, false)?;
                                         self.g_wr(f8 as u32, v40)?;
+                                        self.g_apply(d, "compute", false, false)?;
+                                    } else if (f8 >= 16i128 && f8 <= 79i128) {
+                                        self.g_cond(f1 as u32, false)?;
+                                        v20 = self.g_rd((16i128 + (f4 + 0i128)) as u32)?;
+                                        v21 = self.g_rd((32i128 + (f6 + 0i128)) as u32)?;
+                                        v3 = self.ci(4i128 as u32);
+                                        v22 = self.g_bin(Bin::Mul, v21, v3);
+                                        v23 = self.g_bin(Bin::Add, v20, v22);
+                                        v40 = self.g_load(v23, 4i128 as u8, false)?;
+                                        self.g_wr(f8 as u32, v40)?;
+                                        if (f8 >= 64i128) {
+                                            self.g_wr(((f8 - 64i128) + 16i128) as u32, v40)?;
+                                        }
                                         self.g_apply(d, "compute", false, false)?;
                                     } else {
                                         if (f8 == 107i128) {
@@ -1342,7 +1593,17 @@ impl Lower {
                                         v12 = self.g_load(v7, 4i128 as u8, false)?;
                                         v13 = self.g_load(v8, 4i128 as u8, false)?;
                                         self.g_wr(f8 as u32, v12)?;
+                                        if (f8 >= 64i128) {
+                                            if (f8 <= 79i128) {
+                                                self.g_wr(((f8 - 64i128) + 16i128) as u32, v12)?;
+                                            }
+                                        }
                                         self.g_wr((f8 ^ 1i128) as u32, v13)?;
+                                        if ((f8 ^ 1i128) >= 64i128) {
+                                            if ((f8 ^ 1i128) <= 79i128) {
+                                                self.g_wr((((f8 ^ 1i128) - 64i128) + 16i128) as u32, v13)?;
+                                            }
+                                        }
                                         v14 = self.g_postmod(((f4 + 8i128) + 16) as u32, v0, v4, 4i128 as i64)?;
                                         self.g_wr((16i128 + (f4 + 8i128)) as u32, v14)?;
                                     } else {
@@ -1373,7 +1634,17 @@ impl Lower {
                                         v18 = self.g_load(v16, 4i128 as u8, false)?;
                                         v19 = self.g_load(v17, 4i128 as u8, false)?;
                                         self.g_wr(f8 as u32, v18)?;
+                                        if (f8 >= 64i128) {
+                                            if (f8 <= 79i128) {
+                                                self.g_wr(((f8 - 64i128) + 16i128) as u32, v18)?;
+                                            }
+                                        }
                                         self.g_wr((f8 ^ 1i128) as u32, v19)?;
+                                        if ((f8 ^ 1i128) >= 64i128) {
+                                            if ((f8 ^ 1i128) <= 79i128) {
+                                                self.g_wr((((f8 ^ 1i128) - 64i128) + 16i128) as u32, v19)?;
+                                            }
+                                        }
                                     } else {
                                         v18 = self.g_load(v16, 4i128 as u8, false)?;
                                         self.g_wr(f8 as u32, v18)?;
@@ -1407,7 +1678,17 @@ impl Lower {
                                         v27 = self.g_load(v24, 4i128 as u8, false)?;
                                         v28 = self.g_load(v25, 4i128 as u8, false)?;
                                         self.g_wr(f8 as u32, v27)?;
+                                        if (f8 >= 64i128) {
+                                            if (f8 <= 79i128) {
+                                                self.g_wr(((f8 - 64i128) + 16i128) as u32, v27)?;
+                                            }
+                                        }
                                         self.g_wr((f8 ^ 1i128) as u32, v28)?;
+                                        if ((f8 ^ 1i128) >= 64i128) {
+                                            if ((f8 ^ 1i128) <= 79i128) {
+                                                self.g_wr((((f8 ^ 1i128) - 64i128) + 16i128) as u32, v28)?;
+                                            }
+                                        }
                                         v29 = self.g_postmod(((f4 + 0i128) + 16) as u32, v20, v22, 4i128 as i64)?;
                                         self.g_wr((16i128 + (f4 + 0i128)) as u32, v29)?;
                                     } else {
@@ -1438,7 +1719,17 @@ impl Lower {
                                         v33 = self.g_load(v31, 4i128 as u8, false)?;
                                         v34 = self.g_load(v32, 4i128 as u8, false)?;
                                         self.g_wr(f8 as u32, v33)?;
+                                        if (f8 >= 64i128) {
+                                            if (f8 <= 79i128) {
+                                                self.g_wr(((f8 - 64i128) + 16i128) as u32, v33)?;
+                                            }
+                                        }
                                         self.g_wr((f8 ^ 1i128) as u32, v34)?;
+                                        if ((f8 ^ 1i128) >= 64i128) {
+                                            if ((f8 ^ 1i128) <= 79i128) {
+                                                self.g_wr((((f8 ^ 1i128) - 64i128) + 16i128) as u32, v34)?;
+                                            }
+                                        }
                                     } else {
                                         v33 = self.g_load(v31, 4i128 as u8, false)?;
                                         self.g_wr(f8 as u32, v33)?;
@@ -1470,6 +1761,11 @@ impl Lower {
                                         v4 = self.g_bin(Bin::Mul, v2, v3);
                                         v35 = self.g_load(v0, 4i128 as u8, false)?;
                                         self.g_wr(f8 as u32, v35)?;
+                                        if (f8 >= 64i128) {
+                                            if (f8 <= 79i128) {
+                                                self.g_wr(((f8 - 64i128) + 16i128) as u32, v35)?;
+                                            }
+                                        }
                                         v15 = self.g_postmod(((f4 + 8i128) + 16) as u32, v0, v4, 4i128 as i64)?;
                                         self.g_wr((16i128 + (f4 + 8i128)) as u32, v15)?;
                                         self.g_apply(d, "compute", false, false)?;
@@ -1496,6 +1792,11 @@ impl Lower {
                                         v5 = self.g_bin(Bin::Add, v0, v4);
                                         v36 = self.g_load(v5, 4i128 as u8, false)?;
                                         self.g_wr(f8 as u32, v36)?;
+                                        if (f8 >= 64i128) {
+                                            if (f8 <= 79i128) {
+                                                self.g_wr(((f8 - 64i128) + 16i128) as u32, v36)?;
+                                            }
+                                        }
                                         self.g_apply(d, "compute", false, false)?;
                                     }
                                 }
@@ -1513,13 +1814,26 @@ impl Lower {
                                     self.g_wr((16i128 + (f4 + 0i128)) as u32, v26)?;
                                     self.g_apply(d, "compute", false, false)?;
                                 } else {
-                                    if f8 <= 15i128 || (f8 >= 16i128 && f8 <= 79i128) || (f8 >= 80i128 && f8 <= 95i128) || (f8 >= 108i128 && f8 <= 109i128) || (f8 >= 110i128 && f8 <= 111i128) || (f8 >= 112i128 && f8 <= 113i128) || (f8 >= 114i128 && f8 <= 117i128) || (f8 >= 118i128 && f8 <= 121i128) || (f8 >= 122i128 && f8 <= 125i128) || f8 >= 126i128 {
+                                    if f8 <= 15i128 || (f8 >= 80i128 && f8 <= 95i128) || (f8 >= 108i128 && f8 <= 109i128) || (f8 >= 110i128 && f8 <= 111i128) || (f8 >= 112i128 && f8 <= 113i128) || (f8 >= 114i128 && f8 <= 117i128) || (f8 >= 118i128 && f8 <= 121i128) || (f8 >= 122i128 && f8 <= 125i128) || f8 >= 126i128 {
                                         v20 = self.g_rd((16i128 + (f4 + 0i128)) as u32)?;
                                         v21 = self.g_rd((32i128 + (f6 + 0i128)) as u32)?;
                                         v3 = self.ci(4i128 as u32);
                                         v22 = self.g_bin(Bin::Mul, v21, v3);
                                         v39 = self.g_load(v20, 4i128 as u8, false)?;
                                         self.g_wr(f8 as u32, v39)?;
+                                        v30 = self.g_postmod(((f4 + 0i128) + 16) as u32, v20, v22, 4i128 as i64)?;
+                                        self.g_wr((16i128 + (f4 + 0i128)) as u32, v30)?;
+                                        self.g_apply(d, "compute", false, false)?;
+                                    } else if (f8 >= 16i128 && f8 <= 79i128) {
+                                        v20 = self.g_rd((16i128 + (f4 + 0i128)) as u32)?;
+                                        v21 = self.g_rd((32i128 + (f6 + 0i128)) as u32)?;
+                                        v3 = self.ci(4i128 as u32);
+                                        v22 = self.g_bin(Bin::Mul, v21, v3);
+                                        v39 = self.g_load(v20, 4i128 as u8, false)?;
+                                        self.g_wr(f8 as u32, v39)?;
+                                        if (f8 >= 64i128) {
+                                            self.g_wr(((f8 - 64i128) + 16i128) as u32, v39)?;
+                                        }
                                         v30 = self.g_postmod(((f4 + 0i128) + 16) as u32, v20, v22, 4i128 as i64)?;
                                         self.g_wr((16i128 + (f4 + 0i128)) as u32, v30)?;
                                         self.g_apply(d, "compute", false, false)?;
@@ -1550,7 +1864,7 @@ impl Lower {
                                     self.g_store(v23, v9, 4i128 as u8)?;
                                     self.g_apply(d, "compute", false, false)?;
                                 } else {
-                                    if f8 <= 15i128 || (f8 >= 16i128 && f8 <= 79i128) || (f8 >= 80i128 && f8 <= 95i128) || (f8 >= 108i128 && f8 <= 109i128) || (f8 >= 110i128 && f8 <= 111i128) || (f8 >= 112i128 && f8 <= 113i128) || (f8 >= 114i128 && f8 <= 117i128) || (f8 >= 118i128 && f8 <= 121i128) || (f8 >= 122i128 && f8 <= 125i128) || f8 >= 126i128 {
+                                    if f8 <= 15i128 || (f8 >= 80i128 && f8 <= 95i128) || (f8 >= 108i128 && f8 <= 109i128) || (f8 >= 110i128 && f8 <= 111i128) || (f8 >= 112i128 && f8 <= 113i128) || (f8 >= 114i128 && f8 <= 117i128) || (f8 >= 118i128 && f8 <= 121i128) || (f8 >= 122i128 && f8 <= 125i128) || f8 >= 126i128 {
                                         v20 = self.g_rd((16i128 + (f4 + 0i128)) as u32)?;
                                         v21 = self.g_rd((32i128 + (f6 + 0i128)) as u32)?;
                                         v3 = self.ci(4i128 as u32);
@@ -1558,6 +1872,18 @@ impl Lower {
                                         v23 = self.g_bin(Bin::Add, v20, v22);
                                         v40 = self.g_load(v23, 4i128 as u8, false)?;
                                         self.g_wr(f8 as u32, v40)?;
+                                        self.g_apply(d, "compute", false, false)?;
+                                    } else if (f8 >= 16i128 && f8 <= 79i128) {
+                                        v20 = self.g_rd((16i128 + (f4 + 0i128)) as u32)?;
+                                        v21 = self.g_rd((32i128 + (f6 + 0i128)) as u32)?;
+                                        v3 = self.ci(4i128 as u32);
+                                        v22 = self.g_bin(Bin::Mul, v21, v3);
+                                        v23 = self.g_bin(Bin::Add, v20, v22);
+                                        v40 = self.g_load(v23, 4i128 as u8, false)?;
+                                        self.g_wr(f8 as u32, v40)?;
+                                        if (f8 >= 64i128) {
+                                            self.g_wr(((f8 - 64i128) + 16i128) as u32, v40)?;
+                                        }
                                         self.g_apply(d, "compute", false, false)?;
                                     } else {
                                         if (f8 == 107i128) {
@@ -1611,7 +1937,17 @@ impl Lower {
                                         v12 = self.g_load(v7, 4i128 as u8, false)?;
                                         v13 = self.g_load(v8, 4i128 as u8, false)?;
                                         self.g_wr(f8 as u32, v12)?;
+                                        if (f8 >= 64i128) {
+                                            if (f8 <= 79i128) {
+                                                self.g_wr(((f8 - 64i128) + 16i128) as u32, v12)?;
+                                            }
+                                        }
                                         self.g_wr((f8 ^ 1i128) as u32, v13)?;
+                                        if ((f8 ^ 1i128) >= 64i128) {
+                                            if ((f8 ^ 1i128) <= 79i128) {
+                                                self.g_wr((((f8 ^ 1i128) - 64i128) + 16i128) as u32, v13)?;
+                                            }
+                                        }
                                         v14 = self.g_postmod(((f4 + 8i128) + 16) as u32, v0, v4, 4i128 as i64)?;
                                         self.g_wr((16i128 + (f4 + 8i128)) as u32, v14)?;
                                     } else {
@@ -1642,7 +1978,17 @@ impl Lower {
                                         v18 = self.g_load(v16, 4i128 as u8, false)?;
                                         v19 = self.g_load(v17, 4i128 as u8, false)?;
                                         self.g_wr(f8 as u32, v18)?;
+                                        if (f8 >= 64i128) {
+                                            if (f8 <= 79i128) {
+                                                self.g_wr(((f8 - 64i128) + 16i128) as u32, v18)?;
+                                            }
+                                        }
                                         self.g_wr((f8 ^ 1i128) as u32, v19)?;
+                                        if ((f8 ^ 1i128) >= 64i128) {
+                                            if ((f8 ^ 1i128) <= 79i128) {
+                                                self.g_wr((((f8 ^ 1i128) - 64i128) + 16i128) as u32, v19)?;
+                                            }
+                                        }
                                     } else {
                                         v18 = self.g_load(v16, 4i128 as u8, false)?;
                                         self.g_wr(f8 as u32, v18)?;
@@ -1676,7 +2022,17 @@ impl Lower {
                                         v27 = self.g_load(v24, 4i128 as u8, false)?;
                                         v28 = self.g_load(v25, 4i128 as u8, false)?;
                                         self.g_wr(f8 as u32, v27)?;
+                                        if (f8 >= 64i128) {
+                                            if (f8 <= 79i128) {
+                                                self.g_wr(((f8 - 64i128) + 16i128) as u32, v27)?;
+                                            }
+                                        }
                                         self.g_wr((f8 ^ 1i128) as u32, v28)?;
+                                        if ((f8 ^ 1i128) >= 64i128) {
+                                            if ((f8 ^ 1i128) <= 79i128) {
+                                                self.g_wr((((f8 ^ 1i128) - 64i128) + 16i128) as u32, v28)?;
+                                            }
+                                        }
                                         v29 = self.g_postmod(((f4 + 0i128) + 16) as u32, v20, v22, 4i128 as i64)?;
                                         self.g_wr((16i128 + (f4 + 0i128)) as u32, v29)?;
                                     } else {
@@ -1707,7 +2063,17 @@ impl Lower {
                                         v33 = self.g_load(v31, 4i128 as u8, false)?;
                                         v34 = self.g_load(v32, 4i128 as u8, false)?;
                                         self.g_wr(f8 as u32, v33)?;
+                                        if (f8 >= 64i128) {
+                                            if (f8 <= 79i128) {
+                                                self.g_wr(((f8 - 64i128) + 16i128) as u32, v33)?;
+                                            }
+                                        }
                                         self.g_wr((f8 ^ 1i128) as u32, v34)?;
+                                        if ((f8 ^ 1i128) >= 64i128) {
+                                            if ((f8 ^ 1i128) <= 79i128) {
+                                                self.g_wr((((f8 ^ 1i128) - 64i128) + 16i128) as u32, v34)?;
+                                            }
+                                        }
                                     } else {
                                         v33 = self.g_load(v31, 4i128 as u8, false)?;
                                         self.g_wr(f8 as u32, v33)?;
@@ -1739,6 +2105,11 @@ impl Lower {
                                         v4 = self.g_bin(Bin::Mul, v2, v3);
                                         v35 = self.g_load(v0, 4i128 as u8, false)?;
                                         self.g_wr(f8 as u32, v35)?;
+                                        if (f8 >= 64i128) {
+                                            if (f8 <= 79i128) {
+                                                self.g_wr(((f8 - 64i128) + 16i128) as u32, v35)?;
+                                            }
+                                        }
                                         v15 = self.g_postmod(((f4 + 8i128) + 16) as u32, v0, v4, 4i128 as i64)?;
                                         self.g_wr((16i128 + (f4 + 8i128)) as u32, v15)?;
                                     }
@@ -1765,6 +2136,11 @@ impl Lower {
                                         v5 = self.g_bin(Bin::Add, v0, v4);
                                         v36 = self.g_load(v5, 4i128 as u8, false)?;
                                         self.g_wr(f8 as u32, v36)?;
+                                        if (f8 >= 64i128) {
+                                            if (f8 <= 79i128) {
+                                                self.g_wr(((f8 - 64i128) + 16i128) as u32, v36)?;
+                                            }
+                                        }
                                     }
                                 }
                             }
@@ -1826,7 +2202,7 @@ impl Lower {
                                         self.g_wr((f8 + 80i128) as u32, v28)?;
                                         v29 = self.g_postmod(((f4 + 0i128) + 16) as u32, v20, v22, 4i128 as i64)?;
                                         self.g_wr((16i128 + (f4 + 0i128)) as u32, v29)?;
-                                    } else if (f8 >= 16i128 && f8 <= 79i128) || (f8 >= 110i128 && f8 <= 111i128) || (f8 >= 114i128 && f8 <= 117i128) || (f8 >= 122i128 && f8 <= 125i128) {
+                                    } else if (f8 >= 16i128 && f8 <= 79i128) {
                                         self.g_cond(f1 as u32, false)?;
                                         v20 = self.g_rd((16i128 + (f4 + 0i128)) as u32)?;
                                         v21 = self.g_rd((32i128 + (f6 + 0i128)) as u32)?;
@@ -1834,6 +2210,9 @@ impl Lower {
                                         v22 = self.g_bin(Bin::Mul, v21, v3);
                                         v39 = self.g_load(v20, 4i128 as u8, false)?;
                                         self.g_wr(f8 as u32, v39)?;
+                                        if (f8 >= 64i128) {
+                                            self.g_wr(((f8 - 64i128) + 16i128) as u32, v39)?;
+                                        }
                                         v30 = self.g_postmod(((f4 + 0i128) + 16) as u32, v20, v22, 4i128 as i64)?;
                                         self.g_wr((16i128 + (f4 + 0i128)) as u32, v30)?;
                                     } else if (f8 >= 80i128 && f8 <= 95i128) {
@@ -1863,7 +2242,7 @@ impl Lower {
                                             v30 = self.g_postmod(((f4 + 0i128) + 16) as u32, v20, v22, 4i128 as i64)?;
                                             self.g_wr((16i128 + (f4 + 0i128)) as u32, v30)?;
                                         }
-                                    } else {
+                                    } else if (f8 >= 108i128 && f8 <= 109i128) || (f8 >= 112i128 && f8 <= 113i128) || (f8 >= 118i128 && f8 <= 121i128) || f8 >= 126i128 {
                                         if ((f8 ^ 1i128) == 107i128) {
                                             return refuse("combined PX transfer");
                                         } else {
@@ -1877,9 +2256,24 @@ impl Lower {
                                             self.g_wr(f8 as u32, v39)?;
                                             v28 = self.g_load(v25, 4i128 as u8, false)?;
                                             self.g_wr((f8 ^ 1i128) as u32, v28)?;
+                                            if ((f8 ^ 1i128) >= 64i128) {
+                                                if ((f8 ^ 1i128) <= 79i128) {
+                                                    self.g_wr((((f8 ^ 1i128) - 64i128) + 16i128) as u32, v28)?;
+                                                }
+                                            }
                                             v29 = self.g_postmod(((f4 + 0i128) + 16) as u32, v20, v22, 4i128 as i64)?;
                                             self.g_wr((16i128 + (f4 + 0i128)) as u32, v29)?;
                                         }
+                                    } else {
+                                        self.g_cond(f1 as u32, false)?;
+                                        v20 = self.g_rd((16i128 + (f4 + 0i128)) as u32)?;
+                                        v21 = self.g_rd((32i128 + (f6 + 0i128)) as u32)?;
+                                        v3 = self.ci(4i128 as u32);
+                                        v22 = self.g_bin(Bin::Mul, v21, v3);
+                                        v39 = self.g_load(v20, 4i128 as u8, false)?;
+                                        self.g_wr(f8 as u32, v39)?;
+                                        v30 = self.g_postmod(((f4 + 0i128) + 16) as u32, v20, v22, 4i128 as i64)?;
+                                        self.g_wr((16i128 + (f4 + 0i128)) as u32, v30)?;
                                     }
                                 }
                             } else {
@@ -1937,7 +2331,7 @@ impl Lower {
                                         self.g_wr(f8 as u32, v40)?;
                                         v34 = self.g_load(v32, 4i128 as u8, false)?;
                                         self.g_wr((f8 + 80i128) as u32, v34)?;
-                                    } else if (f8 >= 16i128 && f8 <= 79i128) || (f8 >= 110i128 && f8 <= 111i128) || (f8 >= 114i128 && f8 <= 117i128) || (f8 >= 122i128 && f8 <= 125i128) {
+                                    } else if (f8 >= 16i128 && f8 <= 79i128) {
                                         self.g_cond(f1 as u32, false)?;
                                         v20 = self.g_rd((16i128 + (f4 + 0i128)) as u32)?;
                                         v21 = self.g_rd((32i128 + (f6 + 0i128)) as u32)?;
@@ -1946,6 +2340,9 @@ impl Lower {
                                         v23 = self.g_bin(Bin::Add, v20, v22);
                                         v40 = self.g_load(v23, 4i128 as u8, false)?;
                                         self.g_wr(f8 as u32, v40)?;
+                                        if (f8 >= 64i128) {
+                                            self.g_wr(((f8 - 64i128) + 16i128) as u32, v40)?;
+                                        }
                                     } else if (f8 >= 80i128 && f8 <= 95i128) {
                                         self.g_cond(f1 as u32, false)?;
                                         v20 = self.g_rd((16i128 + (f4 + 0i128)) as u32)?;
@@ -1971,7 +2368,7 @@ impl Lower {
                                             v40 = self.g_load(v23, 4i128 as u8, false)?;
                                             self.g_wr(f8 as u32, v40)?;
                                         }
-                                    } else {
+                                    } else if (f8 >= 108i128 && f8 <= 109i128) || (f8 >= 112i128 && f8 <= 113i128) || (f8 >= 118i128 && f8 <= 121i128) || f8 >= 126i128 {
                                         if ((f8 ^ 1i128) == 107i128) {
                                             return refuse("combined PX transfer");
                                         } else {
@@ -1986,7 +2383,21 @@ impl Lower {
                                             self.g_wr(f8 as u32, v40)?;
                                             v34 = self.g_load(v32, 4i128 as u8, false)?;
                                             self.g_wr((f8 ^ 1i128) as u32, v34)?;
+                                            if ((f8 ^ 1i128) >= 64i128) {
+                                                if ((f8 ^ 1i128) <= 79i128) {
+                                                    self.g_wr((((f8 ^ 1i128) - 64i128) + 16i128) as u32, v34)?;
+                                                }
+                                            }
                                         }
+                                    } else {
+                                        self.g_cond(f1 as u32, false)?;
+                                        v20 = self.g_rd((16i128 + (f4 + 0i128)) as u32)?;
+                                        v21 = self.g_rd((32i128 + (f6 + 0i128)) as u32)?;
+                                        v3 = self.ci(4i128 as u32);
+                                        v22 = self.g_bin(Bin::Mul, v21, v3);
+                                        v23 = self.g_bin(Bin::Add, v20, v22);
+                                        v40 = self.g_load(v23, 4i128 as u8, false)?;
+                                        self.g_wr(f8 as u32, v40)?;
                                     }
                                 }
                             }
@@ -2021,7 +2432,17 @@ impl Lower {
                                         v12 = self.g_load(v7, 4i128 as u8, false)?;
                                         v13 = self.g_load(v8, 4i128 as u8, false)?;
                                         self.g_wr(f8 as u32, v12)?;
+                                        if (f8 >= 64i128) {
+                                            if (f8 <= 79i128) {
+                                                self.g_wr(((f8 - 64i128) + 16i128) as u32, v12)?;
+                                            }
+                                        }
                                         self.g_wr((f8 ^ 1i128) as u32, v13)?;
+                                        if ((f8 ^ 1i128) >= 64i128) {
+                                            if ((f8 ^ 1i128) <= 79i128) {
+                                                self.g_wr((((f8 ^ 1i128) - 64i128) + 16i128) as u32, v13)?;
+                                            }
+                                        }
                                         v14 = self.g_postmod(((f4 + 8i128) + 16) as u32, v0, v4, 4i128 as i64)?;
                                         self.g_wr((16i128 + (f4 + 8i128)) as u32, v14)?;
                                     } else {
@@ -2052,7 +2473,17 @@ impl Lower {
                                         v18 = self.g_load(v16, 4i128 as u8, false)?;
                                         v19 = self.g_load(v17, 4i128 as u8, false)?;
                                         self.g_wr(f8 as u32, v18)?;
+                                        if (f8 >= 64i128) {
+                                            if (f8 <= 79i128) {
+                                                self.g_wr(((f8 - 64i128) + 16i128) as u32, v18)?;
+                                            }
+                                        }
                                         self.g_wr((f8 ^ 1i128) as u32, v19)?;
+                                        if ((f8 ^ 1i128) >= 64i128) {
+                                            if ((f8 ^ 1i128) <= 79i128) {
+                                                self.g_wr((((f8 ^ 1i128) - 64i128) + 16i128) as u32, v19)?;
+                                            }
+                                        }
                                     } else {
                                         v18 = self.g_load(v16, 4i128 as u8, false)?;
                                         self.g_wr(f8 as u32, v18)?;
@@ -2086,7 +2517,17 @@ impl Lower {
                                         v27 = self.g_load(v24, 4i128 as u8, false)?;
                                         v28 = self.g_load(v25, 4i128 as u8, false)?;
                                         self.g_wr(f8 as u32, v27)?;
+                                        if (f8 >= 64i128) {
+                                            if (f8 <= 79i128) {
+                                                self.g_wr(((f8 - 64i128) + 16i128) as u32, v27)?;
+                                            }
+                                        }
                                         self.g_wr((f8 ^ 1i128) as u32, v28)?;
+                                        if ((f8 ^ 1i128) >= 64i128) {
+                                            if ((f8 ^ 1i128) <= 79i128) {
+                                                self.g_wr((((f8 ^ 1i128) - 64i128) + 16i128) as u32, v28)?;
+                                            }
+                                        }
                                         v29 = self.g_postmod(((f4 + 0i128) + 16) as u32, v20, v22, 4i128 as i64)?;
                                         self.g_wr((16i128 + (f4 + 0i128)) as u32, v29)?;
                                     } else {
@@ -2117,7 +2558,17 @@ impl Lower {
                                         v33 = self.g_load(v31, 4i128 as u8, false)?;
                                         v34 = self.g_load(v32, 4i128 as u8, false)?;
                                         self.g_wr(f8 as u32, v33)?;
+                                        if (f8 >= 64i128) {
+                                            if (f8 <= 79i128) {
+                                                self.g_wr(((f8 - 64i128) + 16i128) as u32, v33)?;
+                                            }
+                                        }
                                         self.g_wr((f8 ^ 1i128) as u32, v34)?;
+                                        if ((f8 ^ 1i128) >= 64i128) {
+                                            if ((f8 ^ 1i128) <= 79i128) {
+                                                self.g_wr((((f8 ^ 1i128) - 64i128) + 16i128) as u32, v34)?;
+                                            }
+                                        }
                                     } else {
                                         v33 = self.g_load(v31, 4i128 as u8, false)?;
                                         self.g_wr(f8 as u32, v33)?;
@@ -2147,6 +2598,11 @@ impl Lower {
                                         v4 = self.g_bin(Bin::Mul, v2, v3);
                                         v35 = self.g_load(v0, 4i128 as u8, false)?;
                                         self.g_wr(f8 as u32, v35)?;
+                                        if (f8 >= 64i128) {
+                                            if (f8 <= 79i128) {
+                                                self.g_wr(((f8 - 64i128) + 16i128) as u32, v35)?;
+                                            }
+                                        }
                                         v15 = self.g_postmod(((f4 + 8i128) + 16) as u32, v0, v4, 4i128 as i64)?;
                                         self.g_wr((16i128 + (f4 + 8i128)) as u32, v15)?;
                                     }
@@ -2171,6 +2627,11 @@ impl Lower {
                                         v5 = self.g_bin(Bin::Add, v0, v4);
                                         v36 = self.g_load(v5, 4i128 as u8, false)?;
                                         self.g_wr(f8 as u32, v36)?;
+                                        if (f8 >= 64i128) {
+                                            if (f8 <= 79i128) {
+                                                self.g_wr(((f8 - 64i128) + 16i128) as u32, v36)?;
+                                            }
+                                        }
                                     }
                                 }
                             }
@@ -2230,13 +2691,16 @@ impl Lower {
                                         self.g_wr((f8 + 80i128) as u32, v28)?;
                                         v29 = self.g_postmod(((f4 + 0i128) + 16) as u32, v20, v22, 4i128 as i64)?;
                                         self.g_wr((16i128 + (f4 + 0i128)) as u32, v29)?;
-                                    } else if (f8 >= 16i128 && f8 <= 79i128) || (f8 >= 110i128 && f8 <= 111i128) || (f8 >= 114i128 && f8 <= 117i128) || (f8 >= 122i128 && f8 <= 125i128) {
+                                    } else if (f8 >= 16i128 && f8 <= 79i128) {
                                         v20 = self.g_rd((16i128 + (f4 + 0i128)) as u32)?;
                                         v21 = self.g_rd((32i128 + (f6 + 0i128)) as u32)?;
                                         v3 = self.ci(4i128 as u32);
                                         v22 = self.g_bin(Bin::Mul, v21, v3);
                                         v39 = self.g_load(v20, 4i128 as u8, false)?;
                                         self.g_wr(f8 as u32, v39)?;
+                                        if (f8 >= 64i128) {
+                                            self.g_wr(((f8 - 64i128) + 16i128) as u32, v39)?;
+                                        }
                                         v30 = self.g_postmod(((f4 + 0i128) + 16) as u32, v20, v22, 4i128 as i64)?;
                                         self.g_wr((16i128 + (f4 + 0i128)) as u32, v30)?;
                                     } else if (f8 >= 80i128 && f8 <= 95i128) {
@@ -2264,7 +2728,7 @@ impl Lower {
                                             v30 = self.g_postmod(((f4 + 0i128) + 16) as u32, v20, v22, 4i128 as i64)?;
                                             self.g_wr((16i128 + (f4 + 0i128)) as u32, v30)?;
                                         }
-                                    } else {
+                                    } else if (f8 >= 108i128 && f8 <= 109i128) || (f8 >= 112i128 && f8 <= 113i128) || (f8 >= 118i128 && f8 <= 121i128) || f8 >= 126i128 {
                                         if ((f8 ^ 1i128) == 107i128) {
                                             return refuse("combined PX transfer");
                                         } else {
@@ -2277,9 +2741,23 @@ impl Lower {
                                             self.g_wr(f8 as u32, v39)?;
                                             v28 = self.g_load(v25, 4i128 as u8, false)?;
                                             self.g_wr((f8 ^ 1i128) as u32, v28)?;
+                                            if ((f8 ^ 1i128) >= 64i128) {
+                                                if ((f8 ^ 1i128) <= 79i128) {
+                                                    self.g_wr((((f8 ^ 1i128) - 64i128) + 16i128) as u32, v28)?;
+                                                }
+                                            }
                                             v29 = self.g_postmod(((f4 + 0i128) + 16) as u32, v20, v22, 4i128 as i64)?;
                                             self.g_wr((16i128 + (f4 + 0i128)) as u32, v29)?;
                                         }
+                                    } else {
+                                        v20 = self.g_rd((16i128 + (f4 + 0i128)) as u32)?;
+                                        v21 = self.g_rd((32i128 + (f6 + 0i128)) as u32)?;
+                                        v3 = self.ci(4i128 as u32);
+                                        v22 = self.g_bin(Bin::Mul, v21, v3);
+                                        v39 = self.g_load(v20, 4i128 as u8, false)?;
+                                        self.g_wr(f8 as u32, v39)?;
+                                        v30 = self.g_postmod(((f4 + 0i128) + 16) as u32, v20, v22, 4i128 as i64)?;
+                                        self.g_wr((16i128 + (f4 + 0i128)) as u32, v30)?;
                                     }
                                 }
                             } else {
@@ -2335,7 +2813,7 @@ impl Lower {
                                         self.g_wr(f8 as u32, v40)?;
                                         v34 = self.g_load(v32, 4i128 as u8, false)?;
                                         self.g_wr((f8 + 80i128) as u32, v34)?;
-                                    } else if (f8 >= 16i128 && f8 <= 79i128) || (f8 >= 110i128 && f8 <= 111i128) || (f8 >= 114i128 && f8 <= 117i128) || (f8 >= 122i128 && f8 <= 125i128) {
+                                    } else if (f8 >= 16i128 && f8 <= 79i128) {
                                         v20 = self.g_rd((16i128 + (f4 + 0i128)) as u32)?;
                                         v21 = self.g_rd((32i128 + (f6 + 0i128)) as u32)?;
                                         v3 = self.ci(4i128 as u32);
@@ -2343,6 +2821,9 @@ impl Lower {
                                         v23 = self.g_bin(Bin::Add, v20, v22);
                                         v40 = self.g_load(v23, 4i128 as u8, false)?;
                                         self.g_wr(f8 as u32, v40)?;
+                                        if (f8 >= 64i128) {
+                                            self.g_wr(((f8 - 64i128) + 16i128) as u32, v40)?;
+                                        }
                                     } else if (f8 >= 80i128 && f8 <= 95i128) {
                                         v20 = self.g_rd((16i128 + (f4 + 0i128)) as u32)?;
                                         v21 = self.g_rd((32i128 + (f6 + 0i128)) as u32)?;
@@ -2366,7 +2847,7 @@ impl Lower {
                                             v40 = self.g_load(v23, 4i128 as u8, false)?;
                                             self.g_wr(f8 as u32, v40)?;
                                         }
-                                    } else {
+                                    } else if (f8 >= 108i128 && f8 <= 109i128) || (f8 >= 112i128 && f8 <= 113i128) || (f8 >= 118i128 && f8 <= 121i128) || f8 >= 126i128 {
                                         if ((f8 ^ 1i128) == 107i128) {
                                             return refuse("combined PX transfer");
                                         } else {
@@ -2380,7 +2861,20 @@ impl Lower {
                                             self.g_wr(f8 as u32, v40)?;
                                             v34 = self.g_load(v32, 4i128 as u8, false)?;
                                             self.g_wr((f8 ^ 1i128) as u32, v34)?;
+                                            if ((f8 ^ 1i128) >= 64i128) {
+                                                if ((f8 ^ 1i128) <= 79i128) {
+                                                    self.g_wr((((f8 ^ 1i128) - 64i128) + 16i128) as u32, v34)?;
+                                                }
+                                            }
                                         }
+                                    } else {
+                                        v20 = self.g_rd((16i128 + (f4 + 0i128)) as u32)?;
+                                        v21 = self.g_rd((32i128 + (f6 + 0i128)) as u32)?;
+                                        v3 = self.ci(4i128 as u32);
+                                        v22 = self.g_bin(Bin::Mul, v21, v3);
+                                        v23 = self.g_bin(Bin::Add, v20, v22);
+                                        v40 = self.g_load(v23, 4i128 as u8, false)?;
+                                        self.g_wr(f8 as u32, v40)?;
                                     }
                                 }
                             }
@@ -2418,7 +2912,17 @@ impl Lower {
                                         v12 = self.g_load(v7, 4i128 as u8, false)?;
                                         v13 = self.g_load(v8, 4i128 as u8, false)?;
                                         self.g_wr(f8 as u32, v12)?;
+                                        if (f8 >= 64i128) {
+                                            if (f8 <= 79i128) {
+                                                self.g_wr(((f8 - 64i128) + 16i128) as u32, v12)?;
+                                            }
+                                        }
                                         self.g_wr((f8 ^ 1i128) as u32, v13)?;
+                                        if ((f8 ^ 1i128) >= 64i128) {
+                                            if ((f8 ^ 1i128) <= 79i128) {
+                                                self.g_wr((((f8 ^ 1i128) - 64i128) + 16i128) as u32, v13)?;
+                                            }
+                                        }
                                         v14 = self.g_postmod(((f4 + 8i128) + 16) as u32, v0, v4, 4i128 as i64)?;
                                         self.g_wr((16i128 + (f4 + 8i128)) as u32, v14)?;
                                     } else {
@@ -2449,7 +2953,17 @@ impl Lower {
                                         v18 = self.g_load(v16, 4i128 as u8, false)?;
                                         v19 = self.g_load(v17, 4i128 as u8, false)?;
                                         self.g_wr(f8 as u32, v18)?;
+                                        if (f8 >= 64i128) {
+                                            if (f8 <= 79i128) {
+                                                self.g_wr(((f8 - 64i128) + 16i128) as u32, v18)?;
+                                            }
+                                        }
                                         self.g_wr((f8 ^ 1i128) as u32, v19)?;
+                                        if ((f8 ^ 1i128) >= 64i128) {
+                                            if ((f8 ^ 1i128) <= 79i128) {
+                                                self.g_wr((((f8 ^ 1i128) - 64i128) + 16i128) as u32, v19)?;
+                                            }
+                                        }
                                     } else {
                                         v18 = self.g_load(v16, 4i128 as u8, false)?;
                                         self.g_wr(f8 as u32, v18)?;
@@ -2483,7 +2997,17 @@ impl Lower {
                                         v27 = self.g_load(v24, 4i128 as u8, false)?;
                                         v28 = self.g_load(v25, 4i128 as u8, false)?;
                                         self.g_wr(f8 as u32, v27)?;
+                                        if (f8 >= 64i128) {
+                                            if (f8 <= 79i128) {
+                                                self.g_wr(((f8 - 64i128) + 16i128) as u32, v27)?;
+                                            }
+                                        }
                                         self.g_wr((f8 ^ 1i128) as u32, v28)?;
+                                        if ((f8 ^ 1i128) >= 64i128) {
+                                            if ((f8 ^ 1i128) <= 79i128) {
+                                                self.g_wr((((f8 ^ 1i128) - 64i128) + 16i128) as u32, v28)?;
+                                            }
+                                        }
                                         v29 = self.g_postmod(((f4 + 0i128) + 16) as u32, v20, v22, 4i128 as i64)?;
                                         self.g_wr((16i128 + (f4 + 0i128)) as u32, v29)?;
                                     } else {
@@ -2514,7 +3038,17 @@ impl Lower {
                                         v33 = self.g_load(v31, 4i128 as u8, false)?;
                                         v34 = self.g_load(v32, 4i128 as u8, false)?;
                                         self.g_wr(f8 as u32, v33)?;
+                                        if (f8 >= 64i128) {
+                                            if (f8 <= 79i128) {
+                                                self.g_wr(((f8 - 64i128) + 16i128) as u32, v33)?;
+                                            }
+                                        }
                                         self.g_wr((f8 ^ 1i128) as u32, v34)?;
+                                        if ((f8 ^ 1i128) >= 64i128) {
+                                            if ((f8 ^ 1i128) <= 79i128) {
+                                                self.g_wr((((f8 ^ 1i128) - 64i128) + 16i128) as u32, v34)?;
+                                            }
+                                        }
                                     } else {
                                         v33 = self.g_load(v31, 4i128 as u8, false)?;
                                         self.g_wr(f8 as u32, v33)?;
@@ -2546,6 +3080,11 @@ impl Lower {
                                         v4 = self.g_bin(Bin::Mul, v2, v3);
                                         v35 = self.g_load(v0, 4i128 as u8, false)?;
                                         self.g_wr(f8 as u32, v35)?;
+                                        if (f8 >= 64i128) {
+                                            if (f8 <= 79i128) {
+                                                self.g_wr(((f8 - 64i128) + 16i128) as u32, v35)?;
+                                            }
+                                        }
                                         v15 = self.g_postmod(((f4 + 8i128) + 16) as u32, v0, v4, 4i128 as i64)?;
                                         self.g_wr((16i128 + (f4 + 8i128)) as u32, v15)?;
                                     }
@@ -2572,6 +3111,11 @@ impl Lower {
                                         v5 = self.g_bin(Bin::Add, v0, v4);
                                         v36 = self.g_load(v5, 4i128 as u8, false)?;
                                         self.g_wr(f8 as u32, v36)?;
+                                        if (f8 >= 64i128) {
+                                            if (f8 <= 79i128) {
+                                                self.g_wr(((f8 - 64i128) + 16i128) as u32, v36)?;
+                                            }
+                                        }
                                     }
                                 }
                             }
@@ -2588,7 +3132,7 @@ impl Lower {
                                     v26 = self.g_postmod(((f4 + 0i128) + 16) as u32, v20, v22, 4i128 as i64)?;
                                     self.g_wr((16i128 + (f4 + 0i128)) as u32, v26)?;
                                 } else {
-                                    if f8 <= 15i128 || (f8 >= 16i128 && f8 <= 79i128) || (f8 >= 80i128 && f8 <= 95i128) || (f8 >= 108i128 && f8 <= 109i128) || (f8 >= 110i128 && f8 <= 111i128) || (f8 >= 112i128 && f8 <= 113i128) || (f8 >= 114i128 && f8 <= 117i128) || (f8 >= 118i128 && f8 <= 121i128) || (f8 >= 122i128 && f8 <= 125i128) || f8 >= 126i128 {
+                                    if f8 <= 15i128 || (f8 >= 80i128 && f8 <= 95i128) || (f8 >= 108i128 && f8 <= 109i128) || (f8 >= 110i128 && f8 <= 111i128) || (f8 >= 112i128 && f8 <= 113i128) || (f8 >= 114i128 && f8 <= 117i128) || (f8 >= 118i128 && f8 <= 121i128) || (f8 >= 122i128 && f8 <= 125i128) || f8 >= 126i128 {
                                         self.g_cond(f1 as u32, false)?;
                                         v20 = self.g_rd((16i128 + (f4 + 0i128)) as u32)?;
                                         v21 = self.g_rd((32i128 + (f6 + 0i128)) as u32)?;
@@ -2596,6 +3140,19 @@ impl Lower {
                                         v22 = self.g_bin(Bin::Mul, v21, v3);
                                         v39 = self.g_load(v20, 4i128 as u8, false)?;
                                         self.g_wr(f8 as u32, v39)?;
+                                        v30 = self.g_postmod(((f4 + 0i128) + 16) as u32, v20, v22, 4i128 as i64)?;
+                                        self.g_wr((16i128 + (f4 + 0i128)) as u32, v30)?;
+                                    } else if (f8 >= 16i128 && f8 <= 79i128) {
+                                        self.g_cond(f1 as u32, false)?;
+                                        v20 = self.g_rd((16i128 + (f4 + 0i128)) as u32)?;
+                                        v21 = self.g_rd((32i128 + (f6 + 0i128)) as u32)?;
+                                        v3 = self.ci(4i128 as u32);
+                                        v22 = self.g_bin(Bin::Mul, v21, v3);
+                                        v39 = self.g_load(v20, 4i128 as u8, false)?;
+                                        self.g_wr(f8 as u32, v39)?;
+                                        if (f8 >= 64i128) {
+                                            self.g_wr(((f8 - 64i128) + 16i128) as u32, v39)?;
+                                        }
                                         v30 = self.g_postmod(((f4 + 0i128) + 16) as u32, v20, v22, 4i128 as i64)?;
                                         self.g_wr((16i128 + (f4 + 0i128)) as u32, v30)?;
                                     } else {
@@ -2625,7 +3182,7 @@ impl Lower {
                                     v9 = self.g_rd(f8 as u32)?;
                                     self.g_store(v23, v9, 4i128 as u8)?;
                                 } else {
-                                    if f8 <= 15i128 || (f8 >= 16i128 && f8 <= 79i128) || (f8 >= 80i128 && f8 <= 95i128) || (f8 >= 108i128 && f8 <= 109i128) || (f8 >= 110i128 && f8 <= 111i128) || (f8 >= 112i128 && f8 <= 113i128) || (f8 >= 114i128 && f8 <= 117i128) || (f8 >= 118i128 && f8 <= 121i128) || (f8 >= 122i128 && f8 <= 125i128) || f8 >= 126i128 {
+                                    if f8 <= 15i128 || (f8 >= 80i128 && f8 <= 95i128) || (f8 >= 108i128 && f8 <= 109i128) || (f8 >= 110i128 && f8 <= 111i128) || (f8 >= 112i128 && f8 <= 113i128) || (f8 >= 114i128 && f8 <= 117i128) || (f8 >= 118i128 && f8 <= 121i128) || (f8 >= 122i128 && f8 <= 125i128) || f8 >= 126i128 {
                                         self.g_cond(f1 as u32, false)?;
                                         v20 = self.g_rd((16i128 + (f4 + 0i128)) as u32)?;
                                         v21 = self.g_rd((32i128 + (f6 + 0i128)) as u32)?;
@@ -2634,6 +3191,18 @@ impl Lower {
                                         v23 = self.g_bin(Bin::Add, v20, v22);
                                         v40 = self.g_load(v23, 4i128 as u8, false)?;
                                         self.g_wr(f8 as u32, v40)?;
+                                    } else if (f8 >= 16i128 && f8 <= 79i128) {
+                                        self.g_cond(f1 as u32, false)?;
+                                        v20 = self.g_rd((16i128 + (f4 + 0i128)) as u32)?;
+                                        v21 = self.g_rd((32i128 + (f6 + 0i128)) as u32)?;
+                                        v3 = self.ci(4i128 as u32);
+                                        v22 = self.g_bin(Bin::Mul, v21, v3);
+                                        v23 = self.g_bin(Bin::Add, v20, v22);
+                                        v40 = self.g_load(v23, 4i128 as u8, false)?;
+                                        self.g_wr(f8 as u32, v40)?;
+                                        if (f8 >= 64i128) {
+                                            self.g_wr(((f8 - 64i128) + 16i128) as u32, v40)?;
+                                        }
                                     } else {
                                         if (f8 == 107i128) {
                                             return refuse("combined PX transfer");
@@ -2681,7 +3250,17 @@ impl Lower {
                                         v12 = self.g_load(v7, 4i128 as u8, false)?;
                                         v13 = self.g_load(v8, 4i128 as u8, false)?;
                                         self.g_wr(f8 as u32, v12)?;
+                                        if (f8 >= 64i128) {
+                                            if (f8 <= 79i128) {
+                                                self.g_wr(((f8 - 64i128) + 16i128) as u32, v12)?;
+                                            }
+                                        }
                                         self.g_wr((f8 ^ 1i128) as u32, v13)?;
+                                        if ((f8 ^ 1i128) >= 64i128) {
+                                            if ((f8 ^ 1i128) <= 79i128) {
+                                                self.g_wr((((f8 ^ 1i128) - 64i128) + 16i128) as u32, v13)?;
+                                            }
+                                        }
                                         v14 = self.g_postmod(((f4 + 8i128) + 16) as u32, v0, v4, 4i128 as i64)?;
                                         self.g_wr((16i128 + (f4 + 8i128)) as u32, v14)?;
                                     } else {
@@ -2712,7 +3291,17 @@ impl Lower {
                                         v18 = self.g_load(v16, 4i128 as u8, false)?;
                                         v19 = self.g_load(v17, 4i128 as u8, false)?;
                                         self.g_wr(f8 as u32, v18)?;
+                                        if (f8 >= 64i128) {
+                                            if (f8 <= 79i128) {
+                                                self.g_wr(((f8 - 64i128) + 16i128) as u32, v18)?;
+                                            }
+                                        }
                                         self.g_wr((f8 ^ 1i128) as u32, v19)?;
+                                        if ((f8 ^ 1i128) >= 64i128) {
+                                            if ((f8 ^ 1i128) <= 79i128) {
+                                                self.g_wr((((f8 ^ 1i128) - 64i128) + 16i128) as u32, v19)?;
+                                            }
+                                        }
                                     } else {
                                         v18 = self.g_load(v16, 4i128 as u8, false)?;
                                         self.g_wr(f8 as u32, v18)?;
@@ -2746,7 +3335,17 @@ impl Lower {
                                         v27 = self.g_load(v24, 4i128 as u8, false)?;
                                         v28 = self.g_load(v25, 4i128 as u8, false)?;
                                         self.g_wr(f8 as u32, v27)?;
+                                        if (f8 >= 64i128) {
+                                            if (f8 <= 79i128) {
+                                                self.g_wr(((f8 - 64i128) + 16i128) as u32, v27)?;
+                                            }
+                                        }
                                         self.g_wr((f8 ^ 1i128) as u32, v28)?;
+                                        if ((f8 ^ 1i128) >= 64i128) {
+                                            if ((f8 ^ 1i128) <= 79i128) {
+                                                self.g_wr((((f8 ^ 1i128) - 64i128) + 16i128) as u32, v28)?;
+                                            }
+                                        }
                                         v29 = self.g_postmod(((f4 + 0i128) + 16) as u32, v20, v22, 4i128 as i64)?;
                                         self.g_wr((16i128 + (f4 + 0i128)) as u32, v29)?;
                                     } else {
@@ -2777,7 +3376,17 @@ impl Lower {
                                         v33 = self.g_load(v31, 4i128 as u8, false)?;
                                         v34 = self.g_load(v32, 4i128 as u8, false)?;
                                         self.g_wr(f8 as u32, v33)?;
+                                        if (f8 >= 64i128) {
+                                            if (f8 <= 79i128) {
+                                                self.g_wr(((f8 - 64i128) + 16i128) as u32, v33)?;
+                                            }
+                                        }
                                         self.g_wr((f8 ^ 1i128) as u32, v34)?;
+                                        if ((f8 ^ 1i128) >= 64i128) {
+                                            if ((f8 ^ 1i128) <= 79i128) {
+                                                self.g_wr((((f8 ^ 1i128) - 64i128) + 16i128) as u32, v34)?;
+                                            }
+                                        }
                                     } else {
                                         v33 = self.g_load(v31, 4i128 as u8, false)?;
                                         self.g_wr(f8 as u32, v33)?;
@@ -2807,6 +3416,11 @@ impl Lower {
                                         v4 = self.g_bin(Bin::Mul, v2, v3);
                                         v35 = self.g_load(v0, 4i128 as u8, false)?;
                                         self.g_wr(f8 as u32, v35)?;
+                                        if (f8 >= 64i128) {
+                                            if (f8 <= 79i128) {
+                                                self.g_wr(((f8 - 64i128) + 16i128) as u32, v35)?;
+                                            }
+                                        }
                                         v15 = self.g_postmod(((f4 + 8i128) + 16) as u32, v0, v4, 4i128 as i64)?;
                                         self.g_wr((16i128 + (f4 + 8i128)) as u32, v15)?;
                                     }
@@ -2831,6 +3445,11 @@ impl Lower {
                                         v5 = self.g_bin(Bin::Add, v0, v4);
                                         v36 = self.g_load(v5, 4i128 as u8, false)?;
                                         self.g_wr(f8 as u32, v36)?;
+                                        if (f8 >= 64i128) {
+                                            if (f8 <= 79i128) {
+                                                self.g_wr(((f8 - 64i128) + 16i128) as u32, v36)?;
+                                            }
+                                        }
                                     }
                                 }
                             }
@@ -2846,13 +3465,25 @@ impl Lower {
                                     v26 = self.g_postmod(((f4 + 0i128) + 16) as u32, v20, v22, 4i128 as i64)?;
                                     self.g_wr((16i128 + (f4 + 0i128)) as u32, v26)?;
                                 } else {
-                                    if f8 <= 15i128 || (f8 >= 16i128 && f8 <= 79i128) || (f8 >= 80i128 && f8 <= 95i128) || (f8 >= 108i128 && f8 <= 109i128) || (f8 >= 110i128 && f8 <= 111i128) || (f8 >= 112i128 && f8 <= 113i128) || (f8 >= 114i128 && f8 <= 117i128) || (f8 >= 118i128 && f8 <= 121i128) || (f8 >= 122i128 && f8 <= 125i128) || f8 >= 126i128 {
+                                    if f8 <= 15i128 || (f8 >= 80i128 && f8 <= 95i128) || (f8 >= 108i128 && f8 <= 109i128) || (f8 >= 110i128 && f8 <= 111i128) || (f8 >= 112i128 && f8 <= 113i128) || (f8 >= 114i128 && f8 <= 117i128) || (f8 >= 118i128 && f8 <= 121i128) || (f8 >= 122i128 && f8 <= 125i128) || f8 >= 126i128 {
                                         v20 = self.g_rd((16i128 + (f4 + 0i128)) as u32)?;
                                         v21 = self.g_rd((32i128 + (f6 + 0i128)) as u32)?;
                                         v3 = self.ci(4i128 as u32);
                                         v22 = self.g_bin(Bin::Mul, v21, v3);
                                         v39 = self.g_load(v20, 4i128 as u8, false)?;
                                         self.g_wr(f8 as u32, v39)?;
+                                        v30 = self.g_postmod(((f4 + 0i128) + 16) as u32, v20, v22, 4i128 as i64)?;
+                                        self.g_wr((16i128 + (f4 + 0i128)) as u32, v30)?;
+                                    } else if (f8 >= 16i128 && f8 <= 79i128) {
+                                        v20 = self.g_rd((16i128 + (f4 + 0i128)) as u32)?;
+                                        v21 = self.g_rd((32i128 + (f6 + 0i128)) as u32)?;
+                                        v3 = self.ci(4i128 as u32);
+                                        v22 = self.g_bin(Bin::Mul, v21, v3);
+                                        v39 = self.g_load(v20, 4i128 as u8, false)?;
+                                        self.g_wr(f8 as u32, v39)?;
+                                        if (f8 >= 64i128) {
+                                            self.g_wr(((f8 - 64i128) + 16i128) as u32, v39)?;
+                                        }
                                         v30 = self.g_postmod(((f4 + 0i128) + 16) as u32, v20, v22, 4i128 as i64)?;
                                         self.g_wr((16i128 + (f4 + 0i128)) as u32, v30)?;
                                     } else {
@@ -2880,7 +3511,7 @@ impl Lower {
                                     v9 = self.g_rd(f8 as u32)?;
                                     self.g_store(v23, v9, 4i128 as u8)?;
                                 } else {
-                                    if f8 <= 15i128 || (f8 >= 16i128 && f8 <= 79i128) || (f8 >= 80i128 && f8 <= 95i128) || (f8 >= 108i128 && f8 <= 109i128) || (f8 >= 110i128 && f8 <= 111i128) || (f8 >= 112i128 && f8 <= 113i128) || (f8 >= 114i128 && f8 <= 117i128) || (f8 >= 118i128 && f8 <= 121i128) || (f8 >= 122i128 && f8 <= 125i128) || f8 >= 126i128 {
+                                    if f8 <= 15i128 || (f8 >= 80i128 && f8 <= 95i128) || (f8 >= 108i128 && f8 <= 109i128) || (f8 >= 110i128 && f8 <= 111i128) || (f8 >= 112i128 && f8 <= 113i128) || (f8 >= 114i128 && f8 <= 117i128) || (f8 >= 118i128 && f8 <= 121i128) || (f8 >= 122i128 && f8 <= 125i128) || f8 >= 126i128 {
                                         v20 = self.g_rd((16i128 + (f4 + 0i128)) as u32)?;
                                         v21 = self.g_rd((32i128 + (f6 + 0i128)) as u32)?;
                                         v3 = self.ci(4i128 as u32);
@@ -2888,6 +3519,17 @@ impl Lower {
                                         v23 = self.g_bin(Bin::Add, v20, v22);
                                         v40 = self.g_load(v23, 4i128 as u8, false)?;
                                         self.g_wr(f8 as u32, v40)?;
+                                    } else if (f8 >= 16i128 && f8 <= 79i128) {
+                                        v20 = self.g_rd((16i128 + (f4 + 0i128)) as u32)?;
+                                        v21 = self.g_rd((32i128 + (f6 + 0i128)) as u32)?;
+                                        v3 = self.ci(4i128 as u32);
+                                        v22 = self.g_bin(Bin::Mul, v21, v3);
+                                        v23 = self.g_bin(Bin::Add, v20, v22);
+                                        v40 = self.g_load(v23, 4i128 as u8, false)?;
+                                        self.g_wr(f8 as u32, v40)?;
+                                        if (f8 >= 64i128) {
+                                            self.g_wr(((f8 - 64i128) + 16i128) as u32, v40)?;
+                                        }
                                     } else {
                                         if (f8 == 107i128) {
                                             return refuse("combined PX transfer");
@@ -3167,12 +3809,24 @@ impl Lower {
                                         if (f6 != 0i128) {
                                             v20 = self.g_load(v0, 1i128 as u8, false)?;
                                             self.g_wr(f7 as u32, v20)?;
+                                            if f7 <= 15i128 || (f7 >= 80i128 && f7 <= 95i128) || (f7 >= 96i128 && f7 <= 107i128) || (f7 >= 108i128 && f7 <= 109i128) || (f7 >= 110i128 && f7 <= 111i128) || (f7 >= 112i128 && f7 <= 113i128) || (f7 >= 114i128 && f7 <= 117i128) || (f7 >= 118i128 && f7 <= 121i128) || (f7 >= 122i128 && f7 <= 125i128) || f7 >= 126i128 {
+                                            } else {
+                                                if (f7 >= 64i128) {
+                                                    self.g_wr(((f7 - 64i128) + 16i128) as u32, v20)?;
+                                                }
+                                            }
                                             v21 = self.g_postmod(((f3 + 8i128) + 16) as u32, v0, v4, 1i128 as i64)?;
                                             self.g_wr((16i128 + (f3 + 8i128)) as u32, v21)?;
                                         } else {
                                             v8 = self.g_bin(Bin::Add, v0, v4);
                                             v22 = self.g_load(v8, 1i128 as u8, false)?;
                                             self.g_wr(f7 as u32, v22)?;
+                                            if f7 <= 15i128 || (f7 >= 80i128 && f7 <= 95i128) || (f7 >= 96i128 && f7 <= 107i128) || (f7 >= 108i128 && f7 <= 109i128) || (f7 >= 110i128 && f7 <= 111i128) || (f7 >= 112i128 && f7 <= 113i128) || (f7 >= 114i128 && f7 <= 117i128) || (f7 >= 118i128 && f7 <= 121i128) || (f7 >= 122i128 && f7 <= 125i128) || f7 >= 126i128 {
+                                            } else {
+                                                if (f7 >= 64i128) {
+                                                    self.g_wr(((f7 - 64i128) + 16i128) as u32, v22)?;
+                                                }
+                                            }
                                         }
                                     } else {
                                         v10 = self.g_rd((16i128 + (f3 + 0i128)) as u32)?;
@@ -3195,9 +3849,12 @@ impl Lower {
                                                     v26 = self.g_postmod(((f3 + 0i128) + 16) as u32, v10, v12, 1i128 as i64)?;
                                                     self.g_wr((16i128 + (f3 + 0i128)) as u32, v26)?;
                                                 }
-                                            } else if (f7 >= 16i128 && f7 <= 79i128) || (f7 >= 96i128 && f7 <= 107i128) || (f7 >= 110i128 && f7 <= 111i128) || (f7 >= 114i128 && f7 <= 117i128) || (f7 >= 122i128 && f7 <= 125i128) {
+                                            } else if (f7 >= 16i128 && f7 <= 79i128) {
                                                 v23 = self.g_load(v10, 1i128 as u8, false)?;
                                                 self.g_wr(f7 as u32, v23)?;
+                                                if (f7 >= 64i128) {
+                                                    self.g_wr(((f7 - 64i128) + 16i128) as u32, v23)?;
+                                                }
                                                 v26 = self.g_postmod(((f3 + 0i128) + 16) as u32, v10, v12, 1i128 as i64)?;
                                                 self.g_wr((16i128 + (f3 + 0i128)) as u32, v26)?;
                                             } else if (f7 >= 80i128 && f7 <= 95i128) {
@@ -3215,6 +3872,11 @@ impl Lower {
                                                     v26 = self.g_postmod(((f3 + 0i128) + 16) as u32, v10, v12, 1i128 as i64)?;
                                                     self.g_wr((16i128 + (f3 + 0i128)) as u32, v26)?;
                                                 }
+                                            } else if (f7 >= 96i128 && f7 <= 107i128) || (f7 >= 110i128 && f7 <= 111i128) || (f7 >= 114i128 && f7 <= 117i128) || (f7 >= 122i128 && f7 <= 125i128) {
+                                                v23 = self.g_load(v10, 1i128 as u8, false)?;
+                                                self.g_wr(f7 as u32, v23)?;
+                                                v26 = self.g_postmod(((f3 + 0i128) + 16) as u32, v10, v12, 1i128 as i64)?;
+                                                self.g_wr((16i128 + (f3 + 0i128)) as u32, v26)?;
                                             } else {
                                                 if ((self.m1(0x200000) as i128) != 0i128) {
                                                     v13 = self.g_bin(Bin::Add, v10, v3);
@@ -3222,6 +3884,11 @@ impl Lower {
                                                     self.g_wr(f7 as u32, v23)?;
                                                     v24 = self.g_load(v13, 1i128 as u8, false)?;
                                                     self.g_wr((f7 ^ 1i128) as u32, v24)?;
+                                                    if ((f7 ^ 1i128) >= 64i128) {
+                                                        if ((f7 ^ 1i128) <= 79i128) {
+                                                            self.g_wr((((f7 ^ 1i128) - 64i128) + 16i128) as u32, v24)?;
+                                                        }
+                                                    }
                                                     v25 = self.g_postmod(((f3 + 0i128) + 16) as u32, v10, v12, 1i128 as i64)?;
                                                     self.g_wr((16i128 + (f3 + 0i128)) as u32, v25)?;
                                                 } else {
@@ -3244,9 +3911,12 @@ impl Lower {
                                                     v27 = self.g_load(v18, 1i128 as u8, false)?;
                                                     self.g_wr(f7 as u32, v27)?;
                                                 }
-                                            } else if (f7 >= 16i128 && f7 <= 79i128) || (f7 >= 96i128 && f7 <= 107i128) || (f7 >= 110i128 && f7 <= 111i128) || (f7 >= 114i128 && f7 <= 117i128) || (f7 >= 122i128 && f7 <= 125i128) {
+                                            } else if (f7 >= 16i128 && f7 <= 79i128) {
                                                 v27 = self.g_load(v18, 1i128 as u8, false)?;
                                                 self.g_wr(f7 as u32, v27)?;
+                                                if (f7 >= 64i128) {
+                                                    self.g_wr(((f7 - 64i128) + 16i128) as u32, v27)?;
+                                                }
                                             } else if (f7 >= 80i128 && f7 <= 95i128) {
                                                 if ((self.m1(0x200000) as i128) != 0i128) {
                                                     v19 = self.g_bin(Bin::Add, v18, v3);
@@ -3258,6 +3928,9 @@ impl Lower {
                                                     v27 = self.g_load(v18, 1i128 as u8, false)?;
                                                     self.g_wr(f7 as u32, v27)?;
                                                 }
+                                            } else if (f7 >= 96i128 && f7 <= 107i128) || (f7 >= 110i128 && f7 <= 111i128) || (f7 >= 114i128 && f7 <= 117i128) || (f7 >= 122i128 && f7 <= 125i128) {
+                                                v27 = self.g_load(v18, 1i128 as u8, false)?;
+                                                self.g_wr(f7 as u32, v27)?;
                                             } else {
                                                 if ((self.m1(0x200000) as i128) != 0i128) {
                                                     v19 = self.g_bin(Bin::Add, v18, v3);
@@ -3265,6 +3938,11 @@ impl Lower {
                                                     self.g_wr(f7 as u32, v27)?;
                                                     v28 = self.g_load(v19, 1i128 as u8, false)?;
                                                     self.g_wr((f7 ^ 1i128) as u32, v28)?;
+                                                    if ((f7 ^ 1i128) >= 64i128) {
+                                                        if ((f7 ^ 1i128) <= 79i128) {
+                                                            self.g_wr((((f7 ^ 1i128) - 64i128) + 16i128) as u32, v28)?;
+                                                        }
+                                                    }
                                                 } else {
                                                     v27 = self.g_load(v18, 1i128 as u8, false)?;
                                                     self.g_wr(f7 as u32, v27)?;
@@ -3298,12 +3976,24 @@ impl Lower {
                                         if (f6 != 0i128) {
                                             v29 = self.g_load(v0, 1i128 as u8, true)?;
                                             self.g_wr(f7 as u32, v29)?;
+                                            if f7 <= 15i128 || (f7 >= 80i128 && f7 <= 95i128) || (f7 >= 96i128 && f7 <= 107i128) || (f7 >= 108i128 && f7 <= 109i128) || (f7 >= 110i128 && f7 <= 111i128) || (f7 >= 112i128 && f7 <= 113i128) || (f7 >= 114i128 && f7 <= 117i128) || (f7 >= 118i128 && f7 <= 121i128) || (f7 >= 122i128 && f7 <= 125i128) || f7 >= 126i128 {
+                                            } else {
+                                                if (f7 >= 64i128) {
+                                                    self.g_wr(((f7 - 64i128) + 16i128) as u32, v29)?;
+                                                }
+                                            }
                                             v21 = self.g_postmod(((f3 + 8i128) + 16) as u32, v0, v4, 1i128 as i64)?;
                                             self.g_wr((16i128 + (f3 + 8i128)) as u32, v21)?;
                                         } else {
                                             v8 = self.g_bin(Bin::Add, v0, v4);
                                             v30 = self.g_load(v8, 1i128 as u8, true)?;
                                             self.g_wr(f7 as u32, v30)?;
+                                            if f7 <= 15i128 || (f7 >= 80i128 && f7 <= 95i128) || (f7 >= 96i128 && f7 <= 107i128) || (f7 >= 108i128 && f7 <= 109i128) || (f7 >= 110i128 && f7 <= 111i128) || (f7 >= 112i128 && f7 <= 113i128) || (f7 >= 114i128 && f7 <= 117i128) || (f7 >= 118i128 && f7 <= 121i128) || (f7 >= 122i128 && f7 <= 125i128) || f7 >= 126i128 {
+                                            } else {
+                                                if (f7 >= 64i128) {
+                                                    self.g_wr(((f7 - 64i128) + 16i128) as u32, v30)?;
+                                                }
+                                            }
                                         }
                                     } else {
                                         v10 = self.g_rd((16i128 + (f3 + 0i128)) as u32)?;
@@ -3326,9 +4016,12 @@ impl Lower {
                                                     v26 = self.g_postmod(((f3 + 0i128) + 16) as u32, v10, v12, 1i128 as i64)?;
                                                     self.g_wr((16i128 + (f3 + 0i128)) as u32, v26)?;
                                                 }
-                                            } else if (f7 >= 16i128 && f7 <= 79i128) || (f7 >= 96i128 && f7 <= 107i128) || (f7 >= 110i128 && f7 <= 111i128) || (f7 >= 114i128 && f7 <= 117i128) || (f7 >= 122i128 && f7 <= 125i128) {
+                                            } else if (f7 >= 16i128 && f7 <= 79i128) {
                                                 v31 = self.g_load(v10, 1i128 as u8, true)?;
                                                 self.g_wr(f7 as u32, v31)?;
+                                                if (f7 >= 64i128) {
+                                                    self.g_wr(((f7 - 64i128) + 16i128) as u32, v31)?;
+                                                }
                                                 v26 = self.g_postmod(((f3 + 0i128) + 16) as u32, v10, v12, 1i128 as i64)?;
                                                 self.g_wr((16i128 + (f3 + 0i128)) as u32, v26)?;
                                             } else if (f7 >= 80i128 && f7 <= 95i128) {
@@ -3346,6 +4039,11 @@ impl Lower {
                                                     v26 = self.g_postmod(((f3 + 0i128) + 16) as u32, v10, v12, 1i128 as i64)?;
                                                     self.g_wr((16i128 + (f3 + 0i128)) as u32, v26)?;
                                                 }
+                                            } else if (f7 >= 96i128 && f7 <= 107i128) || (f7 >= 110i128 && f7 <= 111i128) || (f7 >= 114i128 && f7 <= 117i128) || (f7 >= 122i128 && f7 <= 125i128) {
+                                                v31 = self.g_load(v10, 1i128 as u8, true)?;
+                                                self.g_wr(f7 as u32, v31)?;
+                                                v26 = self.g_postmod(((f3 + 0i128) + 16) as u32, v10, v12, 1i128 as i64)?;
+                                                self.g_wr((16i128 + (f3 + 0i128)) as u32, v26)?;
                                             } else {
                                                 if ((self.m1(0x200000) as i128) != 0i128) {
                                                     v13 = self.g_bin(Bin::Add, v10, v3);
@@ -3353,6 +4051,11 @@ impl Lower {
                                                     self.g_wr(f7 as u32, v31)?;
                                                     v32 = self.g_load(v13, 1i128 as u8, true)?;
                                                     self.g_wr((f7 ^ 1i128) as u32, v32)?;
+                                                    if ((f7 ^ 1i128) >= 64i128) {
+                                                        if ((f7 ^ 1i128) <= 79i128) {
+                                                            self.g_wr((((f7 ^ 1i128) - 64i128) + 16i128) as u32, v32)?;
+                                                        }
+                                                    }
                                                     v25 = self.g_postmod(((f3 + 0i128) + 16) as u32, v10, v12, 1i128 as i64)?;
                                                     self.g_wr((16i128 + (f3 + 0i128)) as u32, v25)?;
                                                 } else {
@@ -3375,9 +4078,12 @@ impl Lower {
                                                     v33 = self.g_load(v18, 1i128 as u8, true)?;
                                                     self.g_wr(f7 as u32, v33)?;
                                                 }
-                                            } else if (f7 >= 16i128 && f7 <= 79i128) || (f7 >= 96i128 && f7 <= 107i128) || (f7 >= 110i128 && f7 <= 111i128) || (f7 >= 114i128 && f7 <= 117i128) || (f7 >= 122i128 && f7 <= 125i128) {
+                                            } else if (f7 >= 16i128 && f7 <= 79i128) {
                                                 v33 = self.g_load(v18, 1i128 as u8, true)?;
                                                 self.g_wr(f7 as u32, v33)?;
+                                                if (f7 >= 64i128) {
+                                                    self.g_wr(((f7 - 64i128) + 16i128) as u32, v33)?;
+                                                }
                                             } else if (f7 >= 80i128 && f7 <= 95i128) {
                                                 if ((self.m1(0x200000) as i128) != 0i128) {
                                                     v19 = self.g_bin(Bin::Add, v18, v3);
@@ -3389,6 +4095,9 @@ impl Lower {
                                                     v33 = self.g_load(v18, 1i128 as u8, true)?;
                                                     self.g_wr(f7 as u32, v33)?;
                                                 }
+                                            } else if (f7 >= 96i128 && f7 <= 107i128) || (f7 >= 110i128 && f7 <= 111i128) || (f7 >= 114i128 && f7 <= 117i128) || (f7 >= 122i128 && f7 <= 125i128) {
+                                                v33 = self.g_load(v18, 1i128 as u8, true)?;
+                                                self.g_wr(f7 as u32, v33)?;
                                             } else {
                                                 if ((self.m1(0x200000) as i128) != 0i128) {
                                                     v19 = self.g_bin(Bin::Add, v18, v3);
@@ -3396,6 +4105,11 @@ impl Lower {
                                                     self.g_wr(f7 as u32, v33)?;
                                                     v34 = self.g_load(v19, 1i128 as u8, true)?;
                                                     self.g_wr((f7 ^ 1i128) as u32, v34)?;
+                                                    if ((f7 ^ 1i128) >= 64i128) {
+                                                        if ((f7 ^ 1i128) <= 79i128) {
+                                                            self.g_wr((((f7 ^ 1i128) - 64i128) + 16i128) as u32, v34)?;
+                                                        }
+                                                    }
                                                 } else {
                                                     v33 = self.g_load(v18, 1i128 as u8, true)?;
                                                     self.g_wr(f7 as u32, v33)?;
@@ -3560,13 +4274,25 @@ impl Lower {
                                     if (f2 != 0i128) {
                                         if (f6 != 0i128) {
                                             if (f0 == 31i128) {
-                                                if f7 <= 15i128 || (f7 >= 16i128 && f7 <= 79i128) || (f7 >= 80i128 && f7 <= 95i128) || (f7 >= 108i128 && f7 <= 109i128) || (f7 >= 110i128 && f7 <= 111i128) || (f7 >= 112i128 && f7 <= 113i128) || (f7 >= 114i128 && f7 <= 117i128) || (f7 >= 118i128 && f7 <= 121i128) || (f7 >= 122i128 && f7 <= 125i128) || f7 >= 126i128 {
+                                                if f7 <= 15i128 || (f7 >= 80i128 && f7 <= 95i128) || (f7 >= 108i128 && f7 <= 109i128) || (f7 >= 110i128 && f7 <= 111i128) || (f7 >= 112i128 && f7 <= 113i128) || (f7 >= 114i128 && f7 <= 117i128) || (f7 >= 118i128 && f7 <= 121i128) || (f7 >= 122i128 && f7 <= 125i128) || f7 >= 126i128 {
                                                     v0 = self.g_rd((16i128 + (f3 + 8i128)) as u32)?;
                                                     v2 = self.g_rd((32i128 + (f5 + 8i128)) as u32)?;
                                                     v35 = self.ci(4i128 as u32);
                                                     v36 = self.g_bin(Bin::Mul, v2, v35);
                                                     v46 = self.g_load(v0, 4i128 as u8, false)?;
                                                     self.g_wr(f7 as u32, v46)?;
+                                                    v47 = self.g_postmod(((f3 + 8i128) + 16) as u32, v0, v36, 4i128 as i64)?;
+                                                    self.g_wr((16i128 + (f3 + 8i128)) as u32, v47)?;
+                                                } else if (f7 >= 16i128 && f7 <= 79i128) {
+                                                    v0 = self.g_rd((16i128 + (f3 + 8i128)) as u32)?;
+                                                    v2 = self.g_rd((32i128 + (f5 + 8i128)) as u32)?;
+                                                    v35 = self.ci(4i128 as u32);
+                                                    v36 = self.g_bin(Bin::Mul, v2, v35);
+                                                    v46 = self.g_load(v0, 4i128 as u8, false)?;
+                                                    self.g_wr(f7 as u32, v46)?;
+                                                    if (f7 >= 64i128) {
+                                                        self.g_wr(((f7 - 64i128) + 16i128) as u32, v46)?;
+                                                    }
                                                     v47 = self.g_postmod(((f3 + 8i128) + 16) as u32, v0, v36, 4i128 as i64)?;
                                                     self.g_wr((16i128 + (f3 + 8i128)) as u32, v47)?;
                                                 } else {
@@ -3584,7 +4310,7 @@ impl Lower {
                                                     }
                                                 }
                                             } else {
-                                                if f7 <= 15i128 || (f7 >= 16i128 && f7 <= 79i128) || (f7 >= 80i128 && f7 <= 95i128) || (f7 >= 108i128 && f7 <= 109i128) || (f7 >= 110i128 && f7 <= 111i128) || (f7 >= 112i128 && f7 <= 113i128) || (f7 >= 114i128 && f7 <= 117i128) || (f7 >= 118i128 && f7 <= 121i128) || (f7 >= 122i128 && f7 <= 125i128) || f7 >= 126i128 {
+                                                if f7 <= 15i128 || (f7 >= 80i128 && f7 <= 95i128) || (f7 >= 108i128 && f7 <= 109i128) || (f7 >= 110i128 && f7 <= 111i128) || (f7 >= 112i128 && f7 <= 113i128) || (f7 >= 114i128 && f7 <= 117i128) || (f7 >= 118i128 && f7 <= 121i128) || (f7 >= 122i128 && f7 <= 125i128) || f7 >= 126i128 {
                                                     self.g_cond(f0 as u32, false)?;
                                                     v0 = self.g_rd((16i128 + (f3 + 8i128)) as u32)?;
                                                     v2 = self.g_rd((32i128 + (f5 + 8i128)) as u32)?;
@@ -3592,6 +4318,19 @@ impl Lower {
                                                     v36 = self.g_bin(Bin::Mul, v2, v35);
                                                     v46 = self.g_load(v0, 4i128 as u8, false)?;
                                                     self.g_wr(f7 as u32, v46)?;
+                                                    v47 = self.g_postmod(((f3 + 8i128) + 16) as u32, v0, v36, 4i128 as i64)?;
+                                                    self.g_wr((16i128 + (f3 + 8i128)) as u32, v47)?;
+                                                } else if (f7 >= 16i128 && f7 <= 79i128) {
+                                                    self.g_cond(f0 as u32, false)?;
+                                                    v0 = self.g_rd((16i128 + (f3 + 8i128)) as u32)?;
+                                                    v2 = self.g_rd((32i128 + (f5 + 8i128)) as u32)?;
+                                                    v35 = self.ci(4i128 as u32);
+                                                    v36 = self.g_bin(Bin::Mul, v2, v35);
+                                                    v46 = self.g_load(v0, 4i128 as u8, false)?;
+                                                    self.g_wr(f7 as u32, v46)?;
+                                                    if (f7 >= 64i128) {
+                                                        self.g_wr(((f7 - 64i128) + 16i128) as u32, v46)?;
+                                                    }
                                                     v47 = self.g_postmod(((f3 + 8i128) + 16) as u32, v0, v36, 4i128 as i64)?;
                                                     self.g_wr((16i128 + (f3 + 8i128)) as u32, v47)?;
                                                 } else {
@@ -3612,7 +4351,7 @@ impl Lower {
                                             }
                                         } else {
                                             if (f0 == 31i128) {
-                                                if f7 <= 15i128 || (f7 >= 16i128 && f7 <= 79i128) || (f7 >= 80i128 && f7 <= 95i128) || (f7 >= 108i128 && f7 <= 109i128) || (f7 >= 110i128 && f7 <= 111i128) || (f7 >= 112i128 && f7 <= 113i128) || (f7 >= 114i128 && f7 <= 117i128) || (f7 >= 118i128 && f7 <= 121i128) || (f7 >= 122i128 && f7 <= 125i128) || f7 >= 126i128 {
+                                                if f7 <= 15i128 || (f7 >= 80i128 && f7 <= 95i128) || (f7 >= 108i128 && f7 <= 109i128) || (f7 >= 110i128 && f7 <= 111i128) || (f7 >= 112i128 && f7 <= 113i128) || (f7 >= 114i128 && f7 <= 117i128) || (f7 >= 118i128 && f7 <= 121i128) || (f7 >= 122i128 && f7 <= 125i128) || f7 >= 126i128 {
                                                     v0 = self.g_rd((16i128 + (f3 + 8i128)) as u32)?;
                                                     v2 = self.g_rd((32i128 + (f5 + 8i128)) as u32)?;
                                                     v35 = self.ci(4i128 as u32);
@@ -3620,6 +4359,17 @@ impl Lower {
                                                     v39 = self.g_bin(Bin::Add, v0, v36);
                                                     v48 = self.g_load(v39, 4i128 as u8, false)?;
                                                     self.g_wr(f7 as u32, v48)?;
+                                                } else if (f7 >= 16i128 && f7 <= 79i128) {
+                                                    v0 = self.g_rd((16i128 + (f3 + 8i128)) as u32)?;
+                                                    v2 = self.g_rd((32i128 + (f5 + 8i128)) as u32)?;
+                                                    v35 = self.ci(4i128 as u32);
+                                                    v36 = self.g_bin(Bin::Mul, v2, v35);
+                                                    v39 = self.g_bin(Bin::Add, v0, v36);
+                                                    v48 = self.g_load(v39, 4i128 as u8, false)?;
+                                                    self.g_wr(f7 as u32, v48)?;
+                                                    if (f7 >= 64i128) {
+                                                        self.g_wr(((f7 - 64i128) + 16i128) as u32, v48)?;
+                                                    }
                                                 } else {
                                                     if (f7 == 107i128) {
                                                         return refuse("combined PX transfer");
@@ -3634,7 +4384,7 @@ impl Lower {
                                                     }
                                                 }
                                             } else {
-                                                if f7 <= 15i128 || (f7 >= 16i128 && f7 <= 79i128) || (f7 >= 80i128 && f7 <= 95i128) || (f7 >= 108i128 && f7 <= 109i128) || (f7 >= 110i128 && f7 <= 111i128) || (f7 >= 112i128 && f7 <= 113i128) || (f7 >= 114i128 && f7 <= 117i128) || (f7 >= 118i128 && f7 <= 121i128) || (f7 >= 122i128 && f7 <= 125i128) || f7 >= 126i128 {
+                                                if f7 <= 15i128 || (f7 >= 80i128 && f7 <= 95i128) || (f7 >= 108i128 && f7 <= 109i128) || (f7 >= 110i128 && f7 <= 111i128) || (f7 >= 112i128 && f7 <= 113i128) || (f7 >= 114i128 && f7 <= 117i128) || (f7 >= 118i128 && f7 <= 121i128) || (f7 >= 122i128 && f7 <= 125i128) || f7 >= 126i128 {
                                                     self.g_cond(f0 as u32, false)?;
                                                     v0 = self.g_rd((16i128 + (f3 + 8i128)) as u32)?;
                                                     v2 = self.g_rd((32i128 + (f5 + 8i128)) as u32)?;
@@ -3643,6 +4393,18 @@ impl Lower {
                                                     v39 = self.g_bin(Bin::Add, v0, v36);
                                                     v48 = self.g_load(v39, 4i128 as u8, false)?;
                                                     self.g_wr(f7 as u32, v48)?;
+                                                } else if (f7 >= 16i128 && f7 <= 79i128) {
+                                                    self.g_cond(f0 as u32, false)?;
+                                                    v0 = self.g_rd((16i128 + (f3 + 8i128)) as u32)?;
+                                                    v2 = self.g_rd((32i128 + (f5 + 8i128)) as u32)?;
+                                                    v35 = self.ci(4i128 as u32);
+                                                    v36 = self.g_bin(Bin::Mul, v2, v35);
+                                                    v39 = self.g_bin(Bin::Add, v0, v36);
+                                                    v48 = self.g_load(v39, 4i128 as u8, false)?;
+                                                    self.g_wr(f7 as u32, v48)?;
+                                                    if (f7 >= 64i128) {
+                                                        self.g_wr(((f7 - 64i128) + 16i128) as u32, v48)?;
+                                                    }
                                                 } else {
                                                     if (f7 == 107i128) {
                                                         return refuse("combined PX transfer");
@@ -3681,13 +4443,16 @@ impl Lower {
                                                         v52 = self.g_postmod(((f3 + 0i128) + 16) as u32, v10, v41, 4i128 as i64)?;
                                                         self.g_wr((16i128 + (f3 + 0i128)) as u32, v52)?;
                                                     }
-                                                } else if (f7 >= 16i128 && f7 <= 79i128) || (f7 >= 110i128 && f7 <= 111i128) || (f7 >= 114i128 && f7 <= 117i128) || (f7 >= 122i128 && f7 <= 125i128) {
+                                                } else if (f7 >= 16i128 && f7 <= 79i128) {
                                                     v10 = self.g_rd((16i128 + (f3 + 0i128)) as u32)?;
                                                     v11 = self.g_rd((32i128 + (f5 + 0i128)) as u32)?;
                                                     v35 = self.ci(4i128 as u32);
                                                     v41 = self.g_bin(Bin::Mul, v11, v35);
                                                     v49 = self.g_load(v10, 4i128 as u8, false)?;
                                                     self.g_wr(f7 as u32, v49)?;
+                                                    if (f7 >= 64i128) {
+                                                        self.g_wr(((f7 - 64i128) + 16i128) as u32, v49)?;
+                                                    }
                                                     v52 = self.g_postmod(((f3 + 0i128) + 16) as u32, v10, v41, 4i128 as i64)?;
                                                     self.g_wr((16i128 + (f3 + 0i128)) as u32, v52)?;
                                                 } else if (f7 >= 80i128 && f7 <= 95i128) {
@@ -3722,7 +4487,7 @@ impl Lower {
                                                         v52 = self.g_postmod(((f3 + 0i128) + 16) as u32, v10, v41, 4i128 as i64)?;
                                                         self.g_wr((16i128 + (f3 + 0i128)) as u32, v52)?;
                                                     }
-                                                } else {
+                                                } else if (f7 >= 108i128 && f7 <= 109i128) || (f7 >= 112i128 && f7 <= 113i128) || (f7 >= 118i128 && f7 <= 121i128) || f7 >= 126i128 {
                                                     if ((self.m1(0x200000) as i128) != 0i128) {
                                                         if ((f7 ^ 1i128) == 107i128) {
                                                             return refuse("combined PX transfer");
@@ -3736,6 +4501,11 @@ impl Lower {
                                                             self.g_wr(f7 as u32, v49)?;
                                                             v50 = self.g_load(v42, 4i128 as u8, false)?;
                                                             self.g_wr((f7 ^ 1i128) as u32, v50)?;
+                                                            if ((f7 ^ 1i128) >= 64i128) {
+                                                                if ((f7 ^ 1i128) <= 79i128) {
+                                                                    self.g_wr((((f7 ^ 1i128) - 64i128) + 16i128) as u32, v50)?;
+                                                                }
+                                                            }
                                                             v51 = self.g_postmod(((f3 + 0i128) + 16) as u32, v10, v41, 4i128 as i64)?;
                                                             self.g_wr((16i128 + (f3 + 0i128)) as u32, v51)?;
                                                         }
@@ -3749,6 +4519,15 @@ impl Lower {
                                                         v52 = self.g_postmod(((f3 + 0i128) + 16) as u32, v10, v41, 4i128 as i64)?;
                                                         self.g_wr((16i128 + (f3 + 0i128)) as u32, v52)?;
                                                     }
+                                                } else {
+                                                    v10 = self.g_rd((16i128 + (f3 + 0i128)) as u32)?;
+                                                    v11 = self.g_rd((32i128 + (f5 + 0i128)) as u32)?;
+                                                    v35 = self.ci(4i128 as u32);
+                                                    v41 = self.g_bin(Bin::Mul, v11, v35);
+                                                    v49 = self.g_load(v10, 4i128 as u8, false)?;
+                                                    self.g_wr(f7 as u32, v49)?;
+                                                    v52 = self.g_postmod(((f3 + 0i128) + 16) as u32, v10, v41, 4i128 as i64)?;
+                                                    self.g_wr((16i128 + (f3 + 0i128)) as u32, v52)?;
                                                 }
                                             } else {
                                                 if f7 <= 15i128 {
@@ -3771,7 +4550,7 @@ impl Lower {
                                                         v52 = self.g_postmod(((f3 + 0i128) + 16) as u32, v10, v41, 4i128 as i64)?;
                                                         self.g_wr((16i128 + (f3 + 0i128)) as u32, v52)?;
                                                     }
-                                                } else if (f7 >= 16i128 && f7 <= 79i128) || (f7 >= 110i128 && f7 <= 111i128) || (f7 >= 114i128 && f7 <= 117i128) || (f7 >= 122i128 && f7 <= 125i128) {
+                                                } else if (f7 >= 16i128 && f7 <= 79i128) {
                                                     self.g_cond(f0 as u32, false)?;
                                                     v10 = self.g_rd((16i128 + (f3 + 0i128)) as u32)?;
                                                     v11 = self.g_rd((32i128 + (f5 + 0i128)) as u32)?;
@@ -3779,6 +4558,9 @@ impl Lower {
                                                     v41 = self.g_bin(Bin::Mul, v11, v35);
                                                     v49 = self.g_load(v10, 4i128 as u8, false)?;
                                                     self.g_wr(f7 as u32, v49)?;
+                                                    if (f7 >= 64i128) {
+                                                        self.g_wr(((f7 - 64i128) + 16i128) as u32, v49)?;
+                                                    }
                                                     v52 = self.g_postmod(((f3 + 0i128) + 16) as u32, v10, v41, 4i128 as i64)?;
                                                     self.g_wr((16i128 + (f3 + 0i128)) as u32, v52)?;
                                                 } else if (f7 >= 80i128 && f7 <= 95i128) {
@@ -3815,7 +4597,7 @@ impl Lower {
                                                         v52 = self.g_postmod(((f3 + 0i128) + 16) as u32, v10, v41, 4i128 as i64)?;
                                                         self.g_wr((16i128 + (f3 + 0i128)) as u32, v52)?;
                                                     }
-                                                } else {
+                                                } else if (f7 >= 108i128 && f7 <= 109i128) || (f7 >= 112i128 && f7 <= 113i128) || (f7 >= 118i128 && f7 <= 121i128) || f7 >= 126i128 {
                                                     if ((self.m1(0x200000) as i128) != 0i128) {
                                                         if ((f7 ^ 1i128) == 107i128) {
                                                             return refuse("combined PX transfer");
@@ -3830,6 +4612,11 @@ impl Lower {
                                                             self.g_wr(f7 as u32, v49)?;
                                                             v50 = self.g_load(v42, 4i128 as u8, false)?;
                                                             self.g_wr((f7 ^ 1i128) as u32, v50)?;
+                                                            if ((f7 ^ 1i128) >= 64i128) {
+                                                                if ((f7 ^ 1i128) <= 79i128) {
+                                                                    self.g_wr((((f7 ^ 1i128) - 64i128) + 16i128) as u32, v50)?;
+                                                                }
+                                                            }
                                                             v51 = self.g_postmod(((f3 + 0i128) + 16) as u32, v10, v41, 4i128 as i64)?;
                                                             self.g_wr((16i128 + (f3 + 0i128)) as u32, v51)?;
                                                         }
@@ -3844,6 +4631,16 @@ impl Lower {
                                                         v52 = self.g_postmod(((f3 + 0i128) + 16) as u32, v10, v41, 4i128 as i64)?;
                                                         self.g_wr((16i128 + (f3 + 0i128)) as u32, v52)?;
                                                     }
+                                                } else {
+                                                    self.g_cond(f0 as u32, false)?;
+                                                    v10 = self.g_rd((16i128 + (f3 + 0i128)) as u32)?;
+                                                    v11 = self.g_rd((32i128 + (f5 + 0i128)) as u32)?;
+                                                    v35 = self.ci(4i128 as u32);
+                                                    v41 = self.g_bin(Bin::Mul, v11, v35);
+                                                    v49 = self.g_load(v10, 4i128 as u8, false)?;
+                                                    self.g_wr(f7 as u32, v49)?;
+                                                    v52 = self.g_postmod(((f3 + 0i128) + 16) as u32, v10, v41, 4i128 as i64)?;
+                                                    self.g_wr((16i128 + (f3 + 0i128)) as u32, v52)?;
                                                 }
                                             }
                                         } else {
@@ -3864,7 +4661,7 @@ impl Lower {
                                                         v53 = self.g_load(v44, 4i128 as u8, false)?;
                                                         self.g_wr(f7 as u32, v53)?;
                                                     }
-                                                } else if (f7 >= 16i128 && f7 <= 79i128) || (f7 >= 110i128 && f7 <= 111i128) || (f7 >= 114i128 && f7 <= 117i128) || (f7 >= 122i128 && f7 <= 125i128) {
+                                                } else if (f7 >= 16i128 && f7 <= 79i128) {
                                                     v10 = self.g_rd((16i128 + (f3 + 0i128)) as u32)?;
                                                     v11 = self.g_rd((32i128 + (f5 + 0i128)) as u32)?;
                                                     v35 = self.ci(4i128 as u32);
@@ -3872,6 +4669,9 @@ impl Lower {
                                                     v44 = self.g_bin(Bin::Add, v10, v41);
                                                     v53 = self.g_load(v44, 4i128 as u8, false)?;
                                                     self.g_wr(f7 as u32, v53)?;
+                                                    if (f7 >= 64i128) {
+                                                        self.g_wr(((f7 - 64i128) + 16i128) as u32, v53)?;
+                                                    }
                                                 } else if (f7 >= 80i128 && f7 <= 95i128) {
                                                     v10 = self.g_rd((16i128 + (f3 + 0i128)) as u32)?;
                                                     v11 = self.g_rd((32i128 + (f5 + 0i128)) as u32)?;
@@ -3900,7 +4700,7 @@ impl Lower {
                                                         v53 = self.g_load(v44, 4i128 as u8, false)?;
                                                         self.g_wr(f7 as u32, v53)?;
                                                     }
-                                                } else {
+                                                } else if (f7 >= 108i128 && f7 <= 109i128) || (f7 >= 112i128 && f7 <= 113i128) || (f7 >= 118i128 && f7 <= 121i128) || f7 >= 126i128 {
                                                     if ((self.m1(0x200000) as i128) != 0i128) {
                                                         if ((f7 ^ 1i128) == 107i128) {
                                                             return refuse("combined PX transfer");
@@ -3915,6 +4715,11 @@ impl Lower {
                                                             self.g_wr(f7 as u32, v53)?;
                                                             v54 = self.g_load(v45, 4i128 as u8, false)?;
                                                             self.g_wr((f7 ^ 1i128) as u32, v54)?;
+                                                            if ((f7 ^ 1i128) >= 64i128) {
+                                                                if ((f7 ^ 1i128) <= 79i128) {
+                                                                    self.g_wr((((f7 ^ 1i128) - 64i128) + 16i128) as u32, v54)?;
+                                                                }
+                                                            }
                                                         }
                                                     } else {
                                                         v10 = self.g_rd((16i128 + (f3 + 0i128)) as u32)?;
@@ -3925,6 +4730,14 @@ impl Lower {
                                                         v53 = self.g_load(v44, 4i128 as u8, false)?;
                                                         self.g_wr(f7 as u32, v53)?;
                                                     }
+                                                } else {
+                                                    v10 = self.g_rd((16i128 + (f3 + 0i128)) as u32)?;
+                                                    v11 = self.g_rd((32i128 + (f5 + 0i128)) as u32)?;
+                                                    v35 = self.ci(4i128 as u32);
+                                                    v41 = self.g_bin(Bin::Mul, v11, v35);
+                                                    v44 = self.g_bin(Bin::Add, v10, v41);
+                                                    v53 = self.g_load(v44, 4i128 as u8, false)?;
+                                                    self.g_wr(f7 as u32, v53)?;
                                                 }
                                             } else {
                                                 if f7 <= 15i128 {
@@ -3944,7 +4757,7 @@ impl Lower {
                                                         v53 = self.g_load(v44, 4i128 as u8, false)?;
                                                         self.g_wr(f7 as u32, v53)?;
                                                     }
-                                                } else if (f7 >= 16i128 && f7 <= 79i128) || (f7 >= 110i128 && f7 <= 111i128) || (f7 >= 114i128 && f7 <= 117i128) || (f7 >= 122i128 && f7 <= 125i128) {
+                                                } else if (f7 >= 16i128 && f7 <= 79i128) {
                                                     self.g_cond(f0 as u32, false)?;
                                                     v10 = self.g_rd((16i128 + (f3 + 0i128)) as u32)?;
                                                     v11 = self.g_rd((32i128 + (f5 + 0i128)) as u32)?;
@@ -3953,6 +4766,9 @@ impl Lower {
                                                     v44 = self.g_bin(Bin::Add, v10, v41);
                                                     v53 = self.g_load(v44, 4i128 as u8, false)?;
                                                     self.g_wr(f7 as u32, v53)?;
+                                                    if (f7 >= 64i128) {
+                                                        self.g_wr(((f7 - 64i128) + 16i128) as u32, v53)?;
+                                                    }
                                                 } else if (f7 >= 80i128 && f7 <= 95i128) {
                                                     self.g_cond(f0 as u32, false)?;
                                                     v10 = self.g_rd((16i128 + (f3 + 0i128)) as u32)?;
@@ -3983,7 +4799,7 @@ impl Lower {
                                                         v53 = self.g_load(v44, 4i128 as u8, false)?;
                                                         self.g_wr(f7 as u32, v53)?;
                                                     }
-                                                } else {
+                                                } else if (f7 >= 108i128 && f7 <= 109i128) || (f7 >= 112i128 && f7 <= 113i128) || (f7 >= 118i128 && f7 <= 121i128) || f7 >= 126i128 {
                                                     if ((self.m1(0x200000) as i128) != 0i128) {
                                                         if ((f7 ^ 1i128) == 107i128) {
                                                             return refuse("combined PX transfer");
@@ -3999,6 +4815,11 @@ impl Lower {
                                                             self.g_wr(f7 as u32, v53)?;
                                                             v54 = self.g_load(v45, 4i128 as u8, false)?;
                                                             self.g_wr((f7 ^ 1i128) as u32, v54)?;
+                                                            if ((f7 ^ 1i128) >= 64i128) {
+                                                                if ((f7 ^ 1i128) <= 79i128) {
+                                                                    self.g_wr((((f7 ^ 1i128) - 64i128) + 16i128) as u32, v54)?;
+                                                                }
+                                                            }
                                                         }
                                                     } else {
                                                         self.g_cond(f0 as u32, false)?;
@@ -4010,6 +4831,15 @@ impl Lower {
                                                         v53 = self.g_load(v44, 4i128 as u8, false)?;
                                                         self.g_wr(f7 as u32, v53)?;
                                                     }
+                                                } else {
+                                                    self.g_cond(f0 as u32, false)?;
+                                                    v10 = self.g_rd((16i128 + (f3 + 0i128)) as u32)?;
+                                                    v11 = self.g_rd((32i128 + (f5 + 0i128)) as u32)?;
+                                                    v35 = self.ci(4i128 as u32);
+                                                    v41 = self.g_bin(Bin::Mul, v11, v35);
+                                                    v44 = self.g_bin(Bin::Add, v10, v41);
+                                                    v53 = self.g_load(v44, 4i128 as u8, false)?;
+                                                    self.g_wr(f7 as u32, v53)?;
                                                 }
                                             }
                                         }
@@ -4186,12 +5016,24 @@ impl Lower {
                                         if (f6 != 0i128) {
                                             v66 = self.g_load(v0, 2i128 as u8, false)?;
                                             self.g_wr(f7 as u32, v66)?;
+                                            if f7 <= 15i128 || (f7 >= 80i128 && f7 <= 95i128) || (f7 >= 96i128 && f7 <= 107i128) || (f7 >= 108i128 && f7 <= 109i128) || (f7 >= 110i128 && f7 <= 111i128) || (f7 >= 112i128 && f7 <= 113i128) || (f7 >= 114i128 && f7 <= 117i128) || (f7 >= 118i128 && f7 <= 121i128) || (f7 >= 122i128 && f7 <= 125i128) || f7 >= 126i128 {
+                                            } else {
+                                                if (f7 >= 64i128) {
+                                                    self.g_wr(((f7 - 64i128) + 16i128) as u32, v66)?;
+                                                }
+                                            }
                                             v67 = self.g_postmod(((f3 + 8i128) + 16) as u32, v0, v56, 2i128 as i64)?;
                                             self.g_wr((16i128 + (f3 + 8i128)) as u32, v67)?;
                                         } else {
                                             v59 = self.g_bin(Bin::Add, v0, v56);
                                             v68 = self.g_load(v59, 2i128 as u8, false)?;
                                             self.g_wr(f7 as u32, v68)?;
+                                            if f7 <= 15i128 || (f7 >= 80i128 && f7 <= 95i128) || (f7 >= 96i128 && f7 <= 107i128) || (f7 >= 108i128 && f7 <= 109i128) || (f7 >= 110i128 && f7 <= 111i128) || (f7 >= 112i128 && f7 <= 113i128) || (f7 >= 114i128 && f7 <= 117i128) || (f7 >= 118i128 && f7 <= 121i128) || (f7 >= 122i128 && f7 <= 125i128) || f7 >= 126i128 {
+                                            } else {
+                                                if (f7 >= 64i128) {
+                                                    self.g_wr(((f7 - 64i128) + 16i128) as u32, v68)?;
+                                                }
+                                            }
                                         }
                                     } else {
                                         v10 = self.g_rd((16i128 + (f3 + 0i128)) as u32)?;
@@ -4214,9 +5056,12 @@ impl Lower {
                                                     v72 = self.g_postmod(((f3 + 0i128) + 16) as u32, v10, v61, 2i128 as i64)?;
                                                     self.g_wr((16i128 + (f3 + 0i128)) as u32, v72)?;
                                                 }
-                                            } else if (f7 >= 16i128 && f7 <= 79i128) || (f7 >= 96i128 && f7 <= 107i128) || (f7 >= 110i128 && f7 <= 111i128) || (f7 >= 114i128 && f7 <= 117i128) || (f7 >= 122i128 && f7 <= 125i128) {
+                                            } else if (f7 >= 16i128 && f7 <= 79i128) {
                                                 v69 = self.g_load(v10, 2i128 as u8, false)?;
                                                 self.g_wr(f7 as u32, v69)?;
+                                                if (f7 >= 64i128) {
+                                                    self.g_wr(((f7 - 64i128) + 16i128) as u32, v69)?;
+                                                }
                                                 v72 = self.g_postmod(((f3 + 0i128) + 16) as u32, v10, v61, 2i128 as i64)?;
                                                 self.g_wr((16i128 + (f3 + 0i128)) as u32, v72)?;
                                             } else if (f7 >= 80i128 && f7 <= 95i128) {
@@ -4234,6 +5079,11 @@ impl Lower {
                                                     v72 = self.g_postmod(((f3 + 0i128) + 16) as u32, v10, v61, 2i128 as i64)?;
                                                     self.g_wr((16i128 + (f3 + 0i128)) as u32, v72)?;
                                                 }
+                                            } else if (f7 >= 96i128 && f7 <= 107i128) || (f7 >= 110i128 && f7 <= 111i128) || (f7 >= 114i128 && f7 <= 117i128) || (f7 >= 122i128 && f7 <= 125i128) {
+                                                v69 = self.g_load(v10, 2i128 as u8, false)?;
+                                                self.g_wr(f7 as u32, v69)?;
+                                                v72 = self.g_postmod(((f3 + 0i128) + 16) as u32, v10, v61, 2i128 as i64)?;
+                                                self.g_wr((16i128 + (f3 + 0i128)) as u32, v72)?;
                                             } else {
                                                 if ((self.m1(0x200000) as i128) != 0i128) {
                                                     v62 = self.g_bin(Bin::Add, v10, v55);
@@ -4241,6 +5091,11 @@ impl Lower {
                                                     self.g_wr(f7 as u32, v69)?;
                                                     v70 = self.g_load(v62, 2i128 as u8, false)?;
                                                     self.g_wr((f7 ^ 1i128) as u32, v70)?;
+                                                    if ((f7 ^ 1i128) >= 64i128) {
+                                                        if ((f7 ^ 1i128) <= 79i128) {
+                                                            self.g_wr((((f7 ^ 1i128) - 64i128) + 16i128) as u32, v70)?;
+                                                        }
+                                                    }
                                                     v71 = self.g_postmod(((f3 + 0i128) + 16) as u32, v10, v61, 2i128 as i64)?;
                                                     self.g_wr((16i128 + (f3 + 0i128)) as u32, v71)?;
                                                 } else {
@@ -4263,9 +5118,12 @@ impl Lower {
                                                     v73 = self.g_load(v64, 2i128 as u8, false)?;
                                                     self.g_wr(f7 as u32, v73)?;
                                                 }
-                                            } else if (f7 >= 16i128 && f7 <= 79i128) || (f7 >= 96i128 && f7 <= 107i128) || (f7 >= 110i128 && f7 <= 111i128) || (f7 >= 114i128 && f7 <= 117i128) || (f7 >= 122i128 && f7 <= 125i128) {
+                                            } else if (f7 >= 16i128 && f7 <= 79i128) {
                                                 v73 = self.g_load(v64, 2i128 as u8, false)?;
                                                 self.g_wr(f7 as u32, v73)?;
+                                                if (f7 >= 64i128) {
+                                                    self.g_wr(((f7 - 64i128) + 16i128) as u32, v73)?;
+                                                }
                                             } else if (f7 >= 80i128 && f7 <= 95i128) {
                                                 if ((self.m1(0x200000) as i128) != 0i128) {
                                                     v65 = self.g_bin(Bin::Add, v64, v55);
@@ -4277,6 +5135,9 @@ impl Lower {
                                                     v73 = self.g_load(v64, 2i128 as u8, false)?;
                                                     self.g_wr(f7 as u32, v73)?;
                                                 }
+                                            } else if (f7 >= 96i128 && f7 <= 107i128) || (f7 >= 110i128 && f7 <= 111i128) || (f7 >= 114i128 && f7 <= 117i128) || (f7 >= 122i128 && f7 <= 125i128) {
+                                                v73 = self.g_load(v64, 2i128 as u8, false)?;
+                                                self.g_wr(f7 as u32, v73)?;
                                             } else {
                                                 if ((self.m1(0x200000) as i128) != 0i128) {
                                                     v65 = self.g_bin(Bin::Add, v64, v55);
@@ -4284,6 +5145,11 @@ impl Lower {
                                                     self.g_wr(f7 as u32, v73)?;
                                                     v74 = self.g_load(v65, 2i128 as u8, false)?;
                                                     self.g_wr((f7 ^ 1i128) as u32, v74)?;
+                                                    if ((f7 ^ 1i128) >= 64i128) {
+                                                        if ((f7 ^ 1i128) <= 79i128) {
+                                                            self.g_wr((((f7 ^ 1i128) - 64i128) + 16i128) as u32, v74)?;
+                                                        }
+                                                    }
                                                 } else {
                                                     v73 = self.g_load(v64, 2i128 as u8, false)?;
                                                     self.g_wr(f7 as u32, v73)?;
@@ -4317,12 +5183,24 @@ impl Lower {
                                         if (f6 != 0i128) {
                                             v75 = self.g_load(v0, 2i128 as u8, true)?;
                                             self.g_wr(f7 as u32, v75)?;
+                                            if f7 <= 15i128 || (f7 >= 80i128 && f7 <= 95i128) || (f7 >= 96i128 && f7 <= 107i128) || (f7 >= 108i128 && f7 <= 109i128) || (f7 >= 110i128 && f7 <= 111i128) || (f7 >= 112i128 && f7 <= 113i128) || (f7 >= 114i128 && f7 <= 117i128) || (f7 >= 118i128 && f7 <= 121i128) || (f7 >= 122i128 && f7 <= 125i128) || f7 >= 126i128 {
+                                            } else {
+                                                if (f7 >= 64i128) {
+                                                    self.g_wr(((f7 - 64i128) + 16i128) as u32, v75)?;
+                                                }
+                                            }
                                             v67 = self.g_postmod(((f3 + 8i128) + 16) as u32, v0, v56, 2i128 as i64)?;
                                             self.g_wr((16i128 + (f3 + 8i128)) as u32, v67)?;
                                         } else {
                                             v59 = self.g_bin(Bin::Add, v0, v56);
                                             v76 = self.g_load(v59, 2i128 as u8, true)?;
                                             self.g_wr(f7 as u32, v76)?;
+                                            if f7 <= 15i128 || (f7 >= 80i128 && f7 <= 95i128) || (f7 >= 96i128 && f7 <= 107i128) || (f7 >= 108i128 && f7 <= 109i128) || (f7 >= 110i128 && f7 <= 111i128) || (f7 >= 112i128 && f7 <= 113i128) || (f7 >= 114i128 && f7 <= 117i128) || (f7 >= 118i128 && f7 <= 121i128) || (f7 >= 122i128 && f7 <= 125i128) || f7 >= 126i128 {
+                                            } else {
+                                                if (f7 >= 64i128) {
+                                                    self.g_wr(((f7 - 64i128) + 16i128) as u32, v76)?;
+                                                }
+                                            }
                                         }
                                     } else {
                                         v10 = self.g_rd((16i128 + (f3 + 0i128)) as u32)?;
@@ -4345,9 +5223,12 @@ impl Lower {
                                                     v72 = self.g_postmod(((f3 + 0i128) + 16) as u32, v10, v61, 2i128 as i64)?;
                                                     self.g_wr((16i128 + (f3 + 0i128)) as u32, v72)?;
                                                 }
-                                            } else if (f7 >= 16i128 && f7 <= 79i128) || (f7 >= 96i128 && f7 <= 107i128) || (f7 >= 110i128 && f7 <= 111i128) || (f7 >= 114i128 && f7 <= 117i128) || (f7 >= 122i128 && f7 <= 125i128) {
+                                            } else if (f7 >= 16i128 && f7 <= 79i128) {
                                                 v77 = self.g_load(v10, 2i128 as u8, true)?;
                                                 self.g_wr(f7 as u32, v77)?;
+                                                if (f7 >= 64i128) {
+                                                    self.g_wr(((f7 - 64i128) + 16i128) as u32, v77)?;
+                                                }
                                                 v72 = self.g_postmod(((f3 + 0i128) + 16) as u32, v10, v61, 2i128 as i64)?;
                                                 self.g_wr((16i128 + (f3 + 0i128)) as u32, v72)?;
                                             } else if (f7 >= 80i128 && f7 <= 95i128) {
@@ -4365,6 +5246,11 @@ impl Lower {
                                                     v72 = self.g_postmod(((f3 + 0i128) + 16) as u32, v10, v61, 2i128 as i64)?;
                                                     self.g_wr((16i128 + (f3 + 0i128)) as u32, v72)?;
                                                 }
+                                            } else if (f7 >= 96i128 && f7 <= 107i128) || (f7 >= 110i128 && f7 <= 111i128) || (f7 >= 114i128 && f7 <= 117i128) || (f7 >= 122i128 && f7 <= 125i128) {
+                                                v77 = self.g_load(v10, 2i128 as u8, true)?;
+                                                self.g_wr(f7 as u32, v77)?;
+                                                v72 = self.g_postmod(((f3 + 0i128) + 16) as u32, v10, v61, 2i128 as i64)?;
+                                                self.g_wr((16i128 + (f3 + 0i128)) as u32, v72)?;
                                             } else {
                                                 if ((self.m1(0x200000) as i128) != 0i128) {
                                                     v62 = self.g_bin(Bin::Add, v10, v55);
@@ -4372,6 +5258,11 @@ impl Lower {
                                                     self.g_wr(f7 as u32, v77)?;
                                                     v78 = self.g_load(v62, 2i128 as u8, true)?;
                                                     self.g_wr((f7 ^ 1i128) as u32, v78)?;
+                                                    if ((f7 ^ 1i128) >= 64i128) {
+                                                        if ((f7 ^ 1i128) <= 79i128) {
+                                                            self.g_wr((((f7 ^ 1i128) - 64i128) + 16i128) as u32, v78)?;
+                                                        }
+                                                    }
                                                     v71 = self.g_postmod(((f3 + 0i128) + 16) as u32, v10, v61, 2i128 as i64)?;
                                                     self.g_wr((16i128 + (f3 + 0i128)) as u32, v71)?;
                                                 } else {
@@ -4394,9 +5285,12 @@ impl Lower {
                                                     v79 = self.g_load(v64, 2i128 as u8, true)?;
                                                     self.g_wr(f7 as u32, v79)?;
                                                 }
-                                            } else if (f7 >= 16i128 && f7 <= 79i128) || (f7 >= 96i128 && f7 <= 107i128) || (f7 >= 110i128 && f7 <= 111i128) || (f7 >= 114i128 && f7 <= 117i128) || (f7 >= 122i128 && f7 <= 125i128) {
+                                            } else if (f7 >= 16i128 && f7 <= 79i128) {
                                                 v79 = self.g_load(v64, 2i128 as u8, true)?;
                                                 self.g_wr(f7 as u32, v79)?;
+                                                if (f7 >= 64i128) {
+                                                    self.g_wr(((f7 - 64i128) + 16i128) as u32, v79)?;
+                                                }
                                             } else if (f7 >= 80i128 && f7 <= 95i128) {
                                                 if ((self.m1(0x200000) as i128) != 0i128) {
                                                     v65 = self.g_bin(Bin::Add, v64, v55);
@@ -4408,6 +5302,9 @@ impl Lower {
                                                     v79 = self.g_load(v64, 2i128 as u8, true)?;
                                                     self.g_wr(f7 as u32, v79)?;
                                                 }
+                                            } else if (f7 >= 96i128 && f7 <= 107i128) || (f7 >= 110i128 && f7 <= 111i128) || (f7 >= 114i128 && f7 <= 117i128) || (f7 >= 122i128 && f7 <= 125i128) {
+                                                v79 = self.g_load(v64, 2i128 as u8, true)?;
+                                                self.g_wr(f7 as u32, v79)?;
                                             } else {
                                                 if ((self.m1(0x200000) as i128) != 0i128) {
                                                     v65 = self.g_bin(Bin::Add, v64, v55);
@@ -4415,6 +5312,11 @@ impl Lower {
                                                     self.g_wr(f7 as u32, v79)?;
                                                     v80 = self.g_load(v65, 2i128 as u8, true)?;
                                                     self.g_wr((f7 ^ 1i128) as u32, v80)?;
+                                                    if ((f7 ^ 1i128) >= 64i128) {
+                                                        if ((f7 ^ 1i128) <= 79i128) {
+                                                            self.g_wr((((f7 ^ 1i128) - 64i128) + 16i128) as u32, v80)?;
+                                                        }
+                                                    }
                                                 } else {
                                                     v79 = self.g_load(v64, 2i128 as u8, true)?;
                                                     self.g_wr(f7 as u32, v79)?;
@@ -4470,12 +5372,24 @@ impl Lower {
                                         if (f6 != 0i128) {
                                             v81 = self.g_load(v0, 8i128 as u8, false)?;
                                             self.g_wr(f7 as u32, v81)?;
+                                            if f7 <= 15i128 || (f7 >= 80i128 && f7 <= 95i128) || (f7 >= 96i128 && f7 <= 107i128) || (f7 >= 108i128 && f7 <= 109i128) || (f7 >= 110i128 && f7 <= 111i128) || (f7 >= 112i128 && f7 <= 113i128) || (f7 >= 114i128 && f7 <= 117i128) || (f7 >= 118i128 && f7 <= 121i128) || (f7 >= 122i128 && f7 <= 125i128) || f7 >= 126i128 {
+                                            } else {
+                                                if (f7 >= 64i128) {
+                                                    self.g_wr(((f7 - 64i128) + 16i128) as u32, v81)?;
+                                                }
+                                            }
                                             v47 = self.g_postmod(((f3 + 8i128) + 16) as u32, v0, v36, 4i128 as i64)?;
                                             self.g_wr((16i128 + (f3 + 8i128)) as u32, v47)?;
                                         } else {
                                             v39 = self.g_bin(Bin::Add, v0, v36);
                                             v82 = self.g_load(v39, 8i128 as u8, false)?;
                                             self.g_wr(f7 as u32, v82)?;
+                                            if f7 <= 15i128 || (f7 >= 80i128 && f7 <= 95i128) || (f7 >= 96i128 && f7 <= 107i128) || (f7 >= 108i128 && f7 <= 109i128) || (f7 >= 110i128 && f7 <= 111i128) || (f7 >= 112i128 && f7 <= 113i128) || (f7 >= 114i128 && f7 <= 117i128) || (f7 >= 118i128 && f7 <= 121i128) || (f7 >= 122i128 && f7 <= 125i128) || f7 >= 126i128 {
+                                            } else {
+                                                if (f7 >= 64i128) {
+                                                    self.g_wr(((f7 - 64i128) + 16i128) as u32, v82)?;
+                                                }
+                                            }
                                         }
                                     } else {
                                         v10 = self.g_rd((16i128 + (f3 + 0i128)) as u32)?;
@@ -4485,12 +5399,24 @@ impl Lower {
                                         if (f6 != 0i128) {
                                             v83 = self.g_load(v10, 8i128 as u8, false)?;
                                             self.g_wr(f7 as u32, v83)?;
+                                            if f7 <= 15i128 || (f7 >= 80i128 && f7 <= 95i128) || (f7 >= 96i128 && f7 <= 107i128) || (f7 >= 108i128 && f7 <= 109i128) || (f7 >= 110i128 && f7 <= 111i128) || (f7 >= 112i128 && f7 <= 113i128) || (f7 >= 114i128 && f7 <= 117i128) || (f7 >= 118i128 && f7 <= 121i128) || (f7 >= 122i128 && f7 <= 125i128) || f7 >= 126i128 {
+                                            } else {
+                                                if (f7 >= 64i128) {
+                                                    self.g_wr(((f7 - 64i128) + 16i128) as u32, v83)?;
+                                                }
+                                            }
                                             v52 = self.g_postmod(((f3 + 0i128) + 16) as u32, v10, v41, 4i128 as i64)?;
                                             self.g_wr((16i128 + (f3 + 0i128)) as u32, v52)?;
                                         } else {
                                             v44 = self.g_bin(Bin::Add, v10, v41);
                                             v84 = self.g_load(v44, 8i128 as u8, false)?;
                                             self.g_wr(f7 as u32, v84)?;
+                                            if f7 <= 15i128 || (f7 >= 80i128 && f7 <= 95i128) || (f7 >= 96i128 && f7 <= 107i128) || (f7 >= 108i128 && f7 <= 109i128) || (f7 >= 110i128 && f7 <= 111i128) || (f7 >= 112i128 && f7 <= 113i128) || (f7 >= 114i128 && f7 <= 117i128) || (f7 >= 118i128 && f7 <= 121i128) || (f7 >= 122i128 && f7 <= 125i128) || f7 >= 126i128 {
+                                            } else {
+                                                if (f7 >= 64i128) {
+                                                    self.g_wr(((f7 - 64i128) + 16i128) as u32, v84)?;
+                                                }
+                                            }
                                         }
                                     }
                                 }
@@ -4947,6 +5873,11 @@ impl Lower {
                                                     }
                                                     v18 = self.g_load(v0, 1i128 as u8, false)?;
                                                     self.g_wr(f8 as u32, v18)?;
+                                                    if (f8 >= 64i128) {
+                                                        if (f8 <= 79i128) {
+                                                            self.g_wr(((f8 - 64i128) + 16i128) as u32, v18)?;
+                                                        }
+                                                    }
                                                     v19 = self.g_postmod(((f4 + 8i128) + 16) as u32, v0, v4, 1i128 as i64)?;
                                                     self.g_wr((16i128 + (f4 + 8i128)) as u32, v19)?;
                                                 } else {
@@ -4957,6 +5888,11 @@ impl Lower {
                                                     }
                                                     v20 = self.g_load(v7, 1i128 as u8, false)?;
                                                     self.g_wr(f8 as u32, v20)?;
+                                                    if (f8 >= 64i128) {
+                                                        if (f8 <= 79i128) {
+                                                            self.g_wr(((f8 - 64i128) + 16i128) as u32, v20)?;
+                                                        }
+                                                    }
                                                 }
                                             } else {
                                                 v8 = self.g_rd((16i128 + (f4 + 0i128)) as u32)?;
@@ -4987,13 +5923,16 @@ impl Lower {
                                                             v24 = self.g_postmod(((f4 + 0i128) + 16) as u32, v8, v10, 1i128 as i64)?;
                                                             self.g_wr((16i128 + (f4 + 0i128)) as u32, v24)?;
                                                         }
-                                                    } else if (f8 >= 16i128 && f8 <= 79i128) || (f8 >= 96i128 && f8 <= 107i128) || (f8 >= 110i128 && f8 <= 111i128) || (f8 >= 114i128 && f8 <= 117i128) || (f8 >= 122i128 && f8 <= 125i128) {
+                                                    } else if (f8 >= 16i128 && f8 <= 79i128) {
                                                         if (f0 == 31i128) {
                                                         } else {
                                                             self.g_cond(f0 as u32, false)?;
                                                         }
                                                         v21 = self.g_load(v8, 1i128 as u8, false)?;
                                                         self.g_wr(f8 as u32, v21)?;
+                                                        if (f8 >= 64i128) {
+                                                            self.g_wr(((f8 - 64i128) + 16i128) as u32, v21)?;
+                                                        }
                                                         v24 = self.g_postmod(((f4 + 0i128) + 16) as u32, v8, v10, 1i128 as i64)?;
                                                         self.g_wr((16i128 + (f4 + 0i128)) as u32, v24)?;
                                                     } else if (f8 >= 80i128 && f8 <= 95i128) {
@@ -5019,6 +5958,15 @@ impl Lower {
                                                             v24 = self.g_postmod(((f4 + 0i128) + 16) as u32, v8, v10, 1i128 as i64)?;
                                                             self.g_wr((16i128 + (f4 + 0i128)) as u32, v24)?;
                                                         }
+                                                    } else if (f8 >= 96i128 && f8 <= 107i128) || (f8 >= 110i128 && f8 <= 111i128) || (f8 >= 114i128 && f8 <= 117i128) || (f8 >= 122i128 && f8 <= 125i128) {
+                                                        if (f0 == 31i128) {
+                                                        } else {
+                                                            self.g_cond(f0 as u32, false)?;
+                                                        }
+                                                        v21 = self.g_load(v8, 1i128 as u8, false)?;
+                                                        self.g_wr(f8 as u32, v21)?;
+                                                        v24 = self.g_postmod(((f4 + 0i128) + 16) as u32, v8, v10, 1i128 as i64)?;
+                                                        self.g_wr((16i128 + (f4 + 0i128)) as u32, v24)?;
                                                     } else {
                                                         if ((self.m1(0x200000) as i128) != 0i128) {
                                                             v11 = self.g_bin(Bin::Add, v8, v3);
@@ -5030,6 +5978,11 @@ impl Lower {
                                                             self.g_wr(f8 as u32, v21)?;
                                                             v22 = self.g_load(v11, 1i128 as u8, false)?;
                                                             self.g_wr((f8 ^ 1i128) as u32, v22)?;
+                                                            if ((f8 ^ 1i128) >= 64i128) {
+                                                                if ((f8 ^ 1i128) <= 79i128) {
+                                                                    self.g_wr((((f8 ^ 1i128) - 64i128) + 16i128) as u32, v22)?;
+                                                                }
+                                                            }
                                                             v23 = self.g_postmod(((f4 + 0i128) + 16) as u32, v8, v10, 1i128 as i64)?;
                                                             self.g_wr((16i128 + (f4 + 0i128)) as u32, v23)?;
                                                         } else {
@@ -5064,13 +6017,16 @@ impl Lower {
                                                             v25 = self.g_load(v16, 1i128 as u8, false)?;
                                                             self.g_wr(f8 as u32, v25)?;
                                                         }
-                                                    } else if (f8 >= 16i128 && f8 <= 79i128) || (f8 >= 96i128 && f8 <= 107i128) || (f8 >= 110i128 && f8 <= 111i128) || (f8 >= 114i128 && f8 <= 117i128) || (f8 >= 122i128 && f8 <= 125i128) {
+                                                    } else if (f8 >= 16i128 && f8 <= 79i128) {
                                                         if (f0 == 31i128) {
                                                         } else {
                                                             self.g_cond(f0 as u32, false)?;
                                                         }
                                                         v25 = self.g_load(v16, 1i128 as u8, false)?;
                                                         self.g_wr(f8 as u32, v25)?;
+                                                        if (f8 >= 64i128) {
+                                                            self.g_wr(((f8 - 64i128) + 16i128) as u32, v25)?;
+                                                        }
                                                     } else if (f8 >= 80i128 && f8 <= 95i128) {
                                                         if ((self.m1(0x200000) as i128) != 0i128) {
                                                             v17 = self.g_bin(Bin::Add, v16, v3);
@@ -5090,6 +6046,13 @@ impl Lower {
                                                             v25 = self.g_load(v16, 1i128 as u8, false)?;
                                                             self.g_wr(f8 as u32, v25)?;
                                                         }
+                                                    } else if (f8 >= 96i128 && f8 <= 107i128) || (f8 >= 110i128 && f8 <= 111i128) || (f8 >= 114i128 && f8 <= 117i128) || (f8 >= 122i128 && f8 <= 125i128) {
+                                                        if (f0 == 31i128) {
+                                                        } else {
+                                                            self.g_cond(f0 as u32, false)?;
+                                                        }
+                                                        v25 = self.g_load(v16, 1i128 as u8, false)?;
+                                                        self.g_wr(f8 as u32, v25)?;
                                                     } else {
                                                         if ((self.m1(0x200000) as i128) != 0i128) {
                                                             v17 = self.g_bin(Bin::Add, v16, v3);
@@ -5101,6 +6064,11 @@ impl Lower {
                                                             self.g_wr(f8 as u32, v25)?;
                                                             v26 = self.g_load(v17, 1i128 as u8, false)?;
                                                             self.g_wr((f8 ^ 1i128) as u32, v26)?;
+                                                            if ((f8 ^ 1i128) >= 64i128) {
+                                                                if ((f8 ^ 1i128) <= 79i128) {
+                                                                    self.g_wr((((f8 ^ 1i128) - 64i128) + 16i128) as u32, v26)?;
+                                                                }
+                                                            }
                                                         } else {
                                                             if (f0 == 31i128) {
                                                             } else {
@@ -5138,6 +6106,11 @@ impl Lower {
                                                     }
                                                     v27 = self.g_load(v0, 1i128 as u8, true)?;
                                                     self.g_wr(f8 as u32, v27)?;
+                                                    if (f8 >= 64i128) {
+                                                        if (f8 <= 79i128) {
+                                                            self.g_wr(((f8 - 64i128) + 16i128) as u32, v27)?;
+                                                        }
+                                                    }
                                                     v19 = self.g_postmod(((f4 + 8i128) + 16) as u32, v0, v4, 1i128 as i64)?;
                                                     self.g_wr((16i128 + (f4 + 8i128)) as u32, v19)?;
                                                 } else {
@@ -5148,6 +6121,11 @@ impl Lower {
                                                     }
                                                     v28 = self.g_load(v7, 1i128 as u8, true)?;
                                                     self.g_wr(f8 as u32, v28)?;
+                                                    if (f8 >= 64i128) {
+                                                        if (f8 <= 79i128) {
+                                                            self.g_wr(((f8 - 64i128) + 16i128) as u32, v28)?;
+                                                        }
+                                                    }
                                                 }
                                             } else {
                                                 v8 = self.g_rd((16i128 + (f4 + 0i128)) as u32)?;
@@ -5178,13 +6156,16 @@ impl Lower {
                                                             v24 = self.g_postmod(((f4 + 0i128) + 16) as u32, v8, v10, 1i128 as i64)?;
                                                             self.g_wr((16i128 + (f4 + 0i128)) as u32, v24)?;
                                                         }
-                                                    } else if (f8 >= 16i128 && f8 <= 79i128) || (f8 >= 96i128 && f8 <= 107i128) || (f8 >= 110i128 && f8 <= 111i128) || (f8 >= 114i128 && f8 <= 117i128) || (f8 >= 122i128 && f8 <= 125i128) {
+                                                    } else if (f8 >= 16i128 && f8 <= 79i128) {
                                                         if (f0 == 31i128) {
                                                         } else {
                                                             self.g_cond(f0 as u32, false)?;
                                                         }
                                                         v29 = self.g_load(v8, 1i128 as u8, true)?;
                                                         self.g_wr(f8 as u32, v29)?;
+                                                        if (f8 >= 64i128) {
+                                                            self.g_wr(((f8 - 64i128) + 16i128) as u32, v29)?;
+                                                        }
                                                         v24 = self.g_postmod(((f4 + 0i128) + 16) as u32, v8, v10, 1i128 as i64)?;
                                                         self.g_wr((16i128 + (f4 + 0i128)) as u32, v24)?;
                                                     } else if (f8 >= 80i128 && f8 <= 95i128) {
@@ -5210,6 +6191,15 @@ impl Lower {
                                                             v24 = self.g_postmod(((f4 + 0i128) + 16) as u32, v8, v10, 1i128 as i64)?;
                                                             self.g_wr((16i128 + (f4 + 0i128)) as u32, v24)?;
                                                         }
+                                                    } else if (f8 >= 96i128 && f8 <= 107i128) || (f8 >= 110i128 && f8 <= 111i128) || (f8 >= 114i128 && f8 <= 117i128) || (f8 >= 122i128 && f8 <= 125i128) {
+                                                        if (f0 == 31i128) {
+                                                        } else {
+                                                            self.g_cond(f0 as u32, false)?;
+                                                        }
+                                                        v29 = self.g_load(v8, 1i128 as u8, true)?;
+                                                        self.g_wr(f8 as u32, v29)?;
+                                                        v24 = self.g_postmod(((f4 + 0i128) + 16) as u32, v8, v10, 1i128 as i64)?;
+                                                        self.g_wr((16i128 + (f4 + 0i128)) as u32, v24)?;
                                                     } else {
                                                         if ((self.m1(0x200000) as i128) != 0i128) {
                                                             v11 = self.g_bin(Bin::Add, v8, v3);
@@ -5221,6 +6211,11 @@ impl Lower {
                                                             self.g_wr(f8 as u32, v29)?;
                                                             v30 = self.g_load(v11, 1i128 as u8, true)?;
                                                             self.g_wr((f8 ^ 1i128) as u32, v30)?;
+                                                            if ((f8 ^ 1i128) >= 64i128) {
+                                                                if ((f8 ^ 1i128) <= 79i128) {
+                                                                    self.g_wr((((f8 ^ 1i128) - 64i128) + 16i128) as u32, v30)?;
+                                                                }
+                                                            }
                                                             v23 = self.g_postmod(((f4 + 0i128) + 16) as u32, v8, v10, 1i128 as i64)?;
                                                             self.g_wr((16i128 + (f4 + 0i128)) as u32, v23)?;
                                                         } else {
@@ -5255,13 +6250,16 @@ impl Lower {
                                                             v31 = self.g_load(v16, 1i128 as u8, true)?;
                                                             self.g_wr(f8 as u32, v31)?;
                                                         }
-                                                    } else if (f8 >= 16i128 && f8 <= 79i128) || (f8 >= 96i128 && f8 <= 107i128) || (f8 >= 110i128 && f8 <= 111i128) || (f8 >= 114i128 && f8 <= 117i128) || (f8 >= 122i128 && f8 <= 125i128) {
+                                                    } else if (f8 >= 16i128 && f8 <= 79i128) {
                                                         if (f0 == 31i128) {
                                                         } else {
                                                             self.g_cond(f0 as u32, false)?;
                                                         }
                                                         v31 = self.g_load(v16, 1i128 as u8, true)?;
                                                         self.g_wr(f8 as u32, v31)?;
+                                                        if (f8 >= 64i128) {
+                                                            self.g_wr(((f8 - 64i128) + 16i128) as u32, v31)?;
+                                                        }
                                                     } else if (f8 >= 80i128 && f8 <= 95i128) {
                                                         if ((self.m1(0x200000) as i128) != 0i128) {
                                                             v17 = self.g_bin(Bin::Add, v16, v3);
@@ -5281,6 +6279,13 @@ impl Lower {
                                                             v31 = self.g_load(v16, 1i128 as u8, true)?;
                                                             self.g_wr(f8 as u32, v31)?;
                                                         }
+                                                    } else if (f8 >= 96i128 && f8 <= 107i128) || (f8 >= 110i128 && f8 <= 111i128) || (f8 >= 114i128 && f8 <= 117i128) || (f8 >= 122i128 && f8 <= 125i128) {
+                                                        if (f0 == 31i128) {
+                                                        } else {
+                                                            self.g_cond(f0 as u32, false)?;
+                                                        }
+                                                        v31 = self.g_load(v16, 1i128 as u8, true)?;
+                                                        self.g_wr(f8 as u32, v31)?;
                                                     } else {
                                                         if ((self.m1(0x200000) as i128) != 0i128) {
                                                             v17 = self.g_bin(Bin::Add, v16, v3);
@@ -5292,6 +6297,11 @@ impl Lower {
                                                             self.g_wr(f8 as u32, v31)?;
                                                             v32 = self.g_load(v17, 1i128 as u8, true)?;
                                                             self.g_wr((f8 ^ 1i128) as u32, v32)?;
+                                                            if ((f8 ^ 1i128) >= 64i128) {
+                                                                if ((f8 ^ 1i128) <= 79i128) {
+                                                                    self.g_wr((((f8 ^ 1i128) - 64i128) + 16i128) as u32, v32)?;
+                                                                }
+                                                            }
                                                         } else {
                                                             if (f0 == 31i128) {
                                                             } else {
@@ -5561,6 +6571,11 @@ impl Lower {
                                                             v34 = self.g_bin(Bin::Mul, v2, v33);
                                                             v42 = self.g_load(v0, 4i128 as u8, false)?;
                                                             self.g_wr(f8 as u32, v42)?;
+                                                            if (f8 >= 64i128) {
+                                                                if (f8 <= 79i128) {
+                                                                    self.g_wr(((f8 - 64i128) + 16i128) as u32, v42)?;
+                                                                }
+                                                            }
                                                             v43 = self.g_postmod(((f4 + 8i128) + 16) as u32, v0, v34, 4i128 as i64)?;
                                                             self.g_wr((16i128 + (f4 + 8i128)) as u32, v43)?;
                                                         }
@@ -5575,6 +6590,11 @@ impl Lower {
                                                             self.g_cond(f0 as u32, false)?;
                                                             v42 = self.g_load(v0, 4i128 as u8, false)?;
                                                             self.g_wr(f8 as u32, v42)?;
+                                                            if (f8 >= 64i128) {
+                                                                if (f8 <= 79i128) {
+                                                                    self.g_wr(((f8 - 64i128) + 16i128) as u32, v42)?;
+                                                                }
+                                                            }
                                                             v43 = self.g_postmod(((f4 + 8i128) + 16) as u32, v0, v34, 4i128 as i64)?;
                                                             self.g_wr((16i128 + (f4 + 8i128)) as u32, v43)?;
                                                         }
@@ -5591,6 +6611,11 @@ impl Lower {
                                                             v36 = self.g_bin(Bin::Add, v0, v34);
                                                             v44 = self.g_load(v36, 4i128 as u8, false)?;
                                                             self.g_wr(f8 as u32, v44)?;
+                                                            if (f8 >= 64i128) {
+                                                                if (f8 <= 79i128) {
+                                                                    self.g_wr(((f8 - 64i128) + 16i128) as u32, v44)?;
+                                                                }
+                                                            }
                                                         }
                                                     } else {
                                                         if (f8 == 107i128) {
@@ -5604,6 +6629,11 @@ impl Lower {
                                                             self.g_cond(f0 as u32, false)?;
                                                             v44 = self.g_load(v36, 4i128 as u8, false)?;
                                                             self.g_wr(f8 as u32, v44)?;
+                                                            if (f8 >= 64i128) {
+                                                                if (f8 <= 79i128) {
+                                                                    self.g_wr(((f8 - 64i128) + 16i128) as u32, v44)?;
+                                                                }
+                                                            }
                                                         }
                                                     }
                                                 }
@@ -5636,7 +6666,7 @@ impl Lower {
                                                             v48 = self.g_postmod(((f4 + 0i128) + 16) as u32, v8, v37, 4i128 as i64)?;
                                                             self.g_wr((16i128 + (f4 + 0i128)) as u32, v48)?;
                                                         }
-                                                    } else if (f8 >= 16i128 && f8 <= 79i128) || (f8 >= 110i128 && f8 <= 111i128) || (f8 >= 114i128 && f8 <= 117i128) || (f8 >= 122i128 && f8 <= 125i128) {
+                                                    } else if (f8 >= 16i128 && f8 <= 79i128) {
                                                         v8 = self.g_rd((16i128 + (f4 + 0i128)) as u32)?;
                                                         v9 = self.g_rd((32i128 + (f6 + 0i128)) as u32)?;
                                                         v33 = self.ci(4i128 as u32);
@@ -5647,6 +6677,9 @@ impl Lower {
                                                         }
                                                         v45 = self.g_load(v8, 4i128 as u8, false)?;
                                                         self.g_wr(f8 as u32, v45)?;
+                                                        if (f8 >= 64i128) {
+                                                            self.g_wr(((f8 - 64i128) + 16i128) as u32, v45)?;
+                                                        }
                                                         v48 = self.g_postmod(((f4 + 0i128) + 16) as u32, v8, v37, 4i128 as i64)?;
                                                         self.g_wr((16i128 + (f4 + 0i128)) as u32, v48)?;
                                                     } else if (f8 >= 80i128 && f8 <= 95i128) {
@@ -5705,7 +6738,7 @@ impl Lower {
                                                                 self.g_wr((16i128 + (f4 + 0i128)) as u32, v48)?;
                                                             }
                                                         }
-                                                    } else {
+                                                    } else if (f8 >= 108i128 && f8 <= 109i128) || (f8 >= 112i128 && f8 <= 113i128) || (f8 >= 118i128 && f8 <= 121i128) || f8 >= 126i128 {
                                                         if ((self.m1(0x200000) as i128) != 0i128) {
                                                             if (f0 == 31i128) {
                                                                 if ((f8 ^ 1i128) == 107i128) {
@@ -5720,6 +6753,11 @@ impl Lower {
                                                                     self.g_wr(f8 as u32, v45)?;
                                                                     v46 = self.g_load(v38, 4i128 as u8, false)?;
                                                                     self.g_wr((f8 ^ 1i128) as u32, v46)?;
+                                                                    if ((f8 ^ 1i128) >= 64i128) {
+                                                                        if ((f8 ^ 1i128) <= 79i128) {
+                                                                            self.g_wr((((f8 ^ 1i128) - 64i128) + 16i128) as u32, v46)?;
+                                                                        }
+                                                                    }
                                                                     v47 = self.g_postmod(((f4 + 0i128) + 16) as u32, v8, v37, 4i128 as i64)?;
                                                                     self.g_wr((16i128 + (f4 + 0i128)) as u32, v47)?;
                                                                 }
@@ -5737,6 +6775,11 @@ impl Lower {
                                                                     self.g_wr(f8 as u32, v45)?;
                                                                     v46 = self.g_load(v38, 4i128 as u8, false)?;
                                                                     self.g_wr((f8 ^ 1i128) as u32, v46)?;
+                                                                    if ((f8 ^ 1i128) >= 64i128) {
+                                                                        if ((f8 ^ 1i128) <= 79i128) {
+                                                                            self.g_wr((((f8 ^ 1i128) - 64i128) + 16i128) as u32, v46)?;
+                                                                        }
+                                                                    }
                                                                     v47 = self.g_postmod(((f4 + 0i128) + 16) as u32, v8, v37, 4i128 as i64)?;
                                                                     self.g_wr((16i128 + (f4 + 0i128)) as u32, v47)?;
                                                                 }
@@ -5755,6 +6798,19 @@ impl Lower {
                                                             v48 = self.g_postmod(((f4 + 0i128) + 16) as u32, v8, v37, 4i128 as i64)?;
                                                             self.g_wr((16i128 + (f4 + 0i128)) as u32, v48)?;
                                                         }
+                                                    } else {
+                                                        v8 = self.g_rd((16i128 + (f4 + 0i128)) as u32)?;
+                                                        v9 = self.g_rd((32i128 + (f6 + 0i128)) as u32)?;
+                                                        v33 = self.ci(4i128 as u32);
+                                                        v37 = self.g_bin(Bin::Mul, v9, v33);
+                                                        if (f0 == 31i128) {
+                                                        } else {
+                                                            self.g_cond(f0 as u32, false)?;
+                                                        }
+                                                        v45 = self.g_load(v8, 4i128 as u8, false)?;
+                                                        self.g_wr(f8 as u32, v45)?;
+                                                        v48 = self.g_postmod(((f4 + 0i128) + 16) as u32, v8, v37, 4i128 as i64)?;
+                                                        self.g_wr((16i128 + (f4 + 0i128)) as u32, v48)?;
                                                     }
                                                 } else {
                                                     if f8 <= 15i128 {
@@ -5781,7 +6837,7 @@ impl Lower {
                                                             v49 = self.g_load(v40, 4i128 as u8, false)?;
                                                             self.g_wr(f8 as u32, v49)?;
                                                         }
-                                                    } else if (f8 >= 16i128 && f8 <= 79i128) || (f8 >= 110i128 && f8 <= 111i128) || (f8 >= 114i128 && f8 <= 117i128) || (f8 >= 122i128 && f8 <= 125i128) {
+                                                    } else if (f8 >= 16i128 && f8 <= 79i128) {
                                                         v8 = self.g_rd((16i128 + (f4 + 0i128)) as u32)?;
                                                         v9 = self.g_rd((32i128 + (f6 + 0i128)) as u32)?;
                                                         v33 = self.ci(4i128 as u32);
@@ -5793,6 +6849,9 @@ impl Lower {
                                                         }
                                                         v49 = self.g_load(v40, 4i128 as u8, false)?;
                                                         self.g_wr(f8 as u32, v49)?;
+                                                        if (f8 >= 64i128) {
+                                                            self.g_wr(((f8 - 64i128) + 16i128) as u32, v49)?;
+                                                        }
                                                     } else if (f8 >= 80i128 && f8 <= 95i128) {
                                                         v8 = self.g_rd((16i128 + (f4 + 0i128)) as u32)?;
                                                         v9 = self.g_rd((32i128 + (f6 + 0i128)) as u32)?;
@@ -5844,7 +6903,7 @@ impl Lower {
                                                                 self.g_wr(f8 as u32, v49)?;
                                                             }
                                                         }
-                                                    } else {
+                                                    } else if (f8 >= 108i128 && f8 <= 109i128) || (f8 >= 112i128 && f8 <= 113i128) || (f8 >= 118i128 && f8 <= 121i128) || f8 >= 126i128 {
                                                         if ((self.m1(0x200000) as i128) != 0i128) {
                                                             if (f0 == 31i128) {
                                                                 if ((f8 ^ 1i128) == 107i128) {
@@ -5860,6 +6919,11 @@ impl Lower {
                                                                     self.g_wr(f8 as u32, v49)?;
                                                                     v50 = self.g_load(v41, 4i128 as u8, false)?;
                                                                     self.g_wr((f8 ^ 1i128) as u32, v50)?;
+                                                                    if ((f8 ^ 1i128) >= 64i128) {
+                                                                        if ((f8 ^ 1i128) <= 79i128) {
+                                                                            self.g_wr((((f8 ^ 1i128) - 64i128) + 16i128) as u32, v50)?;
+                                                                        }
+                                                                    }
                                                                 }
                                                             } else {
                                                                 if ((f8 ^ 1i128) == 107i128) {
@@ -5876,6 +6940,11 @@ impl Lower {
                                                                     self.g_wr(f8 as u32, v49)?;
                                                                     v50 = self.g_load(v41, 4i128 as u8, false)?;
                                                                     self.g_wr((f8 ^ 1i128) as u32, v50)?;
+                                                                    if ((f8 ^ 1i128) >= 64i128) {
+                                                                        if ((f8 ^ 1i128) <= 79i128) {
+                                                                            self.g_wr((((f8 ^ 1i128) - 64i128) + 16i128) as u32, v50)?;
+                                                                        }
+                                                                    }
                                                                 }
                                                             }
                                                         } else {
@@ -5891,6 +6960,18 @@ impl Lower {
                                                             v49 = self.g_load(v40, 4i128 as u8, false)?;
                                                             self.g_wr(f8 as u32, v49)?;
                                                         }
+                                                    } else {
+                                                        v8 = self.g_rd((16i128 + (f4 + 0i128)) as u32)?;
+                                                        v9 = self.g_rd((32i128 + (f6 + 0i128)) as u32)?;
+                                                        v33 = self.ci(4i128 as u32);
+                                                        v37 = self.g_bin(Bin::Mul, v9, v33);
+                                                        v40 = self.g_bin(Bin::Add, v8, v37);
+                                                        if (f0 == 31i128) {
+                                                        } else {
+                                                            self.g_cond(f0 as u32, false)?;
+                                                        }
+                                                        v49 = self.g_load(v40, 4i128 as u8, false)?;
+                                                        self.g_wr(f8 as u32, v49)?;
                                                     }
                                                 }
                                             }
@@ -6162,6 +7243,11 @@ impl Lower {
                                                     }
                                                     v60 = self.g_load(v0, 2i128 as u8, false)?;
                                                     self.g_wr(f8 as u32, v60)?;
+                                                    if (f8 >= 64i128) {
+                                                        if (f8 <= 79i128) {
+                                                            self.g_wr(((f8 - 64i128) + 16i128) as u32, v60)?;
+                                                        }
+                                                    }
                                                     v61 = self.g_postmod(((f4 + 8i128) + 16) as u32, v0, v52, 2i128 as i64)?;
                                                     self.g_wr((16i128 + (f4 + 8i128)) as u32, v61)?;
                                                 } else {
@@ -6172,6 +7258,11 @@ impl Lower {
                                                     }
                                                     v62 = self.g_load(v54, 2i128 as u8, false)?;
                                                     self.g_wr(f8 as u32, v62)?;
+                                                    if (f8 >= 64i128) {
+                                                        if (f8 <= 79i128) {
+                                                            self.g_wr(((f8 - 64i128) + 16i128) as u32, v62)?;
+                                                        }
+                                                    }
                                                 }
                                             } else {
                                                 v8 = self.g_rd((16i128 + (f4 + 0i128)) as u32)?;
@@ -6202,13 +7293,16 @@ impl Lower {
                                                             v66 = self.g_postmod(((f4 + 0i128) + 16) as u32, v8, v55, 2i128 as i64)?;
                                                             self.g_wr((16i128 + (f4 + 0i128)) as u32, v66)?;
                                                         }
-                                                    } else if (f8 >= 16i128 && f8 <= 79i128) || (f8 >= 96i128 && f8 <= 107i128) || (f8 >= 110i128 && f8 <= 111i128) || (f8 >= 114i128 && f8 <= 117i128) || (f8 >= 122i128 && f8 <= 125i128) {
+                                                    } else if (f8 >= 16i128 && f8 <= 79i128) {
                                                         if (f0 == 31i128) {
                                                         } else {
                                                             self.g_cond(f0 as u32, false)?;
                                                         }
                                                         v63 = self.g_load(v8, 2i128 as u8, false)?;
                                                         self.g_wr(f8 as u32, v63)?;
+                                                        if (f8 >= 64i128) {
+                                                            self.g_wr(((f8 - 64i128) + 16i128) as u32, v63)?;
+                                                        }
                                                         v66 = self.g_postmod(((f4 + 0i128) + 16) as u32, v8, v55, 2i128 as i64)?;
                                                         self.g_wr((16i128 + (f4 + 0i128)) as u32, v66)?;
                                                     } else if (f8 >= 80i128 && f8 <= 95i128) {
@@ -6234,6 +7328,15 @@ impl Lower {
                                                             v66 = self.g_postmod(((f4 + 0i128) + 16) as u32, v8, v55, 2i128 as i64)?;
                                                             self.g_wr((16i128 + (f4 + 0i128)) as u32, v66)?;
                                                         }
+                                                    } else if (f8 >= 96i128 && f8 <= 107i128) || (f8 >= 110i128 && f8 <= 111i128) || (f8 >= 114i128 && f8 <= 117i128) || (f8 >= 122i128 && f8 <= 125i128) {
+                                                        if (f0 == 31i128) {
+                                                        } else {
+                                                            self.g_cond(f0 as u32, false)?;
+                                                        }
+                                                        v63 = self.g_load(v8, 2i128 as u8, false)?;
+                                                        self.g_wr(f8 as u32, v63)?;
+                                                        v66 = self.g_postmod(((f4 + 0i128) + 16) as u32, v8, v55, 2i128 as i64)?;
+                                                        self.g_wr((16i128 + (f4 + 0i128)) as u32, v66)?;
                                                     } else {
                                                         if ((self.m1(0x200000) as i128) != 0i128) {
                                                             v56 = self.g_bin(Bin::Add, v8, v51);
@@ -6245,6 +7348,11 @@ impl Lower {
                                                             self.g_wr(f8 as u32, v63)?;
                                                             v64 = self.g_load(v56, 2i128 as u8, false)?;
                                                             self.g_wr((f8 ^ 1i128) as u32, v64)?;
+                                                            if ((f8 ^ 1i128) >= 64i128) {
+                                                                if ((f8 ^ 1i128) <= 79i128) {
+                                                                    self.g_wr((((f8 ^ 1i128) - 64i128) + 16i128) as u32, v64)?;
+                                                                }
+                                                            }
                                                             v65 = self.g_postmod(((f4 + 0i128) + 16) as u32, v8, v55, 2i128 as i64)?;
                                                             self.g_wr((16i128 + (f4 + 0i128)) as u32, v65)?;
                                                         } else {
@@ -6279,13 +7387,16 @@ impl Lower {
                                                             v67 = self.g_load(v58, 2i128 as u8, false)?;
                                                             self.g_wr(f8 as u32, v67)?;
                                                         }
-                                                    } else if (f8 >= 16i128 && f8 <= 79i128) || (f8 >= 96i128 && f8 <= 107i128) || (f8 >= 110i128 && f8 <= 111i128) || (f8 >= 114i128 && f8 <= 117i128) || (f8 >= 122i128 && f8 <= 125i128) {
+                                                    } else if (f8 >= 16i128 && f8 <= 79i128) {
                                                         if (f0 == 31i128) {
                                                         } else {
                                                             self.g_cond(f0 as u32, false)?;
                                                         }
                                                         v67 = self.g_load(v58, 2i128 as u8, false)?;
                                                         self.g_wr(f8 as u32, v67)?;
+                                                        if (f8 >= 64i128) {
+                                                            self.g_wr(((f8 - 64i128) + 16i128) as u32, v67)?;
+                                                        }
                                                     } else if (f8 >= 80i128 && f8 <= 95i128) {
                                                         if ((self.m1(0x200000) as i128) != 0i128) {
                                                             v59 = self.g_bin(Bin::Add, v58, v51);
@@ -6305,6 +7416,13 @@ impl Lower {
                                                             v67 = self.g_load(v58, 2i128 as u8, false)?;
                                                             self.g_wr(f8 as u32, v67)?;
                                                         }
+                                                    } else if (f8 >= 96i128 && f8 <= 107i128) || (f8 >= 110i128 && f8 <= 111i128) || (f8 >= 114i128 && f8 <= 117i128) || (f8 >= 122i128 && f8 <= 125i128) {
+                                                        if (f0 == 31i128) {
+                                                        } else {
+                                                            self.g_cond(f0 as u32, false)?;
+                                                        }
+                                                        v67 = self.g_load(v58, 2i128 as u8, false)?;
+                                                        self.g_wr(f8 as u32, v67)?;
                                                     } else {
                                                         if ((self.m1(0x200000) as i128) != 0i128) {
                                                             v59 = self.g_bin(Bin::Add, v58, v51);
@@ -6316,6 +7434,11 @@ impl Lower {
                                                             self.g_wr(f8 as u32, v67)?;
                                                             v68 = self.g_load(v59, 2i128 as u8, false)?;
                                                             self.g_wr((f8 ^ 1i128) as u32, v68)?;
+                                                            if ((f8 ^ 1i128) >= 64i128) {
+                                                                if ((f8 ^ 1i128) <= 79i128) {
+                                                                    self.g_wr((((f8 ^ 1i128) - 64i128) + 16i128) as u32, v68)?;
+                                                                }
+                                                            }
                                                         } else {
                                                             if (f0 == 31i128) {
                                                             } else {
@@ -6353,6 +7476,11 @@ impl Lower {
                                                     }
                                                     v69 = self.g_load(v0, 2i128 as u8, true)?;
                                                     self.g_wr(f8 as u32, v69)?;
+                                                    if (f8 >= 64i128) {
+                                                        if (f8 <= 79i128) {
+                                                            self.g_wr(((f8 - 64i128) + 16i128) as u32, v69)?;
+                                                        }
+                                                    }
                                                     v61 = self.g_postmod(((f4 + 8i128) + 16) as u32, v0, v52, 2i128 as i64)?;
                                                     self.g_wr((16i128 + (f4 + 8i128)) as u32, v61)?;
                                                 } else {
@@ -6363,6 +7491,11 @@ impl Lower {
                                                     }
                                                     v70 = self.g_load(v54, 2i128 as u8, true)?;
                                                     self.g_wr(f8 as u32, v70)?;
+                                                    if (f8 >= 64i128) {
+                                                        if (f8 <= 79i128) {
+                                                            self.g_wr(((f8 - 64i128) + 16i128) as u32, v70)?;
+                                                        }
+                                                    }
                                                 }
                                             } else {
                                                 v8 = self.g_rd((16i128 + (f4 + 0i128)) as u32)?;
@@ -6393,13 +7526,16 @@ impl Lower {
                                                             v66 = self.g_postmod(((f4 + 0i128) + 16) as u32, v8, v55, 2i128 as i64)?;
                                                             self.g_wr((16i128 + (f4 + 0i128)) as u32, v66)?;
                                                         }
-                                                    } else if (f8 >= 16i128 && f8 <= 79i128) || (f8 >= 96i128 && f8 <= 107i128) || (f8 >= 110i128 && f8 <= 111i128) || (f8 >= 114i128 && f8 <= 117i128) || (f8 >= 122i128 && f8 <= 125i128) {
+                                                    } else if (f8 >= 16i128 && f8 <= 79i128) {
                                                         if (f0 == 31i128) {
                                                         } else {
                                                             self.g_cond(f0 as u32, false)?;
                                                         }
                                                         v71 = self.g_load(v8, 2i128 as u8, true)?;
                                                         self.g_wr(f8 as u32, v71)?;
+                                                        if (f8 >= 64i128) {
+                                                            self.g_wr(((f8 - 64i128) + 16i128) as u32, v71)?;
+                                                        }
                                                         v66 = self.g_postmod(((f4 + 0i128) + 16) as u32, v8, v55, 2i128 as i64)?;
                                                         self.g_wr((16i128 + (f4 + 0i128)) as u32, v66)?;
                                                     } else if (f8 >= 80i128 && f8 <= 95i128) {
@@ -6425,6 +7561,15 @@ impl Lower {
                                                             v66 = self.g_postmod(((f4 + 0i128) + 16) as u32, v8, v55, 2i128 as i64)?;
                                                             self.g_wr((16i128 + (f4 + 0i128)) as u32, v66)?;
                                                         }
+                                                    } else if (f8 >= 96i128 && f8 <= 107i128) || (f8 >= 110i128 && f8 <= 111i128) || (f8 >= 114i128 && f8 <= 117i128) || (f8 >= 122i128 && f8 <= 125i128) {
+                                                        if (f0 == 31i128) {
+                                                        } else {
+                                                            self.g_cond(f0 as u32, false)?;
+                                                        }
+                                                        v71 = self.g_load(v8, 2i128 as u8, true)?;
+                                                        self.g_wr(f8 as u32, v71)?;
+                                                        v66 = self.g_postmod(((f4 + 0i128) + 16) as u32, v8, v55, 2i128 as i64)?;
+                                                        self.g_wr((16i128 + (f4 + 0i128)) as u32, v66)?;
                                                     } else {
                                                         if ((self.m1(0x200000) as i128) != 0i128) {
                                                             v56 = self.g_bin(Bin::Add, v8, v51);
@@ -6436,6 +7581,11 @@ impl Lower {
                                                             self.g_wr(f8 as u32, v71)?;
                                                             v72 = self.g_load(v56, 2i128 as u8, true)?;
                                                             self.g_wr((f8 ^ 1i128) as u32, v72)?;
+                                                            if ((f8 ^ 1i128) >= 64i128) {
+                                                                if ((f8 ^ 1i128) <= 79i128) {
+                                                                    self.g_wr((((f8 ^ 1i128) - 64i128) + 16i128) as u32, v72)?;
+                                                                }
+                                                            }
                                                             v65 = self.g_postmod(((f4 + 0i128) + 16) as u32, v8, v55, 2i128 as i64)?;
                                                             self.g_wr((16i128 + (f4 + 0i128)) as u32, v65)?;
                                                         } else {
@@ -6470,13 +7620,16 @@ impl Lower {
                                                             v73 = self.g_load(v58, 2i128 as u8, true)?;
                                                             self.g_wr(f8 as u32, v73)?;
                                                         }
-                                                    } else if (f8 >= 16i128 && f8 <= 79i128) || (f8 >= 96i128 && f8 <= 107i128) || (f8 >= 110i128 && f8 <= 111i128) || (f8 >= 114i128 && f8 <= 117i128) || (f8 >= 122i128 && f8 <= 125i128) {
+                                                    } else if (f8 >= 16i128 && f8 <= 79i128) {
                                                         if (f0 == 31i128) {
                                                         } else {
                                                             self.g_cond(f0 as u32, false)?;
                                                         }
                                                         v73 = self.g_load(v58, 2i128 as u8, true)?;
                                                         self.g_wr(f8 as u32, v73)?;
+                                                        if (f8 >= 64i128) {
+                                                            self.g_wr(((f8 - 64i128) + 16i128) as u32, v73)?;
+                                                        }
                                                     } else if (f8 >= 80i128 && f8 <= 95i128) {
                                                         if ((self.m1(0x200000) as i128) != 0i128) {
                                                             v59 = self.g_bin(Bin::Add, v58, v51);
@@ -6496,6 +7649,13 @@ impl Lower {
                                                             v73 = self.g_load(v58, 2i128 as u8, true)?;
                                                             self.g_wr(f8 as u32, v73)?;
                                                         }
+                                                    } else if (f8 >= 96i128 && f8 <= 107i128) || (f8 >= 110i128 && f8 <= 111i128) || (f8 >= 114i128 && f8 <= 117i128) || (f8 >= 122i128 && f8 <= 125i128) {
+                                                        if (f0 == 31i128) {
+                                                        } else {
+                                                            self.g_cond(f0 as u32, false)?;
+                                                        }
+                                                        v73 = self.g_load(v58, 2i128 as u8, true)?;
+                                                        self.g_wr(f8 as u32, v73)?;
                                                     } else {
                                                         if ((self.m1(0x200000) as i128) != 0i128) {
                                                             v59 = self.g_bin(Bin::Add, v58, v51);
@@ -6507,6 +7667,11 @@ impl Lower {
                                                             self.g_wr(f8 as u32, v73)?;
                                                             v74 = self.g_load(v59, 2i128 as u8, true)?;
                                                             self.g_wr((f8 ^ 1i128) as u32, v74)?;
+                                                            if ((f8 ^ 1i128) >= 64i128) {
+                                                                if ((f8 ^ 1i128) <= 79i128) {
+                                                                    self.g_wr((((f8 ^ 1i128) - 64i128) + 16i128) as u32, v74)?;
+                                                                }
+                                                            }
                                                         } else {
                                                             if (f0 == 31i128) {
                                                             } else {
@@ -6582,6 +7747,11 @@ impl Lower {
                                                     }
                                                     v75 = self.g_load(v0, 8i128 as u8, false)?;
                                                     self.g_wr(f8 as u32, v75)?;
+                                                    if (f8 >= 64i128) {
+                                                        if (f8 <= 79i128) {
+                                                            self.g_wr(((f8 - 64i128) + 16i128) as u32, v75)?;
+                                                        }
+                                                    }
                                                     v43 = self.g_postmod(((f4 + 8i128) + 16) as u32, v0, v34, 4i128 as i64)?;
                                                     self.g_wr((16i128 + (f4 + 8i128)) as u32, v43)?;
                                                 } else {
@@ -6592,6 +7762,11 @@ impl Lower {
                                                     }
                                                     v76 = self.g_load(v36, 8i128 as u8, false)?;
                                                     self.g_wr(f8 as u32, v76)?;
+                                                    if (f8 >= 64i128) {
+                                                        if (f8 <= 79i128) {
+                                                            self.g_wr(((f8 - 64i128) + 16i128) as u32, v76)?;
+                                                        }
+                                                    }
                                                 }
                                             } else {
                                                 v8 = self.g_rd((16i128 + (f4 + 0i128)) as u32)?;
@@ -6605,6 +7780,12 @@ impl Lower {
                                                     }
                                                     v77 = self.g_load(v8, 8i128 as u8, false)?;
                                                     self.g_wr(f8 as u32, v77)?;
+                                                    if f8 <= 15i128 || (f8 >= 80i128 && f8 <= 95i128) || (f8 >= 96i128 && f8 <= 107i128) || (f8 >= 108i128 && f8 <= 109i128) || (f8 >= 110i128 && f8 <= 111i128) || (f8 >= 112i128 && f8 <= 113i128) || (f8 >= 114i128 && f8 <= 117i128) || (f8 >= 118i128 && f8 <= 121i128) || (f8 >= 122i128 && f8 <= 125i128) || f8 >= 126i128 {
+                                                    } else {
+                                                        if (f8 >= 64i128) {
+                                                            self.g_wr(((f8 - 64i128) + 16i128) as u32, v77)?;
+                                                        }
+                                                    }
                                                     v48 = self.g_postmod(((f4 + 0i128) + 16) as u32, v8, v37, 4i128 as i64)?;
                                                     self.g_wr((16i128 + (f4 + 0i128)) as u32, v48)?;
                                                 } else {
@@ -6615,6 +7796,12 @@ impl Lower {
                                                     }
                                                     v78 = self.g_load(v40, 8i128 as u8, false)?;
                                                     self.g_wr(f8 as u32, v78)?;
+                                                    if f8 <= 15i128 || (f8 >= 80i128 && f8 <= 95i128) || (f8 >= 96i128 && f8 <= 107i128) || (f8 >= 108i128 && f8 <= 109i128) || (f8 >= 110i128 && f8 <= 111i128) || (f8 >= 112i128 && f8 <= 113i128) || (f8 >= 114i128 && f8 <= 117i128) || (f8 >= 118i128 && f8 <= 121i128) || (f8 >= 122i128 && f8 <= 125i128) || f8 >= 126i128 {
+                                                    } else {
+                                                        if (f8 >= 64i128) {
+                                                            self.g_wr(((f8 - 64i128) + 16i128) as u32, v78)?;
+                                                        }
+                                                    }
                                                 }
                                             }
                                         }
@@ -9716,11 +10903,21 @@ impl Lower {
                                             v3 = self.g_rd(108i128 as u32)?;
                                             self.g_wr(f3 as u32, v3)?;
                                             self.g_wr((f3 ^ 1i128) as u32, v3)?;
+                                            if ((f3 ^ 1i128) >= 64i128) {
+                                                if ((f3 ^ 1i128) <= 79i128) {
+                                                    self.g_wr((((f3 ^ 1i128) - 64i128) + 16i128) as u32, v3)?;
+                                                }
+                                            }
                                         } else {
                                             v0 = self.g_rd(((((f4) << (2i128 as u32)) | ((f6) << (1i128 as u32))) | f5) as u32)?;
                                             v3 = self.g_rd(108i128 as u32)?;
                                             self.g_wr(f3 as u32, v3)?;
                                             self.g_wr((f3 ^ 1i128) as u32, v0)?;
+                                            if ((f3 ^ 1i128) >= 64i128) {
+                                                if ((f3 ^ 1i128) <= 79i128) {
+                                                    self.g_wr((((f3 ^ 1i128) - 64i128) + 16i128) as u32, v0)?;
+                                                }
+                                            }
                                         }
                                     }
                                     self.g_apply(d, "compute", false, false)?;
@@ -9736,11 +10933,17 @@ impl Lower {
                             v3 = self.g_rd(108i128 as u32)?;
                             if (f2 == 31i128) {
                                 self.g_wr(f3 as u32, v3)?;
+                                if (f3 >= 64i128) {
+                                    self.g_wr(((f3 - 64i128) + 16i128) as u32, v3)?;
+                                }
                                 self.g_apply(d, "compute", false, false)?;
                                 self.g_apply(d, "compute", true, false)?;
                             } else {
                                 self.g_cond(f2 as u32, false)?;
                                 self.g_wr(f3 as u32, v3)?;
+                                if (f3 >= 64i128) {
+                                    self.g_wr(((f3 - 64i128) + 16i128) as u32, v3)?;
+                                }
                                 self.g_apply(d, "compute", false, false)?;
                             }
                         }
@@ -9774,7 +10977,10 @@ impl Lower {
                                     self.g_wr((f3 + 80i128) as u32, v6)?;
                                 }
                             }
-                        } else if (f3 >= 16i128 && f3 <= 79i128) || (f3 >= 96i128 && f3 <= 107i128) || (f3 >= 110i128 && f3 <= 111i128) || (f3 >= 114i128 && f3 <= 117i128) || (f3 >= 122i128 && f3 <= 125i128) {
+                        } else if (f3 >= 16i128 && f3 <= 79i128) {
+                            if (f3 >= 64i128) {
+                                self.g_wr(((f3 - 64i128) + 16i128) as u32, v0)?;
+                            }
                         } else if (f3 >= 80i128 && f3 <= 95i128) {
                             if ((((f4) << (2i128 as u32)) | ((f6) << (1i128 as u32))) | f5) <= 15i128 {
                                 if ((((((f4) << (2i128 as u32)) | ((f6) << (1i128 as u32))) | f5) + 80i128) == ((((f4) << (2i128 as u32)) | ((f6) << (1i128 as u32))) | f5)) {
@@ -9800,29 +11006,65 @@ impl Lower {
                                     self.g_wr((f3 + -80i128) as u32, v6)?;
                                 }
                             }
+                        } else if (f3 >= 96i128 && f3 <= 107i128) || (f3 >= 110i128 && f3 <= 111i128) || (f3 >= 114i128 && f3 <= 117i128) || (f3 >= 122i128 && f3 <= 125i128) {
                         } else {
                             if ((((f4) << (2i128 as u32)) | ((f6) << (1i128 as u32))) | f5) <= 15i128 {
                                 if ((((((f4) << (2i128 as u32)) | ((f6) << (1i128 as u32))) | f5) + 80i128) == ((((f4) << (2i128 as u32)) | ((f6) << (1i128 as u32))) | f5)) {
                                     self.g_wr((f3 ^ 1i128) as u32, v0)?;
+                                    if ((f3 ^ 1i128) >= 64i128) {
+                                        if ((f3 ^ 1i128) <= 79i128) {
+                                            self.g_wr((((f3 ^ 1i128) - 64i128) + 16i128) as u32, v0)?;
+                                        }
+                                    }
                                 } else {
                                     v4 = self.g_rd((((((f4) << (2i128 as u32)) | ((f6) << (1i128 as u32))) | f5) + 80i128) as u32)?;
                                     self.g_wr((f3 ^ 1i128) as u32, v4)?;
+                                    if ((f3 ^ 1i128) >= 64i128) {
+                                        if ((f3 ^ 1i128) <= 79i128) {
+                                            self.g_wr((((f3 ^ 1i128) - 64i128) + 16i128) as u32, v4)?;
+                                        }
+                                    }
                                 }
                             } else if (((((f4) << (2i128 as u32)) | ((f6) << (1i128 as u32))) | f5) >= 16i128 && ((((f4) << (2i128 as u32)) | ((f6) << (1i128 as u32))) | f5) <= 79i128) || (((((f4) << (2i128 as u32)) | ((f6) << (1i128 as u32))) | f5) >= 96i128 && ((((f4) << (2i128 as u32)) | ((f6) << (1i128 as u32))) | f5) <= 107i128) || (((((f4) << (2i128 as u32)) | ((f6) << (1i128 as u32))) | f5) >= 110i128 && ((((f4) << (2i128 as u32)) | ((f6) << (1i128 as u32))) | f5) <= 111i128) || (((((f4) << (2i128 as u32)) | ((f6) << (1i128 as u32))) | f5) >= 114i128 && ((((f4) << (2i128 as u32)) | ((f6) << (1i128 as u32))) | f5) <= 117i128) || (((((f4) << (2i128 as u32)) | ((f6) << (1i128 as u32))) | f5) >= 122i128 && ((((f4) << (2i128 as u32)) | ((f6) << (1i128 as u32))) | f5) <= 125i128) {
                                 self.g_wr((f3 ^ 1i128) as u32, v0)?;
+                                if ((f3 ^ 1i128) >= 64i128) {
+                                    if ((f3 ^ 1i128) <= 79i128) {
+                                        self.g_wr((((f3 ^ 1i128) - 64i128) + 16i128) as u32, v0)?;
+                                    }
+                                }
                             } else if (((((f4) << (2i128 as u32)) | ((f6) << (1i128 as u32))) | f5) >= 80i128 && ((((f4) << (2i128 as u32)) | ((f6) << (1i128 as u32))) | f5) <= 95i128) {
                                 if ((((((f4) << (2i128 as u32)) | ((f6) << (1i128 as u32))) | f5) + -80i128) == ((((f4) << (2i128 as u32)) | ((f6) << (1i128 as u32))) | f5)) {
                                     self.g_wr((f3 ^ 1i128) as u32, v0)?;
+                                    if ((f3 ^ 1i128) >= 64i128) {
+                                        if ((f3 ^ 1i128) <= 79i128) {
+                                            self.g_wr((((f3 ^ 1i128) - 64i128) + 16i128) as u32, v0)?;
+                                        }
+                                    }
                                 } else {
                                     v5 = self.g_rd((((((f4) << (2i128 as u32)) | ((f6) << (1i128 as u32))) | f5) + -80i128) as u32)?;
                                     self.g_wr((f3 ^ 1i128) as u32, v5)?;
+                                    if ((f3 ^ 1i128) >= 64i128) {
+                                        if ((f3 ^ 1i128) <= 79i128) {
+                                            self.g_wr((((f3 ^ 1i128) - 64i128) + 16i128) as u32, v5)?;
+                                        }
+                                    }
                                 }
                             } else {
                                 if ((((((f4) << (2i128 as u32)) | ((f6) << (1i128 as u32))) | f5) ^ 1i128) == ((((f4) << (2i128 as u32)) | ((f6) << (1i128 as u32))) | f5)) {
                                     self.g_wr((f3 ^ 1i128) as u32, v0)?;
+                                    if ((f3 ^ 1i128) >= 64i128) {
+                                        if ((f3 ^ 1i128) <= 79i128) {
+                                            self.g_wr((((f3 ^ 1i128) - 64i128) + 16i128) as u32, v0)?;
+                                        }
+                                    }
                                 } else {
                                     v6 = self.g_rd((((((f4) << (2i128 as u32)) | ((f6) << (1i128 as u32))) | f5) ^ 1i128) as u32)?;
                                     self.g_wr((f3 ^ 1i128) as u32, v6)?;
+                                    if ((f3 ^ 1i128) >= 64i128) {
+                                        if ((f3 ^ 1i128) <= 79i128) {
+                                            self.g_wr((((f3 ^ 1i128) - 64i128) + 16i128) as u32, v6)?;
+                                        }
+                                    }
                                 }
                             }
                         }
@@ -9831,6 +11073,11 @@ impl Lower {
                     } else {
                         self.g_cond(f2 as u32, false)?;
                         self.g_wr(f3 as u32, v0)?;
+                        if (f3 >= 64i128) {
+                            if (f3 <= 79i128) {
+                                self.g_wr(((f3 - 64i128) + 16i128) as u32, v0)?;
+                            }
+                        }
                         self.g_apply(d, "compute", false, false)?;
                     }
                 }
@@ -9867,15 +11114,30 @@ impl Lower {
                                 self.g_cond(f2 as u32, false)?;
                             }
                             self.g_wr(f3 as u32, v3)?;
+                            if (f3 >= 64i128) {
+                                self.g_wr(((f3 - 64i128) + 16i128) as u32, v3)?;
+                            }
                         }
                     }
                 } else {
                     v0 = self.g_rd(((((f4) << (2i128 as u32)) | ((f6) << (1i128 as u32))) | f5) as u32)?;
                     if (f2 == 31i128) {
+                        self.g_wr(f3 as u32, v0)?;
+                        if f3 <= 15i128 || (f3 >= 80i128 && f3 <= 95i128) || (f3 >= 96i128 && f3 <= 107i128) || (f3 >= 108i128 && f3 <= 109i128) || (f3 >= 110i128 && f3 <= 111i128) || (f3 >= 112i128 && f3 <= 113i128) || (f3 >= 114i128 && f3 <= 117i128) || (f3 >= 118i128 && f3 <= 121i128) || (f3 >= 122i128 && f3 <= 125i128) || f3 >= 126i128 {
+                        } else {
+                            if (f3 >= 64i128) {
+                                self.g_wr(((f3 - 64i128) + 16i128) as u32, v0)?;
+                            }
+                        }
                     } else {
                         self.g_cond(f2 as u32, false)?;
+                        self.g_wr(f3 as u32, v0)?;
+                        if (f3 >= 64i128) {
+                            if (f3 <= 79i128) {
+                                self.g_wr(((f3 - 64i128) + 16i128) as u32, v0)?;
+                            }
+                        }
                     }
-                    self.g_wr(f3 as u32, v0)?;
                 }
                 self.g_apply(d, "compute", false, false)?;
             }
@@ -9928,11 +11190,21 @@ impl Lower {
                                             v3 = self.g_rd(108i128 as u32)?;
                                             self.g_wr(f3 as u32, v3)?;
                                             self.g_wr((f3 ^ 1i128) as u32, v3)?;
+                                            if ((f3 ^ 1i128) >= 64i128) {
+                                                if ((f3 ^ 1i128) <= 79i128) {
+                                                    self.g_wr((((f3 ^ 1i128) - 64i128) + 16i128) as u32, v3)?;
+                                                }
+                                            }
                                         } else {
                                             v0 = self.g_rd(((((f4) << (2i128 as u32)) | ((f6) << (1i128 as u32))) | f5) as u32)?;
                                             v3 = self.g_rd(108i128 as u32)?;
                                             self.g_wr(f3 as u32, v3)?;
                                             self.g_wr((f3 ^ 1i128) as u32, v0)?;
+                                            if ((f3 ^ 1i128) >= 64i128) {
+                                                if ((f3 ^ 1i128) <= 79i128) {
+                                                    self.g_wr((((f3 ^ 1i128) - 64i128) + 16i128) as u32, v0)?;
+                                                }
+                                            }
                                         }
                                     }
                                 } else {
@@ -9948,6 +11220,9 @@ impl Lower {
                                 self.g_cond(f2 as u32, false)?;
                             }
                             self.g_wr(f3 as u32, v3)?;
+                            if (f3 >= 64i128) {
+                                self.g_wr(((f3 - 64i128) + 16i128) as u32, v3)?;
+                            }
                         }
                     }
                 } else {
@@ -9979,7 +11254,10 @@ impl Lower {
                                     self.g_wr((f3 + 80i128) as u32, v6)?;
                                 }
                             }
-                        } else if (f3 >= 16i128 && f3 <= 79i128) || (f3 >= 96i128 && f3 <= 107i128) || (f3 >= 110i128 && f3 <= 111i128) || (f3 >= 114i128 && f3 <= 117i128) || (f3 >= 122i128 && f3 <= 125i128) {
+                        } else if (f3 >= 16i128 && f3 <= 79i128) {
+                            if (f3 >= 64i128) {
+                                self.g_wr(((f3 - 64i128) + 16i128) as u32, v0)?;
+                            }
                         } else if (f3 >= 80i128 && f3 <= 95i128) {
                             if ((((f4) << (2i128 as u32)) | ((f6) << (1i128 as u32))) | f5) <= 15i128 {
                                 if ((((((f4) << (2i128 as u32)) | ((f6) << (1i128 as u32))) | f5) + 80i128) == ((((f4) << (2i128 as u32)) | ((f6) << (1i128 as u32))) | f5)) {
@@ -10005,35 +11283,76 @@ impl Lower {
                                     self.g_wr((f3 + -80i128) as u32, v6)?;
                                 }
                             }
+                        } else if (f3 >= 96i128 && f3 <= 107i128) || (f3 >= 110i128 && f3 <= 111i128) || (f3 >= 114i128 && f3 <= 117i128) || (f3 >= 122i128 && f3 <= 125i128) {
                         } else {
                             if ((((f4) << (2i128 as u32)) | ((f6) << (1i128 as u32))) | f5) <= 15i128 {
                                 if ((((((f4) << (2i128 as u32)) | ((f6) << (1i128 as u32))) | f5) + 80i128) == ((((f4) << (2i128 as u32)) | ((f6) << (1i128 as u32))) | f5)) {
                                     self.g_wr((f3 ^ 1i128) as u32, v0)?;
+                                    if ((f3 ^ 1i128) >= 64i128) {
+                                        if ((f3 ^ 1i128) <= 79i128) {
+                                            self.g_wr((((f3 ^ 1i128) - 64i128) + 16i128) as u32, v0)?;
+                                        }
+                                    }
                                 } else {
                                     v4 = self.g_rd((((((f4) << (2i128 as u32)) | ((f6) << (1i128 as u32))) | f5) + 80i128) as u32)?;
                                     self.g_wr((f3 ^ 1i128) as u32, v4)?;
+                                    if ((f3 ^ 1i128) >= 64i128) {
+                                        if ((f3 ^ 1i128) <= 79i128) {
+                                            self.g_wr((((f3 ^ 1i128) - 64i128) + 16i128) as u32, v4)?;
+                                        }
+                                    }
                                 }
                             } else if (((((f4) << (2i128 as u32)) | ((f6) << (1i128 as u32))) | f5) >= 16i128 && ((((f4) << (2i128 as u32)) | ((f6) << (1i128 as u32))) | f5) <= 79i128) || (((((f4) << (2i128 as u32)) | ((f6) << (1i128 as u32))) | f5) >= 96i128 && ((((f4) << (2i128 as u32)) | ((f6) << (1i128 as u32))) | f5) <= 107i128) || (((((f4) << (2i128 as u32)) | ((f6) << (1i128 as u32))) | f5) >= 110i128 && ((((f4) << (2i128 as u32)) | ((f6) << (1i128 as u32))) | f5) <= 111i128) || (((((f4) << (2i128 as u32)) | ((f6) << (1i128 as u32))) | f5) >= 114i128 && ((((f4) << (2i128 as u32)) | ((f6) << (1i128 as u32))) | f5) <= 117i128) || (((((f4) << (2i128 as u32)) | ((f6) << (1i128 as u32))) | f5) >= 122i128 && ((((f4) << (2i128 as u32)) | ((f6) << (1i128 as u32))) | f5) <= 125i128) {
                                 self.g_wr((f3 ^ 1i128) as u32, v0)?;
+                                if ((f3 ^ 1i128) >= 64i128) {
+                                    if ((f3 ^ 1i128) <= 79i128) {
+                                        self.g_wr((((f3 ^ 1i128) - 64i128) + 16i128) as u32, v0)?;
+                                    }
+                                }
                             } else if (((((f4) << (2i128 as u32)) | ((f6) << (1i128 as u32))) | f5) >= 80i128 && ((((f4) << (2i128 as u32)) | ((f6) << (1i128 as u32))) | f5) <= 95i128) {
                                 if ((((((f4) << (2i128 as u32)) | ((f6) << (1i128 as u32))) | f5) + -80i128) == ((((f4) << (2i128 as u32)) | ((f6) << (1i128 as u32))) | f5)) {
                                     self.g_wr((f3 ^ 1i128) as u32, v0)?;
+                                    if ((f3 ^ 1i128) >= 64i128) {
+                                        if ((f3 ^ 1i128) <= 79i128) {
+                                            self.g_wr((((f3 ^ 1i128) - 64i128) + 16i128) as u32, v0)?;
+                                        }
+                                    }
                                 } else {
                                     v5 = self.g_rd((((((f4) << (2i128 as u32)) | ((f6) << (1i128 as u32))) | f5) + -80i128) as u32)?;
                                     self.g_wr((f3 ^ 1i128) as u32, v5)?;
+                                    if ((f3 ^ 1i128) >= 64i128) {
+                                        if ((f3 ^ 1i128) <= 79i128) {
+                                            self.g_wr((((f3 ^ 1i128) - 64i128) + 16i128) as u32, v5)?;
+                                        }
+                                    }
                                 }
                             } else {
                                 if ((((((f4) << (2i128 as u32)) | ((f6) << (1i128 as u32))) | f5) ^ 1i128) == ((((f4) << (2i128 as u32)) | ((f6) << (1i128 as u32))) | f5)) {
                                     self.g_wr((f3 ^ 1i128) as u32, v0)?;
+                                    if ((f3 ^ 1i128) >= 64i128) {
+                                        if ((f3 ^ 1i128) <= 79i128) {
+                                            self.g_wr((((f3 ^ 1i128) - 64i128) + 16i128) as u32, v0)?;
+                                        }
+                                    }
                                 } else {
                                     v6 = self.g_rd((((((f4) << (2i128 as u32)) | ((f6) << (1i128 as u32))) | f5) ^ 1i128) as u32)?;
                                     self.g_wr((f3 ^ 1i128) as u32, v6)?;
+                                    if ((f3 ^ 1i128) >= 64i128) {
+                                        if ((f3 ^ 1i128) <= 79i128) {
+                                            self.g_wr((((f3 ^ 1i128) - 64i128) + 16i128) as u32, v6)?;
+                                        }
+                                    }
                                 }
                             }
                         }
                     } else {
                         self.g_cond(f2 as u32, false)?;
                         self.g_wr(f3 as u32, v0)?;
+                        if (f3 >= 64i128) {
+                            if (f3 <= 79i128) {
+                                self.g_wr(((f3 - 64i128) + 16i128) as u32, v0)?;
+                            }
+                        }
                     }
                 }
             } else {
@@ -10069,15 +11388,30 @@ impl Lower {
                                 self.g_cond(f2 as u32, false)?;
                             }
                             self.g_wr(f3 as u32, v3)?;
+                            if (f3 >= 64i128) {
+                                self.g_wr(((f3 - 64i128) + 16i128) as u32, v3)?;
+                            }
                         }
                     }
                 } else {
                     v0 = self.g_rd(((((f4) << (2i128 as u32)) | ((f6) << (1i128 as u32))) | f5) as u32)?;
                     if (f2 == 31i128) {
+                        self.g_wr(f3 as u32, v0)?;
+                        if f3 <= 15i128 || (f3 >= 80i128 && f3 <= 95i128) || (f3 >= 96i128 && f3 <= 107i128) || (f3 >= 108i128 && f3 <= 109i128) || (f3 >= 110i128 && f3 <= 111i128) || (f3 >= 112i128 && f3 <= 113i128) || (f3 >= 114i128 && f3 <= 117i128) || (f3 >= 118i128 && f3 <= 121i128) || (f3 >= 122i128 && f3 <= 125i128) || f3 >= 126i128 {
+                        } else {
+                            if (f3 >= 64i128) {
+                                self.g_wr(((f3 - 64i128) + 16i128) as u32, v0)?;
+                            }
+                        }
                     } else {
                         self.g_cond(f2 as u32, false)?;
+                        self.g_wr(f3 as u32, v0)?;
+                        if (f3 >= 64i128) {
+                            if (f3 <= 79i128) {
+                                self.g_wr(((f3 - 64i128) + 16i128) as u32, v0)?;
+                            }
+                        }
                     }
-                    self.g_wr(f3 as u32, v0)?;
                 }
             }
         }
@@ -10168,6 +11502,11 @@ impl Lower {
                                     self.g_cond(f0 as u32, true)?;
                                     self.g_wr(f1 as u32, v3)?;
                                     self.g_wr((f1 ^ 1i128) as u32, v3)?;
+                                    if ((f1 ^ 1i128) >= 64i128) {
+                                        if ((f1 ^ 1i128) <= 79i128) {
+                                            self.g_wr((((f1 ^ 1i128) - 64i128) + 16i128) as u32, v3)?;
+                                        }
+                                    }
                                 }
                             } else {
                                 self.g_wr(f1 as u32, v3)?;
@@ -10182,11 +11521,21 @@ impl Lower {
                                         v3 = self.g_rd(108i128 as u32)?;
                                         self.g_wr(f1 as u32, v3)?;
                                         self.g_wr((f1 ^ 1i128) as u32, v3)?;
+                                        if ((f1 ^ 1i128) >= 64i128) {
+                                            if ((f1 ^ 1i128) <= 79i128) {
+                                                self.g_wr((((f1 ^ 1i128) - 64i128) + 16i128) as u32, v3)?;
+                                            }
+                                        }
                                     } else {
                                         v0 = self.g_rd(((((f2) << (2i128 as u32)) | ((f4) << (1i128 as u32))) | f3) as u32)?;
                                         v3 = self.g_rd(108i128 as u32)?;
                                         self.g_wr(f1 as u32, v3)?;
                                         self.g_wr((f1 ^ 1i128) as u32, v0)?;
+                                        if ((f1 ^ 1i128) >= 64i128) {
+                                            if ((f1 ^ 1i128) <= 79i128) {
+                                                self.g_wr((((f1 ^ 1i128) - 64i128) + 16i128) as u32, v0)?;
+                                            }
+                                        }
                                     }
                                 } else {
                                     v3 = self.g_rd(108i128 as u32)?;
@@ -10201,6 +11550,9 @@ impl Lower {
                         self.g_cond(f0 as u32, false)?;
                     }
                     self.g_wr(f1 as u32, v3)?;
+                    if (f1 >= 64i128) {
+                        self.g_wr(((f1 - 64i128) + 16i128) as u32, v3)?;
+                    }
                 }
             }
         } else {
@@ -10223,8 +11575,11 @@ impl Lower {
                             v6 = self.g_rd((((((f2) << (2i128 as u32)) | ((f4) << (1i128 as u32))) | f3) ^ 1i128) as u32)?;
                             self.g_wr((f1 + 80i128) as u32, v6)?;
                         }
-                    } else if (f1 >= 16i128 && f1 <= 79i128) || (f1 >= 96i128 && f1 <= 107i128) || (f1 >= 110i128 && f1 <= 111i128) || (f1 >= 114i128 && f1 <= 117i128) || (f1 >= 122i128 && f1 <= 125i128) {
+                    } else if (f1 >= 16i128 && f1 <= 79i128) {
                         self.g_wr(f1 as u32, v0)?;
+                        if (f1 >= 64i128) {
+                            self.g_wr(((f1 - 64i128) + 16i128) as u32, v0)?;
+                        }
                     } else if (f1 >= 80i128 && f1 <= 95i128) {
                         self.g_cond(f0 as u32, true)?;
                         self.g_wr(f1 as u32, v0)?;
@@ -10240,24 +11595,51 @@ impl Lower {
                             v6 = self.g_rd((((((f2) << (2i128 as u32)) | ((f4) << (1i128 as u32))) | f3) ^ 1i128) as u32)?;
                             self.g_wr((f1 + -80i128) as u32, v6)?;
                         }
+                    } else if (f1 >= 96i128 && f1 <= 107i128) || (f1 >= 110i128 && f1 <= 111i128) || (f1 >= 114i128 && f1 <= 117i128) || (f1 >= 122i128 && f1 <= 125i128) {
+                        self.g_wr(f1 as u32, v0)?;
                     } else {
                         self.g_cond(f0 as u32, true)?;
                         self.g_wr(f1 as u32, v0)?;
                         if ((((f2) << (2i128 as u32)) | ((f4) << (1i128 as u32))) | f3) <= 15i128 {
                             v4 = self.g_rd((((((f2) << (2i128 as u32)) | ((f4) << (1i128 as u32))) | f3) + 80i128) as u32)?;
                             self.g_wr((f1 ^ 1i128) as u32, v4)?;
+                            if ((f1 ^ 1i128) >= 64i128) {
+                                if ((f1 ^ 1i128) <= 79i128) {
+                                    self.g_wr((((f1 ^ 1i128) - 64i128) + 16i128) as u32, v4)?;
+                                }
+                            }
                         } else if (((((f2) << (2i128 as u32)) | ((f4) << (1i128 as u32))) | f3) >= 16i128 && ((((f2) << (2i128 as u32)) | ((f4) << (1i128 as u32))) | f3) <= 79i128) || (((((f2) << (2i128 as u32)) | ((f4) << (1i128 as u32))) | f3) >= 96i128 && ((((f2) << (2i128 as u32)) | ((f4) << (1i128 as u32))) | f3) <= 107i128) || (((((f2) << (2i128 as u32)) | ((f4) << (1i128 as u32))) | f3) >= 110i128 && ((((f2) << (2i128 as u32)) | ((f4) << (1i128 as u32))) | f3) <= 111i128) || (((((f2) << (2i128 as u32)) | ((f4) << (1i128 as u32))) | f3) >= 114i128 && ((((f2) << (2i128 as u32)) | ((f4) << (1i128 as u32))) | f3) <= 117i128) || (((((f2) << (2i128 as u32)) | ((f4) << (1i128 as u32))) | f3) >= 122i128 && ((((f2) << (2i128 as u32)) | ((f4) << (1i128 as u32))) | f3) <= 125i128) {
                             self.g_wr((f1 ^ 1i128) as u32, v0)?;
+                            if ((f1 ^ 1i128) >= 64i128) {
+                                if ((f1 ^ 1i128) <= 79i128) {
+                                    self.g_wr((((f1 ^ 1i128) - 64i128) + 16i128) as u32, v0)?;
+                                }
+                            }
                         } else if (((((f2) << (2i128 as u32)) | ((f4) << (1i128 as u32))) | f3) >= 80i128 && ((((f2) << (2i128 as u32)) | ((f4) << (1i128 as u32))) | f3) <= 95i128) {
                             v5 = self.g_rd((((((f2) << (2i128 as u32)) | ((f4) << (1i128 as u32))) | f3) + -80i128) as u32)?;
                             self.g_wr((f1 ^ 1i128) as u32, v5)?;
+                            if ((f1 ^ 1i128) >= 64i128) {
+                                if ((f1 ^ 1i128) <= 79i128) {
+                                    self.g_wr((((f1 ^ 1i128) - 64i128) + 16i128) as u32, v5)?;
+                                }
+                            }
                         } else {
                             v6 = self.g_rd((((((f2) << (2i128 as u32)) | ((f4) << (1i128 as u32))) | f3) ^ 1i128) as u32)?;
                             self.g_wr((f1 ^ 1i128) as u32, v6)?;
+                            if ((f1 ^ 1i128) >= 64i128) {
+                                if ((f1 ^ 1i128) <= 79i128) {
+                                    self.g_wr((((f1 ^ 1i128) - 64i128) + 16i128) as u32, v6)?;
+                                }
+                            }
                         }
                     }
                 } else {
                     self.g_wr(f1 as u32, v0)?;
+                    if (f1 >= 64i128) {
+                        if (f1 <= 79i128) {
+                            self.g_wr(((f1 - 64i128) + 16i128) as u32, v0)?;
+                        }
+                    }
                 }
             } else {
                 self.g_wr(f1 as u32, v0)?;
@@ -10288,7 +11670,10 @@ impl Lower {
                             }
                         }
                     }
-                } else if (f1 >= 16i128 && f1 <= 79i128) || (f1 >= 96i128 && f1 <= 107i128) || (f1 >= 110i128 && f1 <= 111i128) || (f1 >= 114i128 && f1 <= 117i128) || (f1 >= 122i128 && f1 <= 125i128) {
+                } else if (f1 >= 16i128 && f1 <= 79i128) {
+                    if (f1 >= 64i128) {
+                        self.g_wr(((f1 - 64i128) + 16i128) as u32, v0)?;
+                    }
                 } else if (f1 >= 80i128 && f1 <= 95i128) {
                     if ((self.m1(0x200000) as i128) != 0i128) {
                         if ((((f2) << (2i128 as u32)) | ((f4) << (1i128 as u32))) | f3) <= 15i128 {
@@ -10316,30 +11701,66 @@ impl Lower {
                             }
                         }
                     }
+                } else if (f1 >= 96i128 && f1 <= 107i128) || (f1 >= 110i128 && f1 <= 111i128) || (f1 >= 114i128 && f1 <= 117i128) || (f1 >= 122i128 && f1 <= 125i128) {
                 } else {
                     if ((self.m1(0x200000) as i128) != 0i128) {
                         if ((((f2) << (2i128 as u32)) | ((f4) << (1i128 as u32))) | f3) <= 15i128 {
                             if ((((((f2) << (2i128 as u32)) | ((f4) << (1i128 as u32))) | f3) + 80i128) == ((((f2) << (2i128 as u32)) | ((f4) << (1i128 as u32))) | f3)) {
                                 self.g_wr((f1 ^ 1i128) as u32, v0)?;
+                                if ((f1 ^ 1i128) >= 64i128) {
+                                    if ((f1 ^ 1i128) <= 79i128) {
+                                        self.g_wr((((f1 ^ 1i128) - 64i128) + 16i128) as u32, v0)?;
+                                    }
+                                }
                             } else {
                                 v4 = self.g_rd((((((f2) << (2i128 as u32)) | ((f4) << (1i128 as u32))) | f3) + 80i128) as u32)?;
                                 self.g_wr((f1 ^ 1i128) as u32, v4)?;
+                                if ((f1 ^ 1i128) >= 64i128) {
+                                    if ((f1 ^ 1i128) <= 79i128) {
+                                        self.g_wr((((f1 ^ 1i128) - 64i128) + 16i128) as u32, v4)?;
+                                    }
+                                }
                             }
                         } else if (((((f2) << (2i128 as u32)) | ((f4) << (1i128 as u32))) | f3) >= 16i128 && ((((f2) << (2i128 as u32)) | ((f4) << (1i128 as u32))) | f3) <= 79i128) || (((((f2) << (2i128 as u32)) | ((f4) << (1i128 as u32))) | f3) >= 96i128 && ((((f2) << (2i128 as u32)) | ((f4) << (1i128 as u32))) | f3) <= 107i128) || (((((f2) << (2i128 as u32)) | ((f4) << (1i128 as u32))) | f3) >= 110i128 && ((((f2) << (2i128 as u32)) | ((f4) << (1i128 as u32))) | f3) <= 111i128) || (((((f2) << (2i128 as u32)) | ((f4) << (1i128 as u32))) | f3) >= 114i128 && ((((f2) << (2i128 as u32)) | ((f4) << (1i128 as u32))) | f3) <= 117i128) || (((((f2) << (2i128 as u32)) | ((f4) << (1i128 as u32))) | f3) >= 122i128 && ((((f2) << (2i128 as u32)) | ((f4) << (1i128 as u32))) | f3) <= 125i128) {
                             self.g_wr((f1 ^ 1i128) as u32, v0)?;
+                            if ((f1 ^ 1i128) >= 64i128) {
+                                if ((f1 ^ 1i128) <= 79i128) {
+                                    self.g_wr((((f1 ^ 1i128) - 64i128) + 16i128) as u32, v0)?;
+                                }
+                            }
                         } else if (((((f2) << (2i128 as u32)) | ((f4) << (1i128 as u32))) | f3) >= 80i128 && ((((f2) << (2i128 as u32)) | ((f4) << (1i128 as u32))) | f3) <= 95i128) {
                             if ((((((f2) << (2i128 as u32)) | ((f4) << (1i128 as u32))) | f3) + -80i128) == ((((f2) << (2i128 as u32)) | ((f4) << (1i128 as u32))) | f3)) {
                                 self.g_wr((f1 ^ 1i128) as u32, v0)?;
+                                if ((f1 ^ 1i128) >= 64i128) {
+                                    if ((f1 ^ 1i128) <= 79i128) {
+                                        self.g_wr((((f1 ^ 1i128) - 64i128) + 16i128) as u32, v0)?;
+                                    }
+                                }
                             } else {
                                 v5 = self.g_rd((((((f2) << (2i128 as u32)) | ((f4) << (1i128 as u32))) | f3) + -80i128) as u32)?;
                                 self.g_wr((f1 ^ 1i128) as u32, v5)?;
+                                if ((f1 ^ 1i128) >= 64i128) {
+                                    if ((f1 ^ 1i128) <= 79i128) {
+                                        self.g_wr((((f1 ^ 1i128) - 64i128) + 16i128) as u32, v5)?;
+                                    }
+                                }
                             }
                         } else {
                             if ((((((f2) << (2i128 as u32)) | ((f4) << (1i128 as u32))) | f3) ^ 1i128) == ((((f2) << (2i128 as u32)) | ((f4) << (1i128 as u32))) | f3)) {
                                 self.g_wr((f1 ^ 1i128) as u32, v0)?;
+                                if ((f1 ^ 1i128) >= 64i128) {
+                                    if ((f1 ^ 1i128) <= 79i128) {
+                                        self.g_wr((((f1 ^ 1i128) - 64i128) + 16i128) as u32, v0)?;
+                                    }
+                                }
                             } else {
                                 v6 = self.g_rd((((((f2) << (2i128 as u32)) | ((f4) << (1i128 as u32))) | f3) ^ 1i128) as u32)?;
                                 self.g_wr((f1 ^ 1i128) as u32, v6)?;
+                                if ((f1 ^ 1i128) >= 64i128) {
+                                    if ((f1 ^ 1i128) <= 79i128) {
+                                        self.g_wr((((f1 ^ 1i128) - 64i128) + 16i128) as u32, v6)?;
+                                    }
+                                }
                             }
                         }
                     }
@@ -12219,7 +13640,17 @@ impl Lower {
                                             v4 = self.ci(((((f1) << (16i128 as u32)) | f0) + 4i128) as u32);
                                             v6 = self.g_load(v4, 4i128 as u8, false)?;
                                             self.g_wr(f5 as u32, v5)?;
+                                            if (f5 >= 64i128) {
+                                                if (f5 <= 79i128) {
+                                                    self.g_wr(((f5 - 64i128) + 16i128) as u32, v5)?;
+                                                }
+                                            }
                                             self.g_wr((f5 ^ 1i128) as u32, v6)?;
+                                            if ((f5 ^ 1i128) >= 64i128) {
+                                                if ((f5 ^ 1i128) <= 79i128) {
+                                                    self.g_wr((((f5 ^ 1i128) - 64i128) + 16i128) as u32, v6)?;
+                                                }
+                                            }
                                         } else {
                                             return refuse("normal-word address outside the plain range");
                                         }
@@ -12375,19 +13806,22 @@ impl Lower {
                                 return refuse("normal-word address outside the plain range");
                             }
                         }
-                    } else if (f5 >= 16i128 && f5 <= 79i128) || (f5 >= 110i128 && f5 <= 111i128) || (f5 >= 114i128 && f5 <= 117i128) || (f5 >= 122i128 && f5 <= 125i128) {
+                    } else if (f5 >= 16i128 && f5 <= 79i128) {
                         if ((((f1) << (16i128 as u32)) | f0) >= 950272i128) {
                             if ((((f1) << (16i128 as u32)) | f0) < 67108864i128) {
                                 v8 = self.ci((((f1) << (16i128 as u32)) | f0) as u32);
                                 v9 = self.g_load(v8, 4i128 as u8, false)?;
                                 self.g_wr(f5 as u32, v9)?;
+                                if (f5 >= 64i128) {
+                                    self.g_wr(((f5 - 64i128) + 16i128) as u32, v9)?;
+                                }
                             } else {
                                 return refuse("normal-word address outside the plain range");
                             }
                         } else {
                             return refuse("normal-word address outside the plain range");
                         }
-                    } else {
+                    } else if (f5 >= 96i128 && f5 <= 107i128) {
                         if (f5 == 107i128) {
                             return refuse("combined PX transfer");
                         } else {
@@ -12402,6 +13836,18 @@ impl Lower {
                             } else {
                                 return refuse("normal-word address outside the plain range");
                             }
+                        }
+                    } else {
+                        if ((((f1) << (16i128 as u32)) | f0) >= 950272i128) {
+                            if ((((f1) << (16i128 as u32)) | f0) < 67108864i128) {
+                                v8 = self.ci((((f1) << (16i128 as u32)) | f0) as u32);
+                                v9 = self.g_load(v8, 4i128 as u8, false)?;
+                                self.g_wr(f5 as u32, v9)?;
+                            } else {
+                                return refuse("normal-word address outside the plain range");
+                            }
+                        } else {
+                            return refuse("normal-word address outside the plain range");
                         }
                     }
                 }
@@ -12691,12 +14137,15 @@ impl Lower {
                                 return refuse("normal-word address outside the plain range");
                             }
                         }
-                    } else if (f5 >= 16i128 && f5 <= 79i128) || (f5 >= 110i128 && f5 <= 111i128) || (f5 >= 114i128 && f5 <= 117i128) || (f5 >= 122i128 && f5 <= 125i128) {
+                    } else if (f5 >= 16i128 && f5 <= 79i128) {
                         if ((((f1) << (16i128 as u32)) | f0) >= 950272i128) {
                             if ((((f1) << (16i128 as u32)) | f0) < 67108864i128) {
                                 v8 = self.ci((((f1) << (16i128 as u32)) | f0) as u32);
                                 v9 = self.g_load(v8, 4i128 as u8, false)?;
                                 self.g_wr(f5 as u32, v9)?;
+                                if (f5 >= 64i128) {
+                                    self.g_wr(((f5 - 64i128) + 16i128) as u32, v9)?;
+                                }
                             } else {
                                 return refuse("normal-word address outside the plain range");
                             }
@@ -12764,7 +14213,7 @@ impl Lower {
                                 return refuse("normal-word address outside the plain range");
                             }
                         }
-                    } else {
+                    } else if (f5 >= 108i128 && f5 <= 109i128) || (f5 >= 112i128 && f5 <= 113i128) || (f5 >= 118i128 && f5 <= 121i128) || f5 >= 126i128 {
                         if ((self.m1(0x200000) as i128) != 0i128) {
                             if (((((f1) << (16i128 as u32)) | f0) & 4294967295i128) >= 950272i128) {
                                 if (((((f1) << (16i128 as u32)) | f0) & 4294967295i128) < 67108864i128) {
@@ -12781,6 +14230,11 @@ impl Lower {
                                                         v11 = self.ci(((((((f1) << (16i128 as u32)) | f0) & 4294967295i128) + 4i128) & 4294967295i128) as u32);
                                                         v13 = self.g_load(v11, 4i128 as u8, false)?;
                                                         self.g_wr((f5 ^ 1i128) as u32, v13)?;
+                                                        if ((f5 ^ 1i128) >= 64i128) {
+                                                            if ((f5 ^ 1i128) <= 79i128) {
+                                                                self.g_wr((((f5 ^ 1i128) - 64i128) + 16i128) as u32, v13)?;
+                                                            }
+                                                        }
                                                     } else {
                                                         return refuse("normal-word address outside the plain range");
                                                     }
@@ -12812,6 +14266,18 @@ impl Lower {
                             } else {
                                 return refuse("normal-word address outside the plain range");
                             }
+                        }
+                    } else {
+                        if ((((f1) << (16i128 as u32)) | f0) >= 950272i128) {
+                            if ((((f1) << (16i128 as u32)) | f0) < 67108864i128) {
+                                v8 = self.ci((((f1) << (16i128 as u32)) | f0) as u32);
+                                v9 = self.g_load(v8, 4i128 as u8, false)?;
+                                self.g_wr(f5 as u32, v9)?;
+                            } else {
+                                return refuse("normal-word address outside the plain range");
+                            }
+                        } else {
+                            return refuse("normal-word address outside the plain range");
                         }
                     }
                 }
@@ -12884,7 +14350,17 @@ impl Lower {
                         v9 = self.g_bin(Bin::Add, v3, v8);
                         v11 = self.g_load(v9, 4i128 as u8, false)?;
                         self.g_wr(f6 as u32, v10)?;
+                        if (f6 >= 64i128) {
+                            if (f6 <= 79i128) {
+                                self.g_wr(((f6 - 64i128) + 16i128) as u32, v10)?;
+                            }
+                        }
                         self.g_wr((f6 ^ 1i128) as u32, v11)?;
+                        if ((f6 ^ 1i128) >= 64i128) {
+                            if ((f6 ^ 1i128) <= 79i128) {
+                                self.g_wr((((f6 ^ 1i128) - 64i128) + 16i128) as u32, v11)?;
+                            }
+                        }
                     } else {
                         self.g_wr(f6 as u32, v10)?;
                     }
@@ -12923,13 +14399,16 @@ impl Lower {
                                 self.g_wr(f6 as u32, v14)?;
                             }
                         }
-                    } else if (f6 >= 16i128 && f6 <= 79i128) || (f6 >= 110i128 && f6 <= 111i128) || (f6 >= 114i128 && f6 <= 117i128) || (f6 >= 122i128 && f6 <= 125i128) {
+                    } else if (f6 >= 16i128 && f6 <= 79i128) {
                         v0 = self.g_rd((16i128 + (f4 + 8i128)) as u32)?;
                         v2 = self.ci((((((f1) << (16i128 as u32)) | f0) * 4i128) & 4294967295i128) as u32);
                         v3 = self.g_bin(Bin::Add, v0, v2);
                         v14 = self.g_load(v3, 4i128 as u8, false)?;
                         self.g_wr(f6 as u32, v14)?;
-                    } else {
+                        if (f6 >= 64i128) {
+                            self.g_wr(((f6 - 64i128) + 16i128) as u32, v14)?;
+                        }
+                    } else if (f6 >= 96i128 && f6 <= 107i128) {
                         if (f6 == 107i128) {
                             return refuse("combined PX transfer");
                         } else {
@@ -12939,6 +14418,12 @@ impl Lower {
                             v14 = self.g_load(v3, 4i128 as u8, false)?;
                             self.g_wr(f6 as u32, v14)?;
                         }
+                    } else {
+                        v0 = self.g_rd((16i128 + (f4 + 8i128)) as u32)?;
+                        v2 = self.ci((((((f1) << (16i128 as u32)) | f0) * 4i128) & 4294967295i128) as u32);
+                        v3 = self.g_bin(Bin::Add, v0, v2);
+                        v14 = self.g_load(v3, 4i128 as u8, false)?;
+                        self.g_wr(f6 as u32, v14)?;
                     }
                 }
             }
@@ -12974,7 +14459,17 @@ impl Lower {
                         v18 = self.g_bin(Bin::Add, v16, v8);
                         v20 = self.g_load(v18, 4i128 as u8, false)?;
                         self.g_wr(f6 as u32, v19)?;
+                        if (f6 >= 64i128) {
+                            if (f6 <= 79i128) {
+                                self.g_wr(((f6 - 64i128) + 16i128) as u32, v19)?;
+                            }
+                        }
                         self.g_wr((f6 ^ 1i128) as u32, v20)?;
+                        if ((f6 ^ 1i128) >= 64i128) {
+                            if ((f6 ^ 1i128) <= 79i128) {
+                                self.g_wr((((f6 ^ 1i128) - 64i128) + 16i128) as u32, v20)?;
+                            }
+                        }
                     } else {
                         self.g_wr(f6 as u32, v19)?;
                     }
@@ -13074,12 +14569,15 @@ impl Lower {
                                 self.g_wr(f6 as u32, v21)?;
                             }
                         }
-                    } else if (f6 >= 16i128 && f6 <= 79i128) || (f6 >= 110i128 && f6 <= 111i128) || (f6 >= 114i128 && f6 <= 117i128) || (f6 >= 122i128 && f6 <= 125i128) {
+                    } else if (f6 >= 16i128 && f6 <= 79i128) {
                         v15 = self.g_rd((16i128 + (f4 + 0i128)) as u32)?;
                         v2 = self.ci((((((f1) << (16i128 as u32)) | f0) * 4i128) & 4294967295i128) as u32);
                         v16 = self.g_bin(Bin::Add, v15, v2);
                         v21 = self.g_load(v16, 4i128 as u8, false)?;
                         self.g_wr(f6 as u32, v21)?;
+                        if (f6 >= 64i128) {
+                            self.g_wr(((f6 - 64i128) + 16i128) as u32, v21)?;
+                        }
                     } else if (f6 >= 80i128 && f6 <= 95i128) {
                         v15 = self.g_rd((16i128 + (f4 + 0i128)) as u32)?;
                         v2 = self.ci((((((f1) << (16i128 as u32)) | f0) * 4i128) & 4294967295i128) as u32);
@@ -13128,7 +14626,7 @@ impl Lower {
                             v21 = self.g_load(v16, 4i128 as u8, false)?;
                             self.g_wr(f6 as u32, v21)?;
                         }
-                    } else {
+                    } else if (f6 >= 108i128 && f6 <= 109i128) || (f6 >= 112i128 && f6 <= 113i128) || (f6 >= 118i128 && f6 <= 121i128) || f6 >= 126i128 {
                         if ((f4 + 0i128) == 1i128) {
                             if ((self.m1(0x800000) as i128) != 0i128) {
                                 if ((f6 ^ 1i128) == 107i128) {
@@ -13143,6 +14641,11 @@ impl Lower {
                                     self.g_wr(f6 as u32, v21)?;
                                     v22 = self.g_load(v17, 4i128 as u8, false)?;
                                     self.g_wr((f6 ^ 1i128) as u32, v22)?;
+                                    if ((f6 ^ 1i128) >= 64i128) {
+                                        if ((f6 ^ 1i128) <= 79i128) {
+                                            self.g_wr((((f6 ^ 1i128) - 64i128) + 16i128) as u32, v22)?;
+                                        }
+                                    }
                                 }
                             } else {
                                 if ((self.m1(0x200000) as i128) != 0i128) {
@@ -13158,6 +14661,11 @@ impl Lower {
                                         self.g_wr(f6 as u32, v21)?;
                                         v20 = self.g_load(v18, 4i128 as u8, false)?;
                                         self.g_wr((f6 ^ 1i128) as u32, v20)?;
+                                        if ((f6 ^ 1i128) >= 64i128) {
+                                            if ((f6 ^ 1i128) <= 79i128) {
+                                                self.g_wr((((f6 ^ 1i128) - 64i128) + 16i128) as u32, v20)?;
+                                            }
+                                        }
                                     }
                                 } else {
                                     v15 = self.g_rd((16i128 + (f4 + 0i128)) as u32)?;
@@ -13181,6 +14689,11 @@ impl Lower {
                                     self.g_wr(f6 as u32, v21)?;
                                     v20 = self.g_load(v18, 4i128 as u8, false)?;
                                     self.g_wr((f6 ^ 1i128) as u32, v20)?;
+                                    if ((f6 ^ 1i128) >= 64i128) {
+                                        if ((f6 ^ 1i128) <= 79i128) {
+                                            self.g_wr((((f6 ^ 1i128) - 64i128) + 16i128) as u32, v20)?;
+                                        }
+                                    }
                                 }
                             } else {
                                 v15 = self.g_rd((16i128 + (f4 + 0i128)) as u32)?;
@@ -13190,6 +14703,12 @@ impl Lower {
                                 self.g_wr(f6 as u32, v21)?;
                             }
                         }
+                    } else {
+                        v15 = self.g_rd((16i128 + (f4 + 0i128)) as u32)?;
+                        v2 = self.ci((((((f1) << (16i128 as u32)) | f0) * 4i128) & 4294967295i128) as u32);
+                        v16 = self.g_bin(Bin::Add, v15, v2);
+                        v21 = self.g_load(v16, 4i128 as u8, false)?;
+                        self.g_wr(f6 as u32, v21)?;
                     }
                 }
             }
@@ -13275,7 +14794,17 @@ impl Lower {
                             v9 = self.g_bin(Bin::Add, v3, v8);
                             v11 = self.g_load(v9, 4i128 as u8, false)?;
                             self.g_wr(f5 as u32, v10)?;
+                            if (f5 >= 64i128) {
+                                if (f5 <= 79i128) {
+                                    self.g_wr(((f5 - 64i128) + 16i128) as u32, v10)?;
+                                }
+                            }
                             self.g_wr((f5 ^ 1i128) as u32, v11)?;
+                            if ((f5 ^ 1i128) >= 64i128) {
+                                if ((f5 ^ 1i128) <= 79i128) {
+                                    self.g_wr((((f5 ^ 1i128) - 64i128) + 16i128) as u32, v11)?;
+                                }
+                            }
                         } else {
                             self.g_wr(f5 as u32, v10)?;
                         }
@@ -13314,13 +14843,16 @@ impl Lower {
                                     self.g_wr(f5 as u32, v14)?;
                                 }
                             }
-                        } else if (f5 >= 16i128 && f5 <= 79i128) || (f5 >= 110i128 && f5 <= 111i128) || (f5 >= 114i128 && f5 <= 117i128) || (f5 >= 122i128 && f5 <= 125i128) {
+                        } else if (f5 >= 16i128 && f5 <= 79i128) {
                             v0 = self.g_rd((16i128 + (f3 + 8i128)) as u32)?;
                             v2 = self.ci((((f1 - 128i128) * 4i128) & 4294967295i128) as u32);
                             v3 = self.g_bin(Bin::Add, v0, v2);
                             v14 = self.g_load(v3, 4i128 as u8, false)?;
                             self.g_wr(f5 as u32, v14)?;
-                        } else {
+                            if (f5 >= 64i128) {
+                                self.g_wr(((f5 - 64i128) + 16i128) as u32, v14)?;
+                            }
+                        } else if (f5 >= 96i128 && f5 <= 107i128) {
                             if (f5 == 107i128) {
                                 return refuse("combined PX transfer");
                             } else {
@@ -13330,6 +14862,12 @@ impl Lower {
                                 v14 = self.g_load(v3, 4i128 as u8, false)?;
                                 self.g_wr(f5 as u32, v14)?;
                             }
+                        } else {
+                            v0 = self.g_rd((16i128 + (f3 + 8i128)) as u32)?;
+                            v2 = self.ci((((f1 - 128i128) * 4i128) & 4294967295i128) as u32);
+                            v3 = self.g_bin(Bin::Add, v0, v2);
+                            v14 = self.g_load(v3, 4i128 as u8, false)?;
+                            self.g_wr(f5 as u32, v14)?;
                         }
                     }
                 }
@@ -13365,7 +14903,17 @@ impl Lower {
                             v18 = self.g_bin(Bin::Add, v16, v8);
                             v20 = self.g_load(v18, 4i128 as u8, false)?;
                             self.g_wr(f5 as u32, v19)?;
+                            if (f5 >= 64i128) {
+                                if (f5 <= 79i128) {
+                                    self.g_wr(((f5 - 64i128) + 16i128) as u32, v19)?;
+                                }
+                            }
                             self.g_wr((f5 ^ 1i128) as u32, v20)?;
+                            if ((f5 ^ 1i128) >= 64i128) {
+                                if ((f5 ^ 1i128) <= 79i128) {
+                                    self.g_wr((((f5 ^ 1i128) - 64i128) + 16i128) as u32, v20)?;
+                                }
+                            }
                         } else {
                             self.g_wr(f5 as u32, v19)?;
                         }
@@ -13404,13 +14952,16 @@ impl Lower {
                                     self.g_wr(f5 as u32, v21)?;
                                 }
                             }
-                        } else if (f5 >= 16i128 && f5 <= 79i128) || (f5 >= 110i128 && f5 <= 111i128) || (f5 >= 114i128 && f5 <= 117i128) || (f5 >= 122i128 && f5 <= 125i128) {
+                        } else if (f5 >= 16i128 && f5 <= 79i128) {
                             v0 = self.g_rd((16i128 + (f3 + 8i128)) as u32)?;
                             v15 = self.ci(((f1 * 4i128) & 4294967295i128) as u32);
                             v16 = self.g_bin(Bin::Add, v0, v15);
                             v21 = self.g_load(v16, 4i128 as u8, false)?;
                             self.g_wr(f5 as u32, v21)?;
-                        } else {
+                            if (f5 >= 64i128) {
+                                self.g_wr(((f5 - 64i128) + 16i128) as u32, v21)?;
+                            }
+                        } else if (f5 >= 96i128 && f5 <= 107i128) {
                             if (f5 == 107i128) {
                                 return refuse("combined PX transfer");
                             } else {
@@ -13420,6 +14971,12 @@ impl Lower {
                                 v21 = self.g_load(v16, 4i128 as u8, false)?;
                                 self.g_wr(f5 as u32, v21)?;
                             }
+                        } else {
+                            v0 = self.g_rd((16i128 + (f3 + 8i128)) as u32)?;
+                            v15 = self.ci(((f1 * 4i128) & 4294967295i128) as u32);
+                            v16 = self.g_bin(Bin::Add, v0, v15);
+                            v21 = self.g_load(v16, 4i128 as u8, false)?;
+                            self.g_wr(f5 as u32, v21)?;
                         }
                     }
                 }
@@ -13457,7 +15014,17 @@ impl Lower {
                             v25 = self.g_bin(Bin::Add, v23, v8);
                             v27 = self.g_load(v25, 4i128 as u8, false)?;
                             self.g_wr(f5 as u32, v26)?;
+                            if (f5 >= 64i128) {
+                                if (f5 <= 79i128) {
+                                    self.g_wr(((f5 - 64i128) + 16i128) as u32, v26)?;
+                                }
+                            }
                             self.g_wr((f5 ^ 1i128) as u32, v27)?;
+                            if ((f5 ^ 1i128) >= 64i128) {
+                                if ((f5 ^ 1i128) <= 79i128) {
+                                    self.g_wr((((f5 ^ 1i128) - 64i128) + 16i128) as u32, v27)?;
+                                }
+                            }
                         } else {
                             self.g_wr(f5 as u32, v26)?;
                         }
@@ -13557,12 +15124,15 @@ impl Lower {
                                     self.g_wr(f5 as u32, v28)?;
                                 }
                             }
-                        } else if (f5 >= 16i128 && f5 <= 79i128) || (f5 >= 110i128 && f5 <= 111i128) || (f5 >= 114i128 && f5 <= 117i128) || (f5 >= 122i128 && f5 <= 125i128) {
+                        } else if (f5 >= 16i128 && f5 <= 79i128) {
                             v22 = self.g_rd((16i128 + (f3 + 0i128)) as u32)?;
                             v2 = self.ci((((f1 - 128i128) * 4i128) & 4294967295i128) as u32);
                             v23 = self.g_bin(Bin::Add, v22, v2);
                             v28 = self.g_load(v23, 4i128 as u8, false)?;
                             self.g_wr(f5 as u32, v28)?;
+                            if (f5 >= 64i128) {
+                                self.g_wr(((f5 - 64i128) + 16i128) as u32, v28)?;
+                            }
                         } else if (f5 >= 80i128 && f5 <= 95i128) {
                             v22 = self.g_rd((16i128 + (f3 + 0i128)) as u32)?;
                             v2 = self.ci((((f1 - 128i128) * 4i128) & 4294967295i128) as u32);
@@ -13611,7 +15181,7 @@ impl Lower {
                                 v28 = self.g_load(v23, 4i128 as u8, false)?;
                                 self.g_wr(f5 as u32, v28)?;
                             }
-                        } else {
+                        } else if (f5 >= 108i128 && f5 <= 109i128) || (f5 >= 112i128 && f5 <= 113i128) || (f5 >= 118i128 && f5 <= 121i128) || f5 >= 126i128 {
                             if ((f3 + 0i128) == 1i128) {
                                 if ((self.m1(0x800000) as i128) != 0i128) {
                                     if ((f5 ^ 1i128) == 107i128) {
@@ -13626,6 +15196,11 @@ impl Lower {
                                         self.g_wr(f5 as u32, v28)?;
                                         v29 = self.g_load(v24, 4i128 as u8, false)?;
                                         self.g_wr((f5 ^ 1i128) as u32, v29)?;
+                                        if ((f5 ^ 1i128) >= 64i128) {
+                                            if ((f5 ^ 1i128) <= 79i128) {
+                                                self.g_wr((((f5 ^ 1i128) - 64i128) + 16i128) as u32, v29)?;
+                                            }
+                                        }
                                     }
                                 } else {
                                     if ((self.m1(0x200000) as i128) != 0i128) {
@@ -13641,6 +15216,11 @@ impl Lower {
                                             self.g_wr(f5 as u32, v28)?;
                                             v27 = self.g_load(v25, 4i128 as u8, false)?;
                                             self.g_wr((f5 ^ 1i128) as u32, v27)?;
+                                            if ((f5 ^ 1i128) >= 64i128) {
+                                                if ((f5 ^ 1i128) <= 79i128) {
+                                                    self.g_wr((((f5 ^ 1i128) - 64i128) + 16i128) as u32, v27)?;
+                                                }
+                                            }
                                         }
                                     } else {
                                         v22 = self.g_rd((16i128 + (f3 + 0i128)) as u32)?;
@@ -13664,6 +15244,11 @@ impl Lower {
                                         self.g_wr(f5 as u32, v28)?;
                                         v27 = self.g_load(v25, 4i128 as u8, false)?;
                                         self.g_wr((f5 ^ 1i128) as u32, v27)?;
+                                        if ((f5 ^ 1i128) >= 64i128) {
+                                            if ((f5 ^ 1i128) <= 79i128) {
+                                                self.g_wr((((f5 ^ 1i128) - 64i128) + 16i128) as u32, v27)?;
+                                            }
+                                        }
                                     }
                                 } else {
                                     v22 = self.g_rd((16i128 + (f3 + 0i128)) as u32)?;
@@ -13673,6 +15258,12 @@ impl Lower {
                                     self.g_wr(f5 as u32, v28)?;
                                 }
                             }
+                        } else {
+                            v22 = self.g_rd((16i128 + (f3 + 0i128)) as u32)?;
+                            v2 = self.ci((((f1 - 128i128) * 4i128) & 4294967295i128) as u32);
+                            v23 = self.g_bin(Bin::Add, v22, v2);
+                            v28 = self.g_load(v23, 4i128 as u8, false)?;
+                            self.g_wr(f5 as u32, v28)?;
                         }
                     }
                 }
@@ -13708,7 +15299,17 @@ impl Lower {
                             v32 = self.g_bin(Bin::Add, v30, v8);
                             v34 = self.g_load(v32, 4i128 as u8, false)?;
                             self.g_wr(f5 as u32, v33)?;
+                            if (f5 >= 64i128) {
+                                if (f5 <= 79i128) {
+                                    self.g_wr(((f5 - 64i128) + 16i128) as u32, v33)?;
+                                }
+                            }
                             self.g_wr((f5 ^ 1i128) as u32, v34)?;
+                            if ((f5 ^ 1i128) >= 64i128) {
+                                if ((f5 ^ 1i128) <= 79i128) {
+                                    self.g_wr((((f5 ^ 1i128) - 64i128) + 16i128) as u32, v34)?;
+                                }
+                            }
                         } else {
                             self.g_wr(f5 as u32, v33)?;
                         }
@@ -13808,12 +15409,15 @@ impl Lower {
                                     self.g_wr(f5 as u32, v35)?;
                                 }
                             }
-                        } else if (f5 >= 16i128 && f5 <= 79i128) || (f5 >= 110i128 && f5 <= 111i128) || (f5 >= 114i128 && f5 <= 117i128) || (f5 >= 122i128 && f5 <= 125i128) {
+                        } else if (f5 >= 16i128 && f5 <= 79i128) {
                             v22 = self.g_rd((16i128 + (f3 + 0i128)) as u32)?;
                             v15 = self.ci(((f1 * 4i128) & 4294967295i128) as u32);
                             v30 = self.g_bin(Bin::Add, v22, v15);
                             v35 = self.g_load(v30, 4i128 as u8, false)?;
                             self.g_wr(f5 as u32, v35)?;
+                            if (f5 >= 64i128) {
+                                self.g_wr(((f5 - 64i128) + 16i128) as u32, v35)?;
+                            }
                         } else if (f5 >= 80i128 && f5 <= 95i128) {
                             v22 = self.g_rd((16i128 + (f3 + 0i128)) as u32)?;
                             v15 = self.ci(((f1 * 4i128) & 4294967295i128) as u32);
@@ -13862,7 +15466,7 @@ impl Lower {
                                 v35 = self.g_load(v30, 4i128 as u8, false)?;
                                 self.g_wr(f5 as u32, v35)?;
                             }
-                        } else {
+                        } else if (f5 >= 108i128 && f5 <= 109i128) || (f5 >= 112i128 && f5 <= 113i128) || (f5 >= 118i128 && f5 <= 121i128) || f5 >= 126i128 {
                             if ((f3 + 0i128) == 1i128) {
                                 if ((self.m1(0x800000) as i128) != 0i128) {
                                     if ((f5 ^ 1i128) == 107i128) {
@@ -13877,6 +15481,11 @@ impl Lower {
                                         self.g_wr(f5 as u32, v35)?;
                                         v36 = self.g_load(v31, 4i128 as u8, false)?;
                                         self.g_wr((f5 ^ 1i128) as u32, v36)?;
+                                        if ((f5 ^ 1i128) >= 64i128) {
+                                            if ((f5 ^ 1i128) <= 79i128) {
+                                                self.g_wr((((f5 ^ 1i128) - 64i128) + 16i128) as u32, v36)?;
+                                            }
+                                        }
                                     }
                                 } else {
                                     if ((self.m1(0x200000) as i128) != 0i128) {
@@ -13892,6 +15501,11 @@ impl Lower {
                                             self.g_wr(f5 as u32, v35)?;
                                             v34 = self.g_load(v32, 4i128 as u8, false)?;
                                             self.g_wr((f5 ^ 1i128) as u32, v34)?;
+                                            if ((f5 ^ 1i128) >= 64i128) {
+                                                if ((f5 ^ 1i128) <= 79i128) {
+                                                    self.g_wr((((f5 ^ 1i128) - 64i128) + 16i128) as u32, v34)?;
+                                                }
+                                            }
                                         }
                                     } else {
                                         v22 = self.g_rd((16i128 + (f3 + 0i128)) as u32)?;
@@ -13915,6 +15529,11 @@ impl Lower {
                                         self.g_wr(f5 as u32, v35)?;
                                         v34 = self.g_load(v32, 4i128 as u8, false)?;
                                         self.g_wr((f5 ^ 1i128) as u32, v34)?;
+                                        if ((f5 ^ 1i128) >= 64i128) {
+                                            if ((f5 ^ 1i128) <= 79i128) {
+                                                self.g_wr((((f5 ^ 1i128) - 64i128) + 16i128) as u32, v34)?;
+                                            }
+                                        }
                                     }
                                 } else {
                                     v22 = self.g_rd((16i128 + (f3 + 0i128)) as u32)?;
@@ -13924,6 +15543,12 @@ impl Lower {
                                     self.g_wr(f5 as u32, v35)?;
                                 }
                             }
+                        } else {
+                            v22 = self.g_rd((16i128 + (f3 + 0i128)) as u32)?;
+                            v15 = self.ci(((f1 * 4i128) & 4294967295i128) as u32);
+                            v30 = self.g_bin(Bin::Add, v22, v15);
+                            v35 = self.g_load(v30, 4i128 as u8, false)?;
+                            self.g_wr(f5 as u32, v35)?;
                         }
                     }
                 }
@@ -13940,18 +15565,29 @@ impl Lower {
         let f2 = d.get("ureg[6:0]").ok_or(Refuse("missing field ureg[6:0]".into()))? as i128;
         let v0 = self.ci(((((f1) << (16i128 as u32)) | f0) & 4294967295i128) as u32);
         self.g_wr(f2 as u32, v0)?;
-        if f2 <= 15i128 {
-            if ((self.m1(0x200000) as i128) != 0i128) {
-                self.g_wr((f2 + 80i128) as u32, v0)?;
-            }
-        } else if (f2 >= 16i128 && f2 <= 79i128) || (f2 >= 96i128 && f2 <= 107i128) || (f2 >= 110i128 && f2 <= 111i128) || (f2 >= 114i128 && f2 <= 117i128) || (f2 >= 122i128 && f2 <= 125i128) {
-        } else if (f2 >= 80i128 && f2 <= 95i128) {
-            if ((self.m1(0x200000) as i128) != 0i128) {
-                self.g_wr((f2 + -80i128) as u32, v0)?;
+        if (f2 >= 64i128) {
+            if f2 <= 79i128 {
+                self.g_wr(((f2 - 64i128) + 16i128) as u32, v0)?;
+            } else if (f2 >= 80i128 && f2 <= 95i128) {
+                if ((self.m1(0x200000) as i128) != 0i128) {
+                    self.g_wr((f2 + -80i128) as u32, v0)?;
+                }
+            } else if (f2 >= 96i128 && f2 <= 107i128) || (f2 >= 110i128 && f2 <= 111i128) || (f2 >= 114i128 && f2 <= 117i128) || (f2 >= 122i128 && f2 <= 125i128) {
+            } else {
+                if ((self.m1(0x200000) as i128) != 0i128) {
+                    self.g_wr((f2 ^ 1i128) as u32, v0)?;
+                    if ((f2 ^ 1i128) >= 64i128) {
+                        if ((f2 ^ 1i128) <= 79i128) {
+                            self.g_wr((((f2 ^ 1i128) - 64i128) + 16i128) as u32, v0)?;
+                        }
+                    }
+                }
             }
         } else {
-            if ((self.m1(0x200000) as i128) != 0i128) {
-                self.g_wr((f2 ^ 1i128) as u32, v0)?;
+            if (f2 <= 15i128) {
+                if ((self.m1(0x200000) as i128) != 0i128) {
+                    self.g_wr((f2 + 80i128) as u32, v0)?;
+                }
             }
         }
         Ok(())
@@ -13967,35 +15603,57 @@ impl Lower {
         if ((f0 & 32768i128) != 0i128) {
             v0 = self.ci(((f0 - 65536i128) & 4294967295i128) as u32);
             self.g_wr(f1 as u32, v0)?;
-            if f1 <= 15i128 {
-                if ((self.m1(0x200000) as i128) != 0i128) {
-                    self.g_wr((f1 + 80i128) as u32, v0)?;
-                }
-            } else if (f1 >= 16i128 && f1 <= 79i128) || (f1 >= 96i128 && f1 <= 107i128) || (f1 >= 110i128 && f1 <= 111i128) || (f1 >= 114i128 && f1 <= 117i128) || (f1 >= 122i128 && f1 <= 125i128) {
-            } else if (f1 >= 80i128 && f1 <= 95i128) {
-                if ((self.m1(0x200000) as i128) != 0i128) {
-                    self.g_wr((f1 + -80i128) as u32, v0)?;
+            if (f1 >= 64i128) {
+                if f1 <= 79i128 {
+                    self.g_wr(((f1 - 64i128) + 16i128) as u32, v0)?;
+                } else if (f1 >= 80i128 && f1 <= 95i128) {
+                    if ((self.m1(0x200000) as i128) != 0i128) {
+                        self.g_wr((f1 + -80i128) as u32, v0)?;
+                    }
+                } else if (f1 >= 96i128 && f1 <= 107i128) || (f1 >= 110i128 && f1 <= 111i128) || (f1 >= 114i128 && f1 <= 117i128) || (f1 >= 122i128 && f1 <= 125i128) {
+                } else {
+                    if ((self.m1(0x200000) as i128) != 0i128) {
+                        self.g_wr((f1 ^ 1i128) as u32, v0)?;
+                        if ((f1 ^ 1i128) >= 64i128) {
+                            if ((f1 ^ 1i128) <= 79i128) {
+                                self.g_wr((((f1 ^ 1i128) - 64i128) + 16i128) as u32, v0)?;
+                            }
+                        }
+                    }
                 }
             } else {
-                if ((self.m1(0x200000) as i128) != 0i128) {
-                    self.g_wr((f1 ^ 1i128) as u32, v0)?;
+                if (f1 <= 15i128) {
+                    if ((self.m1(0x200000) as i128) != 0i128) {
+                        self.g_wr((f1 + 80i128) as u32, v0)?;
+                    }
                 }
             }
         } else {
             v1 = self.ci(f0 as u32);
             self.g_wr(f1 as u32, v1)?;
-            if f1 <= 15i128 {
-                if ((self.m1(0x200000) as i128) != 0i128) {
-                    self.g_wr((f1 + 80i128) as u32, v1)?;
-                }
-            } else if (f1 >= 16i128 && f1 <= 79i128) || (f1 >= 96i128 && f1 <= 107i128) || (f1 >= 110i128 && f1 <= 111i128) || (f1 >= 114i128 && f1 <= 117i128) || (f1 >= 122i128 && f1 <= 125i128) {
-            } else if (f1 >= 80i128 && f1 <= 95i128) {
-                if ((self.m1(0x200000) as i128) != 0i128) {
-                    self.g_wr((f1 + -80i128) as u32, v1)?;
+            if (f1 >= 64i128) {
+                if f1 <= 79i128 {
+                    self.g_wr(((f1 - 64i128) + 16i128) as u32, v1)?;
+                } else if (f1 >= 80i128 && f1 <= 95i128) {
+                    if ((self.m1(0x200000) as i128) != 0i128) {
+                        self.g_wr((f1 + -80i128) as u32, v1)?;
+                    }
+                } else if (f1 >= 96i128 && f1 <= 107i128) || (f1 >= 110i128 && f1 <= 111i128) || (f1 >= 114i128 && f1 <= 117i128) || (f1 >= 122i128 && f1 <= 125i128) {
+                } else {
+                    if ((self.m1(0x200000) as i128) != 0i128) {
+                        self.g_wr((f1 ^ 1i128) as u32, v1)?;
+                        if ((f1 ^ 1i128) >= 64i128) {
+                            if ((f1 ^ 1i128) <= 79i128) {
+                                self.g_wr((((f1 ^ 1i128) - 64i128) + 16i128) as u32, v1)?;
+                            }
+                        }
+                    }
                 }
             } else {
-                if ((self.m1(0x200000) as i128) != 0i128) {
-                    self.g_wr((f1 ^ 1i128) as u32, v1)?;
+                if (f1 <= 15i128) {
+                    if ((self.m1(0x200000) as i128) != 0i128) {
+                        self.g_wr((f1 + 80i128) as u32, v1)?;
+                    }
                 }
             }
         }
@@ -14237,6 +15895,11 @@ impl Lower {
                                         v11 = self.ci(((((f2) << (16i128 as u32)) | f1) & 4294967295i128) as u32);
                                         v12 = self.g_bin(Bin::Or, v0, v11);
                                         self.g_wr((112i128 + f3) as u32, v12)?;
+                                        if ((112i128 + f3) >= 64i128) {
+                                            if ((112i128 + f3) <= 79i128) {
+                                                self.g_wr((((112i128 + f3) - 64i128) + 16i128) as u32, v12)?;
+                                            }
+                                        }
                                     }
                                 }
                             }
@@ -14259,6 +15922,11 @@ impl Lower {
                                         v13 = self.ci((!((((f2) << (16i128 as u32)) | f1) & 4294967295i128)) as u32);
                                         v14 = self.g_bin(Bin::And, v0, v13);
                                         self.g_wr((112i128 + f3) as u32, v14)?;
+                                        if ((112i128 + f3) >= 64i128) {
+                                            if ((112i128 + f3) <= 79i128) {
+                                                self.g_wr((((112i128 + f3) - 64i128) + 16i128) as u32, v14)?;
+                                            }
+                                        }
                                     }
                                 }
                             }
@@ -14281,6 +15949,11 @@ impl Lower {
                                         v11 = self.ci(((((f2) << (16i128 as u32)) | f1) & 4294967295i128) as u32);
                                         v15 = self.g_bin(Bin::Xor, v0, v11);
                                         self.g_wr((112i128 + f3) as u32, v15)?;
+                                        if ((112i128 + f3) >= 64i128) {
+                                            if ((112i128 + f3) <= 79i128) {
+                                                self.g_wr((((112i128 + f3) - 64i128) + 16i128) as u32, v15)?;
+                                            }
+                                        }
                                     }
                                 }
                             }

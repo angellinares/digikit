@@ -41,6 +41,7 @@ from .sequencer import (
 from .state import (
     UREG_CODES,
     State,
+    _b_write_loads_i,
     _copy,
     _cureg_code,
     _event,
@@ -204,7 +205,9 @@ def _type_3a_transfer(
                     _dm_read(target, item_address, 4, normal_word=True)
                 )
             for item, mem_value in zip(codes, loaded_values, strict=True):
-                target.uregs[item] = mem_value or Unknown("memory-address " + rendered)
+                loaded = mem_value or Unknown("memory-address " + rendered)
+                target.uregs[item] = loaded
+                _b_write_loads_i(target, item, loaded)
             _event(
                 target,
                 insn,
