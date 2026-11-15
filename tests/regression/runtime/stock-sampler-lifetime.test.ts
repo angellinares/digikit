@@ -1,7 +1,7 @@
 import { createHash } from 'node:crypto';
 import { mkdirSync, mkdtempSync, readFileSync, writeFileSync } from 'node:fs';
 import path from 'node:path';
-import { DkSession, EmuUsbTransport } from '@digi/dk-session';
+import type { DkSession } from '@digi/dk-session';
 import { Sample, prepareUpload } from '@digi/dk-session/dksample';
 import { openSamples } from '@digi/dk-session/samples';
 import { button, repoRoot, type Session } from '@digi/test-support';
@@ -9,7 +9,7 @@ import { expect, test } from 'vitest';
 import { withSession } from '../support.ts';
 import { record } from './artifacts.ts';
 import { memory, panel } from './panel.ts';
-import { pollEmulated, expectPollEmulated } from './waits.ts';
+import { emulatorDk, pollEmulated, expectPollEmulated } from './waits.ts';
 
 // Current DT2 1.17 observations in finding81. All diagnostic accesses are reads.
 const CF = { slotBlock: 0x405b5368, slotRef: 0x405b1368, slotLength: 0x405ba768, blocks: 0x405a0f64 };
@@ -580,7 +580,7 @@ const handle = withSession({
 test('stock DT2 slot binding and active ten-second replacement discovery', async () => {
   const session = handle.session;
   await session.client.call('run.mode', { mode: 'free' });
-  const dk = new DkSession(new EmuUsbTransport((method, params) => session.client.call(method, params)));
+  const dk = emulatorDk(session);
   try {
     const { out, rootTitle } = await discovery(session, dk);
     await unloadEarlierWhilePlaying(session, out, rootTitle);

@@ -17,3 +17,4 @@ export * from './spec.ts';
 export * from './toolchain.ts';
 export * from './voice.ts';
 export * from './soundcheck.ts';
+export * from './profile.ts';
