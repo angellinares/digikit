@@ -780,7 +780,9 @@ firmware, generated core or `out/` data.
 `verify_build daemons` (the `digi-control:daemons` target) keeps the coupled `digi-emud` daemons in
 `<git common dir>/emud-cache/<dev>/<key>/` (`digi-emud`, `key.txt`, `depfile.d`). All worktrees of the
 clone share it and it is never committed. A worktree with the same key restores the daemon and builds
-nothing; a stored file is never rewritten. The last 4 used keys per device stay.
+nothing; a stored file is never rewritten. The last 4 used keys per device stay (a restore refreshes the use time),
+and so does every key that `dist/daemons.json` of any worktree of the clone points at: the store holds at most 4 plus one per active lane.
+`digi-control:daemons` has `cache: false`, so every run restores or rebuilds the entry. `DIGI_EMUD_STORE` moves the store (tests only).
 
 The key is printed by `uv run python -m tools.devtools.emud_key key --device DEV`: a sha256 over the
 content of the repository files in `SOURCE_GLOBS` and `RECIPE_FILES`, every file of the generated core
