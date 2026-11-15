@@ -572,7 +572,7 @@ node tools/devtools/wb.mjs profile record --seconds 4 --image out/try/rt.syx --o
 ```sh
 node tools/devtools/wb.mjs profile spans --start                    # start counting
 node tools/devtools/wb.mjs profile spans --out out/try/spans.profile.json
-# running, 1000000 Hz
+# running, 132000000 Hz
 # name         calls  total ms  mean us  max us
 # early        812    41.200    50.7     91.0
 # digikit/pluck 812   120.500   148.4    210.0
