@@ -20,9 +20,8 @@
 // CALL/RTS pairs for its own subroutines):
 //   in   R4 = voice record (0x1d8 bytes; byte +0x1b8 ACTIVE, +0x1b9 note-on mark, see below), R8 = output block
 //        (32 floats, written in full), R12 = 32, R0 = type, R1 = voice index (even), R2 = track t.
-//   may clobber  R0-R15, I0-I5, I13, M1-M4, B3 and the ALU/multiplier state; this wrapper saves and restores the
-//        registers the stock renderer preserves (and I13). Must keep: I6, I7, I8-I12, I14, I15, M0, M5-M15, L registers,
-//        MODE1 (SIMD off).
+//   Register rules: sdk/dsp/REGISTERS.md. This wrapper saves and restores the registers the stock renderer preserves.
+//        MODE1: SIMD off.
 //   The context registers are SET by this wrapper, never assumed. The firmware restores M5, M6, M7, M13, M14, M15, the L
 //   registers and MODE1 per DSP context (blk69 context restore, finding 45), so their values at the hook are the context's,
 //   not a constant of the machine. Before a registered type runs, the wrapper saves them in the frame and pins

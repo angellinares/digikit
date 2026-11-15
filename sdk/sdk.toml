@@ -2,7 +2,7 @@
 # modules/core/runtime/sdk/src/gen_sdk.rs, tools/device/dklog_kinds.py, tools/device/dkproto.py and
 # packages/dkupload/src/gen_proto.rs, packages/dk-session/src/gen_proto.ts, sdk/dsp/contract/dk_machine.inc, sdk/dsp/contract/dk_fx.inc,
 # sdk/dsp/contract/dk_sample_pool.inc, sdk/include/dk/core/status.h and sdk/include/dk/gen/machine_consts.h, fx_consts.h, machine.h, fx.h, imports.h, page_consts.h, limits.h
-# and sample.h from this file (`patchkit gen --check` fails when they are stale).
+# and sample.h, sdk/dsp/REGISTERS.md and packages/dksharc/src/rules_table.rs from this file (`patchkit gen --check` fails when they are stale).
 
 [runtime]           # the digikit runtime release: the one version of the SDK (semantic version; packed major<<16 | minor<<8 | patch)
 table = "0.8.0"     # the runtime version that introduced the header table of a `.dkm` (R7): `patchkit pack` writes at least this as the version the module needs, so the loader refuses a module of the 0.7 format with E_CONTRACT
@@ -89,8 +89,7 @@ intro = '''The numbers are in sdk/sdk.toml [machine], from which `patchkit gen` 
    sdk/dsp/contract/dk_machine.inc for assembly. Each constant is documented in the consts header.'''
 desc_doc = "One per module in read-only data, found by the manifest's symbol. No function pointers: the manifest names the entry symbols."
 rules = '''Entry points (symbols named in the manifest). SHARC+ assembly, v1: the adapter enters with `I13 = return address;
-   JUMP (M13, I12)` and the module returns with `JUMP (M13, I13)`. Arguments R4 = state, R8 = in, R12 = params; result R0.
-   May clobber R0-R15, I0-I5, M1-M4, B3; must keep I6-I15, M0, M5-M15, L0-L7, MODE1.'''
+   JUMP (M13, I12)` and the module returns with `JUMP (M13, I13)`. Arguments R4 = state, R8 = in, R12 = params; result R0.'''
 voice_in = [
     "i32 pitch // semitones << 8 (MIDI note 60 = 60 << 8), the device's tune added",
     "i32 velocity // 0 .. 127 << 8",
@@ -114,6 +113,23 @@ fns = [
     "i32 note_on(void *state, const dk_voice_in *in, const i32 *params) // At note-on, after `state_clear_bytes` are zeroed; no sound. params: DK_MAX_PARAMS words. Returns 0, or a negative number (a fault). Entered with I13 = return address (R4 state, R8 in, R12 params; result R0).",
     "i32 render(void *state, const dk_voice_in *in, const i32 *params) // Once per block while the voice runs, including the note-on block after note_on. Writes DK_BLOCK floats to in->out. params: DK_MAX_PARAMS words; DK_PARAM_LATCHED words retain the effective clamped note_on value, all other words are live. Returns dk_status.",
 ]
+
+# The register contract of module DSP code, machine and FX entry points alike, in one table. `patchkit gen` writes the rule comments of
+# sdk/include/dk/gen/machine.h and fx.h, sdk/dsp/REGISTERS.md and packages/dksharc/src/rules_table.rs from it. Entries are names, ranges (`R0-R15`)
+# or groups: MR = MRF, MRB, MSF, MSB; ASTAT = ASTATX, ASTATY; STKY = STKYX, STKYY; LCNTR also covers the loop registers CURLCNTR and LADDR.
+# clobber: free to use. keep: save before the first write, restore before every return (I6 is the frame pointer; B6 goes with it).
+# stack: the stack pointer I7; it changes only through balanced pushes and pops (post-modify with M6 or M7, or MODIFY by a constant), holds its
+# entry value at every return and is never loaded with another address. never_write: the stock interrupt code addresses through I6 and I7 with
+# L6 = L7 = 0, takes M5, M6, M7 and M13 as constants, and a write to B7 also moves I7; so none of these may be written, not even with a save and
+# restore. entry: the entry address arrives in I12 (it may be overwritten: both adapters restore it, the machine adapter from the stock frame, the
+# fx adapter from its own copy); the return address arrives in I13 (keep: the module returns with `JUMP (M13, I13)`).
+# The check is `dksharc::rules`, run by `patchkit build` for content modules; it only warns for now.
+[dsp.registers]
+clobber     = ["R0-R15","I0-I5","I12","M1-M4","B3","MR","PX","ASTAT","STKY","LCNTR","USTAT1","USTAT2","USTAT3","USTAT4","PX1","PX2","BFFWRP","BFF_HI","BFF_LO"]
+keep        = ["I6","I8-I11","I14","I15","M0","M8-M12","M14","M15","B0-B2","B4-B6","B8-B15","L0-L5","L8-L15","S0-S15","MODE1","MODE2"]
+stack       = ["I7","PCSTK","PCSTKP"]
+never_write = ["B7","L6","L7","M5","M6","M7","M13","IMASK","IMASKP","IRPTL","MMASK","TPERIOD","TCOUNT","FLAGS"]
+entry       = { entry = "I12", return = "I13" }
 
 # The FX contract's numbers (sdk/include/dk/gen/fx.h is the generated C view; it includes the generated sdk/include/dk/gen/fx_consts.h).
 # `patchkit gen` writes sdk/dsp/contract/dk_fx.inc and sdk/include/dk/gen/fx_consts.h from this table. Do not include it together with dk_machine.inc (DK_BLOCK and DK_LEVEL_BOUND_BITS are in both).
@@ -142,8 +158,7 @@ desc_doc = '''One per module in read-only data, found by the module's registry r
    of the .dkm). The row holds DK_FX_MAX_PARAMS parameter words, p0 to p7: word i of `params` is p_i, all 0 unless the row says otherwise (a run-time
    effect's record gives defaults). The adapter passes the words as they are; n_params says how many the effect reads. No function pointers.'''
 rules = '''Entry point. SHARC+ assembly, v1: the adapter enters with `I13 = return address; JUMP (M13, I12)` and the module returns with
-   `JUMP (M13, I13)`. Arguments R4 = state, R8 = in (dk_fx_in), R12 = params; result R0. Register rules as <dk/machine/machine.h>:
-   may clobber R0-R15, I0-I5, M1-M4, B3; must keep I6-I15, M0, M5-M15, L0-L7, MODE1.'''
+   `JUMP (M13, I13)`. Arguments R4 = state, R8 = in (dk_fx_in), R12 = params; result R0.'''
 fx_in = [
     "const float *in // the block before this effect, DK_FX_BLOCK floats, read only",
     "float *out // process writes DK_FX_BLOCK floats here (adapter scratch)",
