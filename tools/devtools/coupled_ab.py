@@ -19,9 +19,11 @@ writes them to dist/bytes/images/<device>/; run it in each lane and copy the two
 every label, so the A/B never compares stock with patched firmware. Before the timed pairs, each image gets its
 cold state once: ready.py makes its DSP image and cold-idle, then one `coupled-run --cold-base <stock sha256>
 --dsp-image .. --dsp-cold-idle .. --cold-save DIR` boot keeps the ready pair. DIR is
-out/runs/coupled_ab/image-<image sha>-<binary sha>/cold and a rerun reuses it. The timed runs restore that
-pair. The fast tier lists come from the stock firmware the images were built from. PCM must stay equal for
-both labels, so a ColdFire-only change must leave the audio unchanged.
+out/runs/coupled_ab/image-<key>/cold (the key hashes device, image, binary, stock firmware and card) and a
+rerun reuses it once complete.json exists. The timed runs restore that
+pair. The fast tier lists come from the stock firmware the images were built from. PCM must be identical
+across all runs and both labels, or the run fails with the hashes: a ColdFire-only change must leave the
+audio unchanged. The preparation runs under a shared benchlock hold that ends before the exclusive timing hold.
 
 The report prints, per scenario and binary, the median DSP CPU per audio s
 (IQR), the CF thread CPU, the real-time factor and the PCM hash; with two
@@ -38,6 +40,7 @@ import json
 import math
 import os
 import pathlib
+import shutil
 import signal
 import statistics
 import struct
@@ -82,7 +85,13 @@ def write(path: Path, data: dict) -> None:
     partial.replace(path)
 
 
-def process(argv: list[str], env: dict[str, str], folder: Path, timeout: float) -> None:
+def process(
+    argv: list[str],
+    env: dict[str, str],
+    folder: Path,
+    timeout: float,
+    ok_codes: tuple[int, ...] = (0,),
+) -> None:
     """Keep logs on failures too; kill only this child's process group on timeout."""
     folder.mkdir(parents=True, exist_ok=True)
     write(
@@ -113,7 +122,7 @@ def process(argv: list[str], env: dict[str, str], folder: Path, timeout: float) 
             proc.wait()
             raise Invalid(f"interrupted or timed out: {folder}") from None
     write(folder / "exit.json", {"exit_code": code})
-    if code:
+    if code not in ok_codes:
         tail = (folder / "stderr.log").read_text(errors="replace")[-600:]
         raise Invalid(f"child exit {code}: {folder}\n{tail}")
 
@@ -257,27 +266,57 @@ def prepare_image(
     stock = Path(stock_ins["firmware"])
     stock_sha = coupled.file_digest(stock)
     image_sha = coupled.file_digest(Path(image))
-    key = f"image-{image_sha[:16]}-{coupled.file_digest(Path(binary))[:12]}"
-    folder = ROOT / "out" / "runs" / "coupled_ab" / key
-    ready = folder / "ready"
-    cold = folder / "cold"
-    dsp_image = ready / "digi-audio-dn2-image.bin"
-    pair = (cold / "digi-audio-m5.snap", cold / "digi-audio-m5.snap.dsp")
-    if not all(p.is_file() for p in pair):
+    binary_sha = coupled.file_digest(Path(binary))
+    card = card_args[card_args.index("--card-image") + 1] if card_args else None
+    card_sha = coupled.file_digest(Path(card)) if card else None
+    fields = {
+        "device": device,
+        "image_sha256": image_sha,
+        "binary_sha256": binary_sha,
+        "stock_sha256": stock_sha,
+        "card_sha256": card_sha,
+    }
+    key = (
+        "image-"
+        + hashlib.sha256(json.dumps(fields, sort_keys=True).encode()).hexdigest()[:24]
+    )
+    root = ROOT / "out" / "runs" / "coupled_ab"
+    folder = root / key
+    # ready.py writes this file name for every device.
+    dsp_name = "digi-audio-dn2-image.bin"
+
+    def paths(base: Path) -> tuple[Path, Path, tuple[Path, Path]]:
+        cold = base / "cold"
+        return (
+            base / "ready" / dsp_name,
+            cold,
+            (cold / "digi-audio-m5.snap", cold / "digi-audio-m5.snap.dsp"),
+        )
+
+    def complete(base: Path) -> bool:
+        _, _, pair = paths(base)
+        return (base / "complete.json").is_file() and all(
+            p.is_file() and p.stat().st_size > 0 for p in pair
+        )
+
+    if not complete(folder):
+        # Build in a temp directory next to the final one; rename it into place last.
+        work = root / f"{key}.tmp-{os.getpid()}"
+        shutil.rmtree(work, ignore_errors=True)
+        work.mkdir(parents=True)
+        ready = work / "ready"
+        dsp_image, cold, pair = paths(work)
         ready_argv = [
             sys.executable, "-m", "tools.emulator.ready", device,
             "--out", str(ready),
             "--syx", image,
             "--base-sha256", stock_sha,
         ]  # fmt: skip
-        if card_args:
-            ready_argv += [
-                "--card-image",
-                card_args[card_args.index("--card-image") + 1],
-            ]
+        if card:
+            ready_argv += ["--card-image", card]
         # ready.py also boots the ColdFire (its own snapshot, not used here); the
         # pair below comes from coupled-run, as `--cold-base` expects.
-        process(ready_argv, tools.python_env(), folder / "ready-log", 3600)
+        process(ready_argv, tools.python_env(), work / "ready-log", 3600)
         cold.mkdir(parents=True, exist_ok=True)
         prep = [
             binary,
@@ -291,14 +330,25 @@ def prepare_image(
             "--scenarios", str(coupled.scenario_path(scenarios)),
             "--scenario", scenario,
             "--seconds", "0.5",
-            "--out", str(folder / "cold-report.json"),
+            "--out", str(work / "cold-report.json"),
         ]  # fmt: skip
         # The 0.5 s scenario run only exists to make coupled-run write the pair; its
-        # gates (exit 2) cannot pass in that time, so only a missing pair is an error.
-        with contextlib.suppress(Invalid):
-            process(prep, coupled.run_env(ENV, syx=stock), folder / "cold-log", 3600)
-        if not all(p.is_file() for p in pair):
+        # gates cannot pass in that time, so exit 2 (gate failure) is expected. Any
+        # other exit code or a timeout is an error.
+        process(
+            prep,
+            coupled.run_env(ENV, syx=stock),
+            work / "cold-log",
+            3600,
+            ok_codes=(0, 2),
+        )
+        if not all(p.is_file() and p.stat().st_size > 0 for p in pair):
             raise Invalid(f"cold boot of {label} left no ready pair: {cold}")
+        write(work / "complete.json", fields)
+        shutil.rmtree(folder, ignore_errors=True)
+        os.replace(work, folder)
+    dsp_image, cold, pair = paths(folder)
+    ready = folder / "ready"
     return {
         "image": image,
         "image_sha256": image_sha,
@@ -443,27 +493,31 @@ def main() -> None:
             / ("nopin-" + hashlib.sha256(payload.encode()).hexdigest()[:16] + ".json")
         )
         nopin.parent.mkdir(parents=True, exist_ok=True)
-        nopin.write_text(payload)
+        partial = nopin.with_suffix(f".{os.getpid()}.part")
+        partial.write_text(payload)
+        os.replace(partial, nopin)
         args.scenarios = str(nopin)
-    # Before the exclusive hold: the cold preparation builds and boots under the shared lock.
-    for label, path in bins:
-        if label in IMAGES:
-            scn = args.scenarios or str(
-                ROOT / "tests" / "scenarios" / f"{args.device}.json"
-            )
-            prepared[label] = prepare_image(
-                label, IMAGES[label], path, args.device, scn, args.scenario[0]
-            )
-            print(
-                "%-3s image %s (sha256 %s)  cold dir %s"
-                % (
-                    label,
-                    prepared[label]["image"],
-                    prepared[label]["image_sha256"][:16],
-                    prepared[label]["cold_dir"],
-                ),
-                flush=True,
-            )
+    # The cold preparation boots under a shared hold. It ends before the exclusive
+    # timing hold below starts, so the two never nest.
+    with benchlock.hold("shared", "coupled_ab image preparation"):
+        for label, path in bins:
+            if label in IMAGES:
+                scn = args.scenarios or str(
+                    ROOT / "tests" / "scenarios" / f"{args.device}.json"
+                )
+                prepared[label] = prepare_image(
+                    label, IMAGES[label], path, args.device, scn, args.scenario[0]
+                )
+                print(
+                    "%-3s image %s (sha256 %s)  cold dir %s"
+                    % (
+                        label,
+                        prepared[label]["image"],
+                        prepared[label]["image_sha256"][:16],
+                        prepared[label]["cold_dir"],
+                    ),
+                    flush=True,
+                )
     runs: dict[tuple[str, str], list[dict]] = {}
     with benchlock.hold("exclusive", "coupled_ab"):
         for scenario in args.scenario:
@@ -492,6 +546,18 @@ def main() -> None:
                         ),
                         flush=True,
                     )
+    if IMAGES:
+        # No scenario pin applies, so all runs of a scenario must agree on PCM.
+        for scenario in args.scenario:
+            seen: dict[str, str] = {}
+            for label, _ in bins:
+                for r in runs[(scenario, label)]:
+                    seen.setdefault(r["pcm"], f"{label} pair {r['pair']}")
+            if len(seen) > 1:
+                raise Invalid(
+                    "PCM differs in %s: %s"
+                    % (scenario, "; ".join(f"{h} ({w})" for h, w in seen.items()))
+                )
     print()
     for scenario in args.scenario:
         for label, _ in bins:

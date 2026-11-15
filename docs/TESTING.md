@@ -927,12 +927,13 @@ example `main` against a branch with a changed runtime) run with
 `dist/bytes/images/<device>/<id>.syx`; check `dist/bytes/images/<device>/` for the id), copy them
 away, then
 
+    mkdir -p out/ab    # copy main.syx and branch.syx there
     uv run python -m tools.devtools.coupled_ab A=BIN B=BIN \
         --image A=out/ab/main.syx --image B=out/ab/branch.syx -s trig1-taps --pairs 6
 
 Both labels need an image. Each image boots once with `coupled-run --cold-base`
 and keeps its ready pair under `out/runs/coupled_ab/image-*/cold`; the timed
-runs restore it. The PCM check stays on. The matrix requires strict full-state
+runs restore it. PCM must be identical across all runs and both labels, or the run fails. The matrix requires strict full-state
 equivalence and does not support arbitrary firmware patches that intentionally
 change the exported state.
 
