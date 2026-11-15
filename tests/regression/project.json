@@ -37,6 +37,7 @@
       "dependsOn": [
         "patchkit:cli",
         "patchkit:device-bytes",
+        "patchkit:device-images",
         { "target": "build-objects", "projects": ["tag:acceptance-image"] },
         "digi-control:daemons",
         "digikit/probe:pack",
