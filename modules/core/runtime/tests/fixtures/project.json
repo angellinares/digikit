@@ -7,6 +7,7 @@
     "runtimeAcceptance": [
       {
         "files": ["module-load.device.test.ts"],
+        "tags": ["C:loading"],
         "modules": ["digikit/debug", "test/sine", "test/dyn-fx-gain"]
       }
     ]

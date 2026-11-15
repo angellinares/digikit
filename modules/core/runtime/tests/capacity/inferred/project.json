@@ -7,6 +7,7 @@
     "runtimeAcceptance": [
       {
         "files": ["inferred-needs.device.test.ts"],
+        "tags": ["C:loading", "S:fx", "S:machines"],
         "modules": [
           "digikit/debug",
           "digikit/freqshift",

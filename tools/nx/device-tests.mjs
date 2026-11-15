@@ -2,6 +2,7 @@
 // conformance, test-only and regression nodes. The cache keys are in device-test-keys.mjs; build and pack targets are in module-build.mjs.
 import { globSync } from 'node:fs';
 import { basename, dirname, join } from 'node:path';
+import { checkAcceptanceTags } from './acceptance-tags.mjs';
 import { mergeTests, manifestClosure, read, records } from './module-manifests.mjs';
 import { DEVICE_INPUTS, VITEST_SETUP, builtSourceExclusions, deviceInputs } from './device-test-keys.mjs';
 
@@ -181,7 +182,16 @@ export const conformanceTarget = (workspaceRoot, root, m, f, importInputs) => ({
 });
 
 // Nodes of the test-only projects (their device targets); appended to `nodes`.
-export const testOnlyNodes = (workspaceRoot, testOwners, byId, coreBuilds, importInputs, pythonInputs, nodes) => {
+export const testOnlyNodes = (
+  workspaceRoot,
+  testOwners,
+  byId,
+  moduleInfo,
+  coreBuilds,
+  importInputs,
+  pythonInputs,
+  nodes,
+) => {
   for (const [file, config] of testOwners) {
     const root = dirname(file);
     const tests = globSync('**/*.device.test.ts', { cwd: join(workspaceRoot, root) })
@@ -194,6 +204,7 @@ export const testOnlyNodes = (workspaceRoot, testOwners, byId, coreBuilds, impor
     checkMergeTests(workspaceRoot, root, tests, config.tags.includes('tier:full'));
     if (!tests.length) continue;
     const recs = records(join(workspaceRoot, root));
+    checkAcceptanceTags(root, recs, tests, moduleInfo);
     if (recs.some((rec) => Object.keys(rec.aliases ?? {}).length))
       throw new Error(`Test-only project ${config.name} needs explicit pack-aliases support`);
     // Explicit fixture images build only their manifest requirements; ordinary owners keep the default image.

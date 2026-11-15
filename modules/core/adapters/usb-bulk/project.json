@@ -5,6 +5,7 @@
     "runtimeAcceptance": [
       {
         "files": ["tests/usb-bulk.device.test.ts"],
+        "tags": ["A:core/usb-bulk", "C:transport"],
         "modules": ["test/usb-echo", "digikit/debug"],
         "plusdrive": true
       }

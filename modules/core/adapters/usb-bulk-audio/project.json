@@ -6,6 +6,7 @@
     "runtimeAcceptance": [
       {
         "files": ["tests/usb-bulk-audio.device.test.ts"],
+        "tags": ["A:core/usb-bulk-audio", "C:transport"],
         "modules": ["test/usb-echo"],
         "plusdrive": true
       }

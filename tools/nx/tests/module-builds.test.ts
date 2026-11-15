@@ -74,7 +74,7 @@ it('scopes explicit acceptance images without changing the default image produce
         name,
         tags: ['test-only'],
         ...(patchModules ? {} : { implicitDependencies: ['example/owner'] }),
-        metadata: { runtimeAcceptance: [{ files: ['ui.device.test.ts'], patchModules }] },
+        metadata: { runtimeAcceptance: [{ files: ['ui.device.test.ts'], tags: ['C:loading'], patchModules }] },
       }),
     );
     return `${dir}/project.json`;

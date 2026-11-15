@@ -7,11 +7,13 @@
     "runtimeAcceptance": [
       {
         "files": ["settings.device.test.ts", "settings-copies.device.test.ts", "settings-cards.device.test.ts"],
+        "tags": ["C:boot", "C:state", "C:storage"],
         "modules": ["test/c-demo"],
         "plusdrive": true
       },
       {
         "files": ["settings-api.device.test.ts"],
+        "tags": ["C:state", "C:storage"],
         "modules": ["test/settings-a", "test/settings-b"],
         "plusdrive": true
       }

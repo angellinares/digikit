@@ -6,6 +6,7 @@
     "runtimeAcceptance": [
       {
         "files": ["ui.device.test.ts"],
+        "tags": ["A:core/ui"],
         "modules": [],
         "plusdrive": true,
         "patchModules": ["test/ui-demo"]
