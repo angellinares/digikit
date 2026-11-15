@@ -607,10 +607,10 @@ The stock DSP image can be the base core. The setup line takes `image`, the load
 (`packages/emulator/boot/src/dsp_stream.rs`, compiled into the rig by path: a dependency would change `Cargo.lock`, an input of the device tests) and loads it before `code`, so
 linked code and hooks go over the stock bytes. A call takes `stock_reads: [[loader_byte_address, count]]` and answers `stock`, the bytes of the image as loaded (hex, `null` when the stream does not write all of them).
 `breaks` on a call replaces the setup's breaks for that call, and `resume: true` continues from the pc the last call stopped at (the stacks and registers stay; `regs` are still set), as `Runner.run` does after a breakpoint. A zero-step
-resume reads DM without ending a stopped call. An address like 0x2010f000 or 0x80100000 is a byte address: a read count steps by one byte, so a rig that reads words asks for each word.
+resume reads DM without ending a stopped call. `specials: {"MSF": [mask, bits]}` sets an 80-bit multiplier register (hex strings) before a call and `read_specials` answers it after. An address like 0x2010f000 or 0x80100000 is a byte address: a read count steps by one byte, so a rig that reads words asks for each word.
 `packages/sharc-rig-kit/src/stock.ts` finds `out/sections/<id>/section_7_BLOB.bin`, checks its hash and gives the hex; a test that needs it skips with `stockSkipReason` (a describe title) when the firmware was not extracted.
 `StereoRig` (`stereo.ts`) is the DN2 1.12 stereo rig on it: `dsp-voice-dn2-stereo.s` linked beside the stock image, the pan hook patched in at 0x1c9af6, `StereoSession` for one core.
-The tests are `modules/core/adapters/dsp-voice/tests/dsp-stereo-*.rig.test.ts` (run with `pnpm nx:pilot run core/dsp-voice:test-rig`).
+The tests are `modules/core/adapters/dsp-voice/tests/dsp-stereo-*.rig.test.ts` (`pnpm nx:pilot run core/dsp-voice:test-rig`) and `modules/core/adapters/dsp-stereo-proof/tests/*.rig.test.ts` (`core/dsp-stereo-proof:test-rig`, over `openImageSession`).
 
 A call with `"profile": true` also returns `profile`, one `[pc, count]` row per pc it executed, in pc order (the counts add up to `instructions`). Without the option
 nothing is counted and the answer has no `profile` key. `MachineRig` takes `profile: true` and puts the rows in `MachineBlock.profile`. The rig is a producer for `wb profile report`
