@@ -32,6 +32,10 @@ export interface CallSpec {
   breaks?: number[];
   /** continue from the pc the last call stopped at: no new frame, the stacks and registers stay (`regs` are still set) */
   resume?: boolean;
+  /** 80-bit multiplier registers set before the call: `[mask, bits]` as hex strings (`MR`: bits known where the mask is 1) */
+  specials?: Record<string, [mask: string, bits: string]>;
+  /** multiplier registers (MRF, MRB, MSF, MSB) answered after the call (the result's `specials`) */
+  read_specials?: string[];
 }
 
 export type Op = { poke: Poke[] } | { pokem: MaskedPoke[] } | { call: CallSpec };
@@ -50,6 +54,8 @@ export interface CallResult {
   profile?: [pc: number, count: number][];
   /** one hex string per `stock_reads` entry (`null` when the image does not write every byte); only for a call with `stock_reads` */
   stock?: (string | null)[];
+  /** `[mask, bits]` hex per `read_specials` name (`null` when the core does not hold the register); only for a call with `read_specials` */
+  specials?: Record<string, [mask: string, bits: string] | null>;
 }
 
 export interface RigSetup {

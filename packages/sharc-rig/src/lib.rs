@@ -15,11 +15,13 @@
 //!                    {"call": {"pc": 1, "regs": {"R4": 5}, "max_steps": 400000,
 //!                              "reads": [[word_address, count]], "read_regs": ["I6"],
 //!                              "stock_reads": [[loader_byte_address, count]],   // optional: bytes of the image as loaded
-//!                              "breaks": [pc], "resume": true}} ]}                // optional, see below
+//!                              "breaks": [pc], "resume": true,                    // optional, see below
+//!                              "specials": {"MSF": ["mask", "bits"]}, "read_specials": ["MSF"]}} ]}
 //! response {"build": "...", "results": [{"instructions": n, "halt": "breakpoint", "final_pc": pc,
 //!                                        "regs": {"I6": v|null}, "reads": [[v|null, ...]],
 //!                                        "stores": [[pc, address, width], ...],
 //!                                        "stock": ["hex"|null, ...],   // only for a call with "stock_reads"
+//!                                        "specials": {"MSF": ["mask","bits"]|null},   // only for "read_specials"
 //!                                        "profile": [[pc, count], ...]}]}   // only for a call with "profile": true
 //! ```
 //!
@@ -40,6 +42,10 @@
 //! A call with `breaks` stops at those pcs and `return_sw` instead of the request's `breaks`. A call with `resume: true`
 //! continues from the pc the last call stopped at (no new call frame, the stacks and registers stay; `regs` are still
 //! set), as `Runner.run` does after a breakpoint.
+//!
+//! `specials` sets the 80-bit multiplier registers MRF, MRB, MSF, MSB before a call (`{"MSF": ["mask hex", "bits hex"]}`, every bit
+//! known when the mask is 2^80 - 1) and `read_specials: ["MSF"]` answers `specials`, the same pairs after the call (`null` for a
+//! register the core does not hold).
 //!
 //! `pokem` changes some bits of a word (a halfword or a byte lane of a frame word): a word that nothing wrote reads as 0, as
 //! `CallSession.peek(addr) or 0` does in the Python rigs.
@@ -64,7 +70,7 @@ use dsp_stream::LoadedMemory;
 use json::Json;
 use sharc_native::mem::Mem;
 use sharc_native::rt::bnd;
-use sharc_native::rt::{Int, V, VI};
+use sharc_native::rt::{Int, MR, Spec, V, VI};
 use sharc_native::{Engine, exec_insn, trap_name, vectors};
 
 /// Registers a fresh core holds (tools/sharc_dev/sharc_run.py `make_state`: every register 0, then these).
@@ -94,6 +100,10 @@ pub struct Call {
     pub breaks: Option<Vec<u32>>,
     /// continue from the pc the last call stopped at
     pub resume: bool,
+    /// 80-bit multiplier registers set before the call: (slot, mask, bits) of MRF, MRB, MSF or MSB
+    pub specials: Vec<(usize, Int, Int)>,
+    /// multiplier registers answered after the call: (name, slot)
+    pub read_specials: Vec<(String, usize)>,
 }
 
 #[derive(Debug)]
@@ -127,12 +137,26 @@ pub struct CallResult {
     pub profile: Vec<(u32, u64)>,
     /// the `stock_reads` of the call: the bytes, or None when the stream does not write all of them
     pub stock: Vec<Option<Vec<u8>>>,
+    /// the `read_specials` of the call: (name, (mask, bits) when the register is known to the core)
+    pub specials: Vec<(String, Option<(Int, Int)>)>,
 }
 
 fn reg_code(name: &str) -> Result<usize, String> {
     (0..128)
         .find(|&c| vectors::ureg_name(c) == name)
         .ok_or_else(|| format!("unknown register {name}"))
+}
+
+/// The slot of a multiplier register in `St::special` (MRF, MRB, MSF, MSB follow each other).
+fn special_slot(name: &str) -> Result<usize, String> {
+    ["MRF", "MRB", "MSF", "MSB"]
+        .iter()
+        .position(|&n| n == name)
+        .ok_or_else(|| format!("{name} is not a multiplier register (MRF, MRB, MSF, MSB)"))
+}
+
+fn hex_int(v: &Json) -> Result<Int, String> {
+    Int::from_str_radix(v.str()?, 16).map_err(|_| "a multiplier word is a hex string".to_string())
 }
 
 fn hex_bytes(text: &str) -> Result<Vec<u8>, String> {
@@ -197,6 +221,23 @@ pub fn parse_ops(list: &Json) -> Result<Vec<Op>, String> {
                     reads.push((u32_of(&pair[0])?, u32_of(&pair[1])?));
                 }
             }
+            let mut specials = Vec::new();
+            if let Some(r) = c.get("specials") {
+                for (name, v) in r.obj()? {
+                    let pair = v.arr()?;
+                    if pair.len() != 2 {
+                        return Err("a multiplier register is [mask, bits] as hex strings".into());
+                    }
+                    specials.push((special_slot(name)?, hex_int(&pair[0])?, hex_int(&pair[1])?));
+                }
+            }
+            let mut read_specials = Vec::new();
+            if let Some(r) = c.get("read_specials") {
+                for n in r.arr()? {
+                    let n = n.str()?;
+                    read_specials.push((n.to_string(), special_slot(n)?));
+                }
+            }
             let mut stock_reads = Vec::new();
             if let Some(r) = c.get("stock_reads") {
                 for pair in r.arr()? {
@@ -231,6 +272,8 @@ pub fn parse_ops(list: &Json) -> Result<Vec<Op>, String> {
                 },
                 stock_reads,
                 breaks,
+                specials,
+                read_specials,
                 resume: match c.get("resume") {
                     Some(Json::Bool(b)) => *b,
                     Some(_) => return Err("resume is true or false".into()),
@@ -429,6 +472,10 @@ pub fn run_call(
     for &(code, value) in &call.regs {
         e.set_reg(code, V::c(value as Int));
     }
+    for &(slot, mask, bits) in &call.specials {
+        e.s.special[slot] = Spec::M(MR::new(mask, bits));
+        e.s.special_present[slot] = true;
+    }
     if !call.resume {
         e.fresh_call(call.pc, Some(req.return_sw as Int));
     }
@@ -486,6 +533,17 @@ pub fn run_call(
             .collect(),
         stores,
         profile: profile.into_iter().collect(),
+        specials: call
+            .read_specials
+            .iter()
+            .map(|(n, slot)| {
+                let v = match (e.s.special_present[*slot], e.s.special[*slot]) {
+                    (true, Spec::M(m)) => Some((m.mask, m.bits)),
+                    _ => None,
+                };
+                (n.clone(), v)
+            })
+            .collect(),
         stock: call
             .stock_reads
             .iter()
@@ -579,6 +637,7 @@ fn results_json(results: Vec<CallResult>) -> Json {
             .map(|r| {
                 let profile = r.profile;
                 let stock = (!r.stock.is_empty()).then_some(r.stock);
+                let specials = r.specials;
                 let mut fields = vec![
                     ("instructions".into(), Json::Int(r.instructions as i64)),
                     ("halt".into(), Json::Str(r.halt)),
@@ -612,6 +671,25 @@ fn results_json(results: Vec<CallResult>) -> Json {
                         ),
                     ),
                 ];
+                if !specials.is_empty() {
+                    fields.push((
+                        "specials".into(),
+                        Json::Obj(
+                            specials
+                                .into_iter()
+                                .map(|(n, v)| {
+                                    let row = v.map_or(Json::Null, |(mask, bits)| {
+                                        Json::Arr(vec![
+                                            Json::Str(format!("{mask:x}")),
+                                            Json::Str(format!("{bits:x}")),
+                                        ])
+                                    });
+                                    (n, row)
+                                })
+                                .collect(),
+                        ),
+                    ));
+                }
                 if let Some(stock) = stock {
                     fields.push((
                         "stock".into(),
@@ -706,6 +784,7 @@ mod tests {
     use super::*;
 
     const BASE: u32 = 0xB9_0000;
+    const MR_ALL: Int = (1 << 80) - 1;
     const ALIAS: i64 = 0x2800_0000 + 2 * BASE as i64;
 
     fn request(ops: &str) -> String {
@@ -1007,5 +1086,21 @@ mod tests {
         for (i, (name, v)) in r.regs.iter().enumerate() {
             assert_eq!(*v, Some(0x3f01_0000u32 + 17 * i as u32), "{name}");
         }
+    }
+
+    #[test]
+    fn multiplier_registers_are_set_before_a_call_and_read_after_it() {
+        let ops = format!(
+            r#"{{"call": {{"pc": {BASE}, "specials": {{"MSF": ["ffffffffffffffffffff", "123456789abcdef01234"]}},
+               "read_specials": ["MSF", "MSB"]}}}}"#
+        );
+        let r = &call(&request(&ops))[0];
+        assert_eq!(
+            r.specials[0],
+            ("MSF".to_string(), Some((MR_ALL, 0x123456789abcdef01234)))
+        );
+        assert_eq!(r.specials[1].1, None);
+        let bad = request(r#"{"call": {"pc": 1, "read_specials": ["R1"]}}"#);
+        assert!(parse_request(&bad).unwrap_err().contains("multiplier"));
     }
 }

@@ -24,7 +24,15 @@ import { OpQueue, realRig, type RigOpener } from './ops.ts';
 import type { CallResult, RigPort } from './rig.ts';
 import { ROOT } from './rig.ts';
 import { DN2_112, stockHex } from './stock.ts';
-import { SW_ALIAS_BASE, assemble, expandIncludes, link, sharcIncludeDirs, type Linked } from './toolchain.ts';
+import {
+  SW_ALIAS_BASE,
+  assemble,
+  expandIncludes,
+  link,
+  sharcIncludeDirs,
+  type Linked,
+  type SharcObject,
+} from './toolchain.ts';
 
 export const STEREO_ADAPTER = path.join(ROOT, 'modules/core/adapters/dsp-voice');
 export const STEREO_SOURCE = path.join(STEREO_ADAPTER, 'src/dsp/dsp-voice-dn2-stereo.s');
@@ -94,6 +102,25 @@ export const filled = (n: number, word: number): number[] => Array.from({ length
 export const nanBlock = (n: number): number[] => filled(n, 0xffffffff);
 const u32 = (n: number): number => n >>> 0;
 
+/** The data runs of an object from `start` on, each section at its alignment (as `pk_sharc` places them); a data symbol is its run plus its offset. */
+export function placeObjectData(
+  obj: SharcObject,
+  start: number,
+): { data: Record<string, number>; inits: { address: number; bytes: Uint8Array; bss: boolean }[]; end: number } {
+  let address = start;
+  const data: Record<string, number> = {};
+  const inits: { address: number; bytes: Uint8Array; bss: boolean }[] = [];
+  for (const [section, { bytes, bss, align }] of Object.entries(obj.data)) {
+    const a = Math.max(align ?? 4, 1);
+    address = Math.ceil(address / a) * a;
+    for (const [name, sym] of Object.entries(obj.dataSymbols))
+      if (sym.section === section) data[name] = address + sym.offset;
+    inits.push({ address, bytes, bss });
+    address += bytes.length;
+  }
+  return { data, inits, end: address };
+}
+
 interface StereoBuild {
   objectData: Record<string, number>;
   inits: { address: number; bytes: Uint8Array; bss: boolean }[];
@@ -114,17 +141,7 @@ function build(stub: boolean): StereoBuild {
   if (known) return known;
   const dirs = [...sharcIncludeDirs(STEREO_ADAPTER), path.dirname(STEREO_SOURCE)];
   const obj = assemble(expandIncludes(readFileSync(STEREO_SOURCE, 'utf8'), dirs));
-  let address = PRIVATE;
-  const data: Record<string, number> = {};
-  const inits: StereoBuild['inits'] = [];
-  for (const [section, { bytes, bss, align }] of Object.entries(obj.data)) {
-    const a = Math.max(align ?? 4, 1);
-    address = Math.ceil(address / a) * a;
-    for (const [name, sym] of Object.entries(obj.dataSymbols))
-      if (sym.section === section) data[name] = address + sym.offset;
-    inits.push({ address, bytes, bss });
-    address += bytes.length;
-  }
+  const { data, inits, end: address } = placeObjectData(obj, PRIVATE);
   const dv = { _dv_diag: DV, _dv_c: DV + 0x100, _dv_in: DV + 0x200 };
   const stock = stub ? Object.fromEntries(Object.keys(STOCK).map((n) => [n, STUB])) : STOCK;
   const externs = {
@@ -201,6 +218,9 @@ export interface RawCallOptions {
   breaks?: number[];
   /** continue from where the last call stopped */
   resume?: boolean;
+  /** 80-bit multiplier registers set before the call, `[mask, bits]` as hex */
+  specials?: Record<string, [mask: string, bits: string]>;
+  readSpecials?: string[];
 }
 
 export class StereoRig {
@@ -235,25 +255,49 @@ export class StereoRig {
     const poison = o.poison ?? true;
     const linked = hooked ? [...this.b.code, this.b.hook, this.b.pre] : [...this.b.code];
     if (this.b.stubCode) linked.push(this.b.stubCode);
-    const q = new OpQueue();
-    for (const { address, bytes, bss } of this.b.inits) {
-      const view = new DataView(bytes.buffer, bytes.byteOffset, bytes.byteLength);
-      for (let off = 0; off + 4 <= bytes.length; off += 4)
-        q.poke(address + off, bss && poison ? 0xffffffff : view.getUint32(off, true));
-      // a trailing part of a word is not poked (as in the Python rig)
-    }
-    for (let off = 0; off < 128; off += 4) q.poke(DV + off, 0);
-    q.poke(DV, HEARTBEAT);
-    for (let off = 0; off < 16; off += 4) q.poke(STUB_LOG + off, 0);
-    const { port } = await this.open({
-      return_sw: BACK,
-      breaks: [],
-      image: stockHex(DN2_112),
-      code: linked.map((l) => ({ address: SW_ALIAS_BASE + 2 * l.baseSw, hex: l.codeBoot })),
-      ops: q.take(),
-    });
-    return new StereoSession(port);
+    const pokes: [number, number][] = [];
+    for (let off = 0; off < 128; off += 4) pokes.push([DV + off, 0]);
+    pokes[0] = [DV, HEARTBEAT];
+    for (let off = 0; off < 16; off += 4) pokes.push([STUB_LOG + off, 0]);
+    return openImageSession({ code: linked, inits: this.b.inits, poison, pokes, open: this.open });
   }
+}
+
+export interface ImageSessionOptions {
+  /** the objects linked over the stock image */
+  code: Linked[];
+  /** the data runs of the objects (`placeObjectData`): every word is poked, the BSS as NaN words when `poison` */
+  inits?: { address: number; bytes: Uint8Array; bss: boolean }[];
+  poison?: boolean;
+  /** more DM words, poked after the data runs */
+  pokes?: [address: number, word: number][];
+  /** `[first pc, end pc]` ranges whose stores the calls report (`CallResult.stores`) */
+  watch?: [number, number][];
+  /** the pc a call returns to (default BACK) */
+  returnSw?: number;
+  open?: RigOpener;
+}
+
+/** A core with the stock DN2 1.12 image and `code` over it. */
+export async function openImageSession(o: ImageSessionOptions): Promise<StereoSession> {
+  const q = new OpQueue();
+  for (const { address, bytes, bss } of o.inits ?? []) {
+    for (let off = 0; off < bytes.length; off += 4) {
+      let word = 0;
+      for (let k = Math.min(off + 4, bytes.length) - 1; k >= off; k--) word = (word * 256 + bytes[k]!) >>> 0;
+      q.poke(address + off, bss && (o.poison ?? true) ? 0xffffffff : word);
+    }
+  }
+  for (const [a, w] of o.pokes ?? []) q.poke(a, w);
+  const { port } = await (o.open ?? realRig)({
+    return_sw: o.returnSw ?? BACK,
+    breaks: [],
+    ...(o.watch ? { watch: o.watch } : {}),
+    image: stockHex(DN2_112),
+    code: o.code.map((l) => ({ address: SW_ALIAS_BASE + 2 * l.baseSw, hex: l.codeBoot })),
+    ops: q.take(),
+  });
+  return new StereoSession(port);
 }
 
 /** One core: the stock image, the stereo object and the DM the test wrote. */
@@ -321,6 +365,8 @@ export class StereoSession {
     stock_reads?: [number, number][];
     breaks?: number[];
     resume?: boolean;
+    specials?: Record<string, [string, string]>;
+    read_specials?: string[];
   }): Promise<CallResult> {
     this.q.push({
       call: {
@@ -332,6 +378,8 @@ export class StereoSession {
         ...(call.stock_reads ? { stock_reads: call.stock_reads } : {}),
         ...(call.breaks ? { breaks: call.breaks } : {}),
         ...(call.resume ? { resume: true } : {}),
+        ...(call.specials ? { specials: call.specials } : {}),
+        ...(call.read_specials ? { read_specials: call.read_specials } : {}),
       },
     });
     const results = await this.port.run(this.q.take());
@@ -348,6 +396,8 @@ export class StereoSession {
       read_regs: o.readRegs ? [...o.readRegs] : [],
       breaks: o.breaks ?? [BACK],
       resume: o.resume,
+      specials: o.specials,
+      read_specials: o.readSpecials,
     });
   }
 }

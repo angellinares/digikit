@@ -11,9 +11,12 @@ import {
   call,
   engineRegs,
   filled,
+  openImageSession,
+  placeObjectData,
   planes,
 } from '../src/stereo.ts';
 import { DN2_112, stockPath, stockSkipReason } from '../src/stock.ts';
+import type { RigSetup } from '../src/rig.ts';
 
 type Call = Extract<Op, { call: unknown }>['call'];
 
@@ -96,6 +99,16 @@ describe('StereoSession', () => {
     });
   });
 
+  it('passes multiplier registers to the call and keeps what the core answers', async () => {
+    const msf: [string, string] = ['f'.repeat(20), '1234'];
+    const { port: p, calls } = port(() => ({ specials: { MSF: msf } }));
+    const s = new StereoSession(p);
+    const r = await s.raw(1, {}, { specials: { MSF: msf }, readSpecials: ['MSF'] });
+    expect(calls[0]!.specials).toEqual({ MSF: msf });
+    expect(calls[0]!.read_specials).toEqual(['MSF']);
+    expect(r.specials).toEqual({ MSF: msf });
+  });
+
   it('answers stock reads from the image as loaded', async () => {
     const { port: p, calls } = port(() => ({ stock: ['04', null] }));
     const s = new StereoSession(p);
@@ -158,6 +171,40 @@ describe('call', () => {
     // without sentinels the registers are not compared
     const free = port(() => ({ regs: { R5: 1 } }));
     await expect(call(new StereoSession(free.port), 1, 0, 0, 0, [], { sentinels: false })).resolves.toBeDefined();
+  });
+});
+
+describe('openImageSession and placeObjectData', () => {
+  it('places each section at its alignment and pokes every word of a run, a partial last word included, the BSS as NaN words when poisoned', async () => {
+    const object = {
+      text: '',
+      parcels: 0,
+      symbols: {},
+      data: {
+        '.A': { bytes: Uint8Array.from([1, 2, 3, 4, 5, 6]), bss: false, align: 4 },
+        '.B': { bytes: new Uint8Array(8), bss: true, align: 16 },
+      },
+      dataSymbols: { _a: { section: '.A', offset: 2 }, _b: { section: '.B', offset: 4 } },
+    };
+    const { data, inits, end } = placeObjectData(object, 0x200d0000);
+    expect(data).toEqual({ _a: 0x200d0002, _b: 0x200d0014 });
+    expect(end).toBe(0x200d0010 + 8);
+    const setups: RigSetup[] = [];
+    const open = async (setup: RigSetup) => {
+      setups.push(setup);
+      return { port: port().port, first: [] };
+    };
+    await openImageSession({ code: [], inits, pokes: [[0x100, 7]], watch: [[0, 0x1000000]], open });
+    const pokes = (setups[0]!.ops![0] as { poke: [number, number][] }).poke;
+    expect(pokes).toEqual([
+      [0x200d0000, 0x04030201],
+      [0x200d0004, 0x0605],
+      [0x200d0010, 0xffffffff],
+      [0x200d0014, 0xffffffff],
+      [0x100, 7],
+    ]);
+    expect(setups[0]!.watch).toEqual([[0, 0x1000000]]);
+    expect(setups[0]!.image?.length).toBeGreaterThan(0);
   });
 });
 
