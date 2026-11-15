@@ -21,6 +21,7 @@ dependencies = [
  "dkrt-link",
  "dkrt-sdk",
  "dkrt-svc-fx",
+ "dkrt-svc-machines",
  "dkrt-test-support",
 ]
 
@@ -54,6 +55,15 @@ version = "0.1.0"
 
 [[package]]
 name = "dkrt-svc-fx"
+version = "0.1.0"
+dependencies = [
+ "dkneeds",
+ "dkrt-abi",
+ "dkrt-sdk",
+]
+
+[[package]]
+name = "dkrt-svc-machines"
 version = "0.1.0"
 dependencies = [
  "dkneeds",

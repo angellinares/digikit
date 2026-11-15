@@ -93,7 +93,9 @@ dt2` once: the DSP image and `cold-idle.dsp` come from there). The app remembers
 well under a second; the toolbar shows "Samples: NAME (N files)", or "Choose samples to load a
 folder of WAVs" when nothing is cached. A DT2 launch without `SHARC_GEN_DIR` uses the generated
 core its PGO profile was trained on (the launcher prints which core and why), so no environment
-settings are needed. The browser shows the button
+settings are needed. To choose a core: `SHARC_GEN_DIR_DN2` sets the DN2 core, `SHARC_GEN_DIR_DT2`
+sets the DT2 core, and `SHARC_GEN_DIR` sets one core for both devices (the device variable wins).
+Without any of them the core registered for the DSP image is used (`out/native/gen-index.json`). The browser shows the button
 disabled ("desktop only for now"). Headless: the control socket's `card.load {dir}`,
 `card.status`; `uv run python -m tools.emulator.card_check` checks that trigs 1-3 play a 220 Hz sine, an
 880 Hz sine and noise from three generated files.
@@ -190,6 +192,7 @@ pnpm verify:host              # host lint, format, tests and types
 mise run test                 # the gate: Nx targets of the affected projects
 mise run module:check ID      # one module: conformance and its own tests
 pnpm nx:pilot run @digi/sharc-rig-kit:test-conformance-rig   # machine and effect conformance of every module on the SHARC-only rig (docs/TESTING.md "The Vitest kit")
+node tools/devtools/rig_profile.ts digikit/shot --device dn2 --case sample/stereo-fwd-oneshot/note60   # `wb profile report` of one case on the rig: instructions per function and loop (docs/TESTING.md "SHARC-only rig")
 ```
 
 Pins are valid only for the firmware and ready state they were recorded with.

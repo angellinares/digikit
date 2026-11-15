@@ -716,7 +716,18 @@ export interface DkSessionOptions {
   chunk?: number;
   /** DATA requests in flight for `put`, 1 or more; default: the transport's `dataDepth`, else 1. */
   depth?: number;
+  /**
+   * A harness on the emulator measures a MidiRpc wait in emulated time: `rpc` calls it with its timeout as `emulatedMs`; it runs `run` with a signal that
+   * fires after that much emulated time and a wall-time guard `ms` for a dead link. Unset (real hardware), `rpc` waits `timeoutMs` of wall time.
+   */
+  emulatedProbe?: EmulatedProbe;
 }
+
+/** See `DkSessionOptions.emulatedProbe`. */
+export type EmulatedProbe = <T>(
+  run: (limit: { signal: AbortSignal; ms: number }) => Promise<T>,
+  emulatedMs: number,
+) => Promise<T>;
 
 /** DATA chunks `put` sends under one turn when the depth is above 1; the window drains between turns so that other requests get theirs. */
 const WINDOW_CHUNKS = 8;
@@ -845,6 +856,7 @@ export class DkSession {
   private retries: number;
   private chunk: number;
   private depth: number;
+  private emulatedProbe: EmulatedProbe | undefined;
   private fileHashOk = false;
   private turn: Promise<unknown> = Promise.resolve();
   /** Aborted by `cancelPending`: the requests made before it (waiting for a reply or for their turn) fail with kind `cancelled`. */
@@ -855,6 +867,7 @@ export class DkSession {
     this.retries = options.retries ?? 2;
     this.chunk = options.chunk ?? MAX_CHUNK;
     this.depth = Math.max(1, Math.floor(options.depth ?? transport.dataDepth ?? 1));
+    this.emulatedProbe = options.emulatedProbe;
   }
 
   /** The transport's `rpcChunk`: how much data one MidiRpc write may carry on this link, or undefined (use the default). */
@@ -1488,17 +1501,39 @@ export class DkSession {
    */
   rpc(type: number, payload: Uint8Array = new Uint8Array(), timeoutMs: number = this.timeoutMs): Promise<Uint8Array> {
     const signal = this.ctl.signal;
+    const lost = () =>
+      new DkError({ error: `no reply to MidiRpc ${type.toString(16)} from the device`, kind: 'timeout' });
     const next = this.turn.then(async () => {
       if (signal.aborted) throw cancelledError();
       await abortable(Promise.resolve(this.t.send(rpcRequest(type, this.takeSeq(), payload))), signal);
-      const deadline = Date.now() + timeoutMs;
-      for (let left = deadline - Date.now(); left > 0; left = deadline - Date.now()) {
-        const raw = await abortable(this.t.recv(left, signal), signal);
-        if (!raw) break;
-        const r = parseRpcReply(raw);
-        if (r && r[0] === type) return r[1].slice();
-      }
-      throw new DkError({ error: `no reply to MidiRpc ${type.toString(16)} from the device`, kind: 'timeout' });
+      // on the emulator the wait is in emulated time (the probe's signal ends it), `limit.ms` of wall time only guards a dead link
+      const wait = async (wallMs: number, stop: AbortSignal) => {
+        const deadline = Date.now() + wallMs;
+        for (let left = deadline - Date.now(); left > 0; left = deadline - Date.now()) {
+          const raw = await abortable(this.t.recv(left, stop), stop);
+          if (!raw) break;
+          const r = parseRpcReply(raw);
+          if (r && r[0] === type) return r[1].slice();
+        }
+        throw lost();
+      };
+      if (!this.emulatedProbe) return wait(timeoutMs, signal);
+      return this.emulatedProbe(async (limit) => {
+        const c = new AbortController();
+        const stop = () => c.abort();
+        if (signal.aborted || limit.signal.aborted) c.abort();
+        signal.addEventListener('abort', stop, { once: true });
+        limit.signal.addEventListener('abort', stop, { once: true });
+        try {
+          return await wait(limit.ms, c.signal);
+        } catch (e) {
+          if (limit.signal.aborted && !signal.aborted && e instanceof DkError && e.kind === 'cancelled') throw lost();
+          throw e;
+        } finally {
+          signal.removeEventListener('abort', stop);
+          limit.signal.removeEventListener('abort', stop);
+        }
+      }, timeoutMs);
     });
     this.turn = next.catch(() => {});
     return next;

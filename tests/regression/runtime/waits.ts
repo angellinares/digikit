@@ -1,4 +1,5 @@
 import { setTimeout as delay } from 'node:timers/promises';
+import { DkSession, EmuUsbTransport, type DkSessionOptions } from '@digi/dk-session';
 import {
   deadlineExpired,
   describeRestart,
@@ -96,6 +97,17 @@ export async function withEmulatedProbe<T>(
     live = false;
     await watch;
   }
+}
+
+/** A DkSession over the emulator's USB whose probes are bounded in emulated time (`withEmulatedProbe`). */
+export function emulatorDk(
+  session: Pick<Session, 'client' | 'status'>,
+  options: Omit<DkSessionOptions, 'emulatedProbe'> = {},
+): DkSession {
+  return new DkSession(new EmuUsbTransport((method, params) => session.client.call(method, params)), {
+    ...options,
+    emulatedProbe: (run, emulatedMs) => withEmulatedProbe(session, run, emulatedMs),
+  });
 }
 
 /** Wall milliseconds the emulated clock may stand still before a wait fails (a paused daemon, a halted DSP); a slow but rising clock never trips it. DIGI_CLOCK_STUCK_MS overrides it. */

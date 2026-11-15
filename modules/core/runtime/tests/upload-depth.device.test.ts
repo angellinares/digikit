@@ -66,6 +66,7 @@ uploadTests('upload-depth: two DATA requests in flight on the digikit store', as
   await rig.pausedBoot(await rig.card({ name: 'depth' }));
   await rig.applyCap();
   const call = (method: string, params?: Record<string, unknown>) => rig.session.client.call(method, params);
+  // Wall-time wait: this test uses its own stepping link.
   const open = (timeoutMs: number) => {
     const link = new Link(new EmuUsbTransport(call as never, { stepInstructions: 400_000 }));
     return { link, dk: new DkSession(link, { timeoutMs }) };

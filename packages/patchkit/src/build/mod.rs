@@ -10,7 +10,8 @@
 //! build output: its objects go to the cache `out/cache/dko/<module id>/<src12>/<object path>`, where `<src12>` is the first 12 digits of the
 //! object's `source_sha256` (so builds of other commits sit beside this one). [`object_file`] names the file.
 //!
-//! An object whose `source_sha256` equals the hash of its sources now is not compiled ("unchanged"). `--check` rebuilds and
+//! An object whose `source_sha256` equals the hash of its sources now, and, for a SHARC+ object, whose `selache_rev` is the pinned one,
+//! is not compiled ("unchanged"). `--check` rebuilds and
 //! compares with the stored object, ignoring the `*_sha256` keys of the toolchain record (they name the local binaries).
 //!
 //! Library entry points for the command line and the desktop app: [`build_module`], [`module_status`], [`link_sources`], and
@@ -269,15 +270,28 @@ fn source_hash(env: &Env, moddir: &Path, sources: &[String], sdk: bool) -> Resul
     }
 }
 
-fn committed_hash(path: &Path) -> Option<String> {
-    let v: Value = serde_json::from_str(&std::fs::read_to_string(path).ok()?).ok()?;
-    v.get("source_sha256")?.as_str().map(String::from)
+/// Is the object file `path` current: its `source_sha256` is `want` and, when its toolchain record names a `selache_rev`, that is the
+/// pinned one. Objects without a `selache_rev` (ColdFire, Rust) are judged by the hash alone.
+fn stored_current(path: &Path, want: &str) -> bool {
+    let Some(v) = std::fs::read_to_string(path)
+        .ok()
+        .and_then(|t| serde_json::from_str::<Value>(&t).ok())
+    else {
+        return false;
+    };
+    if v.get("source_sha256").and_then(Value::as_str) != Some(want) {
+        return false;
+    }
+    match v.get("toolchain").and_then(|t| t.get("selache_rev")) {
+        Some(r) => r.as_str() == Some(sharc_obj::SELACHE_REV),
+        None => true,
+    }
 }
 
 fn object_unchanged(env: &Env, moddir: &Path, m: &ModuleToml, o: &ObjectToml) -> Result<bool> {
     let want = source_hash(env, moddir, &o.sources, m.is_content())?;
     let out = object_file_at(env, moddir, m, o, &want);
-    let same = committed_hash(&out).is_some_and(|h| h == want);
+    let same = stored_current(&out, &want);
     if same && m.is_content() {
         touch(&out);
     }
@@ -425,7 +439,7 @@ pub fn load_object(env: &Env, moddir: &Path, m: &ModuleToml, rel: &str) -> Resul
     let want = source_hash(env, moddir, &o.sources, m.is_content())
         .map_err(|e| err!("{}: {rel}: cannot hash the sources: {e}", moddir.display()))?;
     let file = object_file_at(env, moddir, m, o, &want);
-    if committed_hash(&file).is_some_and(|h| h == want)
+    if stored_current(&file, &want)
         && let Ok(t) = std::fs::read_to_string(&file)
     {
         if m.is_content() {
@@ -643,6 +657,32 @@ mod tests {
         let _ = std::fs::remove_dir_all(&d);
         std::fs::create_dir_all(&d).unwrap();
         d
+    }
+
+    #[test]
+    fn a_sharc_object_from_another_selache_rev_is_stale() {
+        let dir = scratch("selache-rev");
+        let write = |name: &str, toolchain: &str| {
+            let p = dir.join(name);
+            std::fs::write(&p, format!("{{\"source_sha256\": \"abc\"{toolchain}}}")).unwrap();
+            p
+        };
+        let pinned = write(
+            "pinned.json",
+            &format!(
+                ", \"toolchain\": {{\"selache_rev\": \"{}\"}}",
+                sharc_obj::SELACHE_REV
+            ),
+        );
+        let old = write(
+            "old.json",
+            ", \"toolchain\": {\"selache_rev\": \"02d6d785\"}",
+        );
+        let none = write("none.json", "");
+        assert!(stored_current(&pinned, "abc"));
+        assert!(!stored_current(&old, "abc"));
+        assert!(stored_current(&none, "abc"));
+        assert!(!stored_current(&pinned, "other"));
     }
 
     #[test]

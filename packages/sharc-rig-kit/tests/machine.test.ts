@@ -39,6 +39,28 @@ describe('MachineRig setup', () => {
   });
 });
 
+describe('MachineRig profile', () => {
+  it('asks the rig for per-pc counts only with the option and returns them with the block', async () => {
+    const plain = fakeRig('dt2');
+    const r0 = await MachineRig.open(spec('dt2'), { built: built(), open: plain.open });
+    expect((await r0.block()).profile).toEqual([]);
+    expect(calls(plain.batches[0]!)[0]).not.toHaveProperty('profile');
+    const fake = fakeRig('dt2', () => ({
+      profile: [
+        [0x1000, 3],
+        [0x1002, 1],
+      ],
+    }));
+    const rig = await MachineRig.open(spec('dt2'), { built: built(), open: fake.open, profile: true });
+    const b = await rig.block();
+    expect(calls(fake.batches[0]!)[0]!.profile).toBe(true);
+    expect(b.profile).toEqual([
+      [0x1000, 3],
+      [0x1002, 1],
+    ]);
+  });
+});
+
 describe('MachineRig block', () => {
   it('sets a parameter in the frame halfword of its knob, fills the output with NaN and calls the wrapper entry', async () => {
     const fake = fakeRig('dt2');

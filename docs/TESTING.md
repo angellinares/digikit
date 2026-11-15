@@ -131,7 +131,7 @@ Plugin sources are not inputs of module device targets. A `runtimeAcceptance` re
 
 - `mise run test` runs the gate targets against `DIGI_GATE_BASE` (default `main`): `nx affected` selects them, device and conformance targets included, through `node tools/nx/gate.mjs --tier merge`; the Nx launcher holds the shared benchlock and runs at nice 10.
 - `mise run test:full` runs every gate target on every project, plus `tier-sweep` and `dt2-tier-sweep`. Its device tests run as `test-device-all`. Run it once per batch of merges (for example at the end of a day) in a background lane, bisect a red batch among its merges, and run it after generated-core changes. A merge needs the affected gate (`mise run test`) plus `pnpm nx:pilot run-many -t lint,fmt-check,rust-fmt,typecheck,python-checks`.
-- Core-change policy: a change runs all device tests of the projects it edits. A device test file not listed in `metadata.mergeTests` of the owning project.json (paths relative to the project root; policy in `tools/nx/device-test-keys.mjs`) has a narrow `test-device` cache key: the project's production files (not tests/), the test's imports, the packs it loads, the tools it runs and, for a test-only project, `production` of its subject modules. A change that reaches it only through shared inputs (other core modules, SDK, device profiles, patchkit, the daemon) leaves the key unchanged, and Nx replays the last result. Loaded packs include the alias packs of the file's records. Files in `metadata.mergeTests`, `test-conformance` and `test-device-all` use the full inputs. `test-device-all` (per-file `test-device-all--<file>` for unlisted files) is the full-inputs twin; the `full` tier selects it instead of `test-device`.
+- Core-change policy: a change runs all device tests of the projects it edits. A device test file not listed in `metadata.mergeTests` of the owning project.json (paths relative to the project root; policy in `tools/nx/device-test-keys.mjs`) has a narrow `test-device` cache key: the project's production files (not tests/), the test's imports, the packs it loads, the tools it runs and, for a test-only project, `production` of its subject modules. A change that reaches it only through shared inputs (other core modules, SDK, device profiles, patchkit, the daemon) leaves the key unchanged, and Nx replays the last result. Loaded packs include the alias packs of the file's records. Files in `metadata.mergeTests`, `test-conformance` and `test-device-all` use the full inputs. `test-device-all` (per-file `test-device-all--<file>` for unlisted files) is the full-inputs twin; the `full` tier selects it instead of `test-device`. The twin also sets `DIGIKIT_TIER=full` in its task env, so `mise run test:full` runs the `full: true` tests of the card rig and the other harnesses.
 - Gate projects in `tools/gate/` carry their triggers as `{workspaceRoot}` inputs: `gate-smoke` (target `smoke`), `gate-card` (`card`), `gate-stock` (`stock`, cached), `gate-fx-dn2` (`fx`, `fx-no-aot`, `tier-quick`, `tier-sweep`), `gate-fx-dt2` (`fx-dt2`, `dt2-tier-quick`, `dt2-tier-sweep`), `gate-pins` (`pins`), `gate-dt2-tone` (`dt2-tone`) and `gate-rust-modules` (`rust-tests`). The Vitest suites behind `stock`, `fx` and `fx-dt2` are the `test:stock`, `test:fx` and `test:fx:dt2` scripts of `tests/regression`. `smoke` and `card` run through `tools/nx/daemon-env.mjs`, which sets `DIGI_EMUD_<DEV>` from `dist/daemons.json`, so they use the same content-keyed daemon as the Vitest device tests. Module projects with device tests depend on `regression` (harness), `digi-control` (daemons), `patchkit` (packs) and `devices`; shared SDK contract/compiler surfaces are explicit target inputs. Only modules with `test-conformance` also depend on `conformance`. `python-checks` and `python-tests` run on any change outside `docs/`.
 - The number of concurrent Nx tasks and Vitest workers comes from the machine budget; see "CPU budget of the gate".
 - A device or conformance file that fails only with a load symptom (boot timeout, lifecycle deadline, closed connection, remote release timeout) is rerun once by `tools/devtools/emu-slot.mjs`; the retry is printed in the task output and counted as `retried (n)` in the gate summary. Assertion failures and second failures fail the task.
@@ -530,7 +530,7 @@ and a table named like the kind. Kinds:
 | `pages` | Parameter pages of a machine on track 1: an added machine has one SRC page (no page dots, no sample view) and the stock sample machines keep two. |
 
 Every scenario ends with the write-watch over `cf.expansion` (0 stray writes), the flush check (0 hits)
-and the card-sector check. Tiers: `DIGIKIT_TIER=quick` is the default. The store's cut and tear tests (`modules/core/runtime/tests/upload-faults.device.test.ts`: upload cuts, torn headers, the CLEAR double fault) are full tier: the default gate skips them. Run them with `DIGIKIT_TIER=full pnpm nx:pilot run core/runtime-tests:test-device--upload-faults` (add `--dt2` or `--dn2` for one device). The default `mise run test` gate does not select full-tier tests. `mise run test:full` selects the separate `core/runtime-inferred-needs-tests:test-device-full` target and sets `DIGIKIT_TIER=full`; `mise run module:check` sets it for a module's own scenarios.
+and the card-sector check. Tiers: `DIGIKIT_TIER=quick` is the default. The store's cut and tear tests (`modules/core/runtime/tests/upload-faults.device.test.ts`: upload cuts, torn headers, the CLEAR double fault) are full tier: the default gate skips them. Run them with `pnpm nx:pilot run core/runtime-tests:test-device-all--upload-faults` (sets the tier) or `DIGIKIT_TIER=full pnpm nx:pilot run core/runtime-tests:test-device--upload-faults` (add `--dt2` or `--dn2` for one device). The default `mise run test` gate does not select full-tier tests. `mise run test:full` runs every `test-device-all` twin with `DIGIKIT_TIER=full` (set by the target) and the separate `core/runtime-inferred-needs-tests:test-device-full` target; `mise run module:check` sets it for a module's own scenarios.
 Both use the newest image of each device. Cards are cached by content in `out/cache/digikit/cards/`.
 Jobs: `DIGI_JOBS`. `DIGIKIT_PROFILE=1` prints the phase table,
 `DIGIKIT_RUN_SALT=x` forces cold boots.
@@ -602,6 +602,35 @@ asked for. With `watch` ranges (pcs) it also returns the stores of instructions 
 (the engine's undo log of the instruction; nothing is recorded without `watch`). The op `pokem` changes some bits of a DM word
 (a frame halfword, the trig bit, a release byte). `sharc-rig --serve` keeps the core between lines: the first line is a request, every
 later line is `{"ops": [...]}` and gets one answer line, so a rig runs a case block by block and stops at its first failure.
+
+A call with `"profile": true` also returns `profile`, one `[pc, count]` row per pc it executed, in pc order (the counts add up to `instructions`). Without the option
+nothing is counted and the answer has no `profile` key. `MachineRig` takes `profile: true` and puts the rows in `MachineBlock.profile`. The rig is a producer for `wb profile report`
+([INSTRUMENTATION.md](INSTRUMENTATION.md#profiles)), the profiler of the emulator and the device: `packages/sharc-rig-kit/src/profile.ts` writes the counts as a `dk.profile/1` (`rigProfile`, raw SHARC counters
+per pc, metric `sharc.blocks`, clock unit `instructions`, the load of the module's DSP image) and the labels of the placed objects as a `dk-addrmap` (`rigAddrMap`; module labels relative to its DSP image).
+`tools/devtools/rig_profile.ts` runs one conformance case, adds the counts of its steady blocks (the blocks that are no note-on block), writes both files and the module's `.dkm` to `out/runs/rig-profile/<module>/<device>/`
+and runs `wb profile report` on them with `--analyse`, so the function rows follow the map and the loop rows follow `dksharc`. It needs `mise run wasm:dkprof` once; `--print` shows the command instead. SHARC core only (no emulator), a few seconds:
+
+```sh
+node tools/devtools/rig_profile.ts digikit/shot --device dt2 --case sample/stereo-fwd-oneshot/note60 --top 4
+# run rig:digikit/shot:dt2:sample/stereo-fwd-oneshot/note60 target dt2 clock sharc-rig.insn (instructions)
+# metrics:
+#   sharc.blocks                       299 blocks
+# pc sharc by function (top 4; 944 rows, total 696969):
+#           143819  20.6%      481.0/block  _dk_sample_pcm16s_read_right
+#            73853  10.6%      247.0/block  _dk_gain_ramp_stereo
+#            63687   9.1%      213.0/block  _dv_gcheck
+#            41262   5.9%      138.0/block  _dk_sample_pcm16s_run
+# pc sharc by loop (self; an inner loop is not in its outer one):
+#           181792  26.1%      608.0/block  digikit/shot _dk_sample_pcm16_stereo_linear depth 0 +0x032b..+0x035b count reg R4
+#            66976   9.6%      224.0/block  digikit/shot _dk_gain_ramp_stereo depth 0 +0x001e..+0x0030 count lit 32
+# pc sharc by owner:
+#           356109  51.1%     1191.0/block  digikit/shot
+#           340860  48.9%     1140.0/block  runtime
+```
+
+`--blocks 40,41` adds only those blocks. The function rows follow the assembler's labels (a label inside a loop splits its cost); the loop rows come from the DO loops of the module's code, so a loop is one row.
+`DIGI_RIG_ROOT=PATH` reads the sources, SDK and device files of another checkout (a lane branch) read only; `DIGI_SHARC_RIG` and `DIGI_PATCHKIT` name the binaries when the worktree has no `dist/`.
+The counts are instructions of the generated core: the same numbers as the emulator's `sharc.profile` for the same code, without the firmware around it.
 
 ```sh
 pnpm nx:pilot run sharc-rig:build        # dist/bin/sharc-rig and dist/bytes/sharc-rig.sha256 (shared generated core)
@@ -681,6 +710,20 @@ fine, the module writes only its own memory, the output is finite). Check kinds:
 `atol`, `channel`) and `same-as` (`sha256` of the float32 words). The analysis is `packages/sharc-rig-kit/src/analysis.ts`, tested on
 synthetic signals. A reference table is the output of the old float32 model of the module (or of the rig, for a new pin) as float32
 words; changing one is a re-pin and needs review like a PCM pin of `tests/scenarios`.
+
+#### Adapter tests on the rig (`tests/*.rig.test.ts`)
+
+The tests of the SHARC adapters (`core/dsp-voice`, `core/fx`, `core/overdrive`, `core/sample-pool`) are Vitest files `modules/core/adapters/<name>/tests/<topic>.rig.test.ts`.
+They use the kit classes by `import { ... } from '@digi/sharc-rig-kit'` and run with `pnpm nx:pilot run core/<name>:test-rig` (same inputs as the sound checks above).
+The kit has three rigs for them:
+
+- `RawRig` (`raw.ts`): objects placed at bases the test names, data at its alignment, stand-in externs; `call(symbol, regs, { reads, readRegs })`, `poke`, `peek`.
+- `FxRig` (`fx.ts`): the effect chain; `block` (master hook) and `sendBlock` (send hook; DT2 track buses with `setTrack`, DN2 slot buses with `setSlot`, `setSlotmap`, `setFade`; `setReturn`, `bus`, `prevGains`).
+- `VoiceRig` (`voice.ts`) and `crumbRig()`: the dsp-voice wrapper with one routine; every call runs on a fresh core with the DM in `rig.dm`, so a test carries state by writing words back.
+
+```sh
+pnpm exec vitest run --config vitest.host.config.ts --project module-rig modules/core/adapters/fx/tests/fx-send.rig.test.ts --reporter=verbose   # prints instruction counts
+```
 
 ### DSP budget gate (patchkit smoke)
 
@@ -763,7 +806,7 @@ Formatting an emulator crate or `dkneeds` changes the daemon key and the PGO key
   moves no counter and is not covered: a daemon is not asked to progress then, and only the Vitest limit applies.
 - Tests have no wall-time limit of their own for runtime start, baseline reload, boot, restart and safe-mode waits. The
   watchdog catches a stopped emulator; a wait on firmware state uses emulated time (`pollEmulated` and `waitEmulated` in
-  `tests/regression/runtime/waits.ts`, `events.until(kind, predicate, { emulatedMs })`). `expectPollEmulated(session, read, assertion, { emulatedMs })` replaces `expect.poll(read, { timeout })` in device tests: a wall `timeout` there is cut by a loaded host. Wall limits that remain are readiness deadlines (`expectRemoteEnabled`, the runtime-menu rows) and polls of host processes. Vitest's `testTimeout` (30 min) and
+  `tests/regression/runtime/waits.ts`, `events.until(kind, predicate, { emulatedMs })`). A stock MidiRpc request (`DkSession.rpc`, so `RpcFiles`) of a harness session waits `timeoutMs` of emulated time: the harness gives `DkSession` an `emulatedProbe` (`withEmulatedProbe`), and wall time only guards a dead link. `expectPollEmulated(session, read, assertion, { emulatedMs })` replaces `expect.poll(read, { timeout })` in device tests: a wall `timeout` there is cut by a loaded host. Wall limits that remain are readiness deadlines (`expectRemoteEnabled`, the runtime-menu rows) and polls of host processes. Vitest's `testTimeout` (30 min) and
   `hookTimeout` (10 min) of the `runtime`, `proofs` and `conformance` projects are outer safety nets, not hang detectors: hangs are caught by the progress guard and the emulated-time waits above. `runtimeTests` takes no `timeout` option, so a test cannot set a shorter wall budget that host load then cuts. The emulator-slot wait happens in `emu-slot.mjs` before Vitest starts and never counts against them.
   Hang guards that never fail a healthy slow run: a clock that stands still for 60 s (`DIGI_CLOCK_STUCK_MS`) fails `pollEmulated`
   (a paused daemon, a halted DSP); the phases before the daemon has a socket (environment preparation, the startup load of a
@@ -845,9 +888,9 @@ Where the targets come from:
 - `tools/nx/ts-imports.mjs` and `tools/nx/py-imports.mjs` compute import closures.
 
 Three keys exist:
-- Full key: all shared reads and all built outputs, including the patchkit binary. Used by `test-device-all` and by files listed in `metadata.mergeTests`.
-- Merge key: the default for files not in `metadata.mergeTests`. It holds the bytes the test loads (its `.dkm` packs, `images.sha256`, the daemon key) and the reads its import closure needs.
-- Narrow key: the production files of the project, the packs the test loads, and its imports.
+- Full key: all shared reads and all built outputs, including the patchkit binary. Used by `test-device-all` and conformance.
+- Merge key: the key of files listed in `metadata.mergeTests`. It holds the bytes the test loads (its `.dkm` packs, `images.sha256`, the daemon key) and the reads its import closure needs.
+- Narrow key: the default for files not in `metadata.mergeTests`. It holds the production files of the project, the packs the test loads, and its imports.
 
 `mise run test` selects affected targets with merge keys. `mise run test:full` runs every file with full keys.
 
