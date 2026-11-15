@@ -48,7 +48,7 @@ SHA256 = {
 }
 M68K_PREFIX = TOOLS / "m68k-elf"
 SELACHE_URL = "https://github.com/ElekLabs/selache"
-SELACHE_REV = "02d6d785b8e3a125ab237a00bb89503aff835f5d"
+SELACHE_REV = "967c1d1e4d02e41f483181964f0ba333558a1fa7"
 SELACHE_DIR = TOOLS / "selache"
 
 # Rust through GCC (finding 23 S1b, finding 26). Every revision is pinned.

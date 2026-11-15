@@ -10,6 +10,8 @@
 //! 4. [`link`] places the section at a placeholder base with placeholder externs; [`verify`] re-decodes every instruction and reads the
 //!    relocated fields back.
 //!
+//! Data sections: `/DM` is assembled as `/BW` ([`byte_addressed_data`]), so `.VAR` words are four little-endian bytes.
+//!
 //! Relocations Selache emits (offsets and symbol values are in 16-bit parcels, the PC unit): type 11 is the absolute 24-bit target of a
 //! 48-bit jump or call (low 24 bits of the instruction), type 12 the absolute 32-bit immediate or address (low 32 bits). Both carry the
 //! symbol's address; the addend is in the symbol name (`sym + 4`). Type 27 (`R_SHARC_PM_LOOP16`) is the loop end of a `DO` (Type 12a or
@@ -29,7 +31,7 @@ use std::sync::OnceLock;
 
 /// The Selache commit this build links (`selas`, `selelf` and `selinstr` in Cargo.toml). `tools/patchkit/pk_toolchains.py` pins the same
 /// one for the command-line tools (`SELACHE_REV`); a test keeps the two equal.
-pub const SELACHE_REV: &str = "02d6d785b8e3a125ab237a00bb89503aff835f5d";
+pub const SELACHE_REV: &str = "967c1d1e4d02e41f483181964f0ba333558a1fa7";
 const SECTION: &str = "seg_pmco";
 const PROCESSOR: &str = "ADSP-21569";
 const R_ABS24: u32 = 11;
@@ -408,7 +410,8 @@ fn read_object(blob: &[u8], source_sha256: String) -> Result<Obj> {
                 x.name.clone(),
                 (
                     if nobits { vec![] } else { x.data.clone() },
-                    x.align.max(4),
+                    // the old assembler made every data section 8-aligned
+                    x.align.max(8),
                     nobits,
                 ),
             );
@@ -429,6 +432,9 @@ fn read_object(blob: &[u8], source_sha256: String) -> Result<Obj> {
     }
     let mut code = sec.data.clone();
     let relocs = resolve_loop_ends(&mut code, relocs, &symbols)?;
+    // a local label stays in the object only for a relocation that names it (the fork also lists the labels of the loop ends it
+    // resolved here)
+    symbols.retain(|name, (_, global)| *global || relocs.iter().any(|r| &r.symbol == name));
     // Selache's own instruction extents (VISA: the width comes from the first parcels). A last instruction that runs past the end of
     // the section is listed as the bytes that are left (the same as the listing of `seldump`).
     let mut selache_rows: Vec<Row> = vec![];
@@ -495,13 +501,16 @@ fn resolve_loop_ends(
                 r.symbol
             ));
         }
-        if code[at + 3] & 0x7F != 0 || code[at + 4] != 0 || code[at + 5] != 0 {
+        // The end of `DO (PC, n)` is a label the assembler makes (`___ADI_AGL_DO_n`) and the field holds n until it is relocated; any
+        // other loop end leaves the field zero.
+        let numeric = r.symbol.starts_with("___ADI_AGL_DO_");
+        if !numeric && (code[at + 3] & 0x7F != 0 || code[at + 4] != 0 || code[at + 5] != 0) {
             return Err(err!(
                 "parcel {:#x}: DO loop end field is not zero before relocation",
                 r.parcel
             ));
         }
-        code[at + 3] |= (delta >> 16) as u8 & 0x7F;
+        code[at + 3] = code[at + 3] & 0x80 | (delta >> 16) as u8 & 0x7F;
         code[at + 4] = (delta >> 8) as u8;
         code[at + 5] = delta as u8;
         let back = field_joined(&decode_row(&code[at..at + 6], 6), "reladdr");
@@ -850,10 +859,35 @@ fn verify(
 
 // ---------------------------------------------------------------------------------------------------------------------- the whole
 
+/// `.SECTION/DM name;` becomes `.SECTION/DM/BW name;`. The fork's assembler lays a plain `/DM` section out in 40-bit words (five file
+/// bytes per `.VAR`, symbols in words, the layout of the reference assembler); the data of our modules is 32-bit words in memory
+/// order (four little-endian bytes per `.VAR`, symbols in bytes), which is what `/BW` (byte-addressed data) gives and what the old
+/// pin wrote for `/DM`. A section that already names `BW` or `DOUBLE32` is left alone.
+fn byte_addressed_data(source: &str) -> String {
+    static S: OnceLock<Regex> = OnceLock::new();
+    let sect = rx(&S, r"^([ \t]*\.SECTION[ \t]*/DM)([ \t]+[A-Za-z_.$])", "im");
+    sect.replace_all(source, "${1}/BW${2}").into_owned()
+}
+
 /// Assemble `source` and read the object (no link).
 pub fn assemble(source: &str) -> Result<Obj> {
     let (text, bss_decls) = bss_prepare(source)?;
-    let elf = selas::assemble_text(&text, Some(PROCESSOR), &[], &[], true)
+    let text = byte_addressed_data(&text);
+    // The fork sets the F1-active (fast loop) bit of a DO opcode by itself (`-auto-fast-loops`, its default). Our objects keep the bit
+    // clear, as the old pin wrote them: it is set only by an explicit `(F)`. `assemble_text` with the one option changed:
+    let mut pp = selas::preproc::Preprocessor::new(Some(PROCESSOR), &[], &[]);
+    let elf = pp
+        .process(&text, "<memory>")
+        .and_then(|processed| {
+            selas::assemble::assemble_source_with(
+                &processed,
+                true,
+                selas::assemble::AsmOptions {
+                    auto_fast_loops: false,
+                    ..Default::default()
+                },
+            )
+        })
         .map_err(|e| err!("selas failed:\nselas: {e}"))?;
     let mut obj = read_object(&elf, sha256_hex(source.as_bytes()))?;
     for (name, size, is_bss, blob) in bss_decls {
@@ -872,6 +906,37 @@ pub fn assemble(source: &str) -> Result<Obj> {
     Ok(obj)
 }
 
+/// A relocation against a name that is neither defined here nor declared with `.EXTERN` is an error. The assembler takes any unknown
+/// word for an external symbol, so a register name it does not know (`R0 = LIRPTL`, a register SHARC+ lacks) would load the address of
+/// an undefined symbol. The message names the symbol and the first source line that has it.
+fn undeclared_symbols(source: &str, obj: &Obj) -> Result<()> {
+    static E: OnceLock<Regex> = OnceLock::new();
+    let ext = rx(&E, r"^[ \t]*\.EXTERN[ \t]+([^;\n]*);", "m");
+    let declared: std::collections::HashSet<&str> = ext
+        .captures_iter(source)
+        .flat_map(|c| c.get(1).unwrap().as_str().split(','))
+        .map(str::trim)
+        .collect();
+    for r in &obj.relocs {
+        if obj.symbols.contains_key(&r.symbol)
+            || obj.data_symbols.has(&r.symbol)
+            || declared.contains(r.symbol.as_str())
+        {
+            continue;
+        }
+        let word = Regex::new(&format!(r"\b{}\b", regex_lite::escape(&r.symbol))).map_err(|e| err!("{e}"))?;
+        let line = source
+            .lines()
+            .position(|l| word.is_match(l))
+            .map_or("?".into(), |n| (n + 1).to_string());
+        return Err(err!(
+            "source line {line}: `{}` is not defined here and not declared with .EXTERN (a register name the assembler does not know?)",
+            r.symbol
+        ));
+    }
+    Ok(())
+}
+
 /// The boot-stream bytes of assembled `source`, whatever the ISA rules say (a test makes the stores the scan must find).
 pub fn boot_bytes_unchecked_for_tests(source: &str) -> Result<Vec<u8>> {
     Ok(swap_parcels(&assemble(source)?.section))
@@ -881,6 +946,7 @@ pub fn boot_bytes_unchecked_for_tests(source: &str) -> Result<Vec<u8>> {
 /// instruction re-decoded and every relocated field read back.
 pub fn object_from_text(source: &str) -> Result<Dko> {
     let obj = assemble(source)?;
+    undeclared_symbols(source, &obj)?;
     let mut undefined: Vec<String> = obj
         .relocs
         .iter()
@@ -1403,11 +1469,55 @@ mod tests {
         let body = ".GLOBAL _f;\n_f:\n    LCNTR = 3, DO _e UNTIL LCE;\n    R0 = R0 + 1;\n    R1 = R1 + R0;\n_e: R2 = R2 + R1;\n    RTS;\n";
         let o = asm(body).unwrap();
         assert!(o.relocs.iter().all(|r| r.rtype != R_LOOP16));
-        let at = o.symbols["_e"].0 as i64;
+        // the loop end is the third instruction after the DO; the object keeps no symbol for a label nothing relocates
+        assert!(!o.symbols.contains_key("_e"));
+        let at = o.rows[3].0 as i64;
         let (p, raw) = &o.rows[0];
         let d = decode_row(raw, 6);
         assert!(d.type_name.starts_with("12a"), "{}", d.type_name);
         assert_eq!(field_joined(&d, "reladdr"), Some(at - *p as i64));
         link(&o, BASE, &HashMap::new()).unwrap();
+    }
+
+    #[test]
+    fn dm_data_is_four_little_endian_bytes_per_var_with_byte_symbols() {
+        // the fork's plain /DM is 40-bit words; the module data contract is 32-bit words in memory order
+        let o = asm(".SECTION/DM seg_dmda;\n.GLOBAL _a;\n.VAR _a = 0x11223344;\n.GLOBAL _b;\n.VAR _b[2] = 5, 6;\n.SECTION/PM seg_pmco;\n_f: RTS;\n").unwrap();
+        let (blob, _, bss) = &o.data.0.iter().find(|(n, _)| n == "seg_dmda").unwrap().1;
+        assert_eq!(hex(blob), "443322110500000006000000");
+        assert!(!bss);
+        assert_eq!(o.data_symbols.0.iter().find(|(n, _)| n == "_b").unwrap().1.1, 4);
+        // a section that names its own addressing is left as it is
+        assert_eq!(byte_addressed_data(".SECTION/DM/BW x;"), ".SECTION/DM/BW x;");
+        assert_eq!(byte_addressed_data(".SECTION/DM x;"), ".SECTION/DM/BW x;");
+    }
+
+    #[test]
+    fn an_undeclared_symbol_fails_the_object_build_with_its_line() {
+        // LIRPTL is no register of SHARC+: the assembler would make it an extern symbol
+        let e = object_from_text(&format!("{HEAD}.GLOBAL _f;\n_f:\n    R1 = 1;\n    R0 = LIRPTL;\n    RTS;\n"))
+            .unwrap_err();
+        assert!(e.0.contains("source line 5") && e.0.contains("LIRPTL"), "{e}");
+        // declared, defined here, or a data symbol of the source: fine
+        for ok in [
+            ".EXTERN LIRPTL;\n    R0 = LIRPTL;\n    RTS;",
+            ".EXTERN _a, LIRPTL;\n    R0 = LIRPTL;\n    RTS;",
+            "_g: R0 = _g;\n    RTS;",
+            ".PKBSS _buf, 8;\n    R0 = _buf;\n    RTS;",
+        ] {
+            object_from_text(&format!("{HEAD}.GLOBAL _f;\n_f:\n    {ok}\n")).unwrap_or_else(|e| panic!("{ok}: {e}"));
+        }
+    }
+
+    #[test]
+    fn a_do_loop_keeps_the_fast_loop_bit_clear_unless_the_source_asks_for_it() {
+        // DO opcode bit 23 (mode): the fork would set it for a loop it finds safe; the old pin never did
+        let body = |f: &str| format!(".GLOBAL _f;\n_f:\n    LCNTR = 3, DO _e UNTIL LCE{f};\n    R0 = R0 + 1;\n    R1 = R1 + R0;\n_e: R2 = R2 + R1;\n    RTS;\n");
+        let mode = |src: String| {
+            let o = asm(&src).unwrap();
+            field_joined(&decode_row(&o.rows[0].1, 6), "mode").unwrap()
+        };
+        assert_eq!(mode(body("")), 0);
+        assert_eq!(mode(body(" (F)")), 1);
     }
 }

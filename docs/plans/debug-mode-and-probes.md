@@ -57,7 +57,7 @@ runtime keeps fault capture. Agreed with Em on 2026-10-31. Sources: the sampler 
       compares and selects the previous modules again. `--spawn dt2|dn2` does the same on a private emulator daemon.
 - [x] `test/dsp-facts` (`tests/fixtures/modules/dsp-facts`, items in `tools/device/dkprobe_facts.py`): cycle counts with EMUCLK (NOP, ALU, MAC, loops, branches,
       RECIPS and RSQRTS with Newton steps, L2, L1 and DDR loads, an L2 cache-conflict pair), FIX, float and fixed-point edge cases with ALUSAT clear and set (AI, AV, denormals),
-      core and cache registers (SHL1C configuration and the eight range registers, revision, interrupt masks) and the cycle counter at consecutive calls. A run is 143 items,
+      core and cache registers (SHL1C configuration and the eight range registers, revision, interrupt masks) and the cycle counter at consecutive calls. A run is 142 items,
       0.35 s, so one capture holds about 47 runs. Proven in the emulator on DT2 and DN2; the device run is open.
 - [x] Device run of `test/dsp-facts` (the command is in `tests/fixtures/modules/dsp-facts/README.md`), then: fix the emulator where the values differ, record the results in `docs/findings/`. Done: 59 of 59 value items match after the fixes
       ([finding 103](../findings/103-dsp-facts-on-a-digitakt-ii.md)).
