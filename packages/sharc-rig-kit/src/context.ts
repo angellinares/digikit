@@ -43,8 +43,8 @@ export const FRIENDLY: Record<string, number> = {
   MODE1: 0x1011800,
 };
 
-const M6_HOSTILE = [0x1b8, 4, 0, -1];
-const M13_HOSTILE = [4, -2, 0x10];
+export const M6_HOSTILE = [0x1b8, 4, 0, -1];
+export const M13_HOSTILE = [4, -2, 0x10];
 const ROUND_BITS = 0x1011800; // the startup MODE1: IRPTEN, NESTM, RND32, CBUFEN
 const MODE1_CHOICES = [
   ROUND_BITS,

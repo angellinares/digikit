@@ -58,6 +58,8 @@ export interface Linked {
   codeBoot: string;
   /** symbol -> short-word address */
   symbols: Record<string, number>;
+  /** instructions the link re-decoded */
+  checked?: number;
 }
 
 /** The include directories of an object of a module: its generated and own sources, then the shared ones of pins.toml. */
@@ -121,8 +123,9 @@ export function link(object: SharcObject, baseSw: number, externs: Record<string
     base_sw: number;
     code_boot: string;
     symbols: Record<string, number>;
+    checked?: number;
   };
-  return { baseSw: j.base_sw, codeBoot: j.code_boot, symbols: j.symbols };
+  return { baseSw: j.base_sw, codeBoot: j.code_boot, symbols: j.symbols, checked: j.checked };
 }
 
 /** A DSP source as `pk_sharc` reads it: `#include` from the include directories and the source's own directory. */

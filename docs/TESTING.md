@@ -682,6 +682,20 @@ fine, the module writes only its own memory, the output is finite). Check kinds:
 synthetic signals. A reference table is the output of the old float32 model of the module (or of the rig, for a new pin) as float32
 words; changing one is a re-pin and needs review like a PCM pin of `tests/scenarios`.
 
+#### Adapter tests on the rig (`tests/*.rig.test.ts`)
+
+The tests of the SHARC adapters (`core/dsp-voice`, `core/fx`, `core/overdrive`, `core/sample-pool`) are Vitest files `modules/core/adapters/<name>/tests/<topic>.rig.test.ts`.
+They use the kit classes by `import { ... } from '@digi/sharc-rig-kit'` and run with `pnpm nx:pilot run core/<name>:test-rig` (same inputs as the sound checks above).
+The kit has three rigs for them:
+
+- `RawRig` (`raw.ts`): objects placed at bases the test names, data at its alignment, stand-in externs; `call(symbol, regs, { reads, readRegs })`, `poke`, `peek`.
+- `FxRig` (`fx.ts`): the effect chain; `block` (master hook) and `sendBlock` (send hook; DT2 track buses with `setTrack`, DN2 slot buses with `setSlot`, `setSlotmap`, `setFade`; `setReturn`, `bus`, `prevGains`).
+- `VoiceRig` (`voice.ts`) and `crumbRig()`: the dsp-voice wrapper with one routine; every call runs on a fresh core with the DM in `rig.dm`, so a test carries state by writing words back.
+
+```sh
+pnpm exec vitest run --config vitest.host.config.ts --project module-rig modules/core/adapters/fx/tests/fx-send.rig.test.ts --reporter=verbose   # prints instruction counts
+```
+
 ### DSP budget gate (patchkit smoke)
 
 Every `pk_harness run` cell ends with a DSP measurement: TRIG 1 held for 1 s of audio, the mean busy
