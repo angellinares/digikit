@@ -264,7 +264,7 @@ static const char *const text_runtime[20] = {
 };
 static const char *const text_registry[10] = {
     "NO REGISTRY", "OTHER DEVICE", "BAD TYPE", "TYPE USED", "NO PARAM ROW",
-    "NO PAGE ROW", "TYPE IN USE",  "",         "",          "",
+    "NO PAGE ROW", "TYPE IN USE",  "BAD ID",   "OVER USES", "FX ID TWICE",
 };
 static const char *const text_dsp[10] = {
     "NO DSP LINK",
@@ -279,8 +279,12 @@ static const char *const text_dsp[10] = {
     "",
 };
 static const char *const text_boot[10] = {
-    "BAD PATH", "TOO MANY",     "WRITE FAILED", "CARD BUSY", "SAFE MODE",
-    "",         "OUT OF RANGE", "READ ONLY",    "",          "",
+    "BAD PATH", "TOO MANY",     "WRITE FAILED", "CARD BUSY",     "SAFE MODE",
+    "",         "OUT OF RANGE", "READ ONLY",    "OTHER RUNTIME", "TABLE BAD",
+};
+/* The boot plan and the declarations: -73..-79 (E_MISSING, E_DECL_FULL, E_PLAN_KIND, E_PLAN_OWNER, E_PLAN_KEY, E_PLAN_FIT, E_DECL_KIND). */
+static const char *const text_plan[7] = {
+    "NO SERVICE", "TOO MANY CALLS", "NO OWNER", "TWO OWNERS", "KEY TWICE", "NO FIT", "BAD KIND",
 };
 
 static void status_text(txt *t, int32_t code)
@@ -297,6 +301,8 @@ static void status_text(txt *t, int32_t code)
         known = text_dsp[k - 30];
     else if (k < 50)
         known = text_boot[k - 40];
+    else if (k >= 73 && k < 80)
+        known = text_plan[k - 73];
     if (!known[0]) {
         t_s(t, "ERROR ");
         t_int(t, code);
@@ -305,10 +311,30 @@ static void status_text(txt *t, int32_t code)
     }
 }
 
-/* The text of a module's result at boot: OK, LOADING (the DSP part is still going), NEEDS <module> when the load failed because a module it
-   imports from is not in the image (`needs`, the runtime's DkrtBootInfo.needs of that selection index) or the code's text. */
-static void result_text(txt *t, int32_t code, const uint8_t *needs)
+/* The short name of a CAPACITY kind (DKRT_CAPK_*), for "REFUSED FULL <name>": at most 10 characters. */
+static const char *const fit_label[17] = {
+    "",          "MODULES",    "SELECTION",  "CPU MEMORY", "FILE",       "DSP MEMORY",
+    "MACH ROWS", "VOICE ROWS", "PARAM ROWS", "PAGE ROWS",  "FX SLOTS",   "MAP",
+    "STORE",     "SETTINGS",   "SEND SLOTS", "DSP LOAD",   "DSP VOICES",
+};
+
+/* The text of a module's state and result at boot (the runtime's DkrtBootInfo.states, .results, .needs and .detail of that selection index):
+   OK, LOADING (the DSP part is still going), REFUSED <reason> (the boot plan refused it; E_PLAN_FIT names the resource that is full), NEEDS <module>
+   when the load failed because a module it imports from is not in the image, or the code's text. A refusal has no "- " lead: the row is 23 characters. */
+static void result_text(txt *t, uint32_t state, int32_t code, const uint8_t *needs,
+                        const uint32_t *detail)
 {
+    if (state == DKRT_STATE_REFUSED) {
+        t_s(t, "REFUSED ");
+        if (code == DKRT_E_PLAN_FIT && detail[0] < 17) {
+            t_s(t, "FULL ");
+            t_s(t, fit_label[detail[0]]);
+        } else {
+            status_text(t, code);
+        }
+        return;
+    }
+    t_s(t, "- ");
     if (code == 1)
         t_s(t, "LOADING");
     else if (code == 0)
@@ -696,8 +722,7 @@ static void fill_about(dk_ui_menu *m, void *ctx)
         name_of(p, path_len(p, DKRT_SEL_PATH - 1), 17, 0, &t);
         arow(m, t.b);
         t_init(&t);
-        t_s(&t, "- ");
-        result_text(&t, g_boot.results[k], g_boot.needs[k]);
+        result_text(&t, g_boot.states[k], g_boot.results[k], g_boot.needs[k], g_boot.detail[k]);
         if (traced_path(p, path_len(p, DKRT_SEL_PATH - 1)))
             t_s(&t, " TRACE");
         arow(m, t.b);
