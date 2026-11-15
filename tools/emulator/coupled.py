@@ -169,11 +169,11 @@ def scenario_results(report: dict) -> list[dict]:
 def generated(
     device: str = "dn2", image: pathlib.Path | str | None = None
 ) -> pathlib.Path:
-    """The generated core of a device: SHARC_GEN_DIR, else the one registered
+    """The generated core of a device: SHARC_GEN_DIR_<DEVICE>, else SHARC_GEN_DIR, else the one registered
     for its packed DSP image (IMAGE, else the device's ready-input default)."""
     if image is None:
         image = digi_env.ready_inputs(device=device)["DSP image"]
-    gen = digi_env.generated_dir(image=image)
+    gen = digi_env.generated_dir(image=image, device=device)
     if not gen.is_dir():
         raise SystemExit(f"coupled: generated core dir is missing: {gen}")
     return gen
