@@ -36,7 +36,6 @@ mod irq_probe;
 mod live_capture;
 mod pc_dump;
 mod reply_watch;
-pub mod rig;
 pub mod sha256;
 pub mod vectors;
 mod write_watch;

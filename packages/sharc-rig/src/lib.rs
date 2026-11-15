@@ -8,26 +8,30 @@
 //! ```text
 //! request  {"return_sw": 12120320,                          // pc a routine returns to (ends the call, not executed)
 //!           "breaks":    [12120064],                         // more pcs that end a call (not executed)
+//!           "watch":     [[11862016, 11862400]],             // optional: record the stores of instructions at these pcs
 //!           "code": [{"address": 671088640, "hex": "..."}],  // loader byte address, code in boot-stream order
 //!           "ops": [ {"poke": [[word_address, word], ...]},  // DM writes, normal-word addresses
 //!                    {"call": {"pc": 1, "regs": {"R4": 5}, "max_steps": 400000,
 //!                              "reads": [[word_address, count]], "read_regs": ["I6"]}} ]}
 //! response {"build": "...", "results": [{"instructions": n, "halt": "breakpoint", "final_pc": pc,
-//!                                        "regs": {"I6": v|null}, "reads": [[v|null, ...]]}]}
+//!                                        "regs": {"I6": v|null}, "reads": [[v|null, ...]],
+//!                                        "stores": [[pc, address, width], ...]}]}
 //! ```
 //!
 //! A call is the same as `CallSession.call` of tools/patchkit/pk_sharc.py: the named registers are set, every other
 //! register and all of DM stay as the last call left them, a call at `pc` returns to `return_sw`, and
 //! the run stops before it executes an instruction at `return_sw` or in `breaks`. `instructions` counts the
-//! instructions executed. `halt` is `breakpoint`, `max-steps` or `trap: <reason>`.
+//! instructions executed. `halt` is `breakpoint`, `max-steps` or `trap: <reason>`. `stores` lists, in execution order, the
+//! runs of bytes that instructions at a `watch` pc stored (addresses as the core keeps them: a byte that nothing loaded
+//! or poked is at 0x2800_0000 + its address). Nothing is recorded, and nothing costs, without `watch`.
 
 mod json;
 
-use crate::mem::Mem;
-use crate::rt::bnd;
-use crate::rt::{Int, V, VI};
-use crate::{Engine, vectors};
 use json::Json;
+use sharc_native::mem::Mem;
+use sharc_native::rt::bnd;
+use sharc_native::rt::{Int, V, VI};
+use sharc_native::{Engine, exec_insn, trap_name, vectors};
 
 /// Registers a fresh core holds (tools/sharc_dev/sharc_run.py `make_state`: every register 0, then these).
 const START_REGS: [(&str, i64); 6] = [
@@ -60,6 +64,7 @@ pub enum Op {
 pub struct Request {
     pub return_sw: u32,
     pub breaks: Vec<u32>,
+    pub watch: Vec<(u32, u32)>,
     pub code: Vec<(u32, Vec<u8>)>,
     pub ops: Vec<Op>,
 }
@@ -70,6 +75,8 @@ pub struct CallResult {
     pub final_pc: u32,
     pub regs: Vec<(String, Option<u32>)>,
     pub reads: Vec<Vec<Option<u32>>>,
+    /// (pc, address, width) of the stores of instructions in the request's `watch` ranges
+    pub stores: Vec<(u32, u32, u32)>,
 }
 
 fn reg_code(name: &str) -> Result<usize, String> {
@@ -107,6 +114,16 @@ pub fn parse_request(text: &str) -> Result<Request, String> {
         Some(b) => b.arr()?.iter().map(u32_of).collect::<Result<_, _>>()?,
         None => Vec::new(),
     };
+    let mut watch = Vec::new();
+    if let Some(w) = root.get("watch") {
+        for pair in w.arr()? {
+            let pair = pair.arr()?;
+            if pair.len() != 2 {
+                return Err("a watch range is [first_pc, end_pc]".into());
+            }
+            watch.push((u32_of(&pair[0])?, u32_of(&pair[1])?));
+        }
+    }
     let mut code = Vec::new();
     for seg in need("code")?.arr()? {
         let address = u32_of(seg.get("address").ok_or("code segment has no address")?)?;
@@ -163,6 +180,7 @@ pub fn parse_request(text: &str) -> Result<Request, String> {
     Ok(Request {
         return_sw,
         breaks,
+        watch,
         code,
         ops,
     })
@@ -241,6 +259,8 @@ fn peek_word(e: &Engine, word_address: u32) -> Option<u32> {
     }
 }
 
+/// Run one call. The loop is the interpreter's own (`decode_at`, then `exec_insn`, as `Engine::step` does for one
+/// instruction); it stops at the return point and the breaks before an instruction is decoded.
 pub fn run_call(e: &mut Engine, req: &Request, call: &Call) -> CallResult {
     for &(code, value) in &call.regs {
         e.set_reg(code, V::c(value as Int));
@@ -248,15 +268,32 @@ pub fn run_call(e: &mut Engine, req: &Request, call: &Call) -> CallResult {
     e.fresh_call(call.pc, Some(req.return_sw as Int));
     let start = e.s.icount;
     let mut halt = String::from("max-steps");
+    let mut stores = Vec::new();
     while e.s.icount - start < call.max_steps {
         let pc = e.s.pc_sw as u32;
         if pc == req.return_sw || req.breaks.contains(&pc) {
             halt = "breakpoint".into();
             break;
         }
-        if e.step(1) == 0 {
-            halt = format!("trap: {}", e.halt.clone().unwrap_or_default());
+        let insn = match bnd::decode_at(&mut e.s, (), None, pc as Int) {
+            Ok(i) => i,
+            Err(t) => {
+                halt = format!("trap: {}", trap_name(t));
+                break;
+            }
+        };
+        // The undo log of the instruction names the bytes it stored (`St::probe_note`): the engine's own record, so
+        // the loop pays for it only at the pcs asked for.
+        let watched = req.watch.iter().any(|&(lo, hi)| (lo..hi).contains(&pc));
+        e.s.probe = watched.then(Vec::new);
+        let done = exec_insn(&mut e.s, insn);
+        let log = e.s.probe.take();
+        if let Err(t) = done {
+            halt = format!("trap: {}", trap_name(t));
             break;
+        }
+        if let Some(log) = log {
+            note_stores(&mut stores, pc, log.into_iter().map(|(a, _, _)| a));
         }
     }
     CallResult {
@@ -276,6 +313,24 @@ pub fn run_call(e: &mut Engine, req: &Request, call: &Call) -> CallResult {
             .iter()
             .map(|&(a, n)| (0..n).map(|k| peek_word(e, a + k)).collect())
             .collect(),
+        stores,
+    }
+}
+
+/// The bytes one instruction stored, as runs (`pc`, first address, width) in address order. Addresses are the core's
+/// canonical ones: a store to a byte nothing loaded or poked lands at the loader alias (0x2800_0000 + address).
+fn note_stores(out: &mut Vec<(u32, u32, u32)>, pc: u32, bytes: impl Iterator<Item = u32>) {
+    let mut bytes: Vec<u32> = bytes.collect();
+    bytes.sort_unstable();
+    bytes.dedup();
+    let mut at = 0;
+    while at < bytes.len() {
+        let mut end = at + 1;
+        while end < bytes.len() && bytes[end] == bytes[end - 1].wrapping_add(1) {
+            end += 1;
+        }
+        out.push((pc, bytes[at], (end - at) as u32));
+        at = end;
     }
 }
 
@@ -323,12 +378,27 @@ pub fn run_request(text: &str) -> Result<String, String> {
                             .collect(),
                     ),
                 ),
+                (
+                    "stores".into(),
+                    Json::Arr(
+                        r.stores
+                            .into_iter()
+                            .map(|(pc, a, w)| {
+                                Json::Arr(vec![
+                                    Json::Int(pc as i64),
+                                    Json::Int(a as i64),
+                                    Json::Int(w as i64),
+                                ])
+                            })
+                            .collect(),
+                    ),
+                ),
             ])
         })
         .collect();
     let mut out = String::new();
     Json::Obj(vec![
-        ("build".into(), Json::Str(crate::build_info())),
+        ("build".into(), Json::Str(sharc_native::build_info())),
         ("results".into(), Json::Arr(results)),
     ])
     .write(&mut out);
@@ -372,12 +442,10 @@ mod tests {
         assert!(parse_request(odd).is_err());
     }
 
-    #[cfg(sharc_gen)]
     fn call(text: &str) -> Vec<CallResult> {
         run(&parse_request(text).unwrap()).unwrap()
     }
 
-    #[cfg(sharc_gen)]
     #[test]
     fn a_call_runs_to_its_return_point_and_stops_before_it() {
         let ops = format!(
@@ -397,7 +465,6 @@ mod tests {
         );
     }
 
-    #[cfg(sharc_gen)]
     #[test]
     fn registers_and_memory_stay_between_calls() {
         let first = format!(r#"{{"call": {{"pc": {BASE}, "regs": {{"R7": 11}}}}}}"#);
@@ -419,7 +486,6 @@ mod tests {
         assert_eq!(rs[1].reads[1], vec![None]);
     }
 
-    #[cfg(sharc_gen)]
     #[test]
     fn a_call_stops_at_its_step_limit_and_at_a_break() {
         let limit = format!(r#"{{"call": {{"pc": {BASE}, "max_steps": 1}}}}"#);
@@ -434,7 +500,6 @@ mod tests {
         );
     }
 
-    #[cfg(sharc_gen)]
     #[test]
     fn code_that_was_not_loaded_traps_without_counting() {
         let text = request(&format!(r#"{{"call": {{"pc": {}}}}}"#, BASE + 0x100));
@@ -443,10 +508,27 @@ mod tests {
         assert_eq!(r.instructions, 0);
     }
 
-    #[cfg(sharc_gen)]
     #[test]
     fn a_poke_outside_mapped_memory_is_an_error() {
         let text = request(r#"{"poke": [[4294967295, 1]]}"#);
         assert!(run(&parse_request(&text).unwrap()).is_err());
+    }
+
+    #[test]
+    fn the_bytes_of_one_instruction_become_runs() {
+        let mut out = Vec::new();
+        note_stores(
+            &mut out,
+            7,
+            [
+                0x2000_0003,
+                0x2000_0001,
+                0x2000_0002,
+                0x2000_0010,
+                0x2000_0001,
+            ]
+            .into_iter(),
+        );
+        assert_eq!(out, vec![(7, 0x2000_0001, 3), (7, 0x2000_0010, 1)]);
     }
 }

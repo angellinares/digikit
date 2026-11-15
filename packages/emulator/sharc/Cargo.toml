@@ -38,7 +38,3 @@ path = "src/bin/sharc_check.rs"
 [[bin]]
 name = "sharc-frames"
 path = "src/bin/sharc_frames.rs"
-
-[[bin]]
-name = "sharc-rig"
-path = "src/bin/sharc_rig.rs"
