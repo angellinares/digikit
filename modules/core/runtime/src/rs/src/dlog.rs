@@ -289,10 +289,18 @@ pub unsafe fn span_emit(owner: u32, cycles: u32) {
 
 /// The start of a measured span: the span clock's value, only when the span sink and the clock are both set (one test of the channel word first). A
 /// producer keeps it and calls `span_end` after the measured code.
+#[inline(always)]
 pub fn span_t0() -> Option<u32> {
     if !sink_on(SINK_SPAN) {
         return None;
     }
+    clock_slow()
+}
+
+/// The slow path of `span_t0` (a span sink is set): read the clock, or `None` while it is not set.
+#[cold]
+#[inline(never)]
+fn clock_slow() -> Option<u32> {
     unsafe {
         let k = read_volatile(addr_of!(SPAN_CLOCK));
         if k == 0 {
@@ -304,6 +312,8 @@ pub fn span_t0() -> Option<u32> {
 }
 
 /// The end of a span that `span_t0` started: hand `(owner, cycles)` to the span sink, `cycles` the clock's difference (a wrap of the counter is fine).
+#[cold]
+#[inline(never)]
 pub unsafe fn span_end(owner: u32, t0: u32) {
     let k = read_volatile(addr_of!(SPAN_CLOCK));
     if k == 0 {
@@ -314,7 +324,7 @@ pub unsafe fn span_end(owner: u32, t0: u32) {
 }
 
 /// Run `f` as a measured span of `owner`: the clock is read before and after only while a span sink and clock are set.
-#[inline]
+#[inline(always)]
 pub unsafe fn spanned<R>(owner: u32, f: impl FnOnce() -> R) -> R {
     let t0 = span_t0();
     let r = f();
