@@ -102,6 +102,31 @@ pub trait CoreApi {
     ) -> i32;
     unsafe fn job_cancel(&self, owner: u8, id: u32) -> i32;
 
+    // ---- the native page adapter (core/machines) -----------------------------------------------------------------------------
+    /// Whether the firmware has the native page calls of record kind `kind` (`KIND_NATIVE_PAGE` or `KIND_NATIVE_PAGE_V2`).
+    fn native_available(&self, kind: u32) -> bool;
+    /// Register a native page for machine type `owner`: `title` (a NUL-terminated text), the absolute `draw` and `event` callbacks, eight `[kind, value, position]`
+    /// bindings, the `word_count` parameter codes of its snapshot and the callbacks' `arg` (`with_arg`: 1 when there is one). A status (`OK` or `E_*`).
+    unsafe fn native_register(
+        &self,
+        kind: u32,
+        owner: u32,
+        page: u32,
+        flags: u32,
+        title: *const u8,
+        draw: u32,
+        event: u32,
+        bindings: *const u32,
+        words: *const u32,
+        word_count: u32,
+        arg: u32,
+        with_arg: u32,
+    ) -> i32;
+    /// Remove the native pages of machine type `kind` (before its callbacks and strings are released).
+    unsafe fn native_remove(&self, kind: u32);
+    /// The native handler of an encoder turn on `view`: nonzero when it consumed the turn.
+    unsafe fn native_turn(&self, view: *const u8, event: *const u8) -> u32;
+
     // ---- the DSP loader's state and tables -------------------------------------------------------------------------------
     /// The DSP loader's state and row table.
     fn dsp(&self) -> &'static mut DspState;

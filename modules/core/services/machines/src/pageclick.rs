@@ -2,7 +2,8 @@
 //!
 //! A machine module declares `DK_PARAM_ACTION(machine, word, fn)`. The packer lowers it to an ACTION record of the `register` table; `registry::apply`
 //! stores the callback's address per parameter row (`set`). Two hooks at the entry of the machine page's key handler and turn handler
-//! (`dkrt_pagekey_hook`, `dkrt_pageturn_hook`, src/cf/tramp.s) call `dkrt_page_key` and `dkrt_page_turn`.
+//! (`dkrt_pagekey_hook`, `dkrt_pageturn_hook`, src/cf/tramp.s) call `dkrt_page_key` and `dkrt_page_turn` (`handlers.rs` of the runtime crate), which call
+//! `page_key` and `page_turn` here with the runtime's core and firmware page.
 //! Ordinary PARAM turns and all keys continue through the stock handler. An opt-in native page's LOCAL/unused turn returns one to consume it.
 //!
 //! A click is a press of an encoder's key (codes 0x29 to 0x30) and its release with no turn in between. Press and turn is the stock coarse step
@@ -12,12 +13,9 @@
 //!
 //! Without any action or native page, the hooks return after their armed checks.
 use super::paramapi::{self, Ctx, Held};
-#[cfg(not(test))]
-use super::fw::PageFw;
-use crate::core_api::CoreApi;
-#[cfg(not(test))]
-use crate::core_api::REAL_CORE;
 use core::ptr::{addr_of, addr_of_mut, read_volatile, write_volatile};
+use dkrt_abi::core_api::CoreApi;
+use dkrt_abi::fw::Fw;
 use dkrt_sdk::limits;
 
 /// Key code of the click of encoder 0; encoder `e` is code `FIRST_CODE + e`, for e = 0 to 7.
@@ -28,8 +26,6 @@ pub const F_PRESS: u32 = 0x01;
 pub const F_CHORD: u32 = 0x02;
 pub const F_REPEAT: u32 = 0x08;
 pub const F_RELEASE: u32 = 0x10;
-/// The page's `encoder -> parameter code` function: vtable slot 47 (offset 0xbc), `i32 (view, encoder)`.
-const VT_PARAM_CODE: usize = 47;
 /// The page's track reference (`view + 0x74`, the argument of `cf.page.fn.view_track`).
 const VIEW_TRACK_REF: usize = 0x74;
 const NONE: u32 = 0xff;
@@ -45,7 +41,11 @@ pub struct Detector {
 
 impl Detector {
     pub const fn new() -> Self {
-        Detector { enc: NONE, view: 0, turned: false }
+        Detector {
+            enc: NONE,
+            view: 0,
+            turned: false,
+        }
     }
 
     /// A key event of `view`. Returns the encoder of a click: its release, when its press came on the same view and no turn came in between.
@@ -59,7 +59,8 @@ impl Detector {
             return None;
         }
         if flags & F_RELEASE != 0 {
-            let click = self.enc == enc && self.view == view && !self.turned && flags & F_CHORD == 0;
+            let click =
+                self.enc == enc && self.view == view && !self.turned && flags & F_CHORD == 0;
             self.enc = NONE;
             return if click { Some(enc) } else { None };
         }
@@ -90,7 +91,12 @@ pub fn find(actions: &[u32], first: u32, code: i32) -> u32 {
 }
 
 /// What a click queues: the callback of the parameter `code` and the track (asked for only when there is a callback), or None: the stock click.
-pub fn resolve(actions: &[u32], first: u32, code: i32, track: impl FnOnce() -> u32) -> Option<(u32, u32)> {
+pub fn resolve(
+    actions: &[u32],
+    first: u32,
+    code: i32,
+    track: impl FnOnce() -> u32,
+) -> Option<(u32, u32)> {
     match find(actions, first, code) {
         0 => None,
         f => Some((f, track())),
@@ -111,7 +117,12 @@ pub struct Pending {
     pub view: usize,
     pub code: u32,
 }
-const NO_CLICK: Pending = Pending { callback: 0, track: 0, view: 0, code: 0 };
+const NO_CLICK: Pending = Pending {
+    callback: 0,
+    track: 0,
+    view: 0,
+    code: 0,
+};
 static mut PENDING: Pending = NO_CLICK;
 /// The click flow that `param_get` and `param_set` may serve: from the callback until the page gets input again.
 static mut HELD: Held = Held::new();
@@ -151,54 +162,59 @@ pub unsafe fn set_arg(k: usize, arg: u32) {
     }
 }
 
-pub(super) unsafe fn word(p: *const u8, off: usize) -> u32 {
+pub(crate) unsafe fn word(p: *const u8, off: usize) -> u32 {
     read_volatile(p.add(off) as *const u32)
 }
 
 /// Hook at the entry of the page's key handler (stack: view, event).
-#[cfg(not(test))]
-#[no_mangle]
-pub unsafe extern "C" fn dkrt_page_key(view: *const u8, ev: *const u8) {
+pub unsafe fn page_key<C: CoreApi, F: Fw>(core: &C, fw: &F, view: *const u8, ev: *const u8) {
     if read_volatile(addr_of!(ARMED)) == 0 {
         return;
     }
     (*addr_of_mut!(HELD)).input();
     let det = &mut *addr_of_mut!(DET);
     if let Some(enc) = det.key(view as usize, word(ev, 0xc), word(ev, 0x10)) {
-        click(view, enc);
+        click(core, fw, view, enc);
     }
 }
 
 /// Hook at the entry of the page's turn handler (stack: view, event). Only an encoder event (`event[3] - 1` is 0 to 7) is a turn.
-#[cfg(not(test))]
-#[no_mangle]
-pub unsafe extern "C" fn dkrt_page_turn(view: *const u8, ev: *const u8) -> u32 {
+pub unsafe fn page_turn<C: CoreApi>(core: &C, view: *const u8, ev: *const u8) -> u32 {
     // Every page turn ends the click flow, including LOCAL and unused custom
     // encoders. Bookkeeping must precede the consumed return: press A, turn an
     // unused D, release A must never become an SMP click.
     if read_volatile(addr_of!(ARMED)) != 0 {
-        turn_input(&mut *addr_of_mut!(DET), &mut *addr_of_mut!(HELD), view as usize, word(ev, 0xc));
+        turn_input(
+            &mut *addr_of_mut!(DET),
+            &mut *addr_of_mut!(HELD),
+            view as usize,
+            word(ev, 0xc),
+        );
     }
     // PARAM continues through the native handler exactly once; LOCAL/unused is
     // consumed only after recording the turn above.
-    super::nativepage::turn(view, ev)
+    super::nativepage::turn(core, view, ev)
 }
 
 pub fn turn_input(detector: &mut Detector, held: &mut Held, view: usize, encoder: u32) {
     held.input();
-    if encoder.wrapping_sub(1) < ENCODERS { detector.turn(view); }
+    if encoder.wrapping_sub(1) < ENCODERS {
+        detector.turn(view);
+    }
 }
 
 /// A click of encoder `enc` on `view`: queue the action of the parameter under it, if it has one.
-#[cfg(not(test))]
-unsafe fn click(view: *const u8, enc: u32) {
-    let vt = word(view, 0) as *const u8;
-    let code_of: unsafe extern "C" fn(*const u8, u32) -> i32 = core::mem::transmute(word(vt, 4 * VT_PARAM_CODE) as usize);
-    let code = code_of(view, enc);
-    let first = REAL_CORE.param_first();
-    let track = || paramapi::Fw::view_track(&PageFw, word(view, VIEW_TRACK_REF) as usize);
+unsafe fn click<C: CoreApi, F: Fw>(core: &C, fw: &F, view: *const u8, enc: u32) {
+    let code = fw.param_code(view as usize, enc);
+    let first = core.param_first();
+    let track = || fw.view_track(word(view, VIEW_TRACK_REF) as usize);
     if let Some((callback, track)) = resolve(&*addr_of!(ACTIONS), first, code, track) {
-        *addr_of_mut!(PENDING) = Pending { callback, track, view: view as usize, code: code as u32 };
+        *addr_of_mut!(PENDING) = Pending {
+            callback,
+            track,
+            view: view as usize,
+            code: code as u32,
+        };
     }
 }
 
@@ -206,7 +222,11 @@ unsafe fn click(view: *const u8, enc: u32) {
 pub fn context(p: &Pending, owners: &[u8], first: u32) -> Option<Ctx> {
     let k = p.code.wrapping_sub(first) as usize;
     match owners.get(k) {
-        Some(&owner) if owner != 0 => Some(Ctx { view: p.view, track: p.track, owner }),
+        Some(&owner) if owner != 0 => Some(Ctx {
+            view: p.view,
+            track: p.track,
+            owner,
+        }),
         _ => None,
     }
 }
@@ -218,14 +238,16 @@ pub fn click_context<C: CoreApi>(c: &C, p: &Pending) -> Option<Ctx> {
 
 /// The UI loop pass: run the queued action (`void fn(u32 track)`). `param_get` and `param_set` serve the clicked view from here until the page
 /// gets input again, so the list the action opens can set the value when the user picks.
-#[cfg(not(test))]
-pub unsafe fn tick() {
+pub unsafe fn tick<C: CoreApi>(core: &C) {
     let p = *addr_of!(PENDING);
     if p.callback != 0 {
         *addr_of_mut!(PENDING) = NO_CLICK;
-        let Some(ctx) = click_context(&REAL_CORE, &p) else { return };
+        let Some(ctx) = click_context(core, &p) else {
+            return;
+        };
         (*addr_of_mut!(HELD)).begin(ctx);
-        let (with_arg, arg) = (*addr_of!(ARGS))[(p.code.wrapping_sub(REAL_CORE.param_first())) as usize % limits::PARAM_ROWS];
+        let (with_arg, arg) = (*addr_of!(ARGS))
+            [(p.code.wrapping_sub(core.param_first())) as usize % limits::PARAM_ROWS];
         if with_arg {
             let call: unsafe extern "C" fn(u32, u32) = core::mem::transmute(p.callback as usize);
             call(arg, p.track);
@@ -236,37 +258,48 @@ pub unsafe fn tick() {
     }
 }
 
-#[cfg(test)]
-pub unsafe fn tick() {}
-
 /// `dk_param_get`.
-#[cfg(not(test))]
-pub unsafe fn param_get(track: u32, word: u32) -> i32 {
-    paramapi::get(&PageFw, (*addr_of!(HELD)).ctx(), REAL_CORE.param_owners(), REAL_CORE.param_first(), track, word)
+pub unsafe fn param_get<C: CoreApi, F: Fw>(core: &C, fw: &F, track: u32, word: u32) -> i32 {
+    paramapi::get(
+        fw,
+        (*addr_of!(HELD)).ctx(),
+        core.param_owners(),
+        core.param_first(),
+        track,
+        word,
+    )
 }
 
 /// `dk_param_set`.
-#[cfg(not(test))]
-pub unsafe fn param_set(track: u32, word: u32, raw: i32) -> i32 {
-    paramapi::set(&PageFw, (*addr_of!(HELD)).ctx(), REAL_CORE.param_owners(), REAL_CORE.param_first(), track, word, raw)
+pub unsafe fn param_set<C: CoreApi, F: Fw>(
+    core: &C,
+    fw: &F,
+    track: u32,
+    word: u32,
+    raw: i32,
+) -> i32 {
+    paramapi::set(
+        fw,
+        (*addr_of!(HELD)).ctx(),
+        core.param_owners(),
+        core.param_first(),
+        track,
+        word,
+        raw,
+    )
 }
 
-// Host tests exercise the parameter rules through paramapi::Fw, never firmware pointers.
+/// The click that waits for the next UI pass (for the tests of the registry: what `apply` armed).
 #[cfg(test)]
-pub unsafe fn param_get(_: u32, _: u32) -> i32 {
-    panic!("firmware parameter access requires a paramapi::Fw host fixture")
-}
-
-#[cfg(test)]
-pub unsafe fn param_set(_: u32, _: u32, _: i32) -> i32 {
-    panic!("firmware parameter access requires a paramapi::Fw host fixture")
+pub(crate) unsafe fn pending() -> Pending {
+    *addr_of!(PENDING)
 }
 
 #[cfg(test)]
 mod tests {
     use super::*;
 
-    use crate::core_api::FakeCore;
+    use dkrt_test_support::FakeCore;
 
     const V: usize = 0x1000;
     const PRESS: u32 = F_PRESS;
@@ -297,10 +330,15 @@ mod tests {
 
     #[test]
     fn unused_and_same_encoder_turns_cancel_click_and_flow_before_consumption() {
-        for encoder in [1, 4] { // A itself and unused D on a replacement page
+        for encoder in [1, 4] {
+            // A itself and unused D on a replacement page
             let mut detector = Detector::new();
             let mut held = Held::new();
-            held.begin(Ctx { view: V, track: 0, owner: 1 });
+            held.begin(Ctx {
+                view: V,
+                track: 0,
+                owner: 1,
+            });
             detector.key(V, code(0), PRESS);
             turn_input(&mut detector, &mut held, V, encoder);
             assert_eq!(held.ctx(), None);
@@ -345,7 +383,11 @@ mod tests {
         d.key(V, 0x02, PRESS); // SRC key
         assert_eq!(d.key(V, code(1), REL), None);
         d.key(V, code(1), PRESS);
-        assert_eq!(d.key(V + 0x100, code(1), REL), None, "released on another page");
+        assert_eq!(
+            d.key(V + 0x100, code(1), REL),
+            None,
+            "released on another page"
+        );
         // a release of a key that is not an encoder's leaves the press alone
         d.key(V, code(1), PRESS);
         d.key(V, 0x02, REL);
@@ -383,10 +425,18 @@ mod tests {
         let actions = [0, 0xa0, 0, 0xb0];
         let never = || -> u32 { panic!("the track is not read") };
         assert_eq!(resolve(&actions, 100, 100, never), None);
-        assert_eq!(resolve(&actions, 100, 0xcd, never), None, "a stock parameter code (SAMP)");
+        assert_eq!(
+            resolve(&actions, 100, 0xcd, never),
+            None,
+            "a stock parameter code (SAMP)"
+        );
         assert_eq!(resolve(&actions, 100, 0, never), None, "an empty knob");
         assert_eq!(resolve(&actions, 100, -1, never), None);
-        assert_eq!(resolve(&[0; 4], 100, 101, never), None, "no module declares an action");
+        assert_eq!(
+            resolve(&[0; 4], 100, 101, never),
+            None,
+            "no module declares an action"
+        );
     }
 
     #[test]
@@ -394,8 +444,16 @@ mod tests {
         let actions = [0, 0xa0, 0, 0xb0];
         assert_eq!(find(&actions, 100, 101), 0xa0);
         assert_eq!(find(&actions, 100, 103), 0xb0);
-        assert_eq!(find(&actions, 100, 100), 0, "a row without an action: the stock click");
-        assert_eq!(find(&actions, 100, 0xcd), 0, "a stock parameter code is below the run-time rows");
+        assert_eq!(
+            find(&actions, 100, 100),
+            0,
+            "a row without an action: the stock click"
+        );
+        assert_eq!(
+            find(&actions, 100, 0xcd),
+            0,
+            "a stock parameter code is below the run-time rows"
+        );
         assert_eq!(find(&actions, 100, 104), 0, "past the last row");
         assert_eq!(find(&actions, 100, -1), 0);
         assert_eq!(find(&actions, 100, 0), 0);
@@ -404,8 +462,20 @@ mod tests {
     #[test]
     fn the_click_context_keeps_the_view_the_track_and_the_owner_of_the_clicked_row() {
         let owners = [0u8, 3, 3, 5];
-        let p = Pending { callback: 0xa0, track: 6, view: 0x2000, code: 101 };
-        assert_eq!(context(&p, &owners, 100), Some(Ctx { view: 0x2000, track: 6, owner: 3 }));
+        let p = Pending {
+            callback: 0xa0,
+            track: 6,
+            view: 0x2000,
+            code: 101,
+        };
+        assert_eq!(
+            context(&p, &owners, 100),
+            Some(Ctx {
+                view: 0x2000,
+                track: 6,
+                owner: 3
+            })
+        );
         let p = Pending { code: 103, ..p };
         assert_eq!(context(&p, &owners, 100).map(|c| c.owner), Some(5));
     }
@@ -413,10 +483,23 @@ mod tests {
     #[test]
     fn a_click_whose_row_was_unloaded_has_no_context() {
         let owners = [0u8, 0, 3];
-        let p = Pending { callback: 0xa0, track: 1, view: 0x2000, code: 100 };
+        let p = Pending {
+            callback: 0xa0,
+            track: 1,
+            view: 0x2000,
+            code: 100,
+        };
         assert_eq!(context(&p, &owners, 100), None, "free row");
-        assert_eq!(context(&Pending { code: 50, ..p }, &owners, 100), None, "a stock code");
-        assert_eq!(context(&Pending { code: 200, ..p }, &owners, 100), None, "past the table");
+        assert_eq!(
+            context(&Pending { code: 50, ..p }, &owners, 100),
+            None,
+            "a stock code"
+        );
+        assert_eq!(
+            context(&Pending { code: 200, ..p }, &owners, 100),
+            None,
+            "past the table"
+        );
     }
 
     #[test]
@@ -424,9 +507,21 @@ mod tests {
         let mut core = FakeCore::new();
         core.first = 200;
         core.owners = std::vec![0, 0, 3, 0];
-        let p = |code| Pending { callback: 1, track: 5, view: V, code };
+        let p = |code| Pending {
+            callback: 1,
+            track: 5,
+            view: V,
+            code,
+        };
         // row 2 (code 202) belongs to module record 2 (owner 3)
-        assert_eq!(click_context(&core, &p(202)), Some(Ctx { view: V, track: 5, owner: 3 }));
+        assert_eq!(
+            click_context(&core, &p(202)),
+            Some(Ctx {
+                view: V,
+                track: 5,
+                owner: 3
+            })
+        );
         // a free row, a code below the first row and a code past the table have no context
         assert_eq!(click_context(&core, &p(201)), None);
         assert_eq!(click_context(&core, &p(199)), None);

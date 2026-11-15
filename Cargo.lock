@@ -1213,6 +1213,16 @@ dependencies = [
 ]
 
 [[package]]
+name = "dkrt-svc-machines"
+version = "0.1.0"
+dependencies = [
+ "dkneeds",
+ "dkrt-abi",
+ "dkrt-sdk",
+ "dkrt-test-support",
+]
+
+[[package]]
 name = "dkrt-test-support"
 version = "0.1.0"
 dependencies = [
