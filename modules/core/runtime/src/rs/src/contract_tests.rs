@@ -97,11 +97,10 @@ fn check(f: &[u8], device: u32) -> (i32, Job) {
     let mut keys = [0u32; 8];
     let n = collect::machine_keys(f, &mut keys);
     unsafe {
-        ct::VOICE_INFO_OVERRIDE = info.as_ptr();
+        let _info = ct::VoiceInfoGuard::set(info.as_ptr());
         assign::seed_for_test(&keys[..n]);
         let r = dsp::check(f.as_ptr(), off, size, f.len() as u32, &mut job);
         assign::seed_for_test(&[]);
-        ct::VOICE_INFO_OVERRIDE = core::ptr::null();
         (r, job)
     }
 }
