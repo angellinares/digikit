@@ -1,46 +1,57 @@
 import { describe, expect, it } from 'vitest';
-import { profileBySymbol, profileRuns, totalOf } from '../src/profile.ts';
+import { moduleBaseOf, rigAddrMap, rigProfile, sumCounts } from '../src/profile.ts';
 
-const symbols = { _a: 0x100, _loop: 0x110, _b: 0x120, _alias: 0x120 };
-// _a: 4 instructions once; _loop: 3 instructions 8 times; the label at 0x120: one instruction twice
-const counts: [number, number][] = [
-  [0x100, 1],
-  [0x101, 1],
-  [0x103, 1],
-  [0x104, 1],
-  [0x110, 8],
-  [0x112, 8],
-  [0x113, 8],
-  [0x120, 2],
-];
+// adapter code at 0x100..0x200 (_wrap), module code at 0x200..0x240 (_m_a, _m_loop; _m_alias shares _m_loop's address)
+const built = {
+  symbols: { _wrap: 0x100, _wrap_tail: 0x180, _m_a: 0x200, _m_loop: 0x210, _m_alias: 0x210 },
+  moduleCode: [[0x200, 0x240]] as [number, number][],
+};
 
-describe('rig profile tables', () => {
-  it('adds the counts per symbol, largest first, with shares of the total', () => {
-    expect(totalOf(counts)).toBe(30);
-    const rows = profileBySymbol(counts, symbols);
-    expect(rows.map((r) => [r.symbol, r.count, r.pcs])).toEqual([
-      ['_loop', 24, 3],
-      ['_a', 4, 4],
-      ['_alias', 2, 1], // two names at one address: the first in sort order
-    ]);
-    expect(rows[0]!.percent).toBeCloseTo(80);
-  });
-
-  it('finds equal-count runs as loop bodies and straight code', () => {
-    const rows = profileRuns(counts, symbols);
-    expect(rows[0]).toMatchObject({ from: '_loop', each: 8, length: 3, count: 24 });
-    expect(rows.map((r) => r.count)).toEqual([24, 4, 2]);
-  });
-
-  it('starts a new run at a label and at a gap even when the count is the same', () => {
-    const rows = profileRuns(
+describe('rig profile producer', () => {
+  it('adds the counts of several calls per pc', () => {
+    const sum = sumCounts([
       [
-        [0x10e, 1],
-        [0x110, 1],
-        [0x118, 1],
+        [0x10, 1],
+        [0x11, 2],
       ],
-      symbols,
-    );
-    expect(rows.map((r) => r.from).sort()).toEqual(['_a+0xe', '_loop', '_loop+0x8']);
+      [
+        [0x11, 3],
+        [0x20, 4],
+      ],
+    ]);
+    expect([...sum]).toEqual([
+      [0x10, 1],
+      [0x11, 5],
+      [0x20, 4],
+    ]);
+  });
+
+  it('writes dk.profile/1 with pc counters in pc order, the blocks metric and the module load', () => {
+    const p = rigProfile(
+      { module: 'acme/demo', device: 'dt2', caseName: 'sample/a/note60', blocks: 3 },
+      new Map([
+        [0x211, 6],
+        [0x201, 2],
+      ]),
+      moduleBaseOf(built),
+    ) as Record<string, any>;
+    expect(p.schema).toBe('dk.profile/1');
+    expect(p.raw).toEqual([
+      { cpu: 'sharc', addr: 0x201, count: 2, series: 'pc' },
+      { cpu: 'sharc', addr: 0x211, count: 6, series: 'pc' },
+    ]);
+    expect(p.metrics).toEqual([{ name: 'sharc.blocks', value: 3, unit: 'blocks' }]);
+    expect(p.run.loads.modules).toEqual([{ id: 'acme/demo', base: 0, size: 0, dsp_base: 0x200 }]);
+    expect(p.clock.unit).toBe('instructions');
+  });
+
+  it('maps the adapter labels absolutely and the module labels relative to its image, one name per address', () => {
+    const map = rigAddrMap(built, 'acme/demo', 'dt2') as { entries: Record<string, unknown>[] };
+    expect(map.entries).toEqual([
+      { cpu: 'sharc', addr: 0x100, size: 0x80, name: '_wrap', layer: 'our' },
+      { cpu: 'sharc', addr: 0x180, size: 0x80, name: '_wrap_tail', layer: 'our' },
+      { cpu: 'sharc', addr: 0, size: 0x10, name: '_m_a', layer: 'our', module: 'acme/demo' },
+      { cpu: 'sharc', addr: 0x10, size: 0x30, name: '_m_alias', layer: 'our', module: 'acme/demo' },
+    ]);
   });
 });
