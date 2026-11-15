@@ -742,3 +742,420 @@ suite(enabled ? `${title}: ring` : `${title}: ring: ${stockSkipReason(DN2_112)}`
     }
   });
 });
+
+// ---- the source continuation (b8251b) ----
+
+/** the five instructions that load the audio samples as SIMD double-word loads: 16 runs read the 128 bytes of 32 samples (Python: 32 * 4 byte loads) */
+const SOURCE_SAMPLE_PCS = [0xb8255f, 0xb8256e, 0xb825e3, 0xb825e6, 0xb82613];
+const SOURCE_TABLE_PCS = [0xb825af, 0xb825b3];
+const SOURCE_SCRATCH = { S0: 0x12340000, S5: 0x12340005, S9: 0x12340009, S14: 0x1234000e };
+
+async function sourceCall(s: Shadow, side: string, depth: number): Promise<void> {
+  // Companion scratch is explicitly seeded, not treated as callee-preserved.
+  const regs = { ...BYTE_REGS, ...SOURCE_SCRATCH };
+  const r = await s.call(`_${side}_source`, regs, { maxSteps: CALL_LIMIT, readRegs: ['MODE1', 'S0', 'S5', 'S9', 'S14'], profile: true });
+  expect(r.halt, `${side} source: ${JSON.stringify({ ...r, stores: r.stores.length })}`).toBe('breakpoint');
+  expect(r.final_pc).toBe(BACK);
+  expect(r.regs.MODE1).toBe(0);
+  const offset = side === 'right' ? 0x100 : 0;
+  const counts = checkStores(s, [...range(32).map((i) => LEFT + offset + i), ...stackWords()]);
+  expect(range(32).map((i) => count(counts, LEFT + offset + i))).toEqual(Array(32).fill(1));
+  // The loads: the 32 samples once (16 double-word loads), and two table words (two loads) when the depth is nonzero.
+  expect(executed(r, SOURCE_SAMPLE_PCS)).toBe(16);
+  expect(executed(r, SOURCE_TABLE_PCS)).toBe(depth ? 2 : 0);
+  if (depth) {
+    expect(r.regs.S9).toBe((-depth) >>> 0);
+    expect(r.regs.S14).toBe((-depth - 1) >>> 0);
+  } else {
+    for (const name of ['S0', 'S5', 'S9', 'S14'] as const) expect(r.regs[name], name).toBe(SOURCE_SCRATCH[name]);
+  }
+}
+
+suite(enabled ? `${title}: source` : `${title}: source: ${stockSkipReason(DN2_112)}`, () => {
+  const build = enabled ? buildShadow('source', ['stereo-source-shadow-replay.s'], 0xb98000, { _source: 0xb8251b }) : (undefined as never);
+
+  it.each([[0, 0], [0.25, 8], [0.5, 4], [0.75, 2], [1, 1]] as const)('source continuation matches isolated mono: control %f, depth %i', async (control, depth) => {
+    const sessions = await open(build, 3);
+    const [stereo, left, right] = sessions as [Shadow, Shadow, Shadow];
+    try {
+      for (const s of sessions) for (const offset of [0, 0x100]) s.poke(CONTROL + offset, bits(control));
+      const inputs: [number, number][] = [];
+      for (let i = 0; i < 32; i++) {
+        const lv = bits((i - 15) / 21);
+        const rv = bits((11 - i) / 27);
+        inputs.push([lv, rv]);
+        stereo.poke(LEFT + i, lv);
+        stereo.poke(RIGHT + i, rv);
+        left.poke(LEFT + i, lv);
+        right.poke(LEFT + i, rv);
+      }
+      await sourceCall(stereo, 'left', depth);
+      const authoritative = await stereo.peek(CONTROL);
+      await sourceCall(stereo, 'right', depth);
+      await sourceCall(left, 'left', depth);
+      await sourceCall(right, 'left', depth);
+      expect(await stereo.peek(CONTROL)).toBe(authoritative);
+      expect(authoritative).toBe(bits(control));
+      for (const s of sessions) {
+        expect(await s.peek(CONTROL)).toBe(await s.peek(CONTROL + 0x100));
+        expect(await s.peek(CONTROL)).toBe(bits(control));
+      }
+      for (const [output, reference, channel] of [[LEFT, left, 0], [RIGHT, right, 1]] as const) {
+        const result = await words(stereo, output, 32);
+        expect(result).toEqual(await words(reference, LEFT, 32));
+        const original = inputs.map((v) => v[channel]);
+        if (depth) expect(result).not.toEqual(original);
+        else expect(result).toEqual(original);
+        expect(finite(result)).toBe(true);
+      }
+      expect(await words(stereo, LEFT, 32)).not.toEqual(await words(stereo, RIGHT, 32));
+    } finally {
+      await closeAll(sessions);
+    }
+  });
+});
+
+// ---- the ordered route: source, first-order and case-5 prefix, the original blend, gain and the original pan ----
+
+const ORDER_ENGINE = 0x08040600;
+const ORDER_GAIN = 0x08040800;
+const ORDER_PAN = 0x08040a00;
+const ORDER_INPUTS = 0x08040c00;
+const ORDER_OUTPUTS = 0x08040e00;
+const ORDER_SCRATCH = 0x08041200;
+const ORDER_PLANES = [0x08041400, 0x08041500, 0x08041600, 0x08041700];
+const ORDER_SHARED: [number, number[]][] = [
+  [CONTROL, [0]],
+  [FIRST, [21, 22, 23]],
+  [UY, range(6).flatMap((k) => [11 + 7 * k, 13 + 7 * k])],
+  [ORDER_ENGINE, [0, 2, 7, 9]],
+  [ORDER_GAIN, range(11)],
+  [ORDER_PAN, [0, 2, 112, 114]],
+];
+const ORIGINAL_BLEND = 0x1c9c12;
+const ORIGINAL_BLEND_END = 0x1c98b9;
+const ORIGINAL_PAN = 0x1c9aea;
+const ORIGINAL_PAN_END = 0x1c9b30;
+
+type Phase = 'prepare' | 'prefix' | 'blend' | 'gain' | 'pan';
+
+async function orderedCall(s: Shadow, side: string, phase: Phase, control = 0): Promise<void> {
+  const offset = side === 'right' ? 0x100 : 0;
+  const audio = LEFT + offset;
+  const scratch = ORDER_SCRATCH + offset;
+  const engine = ORDER_ENGINE + offset;
+  const gain = ORDER_GAIN + offset;
+  const pan = ORDER_PAN + offset;
+  const histories = [...[24, 25].map((i) => FIRST + i), ...[9, 10].map((i) => UY + i)];
+  const shared = ORDER_SHARED.flatMap(([base, indices]) => indices.map((i) => base + i));
+  const regs: Record<string, number> = { ...WIDE_REGS };
+  let entry: string | number;
+  let stop = BACK;
+  let writes: number[];
+  if (phase === 'prepare') {
+    entry = '_prepare_ordered';
+    writes = shared.map((a) => a + 0x100);
+  } else if (phase === 'prefix') {
+    entry = `_${side}_ordered`;
+    writes = [...range(32).map((i) => audio + i), ...range(32).map((i) => scratch + i), ...histories.map((a) => a + offset), ...stackWords()];
+  } else if (phase === 'blend') {
+    entry = ORIGINAL_BLEND;
+    stop = ORIGINAL_BLEND_END;
+    // Original continuation reloads the scratch pointer from engine+4e02.
+    Object.assign(regs, { I1: (CONTROL + offset) * 4, I0: engine * 4, I5: audio * 4, R9: 32 });
+    writes = range(32).map((i) => audio + i);
+  } else if (phase === 'gain') {
+    entry = `_${side}_ordered_gain`;
+    Object.assign(regs, { R0: control, R1: 0 });
+    writes = [...range(32).map((i) => audio + i), ...[7, 9, 10].map((i) => gain + i), ...stackWords()];
+  } else {
+    entry = ORIGINAL_PAN;
+    stop = ORIGINAL_PAN_END;
+    Object.assign(regs, { I3: (ORDER_INPUTS + offset) * 4, I5: (ORDER_OUTPUTS + offset) * 4, I4: pan * 4, R9: 32 });
+    const planes = offset ? ORDER_PLANES.slice(2) : ORDER_PLANES.slice(0, 2);
+    writes = planes.flatMap((base) => range(32).map((i) => base + i));
+  }
+  const r = await s.call(entry, regs, { maxSteps: CALL_LIMIT, breaks: [BACK, stop], readRegs: ['MODE1'] });
+  expect(r.halt, `${side} ${phase}: ${JSON.stringify({ ...r, stores: r.stores.length })}`).toBe('breakpoint');
+  expect(r.final_pc).toBe(stop);
+  expect(r.regs.MODE1).toBe(0);
+  const counts = checkStores(s, writes, `${side} ${phase}`);
+  if (phase === 'prepare' || phase === 'pan') {
+    expect([...counts.keys()].sort()).toEqual([...new Set(writes)].sort());
+    expect(new Set(counts.values())).toEqual(new Set([1]));
+  } else if (phase === 'prefix') {
+    expect(range(32).map((i) => count(counts, audio + i))).toEqual(Array(32).fill(2));
+    expect(range(32).map((i) => count(counts, scratch + i))).toEqual(Array(32).fill(1));
+  } else if (phase === 'blend') {
+    expect(range(32).map((i) => count(counts, audio + i))).toEqual(Array(32).fill(1));
+  }
+}
+
+async function initializedOrdered(build: ShadowBuild, channel = 0): Promise<Shadow> {
+  const s = await Shadow.open(build);
+  for (const offset of [0, 0x100]) {
+    for (const [base, n] of [[CONTROL, 1], [FIRST, 28], [UY, 53], [ORDER_ENGINE, 10], [ORDER_GAIN, 11], [ORDER_PAN, 115]] as const)
+      for (let i = 0; i < n; i++) s.poke(base + offset + i, 0);
+    [7, 1, 7, bits(0.5), 7, 1, 0, 5, 0, 0, 0].forEach((v, i) => s.poke(ORDER_GAIN + offset + i, v));
+    const sideChannel = offset ? 1 : channel;
+    for (const [base, indices, values] of [
+      [FIRST, [24, 25], [[0.03, -0.01], [-0.02, 0.04]]],
+      [UY, [9, 10], [[0.02, -0.03], [-0.04, 0.01]]],
+    ] as const)
+      indices.forEach((i, k) => s.poke(base + offset + i, bits(values[sideChannel]![k]!)));
+    s.poke(CONTROL + offset + 0x4e02, (ORDER_SCRATCH + offset) * 4);
+    s.poke(ORDER_INPUTS + offset, (LEFT + offset) * 4);
+    const planes = offset ? ORDER_PLANES.slice(2) : ORDER_PLANES.slice(0, 2);
+    planes.forEach((plane, i) => s.poke(ORDER_OUTPUTS + offset + i, plane * 4));
+  }
+  return s;
+}
+
+interface Channel {
+  prefix: number[];
+  scratch: number[];
+  blend: number[];
+  gain: number[];
+  planes: number[][];
+}
+
+async function runOrderedChannel(s: Shadow, side: string, control: number, overwriteScratch = false): Promise<Channel> {
+  const offset = side === 'right' ? 0x100 : 0;
+  await orderedCall(s, side, 'prefix');
+  const prefix = await words(s, LEFT + offset, 32);
+  const scratch = await words(s, ORDER_SCRATCH + offset, 32);
+  if (overwriteScratch) {
+    // Deliberate lifetime fault after the case5 result but before its original continuation consumes it. Bounds remain valid.
+    for (let i = 0; i < 32; i++) s.poke(ORDER_SCRATCH + offset + i, 0);
+  }
+  await orderedCall(s, side, 'blend');
+  const blend = await words(s, LEFT + offset, 32);
+  await orderedCall(s, side, 'gain', control);
+  const gain = await words(s, LEFT + offset, 32);
+  await orderedCall(s, side, 'pan');
+  const planes = offset ? ORDER_PLANES.slice(2) : ORDER_PLANES.slice(0, 2);
+  return { prefix, scratch, blend, gain, planes: await Promise.all(planes.map((plane) => words(s, plane, 32))) };
+}
+
+suite(enabled ? `${title}: ordered route` : `${title}: ordered route: ${stockSkipReason(DN2_112)}`, () => {
+  const build = enabled
+    ? buildShadow('ordered', ['stereo-ordered-shadow-replay.s'], 0xb9a000, { _source: 0xb8251b, _first: 0xb80c39, _case5: 0xb81526, _gain: 0xb80345 })
+    : (undefined as never);
+
+  // Selected synthetic route: scalar/later ramps unity, other conditionals and fade off. Shared cleanup is outside replay and is not proven
+  // here. The terminal L.A/R.B pair is a candidate balance mapping, not an ABI, stock-default reachability, or mixed/send consumer
+  // integration proof.
+  it.each([null, 'shared-history', 'advanced-gain', 'scratch-overwrite', 'swapped-terminal', 'duplicated-terminal'])(
+    'ordered route matches isolated mono: fault %s',
+    async (fault) => {
+      const stereo = await initializedOrdered(build);
+      const left = await initializedOrdered(build);
+      const right = await initializedOrdered(build, 1);
+      const sessions = [stereo, left, right];
+      try {
+        const differences: boolean[] = [];
+        const phases: number[] = [];
+        for (let block = 0; block < 4; block++) {
+          for (const s of sessions) {
+            s.poke(CONTROL, bits(0.5));
+            for (const [i, v] of Object.entries({ 21: 0.7 - block / 64, 22: 0.2, 23: 0.1 })) s.poke(FIRST + Number(i), bits(v));
+            [0.6, 0.1, 0.15, 0.2, 0.1, 0.08].forEach((v, k) => {
+              s.poke(UY + 11 + 7 * k, bits(v * (1 + block / 32)));
+              s.poke(UY + 13 + 7 * k, bits(0.0001));
+            });
+            for (const [i, v] of Object.entries({ 0: 0.4 + block / 64, 2: 0.001, 7: 0.6 - block / 64, 9: -0.001 })) s.poke(ORDER_ENGINE + Number(i), bits(v));
+            for (const [i, v] of Object.entries({ 0: 0.25 + block / 32, 2: 0.002, 112: 0.8 - block / 32, 114: -0.001 })) s.poke(ORDER_PAN + Number(i), bits(v));
+          }
+          for (let i = 0; i < 32; i++) {
+            const lv = bits((i - 15) / 21 + block / 64);
+            const rv = bits((11 - i) / 27 - block / 128);
+            stereo.poke(LEFT + i, lv);
+            stereo.poke(RIGHT + i, rv);
+            left.poke(LEFT + i, lv);
+            right.poke(LEFT + i, rv);
+          }
+          await orderedCall(stereo, 'left', 'prepare');
+          const actualLeft = await runOrderedChannel(stereo, 'left', Number(block === 0));
+          const watched = [...ORDER_SHARED, [FIRST, [24, 25]] as [number, number[]], [UY, [9, 10]] as [number, number[]]].flatMap(([base, indices]) => indices.map((i) => base + i));
+          const authoritative = await Promise.all(watched.map((a) => stereo.peek(a)));
+          const leftScratch = await words(stereo, ORDER_SCRATCH, 32);
+          if (fault === 'shared-history') {
+            for (const [base, indices] of [[FIRST, [24, 25]], [UY, [9, 10]]] as const)
+              for (const i of indices) stereo.poke(base + 0x100 + i, (await stereo.peek(base + i)) as number);
+          } else if (fault === 'advanced-gain') {
+            await orderedCall(stereo, 'left', 'prepare');
+          }
+          const actualRight = await runOrderedChannel(stereo, 'right', Number(block === 0), fault === 'scratch-overwrite');
+          const expectedLeft = await runOrderedChannel(left, 'left', Number(block === 0));
+          const expectedRight = await runOrderedChannel(right, 'left', Number(block === 0));
+          expect(actualLeft).toEqual(expectedLeft);
+          expect(await Promise.all(watched.map((a) => stereo.peek(a)))).toEqual(authoritative);
+          expect(await words(stereo, ORDER_SCRATCH, 32)).toEqual(leftScratch);
+          if (fault === 'scratch-overwrite') {
+            expect(actualRight.prefix).toEqual(expectedRight.prefix);
+            expect(actualRight.scratch).toEqual(expectedRight.scratch);
+            expect(actualRight.blend).not.toEqual(expectedRight.blend);
+          }
+          if (fault === null || fault === 'swapped-terminal' || fault === 'duplicated-terminal') {
+            expect(actualRight).toEqual(expectedRight);
+            expect(await words(stereo, ORDER_GAIN + 0x100, 11)).toEqual(await words(stereo, ORDER_GAIN, 11));
+          }
+          let terminal = [actualLeft.planes[0], actualRight.planes[1]];
+          if (fault === 'swapped-terminal') terminal = [actualLeft.planes[1]!, actualRight.planes[0]!];
+          else if (fault === 'duplicated-terminal') terminal = [actualLeft.planes[0]!, actualLeft.planes[0]!];
+          const expected = [expectedLeft.planes[0], expectedRight.planes[1]];
+          differences.push(JSON.stringify(terminal) !== JSON.stringify(expected));
+          if (fault === null) expect(terminal).toEqual(expected);
+          expect(actualLeft.planes[0]).not.toEqual(actualRight.planes[1]);
+          for (const snapshots of [actualLeft, actualRight]) {
+            expect(snapshots.prefix).not.toEqual(snapshots.scratch);
+            expect(snapshots.blend).not.toEqual(snapshots.prefix);
+            expect(snapshots.gain).not.toEqual(snapshots.blend);
+            for (const plane of [...snapshots.planes, snapshots.prefix, snapshots.scratch, snapshots.blend, snapshots.gain]) expect(finite(plane)).toBe(true);
+          }
+          phases.push((await left.peek(ORDER_GAIN + 7)) as number);
+        }
+        expect(phases).toEqual([2, 2, 1, 1]);
+        if (fault !== null) expect(differences.some(Boolean)).toBe(true);
+      } finally {
+        await closeAll(sessions);
+      }
+    },
+  );
+});
+
+// ---- the helper resets: each reset helper runs on the left record, then mirrors on the right record ----
+
+const RESET_WRITES: Record<string, number[]> = {
+  snapshots: [3, 4, 12, 13, 14, 17, 19, 20, 21, 24, 26, 27, 28, 31, 33, 34, 35, 38, 40, 41, 42, 45],
+  nine: [10, 11, ...range(9).flatMap((k) => [0, 1, 2, 5].map((delta) => 12 + 7 * k + delta))],
+  prepared: [...range(8, 5), ...PREPARED_WRITES, ...range(6).map((k) => 22 + 7 * k)],
+  held: range(5),
+};
+const RESET_SIZES: Record<string, number> = { snapshots: 51, nine: 75, prepared: 59, held: 5 };
+const RESET_HISTORIES: Record<string, number[]> = { snapshots: [3, 4, 48, 49, 50], nine: [10, 11], prepared: [5, 9, 10, 11, 12], held: [1, 2] };
+const RESET_STOCK = { _reset_snapshots: 0xb81d6d, _reset_nine: 0xb81c8d, _reset_prepared: 0xb811f1, _reset_held: 0xb82440 };
+
+async function resetCall(s: Shadow, family: string, side: string): Promise<void> {
+  const r = await s.call(`_reset_${side}_${family}`, WIDE_REGS, { maxSteps: CALL_LIMIT });
+  expect(r.halt, `${side} reset ${family}: ${JSON.stringify({ ...r, stores: r.stores.length })}`).toBe('breakpoint');
+  expect(r.final_pc).toBe(BACK);
+  const base = CONTROL + (side === 'right' ? 0x100 : 0);
+  const mutable = RESET_WRITES[family]!.map((i) => base + i);
+  const counts = checkStores(s, [...mutable, ...stackWords()], `${side} reset ${family}`);
+  // every mutable word is written
+  expect(mutable.filter((a) => !counts.has(a))).toEqual([]);
+}
+
+suite(enabled ? `${title}: helper resets` : `${title}: helper resets: ${stockSkipReason(DN2_112)}`, () => {
+  const resetBuild = (): ShadowBuild => {
+    const filter = buildShadow('filter', FILTER_FILES, 0xb92000, FILTER_STOCK);
+    return buildShadow('reset', ['stereo-reset-shadow-replay.s'], 0xb9c000, RESET_STOCK, [filter]);
+  };
+  const build = enabled ? resetBuild() : (undefined as never);
+
+  async function initializedReset(family: string, channel = 0): Promise<Shadow> {
+    const s = await Shadow.open(build);
+    const size = RESET_SIZES[family]!;
+    for (const offset of [0, 0x100]) {
+      for (let i = 0; i < size; i++) s.poke(CONTROL + offset + i, bits(0.01 + i / 512));
+      let controls: Record<number, number>;
+      if (family === 'snapshots') {
+        const { coefficients, values } = FILTER_FAMILIES.snapshots!;
+        controls = Object.fromEntries(coefficients.map((i, k) => [i, values[k]!]));
+        Object.assign(controls, { 9: 0.2, 10: 0.25, 11: 0.3, 16: 0.4, 23: 0.1, 30: 0.15, 37: 0.2, 44: 0.25 });
+      } else if (family === 'nine') {
+        controls = Object.fromEntries([0.1, 0.2, 0.1, 0.1, 0.05, 0.05, 0.1, 0.1, 0.1].map((v, k) => [k + 1, v]));
+      } else if (family === 'prepared') {
+        controls = { 0: 0.1, 1: 0.3, 2: 0.08, 3: 0.1, 4: 0.6, 14: 0.2 };
+      } else {
+        controls = { 0: 0.25 };
+        s.poke(CONTROL + offset + 3, 1);
+        s.poke(CONTROL + offset + 4, 1);
+      }
+      for (const [i, v] of Object.entries(controls)) s.poke(CONTROL + offset + Number(i), bits(v));
+      const sideChannel = offset ? 1 : channel;
+      RESET_HISTORIES[family]!.forEach((i, n) => s.poke(CONTROL + offset + i, bits((n + 1) / (sideChannel === 0 ? 64 : -89))));
+    }
+    return s;
+  }
+
+  // Helper boundaries only: no event-name, global writer or reset-hook claim. b82440 is the held-sample record reset here, not an assumption
+  // that every use of that helper has the same record layout as the source continuation.
+  it.each([
+    ...['snapshots', 'nine', 'prepared', 'held'].flatMap((family) => [null, 'missed-reset'].map((fault) => [family, fault] as const)),
+    ['snapshots', 'blanket-snapshots'] as const,
+  ])('helper reset mirroring matches isolated mono: %s, fault %s', async (family, fault) => {
+    const stereo = await initializedReset(family);
+    const left = await initializedReset(family);
+    const right = await initializedReset(family, 1);
+    const sessions = [stereo, left, right];
+    try {
+      const size = RESET_SIZES[family]!;
+      const beforeRight = await words(stereo, CONTROL + 0x100, size);
+      await resetCall(stereo, family, 'left');
+      const authoritative = await words(stereo, CONTROL, size);
+      await resetCall(left, family, 'left');
+      await resetCall(right, family, 'left');
+      if (fault !== 'missed-reset') await resetCall(stereo, family, 'right');
+      if (fault === 'blanket-snapshots') {
+        // b81d6d resets 3/4, but retains 48..50. Their external consumers are unaudited, so check loss exactly at the reset boundary; the leaf
+        // renderer later overwrites these snapshots and can hide the error.
+        for (const i of [48, 49, 50]) stereo.poke(CONTROL + 0x100 + i, 0);
+      }
+      expect(await words(stereo, CONTROL, size)).toEqual(authoritative);
+      expect(authoritative).toEqual(await words(left, CONTROL, size));
+      const actual = await words(stereo, CONTROL + 0x100, size);
+      const expected = await words(right, CONTROL, size);
+      if (fault === null) expect(actual).toEqual(expected);
+      else expect(actual).not.toEqual(expected);
+      if (family === 'snapshots') {
+        expect(await Promise.all([48, 49, 50].map((i) => right.peek(CONTROL + i)))).toEqual([48, 49, 50].map((i) => beforeRight[i]));
+        expect(await Promise.all([3, 4].map((i) => right.peek(CONTROL + i)))).toEqual([0, 0]);
+        expect([48, 49, 50].every((i) => beforeRight[i] !== 0)).toBe(true);
+      }
+      // Run each actual renderer after resetting.
+      if (family === 'held') {
+        // Capture an active post-reset control, retaining actual reset counters and held values. A missed reset must not be hidden by a copy
+        // bypass.
+        for (const [s, offset] of [[stereo, 0], [stereo, 0x100], [left, 0], [right, 0]] as const) s.poke(CONTROL + offset, bits(0.25));
+      }
+      for (let i = 0; i < 32; i++) {
+        const lv = bits((i - 11) / 128);
+        const rv = bits((7 - i) / 163);
+        stereo.poke(LEFT + i, lv);
+        stereo.poke(RIGHT + i, rv);
+        left.poke(LEFT + i, lv);
+        right.poke(LEFT + i, rv);
+      }
+      let histories: number[];
+      let shared: number[];
+      let sharedWrites: number[];
+      if (family in FILTER_FAMILIES) {
+        ({ histories, coefficients: shared } = FILTER_FAMILIES[family]!);
+        sharedWrites = [];
+      } else {
+        histories = RESET_HISTORIES[family]!;
+        shared = family === 'held' ? [0, 3, 4] : PREPARED_SHARED;
+        sharedWrites = family === 'held' ? [3, 4] : PREPARED_WRITES;
+      }
+      await filterCall(stereo, family, 'left', histories, shared, sharedWrites);
+      const authoritativeAfter = await words(stereo, CONTROL, size);
+      await filterCall(stereo, family, 'right', histories, shared, sharedWrites);
+      await filterCall(left, family, 'left', histories, shared, sharedWrites);
+      await filterCall(right, family, 'left', histories, shared, sharedWrites);
+      expect(await words(stereo, CONTROL, size)).toEqual(authoritativeAfter);
+      expect(authoritativeAfter).toEqual(await words(left, CONTROL, size));
+      expect(await words(stereo, LEFT, 32)).toEqual(await words(left, LEFT, 32));
+      const actualAudio = await words(stereo, RIGHT, 32);
+      const expectedAudio = await words(right, LEFT, 32);
+      if (fault === 'missed-reset') expect(actualAudio).not.toEqual(expectedAudio);
+      else expect(actualAudio).toEqual(expectedAudio);
+      expect(await words(stereo, LEFT, 32)).not.toEqual(actualAudio);
+      expect(expectedAudio.some((v) => (v & 0x7fffffff) !== 0)).toBe(true);
+      for (const s of sessions) for (const output of s === stereo ? [LEFT, RIGHT] : [LEFT]) expect(finite(await words(s, output, 32))).toBe(true);
+    } finally {
+      await closeAll(sessions);
+    }
+  });
+});
