@@ -107,7 +107,7 @@ the objects in the cache `out/cache/dko/<module id>/<object path>`, keyed by the
 modules commit their objects (`mise run check:layers` fails when a content module has one). The browser has no compilers: the web build runs
 `patchkit build` and puts the objects from the cache into the gallery bundle.
 
-Do not edit anything in `build/gen/`. A `.dkmod` export leaves out `build/` (section 10).
+Do not edit anything in `build/gen/`. A `.dkmod` export leaves out `build/` (section 11).
 
 ## 5. The manifest and the declaration
 
@@ -728,7 +728,7 @@ wait. The request body is at most 160 bytes. The reply body is at most 879 bytes
 | Run | `mise run dk:run -- ID --emu` | Builds, packs, uploads, selects, restarts and follows the log. |
 | Run on a device | `mise run dk:run -- ID --port Digitakt` | The same on a device that has the digikit runtime. The port is a part of the MIDI port name. |
 | Iterate | `mise run dk:dev -- ID --device dn2 --keys 'tap:...,shot:NAME'` | Builds, reloads a kept emulator daemon and writes `out/runs/devreload/<dev>/sheet.png`. A UI-only change swaps in about 4 s; any other change boots (DN2 5 s, DT2 10 s). Iterate on DN2 and check DT2 at the end. It is no proof: finish with `module:check`. See [TESTING.md](TESTING.md). |
-| Log | `mise run dk:log -- --emu follow` | The runtime log. See section 11. |
+| Log | `mise run dk:log -- --emu follow` | The runtime log. See section 12. |
 | Card | `mise run dk:store -- --emu info` | Lists the store. Prints one `capacity` line per resource. |
 
 Every task takes `-- --help`. Hardware is a deliberate step: do not flash a device from these commands.
@@ -781,7 +781,18 @@ Device facts for authors are in `.agents/skills/digikit-module/references/device
 Trace marks (`DK_TRACE_LOG`, `DK_STEP`) are switched on with `--trace` on `module:pack`, `module:check` and `dk:dev`: see `sdk/README.md`, "Tracing".
 
 
-## 9. Versions and compatibility
+## 9. What happens when a module loads
+
+At boot the runtime gives each selected module a state: SELECTED, then PLANNED or REFUSED, then INIT, DSP LOADING and ACTIVE. FAILED and SKIPPED are the other ends. The boot plan reads only the header tables, so a REFUSED module never ran any code. A refusal and a failure each carry a load code and a reason that Transfer and the DIGIKIT menu show:
+
+- `E_MISSING`, `E_CONTRACT`: a service the module needs is not there, or needs a newer runtime.
+- `E_PLAN_FIT`: the module's `[uses]` do not fit what the modules before it in the selection left (the reason names the resource).
+- `E_PLAN_KIND`, `E_PLAN_OWNER`, `E_PLAN_KEY`: a record kind has no owner, two modules own one kind, slot or hook site, or two modules give one key.
+- other codes (`E_INIT`, `E_NOMEM`, `E_DSP_*`): the load failed after the plan accepted the module.
+
+In safe mode no module loads and every one is SKIPPED. The table of every code with the tests that prove it is `modules/core/runtime/tests/refusal/refusal-table.ts`.
+
+## 10. Versions and compatibility
 
 [MODULES.md](MODULES.md) explains the version rule. What you do:
 
@@ -795,7 +806,7 @@ Trace marks (`DK_TRACE_LOG`, `DK_STEP`) are switched on with `--trace` on `modul
 - The machine key and the effect ID of saved projects and kits come from the packed name and the `id` in `[[machine]]` or `[[fx]]`. Do not
   rename either after users have saved data. A pack with `--name` makes an alias with its own keys.
 
-## 10. Export and import
+## 11. Export and import
 
 ```sh
 mise run module:export -- AUTHOR/NAME                    # out/patch/AUTHOR-NAME-VERSION.dkmod
@@ -809,7 +820,7 @@ A `.dkmod` holds no SDK code: it builds against the SDK of the machine that impo
 `import` checks every hash. It refuses extra or missing files, the author `core`, the type `framework` and an id that is already known. `--replace`
 allows a known id. Without `--dir` it uses the first folder of `PATCHKIT_MODULES`. After an import, run `module:check` before you trust the code.
 
-## 11. Logging
+## 12. Logging
 
 - ColdFire code logs with `dk_log(level, msg, value)` (`<dk/core/log.h>`; 24 characters of the message are kept). `DK_TRACE_LOG(msg, value)` of `<dk/core/trace.h>` is `dk_log` at the trace level and exists only in a `--trace` build.
   Levels: 0 error, 1 warn, 2 info, 3 debug, 4 trace.
@@ -828,7 +839,7 @@ allows a known id. Without `--dir` it uses the first folder of `PATCHKIT_MODULES
 - Details: [DEVELOPMENT.md, "Module loop"](DEVELOPMENT.md#module-loop) and `docs/findings/46-digikit-debug.md`.
 
 
-## 12. Looking things up
+## 13. Looking things up
 
 | Question | Where |
 | --- | --- |
