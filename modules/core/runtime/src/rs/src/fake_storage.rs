@@ -102,6 +102,17 @@ impl Storage for FakeStorage {
         out[..k].copy_from_slice(&n.bytes[..k]);
         Ok(())
     }
+    unsafe fn stat_head(&self, root: u32, path: &[u8], out: &mut [u8; 64]) -> Result<(Stat, usize), i32> {
+        let n = self.node(root, path)?;
+        let st = Self::stat_of(&n);
+        if n.kind == EntryKind::Dir {
+            return Ok((st, 0));
+        }
+        out.fill(0);
+        let k = n.bytes.len().min(64);
+        out[..k].copy_from_slice(&n.bytes[..k]);
+        Ok((st, k))
+    }
     unsafe fn read_range(&self, root: u32, path: &[u8], offset: u32, out: &mut [u8]) -> Result<usize, i32> {
         let n = self.file(root, path)?;
         let start = (offset as usize).min(n.bytes.len());

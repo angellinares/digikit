@@ -713,7 +713,7 @@ pub mod api {
     /// `dk_files_list`: Copy a canonical root-relative directory request; positive ticket or negative error. Supersedes prior results. The optional deferred UI-task notify and its context stay module-owned. No I/O here.
     pub type DkFilesListFn = unsafe extern "C" fn(f: *mut u8, root: u32, path: *const u8, notify: Option<FilesEventFn>, arg: *mut u8) -> i32;
 
-    /// `dk_files_poll`: No I/O: 0 pending, 1 copied 304-byte dk_file_entry, 2 end, negative error. The output is unchanged unless 1.
+    /// `dk_files_poll`: No I/O: 0 pending, 1 copied 304-byte dk_file_entry, 2 end, negative error. The output is unchanged unless 1. A listing that is not polled for 10 s is released and its next poll returns E_LOST.
     pub type DkFilesPollFn = unsafe extern "C" fn(f: *mut u8, ticket: u32, out: *mut u8, capacity: u32) -> i32;
 
     /// `dk_files_cancel`: Invalidate the matching request, its results and its queued notification without waiting for active work or a callback.

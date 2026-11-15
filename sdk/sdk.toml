@@ -437,7 +437,7 @@ service = "runtime"
 since = "0.7.0"
 context = "ui"
 sig = "i32 (dk_files *f, u32 ticket, void *out, u32 capacity)"
-doc = "No I/O: 0 pending, 1 copied 304-byte dk_file_entry, 2 end, negative error. The output is unchanged unless 1."
+doc = "No I/O: 0 pending, 1 copied 304-byte dk_file_entry, 2 end, negative error. The output is unchanged unless 1. A listing that is not polled for 10 s is released and its next poll returns E_LOST."
 
 [[import]]
 name = "dk_files_cancel"

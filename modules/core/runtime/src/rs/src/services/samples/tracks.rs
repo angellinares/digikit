@@ -222,12 +222,12 @@ unsafe fn probe_with<P: Platform + Storage>(p: &P, path: &[u8], head: Option<&mu
     if rel.is_empty() {
         return Err(E_SEL_PATH);
     }
-    let st = p.stat(SAMPLES, rel)?;
+    let st = match head {
+        Some(h) => p.stat_head(SAMPLES, rel, h)?.0,
+        None => p.stat(SAMPLES, rel)?,
+    };
     if st.kind != EntryKind::File {
         return Err(E_SEL_PATH);
-    }
-    if let Some(h) = head {
-        p.read_head(SAMPLES, rel, h)?;
     }
     let mut id = FileId { root: SAMPLES, size: st.size, mtime: 0, flags: 0, hash_kind: 0, hash: [0; 32] };
     if st.hash_valid {

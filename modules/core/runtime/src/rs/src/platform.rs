@@ -323,6 +323,9 @@ impl dkrt_abi::storage::Storage for RealPlatform {
     unsafe fn read_head(&self, root: u32, path: &[u8], out: &mut [u8; 64]) -> Result<(), i32> {
         crate::storage_adapter::read_head(root, &self.storage_facts(), path, out)
     }
+    unsafe fn stat_head(&self, root: u32, path: &[u8], out: &mut [u8; 64]) -> Result<(dkrt_abi::storage::Stat, usize), i32> {
+        crate::storage_adapter::stat_head(root, &self.storage_facts(), path, out)
+    }
     unsafe fn read_range(&self, root: u32, path: &[u8], offset: u32, out: &mut [u8]) -> Result<usize, i32> {
         crate::storage_adapter::read_range(root, &self.storage_facts(), path, offset, out)
     }

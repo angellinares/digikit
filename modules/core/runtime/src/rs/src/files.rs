@@ -5,6 +5,10 @@
 //! at most `MAX_LISTINGS` exist at once across all modules. No lock/model borrow
 //! spans firmware calls or module callbacks. DT2 calls can block; one operation is
 //! not a latency bound. The storage routes are in storage_adapter.rs.
+//!
+//! A consumer that does not poll (and is not notified) for `EXPIRE_BLOCKS` firmware blocks (10 s of emulated time at 1500 blocks a second) has abandoned
+//! its listing: the next tick frees the block and cancels the request, and the client's next `poll` of that ticket gives `E_LOST` (the closest existing
+//! code; there is no timeout code). A request of the same client replaces the expired state. Without a block counter nothing expires.
 use core::ptr::{addr_of, addr_of_mut, null_mut};
 use dkrt_abi::platform::Platform;
 use dkrt_abi::storage::{DirEntry, EntryKind, ListStep, Storage};
@@ -28,12 +32,15 @@ struct ClientInfo {
     ticket: u32,
     notify: Option<FilesEventFn>,
     context: *mut u8,
+    /// The listing of `ticket` was abandoned and freed: `poll` of it gives `E_LOST` until a new request or a cancel.
+    expired: bool,
 }
 const INFO: ClientInfo = ClientInfo {
     handle: 0,
     ticket: 0,
     notify: None,
     context: core::ptr::null_mut(),
+    expired: false,
 };
 static mut JOBS: Broker<{ crate::MAX_MODULES }, Request, FileEntry> = Broker::new();
 static mut INFO_ROWS: [ClientInfo; crate::MAX_MODULES] = [INFO; crate::MAX_MODULES];
@@ -129,13 +136,17 @@ pub unsafe fn list(
 
 /// Most listings at once, across all modules.
 const MAX_LISTINGS: usize = 2;
+/// Firmware blocks without a poll or notification after which a listing is abandoned (10 s at 1500 blocks a second).
+const EXPIRE_BLOCKS: u32 = 15000;
 
 /// The state of one listing, in front of the provider's state in one arena block. The header is 16 bytes, so the provider state that follows is
 /// 16-byte aligned. `busy` is set while a tick step uses the block (under `locked`); a block is freed only when it is not busy, else the step frees it.
+/// `seen` is the block count at the start or at the last poll or notification of the consumer (0 without a counter).
 #[repr(C, align(16))]
 struct Listing {
     owner: u32,
     ticket: u32,
+    seen: u32,
     opened: bool,
     dead: bool,
     busy: bool,
@@ -155,9 +166,12 @@ unsafe fn give(p: *mut u8) {
 static mut TEST_LIVE: usize = 0;
 #[cfg(test)]
 static mut TEST_NOMEM: bool = false;
+/// Most blocks the test arena holds at once.
+#[cfg(test)]
+static mut TEST_CAP: usize = usize::MAX;
 #[cfg(test)]
 unsafe fn take(bytes: usize) -> *mut u8 {
-    if TEST_NOMEM {
+    if TEST_NOMEM || TEST_LIVE >= TEST_CAP {
         return null_mut();
     }
     let base = std::alloc::alloc_zeroed(std::alloc::Layout::from_size_align(bytes + 16, 16).unwrap());
@@ -234,15 +248,17 @@ pub unsafe fn list_with<P: Platform + Storage>(
             Some(owner) => owner,
             None => return E_NOT_FOUND,
         };
-        // A new request replaces the one of this client: its listing is freed after `begin` took the new request. A slot is free, or the old
-        // listing's (when no step uses it); else E_BUSY.
+        // A new request replaces the one of this client: its old listing is released first (when a step uses it, it is marked and the step frees it).
+        // Then a slot and memory must be free, else E_BUSY or E_NOMEM (the old request then ends with an error).
         let old = LISTINGS
             .iter()
             .position(|&l| !l.is_null() && (*l).owner == owner as u32 && !(*l).dead);
-        let slot = match (LISTINGS.iter().position(|l| l.is_null()), old) {
-            (Some(i), _) => i,
-            (None, Some(i)) if !(*LISTINGS[i]).busy => i,
-            _ => return E_BUSY,
+        if let Some(i) = old {
+            kill(i);
+        }
+        let slot = match LISTINGS.iter().position(|l| l.is_null()) {
+            Some(i) => i,
+            None => return E_BUSY,
         };
         let block = take(core::mem::size_of::<Listing>() + p.list_state_bytes(root));
         if block.is_null() {
@@ -250,13 +266,11 @@ pub unsafe fn list_with<P: Platform + Storage>(
         }
         match jobs.begin(Handle::from_id(client), request) {
             Ok(ticket) => {
-                if let Some(i) = old {
-                    kill(i);
-                }
                 let l = block as *mut Listing;
                 l.write(Listing {
                     owner: owner as u32,
                     ticket: ticket.id(),
+                    seen: p.blocks().unwrap_or(0),
                     opened: false,
                     dead: false,
                     busy: false,
@@ -267,6 +281,7 @@ pub unsafe fn list_with<P: Platform + Storage>(
                     ticket: ticket.id(),
                     notify: request.notify,
                     context: request.context,
+                    expired: false,
                 };
                 ticket.id() as i32
             }
@@ -278,6 +293,9 @@ pub unsafe fn list_with<P: Platform + Storage>(
     })
 }
 pub unsafe fn poll(client: u32, ticket: u32, out: *mut u8, capacity: u32) -> i32 {
+    poll_with(&crate::PLATFORM, client, ticket, out, capacity)
+}
+pub(crate) unsafe fn poll_with<P: Platform>(p: &P, client: u32, ticket: u32, out: *mut u8, capacity: u32) -> i32 {
     // Validate before consuming even if no row is currently available.
     if out.is_null()
         || capacity < core::mem::size_of::<FileEntry>() as u32
@@ -286,6 +304,12 @@ pub unsafe fn poll(client: u32, ticket: u32, out: *mut u8, capacity: u32) -> i32
         return E_FORMAT;
     }
     let result = locked(|jobs| {
+        // An abandoned listing (freed by `tick`) answers its ticket with `E_LOST`.
+        if INFO_ROWS.iter().any(|row| {
+            row.expired && row.handle == client && client != 0 && row.ticket == ticket && ticket != 0
+        }) {
+            return Err(E_LOST);
+        }
         if SCHED_ERROR != 0 {
             return Err(
                 if INFO_ROWS.iter().any(|row| {
@@ -297,7 +321,11 @@ pub unsafe fn poll(client: u32, ticket: u32, out: *mut u8, capacity: u32) -> i32
                 },
             );
         }
-        jobs.poll(Handle::from_id(client), Ticket::from_id(ticket))
+        let polled = jobs.poll(Handle::from_id(client), Ticket::from_id(ticket));
+        if polled.is_ok() {
+            touch(ticket, p.blocks());
+        }
+        polled
     });
     match result {
         Ok(Poll::Pending) => 0,
@@ -309,9 +337,27 @@ pub unsafe fn poll(client: u32, ticket: u32, out: *mut u8, capacity: u32) -> i32
         Ok(Poll::Error(error)) | Err(error) => error,
     }
 }
+/// The consumer of the listing of `ticket` polled or was notified at block count `now`. Under `locked`.
+unsafe fn touch(ticket: u32, now: Option<u32>) {
+    let mut i = 0;
+    while i < MAX_LISTINGS {
+        let l = LISTINGS[i];
+        if !l.is_null() && (*l).ticket == ticket && !(*l).dead {
+            (*l).seen = now.unwrap_or(0);
+        }
+        i += 1;
+    }
+}
 pub unsafe fn cancel(client: u32, ticket: u32) -> i32 {
-    locked(
-        |jobs| match jobs.cancel(Handle::from_id(client), Ticket::from_id(ticket)) {
+    locked(|jobs| {
+        // The request of an abandoned listing is already cancelled: this clears the expired state.
+        if let Some(row) = INFO_ROWS.iter_mut().find(|row| {
+            row.expired && row.handle == client && client != 0 && row.ticket == ticket && ticket != 0
+        }) {
+            *row = ClientInfo { handle: client, ..INFO };
+            return OK;
+        }
+        match jobs.cancel(Handle::from_id(client), Ticket::from_id(ticket)) {
             Ok(()) => {
                 let mut i = 0;
                 while i < MAX_LISTINGS {
@@ -331,8 +377,8 @@ pub unsafe fn cancel(client: u32, ticket: u32) -> i32 {
                 OK
             }
             Err(error) => error,
-        },
-    )
+        }
+    })
 }
 
 /// One step of the listing `l` of request `request`: open it on the first step, then one `list_next`. `Pending` (also the store lock taken, `E_BUSY`)
@@ -411,12 +457,24 @@ pub(crate) unsafe fn tick_with<P: Platform + Storage>(p: &P) {
         return;
     }
     // Listings that were marked while a step used them and are idle now (no step runs between here and the loop).
-    locked(|_| {
+    // Listings whose consumer did not poll for `EXPIRE_BLOCKS` are abandoned: the request is cancelled, the block freed, and the client's `poll` answers `E_LOST`.
+    let now = p.blocks();
+    locked(|jobs| {
         let mut i = 0;
         while i < MAX_LISTINGS {
             let l = LISTINGS[i];
             if !l.is_null() && (*l).dead && !(*l).busy {
                 release(i);
+            } else if !l.is_null() && !(*l).dead {
+                if now.map_or(false, |now| now.wrapping_sub((*l).seen) >= EXPIRE_BLOCKS) {
+                    let owner = (*l).owner as usize;
+                    let ticket = (*l).ticket;
+                    let _ = jobs.cancel(Handle::from_id(INFO_ROWS[owner].handle), Ticket::from_id(ticket));
+                    INFO_ROWS[owner].expired = true;
+                    INFO_ROWS[owner].notify = None;
+                    INFO_ROWS[owner].context = null_mut();
+                    kill(i);
+                }
             }
             i += 1;
         }
@@ -487,6 +545,7 @@ pub(crate) unsafe fn tick_with<P: Platform + Storage>(p: &P) {
                 let _ = jobs.finish_event(lease);
                 return None;
             }
+            touch(lease.ticket.id(), p.blocks());
             Some((lease, info.notify, info.context))
         });
         let called = event.is_some();
@@ -542,6 +601,7 @@ mod tests {
         LISTINGS = [null_mut(); MAX_LISTINGS];
         TEST_LIVE = 0;
         TEST_NOMEM = false;
+        TEST_CAP = usize::MAX;
     }
     /// A module record with a listing client, as `client` gives it in `init`.
     unsafe fn attach(owner: usize) -> u32 {
@@ -563,7 +623,7 @@ mod tests {
             tick_with(p);
             loop {
                 let mut e = FileEntry::empty();
-                match poll(client, ticket as u32, addr_of_mut!(e) as *mut u8, 304) {
+                match poll_with(p, client, ticket as u32, addr_of_mut!(e) as *mut u8, 304) {
                     1 => out.push(e),
                     2 => return out,
                     0 => break,
@@ -684,6 +744,59 @@ mod tests {
             assert_eq!(start(&f, h, SAMPLES, b"KICKS"), E_NOMEM);
             TEST_NOMEM = false;
             assert_eq!(TEST_LIVE, 0);
+        }
+    }
+
+    #[test]
+    fn a_client_replaces_its_own_request_when_the_arena_holds_one_block() {
+        let _g = LOCK.lock().unwrap_or_else(|e| e.into_inner());
+        unsafe {
+            reset();
+            let f = fixture(profiles::DN2);
+            let h = attach(0);
+            TEST_CAP = 1;
+            let first = start(&f, h, SAMPLES, b"KICKS");
+            assert!(first > 0);
+            let second = start(&f, h, STORE, b"modules");
+            assert!(second > 0);
+            assert_eq!(TEST_LIVE, 1);
+            let mut e = FileEntry::empty();
+            assert_eq!(poll(h, first as u32, addr_of_mut!(e) as *mut u8, 304), E_NOT_FOUND);
+            assert_eq!(rows(&f, h, second), modules());
+            assert_eq!(TEST_LIVE, 0);
+        }
+    }
+
+    #[test]
+    fn a_listing_nobody_polls_for_10_s_is_freed_and_its_poll_gives_e_lost() {
+        let _g = LOCK.lock().unwrap_or_else(|e| e.into_inner());
+        unsafe {
+            reset();
+            let f = fixture(profiles::DN2);
+            let h = attach(0);
+            f.clock.set(Some(1000));
+            let t = start(&f, h, SAMPLES, b"KICKS");
+            assert!(t > 0);
+            tick_with(&f); // a row waits for the consumer
+            // a poll restarts the 10 s
+            f.clock.set(Some(1000 + EXPIRE_BLOCKS - 1000));
+            let mut e = FileEntry::empty();
+            assert_eq!(poll_with(&f, h, t as u32, addr_of_mut!(e) as *mut u8, 304), 1);
+            tick_with(&f);
+            f.clock.set(Some(1000 + EXPIRE_BLOCKS - 1000 + EXPIRE_BLOCKS - 1));
+            tick_with(&f);
+            assert_eq!(TEST_LIVE, 1, "not yet 10 s without a poll");
+            f.clock.set(Some(1000 + EXPIRE_BLOCKS - 1000 + EXPIRE_BLOCKS));
+            tick_with(&f);
+            assert_eq!(TEST_LIVE, 0);
+            assert_eq!(poll_with(&f, h, t as u32, addr_of_mut!(e) as *mut u8, 304), E_LOST);
+            assert_eq!(poll_with(&f, h, t as u32, addr_of_mut!(e) as *mut u8, 304), E_LOST);
+            assert_eq!(cancel(h, t as u32), OK);
+            assert_eq!(poll_with(&f, h, t as u32, addr_of_mut!(e) as *mut u8, 304), E_NOT_FOUND);
+            // a new request works again
+            let t = start(&f, h, STORE, b"modules");
+            assert!(t > 0);
+            assert_eq!(rows(&f, h, t), modules());
         }
     }
 

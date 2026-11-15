@@ -65,6 +65,14 @@ pub trait Storage {
     unsafe fn stat(&self, root: u32, path: &[u8]) -> Result<Stat, i32>;
     /// The first 64 bytes of a file.
     unsafe fn read_head(&self, root: u32, path: &[u8], out: &mut [u8; 64]) -> Result<(), i32>;
+    /// `stat` and `read_head` of a file with one lookup (one find or open). A path that is not a file gives its `Stat` and 0 head bytes; for a file, `out`
+    /// holds the first 64 bytes (zero padded) and the count is the bytes of the file in it. Errors are those of `read_head`.
+    unsafe fn stat_head(
+        &self,
+        root: u32,
+        path: &[u8],
+        out: &mut [u8; 64],
+    ) -> Result<(Stat, usize), i32>;
     /// Read up to `out.len()` bytes from `offset`; the count read (0 at or past the end).
     unsafe fn read_range(
         &self,

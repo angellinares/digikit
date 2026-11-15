@@ -238,6 +238,9 @@ impl Storage for FakePlatform {
     unsafe fn read_head(&self, root: u32, path: &[u8], out: &mut [u8; 64]) -> Result<(), i32> {
         self.storage.read_head(root, path, out)
     }
+    unsafe fn stat_head(&self, root: u32, path: &[u8], out: &mut [u8; 64]) -> Result<(Stat, usize), i32> {
+        self.storage.stat_head(root, path, out)
+    }
     unsafe fn read_range(&self, root: u32, path: &[u8], offset: u32, out: &mut [u8]) -> Result<usize, i32> {
         self.storage.read_range(root, path, offset, out)
     }

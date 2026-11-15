@@ -259,9 +259,48 @@ pub(crate) unsafe fn read_head(root: u32, f: &Facts, path: &[u8], out: &mut [u8;
     })
 }
 
-/// Read up to `out.len()` bytes from `offset`. Store: one lookup, then one store sector read at a time (`store::read_sector` takes the store lock for each
-/// sector, the same lock every store read takes, and waits for it as `store_writer::acquire` does); the table's file hash is not checked (only
-/// `read_all` does). DT2: the firmware file system has no seek in the device table, so the bytes before `offset` are read and dropped (cost grows
+/// `stat` and `read_head` with one lookup: the store route does one `store::find` and reads the head of that entry; the DT2 route opens the file once, takes
+/// its size and metadata and reads 64 bytes. The root itself (empty path) gives its `Stat` and 0 head bytes; a folder does not open on either route. The head
+/// count is `min(size, 64)` on the store route and 64 on DT2. Errors are those of `read_head`.
+pub(crate) unsafe fn stat_head(root: u32, f: &Facts, path: &[u8], out: &mut [u8; 64]) -> Result<(Stat, usize), i32> {
+    let r = prepare(root, f, path)?;
+    if path.is_empty() {
+        return Ok((dir_stat(), 0));
+    }
+    if r == Route::Store {
+        let mut z = [0u8; PATH_BYTES];
+        store_key(root, path, &mut z)?;
+        let file = crate::store::find(z.as_ptr())?;
+        let st = Stat { kind: EntryKind::File, size: file.size, hash_kind: HASH_ELEKTRON32, hash_valid: true, hash: file.sha };
+        crate::store::read_head(&file, out)?;
+        return Ok((st, core::cmp::min(file.size, 64) as usize));
+    }
+    let mut z = [0u8; 258];
+    fs_key(path, &mut z)?;
+    let fs = fs_table()?;
+    fs_with(&fs, &z, |fs, handle| {
+        let size = fs_size(fs, handle)?;
+        let mut st = Stat { kind: EntryKind::File, size, hash_kind: HASH_NONE, hash_valid: false, hash: [0; 32] };
+        if let Some(meta) = fs.meta {
+            let mut values = [0u32; 4];
+            if meta(handle[0], values.as_mut_ptr()) == 0 && values[2] == size {
+                st.hash_kind = HASH_ELEKTRON32;
+                st.hash_valid = true;
+                st.hash = fs_hash(&values);
+            }
+        }
+        if size < 64 {
+            return Err(E_READ);
+        }
+        fs_read_exact(fs, handle, out.as_mut_ptr(), 64).map_err(|_| E_READ)?;
+        Ok((st, 64))
+    })
+}
+
+/// Read up to `out.len()` bytes from `offset`. Store: one lookup that also leases the file's extent (`store::lease`, owner 0) for the whole read, so a commit
+/// cannot give its sectors to another file between two sector reads; the lease ends on every exit path. Then one store sector read at a time
+/// (`store::read_sector` takes the store lock for each sector, the same lock every store read takes, and waits for it as `store_writer::acquire` does);
+/// the table's file hash is not checked (only `read_all` does). DT2: the firmware file system has no seek in the device table, so the bytes before `offset` are read and dropped (cost grows
 /// with `offset`).
 pub(crate) unsafe fn read_range(root: u32, f: &Facts, path: &[u8], offset: u32, out: &mut [u8]) -> Result<usize, i32> {
     let r = prepare(root, f, path)?;
@@ -271,25 +310,33 @@ pub(crate) unsafe fn read_range(root: u32, f: &Facts, path: &[u8], offset: u32, 
     if r == Route::Store {
         let mut z = [0u8; PATH_BYTES];
         store_key(root, path, &mut z)?;
-        let file = crate::store::find(z.as_ptr())?;
-        if offset >= file.size || out.is_empty() {
-            return Ok(0);
+        let mut file = dkrt_sdk::DkrtStoreFile { first: 0, size: 0, sha: [0; 32] };
+        let id = crate::store::lease(0, z.as_ptr(), &mut file);
+        if id <= 0 {
+            return Err(if id == 0 { E_NOT_FOUND } else { id });
         }
-        let n = core::cmp::min(out.len(), (file.size - offset) as usize);
-        let mut sector = Sector([0; 512]);
-        let mut done = 0usize;
-        while done < n {
-            let at = offset as usize + done;
-            let within = at % 512;
-            let take = core::cmp::min(512 - within, n - done);
-            let rc = crate::store::read_sector(file.first + (at / 512) as u32, sector.0.as_mut_ptr());
-            if rc != OK {
-                return Err(rc);
+        let result = (|| {
+            if offset >= file.size || out.is_empty() {
+                return Ok(0);
             }
-            out[done..done + take].copy_from_slice(&sector.0[within..within + take]);
-            done += take;
-        }
-        return Ok(n);
+            let n = core::cmp::min(out.len(), (file.size - offset) as usize);
+            let mut sector = Sector([0; 512]);
+            let mut done = 0usize;
+            while done < n {
+                let at = offset as usize + done;
+                let within = at % 512;
+                let take = core::cmp::min(512 - within, n - done);
+                let rc = crate::store::read_sector(file.first + (at / 512) as u32, sector.0.as_mut_ptr());
+                if rc != OK {
+                    return Err(rc);
+                }
+                out[done..done + take].copy_from_slice(&sector.0[within..within + take]);
+                done += take;
+            }
+            Ok(n)
+        })();
+        crate::store::dkrt_store_unlease(id);
+        return result;
     }
     let mut z = [0u8; 258];
     fs_key(path, &mut z)?;
@@ -349,6 +396,8 @@ const TAG_STORE: u32 = 0x5354_0001;
 #[repr(C)]
 struct Dt2List {
     tag: u32,
+    /// The firmware's `next` has given the end: later calls give `End` without calling it.
+    ended: bool,
     dir_state: [u32; 4],
     out: [u8; 0x114],
     path: [u8; 258],
@@ -395,6 +444,7 @@ pub(crate) unsafe fn list_open(root: u32, f: &Facts, dir: &[u8], state: *mut u8)
     }
     let l = state as *mut Dt2List;
     addr_of_mut!((*l).tag).write(0);
+    addr_of_mut!((*l).ended).write(false);
     addr_of_mut!((*l).dir_state).write([0; 4]);
     addr_of_mut!((*l).out).write([0; 0x114]);
     addr_of_mut!((*l).path).write([0; 258]);
@@ -451,6 +501,9 @@ pub(crate) unsafe fn list_next(state: *mut u8, out: &mut DirEntry) -> Result<Lis
         return Err(E_FORMAT);
     }
     let l = &mut *(state as *mut Dt2List);
+    if l.ended {
+        return Ok(ListStep::End);
+    }
     let table = addr_of!(dkrt_files_fs) as *const u32;
     let (next, meta) = (read_volatile(table.add(1)), read_volatile(table.add(2)));
     if next == 0 || meta == 0 {
@@ -463,6 +516,7 @@ pub(crate) unsafe fn list_next(state: *mut u8, out: &mut DirEntry) -> Result<Lis
         buf.fill(0);
         let rc = next(l.dir_state.as_mut_ptr(), buf.as_mut_ptr());
         if rc == 0 {
+            l.ended = true;
             return Ok(ListStep::End);
         }
         if rc < 0 {
@@ -651,6 +705,14 @@ mod tests {
         assert!(n >= core::mem::size_of::<StoreList>());
         assert_eq!(n % 16, 0);
         assert!(core::mem::align_of::<Dt2List>() <= 16 && core::mem::align_of::<StoreList>() <= 16);
+    }
+
+    #[test]
+    fn an_ended_dt2_listing_gives_end_without_the_firmware() {
+        let mut l = Dt2List { tag: TAG_FS, ended: true, dir_state: [0; 4], out: [0; 0x114], path: [0; 258] };
+        let mut e = DirEntry::empty();
+        let r = unsafe { list_next(&mut l as *mut Dt2List as *mut u8, &mut e) };
+        assert!(matches!(r, Ok(ListStep::End)));
     }
 
     #[test]
