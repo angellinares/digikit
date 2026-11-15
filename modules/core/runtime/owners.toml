@@ -1,0 +1,69 @@
+# Owners of the items of runtime.dko.json (`patchkit owners`, docs/TESTING.md "Owner hashes"; plan: docs/plans/test-architecture.md, T1e).
+#
+# A tag lists the module path prefixes of the Rust items it owns; the longest prefix at a `::` boundary wins. Every Rust item must
+# match one prefix, or `patchkit owners` fails and names the module paths that lack an owner. A C symbol (an exported `#[no_mangle]`
+# function) is shared; an anonymous constant (a string, a vtable, a table) belongs to the owner of the items that use it, or is shared.
+#
+# `S:` tags are services and are removed when the service becomes a `.dks` file (R12-4 fx, R12-5 machines); `C:` tags stay.
+# When unsure, put a path in `shared`: a wider owner only reruns more tests.
+
+shared = [
+  "core",              # the standard library, and the primitive types
+  "compiler_builtins",
+  "__rustc",
+  "dkrt_abi",          # the platform, storage and service contracts
+  "dkrt_sdk",          # SDK types and the store, settings and sample logic that the core and the SDK share
+  "dkfw",
+  "dkneeds",
+  "dkrt::lib",
+  "dkrt::state",
+  "dkrt::api",
+  "dkrt::core_api",
+  "dkrt::entry",       # the `dk_*` SDK entry points that modules call
+  "dkrt::platform",
+  "dkrt::mailbox",
+  "dkrt::handlers",
+  "dkrt::gen_services",
+  "dkrt::imports",
+  "dkrt::services",    # the service table and its record helpers; each service is below
+  "dkrt::arena",
+  "dkrt::hash32",
+  "dkrt::sha256",
+  "dkrt::worker",
+  "dkrt::speed",
+  "dkrt::imp_param_get",
+  "dkrt::imp_param_set",
+  "dkrt::debug_selected_params",
+]
+
+"S:fx" = ["dkrt_svc_fx"]
+"S:machines" = ["dkrt::services::machines"]
+"S:samples" = ["dkrt::services::samples"]
+"S:lfo" = ["dkrt::services::lfo"]
+
+"C:state" = ["dkrt::settings", "dkrt::selection"]
+"C:boot" = ["dkrt::boot", "dkrt::intro", "dkrt::safe_mode", "dkrt::safe_screen"]
+"C:loading" = [
+  "dkrt::loader",
+  "dkrt::plan",
+  "dkrt::scan",
+  "dkrt::collect",
+  "dkrt::assign",
+  "dkrt::registry",
+  "dkrt::params",
+  "dkrt::invariants",
+  "dkrt_fit",
+]
+"C:dsp" = ["dkrt::dsp", "dkrt::link", "dkrt_link"]
+"C:storage" = [
+  "dkrt::store",
+  "dkrt::store_writer",
+  "dkrt::storage_adapter",
+  "dkrt::files",
+  "dkrt::card",
+  "dkrt::io",
+  "dkrt::aux",
+]
+"C:transport" = ["dkrt::transport", "dkrt::store_cmds", "dkrt::module_cmds", "dkrt::admin_cmds"]
+"C:diagnostics" = ["dkrt::dlog", "dkrt::fault", "dkrt::report", "dkrt::watch", "dkrt::health"]
+"C:tick" = ["dkrt::tick"]

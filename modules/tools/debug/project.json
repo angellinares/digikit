@@ -5,6 +5,7 @@
     "runtimeAcceptance": [
       {
         "files": ["tests/debug-module.device.test.ts"],
+        "tags": ["M:digikit/debug"],
         "modules": ["digikit/probe", "digikit/remote", "test/dyn-params"]
       }
     ]
