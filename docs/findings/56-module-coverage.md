@@ -37,7 +37,7 @@ Codes per device cell:
 | machine with DSP | Gq, Gr, H | Gq, Gr | digikit/pluck: equiv-dyn-pluck, pages-dyn-pluck, menu-dkrun-pluck; machine conformance; device: finding 47 rung C4, rt020, rt021 |
 | machine, data only | Gf | Gq | test/dyn-xslice (equiv-dyn-xslice, DT2); test/dyn-dn2 and test/sine (equiv-dn2-set, DN2) |
 | fx (run-time) | N | N | P3d-1b; `[contract] fx` is [0, 0] |
-| fx (patched in, through core/fx) | Gs, Gr, P | Gr, P | test/fx-gain: smoke cell DT2 only, tests/modules/test_fx_conformance.py, pk_proof_fx |
+| fx (patched in, through core/fx) | Gs, Gr, P | Gr, P | test/fx-gain: smoke cell DT2 only, packages/sharc-rig-kit/conformance/fx.test.ts, pk_proof_fx |
 | raw ColdFire code (asm) | Gq, Gf | Gq, Gf | test/dyn-demo (memaudit-dt2/dn2, equiv-dyn-demo), test/dyn-fault, test/dyn-crash |
 | raw ColdFire code (C) | Gq, Gf | Gq, Gf | test/c-demo (memaudit, equiv-c-demo) |
 | raw ColdFire code (Rust) | Gf | Gf | upload-rust; test/rust-demo is patched in (smoke cell DT2 only) |

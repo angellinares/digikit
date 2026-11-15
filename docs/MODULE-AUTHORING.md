@@ -544,7 +544,7 @@ Registers:
 Memory: your code may write `in->out`, its own voice's state, its data stack (`stack_bytes`) and the data and bss of its own object. Data and bss
 are shared by all voices. State that differs per voice goes in `state`. The conformance suite records every store and fails on any other.
 
-The template `src/dsp/NAME.s` shows all of this in about 90 lines. Read it first. Pitch tests: `tests/patchkit/test_sine.py`.
+The template `src/dsp/NAME.s` shows all of this in about 90 lines. Read it first. Pitch checks: `tests/fixtures/modules/sine/tests/rig/sine.toml` (docs/TESTING.md "Sound checks").
 
 
 ### 7.2 Effect (`<dk/gen/fx.h>`)
@@ -594,8 +594,8 @@ The template `src/dsp/NAME.s` shows all of this in about 90 lines. Read it first
   accumulator for anything that must not drift.
 - Fixtures: `tests/fixtures/modules/dyn-fx-gain` (insert), `dyn-fx-gain-send`, `dyn-fx-gain-both`, `dyn-fx-gain-sendonly`. A real effect with a
   float32 reference model: `modules/fx/freqshift`.
-- The instruction budget of the conformance suite is `pk_conform.fx_budget()` (about 31,000 for the effect today, 900 for the adapter). Read it
-  from the report (`-rA`). The worst call it measures is written as `dsp_cost_fx`.
+- The instruction budget of the conformance suite is `patchkit budget` (about 31,000 for the effect today, 900 for the adapter). Read it
+  from the report in `out/runs/conformance-rig`. The worst call it measures is written as `dsp_cost_fx`.
 
 
 ### 7.3 Entry point and services (`<dk/core/module.h>`)
@@ -733,12 +733,12 @@ wait. The request body is at most 160 bytes. The reply body is at most 879 bytes
 
 Every task takes `-- --help`. Hardware is a deliberate step: do not flash a device from these commands.
 
-`module:check` runs one pytest process. What it runs depends on the kind:
+`module:check` runs the conformance suite on the SHARC-only rig, then one pytest process for the module's own tests. What it runs depends on the kind:
 
 | Kind | What `module:check` runs |
 | --- | --- |
-| `machine` | `tests/modules/test_machine_conformance.py` on both devices, or on one with `--device`. Every parameter at its limits, many notes, modulation, long notes and retriggers. The write-set check is part of it. |
-| `fx` | `tests/modules/test_fx_conformance.py`: signals, parameter limits, modulation, switching and a long run. It checks returns, registers, the write set and the instruction budget. |
+| `machine` | The machine conformance of `packages/sharc-rig-kit` on both devices, or on one with `--device`. Every parameter at its limits, many notes, modulation, long notes and retriggers. The write-set check is part of it. |
+| `fx` | The effect conformance of the kit: signals, parameter limits, modulation, switching and a long run. It checks returns, registers, the write set and the instruction budget. |
 | `service` (tool) | No conformance suite. It checks the objects against their sources. |
 | machine and effect | Also runs `init` in the emulator and writes `[uses.dt2]`, `[uses.dn2]` and `build/gen/gallery.json`. |
 | all | The module's own tests: `tests/**/test_*.py` of the module, and the digikit test files of the kinds of its `tests/scenarios/*.toml`, limited to those scenarios. These may build or launch an emulator. |

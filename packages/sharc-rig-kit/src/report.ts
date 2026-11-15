@@ -1,5 +1,5 @@
 /**
- * The report of a conformance run, in the JSON shape the Python workers wrote (out/runs/conformance/<id>@<device>.json, `<id>@fx.json`):
+ * The report of a conformance run, in the JSON shape the retired Python workers wrote (<id>@<device>.json, `<id>@fx.json`):
  * `module:check` reads `cases[].steady` to write `dsp_cost_voice` and `dsp_cost_fx`.
  */
 import { mkdirSync, writeFileSync } from 'node:fs';
@@ -37,7 +37,7 @@ export interface FxReport {
 
 export const RUNNER = 'sharc-rig-kit';
 
-/** The directory of the reports: `DIGI_CONFORM_REPORTS`, else out/runs/conformance-rig (the Python suite keeps out/runs/conformance). */
+/** The directory of the reports: `DIGI_CONFORM_REPORTS`, else out/runs/conformance-rig. */
 export const reportsDir = (): string => process.env.DIGI_CONFORM_REPORTS || path.join(ROOT, 'out/runs/conformance-rig');
 
 /** The file name of a report: `<id with / as __>@<device or fx>.json`. */

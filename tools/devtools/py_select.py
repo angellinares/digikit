@@ -65,22 +65,6 @@ PY_SUITES: tuple[tuple[str, tuple[str, ...], tuple[str, ...]], ...] = (
         ("tests/patchkit",),
     ),
     (
-        "machine-conformance",
-        (
-            "tools/patchkit/pk_conform.py",
-            "tools/patchkit/pk_modcheck.py",
-            "tools/patchkit/pk_sharc.py",
-            "tests/support/machine_rig.py",
-            "tests/support/conform_worker.py",
-            "tests/support/dsp_voice_rig.py",
-            "tests/support/fx_rig.py",
-            "tests/support/fx_conform_worker.py",
-            "tests/support/fx_effects.s",
-            "tests/modules/",
-        ),
-        ("tests/modules",),
-    ),
-    (
         # the tests inside the modules (modules/<group>/<name>/tests/test_*.py): found by globbing, so a new module test needs no entry;
         # a change in a module selects its own tests through the Nx module projects
         "module-tests",
@@ -592,7 +576,7 @@ def python_tests_command(
         *cmd,
         "--timeout",
         "3600",
-    ]  # catches hangs, not slow files (test_pluck.py takes ~450 s alone)
+    ]  # catches hangs, not slow files
     return [*cmd, "--jobs", str(jobs if jobs is not None else python_jobs()), *files]
 
 
