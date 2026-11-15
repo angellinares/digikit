@@ -235,7 +235,7 @@ pub(crate) unsafe fn stat(root: u32, f: &Facts, path: &[u8]) -> Result<Stat, i32
     })
 }
 
-/// The first 64 bytes. Store: `store::read_head` (a file of size 0 is `E_FORMAT`). DT2: a file under 64 bytes or a short read is `E_READ`.
+/// The first 64 bytes. A file under 64 bytes (0 included) or a short read is `E_READ` on both routes.
 pub(crate) unsafe fn read_head(root: u32, f: &Facts, path: &[u8], out: &mut [u8; 64]) -> Result<(), i32> {
     let r = prepare(root, f, path)?;
     if path.is_empty() {
@@ -261,7 +261,7 @@ pub(crate) unsafe fn read_head(root: u32, f: &Facts, path: &[u8], out: &mut [u8;
 
 /// `stat` and `read_head` with one lookup: the store route does one `store::find` and reads the head of that entry; the DT2 route opens the file once, takes
 /// its size and metadata and reads 64 bytes. The root itself (empty path) gives its `Stat` and 0 head bytes; a folder does not open on either route. The head
-/// count is `min(size, 64)` on the store route and 64 on DT2. Errors are those of `read_head`.
+/// count of a success is 64 (a file under 64 bytes is `E_READ`, as in `read_head`). Errors are those of `read_head`.
 pub(crate) unsafe fn stat_head(root: u32, f: &Facts, path: &[u8], out: &mut [u8; 64]) -> Result<(Stat, usize), i32> {
     let r = prepare(root, f, path)?;
     if path.is_empty() {
@@ -273,7 +273,7 @@ pub(crate) unsafe fn stat_head(root: u32, f: &Facts, path: &[u8], out: &mut [u8;
         let file = crate::store::find(z.as_ptr())?;
         let st = Stat { kind: EntryKind::File, size: file.size, hash_kind: HASH_ELEKTRON32, hash_valid: true, hash: file.sha };
         crate::store::read_head(&file, out)?;
-        return Ok((st, core::cmp::min(file.size, 64) as usize));
+        return Ok((st, 64));
     }
     let mut z = [0u8; 258];
     fs_key(path, &mut z)?;

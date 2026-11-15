@@ -748,7 +748,7 @@ mod tests {
             assert_eq!(&head[..4], [3, 3, 3, 3]);
             assert_eq!(probe_with(&f, b"samples/KICKS/none", None), Err(E_NOT_FOUND));
             assert_eq!(probe_with(&f, b"samples/", None), Err(E_SEL_PATH));
-            assert_eq!(probe_with(&f, b"samples/KICKS/SUB", None), Err(E_SEL_PATH), "a folder is no sample");
+            assert_eq!(probe_with(&f, b"samples/KICKS/SUB", None), Err(E_NOT_FOUND), "a folder is no sample (it does not open as a file)");
         }
     }
 
