@@ -5,7 +5,11 @@
    with interrupts masked: short, no waiting, no logging, no imports.
 
    DK_SINK_LOG: `void sink(const dk_log_ev *e)`, every event the runtime logs, before any filter.
-   DK_SINK_SPAN: `void sink(const dk_span *s)`, one record per measured span. Without a sink a producer pays one flag test. */
+   DK_SINK_SPAN: `void sink(const dk_span *s)`, one record per measured span. Without a sink a producer pays one flag test.
+
+   dk_span_sink_set(emit, clock) takes the span channel like dk_sink_set(DK_SINK_SPAN, emit) and also stores the clock, `uint32_t clock(void)`, a counter
+   that wraps. The runtime measures a span only while both are set; it reads the clock before and after the measured code and passes the difference as
+   `cycles`. (0, 0) clears both. DK_E_BUSY when another module owns the channel. */
 #ifndef DK_SINK_H
 #define DK_SINK_H
 #include <dk/core/module.h>

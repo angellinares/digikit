@@ -9,14 +9,18 @@ use crate::error::*;
 use crate::link;
 use std::collections::{BTreeMap, BTreeSet};
 
-pub const MAGIC: u32 = 0x444b_4d46; // "DKMF"
-pub const FORMAT: u32 = 1;
+// The layout numbers are `[format]` of sdk/sdk.toml, through `dkneeds` (the runtime reads the same constants).
+pub const MAGIC: u32 = dkneeds::MAGIC;
+pub const FORMAT: u32 = dkneeds::FORMAT;
 /// The header size. The entry points are the `dk_module` record of the module (docs/plans/sdk.md section 5): `init`, `fini`, `menu` and `tick` are image
 /// offsets in the header, [`NONE`] for a missing one. The runtime calls them with a `dk_module_ctx`.
-pub const HEADER: usize = 0xa0;
-pub const NONE: u32 = 0xffff_ffff;
-pub const NAME_LEN: usize = 32;
-pub const IMPORT_LEN: usize = 32;
+pub const HEADER: usize = dkneeds::HEADER as usize;
+pub const NONE: u32 = dkneeds::NONE;
+pub const NAME_LEN: usize = dkneeds::NAME_LEN as usize;
+pub const IMPORT_LEN: usize = dkneeds::CF_IMPORT_LEN as usize;
+const CF_RELOC_LEN: usize = dkneeds::CF_RELOC_LEN as usize;
+const CF_RELOC_OFFSET: usize = dkneeds::CF_RELOC_OFFSET as usize;
+const CF_RELOC_KIND: usize = dkneeds::CF_RELOC_KIND as usize;
 /// Largest module file the v0 runtime stages (its staging buffer): `[limits.max] stage_bytes` of sdk/sdk.toml.
 pub fn max_file() -> usize {
     crate::sdkgen::limits_max().stage_bytes as usize
@@ -51,30 +55,32 @@ pub fn needs_json(f: &[u8]) -> Result<serde_json::Value> {
 }
 
 // header field offsets
-pub const H_SIZE: usize = 0x08;
-pub const H_HDRSIZE: usize = 0x0c;
-pub const H_SHA: usize = 0x10;
-pub const H_RUNTIME: usize = 0x30;
-pub const H_VERSION: usize = 0x34;
+pub const H_MAGIC: usize = dkneeds::H_MAGIC as usize;
+pub const H_FORMAT: usize = dkneeds::H_FORMAT as usize;
+pub const H_SIZE: usize = dkneeds::H_SIZE as usize;
+pub const H_HDRSIZE: usize = dkneeds::H_HDRSIZE as usize;
+pub const H_SHA: usize = dkneeds::H_SHA as usize;
+pub const H_RUNTIME: usize = dkneeds::H_RUNTIME as usize;
+pub const H_VERSION: usize = dkneeds::H_VERSION as usize;
 /// 0x38..0x40: reserved, zero (the contract pairs of earlier formats; the one version is the runtime word at 0x30).
-pub const H_RESERVED: usize = 0x38;
-pub const H_NAME: usize = 0x40;
-pub const H_IMAGE_OFF: usize = 0x60;
-pub const H_IMAGE_SIZE: usize = 0x64;
-pub const H_BSS: usize = 0x68;
-pub const H_ALIGN: usize = 0x6c;
-pub const H_RELOC_OFF: usize = 0x70;
-pub const H_RELOC_N: usize = 0x74;
-pub const H_IMPORT_OFF: usize = 0x78;
-pub const H_IMPORT_N: usize = 0x7c;
-pub const H_INIT: usize = 0x80;
-pub const H_FINI: usize = 0x84;
-pub const H_MENU: usize = 0x88;
-pub const H_TICK: usize = 0x8c;
-pub const H_REG_OFF: usize = 0x90;
-pub const H_REG_SIZE: usize = 0x94;
-pub const H_DSP_OFF: usize = 0x98;
-pub const H_DSP_SIZE: usize = 0x9c;
+pub const H_RESERVED: usize = dkneeds::H_RESERVED as usize;
+pub const H_NAME: usize = dkneeds::H_NAME as usize;
+pub const H_IMAGE_OFF: usize = dkneeds::H_IMAGE_OFF as usize;
+pub const H_IMAGE_SIZE: usize = dkneeds::H_IMAGE_SIZE as usize;
+pub const H_BSS: usize = dkneeds::H_BSS as usize;
+pub const H_ALIGN: usize = dkneeds::H_ALIGN as usize;
+pub const H_RELOC_OFF: usize = dkneeds::H_RELOC_OFF as usize;
+pub const H_RELOC_N: usize = dkneeds::H_RELOC_N as usize;
+pub const H_IMPORT_OFF: usize = dkneeds::H_IMPORT_OFF as usize;
+pub const H_IMPORT_N: usize = dkneeds::H_IMPORT_N as usize;
+pub const H_INIT: usize = dkneeds::H_INIT as usize;
+pub const H_FINI: usize = dkneeds::H_FINI as usize;
+pub const H_MENU: usize = dkneeds::H_MENU as usize;
+pub const H_TICK: usize = dkneeds::H_TICK as usize;
+pub const H_REG_OFF: usize = dkneeds::H_REG_OFF as usize;
+pub const H_REG_SIZE: usize = dkneeds::H_REG_SIZE as usize;
+pub const H_DSP_OFF: usize = dkneeds::H_DSP_OFF as usize;
+pub const H_DSP_SIZE: usize = dkneeds::H_DSP_SIZE as usize;
 /// Bit 31 of the word at [`H_RUNTIME`]: the module was built with `DK_TRACE`. The word at [`H_RUNTIME`] is the runtime version the module needs
 /// (the loader's rule: same major and minor, a patch at most the runtime's); a version never reaches this bit.
 pub const FLAG_TRACE: u32 = 1 << 31;
@@ -487,8 +493,8 @@ fn pack_inner(
         ));
     }
     let mut f = vec![0u8; total];
-    put(&mut f, 0, MAGIC);
-    put(&mut f, 4, FORMAT);
+    put(&mut f, H_MAGIC, MAGIC);
+    put(&mut f, H_FORMAT, FORMAT);
     put(&mut f, H_SIZE, total as u32);
     put(&mut f, H_HDRSIZE, HEADER as u32);
     // the runtime version the module needs: the newest `since` of its service imports, at least the version that introduced the header table,
@@ -520,8 +526,8 @@ fn pack_inner(
         f[at..at + n.len()].copy_from_slice(n.as_bytes());
     }
     for (i, (off, k)) in relocs.iter().enumerate() {
-        put(&mut f, reloc_off + i * 8, *off);
-        put(&mut f, reloc_off + i * 8 + 4, *k);
+        put(&mut f, reloc_off + i * CF_RELOC_LEN + CF_RELOC_OFFSET, *off);
+        put(&mut f, reloc_off + i * CF_RELOC_LEN + CF_RELOC_KIND, *k);
     }
     f[reg_off..reg_off + reg_size].copy_from_slice(reg);
     if !dsp.is_empty() {
@@ -955,37 +961,6 @@ mod tests {
         let j = needs_json(&f).unwrap();
         assert_eq!(j["PARAM_ROWS"], 2);
         assert_eq!(j["file_size"], f.len());
-    }
-
-    #[test]
-    fn dkneeds_reads_the_formats_the_packer_writes() {
-        // dkneeds has its own copies of the constants of the files it reads (it has no dependency): they are the packer's
-        assert_eq!(dkneeds::MAGIC, MAGIC);
-        assert_eq!(dkneeds::FORMAT, super::FORMAT);
-        assert_eq!(dkneeds::HEADER as usize, HEADER);
-        for (a, b) in [
-            (dkneeds::H_SIZE, H_SIZE),
-            (dkneeds::H_HDRSIZE, H_HDRSIZE),
-            (dkneeds::H_IMAGE_OFF, H_IMAGE_OFF),
-            (dkneeds::H_IMAGE_SIZE, H_IMAGE_SIZE),
-            (dkneeds::H_BSS, H_BSS),
-            (dkneeds::H_ALIGN, H_ALIGN),
-            (dkneeds::H_RELOC_OFF, H_RELOC_OFF),
-            (dkneeds::H_RELOC_N, H_RELOC_N),
-            (dkneeds::H_IMPORT_OFF, H_IMPORT_OFF),
-            (dkneeds::H_IMPORT_N, H_IMPORT_N),
-            (dkneeds::H_MENU, H_MENU),
-            (dkneeds::H_TICK, H_TICK),
-            (dkneeds::H_REG_OFF, H_REG_OFF),
-            (dkneeds::H_REG_SIZE, H_REG_SIZE),
-            (dkneeds::H_DSP_OFF, H_DSP_OFF),
-            (dkneeds::H_DSP_SIZE, H_DSP_SIZE),
-        ] {
-            assert_eq!(a as usize, b);
-        }
-        use crate::dkmdsp as d;
-        assert_eq!(dkneeds::DSP_MAGIC, d::MAGIC);
-        assert_eq!(dkneeds::DSP_HEADER as usize, d::HEADER);
     }
 
     #[test]

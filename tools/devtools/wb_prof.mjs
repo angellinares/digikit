@@ -5,6 +5,7 @@
 //     wb [--format json|text] module analyse MODULE.dkm DSP.dko.json
 //     wb [--format json|text] profile report FILE [--top N] [--map F]... [--image X.syx] [--loads F] [--analyse ID=MODULE.dkm:DSP.dko.json]...
 //     wb profile record --seconds N --out FILE [--image X.syx] [--run-dir DIR] [--since-boot] [--cpu cf|sharc]
+//     wb [--port SUB] [--bin PATH] profile spans [--start|--stop|--reset] [--out FILE]   (a device command, run from wb.mjs: profSpans; --start resets the counters, then starts)
 //
 // `record` reads `cf.profile` before and after N seconds and keeps the difference; `--since-boot` keeps the cumulative counters (the state of a paused emulator).
 // `--cpu sharc` records `sharc.profile` (the daemon needs the `sharc-profile` cargo feature): it starts the DSP counting, waits N seconds and reads it;
@@ -18,6 +19,14 @@ import { createHash } from 'node:crypto';
 import { existsSync, readFileSync, writeFileSync } from 'node:fs';
 import path from 'node:path';
 import { DkProf } from '../../packages/dk-session/src/dkprof.ts';
+import { SPAN_PHASES } from '../../packages/dk-session/src/gen_proto.ts';
+import {
+  buildProfile,
+  cfPart,
+  runId,
+  sharcPart,
+  spansPart,
+} from '../../packages/workbench-core/src/profile/profile-artifact.ts';
 
 function readJson(file) {
   try {
@@ -106,19 +115,43 @@ export async function profCommand({ cmd, sub, rest, opts, root, fail }) {
     return 0;
   }
   if (cmd === 'profile' && sub === 'record') return record({ opts, root, fail });
-  fail('usage: wb addrmap lookup | module analyse | profile report | profile record (see tools/devtools/wb_prof.mjs)');
+  fail(
+    'usage: wb addrmap lookup | module analyse | profile report | profile record | profile spans (see tools/devtools/wb_prof.mjs)',
+  );
+}
+
+/** `profile spans`: the runtime span counters of a device (dk-session `profileAll`) as a dk.profile/1 with `spans`, and a table. */
+export async function profSpans({ opts, session, fail }) {
+  // --start resets the counters first, so a run starts from zero.
+  if (opts.op === 'start') await session.profileState('reset');
+  if (opts.op) await session.profileState(opts.op);
+  const all = await session.profileAll();
+  const modules = await session.modules();
+  const hz = all.hz;
+  const nameOf = (s) => {
+    if (s.kind === 'module') return modules.find((m) => m.index === s.index)?.name ?? `module ${s.index}`;
+    if (s.kind === 'phase') return SPAN_PHASES[s.index] ?? `phase ${s.index}`;
+    return `poll ${s.index}`;
+  };
+  const part = spansPart(all, nameOf);
+  const spans = part.spans;
+  if (spans.length > 0 && !(hz > 0)) fail('the device reported spans without a clock rate', 1);
+  const profile = buildProfile({ run: { id: runId('dev', new Date()), target: 'unknown' }, spans: part });
+  if (opts.out) writeFileSync(opts.out, `${JSON.stringify(profile)}\n`);
+  console.log(`${all.running ? 'running' : 'stopped'}, ${hz} Hz`);
+  console.log('name\tcalls\ttotal ms\tmean us\tmax us');
+  for (const s of spans) {
+    const us = (t) => (t * 1e6) / hz;
+    const mean = s.calls > 0 ? us(s.sum_ticks) / s.calls : 0;
+    console.log(
+      `${s.name}\t${s.calls}\t${(us(s.sum_ticks) / 1000).toFixed(3)}\t${mean.toFixed(1)}\t${us(s.max_ticks).toFixed(1)}`,
+    );
+  }
+  if (opts.out) console.log(`${opts.out}: ${spans.length} spans`);
+  return 0;
 }
 
 const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
-const PATHS = ['ram_clear', 'run_fast', 'step_once', 'idle_skip'];
-
-/** Rows `[hex pc, weight]` of two reports as counters of the difference. Rows that fell out of the top-N of the later report are lost. */
-function deltaRows(before, after, series) {
-  const base = new Map((before ?? []).map(([pc, w]) => [pc, w]));
-  return (after ?? [])
-    .map(([pc, w]) => ({ cpu: 'cf', addr: Number(pc), count: w - (base.get(pc) ?? 0), series }))
-    .filter((r) => r.count > 0);
-}
 
 /** The load table of the running image: the symbols the ship map names, read from guest memory and decoded by dkprof. */
 async function readLoads(prof, client, ship, plan) {
@@ -140,7 +173,7 @@ async function readLoads(prof, client, ship, plan) {
 
 /** The identity of the run: id, target and, with `--image`, the hashes and the load table read from the running emulator. */
 async function runInfo({ opts, root, fail }, client) {
-  const run = { id: `emu-${new Date().toISOString().replace(/[-:]/g, '').slice(0, 15)}`, target: 'unknown' };
+  const run = { id: runId('emu', new Date()), target: 'unknown' };
   try {
     run.source_revision = execFileSync('git', ['rev-parse', 'HEAD'], { cwd: root, encoding: 'utf8' }).trim();
   } catch {
@@ -184,35 +217,7 @@ async function recordSharc(ctx) {
     }
     const a = await client.call('sharc.profile');
     const run = await runInfo(ctx, client);
-    const profile = {
-      schema: 'dk.profile/1',
-      run,
-      clock: a.clock,
-      raw: a.raw,
-      metrics: [
-        { name: 'sharc.blocks', value: a.blocks, unit: 'blocks' },
-        { name: 'sharc.insn.executed', value: a.icount, unit: 'insn' },
-        { name: 'sharc.insn.idle_skipped', value: a.idle_skipped, unit: 'insn' },
-        { name: 'sharc.insn.counted.fast', value: a.counted.fast, unit: 'insn' },
-        { name: 'sharc.insn.counted.block', value: a.counted.block, unit: 'insn' },
-        { name: 'sharc.insn.counted.interpreted', value: a.counted.interpreted, unit: 'insn' },
-        {
-          name: 'sharc.coverage',
-          unit: 'ratio',
-          na_reason:
-            'sharc.insn.executed and the per-PC counts do not reconcile in the DN2 proof run (open, profiling plan P4)',
-        },
-      ],
-      markers: [{ name: 'record.start', at: 0 }],
-      loss: [],
-      overhead: [
-        {
-          name: 'sharc-profile.feature',
-          unit: 'ratio',
-          na_reason: 'not measured: needs a paired run without the feature',
-        },
-      ],
-    };
+    const profile = buildProfile({ run, sharc: sharcPart(a) });
     writeFileSync(opts.out, `${JSON.stringify(profile)}\n`);
     console.log(`${opts.out}: ${a.raw.length} counters over ${a.blocks} DSP blocks`);
   } finally {
@@ -234,54 +239,15 @@ async function record(ctx) {
     const before = opts['since-boot'] ? { paths: [] } : await client.call('cf.profile');
     await sleep(seconds * 1000);
     const after = await client.call('cf.profile');
-    const raw = [
-      ...deltaRows(before.pc_samples, after.pc_samples, 'pc'),
-      ...deltaRows(before.idle_pc, after.idle_pc, 'idle_pc'),
-      ...deltaRows(before.exit_pcs, after.exit_pcs, 'exit_pc'),
-    ];
     const run = await runInfo(ctx, client);
-    const metrics = [];
-    for (const p of PATHS) {
-      const a = after.paths.find((x) => x.path === p) ?? {};
-      const b = before.paths.find((x) => x.path === p) ?? {};
-      metrics.push(
-        { name: `path.${p}.instructions`, value: (a.instructions ?? 0) - (b.instructions ?? 0), unit: 'insn' },
-        { name: `path.${p}.calls`, value: (a.calls ?? 0) - (b.calls ?? 0), unit: 'calls' },
-        { name: `path.${p}.host_ns`, value: (a.host_ns ?? 0) - (b.host_ns ?? 0), unit: 'ns' },
-      );
-    }
-    metrics.push({
+    const part = cfPart(opts['since-boot'] ? undefined : before, after);
+    part.metrics.push({
       name: 'sharc.pc',
       unit: 'insn',
       na_reason: 'not recorded here: wb profile record --cpu sharc records the DSP counts (sharc.profile)',
     });
-    const profile = {
-      schema: 'dk.profile/1',
-      run,
-      clock: {
-        source: 'emu.cf.insn',
-        unit: 'insn',
-        sampling:
-          'pc: every 64 insns in run_fast, every insn in step_once; idle_pc: weighted by insns skipped; exit_pc: run_fast exits (a count of exits, not insns)',
-      },
-      raw,
-      metrics,
-      markers: [{ name: 'record.start', at: 0 }],
-      loss: [
-        {
-          series: 'all',
-          reason:
-            'cf.profile keeps the 400 heaviest rows of its cumulative tables; rows that fell out of the later report are lost from the difference',
-        },
-      ],
-      overhead: [
-        {
-          name: 'cf-profile.feature',
-          unit: 'ratio',
-          na_reason: 'not measured: needs a paired run without the feature',
-        },
-      ],
-    };
+    const profile = buildProfile({ run, cf: part });
+    const raw = profile.raw;
     writeFileSync(opts.out, `${JSON.stringify(profile)}\n`);
     console.log(`${opts.out}: ${raw.length} counters over ${seconds} s`);
   } finally {

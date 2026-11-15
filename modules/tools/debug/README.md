@@ -14,6 +14,16 @@ starts with the boot. Without the module the runtime keeps only that small ring,
 | PEEK | 0x21 | u32 address, u16 length (1 to 512) | u32 address, u16 length, the bytes; only RAM inside the ranges of the device file (`[digikit] peek`, from the import `dk_debug_peek`), else `E_PEEK` |
 | LOGCFG | 0x22 | u8 op (0 get, 1 set), a set adds u8 default level and 8 module levels (0 to 4, 0xff: the default) | u8 default level, 8 module levels, u8 1 |
 
+## Profiling
+
+The module keeps a table of span times for the runtime's profiling spans. It has one row per module record (`DK_MAX_MODULES`), 3 rows for the service phases (owner `0x100 | p`) and 4 rows for the polls (owner `0x200 | i`), 15 rows of 16 bytes at most. A row holds `u32 calls`, `u64 sum` (ticks, 64 bits so a long run does not wrap) and `u32 max`. Other owner ids are ignored.
+Start registers the span sink and the clock (`dk_span_sink_set`); stop and fini clear them, so nothing is measured while profiling is off. The clock is the counter that `dk_debug_span_clock` returns; the module only reads it and never writes a timer register. Start answers `E_PROTO` when the device has no clock and the runtime's `E_BUSY` when another module owns the span channel.
+
+| Command | Number | Body | Reply |
+| --- | --- | --- | --- |
+| PROFILE_STATE | 0x1e | u8 op (0 get, 1 start, 2 stop, 3 reset; a reset works in both states) | u8 state (0 stopped, 1 running), u32 clock Hz, u16 rows, u64 elapsed ticks (the span clock while running, since the last reset; the 32-bit counter is read each UI pass and at each PROFILE_STATE, so at least one read per wrap period, about 32.5 s at 132 MHz, keeps it exact), then the 4 poll slots, each u8 owner (0 empty, 1 + the module record that registered the function, 0xff the firmware image: a patched-in core module) and u32 function address (from `dk_debug_poll`) |
+| PROFILE_READ | 0x1f | u16 first row | u16 first, u8 n, then n rows of u32 calls, u64 sum, u32 max (big endian), at most 54; a first row past the end gives `E_PEEK` |
+
 ## Card log
 
 The module can write its ring to the store, so a log survives a crash or a power cycle while the host cannot reach the device. It is off by default. The setting `cardlog`

@@ -1,0 +1,49 @@
+# Imports of sdk.toml that no packed module links, on purpose. `patchkit coverage --sdk sdk/sdk.toml --allow sdk/coverage-allow.toml` fails
+# for an `[[import]]` that is neither linked by a packed module nor listed here, and for an entry here that a module links or that is not in sdk.toml
+# (docs/TESTING.md, SDK-surface coverage). Every entry needs a reason.
+
+# Removed imports, kept so that the import table does not change.
+[[allow]]
+name = "dk_usb_bulk_takeover"
+reason = "removed: always returns DK_USB_BULK_E_STATE, kept for the import table"
+
+[[allow]]
+name = "dk_usb_bulk_giveback"
+reason = "removed: always returns DK_USB_BULK_E_STATE, kept for the import table"
+
+# The compiler builds every C module with the ColdFire libgcc linked in (packages/patchkit/src/build/cf.rs), so these 64-bit helpers are local code of the module,
+# never an import. test/c-demo covers the arithmetic; the runtime table keeps the names for objects built without libgcc.
+[[allow]]
+name = "__muldi3"
+reason = "linked from libgcc into the module, not imported (test/c-demo multiplies 64-bit values)"
+
+[[allow]]
+name = "__udivdi3"
+reason = "linked from libgcc into the module, not imported (test/c-demo divides 64-bit values)"
+
+[[allow]]
+name = "__umoddi3"
+reason = "linked from libgcc into the module, not imported (test/c-demo takes 64-bit remainders)"
+
+# A service module declares what it provides with these calls, and the runtime compares them with the KINDS, SLOTS, HOOKS, EXPORTS and RESOURCES entries
+# of the header table at the commit. No manifest field writes those entries yet, so a packed module that calls one is refused with E_DECL_KIND.
+# modules/core/runtime/src/rs/src/collect/tests.rs covers the declare check.
+[[allow]]
+name = "dk_service_declare_kind"
+reason = "needs a KINDS header entry that the packer cannot write from a manifest yet; covered by the runtime's collect tests"
+
+[[allow]]
+name = "dk_service_declare_slot"
+reason = "needs a SLOTS header entry that the packer cannot write from a manifest yet; covered by the runtime's collect tests"
+
+[[allow]]
+name = "dk_service_declare_hook"
+reason = "needs a HOOKS header entry that the packer cannot write from a manifest yet; covered by the runtime's collect tests"
+
+[[allow]]
+name = "dk_service_declare_export"
+reason = "needs an EXPORTS header entry that the packer cannot write from a manifest yet; covered by the runtime's collect tests"
+
+[[allow]]
+name = "dk_service_declare_resource"
+reason = "needs a RESOURCES header entry that the packer cannot write from a manifest yet; covered by the runtime's collect tests"

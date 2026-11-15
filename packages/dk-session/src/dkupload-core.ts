@@ -78,6 +78,25 @@ function abortable<T>(p: Promise<T>, signal: AbortSignal): Promise<T> {
   });
 }
 
+/**
+ * A used poll slot of the runtime (`dkrt_poll_add`), from PROFILE_STATE: the module record that registered the function (`'runtime'`: the firmware
+ * image, a patched-in core module) and the function's address. An empty slot is `undefined`.
+ */
+export interface PollSlot {
+  owner: number | 'runtime';
+  fn: number;
+}
+
+/** One row of `profileAll`: the span (module record, service phase or poll) and its counters in ticks of the span clock. */
+export interface ProfileSpan {
+  row: number;
+  kind: 'module' | 'phase' | 'poll';
+  index: number;
+  calls: number;
+  sumTicks: bigint;
+  maxTicks: number;
+}
+
 export class DkError extends Error {
   kind: string;
   /** The spec's status name (`E_FULL`) for a device error. */
@@ -1262,6 +1281,67 @@ export class DkSession {
       out.set(b.subarray(6, 6 + n), at);
     }
     return out;
+  }
+  /** PROFILE_STATE (debug module): `get` the state, `start` or `stop` the spans, or `reset` the counters. The reply is the state after the op, with the ticks of the span clock that passed while running since the last reset (the window the sums belong to). */
+  async profileState(
+    op: 'get' | 'start' | 'stop' | 'reset',
+    quick: Quick = false,
+  ): Promise<{ running: boolean; hz: number; rows: number; elapsedTicks: bigint; polls: (PollSlot | undefined)[] }> {
+    const code = { get: 0, start: 1, stop: 2, reset: 3 }[op];
+    const b = await this.ok(SERVICE_CMD.PROFILE_STATE, 'profile state', Uint8Array.of(code), quick);
+    if (b.length < 15) throw new DkError({ error: 'profile state: malformed reply', kind: 'protocol' });
+    const elapsedTicks = new DataView(b.buffer, b.byteOffset, b.length).getBigUint64(7);
+    // the 4 poll slots follow (u8 owner: 0 empty, 1 + record, 0xff firmware image; u32 address); a debug module from before them sends none
+    const polls: (PollSlot | undefined)[] = [];
+    for (let at = 15; at + 5 <= b.length; at += 5)
+      polls.push(b[at] === 0 ? undefined : { owner: b[at] === 0xff ? 'runtime' : b[at]! - 1, fn: u32(b, at + 1) });
+    return { running: b[0] === 1, hz: u32(b, 1), rows: u16(b, 5), elapsedTicks, polls };
+  }
+  /** PROFILE_READ (debug module): the span rows from row `first`; the device may return fewer rows than a page holds. */
+  async profileRead(
+    first = 0,
+    quick: Quick = false,
+  ): Promise<{ first: number; rows: { calls: number; sumTicks: bigint; maxTicks: number }[] }> {
+    const body = new Uint8Array(2);
+    new DataView(body.buffer).setUint16(0, first);
+    const b = await this.ok(SERVICE_CMD.PROFILE_READ, 'profile read', body, quick);
+    if (b.length < 3 || b.length < 3 + 16 * b[2]!)
+      throw new DkError({ error: 'profile read: malformed reply', kind: 'protocol' });
+    const view = new DataView(b.buffer, b.byteOffset, b.length);
+    const rows = [];
+    for (let i = 0; i < b[2]!; i++) {
+      const at = 3 + 16 * i;
+      rows.push({ calls: view.getUint32(at), sumTicks: view.getBigUint64(at + 4), maxTicks: view.getUint32(at + 12) });
+    }
+    return { first: u16(b, 0), rows };
+  }
+  /**
+   * All span rows: the state, then pages of PROFILE_READ. Row layout: 0..M-1 module records, then 3 service phases (early, late, last), then
+   * 4 polls, with M = rows - 7.
+   */
+  async profileAll(quick: Quick = false): Promise<{
+    running: boolean;
+    hz: number;
+    elapsedTicks: bigint;
+    spans: ProfileSpan[];
+    polls: (PollSlot | undefined)[];
+  }> {
+    const st = await this.profileState('get', quick);
+    const modules = st.rows - 7;
+    const spans: ProfileSpan[] = [];
+    while (spans.length < st.rows) {
+      const page = await this.profileRead(spans.length, quick);
+      if (page.first !== spans.length || page.rows.length === 0)
+        throw new DkError({ error: 'profile read: malformed reply', kind: 'protocol' });
+      for (const r of page.rows) {
+        const row = spans.length;
+        if (row >= st.rows) break;
+        const kind = row < modules ? 'module' : row < modules + 3 ? 'phase' : 'poll';
+        const index = kind === 'module' ? row : kind === 'phase' ? row - modules : row - modules - 3;
+        spans.push({ row, kind: kind as 'module' | 'phase' | 'poll', index, ...r });
+      }
+    }
+    return { running: st.running, hz: st.hz, elapsedTicks: st.elapsedTicks, spans, polls: st.polls };
   }
   /** LOGCFG (read): the default log level, the level of each module record (0xff: the default), and whether the debug module is loaded. */
   async logConfig(quick: Quick = false): Promise<LogConfig> {

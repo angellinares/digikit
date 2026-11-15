@@ -216,6 +216,7 @@ All tools are indexed in [docs/TOOLS.md](TOOLS.md).
 
 Usage of the address map (`patchkit pack --addrmap`, `patchkit addr`, `wb addrmap lookup`, DSP names, load table snapshots): [ADDRMAP.md](ADDRMAP.md#usage).
 Usage of the object compare for moves of runtime code (`patchkit objdiff OLD NEW`): [PATCHING.md](PATCHING.md#compare-two-objects-after-a-move).
+Usage of the SDK-surface coverage (`patchkit imports`, `patchkit coverage`, `patchkit:sdk-coverage`): [TESTING.md](TESTING.md#sdk-surface-coverage).
 Usage of the module DSP analysis (`wb module analyse`): [packages/dksharc/README.md](../packages/dksharc/README.md#usage).
 Usage of profiles (`wb profile report`, `wb profile record`, the `dk.profile/1` artifact): [INSTRUMENTATION.md](INSTRUMENTATION.md#profiles).
 

@@ -87,6 +87,7 @@ Reading the table:
 - First cases: load SDK-built FX and machine fixtures through the runtime's descriptor parsers on the host and check sizes and offsets against the generated SDK constants; one Storage contract suite run against FakeStorage on the host and the real adapter once on the device.
 - Proof: both implementations run the suite.
 - Depends on: R2c (`CoreApi`, `Service`), R3 (`Platform`).
+- [x] Parts 1 and 2, descriptor contract: the layout numbers of the `.dkm` and its DSP section are `[format]` of `sdk/sdk.toml`, generated into `dkneeds` with the `[fx]` and `[machine]` descriptor offsets; the runtime, the packer and `dksharc` read them (no second copy). `core/runtime:rust-tests` packs `test/dyn-fx-gain` and `test/sine` (`dependsOn`) and runs the runtime's DSP section check (`dsp::check`, with the fx, machines and samples checks) on both devices: it accepts them, what it reads back (parameter count, state bytes, route flags, voice entries, machine key, rows) equals the module's declaration, and broken variants (section magic, descriptor magic, record against descriptor, short descriptor, bad voice entry, other device) are refused with `E_DSP_FORMAT` or `E_DSP_DEVICE`. Open: the Storage suite (needs R3) and the `Service` suite.
 
 ### T1d Device-test audit
 
@@ -103,10 +104,11 @@ Reading the table:
 
 ### T1f SDK-surface fixtures and coverage
 
-- Scope: fixtures cover every `sdk.toml` import and builder call. Measure it: imports linked per fixture against `sdk.toml`, and ColdFire PC coverage with `cf.profile`.
+- Scope: fixtures cover every `sdk.toml` import and builder call. Measure it: imports linked per packed module against `sdk.toml` (`patchkit imports`, `patchkit coverage`; [TESTING.md](../TESTING.md#sdk-surface-coverage)). ColdFire PC coverage with `cf.profile` is dropped.
 - A conforming module then needs the static checks (packer, `module:check`, needs and fit) plus one load-and-smoke test. Module-specific emulator tests remain for DSP behaviour.
 - Proof: the coverage numbers.
 - Depends on: nothing (own lane).
+- [x] Command, report and fixture gaps: 96 of 116 imports covered before, 106 covered and 10 allowed (removed or not packable yet) after; `test/entry-demo` calls the rest. Nx target `patchkit:sdk-coverage`.
 
 ### T1g SHARC-only rig
 

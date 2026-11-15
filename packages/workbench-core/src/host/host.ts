@@ -56,7 +56,7 @@ export interface FsHost {
   /** The bytes of a file below `root`; `head`: only the first bytes. */
   read(root: string, rel: string, head: number | null): Promise<ArrayBuffer>;
   /** The system's save dialog for a log text; the path, or null when the user cancels. */
-  saveLog(bytes: Uint8Array, name: string): Promise<string | null>;
+  saveLog(bytes: Uint8Array, name: string, kind?: 'log' | 'profile'): Promise<string | null>;
 }
 
 /** The address map of one built module (docs/ADDRMAP.md): the JSON text `lib_build` wrote beside its `.dkm`. */

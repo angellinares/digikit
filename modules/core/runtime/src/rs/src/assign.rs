@@ -119,6 +119,18 @@ pub unsafe fn resolve(key: u32) -> u32 {
     0
 }
 
+/// Host tests: give each of `keys` the run-time type number after `dkrt_sdk::sticky`'s first, as `plan` does for the module being loaded (none with `&[]`).
+#[cfg(test)]
+pub(crate) unsafe fn seed_for_test(keys: &[u32]) {
+    let a = st();
+    a.n = keys.len();
+    for (i, k) in keys.iter().enumerate() {
+        a.idx[i] = core::ptr::read_volatile(addr_of_mut!(selection::BOOT_IDX));
+        a.key[i] = *k;
+        a.ty[i] = dkrt_abi::dsp::TYPE_FIRST + i as u32;
+    }
+}
+
 /// The map to write back when the boot changed it.
 pub fn changed_map() -> Option<[u32; MAP_N]> {
     let a = st();

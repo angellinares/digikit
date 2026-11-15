@@ -105,7 +105,7 @@ Plugin sources are not inputs of module device targets. A `runtimeAcceptance` re
 | `pnpm verify:host` | oxlint, Prettier check, host Vitest, typecheck of control-client, dk-session, test-support, regression and desktop. Stops at the first failure. |
 | `pnpm --filter @digi/web test-wasm` | The Vitest project `web-wasm` (`tests/*.wasm.test.ts`, 120 s limit per test). Needs `public/*.wasm` (`@digi/web:test-wasm` builds it). Cases that need firmware skip when absent. |
 | `mise run lint:py` | `ruff check` and `ruff format --check` over the pyproject include list. |
-| `mise run lint` | `lint:py`, `lint:rust`, `pnpm lint`, `pnpm fmt:check`. `lint:rust` runs `workspace:rust-fmt` (`cargo fmt --check` on every workspace crate except `dkfw`). `dkfw` is left out because its crate root is generated. Other generated files carry `#[rustfmt::skip]` on their `mod` line. A format change of `dkrt-sdk`, `dkrt-fit` or `dkneeds` changes `source_sha256` in the committed `build/*.dko.json` objects, so rebuild them with `core/runtime:build-objects`. |
+| `mise run lint` | `lint:py`, `lint:rust`, `pnpm lint`, `pnpm fmt:check`. `lint:rust` runs `workspace:rust-fmt` (`cargo fmt --check` on every workspace crate except `dkfw`) and `workspace:rust-clippy`. `rust-clippy` runs `cargo clippy --no-deps --all-targets -- -D warnings` on the crates that have no clippy warnings. Add a crate to its list when you fix the crate's warnings. `rust-clippy` is in the merge gate. It needs clippy in the pinned toolchain: `rustup component add --toolchain 1.98.1 clippy`. `dkfw` is left out because its crate root is generated. Other generated files carry `#[rustfmt::skip]` on their `mod` line. A format change of `dkrt-sdk`, `dkrt-fit` or `dkneeds` changes `source_sha256` in the committed `build/*.dko.json` objects, so rebuild them with `core/runtime:build-objects`. |
 | `mise run test:pypy` | The SHARC core tests under PyPy 3.11. Slow. |
 | `mise run test:stock` | Vitest project `stock` (`tests/regression/dt2`): DT2 1.17 zero-DSP goldens. Filters pass through. |
 | `mise run test:fx` | Project `fx-dn2`: 61 quick assertions; `DIGI_FX_SWEEP=1` runs 191 across 134 scenarios. `DIGI_JOBS` bounds rendering. |
@@ -616,6 +616,27 @@ OS (cached in `out/runs/patchkit/dsp/`). Projected load = busy x factor / 666,66
 (default 85 %); `--no-dsp-budget` skips it. Results go to `out/runs/patchkit/dsp-budget.json`. Unit
 test: `tests/patchkit/test_pk_dsp_budget.py`.
 
+### SDK-surface coverage
+
+`patchkit imports` lists the SDK imports each `.dkm` links (its import table; the builder calls of `init`, such as `dk_machine_add_page`, `dk_page_add_param` and `dk_fx_routes`, are imports too, so one table covers them). `patchkit coverage` compares the union over the packed modules with the `[[import]]` list of `sdk/sdk.toml`, by service. An import that no packed module links fails the run, unless `sdk/coverage-allow.toml` lists it with a reason; an allow-list entry that a module links, or that is not in `sdk.toml`, fails too. Not observable from a pack: the values a call passes (glyphs, routes, parameter kinds, the constants of `[machine]`, `[fx]` and `[page]`) and whether a linked call runs. The fixture calls that close a gap are compiled and linked, and some never run (the `probe` flag of `test/entry-demo`).
+
+```sh
+pnpm nx:pilot run patchkit:sdk-coverage     # packs every module (cached), then the report; not cached itself
+dist/patchkit/patchkit imports [--json] dist/modules/dt2/entry-demo.dkm
+dist/patchkit/patchkit coverage --sdk sdk/sdk.toml --allow sdk/coverage-allow.toml [--json] dist/modules/*/*.dkm
+```
+
+```text
+sdk imports: 116 total, 106 covered, 10 allowed, 0 uncovered (108 modules)
+  dsp_link   2/2 covered, 0 allowed, 0 uncovered
+  helper     3/6 covered, 3 allowed, 0 uncovered
+  ui         18/18 covered, 0 allowed, 0 uncovered
+  usb_bulk   8/10 covered, 2 allowed, 0 uncovered
+    allowed    dk_usb_bulk_takeover (removed: always returns DK_USB_BULK_E_STATE, kept for the import table)
+```
+
+Without `--allow` the same files give 106 of 116 covered. A new `[[import]]` needs a call in a fixture or a module, or an allow-list entry with a reason; the exit code is 1 otherwise. Unit tests: `cargo test -p patchkit --lib coverage_cli`.
+
 ### AOT versus interpreter equality
 
 The no-AOT halves of `tier-quick` and `tier-sweep` use `NO_AOT_SUBSET` in `tools/devtools/fx_tier.py`:
@@ -804,7 +825,9 @@ firmware, generated core or `out/` data.
 `verify_build daemons` (the `digi-control:daemons` target) keeps the coupled `digi-emud` daemons in
 `<git common dir>/emud-cache/<dev>/<key>/` (`digi-emud`, `key.txt`, `depfile.d`). All worktrees of the
 clone share it and it is never committed. A worktree with the same key restores the daemon and builds
-nothing; a stored file is never rewritten. The last 4 used keys per device stay.
+nothing; a stored file is never rewritten. The last 4 used keys per device stay (a restore refreshes the use time),
+and so does every key that `dist/daemons.json` of any worktree of the clone points at: the store holds at most 4 plus one per active lane.
+`digi-control:daemons` has `cache: false`, so every run restores or rebuilds the entry. `DIGI_EMUD_STORE` moves the store (tests only).
 
 The key is printed by `uv run python -m tools.devtools.emud_key key --device DEV`: a sha256 over the
 content of the repository files in `SOURCE_GLOBS` and `RECIPE_FILES`, every file of the generated core
