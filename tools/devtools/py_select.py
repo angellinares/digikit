@@ -65,22 +65,6 @@ PY_SUITES: tuple[tuple[str, tuple[str, ...], tuple[str, ...]], ...] = (
         ("tests/patchkit",),
     ),
     (
-        "machine-conformance",
-        (
-            "tools/patchkit/pk_conform.py",
-            "tools/patchkit/pk_modcheck.py",
-            "tools/patchkit/pk_sharc.py",
-            "tests/support/machine_rig.py",
-            "tests/support/conform_worker.py",
-            "tests/support/dsp_voice_rig.py",
-            "tests/support/fx_rig.py",
-            "tests/support/fx_conform_worker.py",
-            "tests/support/fx_effects.s",
-            "tests/modules/",
-        ),
-        ("tests/modules",),
-    ),
-    (
         # the tests inside the modules (modules/<group>/<name>/tests/test_*.py): found by globbing, so a new module test needs no entry;
         # a change in a module selects its own tests through the Nx module projects
         "module-tests",
@@ -227,6 +211,16 @@ def is_changed_test(path: str) -> bool:
         and name.startswith("test_")
         and name.endswith(".py")
         and (ROOT / path).is_file()
+    )
+
+
+def is_module_test_helper(path: str) -> bool:
+    """A .py helper (a model, a rig, a case table) in a module's own tests/ directory: not a test file, so its edit selects the module's tests."""
+    name = path.rsplit("/", 1)[-1]
+    return (
+        is_module_test_dir(path)
+        and name.endswith(".py")
+        and not name.startswith("test_")
     )
 
 
@@ -520,13 +514,13 @@ def python_test_plan(files: list[str], full: bool) -> list[tuple[str, str]]:
     the tests that import a changed tests/support/ module."""
     plan_: list[tuple[str, str]] = [(path, "gate") for path in PY_GATE]
     # Python tests owned by content modules are selected by edits to that module's
-    # implementation or manifest. Keep this scoped to the changed module directory.
+    # implementation, manifest or test helper (tb303_ref.py). Keep this scoped to the changed module directory.
     module_roots = {
         root
         for f in files
         if f.startswith("modules/")
         and (root := module_root(f))
-        and not f.startswith(f"{root}/tests/")
+        and (not f.startswith(f"{root}/tests/") or is_module_test_helper(f))
     }
     for root in sorted(module_roots):
         plan_ += [
@@ -592,7 +586,7 @@ def python_tests_command(
         *cmd,
         "--timeout",
         "3600",
-    ]  # catches hangs, not slow files (test_pluck.py takes ~450 s alone)
+    ]  # catches hangs, not slow files
     return [*cmd, "--jobs", str(jobs if jobs is not None else python_jobs()), *files]
 
 

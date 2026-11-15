@@ -17,7 +17,7 @@ HERE = Path(__file__).resolve().parent
 
 
 def generate(check: bool) -> None:
-    """`pluck_rig.model_blocks` for the cases of test_pluck.py and test_pluck_range.py; the toml holds the tolerance 2e-5 * max(1, peak)."""
+    """`pluck_rig.model_blocks` for the cases of tests/rig/pluck.toml; the toml holds the tolerance 2e-5 * max(1, peak)."""
     mod = HERE
     sys.path.insert(0, str(mod))
     from pluck_rig import model_blocks  # type: ignore[import-not-found]

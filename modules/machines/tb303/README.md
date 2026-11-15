@@ -27,7 +27,7 @@ Differences from Open303:
 
 - Runs at 48 kHz without Open303's 4x oversampling and its elliptic decimator. The oscillator level is the table increment's
   exponent + 1 (Open303: + 2), and nothing above 24 kHz is made. Against Open303 itself (`tb303_ref.Open303`, checked against
-  its C++ to 1e-7) the spectra differ by 0.1 to 0.5 dB (log-spectral distance, test_tb303.py).
+  its C++ to 1e-7) the spectra differ by 0.1 to 0.5 dB (log-spectral distance, measured once).
 - b0's division is a reciprocal by three Newton steps from a quadratic guess (2e-7).
 - The filter's coefficients are computed once per block (32 samples, 0.67 ms) at its last sample and ramped linearly, where
   Open303 computes them every sample. A new note's first block starts on its own coefficients, with no ramp from the last
@@ -48,6 +48,6 @@ at note-on; it zeroes a track's whole state at its first note-on after the load 
 Cost: 8,037 instructions per block including the adapter, the same for any note and setting (8,241 on a note-on block).
 
 Tables and constants: `uv run python modules/machines/tb303/src/dsp/gen_tables.py` writes `src/dsp/tables.inc`. Model:
-`tests/tb303_ref.py` (`Tb303`); the routine matches it exactly on the SHARC core (`tests/test_tb303.py`).
+`tests/tb303_ref.py` (`Tb303`); the routine matches it exactly on the SHARC core (`tests/rig/tb303.toml`).
 
 Pack: `mise run module:pack -- tom/tb303 --device dt2`.

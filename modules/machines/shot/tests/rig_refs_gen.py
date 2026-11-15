@@ -18,11 +18,11 @@ HERE = Path(__file__).resolve().parent
 
 
 def generate(check: bool) -> None:
-    """The tables and the toml of the shot machine: the model's output (`test_shot_playback.model`) for the scenarios of the Python test, with the rig's own
+    """The tables and the toml of the shot machine: the model's output (`shot_model.model`) for the scenarios of the retired Python test, with the rig's own
     cursor rate where the test took the model's rate from the rig. Run it again only to compare (--check); the toml is then edited by hand."""
     mod = HERE
     sys.path.insert(0, str(mod))
-    import test_shot_playback as t  # type: ignore[import-not-found]
+    import shot_model as t  # type: ignore[import-not-found]
 
     out = mod / "rig"
     cases: list[str] = []
@@ -467,7 +467,7 @@ def generate(check: bool) -> None:
             ],
         )
     header = (
-        "# the shot machine on the SHARC-only rig (replaces modules/machines/shot/tests/test_shot_playback.py).\n"
+        "# the shot machine on the SHARC-only rig (replaces the retired Python test).\n"
         "# The tables ref/*.f32 are the output of the Python reader model of that test for the same scenarios (tools/devtools/rig_refs.py shot); the PCM of\n"
         "# the pool entries is ref/pcm-*.i16 (the numpy generator's int16 words). The count word of the pool's control set is checked after every block.\n\n"
     )

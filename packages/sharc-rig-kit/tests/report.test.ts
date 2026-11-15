@@ -1,8 +1,9 @@
-import { mkdtempSync, readFileSync, rmSync } from 'node:fs';
+import { mkdtempSync, readFileSync, realpathSync, rmSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import path from 'node:path';
 import { afterAll, describe, expect, it } from 'vitest';
-import { reportName, worstSteady, writeReport, type MachineReport } from '../src/report.ts';
+import { reportName, reportsDir, worktreeRoot, worstSteady, writeReport, type MachineReport } from '../src/report.ts';
+import { ROOT } from '../src/rig.ts';
 
 const dirs: string[] = [];
 afterAll(() => {
@@ -33,12 +34,26 @@ describe('reports', () => {
     const file = writeReport(report, path.join(dir, 'deeper'));
     expect(file).toBe(path.join(dir, 'deeper', 'a__machine@dt2.json'));
     const text = readFileSync(file, 'utf8');
-    expect(JSON.parse(text)).toEqual(report);
+    expect(JSON.parse(text)).toEqual({ ...report, worktree: worktreeRoot() });
     expect(text).toContain('\n "label": "a/machine@dt2"'); // one space of indent, as the Python workers wrote it
   });
 
   it('give the DSP cost of a module as the worst steady block of any case', () => {
     expect(worstSteady(report)).toBe(5546);
     expect(worstSteady({ cases: [] })).toBe(0);
+  });
+
+  it('record the worktree that wrote them, and default to its own dist/, never the shared out/', () => {
+    const prev = process.env.DIGI_CONFORM_REPORTS;
+    delete process.env.DIGI_CONFORM_REPORTS;
+    try {
+      expect(reportsDir()).toBe(path.join(ROOT, 'dist/conformance-rig'));
+    } finally {
+      if (prev !== undefined) process.env.DIGI_CONFORM_REPORTS = prev;
+    }
+    const dir = mkdtempSync(path.join(tmpdir(), 'rig-report-'));
+    dirs.push(dir);
+    const written = JSON.parse(readFileSync(writeReport(report, dir), 'utf8'));
+    expect(written.worktree).toBe(realpathSync(ROOT));
   });
 });

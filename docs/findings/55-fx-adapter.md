@@ -3,7 +3,7 @@
 `core/fx` runs the effects of the FX contract (`sdk/dk_fx.h`) on the final master block of both devices. This finding records where the hook sits and why,
 the ring formats it was proven with, and what it costs. Marks: **[D]** measured or read once (by the author of this finding; no second agent has checked
 the image bytes yet, so nothing here is **[V]**), **[O]** open. Pieces: `modules/core/adapters/fx/` (adapter, one DSP source for both devices),
-`tests/fixtures/modules/fx-gain` and `fx-nan`, `tests/patchkit/test_fx.py`, `tests/modules/test_fx_conformance.py`, `tools/patchkit/pk_proof_fx.py`,
+`tests/fixtures/modules/fx-gain` and `fx-nan`, `tests/patchkit/test_fx.py`, `packages/sharc-rig-kit/conformance/fx.test.ts`, `tools/patchkit/pk_proof_fx.py`,
 `tools/patchkit/fx_rings.py`. It answers the open question of finding 53 (is stage 8 the USB output).
 
 ## The hook sites **[D]**

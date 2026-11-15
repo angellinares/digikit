@@ -5,7 +5,7 @@
     rig.set_note(60, vel=100); rig.trigger()
     b = rig.block()                                 # b.samples (32 floats), b.instructions, b.returned, b.context_bad
 
-The rig is plain Python (no numpy, no pytest): it also runs under PyPy (tests/modules/test_machine_conformance.py).
+The rig is plain Python (no numpy, no pytest): it also runs under PyPy (the adapter tests).
 The rig reads the module's manifest (tools/patchkit/pk_conform.py): DSP sources of the device, entry symbol, machine type and
 parameters with their frame slots. It assembles the wrapper and the module, places the data symbols of both (`.PKDATA`, `.PKBSS`,
 `.VAR`) in free L2, and keeps the core's memory from block to block (tools/patchkit/pk_sharc.py CallSession), so a delay line or a
