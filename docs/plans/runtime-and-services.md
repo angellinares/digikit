@@ -365,7 +365,7 @@ The contract is the ABI in `sdk.toml`, so a Rust service uses the generated bind
 
 `check:layers` enforces that the rest of the runtime reaches a service only through these interfaces (added in R2c; [ARCHITECTURE.md](../ARCHITECTURE.md) says what it checks today).
 
-**Template.** In the runtime crate a service is a folder `src/services/<name>/` with `mod.rs`, `records.rs`, `slots.rs`, `dsp/` and `tests/`. It maps one to one to `modules/core/services/<name>/{module.toml, src/, adapter/, tests/}` when the services are linked in (R9 and R10; `fx` is the first, as the crate `dkrt-svc-fx` without `module.toml` and `adapter/` yet), and `module:new service` generates it. The template and its `module:check` structure check land in R12-3 (section 13.2); every service (lfo, fx, machines, later samples) uses it. R2 moves code only: no behaviour change. R7 proves that interface B is generic.
+**Template.** In the runtime crate a service is a folder `src/services/<name>/` with `mod.rs`, `records.rs`, `slots.rs`, `dsp/` and `tests/`. It maps one to one to `modules/core/services/<name>/{module.toml, src/, adapter/, tests/}` when the services are linked in (R9 and R10: `fx` and `machines` are crates `dkrt-svc-fx` and `dkrt-svc-machines` without `module.toml` and `adapter/` yet), and `module:new service` generates it. The template and its `module:check` structure check land in R12-3 (section 13.2); every service (lfo, fx, machines, later samples) uses it. R2 moves code only: no behaviour change. R7 proves that interface B is generic.
 
 ## 6. DSP
 
@@ -499,7 +499,7 @@ R3 splits into two steps.
 - `RealPlatform` is a zero-size type over today's `platform.rs` and `dkfw` calls. Use `#[inline]` only on small hot paths: lane E measured that inlining larger helpers cost about 4% text. The core is generic over `P: Platform`, like `C: CoreApi`.
 - Not in the trait: `st()` (core state), and `rd32`, `wr32` and `cstr_*` (pure helpers in `dkrt-abi`).
 - Device id, name and image id come from the generated device data (`device.s`, the patchkit stamp). Firmware addresses resolve at patch time through anchors and the `*_info` tables, never as runtime literals. Per-device numbers come as generated consts, like `dkrt_sdk::device` `DDR_CACHED_BASE`.
-- The `machines` service's firmware calls (`dkfw` page, input and param calls in `pageclick`) go behind that service's own adapter interface (`paramapi::Fw` exists), not into the core `Platform`. This matches finding 128: page key and turn hooks stay runtime-owned with slots.
+- The `machines` service's firmware calls (`dkfw` page, input and param calls in `pageclick`) go behind the interface `dkrt_abi::fw::Fw` (R10: `RuntimeFw` in the runtime's `fw.rs` implements it, `FakeFw` fakes it), not into the core `Platform`. This matches finding 128: page key and turn hooks stay runtime-owned with slots.
 - About 20 `dkfw::` lines exist in 6 runtime files today. They move behind the trait.
 
 `FakePlatform` (`cfg(test)`) models:
@@ -655,7 +655,7 @@ Items 7, 9 and 10 link services into the image as a temporary step, so each boun
 | 8 | Spike, whole path | 11.2 | 3-4 days | High: decides item 12 and the small-image goal | Medium for ColdFire; unknown for SHARC |
 | **Stop** | Report to Em; review the model against what was learned | | | | |
 | 9 | `fx` linked in (R9 built: crate `dkrt-svc-fx`, branch `rt/r9-fx-linked`), with neutral adapter functions. Check that each service object is a separate input of the device tests (`tools/nx/device-inputs.mjs`), so a service edit selects only the tests that load it. | 3.2, 10 | 4-5 days | High | Medium |
-| 10 | `machines` linked in, with neutral adapter functions; layer check final | 3.2, 10 | 4-5 days | High: done criterion 1 | Medium |
+| 10 | `machines` linked in (R10 built: crate `dkrt-svc-machines`, branch `rt/r10-machines-linked`; the firmware page is `dkrt_abi::fw::Fw`, the native page calls are `CoreApi::native_*`), with neutral adapter functions; layer check final (only `lfo` and `samples` stay in `src/services/`) | 3.2, 10 | 4-5 days | High: done criterion 1 | Medium |
 | 11 | Boot plan with one verdict per module; module states; refusal fixtures | 5, 8 | 2-3 days | High: users see why | Medium-high |
 | 12 | Services as `.dks`, hooks at boot, workbench binding and install (design: section 13.2) | 5, 13.2 | 7-10 days without R12-7 | High: small runtime; done criteria 5, 6 and 7 | Medium |
 | 13 | Storage interface and files memory (split out of item 7): the `Storage` trait in the Platform composition (stat, read head, read range, read all, paged listing), the store and firmware-fs routes in the adapter chosen by profile data, listing memory from the arena (at most 2), `dkrt_sample_fs` and `dkrt_files_fs` in the adapter's `storage.s` | 9 | 2-3 days | Medium: a clean boundary for the store | Medium |

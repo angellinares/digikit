@@ -1,5 +1,5 @@
 //! Voice-row part of the DSP loader: the voice row of a machine type, its declared ranges and the clearing of a module's voice rows.
-use crate::core_api::{CoreApi, REAL_CORE};
+use dkrt_abi::core_api::CoreApi;
 use dkrt_abi::dsp::*;
 use dkrt_abi::link::{Owner, Sequence};
 use dkrt_abi::mem::{iw, rd32};
@@ -7,18 +7,18 @@ use dkrt_abi::service::{Claim, RowWrite};
 use dkrt_sdk::*;
 
 /// (voice rows the area's table reserves, rows in use); (0, 0) without a DSP loader (for CAPACITY).
-pub unsafe fn rows_counts() -> (u32, u32) {
-    let inf = REAL_CORE.dsp_info();
+pub unsafe fn rows_counts<C: CoreApi>(core: &C) -> (u32, u32) {
+    let inf = core.dsp_info();
     if inf.is_null() {
         return (0, 0);
     }
-    let used = capacity::used_rows(&REAL_CORE.dsp().row_owner);
+    let used = capacity::used_rows(&core.dsp().row_owner);
     (iw(inf, I_VFREE).min(MAX_ROWS as u32), used)
 }
 
 /// The voice row of machine type `t` that module record `rec` claimed.
-pub unsafe fn voice_row(rec: usize, t: u32) -> Option<usize> {
-    let d = REAL_CORE.dsp();
+pub unsafe fn voice_row<C: CoreApi>(core: &C, rec: usize, t: u32) -> Option<usize> {
+    let d = core.dsp();
     let mut k = 0;
     while k < MAX_ROWS {
         if d.row_owner[k] == rec as u8 + 1 && d.row_type[k] == t {
@@ -31,8 +31,8 @@ pub unsafe fn voice_row(rec: usize, t: u32) -> Option<usize> {
 
 /// What `init` declared for the voice row `row` (a module): the eight knob ranges and the latch mask, published with the row. A latch mask needs a
 /// note_on routine (as the DSP section check says for version 3). Returns OK or E_FORMAT.
-pub unsafe fn set_declared(row: usize, rng: [u32; 8], latched: u32) -> i32 {
-    let d = REAL_CORE.dsp();
+pub unsafe fn set_declared<C: CoreApi>(core: &C, row: usize, rng: [u32; 8], latched: u32) -> i32 {
+    let d = core.dsp();
     if row >= MAX_ROWS || (latched & !0xff != 0) || (latched != 0 && d.row_note_on[row] == 0) {
         return E_FORMAT;
     }
@@ -42,8 +42,8 @@ pub unsafe fn set_declared(row: usize, rng: [u32; 8], latched: u32) -> i32 {
 }
 
 /// The module record (index) that owns machine type `t`.
-pub unsafe fn module_of_type(t: u32) -> Option<usize> {
-    let d = REAL_CORE.dsp();
+pub unsafe fn module_of_type<C: CoreApi>(core: &C, t: u32) -> Option<usize> {
+    let d = core.dsp();
     let mut k = 0;
     while k < MAX_ROWS {
         if d.row_owner[k] != 0 && d.row_type[k] == t {
@@ -55,15 +55,17 @@ pub unsafe fn module_of_type(t: u32) -> Option<usize> {
 }
 
 /// Free the rows module record `rec` published: the type word first, so the scan skips the row at once.
-pub(crate) unsafe fn clear_rows(rec: usize) -> bool {
-    let d = REAL_CORE.dsp();
-    let first = iw(REAL_CORE.dsp_info(), I_VFIRST);
+pub(crate) unsafe fn clear_rows<C: CoreApi>(core: &C, rec: usize) -> bool {
+    let d = core.dsp();
+    let first = iw(core.dsp_info(), I_VFIRST);
     let mut k = 0;
     while k < MAX_ROWS {
         if d.row_owner[k] == rec as u8 + 1 && d.row_pub[k] != 0 {
             let mut seq = Sequence::new();
             seq.push(WIN_VOICES, ROW_WORDS * (first + k as u32), FREE_TYPE);
-            if !REAL_CORE.link_run(Owner::Core, &seq) { return false; }
+            if !core.link_run(Owner::Core, &seq) {
+                return false;
+            }
             d.row_pub[k] = 0;
         }
         k += 1;
@@ -72,8 +74,14 @@ pub(crate) unsafe fn clear_rows(rec: usize) -> bool {
 }
 
 /// DSP section, version 3 voices: the state counts must be sane before the range is computed from them.
-pub(crate) unsafe fn check_sections(sec: &DspSec) -> i32 {
-    let (s, voice_off, vstride, nvoice, image_size) = (sec.s, sec.voice_off, sec.vstride, sec.nvoice, sec.image_size);
+pub(crate) unsafe fn check_sections<C: CoreApi>(core: &C, sec: &DspSec) -> i32 {
+    let (s, voice_off, vstride, nvoice, image_size) = (
+        sec.s,
+        sec.voice_off,
+        sec.vstride,
+        sec.nvoice,
+        sec.image_size,
+    );
     if vstride == VOICE_V3 {
         let mut i = 0;
         while i < nvoice {
@@ -84,11 +92,19 @@ pub(crate) unsafe fn check_sections(sec: &DspSec) -> i32 {
                 rd32(e.add(VOICE_CLEAR_BYTES as usize)),
                 rd32(e.add(VOICE_VOICES as usize)),
             );
-            if note_on >= image_size || note_on & 1 != 0 || clear > state || state > iw(REAL_CORE.dsp_info(), I_AREA_BYTES) || count > MAX_STATE_VOICES {
+            if note_on >= image_size
+                || note_on & 1 != 0
+                || clear > state
+                || state > iw(core.dsp_info(), I_AREA_BYTES)
+                || count > MAX_STATE_VOICES
+            {
                 return E_DSP_FORMAT;
             }
             let latched = rd32(e.add(VOICE_LATCH as usize));
-            if latched & !0xff != 0 || (latched != 0 && note_on == 0) || rd32(e.add(VOICE_V3_RESERVED as usize)) != 0 {
+            if latched & !0xff != 0
+                || (latched != 0 && note_on == 0)
+                || rd32(e.add(VOICE_V3_RESERVED as usize)) != 0
+            {
                 return E_DSP_FORMAT;
             }
             i += 1;
@@ -98,22 +114,31 @@ pub(crate) unsafe fn check_sections(sec: &DspSec) -> i32 {
 }
 
 /// DSP section: voice rows are free for the module's voices.
-pub(crate) unsafe fn check_rows(sec: &DspSec) -> i32 {
+pub(crate) unsafe fn check_rows<C: CoreApi>(core: &C, sec: &DspSec) -> i32 {
     let nvoice = sec.nvoice;
-    let d = REAL_CORE.dsp();
-    capacity::dsp_rows(nvoice, capacity::free_rows(&d.row_owner, iw(REAL_CORE.dsp_info(), I_VFREE)))
+    let d = core.dsp();
+    capacity::dsp_rows(
+        nvoice,
+        capacity::free_rows(&d.row_owner, iw(core.dsp_info(), I_VFREE)),
+    )
 }
 
 /// DSP section: the voices' types are in the run-time range, their entries are inside the image, and no loaded or loading module or
 /// earlier voice of this file has the type.
-pub(crate) unsafe fn check_types(sec: &DspSec) -> i32 {
-    let (s, voice_off, vstride, nvoice, image_size) = (sec.s, sec.voice_off, sec.vstride, sec.nvoice, sec.image_size);
-    let d = REAL_CORE.dsp();
+pub(crate) unsafe fn check_types<C: CoreApi>(core: &C, sec: &DspSec) -> i32 {
+    let (s, voice_off, vstride, nvoice, image_size) = (
+        sec.s,
+        sec.voice_off,
+        sec.vstride,
+        sec.nvoice,
+        sec.image_size,
+    );
+    let d = core.dsp();
     let mut i = 0;
     while i < nvoice {
         let e = s.add(voice_off as usize + vstride as usize * i as usize);
         // the voice names its machine by key (or by a pinned number): `assign` has the type
-        let t = REAL_CORE.type_resolve(rd32(e.add(VOICE_TYPE as usize)));
+        let t = core.type_resolve(rd32(e.add(VOICE_TYPE as usize)));
         let entry = rd32(e.add(VOICE_ENTRY as usize));
         if !(TYPE_FIRST..=TYPE_LAST).contains(&t) || entry >= image_size || entry & 1 != 0 {
             return E_DSP_TYPE;
@@ -127,7 +152,10 @@ pub(crate) unsafe fn check_types(sec: &DspSec) -> i32 {
         }
         let mut j = 0;
         while j < i {
-            if REAL_CORE.type_resolve(rd32(s.add(voice_off as usize + vstride as usize * j as usize + VOICE_TYPE as usize))) == t {
+            if core.type_resolve(rd32(s.add(
+                voice_off as usize + vstride as usize * j as usize + VOICE_TYPE as usize,
+            ))) == t
+            {
                 return E_DSP_TYPE; // twice in this file
             }
             j += 1;
@@ -139,19 +167,21 @@ pub(crate) unsafe fn check_types(sec: &DspSec) -> i32 {
 
 /// Claim the voice rows (lowest free ones first): the state blocks follow image and bss (8-aligned), one block of `voices * stride`
 /// per voice record, in record order.
-pub(crate) unsafe fn claim(c: &mut Claim) {
+pub(crate) unsafe fn claim<C: CoreApi>(core: &C, c: &mut Claim) {
     let (rec, job, base, byte_shift) = (c.rec, c.job, c.base, c.byte_shift);
-    let d = REAL_CORE.dsp();
+    let d = core.dsp();
     let mut state_at = c.state_at;
     let mut claimed = 0u32;
     let mut v = 0;
     let mut row = 0;
     while v < job.nvoice as usize {
-        while row < MAX_ROWS && (d.row_owner[row] != 0 || (row as u32) >= iw(REAL_CORE.dsp_info(), I_VFREE)) {
+        while row < MAX_ROWS
+            && (d.row_owner[row] != 0 || (row as u32) >= iw(core.dsp_info(), I_VFREE))
+        {
             row += 1;
         }
         let e = job.voices.add(job.vstride as usize * v);
-        d.row_type[row] = REAL_CORE.type_resolve(rd32(e.add(VOICE_TYPE as usize)));
+        d.row_type[row] = core.type_resolve(rd32(e.add(VOICE_TYPE as usize)));
         d.row_pc[row] = L2_SW_BASE + (base + rd32(e.add(VOICE_ENTRY as usize)) - L2_BYTE_BASE) / 2;
         let mut k = 0;
         while k < 8 {
@@ -165,7 +195,11 @@ pub(crate) unsafe fn claim(c: &mut Claim) {
         if job.vstride == VOICE_V3 {
             let note_on = rd32(e.add(VOICE_NOTE_ON as usize));
             let stride = (rd32(e.add(VOICE_STATE_BYTES as usize)) + 7) & !7;
-            d.row_note_on[row] = if note_on == 0 { 0 } else { L2_SW_BASE + (base + note_on - L2_BYTE_BASE) / 2 };
+            d.row_note_on[row] = if note_on == 0 {
+                0
+            } else {
+                L2_SW_BASE + (base + note_on - L2_BYTE_BASE) / 2
+            };
             // the byte address of a data symbol at image offset `state_at`: nominal L2_BYTE_BASE + state_at, plus the byte shift
             d.row_state_base[row] = L2_BYTE_BASE + state_at + byte_shift;
             d.row_stride[row] = stride;
@@ -190,8 +224,8 @@ pub(crate) unsafe fn claim(c: &mut Claim) {
 }
 
 /// Give back the voice rows module record `rec` claimed.
-pub(crate) unsafe fn release(rec: usize) {
-    let d = REAL_CORE.dsp();
+pub(crate) unsafe fn release<C: CoreApi>(core: &C, rec: usize) {
+    let d = core.dsp();
     let mut k = 0;
     while k < MAX_ROWS {
         if d.row_owner[k] == rec as u8 + 1 {
@@ -213,8 +247,13 @@ pub(crate) unsafe fn release(rec: usize) {
 
 /// The voice-row word to publish at step `*want` of module `rec`: a row takes `ROW_STEPS` steps (the 8 ranges, the pc, note_on, state
 /// base, stride, clear bytes, the latch mask, the zeroed-tracks mask, the disabled word cleared, the type).
-pub(crate) unsafe fn row_step(rec: usize, want: &mut u32, write: bool) -> Option<RowWrite> {
-    let d = REAL_CORE.dsp();
+pub(crate) unsafe fn row_step<C: CoreApi>(
+    core: &C,
+    rec: usize,
+    want: &mut u32,
+    write: bool,
+) -> Option<RowWrite> {
+    let d = core.dsp();
     let mut row = MAX_ROWS;
     let mut k = 0;
     while k < MAX_ROWS {
@@ -231,9 +270,16 @@ pub(crate) unsafe fn row_step(rec: usize, want: &mut u32, write: bool) -> Option
         return None;
     }
     if !write {
-        return Some(RowWrite { win: 0, word: 0, value: 0, published: None, last: false, undo: None });
+        return Some(RowWrite {
+            win: 0,
+            word: 0,
+            value: 0,
+            published: None,
+            last: false,
+            undo: None,
+        });
     }
-    let first = iw(REAL_CORE.dsp_info(), I_VFIRST);
+    let first = iw(core.dsp_info(), I_VFIRST);
     let want = *want;
     let at = ROW_WORDS * (first + row as u32);
     let (word, value) = if want < 8 {
@@ -258,8 +304,19 @@ pub(crate) unsafe fn row_step(rec: usize, want: &mut u32, write: bool) -> Option
         (at, d.row_type[row])
     };
     // from the last step on, the type word may be in the DSP: clear it on failure
-    let published = if want == ROW_STEPS - 1 { Some(&mut d.row_pub[row]) } else { None };
+    let published = if want == ROW_STEPS - 1 {
+        Some(&mut d.row_pub[row])
+    } else {
+        None
+    };
     // the type word makes the row visible: it ends the row, and a failed sequence frees it again
     let last = want == ROW_STEPS - 1;
-    Some(RowWrite { win: WIN_VOICES, word, value, published, last, undo: if last { Some(FREE_TYPE) } else { None } })
+    Some(RowWrite {
+        win: WIN_VOICES,
+        word,
+        value,
+        published,
+        last,
+        undo: if last { Some(FREE_TYPE) } else { None },
+    })
 }

@@ -77,7 +77,7 @@ place = "cf.expansion"
 devices = ["dn2"]
 
 # The encoder click on a machine's page (docs/design/machine-page-click.md): hooks at the entry of the page's key handler and turn handler,
-# on both devices. They call dkrt_page_key and dkrt_page_turn (src/rs/src/pageclick.rs) and then run the stock handler; they never consume an
+# on both devices. They call dkrt_page_key and dkrt_page_turn (handlers.rs, over the machines service crate) and then run the stock handler; they never consume an
 # event, and cost one test of a flag while no loaded module declares a click action.
 [[op]]
 op = "hook"

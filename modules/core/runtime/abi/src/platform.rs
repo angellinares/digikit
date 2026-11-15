@@ -8,7 +8,7 @@
 //! the mask, MIDI output and the providers.
 //!
 //! What stays out: `st()` (core state) and the pure helpers `rd32`, `wr32`, `cstr_*` (`mem`). The firmware calls of one service (the machines
-//! service's page, input and parameter calls) go behind that service's own interface (`paramapi::Fw`), not into this trait.
+//! service's page, input and parameter calls) go behind their own interface (`fw::Fw`), not into this trait.
 //!
 //! Every fact that differs between devices is data of the device files: `DeviceProfile` (generated, `profiles.rs`) and never a comparison of the
 //! device id in code.

@@ -1627,7 +1627,7 @@ rust = "crate::services::samples::records::Samples"
 
 [[service]]
 name = "machines"
-rust = "crate::services::machines::records::Machines"
+rust = "dkrt_svc_machines::records::Machines"
 
 [[service]]
 name = "fx"
