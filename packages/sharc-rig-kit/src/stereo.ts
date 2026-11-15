@@ -220,6 +220,8 @@ export interface RawCallOptions {
   /** 80-bit multiplier registers set before the call, `[mask, bits]` as hex */
   specials?: Record<string, [mask: string, bits: string]>;
   readSpecials?: string[];
+  /** count the instructions executed at each pc (`CallResult.profile`) */
+  profile?: boolean;
 }
 
 export class StereoRig {
@@ -366,6 +368,7 @@ export class StereoSession {
     resume?: boolean;
     specials?: Record<string, [string, string]>;
     read_specials?: string[];
+    profile?: boolean;
   }): Promise<CallResult> {
     this.q.push({
       call: {
@@ -379,6 +382,7 @@ export class StereoSession {
         ...(call.resume ? { resume: true } : {}),
         ...(call.specials ? { specials: call.specials } : {}),
         ...(call.read_specials ? { read_specials: call.read_specials } : {}),
+        ...(call.profile ? { profile: true } : {}),
       },
     });
     const results = await this.port.run(this.q.take());
@@ -397,6 +401,7 @@ export class StereoSession {
       resume: o.resume,
       specials: o.specials,
       read_specials: o.readSpecials,
+      profile: o.profile,
     });
   }
 }
