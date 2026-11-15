@@ -43,7 +43,7 @@ const SEED = 0xd1617;
 const seconds = (t0: number): number => round2((performance.now() - t0) / 1000);
 
 /** The "sample-pool" setup: the PCM planes of the case's sample (a fixed seed) and its record at pool index 0. The case's words select index 0. */
-function publishSample(rig: MachineRig, sp: MachineSpec, c: Case): void {
+export function publishSample(rig: MachineRig, sp: MachineSpec, c: Case): void {
   const [frames, rate, channels] = c.sample!;
   const left = noise(1, frames);
   const right = channels === 1 ? left : noise(2, frames);

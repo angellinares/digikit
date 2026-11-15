@@ -26,6 +26,7 @@ const good = (): MachineBlock => ({
   right: [],
   active: 0,
   extra: [],
+  profile: [],
 });
 const where = 'case g/n block 3: note 60 velocity 100 words [a=0x10]';
 const failure = (b: Partial<MachineBlock>) => machineBlockFailure(where, { ...good(), ...b }, 400_000, { M5: -2 });

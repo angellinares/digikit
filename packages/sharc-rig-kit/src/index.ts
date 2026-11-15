@@ -15,3 +15,4 @@ export * from './samplepool.ts';
 export * from './spec.ts';
 export * from './toolchain.ts';
 export * from './soundcheck.ts';
+export * from './profile.ts';

@@ -71,6 +71,8 @@ export interface MachineBlock {
   active: number;
   /** the DM words asked for with `extraReads`, one row each (a word that nothing wrote is null) */
   extra: (number | null)[][];
+  /** instructions executed per pc (short-word address) in this call; empty without the `profile` option */
+  profile: [pc: number, count: number][];
 }
 
 export interface MachineRigOptions {
@@ -78,6 +80,8 @@ export interface MachineRigOptions {
   track?: number;
   stepLimit?: number;
   recordStores?: boolean;
+  /** ask the rig for the instructions per pc of every `block` call (`MachineBlock.profile`) */
+  profile?: boolean;
   open?: RigOpener;
   /** the placed and linked code: built from the spec by default (a host test passes a made-up one) */
   built?: MachineBuilt;
@@ -101,6 +105,7 @@ export class MachineRig {
   private release_ = false;
   private port!: RigPort;
   private readonly recordStores: boolean;
+  private readonly profile: boolean;
 
   private constructor(spec: MachineSpec, o: MachineRigOptions) {
     this.spec = spec;
@@ -109,6 +114,7 @@ export class MachineRig {
     this.track = o.track ?? 0;
     this.stepLimit = o.stepLimit ?? 400_000;
     this.recordStores = o.recordStores ?? false;
+    this.profile = o.profile ?? false;
     this.ctxRng = new PyRandom(o.seed ?? 0xd1617);
     this.byId = new Map(spec.params.map((p) => [p.id, p]));
   }
@@ -306,6 +312,7 @@ export class MachineRig {
         max_steps: this.stepLimit,
         reads,
         read_regs: ['I6', 'I7', 'I4', ...CONTEXT_REGS],
+        ...(this.profile ? { profile: true } : {}),
       },
     });
     const [res] = (await this.port.run(q.take())) as [CallResult];
@@ -327,6 +334,7 @@ export class MachineRig {
       right: dt2 ? words(res.reads[1], 32) : [],
       active: dt2 ? (res.reads[3]?.[0] ?? 0) : 0,
       extra: extraReads.map((_, i) => res.reads[firstExtra + i] ?? []),
+      profile: res.profile ?? [],
     };
   }
 
