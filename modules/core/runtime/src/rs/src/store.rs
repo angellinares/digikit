@@ -119,10 +119,11 @@ unsafe fn find_unlocked(path: *const u8) -> Result<File, i32> {
     }
 }
 
-/// The first 64 bytes of the file `f` (a native sample header), through the peek sector. Task context, like every store read.
+/// The first 64 bytes of the file `f` (a native sample header), through the peek sector. A file under 64 bytes has no head: `E_READ` (the sector holds
+/// other bytes after the end of the file, which are not the file's). Task context, like every store read.
 pub unsafe fn read_head(f: &File, head: &mut [u8; 64]) -> Result<(), i32> {
-    if f.size == 0 {
-        return Err(E_FORMAT);
+    if f.size < 64 {
+        return Err(E_READ);
     }
     let r = read_sector(f.first, scratch());
     if r != OK {
@@ -412,4 +413,20 @@ pub unsafe extern "C" fn dkrt_store_lease(path: *const u8, out: *mut DkrtStoreFi
 #[no_mangle]
 pub unsafe extern "C" fn dkrt_store_unlease(id: i32) {
     crate::store_writer::lease_end(id);
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    /// A file under 64 bytes has no head, and no sector is read for it (the host has no card: a read would not be answered).
+    #[test]
+    fn a_file_under_64_bytes_has_no_head() {
+        for size in [0, 1, 10, 63] {
+            let f = File { first: 0, size, sha: [0; 32] };
+            let mut head = [0xaau8; 64];
+            assert_eq!(unsafe { read_head(&f, &mut head) }, Err(E_READ), "size {size}");
+            assert_eq!(head, [0xaa; 64], "size {size}: nothing is written");
+        }
+    }
 }
