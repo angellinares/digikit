@@ -312,6 +312,213 @@ fn rframe_without_a_frame_setup_is_a_problem() {
     assert_eq!(p, one("stack", "I7"));
 }
 
+/// The problems of a function made of `insns` and `blocks` as given: (rule, register).
+fn run(insns: Vec<Insn>, blocks: Vec<Block>) -> Vec<(&'static str, String)> {
+    let end = insns.last().map_or(BASE, |i| i.pc + 1);
+    let f = Function {
+        name: "f".to_string(),
+        entry: BASE,
+        end,
+        global: true,
+        origin: vec![],
+        complete: true,
+        blocks,
+        effects: FunctionEffects::default(),
+    };
+    let a = Analysis {
+        insns,
+        functions: vec![f.clone()],
+        ..Analysis::default()
+    };
+    check(&a, &f).into_iter().map(|p| (p.rule, p.reg)).collect()
+}
+
+fn block(start: u32, end: u32, term_pc: Option<u32>, term: Terminator, succ: Vec<Edge>) -> Block {
+    Block {
+        start,
+        end,
+        term_pc,
+        term,
+        delay_slots: vec![],
+        succ,
+    }
+}
+
+#[test]
+fn simd_companion_written_after_peyen_is_a_keep_problem() {
+    let mut set = insn(BASE + 1, &["MODE1"], &["MODE1"]);
+    set.defuse.mode1 = Some(Mode1Effect {
+        op: Mode1Op::Set,
+        mask: 1 << 21,
+        value: None,
+    });
+    let mut w = insn(BASE + 2, &["R1"], &["R0"]);
+    w.defuse.simd_writes = vec!["S0".to_string()];
+    let p = problems(vec![
+        insn(BASE, &["MODE1"], &["R5"]),
+        set,
+        w,
+        insn(BASE + 3, &["R5"], &["MODE1"]),
+    ]);
+    assert_eq!(p, one("keep", "S0"));
+}
+
+#[test]
+fn simd_companion_before_peyen_is_not_a_write() {
+    let mut w = insn(BASE, &["R1"], &["R0"]);
+    w.defuse.simd_writes = vec!["S0".to_string()];
+    assert_eq!(problems(vec![w]), vec![]);
+}
+
+#[test]
+fn merge_with_different_depths_is_uncertain() {
+    let ret = Terminator::Return {
+        conditional: false,
+        delayed: false,
+    };
+    let jump = Terminator::Jump {
+        target: Some(BASE + 3),
+        conditional: true,
+        delayed: false,
+    };
+    let edge = |to, kind| Edge { to, kind };
+    let p = run(
+        vec![
+            push(BASE, "R0"),
+            insn(BASE + 1, &[], &[]),
+            push(BASE + 2, "R1"),
+            insn(BASE + 3, &[], &[]),
+        ],
+        vec![
+            block(
+                BASE,
+                BASE + 2,
+                Some(BASE + 1),
+                jump,
+                vec![
+                    edge(BASE + 3, EdgeKind::Taken),
+                    edge(BASE + 2, EdgeKind::Fall),
+                ],
+            ),
+            block(
+                BASE + 2,
+                BASE + 3,
+                None,
+                Terminator::Fall,
+                vec![edge(BASE + 3, EdgeKind::Fall)],
+            ),
+            block(BASE + 3, BASE + 4, Some(BASE + 3), ret, vec![]),
+        ],
+    );
+    assert_eq!(p, one("uncertain", "stack depth differs at a merge"));
+}
+
+#[test]
+fn stack_step_of_unknown_size_is_uncertain() {
+    let mut i = modify_i7(BASE, 0);
+    i.imm = None;
+    assert_eq!(
+        problems(vec![i]),
+        one("uncertain", "stack step of unknown size")
+    );
+}
+
+#[test]
+fn pc_relative_call_between_modifies_of_the_stack_pointer_is_balanced() {
+    let mut call = cjump(BASE + 2);
+    call.form = "25a_pcrel".to_string();
+    let p = run(
+        vec![
+            insn(BASE, &[], &[]),
+            modify_i7(BASE + 1, -1),
+            call,
+            push(BASE + 3, "R2"),
+            push(BASE + 4, "R0"),
+            modify_i7(BASE + 5, 1),
+            insn(BASE + 6, &[], &[]),
+        ],
+        vec![
+            Block {
+                start: BASE,
+                end: BASE + 5,
+                term_pc: Some(BASE + 2),
+                term: Terminator::Call {
+                    conditional: false,
+                    delayed: true,
+                },
+                delay_slots: vec![BASE + 3, BASE + 4],
+                succ: vec![Edge {
+                    to: BASE + 5,
+                    kind: EdgeKind::ReturnSite,
+                }],
+            },
+            block(
+                BASE + 5,
+                BASE + 7,
+                Some(BASE + 6),
+                Terminator::Return {
+                    conditional: false,
+                    delayed: false,
+                },
+                vec![],
+            ),
+        ],
+    );
+    assert_eq!(p, vec![]);
+}
+
+#[test]
+fn restored_base_register_still_changes_the_index_register() {
+    // B8 is saved, written and loaded back; the writes also load I8, which nothing saved.
+    let p = problems(vec![
+        push(BASE, "B8"),
+        insn(BASE + 1, &["R0"], &["B8"]),
+        pop(BASE + 2, "B8"),
+    ]);
+    assert_eq!(p, one("keep", "I8"));
+}
+
+#[test]
+fn write_of_the_stack_base_register_is_a_stack_problem() {
+    let p = problems(vec![insn(BASE, &["R0"], &["B7"])]);
+    assert_eq!(
+        p,
+        vec![
+            ("never_write", "B7".to_string()),
+            ("stack", "I7".to_string())
+        ]
+    );
+}
+
+#[test]
+fn write_to_an_interrupt_register_is_never_allowed() {
+    let p = problems(vec![insn(BASE, &["R0"], &["IMASK"])]);
+    assert_eq!(p, one("never_write", "IMASK"));
+}
+
+#[test]
+fn write_to_a_user_status_register_is_free() {
+    assert_eq!(problems(vec![insn(BASE, &["R0"], &["USTAT1"])]), vec![]);
+}
+
+#[test]
+fn write_to_a_register_in_no_class_is_unclassified() {
+    let p = problems(vec![insn(BASE, &["R0"], &["FADDR"])]);
+    assert_eq!(p, one("unclassified", "FADDR"));
+}
+
+#[test]
+fn function_without_a_return_is_uncertain() {
+    let p = run(
+        vec![insn(BASE, &[], &[])],
+        vec![block(BASE, BASE + 1, None, Terminator::Fall, vec![])],
+    );
+    assert_eq!(
+        p,
+        one("uncertain", "no return recognised; restore check not done")
+    );
+}
+
 #[test]
 fn frame_exit_without_a_frame_setup_is_a_problem() {
     let p = problems(vec![

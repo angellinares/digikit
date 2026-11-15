@@ -557,6 +557,13 @@ class ImmediateOffsetSignednessTest(unittest.TestCase):
         )
         self.assertIn("DM(I6 - 1) = R2", mnemonic)
 
+    def test_4a_pm_access_prints_the_dag2_index_register(self):
+        # g=1 selects DAG2: i=0 is I8, not I0.
+        mnemonic = self.render(
+            "4a", i=0, g=1, d=1, u=0, cond=0x1F, data=1, dreg=2, compute=0
+        )
+        self.assertIn("PM(I8 + 1) = R2", mnemonic)
+
     def test_4b_six_bit_offset_above_31_is_negative(self):
         mnemonic = self.render(
             "4b", i=6, g=0, d=0, u=0, cond=0x1F, data=0x3F, dreg=3, l=1, w=1, x=1

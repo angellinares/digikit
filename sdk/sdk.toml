@@ -125,10 +125,10 @@ fns = [
 # fx adapter from its own copy); the return address arrives in I13 (keep: the module returns with `JUMP (M13, I13)`).
 # The check is `dksharc::rules`, run by `patchkit build` for content modules; it only warns for now.
 [dsp.registers]
-clobber     = ["R0-R15","I0-I5","I12","M1-M4","B3","MR","PX","ASTAT","STKY","LCNTR"]
+clobber     = ["R0-R15","I0-I5","I12","M1-M4","B3","MR","PX","ASTAT","STKY","LCNTR","USTAT1","USTAT2","USTAT3","USTAT4","PX1","PX2","BFFWRP","BFF_HI","BFF_LO"]
 keep        = ["I6","I8-I11","I14","I15","M0","M8-M12","M14","M15","B0-B2","B4-B6","B8-B15","L0-L5","L8-L15","S0-S15","MODE1","MODE2"]
-stack       = ["I7"]
-never_write = ["B7","L6","L7","M5","M6","M7","M13"]
+stack       = ["I7","PCSTK","PCSTKP"]
+never_write = ["B7","L6","L7","M5","M6","M7","M13","IMASK","IMASKP","IRPTL","MMASK","TPERIOD","TCOUNT","FLAGS"]
 entry       = { entry = "I12", return = "I13" }
 
 # The FX contract's numbers (sdk/include/dk/gen/fx.h is the generated C view; it includes the generated sdk/include/dk/gen/fx_consts.h).

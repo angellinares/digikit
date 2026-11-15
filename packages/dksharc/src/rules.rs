@@ -4,8 +4,8 @@
 //! [`crate::defuse::reg_name`] prints, so they match [`crate::DefUse`] exactly. Every problem is a [`Level::Warn`] for now; [`Level::Refuse`]
 //! is for the day every module in the repository builds without a warning.
 
-use crate::model::{Analysis, Block, Direction, Function, Insn, MemOp, Mode, Terminator};
-use crate::rules_table::{KEEP, NEVER_WRITE, RETURN, STACK};
+use crate::model::{Analysis, Block, Direction, Function, Insn, MemOp, Mode, Mode1Op, Terminator};
+use crate::rules_table::{CLOBBER, KEEP, NEVER_WRITE, RETURN, STACK};
 use std::collections::BTreeMap;
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
@@ -17,7 +17,7 @@ pub enum Level {
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub struct RuleProblem {
     pub level: Level,
-    /// `never_write`, `stack`, `keep` or `uncertain`.
+    /// `never_write`, `stack`, `keep`, `unclassified` or `uncertain`.
     pub rule: &'static str,
     /// Name of the function.
     pub func: String,
@@ -35,9 +35,47 @@ pub fn reason(rule: &str) -> &'static str {
         "never_write" => "the stock interrupt code reads it at any instruction",
         "stack" => "only balanced pushes and pops, the entry value at every return",
         "keep" => "save before the first write, restore before every return",
+        "unclassified" => "register not in the contract table",
         "uncertain" => "the register effect of the instruction is not modelled",
         _ => "",
     }
+}
+
+/// MODE1.PEYEN (bit 21): with it set, a compute instruction on R also writes the S register (the SIMD companion).
+const PEYEN: u32 = 1 << 21;
+
+/// The instruction may set MODE1.PEYEN: a `BIT SET` or `BIT TGL` of the bit, a write of the whole register with an unknown value or a
+/// value with the bit set, or a `POP STS`. A MODE1 write whose effect the analysis did not keep counts as one.
+fn may_set_peyen(insn: &Insn) -> bool {
+    match insn.defuse.mode1 {
+        Some(e) => match e.op {
+            Mode1Op::Set | Mode1Op::Toggle => e.mask & PEYEN != 0,
+            Mode1Op::Full => e.value.is_none_or(|v| v & PEYEN != 0),
+            Mode1Op::PopSts => true,
+            Mode1Op::Clear | Mode1Op::PushSts => false,
+        },
+        None => insn.defuse.writes.iter().any(|r| r == "MODE1"),
+    }
+}
+
+/// The registers an instruction writes. A write of Bn also loads In (the DAG sets the index register to the new base), so In is
+/// added to the writes of the analysis.
+fn writes_of(insn: &Insn) -> Vec<String> {
+    let mut v = insn.defuse.writes.clone();
+    for r in &insn.defuse.writes {
+        if let Some(n) = r.strip_prefix('B').filter(|n| n.parse::<u8>().is_ok()) {
+            let i = format!("I{n}");
+            if !v.contains(&i) {
+                v.push(i);
+            }
+        }
+    }
+    v
+}
+
+/// A CJUMP (`DK_CALL`): direct or pc-relative.
+fn is_cjump(insn: &Insn) -> bool {
+    matches!(insn.form.as_str(), "25a_direct" | "25a_pcrel")
 }
 
 /// The return register counts as keep (the entry register is free to use).
@@ -119,6 +157,10 @@ enum Sp {
 /// of the register modifies and `DefUse::reads` holds M6 or M7); a MODIFY by an immediate (form `19a`). The registers an instruction
 /// writes are `Insn::defuse.writes`.
 fn sp_step(insn: &Insn, sp: &str, idx: u8) -> Sp {
+    // A write of Bn also loads In: never a push, pop or modify.
+    if insn.defuse.writes.iter().any(|r| *r == format!("B{idx}")) {
+        return Sp::Bad;
+    }
     if !insn.defuse.writes.iter().any(|r| r == sp) {
         return Sp::No;
     }
@@ -183,12 +225,13 @@ enum St {
 }
 
 /// The frame setup or exit of a C function: a register copy that writes only I6 (from I7) or only I7 (from I6). `RFRAME` (form
-/// `25c_rframe`, `I7 = I6; I6 = DM(0, I6)`) is a frame exit, and `CJUMP` (form `25a_direct`) is the frame setup for a callee.
+/// `25c_rframe`, `I7 = I6; I6 = DM(0, I6)`) is a frame exit, and `CJUMP` (form `25a_direct` or `25a_pcrel`) is the frame setup for a callee.
 fn frame_step(insn: &Insn) -> Option<St> {
-    match insn.form.as_str() {
-        "25c_rframe" => return Some(St::Restore),
-        "25a_direct" => return Some(St::Call),
-        _ => {}
+    if is_cjump(insn) {
+        return Some(St::Call);
+    }
+    if insn.form == "25c_rframe" {
+        return Some(St::Restore);
     }
     if !insn.mem.is_empty() || insn.defuse.writes.len() != 1 || insn.defuse.conditional {
         return None;
@@ -201,19 +244,21 @@ fn frame_step(insn: &Insn) -> Option<St> {
     }
 }
 
-/// The stack problems of one function: (pc, register). The writes that are not a push, a pop or a modify by a constant, and a return
-/// where the net change of the register since the entry is not zero.
+/// The stack problems of one function: (pc, register), then the places where the check is skipped: (pc, reason). The writes that are
+/// not a push, a pop or a modify by a constant, and a return where the net change of the register since the entry is not zero.
 ///
 /// The net change is a data flow over the blocks of the function (the sum of the pushes, pops and modifies of each block, along the
 /// edges of `Block::succ`). It is skipped for the function when a block holds a change of unknown size or an illegal write, when two
-/// paths reach a block with different depths, or when an edge leaves the function. A call is assumed to leave the register as it
-/// found it.
+/// paths reach a block with different depths, or when an edge leaves the function. A change of unknown size and a merge with different
+/// depths are reported as skipped (`uncertain`). A call is assumed to leave the register as it found it.
+#[allow(clippy::type_complexity)]
 fn stack_problems(
     body: &[&Insn],
     f: &Function,
     rets: &[(&Block, u32)],
-) -> Vec<(u32, &'static str)> {
+) -> (Vec<(u32, &'static str)>, Vec<(u32, &'static str)>) {
     let mut out = vec![];
+    let mut skipped: Vec<(u32, &'static str)> = vec![];
     for &sp in STACK {
         let Some(idx) = sp.strip_prefix('I').and_then(|n| n.parse::<u8>().ok()) else {
             continue;
@@ -238,6 +283,7 @@ fn stack_problems(
                     step.insert(insn.pc, Some(St::Delta(d)));
                 }
                 Sp::Unknown => {
+                    skipped.push((insn.pc, "stack step of unknown size"));
                     step.insert(insn.pc, None);
                 }
                 Sp::Bad => {
@@ -291,6 +337,7 @@ fn stack_problems(
         depth.insert(f.entry, (0, None));
         let mut work = vec![f.entry];
         let mut exact = true;
+        let mut mismatch: Option<u32> = None;
         while let Some(s) = work.pop() {
             let b = by_start[&s];
             let Some(after) = apply(b, depth[&s], true) else {
@@ -302,7 +349,10 @@ fn stack_problems(
                     continue;
                 }
                 match depth.get(&e.to) {
-                    Some(&x) if x != after => exact = false,
+                    Some(&x) if x != after => {
+                        exact = false;
+                        mismatch.get_or_insert(e.to);
+                    }
                     Some(_) => {}
                     None => {
                         depth.insert(e.to, after);
@@ -317,6 +367,9 @@ fn stack_problems(
         for pc in bad_restore.borrow().iter().copied() {
             out.push((pc, sp));
         }
+        if let Some(at) = mismatch {
+            skipped.push((at, "stack depth differs at a merge"));
+        }
         if !exact {
             continue;
         }
@@ -330,7 +383,7 @@ fn stack_problems(
             }
         }
     }
-    out
+    (out, skipped)
 }
 
 /// The problems of one function of `a`.
@@ -344,8 +397,14 @@ fn stack_problems(
 ///   data register (`R0 = MODE1`); and at each return the last write at or before the return pc (in pc order, delay slots included)
 ///   is a load of the register from memory, or a copy of that data register back into it (`MODE1 = R0`) when no instruction between
 ///   the two copies writes the data register. It looks at pc order, not at the paths, so a restore in a branch that does not reach a
-///   return is not told apart. A function without a return needs no restore.
-/// - `uncertain`: an instruction whose register effect the analysis does not know.
+///   return is not told apart.
+/// - Write sets: a write of Bn also writes In (so a B7 write is a `stack` problem on I7, a restored B8 also writes I8 for `keep`).
+///   From the first instruction (in pc order) that may set MODE1.PEYEN, the SIMD companions (`DefUse::simd_writes`, S0-S15 for R0-R15)
+///   count as writes for `never_write` and `keep`; the order is the pc order, not the paths.
+/// - `unclassified`: an instruction writes a register that is in no class of the table.
+/// - `uncertain`: an instruction whose register effect the analysis does not know; a stack check that is skipped (a stack step of
+///   unknown size, a merge with different depths); a write of PCSTK or PCSTKP (push and pop are not told apart); a function with no
+///   recognised return (the restore check is not done).
 pub fn check(a: &Analysis, f: &Function) -> Vec<RuleProblem> {
     let body: Vec<&Insn> = a
         .insns
@@ -361,18 +420,39 @@ pub fn check(a: &Analysis, f: &Function) -> Vec<RuleProblem> {
         reg,
     };
     let mut out = vec![];
-    let mut writes: BTreeMap<&str, Vec<&Insn>> = BTreeMap::new();
+    let mut writes: BTreeMap<String, Vec<&Insn>> = BTreeMap::new();
+    let peyen = body.iter().find(|i| may_set_peyen(i)).map(|i| i.pc);
     for insn in &body {
         if let Some(why) = insn.defuse.uncertain.first() {
             out.push(problem("uncertain", insn.pc, why.clone()));
         }
-        for r in &insn.defuse.writes {
+        let mut names = writes_of(insn);
+        // From the first instruction that may set PEYEN (in pc order), the SIMD companions are written too.
+        if peyen.is_some_and(|p| insn.pc >= p) {
+            for r in &insn.defuse.simd_writes {
+                if !names.contains(r) {
+                    names.push(r.clone());
+                }
+            }
+        }
+        for r in &names {
             if NEVER_WRITE.contains(&r.as_str()) {
                 out.push(problem("never_write", insn.pc, r.clone()));
-            } else if r == "I6" && insn.form == "25a_direct" {
+            } else if r == "I6" && is_cjump(insn) {
                 // The CJUMP of a call sets I6 for the callee; the callee's RFRAME restores it.
+            } else if STACK.contains(&r.as_str()) {
+                // I7 is checked by `stack_problems`. A write of PCSTK or PCSTKP does not tell a push from a pop.
+                if !r.starts_with('I') {
+                    out.push(problem(
+                        "uncertain",
+                        insn.pc,
+                        format!("{r} written: push or pop not told apart"),
+                    ));
+                }
             } else if is_keep(r) {
-                writes.entry(r.as_str()).or_default().push(insn);
+                writes.entry(r.clone()).or_default().push(insn);
+            } else if !CLOBBER.contains(&r.as_str()) {
+                out.push(problem("unclassified", insn.pc, r.clone()));
             }
         }
     }
@@ -393,10 +473,22 @@ pub fn check(a: &Analysis, f: &Function) -> Vec<RuleProblem> {
         })
         .collect();
     let ends: Vec<u32> = rets.iter().map(|(_, e)| *e).collect();
-    for (addr, reg) in stack_problems(&body, f, &rets) {
+    if rets.is_empty() {
+        out.push(problem(
+            "uncertain",
+            f.entry,
+            "no return recognised; restore check not done".to_string(),
+        ));
+    }
+    let (stack, skipped) = stack_problems(&body, f, &rets);
+    for (addr, reg) in stack {
         out.push(problem("stack", addr, reg.to_string()));
     }
+    for (addr, why) in skipped {
+        out.push(problem("uncertain", addr, why.to_string()));
+    }
     for (reg, w) in writes {
+        let reg = reg.as_str();
         let first = w[0].pc;
         // A routine that ends in RFRAME finds the caller's I6 saved in its frame (pushed by the caller's CJUMP delay slot).
         let saved = body.iter().any(|i| {

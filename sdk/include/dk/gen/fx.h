@@ -31,10 +31,10 @@ typedef struct dk_fx_desc {
 /* Entry point. SHARC+ assembly, v1: the adapter enters with `I13 = return address; JUMP (M13, I12)` and the module returns with
    `JUMP (M13, I13)`. Arguments R4 = state, R8 = in (dk_fx_in), R12 = params; result R0.
    Registers (the table is sdk/dsp/REGISTERS.md):
-   clobber (free to use): R0-R15, I0-I5, I12, M1-M4, B3, MR, PX, ASTAT, STKY, LCNTR
+   clobber (free to use): R0-R15, I0-I5, I12, M1-M4, B3, MR, PX, ASTAT, STKY, LCNTR, USTAT1, USTAT2, USTAT3, USTAT4, PX1, PX2, BFFWRP, BFF_HI, BFF_LO
    keep (save before the first write, restore before every return): I6, I8-I11, I14, I15, M0, M8-M12, M14, M15, B0-B2, B4-B6, B8-B15, L0-L5, L8-L15, S0-S15, MODE1, MODE2
-   stack (the stack pointer: changes only by balanced pushes and pops (post-modify with M6 or M7, or MODIFY by a constant), holds its entry value at every return, is never loaded with another address): I7
-   never_write (no write at all: the stock interrupt code reads these at any instruction): B7, L6, L7, M5, M6, M7, M13
+   stack (the stack pointer: changes only by balanced pushes and pops (post-modify with M6 or M7, or MODIFY by a constant), holds its entry value at every return, is never loaded with another address): I7, PCSTK, PCSTKP
+   never_write (no write at all: the stock interrupt code reads these at any instruction): B7, L6, L7, M5, M6, M7, M13, IMASK, IMASKP, IRPTL, MMASK, TPERIOD, TCOUNT, FLAGS
    entry: I12 is the entry address (it may be overwritten), I13 the return address (keep). */
 
 /* Block entry point. params: DK_FX_MAX_PARAMS words. Returns dk_fx_status; a negative number is a fault: the block plays dry. Entered as note_on of dk_machine.h. */

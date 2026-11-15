@@ -260,7 +260,8 @@ def render_mem_immoff(sw, f, insn_type):
     and tools/sharc_dev/sharcdb/'s `ptr` table, both of which already draw this
     distinction). Type15b has no u bit and is always pre-modify (PRM
     p.15-11)."""
-    i = f.get("i", 0)
+    # g selects DAG2 (I8-I15) in 4a/4b/4d/15b, as in sharc_core forms_move (index = i + 8 if g).
+    i = f.get("i", 0) + (8 if f.get("g") else 0)
     bits = _IMMOFF_DATA_BITS.get(insn_type, 6)
     off = sign_extend(f.get("data", 0), bits)
     dreg = f.get("dreg")
