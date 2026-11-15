@@ -310,10 +310,47 @@ Item numbers are ids, not an order. The order lives in [sdk-runtime-roadmap.md](
 
 Before each item over a day: state payoff and confidence, and stop when they are weak.
 
+### 13.1 Item 8 remaining steps: P8c, P8d, P8e
+
+Items marked [inferred] or [open] were not checked.
+
+**What exists.**
+
+- ColdFire spans: `dlog::spanned`, `span_t0`, `span_end` (`modules/core/runtime/src/rs/src/dlog.rs:281-339`). Producers: module ticks (`entry.rs:116-121`), service phases as `0x100|p` (`tick.rs:15`), polls as `0x200|i` (`tick.rs:25`).
+- Debug-module span table: one row per module, per phase (3) and per poll (4) (`modules/tools/debug/src/c/debug.c:71-74, 655-678`); PROFILE_STATE and PROFILE_READ at `debug.c:706-766`. The host derives the layout as `rows - 7` (`packages/dk-session/src/dkupload-core.ts:1319-1341`). `dkprof` accepts only the kinds module, phase and poll (`packages/dkprof/src/profile.rs:176`).
+- SHARC contract defined, not implemented: `DK_SPAN_BEGIN/END`, `_dk_stats_ptr`, a window of 4 + 16x4 words (`sdk/dsp/contract/dk_trace.inc:19-70`, `sdk/include/dk/core/trace.h:38-46`). `_dk_span_add` and the window exist nowhere. Window 3 is reserved and refused on both sides (`abi/src/link.rs:12,19`; `dsp-link.inc:28,181`).
+- R10 still keeps SHARC dispatch in the adapters: `_fx_mark` stage 4/5 (`modules/core/adapters/fx/src/dsp/fx.s:290-307`), `_dv_mark` (`dsp-voice-dn2.s:294-302`; DT2 the same [inferred]).
+
+**P8c, ColdFire dispatcher spans (about 1 day).**
+
+- Dispatch points: (1) hook wrappers `dkrt_page_key` and `dkrt_page_turn` (`handlers.rs:81,89`), owner `0x300|hook`; (2) service ticks: one span per service and phase, owner `0x100 | svc<<4 | phase`, inside `ServiceTable::tick` [inferred location]. (3) Module ticks and polls are unchanged.
+- Service x phase spans replace the phase spans. The host sums the rows of a phase to get the phase total. Overlapping spans may not be added (section 9).
+- Record format unchanged: `(owner, cycles)` on the span channel.
+- Debug module: `span_row` gains the hook class and the service x phase rows. PROFILE_STATE reports its class counts (modules, service-phases, hooks, polls); today the host hard-codes `rows - 7`, and a tail after the poll slots would parse as more polls. This is a format change: the debug module and dk-session change in one PR.
+- Cost: with no sink, one word test per span. With a sink, two clock calls, an emit under IRQ mask and a row update, about 40-60 instructions [inferred]. Budget: the no-sink cost stays within the 0.02% instruction-ratio A/B; the with-sink cost is reported as an `overhead` metric; no budget before the pilot (section 8).
+- Naming: modules from the load table; services from the generated `[[service]]` order exported to `gen_proto`; hooks by wrapper symbol via the address map; polls as today.
+- Output: `dk.profile/1` spans gain the kinds `service` and `hook`; `wb profile spans` and the Profile pane add "Services" and "Hooks" groups. Emulator and device use the same path (dk-session to the debug module), no `mem.cf.peek`.
+- Host tests: runtime spans tests (hook and service owners, no overlap); debug host test (rows, class counts); dk-session fake; dkprof new kinds; profile-core grouping. Device test: one case in `debug-module.device.test.ts` on DN2 and DT2: a page key gives a hook row with calls > 0.
+
+**P8d, DSP stats window (2 days).**
+
+- Step 1, before the DSP macros: the window-3 read case in the DSP routine and its host test. The reply record (687 words; `docs/findings/31-dsp-link.md:86-124`, `78-reply-inflight.md`) has no free run of 7 words on either device (stock words, stock DSP rows, `dl_diag` in rows 1-16 at +0x44/+0x48, DN2 effect-bus audio in all rows), so the stats are not copied into the reply record.
+- Measured on the SHARC: one stats row per DSP dispatch row (rows 0-7 machines, 8-15 effects [inferred: fx rows <= 8]). Per row: calls, cycles summed, largest call, largest block. Window v2 has 6 words per row and replaces v1 in `sdk/dsp/contract/dk_trace.inc` and `sdk/include/dk/core/trace.h` when P8d is built. Nothing implements v1. Header: blocks, largest stock block delta, overruns.
+- Counted in image code only: `DK_SPAN_BEGIN/END` at the existing mark sites in `fx.s` and `dsp-voice*.s`; `_dk_span_add`, the window and the end-of-block fold in the dsp-link block tail. When stubs move to services (runtime-and-services 6.1), only the macro sites move.
+- Cost: off, 3 instructions per macro (6 per call); on, about 20 per call plus a 16-row fold of about 64 per block [inferred]. On the emulator the EMUCLK read takes code out of the fast tiers; emulator figures are instruction counts, not cycles.
+- Overrun: a block whose stock block delta (HEALTH store) is at least the block period in cycles, that is, a block at 100% of the period. The ColdFire writes the period. The UI also draws the 85% budget line. TPERIOD/TCOUNT and the core clock are not measured on hardware: [open] until P9.
+- Transport: the stats live in a DSP DM window behind `_dk_stats_ptr` (`sdk/dsp/contract/dk_trace.inc:21-62`, `sdk/include/dk/core/trace.h:38-40`). The ColdFire reads it through dsp-link window 3, which becomes a read window. Today window 3 is refused (`modules/core/adapters/dsp-link/src/dsp/dsp-link.inc:28,181`); the comment "first window number no writer may use" in `modules/core/runtime/abi/src/link.rs:11-18` changes accordingly. It needs a new window case in the DSP routine (the `_dl_win2`/`_dl_wdone` code shows the mechanism) and costs one window read per poll on the ColdFire side. Two control words (on, clear generation) are written with `link::set`, only by the owner of the span channel. `dl_tick` keeps a ColdFire mirror (`dsp-link.c:253`). Runtime import `dk_dsp_stats_read` gives the mirror to the debug module. The new command `PROFILE_DSP` gets a new command id, with no renumbering; the `debug_profile` range grows (`gen_proto.ts:199`, sdk.toml). Link queue depth is ColdFire state: the pump keeps current and peak depth, returned by PROFILE_DSP [inferred: queue in dkrt-link].
+- Host tests: Rust link (window 3 read-only, control words owner-only); dsp-link host test (window-3 read case, control words, fold); dk-session fake for PROFILE_DSP. Device test: one `dsp: 'sharc'` test, one machine and one effect: calls = voices x blocks, cycles > 0, zero when off. Golden PCM and hashes stay unchanged when off. Patched image hashes change, so `test:full` runs once for the batch.
+
+**P8e, Profile pane DSP section (0.5 day).** A "DSP" section per module (rows mapped through `machine_types_of`, `handlers.rs:66`): cycles per block, largest call, largest block, calls per block; then overruns and link depth. The 85% budget line is drawn. Unit on the emulator: "instructions (EMUCLK)". The existing `sharc.profile` stays as the emulator-only per-function view. Host test: profile-core. Screenshot before handoff.
+
+Payoff: per-module DSP numbers on the device, needed by P9 calibration and the broker. Confidence high for P8c, medium for P8d (the window-3 read case, SHARC register pressure at the mark sites).
+Risks: the window-3 read case adds a DSP routine path and one read per ColdFire poll; the off cost changes the instruction counts `sharc_cells` sees; PROFILE_STATE format break; hooks with spans run in other tasks [inferred: page hooks in the UI task].
+
 ## 14. Open items
 
 - Answered by `packages/dksharc` (3.3): a module DSP section is analysed in Rust. The DSP load address per run is still open (3.2).
 - Answered by item 1 (emulator): load addresses come from a PEEK of the runtime's module table `DKRT_STATE` (`mem.cf.peek`); no event field. On a device the same table is read by the debug module's PEEK (`dklog crash --image`); not run on hardware [O].
-- [O] Host transport for the DSP stats window: `dkrt_peek_range` or a new command?
+- Answered by P8d (13.1): the host reads the DSP stats window through the new command `PROFILE_DSP`.
 - [O] The device transport (`dklog`, `dkupload`) has not run on hardware.
 - Answered by the clock audit ([finding 125](../findings/125-dsp-cycle-counter-consumers.md), [D]): EMUCLK reads only report. One reader per image, the SHARC block handler; its low-word cycle delta feeds the HEALTH page through `core/health`. Nothing branches on it.
