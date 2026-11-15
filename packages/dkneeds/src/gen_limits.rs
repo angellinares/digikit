@@ -17,6 +17,173 @@ pub const TABLE_VERSION: u32 = 1;
 pub const MAX_VOICES: u32 = 8;
 pub const MAX_FX: u32 = 4;
 
+/// Magic of a `.dkm`, "DKMF" (0x444b4d46).
+pub const MAGIC: u32 = 1145785670;
+/// The only `.dkm` format.
+pub const FORMAT: u32 = 1;
+/// The header's entry offset of a missing `init`, `fini`, `menu` or `tick`.
+pub const NONE: u32 = 4294967295;
+/// Bytes of the module name in the header (H_NAME).
+pub const NAME_LEN: u32 = 32;
+/// Bytes of an entry of the ColdFire relocation table.
+pub const CF_RELOC_LEN: u32 = 8;
+/// ColdFire relocation word: the image offset of the field.
+pub const CF_RELOC_OFFSET: u32 = 0;
+/// ColdFire relocation word: kind (0 base-relative, 1 << 24 | import index).
+pub const CF_RELOC_KIND: u32 = 4;
+/// Bytes of an entry of the ColdFire import table.
+pub const CF_IMPORT_LEN: u32 = 32;
+/// Header word: MAGIC.
+pub const H_MAGIC: u32 = 0;
+/// Header word: FORMAT.
+pub const H_FORMAT: u32 = 4;
+/// Header word: file size.
+pub const H_SIZE: u32 = 8;
+/// Header word: header size (`dkm_header`).
+pub const H_HDRSIZE: u32 = 12;
+/// Header: 32 bytes of sha256 over the file with these bytes zero.
+pub const H_SHA: u32 = 16;
+/// Header word: the runtime version the module needs (bit 31: built with DK_TRACE).
+pub const H_RUNTIME: u32 = 48;
+/// Header word: the module's version.
+pub const H_VERSION: u32 = 52;
+/// Header word: reserved.
+pub const H_RESERVED: u32 = 56;
+/// Header: the module name, NAME_LEN bytes.
+pub const H_NAME: u32 = 64;
+/// Header word: ColdFire image offset.
+pub const H_IMAGE_OFF: u32 = 96;
+/// Header word: ColdFire image size.
+pub const H_IMAGE_SIZE: u32 = 100;
+/// Header word: bss bytes.
+pub const H_BSS: u32 = 104;
+/// Header word: placement alignment.
+pub const H_ALIGN: u32 = 108;
+/// Header word: relocation table offset.
+pub const H_RELOC_OFF: u32 = 112;
+/// Header word: relocation count.
+pub const H_RELOC_N: u32 = 116;
+/// Header word: ColdFire import table offset.
+pub const H_IMPORT_OFF: u32 = 120;
+/// Header word: ColdFire import count.
+pub const H_IMPORT_N: u32 = 124;
+/// Header word: `init` image offset.
+pub const H_INIT: u32 = 128;
+/// Header word: `fini` image offset.
+pub const H_FINI: u32 = 132;
+/// Header word: `menu` image offset.
+pub const H_MENU: u32 = 136;
+/// Header word: `tick` image offset.
+pub const H_TICK: u32 = 140;
+/// Header word: the header table (`table_off`).
+pub const H_REG_OFF: u32 = 144;
+/// Header word: the header table's size (`table_size`).
+pub const H_REG_SIZE: u32 = 148;
+/// Header word: DSP section offset.
+pub const H_DSP_OFF: u32 = 152;
+/// Header word: DSP section size.
+pub const H_DSP_SIZE: u32 = 156;
+/// Magic of the DSP section, "DKDS" (0x444b4453).
+pub const DSP_MAGIC: u32 = 1145783379;
+/// DSP section version 1: voices of VOICE_V1 bytes.
+pub const DSP_V1: u32 = 1;
+/// Version 2: voices of VOICE_V2 bytes.
+pub const DSP_V2: u32 = 2;
+/// Version 3: voices of VOICE_V3 bytes, note_on and state.
+pub const DSP_V3: u32 = 3;
+/// Version 4: adds effect records of FX_LEN bytes.
+pub const DSP_V4: u32 = 4;
+/// Version 5: adds the track sample table record.
+pub const DSP_V5: u32 = 5;
+/// DSP header word: magic.
+pub const DSP_H_MAGIC: u32 = 0;
+/// DSP header word: version.
+pub const DSP_H_VERSION: u32 = 4;
+/// DSP header word: device (1 dt2, 2 dn2).
+pub const DSP_H_DEVICE: u32 = 8;
+/// DSP header word: image bytes.
+pub const DSP_H_IMAGE_SIZE: u32 = 12;
+/// DSP header word: bss bytes.
+pub const DSP_H_BSS: u32 = 16;
+/// DSP header word: placement alignment.
+pub const DSP_H_ALIGN: u32 = 20;
+/// DSP header word: image offset.
+pub const DSP_H_IMAGE_OFF: u32 = 24;
+/// DSP header word: relocation table offset.
+pub const DSP_H_RELOC_OFF: u32 = 28;
+/// DSP header word: relocation count.
+pub const DSP_H_RELOC_N: u32 = 32;
+/// DSP header word: import table offset.
+pub const DSP_H_IMPORT_OFF: u32 = 36;
+/// DSP header word: import count.
+pub const DSP_H_IMPORT_N: u32 = 40;
+/// DSP header word: voice table offset.
+pub const DSP_H_VOICE_OFF: u32 = 44;
+/// DSP header word: voice count.
+pub const DSP_H_VOICE_N: u32 = 48;
+/// DSP header word: effect record offset (version 4 and up).
+pub const DSP_H_FX_OFF: u32 = 52;
+/// DSP header word: effect record count (version 4 and up).
+pub const DSP_H_FX_N: u32 = 56;
+/// DSP header word: the track sample table record offset (version 5).
+pub const DSP_H_BANK_OFF: u32 = 60;
+/// Bytes of a DSP relocation.
+pub const RELOC_LEN: u32 = 8;
+/// DSP relocation word: the image byte offset of the 48-bit instruction.
+pub const RELOC_OFFSET: u32 = 0;
+/// DSP relocation word: kind << 28 | class << 24 | import index.
+pub const RELOC_WORD: u32 = 4;
+/// Bytes of a DSP import (a 28-byte name, then the address word at +28).
+pub const DSP_IMPORT_LEN: u32 = 32;
+/// Offset of the address word of a DSP import.
+pub const DSP_IMPORT_ADDR: u32 = 28;
+/// Bytes of a voice of version 1: type, entry, 2 reserved.
+pub const VOICE_V1: u32 = 16;
+/// Bytes of a voice of version 2: type, entry, 8 knob ranges, 2 reserved.
+pub const VOICE_V2: u32 = 48;
+/// Bytes of a voice of version 3 and up.
+pub const VOICE_V3: u32 = 64;
+/// Voice word: the machine key or type.
+pub const VOICE_TYPE: u32 = 0;
+/// Voice word: the entry (version 3: render) as an image byte offset.
+pub const VOICE_ENTRY: u32 = 4;
+/// Voice of version 2: the 8 knob ranges (min | max << 16).
+pub const VOICE_V2_RANGES: u32 = 8;
+/// Version 3 voice word: the note_on entry (0: none).
+pub const VOICE_NOTE_ON: u32 = 8;
+/// Version 3 voice word: state bytes per voice.
+pub const VOICE_STATE_BYTES: u32 = 12;
+/// Version 3 voice word: bytes zeroed at note-on.
+pub const VOICE_CLEAR_BYTES: u32 = 16;
+/// Version 3 voice: the 8 knob ranges.
+pub const VOICE_V3_RANGES: u32 = 20;
+/// Version 3 voice word: the number of voice states.
+pub const VOICE_VOICES: u32 = 52;
+/// Version 3 voice word: the parameter latch mask.
+pub const VOICE_LATCH: u32 = 56;
+/// Version 3 voice word: reserved, 0.
+pub const VOICE_V3_RESERVED: u32 = 60;
+/// Bytes of an effect record (version 4 and up).
+pub const FX_LEN: u32 = 64;
+/// Effect record word: the process entry as an image byte offset.
+pub const FX_PROCESS: u32 = 0;
+/// Effect record word: the image offset of its `dk_fx_desc`.
+pub const FX_DESC: u32 = 4;
+/// Effect record word: state bytes (from the desc).
+pub const FX_STATE: u32 = 8;
+/// Effect record word: parameter count (from the desc).
+pub const FX_NPARAMS: u32 = 12;
+/// Effect record word: the routes (FXF_*).
+pub const FX_FLAGS: u32 = 16;
+/// Effect record: the words p0 to p7 of the row.
+pub const FX_PARAMS: u32 = 20;
+/// Effect flags: the effect may run on a send bus.
+pub const FXF_SEND: u32 = 1;
+/// Effect flags: it may not run on the master chain.
+pub const FXF_NOMASTER: u32 = 2;
+/// Effect flags: its default route is the send bus.
+pub const FXF_DEFAULT_SEND: u32 = 4;
+
 pub const KIND_PARAM: u32 = 1;
 pub const LEN_PARAM: u32 = 0x50;
 pub const KIND_MACHINE: u32 = 2;
@@ -106,3 +273,96 @@ pub const RESOURCES: [(u32, &str); 6] = [
     (RES_DSP_COST_VOICE, "dsp_cost_voice"),
     (RES_DSP_COST_FX, "dsp_cost_fx"),
 ];
+
+/// The `[fx]` contract of sdk/sdk.toml (the numbers of <dk/gen/fx_consts.h>).
+pub mod fx {
+    pub const DK_FX_V1: u32 = 1;
+    pub const DK_BLOCK: u32 = 32;
+    pub const DK_FX_BLOCK: u32 = 64;
+    pub const DK_FX_MAX_PARAMS: u32 = 8;
+    pub const DK_FX_MAX: u32 = 4;
+    pub const DK_FX_OK: u32 = 0;
+    pub const DK_LEVEL_BOUND_BITS: u32 = 1090519040;
+    pub const DK_FX_MAGIC: u32 = 1145783896;
+    pub const DK_FX_IN_IN: u32 = 0;
+    pub const DK_FX_IN_OUT: u32 = 4;
+    pub const DK_FX_IN_BLOCK: u32 = 8;
+    pub const DK_FX_IN_BYTES: u32 = 12;
+    pub const DK_FX_IN_W_IN: u32 = 0;
+    pub const DK_FX_IN_W_OUT: u32 = 1;
+    pub const DK_FX_IN_W_BLOCK: u32 = 2;
+    pub const DK_FX_IN_WORDS: u32 = 3;
+    pub const DK_FX_DESC_MAGIC: u32 = 0;
+    pub const DK_FX_DESC_CONTRACT: u32 = 4;
+    pub const DK_FX_DESC_N_PARAMS: u32 = 8;
+    pub const DK_FX_DESC_STATE_BYTES: u32 = 12;
+    pub const DK_FX_DESC_MAX_CALL_DEPTH: u32 = 16;
+    pub const DK_FX_DESC_STACK_BYTES: u32 = 20;
+    pub const DK_FX_DESC_BYTES: u32 = 24;
+    pub const DK_FX_DESC_W_MAGIC: u32 = 0;
+    pub const DK_FX_DESC_W_CONTRACT: u32 = 1;
+    pub const DK_FX_DESC_W_N_PARAMS: u32 = 2;
+    pub const DK_FX_DESC_W_STATE_BYTES: u32 = 3;
+    pub const DK_FX_DESC_W_MAX_CALL_DEPTH: u32 = 4;
+    pub const DK_FX_DESC_W_STACK_BYTES: u32 = 5;
+    pub const DK_FX_DESC_WORDS: u32 = 6;
+}
+
+/// The `[machine]` contract of sdk/sdk.toml (the numbers of <dk/gen/machine_consts.h>).
+pub mod machine {
+    pub const DK_MACHINE_V1: u32 = 1;
+    pub const DK_BLOCK: u32 = 32;
+    pub const DK_MAX_PARAMS: u32 = 8;
+    pub const DK_MAX_VOICES: u32 = 16;
+    pub const DK_OK: u32 = 0;
+    pub const DK_DONE: u32 = 1;
+    pub const DK_STEREO: u32 = 2;
+    pub const DK_MACHINE_STEREO: u32 = 256;
+    pub const DK_MACHINE_GATE: u32 = 512;
+    pub const DK_P_PERCENT: u32 = 0;
+    pub const DK_P_BIPOLAR: u32 = 1;
+    pub const DK_P_ENUM: u32 = 2;
+    pub const DK_P_PITCH: u32 = 3;
+    pub const DK_LEVEL_BOUND_BITS: u32 = 1090519040;
+    pub const DK_MAGIC: u32 = 1145785665;
+    pub const DK_IN_PITCH: u32 = 0;
+    pub const DK_IN_VELOCITY: u32 = 4;
+    pub const DK_IN_BLOCK: u32 = 8;
+    pub const DK_IN_OUT: u32 = 12;
+    pub const DK_IN_TRACK: u32 = 16;
+    pub const DK_IN_OUT_R: u32 = 20;
+    pub const DK_IN_GATE: u32 = 24;
+    pub const DK_IN_BYTES: u32 = 28;
+    pub const DK_IN_W_PITCH: u32 = 0;
+    pub const DK_IN_W_VELOCITY: u32 = 1;
+    pub const DK_IN_W_BLOCK: u32 = 2;
+    pub const DK_IN_W_OUT: u32 = 3;
+    pub const DK_IN_W_TRACK: u32 = 4;
+    pub const DK_IN_W_OUT_R: u32 = 5;
+    pub const DK_IN_W_GATE: u32 = 6;
+    pub const DK_IN_WORDS: u32 = 7;
+    pub const DK_DESC_MAGIC: u32 = 0;
+    pub const DK_DESC_CONTRACT: u32 = 4;
+    pub const DK_DESC_N_PARAMS: u32 = 8;
+    pub const DK_DESC_VOICES: u32 = 12;
+    pub const DK_DESC_STATE_BYTES: u32 = 16;
+    pub const DK_DESC_STATE_CLEAR_BYTES: u32 = 20;
+    pub const DK_DESC_MAX_CALL_DEPTH: u32 = 24;
+    pub const DK_DESC_STACK_BYTES: u32 = 28;
+    pub const DK_DESC_BYTES: u32 = 32;
+    pub const DK_DESC_W_MAGIC: u32 = 0;
+    pub const DK_DESC_W_CONTRACT: u32 = 1;
+    pub const DK_DESC_W_N_PARAMS: u32 = 2;
+    pub const DK_DESC_W_VOICES: u32 = 3;
+    pub const DK_DESC_W_STATE_BYTES: u32 = 4;
+    pub const DK_DESC_W_STATE_CLEAR_BYTES: u32 = 5;
+    pub const DK_DESC_W_MAX_CALL_DEPTH: u32 = 6;
+    pub const DK_DESC_W_STACK_BYTES: u32 = 7;
+    pub const DK_DESC_WORDS: u32 = 8;
+}
+
+/// The effect routes of `[page] consts` (`DK_ROUTE_*`), the ones a `.dkm` records.
+pub mod page {
+    pub const DK_ROUTE_MASTER: u32 = 1;
+    pub const DK_ROUTE_SEND: u32 = 2;
+}

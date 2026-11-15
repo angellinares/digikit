@@ -57,6 +57,7 @@ mod imports;
 mod mailbox;
 mod plan;
 mod platform;
+mod storage_adapter;
 mod safe_mode;
 mod selection;
 mod report;
@@ -119,6 +120,14 @@ pub(crate) unsafe extern "C" fn imp_param_set(track: u32, word: u32, raw: i32) -
 #[cfg(test)]
 mod cleanup_tests;
 #[cfg(test)]
+mod test_lock;
+#[cfg(test)]
 mod fake_platform;
+#[cfg(test)]
+mod spans_tests;
+#[cfg(test)]
+mod contract_tests;
+#[cfg(test)]
+mod fake_storage;
 
 

@@ -31,7 +31,6 @@ from .sequencer import (
 )
 from .state import (
     State,
-    _b_write_loads_i,
     _copy,
     _event,
     _json_value,
@@ -389,8 +388,10 @@ def _type_7d(
             )
         ]
     result = _aconv(value, w2b, src_code, state.pc_sw)
+    # Not _b_write_loads_i: PRM p.6-15, "In case of B2W or W2B instruction on any B
+    # register, the corresponding I register is not implicitly updated." The DN2
+    # interrupt dispatcher (0x1c0a76) converts I7, then B7, and keeps using I7.
     state.uregs[dst_code] = result
-    _b_write_loads_i(state, dst_code, result)
     _event(
         state,
         insn,

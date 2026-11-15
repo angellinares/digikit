@@ -27,6 +27,12 @@ dkrt_dsp_voices:
     .globl dkrt_peek_n
 dkrt_peek_n:
     .long PEEK_N
+    .globl dkrt_span_clock
+dkrt_span_clock:
+    .long SPAN_CLOCK
+    .globl dkrt_span_clock_hz
+dkrt_span_clock_hz:
+    .long SPAN_CLOCK_HZ
     .globl dkrt_sound_words
 dkrt_sound_words:
     .long FX_SOUND_WORDS
@@ -47,21 +53,3 @@ dkrt_store_sectors:
     .ascii "DKIMGID1"
 dkrt_image_id:
     .long 0, 0
-
-    /* Read-only sample filesystem entry points, resolved through the current
-     * port's hash declarations. Kept in this DT2 object, never the shared Rust
-     * object's required imports (DN2 has no path filesystem). */
-    .balign 4
-    .globl dkrt_sample_fs
-dkrt_sample_fs:
-    .long cf.storage.fn.path.open
-    .long cf.storage.fn.path.read
-    .long cf.storage.fn.path.close
-    .long cf.storage.fn.path.size
-
-    .balign 4
-    .globl dkrt_files_fs
-dkrt_files_fs:
-    .long cf.storage.fn.directory.open
-    .long cf.storage.fn.directory.next
-    .long cf.storage.fn.directory.metadata

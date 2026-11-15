@@ -8,6 +8,8 @@
     .equ DSP_HEADROOM, 0x16a7c    /* DSP instructions per block left for modules: the block at 85 percent (projected with the high cycle factor) less the stock firmware's load (devices/cycle-factors.json, dkprof::budget) */
     .equ DSP_VOICES, 0x10    /* [adapter.machine] voices: the voices a machine's per-voice DSP cost counts for */
     .equ PEEK_N, 0x2    /* [digikit] peek: number of ranges */
+    .equ SPAN_CLOCK, 0xfc07000c    /* [digikit] span_clock (address of the profiling clock; 0 none) */
+    .equ SPAN_CLOCK_HZ, 0x7de2900    /* [digikit] span_clock_hz (its frequency) */
     .equ FX_SOUND_WORDS, 0x65    /* [fx] sound_words (s16 parameter words in a Sound object's array) */
     .equ PEEK_LO_0, 0x40000000    /* [digikit] peek range start (RAM the PEEK command may read) */
     .equ PEEK_HI_0, 0x466c0000    /* [digikit] peek range end (exclusive) */

@@ -113,6 +113,35 @@ fn the_runtime_constants_are_the_device_files_numbers() {
         dt2.contains(".equ PEEK_LO_1, 0x47e8b000 ") && dt2.contains(".equ PEEK_HI_1, 0x47fe1000 "),
         "{dt2}"
     );
+    // the profiling clock: DTIM0 DTCN0 at 132 MHz on both devices
+    for inc in [dn2, dt2] {
+        assert!(inc.contains(".equ SPAN_CLOCK, 0xfc07000c "), "{inc}");
+        assert!(inc.contains(".equ SPAN_CLOCK_HZ, 0x7de2900 "), "{inc}");
+    }
+}
+
+#[test]
+fn a_device_without_a_span_clock_gets_zero() {
+    let Some(mut lib) = Library::scan_repo_or_skip(&root()) else {
+        return;
+    };
+    lib.lower(&Models::from_dir(&root().join("devices")).unwrap())
+        .unwrap();
+    let text = std::fs::read_to_string(root().join("devices/digitone-ii.toml")).unwrap();
+    let text: String = text
+        .lines()
+        .filter(|l| !l.starts_with("span_clock"))
+        .map(|l| format!("{l}\n"))
+        .collect();
+    let facts = Facts::from_texts([text.as_str()]).unwrap();
+    let files = devgen::generate(&lib, &facts, "core/runtime").unwrap();
+    let inc = &files
+        .iter()
+        .find(|f| f.0 == "build/gen/device-dn2.inc")
+        .unwrap()
+        .1;
+    assert!(inc.contains(".equ SPAN_CLOCK, 0x0 "), "{inc}");
+    assert!(inc.contains(".equ SPAN_CLOCK_HZ, 0x0 "), "{inc}");
 }
 
 /// What `devgen::generate` makes of `module` when its `[[gen]]` entries are replaced by one entry.

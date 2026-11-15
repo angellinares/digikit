@@ -19,6 +19,7 @@ pub mod platform;
 pub mod profiles;
 pub mod registry;
 pub mod service;
+pub mod storage;
 
 /// Module records of the runtime (`[limits] modules` of the device files).
 pub const MAX_MODULES: usize = dkrt_sdk::device::LIMIT_MODULES as usize;

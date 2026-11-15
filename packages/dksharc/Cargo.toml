@@ -15,6 +15,7 @@ path = "src/lib.rs"
 # Plain data and the decoder of the SHARC+ runtime (public ISA table): builds for the host and wasm32.
 [dependencies]
 sharc-rt = { path = "../emulator/sharc-rt" }
+dkneeds = { path = "../dkneeds" }
 serde = { version = "1", features = ["derive"] }
 serde_json = "1"
 sha2 = "0.10"

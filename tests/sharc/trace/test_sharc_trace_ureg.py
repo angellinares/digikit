@@ -112,7 +112,8 @@ class TraceUregComputeTest(TraceRunMixin, unittest.TestCase):
         # An immediate write of B7 (Type 17).
         state = immediate(T.State(1, dict(start)), b7, 0x12345)
         self.assertEqual(regs(state, b7, i7), (T.Const(0x12345), T.Const(0x12345)))
-        # Bd = W2B(Bs) (Type 7d) writes B3, so it loads I3 too; I3 starts different.
+        # Bd = W2B(Bs) (Type 7d) writes B3 but not I3 (PRM p.6-15: "the corresponding I
+        # register is not implicitly updated"). The DN2 interrupt dispatcher relies on it.
         state = self.run_one(
             T.State(1, {b7: T.Const(0x2D08C0), i3: T.Const(0x5), b3: T.Const(0x6)}),
             insn(
@@ -121,7 +122,7 @@ class TraceUregComputeTest(TraceRunMixin, unittest.TestCase):
             ),
         )
         self.assertNotEqual(state.uregs[b3], T.Const(0x6))
-        self.assertEqual(state.uregs[i3], state.uregs[b3])
+        self.assertEqual(state.uregs[i3], T.Const(0x5))
 
     def test_ureg_copy_and_compute_rejection(self):
         f = {

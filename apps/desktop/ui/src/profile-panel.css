@@ -1,0 +1,296 @@
+/* The Profile pane (ProfilePanel.tsx): the Card panel's frame (card-panel.css) with the graph and tables of its own. The column is wider for this tab
+   (`.side-col.wide`, card-panel.css: the table has four columns). Tokens from the site (packages/workbench-core/ui/styles/site.css); the colours of an owner type are the Memory panel's. */
+.profile-panel .card-body {
+  gap: 16px;
+  padding: 14px 16px;
+}
+.profile-panel .mono {
+  font-family: var(--font-mono);
+}
+.profile-panel .hint,
+.profile-panel .foot {
+  color: var(--ink-3, #868b94);
+  font-size: 11px;
+  line-height: 1.4;
+}
+.profile-panel .foot {
+  margin-top: auto;
+}
+.profile-panel .acts .sp {
+  flex: 1 1 auto;
+}
+.profile-panel .act.primary {
+  background: var(--amber, #f3b52c);
+  border-color: #a07a1c;
+  color: #17191c;
+  font-weight: 600;
+}
+.profile-panel .act.primary:hover:not(:disabled) {
+  background: #f7c551;
+}
+.profile-panel .act.quiet {
+  background: transparent;
+  color: var(--ink-2, #b3b7be);
+}
+.profile-panel label.act {
+  display: inline-flex;
+  align-items: center;
+  cursor: pointer;
+}
+.profile-panel label.act input {
+  display: none;
+}
+/* the colour of an owner type */
+.profile-panel .k-machine {
+  background: var(--amber, #f3b52c);
+}
+.profile-panel .k-effect {
+  background: var(--teal, #6fc7d1);
+}
+.profile-panel .k-tool {
+  background: var(--ok, #74d49d);
+}
+.profile-panel .k-runtime,
+.profile-panel .k-other {
+  background: #7d828b;
+}
+.profile-panel .swatch {
+  flex: 0 0 auto;
+  width: 8px;
+  height: 8px;
+  border-radius: 2px;
+}
+/* header */
+.profile-panel .prof-head {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+.profile-panel .prof-head .line1 {
+  display: flex;
+  justify-content: space-between;
+  align-items: baseline;
+  color: var(--ink-2, #b3b7be);
+}
+.profile-panel .state-line {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+}
+.profile-panel .dot {
+  width: 8px;
+  height: 8px;
+  border-radius: 4px;
+  background: var(--ink-3, #868b94);
+}
+.profile-panel .dot.rec {
+  background: var(--bad, #e5736b);
+}
+.profile-panel .elapsed {
+  font-family: var(--font-mono);
+}
+/* the graph */
+.profile-panel .prof-sec {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+.profile-panel .prof-sec.ruled {
+  border-top: 1px solid #2c3036;
+  padding-top: 12px;
+}
+.profile-panel .sec-head {
+  display: flex;
+  justify-content: space-between;
+  align-items: baseline;
+}
+.profile-panel .sec-head .title {
+  font-weight: 600;
+}
+.profile-panel .sec-head .num {
+  font-family: var(--font-mono);
+  color: var(--ink-2, #b3b7be);
+}
+.profile-panel .graph {
+  position: relative;
+  height: 96px;
+  box-sizing: border-box;
+  padding: 6px 6px 0;
+  display: flex;
+  align-items: flex-end;
+  gap: 2px;
+  background: #1e2125;
+  border-radius: 6px;
+}
+.profile-panel .graph .col {
+  width: 4px;
+  display: flex;
+  flex-direction: column-reverse;
+}
+.profile-panel .graph .mark {
+  position: absolute;
+  top: 4px;
+  bottom: 0;
+  border-left: 1px dashed var(--ink-2, #b3b7be);
+}
+.profile-panel .graph .mark-text {
+  position: absolute;
+  top: 4px;
+  font-size: 10.5px;
+  color: var(--ink-2, #b3b7be);
+  white-space: nowrap;
+}
+.profile-panel .graph .top {
+  position: absolute;
+  right: 6px;
+  top: 4px;
+  font-size: 10.5px;
+  color: var(--ink-3, #868b94);
+}
+.profile-panel .legend {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 4px 12px;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+  color: var(--ink-2, #b3b7be);
+  font-size: 11px;
+}
+.profile-panel .legend li {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+}
+.profile-panel .legend .swatch {
+  width: 8px;
+  height: 8px;
+}
+/* the table: the Memory panel's row style (swatch, name, amounts) with a share bar */
+.profile-panel .prof-table {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  --cols: minmax(0, 1fr) 72px 52px 52px;
+}
+.profile-panel .prof-table.cmp {
+  --cols: minmax(0, 1fr) 72px 52px 52px 44px;
+}
+.profile-panel .prof-table .row {
+  display: grid;
+  grid-template-columns: var(--cols);
+  gap: 8px;
+  align-items: center;
+  padding: 2px 0;
+  font-size: 11.5px;
+}
+.profile-panel .prof-table .row.colhead {
+  padding-bottom: 2px;
+  border-bottom: 1px solid #2c3036;
+  color: var(--ink-3, #868b94);
+  font-size: 11px;
+}
+.profile-panel .prof-table .group {
+  margin-top: 6px;
+  color: var(--ink-3, #868b94);
+  font-size: 11px;
+}
+.profile-panel .prof-table .r {
+  text-align: right;
+}
+.profile-panel .prof-table .dim {
+  color: var(--ink-3, #868b94);
+}
+.profile-panel .prof-table .owner {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  min-width: 0;
+}
+.profile-panel .prof-table .owner .name {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.profile-panel .prof-table .share {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+}
+.profile-panel .prof-table .share .bar {
+  height: 6px;
+  border-radius: 3px;
+}
+.profile-panel .prof-table .share .pct {
+  font-family: var(--font-mono);
+  font-size: 11px;
+  color: var(--ink-2, #b3b7be);
+}
+.profile-panel .prof-table .hot {
+  color: var(--bad, #e5736b);
+}
+/* DSP */
+.profile-panel .dspbar {
+  display: flex;
+  height: 12px;
+  overflow: hidden;
+  border-radius: 6px;
+  background: var(--panel-3, #23262b);
+}
+.profile-panel .dspbar .peak {
+  background: rgba(229, 115, 107, 0.55);
+}
+.profile-panel .dsp-mods {
+  display: flex;
+  flex-direction: column;
+  gap: 3px;
+  font-size: 11.5px;
+}
+.profile-panel .dsp-mod {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+}
+.profile-panel .dsp-mod .name {
+  flex: 1 1 auto;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.profile-panel .dsp-top {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  padding-left: 14px;
+  color: var(--ink-2, #b3b7be);
+  font-size: 11px;
+}
+.profile-panel .dsp-top > div {
+  display: flex;
+}
+.profile-panel .dsp-top .name {
+  flex: 1 1 auto;
+}
+/* no debug module: the usual shapes, greyed, then the offer */
+.profile-panel .prof-skeleton {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  opacity: 0.45;
+}
+.profile-panel .prof-skeleton .line {
+  display: block;
+  height: 10px;
+  background: #23262b;
+  border-radius: 3px;
+}
+.profile-panel .prof-nodebug {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+.profile-panel .prof-nodebug .text {
+  color: var(--ink-2, #b3b7be);
+  line-height: 1.45;
+}

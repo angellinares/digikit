@@ -1,12 +1,13 @@
-// The right-hand column of the Emulator page and the Remote page: tabs over one panel at a time. The Emulator page offers Card, Memory and
-// Metrics; the Remote page Memory alone (its single tab shows as a title). The column folds to a narrow rail so the faceplate takes the width
+// The right-hand column of the Emulator page and the Remote page: tabs over one panel at a time. The Emulator page offers Card, Memory, Metrics
+// and Profile; the Remote page Memory and Profile. The column folds to a narrow rail so the faceplate takes the width
 // back; the rail lists the tabs vertically, and a click on one opens the column on it. The chosen tab and the fold are kept (panel-open.ts).
-// Card and Memory read through the one session of their target (target.ts), and only while their tab is shown.
+// Card, Memory and Profile read through the one session of their target (target.ts), and only while their tab is shown.
 import { For, Show, createEffect, createSignal, on, type JSX } from 'solid-js';
 import type { DkSession } from '@digi/dk-session';
 import CardPanel from './CardPanel';
 import type { Host } from '@digi/workbench-core/host/host.ts';
 import MemoryPanel from './MemoryPanel';
+import ProfilePanel from './ProfilePanel';
 import { TAB_LABEL, shownTab, type InspectorTab } from './inspector-core';
 import { inspectorOpen, inspectorTab, setInspectorOpen, setInspectorTab } from './panel-open';
 import './card-panel.css';
@@ -17,7 +18,7 @@ import './card-panel.css';
  * Memory panel's (memory-panel props).
  */
 export default function SidePanels(props: {
-  /** The host of the Card panel: needed with `card`. */
+  /** The host of the Card panel (needed with `card`) and of the Profile panel (the emulator's `cf.profile` and `sharc.profile`, the save dialog). */
   host?: Host;
   visible: boolean;
   active?: boolean;
@@ -32,6 +33,7 @@ export default function SidePanels(props: {
     ...(props.card ? (['card'] as const) : []),
     'memory',
     ...(props.metrics ? (['metrics'] as const) : []),
+    'profile',
   ];
   const tab = () => shownTab(inspectorTab(), offered());
   const reads = (t: InspectorTab) => props.visible && (props.active ?? true) && inspectorOpen() && tab() === t;
@@ -68,7 +70,11 @@ export default function SidePanels(props: {
     ),
   );
   return (
-    <div class="side-col" classList={{ rail: !inspectorOpen() }} hidden={!props.visible}>
+    <div
+      class="side-col"
+      classList={{ rail: !inspectorOpen(), wide: inspectorOpen() && tab() === 'profile' }}
+      hidden={!props.visible}
+    >
       <div class="side-head">
         <Show when={inspectorOpen()}>
           <Show
@@ -159,6 +165,14 @@ export default function SidePanels(props: {
         where={props.where}
         track={props.track}
         tabpanel={tabpanel('memory')}
+      />
+      <ProfilePanel
+        visible={reads('profile')}
+        session={props.session}
+        where={props.where}
+        track={props.track}
+        host={props.host}
+        tabpanel={tabpanel('profile')}
       />
       <Show when={props.metrics}>
         <div

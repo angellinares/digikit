@@ -4,18 +4,21 @@
 //!
 //! Integers are big endian. Table accessors check that the table lies inside the section; nothing else is checked here.
 
-pub const MAGIC: u32 = 0x444b_4453; // "DKDS"
-pub const HEADER: usize = 0x40;
-pub const IMPORT_LEN: usize = 32;
-pub const RELOC_LEN: usize = 8;
-pub const VOICE_LEN_V1: usize = 16;
-pub const VOICE_LEN: usize = 48;
-pub const VOICE_LEN_V3: usize = 64;
-pub const FX_LEN: usize = 64;
-pub const VERSION_1: u32 = 1;
-pub const VERSION_3: u32 = 3;
-pub const VERSION_4: u32 = 4;
-pub const VERSION_5: u32 = 5;
+// The layout numbers are `[format]` of sdk/sdk.toml (through `dkneeds`, which the runtime reads too).
+use dkneeds::*;
+
+pub const MAGIC: u32 = DSP_MAGIC;
+pub const HEADER: usize = DSP_HEADER as usize;
+pub const IMPORT_LEN: usize = DSP_IMPORT_LEN as usize;
+pub const RELOC_LEN: usize = dkneeds::RELOC_LEN as usize;
+pub const VOICE_LEN_V1: usize = VOICE_V1 as usize;
+pub const VOICE_LEN: usize = VOICE_V2 as usize;
+pub const VOICE_LEN_V3: usize = VOICE_V3 as usize;
+pub const FX_LEN: usize = dkneeds::FX_LEN as usize;
+pub const VERSION_1: u32 = DSP_V1;
+pub const VERSION_3: u32 = DSP_V3;
+pub const VERSION_4: u32 = DSP_V4;
+pub const VERSION_5: u32 = DSP_V5;
 
 /// A DSP section: its bytes and its version (magic and version are checked).
 #[derive(Clone, Copy, Debug)]
@@ -50,10 +53,10 @@ fn be32(b: &[u8], off: usize) -> u32 {
 
 impl<'a> Dkds<'a> {
     pub fn parse(bytes: &'a [u8]) -> Result<Dkds<'a>, String> {
-        if bytes.len() < HEADER || be32(bytes, 0) != MAGIC {
+        if bytes.len() < HEADER || be32(bytes, DSP_H_MAGIC as usize) != MAGIC {
             return Err("not a DSP section (magic)".into());
         }
-        let version = be32(bytes, 4);
+        let version = be32(bytes, DSP_H_VERSION as usize);
         if !(VERSION_1..=VERSION_5).contains(&version) {
             return Err(format!("DSP section version {version}"));
         }
@@ -65,33 +68,36 @@ impl<'a> Dkds<'a> {
         be32(self.bytes, off)
     }
     pub fn device(&self) -> u32 {
-        self.word(8)
+        self.word(DSP_H_DEVICE as usize)
     }
     pub fn image_size(&self) -> u32 {
-        self.word(0x0c)
+        self.word(DSP_H_IMAGE_SIZE as usize)
     }
     pub fn bss(&self) -> u32 {
-        self.word(0x10)
+        self.word(DSP_H_BSS as usize)
     }
     pub fn align(&self) -> u32 {
-        self.word(0x14)
+        self.word(DSP_H_ALIGN as usize)
     }
     pub fn image_off(&self) -> u32 {
-        self.word(0x18)
+        self.word(DSP_H_IMAGE_OFF as usize)
     }
     pub fn reloc_count(&self) -> usize {
-        self.word(0x20) as usize
+        self.word(DSP_H_RELOC_N as usize) as usize
     }
     pub fn import_count(&self) -> usize {
-        self.word(0x28) as usize
+        self.word(DSP_H_IMPORT_N as usize) as usize
     }
     pub fn voice_count(&self) -> usize {
-        self.word(0x30) as usize
+        self.word(DSP_H_VOICE_N as usize) as usize
     }
     /// Offset and count of the effect records (version 4 and later; none before).
     pub fn fx(&self) -> (u32, usize) {
         if self.version >= VERSION_4 {
-            (self.word(0x34), self.word(0x38) as usize)
+            (
+                self.word(DSP_H_FX_OFF as usize),
+                self.word(DSP_H_FX_N as usize) as usize,
+            )
         } else {
             (0, 0)
         }
@@ -122,7 +128,7 @@ impl<'a> Dkds<'a> {
     pub fn imports(&self) -> Result<Vec<String>, String> {
         let n = self.import_count();
         let raw = self.range(
-            self.word(0x24),
+            self.word(DSP_H_IMPORT_OFF as usize),
             n.checked_mul(IMPORT_LEN).ok_or("overflow")?,
         )?;
         Ok(raw
@@ -136,12 +142,12 @@ impl<'a> Dkds<'a> {
 
     pub fn relocs(&self) -> Result<Vec<RawReloc>, String> {
         let n = self.reloc_count();
-        let raw = self.range(self.word(0x1c), n.checked_mul(RELOC_LEN).ok_or("overflow")?)?;
+        let raw = self.range(self.word(DSP_H_RELOC_OFF as usize), n.checked_mul(RELOC_LEN).ok_or("overflow")?)?;
         Ok(raw
             .chunks_exact(RELOC_LEN)
             .map(|r| RawReloc {
-                offset: be32(r, 0),
-                word: be32(r, 4),
+                offset: be32(r, RELOC_OFFSET as usize),
+                word: be32(r, RELOC_WORD as usize),
             })
             .collect())
     }
@@ -150,7 +156,7 @@ impl<'a> Dkds<'a> {
     pub fn voices(&self) -> Result<&'a [u8], String> {
         let n = self.voice_count();
         self.range(
-            self.word(0x2c),
+            self.word(DSP_H_VOICE_OFF as usize),
             n.checked_mul(self.voice_len()).ok_or("overflow")?,
         )
     }

@@ -284,6 +284,36 @@ async function expectCardLog(runtime: PatchedSession): Promise<void> {
   await session.expectNoFault('card log');
 }
 
+/** Spans: reset and start, a short wait, then the table has the debug module's own tick row (calls > 0, max <= sum) at the span clock rate (132 MHz, the bus).
+ * After stop the counts stay the same. */
+async function expectProfileSpans(runtime: PatchedSession): Promise<void> {
+  const { session, dk } = runtime;
+  await expectRuntimeReady(session);
+  await installWithDebug(runtime);
+  const debug = (await dk.modules()).find((m) => m.name === 'digikit/debug')!;
+  await dk.profileState('reset');
+  expect((await dk.profileState('start')).running).toBe(true);
+  await waitFrames(runtime, 600);
+  const running = await dk.profileAll();
+  expect(running.running).toBe(true);
+  expect(running.hz, 'the span clock is the bus clock').toBe(132_000_000);
+  const row = running.spans.find((s) => s.kind === 'module' && s.index === debug.index)!;
+  expect(row.calls, "the debug module's tick ran").toBeGreaterThan(0);
+  expect(BigInt(row.maxTicks), 'max is at most the sum').toBeLessThanOrEqual(row.sumTicks);
+
+  expect((await dk.profileState('stop')).running).toBe(false);
+  const first = await dk.profileAll();
+  await waitFrames(runtime, 600);
+  const second = await dk.profileAll();
+  expect(second.running).toBe(false);
+  expect(
+    second.spans.map((s) => [s.calls, s.sumTicks, s.maxTicks]),
+    'stopped: the counts do not change',
+  ).toEqual(first.spans.map((s) => [s.calls, s.sumTicks, s.maxTicks]));
+  await session.expectNoFault('profile spans');
+}
+
+runtimeTests('the span table counts the debug module tick and holds still when stopped', expectProfileSpans, { dsp: 'sharc' });
 runtimeTests('the card log is written to the store and reads back', expectCardLog, { dsp: 'sharc' });
 runtimeTests(
   'without the debug module the runtime boots, has no log commands and keeps a small ring',

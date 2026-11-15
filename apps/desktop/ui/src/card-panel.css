@@ -148,6 +148,10 @@
 .side-col.rail {
   width: 40px;
 }
+/* the Profile tab: its table has four columns */
+.side-col.wide {
+  width: 400px;
+}
 .side-head {
   flex-shrink: 0;
   display: flex;

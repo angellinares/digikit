@@ -329,10 +329,10 @@ A new plug-in point starts as an experimental `.dks` with its own hook table, an
 - One owner per channel. A second owner gets `DK_E_BUSY` from `dk_sink_set` at the call, not while planning (a module sets its sink in `init` or later, so the table cannot know it).
 - The channel is cleared after the owner's `fini` and after a failed `init`.
 - `log` receives every event the runtime logs, in addition to the older `dk_debug_log_sink_set` pointer, which is unchanged (the debug module has not moved to the channel; there is no ring replay on the channel).
-- `span` receives `(owner, cycles)` records from `dlog::span_emit`; no producer exists yet (`DK_SPAN`, S5).
+- `span` receives `(owner, cycles)` records from `dlog::span_emit`. The producers are the runtime's ColdFire call sites (module ticks, service phases, polls). The owner of the channel is the debug module.
 - With no sink set, a producer pays one word test per channel and calls nothing.
 
-Users: `digikit/debug` (`log`, later), `profile.dks` (`span`, [profiling plan](profiling.md) section 7). The probe's per-block `dl_set_tick_cb` slot in dsp-link can follow the same rule later. Usage for a sink owner: [INSTRUMENTATION.md](../INSTRUMENTATION.md).
+Users: `digikit/debug` (`log`, later), `digikit/debug` (`span`, [profiling plan](profiling.md) section 7). The probe's per-block `dl_set_tick_cb` slot in dsp-link can follow the same rule later. Usage for a sink owner: [INSTRUMENTATION.md](../INSTRUMENTATION.md).
 
 ### 5.12 Service anatomy
 
@@ -456,9 +456,9 @@ Two concepts exist today:
 - **digikit store:** same code on both devices, with a different card area. The firmware block read is reached by anchor (`lib.rs:221-223`). The runtime needs it at boot: selection record, settings, `.dkm` files.
 - **Firmware files:** DT2 only. Read-only path filesystem, the user's sample files. On DN2, samples live in the store under `samples/`.
 
-Target: one neutral storage interface in the runtime, with a `storage` adapter behind it: stat (size, identity hash with its kind, entry kind), read head, read range, read a whole file into an arena, paged listing, root-relative paths with per-device limits. `dk_file_id` already carries a hash kind (sha256 on DN2, Elektron32 on DT2). The device branches in `tracks.rs:232-318`, `files.rs:131-132,281` and `sample_source.rs:28` go behind it. `dkrt_sample_fs` and `dkrt_files_fs` leave `device.s`.
+R13 built one neutral `Storage` trait in the runtime's Platform composition: stat (size, identity hash with its kind, entry kind), read head, read range, read a whole file, and paged listing with caller-owned state and the steps Entry, Pending and End. Paths are root-relative with per-device limits. `dk_file_id` carries a hash kind (sha256 on DN2, Elektron32 on DT2). The storage adapter (`storage_adapter.rs`) holds two routes: the store route and the firmware-filesystem route. Profile data chooses the route for each root. The device branches in `tracks.rs`, `files.rs` and `sample_source.rs` go through the trait. Listing memory comes from the arena, for at most 2 listings at once. `dkrt_sample_fs` and `dkrt_files_fs` are defined in the adapter's `src/cf/<dev>/storage.s` (DN2: zero tables) and read only by `storage_adapter.rs`. Settings stay on the block path.
 
-Storage is not the whole device difference for samples. `sample-pool` also handles memory placement, DSP-visible addresses, DN2's DSP receiver and hooks, and DT2's borrowing of the stock pool. The DT2 adapter also reads files through the firmware directly (`dt2/pool.c:112-149`). So `samples` depends on the runtime's `storage` interface and contains the `sample-pool` adapter. `dkrt_pool.h` is close to the right adapter ABI header; `dkrt_project_changed` moves out of it.
+Storage is not the whole device difference for samples. `sample-pool` also handles memory placement, DSP-visible addresses, DN2's DSP receiver and hooks, and DT2's borrowing of the stock pool. The DT2 adapter also reads files through the firmware directly (`dt2/pool.c:112-149`). So `samples` depends on the runtime's `storage` interface and contains the `sample-pool` adapter. `dkrt_pool.h` is close to the right adapter ABI header; `dkrt_project_changed` is declared only in the generated `dkrt.h`.
 
 Memory cleanup: files state is 33,980 B in `.data`, about 42 KB with scratch, for 8 module slots of 3.6 KB each. It ships as zero bytes in the image. One active listing needs about 4.3 KB (estimated). Allocate on first use. Tracks state (`CORE`, 35,838 B) is similar, mostly zeros in `.data`. Check how much of the runtime's `.data` is mostly-zero state.
 
@@ -648,7 +648,7 @@ Items 7, 9 and 10 link services into the image as a temporary step, so each boun
 | 10 | `machines` linked in, with neutral adapter functions; layer check final | 3.2, 10 | 4-5 days | High: done criterion 1 | Medium |
 | 11 | Boot plan with one verdict per module; module states; refusal fixtures | 5, 8 | 2-3 days | High: users see why | Medium-high |
 | 12 | Services as `.dks`, hooks at boot, workbench binding and install | 5 | 6-8 days | High: small runtime; done criteria 5 and 6 | Medium |
-| 13 | Storage interface and files memory (split out of item 7): the storage interface of section 9 and the files memory, with the store as its first user | 9 | 2-3 days | Medium: a clean boundary for the store | Medium |
+| 13 | Storage interface and files memory (split out of item 7): the `Storage` trait in the Platform composition (stat, read head, read range, read all, paged listing), the store and firmware-fs routes in the adapter chosen by profile data, listing memory from the arena (at most 2), `dkrt_sample_fs` and `dkrt_files_fs` in the adapter's `storage.s` | 9 | 2-3 days | Medium: a clean boundary for the store | Medium |
 | Later | Projects, event tables, DSP stack guard, MISSING placeholder | 8, 12 | Own plans | | |
 
 Total to item 12: about 36-47 agent days. None of the `.dks` path is proven until item 8.
