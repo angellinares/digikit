@@ -90,6 +90,7 @@ const fxGood = (): FxBlock => ({
   faults: [0, 0, 0, 0],
   scratch: Array<number>(64).fill(0.5),
   stores: [],
+  extra: [],
 });
 const fxFailure = (b: Partial<FxBlock>, before = 0, foreign: string[] = []) =>
   fxBlockFailure(where, { ...fxGood(), ...b }, 200_000, before, () => foreign);

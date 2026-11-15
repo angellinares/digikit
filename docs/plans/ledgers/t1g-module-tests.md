@@ -54,3 +54,27 @@ The tables are `pluck_rig.model_blocks` output (`uv run python -m tools.devtools
 
 Mutation: `0x45b777e3` (P0 = 1 / INC0) to `0x45b787e3` in `src/dsp/pluck.s`: Python `test_the_routine_matches_the_float32_model` fails (error
 0.039 against 2e-5); the kit fails 6 `matches-table` cases (the four model cases, corner note0 and low-tune).
+
+## digikit/freqshift (`test_freqshift.py`, `test_freqshift_ref.py`, `test_fxshift_analysis.py`, `freqshift_ref.py`, `freqshift_long.py`, `freqshift_tone.py`; kit: `tests/rig/freqshift.toml`, tables `tests/rig/ref/*.f32`)
+
+The input tables hold the numpy-generator inputs of the Python tests (a TypeScript run cannot draw them) and the output tables the float32 model's
+output for them (`uv run python -m tools.devtools.rig_refs freqshift`). The device test `freqshift.device.test.ts` stays.
+
+| Python | Kit |
+| --- | --- |
+| `test_the_routine_matches_the_float32_model` (8 shifts, 36 blocks, 2e-7 on the effect's own output block) | 8 cases `the routine matches the model: shift V`: `matches-table` (`channel = "both"`, atol 2e-7) against `ref/model-vN.f32` for input `ref/mixed-in-3.f32` |
+| `test_the_routine_follows_the_model_while_the_shift_moves` | case with 10 steps of 5 blocks, `ref/model-moving.f32`, atol 2e-7 |
+| `test_a_tone_moves_by_the_shift_and_the_image_is_40_db_down` (100, -100, 2000 Hz) | 3 cases: `tone` (amplitude 0.5 within 0.005 at the exact frequency) with `image_freq` and `image_db_min` 40; shift word and exact frequency are the model's (`rig_refs` prints them) |
+| `test_shift_zero_keeps_the_magnitude` (1000 and 12000 Hz, 2e-3 relative) | 2 cases: `tone` amplitude 0.5, tolerance 0.001 |
+| `test_mix_is_the_frameworks_zero_is_dry_bit_for_bit_and_one_is_wet` | 2 cases: `mix = 0` with `master-equals-input`; `mix` 1.0 with `master-equals-scratch` from block 1 |
+| `test_the_output_stays_below_the_level_bound_and_the_adapter_never_refuses_a_block` | 3 cases with `square-noise` input: `peak` of both channels at most float32(7.9), at least 3.0 for amplitude 8; the adapter's refusal is an implicit rule. The right channel's random signs come from the kit's generator, not numpy's: the input is not pinned in the Python test either |
+| `test_writes_stay_in_the_output_block_and_the_state_and_the_cost_matches_the_description` | case with 6 blocks: implicit write-set rule, `description` words, `instructions` of the last block 3001 to 4799 |
+| `test_the_state_is_the_description_state_and_nothing_else` | case with `state-untouched-beyond` (the 4 KiB state block is read after the last block) |
+| `test_the_oscillator_does_not_drift_in_a_long_run` (1,500 blocks) | case `... 1,500 blocks`: `tone-stable` (eight windows of 400 blocks: amplitude spread 1e-4, phase drift 1e-3 rad), `state-word` 0 = the closed-form phase 989059184 (the model's value for inc 3690415), `peak` below 0.8 |
+| `test_the_oscillator_does_not_drift_in_a_run_of_a_minute` (`slow`, 90,000 blocks) | not ported: a `slow` test; the kit keeps whole traces in memory (90,000 blocks) and the closed form is exact for any block count by integer arithmetic |
+| `test_the_module_declares_one_effect_by_builder_calls`, `test_the_committed_shift_knob_is_bipolar` | not ported: they read module.toml and gallery.json, no rig |
+| `test_freqshift_ref.py` | not ported: model only (mapping, Hilbert pair, polynomial, tones through the model); no routine |
+| `test_fxshift_analysis.py` | not ported: the offline adapter of the device PCM oracles (`pk_digikit_fxshift`), no rig |
+
+Mutation: `0x3e3a2e8c` (the scale of the shift mapping, x = |v| * c) to `0x3e3a2e9c` in `src/dsp/freqshift.s`: Python `test_the_routine_follows_the_model_while_the_shift_moves`
+fails (error 3.1e-4 against 2e-7); the kit fails 7 cases (five model shifts, the moving shift, the long run).

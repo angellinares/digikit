@@ -1,0 +1,465 @@
+# digikit/freqshift on the SHARC-only rig (replaces modules/fx/freqshift/tests/test_freqshift.py; the device proof stays freqshift.device.test.ts).
+# The tables ref/*.f32 are the inputs (numpy generators) and the output of the float32 model freqshift_ref.py that the Python tests compared the routine with
+# (tools/devtools/rig_refs.py). Effect cases run once: the Python tests run the effect behind the DT2 adapter only. Inputs are 64 floats a block, left then right.
+
+[[case]]
+name = "the routine matches the model: shift 0.0"
+
+[case.input]
+kind = "table"
+file = "ref/mixed-in-3.f32"
+
+[[case.step]]
+params_f32 = [0.0]
+blocks = 36
+
+[[case.check]]
+# the last bit of a float32 near 1.0 (0 where the SHARC+ FLOAT and TRUNC agree with numpy)
+kind = "matches-table"
+file = "ref/model-v0.f32"
+channel = "both"
+atol = 2e-7
+
+[[case]]
+name = "the routine matches the model: shift 1.0"
+
+[case.input]
+kind = "table"
+file = "ref/mixed-in-3.f32"
+
+[[case.step]]
+params_f32 = [1.0]
+blocks = 36
+
+[[case.check]]
+# the last bit of a float32 near 1.0 (0 where the SHARC+ FLOAT and TRUNC agree with numpy)
+kind = "matches-table"
+file = "ref/model-v1.f32"
+channel = "both"
+atol = 2e-7
+
+[[case]]
+name = "the routine matches the model: shift 20.0"
+
+[case.input]
+kind = "table"
+file = "ref/mixed-in-3.f32"
+
+[[case.step]]
+params_f32 = [20.0]
+blocks = 36
+
+[[case.check]]
+# the last bit of a float32 near 1.0 (0 where the SHARC+ FLOAT and TRUNC agree with numpy)
+kind = "matches-table"
+file = "ref/model-v20.f32"
+channel = "both"
+atol = 2e-7
+
+[[case]]
+name = "the routine matches the model: shift 40.0"
+
+[case.input]
+kind = "table"
+file = "ref/mixed-in-3.f32"
+
+[[case.step]]
+params_f32 = [40.0]
+blocks = 36
+
+[[case.check]]
+# the last bit of a float32 near 1.0 (0 where the SHARC+ FLOAT and TRUNC agree with numpy)
+kind = "matches-table"
+file = "ref/model-v40.f32"
+channel = "both"
+atol = 2e-7
+
+[[case]]
+name = "the routine matches the model: shift -40.0"
+
+[case.input]
+kind = "table"
+file = "ref/mixed-in-3.f32"
+
+[[case.step]]
+params_f32 = [-40.0]
+blocks = 36
+
+[[case.check]]
+# the last bit of a float32 near 1.0 (0 where the SHARC+ FLOAT and TRUNC agree with numpy)
+kind = "matches-table"
+file = "ref/model-vneg40.f32"
+channel = "both"
+atol = 2e-7
+
+[[case]]
+name = "the routine matches the model: shift 63.0"
+
+[case.input]
+kind = "table"
+file = "ref/mixed-in-3.f32"
+
+[[case.step]]
+params_f32 = [63.0]
+blocks = 36
+
+[[case.check]]
+# the last bit of a float32 near 1.0 (0 where the SHARC+ FLOAT and TRUNC agree with numpy)
+kind = "matches-table"
+file = "ref/model-v63.f32"
+channel = "both"
+atol = 2e-7
+
+[[case]]
+name = "the routine matches the model: shift -64.0"
+
+[case.input]
+kind = "table"
+file = "ref/mixed-in-3.f32"
+
+[[case.step]]
+params_f32 = [-64.0]
+blocks = 36
+
+[[case.check]]
+# the last bit of a float32 near 1.0 (0 where the SHARC+ FLOAT and TRUNC agree with numpy)
+kind = "matches-table"
+file = "ref/model-vneg64.f32"
+channel = "both"
+atol = 2e-7
+
+[[case]]
+name = "the routine matches the model: shift 2e-06"
+
+[case.input]
+kind = "table"
+file = "ref/mixed-in-3.f32"
+
+[[case.step]]
+params_f32 = [2e-06]
+blocks = 36
+
+[[case.check]]
+# the last bit of a float32 near 1.0 (0 where the SHARC+ FLOAT and TRUNC agree with numpy)
+kind = "matches-table"
+file = "ref/model-vtiny.f32"
+channel = "both"
+atol = 2e-7
+
+[[case]]
+name = "the routine follows the model while the shift moves"
+
+[case.input]
+kind = "table"
+file = "ref/mixed-in-5.f32"
+
+[[case.step]]
+params_f32 = [0.0]
+blocks = 5
+
+[[case.step]]
+params_f32 = [5.0]
+blocks = 5
+
+[[case.step]]
+params_f32 = [-20.0]
+blocks = 5
+
+[[case.step]]
+params_f32 = [40.0]
+blocks = 5
+
+[[case.step]]
+params_f32 = [63.0]
+blocks = 5
+
+[[case.step]]
+params_f32 = [-64.0]
+blocks = 5
+
+[[case.step]]
+params_f32 = [0.5]
+blocks = 5
+
+[[case.step]]
+params_f32 = [-0.5]
+blocks = 5
+
+[[case.step]]
+params_f32 = [33.0]
+blocks = 5
+
+[[case.step]]
+params_f32 = [0.0]
+blocks = 5
+
+[[case.check]]
+kind = "matches-table"
+file = "ref/model-moving.f32"
+channel = "both"
+atol = 2e-7
+
+[[case]]
+name = "a tone moves by the shift and the image is 40 dB down: 100 Hz"
+
+[case.input]
+kind = "sine"
+freq = 1000.0
+amp = 0.5
+
+[[case.step]]
+params_f32 = [40.25721108313254]
+blocks = 200
+
+[[case.check]]
+kind = "tone"
+freq = 1099.9999940395355
+amp = 0.5
+tol = 0.005
+skip_blocks = 40
+image_freq = 900.0000059604645
+image_db_min = 40.0
+
+[[case]]
+name = "a tone moves by the shift and the image is 40 dB down: -100 Hz"
+
+[case.input]
+kind = "sine"
+freq = 1000.0
+amp = 0.5
+
+[[case.step]]
+params_f32 = [-40.25721108313254]
+blocks = 200
+
+[[case.check]]
+kind = "tone"
+freq = 900.0000059604645
+amp = 0.5
+tol = 0.005
+skip_blocks = 40
+image_freq = 1099.9999940395355
+image_db_min = 40.0
+
+[[case]]
+name = "a tone moves by the shift and the image is 40 dB down: 2000 Hz"
+
+[case.input]
+kind = "sine"
+freq = 1000.0
+amp = 0.5
+
+[[case.step]]
+params_f32 = [63.980482105727525]
+blocks = 200
+
+[[case.check]]
+kind = "tone"
+freq = 3000.000238418579
+amp = 0.5
+tol = 0.005
+skip_blocks = 40
+image_freq = 1000.0002384185791
+image_db_min = 40.0
+
+[[case]]
+name = "shift zero keeps the magnitude: 1000 Hz"
+
+[case.input]
+kind = "sine"
+freq = 1000.0
+amp = 0.5
+
+[[case.step]]
+params_f32 = [0.0]
+blocks = 120
+
+[[case.check]]
+# |a / 0.5 - 1| < 2e-3
+kind = "tone"
+freq = 1000.0
+amp = 0.5
+tol = 0.001
+skip_blocks = 40
+
+[[case]]
+name = "shift zero keeps the magnitude: 12000 Hz"
+
+[case.input]
+kind = "sine"
+freq = 12000.0
+amp = 0.5
+
+[[case.step]]
+params_f32 = [0.0]
+blocks = 120
+
+[[case.check]]
+# |a / 0.5 - 1| < 2e-3
+kind = "tone"
+freq = 12000.0
+amp = 0.5
+tol = 0.001
+skip_blocks = 40
+
+[[case]]
+name = "mix zero is dry bit for bit"
+mix = 0
+
+[case.input]
+kind = "table"
+file = "ref/mixed-in-9.f32"
+
+[[case.step]]
+params_f32 = [40.0]
+blocks = 24
+
+[[case.check]]
+kind = "master-equals-input"
+
+[[case]]
+name = "mix one is wet"
+
+[case.input]
+kind = "table"
+file = "ref/mixed-in-9.f32"
+
+[[case.step]]
+params_f32 = [40.0]
+blocks = 24
+
+[[case.check]]
+# the first block fades the effect in
+kind = "master-equals-scratch"
+from_block = 1
+
+[[case]]
+name = "the output stays below the level bound: amplitude 1, shift 30.0"
+
+[case.input]
+kind = "square-noise"
+amp = 1.0
+
+[[case.step]]
+params_f32 = [30.0]
+blocks = 150
+
+[[case.check]]
+# the routine clamps at 7.9; the adapter refuses nothing (the implicit rules)
+kind = "peak"
+channel = "both"
+max = 7.900000095367432
+
+[[case]]
+name = "the output stays below the level bound: amplitude 8, shift -45.0"
+
+[case.input]
+kind = "square-noise"
+amp = 8.0
+
+[[case.step]]
+params_f32 = [-45.0]
+blocks = 150
+
+[[case.check]]
+# the routine clamps at 7.9; the adapter refuses nothing (the implicit rules)
+kind = "peak"
+channel = "both"
+max = 7.900000095367432
+
+[[case.check]]
+# an input at the level bound does reach the clamp's neighbourhood
+kind = "peak"
+channel = "both"
+min = 3.0
+
+[[case]]
+name = "the output stays below the level bound: amplitude 8, shift 0.0"
+
+[case.input]
+kind = "square-noise"
+amp = 8.0
+
+[[case.step]]
+params_f32 = [0.0]
+blocks = 150
+
+[[case.check]]
+# the routine clamps at 7.9; the adapter refuses nothing (the implicit rules)
+kind = "peak"
+channel = "both"
+max = 7.900000095367432
+
+[[case.check]]
+# an input at the level bound does reach the clamp's neighbourhood
+kind = "peak"
+channel = "both"
+min = 3.0
+
+[[case]]
+name = "writes stay in the state, the description is right and the cost matches"
+
+[case.input]
+kind = "sin-index"
+
+[[case.step]]
+params_f32 = [25.0]
+blocks = 6
+
+[[case.check]]
+kind = "description"
+words = [0x444B4658, 1, 1, 664, 1, 0]
+
+[[case.check]]
+# core/fx around one call is about 520 instructions
+kind = "instructions"
+of = "idle"
+min = 3001
+max = 4799
+
+[[case]]
+name = "the state is the description state and nothing else"
+
+[case.input]
+kind = "table"
+file = "ref/mixed-in-9.f32"
+
+[[case.step]]
+params_f32 = [25.0]
+blocks = 1
+
+[[case.check]]
+kind = "state-untouched-beyond"
+
+[[case]]
+name = "the oscillator does not drift in a run of 1,500 blocks"
+
+[case.input]
+kind = "sine"
+freq = 1000.0
+amp = 0.5
+
+[[case.step]]
+params_f32 = [33.3]
+blocks = 1500
+
+[[case.check]]
+# the tone at the exact frequency (inc 3690415) keeps its level and phase over eight windows
+kind = "tone-stable"
+freq = 1041.243601590395
+windows = 8
+window_blocks = 400
+amp = 0.5
+tol = 0.002
+amp_spread = 1e-4
+phase_drift = 1e-3
+
+[[case.check]]
+# the phase word is the closed form 528 d + (N - 1) 32 inc after any number of blocks
+kind = "state-word"
+index = 0
+equals = 989059184
+
+[[case.check]]
+kind = "peak"
+max = 0.8

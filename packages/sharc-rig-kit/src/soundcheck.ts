@@ -83,6 +83,9 @@ export interface Trace {
   failure: string | null;
   /** per block, which step it belongs to */
   stepOf: number[];
+  /** an effect: the words of its `dk_fx_desc` and the first 1024 words of its state block after the last block */
+  desc?: number[];
+  state?: (number | null)[];
 }
 
 export interface CheckResult {
@@ -178,6 +181,10 @@ function implicitMachine(
 function inputBlock(input: Toml, k: number, table: number[] | undefined, rng: PyRandom): number[] {
   const kind = String(input.kind);
   if (kind === 'table') return table!.slice(k * 64, k * 64 + 64);
+  if (kind === 'sin-index') {
+    // 0.25 sin(k + i) for i = 0 .. 63: no two blocks alike, no tone
+    return Array.from({ length: 64 }, (_, i) => Math.fround(0.25 * Math.sin(k + i)));
+  }
   if (kind === 'sine') {
     const f = num(input, 'freq');
     const amp = num(input, 'amp', 0.5);
@@ -227,6 +234,8 @@ async function runFx(module: string, c: RigCase, dir: string, o: RunOptions): Pr
   };
   const observe = c.observe === 'master' ? 'master' : 'scratch';
   const desc = rig.descWords(spec.desc);
+  trace.desc = desc;
+  const total = steps.reduce((n, st) => n + (st.blocks ?? 1), 0);
   const rng = new PyRandom(Number(c.seed ?? 0xd1617));
   let faults = 0;
   try {
@@ -235,7 +244,9 @@ async function runFx(module: string, c: RigCase, dir: string, o: RunOptions): Pr
       ((step.params_f32 as number[] | undefined) ?? []).forEach((v, j) => rig.setRowWord(0, P0 + j, f2w(v)));
       for (let n = 0; n < (step.blocks ?? 1); n++, k++) {
         const x = inputBlock(input, k, table, rng);
-        const b = await rig.block(x, 'friendly');
+        const last = k === total - 1;
+        const b = await rig.block(x, 'friendly', {}, last ? [[rig.stateAddress(0), 1024]] : []);
+        if (last) trace.state = b.extra[0];
         trace.input.push(x);
         trace.master.push(b.master);
         trace.out.push(observe === 'master' ? b.master : b.scratch);
@@ -380,6 +391,23 @@ export function evaluate(t: Trace, c: Check, dir: string): string | null {
       return Math.abs(v) <= num(c, 'max')
         ? null
         : `sample ${num(c, 'index', 0)} of block ${num(c, 'block')} is ${v}, limit ${num(c, 'max')}`;
+    }
+    case 'description': {
+      const want = c.words as number[];
+      const got = (t.desc ?? []).slice(0, want.length);
+      return JSON.stringify(got) === JSON.stringify(want)
+        ? null
+        : `the description words are ${JSON.stringify(got)}, wanted ${JSON.stringify(want)}`;
+    }
+    case 'state-word': {
+      const v = t.state?.[num(c, 'index')];
+      return v === num(c, 'equals') ? null : `state word ${num(c, 'index')} is ${v}, wanted ${num(c, 'equals')}`;
+    }
+    case 'state-untouched-beyond': {
+      // every state word from the declared size on still holds the poison the rig put there: the effect wrote only its declared state
+      const from = Math.floor((t.desc?.[3] ?? 0) / 4);
+      const bad = (t.state ?? []).findIndex((w, i) => i >= from && w !== num(c, 'poison', 0x7fc00001) >>> 0);
+      return bad < 0 ? null : `state word ${bad} (declared size ${from} words) was written`;
     }
     case 'differs': {
       const a = slice(t.out, c.blocks);

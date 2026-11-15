@@ -110,6 +110,8 @@ export interface FxBlock {
   scratch: number[];
   /** the stores of the module's code in this call (with `recordStores`) */
   stores: CallResult['stores'];
+  /** the DM words asked for with `extraReads`, one row each (a word that nothing wrote is null) */
+  extra: (number | null)[][];
 }
 
 export interface FxRigOptions {
@@ -193,6 +195,11 @@ export class FxRig {
     this.port = port;
   }
 
+  /** The byte address of the state block of row i. */
+  stateAddress(i: number): number {
+    return this.built.data[this.stateSymbol(i)]!;
+  }
+
   private stateSymbol(i: number): string {
     return this.rows[i]!.state || `_fx_auto_state${i}`;
   }
@@ -221,6 +228,7 @@ export class FxRig {
     master: readonly number[],
     ctx?: Context | 'friendly',
     regs: Record<string, number> = {},
+    extraReads: [address: number, count: number][] = [],
   ): Promise<FxBlock> {
     const context = resolveContext(ctx, this.ctxRng);
     this.lastCtx = { ...context };
@@ -234,6 +242,8 @@ export class FxRig {
     for (let i = 0; i < MAX_ROWS; i++) reads.push([nw(TABLE) + i * ROW_WORDS + NFAULT, 1]);
     const scratch = this.built.data._fx_scratch;
     if (scratch !== undefined) reads.push([nw(scratch), 64]);
+    const firstExtra = reads.length;
+    for (const [a, n] of extraReads) reads.push([nw(a), n]);
     q.push({
       call: {
         pc: this.built.symbols._fx_entry!,
@@ -259,6 +269,7 @@ export class FxRig {
       scratch:
         scratch === undefined ? [] : Array.from({ length: 64 }, (_, k) => w2f(res.reads[1 + MAX_ROWS]?.[k] ?? 0)),
       stores: res.stores,
+      extra: extraReads.map((_, i) => res.reads[firstExtra + i] ?? []),
     };
   }
 
