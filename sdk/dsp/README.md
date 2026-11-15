@@ -162,11 +162,16 @@ contains 32 floats. Both channels share the cursor, which advances once. The res
 channel. Source pointers may be equal for mono-to-stereo playback: that case reads one plane and writes both outputs.
 Output buffers must be separate; all other source, output, descriptor, cursor and stack
 ranges must be disjoint and the sources/descriptors immutable during the call.
-It computes the index, the word addresses, the half select and the fraction once per frame for both planes and runs the
+It computes the index, the neighbor index and the fraction once per frame for both planes and runs the
 frames in a hardware loop without range checks. A bisection over the constant block rate finds the frame where the cursor
 leaves `[start, end)`; the loop renders up to that frame, then the end rule (voice done, rest of the block zero) or the loop
-rule (wrap once by the region length, see `sample/pcm16.inc`) runs and the next segment starts. A block that stays inside costs
-about 50 instructions per frame; each crossing about 150 more. The forward neighbor at end-1 is a conditional move, not a branch.
+rule (wrap once by the region length, see `sample/pcm16.inc`) runs and the next segment starts. The forward neighbor at end-1 is a conditional move, not a branch.
+Each sample is one sign-extending short-word load (`SWSE`, byte address space, modifier M4 scaled by 2): once per block the
+normal-word plane bases become byte addresses (a plane whose first frame is in the NW32 DDR alias `0x10000000` to `0x17ffffff` is read at `4 * word + 0x40000000`,
+any other plane at `4 * word`, which holds for the internal L2 window; the L1 normal-word windows are not supported). The float arithmetic uses the multifunction
+forms, and the stores and the M4 moves ride in compute instructions. A frame costs 19 instructions (14 mono-to-stereo, one plane read; 47 and 32 before
+`SWSE`), a block that stays inside the region 747 (586) including the call, each crossing about 130 more.
+M4 is clobbered (a caller-saved register of `call.inc`).
 The routine writes 20 save slots (word slots 2 to 21 below entry I6, no nested call). The adapters give a
 byte-alias I6 (a word is 4 bytes); a normal-word I6 is not supported (finding 111). The calling convention
 and the mono reader's numerical bounds still apply. This is not a stereo machine-output ABI. Assembled coverage is
