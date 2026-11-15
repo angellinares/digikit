@@ -603,6 +603,30 @@ asked for. With `watch` ranges (pcs) it also returns the stores of instructions 
 (a frame halfword, the trig bit, a release byte). `sharc-rig --serve` keeps the core between lines: the first line is a request, every
 later line is `{"ops": [...]}` and gets one answer line, so a rig runs a case block by block and stops at its first failure.
 
+A call with `"profile": true` also returns `profile`, one `[pc, count]` row per pc it executed, in pc order (the counts add up to `instructions`). Without the option
+nothing is counted and the answer has no `profile` key. `MachineRig` takes `profile: true` and puts the rows in `MachineBlock.profile`; `profileBySymbol` and `profileRuns`
+(`packages/sharc-rig-kit/src/profile.ts`) turn them into totals per label of the placed objects and into runs of equally often executed instructions (a loop body shows as a run
+with its pass count). `tools/devtools/rig_profile.ts` runs one conformance case and prints both tables for the blocks asked, on the SHARC core only (no emulator, a few seconds):
+
+```sh
+node tools/devtools/rig_profile.ts digikit/shot --device dt2 --case sample/stereo-fwd-oneshot/note60 --blocks 40 --top 8 --runs
+# == digikit/shot dt2 sample/stereo-fwd-oneshot/note60 block 40
+# instructions 2331
+#     insn      %   pcs  symbol
+#      481   20.6    16  _dk_sample_pcm16s_read_right
+#      247   10.6    30  _dk_gain_ramp_stereo
+#      213    9.1    24  _dv_gcheck
+#      ...
+#     insn      % passes  len  from
+#      480   20.6     32   15  _dk_sample_pcm16s_read_right
+#      224    9.6     32    7  _dk_gain_ramp_stereo+0x1e
+#      192    8.2     64    3  _dv_gcheck+0x23
+```
+
+`--json FILE` keeps the tables of every printed block. The rows follow the assembler's labels, so a label inside a loop splits its cost between two rows; the run table shows the loop whole.
+`DIGI_RIG_ROOT=PATH` reads the sources, SDK and device files of another checkout (a lane branch) read only; `DIGI_SHARC_RIG` and `DIGI_PATCHKIT` name the binaries when the worktree has no `dist/`.
+The counts are instructions of the generated core: the same numbers as the emulator's `sharc.profile` for the same code, without the firmware around it.
+
 ```sh
 pnpm nx:pilot run sharc-rig:build        # dist/bin/sharc-rig and dist/bytes/sharc-rig.sha256 (shared generated core)
 ```
