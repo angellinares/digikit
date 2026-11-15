@@ -859,9 +859,9 @@ Where the targets come from:
 - `tools/nx/ts-imports.mjs` and `tools/nx/py-imports.mjs` compute import closures.
 
 Three keys exist:
-- Full key: all shared reads and all built outputs, including the patchkit binary. Used by `test-device-all` and by files listed in `metadata.mergeTests`.
-- Merge key: the default for files not in `metadata.mergeTests`. It holds the bytes the test loads (its `.dkm` packs, `images.sha256`, the daemon key) and the reads its import closure needs.
-- Narrow key: the production files of the project, the packs the test loads, and its imports.
+- Full key: all shared reads and all built outputs, including the patchkit binary. Used by `test-device-all` and conformance.
+- Merge key: the key of files listed in `metadata.mergeTests`. It holds the bytes the test loads (its `.dkm` packs, `images.sha256`, the daemon key) and the reads its import closure needs.
+- Narrow key: the default for files not in `metadata.mergeTests`. It holds the production files of the project, the packs the test loads, and its imports.
 
 `mise run test` selects affected targets with merge keys. `mise run test:full` runs every file with full keys.
 
