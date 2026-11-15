@@ -40,10 +40,10 @@ Base: main at 7e1f99e9e (PR 510). Evidence runs of 2026-11-16 are in the scratch
 | `pk_modcheck.py`: `--python-conformance`, `plan(..., python_conformance)`, `write_costs`, `CONFORMANCE*`, `CONFORMANCE_REPORTS` | `rig_conformance` and `write_costs_rust` (already the default path) | `mise run module:check` on one machine and one effect after the change (see the PR description); `write_uses` stays: `tests/patchkit/test_modcheck_uses.py` tests it, `patchkit uses set` is its Rust twin |
 | `tools/devtools/py_select.py` group `machine-conformance` | none needed: no test file is left under `tests/modules` | `mise run test:plan` after the change |
 | `tests/patchkit/test_sine.py` | `tests/fixtures/modules/sine/tests/rig/sine.toml` | mapping and mutation in t1g-module-tests.md; the one unported test (an unregistered type falls back to the stock code, under 70 instructions) is pinned by `modules/core/adapters/dsp-voice/tests/test_dsp_voice.py::test_an_unregistered_type_falls_through_to_the_stock_renderer` (under 60 instructions) |
-| `modules/machines/tb303/tests/test_tb303.py` | `tests/rig/tb303.toml`. The helper part (cases, `model_run`) stays as `tb303_cases.py` for `rig_refs_gen.py`; `tb303_ref.py` stays (model of the tables) | mapping and mutation in t1g-module-tests.md; `rig_refs --check` same |
-| `modules/machines/pluck/tests/test_pluck.py`, `test_pluck_range.py`, `test_pluck_tune.py` | `tests/rig/pluck.toml`. `pluck_rig.py` is cut to `model_blocks` (used by `rig_refs_gen.py`); `pluck_ref.py` stays | same |
-| `modules/fx/freqshift/tests/test_freqshift.py`, `freqshift_long.py`, `freqshift_tone.py` | `tests/rig/freqshift.toml`. `mixed_input` stays as `freqshift_inputs.py` for `rig_refs_gen.py`; `freqshift_ref.py`, `test_freqshift_ref.py`, `test_fxshift_analysis.py` and `freqshift.device.test.ts` stay | same |
-| `modules/machines/shot/tests/test_shot_playback.py` | `tests/rig/shot.toml`. The model and the rig-driving helper stay as `shot_model.py` for `rig_refs_gen.py`, which asserts routine equals model before it writes a table | same; the tables were not changed, so no PCM pin is re-pinned |
+| `modules/machines/tb303/tests/test_tb303.py` (trimmed to the kept tests below) | `tests/rig/tb303.toml`. The helper part (cases, `model_run`) stays as `tb303_cases.py` for `rig_refs_gen.py`; `tb303_ref.py` stays (model of the tables) | mapping and mutation in t1g-module-tests.md; `rig_refs --check` same |
+| `modules/machines/pluck/tests/test_pluck.py`, `test_pluck_tune.py`, and the rig test of `test_pluck_range.py` (the file stays with the model tests) | `tests/rig/pluck.toml`. `pluck_rig.py` is cut to `model_blocks` (used by `rig_refs_gen.py`); `pluck_ref.py` stays | same |
+| `modules/fx/freqshift/tests/test_freqshift.py` (trimmed to the kept tests below; `freqshift_long.py`, `freqshift_tone.py` stay for its slow run) | `tests/rig/freqshift.toml`. `mixed_input` stays as `freqshift_inputs.py` for `rig_refs_gen.py`; `freqshift_ref.py`, `test_freqshift_ref.py`, `test_fxshift_analysis.py` and `freqshift.device.test.ts` stay | same |
+| `modules/machines/shot/tests/test_shot_playback.py` (trimmed to the latch test below) | `tests/rig/shot.toml`. The model and the rig-driving helper stay as `shot_model.py` for `rig_refs_gen.py`, which asserts routine equals model before it writes a table | same; the tables were not changed, so no PCM pin is re-pinned |
 
 ## Kept on purpose
 
@@ -55,13 +55,21 @@ Base: main at 7e1f99e9e (PR 510). Evidence runs of 2026-11-16 are in the scratch
 | `tests/support/sample_pool.py` | `modules/machines/shot/tests/shot_model.py` only (the generator of the shot tables); `samplepool.ts` is its port |
 | `pk_sharc.CallSession`, `run_call` | kernel tests and RE tools (plan) |
 
-## Assertions that no rig check replaces (review items)
+## Kept until phase 5
 
-- `tb303`: `test_tb303_tracks_unpack_a_level_of_100` (the adapter's `_dv_unpack` writes 100 << 8 on a TB303 track only) and `test_the_model_sounds_like_open303`
-  (model against Open303, log-spectral distance; `tb303_ref.Open303` stays but nothing runs it). The first belongs to the dsp-voice adapter tests (phase 5) and has no
-  adapter test yet.
-- `shot`: `test_smp_is_latched_but_other_parameter_words_remain_live` (the adapter's latch words, phase 5), no adapter test yet.
-- Model-only tests that never ran the routine: tb303 (tie, release, accent, bounded knobs), pluck (loop period for every note, 200 blocks bounded), freqshift
-  (`test_freqshift_ref.py` stays; the 90,000-block `slow` run is not ported).
+Decision: no coverage is lost before phase 5. Each assertion that no rig check replaces yet stays in a Python test, in its original file name trimmed to these
+tests; each carries the comment "kept until T1g phase 5 ports it". They run as named pytest files and `py_select.py` selects them (the glob `modules/**/tests/test_*.py`).
+The rig-driven tests that the kit replaces stay deleted.
 
-Each is in the git history of the deleted file at `7e1f99e9e`.
+| Kept | File | Why it stays |
+| --- | --- | --- |
+| `test_tb303_tracks_unpack_a_level_of_100` | `modules/machines/tb303/tests/test_tb303.py` | the adapter's `_dv_unpack` writes 100 << 8 on a TB303 track only; it belongs to the dsp-voice adapter tests (phase 5), which have no such test yet |
+| `test_the_model_sounds_like_open303` | same | model against Open303 (log-spectral distance); nothing else runs `tb303_ref.Open303` |
+| tb303 model-only: tie, release, accent above 100, bounded knobs | same | they never ran the routine, so no kit case replaces them |
+| `test_smp_is_latched_but_other_parameter_words_remain_live` | `modules/machines/shot/tests/test_shot_playback.py` | the adapter's latch words (phase 5); no adapter test yet |
+| pluck model-only: loop period for every note and TUNE word, 200 blocks bounded | `modules/machines/pluck/tests/test_pluck_range.py` | model only; the kit has the routine's corners, not the exhaustive grid |
+| freqshift: module declares one effect, the committed SHIFT knob is bipolar | `modules/fx/freqshift/tests/test_freqshift.py` | they read module.toml and gallery.json, no rig |
+| freqshift: the 90,000-block (60 s) oscillator run, `slow` | same (with `freqshift_long.py`, `freqshift_tone.py`) | the kit case runs 1,500 blocks; the long run is not ported |
+| freqshift model | `modules/fx/freqshift/tests/test_freqshift_ref.py` | model only (was never part of the deletion) |
+
+The old files are in git history at `7e1f99e9e`.
