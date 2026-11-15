@@ -214,6 +214,16 @@ def is_changed_test(path: str) -> bool:
     )
 
 
+def is_module_test_helper(path: str) -> bool:
+    """A .py helper (a model, a rig, a case table) in a module's own tests/ directory: not a test file, so its edit selects the module's tests."""
+    name = path.rsplit("/", 1)[-1]
+    return (
+        is_module_test_dir(path)
+        and name.endswith(".py")
+        and not name.startswith("test_")
+    )
+
+
 def resolve_tests(paths: tuple[str, ...]) -> list[str]:
     """Repo-relative test paths for PATHS (globs and directories); a name that matches
     nothing is a registry error, so a rename cannot drop a suite silently."""
@@ -504,13 +514,13 @@ def python_test_plan(files: list[str], full: bool) -> list[tuple[str, str]]:
     the tests that import a changed tests/support/ module."""
     plan_: list[tuple[str, str]] = [(path, "gate") for path in PY_GATE]
     # Python tests owned by content modules are selected by edits to that module's
-    # implementation or manifest. Keep this scoped to the changed module directory.
+    # implementation, manifest or test helper (tb303_ref.py). Keep this scoped to the changed module directory.
     module_roots = {
         root
         for f in files
         if f.startswith("modules/")
         and (root := module_root(f))
-        and not f.startswith(f"{root}/tests/")
+        and (not f.startswith(f"{root}/tests/") or is_module_test_helper(f))
     }
     for root in sorted(module_roots):
         plan_ += [

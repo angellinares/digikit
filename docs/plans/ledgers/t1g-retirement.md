@@ -14,11 +14,29 @@ Base: main at 7e1f99e9e (PR 510). Evidence runs of 2026-11-16 are in the scratch
   The extra test is the kit's own (the negative-fixture group split).
 - Comparison of the 30 reports (`<id>@<device|fx>.json`): `label`, `budget`, `params` and, for every case, `group`, `name`, `blocks`, `steady`, `noteon`, `failure`
   (only `python`, `runner` and `build_seconds` are left out): **30 of 30 identical, 3293 cases**.
-- Observation [O]: in the first full Python run the 22 `sample` cases of `digikit/shot` (11 per device) reported a lower `steady` (DT2 stereo 2331 against 3209,
-  worst block 2449 against 3325; DN2 2658 against 3534) than the kit and than `dsp_cost_voice` in module.toml. A second Python run of `digikit/shot` alone
-  (`DIGI_CONFORM_MODULES=digikit/shot DIGI_CONFORM_DEVICE=dt2|dn2`) reported 3325 and 3534, identical to the kit. The kit's numbers repeat; the cause of the
-  Python difference in the full run (parallel workers, host load 60) is not found. The Python suite is deleted, so this closes with the deletion; a reviewer who
-  wants the cause can run the full Python suite at `7e1f99e9e`.
+- Observation [R]: in the first full Python run the 22 `sample` cases of `digikit/shot` reported a lower `steady` than the kit (DT2 stereo 2331 against 3209,
+  DN2 2658 against 3534). Cause: another lane's report of a shot with the S6a sample kernel (2449 and 2658) was in the shared `out/runs/conformance/`, and
+  this run read it. PR 514 fixed it: reports are per worktree and the cost writer checks the worktree. A run of `digikit/shot` alone gave 3325 and 3534, identical to the kit.
+- Reproduction. Run the two suites at `7e1f99e9e` (`git worktree add <dir> 7e1f99e9e`) with the first command above, copy `out/runs/conformance/*.json` to `PY_DIR`,
+  run the kit command with `DIGI_CONFORM_REPORTS=KIT_DIR`, then compare field by field (`python`, `runner` and `build_seconds` are left out):
+
+  ```sh
+  python3 - PY_DIR KIT_DIR <<'PY'
+  import json, sys, pathlib
+  py, kit = (pathlib.Path(p) for p in sys.argv[1:3])
+  skip = {"python", "runner", "build_seconds"}
+  bad = 0
+  for f in sorted(kit.glob("*.json")):
+      a = {k: v for k, v in json.loads((py / f.name).read_text()).items() if k not in skip}
+      b = {k: v for k, v in json.loads(f.read_text()).items() if k not in skip}
+      if a != b:
+          bad += 1
+          print("differs:", f.name)
+  print(len(list(kit.glob("*.json"))) - bad, "identical,", bad, "different")
+  PY
+  ```
+
+  The reports of the 2026-11-16 run were in the scratch directory of that session and are not kept; the numbers above come from them.
 
 **Negative fixtures.** Both suites expect every failure of a negative fixture to contain the same text (`NEGATIVE` and `FX_NEGATIVE` in `pk_conform.py` and in
 `packages/sharc-rig-kit/src/spec.ts`, equal): `test/dyn-dsp-hang` "did not return", `test/dyn-guard-nan` "guard stepped in",
@@ -39,9 +57,9 @@ Base: main at 7e1f99e9e (PR 510). Evidence runs of 2026-11-16 are in the scratch
 | `tools/patchkit/pk_conform.py`: `Case`, `cases`, `FxCase`, `fx_cases`, `fx_word`, `NEGATIVE*`, `FX_NEGATIVE`, `*_SKIP`, `machine_specs`, `fx_specs`, `fx_budget`, case constants | `cases.ts`, `spec.ts`, `patchkit budget` | the two rows above. The rest of the file stays: `spec`, `fx_spec`, `budget`, `Param`, `Frame`, `MachineSpec`, `DEVICES`, `LEVEL_BOUND`, `ConformError`; importers: `tests/support/machine_rig.py`, `fx_rig.py`, `tools/patchkit/pk_modcheck.py`, `pk_adapter_cost.py`, `tests/patchkit/test_pk_conform.py`, `modules/core/adapters/dsp-voice/tests/test_dsp_voice_stereo*.py`, `test_dsp_voice_input.py`, `test_dsp_guard_contract.py` |
 | `pk_modcheck.py`: `--python-conformance`, `plan(..., python_conformance)`, `write_costs`, `CONFORMANCE*`, `CONFORMANCE_REPORTS` | `rig_conformance` and `write_costs_rust` (already the default path) | `mise run module:check` on one machine and one effect after the change (see the PR description); `write_uses` stays: `tests/patchkit/test_modcheck_uses.py` tests it, `patchkit uses set` is its Rust twin |
 | `tools/devtools/py_select.py` group `machine-conformance` | none needed: no test file is left under `tests/modules` | `mise run test:plan` after the change |
-| `tests/patchkit/test_sine.py` | `tests/fixtures/modules/sine/tests/rig/sine.toml` | mapping and mutation in t1g-module-tests.md; the one unported test (an unregistered type falls back to the stock code, under 70 instructions) is pinned by `modules/core/adapters/dsp-voice/tests/test_dsp_voice.py::test_an_unregistered_type_falls_through_to_the_stock_renderer` (under 60 instructions) |
+| `tests/patchkit/test_sine.py` (trimmed to the fall-through test below) | `tests/fixtures/modules/sine/tests/rig/sine.toml` | mapping and mutation in t1g-module-tests.md; the one unported test (an unregistered type falls back to the stock code, under 70 instructions) is kept (below): the DT2-only adapter test `test_dsp_voice.py::test_an_unregistered_type_falls_through_to_the_stock_renderer` does not cover the DN2 wrapper |
 | `modules/machines/tb303/tests/test_tb303.py` (trimmed to the kept tests below) | `tests/rig/tb303.toml`. The helper part (cases, `model_run`) stays as `tb303_cases.py` for `rig_refs_gen.py`; `tb303_ref.py` stays (model of the tables) | mapping and mutation in t1g-module-tests.md; `rig_refs --check` same |
-| `modules/machines/pluck/tests/test_pluck.py`, `test_pluck_tune.py`, and the rig test of `test_pluck_range.py` (the file stays with the model tests) | `tests/rig/pluck.toml`. `pluck_rig.py` is cut to `model_blocks` (used by `rig_refs_gen.py`); `pluck_ref.py` stays | same |
+| `modules/machines/pluck/tests/test_pluck.py`, `test_pluck_tune.py`, and the rig test of `test_pluck_range.py` (the file stays with the model tests) | `tests/rig/pluck.toml`. `pluck_rig.py` stays whole (`model_blocks` for `rig_refs_gen.py`, `PluckRig` for the kept state test); `pluck_ref.py` stays | same |
 | `modules/fx/freqshift/tests/test_freqshift.py` (trimmed to the kept tests below; `freqshift_long.py`, `freqshift_tone.py` stay for its slow run) | `tests/rig/freqshift.toml`. `mixed_input` stays as `freqshift_inputs.py` for `rig_refs_gen.py`; `freqshift_ref.py`, `test_freqshift_ref.py`, `test_fxshift_analysis.py` and `freqshift.device.test.ts` stay | same |
 | `modules/machines/shot/tests/test_shot_playback.py` (trimmed to the latch test below) | `tests/rig/shot.toml`. The model and the rig-driving helper stay as `shot_model.py` for `rig_refs_gen.py`, which asserts routine equals model before it writes a table | same; the tables were not changed, so no PCM pin is re-pinned |
 
@@ -70,6 +88,8 @@ The rig-driven tests that the kit replaces stay deleted.
 | pluck model-only: loop period for every note and TUNE word, 200 blocks bounded | `modules/machines/pluck/tests/test_pluck_range.py` | model only; the kit has the routine's corners, not the exhaustive grid |
 | freqshift: module declares one effect, the committed SHIFT knob is bipolar | `modules/fx/freqshift/tests/test_freqshift.py` | they read module.toml and gallery.json, no rig |
 | freqshift: the 90,000-block (60 s) oscillator run, `slow` | same (with `freqshift_long.py`, `freqshift_tone.py`) | the kit case runs 1,500 blocks; the long run is not ported |
+| `test_a_slot_with_an_unregistered_type_goes_back_to_the_stock_code_without_the_table_walk` (dt2, dn2) | `tests/patchkit/test_sine.py` | covers the DN2 wrapper `dsp-voice-dn2.s` fall-through (under 70 instructions) and the hostile-context register restore; the DT2-only adapter test does not |
+| pluck: the final string state words lp' and ap' are finite after 8 blocks of the five corner cases | `modules/machines/pluck/tests/test_pluck_range.py` (with `pluck_rig.py`) | the kit corner cases compare the output with the model, not the state words |
 | freqshift model | `modules/fx/freqshift/tests/test_freqshift_ref.py` | model only (was never part of the deletion) |
 
 The old files are in git history at `7e1f99e9e`.
