@@ -303,15 +303,33 @@ export async function bootInfo(session: Session, plan: RuntimePlan) {
   const base = planSymbol(plan, 'DKRT_BOOT') + 4 * BI_FIELDS.length;
   const tail = await Promise.all(Array.from({ length: SEL_MAX + 2 }, (_, i) => word(session, base + 4 * i)));
   const allResults = tail.slice(0, SEL_MAX).map((v) => v | 0);
+  // after `needs` (SEL_MAX * NEEDS_LEN bytes at offset 80 of DkrtBootInfo, modules/core/runtime/abi.toml): `states[SEL_MAX]` (bytes), `detail[SEL_MAX][2]`
+  const statesAt = planSymbol(plan, 'DKRT_BOOT') + BI_STATES_AT;
+  const stateWords = await Promise.all([0, 1].map((i) => word(session, statesAt + 4 * i)));
+  const states = Array.from({ length: SEL_MAX }, (_, i) => (stateWords[i >> 2]! >>> (24 - 8 * (i & 3))) & 255);
+  const detailWords = await Promise.all(
+    Array.from({ length: SEL_MAX * 2 }, (_, i) => word(session, statesAt + 8 + 4 * i)),
+  );
+  const detail = Array.from(
+    { length: SEL_MAX },
+    (_, i) => [detailWords[2 * i]!, detailWords[2 * i + 1]!] as [number, number],
+  );
   return {
     ...d,
     results: allResults.slice(0, d.count),
     allResults,
+    /** The state of each selected module (`[load.state]`: `STATE_NAME[n]`). */
+    states: states.slice(0, d.count),
+    /** What the plan refused each module on (`DkrtBootInfo.detail`). */
+    detail: detail.slice(0, d.count),
     dspWait: tail[SEL_MAX]!,
     stable: tail[SEL_MAX + 1]!,
     reasonName: SAFE_NAMES[d.reason] ?? '?',
   };
 }
+
+/** The offset of `DkrtBootInfo.states` (after the 10 words before `results`, the results, dsp_wait, stable and `needs`; asserted by `abi.toml`'s layout check). */
+const BI_STATES_AT = 176;
 
 /**
  * `bootInfo` once no selected module is still LOADING (1): the DSP part of a module follows its ColdFire part over the first UI-loop

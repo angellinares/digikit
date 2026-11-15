@@ -1,0 +1,25 @@
+{
+  "$schema": "../../../../../node_modules/nx/schemas/project-schema.json",
+  "name": "core/runtime-refusal-tests",
+  "tags": [
+    "test-only"
+  ],
+  "implicitDependencies": [
+    "core/runtime"
+  ],
+  "metadata": {
+    "runtimeAcceptance": [
+      {
+        "files": [
+          "refusal.device.test.ts"
+        ],
+        "modules": [
+          "test/commit-demo",
+          "test/lfo-shape",
+          "test/lfo-shape-dup"
+        ],
+        "plusdrive": true
+      }
+    ]
+  }
+}

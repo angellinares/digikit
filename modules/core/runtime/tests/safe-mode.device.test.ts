@@ -7,6 +7,7 @@ import { settleHang } from '@digi/regression/runtime/debug-kit.ts';
 import { rpc } from '@digi/regression/runtime/fx-live.ts';
 import { drainInputs } from '@digi/regression/runtime/fx-session.ts';
 import { introNow, safeFrame } from '@digi/regression/runtime/intro-frame.ts';
+import { stateName } from '@digi/regression/runtime/load-states.ts';
 import { planSymbol } from '@digi/regression/runtime/runtime-plan.ts';
 import { waitEmulatedFrames, waitForBootEmulated, expectPollEmulated } from '@digi/regression/runtime/waits.ts';
 
@@ -51,6 +52,7 @@ cardRigs('safe mode', { dsp: 'sharc', full: true, relaxFs: true, roots: RT, symb
       });
       expect(info.loaded, 'safe mode loaded no module').toBe(0);
       expect(info.allResults[0], 'and reported it').toBe(E_SAFE_MODE);
+      expect(stateName(info.states[0]!), 'and skipped it').toBe('SKIPPED');
       expect((await introNow(h.session)).equals(safeFrame('counter')), 'the intro shows the 2 FAILED BOOTS frame').toBe(true);
       const rec = currentRecord(await h.records());
       expect(rec?.counter, 'the UI loop ran: counter 0').toBe(0);
