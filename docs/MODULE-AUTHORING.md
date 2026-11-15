@@ -788,7 +788,8 @@ At boot the runtime gives each selected module a state: SELECTED, then PLANNED o
 - `E_MISSING`, `E_CONTRACT`: a service the module needs is not there, or needs a newer runtime.
 - `E_PLAN_FIT`: the module's `[uses]` do not fit what the modules before it in the selection left (the reason names the resource).
 - `E_PLAN_KIND`, `E_PLAN_OWNER`, `E_PLAN_KEY`: a record kind has no owner, two modules own one kind, slot or hook site, or two modules give one key.
-- other codes (`E_INIT`, `E_NOMEM`, `E_DSP_*`): the load failed after the plan accepted the module.
+- `E_INIT`: `init` returned non-zero. `E_DECL_KIND`: the header table has record kinds, slots, hooks or exports that `init` did not declare. Both end FAILED.
+- other codes (`E_NOMEM`, `E_DSP_*`): the load failed after the plan accepted the module.
 
 In safe mode no module loads and every one is SKIPPED. The table of every code with the tests that prove it is `modules/core/runtime/tests/refusal/refusal-table.ts`.
 
