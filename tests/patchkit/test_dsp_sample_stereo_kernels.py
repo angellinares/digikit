@@ -12,7 +12,8 @@ from tools.patchkit import pk_sharc, pk_toolchains
 BASE = 0xB90000
 SRC = 0x10001000
 SRC_L2 = 0x08040000  # internal L2 window: a normal word is byte address / 4
-SRC_L1 = 0x000B1000  # an L1 normal-word window (0x000B0000 to 0x000BBFFF; byte 4 * word)
+# An L1 normal-word window (0x000B0000 to 0x000BBFFF; byte 4 * word).
+SRC_L1 = 0x000B1000
 OUT = 0x08020000
 RIGHT = OUT + 0x100
 STATE = OUT + 0x200
