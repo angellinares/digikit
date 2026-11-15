@@ -580,6 +580,24 @@ fn write_of_the_stack_base_register_is_a_stack_problem() {
 }
 
 #[test]
+fn b2w_of_the_stack_base_register_keeps_the_stack_pointer() {
+    // Bd = B2W(Bs) (Type 7d) does not load I (PRM p.6-15). The DN2 interrupt stub converts I7, then B7, and keeps I7.
+    let mut b2w = insn(BASE, &["B7"], &["B7"]);
+    b2w.form = "7d".to_string();
+    assert_eq!(problems(vec![b2w]), one("never_write", "B7"));
+}
+
+#[test]
+fn w2b_of_a_base_register_does_not_write_the_index_register() {
+    // Bd = W2B(Bs) (Type 7d) writes B8 only. An ordinary write of B8 also loads I8.
+    let mut w2b = insn(BASE, &["B8"], &["B8"]);
+    w2b.form = "7d".to_string();
+    let i8_written = |p: Vec<(&'static str, String)>| p.iter().any(|(_, r)| r == "I8");
+    assert!(!i8_written(problems(vec![w2b])));
+    assert!(i8_written(problems(vec![insn(BASE, &["R0"], &["B8"])])));
+}
+
+#[test]
 fn write_to_an_interrupt_register_is_never_allowed() {
     let p = problems(vec![insn(BASE, &["R0"], &["IMASK"])]);
     assert_eq!(p, one("never_write", "IMASK"));
