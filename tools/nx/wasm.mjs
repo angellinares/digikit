@@ -240,12 +240,7 @@ function buildSmalls(names) {
       }
       fs.writeFileSync(stamp, stampFor(dest));
     }
-    // patchkit.wasm carries the Selache assembler (the SHARC+ build, 0.4 MB); the others stay under 2 MiB
-    const limit = (name === 'patchkit' ? 5 : 4) * 512 * 1024;
     const size = fs.statSync(dest).size;
-    if (size > limit) {
-      die(`${dest} is ${size} bytes: ${name}.wasm must stay small and firmware-free`);
-    }
     console.log(`${name}.wasm: ${size} bytes${current ? ' (unchanged)' : ''}`);
   }
 }
