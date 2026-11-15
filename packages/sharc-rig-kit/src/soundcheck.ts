@@ -26,7 +26,7 @@ import {
   wordsHash,
 } from './analysis.ts';
 import { signalBlock } from './checks.ts';
-import { f2w } from './context.ts';
+import { REC, RECORDS, f2w, nw } from './context.ts';
 import { P0, FxRig } from './fx.ts';
 import { MachineRig } from './machine.ts';
 import type { RigOpener } from './ops.ts';
@@ -48,6 +48,8 @@ export interface Step extends Toml {
   blocks?: number;
   trigger?: boolean;
   release?: boolean;
+  /** DT2: write the voice record's word +0x1b8 (ACTIVE and the mark) before the first block: 0 makes the voice idle */
+  record_word?: number;
 }
 
 export interface RigCase {
@@ -138,6 +140,7 @@ async function runMachine(module: string, device: Device, c: RigCase, o: RunOpti
       if (step.params) rig.setParams(words(step.params));
       if (step.note !== undefined || step.vel !== undefined || first) rig.setNote(step.note ?? 60, step.vel ?? 100);
       first = false;
+      if (step.record_word !== undefined) rig.poke(nw(RECORDS + rig.voice * REC + 0x1b8), step.record_word);
       if (step.release) rig.release();
       const trigger = step.trigger ?? !step.release;
       for (let k = 0; k < (step.blocks ?? 1); k++) {

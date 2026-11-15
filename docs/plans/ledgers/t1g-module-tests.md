@@ -35,3 +35,22 @@ module has no DN2 port).
 Mutation: `0x4102d013` (440 x 2^(-69/12), the pitch scale) to `0x4112d013` in `src/dsp/tb303.s`: Python `test_the_routine_matches_the_model`
 fails (5 of 5); the kit fails all 9 `matches-table` cases. (`0x41333333`, the 11.2 octave clamp, is not reached by any case: no check sees it, in
 Python or in the kit.)
+
+## digikit/pluck (`test_pluck.py`, `test_pluck_range.py`, `test_pluck_tune.py`, `pluck_rig.py`, `pluck_ref.py`; kit: `tests/rig/pluck.toml`, tables `tests/rig/ref/*.f32`)
+
+The tables are `pluck_rig.model_blocks` output (`uv run python -m tools.devtools.rig_refs pluck`); the tolerance of every case is the Python one,
+2e-5 * max(1, model peak) = 2e-5 (every model peak is below 1). DT2 only (the Python rig is DT2).
+
+| Python | Kit |
+| --- | --- |
+| `test_the_routine_matches_the_float32_model` (4 cases, 40 blocks, finite, model peak above 0.05) | 4 cases `the routine matches the model: NAME`: `matches-table` atol 2e-5, `peak` min 0.05, finite by the implicit rules |
+| `test_instruction_counts_per_block` (note-on block below 60000, steady below 2200, idle voice below 750) | case `instruction counts per block` (`instructions` first max 59999, steady max 2199) and case `an idle voice costs little` (step `record_word = 0`, `instructions` idle max 749) |
+| `test_the_voice_ends_when_it_is_quiet_and_clears_its_flags` | case `the voice ends when it is quiet and clears its flags`: `voice-ends` (after block 5, within 1499, mark cleared), then an idle step with `peak` 0 |
+| `test_a_new_note_restarts_the_string` | case `a new note restarts the string`: `peak` min 0.05 of the new block and `differs` from the first block |
+| `test_the_routine_stays_finite_and_matches_the_model_at_the_corners` (5 corners, 8 blocks; the string state `lp'`, `ap'` finite) | 5 cases `the string stays finite and matches the model at the corner NAME`: `matches-table` atol 2e-5 and the implicit finite rule; the state words are not read (a bad state shows in the next blocks' samples, which the table checks) |
+| `test_the_string_is_in_tune` (8 notes, within 1.5 cents) | 8 cases `the string is in tune: note N`: `pitch-hz` method `bandpass`, `skip_periods` 4, cents 1.5, the Python block counts |
+| `test_the_loop_period_is_servable_for_every_note_and_tune_word`, `test_the_string_stays_finite_and_bounded_for_200_blocks` | not ported: they run the Python model only (every note and tune word), no routine; the corner cases above are the routine's side of the same regression |
+| `test_dkm_layout.py` | not ported: a `patchkit pack` layout test, no rig |
+
+Mutation: `0x45b777e3` (P0 = 1 / INC0) to `0x45b787e3` in `src/dsp/pluck.s`: Python `test_the_routine_matches_the_float32_model` fails (error
+0.039 against 2e-5); the kit fails 6 `matches-table` cases (the four model cases, corner note0 and low-tune).
