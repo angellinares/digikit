@@ -35,6 +35,8 @@ const USAGE: &str = "usage: patchkit [--root DIR] COMMAND ...
                                          names for addresses from address maps and a module load table (docs/ADDRMAP.md); JSON by default
   budget  [--device SHORT]... [--fx-max N] [--budget-pct P]   the DSP budget of each device in instructions per block (headroom, voice-block, note-on-block;
                                          with --fx-max the effect budget of the tightest device): JSON from devices/*.toml and devices/cycle-factors.json
+  uses    set --id MODULE --device SHORT [--dsp-cost-voice N] [--dsp-cost-fx N]   write the measured DSP cost (instructions per block) into
+                                         [uses.<device>] of the module's module.toml (only those lines change; comments stay); prints wrote/unchanged PATH
   pack    MODULE_ID -o OUT.dkm [--addrmap map.json] [--name N] [--device SHORT] [--trace] [--manifest PATH]...   the module's ColdFire object as a run-time .dkm;
                                          builds the objects that are stale first (content modules: cache out/cache/dko)
                                          (a `dynamic = true` module: its machine and param records for --device)
@@ -51,6 +53,9 @@ const USAGE: &str = "usage: patchkit [--root DIR] COMMAND ...
   records --json FILE|-                  the decoded records (counts, params, machines, pages, effects) of a committed record block
   needs   [--json] FILE.dkm...           what a load of each file takes (arena, DSP area, rows), inferred from its contents; `-` reads stdin;
                                          --json: one object, file -> the needs or {\"error\": text}; exit 1 when a file has none
+  imports [--json] FILE.dkm...           the SDK imports (service calls and builder calls of init) each file links, from its import table
+  coverage --sdk sdk/sdk.toml [--allow FILE] [--json] FILE.dkm...   the [[import]] entries of sdk.toml that the files link, by service;
+                                         exit 1 when one is neither linked nor in the allow-list (docs/TESTING.md, SDK-surface coverage)
   dkm-dsp-image FILE BASE [NAME=VALUE..]  the relocated DSP image of a .dkm at the L2 byte address BASE (hex)
   pack-section IN OUT                    aPLib-pack a raw file as a section stream (for tests)
   store dump IMAGE [--device dt2|dn2] [--overlay FILE] [--base-sector N] [--json]   digikit's own data on a card image or a raw sector dump:
@@ -811,6 +816,10 @@ plan.json {}",
         "records" => patchkit::records_cli::run(rest)?,
         "addr" => patchkit::addrmap::run(rest)?,
         "budget" => patchkit::budget_cli::run(rest)?,
+        #[cfg(not(target_arch = "wasm32"))]
+        "uses" => patchkit::uses::run(&a.root, rest)?,
+        "imports" => patchkit::coverage_cli::run_imports(rest)?,
+        "coverage" => patchkit::coverage_cli::run_coverage(rest)?,
         "needs" => {
             let json = rest.iter().any(|a| a == "--json");
             let files: Vec<&String> = rest.iter().filter(|a| *a != "--json").collect();

@@ -45,6 +45,26 @@ const cliTarget = ({ build, bin, dir }) => ({
 
 // Extra targets of named crates.
 const CRATE_TARGETS = {
+  'sharc-rig': {
+    build: {
+      executor: 'nx:run-commands',
+      cache: false, // cargo decides; the hash file it writes is the cache key of the tasks that run the rig
+      parallelism: true,
+      description:
+        'Builds the SHARC-only rig against the shared generated core into dist/bin/sharc-rig and writes dist/bytes/sharc-rig.sha256 (tools/nx/sharc-rig-bin.mjs).',
+      inputs: [
+        'default',
+        '^production',
+        '{workspaceRoot}/Cargo.toml',
+        '{workspaceRoot}/Cargo.lock',
+        '{workspaceRoot}/tools/nx/sharc-rig-bin.mjs',
+        '{workspaceRoot}/tools/nx/rust-env.mjs',
+        '{workspaceRoot}/out/native/shared-core/gen/CORE_FINGERPRINT',
+      ],
+      outputs: ['{workspaceRoot}/dist/bin/sharc-rig', '{workspaceRoot}/dist/bytes/sharc-rig.sha256'],
+      options: { command: 'node tools/nx/sharc-rig-bin.mjs', cwd: '.' },
+    },
+  },
   patchkit: {
     'device-bytes': {
       executor: 'nx:run-commands',
@@ -293,7 +313,7 @@ export const createNodesV2 = [
                 ...(COMPILE_SOURCE[name] ?? []),
               ],
               options: {
-                command: `node tools/nx/rust-env.mjs${name === 'sharc-native' ? ' --gen' : ''} -- cargo nextest run -p ${name} --release --locked --offline`,
+                command: `node tools/nx/rust-env.mjs${name === 'sharc-native' || name === 'sharc-rig' ? ' --gen' : ''} -- cargo nextest run -p ${name} --release --locked --offline`,
                 cwd: '.',
               },
             };

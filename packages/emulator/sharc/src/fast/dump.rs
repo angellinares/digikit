@@ -123,16 +123,26 @@ fn fnv(words: &[u32]) -> u64 {
 }
 
 /// Called just before a kernel runs, after the windows are in the context.
+///
+/// # Safety
+///
+/// `ctx` must point to the engine's context buffer (`CTX_SIZE` bytes) and
+/// `st` to its `St`, both valid for reads for the whole call. The register
+/// range comes from the offsets that the kernel names.
 #[inline(always)]
-pub fn before(k: &Kernel, ctx: *const u8, st: *const u8) -> Option<Capture> {
+pub unsafe fn before(k: &Kernel, ctx: *const u8, st: *const u8) -> Option<Capture> {
     if !enabled() {
         return None;
     }
-    before_slow(k, ctx, st)
+    // SAFETY: the caller keeps the contract of `before`.
+    unsafe { before_slow(k, ctx, st) }
 }
 
+/// # Safety
+///
+/// As for `before`.
 #[inline(never)]
-fn before_slow(k: &Kernel, ctx: *const u8, st: *const u8) -> Option<Capture> {
+unsafe fn before_slow(k: &Kernel, ctx: *const u8, st: *const u8) -> Option<Capture> {
     let d = dir()?;
     let key = k as *const Kernel as usize;
     let kid = SEEN.with(|s| {
@@ -189,8 +199,14 @@ fn before_slow(k: &Kernel, ctx: *const u8, st: *const u8) -> Option<Capture> {
 }
 
 /// Called just after the kernel ran.
+///
+/// # Safety
+///
+/// `ctx` must point to the engine's context buffer (`CTX_SIZE` bytes) and
+/// `st` to its `St`, both valid for reads for the whole call. The register
+/// range comes from the offsets that the kernel names.
 #[inline(always)]
-pub fn after(cap: Option<Capture>, code: u32, ctx: *const u8, st: *const u8) {
+pub unsafe fn after(cap: Option<Capture>, code: u32, ctx: *const u8, st: *const u8) {
     let Some(mut c) = cap else { return };
     // SAFETY: as in `before`.
     unsafe {

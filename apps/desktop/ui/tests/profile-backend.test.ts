@@ -5,6 +5,7 @@ import { describe, test } from 'vitest';
 import { DkError } from '@digi/dk-session';
 import { CAP, LOG_KIND } from '@digi/dk-session/gen_proto';
 import type { EmuRpc } from '@digi/workbench-core/host/host.ts';
+import { ownerName } from '@digi/workbench-core/profile/profile-core.ts';
 import type { LibraryModule } from '@digi/workbench-core/modules/dktransfer.ts';
 import { createRecorder, isDebugMissing, type ProfileSession } from '../src/profile-backend.ts';
 
@@ -18,6 +19,7 @@ interface FakeState {
   missing: boolean;
   calls: string[];
   health?: { avg: number; max: number };
+  polls?: ({ owner: number | 'runtime'; fn: number } | undefined)[];
 }
 
 function fakeSession(st: FakeState): ProfileSession {
@@ -57,6 +59,7 @@ function fakeSession(st: FakeState): ProfileSession {
         hz: HZ,
         elapsedTicks: st.elapsed,
         spans: [span(0, 'module', 0, 10, 1000n, 300), span(8, 'phase', 0, 5, 50n, 20), span(11, 'poll', 0, 0, 0n, 0)],
+        polls: st.polls ?? [],
       };
     },
     logPage: async () => {
@@ -133,6 +136,44 @@ describe('read', () => {
       { index: 0, name: 'test/saw', kind: 'machine' },
       { index: 1, name: 'someone/mystery', kind: 'other' },
     ]);
+  });
+
+  test('poll slots are named by their module and, when the address map names the function, by it', async () => {
+    const asked: number[] = [];
+    const rec = createRecorder({
+      session: async () =>
+        fakeSession(
+          state({
+            running: true,
+            elapsed: 5000n,
+            polls: [{ owner: 1, fn: 0x47e10040 }, undefined, { owner: 'runtime', fn: 0x40101000 }],
+          }),
+        ),
+      loadLibrary: library,
+      prof: async () =>
+        ({
+          addrLookup: (req: { addrs: { addr: number }[] }) => {
+            asked.push(...req.addrs.map((a) => a.addr));
+            return {
+              unloaded: [],
+              results: req.addrs.map((a) => ({ text: a.addr === 0x47e10040 ? 'poll_fn' : null })),
+            };
+          },
+        }) as never,
+      names: { inputs: () => ({ maps: [], loads: { modules: [] } }), refresh: async () => {} },
+      now: () => NOW,
+    });
+    const r = await rec.read();
+    assert.ok(!r.noDebug);
+    if (r.noDebug) return;
+    assert.deepEqual(asked, [0x47e10040, 0x40101000], 'one lookup of the used slots');
+    assert.deepEqual(r.snap.polls, [
+      { owner: 1, fn: 0x47e10040, name: 'poll_fn' },
+      undefined,
+      { owner: 'runtime', fn: 0x40101000 },
+    ]);
+    assert.equal(ownerName({ kind: 'poll', index: 0 }, r.modules, r.snap.polls), 'someone/mystery poll: poll_fn');
+    assert.equal(ownerName({ kind: 'poll', index: 2 }, r.modules, r.snap.polls), 'runtime poll');
   });
 
   test('a library that cannot be read leaves every module other', async () => {

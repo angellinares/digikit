@@ -199,3 +199,45 @@ fn dk_sink_set_on_the_span_channel_clears_the_clock() {
         in_module(|| dlog::dk_sink_set(SINK_SPAN, core::ptr::null_mut()));
     }
 }
+
+/// `dkrt_poll_add` records the owner of a slot: the module record whose loaded range holds the function, the runtime marker for any other address.
+#[test]
+fn a_poll_slot_records_the_module_that_registered_it() {
+    let _g = LOCK.lock().unwrap();
+    unsafe {
+        reset(0, 5);
+        let s = crate::st();
+        s.modules[1].used = 1;
+        s.modules[1].base = 0x1000;
+        s.modules[1].size = 0x100;
+        s.modules[3].used = 1;
+        s.modules[3].base = 0x2000;
+        s.modules[3].size = 0x100;
+        assert_eq!(crate::dkrt_poll_add(0x1010), OK);
+        assert_eq!(crate::dkrt_poll_add(0x9000), OK);
+        assert_eq!(crate::dkrt_poll_add(0x20ff), OK);
+        let mut f = 0u32;
+        assert_eq!(crate::report::debug_poll(0, &mut f), 2, "record 1 gives 2");
+        assert_eq!(f, 0x1010);
+        assert_eq!(crate::report::debug_poll(1, &mut f), 0xff, "outside every module: the runtime marker");
+        assert_eq!(f, 0x9000);
+        assert_eq!(crate::report::debug_poll(2, &mut f), 4);
+        assert_eq!(f, 0x20ff);
+        assert_eq!(crate::report::debug_poll(3, &mut f), 0, "an empty slot");
+        assert_eq!(crate::report::debug_poll(4, core::ptr::null_mut()), 0, "past the table");
+        // adding a function that is in the table keeps its slot and owner
+        assert_eq!(crate::dkrt_poll_add(0x1010), OK);
+        assert_eq!(crate::report::debug_poll(0, core::ptr::null_mut()), 2);
+        // a module that is released takes its polls with it; the others stay
+        crate::api::poll_drop_range(0x1000, 0x100);
+        assert_eq!(crate::report::debug_poll(0, &mut f), 0);
+        assert_eq!(crate::report::debug_poll(2, &mut f), 4);
+        // removing one frees the slot; a new function reuses it with its own owner
+        crate::dkrt_poll_remove(0x9000);
+        assert_eq!(crate::report::debug_poll(1, &mut f), 0);
+        assert_eq!(crate::dkrt_poll_add(0x1020), OK);
+        assert_eq!(crate::report::debug_poll(0, &mut f), 2);
+        assert_eq!(f, 0x1020);
+        reset(0, 5);
+    }
+}

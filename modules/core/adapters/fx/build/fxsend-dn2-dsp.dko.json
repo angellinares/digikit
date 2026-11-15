@@ -424,238 +424,238 @@
   },
   {
    "addend": 0,
-   "offset": 392,
+   "offset": 388,
    "section": "seg_pmco",
    "symbol": "_fxs_gnew",
    "type": "sharc.abs32"
   },
   {
    "addend": 16,
-   "offset": 404,
+   "offset": 396,
    "section": "seg_pmco",
    "symbol": "_fxs_c",
    "type": "sharc.abs32"
   },
   {
    "addend": 0,
-   "offset": 419,
+   "offset": 406,
    "section": "seg_pmco",
    "symbol": "_fxs_te",
    "type": "sharc.abs24"
   },
   {
    "addend": 0,
-   "offset": 434,
+   "offset": 415,
    "section": "seg_pmco",
    "symbol": "_fxs_tm",
    "type": "sharc.abs24"
   },
   {
    "addend": 0,
-   "offset": 437,
+   "offset": 418,
    "section": "seg_pmco",
    "symbol": "_fxs_fade",
    "type": "sharc.abs24"
   },
   {
    "addend": 0,
-   "offset": 440,
+   "offset": 421,
    "section": "seg_pmco",
    "symbol": "_fxs_mac",
    "type": "sharc.abs24"
   },
   {
    "addend": 24,
-   "offset": 443,
+   "offset": 424,
    "section": "seg_pmco",
    "symbol": "_fxs_c",
    "type": "sharc.abs32"
   },
   {
    "addend": 8,
-   "offset": 446,
+   "offset": 427,
    "section": "seg_pmco",
    "symbol": "_fxs_c",
    "type": "sharc.abs32"
   },
   {
    "addend": 0,
-   "offset": 449,
+   "offset": 430,
    "section": "seg_pmco",
    "symbol": "_fxs_te",
    "type": "sharc.abs24"
   },
   {
    "addend": 0,
-   "offset": 452,
+   "offset": 433,
    "section": "seg_pmco",
    "symbol": "_fxs_mac",
    "type": "sharc.abs24"
   },
   {
    "addend": 8,
-   "offset": 455,
+   "offset": 436,
    "section": "seg_pmco",
    "symbol": "_fxs_c",
    "type": "sharc.abs32"
   },
   {
    "addend": 8,
-   "offset": 464,
+   "offset": 445,
    "section": "seg_pmco",
    "symbol": "_fxs_c",
    "type": "sharc.abs32"
   },
   {
    "addend": 16,
-   "offset": 467,
+   "offset": 448,
    "section": "seg_pmco",
    "symbol": "_fxs_c",
    "type": "sharc.abs32"
   },
   {
    "addend": 0,
-   "offset": 472,
+   "offset": 453,
    "section": "seg_pmco",
    "symbol": "_fxs_gnew",
    "type": "sharc.abs32"
   },
   {
    "addend": 8,
-   "offset": 487,
+   "offset": 466,
    "section": "seg_pmco",
    "symbol": "_fxs_c",
    "type": "sharc.abs32"
   },
   {
    "addend": 24,
-   "offset": 490,
+   "offset": 469,
    "section": "seg_pmco",
    "symbol": "_fxs_c",
    "type": "sharc.abs32"
   },
   {
    "addend": 0,
-   "offset": 500,
+   "offset": 479,
    "section": "seg_pmco",
    "symbol": "_fxs_fbuf",
    "type": "sharc.abs32"
   },
   {
    "addend": 0,
-   "offset": 503,
+   "offset": 482,
    "section": "seg_pmco",
    "symbol": "_fxs_fbuf",
    "type": "sharc.abs32"
   },
   {
    "addend": 0,
-   "offset": 541,
+   "offset": 520,
    "section": "seg_pmco",
    "symbol": "_fxs_fbuf",
    "type": "sharc.abs32"
   },
   {
    "addend": 8,
-   "offset": 544,
+   "offset": 523,
    "section": "seg_pmco",
    "symbol": "_fxs_c",
    "type": "sharc.abs32"
   },
   {
    "addend": 8,
-   "offset": 550,
+   "offset": 527,
    "section": "seg_pmco",
    "symbol": "_fxs_c",
    "type": "sharc.abs32"
   },
   {
    "addend": 0,
-   "offset": 560,
+   "offset": 537,
    "section": "seg_pmco",
    "symbol": "_fxs_bus",
    "type": "sharc.abs32"
   },
   {
    "addend": 0,
-   "offset": 576,
+   "offset": 553,
    "section": "seg_pmco",
    "symbol": "_fxs_bus",
    "type": "sharc.abs32"
   },
   {
    "addend": 0,
-   "offset": 598,
+   "offset": 573,
    "section": "seg_pmco",
    "symbol": "_fx_c",
    "type": "sharc.abs32"
   },
   {
    "addend": 4,
-   "offset": 613,
+   "offset": 586,
    "section": "seg_pmco",
    "symbol": "_fx_c",
    "type": "sharc.abs32"
   },
   {
    "addend": 0,
-   "offset": 617,
+   "offset": 590,
    "section": "seg_pmco",
    "symbol": "_fxs_steady",
    "type": "sharc.abs24"
   },
   {
    "addend": 0,
-   "offset": 628,
+   "offset": 601,
    "section": "seg_pmco",
    "symbol": "_fxs_rw",
    "type": "sharc.abs24"
   },
   {
    "addend": 0,
-   "offset": 637,
+   "offset": 610,
    "section": "seg_pmco",
    "symbol": "_fx_scratch",
    "type": "sharc.abs32"
   },
   {
    "addend": 0,
-   "offset": 640,
+   "offset": 613,
    "section": "seg_pmco",
    "symbol": "_fxs_return",
    "type": "sharc.abs32"
   },
   {
    "addend": 0,
-   "offset": 643,
+   "offset": 616,
    "section": "seg_pmco",
    "symbol": "_fxs_rchan",
    "type": "sharc.abs24"
   },
   {
    "addend": 0,
-   "offset": 646,
+   "offset": 619,
    "section": "seg_pmco",
    "symbol": "_fxs_rchan",
    "type": "sharc.abs24"
   },
   {
    "addend": 0,
-   "offset": 652,
+   "offset": 625,
    "section": "seg_pmco",
    "symbol": "_fx_scratch",
    "type": "sharc.abs32"
   },
   {
    "addend": 0,
-   "offset": 655,
+   "offset": 628,
    "section": "seg_pmco",
    "symbol": "_fxs_return",
    "type": "sharc.abs32"
   },
   {
    "addend": 0,
-   "offset": 658,
+   "offset": 631,
    "section": "seg_pmco",
    "symbol": "_fxs_return",
    "type": "sharc.abs32"
@@ -664,10 +664,10 @@
  "sections": [
   {
    "align": 8,
-   "hex": "0011000000007e713f000011000000007e733f00001100000000b40f0000140f000000000898000000c200060000000000c50006000000000898120000c60006000000000898180000c200060000000000c500060000000008982a0000c60006000000000898300000c200060000000000c500060000000000a80000420000c600060000000000a80000480000c200060000000000c500060000000000a800005a0000c60006000000000010000000003e703f1a0010000000003e703f0a0010000000003e0600000000be0600000000140f00000000000f00000000810f040001c008990000000f00000000001100000000800f00000011000000000010000000003e703f0a0898000000c200060000000000c50006000000000898120000c620060000000008980e0000c22006000000000898030008988c0001cd000600000000be06000000000010000000003e703f0abe060000000000c2000600000000be06000000000010000000003e703f0a01100000000008998c00001000000000810f600001c000110000000000100000000000c50011000000003e0600000000be06000000003e0600000000000f00000000810f040001c03e703f08800f0000000c00400300be5100800000001000000000810f4c0001c03e70bf08100f00000000840f7f00850ff8ff860fff00070f013c0402000c00041e00be5300000000000c000415003e01040006013e01200005003e01060014113e010c0010a13e01130017013e0113001101be5180800000000000000000110f00000000100f00000000850f0f00000c00081500be53000000003e02102010003e0104001501be51808000003e02102010103e0104001501be5180800000110f00000000100f00000000000c00041b00be53000000003e0210101000be51808000003e0210101008be51808000003e0210101010be51808000003e0210101018be5180800000150f00000000001000000000810f0600a0010100010f0000000001c0001100000000140f00000000000f00000000001100000000030f003d0000000c00105400be5900000000be5b000300003e0200005002000f000000003e01000005103e708008000001a2000000000010000000003e01000005103e708008000002a2000000003e01040012100006000000003e01080012203e01130003053e01020020143e0102006016000600000000be0600000000be06000000000010000000000011000000003e0600000000be0600000000001000000000010f000000013e01000001100011000000000010000000003e70bf08100f00000000000c00100600be5100000000be53008000003e0a000000000010000000000011000000003e703f08810f800001c03e70bf08120f00000000000f00000000810f800001c03e70bf09070f803f0000080f043d0821000c00201500be5100000000be53800000003e01130007003e01130017013e0108007827be5500800000be5780800000000f000000000011000000003e0a000000000010000000003e70bf08810f800001c03e703f08000f00000000810f040001c03e70bf0e810f8000800101123f703f0e3f703f09130f00000000000c00200c0083210834451485231375140cbe57d88480d8be550884ad19b9973e0a000000000010000000003e703f0a08988d04000fff7fffff84019000000a0000000005100000000055c2000600000000060f003d0000870f0000800f010050c3000600000000060f00bd0000070f803f0000110f00000000100f00000000be0600000000be06000000003e0a00000000110f00000000120f000000001c0f0000000049c2000c00400c008123003500003e011300040c3e010800ac1abe55008500003e0a00000000a7c23e713f09000c002015003e010800a61a3e011300a90bbe53000000003e0113000b017e55000100003e0108002112be55008100003f713f083e0a00000000",
+   "hex": "0011000000007e713f000011000000007e733f00001100000000b40f0000140f000000000898000000c200060000000000c50006000000000898120000c60006000000000898180000c200060000000000c500060000000008982a0000c60006000000000898300000c200060000000000c500060000000000a80000420000c600060000000000a80000480000c200060000000000c500060000000000a800005a0000c60006000000000010000000003e703f1a0010000000003e703f0a0010000000003e0600000000be0600000000140f00000000000f00000000810f040001c008990000000f00000000001100000000800f00000011000000000010000000003e703f0a0898000000c200060000000000c50006000000000898120000c620060000000008980e0000c22006000000000898030008988c0001cd000600000000be06000000000010000000003e703f0abe060000000000c2000600000000be06000000000010000000003e703f0a01100000000008998c00001000000000810f600001c000110000000000100000000000c50011000000003e0600000000be06000000003e0600000000000f00000000810f040001c03e703f08800f0000000c00400300be5100800000001000000000810f4c0001c03e70bf08100f00000000840f7f00850ff8ff860fff00070f013c0402000c00041e00be5300000000000c000415003e01040006013e01200005003e01060014113e010c0010a13e01130017013e0113001101be5180800000000000000000110f00000000100f00000000850f0f00000c00081500be53000000003e02102010003e0104001501be51808000003e02102010103e0104001501be5180800000110f00000000100f00000000000c00041b00be53000000003e0210101000be51808000003e0210101008be51808000003e0210101010be51808000003e0210101018be5180800000150f00000000001000000000810f0600a0010100010f0000000001c0001100000000140f00000000000f00000000001100000000030f003d0000000c001041009099969b3e0200005002000f0000000005c03e70bf080892800000100000000005c03e70bf080892000184011210000600000000880112209301030542c266c2000600000000be0600000000be06000000000010000000000011000000003e0600000000be0600000000001000000000010f000000013e01000001100011000000000010000000003e70bf08100f00000000000c00100600be5100000000be5300800000be0a0010000000000011000000003e703f08810f800001c03e70bf08120f00000000000f00000000810f800001c03e70bf09070f803f0000080f043d0821000c00201500be5100000000be53800000003e01130007003e01130017013e0108007827be5500800000be5780800000000f00000000001100000000be0a0010000000003e70bf08810f800001c03e703f08000f00000000810f040001c03e70bf0e810f8000800101123f703f0e3f703f09130f00000000000c00200c0083210834451485231375140cbe57d88480d8be550884ad19b997be0a0010000000003e703f0a08988d04000fff7fffff84019000800a05100000000055c2000600000000060f003d0000870f0000800f010050c3000600000000060f00bd0000070f803f0000110f00000000100f00000000be0600000000be06000000003e0a00000000110f00000000120f000000001c0f0000000049c2000c00400c008123003500003e011300040c3e010800ac1abe5500850000be0a7f703f853e713f09000c002015003e010800a61a3e011300a90bbe53000000003e0113000b017e55000100003e0108002112be55008100003f713f08be0a",
    "kind": "text",
    "name": "seg_pmco",
-   "size": 1424
+   "size": 1364
   },
   {
    "align": 4,
@@ -737,13 +737,13 @@
    "global": false,
    "name": "_fxs_fade",
    "section": "seg_pmco",
-   "value": 487
+   "value": 466
   },
   {
    "global": false,
    "name": "_fxs_mac",
    "section": "seg_pmco",
-   "value": 550
+   "value": 527
   },
   {
    "global": false,
@@ -779,13 +779,13 @@
    "global": false,
    "name": "_fxs_rchan",
    "section": "seg_pmco",
-   "value": 680
+   "value": 651
   },
   {
    "global": false,
    "name": "_fxs_ret",
    "section": "seg_pmco",
-   "value": 598
+   "value": 573
   },
   {
    "global": false,
@@ -803,7 +803,7 @@
    "global": false,
    "name": "_fxs_rw",
    "section": "seg_pmco",
-   "value": 637
+   "value": 610
   },
   {
    "global": false,
@@ -815,19 +815,19 @@
    "global": false,
    "name": "_fxs_steady",
    "section": "seg_pmco",
-   "value": 652
+   "value": 625
   },
   {
    "global": false,
    "name": "_fxs_te",
    "section": "seg_pmco",
-   "value": 455
+   "value": 436
   },
   {
    "global": false,
    "name": "_fxs_tm",
    "section": "seg_pmco",
-   "value": 452
+   "value": 433
   },
   {
    "global": true,
@@ -964,6 +964,6 @@
  ],
  "toolchain": {
   "instructions_redecoded": "278",
-  "selache_rev": "02d6d785b8e3a125ab237a00bb89503aff835f5d"
+  "selache_rev": "967c1d1e4d02e41f483181964f0ba333558a1fa7"
  }
 }

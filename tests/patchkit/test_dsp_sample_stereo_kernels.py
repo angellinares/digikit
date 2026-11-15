@@ -44,6 +44,31 @@ CASES = [
     ref.Cursor(2**24 + 3, 2**24 + 103, 2**24 + 3, 1, 32769),
     ref.Cursor(2**30 - 103, 2**30 - 1, 2**30 - 2, 65535, -65537),
 ]
+# The loop option (bit 1 of the done word): wraps by the region length at each crossing, even several times in a block.
+LOOP_BIT = 2
+LOOP_CASES = [
+    ref.Cursor(10, 30, 25, 0, 65536, LOOP_BIT),  # one wrap in the middle of the block
+    ref.Cursor(10, 30, 12, 32768, -65536, LOOP_BIT),  # reverse
+    ref.Cursor(10, 30, 28, 40000, 100003, LOOP_BIT),
+    ref.Cursor(10, 30, 11, 5, -70001, LOOP_BIT),
+    ref.Cursor(
+        10, 12, 10, 0, 65536, LOOP_BIT
+    ),  # two frame region: a wrap every second frame
+    ref.Cursor(10, 12, 10, 0, 2 * 65536, LOOP_BIT),  # wrap by 2 at every frame
+    ref.Cursor(10, 12, 11, 65535, -65536, LOOP_BIT),
+    ref.Cursor(10, 12, 10, 0, 5 * 65536, LOOP_BIT),  # rate above the region: ends
+    ref.Cursor(10, 11, 10, 0, 65536, LOOP_BIT),  # one frame region: no loop
+    ref.Cursor(10, 30, 25, 0, 65536, LOOP_BIT | 1),  # already done
+    ref.Cursor(
+        0, 64, 63, 65535, 1, LOOP_BIT
+    ),  # fraction crosses at end-1: the neighbor is start
+    ref.Cursor(0, 64, 0, 0, 0, LOOP_BIT),  # zero rate
+    ref.Cursor(
+        0, 100, 99, 0, 3000, LOOP_BIT
+    ),  # slow rate: many frames at end-1 before the wrap
+    ref.Cursor(0, 100, 0, 0, -3000, LOOP_BIT),  # reverse at start
+]
+CASES += LOOP_CASES
 
 
 def words(state):
@@ -55,8 +80,11 @@ def bits(values):
 
 
 def oracle(channels, state):
-    """One arbitrary-precision position drives both channels, no split update."""
+    """One arbitrary-precision position drives both channels, no split update; the loop option wraps once per crossing."""
     st = replace(state)
+    loop = bool(st.done & 2)
+    st.done &= 1
+    length = st.end - st.start
     position = st.index * 65536 + st.fraction
     out = np.zeros((2, 32), dtype=np.float32)
     for n in range(32):
@@ -65,14 +93,23 @@ def oracle(channels, state):
             st.done = 1
         if st.done:
             break
+        nxt = min(index + 1, st.end - 1)
+        if loop and st.rate >= 0 and index + 1 >= st.end:
+            nxt = st.start
         for channel, source in enumerate(channels):
             a = np.float32(source[index] / 32768)
-            b = np.float32(source[min(index + 1, st.end - 1)] / 32768)
+            b = np.float32(source[nxt] / 32768)
             difference = np.float32(b - a)
             product = np.float32(np.float32(fraction / 65536) * difference)
             out[channel, n] = np.float32(a + product)
         position += st.rate
         if not st.start * 65536 <= position < st.end * 65536:
+            if loop and length >= 2:
+                position += (
+                    -length * 65536 if position >= st.end * 65536 else length * 65536
+                )
+                if st.start * 65536 <= position < st.end * 65536:
+                    continue
             st.done = 1
     st.index, st.fraction = divmod(position, 65536)
     return out, st
@@ -174,7 +211,7 @@ def test_assembled_stereo_cursor_once_and_call_contract(linked, st, alias):
     assert result["halt"]["reason"] == "breakpoint", result["halt"]
     assert result["left"] == bits(expected[0])
     assert result["right"] == bits(expected[1])
-    assert result["state"] == result["right_state"] == words(final)
+    assert result["state"] == words(final)
     assert {name: result["regs"][name] for name in REGS} == REGS
     assert all(result[f"immutable_{a}"] == [w] for a, w in immutable.items())
     assert result["instructions"] <= CEILING + 1
@@ -187,7 +224,7 @@ def test_assembled_stereo_cursor_once_and_call_contract(linked, st, alias):
 @pytest.mark.parametrize("st", CASES)
 def test_both_source_read_bounds(linked, st):
     _, bases, dm = setup(st)
-    valid = not st.done and st.start <= st.index < st.end
+    valid = not st.done & 1 and st.start <= st.index < st.end
     for base in bases:
         lo = (base + st.start // 2) & 0xFFFFFFFF
         hi = (base + (st.end + 1) // 2) & 0xFFFFFFFF
@@ -212,7 +249,7 @@ def test_nested_frames_with_architectural_stack(linked):
     session.runner.state.stack_model = True
     session.runner.state.bank_model = True
     # Poison the full claimed writable stack extent before the real call-frame
-    # model executes both nested calls and indirect returns.
+    # model executes the call and the indirect return.
     for address in range(STACK - 25, STACK + 1):
         session.poke(address, 0xDEADBEEF)
     for address, word in dm.items():
@@ -228,10 +265,8 @@ def test_nested_frames_with_architectural_stack(linked):
     assert {name: result["regs"][name] for name in REGS} == REGS
     assert session.peek(STACK) == STACK_ALIAS
     assert session.peek(STACK - 1) == linked.symbols["_stereo_after"] - 1
-    assert session.peek(STACK - 12) == STACK_ALIAS
-    assert (
-        session.peek(STACK - 13) == linked.symbols["_dk_sample_stereo_after_right"] - 1
-    )
+    # The routine writes word slots 2 to 21 (the 20 saves); nothing below them.
+    assert all(session.peek(STACK - n) == 0xDEADBEEF for n in range(22, 26))
     assert session.peek(STACK - 26) == POISON
 
 

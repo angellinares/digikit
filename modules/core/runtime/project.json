@@ -17,6 +17,7 @@
         "{workspaceRoot}/mise.toml",
         "{workspaceRoot}/tools/nx/rust-env.mjs",
         "{workspaceRoot}/modules/core/runtime/tests/platform/contract.toml",
+        "{workspaceRoot}/modules/core/runtime/tests/storage/contract.toml",
         "{workspaceRoot}/tests/fixtures/modules/{dyn-fx-gain,sine}/module.toml",
         "{workspaceRoot}/tests/fixtures/modules/{dyn-fx-gain,sine}/src/**/*",
         { "dependentTasksOutputFiles": "dist/modules/*/{dyn-fx-gain,sine}.*", "transitive": false }

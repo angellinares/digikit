@@ -189,6 +189,7 @@ pnpm test:host                # host Vitest projects; no device
 pnpm verify:host              # host lint, format, tests and types
 mise run test                 # the gate: Nx targets of the affected projects
 mise run module:check ID      # one module: conformance and its own tests
+pnpm nx:pilot run @digi/sharc-rig-kit:test-conformance-rig   # machine and effect conformance of every module on the SHARC-only rig (docs/TESTING.md "The Vitest kit")
 ```
 
 Pins are valid only for the firmware and ready state they were recorded with.
@@ -216,6 +217,7 @@ All tools are indexed in [docs/TOOLS.md](TOOLS.md).
 
 Usage of the address map (`patchkit pack --addrmap`, `patchkit addr`, `wb addrmap lookup`, DSP names, load table snapshots): [ADDRMAP.md](ADDRMAP.md#usage).
 Usage of the object compare for moves of runtime code (`patchkit objdiff OLD NEW`): [PATCHING.md](PATCHING.md#compare-two-objects-after-a-move).
+Usage of the SDK-surface coverage (`patchkit imports`, `patchkit coverage`, `patchkit:sdk-coverage`): [TESTING.md](TESTING.md#sdk-surface-coverage).
 Usage of the module DSP analysis (`wb module analyse`): [packages/dksharc/README.md](../packages/dksharc/README.md#usage).
 Usage of profiles (`wb profile report`, `wb profile record`, the `dk.profile/1` artifact): [INSTRUMENTATION.md](INSTRUMENTATION.md#profiles).
 

@@ -29,11 +29,13 @@ pub struct FakeStorage {
     roots: [RefCell<BTreeMap<Vec<u8>, Node>>; 2],
     /// When not 0, `list_next` gives one `Pending` before each entry (so caller code can be tested against `Pending`).
     pub pending_every: Cell<u32>,
+    /// The longest root-relative path of `ROOT_SAMPLES`: the device profile's `sample_path_max` (`FakePlatform::new` sets it).
+    pub samples_path_max: Cell<u32>,
 }
 
 impl FakeStorage {
     pub fn new() -> Self {
-        FakeStorage { roots: [RefCell::new(BTreeMap::new()), RefCell::new(BTreeMap::new())], pending_every: Cell::new(0) }
+        FakeStorage { roots: [RefCell::new(BTreeMap::new()), RefCell::new(BTreeMap::new())], pending_every: Cell::new(0), samples_path_max: Cell::new(255) }
     }
     fn map(&self, root: u32) -> Result<&RefCell<BTreeMap<Vec<u8>, Node>>, i32> {
         match root {
@@ -50,15 +52,43 @@ impl FakeStorage {
         let node = Node { kind: EntryKind::Dir, bytes: Vec::new(), hash_kind: HASH_NONE, hash: [0; 32] };
         self.map(root).unwrap().borrow_mut().insert(path.to_vec(), node);
     }
-    fn node(&self, root: u32, path: &[u8]) -> Result<Node, i32> {
-        self.map(root)?.borrow().get(path).cloned().ok_or(E_NOT_FOUND)
-    }
-    fn file(&self, root: u32, path: &[u8]) -> Result<Node, i32> {
-        let n = self.node(root, path)?;
-        if n.kind == EntryKind::Dir {
-            return Err(E_FORMAT);
+    /// The root and the path rules every call shares, in the real adapter's order: an unknown root is `E_FORMAT`, a path over the root's limit `E_TOO_BIG`,
+    /// a path with a NUL `E_SEL_PATH`.
+    fn check(&self, root: u32, path: &[u8]) -> Result<(), i32> {
+        self.map(root)?;
+        if path.len() > self.path_max(root) as usize {
+            return Err(E_TOO_BIG);
         }
-        Ok(n)
+        if path.contains(&0) {
+            return Err(E_SEL_PATH);
+        }
+        Ok(())
+    }
+    /// The file at `path` (not the root, not a directory), for the calls that read it: an empty path is `E_SEL_PATH`, a missing path or a directory
+    /// `E_NOT_FOUND`.
+    fn file(&self, root: u32, path: &[u8]) -> Result<Node, i32> {
+        self.check(root, path)?;
+        if path.is_empty() {
+            return Err(E_SEL_PATH);
+        }
+        self.found(root, path)
+    }
+    fn found(&self, root: u32, path: &[u8]) -> Result<Node, i32> {
+        match self.map(root)?.borrow().get(path) {
+            Some(n) if n.kind == EntryKind::File => Ok(n.clone()),
+            _ => Err(E_NOT_FOUND),
+        }
+    }
+    /// The first 64 bytes of `n`, zero padded; a file under 64 bytes is `E_READ`.
+    fn head(n: &Node, out: &mut [u8; 64]) -> Result<(), i32> {
+        if n.bytes.len() < 64 {
+            return Err(E_READ);
+        }
+        out.copy_from_slice(&n.bytes[..64]);
+        Ok(())
+    }
+    fn dir_stat() -> Stat {
+        Stat { kind: EntryKind::Dir, size: 0, hash_kind: HASH_NONE, hash_valid: false, hash: [0; 32] }
     }
     fn stat_of(n: &Node) -> Stat {
         Stat { kind: n.kind, size: n.bytes.len() as u32, hash_kind: n.hash_kind, hash_valid: n.hash_kind != HASH_NONE, hash: n.hash }
@@ -85,33 +115,28 @@ impl Storage for FakeStorage {
     fn path_max(&self, root: u32) -> u32 {
         match root {
             ROOT_STORE => dkrt_sdk::store::PATH_MAX as u32,
+            ROOT_SAMPLES => self.samples_path_max.get(),
             _ => 0,
         }
     }
     unsafe fn stat(&self, root: u32, path: &[u8]) -> Result<Stat, i32> {
+        self.check(root, path)?;
         if path.is_empty() {
-            self.map(root)?;
-            return Ok(Stat { kind: EntryKind::Dir, size: 0, hash_kind: HASH_NONE, hash_valid: false, hash: [0; 32] });
+            return Ok(Self::dir_stat());
         }
-        Ok(Self::stat_of(&self.node(root, path)?))
+        Ok(Self::stat_of(&self.found(root, path)?))
     }
     unsafe fn read_head(&self, root: u32, path: &[u8], out: &mut [u8; 64]) -> Result<(), i32> {
-        let n = self.file(root, path)?;
-        out.fill(0);
-        let k = n.bytes.len().min(64);
-        out[..k].copy_from_slice(&n.bytes[..k]);
-        Ok(())
+        Self::head(&self.file(root, path)?, out)
     }
     unsafe fn stat_head(&self, root: u32, path: &[u8], out: &mut [u8; 64]) -> Result<(Stat, usize), i32> {
-        let n = self.node(root, path)?;
-        let st = Self::stat_of(&n);
-        if n.kind == EntryKind::Dir {
-            return Ok((st, 0));
+        self.check(root, path)?;
+        if path.is_empty() {
+            return Ok((Self::dir_stat(), 0));
         }
-        out.fill(0);
-        let k = n.bytes.len().min(64);
-        out[..k].copy_from_slice(&n.bytes[..k]);
-        Ok((st, k))
+        let n = self.found(root, path)?;
+        Self::head(&n, out)?;
+        Ok((Self::stat_of(&n), 64))
     }
     unsafe fn read_range(&self, root: u32, path: &[u8], offset: u32, out: &mut [u8]) -> Result<usize, i32> {
         let n = self.file(root, path)?;
@@ -132,13 +157,10 @@ impl Storage for FakeStorage {
         (core::mem::size_of::<FakeList>() + 15) & !15
     }
     unsafe fn list_open(&self, root: u32, dir: &[u8], state: *mut u8) -> Result<(), i32> {
-        if dir.len() > 256 {
-            return Err(E_TOO_BIG);
+        self.check(root, dir)?;
+        if !dir.is_empty() && !matches!(self.map(root)?.borrow().get(dir), Some(n) if n.kind == EntryKind::Dir) {
+            return Err(E_NOT_FOUND);
         }
-        if !dir.is_empty() && self.node(root, dir)?.kind != EntryKind::Dir {
-            return Err(E_FORMAT);
-        }
-        self.map(root)?;
         let mut copy = [0u8; 256];
         copy[..dir.len()].copy_from_slice(dir);
         core::ptr::write(state as *mut FakeList, FakeList { root, next: 0, dir_len: dir.len() as u32, pended: false, dir: copy });
@@ -169,136 +191,242 @@ impl Storage for FakeStorage {
     }
 }
 
-const H: [u8; 32] = [7; 32];
-
-fn sample_store() -> FakeStorage {
-    let s = FakeStorage::new();
-    s.add_dir(ROOT_SAMPLES, b"KICKS");
-    s.add_file(ROOT_SAMPLES, b"KICKS/K1", b"0123456789", HASH_ELEKTRON32, H);
-    s.add_file(ROOT_SAMPLES, b"KICKS/K2", &[9u8; 100], HASH_NONE, [0; 32]);
-    s.add_dir(ROOT_SAMPLES, b"KICKS/SUB");
-    s.add_file(ROOT_SAMPLES, b"KICKS/SUB/deep", b"x", HASH_NONE, [0; 32]);
-    s.add_dir(ROOT_SAMPLES, b"EMPTY");
-    s.add_dir(ROOT_STORE, b"samples");
-    s.add_file(ROOT_STORE, b"samples/a", b"abc", HASH_ELEKTRON32, H);
-    s
-}
-
 /// A 16-byte aligned block as the arena gives it.
 #[repr(C, align(16))]
 struct Block([u8; 512]);
 
-fn list(s: &FakeStorage, root: u32, dir: &[u8]) -> Vec<(Vec<u8>, Stat)> {
+const H: [u8; 32] = [7; 32];
+
+fn list(s: &FakeStorage, root: u32, dir: &[u8]) -> Result<Vec<(Vec<u8>, Stat)>, i32> {
     let mut block = Block([0; 512]);
     assert!(s.list_state_bytes(root) <= block.0.len());
     let cur = block.0.as_mut_ptr();
     let mut e = DirEntry::empty();
     let mut rows = Vec::new();
     unsafe {
-        s.list_open(root, dir, cur).unwrap();
+        s.list_open(root, dir, cur)?;
         loop {
-            match s.list_next(cur, &mut e).unwrap() {
+            match s.list_next(cur, &mut e)? {
                 ListStep::Entry => rows.push((e.name().to_vec(), e.stat)),
                 ListStep::Pending => {}
                 ListStep::End => break,
             }
         }
     }
-    rows
+    Ok(rows)
+}
+
+// ---- the contract table (tests/storage/contract.toml) ------------------------------------------------------------------------
+
+/// One `[[file]]` or `[[case]]` of the table: its `key = value` lines.
+type Row = BTreeMap<String, String>;
+
+/// The rows of the table: the files and the cases. The format is line based: a header line `[[file]]` or `[[case]]`, then `key = value` lines.
+fn rows(table: &str) -> (Vec<Row>, Vec<Row>) {
+    let (mut files, mut cases) = (Vec::new(), Vec::new());
+    let mut current: Option<(bool, Row)> = None;
+    let mut done = |c: &mut Option<(bool, Row)>| {
+        if let Some((is_file, row)) = c.take() {
+            if is_file { files.push(row) } else { cases.push(row) }
+        }
+    };
+    for line in table.lines().map(str::trim).filter(|l| !l.is_empty() && !l.starts_with('#')) {
+        if line == "[[file]]" || line == "[[case]]" {
+            done(&mut current);
+            current = Some((line == "[[file]]", Row::new()));
+        } else if let (Some((_, row)), Some((k, v))) = (current.as_mut(), line.split_once('=')) {
+            row.insert(k.trim().to_string(), v.trim().trim_matches('"').to_string());
+        }
+    }
+    done(&mut current);
+    (files, cases)
+}
+
+fn root_of(name: &str) -> u32 {
+    match name {
+        "samples" => ROOT_SAMPLES,
+        "store" => ROOT_STORE,
+        "other" => 99,
+        _ => panic!("root {name}"),
+    }
+}
+
+/// The ramp every file of the table holds.
+fn ramp(n: usize) -> Vec<u8> {
+    (0..n).map(|i| (i * 31 + 7) as u8).collect()
+}
+
+/// The tree of the table in a `FakeStorage` whose samples limit is `samples_max`.
+fn tree(files: &[Row], samples_max: u32) -> FakeStorage {
+    let s = FakeStorage::new();
+    s.samples_path_max.set(samples_max);
+    for f in files {
+        let root = root_of(&f["root"]);
+        let path = f["path"].as_bytes();
+        for (at, _) in path.iter().enumerate().filter(|(_, b)| **b == b'/') {
+            s.add_dir(root, &path[..at]);
+        }
+        s.add_file(root, path, &ramp(f["size"].parse().unwrap()), HASH_ELEKTRON32, H);
+    }
+    s
+}
+
+/// The path of a case: `path`, `path_len` (N times "a", or the root's limit `max` and `max+1`) or `path_nul`.
+fn path_of(case: &Row, limit: u32) -> Vec<u8> {
+    if let Some(n) = case.get("path_len") {
+        let n = match n.as_str() {
+            "max" => limit as usize,
+            "max+1" => limit as usize + 1,
+            n => n.parse().unwrap(),
+        };
+        return std::vec![b'a'; n];
+    }
+    if case.contains_key("path_nul") {
+        return b"a\0b".to_vec();
+    }
+    case.get("path").map_or_else(Vec::new, |p| p.as_bytes().to_vec())
+}
+
+fn err_name(e: i32) -> String {
+    for (name, code) in [("E_NOT_FOUND", E_NOT_FOUND), ("E_FORMAT", E_FORMAT), ("E_READ", E_READ), ("E_TOO_BIG", E_TOO_BIG), ("E_SEL_PATH", E_SEL_PATH)] {
+        if e == code {
+            return name.to_string();
+        }
+    }
+    std::format!("error {e}")
+}
+
+fn entry_text(name: &[u8], st: &Stat) -> String {
+    let name = String::from_utf8_lossy(name);
+    match st.kind {
+        EntryKind::Dir => std::format!("{name}:dir"),
+        EntryKind::File => std::format!("{name}:file:{}", st.size),
+    }
+}
+
+/// What `case` gives on `s`, in the words of the table's `expect`.
+fn answer(s: &FakeStorage, case: &Row) -> String {
+    let root = root_of(&case["root"]);
+    let limit = s.path_max(root);
+    let path = path_of(case, limit);
+    let num = |k: &str| case[k].parse::<u32>().unwrap();
+    let kind = |st: &Stat| match st.kind {
+        EntryKind::Dir => "dir".to_string(),
+        EntryKind::File => std::format!("file size={}", st.size),
+    };
+    let mut out = [0u8; 64];
+    unsafe {
+        match case["call"].as_str() {
+            "path_max" => s.path_max(root).to_string(),
+            "stat" => s.stat(root, &path).map_or_else(err_name, |st| kind(&st)),
+            "read_head" => match s.read_head(root, &path, &mut out) {
+                Ok(()) => {
+                    assert_eq!(out.to_vec(), ramp(64), "{}: the head is the ramp", case["id"]);
+                    "ok".to_string()
+                }
+                Err(e) => err_name(e),
+            },
+            "stat_head" => s.stat_head(root, &path, &mut out).map_or_else(err_name, |(st, n)| {
+                if n == 64 {
+                    assert_eq!(out.to_vec(), ramp(64), "{}: the head is the ramp", case["id"]);
+                }
+                std::format!("{} head={n}", kind(&st))
+            }),
+            "read_range" => {
+                let mut buf = std::vec![0xaau8; num("len") as usize];
+                s.read_range(root, &path, num("offset"), &mut buf).map_or_else(err_name, |n| {
+                    assert_eq!(buf[..n], ramp(num("offset") as usize + n)[num("offset") as usize..], "{}: the bytes are the ramp", case["id"]);
+                    std::format!("n={n}")
+                })
+            }
+            "read_all" => {
+                let cap = num("cap") as usize;
+                let mut buf = std::vec![0xeeu8; cap];
+                let r = s.read_all(root, &path, buf.as_mut_ptr(), cap as u32);
+                match r {
+                    Ok(n) => {
+                        assert_eq!(buf[..n as usize], ramp(n as usize), "{}: the bytes are the ramp", case["id"]);
+                        std::format!("size={n}")
+                    }
+                    Err(e) => {
+                        assert!(buf.iter().all(|b| *b == 0xee), "{}: an error writes nothing", case["id"]);
+                        err_name(e)
+                    }
+                }
+            }
+            "list" => match list(s, root, &path) {
+                Err(e) => err_name(e),
+                Ok(found) => {
+                    let mut got: Vec<String> = found.iter().map(|(n, st)| entry_text(n, st)).collect();
+                    got.sort();
+                    let want = |k: &str| {
+                        let mut w: Vec<String> = case[k].split(',').map(str::to_string).collect();
+                        w.sort();
+                        w
+                    };
+                    if let Some(_) = case.get("entries") {
+                        assert_eq!(got, want("entries"), "{}", case["id"]);
+                    } else {
+                        for w in want("includes") {
+                            assert!(got.contains(&w), "{}: {w} in {got:?}", case["id"]);
+                        }
+                    }
+                    "list".to_string()
+                }
+            },
+            call => panic!("call {call}"),
+        }
+    }
+}
+
+/// Every row of the contract table holds for `FakeStorage`, with the samples limit of each device profile. The device side runs the `device = "list"` rows
+/// on the real adapter (`storage.device.test.ts`).
+#[test]
+fn the_contract_table_holds_for_the_fake() {
+    use dkrt_abi::profiles;
+    let (files, cases) = rows(include_str!("../../../tests/storage/contract.toml"));
+    assert!(cases.len() >= 40 && files.len() >= 5);
+    let mut ids = std::vec::Vec::new();
+    for case in &cases {
+        let id = &case["id"];
+        assert!(!ids.contains(id), "{id}: twice");
+        ids.push(id.clone());
+        assert!(case.contains_key("what"), "{id}: says what it checks");
+        assert!(case.contains_key("device") != case.contains_key("device_pending"), "{id}: a device check or a reason, not both");
+        if let Some(d) = case.get("device") {
+            assert_eq!(d, "list", "{id}: the device runs listings");
+            assert_eq!(case["call"], "list", "{id}: a device row is a listing");
+        }
+    }
+    for p in profiles::ALL {
+        let s = tree(&files, p.sample_path_max);
+        for case in &cases {
+            let want = &case["expect"];
+            let got = answer(&s, case);
+            let want = if want == "profile" { p.sample_path_max.to_string() } else { want.clone() };
+            assert_eq!(got.split_whitespace().next(), want.split_whitespace().next(), "{} on {p:?}", case["id"]);
+            if !want.starts_with("list") {
+                assert_eq!(got, want, "{} on {p:?}", case["id"]);
+            }
+        }
+    }
 }
 
 #[test]
-fn path_max_follows_the_profile() {
+fn the_platform_path_max_is_the_profile_limit() {
     use crate::fake_platform::FakePlatform;
     use dkrt_abi::profiles;
     for p in profiles::ALL {
         let f = FakePlatform::new(p);
         assert_eq!(f.path_max(ROOT_SAMPLES), p.sample_path_max, "{p:?}");
         assert_eq!(f.path_max(ROOT_STORE), dkrt_sdk::store::PATH_MAX as u32, "{p:?}");
-        assert_eq!(f.path_max(99), 0);
-    }
-}
-
-#[test]
-fn stat_of_a_file_a_dir_the_root_and_a_missing_path() {
-    let s = sample_store();
-    unsafe {
-        let f = s.stat(ROOT_SAMPLES, b"KICKS/K1").unwrap();
-        assert_eq!((f.kind, f.size, f.hash_kind, f.hash_valid, f.hash), (EntryKind::File, 10, HASH_ELEKTRON32, true, H));
-        let g = s.stat(ROOT_SAMPLES, b"KICKS/K2").unwrap();
-        assert_eq!((g.size, g.hash_valid), (100, false));
-        assert_eq!(s.stat(ROOT_SAMPLES, b"KICKS").unwrap().kind, EntryKind::Dir);
-        assert_eq!(s.stat(ROOT_STORE, b"").unwrap().kind, EntryKind::Dir);
-        assert_eq!(s.stat(ROOT_SAMPLES, b"KICKS/none"), Err(E_NOT_FOUND));
-        assert_eq!(s.stat(ROOT_STORE, b"KICKS/K1"), Err(E_NOT_FOUND));
-    }
-}
-
-#[test]
-fn read_head_of_a_short_file_pads_with_zeros() {
-    let s = sample_store();
-    let mut out = [0xaa; 64];
-    unsafe {
-        s.read_head(ROOT_SAMPLES, b"KICKS/K1", &mut out).unwrap();
-        assert_eq!(&out[..10], b"0123456789");
-        assert!(out[10..].iter().all(|b| *b == 0));
-        assert_eq!(s.read_head(ROOT_SAMPLES, b"KICKS/none", &mut out), Err(E_NOT_FOUND));
-    }
-}
-
-#[test]
-fn read_range_inside_at_the_end_and_past_the_end() {
-    let s = sample_store();
-    let mut out = [0u8; 4];
-    unsafe {
-        assert_eq!(s.read_range(ROOT_SAMPLES, b"KICKS/K1", 2, &mut out), Ok(4));
-        assert_eq!(&out, b"2345");
-        assert_eq!(s.read_range(ROOT_SAMPLES, b"KICKS/K1", 8, &mut out), Ok(2));
-        assert_eq!(&out[..2], b"89");
-        assert_eq!(s.read_range(ROOT_SAMPLES, b"KICKS/K1", 10, &mut out), Ok(0));
-        assert_eq!(s.read_range(ROOT_SAMPLES, b"KICKS/K1", 500, &mut out), Ok(0));
-    }
-}
-
-#[test]
-fn read_all_with_enough_and_with_too_small_a_buffer() {
-    let s = sample_store();
-    let mut buf = [0u8; 16];
-    unsafe {
-        assert_eq!(s.read_all(ROOT_SAMPLES, b"KICKS/K1", buf.as_mut_ptr(), 16), Ok(10));
-        assert_eq!(&buf[..10], b"0123456789");
-        let mut small = [0xeeu8; 4];
-        assert_eq!(s.read_all(ROOT_SAMPLES, b"KICKS/K1", small.as_mut_ptr(), 4), Err(E_TOO_BIG));
-        assert_eq!(small, [0xee; 4]);
-    }
-}
-
-#[test]
-fn list_gives_the_children_in_path_order_then_the_end() {
-    let s = sample_store();
-    let rows = list(&s, ROOT_SAMPLES, b"KICKS");
-    let names: Vec<&[u8]> = rows.iter().map(|r| r.0.as_slice()).collect();
-    assert_eq!(names, [b"K1".as_slice(), b"K2", b"SUB"]);
-    assert_eq!(rows[0].1.size, 10);
-    assert_eq!(rows[2].1.kind, EntryKind::Dir);
-    let top: Vec<Vec<u8>> = list(&s, ROOT_SAMPLES, b"").into_iter().map(|r| r.0).collect();
-    assert_eq!(top, [b"EMPTY".to_vec(), b"KICKS".to_vec()]);
-    // the end stays the end
-    let mut block = Block([0; 512]);
-    let cur = block.0.as_mut_ptr();
-    let mut e = DirEntry::empty();
-    unsafe {
-        s.list_open(ROOT_SAMPLES, b"EMPTY", cur).unwrap();
-        assert_eq!(s.list_next(cur, &mut e), Ok(ListStep::End));
-        assert_eq!(s.list_next(cur, &mut e), Ok(ListStep::End));
-        assert_eq!(s.list_open(ROOT_SAMPLES, b"KICKS/K1", cur), Err(E_FORMAT));
-        assert_eq!(s.list_open(ROOT_SAMPLES, b"NOPE", cur), Err(E_NOT_FOUND));
     }
 }
 
 #[test]
 fn list_with_pending_gives_pending_before_each_entry() {
-    let s = sample_store();
+    let s = FakeStorage::new();
+    s.add_dir(ROOT_SAMPLES, b"EMPTY");
     s.pending_every.set(1);
     let mut block = Block([0; 512]);
     let cur = block.0.as_mut_ptr();
@@ -312,12 +440,7 @@ fn list_with_pending_gives_pending_before_each_entry() {
         let steps: Vec<ListStep> = (0..5).map(|_| s.list_next(cur, &mut e).unwrap()).collect();
         assert_eq!(steps, [ListStep::Pending, ListStep::Entry, ListStep::Pending, ListStep::Entry, ListStep::End]);
         assert_eq!(e.name(), b"b");
+        // the end stays the end
+        assert_eq!(s.list_next(cur, &mut e), Ok(ListStep::End));
     }
-}
-
-#[test]
-fn listing_an_empty_dir_is_empty() {
-    let s = sample_store();
-    assert!(list(&s, ROOT_SAMPLES, b"EMPTY").is_empty());
-    assert!(list(&s, ROOT_STORE, b"").len() == 1);
 }

@@ -201,7 +201,7 @@ def _cyc() -> list[Fact]:
             "mac_float_dual",
             CYC,
             32,
-            body=("F8 = F0 * F1, F12 = F4 + F5;",) * 32,
+            body=("F8 = F0 * F4, F12 = F9 + F13;",) * 32,
             what="cycles per float multiply with parallel add (multifunction)",
         )
     )
@@ -587,7 +587,7 @@ def _val() -> list[Fact]:
     return f
 
 
-SYSREGS = ("IMASK", "IMASKP", "IRPTL", "LIRPTL", "MODE2", "MMASK", "TPERIOD", "TCOUNT")
+SYSREGS = ("IMASK", "IMASKP", "IRPTL", "MODE2", "MMASK", "TPERIOD", "TCOUNT")
 MMRS = (
     ("SHDBG_REVID", 0x30026),
     ("SHDBG_CORE_ID", 0x300ED),

@@ -28,6 +28,7 @@ Done means:
 4. Service and module logic is device-neutral. Firmware knowledge exists only in adapters and port data.
 5. Every service is a `.dks` file on the device's storage, loaded only when a selected module needs it.
 6. When a service is not loaded, its firmware sites stay stock. Safe mode leaves them stock too.
+7. Transfer installs a module together with the `.dks` services it needs, in one click, on the emulator and on hardware (section 5.8).
 
 ## 2. Terms
 
@@ -297,6 +298,15 @@ Flow:
 2. The workbench binds them against the user's own firmware, the same flow as patching the image in the browser. It generates the tails and writes the finished `.dks`.
 3. The workbench uploads the runtime and the `.dks` set to the device.
 4. The user uploads modules. Services load only when a selected module needs them.
+
+**Transfer installs what a module needs.**
+
+- When the user selects a module in the Transfer pane (workbench and site), the pane lists the services the module needs, read from the module's header table (its service imports and the record kinds it uses). Each service shows a status: on the device with a matching version; missing; needs binding for this firmware; or a version mismatch, refused with a reason.
+- One button installs the module with its services: it binds each missing `.dks` against the user's firmware (cached by firmware hash), uploads the `.dks` files first, then the module, and verifies. The fit check counts the `.dks` sizes.
+- The workbench, the site and the `wb` CLI use the same code (`packages/workbench-core`).
+- Removing a module offers to remove services that no selected module still needs (see uninstall in item 12).
+- Tests: host tests of the dependency resolution behind fakes; one device test of the install flow per device.
+- The pane's dependency list gets a mockup before it is built.
 
 Not checked yet: whether the web patchkit can link these objects. The spike answers this.
 
@@ -647,7 +657,7 @@ Items 7, 9 and 10 link services into the image as a temporary step, so each boun
 | 9 | `fx` linked in (R9 built: crate `dkrt-svc-fx`, branch `rt/r9-fx-linked`), with neutral adapter functions. Check that each service object is a separate input of the device tests (`tools/nx/device-inputs.mjs`), so a service edit selects only the tests that load it. | 3.2, 10 | 4-5 days | High | Medium |
 | 10 | `machines` linked in, with neutral adapter functions; layer check final | 3.2, 10 | 4-5 days | High: done criterion 1 | Medium |
 | 11 | Boot plan with one verdict per module; module states; refusal fixtures | 5, 8 | 2-3 days | High: users see why | Medium-high |
-| 12 | Services as `.dks`, hooks at boot, workbench binding and install | 5 | 6-8 days | High: small runtime; done criteria 5 and 6 | Medium |
+| 12 | Services as `.dks`, hooks at boot, workbench binding and install | 5 | 6-8 days | High: small runtime; done criteria 5, 6 and 7 | Medium |
 | 13 | Storage interface and files memory (split out of item 7): the `Storage` trait in the Platform composition (stat, read head, read range, read all, paged listing), the store and firmware-fs routes in the adapter chosen by profile data, listing memory from the arena (at most 2), `dkrt_sample_fs` and `dkrt_files_fs` in the adapter's `storage.s` | 9 | 2-3 days | Medium: a clean boundary for the store | Medium |
 | Later | Projects, event tables, DSP stack guard, MISSING placeholder | 8, 12 | Own plans | | |
 

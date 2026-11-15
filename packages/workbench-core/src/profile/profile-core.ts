@@ -23,6 +23,16 @@ export interface SpanIn {
   maxTicks: number;
 }
 
+/**
+ * A used poll slot: the module record that registered the function (`'runtime'`: the firmware image, a patched-in core module), the function's
+ * address, and its name when the address map names it (`name`, set by the backend). An empty slot is `undefined`.
+ */
+export interface PollInfo {
+  owner: number | 'runtime';
+  fn: number;
+  name?: string;
+}
+
 /** One reading of the device. */
 export interface Snapshot {
   running: boolean;
@@ -30,6 +40,8 @@ export interface Snapshot {
   /** Ticks of the span clock that passed while running since the last reset. */
   elapsedTicks: bigint;
   spans: SpanIn[];
+  /** The poll slots (index = slot); empty when the debug module is too old to say. */
+  polls?: (PollInfo | undefined)[];
 }
 
 /** A loaded module: the record index the spans use, its name and its type (from the library; `other` when the library does not know it). */
@@ -77,24 +89,29 @@ export function shareOf(sum: bigint, elapsed: bigint): number {
 }
 
 /**
- * The owner a poll slot shows as: `pollNames[i]` (the function the address map names at that slot of the runtime's poll table) or `poll i`.
- * The poll set changes at run time (`dkrt_poll_add`), so the names are not in the contract; the phases are (`SPAN_PHASES`, sdk/sdk.toml `[spans]`).
+ * The owner a poll slot shows as: `<module> poll` for the module that registered it, `runtime poll` for the firmware image, each with `: <function>`
+ * when the address map names the function; `poll i` when the slot is unknown. The poll set changes at run time (`dkrt_poll_add`), so the slots are
+ * read with the spans; the phases are in the contract (`SPAN_PHASES`, sdk/sdk.toml `[spans]`).
  */
 export function ownerName(
   s: Pick<SpanIn, 'kind' | 'index'>,
   modules: ModuleRef[],
-  pollNames?: (string | undefined)[],
+  polls?: (PollInfo | undefined)[],
 ): string {
   if (s.kind === 'module') return modules.find((m) => m.index === s.index)?.name ?? `module ${s.index}`;
   if (s.kind === 'phase') return SPAN_PHASES[s.index] ?? `phase ${s.index}`;
-  return pollNames?.[s.index] ?? `poll ${s.index}`;
+  const p = polls?.[s.index];
+  if (!p) return `poll ${s.index}`;
+  const owner =
+    p.owner === 'runtime' ? 'runtime' : (modules.find((m) => m.index === p.owner)?.name ?? `module ${p.owner}`);
+  return p.name ? `${owner} poll: ${p.name}` : `${owner} poll`;
 }
 
 const kindOf = (s: SpanIn, modules: ModuleRef[]): OwnerKind =>
   s.kind === 'module' ? (modules.find((m) => m.index === s.index)?.kind ?? 'other') : 'runtime';
 
 /** The rows of a reading: every owner that ran, heaviest first within its group. */
-export function buildRows(snap: Snapshot, modules: ModuleRef[], pollNames?: (string | undefined)[]): Row[] {
+export function buildRows(snap: Snapshot, modules: ModuleRef[]): Row[] {
   const rows: Row[] = [];
   for (const s of snap.spans) {
     if (s.calls === 0) continue;
@@ -103,7 +120,7 @@ export function buildRows(snap: Snapshot, modules: ModuleRef[], pollNames?: (str
     rows.push({
       id: `${s.kind}:${s.index}`,
       group: s.kind === 'module' ? 'modules' : s.kind === 'phase' ? 'phases' : 'polls',
-      name: ownerName(s, modules, pollNames),
+      name: ownerName(s, modules, snap.polls),
       kind: kindOf(s, modules),
       calls: s.calls,
       sumTicks: s.sumTicks,

@@ -105,7 +105,7 @@ Plugin sources are not inputs of module device targets. A `runtimeAcceptance` re
 | `pnpm verify:host` | oxlint, Prettier check, host Vitest, typecheck of control-client, dk-session, test-support, regression and desktop. Stops at the first failure. |
 | `pnpm --filter @digi/web test-wasm` | The Vitest project `web-wasm` (`tests/*.wasm.test.ts`, 120 s limit per test). Needs `public/*.wasm` (`@digi/web:test-wasm` builds it). Cases that need firmware skip when absent. |
 | `mise run lint:py` | `ruff check` and `ruff format --check` over the pyproject include list. |
-| `mise run lint` | `lint:py`, `lint:rust`, `pnpm lint`, `pnpm fmt:check`. `lint:rust` runs `workspace:rust-fmt` (`cargo fmt --check` on every workspace crate except `dkfw`). `dkfw` is left out because its crate root is generated. Other generated files carry `#[rustfmt::skip]` on their `mod` line. A format change of `dkrt-sdk`, `dkrt-fit` or `dkneeds` changes `source_sha256` in the committed `build/*.dko.json` objects, so rebuild them with `core/runtime:build-objects`. |
+| `mise run lint` | `lint:py`, `lint:rust`, `pnpm lint`, `pnpm fmt:check`. `lint:rust` runs `workspace:rust-fmt` (`cargo fmt --check` on every workspace crate except `dkfw`) and `workspace:rust-clippy`. `rust-clippy` runs `cargo clippy --no-deps --all-targets -- -D warnings` on the crates that have no clippy warnings. Add a crate to its list when you fix the crate's warnings. `rust-clippy` is in the merge gate. It needs clippy in the pinned toolchain: `rustup component add --toolchain 1.98.1 clippy`. `dkfw` is left out because its crate root is generated. Other generated files carry `#[rustfmt::skip]` on their `mod` line. A format change of `dkrt-sdk`, `dkrt-fit` or `dkneeds` changes `source_sha256` in the committed `build/*.dko.json` objects, so rebuild them with `core/runtime:build-objects`. |
 | `mise run test:pypy` | The SHARC core tests under PyPy 3.11. Slow. |
 | `mise run test:stock` | Vitest project `stock` (`tests/regression/dt2`): DT2 1.17 zero-DSP goldens. Filters pass through. |
 | `mise run test:fx` | Project `fx-dn2`: 61 quick assertions; `DIGI_FX_SWEEP=1` runs 191 across 134 scenarios. `DIGI_JOBS` bounds rendering. |
@@ -566,6 +566,7 @@ use the existing harness resolution/overrides; only resolution holds a shared be
 before the target. The target does not run the broad gate. Its bounded source inputs are conservative affected-selection inputs, not a cache-closure or
 fine-routing claim. This does not replace automatic gate routing. The suite alone:
 `DIGI_CONFORM_MODULES=<author/name> uv run python -m pytest tests/modules/test_machine_conformance.py -rf`.
+`module:check` runs the conformance suite on the SHARC-only rig (reports in `out/runs/conformance-rig`) ("The Vitest kit") and writes `dsp_cost_*` with `patchkit uses set`; `--python-conformance` runs the Python suite above instead (kept until the retirement phase of [the plan](plans/t1g-sharc-rig-kit.md)).
 
 Machine rules (`pk_conform.py`, rig `tests/support/machine_rig.py`, workers `tests/support/conform_worker.py`),
 checked in every block of every case:
@@ -583,6 +584,107 @@ within 8.0; the effect stays within `min(headroom) / 4` plus 900 for core/fx. Ne
 `test/dyn-dsp-hang` (machine), `test/fx-nan` (effect). `DIGI_JOBS` sets the worker count.
 A change in a machine or effect module, `core/dsp-voice`, `core/fx`, `pk_conform.py` or the rigs selects the suite.
 
+### SHARC-only rig (`sharc-rig`, T1g slice)
+
+`sharc-rig` (crate `packages/sharc-rig`, outside `packages/emulator` so that an edit is no input of the daemon build key)
+is a call harness for module routines on the generated native core. It decodes and runs the loaded code with the engine of
+`sharc-native` (`decode_at`, `exec_insn`), like `tools/patchkit/pk_sharc.py` `CallSession` does on the Python core. A JSON
+request lists code to load, DM writes and calls; the caller assembles and places the code (`patchkit sharc`) and decides
+which words a note or a block sets. The format is in the module comment of `packages/sharc-rig/src/lib.rs`.
+
+```sh
+mise run gen:core                                  # the generated core, once
+node tools/nx/rust-env.mjs --gen -- cargo build --release -p sharc-rig   # target/release/sharc-rig
+sharc-rig request.json > response.json             # or the request on standard input
+pnpm nx:pilot run sharc-rig:rust-tests             # unit tests (they need the generated core)
+```
+
+A call returns `instructions`, `halt` (`breakpoint`, `max-steps` or `trap: ...`), `final_pc`, the registers and the DM words
+asked for. With `watch` ranges (pcs) it also returns the stores of instructions in them as `[pc, address, width]` runs
+(the engine's undo log of the instruction; nothing is recorded without `watch`). The op `pokem` changes some bits of a DM word
+(a frame halfword, the trig bit, a release byte). `sharc-rig --serve` keeps the core between lines: the first line is a request, every
+later line is `{"ops": [...]}` and gets one answer line, so a rig runs a case block by block and stops at its first failure.
+
+```sh
+pnpm nx:pilot run sharc-rig:build        # dist/bin/sharc-rig and dist/bytes/sharc-rig.sha256 (shared generated core)
+```
+
+Measured against the Python rigs (`machine_rig.py`, `fx_rig.py`) on `test/sine`, `fadedlimes/analog` (DT2 and DN2), `tom/tb303`,
+`digikit/pluck`, the FX `digikit/freqshift` and the negative fixture `test/dyn-guard-nan#overrun` (hostile contexts): bit-identical
+output words, identical instruction counts in every block, the same store bytes and the same foreign-store texts. On 300 to
+500 block cases the harness (process start and 64k setup pokes included) is 45 to 110 times faster.
+
+#### The Vitest kit (`packages/sharc-rig-kit`)
+
+`@digi/sharc-rig-kit` is the TypeScript side: it assembles and links the sources with `patchkit sharc` (`toolchain.ts`), places them
+(`place.ts`), and runs them on `sharc-rig --serve` through `MachineRig` (core/dsp-voice, `machine.ts`) and `FxRig` (core/fx master chain,
+`fx.ts`). `spec.ts` reads what a module declares (module.toml, `build/gen/gallery.json`, `devices/*.toml`), `cases.ts` makes the
+conformance cases, `checks.ts` holds the rules of a block and `conform.ts` runs a case and writes the report. The random walks and
+the hostile contexts come from `PyRandom`, the generator of Python's `random.Random`, so the cases are the ones the Python suite ran
+and the recorded costs stay comparable. Host tests (fake transport, made-up build, no toolchain) run with
+`pnpm nx:pilot run @digi/sharc-rig-kit:test-host`.
+
+The machine and effect conformance on the rig (about 45 s for all 30 specs with 4 workers, no daemon, firmware or emulator):
+
+```sh
+pnpm nx:pilot run @digi/sharc-rig-kit:test-conformance-rig       # cached; needs patchkit:cli and sharc-rig:build, which it runs
+DIGI_CONFORM_MODULES=fadedlimes/analog DIGI_CONFORM_DEVICE=dt2 DIGI_JOBS=4 DIGI_CONFORM_REPORTS=/tmp/reports \
+  pnpm exec vitest run --config vitest.host.config.ts --project sharc-rig-conformance conformance/machine.test.ts
+```
+
+It runs the same cases as `tests/modules/test_machine_conformance.py` and `test_fx_conformance.py` (the Python suites stay until the
+retirement phase of [the plan](plans/t1g-sharc-rig-kit.md)): same case list, same pass set, the same failure messages for the negative
+fixtures, and the worst steady block of each (module, device) is the `dsp_cost_voice` or `dsp_cost_fx` of module.toml. Reports have the
+shape of the Python reports (`out/runs/conformance-rig/<id>@<device|fx>.json`, `DIGI_CONFORM_REPORTS` moves them; the Python suite keeps `out/runs/conformance`).
+
+The cost writer, `patchkit uses set --id MODULE --device dt2 --dsp-cost-voice N` (or `--dsp-cost-fx N`), edits `[uses.<device>]` of the
+module.toml like `pk_modcheck.write_uses` does: only the lines of the keys given change, comments and other keys stay, and the file
+is written only when a count differs. It prints `wrote PATH` or `unchanged PATH`.
+
+#### Sound checks (`tests/rig/*.toml`)
+
+A module keeps the checks of how it sounds in `modules/<kind>/<name>/tests/rig/*.toml` and one entry file, `tests/rig.rig.test.ts`
+(`import { rigSuite } from '@digi/sharc-rig-kit/suite'; rigSuite(import.meta.dirname);`). Nx infers `<module id>:test-rig` from that file
+(cached; inputs: the module, the kit, the two adapters, the SDK, the device profiles and the hashes of `patchkit` and `sharc-rig`; no
+daemon, firmware or emulator). `pnpm exec vitest run --config vitest.host.config.ts --project module-rig <module dir>/tests/` runs one.
+
+```toml
+[[case]]
+name = "c4 sounds"
+device = ["dt2", "dn2"]           # default both; an effect has no device
+context = "friendly"              # default: a hostile context for every block
+[[case.step]]                     # a machine case plays steps; note, vel and parameters stay from step to step
+note = 60
+vel = 100
+params = { decay = 0x4000 }       # parameter words by manifest id
+blocks = 200
+trigger = true                    # default; release = true sends a note-off in the first block
+[[case.check]]
+kind = "rms"                      # see below; `blocks = [first, end)` limits a check to some blocks of the case
+min = 0.05
+max = 0.5
+```
+
+An effect case has `[case.input]` (`kind` = `sine` with `freq` and `amp`, `table` with a `file` of float32 words (64 per block: left,
+then right), `square-noise`, or a test signal of the conformance cases), `observe = "scratch"` (the effect's own block, the default) or
+`"master"`, `mix` (a float32 word) and steps with `params_f32 = [..]` (the effect's float parameters) and `blocks`.
+
+A machine that plays a sample has `[[case.pool]]` tables (`index`, `frames`, `rate`, `channels`, `token`, `planes` = a file of int16 words, left then right;
+the kit publishes the planes and the record before the first block), `pool_ctl` (the data symbol of the control sets: the count word must be 0 after every
+block), `right = true` (DT2: render the odd voice after each block; checks take `channel = "right"`) and step `pokes = [["rec", word, value]]` (`rec` or
+`ctl` of the first entry). `track` plays a track other than 0, `record_word` writes the voice record's word +0x1b8.
+
+Every case also holds the implicit rules of the conformance run (the call returns, the context registers and the runtime guard are
+fine, the module writes only its own memory, the output is finite). Check kinds: `rms`, `peak` (`min`, `max`), `dc` (`max`), `no-clip`
+(`limit`, default 1), `finite`, `silent-after` (`block`, `max`), `decay-time` (`db`, `min`/`max` seconds), `pitch-hz` (`note` or
+`expect`, `cents`, `method = "crossings"` or `"bandpass"`, `skip_periods`), `tone` and `tone-stable` (effects), `sample-at`, `differs`
+(`other = [first, end)`), `voice-ends` (`within`, `after`), `instructions` (`max`, `of` = `first`, `steady` or `idle`),
+`cursor` (a word of the voice's state block, `signed`, `tol`), `voice-active`, `tone-fit` (least-squares amplitude of a tone), `description`, `state-word`,
+`state-untouched-beyond` and `master-equals-input`, `master-equals-scratch` (effects), and the references `matches-table` (`file` of float32 words next to the toml,
+`atol`, `channel`) and `same-as` (`sha256` of the float32 words). The analysis is `packages/sharc-rig-kit/src/analysis.ts`, tested on
+synthetic signals. A reference table is the output of the old float32 model of the module (or of the rig, for a new pin) as float32
+words; changing one is a re-pin and needs review like a PCM pin of `tests/scenarios`.
+
 ### DSP budget gate (patchkit smoke)
 
 Every `pk_harness run` cell ends with a DSP measurement: TRIG 1 held for 1 s of audio, the mean busy
@@ -591,6 +693,27 @@ OS (cached in `out/runs/patchkit/dsp/`). Projected load = busy x factor / 666,66
 `devices/cycle-factors.json`. A cell fails when the projected high load exceeds `--dsp-budget`
 (default 85 %); `--no-dsp-budget` skips it. Results go to `out/runs/patchkit/dsp-budget.json`. Unit
 test: `tests/patchkit/test_pk_dsp_budget.py`.
+
+### SDK-surface coverage
+
+`patchkit imports` lists the SDK imports each `.dkm` links (its import table; the builder calls of `init`, such as `dk_machine_add_page`, `dk_page_add_param` and `dk_fx_routes`, are imports too, so one table covers them). `patchkit coverage` compares the union over the packed modules with the `[[import]]` list of `sdk/sdk.toml`, by service. An import that no packed module links fails the run, unless `sdk/coverage-allow.toml` lists it with a reason; an allow-list entry that a module links, or that is not in `sdk.toml`, fails too. Not observable from a pack: the values a call passes (glyphs, routes, parameter kinds, the constants of `[machine]`, `[fx]` and `[page]`) and whether a linked call runs. The fixture calls that close a gap are compiled and linked, and some never run (the `probe` flag of `test/entry-demo`).
+
+```sh
+pnpm nx:pilot run patchkit:sdk-coverage     # packs every module (cached), then the report; not cached itself
+dist/patchkit/patchkit imports [--json] dist/modules/dt2/entry-demo.dkm
+dist/patchkit/patchkit coverage --sdk sdk/sdk.toml --allow sdk/coverage-allow.toml [--json] dist/modules/*/*.dkm
+```
+
+```text
+sdk imports: 116 total, 106 covered, 10 allowed, 0 uncovered (108 modules)
+  dsp_link   2/2 covered, 0 allowed, 0 uncovered
+  helper     3/6 covered, 3 allowed, 0 uncovered
+  ui         18/18 covered, 0 allowed, 0 uncovered
+  usb_bulk   8/10 covered, 2 allowed, 0 uncovered
+    allowed    dk_usb_bulk_takeover (removed: always returns DK_USB_BULK_E_STATE, kept for the import table)
+```
+
+Without `--allow` the same files give 106 of 116 covered. A new `[[import]]` needs a call in a fixture or a module, or an allow-list entry with a reason; the exit code is 1 otherwise. Unit tests: `cargo test -p patchkit --lib coverage_cli`.
 
 ### AOT versus interpreter equality
 
@@ -780,7 +903,9 @@ firmware, generated core or `out/` data.
 `verify_build daemons` (the `digi-control:daemons` target) keeps the coupled `digi-emud` daemons in
 `<git common dir>/emud-cache/<dev>/<key>/` (`digi-emud`, `key.txt`, `depfile.d`). All worktrees of the
 clone share it and it is never committed. A worktree with the same key restores the daemon and builds
-nothing; a stored file is never rewritten. The last 4 used keys per device stay.
+nothing; a stored file is never rewritten. The last 4 used keys per device stay (a restore refreshes the use time),
+and so does every key that `dist/daemons.json` of any worktree of the clone points at: the store holds at most 4 plus one per active lane.
+`digi-control:daemons` has `cache: false`, so every run restores or rebuilds the entry. `DIGI_EMUD_STORE` moves the store (tests only).
 
 The key is printed by `uv run python -m tools.devtools.emud_key key --device DEV`: a sha256 over the
 content of the repository files in `SOURCE_GLOBS` and `RECIPE_FILES`, every file of the generated core

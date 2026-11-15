@@ -13,6 +13,13 @@ Two forms:
 
 Style: [docs/sharc/style.md](../../docs/sharc/style.md), in particular section 5a (rules from the manuals).
 
+## Build rules for DSP sources
+
+- **Data sections are 32-bit words.** `.SECTION/DM name;` is assembled as `.SECTION/DM/BW name;`. The assembler (the Selache fork) lays out a plain `/DM` section in 40-bit words (five bytes for each `.VAR`, symbols counted in words). A module stores 32-bit words in memory order: four little-endian bytes for each `.VAR`, symbols counted in bytes. `/BW` gives this layout. Write `.SECTION/DM name;` as before; `patchkit` makes the change (`byte_addressed_data` in `packages/patchkit/src/build/sharc_obj.rs`). A section that already names `BW` or `DOUBLE32` is not changed.
+- **DO loops have no fast-loop bit.** The assembler can set the F1-active bit of a `DO` opcode by itself; `patchkit` turns this off. Write `(F)` on a `DO` that needs the bit.
+- **Names must be defined or declared.** A word that is not an instruction, register or label of the source is taken as an external symbol. The object build fails for a relocation against a name that is neither defined in the source nor declared with `.EXTERN` (for example a register that SHARC+ does not have). The error gives the line.
+- **`Rn = Fm` is not a plain transfer.** Write `Rn = PASS Fm` (the ALU PASS, which sets the ASTAT flags) or use R registers (`Rn = Rm` is a Ureg transfer and leaves ASTAT alone).
+
 ## Register rule for macros
 
 Every macro names all registers it uses as arguments: inputs, outputs, temporaries and constants. The caller allocates
@@ -99,7 +106,7 @@ overwrites the adapter's context. This does not define a general module-call API
 | `dynamics/gain_ramp.inc` | `_dk_gain_ramp_stereo` | 7 | ceiling 254 including three argument loads | in-place gain ramp on two 32-float buffers; R12 = pair [start, step]; writes the reached gain back to pair[0] |
 | `sample/float.inc` | `_dk_sample_linear` | path-dependent | ceiling 1,380 including three argument loads | bounded mono float32 view; split cursor, clamped linear interpolation, zero tail and completion |
 | `sample/pcm16.inc` | `_dk_sample_pcm16_linear` | path-dependent | ceiling 2,148 including three argument loads | packed signed PCM16 view; same cursor, interpolation and completion |
-| `sample/pcm16_stereo.inc` | `_dk_sample_pcm16_stereo_linear` | path-dependent | ceiling 4,396 including three argument loads | two packed PCM16 planes, one shared cursor, separate 32-float outputs |
+| `sample/pcm16_stereo.inc` | `_dk_sample_pcm16_stereo_linear` | path-dependent | 1,625 in range, worst measured 5,152, bound 5,428 including three argument loads | two packed PCM16 planes, one shared cursor, separate 32-float outputs; one pass for both planes, hardware loop, block cut at the end or wrap frame |
 
 For the older block kernels, consult their headers and `tests/patchkit/test_dsp_kernels.py` for the distinction
 between static instruction counts and measured counts. The sample reader's measured evidence is described below.
@@ -148,20 +155,22 @@ odd boundaries, extreme rates, repeated calls, preserved registers and stack
 boundaries, guarded source reads and completion immediately after output 31.
 The ceiling above counts instructions, not hardware cycles.
 
-`sample/pcm16_stereo.inc`, included after the mono reader, composes that reader
-for two channel planes. R4 points to `[left_source, right_source]`, R8 to
+`sample/pcm16_stereo.inc` is a stand-alone kernel (it needs only `dsp/contract/call.inc`) for
+two channel planes. R4 points to `[left_source, right_source]`, R8 to
 `[left_output, right_output]`, and R12 to the same six-word cursor. Each output
-contains 32 floats. Both channels start from the same cursor; the public cursor
-advances once. Source pointers may be equal for mono-to-stereo playback. Output
-buffers must be separate; all other source, output, descriptor, cursor and stack
+contains 32 floats. Both channels share the cursor, which advances once. The result is bit-identical to running the mono reader once per
+channel. Source pointers may be equal for mono-to-stereo playback: that case reads one plane and writes both outputs.
+Output buffers must be separate; all other source, output, descriptor, cursor and stack
 ranges must be disjoint and the sources/descriptors immutable during the call.
-The wrapper uses ten local stack words; with its nested mono call, the deepest
-write is word slot 25 below entry I6 and the deepest stack pointer is slot 26. The adapters give a
-byte-alias I6 (a word is 4 bytes) and the wrapper finds its cursor copy at I6 − 44 bytes; a normal-word
-I6 is not supported (finding 111). The calling convention
-and mono reader's numerical bounds still apply. This is a correctness baseline,
-not a measured optimization or a stereo machine-output ABI. Assembled coverage is
-in `tests/patchkit/test_dsp_sample_stereo_kernels.py`; actual memory ownership and
+It computes the index, the word addresses, the half select and the fraction once per frame for both planes and runs the
+frames in a hardware loop without range checks. A bisection over the constant block rate finds the frame where the cursor
+leaves `[start, end)`; the loop renders up to that frame, then the end rule (voice done, rest of the block zero) or the loop
+rule (wrap once by the region length, see `sample/pcm16.inc`) runs and the next segment starts. A block that stays inside costs
+about 50 instructions per frame; each crossing about 150 more. The forward neighbor at end-1 is a conditional move, not a branch.
+The routine writes 20 save slots (word slots 2 to 21 below entry I6, no nested call). The adapters give a
+byte-alias I6 (a word is 4 bytes); a normal-word I6 is not supported (finding 111). The calling convention
+and the mono reader's numerical bounds still apply. This is not a stereo machine-output ABI. Assembled coverage is
+in `tests/patchkit/test_dsp_sample_stereo_kernels.py` (including the loop option and blocks that cross several times); actual memory ownership and
 stereo routing through each device's stock processing remain adapter obligations.
 
 ## Block gain ramp and stock level

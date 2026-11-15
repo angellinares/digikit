@@ -46,7 +46,7 @@ _bd_render:
     CALL _dv_exp2;
     R1 = 0x39329a62;                      // 440 * 2^(-69/12) / 48000
     F0 = F0 * F1;
-    F7 = F0;
+    F7 = PASS F0;
 
     // ---- level from velocity ----
     R0 = DM(DK_IN_W_VELOCITY, I2);
@@ -118,7 +118,7 @@ _bd_render:
     R1 = 0x40400000;                      // 3.0: up to three cycles of excursion, which is real FM. The phase is
     NOP;                                  // wrapped before the sine (any value in -3 .. 4 is reduced to 0 .. 1), so
     F2 = F2 * F1;                         // the polynomial is always inside its range
-    R1 = F2;
+    R1 = PASS F2;
     DM(3, I3) = R1;                       // the index for this block
 
     // noise envelope: (1 - n/60), 40 ms, so NOISE turns the drum into a snare or a hat
@@ -131,13 +131,13 @@ _bd_render:
     R1 = 0;                               // 0.0
     NOP;
     F2 = MAX(F2, F1);
-    R1 = F2;
+    R1 = PASS F2;
     DM(6, I3) = R1;
     R1 = 0x38010204;                      // 1 / 32512
     R0 = DM(3, I1);
     F0 = FLOAT R0;
     F0 = F0 * F1;                         // NOISE 0 .. 1
-    R1 = F0;
+    R1 = PASS F0;
     DM(7, I3) = R1;
 
     // ---- constants and state ----
@@ -158,7 +158,7 @@ _bd_render:
     F0 = F2 - F0;
     NOP;
     DK_SINE_POLY_STEP(F2, F0, F1, F3, R2, R3);
-    R0 = F2;
+    R0 = PASS F2;
     NOP;
     DM(4, I3) = R0;                       // the modulator value
 

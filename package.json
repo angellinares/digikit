@@ -14,7 +14,7 @@
     "fmt": "prettier --write . '!out/**' '!**/target/**' '!**/gen/**' '!**/dist/**' '!**/.astro/**' '!apps/web/.local/**'",
     "fmt:check": "prettier --check . '!out/**' '!**/target/**' '!**/gen/**' '!**/dist/**' '!**/.astro/**' '!apps/web/.local/**' && node tools/nx/c-format.mjs",
     "fmt:c": "node tools/nx/c-format.mjs --write",
-    "test:host": "vitest run --config vitest.host.config.ts --project '!web-wasm'",
+    "test:host": "vitest run --config vitest.host.config.ts --project '!web-wasm' --project '!sharc-rig-conformance' --project '!module-rig'",
     "nx:pilot": "node tools/nx/nx.mjs",
     "verify:host": "oxlint && pnpm fmt:check && pnpm test:host && pnpm -r run typecheck"
   },

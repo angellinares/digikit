@@ -45,6 +45,7 @@ members = [
     "modules/core/adapters/ui/host",
     "modules/core/fw/rs",
     "packages/patchkit",
+    "packages/sharc-rig",
     "apps/desktop/src-tauri",
 ]
 exclude = [

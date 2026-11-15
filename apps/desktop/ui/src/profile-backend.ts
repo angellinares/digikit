@@ -3,7 +3,7 @@
 // Host's `rpc`). One recorder per panel: no module state; the session, the rpc, the library and dkprof.wasm are arguments, so a test gives fakes.
 // The preview replaces this module (preview/profile-backend.mock.ts). Host tests: tests/profile-backend.test.ts.
 import { CAP, LOG_KIND } from '@digi/dk-session/gen_proto';
-import { DkError, type DkSession } from '@digi/dk-session';
+import { DkError, type DkSession, type PollSlot } from '@digi/dk-session';
 import type { DkProf } from '@digi/dk-session/dkprof';
 import type { EmuRpc } from '@digi/workbench-core/host/host.ts';
 import type { LibraryModule } from '@digi/workbench-core/modules/dktransfer.ts';
@@ -23,6 +23,7 @@ import {
   type DspView,
   type ModuleRef,
   type OwnerKind,
+  type PollInfo,
   type Snapshot,
 } from '@digi/workbench-core/profile/profile-core.ts';
 import type { LogNames } from './log-names';
@@ -109,6 +110,28 @@ export function createRecorder(deps: ProfileDeps): Recorder {
       library = { port, modules };
     }
     return library.modules;
+  };
+
+  /** The poll slots with the function names of the address maps (the Log pane's maps and load table); a slot without a name keeps its address only. */
+  const pollInfos = async (slots: (PollSlot | undefined)[]): Promise<(PollInfo | undefined)[]> => {
+    const polls: (PollInfo | undefined)[] = slots.map((p) => (p ? { owner: p.owner, fn: p.fn } : undefined));
+    const inputs = deps.names?.inputs();
+    const used = polls.flatMap((p) => (p ? [p] : []));
+    if (!deps.prof || !inputs || used.length === 0) return polls;
+    try {
+      const { results } = (await deps.prof()).addrLookup({
+        maps: inputs.maps,
+        loads: inputs.loads,
+        addrs: used.map((p) => ({ cpu: 'cf' as const, addr: p.fn })),
+      });
+      used.forEach((p, i) => {
+        const r = results[i];
+        if (r?.text) p.name = r.text;
+      });
+    } catch {
+      // no names: the rows say the owner only
+    }
+    return polls;
   };
 
   const moduleRefs = async (s: ProfileSession, port: string): Promise<ModuleRef[]> => {
@@ -204,6 +227,7 @@ export function createRecorder(deps: ProfileDeps): Recorder {
         hz: all.hz,
         elapsedTicks: all.elapsedTicks,
         spans: all.spans,
+        polls: await pollInfos(all.polls),
       };
       const r: ProfileReading = { noDebug: false, port, emulator: !!deps.rpc, snap, modules };
       if (deps.rpc) {
@@ -289,7 +313,8 @@ export function createRecorder(deps: ProfileDeps): Recorder {
       const info = await s.info();
       const modules = await moduleRefs(s, info.port ?? '');
       const parts = deps.rpc && counting ? await instructionParts() : kept;
-      const spans = spansPart(all, (x) => ownerName(x, modules));
+      const polls = await pollInfos(all.polls);
+      const spans = spansPart(all, (x) => ownerName(x, modules, polls));
       const id = runId(deps.rpc ? 'emu' : 'dev', now());
       const doc = buildProfile({
         run: { id, target: (info.port ?? 'unknown').split('-')[0] ?? 'unknown' },

@@ -31,6 +31,8 @@ int32_t dk_span_sink_set(uint8_t *emit, uint8_t *clock)
     the_span_clock = (uint32_t (*)(void))clock;
     return 0;
 }
+static uint32_t poll_owner[4], poll_fn[4];
+uint32_t dk_debug_poll(uint32_t slot, uint32_t *fn) { if (slot > 3 || !poll_owner[slot]) return 0; if (fn) *fn = poll_fn[slot]; return poll_owner[slot]; }
 uint32_t dk_debug_span_clock(uint32_t *hz) { *hz = 150000000u; return span_noclock ? 0u : 0x1000u; }
 
 static void (*the_sink)(const Ev *);
@@ -126,6 +128,9 @@ int main(int argc, char **argv)
             sel_track = (int32_t)c;
         } else if (sscanf(line, "word %u %d", &a, &c) == 2) {
             sel_words[a] = (int16_t)c;
+        } else if (sscanf(line, "poll %u %u %x", &a, &b, &c) == 3) {
+            poll_owner[a] = b;
+            poll_fn[a] = (uint32_t)c;
         } else if (!strncmp(line, "noproject", 9)) {
             project = 0;
         } else if (!strncmp(line, "project", 7)) {
@@ -225,7 +230,7 @@ POLL = 0x200
 
 def profile_state(reply: str):
     raw = bytes.fromhex(reply.split()[2])
-    assert len(raw) == 15
+    assert len(raw) == 35
     return struct.unpack(">BIH", raw[:7])
 
 
@@ -252,6 +257,16 @@ def test_profile_start_sets_the_span_sink_and_stop_clears_it(harness):
     assert out[5] == "sink 1 1"
     assert profile_state(out[6]) == (0, 150000000, ROWS)
     assert out[7] == "sink 0 0"
+
+
+def test_profile_state_names_the_poll_owners(harness):
+    out = run(harness, ["poll 0 3 12345678", "poll 2 255 4000", "cmd 30 00"])
+    raw = bytes.fromhex(out[2].split()[2])
+    assert len(raw) == 35
+    assert struct.unpack(">BI", raw[15:20]) == (3, 0x12345678)
+    assert struct.unpack(">BI", raw[20:25]) == (0, 0), "an empty slot"
+    assert struct.unpack(">BI", raw[25:30]) == (255, 0x4000)
+    assert raw[30:35] == bytes(5)
 
 
 def test_profile_span_clock_reads_the_counter_and_fini_clears_the_sink(harness):

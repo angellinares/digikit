@@ -67,10 +67,20 @@
       "cache": false,
       "inputs": ["{workspaceRoot}/**/*.rs", "{workspaceRoot}/Cargo.toml", "{workspaceRoot}/mise.toml"],
       "options": {
-        "command": "node tools/nx/rust-env.mjs -- cargo fmt --check -p elektron-native-boot -p coldfire -p device-profile -p dt2-firmware-loader -p emmc-card -p periph -p live-audio -p machine -p patchkit -p dkupload -p sharc-rt -p plusdrive-format -p dksample -p sharc-fast-wasm -p sharc-fast-cl -p sharc-native -p sharc-gen -p sharc-stats -p sharc-native-2 -p sharc-gen-2 -p bootstrap-emu -p digi-control -p digi-coupled -p sharc-fast-cl-2 -p dkmidi -p dkbulk -p dkui-host -p digiemu-desktop -p dkneeds -p dkrt-sdk -p dkrt-abi -p dkrt-fit -p dkrt-link -p dkrt-test-support -p dkrt-svc-fx",
+        "command": "node tools/nx/rust-env.mjs -- cargo fmt --check -p elektron-native-boot -p coldfire -p device-profile -p dt2-firmware-loader -p emmc-card -p periph -p live-audio -p machine -p patchkit -p dkupload -p sharc-rt -p plusdrive-format -p dksample -p sharc-fast-wasm -p sharc-fast-cl -p sharc-native -p sharc-rig -p sharc-gen -p sharc-stats -p sharc-native-2 -p sharc-gen-2 -p bootstrap-emu -p digi-control -p digi-coupled -p sharc-fast-cl-2 -p dkmidi -p dkbulk -p dkui-host -p digiemu-desktop -p dkneeds -p dkrt-sdk -p dkrt-abi -p dkrt-fit -p dkrt-link -p dkrt-test-support -p dkrt-svc-fx",
         "cwd": "."
       },
       "description": "Workspace crates except dkfw, whose crate root is generated."
+    },
+    "rust-clippy": {
+      "executor": "nx:run-commands",
+      "cache": false,
+      "inputs": ["{workspaceRoot}/**/*.rs", "{workspaceRoot}/Cargo.toml", "{workspaceRoot}/Cargo.lock", "{workspaceRoot}/mise.toml"],
+      "options": {
+        "command": "node tools/nx/rust-env.mjs -- cargo clippy --no-deps --all-targets -p coldfire -p dt2-firmware-loader -p emmc-card -p dkupload -p sharc-gen -p sharc-stats -p sharc-gen-2 -p bootstrap-emu -p dkmidi -p dkbulk -p dkui-host -- -D warnings",
+        "cwd": "."
+      },
+      "description": "cargo clippy with -D warnings on the workspace crates that have no clippy warnings. Add a crate when its warnings are fixed."
     }
   }
 }

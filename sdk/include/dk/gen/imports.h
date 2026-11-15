@@ -175,6 +175,9 @@ uint32_t dk_debug_peek(uint32_t i, uint32_t *out);
 /* The profiling clock of the device file (`[digikit] span_clock`): returns the address of a read-only 32-bit free-running counter (0 when the device has none) and, when `out_hz` is not null and there is a clock, writes its frequency in Hz to `*out_hz`. The counter is never written. See <dk/platform/debug.h>. Context: any. Since runtime 0.8.1. */
 uint32_t dk_debug_span_clock(uint32_t *out_hz);
 
+/* The poll function in slot 0 to 3 of `dkrt_poll_add` and its owner: returns 0 for an empty slot (or a slot past 3), 1 + the record index of the module whose loaded code holds the function, or 0xff for a function outside every module (the firmware image: the patched-in core modules). Writes the function's address to `*out_fn` when `out_fn` is not null and the slot is used. For a profiler that names the rows of the poll spans. Context: any. Since runtime 0.8.2. */
+uint32_t dk_debug_poll(uint32_t slot, uint32_t *out_fn);
+
 /* The machine type of track 0 to 15 of the active kit, read from the firmware (read-only); -1 for a track the firmware has no type for, -2 when there is no project yet. Context: ui. Since runtime 0.7.0. */
 int32_t dk_debug_track_type(uint32_t track);
 
