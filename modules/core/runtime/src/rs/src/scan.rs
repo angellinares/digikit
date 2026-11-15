@@ -19,7 +19,7 @@ static mut SECT: *mut u8 = core::ptr::null_mut();
 /// The sector reads the last scan made to read the needs.
 static mut READS: u32 = 0;
 
-const DKM_MAGIC: u32 = 0x444b_4d46; // "DKMF"
+const DKM_MAGIC: u32 = dkneeds::MAGIC;
 
 unsafe fn sect() -> *mut u8 {
     if (*addr_of!(SECT)).is_null() {
@@ -52,10 +52,10 @@ pub unsafe fn module_header(first: u32, out: *mut DkrtModuleHeader) -> i32 {
         let p = sect().add(off);
         ((*p as u32) << 24) | ((*p.add(1) as u32) << 16) | ((*p.add(2) as u32) << 8) | (*p.add(3) as u32)
     };
-    if rd(0) != DKM_MAGIC {
+    if rd(dkneeds::H_MAGIC as usize) != DKM_MAGIC {
         return E_FORMAT;
     }
-    (*out).version = rd(0x34);
+    (*out).version = rd(dkneeds::H_VERSION as usize);
     OK
 }
 
@@ -63,20 +63,20 @@ pub unsafe fn module_header(first: u32, out: *mut DkrtModuleHeader) -> i32 {
 /// needs (header word 0x30, the loader's rule `runtime_accepts`), and the device of its DSP section (a module without one runs on either device).
 /// A file that is not a `.dkm` or cannot be read passes: the runtime then names the real reason at boot.
 unsafe fn compatible(first: u32, device: u32) -> bool {
-    match file_word(first, 0) {
+    match file_word(first, dkneeds::H_MAGIC) {
         Some(DKM_MAGIC) => {}
         _ => return true,
     }
-    if !file_word(first, 0x30).is_none_or(crate::runtime_accepts) {
+    if !file_word(first, dkneeds::H_RUNTIME).is_none_or(crate::runtime_accepts) {
         return false;
     }
-    let (Some(off), Some(size)) = (file_word(first, 0x98), file_word(first, 0x9c)) else {
+    let (Some(off), Some(size)) = (file_word(first, dkneeds::H_DSP_OFF), file_word(first, dkneeds::H_DSP_SIZE)) else {
         return true;
     };
     if size == 0 {
         return true;
     }
-    match file_word(first, off.wrapping_add(8)) {
+    match file_word(first, off.wrapping_add(dkneeds::DSP_H_DEVICE)) {
         Some(d) => d == device || device == 0,
         None => true,
     }
@@ -84,7 +84,7 @@ unsafe fn compatible(first: u32, device: u32) -> bool {
 
 /// Is the file at store sector `first` a `.dkm` packed with `--trace` (bit 31 of the word at 0x30, which the loader ignores)?
 unsafe fn traced(first: u32) -> bool {
-    file_word(first, 0) == Some(DKM_MAGIC) && file_word(first, 0x30).is_some_and(|w| w >> 31 != 0)
+    file_word(first, dkneeds::H_MAGIC) == Some(DKM_MAGIC) && file_word(first, dkneeds::H_RUNTIME).is_some_and(|w| w >> 31 != 0)
 }
 
 /// A card file as the needs reader's byte source: the store's sector reads, one sector cached (the file is never staged).

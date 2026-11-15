@@ -106,7 +106,11 @@ pub(crate) unsafe fn finfo() -> *const u32 {
 }
 
 pub(crate) unsafe fn have_link() -> bool {
-    fn_addr(dl_send) != 0 && fn_addr(dl_send_win) != 0 && fn_addr(dl_poll) != 0 && !info().is_null()
+    // the host tests have no `core/dsp-link` symbols: the link is there when they give a `dyndsp_info` table
+    #[cfg(test)] { return !info().is_null(); }
+    #[cfg(not(test))] {
+        fn_addr(dl_send) != 0 && fn_addr(dl_send_win) != 0 && fn_addr(dl_poll) != 0 && !info().is_null()
+    }
 }
 
 pub(crate) unsafe fn call_send(dst: u32, buf: *const u8, len: u32) -> i32 {
@@ -223,14 +227,14 @@ pub(crate) unsafe fn extent(image_size: u32, bss: u32, voices: *const u8, nvoice
         let mut i = 0;
         while i < nvoice {
             let e = voices.add((vstride * i) as usize);
-            total += rd32(e.add(52)) * ((rd32(e.add(12)) + 7) & !7);
+            total += rd32(e.add(VOICE_VOICES as usize)) * ((rd32(e.add(VOICE_STATE_BYTES as usize)) + 7) & !7);
             i += 1;
         }
     }
     // then the state of each effect (version 4)
     let mut i = 0;
     while i < nfx {
-        total += (rd32(fxs.add((FX_REC * i) as usize + 8)) + 7) & !7;
+        total += (rd32(fxs.add((FX_REC * i) as usize + FX_STATE as usize)) + 7) & !7;
         i += 1;
     }
     total
@@ -241,9 +245,9 @@ pub(crate) unsafe fn dsp_symbol(name: *const u8) -> u32 {
     let n = iw(I_NIMPORT);
     let mut i = 0;
     while i < n {
-        let e = (info().add(I_IMPORTS) as *const u8).add(32 * i as usize);
+        let e = (info().add(I_IMPORTS) as *const u8).add(DSP_IMPORT_LEN as usize * i as usize);
         if cstr_eq(e, name) {
-            return read_volatile(e.add(28) as *const u32);
+            return read_volatile(e.add(DSP_IMPORT_ADDR as usize) as *const u32);
         }
         i += 1;
     }
@@ -253,31 +257,35 @@ pub(crate) unsafe fn dsp_symbol(name: *const u8) -> u32 {
 /// Validate the DSP section `[off, off + size)` of the staged file `f` for this runtime and image. Writes only `job`.
 pub unsafe fn check(f: *const u8, off: u32, size: u32, file_size: u32, job: &mut Job) -> i32 {
     init_once();
-    if !in_sec(off, size, file_size) || size < 0x40 {
+    if !in_sec(off, size, file_size) || size < DSP_HEADER {
         return E_DSP_FORMAT;
     }
     let s = f.add(off as usize);
-    let version = rd32(s.add(4));
-    if rd32(s) != STATE_MAGIC || (version != 1 && version != 2 && version != 3 && version != 4 && version != 5) {
+    let version = rd32(s.add(DSP_H_VERSION as usize));
+    if rd32(s.add(DSP_H_MAGIC as usize)) != DSP_MAGIC || (version != DSP_V1 && version != DSP_V2 && version != DSP_V3 && version != DSP_V4 && version != DSP_V5) {
         return E_DSP_FORMAT;
     }
     if !have_link() {
         return E_NO_DSP;
     }
-    if rd32(s.add(8)) != iw(I_DEVICE) {
+    if rd32(s.add(DSP_H_DEVICE as usize)) != iw(I_DEVICE) {
         return E_DSP_DEVICE;
     }
-    let image_size = rd32(s.add(0x0c));
-    let bss = rd32(s.add(0x10));
-    let align = rd32(s.add(0x14));
-    let (image_off, reloc_off, nreloc) = (rd32(s.add(0x18)), rd32(s.add(0x1c)), rd32(s.add(0x20)));
-    let (import_off, nimport) = (rd32(s.add(0x24)), rd32(s.add(0x28)));
-    let (voice_off, nvoice) = (rd32(s.add(0x2c)), rd32(s.add(0x30)));
-    // version 4: the effect records (0x34 offset, 0x38 count)
-    let (fx_off, nfx) = if version >= 4 { (rd32(s.add(0x34)), rd32(s.add(0x38))) } else { (0, 0) };
+    let image_size = rd32(s.add(DSP_H_IMAGE_SIZE as usize));
+    let bss = rd32(s.add(DSP_H_BSS as usize));
+    let align = rd32(s.add(DSP_H_ALIGN as usize));
+    let (image_off, reloc_off, nreloc) = (
+        rd32(s.add(DSP_H_IMAGE_OFF as usize)),
+        rd32(s.add(DSP_H_RELOC_OFF as usize)),
+        rd32(s.add(DSP_H_RELOC_N as usize)),
+    );
+    let (import_off, nimport) = (rd32(s.add(DSP_H_IMPORT_OFF as usize)), rd32(s.add(DSP_H_IMPORT_N as usize)));
+    let (voice_off, nvoice) = (rd32(s.add(DSP_H_VOICE_OFF as usize)), rd32(s.add(DSP_H_VOICE_N as usize)));
+    // version 4: the effect records
+    let (fx_off, nfx) = if version >= DSP_V4 { (rd32(s.add(DSP_H_FX_OFF as usize)), rd32(s.add(DSP_H_FX_N as usize))) } else { (0, 0) };
     let vstride = match version {
-        1 => VOICE_V1,
-        2 => VOICE_V2,
+        DSP_V1 => VOICE_V1,
+        DSP_V2 => VOICE_V2,
         _ => VOICE_V3,
     };
     if image_size > iw(I_AREA_BYTES)
@@ -293,13 +301,13 @@ pub unsafe fn check(f: *const u8, off: u32, size: u32, file_size: u32, job: &mut
         || nfx as usize > MAX_FX
         || !in_sec(fx_off, nfx * FX_REC, size)
         || !in_sec(image_off, image_size, size)
-        || !in_sec(reloc_off, nreloc * 8, size)
-        || !in_sec(import_off, nimport * 32, size)
+        || !in_sec(reloc_off, nreloc * RELOC_LEN, size)
+        || !in_sec(import_off, nimport * DSP_IMPORT_LEN, size)
         || !in_sec(voice_off, nvoice * vstride, size)
     {
         return E_DSP_FORMAT;
     }
-    let bank_off = if version == 5 { rd32(s.add(0x3c)) } else { 0 };
+    let bank_off = if version == DSP_V5 { rd32(s.add(DSP_H_BANK_OFF as usize)) } else { 0 };
     let sec = DspSec {
         s,
         version,
@@ -329,8 +337,8 @@ pub unsafe fn check(f: *const u8, off: u32, size: u32, file_size: u32, job: &mut
     }
     let mut i = 0;
     while i < nimport {
-        let p = s.add(import_off as usize + 32 * i as usize);
-        if cstr_len(p, 32) == 32 {
+        let p = s.add(import_off as usize + DSP_IMPORT_LEN as usize * i as usize);
+        if cstr_len(p, DSP_IMPORT_LEN as usize) == DSP_IMPORT_LEN as usize {
             return E_DSP_FORMAT;
         }
         let v = dsp_symbol(p);
@@ -342,9 +350,9 @@ pub unsafe fn check(f: *const u8, off: u32, size: u32, file_size: u32, job: &mut
     }
     i = 0;
     while i < nreloc {
-        let e = s.add(reloc_off as usize + 8 * i as usize);
-        let o = rd32(e);
-        let w = rd32(e.add(4));
+        let e = s.add(reloc_off as usize + RELOC_LEN as usize * i as usize);
+        let o = rd32(e.add(RELOC_OFFSET as usize));
+        let w = rd32(e.add(RELOC_WORD as usize));
         let (kind, class, imp) = (w >> 28, (w >> 24) & 15, w & 0xffff);
         if o > image_size - 6 || kind > 1 || class > 2 || (class == 2 && imp >= nimport) || (kind == 0 && class == 1) {
             return E_DSP_FORMAT;
@@ -418,9 +426,9 @@ pub unsafe fn reserve(rec: usize, job: &Job) -> i32 {
     let byte_shift = base - L2_BYTE_BASE;
     i = 0;
     while i < job.nreloc as usize {
-        let e = job.relocs.add(8 * i);
-        let o = rd32(e) as usize;
-        let w = rd32(e.add(4));
+        let e = job.relocs.add(RELOC_LEN as usize * i);
+        let o = rd32(e.add(RELOC_OFFSET as usize)) as usize;
+        let w = rd32(e.add(RELOC_WORD as usize));
         let (kind, class, imp) = (w >> 28, (w >> 24) & 15, (w & 0xffff) as usize);
         let add = match class {
             0 => pc_shift,

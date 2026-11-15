@@ -12,35 +12,35 @@ use crate::{
 use core::ptr::{addr_of, addr_of_mut, read_volatile};
 use dkrt_sdk::*;
 
-const MAGIC: u32 = crate::collect::dkm::MAGIC;
+const MAGIC: u32 = dkneeds::MAGIC;
 /// The header size. `init`, `fini`, `menu` and `tick` are image offsets in it (NONE for a missing one): the fields of the module's `dk_module` constant
 /// (`dk_module_def`), called with a `dk_module_ctx *` (`entry.rs`).
-const HEADER: u32 = crate::collect::dkm::HEADER;
-const NONE: u32 = 0xffff_ffff;
+const HEADER: u32 = dkneeds::HEADER;
+const NONE: u32 = dkneeds::NONE;
 
-// header field offsets (big endian)
-const H_SIZE: usize = crate::collect::dkm::H_SIZE;
-const H_HDRSIZE: usize = 0x0c;
-const H_SHA: usize = 0x10;
-const H_RUNTIME: usize = 0x30; // the runtime version the module needs (bit 31: built with DK_TRACE)
-const H_VERSION: usize = 0x34;
-const H_NAME: usize = 0x40;
-const H_IMAGE_OFF: usize = 0x60;
-const H_IMAGE_SIZE: usize = 0x64;
-const H_BSS: usize = 0x68;
-const H_ALIGN: usize = 0x6c;
-const H_RELOC_OFF: usize = 0x70;
-const H_RELOC_N: usize = 0x74;
-const H_IMPORT_OFF: usize = 0x78;
-const H_IMPORT_N: usize = 0x7c;
-const H_INIT: usize = 0x80;
-const H_FINI: usize = 0x84;
-const H_MENU: usize = 0x88;
-const H_TICK: usize = 0x8c;
-const H_REG_OFF: usize = crate::collect::dkm::H_REG_OFF;
-const H_REG_SIZE: usize = crate::collect::dkm::H_REG_SIZE;
-const H_DSP_OFF: usize = 0x98;
-const H_DSP_SIZE: usize = 0x9c;
+// header field offsets (big endian): `[format]` of sdk/sdk.toml
+const H_SIZE: usize = dkneeds::H_SIZE as usize;
+const H_HDRSIZE: usize = dkneeds::H_HDRSIZE as usize;
+const H_SHA: usize = dkneeds::H_SHA as usize;
+const H_RUNTIME: usize = dkneeds::H_RUNTIME as usize;
+const H_VERSION: usize = dkneeds::H_VERSION as usize;
+const H_NAME: usize = dkneeds::H_NAME as usize;
+const H_IMAGE_OFF: usize = dkneeds::H_IMAGE_OFF as usize;
+const H_IMAGE_SIZE: usize = dkneeds::H_IMAGE_SIZE as usize;
+const H_BSS: usize = dkneeds::H_BSS as usize;
+const H_ALIGN: usize = dkneeds::H_ALIGN as usize;
+const H_RELOC_OFF: usize = dkneeds::H_RELOC_OFF as usize;
+const H_RELOC_N: usize = dkneeds::H_RELOC_N as usize;
+const H_IMPORT_OFF: usize = dkneeds::H_IMPORT_OFF as usize;
+const H_IMPORT_N: usize = dkneeds::H_IMPORT_N as usize;
+const H_INIT: usize = dkneeds::H_INIT as usize;
+const H_FINI: usize = dkneeds::H_FINI as usize;
+const H_MENU: usize = dkneeds::H_MENU as usize;
+const H_TICK: usize = dkneeds::H_TICK as usize;
+const H_REG_OFF: usize = dkneeds::H_REG_OFF as usize;
+const H_REG_SIZE: usize = dkneeds::H_REG_SIZE as usize;
+const H_DSP_OFF: usize = dkneeds::H_DSP_OFF as usize;
+const H_DSP_SIZE: usize = dkneeds::H_DSP_SIZE as usize;
 
 unsafe fn in_file(off: u32, len: u32, size: u32) -> bool {
     off <= size && len <= size - off
@@ -105,8 +105,8 @@ unsafe fn load_inner(path: *const u8) -> i32 {
         return E_CONTRACT;
     }
     let name = f.add(H_NAME);
-    let nlen = cstr_len(name, 32);
-    if nlen == 0 || nlen == 32 {
+    let nlen = cstr_len(name, dkneeds::NAME_LEN as usize);
+    if nlen == 0 || nlen == dkneeds::NAME_LEN as usize {
         return E_FORMAT;
     }
     let image_off = rd32(f.add(H_IMAGE_OFF));
@@ -134,8 +134,8 @@ unsafe fn load_inner(path: *const u8) -> i32 {
         || image_off & 15 != 0
         || reloc_n > dkneeds::MAX_RELOCS
         || import_n > dkneeds::MAX_CF_IMPORTS
-        || !in_file(reloc_off, reloc_n * 8, size)
-        || !in_file(import_off, import_n * 32, size)
+        || !in_file(reloc_off, reloc_n * dkneeds::CF_RELOC_LEN, size)
+        || !in_file(import_off, import_n * dkneeds::CF_IMPORT_LEN, size)
     {
         return E_FORMAT;
     }
@@ -151,8 +151,8 @@ unsafe fn load_inner(path: *const u8) -> i32 {
     let mut import_addrs = [0u32; 64];
     i = 0;
     while i < import_n as usize {
-        let p = f.add(import_off as usize + i * 32);
-        if cstr_len(p, 32) == 32 {
+        let p = f.add(import_off as usize + i * dkneeds::CF_IMPORT_LEN as usize);
+        if cstr_len(p, dkneeds::CF_IMPORT_LEN as usize) == dkneeds::CF_IMPORT_LEN as usize {
             return E_FORMAT;
         }
         let a = import_addr(p);
@@ -174,9 +174,9 @@ unsafe fn load_inner(path: *const u8) -> i32 {
     // relocations: kind, bounds, import index
     i = 0;
     while i < reloc_n as usize {
-        let e = f.add(reloc_off as usize + i * 8);
-        let off = rd32(e);
-        let kind = rd32(e.add(4));
+        let e = f.add(reloc_off as usize + i * dkneeds::CF_RELOC_LEN as usize);
+        let off = rd32(e.add(dkneeds::CF_RELOC_OFFSET as usize));
+        let kind = rd32(e.add(dkneeds::CF_RELOC_KIND as usize));
         let k = kind >> 24;
         if off > image_size - 4 || (k != 0 && k != 1) || (k == 1 && (kind & 0xff_ffff) >= import_n)
         {
@@ -244,9 +244,9 @@ unsafe fn load_inner(path: *const u8) -> i32 {
     }
     i = 0;
     while i < reloc_n as usize {
-        let e = f.add(reloc_off as usize + i * 8);
-        let off = rd32(e) as usize;
-        let kind = rd32(e.add(4));
+        let e = f.add(reloc_off as usize + i * dkneeds::CF_RELOC_LEN as usize);
+        let off = rd32(e.add(dkneeds::CF_RELOC_OFFSET as usize)) as usize;
+        let kind = rd32(e.add(dkneeds::CF_RELOC_KIND as usize));
         let add = if kind >> 24 == 0 {
             base
         } else {
@@ -263,7 +263,7 @@ unsafe fn load_inner(path: *const u8) -> i32 {
     let m: &mut Module = &mut s.modules[rec];
     m.used = 1;
     i = 0;
-    while i < 32 {
+    while i < dkneeds::NAME_LEN as usize {
         m.name[i] = *name.add(i);
         i += 1;
     }

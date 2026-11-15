@@ -78,12 +78,17 @@ pub(crate) unsafe fn check_sections(sec: &DspSec) -> i32 {
         let mut i = 0;
         while i < nvoice {
             let e = s.add((voice_off + vstride * i) as usize);
-            let (note_on, state, clear, count) = (rd32(e.add(8)), rd32(e.add(12)), rd32(e.add(16)), rd32(e.add(52)));
+            let (note_on, state, clear, count) = (
+                rd32(e.add(VOICE_NOTE_ON as usize)),
+                rd32(e.add(VOICE_STATE_BYTES as usize)),
+                rd32(e.add(VOICE_CLEAR_BYTES as usize)),
+                rd32(e.add(VOICE_VOICES as usize)),
+            );
             if note_on >= image_size || note_on & 1 != 0 || clear > state || state > iw(REAL_CORE.dsp_info(), I_AREA_BYTES) || count > MAX_STATE_VOICES {
                 return E_DSP_FORMAT;
             }
-            let latched = rd32(e.add(56));
-            if latched & !0xff != 0 || (latched != 0 && note_on == 0) || rd32(e.add(60)) != 0 {
+            let latched = rd32(e.add(VOICE_LATCH as usize));
+            if latched & !0xff != 0 || (latched != 0 && note_on == 0) || rd32(e.add(VOICE_V3_RESERVED as usize)) != 0 {
                 return E_DSP_FORMAT;
             }
             i += 1;
@@ -108,8 +113,8 @@ pub(crate) unsafe fn check_types(sec: &DspSec) -> i32 {
     while i < nvoice {
         let e = s.add(voice_off as usize + vstride as usize * i as usize);
         // the voice names its machine by key (or by a pinned number): `assign` has the type
-        let t = REAL_CORE.type_resolve(rd32(e));
-        let entry = rd32(e.add(4));
+        let t = REAL_CORE.type_resolve(rd32(e.add(VOICE_TYPE as usize)));
+        let entry = rd32(e.add(VOICE_ENTRY as usize));
         if !(TYPE_FIRST..=TYPE_LAST).contains(&t) || entry >= image_size || entry & 1 != 0 {
             return E_DSP_TYPE;
         }
@@ -122,7 +127,7 @@ pub(crate) unsafe fn check_types(sec: &DspSec) -> i32 {
         }
         let mut j = 0;
         while j < i {
-            if REAL_CORE.type_resolve(rd32(s.add(voice_off as usize + vstride as usize * j as usize))) == t {
+            if REAL_CORE.type_resolve(rd32(s.add(voice_off as usize + vstride as usize * j as usize + VOICE_TYPE as usize))) == t {
                 return E_DSP_TYPE; // twice in this file
             }
             j += 1;
@@ -146,27 +151,27 @@ pub(crate) unsafe fn claim(c: &mut Claim) {
             row += 1;
         }
         let e = job.voices.add(job.vstride as usize * v);
-        d.row_type[row] = REAL_CORE.type_resolve(rd32(e));
-        d.row_pc[row] = L2_SW_BASE + (base + rd32(e.add(4)) - L2_BYTE_BASE) / 2;
+        d.row_type[row] = REAL_CORE.type_resolve(rd32(e.add(VOICE_TYPE as usize)));
+        d.row_pc[row] = L2_SW_BASE + (base + rd32(e.add(VOICE_ENTRY as usize)) - L2_BYTE_BASE) / 2;
         let mut k = 0;
         while k < 8 {
             d.row_rng[row][k] = match job.vstride {
-                VOICE_V2 => rd32(e.add(8 + 4 * k)),
-                VOICE_V3 => rd32(e.add(20 + 4 * k)),
+                VOICE_V2 => rd32(e.add(VOICE_V2_RANGES as usize + 4 * k)),
+                VOICE_V3 => rd32(e.add(VOICE_V3_RANGES as usize + 4 * k)),
                 _ => 0,
             };
             k += 1;
         }
         if job.vstride == VOICE_V3 {
-            let note_on = rd32(e.add(8));
-            let stride = (rd32(e.add(12)) + 7) & !7;
+            let note_on = rd32(e.add(VOICE_NOTE_ON as usize));
+            let stride = (rd32(e.add(VOICE_STATE_BYTES as usize)) + 7) & !7;
             d.row_note_on[row] = if note_on == 0 { 0 } else { L2_SW_BASE + (base + note_on - L2_BYTE_BASE) / 2 };
             // the byte address of a data symbol at image offset `state_at`: nominal L2_BYTE_BASE + state_at, plus the byte shift
             d.row_state_base[row] = L2_BYTE_BASE + state_at + byte_shift;
             d.row_stride[row] = stride;
-            d.row_clear[row] = rd32(e.add(16));
-            d.row_latched[row] = rd32(e.add(56));
-            state_at += rd32(e.add(52)) * stride;
+            d.row_clear[row] = rd32(e.add(VOICE_CLEAR_BYTES as usize));
+            d.row_latched[row] = rd32(e.add(VOICE_LATCH as usize));
+            state_at += rd32(e.add(VOICE_VOICES as usize)) * stride;
         } else {
             d.row_note_on[row] = 0;
             d.row_state_base[row] = 0;

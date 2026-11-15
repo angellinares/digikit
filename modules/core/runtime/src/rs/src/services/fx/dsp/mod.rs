@@ -1,6 +1,7 @@
 //! Effect-row part of the DSP loader: the chain rows, their owners, one-word writes and the clearing of a module's effect rows.
 use crate::core_api::{CoreApi, REAL_CORE};
 use dkrt_abi::link::{Owner, Sequence, Slot};
+use dkneeds::fx;
 use dkrt_abi::dsp::*;
 use dkrt_abi::mem::{iw, rd32};
 use dkrt_abi::service::{Claim, RowWrite};
@@ -189,7 +190,12 @@ pub(crate) unsafe fn check_sections(sec: &DspSec) -> i32 {
     let mut i = 0;
     while i < nfx {
         let e = s.add((fx_off + FX_REC * i) as usize);
-        let (process, desc, state, np) = (rd32(e), rd32(e.add(4)), rd32(e.add(8)), rd32(e.add(12)));
+        let (process, desc, state, np) = (
+            rd32(e.add(FX_PROCESS as usize)),
+            rd32(e.add(FX_DESC as usize)),
+            rd32(e.add(FX_STATE as usize)),
+            rd32(e.add(FX_NPARAMS as usize)),
+        );
         if process >= image_size
             || process & 1 != 0
             || desc & 3 != 0
@@ -201,12 +207,16 @@ pub(crate) unsafe fn check_sections(sec: &DspSec) -> i32 {
             return E_DSP_FORMAT;
         }
         // the routes: send allowed (bit 0), master not allowed (bit 1), default send (bit 2); the default must be an allowed route (0 is a record before the routes)
-        let fl = rd32(e.add(16));
+        let fl = rd32(e.add(FX_FLAGS as usize));
         if fl & !7 != 0 || (fl & 6 != 0 && fl & 1 == 0) || (fl & 2 != 0 && fl & 4 == 0) {
             return E_DSP_FORMAT;
         }
         let dd = s.add((image_off + desc) as usize);
-        if rd32le(dd) != FX_DESC_MAGIC || rd32le(dd.add(4)) != 1 || rd32le(dd.add(8)) != np || rd32le(dd.add(12)) != state {
+        if rd32le(dd.add(fx::DK_FX_DESC_MAGIC as usize)) != FX_DESC_MAGIC
+            || rd32le(dd.add(fx::DK_FX_DESC_CONTRACT as usize)) != fx::DK_FX_V1
+            || rd32le(dd.add(fx::DK_FX_DESC_N_PARAMS as usize)) != np
+            || rd32le(dd.add(fx::DK_FX_DESC_STATE_BYTES as usize)) != state
+        {
             return E_DSP_FORMAT;
         }
         i += 1;
@@ -244,19 +254,19 @@ pub(crate) unsafe fn claim(c: &mut Claim) {
             frow += 1;
         }
         let e = job.fxs.add(FX_REC as usize * f);
-        d.fx_pc[frow] = L2_SW_BASE + (base + rd32(e) - L2_BYTE_BASE) / 2;
-        d.fx_desc[frow] = base + rd32(e.add(4));
+        d.fx_pc[frow] = L2_SW_BASE + (base + rd32(e.add(FX_PROCESS as usize)) - L2_BYTE_BASE) / 2;
+        d.fx_desc[frow] = base + rd32(e.add(FX_DESC as usize));
         d.fx_state[frow] = base + state_at;
-        state_at += (rd32(e.add(8)) + 7) & !7;
+        state_at += (rd32(e.add(FX_STATE as usize)) + 7) & !7;
         let mut k = 0;
         while k < 8 {
-            d.fx_par[frow][k] = rd32(e.add(20 + 4 * k));
+            d.fx_par[frow][k] = rd32(e.add(FX_PARAMS as usize + 4 * k));
             k += 1;
         }
         d.fx_mix[frow] = MIX_ONE;
         d.fx_route[frow] = 0;
         d.fx_amt[frow] = [0; 4];
-        d.fx_flags[frow] = rd32(e.add(16));
+        d.fx_flags[frow] = rd32(e.add(FX_FLAGS as usize));
         d.fx_owner[frow] = rec as u8 + 1;
         d.fx_pub[frow] = 0;
         fclaimed |= 1 << frow;
