@@ -53,7 +53,7 @@ export const READ_BY_TESTS = [...sharedReads(), ...TEST_READS];
 // only through shared inputs (other core modules, SDK, device profiles, patchkit, the daemon) runs only if it is
 // listed in `metadata.mergeTests` of its project.json (paths relative to the project root). Every other file gets a
 // narrow merge key (its own folder, test code and loaded packs), so Nx replays its last result. `mise run test:full`
-// runs every file with full inputs (`test-device-all`); run it before each push or PR to main.
+// runs every file with full inputs and DIGIKIT_TIER=full (`test-device-all`); run it before each push or PR to main.
 // Vitest runs this file before each test file (`setupFiles`), so no test imports it.
 export const VITEST_SETUP = 'tests/regression/setup-temp.ts';
 
