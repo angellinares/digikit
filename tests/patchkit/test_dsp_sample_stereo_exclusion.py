@@ -278,10 +278,11 @@ def test_unlocked_pinned_control_at_cross_channel_boundary(dsp, unsafe):
     linked, syms, _ = dsp
     session = fresh(dsp, unlocked=True)
     session.runner.breakpoints = frozenset(
-        (BACK, linked.symbols["_dk_sample_stereo_after_left"])
+        (BACK, linked.symbols["_dk_sample_pcm16s_read_right"])
     )
     result = session.call("_sx_reader_h", regs(0x9000), max_steps=LIMIT)
-    assert result["final_pc_sw"] == linked.symbols["_dk_sample_stereo_after_left"]
+    # The kernel reads frame by frame: the pause is after the first left sample (aL of frame 0), before the first right sample.
+    assert result["final_pc_sw"] == linked.symbols["_dk_sample_pcm16s_read_right"]
     assert reg(session, "MODE1") & 0x1000
     assert value(session, syms, "count") == 1
     session.runner.breakpoints = frozenset((BACK,))
@@ -289,10 +290,16 @@ def test_unlocked_pinned_control_at_cross_channel_boundary(dsp, unsafe):
     assert value(session, syms, "written") == int(unsafe)
     result = session.runner.run(LIMIT)
     assert result.halt.reason == "breakpoint", result.halt
-    assert output(session) == expected((OLD[0], NEW[1]) if unsafe else OLD)
     if unsafe:
-        assert output(session) != expected(OLD)
-        assert output(session) != expected(NEW)
+        # Left frame 0 mixes the old sample a with the new neighbor b; every other sample is new, so the block tears
+        # between the channels and is neither the old nor the new stereo block.
+        torn, new = output(session), expected(NEW)
+        assert torn != expected(OLD)
+        assert torn != new
+        assert torn[1:] == new[1:]
+        assert torn[0] != new[0] and torn[0] != expected(OLD)[0]
+    else:
+        assert output(session) == expected(OLD)
     assert value(session, syms, "count") == 0
     assert reg(session, "MODE1") == 0x9000
     session.record_reads(LEFT_PCM, RIGHT_PCM + 64 - LEFT_PCM)
