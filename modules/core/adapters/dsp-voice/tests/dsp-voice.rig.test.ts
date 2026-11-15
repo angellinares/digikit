@@ -57,7 +57,7 @@ function savedIntact(out: VoiceCall): void {
 const crumb = (stage: number, v: number, t: number): number => stage | (v << 8) | (t << 16);
 
 /** One registered voice with a note on; the odd voice sees the even voice's block in place. */
-function voiceCall(rig: VoiceRig, v: number, ctx: Parameters<VoiceRig['call']>[1]) {
+function voiceCall(rig: VoiceRig, v: number, ctx: NonNullable<Parameters<VoiceRig['call']>[1]>['ctx']) {
   const t = Math.floor(v / 2);
   rig.setType(t, TYPE);
   rig.setNote(t, 60);
@@ -67,7 +67,7 @@ function voiceCall(rig: VoiceRig, v: number, ctx: Parameters<VoiceRig['call']>[1
       rig.dm.set(nw(OUT) + 32 * v + k, 0);
       rig.dm.set(nw(OUT) + 32 * (v - 1) + k, 0x3f000000 + k);
     }
-  return rig.call(v, ctx);
+  return rig.call(v, { ctx });
 }
 
 describe('core/dsp-voice on the rig', () => {
