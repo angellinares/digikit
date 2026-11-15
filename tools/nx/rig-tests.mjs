@@ -3,7 +3,9 @@
 // the code in, the SDK, the device profiles, the hashes of the two binaries it runs and the hash of the stock DSP section (or "absent":
 // the stock-image suites skip without the firmware). The synthetic shadow-replay fixtures of tests/fixtures/dsp are inputs of the stereo proof's
 // shadow replay test.
-export const rigTarget = (root) => ({
+const STEREO_PROOF_ROOT = 'modules/core/adapters/dsp-stereo-proof';
+
+export const rigTarget =(root) => ({
   executor: 'nx:run-commands',
   cache: true,
   dependsOn: ['patchkit:cli', 'sharc-rig:build'],
@@ -17,7 +19,7 @@ export const rigTarget = (root) => ({
     '{workspaceRoot}/modules/core/adapters/dsp-voice/**/*',
     '{workspaceRoot}/modules/core/adapters/fx/**/*',
     '{workspaceRoot}/modules/core/adapters/machines/types.toml',
-    '{workspaceRoot}/tests/fixtures/dsp/stereo-*-shadow-replay.s',
+    ...(root === STEREO_PROOF_ROOT ? ['{workspaceRoot}/tests/fixtures/dsp/stereo-*shadow-replay.s'] : []),
     '{workspaceRoot}/sdk/**/*',
     '{workspaceRoot}/devices/*.toml',
     '{workspaceRoot}/tools/patchkit/toolchain/pins.toml',
