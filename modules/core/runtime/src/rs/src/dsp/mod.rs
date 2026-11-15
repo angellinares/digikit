@@ -106,7 +106,11 @@ pub(crate) unsafe fn finfo() -> *const u32 {
 }
 
 pub(crate) unsafe fn have_link() -> bool {
-    fn_addr(dl_send) != 0 && fn_addr(dl_send_win) != 0 && fn_addr(dl_poll) != 0 && !info().is_null()
+    // the host tests have no `core/dsp-link` symbols: the link is there when they give a `dyndsp_info` table
+    #[cfg(test)] { return !info().is_null(); }
+    #[cfg(not(test))] {
+        fn_addr(dl_send) != 0 && fn_addr(dl_send_win) != 0 && fn_addr(dl_poll) != 0 && !info().is_null()
+    }
 }
 
 pub(crate) unsafe fn call_send(dst: u32, buf: *const u8, len: u32) -> i32 {
