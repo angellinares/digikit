@@ -1,0 +1,18 @@
+{
+  "$schema": "../../node_modules/nx/schemas/project-schema.json",
+  "name": "@digi/sharc-rig-kit",
+  "implicitDependencies": ["sharc-rig"],
+  "targets": {
+    "test-host": {
+      "executor": "nx:run-commands",
+      "cache": true,
+      "inputs": ["hostTests", "!{projectRoot}/conformance/**/*"],
+      "outputs": [],
+      "options": {
+        "forwardAllArgs": false,
+        "command": "pnpm exec vitest run --config vitest.host.config.ts --project sharc-rig-kit",
+        "cwd": "."
+      }
+    }
+  }
+}
