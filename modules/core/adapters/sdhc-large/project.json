@@ -6,6 +6,7 @@
     "runtimeAcceptance": [
       {
         "files": ["tests/sdhc-large.device.test.ts"],
+        "tags": ["A:core/sdhc-large", "C:storage"],
         "modules": ["digikit/usb-fast"],
         "plusdrive": true
       }

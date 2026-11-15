@@ -77,10 +77,12 @@
     "runtimeAcceptance": [
       {
         "files": ["emulator/reply-inflight.test.ts"],
+        "tags": ["C:transport"],
         "modules": []
       },
       {
         "files": ["emulator/sharc-semantics.test.ts"],
+        "tags": ["C:dsp", "M:digikit/probe"],
         "modules": ["digikit/probe", "digikit/remote", "test/dsp-facts", "test/sharc-probe", "test/step-beacon"]
       }
     ]

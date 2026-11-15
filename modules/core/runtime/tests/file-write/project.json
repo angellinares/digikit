@@ -13,6 +13,7 @@
         "files": [
           "file-write.device.test.ts"
         ],
+        "tags": ["C:storage"],
         "modules": [
           "test/file-write",
           "test/file-write-b"
@@ -23,6 +24,7 @@
         "files": [
           "file-write-cut.device.test.ts"
         ],
+        "tags": ["C:layout", "C:storage"],
         "modules": [
           "test/file-write"
         ],

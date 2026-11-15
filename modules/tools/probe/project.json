@@ -5,6 +5,7 @@
     "runtimeAcceptance": [
       {
         "files": ["tests/sharc-probe.device.test.ts"],
+        "tags": ["C:dsp", "M:digikit/probe"],
         "modules": ["digikit/remote", "test/dsp-facts", "test/sharc-probe", "test/step-beacon"]
       }
     ]
