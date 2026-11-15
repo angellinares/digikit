@@ -47,7 +47,7 @@ export interface SharcObject {
   /** defined symbol -> parcel offset */
   symbols: Record<string, number>;
   /** data section -> [bytes in memory order, is bss] */
-  data: Record<string, { bytes: Uint8Array; bss: boolean }>;
+  data: Record<string, { bytes: Uint8Array; bss: boolean; align?: number }>;
   /** data symbol -> [section, byte offset] */
   dataSymbols: Record<string, { section: string; offset: number }>;
 }
@@ -100,7 +100,10 @@ export function assemble(text: string): SharcObject {
     parcels: j.section.length / 4,
     symbols: Object.fromEntries(Object.entries(j.symbols).map(([n, [p]]) => [n, p])),
     data: Object.fromEntries(
-      Object.entries(j.data).map(([n, [hex, , bss]]) => [n, { bytes: Uint8Array.from(Buffer.from(hex, 'hex')), bss }]),
+      Object.entries(j.data).map(([n, [hex, align, bss]]) => [
+        n,
+        { bytes: Uint8Array.from(Buffer.from(hex, 'hex')), bss, align },
+      ]),
     ),
     dataSymbols: Object.fromEntries(
       Object.entries(j.data_symbols).map(([n, [section, offset]]) => [n, { section, offset }]),

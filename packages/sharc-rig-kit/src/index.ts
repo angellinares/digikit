@@ -9,6 +9,7 @@ export * from './ops.ts';
 export * from './place.ts';
 export * from './pool.ts';
 export * from './prng.ts';
+export * from './raw.ts';
 export * from './report.ts';
 export * from './rig.ts';
 export * from './samplepool.ts';

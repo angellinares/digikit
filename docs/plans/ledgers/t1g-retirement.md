@@ -93,3 +93,17 @@ The rig-driven tests that the kit replaces stay deleted.
 | freqshift model | `modules/fx/freqshift/tests/test_freqshift_ref.py` | model only (was never part of the deletion) |
 
 The old files are in git history at `7e1f99e9e`.
+
+## Phase 5 ports (adapter tests on the rig)
+
+The Python tests below are **not deleted**: each stays until an independent review of this table. "Values" says whether the pinned values of the
+Python test (output words, registers, counters, words in DM) were reproduced by the Vitest test without a change to any pin. Rig tests run with
+`pnpm nx:pilot run <module-id>:test-rig`. Mutation proof: one changed constant in the DSP source (or in the reference) fails the Vitest test.
+
+| Python test (kept) | Vitest replacement | Values | Notes |
+| --- | --- | --- | --- |
+| `modules/core/adapters/overdrive/tests/test_overdrive.py` (5 tests, 12 cases) | `modules/core/adapters/overdrive/tests/overdrive.rig.test.ts` (12 cases) | same, 12 of 12 | The tanh approximant test checks a formula in the test file against `tanh`, not the DSP source; ported as it was. Mutation: `tanh(4*z)` to `tanh(3*z)` in the reference fails `tnh4`. Time: Python 35 s for both files (25 cases), Vitest 0.5 s and 1.9 s |
+| `modules/core/adapters/sample-pool/tests/test_sample_pool_dsp_dn2.py` (7 tests, 13 cases) | `modules/core/adapters/sample-pool/tests/sample-pool-dsp-dn2.rig.test.ts` (14 cases: the hostile register part of the first test is its own case) | same, 14 of 14 | Same C reference (`pool_wire.h`, compiled with `cc`). Mutation: `0x401` to `0x400` in `sample-pool.s` fails the setup test. |
+
+Kit change for these two (no change to the rig crate): `RawRig` (`packages/sharc-rig-kit/src/raw.ts`) places objects at named bases with data at their alignment and
+calls routines with registers the test sets; `peek` is a call at the return point with no steps.
