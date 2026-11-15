@@ -593,8 +593,10 @@ def test_no_build_of_the_module_stores_a_same_dag_register_through_an_index_regi
     # and a source with one fails, with the parcel address in the message
     bad = tmp_path / "bad.s"
     bad.write_text(".SECTION/PM seg_pmco;\n_x:\n    DM(-16, I6) = I0;\n    RTS;\n")
+    # the fork's assembler refuses it first; our check on the decoded word is the second line
     with pytest.raises(
-        pk_sharc.PkSharcError, match=r"parcel 0x0: DM store of I0 \(DAG1\)"
+        pk_sharc.PkSharcError,
+        match=r"parcel 0x0: DM store of I0 \(DAG1\)|I0 cannot be stored through its own DAG",
     ):
         pk_sharc.sharc_object([bad], [], frozenset())
 

@@ -6,11 +6,10 @@ use crate::registry::{apply_with, check_with, each, remove_with, DKRT_REG};
 use dkrt_sdk::proto::CAPK_FX_SLOTS;
 use crate::core_api::{CoreApi, RealCore, REAL_CORE};
 use dkrt_abi::service::ServiceRow;
-use std::sync::Mutex;
 use std::vec::Vec;
 
 /// Serializes the tests that use the fake's log and the registry's state.
-pub(crate) static LOCK: Mutex<()> = Mutex::new(());
+pub(crate) use crate::test_lock::LOCK;
 
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub(crate) enum Call {

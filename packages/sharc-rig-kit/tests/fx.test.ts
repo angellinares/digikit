@@ -162,3 +162,58 @@ describe('FxRig write set', () => {
     expect(await run([[0x20, FX_MASTER, 4]])).toEqual([]);
   });
 });
+
+describe('FxRig send route', () => {
+  const sendBuilt = () => {
+    const b = fxBuilt();
+    return { ...b, symbols: { ...b.symbols, _fxs_entry: 0xb90040 }, data: { ...b.data, _fxs_bus: 0x200a0600 } };
+  };
+
+  it('packs the 16 amount bytes of a row, track 4w + b in byte b of word w, and clamps nothing but the byte', async () => {
+    const fake = fakeRig('dt2');
+    const amounts = Array.from({ length: 16 }, (_, t) => (t === 5 ? 0x1ff : t + 1));
+    await FxRig.open([{ pc: '_te_half', state: '_te_state_a', route: 1, amounts }], {
+      sources: [],
+      built: sendBuilt(),
+      open: fake.open,
+    });
+    const init = pokes(fake.setups[0]!.ops ?? []);
+    const word = (w: number) => init.findLast(([addr]) => addr === ROW + AMT0 + w)?.[1];
+    expect([word(0), word(1), word(2), word(3)]).toEqual([0x04030201, 0x0807ff05, 0x0c0b0a09, 0x100f0e0d]);
+  });
+
+  it('runs the send hook entry with the buses set before the call, and reads the return bus after it', async () => {
+    const fake = fakeRig('dt2', () => stock);
+    const rig = await FxRig.open([{ pc: '_te_half', state: '_te_state_a' }], {
+      sources: [],
+      built: sendBuilt(),
+      open: fake.open,
+    });
+    rig.setSlotmap([3, 4, 5]);
+    rig.setFade([1, 4]);
+    rig.setReturn([1.0]);
+    await rig.sendBlock();
+    const ops = fake.batches[0]!;
+    expect(calls(ops)[0]!.pc).toBe(0xb90040);
+    expect(pokes(ops)).toContainEqual([nw(0x2009e800), 3 | (4 << 16)]);
+    expect(pokes(ops)).toContainEqual([nw(0x2009e800) + 1, 5]);
+    expect(pokes(ops)).toContainEqual([nw(0x2009e820), 0x00000100]); // slot 1 flagged: byte 1 of the first fade word
+    expect(pokes(ops)).toContainEqual([nw(0x2009e820) + 1, 0x00000001]);
+    expect(pokes(ops)).toContainEqual([nw(0x2009e400), f2w(1.0)]);
+    expect(calls(ops)[0]!.reads.at(-1)).toEqual([nw(0x2009e400), 64]);
+  });
+
+  it('peeks a word as a call at the return point that runs no instruction, after the pending pokes', async () => {
+    const fake = fakeRig('dt2');
+    const rig = await FxRig.open([{ pc: '_te_half', state: '_te_state_a' }], {
+      sources: [],
+      built: sendBuilt(),
+      open: fake.open,
+    });
+    rig.setRowWord(0, MIX, 7);
+    await rig.rowWord(0, MIX);
+    const ops = fake.batches[0]!;
+    expect(ops.map((o) => Object.keys(o)[0])).toEqual(['poke', 'call']);
+    expect(calls(ops)[0]).toMatchObject({ pc: 0xb9f100, max_steps: 0, reads: [[ROW + MIX, 1]] });
+  });
+});
