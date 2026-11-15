@@ -1,5 +1,5 @@
 import path from 'node:path';
-import { DkSession, EmuUsbTransport } from '@digi/dk-session';
+import type { DkSession } from '@digi/dk-session';
 import { describe, expect, test } from 'vitest';
 import type { PatchedSession } from '@digi/regression/support.ts';
 import { advance, analysisJson, bounded, frames, rows, rpc, word } from '@digi/regression/runtime/fx-live.ts';
@@ -19,6 +19,7 @@ import { record } from '@digi/regression/runtime/artifacts.ts';
 import { DEVICES, FIRMWARE } from '@digi/regression/runtime/devices.ts';
 import { expectRuntimeUi } from '@digi/regression/runtime/ready.ts';
 import { planSymbol } from '@digi/regression/runtime/runtime-plan.ts';
+import { emulatorDk } from '@digi/regression/runtime/waits.ts';
 
 const GAIN_B = 'test/dyn-fx-gain-b';
 const MARK = 0x46a7;
@@ -139,7 +140,7 @@ for (const device of DEVICES) {
         await rpc(session, 'run.mode', { mode: 'free' });
         await bounded(() => runtime.dk.restart());
         runtime.dk.cancelPending();
-        const dk = new DkSession(new EmuUsbTransport((method, params) => session.client.call(method, params)));
+        const dk = emulatorDk(session);
         protocols.push(dk);
         runtime = { session, dk, close: runtime.close };
         // Keep the original epoch for both barriers; neither silence nor a stale UI proves restart.

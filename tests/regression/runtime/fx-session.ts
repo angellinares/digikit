@@ -145,6 +145,7 @@ export async function withPausedFxProtocol<T>(
   const status = await withinRuntimeDeadline(deadline, () => runtime.session.status());
   if (status.mode !== 'paused') throw new Error('route protocol reads require a paused runtime');
   let active = true;
+  // Wall-time wait: the daemon is paused, so its emulated clock stands still.
   const dk = new DkSession(
     new EmuUsbTransport(
       async <R>(method: string, params?: Record<string, unknown>) => {

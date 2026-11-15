@@ -13,7 +13,7 @@ import {
 import { fileTemp } from './file-temp.ts';
 import { portFile } from './runtime/device-data.ts';
 import { daemonBinary } from './runtime/devices.ts';
-import { bindBootClock, pollEmulated, withEmulatedProbe } from './runtime/waits.ts';
+import { bindBootClock, emulatorDk, pollEmulated, withEmulatedProbe } from './runtime/waits.ts';
 import type { RunDirClaim } from './runtime/run-claim.ts';
 import { recordPhase, setTimingContext, timePhase, timingContext } from './timing.ts';
 import { startNoProgressWatchdog, type Watchdog } from './watchdog.ts';
@@ -86,9 +86,7 @@ export async function startPatchedSession(
   );
   setTimingContext(session, context);
   try {
-    const dk = new DkSession(new EmuUsbTransport((method, params) => session.client.call(method, params)), {
-      emulatedProbe: (run, emulatedMs) => withEmulatedProbe(session, run, emulatedMs),
-    });
+    const dk = emulatorDk(session);
     bindBootClock(dk, session);
     let closing: Promise<void> | undefined;
     return {
