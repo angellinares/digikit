@@ -12,7 +12,8 @@ For each device that has its ready inputs it takes the daemon from a content-add
 clone. The key is `tools/devtools/emud_key.py key`. On a miss it builds the profile-guided daemon when a PGO
 profile exists (`pgo-emud-<device>` variant; the launcher's `pgo-use` is never touched), else the plain daemon;
 checks that the key did not change during the build; audits cargo's dependency file against the key; and inserts
-the result with one rename. The last 4 used keys per device stay. `DIGI_EMUD_<DEV>=<stored digi-emud>` is written
+the result with one rename. The last 4 used keys per device stay, and every key that
+`dist/daemons.json` of any worktree of the clone points at (a restore refreshes the use time). `DIGI_EMUD_<DEV>=<stored digi-emud>` is written
 to --env-out (JSON); a stored file is never rewritten, so the test processes run it and ask cargo for nothing.
 `pk_harness.daemon_binary` takes that variable before anything else.
 """
@@ -59,7 +60,10 @@ def build_one(device: str, syx: Path) -> tuple[Path, Path]:
 
 
 def store_root() -> Path:
-    """`<git common dir>/emud-cache`: shared by every worktree of the clone, never committed."""
+    """`<git common dir>/emud-cache` (or DIGI_EMUD_STORE, for tests): shared by every worktree of the clone, never committed."""
+    override = os.environ.get("DIGI_EMUD_STORE")
+    if override:
+        return Path(override)
     done = subprocess.run(
         ["git", "rev-parse", "--path-format=absolute", "--git-common-dir"],
         cwd=ROOT, check=True, capture_output=True, text=True,
@@ -67,8 +71,46 @@ def store_root() -> Path:
     return Path(done.stdout.strip()) / "emud-cache"
 
 
-def evict(device_dir: Path, keep_key: str) -> None:
-    """Keep the KEEP most recently used keys of a device (never KEEP_KEY)."""
+def worktree_roots() -> list[Path]:
+    """The root directory of every worktree of the clone (`git worktree list --porcelain`)."""
+    done = subprocess.run(
+        ["git", "worktree", "list", "--porcelain"],
+        cwd=ROOT, check=True, capture_output=True, text=True,
+    )  # fmt: skip
+    return [
+        Path(line.removeprefix("worktree "))
+        for line in done.stdout.splitlines()
+        if line.startswith("worktree ")
+    ]
+
+
+def referenced_keys(device_dir: Path, worktrees: list[Path]) -> set[str]:
+    """The keys of DEVICE_DIR that `dist/daemons.json` of any of WORKTREES points at.
+
+    A worktree without that file, or with one that cannot be read, references nothing.
+    """
+    keys: set[str] = set()
+    for tree in worktrees:
+        try:
+            pinned = json.loads((tree / "dist" / "daemons.json").read_text())
+        except (OSError, ValueError):
+            continue
+        if not isinstance(pinned, dict):
+            continue
+        for value in pinned.values():
+            binary = Path(str(value))
+            if binary.parent.parent == device_dir:
+                keys.add(binary.parent.name)
+    return keys
+
+
+def evict(
+    device_dir: Path, keep_key: str, referenced: set[str] | frozenset[str] = frozenset()
+) -> None:
+    """Keep the KEEP most recently used keys of a device, KEEP_KEY, and every key in REFERENCED.
+
+    The use time is the mtime of key.txt: it is set on insert and refreshed on every restore.
+    """
     entries = []
     for entry in device_dir.iterdir():
         if entry.name.startswith(".") or not entry.is_dir():
@@ -79,7 +121,7 @@ def evict(device_dir: Path, keep_key: str) -> None:
             entries.append((0.0, entry))
     entries.sort(key=lambda item: item[0], reverse=True)
     for _mtime, entry in entries[KEEP:]:
-        if entry.name != keep_key:
+        if entry.name != keep_key and entry.name not in referenced:
             shutil.rmtree(entry, ignore_errors=True)
 
 
@@ -145,7 +187,7 @@ def ensure_daemon(device: str, syx: Path, root: Path) -> Path:
             f"{device} daemon: restored {key[:12]} (inserted by another process)",
             flush=True,
         )
-    evict(device_dir, key)
+    evict(device_dir, key, referenced_keys(device_dir, worktree_roots()))
     return binary
 
 
