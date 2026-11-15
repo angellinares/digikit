@@ -15,7 +15,9 @@
 //     node tools/devtools/wb.mjs [--port SUB] [--bin PATH] log card [on|off|get [--out DIR]]
 //     node tools/devtools/wb.mjs [--format json|text] addrmap lookup ADDR... | module analyse DKM DKO | profile report FILE | profile record --seconds N --out FILE [--cpu cf|sharc]
 //
-// The last line is the offline group (no device, no dkmidi): names for addresses, module DSP analysis and profiles, through dkprof.wasm (`mise run wasm:dkprof`).
+//     node tools/devtools/wb.mjs [--port SUB] [--bin PATH] profile spans [--start|--stop|--reset] [--out FILE]   (a device command: reads the runtime span counters; --start resets them, then starts)
+//
+// The `--format` line above is the offline group (no device, no dkmidi): names for addresses, module DSP analysis and profiles, through dkprof.wasm (`mise run wasm:dkprof`).
 // Its options and output are in tools/devtools/wb_prof.mjs and docs/ADDRMAP.md, docs/INSTRUMENTATION.md and packages/dksharc/README.md.
 //
 // `log card` prints the card log state of the debug module (the log written to data/digikit/debug on the card, kept across restarts); `on` / `off` switch it;
@@ -46,7 +48,7 @@ import { ProcessTransport } from '../../packages/dk-session/src/process-transpor
 import { Sample, prepareUpload } from '../../packages/dk-session/src/dksample.ts';
 import { openSamples, skipVerifyAfterBulk } from '../../packages/dk-session/src/samples.ts';
 import { createNodeHost } from '../../packages/workbench-core/src/node/node-host.ts';
-import { profCommand } from './wb_prof.mjs';
+import { profCommand, profSpans } from './wb_prof.mjs';
 
 const root = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '../..');
 // the patchkit rule (tools/emulator/native_target.py): a worktree builds into its own target dir; no generated core is the "nogen" key
@@ -54,7 +56,7 @@ const targetRoot = existsSync(path.join(root, '.git', 'HEAD'))
   ? path.join(root, 'out/native/target')
   : path.join(root, 'dist/native-target');
 const usage =
-  'usage: node tools/devtools/wb.mjs [--port SUB] [--bin PATH] ports | info | samples ls [FOLDER] | samples put FILE... [--folder F] | samples rm FOLDER... | store ls [PREFIX] | store put LOCAL REMOTE | store rm REMOTE | log card [on|off|get [--out DIR]]';
+  'usage: node tools/devtools/wb.mjs [--port SUB] [--bin PATH] ports | info | samples ls [FOLDER] | samples put FILE... [--folder F] | samples rm FOLDER... | store ls [PREFIX] | store put LOCAL REMOTE | store rm REMOTE | log card [on|off|get [--out DIR]] | profile spans [--start|--stop|--reset] [--out FILE]';
 
 // options anywhere on the line; the rest are the command words
 const args = process.argv.slice(2);
@@ -105,6 +107,7 @@ for (let i = 0; i < args.length; i++) {
     else opts[key] = args[++i];
   } else if (a === '--ret') opts.ret = true;
   else if (a === '--since-boot') opts['since-boot'] = true;
+  else if (a === '--start' || a === '--stop' || a === '--reset') opts.op = a.slice(2);
   else if (a.startsWith('--')) fail(`unknown option ${a}\n${usage}`);
   else words.push(a);
 }
@@ -149,7 +152,8 @@ async function samplesKind(info) {
   }
 }
 
-if (!OFFLINE.includes(words[0]) && !existsSync(opts.bin))
+const SPANS = words[0] === 'profile' && words[1] === 'spans';
+if ((!OFFLINE.includes(words[0]) || SPANS) && !existsSync(opts.bin))
   fail(`no dkmidi binary at ${opts.bin} (run: mise run dkmidi:build)`);
 
 /** Start the bridge on the port and open a session on it. */
@@ -334,7 +338,9 @@ async function cardLogGet(session, outDir) {
 
 const [cmd, sub, ...rest] = words;
 let status = 0;
-if (OFFLINE.includes(cmd)) {
+if (SPANS) {
+  await withSession((session) => profSpans({ opts, session, fail }));
+} else if (OFFLINE.includes(cmd)) {
   status = await profCommand({ cmd, sub, rest, opts, root, fail });
 } else if (cmd === 'ports') {
   try {

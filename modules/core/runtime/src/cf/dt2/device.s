@@ -27,6 +27,12 @@ dkrt_dsp_voices:
     .globl dkrt_peek_n
 dkrt_peek_n:
     .long PEEK_N
+    .globl dkrt_span_clock
+dkrt_span_clock:
+    .long SPAN_CLOCK
+    .globl dkrt_span_clock_hz
+dkrt_span_clock_hz:
+    .long SPAN_CLOCK_HZ
     .globl dkrt_sound_words
 dkrt_sound_words:
     .long FX_SOUND_WORDS

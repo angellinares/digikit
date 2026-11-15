@@ -14,6 +14,9 @@ extern "C" {
     /// Per-device data from the device file (`[digikit] peek`), defined by `src/cf/<dev>/device.s`: the number of ranges and `lo, hi` pairs.
     static dkrt_peek_n: u32;
     static dkrt_peek_ranges: [u32; 8];
+    /// The profiling clock of the device file (`[digikit] span_clock`, `span_clock_hz`): its address (0 when absent) and frequency.
+    static dkrt_span_clock: u32;
+    static dkrt_span_clock_hz: u32;
 }
 
 /// Import `dk_debug_speed_flags`: the run-time switches of the speed levers (`speed::update`).
@@ -30,6 +33,15 @@ pub(crate) unsafe extern "C" fn debug_peek(i: u32, out: *mut u32) -> u32 {
         *out.add(1) = read_volatile(t.add(2 * i as usize + 1));
     }
     n
+}
+
+/// Import `dk_debug_span_clock`: the address of the profiling clock (0 when the device has none); its frequency in Hz into `out_hz` when that is not null.
+pub(crate) unsafe extern "C" fn debug_span_clock(out_hz: *mut u32) -> u32 {
+    let addr = read_volatile(addr_of!(dkrt_span_clock));
+    if addr != 0 && !out_hz.is_null() {
+        *out_hz = read_volatile(addr_of!(dkrt_span_clock_hz));
+    }
+    addr
 }
 
 /// Import `dk_debug_track_type`: the machine type of a track of the active kit, from the firmware's own accessors (read-only); -1 past track 15 or when the

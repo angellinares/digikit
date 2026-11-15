@@ -100,6 +100,19 @@ pub struct Loss {
     pub dropped: Option<u64>,
 }
 
+/// A runtime span: `calls` runs of one owner (a module, a phase or a poll) that took `sum_ticks` in all, the longest `max_ticks`.
+#[derive(Clone, Debug, Deserialize, Serialize, PartialEq, Eq)]
+pub struct Span {
+    /// The runtime owner id: a module record, `0x100 | phase`, `0x200 | poll`.
+    pub owner: u32,
+    /// `module`, `phase` or `poll`.
+    pub kind: String,
+    pub name: String,
+    pub calls: u64,
+    pub sum_ticks: u64,
+    pub max_ticks: u64,
+}
+
 #[derive(Clone, Debug, Deserialize, Serialize, PartialEq)]
 pub struct Profile {
     pub schema: String,
@@ -115,6 +128,11 @@ pub struct Profile {
     /// What measuring cost, as metrics (a value or N/A with a reason).
     #[serde(default)]
     pub overhead: Vec<Metric>,
+    /// Runtime span counters (a producer on the device); ticks run at `span_clock_hz`.
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub spans: Vec<Span>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub span_clock_hz: Option<u64>,
 }
 
 impl Profile {
@@ -148,6 +166,26 @@ impl Profile {
                 }
             }
         }
+        if !self.spans.is_empty() && !matches!(self.span_clock_hz, Some(hz) if hz > 0) {
+            return Err("profile: spans need span_clock_hz greater than zero".into());
+        }
+        for s in &self.spans {
+            if !matches!(s.kind.as_str(), "module" | "phase" | "poll") {
+                return Err(format!(
+                    "profile: span {} has kind {:?}, expected module, phase or poll",
+                    s.name, s.kind
+                ));
+            }
+            if s.max_ticks > s.sum_ticks {
+                return Err(format!(
+                    "profile: span {} has max_ticks above sum_ticks",
+                    s.name
+                ));
+            }
+            if s.calls == 0 && s.sum_ticks != 0 {
+                return Err(format!("profile: span {} has ticks but no calls", s.name));
+            }
+        }
         Ok(())
     }
 
@@ -155,5 +193,54 @@ impl Profile {
         let mut s = serde_json::to_string(self).expect("profile serialises");
         s.push('\n');
         s
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    const OLD: &str = r#"{"schema":"dk.profile/1","run":{"id":"t","target":"dn2"},"clock":{"source":"s","unit":"insn","sampling":"x"},"raw":[],"metrics":[],"markers":[],"loss":[],"overhead":[]}"#;
+
+    fn span(kind: &str, calls: u64, sum: u64, max: u64) -> Span {
+        Span {
+            owner: 0x100,
+            kind: kind.into(),
+            name: "early".into(),
+            calls,
+            sum_ticks: sum,
+            max_ticks: max,
+        }
+    }
+
+    fn with(spans: Vec<Span>, hz: Option<u64>) -> Profile {
+        let mut p = Profile::parse(OLD).unwrap();
+        p.spans = spans;
+        p.span_clock_hz = hz;
+        p
+    }
+
+    #[test]
+    fn spans_round_trip() {
+        let p = with(vec![span("phase", 4, 100, 40)], Some(1_000_000));
+        let back = Profile::parse(&p.to_json()).unwrap();
+        assert_eq!(back, p);
+    }
+
+    #[test]
+    fn old_file_without_spans_is_unchanged() {
+        let p = Profile::parse(OLD).unwrap();
+        assert!(p.spans.is_empty() && p.span_clock_hz.is_none());
+        assert_eq!(p.to_json().trim_end(), OLD);
+    }
+
+    #[test]
+    fn check_rejects_bad_spans() {
+        assert!(with(vec![span("bogus", 1, 2, 2)], Some(1)).check().is_err());
+        assert!(with(vec![span("poll", 1, 2, 2)], None).check().is_err());
+        assert!(with(vec![span("poll", 1, 2, 2)], Some(0)).check().is_err());
+        assert!(with(vec![span("poll", 2, 2, 3)], Some(1)).check().is_err());
+        assert!(with(vec![span("poll", 0, 2, 2)], Some(1)).check().is_err());
+        assert!(with(vec![span("poll", 0, 0, 0)], Some(1)).check().is_ok());
     }
 }

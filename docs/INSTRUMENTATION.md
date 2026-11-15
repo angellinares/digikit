@@ -470,8 +470,9 @@ a channel by calling `dk_sink_set(channel, sink)` (an import, runtime 0.7.1). Th
 
 - `log`: the sink gets `void sink(const dk_log_ev *e)` for every event the runtime logs, before any filter. The old `dk_debug_log_sink_set` still works and
   is independent; the debug module may move to this channel later (it is not changed now).
-- `span`: the sink gets `void sink(const dk_span *s)`, a record `{owner, cycles}`. The runtime has the channel and the emit function (`dlog::span_emit`); no
-  producer calls it yet (`DK_SPAN` is sdk.md section 9).
+- `span`: the sink gets `void sink(const dk_span *s)`, a record `{owner, cycles}`. The runtime emits it from its ColdFire call sites (module ticks, service phases, polls), and the debug module owns the channel
+  (clock: the stock DTIM0 counter). The host reads the debug module's span table with the debug commands PROFILE_STATE (0x1e) and PROFILE_READ (0x1f), next to
+  LOG, PEEK and LOGCFG.
 - A sink runs in the producer's task with interrupts masked: short, no waiting, no logging, no imports.
 - One owner per channel. `dk_sink_set` returns 0, `DK_E_BUSY` (another module owns it, nothing changes), `DK_E_RANGE` (no such channel) or `DK_E_CONTEXT`
   (called outside module code). Setting 0 clears the channel (only its owner may).
@@ -564,6 +565,18 @@ cargo build --release -p digi-control --bin digi-emud --features cf-profile   # 
 target/release/digi-emud out/try/rt.syx --free     # from the repository root: its socket is out/native/run/current.json
 node tools/devtools/wb.mjs profile record --seconds 4 --image out/try/rt.syx --out out/try/real.profile.json
 # out/try/real.profile.json: 371 counters over 4 s
+```
+
+`wb profile spans [--start|--stop|--reset] [--out FILE]` reads the runtime span counters of a device (or an emulator with a MIDI port) over the dk-session link: the flag sets the counting first (`--start` resets the counters, then starts), then it reads the spans (modules, the phases `early`, `late`, `last`, and polls) and prints one row each. With `--out` it writes a `dk.profile/1` with `spans` (`owner`, `kind`, `name`, `calls`, `sum_ticks`, `max_ticks`) and `span_clock_hz`; `raw` stays empty and `wb profile report` ignores the spans. It takes `--port` and `--bin` like the other device commands. The numbers below are an example:
+
+```sh
+node tools/devtools/wb.mjs profile spans --start                    # start counting
+node tools/devtools/wb.mjs profile spans --out out/try/spans.profile.json
+# running, 132000000 Hz
+# name         calls  total ms  mean us  max us
+# early        812    41.200    50.7     91.0
+# digikit/pluck 812   120.500   148.4    210.0
+# out/try/spans.profile.json: 2 spans
 ```
 
 `cf.profile` keeps the 400 heaviest rows of its cumulative tables, which the artifact records under `loss`.

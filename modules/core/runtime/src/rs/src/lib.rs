@@ -124,6 +124,8 @@ mod test_lock;
 #[cfg(test)]
 mod fake_platform;
 #[cfg(test)]
+mod spans_tests;
+#[cfg(test)]
 mod fake_storage;
 
 

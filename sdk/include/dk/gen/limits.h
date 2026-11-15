@@ -18,5 +18,6 @@
 #define DK_TABLE_VERSION 1
 #define DK_MAX_VOICES 8
 #define DK_MAX_FX 4
+#define DK_MAX_MODULES 8
 
 #endif /* DK_GEN_LIMITS_H */

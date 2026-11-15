@@ -1,6 +1,6 @@
 [module]
 id = "core/runtime"
-version = "0.8.0"
+version = "0.8.1"
 name = "digikit runtime"
 category = "core"
 role = "runtime"
@@ -52,7 +52,7 @@ uses = ["CONSOLE_UART_BASE", "DDR_UNCACHED_ALIAS"]
 [[gen]]
 kind = "gas"
 path = "build/gen/device-{dev}.inc"
-uses = ["DEVICE_ID", "DEVICE_NAME_WORD", "SAMPLES_IN_STORE", "SAMPLE_PATH_MAX", "DSP_HEADROOM", "DSP_VOICES", "STORE_FIRST", "STORE_SECTORS", "PEEK_N", "FX_SOUND_WORDS", "PEEK_LO_*", "PEEK_HI_*"]
+uses = ["DEVICE_ID", "DEVICE_NAME_WORD", "SAMPLES_IN_STORE", "SAMPLE_PATH_MAX", "DSP_HEADROOM", "DSP_VOICES", "STORE_FIRST", "STORE_SECTORS", "PEEK_N", "SPAN_CLOCK", "SPAN_CLOCK_HZ", "FX_SOUND_WORDS", "PEEK_LO_*", "PEEK_HI_*"]
 
 # The cache flush, interrupt mask, soft reset and the page hook trampolines (assembly); the UI-loop, boot and MIDI hooks are in core/platform.
 [[object]]

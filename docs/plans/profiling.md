@@ -172,14 +172,15 @@ TCOUNT in `UNSAFE_READ_NAMES`. Per-function detail comes from PC counts plus the
   (`owner_of_row`). The slot mechanism is runtime-and-services section 5.11; the dispatcher owner is its section 6.1.
 - Do not take the probe's `dl_set_tick_cb` slot or the debug sink.
 
-### 7.2 `profile.dks`
+### 7.2 Spans in the debug module
 
-A loadable service, loaded only when a developer asks. It fills the span slot, aggregates per owner per block in a fixed table (at most
-`SEL_MAX` plus provider rows), and answers host polls through the debug transport. Not installed means nothing is paid except the flag tests.
+The runtime emits spans from its ColdFire call sites (module ticks, service phases, polls) to a sink owned by the debug module. The clock is the stock
+DTIM0 counter, read only. The debug module aggregates on the device per owner: calls, a 64-bit sum and the maximum. The host reads the table with
+PROFILE_STATE (0x1e: get, start, stop, reset) and PROFILE_READ (0x1f). Not loaded means nothing is paid except the flag tests. The result is the
+additive `spans` field of `dk.profile/1`, and `wb profile spans` runs the capture.
 
 DSP side: the SHARC dispatchers write `(owner, cycles)` into a stats window registered through dsp-link (window registration is the dsp-link
-target in runtime-and-services section 6). `profile.dks` reads the window from the ColdFire side. Whether `dkrt_peek_range` or a new command is
-the host transport is open [O].
+target in runtime-and-services section 6). The debug module reads the window from the ColdFire side. The DSP transport is open [O].
 
 The debug ring (512 events, at most 27 per read, overwrites old events) is for markers, not for high-rate traces. Aggregate on the device.
 
@@ -304,7 +305,7 @@ Item numbers are ids, not an order. The order lives in [sdk-runtime-roadmap.md](
 | 5 | Host profiles named from sharcdb, first ranking | A | 1-2 days | Nothing; in a lane |
 | 6 | Workbench: names in the Log pane (emulator and device, one dk-session/debug-module PEEK path; hardware proof later), per-module rows in the Memory panel. **Done** (docs/ADDRMAP.md "Workbench"); the Profile pane moved to item 8 | B | 2-3 days | 2 |
 | 7 | Clock audit | B | 1 day | Nothing (static) |
-| 8 | `DK_SPAN`, sink slot, `profile.dks`, DSP stats window, Profile pane (emulator `cf.profile` and device, over the same dk-session path as the Log names) | B | 3-4 days | runtime-and-services sink slots, dsp-link windows, the owner of DSP dispatch |
+| 8 | Spans from the runtime's ColdFire call sites to a sink owned by the debug module; clock = stock DTIM0 counter (read only); aggregation on the device per owner (calls, 64-bit sum, max); PROFILE_STATE/PROFILE_READ (0x1e, 0x1f); additive `spans` in dk.profile/1; `wb profile spans`; DSP stats window, Profile pane (emulator `cf.profile` and device, over the same dk-session path as the Log names) | B | 3-4 days | runtime-and-services sink slots, dsp-link windows, the owner of DSP dispatch |
 | 9 | Device calibration | B | 1 day | 8; the device transport proven on hardware |
 | 10 | ColdFire PC sampling on the device | B | 2 days | 9 |
 

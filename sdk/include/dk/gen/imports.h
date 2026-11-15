@@ -58,6 +58,9 @@ void dk_log_event(uint32_t kind, uint32_t flags, const uint32_t *a);
 /* Set (or, with 0, clear) the sink of a runtime channel for the calling module: DK_SINK_LOG (0) gets `void sink(const dk_log_ev *e)` for every event the runtime logs, DK_SINK_SPAN (1) gets `void sink(const dk_span *s)`, an (owner, cycles) record. A sink runs in the producer's task with interrupts masked: short, no waiting, no logging. A channel has one owner; the runtime clears it after the owner's fini. Returns 0, DK_E_RANGE (no such channel), DK_E_CONTEXT (no module code is running) or DK_E_BUSY (another module owns the channel). See <dk/core/sink.h>. Context: any. Since runtime 0.7.1. */
 int32_t dk_sink_set(uint32_t channel, uint8_t *sink);
 
+/* Take the span channel like `dk_sink_set(DK_SINK_SPAN, emit)` and also store the clock the runtime reads for the spans: `u32 clock(void)`, a free-running counter that wraps. The runtime reads the clock before and after a call it measures and passes the difference to `emit` as the cycles of the span. (0, 0) clears both. Returns 0, DK_E_CONTEXT (no module code is running) or DK_E_BUSY (another module owns the channel). With no sink or no clock the runtime reads no clock. See <dk/core/sink.h>. Context: any. Since runtime 0.8.1. */
+int32_t dk_span_sink_set(uint8_t *emit, uint8_t *clock);
+
 /* The 1500 Hz block clock (wraps), for a module that wants to measure time; 0 when the image has no counter. See <dk/core/time.h>. Context: any. Since runtime 0.7.0. */
 uint32_t dk_time_blocks(void);
 
@@ -168,6 +171,9 @@ int32_t dk_service_declare_resource(dk_module_ctx *ctx, uint32_t resource, uint3
 
 /* The RAM ranges `[lo, hi)` of the device file's `[digikit] peek`: returns how many there are, and for `i` below that writes `lo, hi` to `out[0..2]`. For a module that implements PEEK. See <dk/platform/debug.h>. Context: any. Since runtime 0.7.0. */
 uint32_t dk_debug_peek(uint32_t i, uint32_t *out);
+
+/* The profiling clock of the device file (`[digikit] span_clock`): returns the address of a read-only 32-bit free-running counter (0 when the device has none) and, when `out_hz` is not null and there is a clock, writes its frequency in Hz to `*out_hz`. The counter is never written. See <dk/platform/debug.h>. Context: any. Since runtime 0.8.1. */
+uint32_t dk_debug_span_clock(uint32_t *out_hz);
 
 /* The machine type of track 0 to 15 of the active kit, read from the firmware (read-only); -1 for a track the firmware has no type for, -2 when there is no project yet. Context: ui. Since runtime 0.7.0. */
 int32_t dk_debug_track_type(uint32_t track);
