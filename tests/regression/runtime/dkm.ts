@@ -18,6 +18,29 @@ export async function needsOf(files: string[]): Promise<Record<string, number>[]
   });
 }
 
+/** `record_bytes` of a .dkm: the RES_RECORD_BYTES item (resource 4) of the USES entry (tag 2) in its tagged keys table (packages/dkneeds/src/keys.rs); 0 when absent. */
+export function recordBytesOf(bytes: Buffer): number {
+  const RES_RECORD_BYTES = 4;
+  const TAG_USES = 2;
+  const keysOff = bytes.readUInt32BE(0x90);
+  const keysSize = bytes.readUInt32BE(0x94);
+  if (keysSize === 0) return 0;
+  const entries = bytes.readUInt16BE(keysOff + 6);
+  let at = keysOff + 8;
+  for (let i = 0; i < entries; i++) {
+    const tag = bytes.readUInt16BE(at);
+    const count = bytes.readUInt16BE(at + 2);
+    const len = bytes.readUInt32BE(at + 4);
+    if (tag === TAG_USES) {
+      for (let k = 0; k < count; k++)
+        if (bytes.readUInt32BE(at + 8 + 8 * k) === RES_RECORD_BYTES) return bytes.readUInt32BE(at + 12 + 8 * k);
+      return 0;
+    }
+    at += 8 + len;
+  }
+  return 0;
+}
+
 /** The fit rule (`patchkit fit --json -`) for NEEDS against CAPS; EMPTY makes CAPS the capacity of a runtime that loaded nothing. */
 export async function fit(caps: unknown, needs: Record<string, number>[], empty = false) {
   const { stdout } = await patchkit(['fit', '--json', '-'], { input: JSON.stringify({ caps, needs, empty }) });
