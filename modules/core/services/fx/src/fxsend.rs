@@ -20,10 +20,10 @@
 //! Everything runs in the UI task (the settings store is not for other tasks).
 use crate::dsp as fxdsp;
 use crate::fxpage;
+use core::ptr::addr_of_mut;
 use dkrt_abi::core_api::StaticCore;
 use dkrt_abi::dsp;
 use dkrt_abi::mem::{cstr_len, iw, rd, rd16, wr, wr16};
-use core::ptr::addr_of_mut;
 use dkrt_sdk::*;
 
 /// The routes of an effect (`dkrt_sdk::DkrtFx`), and the bits of the flags word of its record (docs/design/digikit-dkm.md).
@@ -129,7 +129,14 @@ fn routes_of(flags: u32) -> (u8, u8) {
     if flags & FXF_SEND != 0 {
         allow |= ROUTE_SEND;
     }
-    (allow, if flags & FXF_DEFAULT_SEND != 0 { ROUTE_SEND } else { ROUTE_MASTER })
+    (
+        allow,
+        if flags & FXF_DEFAULT_SEND != 0 {
+            ROUTE_SEND
+        } else {
+            ROUTE_MASTER
+        },
+    )
 }
 
 /// The route effect row `k` has in the settings, as `ROUTE_*`: the stored one when the effect allows it, else its default. UI task.
@@ -139,7 +146,13 @@ unsafe fn saved_route<C: StaticCore>(k: usize) -> u8 {
     let kn = key_of(&mut key, b"fx/route/", &s.id[k], s.idlen[k] as usize);
     let mut v = [0u8; 4];
     if C::CORE.settings_get(&key[..kn], &mut v) == 1 {
-        let r = if v[0] == 1 { ROUTE_SEND } else if v[0] == 0 { ROUTE_MASTER } else { 0 };
+        let r = if v[0] == 1 {
+            ROUTE_SEND
+        } else if v[0] == 0 {
+            ROUTE_MASTER
+        } else {
+            0
+        };
         if r != 0 && s.allow[k] & r != 0 {
             return r;
         }
@@ -158,7 +171,11 @@ pub unsafe fn fx_entry<C: StaticCore>(index: u32, out: &mut DkrtFx) -> i32 {
                 out.row = k as u32;
                 out.allowed = s.allow[k] as u32;
                 out.dflt = s.dflt[k] as u32;
-                out.running = if s.route[k] != 0 { ROUTE_SEND as u32 } else { ROUTE_MASTER as u32 };
+                out.running = if s.route[k] != 0 {
+                    ROUTE_SEND as u32
+                } else {
+                    ROUTE_MASTER as u32
+                };
                 out.saved = saved_route::<C>(k) as u32;
                 out.tab = [0; 8];
                 fxpage::tab_of(k, &mut out.tab);
@@ -409,7 +426,9 @@ pub unsafe fn tick<C: StaticCore>() {
                         C::CORE.link_set(slot, want[j]);
                         s.want[k][j] = want[j];
                     }
-                    if s.dsp[k][j] != s.want[k][j] && C::CORE.link_confirmed(slot) == Some(s.want[k][j]) {
+                    if s.dsp[k][j] != s.want[k][j]
+                        && C::CORE.link_confirmed(slot) == Some(s.want[k][j])
+                    {
                         s.dsp[k][j] = s.want[k][j];
                         s.sent += 1;
                     }

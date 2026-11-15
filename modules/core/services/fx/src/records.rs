@@ -94,7 +94,12 @@ impl<C: StaticCore> Service for Fx<C> {
         }
     }
 
-    unsafe fn declare_fx(rec: usize, ordinal: u32, flags: Option<u32>, par: Option<[u32; 8]>) -> Option<bool> {
+    unsafe fn declare_fx(
+        rec: usize,
+        ordinal: u32,
+        flags: Option<u32>,
+        par: Option<[u32; 8]>,
+    ) -> Option<bool> {
         Some(crate::dsp::fx_set_declared::<C>(rec, ordinal, flags, par))
     }
 

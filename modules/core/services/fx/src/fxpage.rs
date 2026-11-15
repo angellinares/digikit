@@ -23,9 +23,9 @@
 //! Everything runs in the UI task. No float arithmetic runs in an interrupt; the arithmetic is the compiler's soft float.
 use crate::dsp as fxdsp;
 use crate::fxsend;
+use core::ptr::{addr_of_mut, read_volatile, write_volatile};
 use dkrt_abi::core_api::{CoreApi, StaticCore};
 use dkrt_abi::mem::{cstr_len, iw, rd, rd16, rd32, wr, wr16};
-use core::ptr::{addr_of_mut, read_volatile, write_volatile};
 use dkrt_sdk::*;
 
 pub use dkrt_sdk::records::{KIND_EFFECT, LEN_EFFECT};
@@ -122,7 +122,9 @@ pub(crate) unsafe fn info<C: StaticCore>() -> *const u32 {
         return core::ptr::null();
     }
     let p = a as *const u32;
-    if read_volatile(p.add(w::MAGIC)) != INFO_MAGIC || read_volatile(p.add(w::DEVICE)) != C::CORE.device_id() {
+    if read_volatile(p.add(w::MAGIC)) != INFO_MAGIC
+        || read_volatile(p.add(w::DEVICE)) != C::CORE.device_id()
+    {
         return core::ptr::null();
     }
     p
@@ -187,7 +189,11 @@ pub unsafe fn check_record<C: StaticCore>(b: *const u8) -> i32 {
         let k = b.add(KNOB_AT + j * KNOB_REC);
         if j < n {
             let (pos, disp) = (rd32(k), rd32(k.add(4)));
-            let (lo, hi, d) = (f32::from_bits(rd32(k.add(8))), f32::from_bits(rd32(k.add(12))), f32::from_bits(rd32(k.add(16))));
+            let (lo, hi, d) = (
+                f32::from_bits(rd32(k.add(8))),
+                f32::from_bits(rd32(k.add(12))),
+                f32::from_bits(rd32(k.add(16))),
+            );
             if pos >= 8 || seen & (1 << pos) != 0 || disp > 1 {
                 return E_FORMAT;
             }
@@ -301,7 +307,10 @@ pub unsafe fn apply<C: StaticCore>(owner: u8, b: *const u8) -> i32 {
     let Some(k) = fxdsp::fx_row_of::<C>(owner, rd32(b)) else {
         return E_FORMAT; // no such effect in the module's DSP section
     };
-    if k >= iw(inf, w::PAGES) as usize || k >= MAX_FX || (iw(inf, w::VALUES_N) as usize) < (k + 1) * WORDS {
+    if k >= iw(inf, w::PAGES) as usize
+        || k >= MAX_FX
+        || (iw(inf, w::VALUES_N) as usize) < (k + 1) * WORDS
+    {
         return E_PAGE_FULL;
     }
     if s.owner[k] != 0 {
@@ -322,11 +331,18 @@ pub unsafe fn apply<C: StaticCore>(owner: u8, b: *const u8) -> i32 {
         let wi = k * WORDS + j;
         let (code, tpl, def_n) = if j < n {
             let kr = b.add(KNOB_AT + j * KNOB_REC);
-            let (lo, hi) = (f32::from_bits(rd32(kr.add(8))), f32::from_bits(rd32(kr.add(12))));
+            let (lo, hi) = (
+                f32::from_bits(rd32(kr.add(8))),
+                f32::from_bits(rd32(kr.add(12))),
+            );
             copy_text(s.name[wi].as_mut_ptr(), kr.add(20), TEXT);
             copy_text(s.short[wi].as_mut_ptr(), kr.add(20 + TEXT), 8);
             let pos = rd32(kr) as usize;
-            let tpl = if rd32(kr.add(4)) == 1 { iw(inf, w::TPL_BIPOLAR) } else { iw(inf, w::TPL_PERCENT) };
+            let tpl = if rd32(kr.add(4)) == 1 {
+                iw(inf, w::TPL_BIPOLAR)
+            } else {
+                iw(inf, w::TPL_PERCENT)
+            };
             let d = raw_of(f32::from_bits(rd32(kr.add(16))), lo, hi);
             s.min[k][j] = lo.to_bits();
             s.span[k][j] = (hi - lo).to_bits();
@@ -336,7 +352,11 @@ pub unsafe fn apply<C: StaticCore>(owner: u8, b: *const u8) -> i32 {
             copy_text(s.name[wi].as_mut_ptr(), b"Mix\0".as_ptr(), 4);
             copy_text(s.short[wi].as_mut_ptr(), b"MIX\0".as_ptr(), 4);
             codes[8] = first + j as u32;
-            (first + j as u32, iw(inf, w::TPL_MIX), rd32(b.add(4)) as i32 * 256)
+            (
+                first + j as u32,
+                iw(inf, w::TPL_MIX),
+                rd32(b.add(4)) as i32 * 256,
+            )
         } else {
             j += 1;
             continue; // a word without a knob
@@ -426,7 +446,10 @@ unsafe fn publish_row(inf: *const u32, k: usize, id: u32) {
     }
     let mut j = 0;
     while j < WORDS {
-        write_volatile((defs + 2 * (k * WORDS + j) as u32) as *mut u16, s.def[k][j] as u16);
+        write_volatile(
+            (defs + 2 * (k * WORDS + j) as u32) as *mut u16,
+            s.def[k][j] as u16,
+        );
         j += 1;
     }
     if id != 0 {
@@ -438,7 +461,10 @@ unsafe fn publish_row(inf: *const u32, k: usize, id: u32) {
 /// Put the mark of `core/fxpages` into the kit array `arr`: its effect rows hold values.
 #[inline]
 unsafe fn mark(inf: *const u32, arr: u32) {
-    wr16(arr + 2 * iw(inf, w::MARK_INDEX), iw(inf, w::MARK_VALUE) as i32);
+    wr16(
+        arr + 2 * iw(inf, w::MARK_INDEX),
+        iw(inf, w::MARK_VALUE) as i32,
+    );
 }
 
 /// The defaults of effect row `k` into the kit array `arr`.
@@ -458,7 +484,8 @@ unsafe fn seed_row(inf: *const u32, k: usize, arr: u32) {
 /// addresses (its sound arrays have an odd stride), so the array's halfwords are read and written a byte at a time.
 pub(crate) unsafe fn kit(inf: *const u32) -> u32 {
     let k = rd(iw(inf, w::KIT_PTR));
-    let ddr = dkrt_sdk::device::DDR_CACHED_BASE..dkrt_sdk::device::DDR_CACHED_BASE + dkrt_sdk::device::DDR_BYTES;
+    let ddr = dkrt_sdk::device::DDR_CACHED_BASE
+        ..dkrt_sdk::device::DDR_CACHED_BASE + dkrt_sdk::device::DDR_BYTES;
     if !ddr.contains(&k) {
         return 0;
     }
@@ -529,7 +556,13 @@ unsafe fn values<C: StaticCore>(inf: *const u32) {
             while j < WORDS {
                 if has_word(s, k, j) {
                     let raw = rd16(arr + 2 * value_index(inf, k, j));
-                    let n = if raw < 0 { 0 } else if raw > RAW_MAX { RAW_MAX } else { raw };
+                    let n = if raw < 0 {
+                        0
+                    } else if raw > RAW_MAX {
+                        RAW_MAX
+                    } else {
+                        raw
+                    };
                     if n != s.cur[k][j] {
                         s.cur[k][j] = n;
                         s.changes += 1;
@@ -547,9 +580,27 @@ unsafe fn values<C: StaticCore>(inf: *const u32) {
 }
 
 /// The parameter row of word `j` of effect row `k` (the code is the row's), and the record's default as the value in force, in the kit and in the DSP row.
-unsafe fn write_knob_row<C: CoreApi>(c: &C, s: &mut FxpState, k: usize, j: usize, code: u32, tpl: u32, idx: u32, def_n: i32) {
+unsafe fn write_knob_row<C: CoreApi>(
+    c: &C,
+    s: &mut FxpState,
+    k: usize,
+    j: usize,
+    code: u32,
+    tpl: u32,
+    idx: u32,
+    def_n: i32,
+) {
     let wi = k * WORDS + j;
-    c.write_fx_param_row(code, tpl, idx, 0, RAW_MAX as u32, def_n as u32, s.name[wi].as_ptr() as u32, s.short[wi].as_ptr() as u32);
+    c.write_fx_param_row(
+        code,
+        tpl,
+        idx,
+        0,
+        RAW_MAX as u32,
+        def_n as u32,
+        s.name[wi].as_ptr() as u32,
+        s.short[wi].as_ptr() as u32,
+    );
     s.cur[k][j] = def_n;
     s.def[k][j] = def_n;
     s.dsp[k][j] = def_n; // the DSP row gets the record's defaults (p words) and the mix below
@@ -557,7 +608,13 @@ unsafe fn write_knob_row<C: CoreApi>(c: &C, s: &mut FxpState, k: usize, j: usize
 }
 
 /// The link slot and the DSP word of word `j` of effect row `k` for the raw value `n`: knob j is word 4 + j (a float in [min, max]), MIX is word 13.
-unsafe fn knob_word<C: CoreApi>(c: &C, s: &FxpState, k: usize, j: usize, n: i32) -> Option<(dkrt_abi::link::Slot, u32)> {
+unsafe fn knob_word<C: CoreApi>(
+    c: &C,
+    s: &FxpState,
+    k: usize,
+    j: usize,
+    n: i32,
+) -> Option<(dkrt_abi::link::Slot, u32)> {
     let (word, bits) = if j == WORDS - 1 {
         (dkrt_abi::dsp::FXW_MIX, mix_value(n))
     } else {
@@ -639,16 +696,38 @@ mod tests {
             s.min[2][1] = 0f32.to_bits();
             s.span[2][1] = 1f32.to_bits();
             write_knob_row(&core, &mut s, 2, 1, 120, 7, 33, 0x4000);
-            assert_eq!((s.cur[2][1], s.def[2][1], s.dsp[2][1], s.want[2][1]), (0x4000, 0x4000, 0x4000, 0x4000));
+            assert_eq!(
+                (s.cur[2][1], s.def[2][1], s.dsp[2][1], s.want[2][1]),
+                (0x4000, 0x4000, 0x4000, 0x4000)
+            );
             assert!(set_knob(&core, &mut s, 2, 1, 0x7f00));
             assert_eq!(s.want[2][1], 0x7f00);
             // a knob is word 4 + j of its row, MIX word 13, whatever its place among the knobs; the rows are 24 words apart
             set_knob(&core, &mut s, 3, WORDS - 1, 0x7f00);
         }
         let calls = core.calls();
-        assert_eq!(calls[0], Call::FxRow { code: 120, mirror: 33, def: 0x4000 });
-        assert!(matches!(calls[1], Call::Set { slot: dkrt_abi::link::Slot { win: 2, word: 53 }, .. }));
-        assert!(matches!(calls[2], Call::Set { slot: dkrt_abi::link::Slot { win: 2, word: 85 }, .. }));
+        assert_eq!(
+            calls[0],
+            Call::FxRow {
+                code: 120,
+                mirror: 33,
+                def: 0x4000
+            }
+        );
+        assert!(matches!(
+            calls[1],
+            Call::Set {
+                slot: dkrt_abi::link::Slot { win: 2, word: 53 },
+                ..
+            }
+        ));
+        assert!(matches!(
+            calls[2],
+            Call::Set {
+                slot: dkrt_abi::link::Slot { win: 2, word: 85 },
+                ..
+            }
+        ));
     }
 
     /// The offsets that the device tests read from `DKRT_FXP` (`tests/regression/runtime/fx-pages-ui.ts`).
@@ -680,7 +759,10 @@ mod tests {
             let slot = fxdsp::fx_slot(&core, 2, 5).unwrap();
             let wire = core.link.borrow().t.words();
             assert_eq!(wire.len(), 1);
-            assert_eq!(core.link_confirmed(slot), Some(knob_value(s.min[2][1], s.span[2][1], 0x300)));
+            assert_eq!(
+                core.link_confirmed(slot),
+                Some(knob_value(s.min[2][1], s.span[2][1], 0x300))
+            );
         }
     }
 }

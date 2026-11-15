@@ -1,8 +1,8 @@
 //! Effect-row part of the DSP loader: the chain rows, their owners, one-word writes and the clearing of a module's effect rows.
-use dkrt_abi::core_api::{CoreApi, StaticCore};
-use dkrt_abi::link::{Owner, Sequence, Slot};
 use dkneeds::fx;
+use dkrt_abi::core_api::{CoreApi, StaticCore};
 use dkrt_abi::dsp::*;
+use dkrt_abi::link::{Owner, Sequence, Slot};
 use dkrt_abi::mem::{iw, rd32};
 use dkrt_abi::service::{Claim, RowWrite};
 use dkrt_sdk::*;
@@ -62,7 +62,12 @@ pub unsafe fn fx_row_of<C: StaticCore>(owner: u8, ordinal: u32) -> Option<usize>
 }
 
 /// What `init` declared for effect record `ordinal` of module `rec`: its route flags (`Some`) and the defaults of the words p0 to p7 (`Some`).
-pub unsafe fn fx_set_declared<C: StaticCore>(rec: usize, ordinal: u32, flags: Option<u32>, par: Option<[u32; 8]>) -> bool {
+pub unsafe fn fx_set_declared<C: StaticCore>(
+    rec: usize,
+    ordinal: u32,
+    flags: Option<u32>,
+    par: Option<[u32; 8]>,
+) -> bool {
     match fx_row_of::<C>(rec as u8 + 1, ordinal) {
         Some(k) => {
             let d = C::CORE.dsp();
@@ -115,7 +120,10 @@ pub unsafe fn fx_slot<C: CoreApi>(c: &C, k: usize, w: u32) -> Option<Slot> {
     if inf.is_null() {
         return None;
     }
-    Some(Slot::new(WIN_FX, FX_ROW_WORDS * (iw(inf, F_FIRST) + k as u32) + w))
+    Some(Slot::new(
+        WIN_FX,
+        FX_ROW_WORDS * (iw(inf, F_FIRST) + k as u32) + w,
+    ))
 }
 
 /// Drop the live values of effect row `k` (its module is gone): the link sends nothing more to the row.
@@ -150,7 +158,9 @@ pub(crate) unsafe fn clear_fx_rows<C: StaticCore>(rec: usize) -> bool {
         // Missing info is harmless only when no owned row was published.
         let mut k = 0;
         while k < MAX_FX {
-            if d.fx_owner[k] == rec as u8 + 1 && d.fx_pub[k] != 0 { return false; }
+            if d.fx_owner[k] == rec as u8 + 1 && d.fx_pub[k] != 0 {
+                return false;
+            }
             k += 1;
         }
         return true;
@@ -176,7 +186,9 @@ pub(crate) unsafe fn clear_fx_rows<C: StaticCore>(rec: usize) -> bool {
             seq.push(WIN_FX, at + FXW_WSTART, 0);
             seq.push(WIN_FX, at + FXW_WCOUNT, 0);
             fx_forget(&C::CORE, k); // no live value may reach the row after its clear
-            if !C::CORE.link_run(Owner::Core, &seq) { return false; }
+            if !C::CORE.link_run(Owner::Core, &seq) {
+                return false;
+            }
             d.fx_pub[k] = 0;
         }
         k += 1;
@@ -186,7 +198,8 @@ pub(crate) unsafe fn clear_fx_rows<C: StaticCore>(rec: usize) -> bool {
 
 /// DSP section, effect records: entries and descriptor inside the image, the descriptor says what the record says.
 pub(crate) unsafe fn check_sections<C: StaticCore>(sec: &DspSec) -> i32 {
-    let (s, fx_off, nfx, image_size, image_off) = (sec.s, sec.fx_off, sec.nfx, sec.image_size, sec.image_off);
+    let (s, fx_off, nfx, image_size, image_off) =
+        (sec.s, sec.fx_off, sec.nfx, sec.image_size, sec.image_off);
     let mut i = 0;
     while i < nfx {
         let e = s.add((fx_off + FX_REC * i) as usize);
@@ -301,7 +314,11 @@ pub(crate) unsafe fn release<C: StaticCore>(rec: usize) {
 
 /// The effect-row word to publish at step `*want` of module `rec`: a row takes `FX_STEPS` steps (the 8 parameter words, desc, state,
 /// mix, enabled, the 4 amount words, the route, the pc).
-pub(crate) unsafe fn row_step<C: StaticCore>(rec: usize, want: &mut u32, write: bool) -> Option<RowWrite> {
+pub(crate) unsafe fn row_step<C: StaticCore>(
+    rec: usize,
+    want: &mut u32,
+    write: bool,
+) -> Option<RowWrite> {
     let d = C::CORE.dsp();
     let mut frow = MAX_FX;
     let mut k = 0;
@@ -319,7 +336,14 @@ pub(crate) unsafe fn row_step<C: StaticCore>(rec: usize, want: &mut u32, write: 
         return None;
     }
     if !write {
-        return Some(RowWrite { win: 0, word: 0, value: 0, published: None, last: false, undo: None });
+        return Some(RowWrite {
+            win: 0,
+            word: 0,
+            value: 0,
+            published: None,
+            last: false,
+            undo: None,
+        });
     }
     let want = *want;
     let at = FX_ROW_WORDS * (fxiw::<C>(F_FIRST) + frow as u32);
@@ -334,15 +358,29 @@ pub(crate) unsafe fn row_step<C: StaticCore>(rec: usize, want: &mut u32, write: 
     } else if want == 11 {
         (at + FXW_ENABLED, 1)
     } else if want < FX_STEPS - 2 {
-        (at + FXW_AMT0 + (want - FX_STEP_ROUTE), d.fx_amt[frow][(want - FX_STEP_ROUTE) as usize])
+        (
+            at + FXW_AMT0 + (want - FX_STEP_ROUTE),
+            d.fx_amt[frow][(want - FX_STEP_ROUTE) as usize],
+        )
     } else if want == FX_STEPS - 2 {
         (at + FXW_ROUTE, d.fx_route[frow])
     } else {
         (at + FXW_PC, d.fx_pc[frow])
     };
     // from the amounts on, the amounts, the route or the pc word may be in the DSP: clear them on failure
-    let published = if want >= FX_STEP_ROUTE { Some(&mut d.fx_pub[frow]) } else { None };
+    let published = if want >= FX_STEP_ROUTE {
+        Some(&mut d.fx_pub[frow])
+    } else {
+        None
+    };
     // the pc word makes the row visible: it ends the row, and a failed sequence frees it again
     let last = want == FX_STEPS - 1;
-    Some(RowWrite { win: WIN_FX, word, value, published, last, undo: if last { Some(FX_FREE_PC) } else { None } })
+    Some(RowWrite {
+        win: WIN_FX,
+        word,
+        value,
+        published,
+        last,
+        undo: if last { Some(FX_FREE_PC) } else { None },
+    })
 }

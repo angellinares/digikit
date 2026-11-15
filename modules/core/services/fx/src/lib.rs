@@ -6,7 +6,7 @@
 #![no_std]
 #[cfg(test)]
 extern crate std;
+pub mod dsp;
 pub mod fxpage;
 pub mod fxsend;
-pub mod dsp;
 pub mod records;
