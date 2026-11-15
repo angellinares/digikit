@@ -603,6 +603,35 @@ asked for. With `watch` ranges (pcs) it also returns the stores of instructions 
 (a frame halfword, the trig bit, a release byte). `sharc-rig --serve` keeps the core between lines: the first line is a request, every
 later line is `{"ops": [...]}` and gets one answer line, so a rig runs a case block by block and stops at its first failure.
 
+A call with `"profile": true` also returns `profile`, one `[pc, count]` row per pc it executed, in pc order (the counts add up to `instructions`). Without the option
+nothing is counted and the answer has no `profile` key. `MachineRig` takes `profile: true` and puts the rows in `MachineBlock.profile`. The rig is a producer for `wb profile report`
+([INSTRUMENTATION.md](INSTRUMENTATION.md#profiles)), the profiler of the emulator and the device: `packages/sharc-rig-kit/src/profile.ts` writes the counts as a `dk.profile/1` (`rigProfile`, raw SHARC counters
+per pc, metric `sharc.blocks`, clock unit `instructions`, the load of the module's DSP image) and the labels of the placed objects as a `dk-addrmap` (`rigAddrMap`; module labels relative to its DSP image).
+`tools/devtools/rig_profile.ts` runs one conformance case, adds the counts of its steady blocks (the blocks that are no note-on block), writes both files and the module's `.dkm` to `out/runs/rig-profile/<module>/<device>/`
+and runs `wb profile report` on them with `--analyse`, so the function rows follow the map and the loop rows follow `dksharc`. It needs `mise run wasm:dkprof` once; `--print` shows the command instead. SHARC core only (no emulator), a few seconds:
+
+```sh
+node tools/devtools/rig_profile.ts digikit/shot --device dt2 --case sample/stereo-fwd-oneshot/note60 --top 4
+# run rig:digikit/shot:dt2:sample/stereo-fwd-oneshot/note60 target dt2 clock sharc-rig.insn (instructions)
+# metrics:
+#   sharc.blocks                       299 blocks
+# pc sharc by function (top 4; 944 rows, total 696969):
+#           143819  20.6%      481.0/block  _dk_sample_pcm16s_read_right
+#            73853  10.6%      247.0/block  _dk_gain_ramp_stereo
+#            63687   9.1%      213.0/block  _dv_gcheck
+#            41262   5.9%      138.0/block  _dk_sample_pcm16s_run
+# pc sharc by loop (self; an inner loop is not in its outer one):
+#           181792  26.1%      608.0/block  digikit/shot _dk_sample_pcm16_stereo_linear depth 0 +0x032b..+0x035b count reg R4
+#            66976   9.6%      224.0/block  digikit/shot _dk_gain_ramp_stereo depth 0 +0x001e..+0x0030 count lit 32
+# pc sharc by owner:
+#           356109  51.1%     1191.0/block  digikit/shot
+#           340860  48.9%     1140.0/block  runtime
+```
+
+`--blocks 40,41` adds only those blocks. The function rows follow the assembler's labels (a label inside a loop splits its cost); the loop rows come from the DO loops of the module's code, so a loop is one row.
+`DIGI_RIG_ROOT=PATH` reads the sources, SDK and device files of another checkout (a lane branch) read only; `DIGI_SHARC_RIG` and `DIGI_PATCHKIT` name the binaries when the worktree has no `dist/`.
+The counts are instructions of the generated core: the same numbers as the emulator's `sharc.profile` for the same code, without the firmware around it.
+
 ```sh
 pnpm nx:pilot run sharc-rig:build        # dist/bin/sharc-rig and dist/bytes/sharc-rig.sha256 (shared generated core)
 ```
