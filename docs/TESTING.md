@@ -197,12 +197,25 @@ Tests that lack an input skip with a reason; `pytest -rs` lists them.
 | SHARC database `out/sharcdb/<image>.sqlite` | `uv run python -m tools.sharc_dev.sharcdb build out/sections/*/section_7_BLOB.bin`. |
 | ColdFire dump `out/ghidra/<image>-emac` and cfdb | Needs Ghidra: `tools.coldfire.ghidradump`, then `tools.coldfire.cfdb build`. |
 | Native SHARC library, shared core | `mise run gen:native-lib` (firmware-free); `SHARC_NATIVE_LIB` overrides. `mise run gen:core` builds the generated core. |
-| Module toolchains in `out/tools` | `mise run patch:toolchains` (about 15 min); `uv run python -m tools.patchkit.pk_toolchains status`. |
+| Module toolchains in `out/tools` | `mise run patch:toolchains` (about 15 min); `uv run python -m tools.patchkit.pk_toolchains status`. Selache builds `selas`, `seld` and `seldump` only: `selcc` does not compile at the pinned revision, and only two tests use it (they skip without it). On Apple silicon with an Intel Homebrew in `/usr/local`, the m68k build compiles for x86_64 (`CC`/`CXX` with `-arch x86_64`) so it links the Homebrew libraries; set `CC` and `CXX` yourself to override. |
 | Objects of content modules and fixtures in `out/cache/dko` | Not committed. The Rust tests that scan the repository (`Library::scan_repo`), `module:pack`, the workbench app's library read (it packs the run-time modules of a device in-process), `dk:run`, `dk:dev` and the web gallery build the stale ones on demand (`patchkit build` does it by hand). Without the m68k-elf toolchain the Rust tests that need them print `SKIP` and return. A checkout with an empty `out/` passes after the first build. |
-| Ready inputs | `mise run emu:ready -- dt2` or `-- dn2` (about 2 min). |
+| Ready inputs | `mise run emu:ready -- dt2` or `-- dn2` (about 2 min). Its helpers build against the shared core (`mise run gen:core` first; `SHARC_GEN_DIR` overrides). It writes to the directories in `tools/emulator/ready_inputs.json`; the patchkit harness and the device tests read the same file. `DIGI_PK_READY_<DEV>_<VER>` overrides the directory for the harness and the tests. |
 | Device generated cores `out/native/{dn2,dt2}-audio/gen` (AOT blocks) | `mise run perf:aot -- dn2` (about 4 min, then about 6 min for the first coupled build against it) or `-- dt2 --card-image IMG`; from the ready inputs, the SHARC database is built when missing. A DN2 core made otherwise (`sharc_dn2_aot`, from a capture) is kept: the tool refuses to overwrite it. Regenerate after a `CORE_FINGERPRINT` change. |
 | Captures `out/captures/*.dt2cap` | Not reproducible from the repository; those tests stay skipped. |
 | Opt-in switches | `LIVE_AUDIO_DEVICE_TESTS=1` opens a real audio device; `--slow` runs long firmware runs. |
+
+On a fresh clone, prepare the inputs in this order (DN2 shown; DT2 is the same with `dt2` and its `.syx`):
+
+```sh
+mise run patch:toolchains            # module compilers (about 15 min)
+mise run gen:core                    # shared generated core
+mise run emu:ready -- dn2            # ready inputs, built against the shared core (about 2 min)
+mise run perf:aot -- dn2             # device generated core (about 4 min)
+pnpm nx:pilot run digi-control:daemons   # daemons for the device tests
+```
+
+A contributor with one device's firmware only can run `mise run module:check ID --device dn2` (or `dt2`): it resolves the
+daemon of that device and runs only its halves of the device tests.
 
 Device suites (`test:stock`, `test:fx*`, the Nx `test-device` and `test-conformance` targets) also need:
 
@@ -774,7 +787,7 @@ content of the repository files in `SOURCE_GLOBS` and `RECIPE_FILES`, every file
 directory (resolved as `pk_emud_pgo` does), the PGO profile, the `tools.rust` pin from `mise.toml`,
 `rustc -vV` of that toolchain, and the build flags. Task definitions in `mise-tasks.toml` are excluded.
 Narrowing this input changes the key once, so existing stored daemons miss on the next request.
-A device without its stock firmware or ready directory is skipped.
+A device without its stock firmware or ready directory is skipped (`SKIP` on stderr); the command fails when no daemon is built.
 
 Each build audits itself: `verify_build` compares the dependency file cargo wrote (`digi-emud.d`) with
 the key. A dependency that the key does not cover (and that is not under the cargo target dir) fails the
@@ -927,12 +940,13 @@ example `main` against a branch with a changed runtime) run with
 `dist/bytes/images/<device>/<id>.syx`; check `dist/bytes/images/<device>/` for the id), copy them
 away, then
 
+    mkdir -p out/ab    # copy main.syx and branch.syx there
     uv run python -m tools.devtools.coupled_ab A=BIN B=BIN \
         --image A=out/ab/main.syx --image B=out/ab/branch.syx -s trig1-taps --pairs 6
 
 Both labels need an image. Each image boots once with `coupled-run --cold-base`
 and keeps its ready pair under `out/runs/coupled_ab/image-*/cold`; the timed
-runs restore it. The PCM check stays on. The matrix requires strict full-state
+runs restore it. PCM must be identical across all runs and both labels, or the run fails. The matrix requires strict full-state
 equivalence and does not support arbitrary firmware patches that intentionally
 change the exported state.
 

@@ -42,7 +42,7 @@ MODEL_FLAGS = ["--model-safe", "--explicit-memory-model", "0", "--chain"]
 RECIPE = "uv run python -m tools.sharc_dev.aot_gen"
 # Cycle 0 runs interpreter-only, so it builds against the firmware-free core (`mise run gen:core`).
 # The tool does not write it: other worktrees build against it.
-SHARED_GEN = ROOT / "out" / "native" / "shared-core" / "gen"
+SHARED_GEN = digi_env.SHARED_GENERATED
 
 
 def check_ours(device: str, gen: pathlib.Path) -> None:

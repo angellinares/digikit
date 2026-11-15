@@ -785,6 +785,25 @@ fn sport_block_returns_the_tx_unit_and_raises_the_group_source() {
     assert_eq!(e.s.mem.read_le(0x2810_0200, 4), 0x0302_0100);
 }
 
+/// `PX = DM(I0, M0)` (Type 3a, normal word) at PC 0. `_load_normal_ureg`
+/// gives no value for a PX load (the halves go to PX1 and PX2), so the
+/// generated core must not unwrap it.
+#[cfg(sharc_gen)]
+#[test]
+fn type3a_load_into_px_runs() {
+    let mut mem = Mem::new();
+    mem.load(0, &[0x3e, 0x50, 0x80, 0x35, 0, 0]);
+    mem.load(0x0003_0000, &[1, 2, 3, 4, 5, 6, 7, 8]);
+    mem.reset();
+    let mut e = crate::Engine::new(mem);
+    e.enable_runtime_decode(direct_short_word);
+    e.s.r[114] = V::c(0); // MODE1
+    e.s.r[16] = V::c(0x0003_0000); // I0
+    e.s.r[32] = V::c(0); // M0
+    assert_eq!(e.step(1), 1, "{:?}", e.halt);
+    assert_eq!(e.s.icount, 1);
+}
+
 /// `JUMP 0` at PC 0 (Type8a, non-delayed, relative 0): a one-instruction
 /// loop that is a fixed point apart from the clocks.
 #[cfg(sharc_gen)]

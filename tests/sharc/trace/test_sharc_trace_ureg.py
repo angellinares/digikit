@@ -62,6 +62,67 @@ class TraceUregComputeTest(TraceRunMixin, unittest.TestCase):
         )
         self.assertEqual(state.uregs[px], T.Const(0))
 
+    def test_b_write_also_loads_i(self):
+        """PRM p.6-25: a write of Bn loads In with the same value; a write of In leaves Bn.
+
+        Issue #201: stock DN2 code restores B7 and then reloads I7. A program that writes I7 before B7 must lose its
+        I7, as on the instrument."""
+        b7, i7, b3, i3 = (T.UREG_CODES[n] for n in ("B7", "I7", "B3", "I3"))
+
+        def move(state, src, dst):
+            return self.run_one(
+                state,
+                insn(
+                    "5b_move",
+                    {
+                        "srcureghigh[4:0]": src >> 2,
+                        "srcureglow[1:1]": (src >> 1) & 1,
+                        "srcureglow[0:0]": src & 1,
+                        "dstureg[6:0]": dst,
+                        "cond[4:0]": 31,
+                    },
+                ),
+            )
+
+        def immediate(state, dst, value):
+            return self.run_one(
+                state,
+                insn(
+                    "17a",
+                    {
+                        "ureg[6:0]": dst,
+                        "data[31:16]": value >> 16,
+                        "data[15:0]": value & 0xFFFF,
+                    },
+                    8,
+                ),
+            )
+
+        def regs(state, *codes):
+            return tuple(state.uregs[c] for c in codes)
+
+        start = {0: T.Const(0x2D08C0), 1: T.Const(0x2D0900)}
+        start |= {i7: T.Const(0x2D0A00), b7: T.Const(0x2D0000)}
+        # I7 then B7: the B7 write overwrites I7.
+        state = move(move(T.State(1, dict(start)), 1, i7), 0, b7)
+        self.assertEqual(regs(state, b7, i7), (T.Const(0x2D08C0), T.Const(0x2D08C0)))
+        # B7 then I7 (the control): I7 keeps its own value and B7 does not change.
+        state = move(move(T.State(1, dict(start)), 0, b7), 1, i7)
+        self.assertEqual(regs(state, b7, i7), (T.Const(0x2D08C0), T.Const(0x2D0900)))
+        # An immediate write of B7 (Type 17).
+        state = immediate(T.State(1, dict(start)), b7, 0x12345)
+        self.assertEqual(regs(state, b7, i7), (T.Const(0x12345), T.Const(0x12345)))
+        # Bd = W2B(Bs) (Type 7d) writes B3, so it loads I3 too; I3 starts different.
+        state = self.run_one(
+            T.State(1, {b7: T.Const(0x2D08C0), i3: T.Const(0x5), b3: T.Const(0x6)}),
+            insn(
+                "7d",
+                {"g": 0, "is[2:2]": 1, "is[1:0]": 3, "idis": 4, "breg": 1, "toby": 1},
+            ),
+        )
+        self.assertNotEqual(state.uregs[b3], T.Const(0x6))
+        self.assertEqual(state.uregs[i3], state.uregs[b3])
+
     def test_ureg_copy_and_compute_rejection(self):
         f = {
             "srcureghigh[4:0]": 4,

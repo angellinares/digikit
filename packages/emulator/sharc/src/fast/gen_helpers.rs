@@ -117,7 +117,17 @@ pub fn h_3a(s: &mut St, f: &[i64; NF]) -> u32 {
                                     v12 = match hload(&*s, v7, 4i128 as u32, false) { Some(x) => x, None => return 1 };
                                     v13 = match hload(&*s, v8, 4i128 as u32, false) { Some(x) => x, None => return 1 };
                                     { let c = (f8) as usize; if c >= 96 { return 1; } ws[nw] = (c as u8, v12); nw += 1; }
+                                    if (f8 >= 64i128) {
+                                        if (f8 <= 79i128) {
+                                            { let c = (((f8 - 64i128) + 16i128)) as usize; if c >= 96 { return 1; } ws[nw] = (c as u8, v12); nw += 1; }
+                                        }
+                                    }
                                     { let c = ((f8 ^ 1i128)) as usize; if c >= 96 { return 1; } ws[nw] = (c as u8, v13); nw += 1; }
+                                    if ((f8 ^ 1i128) >= 64i128) {
+                                        if ((f8 ^ 1i128) <= 79i128) {
+                                            { let c = ((((f8 ^ 1i128) - 64i128) + 16i128)) as usize; if c >= 96 { return 1; } ws[nw] = (c as u8, v13); nw += 1; }
+                                        }
+                                    }
                                     v14 = match hpost(&*s, ((f4 + 8i128) + 16) as u32, v0, v4, 4i128 as i64) { Some(x) => x, None => return 1 };
                                     { let c = ((16i128 + (f4 + 8i128))) as usize; if c >= 96 { return 1; } ws[nw] = (c as u8, v14); nw += 1; }
                                 } else {
@@ -148,7 +158,17 @@ pub fn h_3a(s: &mut St, f: &[i64; NF]) -> u32 {
                                     v18 = match hload(&*s, v16, 4i128 as u32, false) { Some(x) => x, None => return 1 };
                                     v19 = match hload(&*s, v17, 4i128 as u32, false) { Some(x) => x, None => return 1 };
                                     { let c = (f8) as usize; if c >= 96 { return 1; } ws[nw] = (c as u8, v18); nw += 1; }
+                                    if (f8 >= 64i128) {
+                                        if (f8 <= 79i128) {
+                                            { let c = (((f8 - 64i128) + 16i128)) as usize; if c >= 96 { return 1; } ws[nw] = (c as u8, v18); nw += 1; }
+                                        }
+                                    }
                                     { let c = ((f8 ^ 1i128)) as usize; if c >= 96 { return 1; } ws[nw] = (c as u8, v19); nw += 1; }
+                                    if ((f8 ^ 1i128) >= 64i128) {
+                                        if ((f8 ^ 1i128) <= 79i128) {
+                                            { let c = ((((f8 ^ 1i128) - 64i128) + 16i128)) as usize; if c >= 96 { return 1; } ws[nw] = (c as u8, v19); nw += 1; }
+                                        }
+                                    }
                                 } else {
                                     v18 = match hload(&*s, v16, 4i128 as u32, false) { Some(x) => x, None => return 1 };
                                     { let c = (f8) as usize; if c >= 96 { return 1; } ws[nw] = (c as u8, v18); nw += 1; }
@@ -182,7 +202,17 @@ pub fn h_3a(s: &mut St, f: &[i64; NF]) -> u32 {
                                     v27 = match hload(&*s, v24, 4i128 as u32, false) { Some(x) => x, None => return 1 };
                                     v28 = match hload(&*s, v25, 4i128 as u32, false) { Some(x) => x, None => return 1 };
                                     { let c = (f8) as usize; if c >= 96 { return 1; } ws[nw] = (c as u8, v27); nw += 1; }
+                                    if (f8 >= 64i128) {
+                                        if (f8 <= 79i128) {
+                                            { let c = (((f8 - 64i128) + 16i128)) as usize; if c >= 96 { return 1; } ws[nw] = (c as u8, v27); nw += 1; }
+                                        }
+                                    }
                                     { let c = ((f8 ^ 1i128)) as usize; if c >= 96 { return 1; } ws[nw] = (c as u8, v28); nw += 1; }
+                                    if ((f8 ^ 1i128) >= 64i128) {
+                                        if ((f8 ^ 1i128) <= 79i128) {
+                                            { let c = ((((f8 ^ 1i128) - 64i128) + 16i128)) as usize; if c >= 96 { return 1; } ws[nw] = (c as u8, v28); nw += 1; }
+                                        }
+                                    }
                                     v29 = match hpost(&*s, ((f4 + 0i128) + 16) as u32, v20, v22, 4i128 as i64) { Some(x) => x, None => return 1 };
                                     { let c = ((16i128 + (f4 + 0i128))) as usize; if c >= 96 { return 1; } ws[nw] = (c as u8, v29); nw += 1; }
                                 } else {
@@ -213,7 +243,17 @@ pub fn h_3a(s: &mut St, f: &[i64; NF]) -> u32 {
                                     v33 = match hload(&*s, v31, 4i128 as u32, false) { Some(x) => x, None => return 1 };
                                     v34 = match hload(&*s, v32, 4i128 as u32, false) { Some(x) => x, None => return 1 };
                                     { let c = (f8) as usize; if c >= 96 { return 1; } ws[nw] = (c as u8, v33); nw += 1; }
+                                    if (f8 >= 64i128) {
+                                        if (f8 <= 79i128) {
+                                            { let c = (((f8 - 64i128) + 16i128)) as usize; if c >= 96 { return 1; } ws[nw] = (c as u8, v33); nw += 1; }
+                                        }
+                                    }
                                     { let c = ((f8 ^ 1i128)) as usize; if c >= 96 { return 1; } ws[nw] = (c as u8, v34); nw += 1; }
+                                    if ((f8 ^ 1i128) >= 64i128) {
+                                        if ((f8 ^ 1i128) <= 79i128) {
+                                            { let c = ((((f8 ^ 1i128) - 64i128) + 16i128)) as usize; if c >= 96 { return 1; } ws[nw] = (c as u8, v34); nw += 1; }
+                                        }
+                                    }
                                 } else {
                                     v33 = match hload(&*s, v31, 4i128 as u32, false) { Some(x) => x, None => return 1 };
                                     { let c = (f8) as usize; if c >= 96 { return 1; } ws[nw] = (c as u8, v33); nw += 1; }
@@ -247,6 +287,11 @@ pub fn h_3a(s: &mut St, f: &[i64; NF]) -> u32 {
                                     v4 = v2.wrapping_mul(v3);
                                     v35 = match hload(&*s, v0, 4i128 as u32, false) { Some(x) => x, None => return 1 };
                                     { let c = (f8) as usize; if c >= 96 { return 1; } ws[nw] = (c as u8, v35); nw += 1; }
+                                    if (f8 >= 64i128) {
+                                        if (f8 <= 79i128) {
+                                            { let c = (((f8 - 64i128) + 16i128)) as usize; if c >= 96 { return 1; } ws[nw] = (c as u8, v35); nw += 1; }
+                                        }
+                                    }
                                     v15 = match hpost(&*s, ((f4 + 8i128) + 16) as u32, v0, v4, 4i128 as i64) { Some(x) => x, None => return 1 };
                                     { let c = ((16i128 + (f4 + 8i128))) as usize; if c >= 96 { return 1; } ws[nw] = (c as u8, v15); nw += 1; }
                                     return 1;
@@ -275,6 +320,11 @@ pub fn h_3a(s: &mut St, f: &[i64; NF]) -> u32 {
                                     v5 = v0.wrapping_add(v4);
                                     v36 = match hload(&*s, v5, 4i128 as u32, false) { Some(x) => x, None => return 1 };
                                     { let c = (f8) as usize; if c >= 96 { return 1; } ws[nw] = (c as u8, v36); nw += 1; }
+                                    if (f8 >= 64i128) {
+                                        if (f8 <= 79i128) {
+                                            { let c = (((f8 - 64i128) + 16i128)) as usize; if c >= 96 { return 1; } ws[nw] = (c as u8, v36); nw += 1; }
+                                        }
+                                    }
                                     return 1;
                                 }
                             }
@@ -339,7 +389,7 @@ pub fn h_3a(s: &mut St, f: &[i64; NF]) -> u32 {
                                     v29 = match hpost(&*s, ((f4 + 0i128) + 16) as u32, v20, v22, 4i128 as i64) { Some(x) => x, None => return 1 };
                                     { let c = ((16i128 + (f4 + 0i128))) as usize; if c >= 96 { return 1; } ws[nw] = (c as u8, v29); nw += 1; }
                                     return 1;
-                                } else if (f8 >= 16i128 && f8 <= 79i128) || (f8 >= 110i128 && f8 <= 111i128) || (f8 >= 114i128 && f8 <= 117i128) || (f8 >= 122i128 && f8 <= 125i128) {
+                                } else if (f8 >= 16i128 && f8 <= 79i128) {
                                     return 1;
                                     v20 = rr!(&*s, (16i128 + (f4 + 0i128)));
                                     v21 = rr!(&*s, (32i128 + (f6 + 0i128)));
@@ -347,6 +397,9 @@ pub fn h_3a(s: &mut St, f: &[i64; NF]) -> u32 {
                                     v22 = v21.wrapping_mul(v3);
                                     v39 = match hload(&*s, v20, 4i128 as u32, false) { Some(x) => x, None => return 1 };
                                     { let c = (f8) as usize; if c >= 96 { return 1; } ws[nw] = (c as u8, v39); nw += 1; }
+                                    if (f8 >= 64i128) {
+                                        { let c = (((f8 - 64i128) + 16i128)) as usize; if c >= 96 { return 1; } ws[nw] = (c as u8, v39); nw += 1; }
+                                    }
                                     v30 = match hpost(&*s, ((f4 + 0i128) + 16) as u32, v20, v22, 4i128 as i64) { Some(x) => x, None => return 1 };
                                     { let c = ((16i128 + (f4 + 0i128))) as usize; if c >= 96 { return 1; } ws[nw] = (c as u8, v30); nw += 1; }
                                     return 1;
@@ -379,7 +432,7 @@ pub fn h_3a(s: &mut St, f: &[i64; NF]) -> u32 {
                                         { let c = ((16i128 + (f4 + 0i128))) as usize; if c >= 96 { return 1; } ws[nw] = (c as u8, v30); nw += 1; }
                                         return 1;
                                     }
-                                } else {
+                                } else if (f8 >= 108i128 && f8 <= 109i128) || (f8 >= 112i128 && f8 <= 113i128) || (f8 >= 118i128 && f8 <= 121i128) || f8 >= 126i128 {
                                     if ((f8 ^ 1i128) == 107i128) {
                                         return 1;
                                     } else {
@@ -393,10 +446,26 @@ pub fn h_3a(s: &mut St, f: &[i64; NF]) -> u32 {
                                         { let c = (f8) as usize; if c >= 96 { return 1; } ws[nw] = (c as u8, v39); nw += 1; }
                                         v28 = match hload(&*s, v25, 4i128 as u32, false) { Some(x) => x, None => return 1 };
                                         { let c = ((f8 ^ 1i128)) as usize; if c >= 96 { return 1; } ws[nw] = (c as u8, v28); nw += 1; }
+                                        if ((f8 ^ 1i128) >= 64i128) {
+                                            if ((f8 ^ 1i128) <= 79i128) {
+                                                { let c = ((((f8 ^ 1i128) - 64i128) + 16i128)) as usize; if c >= 96 { return 1; } ws[nw] = (c as u8, v28); nw += 1; }
+                                            }
+                                        }
                                         v29 = match hpost(&*s, ((f4 + 0i128) + 16) as u32, v20, v22, 4i128 as i64) { Some(x) => x, None => return 1 };
                                         { let c = ((16i128 + (f4 + 0i128))) as usize; if c >= 96 { return 1; } ws[nw] = (c as u8, v29); nw += 1; }
                                         return 1;
                                     }
+                                } else {
+                                    return 1;
+                                    v20 = rr!(&*s, (16i128 + (f4 + 0i128)));
+                                    v21 = rr!(&*s, (32i128 + (f6 + 0i128)));
+                                    v3 = (4i128) as u32;
+                                    v22 = v21.wrapping_mul(v3);
+                                    v39 = match hload(&*s, v20, 4i128 as u32, false) { Some(x) => x, None => return 1 };
+                                    { let c = (f8) as usize; if c >= 96 { return 1; } ws[nw] = (c as u8, v39); nw += 1; }
+                                    v30 = match hpost(&*s, ((f4 + 0i128) + 16) as u32, v20, v22, 4i128 as i64) { Some(x) => x, None => return 1 };
+                                    { let c = ((16i128 + (f4 + 0i128))) as usize; if c >= 96 { return 1; } ws[nw] = (c as u8, v30); nw += 1; }
+                                    return 1;
                                 }
                             }
                         } else {
@@ -456,7 +525,7 @@ pub fn h_3a(s: &mut St, f: &[i64; NF]) -> u32 {
                                     v34 = match hload(&*s, v32, 4i128 as u32, false) { Some(x) => x, None => return 1 };
                                     { let c = ((f8 + 80i128)) as usize; if c >= 96 { return 1; } ws[nw] = (c as u8, v34); nw += 1; }
                                     return 1;
-                                } else if (f8 >= 16i128 && f8 <= 79i128) || (f8 >= 110i128 && f8 <= 111i128) || (f8 >= 114i128 && f8 <= 117i128) || (f8 >= 122i128 && f8 <= 125i128) {
+                                } else if (f8 >= 16i128 && f8 <= 79i128) {
                                     return 1;
                                     v20 = rr!(&*s, (16i128 + (f4 + 0i128)));
                                     v21 = rr!(&*s, (32i128 + (f6 + 0i128)));
@@ -465,6 +534,9 @@ pub fn h_3a(s: &mut St, f: &[i64; NF]) -> u32 {
                                     v23 = v20.wrapping_add(v22);
                                     v40 = match hload(&*s, v23, 4i128 as u32, false) { Some(x) => x, None => return 1 };
                                     { let c = (f8) as usize; if c >= 96 { return 1; } ws[nw] = (c as u8, v40); nw += 1; }
+                                    if (f8 >= 64i128) {
+                                        { let c = (((f8 - 64i128) + 16i128)) as usize; if c >= 96 { return 1; } ws[nw] = (c as u8, v40); nw += 1; }
+                                    }
                                     return 1;
                                 } else if (f8 >= 80i128 && f8 <= 95i128) {
                                     return 1;
@@ -493,7 +565,7 @@ pub fn h_3a(s: &mut St, f: &[i64; NF]) -> u32 {
                                         { let c = (f8) as usize; if c >= 96 { return 1; } ws[nw] = (c as u8, v40); nw += 1; }
                                         return 1;
                                     }
-                                } else {
+                                } else if (f8 >= 108i128 && f8 <= 109i128) || (f8 >= 112i128 && f8 <= 113i128) || (f8 >= 118i128 && f8 <= 121i128) || f8 >= 126i128 {
                                     if ((f8 ^ 1i128) == 107i128) {
                                         return 1;
                                     } else {
@@ -508,8 +580,23 @@ pub fn h_3a(s: &mut St, f: &[i64; NF]) -> u32 {
                                         { let c = (f8) as usize; if c >= 96 { return 1; } ws[nw] = (c as u8, v40); nw += 1; }
                                         v34 = match hload(&*s, v32, 4i128 as u32, false) { Some(x) => x, None => return 1 };
                                         { let c = ((f8 ^ 1i128)) as usize; if c >= 96 { return 1; } ws[nw] = (c as u8, v34); nw += 1; }
+                                        if ((f8 ^ 1i128) >= 64i128) {
+                                            if ((f8 ^ 1i128) <= 79i128) {
+                                                { let c = ((((f8 ^ 1i128) - 64i128) + 16i128)) as usize; if c >= 96 { return 1; } ws[nw] = (c as u8, v34); nw += 1; }
+                                            }
+                                        }
                                         return 1;
                                     }
+                                } else {
+                                    return 1;
+                                    v20 = rr!(&*s, (16i128 + (f4 + 0i128)));
+                                    v21 = rr!(&*s, (32i128 + (f6 + 0i128)));
+                                    v3 = (4i128) as u32;
+                                    v22 = v21.wrapping_mul(v3);
+                                    v23 = v20.wrapping_add(v22);
+                                    v40 = match hload(&*s, v23, 4i128 as u32, false) { Some(x) => x, None => return 1 };
+                                    { let c = (f8) as usize; if c >= 96 { return 1; } ws[nw] = (c as u8, v40); nw += 1; }
+                                    return 1;
                                 }
                             }
                         }
@@ -544,7 +631,17 @@ pub fn h_3a(s: &mut St, f: &[i64; NF]) -> u32 {
                                     v12 = match hload(&*s, v7, 4i128 as u32, false) { Some(x) => x, None => return 1 };
                                     v13 = match hload(&*s, v8, 4i128 as u32, false) { Some(x) => x, None => return 1 };
                                     { let c = (f8) as usize; if c >= 96 { return 1; } ws[nw] = (c as u8, v12); nw += 1; }
+                                    if (f8 >= 64i128) {
+                                        if (f8 <= 79i128) {
+                                            { let c = (((f8 - 64i128) + 16i128)) as usize; if c >= 96 { return 1; } ws[nw] = (c as u8, v12); nw += 1; }
+                                        }
+                                    }
                                     { let c = ((f8 ^ 1i128)) as usize; if c >= 96 { return 1; } ws[nw] = (c as u8, v13); nw += 1; }
+                                    if ((f8 ^ 1i128) >= 64i128) {
+                                        if ((f8 ^ 1i128) <= 79i128) {
+                                            { let c = ((((f8 ^ 1i128) - 64i128) + 16i128)) as usize; if c >= 96 { return 1; } ws[nw] = (c as u8, v13); nw += 1; }
+                                        }
+                                    }
                                     v14 = match hpost(&*s, ((f4 + 8i128) + 16) as u32, v0, v4, 4i128 as i64) { Some(x) => x, None => return 1 };
                                     { let c = ((16i128 + (f4 + 8i128))) as usize; if c >= 96 { return 1; } ws[nw] = (c as u8, v14); nw += 1; }
                                 } else {
@@ -575,7 +672,17 @@ pub fn h_3a(s: &mut St, f: &[i64; NF]) -> u32 {
                                     v18 = match hload(&*s, v16, 4i128 as u32, false) { Some(x) => x, None => return 1 };
                                     v19 = match hload(&*s, v17, 4i128 as u32, false) { Some(x) => x, None => return 1 };
                                     { let c = (f8) as usize; if c >= 96 { return 1; } ws[nw] = (c as u8, v18); nw += 1; }
+                                    if (f8 >= 64i128) {
+                                        if (f8 <= 79i128) {
+                                            { let c = (((f8 - 64i128) + 16i128)) as usize; if c >= 96 { return 1; } ws[nw] = (c as u8, v18); nw += 1; }
+                                        }
+                                    }
                                     { let c = ((f8 ^ 1i128)) as usize; if c >= 96 { return 1; } ws[nw] = (c as u8, v19); nw += 1; }
+                                    if ((f8 ^ 1i128) >= 64i128) {
+                                        if ((f8 ^ 1i128) <= 79i128) {
+                                            { let c = ((((f8 ^ 1i128) - 64i128) + 16i128)) as usize; if c >= 96 { return 1; } ws[nw] = (c as u8, v19); nw += 1; }
+                                        }
+                                    }
                                 } else {
                                     v18 = match hload(&*s, v16, 4i128 as u32, false) { Some(x) => x, None => return 1 };
                                     { let c = (f8) as usize; if c >= 96 { return 1; } ws[nw] = (c as u8, v18); nw += 1; }
@@ -609,7 +716,17 @@ pub fn h_3a(s: &mut St, f: &[i64; NF]) -> u32 {
                                     v27 = match hload(&*s, v24, 4i128 as u32, false) { Some(x) => x, None => return 1 };
                                     v28 = match hload(&*s, v25, 4i128 as u32, false) { Some(x) => x, None => return 1 };
                                     { let c = (f8) as usize; if c >= 96 { return 1; } ws[nw] = (c as u8, v27); nw += 1; }
+                                    if (f8 >= 64i128) {
+                                        if (f8 <= 79i128) {
+                                            { let c = (((f8 - 64i128) + 16i128)) as usize; if c >= 96 { return 1; } ws[nw] = (c as u8, v27); nw += 1; }
+                                        }
+                                    }
                                     { let c = ((f8 ^ 1i128)) as usize; if c >= 96 { return 1; } ws[nw] = (c as u8, v28); nw += 1; }
+                                    if ((f8 ^ 1i128) >= 64i128) {
+                                        if ((f8 ^ 1i128) <= 79i128) {
+                                            { let c = ((((f8 ^ 1i128) - 64i128) + 16i128)) as usize; if c >= 96 { return 1; } ws[nw] = (c as u8, v28); nw += 1; }
+                                        }
+                                    }
                                     v29 = match hpost(&*s, ((f4 + 0i128) + 16) as u32, v20, v22, 4i128 as i64) { Some(x) => x, None => return 1 };
                                     { let c = ((16i128 + (f4 + 0i128))) as usize; if c >= 96 { return 1; } ws[nw] = (c as u8, v29); nw += 1; }
                                 } else {
@@ -640,7 +757,17 @@ pub fn h_3a(s: &mut St, f: &[i64; NF]) -> u32 {
                                     v33 = match hload(&*s, v31, 4i128 as u32, false) { Some(x) => x, None => return 1 };
                                     v34 = match hload(&*s, v32, 4i128 as u32, false) { Some(x) => x, None => return 1 };
                                     { let c = (f8) as usize; if c >= 96 { return 1; } ws[nw] = (c as u8, v33); nw += 1; }
+                                    if (f8 >= 64i128) {
+                                        if (f8 <= 79i128) {
+                                            { let c = (((f8 - 64i128) + 16i128)) as usize; if c >= 96 { return 1; } ws[nw] = (c as u8, v33); nw += 1; }
+                                        }
+                                    }
                                     { let c = ((f8 ^ 1i128)) as usize; if c >= 96 { return 1; } ws[nw] = (c as u8, v34); nw += 1; }
+                                    if ((f8 ^ 1i128) >= 64i128) {
+                                        if ((f8 ^ 1i128) <= 79i128) {
+                                            { let c = ((((f8 ^ 1i128) - 64i128) + 16i128)) as usize; if c >= 96 { return 1; } ws[nw] = (c as u8, v34); nw += 1; }
+                                        }
+                                    }
                                 } else {
                                     v33 = match hload(&*s, v31, 4i128 as u32, false) { Some(x) => x, None => return 1 };
                                     { let c = (f8) as usize; if c >= 96 { return 1; } ws[nw] = (c as u8, v33); nw += 1; }
@@ -674,6 +801,11 @@ pub fn h_3a(s: &mut St, f: &[i64; NF]) -> u32 {
                                     v4 = v2.wrapping_mul(v3);
                                     v35 = match hload(&*s, v0, 4i128 as u32, false) { Some(x) => x, None => return 1 };
                                     { let c = (f8) as usize; if c >= 96 { return 1; } ws[nw] = (c as u8, v35); nw += 1; }
+                                    if (f8 >= 64i128) {
+                                        if (f8 <= 79i128) {
+                                            { let c = (((f8 - 64i128) + 16i128)) as usize; if c >= 96 { return 1; } ws[nw] = (c as u8, v35); nw += 1; }
+                                        }
+                                    }
                                     v15 = match hpost(&*s, ((f4 + 8i128) + 16) as u32, v0, v4, 4i128 as i64) { Some(x) => x, None => return 1 };
                                     { let c = ((16i128 + (f4 + 8i128))) as usize; if c >= 96 { return 1; } ws[nw] = (c as u8, v15); nw += 1; }
                                     return 1;
@@ -702,6 +834,11 @@ pub fn h_3a(s: &mut St, f: &[i64; NF]) -> u32 {
                                     v5 = v0.wrapping_add(v4);
                                     v36 = match hload(&*s, v5, 4i128 as u32, false) { Some(x) => x, None => return 1 };
                                     { let c = (f8) as usize; if c >= 96 { return 1; } ws[nw] = (c as u8, v36); nw += 1; }
+                                    if (f8 >= 64i128) {
+                                        if (f8 <= 79i128) {
+                                            { let c = (((f8 - 64i128) + 16i128)) as usize; if c >= 96 { return 1; } ws[nw] = (c as u8, v36); nw += 1; }
+                                        }
+                                    }
                                     return 1;
                                     return 1;
                                 }
@@ -767,13 +904,16 @@ pub fn h_3a(s: &mut St, f: &[i64; NF]) -> u32 {
                                     { let c = ((16i128 + (f4 + 0i128))) as usize; if c >= 96 { return 1; } ws[nw] = (c as u8, v29); nw += 1; }
                                     return 1;
                                     return 1;
-                                } else if (f8 >= 16i128 && f8 <= 79i128) || (f8 >= 110i128 && f8 <= 111i128) || (f8 >= 114i128 && f8 <= 117i128) || (f8 >= 122i128 && f8 <= 125i128) {
+                                } else if (f8 >= 16i128 && f8 <= 79i128) {
                                     v20 = rr!(&*s, (16i128 + (f4 + 0i128)));
                                     v21 = rr!(&*s, (32i128 + (f6 + 0i128)));
                                     v3 = (4i128) as u32;
                                     v22 = v21.wrapping_mul(v3);
                                     v39 = match hload(&*s, v20, 4i128 as u32, false) { Some(x) => x, None => return 1 };
                                     { let c = (f8) as usize; if c >= 96 { return 1; } ws[nw] = (c as u8, v39); nw += 1; }
+                                    if (f8 >= 64i128) {
+                                        { let c = (((f8 - 64i128) + 16i128)) as usize; if c >= 96 { return 1; } ws[nw] = (c as u8, v39); nw += 1; }
+                                    }
                                     v30 = match hpost(&*s, ((f4 + 0i128) + 16) as u32, v20, v22, 4i128 as i64) { Some(x) => x, None => return 1 };
                                     { let c = ((16i128 + (f4 + 0i128))) as usize; if c >= 96 { return 1; } ws[nw] = (c as u8, v30); nw += 1; }
                                     return 1;
@@ -807,7 +947,7 @@ pub fn h_3a(s: &mut St, f: &[i64; NF]) -> u32 {
                                         return 1;
                                         return 1;
                                     }
-                                } else {
+                                } else if (f8 >= 108i128 && f8 <= 109i128) || (f8 >= 112i128 && f8 <= 113i128) || (f8 >= 118i128 && f8 <= 121i128) || f8 >= 126i128 {
                                     if ((f8 ^ 1i128) == 107i128) {
                                         return 1;
                                     } else {
@@ -820,11 +960,27 @@ pub fn h_3a(s: &mut St, f: &[i64; NF]) -> u32 {
                                         { let c = (f8) as usize; if c >= 96 { return 1; } ws[nw] = (c as u8, v39); nw += 1; }
                                         v28 = match hload(&*s, v25, 4i128 as u32, false) { Some(x) => x, None => return 1 };
                                         { let c = ((f8 ^ 1i128)) as usize; if c >= 96 { return 1; } ws[nw] = (c as u8, v28); nw += 1; }
+                                        if ((f8 ^ 1i128) >= 64i128) {
+                                            if ((f8 ^ 1i128) <= 79i128) {
+                                                { let c = ((((f8 ^ 1i128) - 64i128) + 16i128)) as usize; if c >= 96 { return 1; } ws[nw] = (c as u8, v28); nw += 1; }
+                                            }
+                                        }
                                         v29 = match hpost(&*s, ((f4 + 0i128) + 16) as u32, v20, v22, 4i128 as i64) { Some(x) => x, None => return 1 };
                                         { let c = ((16i128 + (f4 + 0i128))) as usize; if c >= 96 { return 1; } ws[nw] = (c as u8, v29); nw += 1; }
                                         return 1;
                                         return 1;
                                     }
+                                } else {
+                                    v20 = rr!(&*s, (16i128 + (f4 + 0i128)));
+                                    v21 = rr!(&*s, (32i128 + (f6 + 0i128)));
+                                    v3 = (4i128) as u32;
+                                    v22 = v21.wrapping_mul(v3);
+                                    v39 = match hload(&*s, v20, 4i128 as u32, false) { Some(x) => x, None => return 1 };
+                                    { let c = (f8) as usize; if c >= 96 { return 1; } ws[nw] = (c as u8, v39); nw += 1; }
+                                    v30 = match hpost(&*s, ((f4 + 0i128) + 16) as u32, v20, v22, 4i128 as i64) { Some(x) => x, None => return 1 };
+                                    { let c = ((16i128 + (f4 + 0i128))) as usize; if c >= 96 { return 1; } ws[nw] = (c as u8, v30); nw += 1; }
+                                    return 1;
+                                    return 1;
                                 }
                             }
                         } else {
@@ -884,7 +1040,7 @@ pub fn h_3a(s: &mut St, f: &[i64; NF]) -> u32 {
                                     { let c = ((f8 + 80i128)) as usize; if c >= 96 { return 1; } ws[nw] = (c as u8, v34); nw += 1; }
                                     return 1;
                                     return 1;
-                                } else if (f8 >= 16i128 && f8 <= 79i128) || (f8 >= 110i128 && f8 <= 111i128) || (f8 >= 114i128 && f8 <= 117i128) || (f8 >= 122i128 && f8 <= 125i128) {
+                                } else if (f8 >= 16i128 && f8 <= 79i128) {
                                     v20 = rr!(&*s, (16i128 + (f4 + 0i128)));
                                     v21 = rr!(&*s, (32i128 + (f6 + 0i128)));
                                     v3 = (4i128) as u32;
@@ -892,6 +1048,9 @@ pub fn h_3a(s: &mut St, f: &[i64; NF]) -> u32 {
                                     v23 = v20.wrapping_add(v22);
                                     v40 = match hload(&*s, v23, 4i128 as u32, false) { Some(x) => x, None => return 1 };
                                     { let c = (f8) as usize; if c >= 96 { return 1; } ws[nw] = (c as u8, v40); nw += 1; }
+                                    if (f8 >= 64i128) {
+                                        { let c = (((f8 - 64i128) + 16i128)) as usize; if c >= 96 { return 1; } ws[nw] = (c as u8, v40); nw += 1; }
+                                    }
                                     return 1;
                                     return 1;
                                 } else if (f8 >= 80i128 && f8 <= 95i128) {
@@ -921,7 +1080,7 @@ pub fn h_3a(s: &mut St, f: &[i64; NF]) -> u32 {
                                         return 1;
                                         return 1;
                                     }
-                                } else {
+                                } else if (f8 >= 108i128 && f8 <= 109i128) || (f8 >= 112i128 && f8 <= 113i128) || (f8 >= 118i128 && f8 <= 121i128) || f8 >= 126i128 {
                                     if ((f8 ^ 1i128) == 107i128) {
                                         return 1;
                                     } else {
@@ -935,9 +1094,24 @@ pub fn h_3a(s: &mut St, f: &[i64; NF]) -> u32 {
                                         { let c = (f8) as usize; if c >= 96 { return 1; } ws[nw] = (c as u8, v40); nw += 1; }
                                         v34 = match hload(&*s, v32, 4i128 as u32, false) { Some(x) => x, None => return 1 };
                                         { let c = ((f8 ^ 1i128)) as usize; if c >= 96 { return 1; } ws[nw] = (c as u8, v34); nw += 1; }
+                                        if ((f8 ^ 1i128) >= 64i128) {
+                                            if ((f8 ^ 1i128) <= 79i128) {
+                                                { let c = ((((f8 ^ 1i128) - 64i128) + 16i128)) as usize; if c >= 96 { return 1; } ws[nw] = (c as u8, v34); nw += 1; }
+                                            }
+                                        }
                                         return 1;
                                         return 1;
                                     }
+                                } else {
+                                    v20 = rr!(&*s, (16i128 + (f4 + 0i128)));
+                                    v21 = rr!(&*s, (32i128 + (f6 + 0i128)));
+                                    v3 = (4i128) as u32;
+                                    v22 = v21.wrapping_mul(v3);
+                                    v23 = v20.wrapping_add(v22);
+                                    v40 = match hload(&*s, v23, 4i128 as u32, false) { Some(x) => x, None => return 1 };
+                                    { let c = (f8) as usize; if c >= 96 { return 1; } ws[nw] = (c as u8, v40); nw += 1; }
+                                    return 1;
+                                    return 1;
                                 }
                             }
                         }
@@ -975,7 +1149,17 @@ pub fn h_3a(s: &mut St, f: &[i64; NF]) -> u32 {
                                     v12 = match hload(&*s, v7, 4i128 as u32, false) { Some(x) => x, None => return 1 };
                                     v13 = match hload(&*s, v8, 4i128 as u32, false) { Some(x) => x, None => return 1 };
                                     { let c = (f8) as usize; if c >= 96 { return 1; } ws[nw] = (c as u8, v12); nw += 1; }
+                                    if (f8 >= 64i128) {
+                                        if (f8 <= 79i128) {
+                                            { let c = (((f8 - 64i128) + 16i128)) as usize; if c >= 96 { return 1; } ws[nw] = (c as u8, v12); nw += 1; }
+                                        }
+                                    }
                                     { let c = ((f8 ^ 1i128)) as usize; if c >= 96 { return 1; } ws[nw] = (c as u8, v13); nw += 1; }
+                                    if ((f8 ^ 1i128) >= 64i128) {
+                                        if ((f8 ^ 1i128) <= 79i128) {
+                                            { let c = ((((f8 ^ 1i128) - 64i128) + 16i128)) as usize; if c >= 96 { return 1; } ws[nw] = (c as u8, v13); nw += 1; }
+                                        }
+                                    }
                                     v14 = match hpost(&*s, ((f4 + 8i128) + 16) as u32, v0, v4, 4i128 as i64) { Some(x) => x, None => return 1 };
                                     { let c = ((16i128 + (f4 + 8i128))) as usize; if c >= 96 { return 1; } ws[nw] = (c as u8, v14); nw += 1; }
                                 } else {
@@ -1006,7 +1190,17 @@ pub fn h_3a(s: &mut St, f: &[i64; NF]) -> u32 {
                                     v18 = match hload(&*s, v16, 4i128 as u32, false) { Some(x) => x, None => return 1 };
                                     v19 = match hload(&*s, v17, 4i128 as u32, false) { Some(x) => x, None => return 1 };
                                     { let c = (f8) as usize; if c >= 96 { return 1; } ws[nw] = (c as u8, v18); nw += 1; }
+                                    if (f8 >= 64i128) {
+                                        if (f8 <= 79i128) {
+                                            { let c = (((f8 - 64i128) + 16i128)) as usize; if c >= 96 { return 1; } ws[nw] = (c as u8, v18); nw += 1; }
+                                        }
+                                    }
                                     { let c = ((f8 ^ 1i128)) as usize; if c >= 96 { return 1; } ws[nw] = (c as u8, v19); nw += 1; }
+                                    if ((f8 ^ 1i128) >= 64i128) {
+                                        if ((f8 ^ 1i128) <= 79i128) {
+                                            { let c = ((((f8 ^ 1i128) - 64i128) + 16i128)) as usize; if c >= 96 { return 1; } ws[nw] = (c as u8, v19); nw += 1; }
+                                        }
+                                    }
                                 } else {
                                     v18 = match hload(&*s, v16, 4i128 as u32, false) { Some(x) => x, None => return 1 };
                                     { let c = (f8) as usize; if c >= 96 { return 1; } ws[nw] = (c as u8, v18); nw += 1; }
@@ -1040,7 +1234,17 @@ pub fn h_3a(s: &mut St, f: &[i64; NF]) -> u32 {
                                     v27 = match hload(&*s, v24, 4i128 as u32, false) { Some(x) => x, None => return 1 };
                                     v28 = match hload(&*s, v25, 4i128 as u32, false) { Some(x) => x, None => return 1 };
                                     { let c = (f8) as usize; if c >= 96 { return 1; } ws[nw] = (c as u8, v27); nw += 1; }
+                                    if (f8 >= 64i128) {
+                                        if (f8 <= 79i128) {
+                                            { let c = (((f8 - 64i128) + 16i128)) as usize; if c >= 96 { return 1; } ws[nw] = (c as u8, v27); nw += 1; }
+                                        }
+                                    }
                                     { let c = ((f8 ^ 1i128)) as usize; if c >= 96 { return 1; } ws[nw] = (c as u8, v28); nw += 1; }
+                                    if ((f8 ^ 1i128) >= 64i128) {
+                                        if ((f8 ^ 1i128) <= 79i128) {
+                                            { let c = ((((f8 ^ 1i128) - 64i128) + 16i128)) as usize; if c >= 96 { return 1; } ws[nw] = (c as u8, v28); nw += 1; }
+                                        }
+                                    }
                                     v29 = match hpost(&*s, ((f4 + 0i128) + 16) as u32, v20, v22, 4i128 as i64) { Some(x) => x, None => return 1 };
                                     { let c = ((16i128 + (f4 + 0i128))) as usize; if c >= 96 { return 1; } ws[nw] = (c as u8, v29); nw += 1; }
                                 } else {
@@ -1071,7 +1275,17 @@ pub fn h_3a(s: &mut St, f: &[i64; NF]) -> u32 {
                                     v33 = match hload(&*s, v31, 4i128 as u32, false) { Some(x) => x, None => return 1 };
                                     v34 = match hload(&*s, v32, 4i128 as u32, false) { Some(x) => x, None => return 1 };
                                     { let c = (f8) as usize; if c >= 96 { return 1; } ws[nw] = (c as u8, v33); nw += 1; }
+                                    if (f8 >= 64i128) {
+                                        if (f8 <= 79i128) {
+                                            { let c = (((f8 - 64i128) + 16i128)) as usize; if c >= 96 { return 1; } ws[nw] = (c as u8, v33); nw += 1; }
+                                        }
+                                    }
                                     { let c = ((f8 ^ 1i128)) as usize; if c >= 96 { return 1; } ws[nw] = (c as u8, v34); nw += 1; }
+                                    if ((f8 ^ 1i128) >= 64i128) {
+                                        if ((f8 ^ 1i128) <= 79i128) {
+                                            { let c = ((((f8 ^ 1i128) - 64i128) + 16i128)) as usize; if c >= 96 { return 1; } ws[nw] = (c as u8, v34); nw += 1; }
+                                        }
+                                    }
                                 } else {
                                     v33 = match hload(&*s, v31, 4i128 as u32, false) { Some(x) => x, None => return 1 };
                                     { let c = (f8) as usize; if c >= 96 { return 1; } ws[nw] = (c as u8, v33); nw += 1; }
@@ -1105,6 +1319,11 @@ pub fn h_3a(s: &mut St, f: &[i64; NF]) -> u32 {
                                     v4 = v2.wrapping_mul(v3);
                                     v35 = match hload(&*s, v0, 4i128 as u32, false) { Some(x) => x, None => return 1 };
                                     { let c = (f8) as usize; if c >= 96 { return 1; } ws[nw] = (c as u8, v35); nw += 1; }
+                                    if (f8 >= 64i128) {
+                                        if (f8 <= 79i128) {
+                                            { let c = (((f8 - 64i128) + 16i128)) as usize; if c >= 96 { return 1; } ws[nw] = (c as u8, v35); nw += 1; }
+                                        }
+                                    }
                                     v15 = match hpost(&*s, ((f4 + 8i128) + 16) as u32, v0, v4, 4i128 as i64) { Some(x) => x, None => return 1 };
                                     { let c = ((16i128 + (f4 + 8i128))) as usize; if c >= 96 { return 1; } ws[nw] = (c as u8, v15); nw += 1; }
                                     return 1;
@@ -1133,6 +1352,11 @@ pub fn h_3a(s: &mut St, f: &[i64; NF]) -> u32 {
                                     v5 = v0.wrapping_add(v4);
                                     v36 = match hload(&*s, v5, 4i128 as u32, false) { Some(x) => x, None => return 1 };
                                     { let c = (f8) as usize; if c >= 96 { return 1; } ws[nw] = (c as u8, v36); nw += 1; }
+                                    if (f8 >= 64i128) {
+                                        if (f8 <= 79i128) {
+                                            { let c = (((f8 - 64i128) + 16i128)) as usize; if c >= 96 { return 1; } ws[nw] = (c as u8, v36); nw += 1; }
+                                        }
+                                    }
                                     return 1;
                                 }
                             }
@@ -1151,7 +1375,7 @@ pub fn h_3a(s: &mut St, f: &[i64; NF]) -> u32 {
                                 { let c = ((16i128 + (f4 + 0i128))) as usize; if c >= 96 { return 1; } ws[nw] = (c as u8, v26); nw += 1; }
                                 return 1;
                             } else {
-                                if f8 <= 15i128 || (f8 >= 16i128 && f8 <= 79i128) || (f8 >= 80i128 && f8 <= 95i128) || (f8 >= 108i128 && f8 <= 109i128) || (f8 >= 110i128 && f8 <= 111i128) || (f8 >= 112i128 && f8 <= 113i128) || (f8 >= 114i128 && f8 <= 117i128) || (f8 >= 118i128 && f8 <= 121i128) || (f8 >= 122i128 && f8 <= 125i128) || f8 >= 126i128 {
+                                if f8 <= 15i128 || (f8 >= 80i128 && f8 <= 95i128) || (f8 >= 108i128 && f8 <= 109i128) || (f8 >= 110i128 && f8 <= 111i128) || (f8 >= 112i128 && f8 <= 113i128) || (f8 >= 114i128 && f8 <= 117i128) || (f8 >= 118i128 && f8 <= 121i128) || (f8 >= 122i128 && f8 <= 125i128) || f8 >= 126i128 {
                                     return 1;
                                     v20 = rr!(&*s, (16i128 + (f4 + 0i128)));
                                     v21 = rr!(&*s, (32i128 + (f6 + 0i128)));
@@ -1159,6 +1383,20 @@ pub fn h_3a(s: &mut St, f: &[i64; NF]) -> u32 {
                                     v22 = v21.wrapping_mul(v3);
                                     v39 = match hload(&*s, v20, 4i128 as u32, false) { Some(x) => x, None => return 1 };
                                     { let c = (f8) as usize; if c >= 96 { return 1; } ws[nw] = (c as u8, v39); nw += 1; }
+                                    v30 = match hpost(&*s, ((f4 + 0i128) + 16) as u32, v20, v22, 4i128 as i64) { Some(x) => x, None => return 1 };
+                                    { let c = ((16i128 + (f4 + 0i128))) as usize; if c >= 96 { return 1; } ws[nw] = (c as u8, v30); nw += 1; }
+                                    return 1;
+                                } else if (f8 >= 16i128 && f8 <= 79i128) {
+                                    return 1;
+                                    v20 = rr!(&*s, (16i128 + (f4 + 0i128)));
+                                    v21 = rr!(&*s, (32i128 + (f6 + 0i128)));
+                                    v3 = (4i128) as u32;
+                                    v22 = v21.wrapping_mul(v3);
+                                    v39 = match hload(&*s, v20, 4i128 as u32, false) { Some(x) => x, None => return 1 };
+                                    { let c = (f8) as usize; if c >= 96 { return 1; } ws[nw] = (c as u8, v39); nw += 1; }
+                                    if (f8 >= 64i128) {
+                                        { let c = (((f8 - 64i128) + 16i128)) as usize; if c >= 96 { return 1; } ws[nw] = (c as u8, v39); nw += 1; }
+                                    }
                                     v30 = match hpost(&*s, ((f4 + 0i128) + 16) as u32, v20, v22, 4i128 as i64) { Some(x) => x, None => return 1 };
                                     { let c = ((16i128 + (f4 + 0i128))) as usize; if c >= 96 { return 1; } ws[nw] = (c as u8, v30); nw += 1; }
                                     return 1;
@@ -1191,7 +1429,7 @@ pub fn h_3a(s: &mut St, f: &[i64; NF]) -> u32 {
                                 st[nst] = (v23, v9, 4i128 as u8); nst += 1;
                                 return 1;
                             } else {
-                                if f8 <= 15i128 || (f8 >= 16i128 && f8 <= 79i128) || (f8 >= 80i128 && f8 <= 95i128) || (f8 >= 108i128 && f8 <= 109i128) || (f8 >= 110i128 && f8 <= 111i128) || (f8 >= 112i128 && f8 <= 113i128) || (f8 >= 114i128 && f8 <= 117i128) || (f8 >= 118i128 && f8 <= 121i128) || (f8 >= 122i128 && f8 <= 125i128) || f8 >= 126i128 {
+                                if f8 <= 15i128 || (f8 >= 80i128 && f8 <= 95i128) || (f8 >= 108i128 && f8 <= 109i128) || (f8 >= 110i128 && f8 <= 111i128) || (f8 >= 112i128 && f8 <= 113i128) || (f8 >= 114i128 && f8 <= 117i128) || (f8 >= 118i128 && f8 <= 121i128) || (f8 >= 122i128 && f8 <= 125i128) || f8 >= 126i128 {
                                     return 1;
                                     v20 = rr!(&*s, (16i128 + (f4 + 0i128)));
                                     v21 = rr!(&*s, (32i128 + (f6 + 0i128)));
@@ -1200,6 +1438,19 @@ pub fn h_3a(s: &mut St, f: &[i64; NF]) -> u32 {
                                     v23 = v20.wrapping_add(v22);
                                     v40 = match hload(&*s, v23, 4i128 as u32, false) { Some(x) => x, None => return 1 };
                                     { let c = (f8) as usize; if c >= 96 { return 1; } ws[nw] = (c as u8, v40); nw += 1; }
+                                    return 1;
+                                } else if (f8 >= 16i128 && f8 <= 79i128) {
+                                    return 1;
+                                    v20 = rr!(&*s, (16i128 + (f4 + 0i128)));
+                                    v21 = rr!(&*s, (32i128 + (f6 + 0i128)));
+                                    v3 = (4i128) as u32;
+                                    v22 = v21.wrapping_mul(v3);
+                                    v23 = v20.wrapping_add(v22);
+                                    v40 = match hload(&*s, v23, 4i128 as u32, false) { Some(x) => x, None => return 1 };
+                                    { let c = (f8) as usize; if c >= 96 { return 1; } ws[nw] = (c as u8, v40); nw += 1; }
+                                    if (f8 >= 64i128) {
+                                        { let c = (((f8 - 64i128) + 16i128)) as usize; if c >= 96 { return 1; } ws[nw] = (c as u8, v40); nw += 1; }
+                                    }
                                     return 1;
                                 } else {
                                     if (f8 == 107i128) {
@@ -1249,7 +1500,17 @@ pub fn h_3a(s: &mut St, f: &[i64; NF]) -> u32 {
                                     v12 = match hload(&*s, v7, 4i128 as u32, false) { Some(x) => x, None => return 1 };
                                     v13 = match hload(&*s, v8, 4i128 as u32, false) { Some(x) => x, None => return 1 };
                                     { let c = (f8) as usize; if c >= 96 { return 1; } ws[nw] = (c as u8, v12); nw += 1; }
+                                    if (f8 >= 64i128) {
+                                        if (f8 <= 79i128) {
+                                            { let c = (((f8 - 64i128) + 16i128)) as usize; if c >= 96 { return 1; } ws[nw] = (c as u8, v12); nw += 1; }
+                                        }
+                                    }
                                     { let c = ((f8 ^ 1i128)) as usize; if c >= 96 { return 1; } ws[nw] = (c as u8, v13); nw += 1; }
+                                    if ((f8 ^ 1i128) >= 64i128) {
+                                        if ((f8 ^ 1i128) <= 79i128) {
+                                            { let c = ((((f8 ^ 1i128) - 64i128) + 16i128)) as usize; if c >= 96 { return 1; } ws[nw] = (c as u8, v13); nw += 1; }
+                                        }
+                                    }
                                     v14 = match hpost(&*s, ((f4 + 8i128) + 16) as u32, v0, v4, 4i128 as i64) { Some(x) => x, None => return 1 };
                                     { let c = ((16i128 + (f4 + 8i128))) as usize; if c >= 96 { return 1; } ws[nw] = (c as u8, v14); nw += 1; }
                                 } else {
@@ -1280,7 +1541,17 @@ pub fn h_3a(s: &mut St, f: &[i64; NF]) -> u32 {
                                     v18 = match hload(&*s, v16, 4i128 as u32, false) { Some(x) => x, None => return 1 };
                                     v19 = match hload(&*s, v17, 4i128 as u32, false) { Some(x) => x, None => return 1 };
                                     { let c = (f8) as usize; if c >= 96 { return 1; } ws[nw] = (c as u8, v18); nw += 1; }
+                                    if (f8 >= 64i128) {
+                                        if (f8 <= 79i128) {
+                                            { let c = (((f8 - 64i128) + 16i128)) as usize; if c >= 96 { return 1; } ws[nw] = (c as u8, v18); nw += 1; }
+                                        }
+                                    }
                                     { let c = ((f8 ^ 1i128)) as usize; if c >= 96 { return 1; } ws[nw] = (c as u8, v19); nw += 1; }
+                                    if ((f8 ^ 1i128) >= 64i128) {
+                                        if ((f8 ^ 1i128) <= 79i128) {
+                                            { let c = ((((f8 ^ 1i128) - 64i128) + 16i128)) as usize; if c >= 96 { return 1; } ws[nw] = (c as u8, v19); nw += 1; }
+                                        }
+                                    }
                                 } else {
                                     v18 = match hload(&*s, v16, 4i128 as u32, false) { Some(x) => x, None => return 1 };
                                     { let c = (f8) as usize; if c >= 96 { return 1; } ws[nw] = (c as u8, v18); nw += 1; }
@@ -1314,7 +1585,17 @@ pub fn h_3a(s: &mut St, f: &[i64; NF]) -> u32 {
                                     v27 = match hload(&*s, v24, 4i128 as u32, false) { Some(x) => x, None => return 1 };
                                     v28 = match hload(&*s, v25, 4i128 as u32, false) { Some(x) => x, None => return 1 };
                                     { let c = (f8) as usize; if c >= 96 { return 1; } ws[nw] = (c as u8, v27); nw += 1; }
+                                    if (f8 >= 64i128) {
+                                        if (f8 <= 79i128) {
+                                            { let c = (((f8 - 64i128) + 16i128)) as usize; if c >= 96 { return 1; } ws[nw] = (c as u8, v27); nw += 1; }
+                                        }
+                                    }
                                     { let c = ((f8 ^ 1i128)) as usize; if c >= 96 { return 1; } ws[nw] = (c as u8, v28); nw += 1; }
+                                    if ((f8 ^ 1i128) >= 64i128) {
+                                        if ((f8 ^ 1i128) <= 79i128) {
+                                            { let c = ((((f8 ^ 1i128) - 64i128) + 16i128)) as usize; if c >= 96 { return 1; } ws[nw] = (c as u8, v28); nw += 1; }
+                                        }
+                                    }
                                     v29 = match hpost(&*s, ((f4 + 0i128) + 16) as u32, v20, v22, 4i128 as i64) { Some(x) => x, None => return 1 };
                                     { let c = ((16i128 + (f4 + 0i128))) as usize; if c >= 96 { return 1; } ws[nw] = (c as u8, v29); nw += 1; }
                                 } else {
@@ -1345,7 +1626,17 @@ pub fn h_3a(s: &mut St, f: &[i64; NF]) -> u32 {
                                     v33 = match hload(&*s, v31, 4i128 as u32, false) { Some(x) => x, None => return 1 };
                                     v34 = match hload(&*s, v32, 4i128 as u32, false) { Some(x) => x, None => return 1 };
                                     { let c = (f8) as usize; if c >= 96 { return 1; } ws[nw] = (c as u8, v33); nw += 1; }
+                                    if (f8 >= 64i128) {
+                                        if (f8 <= 79i128) {
+                                            { let c = (((f8 - 64i128) + 16i128)) as usize; if c >= 96 { return 1; } ws[nw] = (c as u8, v33); nw += 1; }
+                                        }
+                                    }
                                     { let c = ((f8 ^ 1i128)) as usize; if c >= 96 { return 1; } ws[nw] = (c as u8, v34); nw += 1; }
+                                    if ((f8 ^ 1i128) >= 64i128) {
+                                        if ((f8 ^ 1i128) <= 79i128) {
+                                            { let c = ((((f8 ^ 1i128) - 64i128) + 16i128)) as usize; if c >= 96 { return 1; } ws[nw] = (c as u8, v34); nw += 1; }
+                                        }
+                                    }
                                 } else {
                                     v33 = match hload(&*s, v31, 4i128 as u32, false) { Some(x) => x, None => return 1 };
                                     { let c = (f8) as usize; if c >= 96 { return 1; } ws[nw] = (c as u8, v33); nw += 1; }
@@ -1377,6 +1668,11 @@ pub fn h_3a(s: &mut St, f: &[i64; NF]) -> u32 {
                                     v4 = v2.wrapping_mul(v3);
                                     v35 = match hload(&*s, v0, 4i128 as u32, false) { Some(x) => x, None => return 1 };
                                     { let c = (f8) as usize; if c >= 96 { return 1; } ws[nw] = (c as u8, v35); nw += 1; }
+                                    if (f8 >= 64i128) {
+                                        if (f8 <= 79i128) {
+                                            { let c = (((f8 - 64i128) + 16i128)) as usize; if c >= 96 { return 1; } ws[nw] = (c as u8, v35); nw += 1; }
+                                        }
+                                    }
                                     v15 = match hpost(&*s, ((f4 + 8i128) + 16) as u32, v0, v4, 4i128 as i64) { Some(x) => x, None => return 1 };
                                     { let c = ((16i128 + (f4 + 8i128))) as usize; if c >= 96 { return 1; } ws[nw] = (c as u8, v15); nw += 1; }
                                     return 1;
@@ -1403,6 +1699,11 @@ pub fn h_3a(s: &mut St, f: &[i64; NF]) -> u32 {
                                     v5 = v0.wrapping_add(v4);
                                     v36 = match hload(&*s, v5, 4i128 as u32, false) { Some(x) => x, None => return 1 };
                                     { let c = (f8) as usize; if c >= 96 { return 1; } ws[nw] = (c as u8, v36); nw += 1; }
+                                    if (f8 >= 64i128) {
+                                        if (f8 <= 79i128) {
+                                            { let c = (((f8 - 64i128) + 16i128)) as usize; if c >= 96 { return 1; } ws[nw] = (c as u8, v36); nw += 1; }
+                                        }
+                                    }
                                     return 1;
                                 }
                             }
@@ -1420,13 +1721,26 @@ pub fn h_3a(s: &mut St, f: &[i64; NF]) -> u32 {
                                 { let c = ((16i128 + (f4 + 0i128))) as usize; if c >= 96 { return 1; } ws[nw] = (c as u8, v26); nw += 1; }
                                 return 1;
                             } else {
-                                if f8 <= 15i128 || (f8 >= 16i128 && f8 <= 79i128) || (f8 >= 80i128 && f8 <= 95i128) || (f8 >= 108i128 && f8 <= 109i128) || (f8 >= 110i128 && f8 <= 111i128) || (f8 >= 112i128 && f8 <= 113i128) || (f8 >= 114i128 && f8 <= 117i128) || (f8 >= 118i128 && f8 <= 121i128) || (f8 >= 122i128 && f8 <= 125i128) || f8 >= 126i128 {
+                                if f8 <= 15i128 || (f8 >= 80i128 && f8 <= 95i128) || (f8 >= 108i128 && f8 <= 109i128) || (f8 >= 110i128 && f8 <= 111i128) || (f8 >= 112i128 && f8 <= 113i128) || (f8 >= 114i128 && f8 <= 117i128) || (f8 >= 118i128 && f8 <= 121i128) || (f8 >= 122i128 && f8 <= 125i128) || f8 >= 126i128 {
                                     v20 = rr!(&*s, (16i128 + (f4 + 0i128)));
                                     v21 = rr!(&*s, (32i128 + (f6 + 0i128)));
                                     v3 = (4i128) as u32;
                                     v22 = v21.wrapping_mul(v3);
                                     v39 = match hload(&*s, v20, 4i128 as u32, false) { Some(x) => x, None => return 1 };
                                     { let c = (f8) as usize; if c >= 96 { return 1; } ws[nw] = (c as u8, v39); nw += 1; }
+                                    v30 = match hpost(&*s, ((f4 + 0i128) + 16) as u32, v20, v22, 4i128 as i64) { Some(x) => x, None => return 1 };
+                                    { let c = ((16i128 + (f4 + 0i128))) as usize; if c >= 96 { return 1; } ws[nw] = (c as u8, v30); nw += 1; }
+                                    return 1;
+                                } else if (f8 >= 16i128 && f8 <= 79i128) {
+                                    v20 = rr!(&*s, (16i128 + (f4 + 0i128)));
+                                    v21 = rr!(&*s, (32i128 + (f6 + 0i128)));
+                                    v3 = (4i128) as u32;
+                                    v22 = v21.wrapping_mul(v3);
+                                    v39 = match hload(&*s, v20, 4i128 as u32, false) { Some(x) => x, None => return 1 };
+                                    { let c = (f8) as usize; if c >= 96 { return 1; } ws[nw] = (c as u8, v39); nw += 1; }
+                                    if (f8 >= 64i128) {
+                                        { let c = (((f8 - 64i128) + 16i128)) as usize; if c >= 96 { return 1; } ws[nw] = (c as u8, v39); nw += 1; }
+                                    }
                                     v30 = match hpost(&*s, ((f4 + 0i128) + 16) as u32, v20, v22, 4i128 as i64) { Some(x) => x, None => return 1 };
                                     { let c = ((16i128 + (f4 + 0i128))) as usize; if c >= 96 { return 1; } ws[nw] = (c as u8, v30); nw += 1; }
                                     return 1;
@@ -1457,7 +1771,7 @@ pub fn h_3a(s: &mut St, f: &[i64; NF]) -> u32 {
                                 st[nst] = (v23, v9, 4i128 as u8); nst += 1;
                                 return 1;
                             } else {
-                                if f8 <= 15i128 || (f8 >= 16i128 && f8 <= 79i128) || (f8 >= 80i128 && f8 <= 95i128) || (f8 >= 108i128 && f8 <= 109i128) || (f8 >= 110i128 && f8 <= 111i128) || (f8 >= 112i128 && f8 <= 113i128) || (f8 >= 114i128 && f8 <= 117i128) || (f8 >= 118i128 && f8 <= 121i128) || (f8 >= 122i128 && f8 <= 125i128) || f8 >= 126i128 {
+                                if f8 <= 15i128 || (f8 >= 80i128 && f8 <= 95i128) || (f8 >= 108i128 && f8 <= 109i128) || (f8 >= 110i128 && f8 <= 111i128) || (f8 >= 112i128 && f8 <= 113i128) || (f8 >= 114i128 && f8 <= 117i128) || (f8 >= 118i128 && f8 <= 121i128) || (f8 >= 122i128 && f8 <= 125i128) || f8 >= 126i128 {
                                     v20 = rr!(&*s, (16i128 + (f4 + 0i128)));
                                     v21 = rr!(&*s, (32i128 + (f6 + 0i128)));
                                     v3 = (4i128) as u32;
@@ -1465,6 +1779,18 @@ pub fn h_3a(s: &mut St, f: &[i64; NF]) -> u32 {
                                     v23 = v20.wrapping_add(v22);
                                     v40 = match hload(&*s, v23, 4i128 as u32, false) { Some(x) => x, None => return 1 };
                                     { let c = (f8) as usize; if c >= 96 { return 1; } ws[nw] = (c as u8, v40); nw += 1; }
+                                    return 1;
+                                } else if (f8 >= 16i128 && f8 <= 79i128) {
+                                    v20 = rr!(&*s, (16i128 + (f4 + 0i128)));
+                                    v21 = rr!(&*s, (32i128 + (f6 + 0i128)));
+                                    v3 = (4i128) as u32;
+                                    v22 = v21.wrapping_mul(v3);
+                                    v23 = v20.wrapping_add(v22);
+                                    v40 = match hload(&*s, v23, 4i128 as u32, false) { Some(x) => x, None => return 1 };
+                                    { let c = (f8) as usize; if c >= 96 { return 1; } ws[nw] = (c as u8, v40); nw += 1; }
+                                    if (f8 >= 64i128) {
+                                        { let c = (((f8 - 64i128) + 16i128)) as usize; if c >= 96 { return 1; } ws[nw] = (c as u8, v40); nw += 1; }
+                                    }
                                     return 1;
                                 } else {
                                     if (f8 == 107i128) {
@@ -1518,7 +1844,17 @@ pub fn h_3a(s: &mut St, f: &[i64; NF]) -> u32 {
                                     v12 = match hload(&*s, v7, 4i128 as u32, false) { Some(x) => x, None => return 1 };
                                     v13 = match hload(&*s, v8, 4i128 as u32, false) { Some(x) => x, None => return 1 };
                                     { let c = (f8) as usize; if c >= 96 { return 1; } ws[nw] = (c as u8, v12); nw += 1; }
+                                    if (f8 >= 64i128) {
+                                        if (f8 <= 79i128) {
+                                            { let c = (((f8 - 64i128) + 16i128)) as usize; if c >= 96 { return 1; } ws[nw] = (c as u8, v12); nw += 1; }
+                                        }
+                                    }
                                     { let c = ((f8 ^ 1i128)) as usize; if c >= 96 { return 1; } ws[nw] = (c as u8, v13); nw += 1; }
+                                    if ((f8 ^ 1i128) >= 64i128) {
+                                        if ((f8 ^ 1i128) <= 79i128) {
+                                            { let c = ((((f8 ^ 1i128) - 64i128) + 16i128)) as usize; if c >= 96 { return 1; } ws[nw] = (c as u8, v13); nw += 1; }
+                                        }
+                                    }
                                     v14 = match hpost(&*s, ((f4 + 8i128) + 16) as u32, v0, v4, 4i128 as i64) { Some(x) => x, None => return 1 };
                                     { let c = ((16i128 + (f4 + 8i128))) as usize; if c >= 96 { return 1; } ws[nw] = (c as u8, v14); nw += 1; }
                                 } else {
@@ -1549,7 +1885,17 @@ pub fn h_3a(s: &mut St, f: &[i64; NF]) -> u32 {
                                     v18 = match hload(&*s, v16, 4i128 as u32, false) { Some(x) => x, None => return 1 };
                                     v19 = match hload(&*s, v17, 4i128 as u32, false) { Some(x) => x, None => return 1 };
                                     { let c = (f8) as usize; if c >= 96 { return 1; } ws[nw] = (c as u8, v18); nw += 1; }
+                                    if (f8 >= 64i128) {
+                                        if (f8 <= 79i128) {
+                                            { let c = (((f8 - 64i128) + 16i128)) as usize; if c >= 96 { return 1; } ws[nw] = (c as u8, v18); nw += 1; }
+                                        }
+                                    }
                                     { let c = ((f8 ^ 1i128)) as usize; if c >= 96 { return 1; } ws[nw] = (c as u8, v19); nw += 1; }
+                                    if ((f8 ^ 1i128) >= 64i128) {
+                                        if ((f8 ^ 1i128) <= 79i128) {
+                                            { let c = ((((f8 ^ 1i128) - 64i128) + 16i128)) as usize; if c >= 96 { return 1; } ws[nw] = (c as u8, v19); nw += 1; }
+                                        }
+                                    }
                                 } else {
                                     v18 = match hload(&*s, v16, 4i128 as u32, false) { Some(x) => x, None => return 1 };
                                     { let c = (f8) as usize; if c >= 96 { return 1; } ws[nw] = (c as u8, v18); nw += 1; }
@@ -1583,7 +1929,17 @@ pub fn h_3a(s: &mut St, f: &[i64; NF]) -> u32 {
                                     v27 = match hload(&*s, v24, 4i128 as u32, false) { Some(x) => x, None => return 1 };
                                     v28 = match hload(&*s, v25, 4i128 as u32, false) { Some(x) => x, None => return 1 };
                                     { let c = (f8) as usize; if c >= 96 { return 1; } ws[nw] = (c as u8, v27); nw += 1; }
+                                    if (f8 >= 64i128) {
+                                        if (f8 <= 79i128) {
+                                            { let c = (((f8 - 64i128) + 16i128)) as usize; if c >= 96 { return 1; } ws[nw] = (c as u8, v27); nw += 1; }
+                                        }
+                                    }
                                     { let c = ((f8 ^ 1i128)) as usize; if c >= 96 { return 1; } ws[nw] = (c as u8, v28); nw += 1; }
+                                    if ((f8 ^ 1i128) >= 64i128) {
+                                        if ((f8 ^ 1i128) <= 79i128) {
+                                            { let c = ((((f8 ^ 1i128) - 64i128) + 16i128)) as usize; if c >= 96 { return 1; } ws[nw] = (c as u8, v28); nw += 1; }
+                                        }
+                                    }
                                     v29 = match hpost(&*s, ((f4 + 0i128) + 16) as u32, v20, v22, 4i128 as i64) { Some(x) => x, None => return 1 };
                                     { let c = ((16i128 + (f4 + 0i128))) as usize; if c >= 96 { return 1; } ws[nw] = (c as u8, v29); nw += 1; }
                                 } else {
@@ -1614,7 +1970,17 @@ pub fn h_3a(s: &mut St, f: &[i64; NF]) -> u32 {
                                     v33 = match hload(&*s, v31, 4i128 as u32, false) { Some(x) => x, None => return 1 };
                                     v34 = match hload(&*s, v32, 4i128 as u32, false) { Some(x) => x, None => return 1 };
                                     { let c = (f8) as usize; if c >= 96 { return 1; } ws[nw] = (c as u8, v33); nw += 1; }
+                                    if (f8 >= 64i128) {
+                                        if (f8 <= 79i128) {
+                                            { let c = (((f8 - 64i128) + 16i128)) as usize; if c >= 96 { return 1; } ws[nw] = (c as u8, v33); nw += 1; }
+                                        }
+                                    }
                                     { let c = ((f8 ^ 1i128)) as usize; if c >= 96 { return 1; } ws[nw] = (c as u8, v34); nw += 1; }
+                                    if ((f8 ^ 1i128) >= 64i128) {
+                                        if ((f8 ^ 1i128) <= 79i128) {
+                                            { let c = ((((f8 ^ 1i128) - 64i128) + 16i128)) as usize; if c >= 96 { return 1; } ws[nw] = (c as u8, v34); nw += 1; }
+                                        }
+                                    }
                                 } else {
                                     v33 = match hload(&*s, v31, 4i128 as u32, false) { Some(x) => x, None => return 1 };
                                     { let c = (f8) as usize; if c >= 96 { return 1; } ws[nw] = (c as u8, v33); nw += 1; }
@@ -1646,6 +2012,11 @@ pub fn h_3a(s: &mut St, f: &[i64; NF]) -> u32 {
                                     v4 = v2.wrapping_mul(v3);
                                     v35 = match hload(&*s, v0, 4i128 as u32, false) { Some(x) => x, None => return 1 };
                                     { let c = (f8) as usize; if c >= 96 { return 1; } ws[nw] = (c as u8, v35); nw += 1; }
+                                    if (f8 >= 64i128) {
+                                        if (f8 <= 79i128) {
+                                            { let c = (((f8 - 64i128) + 16i128)) as usize; if c >= 96 { return 1; } ws[nw] = (c as u8, v35); nw += 1; }
+                                        }
+                                    }
                                     v15 = match hpost(&*s, ((f4 + 8i128) + 16) as u32, v0, v4, 4i128 as i64) { Some(x) => x, None => return 1 };
                                     { let c = ((16i128 + (f4 + 8i128))) as usize; if c >= 96 { return 1; } ws[nw] = (c as u8, v15); nw += 1; }
                                 }
@@ -1672,6 +2043,11 @@ pub fn h_3a(s: &mut St, f: &[i64; NF]) -> u32 {
                                     v5 = v0.wrapping_add(v4);
                                     v36 = match hload(&*s, v5, 4i128 as u32, false) { Some(x) => x, None => return 1 };
                                     { let c = (f8) as usize; if c >= 96 { return 1; } ws[nw] = (c as u8, v36); nw += 1; }
+                                    if (f8 >= 64i128) {
+                                        if (f8 <= 79i128) {
+                                            { let c = (((f8 - 64i128) + 16i128)) as usize; if c >= 96 { return 1; } ws[nw] = (c as u8, v36); nw += 1; }
+                                        }
+                                    }
                                 }
                             }
                         }
@@ -1733,7 +2109,7 @@ pub fn h_3a(s: &mut St, f: &[i64; NF]) -> u32 {
                                     { let c = ((f8 + 80i128)) as usize; if c >= 96 { return 1; } ws[nw] = (c as u8, v28); nw += 1; }
                                     v29 = match hpost(&*s, ((f4 + 0i128) + 16) as u32, v20, v22, 4i128 as i64) { Some(x) => x, None => return 1 };
                                     { let c = ((16i128 + (f4 + 0i128))) as usize; if c >= 96 { return 1; } ws[nw] = (c as u8, v29); nw += 1; }
-                                } else if (f8 >= 16i128 && f8 <= 79i128) || (f8 >= 110i128 && f8 <= 111i128) || (f8 >= 114i128 && f8 <= 117i128) || (f8 >= 122i128 && f8 <= 125i128) {
+                                } else if (f8 >= 16i128 && f8 <= 79i128) {
                                     return 1;
                                     v20 = rr!(&*s, (16i128 + (f4 + 0i128)));
                                     v21 = rr!(&*s, (32i128 + (f6 + 0i128)));
@@ -1741,6 +2117,9 @@ pub fn h_3a(s: &mut St, f: &[i64; NF]) -> u32 {
                                     v22 = v21.wrapping_mul(v3);
                                     v39 = match hload(&*s, v20, 4i128 as u32, false) { Some(x) => x, None => return 1 };
                                     { let c = (f8) as usize; if c >= 96 { return 1; } ws[nw] = (c as u8, v39); nw += 1; }
+                                    if (f8 >= 64i128) {
+                                        { let c = (((f8 - 64i128) + 16i128)) as usize; if c >= 96 { return 1; } ws[nw] = (c as u8, v39); nw += 1; }
+                                    }
                                     v30 = match hpost(&*s, ((f4 + 0i128) + 16) as u32, v20, v22, 4i128 as i64) { Some(x) => x, None => return 1 };
                                     { let c = ((16i128 + (f4 + 0i128))) as usize; if c >= 96 { return 1; } ws[nw] = (c as u8, v30); nw += 1; }
                                 } else if (f8 >= 80i128 && f8 <= 95i128) {
@@ -1770,7 +2149,7 @@ pub fn h_3a(s: &mut St, f: &[i64; NF]) -> u32 {
                                         v30 = match hpost(&*s, ((f4 + 0i128) + 16) as u32, v20, v22, 4i128 as i64) { Some(x) => x, None => return 1 };
                                         { let c = ((16i128 + (f4 + 0i128))) as usize; if c >= 96 { return 1; } ws[nw] = (c as u8, v30); nw += 1; }
                                     }
-                                } else {
+                                } else if (f8 >= 108i128 && f8 <= 109i128) || (f8 >= 112i128 && f8 <= 113i128) || (f8 >= 118i128 && f8 <= 121i128) || f8 >= 126i128 {
                                     if ((f8 ^ 1i128) == 107i128) {
                                         return 1;
                                     } else {
@@ -1784,9 +2163,24 @@ pub fn h_3a(s: &mut St, f: &[i64; NF]) -> u32 {
                                         { let c = (f8) as usize; if c >= 96 { return 1; } ws[nw] = (c as u8, v39); nw += 1; }
                                         v28 = match hload(&*s, v25, 4i128 as u32, false) { Some(x) => x, None => return 1 };
                                         { let c = ((f8 ^ 1i128)) as usize; if c >= 96 { return 1; } ws[nw] = (c as u8, v28); nw += 1; }
+                                        if ((f8 ^ 1i128) >= 64i128) {
+                                            if ((f8 ^ 1i128) <= 79i128) {
+                                                { let c = ((((f8 ^ 1i128) - 64i128) + 16i128)) as usize; if c >= 96 { return 1; } ws[nw] = (c as u8, v28); nw += 1; }
+                                            }
+                                        }
                                         v29 = match hpost(&*s, ((f4 + 0i128) + 16) as u32, v20, v22, 4i128 as i64) { Some(x) => x, None => return 1 };
                                         { let c = ((16i128 + (f4 + 0i128))) as usize; if c >= 96 { return 1; } ws[nw] = (c as u8, v29); nw += 1; }
                                     }
+                                } else {
+                                    return 1;
+                                    v20 = rr!(&*s, (16i128 + (f4 + 0i128)));
+                                    v21 = rr!(&*s, (32i128 + (f6 + 0i128)));
+                                    v3 = (4i128) as u32;
+                                    v22 = v21.wrapping_mul(v3);
+                                    v39 = match hload(&*s, v20, 4i128 as u32, false) { Some(x) => x, None => return 1 };
+                                    { let c = (f8) as usize; if c >= 96 { return 1; } ws[nw] = (c as u8, v39); nw += 1; }
+                                    v30 = match hpost(&*s, ((f4 + 0i128) + 16) as u32, v20, v22, 4i128 as i64) { Some(x) => x, None => return 1 };
+                                    { let c = ((16i128 + (f4 + 0i128))) as usize; if c >= 96 { return 1; } ws[nw] = (c as u8, v30); nw += 1; }
                                 }
                             }
                         } else {
@@ -1844,7 +2238,7 @@ pub fn h_3a(s: &mut St, f: &[i64; NF]) -> u32 {
                                     { let c = (f8) as usize; if c >= 96 { return 1; } ws[nw] = (c as u8, v40); nw += 1; }
                                     v34 = match hload(&*s, v32, 4i128 as u32, false) { Some(x) => x, None => return 1 };
                                     { let c = ((f8 + 80i128)) as usize; if c >= 96 { return 1; } ws[nw] = (c as u8, v34); nw += 1; }
-                                } else if (f8 >= 16i128 && f8 <= 79i128) || (f8 >= 110i128 && f8 <= 111i128) || (f8 >= 114i128 && f8 <= 117i128) || (f8 >= 122i128 && f8 <= 125i128) {
+                                } else if (f8 >= 16i128 && f8 <= 79i128) {
                                     return 1;
                                     v20 = rr!(&*s, (16i128 + (f4 + 0i128)));
                                     v21 = rr!(&*s, (32i128 + (f6 + 0i128)));
@@ -1853,6 +2247,9 @@ pub fn h_3a(s: &mut St, f: &[i64; NF]) -> u32 {
                                     v23 = v20.wrapping_add(v22);
                                     v40 = match hload(&*s, v23, 4i128 as u32, false) { Some(x) => x, None => return 1 };
                                     { let c = (f8) as usize; if c >= 96 { return 1; } ws[nw] = (c as u8, v40); nw += 1; }
+                                    if (f8 >= 64i128) {
+                                        { let c = (((f8 - 64i128) + 16i128)) as usize; if c >= 96 { return 1; } ws[nw] = (c as u8, v40); nw += 1; }
+                                    }
                                 } else if (f8 >= 80i128 && f8 <= 95i128) {
                                     return 1;
                                     v20 = rr!(&*s, (16i128 + (f4 + 0i128)));
@@ -1878,7 +2275,7 @@ pub fn h_3a(s: &mut St, f: &[i64; NF]) -> u32 {
                                         v40 = match hload(&*s, v23, 4i128 as u32, false) { Some(x) => x, None => return 1 };
                                         { let c = (f8) as usize; if c >= 96 { return 1; } ws[nw] = (c as u8, v40); nw += 1; }
                                     }
-                                } else {
+                                } else if (f8 >= 108i128 && f8 <= 109i128) || (f8 >= 112i128 && f8 <= 113i128) || (f8 >= 118i128 && f8 <= 121i128) || f8 >= 126i128 {
                                     if ((f8 ^ 1i128) == 107i128) {
                                         return 1;
                                     } else {
@@ -1893,7 +2290,21 @@ pub fn h_3a(s: &mut St, f: &[i64; NF]) -> u32 {
                                         { let c = (f8) as usize; if c >= 96 { return 1; } ws[nw] = (c as u8, v40); nw += 1; }
                                         v34 = match hload(&*s, v32, 4i128 as u32, false) { Some(x) => x, None => return 1 };
                                         { let c = ((f8 ^ 1i128)) as usize; if c >= 96 { return 1; } ws[nw] = (c as u8, v34); nw += 1; }
+                                        if ((f8 ^ 1i128) >= 64i128) {
+                                            if ((f8 ^ 1i128) <= 79i128) {
+                                                { let c = ((((f8 ^ 1i128) - 64i128) + 16i128)) as usize; if c >= 96 { return 1; } ws[nw] = (c as u8, v34); nw += 1; }
+                                            }
+                                        }
                                     }
+                                } else {
+                                    return 1;
+                                    v20 = rr!(&*s, (16i128 + (f4 + 0i128)));
+                                    v21 = rr!(&*s, (32i128 + (f6 + 0i128)));
+                                    v3 = (4i128) as u32;
+                                    v22 = v21.wrapping_mul(v3);
+                                    v23 = v20.wrapping_add(v22);
+                                    v40 = match hload(&*s, v23, 4i128 as u32, false) { Some(x) => x, None => return 1 };
+                                    { let c = (f8) as usize; if c >= 96 { return 1; } ws[nw] = (c as u8, v40); nw += 1; }
                                 }
                             }
                         }
@@ -1928,7 +2339,17 @@ pub fn h_3a(s: &mut St, f: &[i64; NF]) -> u32 {
                                     v12 = match hload(&*s, v7, 4i128 as u32, false) { Some(x) => x, None => return 1 };
                                     v13 = match hload(&*s, v8, 4i128 as u32, false) { Some(x) => x, None => return 1 };
                                     { let c = (f8) as usize; if c >= 96 { return 1; } ws[nw] = (c as u8, v12); nw += 1; }
+                                    if (f8 >= 64i128) {
+                                        if (f8 <= 79i128) {
+                                            { let c = (((f8 - 64i128) + 16i128)) as usize; if c >= 96 { return 1; } ws[nw] = (c as u8, v12); nw += 1; }
+                                        }
+                                    }
                                     { let c = ((f8 ^ 1i128)) as usize; if c >= 96 { return 1; } ws[nw] = (c as u8, v13); nw += 1; }
+                                    if ((f8 ^ 1i128) >= 64i128) {
+                                        if ((f8 ^ 1i128) <= 79i128) {
+                                            { let c = ((((f8 ^ 1i128) - 64i128) + 16i128)) as usize; if c >= 96 { return 1; } ws[nw] = (c as u8, v13); nw += 1; }
+                                        }
+                                    }
                                     v14 = match hpost(&*s, ((f4 + 8i128) + 16) as u32, v0, v4, 4i128 as i64) { Some(x) => x, None => return 1 };
                                     { let c = ((16i128 + (f4 + 8i128))) as usize; if c >= 96 { return 1; } ws[nw] = (c as u8, v14); nw += 1; }
                                 } else {
@@ -1959,7 +2380,17 @@ pub fn h_3a(s: &mut St, f: &[i64; NF]) -> u32 {
                                     v18 = match hload(&*s, v16, 4i128 as u32, false) { Some(x) => x, None => return 1 };
                                     v19 = match hload(&*s, v17, 4i128 as u32, false) { Some(x) => x, None => return 1 };
                                     { let c = (f8) as usize; if c >= 96 { return 1; } ws[nw] = (c as u8, v18); nw += 1; }
+                                    if (f8 >= 64i128) {
+                                        if (f8 <= 79i128) {
+                                            { let c = (((f8 - 64i128) + 16i128)) as usize; if c >= 96 { return 1; } ws[nw] = (c as u8, v18); nw += 1; }
+                                        }
+                                    }
                                     { let c = ((f8 ^ 1i128)) as usize; if c >= 96 { return 1; } ws[nw] = (c as u8, v19); nw += 1; }
+                                    if ((f8 ^ 1i128) >= 64i128) {
+                                        if ((f8 ^ 1i128) <= 79i128) {
+                                            { let c = ((((f8 ^ 1i128) - 64i128) + 16i128)) as usize; if c >= 96 { return 1; } ws[nw] = (c as u8, v19); nw += 1; }
+                                        }
+                                    }
                                 } else {
                                     v18 = match hload(&*s, v16, 4i128 as u32, false) { Some(x) => x, None => return 1 };
                                     { let c = (f8) as usize; if c >= 96 { return 1; } ws[nw] = (c as u8, v18); nw += 1; }
@@ -1993,7 +2424,17 @@ pub fn h_3a(s: &mut St, f: &[i64; NF]) -> u32 {
                                     v27 = match hload(&*s, v24, 4i128 as u32, false) { Some(x) => x, None => return 1 };
                                     v28 = match hload(&*s, v25, 4i128 as u32, false) { Some(x) => x, None => return 1 };
                                     { let c = (f8) as usize; if c >= 96 { return 1; } ws[nw] = (c as u8, v27); nw += 1; }
+                                    if (f8 >= 64i128) {
+                                        if (f8 <= 79i128) {
+                                            { let c = (((f8 - 64i128) + 16i128)) as usize; if c >= 96 { return 1; } ws[nw] = (c as u8, v27); nw += 1; }
+                                        }
+                                    }
                                     { let c = ((f8 ^ 1i128)) as usize; if c >= 96 { return 1; } ws[nw] = (c as u8, v28); nw += 1; }
+                                    if ((f8 ^ 1i128) >= 64i128) {
+                                        if ((f8 ^ 1i128) <= 79i128) {
+                                            { let c = ((((f8 ^ 1i128) - 64i128) + 16i128)) as usize; if c >= 96 { return 1; } ws[nw] = (c as u8, v28); nw += 1; }
+                                        }
+                                    }
                                     v29 = match hpost(&*s, ((f4 + 0i128) + 16) as u32, v20, v22, 4i128 as i64) { Some(x) => x, None => return 1 };
                                     { let c = ((16i128 + (f4 + 0i128))) as usize; if c >= 96 { return 1; } ws[nw] = (c as u8, v29); nw += 1; }
                                 } else {
@@ -2024,7 +2465,17 @@ pub fn h_3a(s: &mut St, f: &[i64; NF]) -> u32 {
                                     v33 = match hload(&*s, v31, 4i128 as u32, false) { Some(x) => x, None => return 1 };
                                     v34 = match hload(&*s, v32, 4i128 as u32, false) { Some(x) => x, None => return 1 };
                                     { let c = (f8) as usize; if c >= 96 { return 1; } ws[nw] = (c as u8, v33); nw += 1; }
+                                    if (f8 >= 64i128) {
+                                        if (f8 <= 79i128) {
+                                            { let c = (((f8 - 64i128) + 16i128)) as usize; if c >= 96 { return 1; } ws[nw] = (c as u8, v33); nw += 1; }
+                                        }
+                                    }
                                     { let c = ((f8 ^ 1i128)) as usize; if c >= 96 { return 1; } ws[nw] = (c as u8, v34); nw += 1; }
+                                    if ((f8 ^ 1i128) >= 64i128) {
+                                        if ((f8 ^ 1i128) <= 79i128) {
+                                            { let c = ((((f8 ^ 1i128) - 64i128) + 16i128)) as usize; if c >= 96 { return 1; } ws[nw] = (c as u8, v34); nw += 1; }
+                                        }
+                                    }
                                 } else {
                                     v33 = match hload(&*s, v31, 4i128 as u32, false) { Some(x) => x, None => return 1 };
                                     { let c = (f8) as usize; if c >= 96 { return 1; } ws[nw] = (c as u8, v33); nw += 1; }
@@ -2054,6 +2505,11 @@ pub fn h_3a(s: &mut St, f: &[i64; NF]) -> u32 {
                                     v4 = v2.wrapping_mul(v3);
                                     v35 = match hload(&*s, v0, 4i128 as u32, false) { Some(x) => x, None => return 1 };
                                     { let c = (f8) as usize; if c >= 96 { return 1; } ws[nw] = (c as u8, v35); nw += 1; }
+                                    if (f8 >= 64i128) {
+                                        if (f8 <= 79i128) {
+                                            { let c = (((f8 - 64i128) + 16i128)) as usize; if c >= 96 { return 1; } ws[nw] = (c as u8, v35); nw += 1; }
+                                        }
+                                    }
                                     v15 = match hpost(&*s, ((f4 + 8i128) + 16) as u32, v0, v4, 4i128 as i64) { Some(x) => x, None => return 1 };
                                     { let c = ((16i128 + (f4 + 8i128))) as usize; if c >= 96 { return 1; } ws[nw] = (c as u8, v15); nw += 1; }
                                 }
@@ -2078,6 +2534,11 @@ pub fn h_3a(s: &mut St, f: &[i64; NF]) -> u32 {
                                     v5 = v0.wrapping_add(v4);
                                     v36 = match hload(&*s, v5, 4i128 as u32, false) { Some(x) => x, None => return 1 };
                                     { let c = (f8) as usize; if c >= 96 { return 1; } ws[nw] = (c as u8, v36); nw += 1; }
+                                    if (f8 >= 64i128) {
+                                        if (f8 <= 79i128) {
+                                            { let c = (((f8 - 64i128) + 16i128)) as usize; if c >= 96 { return 1; } ws[nw] = (c as u8, v36); nw += 1; }
+                                        }
+                                    }
                                 }
                             }
                         }
@@ -2137,13 +2598,16 @@ pub fn h_3a(s: &mut St, f: &[i64; NF]) -> u32 {
                                     { let c = ((f8 + 80i128)) as usize; if c >= 96 { return 1; } ws[nw] = (c as u8, v28); nw += 1; }
                                     v29 = match hpost(&*s, ((f4 + 0i128) + 16) as u32, v20, v22, 4i128 as i64) { Some(x) => x, None => return 1 };
                                     { let c = ((16i128 + (f4 + 0i128))) as usize; if c >= 96 { return 1; } ws[nw] = (c as u8, v29); nw += 1; }
-                                } else if (f8 >= 16i128 && f8 <= 79i128) || (f8 >= 110i128 && f8 <= 111i128) || (f8 >= 114i128 && f8 <= 117i128) || (f8 >= 122i128 && f8 <= 125i128) {
+                                } else if (f8 >= 16i128 && f8 <= 79i128) {
                                     v20 = rr!(&*s, (16i128 + (f4 + 0i128)));
                                     v21 = rr!(&*s, (32i128 + (f6 + 0i128)));
                                     v3 = (4i128) as u32;
                                     v22 = v21.wrapping_mul(v3);
                                     v39 = match hload(&*s, v20, 4i128 as u32, false) { Some(x) => x, None => return 1 };
                                     { let c = (f8) as usize; if c >= 96 { return 1; } ws[nw] = (c as u8, v39); nw += 1; }
+                                    if (f8 >= 64i128) {
+                                        { let c = (((f8 - 64i128) + 16i128)) as usize; if c >= 96 { return 1; } ws[nw] = (c as u8, v39); nw += 1; }
+                                    }
                                     v30 = match hpost(&*s, ((f4 + 0i128) + 16) as u32, v20, v22, 4i128 as i64) { Some(x) => x, None => return 1 };
                                     { let c = ((16i128 + (f4 + 0i128))) as usize; if c >= 96 { return 1; } ws[nw] = (c as u8, v30); nw += 1; }
                                 } else if (f8 >= 80i128 && f8 <= 95i128) {
@@ -2171,7 +2635,7 @@ pub fn h_3a(s: &mut St, f: &[i64; NF]) -> u32 {
                                         v30 = match hpost(&*s, ((f4 + 0i128) + 16) as u32, v20, v22, 4i128 as i64) { Some(x) => x, None => return 1 };
                                         { let c = ((16i128 + (f4 + 0i128))) as usize; if c >= 96 { return 1; } ws[nw] = (c as u8, v30); nw += 1; }
                                     }
-                                } else {
+                                } else if (f8 >= 108i128 && f8 <= 109i128) || (f8 >= 112i128 && f8 <= 113i128) || (f8 >= 118i128 && f8 <= 121i128) || f8 >= 126i128 {
                                     if ((f8 ^ 1i128) == 107i128) {
                                         return 1;
                                     } else {
@@ -2184,9 +2648,23 @@ pub fn h_3a(s: &mut St, f: &[i64; NF]) -> u32 {
                                         { let c = (f8) as usize; if c >= 96 { return 1; } ws[nw] = (c as u8, v39); nw += 1; }
                                         v28 = match hload(&*s, v25, 4i128 as u32, false) { Some(x) => x, None => return 1 };
                                         { let c = ((f8 ^ 1i128)) as usize; if c >= 96 { return 1; } ws[nw] = (c as u8, v28); nw += 1; }
+                                        if ((f8 ^ 1i128) >= 64i128) {
+                                            if ((f8 ^ 1i128) <= 79i128) {
+                                                { let c = ((((f8 ^ 1i128) - 64i128) + 16i128)) as usize; if c >= 96 { return 1; } ws[nw] = (c as u8, v28); nw += 1; }
+                                            }
+                                        }
                                         v29 = match hpost(&*s, ((f4 + 0i128) + 16) as u32, v20, v22, 4i128 as i64) { Some(x) => x, None => return 1 };
                                         { let c = ((16i128 + (f4 + 0i128))) as usize; if c >= 96 { return 1; } ws[nw] = (c as u8, v29); nw += 1; }
                                     }
+                                } else {
+                                    v20 = rr!(&*s, (16i128 + (f4 + 0i128)));
+                                    v21 = rr!(&*s, (32i128 + (f6 + 0i128)));
+                                    v3 = (4i128) as u32;
+                                    v22 = v21.wrapping_mul(v3);
+                                    v39 = match hload(&*s, v20, 4i128 as u32, false) { Some(x) => x, None => return 1 };
+                                    { let c = (f8) as usize; if c >= 96 { return 1; } ws[nw] = (c as u8, v39); nw += 1; }
+                                    v30 = match hpost(&*s, ((f4 + 0i128) + 16) as u32, v20, v22, 4i128 as i64) { Some(x) => x, None => return 1 };
+                                    { let c = ((16i128 + (f4 + 0i128))) as usize; if c >= 96 { return 1; } ws[nw] = (c as u8, v30); nw += 1; }
                                 }
                             }
                         } else {
@@ -2242,7 +2720,7 @@ pub fn h_3a(s: &mut St, f: &[i64; NF]) -> u32 {
                                     { let c = (f8) as usize; if c >= 96 { return 1; } ws[nw] = (c as u8, v40); nw += 1; }
                                     v34 = match hload(&*s, v32, 4i128 as u32, false) { Some(x) => x, None => return 1 };
                                     { let c = ((f8 + 80i128)) as usize; if c >= 96 { return 1; } ws[nw] = (c as u8, v34); nw += 1; }
-                                } else if (f8 >= 16i128 && f8 <= 79i128) || (f8 >= 110i128 && f8 <= 111i128) || (f8 >= 114i128 && f8 <= 117i128) || (f8 >= 122i128 && f8 <= 125i128) {
+                                } else if (f8 >= 16i128 && f8 <= 79i128) {
                                     v20 = rr!(&*s, (16i128 + (f4 + 0i128)));
                                     v21 = rr!(&*s, (32i128 + (f6 + 0i128)));
                                     v3 = (4i128) as u32;
@@ -2250,6 +2728,9 @@ pub fn h_3a(s: &mut St, f: &[i64; NF]) -> u32 {
                                     v23 = v20.wrapping_add(v22);
                                     v40 = match hload(&*s, v23, 4i128 as u32, false) { Some(x) => x, None => return 1 };
                                     { let c = (f8) as usize; if c >= 96 { return 1; } ws[nw] = (c as u8, v40); nw += 1; }
+                                    if (f8 >= 64i128) {
+                                        { let c = (((f8 - 64i128) + 16i128)) as usize; if c >= 96 { return 1; } ws[nw] = (c as u8, v40); nw += 1; }
+                                    }
                                 } else if (f8 >= 80i128 && f8 <= 95i128) {
                                     v20 = rr!(&*s, (16i128 + (f4 + 0i128)));
                                     v21 = rr!(&*s, (32i128 + (f6 + 0i128)));
@@ -2273,7 +2754,7 @@ pub fn h_3a(s: &mut St, f: &[i64; NF]) -> u32 {
                                         v40 = match hload(&*s, v23, 4i128 as u32, false) { Some(x) => x, None => return 1 };
                                         { let c = (f8) as usize; if c >= 96 { return 1; } ws[nw] = (c as u8, v40); nw += 1; }
                                     }
-                                } else {
+                                } else if (f8 >= 108i128 && f8 <= 109i128) || (f8 >= 112i128 && f8 <= 113i128) || (f8 >= 118i128 && f8 <= 121i128) || f8 >= 126i128 {
                                     if ((f8 ^ 1i128) == 107i128) {
                                         return 1;
                                     } else {
@@ -2287,7 +2768,20 @@ pub fn h_3a(s: &mut St, f: &[i64; NF]) -> u32 {
                                         { let c = (f8) as usize; if c >= 96 { return 1; } ws[nw] = (c as u8, v40); nw += 1; }
                                         v34 = match hload(&*s, v32, 4i128 as u32, false) { Some(x) => x, None => return 1 };
                                         { let c = ((f8 ^ 1i128)) as usize; if c >= 96 { return 1; } ws[nw] = (c as u8, v34); nw += 1; }
+                                        if ((f8 ^ 1i128) >= 64i128) {
+                                            if ((f8 ^ 1i128) <= 79i128) {
+                                                { let c = ((((f8 ^ 1i128) - 64i128) + 16i128)) as usize; if c >= 96 { return 1; } ws[nw] = (c as u8, v34); nw += 1; }
+                                            }
+                                        }
                                     }
+                                } else {
+                                    v20 = rr!(&*s, (16i128 + (f4 + 0i128)));
+                                    v21 = rr!(&*s, (32i128 + (f6 + 0i128)));
+                                    v3 = (4i128) as u32;
+                                    v22 = v21.wrapping_mul(v3);
+                                    v23 = v20.wrapping_add(v22);
+                                    v40 = match hload(&*s, v23, 4i128 as u32, false) { Some(x) => x, None => return 1 };
+                                    { let c = (f8) as usize; if c >= 96 { return 1; } ws[nw] = (c as u8, v40); nw += 1; }
                                 }
                             }
                         }
@@ -2325,7 +2819,17 @@ pub fn h_3a(s: &mut St, f: &[i64; NF]) -> u32 {
                                     v12 = match hload(&*s, v7, 4i128 as u32, false) { Some(x) => x, None => return 1 };
                                     v13 = match hload(&*s, v8, 4i128 as u32, false) { Some(x) => x, None => return 1 };
                                     { let c = (f8) as usize; if c >= 96 { return 1; } ws[nw] = (c as u8, v12); nw += 1; }
+                                    if (f8 >= 64i128) {
+                                        if (f8 <= 79i128) {
+                                            { let c = (((f8 - 64i128) + 16i128)) as usize; if c >= 96 { return 1; } ws[nw] = (c as u8, v12); nw += 1; }
+                                        }
+                                    }
                                     { let c = ((f8 ^ 1i128)) as usize; if c >= 96 { return 1; } ws[nw] = (c as u8, v13); nw += 1; }
+                                    if ((f8 ^ 1i128) >= 64i128) {
+                                        if ((f8 ^ 1i128) <= 79i128) {
+                                            { let c = ((((f8 ^ 1i128) - 64i128) + 16i128)) as usize; if c >= 96 { return 1; } ws[nw] = (c as u8, v13); nw += 1; }
+                                        }
+                                    }
                                     v14 = match hpost(&*s, ((f4 + 8i128) + 16) as u32, v0, v4, 4i128 as i64) { Some(x) => x, None => return 1 };
                                     { let c = ((16i128 + (f4 + 8i128))) as usize; if c >= 96 { return 1; } ws[nw] = (c as u8, v14); nw += 1; }
                                 } else {
@@ -2356,7 +2860,17 @@ pub fn h_3a(s: &mut St, f: &[i64; NF]) -> u32 {
                                     v18 = match hload(&*s, v16, 4i128 as u32, false) { Some(x) => x, None => return 1 };
                                     v19 = match hload(&*s, v17, 4i128 as u32, false) { Some(x) => x, None => return 1 };
                                     { let c = (f8) as usize; if c >= 96 { return 1; } ws[nw] = (c as u8, v18); nw += 1; }
+                                    if (f8 >= 64i128) {
+                                        if (f8 <= 79i128) {
+                                            { let c = (((f8 - 64i128) + 16i128)) as usize; if c >= 96 { return 1; } ws[nw] = (c as u8, v18); nw += 1; }
+                                        }
+                                    }
                                     { let c = ((f8 ^ 1i128)) as usize; if c >= 96 { return 1; } ws[nw] = (c as u8, v19); nw += 1; }
+                                    if ((f8 ^ 1i128) >= 64i128) {
+                                        if ((f8 ^ 1i128) <= 79i128) {
+                                            { let c = ((((f8 ^ 1i128) - 64i128) + 16i128)) as usize; if c >= 96 { return 1; } ws[nw] = (c as u8, v19); nw += 1; }
+                                        }
+                                    }
                                 } else {
                                     v18 = match hload(&*s, v16, 4i128 as u32, false) { Some(x) => x, None => return 1 };
                                     { let c = (f8) as usize; if c >= 96 { return 1; } ws[nw] = (c as u8, v18); nw += 1; }
@@ -2390,7 +2904,17 @@ pub fn h_3a(s: &mut St, f: &[i64; NF]) -> u32 {
                                     v27 = match hload(&*s, v24, 4i128 as u32, false) { Some(x) => x, None => return 1 };
                                     v28 = match hload(&*s, v25, 4i128 as u32, false) { Some(x) => x, None => return 1 };
                                     { let c = (f8) as usize; if c >= 96 { return 1; } ws[nw] = (c as u8, v27); nw += 1; }
+                                    if (f8 >= 64i128) {
+                                        if (f8 <= 79i128) {
+                                            { let c = (((f8 - 64i128) + 16i128)) as usize; if c >= 96 { return 1; } ws[nw] = (c as u8, v27); nw += 1; }
+                                        }
+                                    }
                                     { let c = ((f8 ^ 1i128)) as usize; if c >= 96 { return 1; } ws[nw] = (c as u8, v28); nw += 1; }
+                                    if ((f8 ^ 1i128) >= 64i128) {
+                                        if ((f8 ^ 1i128) <= 79i128) {
+                                            { let c = ((((f8 ^ 1i128) - 64i128) + 16i128)) as usize; if c >= 96 { return 1; } ws[nw] = (c as u8, v28); nw += 1; }
+                                        }
+                                    }
                                     v29 = match hpost(&*s, ((f4 + 0i128) + 16) as u32, v20, v22, 4i128 as i64) { Some(x) => x, None => return 1 };
                                     { let c = ((16i128 + (f4 + 0i128))) as usize; if c >= 96 { return 1; } ws[nw] = (c as u8, v29); nw += 1; }
                                 } else {
@@ -2421,7 +2945,17 @@ pub fn h_3a(s: &mut St, f: &[i64; NF]) -> u32 {
                                     v33 = match hload(&*s, v31, 4i128 as u32, false) { Some(x) => x, None => return 1 };
                                     v34 = match hload(&*s, v32, 4i128 as u32, false) { Some(x) => x, None => return 1 };
                                     { let c = (f8) as usize; if c >= 96 { return 1; } ws[nw] = (c as u8, v33); nw += 1; }
+                                    if (f8 >= 64i128) {
+                                        if (f8 <= 79i128) {
+                                            { let c = (((f8 - 64i128) + 16i128)) as usize; if c >= 96 { return 1; } ws[nw] = (c as u8, v33); nw += 1; }
+                                        }
+                                    }
                                     { let c = ((f8 ^ 1i128)) as usize; if c >= 96 { return 1; } ws[nw] = (c as u8, v34); nw += 1; }
+                                    if ((f8 ^ 1i128) >= 64i128) {
+                                        if ((f8 ^ 1i128) <= 79i128) {
+                                            { let c = ((((f8 ^ 1i128) - 64i128) + 16i128)) as usize; if c >= 96 { return 1; } ws[nw] = (c as u8, v34); nw += 1; }
+                                        }
+                                    }
                                 } else {
                                     v33 = match hload(&*s, v31, 4i128 as u32, false) { Some(x) => x, None => return 1 };
                                     { let c = (f8) as usize; if c >= 96 { return 1; } ws[nw] = (c as u8, v33); nw += 1; }
@@ -2453,6 +2987,11 @@ pub fn h_3a(s: &mut St, f: &[i64; NF]) -> u32 {
                                     v4 = v2.wrapping_mul(v3);
                                     v35 = match hload(&*s, v0, 4i128 as u32, false) { Some(x) => x, None => return 1 };
                                     { let c = (f8) as usize; if c >= 96 { return 1; } ws[nw] = (c as u8, v35); nw += 1; }
+                                    if (f8 >= 64i128) {
+                                        if (f8 <= 79i128) {
+                                            { let c = (((f8 - 64i128) + 16i128)) as usize; if c >= 96 { return 1; } ws[nw] = (c as u8, v35); nw += 1; }
+                                        }
+                                    }
                                     v15 = match hpost(&*s, ((f4 + 8i128) + 16) as u32, v0, v4, 4i128 as i64) { Some(x) => x, None => return 1 };
                                     { let c = ((16i128 + (f4 + 8i128))) as usize; if c >= 96 { return 1; } ws[nw] = (c as u8, v15); nw += 1; }
                                 }
@@ -2479,6 +3018,11 @@ pub fn h_3a(s: &mut St, f: &[i64; NF]) -> u32 {
                                     v5 = v0.wrapping_add(v4);
                                     v36 = match hload(&*s, v5, 4i128 as u32, false) { Some(x) => x, None => return 1 };
                                     { let c = (f8) as usize; if c >= 96 { return 1; } ws[nw] = (c as u8, v36); nw += 1; }
+                                    if (f8 >= 64i128) {
+                                        if (f8 <= 79i128) {
+                                            { let c = (((f8 - 64i128) + 16i128)) as usize; if c >= 96 { return 1; } ws[nw] = (c as u8, v36); nw += 1; }
+                                        }
+                                    }
                                 }
                             }
                         }
@@ -2495,7 +3039,7 @@ pub fn h_3a(s: &mut St, f: &[i64; NF]) -> u32 {
                                 v26 = match hpost(&*s, ((f4 + 0i128) + 16) as u32, v20, v22, 4i128 as i64) { Some(x) => x, None => return 1 };
                                 { let c = ((16i128 + (f4 + 0i128))) as usize; if c >= 96 { return 1; } ws[nw] = (c as u8, v26); nw += 1; }
                             } else {
-                                if f8 <= 15i128 || (f8 >= 16i128 && f8 <= 79i128) || (f8 >= 80i128 && f8 <= 95i128) || (f8 >= 108i128 && f8 <= 109i128) || (f8 >= 110i128 && f8 <= 111i128) || (f8 >= 112i128 && f8 <= 113i128) || (f8 >= 114i128 && f8 <= 117i128) || (f8 >= 118i128 && f8 <= 121i128) || (f8 >= 122i128 && f8 <= 125i128) || f8 >= 126i128 {
+                                if f8 <= 15i128 || (f8 >= 80i128 && f8 <= 95i128) || (f8 >= 108i128 && f8 <= 109i128) || (f8 >= 110i128 && f8 <= 111i128) || (f8 >= 112i128 && f8 <= 113i128) || (f8 >= 114i128 && f8 <= 117i128) || (f8 >= 118i128 && f8 <= 121i128) || (f8 >= 122i128 && f8 <= 125i128) || f8 >= 126i128 {
                                     return 1;
                                     v20 = rr!(&*s, (16i128 + (f4 + 0i128)));
                                     v21 = rr!(&*s, (32i128 + (f6 + 0i128)));
@@ -2503,6 +3047,19 @@ pub fn h_3a(s: &mut St, f: &[i64; NF]) -> u32 {
                                     v22 = v21.wrapping_mul(v3);
                                     v39 = match hload(&*s, v20, 4i128 as u32, false) { Some(x) => x, None => return 1 };
                                     { let c = (f8) as usize; if c >= 96 { return 1; } ws[nw] = (c as u8, v39); nw += 1; }
+                                    v30 = match hpost(&*s, ((f4 + 0i128) + 16) as u32, v20, v22, 4i128 as i64) { Some(x) => x, None => return 1 };
+                                    { let c = ((16i128 + (f4 + 0i128))) as usize; if c >= 96 { return 1; } ws[nw] = (c as u8, v30); nw += 1; }
+                                } else if (f8 >= 16i128 && f8 <= 79i128) {
+                                    return 1;
+                                    v20 = rr!(&*s, (16i128 + (f4 + 0i128)));
+                                    v21 = rr!(&*s, (32i128 + (f6 + 0i128)));
+                                    v3 = (4i128) as u32;
+                                    v22 = v21.wrapping_mul(v3);
+                                    v39 = match hload(&*s, v20, 4i128 as u32, false) { Some(x) => x, None => return 1 };
+                                    { let c = (f8) as usize; if c >= 96 { return 1; } ws[nw] = (c as u8, v39); nw += 1; }
+                                    if (f8 >= 64i128) {
+                                        { let c = (((f8 - 64i128) + 16i128)) as usize; if c >= 96 { return 1; } ws[nw] = (c as u8, v39); nw += 1; }
+                                    }
                                     v30 = match hpost(&*s, ((f4 + 0i128) + 16) as u32, v20, v22, 4i128 as i64) { Some(x) => x, None => return 1 };
                                     { let c = ((16i128 + (f4 + 0i128))) as usize; if c >= 96 { return 1; } ws[nw] = (c as u8, v30); nw += 1; }
                                 } else {
@@ -2532,7 +3089,7 @@ pub fn h_3a(s: &mut St, f: &[i64; NF]) -> u32 {
                                 v9 = rr!(&*s, f8);
                                 st[nst] = (v23, v9, 4i128 as u8); nst += 1;
                             } else {
-                                if f8 <= 15i128 || (f8 >= 16i128 && f8 <= 79i128) || (f8 >= 80i128 && f8 <= 95i128) || (f8 >= 108i128 && f8 <= 109i128) || (f8 >= 110i128 && f8 <= 111i128) || (f8 >= 112i128 && f8 <= 113i128) || (f8 >= 114i128 && f8 <= 117i128) || (f8 >= 118i128 && f8 <= 121i128) || (f8 >= 122i128 && f8 <= 125i128) || f8 >= 126i128 {
+                                if f8 <= 15i128 || (f8 >= 80i128 && f8 <= 95i128) || (f8 >= 108i128 && f8 <= 109i128) || (f8 >= 110i128 && f8 <= 111i128) || (f8 >= 112i128 && f8 <= 113i128) || (f8 >= 114i128 && f8 <= 117i128) || (f8 >= 118i128 && f8 <= 121i128) || (f8 >= 122i128 && f8 <= 125i128) || f8 >= 126i128 {
                                     return 1;
                                     v20 = rr!(&*s, (16i128 + (f4 + 0i128)));
                                     v21 = rr!(&*s, (32i128 + (f6 + 0i128)));
@@ -2541,6 +3098,18 @@ pub fn h_3a(s: &mut St, f: &[i64; NF]) -> u32 {
                                     v23 = v20.wrapping_add(v22);
                                     v40 = match hload(&*s, v23, 4i128 as u32, false) { Some(x) => x, None => return 1 };
                                     { let c = (f8) as usize; if c >= 96 { return 1; } ws[nw] = (c as u8, v40); nw += 1; }
+                                } else if (f8 >= 16i128 && f8 <= 79i128) {
+                                    return 1;
+                                    v20 = rr!(&*s, (16i128 + (f4 + 0i128)));
+                                    v21 = rr!(&*s, (32i128 + (f6 + 0i128)));
+                                    v3 = (4i128) as u32;
+                                    v22 = v21.wrapping_mul(v3);
+                                    v23 = v20.wrapping_add(v22);
+                                    v40 = match hload(&*s, v23, 4i128 as u32, false) { Some(x) => x, None => return 1 };
+                                    { let c = (f8) as usize; if c >= 96 { return 1; } ws[nw] = (c as u8, v40); nw += 1; }
+                                    if (f8 >= 64i128) {
+                                        { let c = (((f8 - 64i128) + 16i128)) as usize; if c >= 96 { return 1; } ws[nw] = (c as u8, v40); nw += 1; }
+                                    }
                                 } else {
                                     if (f8 == 107i128) {
                                         return 1;
@@ -2588,7 +3157,17 @@ pub fn h_3a(s: &mut St, f: &[i64; NF]) -> u32 {
                                     v12 = match hload(&*s, v7, 4i128 as u32, false) { Some(x) => x, None => return 1 };
                                     v13 = match hload(&*s, v8, 4i128 as u32, false) { Some(x) => x, None => return 1 };
                                     { let c = (f8) as usize; if c >= 96 { return 1; } ws[nw] = (c as u8, v12); nw += 1; }
+                                    if (f8 >= 64i128) {
+                                        if (f8 <= 79i128) {
+                                            { let c = (((f8 - 64i128) + 16i128)) as usize; if c >= 96 { return 1; } ws[nw] = (c as u8, v12); nw += 1; }
+                                        }
+                                    }
                                     { let c = ((f8 ^ 1i128)) as usize; if c >= 96 { return 1; } ws[nw] = (c as u8, v13); nw += 1; }
+                                    if ((f8 ^ 1i128) >= 64i128) {
+                                        if ((f8 ^ 1i128) <= 79i128) {
+                                            { let c = ((((f8 ^ 1i128) - 64i128) + 16i128)) as usize; if c >= 96 { return 1; } ws[nw] = (c as u8, v13); nw += 1; }
+                                        }
+                                    }
                                     v14 = match hpost(&*s, ((f4 + 8i128) + 16) as u32, v0, v4, 4i128 as i64) { Some(x) => x, None => return 1 };
                                     { let c = ((16i128 + (f4 + 8i128))) as usize; if c >= 96 { return 1; } ws[nw] = (c as u8, v14); nw += 1; }
                                 } else {
@@ -2619,7 +3198,17 @@ pub fn h_3a(s: &mut St, f: &[i64; NF]) -> u32 {
                                     v18 = match hload(&*s, v16, 4i128 as u32, false) { Some(x) => x, None => return 1 };
                                     v19 = match hload(&*s, v17, 4i128 as u32, false) { Some(x) => x, None => return 1 };
                                     { let c = (f8) as usize; if c >= 96 { return 1; } ws[nw] = (c as u8, v18); nw += 1; }
+                                    if (f8 >= 64i128) {
+                                        if (f8 <= 79i128) {
+                                            { let c = (((f8 - 64i128) + 16i128)) as usize; if c >= 96 { return 1; } ws[nw] = (c as u8, v18); nw += 1; }
+                                        }
+                                    }
                                     { let c = ((f8 ^ 1i128)) as usize; if c >= 96 { return 1; } ws[nw] = (c as u8, v19); nw += 1; }
+                                    if ((f8 ^ 1i128) >= 64i128) {
+                                        if ((f8 ^ 1i128) <= 79i128) {
+                                            { let c = ((((f8 ^ 1i128) - 64i128) + 16i128)) as usize; if c >= 96 { return 1; } ws[nw] = (c as u8, v19); nw += 1; }
+                                        }
+                                    }
                                 } else {
                                     v18 = match hload(&*s, v16, 4i128 as u32, false) { Some(x) => x, None => return 1 };
                                     { let c = (f8) as usize; if c >= 96 { return 1; } ws[nw] = (c as u8, v18); nw += 1; }
@@ -2653,7 +3242,17 @@ pub fn h_3a(s: &mut St, f: &[i64; NF]) -> u32 {
                                     v27 = match hload(&*s, v24, 4i128 as u32, false) { Some(x) => x, None => return 1 };
                                     v28 = match hload(&*s, v25, 4i128 as u32, false) { Some(x) => x, None => return 1 };
                                     { let c = (f8) as usize; if c >= 96 { return 1; } ws[nw] = (c as u8, v27); nw += 1; }
+                                    if (f8 >= 64i128) {
+                                        if (f8 <= 79i128) {
+                                            { let c = (((f8 - 64i128) + 16i128)) as usize; if c >= 96 { return 1; } ws[nw] = (c as u8, v27); nw += 1; }
+                                        }
+                                    }
                                     { let c = ((f8 ^ 1i128)) as usize; if c >= 96 { return 1; } ws[nw] = (c as u8, v28); nw += 1; }
+                                    if ((f8 ^ 1i128) >= 64i128) {
+                                        if ((f8 ^ 1i128) <= 79i128) {
+                                            { let c = ((((f8 ^ 1i128) - 64i128) + 16i128)) as usize; if c >= 96 { return 1; } ws[nw] = (c as u8, v28); nw += 1; }
+                                        }
+                                    }
                                     v29 = match hpost(&*s, ((f4 + 0i128) + 16) as u32, v20, v22, 4i128 as i64) { Some(x) => x, None => return 1 };
                                     { let c = ((16i128 + (f4 + 0i128))) as usize; if c >= 96 { return 1; } ws[nw] = (c as u8, v29); nw += 1; }
                                 } else {
@@ -2684,7 +3283,17 @@ pub fn h_3a(s: &mut St, f: &[i64; NF]) -> u32 {
                                     v33 = match hload(&*s, v31, 4i128 as u32, false) { Some(x) => x, None => return 1 };
                                     v34 = match hload(&*s, v32, 4i128 as u32, false) { Some(x) => x, None => return 1 };
                                     { let c = (f8) as usize; if c >= 96 { return 1; } ws[nw] = (c as u8, v33); nw += 1; }
+                                    if (f8 >= 64i128) {
+                                        if (f8 <= 79i128) {
+                                            { let c = (((f8 - 64i128) + 16i128)) as usize; if c >= 96 { return 1; } ws[nw] = (c as u8, v33); nw += 1; }
+                                        }
+                                    }
                                     { let c = ((f8 ^ 1i128)) as usize; if c >= 96 { return 1; } ws[nw] = (c as u8, v34); nw += 1; }
+                                    if ((f8 ^ 1i128) >= 64i128) {
+                                        if ((f8 ^ 1i128) <= 79i128) {
+                                            { let c = ((((f8 ^ 1i128) - 64i128) + 16i128)) as usize; if c >= 96 { return 1; } ws[nw] = (c as u8, v34); nw += 1; }
+                                        }
+                                    }
                                 } else {
                                     v33 = match hload(&*s, v31, 4i128 as u32, false) { Some(x) => x, None => return 1 };
                                     { let c = (f8) as usize; if c >= 96 { return 1; } ws[nw] = (c as u8, v33); nw += 1; }
@@ -2714,6 +3323,11 @@ pub fn h_3a(s: &mut St, f: &[i64; NF]) -> u32 {
                                     v4 = v2.wrapping_mul(v3);
                                     v35 = match hload(&*s, v0, 4i128 as u32, false) { Some(x) => x, None => return 1 };
                                     { let c = (f8) as usize; if c >= 96 { return 1; } ws[nw] = (c as u8, v35); nw += 1; }
+                                    if (f8 >= 64i128) {
+                                        if (f8 <= 79i128) {
+                                            { let c = (((f8 - 64i128) + 16i128)) as usize; if c >= 96 { return 1; } ws[nw] = (c as u8, v35); nw += 1; }
+                                        }
+                                    }
                                     v15 = match hpost(&*s, ((f4 + 8i128) + 16) as u32, v0, v4, 4i128 as i64) { Some(x) => x, None => return 1 };
                                     { let c = ((16i128 + (f4 + 8i128))) as usize; if c >= 96 { return 1; } ws[nw] = (c as u8, v15); nw += 1; }
                                 }
@@ -2738,6 +3352,11 @@ pub fn h_3a(s: &mut St, f: &[i64; NF]) -> u32 {
                                     v5 = v0.wrapping_add(v4);
                                     v36 = match hload(&*s, v5, 4i128 as u32, false) { Some(x) => x, None => return 1 };
                                     { let c = (f8) as usize; if c >= 96 { return 1; } ws[nw] = (c as u8, v36); nw += 1; }
+                                    if (f8 >= 64i128) {
+                                        if (f8 <= 79i128) {
+                                            { let c = (((f8 - 64i128) + 16i128)) as usize; if c >= 96 { return 1; } ws[nw] = (c as u8, v36); nw += 1; }
+                                        }
+                                    }
                                 }
                             }
                         }
@@ -2753,13 +3372,25 @@ pub fn h_3a(s: &mut St, f: &[i64; NF]) -> u32 {
                                 v26 = match hpost(&*s, ((f4 + 0i128) + 16) as u32, v20, v22, 4i128 as i64) { Some(x) => x, None => return 1 };
                                 { let c = ((16i128 + (f4 + 0i128))) as usize; if c >= 96 { return 1; } ws[nw] = (c as u8, v26); nw += 1; }
                             } else {
-                                if f8 <= 15i128 || (f8 >= 16i128 && f8 <= 79i128) || (f8 >= 80i128 && f8 <= 95i128) || (f8 >= 108i128 && f8 <= 109i128) || (f8 >= 110i128 && f8 <= 111i128) || (f8 >= 112i128 && f8 <= 113i128) || (f8 >= 114i128 && f8 <= 117i128) || (f8 >= 118i128 && f8 <= 121i128) || (f8 >= 122i128 && f8 <= 125i128) || f8 >= 126i128 {
+                                if f8 <= 15i128 || (f8 >= 80i128 && f8 <= 95i128) || (f8 >= 108i128 && f8 <= 109i128) || (f8 >= 110i128 && f8 <= 111i128) || (f8 >= 112i128 && f8 <= 113i128) || (f8 >= 114i128 && f8 <= 117i128) || (f8 >= 118i128 && f8 <= 121i128) || (f8 >= 122i128 && f8 <= 125i128) || f8 >= 126i128 {
                                     v20 = rr!(&*s, (16i128 + (f4 + 0i128)));
                                     v21 = rr!(&*s, (32i128 + (f6 + 0i128)));
                                     v3 = (4i128) as u32;
                                     v22 = v21.wrapping_mul(v3);
                                     v39 = match hload(&*s, v20, 4i128 as u32, false) { Some(x) => x, None => return 1 };
                                     { let c = (f8) as usize; if c >= 96 { return 1; } ws[nw] = (c as u8, v39); nw += 1; }
+                                    v30 = match hpost(&*s, ((f4 + 0i128) + 16) as u32, v20, v22, 4i128 as i64) { Some(x) => x, None => return 1 };
+                                    { let c = ((16i128 + (f4 + 0i128))) as usize; if c >= 96 { return 1; } ws[nw] = (c as u8, v30); nw += 1; }
+                                } else if (f8 >= 16i128 && f8 <= 79i128) {
+                                    v20 = rr!(&*s, (16i128 + (f4 + 0i128)));
+                                    v21 = rr!(&*s, (32i128 + (f6 + 0i128)));
+                                    v3 = (4i128) as u32;
+                                    v22 = v21.wrapping_mul(v3);
+                                    v39 = match hload(&*s, v20, 4i128 as u32, false) { Some(x) => x, None => return 1 };
+                                    { let c = (f8) as usize; if c >= 96 { return 1; } ws[nw] = (c as u8, v39); nw += 1; }
+                                    if (f8 >= 64i128) {
+                                        { let c = (((f8 - 64i128) + 16i128)) as usize; if c >= 96 { return 1; } ws[nw] = (c as u8, v39); nw += 1; }
+                                    }
                                     v30 = match hpost(&*s, ((f4 + 0i128) + 16) as u32, v20, v22, 4i128 as i64) { Some(x) => x, None => return 1 };
                                     { let c = ((16i128 + (f4 + 0i128))) as usize; if c >= 96 { return 1; } ws[nw] = (c as u8, v30); nw += 1; }
                                 } else {
@@ -2787,7 +3418,7 @@ pub fn h_3a(s: &mut St, f: &[i64; NF]) -> u32 {
                                 v9 = rr!(&*s, f8);
                                 st[nst] = (v23, v9, 4i128 as u8); nst += 1;
                             } else {
-                                if f8 <= 15i128 || (f8 >= 16i128 && f8 <= 79i128) || (f8 >= 80i128 && f8 <= 95i128) || (f8 >= 108i128 && f8 <= 109i128) || (f8 >= 110i128 && f8 <= 111i128) || (f8 >= 112i128 && f8 <= 113i128) || (f8 >= 114i128 && f8 <= 117i128) || (f8 >= 118i128 && f8 <= 121i128) || (f8 >= 122i128 && f8 <= 125i128) || f8 >= 126i128 {
+                                if f8 <= 15i128 || (f8 >= 80i128 && f8 <= 95i128) || (f8 >= 108i128 && f8 <= 109i128) || (f8 >= 110i128 && f8 <= 111i128) || (f8 >= 112i128 && f8 <= 113i128) || (f8 >= 114i128 && f8 <= 117i128) || (f8 >= 118i128 && f8 <= 121i128) || (f8 >= 122i128 && f8 <= 125i128) || f8 >= 126i128 {
                                     v20 = rr!(&*s, (16i128 + (f4 + 0i128)));
                                     v21 = rr!(&*s, (32i128 + (f6 + 0i128)));
                                     v3 = (4i128) as u32;
@@ -2795,6 +3426,17 @@ pub fn h_3a(s: &mut St, f: &[i64; NF]) -> u32 {
                                     v23 = v20.wrapping_add(v22);
                                     v40 = match hload(&*s, v23, 4i128 as u32, false) { Some(x) => x, None => return 1 };
                                     { let c = (f8) as usize; if c >= 96 { return 1; } ws[nw] = (c as u8, v40); nw += 1; }
+                                } else if (f8 >= 16i128 && f8 <= 79i128) {
+                                    v20 = rr!(&*s, (16i128 + (f4 + 0i128)));
+                                    v21 = rr!(&*s, (32i128 + (f6 + 0i128)));
+                                    v3 = (4i128) as u32;
+                                    v22 = v21.wrapping_mul(v3);
+                                    v23 = v20.wrapping_add(v22);
+                                    v40 = match hload(&*s, v23, 4i128 as u32, false) { Some(x) => x, None => return 1 };
+                                    { let c = (f8) as usize; if c >= 96 { return 1; } ws[nw] = (c as u8, v40); nw += 1; }
+                                    if (f8 >= 64i128) {
+                                        { let c = (((f8 - 64i128) + 16i128)) as usize; if c >= 96 { return 1; } ws[nw] = (c as u8, v40); nw += 1; }
+                                    }
                                 } else {
                                     if (f8 == 107i128) {
                                         return 1;
@@ -2888,7 +3530,17 @@ pub fn t_3a<S: RegRead>(s: &S, f: &[i64; NF], t: &mut Touch) -> bool {
                             } else {
                                 if (f8 < 96i128) {
                                     t.wr((f8) as u32);
+                                    if (f8 >= 64i128) {
+                                        if (f8 <= 79i128) {
+                                            t.wr((((f8 - 64i128) + 16i128)) as u32);
+                                        }
+                                    }
                                     t.wr(((f8 ^ 1i128)) as u32);
+                                    if ((f8 ^ 1i128) >= 64i128) {
+                                        if ((f8 ^ 1i128) <= 79i128) {
+                                            t.wr(((((f8 ^ 1i128) - 64i128) + 16i128)) as u32);
+                                        }
+                                    }
                                     t.wr(((16i128 + (f4 + 8i128))) as u32);
                                 } else {
                                     t.wr((f8) as u32);
@@ -2905,7 +3557,17 @@ pub fn t_3a<S: RegRead>(s: &S, f: &[i64; NF], t: &mut Touch) -> bool {
                             } else {
                                 if (f8 < 96i128) {
                                     t.wr((f8) as u32);
+                                    if (f8 >= 64i128) {
+                                        if (f8 <= 79i128) {
+                                            t.wr((((f8 - 64i128) + 16i128)) as u32);
+                                        }
+                                    }
                                     t.wr(((f8 ^ 1i128)) as u32);
+                                    if ((f8 ^ 1i128) >= 64i128) {
+                                        if ((f8 ^ 1i128) <= 79i128) {
+                                            t.wr(((((f8 ^ 1i128) - 64i128) + 16i128)) as u32);
+                                        }
+                                    }
                                 } else {
                                     t.wr((f8) as u32);
                                 }
@@ -2925,7 +3587,17 @@ pub fn t_3a<S: RegRead>(s: &S, f: &[i64; NF], t: &mut Touch) -> bool {
                             } else {
                                 if (f8 < 96i128) {
                                     t.wr((f8) as u32);
+                                    if (f8 >= 64i128) {
+                                        if (f8 <= 79i128) {
+                                            t.wr((((f8 - 64i128) + 16i128)) as u32);
+                                        }
+                                    }
                                     t.wr(((f8 ^ 1i128)) as u32);
+                                    if ((f8 ^ 1i128) >= 64i128) {
+                                        if ((f8 ^ 1i128) <= 79i128) {
+                                            t.wr(((((f8 ^ 1i128) - 64i128) + 16i128)) as u32);
+                                        }
+                                    }
                                     t.wr(((16i128 + (f4 + 0i128))) as u32);
                                 } else {
                                     t.wr((f8) as u32);
@@ -2942,7 +3614,17 @@ pub fn t_3a<S: RegRead>(s: &S, f: &[i64; NF], t: &mut Touch) -> bool {
                             } else {
                                 if (f8 < 96i128) {
                                     t.wr((f8) as u32);
+                                    if (f8 >= 64i128) {
+                                        if (f8 <= 79i128) {
+                                            t.wr((((f8 - 64i128) + 16i128)) as u32);
+                                        }
+                                    }
                                     t.wr(((f8 ^ 1i128)) as u32);
+                                    if ((f8 ^ 1i128) >= 64i128) {
+                                        if ((f8 ^ 1i128) <= 79i128) {
+                                            t.wr(((((f8 ^ 1i128) - 64i128) + 16i128)) as u32);
+                                        }
+                                    }
                                 } else {
                                     t.wr((f8) as u32);
                                 }
@@ -2968,6 +3650,11 @@ pub fn t_3a<S: RegRead>(s: &S, f: &[i64; NF], t: &mut Touch) -> bool {
                                     t.rd(((16i128 + (f4 + 8i128))) as u32);
                                     t.rd(((32i128 + (f6 + 8i128))) as u32);
                                     t.wr((f8) as u32);
+                                    if (f8 >= 64i128) {
+                                        if (f8 <= 79i128) {
+                                            t.wr((((f8 - 64i128) + 16i128)) as u32);
+                                        }
+                                    }
                                     t.wr(((16i128 + (f4 + 8i128))) as u32);
                                     return false;
                                 }
@@ -2987,6 +3674,11 @@ pub fn t_3a<S: RegRead>(s: &S, f: &[i64; NF], t: &mut Touch) -> bool {
                                     t.rd(((16i128 + (f4 + 8i128))) as u32);
                                     t.rd(((32i128 + (f6 + 8i128))) as u32);
                                     t.wr((f8) as u32);
+                                    if (f8 >= 64i128) {
+                                        if (f8 <= 79i128) {
+                                            t.wr((((f8 - 64i128) + 16i128)) as u32);
+                                        }
+                                    }
                                     return false;
                                 }
                             }
@@ -3026,11 +3718,14 @@ pub fn t_3a<S: RegRead>(s: &S, f: &[i64; NF], t: &mut Touch) -> bool {
                                     t.wr(((f8 + 80i128)) as u32);
                                     t.wr(((16i128 + (f4 + 0i128))) as u32);
                                     return false;
-                                } else if (f8 >= 16i128 && f8 <= 79i128) || (f8 >= 110i128 && f8 <= 111i128) || (f8 >= 114i128 && f8 <= 117i128) || (f8 >= 122i128 && f8 <= 125i128) {
+                                } else if (f8 >= 16i128 && f8 <= 79i128) {
                                     return false;
                                     t.rd(((16i128 + (f4 + 0i128))) as u32);
                                     t.rd(((32i128 + (f6 + 0i128))) as u32);
                                     t.wr((f8) as u32);
+                                    if (f8 >= 64i128) {
+                                        t.wr((((f8 - 64i128) + 16i128)) as u32);
+                                    }
                                     t.wr(((16i128 + (f4 + 0i128))) as u32);
                                     return false;
                                 } else if (f8 >= 80i128 && f8 <= 95i128) {
@@ -3052,7 +3747,7 @@ pub fn t_3a<S: RegRead>(s: &S, f: &[i64; NF], t: &mut Touch) -> bool {
                                         t.wr(((16i128 + (f4 + 0i128))) as u32);
                                         return false;
                                     }
-                                } else {
+                                } else if (f8 >= 108i128 && f8 <= 109i128) || (f8 >= 112i128 && f8 <= 113i128) || (f8 >= 118i128 && f8 <= 121i128) || f8 >= 126i128 {
                                     if ((f8 ^ 1i128) == 107i128) {
                                         return false;
                                     } else {
@@ -3061,9 +3756,21 @@ pub fn t_3a<S: RegRead>(s: &S, f: &[i64; NF], t: &mut Touch) -> bool {
                                         t.rd(((32i128 + (f6 + 0i128))) as u32);
                                         t.wr((f8) as u32);
                                         t.wr(((f8 ^ 1i128)) as u32);
+                                        if ((f8 ^ 1i128) >= 64i128) {
+                                            if ((f8 ^ 1i128) <= 79i128) {
+                                                t.wr(((((f8 ^ 1i128) - 64i128) + 16i128)) as u32);
+                                            }
+                                        }
                                         t.wr(((16i128 + (f4 + 0i128))) as u32);
                                         return false;
                                     }
+                                } else {
+                                    return false;
+                                    t.rd(((16i128 + (f4 + 0i128))) as u32);
+                                    t.rd(((32i128 + (f6 + 0i128))) as u32);
+                                    t.wr((f8) as u32);
+                                    t.wr(((16i128 + (f4 + 0i128))) as u32);
+                                    return false;
                                 }
                             }
                         } else {
@@ -3098,11 +3805,14 @@ pub fn t_3a<S: RegRead>(s: &S, f: &[i64; NF], t: &mut Touch) -> bool {
                                     t.wr((f8) as u32);
                                     t.wr(((f8 + 80i128)) as u32);
                                     return false;
-                                } else if (f8 >= 16i128 && f8 <= 79i128) || (f8 >= 110i128 && f8 <= 111i128) || (f8 >= 114i128 && f8 <= 117i128) || (f8 >= 122i128 && f8 <= 125i128) {
+                                } else if (f8 >= 16i128 && f8 <= 79i128) {
                                     return false;
                                     t.rd(((16i128 + (f4 + 0i128))) as u32);
                                     t.rd(((32i128 + (f6 + 0i128))) as u32);
                                     t.wr((f8) as u32);
+                                    if (f8 >= 64i128) {
+                                        t.wr((((f8 - 64i128) + 16i128)) as u32);
+                                    }
                                     return false;
                                 } else if (f8 >= 80i128 && f8 <= 95i128) {
                                     return false;
@@ -3121,7 +3831,7 @@ pub fn t_3a<S: RegRead>(s: &S, f: &[i64; NF], t: &mut Touch) -> bool {
                                         t.wr((f8) as u32);
                                         return false;
                                     }
-                                } else {
+                                } else if (f8 >= 108i128 && f8 <= 109i128) || (f8 >= 112i128 && f8 <= 113i128) || (f8 >= 118i128 && f8 <= 121i128) || f8 >= 126i128 {
                                     if ((f8 ^ 1i128) == 107i128) {
                                         return false;
                                     } else {
@@ -3130,8 +3840,19 @@ pub fn t_3a<S: RegRead>(s: &S, f: &[i64; NF], t: &mut Touch) -> bool {
                                         t.rd(((32i128 + (f6 + 0i128))) as u32);
                                         t.wr((f8) as u32);
                                         t.wr(((f8 ^ 1i128)) as u32);
+                                        if ((f8 ^ 1i128) >= 64i128) {
+                                            if ((f8 ^ 1i128) <= 79i128) {
+                                                t.wr(((((f8 ^ 1i128) - 64i128) + 16i128)) as u32);
+                                            }
+                                        }
                                         return false;
                                     }
+                                } else {
+                                    return false;
+                                    t.rd(((16i128 + (f4 + 0i128))) as u32);
+                                    t.rd(((32i128 + (f6 + 0i128))) as u32);
+                                    t.wr((f8) as u32);
+                                    return false;
                                 }
                             }
                         }
@@ -3153,7 +3874,17 @@ pub fn t_3a<S: RegRead>(s: &S, f: &[i64; NF], t: &mut Touch) -> bool {
                             } else {
                                 if (f8 < 96i128) {
                                     t.wr((f8) as u32);
+                                    if (f8 >= 64i128) {
+                                        if (f8 <= 79i128) {
+                                            t.wr((((f8 - 64i128) + 16i128)) as u32);
+                                        }
+                                    }
                                     t.wr(((f8 ^ 1i128)) as u32);
+                                    if ((f8 ^ 1i128) >= 64i128) {
+                                        if ((f8 ^ 1i128) <= 79i128) {
+                                            t.wr(((((f8 ^ 1i128) - 64i128) + 16i128)) as u32);
+                                        }
+                                    }
                                     t.wr(((16i128 + (f4 + 8i128))) as u32);
                                 } else {
                                     t.wr((f8) as u32);
@@ -3170,7 +3901,17 @@ pub fn t_3a<S: RegRead>(s: &S, f: &[i64; NF], t: &mut Touch) -> bool {
                             } else {
                                 if (f8 < 96i128) {
                                     t.wr((f8) as u32);
+                                    if (f8 >= 64i128) {
+                                        if (f8 <= 79i128) {
+                                            t.wr((((f8 - 64i128) + 16i128)) as u32);
+                                        }
+                                    }
                                     t.wr(((f8 ^ 1i128)) as u32);
+                                    if ((f8 ^ 1i128) >= 64i128) {
+                                        if ((f8 ^ 1i128) <= 79i128) {
+                                            t.wr(((((f8 ^ 1i128) - 64i128) + 16i128)) as u32);
+                                        }
+                                    }
                                 } else {
                                     t.wr((f8) as u32);
                                 }
@@ -3190,7 +3931,17 @@ pub fn t_3a<S: RegRead>(s: &S, f: &[i64; NF], t: &mut Touch) -> bool {
                             } else {
                                 if (f8 < 96i128) {
                                     t.wr((f8) as u32);
+                                    if (f8 >= 64i128) {
+                                        if (f8 <= 79i128) {
+                                            t.wr((((f8 - 64i128) + 16i128)) as u32);
+                                        }
+                                    }
                                     t.wr(((f8 ^ 1i128)) as u32);
+                                    if ((f8 ^ 1i128) >= 64i128) {
+                                        if ((f8 ^ 1i128) <= 79i128) {
+                                            t.wr(((((f8 ^ 1i128) - 64i128) + 16i128)) as u32);
+                                        }
+                                    }
                                     t.wr(((16i128 + (f4 + 0i128))) as u32);
                                 } else {
                                     t.wr((f8) as u32);
@@ -3207,7 +3958,17 @@ pub fn t_3a<S: RegRead>(s: &S, f: &[i64; NF], t: &mut Touch) -> bool {
                             } else {
                                 if (f8 < 96i128) {
                                     t.wr((f8) as u32);
+                                    if (f8 >= 64i128) {
+                                        if (f8 <= 79i128) {
+                                            t.wr((((f8 - 64i128) + 16i128)) as u32);
+                                        }
+                                    }
                                     t.wr(((f8 ^ 1i128)) as u32);
+                                    if ((f8 ^ 1i128) >= 64i128) {
+                                        if ((f8 ^ 1i128) <= 79i128) {
+                                            t.wr(((((f8 ^ 1i128) - 64i128) + 16i128)) as u32);
+                                        }
+                                    }
                                 } else {
                                     t.wr((f8) as u32);
                                 }
@@ -3233,6 +3994,11 @@ pub fn t_3a<S: RegRead>(s: &S, f: &[i64; NF], t: &mut Touch) -> bool {
                                     t.rd(((16i128 + (f4 + 8i128))) as u32);
                                     t.rd(((32i128 + (f6 + 8i128))) as u32);
                                     t.wr((f8) as u32);
+                                    if (f8 >= 64i128) {
+                                        if (f8 <= 79i128) {
+                                            t.wr((((f8 - 64i128) + 16i128)) as u32);
+                                        }
+                                    }
                                     t.wr(((16i128 + (f4 + 8i128))) as u32);
                                     return false;
                                     return false;
@@ -3252,6 +4018,11 @@ pub fn t_3a<S: RegRead>(s: &S, f: &[i64; NF], t: &mut Touch) -> bool {
                                     t.rd(((16i128 + (f4 + 8i128))) as u32);
                                     t.rd(((32i128 + (f6 + 8i128))) as u32);
                                     t.wr((f8) as u32);
+                                    if (f8 >= 64i128) {
+                                        if (f8 <= 79i128) {
+                                            t.wr((((f8 - 64i128) + 16i128)) as u32);
+                                        }
+                                    }
                                     return false;
                                     return false;
                                 }
@@ -3292,10 +4063,13 @@ pub fn t_3a<S: RegRead>(s: &S, f: &[i64; NF], t: &mut Touch) -> bool {
                                     t.wr(((16i128 + (f4 + 0i128))) as u32);
                                     return false;
                                     return false;
-                                } else if (f8 >= 16i128 && f8 <= 79i128) || (f8 >= 110i128 && f8 <= 111i128) || (f8 >= 114i128 && f8 <= 117i128) || (f8 >= 122i128 && f8 <= 125i128) {
+                                } else if (f8 >= 16i128 && f8 <= 79i128) {
                                     t.rd(((16i128 + (f4 + 0i128))) as u32);
                                     t.rd(((32i128 + (f6 + 0i128))) as u32);
                                     t.wr((f8) as u32);
+                                    if (f8 >= 64i128) {
+                                        t.wr((((f8 - 64i128) + 16i128)) as u32);
+                                    }
                                     t.wr(((16i128 + (f4 + 0i128))) as u32);
                                     return false;
                                     return false;
@@ -3318,7 +4092,7 @@ pub fn t_3a<S: RegRead>(s: &S, f: &[i64; NF], t: &mut Touch) -> bool {
                                         return false;
                                         return false;
                                     }
-                                } else {
+                                } else if (f8 >= 108i128 && f8 <= 109i128) || (f8 >= 112i128 && f8 <= 113i128) || (f8 >= 118i128 && f8 <= 121i128) || f8 >= 126i128 {
                                     if ((f8 ^ 1i128) == 107i128) {
                                         return false;
                                     } else {
@@ -3326,10 +4100,22 @@ pub fn t_3a<S: RegRead>(s: &S, f: &[i64; NF], t: &mut Touch) -> bool {
                                         t.rd(((32i128 + (f6 + 0i128))) as u32);
                                         t.wr((f8) as u32);
                                         t.wr(((f8 ^ 1i128)) as u32);
+                                        if ((f8 ^ 1i128) >= 64i128) {
+                                            if ((f8 ^ 1i128) <= 79i128) {
+                                                t.wr(((((f8 ^ 1i128) - 64i128) + 16i128)) as u32);
+                                            }
+                                        }
                                         t.wr(((16i128 + (f4 + 0i128))) as u32);
                                         return false;
                                         return false;
                                     }
+                                } else {
+                                    t.rd(((16i128 + (f4 + 0i128))) as u32);
+                                    t.rd(((32i128 + (f6 + 0i128))) as u32);
+                                    t.wr((f8) as u32);
+                                    t.wr(((16i128 + (f4 + 0i128))) as u32);
+                                    return false;
+                                    return false;
                                 }
                             }
                         } else {
@@ -3364,10 +4150,13 @@ pub fn t_3a<S: RegRead>(s: &S, f: &[i64; NF], t: &mut Touch) -> bool {
                                     t.wr(((f8 + 80i128)) as u32);
                                     return false;
                                     return false;
-                                } else if (f8 >= 16i128 && f8 <= 79i128) || (f8 >= 110i128 && f8 <= 111i128) || (f8 >= 114i128 && f8 <= 117i128) || (f8 >= 122i128 && f8 <= 125i128) {
+                                } else if (f8 >= 16i128 && f8 <= 79i128) {
                                     t.rd(((16i128 + (f4 + 0i128))) as u32);
                                     t.rd(((32i128 + (f6 + 0i128))) as u32);
                                     t.wr((f8) as u32);
+                                    if (f8 >= 64i128) {
+                                        t.wr((((f8 - 64i128) + 16i128)) as u32);
+                                    }
                                     return false;
                                     return false;
                                 } else if (f8 >= 80i128 && f8 <= 95i128) {
@@ -3387,7 +4176,7 @@ pub fn t_3a<S: RegRead>(s: &S, f: &[i64; NF], t: &mut Touch) -> bool {
                                         return false;
                                         return false;
                                     }
-                                } else {
+                                } else if (f8 >= 108i128 && f8 <= 109i128) || (f8 >= 112i128 && f8 <= 113i128) || (f8 >= 118i128 && f8 <= 121i128) || f8 >= 126i128 {
                                     if ((f8 ^ 1i128) == 107i128) {
                                         return false;
                                     } else {
@@ -3395,9 +4184,20 @@ pub fn t_3a<S: RegRead>(s: &S, f: &[i64; NF], t: &mut Touch) -> bool {
                                         t.rd(((32i128 + (f6 + 0i128))) as u32);
                                         t.wr((f8) as u32);
                                         t.wr(((f8 ^ 1i128)) as u32);
+                                        if ((f8 ^ 1i128) >= 64i128) {
+                                            if ((f8 ^ 1i128) <= 79i128) {
+                                                t.wr(((((f8 ^ 1i128) - 64i128) + 16i128)) as u32);
+                                            }
+                                        }
                                         return false;
                                         return false;
                                     }
+                                } else {
+                                    t.rd(((16i128 + (f4 + 0i128))) as u32);
+                                    t.rd(((32i128 + (f6 + 0i128))) as u32);
+                                    t.wr((f8) as u32);
+                                    return false;
+                                    return false;
                                 }
                             }
                         }
@@ -3422,7 +4222,17 @@ pub fn t_3a<S: RegRead>(s: &S, f: &[i64; NF], t: &mut Touch) -> bool {
                             } else {
                                 if (f8 < 96i128) {
                                     t.wr((f8) as u32);
+                                    if (f8 >= 64i128) {
+                                        if (f8 <= 79i128) {
+                                            t.wr((((f8 - 64i128) + 16i128)) as u32);
+                                        }
+                                    }
                                     t.wr(((f8 ^ 1i128)) as u32);
+                                    if ((f8 ^ 1i128) >= 64i128) {
+                                        if ((f8 ^ 1i128) <= 79i128) {
+                                            t.wr(((((f8 ^ 1i128) - 64i128) + 16i128)) as u32);
+                                        }
+                                    }
                                     t.wr(((16i128 + (f4 + 8i128))) as u32);
                                 } else {
                                     t.wr((f8) as u32);
@@ -3439,7 +4249,17 @@ pub fn t_3a<S: RegRead>(s: &S, f: &[i64; NF], t: &mut Touch) -> bool {
                             } else {
                                 if (f8 < 96i128) {
                                     t.wr((f8) as u32);
+                                    if (f8 >= 64i128) {
+                                        if (f8 <= 79i128) {
+                                            t.wr((((f8 - 64i128) + 16i128)) as u32);
+                                        }
+                                    }
                                     t.wr(((f8 ^ 1i128)) as u32);
+                                    if ((f8 ^ 1i128) >= 64i128) {
+                                        if ((f8 ^ 1i128) <= 79i128) {
+                                            t.wr(((((f8 ^ 1i128) - 64i128) + 16i128)) as u32);
+                                        }
+                                    }
                                 } else {
                                     t.wr((f8) as u32);
                                 }
@@ -3459,7 +4279,17 @@ pub fn t_3a<S: RegRead>(s: &S, f: &[i64; NF], t: &mut Touch) -> bool {
                             } else {
                                 if (f8 < 96i128) {
                                     t.wr((f8) as u32);
+                                    if (f8 >= 64i128) {
+                                        if (f8 <= 79i128) {
+                                            t.wr((((f8 - 64i128) + 16i128)) as u32);
+                                        }
+                                    }
                                     t.wr(((f8 ^ 1i128)) as u32);
+                                    if ((f8 ^ 1i128) >= 64i128) {
+                                        if ((f8 ^ 1i128) <= 79i128) {
+                                            t.wr(((((f8 ^ 1i128) - 64i128) + 16i128)) as u32);
+                                        }
+                                    }
                                     t.wr(((16i128 + (f4 + 0i128))) as u32);
                                 } else {
                                     t.wr((f8) as u32);
@@ -3476,7 +4306,17 @@ pub fn t_3a<S: RegRead>(s: &S, f: &[i64; NF], t: &mut Touch) -> bool {
                             } else {
                                 if (f8 < 96i128) {
                                     t.wr((f8) as u32);
+                                    if (f8 >= 64i128) {
+                                        if (f8 <= 79i128) {
+                                            t.wr((((f8 - 64i128) + 16i128)) as u32);
+                                        }
+                                    }
                                     t.wr(((f8 ^ 1i128)) as u32);
+                                    if ((f8 ^ 1i128) >= 64i128) {
+                                        if ((f8 ^ 1i128) <= 79i128) {
+                                            t.wr(((((f8 ^ 1i128) - 64i128) + 16i128)) as u32);
+                                        }
+                                    }
                                 } else {
                                     t.wr((f8) as u32);
                                 }
@@ -3502,6 +4342,11 @@ pub fn t_3a<S: RegRead>(s: &S, f: &[i64; NF], t: &mut Touch) -> bool {
                                     t.rd(((16i128 + (f4 + 8i128))) as u32);
                                     t.rd(((32i128 + (f6 + 8i128))) as u32);
                                     t.wr((f8) as u32);
+                                    if (f8 >= 64i128) {
+                                        if (f8 <= 79i128) {
+                                            t.wr((((f8 - 64i128) + 16i128)) as u32);
+                                        }
+                                    }
                                     t.wr(((16i128 + (f4 + 8i128))) as u32);
                                     return false;
                                 }
@@ -3521,6 +4366,11 @@ pub fn t_3a<S: RegRead>(s: &S, f: &[i64; NF], t: &mut Touch) -> bool {
                                     t.rd(((16i128 + (f4 + 8i128))) as u32);
                                     t.rd(((32i128 + (f6 + 8i128))) as u32);
                                     t.wr((f8) as u32);
+                                    if (f8 >= 64i128) {
+                                        if (f8 <= 79i128) {
+                                            t.wr((((f8 - 64i128) + 16i128)) as u32);
+                                        }
+                                    }
                                     return false;
                                 }
                             }
@@ -3535,11 +4385,21 @@ pub fn t_3a<S: RegRead>(s: &S, f: &[i64; NF], t: &mut Touch) -> bool {
                                 t.wr(((16i128 + (f4 + 0i128))) as u32);
                                 return false;
                             } else {
-                                if f8 <= 15i128 || (f8 >= 16i128 && f8 <= 79i128) || (f8 >= 80i128 && f8 <= 95i128) || (f8 >= 108i128 && f8 <= 109i128) || (f8 >= 110i128 && f8 <= 111i128) || (f8 >= 112i128 && f8 <= 113i128) || (f8 >= 114i128 && f8 <= 117i128) || (f8 >= 118i128 && f8 <= 121i128) || (f8 >= 122i128 && f8 <= 125i128) || f8 >= 126i128 {
+                                if f8 <= 15i128 || (f8 >= 80i128 && f8 <= 95i128) || (f8 >= 108i128 && f8 <= 109i128) || (f8 >= 110i128 && f8 <= 111i128) || (f8 >= 112i128 && f8 <= 113i128) || (f8 >= 114i128 && f8 <= 117i128) || (f8 >= 118i128 && f8 <= 121i128) || (f8 >= 122i128 && f8 <= 125i128) || f8 >= 126i128 {
                                     return false;
                                     t.rd(((16i128 + (f4 + 0i128))) as u32);
                                     t.rd(((32i128 + (f6 + 0i128))) as u32);
                                     t.wr((f8) as u32);
+                                    t.wr(((16i128 + (f4 + 0i128))) as u32);
+                                    return false;
+                                } else if (f8 >= 16i128 && f8 <= 79i128) {
+                                    return false;
+                                    t.rd(((16i128 + (f4 + 0i128))) as u32);
+                                    t.rd(((32i128 + (f6 + 0i128))) as u32);
+                                    t.wr((f8) as u32);
+                                    if (f8 >= 64i128) {
+                                        t.wr((((f8 - 64i128) + 16i128)) as u32);
+                                    }
                                     t.wr(((16i128 + (f4 + 0i128))) as u32);
                                     return false;
                                 } else {
@@ -3563,11 +4423,20 @@ pub fn t_3a<S: RegRead>(s: &S, f: &[i64; NF], t: &mut Touch) -> bool {
                                 t.rd((f8) as u32);
                                 return false;
                             } else {
-                                if f8 <= 15i128 || (f8 >= 16i128 && f8 <= 79i128) || (f8 >= 80i128 && f8 <= 95i128) || (f8 >= 108i128 && f8 <= 109i128) || (f8 >= 110i128 && f8 <= 111i128) || (f8 >= 112i128 && f8 <= 113i128) || (f8 >= 114i128 && f8 <= 117i128) || (f8 >= 118i128 && f8 <= 121i128) || (f8 >= 122i128 && f8 <= 125i128) || f8 >= 126i128 {
+                                if f8 <= 15i128 || (f8 >= 80i128 && f8 <= 95i128) || (f8 >= 108i128 && f8 <= 109i128) || (f8 >= 110i128 && f8 <= 111i128) || (f8 >= 112i128 && f8 <= 113i128) || (f8 >= 114i128 && f8 <= 117i128) || (f8 >= 118i128 && f8 <= 121i128) || (f8 >= 122i128 && f8 <= 125i128) || f8 >= 126i128 {
                                     return false;
                                     t.rd(((16i128 + (f4 + 0i128))) as u32);
                                     t.rd(((32i128 + (f6 + 0i128))) as u32);
                                     t.wr((f8) as u32);
+                                    return false;
+                                } else if (f8 >= 16i128 && f8 <= 79i128) {
+                                    return false;
+                                    t.rd(((16i128 + (f4 + 0i128))) as u32);
+                                    t.rd(((32i128 + (f6 + 0i128))) as u32);
+                                    t.wr((f8) as u32);
+                                    if (f8 >= 64i128) {
+                                        t.wr((((f8 - 64i128) + 16i128)) as u32);
+                                    }
                                     return false;
                                 } else {
                                     if (f8 == 107i128) {
@@ -3600,7 +4469,17 @@ pub fn t_3a<S: RegRead>(s: &S, f: &[i64; NF], t: &mut Touch) -> bool {
                             } else {
                                 if (f8 < 96i128) {
                                     t.wr((f8) as u32);
+                                    if (f8 >= 64i128) {
+                                        if (f8 <= 79i128) {
+                                            t.wr((((f8 - 64i128) + 16i128)) as u32);
+                                        }
+                                    }
                                     t.wr(((f8 ^ 1i128)) as u32);
+                                    if ((f8 ^ 1i128) >= 64i128) {
+                                        if ((f8 ^ 1i128) <= 79i128) {
+                                            t.wr(((((f8 ^ 1i128) - 64i128) + 16i128)) as u32);
+                                        }
+                                    }
                                     t.wr(((16i128 + (f4 + 8i128))) as u32);
                                 } else {
                                     t.wr((f8) as u32);
@@ -3617,7 +4496,17 @@ pub fn t_3a<S: RegRead>(s: &S, f: &[i64; NF], t: &mut Touch) -> bool {
                             } else {
                                 if (f8 < 96i128) {
                                     t.wr((f8) as u32);
+                                    if (f8 >= 64i128) {
+                                        if (f8 <= 79i128) {
+                                            t.wr((((f8 - 64i128) + 16i128)) as u32);
+                                        }
+                                    }
                                     t.wr(((f8 ^ 1i128)) as u32);
+                                    if ((f8 ^ 1i128) >= 64i128) {
+                                        if ((f8 ^ 1i128) <= 79i128) {
+                                            t.wr(((((f8 ^ 1i128) - 64i128) + 16i128)) as u32);
+                                        }
+                                    }
                                 } else {
                                     t.wr((f8) as u32);
                                 }
@@ -3637,7 +4526,17 @@ pub fn t_3a<S: RegRead>(s: &S, f: &[i64; NF], t: &mut Touch) -> bool {
                             } else {
                                 if (f8 < 96i128) {
                                     t.wr((f8) as u32);
+                                    if (f8 >= 64i128) {
+                                        if (f8 <= 79i128) {
+                                            t.wr((((f8 - 64i128) + 16i128)) as u32);
+                                        }
+                                    }
                                     t.wr(((f8 ^ 1i128)) as u32);
+                                    if ((f8 ^ 1i128) >= 64i128) {
+                                        if ((f8 ^ 1i128) <= 79i128) {
+                                            t.wr(((((f8 ^ 1i128) - 64i128) + 16i128)) as u32);
+                                        }
+                                    }
                                     t.wr(((16i128 + (f4 + 0i128))) as u32);
                                 } else {
                                     t.wr((f8) as u32);
@@ -3654,7 +4553,17 @@ pub fn t_3a<S: RegRead>(s: &S, f: &[i64; NF], t: &mut Touch) -> bool {
                             } else {
                                 if (f8 < 96i128) {
                                     t.wr((f8) as u32);
+                                    if (f8 >= 64i128) {
+                                        if (f8 <= 79i128) {
+                                            t.wr((((f8 - 64i128) + 16i128)) as u32);
+                                        }
+                                    }
                                     t.wr(((f8 ^ 1i128)) as u32);
+                                    if ((f8 ^ 1i128) >= 64i128) {
+                                        if ((f8 ^ 1i128) <= 79i128) {
+                                            t.wr(((((f8 ^ 1i128) - 64i128) + 16i128)) as u32);
+                                        }
+                                    }
                                 } else {
                                     t.wr((f8) as u32);
                                 }
@@ -3678,6 +4587,11 @@ pub fn t_3a<S: RegRead>(s: &S, f: &[i64; NF], t: &mut Touch) -> bool {
                                     t.rd(((16i128 + (f4 + 8i128))) as u32);
                                     t.rd(((32i128 + (f6 + 8i128))) as u32);
                                     t.wr((f8) as u32);
+                                    if (f8 >= 64i128) {
+                                        if (f8 <= 79i128) {
+                                            t.wr((((f8 - 64i128) + 16i128)) as u32);
+                                        }
+                                    }
                                     t.wr(((16i128 + (f4 + 8i128))) as u32);
                                     return false;
                                 }
@@ -3695,6 +4609,11 @@ pub fn t_3a<S: RegRead>(s: &S, f: &[i64; NF], t: &mut Touch) -> bool {
                                     t.rd(((16i128 + (f4 + 8i128))) as u32);
                                     t.rd(((32i128 + (f6 + 8i128))) as u32);
                                     t.wr((f8) as u32);
+                                    if (f8 >= 64i128) {
+                                        if (f8 <= 79i128) {
+                                            t.wr((((f8 - 64i128) + 16i128)) as u32);
+                                        }
+                                    }
                                     return false;
                                 }
                             }
@@ -3708,10 +4627,19 @@ pub fn t_3a<S: RegRead>(s: &S, f: &[i64; NF], t: &mut Touch) -> bool {
                                 t.wr(((16i128 + (f4 + 0i128))) as u32);
                                 return false;
                             } else {
-                                if f8 <= 15i128 || (f8 >= 16i128 && f8 <= 79i128) || (f8 >= 80i128 && f8 <= 95i128) || (f8 >= 108i128 && f8 <= 109i128) || (f8 >= 110i128 && f8 <= 111i128) || (f8 >= 112i128 && f8 <= 113i128) || (f8 >= 114i128 && f8 <= 117i128) || (f8 >= 118i128 && f8 <= 121i128) || (f8 >= 122i128 && f8 <= 125i128) || f8 >= 126i128 {
+                                if f8 <= 15i128 || (f8 >= 80i128 && f8 <= 95i128) || (f8 >= 108i128 && f8 <= 109i128) || (f8 >= 110i128 && f8 <= 111i128) || (f8 >= 112i128 && f8 <= 113i128) || (f8 >= 114i128 && f8 <= 117i128) || (f8 >= 118i128 && f8 <= 121i128) || (f8 >= 122i128 && f8 <= 125i128) || f8 >= 126i128 {
                                     t.rd(((16i128 + (f4 + 0i128))) as u32);
                                     t.rd(((32i128 + (f6 + 0i128))) as u32);
                                     t.wr((f8) as u32);
+                                    t.wr(((16i128 + (f4 + 0i128))) as u32);
+                                    return false;
+                                } else if (f8 >= 16i128 && f8 <= 79i128) {
+                                    t.rd(((16i128 + (f4 + 0i128))) as u32);
+                                    t.rd(((32i128 + (f6 + 0i128))) as u32);
+                                    t.wr((f8) as u32);
+                                    if (f8 >= 64i128) {
+                                        t.wr((((f8 - 64i128) + 16i128)) as u32);
+                                    }
                                     t.wr(((16i128 + (f4 + 0i128))) as u32);
                                     return false;
                                 } else {
@@ -3733,10 +4661,18 @@ pub fn t_3a<S: RegRead>(s: &S, f: &[i64; NF], t: &mut Touch) -> bool {
                                 t.rd((f8) as u32);
                                 return false;
                             } else {
-                                if f8 <= 15i128 || (f8 >= 16i128 && f8 <= 79i128) || (f8 >= 80i128 && f8 <= 95i128) || (f8 >= 108i128 && f8 <= 109i128) || (f8 >= 110i128 && f8 <= 111i128) || (f8 >= 112i128 && f8 <= 113i128) || (f8 >= 114i128 && f8 <= 117i128) || (f8 >= 118i128 && f8 <= 121i128) || (f8 >= 122i128 && f8 <= 125i128) || f8 >= 126i128 {
+                                if f8 <= 15i128 || (f8 >= 80i128 && f8 <= 95i128) || (f8 >= 108i128 && f8 <= 109i128) || (f8 >= 110i128 && f8 <= 111i128) || (f8 >= 112i128 && f8 <= 113i128) || (f8 >= 114i128 && f8 <= 117i128) || (f8 >= 118i128 && f8 <= 121i128) || (f8 >= 122i128 && f8 <= 125i128) || f8 >= 126i128 {
                                     t.rd(((16i128 + (f4 + 0i128))) as u32);
                                     t.rd(((32i128 + (f6 + 0i128))) as u32);
                                     t.wr((f8) as u32);
+                                    return false;
+                                } else if (f8 >= 16i128 && f8 <= 79i128) {
+                                    t.rd(((16i128 + (f4 + 0i128))) as u32);
+                                    t.rd(((32i128 + (f6 + 0i128))) as u32);
+                                    t.wr((f8) as u32);
+                                    if (f8 >= 64i128) {
+                                        t.wr((((f8 - 64i128) + 16i128)) as u32);
+                                    }
                                     return false;
                                 } else {
                                     if (f8 == 107i128) {
@@ -3773,7 +4709,17 @@ pub fn t_3a<S: RegRead>(s: &S, f: &[i64; NF], t: &mut Touch) -> bool {
                             } else {
                                 if (f8 < 96i128) {
                                     t.wr((f8) as u32);
+                                    if (f8 >= 64i128) {
+                                        if (f8 <= 79i128) {
+                                            t.wr((((f8 - 64i128) + 16i128)) as u32);
+                                        }
+                                    }
                                     t.wr(((f8 ^ 1i128)) as u32);
+                                    if ((f8 ^ 1i128) >= 64i128) {
+                                        if ((f8 ^ 1i128) <= 79i128) {
+                                            t.wr(((((f8 ^ 1i128) - 64i128) + 16i128)) as u32);
+                                        }
+                                    }
                                     t.wr(((16i128 + (f4 + 8i128))) as u32);
                                 } else {
                                     t.wr((f8) as u32);
@@ -3790,7 +4736,17 @@ pub fn t_3a<S: RegRead>(s: &S, f: &[i64; NF], t: &mut Touch) -> bool {
                             } else {
                                 if (f8 < 96i128) {
                                     t.wr((f8) as u32);
+                                    if (f8 >= 64i128) {
+                                        if (f8 <= 79i128) {
+                                            t.wr((((f8 - 64i128) + 16i128)) as u32);
+                                        }
+                                    }
                                     t.wr(((f8 ^ 1i128)) as u32);
+                                    if ((f8 ^ 1i128) >= 64i128) {
+                                        if ((f8 ^ 1i128) <= 79i128) {
+                                            t.wr(((((f8 ^ 1i128) - 64i128) + 16i128)) as u32);
+                                        }
+                                    }
                                 } else {
                                     t.wr((f8) as u32);
                                 }
@@ -3810,7 +4766,17 @@ pub fn t_3a<S: RegRead>(s: &S, f: &[i64; NF], t: &mut Touch) -> bool {
                             } else {
                                 if (f8 < 96i128) {
                                     t.wr((f8) as u32);
+                                    if (f8 >= 64i128) {
+                                        if (f8 <= 79i128) {
+                                            t.wr((((f8 - 64i128) + 16i128)) as u32);
+                                        }
+                                    }
                                     t.wr(((f8 ^ 1i128)) as u32);
+                                    if ((f8 ^ 1i128) >= 64i128) {
+                                        if ((f8 ^ 1i128) <= 79i128) {
+                                            t.wr(((((f8 ^ 1i128) - 64i128) + 16i128)) as u32);
+                                        }
+                                    }
                                     t.wr(((16i128 + (f4 + 0i128))) as u32);
                                 } else {
                                     t.wr((f8) as u32);
@@ -3827,7 +4793,17 @@ pub fn t_3a<S: RegRead>(s: &S, f: &[i64; NF], t: &mut Touch) -> bool {
                             } else {
                                 if (f8 < 96i128) {
                                     t.wr((f8) as u32);
+                                    if (f8 >= 64i128) {
+                                        if (f8 <= 79i128) {
+                                            t.wr((((f8 - 64i128) + 16i128)) as u32);
+                                        }
+                                    }
                                     t.wr(((f8 ^ 1i128)) as u32);
+                                    if ((f8 ^ 1i128) >= 64i128) {
+                                        if ((f8 ^ 1i128) <= 79i128) {
+                                            t.wr(((((f8 ^ 1i128) - 64i128) + 16i128)) as u32);
+                                        }
+                                    }
                                 } else {
                                     t.wr((f8) as u32);
                                 }
@@ -3851,6 +4827,11 @@ pub fn t_3a<S: RegRead>(s: &S, f: &[i64; NF], t: &mut Touch) -> bool {
                                     t.rd(((16i128 + (f4 + 8i128))) as u32);
                                     t.rd(((32i128 + (f6 + 8i128))) as u32);
                                     t.wr((f8) as u32);
+                                    if (f8 >= 64i128) {
+                                        if (f8 <= 79i128) {
+                                            t.wr((((f8 - 64i128) + 16i128)) as u32);
+                                        }
+                                    }
                                     t.wr(((16i128 + (f4 + 8i128))) as u32);
                                 }
                             }
@@ -3868,6 +4849,11 @@ pub fn t_3a<S: RegRead>(s: &S, f: &[i64; NF], t: &mut Touch) -> bool {
                                     t.rd(((16i128 + (f4 + 8i128))) as u32);
                                     t.rd(((32i128 + (f6 + 8i128))) as u32);
                                     t.wr((f8) as u32);
+                                    if (f8 >= 64i128) {
+                                        if (f8 <= 79i128) {
+                                            t.wr((((f8 - 64i128) + 16i128)) as u32);
+                                        }
+                                    }
                                 }
                             }
                         }
@@ -3904,11 +4890,14 @@ pub fn t_3a<S: RegRead>(s: &S, f: &[i64; NF], t: &mut Touch) -> bool {
                                     t.wr((f8) as u32);
                                     t.wr(((f8 + 80i128)) as u32);
                                     t.wr(((16i128 + (f4 + 0i128))) as u32);
-                                } else if (f8 >= 16i128 && f8 <= 79i128) || (f8 >= 110i128 && f8 <= 111i128) || (f8 >= 114i128 && f8 <= 117i128) || (f8 >= 122i128 && f8 <= 125i128) {
+                                } else if (f8 >= 16i128 && f8 <= 79i128) {
                                     return false;
                                     t.rd(((16i128 + (f4 + 0i128))) as u32);
                                     t.rd(((32i128 + (f6 + 0i128))) as u32);
                                     t.wr((f8) as u32);
+                                    if (f8 >= 64i128) {
+                                        t.wr((((f8 - 64i128) + 16i128)) as u32);
+                                    }
                                     t.wr(((16i128 + (f4 + 0i128))) as u32);
                                 } else if (f8 >= 80i128 && f8 <= 95i128) {
                                     return false;
@@ -3927,7 +4916,7 @@ pub fn t_3a<S: RegRead>(s: &S, f: &[i64; NF], t: &mut Touch) -> bool {
                                         t.wr((f8) as u32);
                                         t.wr(((16i128 + (f4 + 0i128))) as u32);
                                     }
-                                } else {
+                                } else if (f8 >= 108i128 && f8 <= 109i128) || (f8 >= 112i128 && f8 <= 113i128) || (f8 >= 118i128 && f8 <= 121i128) || f8 >= 126i128 {
                                     if ((f8 ^ 1i128) == 107i128) {
                                         return false;
                                     } else {
@@ -3936,8 +4925,19 @@ pub fn t_3a<S: RegRead>(s: &S, f: &[i64; NF], t: &mut Touch) -> bool {
                                         t.rd(((32i128 + (f6 + 0i128))) as u32);
                                         t.wr((f8) as u32);
                                         t.wr(((f8 ^ 1i128)) as u32);
+                                        if ((f8 ^ 1i128) >= 64i128) {
+                                            if ((f8 ^ 1i128) <= 79i128) {
+                                                t.wr(((((f8 ^ 1i128) - 64i128) + 16i128)) as u32);
+                                            }
+                                        }
                                         t.wr(((16i128 + (f4 + 0i128))) as u32);
                                     }
+                                } else {
+                                    return false;
+                                    t.rd(((16i128 + (f4 + 0i128))) as u32);
+                                    t.rd(((32i128 + (f6 + 0i128))) as u32);
+                                    t.wr((f8) as u32);
+                                    t.wr(((16i128 + (f4 + 0i128))) as u32);
                                 }
                             }
                         } else {
@@ -3970,11 +4970,14 @@ pub fn t_3a<S: RegRead>(s: &S, f: &[i64; NF], t: &mut Touch) -> bool {
                                     t.rd(((32i128 + (f6 + 0i128))) as u32);
                                     t.wr((f8) as u32);
                                     t.wr(((f8 + 80i128)) as u32);
-                                } else if (f8 >= 16i128 && f8 <= 79i128) || (f8 >= 110i128 && f8 <= 111i128) || (f8 >= 114i128 && f8 <= 117i128) || (f8 >= 122i128 && f8 <= 125i128) {
+                                } else if (f8 >= 16i128 && f8 <= 79i128) {
                                     return false;
                                     t.rd(((16i128 + (f4 + 0i128))) as u32);
                                     t.rd(((32i128 + (f6 + 0i128))) as u32);
                                     t.wr((f8) as u32);
+                                    if (f8 >= 64i128) {
+                                        t.wr((((f8 - 64i128) + 16i128)) as u32);
+                                    }
                                 } else if (f8 >= 80i128 && f8 <= 95i128) {
                                     return false;
                                     t.rd(((16i128 + (f4 + 0i128))) as u32);
@@ -3990,7 +4993,7 @@ pub fn t_3a<S: RegRead>(s: &S, f: &[i64; NF], t: &mut Touch) -> bool {
                                         t.rd(((32i128 + (f6 + 0i128))) as u32);
                                         t.wr((f8) as u32);
                                     }
-                                } else {
+                                } else if (f8 >= 108i128 && f8 <= 109i128) || (f8 >= 112i128 && f8 <= 113i128) || (f8 >= 118i128 && f8 <= 121i128) || f8 >= 126i128 {
                                     if ((f8 ^ 1i128) == 107i128) {
                                         return false;
                                     } else {
@@ -3999,7 +5002,17 @@ pub fn t_3a<S: RegRead>(s: &S, f: &[i64; NF], t: &mut Touch) -> bool {
                                         t.rd(((32i128 + (f6 + 0i128))) as u32);
                                         t.wr((f8) as u32);
                                         t.wr(((f8 ^ 1i128)) as u32);
+                                        if ((f8 ^ 1i128) >= 64i128) {
+                                            if ((f8 ^ 1i128) <= 79i128) {
+                                                t.wr(((((f8 ^ 1i128) - 64i128) + 16i128)) as u32);
+                                            }
+                                        }
                                     }
+                                } else {
+                                    return false;
+                                    t.rd(((16i128 + (f4 + 0i128))) as u32);
+                                    t.rd(((32i128 + (f6 + 0i128))) as u32);
+                                    t.wr((f8) as u32);
                                 }
                             }
                         }
@@ -4021,7 +5034,17 @@ pub fn t_3a<S: RegRead>(s: &S, f: &[i64; NF], t: &mut Touch) -> bool {
                             } else {
                                 if (f8 < 96i128) {
                                     t.wr((f8) as u32);
+                                    if (f8 >= 64i128) {
+                                        if (f8 <= 79i128) {
+                                            t.wr((((f8 - 64i128) + 16i128)) as u32);
+                                        }
+                                    }
                                     t.wr(((f8 ^ 1i128)) as u32);
+                                    if ((f8 ^ 1i128) >= 64i128) {
+                                        if ((f8 ^ 1i128) <= 79i128) {
+                                            t.wr(((((f8 ^ 1i128) - 64i128) + 16i128)) as u32);
+                                        }
+                                    }
                                     t.wr(((16i128 + (f4 + 8i128))) as u32);
                                 } else {
                                     t.wr((f8) as u32);
@@ -4038,7 +5061,17 @@ pub fn t_3a<S: RegRead>(s: &S, f: &[i64; NF], t: &mut Touch) -> bool {
                             } else {
                                 if (f8 < 96i128) {
                                     t.wr((f8) as u32);
+                                    if (f8 >= 64i128) {
+                                        if (f8 <= 79i128) {
+                                            t.wr((((f8 - 64i128) + 16i128)) as u32);
+                                        }
+                                    }
                                     t.wr(((f8 ^ 1i128)) as u32);
+                                    if ((f8 ^ 1i128) >= 64i128) {
+                                        if ((f8 ^ 1i128) <= 79i128) {
+                                            t.wr(((((f8 ^ 1i128) - 64i128) + 16i128)) as u32);
+                                        }
+                                    }
                                 } else {
                                     t.wr((f8) as u32);
                                 }
@@ -4058,7 +5091,17 @@ pub fn t_3a<S: RegRead>(s: &S, f: &[i64; NF], t: &mut Touch) -> bool {
                             } else {
                                 if (f8 < 96i128) {
                                     t.wr((f8) as u32);
+                                    if (f8 >= 64i128) {
+                                        if (f8 <= 79i128) {
+                                            t.wr((((f8 - 64i128) + 16i128)) as u32);
+                                        }
+                                    }
                                     t.wr(((f8 ^ 1i128)) as u32);
+                                    if ((f8 ^ 1i128) >= 64i128) {
+                                        if ((f8 ^ 1i128) <= 79i128) {
+                                            t.wr(((((f8 ^ 1i128) - 64i128) + 16i128)) as u32);
+                                        }
+                                    }
                                     t.wr(((16i128 + (f4 + 0i128))) as u32);
                                 } else {
                                     t.wr((f8) as u32);
@@ -4075,7 +5118,17 @@ pub fn t_3a<S: RegRead>(s: &S, f: &[i64; NF], t: &mut Touch) -> bool {
                             } else {
                                 if (f8 < 96i128) {
                                     t.wr((f8) as u32);
+                                    if (f8 >= 64i128) {
+                                        if (f8 <= 79i128) {
+                                            t.wr((((f8 - 64i128) + 16i128)) as u32);
+                                        }
+                                    }
                                     t.wr(((f8 ^ 1i128)) as u32);
+                                    if ((f8 ^ 1i128) >= 64i128) {
+                                        if ((f8 ^ 1i128) <= 79i128) {
+                                            t.wr(((((f8 ^ 1i128) - 64i128) + 16i128)) as u32);
+                                        }
+                                    }
                                 } else {
                                     t.wr((f8) as u32);
                                 }
@@ -4097,6 +5150,11 @@ pub fn t_3a<S: RegRead>(s: &S, f: &[i64; NF], t: &mut Touch) -> bool {
                                     t.rd(((16i128 + (f4 + 8i128))) as u32);
                                     t.rd(((32i128 + (f6 + 8i128))) as u32);
                                     t.wr((f8) as u32);
+                                    if (f8 >= 64i128) {
+                                        if (f8 <= 79i128) {
+                                            t.wr((((f8 - 64i128) + 16i128)) as u32);
+                                        }
+                                    }
                                     t.wr(((16i128 + (f4 + 8i128))) as u32);
                                 }
                             }
@@ -4112,6 +5170,11 @@ pub fn t_3a<S: RegRead>(s: &S, f: &[i64; NF], t: &mut Touch) -> bool {
                                     t.rd(((16i128 + (f4 + 8i128))) as u32);
                                     t.rd(((32i128 + (f6 + 8i128))) as u32);
                                     t.wr((f8) as u32);
+                                    if (f8 >= 64i128) {
+                                        if (f8 <= 79i128) {
+                                            t.wr((((f8 - 64i128) + 16i128)) as u32);
+                                        }
+                                    }
                                 }
                             }
                         }
@@ -4146,10 +5209,13 @@ pub fn t_3a<S: RegRead>(s: &S, f: &[i64; NF], t: &mut Touch) -> bool {
                                     t.wr((f8) as u32);
                                     t.wr(((f8 + 80i128)) as u32);
                                     t.wr(((16i128 + (f4 + 0i128))) as u32);
-                                } else if (f8 >= 16i128 && f8 <= 79i128) || (f8 >= 110i128 && f8 <= 111i128) || (f8 >= 114i128 && f8 <= 117i128) || (f8 >= 122i128 && f8 <= 125i128) {
+                                } else if (f8 >= 16i128 && f8 <= 79i128) {
                                     t.rd(((16i128 + (f4 + 0i128))) as u32);
                                     t.rd(((32i128 + (f6 + 0i128))) as u32);
                                     t.wr((f8) as u32);
+                                    if (f8 >= 64i128) {
+                                        t.wr((((f8 - 64i128) + 16i128)) as u32);
+                                    }
                                     t.wr(((16i128 + (f4 + 0i128))) as u32);
                                 } else if (f8 >= 80i128 && f8 <= 95i128) {
                                     t.rd(((16i128 + (f4 + 0i128))) as u32);
@@ -4166,7 +5232,7 @@ pub fn t_3a<S: RegRead>(s: &S, f: &[i64; NF], t: &mut Touch) -> bool {
                                         t.wr((f8) as u32);
                                         t.wr(((16i128 + (f4 + 0i128))) as u32);
                                     }
-                                } else {
+                                } else if (f8 >= 108i128 && f8 <= 109i128) || (f8 >= 112i128 && f8 <= 113i128) || (f8 >= 118i128 && f8 <= 121i128) || f8 >= 126i128 {
                                     if ((f8 ^ 1i128) == 107i128) {
                                         return false;
                                     } else {
@@ -4174,8 +5240,18 @@ pub fn t_3a<S: RegRead>(s: &S, f: &[i64; NF], t: &mut Touch) -> bool {
                                         t.rd(((32i128 + (f6 + 0i128))) as u32);
                                         t.wr((f8) as u32);
                                         t.wr(((f8 ^ 1i128)) as u32);
+                                        if ((f8 ^ 1i128) >= 64i128) {
+                                            if ((f8 ^ 1i128) <= 79i128) {
+                                                t.wr(((((f8 ^ 1i128) - 64i128) + 16i128)) as u32);
+                                            }
+                                        }
                                         t.wr(((16i128 + (f4 + 0i128))) as u32);
                                     }
+                                } else {
+                                    t.rd(((16i128 + (f4 + 0i128))) as u32);
+                                    t.rd(((32i128 + (f6 + 0i128))) as u32);
+                                    t.wr((f8) as u32);
+                                    t.wr(((16i128 + (f4 + 0i128))) as u32);
                                 }
                             }
                         } else {
@@ -4206,10 +5282,13 @@ pub fn t_3a<S: RegRead>(s: &S, f: &[i64; NF], t: &mut Touch) -> bool {
                                     t.rd(((32i128 + (f6 + 0i128))) as u32);
                                     t.wr((f8) as u32);
                                     t.wr(((f8 + 80i128)) as u32);
-                                } else if (f8 >= 16i128 && f8 <= 79i128) || (f8 >= 110i128 && f8 <= 111i128) || (f8 >= 114i128 && f8 <= 117i128) || (f8 >= 122i128 && f8 <= 125i128) {
+                                } else if (f8 >= 16i128 && f8 <= 79i128) {
                                     t.rd(((16i128 + (f4 + 0i128))) as u32);
                                     t.rd(((32i128 + (f6 + 0i128))) as u32);
                                     t.wr((f8) as u32);
+                                    if (f8 >= 64i128) {
+                                        t.wr((((f8 - 64i128) + 16i128)) as u32);
+                                    }
                                 } else if (f8 >= 80i128 && f8 <= 95i128) {
                                     t.rd(((16i128 + (f4 + 0i128))) as u32);
                                     t.rd(((32i128 + (f6 + 0i128))) as u32);
@@ -4223,7 +5302,7 @@ pub fn t_3a<S: RegRead>(s: &S, f: &[i64; NF], t: &mut Touch) -> bool {
                                         t.rd(((32i128 + (f6 + 0i128))) as u32);
                                         t.wr((f8) as u32);
                                     }
-                                } else {
+                                } else if (f8 >= 108i128 && f8 <= 109i128) || (f8 >= 112i128 && f8 <= 113i128) || (f8 >= 118i128 && f8 <= 121i128) || f8 >= 126i128 {
                                     if ((f8 ^ 1i128) == 107i128) {
                                         return false;
                                     } else {
@@ -4231,7 +5310,16 @@ pub fn t_3a<S: RegRead>(s: &S, f: &[i64; NF], t: &mut Touch) -> bool {
                                         t.rd(((32i128 + (f6 + 0i128))) as u32);
                                         t.wr((f8) as u32);
                                         t.wr(((f8 ^ 1i128)) as u32);
+                                        if ((f8 ^ 1i128) >= 64i128) {
+                                            if ((f8 ^ 1i128) <= 79i128) {
+                                                t.wr(((((f8 ^ 1i128) - 64i128) + 16i128)) as u32);
+                                            }
+                                        }
                                     }
+                                } else {
+                                    t.rd(((16i128 + (f4 + 0i128))) as u32);
+                                    t.rd(((32i128 + (f6 + 0i128))) as u32);
+                                    t.wr((f8) as u32);
                                 }
                             }
                         }
@@ -4256,7 +5344,17 @@ pub fn t_3a<S: RegRead>(s: &S, f: &[i64; NF], t: &mut Touch) -> bool {
                             } else {
                                 if (f8 < 96i128) {
                                     t.wr((f8) as u32);
+                                    if (f8 >= 64i128) {
+                                        if (f8 <= 79i128) {
+                                            t.wr((((f8 - 64i128) + 16i128)) as u32);
+                                        }
+                                    }
                                     t.wr(((f8 ^ 1i128)) as u32);
+                                    if ((f8 ^ 1i128) >= 64i128) {
+                                        if ((f8 ^ 1i128) <= 79i128) {
+                                            t.wr(((((f8 ^ 1i128) - 64i128) + 16i128)) as u32);
+                                        }
+                                    }
                                     t.wr(((16i128 + (f4 + 8i128))) as u32);
                                 } else {
                                     t.wr((f8) as u32);
@@ -4273,7 +5371,17 @@ pub fn t_3a<S: RegRead>(s: &S, f: &[i64; NF], t: &mut Touch) -> bool {
                             } else {
                                 if (f8 < 96i128) {
                                     t.wr((f8) as u32);
+                                    if (f8 >= 64i128) {
+                                        if (f8 <= 79i128) {
+                                            t.wr((((f8 - 64i128) + 16i128)) as u32);
+                                        }
+                                    }
                                     t.wr(((f8 ^ 1i128)) as u32);
+                                    if ((f8 ^ 1i128) >= 64i128) {
+                                        if ((f8 ^ 1i128) <= 79i128) {
+                                            t.wr(((((f8 ^ 1i128) - 64i128) + 16i128)) as u32);
+                                        }
+                                    }
                                 } else {
                                     t.wr((f8) as u32);
                                 }
@@ -4293,7 +5401,17 @@ pub fn t_3a<S: RegRead>(s: &S, f: &[i64; NF], t: &mut Touch) -> bool {
                             } else {
                                 if (f8 < 96i128) {
                                     t.wr((f8) as u32);
+                                    if (f8 >= 64i128) {
+                                        if (f8 <= 79i128) {
+                                            t.wr((((f8 - 64i128) + 16i128)) as u32);
+                                        }
+                                    }
                                     t.wr(((f8 ^ 1i128)) as u32);
+                                    if ((f8 ^ 1i128) >= 64i128) {
+                                        if ((f8 ^ 1i128) <= 79i128) {
+                                            t.wr(((((f8 ^ 1i128) - 64i128) + 16i128)) as u32);
+                                        }
+                                    }
                                     t.wr(((16i128 + (f4 + 0i128))) as u32);
                                 } else {
                                     t.wr((f8) as u32);
@@ -4310,7 +5428,17 @@ pub fn t_3a<S: RegRead>(s: &S, f: &[i64; NF], t: &mut Touch) -> bool {
                             } else {
                                 if (f8 < 96i128) {
                                     t.wr((f8) as u32);
+                                    if (f8 >= 64i128) {
+                                        if (f8 <= 79i128) {
+                                            t.wr((((f8 - 64i128) + 16i128)) as u32);
+                                        }
+                                    }
                                     t.wr(((f8 ^ 1i128)) as u32);
+                                    if ((f8 ^ 1i128) >= 64i128) {
+                                        if ((f8 ^ 1i128) <= 79i128) {
+                                            t.wr(((((f8 ^ 1i128) - 64i128) + 16i128)) as u32);
+                                        }
+                                    }
                                 } else {
                                     t.wr((f8) as u32);
                                 }
@@ -4334,6 +5462,11 @@ pub fn t_3a<S: RegRead>(s: &S, f: &[i64; NF], t: &mut Touch) -> bool {
                                     t.rd(((16i128 + (f4 + 8i128))) as u32);
                                     t.rd(((32i128 + (f6 + 8i128))) as u32);
                                     t.wr((f8) as u32);
+                                    if (f8 >= 64i128) {
+                                        if (f8 <= 79i128) {
+                                            t.wr((((f8 - 64i128) + 16i128)) as u32);
+                                        }
+                                    }
                                     t.wr(((16i128 + (f4 + 8i128))) as u32);
                                 }
                             }
@@ -4351,6 +5484,11 @@ pub fn t_3a<S: RegRead>(s: &S, f: &[i64; NF], t: &mut Touch) -> bool {
                                     t.rd(((16i128 + (f4 + 8i128))) as u32);
                                     t.rd(((32i128 + (f6 + 8i128))) as u32);
                                     t.wr((f8) as u32);
+                                    if (f8 >= 64i128) {
+                                        if (f8 <= 79i128) {
+                                            t.wr((((f8 - 64i128) + 16i128)) as u32);
+                                        }
+                                    }
                                 }
                             }
                         }
@@ -4363,11 +5501,20 @@ pub fn t_3a<S: RegRead>(s: &S, f: &[i64; NF], t: &mut Touch) -> bool {
                                 t.rd((f8) as u32);
                                 t.wr(((16i128 + (f4 + 0i128))) as u32);
                             } else {
-                                if f8 <= 15i128 || (f8 >= 16i128 && f8 <= 79i128) || (f8 >= 80i128 && f8 <= 95i128) || (f8 >= 108i128 && f8 <= 109i128) || (f8 >= 110i128 && f8 <= 111i128) || (f8 >= 112i128 && f8 <= 113i128) || (f8 >= 114i128 && f8 <= 117i128) || (f8 >= 118i128 && f8 <= 121i128) || (f8 >= 122i128 && f8 <= 125i128) || f8 >= 126i128 {
+                                if f8 <= 15i128 || (f8 >= 80i128 && f8 <= 95i128) || (f8 >= 108i128 && f8 <= 109i128) || (f8 >= 110i128 && f8 <= 111i128) || (f8 >= 112i128 && f8 <= 113i128) || (f8 >= 114i128 && f8 <= 117i128) || (f8 >= 118i128 && f8 <= 121i128) || (f8 >= 122i128 && f8 <= 125i128) || f8 >= 126i128 {
                                     return false;
                                     t.rd(((16i128 + (f4 + 0i128))) as u32);
                                     t.rd(((32i128 + (f6 + 0i128))) as u32);
                                     t.wr((f8) as u32);
+                                    t.wr(((16i128 + (f4 + 0i128))) as u32);
+                                } else if (f8 >= 16i128 && f8 <= 79i128) {
+                                    return false;
+                                    t.rd(((16i128 + (f4 + 0i128))) as u32);
+                                    t.rd(((32i128 + (f6 + 0i128))) as u32);
+                                    t.wr((f8) as u32);
+                                    if (f8 >= 64i128) {
+                                        t.wr((((f8 - 64i128) + 16i128)) as u32);
+                                    }
                                     t.wr(((16i128 + (f4 + 0i128))) as u32);
                                 } else {
                                     if (f8 == 107i128) {
@@ -4388,11 +5535,19 @@ pub fn t_3a<S: RegRead>(s: &S, f: &[i64; NF], t: &mut Touch) -> bool {
                                 t.rd(((32i128 + (f6 + 0i128))) as u32);
                                 t.rd((f8) as u32);
                             } else {
-                                if f8 <= 15i128 || (f8 >= 16i128 && f8 <= 79i128) || (f8 >= 80i128 && f8 <= 95i128) || (f8 >= 108i128 && f8 <= 109i128) || (f8 >= 110i128 && f8 <= 111i128) || (f8 >= 112i128 && f8 <= 113i128) || (f8 >= 114i128 && f8 <= 117i128) || (f8 >= 118i128 && f8 <= 121i128) || (f8 >= 122i128 && f8 <= 125i128) || f8 >= 126i128 {
+                                if f8 <= 15i128 || (f8 >= 80i128 && f8 <= 95i128) || (f8 >= 108i128 && f8 <= 109i128) || (f8 >= 110i128 && f8 <= 111i128) || (f8 >= 112i128 && f8 <= 113i128) || (f8 >= 114i128 && f8 <= 117i128) || (f8 >= 118i128 && f8 <= 121i128) || (f8 >= 122i128 && f8 <= 125i128) || f8 >= 126i128 {
                                     return false;
                                     t.rd(((16i128 + (f4 + 0i128))) as u32);
                                     t.rd(((32i128 + (f6 + 0i128))) as u32);
                                     t.wr((f8) as u32);
+                                } else if (f8 >= 16i128 && f8 <= 79i128) {
+                                    return false;
+                                    t.rd(((16i128 + (f4 + 0i128))) as u32);
+                                    t.rd(((32i128 + (f6 + 0i128))) as u32);
+                                    t.wr((f8) as u32);
+                                    if (f8 >= 64i128) {
+                                        t.wr((((f8 - 64i128) + 16i128)) as u32);
+                                    }
                                 } else {
                                     if (f8 == 107i128) {
                                         return false;
@@ -4423,7 +5578,17 @@ pub fn t_3a<S: RegRead>(s: &S, f: &[i64; NF], t: &mut Touch) -> bool {
                             } else {
                                 if (f8 < 96i128) {
                                     t.wr((f8) as u32);
+                                    if (f8 >= 64i128) {
+                                        if (f8 <= 79i128) {
+                                            t.wr((((f8 - 64i128) + 16i128)) as u32);
+                                        }
+                                    }
                                     t.wr(((f8 ^ 1i128)) as u32);
+                                    if ((f8 ^ 1i128) >= 64i128) {
+                                        if ((f8 ^ 1i128) <= 79i128) {
+                                            t.wr(((((f8 ^ 1i128) - 64i128) + 16i128)) as u32);
+                                        }
+                                    }
                                     t.wr(((16i128 + (f4 + 8i128))) as u32);
                                 } else {
                                     t.wr((f8) as u32);
@@ -4440,7 +5605,17 @@ pub fn t_3a<S: RegRead>(s: &S, f: &[i64; NF], t: &mut Touch) -> bool {
                             } else {
                                 if (f8 < 96i128) {
                                     t.wr((f8) as u32);
+                                    if (f8 >= 64i128) {
+                                        if (f8 <= 79i128) {
+                                            t.wr((((f8 - 64i128) + 16i128)) as u32);
+                                        }
+                                    }
                                     t.wr(((f8 ^ 1i128)) as u32);
+                                    if ((f8 ^ 1i128) >= 64i128) {
+                                        if ((f8 ^ 1i128) <= 79i128) {
+                                            t.wr(((((f8 ^ 1i128) - 64i128) + 16i128)) as u32);
+                                        }
+                                    }
                                 } else {
                                     t.wr((f8) as u32);
                                 }
@@ -4460,7 +5635,17 @@ pub fn t_3a<S: RegRead>(s: &S, f: &[i64; NF], t: &mut Touch) -> bool {
                             } else {
                                 if (f8 < 96i128) {
                                     t.wr((f8) as u32);
+                                    if (f8 >= 64i128) {
+                                        if (f8 <= 79i128) {
+                                            t.wr((((f8 - 64i128) + 16i128)) as u32);
+                                        }
+                                    }
                                     t.wr(((f8 ^ 1i128)) as u32);
+                                    if ((f8 ^ 1i128) >= 64i128) {
+                                        if ((f8 ^ 1i128) <= 79i128) {
+                                            t.wr(((((f8 ^ 1i128) - 64i128) + 16i128)) as u32);
+                                        }
+                                    }
                                     t.wr(((16i128 + (f4 + 0i128))) as u32);
                                 } else {
                                     t.wr((f8) as u32);
@@ -4477,7 +5662,17 @@ pub fn t_3a<S: RegRead>(s: &S, f: &[i64; NF], t: &mut Touch) -> bool {
                             } else {
                                 if (f8 < 96i128) {
                                     t.wr((f8) as u32);
+                                    if (f8 >= 64i128) {
+                                        if (f8 <= 79i128) {
+                                            t.wr((((f8 - 64i128) + 16i128)) as u32);
+                                        }
+                                    }
                                     t.wr(((f8 ^ 1i128)) as u32);
+                                    if ((f8 ^ 1i128) >= 64i128) {
+                                        if ((f8 ^ 1i128) <= 79i128) {
+                                            t.wr(((((f8 ^ 1i128) - 64i128) + 16i128)) as u32);
+                                        }
+                                    }
                                 } else {
                                     t.wr((f8) as u32);
                                 }
@@ -4499,6 +5694,11 @@ pub fn t_3a<S: RegRead>(s: &S, f: &[i64; NF], t: &mut Touch) -> bool {
                                     t.rd(((16i128 + (f4 + 8i128))) as u32);
                                     t.rd(((32i128 + (f6 + 8i128))) as u32);
                                     t.wr((f8) as u32);
+                                    if (f8 >= 64i128) {
+                                        if (f8 <= 79i128) {
+                                            t.wr((((f8 - 64i128) + 16i128)) as u32);
+                                        }
+                                    }
                                     t.wr(((16i128 + (f4 + 8i128))) as u32);
                                 }
                             }
@@ -4514,6 +5714,11 @@ pub fn t_3a<S: RegRead>(s: &S, f: &[i64; NF], t: &mut Touch) -> bool {
                                     t.rd(((16i128 + (f4 + 8i128))) as u32);
                                     t.rd(((32i128 + (f6 + 8i128))) as u32);
                                     t.wr((f8) as u32);
+                                    if (f8 >= 64i128) {
+                                        if (f8 <= 79i128) {
+                                            t.wr((((f8 - 64i128) + 16i128)) as u32);
+                                        }
+                                    }
                                 }
                             }
                         }
@@ -4525,10 +5730,18 @@ pub fn t_3a<S: RegRead>(s: &S, f: &[i64; NF], t: &mut Touch) -> bool {
                                 t.rd((f8) as u32);
                                 t.wr(((16i128 + (f4 + 0i128))) as u32);
                             } else {
-                                if f8 <= 15i128 || (f8 >= 16i128 && f8 <= 79i128) || (f8 >= 80i128 && f8 <= 95i128) || (f8 >= 108i128 && f8 <= 109i128) || (f8 >= 110i128 && f8 <= 111i128) || (f8 >= 112i128 && f8 <= 113i128) || (f8 >= 114i128 && f8 <= 117i128) || (f8 >= 118i128 && f8 <= 121i128) || (f8 >= 122i128 && f8 <= 125i128) || f8 >= 126i128 {
+                                if f8 <= 15i128 || (f8 >= 80i128 && f8 <= 95i128) || (f8 >= 108i128 && f8 <= 109i128) || (f8 >= 110i128 && f8 <= 111i128) || (f8 >= 112i128 && f8 <= 113i128) || (f8 >= 114i128 && f8 <= 117i128) || (f8 >= 118i128 && f8 <= 121i128) || (f8 >= 122i128 && f8 <= 125i128) || f8 >= 126i128 {
                                     t.rd(((16i128 + (f4 + 0i128))) as u32);
                                     t.rd(((32i128 + (f6 + 0i128))) as u32);
                                     t.wr((f8) as u32);
+                                    t.wr(((16i128 + (f4 + 0i128))) as u32);
+                                } else if (f8 >= 16i128 && f8 <= 79i128) {
+                                    t.rd(((16i128 + (f4 + 0i128))) as u32);
+                                    t.rd(((32i128 + (f6 + 0i128))) as u32);
+                                    t.wr((f8) as u32);
+                                    if (f8 >= 64i128) {
+                                        t.wr((((f8 - 64i128) + 16i128)) as u32);
+                                    }
                                     t.wr(((16i128 + (f4 + 0i128))) as u32);
                                 } else {
                                     if (f8 == 107i128) {
@@ -4547,10 +5760,17 @@ pub fn t_3a<S: RegRead>(s: &S, f: &[i64; NF], t: &mut Touch) -> bool {
                                 t.rd(((32i128 + (f6 + 0i128))) as u32);
                                 t.rd((f8) as u32);
                             } else {
-                                if f8 <= 15i128 || (f8 >= 16i128 && f8 <= 79i128) || (f8 >= 80i128 && f8 <= 95i128) || (f8 >= 108i128 && f8 <= 109i128) || (f8 >= 110i128 && f8 <= 111i128) || (f8 >= 112i128 && f8 <= 113i128) || (f8 >= 114i128 && f8 <= 117i128) || (f8 >= 118i128 && f8 <= 121i128) || (f8 >= 122i128 && f8 <= 125i128) || f8 >= 126i128 {
+                                if f8 <= 15i128 || (f8 >= 80i128 && f8 <= 95i128) || (f8 >= 108i128 && f8 <= 109i128) || (f8 >= 110i128 && f8 <= 111i128) || (f8 >= 112i128 && f8 <= 113i128) || (f8 >= 114i128 && f8 <= 117i128) || (f8 >= 118i128 && f8 <= 121i128) || (f8 >= 122i128 && f8 <= 125i128) || f8 >= 126i128 {
                                     t.rd(((16i128 + (f4 + 0i128))) as u32);
                                     t.rd(((32i128 + (f6 + 0i128))) as u32);
                                     t.wr((f8) as u32);
+                                } else if (f8 >= 16i128 && f8 <= 79i128) {
+                                    t.rd(((16i128 + (f4 + 0i128))) as u32);
+                                    t.rd(((32i128 + (f6 + 0i128))) as u32);
+                                    t.wr((f8) as u32);
+                                    if (f8 >= 64i128) {
+                                        t.wr((((f8 - 64i128) + 16i128)) as u32);
+                                    }
                                 } else {
                                     if (f8 == 107i128) {
                                         return false;
@@ -4829,12 +6049,24 @@ pub fn h_3b(s: &mut St, f: &[i64; NF]) -> u32 {
                                     if (f6 != 0i128) {
                                         v20 = match hload(&*s, v0, 1i128 as u32, false) { Some(x) => x, None => return 1 };
                                         { let c = (f7) as usize; if c >= 96 { return 1; } ws[nw] = (c as u8, v20); nw += 1; }
+                                        if f7 <= 15i128 || (f7 >= 80i128 && f7 <= 95i128) || (f7 >= 96i128 && f7 <= 107i128) || (f7 >= 108i128 && f7 <= 109i128) || (f7 >= 110i128 && f7 <= 111i128) || (f7 >= 112i128 && f7 <= 113i128) || (f7 >= 114i128 && f7 <= 117i128) || (f7 >= 118i128 && f7 <= 121i128) || (f7 >= 122i128 && f7 <= 125i128) || f7 >= 126i128 {
+                                        } else {
+                                            if (f7 >= 64i128) {
+                                                { let c = (((f7 - 64i128) + 16i128)) as usize; if c >= 96 { return 1; } ws[nw] = (c as u8, v20); nw += 1; }
+                                            }
+                                        }
                                         v21 = match hpost(&*s, ((f3 + 8i128) + 16) as u32, v0, v4, 1i128 as i64) { Some(x) => x, None => return 1 };
                                         { let c = ((16i128 + (f3 + 8i128))) as usize; if c >= 96 { return 1; } ws[nw] = (c as u8, v21); nw += 1; }
                                     } else {
                                         v8 = v0.wrapping_add(v4);
                                         v22 = match hload(&*s, v8, 1i128 as u32, false) { Some(x) => x, None => return 1 };
                                         { let c = (f7) as usize; if c >= 96 { return 1; } ws[nw] = (c as u8, v22); nw += 1; }
+                                        if f7 <= 15i128 || (f7 >= 80i128 && f7 <= 95i128) || (f7 >= 96i128 && f7 <= 107i128) || (f7 >= 108i128 && f7 <= 109i128) || (f7 >= 110i128 && f7 <= 111i128) || (f7 >= 112i128 && f7 <= 113i128) || (f7 >= 114i128 && f7 <= 117i128) || (f7 >= 118i128 && f7 <= 121i128) || (f7 >= 122i128 && f7 <= 125i128) || f7 >= 126i128 {
+                                        } else {
+                                            if (f7 >= 64i128) {
+                                                { let c = (((f7 - 64i128) + 16i128)) as usize; if c >= 96 { return 1; } ws[nw] = (c as u8, v22); nw += 1; }
+                                            }
+                                        }
                                     }
                                 } else {
                                     v10 = rr!(&*s, (16i128 + (f3 + 0i128)));
@@ -4857,9 +6089,12 @@ pub fn h_3b(s: &mut St, f: &[i64; NF]) -> u32 {
                                                 v26 = match hpost(&*s, ((f3 + 0i128) + 16) as u32, v10, v12, 1i128 as i64) { Some(x) => x, None => return 1 };
                                                 { let c = ((16i128 + (f3 + 0i128))) as usize; if c >= 96 { return 1; } ws[nw] = (c as u8, v26); nw += 1; }
                                             }
-                                        } else if (f7 >= 16i128 && f7 <= 79i128) || (f7 >= 96i128 && f7 <= 107i128) || (f7 >= 110i128 && f7 <= 111i128) || (f7 >= 114i128 && f7 <= 117i128) || (f7 >= 122i128 && f7 <= 125i128) {
+                                        } else if (f7 >= 16i128 && f7 <= 79i128) {
                                             v23 = match hload(&*s, v10, 1i128 as u32, false) { Some(x) => x, None => return 1 };
                                             { let c = (f7) as usize; if c >= 96 { return 1; } ws[nw] = (c as u8, v23); nw += 1; }
+                                            if (f7 >= 64i128) {
+                                                { let c = (((f7 - 64i128) + 16i128)) as usize; if c >= 96 { return 1; } ws[nw] = (c as u8, v23); nw += 1; }
+                                            }
                                             v26 = match hpost(&*s, ((f3 + 0i128) + 16) as u32, v10, v12, 1i128 as i64) { Some(x) => x, None => return 1 };
                                             { let c = ((16i128 + (f3 + 0i128))) as usize; if c >= 96 { return 1; } ws[nw] = (c as u8, v26); nw += 1; }
                                         } else if (f7 >= 80i128 && f7 <= 95i128) {
@@ -4877,6 +6112,11 @@ pub fn h_3b(s: &mut St, f: &[i64; NF]) -> u32 {
                                                 v26 = match hpost(&*s, ((f3 + 0i128) + 16) as u32, v10, v12, 1i128 as i64) { Some(x) => x, None => return 1 };
                                                 { let c = ((16i128 + (f3 + 0i128))) as usize; if c >= 96 { return 1; } ws[nw] = (c as u8, v26); nw += 1; }
                                             }
+                                        } else if (f7 >= 96i128 && f7 <= 107i128) || (f7 >= 110i128 && f7 <= 111i128) || (f7 >= 114i128 && f7 <= 117i128) || (f7 >= 122i128 && f7 <= 125i128) {
+                                            v23 = match hload(&*s, v10, 1i128 as u32, false) { Some(x) => x, None => return 1 };
+                                            { let c = (f7) as usize; if c >= 96 { return 1; } ws[nw] = (c as u8, v23); nw += 1; }
+                                            v26 = match hpost(&*s, ((f3 + 0i128) + 16) as u32, v10, v12, 1i128 as i64) { Some(x) => x, None => return 1 };
+                                            { let c = ((16i128 + (f3 + 0i128))) as usize; if c >= 96 { return 1; } ws[nw] = (c as u8, v26); nw += 1; }
                                         } else {
                                             if (((rr!(&*s, 114) as i128) & 2097152) != 0i128) {
                                                 v13 = v10.wrapping_add(v3);
@@ -4884,6 +6124,11 @@ pub fn h_3b(s: &mut St, f: &[i64; NF]) -> u32 {
                                                 { let c = (f7) as usize; if c >= 96 { return 1; } ws[nw] = (c as u8, v23); nw += 1; }
                                                 v24 = match hload(&*s, v13, 1i128 as u32, false) { Some(x) => x, None => return 1 };
                                                 { let c = ((f7 ^ 1i128)) as usize; if c >= 96 { return 1; } ws[nw] = (c as u8, v24); nw += 1; }
+                                                if ((f7 ^ 1i128) >= 64i128) {
+                                                    if ((f7 ^ 1i128) <= 79i128) {
+                                                        { let c = ((((f7 ^ 1i128) - 64i128) + 16i128)) as usize; if c >= 96 { return 1; } ws[nw] = (c as u8, v24); nw += 1; }
+                                                    }
+                                                }
                                                 v25 = match hpost(&*s, ((f3 + 0i128) + 16) as u32, v10, v12, 1i128 as i64) { Some(x) => x, None => return 1 };
                                                 { let c = ((16i128 + (f3 + 0i128))) as usize; if c >= 96 { return 1; } ws[nw] = (c as u8, v25); nw += 1; }
                                             } else {
@@ -4906,9 +6151,12 @@ pub fn h_3b(s: &mut St, f: &[i64; NF]) -> u32 {
                                                 v27 = match hload(&*s, v18, 1i128 as u32, false) { Some(x) => x, None => return 1 };
                                                 { let c = (f7) as usize; if c >= 96 { return 1; } ws[nw] = (c as u8, v27); nw += 1; }
                                             }
-                                        } else if (f7 >= 16i128 && f7 <= 79i128) || (f7 >= 96i128 && f7 <= 107i128) || (f7 >= 110i128 && f7 <= 111i128) || (f7 >= 114i128 && f7 <= 117i128) || (f7 >= 122i128 && f7 <= 125i128) {
+                                        } else if (f7 >= 16i128 && f7 <= 79i128) {
                                             v27 = match hload(&*s, v18, 1i128 as u32, false) { Some(x) => x, None => return 1 };
                                             { let c = (f7) as usize; if c >= 96 { return 1; } ws[nw] = (c as u8, v27); nw += 1; }
+                                            if (f7 >= 64i128) {
+                                                { let c = (((f7 - 64i128) + 16i128)) as usize; if c >= 96 { return 1; } ws[nw] = (c as u8, v27); nw += 1; }
+                                            }
                                         } else if (f7 >= 80i128 && f7 <= 95i128) {
                                             if (((rr!(&*s, 114) as i128) & 2097152) != 0i128) {
                                                 v19 = v18.wrapping_add(v3);
@@ -4920,6 +6168,9 @@ pub fn h_3b(s: &mut St, f: &[i64; NF]) -> u32 {
                                                 v27 = match hload(&*s, v18, 1i128 as u32, false) { Some(x) => x, None => return 1 };
                                                 { let c = (f7) as usize; if c >= 96 { return 1; } ws[nw] = (c as u8, v27); nw += 1; }
                                             }
+                                        } else if (f7 >= 96i128 && f7 <= 107i128) || (f7 >= 110i128 && f7 <= 111i128) || (f7 >= 114i128 && f7 <= 117i128) || (f7 >= 122i128 && f7 <= 125i128) {
+                                            v27 = match hload(&*s, v18, 1i128 as u32, false) { Some(x) => x, None => return 1 };
+                                            { let c = (f7) as usize; if c >= 96 { return 1; } ws[nw] = (c as u8, v27); nw += 1; }
                                         } else {
                                             if (((rr!(&*s, 114) as i128) & 2097152) != 0i128) {
                                                 v19 = v18.wrapping_add(v3);
@@ -4927,6 +6178,11 @@ pub fn h_3b(s: &mut St, f: &[i64; NF]) -> u32 {
                                                 { let c = (f7) as usize; if c >= 96 { return 1; } ws[nw] = (c as u8, v27); nw += 1; }
                                                 v28 = match hload(&*s, v19, 1i128 as u32, false) { Some(x) => x, None => return 1 };
                                                 { let c = ((f7 ^ 1i128)) as usize; if c >= 96 { return 1; } ws[nw] = (c as u8, v28); nw += 1; }
+                                                if ((f7 ^ 1i128) >= 64i128) {
+                                                    if ((f7 ^ 1i128) <= 79i128) {
+                                                        { let c = ((((f7 ^ 1i128) - 64i128) + 16i128)) as usize; if c >= 96 { return 1; } ws[nw] = (c as u8, v28); nw += 1; }
+                                                    }
+                                                }
                                             } else {
                                                 v27 = match hload(&*s, v18, 1i128 as u32, false) { Some(x) => x, None => return 1 };
                                                 { let c = (f7) as usize; if c >= 96 { return 1; } ws[nw] = (c as u8, v27); nw += 1; }
@@ -4960,12 +6216,24 @@ pub fn h_3b(s: &mut St, f: &[i64; NF]) -> u32 {
                                     if (f6 != 0i128) {
                                         v29 = match hload(&*s, v0, 1i128 as u32, true) { Some(x) => x, None => return 1 };
                                         { let c = (f7) as usize; if c >= 96 { return 1; } ws[nw] = (c as u8, v29); nw += 1; }
+                                        if f7 <= 15i128 || (f7 >= 80i128 && f7 <= 95i128) || (f7 >= 96i128 && f7 <= 107i128) || (f7 >= 108i128 && f7 <= 109i128) || (f7 >= 110i128 && f7 <= 111i128) || (f7 >= 112i128 && f7 <= 113i128) || (f7 >= 114i128 && f7 <= 117i128) || (f7 >= 118i128 && f7 <= 121i128) || (f7 >= 122i128 && f7 <= 125i128) || f7 >= 126i128 {
+                                        } else {
+                                            if (f7 >= 64i128) {
+                                                { let c = (((f7 - 64i128) + 16i128)) as usize; if c >= 96 { return 1; } ws[nw] = (c as u8, v29); nw += 1; }
+                                            }
+                                        }
                                         v21 = match hpost(&*s, ((f3 + 8i128) + 16) as u32, v0, v4, 1i128 as i64) { Some(x) => x, None => return 1 };
                                         { let c = ((16i128 + (f3 + 8i128))) as usize; if c >= 96 { return 1; } ws[nw] = (c as u8, v21); nw += 1; }
                                     } else {
                                         v8 = v0.wrapping_add(v4);
                                         v30 = match hload(&*s, v8, 1i128 as u32, true) { Some(x) => x, None => return 1 };
                                         { let c = (f7) as usize; if c >= 96 { return 1; } ws[nw] = (c as u8, v30); nw += 1; }
+                                        if f7 <= 15i128 || (f7 >= 80i128 && f7 <= 95i128) || (f7 >= 96i128 && f7 <= 107i128) || (f7 >= 108i128 && f7 <= 109i128) || (f7 >= 110i128 && f7 <= 111i128) || (f7 >= 112i128 && f7 <= 113i128) || (f7 >= 114i128 && f7 <= 117i128) || (f7 >= 118i128 && f7 <= 121i128) || (f7 >= 122i128 && f7 <= 125i128) || f7 >= 126i128 {
+                                        } else {
+                                            if (f7 >= 64i128) {
+                                                { let c = (((f7 - 64i128) + 16i128)) as usize; if c >= 96 { return 1; } ws[nw] = (c as u8, v30); nw += 1; }
+                                            }
+                                        }
                                     }
                                 } else {
                                     v10 = rr!(&*s, (16i128 + (f3 + 0i128)));
@@ -4988,9 +6256,12 @@ pub fn h_3b(s: &mut St, f: &[i64; NF]) -> u32 {
                                                 v26 = match hpost(&*s, ((f3 + 0i128) + 16) as u32, v10, v12, 1i128 as i64) { Some(x) => x, None => return 1 };
                                                 { let c = ((16i128 + (f3 + 0i128))) as usize; if c >= 96 { return 1; } ws[nw] = (c as u8, v26); nw += 1; }
                                             }
-                                        } else if (f7 >= 16i128 && f7 <= 79i128) || (f7 >= 96i128 && f7 <= 107i128) || (f7 >= 110i128 && f7 <= 111i128) || (f7 >= 114i128 && f7 <= 117i128) || (f7 >= 122i128 && f7 <= 125i128) {
+                                        } else if (f7 >= 16i128 && f7 <= 79i128) {
                                             v31 = match hload(&*s, v10, 1i128 as u32, true) { Some(x) => x, None => return 1 };
                                             { let c = (f7) as usize; if c >= 96 { return 1; } ws[nw] = (c as u8, v31); nw += 1; }
+                                            if (f7 >= 64i128) {
+                                                { let c = (((f7 - 64i128) + 16i128)) as usize; if c >= 96 { return 1; } ws[nw] = (c as u8, v31); nw += 1; }
+                                            }
                                             v26 = match hpost(&*s, ((f3 + 0i128) + 16) as u32, v10, v12, 1i128 as i64) { Some(x) => x, None => return 1 };
                                             { let c = ((16i128 + (f3 + 0i128))) as usize; if c >= 96 { return 1; } ws[nw] = (c as u8, v26); nw += 1; }
                                         } else if (f7 >= 80i128 && f7 <= 95i128) {
@@ -5008,6 +6279,11 @@ pub fn h_3b(s: &mut St, f: &[i64; NF]) -> u32 {
                                                 v26 = match hpost(&*s, ((f3 + 0i128) + 16) as u32, v10, v12, 1i128 as i64) { Some(x) => x, None => return 1 };
                                                 { let c = ((16i128 + (f3 + 0i128))) as usize; if c >= 96 { return 1; } ws[nw] = (c as u8, v26); nw += 1; }
                                             }
+                                        } else if (f7 >= 96i128 && f7 <= 107i128) || (f7 >= 110i128 && f7 <= 111i128) || (f7 >= 114i128 && f7 <= 117i128) || (f7 >= 122i128 && f7 <= 125i128) {
+                                            v31 = match hload(&*s, v10, 1i128 as u32, true) { Some(x) => x, None => return 1 };
+                                            { let c = (f7) as usize; if c >= 96 { return 1; } ws[nw] = (c as u8, v31); nw += 1; }
+                                            v26 = match hpost(&*s, ((f3 + 0i128) + 16) as u32, v10, v12, 1i128 as i64) { Some(x) => x, None => return 1 };
+                                            { let c = ((16i128 + (f3 + 0i128))) as usize; if c >= 96 { return 1; } ws[nw] = (c as u8, v26); nw += 1; }
                                         } else {
                                             if (((rr!(&*s, 114) as i128) & 2097152) != 0i128) {
                                                 v13 = v10.wrapping_add(v3);
@@ -5015,6 +6291,11 @@ pub fn h_3b(s: &mut St, f: &[i64; NF]) -> u32 {
                                                 { let c = (f7) as usize; if c >= 96 { return 1; } ws[nw] = (c as u8, v31); nw += 1; }
                                                 v32 = match hload(&*s, v13, 1i128 as u32, true) { Some(x) => x, None => return 1 };
                                                 { let c = ((f7 ^ 1i128)) as usize; if c >= 96 { return 1; } ws[nw] = (c as u8, v32); nw += 1; }
+                                                if ((f7 ^ 1i128) >= 64i128) {
+                                                    if ((f7 ^ 1i128) <= 79i128) {
+                                                        { let c = ((((f7 ^ 1i128) - 64i128) + 16i128)) as usize; if c >= 96 { return 1; } ws[nw] = (c as u8, v32); nw += 1; }
+                                                    }
+                                                }
                                                 v25 = match hpost(&*s, ((f3 + 0i128) + 16) as u32, v10, v12, 1i128 as i64) { Some(x) => x, None => return 1 };
                                                 { let c = ((16i128 + (f3 + 0i128))) as usize; if c >= 96 { return 1; } ws[nw] = (c as u8, v25); nw += 1; }
                                             } else {
@@ -5037,9 +6318,12 @@ pub fn h_3b(s: &mut St, f: &[i64; NF]) -> u32 {
                                                 v33 = match hload(&*s, v18, 1i128 as u32, true) { Some(x) => x, None => return 1 };
                                                 { let c = (f7) as usize; if c >= 96 { return 1; } ws[nw] = (c as u8, v33); nw += 1; }
                                             }
-                                        } else if (f7 >= 16i128 && f7 <= 79i128) || (f7 >= 96i128 && f7 <= 107i128) || (f7 >= 110i128 && f7 <= 111i128) || (f7 >= 114i128 && f7 <= 117i128) || (f7 >= 122i128 && f7 <= 125i128) {
+                                        } else if (f7 >= 16i128 && f7 <= 79i128) {
                                             v33 = match hload(&*s, v18, 1i128 as u32, true) { Some(x) => x, None => return 1 };
                                             { let c = (f7) as usize; if c >= 96 { return 1; } ws[nw] = (c as u8, v33); nw += 1; }
+                                            if (f7 >= 64i128) {
+                                                { let c = (((f7 - 64i128) + 16i128)) as usize; if c >= 96 { return 1; } ws[nw] = (c as u8, v33); nw += 1; }
+                                            }
                                         } else if (f7 >= 80i128 && f7 <= 95i128) {
                                             if (((rr!(&*s, 114) as i128) & 2097152) != 0i128) {
                                                 v19 = v18.wrapping_add(v3);
@@ -5051,6 +6335,9 @@ pub fn h_3b(s: &mut St, f: &[i64; NF]) -> u32 {
                                                 v33 = match hload(&*s, v18, 1i128 as u32, true) { Some(x) => x, None => return 1 };
                                                 { let c = (f7) as usize; if c >= 96 { return 1; } ws[nw] = (c as u8, v33); nw += 1; }
                                             }
+                                        } else if (f7 >= 96i128 && f7 <= 107i128) || (f7 >= 110i128 && f7 <= 111i128) || (f7 >= 114i128 && f7 <= 117i128) || (f7 >= 122i128 && f7 <= 125i128) {
+                                            v33 = match hload(&*s, v18, 1i128 as u32, true) { Some(x) => x, None => return 1 };
+                                            { let c = (f7) as usize; if c >= 96 { return 1; } ws[nw] = (c as u8, v33); nw += 1; }
                                         } else {
                                             if (((rr!(&*s, 114) as i128) & 2097152) != 0i128) {
                                                 v19 = v18.wrapping_add(v3);
@@ -5058,6 +6345,11 @@ pub fn h_3b(s: &mut St, f: &[i64; NF]) -> u32 {
                                                 { let c = (f7) as usize; if c >= 96 { return 1; } ws[nw] = (c as u8, v33); nw += 1; }
                                                 v34 = match hload(&*s, v19, 1i128 as u32, true) { Some(x) => x, None => return 1 };
                                                 { let c = ((f7 ^ 1i128)) as usize; if c >= 96 { return 1; } ws[nw] = (c as u8, v34); nw += 1; }
+                                                if ((f7 ^ 1i128) >= 64i128) {
+                                                    if ((f7 ^ 1i128) <= 79i128) {
+                                                        { let c = ((((f7 ^ 1i128) - 64i128) + 16i128)) as usize; if c >= 96 { return 1; } ws[nw] = (c as u8, v34); nw += 1; }
+                                                    }
+                                                }
                                             } else {
                                                 v33 = match hload(&*s, v18, 1i128 as u32, true) { Some(x) => x, None => return 1 };
                                                 { let c = (f7) as usize; if c >= 96 { return 1; } ws[nw] = (c as u8, v33); nw += 1; }
@@ -5222,13 +6514,25 @@ pub fn h_3b(s: &mut St, f: &[i64; NF]) -> u32 {
                                 if (f2 != 0i128) {
                                     if (f6 != 0i128) {
                                         if (f0 == 31i128) {
-                                            if f7 <= 15i128 || (f7 >= 16i128 && f7 <= 79i128) || (f7 >= 80i128 && f7 <= 95i128) || (f7 >= 108i128 && f7 <= 109i128) || (f7 >= 110i128 && f7 <= 111i128) || (f7 >= 112i128 && f7 <= 113i128) || (f7 >= 114i128 && f7 <= 117i128) || (f7 >= 118i128 && f7 <= 121i128) || (f7 >= 122i128 && f7 <= 125i128) || f7 >= 126i128 {
+                                            if f7 <= 15i128 || (f7 >= 80i128 && f7 <= 95i128) || (f7 >= 108i128 && f7 <= 109i128) || (f7 >= 110i128 && f7 <= 111i128) || (f7 >= 112i128 && f7 <= 113i128) || (f7 >= 114i128 && f7 <= 117i128) || (f7 >= 118i128 && f7 <= 121i128) || (f7 >= 122i128 && f7 <= 125i128) || f7 >= 126i128 {
                                                 v0 = rr!(&*s, (16i128 + (f3 + 8i128)));
                                                 v2 = rr!(&*s, (32i128 + (f5 + 8i128)));
                                                 v35 = (4i128) as u32;
                                                 v36 = v2.wrapping_mul(v35);
                                                 v46 = match hload(&*s, v0, 4i128 as u32, false) { Some(x) => x, None => return 1 };
                                                 { let c = (f7) as usize; if c >= 96 { return 1; } ws[nw] = (c as u8, v46); nw += 1; }
+                                                v47 = match hpost(&*s, ((f3 + 8i128) + 16) as u32, v0, v36, 4i128 as i64) { Some(x) => x, None => return 1 };
+                                                { let c = ((16i128 + (f3 + 8i128))) as usize; if c >= 96 { return 1; } ws[nw] = (c as u8, v47); nw += 1; }
+                                            } else if (f7 >= 16i128 && f7 <= 79i128) {
+                                                v0 = rr!(&*s, (16i128 + (f3 + 8i128)));
+                                                v2 = rr!(&*s, (32i128 + (f5 + 8i128)));
+                                                v35 = (4i128) as u32;
+                                                v36 = v2.wrapping_mul(v35);
+                                                v46 = match hload(&*s, v0, 4i128 as u32, false) { Some(x) => x, None => return 1 };
+                                                { let c = (f7) as usize; if c >= 96 { return 1; } ws[nw] = (c as u8, v46); nw += 1; }
+                                                if (f7 >= 64i128) {
+                                                    { let c = (((f7 - 64i128) + 16i128)) as usize; if c >= 96 { return 1; } ws[nw] = (c as u8, v46); nw += 1; }
+                                                }
                                                 v47 = match hpost(&*s, ((f3 + 8i128) + 16) as u32, v0, v36, 4i128 as i64) { Some(x) => x, None => return 1 };
                                                 { let c = ((16i128 + (f3 + 8i128))) as usize; if c >= 96 { return 1; } ws[nw] = (c as u8, v47); nw += 1; }
                                             } else {
@@ -5246,7 +6550,7 @@ pub fn h_3b(s: &mut St, f: &[i64; NF]) -> u32 {
                                                 }
                                             }
                                         } else {
-                                            if f7 <= 15i128 || (f7 >= 16i128 && f7 <= 79i128) || (f7 >= 80i128 && f7 <= 95i128) || (f7 >= 108i128 && f7 <= 109i128) || (f7 >= 110i128 && f7 <= 111i128) || (f7 >= 112i128 && f7 <= 113i128) || (f7 >= 114i128 && f7 <= 117i128) || (f7 >= 118i128 && f7 <= 121i128) || (f7 >= 122i128 && f7 <= 125i128) || f7 >= 126i128 {
+                                            if f7 <= 15i128 || (f7 >= 80i128 && f7 <= 95i128) || (f7 >= 108i128 && f7 <= 109i128) || (f7 >= 110i128 && f7 <= 111i128) || (f7 >= 112i128 && f7 <= 113i128) || (f7 >= 114i128 && f7 <= 117i128) || (f7 >= 118i128 && f7 <= 121i128) || (f7 >= 122i128 && f7 <= 125i128) || f7 >= 126i128 {
                                                 return 1;
                                                 v0 = rr!(&*s, (16i128 + (f3 + 8i128)));
                                                 v2 = rr!(&*s, (32i128 + (f5 + 8i128)));
@@ -5254,6 +6558,19 @@ pub fn h_3b(s: &mut St, f: &[i64; NF]) -> u32 {
                                                 v36 = v2.wrapping_mul(v35);
                                                 v46 = match hload(&*s, v0, 4i128 as u32, false) { Some(x) => x, None => return 1 };
                                                 { let c = (f7) as usize; if c >= 96 { return 1; } ws[nw] = (c as u8, v46); nw += 1; }
+                                                v47 = match hpost(&*s, ((f3 + 8i128) + 16) as u32, v0, v36, 4i128 as i64) { Some(x) => x, None => return 1 };
+                                                { let c = ((16i128 + (f3 + 8i128))) as usize; if c >= 96 { return 1; } ws[nw] = (c as u8, v47); nw += 1; }
+                                            } else if (f7 >= 16i128 && f7 <= 79i128) {
+                                                return 1;
+                                                v0 = rr!(&*s, (16i128 + (f3 + 8i128)));
+                                                v2 = rr!(&*s, (32i128 + (f5 + 8i128)));
+                                                v35 = (4i128) as u32;
+                                                v36 = v2.wrapping_mul(v35);
+                                                v46 = match hload(&*s, v0, 4i128 as u32, false) { Some(x) => x, None => return 1 };
+                                                { let c = (f7) as usize; if c >= 96 { return 1; } ws[nw] = (c as u8, v46); nw += 1; }
+                                                if (f7 >= 64i128) {
+                                                    { let c = (((f7 - 64i128) + 16i128)) as usize; if c >= 96 { return 1; } ws[nw] = (c as u8, v46); nw += 1; }
+                                                }
                                                 v47 = match hpost(&*s, ((f3 + 8i128) + 16) as u32, v0, v36, 4i128 as i64) { Some(x) => x, None => return 1 };
                                                 { let c = ((16i128 + (f3 + 8i128))) as usize; if c >= 96 { return 1; } ws[nw] = (c as u8, v47); nw += 1; }
                                             } else {
@@ -5274,7 +6591,7 @@ pub fn h_3b(s: &mut St, f: &[i64; NF]) -> u32 {
                                         }
                                     } else {
                                         if (f0 == 31i128) {
-                                            if f7 <= 15i128 || (f7 >= 16i128 && f7 <= 79i128) || (f7 >= 80i128 && f7 <= 95i128) || (f7 >= 108i128 && f7 <= 109i128) || (f7 >= 110i128 && f7 <= 111i128) || (f7 >= 112i128 && f7 <= 113i128) || (f7 >= 114i128 && f7 <= 117i128) || (f7 >= 118i128 && f7 <= 121i128) || (f7 >= 122i128 && f7 <= 125i128) || f7 >= 126i128 {
+                                            if f7 <= 15i128 || (f7 >= 80i128 && f7 <= 95i128) || (f7 >= 108i128 && f7 <= 109i128) || (f7 >= 110i128 && f7 <= 111i128) || (f7 >= 112i128 && f7 <= 113i128) || (f7 >= 114i128 && f7 <= 117i128) || (f7 >= 118i128 && f7 <= 121i128) || (f7 >= 122i128 && f7 <= 125i128) || f7 >= 126i128 {
                                                 v0 = rr!(&*s, (16i128 + (f3 + 8i128)));
                                                 v2 = rr!(&*s, (32i128 + (f5 + 8i128)));
                                                 v35 = (4i128) as u32;
@@ -5282,6 +6599,17 @@ pub fn h_3b(s: &mut St, f: &[i64; NF]) -> u32 {
                                                 v39 = v0.wrapping_add(v36);
                                                 v48 = match hload(&*s, v39, 4i128 as u32, false) { Some(x) => x, None => return 1 };
                                                 { let c = (f7) as usize; if c >= 96 { return 1; } ws[nw] = (c as u8, v48); nw += 1; }
+                                            } else if (f7 >= 16i128 && f7 <= 79i128) {
+                                                v0 = rr!(&*s, (16i128 + (f3 + 8i128)));
+                                                v2 = rr!(&*s, (32i128 + (f5 + 8i128)));
+                                                v35 = (4i128) as u32;
+                                                v36 = v2.wrapping_mul(v35);
+                                                v39 = v0.wrapping_add(v36);
+                                                v48 = match hload(&*s, v39, 4i128 as u32, false) { Some(x) => x, None => return 1 };
+                                                { let c = (f7) as usize; if c >= 96 { return 1; } ws[nw] = (c as u8, v48); nw += 1; }
+                                                if (f7 >= 64i128) {
+                                                    { let c = (((f7 - 64i128) + 16i128)) as usize; if c >= 96 { return 1; } ws[nw] = (c as u8, v48); nw += 1; }
+                                                }
                                             } else {
                                                 if (f7 == 107i128) {
                                                     return 1;
@@ -5296,7 +6624,7 @@ pub fn h_3b(s: &mut St, f: &[i64; NF]) -> u32 {
                                                 }
                                             }
                                         } else {
-                                            if f7 <= 15i128 || (f7 >= 16i128 && f7 <= 79i128) || (f7 >= 80i128 && f7 <= 95i128) || (f7 >= 108i128 && f7 <= 109i128) || (f7 >= 110i128 && f7 <= 111i128) || (f7 >= 112i128 && f7 <= 113i128) || (f7 >= 114i128 && f7 <= 117i128) || (f7 >= 118i128 && f7 <= 121i128) || (f7 >= 122i128 && f7 <= 125i128) || f7 >= 126i128 {
+                                            if f7 <= 15i128 || (f7 >= 80i128 && f7 <= 95i128) || (f7 >= 108i128 && f7 <= 109i128) || (f7 >= 110i128 && f7 <= 111i128) || (f7 >= 112i128 && f7 <= 113i128) || (f7 >= 114i128 && f7 <= 117i128) || (f7 >= 118i128 && f7 <= 121i128) || (f7 >= 122i128 && f7 <= 125i128) || f7 >= 126i128 {
                                                 return 1;
                                                 v0 = rr!(&*s, (16i128 + (f3 + 8i128)));
                                                 v2 = rr!(&*s, (32i128 + (f5 + 8i128)));
@@ -5305,6 +6633,18 @@ pub fn h_3b(s: &mut St, f: &[i64; NF]) -> u32 {
                                                 v39 = v0.wrapping_add(v36);
                                                 v48 = match hload(&*s, v39, 4i128 as u32, false) { Some(x) => x, None => return 1 };
                                                 { let c = (f7) as usize; if c >= 96 { return 1; } ws[nw] = (c as u8, v48); nw += 1; }
+                                            } else if (f7 >= 16i128 && f7 <= 79i128) {
+                                                return 1;
+                                                v0 = rr!(&*s, (16i128 + (f3 + 8i128)));
+                                                v2 = rr!(&*s, (32i128 + (f5 + 8i128)));
+                                                v35 = (4i128) as u32;
+                                                v36 = v2.wrapping_mul(v35);
+                                                v39 = v0.wrapping_add(v36);
+                                                v48 = match hload(&*s, v39, 4i128 as u32, false) { Some(x) => x, None => return 1 };
+                                                { let c = (f7) as usize; if c >= 96 { return 1; } ws[nw] = (c as u8, v48); nw += 1; }
+                                                if (f7 >= 64i128) {
+                                                    { let c = (((f7 - 64i128) + 16i128)) as usize; if c >= 96 { return 1; } ws[nw] = (c as u8, v48); nw += 1; }
+                                                }
                                             } else {
                                                 if (f7 == 107i128) {
                                                     return 1;
@@ -5343,13 +6683,16 @@ pub fn h_3b(s: &mut St, f: &[i64; NF]) -> u32 {
                                                     v52 = match hpost(&*s, ((f3 + 0i128) + 16) as u32, v10, v41, 4i128 as i64) { Some(x) => x, None => return 1 };
                                                     { let c = ((16i128 + (f3 + 0i128))) as usize; if c >= 96 { return 1; } ws[nw] = (c as u8, v52); nw += 1; }
                                                 }
-                                            } else if (f7 >= 16i128 && f7 <= 79i128) || (f7 >= 110i128 && f7 <= 111i128) || (f7 >= 114i128 && f7 <= 117i128) || (f7 >= 122i128 && f7 <= 125i128) {
+                                            } else if (f7 >= 16i128 && f7 <= 79i128) {
                                                 v10 = rr!(&*s, (16i128 + (f3 + 0i128)));
                                                 v11 = rr!(&*s, (32i128 + (f5 + 0i128)));
                                                 v35 = (4i128) as u32;
                                                 v41 = v11.wrapping_mul(v35);
                                                 v49 = match hload(&*s, v10, 4i128 as u32, false) { Some(x) => x, None => return 1 };
                                                 { let c = (f7) as usize; if c >= 96 { return 1; } ws[nw] = (c as u8, v49); nw += 1; }
+                                                if (f7 >= 64i128) {
+                                                    { let c = (((f7 - 64i128) + 16i128)) as usize; if c >= 96 { return 1; } ws[nw] = (c as u8, v49); nw += 1; }
+                                                }
                                                 v52 = match hpost(&*s, ((f3 + 0i128) + 16) as u32, v10, v41, 4i128 as i64) { Some(x) => x, None => return 1 };
                                                 { let c = ((16i128 + (f3 + 0i128))) as usize; if c >= 96 { return 1; } ws[nw] = (c as u8, v52); nw += 1; }
                                             } else if (f7 >= 80i128 && f7 <= 95i128) {
@@ -5384,7 +6727,7 @@ pub fn h_3b(s: &mut St, f: &[i64; NF]) -> u32 {
                                                     v52 = match hpost(&*s, ((f3 + 0i128) + 16) as u32, v10, v41, 4i128 as i64) { Some(x) => x, None => return 1 };
                                                     { let c = ((16i128 + (f3 + 0i128))) as usize; if c >= 96 { return 1; } ws[nw] = (c as u8, v52); nw += 1; }
                                                 }
-                                            } else {
+                                            } else if (f7 >= 108i128 && f7 <= 109i128) || (f7 >= 112i128 && f7 <= 113i128) || (f7 >= 118i128 && f7 <= 121i128) || f7 >= 126i128 {
                                                 if (((rr!(&*s, 114) as i128) & 2097152) != 0i128) {
                                                     if ((f7 ^ 1i128) == 107i128) {
                                                         return 1;
@@ -5398,6 +6741,11 @@ pub fn h_3b(s: &mut St, f: &[i64; NF]) -> u32 {
                                                         { let c = (f7) as usize; if c >= 96 { return 1; } ws[nw] = (c as u8, v49); nw += 1; }
                                                         v50 = match hload(&*s, v42, 4i128 as u32, false) { Some(x) => x, None => return 1 };
                                                         { let c = ((f7 ^ 1i128)) as usize; if c >= 96 { return 1; } ws[nw] = (c as u8, v50); nw += 1; }
+                                                        if ((f7 ^ 1i128) >= 64i128) {
+                                                            if ((f7 ^ 1i128) <= 79i128) {
+                                                                { let c = ((((f7 ^ 1i128) - 64i128) + 16i128)) as usize; if c >= 96 { return 1; } ws[nw] = (c as u8, v50); nw += 1; }
+                                                            }
+                                                        }
                                                         v51 = match hpost(&*s, ((f3 + 0i128) + 16) as u32, v10, v41, 4i128 as i64) { Some(x) => x, None => return 1 };
                                                         { let c = ((16i128 + (f3 + 0i128))) as usize; if c >= 96 { return 1; } ws[nw] = (c as u8, v51); nw += 1; }
                                                     }
@@ -5411,6 +6759,15 @@ pub fn h_3b(s: &mut St, f: &[i64; NF]) -> u32 {
                                                     v52 = match hpost(&*s, ((f3 + 0i128) + 16) as u32, v10, v41, 4i128 as i64) { Some(x) => x, None => return 1 };
                                                     { let c = ((16i128 + (f3 + 0i128))) as usize; if c >= 96 { return 1; } ws[nw] = (c as u8, v52); nw += 1; }
                                                 }
+                                            } else {
+                                                v10 = rr!(&*s, (16i128 + (f3 + 0i128)));
+                                                v11 = rr!(&*s, (32i128 + (f5 + 0i128)));
+                                                v35 = (4i128) as u32;
+                                                v41 = v11.wrapping_mul(v35);
+                                                v49 = match hload(&*s, v10, 4i128 as u32, false) { Some(x) => x, None => return 1 };
+                                                { let c = (f7) as usize; if c >= 96 { return 1; } ws[nw] = (c as u8, v49); nw += 1; }
+                                                v52 = match hpost(&*s, ((f3 + 0i128) + 16) as u32, v10, v41, 4i128 as i64) { Some(x) => x, None => return 1 };
+                                                { let c = ((16i128 + (f3 + 0i128))) as usize; if c >= 96 { return 1; } ws[nw] = (c as u8, v52); nw += 1; }
                                             }
                                         } else {
                                             if f7 <= 15i128 {
@@ -5433,7 +6790,7 @@ pub fn h_3b(s: &mut St, f: &[i64; NF]) -> u32 {
                                                     v52 = match hpost(&*s, ((f3 + 0i128) + 16) as u32, v10, v41, 4i128 as i64) { Some(x) => x, None => return 1 };
                                                     { let c = ((16i128 + (f3 + 0i128))) as usize; if c >= 96 { return 1; } ws[nw] = (c as u8, v52); nw += 1; }
                                                 }
-                                            } else if (f7 >= 16i128 && f7 <= 79i128) || (f7 >= 110i128 && f7 <= 111i128) || (f7 >= 114i128 && f7 <= 117i128) || (f7 >= 122i128 && f7 <= 125i128) {
+                                            } else if (f7 >= 16i128 && f7 <= 79i128) {
                                                 return 1;
                                                 v10 = rr!(&*s, (16i128 + (f3 + 0i128)));
                                                 v11 = rr!(&*s, (32i128 + (f5 + 0i128)));
@@ -5441,6 +6798,9 @@ pub fn h_3b(s: &mut St, f: &[i64; NF]) -> u32 {
                                                 v41 = v11.wrapping_mul(v35);
                                                 v49 = match hload(&*s, v10, 4i128 as u32, false) { Some(x) => x, None => return 1 };
                                                 { let c = (f7) as usize; if c >= 96 { return 1; } ws[nw] = (c as u8, v49); nw += 1; }
+                                                if (f7 >= 64i128) {
+                                                    { let c = (((f7 - 64i128) + 16i128)) as usize; if c >= 96 { return 1; } ws[nw] = (c as u8, v49); nw += 1; }
+                                                }
                                                 v52 = match hpost(&*s, ((f3 + 0i128) + 16) as u32, v10, v41, 4i128 as i64) { Some(x) => x, None => return 1 };
                                                 { let c = ((16i128 + (f3 + 0i128))) as usize; if c >= 96 { return 1; } ws[nw] = (c as u8, v52); nw += 1; }
                                             } else if (f7 >= 80i128 && f7 <= 95i128) {
@@ -5477,7 +6837,7 @@ pub fn h_3b(s: &mut St, f: &[i64; NF]) -> u32 {
                                                     v52 = match hpost(&*s, ((f3 + 0i128) + 16) as u32, v10, v41, 4i128 as i64) { Some(x) => x, None => return 1 };
                                                     { let c = ((16i128 + (f3 + 0i128))) as usize; if c >= 96 { return 1; } ws[nw] = (c as u8, v52); nw += 1; }
                                                 }
-                                            } else {
+                                            } else if (f7 >= 108i128 && f7 <= 109i128) || (f7 >= 112i128 && f7 <= 113i128) || (f7 >= 118i128 && f7 <= 121i128) || f7 >= 126i128 {
                                                 if (((rr!(&*s, 114) as i128) & 2097152) != 0i128) {
                                                     if ((f7 ^ 1i128) == 107i128) {
                                                         return 1;
@@ -5492,6 +6852,11 @@ pub fn h_3b(s: &mut St, f: &[i64; NF]) -> u32 {
                                                         { let c = (f7) as usize; if c >= 96 { return 1; } ws[nw] = (c as u8, v49); nw += 1; }
                                                         v50 = match hload(&*s, v42, 4i128 as u32, false) { Some(x) => x, None => return 1 };
                                                         { let c = ((f7 ^ 1i128)) as usize; if c >= 96 { return 1; } ws[nw] = (c as u8, v50); nw += 1; }
+                                                        if ((f7 ^ 1i128) >= 64i128) {
+                                                            if ((f7 ^ 1i128) <= 79i128) {
+                                                                { let c = ((((f7 ^ 1i128) - 64i128) + 16i128)) as usize; if c >= 96 { return 1; } ws[nw] = (c as u8, v50); nw += 1; }
+                                                            }
+                                                        }
                                                         v51 = match hpost(&*s, ((f3 + 0i128) + 16) as u32, v10, v41, 4i128 as i64) { Some(x) => x, None => return 1 };
                                                         { let c = ((16i128 + (f3 + 0i128))) as usize; if c >= 96 { return 1; } ws[nw] = (c as u8, v51); nw += 1; }
                                                     }
@@ -5506,6 +6871,16 @@ pub fn h_3b(s: &mut St, f: &[i64; NF]) -> u32 {
                                                     v52 = match hpost(&*s, ((f3 + 0i128) + 16) as u32, v10, v41, 4i128 as i64) { Some(x) => x, None => return 1 };
                                                     { let c = ((16i128 + (f3 + 0i128))) as usize; if c >= 96 { return 1; } ws[nw] = (c as u8, v52); nw += 1; }
                                                 }
+                                            } else {
+                                                return 1;
+                                                v10 = rr!(&*s, (16i128 + (f3 + 0i128)));
+                                                v11 = rr!(&*s, (32i128 + (f5 + 0i128)));
+                                                v35 = (4i128) as u32;
+                                                v41 = v11.wrapping_mul(v35);
+                                                v49 = match hload(&*s, v10, 4i128 as u32, false) { Some(x) => x, None => return 1 };
+                                                { let c = (f7) as usize; if c >= 96 { return 1; } ws[nw] = (c as u8, v49); nw += 1; }
+                                                v52 = match hpost(&*s, ((f3 + 0i128) + 16) as u32, v10, v41, 4i128 as i64) { Some(x) => x, None => return 1 };
+                                                { let c = ((16i128 + (f3 + 0i128))) as usize; if c >= 96 { return 1; } ws[nw] = (c as u8, v52); nw += 1; }
                                             }
                                         }
                                     } else {
@@ -5526,7 +6901,7 @@ pub fn h_3b(s: &mut St, f: &[i64; NF]) -> u32 {
                                                     v53 = match hload(&*s, v44, 4i128 as u32, false) { Some(x) => x, None => return 1 };
                                                     { let c = (f7) as usize; if c >= 96 { return 1; } ws[nw] = (c as u8, v53); nw += 1; }
                                                 }
-                                            } else if (f7 >= 16i128 && f7 <= 79i128) || (f7 >= 110i128 && f7 <= 111i128) || (f7 >= 114i128 && f7 <= 117i128) || (f7 >= 122i128 && f7 <= 125i128) {
+                                            } else if (f7 >= 16i128 && f7 <= 79i128) {
                                                 v10 = rr!(&*s, (16i128 + (f3 + 0i128)));
                                                 v11 = rr!(&*s, (32i128 + (f5 + 0i128)));
                                                 v35 = (4i128) as u32;
@@ -5534,6 +6909,9 @@ pub fn h_3b(s: &mut St, f: &[i64; NF]) -> u32 {
                                                 v44 = v10.wrapping_add(v41);
                                                 v53 = match hload(&*s, v44, 4i128 as u32, false) { Some(x) => x, None => return 1 };
                                                 { let c = (f7) as usize; if c >= 96 { return 1; } ws[nw] = (c as u8, v53); nw += 1; }
+                                                if (f7 >= 64i128) {
+                                                    { let c = (((f7 - 64i128) + 16i128)) as usize; if c >= 96 { return 1; } ws[nw] = (c as u8, v53); nw += 1; }
+                                                }
                                             } else if (f7 >= 80i128 && f7 <= 95i128) {
                                                 v10 = rr!(&*s, (16i128 + (f3 + 0i128)));
                                                 v11 = rr!(&*s, (32i128 + (f5 + 0i128)));
@@ -5562,7 +6940,7 @@ pub fn h_3b(s: &mut St, f: &[i64; NF]) -> u32 {
                                                     v53 = match hload(&*s, v44, 4i128 as u32, false) { Some(x) => x, None => return 1 };
                                                     { let c = (f7) as usize; if c >= 96 { return 1; } ws[nw] = (c as u8, v53); nw += 1; }
                                                 }
-                                            } else {
+                                            } else if (f7 >= 108i128 && f7 <= 109i128) || (f7 >= 112i128 && f7 <= 113i128) || (f7 >= 118i128 && f7 <= 121i128) || f7 >= 126i128 {
                                                 if (((rr!(&*s, 114) as i128) & 2097152) != 0i128) {
                                                     if ((f7 ^ 1i128) == 107i128) {
                                                         return 1;
@@ -5577,6 +6955,11 @@ pub fn h_3b(s: &mut St, f: &[i64; NF]) -> u32 {
                                                         { let c = (f7) as usize; if c >= 96 { return 1; } ws[nw] = (c as u8, v53); nw += 1; }
                                                         v54 = match hload(&*s, v45, 4i128 as u32, false) { Some(x) => x, None => return 1 };
                                                         { let c = ((f7 ^ 1i128)) as usize; if c >= 96 { return 1; } ws[nw] = (c as u8, v54); nw += 1; }
+                                                        if ((f7 ^ 1i128) >= 64i128) {
+                                                            if ((f7 ^ 1i128) <= 79i128) {
+                                                                { let c = ((((f7 ^ 1i128) - 64i128) + 16i128)) as usize; if c >= 96 { return 1; } ws[nw] = (c as u8, v54); nw += 1; }
+                                                            }
+                                                        }
                                                     }
                                                 } else {
                                                     v10 = rr!(&*s, (16i128 + (f3 + 0i128)));
@@ -5587,6 +6970,14 @@ pub fn h_3b(s: &mut St, f: &[i64; NF]) -> u32 {
                                                     v53 = match hload(&*s, v44, 4i128 as u32, false) { Some(x) => x, None => return 1 };
                                                     { let c = (f7) as usize; if c >= 96 { return 1; } ws[nw] = (c as u8, v53); nw += 1; }
                                                 }
+                                            } else {
+                                                v10 = rr!(&*s, (16i128 + (f3 + 0i128)));
+                                                v11 = rr!(&*s, (32i128 + (f5 + 0i128)));
+                                                v35 = (4i128) as u32;
+                                                v41 = v11.wrapping_mul(v35);
+                                                v44 = v10.wrapping_add(v41);
+                                                v53 = match hload(&*s, v44, 4i128 as u32, false) { Some(x) => x, None => return 1 };
+                                                { let c = (f7) as usize; if c >= 96 { return 1; } ws[nw] = (c as u8, v53); nw += 1; }
                                             }
                                         } else {
                                             if f7 <= 15i128 {
@@ -5606,7 +6997,7 @@ pub fn h_3b(s: &mut St, f: &[i64; NF]) -> u32 {
                                                     v53 = match hload(&*s, v44, 4i128 as u32, false) { Some(x) => x, None => return 1 };
                                                     { let c = (f7) as usize; if c >= 96 { return 1; } ws[nw] = (c as u8, v53); nw += 1; }
                                                 }
-                                            } else if (f7 >= 16i128 && f7 <= 79i128) || (f7 >= 110i128 && f7 <= 111i128) || (f7 >= 114i128 && f7 <= 117i128) || (f7 >= 122i128 && f7 <= 125i128) {
+                                            } else if (f7 >= 16i128 && f7 <= 79i128) {
                                                 return 1;
                                                 v10 = rr!(&*s, (16i128 + (f3 + 0i128)));
                                                 v11 = rr!(&*s, (32i128 + (f5 + 0i128)));
@@ -5615,6 +7006,9 @@ pub fn h_3b(s: &mut St, f: &[i64; NF]) -> u32 {
                                                 v44 = v10.wrapping_add(v41);
                                                 v53 = match hload(&*s, v44, 4i128 as u32, false) { Some(x) => x, None => return 1 };
                                                 { let c = (f7) as usize; if c >= 96 { return 1; } ws[nw] = (c as u8, v53); nw += 1; }
+                                                if (f7 >= 64i128) {
+                                                    { let c = (((f7 - 64i128) + 16i128)) as usize; if c >= 96 { return 1; } ws[nw] = (c as u8, v53); nw += 1; }
+                                                }
                                             } else if (f7 >= 80i128 && f7 <= 95i128) {
                                                 return 1;
                                                 v10 = rr!(&*s, (16i128 + (f3 + 0i128)));
@@ -5645,7 +7039,7 @@ pub fn h_3b(s: &mut St, f: &[i64; NF]) -> u32 {
                                                     v53 = match hload(&*s, v44, 4i128 as u32, false) { Some(x) => x, None => return 1 };
                                                     { let c = (f7) as usize; if c >= 96 { return 1; } ws[nw] = (c as u8, v53); nw += 1; }
                                                 }
-                                            } else {
+                                            } else if (f7 >= 108i128 && f7 <= 109i128) || (f7 >= 112i128 && f7 <= 113i128) || (f7 >= 118i128 && f7 <= 121i128) || f7 >= 126i128 {
                                                 if (((rr!(&*s, 114) as i128) & 2097152) != 0i128) {
                                                     if ((f7 ^ 1i128) == 107i128) {
                                                         return 1;
@@ -5661,6 +7055,11 @@ pub fn h_3b(s: &mut St, f: &[i64; NF]) -> u32 {
                                                         { let c = (f7) as usize; if c >= 96 { return 1; } ws[nw] = (c as u8, v53); nw += 1; }
                                                         v54 = match hload(&*s, v45, 4i128 as u32, false) { Some(x) => x, None => return 1 };
                                                         { let c = ((f7 ^ 1i128)) as usize; if c >= 96 { return 1; } ws[nw] = (c as u8, v54); nw += 1; }
+                                                        if ((f7 ^ 1i128) >= 64i128) {
+                                                            if ((f7 ^ 1i128) <= 79i128) {
+                                                                { let c = ((((f7 ^ 1i128) - 64i128) + 16i128)) as usize; if c >= 96 { return 1; } ws[nw] = (c as u8, v54); nw += 1; }
+                                                            }
+                                                        }
                                                     }
                                                 } else {
                                                     return 1;
@@ -5672,6 +7071,15 @@ pub fn h_3b(s: &mut St, f: &[i64; NF]) -> u32 {
                                                     v53 = match hload(&*s, v44, 4i128 as u32, false) { Some(x) => x, None => return 1 };
                                                     { let c = (f7) as usize; if c >= 96 { return 1; } ws[nw] = (c as u8, v53); nw += 1; }
                                                 }
+                                            } else {
+                                                return 1;
+                                                v10 = rr!(&*s, (16i128 + (f3 + 0i128)));
+                                                v11 = rr!(&*s, (32i128 + (f5 + 0i128)));
+                                                v35 = (4i128) as u32;
+                                                v41 = v11.wrapping_mul(v35);
+                                                v44 = v10.wrapping_add(v41);
+                                                v53 = match hload(&*s, v44, 4i128 as u32, false) { Some(x) => x, None => return 1 };
+                                                { let c = (f7) as usize; if c >= 96 { return 1; } ws[nw] = (c as u8, v53); nw += 1; }
                                             }
                                         }
                                     }
@@ -5848,12 +7256,24 @@ pub fn h_3b(s: &mut St, f: &[i64; NF]) -> u32 {
                                     if (f6 != 0i128) {
                                         v66 = match hload(&*s, v0, 2i128 as u32, false) { Some(x) => x, None => return 1 };
                                         { let c = (f7) as usize; if c >= 96 { return 1; } ws[nw] = (c as u8, v66); nw += 1; }
+                                        if f7 <= 15i128 || (f7 >= 80i128 && f7 <= 95i128) || (f7 >= 96i128 && f7 <= 107i128) || (f7 >= 108i128 && f7 <= 109i128) || (f7 >= 110i128 && f7 <= 111i128) || (f7 >= 112i128 && f7 <= 113i128) || (f7 >= 114i128 && f7 <= 117i128) || (f7 >= 118i128 && f7 <= 121i128) || (f7 >= 122i128 && f7 <= 125i128) || f7 >= 126i128 {
+                                        } else {
+                                            if (f7 >= 64i128) {
+                                                { let c = (((f7 - 64i128) + 16i128)) as usize; if c >= 96 { return 1; } ws[nw] = (c as u8, v66); nw += 1; }
+                                            }
+                                        }
                                         v67 = match hpost(&*s, ((f3 + 8i128) + 16) as u32, v0, v56, 2i128 as i64) { Some(x) => x, None => return 1 };
                                         { let c = ((16i128 + (f3 + 8i128))) as usize; if c >= 96 { return 1; } ws[nw] = (c as u8, v67); nw += 1; }
                                     } else {
                                         v59 = v0.wrapping_add(v56);
                                         v68 = match hload(&*s, v59, 2i128 as u32, false) { Some(x) => x, None => return 1 };
                                         { let c = (f7) as usize; if c >= 96 { return 1; } ws[nw] = (c as u8, v68); nw += 1; }
+                                        if f7 <= 15i128 || (f7 >= 80i128 && f7 <= 95i128) || (f7 >= 96i128 && f7 <= 107i128) || (f7 >= 108i128 && f7 <= 109i128) || (f7 >= 110i128 && f7 <= 111i128) || (f7 >= 112i128 && f7 <= 113i128) || (f7 >= 114i128 && f7 <= 117i128) || (f7 >= 118i128 && f7 <= 121i128) || (f7 >= 122i128 && f7 <= 125i128) || f7 >= 126i128 {
+                                        } else {
+                                            if (f7 >= 64i128) {
+                                                { let c = (((f7 - 64i128) + 16i128)) as usize; if c >= 96 { return 1; } ws[nw] = (c as u8, v68); nw += 1; }
+                                            }
+                                        }
                                     }
                                 } else {
                                     v10 = rr!(&*s, (16i128 + (f3 + 0i128)));
@@ -5876,9 +7296,12 @@ pub fn h_3b(s: &mut St, f: &[i64; NF]) -> u32 {
                                                 v72 = match hpost(&*s, ((f3 + 0i128) + 16) as u32, v10, v61, 2i128 as i64) { Some(x) => x, None => return 1 };
                                                 { let c = ((16i128 + (f3 + 0i128))) as usize; if c >= 96 { return 1; } ws[nw] = (c as u8, v72); nw += 1; }
                                             }
-                                        } else if (f7 >= 16i128 && f7 <= 79i128) || (f7 >= 96i128 && f7 <= 107i128) || (f7 >= 110i128 && f7 <= 111i128) || (f7 >= 114i128 && f7 <= 117i128) || (f7 >= 122i128 && f7 <= 125i128) {
+                                        } else if (f7 >= 16i128 && f7 <= 79i128) {
                                             v69 = match hload(&*s, v10, 2i128 as u32, false) { Some(x) => x, None => return 1 };
                                             { let c = (f7) as usize; if c >= 96 { return 1; } ws[nw] = (c as u8, v69); nw += 1; }
+                                            if (f7 >= 64i128) {
+                                                { let c = (((f7 - 64i128) + 16i128)) as usize; if c >= 96 { return 1; } ws[nw] = (c as u8, v69); nw += 1; }
+                                            }
                                             v72 = match hpost(&*s, ((f3 + 0i128) + 16) as u32, v10, v61, 2i128 as i64) { Some(x) => x, None => return 1 };
                                             { let c = ((16i128 + (f3 + 0i128))) as usize; if c >= 96 { return 1; } ws[nw] = (c as u8, v72); nw += 1; }
                                         } else if (f7 >= 80i128 && f7 <= 95i128) {
@@ -5896,6 +7319,11 @@ pub fn h_3b(s: &mut St, f: &[i64; NF]) -> u32 {
                                                 v72 = match hpost(&*s, ((f3 + 0i128) + 16) as u32, v10, v61, 2i128 as i64) { Some(x) => x, None => return 1 };
                                                 { let c = ((16i128 + (f3 + 0i128))) as usize; if c >= 96 { return 1; } ws[nw] = (c as u8, v72); nw += 1; }
                                             }
+                                        } else if (f7 >= 96i128 && f7 <= 107i128) || (f7 >= 110i128 && f7 <= 111i128) || (f7 >= 114i128 && f7 <= 117i128) || (f7 >= 122i128 && f7 <= 125i128) {
+                                            v69 = match hload(&*s, v10, 2i128 as u32, false) { Some(x) => x, None => return 1 };
+                                            { let c = (f7) as usize; if c >= 96 { return 1; } ws[nw] = (c as u8, v69); nw += 1; }
+                                            v72 = match hpost(&*s, ((f3 + 0i128) + 16) as u32, v10, v61, 2i128 as i64) { Some(x) => x, None => return 1 };
+                                            { let c = ((16i128 + (f3 + 0i128))) as usize; if c >= 96 { return 1; } ws[nw] = (c as u8, v72); nw += 1; }
                                         } else {
                                             if (((rr!(&*s, 114) as i128) & 2097152) != 0i128) {
                                                 v62 = v10.wrapping_add(v55);
@@ -5903,6 +7331,11 @@ pub fn h_3b(s: &mut St, f: &[i64; NF]) -> u32 {
                                                 { let c = (f7) as usize; if c >= 96 { return 1; } ws[nw] = (c as u8, v69); nw += 1; }
                                                 v70 = match hload(&*s, v62, 2i128 as u32, false) { Some(x) => x, None => return 1 };
                                                 { let c = ((f7 ^ 1i128)) as usize; if c >= 96 { return 1; } ws[nw] = (c as u8, v70); nw += 1; }
+                                                if ((f7 ^ 1i128) >= 64i128) {
+                                                    if ((f7 ^ 1i128) <= 79i128) {
+                                                        { let c = ((((f7 ^ 1i128) - 64i128) + 16i128)) as usize; if c >= 96 { return 1; } ws[nw] = (c as u8, v70); nw += 1; }
+                                                    }
+                                                }
                                                 v71 = match hpost(&*s, ((f3 + 0i128) + 16) as u32, v10, v61, 2i128 as i64) { Some(x) => x, None => return 1 };
                                                 { let c = ((16i128 + (f3 + 0i128))) as usize; if c >= 96 { return 1; } ws[nw] = (c as u8, v71); nw += 1; }
                                             } else {
@@ -5925,9 +7358,12 @@ pub fn h_3b(s: &mut St, f: &[i64; NF]) -> u32 {
                                                 v73 = match hload(&*s, v64, 2i128 as u32, false) { Some(x) => x, None => return 1 };
                                                 { let c = (f7) as usize; if c >= 96 { return 1; } ws[nw] = (c as u8, v73); nw += 1; }
                                             }
-                                        } else if (f7 >= 16i128 && f7 <= 79i128) || (f7 >= 96i128 && f7 <= 107i128) || (f7 >= 110i128 && f7 <= 111i128) || (f7 >= 114i128 && f7 <= 117i128) || (f7 >= 122i128 && f7 <= 125i128) {
+                                        } else if (f7 >= 16i128 && f7 <= 79i128) {
                                             v73 = match hload(&*s, v64, 2i128 as u32, false) { Some(x) => x, None => return 1 };
                                             { let c = (f7) as usize; if c >= 96 { return 1; } ws[nw] = (c as u8, v73); nw += 1; }
+                                            if (f7 >= 64i128) {
+                                                { let c = (((f7 - 64i128) + 16i128)) as usize; if c >= 96 { return 1; } ws[nw] = (c as u8, v73); nw += 1; }
+                                            }
                                         } else if (f7 >= 80i128 && f7 <= 95i128) {
                                             if (((rr!(&*s, 114) as i128) & 2097152) != 0i128) {
                                                 v65 = v64.wrapping_add(v55);
@@ -5939,6 +7375,9 @@ pub fn h_3b(s: &mut St, f: &[i64; NF]) -> u32 {
                                                 v73 = match hload(&*s, v64, 2i128 as u32, false) { Some(x) => x, None => return 1 };
                                                 { let c = (f7) as usize; if c >= 96 { return 1; } ws[nw] = (c as u8, v73); nw += 1; }
                                             }
+                                        } else if (f7 >= 96i128 && f7 <= 107i128) || (f7 >= 110i128 && f7 <= 111i128) || (f7 >= 114i128 && f7 <= 117i128) || (f7 >= 122i128 && f7 <= 125i128) {
+                                            v73 = match hload(&*s, v64, 2i128 as u32, false) { Some(x) => x, None => return 1 };
+                                            { let c = (f7) as usize; if c >= 96 { return 1; } ws[nw] = (c as u8, v73); nw += 1; }
                                         } else {
                                             if (((rr!(&*s, 114) as i128) & 2097152) != 0i128) {
                                                 v65 = v64.wrapping_add(v55);
@@ -5946,6 +7385,11 @@ pub fn h_3b(s: &mut St, f: &[i64; NF]) -> u32 {
                                                 { let c = (f7) as usize; if c >= 96 { return 1; } ws[nw] = (c as u8, v73); nw += 1; }
                                                 v74 = match hload(&*s, v65, 2i128 as u32, false) { Some(x) => x, None => return 1 };
                                                 { let c = ((f7 ^ 1i128)) as usize; if c >= 96 { return 1; } ws[nw] = (c as u8, v74); nw += 1; }
+                                                if ((f7 ^ 1i128) >= 64i128) {
+                                                    if ((f7 ^ 1i128) <= 79i128) {
+                                                        { let c = ((((f7 ^ 1i128) - 64i128) + 16i128)) as usize; if c >= 96 { return 1; } ws[nw] = (c as u8, v74); nw += 1; }
+                                                    }
+                                                }
                                             } else {
                                                 v73 = match hload(&*s, v64, 2i128 as u32, false) { Some(x) => x, None => return 1 };
                                                 { let c = (f7) as usize; if c >= 96 { return 1; } ws[nw] = (c as u8, v73); nw += 1; }
@@ -5979,12 +7423,24 @@ pub fn h_3b(s: &mut St, f: &[i64; NF]) -> u32 {
                                     if (f6 != 0i128) {
                                         v75 = match hload(&*s, v0, 2i128 as u32, true) { Some(x) => x, None => return 1 };
                                         { let c = (f7) as usize; if c >= 96 { return 1; } ws[nw] = (c as u8, v75); nw += 1; }
+                                        if f7 <= 15i128 || (f7 >= 80i128 && f7 <= 95i128) || (f7 >= 96i128 && f7 <= 107i128) || (f7 >= 108i128 && f7 <= 109i128) || (f7 >= 110i128 && f7 <= 111i128) || (f7 >= 112i128 && f7 <= 113i128) || (f7 >= 114i128 && f7 <= 117i128) || (f7 >= 118i128 && f7 <= 121i128) || (f7 >= 122i128 && f7 <= 125i128) || f7 >= 126i128 {
+                                        } else {
+                                            if (f7 >= 64i128) {
+                                                { let c = (((f7 - 64i128) + 16i128)) as usize; if c >= 96 { return 1; } ws[nw] = (c as u8, v75); nw += 1; }
+                                            }
+                                        }
                                         v67 = match hpost(&*s, ((f3 + 8i128) + 16) as u32, v0, v56, 2i128 as i64) { Some(x) => x, None => return 1 };
                                         { let c = ((16i128 + (f3 + 8i128))) as usize; if c >= 96 { return 1; } ws[nw] = (c as u8, v67); nw += 1; }
                                     } else {
                                         v59 = v0.wrapping_add(v56);
                                         v76 = match hload(&*s, v59, 2i128 as u32, true) { Some(x) => x, None => return 1 };
                                         { let c = (f7) as usize; if c >= 96 { return 1; } ws[nw] = (c as u8, v76); nw += 1; }
+                                        if f7 <= 15i128 || (f7 >= 80i128 && f7 <= 95i128) || (f7 >= 96i128 && f7 <= 107i128) || (f7 >= 108i128 && f7 <= 109i128) || (f7 >= 110i128 && f7 <= 111i128) || (f7 >= 112i128 && f7 <= 113i128) || (f7 >= 114i128 && f7 <= 117i128) || (f7 >= 118i128 && f7 <= 121i128) || (f7 >= 122i128 && f7 <= 125i128) || f7 >= 126i128 {
+                                        } else {
+                                            if (f7 >= 64i128) {
+                                                { let c = (((f7 - 64i128) + 16i128)) as usize; if c >= 96 { return 1; } ws[nw] = (c as u8, v76); nw += 1; }
+                                            }
+                                        }
                                     }
                                 } else {
                                     v10 = rr!(&*s, (16i128 + (f3 + 0i128)));
@@ -6007,9 +7463,12 @@ pub fn h_3b(s: &mut St, f: &[i64; NF]) -> u32 {
                                                 v72 = match hpost(&*s, ((f3 + 0i128) + 16) as u32, v10, v61, 2i128 as i64) { Some(x) => x, None => return 1 };
                                                 { let c = ((16i128 + (f3 + 0i128))) as usize; if c >= 96 { return 1; } ws[nw] = (c as u8, v72); nw += 1; }
                                             }
-                                        } else if (f7 >= 16i128 && f7 <= 79i128) || (f7 >= 96i128 && f7 <= 107i128) || (f7 >= 110i128 && f7 <= 111i128) || (f7 >= 114i128 && f7 <= 117i128) || (f7 >= 122i128 && f7 <= 125i128) {
+                                        } else if (f7 >= 16i128 && f7 <= 79i128) {
                                             v77 = match hload(&*s, v10, 2i128 as u32, true) { Some(x) => x, None => return 1 };
                                             { let c = (f7) as usize; if c >= 96 { return 1; } ws[nw] = (c as u8, v77); nw += 1; }
+                                            if (f7 >= 64i128) {
+                                                { let c = (((f7 - 64i128) + 16i128)) as usize; if c >= 96 { return 1; } ws[nw] = (c as u8, v77); nw += 1; }
+                                            }
                                             v72 = match hpost(&*s, ((f3 + 0i128) + 16) as u32, v10, v61, 2i128 as i64) { Some(x) => x, None => return 1 };
                                             { let c = ((16i128 + (f3 + 0i128))) as usize; if c >= 96 { return 1; } ws[nw] = (c as u8, v72); nw += 1; }
                                         } else if (f7 >= 80i128 && f7 <= 95i128) {
@@ -6027,6 +7486,11 @@ pub fn h_3b(s: &mut St, f: &[i64; NF]) -> u32 {
                                                 v72 = match hpost(&*s, ((f3 + 0i128) + 16) as u32, v10, v61, 2i128 as i64) { Some(x) => x, None => return 1 };
                                                 { let c = ((16i128 + (f3 + 0i128))) as usize; if c >= 96 { return 1; } ws[nw] = (c as u8, v72); nw += 1; }
                                             }
+                                        } else if (f7 >= 96i128 && f7 <= 107i128) || (f7 >= 110i128 && f7 <= 111i128) || (f7 >= 114i128 && f7 <= 117i128) || (f7 >= 122i128 && f7 <= 125i128) {
+                                            v77 = match hload(&*s, v10, 2i128 as u32, true) { Some(x) => x, None => return 1 };
+                                            { let c = (f7) as usize; if c >= 96 { return 1; } ws[nw] = (c as u8, v77); nw += 1; }
+                                            v72 = match hpost(&*s, ((f3 + 0i128) + 16) as u32, v10, v61, 2i128 as i64) { Some(x) => x, None => return 1 };
+                                            { let c = ((16i128 + (f3 + 0i128))) as usize; if c >= 96 { return 1; } ws[nw] = (c as u8, v72); nw += 1; }
                                         } else {
                                             if (((rr!(&*s, 114) as i128) & 2097152) != 0i128) {
                                                 v62 = v10.wrapping_add(v55);
@@ -6034,6 +7498,11 @@ pub fn h_3b(s: &mut St, f: &[i64; NF]) -> u32 {
                                                 { let c = (f7) as usize; if c >= 96 { return 1; } ws[nw] = (c as u8, v77); nw += 1; }
                                                 v78 = match hload(&*s, v62, 2i128 as u32, true) { Some(x) => x, None => return 1 };
                                                 { let c = ((f7 ^ 1i128)) as usize; if c >= 96 { return 1; } ws[nw] = (c as u8, v78); nw += 1; }
+                                                if ((f7 ^ 1i128) >= 64i128) {
+                                                    if ((f7 ^ 1i128) <= 79i128) {
+                                                        { let c = ((((f7 ^ 1i128) - 64i128) + 16i128)) as usize; if c >= 96 { return 1; } ws[nw] = (c as u8, v78); nw += 1; }
+                                                    }
+                                                }
                                                 v71 = match hpost(&*s, ((f3 + 0i128) + 16) as u32, v10, v61, 2i128 as i64) { Some(x) => x, None => return 1 };
                                                 { let c = ((16i128 + (f3 + 0i128))) as usize; if c >= 96 { return 1; } ws[nw] = (c as u8, v71); nw += 1; }
                                             } else {
@@ -6056,9 +7525,12 @@ pub fn h_3b(s: &mut St, f: &[i64; NF]) -> u32 {
                                                 v79 = match hload(&*s, v64, 2i128 as u32, true) { Some(x) => x, None => return 1 };
                                                 { let c = (f7) as usize; if c >= 96 { return 1; } ws[nw] = (c as u8, v79); nw += 1; }
                                             }
-                                        } else if (f7 >= 16i128 && f7 <= 79i128) || (f7 >= 96i128 && f7 <= 107i128) || (f7 >= 110i128 && f7 <= 111i128) || (f7 >= 114i128 && f7 <= 117i128) || (f7 >= 122i128 && f7 <= 125i128) {
+                                        } else if (f7 >= 16i128 && f7 <= 79i128) {
                                             v79 = match hload(&*s, v64, 2i128 as u32, true) { Some(x) => x, None => return 1 };
                                             { let c = (f7) as usize; if c >= 96 { return 1; } ws[nw] = (c as u8, v79); nw += 1; }
+                                            if (f7 >= 64i128) {
+                                                { let c = (((f7 - 64i128) + 16i128)) as usize; if c >= 96 { return 1; } ws[nw] = (c as u8, v79); nw += 1; }
+                                            }
                                         } else if (f7 >= 80i128 && f7 <= 95i128) {
                                             if (((rr!(&*s, 114) as i128) & 2097152) != 0i128) {
                                                 v65 = v64.wrapping_add(v55);
@@ -6070,6 +7542,9 @@ pub fn h_3b(s: &mut St, f: &[i64; NF]) -> u32 {
                                                 v79 = match hload(&*s, v64, 2i128 as u32, true) { Some(x) => x, None => return 1 };
                                                 { let c = (f7) as usize; if c >= 96 { return 1; } ws[nw] = (c as u8, v79); nw += 1; }
                                             }
+                                        } else if (f7 >= 96i128 && f7 <= 107i128) || (f7 >= 110i128 && f7 <= 111i128) || (f7 >= 114i128 && f7 <= 117i128) || (f7 >= 122i128 && f7 <= 125i128) {
+                                            v79 = match hload(&*s, v64, 2i128 as u32, true) { Some(x) => x, None => return 1 };
+                                            { let c = (f7) as usize; if c >= 96 { return 1; } ws[nw] = (c as u8, v79); nw += 1; }
                                         } else {
                                             if (((rr!(&*s, 114) as i128) & 2097152) != 0i128) {
                                                 v65 = v64.wrapping_add(v55);
@@ -6077,6 +7552,11 @@ pub fn h_3b(s: &mut St, f: &[i64; NF]) -> u32 {
                                                 { let c = (f7) as usize; if c >= 96 { return 1; } ws[nw] = (c as u8, v79); nw += 1; }
                                                 v80 = match hload(&*s, v65, 2i128 as u32, true) { Some(x) => x, None => return 1 };
                                                 { let c = ((f7 ^ 1i128)) as usize; if c >= 96 { return 1; } ws[nw] = (c as u8, v80); nw += 1; }
+                                                if ((f7 ^ 1i128) >= 64i128) {
+                                                    if ((f7 ^ 1i128) <= 79i128) {
+                                                        { let c = ((((f7 ^ 1i128) - 64i128) + 16i128)) as usize; if c >= 96 { return 1; } ws[nw] = (c as u8, v80); nw += 1; }
+                                                    }
+                                                }
                                             } else {
                                                 v79 = match hload(&*s, v64, 2i128 as u32, true) { Some(x) => x, None => return 1 };
                                                 { let c = (f7) as usize; if c >= 96 { return 1; } ws[nw] = (c as u8, v79); nw += 1; }
@@ -6132,12 +7612,24 @@ pub fn h_3b(s: &mut St, f: &[i64; NF]) -> u32 {
                                     if (f6 != 0i128) {
                                         v81 = match hload(&*s, v0, 8i128 as u32, false) { Some(x) => x, None => return 1 };
                                         { let c = (f7) as usize; if c >= 96 { return 1; } ws[nw] = (c as u8, v81); nw += 1; }
+                                        if f7 <= 15i128 || (f7 >= 80i128 && f7 <= 95i128) || (f7 >= 96i128 && f7 <= 107i128) || (f7 >= 108i128 && f7 <= 109i128) || (f7 >= 110i128 && f7 <= 111i128) || (f7 >= 112i128 && f7 <= 113i128) || (f7 >= 114i128 && f7 <= 117i128) || (f7 >= 118i128 && f7 <= 121i128) || (f7 >= 122i128 && f7 <= 125i128) || f7 >= 126i128 {
+                                        } else {
+                                            if (f7 >= 64i128) {
+                                                { let c = (((f7 - 64i128) + 16i128)) as usize; if c >= 96 { return 1; } ws[nw] = (c as u8, v81); nw += 1; }
+                                            }
+                                        }
                                         v47 = match hpost(&*s, ((f3 + 8i128) + 16) as u32, v0, v36, 4i128 as i64) { Some(x) => x, None => return 1 };
                                         { let c = ((16i128 + (f3 + 8i128))) as usize; if c >= 96 { return 1; } ws[nw] = (c as u8, v47); nw += 1; }
                                     } else {
                                         v39 = v0.wrapping_add(v36);
                                         v82 = match hload(&*s, v39, 8i128 as u32, false) { Some(x) => x, None => return 1 };
                                         { let c = (f7) as usize; if c >= 96 { return 1; } ws[nw] = (c as u8, v82); nw += 1; }
+                                        if f7 <= 15i128 || (f7 >= 80i128 && f7 <= 95i128) || (f7 >= 96i128 && f7 <= 107i128) || (f7 >= 108i128 && f7 <= 109i128) || (f7 >= 110i128 && f7 <= 111i128) || (f7 >= 112i128 && f7 <= 113i128) || (f7 >= 114i128 && f7 <= 117i128) || (f7 >= 118i128 && f7 <= 121i128) || (f7 >= 122i128 && f7 <= 125i128) || f7 >= 126i128 {
+                                        } else {
+                                            if (f7 >= 64i128) {
+                                                { let c = (((f7 - 64i128) + 16i128)) as usize; if c >= 96 { return 1; } ws[nw] = (c as u8, v82); nw += 1; }
+                                            }
+                                        }
                                     }
                                 } else {
                                     v10 = rr!(&*s, (16i128 + (f3 + 0i128)));
@@ -6147,12 +7639,24 @@ pub fn h_3b(s: &mut St, f: &[i64; NF]) -> u32 {
                                     if (f6 != 0i128) {
                                         v83 = match hload(&*s, v10, 8i128 as u32, false) { Some(x) => x, None => return 1 };
                                         { let c = (f7) as usize; if c >= 96 { return 1; } ws[nw] = (c as u8, v83); nw += 1; }
+                                        if f7 <= 15i128 || (f7 >= 80i128 && f7 <= 95i128) || (f7 >= 96i128 && f7 <= 107i128) || (f7 >= 108i128 && f7 <= 109i128) || (f7 >= 110i128 && f7 <= 111i128) || (f7 >= 112i128 && f7 <= 113i128) || (f7 >= 114i128 && f7 <= 117i128) || (f7 >= 118i128 && f7 <= 121i128) || (f7 >= 122i128 && f7 <= 125i128) || f7 >= 126i128 {
+                                        } else {
+                                            if (f7 >= 64i128) {
+                                                { let c = (((f7 - 64i128) + 16i128)) as usize; if c >= 96 { return 1; } ws[nw] = (c as u8, v83); nw += 1; }
+                                            }
+                                        }
                                         v52 = match hpost(&*s, ((f3 + 0i128) + 16) as u32, v10, v41, 4i128 as i64) { Some(x) => x, None => return 1 };
                                         { let c = ((16i128 + (f3 + 0i128))) as usize; if c >= 96 { return 1; } ws[nw] = (c as u8, v52); nw += 1; }
                                     } else {
                                         v44 = v10.wrapping_add(v41);
                                         v84 = match hload(&*s, v44, 8i128 as u32, false) { Some(x) => x, None => return 1 };
                                         { let c = (f7) as usize; if c >= 96 { return 1; } ws[nw] = (c as u8, v84); nw += 1; }
+                                        if f7 <= 15i128 || (f7 >= 80i128 && f7 <= 95i128) || (f7 >= 96i128 && f7 <= 107i128) || (f7 >= 108i128 && f7 <= 109i128) || (f7 >= 110i128 && f7 <= 111i128) || (f7 >= 112i128 && f7 <= 113i128) || (f7 >= 114i128 && f7 <= 117i128) || (f7 >= 118i128 && f7 <= 121i128) || (f7 >= 122i128 && f7 <= 125i128) || f7 >= 126i128 {
+                                        } else {
+                                            if (f7 >= 64i128) {
+                                                { let c = (((f7 - 64i128) + 16i128)) as usize; if c >= 96 { return 1; } ws[nw] = (c as u8, v84); nw += 1; }
+                                            }
+                                        }
                                     }
                                 }
                             }
@@ -6368,9 +7872,21 @@ pub fn t_3b<S: RegRead>(s: &S, f: &[i64; NF], t: &mut Touch) -> bool {
                                     t.rd(((32i128 + (f5 + 8i128))) as u32);
                                     if (f6 != 0i128) {
                                         t.wr((f7) as u32);
+                                        if f7 <= 15i128 || (f7 >= 80i128 && f7 <= 95i128) || (f7 >= 96i128 && f7 <= 107i128) || (f7 >= 108i128 && f7 <= 109i128) || (f7 >= 110i128 && f7 <= 111i128) || (f7 >= 112i128 && f7 <= 113i128) || (f7 >= 114i128 && f7 <= 117i128) || (f7 >= 118i128 && f7 <= 121i128) || (f7 >= 122i128 && f7 <= 125i128) || f7 >= 126i128 {
+                                        } else {
+                                            if (f7 >= 64i128) {
+                                                t.wr((((f7 - 64i128) + 16i128)) as u32);
+                                            }
+                                        }
                                         t.wr(((16i128 + (f3 + 8i128))) as u32);
                                     } else {
                                         t.wr((f7) as u32);
+                                        if f7 <= 15i128 || (f7 >= 80i128 && f7 <= 95i128) || (f7 >= 96i128 && f7 <= 107i128) || (f7 >= 108i128 && f7 <= 109i128) || (f7 >= 110i128 && f7 <= 111i128) || (f7 >= 112i128 && f7 <= 113i128) || (f7 >= 114i128 && f7 <= 117i128) || (f7 >= 118i128 && f7 <= 121i128) || (f7 >= 122i128 && f7 <= 125i128) || f7 >= 126i128 {
+                                        } else {
+                                            if (f7 >= 64i128) {
+                                                t.wr((((f7 - 64i128) + 16i128)) as u32);
+                                            }
+                                        }
                                     }
                                 } else {
                                     t.rd(((16i128 + (f3 + 0i128))) as u32);
@@ -6385,8 +7901,11 @@ pub fn t_3b<S: RegRead>(s: &S, f: &[i64; NF], t: &mut Touch) -> bool {
                                                 t.wr((f7) as u32);
                                                 t.wr(((16i128 + (f3 + 0i128))) as u32);
                                             }
-                                        } else if (f7 >= 16i128 && f7 <= 79i128) || (f7 >= 96i128 && f7 <= 107i128) || (f7 >= 110i128 && f7 <= 111i128) || (f7 >= 114i128 && f7 <= 117i128) || (f7 >= 122i128 && f7 <= 125i128) {
+                                        } else if (f7 >= 16i128 && f7 <= 79i128) {
                                             t.wr((f7) as u32);
+                                            if (f7 >= 64i128) {
+                                                t.wr((((f7 - 64i128) + 16i128)) as u32);
+                                            }
                                             t.wr(((16i128 + (f3 + 0i128))) as u32);
                                         } else if (f7 >= 80i128 && f7 <= 95i128) {
                                             if (((rrt!(&*s, 114) as i128) & 2097152) != 0i128) {
@@ -6397,10 +7916,18 @@ pub fn t_3b<S: RegRead>(s: &S, f: &[i64; NF], t: &mut Touch) -> bool {
                                                 t.wr((f7) as u32);
                                                 t.wr(((16i128 + (f3 + 0i128))) as u32);
                                             }
+                                        } else if (f7 >= 96i128 && f7 <= 107i128) || (f7 >= 110i128 && f7 <= 111i128) || (f7 >= 114i128 && f7 <= 117i128) || (f7 >= 122i128 && f7 <= 125i128) {
+                                            t.wr((f7) as u32);
+                                            t.wr(((16i128 + (f3 + 0i128))) as u32);
                                         } else {
                                             if (((rrt!(&*s, 114) as i128) & 2097152) != 0i128) {
                                                 t.wr((f7) as u32);
                                                 t.wr(((f7 ^ 1i128)) as u32);
+                                                if ((f7 ^ 1i128) >= 64i128) {
+                                                    if ((f7 ^ 1i128) <= 79i128) {
+                                                        t.wr(((((f7 ^ 1i128) - 64i128) + 16i128)) as u32);
+                                                    }
+                                                }
                                                 t.wr(((16i128 + (f3 + 0i128))) as u32);
                                             } else {
                                                 t.wr((f7) as u32);
@@ -6415,8 +7942,11 @@ pub fn t_3b<S: RegRead>(s: &S, f: &[i64; NF], t: &mut Touch) -> bool {
                                             } else {
                                                 t.wr((f7) as u32);
                                             }
-                                        } else if (f7 >= 16i128 && f7 <= 79i128) || (f7 >= 96i128 && f7 <= 107i128) || (f7 >= 110i128 && f7 <= 111i128) || (f7 >= 114i128 && f7 <= 117i128) || (f7 >= 122i128 && f7 <= 125i128) {
+                                        } else if (f7 >= 16i128 && f7 <= 79i128) {
                                             t.wr((f7) as u32);
+                                            if (f7 >= 64i128) {
+                                                t.wr((((f7 - 64i128) + 16i128)) as u32);
+                                            }
                                         } else if (f7 >= 80i128 && f7 <= 95i128) {
                                             if (((rrt!(&*s, 114) as i128) & 2097152) != 0i128) {
                                                 t.wr((f7) as u32);
@@ -6424,10 +7954,17 @@ pub fn t_3b<S: RegRead>(s: &S, f: &[i64; NF], t: &mut Touch) -> bool {
                                             } else {
                                                 t.wr((f7) as u32);
                                             }
+                                        } else if (f7 >= 96i128 && f7 <= 107i128) || (f7 >= 110i128 && f7 <= 111i128) || (f7 >= 114i128 && f7 <= 117i128) || (f7 >= 122i128 && f7 <= 125i128) {
+                                            t.wr((f7) as u32);
                                         } else {
                                             if (((rrt!(&*s, 114) as i128) & 2097152) != 0i128) {
                                                 t.wr((f7) as u32);
                                                 t.wr(((f7 ^ 1i128)) as u32);
+                                                if ((f7 ^ 1i128) >= 64i128) {
+                                                    if ((f7 ^ 1i128) <= 79i128) {
+                                                        t.wr(((((f7 ^ 1i128) - 64i128) + 16i128)) as u32);
+                                                    }
+                                                }
                                             } else {
                                                 t.wr((f7) as u32);
                                             }
@@ -6457,9 +7994,21 @@ pub fn t_3b<S: RegRead>(s: &S, f: &[i64; NF], t: &mut Touch) -> bool {
                                     t.rd(((32i128 + (f5 + 8i128))) as u32);
                                     if (f6 != 0i128) {
                                         t.wr((f7) as u32);
+                                        if f7 <= 15i128 || (f7 >= 80i128 && f7 <= 95i128) || (f7 >= 96i128 && f7 <= 107i128) || (f7 >= 108i128 && f7 <= 109i128) || (f7 >= 110i128 && f7 <= 111i128) || (f7 >= 112i128 && f7 <= 113i128) || (f7 >= 114i128 && f7 <= 117i128) || (f7 >= 118i128 && f7 <= 121i128) || (f7 >= 122i128 && f7 <= 125i128) || f7 >= 126i128 {
+                                        } else {
+                                            if (f7 >= 64i128) {
+                                                t.wr((((f7 - 64i128) + 16i128)) as u32);
+                                            }
+                                        }
                                         t.wr(((16i128 + (f3 + 8i128))) as u32);
                                     } else {
                                         t.wr((f7) as u32);
+                                        if f7 <= 15i128 || (f7 >= 80i128 && f7 <= 95i128) || (f7 >= 96i128 && f7 <= 107i128) || (f7 >= 108i128 && f7 <= 109i128) || (f7 >= 110i128 && f7 <= 111i128) || (f7 >= 112i128 && f7 <= 113i128) || (f7 >= 114i128 && f7 <= 117i128) || (f7 >= 118i128 && f7 <= 121i128) || (f7 >= 122i128 && f7 <= 125i128) || f7 >= 126i128 {
+                                        } else {
+                                            if (f7 >= 64i128) {
+                                                t.wr((((f7 - 64i128) + 16i128)) as u32);
+                                            }
+                                        }
                                     }
                                 } else {
                                     t.rd(((16i128 + (f3 + 0i128))) as u32);
@@ -6474,8 +8023,11 @@ pub fn t_3b<S: RegRead>(s: &S, f: &[i64; NF], t: &mut Touch) -> bool {
                                                 t.wr((f7) as u32);
                                                 t.wr(((16i128 + (f3 + 0i128))) as u32);
                                             }
-                                        } else if (f7 >= 16i128 && f7 <= 79i128) || (f7 >= 96i128 && f7 <= 107i128) || (f7 >= 110i128 && f7 <= 111i128) || (f7 >= 114i128 && f7 <= 117i128) || (f7 >= 122i128 && f7 <= 125i128) {
+                                        } else if (f7 >= 16i128 && f7 <= 79i128) {
                                             t.wr((f7) as u32);
+                                            if (f7 >= 64i128) {
+                                                t.wr((((f7 - 64i128) + 16i128)) as u32);
+                                            }
                                             t.wr(((16i128 + (f3 + 0i128))) as u32);
                                         } else if (f7 >= 80i128 && f7 <= 95i128) {
                                             if (((rrt!(&*s, 114) as i128) & 2097152) != 0i128) {
@@ -6486,10 +8038,18 @@ pub fn t_3b<S: RegRead>(s: &S, f: &[i64; NF], t: &mut Touch) -> bool {
                                                 t.wr((f7) as u32);
                                                 t.wr(((16i128 + (f3 + 0i128))) as u32);
                                             }
+                                        } else if (f7 >= 96i128 && f7 <= 107i128) || (f7 >= 110i128 && f7 <= 111i128) || (f7 >= 114i128 && f7 <= 117i128) || (f7 >= 122i128 && f7 <= 125i128) {
+                                            t.wr((f7) as u32);
+                                            t.wr(((16i128 + (f3 + 0i128))) as u32);
                                         } else {
                                             if (((rrt!(&*s, 114) as i128) & 2097152) != 0i128) {
                                                 t.wr((f7) as u32);
                                                 t.wr(((f7 ^ 1i128)) as u32);
+                                                if ((f7 ^ 1i128) >= 64i128) {
+                                                    if ((f7 ^ 1i128) <= 79i128) {
+                                                        t.wr(((((f7 ^ 1i128) - 64i128) + 16i128)) as u32);
+                                                    }
+                                                }
                                                 t.wr(((16i128 + (f3 + 0i128))) as u32);
                                             } else {
                                                 t.wr((f7) as u32);
@@ -6504,8 +8064,11 @@ pub fn t_3b<S: RegRead>(s: &S, f: &[i64; NF], t: &mut Touch) -> bool {
                                             } else {
                                                 t.wr((f7) as u32);
                                             }
-                                        } else if (f7 >= 16i128 && f7 <= 79i128) || (f7 >= 96i128 && f7 <= 107i128) || (f7 >= 110i128 && f7 <= 111i128) || (f7 >= 114i128 && f7 <= 117i128) || (f7 >= 122i128 && f7 <= 125i128) {
+                                        } else if (f7 >= 16i128 && f7 <= 79i128) {
                                             t.wr((f7) as u32);
+                                            if (f7 >= 64i128) {
+                                                t.wr((((f7 - 64i128) + 16i128)) as u32);
+                                            }
                                         } else if (f7 >= 80i128 && f7 <= 95i128) {
                                             if (((rrt!(&*s, 114) as i128) & 2097152) != 0i128) {
                                                 t.wr((f7) as u32);
@@ -6513,10 +8076,17 @@ pub fn t_3b<S: RegRead>(s: &S, f: &[i64; NF], t: &mut Touch) -> bool {
                                             } else {
                                                 t.wr((f7) as u32);
                                             }
+                                        } else if (f7 >= 96i128 && f7 <= 107i128) || (f7 >= 110i128 && f7 <= 111i128) || (f7 >= 114i128 && f7 <= 117i128) || (f7 >= 122i128 && f7 <= 125i128) {
+                                            t.wr((f7) as u32);
                                         } else {
                                             if (((rrt!(&*s, 114) as i128) & 2097152) != 0i128) {
                                                 t.wr((f7) as u32);
                                                 t.wr(((f7 ^ 1i128)) as u32);
+                                                if ((f7 ^ 1i128) >= 64i128) {
+                                                    if ((f7 ^ 1i128) <= 79i128) {
+                                                        t.wr(((((f7 ^ 1i128) - 64i128) + 16i128)) as u32);
+                                                    }
+                                                }
                                             } else {
                                                 t.wr((f7) as u32);
                                             }
@@ -6628,10 +8198,18 @@ pub fn t_3b<S: RegRead>(s: &S, f: &[i64; NF], t: &mut Touch) -> bool {
                                 if (f2 != 0i128) {
                                     if (f6 != 0i128) {
                                         if (f0 == 31i128) {
-                                            if f7 <= 15i128 || (f7 >= 16i128 && f7 <= 79i128) || (f7 >= 80i128 && f7 <= 95i128) || (f7 >= 108i128 && f7 <= 109i128) || (f7 >= 110i128 && f7 <= 111i128) || (f7 >= 112i128 && f7 <= 113i128) || (f7 >= 114i128 && f7 <= 117i128) || (f7 >= 118i128 && f7 <= 121i128) || (f7 >= 122i128 && f7 <= 125i128) || f7 >= 126i128 {
+                                            if f7 <= 15i128 || (f7 >= 80i128 && f7 <= 95i128) || (f7 >= 108i128 && f7 <= 109i128) || (f7 >= 110i128 && f7 <= 111i128) || (f7 >= 112i128 && f7 <= 113i128) || (f7 >= 114i128 && f7 <= 117i128) || (f7 >= 118i128 && f7 <= 121i128) || (f7 >= 122i128 && f7 <= 125i128) || f7 >= 126i128 {
                                                 t.rd(((16i128 + (f3 + 8i128))) as u32);
                                                 t.rd(((32i128 + (f5 + 8i128))) as u32);
                                                 t.wr((f7) as u32);
+                                                t.wr(((16i128 + (f3 + 8i128))) as u32);
+                                            } else if (f7 >= 16i128 && f7 <= 79i128) {
+                                                t.rd(((16i128 + (f3 + 8i128))) as u32);
+                                                t.rd(((32i128 + (f5 + 8i128))) as u32);
+                                                t.wr((f7) as u32);
+                                                if (f7 >= 64i128) {
+                                                    t.wr((((f7 - 64i128) + 16i128)) as u32);
+                                                }
                                                 t.wr(((16i128 + (f3 + 8i128))) as u32);
                                             } else {
                                                 if (f7 == 107i128) {
@@ -6644,11 +8222,20 @@ pub fn t_3b<S: RegRead>(s: &S, f: &[i64; NF], t: &mut Touch) -> bool {
                                                 }
                                             }
                                         } else {
-                                            if f7 <= 15i128 || (f7 >= 16i128 && f7 <= 79i128) || (f7 >= 80i128 && f7 <= 95i128) || (f7 >= 108i128 && f7 <= 109i128) || (f7 >= 110i128 && f7 <= 111i128) || (f7 >= 112i128 && f7 <= 113i128) || (f7 >= 114i128 && f7 <= 117i128) || (f7 >= 118i128 && f7 <= 121i128) || (f7 >= 122i128 && f7 <= 125i128) || f7 >= 126i128 {
+                                            if f7 <= 15i128 || (f7 >= 80i128 && f7 <= 95i128) || (f7 >= 108i128 && f7 <= 109i128) || (f7 >= 110i128 && f7 <= 111i128) || (f7 >= 112i128 && f7 <= 113i128) || (f7 >= 114i128 && f7 <= 117i128) || (f7 >= 118i128 && f7 <= 121i128) || (f7 >= 122i128 && f7 <= 125i128) || f7 >= 126i128 {
                                                 return false;
                                                 t.rd(((16i128 + (f3 + 8i128))) as u32);
                                                 t.rd(((32i128 + (f5 + 8i128))) as u32);
                                                 t.wr((f7) as u32);
+                                                t.wr(((16i128 + (f3 + 8i128))) as u32);
+                                            } else if (f7 >= 16i128 && f7 <= 79i128) {
+                                                return false;
+                                                t.rd(((16i128 + (f3 + 8i128))) as u32);
+                                                t.rd(((32i128 + (f5 + 8i128))) as u32);
+                                                t.wr((f7) as u32);
+                                                if (f7 >= 64i128) {
+                                                    t.wr((((f7 - 64i128) + 16i128)) as u32);
+                                                }
                                                 t.wr(((16i128 + (f3 + 8i128))) as u32);
                                             } else {
                                                 if (f7 == 107i128) {
@@ -6664,10 +8251,17 @@ pub fn t_3b<S: RegRead>(s: &S, f: &[i64; NF], t: &mut Touch) -> bool {
                                         }
                                     } else {
                                         if (f0 == 31i128) {
-                                            if f7 <= 15i128 || (f7 >= 16i128 && f7 <= 79i128) || (f7 >= 80i128 && f7 <= 95i128) || (f7 >= 108i128 && f7 <= 109i128) || (f7 >= 110i128 && f7 <= 111i128) || (f7 >= 112i128 && f7 <= 113i128) || (f7 >= 114i128 && f7 <= 117i128) || (f7 >= 118i128 && f7 <= 121i128) || (f7 >= 122i128 && f7 <= 125i128) || f7 >= 126i128 {
+                                            if f7 <= 15i128 || (f7 >= 80i128 && f7 <= 95i128) || (f7 >= 108i128 && f7 <= 109i128) || (f7 >= 110i128 && f7 <= 111i128) || (f7 >= 112i128 && f7 <= 113i128) || (f7 >= 114i128 && f7 <= 117i128) || (f7 >= 118i128 && f7 <= 121i128) || (f7 >= 122i128 && f7 <= 125i128) || f7 >= 126i128 {
                                                 t.rd(((16i128 + (f3 + 8i128))) as u32);
                                                 t.rd(((32i128 + (f5 + 8i128))) as u32);
                                                 t.wr((f7) as u32);
+                                            } else if (f7 >= 16i128 && f7 <= 79i128) {
+                                                t.rd(((16i128 + (f3 + 8i128))) as u32);
+                                                t.rd(((32i128 + (f5 + 8i128))) as u32);
+                                                t.wr((f7) as u32);
+                                                if (f7 >= 64i128) {
+                                                    t.wr((((f7 - 64i128) + 16i128)) as u32);
+                                                }
                                             } else {
                                                 if (f7 == 107i128) {
                                                     return false;
@@ -6678,11 +8272,19 @@ pub fn t_3b<S: RegRead>(s: &S, f: &[i64; NF], t: &mut Touch) -> bool {
                                                 }
                                             }
                                         } else {
-                                            if f7 <= 15i128 || (f7 >= 16i128 && f7 <= 79i128) || (f7 >= 80i128 && f7 <= 95i128) || (f7 >= 108i128 && f7 <= 109i128) || (f7 >= 110i128 && f7 <= 111i128) || (f7 >= 112i128 && f7 <= 113i128) || (f7 >= 114i128 && f7 <= 117i128) || (f7 >= 118i128 && f7 <= 121i128) || (f7 >= 122i128 && f7 <= 125i128) || f7 >= 126i128 {
+                                            if f7 <= 15i128 || (f7 >= 80i128 && f7 <= 95i128) || (f7 >= 108i128 && f7 <= 109i128) || (f7 >= 110i128 && f7 <= 111i128) || (f7 >= 112i128 && f7 <= 113i128) || (f7 >= 114i128 && f7 <= 117i128) || (f7 >= 118i128 && f7 <= 121i128) || (f7 >= 122i128 && f7 <= 125i128) || f7 >= 126i128 {
                                                 return false;
                                                 t.rd(((16i128 + (f3 + 8i128))) as u32);
                                                 t.rd(((32i128 + (f5 + 8i128))) as u32);
                                                 t.wr((f7) as u32);
+                                            } else if (f7 >= 16i128 && f7 <= 79i128) {
+                                                return false;
+                                                t.rd(((16i128 + (f3 + 8i128))) as u32);
+                                                t.rd(((32i128 + (f5 + 8i128))) as u32);
+                                                t.wr((f7) as u32);
+                                                if (f7 >= 64i128) {
+                                                    t.wr((((f7 - 64i128) + 16i128)) as u32);
+                                                }
                                             } else {
                                                 if (f7 == 107i128) {
                                                     return false;
@@ -6709,10 +8311,13 @@ pub fn t_3b<S: RegRead>(s: &S, f: &[i64; NF], t: &mut Touch) -> bool {
                                                     t.wr((f7) as u32);
                                                     t.wr(((16i128 + (f3 + 0i128))) as u32);
                                                 }
-                                            } else if (f7 >= 16i128 && f7 <= 79i128) || (f7 >= 110i128 && f7 <= 111i128) || (f7 >= 114i128 && f7 <= 117i128) || (f7 >= 122i128 && f7 <= 125i128) {
+                                            } else if (f7 >= 16i128 && f7 <= 79i128) {
                                                 t.rd(((16i128 + (f3 + 0i128))) as u32);
                                                 t.rd(((32i128 + (f5 + 0i128))) as u32);
                                                 t.wr((f7) as u32);
+                                                if (f7 >= 64i128) {
+                                                    t.wr((((f7 - 64i128) + 16i128)) as u32);
+                                                }
                                                 t.wr(((16i128 + (f3 + 0i128))) as u32);
                                             } else if (f7 >= 80i128 && f7 <= 95i128) {
                                                 t.rd(((16i128 + (f3 + 0i128))) as u32);
@@ -6734,7 +8339,7 @@ pub fn t_3b<S: RegRead>(s: &S, f: &[i64; NF], t: &mut Touch) -> bool {
                                                     t.wr((f7) as u32);
                                                     t.wr(((16i128 + (f3 + 0i128))) as u32);
                                                 }
-                                            } else {
+                                            } else if (f7 >= 108i128 && f7 <= 109i128) || (f7 >= 112i128 && f7 <= 113i128) || (f7 >= 118i128 && f7 <= 121i128) || f7 >= 126i128 {
                                                 if (((rrt!(&*s, 114) as i128) & 2097152) != 0i128) {
                                                     if ((f7 ^ 1i128) == 107i128) {
                                                         return false;
@@ -6743,6 +8348,11 @@ pub fn t_3b<S: RegRead>(s: &S, f: &[i64; NF], t: &mut Touch) -> bool {
                                                         t.rd(((32i128 + (f5 + 0i128))) as u32);
                                                         t.wr((f7) as u32);
                                                         t.wr(((f7 ^ 1i128)) as u32);
+                                                        if ((f7 ^ 1i128) >= 64i128) {
+                                                            if ((f7 ^ 1i128) <= 79i128) {
+                                                                t.wr(((((f7 ^ 1i128) - 64i128) + 16i128)) as u32);
+                                                            }
+                                                        }
                                                         t.wr(((16i128 + (f3 + 0i128))) as u32);
                                                     }
                                                 } else {
@@ -6751,6 +8361,11 @@ pub fn t_3b<S: RegRead>(s: &S, f: &[i64; NF], t: &mut Touch) -> bool {
                                                     t.wr((f7) as u32);
                                                     t.wr(((16i128 + (f3 + 0i128))) as u32);
                                                 }
+                                            } else {
+                                                t.rd(((16i128 + (f3 + 0i128))) as u32);
+                                                t.rd(((32i128 + (f5 + 0i128))) as u32);
+                                                t.wr((f7) as u32);
+                                                t.wr(((16i128 + (f3 + 0i128))) as u32);
                                             }
                                         } else {
                                             if f7 <= 15i128 {
@@ -6765,11 +8380,14 @@ pub fn t_3b<S: RegRead>(s: &S, f: &[i64; NF], t: &mut Touch) -> bool {
                                                     t.wr((f7) as u32);
                                                     t.wr(((16i128 + (f3 + 0i128))) as u32);
                                                 }
-                                            } else if (f7 >= 16i128 && f7 <= 79i128) || (f7 >= 110i128 && f7 <= 111i128) || (f7 >= 114i128 && f7 <= 117i128) || (f7 >= 122i128 && f7 <= 125i128) {
+                                            } else if (f7 >= 16i128 && f7 <= 79i128) {
                                                 return false;
                                                 t.rd(((16i128 + (f3 + 0i128))) as u32);
                                                 t.rd(((32i128 + (f5 + 0i128))) as u32);
                                                 t.wr((f7) as u32);
+                                                if (f7 >= 64i128) {
+                                                    t.wr((((f7 - 64i128) + 16i128)) as u32);
+                                                }
                                                 t.wr(((16i128 + (f3 + 0i128))) as u32);
                                             } else if (f7 >= 80i128 && f7 <= 95i128) {
                                                 return false;
@@ -6793,7 +8411,7 @@ pub fn t_3b<S: RegRead>(s: &S, f: &[i64; NF], t: &mut Touch) -> bool {
                                                     t.wr((f7) as u32);
                                                     t.wr(((16i128 + (f3 + 0i128))) as u32);
                                                 }
-                                            } else {
+                                            } else if (f7 >= 108i128 && f7 <= 109i128) || (f7 >= 112i128 && f7 <= 113i128) || (f7 >= 118i128 && f7 <= 121i128) || f7 >= 126i128 {
                                                 if (((rrt!(&*s, 114) as i128) & 2097152) != 0i128) {
                                                     if ((f7 ^ 1i128) == 107i128) {
                                                         return false;
@@ -6803,6 +8421,11 @@ pub fn t_3b<S: RegRead>(s: &S, f: &[i64; NF], t: &mut Touch) -> bool {
                                                         t.rd(((32i128 + (f5 + 0i128))) as u32);
                                                         t.wr((f7) as u32);
                                                         t.wr(((f7 ^ 1i128)) as u32);
+                                                        if ((f7 ^ 1i128) >= 64i128) {
+                                                            if ((f7 ^ 1i128) <= 79i128) {
+                                                                t.wr(((((f7 ^ 1i128) - 64i128) + 16i128)) as u32);
+                                                            }
+                                                        }
                                                         t.wr(((16i128 + (f3 + 0i128))) as u32);
                                                     }
                                                 } else {
@@ -6812,6 +8435,12 @@ pub fn t_3b<S: RegRead>(s: &S, f: &[i64; NF], t: &mut Touch) -> bool {
                                                     t.wr((f7) as u32);
                                                     t.wr(((16i128 + (f3 + 0i128))) as u32);
                                                 }
+                                            } else {
+                                                return false;
+                                                t.rd(((16i128 + (f3 + 0i128))) as u32);
+                                                t.rd(((32i128 + (f5 + 0i128))) as u32);
+                                                t.wr((f7) as u32);
+                                                t.wr(((16i128 + (f3 + 0i128))) as u32);
                                             }
                                         }
                                     } else {
@@ -6825,10 +8454,13 @@ pub fn t_3b<S: RegRead>(s: &S, f: &[i64; NF], t: &mut Touch) -> bool {
                                                 } else {
                                                     t.wr((f7) as u32);
                                                 }
-                                            } else if (f7 >= 16i128 && f7 <= 79i128) || (f7 >= 110i128 && f7 <= 111i128) || (f7 >= 114i128 && f7 <= 117i128) || (f7 >= 122i128 && f7 <= 125i128) {
+                                            } else if (f7 >= 16i128 && f7 <= 79i128) {
                                                 t.rd(((16i128 + (f3 + 0i128))) as u32);
                                                 t.rd(((32i128 + (f5 + 0i128))) as u32);
                                                 t.wr((f7) as u32);
+                                                if (f7 >= 64i128) {
+                                                    t.wr((((f7 - 64i128) + 16i128)) as u32);
+                                                }
                                             } else if (f7 >= 80i128 && f7 <= 95i128) {
                                                 t.rd(((16i128 + (f3 + 0i128))) as u32);
                                                 t.rd(((32i128 + (f5 + 0i128))) as u32);
@@ -6846,7 +8478,7 @@ pub fn t_3b<S: RegRead>(s: &S, f: &[i64; NF], t: &mut Touch) -> bool {
                                                     t.rd(((32i128 + (f5 + 0i128))) as u32);
                                                     t.wr((f7) as u32);
                                                 }
-                                            } else {
+                                            } else if (f7 >= 108i128 && f7 <= 109i128) || (f7 >= 112i128 && f7 <= 113i128) || (f7 >= 118i128 && f7 <= 121i128) || f7 >= 126i128 {
                                                 if (((rrt!(&*s, 114) as i128) & 2097152) != 0i128) {
                                                     if ((f7 ^ 1i128) == 107i128) {
                                                         return false;
@@ -6855,12 +8487,21 @@ pub fn t_3b<S: RegRead>(s: &S, f: &[i64; NF], t: &mut Touch) -> bool {
                                                         t.rd(((32i128 + (f5 + 0i128))) as u32);
                                                         t.wr((f7) as u32);
                                                         t.wr(((f7 ^ 1i128)) as u32);
+                                                        if ((f7 ^ 1i128) >= 64i128) {
+                                                            if ((f7 ^ 1i128) <= 79i128) {
+                                                                t.wr(((((f7 ^ 1i128) - 64i128) + 16i128)) as u32);
+                                                            }
+                                                        }
                                                     }
                                                 } else {
                                                     t.rd(((16i128 + (f3 + 0i128))) as u32);
                                                     t.rd(((32i128 + (f5 + 0i128))) as u32);
                                                     t.wr((f7) as u32);
                                                 }
+                                            } else {
+                                                t.rd(((16i128 + (f3 + 0i128))) as u32);
+                                                t.rd(((32i128 + (f5 + 0i128))) as u32);
+                                                t.wr((f7) as u32);
                                             }
                                         } else {
                                             if f7 <= 15i128 {
@@ -6873,11 +8514,14 @@ pub fn t_3b<S: RegRead>(s: &S, f: &[i64; NF], t: &mut Touch) -> bool {
                                                 } else {
                                                     t.wr((f7) as u32);
                                                 }
-                                            } else if (f7 >= 16i128 && f7 <= 79i128) || (f7 >= 110i128 && f7 <= 111i128) || (f7 >= 114i128 && f7 <= 117i128) || (f7 >= 122i128 && f7 <= 125i128) {
+                                            } else if (f7 >= 16i128 && f7 <= 79i128) {
                                                 return false;
                                                 t.rd(((16i128 + (f3 + 0i128))) as u32);
                                                 t.rd(((32i128 + (f5 + 0i128))) as u32);
                                                 t.wr((f7) as u32);
+                                                if (f7 >= 64i128) {
+                                                    t.wr((((f7 - 64i128) + 16i128)) as u32);
+                                                }
                                             } else if (f7 >= 80i128 && f7 <= 95i128) {
                                                 return false;
                                                 t.rd(((16i128 + (f3 + 0i128))) as u32);
@@ -6897,7 +8541,7 @@ pub fn t_3b<S: RegRead>(s: &S, f: &[i64; NF], t: &mut Touch) -> bool {
                                                     t.rd(((32i128 + (f5 + 0i128))) as u32);
                                                     t.wr((f7) as u32);
                                                 }
-                                            } else {
+                                            } else if (f7 >= 108i128 && f7 <= 109i128) || (f7 >= 112i128 && f7 <= 113i128) || (f7 >= 118i128 && f7 <= 121i128) || f7 >= 126i128 {
                                                 if (((rrt!(&*s, 114) as i128) & 2097152) != 0i128) {
                                                     if ((f7 ^ 1i128) == 107i128) {
                                                         return false;
@@ -6907,6 +8551,11 @@ pub fn t_3b<S: RegRead>(s: &S, f: &[i64; NF], t: &mut Touch) -> bool {
                                                         t.rd(((32i128 + (f5 + 0i128))) as u32);
                                                         t.wr((f7) as u32);
                                                         t.wr(((f7 ^ 1i128)) as u32);
+                                                        if ((f7 ^ 1i128) >= 64i128) {
+                                                            if ((f7 ^ 1i128) <= 79i128) {
+                                                                t.wr(((((f7 ^ 1i128) - 64i128) + 16i128)) as u32);
+                                                            }
+                                                        }
                                                     }
                                                 } else {
                                                     return false;
@@ -6914,6 +8563,11 @@ pub fn t_3b<S: RegRead>(s: &S, f: &[i64; NF], t: &mut Touch) -> bool {
                                                     t.rd(((32i128 + (f5 + 0i128))) as u32);
                                                     t.wr((f7) as u32);
                                                 }
+                                            } else {
+                                                return false;
+                                                t.rd(((16i128 + (f3 + 0i128))) as u32);
+                                                t.rd(((32i128 + (f5 + 0i128))) as u32);
+                                                t.wr((f7) as u32);
                                             }
                                         }
                                     }
@@ -7035,9 +8689,21 @@ pub fn t_3b<S: RegRead>(s: &S, f: &[i64; NF], t: &mut Touch) -> bool {
                                     t.rd(((32i128 + (f5 + 8i128))) as u32);
                                     if (f6 != 0i128) {
                                         t.wr((f7) as u32);
+                                        if f7 <= 15i128 || (f7 >= 80i128 && f7 <= 95i128) || (f7 >= 96i128 && f7 <= 107i128) || (f7 >= 108i128 && f7 <= 109i128) || (f7 >= 110i128 && f7 <= 111i128) || (f7 >= 112i128 && f7 <= 113i128) || (f7 >= 114i128 && f7 <= 117i128) || (f7 >= 118i128 && f7 <= 121i128) || (f7 >= 122i128 && f7 <= 125i128) || f7 >= 126i128 {
+                                        } else {
+                                            if (f7 >= 64i128) {
+                                                t.wr((((f7 - 64i128) + 16i128)) as u32);
+                                            }
+                                        }
                                         t.wr(((16i128 + (f3 + 8i128))) as u32);
                                     } else {
                                         t.wr((f7) as u32);
+                                        if f7 <= 15i128 || (f7 >= 80i128 && f7 <= 95i128) || (f7 >= 96i128 && f7 <= 107i128) || (f7 >= 108i128 && f7 <= 109i128) || (f7 >= 110i128 && f7 <= 111i128) || (f7 >= 112i128 && f7 <= 113i128) || (f7 >= 114i128 && f7 <= 117i128) || (f7 >= 118i128 && f7 <= 121i128) || (f7 >= 122i128 && f7 <= 125i128) || f7 >= 126i128 {
+                                        } else {
+                                            if (f7 >= 64i128) {
+                                                t.wr((((f7 - 64i128) + 16i128)) as u32);
+                                            }
+                                        }
                                     }
                                 } else {
                                     t.rd(((16i128 + (f3 + 0i128))) as u32);
@@ -7052,8 +8718,11 @@ pub fn t_3b<S: RegRead>(s: &S, f: &[i64; NF], t: &mut Touch) -> bool {
                                                 t.wr((f7) as u32);
                                                 t.wr(((16i128 + (f3 + 0i128))) as u32);
                                             }
-                                        } else if (f7 >= 16i128 && f7 <= 79i128) || (f7 >= 96i128 && f7 <= 107i128) || (f7 >= 110i128 && f7 <= 111i128) || (f7 >= 114i128 && f7 <= 117i128) || (f7 >= 122i128 && f7 <= 125i128) {
+                                        } else if (f7 >= 16i128 && f7 <= 79i128) {
                                             t.wr((f7) as u32);
+                                            if (f7 >= 64i128) {
+                                                t.wr((((f7 - 64i128) + 16i128)) as u32);
+                                            }
                                             t.wr(((16i128 + (f3 + 0i128))) as u32);
                                         } else if (f7 >= 80i128 && f7 <= 95i128) {
                                             if (((rrt!(&*s, 114) as i128) & 2097152) != 0i128) {
@@ -7064,10 +8733,18 @@ pub fn t_3b<S: RegRead>(s: &S, f: &[i64; NF], t: &mut Touch) -> bool {
                                                 t.wr((f7) as u32);
                                                 t.wr(((16i128 + (f3 + 0i128))) as u32);
                                             }
+                                        } else if (f7 >= 96i128 && f7 <= 107i128) || (f7 >= 110i128 && f7 <= 111i128) || (f7 >= 114i128 && f7 <= 117i128) || (f7 >= 122i128 && f7 <= 125i128) {
+                                            t.wr((f7) as u32);
+                                            t.wr(((16i128 + (f3 + 0i128))) as u32);
                                         } else {
                                             if (((rrt!(&*s, 114) as i128) & 2097152) != 0i128) {
                                                 t.wr((f7) as u32);
                                                 t.wr(((f7 ^ 1i128)) as u32);
+                                                if ((f7 ^ 1i128) >= 64i128) {
+                                                    if ((f7 ^ 1i128) <= 79i128) {
+                                                        t.wr(((((f7 ^ 1i128) - 64i128) + 16i128)) as u32);
+                                                    }
+                                                }
                                                 t.wr(((16i128 + (f3 + 0i128))) as u32);
                                             } else {
                                                 t.wr((f7) as u32);
@@ -7082,8 +8759,11 @@ pub fn t_3b<S: RegRead>(s: &S, f: &[i64; NF], t: &mut Touch) -> bool {
                                             } else {
                                                 t.wr((f7) as u32);
                                             }
-                                        } else if (f7 >= 16i128 && f7 <= 79i128) || (f7 >= 96i128 && f7 <= 107i128) || (f7 >= 110i128 && f7 <= 111i128) || (f7 >= 114i128 && f7 <= 117i128) || (f7 >= 122i128 && f7 <= 125i128) {
+                                        } else if (f7 >= 16i128 && f7 <= 79i128) {
                                             t.wr((f7) as u32);
+                                            if (f7 >= 64i128) {
+                                                t.wr((((f7 - 64i128) + 16i128)) as u32);
+                                            }
                                         } else if (f7 >= 80i128 && f7 <= 95i128) {
                                             if (((rrt!(&*s, 114) as i128) & 2097152) != 0i128) {
                                                 t.wr((f7) as u32);
@@ -7091,10 +8771,17 @@ pub fn t_3b<S: RegRead>(s: &S, f: &[i64; NF], t: &mut Touch) -> bool {
                                             } else {
                                                 t.wr((f7) as u32);
                                             }
+                                        } else if (f7 >= 96i128 && f7 <= 107i128) || (f7 >= 110i128 && f7 <= 111i128) || (f7 >= 114i128 && f7 <= 117i128) || (f7 >= 122i128 && f7 <= 125i128) {
+                                            t.wr((f7) as u32);
                                         } else {
                                             if (((rrt!(&*s, 114) as i128) & 2097152) != 0i128) {
                                                 t.wr((f7) as u32);
                                                 t.wr(((f7 ^ 1i128)) as u32);
+                                                if ((f7 ^ 1i128) >= 64i128) {
+                                                    if ((f7 ^ 1i128) <= 79i128) {
+                                                        t.wr(((((f7 ^ 1i128) - 64i128) + 16i128)) as u32);
+                                                    }
+                                                }
                                             } else {
                                                 t.wr((f7) as u32);
                                             }
@@ -7124,9 +8811,21 @@ pub fn t_3b<S: RegRead>(s: &S, f: &[i64; NF], t: &mut Touch) -> bool {
                                     t.rd(((32i128 + (f5 + 8i128))) as u32);
                                     if (f6 != 0i128) {
                                         t.wr((f7) as u32);
+                                        if f7 <= 15i128 || (f7 >= 80i128 && f7 <= 95i128) || (f7 >= 96i128 && f7 <= 107i128) || (f7 >= 108i128 && f7 <= 109i128) || (f7 >= 110i128 && f7 <= 111i128) || (f7 >= 112i128 && f7 <= 113i128) || (f7 >= 114i128 && f7 <= 117i128) || (f7 >= 118i128 && f7 <= 121i128) || (f7 >= 122i128 && f7 <= 125i128) || f7 >= 126i128 {
+                                        } else {
+                                            if (f7 >= 64i128) {
+                                                t.wr((((f7 - 64i128) + 16i128)) as u32);
+                                            }
+                                        }
                                         t.wr(((16i128 + (f3 + 8i128))) as u32);
                                     } else {
                                         t.wr((f7) as u32);
+                                        if f7 <= 15i128 || (f7 >= 80i128 && f7 <= 95i128) || (f7 >= 96i128 && f7 <= 107i128) || (f7 >= 108i128 && f7 <= 109i128) || (f7 >= 110i128 && f7 <= 111i128) || (f7 >= 112i128 && f7 <= 113i128) || (f7 >= 114i128 && f7 <= 117i128) || (f7 >= 118i128 && f7 <= 121i128) || (f7 >= 122i128 && f7 <= 125i128) || f7 >= 126i128 {
+                                        } else {
+                                            if (f7 >= 64i128) {
+                                                t.wr((((f7 - 64i128) + 16i128)) as u32);
+                                            }
+                                        }
                                     }
                                 } else {
                                     t.rd(((16i128 + (f3 + 0i128))) as u32);
@@ -7141,8 +8840,11 @@ pub fn t_3b<S: RegRead>(s: &S, f: &[i64; NF], t: &mut Touch) -> bool {
                                                 t.wr((f7) as u32);
                                                 t.wr(((16i128 + (f3 + 0i128))) as u32);
                                             }
-                                        } else if (f7 >= 16i128 && f7 <= 79i128) || (f7 >= 96i128 && f7 <= 107i128) || (f7 >= 110i128 && f7 <= 111i128) || (f7 >= 114i128 && f7 <= 117i128) || (f7 >= 122i128 && f7 <= 125i128) {
+                                        } else if (f7 >= 16i128 && f7 <= 79i128) {
                                             t.wr((f7) as u32);
+                                            if (f7 >= 64i128) {
+                                                t.wr((((f7 - 64i128) + 16i128)) as u32);
+                                            }
                                             t.wr(((16i128 + (f3 + 0i128))) as u32);
                                         } else if (f7 >= 80i128 && f7 <= 95i128) {
                                             if (((rrt!(&*s, 114) as i128) & 2097152) != 0i128) {
@@ -7153,10 +8855,18 @@ pub fn t_3b<S: RegRead>(s: &S, f: &[i64; NF], t: &mut Touch) -> bool {
                                                 t.wr((f7) as u32);
                                                 t.wr(((16i128 + (f3 + 0i128))) as u32);
                                             }
+                                        } else if (f7 >= 96i128 && f7 <= 107i128) || (f7 >= 110i128 && f7 <= 111i128) || (f7 >= 114i128 && f7 <= 117i128) || (f7 >= 122i128 && f7 <= 125i128) {
+                                            t.wr((f7) as u32);
+                                            t.wr(((16i128 + (f3 + 0i128))) as u32);
                                         } else {
                                             if (((rrt!(&*s, 114) as i128) & 2097152) != 0i128) {
                                                 t.wr((f7) as u32);
                                                 t.wr(((f7 ^ 1i128)) as u32);
+                                                if ((f7 ^ 1i128) >= 64i128) {
+                                                    if ((f7 ^ 1i128) <= 79i128) {
+                                                        t.wr(((((f7 ^ 1i128) - 64i128) + 16i128)) as u32);
+                                                    }
+                                                }
                                                 t.wr(((16i128 + (f3 + 0i128))) as u32);
                                             } else {
                                                 t.wr((f7) as u32);
@@ -7171,8 +8881,11 @@ pub fn t_3b<S: RegRead>(s: &S, f: &[i64; NF], t: &mut Touch) -> bool {
                                             } else {
                                                 t.wr((f7) as u32);
                                             }
-                                        } else if (f7 >= 16i128 && f7 <= 79i128) || (f7 >= 96i128 && f7 <= 107i128) || (f7 >= 110i128 && f7 <= 111i128) || (f7 >= 114i128 && f7 <= 117i128) || (f7 >= 122i128 && f7 <= 125i128) {
+                                        } else if (f7 >= 16i128 && f7 <= 79i128) {
                                             t.wr((f7) as u32);
+                                            if (f7 >= 64i128) {
+                                                t.wr((((f7 - 64i128) + 16i128)) as u32);
+                                            }
                                         } else if (f7 >= 80i128 && f7 <= 95i128) {
                                             if (((rrt!(&*s, 114) as i128) & 2097152) != 0i128) {
                                                 t.wr((f7) as u32);
@@ -7180,10 +8893,17 @@ pub fn t_3b<S: RegRead>(s: &S, f: &[i64; NF], t: &mut Touch) -> bool {
                                             } else {
                                                 t.wr((f7) as u32);
                                             }
+                                        } else if (f7 >= 96i128 && f7 <= 107i128) || (f7 >= 110i128 && f7 <= 111i128) || (f7 >= 114i128 && f7 <= 117i128) || (f7 >= 122i128 && f7 <= 125i128) {
+                                            t.wr((f7) as u32);
                                         } else {
                                             if (((rrt!(&*s, 114) as i128) & 2097152) != 0i128) {
                                                 t.wr((f7) as u32);
                                                 t.wr(((f7 ^ 1i128)) as u32);
+                                                if ((f7 ^ 1i128) >= 64i128) {
+                                                    if ((f7 ^ 1i128) <= 79i128) {
+                                                        t.wr(((((f7 ^ 1i128) - 64i128) + 16i128)) as u32);
+                                                    }
+                                                }
                                             } else {
                                                 t.wr((f7) as u32);
                                             }
@@ -7223,18 +8943,42 @@ pub fn t_3b<S: RegRead>(s: &S, f: &[i64; NF], t: &mut Touch) -> bool {
                                     t.rd(((32i128 + (f5 + 8i128))) as u32);
                                     if (f6 != 0i128) {
                                         t.wr((f7) as u32);
+                                        if f7 <= 15i128 || (f7 >= 80i128 && f7 <= 95i128) || (f7 >= 96i128 && f7 <= 107i128) || (f7 >= 108i128 && f7 <= 109i128) || (f7 >= 110i128 && f7 <= 111i128) || (f7 >= 112i128 && f7 <= 113i128) || (f7 >= 114i128 && f7 <= 117i128) || (f7 >= 118i128 && f7 <= 121i128) || (f7 >= 122i128 && f7 <= 125i128) || f7 >= 126i128 {
+                                        } else {
+                                            if (f7 >= 64i128) {
+                                                t.wr((((f7 - 64i128) + 16i128)) as u32);
+                                            }
+                                        }
                                         t.wr(((16i128 + (f3 + 8i128))) as u32);
                                     } else {
                                         t.wr((f7) as u32);
+                                        if f7 <= 15i128 || (f7 >= 80i128 && f7 <= 95i128) || (f7 >= 96i128 && f7 <= 107i128) || (f7 >= 108i128 && f7 <= 109i128) || (f7 >= 110i128 && f7 <= 111i128) || (f7 >= 112i128 && f7 <= 113i128) || (f7 >= 114i128 && f7 <= 117i128) || (f7 >= 118i128 && f7 <= 121i128) || (f7 >= 122i128 && f7 <= 125i128) || f7 >= 126i128 {
+                                        } else {
+                                            if (f7 >= 64i128) {
+                                                t.wr((((f7 - 64i128) + 16i128)) as u32);
+                                            }
+                                        }
                                     }
                                 } else {
                                     t.rd(((16i128 + (f3 + 0i128))) as u32);
                                     t.rd(((32i128 + (f5 + 0i128))) as u32);
                                     if (f6 != 0i128) {
                                         t.wr((f7) as u32);
+                                        if f7 <= 15i128 || (f7 >= 80i128 && f7 <= 95i128) || (f7 >= 96i128 && f7 <= 107i128) || (f7 >= 108i128 && f7 <= 109i128) || (f7 >= 110i128 && f7 <= 111i128) || (f7 >= 112i128 && f7 <= 113i128) || (f7 >= 114i128 && f7 <= 117i128) || (f7 >= 118i128 && f7 <= 121i128) || (f7 >= 122i128 && f7 <= 125i128) || f7 >= 126i128 {
+                                        } else {
+                                            if (f7 >= 64i128) {
+                                                t.wr((((f7 - 64i128) + 16i128)) as u32);
+                                            }
+                                        }
                                         t.wr(((16i128 + (f3 + 0i128))) as u32);
                                     } else {
                                         t.wr((f7) as u32);
+                                        if f7 <= 15i128 || (f7 >= 80i128 && f7 <= 95i128) || (f7 >= 96i128 && f7 <= 107i128) || (f7 >= 108i128 && f7 <= 109i128) || (f7 >= 110i128 && f7 <= 111i128) || (f7 >= 112i128 && f7 <= 113i128) || (f7 >= 114i128 && f7 <= 117i128) || (f7 >= 118i128 && f7 <= 121i128) || (f7 >= 122i128 && f7 <= 125i128) || f7 >= 126i128 {
+                                        } else {
+                                            if (f7 >= 64i128) {
+                                                t.wr((((f7 - 64i128) + 16i128)) as u32);
+                                            }
+                                        }
                                     }
                                 }
                             }
@@ -7262,9 +9006,6 @@ pub fn h_3c(s: &mut St, f: &[i64; NF]) -> u32 {
     let mut v8: u32 = 0;
     let mut v9: u32 = 0;
     let mut v10: u32 = 0;
-    let mut v11: u32 = 0;
-    let mut v12: u32 = 0;
-    let mut v13: u32 = 0;
     let mut ws: [(u8, u32); 8] = [(0, 0); 8];
     let mut nw = 0usize;
     let mut st: [(u32, u32, u8); 4] = [(0, 0, 0); 4];
@@ -7289,47 +9030,19 @@ pub fn h_3c(s: &mut St, f: &[i64; NF]) -> u32 {
             st[nst] = (v0, v7, 4i128 as u8); nst += 1;
         }
     } else {
-        if (f1 == 1i128) {
-            if (((rr!(&*s, 114) as i128) & 8388608) != 0i128) {
-                v9 = (0i128) as u32;
-                v10 = v0.wrapping_add(v9);
-                v6 = match hpost(&*s, (f1 + 16) as u32, v0, v4, 4i128 as i64) { Some(x) => x, None => return 1 };
-                { let c = ((16i128 + f1)) as usize; if c >= 96 { return 1; } ws[nw] = (c as u8, v6); nw += 1; }
-                v11 = match hload(&*s, v0, 4i128 as u32, false) { Some(x) => x, None => return 1 };
-                { let c = (f3) as usize; if c >= 96 { return 1; } ws[nw] = (c as u8, v11); nw += 1; }
-                v12 = match hload(&*s, v10, 4i128 as u32, false) { Some(x) => x, None => return 1 };
-                { let c = ((f3 + 80i128)) as usize; if c >= 96 { return 1; } ws[nw] = (c as u8, v12); nw += 1; }
-            } else {
-                if (((rr!(&*s, 114) as i128) & 2097152) != 0i128) {
-                    v5 = v0.wrapping_add(v3);
-                    v6 = match hpost(&*s, (f1 + 16) as u32, v0, v4, 4i128 as i64) { Some(x) => x, None => return 1 };
-                    { let c = ((16i128 + f1)) as usize; if c >= 96 { return 1; } ws[nw] = (c as u8, v6); nw += 1; }
-                    v11 = match hload(&*s, v0, 4i128 as u32, false) { Some(x) => x, None => return 1 };
-                    { let c = (f3) as usize; if c >= 96 { return 1; } ws[nw] = (c as u8, v11); nw += 1; }
-                    v13 = match hload(&*s, v5, 4i128 as u32, false) { Some(x) => x, None => return 1 };
-                    { let c = ((f3 + 80i128)) as usize; if c >= 96 { return 1; } ws[nw] = (c as u8, v13); nw += 1; }
-                } else {
-                    v6 = match hpost(&*s, (f1 + 16) as u32, v0, v4, 4i128 as i64) { Some(x) => x, None => return 1 };
-                    { let c = ((16i128 + f1)) as usize; if c >= 96 { return 1; } ws[nw] = (c as u8, v6); nw += 1; }
-                    v11 = match hload(&*s, v0, 4i128 as u32, false) { Some(x) => x, None => return 1 };
-                    { let c = (f3) as usize; if c >= 96 { return 1; } ws[nw] = (c as u8, v11); nw += 1; }
-                }
-            }
+        if (((rr!(&*s, 114) as i128) & 2097152) != 0i128) {
+            v5 = v0.wrapping_add(v3);
+            v6 = match hpost(&*s, (f1 + 16) as u32, v0, v4, 4i128 as i64) { Some(x) => x, None => return 1 };
+            { let c = ((16i128 + f1)) as usize; if c >= 96 { return 1; } ws[nw] = (c as u8, v6); nw += 1; }
+            v9 = match hload(&*s, v0, 4i128 as u32, false) { Some(x) => x, None => return 1 };
+            { let c = (f3) as usize; if c >= 96 { return 1; } ws[nw] = (c as u8, v9); nw += 1; }
+            v10 = match hload(&*s, v5, 4i128 as u32, false) { Some(x) => x, None => return 1 };
+            { let c = ((f3 + 80i128)) as usize; if c >= 96 { return 1; } ws[nw] = (c as u8, v10); nw += 1; }
         } else {
-            if (((rr!(&*s, 114) as i128) & 2097152) != 0i128) {
-                v5 = v0.wrapping_add(v3);
-                v6 = match hpost(&*s, (f1 + 16) as u32, v0, v4, 4i128 as i64) { Some(x) => x, None => return 1 };
-                { let c = ((16i128 + f1)) as usize; if c >= 96 { return 1; } ws[nw] = (c as u8, v6); nw += 1; }
-                v11 = match hload(&*s, v0, 4i128 as u32, false) { Some(x) => x, None => return 1 };
-                { let c = (f3) as usize; if c >= 96 { return 1; } ws[nw] = (c as u8, v11); nw += 1; }
-                v13 = match hload(&*s, v5, 4i128 as u32, false) { Some(x) => x, None => return 1 };
-                { let c = ((f3 + 80i128)) as usize; if c >= 96 { return 1; } ws[nw] = (c as u8, v13); nw += 1; }
-            } else {
-                v6 = match hpost(&*s, (f1 + 16) as u32, v0, v4, 4i128 as i64) { Some(x) => x, None => return 1 };
-                { let c = ((16i128 + f1)) as usize; if c >= 96 { return 1; } ws[nw] = (c as u8, v6); nw += 1; }
-                v11 = match hload(&*s, v0, 4i128 as u32, false) { Some(x) => x, None => return 1 };
-                { let c = (f3) as usize; if c >= 96 { return 1; } ws[nw] = (c as u8, v11); nw += 1; }
-            }
+            v6 = match hpost(&*s, (f1 + 16) as u32, v0, v4, 4i128 as i64) { Some(x) => x, None => return 1 };
+            { let c = ((16i128 + f1)) as usize; if c >= 96 { return 1; } ws[nw] = (c as u8, v6); nw += 1; }
+            v9 = match hload(&*s, v0, 4i128 as u32, false) { Some(x) => x, None => return 1 };
+            { let c = (f3) as usize; if c >= 96 { return 1; } ws[nw] = (c as u8, v9); nw += 1; }
         }
     }
     for i in 0..nst { if !hstore_ok(s, st[i].0, st[i].1, st[i].2) { return 1; } }
@@ -7347,9 +9060,6 @@ pub fn t_3c<S: RegRead>(s: &S, f: &[i64; NF], t: &mut Touch) -> bool {
     let mut v8: u32 = 0;
     let mut v9: u32 = 0;
     let mut v10: u32 = 0;
-    let mut v11: u32 = 0;
-    let mut v12: u32 = 0;
-    let mut v13: u32 = 0;
     t.rd(((16i128 + f1)) as u32);
     t.rd(((32i128 + f2)) as u32);
     if (f0 != 0i128) {
@@ -7362,30 +9072,13 @@ pub fn t_3c<S: RegRead>(s: &S, f: &[i64; NF], t: &mut Touch) -> bool {
             t.rd((f3) as u32);
         }
     } else {
-        if (f1 == 1i128) {
-            if (((rrt!(&*s, 114) as i128) & 8388608) != 0i128) {
-                t.wr(((16i128 + f1)) as u32);
-                t.wr((f3) as u32);
-                t.wr(((f3 + 80i128)) as u32);
-            } else {
-                if (((rrt!(&*s, 114) as i128) & 2097152) != 0i128) {
-                    t.wr(((16i128 + f1)) as u32);
-                    t.wr((f3) as u32);
-                    t.wr(((f3 + 80i128)) as u32);
-                } else {
-                    t.wr(((16i128 + f1)) as u32);
-                    t.wr((f3) as u32);
-                }
-            }
+        if (((rrt!(&*s, 114) as i128) & 2097152) != 0i128) {
+            t.wr(((16i128 + f1)) as u32);
+            t.wr((f3) as u32);
+            t.wr(((f3 + 80i128)) as u32);
         } else {
-            if (((rrt!(&*s, 114) as i128) & 2097152) != 0i128) {
-                t.wr(((16i128 + f1)) as u32);
-                t.wr((f3) as u32);
-                t.wr(((f3 + 80i128)) as u32);
-            } else {
-                t.wr(((16i128 + f1)) as u32);
-                t.wr((f3) as u32);
-            }
+            t.wr(((16i128 + f1)) as u32);
+            t.wr((f3) as u32);
         }
     }
     true
@@ -7753,6 +9446,11 @@ pub fn h_3d(s: &mut St, f: &[i64; NF]) -> u32 {
                                                 }
                                                 v18 = match hload(&*s, v0, 1i128 as u32, false) { Some(x) => x, None => return 1 };
                                                 { let c = (f8) as usize; if c >= 96 { return 1; } ws[nw] = (c as u8, v18); nw += 1; }
+                                                if (f8 >= 64i128) {
+                                                    if (f8 <= 79i128) {
+                                                        { let c = (((f8 - 64i128) + 16i128)) as usize; if c >= 96 { return 1; } ws[nw] = (c as u8, v18); nw += 1; }
+                                                    }
+                                                }
                                                 v19 = match hpost(&*s, ((f4 + 8i128) + 16) as u32, v0, v4, 1i128 as i64) { Some(x) => x, None => return 1 };
                                                 { let c = ((16i128 + (f4 + 8i128))) as usize; if c >= 96 { return 1; } ws[nw] = (c as u8, v19); nw += 1; }
                                             } else {
@@ -7763,6 +9461,11 @@ pub fn h_3d(s: &mut St, f: &[i64; NF]) -> u32 {
                                                 }
                                                 v20 = match hload(&*s, v7, 1i128 as u32, false) { Some(x) => x, None => return 1 };
                                                 { let c = (f8) as usize; if c >= 96 { return 1; } ws[nw] = (c as u8, v20); nw += 1; }
+                                                if (f8 >= 64i128) {
+                                                    if (f8 <= 79i128) {
+                                                        { let c = (((f8 - 64i128) + 16i128)) as usize; if c >= 96 { return 1; } ws[nw] = (c as u8, v20); nw += 1; }
+                                                    }
+                                                }
                                             }
                                         } else {
                                             v8 = rr!(&*s, (16i128 + (f4 + 0i128)));
@@ -7793,13 +9496,16 @@ pub fn h_3d(s: &mut St, f: &[i64; NF]) -> u32 {
                                                         v24 = match hpost(&*s, ((f4 + 0i128) + 16) as u32, v8, v10, 1i128 as i64) { Some(x) => x, None => return 1 };
                                                         { let c = ((16i128 + (f4 + 0i128))) as usize; if c >= 96 { return 1; } ws[nw] = (c as u8, v24); nw += 1; }
                                                     }
-                                                } else if (f8 >= 16i128 && f8 <= 79i128) || (f8 >= 96i128 && f8 <= 107i128) || (f8 >= 110i128 && f8 <= 111i128) || (f8 >= 114i128 && f8 <= 117i128) || (f8 >= 122i128 && f8 <= 125i128) {
+                                                } else if (f8 >= 16i128 && f8 <= 79i128) {
                                                     if (f0 == 31i128) {
                                                     } else {
                                                         return 1;
                                                     }
                                                     v21 = match hload(&*s, v8, 1i128 as u32, false) { Some(x) => x, None => return 1 };
                                                     { let c = (f8) as usize; if c >= 96 { return 1; } ws[nw] = (c as u8, v21); nw += 1; }
+                                                    if (f8 >= 64i128) {
+                                                        { let c = (((f8 - 64i128) + 16i128)) as usize; if c >= 96 { return 1; } ws[nw] = (c as u8, v21); nw += 1; }
+                                                    }
                                                     v24 = match hpost(&*s, ((f4 + 0i128) + 16) as u32, v8, v10, 1i128 as i64) { Some(x) => x, None => return 1 };
                                                     { let c = ((16i128 + (f4 + 0i128))) as usize; if c >= 96 { return 1; } ws[nw] = (c as u8, v24); nw += 1; }
                                                 } else if (f8 >= 80i128 && f8 <= 95i128) {
@@ -7825,6 +9531,15 @@ pub fn h_3d(s: &mut St, f: &[i64; NF]) -> u32 {
                                                         v24 = match hpost(&*s, ((f4 + 0i128) + 16) as u32, v8, v10, 1i128 as i64) { Some(x) => x, None => return 1 };
                                                         { let c = ((16i128 + (f4 + 0i128))) as usize; if c >= 96 { return 1; } ws[nw] = (c as u8, v24); nw += 1; }
                                                     }
+                                                } else if (f8 >= 96i128 && f8 <= 107i128) || (f8 >= 110i128 && f8 <= 111i128) || (f8 >= 114i128 && f8 <= 117i128) || (f8 >= 122i128 && f8 <= 125i128) {
+                                                    if (f0 == 31i128) {
+                                                    } else {
+                                                        return 1;
+                                                    }
+                                                    v21 = match hload(&*s, v8, 1i128 as u32, false) { Some(x) => x, None => return 1 };
+                                                    { let c = (f8) as usize; if c >= 96 { return 1; } ws[nw] = (c as u8, v21); nw += 1; }
+                                                    v24 = match hpost(&*s, ((f4 + 0i128) + 16) as u32, v8, v10, 1i128 as i64) { Some(x) => x, None => return 1 };
+                                                    { let c = ((16i128 + (f4 + 0i128))) as usize; if c >= 96 { return 1; } ws[nw] = (c as u8, v24); nw += 1; }
                                                 } else {
                                                     if (((rr!(&*s, 114) as i128) & 2097152) != 0i128) {
                                                         v11 = v8.wrapping_add(v3);
@@ -7836,6 +9551,11 @@ pub fn h_3d(s: &mut St, f: &[i64; NF]) -> u32 {
                                                         { let c = (f8) as usize; if c >= 96 { return 1; } ws[nw] = (c as u8, v21); nw += 1; }
                                                         v22 = match hload(&*s, v11, 1i128 as u32, false) { Some(x) => x, None => return 1 };
                                                         { let c = ((f8 ^ 1i128)) as usize; if c >= 96 { return 1; } ws[nw] = (c as u8, v22); nw += 1; }
+                                                        if ((f8 ^ 1i128) >= 64i128) {
+                                                            if ((f8 ^ 1i128) <= 79i128) {
+                                                                { let c = ((((f8 ^ 1i128) - 64i128) + 16i128)) as usize; if c >= 96 { return 1; } ws[nw] = (c as u8, v22); nw += 1; }
+                                                            }
+                                                        }
                                                         v23 = match hpost(&*s, ((f4 + 0i128) + 16) as u32, v8, v10, 1i128 as i64) { Some(x) => x, None => return 1 };
                                                         { let c = ((16i128 + (f4 + 0i128))) as usize; if c >= 96 { return 1; } ws[nw] = (c as u8, v23); nw += 1; }
                                                     } else {
@@ -7870,13 +9590,16 @@ pub fn h_3d(s: &mut St, f: &[i64; NF]) -> u32 {
                                                         v25 = match hload(&*s, v16, 1i128 as u32, false) { Some(x) => x, None => return 1 };
                                                         { let c = (f8) as usize; if c >= 96 { return 1; } ws[nw] = (c as u8, v25); nw += 1; }
                                                     }
-                                                } else if (f8 >= 16i128 && f8 <= 79i128) || (f8 >= 96i128 && f8 <= 107i128) || (f8 >= 110i128 && f8 <= 111i128) || (f8 >= 114i128 && f8 <= 117i128) || (f8 >= 122i128 && f8 <= 125i128) {
+                                                } else if (f8 >= 16i128 && f8 <= 79i128) {
                                                     if (f0 == 31i128) {
                                                     } else {
                                                         return 1;
                                                     }
                                                     v25 = match hload(&*s, v16, 1i128 as u32, false) { Some(x) => x, None => return 1 };
                                                     { let c = (f8) as usize; if c >= 96 { return 1; } ws[nw] = (c as u8, v25); nw += 1; }
+                                                    if (f8 >= 64i128) {
+                                                        { let c = (((f8 - 64i128) + 16i128)) as usize; if c >= 96 { return 1; } ws[nw] = (c as u8, v25); nw += 1; }
+                                                    }
                                                 } else if (f8 >= 80i128 && f8 <= 95i128) {
                                                     if (((rr!(&*s, 114) as i128) & 2097152) != 0i128) {
                                                         v17 = v16.wrapping_add(v3);
@@ -7896,6 +9619,13 @@ pub fn h_3d(s: &mut St, f: &[i64; NF]) -> u32 {
                                                         v25 = match hload(&*s, v16, 1i128 as u32, false) { Some(x) => x, None => return 1 };
                                                         { let c = (f8) as usize; if c >= 96 { return 1; } ws[nw] = (c as u8, v25); nw += 1; }
                                                     }
+                                                } else if (f8 >= 96i128 && f8 <= 107i128) || (f8 >= 110i128 && f8 <= 111i128) || (f8 >= 114i128 && f8 <= 117i128) || (f8 >= 122i128 && f8 <= 125i128) {
+                                                    if (f0 == 31i128) {
+                                                    } else {
+                                                        return 1;
+                                                    }
+                                                    v25 = match hload(&*s, v16, 1i128 as u32, false) { Some(x) => x, None => return 1 };
+                                                    { let c = (f8) as usize; if c >= 96 { return 1; } ws[nw] = (c as u8, v25); nw += 1; }
                                                 } else {
                                                     if (((rr!(&*s, 114) as i128) & 2097152) != 0i128) {
                                                         v17 = v16.wrapping_add(v3);
@@ -7907,6 +9637,11 @@ pub fn h_3d(s: &mut St, f: &[i64; NF]) -> u32 {
                                                         { let c = (f8) as usize; if c >= 96 { return 1; } ws[nw] = (c as u8, v25); nw += 1; }
                                                         v26 = match hload(&*s, v17, 1i128 as u32, false) { Some(x) => x, None => return 1 };
                                                         { let c = ((f8 ^ 1i128)) as usize; if c >= 96 { return 1; } ws[nw] = (c as u8, v26); nw += 1; }
+                                                        if ((f8 ^ 1i128) >= 64i128) {
+                                                            if ((f8 ^ 1i128) <= 79i128) {
+                                                                { let c = ((((f8 ^ 1i128) - 64i128) + 16i128)) as usize; if c >= 96 { return 1; } ws[nw] = (c as u8, v26); nw += 1; }
+                                                            }
+                                                        }
                                                     } else {
                                                         if (f0 == 31i128) {
                                                         } else {
@@ -7944,6 +9679,11 @@ pub fn h_3d(s: &mut St, f: &[i64; NF]) -> u32 {
                                                 }
                                                 v27 = match hload(&*s, v0, 1i128 as u32, true) { Some(x) => x, None => return 1 };
                                                 { let c = (f8) as usize; if c >= 96 { return 1; } ws[nw] = (c as u8, v27); nw += 1; }
+                                                if (f8 >= 64i128) {
+                                                    if (f8 <= 79i128) {
+                                                        { let c = (((f8 - 64i128) + 16i128)) as usize; if c >= 96 { return 1; } ws[nw] = (c as u8, v27); nw += 1; }
+                                                    }
+                                                }
                                                 v19 = match hpost(&*s, ((f4 + 8i128) + 16) as u32, v0, v4, 1i128 as i64) { Some(x) => x, None => return 1 };
                                                 { let c = ((16i128 + (f4 + 8i128))) as usize; if c >= 96 { return 1; } ws[nw] = (c as u8, v19); nw += 1; }
                                             } else {
@@ -7954,6 +9694,11 @@ pub fn h_3d(s: &mut St, f: &[i64; NF]) -> u32 {
                                                 }
                                                 v28 = match hload(&*s, v7, 1i128 as u32, true) { Some(x) => x, None => return 1 };
                                                 { let c = (f8) as usize; if c >= 96 { return 1; } ws[nw] = (c as u8, v28); nw += 1; }
+                                                if (f8 >= 64i128) {
+                                                    if (f8 <= 79i128) {
+                                                        { let c = (((f8 - 64i128) + 16i128)) as usize; if c >= 96 { return 1; } ws[nw] = (c as u8, v28); nw += 1; }
+                                                    }
+                                                }
                                             }
                                         } else {
                                             v8 = rr!(&*s, (16i128 + (f4 + 0i128)));
@@ -7984,13 +9729,16 @@ pub fn h_3d(s: &mut St, f: &[i64; NF]) -> u32 {
                                                         v24 = match hpost(&*s, ((f4 + 0i128) + 16) as u32, v8, v10, 1i128 as i64) { Some(x) => x, None => return 1 };
                                                         { let c = ((16i128 + (f4 + 0i128))) as usize; if c >= 96 { return 1; } ws[nw] = (c as u8, v24); nw += 1; }
                                                     }
-                                                } else if (f8 >= 16i128 && f8 <= 79i128) || (f8 >= 96i128 && f8 <= 107i128) || (f8 >= 110i128 && f8 <= 111i128) || (f8 >= 114i128 && f8 <= 117i128) || (f8 >= 122i128 && f8 <= 125i128) {
+                                                } else if (f8 >= 16i128 && f8 <= 79i128) {
                                                     if (f0 == 31i128) {
                                                     } else {
                                                         return 1;
                                                     }
                                                     v29 = match hload(&*s, v8, 1i128 as u32, true) { Some(x) => x, None => return 1 };
                                                     { let c = (f8) as usize; if c >= 96 { return 1; } ws[nw] = (c as u8, v29); nw += 1; }
+                                                    if (f8 >= 64i128) {
+                                                        { let c = (((f8 - 64i128) + 16i128)) as usize; if c >= 96 { return 1; } ws[nw] = (c as u8, v29); nw += 1; }
+                                                    }
                                                     v24 = match hpost(&*s, ((f4 + 0i128) + 16) as u32, v8, v10, 1i128 as i64) { Some(x) => x, None => return 1 };
                                                     { let c = ((16i128 + (f4 + 0i128))) as usize; if c >= 96 { return 1; } ws[nw] = (c as u8, v24); nw += 1; }
                                                 } else if (f8 >= 80i128 && f8 <= 95i128) {
@@ -8016,6 +9764,15 @@ pub fn h_3d(s: &mut St, f: &[i64; NF]) -> u32 {
                                                         v24 = match hpost(&*s, ((f4 + 0i128) + 16) as u32, v8, v10, 1i128 as i64) { Some(x) => x, None => return 1 };
                                                         { let c = ((16i128 + (f4 + 0i128))) as usize; if c >= 96 { return 1; } ws[nw] = (c as u8, v24); nw += 1; }
                                                     }
+                                                } else if (f8 >= 96i128 && f8 <= 107i128) || (f8 >= 110i128 && f8 <= 111i128) || (f8 >= 114i128 && f8 <= 117i128) || (f8 >= 122i128 && f8 <= 125i128) {
+                                                    if (f0 == 31i128) {
+                                                    } else {
+                                                        return 1;
+                                                    }
+                                                    v29 = match hload(&*s, v8, 1i128 as u32, true) { Some(x) => x, None => return 1 };
+                                                    { let c = (f8) as usize; if c >= 96 { return 1; } ws[nw] = (c as u8, v29); nw += 1; }
+                                                    v24 = match hpost(&*s, ((f4 + 0i128) + 16) as u32, v8, v10, 1i128 as i64) { Some(x) => x, None => return 1 };
+                                                    { let c = ((16i128 + (f4 + 0i128))) as usize; if c >= 96 { return 1; } ws[nw] = (c as u8, v24); nw += 1; }
                                                 } else {
                                                     if (((rr!(&*s, 114) as i128) & 2097152) != 0i128) {
                                                         v11 = v8.wrapping_add(v3);
@@ -8027,6 +9784,11 @@ pub fn h_3d(s: &mut St, f: &[i64; NF]) -> u32 {
                                                         { let c = (f8) as usize; if c >= 96 { return 1; } ws[nw] = (c as u8, v29); nw += 1; }
                                                         v30 = match hload(&*s, v11, 1i128 as u32, true) { Some(x) => x, None => return 1 };
                                                         { let c = ((f8 ^ 1i128)) as usize; if c >= 96 { return 1; } ws[nw] = (c as u8, v30); nw += 1; }
+                                                        if ((f8 ^ 1i128) >= 64i128) {
+                                                            if ((f8 ^ 1i128) <= 79i128) {
+                                                                { let c = ((((f8 ^ 1i128) - 64i128) + 16i128)) as usize; if c >= 96 { return 1; } ws[nw] = (c as u8, v30); nw += 1; }
+                                                            }
+                                                        }
                                                         v23 = match hpost(&*s, ((f4 + 0i128) + 16) as u32, v8, v10, 1i128 as i64) { Some(x) => x, None => return 1 };
                                                         { let c = ((16i128 + (f4 + 0i128))) as usize; if c >= 96 { return 1; } ws[nw] = (c as u8, v23); nw += 1; }
                                                     } else {
@@ -8061,13 +9823,16 @@ pub fn h_3d(s: &mut St, f: &[i64; NF]) -> u32 {
                                                         v31 = match hload(&*s, v16, 1i128 as u32, true) { Some(x) => x, None => return 1 };
                                                         { let c = (f8) as usize; if c >= 96 { return 1; } ws[nw] = (c as u8, v31); nw += 1; }
                                                     }
-                                                } else if (f8 >= 16i128 && f8 <= 79i128) || (f8 >= 96i128 && f8 <= 107i128) || (f8 >= 110i128 && f8 <= 111i128) || (f8 >= 114i128 && f8 <= 117i128) || (f8 >= 122i128 && f8 <= 125i128) {
+                                                } else if (f8 >= 16i128 && f8 <= 79i128) {
                                                     if (f0 == 31i128) {
                                                     } else {
                                                         return 1;
                                                     }
                                                     v31 = match hload(&*s, v16, 1i128 as u32, true) { Some(x) => x, None => return 1 };
                                                     { let c = (f8) as usize; if c >= 96 { return 1; } ws[nw] = (c as u8, v31); nw += 1; }
+                                                    if (f8 >= 64i128) {
+                                                        { let c = (((f8 - 64i128) + 16i128)) as usize; if c >= 96 { return 1; } ws[nw] = (c as u8, v31); nw += 1; }
+                                                    }
                                                 } else if (f8 >= 80i128 && f8 <= 95i128) {
                                                     if (((rr!(&*s, 114) as i128) & 2097152) != 0i128) {
                                                         v17 = v16.wrapping_add(v3);
@@ -8087,6 +9852,13 @@ pub fn h_3d(s: &mut St, f: &[i64; NF]) -> u32 {
                                                         v31 = match hload(&*s, v16, 1i128 as u32, true) { Some(x) => x, None => return 1 };
                                                         { let c = (f8) as usize; if c >= 96 { return 1; } ws[nw] = (c as u8, v31); nw += 1; }
                                                     }
+                                                } else if (f8 >= 96i128 && f8 <= 107i128) || (f8 >= 110i128 && f8 <= 111i128) || (f8 >= 114i128 && f8 <= 117i128) || (f8 >= 122i128 && f8 <= 125i128) {
+                                                    if (f0 == 31i128) {
+                                                    } else {
+                                                        return 1;
+                                                    }
+                                                    v31 = match hload(&*s, v16, 1i128 as u32, true) { Some(x) => x, None => return 1 };
+                                                    { let c = (f8) as usize; if c >= 96 { return 1; } ws[nw] = (c as u8, v31); nw += 1; }
                                                 } else {
                                                     if (((rr!(&*s, 114) as i128) & 2097152) != 0i128) {
                                                         v17 = v16.wrapping_add(v3);
@@ -8098,6 +9870,11 @@ pub fn h_3d(s: &mut St, f: &[i64; NF]) -> u32 {
                                                         { let c = (f8) as usize; if c >= 96 { return 1; } ws[nw] = (c as u8, v31); nw += 1; }
                                                         v32 = match hload(&*s, v17, 1i128 as u32, true) { Some(x) => x, None => return 1 };
                                                         { let c = ((f8 ^ 1i128)) as usize; if c >= 96 { return 1; } ws[nw] = (c as u8, v32); nw += 1; }
+                                                        if ((f8 ^ 1i128) >= 64i128) {
+                                                            if ((f8 ^ 1i128) <= 79i128) {
+                                                                { let c = ((((f8 ^ 1i128) - 64i128) + 16i128)) as usize; if c >= 96 { return 1; } ws[nw] = (c as u8, v32); nw += 1; }
+                                                            }
+                                                        }
                                                     } else {
                                                         if (f0 == 31i128) {
                                                         } else {
@@ -8367,6 +10144,11 @@ pub fn h_3d(s: &mut St, f: &[i64; NF]) -> u32 {
                                                         v34 = v2.wrapping_mul(v33);
                                                         v42 = match hload(&*s, v0, 4i128 as u32, false) { Some(x) => x, None => return 1 };
                                                         { let c = (f8) as usize; if c >= 96 { return 1; } ws[nw] = (c as u8, v42); nw += 1; }
+                                                        if (f8 >= 64i128) {
+                                                            if (f8 <= 79i128) {
+                                                                { let c = (((f8 - 64i128) + 16i128)) as usize; if c >= 96 { return 1; } ws[nw] = (c as u8, v42); nw += 1; }
+                                                            }
+                                                        }
                                                         v43 = match hpost(&*s, ((f4 + 8i128) + 16) as u32, v0, v34, 4i128 as i64) { Some(x) => x, None => return 1 };
                                                         { let c = ((16i128 + (f4 + 8i128))) as usize; if c >= 96 { return 1; } ws[nw] = (c as u8, v43); nw += 1; }
                                                     }
@@ -8381,6 +10163,11 @@ pub fn h_3d(s: &mut St, f: &[i64; NF]) -> u32 {
                                                         return 1;
                                                         v42 = match hload(&*s, v0, 4i128 as u32, false) { Some(x) => x, None => return 1 };
                                                         { let c = (f8) as usize; if c >= 96 { return 1; } ws[nw] = (c as u8, v42); nw += 1; }
+                                                        if (f8 >= 64i128) {
+                                                            if (f8 <= 79i128) {
+                                                                { let c = (((f8 - 64i128) + 16i128)) as usize; if c >= 96 { return 1; } ws[nw] = (c as u8, v42); nw += 1; }
+                                                            }
+                                                        }
                                                         v43 = match hpost(&*s, ((f4 + 8i128) + 16) as u32, v0, v34, 4i128 as i64) { Some(x) => x, None => return 1 };
                                                         { let c = ((16i128 + (f4 + 8i128))) as usize; if c >= 96 { return 1; } ws[nw] = (c as u8, v43); nw += 1; }
                                                     }
@@ -8397,6 +10184,11 @@ pub fn h_3d(s: &mut St, f: &[i64; NF]) -> u32 {
                                                         v36 = v0.wrapping_add(v34);
                                                         v44 = match hload(&*s, v36, 4i128 as u32, false) { Some(x) => x, None => return 1 };
                                                         { let c = (f8) as usize; if c >= 96 { return 1; } ws[nw] = (c as u8, v44); nw += 1; }
+                                                        if (f8 >= 64i128) {
+                                                            if (f8 <= 79i128) {
+                                                                { let c = (((f8 - 64i128) + 16i128)) as usize; if c >= 96 { return 1; } ws[nw] = (c as u8, v44); nw += 1; }
+                                                            }
+                                                        }
                                                     }
                                                 } else {
                                                     if (f8 == 107i128) {
@@ -8410,6 +10202,11 @@ pub fn h_3d(s: &mut St, f: &[i64; NF]) -> u32 {
                                                         return 1;
                                                         v44 = match hload(&*s, v36, 4i128 as u32, false) { Some(x) => x, None => return 1 };
                                                         { let c = (f8) as usize; if c >= 96 { return 1; } ws[nw] = (c as u8, v44); nw += 1; }
+                                                        if (f8 >= 64i128) {
+                                                            if (f8 <= 79i128) {
+                                                                { let c = (((f8 - 64i128) + 16i128)) as usize; if c >= 96 { return 1; } ws[nw] = (c as u8, v44); nw += 1; }
+                                                            }
+                                                        }
                                                     }
                                                 }
                                             }
@@ -8442,7 +10239,7 @@ pub fn h_3d(s: &mut St, f: &[i64; NF]) -> u32 {
                                                         v48 = match hpost(&*s, ((f4 + 0i128) + 16) as u32, v8, v37, 4i128 as i64) { Some(x) => x, None => return 1 };
                                                         { let c = ((16i128 + (f4 + 0i128))) as usize; if c >= 96 { return 1; } ws[nw] = (c as u8, v48); nw += 1; }
                                                     }
-                                                } else if (f8 >= 16i128 && f8 <= 79i128) || (f8 >= 110i128 && f8 <= 111i128) || (f8 >= 114i128 && f8 <= 117i128) || (f8 >= 122i128 && f8 <= 125i128) {
+                                                } else if (f8 >= 16i128 && f8 <= 79i128) {
                                                     v8 = rr!(&*s, (16i128 + (f4 + 0i128)));
                                                     v9 = rr!(&*s, (32i128 + (f6 + 0i128)));
                                                     v33 = (4i128) as u32;
@@ -8453,6 +10250,9 @@ pub fn h_3d(s: &mut St, f: &[i64; NF]) -> u32 {
                                                     }
                                                     v45 = match hload(&*s, v8, 4i128 as u32, false) { Some(x) => x, None => return 1 };
                                                     { let c = (f8) as usize; if c >= 96 { return 1; } ws[nw] = (c as u8, v45); nw += 1; }
+                                                    if (f8 >= 64i128) {
+                                                        { let c = (((f8 - 64i128) + 16i128)) as usize; if c >= 96 { return 1; } ws[nw] = (c as u8, v45); nw += 1; }
+                                                    }
                                                     v48 = match hpost(&*s, ((f4 + 0i128) + 16) as u32, v8, v37, 4i128 as i64) { Some(x) => x, None => return 1 };
                                                     { let c = ((16i128 + (f4 + 0i128))) as usize; if c >= 96 { return 1; } ws[nw] = (c as u8, v48); nw += 1; }
                                                 } else if (f8 >= 80i128 && f8 <= 95i128) {
@@ -8511,7 +10311,7 @@ pub fn h_3d(s: &mut St, f: &[i64; NF]) -> u32 {
                                                             { let c = ((16i128 + (f4 + 0i128))) as usize; if c >= 96 { return 1; } ws[nw] = (c as u8, v48); nw += 1; }
                                                         }
                                                     }
-                                                } else {
+                                                } else if (f8 >= 108i128 && f8 <= 109i128) || (f8 >= 112i128 && f8 <= 113i128) || (f8 >= 118i128 && f8 <= 121i128) || f8 >= 126i128 {
                                                     if (((rr!(&*s, 114) as i128) & 2097152) != 0i128) {
                                                         if (f0 == 31i128) {
                                                             if ((f8 ^ 1i128) == 107i128) {
@@ -8526,6 +10326,11 @@ pub fn h_3d(s: &mut St, f: &[i64; NF]) -> u32 {
                                                                 { let c = (f8) as usize; if c >= 96 { return 1; } ws[nw] = (c as u8, v45); nw += 1; }
                                                                 v46 = match hload(&*s, v38, 4i128 as u32, false) { Some(x) => x, None => return 1 };
                                                                 { let c = ((f8 ^ 1i128)) as usize; if c >= 96 { return 1; } ws[nw] = (c as u8, v46); nw += 1; }
+                                                                if ((f8 ^ 1i128) >= 64i128) {
+                                                                    if ((f8 ^ 1i128) <= 79i128) {
+                                                                        { let c = ((((f8 ^ 1i128) - 64i128) + 16i128)) as usize; if c >= 96 { return 1; } ws[nw] = (c as u8, v46); nw += 1; }
+                                                                    }
+                                                                }
                                                                 v47 = match hpost(&*s, ((f4 + 0i128) + 16) as u32, v8, v37, 4i128 as i64) { Some(x) => x, None => return 1 };
                                                                 { let c = ((16i128 + (f4 + 0i128))) as usize; if c >= 96 { return 1; } ws[nw] = (c as u8, v47); nw += 1; }
                                                             }
@@ -8543,6 +10348,11 @@ pub fn h_3d(s: &mut St, f: &[i64; NF]) -> u32 {
                                                                 { let c = (f8) as usize; if c >= 96 { return 1; } ws[nw] = (c as u8, v45); nw += 1; }
                                                                 v46 = match hload(&*s, v38, 4i128 as u32, false) { Some(x) => x, None => return 1 };
                                                                 { let c = ((f8 ^ 1i128)) as usize; if c >= 96 { return 1; } ws[nw] = (c as u8, v46); nw += 1; }
+                                                                if ((f8 ^ 1i128) >= 64i128) {
+                                                                    if ((f8 ^ 1i128) <= 79i128) {
+                                                                        { let c = ((((f8 ^ 1i128) - 64i128) + 16i128)) as usize; if c >= 96 { return 1; } ws[nw] = (c as u8, v46); nw += 1; }
+                                                                    }
+                                                                }
                                                                 v47 = match hpost(&*s, ((f4 + 0i128) + 16) as u32, v8, v37, 4i128 as i64) { Some(x) => x, None => return 1 };
                                                                 { let c = ((16i128 + (f4 + 0i128))) as usize; if c >= 96 { return 1; } ws[nw] = (c as u8, v47); nw += 1; }
                                                             }
@@ -8561,6 +10371,19 @@ pub fn h_3d(s: &mut St, f: &[i64; NF]) -> u32 {
                                                         v48 = match hpost(&*s, ((f4 + 0i128) + 16) as u32, v8, v37, 4i128 as i64) { Some(x) => x, None => return 1 };
                                                         { let c = ((16i128 + (f4 + 0i128))) as usize; if c >= 96 { return 1; } ws[nw] = (c as u8, v48); nw += 1; }
                                                     }
+                                                } else {
+                                                    v8 = rr!(&*s, (16i128 + (f4 + 0i128)));
+                                                    v9 = rr!(&*s, (32i128 + (f6 + 0i128)));
+                                                    v33 = (4i128) as u32;
+                                                    v37 = v9.wrapping_mul(v33);
+                                                    if (f0 == 31i128) {
+                                                    } else {
+                                                        return 1;
+                                                    }
+                                                    v45 = match hload(&*s, v8, 4i128 as u32, false) { Some(x) => x, None => return 1 };
+                                                    { let c = (f8) as usize; if c >= 96 { return 1; } ws[nw] = (c as u8, v45); nw += 1; }
+                                                    v48 = match hpost(&*s, ((f4 + 0i128) + 16) as u32, v8, v37, 4i128 as i64) { Some(x) => x, None => return 1 };
+                                                    { let c = ((16i128 + (f4 + 0i128))) as usize; if c >= 96 { return 1; } ws[nw] = (c as u8, v48); nw += 1; }
                                                 }
                                             } else {
                                                 if f8 <= 15i128 {
@@ -8587,7 +10410,7 @@ pub fn h_3d(s: &mut St, f: &[i64; NF]) -> u32 {
                                                         v49 = match hload(&*s, v40, 4i128 as u32, false) { Some(x) => x, None => return 1 };
                                                         { let c = (f8) as usize; if c >= 96 { return 1; } ws[nw] = (c as u8, v49); nw += 1; }
                                                     }
-                                                } else if (f8 >= 16i128 && f8 <= 79i128) || (f8 >= 110i128 && f8 <= 111i128) || (f8 >= 114i128 && f8 <= 117i128) || (f8 >= 122i128 && f8 <= 125i128) {
+                                                } else if (f8 >= 16i128 && f8 <= 79i128) {
                                                     v8 = rr!(&*s, (16i128 + (f4 + 0i128)));
                                                     v9 = rr!(&*s, (32i128 + (f6 + 0i128)));
                                                     v33 = (4i128) as u32;
@@ -8599,6 +10422,9 @@ pub fn h_3d(s: &mut St, f: &[i64; NF]) -> u32 {
                                                     }
                                                     v49 = match hload(&*s, v40, 4i128 as u32, false) { Some(x) => x, None => return 1 };
                                                     { let c = (f8) as usize; if c >= 96 { return 1; } ws[nw] = (c as u8, v49); nw += 1; }
+                                                    if (f8 >= 64i128) {
+                                                        { let c = (((f8 - 64i128) + 16i128)) as usize; if c >= 96 { return 1; } ws[nw] = (c as u8, v49); nw += 1; }
+                                                    }
                                                 } else if (f8 >= 80i128 && f8 <= 95i128) {
                                                     v8 = rr!(&*s, (16i128 + (f4 + 0i128)));
                                                     v9 = rr!(&*s, (32i128 + (f6 + 0i128)));
@@ -8650,7 +10476,7 @@ pub fn h_3d(s: &mut St, f: &[i64; NF]) -> u32 {
                                                             { let c = (f8) as usize; if c >= 96 { return 1; } ws[nw] = (c as u8, v49); nw += 1; }
                                                         }
                                                     }
-                                                } else {
+                                                } else if (f8 >= 108i128 && f8 <= 109i128) || (f8 >= 112i128 && f8 <= 113i128) || (f8 >= 118i128 && f8 <= 121i128) || f8 >= 126i128 {
                                                     if (((rr!(&*s, 114) as i128) & 2097152) != 0i128) {
                                                         if (f0 == 31i128) {
                                                             if ((f8 ^ 1i128) == 107i128) {
@@ -8666,6 +10492,11 @@ pub fn h_3d(s: &mut St, f: &[i64; NF]) -> u32 {
                                                                 { let c = (f8) as usize; if c >= 96 { return 1; } ws[nw] = (c as u8, v49); nw += 1; }
                                                                 v50 = match hload(&*s, v41, 4i128 as u32, false) { Some(x) => x, None => return 1 };
                                                                 { let c = ((f8 ^ 1i128)) as usize; if c >= 96 { return 1; } ws[nw] = (c as u8, v50); nw += 1; }
+                                                                if ((f8 ^ 1i128) >= 64i128) {
+                                                                    if ((f8 ^ 1i128) <= 79i128) {
+                                                                        { let c = ((((f8 ^ 1i128) - 64i128) + 16i128)) as usize; if c >= 96 { return 1; } ws[nw] = (c as u8, v50); nw += 1; }
+                                                                    }
+                                                                }
                                                             }
                                                         } else {
                                                             if ((f8 ^ 1i128) == 107i128) {
@@ -8682,6 +10513,11 @@ pub fn h_3d(s: &mut St, f: &[i64; NF]) -> u32 {
                                                                 { let c = (f8) as usize; if c >= 96 { return 1; } ws[nw] = (c as u8, v49); nw += 1; }
                                                                 v50 = match hload(&*s, v41, 4i128 as u32, false) { Some(x) => x, None => return 1 };
                                                                 { let c = ((f8 ^ 1i128)) as usize; if c >= 96 { return 1; } ws[nw] = (c as u8, v50); nw += 1; }
+                                                                if ((f8 ^ 1i128) >= 64i128) {
+                                                                    if ((f8 ^ 1i128) <= 79i128) {
+                                                                        { let c = ((((f8 ^ 1i128) - 64i128) + 16i128)) as usize; if c >= 96 { return 1; } ws[nw] = (c as u8, v50); nw += 1; }
+                                                                    }
+                                                                }
                                                             }
                                                         }
                                                     } else {
@@ -8697,6 +10533,18 @@ pub fn h_3d(s: &mut St, f: &[i64; NF]) -> u32 {
                                                         v49 = match hload(&*s, v40, 4i128 as u32, false) { Some(x) => x, None => return 1 };
                                                         { let c = (f8) as usize; if c >= 96 { return 1; } ws[nw] = (c as u8, v49); nw += 1; }
                                                     }
+                                                } else {
+                                                    v8 = rr!(&*s, (16i128 + (f4 + 0i128)));
+                                                    v9 = rr!(&*s, (32i128 + (f6 + 0i128)));
+                                                    v33 = (4i128) as u32;
+                                                    v37 = v9.wrapping_mul(v33);
+                                                    v40 = v8.wrapping_add(v37);
+                                                    if (f0 == 31i128) {
+                                                    } else {
+                                                        return 1;
+                                                    }
+                                                    v49 = match hload(&*s, v40, 4i128 as u32, false) { Some(x) => x, None => return 1 };
+                                                    { let c = (f8) as usize; if c >= 96 { return 1; } ws[nw] = (c as u8, v49); nw += 1; }
                                                 }
                                             }
                                         }
@@ -8968,6 +10816,11 @@ pub fn h_3d(s: &mut St, f: &[i64; NF]) -> u32 {
                                                 }
                                                 v60 = match hload(&*s, v0, 2i128 as u32, false) { Some(x) => x, None => return 1 };
                                                 { let c = (f8) as usize; if c >= 96 { return 1; } ws[nw] = (c as u8, v60); nw += 1; }
+                                                if (f8 >= 64i128) {
+                                                    if (f8 <= 79i128) {
+                                                        { let c = (((f8 - 64i128) + 16i128)) as usize; if c >= 96 { return 1; } ws[nw] = (c as u8, v60); nw += 1; }
+                                                    }
+                                                }
                                                 v61 = match hpost(&*s, ((f4 + 8i128) + 16) as u32, v0, v52, 2i128 as i64) { Some(x) => x, None => return 1 };
                                                 { let c = ((16i128 + (f4 + 8i128))) as usize; if c >= 96 { return 1; } ws[nw] = (c as u8, v61); nw += 1; }
                                             } else {
@@ -8978,6 +10831,11 @@ pub fn h_3d(s: &mut St, f: &[i64; NF]) -> u32 {
                                                 }
                                                 v62 = match hload(&*s, v54, 2i128 as u32, false) { Some(x) => x, None => return 1 };
                                                 { let c = (f8) as usize; if c >= 96 { return 1; } ws[nw] = (c as u8, v62); nw += 1; }
+                                                if (f8 >= 64i128) {
+                                                    if (f8 <= 79i128) {
+                                                        { let c = (((f8 - 64i128) + 16i128)) as usize; if c >= 96 { return 1; } ws[nw] = (c as u8, v62); nw += 1; }
+                                                    }
+                                                }
                                             }
                                         } else {
                                             v8 = rr!(&*s, (16i128 + (f4 + 0i128)));
@@ -9008,13 +10866,16 @@ pub fn h_3d(s: &mut St, f: &[i64; NF]) -> u32 {
                                                         v66 = match hpost(&*s, ((f4 + 0i128) + 16) as u32, v8, v55, 2i128 as i64) { Some(x) => x, None => return 1 };
                                                         { let c = ((16i128 + (f4 + 0i128))) as usize; if c >= 96 { return 1; } ws[nw] = (c as u8, v66); nw += 1; }
                                                     }
-                                                } else if (f8 >= 16i128 && f8 <= 79i128) || (f8 >= 96i128 && f8 <= 107i128) || (f8 >= 110i128 && f8 <= 111i128) || (f8 >= 114i128 && f8 <= 117i128) || (f8 >= 122i128 && f8 <= 125i128) {
+                                                } else if (f8 >= 16i128 && f8 <= 79i128) {
                                                     if (f0 == 31i128) {
                                                     } else {
                                                         return 1;
                                                     }
                                                     v63 = match hload(&*s, v8, 2i128 as u32, false) { Some(x) => x, None => return 1 };
                                                     { let c = (f8) as usize; if c >= 96 { return 1; } ws[nw] = (c as u8, v63); nw += 1; }
+                                                    if (f8 >= 64i128) {
+                                                        { let c = (((f8 - 64i128) + 16i128)) as usize; if c >= 96 { return 1; } ws[nw] = (c as u8, v63); nw += 1; }
+                                                    }
                                                     v66 = match hpost(&*s, ((f4 + 0i128) + 16) as u32, v8, v55, 2i128 as i64) { Some(x) => x, None => return 1 };
                                                     { let c = ((16i128 + (f4 + 0i128))) as usize; if c >= 96 { return 1; } ws[nw] = (c as u8, v66); nw += 1; }
                                                 } else if (f8 >= 80i128 && f8 <= 95i128) {
@@ -9040,6 +10901,15 @@ pub fn h_3d(s: &mut St, f: &[i64; NF]) -> u32 {
                                                         v66 = match hpost(&*s, ((f4 + 0i128) + 16) as u32, v8, v55, 2i128 as i64) { Some(x) => x, None => return 1 };
                                                         { let c = ((16i128 + (f4 + 0i128))) as usize; if c >= 96 { return 1; } ws[nw] = (c as u8, v66); nw += 1; }
                                                     }
+                                                } else if (f8 >= 96i128 && f8 <= 107i128) || (f8 >= 110i128 && f8 <= 111i128) || (f8 >= 114i128 && f8 <= 117i128) || (f8 >= 122i128 && f8 <= 125i128) {
+                                                    if (f0 == 31i128) {
+                                                    } else {
+                                                        return 1;
+                                                    }
+                                                    v63 = match hload(&*s, v8, 2i128 as u32, false) { Some(x) => x, None => return 1 };
+                                                    { let c = (f8) as usize; if c >= 96 { return 1; } ws[nw] = (c as u8, v63); nw += 1; }
+                                                    v66 = match hpost(&*s, ((f4 + 0i128) + 16) as u32, v8, v55, 2i128 as i64) { Some(x) => x, None => return 1 };
+                                                    { let c = ((16i128 + (f4 + 0i128))) as usize; if c >= 96 { return 1; } ws[nw] = (c as u8, v66); nw += 1; }
                                                 } else {
                                                     if (((rr!(&*s, 114) as i128) & 2097152) != 0i128) {
                                                         v56 = v8.wrapping_add(v51);
@@ -9051,6 +10921,11 @@ pub fn h_3d(s: &mut St, f: &[i64; NF]) -> u32 {
                                                         { let c = (f8) as usize; if c >= 96 { return 1; } ws[nw] = (c as u8, v63); nw += 1; }
                                                         v64 = match hload(&*s, v56, 2i128 as u32, false) { Some(x) => x, None => return 1 };
                                                         { let c = ((f8 ^ 1i128)) as usize; if c >= 96 { return 1; } ws[nw] = (c as u8, v64); nw += 1; }
+                                                        if ((f8 ^ 1i128) >= 64i128) {
+                                                            if ((f8 ^ 1i128) <= 79i128) {
+                                                                { let c = ((((f8 ^ 1i128) - 64i128) + 16i128)) as usize; if c >= 96 { return 1; } ws[nw] = (c as u8, v64); nw += 1; }
+                                                            }
+                                                        }
                                                         v65 = match hpost(&*s, ((f4 + 0i128) + 16) as u32, v8, v55, 2i128 as i64) { Some(x) => x, None => return 1 };
                                                         { let c = ((16i128 + (f4 + 0i128))) as usize; if c >= 96 { return 1; } ws[nw] = (c as u8, v65); nw += 1; }
                                                     } else {
@@ -9085,13 +10960,16 @@ pub fn h_3d(s: &mut St, f: &[i64; NF]) -> u32 {
                                                         v67 = match hload(&*s, v58, 2i128 as u32, false) { Some(x) => x, None => return 1 };
                                                         { let c = (f8) as usize; if c >= 96 { return 1; } ws[nw] = (c as u8, v67); nw += 1; }
                                                     }
-                                                } else if (f8 >= 16i128 && f8 <= 79i128) || (f8 >= 96i128 && f8 <= 107i128) || (f8 >= 110i128 && f8 <= 111i128) || (f8 >= 114i128 && f8 <= 117i128) || (f8 >= 122i128 && f8 <= 125i128) {
+                                                } else if (f8 >= 16i128 && f8 <= 79i128) {
                                                     if (f0 == 31i128) {
                                                     } else {
                                                         return 1;
                                                     }
                                                     v67 = match hload(&*s, v58, 2i128 as u32, false) { Some(x) => x, None => return 1 };
                                                     { let c = (f8) as usize; if c >= 96 { return 1; } ws[nw] = (c as u8, v67); nw += 1; }
+                                                    if (f8 >= 64i128) {
+                                                        { let c = (((f8 - 64i128) + 16i128)) as usize; if c >= 96 { return 1; } ws[nw] = (c as u8, v67); nw += 1; }
+                                                    }
                                                 } else if (f8 >= 80i128 && f8 <= 95i128) {
                                                     if (((rr!(&*s, 114) as i128) & 2097152) != 0i128) {
                                                         v59 = v58.wrapping_add(v51);
@@ -9111,6 +10989,13 @@ pub fn h_3d(s: &mut St, f: &[i64; NF]) -> u32 {
                                                         v67 = match hload(&*s, v58, 2i128 as u32, false) { Some(x) => x, None => return 1 };
                                                         { let c = (f8) as usize; if c >= 96 { return 1; } ws[nw] = (c as u8, v67); nw += 1; }
                                                     }
+                                                } else if (f8 >= 96i128 && f8 <= 107i128) || (f8 >= 110i128 && f8 <= 111i128) || (f8 >= 114i128 && f8 <= 117i128) || (f8 >= 122i128 && f8 <= 125i128) {
+                                                    if (f0 == 31i128) {
+                                                    } else {
+                                                        return 1;
+                                                    }
+                                                    v67 = match hload(&*s, v58, 2i128 as u32, false) { Some(x) => x, None => return 1 };
+                                                    { let c = (f8) as usize; if c >= 96 { return 1; } ws[nw] = (c as u8, v67); nw += 1; }
                                                 } else {
                                                     if (((rr!(&*s, 114) as i128) & 2097152) != 0i128) {
                                                         v59 = v58.wrapping_add(v51);
@@ -9122,6 +11007,11 @@ pub fn h_3d(s: &mut St, f: &[i64; NF]) -> u32 {
                                                         { let c = (f8) as usize; if c >= 96 { return 1; } ws[nw] = (c as u8, v67); nw += 1; }
                                                         v68 = match hload(&*s, v59, 2i128 as u32, false) { Some(x) => x, None => return 1 };
                                                         { let c = ((f8 ^ 1i128)) as usize; if c >= 96 { return 1; } ws[nw] = (c as u8, v68); nw += 1; }
+                                                        if ((f8 ^ 1i128) >= 64i128) {
+                                                            if ((f8 ^ 1i128) <= 79i128) {
+                                                                { let c = ((((f8 ^ 1i128) - 64i128) + 16i128)) as usize; if c >= 96 { return 1; } ws[nw] = (c as u8, v68); nw += 1; }
+                                                            }
+                                                        }
                                                     } else {
                                                         if (f0 == 31i128) {
                                                         } else {
@@ -9159,6 +11049,11 @@ pub fn h_3d(s: &mut St, f: &[i64; NF]) -> u32 {
                                                 }
                                                 v69 = match hload(&*s, v0, 2i128 as u32, true) { Some(x) => x, None => return 1 };
                                                 { let c = (f8) as usize; if c >= 96 { return 1; } ws[nw] = (c as u8, v69); nw += 1; }
+                                                if (f8 >= 64i128) {
+                                                    if (f8 <= 79i128) {
+                                                        { let c = (((f8 - 64i128) + 16i128)) as usize; if c >= 96 { return 1; } ws[nw] = (c as u8, v69); nw += 1; }
+                                                    }
+                                                }
                                                 v61 = match hpost(&*s, ((f4 + 8i128) + 16) as u32, v0, v52, 2i128 as i64) { Some(x) => x, None => return 1 };
                                                 { let c = ((16i128 + (f4 + 8i128))) as usize; if c >= 96 { return 1; } ws[nw] = (c as u8, v61); nw += 1; }
                                             } else {
@@ -9169,6 +11064,11 @@ pub fn h_3d(s: &mut St, f: &[i64; NF]) -> u32 {
                                                 }
                                                 v70 = match hload(&*s, v54, 2i128 as u32, true) { Some(x) => x, None => return 1 };
                                                 { let c = (f8) as usize; if c >= 96 { return 1; } ws[nw] = (c as u8, v70); nw += 1; }
+                                                if (f8 >= 64i128) {
+                                                    if (f8 <= 79i128) {
+                                                        { let c = (((f8 - 64i128) + 16i128)) as usize; if c >= 96 { return 1; } ws[nw] = (c as u8, v70); nw += 1; }
+                                                    }
+                                                }
                                             }
                                         } else {
                                             v8 = rr!(&*s, (16i128 + (f4 + 0i128)));
@@ -9199,13 +11099,16 @@ pub fn h_3d(s: &mut St, f: &[i64; NF]) -> u32 {
                                                         v66 = match hpost(&*s, ((f4 + 0i128) + 16) as u32, v8, v55, 2i128 as i64) { Some(x) => x, None => return 1 };
                                                         { let c = ((16i128 + (f4 + 0i128))) as usize; if c >= 96 { return 1; } ws[nw] = (c as u8, v66); nw += 1; }
                                                     }
-                                                } else if (f8 >= 16i128 && f8 <= 79i128) || (f8 >= 96i128 && f8 <= 107i128) || (f8 >= 110i128 && f8 <= 111i128) || (f8 >= 114i128 && f8 <= 117i128) || (f8 >= 122i128 && f8 <= 125i128) {
+                                                } else if (f8 >= 16i128 && f8 <= 79i128) {
                                                     if (f0 == 31i128) {
                                                     } else {
                                                         return 1;
                                                     }
                                                     v71 = match hload(&*s, v8, 2i128 as u32, true) { Some(x) => x, None => return 1 };
                                                     { let c = (f8) as usize; if c >= 96 { return 1; } ws[nw] = (c as u8, v71); nw += 1; }
+                                                    if (f8 >= 64i128) {
+                                                        { let c = (((f8 - 64i128) + 16i128)) as usize; if c >= 96 { return 1; } ws[nw] = (c as u8, v71); nw += 1; }
+                                                    }
                                                     v66 = match hpost(&*s, ((f4 + 0i128) + 16) as u32, v8, v55, 2i128 as i64) { Some(x) => x, None => return 1 };
                                                     { let c = ((16i128 + (f4 + 0i128))) as usize; if c >= 96 { return 1; } ws[nw] = (c as u8, v66); nw += 1; }
                                                 } else if (f8 >= 80i128 && f8 <= 95i128) {
@@ -9231,6 +11134,15 @@ pub fn h_3d(s: &mut St, f: &[i64; NF]) -> u32 {
                                                         v66 = match hpost(&*s, ((f4 + 0i128) + 16) as u32, v8, v55, 2i128 as i64) { Some(x) => x, None => return 1 };
                                                         { let c = ((16i128 + (f4 + 0i128))) as usize; if c >= 96 { return 1; } ws[nw] = (c as u8, v66); nw += 1; }
                                                     }
+                                                } else if (f8 >= 96i128 && f8 <= 107i128) || (f8 >= 110i128 && f8 <= 111i128) || (f8 >= 114i128 && f8 <= 117i128) || (f8 >= 122i128 && f8 <= 125i128) {
+                                                    if (f0 == 31i128) {
+                                                    } else {
+                                                        return 1;
+                                                    }
+                                                    v71 = match hload(&*s, v8, 2i128 as u32, true) { Some(x) => x, None => return 1 };
+                                                    { let c = (f8) as usize; if c >= 96 { return 1; } ws[nw] = (c as u8, v71); nw += 1; }
+                                                    v66 = match hpost(&*s, ((f4 + 0i128) + 16) as u32, v8, v55, 2i128 as i64) { Some(x) => x, None => return 1 };
+                                                    { let c = ((16i128 + (f4 + 0i128))) as usize; if c >= 96 { return 1; } ws[nw] = (c as u8, v66); nw += 1; }
                                                 } else {
                                                     if (((rr!(&*s, 114) as i128) & 2097152) != 0i128) {
                                                         v56 = v8.wrapping_add(v51);
@@ -9242,6 +11154,11 @@ pub fn h_3d(s: &mut St, f: &[i64; NF]) -> u32 {
                                                         { let c = (f8) as usize; if c >= 96 { return 1; } ws[nw] = (c as u8, v71); nw += 1; }
                                                         v72 = match hload(&*s, v56, 2i128 as u32, true) { Some(x) => x, None => return 1 };
                                                         { let c = ((f8 ^ 1i128)) as usize; if c >= 96 { return 1; } ws[nw] = (c as u8, v72); nw += 1; }
+                                                        if ((f8 ^ 1i128) >= 64i128) {
+                                                            if ((f8 ^ 1i128) <= 79i128) {
+                                                                { let c = ((((f8 ^ 1i128) - 64i128) + 16i128)) as usize; if c >= 96 { return 1; } ws[nw] = (c as u8, v72); nw += 1; }
+                                                            }
+                                                        }
                                                         v65 = match hpost(&*s, ((f4 + 0i128) + 16) as u32, v8, v55, 2i128 as i64) { Some(x) => x, None => return 1 };
                                                         { let c = ((16i128 + (f4 + 0i128))) as usize; if c >= 96 { return 1; } ws[nw] = (c as u8, v65); nw += 1; }
                                                     } else {
@@ -9276,13 +11193,16 @@ pub fn h_3d(s: &mut St, f: &[i64; NF]) -> u32 {
                                                         v73 = match hload(&*s, v58, 2i128 as u32, true) { Some(x) => x, None => return 1 };
                                                         { let c = (f8) as usize; if c >= 96 { return 1; } ws[nw] = (c as u8, v73); nw += 1; }
                                                     }
-                                                } else if (f8 >= 16i128 && f8 <= 79i128) || (f8 >= 96i128 && f8 <= 107i128) || (f8 >= 110i128 && f8 <= 111i128) || (f8 >= 114i128 && f8 <= 117i128) || (f8 >= 122i128 && f8 <= 125i128) {
+                                                } else if (f8 >= 16i128 && f8 <= 79i128) {
                                                     if (f0 == 31i128) {
                                                     } else {
                                                         return 1;
                                                     }
                                                     v73 = match hload(&*s, v58, 2i128 as u32, true) { Some(x) => x, None => return 1 };
                                                     { let c = (f8) as usize; if c >= 96 { return 1; } ws[nw] = (c as u8, v73); nw += 1; }
+                                                    if (f8 >= 64i128) {
+                                                        { let c = (((f8 - 64i128) + 16i128)) as usize; if c >= 96 { return 1; } ws[nw] = (c as u8, v73); nw += 1; }
+                                                    }
                                                 } else if (f8 >= 80i128 && f8 <= 95i128) {
                                                     if (((rr!(&*s, 114) as i128) & 2097152) != 0i128) {
                                                         v59 = v58.wrapping_add(v51);
@@ -9302,6 +11222,13 @@ pub fn h_3d(s: &mut St, f: &[i64; NF]) -> u32 {
                                                         v73 = match hload(&*s, v58, 2i128 as u32, true) { Some(x) => x, None => return 1 };
                                                         { let c = (f8) as usize; if c >= 96 { return 1; } ws[nw] = (c as u8, v73); nw += 1; }
                                                     }
+                                                } else if (f8 >= 96i128 && f8 <= 107i128) || (f8 >= 110i128 && f8 <= 111i128) || (f8 >= 114i128 && f8 <= 117i128) || (f8 >= 122i128 && f8 <= 125i128) {
+                                                    if (f0 == 31i128) {
+                                                    } else {
+                                                        return 1;
+                                                    }
+                                                    v73 = match hload(&*s, v58, 2i128 as u32, true) { Some(x) => x, None => return 1 };
+                                                    { let c = (f8) as usize; if c >= 96 { return 1; } ws[nw] = (c as u8, v73); nw += 1; }
                                                 } else {
                                                     if (((rr!(&*s, 114) as i128) & 2097152) != 0i128) {
                                                         v59 = v58.wrapping_add(v51);
@@ -9313,6 +11240,11 @@ pub fn h_3d(s: &mut St, f: &[i64; NF]) -> u32 {
                                                         { let c = (f8) as usize; if c >= 96 { return 1; } ws[nw] = (c as u8, v73); nw += 1; }
                                                         v74 = match hload(&*s, v59, 2i128 as u32, true) { Some(x) => x, None => return 1 };
                                                         { let c = ((f8 ^ 1i128)) as usize; if c >= 96 { return 1; } ws[nw] = (c as u8, v74); nw += 1; }
+                                                        if ((f8 ^ 1i128) >= 64i128) {
+                                                            if ((f8 ^ 1i128) <= 79i128) {
+                                                                { let c = ((((f8 ^ 1i128) - 64i128) + 16i128)) as usize; if c >= 96 { return 1; } ws[nw] = (c as u8, v74); nw += 1; }
+                                                            }
+                                                        }
                                                     } else {
                                                         if (f0 == 31i128) {
                                                         } else {
@@ -9388,6 +11320,11 @@ pub fn h_3d(s: &mut St, f: &[i64; NF]) -> u32 {
                                                 }
                                                 v75 = match hload(&*s, v0, 8i128 as u32, false) { Some(x) => x, None => return 1 };
                                                 { let c = (f8) as usize; if c >= 96 { return 1; } ws[nw] = (c as u8, v75); nw += 1; }
+                                                if (f8 >= 64i128) {
+                                                    if (f8 <= 79i128) {
+                                                        { let c = (((f8 - 64i128) + 16i128)) as usize; if c >= 96 { return 1; } ws[nw] = (c as u8, v75); nw += 1; }
+                                                    }
+                                                }
                                                 v43 = match hpost(&*s, ((f4 + 8i128) + 16) as u32, v0, v34, 4i128 as i64) { Some(x) => x, None => return 1 };
                                                 { let c = ((16i128 + (f4 + 8i128))) as usize; if c >= 96 { return 1; } ws[nw] = (c as u8, v43); nw += 1; }
                                             } else {
@@ -9398,6 +11335,11 @@ pub fn h_3d(s: &mut St, f: &[i64; NF]) -> u32 {
                                                 }
                                                 v76 = match hload(&*s, v36, 8i128 as u32, false) { Some(x) => x, None => return 1 };
                                                 { let c = (f8) as usize; if c >= 96 { return 1; } ws[nw] = (c as u8, v76); nw += 1; }
+                                                if (f8 >= 64i128) {
+                                                    if (f8 <= 79i128) {
+                                                        { let c = (((f8 - 64i128) + 16i128)) as usize; if c >= 96 { return 1; } ws[nw] = (c as u8, v76); nw += 1; }
+                                                    }
+                                                }
                                             }
                                         } else {
                                             v8 = rr!(&*s, (16i128 + (f4 + 0i128)));
@@ -9411,6 +11353,12 @@ pub fn h_3d(s: &mut St, f: &[i64; NF]) -> u32 {
                                                 }
                                                 v77 = match hload(&*s, v8, 8i128 as u32, false) { Some(x) => x, None => return 1 };
                                                 { let c = (f8) as usize; if c >= 96 { return 1; } ws[nw] = (c as u8, v77); nw += 1; }
+                                                if f8 <= 15i128 || (f8 >= 80i128 && f8 <= 95i128) || (f8 >= 96i128 && f8 <= 107i128) || (f8 >= 108i128 && f8 <= 109i128) || (f8 >= 110i128 && f8 <= 111i128) || (f8 >= 112i128 && f8 <= 113i128) || (f8 >= 114i128 && f8 <= 117i128) || (f8 >= 118i128 && f8 <= 121i128) || (f8 >= 122i128 && f8 <= 125i128) || f8 >= 126i128 {
+                                                } else {
+                                                    if (f8 >= 64i128) {
+                                                        { let c = (((f8 - 64i128) + 16i128)) as usize; if c >= 96 { return 1; } ws[nw] = (c as u8, v77); nw += 1; }
+                                                    }
+                                                }
                                                 v48 = match hpost(&*s, ((f4 + 0i128) + 16) as u32, v8, v37, 4i128 as i64) { Some(x) => x, None => return 1 };
                                                 { let c = ((16i128 + (f4 + 0i128))) as usize; if c >= 96 { return 1; } ws[nw] = (c as u8, v48); nw += 1; }
                                             } else {
@@ -9421,6 +11369,12 @@ pub fn h_3d(s: &mut St, f: &[i64; NF]) -> u32 {
                                                 }
                                                 v78 = match hload(&*s, v40, 8i128 as u32, false) { Some(x) => x, None => return 1 };
                                                 { let c = (f8) as usize; if c >= 96 { return 1; } ws[nw] = (c as u8, v78); nw += 1; }
+                                                if f8 <= 15i128 || (f8 >= 80i128 && f8 <= 95i128) || (f8 >= 96i128 && f8 <= 107i128) || (f8 >= 108i128 && f8 <= 109i128) || (f8 >= 110i128 && f8 <= 111i128) || (f8 >= 112i128 && f8 <= 113i128) || (f8 >= 114i128 && f8 <= 117i128) || (f8 >= 118i128 && f8 <= 121i128) || (f8 >= 122i128 && f8 <= 125i128) || f8 >= 126i128 {
+                                                } else {
+                                                    if (f8 >= 64i128) {
+                                                        { let c = (((f8 - 64i128) + 16i128)) as usize; if c >= 96 { return 1; } ws[nw] = (c as u8, v78); nw += 1; }
+                                                    }
+                                                }
                                             }
                                         }
                                     }
@@ -9741,6 +11695,11 @@ pub fn t_3d<S: RegRead>(s: &S, f: &[i64; NF], t: &mut Touch) -> bool {
                                                     return false;
                                                 }
                                                 t.wr((f8) as u32);
+                                                if (f8 >= 64i128) {
+                                                    if (f8 <= 79i128) {
+                                                        t.wr((((f8 - 64i128) + 16i128)) as u32);
+                                                    }
+                                                }
                                                 t.wr(((16i128 + (f4 + 8i128))) as u32);
                                             } else {
                                                 if (f0 == 31i128) {
@@ -9748,6 +11707,11 @@ pub fn t_3d<S: RegRead>(s: &S, f: &[i64; NF], t: &mut Touch) -> bool {
                                                     return false;
                                                 }
                                                 t.wr((f8) as u32);
+                                                if (f8 >= 64i128) {
+                                                    if (f8 <= 79i128) {
+                                                        t.wr((((f8 - 64i128) + 16i128)) as u32);
+                                                    }
+                                                }
                                             }
                                         } else {
                                             t.rd(((16i128 + (f4 + 0i128))) as u32);
@@ -9770,12 +11734,15 @@ pub fn t_3d<S: RegRead>(s: &S, f: &[i64; NF], t: &mut Touch) -> bool {
                                                         t.wr((f8) as u32);
                                                         t.wr(((16i128 + (f4 + 0i128))) as u32);
                                                     }
-                                                } else if (f8 >= 16i128 && f8 <= 79i128) || (f8 >= 96i128 && f8 <= 107i128) || (f8 >= 110i128 && f8 <= 111i128) || (f8 >= 114i128 && f8 <= 117i128) || (f8 >= 122i128 && f8 <= 125i128) {
+                                                } else if (f8 >= 16i128 && f8 <= 79i128) {
                                                     if (f0 == 31i128) {
                                                     } else {
                                                         return false;
                                                     }
                                                     t.wr((f8) as u32);
+                                                    if (f8 >= 64i128) {
+                                                        t.wr((((f8 - 64i128) + 16i128)) as u32);
+                                                    }
                                                     t.wr(((16i128 + (f4 + 0i128))) as u32);
                                                 } else if (f8 >= 80i128 && f8 <= 95i128) {
                                                     if (((rrt!(&*s, 114) as i128) & 2097152) != 0i128) {
@@ -9794,6 +11761,13 @@ pub fn t_3d<S: RegRead>(s: &S, f: &[i64; NF], t: &mut Touch) -> bool {
                                                         t.wr((f8) as u32);
                                                         t.wr(((16i128 + (f4 + 0i128))) as u32);
                                                     }
+                                                } else if (f8 >= 96i128 && f8 <= 107i128) || (f8 >= 110i128 && f8 <= 111i128) || (f8 >= 114i128 && f8 <= 117i128) || (f8 >= 122i128 && f8 <= 125i128) {
+                                                    if (f0 == 31i128) {
+                                                    } else {
+                                                        return false;
+                                                    }
+                                                    t.wr((f8) as u32);
+                                                    t.wr(((16i128 + (f4 + 0i128))) as u32);
                                                 } else {
                                                     if (((rrt!(&*s, 114) as i128) & 2097152) != 0i128) {
                                                         if (f0 == 31i128) {
@@ -9802,6 +11776,11 @@ pub fn t_3d<S: RegRead>(s: &S, f: &[i64; NF], t: &mut Touch) -> bool {
                                                         }
                                                         t.wr((f8) as u32);
                                                         t.wr(((f8 ^ 1i128)) as u32);
+                                                        if ((f8 ^ 1i128) >= 64i128) {
+                                                            if ((f8 ^ 1i128) <= 79i128) {
+                                                                t.wr(((((f8 ^ 1i128) - 64i128) + 16i128)) as u32);
+                                                            }
+                                                        }
                                                         t.wr(((16i128 + (f4 + 0i128))) as u32);
                                                     } else {
                                                         if (f0 == 31i128) {
@@ -9828,12 +11807,15 @@ pub fn t_3d<S: RegRead>(s: &S, f: &[i64; NF], t: &mut Touch) -> bool {
                                                         }
                                                         t.wr((f8) as u32);
                                                     }
-                                                } else if (f8 >= 16i128 && f8 <= 79i128) || (f8 >= 96i128 && f8 <= 107i128) || (f8 >= 110i128 && f8 <= 111i128) || (f8 >= 114i128 && f8 <= 117i128) || (f8 >= 122i128 && f8 <= 125i128) {
+                                                } else if (f8 >= 16i128 && f8 <= 79i128) {
                                                     if (f0 == 31i128) {
                                                     } else {
                                                         return false;
                                                     }
                                                     t.wr((f8) as u32);
+                                                    if (f8 >= 64i128) {
+                                                        t.wr((((f8 - 64i128) + 16i128)) as u32);
+                                                    }
                                                 } else if (f8 >= 80i128 && f8 <= 95i128) {
                                                     if (((rrt!(&*s, 114) as i128) & 2097152) != 0i128) {
                                                         if (f0 == 31i128) {
@@ -9849,6 +11831,12 @@ pub fn t_3d<S: RegRead>(s: &S, f: &[i64; NF], t: &mut Touch) -> bool {
                                                         }
                                                         t.wr((f8) as u32);
                                                     }
+                                                } else if (f8 >= 96i128 && f8 <= 107i128) || (f8 >= 110i128 && f8 <= 111i128) || (f8 >= 114i128 && f8 <= 117i128) || (f8 >= 122i128 && f8 <= 125i128) {
+                                                    if (f0 == 31i128) {
+                                                    } else {
+                                                        return false;
+                                                    }
+                                                    t.wr((f8) as u32);
                                                 } else {
                                                     if (((rrt!(&*s, 114) as i128) & 2097152) != 0i128) {
                                                         if (f0 == 31i128) {
@@ -9857,6 +11845,11 @@ pub fn t_3d<S: RegRead>(s: &S, f: &[i64; NF], t: &mut Touch) -> bool {
                                                         }
                                                         t.wr((f8) as u32);
                                                         t.wr(((f8 ^ 1i128)) as u32);
+                                                        if ((f8 ^ 1i128) >= 64i128) {
+                                                            if ((f8 ^ 1i128) <= 79i128) {
+                                                                t.wr(((((f8 ^ 1i128) - 64i128) + 16i128)) as u32);
+                                                            }
+                                                        }
                                                     } else {
                                                         if (f0 == 31i128) {
                                                         } else {
@@ -9890,6 +11883,11 @@ pub fn t_3d<S: RegRead>(s: &S, f: &[i64; NF], t: &mut Touch) -> bool {
                                                     return false;
                                                 }
                                                 t.wr((f8) as u32);
+                                                if (f8 >= 64i128) {
+                                                    if (f8 <= 79i128) {
+                                                        t.wr((((f8 - 64i128) + 16i128)) as u32);
+                                                    }
+                                                }
                                                 t.wr(((16i128 + (f4 + 8i128))) as u32);
                                             } else {
                                                 if (f0 == 31i128) {
@@ -9897,6 +11895,11 @@ pub fn t_3d<S: RegRead>(s: &S, f: &[i64; NF], t: &mut Touch) -> bool {
                                                     return false;
                                                 }
                                                 t.wr((f8) as u32);
+                                                if (f8 >= 64i128) {
+                                                    if (f8 <= 79i128) {
+                                                        t.wr((((f8 - 64i128) + 16i128)) as u32);
+                                                    }
+                                                }
                                             }
                                         } else {
                                             t.rd(((16i128 + (f4 + 0i128))) as u32);
@@ -9919,12 +11922,15 @@ pub fn t_3d<S: RegRead>(s: &S, f: &[i64; NF], t: &mut Touch) -> bool {
                                                         t.wr((f8) as u32);
                                                         t.wr(((16i128 + (f4 + 0i128))) as u32);
                                                     }
-                                                } else if (f8 >= 16i128 && f8 <= 79i128) || (f8 >= 96i128 && f8 <= 107i128) || (f8 >= 110i128 && f8 <= 111i128) || (f8 >= 114i128 && f8 <= 117i128) || (f8 >= 122i128 && f8 <= 125i128) {
+                                                } else if (f8 >= 16i128 && f8 <= 79i128) {
                                                     if (f0 == 31i128) {
                                                     } else {
                                                         return false;
                                                     }
                                                     t.wr((f8) as u32);
+                                                    if (f8 >= 64i128) {
+                                                        t.wr((((f8 - 64i128) + 16i128)) as u32);
+                                                    }
                                                     t.wr(((16i128 + (f4 + 0i128))) as u32);
                                                 } else if (f8 >= 80i128 && f8 <= 95i128) {
                                                     if (((rrt!(&*s, 114) as i128) & 2097152) != 0i128) {
@@ -9943,6 +11949,13 @@ pub fn t_3d<S: RegRead>(s: &S, f: &[i64; NF], t: &mut Touch) -> bool {
                                                         t.wr((f8) as u32);
                                                         t.wr(((16i128 + (f4 + 0i128))) as u32);
                                                     }
+                                                } else if (f8 >= 96i128 && f8 <= 107i128) || (f8 >= 110i128 && f8 <= 111i128) || (f8 >= 114i128 && f8 <= 117i128) || (f8 >= 122i128 && f8 <= 125i128) {
+                                                    if (f0 == 31i128) {
+                                                    } else {
+                                                        return false;
+                                                    }
+                                                    t.wr((f8) as u32);
+                                                    t.wr(((16i128 + (f4 + 0i128))) as u32);
                                                 } else {
                                                     if (((rrt!(&*s, 114) as i128) & 2097152) != 0i128) {
                                                         if (f0 == 31i128) {
@@ -9951,6 +11964,11 @@ pub fn t_3d<S: RegRead>(s: &S, f: &[i64; NF], t: &mut Touch) -> bool {
                                                         }
                                                         t.wr((f8) as u32);
                                                         t.wr(((f8 ^ 1i128)) as u32);
+                                                        if ((f8 ^ 1i128) >= 64i128) {
+                                                            if ((f8 ^ 1i128) <= 79i128) {
+                                                                t.wr(((((f8 ^ 1i128) - 64i128) + 16i128)) as u32);
+                                                            }
+                                                        }
                                                         t.wr(((16i128 + (f4 + 0i128))) as u32);
                                                     } else {
                                                         if (f0 == 31i128) {
@@ -9977,12 +11995,15 @@ pub fn t_3d<S: RegRead>(s: &S, f: &[i64; NF], t: &mut Touch) -> bool {
                                                         }
                                                         t.wr((f8) as u32);
                                                     }
-                                                } else if (f8 >= 16i128 && f8 <= 79i128) || (f8 >= 96i128 && f8 <= 107i128) || (f8 >= 110i128 && f8 <= 111i128) || (f8 >= 114i128 && f8 <= 117i128) || (f8 >= 122i128 && f8 <= 125i128) {
+                                                } else if (f8 >= 16i128 && f8 <= 79i128) {
                                                     if (f0 == 31i128) {
                                                     } else {
                                                         return false;
                                                     }
                                                     t.wr((f8) as u32);
+                                                    if (f8 >= 64i128) {
+                                                        t.wr((((f8 - 64i128) + 16i128)) as u32);
+                                                    }
                                                 } else if (f8 >= 80i128 && f8 <= 95i128) {
                                                     if (((rrt!(&*s, 114) as i128) & 2097152) != 0i128) {
                                                         if (f0 == 31i128) {
@@ -9998,6 +12019,12 @@ pub fn t_3d<S: RegRead>(s: &S, f: &[i64; NF], t: &mut Touch) -> bool {
                                                         }
                                                         t.wr((f8) as u32);
                                                     }
+                                                } else if (f8 >= 96i128 && f8 <= 107i128) || (f8 >= 110i128 && f8 <= 111i128) || (f8 >= 114i128 && f8 <= 117i128) || (f8 >= 122i128 && f8 <= 125i128) {
+                                                    if (f0 == 31i128) {
+                                                    } else {
+                                                        return false;
+                                                    }
+                                                    t.wr((f8) as u32);
                                                 } else {
                                                     if (((rrt!(&*s, 114) as i128) & 2097152) != 0i128) {
                                                         if (f0 == 31i128) {
@@ -10006,6 +12033,11 @@ pub fn t_3d<S: RegRead>(s: &S, f: &[i64; NF], t: &mut Touch) -> bool {
                                                         }
                                                         t.wr((f8) as u32);
                                                         t.wr(((f8 ^ 1i128)) as u32);
+                                                        if ((f8 ^ 1i128) >= 64i128) {
+                                                            if ((f8 ^ 1i128) <= 79i128) {
+                                                                t.wr(((((f8 ^ 1i128) - 64i128) + 16i128)) as u32);
+                                                            }
+                                                        }
                                                     } else {
                                                         if (f0 == 31i128) {
                                                         } else {
@@ -10219,6 +12251,11 @@ pub fn t_3d<S: RegRead>(s: &S, f: &[i64; NF], t: &mut Touch) -> bool {
                                                         t.rd(((16i128 + (f4 + 8i128))) as u32);
                                                         t.rd(((32i128 + (f6 + 8i128))) as u32);
                                                         t.wr((f8) as u32);
+                                                        if (f8 >= 64i128) {
+                                                            if (f8 <= 79i128) {
+                                                                t.wr((((f8 - 64i128) + 16i128)) as u32);
+                                                            }
+                                                        }
                                                         t.wr(((16i128 + (f4 + 8i128))) as u32);
                                                     }
                                                 } else {
@@ -10229,6 +12266,11 @@ pub fn t_3d<S: RegRead>(s: &S, f: &[i64; NF], t: &mut Touch) -> bool {
                                                         t.rd(((32i128 + (f6 + 8i128))) as u32);
                                                         return false;
                                                         t.wr((f8) as u32);
+                                                        if (f8 >= 64i128) {
+                                                            if (f8 <= 79i128) {
+                                                                t.wr((((f8 - 64i128) + 16i128)) as u32);
+                                                            }
+                                                        }
                                                         t.wr(((16i128 + (f4 + 8i128))) as u32);
                                                     }
                                                 }
@@ -10240,6 +12282,11 @@ pub fn t_3d<S: RegRead>(s: &S, f: &[i64; NF], t: &mut Touch) -> bool {
                                                         t.rd(((16i128 + (f4 + 8i128))) as u32);
                                                         t.rd(((32i128 + (f6 + 8i128))) as u32);
                                                         t.wr((f8) as u32);
+                                                        if (f8 >= 64i128) {
+                                                            if (f8 <= 79i128) {
+                                                                t.wr((((f8 - 64i128) + 16i128)) as u32);
+                                                            }
+                                                        }
                                                     }
                                                 } else {
                                                     if (f8 == 107i128) {
@@ -10249,6 +12296,11 @@ pub fn t_3d<S: RegRead>(s: &S, f: &[i64; NF], t: &mut Touch) -> bool {
                                                         t.rd(((32i128 + (f6 + 8i128))) as u32);
                                                         return false;
                                                         t.wr((f8) as u32);
+                                                        if (f8 >= 64i128) {
+                                                            if (f8 <= 79i128) {
+                                                                t.wr((((f8 - 64i128) + 16i128)) as u32);
+                                                            }
+                                                        }
                                                     }
                                                 }
                                             }
@@ -10273,7 +12325,7 @@ pub fn t_3d<S: RegRead>(s: &S, f: &[i64; NF], t: &mut Touch) -> bool {
                                                         t.wr((f8) as u32);
                                                         t.wr(((16i128 + (f4 + 0i128))) as u32);
                                                     }
-                                                } else if (f8 >= 16i128 && f8 <= 79i128) || (f8 >= 110i128 && f8 <= 111i128) || (f8 >= 114i128 && f8 <= 117i128) || (f8 >= 122i128 && f8 <= 125i128) {
+                                                } else if (f8 >= 16i128 && f8 <= 79i128) {
                                                     t.rd(((16i128 + (f4 + 0i128))) as u32);
                                                     t.rd(((32i128 + (f6 + 0i128))) as u32);
                                                     if (f0 == 31i128) {
@@ -10281,6 +12333,9 @@ pub fn t_3d<S: RegRead>(s: &S, f: &[i64; NF], t: &mut Touch) -> bool {
                                                         return false;
                                                     }
                                                     t.wr((f8) as u32);
+                                                    if (f8 >= 64i128) {
+                                                        t.wr((((f8 - 64i128) + 16i128)) as u32);
+                                                    }
                                                     t.wr(((16i128 + (f4 + 0i128))) as u32);
                                                 } else if (f8 >= 80i128 && f8 <= 95i128) {
                                                     t.rd(((16i128 + (f4 + 0i128))) as u32);
@@ -10322,7 +12377,7 @@ pub fn t_3d<S: RegRead>(s: &S, f: &[i64; NF], t: &mut Touch) -> bool {
                                                             t.wr(((16i128 + (f4 + 0i128))) as u32);
                                                         }
                                                     }
-                                                } else {
+                                                } else if (f8 >= 108i128 && f8 <= 109i128) || (f8 >= 112i128 && f8 <= 113i128) || (f8 >= 118i128 && f8 <= 121i128) || f8 >= 126i128 {
                                                     if (((rrt!(&*s, 114) as i128) & 2097152) != 0i128) {
                                                         if (f0 == 31i128) {
                                                             if ((f8 ^ 1i128) == 107i128) {
@@ -10332,6 +12387,11 @@ pub fn t_3d<S: RegRead>(s: &S, f: &[i64; NF], t: &mut Touch) -> bool {
                                                                 t.rd(((32i128 + (f6 + 0i128))) as u32);
                                                                 t.wr((f8) as u32);
                                                                 t.wr(((f8 ^ 1i128)) as u32);
+                                                                if ((f8 ^ 1i128) >= 64i128) {
+                                                                    if ((f8 ^ 1i128) <= 79i128) {
+                                                                        t.wr(((((f8 ^ 1i128) - 64i128) + 16i128)) as u32);
+                                                                    }
+                                                                }
                                                                 t.wr(((16i128 + (f4 + 0i128))) as u32);
                                                             }
                                                         } else {
@@ -10343,6 +12403,11 @@ pub fn t_3d<S: RegRead>(s: &S, f: &[i64; NF], t: &mut Touch) -> bool {
                                                                 return false;
                                                                 t.wr((f8) as u32);
                                                                 t.wr(((f8 ^ 1i128)) as u32);
+                                                                if ((f8 ^ 1i128) >= 64i128) {
+                                                                    if ((f8 ^ 1i128) <= 79i128) {
+                                                                        t.wr(((((f8 ^ 1i128) - 64i128) + 16i128)) as u32);
+                                                                    }
+                                                                }
                                                                 t.wr(((16i128 + (f4 + 0i128))) as u32);
                                                             }
                                                         }
@@ -10356,6 +12421,15 @@ pub fn t_3d<S: RegRead>(s: &S, f: &[i64; NF], t: &mut Touch) -> bool {
                                                         t.wr((f8) as u32);
                                                         t.wr(((16i128 + (f4 + 0i128))) as u32);
                                                     }
+                                                } else {
+                                                    t.rd(((16i128 + (f4 + 0i128))) as u32);
+                                                    t.rd(((32i128 + (f6 + 0i128))) as u32);
+                                                    if (f0 == 31i128) {
+                                                    } else {
+                                                        return false;
+                                                    }
+                                                    t.wr((f8) as u32);
+                                                    t.wr(((16i128 + (f4 + 0i128))) as u32);
                                                 }
                                             } else {
                                                 if f8 <= 15i128 {
@@ -10375,7 +12449,7 @@ pub fn t_3d<S: RegRead>(s: &S, f: &[i64; NF], t: &mut Touch) -> bool {
                                                         }
                                                         t.wr((f8) as u32);
                                                     }
-                                                } else if (f8 >= 16i128 && f8 <= 79i128) || (f8 >= 110i128 && f8 <= 111i128) || (f8 >= 114i128 && f8 <= 117i128) || (f8 >= 122i128 && f8 <= 125i128) {
+                                                } else if (f8 >= 16i128 && f8 <= 79i128) {
                                                     t.rd(((16i128 + (f4 + 0i128))) as u32);
                                                     t.rd(((32i128 + (f6 + 0i128))) as u32);
                                                     if (f0 == 31i128) {
@@ -10383,6 +12457,9 @@ pub fn t_3d<S: RegRead>(s: &S, f: &[i64; NF], t: &mut Touch) -> bool {
                                                         return false;
                                                     }
                                                     t.wr((f8) as u32);
+                                                    if (f8 >= 64i128) {
+                                                        t.wr((((f8 - 64i128) + 16i128)) as u32);
+                                                    }
                                                 } else if (f8 >= 80i128 && f8 <= 95i128) {
                                                     t.rd(((16i128 + (f4 + 0i128))) as u32);
                                                     t.rd(((32i128 + (f6 + 0i128))) as u32);
@@ -10419,7 +12496,7 @@ pub fn t_3d<S: RegRead>(s: &S, f: &[i64; NF], t: &mut Touch) -> bool {
                                                             t.wr((f8) as u32);
                                                         }
                                                     }
-                                                } else {
+                                                } else if (f8 >= 108i128 && f8 <= 109i128) || (f8 >= 112i128 && f8 <= 113i128) || (f8 >= 118i128 && f8 <= 121i128) || f8 >= 126i128 {
                                                     if (((rrt!(&*s, 114) as i128) & 2097152) != 0i128) {
                                                         if (f0 == 31i128) {
                                                             if ((f8 ^ 1i128) == 107i128) {
@@ -10429,6 +12506,11 @@ pub fn t_3d<S: RegRead>(s: &S, f: &[i64; NF], t: &mut Touch) -> bool {
                                                                 t.rd(((32i128 + (f6 + 0i128))) as u32);
                                                                 t.wr((f8) as u32);
                                                                 t.wr(((f8 ^ 1i128)) as u32);
+                                                                if ((f8 ^ 1i128) >= 64i128) {
+                                                                    if ((f8 ^ 1i128) <= 79i128) {
+                                                                        t.wr(((((f8 ^ 1i128) - 64i128) + 16i128)) as u32);
+                                                                    }
+                                                                }
                                                             }
                                                         } else {
                                                             if ((f8 ^ 1i128) == 107i128) {
@@ -10439,6 +12521,11 @@ pub fn t_3d<S: RegRead>(s: &S, f: &[i64; NF], t: &mut Touch) -> bool {
                                                                 return false;
                                                                 t.wr((f8) as u32);
                                                                 t.wr(((f8 ^ 1i128)) as u32);
+                                                                if ((f8 ^ 1i128) >= 64i128) {
+                                                                    if ((f8 ^ 1i128) <= 79i128) {
+                                                                        t.wr(((((f8 ^ 1i128) - 64i128) + 16i128)) as u32);
+                                                                    }
+                                                                }
                                                             }
                                                         }
                                                     } else {
@@ -10450,6 +12537,14 @@ pub fn t_3d<S: RegRead>(s: &S, f: &[i64; NF], t: &mut Touch) -> bool {
                                                         }
                                                         t.wr((f8) as u32);
                                                     }
+                                                } else {
+                                                    t.rd(((16i128 + (f4 + 0i128))) as u32);
+                                                    t.rd(((32i128 + (f6 + 0i128))) as u32);
+                                                    if (f0 == 31i128) {
+                                                    } else {
+                                                        return false;
+                                                    }
+                                                    t.wr((f8) as u32);
                                                 }
                                             }
                                         }
@@ -10666,6 +12761,11 @@ pub fn t_3d<S: RegRead>(s: &S, f: &[i64; NF], t: &mut Touch) -> bool {
                                                     return false;
                                                 }
                                                 t.wr((f8) as u32);
+                                                if (f8 >= 64i128) {
+                                                    if (f8 <= 79i128) {
+                                                        t.wr((((f8 - 64i128) + 16i128)) as u32);
+                                                    }
+                                                }
                                                 t.wr(((16i128 + (f4 + 8i128))) as u32);
                                             } else {
                                                 if (f0 == 31i128) {
@@ -10673,6 +12773,11 @@ pub fn t_3d<S: RegRead>(s: &S, f: &[i64; NF], t: &mut Touch) -> bool {
                                                     return false;
                                                 }
                                                 t.wr((f8) as u32);
+                                                if (f8 >= 64i128) {
+                                                    if (f8 <= 79i128) {
+                                                        t.wr((((f8 - 64i128) + 16i128)) as u32);
+                                                    }
+                                                }
                                             }
                                         } else {
                                             t.rd(((16i128 + (f4 + 0i128))) as u32);
@@ -10695,12 +12800,15 @@ pub fn t_3d<S: RegRead>(s: &S, f: &[i64; NF], t: &mut Touch) -> bool {
                                                         t.wr((f8) as u32);
                                                         t.wr(((16i128 + (f4 + 0i128))) as u32);
                                                     }
-                                                } else if (f8 >= 16i128 && f8 <= 79i128) || (f8 >= 96i128 && f8 <= 107i128) || (f8 >= 110i128 && f8 <= 111i128) || (f8 >= 114i128 && f8 <= 117i128) || (f8 >= 122i128 && f8 <= 125i128) {
+                                                } else if (f8 >= 16i128 && f8 <= 79i128) {
                                                     if (f0 == 31i128) {
                                                     } else {
                                                         return false;
                                                     }
                                                     t.wr((f8) as u32);
+                                                    if (f8 >= 64i128) {
+                                                        t.wr((((f8 - 64i128) + 16i128)) as u32);
+                                                    }
                                                     t.wr(((16i128 + (f4 + 0i128))) as u32);
                                                 } else if (f8 >= 80i128 && f8 <= 95i128) {
                                                     if (((rrt!(&*s, 114) as i128) & 2097152) != 0i128) {
@@ -10719,6 +12827,13 @@ pub fn t_3d<S: RegRead>(s: &S, f: &[i64; NF], t: &mut Touch) -> bool {
                                                         t.wr((f8) as u32);
                                                         t.wr(((16i128 + (f4 + 0i128))) as u32);
                                                     }
+                                                } else if (f8 >= 96i128 && f8 <= 107i128) || (f8 >= 110i128 && f8 <= 111i128) || (f8 >= 114i128 && f8 <= 117i128) || (f8 >= 122i128 && f8 <= 125i128) {
+                                                    if (f0 == 31i128) {
+                                                    } else {
+                                                        return false;
+                                                    }
+                                                    t.wr((f8) as u32);
+                                                    t.wr(((16i128 + (f4 + 0i128))) as u32);
                                                 } else {
                                                     if (((rrt!(&*s, 114) as i128) & 2097152) != 0i128) {
                                                         if (f0 == 31i128) {
@@ -10727,6 +12842,11 @@ pub fn t_3d<S: RegRead>(s: &S, f: &[i64; NF], t: &mut Touch) -> bool {
                                                         }
                                                         t.wr((f8) as u32);
                                                         t.wr(((f8 ^ 1i128)) as u32);
+                                                        if ((f8 ^ 1i128) >= 64i128) {
+                                                            if ((f8 ^ 1i128) <= 79i128) {
+                                                                t.wr(((((f8 ^ 1i128) - 64i128) + 16i128)) as u32);
+                                                            }
+                                                        }
                                                         t.wr(((16i128 + (f4 + 0i128))) as u32);
                                                     } else {
                                                         if (f0 == 31i128) {
@@ -10753,12 +12873,15 @@ pub fn t_3d<S: RegRead>(s: &S, f: &[i64; NF], t: &mut Touch) -> bool {
                                                         }
                                                         t.wr((f8) as u32);
                                                     }
-                                                } else if (f8 >= 16i128 && f8 <= 79i128) || (f8 >= 96i128 && f8 <= 107i128) || (f8 >= 110i128 && f8 <= 111i128) || (f8 >= 114i128 && f8 <= 117i128) || (f8 >= 122i128 && f8 <= 125i128) {
+                                                } else if (f8 >= 16i128 && f8 <= 79i128) {
                                                     if (f0 == 31i128) {
                                                     } else {
                                                         return false;
                                                     }
                                                     t.wr((f8) as u32);
+                                                    if (f8 >= 64i128) {
+                                                        t.wr((((f8 - 64i128) + 16i128)) as u32);
+                                                    }
                                                 } else if (f8 >= 80i128 && f8 <= 95i128) {
                                                     if (((rrt!(&*s, 114) as i128) & 2097152) != 0i128) {
                                                         if (f0 == 31i128) {
@@ -10774,6 +12897,12 @@ pub fn t_3d<S: RegRead>(s: &S, f: &[i64; NF], t: &mut Touch) -> bool {
                                                         }
                                                         t.wr((f8) as u32);
                                                     }
+                                                } else if (f8 >= 96i128 && f8 <= 107i128) || (f8 >= 110i128 && f8 <= 111i128) || (f8 >= 114i128 && f8 <= 117i128) || (f8 >= 122i128 && f8 <= 125i128) {
+                                                    if (f0 == 31i128) {
+                                                    } else {
+                                                        return false;
+                                                    }
+                                                    t.wr((f8) as u32);
                                                 } else {
                                                     if (((rrt!(&*s, 114) as i128) & 2097152) != 0i128) {
                                                         if (f0 == 31i128) {
@@ -10782,6 +12911,11 @@ pub fn t_3d<S: RegRead>(s: &S, f: &[i64; NF], t: &mut Touch) -> bool {
                                                         }
                                                         t.wr((f8) as u32);
                                                         t.wr(((f8 ^ 1i128)) as u32);
+                                                        if ((f8 ^ 1i128) >= 64i128) {
+                                                            if ((f8 ^ 1i128) <= 79i128) {
+                                                                t.wr(((((f8 ^ 1i128) - 64i128) + 16i128)) as u32);
+                                                            }
+                                                        }
                                                     } else {
                                                         if (f0 == 31i128) {
                                                         } else {
@@ -10815,6 +12949,11 @@ pub fn t_3d<S: RegRead>(s: &S, f: &[i64; NF], t: &mut Touch) -> bool {
                                                     return false;
                                                 }
                                                 t.wr((f8) as u32);
+                                                if (f8 >= 64i128) {
+                                                    if (f8 <= 79i128) {
+                                                        t.wr((((f8 - 64i128) + 16i128)) as u32);
+                                                    }
+                                                }
                                                 t.wr(((16i128 + (f4 + 8i128))) as u32);
                                             } else {
                                                 if (f0 == 31i128) {
@@ -10822,6 +12961,11 @@ pub fn t_3d<S: RegRead>(s: &S, f: &[i64; NF], t: &mut Touch) -> bool {
                                                     return false;
                                                 }
                                                 t.wr((f8) as u32);
+                                                if (f8 >= 64i128) {
+                                                    if (f8 <= 79i128) {
+                                                        t.wr((((f8 - 64i128) + 16i128)) as u32);
+                                                    }
+                                                }
                                             }
                                         } else {
                                             t.rd(((16i128 + (f4 + 0i128))) as u32);
@@ -10844,12 +12988,15 @@ pub fn t_3d<S: RegRead>(s: &S, f: &[i64; NF], t: &mut Touch) -> bool {
                                                         t.wr((f8) as u32);
                                                         t.wr(((16i128 + (f4 + 0i128))) as u32);
                                                     }
-                                                } else if (f8 >= 16i128 && f8 <= 79i128) || (f8 >= 96i128 && f8 <= 107i128) || (f8 >= 110i128 && f8 <= 111i128) || (f8 >= 114i128 && f8 <= 117i128) || (f8 >= 122i128 && f8 <= 125i128) {
+                                                } else if (f8 >= 16i128 && f8 <= 79i128) {
                                                     if (f0 == 31i128) {
                                                     } else {
                                                         return false;
                                                     }
                                                     t.wr((f8) as u32);
+                                                    if (f8 >= 64i128) {
+                                                        t.wr((((f8 - 64i128) + 16i128)) as u32);
+                                                    }
                                                     t.wr(((16i128 + (f4 + 0i128))) as u32);
                                                 } else if (f8 >= 80i128 && f8 <= 95i128) {
                                                     if (((rrt!(&*s, 114) as i128) & 2097152) != 0i128) {
@@ -10868,6 +13015,13 @@ pub fn t_3d<S: RegRead>(s: &S, f: &[i64; NF], t: &mut Touch) -> bool {
                                                         t.wr((f8) as u32);
                                                         t.wr(((16i128 + (f4 + 0i128))) as u32);
                                                     }
+                                                } else if (f8 >= 96i128 && f8 <= 107i128) || (f8 >= 110i128 && f8 <= 111i128) || (f8 >= 114i128 && f8 <= 117i128) || (f8 >= 122i128 && f8 <= 125i128) {
+                                                    if (f0 == 31i128) {
+                                                    } else {
+                                                        return false;
+                                                    }
+                                                    t.wr((f8) as u32);
+                                                    t.wr(((16i128 + (f4 + 0i128))) as u32);
                                                 } else {
                                                     if (((rrt!(&*s, 114) as i128) & 2097152) != 0i128) {
                                                         if (f0 == 31i128) {
@@ -10876,6 +13030,11 @@ pub fn t_3d<S: RegRead>(s: &S, f: &[i64; NF], t: &mut Touch) -> bool {
                                                         }
                                                         t.wr((f8) as u32);
                                                         t.wr(((f8 ^ 1i128)) as u32);
+                                                        if ((f8 ^ 1i128) >= 64i128) {
+                                                            if ((f8 ^ 1i128) <= 79i128) {
+                                                                t.wr(((((f8 ^ 1i128) - 64i128) + 16i128)) as u32);
+                                                            }
+                                                        }
                                                         t.wr(((16i128 + (f4 + 0i128))) as u32);
                                                     } else {
                                                         if (f0 == 31i128) {
@@ -10902,12 +13061,15 @@ pub fn t_3d<S: RegRead>(s: &S, f: &[i64; NF], t: &mut Touch) -> bool {
                                                         }
                                                         t.wr((f8) as u32);
                                                     }
-                                                } else if (f8 >= 16i128 && f8 <= 79i128) || (f8 >= 96i128 && f8 <= 107i128) || (f8 >= 110i128 && f8 <= 111i128) || (f8 >= 114i128 && f8 <= 117i128) || (f8 >= 122i128 && f8 <= 125i128) {
+                                                } else if (f8 >= 16i128 && f8 <= 79i128) {
                                                     if (f0 == 31i128) {
                                                     } else {
                                                         return false;
                                                     }
                                                     t.wr((f8) as u32);
+                                                    if (f8 >= 64i128) {
+                                                        t.wr((((f8 - 64i128) + 16i128)) as u32);
+                                                    }
                                                 } else if (f8 >= 80i128 && f8 <= 95i128) {
                                                     if (((rrt!(&*s, 114) as i128) & 2097152) != 0i128) {
                                                         if (f0 == 31i128) {
@@ -10923,6 +13085,12 @@ pub fn t_3d<S: RegRead>(s: &S, f: &[i64; NF], t: &mut Touch) -> bool {
                                                         }
                                                         t.wr((f8) as u32);
                                                     }
+                                                } else if (f8 >= 96i128 && f8 <= 107i128) || (f8 >= 110i128 && f8 <= 111i128) || (f8 >= 114i128 && f8 <= 117i128) || (f8 >= 122i128 && f8 <= 125i128) {
+                                                    if (f0 == 31i128) {
+                                                    } else {
+                                                        return false;
+                                                    }
+                                                    t.wr((f8) as u32);
                                                 } else {
                                                     if (((rrt!(&*s, 114) as i128) & 2097152) != 0i128) {
                                                         if (f0 == 31i128) {
@@ -10931,6 +13099,11 @@ pub fn t_3d<S: RegRead>(s: &S, f: &[i64; NF], t: &mut Touch) -> bool {
                                                         }
                                                         t.wr((f8) as u32);
                                                         t.wr(((f8 ^ 1i128)) as u32);
+                                                        if ((f8 ^ 1i128) >= 64i128) {
+                                                            if ((f8 ^ 1i128) <= 79i128) {
+                                                                t.wr(((((f8 ^ 1i128) - 64i128) + 16i128)) as u32);
+                                                            }
+                                                        }
                                                     } else {
                                                         if (f0 == 31i128) {
                                                         } else {
@@ -10990,6 +13163,11 @@ pub fn t_3d<S: RegRead>(s: &S, f: &[i64; NF], t: &mut Touch) -> bool {
                                                     return false;
                                                 }
                                                 t.wr((f8) as u32);
+                                                if (f8 >= 64i128) {
+                                                    if (f8 <= 79i128) {
+                                                        t.wr((((f8 - 64i128) + 16i128)) as u32);
+                                                    }
+                                                }
                                                 t.wr(((16i128 + (f4 + 8i128))) as u32);
                                             } else {
                                                 if (f0 == 31i128) {
@@ -10997,6 +13175,11 @@ pub fn t_3d<S: RegRead>(s: &S, f: &[i64; NF], t: &mut Touch) -> bool {
                                                     return false;
                                                 }
                                                 t.wr((f8) as u32);
+                                                if (f8 >= 64i128) {
+                                                    if (f8 <= 79i128) {
+                                                        t.wr((((f8 - 64i128) + 16i128)) as u32);
+                                                    }
+                                                }
                                             }
                                         } else {
                                             t.rd(((16i128 + (f4 + 0i128))) as u32);
@@ -11007,6 +13190,12 @@ pub fn t_3d<S: RegRead>(s: &S, f: &[i64; NF], t: &mut Touch) -> bool {
                                                     return false;
                                                 }
                                                 t.wr((f8) as u32);
+                                                if f8 <= 15i128 || (f8 >= 80i128 && f8 <= 95i128) || (f8 >= 96i128 && f8 <= 107i128) || (f8 >= 108i128 && f8 <= 109i128) || (f8 >= 110i128 && f8 <= 111i128) || (f8 >= 112i128 && f8 <= 113i128) || (f8 >= 114i128 && f8 <= 117i128) || (f8 >= 118i128 && f8 <= 121i128) || (f8 >= 122i128 && f8 <= 125i128) || f8 >= 126i128 {
+                                                } else {
+                                                    if (f8 >= 64i128) {
+                                                        t.wr((((f8 - 64i128) + 16i128)) as u32);
+                                                    }
+                                                }
                                                 t.wr(((16i128 + (f4 + 0i128))) as u32);
                                             } else {
                                                 if (f0 == 31i128) {
@@ -11014,6 +13203,12 @@ pub fn t_3d<S: RegRead>(s: &S, f: &[i64; NF], t: &mut Touch) -> bool {
                                                     return false;
                                                 }
                                                 t.wr((f8) as u32);
+                                                if f8 <= 15i128 || (f8 >= 80i128 && f8 <= 95i128) || (f8 >= 96i128 && f8 <= 107i128) || (f8 >= 108i128 && f8 <= 109i128) || (f8 >= 110i128 && f8 <= 111i128) || (f8 >= 112i128 && f8 <= 113i128) || (f8 >= 114i128 && f8 <= 117i128) || (f8 >= 118i128 && f8 <= 121i128) || (f8 >= 122i128 && f8 <= 125i128) || f8 >= 126i128 {
+                                                } else {
+                                                    if (f8 >= 64i128) {
+                                                        t.wr((((f8 - 64i128) + 16i128)) as u32);
+                                                    }
+                                                }
                                             }
                                         }
                                     }
@@ -12174,12 +14369,12 @@ pub fn h_4b(s: &mut St, f: &[i64; NF]) -> u32 {
                             if (f1 != 0i128) {
                                 if (f5 != 0i128) {
                                     v0 = rr!(&*s, (16i128 + (f6 + 8i128)));
-                                    if (f0 == 31i128) {
-                                    } else {
-                                        return 1;
-                                    }
                                     if (((((f3) << (5i128 as u32)) | f2) & 32i128) != 0i128) {
                                         if (f8 != 0i128) {
+                                            if (f0 == 31i128) {
+                                            } else {
+                                                return 1;
+                                            }
                                             v2 = rr!(&*s, f4);
                                             st[nst] = (v0, v2, 1i128 as u8); nst += 1;
                                             v3 = (((((((f3) << (5i128 as u32)) | f2) - 64i128) * 1i128) & 4294967295i128)) as u32;
@@ -12188,11 +14383,19 @@ pub fn h_4b(s: &mut St, f: &[i64; NF]) -> u32 {
                                         } else {
                                             v3 = (((((((f3) << (5i128 as u32)) | f2) - 64i128) * 1i128) & 4294967295i128)) as u32;
                                             v5 = v0.wrapping_add(v3);
+                                            if (f0 == 31i128) {
+                                            } else {
+                                                return 1;
+                                            }
                                             v2 = rr!(&*s, f4);
                                             st[nst] = (v5, v2, 1i128 as u8); nst += 1;
                                         }
                                     } else {
                                         if (f8 != 0i128) {
+                                            if (f0 == 31i128) {
+                                            } else {
+                                                return 1;
+                                            }
                                             v2 = rr!(&*s, f4);
                                             st[nst] = (v0, v2, 1i128 as u8); nst += 1;
                                             v6 = ((((((f3) << (5i128 as u32)) | f2) * 1i128) & 4294967295i128)) as u32;
@@ -12201,6 +14404,10 @@ pub fn h_4b(s: &mut St, f: &[i64; NF]) -> u32 {
                                         } else {
                                             v6 = ((((((f3) << (5i128 as u32)) | f2) * 1i128) & 4294967295i128)) as u32;
                                             v8 = v0.wrapping_add(v6);
+                                            if (f0 == 31i128) {
+                                            } else {
+                                                return 1;
+                                            }
                                             v2 = rr!(&*s, f4);
                                             st[nst] = (v8, v2, 1i128 as u8); nst += 1;
                                         }
@@ -12306,12 +14513,12 @@ pub fn h_4b(s: &mut St, f: &[i64; NF]) -> u32 {
                             } else {
                                 if (f5 != 0i128) {
                                     v0 = rr!(&*s, (16i128 + (f6 + 8i128)));
-                                    if (f0 == 31i128) {
-                                    } else {
-                                        return 1;
-                                    }
                                     if (((((f3) << (5i128 as u32)) | f2) & 32i128) != 0i128) {
                                         if (f8 != 0i128) {
+                                            if (f0 == 31i128) {
+                                            } else {
+                                                return 1;
+                                            }
                                             v19 = match hload(&*s, v0, 1i128 as u32, false) { Some(x) => x, None => return 1 };
                                             { let c = (f4) as usize; if c >= 96 { return 1; } ws[nw] = (c as u8, v19); nw += 1; }
                                             v3 = (((((((f3) << (5i128 as u32)) | f2) - 64i128) * 1i128) & 4294967295i128)) as u32;
@@ -12320,11 +14527,19 @@ pub fn h_4b(s: &mut St, f: &[i64; NF]) -> u32 {
                                         } else {
                                             v3 = (((((((f3) << (5i128 as u32)) | f2) - 64i128) * 1i128) & 4294967295i128)) as u32;
                                             v5 = v0.wrapping_add(v3);
+                                            if (f0 == 31i128) {
+                                            } else {
+                                                return 1;
+                                            }
                                             v21 = match hload(&*s, v5, 1i128 as u32, false) { Some(x) => x, None => return 1 };
                                             { let c = (f4) as usize; if c >= 96 { return 1; } ws[nw] = (c as u8, v21); nw += 1; }
                                         }
                                     } else {
                                         if (f8 != 0i128) {
+                                            if (f0 == 31i128) {
+                                            } else {
+                                                return 1;
+                                            }
                                             v19 = match hload(&*s, v0, 1i128 as u32, false) { Some(x) => x, None => return 1 };
                                             { let c = (f4) as usize; if c >= 96 { return 1; } ws[nw] = (c as u8, v19); nw += 1; }
                                             v6 = ((((((f3) << (5i128 as u32)) | f2) * 1i128) & 4294967295i128)) as u32;
@@ -12333,6 +14548,10 @@ pub fn h_4b(s: &mut St, f: &[i64; NF]) -> u32 {
                                         } else {
                                             v6 = ((((((f3) << (5i128 as u32)) | f2) * 1i128) & 4294967295i128)) as u32;
                                             v8 = v0.wrapping_add(v6);
+                                            if (f0 == 31i128) {
+                                            } else {
+                                                return 1;
+                                            }
                                             v23 = match hload(&*s, v8, 1i128 as u32, false) { Some(x) => x, None => return 1 };
                                             { let c = (f4) as usize; if c >= 96 { return 1; } ws[nw] = (c as u8, v23); nw += 1; }
                                         }
@@ -12457,12 +14676,12 @@ pub fn h_4b(s: &mut St, f: &[i64; NF]) -> u32 {
                             } else {
                                 if (f5 != 0i128) {
                                     v0 = rr!(&*s, (16i128 + (f6 + 8i128)));
-                                    if (f0 == 31i128) {
-                                    } else {
-                                        return 1;
-                                    }
                                     if (((((f3) << (5i128 as u32)) | f2) & 32i128) != 0i128) {
                                         if (f8 != 0i128) {
+                                            if (f0 == 31i128) {
+                                            } else {
+                                                return 1;
+                                            }
                                             v34 = match hload(&*s, v0, 1i128 as u32, true) { Some(x) => x, None => return 1 };
                                             { let c = (f4) as usize; if c >= 96 { return 1; } ws[nw] = (c as u8, v34); nw += 1; }
                                             v3 = (((((((f3) << (5i128 as u32)) | f2) - 64i128) * 1i128) & 4294967295i128)) as u32;
@@ -12471,11 +14690,19 @@ pub fn h_4b(s: &mut St, f: &[i64; NF]) -> u32 {
                                         } else {
                                             v3 = (((((((f3) << (5i128 as u32)) | f2) - 64i128) * 1i128) & 4294967295i128)) as u32;
                                             v5 = v0.wrapping_add(v3);
+                                            if (f0 == 31i128) {
+                                            } else {
+                                                return 1;
+                                            }
                                             v35 = match hload(&*s, v5, 1i128 as u32, true) { Some(x) => x, None => return 1 };
                                             { let c = (f4) as usize; if c >= 96 { return 1; } ws[nw] = (c as u8, v35); nw += 1; }
                                         }
                                     } else {
                                         if (f8 != 0i128) {
+                                            if (f0 == 31i128) {
+                                            } else {
+                                                return 1;
+                                            }
                                             v34 = match hload(&*s, v0, 1i128 as u32, true) { Some(x) => x, None => return 1 };
                                             { let c = (f4) as usize; if c >= 96 { return 1; } ws[nw] = (c as u8, v34); nw += 1; }
                                             v6 = ((((((f3) << (5i128 as u32)) | f2) * 1i128) & 4294967295i128)) as u32;
@@ -12484,6 +14711,10 @@ pub fn h_4b(s: &mut St, f: &[i64; NF]) -> u32 {
                                         } else {
                                             v6 = ((((((f3) << (5i128 as u32)) | f2) * 1i128) & 4294967295i128)) as u32;
                                             v8 = v0.wrapping_add(v6);
+                                            if (f0 == 31i128) {
+                                            } else {
+                                                return 1;
+                                            }
                                             v36 = match hload(&*s, v8, 1i128 as u32, true) { Some(x) => x, None => return 1 };
                                             { let c = (f4) as usize; if c >= 96 { return 1; } ws[nw] = (c as u8, v36); nw += 1; }
                                         }
@@ -12611,12 +14842,12 @@ pub fn h_4b(s: &mut St, f: &[i64; NF]) -> u32 {
                             if (f1 != 0i128) {
                                 if (f5 != 0i128) {
                                     v0 = rr!(&*s, (16i128 + (f6 + 8i128)));
-                                    if (f0 == 31i128) {
-                                    } else {
-                                        return 1;
-                                    }
                                     if (((((f3) << (5i128 as u32)) | f2) & 32i128) != 0i128) {
                                         if (f8 != 0i128) {
+                                            if (f0 == 31i128) {
+                                            } else {
+                                                return 1;
+                                            }
                                             v2 = rr!(&*s, f4);
                                             st[nst] = (v0, v2, 2i128 as u8); nst += 1;
                                             v43 = (((((((f3) << (5i128 as u32)) | f2) - 64i128) * 2i128) & 4294967295i128)) as u32;
@@ -12625,11 +14856,19 @@ pub fn h_4b(s: &mut St, f: &[i64; NF]) -> u32 {
                                         } else {
                                             v43 = (((((((f3) << (5i128 as u32)) | f2) - 64i128) * 2i128) & 4294967295i128)) as u32;
                                             v45 = v0.wrapping_add(v43);
+                                            if (f0 == 31i128) {
+                                            } else {
+                                                return 1;
+                                            }
                                             v2 = rr!(&*s, f4);
                                             st[nst] = (v45, v2, 2i128 as u8); nst += 1;
                                         }
                                     } else {
                                         if (f8 != 0i128) {
+                                            if (f0 == 31i128) {
+                                            } else {
+                                                return 1;
+                                            }
                                             v2 = rr!(&*s, f4);
                                             st[nst] = (v0, v2, 2i128 as u8); nst += 1;
                                             v46 = ((((((f3) << (5i128 as u32)) | f2) * 2i128) & 4294967295i128)) as u32;
@@ -12638,6 +14877,10 @@ pub fn h_4b(s: &mut St, f: &[i64; NF]) -> u32 {
                                         } else {
                                             v46 = ((((((f3) << (5i128 as u32)) | f2) * 2i128) & 4294967295i128)) as u32;
                                             v48 = v0.wrapping_add(v46);
+                                            if (f0 == 31i128) {
+                                            } else {
+                                                return 1;
+                                            }
                                             v2 = rr!(&*s, f4);
                                             st[nst] = (v48, v2, 2i128 as u8); nst += 1;
                                         }
@@ -12743,12 +14986,12 @@ pub fn h_4b(s: &mut St, f: &[i64; NF]) -> u32 {
                             } else {
                                 if (f5 != 0i128) {
                                     v0 = rr!(&*s, (16i128 + (f6 + 8i128)));
-                                    if (f0 == 31i128) {
-                                    } else {
-                                        return 1;
-                                    }
                                     if (((((f3) << (5i128 as u32)) | f2) & 32i128) != 0i128) {
                                         if (f8 != 0i128) {
+                                            if (f0 == 31i128) {
+                                            } else {
+                                                return 1;
+                                            }
                                             v57 = match hload(&*s, v0, 2i128 as u32, false) { Some(x) => x, None => return 1 };
                                             { let c = (f4) as usize; if c >= 96 { return 1; } ws[nw] = (c as u8, v57); nw += 1; }
                                             v43 = (((((((f3) << (5i128 as u32)) | f2) - 64i128) * 2i128) & 4294967295i128)) as u32;
@@ -12757,11 +15000,19 @@ pub fn h_4b(s: &mut St, f: &[i64; NF]) -> u32 {
                                         } else {
                                             v43 = (((((((f3) << (5i128 as u32)) | f2) - 64i128) * 2i128) & 4294967295i128)) as u32;
                                             v45 = v0.wrapping_add(v43);
+                                            if (f0 == 31i128) {
+                                            } else {
+                                                return 1;
+                                            }
                                             v59 = match hload(&*s, v45, 2i128 as u32, false) { Some(x) => x, None => return 1 };
                                             { let c = (f4) as usize; if c >= 96 { return 1; } ws[nw] = (c as u8, v59); nw += 1; }
                                         }
                                     } else {
                                         if (f8 != 0i128) {
+                                            if (f0 == 31i128) {
+                                            } else {
+                                                return 1;
+                                            }
                                             v57 = match hload(&*s, v0, 2i128 as u32, false) { Some(x) => x, None => return 1 };
                                             { let c = (f4) as usize; if c >= 96 { return 1; } ws[nw] = (c as u8, v57); nw += 1; }
                                             v46 = ((((((f3) << (5i128 as u32)) | f2) * 2i128) & 4294967295i128)) as u32;
@@ -12770,6 +15021,10 @@ pub fn h_4b(s: &mut St, f: &[i64; NF]) -> u32 {
                                         } else {
                                             v46 = ((((((f3) << (5i128 as u32)) | f2) * 2i128) & 4294967295i128)) as u32;
                                             v48 = v0.wrapping_add(v46);
+                                            if (f0 == 31i128) {
+                                            } else {
+                                                return 1;
+                                            }
                                             v61 = match hload(&*s, v48, 2i128 as u32, false) { Some(x) => x, None => return 1 };
                                             { let c = (f4) as usize; if c >= 96 { return 1; } ws[nw] = (c as u8, v61); nw += 1; }
                                         }
@@ -12894,12 +15149,12 @@ pub fn h_4b(s: &mut St, f: &[i64; NF]) -> u32 {
                             } else {
                                 if (f5 != 0i128) {
                                     v0 = rr!(&*s, (16i128 + (f6 + 8i128)));
-                                    if (f0 == 31i128) {
-                                    } else {
-                                        return 1;
-                                    }
                                     if (((((f3) << (5i128 as u32)) | f2) & 32i128) != 0i128) {
                                         if (f8 != 0i128) {
+                                            if (f0 == 31i128) {
+                                            } else {
+                                                return 1;
+                                            }
                                             v72 = match hload(&*s, v0, 2i128 as u32, true) { Some(x) => x, None => return 1 };
                                             { let c = (f4) as usize; if c >= 96 { return 1; } ws[nw] = (c as u8, v72); nw += 1; }
                                             v43 = (((((((f3) << (5i128 as u32)) | f2) - 64i128) * 2i128) & 4294967295i128)) as u32;
@@ -12908,11 +15163,19 @@ pub fn h_4b(s: &mut St, f: &[i64; NF]) -> u32 {
                                         } else {
                                             v43 = (((((((f3) << (5i128 as u32)) | f2) - 64i128) * 2i128) & 4294967295i128)) as u32;
                                             v45 = v0.wrapping_add(v43);
+                                            if (f0 == 31i128) {
+                                            } else {
+                                                return 1;
+                                            }
                                             v73 = match hload(&*s, v45, 2i128 as u32, true) { Some(x) => x, None => return 1 };
                                             { let c = (f4) as usize; if c >= 96 { return 1; } ws[nw] = (c as u8, v73); nw += 1; }
                                         }
                                     } else {
                                         if (f8 != 0i128) {
+                                            if (f0 == 31i128) {
+                                            } else {
+                                                return 1;
+                                            }
                                             v72 = match hload(&*s, v0, 2i128 as u32, true) { Some(x) => x, None => return 1 };
                                             { let c = (f4) as usize; if c >= 96 { return 1; } ws[nw] = (c as u8, v72); nw += 1; }
                                             v46 = ((((((f3) << (5i128 as u32)) | f2) * 2i128) & 4294967295i128)) as u32;
@@ -12921,6 +15184,10 @@ pub fn h_4b(s: &mut St, f: &[i64; NF]) -> u32 {
                                         } else {
                                             v46 = ((((((f3) << (5i128 as u32)) | f2) * 2i128) & 4294967295i128)) as u32;
                                             v48 = v0.wrapping_add(v46);
+                                            if (f0 == 31i128) {
+                                            } else {
+                                                return 1;
+                                            }
                                             v74 = match hload(&*s, v48, 2i128 as u32, true) { Some(x) => x, None => return 1 };
                                             { let c = (f4) as usize; if c >= 96 { return 1; } ws[nw] = (c as u8, v74); nw += 1; }
                                         }
@@ -13035,12 +15302,12 @@ pub fn h_4b(s: &mut St, f: &[i64; NF]) -> u32 {
                             if (f1 != 0i128) {
                                 if (f5 != 0i128) {
                                     v0 = rr!(&*s, (16i128 + (f6 + 8i128)));
-                                    if (f0 == 31i128) {
-                                    } else {
-                                        return 1;
-                                    }
                                     if (((((f3) << (5i128 as u32)) | f2) & 32i128) != 0i128) {
                                         if (f8 != 0i128) {
+                                            if (f0 == 31i128) {
+                                            } else {
+                                                return 1;
+                                            }
                                             v2 = rr!(&*s, f4);
                                             st[nst] = (v0, v2, 4i128 as u8); nst += 1;
                                             v81 = (((((((f3) << (5i128 as u32)) | f2) - 64i128) * 4i128) & 4294967295i128)) as u32;
@@ -13049,11 +15316,19 @@ pub fn h_4b(s: &mut St, f: &[i64; NF]) -> u32 {
                                         } else {
                                             v81 = (((((((f3) << (5i128 as u32)) | f2) - 64i128) * 4i128) & 4294967295i128)) as u32;
                                             v83 = v0.wrapping_add(v81);
+                                            if (f0 == 31i128) {
+                                            } else {
+                                                return 1;
+                                            }
                                             v2 = rr!(&*s, f4);
                                             st[nst] = (v83, v2, 4i128 as u8); nst += 1;
                                         }
                                     } else {
                                         if (f8 != 0i128) {
+                                            if (f0 == 31i128) {
+                                            } else {
+                                                return 1;
+                                            }
                                             v2 = rr!(&*s, f4);
                                             st[nst] = (v0, v2, 4i128 as u8); nst += 1;
                                             v84 = ((((((f3) << (5i128 as u32)) | f2) * 4i128) & 4294967295i128)) as u32;
@@ -13062,6 +15337,10 @@ pub fn h_4b(s: &mut St, f: &[i64; NF]) -> u32 {
                                         } else {
                                             v84 = ((((((f3) << (5i128 as u32)) | f2) * 4i128) & 4294967295i128)) as u32;
                                             v86 = v0.wrapping_add(v84);
+                                            if (f0 == 31i128) {
+                                            } else {
+                                                return 1;
+                                            }
                                             v2 = rr!(&*s, f4);
                                             st[nst] = (v86, v2, 4i128 as u8); nst += 1;
                                         }
@@ -13167,12 +15446,12 @@ pub fn h_4b(s: &mut St, f: &[i64; NF]) -> u32 {
                             } else {
                                 if (f5 != 0i128) {
                                     v0 = rr!(&*s, (16i128 + (f6 + 8i128)));
-                                    if (f0 == 31i128) {
-                                    } else {
-                                        return 1;
-                                    }
                                     if (((((f3) << (5i128 as u32)) | f2) & 32i128) != 0i128) {
                                         if (f8 != 0i128) {
+                                            if (f0 == 31i128) {
+                                            } else {
+                                                return 1;
+                                            }
                                             v95 = match hload(&*s, v0, 4i128 as u32, false) { Some(x) => x, None => return 1 };
                                             { let c = (f4) as usize; if c >= 96 { return 1; } ws[nw] = (c as u8, v95); nw += 1; }
                                             v81 = (((((((f3) << (5i128 as u32)) | f2) - 64i128) * 4i128) & 4294967295i128)) as u32;
@@ -13181,11 +15460,19 @@ pub fn h_4b(s: &mut St, f: &[i64; NF]) -> u32 {
                                         } else {
                                             v81 = (((((((f3) << (5i128 as u32)) | f2) - 64i128) * 4i128) & 4294967295i128)) as u32;
                                             v83 = v0.wrapping_add(v81);
+                                            if (f0 == 31i128) {
+                                            } else {
+                                                return 1;
+                                            }
                                             v97 = match hload(&*s, v83, 4i128 as u32, false) { Some(x) => x, None => return 1 };
                                             { let c = (f4) as usize; if c >= 96 { return 1; } ws[nw] = (c as u8, v97); nw += 1; }
                                         }
                                     } else {
                                         if (f8 != 0i128) {
+                                            if (f0 == 31i128) {
+                                            } else {
+                                                return 1;
+                                            }
                                             v95 = match hload(&*s, v0, 4i128 as u32, false) { Some(x) => x, None => return 1 };
                                             { let c = (f4) as usize; if c >= 96 { return 1; } ws[nw] = (c as u8, v95); nw += 1; }
                                             v84 = ((((((f3) << (5i128 as u32)) | f2) * 4i128) & 4294967295i128)) as u32;
@@ -13194,6 +15481,10 @@ pub fn h_4b(s: &mut St, f: &[i64; NF]) -> u32 {
                                         } else {
                                             v84 = ((((((f3) << (5i128 as u32)) | f2) * 4i128) & 4294967295i128)) as u32;
                                             v86 = v0.wrapping_add(v84);
+                                            if (f0 == 31i128) {
+                                            } else {
+                                                return 1;
+                                            }
                                             v99 = match hload(&*s, v86, 4i128 as u32, false) { Some(x) => x, None => return 1 };
                                             { let c = (f4) as usize; if c >= 96 { return 1; } ws[nw] = (c as u8, v99); nw += 1; }
                                         }
@@ -13446,22 +15737,34 @@ pub fn t_4b<S: RegRead>(s: &S, f: &[i64; NF], t: &mut Touch) -> bool {
                             if (f1 != 0i128) {
                                 if (f5 != 0i128) {
                                     t.rd(((16i128 + (f6 + 8i128))) as u32);
-                                    if (f0 == 31i128) {
-                                    } else {
-                                        return false;
-                                    }
                                     if (((((f3) << (5i128 as u32)) | f2) & 32i128) != 0i128) {
                                         if (f8 != 0i128) {
+                                            if (f0 == 31i128) {
+                                            } else {
+                                                return false;
+                                            }
                                             t.rd((f4) as u32);
                                             t.wr(((16i128 + (f6 + 8i128))) as u32);
                                         } else {
+                                            if (f0 == 31i128) {
+                                            } else {
+                                                return false;
+                                            }
                                             t.rd((f4) as u32);
                                         }
                                     } else {
                                         if (f8 != 0i128) {
+                                            if (f0 == 31i128) {
+                                            } else {
+                                                return false;
+                                            }
                                             t.rd((f4) as u32);
                                             t.wr(((16i128 + (f6 + 8i128))) as u32);
                                         } else {
+                                            if (f0 == 31i128) {
+                                            } else {
+                                                return false;
+                                            }
                                             t.rd((f4) as u32);
                                         }
                                     }
@@ -13538,22 +15841,34 @@ pub fn t_4b<S: RegRead>(s: &S, f: &[i64; NF], t: &mut Touch) -> bool {
                             } else {
                                 if (f5 != 0i128) {
                                     t.rd(((16i128 + (f6 + 8i128))) as u32);
-                                    if (f0 == 31i128) {
-                                    } else {
-                                        return false;
-                                    }
                                     if (((((f3) << (5i128 as u32)) | f2) & 32i128) != 0i128) {
                                         if (f8 != 0i128) {
+                                            if (f0 == 31i128) {
+                                            } else {
+                                                return false;
+                                            }
                                             t.wr((f4) as u32);
                                             t.wr(((16i128 + (f6 + 8i128))) as u32);
                                         } else {
+                                            if (f0 == 31i128) {
+                                            } else {
+                                                return false;
+                                            }
                                             t.wr((f4) as u32);
                                         }
                                     } else {
                                         if (f8 != 0i128) {
+                                            if (f0 == 31i128) {
+                                            } else {
+                                                return false;
+                                            }
                                             t.wr((f4) as u32);
                                             t.wr(((16i128 + (f6 + 8i128))) as u32);
                                         } else {
+                                            if (f0 == 31i128) {
+                                            } else {
+                                                return false;
+                                            }
                                             t.wr((f4) as u32);
                                         }
                                     }
@@ -13645,22 +15960,34 @@ pub fn t_4b<S: RegRead>(s: &S, f: &[i64; NF], t: &mut Touch) -> bool {
                             } else {
                                 if (f5 != 0i128) {
                                     t.rd(((16i128 + (f6 + 8i128))) as u32);
-                                    if (f0 == 31i128) {
-                                    } else {
-                                        return false;
-                                    }
                                     if (((((f3) << (5i128 as u32)) | f2) & 32i128) != 0i128) {
                                         if (f8 != 0i128) {
+                                            if (f0 == 31i128) {
+                                            } else {
+                                                return false;
+                                            }
                                             t.wr((f4) as u32);
                                             t.wr(((16i128 + (f6 + 8i128))) as u32);
                                         } else {
+                                            if (f0 == 31i128) {
+                                            } else {
+                                                return false;
+                                            }
                                             t.wr((f4) as u32);
                                         }
                                     } else {
                                         if (f8 != 0i128) {
+                                            if (f0 == 31i128) {
+                                            } else {
+                                                return false;
+                                            }
                                             t.wr((f4) as u32);
                                             t.wr(((16i128 + (f6 + 8i128))) as u32);
                                         } else {
+                                            if (f0 == 31i128) {
+                                            } else {
+                                                return false;
+                                            }
                                             t.wr((f4) as u32);
                                         }
                                     }
@@ -13755,22 +16082,34 @@ pub fn t_4b<S: RegRead>(s: &S, f: &[i64; NF], t: &mut Touch) -> bool {
                             if (f1 != 0i128) {
                                 if (f5 != 0i128) {
                                     t.rd(((16i128 + (f6 + 8i128))) as u32);
-                                    if (f0 == 31i128) {
-                                    } else {
-                                        return false;
-                                    }
                                     if (((((f3) << (5i128 as u32)) | f2) & 32i128) != 0i128) {
                                         if (f8 != 0i128) {
+                                            if (f0 == 31i128) {
+                                            } else {
+                                                return false;
+                                            }
                                             t.rd((f4) as u32);
                                             t.wr(((16i128 + (f6 + 8i128))) as u32);
                                         } else {
+                                            if (f0 == 31i128) {
+                                            } else {
+                                                return false;
+                                            }
                                             t.rd((f4) as u32);
                                         }
                                     } else {
                                         if (f8 != 0i128) {
+                                            if (f0 == 31i128) {
+                                            } else {
+                                                return false;
+                                            }
                                             t.rd((f4) as u32);
                                             t.wr(((16i128 + (f6 + 8i128))) as u32);
                                         } else {
+                                            if (f0 == 31i128) {
+                                            } else {
+                                                return false;
+                                            }
                                             t.rd((f4) as u32);
                                         }
                                     }
@@ -13847,22 +16186,34 @@ pub fn t_4b<S: RegRead>(s: &S, f: &[i64; NF], t: &mut Touch) -> bool {
                             } else {
                                 if (f5 != 0i128) {
                                     t.rd(((16i128 + (f6 + 8i128))) as u32);
-                                    if (f0 == 31i128) {
-                                    } else {
-                                        return false;
-                                    }
                                     if (((((f3) << (5i128 as u32)) | f2) & 32i128) != 0i128) {
                                         if (f8 != 0i128) {
+                                            if (f0 == 31i128) {
+                                            } else {
+                                                return false;
+                                            }
                                             t.wr((f4) as u32);
                                             t.wr(((16i128 + (f6 + 8i128))) as u32);
                                         } else {
+                                            if (f0 == 31i128) {
+                                            } else {
+                                                return false;
+                                            }
                                             t.wr((f4) as u32);
                                         }
                                     } else {
                                         if (f8 != 0i128) {
+                                            if (f0 == 31i128) {
+                                            } else {
+                                                return false;
+                                            }
                                             t.wr((f4) as u32);
                                             t.wr(((16i128 + (f6 + 8i128))) as u32);
                                         } else {
+                                            if (f0 == 31i128) {
+                                            } else {
+                                                return false;
+                                            }
                                             t.wr((f4) as u32);
                                         }
                                     }
@@ -13954,22 +16305,34 @@ pub fn t_4b<S: RegRead>(s: &S, f: &[i64; NF], t: &mut Touch) -> bool {
                             } else {
                                 if (f5 != 0i128) {
                                     t.rd(((16i128 + (f6 + 8i128))) as u32);
-                                    if (f0 == 31i128) {
-                                    } else {
-                                        return false;
-                                    }
                                     if (((((f3) << (5i128 as u32)) | f2) & 32i128) != 0i128) {
                                         if (f8 != 0i128) {
+                                            if (f0 == 31i128) {
+                                            } else {
+                                                return false;
+                                            }
                                             t.wr((f4) as u32);
                                             t.wr(((16i128 + (f6 + 8i128))) as u32);
                                         } else {
+                                            if (f0 == 31i128) {
+                                            } else {
+                                                return false;
+                                            }
                                             t.wr((f4) as u32);
                                         }
                                     } else {
                                         if (f8 != 0i128) {
+                                            if (f0 == 31i128) {
+                                            } else {
+                                                return false;
+                                            }
                                             t.wr((f4) as u32);
                                             t.wr(((16i128 + (f6 + 8i128))) as u32);
                                         } else {
+                                            if (f0 == 31i128) {
+                                            } else {
+                                                return false;
+                                            }
                                             t.wr((f4) as u32);
                                         }
                                     }
@@ -14051,22 +16414,34 @@ pub fn t_4b<S: RegRead>(s: &S, f: &[i64; NF], t: &mut Touch) -> bool {
                             if (f1 != 0i128) {
                                 if (f5 != 0i128) {
                                     t.rd(((16i128 + (f6 + 8i128))) as u32);
-                                    if (f0 == 31i128) {
-                                    } else {
-                                        return false;
-                                    }
                                     if (((((f3) << (5i128 as u32)) | f2) & 32i128) != 0i128) {
                                         if (f8 != 0i128) {
+                                            if (f0 == 31i128) {
+                                            } else {
+                                                return false;
+                                            }
                                             t.rd((f4) as u32);
                                             t.wr(((16i128 + (f6 + 8i128))) as u32);
                                         } else {
+                                            if (f0 == 31i128) {
+                                            } else {
+                                                return false;
+                                            }
                                             t.rd((f4) as u32);
                                         }
                                     } else {
                                         if (f8 != 0i128) {
+                                            if (f0 == 31i128) {
+                                            } else {
+                                                return false;
+                                            }
                                             t.rd((f4) as u32);
                                             t.wr(((16i128 + (f6 + 8i128))) as u32);
                                         } else {
+                                            if (f0 == 31i128) {
+                                            } else {
+                                                return false;
+                                            }
                                             t.rd((f4) as u32);
                                         }
                                     }
@@ -14143,22 +16518,34 @@ pub fn t_4b<S: RegRead>(s: &S, f: &[i64; NF], t: &mut Touch) -> bool {
                             } else {
                                 if (f5 != 0i128) {
                                     t.rd(((16i128 + (f6 + 8i128))) as u32);
-                                    if (f0 == 31i128) {
-                                    } else {
-                                        return false;
-                                    }
                                     if (((((f3) << (5i128 as u32)) | f2) & 32i128) != 0i128) {
                                         if (f8 != 0i128) {
+                                            if (f0 == 31i128) {
+                                            } else {
+                                                return false;
+                                            }
                                             t.wr((f4) as u32);
                                             t.wr(((16i128 + (f6 + 8i128))) as u32);
                                         } else {
+                                            if (f0 == 31i128) {
+                                            } else {
+                                                return false;
+                                            }
                                             t.wr((f4) as u32);
                                         }
                                     } else {
                                         if (f8 != 0i128) {
+                                            if (f0 == 31i128) {
+                                            } else {
+                                                return false;
+                                            }
                                             t.wr((f4) as u32);
                                             t.wr(((16i128 + (f6 + 8i128))) as u32);
                                         } else {
+                                            if (f0 == 31i128) {
+                                            } else {
+                                                return false;
+                                            }
                                             t.wr((f4) as u32);
                                         }
                                     }
@@ -16262,7 +18649,17 @@ pub fn h_14a(s: &mut St, f: &[i64; NF]) -> u32 {
                                         v4 = (((((f1) << (16i128 as u32)) | f0) + 4i128)) as u32;
                                         v6 = match hload(&*s, v4, 4i128 as u32, false) { Some(x) => x, None => return 1 };
                                         { let c = (f5) as usize; if c >= 96 { return 1; } ws[nw] = (c as u8, v5); nw += 1; }
+                                        if (f5 >= 64i128) {
+                                            if (f5 <= 79i128) {
+                                                { let c = (((f5 - 64i128) + 16i128)) as usize; if c >= 96 { return 1; } ws[nw] = (c as u8, v5); nw += 1; }
+                                            }
+                                        }
                                         { let c = ((f5 ^ 1i128)) as usize; if c >= 96 { return 1; } ws[nw] = (c as u8, v6); nw += 1; }
+                                        if ((f5 ^ 1i128) >= 64i128) {
+                                            if ((f5 ^ 1i128) <= 79i128) {
+                                                { let c = ((((f5 ^ 1i128) - 64i128) + 16i128)) as usize; if c >= 96 { return 1; } ws[nw] = (c as u8, v6); nw += 1; }
+                                            }
+                                        }
                                     } else {
                                         return 1;
                                     }
@@ -16418,19 +18815,22 @@ pub fn h_14a(s: &mut St, f: &[i64; NF]) -> u32 {
                             return 1;
                         }
                     }
-                } else if (f5 >= 16i128 && f5 <= 79i128) || (f5 >= 110i128 && f5 <= 111i128) || (f5 >= 114i128 && f5 <= 117i128) || (f5 >= 122i128 && f5 <= 125i128) {
+                } else if (f5 >= 16i128 && f5 <= 79i128) {
                     if ((((f1) << (16i128 as u32)) | f0) >= 950272i128) {
                         if ((((f1) << (16i128 as u32)) | f0) < 67108864i128) {
                             v8 = ((((f1) << (16i128 as u32)) | f0)) as u32;
                             v9 = match hload(&*s, v8, 4i128 as u32, false) { Some(x) => x, None => return 1 };
                             { let c = (f5) as usize; if c >= 96 { return 1; } ws[nw] = (c as u8, v9); nw += 1; }
+                            if (f5 >= 64i128) {
+                                { let c = (((f5 - 64i128) + 16i128)) as usize; if c >= 96 { return 1; } ws[nw] = (c as u8, v9); nw += 1; }
+                            }
                         } else {
                             return 1;
                         }
                     } else {
                         return 1;
                     }
-                } else {
+                } else if (f5 >= 96i128 && f5 <= 107i128) {
                     if (f5 == 107i128) {
                         return 1;
                     } else {
@@ -16445,6 +18845,18 @@ pub fn h_14a(s: &mut St, f: &[i64; NF]) -> u32 {
                         } else {
                             return 1;
                         }
+                    }
+                } else {
+                    if ((((f1) << (16i128 as u32)) | f0) >= 950272i128) {
+                        if ((((f1) << (16i128 as u32)) | f0) < 67108864i128) {
+                            v8 = ((((f1) << (16i128 as u32)) | f0)) as u32;
+                            v9 = match hload(&*s, v8, 4i128 as u32, false) { Some(x) => x, None => return 1 };
+                            { let c = (f5) as usize; if c >= 96 { return 1; } ws[nw] = (c as u8, v9); nw += 1; }
+                        } else {
+                            return 1;
+                        }
+                    } else {
+                        return 1;
                     }
                 }
             }
@@ -16734,12 +19146,15 @@ pub fn h_14a(s: &mut St, f: &[i64; NF]) -> u32 {
                             return 1;
                         }
                     }
-                } else if (f5 >= 16i128 && f5 <= 79i128) || (f5 >= 110i128 && f5 <= 111i128) || (f5 >= 114i128 && f5 <= 117i128) || (f5 >= 122i128 && f5 <= 125i128) {
+                } else if (f5 >= 16i128 && f5 <= 79i128) {
                     if ((((f1) << (16i128 as u32)) | f0) >= 950272i128) {
                         if ((((f1) << (16i128 as u32)) | f0) < 67108864i128) {
                             v8 = ((((f1) << (16i128 as u32)) | f0)) as u32;
                             v9 = match hload(&*s, v8, 4i128 as u32, false) { Some(x) => x, None => return 1 };
                             { let c = (f5) as usize; if c >= 96 { return 1; } ws[nw] = (c as u8, v9); nw += 1; }
+                            if (f5 >= 64i128) {
+                                { let c = (((f5 - 64i128) + 16i128)) as usize; if c >= 96 { return 1; } ws[nw] = (c as u8, v9); nw += 1; }
+                            }
                         } else {
                             return 1;
                         }
@@ -16807,7 +19222,7 @@ pub fn h_14a(s: &mut St, f: &[i64; NF]) -> u32 {
                             return 1;
                         }
                     }
-                } else {
+                } else if (f5 >= 108i128 && f5 <= 109i128) || (f5 >= 112i128 && f5 <= 113i128) || (f5 >= 118i128 && f5 <= 121i128) || f5 >= 126i128 {
                     if (((rr!(&*s, 114) as i128) & 2097152) != 0i128) {
                         if (((((f1) << (16i128 as u32)) | f0) & 4294967295i128) >= 950272i128) {
                             if (((((f1) << (16i128 as u32)) | f0) & 4294967295i128) < 67108864i128) {
@@ -16824,6 +19239,11 @@ pub fn h_14a(s: &mut St, f: &[i64; NF]) -> u32 {
                                                     v11 = (((((((f1) << (16i128 as u32)) | f0) & 4294967295i128) + 4i128) & 4294967295i128)) as u32;
                                                     v13 = match hload(&*s, v11, 4i128 as u32, false) { Some(x) => x, None => return 1 };
                                                     { let c = ((f5 ^ 1i128)) as usize; if c >= 96 { return 1; } ws[nw] = (c as u8, v13); nw += 1; }
+                                                    if ((f5 ^ 1i128) >= 64i128) {
+                                                        if ((f5 ^ 1i128) <= 79i128) {
+                                                            { let c = ((((f5 ^ 1i128) - 64i128) + 16i128)) as usize; if c >= 96 { return 1; } ws[nw] = (c as u8, v13); nw += 1; }
+                                                        }
+                                                    }
                                                 } else {
                                                     return 1;
                                                 }
@@ -16855,6 +19275,18 @@ pub fn h_14a(s: &mut St, f: &[i64; NF]) -> u32 {
                         } else {
                             return 1;
                         }
+                    }
+                } else {
+                    if ((((f1) << (16i128 as u32)) | f0) >= 950272i128) {
+                        if ((((f1) << (16i128 as u32)) | f0) < 67108864i128) {
+                            v8 = ((((f1) << (16i128 as u32)) | f0)) as u32;
+                            v9 = match hload(&*s, v8, 4i128 as u32, false) { Some(x) => x, None => return 1 };
+                            { let c = (f5) as usize; if c >= 96 { return 1; } ws[nw] = (c as u8, v9); nw += 1; }
+                        } else {
+                            return 1;
+                        }
+                    } else {
+                        return 1;
                     }
                 }
             }
@@ -16946,7 +19378,17 @@ pub fn t_14a<S: RegRead>(s: &S, f: &[i64; NF], t: &mut Touch) -> bool {
                                 if (((f1) << (16i128 as u32)) | f0) <= 67108863i128 {
                                     if (((((f1) << (16i128 as u32)) | f0) + 4i128) < 67108864i128) {
                                         t.wr((f5) as u32);
+                                        if (f5 >= 64i128) {
+                                            if (f5 <= 79i128) {
+                                                t.wr((((f5 - 64i128) + 16i128)) as u32);
+                                            }
+                                        }
                                         t.wr(((f5 ^ 1i128)) as u32);
+                                        if ((f5 ^ 1i128) >= 64i128) {
+                                            if ((f5 ^ 1i128) <= 79i128) {
+                                                t.wr(((((f5 ^ 1i128) - 64i128) + 16i128)) as u32);
+                                            }
+                                        }
                                     } else {
                                         return false;
                                     }
@@ -17086,17 +19528,20 @@ pub fn t_14a<S: RegRead>(s: &S, f: &[i64; NF], t: &mut Touch) -> bool {
                             return false;
                         }
                     }
-                } else if (f5 >= 16i128 && f5 <= 79i128) || (f5 >= 110i128 && f5 <= 111i128) || (f5 >= 114i128 && f5 <= 117i128) || (f5 >= 122i128 && f5 <= 125i128) {
+                } else if (f5 >= 16i128 && f5 <= 79i128) {
                     if ((((f1) << (16i128 as u32)) | f0) >= 950272i128) {
                         if ((((f1) << (16i128 as u32)) | f0) < 67108864i128) {
                             t.wr((f5) as u32);
+                            if (f5 >= 64i128) {
+                                t.wr((((f5 - 64i128) + 16i128)) as u32);
+                            }
                         } else {
                             return false;
                         }
                     } else {
                         return false;
                     }
-                } else {
+                } else if (f5 >= 96i128 && f5 <= 107i128) {
                     if (f5 == 107i128) {
                         return false;
                     } else {
@@ -17109,6 +19554,16 @@ pub fn t_14a<S: RegRead>(s: &S, f: &[i64; NF], t: &mut Touch) -> bool {
                         } else {
                             return false;
                         }
+                    }
+                } else {
+                    if ((((f1) << (16i128 as u32)) | f0) >= 950272i128) {
+                        if ((((f1) << (16i128 as u32)) | f0) < 67108864i128) {
+                            t.wr((f5) as u32);
+                        } else {
+                            return false;
+                        }
+                    } else {
+                        return false;
                     }
                 }
             }
@@ -17360,10 +19815,13 @@ pub fn t_14a<S: RegRead>(s: &S, f: &[i64; NF], t: &mut Touch) -> bool {
                             return false;
                         }
                     }
-                } else if (f5 >= 16i128 && f5 <= 79i128) || (f5 >= 110i128 && f5 <= 111i128) || (f5 >= 114i128 && f5 <= 117i128) || (f5 >= 122i128 && f5 <= 125i128) {
+                } else if (f5 >= 16i128 && f5 <= 79i128) {
                     if ((((f1) << (16i128 as u32)) | f0) >= 950272i128) {
                         if ((((f1) << (16i128 as u32)) | f0) < 67108864i128) {
                             t.wr((f5) as u32);
+                            if (f5 >= 64i128) {
+                                t.wr((((f5 - 64i128) + 16i128)) as u32);
+                            }
                         } else {
                             return false;
                         }
@@ -17423,7 +19881,7 @@ pub fn t_14a<S: RegRead>(s: &S, f: &[i64; NF], t: &mut Touch) -> bool {
                             return false;
                         }
                     }
-                } else {
+                } else if (f5 >= 108i128 && f5 <= 109i128) || (f5 >= 112i128 && f5 <= 113i128) || (f5 >= 118i128 && f5 <= 121i128) || f5 >= 126i128 {
                     if (((rrt!(&*s, 114) as i128) & 2097152) != 0i128) {
                         if (((((f1) << (16i128 as u32)) | f0) & 4294967295i128) >= 950272i128) {
                             if (((((f1) << (16i128 as u32)) | f0) & 4294967295i128) < 67108864i128) {
@@ -17436,6 +19894,11 @@ pub fn t_14a<S: RegRead>(s: &S, f: &[i64; NF], t: &mut Touch) -> bool {
                                                 if (((((((f1) << (16i128 as u32)) | f0) & 4294967295i128) + 4i128) & 4294967295i128) < 67108864i128) {
                                                     t.wr((f5) as u32);
                                                     t.wr(((f5 ^ 1i128)) as u32);
+                                                    if ((f5 ^ 1i128) >= 64i128) {
+                                                        if ((f5 ^ 1i128) <= 79i128) {
+                                                            t.wr(((((f5 ^ 1i128) - 64i128) + 16i128)) as u32);
+                                                        }
+                                                    }
                                                 } else {
                                                     return false;
                                                 }
@@ -17465,6 +19928,16 @@ pub fn t_14a<S: RegRead>(s: &S, f: &[i64; NF], t: &mut Touch) -> bool {
                         } else {
                             return false;
                         }
+                    }
+                } else {
+                    if ((((f1) << (16i128 as u32)) | f0) >= 950272i128) {
+                        if ((((f1) << (16i128 as u32)) | f0) < 67108864i128) {
+                            t.wr((f5) as u32);
+                        } else {
+                            return false;
+                        }
+                    } else {
+                        return false;
                     }
                 }
             }
@@ -17503,7 +19976,6 @@ pub fn h_15a(s: &mut St, f: &[i64; NF]) -> u32 {
     let mut v19: u32 = 0;
     let mut v20: u32 = 0;
     let mut v21: u32 = 0;
-    let mut v22: u32 = 0;
     let mut ws: [(u8, u32); 8] = [(0, 0); 8];
     let mut nw = 0usize;
     let mut st: [(u32, u32, u8); 4] = [(0, 0, 0); 4];
@@ -17540,7 +20012,17 @@ pub fn h_15a(s: &mut St, f: &[i64; NF]) -> u32 {
                     v9 = v3.wrapping_add(v8);
                     v11 = match hload(&*s, v9, 4i128 as u32, false) { Some(x) => x, None => return 1 };
                     { let c = (f6) as usize; if c >= 96 { return 1; } ws[nw] = (c as u8, v10); nw += 1; }
+                    if (f6 >= 64i128) {
+                        if (f6 <= 79i128) {
+                            { let c = (((f6 - 64i128) + 16i128)) as usize; if c >= 96 { return 1; } ws[nw] = (c as u8, v10); nw += 1; }
+                        }
+                    }
                     { let c = ((f6 ^ 1i128)) as usize; if c >= 96 { return 1; } ws[nw] = (c as u8, v11); nw += 1; }
+                    if ((f6 ^ 1i128) >= 64i128) {
+                        if ((f6 ^ 1i128) <= 79i128) {
+                            { let c = ((((f6 ^ 1i128) - 64i128) + 16i128)) as usize; if c >= 96 { return 1; } ws[nw] = (c as u8, v11); nw += 1; }
+                        }
+                    }
                 } else {
                     { let c = (f6) as usize; if c >= 96 { return 1; } ws[nw] = (c as u8, v10); nw += 1; }
                 }
@@ -17554,38 +20036,25 @@ pub fn h_15a(s: &mut St, f: &[i64; NF]) -> u32 {
                 st[nst] = (v3, v4, 4i128 as u8); nst += 1;
             } else {
                 if f6 <= 15i128 || (f6 >= 80i128 && f6 <= 95i128) || (f6 >= 108i128 && f6 <= 109i128) || (f6 >= 112i128 && f6 <= 113i128) || (f6 >= 118i128 && f6 <= 121i128) || f6 >= 126i128 {
-                    if ((f4 + 8i128) == 9i128) {
-                        if (((rr!(&*s, 114) as i128) & 4194304) != 0i128) {
-                            return 1;
-                        } else {
-                            if (((rr!(&*s, 114) as i128) & 2097152) != 0i128) {
-                                return 1;
-                            } else {
-                                v0 = rr!(&*s, (16i128 + (f4 + 8i128)));
-                                v2 = ((((((f1) << (16i128 as u32)) | f0) * 4i128) & 4294967295i128)) as u32;
-                                v3 = v0.wrapping_add(v2);
-                                v14 = match hload(&*s, v3, 4i128 as u32, false) { Some(x) => x, None => return 1 };
-                                { let c = (f6) as usize; if c >= 96 { return 1; } ws[nw] = (c as u8, v14); nw += 1; }
-                            }
-                        }
+                    if (((rr!(&*s, 114) as i128) & 2097152) != 0i128) {
+                        return 1;
                     } else {
-                        if (((rr!(&*s, 114) as i128) & 2097152) != 0i128) {
-                            return 1;
-                        } else {
-                            v0 = rr!(&*s, (16i128 + (f4 + 8i128)));
-                            v2 = ((((((f1) << (16i128 as u32)) | f0) * 4i128) & 4294967295i128)) as u32;
-                            v3 = v0.wrapping_add(v2);
-                            v14 = match hload(&*s, v3, 4i128 as u32, false) { Some(x) => x, None => return 1 };
-                            { let c = (f6) as usize; if c >= 96 { return 1; } ws[nw] = (c as u8, v14); nw += 1; }
-                        }
+                        v0 = rr!(&*s, (16i128 + (f4 + 8i128)));
+                        v2 = ((((((f1) << (16i128 as u32)) | f0) * 4i128) & 4294967295i128)) as u32;
+                        v3 = v0.wrapping_add(v2);
+                        v14 = match hload(&*s, v3, 4i128 as u32, false) { Some(x) => x, None => return 1 };
+                        { let c = (f6) as usize; if c >= 96 { return 1; } ws[nw] = (c as u8, v14); nw += 1; }
                     }
-                } else if (f6 >= 16i128 && f6 <= 79i128) || (f6 >= 110i128 && f6 <= 111i128) || (f6 >= 114i128 && f6 <= 117i128) || (f6 >= 122i128 && f6 <= 125i128) {
+                } else if (f6 >= 16i128 && f6 <= 79i128) {
                     v0 = rr!(&*s, (16i128 + (f4 + 8i128)));
                     v2 = ((((((f1) << (16i128 as u32)) | f0) * 4i128) & 4294967295i128)) as u32;
                     v3 = v0.wrapping_add(v2);
                     v14 = match hload(&*s, v3, 4i128 as u32, false) { Some(x) => x, None => return 1 };
                     { let c = (f6) as usize; if c >= 96 { return 1; } ws[nw] = (c as u8, v14); nw += 1; }
-                } else {
+                    if (f6 >= 64i128) {
+                        { let c = (((f6 - 64i128) + 16i128)) as usize; if c >= 96 { return 1; } ws[nw] = (c as u8, v14); nw += 1; }
+                    }
+                } else if (f6 >= 96i128 && f6 <= 107i128) {
                     if (f6 == 107i128) {
                         return 1;
                     } else {
@@ -17595,6 +20064,12 @@ pub fn h_15a(s: &mut St, f: &[i64; NF]) -> u32 {
                         v14 = match hload(&*s, v3, 4i128 as u32, false) { Some(x) => x, None => return 1 };
                         { let c = (f6) as usize; if c >= 96 { return 1; } ws[nw] = (c as u8, v14); nw += 1; }
                     }
+                } else {
+                    v0 = rr!(&*s, (16i128 + (f4 + 8i128)));
+                    v2 = ((((((f1) << (16i128 as u32)) | f0) * 4i128) & 4294967295i128)) as u32;
+                    v3 = v0.wrapping_add(v2);
+                    v14 = match hload(&*s, v3, 4i128 as u32, false) { Some(x) => x, None => return 1 };
+                    { let c = (f6) as usize; if c >= 96 { return 1; } ws[nw] = (c as u8, v14); nw += 1; }
                 }
             }
         }
@@ -17630,7 +20105,17 @@ pub fn h_15a(s: &mut St, f: &[i64; NF]) -> u32 {
                     v18 = v16.wrapping_add(v8);
                     v20 = match hload(&*s, v18, 4i128 as u32, false) { Some(x) => x, None => return 1 };
                     { let c = (f6) as usize; if c >= 96 { return 1; } ws[nw] = (c as u8, v19); nw += 1; }
+                    if (f6 >= 64i128) {
+                        if (f6 <= 79i128) {
+                            { let c = (((f6 - 64i128) + 16i128)) as usize; if c >= 96 { return 1; } ws[nw] = (c as u8, v19); nw += 1; }
+                        }
+                    }
                     { let c = ((f6 ^ 1i128)) as usize; if c >= 96 { return 1; } ws[nw] = (c as u8, v20); nw += 1; }
+                    if ((f6 ^ 1i128) >= 64i128) {
+                        if ((f6 ^ 1i128) <= 79i128) {
+                            { let c = ((((f6 ^ 1i128) - 64i128) + 16i128)) as usize; if c >= 96 { return 1; } ws[nw] = (c as u8, v20); nw += 1; }
+                        }
+                    }
                 } else {
                     { let c = (f6) as usize; if c >= 96 { return 1; } ws[nw] = (c as u8, v19); nw += 1; }
                 }
@@ -17696,83 +20181,40 @@ pub fn h_15a(s: &mut St, f: &[i64; NF]) -> u32 {
                     v15 = rr!(&*s, (16i128 + (f4 + 0i128)));
                     v2 = ((((((f1) << (16i128 as u32)) | f0) * 4i128) & 4294967295i128)) as u32;
                     v16 = v15.wrapping_add(v2);
-                    if ((f4 + 0i128) == 1i128) {
-                        if (((rr!(&*s, 114) as i128) & 8388608) != 0i128) {
-                            v6 = (0i128) as u32;
-                            v17 = v16.wrapping_add(v6);
-                            v21 = match hload(&*s, v16, 4i128 as u32, false) { Some(x) => x, None => return 1 };
-                            { let c = (f6) as usize; if c >= 96 { return 1; } ws[nw] = (c as u8, v21); nw += 1; }
-                            v22 = match hload(&*s, v17, 4i128 as u32, false) { Some(x) => x, None => return 1 };
-                            { let c = ((f6 + 80i128)) as usize; if c >= 96 { return 1; } ws[nw] = (c as u8, v22); nw += 1; }
-                        } else {
-                            if (((rr!(&*s, 114) as i128) & 2097152) != 0i128) {
-                                v8 = (4i128) as u32;
-                                v18 = v16.wrapping_add(v8);
-                                v21 = match hload(&*s, v16, 4i128 as u32, false) { Some(x) => x, None => return 1 };
-                                { let c = (f6) as usize; if c >= 96 { return 1; } ws[nw] = (c as u8, v21); nw += 1; }
-                                v20 = match hload(&*s, v18, 4i128 as u32, false) { Some(x) => x, None => return 1 };
-                                { let c = ((f6 + 80i128)) as usize; if c >= 96 { return 1; } ws[nw] = (c as u8, v20); nw += 1; }
-                            } else {
-                                v21 = match hload(&*s, v16, 4i128 as u32, false) { Some(x) => x, None => return 1 };
-                                { let c = (f6) as usize; if c >= 96 { return 1; } ws[nw] = (c as u8, v21); nw += 1; }
-                            }
-                        }
+                    if (((rr!(&*s, 114) as i128) & 2097152) != 0i128) {
+                        v8 = (4i128) as u32;
+                        v18 = v16.wrapping_add(v8);
+                        v21 = match hload(&*s, v16, 4i128 as u32, false) { Some(x) => x, None => return 1 };
+                        { let c = (f6) as usize; if c >= 96 { return 1; } ws[nw] = (c as u8, v21); nw += 1; }
+                        v20 = match hload(&*s, v18, 4i128 as u32, false) { Some(x) => x, None => return 1 };
+                        { let c = ((f6 + 80i128)) as usize; if c >= 96 { return 1; } ws[nw] = (c as u8, v20); nw += 1; }
                     } else {
-                        if (((rr!(&*s, 114) as i128) & 2097152) != 0i128) {
-                            v8 = (4i128) as u32;
-                            v18 = v16.wrapping_add(v8);
-                            v21 = match hload(&*s, v16, 4i128 as u32, false) { Some(x) => x, None => return 1 };
-                            { let c = (f6) as usize; if c >= 96 { return 1; } ws[nw] = (c as u8, v21); nw += 1; }
-                            v20 = match hload(&*s, v18, 4i128 as u32, false) { Some(x) => x, None => return 1 };
-                            { let c = ((f6 + 80i128)) as usize; if c >= 96 { return 1; } ws[nw] = (c as u8, v20); nw += 1; }
-                        } else {
-                            v21 = match hload(&*s, v16, 4i128 as u32, false) { Some(x) => x, None => return 1 };
-                            { let c = (f6) as usize; if c >= 96 { return 1; } ws[nw] = (c as u8, v21); nw += 1; }
-                        }
+                        v21 = match hload(&*s, v16, 4i128 as u32, false) { Some(x) => x, None => return 1 };
+                        { let c = (f6) as usize; if c >= 96 { return 1; } ws[nw] = (c as u8, v21); nw += 1; }
                     }
-                } else if (f6 >= 16i128 && f6 <= 79i128) || (f6 >= 110i128 && f6 <= 111i128) || (f6 >= 114i128 && f6 <= 117i128) || (f6 >= 122i128 && f6 <= 125i128) {
+                } else if (f6 >= 16i128 && f6 <= 79i128) {
                     v15 = rr!(&*s, (16i128 + (f4 + 0i128)));
                     v2 = ((((((f1) << (16i128 as u32)) | f0) * 4i128) & 4294967295i128)) as u32;
                     v16 = v15.wrapping_add(v2);
                     v21 = match hload(&*s, v16, 4i128 as u32, false) { Some(x) => x, None => return 1 };
                     { let c = (f6) as usize; if c >= 96 { return 1; } ws[nw] = (c as u8, v21); nw += 1; }
+                    if (f6 >= 64i128) {
+                        { let c = (((f6 - 64i128) + 16i128)) as usize; if c >= 96 { return 1; } ws[nw] = (c as u8, v21); nw += 1; }
+                    }
                 } else if (f6 >= 80i128 && f6 <= 95i128) {
                     v15 = rr!(&*s, (16i128 + (f4 + 0i128)));
                     v2 = ((((((f1) << (16i128 as u32)) | f0) * 4i128) & 4294967295i128)) as u32;
                     v16 = v15.wrapping_add(v2);
-                    if ((f4 + 0i128) == 1i128) {
-                        if (((rr!(&*s, 114) as i128) & 8388608) != 0i128) {
-                            v6 = (0i128) as u32;
-                            v17 = v16.wrapping_add(v6);
-                            v21 = match hload(&*s, v16, 4i128 as u32, false) { Some(x) => x, None => return 1 };
-                            { let c = (f6) as usize; if c >= 96 { return 1; } ws[nw] = (c as u8, v21); nw += 1; }
-                            v22 = match hload(&*s, v17, 4i128 as u32, false) { Some(x) => x, None => return 1 };
-                            { let c = ((f6 + -80i128)) as usize; if c >= 96 { return 1; } ws[nw] = (c as u8, v22); nw += 1; }
-                        } else {
-                            if (((rr!(&*s, 114) as i128) & 2097152) != 0i128) {
-                                v8 = (4i128) as u32;
-                                v18 = v16.wrapping_add(v8);
-                                v21 = match hload(&*s, v16, 4i128 as u32, false) { Some(x) => x, None => return 1 };
-                                { let c = (f6) as usize; if c >= 96 { return 1; } ws[nw] = (c as u8, v21); nw += 1; }
-                                v20 = match hload(&*s, v18, 4i128 as u32, false) { Some(x) => x, None => return 1 };
-                                { let c = ((f6 + -80i128)) as usize; if c >= 96 { return 1; } ws[nw] = (c as u8, v20); nw += 1; }
-                            } else {
-                                v21 = match hload(&*s, v16, 4i128 as u32, false) { Some(x) => x, None => return 1 };
-                                { let c = (f6) as usize; if c >= 96 { return 1; } ws[nw] = (c as u8, v21); nw += 1; }
-                            }
-                        }
+                    if (((rr!(&*s, 114) as i128) & 2097152) != 0i128) {
+                        v8 = (4i128) as u32;
+                        v18 = v16.wrapping_add(v8);
+                        v21 = match hload(&*s, v16, 4i128 as u32, false) { Some(x) => x, None => return 1 };
+                        { let c = (f6) as usize; if c >= 96 { return 1; } ws[nw] = (c as u8, v21); nw += 1; }
+                        v20 = match hload(&*s, v18, 4i128 as u32, false) { Some(x) => x, None => return 1 };
+                        { let c = ((f6 + -80i128)) as usize; if c >= 96 { return 1; } ws[nw] = (c as u8, v20); nw += 1; }
                     } else {
-                        if (((rr!(&*s, 114) as i128) & 2097152) != 0i128) {
-                            v8 = (4i128) as u32;
-                            v18 = v16.wrapping_add(v8);
-                            v21 = match hload(&*s, v16, 4i128 as u32, false) { Some(x) => x, None => return 1 };
-                            { let c = (f6) as usize; if c >= 96 { return 1; } ws[nw] = (c as u8, v21); nw += 1; }
-                            v20 = match hload(&*s, v18, 4i128 as u32, false) { Some(x) => x, None => return 1 };
-                            { let c = ((f6 + -80i128)) as usize; if c >= 96 { return 1; } ws[nw] = (c as u8, v20); nw += 1; }
-                        } else {
-                            v21 = match hload(&*s, v16, 4i128 as u32, false) { Some(x) => x, None => return 1 };
-                            { let c = (f6) as usize; if c >= 96 { return 1; } ws[nw] = (c as u8, v21); nw += 1; }
-                        }
+                        v21 = match hload(&*s, v16, 4i128 as u32, false) { Some(x) => x, None => return 1 };
+                        { let c = (f6) as usize; if c >= 96 { return 1; } ws[nw] = (c as u8, v21); nw += 1; }
                     }
                 } else if (f6 >= 96i128 && f6 <= 107i128) {
                     if (f6 == 107i128) {
@@ -17784,68 +20226,39 @@ pub fn h_15a(s: &mut St, f: &[i64; NF]) -> u32 {
                         v21 = match hload(&*s, v16, 4i128 as u32, false) { Some(x) => x, None => return 1 };
                         { let c = (f6) as usize; if c >= 96 { return 1; } ws[nw] = (c as u8, v21); nw += 1; }
                     }
-                } else {
-                    if ((f4 + 0i128) == 1i128) {
-                        if (((rr!(&*s, 114) as i128) & 8388608) != 0i128) {
-                            if ((f6 ^ 1i128) == 107i128) {
-                                return 1;
-                            } else {
-                                v15 = rr!(&*s, (16i128 + (f4 + 0i128)));
-                                v2 = ((((((f1) << (16i128 as u32)) | f0) * 4i128) & 4294967295i128)) as u32;
-                                v16 = v15.wrapping_add(v2);
-                                v6 = (0i128) as u32;
-                                v17 = v16.wrapping_add(v6);
-                                v21 = match hload(&*s, v16, 4i128 as u32, false) { Some(x) => x, None => return 1 };
-                                { let c = (f6) as usize; if c >= 96 { return 1; } ws[nw] = (c as u8, v21); nw += 1; }
-                                v22 = match hload(&*s, v17, 4i128 as u32, false) { Some(x) => x, None => return 1 };
-                                { let c = ((f6 ^ 1i128)) as usize; if c >= 96 { return 1; } ws[nw] = (c as u8, v22); nw += 1; }
-                            }
-                        } else {
-                            if (((rr!(&*s, 114) as i128) & 2097152) != 0i128) {
-                                if ((f6 ^ 1i128) == 107i128) {
-                                    return 1;
-                                } else {
-                                    v15 = rr!(&*s, (16i128 + (f4 + 0i128)));
-                                    v2 = ((((((f1) << (16i128 as u32)) | f0) * 4i128) & 4294967295i128)) as u32;
-                                    v16 = v15.wrapping_add(v2);
-                                    v8 = (4i128) as u32;
-                                    v18 = v16.wrapping_add(v8);
-                                    v21 = match hload(&*s, v16, 4i128 as u32, false) { Some(x) => x, None => return 1 };
-                                    { let c = (f6) as usize; if c >= 96 { return 1; } ws[nw] = (c as u8, v21); nw += 1; }
-                                    v20 = match hload(&*s, v18, 4i128 as u32, false) { Some(x) => x, None => return 1 };
-                                    { let c = ((f6 ^ 1i128)) as usize; if c >= 96 { return 1; } ws[nw] = (c as u8, v20); nw += 1; }
-                                }
-                            } else {
-                                v15 = rr!(&*s, (16i128 + (f4 + 0i128)));
-                                v2 = ((((((f1) << (16i128 as u32)) | f0) * 4i128) & 4294967295i128)) as u32;
-                                v16 = v15.wrapping_add(v2);
-                                v21 = match hload(&*s, v16, 4i128 as u32, false) { Some(x) => x, None => return 1 };
-                                { let c = (f6) as usize; if c >= 96 { return 1; } ws[nw] = (c as u8, v21); nw += 1; }
-                            }
-                        }
-                    } else {
-                        if (((rr!(&*s, 114) as i128) & 2097152) != 0i128) {
-                            if ((f6 ^ 1i128) == 107i128) {
-                                return 1;
-                            } else {
-                                v15 = rr!(&*s, (16i128 + (f4 + 0i128)));
-                                v2 = ((((((f1) << (16i128 as u32)) | f0) * 4i128) & 4294967295i128)) as u32;
-                                v16 = v15.wrapping_add(v2);
-                                v8 = (4i128) as u32;
-                                v18 = v16.wrapping_add(v8);
-                                v21 = match hload(&*s, v16, 4i128 as u32, false) { Some(x) => x, None => return 1 };
-                                { let c = (f6) as usize; if c >= 96 { return 1; } ws[nw] = (c as u8, v21); nw += 1; }
-                                v20 = match hload(&*s, v18, 4i128 as u32, false) { Some(x) => x, None => return 1 };
-                                { let c = ((f6 ^ 1i128)) as usize; if c >= 96 { return 1; } ws[nw] = (c as u8, v20); nw += 1; }
-                            }
+                } else if (f6 >= 108i128 && f6 <= 109i128) || (f6 >= 112i128 && f6 <= 113i128) || (f6 >= 118i128 && f6 <= 121i128) || f6 >= 126i128 {
+                    if (((rr!(&*s, 114) as i128) & 2097152) != 0i128) {
+                        if ((f6 ^ 1i128) == 107i128) {
+                            return 1;
                         } else {
                             v15 = rr!(&*s, (16i128 + (f4 + 0i128)));
                             v2 = ((((((f1) << (16i128 as u32)) | f0) * 4i128) & 4294967295i128)) as u32;
                             v16 = v15.wrapping_add(v2);
+                            v8 = (4i128) as u32;
+                            v18 = v16.wrapping_add(v8);
                             v21 = match hload(&*s, v16, 4i128 as u32, false) { Some(x) => x, None => return 1 };
                             { let c = (f6) as usize; if c >= 96 { return 1; } ws[nw] = (c as u8, v21); nw += 1; }
+                            v20 = match hload(&*s, v18, 4i128 as u32, false) { Some(x) => x, None => return 1 };
+                            { let c = ((f6 ^ 1i128)) as usize; if c >= 96 { return 1; } ws[nw] = (c as u8, v20); nw += 1; }
+                            if ((f6 ^ 1i128) >= 64i128) {
+                                if ((f6 ^ 1i128) <= 79i128) {
+                                    { let c = ((((f6 ^ 1i128) - 64i128) + 16i128)) as usize; if c >= 96 { return 1; } ws[nw] = (c as u8, v20); nw += 1; }
+                                }
+                            }
                         }
+                    } else {
+                        v15 = rr!(&*s, (16i128 + (f4 + 0i128)));
+                        v2 = ((((((f1) << (16i128 as u32)) | f0) * 4i128) & 4294967295i128)) as u32;
+                        v16 = v15.wrapping_add(v2);
+                        v21 = match hload(&*s, v16, 4i128 as u32, false) { Some(x) => x, None => return 1 };
+                        { let c = (f6) as usize; if c >= 96 { return 1; } ws[nw] = (c as u8, v21); nw += 1; }
                     }
+                } else {
+                    v15 = rr!(&*s, (16i128 + (f4 + 0i128)));
+                    v2 = ((((((f1) << (16i128 as u32)) | f0) * 4i128) & 4294967295i128)) as u32;
+                    v16 = v15.wrapping_add(v2);
+                    v21 = match hload(&*s, v16, 4i128 as u32, false) { Some(x) => x, None => return 1 };
+                    { let c = (f6) as usize; if c >= 96 { return 1; } ws[nw] = (c as u8, v21); nw += 1; }
                 }
             }
         }
@@ -17883,7 +20296,6 @@ pub fn t_15a<S: RegRead>(s: &S, f: &[i64; NF], t: &mut Touch) -> bool {
     let mut v19: u32 = 0;
     let mut v20: u32 = 0;
     let mut v21: u32 = 0;
-    let mut v22: u32 = 0;
     if (f3 != 0i128) {
         if (f5 != 0i128) {
             t.rd(((16i128 + (f4 + 8i128))) as u32);
@@ -17896,7 +20308,17 @@ pub fn t_15a<S: RegRead>(s: &S, f: &[i64; NF], t: &mut Touch) -> bool {
             } else {
                 if (f6 < 96i128) {
                     t.wr((f6) as u32);
+                    if (f6 >= 64i128) {
+                        if (f6 <= 79i128) {
+                            t.wr((((f6 - 64i128) + 16i128)) as u32);
+                        }
+                    }
                     t.wr(((f6 ^ 1i128)) as u32);
+                    if ((f6 ^ 1i128) >= 64i128) {
+                        if ((f6 ^ 1i128) <= 79i128) {
+                            t.wr(((((f6 ^ 1i128) - 64i128) + 16i128)) as u32);
+                        }
+                    }
                 } else {
                     t.wr((f6) as u32);
                 }
@@ -17907,35 +20329,28 @@ pub fn t_15a<S: RegRead>(s: &S, f: &[i64; NF], t: &mut Touch) -> bool {
                 t.rd((f6) as u32);
             } else {
                 if f6 <= 15i128 || (f6 >= 80i128 && f6 <= 95i128) || (f6 >= 108i128 && f6 <= 109i128) || (f6 >= 112i128 && f6 <= 113i128) || (f6 >= 118i128 && f6 <= 121i128) || f6 >= 126i128 {
-                    if ((f4 + 8i128) == 9i128) {
-                        if (((rrt!(&*s, 114) as i128) & 4194304) != 0i128) {
-                            return false;
-                        } else {
-                            if (((rrt!(&*s, 114) as i128) & 2097152) != 0i128) {
-                                return false;
-                            } else {
-                                t.rd(((16i128 + (f4 + 8i128))) as u32);
-                                t.wr((f6) as u32);
-                            }
-                        }
+                    if (((rrt!(&*s, 114) as i128) & 2097152) != 0i128) {
+                        return false;
                     } else {
-                        if (((rrt!(&*s, 114) as i128) & 2097152) != 0i128) {
-                            return false;
-                        } else {
-                            t.rd(((16i128 + (f4 + 8i128))) as u32);
-                            t.wr((f6) as u32);
-                        }
+                        t.rd(((16i128 + (f4 + 8i128))) as u32);
+                        t.wr((f6) as u32);
                     }
-                } else if (f6 >= 16i128 && f6 <= 79i128) || (f6 >= 110i128 && f6 <= 111i128) || (f6 >= 114i128 && f6 <= 117i128) || (f6 >= 122i128 && f6 <= 125i128) {
+                } else if (f6 >= 16i128 && f6 <= 79i128) {
                     t.rd(((16i128 + (f4 + 8i128))) as u32);
                     t.wr((f6) as u32);
-                } else {
+                    if (f6 >= 64i128) {
+                        t.wr((((f6 - 64i128) + 16i128)) as u32);
+                    }
+                } else if (f6 >= 96i128 && f6 <= 107i128) {
                     if (f6 == 107i128) {
                         return false;
                     } else {
                         t.rd(((16i128 + (f4 + 8i128))) as u32);
                         t.wr((f6) as u32);
                     }
+                } else {
+                    t.rd(((16i128 + (f4 + 8i128))) as u32);
+                    t.wr((f6) as u32);
                 }
             }
         }
@@ -17951,7 +20366,17 @@ pub fn t_15a<S: RegRead>(s: &S, f: &[i64; NF], t: &mut Touch) -> bool {
             } else {
                 if (f6 < 96i128) {
                     t.wr((f6) as u32);
+                    if (f6 >= 64i128) {
+                        if (f6 <= 79i128) {
+                            t.wr((((f6 - 64i128) + 16i128)) as u32);
+                        }
+                    }
                     t.wr(((f6 ^ 1i128)) as u32);
+                    if ((f6 ^ 1i128) >= 64i128) {
+                        if ((f6 ^ 1i128) <= 79i128) {
+                            t.wr(((((f6 ^ 1i128) - 64i128) + 16i128)) as u32);
+                        }
+                    }
                 } else {
                     t.wr((f6) as u32);
                 }
@@ -17992,50 +20417,25 @@ pub fn t_15a<S: RegRead>(s: &S, f: &[i64; NF], t: &mut Touch) -> bool {
             } else {
                 if f6 <= 15i128 {
                     t.rd(((16i128 + (f4 + 0i128))) as u32);
-                    if ((f4 + 0i128) == 1i128) {
-                        if (((rrt!(&*s, 114) as i128) & 8388608) != 0i128) {
-                            t.wr((f6) as u32);
-                            t.wr(((f6 + 80i128)) as u32);
-                        } else {
-                            if (((rrt!(&*s, 114) as i128) & 2097152) != 0i128) {
-                                t.wr((f6) as u32);
-                                t.wr(((f6 + 80i128)) as u32);
-                            } else {
-                                t.wr((f6) as u32);
-                            }
-                        }
+                    if (((rrt!(&*s, 114) as i128) & 2097152) != 0i128) {
+                        t.wr((f6) as u32);
+                        t.wr(((f6 + 80i128)) as u32);
                     } else {
-                        if (((rrt!(&*s, 114) as i128) & 2097152) != 0i128) {
-                            t.wr((f6) as u32);
-                            t.wr(((f6 + 80i128)) as u32);
-                        } else {
-                            t.wr((f6) as u32);
-                        }
+                        t.wr((f6) as u32);
                     }
-                } else if (f6 >= 16i128 && f6 <= 79i128) || (f6 >= 110i128 && f6 <= 111i128) || (f6 >= 114i128 && f6 <= 117i128) || (f6 >= 122i128 && f6 <= 125i128) {
+                } else if (f6 >= 16i128 && f6 <= 79i128) {
                     t.rd(((16i128 + (f4 + 0i128))) as u32);
                     t.wr((f6) as u32);
+                    if (f6 >= 64i128) {
+                        t.wr((((f6 - 64i128) + 16i128)) as u32);
+                    }
                 } else if (f6 >= 80i128 && f6 <= 95i128) {
                     t.rd(((16i128 + (f4 + 0i128))) as u32);
-                    if ((f4 + 0i128) == 1i128) {
-                        if (((rrt!(&*s, 114) as i128) & 8388608) != 0i128) {
-                            t.wr((f6) as u32);
-                            t.wr(((f6 + -80i128)) as u32);
-                        } else {
-                            if (((rrt!(&*s, 114) as i128) & 2097152) != 0i128) {
-                                t.wr((f6) as u32);
-                                t.wr(((f6 + -80i128)) as u32);
-                            } else {
-                                t.wr((f6) as u32);
-                            }
-                        }
+                    if (((rrt!(&*s, 114) as i128) & 2097152) != 0i128) {
+                        t.wr((f6) as u32);
+                        t.wr(((f6 + -80i128)) as u32);
                     } else {
-                        if (((rrt!(&*s, 114) as i128) & 2097152) != 0i128) {
-                            t.wr((f6) as u32);
-                            t.wr(((f6 + -80i128)) as u32);
-                        } else {
-                            t.wr((f6) as u32);
-                        }
+                        t.wr((f6) as u32);
                     }
                 } else if (f6 >= 96i128 && f6 <= 107i128) {
                     if (f6 == 107i128) {
@@ -18044,44 +20444,27 @@ pub fn t_15a<S: RegRead>(s: &S, f: &[i64; NF], t: &mut Touch) -> bool {
                         t.rd(((16i128 + (f4 + 0i128))) as u32);
                         t.wr((f6) as u32);
                     }
-                } else {
-                    if ((f4 + 0i128) == 1i128) {
-                        if (((rrt!(&*s, 114) as i128) & 8388608) != 0i128) {
-                            if ((f6 ^ 1i128) == 107i128) {
-                                return false;
-                            } else {
-                                t.rd(((16i128 + (f4 + 0i128))) as u32);
-                                t.wr((f6) as u32);
-                                t.wr(((f6 ^ 1i128)) as u32);
-                            }
-                        } else {
-                            if (((rrt!(&*s, 114) as i128) & 2097152) != 0i128) {
-                                if ((f6 ^ 1i128) == 107i128) {
-                                    return false;
-                                } else {
-                                    t.rd(((16i128 + (f4 + 0i128))) as u32);
-                                    t.wr((f6) as u32);
-                                    t.wr(((f6 ^ 1i128)) as u32);
-                                }
-                            } else {
-                                t.rd(((16i128 + (f4 + 0i128))) as u32);
-                                t.wr((f6) as u32);
-                            }
-                        }
-                    } else {
-                        if (((rrt!(&*s, 114) as i128) & 2097152) != 0i128) {
-                            if ((f6 ^ 1i128) == 107i128) {
-                                return false;
-                            } else {
-                                t.rd(((16i128 + (f4 + 0i128))) as u32);
-                                t.wr((f6) as u32);
-                                t.wr(((f6 ^ 1i128)) as u32);
-                            }
+                } else if (f6 >= 108i128 && f6 <= 109i128) || (f6 >= 112i128 && f6 <= 113i128) || (f6 >= 118i128 && f6 <= 121i128) || f6 >= 126i128 {
+                    if (((rrt!(&*s, 114) as i128) & 2097152) != 0i128) {
+                        if ((f6 ^ 1i128) == 107i128) {
+                            return false;
                         } else {
                             t.rd(((16i128 + (f4 + 0i128))) as u32);
                             t.wr((f6) as u32);
+                            t.wr(((f6 ^ 1i128)) as u32);
+                            if ((f6 ^ 1i128) >= 64i128) {
+                                if ((f6 ^ 1i128) <= 79i128) {
+                                    t.wr(((((f6 ^ 1i128) - 64i128) + 16i128)) as u32);
+                                }
+                            }
                         }
+                    } else {
+                        t.rd(((16i128 + (f4 + 0i128))) as u32);
+                        t.wr((f6) as u32);
                     }
+                } else {
+                    t.rd(((16i128 + (f4 + 0i128))) as u32);
+                    t.wr((f6) as u32);
                 }
             }
         }
@@ -18131,8 +20514,6 @@ pub fn h_15b(s: &mut St, f: &[i64; NF]) -> u32 {
     let mut v32: u32 = 0;
     let mut v33: u32 = 0;
     let mut v34: u32 = 0;
-    let mut v35: u32 = 0;
-    let mut v36: u32 = 0;
     let mut ws: [(u8, u32); 8] = [(0, 0); 8];
     let mut nw = 0usize;
     let mut st: [(u32, u32, u8); 4] = [(0, 0, 0); 4];
@@ -18170,7 +20551,17 @@ pub fn h_15b(s: &mut St, f: &[i64; NF]) -> u32 {
                         v9 = v3.wrapping_add(v8);
                         v11 = match hload(&*s, v9, 4i128 as u32, false) { Some(x) => x, None => return 1 };
                         { let c = (f5) as usize; if c >= 96 { return 1; } ws[nw] = (c as u8, v10); nw += 1; }
+                        if (f5 >= 64i128) {
+                            if (f5 <= 79i128) {
+                                { let c = (((f5 - 64i128) + 16i128)) as usize; if c >= 96 { return 1; } ws[nw] = (c as u8, v10); nw += 1; }
+                            }
+                        }
                         { let c = ((f5 ^ 1i128)) as usize; if c >= 96 { return 1; } ws[nw] = (c as u8, v11); nw += 1; }
+                        if ((f5 ^ 1i128) >= 64i128) {
+                            if ((f5 ^ 1i128) <= 79i128) {
+                                { let c = ((((f5 ^ 1i128) - 64i128) + 16i128)) as usize; if c >= 96 { return 1; } ws[nw] = (c as u8, v11); nw += 1; }
+                            }
+                        }
                     } else {
                         { let c = (f5) as usize; if c >= 96 { return 1; } ws[nw] = (c as u8, v10); nw += 1; }
                     }
@@ -18184,38 +20575,25 @@ pub fn h_15b(s: &mut St, f: &[i64; NF]) -> u32 {
                     st[nst] = (v3, v4, 4i128 as u8); nst += 1;
                 } else {
                     if f5 <= 15i128 || (f5 >= 80i128 && f5 <= 95i128) || (f5 >= 108i128 && f5 <= 109i128) || (f5 >= 112i128 && f5 <= 113i128) || (f5 >= 118i128 && f5 <= 121i128) || f5 >= 126i128 {
-                        if ((f3 + 8i128) == 9i128) {
-                            if (((rr!(&*s, 114) as i128) & 4194304) != 0i128) {
-                                return 1;
-                            } else {
-                                if (((rr!(&*s, 114) as i128) & 2097152) != 0i128) {
-                                    return 1;
-                                } else {
-                                    v0 = rr!(&*s, (16i128 + (f3 + 8i128)));
-                                    v2 = ((((f1 - 128i128) * 4i128) & 4294967295i128)) as u32;
-                                    v3 = v0.wrapping_add(v2);
-                                    v14 = match hload(&*s, v3, 4i128 as u32, false) { Some(x) => x, None => return 1 };
-                                    { let c = (f5) as usize; if c >= 96 { return 1; } ws[nw] = (c as u8, v14); nw += 1; }
-                                }
-                            }
+                        if (((rr!(&*s, 114) as i128) & 2097152) != 0i128) {
+                            return 1;
                         } else {
-                            if (((rr!(&*s, 114) as i128) & 2097152) != 0i128) {
-                                return 1;
-                            } else {
-                                v0 = rr!(&*s, (16i128 + (f3 + 8i128)));
-                                v2 = ((((f1 - 128i128) * 4i128) & 4294967295i128)) as u32;
-                                v3 = v0.wrapping_add(v2);
-                                v14 = match hload(&*s, v3, 4i128 as u32, false) { Some(x) => x, None => return 1 };
-                                { let c = (f5) as usize; if c >= 96 { return 1; } ws[nw] = (c as u8, v14); nw += 1; }
-                            }
+                            v0 = rr!(&*s, (16i128 + (f3 + 8i128)));
+                            v2 = ((((f1 - 128i128) * 4i128) & 4294967295i128)) as u32;
+                            v3 = v0.wrapping_add(v2);
+                            v14 = match hload(&*s, v3, 4i128 as u32, false) { Some(x) => x, None => return 1 };
+                            { let c = (f5) as usize; if c >= 96 { return 1; } ws[nw] = (c as u8, v14); nw += 1; }
                         }
-                    } else if (f5 >= 16i128 && f5 <= 79i128) || (f5 >= 110i128 && f5 <= 111i128) || (f5 >= 114i128 && f5 <= 117i128) || (f5 >= 122i128 && f5 <= 125i128) {
+                    } else if (f5 >= 16i128 && f5 <= 79i128) {
                         v0 = rr!(&*s, (16i128 + (f3 + 8i128)));
                         v2 = ((((f1 - 128i128) * 4i128) & 4294967295i128)) as u32;
                         v3 = v0.wrapping_add(v2);
                         v14 = match hload(&*s, v3, 4i128 as u32, false) { Some(x) => x, None => return 1 };
                         { let c = (f5) as usize; if c >= 96 { return 1; } ws[nw] = (c as u8, v14); nw += 1; }
-                    } else {
+                        if (f5 >= 64i128) {
+                            { let c = (((f5 - 64i128) + 16i128)) as usize; if c >= 96 { return 1; } ws[nw] = (c as u8, v14); nw += 1; }
+                        }
+                    } else if (f5 >= 96i128 && f5 <= 107i128) {
                         if (f5 == 107i128) {
                             return 1;
                         } else {
@@ -18225,6 +20603,12 @@ pub fn h_15b(s: &mut St, f: &[i64; NF]) -> u32 {
                             v14 = match hload(&*s, v3, 4i128 as u32, false) { Some(x) => x, None => return 1 };
                             { let c = (f5) as usize; if c >= 96 { return 1; } ws[nw] = (c as u8, v14); nw += 1; }
                         }
+                    } else {
+                        v0 = rr!(&*s, (16i128 + (f3 + 8i128)));
+                        v2 = ((((f1 - 128i128) * 4i128) & 4294967295i128)) as u32;
+                        v3 = v0.wrapping_add(v2);
+                        v14 = match hload(&*s, v3, 4i128 as u32, false) { Some(x) => x, None => return 1 };
+                        { let c = (f5) as usize; if c >= 96 { return 1; } ws[nw] = (c as u8, v14); nw += 1; }
                     }
                 }
             }
@@ -18260,7 +20644,17 @@ pub fn h_15b(s: &mut St, f: &[i64; NF]) -> u32 {
                         v18 = v16.wrapping_add(v8);
                         v20 = match hload(&*s, v18, 4i128 as u32, false) { Some(x) => x, None => return 1 };
                         { let c = (f5) as usize; if c >= 96 { return 1; } ws[nw] = (c as u8, v19); nw += 1; }
+                        if (f5 >= 64i128) {
+                            if (f5 <= 79i128) {
+                                { let c = (((f5 - 64i128) + 16i128)) as usize; if c >= 96 { return 1; } ws[nw] = (c as u8, v19); nw += 1; }
+                            }
+                        }
                         { let c = ((f5 ^ 1i128)) as usize; if c >= 96 { return 1; } ws[nw] = (c as u8, v20); nw += 1; }
+                        if ((f5 ^ 1i128) >= 64i128) {
+                            if ((f5 ^ 1i128) <= 79i128) {
+                                { let c = ((((f5 ^ 1i128) - 64i128) + 16i128)) as usize; if c >= 96 { return 1; } ws[nw] = (c as u8, v20); nw += 1; }
+                            }
+                        }
                     } else {
                         { let c = (f5) as usize; if c >= 96 { return 1; } ws[nw] = (c as u8, v19); nw += 1; }
                     }
@@ -18274,38 +20668,25 @@ pub fn h_15b(s: &mut St, f: &[i64; NF]) -> u32 {
                     st[nst] = (v16, v4, 4i128 as u8); nst += 1;
                 } else {
                     if f5 <= 15i128 || (f5 >= 80i128 && f5 <= 95i128) || (f5 >= 108i128 && f5 <= 109i128) || (f5 >= 112i128 && f5 <= 113i128) || (f5 >= 118i128 && f5 <= 121i128) || f5 >= 126i128 {
-                        if ((f3 + 8i128) == 9i128) {
-                            if (((rr!(&*s, 114) as i128) & 4194304) != 0i128) {
-                                return 1;
-                            } else {
-                                if (((rr!(&*s, 114) as i128) & 2097152) != 0i128) {
-                                    return 1;
-                                } else {
-                                    v0 = rr!(&*s, (16i128 + (f3 + 8i128)));
-                                    v15 = (((f1 * 4i128) & 4294967295i128)) as u32;
-                                    v16 = v0.wrapping_add(v15);
-                                    v21 = match hload(&*s, v16, 4i128 as u32, false) { Some(x) => x, None => return 1 };
-                                    { let c = (f5) as usize; if c >= 96 { return 1; } ws[nw] = (c as u8, v21); nw += 1; }
-                                }
-                            }
+                        if (((rr!(&*s, 114) as i128) & 2097152) != 0i128) {
+                            return 1;
                         } else {
-                            if (((rr!(&*s, 114) as i128) & 2097152) != 0i128) {
-                                return 1;
-                            } else {
-                                v0 = rr!(&*s, (16i128 + (f3 + 8i128)));
-                                v15 = (((f1 * 4i128) & 4294967295i128)) as u32;
-                                v16 = v0.wrapping_add(v15);
-                                v21 = match hload(&*s, v16, 4i128 as u32, false) { Some(x) => x, None => return 1 };
-                                { let c = (f5) as usize; if c >= 96 { return 1; } ws[nw] = (c as u8, v21); nw += 1; }
-                            }
+                            v0 = rr!(&*s, (16i128 + (f3 + 8i128)));
+                            v15 = (((f1 * 4i128) & 4294967295i128)) as u32;
+                            v16 = v0.wrapping_add(v15);
+                            v21 = match hload(&*s, v16, 4i128 as u32, false) { Some(x) => x, None => return 1 };
+                            { let c = (f5) as usize; if c >= 96 { return 1; } ws[nw] = (c as u8, v21); nw += 1; }
                         }
-                    } else if (f5 >= 16i128 && f5 <= 79i128) || (f5 >= 110i128 && f5 <= 111i128) || (f5 >= 114i128 && f5 <= 117i128) || (f5 >= 122i128 && f5 <= 125i128) {
+                    } else if (f5 >= 16i128 && f5 <= 79i128) {
                         v0 = rr!(&*s, (16i128 + (f3 + 8i128)));
                         v15 = (((f1 * 4i128) & 4294967295i128)) as u32;
                         v16 = v0.wrapping_add(v15);
                         v21 = match hload(&*s, v16, 4i128 as u32, false) { Some(x) => x, None => return 1 };
                         { let c = (f5) as usize; if c >= 96 { return 1; } ws[nw] = (c as u8, v21); nw += 1; }
-                    } else {
+                        if (f5 >= 64i128) {
+                            { let c = (((f5 - 64i128) + 16i128)) as usize; if c >= 96 { return 1; } ws[nw] = (c as u8, v21); nw += 1; }
+                        }
+                    } else if (f5 >= 96i128 && f5 <= 107i128) {
                         if (f5 == 107i128) {
                             return 1;
                         } else {
@@ -18315,6 +20696,12 @@ pub fn h_15b(s: &mut St, f: &[i64; NF]) -> u32 {
                             v21 = match hload(&*s, v16, 4i128 as u32, false) { Some(x) => x, None => return 1 };
                             { let c = (f5) as usize; if c >= 96 { return 1; } ws[nw] = (c as u8, v21); nw += 1; }
                         }
+                    } else {
+                        v0 = rr!(&*s, (16i128 + (f3 + 8i128)));
+                        v15 = (((f1 * 4i128) & 4294967295i128)) as u32;
+                        v16 = v0.wrapping_add(v15);
+                        v21 = match hload(&*s, v16, 4i128 as u32, false) { Some(x) => x, None => return 1 };
+                        { let c = (f5) as usize; if c >= 96 { return 1; } ws[nw] = (c as u8, v21); nw += 1; }
                     }
                 }
             }
@@ -18352,7 +20739,17 @@ pub fn h_15b(s: &mut St, f: &[i64; NF]) -> u32 {
                         v25 = v23.wrapping_add(v8);
                         v27 = match hload(&*s, v25, 4i128 as u32, false) { Some(x) => x, None => return 1 };
                         { let c = (f5) as usize; if c >= 96 { return 1; } ws[nw] = (c as u8, v26); nw += 1; }
+                        if (f5 >= 64i128) {
+                            if (f5 <= 79i128) {
+                                { let c = (((f5 - 64i128) + 16i128)) as usize; if c >= 96 { return 1; } ws[nw] = (c as u8, v26); nw += 1; }
+                            }
+                        }
                         { let c = ((f5 ^ 1i128)) as usize; if c >= 96 { return 1; } ws[nw] = (c as u8, v27); nw += 1; }
+                        if ((f5 ^ 1i128) >= 64i128) {
+                            if ((f5 ^ 1i128) <= 79i128) {
+                                { let c = ((((f5 ^ 1i128) - 64i128) + 16i128)) as usize; if c >= 96 { return 1; } ws[nw] = (c as u8, v27); nw += 1; }
+                            }
+                        }
                     } else {
                         { let c = (f5) as usize; if c >= 96 { return 1; } ws[nw] = (c as u8, v26); nw += 1; }
                     }
@@ -18418,83 +20815,40 @@ pub fn h_15b(s: &mut St, f: &[i64; NF]) -> u32 {
                         v22 = rr!(&*s, (16i128 + (f3 + 0i128)));
                         v2 = ((((f1 - 128i128) * 4i128) & 4294967295i128)) as u32;
                         v23 = v22.wrapping_add(v2);
-                        if ((f3 + 0i128) == 1i128) {
-                            if (((rr!(&*s, 114) as i128) & 8388608) != 0i128) {
-                                v6 = (0i128) as u32;
-                                v24 = v23.wrapping_add(v6);
-                                v28 = match hload(&*s, v23, 4i128 as u32, false) { Some(x) => x, None => return 1 };
-                                { let c = (f5) as usize; if c >= 96 { return 1; } ws[nw] = (c as u8, v28); nw += 1; }
-                                v29 = match hload(&*s, v24, 4i128 as u32, false) { Some(x) => x, None => return 1 };
-                                { let c = ((f5 + 80i128)) as usize; if c >= 96 { return 1; } ws[nw] = (c as u8, v29); nw += 1; }
-                            } else {
-                                if (((rr!(&*s, 114) as i128) & 2097152) != 0i128) {
-                                    v8 = (4i128) as u32;
-                                    v25 = v23.wrapping_add(v8);
-                                    v28 = match hload(&*s, v23, 4i128 as u32, false) { Some(x) => x, None => return 1 };
-                                    { let c = (f5) as usize; if c >= 96 { return 1; } ws[nw] = (c as u8, v28); nw += 1; }
-                                    v27 = match hload(&*s, v25, 4i128 as u32, false) { Some(x) => x, None => return 1 };
-                                    { let c = ((f5 + 80i128)) as usize; if c >= 96 { return 1; } ws[nw] = (c as u8, v27); nw += 1; }
-                                } else {
-                                    v28 = match hload(&*s, v23, 4i128 as u32, false) { Some(x) => x, None => return 1 };
-                                    { let c = (f5) as usize; if c >= 96 { return 1; } ws[nw] = (c as u8, v28); nw += 1; }
-                                }
-                            }
+                        if (((rr!(&*s, 114) as i128) & 2097152) != 0i128) {
+                            v8 = (4i128) as u32;
+                            v25 = v23.wrapping_add(v8);
+                            v28 = match hload(&*s, v23, 4i128 as u32, false) { Some(x) => x, None => return 1 };
+                            { let c = (f5) as usize; if c >= 96 { return 1; } ws[nw] = (c as u8, v28); nw += 1; }
+                            v27 = match hload(&*s, v25, 4i128 as u32, false) { Some(x) => x, None => return 1 };
+                            { let c = ((f5 + 80i128)) as usize; if c >= 96 { return 1; } ws[nw] = (c as u8, v27); nw += 1; }
                         } else {
-                            if (((rr!(&*s, 114) as i128) & 2097152) != 0i128) {
-                                v8 = (4i128) as u32;
-                                v25 = v23.wrapping_add(v8);
-                                v28 = match hload(&*s, v23, 4i128 as u32, false) { Some(x) => x, None => return 1 };
-                                { let c = (f5) as usize; if c >= 96 { return 1; } ws[nw] = (c as u8, v28); nw += 1; }
-                                v27 = match hload(&*s, v25, 4i128 as u32, false) { Some(x) => x, None => return 1 };
-                                { let c = ((f5 + 80i128)) as usize; if c >= 96 { return 1; } ws[nw] = (c as u8, v27); nw += 1; }
-                            } else {
-                                v28 = match hload(&*s, v23, 4i128 as u32, false) { Some(x) => x, None => return 1 };
-                                { let c = (f5) as usize; if c >= 96 { return 1; } ws[nw] = (c as u8, v28); nw += 1; }
-                            }
+                            v28 = match hload(&*s, v23, 4i128 as u32, false) { Some(x) => x, None => return 1 };
+                            { let c = (f5) as usize; if c >= 96 { return 1; } ws[nw] = (c as u8, v28); nw += 1; }
                         }
-                    } else if (f5 >= 16i128 && f5 <= 79i128) || (f5 >= 110i128 && f5 <= 111i128) || (f5 >= 114i128 && f5 <= 117i128) || (f5 >= 122i128 && f5 <= 125i128) {
+                    } else if (f5 >= 16i128 && f5 <= 79i128) {
                         v22 = rr!(&*s, (16i128 + (f3 + 0i128)));
                         v2 = ((((f1 - 128i128) * 4i128) & 4294967295i128)) as u32;
                         v23 = v22.wrapping_add(v2);
                         v28 = match hload(&*s, v23, 4i128 as u32, false) { Some(x) => x, None => return 1 };
                         { let c = (f5) as usize; if c >= 96 { return 1; } ws[nw] = (c as u8, v28); nw += 1; }
+                        if (f5 >= 64i128) {
+                            { let c = (((f5 - 64i128) + 16i128)) as usize; if c >= 96 { return 1; } ws[nw] = (c as u8, v28); nw += 1; }
+                        }
                     } else if (f5 >= 80i128 && f5 <= 95i128) {
                         v22 = rr!(&*s, (16i128 + (f3 + 0i128)));
                         v2 = ((((f1 - 128i128) * 4i128) & 4294967295i128)) as u32;
                         v23 = v22.wrapping_add(v2);
-                        if ((f3 + 0i128) == 1i128) {
-                            if (((rr!(&*s, 114) as i128) & 8388608) != 0i128) {
-                                v6 = (0i128) as u32;
-                                v24 = v23.wrapping_add(v6);
-                                v28 = match hload(&*s, v23, 4i128 as u32, false) { Some(x) => x, None => return 1 };
-                                { let c = (f5) as usize; if c >= 96 { return 1; } ws[nw] = (c as u8, v28); nw += 1; }
-                                v29 = match hload(&*s, v24, 4i128 as u32, false) { Some(x) => x, None => return 1 };
-                                { let c = ((f5 + -80i128)) as usize; if c >= 96 { return 1; } ws[nw] = (c as u8, v29); nw += 1; }
-                            } else {
-                                if (((rr!(&*s, 114) as i128) & 2097152) != 0i128) {
-                                    v8 = (4i128) as u32;
-                                    v25 = v23.wrapping_add(v8);
-                                    v28 = match hload(&*s, v23, 4i128 as u32, false) { Some(x) => x, None => return 1 };
-                                    { let c = (f5) as usize; if c >= 96 { return 1; } ws[nw] = (c as u8, v28); nw += 1; }
-                                    v27 = match hload(&*s, v25, 4i128 as u32, false) { Some(x) => x, None => return 1 };
-                                    { let c = ((f5 + -80i128)) as usize; if c >= 96 { return 1; } ws[nw] = (c as u8, v27); nw += 1; }
-                                } else {
-                                    v28 = match hload(&*s, v23, 4i128 as u32, false) { Some(x) => x, None => return 1 };
-                                    { let c = (f5) as usize; if c >= 96 { return 1; } ws[nw] = (c as u8, v28); nw += 1; }
-                                }
-                            }
+                        if (((rr!(&*s, 114) as i128) & 2097152) != 0i128) {
+                            v8 = (4i128) as u32;
+                            v25 = v23.wrapping_add(v8);
+                            v28 = match hload(&*s, v23, 4i128 as u32, false) { Some(x) => x, None => return 1 };
+                            { let c = (f5) as usize; if c >= 96 { return 1; } ws[nw] = (c as u8, v28); nw += 1; }
+                            v27 = match hload(&*s, v25, 4i128 as u32, false) { Some(x) => x, None => return 1 };
+                            { let c = ((f5 + -80i128)) as usize; if c >= 96 { return 1; } ws[nw] = (c as u8, v27); nw += 1; }
                         } else {
-                            if (((rr!(&*s, 114) as i128) & 2097152) != 0i128) {
-                                v8 = (4i128) as u32;
-                                v25 = v23.wrapping_add(v8);
-                                v28 = match hload(&*s, v23, 4i128 as u32, false) { Some(x) => x, None => return 1 };
-                                { let c = (f5) as usize; if c >= 96 { return 1; } ws[nw] = (c as u8, v28); nw += 1; }
-                                v27 = match hload(&*s, v25, 4i128 as u32, false) { Some(x) => x, None => return 1 };
-                                { let c = ((f5 + -80i128)) as usize; if c >= 96 { return 1; } ws[nw] = (c as u8, v27); nw += 1; }
-                            } else {
-                                v28 = match hload(&*s, v23, 4i128 as u32, false) { Some(x) => x, None => return 1 };
-                                { let c = (f5) as usize; if c >= 96 { return 1; } ws[nw] = (c as u8, v28); nw += 1; }
-                            }
+                            v28 = match hload(&*s, v23, 4i128 as u32, false) { Some(x) => x, None => return 1 };
+                            { let c = (f5) as usize; if c >= 96 { return 1; } ws[nw] = (c as u8, v28); nw += 1; }
                         }
                     } else if (f5 >= 96i128 && f5 <= 107i128) {
                         if (f5 == 107i128) {
@@ -18506,68 +20860,39 @@ pub fn h_15b(s: &mut St, f: &[i64; NF]) -> u32 {
                             v28 = match hload(&*s, v23, 4i128 as u32, false) { Some(x) => x, None => return 1 };
                             { let c = (f5) as usize; if c >= 96 { return 1; } ws[nw] = (c as u8, v28); nw += 1; }
                         }
-                    } else {
-                        if ((f3 + 0i128) == 1i128) {
-                            if (((rr!(&*s, 114) as i128) & 8388608) != 0i128) {
-                                if ((f5 ^ 1i128) == 107i128) {
-                                    return 1;
-                                } else {
-                                    v22 = rr!(&*s, (16i128 + (f3 + 0i128)));
-                                    v2 = ((((f1 - 128i128) * 4i128) & 4294967295i128)) as u32;
-                                    v23 = v22.wrapping_add(v2);
-                                    v6 = (0i128) as u32;
-                                    v24 = v23.wrapping_add(v6);
-                                    v28 = match hload(&*s, v23, 4i128 as u32, false) { Some(x) => x, None => return 1 };
-                                    { let c = (f5) as usize; if c >= 96 { return 1; } ws[nw] = (c as u8, v28); nw += 1; }
-                                    v29 = match hload(&*s, v24, 4i128 as u32, false) { Some(x) => x, None => return 1 };
-                                    { let c = ((f5 ^ 1i128)) as usize; if c >= 96 { return 1; } ws[nw] = (c as u8, v29); nw += 1; }
-                                }
-                            } else {
-                                if (((rr!(&*s, 114) as i128) & 2097152) != 0i128) {
-                                    if ((f5 ^ 1i128) == 107i128) {
-                                        return 1;
-                                    } else {
-                                        v22 = rr!(&*s, (16i128 + (f3 + 0i128)));
-                                        v2 = ((((f1 - 128i128) * 4i128) & 4294967295i128)) as u32;
-                                        v23 = v22.wrapping_add(v2);
-                                        v8 = (4i128) as u32;
-                                        v25 = v23.wrapping_add(v8);
-                                        v28 = match hload(&*s, v23, 4i128 as u32, false) { Some(x) => x, None => return 1 };
-                                        { let c = (f5) as usize; if c >= 96 { return 1; } ws[nw] = (c as u8, v28); nw += 1; }
-                                        v27 = match hload(&*s, v25, 4i128 as u32, false) { Some(x) => x, None => return 1 };
-                                        { let c = ((f5 ^ 1i128)) as usize; if c >= 96 { return 1; } ws[nw] = (c as u8, v27); nw += 1; }
-                                    }
-                                } else {
-                                    v22 = rr!(&*s, (16i128 + (f3 + 0i128)));
-                                    v2 = ((((f1 - 128i128) * 4i128) & 4294967295i128)) as u32;
-                                    v23 = v22.wrapping_add(v2);
-                                    v28 = match hload(&*s, v23, 4i128 as u32, false) { Some(x) => x, None => return 1 };
-                                    { let c = (f5) as usize; if c >= 96 { return 1; } ws[nw] = (c as u8, v28); nw += 1; }
-                                }
-                            }
-                        } else {
-                            if (((rr!(&*s, 114) as i128) & 2097152) != 0i128) {
-                                if ((f5 ^ 1i128) == 107i128) {
-                                    return 1;
-                                } else {
-                                    v22 = rr!(&*s, (16i128 + (f3 + 0i128)));
-                                    v2 = ((((f1 - 128i128) * 4i128) & 4294967295i128)) as u32;
-                                    v23 = v22.wrapping_add(v2);
-                                    v8 = (4i128) as u32;
-                                    v25 = v23.wrapping_add(v8);
-                                    v28 = match hload(&*s, v23, 4i128 as u32, false) { Some(x) => x, None => return 1 };
-                                    { let c = (f5) as usize; if c >= 96 { return 1; } ws[nw] = (c as u8, v28); nw += 1; }
-                                    v27 = match hload(&*s, v25, 4i128 as u32, false) { Some(x) => x, None => return 1 };
-                                    { let c = ((f5 ^ 1i128)) as usize; if c >= 96 { return 1; } ws[nw] = (c as u8, v27); nw += 1; }
-                                }
+                    } else if (f5 >= 108i128 && f5 <= 109i128) || (f5 >= 112i128 && f5 <= 113i128) || (f5 >= 118i128 && f5 <= 121i128) || f5 >= 126i128 {
+                        if (((rr!(&*s, 114) as i128) & 2097152) != 0i128) {
+                            if ((f5 ^ 1i128) == 107i128) {
+                                return 1;
                             } else {
                                 v22 = rr!(&*s, (16i128 + (f3 + 0i128)));
                                 v2 = ((((f1 - 128i128) * 4i128) & 4294967295i128)) as u32;
                                 v23 = v22.wrapping_add(v2);
+                                v8 = (4i128) as u32;
+                                v25 = v23.wrapping_add(v8);
                                 v28 = match hload(&*s, v23, 4i128 as u32, false) { Some(x) => x, None => return 1 };
                                 { let c = (f5) as usize; if c >= 96 { return 1; } ws[nw] = (c as u8, v28); nw += 1; }
+                                v27 = match hload(&*s, v25, 4i128 as u32, false) { Some(x) => x, None => return 1 };
+                                { let c = ((f5 ^ 1i128)) as usize; if c >= 96 { return 1; } ws[nw] = (c as u8, v27); nw += 1; }
+                                if ((f5 ^ 1i128) >= 64i128) {
+                                    if ((f5 ^ 1i128) <= 79i128) {
+                                        { let c = ((((f5 ^ 1i128) - 64i128) + 16i128)) as usize; if c >= 96 { return 1; } ws[nw] = (c as u8, v27); nw += 1; }
+                                    }
+                                }
                             }
+                        } else {
+                            v22 = rr!(&*s, (16i128 + (f3 + 0i128)));
+                            v2 = ((((f1 - 128i128) * 4i128) & 4294967295i128)) as u32;
+                            v23 = v22.wrapping_add(v2);
+                            v28 = match hload(&*s, v23, 4i128 as u32, false) { Some(x) => x, None => return 1 };
+                            { let c = (f5) as usize; if c >= 96 { return 1; } ws[nw] = (c as u8, v28); nw += 1; }
                         }
+                    } else {
+                        v22 = rr!(&*s, (16i128 + (f3 + 0i128)));
+                        v2 = ((((f1 - 128i128) * 4i128) & 4294967295i128)) as u32;
+                        v23 = v22.wrapping_add(v2);
+                        v28 = match hload(&*s, v23, 4i128 as u32, false) { Some(x) => x, None => return 1 };
+                        { let c = (f5) as usize; if c >= 96 { return 1; } ws[nw] = (c as u8, v28); nw += 1; }
                     }
                 }
             }
@@ -18575,177 +20900,144 @@ pub fn h_15b(s: &mut St, f: &[i64; NF]) -> u32 {
             if (f4 != 0i128) {
                 v22 = rr!(&*s, (16i128 + (f3 + 0i128)));
                 v15 = (((f1 * 4i128) & 4294967295i128)) as u32;
-                v30 = v22.wrapping_add(v15);
+                v29 = v22.wrapping_add(v15);
                 if (f0 != 0i128) {
                     v4 = rr!(&*s, f5);
                     if f5 <= 95i128 || (f5 >= 108i128 && f5 <= 109i128) || (f5 >= 112i128 && f5 <= 113i128) || f5 >= 126i128 {
                         v5 = rr!(&*s, (f5 ^ 1i128));
                         v6 = (0i128) as u32;
-                        v31 = v30.wrapping_add(v6);
+                        v30 = v29.wrapping_add(v6);
                         v8 = (4i128) as u32;
-                        v32 = v30.wrapping_add(v8);
-                        st[nst] = (v31, v4, 4i128 as u8); nst += 1;
-                        st[nst] = (v32, v5, 4i128 as u8); nst += 1;
+                        v31 = v29.wrapping_add(v8);
+                        st[nst] = (v30, v4, 4i128 as u8); nst += 1;
+                        st[nst] = (v31, v5, 4i128 as u8); nst += 1;
                     } else {
                         v6 = (0i128) as u32;
-                        v31 = v30.wrapping_add(v6);
+                        v30 = v29.wrapping_add(v6);
                         v8 = (4i128) as u32;
-                        v32 = v30.wrapping_add(v8);
+                        v31 = v29.wrapping_add(v8);
+                        st[nst] = (v30, v4, 4i128 as u8); nst += 1;
                         st[nst] = (v31, v4, 4i128 as u8); nst += 1;
-                        st[nst] = (v32, v4, 4i128 as u8); nst += 1;
                     }
                 } else {
                     v6 = (0i128) as u32;
-                    v31 = v30.wrapping_add(v6);
-                    v33 = match hload(&*s, v31, 4i128 as u32, false) { Some(x) => x, None => return 1 };
+                    v30 = v29.wrapping_add(v6);
+                    v32 = match hload(&*s, v30, 4i128 as u32, false) { Some(x) => x, None => return 1 };
                     if (f5 < 96i128) {
                         v8 = (4i128) as u32;
-                        v32 = v30.wrapping_add(v8);
-                        v34 = match hload(&*s, v32, 4i128 as u32, false) { Some(x) => x, None => return 1 };
-                        { let c = (f5) as usize; if c >= 96 { return 1; } ws[nw] = (c as u8, v33); nw += 1; }
-                        { let c = ((f5 ^ 1i128)) as usize; if c >= 96 { return 1; } ws[nw] = (c as u8, v34); nw += 1; }
+                        v31 = v29.wrapping_add(v8);
+                        v33 = match hload(&*s, v31, 4i128 as u32, false) { Some(x) => x, None => return 1 };
+                        { let c = (f5) as usize; if c >= 96 { return 1; } ws[nw] = (c as u8, v32); nw += 1; }
+                        if (f5 >= 64i128) {
+                            if (f5 <= 79i128) {
+                                { let c = (((f5 - 64i128) + 16i128)) as usize; if c >= 96 { return 1; } ws[nw] = (c as u8, v32); nw += 1; }
+                            }
+                        }
+                        { let c = ((f5 ^ 1i128)) as usize; if c >= 96 { return 1; } ws[nw] = (c as u8, v33); nw += 1; }
+                        if ((f5 ^ 1i128) >= 64i128) {
+                            if ((f5 ^ 1i128) <= 79i128) {
+                                { let c = ((((f5 ^ 1i128) - 64i128) + 16i128)) as usize; if c >= 96 { return 1; } ws[nw] = (c as u8, v33); nw += 1; }
+                            }
+                        }
                     } else {
-                        { let c = (f5) as usize; if c >= 96 { return 1; } ws[nw] = (c as u8, v33); nw += 1; }
+                        { let c = (f5) as usize; if c >= 96 { return 1; } ws[nw] = (c as u8, v32); nw += 1; }
                     }
                 }
             } else {
                 if (f0 != 0i128) {
                     v22 = rr!(&*s, (16i128 + (f3 + 0i128)));
                     v15 = (((f1 * 4i128) & 4294967295i128)) as u32;
-                    v30 = v22.wrapping_add(v15);
+                    v29 = v22.wrapping_add(v15);
                     if f5 <= 15i128 {
                         if (((rr!(&*s, 114) as i128) & 2097152) != 0i128) {
                             v8 = (4i128) as u32;
-                            v32 = v30.wrapping_add(v8);
+                            v31 = v29.wrapping_add(v8);
                             v4 = rr!(&*s, f5);
-                            st[nst] = (v30, v4, 4i128 as u8); nst += 1;
+                            st[nst] = (v29, v4, 4i128 as u8); nst += 1;
                             v12 = rr!(&*s, (f5 + 80i128));
-                            st[nst] = (v32, v12, 4i128 as u8); nst += 1;
+                            st[nst] = (v31, v12, 4i128 as u8); nst += 1;
                         } else {
                             v4 = rr!(&*s, f5);
-                            st[nst] = (v30, v4, 4i128 as u8); nst += 1;
+                            st[nst] = (v29, v4, 4i128 as u8); nst += 1;
                         }
                     } else if (f5 >= 16i128 && f5 <= 79i128) {
                         if (((rr!(&*s, 114) as i128) & 2097152) != 0i128) {
                             v8 = (4i128) as u32;
-                            v32 = v30.wrapping_add(v8);
+                            v31 = v29.wrapping_add(v8);
                             v4 = rr!(&*s, f5);
-                            st[nst] = (v30, v4, 4i128 as u8); nst += 1;
-                            st[nst] = (v32, v4, 4i128 as u8); nst += 1;
+                            st[nst] = (v29, v4, 4i128 as u8); nst += 1;
+                            st[nst] = (v31, v4, 4i128 as u8); nst += 1;
                         } else {
                             v4 = rr!(&*s, f5);
-                            st[nst] = (v30, v4, 4i128 as u8); nst += 1;
+                            st[nst] = (v29, v4, 4i128 as u8); nst += 1;
                         }
                     } else if (f5 >= 80i128 && f5 <= 95i128) {
                         if (((rr!(&*s, 114) as i128) & 2097152) != 0i128) {
                             v8 = (4i128) as u32;
-                            v32 = v30.wrapping_add(v8);
+                            v31 = v29.wrapping_add(v8);
                             v4 = rr!(&*s, f5);
-                            st[nst] = (v30, v4, 4i128 as u8); nst += 1;
+                            st[nst] = (v29, v4, 4i128 as u8); nst += 1;
                             v13 = rr!(&*s, (f5 + -80i128));
-                            st[nst] = (v32, v13, 4i128 as u8); nst += 1;
+                            st[nst] = (v31, v13, 4i128 as u8); nst += 1;
                         } else {
                             v4 = rr!(&*s, f5);
-                            st[nst] = (v30, v4, 4i128 as u8); nst += 1;
+                            st[nst] = (v29, v4, 4i128 as u8); nst += 1;
                         }
                     } else if (f5 >= 96i128 && f5 <= 107i128) || (f5 >= 110i128 && f5 <= 111i128) || (f5 >= 114i128 && f5 <= 117i128) || (f5 >= 122i128 && f5 <= 125i128) {
                         v4 = rr!(&*s, f5);
-                        st[nst] = (v30, v4, 4i128 as u8); nst += 1;
+                        st[nst] = (v29, v4, 4i128 as u8); nst += 1;
                     } else {
                         if (((rr!(&*s, 114) as i128) & 2097152) != 0i128) {
                             v8 = (4i128) as u32;
-                            v32 = v30.wrapping_add(v8);
+                            v31 = v29.wrapping_add(v8);
                             v4 = rr!(&*s, f5);
-                            st[nst] = (v30, v4, 4i128 as u8); nst += 1;
+                            st[nst] = (v29, v4, 4i128 as u8); nst += 1;
                             v5 = rr!(&*s, (f5 ^ 1i128));
-                            st[nst] = (v32, v5, 4i128 as u8); nst += 1;
+                            st[nst] = (v31, v5, 4i128 as u8); nst += 1;
                         } else {
                             v4 = rr!(&*s, f5);
-                            st[nst] = (v30, v4, 4i128 as u8); nst += 1;
+                            st[nst] = (v29, v4, 4i128 as u8); nst += 1;
                         }
                     }
                 } else {
                     if f5 <= 15i128 {
                         v22 = rr!(&*s, (16i128 + (f3 + 0i128)));
                         v15 = (((f1 * 4i128) & 4294967295i128)) as u32;
-                        v30 = v22.wrapping_add(v15);
-                        if ((f3 + 0i128) == 1i128) {
-                            if (((rr!(&*s, 114) as i128) & 8388608) != 0i128) {
-                                v6 = (0i128) as u32;
-                                v31 = v30.wrapping_add(v6);
-                                v35 = match hload(&*s, v30, 4i128 as u32, false) { Some(x) => x, None => return 1 };
-                                { let c = (f5) as usize; if c >= 96 { return 1; } ws[nw] = (c as u8, v35); nw += 1; }
-                                v36 = match hload(&*s, v31, 4i128 as u32, false) { Some(x) => x, None => return 1 };
-                                { let c = ((f5 + 80i128)) as usize; if c >= 96 { return 1; } ws[nw] = (c as u8, v36); nw += 1; }
-                            } else {
-                                if (((rr!(&*s, 114) as i128) & 2097152) != 0i128) {
-                                    v8 = (4i128) as u32;
-                                    v32 = v30.wrapping_add(v8);
-                                    v35 = match hload(&*s, v30, 4i128 as u32, false) { Some(x) => x, None => return 1 };
-                                    { let c = (f5) as usize; if c >= 96 { return 1; } ws[nw] = (c as u8, v35); nw += 1; }
-                                    v34 = match hload(&*s, v32, 4i128 as u32, false) { Some(x) => x, None => return 1 };
-                                    { let c = ((f5 + 80i128)) as usize; if c >= 96 { return 1; } ws[nw] = (c as u8, v34); nw += 1; }
-                                } else {
-                                    v35 = match hload(&*s, v30, 4i128 as u32, false) { Some(x) => x, None => return 1 };
-                                    { let c = (f5) as usize; if c >= 96 { return 1; } ws[nw] = (c as u8, v35); nw += 1; }
-                                }
-                            }
+                        v29 = v22.wrapping_add(v15);
+                        if (((rr!(&*s, 114) as i128) & 2097152) != 0i128) {
+                            v8 = (4i128) as u32;
+                            v31 = v29.wrapping_add(v8);
+                            v34 = match hload(&*s, v29, 4i128 as u32, false) { Some(x) => x, None => return 1 };
+                            { let c = (f5) as usize; if c >= 96 { return 1; } ws[nw] = (c as u8, v34); nw += 1; }
+                            v33 = match hload(&*s, v31, 4i128 as u32, false) { Some(x) => x, None => return 1 };
+                            { let c = ((f5 + 80i128)) as usize; if c >= 96 { return 1; } ws[nw] = (c as u8, v33); nw += 1; }
                         } else {
-                            if (((rr!(&*s, 114) as i128) & 2097152) != 0i128) {
-                                v8 = (4i128) as u32;
-                                v32 = v30.wrapping_add(v8);
-                                v35 = match hload(&*s, v30, 4i128 as u32, false) { Some(x) => x, None => return 1 };
-                                { let c = (f5) as usize; if c >= 96 { return 1; } ws[nw] = (c as u8, v35); nw += 1; }
-                                v34 = match hload(&*s, v32, 4i128 as u32, false) { Some(x) => x, None => return 1 };
-                                { let c = ((f5 + 80i128)) as usize; if c >= 96 { return 1; } ws[nw] = (c as u8, v34); nw += 1; }
-                            } else {
-                                v35 = match hload(&*s, v30, 4i128 as u32, false) { Some(x) => x, None => return 1 };
-                                { let c = (f5) as usize; if c >= 96 { return 1; } ws[nw] = (c as u8, v35); nw += 1; }
-                            }
+                            v34 = match hload(&*s, v29, 4i128 as u32, false) { Some(x) => x, None => return 1 };
+                            { let c = (f5) as usize; if c >= 96 { return 1; } ws[nw] = (c as u8, v34); nw += 1; }
                         }
-                    } else if (f5 >= 16i128 && f5 <= 79i128) || (f5 >= 110i128 && f5 <= 111i128) || (f5 >= 114i128 && f5 <= 117i128) || (f5 >= 122i128 && f5 <= 125i128) {
+                    } else if (f5 >= 16i128 && f5 <= 79i128) {
                         v22 = rr!(&*s, (16i128 + (f3 + 0i128)));
                         v15 = (((f1 * 4i128) & 4294967295i128)) as u32;
-                        v30 = v22.wrapping_add(v15);
-                        v35 = match hload(&*s, v30, 4i128 as u32, false) { Some(x) => x, None => return 1 };
-                        { let c = (f5) as usize; if c >= 96 { return 1; } ws[nw] = (c as u8, v35); nw += 1; }
+                        v29 = v22.wrapping_add(v15);
+                        v34 = match hload(&*s, v29, 4i128 as u32, false) { Some(x) => x, None => return 1 };
+                        { let c = (f5) as usize; if c >= 96 { return 1; } ws[nw] = (c as u8, v34); nw += 1; }
+                        if (f5 >= 64i128) {
+                            { let c = (((f5 - 64i128) + 16i128)) as usize; if c >= 96 { return 1; } ws[nw] = (c as u8, v34); nw += 1; }
+                        }
                     } else if (f5 >= 80i128 && f5 <= 95i128) {
                         v22 = rr!(&*s, (16i128 + (f3 + 0i128)));
                         v15 = (((f1 * 4i128) & 4294967295i128)) as u32;
-                        v30 = v22.wrapping_add(v15);
-                        if ((f3 + 0i128) == 1i128) {
-                            if (((rr!(&*s, 114) as i128) & 8388608) != 0i128) {
-                                v6 = (0i128) as u32;
-                                v31 = v30.wrapping_add(v6);
-                                v35 = match hload(&*s, v30, 4i128 as u32, false) { Some(x) => x, None => return 1 };
-                                { let c = (f5) as usize; if c >= 96 { return 1; } ws[nw] = (c as u8, v35); nw += 1; }
-                                v36 = match hload(&*s, v31, 4i128 as u32, false) { Some(x) => x, None => return 1 };
-                                { let c = ((f5 + -80i128)) as usize; if c >= 96 { return 1; } ws[nw] = (c as u8, v36); nw += 1; }
-                            } else {
-                                if (((rr!(&*s, 114) as i128) & 2097152) != 0i128) {
-                                    v8 = (4i128) as u32;
-                                    v32 = v30.wrapping_add(v8);
-                                    v35 = match hload(&*s, v30, 4i128 as u32, false) { Some(x) => x, None => return 1 };
-                                    { let c = (f5) as usize; if c >= 96 { return 1; } ws[nw] = (c as u8, v35); nw += 1; }
-                                    v34 = match hload(&*s, v32, 4i128 as u32, false) { Some(x) => x, None => return 1 };
-                                    { let c = ((f5 + -80i128)) as usize; if c >= 96 { return 1; } ws[nw] = (c as u8, v34); nw += 1; }
-                                } else {
-                                    v35 = match hload(&*s, v30, 4i128 as u32, false) { Some(x) => x, None => return 1 };
-                                    { let c = (f5) as usize; if c >= 96 { return 1; } ws[nw] = (c as u8, v35); nw += 1; }
-                                }
-                            }
+                        v29 = v22.wrapping_add(v15);
+                        if (((rr!(&*s, 114) as i128) & 2097152) != 0i128) {
+                            v8 = (4i128) as u32;
+                            v31 = v29.wrapping_add(v8);
+                            v34 = match hload(&*s, v29, 4i128 as u32, false) { Some(x) => x, None => return 1 };
+                            { let c = (f5) as usize; if c >= 96 { return 1; } ws[nw] = (c as u8, v34); nw += 1; }
+                            v33 = match hload(&*s, v31, 4i128 as u32, false) { Some(x) => x, None => return 1 };
+                            { let c = ((f5 + -80i128)) as usize; if c >= 96 { return 1; } ws[nw] = (c as u8, v33); nw += 1; }
                         } else {
-                            if (((rr!(&*s, 114) as i128) & 2097152) != 0i128) {
-                                v8 = (4i128) as u32;
-                                v32 = v30.wrapping_add(v8);
-                                v35 = match hload(&*s, v30, 4i128 as u32, false) { Some(x) => x, None => return 1 };
-                                { let c = (f5) as usize; if c >= 96 { return 1; } ws[nw] = (c as u8, v35); nw += 1; }
-                                v34 = match hload(&*s, v32, 4i128 as u32, false) { Some(x) => x, None => return 1 };
-                                { let c = ((f5 + -80i128)) as usize; if c >= 96 { return 1; } ws[nw] = (c as u8, v34); nw += 1; }
-                            } else {
-                                v35 = match hload(&*s, v30, 4i128 as u32, false) { Some(x) => x, None => return 1 };
-                                { let c = (f5) as usize; if c >= 96 { return 1; } ws[nw] = (c as u8, v35); nw += 1; }
-                            }
+                            v34 = match hload(&*s, v29, 4i128 as u32, false) { Some(x) => x, None => return 1 };
+                            { let c = (f5) as usize; if c >= 96 { return 1; } ws[nw] = (c as u8, v34); nw += 1; }
                         }
                     } else if (f5 >= 96i128 && f5 <= 107i128) {
                         if (f5 == 107i128) {
@@ -18753,72 +21045,43 @@ pub fn h_15b(s: &mut St, f: &[i64; NF]) -> u32 {
                         } else {
                             v22 = rr!(&*s, (16i128 + (f3 + 0i128)));
                             v15 = (((f1 * 4i128) & 4294967295i128)) as u32;
-                            v30 = v22.wrapping_add(v15);
-                            v35 = match hload(&*s, v30, 4i128 as u32, false) { Some(x) => x, None => return 1 };
-                            { let c = (f5) as usize; if c >= 96 { return 1; } ws[nw] = (c as u8, v35); nw += 1; }
+                            v29 = v22.wrapping_add(v15);
+                            v34 = match hload(&*s, v29, 4i128 as u32, false) { Some(x) => x, None => return 1 };
+                            { let c = (f5) as usize; if c >= 96 { return 1; } ws[nw] = (c as u8, v34); nw += 1; }
                         }
-                    } else {
-                        if ((f3 + 0i128) == 1i128) {
-                            if (((rr!(&*s, 114) as i128) & 8388608) != 0i128) {
-                                if ((f5 ^ 1i128) == 107i128) {
-                                    return 1;
-                                } else {
-                                    v22 = rr!(&*s, (16i128 + (f3 + 0i128)));
-                                    v15 = (((f1 * 4i128) & 4294967295i128)) as u32;
-                                    v30 = v22.wrapping_add(v15);
-                                    v6 = (0i128) as u32;
-                                    v31 = v30.wrapping_add(v6);
-                                    v35 = match hload(&*s, v30, 4i128 as u32, false) { Some(x) => x, None => return 1 };
-                                    { let c = (f5) as usize; if c >= 96 { return 1; } ws[nw] = (c as u8, v35); nw += 1; }
-                                    v36 = match hload(&*s, v31, 4i128 as u32, false) { Some(x) => x, None => return 1 };
-                                    { let c = ((f5 ^ 1i128)) as usize; if c >= 96 { return 1; } ws[nw] = (c as u8, v36); nw += 1; }
-                                }
-                            } else {
-                                if (((rr!(&*s, 114) as i128) & 2097152) != 0i128) {
-                                    if ((f5 ^ 1i128) == 107i128) {
-                                        return 1;
-                                    } else {
-                                        v22 = rr!(&*s, (16i128 + (f3 + 0i128)));
-                                        v15 = (((f1 * 4i128) & 4294967295i128)) as u32;
-                                        v30 = v22.wrapping_add(v15);
-                                        v8 = (4i128) as u32;
-                                        v32 = v30.wrapping_add(v8);
-                                        v35 = match hload(&*s, v30, 4i128 as u32, false) { Some(x) => x, None => return 1 };
-                                        { let c = (f5) as usize; if c >= 96 { return 1; } ws[nw] = (c as u8, v35); nw += 1; }
-                                        v34 = match hload(&*s, v32, 4i128 as u32, false) { Some(x) => x, None => return 1 };
-                                        { let c = ((f5 ^ 1i128)) as usize; if c >= 96 { return 1; } ws[nw] = (c as u8, v34); nw += 1; }
-                                    }
-                                } else {
-                                    v22 = rr!(&*s, (16i128 + (f3 + 0i128)));
-                                    v15 = (((f1 * 4i128) & 4294967295i128)) as u32;
-                                    v30 = v22.wrapping_add(v15);
-                                    v35 = match hload(&*s, v30, 4i128 as u32, false) { Some(x) => x, None => return 1 };
-                                    { let c = (f5) as usize; if c >= 96 { return 1; } ws[nw] = (c as u8, v35); nw += 1; }
-                                }
-                            }
-                        } else {
-                            if (((rr!(&*s, 114) as i128) & 2097152) != 0i128) {
-                                if ((f5 ^ 1i128) == 107i128) {
-                                    return 1;
-                                } else {
-                                    v22 = rr!(&*s, (16i128 + (f3 + 0i128)));
-                                    v15 = (((f1 * 4i128) & 4294967295i128)) as u32;
-                                    v30 = v22.wrapping_add(v15);
-                                    v8 = (4i128) as u32;
-                                    v32 = v30.wrapping_add(v8);
-                                    v35 = match hload(&*s, v30, 4i128 as u32, false) { Some(x) => x, None => return 1 };
-                                    { let c = (f5) as usize; if c >= 96 { return 1; } ws[nw] = (c as u8, v35); nw += 1; }
-                                    v34 = match hload(&*s, v32, 4i128 as u32, false) { Some(x) => x, None => return 1 };
-                                    { let c = ((f5 ^ 1i128)) as usize; if c >= 96 { return 1; } ws[nw] = (c as u8, v34); nw += 1; }
-                                }
+                    } else if (f5 >= 108i128 && f5 <= 109i128) || (f5 >= 112i128 && f5 <= 113i128) || (f5 >= 118i128 && f5 <= 121i128) || f5 >= 126i128 {
+                        if (((rr!(&*s, 114) as i128) & 2097152) != 0i128) {
+                            if ((f5 ^ 1i128) == 107i128) {
+                                return 1;
                             } else {
                                 v22 = rr!(&*s, (16i128 + (f3 + 0i128)));
                                 v15 = (((f1 * 4i128) & 4294967295i128)) as u32;
-                                v30 = v22.wrapping_add(v15);
-                                v35 = match hload(&*s, v30, 4i128 as u32, false) { Some(x) => x, None => return 1 };
-                                { let c = (f5) as usize; if c >= 96 { return 1; } ws[nw] = (c as u8, v35); nw += 1; }
+                                v29 = v22.wrapping_add(v15);
+                                v8 = (4i128) as u32;
+                                v31 = v29.wrapping_add(v8);
+                                v34 = match hload(&*s, v29, 4i128 as u32, false) { Some(x) => x, None => return 1 };
+                                { let c = (f5) as usize; if c >= 96 { return 1; } ws[nw] = (c as u8, v34); nw += 1; }
+                                v33 = match hload(&*s, v31, 4i128 as u32, false) { Some(x) => x, None => return 1 };
+                                { let c = ((f5 ^ 1i128)) as usize; if c >= 96 { return 1; } ws[nw] = (c as u8, v33); nw += 1; }
+                                if ((f5 ^ 1i128) >= 64i128) {
+                                    if ((f5 ^ 1i128) <= 79i128) {
+                                        { let c = ((((f5 ^ 1i128) - 64i128) + 16i128)) as usize; if c >= 96 { return 1; } ws[nw] = (c as u8, v33); nw += 1; }
+                                    }
+                                }
                             }
+                        } else {
+                            v22 = rr!(&*s, (16i128 + (f3 + 0i128)));
+                            v15 = (((f1 * 4i128) & 4294967295i128)) as u32;
+                            v29 = v22.wrapping_add(v15);
+                            v34 = match hload(&*s, v29, 4i128 as u32, false) { Some(x) => x, None => return 1 };
+                            { let c = (f5) as usize; if c >= 96 { return 1; } ws[nw] = (c as u8, v34); nw += 1; }
                         }
+                    } else {
+                        v22 = rr!(&*s, (16i128 + (f3 + 0i128)));
+                        v15 = (((f1 * 4i128) & 4294967295i128)) as u32;
+                        v29 = v22.wrapping_add(v15);
+                        v34 = match hload(&*s, v29, 4i128 as u32, false) { Some(x) => x, None => return 1 };
+                        { let c = (f5) as usize; if c >= 96 { return 1; } ws[nw] = (c as u8, v34); nw += 1; }
                     }
                 }
             }
@@ -18869,8 +21132,6 @@ pub fn t_15b<S: RegRead>(s: &S, f: &[i64; NF], t: &mut Touch) -> bool {
     let mut v32: u32 = 0;
     let mut v33: u32 = 0;
     let mut v34: u32 = 0;
-    let mut v35: u32 = 0;
-    let mut v36: u32 = 0;
     if (f2 != 0i128) {
         if ((f1 & 64i128) != 0i128) {
             if (f4 != 0i128) {
@@ -18884,7 +21145,17 @@ pub fn t_15b<S: RegRead>(s: &S, f: &[i64; NF], t: &mut Touch) -> bool {
                 } else {
                     if (f5 < 96i128) {
                         t.wr((f5) as u32);
+                        if (f5 >= 64i128) {
+                            if (f5 <= 79i128) {
+                                t.wr((((f5 - 64i128) + 16i128)) as u32);
+                            }
+                        }
                         t.wr(((f5 ^ 1i128)) as u32);
+                        if ((f5 ^ 1i128) >= 64i128) {
+                            if ((f5 ^ 1i128) <= 79i128) {
+                                t.wr(((((f5 ^ 1i128) - 64i128) + 16i128)) as u32);
+                            }
+                        }
                     } else {
                         t.wr((f5) as u32);
                     }
@@ -18895,35 +21166,28 @@ pub fn t_15b<S: RegRead>(s: &S, f: &[i64; NF], t: &mut Touch) -> bool {
                     t.rd((f5) as u32);
                 } else {
                     if f5 <= 15i128 || (f5 >= 80i128 && f5 <= 95i128) || (f5 >= 108i128 && f5 <= 109i128) || (f5 >= 112i128 && f5 <= 113i128) || (f5 >= 118i128 && f5 <= 121i128) || f5 >= 126i128 {
-                        if ((f3 + 8i128) == 9i128) {
-                            if (((rrt!(&*s, 114) as i128) & 4194304) != 0i128) {
-                                return false;
-                            } else {
-                                if (((rrt!(&*s, 114) as i128) & 2097152) != 0i128) {
-                                    return false;
-                                } else {
-                                    t.rd(((16i128 + (f3 + 8i128))) as u32);
-                                    t.wr((f5) as u32);
-                                }
-                            }
+                        if (((rrt!(&*s, 114) as i128) & 2097152) != 0i128) {
+                            return false;
                         } else {
-                            if (((rrt!(&*s, 114) as i128) & 2097152) != 0i128) {
-                                return false;
-                            } else {
-                                t.rd(((16i128 + (f3 + 8i128))) as u32);
-                                t.wr((f5) as u32);
-                            }
+                            t.rd(((16i128 + (f3 + 8i128))) as u32);
+                            t.wr((f5) as u32);
                         }
-                    } else if (f5 >= 16i128 && f5 <= 79i128) || (f5 >= 110i128 && f5 <= 111i128) || (f5 >= 114i128 && f5 <= 117i128) || (f5 >= 122i128 && f5 <= 125i128) {
+                    } else if (f5 >= 16i128 && f5 <= 79i128) {
                         t.rd(((16i128 + (f3 + 8i128))) as u32);
                         t.wr((f5) as u32);
-                    } else {
+                        if (f5 >= 64i128) {
+                            t.wr((((f5 - 64i128) + 16i128)) as u32);
+                        }
+                    } else if (f5 >= 96i128 && f5 <= 107i128) {
                         if (f5 == 107i128) {
                             return false;
                         } else {
                             t.rd(((16i128 + (f3 + 8i128))) as u32);
                             t.wr((f5) as u32);
                         }
+                    } else {
+                        t.rd(((16i128 + (f3 + 8i128))) as u32);
+                        t.wr((f5) as u32);
                     }
                 }
             }
@@ -18939,7 +21203,17 @@ pub fn t_15b<S: RegRead>(s: &S, f: &[i64; NF], t: &mut Touch) -> bool {
                 } else {
                     if (f5 < 96i128) {
                         t.wr((f5) as u32);
+                        if (f5 >= 64i128) {
+                            if (f5 <= 79i128) {
+                                t.wr((((f5 - 64i128) + 16i128)) as u32);
+                            }
+                        }
                         t.wr(((f5 ^ 1i128)) as u32);
+                        if ((f5 ^ 1i128) >= 64i128) {
+                            if ((f5 ^ 1i128) <= 79i128) {
+                                t.wr(((((f5 ^ 1i128) - 64i128) + 16i128)) as u32);
+                            }
+                        }
                     } else {
                         t.wr((f5) as u32);
                     }
@@ -18950,35 +21224,28 @@ pub fn t_15b<S: RegRead>(s: &S, f: &[i64; NF], t: &mut Touch) -> bool {
                     t.rd((f5) as u32);
                 } else {
                     if f5 <= 15i128 || (f5 >= 80i128 && f5 <= 95i128) || (f5 >= 108i128 && f5 <= 109i128) || (f5 >= 112i128 && f5 <= 113i128) || (f5 >= 118i128 && f5 <= 121i128) || f5 >= 126i128 {
-                        if ((f3 + 8i128) == 9i128) {
-                            if (((rrt!(&*s, 114) as i128) & 4194304) != 0i128) {
-                                return false;
-                            } else {
-                                if (((rrt!(&*s, 114) as i128) & 2097152) != 0i128) {
-                                    return false;
-                                } else {
-                                    t.rd(((16i128 + (f3 + 8i128))) as u32);
-                                    t.wr((f5) as u32);
-                                }
-                            }
+                        if (((rrt!(&*s, 114) as i128) & 2097152) != 0i128) {
+                            return false;
                         } else {
-                            if (((rrt!(&*s, 114) as i128) & 2097152) != 0i128) {
-                                return false;
-                            } else {
-                                t.rd(((16i128 + (f3 + 8i128))) as u32);
-                                t.wr((f5) as u32);
-                            }
+                            t.rd(((16i128 + (f3 + 8i128))) as u32);
+                            t.wr((f5) as u32);
                         }
-                    } else if (f5 >= 16i128 && f5 <= 79i128) || (f5 >= 110i128 && f5 <= 111i128) || (f5 >= 114i128 && f5 <= 117i128) || (f5 >= 122i128 && f5 <= 125i128) {
+                    } else if (f5 >= 16i128 && f5 <= 79i128) {
                         t.rd(((16i128 + (f3 + 8i128))) as u32);
                         t.wr((f5) as u32);
-                    } else {
+                        if (f5 >= 64i128) {
+                            t.wr((((f5 - 64i128) + 16i128)) as u32);
+                        }
+                    } else if (f5 >= 96i128 && f5 <= 107i128) {
                         if (f5 == 107i128) {
                             return false;
                         } else {
                             t.rd(((16i128 + (f3 + 8i128))) as u32);
                             t.wr((f5) as u32);
                         }
+                    } else {
+                        t.rd(((16i128 + (f3 + 8i128))) as u32);
+                        t.wr((f5) as u32);
                     }
                 }
             }
@@ -18996,7 +21263,17 @@ pub fn t_15b<S: RegRead>(s: &S, f: &[i64; NF], t: &mut Touch) -> bool {
                 } else {
                     if (f5 < 96i128) {
                         t.wr((f5) as u32);
+                        if (f5 >= 64i128) {
+                            if (f5 <= 79i128) {
+                                t.wr((((f5 - 64i128) + 16i128)) as u32);
+                            }
+                        }
                         t.wr(((f5 ^ 1i128)) as u32);
+                        if ((f5 ^ 1i128) >= 64i128) {
+                            if ((f5 ^ 1i128) <= 79i128) {
+                                t.wr(((((f5 ^ 1i128) - 64i128) + 16i128)) as u32);
+                            }
+                        }
                     } else {
                         t.wr((f5) as u32);
                     }
@@ -19037,50 +21314,25 @@ pub fn t_15b<S: RegRead>(s: &S, f: &[i64; NF], t: &mut Touch) -> bool {
                 } else {
                     if f5 <= 15i128 {
                         t.rd(((16i128 + (f3 + 0i128))) as u32);
-                        if ((f3 + 0i128) == 1i128) {
-                            if (((rrt!(&*s, 114) as i128) & 8388608) != 0i128) {
-                                t.wr((f5) as u32);
-                                t.wr(((f5 + 80i128)) as u32);
-                            } else {
-                                if (((rrt!(&*s, 114) as i128) & 2097152) != 0i128) {
-                                    t.wr((f5) as u32);
-                                    t.wr(((f5 + 80i128)) as u32);
-                                } else {
-                                    t.wr((f5) as u32);
-                                }
-                            }
+                        if (((rrt!(&*s, 114) as i128) & 2097152) != 0i128) {
+                            t.wr((f5) as u32);
+                            t.wr(((f5 + 80i128)) as u32);
                         } else {
-                            if (((rrt!(&*s, 114) as i128) & 2097152) != 0i128) {
-                                t.wr((f5) as u32);
-                                t.wr(((f5 + 80i128)) as u32);
-                            } else {
-                                t.wr((f5) as u32);
-                            }
+                            t.wr((f5) as u32);
                         }
-                    } else if (f5 >= 16i128 && f5 <= 79i128) || (f5 >= 110i128 && f5 <= 111i128) || (f5 >= 114i128 && f5 <= 117i128) || (f5 >= 122i128 && f5 <= 125i128) {
+                    } else if (f5 >= 16i128 && f5 <= 79i128) {
                         t.rd(((16i128 + (f3 + 0i128))) as u32);
                         t.wr((f5) as u32);
+                        if (f5 >= 64i128) {
+                            t.wr((((f5 - 64i128) + 16i128)) as u32);
+                        }
                     } else if (f5 >= 80i128 && f5 <= 95i128) {
                         t.rd(((16i128 + (f3 + 0i128))) as u32);
-                        if ((f3 + 0i128) == 1i128) {
-                            if (((rrt!(&*s, 114) as i128) & 8388608) != 0i128) {
-                                t.wr((f5) as u32);
-                                t.wr(((f5 + -80i128)) as u32);
-                            } else {
-                                if (((rrt!(&*s, 114) as i128) & 2097152) != 0i128) {
-                                    t.wr((f5) as u32);
-                                    t.wr(((f5 + -80i128)) as u32);
-                                } else {
-                                    t.wr((f5) as u32);
-                                }
-                            }
+                        if (((rrt!(&*s, 114) as i128) & 2097152) != 0i128) {
+                            t.wr((f5) as u32);
+                            t.wr(((f5 + -80i128)) as u32);
                         } else {
-                            if (((rrt!(&*s, 114) as i128) & 2097152) != 0i128) {
-                                t.wr((f5) as u32);
-                                t.wr(((f5 + -80i128)) as u32);
-                            } else {
-                                t.wr((f5) as u32);
-                            }
+                            t.wr((f5) as u32);
                         }
                     } else if (f5 >= 96i128 && f5 <= 107i128) {
                         if (f5 == 107i128) {
@@ -19089,44 +21341,27 @@ pub fn t_15b<S: RegRead>(s: &S, f: &[i64; NF], t: &mut Touch) -> bool {
                             t.rd(((16i128 + (f3 + 0i128))) as u32);
                             t.wr((f5) as u32);
                         }
-                    } else {
-                        if ((f3 + 0i128) == 1i128) {
-                            if (((rrt!(&*s, 114) as i128) & 8388608) != 0i128) {
-                                if ((f5 ^ 1i128) == 107i128) {
-                                    return false;
-                                } else {
-                                    t.rd(((16i128 + (f3 + 0i128))) as u32);
-                                    t.wr((f5) as u32);
-                                    t.wr(((f5 ^ 1i128)) as u32);
-                                }
-                            } else {
-                                if (((rrt!(&*s, 114) as i128) & 2097152) != 0i128) {
-                                    if ((f5 ^ 1i128) == 107i128) {
-                                        return false;
-                                    } else {
-                                        t.rd(((16i128 + (f3 + 0i128))) as u32);
-                                        t.wr((f5) as u32);
-                                        t.wr(((f5 ^ 1i128)) as u32);
-                                    }
-                                } else {
-                                    t.rd(((16i128 + (f3 + 0i128))) as u32);
-                                    t.wr((f5) as u32);
-                                }
-                            }
-                        } else {
-                            if (((rrt!(&*s, 114) as i128) & 2097152) != 0i128) {
-                                if ((f5 ^ 1i128) == 107i128) {
-                                    return false;
-                                } else {
-                                    t.rd(((16i128 + (f3 + 0i128))) as u32);
-                                    t.wr((f5) as u32);
-                                    t.wr(((f5 ^ 1i128)) as u32);
-                                }
+                    } else if (f5 >= 108i128 && f5 <= 109i128) || (f5 >= 112i128 && f5 <= 113i128) || (f5 >= 118i128 && f5 <= 121i128) || f5 >= 126i128 {
+                        if (((rrt!(&*s, 114) as i128) & 2097152) != 0i128) {
+                            if ((f5 ^ 1i128) == 107i128) {
+                                return false;
                             } else {
                                 t.rd(((16i128 + (f3 + 0i128))) as u32);
                                 t.wr((f5) as u32);
+                                t.wr(((f5 ^ 1i128)) as u32);
+                                if ((f5 ^ 1i128) >= 64i128) {
+                                    if ((f5 ^ 1i128) <= 79i128) {
+                                        t.wr(((((f5 ^ 1i128) - 64i128) + 16i128)) as u32);
+                                    }
+                                }
                             }
+                        } else {
+                            t.rd(((16i128 + (f3 + 0i128))) as u32);
+                            t.wr((f5) as u32);
                         }
+                    } else {
+                        t.rd(((16i128 + (f3 + 0i128))) as u32);
+                        t.wr((f5) as u32);
                     }
                 }
             }
@@ -19142,7 +21377,17 @@ pub fn t_15b<S: RegRead>(s: &S, f: &[i64; NF], t: &mut Touch) -> bool {
                 } else {
                     if (f5 < 96i128) {
                         t.wr((f5) as u32);
+                        if (f5 >= 64i128) {
+                            if (f5 <= 79i128) {
+                                t.wr((((f5 - 64i128) + 16i128)) as u32);
+                            }
+                        }
                         t.wr(((f5 ^ 1i128)) as u32);
+                        if ((f5 ^ 1i128) >= 64i128) {
+                            if ((f5 ^ 1i128) <= 79i128) {
+                                t.wr(((((f5 ^ 1i128) - 64i128) + 16i128)) as u32);
+                            }
+                        }
                     } else {
                         t.wr((f5) as u32);
                     }
@@ -19183,50 +21428,25 @@ pub fn t_15b<S: RegRead>(s: &S, f: &[i64; NF], t: &mut Touch) -> bool {
                 } else {
                     if f5 <= 15i128 {
                         t.rd(((16i128 + (f3 + 0i128))) as u32);
-                        if ((f3 + 0i128) == 1i128) {
-                            if (((rrt!(&*s, 114) as i128) & 8388608) != 0i128) {
-                                t.wr((f5) as u32);
-                                t.wr(((f5 + 80i128)) as u32);
-                            } else {
-                                if (((rrt!(&*s, 114) as i128) & 2097152) != 0i128) {
-                                    t.wr((f5) as u32);
-                                    t.wr(((f5 + 80i128)) as u32);
-                                } else {
-                                    t.wr((f5) as u32);
-                                }
-                            }
+                        if (((rrt!(&*s, 114) as i128) & 2097152) != 0i128) {
+                            t.wr((f5) as u32);
+                            t.wr(((f5 + 80i128)) as u32);
                         } else {
-                            if (((rrt!(&*s, 114) as i128) & 2097152) != 0i128) {
-                                t.wr((f5) as u32);
-                                t.wr(((f5 + 80i128)) as u32);
-                            } else {
-                                t.wr((f5) as u32);
-                            }
+                            t.wr((f5) as u32);
                         }
-                    } else if (f5 >= 16i128 && f5 <= 79i128) || (f5 >= 110i128 && f5 <= 111i128) || (f5 >= 114i128 && f5 <= 117i128) || (f5 >= 122i128 && f5 <= 125i128) {
+                    } else if (f5 >= 16i128 && f5 <= 79i128) {
                         t.rd(((16i128 + (f3 + 0i128))) as u32);
                         t.wr((f5) as u32);
+                        if (f5 >= 64i128) {
+                            t.wr((((f5 - 64i128) + 16i128)) as u32);
+                        }
                     } else if (f5 >= 80i128 && f5 <= 95i128) {
                         t.rd(((16i128 + (f3 + 0i128))) as u32);
-                        if ((f3 + 0i128) == 1i128) {
-                            if (((rrt!(&*s, 114) as i128) & 8388608) != 0i128) {
-                                t.wr((f5) as u32);
-                                t.wr(((f5 + -80i128)) as u32);
-                            } else {
-                                if (((rrt!(&*s, 114) as i128) & 2097152) != 0i128) {
-                                    t.wr((f5) as u32);
-                                    t.wr(((f5 + -80i128)) as u32);
-                                } else {
-                                    t.wr((f5) as u32);
-                                }
-                            }
+                        if (((rrt!(&*s, 114) as i128) & 2097152) != 0i128) {
+                            t.wr((f5) as u32);
+                            t.wr(((f5 + -80i128)) as u32);
                         } else {
-                            if (((rrt!(&*s, 114) as i128) & 2097152) != 0i128) {
-                                t.wr((f5) as u32);
-                                t.wr(((f5 + -80i128)) as u32);
-                            } else {
-                                t.wr((f5) as u32);
-                            }
+                            t.wr((f5) as u32);
                         }
                     } else if (f5 >= 96i128 && f5 <= 107i128) {
                         if (f5 == 107i128) {
@@ -19235,44 +21455,27 @@ pub fn t_15b<S: RegRead>(s: &S, f: &[i64; NF], t: &mut Touch) -> bool {
                             t.rd(((16i128 + (f3 + 0i128))) as u32);
                             t.wr((f5) as u32);
                         }
-                    } else {
-                        if ((f3 + 0i128) == 1i128) {
-                            if (((rrt!(&*s, 114) as i128) & 8388608) != 0i128) {
-                                if ((f5 ^ 1i128) == 107i128) {
-                                    return false;
-                                } else {
-                                    t.rd(((16i128 + (f3 + 0i128))) as u32);
-                                    t.wr((f5) as u32);
-                                    t.wr(((f5 ^ 1i128)) as u32);
-                                }
-                            } else {
-                                if (((rrt!(&*s, 114) as i128) & 2097152) != 0i128) {
-                                    if ((f5 ^ 1i128) == 107i128) {
-                                        return false;
-                                    } else {
-                                        t.rd(((16i128 + (f3 + 0i128))) as u32);
-                                        t.wr((f5) as u32);
-                                        t.wr(((f5 ^ 1i128)) as u32);
-                                    }
-                                } else {
-                                    t.rd(((16i128 + (f3 + 0i128))) as u32);
-                                    t.wr((f5) as u32);
-                                }
-                            }
-                        } else {
-                            if (((rrt!(&*s, 114) as i128) & 2097152) != 0i128) {
-                                if ((f5 ^ 1i128) == 107i128) {
-                                    return false;
-                                } else {
-                                    t.rd(((16i128 + (f3 + 0i128))) as u32);
-                                    t.wr((f5) as u32);
-                                    t.wr(((f5 ^ 1i128)) as u32);
-                                }
+                    } else if (f5 >= 108i128 && f5 <= 109i128) || (f5 >= 112i128 && f5 <= 113i128) || (f5 >= 118i128 && f5 <= 121i128) || f5 >= 126i128 {
+                        if (((rrt!(&*s, 114) as i128) & 2097152) != 0i128) {
+                            if ((f5 ^ 1i128) == 107i128) {
+                                return false;
                             } else {
                                 t.rd(((16i128 + (f3 + 0i128))) as u32);
                                 t.wr((f5) as u32);
+                                t.wr(((f5 ^ 1i128)) as u32);
+                                if ((f5 ^ 1i128) >= 64i128) {
+                                    if ((f5 ^ 1i128) <= 79i128) {
+                                        t.wr(((((f5 ^ 1i128) - 64i128) + 16i128)) as u32);
+                                    }
+                                }
                             }
+                        } else {
+                            t.rd(((16i128 + (f3 + 0i128))) as u32);
+                            t.wr((f5) as u32);
                         }
+                    } else {
+                        t.rd(((16i128 + (f3 + 0i128))) as u32);
+                        t.wr((f5) as u32);
                     }
                 }
             }

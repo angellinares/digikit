@@ -26,6 +26,8 @@ from .encoding import (
 )
 from .memory import (
     _access_modifier_scale,
+    _broadcast_companion,
+    _broadcast_load,
     _dm_read,
     _dm_write,
     _load_normal_ureg,
@@ -41,6 +43,7 @@ from .sequencer import (
 from .state import (
     UREG_CODES,
     State,
+    _b_write_loads_i,
     _copy,
     _cureg_code,
     _event,
@@ -158,11 +161,17 @@ def _type_3a_transfer(
     # over 64 words) loads its even words with "R2 = DM(I4, M5)" (3a):
     # without the companion S2 kept a stale float and half of ring A
     # was written with its negation.
-    companion = (
-        None
-        if long_word or space != "DM"
-        else _simd_ureg_mem_companion(target, ureg, address, store=bool(_field(f, "d")))
-    )
+    # A broadcast load (MODE1.BDCST1/BDCST9) moves the same word into Cdreg, on
+    # either bus (_broadcast_load). The SIMD PM half is not modelled.
+    store = bool(_field(f, "d"))
+    if long_word:
+        companion = None
+    elif space == "DM":
+        companion = _simd_ureg_mem_companion(
+            target, ureg, address, store=store, index=index
+        )
+    else:
+        companion = _broadcast_companion(old, ureg, address, index, store)
     if long_word:
         pair_addresses: list[Operand] = []
         for offset in range(2):
@@ -203,8 +212,16 @@ def _type_3a_transfer(
                 loaded_values.append(
                     _dm_read(target, item_address, 4, normal_word=True)
                 )
+            broadcast = _broadcast_load(old, ureg, index, False)
             for item, mem_value in zip(codes, loaded_values, strict=True):
-                target.uregs[item] = mem_value or Unknown("memory-address " + rendered)
+                # Not `loaded`: the normal-word load below gives that name an
+                # optional value, and the transpiler keeps one type per name.
+                word = mem_value or Unknown("memory-address " + rendered)
+                target.uregs[item] = word
+                _b_write_loads_i(target, item, word)
+                if broadcast:
+                    # PRM Fig 7-28: a broadcast (LW) load fills the complement pair too.
+                    _broadcast_long_word(target, item, word)
             _event(
                 target,
                 insn,
@@ -239,7 +256,9 @@ def _type_3a_transfer(
             access_width="normal-word",
         )
         if companion is not None:
-            _companion_transfer(target, insn, companion, True, "normal-word", old, mode)
+            _companion_transfer(
+                target, insn, companion, True, "normal-word", old, mode, space
+            )
     else:
         loaded = _load_normal_ureg(target, space, address, ureg)
         _event(
@@ -256,7 +275,7 @@ def _type_3a_transfer(
         )
         if companion is not None:
             _companion_transfer(
-                target, insn, companion, False, "normal-word", old, mode
+                target, insn, companion, False, "normal-word", old, mode, space
             )
     if post_modify:
         target.uregs[16 + index] = _post_modify_index(
@@ -858,14 +877,20 @@ def _type_nw_companion(
         cureg = code
     mode = old.get(UREG_CODES["MODE1"])
     mode_value = mode.value if isinstance(mode, Const) else 0
-    broadcast = not store and (
-        (index == 1 and mode_value & (1 << 23))
-        or (index == 9 and mode_value & (1 << 22))
-    )
+    broadcast = _broadcast_load(old, code, index, store)
     if not broadcast and not (mode_value & (1 << 21)):
         return None
     offset = 0 if broadcast else scale
     return cureg, _add(address, Const(offset), "%s + %d" % (_render(address), offset))
+
+
+def _broadcast_long_word(state: State, code: int, value: Value) -> None:
+    """A broadcast (LW) load writes VALUE, the word it put in CODE, to the
+    complement register as well (PRM Fig 7-28: RX = DM(LW) fills RX, RY and
+    SX, SY with the same 64 bits)."""
+    cureg = _cureg_code(code)
+    if cureg is not None:
+        _write_ureg(state, cureg, value)
 
 
 _COMPANION_WIDTH_BYTES = {
@@ -939,10 +964,14 @@ def _type_4a_access(
     if space == "DM":
         try:
             companion = _simd_ureg_mem_companion(
-                state, code, address, store=bool(_field(f, "d"))
+                state, code, address, store=bool(_field(f, "d")), index=index
             )
         except ValueError as error:
             return [_stop(state, insn, str(error))]
+    else:
+        companion = _broadcast_companion(
+            old, code, address, index, bool(_field(f, "d"))
+        )
     if _field(f, "d"):
         value = _ureg(old, code)
         wrote = _dm_write(state, address, 4, value, normal_word=True)
@@ -1080,7 +1109,9 @@ def _type_4b_access(
             predicate_assumption=True,
         )
     if companion is not None:
-        _companion_transfer(executed, insn, companion, store, access_width, old, mode)
+        _companion_transfer(
+            executed, insn, companion, store, access_width, old, mode, space
+        )
     if post_modify:
         executed.uregs[16 + index] = _post_modify_index(
             executed,
@@ -1137,10 +1168,25 @@ def _type_4b(
         )
         try:
             companion = _simd_ureg_mem_companion(
-                state, code, address0, access_width, store=bool(_field(f, "d"))
+                state,
+                code,
+                address0,
+                access_width,
+                store=bool(_field(f, "d")),
+                index=index,
             )
         except ValueError as error:
             return [_stop(state, insn, str(error))]
+    else:
+        iv0 = _ureg(state.uregs, 16 + index)
+        address0 = (
+            iv0
+            if post_modify
+            else _add(iv0, Const(offset), "I%d + %d" % (index, offset))
+        )
+        companion = _broadcast_companion(
+            state.uregs, code, address0, index, bool(_field(f, "d")), access_width
+        )
     mode = "post-modify" if post_modify else "pre-modify"
 
     predicate = _predicate(state, cond)
@@ -1223,10 +1269,20 @@ def _type_3b_access(
     )
     try:
         companion = _simd_ureg_mem_companion(
-            executed, ureg, address, access_width, store=bool(_field(f, "d"))
+            executed,
+            ureg,
+            address,
+            access_width,
+            store=bool(_field(f, "d")),
+            index=index,
         )
     except ValueError as error:
         return str(error)
+    if space != "DM":
+        # On PM only a broadcast load has a modelled PEy half.
+        companion = _broadcast_companion(
+            old, ureg, address, index, bool(_field(f, "d")), access_width
+        )
     if store:
         value = _ureg(old, ureg)
         wrote = _dm_write(
@@ -1251,7 +1307,7 @@ def _type_3b_access(
             condition=cond,
             predicate_assumption=True,
         )
-        if companion is not None and space == "DM":
+        if companion is not None:
             companion_value = _ureg(old, companion[0])
             _dm_write(
                 executed,
@@ -1307,9 +1363,16 @@ def _type_3b_access(
             condition=cond,
             predicate_assumption=True,
         )
-        if companion is not None and space == "DM":
+        if companion is not None:
             _companion_transfer(
-                executed, insn, companion, False, access_width, old, addressing_mode
+                executed,
+                insn,
+                companion,
+                False,
+                access_width,
+                old,
+                addressing_mode,
+                space,
             )
     if post_modify:
         executed.uregs[16 + index] = _post_modify_index(
@@ -1602,10 +1665,13 @@ def _type_15b(
                 loaded_values.append(
                     _dm_read(state, offset_address, 4, normal_word=True)
                 )
+            broadcast = _broadcast_load(state.uregs, code, index, False)
             for item, mem_value in zip(codes, loaded_values, strict=True):
-                _write_ureg(
-                    state, item, mem_value or Unknown("memory-address " + rendered)
-                )
+                word = mem_value or Unknown("memory-address " + rendered)
+                _write_ureg(state, item, word)
+                if broadcast:
+                    # PRM Fig 7-28: a broadcast (LW) load fills the complement pair too.
+                    _broadcast_long_word(state, item, word)
             _event(
                 state,
                 insn,
@@ -1678,9 +1744,16 @@ def _type_15b(
             concrete_value=loaded,
         )
         if companion is not None:
-            if space == "DM":
+            if space == "DM" or _broadcast_load(old, code, index, False):
                 _companion_transfer(
-                    state, insn, companion, False, "normal-word", old, "pre-modify"
+                    state,
+                    insn,
+                    companion,
+                    False,
+                    "normal-word",
+                    old,
+                    "pre-modify",
+                    space,
                 )
             else:
                 _pm_companion_transfer(state, insn, companion, False, old, "pre-modify")
@@ -1847,9 +1920,16 @@ def _type_15a(
             simd_companion_possible=True,
         )
         if companion is not None:
-            if space == "DM":
+            if space == "DM" or _broadcast_load(old, code, index, False):
                 _companion_transfer(
-                    state, insn, companion, False, "normal-word", old, "pre-modify"
+                    state,
+                    insn,
+                    companion,
+                    False,
+                    "normal-word",
+                    old,
+                    "pre-modify",
+                    space,
                 )
             else:
                 _pm_companion_transfer(state, insn, companion, False, old, "pre-modify")
@@ -2084,10 +2164,19 @@ def _type_4d(
     if space == "DM":
         try:
             companion = _simd_ureg_mem_companion(
-                state, code, address, access_width, store=bool(_field(f, "d"))
+                state,
+                code,
+                address,
+                access_width,
+                store=bool(_field(f, "d")),
+                index=index,
             )
         except ValueError as error:
             return [_stop(state, insn, str(error))]
+    else:
+        companion = _broadcast_companion(
+            state.uregs, code, address, index, bool(_field(f, "d")), access_width
+        )
     old = _snapshot_uregs(state.uregs)
     mode = "post-modify" if post_modify else "pre-modify"
     if store:
@@ -2113,7 +2202,9 @@ def _type_4d(
             access_width=access_width,
         )
         if companion is not None:
-            _companion_transfer(state, insn, companion, True, access_width, old, mode)
+            _companion_transfer(
+                state, insn, companion, True, access_width, old, mode, space
+            )
     else:
         loaded = (
             _load_normal_ureg(state, space, address, code)
@@ -2148,7 +2239,9 @@ def _type_4d(
             access_width=access_width,
         )
         if companion is not None:
-            _companion_transfer(state, insn, companion, False, access_width, old, mode)
+            _companion_transfer(
+                state, insn, companion, False, access_width, old, mode, space
+            )
     if post_modify:
         state.uregs[16 + index] = _post_modify_index(
             state,
@@ -2325,10 +2418,19 @@ def _type_3d(
     if space == "DM":
         try:
             companion = _simd_ureg_mem_companion(
-                state, ureg, address, access_width, store=bool(_field(f, "d"))
+                state,
+                ureg,
+                address,
+                access_width,
+                store=bool(_field(f, "d")),
+                index=index,
             )
         except ValueError as error:
             return [_stop(state, insn, str(error))]
+    else:
+        companion = _broadcast_companion(
+            state.uregs, ureg, address, index, bool(_field(f, "d")), access_width
+        )
     mode = "post-modify" if post_modify else "pre-modify"
 
     predicate = _predicate(state, cond)

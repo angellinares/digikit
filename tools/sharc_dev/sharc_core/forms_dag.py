@@ -31,6 +31,7 @@ from .sequencer import (
 )
 from .state import (
     State,
+    _b_write_loads_i,
     _copy,
     _event,
     _json_value,
@@ -389,6 +390,7 @@ def _type_7d(
         ]
     result = _aconv(value, w2b, src_code, state.pc_sw)
     state.uregs[dst_code] = result
+    _b_write_loads_i(state, dst_code, result)
     _event(
         state,
         insn,
