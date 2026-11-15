@@ -57,7 +57,7 @@ Status: `todo`, `active`, `done`, `parked`.
 | 5 | R9 | `fx` linked in | R8 | todo | |
 | 5 | R10 | `machines` linked in; layer check final | R9 | todo | |
 | 5 | R11 | Boot plan, module states, refusal fixtures | R10 | todo | |
-| 5 | R12 | Services as `.dks`. Scope from R8: movable hooks in `.dks`; boot-thread and interrupt hooks keep image stubs plus pointer slots. Decisions carried from the R8 spike: table version bump; replace the `core/` prefix rule for runtime services; separate provider slots; patchkit wasm size (bind raised it past 2.5 MiB); uninstall and hot reload; a dedicated stock-mismatch error code | R11 | todo | |
+| 5 | R12 | Services as `.dks`. Scope from R8: movable hooks in `.dks`; boot-thread and interrupt hooks keep image stubs plus pointer slots. Decisions carried from the R8 spike: table version bump; replace the `core/` prefix rule for runtime services; separate provider slots; patchkit wasm size (bind raised it past 2.5 MiB); uninstall and hot reload; a dedicated stock-mismatch error code. Transfer shows a module's service dependencies and installs the needed `.dks` with the module in one click (runtime-and-services 5.8). | R11 | todo | |
 | 5 | P10 | ColdFire PC sampling on the device | P9 | todo | |
 | Any | T-AB | A/B of two firmware images: `coupled_ab --image LABEL=SYX` | - | done | PR 484 |
 | Any | P5 | Track A: host profiles named from sharcdb (emulator host speed), in a lane | - | parked | |

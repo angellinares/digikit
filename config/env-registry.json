@@ -149,6 +149,10 @@
    "owner": "python:tests/patchkit",
    "purpose": "Path to the DN2 digi-emud daemon binary; overrides DIGI_EMUD for DN2"
   },
+  "DIGI_EMUD_STORE": {
+   "owner": "python:tools/devtools",
+   "purpose": "Directory of the daemon store instead of <git common dir>/emud-cache (tests only)"
+  },
   "DIGI_EMUD_DT2": {
    "owner": "python:tests/patchkit",
    "purpose": "Path to the DT2 digi-emud daemon binary; overrides DIGI_EMUD for DT2"
