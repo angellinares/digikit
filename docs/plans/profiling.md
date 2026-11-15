@@ -323,7 +323,7 @@ Items marked [inferred] or [open] were not checked.
 
 **P8c, ColdFire dispatcher spans (about 1 day).**
 
-- Dispatch points: (1) hook wrappers `dkrt_page_key` and `dkrt_page_turn` (`handlers.rs:81,89`), owner `0x300|hook`; (2) service ticks: one span per service and phase, owner `0x100 | svc<<4 | phase`, inside `ServiceTable::tick` [inferred location]. (3) Module ticks and polls are unchanged.
+- Dispatch points: spans sit at the interface-B boundary, one instrumentation point for all services and modules, the same for linked crates and `.dks` files. (1) Service calls: where the core calls a service through its `ServiceRow` in the service table dispatch (`ServiceTable`), owner `0x100 | svc<<4 | phase`, one span per service and phase; hook calls through the `ServiceRow` (page key and page turn) use owner `0x300|hook`. (2) Module entry calls: where the core calls a module's `dk_module` entry. (3) Module ticks and polls are unchanged.
 - Service x phase spans replace the phase spans. The host sums the rows of a phase to get the phase total. Overlapping spans may not be added (section 9).
 - Record format unchanged: `(owner, cycles)` on the span channel.
 - Debug module: `span_row` gains the hook class and the service x phase rows. PROFILE_STATE reports its class counts (modules, service-phases, hooks, polls); today the host hard-codes `rows - 7`, and a tail after the poll slots would parse as more polls. This is a format change: the debug module and dk-session change in one PR.
@@ -349,7 +349,7 @@ Risks: the window-3 read case adds a DSP routine path and one read per ColdFire 
 
 ### 13.2 Item 9: device calibration (`wb profile calibrate`)
 
-Not started. Order: after the refactor and architecture items (R12) and after P8d.
+Not started. Order: after R12, P8c and P8d.
 
 - Same counter on both sides: the P8d DSP stats rows read EMUCLK around each dispatch (`sdk/dsp/contract/dk_trace.inc:48-69`). On the device EMUCLK counts core cycles (SHARC+ PRM p.28-18). In the emulator it advances one per instruction plus modelled jump costs (finding 125, finding 103 section 8). Calibration is the device/emulator ratio per stats row.
 - Model: one factor per device for module rows, fitted on worst-case statistics (largest call, largest block), not means. The budget factor is the worst observed device/emulator ratio in the calibration set, so it never underpredicts a measured case. Move to a per-class model (instructions plus weighted taken jumps and calls, from per-PC counts and the dksharc class of each PC) only if the spread exceeds 10%. Cache-set conflicts are reported as outliers, not modelled.

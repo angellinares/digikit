@@ -7,6 +7,7 @@
         "files": [
           "tests/fx-chain.device.test.ts"
         ],
+        "tags": ["A:core/dynfx", "S:fx"],
         "modules": [
           "test/dyn-fx-gain",
           "test/sine"
@@ -28,6 +29,7 @@
         "files": [
           "tests/fx-reuse.device.test.ts"
         ],
+        "tags": ["A:core/dynfx", "S:fx"],
         "modules": [
           "test/dyn-fx-gain",
           "test/sine"

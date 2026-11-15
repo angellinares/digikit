@@ -13,6 +13,7 @@ dkrt-abi = { path = "../../abi" }
 dkrt-fit = { path = "../../fit" }
 dkrt-link = { path = "../../link" }
 dkrt-svc-fx = { path = "../../../services/fx" }
+dkrt-svc-machines = { path = "../../../services/machines" }
 dkneeds = { path = "../../../../../packages/dkneeds" }
 dkfw = { path = "../../../fw/rs" }
 

@@ -13,6 +13,7 @@
         "files": [
           "capacity.device.test.ts"
         ],
+        "tags": ["C:loading"],
         "modules": [
           "test/dyn-fx-gain"
         ],
@@ -22,6 +23,7 @@
         "files": [
           "commit.device.test.ts"
         ],
+        "tags": ["C:loading", "S:fx", "S:machines"],
         "modules": [
           "test/commit-demo"
         ],

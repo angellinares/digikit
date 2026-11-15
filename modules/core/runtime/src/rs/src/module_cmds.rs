@@ -48,7 +48,7 @@ pub(crate) unsafe fn cmd_modules(seq: u32, body: *const u8, blen: usize) -> i32 
         }
         // the machine types: rows of the registry, then voice rows (pinned numbers of a DSP-only module)
         let mut types = [0u8; 8];
-        let mut nt = crate::registry::types_of(i as u8 + 1, &mut types);
+        let mut nt = crate::handlers::exports::machine_types_of(i as u8 + 1, &mut types);
         let mut r = 0;
         while r < crate::dsp::MAX_ROWS {
             if d.row_owner[r] == i as u8 + 1 && d.row_type[r] < 256 && nt < 8 {

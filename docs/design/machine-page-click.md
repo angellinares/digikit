@@ -33,7 +33,7 @@ void shot_smp_click(uint32_t track)                       // global, not static
  key event / turn event of the machine page
         |  hook at the entry of the page's vfunc_2 and vfunc_17 (both devices), then the stock handler runs unchanged
         v
- dkrt_page_key / dkrt_page_turn          (modules/core/runtime/src/rs/src/services/machines/pageclick.rs; one test of ARMED when no action exists)
+ dkrt_page_key / dkrt_page_turn          (modules/core/services/machines/src/pageclick.rs, over the wrappers in handlers.rs; one test of ARMED when no action exists)
         |  Detector: press of encoder e -> pending; a turn -> turned; release of e, same view, no turn -> click(e)
         v
  code = view.vtable[47](view, e)         the page's own encoder -> parameter code (what the stock list opener calls)
@@ -62,7 +62,7 @@ void shot_smp_click(uint32_t track)                       // global, not static
 | release (0x10) of 0x29 + e, no chord | click(e) if pending == e, same view, not turned; pending cleared |
 | release of another encoder, or on another view | no click; pending cleared |
 
-Host tests: `modules/core/runtime/src/rs/src/services/machines/pageclick.rs` (`tests`); packer side: `desc.rs`, `register.rs`, `dkm.rs`, `typed.rs` (unit tests) and `packages/dkneeds`.
+Host tests: `modules/core/services/machines/src/pageclick.rs` (`tests`); packer side: `desc.rs`, `register.rs`, `dkm.rs`, `typed.rs` (unit tests) and `packages/dkneeds`.
 
 ## Static answers (what the hooks rely on)
 

@@ -7,6 +7,7 @@
     "runtimeAcceptance": [
       {
         "files": ["menu.device.test.ts"],
+        "tags": ["A:core/digikit-menu"],
         "modules": []
       }
     ],

@@ -18,6 +18,9 @@ use dkrt_sdk::*;
 mod api;
 mod arena;
 pub mod core_api;
+#[cfg(not(test))]
+mod fw;
+mod native;
 pub mod services;
 pub mod assign;
 pub mod collect;

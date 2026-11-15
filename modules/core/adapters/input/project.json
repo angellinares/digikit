@@ -5,6 +5,7 @@
     "runtimeAcceptance": [
       {
         "files": ["tests/input-adapter.device.test.ts"],
+        "tags": ["A:core/input"],
         "modules": ["test/input-probe"]
       }
     ]
