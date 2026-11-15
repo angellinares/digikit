@@ -220,6 +220,10 @@ pub unsafe extern "C" fn dk_sink_set(channel: u32, sink: *mut u8) -> i32 {
     } else {
         write_volatile(addr_of_mut!(c.owner), if sink.is_null() { 0 } else { owner });
         write_volatile(addr_of_mut!(c.f), sink as usize);
+        if channel == SINK_SPAN {
+            // The old API leaves no clock behind: a span sink set this way measures nothing.
+            write_volatile(addr_of_mut!(SPAN_CLOCK), 0);
+        }
         OK
     };
     irq_restore(sr);

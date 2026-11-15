@@ -108,7 +108,7 @@ fn an_emit_without_a_clock_measures_nothing() {
     }
 }
 
-/// The span of a module tick (`entry::tick_all` wraps the call in `spanned` with the record index): one span per call with the owner and the clock's
+/// The span of a module tick (`entry::tick_all` measures the call with the record index, the emit after `leave_module`): one span per call with the owner and the clock's
 /// difference, a wrap of the counter included. The 32-bit `DKRT_TICKS` table cannot hold a fake's address on a 64-bit host, so `tick_all` itself is not run here.
 #[test]
 fn spanned_emits_one_span_per_call_with_its_owner() {
@@ -173,6 +173,29 @@ fn releasing_the_sinks_clears_the_clock() {
         let calls = CLOCK_CALLS;
         assert_eq!(dlog::span_t0(), None);
         assert_eq!(CLOCK_CALLS, calls);
+        in_module(|| dlog::dk_sink_set(SINK_SPAN, core::ptr::null_mut()));
+    }
+}
+
+#[test]
+fn dk_sink_set_on_the_span_channel_clears_the_clock() {
+    let _g = LOCK.lock().unwrap();
+    unsafe {
+        reset(0, 5);
+        assert_eq!(in_module(|| dlog::dk_span_sink_set(p(fake_emit as *const () as usize), p(fake_clock as *const () as usize))), OK);
+        assert!(dlog::span_t0().is_some());
+        assert_eq!(in_module(|| dlog::dk_sink_set(SINK_SPAN, core::ptr::null_mut())), OK);
+        let calls = CLOCK_CALLS;
+        assert_eq!(dlog::span_t0(), None);
+        (*addr_of_mut!(DKRT_POLLS))[0] = fake_poll as *const () as usize;
+        phase(0);
+        poll_all();
+        entry::tick_all();
+        assert_eq!(CLOCK_CALLS, calls);
+        assert!(emits().is_empty());
+        // The clock is gone too: a sink set again through the old API still measures nothing.
+        assert_eq!(in_module(|| dlog::dk_sink_set(SINK_SPAN, p(fake_emit as *const () as usize))), OK);
+        assert_eq!(dlog::span_t0(), None);
         in_module(|| dlog::dk_sink_set(SINK_SPAN, core::ptr::null_mut()));
     }
 }

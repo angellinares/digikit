@@ -5,7 +5,7 @@
 //     wb [--format json|text] module analyse MODULE.dkm DSP.dko.json
 //     wb [--format json|text] profile report FILE [--top N] [--map F]... [--image X.syx] [--loads F] [--analyse ID=MODULE.dkm:DSP.dko.json]...
 //     wb profile record --seconds N --out FILE [--image X.syx] [--run-dir DIR] [--since-boot] [--cpu cf|sharc]
-//     wb [--port SUB] [--bin PATH] profile spans [--start|--stop|--reset] [--out FILE]   (a device command, run from wb.mjs: profSpans)
+//     wb [--port SUB] [--bin PATH] profile spans [--start|--stop|--reset] [--out FILE]   (a device command, run from wb.mjs: profSpans; --start resets the counters, then starts)
 //
 // `record` reads `cf.profile` before and after N seconds and keeps the difference; `--since-boot` keeps the cumulative counters (the state of a paused emulator).
 // `--cpu sharc` records `sharc.profile` (the daemon needs the `sharc-profile` cargo feature): it starts the DSP counting, waits N seconds and reads it;
@@ -116,6 +116,8 @@ const PHASES = ['early', 'late', 'last'];
 
 /** `profile spans`: the runtime span counters of a device (dk-session `profileAll`) as a dk.profile/1 with `spans`, and a table. */
 export async function profSpans({ opts, session, fail }) {
+  // --start resets the counters first, so a run starts from zero.
+  if (opts.op === 'start') await session.profileState('reset');
   if (opts.op) await session.profileState(opts.op);
   const all = await session.profileAll();
   const modules = await session.modules();

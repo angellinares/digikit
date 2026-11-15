@@ -567,7 +567,7 @@ node tools/devtools/wb.mjs profile record --seconds 4 --image out/try/rt.syx --o
 # out/try/real.profile.json: 371 counters over 4 s
 ```
 
-`wb profile spans [--start|--stop|--reset] [--out FILE]` reads the runtime span counters of a device (or an emulator with a MIDI port) over the dk-session link: the flag sets the counting first, then it reads the spans (modules, the phases `early`, `late`, `last`, and polls) and prints one row each. With `--out` it writes a `dk.profile/1` with `spans` (`owner`, `kind`, `name`, `calls`, `sum_ticks`, `max_ticks`) and `span_clock_hz`; `raw` stays empty and `wb profile report` ignores the spans. It takes `--port` and `--bin` like the other device commands. The numbers below are an example:
+`wb profile spans [--start|--stop|--reset] [--out FILE]` reads the runtime span counters of a device (or an emulator with a MIDI port) over the dk-session link: the flag sets the counting first (`--start` resets the counters, then starts), then it reads the spans (modules, the phases `early`, `late`, `last`, and polls) and prints one row each. With `--out` it writes a `dk.profile/1` with `spans` (`owner`, `kind`, `name`, `calls`, `sum_ticks`, `max_ticks`) and `span_clock_hz`; `raw` stays empty and `wb profile report` ignores the spans. It takes `--port` and `--bin` like the other device commands. The numbers below are an example:
 
 ```sh
 node tools/devtools/wb.mjs profile spans --start                    # start counting

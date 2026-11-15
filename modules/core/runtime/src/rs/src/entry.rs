@@ -113,8 +113,13 @@ pub unsafe fn tick_all() {
         if t != 0 {
             let call: unsafe extern "C" fn(*const Ctx) = core::mem::transmute(t as usize);
             let prev = dlog::enter_module(rec, dlog::PHASE_TICK);
-            dlog::spanned(rec as u32, || call(addr_of!(DKRT_CTXS[rec])));
+            let t0 = dlog::span_t0();
+            call(addr_of!(DKRT_CTXS[rec]));
             dlog::leave_module(prev);
+            // The emit runs after `leave_module`: the sink's own work and faults are not the module's.
+            if let Some(t) = t0 {
+                dlog::span_end(rec as u32, t);
+            }
             let s = crate::st();
             s.tick_calls = s.tick_calls.wrapping_add(1);
         }

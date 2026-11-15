@@ -15,7 +15,7 @@
 //     node tools/devtools/wb.mjs [--port SUB] [--bin PATH] log card [on|off|get [--out DIR]]
 //     node tools/devtools/wb.mjs [--format json|text] addrmap lookup ADDR... | module analyse DKM DKO | profile report FILE | profile record --seconds N --out FILE [--cpu cf|sharc]
 //
-//     node tools/devtools/wb.mjs [--port SUB] [--bin PATH] profile spans [--start|--stop|--reset] [--out FILE]   (a device command: reads the runtime span counters)
+//     node tools/devtools/wb.mjs [--port SUB] [--bin PATH] profile spans [--start|--stop|--reset] [--out FILE]   (a device command: reads the runtime span counters; --start resets them, then starts)
 //
 // The `--format` line above is the offline group (no device, no dkmidi): names for addresses, module DSP analysis and profiles, through dkprof.wasm (`mise run wasm:dkprof`).
 // Its options and output are in tools/devtools/wb_prof.mjs and docs/ADDRMAP.md, docs/INSTRUMENTATION.md and packages/dksharc/README.md.
