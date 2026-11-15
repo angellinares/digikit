@@ -199,8 +199,9 @@ def render_mem_indexed(sw, f):
     3a/3b/3d name their register with the wide "ureg" field; 6a_mem instead
     has a plain 4-bit "dreg" (R0-R15) -- same fallback tools/sharc_dev/sharcfn/'s
     render_mem_immoff() already uses for 4a/4b/4d/15b."""
-    i = f.get("i", 0)
-    m = f.get("m", 0)
+    bank = 8 if f.get("g") else 0
+    i = f.get("i", 0) + bank
+    m = f.get("m", 0) + bank
     dreg = f.get("dreg")
     ureg = f.get("ureg")
     reg = (
@@ -259,7 +260,8 @@ def render_mem_immoff(sw, f, insn_type):
     and tools/sharc_dev/sharcdb/'s `ptr` table, both of which already draw this
     distinction). Type15b has no u bit and is always pre-modify (PRM
     p.15-11)."""
-    i = f.get("i", 0)
+    # g selects DAG2 (I8-I15) in 4a/4b/4d/15b, as in sharc_core forms_move (index = i + 8 if g).
+    i = f.get("i", 0) + (8 if f.get("g") else 0)
     bits = _IMMOFF_DATA_BITS.get(insn_type, 6)
     off = sign_extend(f.get("data", 0), bits)
     dreg = f.get("dreg")
@@ -313,9 +315,9 @@ def render_dual_mem(f):
         else "R%d = DM(I%d, M%d)" % (dmdreg, dmi, dmm)
     )
     pm = (
-        "PM(I%d, M%d) = R%d" % (pmi, pmm, pmdreg)
+        "PM(I%d, M%d) = R%d" % (8 + pmi, 8 + pmm, pmdreg)
         if f.get("pmd")
-        else "R%d = PM(I%d, M%d)" % (pmdreg, pmi, pmm)
+        else "R%d = PM(I%d, M%d)" % (pmdreg, 8 + pmi, 8 + pmm)
     )
     return dm + " ; " + pm
 
@@ -555,7 +557,10 @@ def render_instruction(
         elif t in ("9a_abs", "9b_abs"):
             # 9a_abs has no addr field: like 9b_abs it jumps through PM(I, M).
             target = None
-            head += "  target=indirect PM(I%s, M%s)" % (f.get("pmi"), f.get("pmm"))
+            head += "  target=indirect PM(I%d, M%d)" % (
+                8 + f.get("pmi", 0),
+                8 + f.get("pmm", 0),
+            )
         else:
             target = None
         if target is not None:

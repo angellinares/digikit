@@ -453,11 +453,14 @@ the SDK grows. Today `type = "raw"` exists only in test fixtures.
 
 These come from the profiling work and land after the steps in section 12 that they depend on.
 
-- **DSP rules.** One rules section in `sdk/` for machine and FX entry points: registers a module may clobber, registers and mode bits it
-  must restore, memory it may touch. Parts exist today in `sdk/dsp/README.md` "Block routines" and `sdk/dsp/delay/delay.inc` (MODE1.CBUFEN).
-  The stock side comes from sharcdb (`regdef`/`reguse` of the interrupt context save at `0x1c02a4`, image and port to confirm, and of the
-  adapter dispatchers; `mem_access` for memory stock code owns). No finding records the stock save set yet [O]; record it in
-  `docs/findings/` and have a second agent check it against image bytes before [V]. `pk_conform` checks each module against the rules,
+- **DSP rules.** The table `[dsp.registers]` in `sdk/sdk.toml` is the one source of the register contract: registers a module may clobber,
+  must keep and never writes, and the entry registers. `patchkit gen` writes the rule comments of the generated headers, `sdk/dsp/REGISTERS.md`
+  and `packages/dksharc/src/rules_table.rs` from it. The check lives in `dksharc::rules` and runs in patchkit at module build. It warns first
+  and refuses when every module in the repo builds with no warning. Mode bits and memory rules are still to do; parts exist today in
+  `sdk/dsp/README.md` "Block routines" and `sdk/dsp/delay/delay.inc` (MODE1.CBUFEN).
+  The stock side comes from sharcdb (`regdef`/`reguse` of the interrupt context save at `0x1c02a4`, the same code on DT2 1.17 and DN2 1.12, and of the
+  adapter dispatchers; `mem_access` for memory stock code owns). [Finding 130](../findings/130-sharc-interrupt-save-set.md) records the stock save set [D]; a second agent checks it against image
+  bytes before [V]. `pk_conform` checks each module against the rules,
   using sharcdb tables built for the module's own DSP section ([profiling.md](profiling.md) 3.3).
 - **Cycle cost (S5a, built).** Nobody declares a cost: the DSP descriptors have no `max_cycles_*` words (the machine descriptor is 8 words, the effect
   descriptor 6) and the manifest has no `[conformance]` overrides. `module:check` runs the conformance suite and writes the module's own cost into

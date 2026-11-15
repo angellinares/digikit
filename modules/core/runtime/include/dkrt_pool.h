@@ -107,6 +107,4 @@ int32_t dkrt_job_post(uintptr_t step, uintptr_t done, uint8_t *ctx);
 int32_t dkrt_job_cancel(uint32_t id);
 /* "Backing lost": all handles are invalid (reset). */
 void dkrt_pool_lost(void);
-/* Project adapter to runtime: the current project slot changed. The runtime never reads the byte. */
-void dkrt_project_changed(uint32_t slot);
 #endif

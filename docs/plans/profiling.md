@@ -76,8 +76,8 @@ decodes the text with the decoder of `sharc_rt`. It gives functions (named from 
 or register count, nesting), calls inside the module, import calls resolved through relocations (`import:<symbol>`) and the memory
 operands of each instruction at form level. A decode that is not confident is reported and never guessed. On the pluck module for the
 Digitone II it gives 306 instructions, 3 functions, 4 DO loops (one literal count of 32, three register counts) and 4 import calls; the Python
-module mode of sharcdb, an oracle only and not merged, gave the same numbers. Slice 2 adds register def/use per instruction, from a table
-generated from `tools/sharc_dev/sharc_core`, so the instruction semantics stay in one place. Uses: static loop cost, the DSP rule check
+module mode of sharcdb, an oracle only and not merged, gave the same numbers. Slice 2 (done) adds register def/use per instruction and per function (registers written on any path to a return, MODE1 net effect), from a
+table generated from `tools/sharc_dev/sharc_core` (`tools/sharc_dev/sharc_defuse_gen.py`), so the instruction semantics stay in one place. Uses: static loop cost, the DSP rule check
 ([sdk.md](sdk.md) section 9), and naming in profiles.
 
 ### 3.4 Export
@@ -299,7 +299,7 @@ Item numbers are ids, not an order. The order lives in [sdk-runtime-roadmap.md](
 | --- | --- | --- | --- | --- |
 | 1 | Address map v1, emulator only: `.dko` symbols kept, map export, names in emulator tools and crash records. **Done** (docs/ADDRMAP.md) | B | 1-2 days | Nothing. Runs in parallel with runtime-and-services item 4 |
 | 2 | Shared Rust library and `wb:cli` profile and addrmap commands with JSON output | B | 1-2 days | 1 |
-| 3 | Module DSP analysis: the Rust crate `dksharc` (slice 1 done; slice 2 register def/use) | B | 1 day | 1 |
+| 3 | Module DSP analysis: the Rust crate `dksharc` (slices 1 and 2 done: register def/use) | B | 1 day | 1 |
 | 4 | Per-module cost, machine budget check (fast-tier refusals moved to item 5's track). **Done** | B | 1-2 days | 1, 3 |
 | 5 | Host profiles named from sharcdb, first ranking | A | 1-2 days | Nothing; in a lane |
 | 6 | Workbench: names in the Log pane (emulator and device, one dk-session/debug-module PEEK path; hardware proof later), per-module rows in the Memory panel. **Done** (docs/ADDRMAP.md "Workbench"); the Profile pane moved to item 8 | B | 2-3 days | 2 |

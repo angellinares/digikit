@@ -50,8 +50,7 @@ routine runs it saves them and **sets** them, and it puts the caller's values ba
 | L0-L5 | 0 (linear addressing for I0-I5) |
 | MODE1 | SIMD off, ALUSAT and TRUNCATE clear, RND32 set (32-bit floats, round to nearest) |
 
-The routine may clobber R0-R15, I0-I5, I13, M1-M4 and B3, and must keep I6-I12, I14, I15, M0, M5-M15, the L registers and
-MODE1 as it found them (the pinned values above). Details, the entry registers and the voice record: the header of
+Register rules for the routine: `sdk/dsp/REGISTERS.md`. Details, the entry registers and the voice record: the header of
 `src/dsp/dsp-voice.s` (Digitakt II) and `src/dsp/dsp-voice-dn2.s` (Digitone II); the audit and its tests:
 [docs/findings/45-dsp-voice-context.md](../../../../docs/findings/45-dsp-voice-context.md).
 

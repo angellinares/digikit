@@ -233,3 +233,90 @@ pub fn source_text_from(
 pub fn sharc_object(text: &str) -> Result<Dko> {
     super::sharc_obj::object_from_text(text)
 }
+
+/// The register contract problems (`dksharc::rules`, sdk/dsp/REGISTERS.md) of a SHARC+ object. The object is linked at the nominal
+/// base with placeholder externs, so jumps and calls have their targets; the rules look at the instructions of each function and at
+/// its returns, and do not follow a call into another object.
+pub fn rule_problems(obj: &Dko) -> Vec<dksharc::rules::RuleProblem> {
+    let mut out = vec![];
+    // The jumps and calls of the stored text carry relocations: link at the nominal base, with a placeholder for each undefined
+    // symbol, so the analysis sees the real control flow (an unrelocated jump target is 0 and hides the returns behind it).
+    let mut externs = std::collections::BTreeMap::new();
+    for (i, s) in obj
+        .symbols
+        .iter()
+        .filter(|s| s.section.is_none())
+        .enumerate()
+    {
+        externs.insert(
+            s.name.clone(),
+            (crate::dsp::L2_SW_BASE + 0x1_0000 + 0x40 * i as u32) as u64,
+        );
+    }
+    let linked = crate::link::link(obj, crate::dsp::L2_BYTE_BASE as u64, &externs).ok();
+    for sec in obj.sections.iter().filter(|s| s.kind == "text") {
+        let bytes = match &linked {
+            Some(l) => l.places.get(sec.name.as_str()).and_then(|at| {
+                let from = (*at - l.base) as usize;
+                l.image
+                    .get(from..from + sec.size as usize)
+                    .map(<[u8]>::to_vec)
+            }),
+            None => None,
+        };
+        let Some(bytes) = bytes.or_else(|| unhex(&sec.hex).ok()) else {
+            out.push(dksharc::rules::RuleProblem {
+                level: dksharc::rules::Level::Warn,
+                rule: "uncertain",
+                func: sec.name.clone(),
+                entry: 0,
+                addr: 0,
+                reg: "the text section does not decode; the register check is not done".to_string(),
+            });
+            continue;
+        };
+        let text: Vec<u16> = bytes
+            .chunks_exact(2)
+            .map(|c| u16::from_le_bytes([c[0], c[1]]))
+            .collect();
+        let n = text.len() as u64;
+        let symbols = obj
+            .symbols
+            .iter()
+            .filter(|s| s.section.as_deref() == Some(sec.name.as_str()) && s.value < n)
+            .map(|s| dksharc::TextSymbol {
+                name: s.name.clone(),
+                parcel: s.value as u32,
+                global: s.global,
+            })
+            .collect();
+        let input = dksharc::Input {
+            text,
+            base_sw: dksharc::L2_SW_BASE,
+            symbols,
+            ..dksharc::Input::default()
+        };
+        out.extend(dksharc::rules::check_all(&dksharc::analyze(&input)));
+    }
+    out
+}
+
+/// One problem as a line for stderr: `warn  <module id>  <func>+0x<off>  writes <REG>  (<rule>: <reason>)`. The offset counts short words.
+pub fn rule_warning_line(module: &str, p: &dksharc::rules::RuleProblem) -> String {
+    let level = match p.level {
+        dksharc::rules::Level::Warn => "warn",
+        dksharc::rules::Level::Refuse => "error",
+    };
+    let what = if p.rule == "uncertain" {
+        p.reg.clone()
+    } else {
+        format!("writes {}", p.reg)
+    };
+    format!(
+        "{level}  {module}  {}+{:#x}  {what}  ({}: {})",
+        p.func,
+        p.addr - p.entry,
+        p.rule,
+        dksharc::rules::reason(p.rule)
+    )
+}

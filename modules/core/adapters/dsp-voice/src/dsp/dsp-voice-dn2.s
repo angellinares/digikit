@@ -20,8 +20,8 @@
 // Routine ABI (entered with JUMP (M13, I12); I13 holds the return address, the routine ends with JUMP (M13, I13);
 // ordinary CALL/RTS pairs for its own subroutines are fine):
 //   in   R4 = the slot's voice buffer (32 floats, written in full), R0 = type, R2 = slot v (0..15), R12 = 32
-//   may clobber  R0-R15, I0-I5, I12, I13, M1-M4 (saved and restored here); must keep I6-I11, I14, I15, M0, M5-M15,
-//        the L registers and MODE1 (SIMD off).
+//   Register rules: sdk/dsp/REGISTERS.md. This wrapper saves and restores the registers it touches.
+//        MODE1: SIMD off.
 //   The context registers are SET by this wrapper, never assumed. The firmware restores M5, M6, M7, M13, M14, M15, the L
 //   registers and MODE1 per DSP context (blk69 context restore, finding 45), so their values at the hook are the context's,
 //   not constants of the machine. Before a registered type runs, the wrapper saves them (`_dv_ctx`) and pins

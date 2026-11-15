@@ -126,6 +126,52 @@ pub struct MemOp {
     pub import: Option<String>,
 }
 
+/// What an instruction does to MODE1.
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "snake_case")]
+pub enum Mode1Op {
+    /// The whole register is written (`value` when it is an immediate).
+    Full,
+    /// `BIT SET MODE1 mask`.
+    Set,
+    Clear,
+    Toggle,
+    /// `PUSH STS`: MODE1 is saved and its MMASK bits are cleared.
+    PushSts,
+    /// `POP STS`: MODE1 is restored from the status stack.
+    PopSts,
+}
+
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize, Deserialize)]
+pub struct Mode1Effect {
+    pub op: Mode1Op,
+    /// The bits of `Set`, `Clear` and `Toggle`; all ones for `Full`; 0 for the stack operations.
+    pub mask: u32,
+    pub value: Option<u32>,
+}
+
+/// The registers an instruction reads and writes (register names as in the SHARC register file; `MRF` ... for the multiplier and the
+/// bit FIFO). The sets are what the core's semantics define, taken per decoded field: compute opcode, Ureg code, DAG registers.
+/// A form or compute opcode the core does not model has `uncertain` set and no guessed registers.
+#[derive(Clone, Debug, Default, PartialEq, Eq, Serialize, Deserialize)]
+pub struct DefUse {
+    pub reads: Vec<String>,
+    pub writes: Vec<String>,
+    /// The index registers written by an address post-modify (also in `writes`).
+    pub post_modify: Vec<String>,
+    /// The instruction has a condition other than "always": every effect is then "may".
+    pub conditional: bool,
+    /// ASTATX bits the instruction defines or forgets.
+    pub astat_bits: u32,
+    pub mode1: Option<Mode1Effect>,
+    /// The PC, loop or status stack is pushed or popped.
+    pub stack: bool,
+    /// Registers that are also written, and registers also read, when MODE1.PEYEN is set (the S registers for R, ASTATY for ASTATX).
+    pub simd_writes: Vec<String>,
+    pub simd_reads: Vec<String>,
+    pub uncertain: Vec<String>,
+}
+
 #[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
 pub struct Insn {
     pub pc: u32,
@@ -136,6 +182,11 @@ pub struct Insn {
     /// Name of the import the relocation on this instruction refers to.
     pub import: Option<String>,
     pub mem: Vec<MemOp>,
+    pub defuse: DefUse,
+    /// The immediate of a MODIFY by an immediate (forms `19a` and `19a_scaled`), in words (the decoded `data` field, sign-extended
+    /// from 32 bits).
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub imm: Option<i64>,
 }
 
 #[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
@@ -211,6 +262,53 @@ pub struct Function {
     /// False when an instruction in the function did not decode with confidence, or a transfer is not modelled.
     pub complete: bool,
     pub blocks: Vec<Block>,
+    /// Registers written on any path to a return, MODE1 and the effects of calls.
+    pub effects: FunctionEffects,
+}
+
+/// One instruction that changes MODE1.
+#[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
+pub struct Mode1Write {
+    pub pc: u32,
+    pub op: Mode1Op,
+    pub mask: u32,
+}
+
+/// The net effect of a function on MODE1, by a data flow over its blocks. Each bit is tracked as the entry value, its inverse, a
+/// constant or unknown; a `Rn = MODE1` ... `MODE1 = Rn` pair and `PUSH STS` ... `POP STS` restore the entry value.
+#[derive(Clone, Debug, Default, PartialEq, Eq, Serialize, Deserialize)]
+pub struct Mode1Summary {
+    pub writes: Vec<Mode1Write>,
+    /// Bits that may differ from their entry value at a return.
+    pub changed_mask: u32,
+    /// The subset of `changed_mask` whose value is not known (the rest is a known constant or the inverse of the entry value).
+    pub unknown_mask: u32,
+    /// MODE1 is proven unchanged: no changed bit and an exact analysis.
+    pub restored: bool,
+    /// False when a callee with unknown effects, a stack mismatch or a non-converging loop makes the masks a lower bound.
+    pub exact: bool,
+}
+
+#[derive(Clone, Debug, Default, PartialEq, Eq, Serialize, Deserialize)]
+pub struct FunctionEffects {
+    /// Registers written by an instruction on a path from the entry to a return, with the writes of local callees.
+    pub writes: Vec<String>,
+    /// Companion registers also written when MODE1.PEYEN is set.
+    pub simd_writes: Vec<String>,
+    pub mode1: Mode1Summary,
+    /// A return can be reached.
+    pub returns: bool,
+    /// pcs of the returns that are indirect jumps through the return registers of the module contract (`JUMP (M13, I13)` and
+    /// `JUMP (M14, I12)`); the address in the register is not checked.
+    pub indirect_returns: Vec<u32>,
+    /// Jumps out of the function and indirect jumps on a path (their targets are not analysed).
+    pub other_exits: Vec<u32>,
+    /// Calls whose effects are not known: imports, indirect calls, calls outside the text, recursion.
+    pub unknown_calls: Vec<String>,
+    /// pcs of instructions on a path whose effects are uncertain.
+    pub uncertain_pcs: Vec<u32>,
+    /// The write set is complete: the function decodes completely, no uncertain instruction, no unknown call, no unanalysed exit.
+    pub complete: bool,
 }
 
 #[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]

@@ -849,7 +849,7 @@ _gs_mono:
     JUMP _gs_pan_cont;
 
 // ---- the adapter's post-step (CALL from _dv_contract after the guard of L), plain subroutine: R is checked and scaled, the slot stamped ----
-// In: _dv_c + 4 = the slot v, _dv_c + 48 = the status bit DK_STEREO of the module's return (0: mono), _dv_in + DK_IN_BLOCK. May clobber R0-R15, I0-I5.
+// In: _dv_c + 4 = the slot v, _dv_c + 48 = the status bit DK_STEREO of the module's return (0: mono), _dv_in + DK_IN_BLOCK. Register rules: sdk/dsp/REGISTERS.md.
 // A bad R block (not finite, over 8.0 in magnitude) or a slot over the cap stays unstamped: the slot plays R = L for the block.
 .GLOBAL _gs_post;
 _gs_post:

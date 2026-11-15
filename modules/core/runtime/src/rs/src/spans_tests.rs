@@ -1,7 +1,7 @@
 //! The span producers (`entry::tick_all`, `tick::phase`, `tick::poll_all`) over a fake clock and a fake emit: nothing is read or emitted without a span sink
 //! and a clock, and a span carries the owner of its producer and the clock's difference (a wrap included). The sink channel is global state: the tests
 //! share the lock of `cleanup_tests`.
-use crate::cleanup_tests::LOCK;
+use crate::test_lock::LOCK;
 use crate::dlog::{self, Span, SINK_SPAN};
 use crate::entry::{self, Ctx};
 use crate::state::{DKRT_POLLS, POLLS};

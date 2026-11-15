@@ -1,6 +1,7 @@
 //! The analysis: a linear sweep of the text, then functions, DO loops, basic blocks and calls.
 
-use crate::forms::{self, DoCount, Flow};
+use crate::defuse::{self, Effects, reg_name, simd_companions};
+use crate::forms::{self, DoCount, Fields, Flow};
 use crate::input::Input;
 use crate::model::*;
 use sharc_rt::decode::{DecodeKind, Decoded, decode_at};
@@ -13,6 +14,43 @@ struct Swept {
     insn: Insn,
     decoded: Decoded,
     flow: Option<Flow>,
+    fx: Effects,
+}
+
+/// The reported register effects of an instruction.
+fn def_use(fx: &Effects, d: &Decoded, mem: &[MemOp]) -> DefUse {
+    let names =
+        |s: &std::collections::BTreeSet<u8>| s.iter().map(|c| reg_name(*c)).collect::<Vec<_>>();
+    let modify_form = matches!(
+        d.type_name,
+        "16a" | "16b" | "7a" | "7b" | "7d" | "19a" | "19a_scaled" | "19a_bitrev"
+    );
+    let post = mem
+        .iter()
+        .any(|m| matches!(m.mode, Mode::PostModify | Mode::PostModifyImm));
+    let post_modify = if post || modify_form {
+        fx.writes
+            .iter()
+            .filter(|c| (16..32).contains(*c))
+            .map(|c| reg_name(*c))
+            .collect()
+    } else {
+        vec![]
+    };
+    DefUse {
+        reads: names(&fx.reads),
+        writes: names(&fx.writes),
+        post_modify,
+        conditional: Fields::new(d)
+            .get("cond")
+            .is_some_and(|c| c != forms::COND_ALWAYS),
+        astat_bits: fx.astat,
+        mode1: fx.mode1,
+        stack: fx.stack,
+        simd_writes: names(&simd_companions(&fx.writes)),
+        simd_reads: names(&simd_companions(&fx.reads)),
+        uncertain: fx.uncertain.clone(),
+    }
 }
 
 /// Decode the whole text. A parcel that does not decode with confidence is reported and skipped (by the decoded length when the decoder
@@ -44,6 +82,8 @@ fn sweep(input: &Input, out: &mut Analysis) -> Vec<Swept> {
                 for m in &mut mem {
                     m.import = import.clone();
                 }
+                let fx = defuse::effects(&d);
+                let defuse = def_use(&fx, &d, &mem);
                 v.push(Swept {
                     insn: Insn {
                         pc,
@@ -51,9 +91,14 @@ fn sweep(input: &Input, out: &mut Analysis) -> Vec<Swept> {
                         form: d.type_name.to_string(),
                         import,
                         mem,
+                        defuse,
+                        imm: matches!(d.type_name, "19a" | "19a_scaled")
+                            .then(|| Fields::new(&d).get("data").map(|v| v as i32 as i64))
+                            .flatten(),
                     },
                     flow: forms::flow(&d, pc),
                     decoded: d,
+                    fx,
                 });
                 p += parcels as u32;
             }
@@ -193,6 +238,7 @@ pub fn analyze(input: &Input) -> Analysis {
                 origin: starts[&entry].clone(),
                 complete: true,
                 blocks: vec![],
+                effects: FunctionEffects::default(),
             }
         })
         .collect();
@@ -499,6 +545,8 @@ pub fn analyze(input: &Input) -> Analysis {
         }
     }
 
+    let fxs: Vec<(u32, &Effects)> = swept.iter().map(|s| (s.insn.pc, &s.fx)).collect();
+    crate::fxsum::summarize(&mut functions, &fxs, &calls);
     a.summary = Summary {
         instructions: swept.len(),
         functions: functions.len(),

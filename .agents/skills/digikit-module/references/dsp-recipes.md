@@ -40,7 +40,7 @@ Output block pointer (P:307-309):
 ```
 Note-on: `I3 = R4; CALL _pk_coef; R0 = 1; DM(5, I3) = R0;` (P:178-181) computes the coefficients once and marks them fresh. `render` (P:296-303) reads word 5: if set, it clears it and skips `_pk_coef`; if not, it calls `_pk_coef` every block (parameters can move).
 Returns: `JUMP (M13, I13);` after `R0 = DK_OK;` or `R0 = DK_DONE;`. A routine that calls (`CALL _dv_exp2`) ends its helper with `RTS;` (P:175).
-Do not touch I6-I12, I14, I15, M0, M5-M15, L registers. M5 = 0, M6 = 1, M7 = -1 are the post-modifiers used below.
+Register classes: sdk/dsp/REGISTERS.md. M5 = 0, M6 = 1, M7 = -1 are the post-modifiers used below.
 
 ## 3. Block loop: DK_BLOCK samples, in to out (P:331-332, 355-358)
 
