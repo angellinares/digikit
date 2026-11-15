@@ -26,8 +26,8 @@ Done means:
 2. With no modules selected and no loadable services on the card, the device behaves as stock, safe mode works, and modules can be uploaded.
 3. A module that needs a missing service is refused with a reason before any of its code runs.
 4. Service and module logic is device-neutral. Firmware knowledge exists only in adapters and port data.
-5. Every service is a `.dks` file on the device's storage, loaded only when a selected module needs it.
-6. When a service is not loaded, its firmware sites stay stock. Safe mode leaves them stock too.
+5. Every service is a `.dks` file on the device's storage, loaded only when a selected module needs it. `fx` and `machines` meet this in R12; `samples` follows in a later item.
+6. When a service is not loaded, its hook sites stay stock. Safe mode leaves them stock too. Patch-time writes and row tables stay in the image.
 7. Transfer installs a module together with the `.dks` services it needs, in one click, on the emulator and on hardware (section 5.8).
 
 ## 2. Terms
@@ -226,7 +226,7 @@ Reason: the menu and Transfer tab can say "does not fit" without running code, a
 ### 5.2 Needs and discovery
 
 - A module uses a service by importing its functions or holding its record kinds. `sdk.toml` maps each import and kind to its service. The packer writes the needed services and versions into the `.dkm` header and report.
-- Provider files use one path per service, such as `services/samples.dks`. No directory scan is needed. Check the folder name against `docs/design/digikit-store.md` and the 159-byte store path limit.
+- Provider files use one path per service, such as `services/fx.dks`. The runtime lists `services/` once per boot and matches `name_hash(stem)` against each unresolved hard need, because NEEDS carries only a hash (section 13.2). Check the folder name against `docs/design/digikit-store.md` and the 159-byte store path limit.
 - There is one provider per service. Services are never bundled into content modules, and "first registration wins" is rejected.
 - Services load only when a selected module needs them, transitively, in dependency order, and before the modules that use them. Load order is by dependency, then id, not selection order.
 - A provider that fails makes its dependents REFUSED. Safe mode skips loadable providers and their dependents.
@@ -267,7 +267,7 @@ What this gains:
 
 Hooks scale: no content module has a hook today. Most hooks are one hook plus a table of users. Another machine or effect needs no new hook. Only something new to the firmware needs a new adapter.
 
-The runtime's own hooks (boot, UI loop, MIDI, and those of its other adapters) stay patched. So do hook sites that run before main-OS entry. What cannot move is decided by the spike. **Acceptance test:** anything that stays in the image is harmless with no service loaded.
+The runtime's own hooks (boot, UI loop, MIDI, and those of its other adapters) stay patched. Boot-thread hooks of a service are installed directly, with no image stub: stock code is correct before main-OS entry ([finding 131](../findings/131-r8-whole-path.md), [V]). Interrupt hooks use image stubs with pointer slots. What cannot move is decided by the spike. **Acceptance test:** anything that stays in the image is harmless with no service loaded.
 
 Services call their adapter directly, linked in the same file. Services call runtime adapters through named imports, which already works for `core/ui`, `core/input` and `core/dsp-link`: an `sdk.toml` import with `requires` and `absent`, plus the runtime's `optional` list (`lib.rs:461-482`, `layercheck.py:489-498`).
 
@@ -304,7 +304,7 @@ Flow:
 - When the user selects a module in the Transfer pane (workbench and site), the pane lists the services the module needs, read from the module's header table (its service imports and the record kinds it uses). Each service shows a status: on the device with a matching version; missing; needs binding for this firmware; or a version mismatch, refused with a reason.
 - One button installs the module with its services: it binds each missing `.dks` against the user's firmware (cached by firmware hash), uploads the `.dks` files first, then the module, and verifies. The fit check counts the `.dks` sizes.
 - The workbench, the site and the `wb` CLI use the same code (`packages/workbench-core`).
-- Removing a module offers to remove services that no selected module still needs (see uninstall in item 12).
+- Removing a module also removes its now-unused `.dks` files in the same click. A `.dks` is unused when no `.dkm` on the card hard-needs it. Flash also replaces the `.dks` files on the card.
 - Tests: host tests of the dependency resolution behind fakes; one device test of the install flow per device.
 - The pane's dependency list gets a mockup before it is built.
 
@@ -365,7 +365,7 @@ The contract is the ABI in `sdk.toml`, so a Rust service uses the generated bind
 
 `check:layers` enforces that the rest of the runtime reaches a service only through these interfaces (added in R2c; [ARCHITECTURE.md](../ARCHITECTURE.md) says what it checks today).
 
-**Template.** In the runtime crate a service is a folder `src/services/<name>/` with `mod.rs`, `records.rs`, `slots.rs`, `dsp/` and `tests/`. It maps one to one to `modules/core/services/<name>/{module.toml, src/, adapter/, tests/}` when the services are linked in (R9 and R10: `fx` and `machines` are crates `dkrt-svc-fx` and `dkrt-svc-machines` without `module.toml` and `adapter/` yet), and `module:new service` generates it at R12. R2 moves code only: no behaviour change. R7 proves that interface B is generic.
+**Template.** In the runtime crate a service is a folder `src/services/<name>/` with `mod.rs`, `records.rs`, `slots.rs`, `dsp/` and `tests/`. It maps one to one to `modules/core/services/<name>/{module.toml, src/, adapter/, tests/}` when the services are linked in (R9 and R10: `fx` and `machines` are crates `dkrt-svc-fx` and `dkrt-svc-machines` without `module.toml` and `adapter/` yet), and `module:new service` generates it. The template and its `module:check` structure check land in R12-3 (section 13.2); every service (lfo, fx, machines, later samples) uses it. R2 moves code only: no behaviour change. R7 proves that interface B is generic.
 
 ## 6. DSP
 
@@ -592,7 +592,7 @@ Question: can a service with its hooks load from device storage at boot? If yes,
 5. Measure `machines` and `dsp-voice` output sizes against the 64 KiB limit.
 6. Trace whether FX really shares firmware param rows with machines (section 3.2).
 
-**Install point: main-OS task entry.** That is where the first card read happens (`boot.rs:239`). The block read needs a mutex and a semaphore (`docs/findings/36-boot-load-spike.md:35`, [D]), so reset `init_calls` cannot read the card. This amends `module-architecture.md` 11.2. Sites that run earlier stay patched.
+**Install point: main-OS task entry.** That is where the first card read happens (`boot.rs:239`). The block read needs a mutex and a semaphore (`docs/findings/36-boot-load-spike.md:35`, [D]), so reset `init_calls` cannot read the card. This amends `module-architecture.md` 11.2. A site that runs earlier is installed directly at this point too when stock code is correct before main-OS entry (item 12, section 13.2); the runtime's own early hooks stay patched.
 
 ### 11.2 Whole path (item 8)
 
@@ -657,7 +657,7 @@ Items 7, 9 and 10 link services into the image as a temporary step, so each boun
 | 9 | `fx` linked in (R9 built: crate `dkrt-svc-fx`, branch `rt/r9-fx-linked`), with neutral adapter functions. Check that each service object is a separate input of the device tests (`tools/nx/device-inputs.mjs`), so a service edit selects only the tests that load it. | 3.2, 10 | 4-5 days | High | Medium |
 | 10 | `machines` linked in (R10 built: crate `dkrt-svc-machines`, branch `rt/r10-machines-linked`; the firmware page is `dkrt_abi::fw::Fw`, the native page calls are `CoreApi::native_*`), with neutral adapter functions; layer check final (only `lfo` and `samples` stay in `src/services/`) | 3.2, 10 | 4-5 days | High: done criterion 1 | Medium |
 | 11 | Boot plan with one verdict per module; module states; refusal fixtures | 5, 8 | 2-3 days | High: users see why | Medium-high |
-| 12 | Services as `.dks`, hooks at boot, workbench binding and install | 5 | 6-8 days | High: small runtime; done criteria 5, 6 and 7 | Medium |
+| 12 | Services as `.dks`, hooks at boot, workbench binding and install (design: section 13.2) | 5, 13.2 | 7-10 days without R12-7 | High: small runtime; done criteria 5, 6 and 7 | Medium |
 | 13 | Storage interface and files memory (split out of item 7): the `Storage` trait in the Platform composition (stat, read head, read range, read all, paged listing), the store and firmware-fs routes in the adapter chosen by profile data, listing memory from the arena (at most 2), `dkrt_sample_fs` and `dkrt_files_fs` in the adapter's `storage.s` | 9 | 2-3 days | Medium: a clean boundary for the store | Medium |
 | Later | Projects, event tables, DSP stack guard, MISSING placeholder | 8, 12 | Own plans | | |
 
@@ -674,6 +674,66 @@ Note on payoff: moving code into a `.dks` saves memory only when it is unused, a
 - S3 changes the loader and registry (builder calls collected in `init`, commit after `init`, DSP binding at commit) before items 2 and 7. Item 7 builds its generic record walker on that commit path.
 - **Blocked:** the new-kind acceptance test (an LFO shape with no runtime edits) needs the generic record walker of item 7 (section 4). S3 ports the existing modules and fixtures; the new-kind proof stays at the end of item 7.
 - The sink slots (5.11) fit item 2 (the `dlog.rs` and module context split). The dsp-link windows the profiler needs fit item 6.
+
+### 13.2 R12 design: services as `.dks`
+
+Prefixes: `S:` = branch `rt/r8-spike`; F131 = `S:docs/findings/131-r8-whole-path.md`. Not verified: hook owners outside machines, fxpages, params and dynreg come from findings 128 and 131; no SHARC stub has been built or measured; the identity of register 0xfc050014 is unchecked.
+
+**Format and registry.**
+
+- A `.dks` is a `.dkm` with role word 1 at header 0x38 and header table v2. v2 adds PROVIDES (tag 9: service hash, version; it points at `dk_module`) and BIND (tag 10). SLOTS items gain an entry word (today id and flags only, `packages/dkneeds/src/keys.rs:18`). Spike: `S:.../loader.rs` (H_ROLE), `S:.../provide.rs:46-56` (role 0 with HOOKS or BIND is refused). The role word sits in the 64-byte head of `Storage::stat_head` (`modules/core/runtime/abi/src/storage.rs:68-77`), so a provider is checked before staging.
+- Find: one listing of `services/` per boot, matching `name_hash(stem)` for every unresolved hard need, transitively. NEEDS carries only a hash (`keys.rs:13`), so the runtime cannot build a path. The spike resolves one provider per boot (`S:.../provider.rs`). Rejected: hex-hash file names (unreadable in Transfer), names in NEEDS (grows every module table). If the boot listing is slow or returns E_BUSY, use hash-named paths.
+- Order and slots: planner dependency order. Providers get their own slots (`PROVIDER_MAX` 6), not one of the 8 module records (the spike uses `PLAN_MAX = SEL_MAX + 1`, so a provider takes a module record, F131:146). The `core/` prefix rule goes: a service is the runtime's if it has a row in the static table (`modules/core/runtime/src/rs/src/plan.rs:46-65`); any other hard need must be a planned PROVIDES. The planner captures tags up to PROVIDES. BIND is read at load, because the 384-byte TABLES copy cannot hold 12 BIND items with stock bytes.
+- Refusals: missing provider E_MISSING; too-old or other-major service E_CONTRACT (both exist, `abi/src/plan.rs:10-12`). New: E_SVC_ABI, E_HOOK_STOCK (the spike returns E_FORMAT). Two owners of a site or slot: E_PLAN_OWNER.
+
+**ABI.**
+
+- Interface C (service to core): service-only named imports generated from one list in `sdk.toml`. A generated zero-size `ImportCore` implements `CoreApi`, so `Service<C: CoreApi>` code and FakeCore tests do not change (`service.rs:209`, `core_api.rs:24-130`, `services/fx/Cargo.toml:11-14`).
+- Interface B (core to service): a `.dks` exports only `dk_module` (section 5.12). For `role = "service"`, `dk_module_def` carries a pointer to the service's `ServiceRow` (the 22 pointers, `service.rs:314-335`); there is no second exported row symbol. `ServiceTable.rows` = static rows + loaded rows.
+- Version, `.dks` vs runtime: exact match of a generated fingerprint over the B and C lists. Module vs service: same major, minor not older. Rejected: a pointer struct passed at init (a second mechanism); exact runtime version only (a stale dev `.dks` would pass).
+- Build: as the spike's Rust provider (`S:tests/fixtures/modules/hooktest-rs/module.toml`): crate and adapter objects, packed unbound, then `patchkit bind` against the user's firmware.
+
+**Hooks in scope.** 30 of 54 hooks, not 45: the runtime's own adapters stay in the image (section 3), and `samples` is not a crate yet.
+
+- `machines.dks`, 21 hooks (`machines/module.toml:352-775`). Movable now: type_page.count, type_page.desc, owner_type_load, clone.5, page.source_code, page.source_draw. Displaced branch dropped: clone.0-3, srcpage, type_reader.load. Position-independent tail: group. Boot-thread: param_code.args, param_code.map. First fire after main-OS entry: list.entry, list_rank_insert. Vtable-only: dispatch, clone.4. Interrupt (stub and slot): clone.6 (DT2), frametype (DN2). It also fills the page key and turn slots (`modules/core/services/machines/src/handlers.rs:78-91`).
+- `fx.dks`, 9 hooks (`fxpages/module.toml:86-138`). Movable: tab_label_test, filter_graph_test. Boot-thread: fx_array.init_exit, fx_array.load, fx_array.save, sound_load_exit. After main-OS entry: fx_key_list.load, fx_view_list.load. Vtable-only: page_desc.
+- The 6 boot-thread hooks in scope are installed directly, with no image stub: stock is correct before main-OS entry (F131:54-61, [V]). Interrupt hooks use image stubs with pointer slots. The R12-0 probe also covers the `param_code` call sites, to settle their other callers (F131:59).
+- Stay in the image: params and dynreg hooks with their row tables (fx uses them too); platform, ui, dsp-link, storage, usb, idle and sample-pool hooks; all patch-time `write` ops and `[[section]]` copies; `sound_load_type_bound` (F131:71-73).
+- Slots: a data word in the image, zero after reset. Fill after the provider commits and before dependents load, at IPL 7, one group at a time. Clear: write zero at IPL 7. Safe mode never fills. A data write has no I-cache risk on hardware (F131:26).
+
+**Transfer.**
+
+- The pane reads the hard NEEDS of each ticked module (as KEYS today, `dktransfer.ts:92-120`). Per need: bind the `.dks` for the user's firmware (cache key: firmware hash + object hash), upload the `.dks` first, then the modules, then VERIFY. The equal-hash skip applies. Fit counts providers (`transfer-core.ts:131-138`). All checks run before the first upload; a failure uploads nothing.
+- The `.dks` must match the device runtime fingerprint. A differing card `.dks` (older or newer) is replaced. If the workbench set lacks the needed service version, the install is refused with a reason naming the module.
+- Flash also replaces the `.dks` files on the card.
+
+**Uninstall.** File DELETE and restart; nothing unloads at run time (`ARCHITECTURE.md:191`). Removing a module also removes its now-unused `.dks` in the same click. A `.dks` is unused when no `.dkm` on the card hard-needs it. Deleting a needed `.dks` is refused in the pane, naming the modules. If it disappears anyway, the planner refuses dependents with E_MISSING.
+
+**Unload rule.**
+
+- R12 frees no provider code at run time. A provider that fails after install is disarmed: slots cleared and direct sites restored at IPL 7 (`S:.../install.rs:109-123`), dependents failed first; memory is kept until restart.
+- Later (hot reload): interrupt-only code may be freed right after the IPL 7 group clear, only if check 1 gives 0. Task-reachable code needs an entry/exit counter and a trampoline outside the freed block.
+- The install record keeps the stock bytes and the stub shape is fixed now (image code), so hot reload stays possible. Nothing in R12 depends on freeing.
+
+**Deciding checks.** One new instrument: a ColdFire PC probe active from reset, logging instruction count, SR, SP and chosen words per hit. `--span` starts only at the sample phase (`INSTRUMENTATION.md:199-200`).
+
+- Check 1, interrupt-level task switches. Stock DT2 1.17 and DN2 1.12, cold boot + 30 emulated s with the sequencer playing, a card load and USB MIDI. Probe PC 0x40000410, stacked vector and SR; histogram by (vector, stacked IPL). Controls: entries > 0; vector 191 > 0. The handler appears to clear bit 13 at 0xfc050014, so a switch may enter without `trap #0`; current-task pointer DT2 0x47db3f64, DN2 0x4664bcdc. Outcome: 0 entries with stacked IPL >= 2 means the stub is load-test-jump and the unload rule holds. More than 0 means interrupt code is never freed at run time and hot reload needs a counter in the stub; decide before the stub ships.
+- Check 2, first fire of the 3 vtable-only service hooks (dispatch, clone.4 DT2, page_desc) and of `value_class` (`cf.param.hook.value_class`, a params hook that stays in the image, so it is observed only to settle its callers), main-OS entry (DT2 0x400337ba, DN2 0x4002ed34), the 5 DN2 UI hook sites, and the `param_code` call sites. First 8 hits and counts per (task, IPL); cases: boot, SRC page, machine list, FX page, one knob turn, play. Outcome: all after main-OS entry in a task means BIND and direct install. Any before main-OS entry is installed directly, because stock is correct there. Any at IPL >= 2 gets a slot in the block-ISR group.
+
+**Steps.**
+
+| Step | Content | Host test | Device test |
+| --- | --- | --- | --- |
+| R12-0 PC probe and checks | probe (documented in INSTRUMENTATION.md), both checks | none; validated by the runs | - |
+| R12-1 Format v2 and provider slots | table v2, role word, provider slots, multi-provider planner, new codes | dkneeds round trip; planner cases; `patchkit dkm-identity` | - |
+| R12-2 Installer and slots | spike installer merged; slot fill, clear, disarm | FakePlatform call order | spike test with a slot, safe mode, a second claimant, `DIGI_FLUSH_CHECK=1` |
+| R12-3 Service ABI, service template and `lfo.dks` | B row in `dk_module_def`, C imports, fingerprint; `module:new service` (generates `modules/core/services/<name>/` with `module.toml` `role = "service"`, `src/` with `lib.rs`, `records.rs`, `slots.rs`, `adapter/`, `dsp/`, `tests/`); `module:check` structure check for services (the layout, exactly one exported entry `dk_module`, declarations equal to the manifest); `lfo.dks` is the first service made from the template | lfo over FakeCore; structure check cases (wrong layout, second export, declaration differing from the manifest) | core/runtime-lfo-tests |
+| R12-4 `fx.dks` | fx crate + fxpages hooks, moved to the template layout | fx crate tests | digikit/freqshift; stock sites with no service |
+| R12-5 `machines.dks` | after R10 merges; moved to the template layout | machines crate tests | digikit/pluck, digikit/shot |
+| R12-6 Transfer installs services | mockup first | resolution behind fakes | transfer-live per device |
+| R12-7 SHARC stubs, dispatch in services | slice proof first: one stub, golden hashes at a zero slot, instruction-ratio A/B | - | - |
+
+Order: R10, R11, then R12-0..R12-7. R12-6 may run in a UI lane after R12-1. Payoff high (done criteria 5-7 for fx and machines). Confidence: ColdFire medium-high (the spike ran on both devices in the emulator); R12-7 low-medium, with a separate go. Estimate 7-10 agent days without R12-7.
 
 ## 14. Checks
 

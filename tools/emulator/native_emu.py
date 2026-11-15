@@ -67,14 +67,17 @@ def set_fast_regions(
     return first
 
 
-def generated_core(args: list[str] | None = None) -> pathlib.Path:
-    """The generated core for a launch: SHARC_GEN_DIR, else the one registered
-    for the --dsp-image in ARGS (tools/sharc_dev/aot_gen.py), else the DN2 default."""
+def generated_core(
+    args: list[str] | None = None, device: str | None = None
+) -> pathlib.Path:
+    """The generated core for a launch: SHARC_GEN_DIR_<DEVICE> (when DEVICE is given),
+    else SHARC_GEN_DIR, else the one registered for the --dsp-image in ARGS
+    (tools/sharc_dev/aot_gen.py), else the DN2 default."""
     image = None
     if args and "--dsp-image" in args:
         position = args.index("--dsp-image") + 1
         image = args[position] if position < len(args) else None
-    return digi_env.generated_dir(image=image)
+    return digi_env.generated_dir(image=image, device=device)
 
 
 def pgo_trained_core(device: str) -> pathlib.Path | None:
@@ -107,8 +110,7 @@ def second_core(
     device: str, *, enabled_by_default: bool = False
 ) -> tuple[list[str], pathlib.Path | None]:
     """The other device's ready inputs for a binary with both generated cores (`--also-coupled`) and its generated core
-    (a preset SHARC_GEN_DIR_2 names the other device's core, as SHARC_GEN_DIR names the launching device's; the caller
-    then stores both in slot order). Desktop launches enable it by default; daemons opt in with
+    (SHARC_GEN_DIR_<OTHER> names the other device's core; the caller then stores both in slot order). Desktop launches enable it by default; daemons opt in with
     DIGI_EMU_SECOND_CORE=1. DIGI_EMU_SECOND_CORE=0 disables it. The two-core build has its own PGO profile (device
     `both`). Nothing (a one-core launch) when it is off or the other device lacks a ready set or a core."""
     if (
@@ -121,8 +123,8 @@ def second_core(
     missing = [label for label, path in paths.items() if not path.is_file()]
     # Not `digi_env.generated_dir`: SHARC_GEN_DIR names the first core and would win over the image's registered one.
     gen = (
-        pathlib.Path(os.environ["SHARC_GEN_DIR_2"])
-        if os.environ.get("SHARC_GEN_DIR_2")
+        pathlib.Path(os.environ[f"SHARC_GEN_DIR_{other.upper()}"])
+        if os.environ.get(f"SHARC_GEN_DIR_{other.upper()}")
         else digi_env.gen_for_image(paths["DSP image"])
         or (digi_env.DEFAULT_GENERATED if other == "dn2" else None)
     )
@@ -177,14 +179,16 @@ def default_audio_args(
     if device != "dn2" and (card is not None or not paths["CF snapshot"].is_file()):
         paths = ready_for(device, syx, card, paths)
     missing = [label for label, path in paths.items() if not path.is_file()]
-    generated = digi_env.generated_dir(image=paths["DSP image"])
-    reason = "SHARC_GEN_DIR" if os.environ.get("SHARC_GEN_DIR") else "registered core"
-    if device == "dt2" and not os.environ.get("SHARC_GEN_DIR"):
+    generated = digi_env.generated_dir(image=paths["DSP image"], device=device)
+    own_var = f"SHARC_GEN_DIR_{device.upper()}"
+    explicit = own_var if os.environ.get(own_var) else "SHARC_GEN_DIR"
+    reason = explicit if os.environ.get(explicit) else "registered core"
+    if device == "dt2" and not os.environ.get(explicit):
         trained = pgo_trained_core(device)
         if trained is not None:
             generated, reason = trained, "the core the DT2 PGO profile was trained on"
     if not generated.is_dir():
-        missing.append("generated DN2 core (set SHARC_GEN_DIR)")
+        missing.append(f"generated {device.upper()} core (set {own_var})")
     if missing:
         print(
             "Native audio is not set up (missing "

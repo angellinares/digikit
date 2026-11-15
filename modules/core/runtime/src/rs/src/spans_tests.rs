@@ -58,10 +58,8 @@ unsafe fn reset(now: u32, step: u32) {
         entry::publish_tick(rec, 0);
         rec += 1;
     }
-    in_module(|| {
-        dlog::dk_span_sink_set(core::ptr::null_mut(), core::ptr::null_mut());
-        dlog::dk_sink_set(SINK_SPAN, core::ptr::null_mut());
-    });
+    // A test before may have left the channel owned by another module (E_BUSY): clear it, not ask.
+    dlog::test_reset_sinks();
 }
 
 /// Run `f` as code of module 0 (a sink is set from a module's code).

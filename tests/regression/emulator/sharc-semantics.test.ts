@@ -119,15 +119,20 @@ runtimeTests('RECIPS and RSQRTS give the measured result and flags for every pro
 });
 
 /** The value items of the dsp-facts probe (tests/fixtures/modules/dsp-facts) that the Digitakt II measured (tests/fixtures/sharc/dsp-facts-values-dt2-1.17.json): FIX, float ALU edge cases, fixed-point overflow with and without ALUSAT, the
- * float multiplier's invalid result, MR reads. A run of the stream is 37 frames (one frame per block). */
+ * float multiplier's invalid result, MR reads. A run of the stream is FC_NFRAMES frames (one frame per block). */
 const FACTS = 'test/dsp-facts';
-const FACTS_WORDS_PER_RUN = 37 * (PAYLOAD_WORDS + 2);
+const factsSeq = fs.readFileSync(path.join(repoRoot(), 'tests/fixtures/modules/dsp-facts/src/facts_seq.inc'), 'utf8');
+const factsDefine = (name: string): number => Number(new RegExp(`#define ${name}\\s+(\\d+)`).exec(factsSeq)![1]);
+const FC_NFRAMES = factsDefine('FC_NFRAMES');
+const FC_NITEMS = factsDefine('FC_NITEMS');
+const FACTS_WORDS_PER_RUN = FC_NFRAMES * (PAYLOAD_WORDS + 2);
 
 async function expectFactsValues(patched: PatchedSession): Promise<void> {
   const { session, dk } = patched;
   const fixture = JSON.parse(
     fs.readFileSync(path.join(repoRoot(), 'tests/fixtures/sharc/dsp-facts-values-dt2-1.17.json'), 'utf8'),
   ) as { items: number; rows: string[] };
+  expect(fixture.items, 'fixture items vs the probe (FC_NITEMS)').toBe(FC_NITEMS);
   await installProbe(patched, FACTS);
   expect((await dk.request(CMD_RESET)).status).toBe(0);
   let last: Record<string, number> = {};

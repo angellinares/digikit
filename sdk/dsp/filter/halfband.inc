@@ -32,9 +32,9 @@
 //                  restored (with L = 0 it has no effect; the callee-saved list of call.inc holds B3 only). L1 is 0 on return.
 //   instructions:  20 per output in the loop. The 12 history reads, 2 input loads, 2 history writes and the output store are
 //                  17 accesses on one data bus; the ALU does 12 operations (6 pre-adds, 5 sums, the average) starting at slot 7,
-//                  so the last one is in slot 18 and the store in slot 19. Per call 698 in the routine: 39 before the loop,
-//                  620 in the loop (20 x 31 outputs), 21 for the last output (20 and the LCNTR of its one-pass loop), 18 after; 701 with DK_CALL.
-//                  Average 21.9 per output with the call. Measured by the test [D].
+//                  so the last one is in slot 18 and the store in slot 19. Per call 702 in the routine: 43 before the loop,
+//                  620 in the loop (20 x 31 outputs), 21 for the last output (20 and the LCNTR of its one-pass loop), 18 after; 705 with DK_CALL.
+//                  Average 22.0 per output with the call. Measured by the test [D].
 //                  [O] A shorter loop needs the window in registers (renamed registers over several outputs) or long-word
 //                  accesses; there are only 16 data registers and 6 are coefficients, 2 are sums.
 //   loop schedule: the history pointer I1 walks one fixed path per output, all with post-modify (circular buffers allow no
@@ -66,10 +66,14 @@ _dk_halfband_down:
 dk_halfband_down.:
     DK_ENTER(14);
     I4 = R12;                          // state pointer
-    DK_SAVE(2, I1);
-    DK_SAVE(3, I0);
-    DK_SAVE(4, M1);
-    DK_SAVE(5, M2);
+    R0 = I1;
+    DK_SAVE(2, R0);
+    R0 = I0;
+    DK_SAVE(3, R0);
+    R0 = M1;
+    DK_SAVE(4, R0);
+    R0 = M2;
+    DK_SAVE(5, R0);
     R0 = DM(0, I4);                    // ring base
     R1 = DM(1, I4);                    // history offset o
     I0 = _dk_halfband_c1;              // coefficient table pointer (I0 is the output pointer later)

@@ -34,5 +34,5 @@ How (firmware 1.17, docs in `src/dsp/overdrive.s`):
 The firmware facts are declared in `devices/fw/dsp/frame.toml` and `devices/fw/dsp/voice.toml`. `src/dsp/gen_split.py`
 writes `split.inc` (the split, unrolled over the 16 tracks) and the curve constants (`consts.inc`, `k.inc`).
 
-Tests: `tests/test_overdrive.py` runs `_od_sat` and the split on the concrete SHARC core (every curve against a float reference,
+Tests: `tests/overdrive.rig.test.ts` runs `_od_sat` and the split on the concrete SHARC core (every curve against a float reference,
 the record updates and the boost, the registers it must keep, the stock fallback).

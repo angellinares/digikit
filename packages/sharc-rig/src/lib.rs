@@ -15,7 +15,8 @@
 //!                              "reads": [[word_address, count]], "read_regs": ["I6"]}} ]}
 //! response {"build": "...", "results": [{"instructions": n, "halt": "breakpoint", "final_pc": pc,
 //!                                        "regs": {"I6": v|null}, "reads": [[v|null, ...]],
-//!                                        "stores": [[pc, address, width], ...]}]}
+//!                                        "stores": [[pc, address, width], ...],
+//!                                        "profile": [[pc, count], ...]}]}   // only for a call with "profile": true
 //! ```
 //!
 //! A call is the same as `CallSession.call` of tools/patchkit/pk_sharc.py: the named registers are set, every other
@@ -24,6 +25,8 @@
 //! instructions executed. `halt` is `breakpoint`, `max-steps` or `trap: <reason>`. `stores` lists, in execution order, the
 //! runs of bytes that instructions at a `watch` pc stored (addresses as the core keeps them: a byte that nothing loaded
 //! or poked is at 0x2800_0000 + its address). Nothing is recorded, and nothing costs, without `watch`.
+//! A call with `"profile": true` also answers `profile`: one `[pc, count]` row per pc the call executed, in pc order (the counts
+//! add up to `instructions`; no key without the option, and the loop only counts when it is on).
 //!
 //! `pokem` changes some bits of a word (a halfword or a byte lane of a frame word): a word that nothing wrote reads as 0, as
 //! `CallSession.peek(addr) or 0` does in the Python rigs.
@@ -60,6 +63,8 @@ pub struct Call {
     pub max_steps: u64,
     pub reads: Vec<(u32, u32)>,
     pub read_regs: Vec<(String, usize)>,
+    /// count the instructions executed at each pc (`CallResult::profile`)
+    pub profile: bool,
 }
 
 #[derive(Debug)]
@@ -87,6 +92,8 @@ pub struct CallResult {
     pub reads: Vec<Vec<Option<u32>>>,
     /// (pc, address, width) of the stores of instructions in the request's `watch` ranges
     pub stores: Vec<(u32, u32, u32)>,
+    /// (pc, instructions executed there) in pc order, for a call with `profile`; empty otherwise
+    pub profile: Vec<(u32, u64)>,
 }
 
 fn reg_code(name: &str) -> Result<usize, String> {
@@ -170,6 +177,11 @@ pub fn parse_ops(list: &Json) -> Result<Vec<Op>, String> {
                 max_steps: c.get("max_steps").map_or(Ok(100_000), Json::int)? as u64,
                 reads,
                 read_regs,
+                profile: match c.get("profile") {
+                    Some(Json::Bool(b)) => *b,
+                    Some(_) => return Err("profile is true or false".into()),
+                    None => false,
+                },
             }));
         } else {
             return Err("an op is {\"poke\": ...}, {\"pokem\": ...} or {\"call\": ...}".into());
@@ -298,6 +310,7 @@ pub fn run_call(e: &mut Engine, req: &Request, call: &Call) -> CallResult {
     let start = e.s.icount;
     let mut halt = String::from("max-steps");
     let mut stores = Vec::new();
+    let mut profile: std::collections::BTreeMap<u32, u64> = Default::default();
     while e.s.icount - start < call.max_steps {
         let pc = e.s.pc_sw as u32;
         if pc == req.return_sw || req.breaks.contains(&pc) {
@@ -315,6 +328,9 @@ pub fn run_call(e: &mut Engine, req: &Request, call: &Call) -> CallResult {
         // the loop pays for it only at the pcs asked for.
         let watched = req.watch.iter().any(|&(lo, hi)| (lo..hi).contains(&pc));
         e.s.probe = watched.then(Vec::new);
+        if call.profile {
+            *profile.entry(pc).or_default() += 1;
+        }
         let done = exec_insn(&mut e.s, insn);
         let log = e.s.probe.take();
         if let Err(t) = done {
@@ -343,6 +359,7 @@ pub fn run_call(e: &mut Engine, req: &Request, call: &Call) -> CallResult {
             .map(|&(a, n)| (0..n).map(|k| peek_word(e, a + k)).collect())
             .collect(),
         stores,
+        profile: profile.into_iter().collect(),
     }
 }
 
@@ -414,7 +431,8 @@ fn results_json(results: Vec<CallResult>) -> Json {
         results
             .into_iter()
             .map(|r| {
-                Json::Obj(vec![
+                let profile = r.profile;
+                let mut fields = vec![
                     ("instructions".into(), Json::Int(r.instructions as i64)),
                     ("halt".into(), Json::Str(r.halt)),
                     ("final_pc".into(), Json::Int(r.final_pc as i64)),
@@ -446,7 +464,21 @@ fn results_json(results: Vec<CallResult>) -> Json {
                                 .collect(),
                         ),
                     ),
-                ])
+                ];
+                if !profile.is_empty() {
+                    fields.push((
+                        "profile".into(),
+                        Json::Arr(
+                            profile
+                                .into_iter()
+                                .map(|(pc, n)| {
+                                    Json::Arr(vec![Json::Int(pc as i64), Json::Int(n as i64)])
+                                })
+                                .collect(),
+                        ),
+                    ));
+                }
+                Json::Obj(fields)
             })
             .collect(),
     )
@@ -599,6 +631,23 @@ mod tests {
             (r.halt.as_str(), r.instructions, r.final_pc),
             ("breakpoint", 1, BASE + 2)
         );
+    }
+
+    #[test]
+    fn a_profile_call_counts_instructions_per_pc_and_other_calls_carry_none() {
+        let plain = format!(r#"{{"call": {{"pc": {BASE}}}}}"#);
+        assert!(call(&request(&plain))[0].profile.is_empty());
+        let ops = format!(r#"{{"call": {{"pc": {BASE}, "profile": true}}}}"#);
+        let r = &call(&request(&ops))[0];
+        assert_eq!(r.profile, vec![(BASE, 1), (BASE + 2, 1)]);
+        let text = run_request(&request(&ops)).unwrap();
+        assert!(
+            text.contains(&format!(r#""profile":[[{BASE},1],[{},1]]"#, BASE + 2)),
+            "{text}"
+        );
+        assert!(!run_request(&request(&plain)).unwrap().contains("profile"));
+        let bad = request(r#"{"call": {"pc": 1, "profile": 1}}"#);
+        assert!(parse_request(&bad).unwrap_err().contains("profile"));
     }
 
     #[test]

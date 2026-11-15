@@ -98,12 +98,17 @@ def exe_name(name: str) -> str:
 
 
 def generated_dir(
-    environ: Environ | None = None, image: pathlib.Path | str | None = None
+    environ: Environ | None = None,
+    image: pathlib.Path | str | None = None,
+    device: str | None = None,
 ) -> pathlib.Path:
-    """The generated core to build against: SHARC_GEN_DIR, else the one
-    registered for IMAGE (a packed DSP image), else the DN2 prod default."""
+    """The generated core to build against: SHARC_GEN_DIR_<DEVICE> (when DEVICE
+    is given), else SHARC_GEN_DIR, else the one registered for IMAGE (a packed
+    DSP image), else the DN2 prod default."""
     environ = os.environ if environ is None else environ
-    configured = environ.get("SHARC_GEN_DIR")
+    configured = (
+        device and environ.get(f"SHARC_GEN_DIR_{device.upper()}")
+    ) or environ.get("SHARC_GEN_DIR")
     if configured:
         # Relative to the repo root (mise runs tasks there); build scripts run in their crate dir.
         path = pathlib.Path(configured)

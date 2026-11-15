@@ -1,8 +1,8 @@
 import path from 'node:path';
-import { DkSession, EmuUsbTransport } from '@digi/dk-session';
 import { withinRuntimeDeadline } from '@digi/test-support';
 import { describe, expect, test } from 'vitest';
 import { record } from '@digi/regression/runtime/artifacts.ts';
+import { emulatorDk } from '@digi/regression/runtime/waits.ts';
 import { DEVICES, FIRMWARE } from '@digi/regression/runtime/devices.ts';
 import { expectRuntimeUi } from '@digi/regression/runtime/ready.ts';
 import { timePhase, timingContext } from '@digi/regression/timing.ts';
@@ -64,9 +64,7 @@ for (const device of DEVICES) {
       expect(typeof epoch).toBe('number');
       await timePhase('protocol.restart', () => bounded(() => dirty.dk.restart()), timingContext(dirty.session));
       dirty.dk.cancelPending();
-      const rebootDk = new DkSession(
-        new EmuUsbTransport((method, params) => dirty.session.client.call(method, params)),
-      );
+      const rebootDk = emulatorDk(dirty.session);
       const reboot = { session: dirty.session, dk: rebootDk, close: dirty.close };
       try {
         await timePhase(

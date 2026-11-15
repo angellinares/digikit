@@ -1,6 +1,6 @@
 {
  "about": "Value items of test/dsp-facts measured on a Digitakt II (OS 1.17, 2026-10-31): item index,op,operands,result,ASTAT[13:0],STKY[9:0]; the index is decimal, the rest hex; MODE1 RND32 set, ALUSAT set for the _sat ops; ASTATX and STKYX cleared before the instruction",
- "items": 143,
+ "items": 142,
  "masks": {
   "astat": 16383,
   "stky": 1023

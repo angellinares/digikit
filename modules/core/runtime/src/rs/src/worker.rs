@@ -379,10 +379,6 @@ pub unsafe fn tick() {
     }
 }
 
-/// Host tests of other files share the one queue: they hold this lock.
-#[cfg(test)]
-pub(crate) static TEST_LOCK: std::sync::Mutex<()> = std::sync::Mutex::new(());
-
 /// Host test helper: empty the queue and the flight.
 #[cfg(test)]
 pub(crate) unsafe fn test_reset() {
@@ -407,7 +403,7 @@ pub(crate) unsafe fn test_pump() {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use super::TEST_LOCK as LOCK;
+    use crate::test_lock::LOCK;
 
     struct Script {
         tag: u32,

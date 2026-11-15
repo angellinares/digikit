@@ -16,9 +16,9 @@
 //                  in F8-F11 and F12-F15, as the multifunction form needs. The routine keeps R12 unchanged.
 //   saves:         R5, R6, R7, R9, R10, R13, R14, R15, I0 (9 slots, S = 9). Nothing else callee-saved is written.
 //   instructions:  5 per sample in the loop (5 multiplies on one multiplier, so 5 is the floor for this form). Per call
-//                  200 in the routine: 25 before the loop, 160 in the loop and the two samples after it (5 x 30 + 5 + 5),
-//                  15 after; 203 with DK_CALL.
-//                  Average 6.3 per sample with the call. Counted by reading, [O] until the test measures it.
+//                  201 in the routine: 26 before the loop, 160 in the loop and the two samples after it (5 x 30 + 5 + 5),
+//                  15 after; 204 with DK_CALL.
+//                  Average 6.4 per sample with the call. Counted by reading, [O] until the test measures it.
 //   loop schedule: one iteration handles sample n and starts the products of sample n + 1 (software pipelined).
 //                    slot 0: p0' = b0 x[n+1];  y = p0 + s1
 //                    slot 1: p1' = b1 x[n+1];  u = s2 + p1;  store y[n]
@@ -45,8 +45,9 @@ dk_biquad.:
     DK_SAVE(3, R6);
     DK_SAVE(4, R7);
     DK_SAVE(5, R15);
-    DK_SAVE(6, I0);
-    I0 = R8;                           // output pointer
+    R5 = I0;
+    DK_SAVE(6, R5);
+    I0 = R8;                          // output pointer
     F5 = DM(0, I4);                    // b0
     F6 = DM(1, I4);                    // b1
     F7 = DM(2, I4);                    // b2
