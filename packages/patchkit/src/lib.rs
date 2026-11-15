@@ -45,6 +45,7 @@ pub mod major3;
 pub mod modgen;
 pub mod module;
 pub mod objdiff;
+pub mod owners;
 pub mod pack;
 pub mod port;
 pub mod preflight;
