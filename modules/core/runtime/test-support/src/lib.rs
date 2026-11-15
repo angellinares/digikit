@@ -84,11 +84,41 @@ impl CoreApi for FakeCore {
     fn param_owners(&self) -> &[u8] {
         &self.owners
     }
-    unsafe fn write_param_row(&self, _inf: *const u32, _c: u32, _t: u32, _slot: u32, _min: u32, _max: u32, _def: u32, _n: u32, _s: u32) {}
-    unsafe fn write_fx_param_row(&self, code: u32, _t: u32, mirror: u32, _min: u32, _max: u32, def: u32, _n: u32, _s: u32) {
+    unsafe fn write_param_row(
+        &self,
+        _inf: *const u32,
+        _c: u32,
+        _t: u32,
+        _slot: u32,
+        _min: u32,
+        _max: u32,
+        _def: u32,
+        _n: u32,
+        _s: u32,
+    ) {
+    }
+    unsafe fn write_fx_param_row(
+        &self,
+        code: u32,
+        _t: u32,
+        mirror: u32,
+        _min: u32,
+        _max: u32,
+        def: u32,
+        _n: u32,
+        _s: u32,
+    ) {
         self.rec(Call::FxRow { code, mirror, def })
     }
-    unsafe fn write_send_param_row(&self, code: u32, _c: u32, _o: u32, mirror: u32, _n: u32, _s: u32) {
+    unsafe fn write_send_param_row(
+        &self,
+        code: u32,
+        _c: u32,
+        _o: u32,
+        mirror: u32,
+        _n: u32,
+        _s: u32,
+    ) {
         self.rec(Call::SendRow { code, mirror })
     }
     unsafe fn reset_param_row(&self, code: u32) {
@@ -134,7 +164,13 @@ impl CoreApi for FakeCore {
     fn current_source(&self) -> u8 {
         self.source.get()
     }
-    unsafe fn job_post(&self, owner: u8, _s: Option<JobStepFn>, _d: Option<JobDoneFn>, _c: *mut u8) -> i32 {
+    unsafe fn job_post(
+        &self,
+        owner: u8,
+        _s: Option<JobStepFn>,
+        _d: Option<JobDoneFn>,
+        _c: *mut u8,
+    ) -> i32 {
         self.rec(Call::JobPost { owner });
         1
     }

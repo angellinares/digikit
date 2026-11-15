@@ -6,7 +6,7 @@ use dkrt_abi::service::{ServiceRow, ServiceTable};
 pub static SERVICES: [ServiceRow; 4] = [
     ServiceRow::of::<crate::services::samples::records::Samples>("samples", &dkrt_sdk::records::KINDS_SAMPLES),
     ServiceRow::of::<crate::services::machines::records::Machines>("machines", &dkrt_sdk::records::KINDS_MACHINES),
-    ServiceRow::of::<crate::services::fx::records::Fx>("fx", &dkrt_sdk::records::KINDS_FX),
+    ServiceRow::of::<dkrt_svc_fx::records::Fx<crate::core_api::RealCore>>("fx", &dkrt_sdk::records::KINDS_FX),
     ServiceRow::of::<crate::services::lfo::records::Lfo>("lfo", &dkrt_sdk::records::KINDS_LFO),
 ];
 

@@ -21,9 +21,9 @@
 //! The array is the live kit's (`[fx] kit_ptr` of the device file): the kit accessor of the firmware (`fw_kit_of`) answers another object, the project's.
 //!
 //! Everything runs in the UI task. No float arithmetic runs in an interrupt; the arithmetic is the compiler's soft float.
-use super::dsp as fxdsp;
-use super::fxsend;
-use crate::core_api::{CoreApi, Platform, PLATFORM, REAL_CORE};
+use crate::dsp as fxdsp;
+use crate::fxsend;
+use dkrt_abi::core_api::{CoreApi, StaticCore};
 use dkrt_abi::mem::{cstr_len, iw, rd, rd16, rd32, wr, wr16};
 use core::ptr::{addr_of_mut, read_volatile, write_volatile};
 use dkrt_sdk::*;
@@ -116,19 +116,20 @@ fn fs() -> &'static mut FxpState {
     unsafe { &mut *addr_of_mut!(DKRT_FXP) }
 }
 
-pub(crate) unsafe fn info() -> *const u32 {
+pub(crate) unsafe fn info<C: StaticCore>() -> *const u32 {
     let a = core::hint::black_box(fxpages_info as usize);
     if a == 0 {
         return core::ptr::null();
     }
     let p = a as *const u32;
-    if read_volatile(p.add(w::MAGIC)) != INFO_MAGIC || read_volatile(p.add(w::DEVICE)) != PLATFORM.device_id() {
+    if read_volatile(p.add(w::MAGIC)) != INFO_MAGIC || read_volatile(p.add(w::DEVICE)) != C::CORE.device_id() {
         return core::ptr::null();
     }
     p
 }
 
 /// The kit's value array index of word `j` of effect row `k`.
+#[inline]
 unsafe fn value_index(inf: *const u32, k: usize, j: usize) -> u32 {
     read_volatile((inf as *const u8).add(w::INDICES + k * WORDS + j)) as u32
 }
@@ -162,13 +163,13 @@ unsafe fn copy_text(dst: *mut u8, src: *const u8, n: usize) {
 }
 
 /// Whether this image can show effect pages at all (`core/fxpages` and `core/dynreg` are in it).
-pub unsafe fn available() -> bool {
-    !info().is_null()
+pub unsafe fn available<C: StaticCore>() -> bool {
+    !info::<C>().is_null()
 }
 
 /// The fixed-size EFFECT record at `b` (its body), checked before anything is written. Pure: the page slots are checked by `apply`.
-pub unsafe fn check_record(b: *const u8) -> i32 {
-    let inf = info();
+pub unsafe fn check_record<C: StaticCore>(b: *const u8) -> i32 {
+    let inf = info::<C>();
     if inf.is_null() {
         return E_NO_REGISTRY;
     }
@@ -218,11 +219,13 @@ fn raw_of(def: f32, lo: f32, hi: f32) -> i32 {
 }
 
 /// The float a raw value stands for: min + span * (raw / 0x7f00); the maximum is exact.
+#[inline]
 fn knob_value(min: u32, span: u32, raw: i32) -> u32 {
     (f32::from_bits(min) + f32::from_bits(span) * (raw as f32 / RAW_F)).to_bits()
 }
 
 /// MIX as a float: raw / 0x7f00 (0x7f00 is exactly 1.0, 0 exactly 0).
+#[inline]
 fn mix_value(raw: i32) -> u32 {
     (raw as f32 / RAW_F).to_bits()
 }
@@ -257,14 +260,15 @@ unsafe fn rebuild_list(inf: *const u32) {
 }
 
 /// Build the page list again (a route changed the order).
-pub unsafe fn relist() {
-    let inf = info();
+pub unsafe fn relist<C: StaticCore>() {
+    let inf = info::<C>();
     if !inf.is_null() {
         rebuild_list(inf);
     }
 }
 
 /// The module record + 1 that owns the page of effect row `k` (0: no page).
+#[inline]
 pub fn page_owner(k: usize) -> u8 {
     if k < MAX_FX {
         fs().owner[k]
@@ -274,6 +278,7 @@ pub fn page_owner(k: usize) -> u8 {
 }
 
 /// The tab label of the page of effect row `k` (up to 3 characters) into `out`.
+#[inline]
 pub fn tab_of(k: usize, out: &mut [u8; 8]) {
     if k < MAX_FX {
         let t = &fs().tab[k];
@@ -287,13 +292,13 @@ pub fn tab_of(k: usize, out: &mut [u8; 8]) {
 
 /// Fill the page, the parameter rows and the list for the EFFECT record at `b` of module `owner` (module record + 1). The effect's row in the chain has been
 /// claimed by `dsp::reserve`; the page and parameter rows belong to that row's number.
-pub unsafe fn apply(owner: u8, b: *const u8) -> i32 {
-    let inf = info();
+pub unsafe fn apply<C: StaticCore>(owner: u8, b: *const u8) -> i32 {
+    let inf = info::<C>();
     if inf.is_null() {
         return E_NO_REGISTRY;
     }
     let s = fs();
-    let Some(k) = fxdsp::fx_row_of(owner, rd32(b)) else {
+    let Some(k) = fxdsp::fx_row_of::<C>(owner, rd32(b)) else {
         return E_FORMAT; // no such effect in the module's DSP section
     };
     if k >= iw(inf, w::PAGES) as usize || k >= MAX_FX || (iw(inf, w::VALUES_N) as usize) < (k + 1) * WORDS {
@@ -308,8 +313,8 @@ pub unsafe fn apply(owner: u8, b: *const u8) -> i32 {
     // strings
     copy_text(s.tab[k].as_mut_ptr(), b.add(16), 8);
     copy_text(s.title[k].as_mut_ptr(), b.add(24), TEXT);
-    let tab = REAL_CORE.make_rep(s.rep_tab[k].as_mut_ptr(), s.tab[k].as_ptr(), false);
-    let title = REAL_CORE.make_rep(s.rep_title[k].as_mut_ptr(), s.title[k].as_ptr(), false);
+    let tab = C::CORE.make_rep(s.rep_tab[k].as_mut_ptr(), s.tab[k].as_ptr(), false);
+    let title = C::CORE.make_rep(s.rep_title[k].as_mut_ptr(), s.title[k].as_ptr(), false);
     // the page's nine codes: 0 where no knob stands
     let mut codes = [0u32; 9];
     let mut j = 0;
@@ -337,7 +342,7 @@ pub unsafe fn apply(owner: u8, b: *const u8) -> i32 {
             continue; // a word without a knob
         };
         let idx = value_index(inf, k, j);
-        write_knob_row(&REAL_CORE, s, k, j, code, tpl, idx, def_n);
+        write_knob_row(&C::CORE, s, k, j, code, tpl, idx, def_n);
         j += 1;
     }
     s.nknob[k] = n as u8;
@@ -349,7 +354,7 @@ pub unsafe fn apply(owner: u8, b: *const u8) -> i32 {
         mark(inf, live + iw(inf, w::ARRAY_OFF));
         s.seeds += 1;
     }
-    fxdsp::fx_set_mix(k, mix_value(rd32(b.add(4)) as i32 * 256));
+    fxdsp::fx_set_mix::<C>(k, mix_value(rd32(b.add(4)) as i32 * 256));
     // the page row: codes, then the strings; the owner and the list publish it
     let mut c = 0;
     while c < 9 {
@@ -360,13 +365,13 @@ pub unsafe fn apply(owner: u8, b: *const u8) -> i32 {
     wr(row + 4, title);
     s.owner[k] = owner;
     rebuild_list(inf);
-    fxsend::apply(k, owner, s.tab[k].as_ptr());
+    fxsend::apply::<C>(k, owner, s.tab[k].as_ptr());
     OK
 }
 
 /// Give back the pages of module `owner`: out of the list first, then the rows back to the reserved state.
-pub unsafe fn remove(owner: u8) {
-    let inf = info();
+pub unsafe fn remove<C: StaticCore>(owner: u8) {
+    let inf = info::<C>();
     if inf.is_null() {
         return;
     }
@@ -396,7 +401,7 @@ pub unsafe fn remove(owner: u8) {
             let mut j = 0;
             publish_row(inf, k, 0);
             while j < WORDS {
-                REAL_CORE.reset_param_row(iw(inf, w::P_FIRST) + (k * WORDS + j) as u32);
+                C::CORE.reset_param_row(iw(inf, w::P_FIRST) + (k * WORDS + j) as u32);
                 s.cur[k][j] = 0;
                 s.def[k][j] = 0;
                 s.dsp[k][j] = -1;
@@ -404,8 +409,8 @@ pub unsafe fn remove(owner: u8) {
                 j += 1;
             }
             s.nknob[k] = 0;
-            fxdsp::fx_forget(&REAL_CORE, k);
-            fxsend::remove(k);
+            fxdsp::fx_forget(&C::CORE, k);
+            fxsend::remove::<C>(k);
         }
         k += 1;
     }
@@ -431,6 +436,7 @@ unsafe fn publish_row(inf: *const u32, k: usize, id: u32) {
 }
 
 /// Put the mark of `core/fxpages` into the kit array `arr`: its effect rows hold values.
+#[inline]
 unsafe fn mark(inf: *const u32, arr: u32) {
     wr16(arr + 2 * iw(inf, w::MARK_INDEX), iw(inf, w::MARK_VALUE) as i32);
 }
@@ -460,12 +466,13 @@ pub(crate) unsafe fn kit(inf: *const u32) -> u32 {
 }
 
 /// Words of effect row `k` that exist: its knobs and MIX.
+#[inline(never)]
 fn has_word(s: &FxpState, k: usize, j: usize) -> bool {
     j == WORDS - 1 || j < s.nknob[k] as usize
 }
 
 /// Once per UI-loop pass: note which values the DSP has taken, put the values in a new kit's array, and hand the changed values to the link; then the send effects' amounts.
-pub unsafe fn tick() {
+pub unsafe fn tick<C: StaticCore>() {
     let s = fs();
     let mut any = false;
     let mut k = 0;
@@ -476,17 +483,17 @@ pub unsafe fn tick() {
     if !any {
         return;
     }
-    let inf = info();
+    let inf = info::<C>();
     if inf.is_null() {
         return;
     }
-    confirm();
-    values(inf);
-    fxsend::tick();
+    confirm::<C>();
+    values::<C>(inf);
+    fxsend::tick::<C>();
 }
 
 /// The effect pages' values: the kit's array against the DSP rows.
-unsafe fn values(inf: *const u32) {
+unsafe fn values<C: StaticCore>(inf: *const u32) {
     let s = fs();
     let mut k;
     let kit = kit(inf);
@@ -528,8 +535,8 @@ unsafe fn values(inf: *const u32) {
                         s.changes += 1;
                     }
                     // only when the row is in the DSP and no load is going on; the link sends the newest value of the word when it is free
-                    if n != s.want[k][j] && fxdsp::fx_live(k) {
-                        set_knob(&REAL_CORE, s, k, j, n);
+                    if n != s.want[k][j] && fxdsp::fx_live::<C>(k) {
+                        set_knob(&C::CORE, s, k, j, n);
                     }
                 }
                 j += 1;
@@ -572,7 +579,7 @@ unsafe fn set_knob<C: CoreApi>(c: &C, s: &mut FxpState, k: usize, j: usize, n: i
 }
 
 /// Note the values the DSP has taken: a word whose live value the link confirms is the DSP's.
-unsafe fn confirm() {
+unsafe fn confirm<C: StaticCore>() {
     let s = fs();
     let mut k = 0;
     while k < MAX_FX {
@@ -581,8 +588,8 @@ unsafe fn confirm() {
             while j < WORDS {
                 let n = s.want[k][j];
                 if has_word(s, k, j) && n >= 0 && n != s.dsp[k][j] {
-                    if let Some((slot, bits)) = knob_word(&REAL_CORE, s, k, j, n) {
-                        if REAL_CORE.link_confirmed(slot) == Some(bits) {
+                    if let Some((slot, bits)) = knob_word(&C::CORE, s, k, j, n) {
+                        if C::CORE.link_confirmed(slot) == Some(bits) {
                             s.dsp[k][j] = n;
                             s.sent += 1;
                         }
@@ -593,12 +600,12 @@ unsafe fn confirm() {
         }
         k += 1;
     }
-    s.errors = REAL_CORE.link_errors();
+    s.errors = C::CORE.link_errors();
 }
 
 /// Pages in use and the pages the image reserved (for CAPACITY-like reports and tests): (reserved, used).
-pub unsafe fn counts() -> (u32, u32) {
-    let inf = info();
+pub unsafe fn counts<C: StaticCore>() -> (u32, u32) {
+    let inf = info::<C>();
     if inf.is_null() {
         return (0, 0);
     }
@@ -617,7 +624,11 @@ pub unsafe fn counts() -> (u32, u32) {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::core_api::{Call, FakeCore};
+    use dkrt_test_support::{Call, FakeCore};
+
+    /// The optional data symbol of `core/fxpages`: the runtime's own host fixture defines it for its tests; this crate's test binary has none.
+    #[no_mangle]
+    pub extern "C" fn fxpages_info() {}
 
     /// A knob of effect row 2 is declared with a default, then its value changes: the parameter row is written first, then the new value is the word's live value.
     #[test]

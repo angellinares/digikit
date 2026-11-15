@@ -103,7 +103,20 @@ struct Live {
     conf_value: u32,
     tries: u8,
 }
-const LIVE0: Live = Live { used: false, dirty: false, has_conf: false, failed: false, win: 0, hold: 0, word: 0, value: 0, ver: 0, conf_ver: 0, conf_value: 0, tries: 0 };
+const LIVE0: Live = Live {
+    used: false,
+    dirty: false,
+    has_conf: false,
+    failed: false,
+    win: 0,
+    hold: 0,
+    word: 0,
+    value: 0,
+    ver: 0,
+    conf_ver: 0,
+    conf_value: 0,
+    tries: 0,
+};
 
 #[derive(Clone, Copy)]
 struct Req {
@@ -156,7 +169,14 @@ struct Flight {
     /// The value of a live write; the bytes of a chunk.
     value: u32,
 }
-const FLIGHT0: Flight = Flight { kind: F_NONE, idx: 0, win: 0, ver: 0, word: 0, value: 0 };
+const FLIGHT0: Flight = Flight {
+    kind: F_NONE,
+    idx: 0,
+    win: 0,
+    ver: 0,
+    word: 0,
+    value: 0,
+};
 
 /// Counters of what the link did, for `DKRT_DSP`-style peeks and the tests.
 #[derive(Clone, Copy, Default, Debug)]
@@ -193,7 +213,12 @@ impl<T: Transport> Link<T> {
             cursor: 0,
             flight: FLIGHT0,
             buf: [0; OWNED_MAX],
-            stats: Stats { live_sent: 0, live_errors: 0, req_done: 0, req_failed: 0 },
+            stats: Stats {
+                live_sent: 0,
+                live_errors: 0,
+                req_done: 0,
+                req_failed: 0,
+            },
             spin: 0,
         }
     }
@@ -237,7 +262,15 @@ impl<T: Transport> Link<T> {
         let mut i = 0;
         while i < SLOT_MAX {
             if !self.live[i].used {
-                self.live[i] = Live { used: true, dirty: true, win: slot.win, word: slot.word, value, ver: 1, ..LIVE0 };
+                self.live[i] = Live {
+                    used: true,
+                    dirty: true,
+                    win: slot.win,
+                    word: slot.word,
+                    value,
+                    ver: 1,
+                    ..LIVE0
+                };
                 return;
             }
             i += 1;
@@ -305,7 +338,13 @@ impl<T: Transport> Link<T> {
             r.src = src;
             r.len = len;
             (K_BULK, 0, len)
-        } else if let Stream::Owned { win, dst, len, bytes } = stream {
+        } else if let Stream::Owned {
+            win,
+            dst,
+            len,
+            bytes,
+        } = stream
+        {
             let (win, dst, len) = (*win, *dst, *len);
             if len == 0 || len & 3 != 0 || len as usize > OWNED_MAX || win >= WIN_RESERVED {
                 return None;
@@ -337,14 +376,26 @@ impl<T: Transport> Link<T> {
         while i < REQ_MAX {
             if self.reqs[i].state == R_FREE {
                 // ids start at 1 and skip 0; `next_id` is the last one given, so the whole queue is zero at start (it lives in .bss)
-                let id = if self.next_id == u16::MAX { 1 } else { self.next_id + 1 };
+                let id = if self.next_id == u16::MAX {
+                    1
+                } else {
+                    self.next_id + 1
+                };
                 self.next_id = id;
                 r.id = id;
                 r.order = self.next_order;
                 self.next_order = self.next_order.wrapping_add(1);
                 r.state = R_QUEUED;
                 self.reqs[i] = r;
-                self.t.event(EV_SUBMIT, [owner.index() as u32, id as u32, kind as u32 | steps << 8, len]);
+                self.t.event(
+                    EV_SUBMIT,
+                    [
+                        owner.index() as u32,
+                        id as u32,
+                        kind as u32 | steps << 8,
+                        len,
+                    ],
+                );
                 return Some(Ticket { owner, id });
             }
             i += 1;
@@ -463,14 +514,26 @@ impl<T: Transport> Link<T> {
     /// A transfer of `owner` on the wire, for the loader's host tests: its request ends with whatever the transport answers to the next poll.
     #[cfg(any(test, feature = "fake"))]
     pub fn test_in_flight(&mut self, owner: Owner) -> Ticket {
-        let t = self.submit(owner, &Stream::Sequence({
-            let mut s = Sequence::new();
-            s.push(1, 0, 0);
-            s
-        })).unwrap();
+        let t = self
+            .submit(
+                owner,
+                &Stream::Sequence({
+                    let mut s = Sequence::new();
+                    s.push(1, 0, 0);
+                    s
+                }),
+            )
+            .unwrap();
         let i = self.find_req(t).unwrap();
         self.reqs[i].state = R_ACTIVE;
-        self.flight = Flight { kind: F_STEP, idx: i as u8, win: 0, ver: 0, word: 0, value: 4 };
+        self.flight = Flight {
+            kind: F_STEP,
+            idx: i as u8,
+            win: 0,
+            ver: 0,
+            word: 0,
+            value: 4,
+        };
         t
     }
 
@@ -508,12 +571,14 @@ impl<T: Transport> Link<T> {
                 e.failed = false;
                 e.tries = 0;
                 self.stats.live_sent += 1;
-                self.t.event(EV_LIVE, [f.idx as u32, f.ver as u32, f.win as u32, f.word]);
+                self.t
+                    .event(EV_LIVE, [f.idx as u32, f.ver as u32, f.win as u32, f.word]);
             } else {
                 e.hold = HOLD;
                 e.failed = true;
                 self.stats.live_errors += 1;
-                self.t.event(EV_ERROR, [0xff, 0x8000 | f.idx as u32, code, f.idx as u32]);
+                self.t
+                    .event(EV_ERROR, [0xff, 0x8000 | f.idx as u32, code, f.idx as u32]);
             }
             return;
         }
@@ -553,7 +618,8 @@ impl<T: Transport> Link<T> {
                 r.state = R_RBFAILED;
             }
         }
-        let (st, owner, id, code, pos) = (r.state, r.owner as u32, r.id as u32, r.code, r.pos as u32);
+        let (st, owner, id, code, pos) =
+            (r.state, r.owner as u32, r.id as u32, r.code, r.pos as u32);
         if st == R_DONE {
             self.stats.req_done += 1;
             self.t.event(EV_DONE, [owner, id, 0, 0]);
@@ -578,7 +644,9 @@ impl<T: Transport> Link<T> {
         let mut best = REQ_MAX;
         let mut i = 0;
         while i < REQ_MAX {
-            if self.reqs[i].state == R_ROLLBACK && (best == REQ_MAX || self.reqs[i].order < self.reqs[best].order) {
+            if self.reqs[i].state == R_ROLLBACK
+                && (best == REQ_MAX || self.reqs[i].order < self.reqs[best].order)
+            {
                 best = i;
             }
             i += 1;
@@ -588,7 +656,14 @@ impl<T: Transport> Link<T> {
             self.buf[..4].copy_from_slice(&s.undo.to_le_bytes());
             let ok = self.t.send(s.win as u32, s.at, self.buf.as_ptr(), 4);
             if ok == Sent::Accepted {
-                self.flight = Flight { kind: F_UNDO, idx: best as u8, win: 0, ver: 0, word: 0, value: 0 };
+                self.flight = Flight {
+                    kind: F_UNDO,
+                    idx: best as u8,
+                    win: 0,
+                    ver: 0,
+                    word: 0,
+                    value: 0,
+                };
             } else if ok == Sent::Hard {
                 self.reqs[best].state = R_RBFAILED;
             }
@@ -611,10 +686,18 @@ impl<T: Transport> Link<T> {
                 let ok = self.t.send(e.win as u32, e.word, self.buf.as_ptr(), 4);
                 if ok == Sent::Accepted {
                     if e.failed {
-                        self.t.event(EV_RESEND, [j as u32, e.ver as u32, e.tries as u32 + 1, 0]);
+                        self.t
+                            .event(EV_RESEND, [j as u32, e.ver as u32, e.tries as u32 + 1, 0]);
                         self.live[j].tries = e.tries.saturating_add(1);
                     }
-                    self.flight = Flight { kind: F_LIVE, idx: j as u8, win: e.win, ver: e.ver, word: e.word, value: e.value };
+                    self.flight = Flight {
+                        kind: F_LIVE,
+                        idx: j as u8,
+                        win: e.win,
+                        ver: e.ver,
+                        word: e.word,
+                        value: e.value,
+                    };
                     self.cursor = if j + 1 == SLOT_MAX { 0 } else { j as u8 + 1 };
                 } else if ok == Sent::Hard {
                     self.live[j].hold = HOLD;
@@ -630,7 +713,9 @@ impl<T: Transport> Link<T> {
         let mut i = 0;
         while i < REQ_MAX {
             let s = self.reqs[i].state;
-            if (s == R_QUEUED || s == R_ACTIVE) && (best == REQ_MAX || self.reqs[i].order < self.reqs[best].order) {
+            if (s == R_QUEUED || s == R_ACTIVE)
+                && (best == REQ_MAX || self.reqs[i].order < self.reqs[best].order)
+            {
                 best = i;
             }
             i += 1;
@@ -642,15 +727,22 @@ impl<T: Transport> Link<T> {
         let (owner, id) = (r.owner as u32, r.id as u32);
         let (win, dst, buf, len, kind, step);
         if r.kind == K_BULK {
-            let n = if r.len - r.off > CHUNK { CHUNK } else { r.len - r.off };
-            (win, dst, buf, len, kind, step) = (0, r.dst + r.off, r.src.add(r.off as usize), n, F_CHUNK, 0);
+            let n = if r.len - r.off > CHUNK {
+                CHUNK
+            } else {
+                r.len - r.off
+            };
+            (win, dst, buf, len, kind, step) =
+                (0, r.dst + r.off, r.src.add(r.off as usize), n, F_CHUNK, 0);
         } else if r.kind == K_OWNED {
             self.buf[..OWNED_MAX].copy_from_slice(&r.bytes);
-            (win, dst, buf, len, kind, step) = (r.win as u32, r.dst, self.buf.as_ptr(), r.len, F_CHUNK, 0);
+            (win, dst, buf, len, kind, step) =
+                (r.win as u32, r.dst, self.buf.as_ptr(), r.len, F_CHUNK, 0);
         } else {
             let s = r.seq.steps[r.pos as usize];
             self.buf[..4].copy_from_slice(&s.value.to_le_bytes());
-            (win, dst, buf, len, kind, step) = (s.win as u32, s.at, self.buf.as_ptr(), 4, F_STEP, s.flags);
+            (win, dst, buf, len, kind, step) =
+                (s.win as u32, s.at, self.buf.as_ptr(), 4, F_STEP, s.flags);
         }
         let ok = self.t.send(win, dst, buf, len);
         if ok == Sent::Accepted {
@@ -661,7 +753,14 @@ impl<T: Transport> Link<T> {
             if step & STEP_MARK != 0 && !r.seq.mark.is_null() {
                 *r.seq.mark = 1;
             }
-            self.flight = Flight { kind, idx: best as u8, win: 0, ver: 0, word: 0, value: len };
+            self.flight = Flight {
+                kind,
+                idx: best as u8,
+                win: 0,
+                ver: 0,
+                word: 0,
+                value: len,
+            };
         } else if ok == Sent::Hard {
             self.reqs[best].state = R_FAILED;
             self.reqs[best].code = u32::MAX;
@@ -708,10 +807,29 @@ pub mod fake {
 
     impl FakeLink {
         pub fn new() -> Self {
-            FakeLink { now: 0, busy_until: 0, end_until: 0, result: None, wire: Vec::new(), script: VecDeque::new(), refuse: false, hard: false, events: Vec::new() }
+            FakeLink {
+                now: 0,
+                busy_until: 0,
+                end_until: 0,
+                result: None,
+                wire: Vec::new(),
+                script: VecDeque::new(),
+                refuse: false,
+                hard: false,
+                events: Vec::new(),
+            }
         }
         pub fn words(&self) -> Vec<(u32, u32, u32)> {
-            self.wire.iter().map(|w| (w.win, w.dst, u32::from_le_bytes([w.bytes[0], w.bytes[1], w.bytes[2], w.bytes[3]]))).collect()
+            self.wire
+                .iter()
+                .map(|w| {
+                    (
+                        w.win,
+                        w.dst,
+                        u32::from_le_bytes([w.bytes[0], w.bytes[1], w.bytes[2], w.bytes[3]]),
+                    )
+                })
+                .collect()
         }
     }
 
@@ -724,7 +842,11 @@ pub mod fake {
             if self.refuse || self.now < self.busy_until || self.now < self.end_until {
                 return Sent::Refused;
             }
-            self.wire.push(Wire { win, dst, bytes: core::slice::from_raw_parts(buf, len as usize).to_vec() });
+            self.wire.push(Wire {
+                win,
+                dst,
+                bytes: core::slice::from_raw_parts(buf, len as usize).to_vec(),
+            });
             self.busy_until = self.now + TRANSFER;
             self.end_until = self.busy_until + END_FRAMES;
             self.result = Some(match self.script.pop_front().flatten() {
@@ -870,10 +992,21 @@ mod tests {
         let mut l = link();
         l.t.script.push_back(None); // A's word is taken
         l.t.script.push_back(Some(91)); // B's word fails
-        let a = l.submit(Owner::Loader, &Stream::Sequence(seq(&[(1, 10, 1)]))).unwrap();
-        let b = l.submit(Owner::Tracks, &Stream::owned(0, 0x100, &[7]).unwrap()).unwrap();
+        let a = l
+            .submit(Owner::Loader, &Stream::Sequence(seq(&[(1, 10, 1)])))
+            .unwrap();
+        let b = l
+            .submit(Owner::Tracks, &Stream::owned(0, 0x100, &[7]).unwrap())
+            .unwrap();
         unsafe { settle_all(&mut l) }; // both ended before A looks
-        assert_eq!(l.result(Ticket { owner: Owner::Tracks, id: a.id }), LinkResult::Gone, "another owner cannot take A's result");
+        assert_eq!(
+            l.result(Ticket {
+                owner: Owner::Tracks,
+                id: a.id
+            }),
+            LinkResult::Gone,
+            "another owner cannot take A's result"
+        );
         assert_eq!(l.result(a), LinkResult::Done);
         assert_eq!(l.result(a), LinkResult::Gone, "a result is given once");
         assert_eq!(l.result(b), LinkResult::Failed);
@@ -882,12 +1015,27 @@ mod tests {
     #[test]
     fn the_owners_requests_go_out_in_the_order_they_were_submitted() {
         let mut l = link();
-        let a1 = l.submit(Owner::Loader, &Stream::Sequence(seq(&[(1, 1, 1), (1, 2, 2)]))).unwrap();
-        let b1 = l.submit(Owner::Tracks, &Stream::owned(2, 5, &[5]).unwrap()).unwrap();
-        let a2 = l.submit(Owner::Loader, &Stream::Sequence(seq(&[(2, 3, 3)]))).unwrap();
+        let a1 = l
+            .submit(
+                Owner::Loader,
+                &Stream::Sequence(seq(&[(1, 1, 1), (1, 2, 2)])),
+            )
+            .unwrap();
+        let b1 = l
+            .submit(Owner::Tracks, &Stream::owned(2, 5, &[5]).unwrap())
+            .unwrap();
+        let a2 = l
+            .submit(Owner::Loader, &Stream::Sequence(seq(&[(2, 3, 3)])))
+            .unwrap();
         unsafe { settle_all(&mut l) };
-        assert_eq!(l.t.words(), vec![(1, 1, 1), (1, 2, 2), (2, 5, 5), (2, 3, 3)]);
-        assert_eq!((l.result(a1), l.result(b1), l.result(a2)), (LinkResult::Done, LinkResult::Done, LinkResult::Done));
+        assert_eq!(
+            l.t.words(),
+            vec![(1, 1, 1), (1, 2, 2), (2, 5, 5), (2, 3, 3)]
+        );
+        assert_eq!(
+            (l.result(a1), l.result(b1), l.result(a2)),
+            (LinkResult::Done, LinkResult::Done, LinkResult::Done)
+        );
     }
 
     #[test]
@@ -906,7 +1054,10 @@ mod tests {
         assert_eq!(words.len(), 6);
         assert_eq!(words[5], (1, 72, 17));
         assert_eq!(l.result(t), LinkResult::Done);
-        assert_eq!(flag, 1, "the mark is set when the publishing word is accepted");
+        assert_eq!(
+            flag, 1,
+            "the mark is set when the publishing word is accepted"
+        );
     }
 
     #[test]
@@ -922,7 +1073,10 @@ mod tests {
         l.t.script.push_back(Some(92)); // the last word errors
         let t = l.submit(Owner::Loader, &Stream::Sequence(s)).unwrap();
         unsafe { settle_all(&mut l) };
-        assert_eq!(l.t.words(), vec![(2, 100, 1), (2, 101, 2), (2, 102, 3), (2, 102, 0xffff_ffff)]);
+        assert_eq!(
+            l.t.words(),
+            vec![(2, 100, 1), (2, 101, 2), (2, 102, 3), (2, 102, 0xffff_ffff)]
+        );
         assert_eq!(l.result(t), LinkResult::Failed);
     }
 
@@ -946,7 +1100,12 @@ mod tests {
     fn a_failed_step_without_undo_words_fails_at_once() {
         let mut l = link();
         l.t.script.push_back(Some(3));
-        let t = l.submit(Owner::Loader, &Stream::Sequence(seq(&[(2, 1, 1), (2, 2, 2)]))).unwrap();
+        let t = l
+            .submit(
+                Owner::Loader,
+                &Stream::Sequence(seq(&[(2, 1, 1), (2, 2, 2)])),
+            )
+            .unwrap();
         unsafe { settle_all(&mut l) };
         assert_eq!(l.t.wire.len(), 1, "the second step is not sent");
         assert_eq!(l.result(t), LinkResult::Failed);
@@ -967,7 +1126,16 @@ mod tests {
     fn a_live_edit_goes_between_two_chunks_of_a_bulk() {
         let mut l = link();
         let data = vec![0xabu8; (2 * CHUNK + 8) as usize];
-        let t = l.submit(Owner::Loader, &Stream::Bulk { dst: 0x2000_0000, src: data.as_ptr(), len: data.len() as u32 }).unwrap();
+        let t = l
+            .submit(
+                Owner::Loader,
+                &Stream::Bulk {
+                    dst: 0x2000_0000,
+                    src: data.as_ptr(),
+                    len: data.len() as u32,
+                },
+            )
+            .unwrap();
         unsafe {
             l.pump(); // chunk 1 is on the wire
             l.set(S, 42);
@@ -976,8 +1144,15 @@ mod tests {
         let w = &l.t.wire;
         assert_eq!(w.len(), 4);
         assert_eq!((w[0].win, w[0].bytes.len()), (0, CHUNK as usize));
-        assert_eq!((w[1].win, w[1].dst), (2, 53), "the live word goes before chunk 2");
-        assert_eq!((w[2].dst, w[2].bytes.len()), (0x2000_0000 + CHUNK, CHUNK as usize));
+        assert_eq!(
+            (w[1].win, w[1].dst),
+            (2, 53),
+            "the live word goes before chunk 2"
+        );
+        assert_eq!(
+            (w[2].dst, w[2].bytes.len()),
+            (0x2000_0000 + CHUNK, CHUNK as usize)
+        );
         assert_eq!((w[3].dst, w[3].bytes.len()), (0x2000_0000 + 2 * CHUNK, 8));
         assert_eq!(l.result(t), LinkResult::Done);
     }
@@ -987,7 +1162,16 @@ mod tests {
         let mut l = link();
         l.t.script.push_back(Some(100));
         let data = vec![0u8; (CHUNK + 4) as usize];
-        let t = l.submit(Owner::Loader, &Stream::Bulk { dst: 0x2000_0000, src: data.as_ptr(), len: data.len() as u32 }).unwrap();
+        let t = l
+            .submit(
+                Owner::Loader,
+                &Stream::Bulk {
+                    dst: 0x2000_0000,
+                    src: data.as_ptr(),
+                    len: data.len() as u32,
+                },
+            )
+            .unwrap();
         unsafe { settle_all(&mut l) };
         assert_eq!(l.t.wire.len(), 1);
         assert_eq!(l.result(t), LinkResult::Failed);
@@ -997,9 +1181,22 @@ mod tests {
     fn drain_cancels_queued_requests_waits_for_the_transfer_in_flight_and_keeps_other_owners() {
         let mut l = link();
         let data = vec![1u8; 2 * CHUNK as usize];
-        let a1 = l.submit(Owner::Loader, &Stream::Bulk { dst: 0x2000_0000, src: data.as_ptr(), len: data.len() as u32 }).unwrap();
-        let a2 = l.submit(Owner::Loader, &Stream::Sequence(seq(&[(1, 1, 1)]))).unwrap();
-        let b = l.submit(Owner::Tracks, &Stream::owned(2, 5, &[5]).unwrap()).unwrap();
+        let a1 = l
+            .submit(
+                Owner::Loader,
+                &Stream::Bulk {
+                    dst: 0x2000_0000,
+                    src: data.as_ptr(),
+                    len: data.len() as u32,
+                },
+            )
+            .unwrap();
+        let a2 = l
+            .submit(Owner::Loader, &Stream::Sequence(seq(&[(1, 1, 1)])))
+            .unwrap();
+        let b = l
+            .submit(Owner::Tracks, &Stream::owned(2, 5, &[5]).unwrap())
+            .unwrap();
         unsafe {
             l.pump(); // chunk 1 of A's bulk is on the wire
             assert!(l.drain(Owner::Loader));
@@ -1009,7 +1206,10 @@ mod tests {
             // only B's word follows; A's chunk 2 and sequence are gone
             assert_eq!(l.t.words()[before..], [(2, 5, 5)]);
         }
-        assert_eq!((l.result(a1), l.result(a2)), (LinkResult::Gone, LinkResult::Gone));
+        assert_eq!(
+            (l.result(a1), l.result(a2)),
+            (LinkResult::Gone, LinkResult::Gone)
+        );
         assert_eq!(l.result(b), LinkResult::Done);
     }
 
@@ -1040,9 +1240,22 @@ mod tests {
     #[test]
     fn a_request_for_the_reserved_window_or_an_odd_size_is_refused() {
         let mut l = link();
-        assert!(l.submit(Owner::Core, &Stream::Sequence(seq(&[(3, 0, 0)]))).is_none());
-        assert!(l.submit(Owner::Core, &Stream::Sequence(Sequence::new())).is_none());
-        assert!(l.submit(Owner::Core, &Stream::Bulk { dst: 0x2000_0000, src: [0u8; 6].as_ptr(), len: 6 }).is_none());
+        assert!(l
+            .submit(Owner::Core, &Stream::Sequence(seq(&[(3, 0, 0)])))
+            .is_none());
+        assert!(l
+            .submit(Owner::Core, &Stream::Sequence(Sequence::new()))
+            .is_none());
+        assert!(l
+            .submit(
+                Owner::Core,
+                &Stream::Bulk {
+                    dst: 0x2000_0000,
+                    src: [0u8; 6].as_ptr(),
+                    len: 6
+                }
+            )
+            .is_none());
         l.set(Slot { win: 3, word: 0 }, 1);
         unsafe { settle_all(&mut l) };
         assert!(l.t.wire.is_empty());
@@ -1052,7 +1265,9 @@ mod tests {
     fn a_hard_refusal_fails_the_request_instead_of_waiting_for_ever() {
         let mut l = link();
         l.t.hard = true;
-        let t = l.submit(Owner::Loader, &Stream::Sequence(seq(&[(1, 1, 1)]))).unwrap();
+        let t = l
+            .submit(Owner::Loader, &Stream::Sequence(seq(&[(1, 1, 1)])))
+            .unwrap();
         unsafe { settle_all(&mut l) };
         assert_eq!(l.result(t), LinkResult::Failed);
     }
@@ -1062,12 +1277,19 @@ mod tests {
         let mut l = link();
         l.t.script.push_back(None);
         l.t.script.push_back(Some(7));
-        let a = l.submit(Owner::Loader, &Stream::Sequence(seq(&[(1, 1, 1)]))).unwrap();
-        let b = l.submit(Owner::Tracks, &Stream::owned(2, 5, &[5]).unwrap()).unwrap();
+        let a = l
+            .submit(Owner::Loader, &Stream::Sequence(seq(&[(1, 1, 1)])))
+            .unwrap();
+        let b = l
+            .submit(Owner::Tracks, &Stream::owned(2, 5, &[5]).unwrap())
+            .unwrap();
         unsafe { settle_all(&mut l) };
         l.result(a);
         l.result(b);
         let kinds: Vec<u32> = l.t.events.iter().map(|e| e.0).collect();
-        assert_eq!(kinds, vec![EV_SUBMIT, EV_SUBMIT, EV_START, EV_DONE, EV_START, EV_ERROR]);
+        assert_eq!(
+            kinds,
+            vec![EV_SUBMIT, EV_SUBMIT, EV_START, EV_DONE, EV_START, EV_ERROR]
+        );
     }
 }

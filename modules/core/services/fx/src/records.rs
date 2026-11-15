@@ -1,16 +1,18 @@
 //! `fx` service, record handlers (interface B): the effect records of the `register` section, and the effect parts of the DSP
 //! section. The registry walker (`registry.rs`) and the DSP loader (`dsp/mod.rs`) call them through `handlers::Service`.
-use super::{fxpage, fxsend};
+use crate::{fxpage, fxsend};
+use core::marker::PhantomData;
+use dkrt_abi::core_api::StaticCore;
 use dkrt_abi::dsp::{DspSec, MAX_FX};
 use dkrt_abi::mem::rd32;
 use dkrt_abi::registry::each;
 use dkrt_abi::service::{tick_phase, ApplyCtx, CheckCtx, Claim, Declare, RowWrite, Service};
 use dkrt_sdk::*;
 
-/// The fx service.
-pub struct Fx;
+/// The fx service over the core `C` (the runtime's `RealCore`).
+pub struct Fx<C>(PhantomData<C>);
 
-impl Service for Fx {
+impl<C: StaticCore> Service for Fx<C> {
     unsafe fn declare(d: &mut Declare) {
         d.kind(fxpage::KIND_EFFECT, fxpage::LEN_EFFECT);
     }
@@ -35,7 +37,7 @@ impl Service for Fx {
             let mut bad_fx = OK;
             each(c.reg, |kind, b| {
                 if kind == fxpage::KIND_EFFECT && bad_fx == OK {
-                    let r = fxpage::check_record(b);
+                    let r = fxpage::check_record::<C>(b);
                     let fx = rd32(b);
                     if r == OK && fx < 32 && fx_seen & (1 << fx) != 0 {
                         bad_fx = E_FORMAT;
@@ -56,28 +58,28 @@ impl Service for Fx {
     /// An effect record, in file order: its page, parameter rows and list entry are written (the effect's row in the chain is claimed).
     unsafe fn apply_record(kind: u32, body: *const u8, c: &ApplyCtx) -> i32 {
         if kind == fxpage::KIND_EFFECT {
-            fxpage::apply(c.owner, body)
+            fxpage::apply::<C>(c.owner, body)
         } else {
             OK
         }
     }
 
     unsafe fn remove(owner: u8) {
-        fxpage::remove(owner);
+        fxpage::remove::<C>(owner);
     }
 
     unsafe fn tick(phase: u32) {
         if phase == tick_phase::LATE {
-            fxpage::tick();
+            fxpage::tick::<C>();
         }
     }
 
     unsafe fn cap(kind: u8) -> Option<(u32, u32)> {
         use dkrt_sdk::proto::*;
         if kind == CAPK_FX_SLOTS {
-            Some((super::dsp::fx_free_rows(), super::dsp::fx_used()))
+            Some((crate::dsp::fx_free_rows::<C>(), crate::dsp::fx_used::<C>()))
         } else if kind == CAPK_SEND_SLOTS {
-            Some((fxsend::slots(), fxsend::used()))
+            Some((fxsend::slots::<C>(), fxsend::used()))
         } else {
             None
         }
@@ -86,37 +88,37 @@ impl Service for Fx {
     unsafe fn attribute(site: u32, id: u32) -> Option<usize> {
         // every site but the voice's names an effect row (the master route, the send route, or a site this runtime does not know)
         if site != dkrt_sdk::fault::SITE_VOICE {
-            super::dsp::module_of_fx_table_row(id)
+            crate::dsp::module_of_fx_table_row::<C>(id)
         } else {
             None
         }
     }
 
     unsafe fn declare_fx(rec: usize, ordinal: u32, flags: Option<u32>, par: Option<[u32; 8]>) -> Option<bool> {
-        Some(super::dsp::fx_set_declared(rec, ordinal, flags, par))
+        Some(crate::dsp::fx_set_declared::<C>(rec, ordinal, flags, par))
     }
 
     unsafe fn dsp_check_sections(sec: &DspSec) -> i32 {
-        super::dsp::check_sections(sec)
+        crate::dsp::check_sections::<C>(sec)
     }
 
     unsafe fn dsp_check_rows(sec: &DspSec) -> i32 {
-        super::dsp::check_rows(sec)
+        crate::dsp::check_rows::<C>(sec)
     }
 
     unsafe fn dsp_claim(c: &mut Claim) {
-        super::dsp::claim(c)
+        crate::dsp::claim::<C>(c)
     }
 
     unsafe fn dsp_release(rec: usize) {
-        super::dsp::release(rec)
+        crate::dsp::release::<C>(rec)
     }
 
     unsafe fn dsp_clear(rec: usize) -> bool {
-        super::dsp::clear_fx_rows(rec)
+        crate::dsp::clear_fx_rows::<C>(rec)
     }
 
     unsafe fn dsp_row_step(rec: usize, want: &mut u32, write: bool) -> Option<RowWrite> {
-        super::dsp::row_step(rec, want, write)
+        crate::dsp::row_step::<C>(rec, want, write)
     }
 }

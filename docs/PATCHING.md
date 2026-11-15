@@ -88,7 +88,7 @@ mise run patch:mem -- core/machines test/machine-clone --device dt2 --firmware 1
 
 ### Compare two objects after a move
 
-`patchkit objdiff OLD.dko.json NEW.dko.json [--format text|json] [--strict]` proves that two ColdFire objects hold the same code when only
+`patchkit objdiff OLD.dko.json NEW.dko.json [--format text|json] [--strict] [--erase TYPE]...` proves that two ColdFire objects hold the same code when only
 names, order and addresses differ (the check for moving Rust items between modules of the runtime crate). A byte compare of such
 objects always fails: mangled names contain the module path, functions change order, and relocations name section symbols.
 
@@ -101,6 +101,8 @@ objects always fails: mangled names contain the module path, functions change or
   also compared as one multiset (content and count), so an unused changed string is caught: `only-old` or `only-new string constant`.
 - A panic location (`core::panic::Location`: 16 bytes, one relocation at 0 to its file name) is ignored when only file, line or column
   differ: the runtime is `panic=abort`. The result says `ignored: N panic locations`. `--strict` compares them like any constant.
+- `--erase TYPE` (repeatable) removes `::<TYPE>` and `<TYPE>` from every Rust name before matching, so a function that became generic over one
+  type (`fx_entry` and `fx_entry::<RealCore>`, `Fx` and `Fx<RealCore>`) is the same item. Use it for a move into a crate that is generic over the core.
 - Other anonymous constants (with relocations inside) are matched by content.
 - Code and data are compared byte by byte with every relocated field masked. A relocation is compared by its normalized target
   plus addend, never by address. The first difference of a function is shown as an instruction with its relocation.

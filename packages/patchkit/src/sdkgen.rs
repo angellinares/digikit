@@ -286,7 +286,7 @@ struct Records {
 #[serde(deny_unknown_fields)]
 struct ServiceDecl {
     name: String,
-    /// The type that implements `Service`, from the runtime crate's root.
+    /// The full path of the type that implements `Service` (`crate::services::NAME::...`, or a linked service crate).
     rust: String,
 }
 /// One record kind: its number, the whole record's length (header included) and the in-crate service that owns it.
@@ -513,7 +513,7 @@ fn rust_services(sdk: &Sdk) -> String {
     for d in &sdk.service {
         let _ = writeln!(
             s,
-            "    ServiceRow::of::<crate::{}>({:?}, &dkrt_sdk::records::KINDS_{}),",
+            "    ServiceRow::of::<{}>({:?}, &dkrt_sdk::records::KINDS_{}),",
             d.rust,
             d.name,
             d.name.to_uppercase()

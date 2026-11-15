@@ -69,8 +69,17 @@ fn parse_cargo(text: &str, what: &Path) -> Result<Cargo> {
 fn path_deps(text: &str, what: &Path, dev: bool) -> Result<Vec<String>> {
     let c = parse_cargo(text, what)?;
     let mut deps: Vec<(usize, String)> = vec![];
-    let dev_deps = if dev { c.dev_dependencies.unwrap_or_default() } else { BTreeMap::new() };
-    for (_, d) in c.dependencies.unwrap_or_default().into_iter().chain(dev_deps) {
+    let dev_deps = if dev {
+        c.dev_dependencies.unwrap_or_default()
+    } else {
+        BTreeMap::new()
+    };
+    for (_, d) in c
+        .dependencies
+        .unwrap_or_default()
+        .into_iter()
+        .chain(dev_deps)
+    {
         if let Some(p) = d.get_ref().get("path").and_then(|p| p.as_str()) {
             deps.push((d.span().start, p.to_string()));
         }

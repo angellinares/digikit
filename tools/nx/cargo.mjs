@@ -190,6 +190,7 @@ const NO_TESTS = new Set([
   'sharc-gen-2',
   'sharc-native-2',
   'dkfw',
+  'dkrt-test-support',
   'sharc-fast-cl',
   'sharc-fast-cl-2',
   'bootstrap-emu',

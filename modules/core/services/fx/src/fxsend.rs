@@ -18,9 +18,9 @@
 //!   settings, written to the card 2 s after the last change, and the DSP words, live values on the link through window 2 like the effect pages' values).
 //!
 //! Everything runs in the UI task (the settings store is not for other tasks).
-use super::dsp as fxdsp;
-use super::fxpage;
-use crate::core_api::{CoreApi, REAL_CORE};
+use crate::dsp as fxdsp;
+use crate::fxpage;
+use dkrt_abi::core_api::StaticCore;
 use dkrt_abi::dsp;
 use dkrt_abi::mem::{cstr_len, iw, rd, rd16, wr, wr16};
 use core::ptr::addr_of_mut;
@@ -103,8 +103,8 @@ fn ss() -> &'static mut SendState {
 }
 
 /// The info table when this image has send cells (a `core/fxpages` object of version 2 with at least one), else null.
-unsafe fn info() -> *const u32 {
-    let inf = fxpage::info();
+unsafe fn info<C: StaticCore>() -> *const u32 {
+    let inf = fxpage::info::<C>();
     if inf.is_null() || iw(inf, w::VERSION) < 2 || iw(inf, w::CELLS) == 0 {
         return core::ptr::null();
     }
@@ -112,8 +112,8 @@ unsafe fn info() -> *const u32 {
 }
 
 /// The cells of the send page this image has (the CAPACITY limit of `SEND_SLOTS`): 0 without `core/fxpages` or on a device with no send page.
-pub unsafe fn slots() -> u32 {
-    let inf = info();
+pub unsafe fn slots<C: StaticCore>() -> u32 {
+    let inf = info::<C>();
     if inf.is_null() {
         return 0;
     }
@@ -133,12 +133,12 @@ fn routes_of(flags: u32) -> (u8, u8) {
 }
 
 /// The route effect row `k` has in the settings, as `ROUTE_*`: the stored one when the effect allows it, else its default. UI task.
-unsafe fn saved_route(k: usize) -> u8 {
+unsafe fn saved_route<C: StaticCore>(k: usize) -> u8 {
     let s = ss();
     let mut key = [0u8; KEY_MAX];
     let kn = key_of(&mut key, b"fx/route/", &s.id[k], s.idlen[k] as usize);
     let mut v = [0u8; 4];
-    if REAL_CORE.settings_get(&key[..kn], &mut v) == 1 {
+    if C::CORE.settings_get(&key[..kn], &mut v) == 1 {
         let r = if v[0] == 1 { ROUTE_SEND } else if v[0] == 0 { ROUTE_MASTER } else { 0 };
         if r != 0 && s.allow[k] & r != 0 {
             return r;
@@ -148,7 +148,7 @@ unsafe fn saved_route(k: usize) -> u8 {
 }
 
 /// Effect `index` (0 ..) in row order, among the rows that have a page: the entry for DIGIKIT > FX ROUTES. 0, or `E_NOT_FOUND` past the end. UI task.
-pub unsafe fn fx_entry(index: u32, out: &mut DkrtFx) -> i32 {
+pub unsafe fn fx_entry<C: StaticCore>(index: u32, out: &mut DkrtFx) -> i32 {
     let s = ss();
     let mut seen = 0;
     let mut k = 0;
@@ -159,7 +159,7 @@ pub unsafe fn fx_entry(index: u32, out: &mut DkrtFx) -> i32 {
                 out.allowed = s.allow[k] as u32;
                 out.dflt = s.dflt[k] as u32;
                 out.running = if s.route[k] != 0 { ROUTE_SEND as u32 } else { ROUTE_MASTER as u32 };
-                out.saved = saved_route(k) as u32;
+                out.saved = saved_route::<C>(k) as u32;
                 out.tab = [0; 8];
                 fxpage::tab_of(k, &mut out.tab);
                 out.id = s.id[k];
@@ -173,11 +173,13 @@ pub unsafe fn fx_entry(index: u32, out: &mut DkrtFx) -> i32 {
 }
 
 /// Does effect row `k` run on a send bus (the FX view lists the send effects before the master effects).
+#[inline]
 pub fn is_send(k: usize) -> bool {
     k < dsp::MAX_FX && ss().route[k] != 0
 }
 
 /// Send effects loaded (CAPACITY `used`).
+#[inline]
 pub fn used() -> u32 {
     ss().used
 }
@@ -221,25 +223,26 @@ unsafe fn copy(dst: &mut [u8], src: *const u8, max: usize) {
 }
 
 /// The count cell of the track FX key's list: 2 (the send page follows the stock page) while a cell is in use, else 0 (the stock list).
+#[inline]
 unsafe fn publish_count(inf: *const u32) {
     wr(iw(inf, w::COUNT), if ss().used != 0 { 2 } else { 0 });
 }
 
 /// Effect row `k` (module record `owner - 1`, tab string `tab`) has been registered: read its route and amounts from the settings and, for a send effect within the limit, give it a
 /// cell of the send page. The route and the four amount words go to the DSP with the row (`dsp::fx_set_route`).
-pub unsafe fn apply(k: usize, owner: u8, tab: *const u8) {
+pub unsafe fn apply<C: StaticCore>(k: usize, owner: u8, tab: *const u8) {
     if k >= dsp::MAX_FX || owner == 0 {
         return;
     }
     let s = ss();
-    let inf = info();
+    let inf = info::<C>();
     if !inf.is_null() {
-        release(inf, k);
+        release::<C>(inf, k);
     }
-    let (allow, dflt) = routes_of(fxdsp::fx_flags_of(k));
+    let (allow, dflt) = routes_of(fxdsp::fx_flags_of::<C>(k));
     s.allow[k] = allow;
     s.dflt[k] = dflt;
-    let name = REAL_CORE.module_name(owner);
+    let name = C::CORE.module_name(owner);
     let mut n = 0;
     while n < 31 && *name.add(n) != 0 {
         s.id[k][n] = *name.add(n);
@@ -254,11 +257,11 @@ pub unsafe fn apply(k: usize, owner: u8, tab: *const u8) {
     if inf.is_null() {
         return;
     }
-    let want = saved_route(k) == ROUTE_SEND;
+    let want = saved_route::<C>(k) == ROUTE_SEND;
     let mut key = [0u8; KEY_MAX];
     let mut a = [0u8; TRACKS];
     let kn = key_of(&mut key, b"fx/send/", &s.id[k], s.idlen[k] as usize);
-    if REAL_CORE.settings_get(&key[..kn], &mut a) != TRACKS as i32 {
+    if C::CORE.settings_get(&key[..kn], &mut a) != TRACKS as i32 {
         a = [0u8; TRACKS];
     }
     let mut t = 0;
@@ -298,7 +301,7 @@ pub unsafe fn apply(k: usize, owner: u8, tab: *const u8) {
         }
         copy(&mut s.name[c], name.as_ptr(), 16);
         let code = iw(inf, w::P_SEND) + c as u32;
-        REAL_CORE.write_send_param_row(
+        C::CORE.write_send_param_row(
             code,
             iw(inf, w::TPL_PERCENT),
             iw(inf, w::TEMPLATE),
@@ -312,20 +315,20 @@ pub unsafe fn apply(k: usize, owner: u8, tab: *const u8) {
         s.kit = 0;
         publish_count(inf);
     }
-    fxdsp::fx_set_route(k, s.route[k] as u32, s.dsp[k]);
+    fxdsp::fx_set_route::<C>(k, s.route[k] as u32, s.dsp[k]);
     // the FX view lists the send effects first: the list is built again now that the route is known
-    fxpage::relist();
+    fxpage::relist::<C>();
 }
 
 /// Give back the cell of effect row `k` (if it has one).
-unsafe fn release(inf: *const u32, k: usize) {
+unsafe fn release<C: StaticCore>(inf: *const u32, k: usize) {
     let s = ss();
     if s.route[k] == 0 {
         return;
     }
     let c = s.cell[k] as usize - 1;
     wr(iw(inf, w::ROW) + 8 + 4 * c as u32, 0);
-    REAL_CORE.reset_param_row(iw(inf, w::P_SEND) + c as u32);
+    C::CORE.reset_param_row(iw(inf, w::P_SEND) + c as u32);
     s.row[c] = 0;
     s.cell[k] = 0;
     s.route[k] = 0;
@@ -339,15 +342,15 @@ unsafe fn release(inf: *const u32, k: usize) {
 }
 
 /// The effect row `k` is gone (its module was removed): its cell and its state.
-pub unsafe fn remove(k: usize) {
+pub unsafe fn remove<C: StaticCore>(k: usize) {
     if k >= dsp::MAX_FX {
         return;
     }
-    let inf = info();
+    let inf = info::<C>();
     if !inf.is_null() {
-        release(inf, k);
+        release::<C>(inf, k);
     }
-    fxdsp::fx_forget(&REAL_CORE, k);
+    fxdsp::fx_forget(&C::CORE, k);
     let s = ss();
     s.allow[k] = 0;
     s.dflt[k] = 0;
@@ -358,21 +361,21 @@ pub unsafe fn remove(k: usize) {
     s.id[k] = [0; 32];
 }
 
-unsafe fn put_amounts(k: usize) {
+unsafe fn put_amounts<C: StaticCore>(k: usize) {
     let s = ss();
     let mut key = [0u8; KEY_MAX];
     let kn = key_of(&mut key, b"fx/send/", &s.id[k], s.idlen[k] as usize);
-    REAL_CORE.settings_put(&key[..kn], &s.amt[k]);
+    C::CORE.settings_put(&key[..kn], &s.amt[k]);
     s.puts += 1;
 }
 
 /// Once per UI-loop pass (after the effect pages' own tick).
-pub unsafe fn tick() {
+pub unsafe fn tick<C: StaticCore>() {
     let s = ss();
     if s.used == 0 {
         return;
     }
-    let inf = info();
+    let inf = info::<C>();
     if inf.is_null() {
         return;
     }
@@ -392,21 +395,21 @@ pub unsafe fn tick() {
         }
     }
     if quiet {
-        tracks(inf);
+        tracks::<C>(inf);
     }
     // the amounts go to the link as live values; the DSP's own copy follows the link's confirmation
     let mut k = 0;
     while k < dsp::MAX_FX {
-        if s.route[k] != 0 && fxdsp::fx_live(k) {
+        if s.route[k] != 0 && fxdsp::fx_live::<C>(k) {
             let want = words_of(&s.amt[k]);
             let mut j = 0;
             while j < 4 {
-                if let Some(slot) = fxdsp::fx_slot(&REAL_CORE, k, dsp::FXW_AMT0 + j as u32) {
+                if let Some(slot) = fxdsp::fx_slot(&C::CORE, k, dsp::FXW_AMT0 + j as u32) {
                     if want[j] != s.want[k][j] {
-                        REAL_CORE.link_set(slot, want[j]);
+                        C::CORE.link_set(slot, want[j]);
                         s.want[k][j] = want[j];
                     }
-                    if s.dsp[k][j] != s.want[k][j] && REAL_CORE.link_confirmed(slot) == Some(s.want[k][j]) {
+                    if s.dsp[k][j] != s.want[k][j] && C::CORE.link_confirmed(slot) == Some(s.want[k][j]) {
                         s.dsp[k][j] = s.want[k][j];
                         s.sent += 1;
                     }
@@ -416,11 +419,11 @@ pub unsafe fn tick() {
         }
         k += 1;
     }
-    s.errors = REAL_CORE.link_errors();
+    s.errors = C::CORE.link_errors();
 }
 
 /// The 16 Sound arrays: the stored amounts back into those that need them, a turn of the knob in the others.
-unsafe fn tracks(inf: *const u32) {
+unsafe fn tracks<C: StaticCore>(inf: *const u32) {
     let s = ss();
     let kit = fxpage::kit(inf);
     if kit == 0 {
@@ -475,7 +478,7 @@ unsafe fn tracks(inf: *const u32) {
     let mut k = 0;
     while k < dsp::MAX_FX {
         if changed & (1 << k) != 0 {
-            put_amounts(k);
+            put_amounts::<C>(k);
         }
         k += 1;
     }

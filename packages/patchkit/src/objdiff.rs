@@ -72,6 +72,9 @@ impl Report {
     }
 }
 
+/// Type names erased from every normalized name (`--erase`): the instantiation of a generic with one type is the generic itself.
+static ERASE: std::sync::OnceLock<Vec<String>> = std::sync::OnceLock::new();
+
 /// A name without crate and module path: `_RNvNtCs..4dkrt3foo4rd32` is `rd32`, `<dkrt::a::T>::m` is `<T>::m`. A name that is not Rust-mangled
 /// (a C symbol, `#[no_mangle]`) stays exact.
 pub fn norm_name(name: &str) -> String {
@@ -108,6 +111,12 @@ pub fn norm_name(name: &str) -> String {
         }
         out.push(c as char);
         i += 1;
+    }
+    for t in ERASE.get().map(|v| v.as_slice()).unwrap_or(&[]) {
+        // `f::<T>` is `f`, `Fx<T>` is `Fx` (the module path of `T` is already gone)
+        out = out
+            .replace(&format!("::<{t}>"), "")
+            .replace(&format!("<{t}>"), "");
     }
     out
 }
@@ -688,11 +697,11 @@ pub fn diff_with(old: &Dko, new: &Dko, strict: bool) -> Result<Report> {
     Ok(rep)
 }
 
-/// `patchkit objdiff OLD NEW [--format text|json] [--strict]`; returns the exit code.
+/// `patchkit objdiff OLD NEW [--format text|json] [--strict] [--erase TYPE]...`; returns the exit code.
 pub fn run(rest: &[String]) -> Result<i32> {
-    const U: &str =
-        "usage: patchkit objdiff OLD.dko.json NEW.dko.json [--format text|json] [--strict]";
+    const U: &str = "usage: patchkit objdiff OLD.dko.json NEW.dko.json [--format text|json] [--strict] [--erase TYPE]...";
     let mut strict = false;
+    let mut erase: Vec<String> = vec![];
     let mut files = vec![];
     let mut format = "text".to_string();
     let mut it = rest.iter();
@@ -701,6 +710,8 @@ pub fn run(rest: &[String]) -> Result<i32> {
             format = it.next().ok_or_else(|| Error(U.into()))?.clone();
         } else if a == "--strict" {
             strict = true;
+        } else if a == "--erase" {
+            erase.push(it.next().ok_or_else(|| Error(U.into()))?.clone());
         } else if a.starts_with("--") {
             return Err(Error(U.into()));
         } else {
@@ -710,6 +721,7 @@ pub fn run(rest: &[String]) -> Result<i32> {
     if files.len() != 2 || !matches!(format.as_str(), "text" | "json") {
         return Err(Error(U.into()));
     }
+    let _ = ERASE.set(erase);
     let read = |f: &str| -> Result<Dko> {
         Dko::parse(&std::fs::read_to_string(f).map_err(|e| Error(format!("{f}: {e}")))?)
             .map_err(|e| Error(format!("{f}: {e}")))
