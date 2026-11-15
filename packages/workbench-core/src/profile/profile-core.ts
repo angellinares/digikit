@@ -250,3 +250,73 @@ export function readReference(doc: unknown): Map<string, number> | undefined {
   for (const s of d.spans) if (s.name) out.set(s.name, (s.sum_ticks ?? 0) / d.span_elapsed_ticks);
   return out;
 }
+
+// ---- DSP ------------------------------------------------------------------------------------------------------------------------------
+
+/** One module of the emulator's DSP view: its instructions per block, and the functions that hold most of them. */
+export interface DspModule {
+  name: string;
+  kind: OwnerKind;
+  insnPerBlock: number;
+  top: { label: string; pct: number }[];
+}
+
+/** The emulator's DSP per block: the modules' instructions per DSP block against the device's headroom (CAPACITY DSP_COST). */
+export interface DspView {
+  blocks: number;
+  /** The modules' instructions per block, added up (the stock firmware's DSP work is not in it). */
+  total: number;
+  /** The device's headroom in instructions per block; undefined when the device does not report it. */
+  headroom?: number;
+  modules: DspModule[];
+}
+
+interface ReportSeries {
+  series?: string;
+  cpu?: string;
+  owners?: { owner: string; per_block?: number }[];
+  functions?: { name: string; module?: string; per_block?: number }[];
+}
+
+const sameModule = (owner: string, m: ModuleRef) => owner === m.name || shortName(owner) === shortName(m.name);
+
+/**
+ * The DSP view from a `dkprof` report of `sharc.profile` (`series` `pc` of the CPU `sharc`): a module's owner row is its instructions per block,
+ * and its top functions give the lines under it. Owners that are no loaded module (`runtime`, `firmware`, `unnamed`) are the stock work and stay out.
+ */
+export function dspView(
+  report: { blocks?: number; series?: ReportSeries[] },
+  modules: ModuleRef[],
+  headroom?: number,
+): DspView {
+  const s = report.series?.find((x) => x.cpu === 'sharc' && x.series === 'pc');
+  const out: DspModule[] = [];
+  for (const o of s?.owners ?? []) {
+    const m = modules.find((x) => sameModule(o.owner, x));
+    if (!m || !o.per_block) continue;
+    const top = (s?.functions ?? [])
+      .filter((f) => f.module !== undefined && sameModule(f.module, m) && f.per_block)
+      .slice(0, 3)
+      .map((f) => ({ label: f.name, pct: Math.round((100 * f.per_block!) / o.per_block!) }));
+    out.push({ name: m.name, kind: m.kind, insnPerBlock: o.per_block, top });
+  }
+  out.sort((a, b) => b.insnPerBlock - a.insnPerBlock);
+  return {
+    blocks: report.blocks ?? 0,
+    total: out.reduce((a, m) => a + m.insnPerBlock, 0),
+    ...(headroom ? { headroom } : {}),
+    modules: out,
+  };
+}
+
+/** The width of a module's segment in the DSP bar, as a percent of the headroom (or of the total when the device reports none), at most 100. */
+export function dspWidth(v: DspView, insn: number): number {
+  const whole = v.headroom ?? v.total;
+  return whole > 0 ? Math.min(100, (100 * insn) / whole) : 0;
+}
+
+/** `43,700 / 92,796`: the total against the headroom, or the total alone. */
+export function dspText(v: DspView): string {
+  const n = (x: number) => Math.round(x).toLocaleString('en-US');
+  return v.headroom ? `${n(v.total)} / ${n(v.headroom)}` : n(v.total);
+}

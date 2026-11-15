@@ -4,6 +4,9 @@ import { describe, test } from 'vitest';
 import {
   buildRows,
   createHistory,
+  dspText,
+  dspView,
+  dspWidth,
   fmtElapsed,
   fmtMhz,
   fmtShare,
@@ -20,9 +23,9 @@ import {
 
 const HZ = 132_000_000;
 const MODS: ModuleRef[] = [
-  { index: 0, name: 'digikit/pluck', kind: 'machine' },
-  { index: 1, name: 'digikit/freqshift', kind: 'effect' },
-  { index: 2, name: 'digikit/debug', kind: 'tool' },
+  { index: 0, name: 'test/saw', kind: 'machine' },
+  { index: 1, name: 'test/verb', kind: 'effect' },
+  { index: 2, name: 'test/mon', kind: 'tool' },
 ];
 const span = (kind: SpanIn['kind'], index: number, calls: number, sum: number, max: number): SpanIn => ({
   row: index,
@@ -44,7 +47,7 @@ describe('rows', () => {
     // 1 second: pluck 18% of it in 1000 calls
     const rows = buildRows(snap(HZ, [span('module', 0, 1000, Math.round(HZ * 0.18), Math.round(HZ * 210e-6))]), MODS);
     assert.equal(rows.length, 1);
-    assert.equal(rows[0]!.name, 'digikit/pluck');
+    assert.equal(rows[0]!.name, 'test/saw');
     assert.equal(rows[0]!.kind, 'machine');
     assert.equal(fmtShare(rows[0]!.share), '18.0%');
     assert.ok(Math.abs(rows[0]!.meanUs - 180) < 0.01);
@@ -87,7 +90,7 @@ describe('rows', () => {
     assert.deepEqual(
       groupRows(rows).map((g) => [g.label, g.rows.map((r) => r.name)]),
       [
-        ['Modules', ['digikit/pluck', 'digikit/freqshift']],
+        ['Modules', ['test/saw', 'test/verb']],
         ['Runtime phases', ['early']],
         ['Polls', ['poll 0']],
       ],
@@ -151,10 +154,10 @@ describe('the history', () => {
     h.push(...at(1000, 0));
     h.push(...at(2000, 100));
     const [s, m] = at(3000, 200);
-    h.push(s, [...m, { index: 3, name: 'digikit/chorus', kind: 'effect' }]);
+    h.push(s, [...m, { index: 3, name: 'test/echo', kind: 'effect' }]);
     assert.deepEqual(h.markers(), [
       { col: 0, text: 'start' },
-      { col: 1, text: 'chorus loaded' },
+      { col: 1, text: 'echo loaded' },
     ]);
   });
 
@@ -197,19 +200,78 @@ describe('text and reference', () => {
       schema: 'dk.profile/1',
       span_elapsed_ticks: 1000,
       spans: [
-        { name: 'digikit/pluck', sum_ticks: 250 },
+        { name: 'test/saw', sum_ticks: 250 },
         { name: 'early', sum_ticks: 10 },
       ],
     };
     assert.deepEqual(
       [...readReference(doc)!],
       [
-        ['digikit/pluck', 0.25],
+        ['test/saw', 0.25],
         ['early', 0.01],
       ],
     );
     assert.equal(readReference({ schema: 'dk.profile/1', spans: [] }), undefined);
     assert.equal(readReference({ schema: 'dk.profile/1', spans: [{ name: 'x', sum_ticks: 1 }] }), undefined);
     assert.throws(() => readReference({ schema: 'other' }), /dk\.profile\/1/);
+  });
+});
+
+describe('the DSP view', () => {
+  const report = {
+    blocks: 1000,
+    series: [
+      {
+        series: 'pc',
+        cpu: 'sharc',
+        owners: [
+          { owner: 'firmware', per_block: 50_000 },
+          { owner: 'test/verb', per_block: 12_100 },
+          { owner: 'test/saw', per_block: 31_600 },
+          { owner: 'digikit/unloaded', per_block: 5 },
+        ],
+        functions: [
+          { name: 'render', module: 'test/saw', per_block: 24_648 },
+          { name: 'setup', module: 'test/saw', per_block: 4_740 },
+          { name: 'note_on', module: 'test/saw', per_block: 2_212 },
+          { name: 'extra', module: 'test/saw', per_block: 1 },
+          { name: 'send', module: 'test/verb', per_block: 12_100 },
+          { name: 'stock_fn', module: undefined, per_block: 40_000 },
+        ],
+      },
+      { series: 'pc', cpu: 'cf', owners: [{ owner: 'test/saw', per_block: 1 }] },
+    ],
+  };
+
+  test('loaded modules only, heaviest first, with their top three functions as a percent of the module', () => {
+    const v = dspView(report, MODS, 92_796);
+    assert.deepEqual(
+      v.modules.map((m) => [m.name, m.insnPerBlock]),
+      [
+        ['test/saw', 31_600],
+        ['test/verb', 12_100],
+      ],
+    );
+    assert.deepEqual(v.modules[0]!.top, [
+      { label: 'render', pct: 78 },
+      { label: 'setup', pct: 15 },
+      { label: 'note_on', pct: 7 },
+    ]);
+    assert.equal(v.total, 43_700);
+    assert.equal(v.blocks, 1000);
+    assert.equal(dspText(v), '43,700 / 92,796');
+    assert.ok(Math.abs(dspWidth(v, 31_600) - 34.05) < 0.01);
+  });
+
+  test('without a headroom the bar is the total and the text is the total alone', () => {
+    const v = dspView(report, MODS);
+    assert.equal(dspText(v), '43,700');
+    assert.equal(dspWidth(v, 43_700), 100);
+  });
+
+  test('a report without a SHARC series is an empty view', () => {
+    const v = dspView({ series: [] }, MODS, 100);
+    assert.deepEqual(v.modules, []);
+    assert.equal(dspWidth(v, 5), 5);
   });
 });
