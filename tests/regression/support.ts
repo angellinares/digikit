@@ -13,7 +13,7 @@ import {
 import { fileTemp } from './file-temp.ts';
 import { portFile } from './runtime/device-data.ts';
 import { daemonBinary } from './runtime/devices.ts';
-import { bindBootClock, pollEmulated } from './runtime/waits.ts';
+import { bindBootClock, pollEmulated, withEmulatedProbe } from './runtime/waits.ts';
 import type { RunDirClaim } from './runtime/run-claim.ts';
 import { recordPhase, setTimingContext, timePhase, timingContext } from './timing.ts';
 import { startNoProgressWatchdog, type Watchdog } from './watchdog.ts';
@@ -86,7 +86,9 @@ export async function startPatchedSession(
   );
   setTimingContext(session, context);
   try {
-    const dk = new DkSession(new EmuUsbTransport((method, params) => session.client.call(method, params)));
+    const dk = new DkSession(new EmuUsbTransport((method, params) => session.client.call(method, params)), {
+      emulatedProbe: (run, emulatedMs) => withEmulatedProbe(session, run, emulatedMs),
+    });
     bindBootClock(dk, session);
     let closing: Promise<void> | undefined;
     return {
@@ -247,6 +249,7 @@ export function withReusablePatchedSession(
         if (!active) throw new Error('runtime case protocol is no longer active');
         return result;
       }),
+      { emulatedProbe: (run, emulatedMs) => withEmulatedProbe(session!, run, emulatedMs) },
     );
     bindBootClock(dk, session!);
     const invalidateCase = () => {
