@@ -114,7 +114,8 @@ def process(argv: list[str], env: dict[str, str], folder: Path, timeout: float) 
             raise Invalid(f"interrupted or timed out: {folder}") from None
     write(folder / "exit.json", {"exit_code": code})
     if code:
-        raise Invalid(f"child exit {code}: {folder}")
+        tail = (folder / "stderr.log").read_text(errors="replace")[-600:]
+        raise Invalid(f"child exit {code}: {folder}\n{tail}")
 
 
 def wav_pcm(path: Path) -> tuple[str, float]:
