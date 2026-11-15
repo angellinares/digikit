@@ -24,7 +24,8 @@ pub(crate) use crate::entry::{client, give, own_rec};
 /// What the services' host tests use of the core's job queue.
 #[cfg(test)]
 pub(crate) mod testing {
-    pub(crate) use crate::worker::{cancel, test_pump, test_reset, TEST_LOCK};
+    pub(crate) use crate::test_lock::LOCK as TEST_LOCK;
+    pub(crate) use crate::worker::{cancel, test_pump, test_reset};
 }
 
 /// The core's own functions, called through `CoreApi`.
