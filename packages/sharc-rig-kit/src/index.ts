@@ -1,5 +1,6 @@
 export * from './cases.ts';
 export * from './context.ts';
+export * from './fx.ts';
 export * from './machine.ts';
 export * from './ops.ts';
 export * from './place.ts';
