@@ -147,7 +147,7 @@ Deletion needs an independent adversarial review (rule); each line names its pro
    The rig got `--serve` (a core that keeps its state between lines) and the op `pokem` (masked poke), so a rig runs block by block as the Python rigs do.
 2. Done. `fx.ts` (master chain, no send) and parity: 3 h.
 3. Done. `spec.ts`, `cases.ts`, `checks.ts`, `report.ts`, negative fixtures, conformance Nx targets, the `patchkit uses` writer: 7 h.
-4. Sound-check format, analysis library, port of the module tests (tb303, pluck, freqshift, shot with sample pool, sine): 10 h. Largest risk is reading the pins; the reference files may need re-pinning.
+4. Done (tb303, pluck, freqshift, shot, sine; mapping and mutation proofs in [ledgers/t1g-module-tests.md](ledgers/t1g-module-tests.md)). Sound-check format, analysis library, port of the module tests (tb303, pluck, freqshift, shot with sample pool, sine): 10 h. Largest risk is reading the pins; the reference files may need re-pinning.
 5. Adapter and stereo rigs (`dn2_stereo_*`, send FX, the dsp-voice and fx adapter tests): 12 h. Optional.
 6. Retirement PRs with reviews and the batch `test:full`: 4 h.
 

@@ -669,12 +669,18 @@ An effect case has `[case.input]` (`kind` = `sine` with `freq` and `amp`, `table
 then right), `square-noise`, or a test signal of the conformance cases), `observe = "scratch"` (the effect's own block, the default) or
 `"master"`, `mix` (a float32 word) and steps with `params_f32 = [..]` (the effect's float parameters) and `blocks`.
 
+A machine that plays a sample has `[[case.pool]]` tables (`index`, `frames`, `rate`, `channels`, `token`, `planes` = a file of int16 words, left then right;
+the kit publishes the planes and the record before the first block), `pool_ctl` (the data symbol of the control sets: the count word must be 0 after every
+block), `right = true` (DT2: render the odd voice after each block; checks take `channel = "right"`) and step `pokes = [["rec", word, value]]` (`rec` or
+`ctl` of the first entry). `track` plays a track other than 0, `record_word` writes the voice record's word +0x1b8.
+
 Every case also holds the implicit rules of the conformance run (the call returns, the context registers and the runtime guard are
 fine, the module writes only its own memory, the output is finite). Check kinds: `rms`, `peak` (`min`, `max`), `dc` (`max`), `no-clip`
 (`limit`, default 1), `finite`, `silent-after` (`block`, `max`), `decay-time` (`db`, `min`/`max` seconds), `pitch-hz` (`note` or
 `expect`, `cents`, `method = "crossings"` or `"bandpass"`, `skip_periods`), `tone` and `tone-stable` (effects), `sample-at`, `differs`
 (`other = [first, end)`), `voice-ends` (`within`, `after`), `instructions` (`max`, `of` = `first`, `steady` or `idle`),
-`master-equals-input`, `master-equals-scratch` (effects), and the references `matches-table` (`file` of float32 words next to the toml,
+`cursor` (a word of the voice's state block, `signed`, `tol`), `voice-active`, `tone-fit` (least-squares amplitude of a tone), `description`, `state-word`,
+`state-untouched-beyond` and `master-equals-input`, `master-equals-scratch` (effects), and the references `matches-table` (`file` of float32 words next to the toml,
 `atol`, `channel`) and `same-as` (`sha256` of the float32 words). The analysis is `packages/sharc-rig-kit/src/analysis.ts`, tested on
 synthetic signals. A reference table is the output of the old float32 model of the module (or of the rig, for a new pin) as float32
 words; changing one is a re-pin and needs review like a PCM pin of `tests/scenarios`.
