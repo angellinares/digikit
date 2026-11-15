@@ -583,6 +583,30 @@ within 8.0; the effect stays within `min(headroom) / 4` plus 900 for core/fx. Ne
 `test/dyn-dsp-hang` (machine), `test/fx-nan` (effect). `DIGI_JOBS` sets the worker count.
 A change in a machine or effect module, `core/dsp-voice`, `core/fx`, `pk_conform.py` or the rigs selects the suite.
 
+### SHARC-only rig (`sharc-rig`, T1g slice)
+
+`sharc-rig` (crate `packages/sharc-rig`, outside `packages/emulator` so that an edit is no input of the daemon build key)
+is a call harness for module routines on the generated native core. It decodes and runs the loaded code with the engine of
+`sharc-native` (`decode_at`, `exec_insn`), like `tools/patchkit/pk_sharc.py` `CallSession` does on the Python core. A JSON
+request lists code to load, DM writes and calls; the caller assembles and places the code (`patchkit sharc`) and decides
+which words a note or a block sets. The format is in the module comment of `packages/sharc-rig/src/lib.rs`.
+
+```sh
+mise run gen:core                                  # the generated core, once
+node tools/nx/rust-env.mjs --gen -- cargo build --release -p sharc-rig   # target/release/sharc-rig
+sharc-rig request.json > response.json             # or the request on standard input
+pnpm nx:pilot run sharc-rig:rust-tests             # unit tests (they need the generated core)
+```
+
+A call returns `instructions`, `halt` (`breakpoint`, `max-steps` or `trap: ...`), `final_pc`, the registers and the DM words
+asked for. With `watch` ranges (pcs) it also returns the stores of instructions in them as `[pc, address, width]` runs
+(the engine's undo log of the instruction; nothing is recorded without `watch`).
+
+Measured against the Python rigs (`machine_rig.py`, `fx_rig.py`) on `test/sine`, `fadedlimes/analog` (DT2 and DN2), `tom/tb303`,
+`digikit/pluck`, the FX `digikit/freqshift` and the negative fixture `test/dyn-guard-nan#overrun` (hostile contexts): bit-identical
+output words, identical instruction counts in every block, the same store bytes and the same foreign-store texts. On 300 to
+500 block cases the harness (process start and 64k setup pokes included) is 45 to 110 times faster. Not yet: the Vitest kit.
+
 ### DSP budget gate (patchkit smoke)
 
 Every `pk_harness run` cell ends with a DSP measurement: TRIG 1 held for 1 s of audio, the mean busy

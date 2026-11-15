@@ -310,10 +310,19 @@ fn a_container_read_back_from_flash_makes_the_image_again() {
 /// A same-DAG store (`DM(-16, I6) = I0`) after ten NOPs, as boot-stream bytes: the ISA does not have it, the silicon does not run it.
 fn bad_store_code() -> Vec<u8> {
     let nops = "    NOP;\n".repeat(10);
-    patchkit::build::sharc_obj::boot_bytes_unchecked_for_tests(&format!(
-        ".SECTION/PM seg_pmco;\n_x:\n{nops}    DM(-16, I6) = I0;\n    RTS;\n"
+    // the assembler refuses the store itself: its ISA word (Selache order) between the NOPs and the RTS
+    let mut code = patchkit::build::sharc_obj::boot_bytes_unchecked_for_tests(&format!(
+        ".SECTION/PM seg_pmco;\n_x:\n{nops}"
     ))
-    .unwrap()
+    .unwrap();
+    code.extend([0x08, 0x9d, 0x70, 0x08]);
+    code.extend(
+        patchkit::build::sharc_obj::boot_bytes_unchecked_for_tests(
+            ".SECTION/PM seg_pmco;\n    RTS;\n",
+        )
+        .unwrap(),
+    );
+    code
 }
 
 #[test]

@@ -701,7 +701,10 @@ fn sharc_sources_given_as_texts_make_the_object_of_the_files() {
     // a missing include and a refused instruction are errors, not panics
     assert!(sharc::source_text_from(&["#include \"no.inc\"".into()], &includes, &[]).is_err());
     let e = sharc::sharc_object(".SECTION/PM seg_pmco;\nDM(15, I4) = I0;\n").unwrap_err();
-    assert!(e.0.contains("the ISA does not allow"), "{e}");
+    assert!(
+        e.0.contains("the ISA does not allow") || e.0.contains("through its own DAG"),
+        "{e}"
+    );
 }
 
 /// Exercise endian conversions compiled by the actual ColdFire Rust backend.

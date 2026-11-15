@@ -29,6 +29,14 @@ Tools: `tools/patchkit/pk_toolchains.py`, `pk_link.py`, `pk_cfcall.py`, `pk_shar
   (`packages/emulator/coldfire` `cfdis`, generated from `tools/coldfire/cfisa/coldfire.json`) and fails on an illegal word, a form
   outside `isa_a`/`isa_b`/`isa_c`/`emac`, or a privileged form. The test module (55 instructions, 22 forms)
   passes; an assembly file built with `-m68020` (`bfextu`) is rejected.
+- **Modifier guard and `/DM` sections [D].** The object build checks every source statement with `(SW)`, `(SWSE)`, `(BW)`, `(BWSE)`,
+  `(LW)` or `(SE)`: the statement is assembled alone and the instruction our decoder reads must carry the modifier (the `l`, `w` and
+  `x` width fields of the form; a form without a width field fails). The error names the source line. It catches an assembler that
+  writes the plain transfer for a modified one (the old assembler did so for 77 transfers). The fork's assembler lays a plain `/DM`
+  section out in 40-bit words; our data is 32-bit words in memory order, so `sharc_obj.rs` assembles `.SECTION/DM name;` as
+  `.SECTION/DM/BW name;` (byte-addressed data, the bytes the old pin wrote). Automatic fast loops (`-auto-fast-loops`) are off: a
+  `DO` sets its F1 bit only with an explicit `(F)`. A relocation against a name that is neither defined nor declared `.EXTERN`
+  fails the build.
 - **Running on the core [D].** `Emulator::call_function` (`packages/emulator/boot/src/runtime/call.rs`, example
   `cf_call`, wrapper `CfMachine`): boots a ready image once (7 s CPU, DT2 1.17), caches the `save_state` blob
   (73 MB) in `out/cache/pk_cfcall/`, afterwards 0.75 s per test process. A call pushes the arguments and a
@@ -49,7 +57,7 @@ Tools: `tools/patchkit/pk_toolchains.py`, `pk_link.py`, `pk_cfcall.py`, `pk_shar
 
 ## SHARC+ (ADSP-2156x)
 
-- **Toolchain [D].** Selache at `926bfac9` (GPLv3, ElekLabs fork of the public project), `cargo build --release`, built by
+- **Toolchain [D].** Selache at `967c1d1e` (GPLv3, ElekLabs fork of the public project, branch `fix/encodings`), `cargo build --release`, built by
   `tools/patchkit/pk_toolchains.py selache` into `out/tools/selache` in under a minute. `selas -proc ADSP-21569`.
 - **Object facts [D].** Section `seg_pmco` (assembly, 48-bit forms) or `seg_swco` (selcc). Symbol values and
   relocation offsets are in 16-bit parcels (the PC unit). Two relocation types: **11** = absolute 24-bit target
