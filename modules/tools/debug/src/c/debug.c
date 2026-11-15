@@ -13,7 +13,8 @@
  *                op 2 get the card log, op 3 set it (adds u8 on); reply: u8 on, u8 file (0 a, 1 b), u8 state (0 off, 1 on, 2 full, 3 error), u8 0, u32 writes,
  *                i32 last status, u32 ms since the last write (0xffffffff: none yet). The card log writes the ring to a file of the store (see the card log below).
  *
- *   0x1e PROFILE_STATE  body: u8 op (0 get, 1 start, 2 stop, 3 reset)   reply: u8 state (0 stopped, 1 running), u32 clock Hz, u16 rows, u64 elapsed ticks of the span clock while running since the last reset
+ *   0x1e PROFILE_STATE  body: u8 op (0 get, 1 start, 2 stop, 3 reset)   reply: u8 state (0 stopped, 1 running), u32 clock Hz, u16 rows, u64 elapsed ticks of the span clock while running since the last reset,
+ *                       then the 4 poll slots, each u8 owner (0 empty, 1 + module record, 0xff firmware image) and u32 function address
  *   0x1f PROFILE_READ   body: u16 first row   reply: u16 first, u8 n, then n rows of u32 calls, u64 sum, u32 max (ticks of the span clock; big endian)
  * Start sets the span sink and clock (`dk_span_sink_set`); stop, and fini, clear them. The table has one row per module record, per service phase (3) and per poll (4).
  *
@@ -704,6 +705,7 @@ static void span_stop(void)
 
 static int32_t cmd_profile_state(const u8 *body, u32 len, u8 *out)
 {
+    u32 i;
     if (len != 1u)
         return E_MSG;
     if (body[0] == 1u && !profiling) {
@@ -730,7 +732,12 @@ static int32_t cmd_profile_state(const u8 *body, u32 len, u8 *out)
     out[6] = (u8)SPAN_ROWS;
     dk_bytes_put32(out + 7, (u32)(el_ticks >> 32));
     dk_bytes_put32(out + 11, (u32)el_ticks);
-    return 15;
+    for (i = 0; i < SPAN_POLLS; i++) {
+        u32 fn = 0;
+        out[15u + 5u * i] = (u8)dk_debug_poll(i, &fn);
+        dk_bytes_put32(out + 16u + 5u * i, fn);
+    }
+    return (int32_t)(15u + 5u * SPAN_POLLS);
 }
 
 static int32_t cmd_profile_read(const u8 *body, u32 len, u8 *out)

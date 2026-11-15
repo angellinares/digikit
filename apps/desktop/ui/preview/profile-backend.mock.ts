@@ -73,6 +73,10 @@ export function createRecorder(): Recorder {
       sumTicks: sums[i]!,
       maxTicks: calls[i]! > 0 ? Math.round((m.maxUs * HZ) / 1e6) : 0,
     })),
+    polls: [
+      { owner: 'runtime', fn: 0x40101000, name: 'usb_bulk_tick' },
+      { owner: 2, fn: 0x47e20040 },
+    ],
   });
   return {
     async read(): Promise<ProfileReading> {

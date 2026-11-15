@@ -44,6 +44,24 @@ pub(crate) unsafe extern "C" fn debug_span_clock(out_hz: *mut u32) -> u32 {
     addr
 }
 
+/// Import `dk_debug_poll`: the owner and function of poll slot `slot` (`dkrt_poll_add`): 0 when the slot is empty, 1 + the module record, or 0xff for the firmware image.
+pub(crate) unsafe extern "C" fn debug_poll(slot: u32, out_fn: *mut u32) -> u32 {
+    if slot as usize >= crate::state::POLLS {
+        return 0;
+    }
+    let f = read_volatile(addr_of!(crate::state::DKRT_POLLS[slot as usize]));
+    if f == 0 {
+        return 0;
+    }
+    if !out_fn.is_null() {
+        *out_fn = f as u32;
+    }
+    match read_volatile(addr_of!(crate::state::DKRT_POLL_OWNER[slot as usize])) {
+        crate::state::POLL_OWNER_RUNTIME => 0xff,
+        rec => rec as u32 + 1,
+    }
+}
+
 /// Import `dk_debug_track_type`: the machine type of a track of the active kit, from the firmware's own accessors (read-only); -1 past track 15 or when the
 /// firmware has no type for it, -2 when there is no project yet.
 pub(crate) unsafe extern "C" fn debug_track_type(track: u32) -> i32 {
