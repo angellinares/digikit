@@ -168,7 +168,7 @@ leaves `[start, end)`; the loop renders up to that frame, then the end rule (voi
 rule (wrap once by the region length, see `sample/pcm16.inc`) runs and the next segment starts. The forward neighbor at end-1 is a conditional move, not a branch.
 Each sample is one sign-extending short-word load (`SWSE`, byte address space, modifier M4 scaled by 2): once per block the
 normal-word plane bases become byte addresses (a plane whose first frame is in the NW32 DDR alias `0x10000000` to `0x17ffffff` is read at `4 * word + 0x40000000`,
-any other plane at `4 * word`, which holds for the internal L2 window; the L1 normal-word windows are not supported). The float arithmetic uses the multifunction
+any other plane at `4 * word`, which holds for the L2 window and the L1 normal-word windows (`0x00090000` to `0x000e7fff`, data sheet tables 2 and 3), so DDR, L1 and L2 planes all work; the window at `0x04000000` is not mapped). The float arithmetic uses the multifunction
 forms, and the stores and the M4 moves ride in compute instructions. A frame costs 19 instructions (14 mono-to-stereo, one plane read; 47 and 32 before
 `SWSE`), a block that stays inside the region 747 (586) including the call, each crossing about 130 more.
 M4 is clobbered (a caller-saved register of `call.inc`).

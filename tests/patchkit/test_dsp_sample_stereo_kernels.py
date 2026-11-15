@@ -12,6 +12,7 @@ from tools.patchkit import pk_sharc, pk_toolchains
 BASE = 0xB90000
 SRC = 0x10001000
 SRC_L2 = 0x08040000  # internal L2 window: a normal word is byte address / 4
+SRC_L1 = 0x000B1000  # an L1 normal-word window (0x000B0000 to 0x000BBFFF; byte 4 * word)
 OUT = 0x08020000
 RIGHT = OUT + 0x100
 STATE = OUT + 0x200
@@ -289,6 +290,25 @@ def test_right_channel_is_not_silent_under_the_adapter_byte_alias_frame(linked):
 def test_planes_in_the_l2_window_read_the_same_samples(linked, st):
     """A plane outside the DDR alias is read at byte 4 * word (the planes of the shot rig live in L2)."""
     channels, _, dm = setup(st, src=SRC_L2, gap=0x800)
+    expected, final = oracle(channels, st)
+    result = pk_sharc.run_call(
+        linked,
+        "_stereo_h",
+        regs=REGS,
+        dm_words=dm,
+        max_steps=CEILING + 1,
+        reads={"left": (OUT, 32), "right": (RIGHT, 32), "state": (STATE, 6)},
+    )
+    assert result["halt"]["reason"] == "breakpoint", result["halt"]
+    assert result["left"] == bits(expected[0])
+    assert result["right"] == bits(expected[1])
+    assert result["state"] == words(final)
+
+
+@pytest.mark.parametrize("st", [CASES[1], CASES[2], CASES[10], LOOP_CASES[0]])
+def test_planes_in_an_l1_window_read_the_same_samples(linked, st):
+    """A plane in an L1 normal-word window is read bit-identically to the reference (byte 4 * word)."""
+    channels, _, dm = setup(st, src=SRC_L1, gap=0x800)
     expected, final = oracle(channels, st)
     result = pk_sharc.run_call(
         linked,

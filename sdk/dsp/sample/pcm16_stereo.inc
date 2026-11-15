@@ -1,7 +1,7 @@
 // Planar packed PCM16 stereo numerical reader; no resource ABI or pool policy.
 // Include dsp/contract/call.inc first (dsp/sample/float.inc and pcm16.inc may be included too; this file uses neither).
 // _dk_sample_pcm16_stereo_linear / dk_sample_pcm16_stereo_linear.:
-// R4 = two normal-word source bases [left, right] (NW32 DDR alias, see Sample reads), R8 = two normal-word
+// R4 = two normal-word source bases [left, right] (any DDR alias, L1 or L2 region, see Sample reads), R8 = two normal-word
 // output bases [left, right], R12 = the existing six-word sample cursor.
 // Each output has 32 float32 words. Each source has the mono packed PCM16
 // layout and bounds of sample/pcm16.inc. Both channels use the same cursor,
@@ -23,8 +23,12 @@
 // the high half of a register: one add sets the carry, the index add takes it (CI).
 // Sample reads: once per block the two normal-word bases are turned into byte addresses. A plane whose first frame
 // (base + start / 2) is in the NW32 DDR alias, 0x10000000 to 0x17ffffff (the pool bases of <dk/sample/pool.h>), has byte
-// 4 * w + 0x40000000 for word w (modulo 2^32); any other plane is read at 4 * w, which holds for the windows where a
-// normal-word address is the byte address / 4 (internal L2 at 0x08000000, finding 99). The L1 normal-word windows are not supported.
+// 4 * w + 0x40000000 for word w (modulo 2^32); any other plane is read at 4 * w. That holds for every internal window: the
+// byte address of an internal word is 4 times its normal-word address in L2 (0x08000000, finding 99) and in the L1 windows
+// (normal words 0x00090000 to 0x000e7fff, in four blocks, are bytes 0x00240000 to 0x003a0000; ADSP-2156x data sheet Rev. D tables 2 and 3,
+// docs/refs/adsp-2156x-data-addressing.md, tools/sharc_dev/sharc_core/addressing.py; SHARC+ PRM chapter 6, p. 6-31 and 6-32, Table 6-12,
+// the B2W and W2B address switch instructions between the two spaces). No instruction is needed for L1 or L2.
+// The window at normal words 0x04000000 to 0x07ffffff (byte 4 * w + 0x50000000) is not mapped.
 // Frame i is then the short word at byte offset 2 * i (even frames are the low half of a little-endian word), read with one
 // sign-extending short-word load (SWSE: SHARC+ PRM, "Enhanced Modify Instruction for Address Scaling";
 // the modifier M4 = frame index is scaled by 2). Only the two needed halves are read, not the containing words. The float
@@ -43,6 +47,7 @@
 .SECTION/PM seg_pmco;
 .GLOBAL _dk_sample_pcm16_stereo_linear;
 .GLOBAL dk_sample_pcm16_stereo_linear.;
+.GLOBAL _dk_sample_pcm16s_read_right; // test pause point: the first right sample of a block (tests/patchkit/test_dsp_sample_stereo_exclusion.py)
 _dk_sample_pcm16_stereo_linear:
 dk_sample_pcm16_stereo_linear.:
     DK_ENTER(20);
@@ -210,7 +215,7 @@ _dk_sample_pcm16s_run:
         COMP(R2, R6);
         IF GE R2 = PASS R14;              // clamp, or start for a forward loop at end-1
         R12 = DM(M4, I1) (SWSE);          // aL
-        R13 = DM(M4, I3) (SWSE);          // aR
+_dk_sample_pcm16s_read_right: R13 = DM(M4, I3) (SWSE);          // aR
         R4 = LSHIFT R9 BY R15, M4 = R2;   // fraction (R15 = -16), neighbor index
         R8 = DM(M4, I1) (SWSE);           // bL
         R11 = DM(M4, I3) (SWSE);          // bR
