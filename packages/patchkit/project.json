@@ -57,6 +57,25 @@
         "cwd": "."
       }
     },
+    "sdk-coverage": {
+      "executor": "nx:run-commands",
+      "cache": false,
+      "description": "Fails when an [[import]] of sdk/sdk.toml is linked by no packed module and is not in sdk/coverage-allow.toml. Runs after every pack target; not cached (the packs are).",
+      "inputs": [
+        "{workspaceRoot}/sdk/sdk.toml",
+        "{workspaceRoot}/sdk/coverage-allow.toml",
+        {
+          "dependentTasksOutputFiles": "**/*.dkm",
+          "transitive": true
+        }
+      ],
+      "dependsOn": ["cli", { "target": "pack", "projects": ["tag:module"] }],
+      "outputs": [],
+      "options": {
+        "command": "dist/patchkit/patchkit --root . coverage --sdk sdk/sdk.toml --allow sdk/coverage-allow.toml dist/modules/*/*.dkm",
+        "cwd": "."
+      }
+    },
     "wasm": {
       "executor": "nx:run-commands",
       "cache": true,
