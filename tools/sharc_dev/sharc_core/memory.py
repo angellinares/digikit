@@ -5,6 +5,8 @@ Moved verbatim from tools/sharc_dev/sharc_trace.py.
 
 from __future__ import annotations
 
+from collections.abc import Mapping
+
 from tools.sharc_dev.sharcimm import name_address
 from tools.sharc_dev.sharcldr import SW_ALIAS_BASE, LoadedMemory, sw_to_byte
 
@@ -433,6 +435,48 @@ _SIMD_SUBWORD_COMPANION_BYTES = {
 }
 
 
+def _broadcast_load(
+    uregs: Mapping[int, Value], code: int, index: int, store: bool
+) -> bool:
+    """A broadcast load: PEy gets the same word as PEx (PRM pp.6-26 to 6-28).
+
+    All of these must be true: the transfer is a load; the register is a Dreg
+    (R0-R15, codes 0-15) or a CDreg (S0-S15, codes 80-95); the index is I1 with
+    MODE1.BDCST1 (bit 23) set, or I9 with MODE1.BDCST9 (bit 22) set. "Broadcast
+    mode is independent of SIMD mode", MODE1.PEYEN "does not influence
+    broadcast operations", and a broadcast has "no effect on register stores
+    or loads to universal registers (Ureg)". The implicit access uses the
+    explicit address (Table 6-10: "Broadcast DM(Ia, Mb)")."""
+    if store or not (index == 1 or index == 9):
+        return False
+    if not (code < 16 or (code >= 80 and code < 96)):
+        return False
+    mode1 = _ureg(uregs, UREG_CODES["MODE1"])
+    if not isinstance(mode1, Const):
+        return False
+    bit = 23 if index == 1 else 22
+    return bool(mode1.value & (1 << bit))
+
+
+def _broadcast_companion(
+    uregs: Mapping[int, Value],
+    code: int,
+    address: Operand,
+    index: int,
+    store: bool,
+    access_width: str = "normal-word",
+) -> tuple[int, Operand] | None:
+    """The PEy half of a broadcast load: (the complement register, the explicit
+    address), or None when the access is not a broadcast load. A long word is
+    left to its caller (PRM Fig 7-28: the complement pair gets both words)."""
+    if access_width == "long-word" or not _broadcast_load(uregs, code, index, store):
+        return None
+    cureg = _cureg_code(code)
+    if cureg is None:
+        return None
+    return cureg, address
+
+
 def _simd_ureg_mem_companion(
     state: State,
     code: int,
@@ -440,6 +484,7 @@ def _simd_ureg_mem_companion(
     access_width: str = "normal-word",
     *,
     store: bool = False,
+    index: int | None = None,
 ) -> tuple[int, Operand] | None:
     """The SIMD companion (Cureg code, companion address) for a single
     UREG<->memory transfer, or None when no companion transfer applies
@@ -475,6 +520,13 @@ def _simd_ureg_mem_companion(
         if not store or code == UREG_CODES["PX"]:
             return None
         cureg = code
+    if index is not None:
+        # A broadcast load through INDEX overrides SIMD (PRM p.6-28 NOTE).
+        broadcast = _broadcast_companion(
+            state.uregs, code, address, index, store, access_width
+        )
+        if broadcast is not None:
+            return broadcast
     if access_width == "long-word":
         # PRM p.13-17: the (LW) modifier "override[s] SIMD mode, so these
         # loads always operate in SISD mode" -- unlike byte/short-word,

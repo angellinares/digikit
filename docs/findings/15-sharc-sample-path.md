@@ -637,8 +637,9 @@ Forms fixed in `tools/sharc_dev/sharc_core`:
   (`compute._shift_immediate_simd`, `_shift_immediate_pey`); a conditional
   one is gated per element.
 - `6a_mem`: the same, plus the PEy memory transfer at Ia+k (DM through
-  `_companion_transfer`, PM through `_pm_companion_transfer`, broadcast
-  loads included). A SIMD condition that differs between the elements stops
+  `_companion_transfer`, PM through `_pm_companion_transfer`). A broadcast
+  load reads the explicit address through `_companion_transfer` on both
+  buses (#187). A SIMD condition that differs between the elements stops
   the trace (`mixed-PE conditional SIMD Type6a`); it is not modelled.
 - `18a` BIT TST: the PEy BTF update now also covers USTAT1/2 and USTAT3/4
   (it covered ASTAT/STKY only). BIT SET/CLEAR/TOGGLE on a SIMD-paired system
