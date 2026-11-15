@@ -305,7 +305,7 @@ Item numbers are ids, not an order. The order lives in [sdk-runtime-roadmap.md](
 | 6 | Workbench: names in the Log pane (emulator and device, one dk-session/debug-module PEEK path; hardware proof later), per-module rows in the Memory panel. **Done** (docs/ADDRMAP.md "Workbench"); the Profile pane moved to item 8 | B | 2-3 days | 2 |
 | 7 | Clock audit | B | 1 day | Nothing (static) |
 | 8 | Spans from the runtime's ColdFire call sites to a sink owned by the debug module; clock = stock DTIM0 counter (read only); aggregation on the device per owner (calls, 64-bit sum, max); PROFILE_STATE/PROFILE_READ (0x1e, 0x1f); additive `spans` in dk.profile/1; `wb profile spans`; DSP stats window, Profile pane (emulator `cf.profile` and device, over the same dk-session path as the Log names) | B | 3-4 days | runtime-and-services sink slots, dsp-link windows, the owner of DSP dispatch |
-| 9 | Device calibration | B | 1 day | 8; the device transport proven on hardware |
+| 9 | Device calibration (`wb profile calibrate`; design in 13.2) | B | 1-2 days | 8 (P8d); the device transport proven on hardware, with Em's go |
 | 10 | ColdFire PC sampling on the device | B | 2 days | 9 |
 
 Before each item over a day: state payoff and confidence, and stop when they are weak.
@@ -346,6 +346,23 @@ Items marked [inferred] or [open] were not checked.
 
 Payoff: per-module DSP numbers on the device, needed by P9 calibration and the broker. Confidence high for P8c, medium for P8d (the window-3 read case, SHARC register pressure at the mark sites).
 Risks: the window-3 read case adds a DSP routine path and one read per ColdFire poll; the off cost changes the instruction counts `sharc_cells` sees; PROFILE_STATE format break; hooks with spans run in other tasks [inferred: page hooks in the UI task].
+
+### 13.2 Item 9: device calibration (`wb profile calibrate`)
+
+Not started. Order: after the refactor and architecture items (R12) and after P8d.
+
+- Same counter on both sides: the P8d DSP stats rows read EMUCLK around each dispatch (`sdk/dsp/contract/dk_trace.inc:48-69`). On the device EMUCLK counts core cycles (SHARC+ PRM p.28-18). In the emulator it advances one per instruction plus modelled jump costs (finding 125, finding 103 section 8). Calibration is the device/emulator ratio per stats row.
+- Model: one factor per device for module rows, fitted on worst-case statistics (largest call, largest block), not means. The budget factor is the worst observed device/emulator ratio in the calibration set, so it never underpredicts a measured case. Move to a per-class model (instructions plus weighted taken jumps and calls, from per-PC counts and the dksharc class of each PC) only if the spread exceeds 10%. Cache-set conflicts are reported as outliers, not modelled.
+- Error per calibration: e_i = (f*insn_i - cyc_i)/cyc_i. Report n, mean, worst underprediction and worst leave-one-module-out. Each case is captured more than once (device block jitter is about +-2.7%, finding 103 section 8).
+- Stock load and block size come from the device. Stock = the P8d header's largest stock block delta minus the module rows. Block cycles are measured (about 666,582 DT2 / 666,784 DN2, finding 103 sections 8 and 10). The absolute core clock is not needed; TPERIOD/TCOUNT are a cross-check. Two stock baselines are captured (a held note, a heavier project); the budget uses the higher.
+- Data: device cycles come from P8d rows via PROFILE_DSP (the emulator answers the same command over the same dk-session and debug-module path). Instruction-class costs come from the dsp-facts probe rerun (TPERIOD, TCOUNT, MMASK, real dual MAC, SSFR). Rig per-PC counts are model input only, after one case proves that rig instructions per call equal the emulator row.
+- Pairing key: {device, .dkm and DSP .dko sha256, case id and input hash, row}, with equal calls per block. Steady means and largest values are paired separately. A mismatch is refused with a reason. The dk.profile/1 `Run` gains a case id; the profile gains an additive `dsp_rows` field next to `spans`.
+- Commands: `wb profile calibrate --device D.json --model E.json [...] --out cal.json`. The fit is in Rust (`dkprof::calibrate`, exported through dkprof.wasm), so wb, the workbench and patchkit run one code. File `dk.calibration/1`: key {device, firmware sha256, measured block cycles, instruction-count model: daemon sha256 or CORE_FINGERPRINT or rig core fingerprint}, factor {fit, budget, model}, error {n, mean, worst_under, loo_worst}, stock {avg, max}, pairs. `wb profile report --calibration cal.json` shows estimated cycles (+-e) and % of the measured block next to instructions. Instructions and cycles stay separate measures.
+- Budget: the chosen file is committed as `devices/calibration/<dev>.json` and embedded like CYCLE_FACTORS (`packages/patchkit/src/budget_cli.rs`). Headroom = (pct*block_cycles - stock_cycles_max)/f_budget. It replaces `budget.rs:91-97`. The 85% margin stays until several devices and cases show a small error. Without a calibration file, today's factors (`devices/cycle-factors.json`, 1.13-1.41 from the manual's tables) apply.
+- Calibration set: shot (memory-heavy), pluck (compute), analog (filters), tb303, bd (light), freqshift (FX).
+- Without the device: `dkprof::calibrate` host tests on synthetic pairs (known factor recovered, underprediction flagged, unpaired and key-mismatched rows refused, leave-one-out); `report --calibration` and the patchkit budget against fakes. After P8d, an emulator-vs-emulator run must give exactly 1.000.
+- With Em's go (the device restarts on upload): P8d capture on DT2 and DN2; the dsp-facts rerun.
+- Steps: (1) calibrate crate, format, host tests (0.5 day, no P8d needed); (2) `dsp_rows` and case id in dk.profile/1 with P8d/P8e; (3) `wb profile calibrate` and `report --calibration` (0.5 day); (4) emulator captures of the set; (5) device captures (Em's go); (6) the patchkit budget switches to the calibration. Patched image hashes change, so `test:full` runs once for the batch.
 
 ## 14. Open items
 
