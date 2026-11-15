@@ -75,8 +75,9 @@ and `selcc`-compiled C call it the same way. `contract/call.inc` has the macros 
 
 - Arguments R4, R8, R12; no result. Normal-word DM addresses (a C caller passes them as `int`; selcc's byte-address pointers do
   not match). The caller sets up M5 = 0, M6 = 1, M7 = -1, M14 = 1 as the module contract already guarantees.
-- A caller assumes R0, R1, R2, R4, R8, R12, I4, I12, MR and ASTAT are clobbered. R3, R5-R7, R9-R11, R13-R15, I0-I3, I5, M1-M3
-  and B3 are kept. I6 and I7 are restored by the routine's `RFRAME`.
+- The register classes of a module are in [REGISTERS.md](REGISTERS.md). A caller of a block routine assumes R0, R1, R2, R4, R8,
+  R12, I4, I12, MR and ASTAT are clobbered. R3, R5-R7, R9-R11, R13-R15, I0-I3, I5, M1-M3 and B3 are kept. I6 and I7 are
+  restored by the routine's `RFRAME`.
 - Stack: `DK_CALL(fn, return_label)` (`CJUMP` plus two pushes) builds the frame, `DK_ENTER(N)` reserves N save slots at `[I6 - 2]` downward, and
   `DK_LEAVE` returns and runs `RFRAME`.
 - Every call supplies a continuation label unique within the assembled object, including repeated calls to the same routine.

@@ -557,6 +557,13 @@ class ImmediateOffsetSignednessTest(unittest.TestCase):
         )
         self.assertIn("DM(I6 - 1) = R2", mnemonic)
 
+    def test_4a_pm_access_prints_the_dag2_index_register(self):
+        # g=1 selects DAG2: i=0 is I8, not I0.
+        mnemonic = self.render(
+            "4a", i=0, g=1, d=1, u=0, cond=0x1F, data=1, dreg=2, compute=0
+        )
+        self.assertIn("PM(I8 + 1) = R2", mnemonic)
+
     def test_4b_six_bit_offset_above_31_is_negative(self):
         mnemonic = self.render(
             "4b", i=6, g=0, d=0, u=0, cond=0x1F, data=0x3F, dreg=3, l=1, w=1, x=1
@@ -724,14 +731,14 @@ class DualMemDirectionRenderingTest(unittest.TestCase):
         mnemonic = self.render(
             dmd=1, dmi=0, dmm=1, dmdreg=2, pmd=0, pmi=4, pmm=7, pmdreg=10
         )
-        self.assertIn("R10 = PM(I4, M7)", mnemonic)
-        self.assertNotIn("PM(I4, M7) <-", mnemonic)
+        self.assertIn("R10 = PM(I12, M15)", mnemonic)
+        self.assertNotIn("PM(I12, M15) <-", mnemonic)
 
     def test_pm_write_puts_register_on_the_right(self):
         mnemonic = self.render(
             dmd=1, dmi=0, dmm=1, dmdreg=2, pmd=1, pmi=4, pmm=7, pmdreg=10
         )
-        self.assertIn("PM(I4, M7) = R10", mnemonic)
+        self.assertIn("PM(I12, M15) = R10", mnemonic)
 
 
 _DT2_116_BLOB = os.path.join(

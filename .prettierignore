@@ -16,6 +16,7 @@
 !/tests/regression/
 /tools/**/*.json
 /packages/emulator/**/*.json
+/packages/dksharc/tests/fixtures/*.json
 **/*.md
 
 # Generated or local

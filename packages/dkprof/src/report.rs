@@ -568,6 +568,7 @@ mod tests {
             origin: vec![],
             complete: true,
             blocks: vec![],
+            effects: Default::default(),
         };
         let lp = |start, end, depth, parent, count| dksharc::DoLoop {
             do_pc: start - 1,

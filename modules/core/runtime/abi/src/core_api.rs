@@ -83,14 +83,6 @@ pub trait CoreApi {
     unsafe fn settings_get(&self, key: &[u8], out: &mut [u8]) -> i32;
     unsafe fn settings_put(&self, key: &[u8], value: &[u8]) -> i32;
 
-    // ---- the store -------------------------------------------------------------------------------------------------------
-    /// Look the digikit store file `path` (NUL-terminated) up: its size and SHA-256, and when `head` is given its first 64 bytes. The negative error otherwise.
-    unsafe fn store_probe(
-        &self,
-        path: *const u8,
-        head: Option<&mut [u8; 64]>,
-    ) -> Result<(u32, [u8; 32]), i32>;
-
     // ---- log and source --------------------------------------------------------------------------------------------------
     unsafe fn log(&self, kind: u16, flags: u16, args: [u32; 5]);
     /// The module whose code runs now (record index + 1; 0 outside module code).

@@ -335,12 +335,21 @@ fn build_object(
     o: &ObjectToml,
     defines: &[String],
     sdk: bool,
+    module: &str,
 ) -> Result<Dko> {
     let paths: Vec<PathBuf> = o.sources.iter().map(|s| moddir.join(s)).collect();
     match kind_of(&o.sources) {
         Kind::Sharc => {
             let text = sharc::source_text(&env.root, moddir, &paths, defines)?;
-            sharc::sharc_object(&text)
+            let obj = sharc::sharc_object(&text)?;
+            // The register contract (sdk/dsp/REGISTERS.md): a warning for now, never a failed build. Only content modules are checked
+            // (`sdk` is `is_content()`): a `core/*` module implements the contract (the adapters, the stock-code hooks), so it is not held to it.
+            if sdk {
+                for p in sharc::rule_problems(&obj) {
+                    eprintln!("{}", sharc::rule_warning_line(module, &p));
+                }
+            }
+            Ok(obj)
         }
         k => {
             if !defines.is_empty() {
@@ -430,7 +439,7 @@ pub fn load_object(env: &Env, moddir: &Path, m: &ModuleToml, rel: &str) -> Resul
     } else {
         vec![]
     };
-    let obj = build_object(env, moddir, o, &defines, m.is_content())
+    let obj = build_object(env, moddir, o, &defines, m.is_content(), &m.module.id)
         .map_err(|e| err!("{}: {rel}: build failed: {e}", moddir.display()))?;
     let text = to_text(&obj)?;
     write_object(&file, &text)?;
@@ -466,7 +475,7 @@ pub fn build_module(moddir: &Path, opts: &BuildOptions) -> Result<BuildReport> {
             });
             continue;
         }
-        let obj = build_object(&env, moddir, o, &opts.defines, m.is_content())?;
+        let obj = build_object(&env, moddir, o, &opts.defines, m.is_content(), &m.module.id)?;
         let out = match &opts.out {
             Some(d) => d.join(&o.path),
             None => stored(&hash),
