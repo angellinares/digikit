@@ -75,6 +75,10 @@ pub trait CoreApi {
     unsafe fn guard_faults(&self, ty: u32) -> u32;
     unsafe fn guard_disabled(&self, ty: u32) -> bool;
 
+    // ---- the device ------------------------------------------------------------------------------------------------------
+    /// The device id of the profile the runtime was built for (`Platform::device_id`), to compare with what an adapter table records.
+    fn device_id(&self) -> u32;
+
     // ---- the module table ------------------------------------------------------------------------------------------------
     /// The NUL-terminated id of module record `owner - 1` (`owner` is 1 or more).
     unsafe fn module_name(&self, owner: u8) -> *const u8;
@@ -123,4 +127,11 @@ pub trait CoreApi {
     unsafe fn link_drain(&self, owner: Owner) -> bool;
     /// Send `seq` for `owner` and wait for the result (error paths and unload clears). `true` when every step was taken.
     unsafe fn link_run(&self, owner: Owner, seq: &Sequence) -> bool;
+}
+
+/// A core that is one value of a zero-sized type, so a service built over it reaches the core without a parameter (`C::CORE.write_param_row(..)`)
+/// and a call costs what the direct call costs. A service crate is generic over it; the runtime names `RealCore` once, in the generated service table.
+/// Host tests that need to drive a function pass a `&impl CoreApi` instead.
+pub trait StaticCore: CoreApi + Sized {
+    const CORE: Self;
 }
