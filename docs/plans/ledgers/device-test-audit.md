@@ -176,3 +176,12 @@ host tests: their checks stay device tests until the logic is split out.
 | `tools/probe/tests/sharc-probe.device.test.ts` | C:dsp, M:digikit/probe |
 | `tools/remote/tests/remote-input.device.test.ts` | M:digikit/remote |
 | `tools/usb-fast/tests/usb-fast.device.test.ts` | C:storage, C:transport, M:digikit/usb-fast |
+## SHARC need (T1d, first changes)
+
+The rows above lack a SHARC column; the full column comes with T1e. Rows checked so far:
+
+| File | Test | SHARC | Evidence |
+| --- | --- | --- | --- |
+| `digikit-menu/needs` | usb-fast without core/usb-bulk | no (zero), proven on DT2 and DN2 | usb-fast has no DSP object; the load ends in E_IMPORT; reads only `memPeek`, the small ring and menu rows; no `pcm.*`, `dsp.*`, `audio.*` |
+| `bootscreen-fault` | fault in the intro callback halts | yes (keeps `sharc`) | no module needs the DSP, but on a zero-DSP boot the halt comes back as `RpcError: Halted (code 6)` without the "guest fault during boot" context the test checks; tried on both devices |
+| `bootscreen-safe` | REC held with a valid file | yes for the REC-held rig (keeps `sharc`) | no DSP object, but the card safety check needs observed emulators and exported overlays ("runtime safety needs observed emulators and exported overlays" on a zero-DSP boot); the reset-chain rig already runs on zero |

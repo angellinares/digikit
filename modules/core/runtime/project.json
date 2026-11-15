@@ -1,7 +1,7 @@
 {
   "$schema": "../../../node_modules/nx/schemas/project-schema.json",
   "name": "core/runtime",
-  "implicitDependencies": ["dkrt-sdk", "dkrt-abi", "dkrt-fit", "dkrt-link", "dkrt-test-support", "dkrt-svc-fx", "dkneeds", "dkfw"],
+  "implicitDependencies": ["dkrt-sdk", "dkrt-abi", "dkrt-fit", "dkrt-link", "dkrt-test-support", "dkrt-svc-fx", "dkrt-svc-machines", "dkneeds", "dkfw"],
   "targets": {
     "rust-tests": {
       "executor": "nx:run-commands",
@@ -10,7 +10,7 @@
         "{projectRoot}/src/rs/**/*",
         {
           "input": "production",
-          "projects": ["dkrt-sdk", "dkrt-abi", "dkrt-fit", "dkrt-link", "dkrt-test-support", "dkrt-svc-fx", "dkneeds", "dkfw"]
+          "projects": ["dkrt-sdk", "dkrt-abi", "dkrt-fit", "dkrt-link", "dkrt-test-support", "dkrt-svc-fx", "dkrt-svc-machines", "dkneeds", "dkfw"]
         },
         "{workspaceRoot}/.cargo/**/*",
         "{workspaceRoot}/rust-toolchain*",

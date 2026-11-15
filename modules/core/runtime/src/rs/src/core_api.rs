@@ -99,6 +99,32 @@ impl CoreApi for RealCore {
     unsafe fn job_cancel(&self, owner: u8, id: u32) -> i32 {
         worker::cancel(owner, id)
     }
+    fn native_available(&self, kind: u32) -> bool {
+        crate::native::available(kind)
+    }
+    unsafe fn native_register(
+        &self,
+        kind: u32,
+        owner: u32,
+        page: u32,
+        flags: u32,
+        title: *const u8,
+        draw: u32,
+        event: u32,
+        bindings: *const u32,
+        words: *const u32,
+        word_count: u32,
+        arg: u32,
+        with_arg: u32,
+    ) -> i32 {
+        crate::native::register(kind, owner, page, flags, title, draw, event, bindings, words, word_count, arg, with_arg)
+    }
+    unsafe fn native_remove(&self, kind: u32) {
+        crate::native::remove(kind)
+    }
+    unsafe fn native_turn(&self, view: *const u8, event: *const u8) -> u32 {
+        crate::native::turn(view, event)
+    }
     fn dsp(&self) -> &'static mut DspState {
         crate::dsp::ds()
     }

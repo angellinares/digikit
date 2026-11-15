@@ -44,14 +44,50 @@ pub mod exports {
     pub unsafe fn fx_entry(index: u32, out: &mut dkrt_sdk::DkrtFx) -> i32 {
         dkrt_svc_fx::fxsend::fx_entry(&crate::core_api::REAL_CORE, index, out)
     }
-    pub use crate::services::machines::pageclick::{param_get, param_set};
+    /// `dk_param_get` over the real core and the real firmware page. (A host test of the runtime crate has no firmware: it never reaches it.)
+    #[cfg(not(test))]
+    pub unsafe fn param_get(track: u32, word: u32) -> i32 {
+        dkrt_svc_machines::pageclick::param_get(&crate::core_api::REAL_CORE, &crate::fw::RuntimeFw, track, word)
+    }
+    /// `dk_param_set`, as `param_get`.
+    #[cfg(not(test))]
+    pub unsafe fn param_set(track: u32, word: u32, raw: i32) -> i32 {
+        dkrt_svc_machines::pageclick::param_set(&crate::core_api::REAL_CORE, &crate::fw::RuntimeFw, track, word, raw)
+    }
+    #[cfg(test)]
+    pub unsafe fn param_get(_: u32, _: u32) -> i32 {
+        panic!("firmware parameter access requires a dkrt_abi::fw::Fw host fixture")
+    }
+    #[cfg(test)]
+    pub unsafe fn param_set(_: u32, _: u32, _: i32) -> i32 {
+        panic!("firmware parameter access requires a dkrt_abi::fw::Fw host fixture")
+    }
+    /// The machine type numbers of the machine rows module `owner` filled (`module_cmds`: the module list); returns how many.
+    pub fn machine_types_of(owner: u8, out: &mut [u8; 8]) -> usize {
+        dkrt_svc_machines::records::types_of(&crate::core_api::REAL_CORE, owner, out)
+    }
+    #[cfg(test)]
+    pub(crate) use dkrt_svc_machines::nativepage::PageSet;
     pub use crate::services::samples::tracks::{dkrt_pool_done, dkrt_pool_lost, dkrt_project_changed};
     pub use crate::services::samples::{
         dk_sample_pool_add, dk_sample_pool_clear, dk_sample_pool_info, dk_sample_pool_open, dk_sample_pool_path, dk_sample_pool_peaks,
         dk_sample_pool_peaks_window, dk_sample_pool_set, dk_sample_pool_status,
     };
-    #[cfg(test)]
-    pub(crate) use crate::services::machines::nativepage::PageSet;
+}
+
+/// Hook at the entry of the machine page's key handler (`dkrt_pagekey_hook`, src/cf/tramp.s; stack: view, event): the machines service sees the key.
+#[cfg(not(test))]
+#[no_mangle]
+pub unsafe extern "C" fn dkrt_page_key(view: *const u8, ev: *const u8) {
+    dkrt_svc_machines::pageclick::page_key(&crate::core_api::REAL_CORE, &crate::fw::RuntimeFw, view, ev)
+}
+
+/// Hook at the entry of the machine page's turn handler (`dkrt_pageturn_hook`): the machines service sees the turn; the result is nonzero when a
+/// native page consumed it.
+#[cfg(not(test))]
+#[no_mangle]
+pub unsafe extern "C" fn dkrt_page_turn(view: *const u8, ev: *const u8) -> u32 {
+    dkrt_svc_machines::pageclick::page_turn(&crate::core_api::REAL_CORE, view, ev)
 }
 
 /// The length of a record of `kind`; `E_FORMAT`-worthy kinds are `None`. For the builder lowering (`collect`).

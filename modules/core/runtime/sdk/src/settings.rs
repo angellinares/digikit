@@ -62,8 +62,11 @@ fn get32(b: &[u8], at: usize) -> u32 {
 
 /// The crc32 of a record of `used` bytes: bytes 0..14, then bytes 18..used. `b` holds at least `used` bytes.
 pub fn crc_of(b: &[u8], used: usize) -> u32 {
-    let c = crc32(0xffff_ffff, b.as_ptr(), O_CRC);
-    !crc32(c, b[HEADER..used].as_ptr(), used - HEADER)
+    let rest = &b[HEADER..used];
+    // SAFETY: `rest` checks that `b` holds `used` bytes, and O_CRC < HEADER <= used.
+    let c = unsafe { crc32(0xffff_ffff, b.as_ptr(), O_CRC) };
+    // SAFETY: the pointer and the length come from one slice.
+    !unsafe { crc32(c, rest.as_ptr(), rest.len()) }
 }
 
 /// Are the two byte strings equal? A loop, not `==`: a slice comparison compiles to a call of `memcmp`, which the runtime does not link.
