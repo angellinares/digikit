@@ -2566,7 +2566,7 @@ impl Engine {
 
 /// Allocate a host-transfer buffer, including in WebAssembly where JavaScript
 /// cannot supply an allocation owned by Rust. Release with the same length.
-#[cfg_attr(not(sharc_second), unsafe(no_mangle))]
+#[cfg_attr(not(any(sharc_second, test)), unsafe(no_mangle))]
 pub extern "C" fn sharc_native_alloc(len: usize) -> *mut u8 {
     let bytes = vec![0u8; len].into_boxed_slice();
     Box::into_raw(bytes) as *mut u8
@@ -2574,7 +2574,7 @@ pub extern "C" fn sharc_native_alloc(len: usize) -> *mut u8 {
 
 /// # Safety
 /// PTR and LEN must be an outstanding allocation from sharc_native_alloc.
-#[cfg_attr(not(sharc_second), unsafe(no_mangle))]
+#[cfg_attr(not(any(sharc_second, test)), unsafe(no_mangle))]
 pub unsafe extern "C" fn sharc_native_free(ptr: *mut u8, len: usize) {
     if !ptr.is_null() {
         // SAFETY: caller supplies the allocation and its original length.
@@ -2585,7 +2585,7 @@ pub unsafe extern "C" fn sharc_native_free(ptr: *mut u8, len: usize) {
 /// # Safety
 /// IMAGE must point to IMAGE_LEN readable bytes (a tools/sharc_dev/sharc_transpile_run.py
 /// `pack_image` blob).
-#[cfg_attr(not(sharc_second), unsafe(no_mangle))]
+#[cfg_attr(not(any(sharc_second, test)), unsafe(no_mangle))]
 pub unsafe extern "C" fn sharc_native_create(image: *const u8, image_len: usize) -> *mut Engine {
     let bytes = if image.is_null() {
         &[][..]
@@ -2601,7 +2601,7 @@ pub unsafe extern "C" fn sharc_native_create(image: *const u8, image_len: usize)
 
 /// # Safety
 /// HANDLE must come from sharc_native_create and not be used afterwards.
-#[cfg_attr(not(sharc_second), unsafe(no_mangle))]
+#[cfg_attr(not(any(sharc_second, test)), unsafe(no_mangle))]
 pub unsafe extern "C" fn sharc_native_destroy(handle: *mut Engine) {
     if !handle.is_null() {
         // SAFETY: created by Box::into_raw in sharc_native_create.
@@ -2611,7 +2611,7 @@ pub unsafe extern "C" fn sharc_native_destroy(handle: *mut Engine) {
 
 /// # Safety
 /// HANDLE from sharc_native_create; BLOB points to BLOB_LEN bytes.
-#[cfg_attr(not(sharc_second), unsafe(no_mangle))]
+#[cfg_attr(not(any(sharc_second, test)), unsafe(no_mangle))]
 pub unsafe extern "C" fn sharc_native_import_state(
     handle: *mut Engine,
     blob: *const u8,
@@ -2627,7 +2627,7 @@ pub unsafe extern "C" fn sharc_native_import_state(
 
 /// # Safety
 /// HANDLE from sharc_native_create; OUT points to OUT_CAP writable bytes.
-#[cfg_attr(not(sharc_second), unsafe(no_mangle))]
+#[cfg_attr(not(any(sharc_second, test)), unsafe(no_mangle))]
 pub unsafe extern "C" fn sharc_native_export_state(
     handle: *mut Engine,
     out: *mut u8,
@@ -2646,7 +2646,7 @@ pub unsafe extern "C" fn sharc_native_export_state(
 
 /// # Safety
 /// HANDLE from sharc_native_create.
-#[cfg_attr(not(sharc_second), unsafe(no_mangle))]
+#[cfg_attr(not(any(sharc_second, test)), unsafe(no_mangle))]
 pub unsafe extern "C" fn sharc_native_step(handle: *mut Engine, n: u32) -> i32 {
     // SAFETY: caller contract.
     let e = unsafe { &mut *handle };
@@ -2655,7 +2655,7 @@ pub unsafe extern "C" fn sharc_native_step(handle: *mut Engine, n: u32) -> i32 {
 
 /// # Safety
 /// HANDLE from sharc_native_create; OUT points to OUT_CAP writable bytes.
-#[cfg_attr(not(sharc_second), unsafe(no_mangle))]
+#[cfg_attr(not(any(sharc_second, test)), unsafe(no_mangle))]
 pub unsafe extern "C" fn sharc_native_halt_reason(
     handle: *mut Engine,
     out: *mut u8,
@@ -2682,7 +2682,7 @@ pub unsafe extern "C" fn sharc_native_halt_reason(
 ///
 /// # Safety
 /// HANDLE from sharc_native_create.
-#[cfg_attr(not(sharc_second), unsafe(no_mangle))]
+#[cfg_attr(not(any(sharc_second, test)), unsafe(no_mangle))]
 pub unsafe extern "C" fn sharc_native_set_option(handle: *mut Engine, key: u32, value: i64) -> i32 {
     // SAFETY: caller contract.
     let e = unsafe { &mut *handle };
@@ -2693,7 +2693,7 @@ pub unsafe extern "C" fn sharc_native_set_option(handle: *mut Engine, key: u32, 
 ///
 /// # Safety
 /// HANDLE from sharc_native_create; the pointers cover their lengths.
-#[cfg_attr(not(sharc_second), unsafe(no_mangle))]
+#[cfg_attr(not(any(sharc_second, test)), unsafe(no_mangle))]
 pub unsafe extern "C" fn sharc_native_set_provisional(
     handle: *mut Engine,
     name: *const u8,
@@ -2729,7 +2729,7 @@ pub unsafe extern "C" fn sharc_native_set_provisional(
 ///
 /// # Safety
 /// HANDLE from sharc_native_create; BLOB points to BLOB_LEN bytes.
-#[cfg_attr(not(sharc_second), unsafe(no_mangle))]
+#[cfg_attr(not(any(sharc_second, test)), unsafe(no_mangle))]
 pub unsafe extern "C" fn sharc_native_exec_insn(
     handle: *mut Engine,
     blob: *const u8,
@@ -2759,7 +2759,7 @@ pub unsafe extern "C" fn sharc_native_exec_insn(
 ///
 /// # Safety
 /// HANDLE from sharc_native_create; OUT points to OUT_CAP u64s.
-#[cfg_attr(not(sharc_second), unsafe(no_mangle))]
+#[cfg_attr(not(any(sharc_second, test)), unsafe(no_mangle))]
 pub unsafe extern "C" fn sharc_native_stats(
     handle: *mut Engine,
     out: *mut u64,
@@ -2799,7 +2799,7 @@ pub unsafe extern "C" fn sharc_native_stats(
 ///
 /// # Safety
 /// HANDLE from sharc_native_create; OUT points to OUT_CAP writable bytes.
-#[cfg_attr(not(sharc_second), unsafe(no_mangle))]
+#[cfg_attr(not(any(sharc_second, test)), unsafe(no_mangle))]
 pub unsafe extern "C" fn sharc_native_profile(
     handle: *mut Engine,
     kind: u32,
@@ -2888,7 +2888,7 @@ impl Engine {
 ///
 /// # Safety
 /// HANDLE from sharc_native_create.
-#[cfg_attr(not(sharc_second), unsafe(no_mangle))]
+#[cfg_attr(not(any(sharc_second, test)), unsafe(no_mangle))]
 pub unsafe extern "C" fn sharc_native_set_reg(
     handle: *mut Engine,
     code: u32,
@@ -2914,7 +2914,7 @@ pub unsafe extern "C" fn sharc_native_set_reg(
 ///
 /// # Safety
 /// HANDLE from sharc_native_create.
-#[cfg_attr(not(sharc_second), unsafe(no_mangle))]
+#[cfg_attr(not(any(sharc_second, test)), unsafe(no_mangle))]
 pub unsafe extern "C" fn sharc_native_get_reg(handle: *mut Engine, code: u32) -> u64 {
     // SAFETY: caller contract.
     let e = unsafe { &mut *handle };
@@ -2929,7 +2929,7 @@ pub unsafe extern "C" fn sharc_native_get_reg(handle: *mut Engine, code: u32) ->
 ///
 /// # Safety
 /// HANDLE from sharc_native_create, or null.
-#[cfg_attr(not(sharc_second), unsafe(no_mangle))]
+#[cfg_attr(not(any(sharc_second, test)), unsafe(no_mangle))]
 pub unsafe extern "C" fn sharc_native_get_pc(handle: *mut Engine) -> i64 {
     if handle.is_null() {
         return -1;
@@ -2943,7 +2943,7 @@ pub unsafe extern "C" fn sharc_native_get_pc(handle: *mut Engine) -> i64 {
 ///
 /// # Safety
 /// HANDLE from sharc_native_create; DATA points to LEN bytes.
-#[cfg_attr(not(sharc_second), unsafe(no_mangle))]
+#[cfg_attr(not(any(sharc_second, test)), unsafe(no_mangle))]
 pub unsafe extern "C" fn sharc_native_poke(
     handle: *mut Engine,
     address: u64,
@@ -2961,7 +2961,7 @@ pub unsafe extern "C" fn sharc_native_poke(
 ///
 /// # Safety
 /// HANDLE from sharc_native_create.
-#[cfg_attr(not(sharc_second), unsafe(no_mangle))]
+#[cfg_attr(not(any(sharc_second, test)), unsafe(no_mangle))]
 pub unsafe extern "C" fn sharc_native_peek(handle: *mut Engine, address: u64, width: u32) -> i64 {
     // SAFETY: caller contract.
     let e = unsafe { &mut *handle };
@@ -2977,7 +2977,7 @@ pub unsafe extern "C" fn sharc_native_peek(handle: *mut Engine, address: u64, wi
 ///
 /// # Safety
 /// HANDLE from sharc_native_create.
-#[cfg_attr(not(sharc_second), unsafe(no_mangle))]
+#[cfg_attr(not(any(sharc_second, test)), unsafe(no_mangle))]
 pub unsafe extern "C" fn sharc_native_sec_raise(handle: *mut Engine, sid: u32) -> i32 {
     // SAFETY: caller contract.
     let e = unsafe { &mut *handle };
@@ -2989,7 +2989,7 @@ pub unsafe extern "C" fn sharc_native_sec_raise(handle: *mut Engine, sid: u32) -
 ///
 /// # Safety
 /// HANDLE from sharc_native_create.
-#[cfg_attr(not(sharc_second), unsafe(no_mangle))]
+#[cfg_attr(not(any(sharc_second, test)), unsafe(no_mangle))]
 pub unsafe extern "C" fn sharc_native_dma_start(handle: *mut Engine, base: u32) -> i64 {
     // SAFETY: caller contract.
     let e = unsafe { &mut *handle };
@@ -3001,7 +3001,7 @@ pub unsafe extern "C" fn sharc_native_dma_start(handle: *mut Engine, base: u32) 
 ///
 /// # Safety
 /// HANDLE from sharc_native_create.
-#[cfg_attr(not(sharc_second), unsafe(no_mangle))]
+#[cfg_attr(not(any(sharc_second, test)), unsafe(no_mangle))]
 pub unsafe extern "C" fn sharc_native_dma_done(handle: *mut Engine, base: u32, sid: u32) -> i32 {
     // SAFETY: caller contract.
     let e = unsafe { &mut *handle };
@@ -3016,7 +3016,7 @@ pub unsafe extern "C" fn sharc_native_dma_done(handle: *mut Engine, base: u32, s
 /// # Safety
 /// HANDLE from sharc_native_create; FRAME points to LEN readable bytes and
 /// OUT to LEN writable bytes.
-#[cfg_attr(not(sharc_second), unsafe(no_mangle))]
+#[cfg_attr(not(any(sharc_second, test)), unsafe(no_mangle))]
 pub unsafe extern "C" fn sharc_native_spi2_exchange(
     handle: *mut Engine,
     frame: *const u8,
@@ -3043,7 +3043,7 @@ pub unsafe extern "C" fn sharc_native_spi2_exchange(
 /// # Safety
 /// HANDLE from sharc_native_create; BLOCK points to LEN readable bytes (or is
 /// null with LEN 0) and OUT to OUT_CAP writable bytes.
-#[cfg_attr(not(sharc_second), unsafe(no_mangle))]
+#[cfg_attr(not(any(sharc_second, test)), unsafe(no_mangle))]
 pub unsafe extern "C" fn sharc_native_sport_block(
     handle: *mut Engine,
     block: *const u8,
@@ -3076,7 +3076,7 @@ pub unsafe extern "C" fn sharc_native_sport_block(
 ///
 /// # Safety
 /// HANDLE from sharc_native_create.
-#[cfg_attr(not(sharc_second), unsafe(no_mangle))]
+#[cfg_attr(not(any(sharc_second, test)), unsafe(no_mangle))]
 pub unsafe extern "C" fn sharc_native_fresh_call(
     handle: *mut Engine,
     pc: u32,
@@ -3092,7 +3092,7 @@ pub unsafe extern "C" fn sharc_native_fresh_call(
 ///
 /// # Safety
 /// OUT points to OUT_CAP writable bytes.
-#[cfg_attr(not(sharc_second), unsafe(no_mangle))]
+#[cfg_attr(not(any(sharc_second, test)), unsafe(no_mangle))]
 pub unsafe extern "C" fn sharc_native_info(out: *mut u8, out_cap: usize) -> i32 {
     let info = build_info();
     if info.len() > out_cap {

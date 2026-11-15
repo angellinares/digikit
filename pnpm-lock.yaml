@@ -319,6 +319,22 @@ importers:
         specifier: 5.1.0
         version: 5.1.0(@types/node@22.15.0)(vite@8.3.1(@types/node@22.15.0)(esbuild@0.28.2)(yaml@2.9.1))
 
+  packages/sharc-rig-kit:
+    dependencies:
+      smol-toml:
+        specifier: 1.9.0
+        version: 1.9.0
+    devDependencies:
+      '@types/node':
+        specifier: 22.15.0
+        version: 22.15.0
+      typescript:
+        specifier: 5.9.3
+        version: 5.9.3
+      vitest:
+        specifier: 5.1.0
+        version: 5.1.0(@types/node@22.15.0)(vite@8.3.1(@types/node@22.15.0)(esbuild@0.28.2)(yaml@2.9.1))
+
   packages/test-support:
     dependencies:
       '@digi/control-client':

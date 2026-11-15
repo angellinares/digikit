@@ -201,7 +201,7 @@ pub fn check_section7(dsp: &[u8], code: Option<&[(u64, u64)]>) -> Result<String>
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::build::sharc_obj::boot_bytes_unchecked_for_tests;
+    use crate::build::sharc_obj::{boot_bytes_unchecked_for_tests, swap_parcels};
     use crate::dsp::block_header;
 
     const FINAL: u32 = 1 << 15;
@@ -223,26 +223,38 @@ mod tests {
         s
     }
 
-    fn assembled(stores: &str) -> Vec<u8> {
+    /// Same-DAG stores as Selache-order hex of the ISA words (the assembler refuses them itself now): `DM(-16, I6) = I0` and
+    /// `PM(15, I12) = I8`. The ISA does not have them; the scan must find them in code.
+    const DM_I0: &str = "9d080870";
+    const PM_I8: &str = "b9180000000f";
+
+    fn boot(selache_hex: &str) -> Vec<u8> {
+        let b: Vec<u8> = (0..selache_hex.len() / 2)
+            .map(|i| u8::from_str_radix(&selache_hex[2 * i..2 * i + 2], 16).unwrap())
+            .collect();
+        swap_parcels(&b)
+    }
+
+    fn assembled(stores: &str, raw: &[&str]) -> Vec<u8> {
         let nops = "    NOP;\n".repeat(10);
-        boot_bytes_unchecked_for_tests(&format!(
-            ".SECTION/PM seg_pmco;\n_x:\n{nops}{stores}    RTS;\n"
-        ))
-        .unwrap()
+        let mut code =
+            boot_bytes_unchecked_for_tests(&format!(".SECTION/PM seg_pmco;\n_x:\n{nops}{stores}"))
+                .unwrap();
+        for w in raw {
+            code.extend(boot(w));
+        }
+        code.extend(boot_bytes_unchecked_for_tests(".SECTION/PM seg_pmco;\n    RTS;\n").unwrap());
+        code
     }
 
     #[test]
     fn a_code_block_with_a_same_dag_store_is_refused_and_an_allowed_one_passes() {
-        let bad = scan(
-            &stream_of(&assembled("    DM(-16, I6) = I0;\n    PM(15, I12) = I8;\n")),
-            None,
-        )
-        .unwrap();
+        let bad = scan(&stream_of(&assembled("", &[DM_I0, PM_I8])), None).unwrap();
         assert_eq!(bad.len(), 2, "{bad:?}");
         assert!(bad[0].starts_with("block 0 pc 0x"), "{bad:?}");
         assert!(bad[0].ends_with(": DM store of I0 (DAG1)"), "{bad:?}");
         assert!(bad[1].ends_with(": PM store of I8 (DAG2)"), "{bad:?}");
-        let e = check_section7(&stream_of(&assembled("    DM(-16, I6) = I0;\n")), None)
+        let e = check_section7(&stream_of(&assembled("", &[DM_I0])), None)
             .unwrap_err()
             .0;
         assert!(
@@ -250,7 +262,7 @@ mod tests {
             "{e}"
         );
         // the direct-address store and a store of a data register are allowed
-        let good = assembled("    DM(0x20000000) = I0;\n    DM(15, I4) = R0;\n");
+        let good = assembled("    DM(0x20000000) = I0;\n    DM(15, I4) = R0;\n", &[]);
         assert_eq!(scan(&stream_of(&good), None).unwrap(), Vec::<String>::new());
         check_section7(&stream_of(&good), None).unwrap();
     }
@@ -258,8 +270,8 @@ mod tests {
     #[test]
     fn with_the_plans_code_ranges_only_placed_code_of_an_appended_block_is_scanned() {
         // code, then bytes that decode as an excluded store (a module's data behind its code in the same block)
-        let code = assembled("");
-        let data = assembled("    DM(-16, I6) = I0;\n");
+        let code = assembled("", &[]);
+        let data = assembled("", &[DM_I0]);
         let blob = stream_of(&[code.clone(), data].concat());
         assert_eq!(scan(&blob, None).unwrap().len(), 1);
         let placed = [(APPENDED as u64, APPENDED as u64 + code.len() as u64)];
@@ -272,10 +284,8 @@ mod tests {
     #[test]
     fn a_short_run_of_code_is_not_scanned() {
         // fewer than MIN_DEPTH instructions before the store: the decode is not trusted as code
-        let short = boot_bytes_unchecked_for_tests(
-            ".SECTION/PM seg_pmco;\n_x:\n    DM(-16, I6) = I0;\n    RTS;\n",
-        )
-        .unwrap();
+        let mut short = boot(DM_I0);
+        short.extend(boot_bytes_unchecked_for_tests(".SECTION/PM seg_pmco;\n    RTS;\n").unwrap());
         assert!(scan(&stream_of(&short), None).unwrap().is_empty());
     }
 

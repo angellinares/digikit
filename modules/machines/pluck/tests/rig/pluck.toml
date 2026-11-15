@@ -1,0 +1,390 @@
+# digikit/pluck on the SHARC-only rig (replaces test_pluck.py, test_pluck_range.py and test_pluck_tune.py with pluck_rig.py).
+# The tables ref/*.f32 are the output of the float32 model pluck_ref.py that the Python tests compared the routine with (tools/devtools/rig_refs.py).
+# The tolerance is the Python one: 2e-5 * max(1, model peak); every model peak is below 1.
+
+[[case]]
+name = "the routine matches the model: default"
+device = ["dt2"]
+
+[[case.step]]
+note = 60.0
+vel = 100
+params = { tune = 16384, decay = 16384, pick_position = 0, brightness = 16384, excitation_colour = 0 }
+blocks = 40
+
+[[case.check]]
+kind = "matches-table"
+file = "ref/model-default.f32"
+atol = 2e-5
+
+[[case.check]]
+kind = "peak"
+min = 0.05
+
+[[case]]
+name = "the routine matches the model: low"
+device = ["dt2"]
+
+[[case.step]]
+note = 48
+vel = 100
+params = { tune = 16384, decay = 28672, pick_position = 8192, brightness = 8192, excitation_colour = 12288 }
+blocks = 40
+
+[[case.check]]
+kind = "matches-table"
+file = "ref/model-low.f32"
+atol = 2e-5
+
+[[case.check]]
+kind = "peak"
+min = 0.05
+
+[[case]]
+name = "the routine matches the model: high-tuned"
+device = ["dt2"]
+
+[[case.step]]
+note = 84
+vel = 127
+params = { tune = 16896, decay = 16384, pick_position = 0, brightness = 32512, excitation_colour = 32512 }
+blocks = 40
+
+[[case.check]]
+kind = "matches-table"
+file = "ref/model-high-tuned.f32"
+atol = 2e-5
+
+[[case.check]]
+kind = "peak"
+min = 0.05
+
+[[case]]
+name = "the routine matches the model: pick-max"
+device = ["dt2"]
+
+[[case.step]]
+note = 33
+vel = 100
+params = { tune = 16384, decay = 4096, pick_position = 32512, brightness = 0, excitation_colour = 0 }
+blocks = 40
+
+[[case.check]]
+kind = "matches-table"
+file = "ref/model-pick-max.f32"
+atol = 2e-5
+
+[[case.check]]
+kind = "peak"
+min = 0.05
+
+[[case]]
+name = "the string stays finite and matches the model at the corner note0"
+device = ["dt2"]
+
+[[case.step]]
+note = 0
+vel = 100
+params = { tune = 0, decay = 16384, pick_position = 0, brightness = 16384, excitation_colour = 0 }
+blocks = 8
+
+[[case.check]]
+kind = "matches-table"
+file = "ref/model-note0.f32"
+atol = 2e-5
+
+[[case]]
+name = "the string stays finite and matches the model at the corner low-tune"
+device = ["dt2"]
+
+[[case.step]]
+note = 60
+vel = 100
+params = { tune = 1024, decay = 16384, pick_position = 0, brightness = 16384, excitation_colour = 0 }
+blocks = 8
+
+[[case.check]]
+kind = "matches-table"
+file = "ref/model-low-tune.f32"
+atol = 2e-5
+
+[[case]]
+name = "the string stays finite and matches the model at the corner note100-high-tune"
+device = ["dt2"]
+
+[[case.step]]
+note = 100
+vel = 100
+params = { tune = 31744, decay = 16384, pick_position = 0, brightness = 16384, excitation_colour = 0 }
+blocks = 8
+
+[[case.check]]
+kind = "matches-table"
+file = "ref/model-note100-high-tune.f32"
+atol = 2e-5
+
+[[case]]
+name = "the string stays finite and matches the model at the corner note127"
+device = ["dt2"]
+
+[[case.step]]
+note = 127
+vel = 100
+params = { tune = 32512, decay = 16384, pick_position = 0, brightness = 16384, excitation_colour = 0 }
+blocks = 8
+
+[[case.check]]
+kind = "matches-table"
+file = "ref/model-note127.f32"
+atol = 2e-5
+
+[[case]]
+name = "the string stays finite and matches the model at the corner note127-max-word"
+device = ["dt2"]
+
+[[case.step]]
+note = 127
+vel = 100
+params = { tune = 65535, decay = 16384, pick_position = 0, brightness = 16384, excitation_colour = 0 }
+blocks = 8
+
+[[case.check]]
+kind = "matches-table"
+file = "ref/model-note127-max-word.f32"
+atol = 2e-5
+
+[[case]]
+name = "instruction counts per block"
+device = ["dt2"]
+
+[[case.step]]
+note = 48
+vel = 100
+params = { tune = 16384, decay = 16384, pick_position = 0, brightness = 16384, excitation_colour = 0 }
+blocks = 2
+
+[[case.check]]
+kind = "instructions"
+of = "first"
+max = 59999
+
+[[case.check]]
+kind = "instructions"
+of = "steady"
+max = 2199
+
+[[case]]
+name = "an idle voice costs little"
+device = ["dt2"]
+
+[[case.step]]
+note = 48
+vel = 100
+params = { tune = 16384, decay = 16384, pick_position = 0, brightness = 16384, excitation_colour = 0 }
+blocks = 2
+
+[[case.step]]
+record_word = 0
+trigger = false
+blocks = 1
+
+[[case.check]]
+# wrapper (saves, pins and restores the context registers, writes four breadcrumbs) + 32 stores + the guard
+kind = "instructions"
+of = "idle"
+max = 749
+
+[[case]]
+name = "the voice ends when it is quiet and clears its flags"
+device = ["dt2"]
+
+[[case.step]]
+note = 84
+vel = 100
+params = { tune = 16384, decay = 0, pick_position = 0, brightness = 0, excitation_colour = 0 }
+blocks = 1500
+
+# the next block, with the voice record idle, is silent
+[[case.step]]
+record_word = 0
+trigger = false
+blocks = 1
+
+[[case.check]]
+kind = "voice-ends"
+after = 5
+within = 1499
+
+[[case.check]]
+kind = "peak"
+blocks = [1500, 1501]
+max = 0
+
+[[case]]
+name = "a new note restarts the string"
+device = ["dt2"]
+
+[[case.step]]
+note = 60
+vel = 100
+params = { tune = 16384, decay = 16384, pick_position = 0, brightness = 16384, excitation_colour = 0 }
+blocks = 6
+
+# the arm routine: ACTIVE = 1, mark cleared
+[[case.step]]
+trigger = true
+blocks = 1
+
+[[case.check]]
+kind = "peak"
+blocks = [6, 7]
+min = 0.05
+
+[[case.check]]
+kind = "differs"
+blocks = [6, 7]
+other = [0, 1]
+
+[[case]]
+name = "the string is in tune: note 24"
+device = ["dt2"]
+
+[[case.step]]
+note = 24
+vel = 100
+params = { tune = 16384, decay = 32512, pick_position = 0, brightness = 32512, excitation_colour = 28672 }
+blocks = 1839
+
+[[case.check]]
+# the phase slope of the first partial after four periods, within the model's analytic error plus the measurement's
+kind = "pitch-hz"
+note = 24
+method = "bandpass"
+skip_periods = 4
+cents = 1.5
+
+[[case]]
+name = "the string is in tune: note 36"
+device = ["dt2"]
+
+[[case.step]]
+note = 36
+vel = 100
+params = { tune = 16384, decay = 32512, pick_position = 0, brightness = 32512, excitation_colour = 28672 }
+blocks = 922
+
+[[case.check]]
+# the phase slope of the first partial after four periods, within the model's analytic error plus the measurement's
+kind = "pitch-hz"
+note = 36
+method = "bandpass"
+skip_periods = 4
+cents = 1.5
+
+[[case]]
+name = "the string is in tune: note 48"
+device = ["dt2"]
+
+[[case.step]]
+note = 48
+vel = 100
+params = { tune = 16384, decay = 32512, pick_position = 0, brightness = 32512, excitation_colour = 28672 }
+blocks = 463
+
+[[case.check]]
+# the phase slope of the first partial after four periods, within the model's analytic error plus the measurement's
+kind = "pitch-hz"
+note = 48
+method = "bandpass"
+skip_periods = 4
+cents = 1.5
+
+[[case]]
+name = "the string is in tune: note 60"
+device = ["dt2"]
+
+[[case.step]]
+note = 60
+vel = 100
+params = { tune = 16384, decay = 32512, pick_position = 0, brightness = 32512, excitation_colour = 28672 }
+blocks = 234
+
+[[case.check]]
+# the phase slope of the first partial after four periods, within the model's analytic error plus the measurement's
+kind = "pitch-hz"
+note = 60
+method = "bandpass"
+skip_periods = 4
+cents = 1.5
+
+[[case]]
+name = "the string is in tune: note 72"
+device = ["dt2"]
+
+[[case.step]]
+note = 72
+vel = 100
+params = { tune = 16384, decay = 32512, pick_position = 0, brightness = 32512, excitation_colour = 28672 }
+blocks = 119
+
+[[case.check]]
+# the phase slope of the first partial after four periods, within the model's analytic error plus the measurement's
+kind = "pitch-hz"
+note = 72
+method = "bandpass"
+skip_periods = 4
+cents = 1.5
+
+[[case]]
+name = "the string is in tune: note 84"
+device = ["dt2"]
+
+[[case.step]]
+note = 84
+vel = 100
+params = { tune = 16384, decay = 32512, pick_position = 0, brightness = 32512, excitation_colour = 28672 }
+blocks = 104
+
+[[case.check]]
+# the phase slope of the first partial after four periods, within the model's analytic error plus the measurement's
+kind = "pitch-hz"
+note = 84
+method = "bandpass"
+skip_periods = 4
+cents = 1.5
+
+[[case]]
+name = "the string is in tune: note 96"
+device = ["dt2"]
+
+[[case.step]]
+note = 96
+vel = 100
+params = { tune = 16384, decay = 32512, pick_position = 0, brightness = 32512, excitation_colour = 28672 }
+blocks = 104
+
+[[case.check]]
+# the phase slope of the first partial after four periods, within the model's analytic error plus the measurement's
+kind = "pitch-hz"
+note = 96
+method = "bandpass"
+skip_periods = 4
+cents = 1.5
+
+[[case]]
+name = "the string is in tune: note 100"
+device = ["dt2"]
+
+[[case.step]]
+note = 100
+vel = 100
+params = { tune = 16384, decay = 32512, pick_position = 0, brightness = 32512, excitation_colour = 28672 }
+blocks = 104
+
+[[case.check]]
+# the phase slope of the first partial after four periods, within the model's analytic error plus the measurement's
+kind = "pitch-hz"
+note = 100
+method = "bandpass"
+skip_periods = 4
+cents = 1.5

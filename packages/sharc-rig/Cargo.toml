@@ -1,0 +1,21 @@
+[package]
+name = "sharc-rig"
+license.workspace = true
+repository.workspace = true
+version = "0.0.1"
+edition = "2024"
+publish = false
+description = "Call harness for module routines on the generated native SHARC+ core (JSON request, JSON response)"
+
+# std only besides the engine. The engine needs the generated core (SHARC_GEN_DIR, `mise run gen:core`);
+# without it every instruction traps. A rig lives outside packages/emulator so that an edit here is no input of
+# the daemon build key (tools/devtools/emud_key.py) or of the device tests that follow it.
+[dependencies]
+sharc-native = { path = "../emulator/sharc" }
+
+[lib]
+name = "sharc_rig"
+
+[[bin]]
+name = "sharc-rig"
+path = "src/main.rs"

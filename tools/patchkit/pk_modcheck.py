@@ -1,10 +1,11 @@
 #!/usr/bin/env python3
 """patchkit: check one module with its conformance suite and own tests.
 
-    uv run python -m tools.patchkit.pk_modcheck NAME [--device dt2|dn2] [--trace]      (mise run module:check NAME)
+    uv run python -m tools.patchkit.pk_modcheck NAME [--device dt2|dn2] [--trace] [--python-conformance]      (mise run module:check NAME)
 
-NAME is a module id (`<author/name>`) or its last part (`<name>`). An effect module runs tests/modules/test_fx_conformance.py. A machine module (tools/patchkit/pk_conform.py) runs the conformance
-suite, tests/modules/test_machine_conformance.py, for its devices (docs/TESTING.md "Machine conformance"). The same process includes the module's own tests: `modules/<group>/<name>/tests/**/test_*.py` and its scenarios in `tests/scenarios/*.toml` (only those run, at every tier). One pytest process runs those Python tests. Module-owned Nx `test-device-all` targets (full inputs) then run their declared TypeScript device acceptance; any failing stage stops the check before size/fit.
+NAME is a module id (`<author/name>`) or its last part (`<name>`). A machine or effect module runs the conformance suite on the SHARC-only rig
+(packages/sharc-rig-kit, docs/TESTING.md "The Vitest kit"), for its devices, then `patchkit uses set` writes its measured DSP cost. With
+--python-conformance the old path runs instead: tests/modules/test_fx_conformance.py or test_machine_conformance.py (tools/patchkit/pk_conform.py). The same process includes the module's own tests: `modules/<group>/<name>/tests/**/test_*.py` and its scenarios in `tests/scenarios/*.toml` (only those run, at every tier). One pytest process runs those Python tests. Module-owned Nx `test-device-all` targets (full inputs) then run their declared TypeScript device acceptance; any failing stage stops the check before size/fit.
 Own tests may build or launch an emulator. A service/raw module with no Python tests has its objects checked against their sources, then runs its owned device target if present. Size and fit follow only after both stages pass. This command does not prove every module loads in patched firmware.
 """
 
@@ -146,10 +147,13 @@ def commit_stage(mid: str, devices: list[str]) -> bool:
 
 
 CONFORMANCE_REPORTS = ROOT / "out" / "runs" / "conformance"
+RIG_REPORTS = (
+    ROOT / "out" / "runs" / "conformance-rig"
+)  # the SHARC-only rig writes here (packages/sharc-rig-kit/src/report.ts)
 
 
 def measured_costs(
-    mid: str, devices: list[str], since: float
+    mid: str, devices: list[str], since: float, reports: Path = CONFORMANCE_REPORTS
 ) -> dict[str, dict[str, int]]:
     """The DSP cost of module MID per device from the reports of the conformance run that started at `since` (tests/modules/test_machine_conformance.py and
     test_fx_conformance.py write them): the worst steady block over every case. A machine's cost is per voice; an effect's is the whole process call (the effect and
@@ -165,15 +169,72 @@ def measured_costs(
     stem = mid.replace("/", "__")
     if pk_conform.is_machine_module(mid):
         for dev in devices:
-            cost = worst(CONFORMANCE_REPORTS / f"{stem}@{dev}.json")
+            cost = worst(reports / f"{stem}@{dev}.json")
             if cost:
                 out.setdefault(dev, {})[COST_VOICE] = cost
     if pk_conform.is_fx_module(mid):
-        cost = worst(CONFORMANCE_REPORTS / f"{stem}@fx.json")
+        cost = worst(reports / f"{stem}@fx.json")
         if cost:
             for dev in devices:
                 out.setdefault(dev, {})[COST_FX] = cost
     return out
+
+
+def rig_conformance(mid: str, env: dict[str, str]) -> int:
+    """The conformance suites on the SHARC-only rig (packages/sharc-rig-kit): builds the rig, then runs the Vitest project with the selection in ENV.
+    The kit writes the reports to out/runs/conformance-rig (`RIG_REPORTS`), which `write_costs_rust` reads; the Python suite keeps out/runs/conformance."""
+    from tools.patchkit import patchkit
+
+    r = subprocess.run(
+        ["pnpm", "nx:pilot", "run", "sharc-rig:build"],
+        cwd=ROOT,
+        env=python_env(dict(os.environ)),
+    )
+    if r.returncode:
+        return r.returncode
+    kit_env = {
+        **os.environ,
+        **env,
+        "DIGI_PATCHKIT": str(patchkit.binary()),
+        "DIGI_CONFORM_REPORTS": str(RIG_REPORTS),
+    }
+    return subprocess.run(
+        [
+            "pnpm",
+            "exec",
+            "vitest",
+            "run",
+            "--config",
+            "vitest.host.config.ts",
+            "--project",
+            "sharc-rig-conformance",
+        ],
+        cwd=ROOT,
+        env=python_env(kit_env),
+    ).returncode
+
+
+def write_costs_rust(
+    mid: str, devices: list[str], since: float
+) -> dict[str, dict[str, int]]:
+    """`write_costs` through `patchkit uses set` (packages/patchkit/src/uses.rs): the same lines change as with `write_uses`."""
+    from tools.patchkit import patchkit
+
+    costs = measured_costs(mid, devices, since, RIG_REPORTS)
+    for dev, c in sorted(costs.items()):
+        flags = [x for k, v in c.items() for x in (f"--{k.replace('_', '-')}", str(v))]
+        r = patchkit.run(
+            ["uses", "set", "--id", mid, "--device", dev, *flags], capture=True
+        )
+        if r.returncode:
+            raise RuntimeError(
+                f"patchkit uses set {mid} {dev} failed: {(r.stderr or '').strip()}"
+            )
+        print(
+            f"{mid}: {dev} DSP cost {', '.join(f'{k} {v}' for k, v in c.items())} instructions per block",
+            flush=True,
+        )
+    return costs
 
 
 def write_costs(
@@ -294,17 +355,21 @@ def _scenario_tests(kinds: set[str]) -> list[str]:
     return sorted(files)
 
 
-def plan(mid: str, device: str | None) -> tuple[list[str], dict[str, str]]:
-    """(pytest paths, extra environment) for module MID."""
+def plan(
+    mid: str, device: str | None, python_conformance: bool = False
+) -> tuple[list[str], dict[str, str]]:
+    """(pytest paths, extra environment) for module MID. The conformance suite is a pytest path only with `python_conformance`; the rig runs it otherwise (`rig_conformance`)."""
     paths: list[str] = []
     env: dict[str, str] = {}
     if pk_conform.is_machine_module(mid):
-        paths.append(CONFORMANCE)
+        if python_conformance:
+            paths.append(CONFORMANCE)
         env["DIGI_CONFORM_MODULES"] = mid
         if device:
             env["DIGI_CONFORM_DEVICE"] = device
     if pk_conform.is_fx_module(mid):
-        paths.append(FX_CONFORMANCE)
+        if python_conformance:
+            paths.append(FX_CONFORMANCE)
         env["DIGI_CONFORM_MODULES"] = mid
     paths += own_tests(mid)
     # the module's own scenarios (tests/scenarios/*.toml): the digikit test files of their kinds, limited to them, all tiers
@@ -526,6 +591,11 @@ def main() -> int:
     ap.add_argument("name")
     ap.add_argument("--device", choices=pk_conform.DEVICES)
     ap.add_argument(
+        "--python-conformance",
+        action="store_true",
+        help="run the conformance suite as pytest on the Python rigs (tests/modules) instead of the SHARC-only rig",
+    )
+    ap.add_argument(
         "--trace",
         action="store_true",
         help="pack the size lines with DK_TRACE defined (patchkit pack --trace); the conformance and own tests run the module as stored",
@@ -533,18 +603,46 @@ def main() -> int:
     a = ap.parse_args()
     mid = resolve(a.name)
     commit_stage(mid, [a.device] if a.device else list(pk_conform.DEVICES))
-    paths, env = plan(mid, a.device)
+    paths, env = plan(mid, a.device, a.python_conformance)
     targets = own_device_targets(mid)
+    machine, effect = pk_conform.is_machine_module(mid), pk_conform.is_fx_module(mid)
     kind = (
         "machine module"
-        if CONFORMANCE in paths
+        if machine
         else "effect module"
-        if FX_CONFORMANCE in paths
+        if effect
         else "module (no machine or effect DSP: no conformance suite)"
     )
-    print(f"{mid}: {kind}; pytest {' '.join(paths) or '(nothing to run)'}", flush=True)
+    on_rig = (machine or effect) and not a.python_conformance
+    print(
+        f"{mid}: {kind}; conformance on {'the SHARC-only rig' if on_rig else 'the Python rigs' if machine or effect else 'nothing'}; pytest {' '.join(paths) or '(nothing to run)'}",
+        flush=True,
+    )
     devices = [a.device] if a.device else list(pk_conform.DEVICES)
-    if not paths:
+    if on_rig:
+        started = time.time()
+        rc = rig_conformance(mid, env)
+        if rc:
+            return rc
+        if paths:
+            rc = subprocess.run(
+                [
+                    sys.executable,
+                    "-m",
+                    "pytest",
+                    "-q",
+                    "-p",
+                    "no:cacheprovider",
+                    "-rf",
+                    *paths,
+                ],
+                cwd=ROOT,
+                env=python_env({**os.environ, **env}),
+            ).returncode
+            if rc:
+                return rc
+        write_costs_rust(mid, devices, started)
+    elif not paths:
         from tools.patchkit import patchkit
 
         try:

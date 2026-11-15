@@ -13,6 +13,13 @@ Two forms:
 
 Style: [docs/sharc/style.md](../../docs/sharc/style.md), in particular section 5a (rules from the manuals).
 
+## Build rules for DSP sources
+
+- **Data sections are 32-bit words.** `.SECTION/DM name;` is assembled as `.SECTION/DM/BW name;`. The assembler (the Selache fork) lays out a plain `/DM` section in 40-bit words (five bytes for each `.VAR`, symbols counted in words). A module stores 32-bit words in memory order: four little-endian bytes for each `.VAR`, symbols counted in bytes. `/BW` gives this layout. Write `.SECTION/DM name;` as before; `patchkit` makes the change (`byte_addressed_data` in `packages/patchkit/src/build/sharc_obj.rs`). A section that already names `BW` or `DOUBLE32` is not changed.
+- **DO loops have no fast-loop bit.** The assembler can set the F1-active bit of a `DO` opcode by itself; `patchkit` turns this off. Write `(F)` on a `DO` that needs the bit.
+- **Names must be defined or declared.** A word that is not an instruction, register or label of the source is taken as an external symbol. The object build fails for a relocation against a name that is neither defined in the source nor declared with `.EXTERN` (for example a register that SHARC+ does not have). The error gives the line.
+- **`Rn = Fm` is not a plain transfer.** Write `Rn = PASS Fm` (the ALU PASS, which sets the ASTAT flags) or use R registers (`Rn = Rm` is a Ureg transfer and leaves ASTAT alone).
+
 ## Register rule for macros
 
 Every macro names all registers it uses as arguments: inputs, outputs, temporaries and constants. The caller allocates

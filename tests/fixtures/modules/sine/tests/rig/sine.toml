@@ -1,0 +1,304 @@
+# test/sine on the SHARC-only rig (replaces tests/patchkit/test_sine.py). Every case also holds the implicit rules of the kit:
+# every call returns, the context registers and the runtime guard are fine, the module writes only its own memory, the output is finite.
+
+[[case]]
+name = "follows note 12 within a cent"
+device = ["dt2", "dn2"]
+context = "friendly"
+
+[[case.step]]
+note = 12
+vel = 100
+params = { level = 0x7F00 }
+blocks = 386
+
+[[case.check]]
+kind = "pitch-hz"
+note = 12
+cents = 1.0
+
+[[case.check]]
+kind = "peak"
+min = 0.35
+max = 0.40
+
+[[case]]
+name = "follows note 36 within a cent"
+device = ["dt2", "dn2"]
+context = "friendly"
+
+[[case.step]]
+note = 36
+vel = 100
+params = { level = 0x7F00 }
+blocks = 101
+
+[[case.check]]
+kind = "pitch-hz"
+note = 36
+cents = 1.0
+
+[[case.check]]
+kind = "peak"
+min = 0.35
+max = 0.40
+
+[[case]]
+name = "follows note 60 within a cent"
+device = ["dt2", "dn2"]
+context = "friendly"
+
+[[case.step]]
+note = 60
+vel = 100
+params = { level = 0x7F00 }
+blocks = 101
+
+[[case.check]]
+kind = "pitch-hz"
+note = 60
+cents = 1.0
+
+[[case.check]]
+kind = "peak"
+min = 0.35
+max = 0.40
+
+[[case]]
+name = "follows note 69 within a cent"
+device = ["dt2", "dn2"]
+context = "friendly"
+
+[[case.step]]
+note = 69
+vel = 100
+params = { level = 0x7F00 }
+blocks = 101
+
+[[case.check]]
+kind = "pitch-hz"
+note = 69
+cents = 1.0
+
+[[case.check]]
+kind = "peak"
+min = 0.35
+max = 0.40
+
+[[case]]
+name = "follows note 84 within a cent"
+device = ["dt2", "dn2"]
+context = "friendly"
+
+[[case.step]]
+note = 84
+vel = 100
+params = { level = 0x7F00 }
+blocks = 101
+
+[[case.check]]
+kind = "pitch-hz"
+note = 84
+cents = 1.0
+
+[[case.check]]
+kind = "peak"
+min = 0.35
+max = 0.40
+
+[[case]]
+name = "follows note 108 within a cent"
+device = ["dt2", "dn2"]
+context = "friendly"
+
+[[case.step]]
+note = 108
+vel = 100
+params = { level = 0x7F00 }
+blocks = 101
+
+[[case.check]]
+kind = "pitch-hz"
+note = 108
+cents = 1.0
+
+[[case.check]]
+kind = "peak"
+min = 0.35
+max = 0.40
+
+[[case]]
+name = "follows note 127 within a cent"
+device = ["dt2", "dn2"]
+context = "friendly"
+
+[[case.step]]
+note = 127
+vel = 100
+params = { level = 0x7F00 }
+blocks = 101
+
+[[case.check]]
+kind = "pitch-hz"
+note = 127
+cents = 1.0
+
+[[case.check]]
+kind = "peak"
+min = 0.35
+max = 0.40
+
+[[case]]
+name = "tune shifts the pitch by semitones"
+device = ["dt2"]
+context = "friendly"
+
+[[case.step]]
+note = 60
+vel = 100
+params = { level = 0x7F00, tune = 0x4100 }
+blocks = 101
+
+[[case.check]]
+kind = "pitch-hz"
+note = 61
+cents = 1.0
+
+[[case]]
+name = "level 0x3F80 halves the amplitude (dt2)"
+device = ["dt2"]
+context = "friendly"
+
+[[case.step]]
+note = 60
+vel = 100
+params = { level = 0x3F80 }
+blocks = 101
+
+[[case.check]]
+# 100 / 127 * 0.5 = 0.3937 at full level: a ratio of 0.5 within 0.01 is 0.1929 to 0.2008
+kind = "peak"
+min = 0.1929
+max = 0.2008
+
+[[case]]
+name = "full level peak (dt2)"
+device = ["dt2"]
+context = "friendly"
+
+[[case.step]]
+note = 60
+vel = 100
+params = { level = 0x7F00 }
+blocks = 101
+
+[[case.check]]
+kind = "peak"
+min = 0.3937
+max = 0.3938
+
+[[case]]
+name = "level 0x3F80 halves the amplitude (dn2)"
+device = ["dn2"]
+context = "friendly"
+
+[[case.step]]
+note = 60
+vel = 100
+params = { level = 0x3F80 }
+blocks = 101
+
+[[case.check]]
+# 100 / 127 * 0.5 = 0.3937 at full level: a ratio of 0.5 within 0.01 is 0.1929 to 0.2008
+kind = "peak"
+min = 0.1929
+max = 0.2008
+
+[[case]]
+name = "full level peak (dn2)"
+device = ["dn2"]
+context = "friendly"
+
+[[case.step]]
+note = 60
+vel = 100
+params = { level = 0x7F00 }
+blocks = 101
+
+[[case.check]]
+kind = "peak"
+min = 0.3937
+max = 0.3938
+
+[[case]]
+name = "a retrigger restarts the oscillator (dt2)"
+device = ["dt2"]
+context = "friendly"
+
+[[case.step]]
+note = 60
+vel = 100
+params = { level = 0x7F00 }
+blocks = 2
+
+[[case.step]]
+trigger = false
+blocks = 10
+
+[[case.step]]
+blocks = 2
+
+[[case.check]]
+kind = "sample-at"
+block = 0
+max = 1e-6
+
+[[case.check]]
+kind = "sample-at"
+block = 12
+max = 1e-6
+
+[[case]]
+name = "a retrigger restarts the oscillator (dn2)"
+device = ["dn2"]
+context = "friendly"
+
+[[case.step]]
+note = 60
+vel = 100
+params = { level = 0x7F00 }
+blocks = 2
+
+[[case.step]]
+trigger = false
+blocks = 10
+
+[[case.step]]
+blocks = 2
+
+[[case.check]]
+kind = "sample-at"
+block = 1
+max = 1e-6
+
+[[case.check]]
+kind = "sample-at"
+block = 13
+max = 1e-6
+
+[[case]]
+name = "the voice ends after two seconds (dt2)"
+device = ["dt2"]
+context = "friendly"
+
+[[case.step]]
+note = 60
+vel = 100
+params = { level = 0x7F00 }
+blocks = 3014
+
+# 96,000 samples: DK_DONE, then silence
+[[case.check]]
+kind = "peak"
+blocks = [3013, 3014]
+max = 0
