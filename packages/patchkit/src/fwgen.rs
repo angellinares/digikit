@@ -76,6 +76,10 @@ struct Hook {
     mode: String,
     regs: Regs,
     handler: Option<Handler>,
+    /// A hook without a `handler` (a raw hook, entered at its own entry) may continue in the displaced stock instructions of the site: `tail = true`.
+    /// `patchkit bind` then generates that code from the user's firmware and resolves the `dk_tail_<hash>` references of the service to it.
+    #[serde(default)]
+    tail: bool,
     #[serde(default)]
     was: Vec<String>,
     cpu: Option<String>,
@@ -207,6 +211,34 @@ pub fn handler_plan(decls: &[&str], device_short: &str, hook: &str) -> Result<Ha
         }
     }
     Err(err!("{hook}: no declared hook with a handler"))
+}
+
+/// Does the declared hook `hook` have a `handler` (a C-callable function the trampoline calls)? A hook without one is a raw hook: entered at its `entry` itself (`bind`).
+pub fn hook_has_handler(decls: &[&str], device_short: &str, hook: &str) -> Result<bool> {
+    Ok(declared_hook(decls, device_short, hook, |h| h.handler.is_some())?)
+}
+
+/// Does the raw hook `hook` declare the exit `tail = true` (run the displaced instructions of the site, then continue at site + len)?
+pub fn hook_has_tail(decls: &[&str], device_short: &str, hook: &str) -> Result<bool> {
+    declared_hook(decls, device_short, hook, |h| h.tail)
+}
+
+fn declared_hook(
+    decls: &[&str],
+    device_short: &str,
+    hook: &str,
+    f: impl Fn(&Hook) -> bool,
+) -> Result<bool> {
+    for text in decls.iter().copied() {
+        let files: Files = toml::from_str(text).map_err(|e| err!("devices/fw: {e}"))?;
+        for h in files.hook.iter().filter(|h| h.name == hook) {
+            if !h.devices.is_empty() && !h.devices.iter().any(|d| d == device_short) {
+                return Err(err!("{hook}: not declared for the device {device_short}"));
+            }
+            return Ok(f(h));
+        }
+    }
+    Err(err!("{hook}: no declared hook"))
 }
 
 /// The registers to save and the argument sources of a hook handler. `inputs` and `clobbers` are the expanded `regs.in` and `regs.clobbers`.
@@ -1009,6 +1041,11 @@ fn check_hook(
                 ));
             }
         }
+    }
+    if h.tail && (h.handler.is_some() || !cf || h.mode != "replace") {
+        return Err(err!(
+            "{name}: `tail = true` is only for a cf hook with mode \"replace\" and no handler (a raw hook)"
+        ));
     }
     let Some(handler) = &h.handler else {
         return Ok(None);
