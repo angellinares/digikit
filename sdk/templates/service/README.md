@@ -27,5 +27,7 @@ Make it a real service:
 3. A service that takes hooks: one `[[hook]]` in `dks/module.toml` for each, the `service!(..., setup = f, hooks = [("cf.x.hook.y", hooks::entry), ("cf.x.hook.z", hooks::z_dn2, dn2)])` list (an entry with `dt2` or `dn2` is for that device),
    and the entry as assembler in `dks/src/hooks.rs`. A hook that takes the whole control flow of its site (no handler in `devices/fw/`) may continue in the stock code of the site with the exit `tail = true`;
    its assembler refers to `dk_tail_<8 hex digits of name_hash(hook)>`, which `patchkit bind` resolves to code generated from the user's firmware (docs/PATCHING.md "Raw hooks").
+   A service that offers functions to other modules: one `[[export]]` in `dks/module.toml` for each and `exports = [("dk_name", fw::dk_name)]` after `fills =` (`hooks =` and `fills =` come first; pass `fills = []` when there is none). `service!` declares each export in `init`:
+   a header entry `init` does not declare refuses the file with `E_DECL_KIND`.
 4. `mise run module:check -- service/__NAME__` runs `patchkit service-check` (the layout above, the `service!` hooks against `[[hook]]` per device, assembler only in `dks/src/hooks.rs`, firmware names only under `dks/`,
    the one exported entry, the declarations against `sdk.toml`) and the crate's tests.

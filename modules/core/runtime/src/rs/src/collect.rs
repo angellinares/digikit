@@ -624,16 +624,20 @@ pub unsafe extern "C" fn dk_service_declare_kind(ctx: *mut u8, kind: u32, len: u
     // a handler is an image address: the header table carries its offset in the image
     declare(ctx, Declare::KIND, kind, len, handler as usize as u32)
 }
+#[cfg_attr(test, no_mangle)]
 pub unsafe extern "C" fn dk_service_declare_slot(ctx: *mut u8, slot: u32, flags: u32, entry: *const u8) -> i32 {
     // the entry is an image address: the header table carries its offset in the image
     declare(ctx, Declare::SLOT, slot, flags, entry as usize as u32)
 }
+#[cfg_attr(test, no_mangle)]
 pub unsafe extern "C" fn dk_service_declare_hook(ctx: *mut u8, site: u32, entry: *const u8) -> i32 {
     declare(ctx, Declare::HOOK, site, entry as usize as u32, 0)
 }
+#[cfg_attr(test, no_mangle)]
 pub unsafe extern "C" fn dk_service_declare_export(ctx: *mut u8, name_hash: u32, entry: *const u8) -> i32 {
     declare(ctx, Declare::EXPORT, name_hash, entry as usize as u32, 0)
 }
+#[cfg_attr(test, no_mangle)]
 pub unsafe extern "C" fn dk_service_declare_resource(ctx: *mut u8, resource: u32, limit: u32) -> i32 {
     declare(ctx, Declare::RESOURCE, resource, limit, 0)
 }
@@ -1295,9 +1299,9 @@ pub fn counts_of(c: &Collect, p: &Profile) -> (u32, u32, u32) {
     (c.nm as u32, params, pages)
 }
 
-/// Whether what `init` declared (`dk_service_declare_*`, addresses in the loaded image at `base`) is what the header table carries (declare-check-commit):
-/// the same kinds with the same lengths and handlers, slots, hooks, exports and resources. A module that declares nothing and has no such entries passes.
-pub fn decl_matches(c: &Collect, keys: &KeysCopy, base: u32) -> bool {
+/// What `init` declared (`dk_service_declare_*`, addresses in the loaded image at `base`) with the entries that are addresses made image offsets, as the header table
+/// has them.
+fn declared_offsets(c: &Collect, base: u32) -> Declare {
     let mut d = c.decl;
     let mut i = 0;
     while i < d.n {
@@ -1314,7 +1318,55 @@ pub fn decl_matches(c: &Collect, keys: &KeysCopy, base: u32) -> bool {
         };
         i += 1;
     }
-    d.same_as(&keys.decl)
+    d
+}
+
+/// Whether what `init` declared (`dk_service_declare_*`, addresses in the loaded image at `base`) is what the header table carries (declare-check-commit):
+/// the same kinds with the same lengths and handlers, slots, hooks, exports and resources. A module that declares nothing and has no such entries passes.
+pub fn decl_matches(c: &Collect, keys: &KeysCopy, base: u32) -> bool {
+    declared_offsets(c, base).same_as(&keys.decl)
+}
+
+/// The first item that `a` and `b` do not both hold (the `ROW` item of `a` is left out, as in `Declare::same_as`): the item, and whether it is `a`'s (else it is `b`'s).
+fn first_unmatched(a: &Declare, b: &Declare) -> Option<(DeclItem, bool)> {
+    let has = |d: &Declare, x: DeclItem| {
+        let mut k = 0;
+        while k < d.n {
+            if d.items[k] == x {
+                return true;
+            }
+            k += 1;
+        }
+        false
+    };
+    let mut i = 0;
+    while i < a.n {
+        if a.items[i].tag != Declare::ROW && !has(b, a.items[i]) {
+            return Some((a.items[i], true));
+        }
+        i += 1;
+    }
+    i = 0;
+    while i < b.n {
+        if !has(a, b.items[i]) {
+            return Some((b.items[i], false));
+        }
+        i += 1;
+    }
+    None
+}
+
+/// `None` when `decl_matches`; else the first item that `init` and the header table do not both hold: (its tag, its first word), with 0x100 added to the tag when only
+/// the header table has it. A difference without such an item (a full collection) is `(0, 0)` with a tag of 1.
+pub fn decl_diff(c: &Collect, keys: &KeysCopy, base: u32) -> Option<(u32, u32)> {
+    let d = declared_offsets(c, base);
+    if d.same_as(&keys.decl) {
+        return None;
+    }
+    Some(match first_unmatched(&d, &keys.decl) {
+        Some((item, declared)) => (item.tag as u32 | if declared { 0 } else { 0x100 }, item.a),
+        None => (1, 0),
+    })
 }
 
 /// The checks of 6.3 that need only the collection, the header's keys table, the effect ids of the other loaded modules and the free rows. Returns OK or the refusal.

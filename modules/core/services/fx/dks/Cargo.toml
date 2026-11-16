@@ -6,7 +6,7 @@ publish = false
 description = "The fx service as a service file (.dks): the crate dkrt-svc-fx behind the glue of dkrt-svc-rt, with the nine hooks of the effect pages"
 
 [lib]
-crate-type = ["staticlib"]
+crate-type = ["staticlib", "rlib"]
 
 [dependencies]
 dkrt-sdk = { path = "../../../runtime/sdk" }

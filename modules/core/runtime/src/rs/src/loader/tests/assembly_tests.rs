@@ -7,7 +7,7 @@
 //! the search for providers on the card, the plan (needs, owners of kinds, capacity limits from the `cap_<kind>` entries), the role checks of a provider file (ABI word, stock
 //! bytes of every hook site), the install of its hooks and slots over `FakePlatform`, and the load of a module without a DSP section.
 //!
-//! What the host cannot show stays out: no ColdFire code runs (the `init` of a service replays what its header table declares), and the DSP part of a module is
+//! What the host cannot show stays out: no ColdFire code runs (in the loader cases the `init` of a service replays what its header table declares; one case runs the glue of each Rust service file natively and compares), and the DSP part of a module is
 //! not loaded (its DSP loader needs the DSP). One case per seam shows that it fits and one the refusal that is typical for it. The edge cases of each part are unit
 //! tests of that part; an assertion that needs a hand-built table or a changed rule belongs there, not here.
 //!
@@ -657,6 +657,79 @@ fn the_service_objects_and_files_carry_the_abi_word_of_the_runtime_object() {
         for dev in DEVICES {
             let file = packed(dev, s.leaf, "dks", s.nx);
             assert_eq!(std::format!("{:08x}", be(&file, dkneeds::H_SVC_ABI)), abi, "{} {}: the packed file has another ABI word", dev.name, s.leaf);
+        }
+    }
+}
+
+/// The declarations of the real `init` of a service file (its glue, `dk_svc_declare` of `service!`, run natively over the runtime's own `dk_service_declare_*`) against the
+/// header table of the file as the card holds it (the bound file) for the device: the same kinds with their lengths, slots with their flags, hooks, exports and resources. The loader makes the same
+/// comparison at the commit (`decl_matches`) and refuses a difference with `E_DECL_KIND`; the other cases here replay the table and cannot see one. The entry addresses are not
+/// compared: a host function has no offset in the file (an entry is checked by its presence and its name hash).
+#[test]
+fn the_init_of_each_service_file_declares_what_its_header_table_carries() {
+    fn dt2() -> u32 {
+        profiles::DT2.id
+    }
+    fn dn2() -> u32 {
+        profiles::DN2.id
+    }
+    // (tag, a, b) with the address words left out
+    fn plain(tag: u16, a: u32, b: u32) -> (u16, u32, u32) {
+        if tag == Declare::HOOK || tag == Declare::EXPORT {
+            (tag, a, 0)
+        } else {
+            (tag, a, b)
+        }
+    }
+    fn name(tag: u16) -> &'static str {
+        match tag {
+            t if t == Declare::KIND => "KINDS",
+            t if t == Declare::SLOT => "SLOTS",
+            t if t == Declare::HOOK => "HOOKS",
+            t if t == Declare::EXPORT => "EXPORTS",
+            _ => "RESOURCES",
+        }
+    }
+    let _g = clean();
+    let services: Vec<(&Fixture, crate::handlers::dks_decls::DeclareFn)> = crate::handlers::dks_decls::declarations()
+        .iter()
+        .map(|(leaf, declare)| (SERVICES.iter().find(|s| s.leaf == *leaf).unwrap(), *declare))
+        .collect();
+    for dev in DEVICES.iter().filter(|d| d.has_firmware()) {
+        for (s, declare) in &services {
+            // the bound file: the packed one carries the hooks of both devices, `bind` keeps those of the device
+            let file = service_file(*dev, s.leaf, s.nx);
+            let header = crate::collect::KeysCopy::from_bytes(&table_of(&file)).unwrap().decl;
+            let mut want: Vec<(u16, u32, u32)> = (0..header.n).map(|i| plain(header.items[i].tag, header.items[i].a, header.items[i].b)).collect();
+            let mut got: Vec<(u16, u32, u32)> = Vec::new();
+            unsafe {
+                let mut col = std::boxed::Box::new(crate::collect::Collect::new());
+                crate::collect::begin(&mut *col);
+                let ctx = crate::entry::bind(0) as *mut u8;
+                let r = declare(ctx, if dev.name == "dt2" { dt2 } else { dn2 });
+                crate::collect::end();
+                crate::entry::unbind(0);
+                assert_eq!(r, OK, "{} {}: init refused its own declarations", dev.name, s.leaf);
+                for i in 0..col.decl.n {
+                    let d = col.decl.items[i];
+                    if d.tag != Declare::ROW {
+                        got.push(plain(d.tag, d.a, d.b));
+                    }
+                }
+            }
+            got.sort();
+            want.sort();
+            let show = |v: &[(u16, u32, u32)], other: &[(u16, u32, u32)]| {
+                v.iter().filter(|x| !other.contains(x)).map(|x| std::format!("{} {:08x}", name(x.0), x.1)).collect::<Vec<_>>()
+            };
+            assert!(
+                got == want,
+                "{} {}: init declares what the header table does not carry {:?}; the table carries what init does not declare {:?}",
+                dev.name,
+                s.leaf,
+                show(&got, &want),
+                show(&want, &got)
+            );
         }
     }
 }

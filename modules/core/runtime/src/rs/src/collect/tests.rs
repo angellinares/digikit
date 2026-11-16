@@ -517,6 +517,14 @@ fn what_init_declared_must_be_what_the_header_table_carries() {
         c
     };
     assert!(decl_matches(&declared(), &keys, base));
+    assert_eq!(decl_diff(&declared(), &keys, base), None);
+    // the diff names the first item that is not in both: the export the table has and `init` did not declare (the 0x100 bit), or the hook `init` declared more
+    let mut d = declared();
+    d.decl.n -= 1;
+    assert_eq!(decl_diff(&d, &keys, base), Some((Declare::EXPORT as u32 | 0x100, 0xaabb)));
+    let mut d = declared();
+    d.decl.add(Declare::HOOK, 1, base, 0);
+    assert_eq!(decl_diff(&d, &keys, base), Some((Declare::HOOK as u32, 1)));
     // another handler, another length, an item more
     let mut d = declared();
     d.decl.items[0].c = base + 0x44;

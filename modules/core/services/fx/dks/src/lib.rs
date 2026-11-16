@@ -1,7 +1,8 @@
 //! The `fx` service as a service file (`services/fx.dks`): the `service!` call and nothing else. The nine hooks of the effect pages are assembler in `hooks.rs`.
-#![no_std]
+// a host build (the assembly test of the runtime) has std; the file is `no_std` on the ColdFire
+#![cfg_attr(target_arch = "m68k", no_std)]
 // `global_asm!` on ColdFire is an experimental architecture of the compiler
-#![feature(asm_experimental_arch)]
+#![cfg_attr(target_arch = "m68k", feature(asm_experimental_arch))]
 
 use dkrt_sdk::records::KINDS_FX;
 use dkrt_svc_fx::fxpage;

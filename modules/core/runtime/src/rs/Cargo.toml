@@ -22,6 +22,9 @@ dkrt-svc-rt = { path = "../../svc-rt" }
 dkrt-svc-lfo = { path = "../../../services/lfo" }
 dkrt-svc-fx = { path = "../../../services/fx" }
 dkrt-svc-machines = { path = "../../../services/machines" }
+dkrt-svc-machines-dks = { path = "../../../services/machines/dks" }
+dkrt-svc-fx-dks = { path = "../../../services/fx/dks" }
+dkrt-svc-lfo-dks = { path = "../../../services/lfo/dks" }
 
 # This crate sits inside the repository's cargo workspace but is built on its own (`patchkit build`).
 [workspace]

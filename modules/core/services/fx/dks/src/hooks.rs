@@ -20,21 +20,37 @@
 //!   the defaults. The loader and the initialiser put the mark (`MARKVAL` at `MARK_OFF` in the array) when a row has an effect.
 //!
 //! Table offsets (bytes): the image table `fxpages_info` version 3 (`core/fxpages`) and the words `fxpage::bind_table` adds (from `ROWS_N`).
+#[cfg(target_arch = "m68k")]
 use core::arch::global_asm;
 
-extern "C" {
-    /// The entries (the labels of the assembler below): the runtime writes a jump to each at its stock site.
-    pub fn fxp_acc();
-    pub fn fxp_label();
-    pub fn fxp_graph();
-    pub fn fxp_list();
-    pub fn fxp_load();
-    pub fn fxp_save();
-    pub fn fxp_init();
-    pub fn fxp_keylist();
-    pub fn fxp_sound();
+macro_rules! entries {
+    ($($name:ident,)*) => {
+        $(
+            #[cfg(target_arch = "m68k")]
+            extern "C" {
+                /// An entry (a label of the assembler below): the runtime writes a jump to it at its stock site.
+                pub fn $name();
+            }
+            // a host build (the assembly test of the runtime runs the declarations of `service!`) has an empty function, so that the entry address exists
+            #[cfg(not(target_arch = "m68k"))]
+            pub extern "C" fn $name() {}
+        )*
+    };
 }
 
+entries! {
+    fxp_acc,
+    fxp_label,
+    fxp_graph,
+    fxp_list,
+    fxp_load,
+    fxp_save,
+    fxp_init,
+    fxp_keylist,
+    fxp_sound,
+}
+
+#[cfg(target_arch = "m68k")]
 global_asm!(
     r#"
     .equ ROW_SIZE, 0x2c         | the firmware's page descriptor row: name, title (char pointers), 9 codes

@@ -1,8 +1,9 @@
 //! The `machines` service as a service file (`services/machines.dks`): the crate `dkrt-svc-machines` over the `dkc_*` imports, the hooks of the machine framework (`hooks.rs`),
 //! the click flow's firmware calls and the exports `dk_param_get` and `dk_param_set` (`fw.rs`); the image table `machines_info` is bound by `image::setup`
 //! (docs/plans/runtime-and-services.md section 13.2, R12-6).
-#![no_std]
-#![feature(asm_experimental_arch)]
+// a host build (the assembly test of the runtime) has std; the file is `no_std` on the ColdFire
+#![cfg_attr(target_arch = "m68k", no_std)]
+#![cfg_attr(target_arch = "m68k", feature(asm_experimental_arch))]
 
 use dkrt_sdk::records::KINDS_MACHINES;
 use dkrt_svc_machines::records::Machines;
@@ -31,5 +32,6 @@ dkrt_svc_rt::service!(
         ("cf.page.hook.source_key", hooks::mf_key_hook),
         ("cf.page.hook.source_turn", hooks::mf_turn_hook),
     ],
-    fills = [("frametype", hooks::mf_frametype, dn2)]
+    fills = [("frametype", hooks::mf_frametype, dn2)],
+    exports = [("dk_param_get", fw::dk_param_get), ("dk_param_set", fw::dk_param_set)]
 );

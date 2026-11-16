@@ -50,6 +50,7 @@
         "{workspaceRoot}/modules/core/services/fx/dks/build/fx.dko.json",
         "{workspaceRoot}/modules/core/services/machines/dks/build/machines.dko.json",
         "{workspaceRoot}/modules/core/services/lfo/dks/build/lfo.dko.json",
+        "{workspaceRoot}/modules/core/services/{fx,machines,lfo}/dks/{Cargo.toml,src/**/*}",
         "{workspaceRoot}/tools/nx/device-images.mjs",
         "{workspaceRoot}/dist/modules/dt2/sine.dkm",
         "{workspaceRoot}/dist/modules/dt2/dyn-fx-gain.dkm",

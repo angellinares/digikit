@@ -146,3 +146,5 @@ pub(crate) mod tests;
 mod lfo_tests;
 #[cfg(test)]
 pub(crate) mod fx_fixture;
+#[cfg(test)]
+pub(crate) mod dks_decls;

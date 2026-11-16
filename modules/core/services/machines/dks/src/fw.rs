@@ -107,13 +107,13 @@ pub unsafe extern "C" fn dks_page_turn(view: *const u8, ev: *const u8) -> u32 {
 }
 
 /// `dk_param_get` (an `[[export]]` of the file): the value of a parameter word in the flow of a click.
-#[no_mangle]
+#[cfg_attr(target_arch = "m68k", no_mangle)]
 pub unsafe extern "C" fn dk_param_get(track: u32, word: u32) -> i32 {
     slots::param_get(&ImportCore, &tab(), track, word)
 }
 
 /// `dk_param_set`, as `dk_param_get`.
-#[no_mangle]
+#[cfg_attr(target_arch = "m68k", no_mangle)]
 pub unsafe extern "C" fn dk_param_set(track: u32, word: u32, raw: i32) -> i32 {
     slots::param_set(&ImportCore, &tab(), track, word, raw)
 }
