@@ -32,7 +32,7 @@ import { P0, FxRig } from './fx.ts';
 import { MachineRig } from './machine.ts';
 import type { RigOpener } from './ops.ts';
 import { PyRandom } from './prng.ts';
-import { DEVICES, fxSpec, machineSpec, type Device } from './spec.ts';
+import { DEVICES, fxSpec, galleryGaps, machineSpec, type Device } from './spec.ts';
 
 export type Toml = Record<string, unknown>;
 
@@ -154,6 +154,10 @@ const words = (params: Record<string, number>): [string, number][] => Object.ent
 async function runMachine(module: string, device: Device, c: RigCase, dir: string, o: RunOptions): Promise<Trace> {
   const spec = machineSpec(module, device);
   if (!spec) throw new Error(`${module} is no machine for ${device}`);
+  if (galleryGaps(module).includes(device))
+    throw new Error(
+      `${module}: build/gen/gallery.json lists no ${device} machine, so the case would run with no parameters: run \`mise run module:check ${module}\` to write it`,
+    );
   if (c.poison === false && !c.poison_reason) throw new Error(`${c.name}: poison = false needs a poison_reason`);
   const rig = await MachineRig.open(spec, {
     recordStores: true,

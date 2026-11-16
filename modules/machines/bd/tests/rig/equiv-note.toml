@@ -4,6 +4,8 @@
 # shows as a NaN output, which fails the implicit finite rule; that is a machine bug to report, never a value to pin), and pins the SHA-256 of the machine's float32 output words (375 blocks of 32 samples). The device pin hashed the same note through the whole firmware
 # path (track filter, mixer, output); this pin sees only the machine's own DSP. One case per device: the sha256 differs per device.
 # The pins are written by the rig, never by hand: DIGI_RIG_PIN=1 pnpm exec vitest run --config vitest.host.config.ts --project module-rig modules/machines/bd/tests/
+# PENDING (bd DT2): build/gen/gallery.json lacks dt2, so the DT2 case below fails loudly (the rig refuses to run it with no parameters) and its sha256 is not a pin.
+# Re-pin after `mise run module:check fadedlimes/bd` regenerates the gallery (DIGI_RIG_PIN=1 as above). The DN2 pin is valid.
 # A changed pin is a re-pin and needs Em's review (docs/plans/ledgers/t2-machine-rig-refs.md).
 
 [[case]]

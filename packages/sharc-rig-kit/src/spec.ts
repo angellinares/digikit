@@ -259,6 +259,21 @@ function deviceFile(short: string): Toml {
 }
 
 /** The spec of module MID on DEVICE, or null when the module is no machine with a DSP object for that device. */
+/**
+ * The devices that `[targets]` of module.toml names and that the machine of `build/gen/gallery.json` does not list. A machine
+ * without its device in the gallery has no parameters and no knob slots there: the rig would run it with every parameter word at 0.
+ * `module:check` writes the gallery, so the fix is to run it again (docs/TESTING.md "Sound checks").
+ */
+export function galleryGaps(mid: string): string[] {
+  const moddir = moduleDir(mid);
+  const man = manifest(moddir);
+  if (!entryRow(man)) return [];
+  const gallery = readGallery(moddir, mid, '`patchkit gen`');
+  const listed = Object.keys(gallery.machines?.[0]?.devices ?? {});
+  const wanted = Object.keys((man.targets ?? {}) as Toml).map((t) => t.split('-')[0]!);
+  return wanted.filter((d) => !listed.includes(d));
+}
+
 export function machineSpec(mid: string, device: Device): MachineSpec | null {
   if (mid.split('/')[0] === 'core') return null; // the framework renders no machine of its own
   const variant = NEGATIVE_VARIANTS[mid];

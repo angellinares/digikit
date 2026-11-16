@@ -3,7 +3,7 @@ import { tmpdir } from 'node:os';
 import path from 'node:path';
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
 import { f2w } from '../src/context.ts';
-import { fxSpec, fxSpecs, frameHw, fxWord, machineSpec, machineSpecs, paramMid } from '../src/spec.ts';
+import { fxSpec, fxSpecs, frameHw, fxWord, galleryGaps, machineSpec, machineSpecs, paramMid } from '../src/spec.ts';
 import { param } from './fakes.ts';
 
 let root: string;
@@ -73,6 +73,29 @@ sources = ["src/dsp/wob.s"]
       ],
     }),
   );
+  write(
+    'gap/module.toml',
+    `[module]
+id = "zzt/gap"
+type = "machine"
+category = "machines"
+dynamic = true
+ports = ["dt2-1.17", "dn2-1.12"]
+
+[targets]
+"dt2-1.17" = "experimental"
+"dn2-1.12" = "experimental"
+
+[[machine]]
+id = "gap-one"
+dsp = "go"
+
+[[object]]
+path = "build/dsp.dko.json"
+sources = ["src/dsp/go.s"]
+`,
+  );
+  write('gap/build/gen/gallery.json', JSON.stringify({ machines: [{ devices: { dn2: { knobs: [] } } }], params: {} }));
 });
 
 afterAll(() => {
@@ -104,6 +127,17 @@ describe('machineSpec', () => {
     expect(machineSpecs().map((s) => `${s.module}@${s.device}`)).toContain('zzt/mach@dt2');
     expect(machineSpecs(true).map((s) => s.module)).not.toContain('zzt/mach');
     expect(machineSpecs(true).map((s) => s.module)).toContain('test/dyn-guard-nan#overrun');
+  });
+});
+
+describe('galleryGaps', () => {
+  it('names a device of [targets] that the gallery does not list, and nothing for a complete gallery', () => {
+    expect(galleryGaps('zzt/gap')).toEqual(['dt2']);
+    write(
+      'gap/build/gen/gallery.json',
+      JSON.stringify({ machines: [{ devices: { dn2: { knobs: [] }, dt2: { knobs: [] } } }], params: {} }),
+    );
+    expect(galleryGaps('zzt/gap')).toEqual([]);
   });
 });
 
