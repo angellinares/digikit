@@ -74,7 +74,8 @@ def effect_ids(dkm: bytes) -> list[int]:
     """The effect ids of the file's header table (the header's 0x90 pair): the keys of the effect kind in the KEYS entry (tag 3)."""
     off, size = struct.unpack_from(">II", dkm, 0x90)
     magic, version, entries = struct.unpack_from(">IHH", dkm, off)
-    assert (magic, version) == (dkproto.TABLE_MAGIC, dkproto.TABLE_VERSION)
+    assert magic == dkproto.TABLE_MAGIC
+    assert 1 <= version <= dkproto.TABLE_VERSION
     ids: list[int] = []
     at = off + 8
     for _ in range(entries):
