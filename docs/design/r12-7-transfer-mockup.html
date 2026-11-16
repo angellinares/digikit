@@ -1,0 +1,99 @@
+<!doctype html>
+<html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
+<title>R12-7 Transfer installs services</title>
+<style>
+:root{color-scheme:dark light;--bg:#0f1012;--panel:#131418;--panel2:#1a1c20;--line:#24262b;--ink:#eceae5;--ink2:#a9adb4;--ink3:#868b94;--amber:#f3b52c;--amberink:#1d1403;--sel:rgba(243,181,44,.16);--okfg:#7be3a1;--okbg:#0f2418;--wfg:#f0b35a;--wbg:#2a2010;--badfg:#ffb4ab;--badbg:#2a1210;--errfg:#ffc1bc;--errbg:rgba(255,139,130,.12);--track:#1d1f23;--bar:#121316;--barline:#222428;--green:#35c47a;--mono:ui-monospace,Menlo,Consolas,monospace}
+@media (prefers-color-scheme:light){:root{--bg:#f6f5f1;--panel:#fff;--panel2:#ecebe6;--line:#d9d7d0;--ink:#1c1d20;--ink2:#51555c;--ink3:#6b7078;--amber:#d99a10;--amberink:#1d1403;--sel:rgba(217,154,16,.18);--okfg:#17713f;--okbg:#dff3e6;--wfg:#8a5a0a;--wbg:#fbefd6;--badfg:#9b2118;--badbg:#fbe1de;--errfg:#8a1f17;--errbg:rgba(200,60,50,.12);--track:#dedcd5;--bar:#efeee9;--barline:#d9d7d0;--green:#1f9d5c}}
+*{box-sizing:border-box}body{margin:0;background:var(--bg);color:var(--ink);font:13px system-ui,sans-serif;padding:16px}
+h1{font-size:16px;margin:0 0 4px}.lead{color:var(--ink3);margin:0 0 20px;font-size:12.5px}
+.state{max-width:880px;margin:0 auto 28px}.state>h2{font-size:12px;letter-spacing:.06em;text-transform:uppercase;color:var(--ink2);margin:0 0 6px}
+.state>p{margin:0 0 8px;color:var(--ink3);font-size:12px}
+.pane{border:1px solid var(--line);border-radius:8px;background:var(--bg);padding:14px 16px 0;overflow:hidden}
+h3{margin:0;font-size:12px;letter-spacing:.06em;text-transform:uppercase;color:var(--ink2)}
+.colhead{display:flex;align-items:center;gap:12px;padding-bottom:8px;flex-wrap:wrap}.sp{flex:1}
+.selcount{padding:1px 6px;border-radius:5px;background:var(--panel2);color:var(--ink3);font:11px var(--mono)}
+.act{height:30px;padding:0 12px;border-radius:6px;border:1px solid var(--line);background:var(--panel2);color:var(--ink);font:inherit}
+.act.primary{background:var(--amber);border-color:var(--amber);color:var(--amberink)}.act:disabled{opacity:.5}
+.act.danger{background:#4a1713;border-color:#e5594d;color:#ffb4ab}
+@media (prefers-color-scheme:light){.act.danger{background:#fbe1de;color:#9b2118}}
+.rows{list-style:none;margin:0;padding:0;border-block:1px solid var(--line)}
+.rows li{display:flex;align-items:center;gap:10px;min-height:26px;padding:2px 6px;border-bottom:1px solid var(--line);font:12.5px var(--mono);white-space:nowrap}
+.rows li:last-child{border-bottom:0}.rows li.sel{background:var(--sel)}
+.rows li.sub{padding-left:30px;color:var(--ink2);font-size:12px;min-height:22px}
+.rows li.sub .tree{color:var(--ink3)}
+.tick{width:14px;height:14px;accent-color:var(--amber);flex:none;margin:0}
+.name{flex:1 1 0;min-width:0;overflow:hidden;display:flex;align-items:center;gap:8px}
+.nm{overflow:hidden;text-overflow:ellipsis}
+.vers,.size{flex:none;text-align:right;font-size:11.5px;color:var(--ink3);font-variant-numeric:tabular-nums}.vers{min-width:6ch}.size{min-width:9ch}
+.rtag,.check{flex:none;padding:0 6px;border-radius:4px;font-size:10.5px;line-height:16px;color:var(--ink3);background:var(--panel2)}
+.rtag.ok,.check.ok{color:var(--okfg);background:var(--okbg)}.rtag.warn{color:var(--wfg);background:var(--wbg)}.check.bad{color:var(--badfg);background:var(--badbg)}
+.with{font:11.5px var(--mono);color:var(--ink3);padding:2px 6px 8px 30px}
+.fitline{font:11.5px var(--mono);padding:6px 0;color:var(--okfg)}.fitline.dim{color:var(--ink3)}
+.err{display:flex;gap:12px;margin:8px 0;padding:8px 10px;border-radius:8px;color:var(--errfg);background:var(--errbg);line-height:1.45}
+.err b{color:inherit}.note{margin:8px 0;padding:8px 10px;border-radius:8px;background:var(--okbg);color:var(--okfg);line-height:1.5}
+.note div{font:12px var(--mono)}
+.bar{margin:14px -16px 0;padding:10px 16px 12px;background:var(--bar);border-top:1px solid var(--barline);display:flex;flex-direction:column;gap:8px}
+.barline{display:flex;gap:16px;font:12.5px var(--mono)}.barline .msg{flex:1;min-width:0;overflow:hidden;text-overflow:ellipsis}.barline .stats{color:var(--ink2)}
+progress{appearance:none;border:0;background:var(--track);border-radius:6px;overflow:hidden;width:100%;height:12px}
+progress::-webkit-progress-bar{background:var(--track)}progress::-webkit-progress-value{background:var(--green)}progress::-moz-progress-bar{background:var(--green)}
+.up{flex:none;display:flex;align-items:center;gap:8px;font-size:11.5px;color:var(--ink2)}.up progress{width:90px;height:8px}.up progress::-webkit-progress-value{background:var(--amber)}.up progress::-moz-progress-bar{background:var(--amber)}
+.phase{flex:none;width:9ch;color:var(--ink2);font-size:11.5px}
+.ann{max-width:880px;margin:6px auto 0;color:var(--ink3);font-size:12px}
+</style></head><body>
+<h1>R12-7 Transfer installs services: mockup</h1>
+<p class="lead" style="max-width:880px;margin:0 auto 20px">Four states of the existing Transfer pane, "On your computer" list and the bottom bar. Static, no behaviour.</p>
+
+<section class="state"><h2>1. A module that needs services</h2>
+<p>pluck is ticked. Its hard needs resolve to two services; they show under it and are counted in the fit line. One button, no confirmation.</p>
+<div class="pane">
+<div class="colhead"><div style="display:flex;gap:8px;align-items:center"><input class="tick" type="checkbox" checked aria-label="all"><h3>On your computer</h3><span class="selcount">1</span></div><span class="sp"></span><button class="act primary">Install</button></div>
+<ul class="rows">
+<li class="sel"><input class="tick" type="checkbox" checked><span class="name"><span class="nm">pluck</span><span class="rtag">machine</span></span><span class="vers">0.3.1</span><span class="size">18.2 KB</span></li>
+<li class="sub sel"><span class="tree">&#9492;</span><span class="name"><span class="nm">fx service</span><span class="rtag warn">not on device</span></span><span class="vers">1.2</span><span class="size">38.4 KB</span></li>
+<li class="sub sel"><span class="tree">&#9492;</span><span class="name"><span class="nm">machines service</span><span class="rtag ok">on device</span></span><span class="vers">1.2</span><span class="size">61.0 KB</span></li>
+<li><input class="tick" type="checkbox"><span class="name"><span class="nm">freqshift</span><span class="rtag">effect</span></span><span class="vers">0.2.0</span><span class="size">9.7 KB</span></li>
+<li><input class="tick" type="checkbox"><span class="name"><span class="nm">usb-fast</span><span class="rtag">tool</span></span><span class="vers">1.0.0</span><span class="size">12.1 KB</span></li>
+</ul>
+<div class="with">pluck installs with: fx service, machines service</div>
+<div class="fitline">Fits together: pluck and its 2 services. 1 service needs uploading (fx service).</div>
+<div class="bar"><div class="barline"><span class="msg">Ready: Install uploads 2 files and verifies them.</span><span class="stats">57 KB</span></div></div>
+</div></section>
+
+<section class="state"><h2>2. Upload in progress, services first</h2>
+<p>Services upload and verify before any module. A service that is already on the card with the same hash is skipped, as modules are today.</p>
+<div class="pane">
+<div class="colhead"><h3>Installing</h3><span class="sp"></span><button class="act" disabled>Install</button></div>
+<ul class="rows">
+<li><span class="phase">service</span><span class="name"><span class="nm">services/fx.dks</span></span><span class="check ok">verified</span><span class="size">38.4 KB</span></li>
+<li><span class="phase">service</span><span class="name"><span class="nm">services/machines.dks</span></span><span class="rtag">same hash, skipped</span><span class="size">61.0 KB</span></li>
+<li><span class="phase">module</span><span class="name"><span class="nm">modules/pluck.dkm</span></span><span class="up"><progress max="100" value="62"></progress><span>62%</span></span><span class="size">18.2 KB</span></li>
+<li><span class="phase">module</span><span class="name"><span class="nm">modules/freqshift.dkm</span></span><span class="rtag">waiting</span><span class="size">9.7 KB</span></li>
+</ul>
+<div class="bar"><div class="barline"><span class="msg">Uploading modules/pluck.dkm: 62%</span><span class="stats">3 of 4 files</span></div><progress max="100" value="68"></progress></div>
+</div></section>
+
+<section class="state"><h2>3. Refusal: service version does not match the device runtime</h2>
+<p>All checks ran before the first upload. Nothing was uploaded; the card is unchanged. The text names the module, the service and both versions.</p>
+<div class="pane">
+<div class="colhead"><div style="display:flex;gap:8px;align-items:center"><input class="tick" type="checkbox" checked><h3>On your computer</h3><span class="selcount">2</span></div><span class="sp"></span><button class="act primary">Install</button></div>
+<div class="err"><div><b>pluck not installed.</b> It needs the machines service, and this workbench has no machines service for the runtime on your device (runtime 0.5.2, service built for 0.5.0). Nothing was uploaded. Update the workbench, or flash a matching runtime from the Firmware page.<br><span style="opacity:.85">freqshift is not affected, but nothing from this selection was uploaded either.</span></div></div>
+<ul class="rows">
+<li class="sel"><input class="tick" type="checkbox" checked><span class="name"><span class="nm">pluck</span><span class="rtag">machine</span><span class="rtag warn" title="machines service built for 0.5.0, device runtime is 0.5.2">service mismatch</span></span><span class="vers">0.3.1</span><span class="size">18.2 KB</span></li>
+<li class="sel"><input class="tick" type="checkbox" checked><span class="name"><span class="nm">freqshift</span><span class="rtag">effect</span></span><span class="vers">0.2.0</span><span class="size">9.7 KB</span></li>
+</ul>
+<div class="bar"><div class="barline"><span class="msg">Install failed: no files uploaded</span></div><progress class="failed" max="100" value="0"></progress></div>
+</div></section>
+
+<section class="state"><h2>4. Uninstall: module and its now-unused service in one click</h2>
+<p>Delete is selected on pluck (shot stays). machines.dks is still needed by shot, so it stays. fx.dks has no other user, so it goes in the same click. No confirmation; the result list says what happened.</p>
+<div class="pane">
+<div class="colhead"><h3>On device</h3><span class="selcount">1</span><span class="sp"></span><button class="act danger">Delete</button></div>
+<div class="note"><div>Deleted modules/pluck.dkm</div><div>Deleted services/fx.dks (no module on the card needs it)</div><div>Kept services/machines.dks (shot needs it)</div><div style="font-family:system-ui;margin-top:4px">Restart the device to apply.</div></div>
+<ul class="rows">
+<li><input class="tick" type="checkbox"><span class="name"><span class="nm">modules/shot.dkm</span><span class="rtag ok">loaded</span></span><span class="size">14.0 KB</span></li>
+<li><input class="tick" type="checkbox"><span class="name"><span class="nm">services/machines.dks</span><span class="rtag">needed by shot</span></span><span class="size">61.0 KB</span></li>
+</ul>
+<div class="err" style="margin-top:10px"><div>Selecting services/machines.dks and Delete alone is refused: <b>machines service is needed by shot.</b> Delete that module first (its services go with it).</div></div>
+<div class="bar"><div class="barline"><span class="msg">Deleted 2 files, kept 1. Restart the device to apply.</span></div></div>
+</div></section>
+</body></html>
