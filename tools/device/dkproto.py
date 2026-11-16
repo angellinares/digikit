@@ -21,9 +21,11 @@ DSP_SLACK = 8
 ARENA_HDR = 16
 COLLECT_BYTES = 7206
 TABLE_MAGIC = 1145787458
-TABLE_VERSION = 1
+TABLE_VERSION = 2
+PROVIDER_MAX = 6
 MAX_VOICES = 8
 MAX_FX = 4
+H_ROLE = 56
 
 # the record kinds of a .dkm ([records.kinds])
 RECORD_KIND: dict[str, int] = {

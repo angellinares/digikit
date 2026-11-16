@@ -1162,6 +1162,17 @@ context = "any"
 sig = "u32 (u32 slot, u32 *out_fn)"
 doc = "The poll function in slot 0 to 3 of `dkrt_poll_add` and its owner: returns 0 for an empty slot (or a slot past 3), 1 + the record index of the module whose loaded code holds the function, or 0xff for a function outside every module (the firmware image: the patched-in core modules). Writes the function's address to `*out_fn` when `out_fn` is not null and the slot is used. For a profiler that names the rows of the poll spans."
 
+# Test-only (`test = true`): an import of the test-only service `svc-test`, which a `.dks` provider (tests/fixtures/modules/svc-test) exports. It is in no
+# public header, doc or template and not in the runtime's table (no `requires`): a module that calls it resolves it at load from the provider's EXPORTS.
+[[import]]
+name = "dk_svctest_ping"
+service = "svc-test"
+since = "0.8.2"
+context = "any"
+sig = "i32 ()"
+doc = "Test only: returns 42 from the svc-test provider."
+test = true
+
 [[import]]
 name = "dk_debug_track_type"
 service = "runtime"
@@ -1637,6 +1648,12 @@ rust = "dkrt_svc_fx::records::Fx"
 name = "lfo"
 rust = "dkrt_svc_lfo::records::Lfo"
 
+# A `[[service]]` without `rust` is provided by a `.dks` provider (a module with `role = "service"`), not by a runtime row: it is in no generated table.
+# `test = true`: a test-only service; it and its `[[import]]` rows (also `test = true`) are left out of the public SDK headers, docs and templates.
+[[service]]
+name = "svc-test"
+test = true
+
 # The record kinds of the `register` section of a `.dkm` (docs/plans/runtime-and-services.md R7): one table for the runtime, dkneeds and patchkit
 # (`patchkit gen` writes `records::KINDS` and one `KIND_<NAME>` and `LEN_<NAME>` per kind into gen_sdk.rs and packages/dkneeds/src/gen_limits.rs).
 # `len` is the whole record, the 8-byte header (kind, length) included. `service` is the in-crate service that owns the kind: it checks, applies and
@@ -1683,7 +1700,9 @@ dkm_header = 160    # 0xa0: the header of a `.dkm` (init, fini, menu and tick of
 #   +0  u32 magic "DKTB" (`table_magic`)   +4  u16 version (`table_version`)   +6  u16 n_entries
 #   then, in ascending tag order, each tag at most once: u16 tag, u16 count, u32 payload_bytes, the payload.
 # Tags: 1 NEEDS (service name hash, minimum version, hard or optional), 2 USES (resource id, count; ids in [records.resources]), 3 KEYS (record kind, n, keys: the
-# machine keys, effect ids and the keys of a service's kind), 4 KINDS (kind, length, handler entry: a service module's kinds), 5 SLOTS, 6 HOOKS, 7 EXPORTS, 8 RESOURCES.
+# machine keys, effect ids and the keys of a service's kind), 4 KINDS (kind, length, handler entry: a service module's kinds), 5 SLOTS, 6 HOOKS, 7 EXPORTS, 8 RESOURCES,
+# and, in a version 2 table only: 9 PROVIDES (service name hash, version: the services the module provides), 10 BIND (site hash, address, stock length, trampoline offset,
+# then the stock bytes padded to 4, at most 64: the firmware sites a service binds). In a version 2 table a SLOTS item has 12 bytes (slot id, flags, entry).
 # A module that needs and keeps nothing has the 8-byte head. A file with no table, or another magic, is the format of runtime 0.7: E_CONTRACT.
 dsp_header = 64     # 0x40: the header of the DSP section
 max_records = 32    # records of the `register` table
@@ -1696,7 +1715,8 @@ granule = 64        # the DSP area's placement granule
 dsp_slack = 8       # bytes the DSP range may start before its alignment
 arena_hdr = 16      # the arena's block header
 table_magic = 1145787458  # 0x444b5442 "DKTB": the first word of the header table of a `.dkm` (packages/dkneeds/src/keys.rs); another word is a file of the 0.7 format
-table_version = 1   # the version of the header table (a change is a MINOR of the runtime)
+table_version = 2   # the newest version of the header table a reader accepts (1 and 2; a writer uses 2 only for a table with PROVIDES or BIND; a change is a MINOR of the runtime)
+provider_max = 6    # provider slots of the boot plan (the services that provide; separate from the module records, SEL_MAX)
 collect_bytes = 7206  # `size_of::<Collect>()` of the runtime's collect.rs on the ColdFire: the builder calls of one `init`, held in an arena block until the commit (the runtime checks it at compile time; the host's struct has more padding)
 
 # The layout of the `.dkm` file and of its DSP section: byte offsets (big endian words), entry sizes and magics that the packer (packages/patchkit
@@ -1720,7 +1740,8 @@ consts = [
     { name = "H_SHA", value = 16, doc = "Header: 32 bytes of sha256 over the file with these bytes zero." },
     { name = "H_RUNTIME", value = 48, doc = "Header word: the runtime version the module needs (bit 31: built with DK_TRACE)." },
     { name = "H_VERSION", value = 52, doc = "Header word: the module's version." },
-    { name = "H_RESERVED", value = 56, doc = "Header word: reserved." },
+    { name = "H_ROLE", value = 56, doc = "Header word: the role (0 module, 1 service)." },
+    { name = "H_RESERVED", value = 60, doc = "Header word: reserved, zero." },
     { name = "H_NAME", value = 64, doc = "Header: the module name, NAME_LEN bytes." },
     { name = "H_IMAGE_OFF", value = 96, doc = "Header word: ColdFire image offset." },
     { name = "H_IMAGE_SIZE", value = 100, doc = "Header word: ColdFire image size." },

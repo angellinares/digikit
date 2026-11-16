@@ -21,9 +21,11 @@ export const DSP_SLACK = 8;
 export const ARENA_HDR = 16;
 export const COLLECT_BYTES = 7206;
 export const TABLE_MAGIC = 1145787458;
-export const TABLE_VERSION = 1;
+export const TABLE_VERSION = 2;
+export const PROVIDER_MAX = 6;
 export const MAX_VOICES = 8;
 export const MAX_FX = 4;
+export const H_ROLE = 56;
 
 /** The record kinds of a `.dkm` (`[records.kinds]`). */
 export const RECORD_KIND = {

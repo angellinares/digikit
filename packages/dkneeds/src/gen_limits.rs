@@ -13,7 +13,8 @@ pub const DSP_SLACK: u32 = 8;
 pub const ARENA_HDR: u32 = 16;
 pub const COLLECT_BYTES: u32 = 7206;
 pub const TABLE_MAGIC: u32 = 1145787458;
-pub const TABLE_VERSION: u32 = 1;
+pub const TABLE_VERSION: u32 = 2;
+pub const PROVIDER_MAX: u32 = 6;
 pub const MAX_VOICES: u32 = 8;
 pub const MAX_FX: u32 = 4;
 
@@ -47,8 +48,10 @@ pub const H_SHA: u32 = 16;
 pub const H_RUNTIME: u32 = 48;
 /// Header word: the module's version.
 pub const H_VERSION: u32 = 52;
-/// Header word: reserved.
-pub const H_RESERVED: u32 = 56;
+/// Header word: the role (0 module, 1 service).
+pub const H_ROLE: u32 = 56;
+/// Header word: reserved, zero.
+pub const H_RESERVED: u32 = 60;
 /// Header: the module name, NAME_LEN bytes.
 pub const H_NAME: u32 = 64;
 /// Header word: ColdFire image offset.
