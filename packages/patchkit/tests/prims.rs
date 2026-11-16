@@ -1572,7 +1572,8 @@ fn a_stub_loads_its_slot_and_falls_through_to_the_stock_path() {
 #[test]
 fn info_entries_and_slots_share_one_table_and_a_duplicate_hash_is_refused() {
     need_image!(DN2);
-    let extra = "[[info]]\nname = \"frame_info\"\nsymbol = \"slot.frame_type\"\ndevices = [\"dn2\"]\n";
+    let extra =
+        "[[info]]\nname = \"frame_info\"\nsymbol = \"slot.frame_type\"\ndevices = [\"dn2\"]\n";
     let body = format!(
         "{}{extra}",
         stub_body(FRAMETYPE, "frame_type", "d0", "", "[\"dn2\"]")
@@ -1591,7 +1592,10 @@ fn info_entries_and_slots_share_one_table_and_a_duplicate_hash_is_refused() {
     // an info entry with the name of a slot gives one hash twice
     let dup = body.replace("name = \"frame_info\"", "name = \"frame_type\"");
     let lib = library(vec![module("t/s", "", &dup, Some(cf_obj()))]);
-    expect_err(run_on(DN2, &registry(), &lib, &["t/s"]), "two entries of the info table have the name hash");
+    expect_err(
+        run_on(DN2, &registry(), &lib, &["t/s"]),
+        "two entries of the info table have the name hash",
+    );
 }
 
 #[test]

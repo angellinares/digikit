@@ -219,7 +219,10 @@ pub fn validate_manifest(m: &Manifest) -> Result<()> {
     for (i, inf) in m.info.iter().enumerate() {
         check_devices(id, &format!("info {}", inf.name), &inf.devices)?;
         if !ident_ok(&inf.name) {
-            return Err(err!("{id}: info name {:?} is not [a-z][a-z0-9_]*", inf.name));
+            return Err(err!(
+                "{id}: info name {:?} is not [a-z][a-z0-9_]*",
+                inf.name
+            ));
         }
         if let Some(t) = &inf.symbol {
             expr::parse(t).map_err(|e| err!("{id}: info {}: symbol: {e}", inf.name))?;

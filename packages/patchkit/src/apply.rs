@@ -1112,7 +1112,11 @@ pub fn apply_with(
         let names = slot_defs
             .iter()
             .flat_map(|(m, d)| d.iter().map(move |s| (m.id().to_string(), s.name.as_str())))
-            .chain(info_defs.iter().map(|(m, i)| (m.id().to_string(), i.name.as_str())));
+            .chain(
+                info_defs
+                    .iter()
+                    .map(|(m, i)| (m.id().to_string(), i.name.as_str())),
+            );
         for (owner, name) in names {
             let h = dkneeds::keys::name_hash(name);
             if let Some((_, other)) = seen.iter().find(|(x, _)| *x == h) {
@@ -1535,7 +1539,11 @@ pub fn apply_with(
                 let v = crate::expr::eval_str(text, &scope)
                     .map_err(|e| err!("{}: info {}: symbol: {e}", m.id(), inf.name))?;
                 let v = u32::try_from(v).map_err(|_| {
-                    err!("{}: info {}: address {v:#x} is not 32 bits", m.id(), inf.name)
+                    err!(
+                        "{}: info {}: address {v:#x} is not 32 bits",
+                        m.id(),
+                        inf.name
+                    )
                 })?;
                 entries.push((dkneeds::keys::name_hash(&inf.name), v));
             }

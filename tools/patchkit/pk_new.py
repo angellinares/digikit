@@ -92,7 +92,11 @@ def create_service(name: str, dir_: Path | None = None) -> Path:
     """A service crate of the runtime from sdk/templates/service: `modules/core/services/NAME` (or `DIR/NAME`). The id is `core/services/NAME`; there is no author."""
     if not NAME_RE.fullmatch(name):
         raise SystemExit(f"a service name is lower snake case: {name!r}")
-    values = {**tokens(f"service/{name}"), "ID": f"core/services/{name}", "AUTHOR": "core"}
+    values = {
+        **tokens(f"service/{name}"),
+        "ID": f"core/services/{name}",
+        "AUTHOR": "core",
+    }
     base = (dir_ if dir_ is not None else MODULES / "core" / "services") / name
     write_template("service", base, values)
     return base

@@ -868,7 +868,10 @@ def check_service_crates(root: Path) -> list[Violation]:
             ):
                 where = f"{rel(root, f)}:{n}"
                 # the service file (`dks/`) is where a service names firmware (`dks/src/fw.rs`); the neutral crate does not
-                if RS_FW.search(line) and "dks" not in f.relative_to(manifest.parent).parts:
+                if (
+                    RS_FW.search(line)
+                    and "dks" not in f.relative_to(manifest.parent).parts
+                ):
                     out.append(
                         Violation(
                             where,

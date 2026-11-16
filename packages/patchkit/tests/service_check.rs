@@ -256,20 +256,39 @@ fn the_service_file_layout_id_and_role_are_checked() {
     ] {
         let (dir, sdk) = service("dks-file", &[]);
         fs::remove_file(dir.join(gone)).unwrap();
-        assert!(mentions(&problems(&dir, &sdk), what), "{gone}: {:?}", problems(&dir, &sdk));
+        assert!(
+            mentions(&problems(&dir, &sdk), what),
+            "{gone}: {:?}",
+            problems(&dir, &sdk)
+        );
     }
     let (dir, sdk) = service("dks-id", &[]);
     let m = fs::read_to_string(dir.join("dks/module.toml")).unwrap();
-    fs::write(dir.join("dks/module.toml"), m.replace("core/services/sweep", "core/sweep")).unwrap();
-    assert!(mentions(&problems(&dir, &sdk), "the layout wants `core/services/sweep`"));
+    fs::write(
+        dir.join("dks/module.toml"),
+        m.replace("core/services/sweep", "core/sweep"),
+    )
+    .unwrap();
+    assert!(mentions(
+        &problems(&dir, &sdk),
+        "the layout wants `core/services/sweep`"
+    ));
     let (dir, sdk) = service("dks-role", &[]);
     let m = fs::read_to_string(dir.join("dks/module.toml")).unwrap();
-    fs::write(dir.join("dks/module.toml"), m.replace("role = \"service\"", "role = \"tool\"")).unwrap();
+    fs::write(
+        dir.join("dks/module.toml"),
+        m.replace("role = \"service\"", "role = \"tool\""),
+    )
+    .unwrap();
     assert!(mentions(&problems(&dir, &sdk), "`role` is not \"service\""));
     // a service whose row has no `rust` is a file: dks/ is required
     let (dir, sdk) = service("dks-required", &[]);
     fs::remove_dir_all(dir.join("dks")).unwrap();
-    assert_eq!(problems(&dir, &sdk), Vec::<String>::new(), "a linked-in service has no dks/");
+    assert_eq!(
+        problems(&dir, &sdk),
+        Vec::<String>::new(),
+        "a linked-in service has no dks/"
+    );
     fs::write(&sdk, "[[service]]\nname = \"sweep\"\n").unwrap();
     assert!(mentions(&problems(&dir, &sdk), "dks/ is missing"));
 }
@@ -278,7 +297,10 @@ fn the_service_file_layout_id_and_role_are_checked() {
 fn dks_lib_rs_is_the_service_call_alone() {
     let (dir, sdk) = service("dks-lib", &[]);
     append(&dir.join("dks/src/lib.rs"), "\nfn helper() {}\n");
-    assert!(mentions(&problems(&dir, &sdk), "dks/src/lib.rs is not the `service!(...)` call alone"));
+    assert!(mentions(
+        &problems(&dir, &sdk),
+        "dks/src/lib.rs is not the `service!(...)` call alone"
+    ));
     // the extra items go to hooks.rs or fw.rs, which lib.rs declares
     let (dir, sdk) = service("dks-lib-mod", &[]);
     append(&dir.join("dks/src/lib.rs"), "\nmod fw;\n");
@@ -288,49 +310,96 @@ fn dks_lib_rs_is_the_service_call_alone() {
 #[test]
 fn service_hooks_equal_the_hook_entries_per_device() {
     let call = |hooks: &str| {
-        format!("#![no_std]\nmod hooks;\ndkrt_svc_rt::service!(Sweep, \"sweep\", &KINDS_SWEEP, setup = hooks::setup, hooks = [{hooks}]);\n")
+        format!(
+            "#![no_std]\nmod hooks;\ndkrt_svc_rt::service!(Sweep, \"sweep\", &KINDS_SWEEP, setup = hooks::setup, hooks = [{hooks}]);\n"
+        )
     };
-    let entry = |name: &str, dev: &str| {
-        format!("\n[[hook]]\nname = \"{name}\"\nentry = \"e\"\n{dev}")
-    };
+    let entry =
+        |name: &str, dev: &str| format!("\n[[hook]]\nname = \"{name}\"\nentry = \"e\"\n{dev}");
     // equal: one hook for both devices, one for dn2 only
     let (dir, sdk) = service("hooks-equal", &[]);
-    fs::write(dir.join("dks/src/lib.rs"), call("(\"cf.a.hook.x\", hooks::x), (\"cf.a.hook.y\", hooks::y, dn2)")).unwrap();
+    fs::write(
+        dir.join("dks/src/lib.rs"),
+        call("(\"cf.a.hook.x\", hooks::x), (\"cf.a.hook.y\", hooks::y, dn2)"),
+    )
+    .unwrap();
     fs::write(dir.join("dks/src/hooks.rs"), "").unwrap();
     append(&dir.join("dks/module.toml"), &entry("cf.a.hook.x", ""));
-    append(&dir.join("dks/module.toml"), &entry("cf.a.hook.y", "devices = [\"dn2\"]\n"));
+    append(
+        &dir.join("dks/module.toml"),
+        &entry("cf.a.hook.y", "devices = [\"dn2\"]\n"),
+    );
     assert_eq!(problems(&dir, &sdk), Vec::<String>::new());
     // the call has a hook the manifest has not, and the manifest has one the call has not, each for its device
-    fs::write(dir.join("dks/src/lib.rs"), call("(\"cf.a.hook.x\", hooks::x), (\"cf.a.hook.y\", hooks::y, dt2)")).unwrap();
+    fs::write(
+        dir.join("dks/src/lib.rs"),
+        call("(\"cf.a.hook.x\", hooks::x), (\"cf.a.hook.y\", hooks::y, dt2)"),
+    )
+    .unwrap();
     let found = problems(&dir, &sdk);
-    assert!(mentions(&found, "service! takes the hook `cf.a.hook.y` on dt2"), "{found:?}");
-    assert!(mentions(&found, "[[hook]] `cf.a.hook.y` on dn2 is not in the service! hook list"), "{found:?}");
+    assert!(
+        mentions(&found, "service! takes the hook `cf.a.hook.y` on dt2"),
+        "{found:?}"
+    );
+    assert!(
+        mentions(
+            &found,
+            "[[hook]] `cf.a.hook.y` on dn2 is not in the service! hook list"
+        ),
+        "{found:?}"
+    );
     // [[hook]] entries need hooks.rs
     fs::remove_file(dir.join("dks/src/hooks.rs")).unwrap();
-    assert!(mentions(&problems(&dir, &sdk), "dks/src/hooks.rs is missing"));
+    assert!(mentions(
+        &problems(&dir, &sdk),
+        "dks/src/hooks.rs is missing"
+    ));
 }
 
 #[test]
 fn assembler_and_firmware_names_stay_in_their_place() {
     // assembler: only dks/src/hooks.rs; the neutral crate has none
     let (dir, sdk) = service("asm", &[]);
-    fs::write(dir.join("dks/src/hooks.rs"), "core::arch::global_asm!(\".text\");\n").unwrap();
+    fs::write(
+        dir.join("dks/src/hooks.rs"),
+        "core::arch::global_asm!(\".text\");\n",
+    )
+    .unwrap();
     append(&dir.join("dks/src/lib.rs"), "\nmod hooks;\n");
     assert_eq!(problems(&dir, &sdk), Vec::<String>::new());
     fs::write(dir.join("dks/src/fw.rs"), "core::arch::asm!(\"nop\");\n").unwrap();
-    assert!(mentions(&problems(&dir, &sdk), "dks/src/fw.rs: assembler is only in dks/src/hooks.rs"));
+    assert!(mentions(
+        &problems(&dir, &sdk),
+        "dks/src/fw.rs: assembler is only in dks/src/hooks.rs"
+    ));
     let (dir, sdk) = service("asm-neutral", &[]);
-    append(&dir.join("src/slots.rs"), "pub fn f() { unsafe { core::arch::asm!(\"nop\") } }\n");
-    assert!(mentions(&problems(&dir, &sdk), "src/slots.rs: assembler is only in dks/src/hooks.rs"));
+    append(
+        &dir.join("src/slots.rs"),
+        "pub fn f() { unsafe { core::arch::asm!(\"nop\") } }\n",
+    );
+    assert!(mentions(
+        &problems(&dir, &sdk),
+        "src/slots.rs: assembler is only in dks/src/hooks.rs"
+    ));
     // firmware names: allowed under dks/, refused in the neutral crate
     let (dir, sdk) = service("fw-names", &[]);
     append(&dir.join("dks/src/lib.rs"), "\nmod fw;\n");
-    fs::write(dir.join("dks/src/fw.rs"), "use dkfw::page;\nconst H: &str = \"cf.page.hook.x\";\n").unwrap();
+    fs::write(
+        dir.join("dks/src/fw.rs"),
+        "use dkfw::page;\nconst H: &str = \"cf.page.hook.x\";\n",
+    )
+    .unwrap();
     assert_eq!(problems(&dir, &sdk), Vec::<String>::new());
-    append(&dir.join("src/slots.rs"), "pub const A: &str = \"cf.page.fn.draw\";\n");
+    append(
+        &dir.join("src/slots.rs"),
+        "pub const A: &str = \"cf.page.fn.draw\";\n",
+    );
     append(&dir.join("src/records.rs"), "use dkfw::page;\n");
     let found = problems(&dir, &sdk);
-    assert!(mentions(&found, "names firmware (`\"cf.page.fn.draw\"`)"), "{found:?}");
+    assert!(
+        mentions(&found, "names firmware (`\"cf.page.fn.draw\"`)"),
+        "{found:?}"
+    );
     assert!(mentions(&found, "names firmware (`dkfw`)"), "{found:?}");
 }
 

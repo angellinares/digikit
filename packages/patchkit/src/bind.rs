@@ -47,9 +47,9 @@ pub fn tail_import(hook: &str) -> String {
 
 /// Is `import` the tail reference of some hook (a name `tail_import` makes)?
 pub fn is_tail_import(import: &str) -> bool {
-    import.strip_prefix("dk_tail_").is_some_and(|h| {
-        h.len() == 8 && h.bytes().all(|c| matches!(c, b'0'..=b'9' | b'a'..=b'f'))
-    })
+    import
+        .strip_prefix("dk_tail_")
+        .is_some_and(|h| h.len() == 8 && h.bytes().all(|c| matches!(c, b'0'..=b'9' | b'a'..=b'f')))
 }
 
 fn put16(out: &mut Vec<u8>, w: u16) {
@@ -909,7 +909,10 @@ mod tests {
         let code = [0x66, 0x00, 0x00, 0x20, 0x4e, 0x71, 0x4e, 0x71, 0x4e, 0x71];
         let site = site_of(&code, "replace").unwrap();
         let e = bind_raw("x.hook", &site, 0, true, &mut vec![0; 4]).unwrap_err();
-        assert!(e.0.contains("PC-relative displaced instruction at x.hook"), "{e}");
+        assert!(
+            e.0.contains("PC-relative displaced instruction at x.hook"),
+            "{e}"
+        );
         // a hook that is not "replace" is not entered directly
         let site = site_of(&CODE, "before").unwrap();
         assert!(bind_raw("x.hook", &site, 0, false, &mut vec![]).is_err());
@@ -919,12 +922,22 @@ mod tests {
     fn tail_references_become_base_relative_relocations() {
         let (a, b) = ("x.hook.a", "x.hook.b");
         assert_eq!(tail_import(a).len(), 16);
-        assert!(is_tail_import(&tail_import(a)) && !is_tail_import("dk_tail_xyz") && !is_tail_import("dk_log"));
+        assert!(
+            is_tail_import(&tail_import(a))
+                && !is_tail_import("dk_tail_xyz")
+                && !is_tail_import("dk_log")
+        );
         // imports: the log function, the tail of a, the tail of b; words at 0 (log), 4 (a, addend 2), 8 (b), 12 (a)
         let imports = vec!["dk_log".to_string(), tail_import(a), tail_import(b)];
         let mut image = vec![0, 0, 0, 0, 0, 0, 0, 2, 0, 0, 0, 0, 0, 0, 0, 0];
-        let mut relocs = vec![(0, 1 << 24), (4, 1 << 24 | 1), (8, 1 << 24 | 2), (12, 1 << 24 | 1)];
-        let keep = resolve_tail_refs(&mut image, &mut relocs, &imports, &[(a, 0x40), (b, 0x60)]).unwrap();
+        let mut relocs = vec![
+            (0, 1 << 24),
+            (4, 1 << 24 | 1),
+            (8, 1 << 24 | 2),
+            (12, 1 << 24 | 1),
+        ];
+        let keep =
+            resolve_tail_refs(&mut image, &mut relocs, &imports, &[(a, 0x40), (b, 0x60)]).unwrap();
         assert_eq!(keep, ["dk_log"]);
         assert_eq!(relocs, [(0, 1 << 24), (4, 0), (8, 0), (12, 0)]);
         let word = |at: usize| u32::from_be_bytes(image[at..at + 4].try_into().unwrap());

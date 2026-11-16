@@ -420,7 +420,10 @@ impl CoreApi for FakeCore {
         self.fx_table.as_ptr()
     }
     unsafe fn info(&self, name_hash: u32) -> *const u32 {
-        self.info_tables.iter().find(|(h, _)| *h == name_hash).map_or(core::ptr::null(), |(_, w)| w.as_ptr())
+        self.info_tables
+            .iter()
+            .find(|(h, _)| *h == name_hash)
+            .map_or(core::ptr::null(), |(_, w)| w.as_ptr())
     }
     fn link_set(&self, slot: Slot, value: u32) {
         self.rec(Call::Set { slot, value });

@@ -234,10 +234,9 @@ fn service_hooks(lib: &str) -> Option<Vec<(String, Option<String>)>> {
             _ => {}
         }
     }
-    let entry = Regex::new(
-        r#"\(\s*"([^"]+)"\s*,\s*[A-Za-z_][\w:]*\s*(?:,\s*([A-Za-z0-9_]+)\s*)?\)"#,
-    )
-    .unwrap();
+    let entry =
+        Regex::new(r#"\(\s*"([^"]+)"\s*,\s*[A-Za-z_][\w:]*\s*(?:,\s*([A-Za-z0-9_]+)\s*)?\)"#)
+            .unwrap();
     Some(
         entry
             .captures_iter(&body[open + 1..end])
@@ -270,14 +269,16 @@ fn only_service_call(text: &str) -> bool {
         return false;
     };
     let head = &text[..at];
-    let tail = text[end..].trim_start_matches(';');
+    let tail = text[end..].trim_start().trim_start_matches(';');
     // the path before `service!` (dkrt_svc_rt::) is part of the call
     let head = head.trim_end_matches(|c: char| c.is_alphanumeric() || c == '_' || c == ':');
-    let allowed = Regex::new(r"^\s*(?:#!?\[[^\]]*\]|(?:pub\s+)?use\s+[^;]*;|(?:pub\s+)?mod\s+\w+\s*;)\s*$").unwrap();
+    let allowed =
+        Regex::new(r"^\s*(?:#!?\[[^\]]*\]|(?:pub\s+)?use\s+[^;]*;|(?:pub\s+)?mod\s+\w+\s*;)\s*$")
+            .unwrap();
     // `use`, `mod` and attributes: split at `;` and `]` boundaries into statements
     let mut stmts: Vec<String> = vec![];
     let mut cur = String::new();
-    for c in head.chars() {
+    for c in head.chars().chain(['\n']).chain(tail.chars()) {
         cur.push(c);
         if c == ';' || c == ']' {
             stmts.push(std::mem::take(&mut cur));
@@ -286,7 +287,7 @@ fn only_service_call(text: &str) -> bool {
     if !cur.trim().is_empty() {
         stmts.push(cur);
     }
-    stmts.iter().all(|s| allowed.is_match(s)) && tail.trim().is_empty()
+    stmts.iter().all(|s| allowed.is_match(s))
 }
 
 /// The device a `[[hook]]` entry or a `service!` entry is for; an entry for no device named is for all.
@@ -301,11 +302,16 @@ fn hook_set(entries: &[(String, Vec<String>)], device: &str) -> BTreeSet<String>
 /// The problems of the service file crate `dks/` (when it exists or the service is a file) and of the neutral crate's sources against the file rules.
 fn check_dks(dir: &Path, needs_dks: bool, neutral: &[(String, String)]) -> Vec<String> {
     let mut out = vec![];
-    let asm = Regex::new(r"\b(?:global_asm|asm|naked_asm)\s*!|#\[\s*naked\s*\]|#\[\s*unsafe\s*\(\s*naked\s*\)\s*\]").unwrap();
+    let asm = Regex::new(
+        r"\b(?:global_asm|asm|naked_asm)\s*!|#\[\s*naked\s*\]|#\[\s*unsafe\s*\(\s*naked\s*\)\s*\]",
+    )
+    .unwrap();
     let fw = Regex::new(r#""cf\.[a-z0-9_]+(?:\.[a-z0-9_]+)+"|\bdkfw\b"#).unwrap();
     for (path, text) in neutral {
         if asm.is_match(text) {
-            out.push(format!("{path}: assembler is only in dks/src/hooks.rs (the neutral crate has none)"));
+            out.push(format!(
+                "{path}: assembler is only in dks/src/hooks.rs (the neutral crate has none)"
+            ));
         }
         if let Some(m) = fw.find(text) {
             out.push(format!("{path}: names firmware (`{}`): firmware names (cf.* hooks and anchors, dkfw) belong under dks/", m.as_str()));
@@ -333,18 +339,34 @@ fn check_dks(dir: &Path, needs_dks: bool, neutral: &[(String, String)]) -> Vec<S
         let get = |k: &str| module.and_then(|t| t.get(k)).and_then(|v| v.as_str());
         let want = format!("core/services/{name}");
         if get("id") != Some(want.as_str()) {
-            out.push(format!("dks/module.toml: the id is `{}`, the layout wants `{want}`", get("id").unwrap_or("")));
+            out.push(format!(
+                "dks/module.toml: the id is `{}`, the layout wants `{want}`",
+                get("id").unwrap_or("")
+            ));
         }
         if get("role") != Some("service") {
             out.push("dks/module.toml: `role` is not \"service\"".into());
         }
-        for h in m.get("hook").and_then(|h| h.as_array()).into_iter().flatten() {
+        for h in m
+            .get("hook")
+            .and_then(|h| h.as_array())
+            .into_iter()
+            .flatten()
+        {
             let Some(t) = h.as_table() else { continue };
-            let n = t.get("name").and_then(|n| n.as_str()).unwrap_or("").to_string();
+            let n = t
+                .get("name")
+                .and_then(|n| n.as_str())
+                .unwrap_or("")
+                .to_string();
             let d = t
                 .get("devices")
                 .and_then(|d| d.as_array())
-                .map(|a| a.iter().filter_map(|x| x.as_str().map(str::to_string)).collect())
+                .map(|a| {
+                    a.iter()
+                        .filter_map(|x| x.as_str().map(str::to_string))
+                        .collect()
+                })
                 .unwrap_or_default();
             hooks.push((n, d));
         }
@@ -376,7 +398,9 @@ fn check_dks(dir: &Path, needs_dks: bool, neutral: &[(String, String)]) -> Vec<S
                 out.push(format!("dks/src/lib.rs: service! takes the hook `{n}` on {dev}, but dks/module.toml has no [[hook]] for it"));
             }
             for n in m.difference(&c) {
-                out.push(format!("dks/module.toml: [[hook]] `{n}` on {dev} is not in the service! hook list"));
+                out.push(format!(
+                    "dks/module.toml: [[hook]] `{n}` on {dev} is not in the service! hook list"
+                ));
             }
         }
     }

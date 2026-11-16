@@ -215,7 +215,9 @@ pub fn handler_plan(decls: &[&str], device_short: &str, hook: &str) -> Result<Ha
 
 /// Does the declared hook `hook` have a `handler` (a C-callable function the trampoline calls)? A hook without one is a raw hook: entered at its `entry` itself (`bind`).
 pub fn hook_has_handler(decls: &[&str], device_short: &str, hook: &str) -> Result<bool> {
-    Ok(declared_hook(decls, device_short, hook, |h| h.handler.is_some())?)
+    Ok(declared_hook(decls, device_short, hook, |h| {
+        h.handler.is_some()
+    })?)
 }
 
 /// Does the raw hook `hook` declare the exit `tail = true` (run the displaced instructions of the site, then continue at site + len)?
