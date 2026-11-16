@@ -8,10 +8,14 @@
 import { existsSync, readFileSync } from 'node:fs';
 import { createRequire, isBuiltin } from 'node:module';
 import { dirname, isAbsolute, join, relative, resolve } from 'node:path';
+import { fileURLToPath } from 'node:url';
+
+// TypeScript is a dependency of tests/regression in the real checkout; a workspaceRoot that is a fixture has no node_modules.
+const regressionRequire = createRequire(fileURLToPath(new URL('../../tests/regression/package.json', import.meta.url)));
 
 export const testImportInputs = (workspaceRoot) => {
   const config = join(workspaceRoot, 'tests/regression/tsconfig.json');
-  const ts = createRequire(join(workspaceRoot, 'tests/regression/package.json'))('typescript');
+  const ts = regressionRequire('typescript');
   const parsed = ts.getParsedCommandLineOfConfigFile(
     config,
     {},
