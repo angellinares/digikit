@@ -247,13 +247,20 @@ impl Images for Card {
         self.live.remove(at);
     }
     unsafe fn import_addr(&mut self, name: *const u8) -> u32 {
-        RealImages.import_addr(name)
+        // The device table `IMPORTS` points at firmware symbols that a host test binary does not link: a name the SDK declares gets a stand-in address.
+        let n = core::slice::from_raw_parts(name, cstr_len(name, 64));
+        if dkrt_sdk::api::BUILTIN_NAMES.iter().any(|b| b.as_bytes() == n) {
+            0x1000
+        } else {
+            0
+        }
     }
     unsafe fn svc_import_addr(&mut self, name: *const u8) -> u32 {
         RealImages.svc_import_addr(name)
     }
     unsafe fn import_needs(&mut self, name: *const u8) -> Option<&'static str> {
-        RealImages.import_needs(name)
+        let _ = name;
+        None
     }
     unsafe fn list(&mut self, prefix: *const u8, out: *mut DkrtStoreEntry, max: u32) -> i32 {
         let prefix = core::slice::from_raw_parts(prefix, cstr_len(prefix, 64)).to_vec();
