@@ -12,7 +12,7 @@ import { DEVICES, FIRMWARE } from '@digi/regression/runtime/devices.ts';
 import { planSymbol } from '@digi/regression/runtime/runtime-plan.ts';
 
 // The signed value template of core/fxpages on test/dyn-fx-gain-bipolar: a BIAS knob from -64 to +63 (default 0) whose float p0 gives the
-// gain 1 + p0 / 64. This replaces the adapter legs of digikit/freqshift (docs/plans/ledgers/t2-fx-contract.md); the frequency shift
+// gain 1 + p0 / 64. This replaces the adapter legs of the frequency shifter test (docs/plans/ledgers/t2-fx-contract.md); the frequency shift
 // itself is proven on the SHARC rig.
 const FX = 'test/dyn-fx-gain-bipolar';
 const ROUTE = `fx/route/${FX}`;

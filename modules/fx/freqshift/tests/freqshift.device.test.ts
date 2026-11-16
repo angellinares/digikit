@@ -7,7 +7,7 @@ import { advance, analysisJson, bounded, captureNote, frames, rows, word } from 
 import { SINE, triggerFrame } from '@digi/regression/runtime/fixtures.ts';
 import { bits, cstring, mainPage, openPages, pageKit } from '@digi/regression/runtime/fx-pages-ui.ts';
 import { inspectFxBoot, selectSine, shot, tap, withPreparedFxSession } from '@digi/regression/runtime/fx-session.ts';
-import { selectTrack, setAmount } from '@digi/regression/runtime/fx-track-ui.ts';
+import { setAmount } from '@digi/regression/runtime/fx-track-ui.ts';
 import { record } from '@digi/regression/runtime/artifacts.ts';
 import { DEVICES, FIRMWARE } from '@digi/regression/runtime/devices.ts';
 import { planSymbol } from '@digi/regression/runtime/runtime-plan.ts';
@@ -21,7 +21,7 @@ const floatWord = (raw: number) => {
   return bytes.readFloatLE();
 };
 
-// The legacy runner exercises all four pristine-card legs on BOTH devices.
+// The legacy runner exercises all three pristine-card legs on BOTH devices.
 // In particular, the old DN2 TOML's "no send cells" header is stale.
 for (const device of DEVICES) {
   describe(`${device.toUpperCase()} ${FIRMWARE[device]} frequency shifter`, () => {
@@ -50,13 +50,12 @@ for (const device of DEVICES) {
         dry: { selection: ['modules/m0.dkm'] },
         master: { ...effectCard, settings: [[`fx/route/${FX}`, '00']] },
         send: effectCard,
-        other: effectCard,
       },
       // Its own dry amplitude > .01 and relative PCM oracles own audibility.
       requireAudible: false,
     });
 
-    test('preserves page metadata, bipolar shift, kit roundtrip and master/send spectra across four clean cards', async () => {
+    test('preserves page metadata, bipolar shift, kit roundtrip and master/send spectra across three clean cards', async () => {
       const { fixture, plan, profile, artifacts, slots, sendSlots } = context;
       const sym = (name: string) => planSymbol(plan, name);
       let runtime = fixture.runtime;
@@ -237,25 +236,6 @@ for (const device of DEVICES) {
       await mainPage(runtime.session);
       await sound('half');
       await noFault();
-
-      await boot('other', [SINE, FX]);
-      await selectSine(runtime, profile);
-      ui = createFxKitUi(runtime, plan, profile, artifacts);
-      kit = pageKit(runtime.session, profile);
-      await mainPage(runtime.session);
-      await selectTrack(runtime.session, 2);
-      await tap(runtime.session, 'FX', 400);
-      await tap(runtime.session, 'FX', 400);
-      await setAmount(runtime.session, profile, 'ENC A', 1, 100);
-      await advance(runtime.session, 300);
-      expect(await amounts()).toEqual([0, 100, ...Array(14).fill(0)]);
-      await selectTrack(runtime.session, 1);
-      await ui.fxPage(3);
-      const otherRaw = await kit.setRaw('ENC A', 0, 0x6800);
-      await advance(runtime.session, 100);
-      expect((await row())[4]).toBe(bits(shiftFloat(otherRaw)));
-      await mainPage(runtime.session);
-      await sound('other');
 
       const request = path.join(artifacts, 'freqshift-analysis-request.json');
       fs.writeFileSync(request, JSON.stringify({ module: FX, pcm, shift, mix }));

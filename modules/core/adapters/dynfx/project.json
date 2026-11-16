@@ -4,6 +4,13 @@
   "metadata": {
     "runtimeAcceptance": [
       {
+        "files": ["tests/fx-two-notes.device.test.ts"],
+        "tags": ["A:core/dynfx", "S:fx"],
+        "modules": ["test/dyn-fx-gain", "test/sine"],
+        "sources": ["tools/patchkit/hook_ab.py"],
+        "plusdrive": true
+      },
+      {
         "files": [
           "tests/fx-contract.device.test.ts"
         ],

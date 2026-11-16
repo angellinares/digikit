@@ -27,7 +27,7 @@ def captures(tmp_path_factory):
     f0 = 440.0
     dry = (0.2 * np.sin(2 * np.pi * f0 * n / shifter.FS)).astype(np.float32)
     values = {"up": 40.0, "down": -40.0, "e": -40.0, "send": 40.0}
-    pcm = {"dry": dry, "a": dry, "b": dry, "other": dry}
+    pcm = {"dry": dry, "a": dry, "b": dry}
     for tag, key in (("c", "up"), ("d", "down"), ("e", "e")):
         hz = model.target_inc(values[key]) * shifter.FS / 2**32
         pcm[tag] = 0.2 * np.sin(2 * np.pi * (f0 + hz) * n / shifter.FS)
@@ -64,7 +64,7 @@ def test_json_adapter_accepts_independent_master_tones_and_float_model_send(
 
 
 @pytest.mark.parametrize(
-    "fault", ["image", "residual", "level", "send_gain", "other", "mix_zero"]
+    "fault", ["image", "residual", "level", "send_gain", "mix_zero"]
 )
 def test_pcm_oracles_reject_spectral_route_and_endpoint_regressions(
     captures, tmp_path, fault
@@ -84,9 +84,6 @@ def test_pcm_oracles_reject_spectral_route_and_endpoint_regressions(
     elif fault == "send_gain":
         tag, label = "send", "send send:"
         changed = pcm["dry"] + 2 * (pcm["send"] - pcm["dry"])
-    elif fault == "other":
-        tag, label = "other", "other:"
-        changed = pcm["dry"] * 1.01
     elif fault == "mix_zero":
         tag, label = "b", "shift B:"
         changed = pcm["dry"] * 1.01
