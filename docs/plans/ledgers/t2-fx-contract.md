@@ -1,6 +1,6 @@
 # Ledger: FX contract suite (T2 step 2, lane 1)
 
-Status 2026-11-16, phase 1: the new files are written and committed as `wip:` commits; nothing was built or run. No test is deleted yet. Deletions go in their own commits, after the
+Status 2026-11-16, phase 2 (host checks only): the fixture packs and `patchkit gen` reproduces its `build/gen` files unchanged; lint, format, types, layers and the Python checks pass; the device files are registered and selected (`mise run test:plan`). No device or emulator run yet. No test is deleted yet. Deletions go in their own commits, after the
 replacement passes on DT2 OS 1.17 and DN2 OS 1.12 and an independent review has signed the rows below.
 
 Line format: `old file:line | assertion | -> new file: place | or KEPT | or DROPPED: reason`.
@@ -11,7 +11,7 @@ New files: `B` = `modules/core/adapters/fxpages/tests/fx-bipolar.device.test.ts`
 
 | Suite | Before | After | Note |
 | --- | --- | --- | --- |
-| freqshift adapter legs | 4 (F: dry, master, send, other) | 4 (B, same cards on the bipolar fixture); F itself is trimmed in a later step | the cards are the same: the legs test one boot each |
+| freqshift adapter legs | 4 (F: dry, master, send, other) | B 4 (dry, master, send, other on the bipolar fixture) and F 3 (the `other` boot is gone from F now) | F keeps its dry, master and send cards for the PCM oracle |
 | dynfx chain and reuse | 3 (C: plain, dry, full) + 4 (R: initial, wet, restart, restored) = 7 | 5 (D: plain, dry, wet, deselect restart, full) | `restored` dropped |
 | fx send, routes panel, routes persist (core/fx) | 5 + 5 + 5, DN2 chord 3 more | not changed in this step | see "Not merged" |
 
@@ -35,8 +35,8 @@ The ledger estimate of the plan (about 92 to about 30 boots) needs the merges in
 | F:213-222 | send amount 40 on track 1 reaches the row only as amount byte 0 | B: send |
 | F:223-229 | signed value on the send route; route word stays 1; amount stays 40 | B: send |
 | F:233-236 | MIX raw 0x4000 gives the float `raw / 0x7f00` within 1e-4 | B: send |
-| F:241-256 | other-track amount 100 on track 2 only; signed value reaches the row word | B: other |
-| F:260-270, analysis `pk_digikit_fxshift` | PCM oracles of the shifter (spectra, image rejection, send and half levels) | NOT MOVED to B. B checks the gain law on the master as relative PCM (`compare`). The shift itself belongs to the rig sound checks (`tests/rig/freqshift.toml`) and the model tests; the oracle stays in F until the trim step |
+| F:241-256 | other-track amount 100 on track 2 only; signed value reaches the row word | B: other. F lost this boot and the oracle check `other:` of `pk_digikit_fxshift` (its PCM part: track 2 amount adds nothing to track 1, bit for bit) is covered by the `other` card of `fx-send.device.test.ts` |
+| F:260-270 (rest), analysis `pk_digikit_fxshift` | PCM oracles of the shifter (spectra, image rejection, send and half levels) | NOT MOVED to B. B checks the gain law on the master as relative PCM (`compare`). The shift itself belongs to the rig sound checks (`tests/rig/freqshift.toml`) and the model tests; the oracle stays in F until the trim step |
 | F, adapter-specific | master and send spectra with a real module | KEPT in F (trim step) |
 
 Not covered by B on purpose: audible send PCM with the bipolar knob (the send law is proven with `test/dyn-fx-gain` in `fx-send.device.test.ts`).
