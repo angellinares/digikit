@@ -16,8 +16,29 @@ conflicts = []
 "dt2-1.17" = "experimental"
 "dn2-1.12" = "experimental"
 
+# The functions the file exports to other modules: one [[export]] for each, and the same names in the `exports = [...]` list of `service!` (the loader refuses a
+# mismatch with E_DECL_KIND). Each is an [[import]] of its service in sdk/sdk.toml.
+#
+# [[export]]
+# name = "dk___NAME___ping"
+#
+# A hook (devices/fw/*.toml) for each device that has it: `entry` is the routine of `dks/src/hooks.rs`; without `devices` the hook is for every device. Each [[hook]]
+# is also an entry of the `hooks = [...]` list of `service!`, with the same device filter (`patchkit service-check` compares both per device).
+#
+# [[hook]]
+# name = "cf.x.hook.y"
+# entry = "x_hook_y"
+# devices = ["dt2"]
+#
+# A fill: the pointer slot of a fixed firmware site (an adapter's `[[slot]]`); a loaded file fills it with the address of its routine. `devices` limits it to one
+# device. Each [[fill]] is an entry of the `fills = [...]` list of `service!`.
+#
+# [[fill]]
+# slot = "x_slot"
+# entry = "x_fill"
+# devices = ["dn2"]
+
 # Rust, built with rustc_codegen_gcc for -mcpu=54418 (`patchkit build`). Packed as a .dks (`patchkit pack __ID__`): the file is `__NAME__.dks`.
-# A service with hooks adds one [[hook]] (name, entry, optional devices) for each hook of the `service!` call; `patchkit service-check` compares the two per device.
 [[object]]
 path = "build/__NAME__.dko.json"
 sources = ["Cargo.toml"]
