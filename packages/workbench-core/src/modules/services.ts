@@ -23,7 +23,7 @@ export interface ServiceFile {
   label: string;
   hash32: number;
   version: number;
-  /** The ABI fingerprint the service was built for (header word 0x3c); it must equal the runtime's `svc_abi`. */
+  /** The ABI fingerprint the service was built for (header word 0x3c); it must equal the runtime's `svc_abi`; 0 (a service in C, no `dk_svc_abi`) is accepted as the loader does. */
   abi: number;
   /** The runtime version the file was built for (header word 0x30 without the trace bit 31), for the refusal text. */
   builtFor: number;
@@ -192,7 +192,8 @@ export function resolveServices(
         if (!s) return { module: id, service: hex(n.hash32), kind: 'unknown-hash' };
         if (!versionFits(s.version, n.minVersion))
           return { module: id, service: s.stem, kind: 'version', need: fmt(n.minVersion), have: fmt(s.version) };
-        if (rt.fingerprint !== null && s.abi !== rt.fingerprint)
+        // abi 0: the file defines no `dk_svc_abi` (a service in C); the runtime's loader accepts it too (RealRegistry::abi_ok)
+        if (rt.fingerprint !== null && s.abi !== 0 && s.abi !== rt.fingerprint)
           return {
             module: id,
             service: s.stem,
