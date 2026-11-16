@@ -177,6 +177,11 @@ export const LOAD_STATUS: [number, string, string][] = [
   ],
   [-79, 'E_DECL_KIND', 'a service declared a record kind that the header table does not carry, or with another length'],
   [
+    -81,
+    'E_SVC_ABI',
+    "a service file was built for another runtime ABI (its header word H_SVC_ABI differs from the runtime's fingerprint)",
+  ],
+  [
     -82,
     'E_HOOK_STOCK',
     'a hook site of a service does not hold the stock bytes the bind recorded (another firmware, or a patched site): the service is refused before its init',
@@ -212,6 +217,7 @@ export const CAP = {
   RENAME: 13,
   READBACK: 14,
   LOADS: 15,
+  SVC_ABI: 16,
 } as const;
 
 /** The command numbers a module may register: [first, last]. */

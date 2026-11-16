@@ -1615,6 +1615,7 @@ FILEHASH = 12       # store format 4: the 32-byte hash of BEGIN, END, LIST and V
 RENAME = 13         # the RENAME command (rename or move one store entry)
 READBACK = 14       # END (and the SDK file_close) read the written file back from the card and compare its content hash with the running hash and BEGIN's before the commit: a host may skip its VERIFY after a successful END
 LOADS = 15          # the LOADS command (the result of each module of the boot selection, and the missing module of an E_IMPORT)
+SVC_ABI = 16        # the INFO reply ends with `svc_abi`: u32, the ABI fingerprint of interfaces B and C (`dkrt_abi::SVC_ABI`) a service file (.dks) must carry in header word H_SVC_ABI
 
 [capacity.kinds]   # the `kind` byte of a CAPACITY entry (u8 kind, u32 limit, u32 used, u32 largest); additive: a number is never reused.
                    # `fit = true`: a resource a fit looks at, with its `label` for a person (CAP_FIT in the generated code); every kind is in CAP_KINDS
@@ -1752,7 +1753,7 @@ consts = [
     { name = "H_RUNTIME", value = 48, doc = "Header word: the runtime version the module needs (bit 31: built with DK_TRACE)." },
     { name = "H_VERSION", value = 52, doc = "Header word: the module's version." },
     { name = "H_ROLE", value = 56, doc = "Header word: the role (0 module, 1 service)." },
-    { name = "H_RESERVED", value = 60, doc = "Header word: reserved, zero." },
+    { name = "H_SVC_ABI", value = 60, doc = "Header word: the ABI fingerprint of a service file (`dk_svc_abi`, the `dkrt-abi` boundary hash); 0 for a module and for a file that uses neither interface B nor C." },
     { name = "H_NAME", value = 64, doc = "Header: the module name, NAME_LEN bytes." },
     { name = "H_IMAGE_OFF", value = 96, doc = "Header word: ColdFire image offset." },
     { name = "H_IMAGE_SIZE", value = 100, doc = "Header word: ColdFire image size." },
@@ -1898,6 +1899,7 @@ E_CARD_RO = { code = -47, text = "the card's store area is not ours and not blan
 E_CONTRACT = { code = -48, text = "the module needs another runtime version than this one (another major or minor, or a higher patch)" }
 E_TABLE = { code = -49, text = "the runtime's tables failed their check" }
 E_MISSING = { code = -73, text = "the service is not in the image (the module that provides it is not loaded)" }
+E_SVC_ABI = { code = -81, text = "a service file was built for another runtime ABI (its header word H_SVC_ABI differs from the runtime's fingerprint)" }
 
 [load.state]        # the state of a module of the boot selection (LOADS v2, `DkrtBootInfo.states`); never renumber
 SELECTED = { code = 0, text = "in the selection, not planned yet" }

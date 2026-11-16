@@ -64,8 +64,9 @@ pub const H_RUNTIME: usize = dkneeds::H_RUNTIME as usize;
 pub const H_VERSION: usize = dkneeds::H_VERSION as usize;
 /// 0x38: the role of the file, [`ROLE_MODULE`] or [`ROLE_SERVICE`].
 pub const H_ROLE: usize = dkneeds::H_ROLE as usize;
-/// 0x3c..0x40: reserved, zero (the contract pairs of earlier formats; the one version is the runtime word at 0x30).
-pub const H_RESERVED: usize = dkneeds::H_RESERVED as usize;
+/// 0x3c..0x40: the ABI fingerprint of the object's `dk_svc_abi` data symbol (a service file built with `dkrt-svc-rt`); 0 when the object defines none, so a
+/// module is byte-identical to the format before the word was used.
+pub const H_SVC_ABI: usize = dkneeds::H_SVC_ABI as usize;
 /// A content module (a `.dkm`).
 pub const ROLE_MODULE: u32 = 0;
 /// A service provider (a `.dks`): its table has `PROVIDES` and `EXPORTS`.
@@ -505,6 +506,17 @@ fn pack_inner(
     } else {
         [Some(0), None, None, None]
     };
+    // the ABI fingerprint of a service built with `dkrt-svc-rt`: the value of the data symbol `dk_svc_abi` (a big-endian word in the image)
+    let svc_abi = match sym("dk_svc_abi")? {
+        None => 0,
+        Some(at) => {
+            let at = at as usize;
+            match image.get(at..at + 4) {
+                Some(w) => u32::from_be_bytes([w[0], w[1], w[2], w[3]]),
+                None => return Err(err!("dk_svc_abi is not a whole word of the image")),
+            }
+        }
+    };
     let align = obj
         .sections
         .iter()
@@ -573,6 +585,7 @@ fn pack_inner(
         // and the trace flag
         runtime_word: needed_runtime(imports.iter().copied()).max(crate::sdkgen::table_runtime())
             | if o.trace { FLAG_TRACE } else { 0 },
+        svc_abi,
         image: &image,
         bss: linked.bss_size as u32,
         align,
@@ -593,6 +606,8 @@ pub(crate) struct EmitParts<'a> {
     pub role: u32,
     /// The word at [`H_RUNTIME`]: the runtime version the module needs and the trace flag.
     pub runtime_word: u32,
+    /// The word at [`H_SVC_ABI`]: the service ABI fingerprint of a service (0 for a module).
+    pub svc_abi: u32,
     pub image: &'a [u8],
     pub bss: u32,
     pub align: u32,
@@ -632,6 +647,7 @@ pub(crate) fn emit(p: &EmitParts) -> Result<Vec<u8>> {
     put(&mut f, H_HDRSIZE, HEADER as u32);
     put(&mut f, H_RUNTIME, p.runtime_word);
     put(&mut f, H_VERSION, p.version);
+    put(&mut f, H_SVC_ABI, p.svc_abi);
     put(&mut f, H_ROLE, p.role);
     f[H_NAME..H_NAME + p.name.len()].copy_from_slice(p.name.as_bytes());
     put(&mut f, H_IMAGE_OFF, image_off as u32);
@@ -674,6 +690,8 @@ pub struct Dkm {
     pub version: u32,
     /// [`ROLE_MODULE`] or [`ROLE_SERVICE`].
     pub role: u32,
+    /// The word at [`H_SVC_ABI`].
+    pub svc_abi: u32,
     pub runtime_min: u32,
     /// Built with `DK_TRACE` ([`FLAG_TRACE`]); not part of `runtime_min`.
     pub trace: bool,
@@ -777,6 +795,7 @@ impl Dkm {
             name,
             version: get(f, H_VERSION),
             role,
+            svc_abi: get(f, H_SVC_ABI),
             runtime_min: get(f, H_RUNTIME) & !FLAG_TRACE,
             trace: get(f, H_RUNTIME) & FLAG_TRACE != 0,
             sha256: hex(&f[H_SHA..H_SHA + 32]),
@@ -979,11 +998,25 @@ mod tests {
     }
 
     #[test]
+    fn the_abi_fingerprint_of_a_service_object_is_header_word_0x3c() {
+        let mut o = unstamped();
+        // the dk_module record fills data bytes 8 to 24; the fingerprint follows it
+        let mut data = [0u8; 28];
+        data[24..28].copy_from_slice(&0xabcd_0123u32.to_be_bytes());
+        o.sections[1] = sec(".data", "data", 4, &data);
+        o.symbols.push(sym("dk_svc_abi", Some(".data"), 24));
+        o.stamp_isa();
+        assert_eq!(get(&pack(&o, &opts()).unwrap(), H_SVC_ABI), 0xabcd_0123);
+        // an object without the symbol leaves the word zero
+        assert_eq!(get(&pack(&object(), &opts()).unwrap(), H_SVC_ABI), 0);
+    }
+
+    #[test]
     fn the_header_has_the_needed_runtime_and_no_contract_pairs() {
         // 0x38..0x40 are reserved zero; 0x30 is the newest `since` of the imports (0: none) with the trace flag
         let f = pack(&object(), &opts()).unwrap();
         assert_eq!(&f[H_ROLE..H_ROLE + 4], &[0u8; 4]);
-        assert_eq!(&f[H_RESERVED..H_RESERVED + 4], &[0u8; 4]);
+        assert_eq!(&f[H_SVC_ABI..H_SVC_ABI + 4], &[0u8; 4]);
         // no import is linked: the file needs the version that introduced the header table
         assert_eq!(get(&f, H_RUNTIME), crate::sdkgen::table_runtime());
         let f = pack_keys(Some(&object()), &[], &[0u8; 16], &opts()).unwrap();

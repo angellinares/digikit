@@ -16,6 +16,7 @@
 pub mod core_api;
 pub mod dsp;
 pub mod fw;
+pub mod gen_svc_abi;
 pub mod link;
 pub mod mem;
 pub mod plan;

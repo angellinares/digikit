@@ -94,4 +94,5 @@ pub const L_E_PLAN_OWNER: i16 = -76;
 pub const L_E_PLAN_KEY: i16 = -77;
 pub const L_E_PLAN_FIT: i16 = -78;
 pub const L_E_DECL_KIND: i16 = -79;
+pub const L_E_SVC_ABI: i16 = -81;
 pub const L_E_HOOK_STOCK: i16 = -82;

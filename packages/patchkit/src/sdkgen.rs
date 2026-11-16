@@ -47,6 +47,8 @@ pub const REGISTERS_MD_OUT: &str = "sdk/dsp/REGISTERS.md";
 pub const LIMITS_RS_OUT: &str = "packages/dkneeds/src/gen_limits.rs";
 /// The generated static table of the runtime's in-crate services, relative to the repository root.
 pub const SERVICES_RS_OUT: &str = "modules/core/runtime/src/rs/src/gen_services.rs";
+/// The generated hash of the `dkrt-abi` boundary files (`SVC_ABI`, docs/plans/runtime-and-services.md section 13.2), relative to the repository root.
+pub const SVC_ABI_OUT: &str = "modules/core/runtime/abi/src/gen_svc_abi.rs";
 /// The generated Python protocol numbers, relative to the repository root.
 pub const PROTO_PY_OUT: &str = "tools/device/dkproto.py";
 /// The generated Rust protocol numbers of the host client, relative to the repository root.
@@ -2902,6 +2904,51 @@ pub(crate) fn abi_inputs(text: &str) -> Result<AbiInputs> {
     })
 }
 
+/// The files of `dkrt-abi` that a service file and the runtime share across the boundary (interfaces B and C), relative to the repository root. `gen_svc_abi.rs`
+/// itself and the other files of the crate are not in the list.
+pub const SVC_ABI_FILES: [&str; 5] = [
+    "modules/core/runtime/abi/src/service.rs",
+    "modules/core/runtime/abi/src/core_api.rs",
+    "modules/core/runtime/abi/src/link.rs",
+    "modules/core/runtime/abi/src/dsp.rs",
+    "modules/core/runtime/abi/src/registry.rs",
+];
+
+/// FNV-1a (32 bits) over each file as its name, a zero byte, its bytes and a zero byte, in the given order. Never 0 (0 means "no interface B or C" in the
+/// header word).
+pub fn svc_abi_hash(files: &[(&str, &[u8])]) -> u32 {
+    let mut h: u32 = 0x811c_9dc5;
+    let mut eat = |b: u8| {
+        h ^= b as u32;
+        h = h.wrapping_mul(0x0100_0193);
+    };
+    for (name, bytes) in files {
+        name.bytes().for_each(&mut eat);
+        eat(0);
+        bytes.iter().copied().for_each(&mut eat);
+        eat(0);
+    }
+    if h == 0 { 1 } else { h }
+}
+
+/// `modules/core/runtime/abi/src/gen_svc_abi.rs`: the hash of `SVC_ABI_FILES` as read under `root`. `dkrt-abi` mixes the sizes of the shared structs into it.
+fn svc_abi_rs(root: &std::path::Path) -> Result<String> {
+    let mut bytes = vec![];
+    for rel in SVC_ABI_FILES {
+        let path = root.join(rel);
+        bytes.push(std::fs::read(&path).map_err(|e| err!("{}: {e}", path.display()))?);
+    }
+    let files: Vec<(&str, &[u8])> = SVC_ABI_FILES
+        .iter()
+        .zip(&bytes)
+        .map(|(n, b)| (*n, b.as_slice()))
+        .collect();
+    Ok(format!(
+        "// {HEADER}\n\n/// The hash of the boundary files of this crate (`patchkit::sdkgen::SVC_ABI_FILES`); `SVC_ABI` mixes the sizes of the shared structs into it.\npub const FILES_HASH: u32 = {:#010x};\n",
+        svc_abi_hash(&files)
+    ))
+}
+
 /// The outputs, reading `sdk/sdk.toml` and the runtime's `abi.toml` under the repository root.
 pub fn generate(root: &std::path::Path) -> Result<Vec<(String, String)>> {
     let path = root.join(SOURCE);
@@ -2911,5 +2958,6 @@ pub fn generate(root: &std::path::Path) -> Result<Vec<(String, String)>> {
     let abi =
         std::fs::read_to_string(&abi_path).map_err(|e| err!("{}: {e}", abi_path.display()))?;
     files.extend(crate::abigen::render(&abi, &abi_inputs(&text)?)?);
+    files.push((SVC_ABI_OUT.to_string(), svc_abi_rs(root)?));
     Ok(files)
 }

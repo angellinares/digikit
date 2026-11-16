@@ -102,5 +102,6 @@ export const BULK_STATUS = {
   L_E_PLAN_KEY: -77,
   L_E_PLAN_FIT: -78,
   L_E_DECL_KIND: -79,
+  L_E_SVC_ABI: -81,
   L_E_HOOK_STOCK: -82,
 } as const;

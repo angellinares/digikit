@@ -361,6 +361,7 @@ pub fn bind(
         version: dkm.version,
         role: dkm.role,
         runtime_word: dkm.runtime_min | if dkm.trace { FLAG_TRACE } else { 0 },
+        svc_abi: dkm.svc_abi,
         image: &image,
         bss: dkm.bss,
         align: dkm.align,

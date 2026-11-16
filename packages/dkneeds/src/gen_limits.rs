@@ -52,8 +52,8 @@ pub const H_RUNTIME: u32 = 48;
 pub const H_VERSION: u32 = 52;
 /// Header word: the role (0 module, 1 service).
 pub const H_ROLE: u32 = 56;
-/// Header word: reserved, zero.
-pub const H_RESERVED: u32 = 60;
+/// Header word: the ABI fingerprint of a service file (`dk_svc_abi`, the `dkrt-abi` boundary hash); 0 for a module and for a file that uses neither interface B nor C.
+pub const H_SVC_ABI: u32 = 60;
 /// Header: the module name, NAME_LEN bytes.
 pub const H_NAME: u32 = 64;
 /// Header word: ColdFire image offset.

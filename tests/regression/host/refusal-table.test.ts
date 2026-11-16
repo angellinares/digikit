@@ -75,6 +75,7 @@ test('the open rows are the known gaps', () => {
       'E_READ',
       'E_REG_DEVICE',
       'E_SEL_WRITE',
+      'E_SVC_ABI',
       'E_TABLE',
     ].sort(),
   );

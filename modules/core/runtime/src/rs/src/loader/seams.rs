@@ -38,7 +38,7 @@ pub trait Images {
 
 /// The registry of what a loaded file publishes (R12-4): the rows of a service file, and the rows of a module's records.
 pub trait Registry {
-    /// Does the runtime accept a service file with this ABI fingerprint (header word 0x3c)?
+    /// Does the runtime accept a service file with this ABI fingerprint (header word 0x3c)? 0: the file uses neither interface B nor C.
     fn abi_ok(&self, fingerprint: u32) -> bool;
     /// Publish the service row that `init` of record `rec` declared (`None`: it declared none, as every module today).
     unsafe fn add(&mut self, rec: usize, row: Option<&ServiceRow>) -> i32;
@@ -100,8 +100,8 @@ impl Images for RealImages {
 pub struct RealRegistry;
 
 impl Registry for RealRegistry {
-    fn abi_ok(&self, _fingerprint: u32) -> bool {
-        true
+    fn abi_ok(&self, fingerprint: u32) -> bool {
+        fingerprint == 0 || fingerprint == dkrt_abi::service::SVC_ABI
     }
     unsafe fn add(&mut self, _rec: usize, row: Option<&ServiceRow>) -> i32 {
         match row {

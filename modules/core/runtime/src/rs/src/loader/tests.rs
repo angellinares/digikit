@@ -568,7 +568,7 @@ fn a_service_file_loads_only_as_a_provider_and_a_module_file_only_as_a_module() 
         assert_eq!(l.load_provider(PATH.as_ptr(), 0), E_FORMAT);
         // a provider whose ABI the registry refuses stops before anything is allocated; the module asks nothing
         let mut svc2 = svc;
-        put(&mut svc2, dkneeds::H_RESERVED, 0xabcd_0123);
+        put(&mut svc2, dkneeds::H_SVC_ABI, 0xabcd_0123);
         seal(&mut svc2);
         let mut l = provider_loader(svc2, svc_init());
         assert_eq!(l.load_provider(PATH.as_ptr(), 0), OK);
@@ -577,11 +577,11 @@ fn a_service_file_loads_only_as_a_provider_and_a_module_file_only_as_a_module() 
         assert_eq!(l.load(PATH.as_ptr()), OK);
         assert!(l.r.asked.borrow().is_empty());
         let mut svc3 = service_file(&svc_table(&bind), 0);
-        put(&mut svc3, dkneeds::H_RESERVED, 1);
+        put(&mut svc3, dkneeds::H_SVC_ABI, 1);
         seal(&mut svc3);
         let mut l = provider_loader(svc3, svc_init());
         l.r.abi = false;
-        assert_eq!(l.load_provider(PATH.as_ptr(), 0), E_CONTRACT);
+        assert_eq!(l.load_provider(PATH.as_ptr(), 0), E_SVC_ABI);
         assert_eq!(l.m.allocs, 0);
     }
 }
@@ -696,6 +696,14 @@ fn no_search_without_an_unmet_need_and_a_failed_provider_refuses_its_dependents_
         // the site stayed stock and the table holds no site
         assert_eq!(l.installer.count(), 0);
     }
+}
+
+#[test]
+fn the_real_registry_accepts_zero_and_its_own_fingerprint_only() {
+    let r = RealRegistry;
+    assert!(r.abi_ok(0));
+    assert!(r.abi_ok(dkrt_abi::service::SVC_ABI));
+    assert!(!r.abi_ok(dkrt_abi::service::SVC_ABI ^ 1));
 }
 
 #[test]

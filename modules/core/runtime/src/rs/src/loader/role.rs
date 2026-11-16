@@ -7,7 +7,7 @@ use super::image::Head;
 use super::{Images, Loader, ProvRec, Registry};
 use dkneeds::keys::{tag, BindRef, Keys};
 use dkrt_abi::platform::Platform;
-use dkrt_sdk::{E_CONTRACT, E_FORMAT, E_NOMEM, OK};
+use dkrt_sdk::{E_FORMAT, E_NOMEM, E_SVC_ABI, OK};
 
 /// What a role step may need of the file besides the record: the staged file (valid until `init` runs) and where its table and image are.
 #[derive(Clone, Copy)]
@@ -88,8 +88,8 @@ const BIND_MAX: usize = dkneeds::BIND_MAX as usize;
 const NO_BIND: BindRef<'static> = BindRef { site: 0, addr: 0, len: 0, tramp: 0, stock: &[] };
 
 unsafe fn service_check<P: Platform, M: Images, R: Registry>(l: &mut Loader<P, M, R>, file: *const u8, head: &Head) -> i32 {
-    if !l.r.abi_ok(crate::rd32(file.add(dkneeds::H_RESERVED as usize))) {
-        return E_CONTRACT;
+    if !l.r.abi_ok(crate::rd32(file.add(dkneeds::H_SVC_ABI as usize))) {
+        return E_SVC_ABI;
     }
     // a provider's DSP section waits for R12-8 (the DSP part of a service)
     if crate::rd32(file.add(super::H_DSP_SIZE)) != 0 {

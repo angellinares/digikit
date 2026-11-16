@@ -1106,6 +1106,10 @@ mod tests {
             fixture.0.join(patchkit::abigen::SOURCE),
         )
         .unwrap();
+        copy_tree(
+            &real.join("modules/core/runtime/abi/src"),
+            &fixture.0.join("modules/core/runtime/abi/src"),
+        );
         let module_dir = fixture.0.join("modules/fixture");
         std::fs::create_dir_all(&module_dir).unwrap();
         std::fs::write(

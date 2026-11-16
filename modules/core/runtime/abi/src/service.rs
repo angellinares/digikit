@@ -17,6 +17,52 @@ use crate::registry::ApplyArgs;
 use core::ffi::c_void;
 use dkrt_sdk::*;
 
+/// The ABI fingerprint of interfaces B and C between the runtime and a service file (`dk_svc_abi`, header word 0x3c of a `.dks`).
+///
+/// It is the hash of the bytes of the boundary files of this crate (`FILES_HASH`, written by `patchkit gen` over the
+/// files of `patchkit::sdkgen::SVC_ABI_FILES`) with the `size_of` of every `repr(C)` struct that crosses the boundary mixed in at compile time. The
+/// sizes make the value depend on the target: the runtime and a service file built for the same device have the same value, a host build another one
+/// (64-bit pointers). The runtime reports its value in INFO bytes 41 to 44 and the loader compares it with the word of a service file; 0 in the
+/// word means the file uses neither interface. The value is never 0.
+pub const SVC_ABI: u32 = svc_abi();
+
+const fn svc_abi() -> u32 {
+    use core::mem::size_of;
+    let sizes = [
+        size_of::<ServiceRow>(),
+        size_of::<CheckCtx>(),
+        size_of::<ApplyCtx>(),
+        size_of::<Claim>(),
+        size_of::<RowWrite>(),
+        size_of::<GuardState>(),
+        size_of::<DeclItem>(),
+        size_of::<Declare>(),
+        size_of::<ApplyArgs>(),
+        size_of::<crate::registry::RegState>(),
+        size_of::<Job>(),
+        size_of::<DspSec>(),
+        size_of::<crate::dsp::DspState>(),
+        size_of::<crate::link::Slot>(),
+        size_of::<crate::link::Owner>(),
+        size_of::<crate::link::Ticket>(),
+        size_of::<crate::link::LinkResult>(),
+        size_of::<crate::link::Step>(),
+        size_of::<crate::link::Sequence>(),
+        size_of::<crate::link::Stream>(),
+    ];
+    let mut h = crate::gen_svc_abi::FILES_HASH;
+    let mut i = 0;
+    while i < sizes.len() {
+        h = (h ^ sizes[i] as u32).wrapping_mul(0x0100_0193);
+        i += 1;
+    }
+    if h == 0 {
+        1
+    } else {
+        h
+    }
+}
+
 /// The steps of the validation of a `register` section, in the order the registry ran them when it was one body. The walker runs
 /// each step over the whole list of services before the next, and a service does the steps for its kinds over its records in file
 /// order, so the first fault is the one the old body reported.

@@ -1,7 +1,7 @@
 //! Status codes, request bodies and reply parsers.
 
 use crate::codec::*;
-use crate::gen_proto::{CAP_LOG, CAP_LOGCFG, CAP_PEEK, CAP_RESTART, CAP_SELECT};
+use crate::gen_proto::{CAP_LOG, CAP_LOGCFG, CAP_PEEK, CAP_RESTART, CAP_SELECT, CAP_SVC_ABI};
 use std::fmt;
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
@@ -168,6 +168,8 @@ pub struct Info {
     pub caps: Option<u32>,
     /// The id of the flashed image, when the reply carries it (runtime 0.5.2 and later; all zero when patchkit stamped none).
     pub image_id: Option<[u8; 8]>,
+    /// The runtime's ABI fingerprint for service files (`CAP_SVC_ABI`; the word a `.dks` carries at header 0x3c), when the reply carries it.
+    pub svc_abi: Option<u32>,
 }
 impl Info {
     /// The packed runtime version: the 32-bit field when present, else the 16-bit one.
@@ -277,6 +279,12 @@ pub fn parse_info(body: &[u8]) -> Result<Info, Error> {
     } else {
         None
     };
+    let svc_abi =
+        if image_id.is_some() && caps.is_some_and(|c| c & CAP_SVC_ABI != 0) && c.0.len() >= 4 {
+            Some(c.u32()?)
+        } else {
+            None
+        };
     Ok(Info {
         protocol,
         runtime_version,
@@ -289,6 +297,7 @@ pub fn parse_info(body: &[u8]) -> Result<Info, Error> {
         runtime32,
         caps,
         image_id,
+        svc_abi,
     })
 }
 
@@ -459,6 +468,34 @@ mod tests {
         let with_id = parse_info(&info_body(0, &tail)).unwrap();
         assert_eq!(with_id.image_id, Some([1, 2, 3, 4, 5, 6, 7, 8]));
         assert_eq!(with_id.caps, new.caps);
+        assert_eq!(with_id.svc_abi, None);
+    }
+
+    #[test]
+    fn the_service_abi_is_read_after_the_image_id_when_the_capability_is_set() {
+        let tail = |caps: u32, abi: &[u8]| {
+            let mut t = 5u32.to_be_bytes().to_vec();
+            t.extend(9u32.to_be_bytes());
+            t.extend(0x0005_0000u32.to_be_bytes());
+            t.extend(caps.to_be_bytes());
+            t.extend([1, 2, 3, 4, 5, 6, 7, 8]);
+            t.extend(abi);
+            t
+        };
+        let abi = 0xdead_beefu32.to_be_bytes();
+        let on = parse_info(&info_body(0, &tail(CAP_SVC_ABI, &abi))).unwrap();
+        assert_eq!(on.svc_abi, Some(0xdead_beef));
+        // without the capability, or without the bytes, there is none
+        assert_eq!(
+            parse_info(&info_body(0, &tail(0, &abi))).unwrap().svc_abi,
+            None
+        );
+        assert_eq!(
+            parse_info(&info_body(0, &tail(CAP_SVC_ABI, &[])))
+                .unwrap()
+                .svc_abi,
+            None
+        );
     }
 
     #[test]
