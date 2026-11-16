@@ -795,7 +795,7 @@ never starves); otherwise it samples the idle cores twice, 1 s apart, and admits
 idle. The reserve is the efficiency-core count on Apple Silicon, else max(2, floor(cores/4)); `DIGI_EMU_RESERVE=N`
 sets it. After an admission the lock is kept for 3 s, so the next decision sees the new emulator's load. The log shows
 `emulator slot taken (M of ceiling, idle X.X cores), emulator slot waited N s`. With `DIGI_TRACE_DIR` set, it appends `wait` and `run` spans to `$DIGI_TRACE_DIR/slots-trace.json`. `DIGI_EMU_SLOTS=N` is a fixed count with no idle check, for an A/B.
-A waiting task prints one line and waits without a limit; a lock of a dead process is taken over. The wait is outside
+A waiting task prints one line and waits without a limit; a lock of a dead process is taken over. The admit lock is stale after 30 s (`ADMIT_MAX_MS`) even when its pid lives, so a holder that never releases it cannot stop every waiter. The wait is outside
 Vitest, so it does not count against test timeouts. The emulator gate targets are wrapped too (see the job rule below).
 
 Formatting an emulator crate or `dkneeds` changes the daemon key and the PGO key, so the PGO profile needs a retrain.
