@@ -475,16 +475,27 @@ fn records_consts(sdk: &Sdk, indent: &str) -> String {
         }
         let _ = writeln!(s, "{indent}];");
     }
+    // a service of `[handle] services` that a `.dks` provides (no `rust` row) is not the runtime's: the planner must load its provider, so it is not in this list
+    let runtime_services: Vec<&String> = sdk
+        .handle
+        .services
+        .iter()
+        .filter(|n| {
+            !sdk.service
+                .iter()
+                .any(|d| d.rust.is_none() && d.name == **n)
+        })
+        .collect();
     let _ = writeln!(
         s,
-        "{indent}/// The services of `[handle] services`: the names a module's `NEEDS` may carry (hashed by `dkneeds::keys::name_hash`)."
+        "{indent}/// The services of `[handle] services` that are in the runtime image (not the ones a `.dks` provides): the names a module's `NEEDS` meets without a provider (hashed by `dkneeds::keys::name_hash`)."
     );
     let _ = writeln!(
         s,
         "{indent}pub const HANDLE_SERVICES: [&str; {}] = [",
-        sdk.handle.services.len()
+        runtime_services.len()
     );
-    for n in &sdk.handle.services {
+    for n in &runtime_services {
         let _ = writeln!(s, "{indent}    {n:?},");
     }
     let _ = writeln!(s, "{indent}];");

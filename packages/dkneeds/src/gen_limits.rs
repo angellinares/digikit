@@ -238,12 +238,10 @@ pub const KINDS_FX: [(u32, u32); 1] = [
 pub const KINDS_LFO: [(u32, u32); 1] = [
     (KIND_LFO_SHAPE, LEN_LFO_SHAPE),
 ];
-/// The services of `[handle] services`: the names a module's `NEEDS` may carry (hashed by `dkneeds::keys::name_hash`).
-pub const HANDLE_SERVICES: [&str; 9] = [
+/// The services of `[handle] services` that are in the runtime image (not the ones a `.dks` provides): the names a module's `NEEDS` meets without a provider (hashed by `dkneeds::keys::name_hash`).
+pub const HANDLE_SERVICES: [&str; 7] = [
     "runtime",
     "samples",
-    "machines",
-    "fx",
     "ui",
     "input",
     "usb_bulk",
