@@ -275,9 +275,45 @@ def _measure(mid: str, devices: list[str]) -> dict[str, dict]:
                     f"packing digikit/debug for {dev} failed:\n{(d.stderr or '').strip()}"
                 )
             per[dev] = pk_committed.committed(
-                mid, dev, out, str(patchkit.binary()), _daemon(dev), debug_dkm=dbg
+                mid,
+                dev,
+                out,
+                str(patchkit.binary()),
+                _daemon(dev),
+                debug_dkm=dbg,
+                services=_bound_services(dev, Path(tmp)),
             )
     return per
+
+
+# The services that are files of the card (`[[service]]` without `rust` in sdk.toml, loaded from services/<name>.dks): a machine or an effect needs them.
+CARD_SERVICES = ("core/services/machines", "core/services/fx")
+
+
+def _bound_services(dev: str, tmp: Path) -> list[Path]:
+    """Pack the card services for DEV and bind them to the stock firmware, as the Nx targets `<id>:pack` and `<id>:bind` do (module:check needs no Nx output)."""
+    from tools.patchkit import patchkit, pk_harness
+
+    version = {"dt2": "1.17", "dn2": "1.12"}[dev]
+    syx, _ready = pk_harness.firmware_inputs(pk_harness.Cell(dev, version))
+    bound: list[Path] = []
+    for sid in CARD_SERVICES:
+        leaf = sid.rsplit("/", 1)[-1]
+        packed = tmp / "svc" / dev / f"{leaf}.dks"
+        packed.parent.mkdir(parents=True, exist_ok=True)
+        out = tmp / "svc-bound" / dev / f"{leaf}.dks"
+        out.parent.mkdir(parents=True, exist_ok=True)
+        for args in (
+            ["pack", sid, "--device", dev, "-o", str(packed)],
+            ["bind", str(packed), "--firmware", str(syx), "-o", str(out)],
+        ):
+            r = patchkit.run(args, capture=True)
+            if r.returncode:
+                raise RuntimeError(
+                    f"patchkit {args[0]} {sid} for {dev} failed:\n{(r.stderr or '').strip()}"
+                )
+        bound.append(out)
+    return bound
 
 
 def _write_measured(

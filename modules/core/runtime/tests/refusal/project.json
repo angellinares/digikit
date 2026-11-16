@@ -18,7 +18,8 @@
           "test/lfo-shape",
           "test/lfo-shape-dup",
           "core/services/lfo",
-          "core/services/machines"
+          "core/services/machines",
+          "core/services/fx"
         ],
         "plusdrive": true,
         "tags": [

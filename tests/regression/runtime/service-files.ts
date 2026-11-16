@@ -8,7 +8,10 @@ import { neededServiceHashes, nameHash } from './dkm-parse.ts';
  * of them has a hard NEEDS item for its hash (the packer adds it for a record kind of that service), and the runtime finds the file by its name at boot. The harness
  * puts the file on the card of every test that installs such a module, so a test never lists the service by hand.
  */
-export const SERVICE_MODULES: Record<string, string> = { fx: 'core/services/fx' };
+export const SERVICE_MODULES: Record<string, string> = {
+  machines: 'core/services/machines',
+  fx: 'core/services/fx',
+};
 
 /** The names of the services (of `SERVICE_MODULES`) that the packed `.dkm` files need, in the order of `SERVICE_MODULES`. */
 export function neededServices(files: string[]): string[] {

@@ -6,7 +6,7 @@
       {
         "files": ["tests/fx-two-notes.device.test.ts"],
         "tags": ["A:core/dynfx"],
-        "modules": ["test/dyn-fx-gain", "test/sine"],
+        "modules": ["test/dyn-fx-gain", "test/sine", "core/services/machines", "core/services/fx"],
         "sources": ["tools/patchkit/hook_ab.py"],
         "plusdrive": true
       },

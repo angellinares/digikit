@@ -58,8 +58,9 @@ test('the needs of a packed module are read from its header table', () => {
 test('only the services that a .dks provides (the table of service files) are named', () => {
   const effect = write('effect.dkm', [nameHash('fx'), nameHash('runtime-only')]);
   const machine = write('machine.dkm', [nameHash('machines')]);
-  expect(neededServices([effect, machine])).toEqual(['fx']);
-  expect(neededServices([machine])).toEqual([]);
+  expect(neededServices([effect, machine])).toEqual(['machines', 'fx']);
+  expect(neededServices([machine])).toEqual(['machines']);
+  expect(neededServices([effect])).toEqual(['fx']);
 });
 
 test('install puts the bound service on the card before the selection and the restart', async () => {

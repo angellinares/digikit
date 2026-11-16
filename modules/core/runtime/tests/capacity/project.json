@@ -15,7 +15,8 @@
         ],
         "tags": ["C:loading"],
         "modules": [
-          "test/dyn-fx-gain"
+          "test/dyn-fx-gain",
+          "core/services/fx"
         ],
         "plusdrive": true
       },
@@ -26,7 +27,8 @@
         "tags": ["C:loading", "S:machines"],
         "modules": [
           "test/commit-demo",
-          "core/services/machines"
+          "core/services/machines",
+          "core/services/fx"
         ],
         "plusdrive": true
       }
