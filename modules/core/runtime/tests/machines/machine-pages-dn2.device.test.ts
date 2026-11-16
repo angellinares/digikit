@@ -8,7 +8,7 @@ import { ENCODERS, expectLoaded, namedKnobs, tableSymbols, turnChangesOneWord } 
 /**
  * The SYN key cycles the pages of a run-time machine with two pages on the Digitone II (`test/dyn-dn2-pages`: machine DynPages, pages PGA with ALPH BETA GAMA and
  * PGB with EPSL ZETA). The page rows are the declared ones. Which page is current shows in what a knob edits: the first knob of PGA edits the Sound word of ALPH,
- * the first knob of PGB the word of EPSL, `slot` apart. SYN once gives PGA, twice PGB, three times PGA again. No pixels. One boot; SHARC for the module's DSP part.
+ * the first knob of PGB the word of EPSL (the mirror index of the parameter row; the slot-to-word assumption is an open point of the ledger). SYN once gives PGA, twice PGB, three times PGA again. No pixels. One boot; SHARC for the module's DSP part.
  */
 const ID = 'test/dyn-dn2-pages';
 const AUDIO_MIRROR_DN2_112 = 0x8000487c; // SRAM, first byte: the selected machine type
@@ -45,16 +45,17 @@ describeOn('dn2', `DN2 ${FIRMWARE.dn2} machines.dks: two pages of a run-time mac
     expect((await word(session, AUDIO_MIRROR_DN2_112)) >>> 24, 'the audio mirror holds the committed type').toBe(type);
 
     const [a0, b0] = [layout[0]![0]!, layout[1]![0]!];
+    const mirror = (k: { name: string }) => (tables.params[k.name] as { mirror: number }).mirror;
     const edit = async (k: { knob: number }) => (await turnChangesOneWord(rt, ENCODERS[k.knob]!)).index;
     const syn = () => rt.ui.tap('SYN', { until: { ms: 400, why: REDRAW } });
 
     await syn(); // page A
-    const alpha = await edit(a0);
+    expect(await edit(a0), 'on page A the first knob edits the Sound word of ALPH (the mirror index of its row)').toBe(mirror(a0));
     await syn(); // page B
-    const epsilon = await edit(b0);
-    expect(epsilon - alpha, 'on page B the first knob edits EPSL, as far from ALPH as their slots').toBe(b0.slot - a0.slot);
+    expect(await edit(b0), 'on page B the first knob edits the Sound word of EPSL').toBe(mirror(b0));
+    expect(mirror(b0) - mirror(a0), 'the words are as far apart as the slots').toBe(b0.slot - a0.slot);
     await syn(); // page A again
-    expect(await edit(a0), 'on the third SYN the first knob edits ALPH again').toBe(alpha);
+    expect(await edit(a0), 'on the third SYN the first knob edits ALPH again').toBe(mirror(a0));
     await session.expectNoFault('two pages cycled and edited');
   }, 900_000);
 });
