@@ -819,6 +819,7 @@ mod tests {
                 service: "svc-test".into(),
                 exports: vec![],
                 hooks: vec![],
+                fills: vec![],
             }),
         };
         pack_keys(None, &table, &[], &o).unwrap()

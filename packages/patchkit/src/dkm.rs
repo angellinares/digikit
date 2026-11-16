@@ -215,6 +215,7 @@ fn table_with_needs(
     provides: &[dkneeds::keys::Pair],
     exports_add: &[dkneeds::keys::Pair],
     hooks_add: &[dkneeds::keys::Pair],
+    slots_add: &[dkneeds::keys::Slot],
     kinds_add: &[dkneeds::keys::KindDecl],
 ) -> Result<Vec<u8>> {
     use dkneeds::keys::{Bind, KeyGroup, Keys, Pair, Table, write_table};
@@ -253,6 +254,7 @@ fn table_with_needs(
     }
     exports.extend_from_slice(exports_add);
     hooks.extend_from_slice(hooks_add);
+    slots.extend_from_slice(slots_add);
     kinds.extend_from_slice(kinds_add);
     provided.extend_from_slice(provides);
     let key_groups: Vec<KeyGroup> = groups
@@ -312,6 +314,9 @@ pub struct Provided {
     /// The hooks the service takes (`[[hook]]`): (hook name of the port, global function of the object that handles it). A `patchkit bind`
     /// of the file gives each a trampoline.
     pub hooks: Vec<(String, String)>,
+    /// The pointer slots the service fills (`[[fill]]`): (slot name of the image adapter, global function of the object whose address goes in the slot).
+    /// A `SLOTS` item of the table is the name hash and the entry offset.
+    pub fills: Vec<(String, String)>,
 }
 
 /// "1.2.3" -> 0x010203
@@ -575,8 +580,8 @@ fn pack_inner(
     }
 
     // the header table: the packer's uses and keys (none: a module that keeps nothing) and the needs of the imports the module links
-    let (provides, svc_exports, svc_hooks, svc_kinds) = match &o.service {
-        None => (vec![], vec![], vec![], vec![]),
+    let (provides, svc_exports, svc_hooks, svc_slots, svc_kinds) = match &o.service {
+        None => (vec![], vec![], vec![], vec![], vec![]),
         Some(s) => {
             let mut hk: Vec<dkneeds::keys::Pair> = vec![];
             for (hook, entry) in &s.hooks {
@@ -595,6 +600,22 @@ fn pack_inner(
                 hk.push(dkneeds::keys::Pair { a, b: at });
             }
             hk.sort_by_key(|p| p.a);
+            let mut sl: Vec<dkneeds::keys::Slot> = vec![];
+            for (slot, entry) in &s.fills {
+                let at = sym(entry)?.ok_or_else(|| {
+                    err!("the service fills {slot} with {entry}, which the object does not define")
+                })?;
+                let id = dkneeds::keys::name_hash(slot);
+                if sl.iter().any(|p| p.id == id) {
+                    return Err(err!("the service fills {slot} twice"));
+                }
+                sl.push(dkneeds::keys::Slot {
+                    id,
+                    flags: 0,
+                    entry: at,
+                });
+            }
+            sl.sort_by_key(|p| p.id);
             let mut ex: Vec<dkneeds::keys::Pair> = vec![];
             for n in &s.exports {
                 let at = sym(n)?.ok_or_else(|| {
@@ -614,6 +635,7 @@ fn pack_inner(
                 }],
                 ex,
                 hk,
+                sl,
                 service_kinds(&s.service, init.unwrap_or(0)),
             )
         }
@@ -624,6 +646,7 @@ fn pack_inner(
         &provides,
         &svc_exports,
         &svc_hooks,
+        &svc_slots,
         &svc_kinds,
     )?;
     emit(&EmitParts {
@@ -1071,6 +1094,7 @@ mod tests {
                 service: service.into(),
                 exports: vec![],
                 hooks: vec![],
+                fills: vec![],
             }),
             ..opts()
         };

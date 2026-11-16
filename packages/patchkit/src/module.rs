@@ -68,6 +68,10 @@ pub struct Manifest {
     /// that handles each. Their name hashes and entry offsets go in the `HOOKS` entry of the header table; `patchkit bind` gives each a trampoline.
     #[serde(default, rename = "hook")]
     pub hooks: Vec<ServiceHook>,
+    /// `[[fill]] slot = "frametype"`, `entry = "mf_frametype"`: a pointer slot of an image adapter (`[[slot]]` of its module.toml) that a service module fills with the address
+    /// of a global function of the object when it is loaded (the loader finds the slot word by the hash of the name in the image's info table).
+    #[serde(default, rename = "fill")]
+    pub fills: Vec<ServiceFill>,
     /// `[uses.dt2]`, `[uses.dn2]`: registry rows the module takes on each device (the keys table's three counts). Per device because the runtime
     /// builds different rows per device (DT2 has no page rows).
     #[serde(default)]
@@ -145,9 +149,9 @@ impl Manifest {
     pub fn provided_service(&self) -> Result<Option<crate::dkm::Provided>> {
         let id = &self.module.id;
         if self.module.role != Some(ModuleRole::Service) {
-            if self.module.service.is_some() || !self.exports.is_empty() || !self.hooks.is_empty() {
+            if self.module.service.is_some() || !self.exports.is_empty() || !self.hooks.is_empty() || !self.fills.is_empty() {
                 return Err(err!(
-                    "{id}: `service` in [module], [[export]] and [[hook]] belong to a module with `role = \"service\"`"
+                    "{id}: `service` in [module], [[export]], [[hook]] and [[fill]] belong to a module with `role = \"service\"`"
                 ));
             }
             return Ok(None);
@@ -212,10 +216,24 @@ impl Manifest {
             }
             hooks.push((h.name.clone(), h.entry.clone()));
         }
+        let mut fills: Vec<(String, String)> = vec![];
+        for f in &self.fills {
+            if f.slot.is_empty() || f.entry.is_empty() {
+                return Err(err!("{id}: [[fill]] needs a `slot` and an `entry`, both not empty"));
+            }
+            if fills.iter().any(|(n, _)| *n == f.slot) {
+                return Err(err!("{id}: [[fill]] {:?} is declared twice", f.slot));
+            }
+            fills.push((f.slot.clone(), f.entry.clone()));
+        }
+        if fills.len() > dkneeds::SLOTS_MAX as usize {
+            return Err(err!("{id}: {} [[fill]] entries, over the {} a service file fills", fills.len(), dkneeds::SLOTS_MAX));
+        }
         Ok(Some(crate::dkm::Provided {
             service: service.clone(),
             exports,
             hooks,
+            fills,
         }))
     }
 }
@@ -230,6 +248,14 @@ pub fn service_of(m: &Module) -> Result<Option<crate::dkm::Provided>> {
 #[serde(deny_unknown_fields)]
 pub struct ExportDef {
     pub name: String,
+}
+
+/// An entry of `[[fill]]` of a service: the pointer slot of an image adapter and the global function of the object whose address the installer writes in it.
+#[derive(Clone, Debug, Deserialize, PartialEq, Eq)]
+#[serde(deny_unknown_fields)]
+pub struct ServiceFill {
+    pub slot: String,
+    pub entry: String,
 }
 
 /// An entry of `[[hook]]` of a service: the hook of the port files (`devices/ports/`) and the global function of the object that handles it.
