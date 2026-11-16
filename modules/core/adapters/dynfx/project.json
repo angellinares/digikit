@@ -18,7 +18,8 @@
         "modules": [
           "test/dyn-fx-gain",
           "test/sine",
-          "core/services/machines"
+          "core/services/machines",
+          "core/services/fx"
         ],
         "aliases": {
           "test/dyn-fx-gain-2": "test/dyn-fx-gain",
@@ -41,7 +42,8 @@
         "modules": [
           "test/dyn-fx-gain",
           "test/sine",
-          "core/services/fx"
+          "core/services/fx",
+          "core/services/machines"
         ],
         "aliases": {
           "test/dyn-fx-gain-2": "test/dyn-fx-gain",
@@ -64,7 +66,8 @@
         "modules": [
           "test/dyn-fx-gain",
           "test/sine",
-          "core/services/fx"
+          "core/services/fx",
+          "core/services/machines"
         ],
         "sources": [
           "tools/patchkit/hook_ab.py"

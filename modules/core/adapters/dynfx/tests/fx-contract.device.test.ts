@@ -9,6 +9,7 @@ import {
   compare,
   dspWords,
   expectGainRow,
+  FREE_PC,
   frames,
   inspect,
   rows,
@@ -21,6 +22,7 @@ import { GAIN, RT, SINE, triggerFrame } from '@digi/regression/runtime/fixtures.
 import { chainCheck, fxExpectations } from '@digi/regression/runtime/dkm.ts';
 import { inspectFxBoot, selectSine, withPreparedFxSession } from '@digi/regression/runtime/fx-session.ts';
 import { record } from '@digi/regression/runtime/artifacts.ts';
+import { loadCode } from '@digi/regression/runtime/load-states.ts';
 import { DEVICES, FIRMWARE } from '@digi/regression/runtime/devices.ts';
 import { readSmallRing } from '@digi/regression/runtime/runtime-menu.ts';
 import { planSymbol } from '@digi/regression/runtime/runtime-plan.ts';
@@ -30,8 +32,8 @@ import { bindBootClock, emulatorDk, waitForBootEmulated } from '@digi/regression
 //   1. plain image: the unhooked sine is the audible reference;
 //   2. hooked image, dry card: free rows are transparent;
 //   3. wet card: one effect loads, its row, PCM gain and call counter are exact; a protocol select and restart deselects it again;
-//   4. full card: effects beyond the free rows are refused, the loaded chain multiplies its gains.
-// R12-5 (fx.dks) adds the case without an fx service in the image beside these.
+//   4. full card: effects beyond the free rows are refused, the loaded chain multiplies its gains;
+//   5. card without the fx service file: the stock FX pages stay and the effect is refused.
 // It replaces fx-chain.device.test.ts and fx-reuse.device.test.ts (ledger: docs/plans/ledgers/t2-fx-contract.md).
 
 for (const device of DEVICES) {
@@ -94,6 +96,8 @@ for (const device of DEVICES) {
         presets: {
           dry: { selection: ['modules/m0.dkm'] },
           wet: { selection: ['modules/m0.dkm', 'modules/m1.dkm'] },
+          // no service files on this card: the effect is refused
+          nofx: { selection: ['modules/m0.dkm', 'modules/m1.dkm'], noServices: true },
           full: { selection: inventory.map((_, index) => `modules/m${index}.dkm`) },
         },
       });
@@ -196,6 +200,21 @@ for (const device of DEVICES) {
         const fullPcm = await capture(full, context, 'full');
         // Retained tolerances: <=2 ULPs, <0.001 dB, and <=128 onset samples.
         await compare(dryPcm, fullPcm, 0.5 ** slots, artifacts, 'full');
+      });
+
+      test('without the fx service the stock FX pages stay and the effect is refused', async () => {
+        const { fixture, plan, artifacts, rememberEpoch } = context;
+        const nofx = await fixture.reload(context.baseline('nofx'));
+        // The sine loads; the effect module is REFUSED: its record kind has no owner (the fx service file is not on the card), E_MISSING.
+        const state = await inspectFxBoot(nofx, plan, [SINE], artifacts, 'nofx-boot', [0, loadCode('E_MISSING')]);
+        rememberEpoch(state.epoch);
+        expect(state.capacity.FX_SLOTS?.used ?? 0, 'no effect row is in use').toBe(0);
+        expect((await rows(nofx.session, plan, slots)).map((row) => row[0]), 'every free row stays free').toEqual(
+          Array(slots).fill(FREE_PC),
+        );
+        // No hook is installed, so the sine is as audible as on the plain image.
+        const pcm = await capture(nofx, context, 'nofx');
+        await compare(plainPcm, pcm, 1, artifacts, 'plain-nofx', true);
       });
     });
   });

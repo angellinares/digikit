@@ -21,7 +21,8 @@
           "test/dyn-fx-gain",
           "test/dyn-params",
           "test/sine",
-          "core/services/fx"
+          "core/services/fx",
+          "core/services/machines"
         ],
         "plusdrive": true
       }
