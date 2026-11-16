@@ -53,7 +53,7 @@ export function Chip(props: { status: ChipStatus }): JSX.Element {
         <span class="check idle">waiting</span>
       </Show>
       <Show when={props.status.kind === 'verifying' && !progress()}>
-        <span class="check idle">verifying…</span>
+        <span class="check idle">{props.status.message || 'verifying…'}</span>
       </Show>
       <Show when={props.status.kind === 'ok'}>
         <span class="check ok" title={props.status.message}>

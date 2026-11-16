@@ -142,6 +142,8 @@ export type UploadEvent =
     }
   | { event: 'progress'; folder: string; name: string; sent: number; bytes: number }
   | { event: 'verifying'; folder: string; name: string }
+  /** The device verified the file and holds it pending: it is named in the store with the next commit (the batch). */
+  | { event: 'saving'; folder: string; name: string }
   | { event: 'verified'; folder: string; name: string; ok: boolean; message: string }
   | { event: 'same'; folder: string; name: string }
   /** One line for the Log that belongs to no file (a folder listing that failed). */
@@ -178,6 +180,8 @@ export function applyUpload(u: Uploads, e: UploadEvent): Uploads {
       return { ...u, [key]: { ...base, state: 'uploading', sent: e.sent, bytes: e.bytes } };
     case 'verifying':
       return { ...u, [key]: { ...base, state: 'verifying', sent: base.bytes } };
+    case 'saving':
+      return { ...u, [key]: { ...base, state: 'verifying', sent: base.bytes, message: SAVING_MESSAGE } };
     case 'verified':
       return { ...u, [key]: { ...base, state: e.ok ? 'ok' : 'failed', message: e.message } };
     case 'same':
@@ -188,6 +192,14 @@ export function applyUpload(u: Uploads, e: UploadEvent): Uploads {
       return { ...u, [key]: { ...base, state: 'cancelled', message: e.message } };
   }
 }
+
+/** The label of a file that the device verified and holds pending (the chip says it instead of "verifying…"). */
+export const SAVING_MESSAGE = 'Saving…';
+/** The tooltip of a file that was saved with a batch commit. */
+export const SAVED_MESSAGE =
+  'The device checked this file when it was received (read back from the card and hashed) and saved it with the files of its batch.';
+/** The tooltip of a file that the device verified but whose saving was not confirmed: the link or the commit failed. The device may still commit it by itself 1 s after its last file call, so the next run's `sameOnDevice` skips it when it did. */
+export const NOT_CONFIRMED = 'not confirmed, run again';
 
 /** The tooltip of a file that was not sent: what was compared, and how to get a fresh read-back. */
 export const SAME_MESSAGE =
@@ -224,6 +236,8 @@ export function uploadStatus(u: Upload | undefined): SampleStatus | undefined {
     case 'uploading':
       return { kind: 'uploading', sent: u.sent, bytes: u.bytes, message, checking: '' };
     case 'verifying':
+      // saving (pending on the device): a label, not the full bar of a check
+      if (message === SAVING_MESSAGE) return { kind: 'verifying', message, checking: '' };
       return { kind: 'verifying', sent: u.bytes, bytes: u.bytes, message, checking: joinPath(u.folder, u.name) };
     case 'ok':
       return { kind: 'ok', message };
@@ -558,14 +572,26 @@ const under = (folder: string, parent: string) => folder === parent || folder.st
  * A file that the device holds already with the same bytes is not sent (`same`, no verify: the device's hash was read from its listing). The
  * backend lists each folder once, the first time the run needs it (a folder this run made is empty, so it is not listed), and `sameOnDevice`
  * compares the file as `prepare` made it with that listing. A listing that fails is logged once (`note`) and the files go as if nothing was there.
+ *
+ * A backend with `commit` gets files with `defer` (the batch commit): the device verifies each file at its END but names it in the store only with the next
+ * commit. A file whose reply says files are pending stays `verifying`, labelled "Saving…" (no SysEx verify: the device checked it). When a reply shows nothing
+ * pending, or the commit sent after the last file succeeds, the files waiting become `ok`. When the commit fails or the bulk link fell back with files waiting,
+ * they become `failed` ("not confirmed, run again": the device may still commit them itself after 1 s); the next run's `sameOnDevice` then sends only the
+ * files the device does not hold. After a link loss the run waits `settleMs` and lists the folders again before it goes on, so files the device committed
+ * meanwhile are seen (a file that the fresh listing shows with the same bytes is `ok`, the others `failed`). A stop still commits the waiting files (verified
+ * data is never dropped) and shows them `ok`; the commit gets an abort signal that a stop raised during it fires (a stop before it gives it
+ * `commitCancelMs`), so a hung COMMIT is not waited out: those files are "not confirmed". A commit that answers files still pending (a file it replaces is being
+ * read) is asked again up to 3 times.
  */
 export async function uploadItems(
-  backend: Pick<SamplesBackend, 'put' | 'verify'> & Partial<Pick<SamplesBackend, 'list' | 'mkdir' | 'sameOnDevice'>>,
+  backend: Pick<SamplesBackend, 'put' | 'verify'> &
+    Partial<Pick<SamplesBackend, 'list' | 'mkdir' | 'sameOnDevice' | 'commit' | 'bulkState'>>,
   prepare: Prepare,
   mkdirs: readonly string[],
   items: readonly UploadItem[],
   emit: (e: UploadEvent) => void,
   stop: () => boolean = () => false,
+  { settleMs = 1500, commitCancelMs = 5000 }: { settleMs?: number; commitCancelMs?: number } = {},
 ): Promise<void> {
   for (const it of items) emit({ event: 'queued', folder: it.folder, name: it.name, bytes: it.size });
   const lost = new Map<string, string>();
@@ -611,7 +637,56 @@ export async function uploadItems(
     }
   }
   let stopped = '';
-  for (const it of items) {
+  // files the device verified and holds pending: named in the store by the next reply that shows 0 pending, or by the commit after the last file
+  let waiting: { folder: string; name: string; p: Prepared }[] = [];
+  const saved = () => {
+    for (const w of waiting)
+      emit({ event: 'verified', folder: w.folder, name: w.name, ok: true, message: SAVED_MESSAGE });
+    waiting = [];
+  };
+  const lostWaiting = (why: string) => {
+    for (const w of waiting)
+      emit({ event: 'failed', folder: w.folder, name: w.name, message: `${NOT_CONFIRMED}: ${why}` });
+    waiting = [];
+  };
+  const pause = (ms: number) => (ms > 0 ? new Promise<void>((r) => setTimeout(r, ms)) : Promise.resolve());
+  // the bulk link was lost with files waiting: the device may still commit them (its 1 s idle commit). Wait, list the folders again, and say what the listing shows.
+  const afterLoss = async () => {
+    const gone = waiting;
+    waiting = [];
+    await pause(settleMs);
+    for (const folder of new Set(gone.map((w) => w.folder))) listings.delete(folder);
+    for (const w of gone) {
+      let have: SampleEntry[] | null = null;
+      try {
+        have = await listingOf(w.folder);
+      } catch {
+        cancelled = true;
+      }
+      if (have && backend.sameOnDevice?.(w.p, have))
+        emit({ event: 'verified', folder: w.folder, name: w.name, ok: true, message: SAVED_MESSAGE });
+      else
+        emit({
+          event: 'failed',
+          folder: w.folder,
+          name: w.name,
+          message: `${NOT_CONFIRMED}: the USB link was lost`,
+        });
+    }
+  };
+  // The next file is read and prepared while this one is sent (the host spends 10 to 21 s of a 300-file run on it). The promise never rejects: a failure is a
+  // value that the next iteration reports on that file, so nothing is left unhandled when a stop, a cancel or a failed send discards it.
+  type Readied = { ok: true; p: Prepared } | { ok: false; error: unknown };
+  const readyItem = (it: UploadItem): Promise<Readied> =>
+    (async (): Promise<Readied> => {
+      try {
+        return { ok: true, p: prepare(it.name, await it.read()) };
+      } catch (error) {
+        return { ok: false, error };
+      }
+    })();
+  let ahead: { index: number; ready: Promise<Readied> } | undefined;
+  for (const [index, it] of items.entries()) {
     const { folder } = it;
     if (cancelled || stop()) {
       cancelled = true;
@@ -623,22 +698,22 @@ export async function uploadItems(
       emit({ event: 'failed', folder, name: it.name, source: it.name, message: `not sent: ${why ?? stopped}` });
       continue;
     }
-    let p: Prepared;
-    try {
-      p = prepare(it.name, await it.read());
-      emit({
-        event: 'prepared',
-        folder,
-        name: p.name,
-        source: it.name,
-        kind: p.kind,
-        bytes: p.stored.length,
-        queued: it.name,
-      });
-    } catch (e) {
-      emit({ event: 'failed', folder, name: it.name, source: it.name, message: errorLine(e) });
+    const got = await (ahead?.index === index ? ahead.ready : readyItem(it));
+    ahead = undefined;
+    if (!got.ok) {
+      emit({ event: 'failed', folder, name: it.name, source: it.name, message: errorLine(got.error) });
       continue;
     }
+    const p = got.p;
+    emit({
+      event: 'prepared',
+      folder,
+      name: p.name,
+      source: it.name,
+      kind: p.kind,
+      bytes: p.stored.length,
+      queued: it.name,
+    });
     // the cancel came while the file was read: nothing of it was sent
     if (stop()) {
       cancelled = true;
@@ -661,15 +736,20 @@ export async function uploadItems(
     }
     // what the listing says about the destination (the bulk path replaces an existing file atomically); the user's stop reaches a send in flight
     const exists = listings.get(folder)?.some((e) => e.name === p.name && e.kind === 'file');
+    const nextItem = items[index + 1];
+    if (nextItem && !stop()) ahead = { index: index + 1, ready: readyItem(nextItem) };
     const abort = new AbortController();
     const watch = setInterval(() => {
       if (stop()) abort.abort();
     }, 50);
+    let result: Awaited<ReturnType<typeof backend.put>>;
     try {
-      await backend.put(folder, p, (sent, bytes) => emit({ event: 'progress', folder, name: p.name, sent, bytes }), {
-        signal: abort.signal,
-        exists,
-      });
+      result = await backend.put(
+        folder,
+        p,
+        (sent, bytes) => emit({ event: 'progress', folder, name: p.name, sent, bytes }),
+        { signal: abort.signal, exists, defer: backend.commit !== undefined },
+      );
     } catch (e) {
       if (isCancelled(e)) {
         cancelled = true;
@@ -682,6 +762,15 @@ export async function uploadItems(
     } finally {
       clearInterval(watch);
     }
+    // the bulk link failed during this file: what the device held pending is not known to be saved
+    if (waiting.length && backend.bulkState === 'fallback') await afterLoss();
+    if (result && (result.pending > 0 || waiting.length)) {
+      // the batch: the device checked the file at END
+      waiting.push({ folder, name: p.name, p });
+      if (result.pending > 0) emit({ event: 'saving', folder, name: p.name });
+      else saved();
+      continue;
+    }
     emit({ event: 'verifying', folder, name: p.name });
     try {
       const v = await backend.verify(folder, p);
@@ -693,6 +782,33 @@ export async function uploadItems(
         continue;
       }
       emit({ event: 'failed', folder, name: p.name, message: errorLine(e) });
+    }
+  }
+  // the commit after the last file (also after a stop or a failed file: the waiting files are verified data)
+  if (waiting.length) {
+    if (backend.bulkState === 'fallback' || !backend.commit) await afterLoss();
+    else {
+      // a stop that comes during the commit ends the wait; a stop that came before gives the commit a bounded time
+      const abort = new AbortController();
+      const stoppedAtStart = cancelled || stop();
+      const timer = stoppedAtStart ? setTimeout(() => abort.abort(), commitCancelMs) : undefined;
+      const watch = setInterval(() => {
+        if (!stoppedAtStart && stop()) abort.abort();
+      }, 50);
+      try {
+        let left = await backend.commit(abort.signal);
+        for (let again = 0; left > 0 && again < 3; again++) {
+          await pause(settleMs);
+          left = await backend.commit(abort.signal);
+        }
+        if (left > 0) lostWaiting('the device still held files back');
+        else saved();
+      } catch (e) {
+        lostWaiting(isCancelled(e) ? 'cancelled while saving' : errorLine(e));
+      } finally {
+        clearInterval(watch);
+        if (timer) clearTimeout(timer);
+      }
     }
   }
 }

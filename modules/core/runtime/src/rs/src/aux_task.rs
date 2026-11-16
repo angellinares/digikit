@@ -5,6 +5,12 @@
 //! One call at a time: `run` answers `E_BUSY` while a run is not yet collected with `wait`, and the caller then does the work itself. The function runs
 //! with its own 4 KiB stack: no firmware calls, no waiting. Priority 3, the I/O task's (UI 6, MIDI 7): it never starves, and it runs while the I/O task sleeps.
 //!
+//! The runtime's own user is the close's read-back hash. A module reaches the helper through `dk_helper_run` and `dk_helper_wait` (`module_run`,
+//! `module_wait`): one pure-compute function, no import call, no waiting, started and collected inside one I/O step. The two users never overlap in time
+//! (both run on the I/O task: the close inside `dk_files_close`, the module's run between its own calls), and `BUSY` enforces it: a module that left a run
+//! uncollected makes the close hash on its own (`E_BUSY`, slower, still right), and `module_run` answers `E_BUSY` for any run not yet collected. A module run
+//! that its step did not collect is collected when the step returns (`step_end`), so the helper never runs module code after the step or an unload.
+//!
 //! Rules: no `match` on integers, no `core::fmt`, no slice indexing.
 use core::ptr::{addr_of, addr_of_mut, read_volatile, write_volatile};
 use dkrt_sdk::proto::E_STATE;
@@ -33,6 +39,8 @@ type Func = extern "C" fn(*mut u8);
 static mut TASK_UP: u32 = 0;
 /// 0: idle, 1: a run was started and not yet collected.
 static mut BUSY: u32 = 0;
+/// 1 while the uncollected run is a module's (`module_run`): only `module_wait` collects it, and the end of the module's step does when it did not.
+static mut MODULE_RUN: u32 = 0;
 static mut FUNC: Option<Func> = None;
 static mut CTX: *mut u8 = core::ptr::null_mut();
 
@@ -166,4 +174,42 @@ pub unsafe extern "C" fn dkrt_aux_run(f: usize, ctx: *mut u8) -> i32 {
 #[no_mangle]
 pub unsafe extern "C" fn dkrt_aux_wait() -> i32 {
     wait()
+}
+
+/// `dk_helper_run`: a module's pure-compute function on the helper task. I/O step only (`E_CONTEXT` elsewhere); `E_BUSY` while any run is uncollected;
+/// `E_CONTRACT` for no function; `E_NOT_FOUND` when the kernel gave no task (the module then runs the function itself).
+pub unsafe fn module_run(f: usize, ctx: *mut u8) -> i32 {
+    if crate::io::step_owner().is_none() {
+        return dkrt_sdk::E_CONTEXT;
+    }
+    let f = match core::mem::transmute::<usize, Option<Func>>(f) {
+        Some(f) => f,
+        None => return dkrt_sdk::E_CONTRACT,
+    };
+    let r = run(f, ctx);
+    if r == OK {
+        write_volatile(addr_of_mut!(MODULE_RUN), 1);
+    }
+    r
+}
+
+/// `dk_helper_wait`: wait for the run that `module_run` started. `E_STATE` when the module has none (or the run is the runtime's).
+pub unsafe fn module_wait() -> i32 {
+    if crate::io::step_owner().is_none() {
+        return dkrt_sdk::E_CONTEXT;
+    }
+    if read_volatile(addr_of!(MODULE_RUN)) == 0 {
+        return E_STATE;
+    }
+    let r = wait();
+    write_volatile(addr_of_mut!(MODULE_RUN), 0);
+    r
+}
+
+/// An I/O step returned: collect a module run it left behind.
+pub unsafe fn step_end() {
+    if read_volatile(addr_of!(MODULE_RUN)) != 0 {
+        wait();
+        write_volatile(addr_of_mut!(MODULE_RUN), 0);
+    }
 }

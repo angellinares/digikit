@@ -72,7 +72,8 @@ export function steppedClock(session: Pick<Session, 'status' | 'client'>): Clock
       return (await readClock(session)).ms;
     },
     async pause(ms) {
-      for (let left = Math.floor(ms * MS); left > 0;) {
+      // Round up: a positive wait steps at least one instruction (a float remainder like 1e-12 ms must not step none).
+      for (let left = Math.ceil(ms * MS); left > 0;) {
         const n = Math.min(left, SLICE_INSNS);
         await withinRuntimeDeadline(Date.now() + PROGRESS_HANG_S * 1000, () =>
           session.client.step(n, { timeout_wall_s: PROGRESS_HANG_S }),
@@ -163,9 +164,10 @@ export async function waitClock(
 ): Promise<void> {
   const start = await clock.now();
   const stuck = stuckGuard(`wait of ${ms} ms`, hangMs, clock);
-  for (let now = start; now - start < ms; now = await clock.now()) {
+  for (let now = start; now - start < ms;) {
     await clock.pause(Math.min(50, ms - (now - start)));
-    await stuck(await clock.now());
+    now = await clock.now();
+    await stuck(now);
   }
 }
 

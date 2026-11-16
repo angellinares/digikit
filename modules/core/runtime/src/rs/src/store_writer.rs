@@ -188,6 +188,8 @@ struct Up {
     start: u32,
     /// What BEGIN found for the commit (`Hint`).
     hint: Hint,
+    /// The file is closed as a pending file (`DK_FILE_DEFER`), not named in the table at once.
+    defer: bool,
 }
 
 /// The table's place that BEGIN found for the commit of the session. It is used only when the commit sees the same header (every commit changes
@@ -229,6 +231,7 @@ static mut UP: Up = Up {
     last_len: 0,
     start: 0,
     hint: NO_HINT,
+    defer: false,
 };
 static mut NEXT_HANDLE: i32 = 0;
 
@@ -262,6 +265,10 @@ pub fn end_job(id: u32) {
     if u.kind == SDK && id != 0 && u.job == id {
         drop_sdk(u);
     }
+    let p = pf();
+    if id != 0 && p.n != 0 && p.job == id {
+        p.flush = true; // the job that closed the pending files is over: `pend_tick` commits them
+    }
 }
 
 /// Test knob: blocks (1500 a second) of idleness after which a write session is aborted; 0: the default, 20 s (the stock firmware's writer timeout).
@@ -284,6 +291,7 @@ unsafe fn now() -> u32 {
 /// Skipped while the store lock is held (a write is in progress) and when the block clock is not there.
 pub unsafe fn tick() {
     pd_tick();
+    pend_tick();
     let u = up();
     if u.kind == NONE {
         return;
@@ -320,6 +328,14 @@ pub fn retire(owner: u8) {
     let u = up();
     if u.kind == SDK && u.owner == owner {
         drop_sdk(u);
+    }
+    let p = pf();
+    let mut i = 0;
+    while i < p.n {
+        if p.owner[i] == owner {
+            p.flush = true; // the module goes: its pending files are verified data and are committed, not dropped
+        }
+        i += 1;
     }
     lease_drop_owner(owner);
 }
@@ -513,7 +529,7 @@ fn limit_now() -> u32 {
 }
 
 /// Room for the extents an allocation keeps out of: the capacity knob, a file being written and the leases.
-pub const EXTRA_MAX: usize = 2 + lease::MAX;
+pub const EXTRA_MAX: usize = 2 + PENDING_MAX + lease::MAX;
 
 /// The extents an allocation keeps out of: the sectors the test knob takes away, `pend` (a file being written) and the leased extents. A lease
 /// guards its file against replace and delete, so its extent is free space only if the table lost the file by a path the writer does not
@@ -531,14 +547,16 @@ pub fn extras(buf: &mut [(u32, u32); EXTRA_MAX], pend: Option<(u32, u32)>) -> &[
         buf[n] = p;
         n += 1;
     }
+    n = pend_extents(buf, n);
     n = leases().extents(buf, n);
     &buf[..n]
 }
 
 /// Bytes of free space in all (the room for the table's next entry kept back), saturated to 32 bits for INFO.
 pub fn free_bytes(h: &Hdr) -> u32 {
-    let room = store::table_sectors(h.count + 1);
-    let b = limit_now().saturating_sub(h.used).saturating_sub(room) as u64 * 512;
+    let pf = pf();
+    let room = store::table_sectors(h.count + pf.n as u32 + 1);
+    let b = limit_now().saturating_sub(h.used).saturating_sub(room).saturating_sub(pf.sectors()) as u64 * 512;
     if b > u32::MAX as u64 {
         u32::MAX
     } else {
@@ -600,6 +618,318 @@ fn same_extents(a: &[(u32, u32)], b: &[(u32, u32)]) -> bool {
     true
 }
 
+// ---- pending files (DK_FILE_DEFER) ---------------------------------------------------------------------------------------------
+
+/// At most this many pending files, and this many bytes of them (docs/plans/usb-fast-batch.md B): a deferred create that would pass either commits all first.
+pub const PENDING_MAX: usize = store::MANY_MAX;
+const PENDING_BYTES_MAX: u32 = 16 * 1024 * 1024;
+/// 1 s of block clock: the owner's last file call this long ago, and the pending files are committed.
+const PENDING_IDLE: u32 = 1500;
+/// After a failed automatic commit, wait this long before the next try.
+const PENDING_RETRY: u32 = 1500;
+
+/// Files that are written, read back and hash-checked, and named in no table yet. Their extents are kept out of every allocation (`extras`).
+/// Only the card holds them: a power cut loses them (the space is free after boot, the old table is valid).
+struct Pending {
+    n: usize,
+    owner: [u8; PENDING_MAX],
+    /// The 256-byte table entries.
+    ent: [[u8; store::ENTRY]; PENDING_MAX],
+    /// The I/O job of the latest pending file: its end triggers the commit.
+    job: u32,
+    /// The block clock at the last file call of any module.
+    last: u32,
+    /// Commit now (the job ended or the module goes), not after the idle time.
+    flush: bool,
+    /// The automatic commit job is posted.
+    posted: bool,
+    /// No automatic commit before this block time (after an error).
+    retry_at: u32,
+    retrying: bool,
+}
+
+impl Pending {
+    fn sectors(&self) -> u32 {
+        let mut t = 0;
+        let mut i = 0;
+        while i < self.n {
+            t += store::entry_sectors(unsafe { &store::entry_of(self.ent[i].as_ptr()) });
+            i += 1;
+        }
+        t
+    }
+    fn bytes(&self) -> u32 {
+        let mut t = 0u32;
+        let mut i = 0;
+        while i < self.n {
+            t = t.saturating_add(unsafe { store::entry_of(self.ent[i].as_ptr()) }.size);
+            i += 1;
+        }
+        t
+    }
+    fn remove_at(&mut self, i: usize) {
+        let mut k = i;
+        while k + 1 < self.n {
+            self.owner[k] = self.owner[k + 1];
+            self.ent[k] = self.ent[k + 1];
+            k += 1;
+        }
+        self.n -= 1;
+    }
+}
+
+static mut PEND: Pending = Pending {
+    n: 0,
+    owner: [0; PENDING_MAX],
+    ent: [[0; store::ENTRY]; PENDING_MAX],
+    job: 0,
+    last: 0,
+    flush: false,
+    posted: false,
+    retry_at: 0,
+    retrying: false,
+};
+
+fn pf() -> &'static mut Pending {
+    unsafe { &mut *addr_of_mut!(PEND) }
+}
+
+/// Add the data extents of the pending files to `buf` from `n`: their data is on the card and nothing names it yet. The new length.
+fn pend_extents(buf: &mut [(u32, u32); EXTRA_MAX], mut n: usize) -> usize {
+    let p = pf();
+    let mut i = 0;
+    while i < p.n {
+        let e = unsafe { store::entry_of(p.ent[i].as_ptr()) };
+        let secs = store::entry_sectors(&e);
+        if secs != 0 {
+            buf[n] = (e.first, secs);
+            n += 1;
+        }
+        i += 1;
+    }
+    n
+}
+
+/// Pending files of `owner`.
+fn pend_count(owner: u8) -> i32 {
+    let p = pf();
+    let mut n = 0;
+    let mut i = 0;
+    while i < p.n {
+        if p.owner[i] == owner {
+            n += 1;
+        }
+        i += 1;
+    }
+    n
+}
+
+/// Is there a pending file with this path (NUL-terminated)?
+unsafe fn pend_has_path(path: *const u8) -> bool {
+    let p = pf();
+    let mut i = 0;
+    while i < p.n {
+        if store::relation(path, p.ent[i].as_ptr()) == 1 {
+            return true;
+        }
+        i += 1;
+    }
+    false
+}
+
+/// Drop the pending file with this path (NUL-terminated). True when there was one.
+unsafe fn pend_remove_path(path: *const u8) -> bool {
+    let p = pf();
+    let mut i = 0;
+    while i < p.n {
+        if store::relation(path, p.ent[i].as_ptr()) == 1 {
+            p.remove_at(i);
+            return true;
+        }
+        i += 1;
+    }
+    false
+}
+
+/// Drop every pending file (the SysEx CLEAR empties the store).
+pub fn pend_clear() {
+    let p = pf();
+    p.n = 0;
+    p.flush = false;
+}
+
+/// A file was verified: it replaces a pending file of its path and joins the others. It never commits and never fails for a limit: the create that
+/// opened the file made room (`make_room`).
+unsafe fn pend_add(owner: u8, job: u32, ent: &[u8; store::ENTRY]) -> i32 {
+    pend_remove_path(ent.as_ptr());
+    let p = pf();
+    if p.n >= PENDING_MAX {
+        return E_FULL;
+    }
+    p.ent[p.n] = *ent;
+    p.owner[p.n] = owner;
+    p.n += 1;
+    p.job = job;
+    p.last = now();
+    OK
+}
+
+/// Must the pending files (`n` of them, `bytes` of data) be committed before a deferred file of `size` bytes is created?
+fn room_needed(n: usize, bytes: u32, size: u32) -> bool {
+    n != 0 && (n >= PENDING_MAX || bytes as u64 + size as u64 > PENDING_BYTES_MAX as u64)
+}
+
+/// A deferred create of a file of `size` bytes: when the pending files are at the limit (16 files) or would pass 16 MiB with this one, commit them first.
+/// An error (or leftovers that stay pending, E_BUSY) is the create's result, before any data is sent. The caller holds the store lock.
+unsafe fn make_room(b: &Bufs, size: u32) -> i32 {
+    let p = pf();
+    if !room_needed(p.n, p.bytes(), size) {
+        return OK;
+    }
+    let r = commit_pending(b, None);
+    if r != OK {
+        return r;
+    }
+    if pf().n >= PENDING_MAX {
+        return E_BUSY; // entries whose replaced file is leased stay pending: try again
+    }
+    OK
+}
+
+/// Name the pending files of `owner` (all when `None`) in the table in one commit. Nothing is dropped on an error. The caller holds the store lock.
+pub unsafe fn commit_pending(b: &Bufs, owner: Option<u8>) -> i32 {
+    let p = pf();
+    let mut ptrs = [core::ptr::null::<u8>(); PENDING_MAX];
+    let mut which = [0usize; PENDING_MAX];
+    let mut n = 0;
+    let mut i = 0;
+    while i < p.n {
+        if owner.map_or(true, |o| o == p.owner[i]) {
+            ptrs[n] = p.ent[i].as_ptr();
+            which[n] = i;
+            n += 1;
+        }
+        i += 1;
+    }
+    if n == 0 {
+        return OK;
+    }
+    if !card::writable() {
+        return if card::state() == CARD_TOO_SMALL { E_NOSTORE } else { E_INUSE };
+    }
+    let t = match state(b) {
+        Ok(t) => t,
+        Err(e) => return e,
+    };
+    if !sync_headers(b, &t) {
+        return E_WRITE;
+    }
+    // a reader took a lease on a file that a pending one replaces: the commit would free its extent, so that entry stays pending (the others commit)
+    let mut kept = 0;
+    if leased_any() {
+        let mut k = 0;
+        let mut m = 0;
+        while k < n {
+            let leased_target = match store::find(&io(), &lay(), &t.h, b.tin, TBL_CAP, ptrs[k]) {
+                Ok(Some((_, old))) => leased(&old),
+                Ok(None) => false,
+                Err(e) => return pe(e),
+            };
+            if leased_target {
+                kept += 1;
+            } else {
+                ptrs[m] = ptrs[k];
+                which[m] = which[k];
+                m += 1;
+            }
+            k += 1;
+        }
+        n = m;
+        if n == 0 {
+            return E_FILE_IN_USE;
+        }
+    }
+    // an open session's extent stays out of the table's place too (`extras` already holds the pending files)
+    let u = up();
+    let open = if u.kind != NONE && !u.pd && u.size != 0 { Some((u.start, sectors_of(u.size))) } else { None };
+    let r = do_commit(b, &t.h, Edit::InsertMany(ptrs.as_ptr(), n), open);
+    if r == OK {
+        // drop what was named, last first so the indexes hold
+        let mut k = n;
+        while k > 0 {
+            k -= 1;
+            p.remove_at(which[k]);
+        }
+        if p.n == 0 {
+            p.flush = false;
+        }
+        if kept != 0 {
+            // the leased ones are tried again by the automatic commit, after a pause
+            p.retrying = true;
+            p.retry_at = now().wrapping_add(PENDING_RETRY);
+        }
+    }
+    r
+}
+
+/// Are the pending files due for the automatic commit at block time `t`: not waiting after an error, and their job or module gone or the owner idle?
+fn pend_due(p: &Pending, t: u32) -> bool {
+    if p.n == 0 || p.posted {
+        return false;
+    }
+    if p.retrying && (t.wrapping_sub(p.retry_at) as i32) < 0 {
+        return false;
+    }
+    p.flush || t.wrapping_sub(p.last) >= PENDING_IDLE
+}
+
+/// UI task, once per pass: when pending files are due (the idle time passed, or their job or module is gone), post the commit as an I/O job. The
+/// commit runs in the I/O task, never here.
+unsafe fn pend_tick() {
+    let p = pf();
+    if p.n == 0 || p.posted {
+        return;
+    }
+    #[cfg(not(test))]
+    if crate::fw_blocks().is_none() {
+        return;
+    }
+    if !pend_due(p, now()) {
+        return;
+    }
+    p.posted = true;
+    if crate::io::post(0, Some(pend_step), None, core::ptr::null_mut()) <= 0 {
+        p.posted = false; // no job entry free: the next pass tries again
+    }
+}
+
+/// The automatic commit, a job of the runtime in the I/O task.
+unsafe extern "C" fn pend_step(_: *mut u8) -> i32 {
+    if !acquire() {
+        pf().posted = false;
+        return 0; // the next pass posts it again
+    }
+    let r = commit_pending(&sdk_bufs(), None);
+    unlock();
+    let p = pf();
+    p.posted = false;
+    if r == OK {
+        if p.n == 0 {
+            p.retrying = false; // else entries with a leased target stay: `commit_pending` set the pause
+        }
+    } else {
+        crate::dlog::ev(dkrt_sdk::logk::UPLOAD, dkrt_sdk::logk::F_ERROR, [0xb8, r as u32, p.n as u32, 0, 0]);
+        p.retrying = true;
+        p.retry_at = now().wrapping_add(PENDING_RETRY);
+    }
+    0
+}
+
+/// SysEx commands that change the table (MKDIR, RENAME) first name the pending files, so that their checks see them. `E_BUSY`-free: the caller holds the lock.
+pub unsafe fn flush_pending(b: &Bufs) -> i32 {
+    commit_pending(b, None)
+}
+
 // ---- begin, write, close, abort, delete ---------------------------------------------------------------------------------------
 
 /// Open the write session of `kind` for the file `path` (`pl` bytes, NUL-terminated, already checked by `store::path_ok`) of `size` bytes.
@@ -639,7 +969,7 @@ pub unsafe fn begin(
     // room beside it (`store::begin_fit`)
     let need = sectors_of(size);
     let mut ex0 = [(0, 0); EXTRA_MAX];
-    let fit = match store::begin_fit(&io, &lay, &t.h, b.tin, TBL_CAP, extras(&mut ex0, None), need, store::table_sectors(t.h.count + 1), |e| {
+    let fit = match store::begin_fit(&io, &lay, &t.h, b.tin, TBL_CAP, extras(&mut ex0, None), need, store::table_sectors(t.h.count + pf().n as u32 + 1), |e| {
         let rel = store::relation(path, e);
         if rel >= 2 || (rel == 1 && store::entry_of(e).kind == KIND_DIR) {
             conflict = true;
@@ -652,6 +982,17 @@ pub unsafe fn begin(
         Ok(f) => f,
         Err(r) => return pe(r),
     };
+    // the pending files (named in no table yet) count like the stored ones
+    let mut i = 0;
+    while i < pf().n {
+        let rel = store::relation(path, pf().ent[i].as_ptr());
+        if rel >= 2 {
+            conflict = true;
+        } else if rel == 1 {
+            exists = true;
+        }
+        i += 1;
+    }
     if conflict {
         return E_PATH;
     }
@@ -702,6 +1043,7 @@ pub unsafe fn begin(
     u.run = Hash32::new();
     u.skip_rx = want.is_some() && crate::speed::on(crate::speed::HASH_ONCE);
     u.pd = false;
+    u.defer = false;
     u.next = 0;
     u.have_last = false;
     u.last_off = 0;
@@ -854,6 +1196,14 @@ unsafe fn close_inner(b: &Bufs, out: *mut u8) -> i32 {
             }
         }
     }
+    if u.defer {
+        // a deferred file is verified: it becomes a pending file and is named in the table at the next commit of pending files
+        let mut ent = [0u8; store::ENTRY];
+        let e = Entry { first: u.start, size: u.size, kind: KIND_FILE, sha: got };
+        store::encode_entry(u.path.as_ptr(), &e, ent.as_mut_ptr());
+        u.hint.valid = false;
+        return pend_add(u.owner, u.job, &ent);
+    }
     // the new table: the current one with the entry replaced or inserted
     let t = match state(b) {
         Ok(t) => t,
@@ -877,7 +1227,11 @@ unsafe fn close_inner(b: &Bufs, out: *mut u8) -> i32 {
     let pend = if u.size == 0 { None } else { Some((u.start, sectors_of(u.size))) };
     let hint = u.hint;
     u.hint.valid = false;
-    do_commit_hinted(b, &t.h, Edit::Insert(ent.as_ptr()), pend, Some(&hint))
+    let r = do_commit_hinted(b, &t.h, Edit::Insert(ent.as_ptr()), pend, Some(&hint));
+    if r == OK {
+        pend_remove_path(u.path.as_ptr()); // the file replaced a pending one of the same path
+    }
+    r
 }
 
 /// The read-back piece: the bytes of one card read of the close. The firmware's block read takes 64 KiB at most (`store::MAX_IO_SECTORS` sectors); with
@@ -1063,19 +1417,31 @@ pub unsafe fn delete(b: &Bufs, path: *const u8, drop_sysex: bool) -> i32 {
     if !sync_headers(b, &t) {
         return E_WRITE;
     }
+    // a pending file of this path is dropped (it was never named) only after every check passed; a stored one is removed by a commit
+    let was_pending = pend_has_path(path);
     match store::find(&io(), &lay(), &t.h, b.tin, TBL_CAP, path) {
         Ok(Some((_, e))) => {
             if leased(&e) {
                 return E_FILE_IN_USE;
             }
         }
-        Ok(None) => return E_NOFILE,
+        Ok(None) => {
+            if was_pending {
+                pend_remove_path(path);
+                return OK;
+            }
+            return E_NOFILE;
+        }
         Err(e) => return pe(e),
     }
     if k == SYSEX {
         up().kind = NONE;
     }
-    do_commit(b, &t.h, Edit::Remove(path), None)
+    let r = do_commit(b, &t.h, Edit::Remove(path), None);
+    if r == OK {
+        pend_remove_path(path);
+    }
+    r
 }
 
 // ---- the SDK front end (`file_*`, api 1.10) -----------------------------------------------------------------------------------
@@ -1085,13 +1451,18 @@ pub(crate) const ROOT_SAMPLES: u32 = 1;
 pub(crate) const ROOT_STORE: u32 = 2;
 /// `DK_FILE_REPLACE` of `<dk/platform/file.h>`.
 pub const FILE_REPLACE: u32 = 1;
+/// `DK_FILE_DEFER`: the file is verified at close and named in the table at the next commit of pending files.
+pub const FILE_DEFER: u32 = 2;
 /// A store path with its root prefix: at most `store::PATH_MAX` bytes and the NUL.
 const FULL_MAX: usize = 168;
 
 /// The SDK calls run in an I/O step only: the running task is the I/O task and a step is running. The owner is the module whose job it is.
 unsafe fn sdk_owner() -> Result<u8, i32> {
     match crate::io::step_owner() {
-        Some(o) => Ok(o),
+        Some(o) => {
+            pf().last = now(); // the owner's last file call: the idle time of the pending files counts from here
+            Ok(o)
+        }
         None => Err(E_CONTEXT),
     }
 }
@@ -1155,7 +1526,7 @@ pub unsafe fn sdk_create(root: u32, path: *const u8, size: u32, hash4: *const u8
         Ok(o) => o,
         Err(e) => return e,
     };
-    if flags & !FILE_REPLACE != 0 {
+    if flags & !(FILE_REPLACE | FILE_DEFER) != 0 {
         return E_CONTRACT;
     }
     let mut full = [0u8; FULL_MAX];
@@ -1165,7 +1536,7 @@ pub unsafe fn sdk_create(root: u32, path: *const u8, size: u32, hash4: *const u8
         Err(e) => return e,
     };
     if pd {
-        return pd_create(owner, full.as_ptr(), size, hash4, flags);
+        return pd_create(owner, full.as_ptr(), size, hash4, flags & FILE_REPLACE); // the +Drive names its files at close
     }
     let want = if hash4.is_null() {
         None
@@ -1178,12 +1549,53 @@ pub unsafe fn sdk_create(root: u32, path: *const u8, size: u32, hash4: *const u8
         return busy(E_BUSY);
     }
     let mut free = 0;
+    if flags & FILE_DEFER != 0 {
+        let m = make_room(&sdk_bufs(), size);
+        if m != OK {
+            unlock();
+            return busy(m);
+        }
+    }
     let r = begin(&sdk_bufs(), SDK, owner, full.as_ptr(), pl, size, want, flags & FILE_REPLACE == 0, &mut free);
     unlock();
     if r != OK {
         return busy(r);
     }
+    up().defer = flags & FILE_DEFER != 0;
     handle()
+}
+
+/// `dk_files_commit`: name the calling module's pending files in one commit. The DT2 samples root: finish the adapter's table rebuild.
+pub unsafe fn sdk_commit() -> i32 {
+    let owner = match sdk_owner() {
+        Ok(o) => o,
+        Err(e) => return e,
+    };
+    if !acquire() {
+        return busy(E_BUSY);
+    }
+    let r = commit_pending(&sdk_bufs(), Some(owner));
+    unlock();
+    if r != OK {
+        return busy(r);
+    }
+    if !PLATFORM.samples_in_store() && pd_present() {
+        if up().pd || !pd_enter() {
+            return busy(E_BUSY); // a +Drive file is open, or the adapter is in a call
+        }
+        let r = pd_commit();
+        pd_leave();
+        return r;
+    }
+    OK
+}
+
+/// `dk_files_pending`: the calling module's pending files.
+pub unsafe fn sdk_pending() -> i32 {
+    match sdk_owner() {
+        Ok(o) => pend_count(o),
+        Err(e) => e,
+    }
 }
 
 /// `file_write`: `len` bytes of `buf` (16-byte aligned) at `offset`, the next byte, in pieces of `WRITE_PIECE`. The store lock is taken once for the
@@ -1278,6 +1690,7 @@ extern "C" {
     fn dkpw_abort();
     fn dkpw_delete(path: *const u8) -> i32;
     fn dkpw_recover(out: *mut u32) -> i32;
+    fn dkpw_commit() -> i32;
     fn dkpw_staging() -> *const u8;
 }
 
@@ -1393,6 +1806,11 @@ unsafe fn pd_tick() {
             }
         }
     }
+}
+
+/// The adapter's deferred table rebuild (`dkpw_commit`); the caller holds the adapter (`pd_enter`).
+unsafe fn pd_commit() -> i32 {
+    dkpw_commit()
 }
 
 /// Claim the one write session for the +Drive. `E_BUSY`: a session is open or the store is in use.
@@ -1656,6 +2074,173 @@ mod tests {
             assert_eq!(readback_hash(fake(&GOOD, None), 100, GOOD.len() as u32, p, 512, true), Ok(want));
             assert_ne!(readback_hash(fake(&BAD_MID, None), 100, GOOD.len() as u32, p, 16384, true), Ok(want));
             assert_eq!(readback_hash(fake(&GOOD, Some(150)), 100, GOOD.len() as u32, p, 16384, true), Err(E_READ));
+        }
+    }
+
+    fn file_entry(path: &str, first: u32, size: u32) -> [u8; store::ENTRY] {
+        let mut ent = [0u8; store::ENTRY];
+        let mut p = [0u8; 160];
+        p[..path.len()].copy_from_slice(path.as_bytes());
+        let e = Entry { first, size, kind: KIND_FILE, sha: [first as u8; 32] };
+        unsafe { store::encode_entry(p.as_ptr(), &e, ent.as_mut_ptr()) };
+        ent
+    }
+
+    fn put(path: &str, first: u32, size: u32, owner: u8) {
+        let p = pf();
+        p.ent[p.n] = file_entry(path, first, size);
+        p.owner[p.n] = owner;
+        p.n += 1;
+    }
+
+    fn cpath(s: &str) -> [u8; 32] {
+        let mut b = [0u8; 32];
+        b[..s.len()].copy_from_slice(s.as_bytes());
+        b
+    }
+
+    #[test]
+    fn pending_files_keep_their_extents_out_and_count_for_their_owner() {
+        let _g = LOCK.lock().unwrap_or_else(|e| e.into_inner());
+        unsafe {
+            pend_clear();
+            put("samples/a", 500, 1024, 3);
+            put("samples/b", 600, 512, 4);
+            put("samples/c", 700, 0, 3); // no data: no extent
+            assert_eq!((pend_count(3), pend_count(4), pend_count(9)), (2, 1, 0));
+            assert_eq!(pf().sectors(), 3);
+            assert_eq!(pf().bytes(), 1536);
+            let mut ex = [(0, 0); EXTRA_MAX];
+            ex[0] = (900, 4);
+            let n = pend_extents(&mut ex, 1);
+            let got = &ex[..n];
+            assert_eq!(got, &[(900, 4), (500, 2), (600, 1)], "the file without data has no extent");
+            // a path is found by `pend_remove_path` and its slot closes
+            let p = cpath("samples/b");
+            assert!(pend_remove_path(p.as_ptr()));
+            assert!(!pend_remove_path(p.as_ptr()));
+            assert_eq!((pf().n, pend_count(4)), (2, 0));
+            pend_clear();
+            assert_eq!(pf().n, 0);
+        }
+    }
+
+    #[test]
+    fn a_pending_replace_takes_the_slot_of_its_path() {
+        let _g = LOCK.lock().unwrap_or_else(|e| e.into_inner());
+        unsafe {
+            pend_clear();
+            TEST_NOW = 10;
+            assert_eq!(pend_add(3, 7, &file_entry("samples/a", 500, 512)), OK);
+            assert_eq!(pend_add(3, 7, &file_entry("samples/b", 600, 512)), OK);
+            assert_eq!(pend_add(3, 8, &file_entry("samples/a", 800, 1024)), OK);
+            assert_eq!(pf().n, 2);
+            let a = store::entry_of(pf().ent[1].as_ptr());
+            assert_eq!((a.first, a.size), (800, 1024), "the new file of the path is the pending one");
+            assert_eq!((pf().job, pf().last), (8, 10));
+            pend_clear();
+        }
+    }
+
+    #[test]
+    fn pending_files_are_due_when_the_owner_is_idle_for_a_second_or_its_job_ends_and_never_dropped_by_the_session_idle() {
+        let _g = LOCK.lock().unwrap_or_else(|e| e.into_inner());
+        unsafe {
+            pend_clear();
+            put("samples/a", 500, 512, 3);
+            let p = pf();
+            p.last = 100;
+            p.job = 7;
+            p.posted = false;
+            p.retrying = false;
+            assert!(!pend_due(p, 100 + PENDING_IDLE - 1), "999 ms after the last call");
+            assert!(pend_due(p, 100 + PENDING_IDLE), "1 s");
+            // the job ends: due at once
+            end_job(9);
+            assert!(!pend_due(pf(), 101), "another job");
+            end_job(7);
+            assert!(pend_due(pf(), 101));
+            // an error waits before the next try; a posted job is not posted twice
+            pf().retrying = true;
+            pf().retry_at = 5000;
+            assert!(!pend_due(pf(), 4999) && pend_due(pf(), 5000));
+            pf().posted = true;
+            assert!(!pend_due(pf(), 9999));
+            pf().posted = false;
+            // the 20 s idle drop of a write session leaves the pending files alone
+            open_session(SDK, 0);
+            TEST_NOW = 100_000;
+            tick();
+            assert!(!is_open());
+            assert_eq!(pf().n, 1);
+            pend_clear();
+            pf().retrying = false;
+        }
+    }
+
+    #[test]
+    fn a_module_that_goes_gets_its_pending_files_flushed() {
+        let _g = LOCK.lock().unwrap_or_else(|e| e.into_inner());
+        unsafe {
+            pend_clear();
+            put("samples/a", 500, 512, 3);
+            pf().last = 0;
+            retire(4);
+            assert!(!pf().flush, "another module's");
+            retire(3);
+            assert!(pf().flush);
+            pend_clear();
+            assert!(!pf().flush);
+        }
+    }
+
+    #[test]
+    fn the_sdk_accepts_the_defer_flag_and_nothing_else() {
+        assert_eq!(FILE_DEFER & FILE_REPLACE, 0);
+        assert_eq!((FILE_REPLACE | FILE_DEFER) & !(FILE_REPLACE | FILE_DEFER), 0);
+        assert_eq!(PENDING_MAX, 16);
+    }
+
+    #[test]
+    fn a_deferred_create_commits_first_only_at_the_limits() {
+        assert!(!room_needed(0, 0, 100 * 1024 * 1024), "nothing pending: nothing to commit, whatever the size");
+        assert!(!room_needed(15, 1000, 1000));
+        assert!(room_needed(16, 0, 1), "16 files pending");
+        assert!(!room_needed(3, PENDING_BYTES_MAX - 10, 10), "exactly 16 MiB is allowed");
+        assert!(room_needed(3, PENDING_BYTES_MAX - 10, 11), "this file would pass 16 MiB");
+    }
+
+    #[test]
+    fn free_bytes_leaves_room_for_the_pending_entries_and_their_data() {
+        let _g = LOCK.lock().unwrap_or_else(|e| e.into_inner());
+        unsafe {
+            pend_clear();
+            crate::store::TEST_LAYOUT.with(|c| c.set(Some(Layout { first: 100, sectors: 100_000 })));
+            let h = Hdr { count: 0, table_sectors: 0, table_first: 0, table_crc: 0, seq: 1, used: 1, area: 100_000 };
+            let none = free_bytes(&h);
+            put("samples/a", 500, 1024, 3); // 2 sectors of data, one more table entry
+            put("samples/b", 600, 512, 3);
+            let two = free_bytes(&h);
+            let room = |n: u32| store::table_sectors(n);
+            let drop = (3 + room(3) - room(1)) as u64 * 512; // data sectors and the table's growth
+            assert_eq!(none as u64 - two as u64, drop);
+            pend_clear();
+            crate::store::TEST_LAYOUT.with(|c| c.set(None));
+        }
+    }
+
+    #[test]
+    fn a_pending_path_is_found_without_being_removed() {
+        let _g = LOCK.lock().unwrap_or_else(|e| e.into_inner());
+        unsafe {
+            pend_clear();
+            put("samples/a", 500, 512, 3);
+            let p = cpath("samples/a");
+            assert!(pend_has_path(p.as_ptr()));
+            assert_eq!(pf().n, 1, "looking does not drop it (delete drops only after its checks)");
+            assert!(pend_remove_path(p.as_ptr()));
+            assert!(!pend_has_path(p.as_ptr()));
+            pend_clear();
         }
     }
 

@@ -2702,6 +2702,16 @@ mark = "D"
 rule = "fw/storage:cf_func"
 
 [[anchor]]
+name = "cf.storage.fn.file.alloc_pages"
+cpu = "cf"
+kind = "code"
+addr = 0x401581dc
+len = 4
+sha256 = "e26a6edd1fa03cb09e71e68d5c523db6fb0975d75aaf4aabb1a08024a42e5344"
+mark = "D"
+rule = "fw/storage:cf_func"
+
+[[anchor]]
 name = "cf.storage.fn.inode.get"
 cpu = "cf"
 kind = "code"

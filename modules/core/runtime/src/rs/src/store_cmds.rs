@@ -115,6 +115,11 @@ pub(crate) unsafe fn cmd_mkdir(seq: u32, buf: *mut u8, body: *const u8, blen: us
         Some(n) if n + 1 == blen => {}
         _ => return reply(CMD_MKDIR, seq, if blen < 2 { E_MSG } else { E_PATH }, 0),
     }
+    // pending files of an SDK module are named first, so that the checks below see them
+    let r = sw::flush_pending(&Bufs::sysex(buf));
+    if r != OK {
+        return reply(CMD_MKDIR, seq, r, 0);
+    }
     let t = match state(buf) {
         Ok(t) => t,
         Err(e) => return reply(CMD_MKDIR, seq, e, 0),
@@ -168,6 +173,10 @@ pub(crate) unsafe fn cmd_rename(seq: u32, buf: *mut u8, body: *const u8, blen: u
     match path_ok(to, blen - fl - 1) {
         Some(n) if fl + 1 + n + 1 == blen => {}
         _ => return reply(CMD_RENAME, seq, if blen < fl + 3 { E_MSG } else { E_PATH }, 0),
+    }
+    let r = sw::flush_pending(&Bufs::sysex(buf));
+    if r != OK {
+        return reply(CMD_RENAME, seq, r, 0);
     }
     let t = match state(buf) {
         Ok(t) => t,
@@ -368,6 +377,9 @@ pub(crate) unsafe fn cmd_clear(seq: u32, buf: *mut u8, body: *const u8, blen: us
     };
     let cur = Hdr { seq: seq_now, ..Hdr::empty(&lay()) };
     let r = do_commit(buf, &cur, Edit::Clear, None);
+    if r == OK {
+        sw::pend_clear(); // the store is emptied: pending files go too (only once it is)
+    }
     reply(CMD_CLEAR, seq, r, 0)
 }
 

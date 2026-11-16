@@ -8,6 +8,8 @@ import { fileGroups, nameInGroup } from '../src/card-core.ts';
 import {
   applyUpload,
   confirmDeleteLabel,
+  NOT_CONFIRMED,
+  SAVING_MESSAGE,
   crumbs,
   deletePartLine,
   deleteRows,
@@ -768,6 +770,7 @@ const runAll = async (backend: Backend, mkdirs: string[], items: UploadItem[], s
       u = applyUpload(u, e);
     },
     stop,
+    { settleMs: 0, commitCancelMs: 50 },
   );
   return { u, events };
 };
@@ -898,4 +901,295 @@ test('Cancel between skipped files stops the run', async () => {
     ['b', 'cancelled'],
     ['c', 'cancelled'],
   ]);
+});
+
+// ---- the batch commit ------------------------------------------------------------------------------------------------------------
+
+/**
+ * A backend with `commit` (the bulk backend of a device with the batch commit): `pending` says what each put reports (in order; the last repeats),
+ * `commitFails` makes the commit throw, `fallbackAfter` flips `bulkState` after that many puts (the link was lost).
+ */
+const batchBackend = ({
+  pending = [1, 2, 3],
+  commitFails = '',
+  fallbackAfter = Infinity,
+  commitLeft = [0],
+  commitHangs = false,
+  have = {} as Record<string, Record<string, Uint8Array>>,
+}: {
+  pending?: number[];
+  commitFails?: string;
+  fallbackAfter?: number;
+  commitLeft?: number[];
+  commitHangs?: boolean;
+  have?: Record<string, Record<string, Uint8Array>>;
+} = {}) => {
+  const calls: string[] = [];
+  const base = deviceBackend(have);
+  let n = 0;
+  let commits = 0;
+  return {
+    calls,
+    list: base.list,
+    sameOnDevice: base.sameOnDevice,
+    bulkState: 'bulk' as 'bulk' | 'fallback',
+    async put(f: string, p: Prepared, o: (sent: number, total: number) => void, opts?: { defer?: boolean }) {
+      calls.push(`put ${f}/${p.name}${opts?.defer ? ' defer' : ''}`);
+      await base.put(f, p, o);
+      n++;
+      if (n >= fallbackAfter) this.bulkState = 'fallback';
+      return opts?.defer && this.bulkState === 'bulk'
+        ? { pending: pending[Math.min(n, pending.length) - 1]! }
+        : undefined;
+    },
+    verify: async (f: string, p: Prepared) => {
+      calls.push(`verify ${f}/${p.name}`);
+      return base.verify(f, p);
+    },
+    async commit(signal?: AbortSignal) {
+      calls.push('commit');
+      if (commitFails) throw new Error(commitFails);
+      if (commitHangs)
+        await new Promise<void>((_, reject) =>
+          signal?.addEventListener('abort', () => reject(cancelError()), { once: true }),
+        );
+      return commitLeft[Math.min(commits++, commitLeft.length - 1)]!;
+    },
+  };
+};
+const items3 = [filled('d', 'a', 10, 1), filled('d', 'b', 10, 2), filled('d', 'c', 10, 3)];
+
+test('deferred files wait as "Saving…" and become ok when the commit after the last file succeeds; no SysEx verify', async () => {
+  const b = batchBackend();
+  const { u, events } = await runAll(b, [], items3);
+  assert.deepEqual(names(u), [
+    ['a', 'ok'],
+    ['b', 'ok'],
+    ['c', 'ok'],
+  ]);
+  assert.deepEqual(b.calls, ['put d/a defer', 'put d/b defer', 'put d/c defer', 'commit']);
+  // each file was saving before the commit made them ok, none was verified earlier
+  const order = events.filter((e) => e.event === 'saving' || e.event === 'verified').map((e) => e.event);
+  assert.deepEqual(order, ['saving', 'saving', 'saving', 'verified', 'verified', 'verified']);
+  assert.match(u['d/a']!.message, /saved it with the files of its batch/);
+  let w = applyUpload({}, { event: 'prepared', folder: 'd', name: 'a', source: 'a', kind: 'unchanged', bytes: 10 });
+  w = applyUpload(w, { event: 'saving', folder: 'd', name: 'a' });
+  assert.deepEqual([w['d/a']!.state, w['d/a']!.message], ['verifying', SAVING_MESSAGE]);
+  const status = uploadStatus(w['d/a']!)!;
+  assert.deepEqual([status.kind, status.message], ['verifying', SAVING_MESSAGE]);
+});
+
+test('files waiting become ok at once when a reply shows nothing pending (a limit committed them), the commit after the last file is skipped', async () => {
+  const b = batchBackend({ pending: [1, 2, 0] });
+  const { u } = await runAll(b, [], items3);
+  assert.deepEqual(names(u), [
+    ['a', 'ok'],
+    ['b', 'ok'],
+    ['c', 'ok'],
+  ]);
+  assert.deepEqual(b.calls, ['put d/a defer', 'put d/b defer', 'put d/c defer']);
+});
+
+test('a commit that fails marks the waiting files failed: not saved, send again', async () => {
+  const b = batchBackend({ commitFails: '{"error":"E_WRITE: card write failed","kind":"device"}' });
+  const { u } = await runAll(b, [], items3);
+  assert.deepEqual(names(u), [
+    ['a', 'failed'],
+    ['b', 'failed'],
+    ['c', 'failed'],
+  ]);
+  assert.ok(u['d/a']!.message.startsWith(NOT_CONFIRMED), u['d/a']!.message);
+  assert.match(u['d/a']!.message, /E_WRITE/);
+});
+
+test('the link lost while files wait (the backend fell back): they fail as not saved, the file sent over the fallback is a normal one', async () => {
+  const b = batchBackend({ fallbackAfter: 3 });
+  const { u } = await runAll(b, [], items3);
+  assert.deepEqual(names(u), [
+    ['a', 'failed'],
+    ['b', 'failed'],
+    ['c', 'ok'],
+  ]);
+  assert.ok(u['d/a']!.message.startsWith(NOT_CONFIRMED));
+  assert.match(u['d/a']!.message, /USB link was lost/);
+  // the third put returned nothing pending on the fallback: its own verify ran, and there is no commit
+  assert.deepEqual(b.calls.slice(-2), ['put d/c defer', 'verify d/c']);
+  assert.ok(!b.calls.includes('commit'));
+});
+
+test('the rerun after a loss sends only the files the device does not hold (the existing same-on-device skip)', async () => {
+  // a, b were lost: the device lists only c
+  const b = deviceBackend({ d: { c: bytesOf(10, 3) } });
+  const { u } = await runAll(b, [], items3);
+  assert.deepEqual(names(u), [
+    ['a', 'ok'],
+    ['b', 'ok'],
+    ['c', 'same'],
+  ]);
+});
+
+test('a stop still commits the files already waiting', async () => {
+  const b = batchBackend();
+  let stopped = false;
+  const put = b.put.bind(b);
+  b.put = async (...args: Parameters<typeof put>) => {
+    const r = await put(...args);
+    stopped = true; // the user stops once a is sent
+    return r;
+  };
+  const { u } = await runAll(b, [], items3, () => stopped);
+  assert.ok(b.calls.includes('commit'), b.calls.join('|'));
+  assert.equal(u['d/a']!.state, 'ok');
+  assert.equal(u['d/c']!.state, 'cancelled');
+});
+
+test('a commit that answers files still pending is asked again; files still held back after that are not confirmed', async () => {
+  const b = batchBackend({ commitLeft: [2, 0] });
+  const { u } = await runAll(b, [], items3);
+  assert.deepEqual(names(u), [
+    ['a', 'ok'],
+    ['b', 'ok'],
+    ['c', 'ok'],
+  ]);
+  assert.equal(b.calls.filter((c) => c === 'commit').length, 2);
+  const held = batchBackend({ commitLeft: [1] });
+  const r = await runAll(held, [], items3);
+  assert.deepEqual(names(r.u), [
+    ['a', 'failed'],
+    ['b', 'failed'],
+    ['c', 'failed'],
+  ]);
+  assert.equal(held.calls.filter((c) => c === 'commit').length, 4, 'one commit and three more');
+  assert.ok(r.u['d/a']!.message.startsWith(NOT_CONFIRMED));
+});
+
+test('a hung COMMIT is cut off by a stop that comes during it; the files are not confirmed', async () => {
+  const b = batchBackend({ commitHangs: true });
+  let stopNow = false;
+  const put = b.put.bind(b);
+  let puts = 0;
+  b.put = async (...args: Parameters<typeof put>) => {
+    const r = await put(...args);
+    if (++puts === 3) setTimeout(() => (stopNow = true), 120); // the stop comes while the COMMIT hangs
+    return r;
+  };
+  const { u } = await runAll(b, [], items3, () => stopNow);
+  assert.deepEqual(names(u), [
+    ['a', 'failed'],
+    ['b', 'failed'],
+    ['c', 'failed'],
+  ]);
+  assert.match(u['d/a']!.message, /not confirmed, run again: cancelled while saving/);
+});
+
+test('after the link was lost the run lists the folder again: files the device committed meanwhile are ok, the others not confirmed', async () => {
+  // the device commits a and b by itself (its idle commit) while the run is on the fallback: they show in the fresh listing, c was sent over SysEx
+  const lose = (committed: Record<string, Uint8Array>) => {
+    const have: Record<string, Record<string, Uint8Array>> = {};
+    const b = batchBackend({ fallbackAfter: 3, have });
+    const put = b.put.bind(b);
+    b.put = async (...args: Parameters<typeof put>) => {
+      const r = await put(...args);
+      if (args[1].name === 'c') have.d = committed;
+      return r;
+    };
+    return b;
+  };
+  const both = await runAll(lose({ a: bytesOf(10, 1), b: bytesOf(10, 2) }), [], items3);
+  assert.deepEqual(names(both.u), [
+    ['a', 'ok'],
+    ['b', 'ok'],
+    ['c', 'ok'],
+  ]);
+  const one = await runAll(lose({ a: bytesOf(10, 1) }), [], items3);
+  assert.deepEqual(names(one.u), [
+    ['a', 'ok'],
+    ['b', 'failed'],
+    ['c', 'ok'],
+  ]);
+  assert.ok(one.u['d/b']!.message.startsWith(NOT_CONFIRMED));
+});
+
+// ---- reading and preparing the next file while one is sent ----------------------------------------------------------------------
+
+/** A backend whose put waits a moment (so that work started ahead can run) and logs what the run does, in order. */
+const slowBackend = (log: string[], onPut: (name: string) => void = () => {}) => {
+  const base = fakeBackend();
+  return {
+    put: async (f: string, p: Prepared, o: (sent: number, total: number) => void) => {
+      log.push(`put ${p.name}`);
+      onPut(p.name);
+      await new Promise((r) => setTimeout(r, 20));
+      log.push(`put done ${p.name}`);
+      return base.put(f, p, o);
+    },
+    verify: base.verify,
+  };
+};
+const logged = (log: string[], name: string, size = 10, fill = 0): UploadItem => ({
+  folder: 'd',
+  name,
+  size,
+  read: async () => {
+    log.push(`read ${name}`);
+    return bytesOf(size, fill);
+  },
+});
+
+test('the next file is read while one is sent, and its events keep their order: prepared comes after the verify of the file before', async () => {
+  const log: string[] = [];
+  const { events } = await runAll(slowBackend(log), [], [logged(log, 'a'), logged(log, 'b'), logged(log, 'c')]);
+  assert.ok(log.indexOf('read b') < log.indexOf('put done a'), 'b is read while a is sent');
+  assert.ok(log.indexOf('read c') < log.indexOf('put done b'), 'and c while b is sent');
+  const order = events
+    .filter((e) => e.event === 'prepared' || e.event === 'verified')
+    .map((e) => `${e.event} ${e.name}`);
+  assert.deepEqual(order, ['prepared a', 'verified a', 'prepared b', 'verified b', 'prepared c', 'verified c']);
+});
+
+test('a cancel during a prepared-ahead file: it is cancelled, never prepared, and its failing read leaves nothing unhandled', async () => {
+  const log: string[] = [];
+  let cancel = false;
+  const b: UploadItem = {
+    folder: 'd',
+    name: 'b',
+    size: 10,
+    read: async () => {
+      log.push('read b');
+      throw new Error('b: read failed');
+    },
+  };
+  const { u, events } = await runAll(
+    slowBackend(log, (name) => {
+      if (name === 'a') cancel = true; // the cancel comes while a is sent and b is read ahead (the fake send ignores the abort signal: a ends ok)
+    }),
+    [],
+    [logged(log, 'a'), b, logged(log, 'c')],
+    () => cancel,
+  );
+  assert.ok(log.includes('read b'), 'b was read ahead');
+  assert.equal(u['d/a']!.state, 'ok');
+  assert.equal(u['d/b']!.state, 'cancelled');
+  assert.equal(u['d/c']!.state, 'cancelled');
+  assert.ok(!events.some((e) => e.event === 'prepared' && e.name === 'b'));
+  assert.ok(!log.includes('read c'), 'nothing after the cancel is read');
+});
+
+test('a file that cannot be prepared fails alone when its turn comes; the files around it are sent', async () => {
+  const log: string[] = [];
+  const { u, events } = await runAll(
+    slowBackend(log),
+    [],
+    [logged(log, 'a'), logged(log, 'x.bad.wav'), logged(log, 'c')],
+  );
+  assert.deepEqual(names(u), [
+    ['a', 'ok'],
+    ['x.bad.wav', 'failed'],
+    ['c', 'ok'],
+  ]);
+  assert.match(u['d/x.bad.wav']!.message, /not a usable WAV/);
+  assert.ok(!events.some((e) => e.event === 'failed' && e.name !== 'x.bad.wav'));
+  assert.ok(!log.includes('put x.bad'), 'nothing of it was sent');
+  const order = events.filter((e) => e.event === 'verified' || e.event === 'failed').map((e) => `${e.event} ${e.name}`);
+  assert.deepEqual(order, ['verified a', 'failed x.bad.wav', 'verified c']);
 });

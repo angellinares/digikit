@@ -20,6 +20,8 @@ int32_t dk_fw_storage_directory_next(uint32_t *state, uint8_t *output) __asm__("
 int32_t dk_fw_storage_directory_open(const uint8_t *path, uint32_t *state) __asm__("cf.storage.fn.directory.open");
 /* Post a file-system event (FUN_4015a6aa) into the 32-entry ring and wake its consumer: kind 2 after a write, kind 3 after the close hash (a = inode word +8, b = inode id) (finding 120). */
 void dk_fw_storage_event_post(uint32_t kind, uint32_t a, uint32_t b) __asm__("cf.storage.fn.event.post");
+/* Page allocation FUN_401581dc (DT2 1.17): allocates `pages` card pages for file pages [first_page, first_page + pages) of the inode, first fit from the bitmap start 0xa7a (hint 0), and adds one extent per allocation (FUN_40157c68, FUN_40155974); stops silently when no page is free. It does not write the inode back (inode.write does) and does not count free pages first, which file.reserve does (FUN_40155f84, bit by bit). Call under the filesystem mutex with an inode of inode.get. Pass hint 0 (finding 120, finding 134). */
+void dk_fw_storage_file_alloc_pages(uint8_t *inode, uint32_t first_page, uint32_t pages, uint8_t hint) __asm__("cf.storage.fn.file.alloc_pages");
 /* Nonzero when any inode's bit is set in the open-file bitmap (finding 120). */
 int32_t dk_fw_storage_file_any_open(void) __asm__("cf.storage.fn.file.any_open");
 /* Delete a file and free its pages: 0, -1 for a missing path or an open file (open bitmap) (finding 120). */
