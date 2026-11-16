@@ -427,6 +427,78 @@ fn owner_clash(
     None
 }
 
+/// The refusal for the keys of `t`, if any: a group of keys for a kind nobody owns (the runtime's table, `t` itself, an accepted module or provider), or a key of a
+/// generic kind that an accepted module (`done`, not index `skip_m`) or provider (`pdone`, not index `skip_p`) has too. One rule for modules and providers.
+#[allow(clippy::too_many_arguments)]
+fn keys_clash(
+    env: &Env,
+    t: &Keys,
+    mods: &[Option<Keys>],
+    done: &[bool; SEL_MAX],
+    skip_m: usize,
+    provs: &[Option<Keys>],
+    pdone: &[bool; PROVIDER_MAX],
+    skip_p: usize,
+) -> Option<Reason> {
+    let mut gi = 0;
+    while let Some((kind, keys)) = t.group(gi) {
+        gi += 1;
+        let mut owned = env.services.owner(kind).is_some();
+        let mut i = 0;
+        while i < mods.len() {
+            if i != skip_m && done[i] {
+                if let Some(ti) = &mods[i] {
+                    owned |= provides_kind(ti, kind);
+                }
+            }
+            i += 1;
+        }
+        owned |= provides_kind(t, kind);
+        let mut p = 0;
+        while p < provs.len() {
+            if p != skip_p && pdone[p] {
+                if let Some(tp) = &provs[p] {
+                    owned |= provides_kind(tp, kind);
+                }
+            }
+            p += 1;
+        }
+        if !owned {
+            return Some(Reason::UnownedKind(kind));
+        }
+        if is_generic(kind) {
+            let mut n = 0;
+            while n < keys.len() {
+                let k = keys.get(n);
+                n += 1;
+                let mut i = 0;
+                while i < mods.len() {
+                    if i != skip_m && done[i] {
+                        if let Some(ti) = &mods[i] {
+                            if ti.has_key(kind, k) {
+                                return Some(Reason::DuplicateKey(kind, k));
+                            }
+                        }
+                    }
+                    i += 1;
+                }
+                let mut p = 0;
+                while p < provs.len() {
+                    if p != skip_p && pdone[p] {
+                        if let Some(tp) = &provs[p] {
+                            if tp.has_key(kind, k) {
+                                return Some(Reason::DuplicateKey(kind, k));
+                            }
+                        }
+                    }
+                    p += 1;
+                }
+            }
+        }
+    }
+    None
+}
+
 /// The verdict of provider `j` against the accepted providers `pdone` (the ones before it in the order).
 fn judge_provider(env: &Env, provs: &[Option<Keys>], j: usize, pdone: &[bool; PROVIDER_MAX], caps: &mut [DkrtCap]) -> Verdict {
     let t = match &provs[j] {
@@ -459,6 +531,9 @@ fn judge_provider(env: &Env, provs: &[Option<Keys>], j: usize, pdone: &[bool; PR
     if let Some(site) = owner_clash(env, t, &[], &[false; SEL_MAX], usize::MAX, provs, pdone, j) {
         return Verdict::Refused(Reason::DuplicateOwner(site));
     }
+    if let Some(r) = keys_clash(env, t, &[], &[false; SEL_MAX], usize::MAX, provs, pdone, j) {
+        return Verdict::Refused(r);
+    }
     match take_fit(t, caps, false) {
         Some(kind) => Verdict::Refused(Reason::Fit(kind)),
         None => Verdict::Accepted,
@@ -488,50 +563,8 @@ fn judge(
         return Verdict::Refused(Reason::DuplicateOwner(site));
     }
     // the keys: an owner for the kind, and no key twice for a generic kind
-    let mut gi = 0;
-    while let Some((kind, keys)) = t.group(gi) {
-        gi += 1;
-        let mut owned = env.services.owner(kind).is_some();
-        let mut i = 0;
-        while i < mods.len() {
-            if i != j && done[i] {
-                if let Some(ti) = &mods[i] {
-                    owned |= provides_kind(ti, kind);
-                }
-            }
-            i += 1;
-        }
-        owned |= provides_kind(t, kind);
-        let mut p = 0;
-        while p < provs.len() {
-            if pdone[p] {
-                if let Some(tp) = &provs[p] {
-                    owned |= provides_kind(tp, kind);
-                }
-            }
-            p += 1;
-        }
-        if !owned {
-            return Verdict::Refused(Reason::UnownedKind(kind));
-        }
-        if is_generic(kind) {
-            let mut n = 0;
-            while n < keys.len() {
-                let k = keys.get(n);
-                n += 1;
-                let mut i = 0;
-                while i < mods.len() {
-                    if i != j && done[i] {
-                        if let Some(ti) = &mods[i] {
-                            if ti.has_key(kind, k) {
-                                return Verdict::Refused(Reason::DuplicateKey(kind, k));
-                            }
-                        }
-                    }
-                    i += 1;
-                }
-            }
-        }
+    if let Some(r) = keys_clash(env, t, mods, done, j, provs, pdone, usize::MAX) {
+        return Verdict::Refused(r);
     }
     // fit
     match take_fit(t, caps, true) {
@@ -801,6 +834,39 @@ mod tests {
         let p = run(&[Some(bytes(&unowned)), Some(bytes(&provider))]);
         assert_eq!(p.order[..2], [1, 0]);
         assert_eq!(p.verdicts[..2], [Verdict::Accepted; 2]);
+    }
+
+    #[test]
+    fn modules_that_own_a_kind_the_other_has_keys_for_form_a_cycle_and_are_refused() {
+        let ks = [5u32];
+        // A owns kind 90 and has keys for 91; B owns 91 and has keys for 90: neither can load first
+        let a = Table { kinds: &[KindDecl { kind: 90, len: 16, entry: 8 }], keys: &[KeyGroup { kind: 91, keys: &ks }], ..KEEP };
+        let b = Table { kinds: &[KindDecl { kind: 91, len: 16, entry: 8 }], keys: &[KeyGroup { kind: 90, keys: &ks }], ..KEEP };
+        let p = run(&[Some(bytes(&a)), Some(bytes(&b))]);
+        assert_eq!(p.verdicts[..2], [Verdict::Refused(Reason::NeedMissing); 2]);
+    }
+
+    #[test]
+    fn the_keys_of_a_provider_are_judged_like_the_keys_of_a_module() {
+        let g = dkrt_sdk::records::GENERIC_KINDS[0];
+        let ks = [5u32];
+        let svc = |n: &str| [Pair { a: name_hash(n), b: 0 }];
+        let (pa, pb) = (svc("a"), svc("b"));
+        // a provider with keys for a kind nobody owns
+        let unowned = Table { provides: &pa, keys: &[KeyGroup { kind: 90, keys: &ks }], ..KEEP };
+        let p = run_p(&[], &[Some(bytes(&unowned))]);
+        assert_eq!(p.provider_verdicts[0], Verdict::Refused(Reason::UnownedKind(90)));
+        assert_eq!(p.provider_verdicts[0].result(), E_PLAN_KIND);
+        // a generic key twice: the later provider is refused
+        let first = Table { provides: &pa, kinds: &[KindDecl { kind: g, len: 16, entry: 8 }], keys: &[KeyGroup { kind: g, keys: &ks }], ..KEEP };
+        let second = Table { provides: &pb, keys: &[KeyGroup { kind: g, keys: &ks }], ..KEEP };
+        let p = run_p(&[], &[Some(bytes(&first)), Some(bytes(&second))]);
+        assert_eq!(p.provider_verdicts[..2], [Verdict::Accepted, Verdict::Refused(Reason::DuplicateKey(g, 5))]);
+        // a module with a key of a provider is refused (the providers are judged first)
+        let user = Table { keys: &[KeyGroup { kind: g, keys: &ks }], ..KEEP };
+        let p = run_p(&[Some(bytes(&user))], &[Some(bytes(&first))]);
+        assert_eq!(p.provider_verdicts[0], Verdict::Accepted);
+        assert_eq!(p.verdicts[0], Verdict::Refused(Reason::DuplicateKey(g, 5)));
     }
 
     #[test]

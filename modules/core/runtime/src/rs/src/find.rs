@@ -8,7 +8,7 @@
 #![allow(dead_code)]
 use crate::handlers::ServiceTable;
 use crate::plan::{is_runtime_service, TABLE_MAX};
-use crate::provide::role_of;
+use crate::provide::{role_of, role_ok};
 use dkneeds::keys::{name_hash, tag, Keys};
 use dkrt_abi::storage::{DirEntry, EntryKind, ListStep, Storage, ROOT_STORE};
 use dkrt_sdk::PROVIDER_MAX;
@@ -19,9 +19,12 @@ const EXT: &[u8] = b".dks";
 /// Longest file stem the search considers (50: `services/<stem>.dks` and its NUL fit the 64 bytes of a selection path), and the longest path it builds.
 const STEM_MAX: usize = 50;
 pub const PATH_CAP: usize = DIR.len() + 1 + STEM_MAX + EXT.len();
-/// Most `.dks` files of the folder the search remembers, and most service hashes it searches for.
-const CAND_MAX: usize = 16;
-const WANT_MAX: usize = 16;
+/// Most `.dks` files of the folder the search remembers. The store has no per-folder limit, only the card's size (`dkrt_sdk::store`): 32 is what the 8 KiB table
+/// buffer (`TBL_CAP`) holds in 256-byte entries. A folder with more `.dks` files sets `Found::truncated`; the files past the limit are not looked at.
+const CAND_MAX: usize = 32;
+/// Most service hashes the search keeps. Distinct non-runtime needs beyond the provider slots can never all be met; 4 times `PROVIDER_MAX` leaves room for
+/// needs of refused or unmatched services. A need past the limit sets `Found::truncated`.
+const WANT_MAX: usize = 4 * PROVIDER_MAX;
 /// Most listing steps of one search (a `Pending` step is asked again).
 const STEPS_MAX: u32 = 4096;
 /// The header bytes read to get the table range: up to and including the size word.
@@ -30,6 +33,14 @@ const HEAD_LEN: usize = dkneeds::H_REG_SIZE as usize + 4;
 /// The providers found: for provider `k`, its store path and its header table (the bytes the planner parses).
 pub struct Found {
     pub n: usize,
+    /// A limit of the search was passed (more `.dks` files than `CAND_MAX`, more needs than `WANT_MAX`): a provider may be missing from the result.
+    pub truncated: bool,
+    // the search's work arrays live here, not on the boot thread's stack: the `.dks` files of the folder (hash, stem, taken) and the service hashes searched for
+    c_hash: [u32; CAND_MAX],
+    c_stem: [[u8; STEM_MAX]; CAND_MAX],
+    c_len: [usize; CAND_MAX],
+    c_used: [bool; CAND_MAX],
+    search: [u32; WANT_MAX],
     pub path_len: [usize; PROVIDER_MAX],
     pub paths: [[u8; PATH_CAP]; PROVIDER_MAX],
     pub table_len: [usize; PROVIDER_MAX],
@@ -40,6 +51,12 @@ impl Found {
     pub const fn new() -> Found {
         Found {
             n: 0,
+            truncated: false,
+            c_hash: [0; CAND_MAX],
+            c_stem: [[0; STEM_MAX]; CAND_MAX],
+            c_len: [0; CAND_MAX],
+            c_used: [false; CAND_MAX],
+            search: [0; WANT_MAX],
             path_len: [0; PROVIDER_MAX],
             paths: [[0; PATH_CAP]; PROVIDER_MAX],
             table_len: [0; PROVIDER_MAX],
@@ -99,38 +116,62 @@ unsafe fn read_provider<S: Storage>(s: &S, stem: &[u8], out: &mut Found) -> bool
     if len < 8 || off as u64 + len as u64 > size as u64 {
         return false;
     }
-    // The planner's copy is the table without its BIND entry (the highest tag, so the last): a service with many BIND items has a table over TABLE_MAX,
-    // and the planner never needs BIND (the load reads it). Read up to TABLE_MAX bytes, walk the entries to the first BIND (or the end) and cut there.
-    let want = (len as usize).min(TABLE_MAX);
-    match s.read_range(ROOT_STORE, path, off, &mut out.tables[k][..want]) {
-        Ok(n) if n == want => {}
+    // The planner's copy is the table without its BIND entry: a service with many BIND items has a table over TABLE_MAX, and the planner never needs BIND
+    // (the load reads it). Walk every entry of the full table, entry head by entry head: the heads and sizes must fit the table and the entries must use
+    // it up exactly, as many as the table declares. The entries other than BIND are copied; BIND is skipped.
+    let len = len as usize;
+    let t = &mut out.tables[k];
+    match s.read_range(ROOT_STORE, path, off, &mut t[..8]) {
+        Ok(n) if n == 8 => {}
         _ => return false,
     }
-    let t = &mut out.tables[k];
     let n_entries = u16::from_be_bytes([t[6], t[7]]) as usize;
-    let mut pos = 8usize;
+    let mut pos = 8usize; // in the file's table
+    let mut copied = 8usize; // in the copy
     let mut kept = 0usize;
-    while kept < n_entries && pos < len as usize {
-        if pos + 8 > want {
-            return false; // the entry header is past what the copy holds
+    let mut e = 0;
+    while e < n_entries {
+        e += 1;
+        if pos + 8 > len {
+            return false; // the entry head is past the table
         }
-        let tg = u16::from_be_bytes([t[pos], t[pos + 1]]);
-        if tg >= tag::BIND {
-            break;
+        if copied + 8 > TABLE_MAX {
+            return false; // the copy does not hold another entry head
         }
-        let plen = u32::from_be_bytes([t[pos + 4], t[pos + 5], t[pos + 6], t[pos + 7]]) as usize;
-        pos = match pos.checked_add(8 + plen) {
-            Some(p) if p <= want => p,
-            _ => return false, // an entry before BIND does not fit the copy
-        };
-        kept += 1;
+        match s.read_range(ROOT_STORE, path, off + pos as u32, &mut t[copied..copied + 8]) {
+            Ok(n) if n == 8 => {}
+            _ => return false,
+        }
+        let tg = u16::from_be_bytes([t[copied], t[copied + 1]]);
+        let plen = u32::from_be_bytes([t[copied + 4], t[copied + 5], t[copied + 6], t[copied + 7]]) as usize;
+        if plen % 4 != 0 || plen > len - pos - 8 {
+            return false;
+        }
+        if tg != tag::BIND {
+            if plen > TABLE_MAX - copied - 8 {
+                return false; // the copy does not hold the entry
+            }
+            if plen != 0 {
+                match s.read_range(ROOT_STORE, path, off + (pos + 8) as u32, &mut t[copied + 8..copied + 8 + plen]) {
+                    Ok(n) if n == plen => {}
+                    _ => return false,
+                }
+            }
+            copied += 8 + plen;
+            kept += 1;
+        }
+        pos += 8 + plen;
+    }
+    if pos != len {
+        return false; // bytes after the declared entries
     }
     t[6..8].copy_from_slice(&(kept as u16).to_be_bytes());
-    let len = pos;
-    if Keys::parse(&t[..len]).is_err() {
-        return false;
+    match Keys::parse(&t[..copied]) {
+        // BIND is not in the copy and role 1 does not look at it
+        Ok(keys) if role_ok(1, &keys).is_ok() => {}
+        _ => return false,
     }
-    out.table_len[k] = len;
+    out.table_len[k] = copied;
     true
 }
 
@@ -139,14 +180,12 @@ unsafe fn read_provider<S: Storage>(s: &S, stem: &[u8], out: &mut Found) -> bool
 /// `services` is the runtime's own table: a need of a runtime service is not searched for.
 pub unsafe fn find<S: Storage>(s: &S, services: &ServiceTable, state: *mut u8, want: &[u32], out: &mut Found) {
     out.n = 0;
+    out.truncated = false;
     if want.is_empty() {
         return;
     }
     // the folder is listed once: the `.dks` files are remembered by the hash of their stem
-    let mut c_hash = [0u32; CAND_MAX];
-    let mut c_stem = [[0u8; STEM_MAX]; CAND_MAX];
-    let mut c_len = [0usize; CAND_MAX];
-    let mut c_used = [false; CAND_MAX];
+    out.c_used = [false; CAND_MAX];
     let mut nc = 0;
     if s.list_open(ROOT_STORE, DIR, state).is_err() {
         return;
@@ -165,7 +204,7 @@ pub unsafe fn find<S: Storage>(s: &S, services: &ServiceTable, state: *mut u8, w
             Err(_) => return,
         }
         let name = e.name();
-        if e.stat.kind != EntryKind::File || name.len() <= EXT.len() || !name.ends_with(EXT) || nc >= CAND_MAX {
+        if e.stat.kind != EntryKind::File || name.len() <= EXT.len() || !name.ends_with(EXT) {
             continue;
         }
         let stem = &name[..name.len() - EXT.len()];
@@ -173,39 +212,55 @@ pub unsafe fn find<S: Storage>(s: &S, services: &ServiceTable, state: *mut u8, w
             continue;
         }
         if let Ok(text) = core::str::from_utf8(stem) {
-            c_hash[nc] = name_hash(text);
-            c_stem[nc][..stem.len()].copy_from_slice(stem);
-            c_len[nc] = stem.len();
+            if nc >= CAND_MAX {
+                out.truncated = true;
+                continue;
+            }
+            out.c_hash[nc] = name_hash(text);
+            out.c_stem[nc][..stem.len()].copy_from_slice(stem);
+            out.c_len[nc] = stem.len();
             nc += 1;
         }
     }
     // the search list: the needs given, then the needs of each provider found
-    let mut search = [0u32; WANT_MAX];
     let mut ns = 0;
     let mut i = 0;
     while i < want.len() {
-        if ns < WANT_MAX && !has(&search, ns, want[i]) {
-            search[ns] = want[i];
-            ns += 1;
+        if !has(&out.search, ns, want[i]) {
+            if ns < WANT_MAX {
+                out.search[ns] = want[i];
+                ns += 1;
+            } else {
+                out.truncated = true;
+            }
         }
         i += 1;
     }
     let mut w = 0;
     while w < ns && out.n < PROVIDER_MAX {
-        let h = search[w];
+        let h = out.search[w];
         w += 1;
         let mut c = 0;
         while c < nc {
-            if !c_used[c] && c_hash[c] == h {
-                c_used[c] = true;
-                if read_provider(s, &c_stem[c][..c_len[c]], out) {
-                    if let Ok(t) = Keys::parse(out.table(out.n)) {
+            if !out.c_used[c] && out.c_hash[c] == h {
+                out.c_used[c] = true;
+                // a copy of the stem: `read_provider` borrows all of `out`
+                let mut stem = [0u8; STEM_MAX];
+                let sl = out.c_len[c];
+                stem[..sl].copy_from_slice(&out.c_stem[c][..sl]);
+                if read_provider(s, &stem[..sl], out) {
+                    let k = out.n;
+                    if let Ok(t) = Keys::parse(&out.tables[k][..out.table_len[k]]) {
                         let mut ni = 0;
                         while let Some(n) = t.words(tag::NEEDS, ni) {
                             ni += 1;
-                            if n.2 & 1 != 0 && ns < WANT_MAX && !is_runtime_service(n.0, services) && !has(&search, ns, n.0) {
-                                search[ns] = n.0;
-                                ns += 1;
+                            if n.2 & 1 != 0 && !is_runtime_service(n.0, services) && !has(&out.search, ns, n.0) {
+                                if ns < WANT_MAX {
+                                    out.search[ns] = n.0;
+                                    ns += 1;
+                                } else {
+                                    out.truncated = true;
+                                }
                             }
                         }
                     }
@@ -399,6 +454,69 @@ mod tests {
         let fs = store_with(&[("lfo", 0, &[]), ("fx", 1, &[])]);
         assert_eq!(run(&fs, &["lfo"]).n, 0);
         assert_eq!(run(&fs, &["lfo", "fx"]).n, 1);
+    }
+
+    /// A role 1 file named `name` with `table` as it is (the header's table size is `table.len()`).
+    fn raw_file(table: &[u8]) -> Vec<u8> {
+        let off = 0xa0usize;
+        let mut f = vec![0u8; off];
+        f[dkneeds::H_ROLE as usize..][..4].copy_from_slice(&1u32.to_be_bytes());
+        f[dkneeds::H_REG_OFF as usize..][..4].copy_from_slice(&(off as u32).to_be_bytes());
+        f[dkneeds::H_REG_SIZE as usize..][..4].copy_from_slice(&(table.len() as u32).to_be_bytes());
+        f.extend_from_slice(table);
+        f
+    }
+
+    fn table_bytes(provides: &[Pair]) -> Vec<u8> {
+        let t = Table { provides, ..KEEP };
+        let mut b = vec![0u8; dkneeds::keys::table_size(&t)];
+        write_table(&t, &mut b).unwrap();
+        b
+    }
+
+    fn found_in(table: &[u8]) -> usize {
+        let fs = FakeStorage::new();
+        fs.add_dir(ROOT_STORE, b"services");
+        fs.add_file(ROOT_STORE, b"services/bad.dks", &raw_file(table), 0, [0; 32]);
+        run(&fs, &["bad"]).n
+    }
+
+    #[test]
+    fn a_provider_with_a_malformed_or_wrong_table_is_skipped() {
+        let one = [Pair { a: name_hash("bad"), b: 0x010000 }];
+        assert_eq!(found_in(&table_bytes(&one)), 1);
+        // a version 1 table
+        let mut v1 = table_bytes(&one);
+        v1[4..6].copy_from_slice(&1u16.to_be_bytes());
+        assert_eq!(found_in(&v1), 0);
+        // two PROVIDES items
+        assert_eq!(found_in(&table_bytes(&[Pair { a: name_hash("bad"), b: 0x010000 }, Pair { a: name_hash("other"), b: 0 }])), 0);
+        // a header that claims more entries than the table holds
+        let mut more = table_bytes(&one);
+        let n = u16::from_be_bytes([more[6], more[7]]);
+        more[6..8].copy_from_slice(&(n + 1).to_be_bytes());
+        assert_eq!(found_in(&more), 0);
+        // bytes after the last entry
+        let mut trailing = table_bytes(&one);
+        trailing.extend_from_slice(&[0; 4]);
+        assert_eq!(found_in(&trailing), 0);
+    }
+
+    #[test]
+    fn a_folder_with_more_files_than_the_search_remembers_sets_truncated() {
+        let names: Vec<std::string::String> = (0..CAND_MAX + 1).map(|k| std::format!("c{k}")).collect();
+        let files: Vec<(&str, u32, &[&str])> = names.iter().map(|n| (n.as_str(), 1u32, &[][..])).collect();
+        let fs = store_with(&files);
+        assert!(run(&fs, &["c0"]).truncated);
+        let fs = store_with(&files[..CAND_MAX]);
+        assert!(!run(&fs, &["c0"]).truncated);
+        // more distinct needs than the search list holds
+        let want: Vec<u32> = (0..WANT_MAX as u32 + 1).collect();
+        let services = ServiceTable { rows: &ROWS, failed: 0, core: &REAL_CORE };
+        let mut block = Block([0; 1024]);
+        let mut out = Found::new();
+        unsafe { find(&fs, &services, block.0.as_mut_ptr(), &want, &mut out) };
+        assert!(out.truncated);
     }
 
     #[test]

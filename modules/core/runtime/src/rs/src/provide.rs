@@ -14,6 +14,7 @@ pub fn role_of(head: &[u8; 64]) -> u32 {
 /// PROVIDES item. Another role is `E_FORMAT`, like the other refusals.
 pub fn role_ok(role: u32, keys: &Keys) -> Result<(), i32> {
     if role == 0 {
+        // No packer writes HOOKS for a module (patchkit major3.rs writes only USES and KEYS, dkm.rs adds NEEDS): HOOKS are a service's (role 1).
         if keys.count(tag::PROVIDES) != 0 || keys.count(tag::HOOKS) != 0 || keys.count(tag::BIND) != 0 {
             return Err(E_FORMAT);
         }

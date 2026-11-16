@@ -75,7 +75,7 @@ def effect_ids(dkm: bytes) -> list[int]:
     off, size = struct.unpack_from(">II", dkm, 0x90)
     magic, version, entries = struct.unpack_from(">IHH", dkm, off)
     assert magic == dkproto.TABLE_MAGIC
-    assert 1 <= version <= dkproto.TABLE_VERSION
+    assert version == 1  # an ordinary module stays table version 1
     ids: list[int] = []
     at = off + 8
     for _ in range(entries):
