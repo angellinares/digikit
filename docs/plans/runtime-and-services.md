@@ -768,6 +768,8 @@ Estimate: about 2 agent days.
 
 **Device proof.** One file in `core/runtime-tests`, on both devices: order provider, install, consumer; the site jumps to the trampoline; `dk_svctest_ping()` returns 42; safe boot gives stock bytes; E_HOOK_STOCK; E_PLAN_OWNER (moves from the host row to the device proof); `DIGI_FLUSH_CHECK=1`. Per-leaf `.dks` device inputs: `tools/nx/device-test-keys.mjs` needs a role set from `modules.mjs`.
 
+Size: runtime text +8.9 KB on DT2 (provider machinery). Accepted.
+
 Estimate: about 2 agent days.
 
 #### R12-4 Service boundary and lfo.dks
@@ -787,9 +789,31 @@ Order: R12-2, then R12-4 step 1, then R12-3a, then R12-3, then R12-4 steps 2-6, 
 
 **Scope guard.** No fx or machines move, no `samples.dks`, no unload, no Transfer, no hash-keyed table.
 
-**For R12-5 and R12-6.** `fx_entry` and `machine_types_of` become row methods. `param_get` and `param_set` become provider EXPORTS. `page_key` and `turn` become slots. `RuntimeFw` moves into `machines.dks`. The arena fit on DT2 is measured in R12-5.
+**Measured size.** R12-4 adds 2.9 KB to the runtime text, then removes 0.8 KB when lfo leaves (net accepted). Service code still in the runtime image: machines 11.9 KB text, fx 10.8 KB text, samples 17.2 KB text and 35.9 KB data. lfo is out.
 
 Estimate: about 3 agent days.
+
+#### R12-5 fx.dks
+
+- A wrapper crate with `service!(Fx, "fx", KINDS_FX)`. The fx `[[service]]` loses `rust =`. The runtime drops the dependency on `dkrt-svc-fx`.
+- The 9 fxpages hook bodies (asm, about 1.1 KB per device plus bss) move into `fx.dks` as `[[hook]]`s. All are task-level, so they install directly through BIND, with no slots.
+- The image keeps a data-only `fxpages_info` table: firmware data addresses and the `params.fp0` and `fs0` row indices, filled at patch time. `fx.dks` reads it through one generic core import, `dkc_info(name_hash) -> *const u32`, so the runtime stays free of fx knowledge. There are no bind-time externs. The asm jumps through the table.
+- `fx_entry` becomes a row method. It answers "no fx" when the service is absent.
+- Kits loaded before the install get defaults (the adopt path).
+- Proof: the FX contract suite on `test/dyn-fx-gain`, plus a new bipolar fixture variant for the signed template of freqshift. `fx.dks` is on the card. A second case has no fx service and expects the stock FX pages. New fx host tests over FakeCore cover routes and fallback, send limit, send encoding, kit records and page rows.
+- Zero-DSP probe: FX modules fail with E_DSP_XFER (-35) without the SHARC. FX device tests keep the SHARC. The saving comes from the contract suite (about 92 to 30 boots, about 50 min per full tier). FX tests have no PCM pins.
+- R12-7 is on main before R12-5 merges. The arena fit on DT2 is measured here.
+
+#### R12-6 machines.dks
+
+- A wrapper crate. The machines `[[service]]` loses `rust =`. `RuntimeFw` moves into `machines.dks` (`Fw` does not cross the boundary).
+- 21 hooks. Direct install: the movable, boot-thread and first-fire hooks, and the page key and turn hooks that the runtime installs today. DT2 `clone.4` and the DN2 `dispatch` stay patched in the image.
+- DN2 `frametype` (frame interrupt, vector 191) gets an image stub and a slot. DT2 `clone.6` is decided by a PC probe: task level means direct install.
+- New patchkit op `op = "stub"` with `slot = NAME`. The site jumps to the stub. The stub loads the slot, tests it, branches to the stock tail when it is zero, and otherwise does `jmp (a0)`. It is built from `cf_site` and `cf_tail`. The 12-byte site of `clone.6` has a `bne.w` and needs a hand-written stock path.
+- Image adapter `[[slot]]`: a zero data word, plus an exported table of `{name hash, addr}` that the runtime reads. The installer writes base plus entry under IPL 7, then flushes the line.
+- `machine_types_of` becomes a row method. `param_get` and `param_set` become provider EXPORTS.
+- Proof: the machine fixture suite (`test/sine`, `test/dyn-dn2`) with dynreg and equiv. The address-map check of pluck moves there. The first slot device proof is DN2 `frametype`. `shot` keeps pool, lease and picker.
+- Machine equiv moves to the rig: the rig references are new pins, reviewed once. Then the 8 analog, bd, pd and pluck pins go. The dynreg DN2 pin stays.
 
 #### R12-7 Transfer installs services
 
@@ -856,12 +880,12 @@ Flash adds the same `.dks` set to its job.
 | R12-3a Loader structure | one `Loader` with `Images` and `Registry` seams, role steps table, `REC_MAX` record space, six migration steps; no behaviour change | each step: host tests and `patchkit objdiff` identical or explained; DT2 runtime text growth at most 1 KiB | representative subset once at the end (pluck or shot, refusal, safe-mode, boot-restart, needs, capacity, gate-smoke) |
 | R12-3 Installer and slots | boot order with providers, log-only reporting, all-or-nothing install under one IPL-7 mask, E_HOOK_STOCK, slot mechanism, `read_code` and `write_code`, patchkit bind; no live disarm | FakePlatform call order; pass 1 and pass 2 cases; restore | one file in `core/runtime-tests`: order, trampoline jump, `dk_svctest_ping()` = 42, safe mode, E_HOOK_STOCK, E_PLAN_OWNER, `DIGI_FLUSH_CHECK=1` |
 | R12-4 Service boundary and `lfo.dks` | steps 2-6: fingerprint, `core_imports` and `SVC_IMPORTS` with `dkrt-svc-rt`, `Registry` add and remove with `dk_service_declare_row`, the `lfo` wrapper (static row dropped, record-kind NEED), device proof; `lfo.dks` is the first service built as a `.dks` | lfo over FakeCore; import contract test; fingerprint cases | core/runtime-lfo-tests on both devices (refusals: wrong ABI word, no file) |
-| R12-5 `fx.dks` | fx crate + fxpages hooks | fx crate tests | digikit/freqshift; stock sites with no service |
-| R12-6 `machines.dks` | after R10 merges | machines crate tests | digikit/pluck, digikit/shot |
+| R12-5 `fx.dks` | fx wrapper crate, 9 fxpages hooks by BIND, data-only `fxpages_info` with `dkc_info`, `fx_entry` row method | fx host tests over FakeCore (routes, send, kit records, page rows) | FX contract suite (`test/dyn-fx-gain` and a bipolar variant); no fx service gives stock FX pages |
+| R12-6 `machines.dks` | machines wrapper crate, 21 hooks, `op = "stub"` and `[[slot]]`, `RuntimeFw` moves in | machines crate tests | machine fixture suite (`test/sine`, `test/dyn-dn2`) with dynreg and equiv; first slot proof on DN2 `frametype`; shot |
 | R12-7 Transfer installs services | mockup first | resolution behind fakes | transfer-live per device |
 | R12-8 SHARC stubs, dispatch in services | slice proof first: one stub, golden hashes at a zero slot, instruction-ratio A/B | - | - |
 
-Order: R10, R11, T1e step 3, then R12-1, R12-2, R12-4a, R12-3a, R12-3, R12-4 steps 2-6, R12-7 on main, R12-5, R12-6, R12-8 (R12-0 any time; R12-7 Transfer may run in a UI lane after R12-2). `samples.dks` is a later item. Payoff high (done criteria 5-7 for fx and machines). Confidence: ColdFire medium-high (the spike ran on both devices in the emulator); R12-8 low-medium, with a separate go. Estimate 10-13 agent days without R12-8 (R12-3a loader structure and the R12-4 boundary added).
+Order: R10, R11, T1e step 3, then R12-1, R12-2, R12-4a, R12-3a, R12-3, R12-4 steps 2-6, R12-7 on main, R12-5, R12-6, R12-8 (R12-0 any time; R12-7 Transfer may run in a UI lane after R12-2). `samples.dks` is a later item. Two device gates: gate A (R12-2, R12-4a, R12-3a, R12-3, R12-4 including `lfo.dks`) proves Find, provider load, the installer and the ABI check with the smallest service; gate BC (R12-7, R12-5, R12-6 together) runs on the proven base. One full tier at the end of R12. Payoff high (done criteria 5-7 for fx and machines). Confidence: ColdFire medium-high (the spike ran on both devices in the emulator); R12-8 low-medium, with a separate go. Estimate 10-13 agent days without R12-8 (R12-3a loader structure and the R12-4 boundary added).
 
 ## 14. Checks
 
