@@ -312,18 +312,6 @@ _mf_c5a = "cf.machine.site.clone.5.alt"
 _mf_k_keydown = "cf.input.fn.key_down"
 _mf_k_setvalue = "cf.param.fn.set_value"
 _mf_k_viewtrack = "cf.page.fn.view_track"
-_mf_c0 = "cf.machine.site.clone.0"
-_mf_c0a = "cf.machine.site.clone.0.alt"
-_mf_c1 = "cf.machine.site.clone.1"
-_mf_c1a = "cf.machine.site.clone.1.alt"
-_mf_c2 = "cf.machine.site.clone.2"
-_mf_c2a = "cf.machine.site.clone.2.alt"
-_mf_c3 = "cf.machine.site.clone.3"
-_mf_c3a = "cf.machine.site.clone.3.alt"
-_mf_c4 = "cf.machine.site.clone.4"
-_mf_c4a = "cf.machine.site.clone.4.alt"
-_mf_c6 = "cf.machine.site.clone.6"
-_mf_c6a = "cf.machine.site.clone.6.alt"
 _mf_sp = "cf.machine.site.srcpage"
 _mf_spa = "cf.machine.site.srcpage.alt"
 _mf_spt = "cf.machine.fn.current_track_type"
@@ -623,44 +611,6 @@ anchor = "cf.machine.site.pertype.5"
 offset = 0x22
 value = "mf_pertype"
 width = 4
-devices = ["dt2"]
-
-# clone tests (Digitakt II): `type == MANUAL SLICE` also holds for an added clone of it
-
-[[op]]
-op = "hook"
-hook = "cf.machine.hook.clone.0"
-to = "mf_clone0"
-devices = ["dt2"]
-
-[[op]]
-op = "hook"
-hook = "cf.machine.hook.clone.1"
-to = "mf_clone1"
-devices = ["dt2"]
-
-[[op]]
-op = "hook"
-hook = "cf.machine.hook.clone.2"
-to = "mf_clone2"
-devices = ["dt2"]
-
-[[op]]
-op = "hook"
-hook = "cf.machine.hook.clone.3"
-to = "mf_clone3"
-devices = ["dt2"]
-
-[[op]]
-op = "hook"
-hook = "cf.machine.hook.clone.4"
-to = "mf_clone4"
-devices = ["dt2"]
-
-[[op]]
-op = "hook"
-hook = "cf.machine.hook.clone.6"
-to = "mf_clone6"
 devices = ["dt2"]
 
 # type argument of the parameter mapping (Digitakt II)

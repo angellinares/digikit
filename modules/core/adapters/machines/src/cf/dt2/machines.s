@@ -27,7 +27,6 @@
     .equ O_NAME,   56          | pointer to the display name (C string)
     .equ O_SNAME,  60          | pointer to the short label (C string)
     .equ ROWSIZE,  64
-    .equ SLICE,    6           | the stock type whose `type == 6` tests an added clone of it also passes
     .equ MAXN,     32          | registry max
     .equ REPSIZE,  48          | bytes per std::string representation in mf_strbuf
 
@@ -164,89 +163,6 @@ mf_rank:
     addi.l  #mf_rank_buf,%d0
     move.l  %d0,8(%sp)
     jmp     _mf_t_rank
-
-| mf_row: d0 = index k (< count) -> a0 = &machines.rows[k]. Preserves every other register (not the flags).
-mf_row:
-    move.l  %d1,-(%sp)
-    move.l  #ROWSIZE,%d1
-    muls.l  %d0,%d1
-    addi.l  #_mf_rows,%d1
-    movea.l %d1,%a0
-    move.l  (%sp)+,%d1
-    rts
-
-| ---- clone tests. `type == SLICE` must also be true for an added type whose clone_of is SLICE. Each site is the
-| whole stock test (a prefix, `cmp`, a conditional branch); the hook replaces it (displaced = "drop"): the routine
-| runs the stock prefix and compare, and takes the branch itself: equal -> `eq`, otherwise it asks whether the type
-| register holds an added type whose clone_of is SLICE (then equal) and goes to `eq` or `neq`. The two destinations
-| are the end of the site and the branch target (an anchor `cf.machines.clone.N.alt`). Registers and the stack come
-| out as the stock test leaves them (d0-d2 and a0 are saved around the lookup); the flags are not preserved on
-| the paths after the branch (every site was read: none reads them).
-    .macro CLONE_BODY treg, eq, neq
-    beq.w   6f
-    cmpi.l  #_mf_first,%d\treg
-    bcc.s   4f
-    jmp     \neq                        | a stock type other than SLICE: the stock answer
-4:
-    lea     -16(%sp),%sp
-    movem.l %d0-%d2/%a0,(%sp)
-    .if \treg < 3
-    move.l  (\treg * 4,%sp),%d0
-    .else
-    move.l  %d\treg,%d0
-    .endif
-    subi.l  #_mf_first,%d0
-    cmpi.l  #_mf_count,%d0
-    bcc.s   5f
-    bsr.w   mf_row
-    move.l  O_CLONE(%a0),%d1
-    cmpi.l  #SLICE,%d1
-    bne.s   5f
-    movem.l (%sp),%d0-%d2/%a0
-    lea     16(%sp),%sp
-6:  jmp     \eq
-5:  movem.l (%sp),%d0-%d2/%a0
-    lea     16(%sp),%sp
-    jmp     \neq
-    .endm
-
-| clone.0: moveq #6,D1; cmp.l D0,D1; beq.w T (equal -> T)
-    .globl mf_clone0
-mf_clone0:
-    moveq   #6,%d1
-    cmp.l   %d0,%d1
-    CLONE_BODY 0, _mf_c0a, _mf_c0 + 8
-| clone.1: moveq #6,D1; cmp.l D0,D1; bne.b U
-    .globl mf_clone1
-mf_clone1:
-    moveq   #6,%d1
-    cmp.l   %d0,%d1
-    CLONE_BODY 0, _mf_c1 + 6, _mf_c1a
-| clone.2: moveq #6,D1; cmp.l D0,D1; bne.w U
-    .globl mf_clone2
-mf_clone2:
-    moveq   #6,%d1
-    cmp.l   %d0,%d1
-    CLONE_BODY 0, _mf_c2 + 8, _mf_c2a
-| clone.3: addq.l #4,SP; cmp.l D0,D6; bne.b U (d6 holds SLICE)
-    .globl mf_clone3
-mf_clone3:
-    addq.l  #4,%sp
-    cmp.l   %d0,%d6
-    CLONE_BODY 0, _mf_c3 + 6, _mf_c3a
-| clone.4: moveq #6,D0; cmp.l D2,D0; bne.b U (the type is in d2)
-    .globl mf_clone4
-mf_clone4:
-    moveq   #6,%d0
-    cmp.l   %d2,%d0
-    CLONE_BODY 2, _mf_c4 + 6, _mf_c4a
-| clone.6: moveq #6,D1; mvs.b (0x990,A0),D0; cmp.l D0,D1; bne.w U
-    .globl mf_clone6
-mf_clone6:
-    moveq   #6,%d1
-    mvs.b   0x990(%a0),%d0
-    cmp.l   %d0,%d1
-    CLONE_BODY 0, _mf_c6 + 12, _mf_c6a
 
 | descriptor field offset of mirror index 25 .. 34 (-1: none)
     .section .rodata

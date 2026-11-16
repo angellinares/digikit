@@ -115,107 +115,6 @@ users = ["core/machines"]
 doc = "DN2: returns the machine type of a sound (`mvs.b 0xde(A0),D0`); core/machines copies its 48 bytes as mf_reader_real for callers that want the real type."
 
 [[site]]
-name = "cf.machine.site.clone.0"
-was = ["cf.machines.clone.0"]
-cpu = "cf"
-devices = ["dt2"]
-rule = { kind = "cf_func", hash = "cda6789150920d540acf061ca9321fd1", offset = 0xe0, len = 8 }
-mark = "D"
-users = ["core/machines"]
-doc = "DT2 clone test `moveq #6,D1; cmp.l D0,D1; beq.w` on the type in d0 (type 6 = MANUAL SLICE); the hook also answers equal for an added clone of type 6."
-
-# the branch target of each clone test (the other destination of the routine; see mf_clone* in src/cf/dt2/machines.s)
-[[site]]
-name = "cf.machine.site.clone.0.alt"
-was = ["cf.machines.clone.0.alt"]
-cpu = "cf"
-devices = ["dt2"]
-rule = { kind = "cf_func", hash = "cda6789150920d540acf061ca9321fd1", offset = 0x1c8, len = 2 }
-mark = "D"
-users = ["core/machines"]
-doc = "Branch target of the clone.0 test; the clone hook jumps there when its answer is the other way."
-
-[[site]]
-name = "cf.machine.site.clone.1"
-was = ["cf.machines.clone.1"]
-cpu = "cf"
-devices = ["dt2"]
-rule = { kind = "cf_func", hash = "294532983de6494ff0bf7999b150febf", offset = 0xd6, len = 6 }
-mark = "D"
-users = ["core/machines"]
-doc = "DT2 clone test `moveq #6,D1; cmp.l D0,D1; bne.b` on the type in d0; the hook also answers equal for an added clone of type 6."
-
-[[site]]
-name = "cf.machine.site.clone.1.alt"
-was = ["cf.machines.clone.1.alt"]
-cpu = "cf"
-devices = ["dt2"]
-rule = { kind = "cf_func", hash = "294532983de6494ff0bf7999b150febf", offset = 0xfe, len = 2 }
-mark = "D"
-users = ["core/machines"]
-doc = "Branch target of the clone.1 test; the clone hook jumps there when its answer is the other way."
-
-[[site]]
-name = "cf.machine.site.clone.2"
-was = ["cf.machines.clone.2"]
-cpu = "cf"
-devices = ["dt2"]
-rule = { kind = "cf_func", hash = "f76a21ed019dd060daebc8df6133f886", offset = 0x10c, len = 8 }
-mark = "D"
-users = ["core/machines"]
-doc = "DT2 clone test `moveq #6,D1; cmp.l D0,D1; bne.w` on the type in d0; the hook also answers equal for an added clone of type 6."
-
-[[site]]
-name = "cf.machine.site.clone.2.alt"
-was = ["cf.machines.clone.2.alt"]
-cpu = "cf"
-devices = ["dt2"]
-rule = { kind = "cf_func", hash = "f76a21ed019dd060daebc8df6133f886", offset = 0x27e, len = 2 }
-mark = "D"
-users = ["core/machines"]
-doc = "Branch target of the clone.2 test; the clone hook jumps there when its answer is the other way."
-
-[[site]]
-name = "cf.machine.site.clone.3"
-was = ["cf.machines.clone.3"]
-cpu = "cf"
-devices = ["dt2"]
-rule = { kind = "cf_func", hash = "352d15c2c4edd7717e1afa1924e2754a", offset = 0x28c, len = 6 }
-mark = "D"
-users = ["core/machines"]
-doc = "DT2 clone test `addq.l #4,SP; cmp.l D0,D6; bne.b` (d6 holds 6, d0 the type); the hook also answers equal for an added clone of type 6."
-
-[[site]]
-name = "cf.machine.site.clone.3.alt"
-was = ["cf.machines.clone.3.alt"]
-cpu = "cf"
-devices = ["dt2"]
-rule = { kind = "cf_func", hash = "352d15c2c4edd7717e1afa1924e2754a", offset = 0x2b4, len = 2 }
-mark = "D"
-users = ["core/machines"]
-doc = "Branch target of the clone.3 test; the clone hook jumps there when its answer is the other way."
-
-[[site]]
-name = "cf.machine.site.clone.4"
-was = ["cf.machines.clone.4"]
-cpu = "cf"
-devices = ["dt2"]
-rule = { kind = "cf_func", hash = "7e07c7cb054799ae481616fec559037b", offset = 0x56, len = 6 }
-mark = "D"
-users = ["core/machines"]
-doc = "DT2 clone test `moveq #6,D0; cmp.l D2,D0; bne.b` on the type in d2; the hook also answers equal for an added clone of type 6."
-
-[[site]]
-name = "cf.machine.site.clone.4.alt"
-was = ["cf.machines.clone.4.alt"]
-cpu = "cf"
-devices = ["dt2"]
-rule = { kind = "cf_func", hash = "7e07c7cb054799ae481616fec559037b", offset = 0x70, len = 2 }
-mark = "D"
-users = ["core/machines"]
-doc = "Branch target of the clone.4 test; the clone hook jumps there when its answer is the other way."
-
-[[site]]
 name = "cf.machine.site.clone.5.alt"
 cpu = "cf"
 devices = ["dt2"]
@@ -233,26 +132,6 @@ rule = { kind = "cf_func", hash = "6e5398e048beea2451c38258daa7b651", offset = 0
 mark = "D"
 users = ["core/machines"]
 doc = "DT2: the first four instructions (12 bytes) of the masked test `(type & ~2) == 4` (d0 the type); the hook replaces an added type by its clone_of."
-
-[[site]]
-name = "cf.machine.site.clone.6"
-was = ["cf.machines.clone.6"]
-cpu = "cf"
-devices = ["dt2"]
-rule = { kind = "cf_func", hash = "e17112316e2cef97a3ebdd4ec57cc849", offset = 0xf0c, len = 12 }
-mark = "D"
-users = ["core/machines"]
-doc = "DT2 clone test in the frame builder `moveq #6,D1; mvs.b (0x990,A0),D0; cmp.l D0,D1; bne.w`; the hook also answers equal for an added clone of type 6."
-
-[[site]]
-name = "cf.machine.site.clone.6.alt"
-was = ["cf.machines.clone.6.alt"]
-cpu = "cf"
-devices = ["dt2"]
-rule = { kind = "cf_func", hash = "e17112316e2cef97a3ebdd4ec57cc849", offset = 0xfcc, len = 2 }
-mark = "D"
-users = ["core/machines"]
-doc = "Branch target of the clone.6 test; the clone hook jumps there when its answer is the other way."
 
 [[site]]
 name = "cf.machine.site.frametype"
@@ -640,63 +519,6 @@ mark = "D"
 users = ["core/services/machines"]
 doc = "Entry of the DN2 group helper (types 0..3 group 1, 4 group 2, other 0); the hook maps added types to 0 so they fall in group 1."
 
-# DT2 clone tests `type == 6`: each site is the whole stock test; the hook runs the test itself and continues at the site
-# end or at the `.alt` branch target.
-[[hook]]
-name = "cf.machine.hook.clone.0"
-site = "cf.machine.site.clone.0"
-cpu = "cf"
-mode = "replace"
-regs = { in = ["d0"], clobbers = ["d1", "ccr"] }   # exits: site+8 and cf.machine.site.clone.0.alt
-devices = ["dt2"]
-mark = "D"
-users = ["core/machines"]
-doc = "Clone test `moveq #6,D1; cmp.l D0,D1; beq.w T` on the type in d0; the hook also answers equal for an added clone of type 6."
-
-[[hook]]
-name = "cf.machine.hook.clone.1"
-site = "cf.machine.site.clone.1"
-cpu = "cf"
-mode = "replace"
-regs = { in = ["d0"], clobbers = ["d1", "ccr"] }   # exits: site+6 and cf.machine.site.clone.1.alt
-devices = ["dt2"]
-mark = "D"
-users = ["core/machines"]
-doc = "Clone test `moveq #6,D1; cmp.l D0,D1; bne.b U` on the type in d0; the hook also answers equal for an added clone of type 6."
-
-[[hook]]
-name = "cf.machine.hook.clone.2"
-site = "cf.machine.site.clone.2"
-cpu = "cf"
-mode = "replace"
-regs = { in = ["d0"], clobbers = ["d1", "ccr"] }   # exits: site+8 and cf.machine.site.clone.2.alt
-devices = ["dt2"]
-mark = "D"
-users = ["core/machines"]
-doc = "Clone test `moveq #6,D1; cmp.l D0,D1; bne.w U` on the type in d0; the hook also answers equal for an added clone of type 6."
-
-[[hook]]
-name = "cf.machine.hook.clone.3"
-site = "cf.machine.site.clone.3"
-cpu = "cf"
-mode = "replace"
-regs = { in = ["d0", "d6"], clobbers = ["ccr"] }   # the stock `addq.l #4,sp` is repeated; exits: site+6 and cf.machine.site.clone.3.alt
-devices = ["dt2"]
-mark = "D"
-users = ["core/machines"]
-doc = "Clone test `addq.l #4,SP; cmp.l D0,D6; bne.b U` (d6 holds 6, d0 the type); the hook also answers equal for an added clone of type 6."
-
-[[hook]]
-name = "cf.machine.hook.clone.4"
-site = "cf.machine.site.clone.4"
-cpu = "cf"
-mode = "replace"
-regs = { in = ["d2"], clobbers = ["d0", "ccr"] }   # exits: site+6 and cf.machine.site.clone.4.alt
-devices = ["dt2"]
-mark = "D"
-users = ["core/machines"]
-doc = "Clone test `moveq #6,D0; cmp.l D2,D0; bne.b U` on the type in d2; the hook also answers equal for an added clone of type 6."
-
 [[hook]]
 name = "cf.machine.hook.clone.5"
 site = "cf.machine.site.clone.5"
@@ -707,17 +529,6 @@ devices = ["dt2"]
 mark = "D"
 users = ["core/services/machines"]
 doc = "First four instructions of the masked test `(type & ~2) == 4` (d0 the type); the hook replaces an added type by its clone_of."
-
-[[hook]]
-name = "cf.machine.hook.clone.6"
-site = "cf.machine.site.clone.6"
-cpu = "cf"
-mode = "replace"
-regs = { in = ["a0"], clobbers = ["d0", "d1", "ccr"] }   # exits: site+12 and cf.machine.site.clone.6.alt
-devices = ["dt2"]
-mark = "D"
-users = ["core/machines"]
-doc = "Clone test `moveq #6,D1; mvs.b (0x990,A0),D0; cmp.l D0,D1; bne.w U`; the hook also answers equal for an added clone of type 6."
 
 [[hook]]
 name = "cf.machine.hook.param_code.args"

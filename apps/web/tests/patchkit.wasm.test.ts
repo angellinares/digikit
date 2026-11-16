@@ -83,7 +83,7 @@ test.skipIf(!need)('wasm and CLI produce byte-identical output for the machine f
   const report = JSON.parse(text(x.pk_plan_ptr, x.pk_plan_len));
   const entries = (name: string) =>
     (report.registries as Registry[]).find((r) => r.name === name)!.entries.map((e) => [e.id, e.index]);
-  assert.deepEqual(entries('machines'), [['xclone', 8]]); // Digitone II has core/machines, but XClone clones a Digitakt machine (MANUAL SLICE, type 6)
+  assert.deepEqual(entries('machines'), [['xclone', 8]]); // Digitone II has core/machines, but XClone clones a Digitakt machine (SAMPLE, type 0)
   const [dp, dl] = put(readFileSync(images.dn2));
   const [mp, ml] = put(Buffer.from('core/machines,test/machine-clone'));
   assert.equal(x.pk_apply(dp, dl, bp, bl, mp, ml), 1);

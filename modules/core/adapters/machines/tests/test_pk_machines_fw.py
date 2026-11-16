@@ -49,18 +49,6 @@ STUBS = [
     "_mf_x_typearg",
     "_mf_c5ne",
     "_mf_c5eq",
-    "_mf_c0a",
-    ("_mf_c0", 8),
-    ("_mf_c1", 6),
-    "_mf_c1a",
-    ("_mf_c2", 8),
-    "_mf_c2a",
-    ("_mf_c3", 6),
-    "_mf_c3a",
-    ("_mf_c4", 6),
-    "_mf_c4a",
-    ("_mf_c6", 12),
-    "_mf_c6a",
     ("_mf_sp", 8),
     "_mf_spa",
 ]
@@ -148,7 +136,6 @@ def unit():
             "mf_rank",
             "mf_typearg",
             "mf_clone5",
-            *CLONE_SITES,
         ],
     )
 
@@ -312,63 +299,6 @@ def test_a_gap_row_is_neither_listed_nor_ranked(gap_unit, monkeypatch):
         int.from_bytes(pairs[8 * i : 8 * i + 4], "big") for i in range(len(expect))
     ] == expect
     assert FIRST + 1 not in expect
-
-
-# site -> (type register, stub that stands for "equal", for "not equal"); stubs named `_mf_cN` are the site address,
-# so `_mf_cN + k` is the end of the site
-CLONE_SITES = {
-    "mf_clone0": (0, "_mf_c0a", "_mf_c0"),
-    "mf_clone1": (0, "_mf_c1", "_mf_c1a"),
-    "mf_clone2": (0, "_mf_c2", "_mf_c2a"),
-    "mf_clone3": (0, "_mf_c3", "_mf_c3a"),
-    "mf_clone4": (2, "_mf_c4", "_mf_c4a"),
-    "mf_clone6": (0, "_mf_c6", "_mf_c6a"),
-}
-OBJ6 = 0x47EC5000
-
-
-def test_clone_tests_take_the_stock_branch_and_also_for_added_clones_of_slice(unit):
-    mem = tables()
-    types_added = [FIRST + k for k in range(COUNT)]
-    cases, want = [], []
-    for name, (reg, eq, neq) in CLONE_SITES.items():
-        for t in [6, 5, *types_added, FIRST + COUNT, 255]:
-            d = {i: 0x1000 + i for i in range(8)}
-            d[reg] = t
-            if name == "mf_clone4":
-                d[0] = 0x77  # the stock prefix loads 6 into d0
-            if name == "mf_clone3":
-                d[6] = 6
-            a = {i: 0x2000 + i for i in range(7)}
-            m = dict(mem)
-            if name == "mf_clone6":
-                a[0] = OBJ6 - 0x990
-                m[OBJ6] = bytes([t])
-            clone = (
-                ENTRIES[t - FIRST]["clone_of"] if FIRST <= t < FIRST + COUNT else None
-            )
-            equal = t == 6 or clone == 6
-            cases.append((m, {"routine": name, "d": d, "a": a, "stack": [0x11, 0x22]}))
-            want.append((name, t, eq if equal else neq, d))
-    for (m, case), (name, t, stub, _d) in zip(cases, want, strict=True):
-        r = unit.run_cases(m, [case])[0]
-        assert r.stub == stub, (name, t)
-        exp = dict(enumerate(case["d"][i] for i in range(8)))
-        if name in ("mf_clone0", "mf_clone1", "mf_clone2"):
-            exp[1] = 6
-        if name == "mf_clone4":
-            exp[0] = 6
-        if name == "mf_clone6":
-            exp[1] = 6
-            exp[0] = t if t < 128 else t - 256
-            exp[0] &= 0xFFFFFFFF
-        assert r.d == [exp[i] for i in range(8)], (name, t, r.d)
-        assert r.a[1:7] == [0x2000 + i for i in range(1, 7)]
-        assert r.a[0] == case["a"][0]
-        if (
-            name == "mf_clone3"
-        ):  # addq.l #4,sp ran: the stack words are seen from 4 bytes up
-            assert r.stack[:1] == [0x22]
 
 
 def test_masked_clone_test_maps_added_types_to_their_clone(unit):

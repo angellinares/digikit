@@ -283,106 +283,6 @@ mark = "D"
 rule = "fw/machine:cf_func"
 
 [[anchor]]
-name = "cf.machine.site.clone.0"
-cpu = "cf"
-kind = "code"
-addr = 0x4005fbec
-len = 8
-sha256 = "4b1eeee281fd6e7363193c4ca9da513e4bd2d1fe067ff9cb508bf1826d67be1c"
-mark = "D"
-rule = "fw/machine:cf_func"
-
-[[anchor]]
-name = "cf.machine.site.clone.0.alt"
-cpu = "cf"
-kind = "code"
-addr = 0x4005fcd4
-len = 2
-sha256 = "599debdf7811ff51e24d085a6211297f7fcb9186469160f1faa84e6f07965b9e"
-mark = "D"
-rule = "fw/machine:cf_func"
-
-[[anchor]]
-name = "cf.machine.site.clone.1"
-cpu = "cf"
-kind = "code"
-addr = 0x4005f8f8
-len = 6
-sha256 = "79c9245c0bcd2f36da3681a6dfb09637cc19d395561125c390cb749209fd93b1"
-mark = "D"
-rule = "fw/machine:cf_func"
-
-[[anchor]]
-name = "cf.machine.site.clone.1.alt"
-cpu = "cf"
-kind = "code"
-addr = 0x4005f920
-len = 2
-sha256 = "0687bc351e655add9b30c9ec4275af19b0bd195202543f61820e0568760ae0c1"
-mark = "D"
-rule = "fw/machine:cf_func"
-
-[[anchor]]
-name = "cf.machine.site.clone.2"
-cpu = "cf"
-kind = "code"
-addr = 0x40030e1e
-len = 8
-sha256 = "a7679cac66bb9ff5abd1b24e94d5810c8131c19e0d8d6e7a110ee0b2db3f8d5f"
-mark = "D"
-rule = "fw/machine:cf_func"
-
-[[anchor]]
-name = "cf.machine.site.clone.2.alt"
-cpu = "cf"
-kind = "code"
-addr = 0x40030f90
-len = 2
-sha256 = "9d26521ee1c472c774c62140595d153d6f827a820b852dafbfba2bc620b2a1eb"
-mark = "D"
-rule = "fw/machine:cf_func"
-
-[[anchor]]
-name = "cf.machine.site.clone.3"
-cpu = "cf"
-kind = "code"
-addr = 0x4004923e
-len = 6
-sha256 = "5292b911cf0deaba185812ccd2eecdfa10085b29823e8bedde84ae69db5d9cd8"
-mark = "D"
-rule = "fw/machine:cf_func"
-
-[[anchor]]
-name = "cf.machine.site.clone.3.alt"
-cpu = "cf"
-kind = "code"
-addr = 0x40049266
-len = 2
-sha256 = "a5e260e5a708e9bc7beceb8338f3705e6249bccb6c5df38f624e9ae58ea118de"
-mark = "D"
-rule = "fw/machine:cf_func"
-
-[[anchor]]
-name = "cf.machine.site.clone.4"
-cpu = "cf"
-kind = "code"
-addr = 0x4005c936
-len = 6
-sha256 = "5fa6eb2badf7467be4963c0591deb2d20266f53a6ec0721df1a6813785c1b176"
-mark = "D"
-rule = "fw/machine:cf_func"
-
-[[anchor]]
-name = "cf.machine.site.clone.4.alt"
-cpu = "cf"
-kind = "code"
-addr = 0x4005c950
-len = 2
-sha256 = "1f2e6d00279b4659b6d6f1ad57e12568e4a50f80908af50d1e861001b2be2a3b"
-mark = "D"
-rule = "fw/machine:cf_func"
-
-[[anchor]]
 name = "cf.machine.site.clone.5"
 cpu = "cf"
 kind = "code"
@@ -399,26 +299,6 @@ kind = "code"
 addr = 0x4005db02
 len = 2
 sha256 = "f465c3739385890c221dff1a05e578c6cae0d0430e46996d319db7439f884336"
-mark = "D"
-rule = "fw/machine:cf_func"
-
-[[anchor]]
-name = "cf.machine.site.clone.6"
-cpu = "cf"
-kind = "code"
-addr = 0x4002ec18
-len = 12
-sha256 = "374f947abc19fe049b7ac5eca4b32fc6063ef3e8b28e624b5de98b02f1a65d62"
-mark = "D"
-rule = "fw/machine:cf_func"
-
-[[anchor]]
-name = "cf.machine.site.clone.6.alt"
-cpu = "cf"
-kind = "code"
-addr = 0x4002ecd8
-len = 2
-sha256 = "1fc1c0ebcf867bc2675aff5ec81e7d2b43c1916e9baa8546dd937e5b9aa803b9"
 mark = "D"
 rule = "fw/machine:cf_func"
 
@@ -3730,38 +3610,8 @@ site = "cf.link.site.block_isr.frame_call"
 mode = "retarget"
 
 [[hook]]
-name = "cf.machine.hook.clone.0"
-site = "cf.machine.site.clone.0"
-mode = "replace"
-
-[[hook]]
-name = "cf.machine.hook.clone.1"
-site = "cf.machine.site.clone.1"
-mode = "replace"
-
-[[hook]]
-name = "cf.machine.hook.clone.2"
-site = "cf.machine.site.clone.2"
-mode = "replace"
-
-[[hook]]
-name = "cf.machine.hook.clone.3"
-site = "cf.machine.site.clone.3"
-mode = "replace"
-
-[[hook]]
-name = "cf.machine.hook.clone.4"
-site = "cf.machine.site.clone.4"
-mode = "replace"
-
-[[hook]]
 name = "cf.machine.hook.clone.5"
 site = "cf.machine.site.clone.5"
-mode = "replace"
-
-[[hook]]
-name = "cf.machine.hook.clone.6"
-site = "cf.machine.site.clone.6"
 mode = "replace"
 
 [[hook]]
