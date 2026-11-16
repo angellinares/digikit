@@ -4,6 +4,18 @@
   "metadata": {
     "runtimeAcceptance": [
       {
+        "files": ["tests/fx-bipolar.device.test.ts"],
+        "tags": ["A:core/fxpages", "C:state", "S:fx"],
+        "modules": ["test/dyn-fx-gain-bipolar", "test/sine"],
+        "sources": [
+          "tools/patchkit/hook_ab.py",
+          "tools/patchkit/pk_digikit_fxroute.py",
+          "tools/patchkit/pk_digikit_fxroutes.py",
+          "tools/patchkit/pk_digikit_fxsend.py"
+        ],
+        "plusdrive": true
+      },
+      {
         "files": ["tests/fx-kit-persist.device.test.ts"],
         "tags": ["A:core/fxpages", "C:state", "S:fx"],
         "modules": ["test/dyn-fx-gain", "test/dyn-fx-gain-b", "test/sine"],
