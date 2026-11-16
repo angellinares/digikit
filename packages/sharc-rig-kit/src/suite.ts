@@ -20,7 +20,11 @@ export function rigSuite(testsDir: string): void {
     if (process.env.DIGI_RIG_REPORT === '1') {
       it(`${module} ${name}: report`, async () => {
         const text = (await reportRigFile(module, file)).join('\n');
-        writeFileSync(path.join(process.env.DIGI_RIG_REPORT_FILE ?? path.join(tmpdir(), 'rig-report.txt')), `${text}\n`, { flag: 'a' });
+        writeFileSync(
+          path.join(process.env.DIGI_RIG_REPORT_FILE ?? path.join(tmpdir(), 'rig-report.txt')),
+          `${text}\n`,
+          { flag: 'a' },
+        );
         console.log(text);
       });
       continue;

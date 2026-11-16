@@ -26,7 +26,17 @@ import {
   wordsHash,
 } from './analysis.ts';
 import { signalBlock } from './checks.ts';
-import { classify, fingerprint, fingerprintFile, readFingerprint, readRef, rigKey, writeFingerprint, writeRef, cacheDir } from './fingerprint.ts';
+import {
+  classify,
+  fingerprint,
+  fingerprintFile,
+  readFingerprint,
+  readRef,
+  rigKey,
+  writeFingerprint,
+  writeRef,
+  cacheDir,
+} from './fingerprint.ts';
 import { plotPng, writePng, writeWav } from './plot.ts';
 import { REC, RECORDS, f2w, nw } from './context.ts';
 import { PLANE_L, PLANE_R, TOKEN, publish, writePlanes } from './samplepool.ts';
@@ -683,7 +693,10 @@ export async function reportRigFile(module: string, file: string, o: RunOptions 
       const out = cacheDir(key);
       writeWav(path.join(out, 'out.wav'), x);
       if (ref) writeWav(path.join(out, 'ref.wav'), ref);
-      writePng(path.join(out, 'plot.png'), plotPng(`${module} ${device} ${c.name}`, `${same ? 'PIN MATCHES' : 'PIN DIFFERS'}  ${v.line}`, x, ref));
+      writePng(
+        path.join(out, 'plot.png'),
+        plotPng(`${module} ${device} ${c.name}`, `${same ? 'PIN MATCHES' : 'PIN DIFFERS'}  ${v.line}`, x, ref),
+      );
       lines.push(`${key}: ${same ? 'pin matches' : 'PIN DIFFERS'}; ${v.line}\n  ${path.join(out, 'plot.png')}`);
     } catch (e) {
       lines.push(`${key}: not run: ${(e as Error).message}`);

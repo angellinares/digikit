@@ -131,7 +131,8 @@ export class MachineRig {
   static async open(spec: MachineSpec, o: MachineRigOptions = {}): Promise<MachineRig> {
     if (!o.built) {
       const gaps = galleryGaps(spec.module.split('#')[0]!).filter((g) => g.startsWith(`${spec.device}:`));
-      if (gaps.length) throw new Error(`${spec.module}: ${gaps.join('; ')}; run \`mise run module:check ${spec.module}\` to write it`);
+      if (gaps.length)
+        throw new Error(`${spec.module}: ${gaps.join('; ')}; run \`mise run module:check ${spec.module}\` to write it`);
     }
     const rig = new MachineRig(spec, o);
     await rig.reset(o.open ?? realRig);
@@ -182,7 +183,10 @@ export class MachineRig {
     for (const init of b.inits) {
       const view = new DataView(init.bytes.buffer, init.bytes.byteOffset, init.bytes.byteLength);
       for (let k = 0; k < Math.floor(init.bytes.length / 4); k++)
-        q.poke(nw(init.address) + k, init.bss && this.poison ? this.fillWord(nw(init.address) + k) : view.getUint32(4 * k, true));
+        q.poke(
+          nw(init.address) + k,
+          init.bss && this.poison ? this.fillWord(nw(init.address) + k) : view.getUint32(4 * k, true),
+        );
     }
     const { port } = await open({
       return_sw: RETURN_SW,

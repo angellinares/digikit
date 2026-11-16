@@ -10,7 +10,13 @@ const signal = (): number[] => {
   return Array.from({ length: N }, (_, i) => {
     const t = i / 48000;
     const env = Math.exp(-t * 12);
-    return Math.fround(env * (0.5 * Math.sin(2 * Math.PI * 220 * t) + 0.2 * Math.sin(2 * Math.PI * 3000 * t) + 0.1 * Math.sin(2 * Math.PI * 9000 * t)) + noise());
+    return Math.fround(
+      env *
+        (0.5 * Math.sin(2 * Math.PI * 220 * t) +
+          0.2 * Math.sin(2 * Math.PI * 3000 * t) +
+          0.1 * Math.sin(2 * Math.PI * 9000 * t)) +
+        noise(),
+    );
   });
 };
 
@@ -32,7 +38,10 @@ describe('classify', () => {
   it('calls a difference at -120 dB with unchanged bands rounding', () => {
     const rms = Math.sqrt(ref.reduce((s, v) => s + v * v, 0) / N);
     let seed = 7;
-    const now = ref.map((v) => v + ((((seed = (Math.imul(seed, 1664525) + 1013904223) >>> 0) / 2 ** 32) - 0.5) * 2 * Math.sqrt(3)) * rms * 1e-6);
+    const now = ref.map(
+      (v) =>
+        v + ((seed = (Math.imul(seed, 1664525) + 1013904223) >>> 0) / 2 ** 32 - 0.5) * 2 * Math.sqrt(3) * rms * 1e-6,
+    );
     const v = classify(now, ref, pinned);
     expect(v.kind).toBe('rounding');
     expect(v.diffDb).toBeLessThan(-110);
@@ -40,7 +49,11 @@ describe('classify', () => {
   });
 
   it('reports a level change of -3 dB as a real change with its size', () => {
-    const v = classify(ref.map((x) => x * 10 ** (-3 / 20)), ref, pinned);
+    const v = classify(
+      ref.map((x) => x * 10 ** (-3 / 20)),
+      ref,
+      pinned,
+    );
     expect(v.kind).toBe('real-change');
     expect(v.levelDb).toBeCloseTo(-3, 1);
   });
@@ -56,7 +69,11 @@ describe('classify', () => {
 
   it('compares fingerprints when there is no cached output', () => {
     expect(classify(ref, null, pinned).line).toContain('equal the pin');
-    const v = classify(ref.map((x) => x * 0.5), null, pinned);
+    const v = classify(
+      ref.map((x) => x * 0.5),
+      null,
+      pinned,
+    );
     expect([v.kind, v.line]).toEqual(['fingerprint-only', expect.stringContaining('level -6.02 dB')]);
   });
 });

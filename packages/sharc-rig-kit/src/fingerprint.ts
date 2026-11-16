@@ -175,7 +175,10 @@ function ranges(n: number, moved: (i: number) => boolean, max = 3): [number, num
   return out.slice(0, max);
 }
 
-function describeMoves(fa: Fingerprint, fb: Fingerprint): { blocks: string; bands: string; maxBand: number; level: number } {
+function describeMoves(
+  fa: Fingerprint,
+  fb: Fingerprint,
+): { blocks: string; bands: string; maxBand: number; level: number } {
   const n = Math.min(fa.rms.length, fb.rms.length);
   const db = (p: number, q: number) => 20 * Math.log10(Math.max(p, 1e-9) / Math.max(q, 1e-9));
   const blocks = ranges(n, (i) => Math.abs(db(fa.rms[i]!, fb.rms[i]!)) > 1 && Math.max(fa.rms[i]!, fb.rms[i]!) > 1e-5);
@@ -188,7 +191,14 @@ function describeMoves(fa: Fingerprint, fb: Fingerprint): { blocks: string; band
     const mean = delta.slice(r[0], r[1] + 1).reduce((s, v) => s + v, 0) / (r[1] - r[0] + 1);
     return `${Math.round(fa.bandHz[r[0]]!)}-${Math.round(fa.bandHz[r[1]]!)} Hz ${mean > 0 ? '+' : ''}${fmt(mean, 1)} dB`;
   };
-  const total = (f: Fingerprint) => 10 * Math.log10(Math.max(f.rms.reduce((s, v) => s + v * v, 0), 1e-30));
+  const total = (f: Fingerprint) =>
+    10 *
+    Math.log10(
+      Math.max(
+        f.rms.reduce((s, v) => s + v * v, 0),
+        1e-30,
+      ),
+    );
   return {
     blocks: blocks.length ? blocks.map(([a, b]) => `${a}-${b}`).join(',') : 'none',
     bands: bands.length ? bands.map(hz).join('; ') : 'none',
@@ -204,7 +214,8 @@ function describeMoves(fa: Fingerprint, fb: Fingerprint): { blocks: string; band
 export function classify(now: readonly number[], ref: readonly number[] | null, pinned: Fingerprint | null): Verdict {
   const fnow = fingerprint(now);
   if (ref === null) {
-    if (pinned === null) return { kind: 'fingerprint-only', line: 'no stored fingerprint and no cached output: nothing to compare with' };
+    if (pinned === null)
+      return { kind: 'fingerprint-only', line: 'no stored fingerprint and no cached output: nothing to compare with' };
     const m = describeMoves(fnow, pinned);
     const same = m.maxBand <= 0.05 && m.blocks === 'none' && fnow.onset === pinned.onset;
     return {
@@ -216,19 +227,37 @@ export function classify(now: readonly number[], ref: readonly number[] | null, 
         : `fingerprint-only: onset ${pinned.onset} -> ${fnow.onset}, level ${fmt(m.level)} dB, moved blocks ${m.blocks}, moved bands ${m.bands}; no cached output for the sample comparison`,
     };
   }
-  if (ref.length === now.length && ref.every((v, i) => Object.is(v, now[i]))) return { kind: 'identical', line: 'identical: the output equals the cached output bit for bit' };
+  if (ref.length === now.length && ref.every((v, i) => Object.is(v, now[i])))
+    return { kind: 'identical', line: 'identical: the output equals the cached output bit for bit' };
   const k = bestShift([...now], ref);
   if (k !== 0) {
     const [a, b] = overlap(now, ref, k);
     const d = diffDb(a, b);
-    if (d === -Infinity) return { kind: 'time-shift', shift: k, diffDb: d, line: `time-shift: the output is the cached output shifted by ${k} samples, bit-identical on the overlap (${a.length} samples)` };
-    if (d <= ROUNDING_DB) return { kind: 'time-shift', shift: k, diffDb: d, line: `time-shift: shifted by ${k} samples, then not bit-identical: difference ${fmt(d, 1)} dB on the overlap` };
+    if (d === -Infinity)
+      return {
+        kind: 'time-shift',
+        shift: k,
+        diffDb: d,
+        line: `time-shift: the output is the cached output shifted by ${k} samples, bit-identical on the overlap (${a.length} samples)`,
+      };
+    if (d <= ROUNDING_DB)
+      return {
+        kind: 'time-shift',
+        shift: k,
+        diffDb: d,
+        line: `time-shift: shifted by ${k} samples, then not bit-identical: difference ${fmt(d, 1)} dB on the overlap`,
+      };
   }
   const d = diffDb(now, ref);
   const fref = fingerprint(ref);
   const m = describeMoves(fnow, fref);
   if (d <= ROUNDING_DB && m.maxBand <= 0.05)
-    return { kind: 'rounding', diffDb: d, maxBandDb: m.maxBand, line: `rounding: difference ${fmt(d, 1)} dB re the signal (limit ${ROUNDING_DB} dB), band spectrum unchanged (max ${fmt(m.maxBand)} dB)` };
+    return {
+      kind: 'rounding',
+      diffDb: d,
+      maxBandDb: m.maxBand,
+      line: `rounding: difference ${fmt(d, 1)} dB re the signal (limit ${ROUNDING_DB} dB), band spectrum unchanged (max ${fmt(m.maxBand)} dB)`,
+    };
   return {
     kind: 'real-change',
     diffDb: d,

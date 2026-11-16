@@ -95,7 +95,13 @@ path = "build/dsp.dko.json"
 sources = ["src/dsp/go.s"]
 `,
   );
-  write('gap/build/gen/gallery.json', JSON.stringify({ machines: [{ id: 'gap-one', devices: { dn2: { knobs: [] }, dt2: { knobs: [] } } }], params: { dn2: [{ id: 'x' }], dt2: [{ id: 'x' }] } }));
+  write(
+    'gap/build/gen/gallery.json',
+    JSON.stringify({
+      machines: [{ id: 'gap-one', devices: { dn2: { knobs: [] }, dt2: { knobs: [] } } }],
+      params: { dn2: [{ id: 'x' }], dt2: [{ id: 'x' }] },
+    }),
+  );
 });
 
 afterAll(() => {
@@ -131,7 +137,8 @@ describe('machineSpec', () => {
 });
 
 describe('galleryGaps', () => {
-  const gallery = (machines: unknown[], params: unknown) => write('gap/build/gen/gallery.json', JSON.stringify({ machines, params }));
+  const gallery = (machines: unknown[], params: unknown) =>
+    write('gap/build/gen/gallery.json', JSON.stringify({ machines, params }));
   const two = { dn2: { knobs: [] }, dt2: { knobs: [] } };
   const filled = { dn2: [{ id: 'x' }], dt2: [{ id: 'x' }] };
 
@@ -146,7 +153,13 @@ describe('galleryGaps', () => {
   });
 
   it('checks every machine of the gallery, not only the first', () => {
-    gallery([{ id: 'gap-one', devices: two }, { id: 'gap-two', devices: { dn2: { knobs: [] } } }], filled);
+    gallery(
+      [
+        { id: 'gap-one', devices: two },
+        { id: 'gap-two', devices: { dn2: { knobs: [] } } },
+      ],
+      filled,
+    );
     expect(galleryGaps('zzt/gap')).toEqual(['dt2: machine gap-two is not listed in build/gen/gallery.json']);
   });
 

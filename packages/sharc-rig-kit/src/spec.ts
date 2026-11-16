@@ -280,7 +280,8 @@ export function galleryGaps(mid: string): string[] {
     for (const d of [...wanted].sort()) {
       const dev = m.devices?.[d];
       if (!dev) out.push(`${d}: machine ${m.id} is not listed in build/gen/gallery.json`);
-      else if (!(gallery.params?.[d] ?? []).length) out.push(`${d}: machine ${m.id} has no parameter in build/gen/gallery.json`);
+      else if (!(gallery.params?.[d] ?? []).length)
+        out.push(`${d}: machine ${m.id} has no parameter in build/gen/gallery.json`);
     }
   return out;
 }
