@@ -1,0 +1,29 @@
+{
+  "$schema": "../../../../../node_modules/nx/schemas/project-schema.json",
+  "name": "core/runtime-provider-tests",
+  "tags": [
+    "test-only"
+  ],
+  "implicitDependencies": [
+    "core/runtime"
+  ],
+  "metadata": {
+    "runtimeAcceptance": [
+      {
+        "files": [
+          "providers.device.test.ts"
+        ],
+        "tags": [
+          "C:boot",
+          "C:loading"
+        ],
+        "modules": [
+          "digikit/debug",
+          "test/svc-test",
+          "test/svc-test-user"
+        ],
+        "plusdrive": true
+      }
+    ]
+  }
+}

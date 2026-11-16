@@ -28,7 +28,9 @@ fn fixture_text(path: &str) -> String {
 
 /// The packed fixture (Nx `test/<leaf>:pack`).
 fn packed(device: &str, leaf: &str) -> Vec<u8> {
-    let p = root().join(format!("dist/modules/{device}/{leaf}.dkm"));
+    // a service packs to `.dks`, every other module to `.dkm`
+    let base = root().join(format!("dist/modules/{device}/{leaf}"));
+    let p = if base.with_extension("dks").exists() { base.with_extension("dks") } else { base.with_extension("dkm") };
     std::fs::read(&p).unwrap_or_else(|e| panic!("{}: {e} (nx run test/{leaf}:pack)", p.display()))
 }
 
@@ -282,4 +284,95 @@ fn a_machine_voice_with_a_bad_entry_is_refused() {
         put_be(f, voice + dkneeds::VOICE_CLEAR_BYTES, state + 4);
     });
     assert_eq!(r, E_DSP_FORMAT);
+}
+
+// The test-only service `svc-test` (`.dks`) and its user (`.dkm`): the role word, the find and the plan on the packed files.
+mod service_fixtures {
+    use super::*;
+    use crate::core_api::{CoreApi, REAL_CORE};
+    use crate::fake_storage::FakeStorage;
+    use crate::loader::discover::{find, Found};
+    use crate::handlers::ServiceTable;
+    use crate::plan::{plan_with, Env};
+    use crate::loader::role::{role_of, role_ok};
+    use dkneeds::keys::name_hash;
+    use dkrt_abi::plan::{Reason, Verdict};
+    use dkrt_abi::service::{Service, ServiceRow};
+    use dkrt_abi::storage::{Storage, ROOT_STORE};
+
+    struct S;
+    impl<C: CoreApi> Service<C> for S {}
+    static ROWS: [ServiceRow; 1] = [ServiceRow::of::<S, crate::core_api::RealCore>("machines", &[])];
+    static ROWS_P: dkrt_abi::service::RowPtrs<1> = dkrt_abi::service::RowPtrs::of(&ROWS);
+
+    #[repr(C, align(16))]
+    struct Block([u8; 1024]);
+
+    fn head(f: &[u8]) -> [u8; 64] {
+        f[..64].try_into().unwrap()
+    }
+
+    /// The header table of a packed file.
+    fn table(f: &[u8]) -> &[u8] {
+        let (off, size) = (be(f, dkneeds::H_REG_OFF) as usize, be(f, dkneeds::H_REG_SIZE) as usize);
+        &f[off..off + size]
+    }
+
+    fn caps() -> Vec<DkrtCap> {
+        let c = |kind: u8, limit: u32| DkrtCap { kind: kind as u32, limit, used: 0, largest: limit };
+        vec![c(proto::CAPK_MODULES, 8), c(proto::CAPK_SELECTION, 8), c(proto::CAPK_ARENA, 1 << 20)]
+    }
+
+    #[test]
+    fn the_service_has_role_1_and_a_version_2_table_and_the_user_is_an_ordinary_module_with_a_need() {
+        for (dev, _) in DEVICES {
+            let (svc, user) = (packed(dev, "svc-test"), packed(dev, "svc-test-user"));
+            assert_eq!((role_of(&head(&svc)), role_of(&head(&user))), (1, 0), "{dev}");
+            let (ks, ku) = (Keys::parse(table(&svc)).unwrap(), Keys::parse(table(&user)).unwrap());
+            assert_eq!((ks.version(), ku.version()), (2, 1), "{dev}");
+            assert_eq!(ks.words(dkneeds::keys::tag::PROVIDES, 0).unwrap().0, name_hash("svc-test"));
+            assert_eq!(ku.words(dkneeds::keys::tag::NEEDS, 0).unwrap().0, name_hash("svc-test"));
+            assert_eq!(role_ok(1, &ks), Ok(()), "{dev}");
+            assert_eq!(role_ok(0, &ku), Ok(()), "{dev}");
+            // the user's table is no service table, and the provider's is no module table
+            assert_eq!(role_ok(1, &ku), Err(E_FORMAT), "{dev}");
+            assert_eq!(role_ok(0, &ks), Err(E_FORMAT), "{dev}");
+        }
+    }
+
+    fn found(dev: &str) -> (Vec<u8>, Found) {
+        let svc = packed(dev, "svc-test");
+        let mut fs = crate::loader::discover::fake::cards(vec![("services/svc-test.dks".into(), svc.clone())]);
+        let services = ServiceTable::new(&ROWS_P.0, &REAL_CORE);
+        let mut out = Found::new();
+        unsafe { find(&mut fs, &services, &[name_hash("svc-test")], &mut out) };
+        (svc, out)
+    }
+
+    #[test]
+    fn the_find_takes_the_packed_provider_from_the_services_folder_for_the_users_need() {
+        for (dev, _) in DEVICES {
+            let (svc, out) = found(dev);
+            assert_eq!(out.n, 1, "{dev}");
+            assert_eq!(out.path(0), b"services/svc-test.dks");
+            assert_eq!(out.table(0), table(&svc));
+        }
+    }
+
+    #[test]
+    fn the_plan_loads_the_provider_before_the_user_and_the_user_alone_is_missing_its_service() {
+        for (dev, _) in DEVICES {
+            let user = packed(dev, "svc-test-user");
+            let (svc, _) = found(dev);
+            let (mods, provs) = ([Some(Keys::parse(table(&user)).unwrap())], [Some(Keys::parse(table(&svc)).unwrap())]);
+            let c = caps();
+            let env = Env { services: ServiceTable::new(&ROWS_P.0, &REAL_CORE), runtime: 0x000900, caps: &c };
+            let p = plan_with(&env, &mods, &provs);
+            assert_eq!((p.n, p.np), (1, 1), "{dev}");
+            assert_eq!((p.provider_verdicts[0], p.verdicts[0]), (Verdict::Accepted, Verdict::Accepted), "{dev}");
+            let p = plan_with(&env, &mods, &[]);
+            assert_eq!(p.verdicts[0], Verdict::Refused(Reason::NeedMissing(name_hash("svc-test"))), "{dev}");
+            assert_eq!(p.verdicts[0].result(), E_MISSING, "{dev}");
+        }
+    }
 }

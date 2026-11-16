@@ -651,8 +651,8 @@ pub(crate) unsafe fn step_with(l: ServiceTable) -> Advance {
                         match l.dsp_row_step(d.pending.rec as usize, &mut want, true) {
                             None => break,
                             Some(w) => {
-                                if let Some(undo) = w.undo {
-                                    seq.push_undo(w.win, w.word, w.value, undo);
+                                if w.has_undo {
+                                    seq.push_undo(w.win, w.word, w.value, w.undo);
                                 } else {
                                     seq.push(w.win, w.word, w.value);
                                 }

@@ -24,6 +24,8 @@ import { edits, patched, unhashed } from './dkm-patch.ts';
 const GOOD = 'test/commit-demo';
 const LFO = 'test/lfo-shape';
 const LFO_DUP = 'test/lfo-shape-dup';
+/** The service of the lfo_shape kind is a file of the card (`services/lfo.dks`), not a part of the image: the two fixtures need it. */
+const LFO_SERVICE = 'core/lfo';
 const UNOWNED_KIND = 90;
 
 interface Seen {
@@ -35,8 +37,8 @@ interface Seen {
 }
 
 /** One boot of `entries`, and everything the tests read from it as plain values (the tests do not touch the device again). */
-async function boot(rig: CardRig, tag: string, entries: Entry[]): Promise<Seen> {
-  const got = await bootEntries(rig, tag, entries);
+async function boot(rig: CardRig, tag: string, entries: Entry[], files: { name: string; file: string }[] = []): Promise<Seen> {
+  const got = await bootEntries(rig, tag, entries, files);
   const loads = await rig.usb(got.rt, (dk) => dk.loadStates());
   return {
     results: got.info.results,
@@ -123,7 +125,7 @@ cardRigs('refusal fixtures and module states', { dsp: 'cold', roots: COUPLED_ROO
   test('a hard need nobody provides is E_MISSING', async () => {
     const seen = await patchedSeen();
     expectModule(seen, 5, 'REFUSED', loadCode('E_MISSING'));
-    expect(moduleStateText(seen.loads[5]!)).toContain('refused: a service it needs');
+    expect(moduleStateText(seen.loads[5]!)).toContain('refused: the service 0xdeadbeef that it needs');
   });
 
   test('keys for a kind nobody owns are refused with E_PLAN_KIND and the kind', async () => {
@@ -184,7 +186,7 @@ cardRigs('refusal fixtures and module states', { dsp: 'cold', roots: COUPLED_ROO
         { name: LFO, file: moduleArtifact(rig.device, LFO), want: LOADED },
         { name: LFO_DUP, file: moduleArtifact(rig.device, LFO_DUP), want: loadCode('E_PLAN_KEY') },
       ];
-      return boot(rig, 'refusal-owners', entries);
+      return boot(rig, 'refusal-owners', entries, [{ name: 'services/lfo.dks', file: moduleArtifact(rig.device, LFO_SERVICE) }]);
     })();
     return owners;
   };

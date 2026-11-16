@@ -24,7 +24,7 @@
 //! so API calls from the MIDI task cannot interleave with a tick step of the same track (an idle track is safe today).
 use core::hint::black_box;
 use core::ptr::{addr_of, addr_of_mut, read_volatile};
-use dkrt_abi::core_api::{CoreApi, LOG_INFO};
+use dkrt_abi::core_api::{SampleCore, LOG_INFO};
 use dkrt_abi::dsp::PH_IDLE;
 use dkrt_abi::link::{LinkResult, Owner, Stream, Ticket};
 use dkrt_abi::platform::SampleHost;
@@ -79,7 +79,7 @@ pub(crate) unsafe fn core_() -> &'static mut Core<CLIENTS, ENTRIES, PROJECTS> {
 }
 
 /// Is a backing adapter of the right version in the image? (The platform's sample-pool provider.)
-unsafe fn pool_ok<C: CoreApi>(core: &C) -> bool {
+unsafe fn pool_ok<C: SampleCore>(core: &C) -> bool {
     core.host().pool_present()
 }
 
@@ -152,7 +152,7 @@ unsafe fn next_write(c: usize, k: usize, op: &Op) -> Option<(u32, [u32; 7], usiz
 }
 
 /// Finish the write in flight, then start the next one. Called twice per UI-loop pass.
-unsafe fn pump<C: CoreApi>(api: &C) {
+unsafe fn pump<C: SampleCore>(api: &C) {
     if FLIGHT != NO_FLIGHT {
         let done = api.link_result(Ticket {
             owner: Owner::Tracks,
@@ -217,7 +217,7 @@ unsafe fn pump<C: CoreApi>(api: &C) {
 // ---- file header and identity ---------------------------------------------------------------------------------------------
 
 /// The device's sample root (`select` paths are root-relative; the runtime keeps the rooted form).
-fn root<C: CoreApi>(core: &C) -> &'static [u8] {
+fn root<C: SampleCore>(core: &C) -> &'static [u8] {
     root_of(core.host())
 }
 fn root_of<H: SampleHost>(h: &H) -> &'static [u8] {
@@ -266,7 +266,7 @@ unsafe fn probe_with<H: SampleHost>(
     Ok(id)
 }
 
-unsafe fn probe<C: CoreApi>(
+unsafe fn probe<C: SampleCore>(
     core: &C,
     path: &[u8],
     head: Option<&mut [u8; 64]>,
@@ -275,8 +275,8 @@ unsafe fn probe<C: CoreApi>(
 }
 
 /// The environment the track state machine runs in: the pool adapter's `dkpool_*` calls, the table writes, and the core for the platform facts and the log.
-struct Device<'a, C: CoreApi>(&'a C);
-impl<C: CoreApi> Env for Device<'_, C> {
+struct Device<'a, C: SampleCore>(&'a C);
+impl<C: SampleCore> Env for Device<'_, C> {
     fn inspect(&mut self, path: &[u8]) -> Result<Inspect, i32> {
         let mut head = [0u8; 64];
         let id = unsafe { probe(self.0, path, Some(&mut head))? };
@@ -464,7 +464,7 @@ pub unsafe fn ready(rec: usize) {
 /// A module's record went away (its machine rows are already cleared, so no voice runs): unbind its tracks without closing them in
 /// the DSP, release the pool references and free the client slot. A write already in flight ends by itself (its bytes are static, and
 /// the link is serialized, so a later load of the range lands after it).
-pub unsafe fn remove<C: CoreApi>(core: &C, rec: usize) {
+pub unsafe fn remove<C: SampleCore>(core: &C, rec: usize) {
     let mut i = 0;
     while i < CLIENTS {
         if OWNER[i] == rec {
@@ -495,7 +495,7 @@ pub unsafe fn has(rec: usize) -> bool {
     false
 }
 
-pub unsafe fn tracks<C: CoreApi>(core: &C, local_id: u32) -> i32 {
+pub unsafe fn tracks<C: SampleCore>(core: &C, local_id: u32) -> i32 {
     let owner = core.current_source();
     if owner == 0 {
         return E_NOT_FOUND;
@@ -513,7 +513,7 @@ pub unsafe fn tracks<C: CoreApi>(core: &C, local_id: u32) -> i32 {
 
 /// `dk_sample_pool_open`: the handle of the module's pool table with the lowest local id (the one table a module declares), as `tracks` gives it for
 /// that id; E_NOT_FOUND without a table.
-pub unsafe fn open_first<C: CoreApi>(core: &C) -> i32 {
+pub unsafe fn open_first<C: SampleCore>(core: &C) -> i32 {
     let owner = core.current_source();
     if owner == 0 {
         return E_NOT_FOUND;
@@ -534,7 +534,7 @@ pub unsafe fn open_first<C: CoreApi>(core: &C) -> i32 {
 }
 
 /// The device-rooted copy of a module's root-relative path (a listing row) in `full`, and its length; or a negative error.
-unsafe fn rooted_path<C: CoreApi>(
+unsafe fn rooted_path<C: SampleCore>(
     core: &C,
     path: *const u8,
     full: &mut [u8; dkrt_sdk::sample_tracks::PATH],
@@ -560,7 +560,7 @@ unsafe fn rooted_path<C: CoreApi>(
 }
 
 /// `sample_pool_add`: the pool index of the file (a new entry, or the one that already holds the path), or a negative error.
-pub unsafe fn pool_add<C: CoreApi>(core: &C, handle: u32, path: *const u8) -> i32 {
+pub unsafe fn pool_add<C: SampleCore>(core: &C, handle: u32, path: *const u8) -> i32 {
     if path.is_null() {
         return E_SEL_PATH;
     }
@@ -583,7 +583,7 @@ pub unsafe fn pool_add<C: CoreApi>(core: &C, handle: u32, path: *const u8) -> i3
 }
 
 /// `sample_pool_set`: load the file into entry `index` (replacing what was there); 0 or a negative error.
-pub unsafe fn pool_set<C: CoreApi>(core: &C, handle: u32, index: u32, path: *const u8) -> i32 {
+pub unsafe fn pool_set<C: SampleCore>(core: &C, handle: u32, index: u32, path: *const u8) -> i32 {
     if path.is_null() {
         return E_SEL_PATH;
     }
@@ -606,7 +606,7 @@ pub unsafe fn pool_set<C: CoreApi>(core: &C, handle: u32, index: u32, path: *con
 }
 
 /// `sample_pool_clear`: the entry becomes UNUSED (a hole); the other indexes stay.
-pub unsafe fn pool_clear<C: CoreApi>(core: &C, handle: u32, track: u32) -> i32 {
+pub unsafe fn pool_clear<C: SampleCore>(core: &C, handle: u32, track: u32) -> i32 {
     match client(handle) {
         Ok(c) => {
             let sr = core.host().mask_irq();
@@ -626,7 +626,13 @@ pub unsafe fn status(handle: u32, track: u32) -> i32 {
 }
 
 /// `sample_pool_path`: the entry's current selection, root-relative, NUL-terminated, into `buf`; the length without the NUL.
-pub unsafe fn path<C: CoreApi>(core: &C, handle: u32, track: u32, buf: *mut u8, cap: u32) -> i32 {
+pub unsafe fn path<C: SampleCore>(
+    core: &C,
+    handle: u32,
+    track: u32,
+    buf: *mut u8,
+    cap: u32,
+) -> i32 {
     let c = match client(handle) {
         Ok(c) => c,
         Err(e) => return e,
@@ -672,7 +678,7 @@ pub unsafe fn info(handle: u32, track: u32, out: *mut u8) -> i32 {
 }
 
 /// One step of every track, in the UI loop. Without a backing adapter nothing runs.
-pub unsafe fn tick<C: CoreApi>(core: &C) {
+pub unsafe fn tick<C: SampleCore>(core: &C) {
     if !pool_ok(core) {
         return;
     }
@@ -690,7 +696,7 @@ pub unsafe fn pool_done(req: u32, result: i32) {
     core_().done(req, result);
 }
 /// Adapter to runtime: the backing was lost, all handles are invalid. The runtime's `dkrt_pool_lost` calls it.
-pub unsafe fn pool_lost<C: CoreApi>(core: &C) {
+pub unsafe fn pool_lost<C: SampleCore>(core: &C) {
     static mut LOST: u32 = 0;
     let n = read_volatile(addr_of!(LOST)).wrapping_add(1);
     *addr_of_mut!(LOST) = n;
@@ -747,6 +753,7 @@ pub unsafe fn peaks(handle: u32, track: u32, token: u32, out: *mut u8, capacity:
 mod tests {
     use super::*;
     use crate::TEST_LOCK as LOCK;
+    use dkrt_abi::core_api::CoreApi;
     use dkrt_test_support::{FakeCore, FakeHost};
 
     /// Client 0, track 1 has an op `kind`; its records and control sets are at fixed L2 addresses.

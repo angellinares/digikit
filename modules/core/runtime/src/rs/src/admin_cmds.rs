@@ -37,7 +37,7 @@ pub(crate) unsafe fn cmd_info(seq: u32, buf: *mut u8) -> i32 {
     // appended after the log range: the whole packed runtime version (bytes 2-3 keep its low 16 bits) and the capability bits
     wr32(rb.add(25), RUNTIME_VERSION);
     let log_caps = if dlog::sink_present() { CAP_LOG | CAP_PEEK | CAP_LOGCFG } else { 0 };
-    wr32(rb.add(29), log_caps | CAP_SELECT | CAP_RESTART | CAP_MODULES | CAP_CAPACITY | CAP_READ | CAP_VERIFY | CAP_SERVICE_CMDS | CAP_FOLDERS | CAP_SETTINGS | CAP_FILEHASH | CAP_RENAME | CAP_READBACK | CAP_LOADS);
+    wr32(rb.add(29), log_caps | CAP_SELECT | CAP_RESTART | CAP_MODULES | CAP_CAPACITY | CAP_READ | CAP_VERIFY | CAP_SERVICE_CMDS | CAP_FOLDERS | CAP_SETTINGS | CAP_FILEHASH | CAP_RENAME | CAP_READBACK | CAP_LOADS | CAP_SVC_ABI);
     // appended after the capability bits: the id of the flashed image (patchkit stamps it; zeros when there is none)
     let id = crate::image_id();
     let mut i = 0;
@@ -45,7 +45,9 @@ pub(crate) unsafe fn cmd_info(seq: u32, buf: *mut u8) -> i32 {
         *rb.add(33 + i) = id[i];
         i += 1;
     }
-    reply(CMD_INFO, seq, OK, 41)
+    // appended after the image id: the ABI fingerprint of interfaces B and C (`dkrt_abi::SVC_ABI`, CAP_SVC_ABI), the word a service file carries at header 0x3c
+    wr32(rb.add(41), dkrt_abi::service::SVC_ABI);
+    reply(CMD_INFO, seq, OK, 45)
 }
 
 /// CAPACITY: per resource of the runtime, its limit, what is used and the largest free piece. Body: none. Reply: `u8 version` (1), `u8 n`, then

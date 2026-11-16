@@ -4,7 +4,13 @@ import { globSync } from 'node:fs';
 import { basename, dirname, join } from 'node:path';
 import { checkAcceptanceTags } from './acceptance-tags.mjs';
 import { mergeTests, manifestClosure, read, records } from './module-manifests.mjs';
-import { DEVICE_INPUTS, VITEST_SETUP, builtSourceExclusions, deviceInputs } from './device-test-keys.mjs';
+import {
+  DEVICE_INPUTS,
+  VITEST_SETUP,
+  builtSourceExclusions,
+  deviceInputs,
+  serviceLeaves,
+} from './device-test-keys.mjs';
 
 export const IMAGE_BUILD = { target: 'build-objects', projects: ['tag:acceptance-image'] };
 // Writes the hash of every committed core object without its source hash (tools/nx/device-bytes.mjs).
@@ -264,6 +270,7 @@ export const testOnlyNodes = (
       {
         twin: targetName === 'test-device',
         subjects: config.implicitDependencies,
+        services: serviceLeaves(byId),
         base: workspaceRoot,
         mergeTests: mergeTests(join(workspaceRoot, root)),
       },

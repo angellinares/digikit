@@ -67,12 +67,16 @@
         {
           "dependentTasksOutputFiles": "**/*.dkm",
           "transitive": true
+        },
+        {
+          "dependentTasksOutputFiles": "**/*.dks",
+          "transitive": true
         }
       ],
       "dependsOn": ["cli", { "target": "pack", "projects": ["tag:module"] }],
       "outputs": [],
       "options": {
-        "command": "dist/patchkit/patchkit --root . coverage --sdk sdk/sdk.toml --allow sdk/coverage-allow.toml dist/modules/*/*.dkm",
+        "command": "dist/patchkit/patchkit --root . coverage --sdk sdk/sdk.toml --allow sdk/coverage-allow.toml dist/modules/*/*.dkm dist/modules/*/*.dks",
         "cwd": "."
       }
     },

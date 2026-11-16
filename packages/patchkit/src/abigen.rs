@@ -295,6 +295,11 @@ fn rust(abi: &Abi, lays: &[Layout], fns: &[(&FnToml, Sig)], inputs: &AbiInputs) 
         "/// Paths of the selection (`[limits.max] modules` of sdk/sdk.toml).\npub const SEL_MAX: usize = {};",
         inputs.sel_max
     );
+    let _ = writeln!(
+        s,
+        "/// Provider slots of the boot plan (`[limits.format] provider_max` of sdk/sdk.toml), separate from the selection.\npub const PROVIDER_MAX: usize = {};",
+        inputs.provider_max
+    );
     for l in lays {
         let _ = writeln!(s, "\n/// {}\n#[repr(C)]", l.doc);
         if !l.derive.is_empty() {

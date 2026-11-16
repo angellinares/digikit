@@ -8,8 +8,8 @@ use dkrt_sdk::*;
 pub enum Reason {
     /// A hard need names a service that needs a newer runtime than this one.
     NeedVersion,
-    /// A hard need names a service that neither the runtime nor an earlier module of the selection provides.
-    NeedMissing,
+    /// A hard need names a service (its name hash) that neither the runtime nor a provider that loaded provides.
+    NeedMissing(u32),
     /// The header table gives keys for a record kind that no service owns.
     UnownedKind(u32),
     /// Another module of the selection owns the kind, the slot or the hook site the module takes.
@@ -26,7 +26,7 @@ impl Reason {
         // if-let chains, not a `match`: a dense match becomes a PC-relative jump table, which is not ColdFire code
         if *self == Reason::NeedVersion {
             E_CONTRACT
-        } else if *self == Reason::NeedMissing {
+        } else if let Reason::NeedMissing(_) = *self {
             E_MISSING
         } else if let Reason::UnownedKind(_) = *self {
             E_PLAN_KIND
@@ -41,11 +41,13 @@ impl Reason {
 }
 
 impl Reason {
-    /// The two words `LOADS` v2 and `DkrtBootInfo.detail` carry for a refused module (`[load.state]`): the kind (`UnownedKind`), the kind, slot or hook site
+    /// The two words `LOADS` v2 and `DkrtBootInfo.detail` carry for a refused module (`[load.state]`): the kind (`UnownedKind`), the service hash (`NeedMissing`), the kind, slot or hook site
     /// (`DuplicateOwner`), the kind and the key (`DuplicateKey`), the capacity kind (`Fit`); zeros when the code says it all.
     pub fn detail(&self) -> [u32; 2] {
         if let Reason::UnownedKind(k) = *self {
             [k, 0]
+        } else if let Reason::NeedMissing(h) = *self {
+            [h, 0]
         } else if let Reason::DuplicateOwner(k) = *self {
             [k, 0]
         } else if let Reason::DuplicateKey(kind, key) = *self {

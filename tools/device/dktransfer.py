@@ -53,7 +53,7 @@ from tools.device import dkupload as D
 from tools.patchkit import modroots
 
 MAGIC = b"DKMF"
-GROUPS = ("Machines", "Effects", "Tools")
+GROUPS = ("Machines", "Effects", "Tools", "Services")
 KEYS_TAG = 3  # the KEYS entry of the header table (packages/dkneeds/src/keys.rs)
 SELECTION_MAX = 8
 
@@ -84,17 +84,18 @@ def header_info(h: bytes) -> dict[str, Any] | None:
 
 
 def group_of(f: bytes) -> str:
-    """Machines for a file whose keys table lists a machine, Effects for one that lists an effect, else Tools. The table is at the header's 0x90
-    pair (offset, size); a header alone, without the table, gives Tools."""
+    """Services for a file whose role word (header 0x38) is 1, Machines for a file whose keys table lists a machine, Effects for one that lists an
+    effect, else Tools. The table is at the header's 0x90 pair (offset, size); a header alone, without the table, gives Tools. Table versions
+    1 to TABLE_VERSION are read."""
     off, size = struct.unpack_from(">II", f, 0x90)
     t = f[off : off + size]
-    if (
-        size < 8
-        or len(t) != size
-        or struct.unpack_from(">IH", t, 0)
-        != (dkproto.TABLE_MAGIC, dkproto.TABLE_VERSION)
-    ):
+    if size < 8 or len(t) != size:
         return "Tools"
+    magic, version = struct.unpack_from(">IH", t, 0)
+    if magic != dkproto.TABLE_MAGIC or not 1 <= version <= dkproto.TABLE_VERSION:
+        return "Tools"
+    if struct.unpack_from(">I", f, dkproto.H_ROLE)[0] == 1:
+        return "Services"
     kinds: set[int] = set()
     at = 8
     for _ in range(struct.unpack_from(">H", t, 6)[0]):

@@ -970,6 +970,14 @@ pub fn cf_tail(s: &CfSite, base: u64, ret: u64) -> Result<Vec<u8>> {
     Ok(out)
 }
 
+/// The displaced instructions of a site as plan lines: address, bytes, instruction.
+pub fn fmt_displaced(site: &CfSite) -> Vec<String> {
+    site.insns
+        .iter()
+        .map(|d| format!("{:#010x}  {}  {}", d.addr, hex(&d.raw), d.insn))
+        .collect()
+}
+
 // ---- tests of the byte-level builders -----------------------------------------------------------------------
 
 #[cfg(test)]

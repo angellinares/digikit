@@ -14,7 +14,7 @@
 //! so `done` needs no job id.
 use crate::tracks::{client, core_, CLIENTS};
 use core::ptr::{addr_of, addr_of_mut, write_volatile};
-use dkrt_abi::core_api::{CoreApi, JOB_E_CANCELLED};
+use dkrt_abi::core_api::{SampleCore, JOB_E_CANCELLED};
 use dkrt_sdk::sample_tracks::{Handle, PATH};
 use dkrt_sdk::{E_CONTRACT, E_RANGE};
 
@@ -181,7 +181,7 @@ fn check_args(out: *const u8, frames: u32, columns: u32, capacity: u32) -> Resul
 }
 
 /// Zero the result, set the cursor and post the job for `cur`. 0, or the error of `worker::post` (the state is Idle then).
-unsafe fn start<C: CoreApi>(core: &C, w: *mut Window) -> i32 {
+unsafe fn start<C: SampleCore>(core: &C, w: *mut Window) -> i32 {
     let mut i = 0;
     while i < 2 * WINDOW_MAX {
         write_volatile(addr_of_mut!((*w).result[i]), 0);
@@ -216,7 +216,7 @@ unsafe extern "C" fn step(ctx: *mut u8) -> i32 {
 }
 
 /// UI task, once per job. A newer request waits in `next`: start it. Otherwise take the result.
-unsafe extern "C" fn done<C: CoreApi>(ctx: *mut u8, status: i32) {
+unsafe extern "C" fn done<C: SampleCore>(ctx: *mut u8, status: i32) {
     let w = ctx as *mut Window;
     let core = &*((*w).core as *const C);
     if (*w).state != State::Pending {
@@ -248,7 +248,7 @@ unsafe extern "C" fn done<C: CoreApi>(ctx: *mut u8, status: i32) {
 }
 
 /// The key logic of one call with a valid request: the columns when ready (copied to `out`), 0 while pending, or an error.
-unsafe fn lookup<C: CoreApi>(core: &C, w: *mut Window, req: &Req, out: *mut u8) -> i32 {
+unsafe fn lookup<C: SampleCore>(core: &C, w: *mut Window, req: &Req, out: *mut u8) -> i32 {
     let key = req.key;
     let state = (*w).state;
     if state == State::Pending {
@@ -286,7 +286,7 @@ unsafe fn lookup<C: CoreApi>(core: &C, w: *mut Window, req: &Req, out: *mut u8) 
 }
 
 /// The client's module went away: stop its job; no result is kept.
-unsafe fn reset_window<C: CoreApi>(core: &C, w: *mut Window) {
+unsafe fn reset_window<C: SampleCore>(core: &C, w: *mut Window) {
     if (*w).state == State::Pending {
         core.job_cancel(0, (*w).job);
         (*w).has_next = false;
@@ -297,14 +297,14 @@ unsafe fn reset_window<C: CoreApi>(core: &C, w: *mut Window) {
 }
 
 /// Client teardown (`tracks::remove`).
-pub(crate) unsafe fn reset<C: CoreApi>(core: &C, client: usize) {
+pub(crate) unsafe fn reset<C: SampleCore>(core: &C, client: usize) {
     if client < CLIENTS {
         reset_window(core, addr_of_mut!(WIN[client]));
     }
 }
 
 /// `sample_pool_peaks_window`, UI task.
-pub unsafe fn window<C: CoreApi>(
+pub unsafe fn window<C: SampleCore>(
     core: &C,
     handle: u32,
     index: u32,
@@ -357,6 +357,7 @@ pub unsafe fn window<C: CoreApi>(
 mod tests {
     use super::*;
     use crate::TEST_LOCK;
+    use dkrt_abi::core_api::CoreApi;
     use dkrt_test_support::FakeCore;
 
     fn key(first: u32) -> Key {

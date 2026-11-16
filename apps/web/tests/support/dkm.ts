@@ -9,12 +9,25 @@ export interface DkmOptions {
   dsp?: number;
   version?: number;
   salt?: number;
+  /** The header table version (default 1). */
+  tableVersion?: number;
+  /** The role word at header 0x38: 0 module, 1 service (default 0). */
+  role?: number;
 }
 
 /** A .dkm with a valid header (docs/design/digikit-dkm.md) of `size` bytes. */
 export function dkm(
   name: string,
-  { machine = 0, fx = 0, size = 700, dsp = 0, version = 0x000102, salt = 0 }: DkmOptions = {},
+  {
+    machine = 0,
+    fx = 0,
+    size = 700,
+    dsp = 0,
+    version = 0x000102,
+    salt = 0,
+    tableVersion = 1,
+    role = 0,
+  }: DkmOptions = {},
 ): Uint8Array {
   const b = new Uint8Array(size);
   b.set([0x44, 0x4b, 0x4d, 0x46], 0);
@@ -32,7 +45,8 @@ export function dkm(
   const v = new DataView(b.buffer);
   let at = 0xa0;
   v.setUint32(at, 0x444b5442);
-  v.setUint16(at + 4, 1);
+  v.setUint16(at + 4, tableVersion);
+  v.setUint32(0x38, role);
   v.setUint16(at + 6, groups.length ? 1 : 0);
   at += 8;
   if (groups.length) {

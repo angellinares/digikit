@@ -15,6 +15,10 @@ const leaf = (id) => id.split('/').at(-1);
 export const dkm = (dev, id) => `dist/modules/${dev}/${leaf(id)}.dkm`;
 // The module's address map (docs/ADDRMAP.md), written by `patchkit pack --addrmap` next to the .dkm.
 export const dkmMap = (dev, id) => dkm(dev, id).replace(/\.dkm$/, '.addrmap.json');
+// Pack output of a module, given its parsed [module] table: a service packs to .dks, every other module to .dkm.
+export const packOut = (dev, manifest, id = manifest.id) =>
+  manifest.role === 'service' ? dkm(dev, id).replace(/\.dkm$/, '.dks') : dkm(dev, id);
+export const packMap = (dev, manifest) => packOut(dev, manifest).replace(/\.dk[ms]$/, '.addrmap.json');
 export const records = (root) => {
   const file = join(root, 'project.json');
   return existsSync(file) ? (JSON.parse(readFileSync(file, 'utf8')).metadata?.runtimeAcceptance ?? []) : [];
