@@ -37,13 +37,14 @@ const USAGE: &str = "usage: patchkit [--root DIR] COMMAND ...
                                          with --fx-max the effect budget of the tightest device): JSON from devices/*.toml and devices/cycle-factors.json
   uses    set --id MODULE --device SHORT [--dsp-cost-voice N] [--dsp-cost-fx N]   write the measured DSP cost (instructions per block) into
                                          [uses.<device>] of the module's module.toml (only those lines change; comments stay); prints wrote/unchanged PATH
-  pack    MODULE_ID -o OUT.dkm [--addrmap map.json] [--name N] [--device SHORT] [--trace] [--manifest PATH]...   the module's ColdFire object as a run-time .dkm;
+  pack    MODULE_ID -o OUT.dkm [--addrmap map.json] [--name N] [--device SHORT] [--trace] [--manifest PATH]...   the module's ColdFire object as a run-time .dkm
+                                         (a `role = \"service\"` module packs to a .dks: OUT must end in .dks; any other module: not .dks);
                                          builds the objects that are stale first (content modules: cache out/cache/dko)
                                          (a `dynamic = true` module: its machine and param records for --device)
                                          (--trace: built with DK_TRACE defined, trace bit set in the header; objects cached apart)
                                          --manifest PATH (repeatable, relative to cwd): explicit library instead of discovery; include the module and its requires closure
                                          explicit manifests replace modules/, --modules-dir and PATCHKIT_MODULES
-  pack-all --device SHORT --out DIR ID...  pack many modules for a device in one process into DIR/<last part of id>.dkm, one JSON line each:
+  pack-all --device SHORT --out DIR ID...  pack many modules for a device in one process into DIR/<last part of id>.dkm (.dks for a service), one JSON line each:
                                          {id, file, bytes, sha256}, {id, error} or {id, skipped: \"patch-only\"}; exit 1 when a module failed
   synth-dkm SPEC.toml --device SHORT -o OUT.dkm [--size]   a synthetic .dkm of a chosen size, machines, parameters and DSP voices (capacity tests;
                                          the spec keys are in packages/patchkit/src/dkmsynth.rs)
@@ -669,6 +670,18 @@ plan.json {}",
                 trace: rest.iter().any(|a| a == "--trace"),
             };
             let packed = patchkit::pack::pack_module(&lib, id, &opts)?;
+            let service = packed.dkm.role == patchkit::dkm::ROLE_SERVICE;
+            if service != out.ends_with(".dks") {
+                return Err(Error(if service {
+                    format!(
+                        "{id} is a service (role = \"service\"): its file is a .dks, so -o must end in .dks, not {out}"
+                    )
+                } else {
+                    format!(
+                        "{id} is not a service: its file is a .dkm, so -o must not end in .dks ({out})"
+                    )
+                }));
+            }
             write(&out, &packed.bytes)?;
             if let Some(p) = flag(rest, "--addrmap") {
                 write(&p, packed.addrmap()?.to_json().as_bytes())?;
@@ -738,7 +751,12 @@ plan.json {}",
                     None => serde_json::json!({ "id": id, "skipped": "patch-only" }),
                     Some((_, Ok(p))) => {
                         let leaf = id.rsplit('/').next().unwrap_or(id);
-                        let path = out.join(format!("{leaf}.dkm"));
+                        let ext = if p.dkm.role == patchkit::dkm::ROLE_SERVICE {
+                            "dks"
+                        } else {
+                            "dkm"
+                        };
+                        let path = out.join(format!("{leaf}.{ext}"));
                         match std::fs::write(&path, &p.bytes) {
                             Ok(()) => serde_json::json!({
                                 "id": id,

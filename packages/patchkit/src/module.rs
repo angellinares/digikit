@@ -53,6 +53,10 @@ pub struct Manifest {
     /// word of the record's body). The keys go in the KEYS entry of the header table, where the boot planner checks that the kind has an owner and that no other module has the key.
     #[serde(default, rename = "record")]
     pub records: Vec<RecordKey>,
+    /// `[[export]] name = "dk_svctest_ping"`: the functions a service module (`role = "service"`) exports; each is an `[[import]]` of its service in sdk/sdk.toml.
+    /// Their name hashes and entry offsets go in the `EXPORTS` entry of the header table.
+    #[serde(default, rename = "export")]
+    pub exports: Vec<ExportDef>,
     /// `[uses.dt2]`, `[uses.dn2]`: registry rows the module takes on each device (the keys table's three counts). Per device because the runtime
     /// builds different rows per device (DT2 has no page rows).
     #[serde(default)]
@@ -81,6 +85,7 @@ impl Manifest {
                 self.module.id
             ));
         }
+        self.provided_service()?;
         for (table, ids) in [("machine", &self.machines), ("fx", &self.fxs)] {
             let mut seen = std::collections::BTreeSet::new();
             for r in ids {
@@ -123,6 +128,72 @@ impl Manifest {
         }
         Ok(())
     }
+
+    /// What a `role = "service"` module provides (`None` for any other role). The service is a `[[service]]` of sdk/sdk.toml without `rust` (provided by a
+    /// `.dks`), and each `[[export]]` is an `[[import]]` of that service.
+    pub fn provided_service(&self) -> Result<Option<crate::dkm::Provided>> {
+        let id = &self.module.id;
+        if self.module.role != Some(ModuleRole::Service) {
+            if self.module.service.is_some() || !self.exports.is_empty() {
+                return Err(err!(
+                    "{id}: `service` in [module] and [[export]] belong to a module with `role = \"service\"`"
+                ));
+            }
+            return Ok(None);
+        }
+        let Some(service) = &self.module.service else {
+            return Err(err!(
+                "{id}: a module with `role = \"service\"` needs `service = \"NAME\"` in [module]"
+            ));
+        };
+        if !crate::sdkgen::provider_services().contains(service) {
+            return Err(err!(
+                "{id}: service {service:?} is not a [[service]] of sdk/sdk.toml without `rust` (a service provided by a .dks)"
+            ));
+        }
+        // The runtime's find and Transfer name a provider by its file stem: `services/<service>.dks`, and the stem is the id's leaf.
+        let leaf = id.rsplit('/').next().unwrap_or(id);
+        if leaf.len() > 50 {
+            return Err(err!(
+                "{id}: the id's last part is {} bytes: a service file name is at most 50 (`services/<name>.dks` and its NUL must fit the 64 bytes of a selection path)",
+                leaf.len()
+            ));
+        }
+        if leaf != service {
+            return Err(err!(
+                "{id}: the id's last part {leaf:?} must equal the provided service {service:?} (the file is `{service}.dks`: the runtime finds a provider by its file name)"
+            ));
+        }
+        let imports = crate::sdkgen::import_infos();
+        let mut exports = vec![];
+        for e in &self.exports {
+            match imports.get(&e.name) {
+                Some(i) if i.service == *service => exports.push(e.name.clone()),
+                _ => {
+                    return Err(err!(
+                        "{id}: [[export]] {:?} is not an [[import]] of the service {service:?} in sdk/sdk.toml",
+                        e.name
+                    ));
+                }
+            }
+        }
+        Ok(Some(crate::dkm::Provided {
+            service: service.clone(),
+            exports,
+        }))
+    }
+}
+
+/// The module's provided service for `pack` (see [`Manifest::provided_service`]).
+pub fn service_of(m: &Module) -> Result<Option<crate::dkm::Provided>> {
+    m.manifest.provided_service()
+}
+
+/// An entry of `[[export]]`: the name of an exported function.
+#[derive(Clone, Debug, Deserialize, PartialEq, Eq)]
+#[serde(deny_unknown_fields)]
+pub struct ExportDef {
+    pub name: String,
 }
 
 /// An entry of `[[record]]`: the kind by its lower-case name (`dkneeds::KIND_NAMES`) and the key of one record of it.
@@ -425,6 +496,8 @@ pub enum ModuleRole {
     Installer,
     Adapter,
     App,
+    /// A service provider (a `.dks`; any category): needs `service` in [module].
+    Service,
 }
 
 #[derive(Clone, Debug, Deserialize)]
@@ -437,6 +510,9 @@ pub struct ModuleInfo {
     /// The layer of a `core` module (required for `category = "core"`, see `ModuleRole`)
     #[serde(default)]
     pub role: Option<ModuleRole>,
+    /// With `role = "service"`: the service the module provides (a `[[service]]` of sdk/sdk.toml without `rust`)
+    #[serde(default)]
+    pub service: Option<String>,
     /// What the module is; `framework` is internal (core modules)
     #[serde(rename = "type")]
     pub kind: ModuleKind,

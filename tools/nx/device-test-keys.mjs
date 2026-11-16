@@ -94,6 +94,7 @@ export const outputFiles = (globs) => globs.map((glob) => ({ dependentTasksOutpu
 const SHARED_BUILT = [
   'dist/bytes/core-objects.sha256',
   'dist/modules/*/*.dkm',
+  'dist/modules/*/*.dks',
   'dist/plusdrive/plusdrive',
   'apps/web/public/dksample.wasm',
 ];

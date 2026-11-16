@@ -62,8 +62,14 @@ pub const H_HDRSIZE: usize = dkneeds::H_HDRSIZE as usize;
 pub const H_SHA: usize = dkneeds::H_SHA as usize;
 pub const H_RUNTIME: usize = dkneeds::H_RUNTIME as usize;
 pub const H_VERSION: usize = dkneeds::H_VERSION as usize;
-/// 0x38..0x40: reserved, zero (the contract pairs of earlier formats; the one version is the runtime word at 0x30).
+/// 0x38: the role of the file, [`ROLE_MODULE`] or [`ROLE_SERVICE`].
+pub const H_ROLE: usize = dkneeds::H_ROLE as usize;
+/// 0x3c..0x40: reserved, zero (the contract pairs of earlier formats; the one version is the runtime word at 0x30).
 pub const H_RESERVED: usize = dkneeds::H_RESERVED as usize;
+/// A content module (a `.dkm`).
+pub const ROLE_MODULE: u32 = 0;
+/// A service provider (a `.dks`): its table has `PROVIDES` and `EXPORTS`.
+pub const ROLE_SERVICE: u32 = 1;
 pub const H_NAME: usize = dkneeds::H_NAME as usize;
 pub const H_IMAGE_OFF: usize = dkneeds::H_IMAGE_OFF as usize;
 pub const H_IMAGE_SIZE: usize = dkneeds::H_IMAGE_SIZE as usize;
@@ -161,8 +167,15 @@ pub fn needs_of_imports<'a>(
 
 /// The header table to write: `reg` is the table the caller built (empty: a module that takes and keeps nothing) with the `NEEDS` entry replaced by
 /// the needs of `imports`.
-fn table_with_needs(reg: &[u8], imports: &[&str]) -> Result<Vec<u8>> {
-    use dkneeds::keys::{KeyGroup, Keys, Table, write_table};
+///
+/// `provides` and `exports` are added to the ones of `reg`; a table with any `PROVIDES` is written as version 2.
+fn table_with_needs(
+    reg: &[u8],
+    imports: &[&str],
+    provides: &[dkneeds::keys::Pair],
+    exports_add: &[dkneeds::keys::Pair],
+) -> Result<Vec<u8>> {
+    use dkneeds::keys::{Bind, KeyGroup, Keys, Pair, Table, write_table};
     let keys = if reg.is_empty() {
         None
     } else {
@@ -172,7 +185,16 @@ fn table_with_needs(reg: &[u8], imports: &[&str]) -> Result<Vec<u8>> {
     let (mut uses, mut kinds, mut slots, mut hooks, mut exports, mut resources) =
         (vec![], vec![], vec![], vec![], vec![], vec![]);
     let mut groups: Vec<(u32, Vec<u32>)> = vec![];
+    let mut provided: Vec<Pair> = vec![];
+    let mut binds: Vec<Bind> = vec![];
     if let Some(k) = &keys {
+        provided.extend(k.provides().map(|(a, b)| Pair { a, b }));
+        binds.extend((0..k.bind_count()).filter_map(|i| k.bind(i)).map(|b| Bind {
+            site: b.site,
+            addr: b.addr,
+            tramp: b.tramp,
+            stock: b.stock,
+        }));
         uses.extend(k.uses());
         kinds.extend(k.kinds());
         slots.extend(k.slots());
@@ -183,11 +205,15 @@ fn table_with_needs(reg: &[u8], imports: &[&str]) -> Result<Vec<u8>> {
             groups.push((kind, ks.collect()));
         }
     }
+    exports.extend_from_slice(exports_add);
+    provided.extend_from_slice(provides);
     let key_groups: Vec<KeyGroup> = groups
         .iter()
         .map(|(kind, keys)| KeyGroup { kind: *kind, keys })
         .collect();
     let t = Table {
+        provides: &provided,
+        bind: &binds,
         needs: &needs,
         uses: &uses,
         keys: &key_groups,
@@ -226,6 +252,15 @@ pub struct Options {
     pub stereo: bool,
     /// A machine that reads `gate` (`DK_MACHINE_GATE` in its desc); informational for tools.
     pub gate: bool,
+    /// A service provider (`role = "service"`): the file gets [`ROLE_SERVICE`] and a table with its `PROVIDES` and `EXPORTS`. `None`: a content module.
+    pub service: Option<Provided>,
+}
+
+/// What a service file provides: the service name (`[module] service`) and the functions it exports (`[[export]]`), each a global function of the object.
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub struct Provided {
+    pub service: String,
+    pub exports: Vec<String>,
 }
 
 /// "1.2.3" -> 0x010203
@@ -481,7 +516,31 @@ fn pack_inner(
     let reloc_off = import_off + imports.len() * IMPORT_LEN;
     let reg_off = reloc_off + relocs.len() * 8;
     // the header table: the packer's uses and keys (none: a module that keeps nothing) and the needs of the imports the module links
-    let table = table_with_needs(reg, &imports)?;
+    let (provides, svc_exports) = match &o.service {
+        None => (vec![], vec![]),
+        Some(s) => {
+            let mut ex: Vec<dkneeds::keys::Pair> = vec![];
+            for n in &s.exports {
+                let at = sym(n)?.ok_or_else(|| {
+                    err!("the service exports {n}, which the object does not define")
+                })?;
+                let a = dkneeds::keys::name_hash(n);
+                if ex.iter().any(|p| p.a == a) {
+                    return Err(err!("the service exports {n} twice"));
+                }
+                ex.push(dkneeds::keys::Pair { a, b: at });
+            }
+            ex.sort_by_key(|p| p.a);
+            (
+                vec![dkneeds::keys::Pair {
+                    a: dkneeds::keys::name_hash(&s.service),
+                    b: o.version,
+                }],
+                ex,
+            )
+        }
+    };
+    let table = table_with_needs(reg, &imports, &provides, &svc_exports)?;
     let reg: &[u8] = &table;
     let reg_size = reg.len();
     let dsp_off = align_up(reg_off + reg_size, 16);
@@ -506,6 +565,9 @@ fn pack_inner(
             | if o.trace { FLAG_TRACE } else { 0 },
     );
     put(&mut f, H_VERSION, o.version);
+    if o.service.is_some() {
+        put(&mut f, H_ROLE, ROLE_SERVICE);
+    }
     f[H_NAME..H_NAME + o.name.len()].copy_from_slice(o.name.as_bytes());
     put(&mut f, H_IMAGE_OFF, image_off as u32);
     put(&mut f, H_IMAGE_SIZE, image.len() as u32);
@@ -545,6 +607,8 @@ fn pack_inner(
 pub struct Dkm {
     pub name: String,
     pub version: u32,
+    /// [`ROLE_MODULE`] or [`ROLE_SERVICE`].
+    pub role: u32,
     pub runtime_min: u32,
     /// Built with `DK_TRACE` ([`FLAG_TRACE`]); not part of `runtime_min`.
     pub trace: bool,
@@ -639,10 +703,15 @@ impl Dkm {
                 },
             ));
         }
+        let role = get(f, H_ROLE);
+        if role != ROLE_MODULE && role != ROLE_SERVICE {
+            return Err(err!("role {role} is not supported (0 module, 1 service)"));
+        }
         let opt = |v: u32| (v != NONE).then_some(v);
         Ok(Dkm {
             name,
             version: get(f, H_VERSION),
+            role,
             runtime_min: get(f, H_RUNTIME) & !FLAG_TRACE,
             trace: get(f, H_RUNTIME) & FLAG_TRACE != 0,
             sha256: hex(&f[H_SHA..H_SHA + 32]),
@@ -760,6 +829,7 @@ mod tests {
             trace: false,
             stereo: false,
             gate: false,
+            service: None,
         }
     }
 
@@ -847,11 +917,12 @@ mod tests {
     fn the_header_has_the_needed_runtime_and_no_contract_pairs() {
         // 0x38..0x40 are reserved zero; 0x30 is the newest `since` of the imports (0: none) with the trace flag
         let f = pack(&object(), &opts()).unwrap();
-        assert_eq!(&f[H_RESERVED..H_RESERVED + 8], &[0u8; 8]);
+        assert_eq!(&f[H_ROLE..H_ROLE + 4], &[0u8; 4]);
+        assert_eq!(&f[H_RESERVED..H_RESERVED + 4], &[0u8; 4]);
         // no import is linked: the file needs the version that introduced the header table
         assert_eq!(get(&f, H_RUNTIME), crate::sdkgen::table_runtime());
         let f = pack_keys(Some(&object()), &[], &[0u8; 16], &opts()).unwrap();
-        assert_eq!(&f[H_RESERVED..H_RESERVED + 8], &[0u8; 8]);
+        assert_eq!(&f[H_ROLE..H_ROLE + 8], &[0u8; 8]);
         let traced = Options {
             trace: true,
             ..opts()

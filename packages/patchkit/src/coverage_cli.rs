@@ -326,6 +326,7 @@ mod tests {
                 trace: false,
                 stereo: false,
                 gate: false,
+                service: None,
             },
         )
         .unwrap()

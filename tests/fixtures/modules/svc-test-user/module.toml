@@ -1,0 +1,21 @@
+[module]
+id = "test/svc-test-user"
+version = "0.1.0"
+name = "Test service user"
+category = "test"
+type = "raw"
+author = "digikit"
+status = "experimental"
+summary = "Test fixture: a module that calls dk_svctest_ping, so it has a hard NEED on the test-only service svc-test"
+requires = []
+conflicts = []
+
+[targets]
+"dt2-1.17" = "experimental"
+"dn2-1.12" = "experimental"
+
+# C, built by `patchkit build`. Loaded by the digikit runtime from the card store (`patchkit pack test/svc-test-user`).
+[[object]]
+path = "build/svc-test-user.dko.json"
+sources = ["src/c/svc_test_user.c"]
+place = "cf.expansion"
