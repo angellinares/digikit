@@ -11,6 +11,8 @@ import { haveWasmAndImages as need, images, py, root, wasmPath, workDir, writeBu
 // test that took 408 s on a loaded machine. The limit fits that work.
 vi.setConfig({ testTimeout: 900_000 });
 
+type Registry = { name: string; entries: { id: string; index: number }[]; gaps?: number[]; count?: number };
+
 /** The raw exports of patchkit.wasm (`pk_*`), with the helpers that pass bytes in and read results out. */
 async function load() {
   const { instance } = await WebAssembly.instantiate(new Uint8Array(readFileSync(wasmPath)), {});
@@ -150,6 +152,102 @@ test.skipIf(!need)(
       ['pg_eps', 325],
       ['pg_zeta', 326],
     ]);
+  },
+);
+
+test.skipIf(!need)(
+  'wasm and CLI produce byte-identical output for core/machines and core/params on each device',
+  async () => {
+    const work = workDir('pk-wasm-');
+    const bundle = readFileSync(writeBundle(work));
+    const { x, put, get, text } = await load();
+    const mods = 'core/machines,core/params';
+    for (const dev of ['dt2', 'dn2'] as const) {
+      const out = join(work, `${dev}-machines.syx`);
+      const plan = join(work, `${dev}-machines.plan.json`);
+      py('tools.patchkit.patchkit', 'patch', '--firmware', images[dev], '--modules', mods, '-o', out, '--plan', plan);
+      const [fp, fl] = put(readFileSync(images[dev]));
+      const [bp, bl] = put(bundle);
+      const [ip, il] = put(Buffer.from(mods));
+      assert.equal(x.pk_apply(fp, fl, bp, bl, ip, il), 0, text(x.pk_err_ptr, x.pk_err_len));
+      assert.ok(
+        Buffer.from(get(x.pk_out_ptr, x.pk_out_len)).equals(readFileSync(out)),
+        `${dev}: wasm and CLI output differ`,
+      );
+      const wasmPlan = text(x.pk_plan_ptr, x.pk_plan_len);
+      assert.equal(wasmPlan, readFileSync(plan, 'utf8'), `${dev}: plan.json differs`);
+      // no module adds rows at patch time: the registries exist and are empty
+      const registries = JSON.parse(wasmPlan).registries as Registry[];
+      for (const name of ['machines', 'params']) {
+        assert.deepEqual(
+          registries.find((r) => r.name === name)?.entries,
+          [],
+          `${dev}: ${name} has no patch-time rows`,
+        );
+      }
+    }
+  },
+);
+
+test.skipIf(!need)(
+  'wasm adds core/machines and core/params as requirements of core/dynreg like the CLI and the plan reserves the run-time rows',
+  async () => {
+    const work = workDir('pk-wasm-');
+    const { x, put, get, text } = await load();
+    const [bp, bl] = put(readFileSync(writeBundle(work)));
+    // the first parameter code and the reserved page rows differ by device (the machine rows are the types 16 to 23 on both)
+    const want = {
+      dt2: { gaps: [7, 8, 9, 10, 11, 12, 13, 14, 15], firstParam: 275, pages: 0 },
+      dn2: { gaps: [5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15], firstParam: 321, pages: 8 },
+    } as const;
+    for (const dev of ['dt2', 'dn2'] as const) {
+      const out = join(work, `${dev}-dynreg.syx`);
+      const plan = join(work, `${dev}-dynreg.plan.json`);
+      // the CLI prints what it added
+      const said = py(
+        'tools.patchkit.patchkit',
+        'patch',
+        '--firmware',
+        images[dev],
+        '--modules',
+        'core/dynreg',
+        '-o',
+        out,
+        '--plan',
+        plan,
+      );
+      assert.match(said, /added by requires: .*core\/machines/);
+      const [fp, fl] = put(readFileSync(images[dev]));
+      const [ip, il] = put(Buffer.from('core/dynreg'));
+      assert.equal(x.pk_apply(fp, fl, bp, bl, ip, il), 0, text(x.pk_err_ptr, x.pk_err_len));
+      assert.ok(
+        Buffer.from(get(x.pk_out_ptr, x.pk_out_len)).equals(readFileSync(out)),
+        `${dev}: wasm and CLI output differ`,
+      );
+      const wasmPlan = text(x.pk_plan_ptr, x.pk_plan_len);
+      assert.equal(wasmPlan, readFileSync(plan, 'utf8'), `${dev}: plan.json differs`);
+      const registries = JSON.parse(wasmPlan).registries as Registry[];
+      const find = (name: string) => registries.find((r) => r.name === name)!;
+      const machines = find('machines');
+      assert.deepEqual(
+        machines.entries.map((e) => [e.id, e.index]),
+        Array.from({ length: 8 }, (_, i) => [`dyn${16 + i}`, 16 + i]),
+        `${dev}: eight reserved run-time machine rows`,
+      );
+      assert.deepEqual(machines.gaps, want[dev].gaps, `${dev}: the rows between the stock and the run-time types`);
+      const params = find('params').entries;
+      assert.equal(params.length, 16, `${dev}: sixteen reserved parameter rows`);
+      assert.deepEqual(
+        [params[0]!.id, params[0]!.index],
+        ['dp0', want[dev].firstParam],
+        `${dev}: first reserved parameter code`,
+      );
+      assert.equal(
+        registries.find((r) => r.name === 'pages')?.entries.length ?? 0,
+        want[dev].pages,
+        `${dev}: reserved page rows`,
+      );
+    }
   },
 );
 
