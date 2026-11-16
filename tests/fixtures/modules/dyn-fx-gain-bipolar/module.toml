@@ -1,0 +1,47 @@
+[module]
+id = "test/dyn-fx-gain-bipolar"
+version = "0.1.0"
+name = "FX gain bipolar (run time)"
+category = "test"
+type = "fx"
+author = "digikit"
+status = "experimental"
+summary = "Test effect of the FX contract with a signed knob (the BIAS knob, -64 to +63, default 0): scales the master block by 1 + p0 / 64, for the signed value template of the FX page."
+dynamic = true
+ports = ["dt2-1.17", "dn2-1.12"]
+requires = []
+conflicts = []
+
+[targets]
+"dt2-1.17" = "experimental"
+"dn2-1.12" = "experimental"
+
+# `patchkit pack test/dyn-fx-gain-bipolar --device dt2 -o fx-gain-bipolar.dkm` makes the .dkm. The digikit runtime sends the DSP object to the DSP and
+# publishes a free effect row of core/dynfx for the effect (state reserved behind the image, p0 at its default).
+# The effect is declared by builder calls in init (src/module.c). The id `gain` is what the keys hash; the DSP symbols start with `gbp`.
+[[fx]]
+id = "gain"
+dsp = "gbp"
+
+[[object]]
+path = "build/dyn-fx-gain-bipolar-cf.dko.json"
+sources = ["src/module.c"]
+place = "cf.expansion"
+
+[[object]]
+path = "build/dyn-fx-gain-bipolar-dsp.dko.json"
+sources = ["src/dsp/dyn_fx_gain_bipolar.s"]
+place = "dsp.l2"
+devices = ["dt2", "dn2"]
+
+[uses.dt2]
+machine_rows = 0
+param_rows = 0
+page_rows = 0
+record_bytes = 436
+
+[uses.dn2]
+machine_rows = 0
+param_rows = 0
+page_rows = 0
+record_bytes = 436
