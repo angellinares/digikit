@@ -41,7 +41,7 @@ import { OpQueue, hex, pokeHalf, realRig, type RigOpener } from './ops.ts';
 import { buildMachine, type MachineBuilt, type Range } from './place.ts';
 import { PyRandom } from './prng.ts';
 import type { CallResult, RigPort } from './rig.ts';
-import { frameHw, machineLabel, type MachineSpec } from './spec.ts';
+import { frameHw, galleryGaps, machineLabel, type MachineSpec } from './spec.ts';
 import { SW_ALIAS_BASE } from './toolchain.ts';
 
 const NAN = 0xffffffff;
@@ -84,6 +84,8 @@ export interface MachineRigOptions {
   profile?: boolean;
   /** `.PKBSS` memory (the module's bss and the voice state blocks) starts as NaN words (default true); false zeroes it and needs a reason at the call site (sound-check cases: `poison_reason`) */
   poison?: boolean;
+  /** with `poison`: fill the memory with a seeded integer pattern instead of NaN words (a second fill, to show that the output does not depend on the initial state) */
+  fillSeed?: number;
   open?: RigOpener;
   /** the placed and linked code: built from the spec by default (a host test passes a made-up one) */
   built?: MachineBuilt;
@@ -109,6 +111,7 @@ export class MachineRig {
   private readonly recordStores: boolean;
   private readonly profile: boolean;
   private readonly poison: boolean;
+  private readonly fillSeed: number | undefined;
 
   private constructor(spec: MachineSpec, o: MachineRigOptions) {
     this.spec = spec;
@@ -119,12 +122,17 @@ export class MachineRig {
     this.recordStores = o.recordStores ?? false;
     this.profile = o.profile ?? false;
     this.poison = o.poison ?? true;
+    this.fillSeed = o.fillSeed;
     this.ctxRng = new PyRandom(o.seed ?? 0xd1617);
     this.byId = new Map(spec.params.map((p) => [p.id, p]));
   }
 
   /** A fresh core: zeroed stand-ins, initialised data, parameters at their defaults, the voice idle. */
   static async open(spec: MachineSpec, o: MachineRigOptions = {}): Promise<MachineRig> {
+    if (!o.built) {
+      const gaps = galleryGaps(spec.module.split('#')[0]!).filter((g) => g.startsWith(`${spec.device}:`));
+      if (gaps.length) throw new Error(`${spec.module}: ${gaps.join('; ')}; run \`mise run module:check ${spec.module}\` to write it`);
+    }
     const rig = new MachineRig(spec, o);
     await rig.reset(o.open ?? realRig);
     return rig;
@@ -132,6 +140,17 @@ export class MachineRig {
 
   async close(): Promise<void> {
     await this.port.close();
+  }
+
+  /** The initial word of a poisoned memory word: NaN, or a seeded integer pattern (xorshift of the seed and the word address). */
+  private fillWord(address: number): number {
+    if (this.fillSeed === undefined) return NAN;
+    let x = (Math.imul(address + 1, 0x9e3779b1) ^ this.fillSeed) >>> 0 || 1;
+    x ^= x << 13;
+    x >>>= 0;
+    x ^= x >>> 17;
+    x ^= x << 5;
+    return x >>> 0;
   }
 
   private async reset(open: RigOpener): Promise<void> {
@@ -163,7 +182,7 @@ export class MachineRig {
     for (const init of b.inits) {
       const view = new DataView(init.bytes.buffer, init.bytes.byteOffset, init.bytes.byteLength);
       for (let k = 0; k < Math.floor(init.bytes.length / 4); k++)
-        q.poke(nw(init.address) + k, init.bss && this.poison ? NAN : view.getUint32(4 * k, true));
+        q.poke(nw(init.address) + k, init.bss && this.poison ? this.fillWord(nw(init.address) + k) : view.getUint32(4 * k, true));
     }
     const { port } = await open({
       return_sw: RETURN_SW,

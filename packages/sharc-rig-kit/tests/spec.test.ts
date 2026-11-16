@@ -95,7 +95,7 @@ path = "build/dsp.dko.json"
 sources = ["src/dsp/go.s"]
 `,
   );
-  write('gap/build/gen/gallery.json', JSON.stringify({ machines: [{ devices: { dn2: { knobs: [] } } }], params: {} }));
+  write('gap/build/gen/gallery.json', JSON.stringify({ machines: [{ id: 'gap-one', devices: { dn2: { knobs: [] }, dt2: { knobs: [] } } }], params: { dn2: [{ id: 'x' }], dt2: [{ id: 'x' }] } }));
 });
 
 afterAll(() => {
@@ -131,12 +131,27 @@ describe('machineSpec', () => {
 });
 
 describe('galleryGaps', () => {
-  it('names a device of [targets] that the gallery does not list, and nothing for a complete gallery', () => {
-    expect(galleryGaps('zzt/gap')).toEqual(['dt2']);
-    write(
-      'gap/build/gen/gallery.json',
-      JSON.stringify({ machines: [{ devices: { dn2: { knobs: [] }, dt2: { knobs: [] } } }], params: {} }),
-    );
+  const gallery = (machines: unknown[], params: unknown) => write('gap/build/gen/gallery.json', JSON.stringify({ machines, params }));
+  const two = { dn2: { knobs: [] }, dt2: { knobs: [] } };
+  const filled = { dn2: [{ id: 'x' }], dt2: [{ id: 'x' }] };
+
+  it('names a device of [targets] that the gallery does not list', () => {
+    gallery([{ id: 'gap-one', devices: { dn2: { knobs: [] } } }], filled);
+    expect(galleryGaps('zzt/gap')).toEqual(['dt2: machine gap-one is not listed in build/gen/gallery.json']);
+  });
+
+  it('names a device entry with an empty parameter list', () => {
+    gallery([{ id: 'gap-one', devices: two }], { dn2: [{ id: 'x' }], dt2: [] });
+    expect(galleryGaps('zzt/gap')).toEqual(['dt2: machine gap-one has no parameter in build/gen/gallery.json']);
+  });
+
+  it('checks every machine of the gallery, not only the first', () => {
+    gallery([{ id: 'gap-one', devices: two }, { id: 'gap-two', devices: { dn2: { knobs: [] } } }], filled);
+    expect(galleryGaps('zzt/gap')).toEqual(['dt2: machine gap-two is not listed in build/gen/gallery.json']);
+  });
+
+  it('reports nothing for a complete gallery', () => {
+    gallery([{ id: 'gap-one', devices: two }], filled);
     expect(galleryGaps('zzt/gap')).toEqual([]);
   });
 });

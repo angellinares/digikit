@@ -32,7 +32,7 @@ import { P0, FxRig } from './fx.ts';
 import { MachineRig } from './machine.ts';
 import type { RigOpener } from './ops.ts';
 import { PyRandom } from './prng.ts';
-import { DEVICES, fxSpec, galleryGaps, machineSpec, type Device } from './spec.ts';
+import { DEVICES, fxSpec, machineSpec, type Device } from './spec.ts';
 
 export type Toml = Record<string, unknown>;
 
@@ -151,18 +151,21 @@ export interface RunOptions {
 
 const words = (params: Record<string, number>): [string, number][] => Object.entries(params);
 
-async function runMachine(module: string, device: Device, c: RigCase, dir: string, o: RunOptions): Promise<Trace> {
+async function runMachine(
+  module: string,
+  device: Device,
+  c: RigCase,
+  dir: string,
+  o: RunOptions,
+  fillSeed?: number,
+): Promise<Trace> {
   const spec = machineSpec(module, device);
   if (!spec) throw new Error(`${module} is no machine for ${device}`);
-  if (galleryGaps(module).includes(device))
-    throw new Error(
-      `${module}: build/gen/gallery.json lists no ${device} machine, so the case would run with no parameters: run \`mise run module:check ${module}\` to write it`,
-    );
-  if (c.poison === false && !c.poison_reason) throw new Error(`${c.name}: poison = false needs a poison_reason`);
   const rig = await MachineRig.open(spec, {
     recordStores: true,
     track: c.track ?? 0,
     poison: c.poison !== false,
+    fillSeed,
     open: o.open,
   });
   const trace: Trace = {
@@ -556,6 +559,22 @@ export function evaluate(t: Trace, c: Check, dir: string): string | null {
   }
 }
 
+/** The second fill of a machine case: a seeded integer pattern in all module state, next to the NaN fill of the first run. */
+export const FILL_SEED = 0x5eed1234;
+
+/** The first difference between the runs of two fills, or null: the output does not depend on the initial state. */
+export function stateDependence(a: Trace, b: Trace): string | null {
+  for (const key of ['out', 'right'] as const) {
+    const x = a[key] ?? [];
+    const y = b[key] ?? [];
+    for (let k = 0; k < Math.max(x.length, y.length); k++)
+      for (let i = 0; i < Math.max(x[k]?.length ?? 0, y[k]?.length ?? 0); i++)
+        if (!Object.is(x[k]?.[i], y[k]?.[i]))
+          return `the output depends on the initial state: ${key} block ${k} sample ${i} is ${x[k]?.[i]} with NaN words and ${y[k]?.[i]} with a seeded integer fill`;
+  }
+  return null;
+}
+
 /** Run every case of a file for the devices it names (both when it names none) and check it. */
 export async function runRigFile(module: string, file: string, o: RunOptions = {}): Promise<CheckResult[]> {
   const dir = path.dirname(file);
@@ -567,6 +586,11 @@ export async function runRigFile(module: string, file: string, o: RunOptions = {
       const t = isFx ? await runFx(module, c, dir, o) : await runMachine(module, device as Device, c, dir, o);
       const at = { case: c.name, device };
       results.push({ ...at, kind: 'implicit rules', ok: t.failure === null, message: t.failure ?? '' });
+      if (!isFx && c.poison !== false) {
+        const other = await runMachine(module, device as Device, c, dir, o, FILL_SEED);
+        const why = stateDependence(t, other);
+        results.push({ ...at, kind: 'initial state', ok: why === null, message: why ?? '' });
+      }
       for (const check of c.check ?? []) {
         let message: string | null;
         try {
@@ -598,6 +622,10 @@ export async function pinRigFile(module: string, file: string, o: RunOptions = {
     if (devices.length !== 1) throw new Error(`${c.name}: a case with a same-as check names exactly one device`);
     const t = isFx ? await runFx(module, c, dir, o) : await runMachine(module, devices[0]!, c, dir, o);
     if (t.failure !== null) throw new Error(`${c.name}: ${t.failure}`);
+    if (!isFx && c.poison !== false) {
+      const why = stateDependence(t, await runMachine(module, devices[0]!, c, dir, o, FILL_SEED));
+      if (why !== null) throw new Error(`${c.name}: ${why}`);
+    }
     for (const k of pins) {
       const h = wordsHash(signal(t, k));
       hashes.push(h);

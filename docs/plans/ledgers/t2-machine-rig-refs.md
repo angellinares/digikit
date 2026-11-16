@@ -15,7 +15,7 @@ File per module: `modules/machines/<m>/tests/rig/equiv-note.toml`, run by `pnpm 
 | Notes | one | pluck: a second note 67 after the first (750 blocks) |
 | Length | 24000 interleaved float32 samples (0.25 s) from the onset | 375 blocks of 32 samples (0.25 s), mono machine output, from the trigger |
 | Signal | the whole firmware path: machine, track filter, mixer, output | the machine's own DSP through the dsp-voice adapter; no firmware |
-| Voice state at start | uninitialised L2 for analog and pd (`UNINIT`) | poisoned: the module's bss and the voice state blocks are NaN words in every machine rig case (default `poison`, opt-out needs a `poison_reason`); a machine that reads unwritten state gives NaN and fails the finite rule, which is a machine bug to report, not a pin |
+| Voice state at start | uninitialised L2 for analog and pd (`UNINIT`) | every case runs twice with all module state filled differently (NaN words, then a seeded integer pattern; the module's bss and the voice state blocks) and fails when the outputs differ: the output does not depend on the initial state. The adapter's `note_on` clears the first `clear` bytes of each voice state, as on the device. A machine that reads unwritten state is a machine bug to report, not a pin |
 | Pin | SHA-256 of the PCM window | SHA-256 of the float32 output words (`same-as`), one case per device |
 | Also checked | audible | `peak >= 0.01`, `no-clip`, and the implicit rules of every rig case (finite output, context registers, own memory only) |
 
@@ -43,7 +43,7 @@ Peak: largest absolute output sample of the pinned signal (an independent rig ru
 
 What the old device pin covered that these cases do not: the track filter (analog, pd and bd run through the track's stock filter), the mixer and the output path (levels, pan, master), the stereo interleave of the PCM, the exact onset and trigger timing of the firmware, the real card load and boot of the module, and the real voice state at boot (`UNINIT` on analog and pd). They cover what the old pin could not tell apart from firmware effects: the machine's own DSP output alone, with poisoned state.
 
-DT2 against DN2 (host rig, both outputs dumped, 2026-11-16): the hashes differ because DN2's note starts one block (32 samples) later than DT2's. The first differing sample is 32 for analog, 1 for bd and 0 for pluck; for analog, pd and pluck (one note) the DN2 output shifted by exactly 32 samples equals the DT2 output (maximum difference 0), and no other shift in -64..64 matches. Cause: the DN2 trigger is the rising edge of a frame bit that the voice sees one block after the call that sets it, while the DT2 trigger writes the voice record and sounds in the same block (`trigger` and the device comment in `packages/sharc-rig-kit/src/machine.ts`); the peaks are equal because the signal is the same. The pluck two-note case does not match as a whole only because the second note also shifts by a block while the first note's tail overlaps it. These cases stay per device: the shift is the real trigger contract of the two devices, so the cases pin each path. **bd is different and is a defect of the committed gallery, not a rig result:** `modules/machines/bd/build/gen/gallery.json` has a `dn2` entry only, so the DT2 spec of bd has no parameters and the rig writes no defaults (bend, index, ratio and noise stay 0), while DN2 writes 16384, 8192, 0 and 0. The two bd outputs therefore differ beyond a shift (maximum difference 0.55 after a 32-sample shift, with any parameter subset). The bd DT2 pin is therefore not a manifest-default note and must be re-pinned after `build/gen/gallery.json` of bd gets its `dt2` machine and parameters (analog, pd and pluck have both). See "Pending".
+DT2 against DN2 (host rig, both outputs dumped, 2026-11-16): the hashes differ because DN2's note starts one block (32 samples) later than DT2's. The first differing sample is 32 for analog, 1 for bd and 0 for pluck; for analog, pd and pluck (one note) the DN2 output shifted by exactly 32 samples equals the DT2 output (maximum difference 0), and no other shift in -64..64 matches. Cause (the rig's model of the trigger, `trigger` at `machine.ts` and the DT2 and DN2 trigger paths in `block`; not measured on the device): the DN2 trigger is the rising edge of a frame bit that the voice sees one block after the call that sets it, while the DT2 trigger writes the voice record and sounds in the same block (`trigger` and the device comment in `packages/sharc-rig-kit/src/machine.ts`); the peaks are equal because the signal is the same. The pluck two-note case does not match as a whole only because the second note also shifts by a block while the first note's tail overlaps it. These cases stay per device: the shift is the real trigger contract of the two devices, so the cases pin each path. **bd is different and is a defect of the committed gallery, not a rig result:** `modules/machines/bd/build/gen/gallery.json` has a `dn2` entry only, so the DT2 spec of bd has no parameters and the rig writes no defaults (bend, index, ratio and noise stay 0), while DN2 writes 16384, 8192, 0 and 0. The two bd outputs therefore differ beyond a shift (maximum difference 0.55 after a 32-sample shift, with any parameter subset). The bd DT2 pin is therefore not a manifest-default note and must be re-pinned after `build/gen/gallery.json` of bd gets its `dt2` machine and parameters (analog, pd and pluck have both). See "Pending".
 
 Not pinned: no machine produced NaN or failed the finite rule under poison.
 
@@ -53,24 +53,41 @@ Each deleted test has the same assertions (`defineEquiv` in `tests/regression/ru
 
 | # | Deleted assertion (all four machines, DT2 and DN2) | New home |
 | --- | --- | --- |
-| 1 | The selection loaded at boot: module count equals the selection | dynreg equiv (same boot path, `test/sine`, `test/dyn-dn2`); device conformance load of the module |
-| 2 | Every module load result is 0 | dynreg equiv; device conformance load |
-| 3 | Loaded count equals the selection and safe mode is 0 | dynreg equiv; device conformance load |
-| 4 | One voice row is claimed by the machine | `test-conformance-rig` (descriptor and voice claim through the gallery); dynreg equiv for the runtime row path. Dropped for the machine itself as a device assertion: the count is a descriptor property |
+| 1 | The selection loaded at boot: module count equals the selection | dynreg equiv (fixtures, same boot path). Real module: `<id>:test-conformance` (`tests/conformance/assert-load.ts`) uploads the real `.dkm` over USB, reboots, and asserts that exactly the debug module and this module are registered, the bytes survive the reboot and the loader reports its version and needed runtime version |
+| 2 | Every module load result is 0 | dynreg equiv (fixtures). Real module: the same suite asserts that the DSP loader completes the selected module with result 0 (MOD_DSP log), that the module has `faults = 0` and `guard_off = false`, and that a DSP part was allocated (`dsp_len > 0`) |
+| 3 | Loaded count equals the selection and safe mode is 0 | dynreg equiv (fixtures). Real module: the same suite asserts that the boot log holds no SAFE, DSP_STOPPED, CRASH_FOUND, DSP_ABSENT, MACHINE_FAULT, MACHINE_DISABLED or TABLE_BAD record and that the UI is reached |
+| 4 | One voice row is claimed by the machine | Weaker: the conformance load asserts `rows > 0` and exactly one published firmware type for a machine, not that one voice row is claimed. `test-conformance-rig` checks the gallery, not the runtime rows. Exact voice-row count: dynreg equiv only, for its fixtures |
 | 5 | Pluck only: the address map resolves `_pk_render` to the module's DSP base (`dspName`) | machine fixture suite (R12-6), generic addrmap check: a fixture module with a DSP section (e.g. `test/sine`) resolves a module DSP symbol through the device load table. Another lane writes it; not part of this branch. Must be green before the deletion |
 | 6 | PCM from the onset (24000 samples) has the pinned SHA-256 | `tests/rig/equiv-note.toml` (`same-as`), one case per device, see above. The signal differs (machine output, not the firmware path) |
 | 7 | The note is audible (`peak > 0.01`) where no pin exists | `peak min 0.01` in the same cases |
-| 8 | The rows (machine, parameter, page tables) equal a boot of no module, apart from the module's own machine | dynreg equiv (same table diff); descriptor of the machine row from `test-conformance-rig` |
-| 9 | No emulator fault during the note (`expectNoFault`) | implicit rules of every rig case |
+| 8 | The rows (machine, parameter, page tables) equal a boot of no module, apart from the module's own machine | dynreg equiv for its fixtures (`test/sine`, `test/dyn-dn2`) only. The conformance load does not compare tables with a no-module boot. After the deletion nothing compares the tables of the real analog, bd, pd and pluck: see "No longer tested anywhere".
+| 9 | No emulator fault during the note (`expectNoFault`) | Not tested for a note on the device. The conformance load calls `expectNoFault` after load and boot, without playing a note (it plays none and checks no audio: its own comment says DSP registration does not establish rendered audio correctness). The rig's implicit rules cover the DSP routine (finite output, context registers, own memory only) |
 | 10 | Pluck, full tier DT2 only (`equiv-mixed`, note at frame 9500): audible | the second note (67) of pluck's rig pin case, which covers state after running a while |
 
-Analog and pd's `UNINIT` boot (device-only) maps to the poisoned rig case. Rows 1 to 4 and 8 depend on the dynreg pin and the device conformance load staying green (row 5: the R12-6 fixture check); they are the part of the deletion for the reviewer to judge.
+Analog and pd's `UNINIT` boot (device-only) maps to the rig case that runs with two different state fills and requires identical output: the output does not depend on the initial state. Rows 1 to 4 and 8 are the part of the deletion for the reviewer to judge (row 5 needs the R12-6 fixture check).
 
-## Deletion commit
+## No longer tested anywhere after the deletion
 
-Removes the four `equiv.device.test.ts` files and their `runtimeAcceptance` records in `project.json`. After it, `test:subset -- S:machines` selects the remaining machine
-device tests (shot, tb303); analog, bd, pd and pluck are covered by `<id>:test-rig`.
+Em decides whether each is acceptable. Nearest coverage in brackets.
+
+- Track filter output of the four machines (dynreg DN2 pin: the stock path with a fixture machine, not these machines).
+- Mixer, pan, master and the stereo interleave of the output (dynreg DN2 and DT2 pins and fixture suites, with fixture signals).
+- Exact firmware onset timing of a trigger (dynreg pin onset; the rig models the trigger, see above).
+- Firmware voice state at boot, `UNINIT` (now: the rig requires output independent of the initial state, so a machine cannot depend on it).
+- Parameter and page tables of the real machines against a no-module boot (dynreg equiv, fixtures only).
+- A real note of the real machine on the device: audibility, no fault while it plays (the conformance load plays no note; pluck's former full-tier audible case goes too).
+
+## Deletion commits
+
+Two commits, last on the branch, each marked do not merge before the R12-6 gate and Em's pin review:
+
+1. analog, pd and pluck: the `equiv.device.test.ts` files and their `runtimeAcceptance` records. The pluck deletion needs the R12-6 generic addrmap check (row 5) to exist first.
+2. bd: its `equiv.device.test.ts` and `runtimeAcceptance`, only together with the bd DT2 re-pin after `mise run module:check fadedlimes/bd` regenerates the gallery (see Pending).
+
+After them, `test:subset -- S:machines` selects the remaining machine device tests (shot, tb303); analog, bd, pd and pluck are covered by `<id>:test-rig`.
 
 ## Pending
 
 **bd DT2 pin: pending, gallery.json lacks dt2; re-pin after module:check regenerates it.** The bd DT2 case fails loudly until then (`galleryGaps` in `packages/sharc-rig-kit/src/spec.ts`, called by every machine sound-check case, names the missing device and the command). The hash in the pinned-case table for bd DT2 is not a pin. A host test (`tests/spec.test.ts`, "galleryGaps") covers the check with a fixture that lacks one device.
+
+Until the gallery is regenerated, `@digi/sharc-rig-kit:test-conformance-rig` is red too: `MachineRig` refuses to open bd for DT2 (`galleryGaps`), which stops the machine conformance file. Every other machine opens.
