@@ -172,6 +172,7 @@ pub fn load_symbols(plan: &crate::apply::Plan) -> std::collections::BTreeMap<Str
         dkaddrmap::snapshot::SYM_STATE,
         dkaddrmap::snapshot::SYM_DSP,
         dkaddrmap::snapshot::SYM_INFO,
+        dkaddrmap::snapshot::SYM_PROVIDERS,
     ]
     .iter()
     .filter_map(|s| {
@@ -203,6 +204,11 @@ pub fn ship_map(plan: &crate::apply::Plan) -> AddrMap {
             l2_byte_base: crate::dsp::L2_BYTE_BASE as u64,
             l2_sw_base: crate::dsp::L2_SW_BASE as u64,
             dsp: has(dkaddrmap::snapshot::SYM_DSP) && has(dkaddrmap::snapshot::SYM_INFO),
+            providers: if has(dkaddrmap::snapshot::SYM_PROVIDERS) {
+                dkrt_sdk::PROVIDER_MAX as u64
+            } else {
+                0
+            },
         });
     let key = Key {
         loader,

@@ -1,5 +1,5 @@
 //! The loader's records: one per loaded file, `REC_MAX` of them. Records below `MAX_MODULES` are the module records of `DKRT_STATE.modules` (their layout and
-//! the tables the proof tools read stay as they are); the records after them are the provider files' (R12-3), kept in statics beside `DKRT_PATHS`.
+//! the tables the proof tools read stay as they are); the records after them are the provider files' (R12-3), kept in `DKRT_PROVIDERS`, a symbol of the patch plan beside `DKRT_STATE`, so host tools read them with the same layout.
 //! Only the loader writes them. Provider records have no menu and no runtime-version cell: those tables stay `MAX_MODULES` long.
 
 use crate::state::{DKRT_MENUS, DKRT_MODULE_RUNTIME, DKRT_PATHS};
@@ -8,7 +8,9 @@ pub use crate::state::REC_MAX;
 use core::ptr::addr_of_mut;
 use dkrt_sdk::PROVIDER_MAX;
 
-static mut PROVIDER_RECS: [Module; PROVIDER_MAX] = unsafe { core::mem::zeroed() };
+/// The provider records, `Module` records like `DKRT_STATE.modules` (record `MAX_MODULES + j` is slot `j`); the load-table decoder reads them.
+#[no_mangle]
+pub static mut DKRT_PROVIDERS: [Module; PROVIDER_MAX] = unsafe { core::mem::zeroed() };
 static mut PROVIDER_PATHS: [[u8; 64]; PROVIDER_MAX] = [[0; 64]; PROVIDER_MAX];
 
 /// The record `rec` (below `REC_MAX`).
@@ -16,7 +18,7 @@ pub unsafe fn module(rec: usize) -> &'static mut Module {
     if rec < MAX_MODULES {
         &mut st().modules[rec]
     } else {
-        &mut (*addr_of_mut!(PROVIDER_RECS))[rec - MAX_MODULES]
+        &mut (*addr_of_mut!(DKRT_PROVIDERS))[rec - MAX_MODULES]
     }
 }
 
@@ -46,7 +48,7 @@ pub unsafe fn set_menu(rec: usize, addr: u32) {
 /// Test only: every provider record unused.
 #[cfg(test)]
 pub unsafe fn reset() {
-    *addr_of_mut!(PROVIDER_RECS) = core::mem::zeroed();
+    *addr_of_mut!(DKRT_PROVIDERS) = core::mem::zeroed();
     *addr_of_mut!(PROVIDER_PATHS) = [[0; 64]; PROVIDER_MAX];
 }
 
@@ -73,7 +75,7 @@ mod tests {
             set_menu(0, 9);
             assert_eq!(DKRT_MENUS[0], 9);
             *st() = core::mem::zeroed();
-            *addr_of_mut!(PROVIDER_RECS) = core::mem::zeroed();
+            *addr_of_mut!(DKRT_PROVIDERS) = core::mem::zeroed();
             *addr_of_mut!(PROVIDER_PATHS) = [[0; 64]; PROVIDER_MAX];
             DKRT_PATHS[0][0] = 0;
             DKRT_MENUS[0] = 0;

@@ -260,6 +260,7 @@ fn synthetic() -> (snapshot::Loader, snapshot::Snapshot) {
         l2_byte_base: 0x2000_0000,
         l2_sw_base: 0xb8_0000,
         dsp: true,
+        providers: 0,
     };
     let record = |used: u32, name: &str, base: u32, size: u32, fini: u32| {
         let mut n = name.as_bytes().to_vec();
@@ -333,4 +334,30 @@ fn a_snapshot_without_the_dsp_loader_gives_no_dsp_bases() {
     assert!(
         snapshot::parse_hex("0aff").unwrap() == [10, 255] && snapshot::parse_hex("0a f").is_err()
     );
+}
+
+#[test]
+fn a_provider_record_decodes_to_a_load_and_an_old_loader_header_still_parses() {
+    let (mut loader, mut snap) = synthetic();
+    loader.providers = 2;
+    let mut name = b"core/services/fx".to_vec();
+    name.resize(32, 0);
+    let mut recs = words(&[1]);
+    recs.extend(name);
+    recs.extend(words(&[0x0001_0000, 0x4760_0000, 0x1200, 0]));
+    recs.extend(words(&[0; 13]));
+    snap.insert("DKRT_PROVIDERS".into(), recs);
+    let reads: Vec<_> = loader.reads().iter().map(|r| (r.symbol, r.len)).collect();
+    assert_eq!(reads.last(), Some(&("DKRT_PROVIDERS", 2 * 52)));
+    let t = snapshot::decode_loads(&loader, &snap).unwrap();
+    assert_eq!(t.modules.len(), 3, "two modules and the provider");
+    let fx = &t.modules[2];
+    assert_eq!(
+        (fx.id.as_str(), fx.base, fx.size, fx.dsp_base),
+        ("core/services/fx", 0x4760_0000, 0x1200, None)
+    );
+    let old: snapshot::Loader =
+        serde_json::from_str(r#"{"modules":3,"l2_byte_base":1,"l2_sw_base":2}"#).unwrap();
+    assert_eq!((old.providers, old.dsp), (0, false));
+    assert_eq!(old.reads().len(), 1);
 }

@@ -505,6 +505,12 @@ fn a_provider_loads_into_its_own_record_publishes_its_exports_and_installs_its_h
         let base = records::module(rec).base;
         assert_eq!((records::module(rec).used, l.roles[rec], st().loads), (1, 1, 0), "a provider is no module of the count");
         assert_eq!(st().modules[0].used, 0, "no module record is taken");
+        // the record is the host-visible DKRT_PROVIDERS slot 1: used, named, with the load base
+        let published = &*core::ptr::addr_of!(records::DKRT_PROVIDERS);
+        let name = &published[1].name;
+        assert_eq!((published[1].used, published[1].base), (1, base));
+        assert_ne!(name[0], 0, "the record carries the file's name");
+        assert_eq!(published[0].used, 0);
         // the export resolves to base + 8; the site jumps to base + 16 (4ef9 and the address, big endian)
         assert_eq!(l.exports.resolve(dkneeds::keys::name_hash("dk_svctest_ping")), Some(base + 8));
         let t = base + 16;
