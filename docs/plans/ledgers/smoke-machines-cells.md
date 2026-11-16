@@ -11,7 +11,7 @@ Why: only three fixtures used patch-time `[[entry]]` rows of the `machines` regi
 | Two machine modules get their own types (XClone 8, FM Clone 5, PAGES 6) | `dynreg/tests/equiv.device.test.ts` (`equiv-dn2-set`: dyn-dn2 and sine, voice rows, rows equal the no-module boot) and `roundtrip.device.test.ts` (`dynType` of each machine, kept in every set order, sound records carry the types). Both existed. |
 | The menu list has the added entry; YES commits it | `roundtrip` (`pickSine` / `selectDt2` per machine, the sound carries the type), `equiv` (`selectType`). New: `machine-rows-dn2` (audio mirror holds the type after a TRIG) and `machine-rows-dt2` (`trackType` equals the type). |
 | DN2 PAGES row placed by the group hook | The group hook acts when the machine's page is built: `machine-rows-dn2` decodes the page row of DynSyn (name, title, knob layout, slots, ranges, defaults). New. |
-| DN2 own page: draw, key, turn | New `machine-rows-dn2`: SYN changes the screen (frame against the frame before in the same run), each knob changes exactly one Sound word, upward, and the words are as far apart as the slots. `roundtrip` turns two knobs and keeps the values through a save. **Not covered:** cycling two pages with SYN (`page_a`, `page_b`, `page_a_again`): no run-time fixture has two pages. Add a second page to `test/dyn-dn2`, or a fixture, if the page key hook needs this proof. |
+| DN2 own page: draw, key, turn | New `machine-rows-dn2`: SYN changes the screen (frame against the frame before in the same run), each knob changes exactly one Sound word, upward, and the words are as far apart as the slots. `roundtrip` turns two knobs and keeps the values through a save. Cycling two pages with SYN (`page_a`, `page_b`, `page_a_again`): new `machine-pages-dn2.device.test.ts` with the new fixture `test/dyn-dn2-pages` (a copy of dyn-dn2 with two pages; dyn-dn2 itself is unchanged): the page rows are the declared ones, and after SYN once, twice and three times the first knob edits the Sound word of ALPH, EPSL, ALPH (state, no pixels). |
 | DT2 clone: SRC page | New `machine-rows-dt2` (test/sine): the row (`Sine`, knob Level), the SRC knob changes exactly one Sound word. |
 | DT2 clone: DSP selector byte at 0x255970 = 8 | Not applicable: a run-time machine has its own voice row and DSP (`voiceRows` in `equiv`, the PCM pin of `equiv-dt2-sine`, pending approval). The selector of a clone of a stock type no longer exists. |
 | DN2 clone: TX frame sends FM TONE's type (`clone_of` 0) | Not applicable: a run-time machine on DN2 has `own_dsp`; the type reaches the DSP (`frametype-slot.device.test.ts` proves the slot, `equiv-dn2-set` the sound). |
@@ -24,6 +24,7 @@ The generic smoke tour in those cells (`tests/patchkit/smoke/tours/smoke.toml`) 
 
 - `machine-rows-dn2.device.test.ts` (DN2, test/dyn-dn2): one boot, SHARC for the module's DSP part.
 - `machine-rows-dt2.device.test.ts` (DT2, test/sine): one boot.
+- `machine-pages-dn2.device.test.ts` (DN2, test/dyn-dn2-pages): one boot, SHARC for the DSP part. Open: `[uses.dn2]` of the fixture is computed by hand (`mise run module:check test/dyn-dn2-pages` rewrites it and writes `build/gen`); no firmware word with the current page index was found, so the page shows in what a knob edits.
 
 Open points for the review
 
