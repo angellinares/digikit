@@ -52,7 +52,7 @@ binary, device, every file's relative path and bytes).
 
 ## Exit export
 
-`mise run workbench` starts the app with `--device-folders`: at every load the app builds the card from the loaded device's folder (`plus_drive/<device>/`, or the folder chosen in the Card panel) when it holds something the card takes, and treats that folder as the card's +Drive folder: when the app exits, the
+`mise run workbench` starts the app with `--device-folders`: at every load the app builds the card from the loaded device's folder (`plus_drive/<device>/`, or the folder chosen in the card-folder strip of the Files page) when it holds something the card takes, and treats that folder as the card's +Drive folder: when the app exits, the
 firmware's changes to the card are exported back into the folder (files of the path filesystem, `.mmcfs/` slots and
 regions; finding 24) and a line says how many files changed:
 
