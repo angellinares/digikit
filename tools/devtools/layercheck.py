@@ -11,7 +11,7 @@ Rules:
   roles     Every module under modules/core has `role` in [module], and the role fits the folder: adapters/ -> adapter,
             apps/ -> app, runtime/ -> runtime, expansion/ -> installer.
   sources   Content modules (modules/machines, modules/fx, modules/tools, tests/fixtures/modules) and apps include only
-            their own files and the SDK (sdk/include, sdk/dsp/contract). Apps may also include dkrt.h (runtime) and dk_ui_core.h
+            their own files and the SDK (sdk/include, sdk/dsp/contract); a fixture may also include the source of another fixture (a variant of its base). Apps may also include dkrt.h (runtime) and dk_ui_core.h
             (core/ui). Only the runtime's platform file, the installer and adapters include the firmware bindings (dk_fw_* headers, the dkfw crate).
             C, ColdFire and SHARC assembly (`#include`, `.include`) and Rust (`dkfw`, path dependencies) are read.
   objects   The undefined symbols of the built objects of apps and content modules are SDK imports, dkrt_*, dk_ui_*,
@@ -259,6 +259,7 @@ def check_sources(root: Path, mods: list[Module]) -> list[Violation]:
     runtime_inc = (root / CORE / "runtime/include").resolve()
     adapters = (root / CORE / "adapters").resolve()
     all_mod_dirs = [(m.dir.resolve(), m) for m in mods]
+    fixtures = (root / "tests/fixtures/modules").resolve()
     for m in mods:
         kind = classify(root, m)
         role = m.mod.get("role")
@@ -332,6 +333,12 @@ def check_sources(root: Path, mods: list[Module]) -> list[Violation]:
                     foreign = next(
                         (o for d, o in all_mod_dirs if d in target.parents), None
                     )
+                    if (
+                        foreign is not None
+                        and fixtures in m.dir.resolve().parents
+                        and fixtures in foreign.dir.resolve().parents
+                    ):
+                        continue  # a fixture variant (file-write-b) includes the source of its base fixture
                     out.append(
                         Violation(
                             where,
