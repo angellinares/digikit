@@ -6,7 +6,7 @@
  * staging folder; the boot recovery removes it. A replace is: write a hashed journal record naming the destination, delete the destination,
  * rename the staged file, delete the journal. The recovery finishes a replace whose destination is missing and drops one whose destination is
  * still there. The folder is created at the first write; the runtime removes it (`dkpw_recover`) once it is empty and no write session has run for 2 s,
- * not at the end of each file.
+ * not at the end of each file. A new file skips the staging (direct writes, below).
  *
  * Facts the order of steps relies on (finding 120, static, firmware 1.17):
  *  - Every inode, directory page and bitmap update is written through to the eMMC by the firmware's block write before the file call returns
@@ -22,13 +22,30 @@
  * 32 KiB pieces (4.2 MB/s). `hash_fast` reads the same pages from the card with the firmware's block read (the card sector of a file page comes from
  * the firmware's extent lookup), hashes them with `pdw_hash.h`, compares the result with the host's hash (BEGIN's hash4) before it writes anything,
  * and then runs the rest of FUN_4015b1e8 in its order with the firmware's own functions under its mutex. PDW_FAST_CLOSE 0 builds the adapter with
- * the firmware's hash only. */
+ * the firmware's hash only.
+ *
+ * Speed levers (finding 134 has the hardware times; there is no switch for them):
+ *  - Read-back in runs (D1): `hash_fast` reads the contiguous pages of one extent with one block read of up to RUN_PAGES pages (128 KiB; core/sdhc-large
+ *    makes it one card command) into a buffer from the firmware's allocator and hashes the run in one piece. When that buffer cannot be had, it reads page
+ *    by page into the firmware's scratch buffers.
+ *  - Trailer in the last write (D2): when a data write completes the file, its last-page part and the 16 zero bytes go to the firmware in one call (through a
+ *    bounce copy), so the close has no trailer write of its own. Content, size and hash are the same. Without a bounce buffer, or when the data ends on a
+ *    page boundary, the close writes the trailer as before.
+ *  - Page allocation (D3): `reserve_fast` allocates the pages of a new file with the firmware's page allocator (FUN_401581dc) and one inode write-back,
+ *    and skips what `file_reserve` does besides: the free page count (a bit-by-bit loop over the 82 KiB bitmap). A short allocation falls back to
+ *    the firmware's `file_reserve`, which answers the card-full error.
+ *  - Direct writes (D4): a new file (destination missing, no REPLACE) is written at its final name and not renamed into place. There is no record and no
+ *    boot cleanup: the file is visible, without a hash, from its creation to its close hash. A power cut in that time leaves that one partial file, without
+ *    a hash, at its name, and nothing else changes. The next upload of the same path finds a file with no hash on the device and sends it with REPLACE
+ *    (staged, journaled, renamed), which replaces it. A failed or aborted write deletes the file (`dkpw_abort`). A folder that `parents` created stays
+ *    when the upload fails. */
 
 #include <stddef.h>
 #include <stdint.h>
 #include "dkrt_pdw.h"
 #include "dk_fw_storage.h"
 #include "dk_fw_rtos.h"
+#include "dk_fw_mem.h"
 #include "pdw_hash.h"
 
 typedef uint32_t u32;
@@ -43,6 +60,10 @@ typedef uint8_t u8;
 #define E_WRITE (-57)
 #define E_NOFILE (-59)
 #define E_FILE_IN_USE (-71)
+
+/* Read-back run: 4 pages (128 KiB); the buffer holds two runs when the hash overlaps the next read */
+#define RUN_PAGES 4u
+#define RUN_BYTES (RUN_PAGES << 15)
 
 /* 1: the close hash reads the card directly (`hash_fast`); 0: the firmware's own close hash only. */
 #define PDW_FAST_CLOSE 1
@@ -76,8 +97,8 @@ struct dma {
     u32 inf[4], inf2[4]; /* file_info results */
     u32 dstate[4];       /* directory state */
     u32 dout[0x114 / 4]; /* one directory entry */
-    u32 phys;            /* the card page of a file page (page_find) */
-    u8 pad[640 - 256 - 96 - 0x114 - 4];
+    u32 phys, phys2; /* the card page of a file page (page_find); of the next one (run length) */
+    u8 pad[640 - 256 - 96 - 0x114 - 8];
 };
 struct dma DKPW_DMA __attribute__((aligned(16)));
 _Static_assert(sizeof(struct dma) == 640,
@@ -113,6 +134,10 @@ static u8 slow;
 static u8 rb_pending;
 static u32 total, written;
 static char stage[40], jour[48];
+/* Direct write: the file is written at `dest`, not staged (`spath`). */
+static u8 direct;
+/* The 16 zero bytes were written with the last data */
+static u8 tail_done;
 static char dest[DEST_MAX] __attribute__((aligned(16)));
 static char lp[DEST_MAX];
 static const u8 zeros[ZERO_TAIL] __attribute__((aligned(16)));
@@ -390,6 +415,12 @@ static void tidy(void)
         dk_fw_storage_file_rmdir((const u8 *)STAGE_DIR);
 }
 
+/* The file being written: the staged name, or the destination for a direct write. */
+static const char *spath(void)
+{
+    return direct ? dest : stage;
+}
+
 /* The folder /factory (and what is under it) is the firmware's own read-only ROM tree: its inodes and directory pages are RAM tables built at every
  * mount (ids from 0x1000000), never written to the card. Nothing is written, replaced or deleted there. */
 static int in_factory(const char *p)
@@ -421,6 +452,13 @@ static void rebuild_table(void)
     rb_pending = 0;
 }
 
+/* The runtime's dk_files_commit: the table rebuild that a batch of files left pending, without waiting for the 2 s idle recovery. */
+int32_t dkpw_commit(void)
+{
+    rebuild_table();
+    return 0;
+}
+
 void dkpw_abort(void)
 {
     if (dead)
@@ -430,7 +468,7 @@ void dkpw_abort(void)
         st_open = 0;
     }
     if (st_live) {
-        f_delete(stage);
+        f_delete(spath());
         st_live = 0;
     }
     rebuild_table();
@@ -456,6 +494,35 @@ static u32 next_number(int *there)
     return any ? top + 1 : 0;
 }
 
+/* The pages of the new staged file, as the firmware's file_reserve (FUN_40158448) does for a file without extents, minus its free page count: the page
+ * allocator (FUN_401581dc: first fit from the bitmap start, one extent per allocation) and one inode write-back, under the filesystem mutex. 0 when the
+ * file's last page has a card page afterwards (the allocator allocates the pages in order and stops when none is free). Anything else, and a file that
+ * already has extents, is nothing to this function (1: nothing is changed that `file_reserve` would not also find): the caller runs `file_reserve`, which
+ * allocates what is missing and answers -1 when the card cannot hold it (the caller then deletes the file, and its pages with it). Hint 0 as the firmware. */
+static u32 reserve_fast(void)
+{
+    u32 *mutex = (u32 *)lit(&dk_fw_storage_fs_mutex);
+    u32 id = hnd[0], pages = (total + (PAGE_BYTES - 1u)) >> PAGE_SHIFT;
+    u32 r = 1;
+    u8 *ino;
+    if (!mounted() || id > 0xffffffu)
+        return 1;
+    dk_fw_rtos_mutex_lock(mutex);
+    ino = dk_fw_storage_inode_get(id);
+    if (ino) {
+        if (*(const uint16_t *)(ino + 0x1e) == 0) { /* no extents yet */
+            dk_fw_storage_file_alloc_pages(ino, 0, pages, 0);
+            dk_fw_storage_inode_write(ino);
+            if ((dk_fw_storage_file_page_find(ino, pages - 1u, &DKPW_DMA.phys) &
+                 PAGE_FIND_STATUS) != 0)
+                r = 0;
+        }
+        dk_fw_storage_inode_put(ino);
+    }
+    dk_fw_rtos_mutex_unlock(mutex);
+    return r;
+}
+
 int32_t dkpw_begin(const u8 *path, u32 size, const u8 *hash4, u32 flags)
 {
     u32 n = slen((const char *)path), i, id;
@@ -474,6 +541,8 @@ int32_t dkpw_begin(const u8 *path, u32 size, const u8 *hash4, u32 flags)
     cut &= 0x7fu;
     dead = 0;
     broken = 0;
+    direct = 0;
+    tail_done = 0;
 #if PDW_TRACE
     pw_b_parent = pw_b_lookup = pw_b_mkdir = pw_b_open = pw_b_reserve = 0;
     pw_e_tail = pw_e_hash = pw_e_close = pw_e_info = pw_e_place = pw_e_rename = pw_e_journal = 0;
@@ -496,13 +565,20 @@ int32_t dkpw_begin(const u8 *path, u32 size, const u8 *hash4, u32 flags)
             return E_FILE_IN_USE;
     }
     PW_T0();
-    num = next_number(&there); /* the folder of an earlier file of the session is reused */
-    if (!there)
-        f_mkdir(STAGE_DIR);
+    if (at == 0 && !replace && cut != 8) {
+        /* a new file: written at its final name */
+        parents(dest);
+        direct = 1;
+    }
+    if (!direct) {
+        num = next_number(&there); /* the folder of an earlier file of the session is reused */
+        if (!there)
+            f_mkdir(STAGE_DIR);
+        names_for(num);
+    }
     PW_T1(pw_b_mkdir);
-    names_for(num);
     PW_T0();
-    i = (u32)dk_fw_storage_path_open((const u8 *)stage, (const u8 *)"w", hnd);
+    i = (u32)dk_fw_storage_path_open((const u8 *)spath(), (const u8 *)"w", hnd);
     PW_T1(pw_b_open);
     if (i != 0) {
         return E_WRITE;
@@ -516,13 +592,63 @@ int32_t dkpw_begin(const u8 *path, u32 size, const u8 *hash4, u32 flags)
         for (i = 0; i < 4; i++)
             want[i] = hash4[i];
     PW_T0();
-    i = (u32)dk_fw_storage_file_reserve(hnd, 0, total);
+    i = reserve_fast();
+    if (i != 0)
+        i = (u32)dk_fw_storage_file_reserve(hnd, 0, total);
     PW_T1(pw_b_reserve);
     if (i != 0) {
         dkpw_abort();
         return E_FULL;
     }
     return 0;
+}
+
+/* Push and invalidate the data cache lines of [p, p + n): dirty lines are written back before a DMA and no stale line is left to be refilled or evicted over
+ * DMA data. The firmware's block read (FUN_4012e1b6) does the same for its destination before a direct DMA (its cpushl loop at 0x4012e27e, 16-byte aligned
+ * destinations only) and copies from a bounce buffer otherwise; it does nothing after the DMA. */
+static void cache_push(const u8 *p, u32 n)
+{
+    for (n = (n + 15u) >> 4; n; n--, p += 16)
+        __asm__ volatile("cpushl %%dc,(%0)" : : "a"(p) : "memory");
+}
+
+/* The last data write with the 16 zero bytes of the trailer: `len` bytes at file offset `written` end the data. The whole pages go to the
+ * firmware straight from `buf`; the rest (under 32 KiB) and the zeros go in one call from a bounce copy, so the page the file ends in is written once
+ * (the trailer write of the close would write it again). 1 when both calls wrote everything (the trailer is done), 0 when the bounce buffer could not be
+ * had and nothing was written (the caller writes `buf` as it is), -1 when a write failed. */
+static i32 write_with_tail(const u8 *buf, u32 len)
+{
+    u32 end = written + len;
+    u32 keep = end & (PAGE_BYTES - 1u); /* bytes of the last page */
+    u32 head = len >= keep ? len - keep : 0;
+    u32 rest = len - head, n, i;
+    u8 *bounce;
+    i32 wr;
+    if (keep == 0)
+        return 0; /* the data ends on a page boundary: the trailer is a page of its own */
+    bounce = dk_fw_mem_new(rest + ZERO_TAIL);
+    if (!bounce)
+        return 0;
+    if ((uintptr_t)bounce & 15u) {
+        dk_fw_mem_free(bounce);
+        return 0;
+    }
+    if (head) {
+        wr = dk_fw_storage_file_write(buf, head, hnd);
+        if (wr != (i32)head) {
+            dk_fw_mem_free(bounce);
+            return -1;
+        }
+    }
+    for (i = 0; i < rest; i++)
+        bounce[i] = buf[head + i];
+    for (i = 0; i < ZERO_TAIL; i++)
+        bounce[rest + i] = 0;
+    n = rest + ZERO_TAIL;
+    cache_push(bounce, n); /* the firmware writes whole pages from the buffer by DMA */
+    wr = dk_fw_storage_file_write(bounce, n, hnd);
+    dk_fw_mem_free(bounce);
+    return wr == (i32)n ? 1 : -1;
 }
 
 int32_t dkpw_write(const u8 *buf, u32 len)
@@ -534,7 +660,18 @@ int32_t dkpw_write(const u8 *buf, u32 len)
          * straight to the card. A buffer that is not 16-byte aligned is bounced by the firmware (correct, only slower). */
         i32 wr;
         PW_T0();
-        wr = dk_fw_storage_file_write(buf, len, hnd);
+        wr = -1;
+        if (written + len + ZERO_TAIL == total) {
+            i32 t = write_with_tail(buf, len);
+            if (t != 0) {
+                wr = t > 0 ? (i32)len : -1;
+                tail_done = (u8)(t > 0);
+            } else {
+                wr = dk_fw_storage_file_write(buf, len, hnd);
+            }
+        } else {
+            wr = dk_fw_storage_file_write(buf, len, hnd);
+        }
         PW_T1(pw_w_blk);
 #if PDW_TRACE
         pw_w_n++;
@@ -573,6 +710,8 @@ static i32 place(void)
 {
     int journaled = 0, tries, at;
     u32 id;
+    if (direct)
+        return 0; /* written at its name, hashed: nothing to move */
     parents(dest);
     at = lookup(dest, &id);
     if (at == 2) {
@@ -647,22 +786,46 @@ static void hjob_run(u8 *ctx)
     pdw_hash_update(j->h, j->buf, j->n);
 }
 
-/* Push and invalidate the data cache lines of [p, p + n): dirty lines are written back before a DMA and no stale line is left to be refilled or evicted over
- * DMA data. The firmware's block read (FUN_4012e1b6) does the same for its destination before a direct DMA (its cpushl loop at 0x4012e27e, 16-byte aligned
- * destinations only) and copies from a bounce buffer otherwise; it does nothing after the DMA. */
-static void cache_push(const u8 *p, u32 n)
-{
-    for (n = (n + 15u) >> 4; n; n--, p += 16)
-        __asm__ volatile("cpushl %%dc,(%0)" : : "a"(p) : "memory");
-}
-
 /* The firmware's close hash of the staged file (FUN_4015b1e8) without its re-read through the page cache. 0; E_HASH when the card's data differs from
  * the host's hash (nothing is changed then); HF_FALLBACK when the card cannot be read the way this function needs (not mounted, no inode, a size that is not what
  * was written, a page that the extent lookup misses, a failed block read; nothing is changed yet), and the caller closes with the firmware's own hash;
  * E_WRITE when the hash page could not be written (the page is restored; the table, the inode and the event are not touched). Everything runs under the filesystem
  * mutex, as in the firmware (FUN_4015b3aa). The firmware's own scratch buffers are used: both are 32 KiB, 16-byte aligned and used only under that mutex
  * (the hash page buffer is free until the hash is done, so it is the second read buffer of the overlapped hash). */
+static i32 hash_fast_run(u8 *big);
+
+/* core/sdhc-large's range of the buffer whose card transfers may be large commands (the symbol is 0 when that module is not in the image) */
+extern void sdhc_large_range(u32 lo, u32 hi);
+static void large_range(u32 lo, u32 hi)
+{
+    void (*f)(u32, u32) = sdhc_large_range;
+    __asm__("" : "+r"(f));
+    if (f)
+        f(lo, hi);
+}
+
+/* The runs of the read-back are read into one buffer of the firmware's allocator (two runs with the overlap), else page by page into the
+ * firmware's scratch buffers. The allocation is made before the filesystem mutex is taken. */
 static i32 hash_fast(void)
+{
+    u32 pages = (total + (PAGE_BYTES - 1u)) >> PAGE_SHIFT;
+    u32 ovl = pages > 1u && (dkrt_speed_flags() & SPEED_OVERLAP) != 0;
+    u8 *big = 0;
+    i32 r;
+    if (pages > 1u) {
+        big = dk_fw_mem_new(ovl ? 2u * RUN_BYTES : RUN_BYTES);
+        if (big && ((uintptr_t)big & 15u)) {
+            dk_fw_mem_free(big);
+            big = 0;
+        }
+    }
+    r = hash_fast_run(big);
+    if (big)
+        dk_fw_mem_free(big);
+    return r;
+}
+
+static i32 hash_fast_run(u8 *big)
 {
     struct pdw_hash h;
     u32 *mutex = (u32 *)lit(&dk_fw_storage_fs_mutex);
@@ -676,6 +839,7 @@ static i32 hash_fast(void)
     struct hjob job;
     u32 pending = 0;
     u32 ovl = pages > 1u && (dkrt_speed_flags() & SPEED_OVERLAP) != 0;
+    u32 ranged = 0, idx = 0;
     if (!mounted())
         return HF_FALLBACK;
     dk_fw_rtos_mutex_lock(mutex);
@@ -686,22 +850,41 @@ static i32 hash_fast(void)
         goto put; /* the inode size is what was written (knob 10 acts as a size mismatch) */
     pdw_hash_init(&h);
     job.h = &h;
-    cache_push(rbuf, PAGE_BYTES);
-    if (ovl)
-        cache_push(pbuf, PAGE_BYTES);
-    for (p = 0; p < pages; p++) {
-        u32 n = total - (p << PAGE_SHIFT);
-        u8 *buf = (ovl && (p & 1u)) ? pbuf : rbuf;
-        if (n > PAGE_BYTES)
-            n = PAGE_BYTES;
-        if ((dk_fw_storage_file_page_find((u8 *)ino, p, &DKPW_DMA.phys) & PAGE_FIND_STATUS) == 0 ||
-            dk_fw_storage_block_read(dsec + (DKPW_DMA.phys << PAGE_SECTOR_SHIFT),
+    if (big) {
+        cache_push(big, ovl ? 2u * RUN_BYTES : RUN_BYTES);
+        large_range((u32)big, (u32)big + (ovl ? 2u * RUN_BYTES : RUN_BYTES));
+        ranged = 1;
+    } else {
+        cache_push(rbuf, PAGE_BYTES);
+        if (ovl)
+            cache_push(pbuf, PAGE_BYTES);
+    }
+    for (p = 0; p < pages; idx++) {
+        u32 run = 1, n;
+        u8 *buf = (ovl && (idx & 1u)) ? pbuf : rbuf;
+        if (big)
+            buf = big + ((ovl && (idx & 1u)) ? RUN_BYTES : 0u);
+        if ((dk_fw_storage_file_page_find((u8 *)ino, p, &DKPW_DMA.phys) & PAGE_FIND_STATUS) == 0) {
+            if (pending)
+                dkrt_aux_wait();
+            goto put;
+        }
+        /* the run: the next pages that follow on the card (one extent), at most RUN_PAGES */
+        while (big && run < RUN_PAGES && p + run < pages &&
+               (dk_fw_storage_file_page_find((u8 *)ino, p + run, &DKPW_DMA.phys2) &
+                PAGE_FIND_STATUS) != 0 &&
+               DKPW_DMA.phys2 == DKPW_DMA.phys + run)
+            run++;
+        n = total - (p << PAGE_SHIFT);
+        if (n > run << PAGE_SHIFT)
+            n = run << PAGE_SHIFT;
+        if (dk_fw_storage_block_read(dsec + (DKPW_DMA.phys << PAGE_SECTOR_SHIFT),
                                      (n + (SECTOR_BYTES - 1u)) & ~(SECTOR_BYTES - 1u), buf) != 0) {
             if (pending)
                 dkrt_aux_wait();
             goto put;
         }
-        if (pending) { /* page p - 1 is hashed: its buffer is free again, and the hash state is ours */
+        if (pending) { /* the run before is hashed: its buffer is free again, and the hash state is ours */
             dkrt_aux_wait();
             pending = 0;
         }
@@ -711,6 +894,11 @@ static i32 hash_fast(void)
             pending = 1;
         else
             pdw_hash_update(&h, buf, n);
+        p += run;
+    }
+    if (ranged) {
+        large_range(0, 0);
+        ranged = 0;
     }
     if (pending)
         dkrt_aux_wait();
@@ -744,6 +932,8 @@ static i32 hash_fast(void)
     dk_fw_storage_inode_write((u8 *)ino);
     r = 0;
 put:
+    if (ranged)
+        large_range(0, 0);
     dk_fw_storage_inode_put((u8 *)ino);
 unlock:
     dk_fw_rtos_mutex_unlock(mutex);
@@ -763,7 +953,7 @@ static int32_t close_file(u8 *hash_out)
         return bad ? E_WRITE : E_LENGTH;
     }
     PW_T0();
-    r = dk_fw_storage_file_write(zeros, ZERO_TAIL, hnd);
+    r = tail_done ? (i32)ZERO_TAIL : dk_fw_storage_file_write(zeros, ZERO_TAIL, hnd);
     PW_T1(pw_e_tail);
     if (r != (i32)ZERO_TAIL) {
         dkpw_abort();
@@ -804,7 +994,7 @@ static int32_t close_file(u8 *hash_out)
     PW_T1(pw_e_close);
     st_open = 0;
     PW_T0();
-    r = f_info(stage, inf);
+    r = f_info(spath(), inf);
     PW_T1(pw_e_info);
     if (r != 0 || inf[2] != total) {
         dkpw_abort();
@@ -884,8 +1074,8 @@ static i32 collect(u32 *foreign)
     return (i32)n;
 }
 
-/* Read the journal `jp` into recpath: 1 when it is whole (hashed) and holds one absolute path. */
-static int journal_read(const char *jp)
+/* Read the journal `jp` into recpath: 1 when it is whole (hashed) and holds one absolute path of at least `min` bytes with its NUL. */
+static int journal_read(const char *jp, i32 min)
 {
     i32 got;
     u32 i;
@@ -895,7 +1085,7 @@ static int journal_read(const char *jp)
         return 0;
     got = dk_fw_storage_path_read(jbuf, 256, rh);
     dk_fw_storage_path_close(rh);
-    if (got < 3 || got >= 256 || jbuf[got - 1] != 0 || jbuf[0] != '/')
+    if (got < min || got >= 256 || jbuf[got - 1] != 0 || jbuf[0] != '/')
         return 0;
     for (i = 0; i < (u32)got; i++)
         recpath[i] = (char)jbuf[i];
@@ -926,7 +1116,7 @@ int32_t dkpw_recover(u32 *out)
             if (is_j) {
                 in_stage(jp, names[k]);
                 sp[slen(sp) - 5] = 0; /* the staged file of this journal */
-                if (journal_read(jp) && f_info(sp, inf) == 0 && lookup(recpath, &id) == 0) {
+                if (journal_read(jp, 3) && f_info(sp, inf) == 0 && lookup(recpath, &id) == 0) {
                     /* a hashed staged file and a destination that is gone: finish the replace */
                     parents(recpath);
                     if (dk_fw_storage_file_rename((const u8 *)sp, (const u8 *)recpath) == 0) {

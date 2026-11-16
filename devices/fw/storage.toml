@@ -400,6 +400,16 @@ users = ["core/plusdrive-write"]
 doc = "Inode write-back FUN_4015b868: reads the inode's 32 KiB card page, replaces the 0x80-byte inode and writes the page through (synchronous). No mutex (finding 120)."
 
 [[fn]]
+name = "cf.storage.fn.file.alloc_pages"
+cpu = "cf"
+sig = "void (u8 *inode, u32 first_page, u32 pages, u8 hint)"
+devices = ["dt2"]
+rule = { kind = "cf_func", hash = "7687cc253c7ffaf8e3f34f099283749d", offset = 0x0, len = 4 }
+mark = "D"
+users = ["core/plusdrive-write"]
+doc = "Page allocation FUN_401581dc (DT2 1.17): allocates `pages` card pages for file pages [first_page, first_page + pages) of the inode, first fit from the bitmap start 0xa7a (hint 0), and adds one extent per allocation (FUN_40157c68, FUN_40155974); stops silently when no page is free. It does not write the inode back (inode.write does) and does not count free pages first, which file.reserve does (FUN_40155f84, bit by bit). Call under the filesystem mutex with an inode of inode.get. Pass hint 0 (finding 120, finding 134)."
+
+[[fn]]
 name = "cf.storage.fn.file.page_find"
 cpu = "cf"
 sig = "u32 (u8 *inode, u32 page, u32 *phys)"

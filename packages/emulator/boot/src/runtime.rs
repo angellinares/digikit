@@ -794,7 +794,7 @@ impl Emulator {
         emulator.rebuild_watch();
         // DIGI_WRITE_WATCH / DIGI_FLUSH_CHECK: off unless set (see watch.rs).
         match crate::watch::WatchConfig::from_env() {
-            Ok(cfg) => emulator.bus.guards.set_watch(cfg),
+            Ok(cfg) => emulator.set_write_watch(cfg),
             Err(e) => eprintln!("write-watch: {e}; not armed"),
         }
         emulator.mark(Mark::Entry, "before_instruction");
@@ -1305,6 +1305,9 @@ impl Emulator {
     /// as the `DIGI_WRITE_WATCH*` and `DIGI_FLUSH_CHECK` variables read at
     /// construction. The CACR the instruments assume is the CPU's current one.
     pub fn set_write_watch(&mut self, cfg: Option<crate::watch::WatchConfig>) {
+        self.bus
+            .board
+            .set_card_trace(cfg.as_ref().is_some_and(|c| c.card_trace));
         self.bus.guards.set_watch(cfg);
         let cacr = self.cpu.ctrl.cacr;
         if let Some(w) = self.bus.guards.watch_mut() {
@@ -2592,6 +2595,11 @@ impl Emulator {
                 CompletionEvent::Data { .. } => self.completion_kind_counts[1] += 1,
                 CompletionEvent::Command { .. } => self.completion_kind_counts[2] += 1,
             }
+        }
+        for op in self.bus.board.take_card_trace() {
+            self.bus
+                .guards
+                .note_card(op.cmd, op.arg, op.bytes, self.bus.current_icount);
         }
         let ranges = self.bus.board.take_dma_written_ranges();
         let sources = self.bus.board.take_dma_sources();

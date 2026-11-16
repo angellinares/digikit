@@ -9,7 +9,13 @@
                 7 spin inside the step (create, then wait with the session open for RELEASE; the step is mid-call while the MIDI task runs),
                 8 create, abort, then file_write, file_close and file_abort on the stale handle (aux 0 to 2),
                 9 file_write, file_close and file_abort on a handle that another module made (the size field is the handle; aux 0 to 2),
-                10 write with two file_write calls: 65536 bytes in one call, then the rest.
+                10 write with two file_write calls: 65536 bytes in one call, then the rest,
+                11 the batch: after the path NUL come u8 n (files, at most 99) and u8 mode. File i is the path with the two digits of i appended,
+                   `size` bytes of the pattern shifted by 13 * i, created with DK_FILE_DEFER (and
+                   DK_FILE_REPLACE when bit 6 is set). Mode 0: dk_files_commit after the last close, then the job ends; mode 1: the job ends after the last
+                   close (the runtime commits at the end of the job); mode 2: the job sleeps (DK_IO_WAIT) after the last close until RELEASE, so the runtime's
+                   1 s idle commit is what names the files, then the job ends. aux[0] = dk_files_pending after the last close, aux[1] = the commit result
+                   (mode 0), aux[2] = dk_files_pending after the commit (mode 0) or the first pending count seen after RELEASE (mode 2), steps = closes done.
                 Reply: 0, or -12 when a job is running.
      +1 STATUS  reply: u8 state (0 idle, 1 running, 2 finished), i32 create result (the handle or an error), i32 close result, i32 abort result,
                 i32 status of the job (what `done` got), u32 the hash this module computed over the pattern (hash32_*), u8[4] the hash file_close
@@ -34,21 +40,94 @@ static volatile uint32_t state; /* 0 idle, 1 running, 2 finished */
 static uint8_t job_case;
 static uint32_t root, flags, tail16;
 static uint32_t size, written, steps, mod_hash;
+static uint32_t b_n, b_mode, b_i;
+static char b_path[170];
 static char path[160];
 static uint8_t dev_hash[4];
 static int32_t handle, create_rc, close_rc, abort_rc, job_status, job_id, phase;
 static int32_t aux[3];
 static volatile uint32_t spin_release, in_spin;
+static uint32_t seed;
 static void fill(uint32_t off, uint32_t n)
 {
     for (uint32_t i = 0; i < n; ++i) {
-        uint32_t k = off + i;
+        uint32_t k = off + i + seed;
         buf[i] = (uint8_t)((k * 7u) + (k >> 8));
     }
+}
+/* case 11: the batch of deferred files */
+static int32_t batch_step(void)
+{
+    if (phase == 0) {
+        uint32_t l = 0;
+        while (path[l] != 0 && l < 160)
+            l++;
+        for (uint32_t k = 0; k < l; ++k)
+            b_path[k] = path[k];
+        b_path[l] = (char)('0' + b_i / 10u);
+        b_path[l + 1] = (char)('0' + b_i % 10u);
+        b_path[l + 2] = 0;
+        seed = 13u * b_i;
+        handle = dk_files_create(files, root, b_path, size, 0, flags | DK_FILE_DEFER);
+        if (handle == DK_FILE_E_BUSY)
+            return DK_IO_MORE;
+        create_rc = handle;
+        if (handle <= 0)
+            return handle ? handle : -1;
+        written = 0;
+        phase = 1;
+        return DK_IO_MORE;
+    }
+    if (phase == 1) {
+        uint32_t n = size - written < CHUNK ? size - written : CHUNK;
+        fill(written, n);
+        int32_t rc = dk_files_write(files, handle, written, buf, n);
+        if (rc == DK_FILE_E_BUSY)
+            return DK_IO_MORE;
+        if (rc < 0) {
+            dk_files_abort(files, handle);
+            return rc;
+        }
+        written += n;
+        if (written >= size)
+            phase = 2;
+        return DK_IO_MORE;
+    }
+    if (phase == 2) {
+        int32_t rc = dk_files_close(files, handle, dev_hash);
+        if (rc == DK_FILE_E_BUSY)
+            return DK_IO_MORE;
+        close_rc = rc;
+        if (rc < 0)
+            return rc;
+        b_i++;
+        steps = b_i;
+        aux[0] = dk_files_pending(files);
+        phase = b_i < b_n ? 0 : 3;
+        return DK_IO_MORE;
+    }
+    if (phase == 3) {
+        if (b_mode == 0) {
+            int32_t rc = dk_files_commit(files);
+            if (rc == DK_FILE_E_BUSY)
+                return DK_IO_MORE;
+            aux[1] = rc;
+            aux[2] = dk_files_pending(files);
+            return rc < 0 ? rc : 0;
+        }
+        if (b_mode == 1)
+            return 0;
+        phase = 4;
+        return DK_IO_WAIT;
+    }
+    aux[2] = dk_files_pending(files);
+    return 0;
 }
 static int32_t step(void *arg)
 {
     (void)arg;
+    if (job_case == 11)
+        return batch_step();
     steps++;
     if (job_case == 9) {
         aux[0] = dk_files_write(files, (int32_t)size, 0, buf, 512);
@@ -174,7 +253,7 @@ command(uint32_t cmd, uint32_t seq, const void *request, uint32_t len, void *rep
     if (cmd == PROOF_CMD) {
         if (state == 1)
             return -12;
-        if (len < 7 || (body[0] & 0x1f) < 1 || (body[0] & 0x1f) > 10)
+        if (len < 7 || (body[0] & 0x1f) < 1 || (body[0] & 0x1f) > 11)
             return -50;
         uint32_t i = 5;
         while (i < len && body[i] != 0)
@@ -182,6 +261,15 @@ command(uint32_t cmd, uint32_t seq, const void *request, uint32_t len, void *rep
         if (i >= len || i - 5 >= sizeof path)
             return -50;
         job_case = body[0] & 0x1f;
+        b_n = b_mode = b_i = 0;
+        if (job_case == 11) {
+            if (i + 2 >= len)
+                return -50;
+            b_n = body[i + 1];
+            b_mode = body[i + 2];
+            if (b_n == 0 || b_n > 99 || i - 5 > 150)
+                return -50;
+        }
         tail16 = (body[0] & 0x20) != 0;
         flags = (body[0] & 0x40) ? DK_FILE_REPLACE : 0;
         root = (body[0] & 0x80) ? DK_FILES_SAMPLES : DK_FILES_STORE;
@@ -190,6 +278,7 @@ command(uint32_t cmd, uint32_t seq, const void *request, uint32_t len, void *rep
         for (uint32_t k = 0; k <= i - 5; ++k)
             path[k] = (char)body[5 + k];
         written = steps = mod_hash = 0;
+        seed = 0;
         handle = create_rc = close_rc = abort_rc = job_status = phase = 0;
         aux[0] = aux[1] = aux[2] = 0;
         spin_release = 0;

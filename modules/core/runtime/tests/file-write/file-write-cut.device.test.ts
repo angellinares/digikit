@@ -20,9 +20,15 @@ import { deviceListing } from '@digi/regression/runtime/upload-kit.ts';
 const CMD = 0x24;
 const WRITE = 1;
 const REPLACE = 0x40; // added to the case: DK_FILE_REPLACE
+const BATCH = 11; // the fixture's batch case: after the path, u8 n files and u8 mode (0: dk_files_commit after the last close)
+const BATCH_N = 4;
+const BATCH_SIZE = 2000;
+const BATCH_BASE = 'batch/cut';
 const SIZE = 2 * 4096 + 777;
 const PATH = 'data/sdk-cut.bin';
 const pattern = (n: number) => Buffer.from(Uint8Array.from({ length: n }, (_, i) => (i * 7 + (i >> 8)) & 255));
+const shifted = (n: number, i: number) => Buffer.from(Uint8Array.from({ length: n }, (_, k) => (((k + 13 * i) * 7) + ((k + 13 * i) >> 8)) & 255));
+const batchPath = (i: number) => `${BATCH_BASE}${String(i).padStart(2, '0')}`;
 const cstr = (s: string) => Buffer.concat([Buffer.from(s), Buffer.from([0])]);
 
 const cases = [
@@ -44,6 +50,18 @@ async function runJob(rig: CardRig, dk: DkSession, size: number, file: string, k
     if (b[0] === 2) return { job: b.readInt32BE(13), close: b.readInt32BE(5) };
   }
   throw new Error('the job did not end');
+}
+
+/** Run the fixture's batch job (BATCH_N deferred files, one commit) until it has ended; returns the job's status. */
+async function runBatch(rig: CardRig, dk: DkSession, replace = false): Promise<{ job: number; close: number; commit: number }> {
+  const body = Buffer.concat([Buffer.from([BATCH | (replace ? REPLACE : 0)]), be32(BATCH_SIZE), cstr(BATCH_BASE), Buffer.from([BATCH_N, 0])]);
+  expect((await dk.request(CMD, body)).status, 'the batch job is queued').toBe(0);
+  for (let i = 0; i < 300; i++) {
+    await rig.runtime.ui.wait({ ms: 100, why: SETTLE });
+    const b = Buffer.from((await dk.request(CMD + 1)).body);
+    if (b[0] === 2) return { job: b.readInt32BE(13), close: b.readInt32BE(5), commit: b.readInt32BE(41) };
+  }
+  throw new Error('the batch job did not end');
 }
 
 for (const device of DEVICES) {
@@ -130,6 +148,55 @@ for (const device of DEVICES) {
         const again = await runJob(rig, next, 5000, PATH, WRITE | REPLACE);
         expect([again.job, again.close], `${label}: the next replace works`).toEqual([0, 0]);
         expect(await next.verify(PATH)).toBe(sha(pattern(5000)));
+      }
+    }, 3_600_000);
+    test('a cut or tear at any card write of an N-file batch commit leaves the old store or the new one with all N files; before the commit no pending file shows and the space is free', async () => {
+      const old = blob(3000, 21);
+      const oldFile = path.join(rig.artifacts, 'old-b.dkm');
+      fs.writeFileSync(oldFile, old);
+      const mod = rig.mod('test/file-write');
+      const moduleBytes = fs.readFileSync(mod.file);
+      const base = await rig.card({ name: 'cut-batch-base', modules: [mod, { name: 'modules/old.dkm', file: oldFile }], selection: [mod.name] });
+      const oldFiles: Files = { 'modules/old.dkm': old, [mod.name]: moduleBytes };
+      const newFiles: Files = { ...oldFiles };
+      for (let i = 0; i < BATCH_N; i++) newFiles[batchPath(i)] = shifted(BATCH_SIZE, i);
+
+      // no cut: the number of card writes W of the whole job (the repair of header A, the data writes, the table, header B, header A)
+      const first = await rig.pausedBoot(base);
+      const usedBefore = (await first.capacity()).STORE!.used;
+      const ref = await runBatch(rig, first);
+      expect([ref.job, ref.commit], 'no cut: the job and its commit end ok').toEqual([0, 0]);
+      const W = await word(rig.session, planSymbol(rig.plan, 'DKRT_UPLOAD_WRITES'));
+      expect(W, 'at least the repair, N data writes, a table write and two headers').toBeGreaterThanOrEqual(BATCH_N + 4);
+      const refCard = await rig.after('batch-ref');
+      expect(await deviceListing(await rig.pausedBoot(refCard)), 'the whole batch is in the store').toEqual(listing(newFiles));
+
+      // every cut point, and a tear of header B and of header A (the last two writes)
+      const points: [string, Record<string, number>, boolean][] = [];
+      for (let c = 1; c <= W; c++) points.push([`a cut after write ${c} of ${W}`, { DKRT_UPLOAD_CUT: c }, c >= W - 1]);
+      points.push([`a tear of header B (write ${W - 1})`, { DKRT_UPLOAD_TEAR: W - 1 }, false]);
+      points.push([`a tear of header A (write ${W})`, { DKRT_UPLOAD_TEAR: W }, true]);
+      for (const [k, [label, knobs, committed]] of points.entries()) {
+        const dk = await rig.pausedBoot(base);
+        for (const [name, value] of Object.entries(knobs)) await pokeKnob(rig.session, rig.plan, name, value);
+        const done = await runBatch(rig, dk);
+        const whole = 'DKRT_UPLOAD_CUT' in knobs && knobs.DKRT_UPLOAD_CUT! >= W;
+        expect(done.job === 0, `${label}: the job ${whole ? 'ends ok' : 'is refused a write'} (status ${done.job})`).toBe(whole);
+        const card = await rig.after(`batchcut${k}`);
+
+        const want = committed ? newFiles : oldFiles;
+        const next = await rig.pausedBoot(card);
+        expect(await deviceListing(next), `${label}: the next boot reads the old store, or the new one with all ${BATCH_N} files`).toEqual(listing(want));
+        const view = await rig.view(`batchcut${k}-v`);
+        expect(listing(view.files), `${label}: plusdrive reads the same from the card ${view.head}`).toEqual(listing(want));
+        if (!committed) {
+          expect((await next.capacity()).STORE!.used, `${label}: the space of the pending files is free again`).toBe(usedBefore);
+        }
+        for (let i = 0; committed && i < BATCH_N; i++) expect(await next.verify(batchPath(i)), `${label}: file ${i} verifies`).toBe(sha(shifted(BATCH_SIZE, i)));
+
+        // the store takes the same batch again (new files on an old table, or replacements of the files of the new one)
+        const again = await runBatch(rig, next, committed);
+        expect([again.job, again.commit], `${label}: the next batch works`).toEqual([0, 0]);
       }
     }, 3_600_000);
   });

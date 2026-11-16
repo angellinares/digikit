@@ -258,6 +258,7 @@ volatile u32
  * fill whole 16-byte lines in bursts (the uncached alias costs one bus access per longword). 0: the uncached alias, as before (the A/B switch).
  * DEFAULT 0 until the emulator aliases DDR: its board keeps the cached window 0x40000000 and the uncached alias +0x08000000 in separate pages
  * (packages/emulator/machine/src/board.rs page_index), so the emulator's DMA data (written at the alias) reads as zeros at the cached address. Hardware: -DUB_CACHED_RX=1.
+ * Hardware result (DN2 1.12, measured 2026-11-16, finding 134): the cached read gave no copy gain and cost about 0.19 s per 9.8 MB (the line invalidate), so the default stays 0.
  * Rules, all in this file:
  *  1. The CPU never writes a receive buffer through its cached address. Only the USB DMA writes these buffers (enable writes only the descriptor, through the
  *     alias; the receive buffers are never written by the CPU). A dirty line could be written back over DMA data later. The cached address exists only as the

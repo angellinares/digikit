@@ -6,7 +6,7 @@
 
 [runtime]           # the digikit runtime release: the one version of the SDK (semantic version; packed major<<16 | minor<<8 | patch)
 table = "0.8.0"     # the runtime version that introduced the header table of a `.dkm` (R7): `patchkit pack` writes at least this as the version the module needs, so the loader refuses a module of the 0.7 format with E_CONTRACT
-version = "0.8.2"   # 0.x (stable is 1.0.0): a MINOR may break (an import changed or removed, the module file format, the store format, the SysEx protocol); a PATCH only adds
+version = "0.8.3"   # 0.x (stable is 1.0.0): a MINOR may break (an import changed or removed, the module file format, the store format, the SysEx protocol); a PATCH only adds
 # The one-version rule (docs/plans/sdk.md section 5.1): every `[[import]]` has `since`, the runtime version that added it (a string "0.7.0"; S3 is breaking, so every import has 0.7.0).
 # `patchkit pack` writes the newest `since` among the imports a module links into the `.dkm` header (word 0x30, the runtime version the module needs; bit 31 is the trace flag,
 # 0 when the module links no service import). The runtime loads a module only when that version has the runtime's MAJOR and MINOR and a PATCH at most the runtime's; otherwise
@@ -39,6 +39,8 @@ intro_done_fn = "void (void *arg)"
 io_step_fn = "i32 (void *arg)"
 # The end of an I/O job, in the UI task, once. `status` is the last step's result, or DK_IO_E_CANCELLED.
 io_done_fn = "void (void *arg, i32 status)"
+# One function for the runtime's helper task (`dk_helper_run`): it computes on its own memory, calls no import and does not wait.
+helper_fn = "void (void *arg)"
 # A menu row action or change (`dk_ui_menu_add_action`, `dk_ui_menu_add_toggle`, `dk_ui_menu_add_value`), in the UI task: `arg` is the pointer the row was added with, `value` the
 # value the row was added with (an action) or the new value.
 ui_action_fn = "void (void *arg, i32 value)"
@@ -476,7 +478,7 @@ service = "runtime"
 since = "0.7.0"
 context = "io-step"
 sig = "i32 (dk_files *f, u32 root, const char *path, u32 size, const void *hash4, u32 flags)"
-doc = "Open the one write session for the file `path` of `size` bytes under `root` (DK_FILES_STORE or DK_FILES_SAMPLES). `hash4`: NULL, or the expected file hash; dk_files_close then checks it. `flags`: 0 or DK_FILE_REPLACE (1). Returns a handle > 0 owned by this module, or a negative status (DK_E_BUSY: try again; DK_E_EXISTS, DK_E_FILE_IN_USE, DK_E_PATH, DK_E_FULL, DK_E_NOSTORE, DK_E_INUSE, DK_E_WRITE; DK_E_CONTEXT outside an I/O step). See <dk/platform/files.h>."
+doc = "Open the one write session for the file `path` of `size` bytes under `root` (DK_FILES_STORE or DK_FILES_SAMPLES). `hash4`: NULL, or the expected file hash; dk_files_close then checks it. `flags`: 0, DK_FILE_REPLACE (1) or DK_FILE_DEFER (2, a deferred file: dk_files_close checks it but names it in the store only at dk_files_commit or the runtime's own commit). Returns a handle > 0 owned by this module, or a negative status (DK_E_BUSY: try again; DK_E_EXISTS, DK_E_FILE_IN_USE, DK_E_PATH, DK_E_FULL, DK_E_NOSTORE, DK_E_INUSE, DK_E_WRITE; DK_E_CONTEXT outside an I/O step). See <dk/platform/files.h>."
 
 [[import]]
 name = "dk_files_write"
@@ -492,7 +494,7 @@ service = "runtime"
 since = "0.7.0"
 context = "io-step"
 sig = "i32 (dk_files *f, i32 h, void *hash_out)"
-doc = "End the file. All `size` bytes must have been written (DK_E_LENGTH) and match `hash4` when it was given (DK_E_HASH); the table is committed (power-cut safe). `hash_out` (4 bytes, may be NULL) gets the file hash of the bytes written. The session is closed whatever the result, except for DK_E_BUSY (try again)."
+doc = "End the file. All `size` bytes must have been written (DK_E_LENGTH) and match `hash4` when it was given (DK_E_HASH); the table is committed (power-cut safe), or, for a DK_FILE_DEFER file, the file becomes pending (see dk_files_commit; a dk_files_create with DK_FILE_DEFER that would pass DK_FILE_PENDING_MAX files or 16 MiB commits them first). `hash_out` (4 bytes, may be NULL) gets the file hash of the bytes written. The session is closed whatever the result, except for DK_E_BUSY (try again)."
 
 [[import]]
 name = "dk_files_abort"
@@ -509,6 +511,22 @@ since = "0.7.0"
 context = "io-step"
 sig = "i32 (dk_files *f, u32 root, const char *path)"
 doc = "Remove a file or folder entry. Returns 0, DK_E_NOFILE, DK_E_FILE_IN_USE (a reader still reads it: try again later), DK_E_BUSY or a path or store status."
+
+[[import]]
+name = "dk_files_commit"
+service = "runtime"
+since = "0.8.3"
+context = "io-step"
+sig = "i32 (dk_files *f)"
+doc = "Name all pending files of this module (closed with DK_FILE_DEFER) in the store in one table commit (power-cut safe). Returns 0 or a negative status (DK_E_BUSY: try again; DK_E_FILE_IN_USE, DK_E_FULL, DK_E_WRITE). The files stay pending after an error, and a pending file whose replaced file a reader still reads stays pending too (returns 0, the pending count says so; DK_E_FILE_IN_USE when none could commit). The runtime also commits them 1 s after the module's last file call, when its job ends or the module is unloaded. DK_E_CONTEXT outside an I/O step. See <dk/platform/files.h>."
+
+[[import]]
+name = "dk_files_pending"
+service = "runtime"
+since = "0.8.3"
+context = "io-step"
+sig = "i32 (dk_files *f)"
+doc = "The number of pending files of this module (closed with DK_FILE_DEFER, not yet named in the store). Always 0 for the DT2 samples root: its files are named at dk_files_close. DK_E_CONTEXT outside an I/O step."
 
 [[import]]
 name = "dk_io_post"
@@ -533,6 +551,22 @@ since = "0.7.0"
 context = "isr"
 sig = "void (i32 id)"
 doc = "Wake a job whose step returned DK_IO_WAIT. Callable from an interrupt handler, an adapter or any task. Unknown ids are ignored."
+
+[[import]]
+name = "dk_helper_run"
+service = "runtime"
+since = "0.8.3"
+context = "io-step"
+sig = "i32 (helper_fn work, void *arg)"
+doc = "Run `work(arg)` on the runtime's helper task (priority 3, 4 KiB stack) while the I/O step does something that blocks, such as dk_files_write; collect it with dk_helper_wait in the same step. `work` is pure compute: it calls no import, does not wait and keeps to the 4 KiB stack. One run at a time: DK_E_BUSY while a run (this module's, or the runtime's own close read-back hash, which never overlaps a step's own calls) is not collected; the caller then does the work itself. DK_E_NOT_FOUND: the kernel gave no task (same). DK_E_CONTRACT: no function. DK_E_CONTEXT outside an I/O step. A run the step leaves uncollected is collected when the step returns. See <dk/platform/io.h>."
+
+[[import]]
+name = "dk_helper_wait"
+service = "runtime"
+since = "0.8.3"
+context = "io-step"
+sig = "i32 ()"
+doc = "Wait until the run started by dk_helper_run has finished (the I/O task sleeps). Returns 0, DK_E_STATE when this module has no run, or DK_E_CONTEXT outside an I/O step. See <dk/platform/io.h>."
 
 [[import]]
 name = "dk_job_post"
@@ -1565,13 +1599,15 @@ frame_slack = 64    # a frame whose body length exceeds data_max + 4 + this is a
 
 [protocol.bulk.flags]     # bits of the `flags` u16 of a request header (BEGIN)
 REPLACE = 0x0001    # the destination may exist: the device replaces it atomically at END (DN2: the store's replace commit; DT2: temp file, then rename); a failed or aborted upload keeps the old file. Clear: an existing file gives E_EXISTS
+DEFER = 0x0002      # the device creates the file with DK_FILE_DEFER (runtime 0.8.3): END verifies it, but the file is only pending until a table commit names it (COMMIT, the runtime's 1 s idle commit, or a limit of 16 files or 16 MiB); an old device ignores the flag and commits at END
 
 [protocol.bulk.commands]  # never reuse or renumber (additive only)
 INFO = 0x01         # reply body: version u8, flags u8, u16 reserved, u32 data_max, u32 align, nonce[8] (20 bytes)
 BEGIN = 0x02        # body: root u32, path (NUL-terminated), size u32, expected hash 4 bytes (all zero: none)
 DATA = 0x03         # body: offset u32, then the bytes; the next offset only
-END = 0x04          # reply body: the device's hash|1 of the file (4 bytes, big-endian)
+END = 0x04          # reply body: the device's hash|1 of the file (4 bytes, big-endian), then pending u16 and reserved u16 (8 bytes). `pending`: files verified but not yet named in the store; 0 means everything sent so far is committed. An old device sends the 4 bytes only: read that as committed
 ABORT = 0x05        # drop the open file
+COMMIT = 0x07       # name all pending files in one table commit; no body; reply body: pending u16, reserved u16 (0 pending on success). An old device answers E_PROTO: read that as nothing to commit
 VERIFY = 0x06       # reserved, not implemented by usb-fast: the reply is E_PROTO (the host verifies over SysEx: DN2 VERIFY, DT2 file info; both are device-CPU bound with tiny replies)
 
 [protocol.status]   # reply status codes of the upload commands (0 = ok); never renumber

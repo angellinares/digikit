@@ -3,7 +3,7 @@
 
 use crate::platform::cstr_eq;
 use crate::state::log_at;
-use crate::{arena, collect, dlog, entry, hash32, intro, io, worker};
+use crate::{arena, aux, collect, dlog, entry, hash32, intro, io, worker};
 use crate::{debug_selected_params, imp_param_get, imp_param_set};
 use crate::health::dkrt_blocks;
 use crate::report::{debug_peek, debug_poll, debug_span_clock, debug_speed_flags, debug_track_type};
@@ -106,9 +106,13 @@ import_table! {
     ("dk_files_close", entry::dk_files_close),
     ("dk_files_abort", entry::dk_files_abort),
     ("dk_files_delete", entry::dk_files_delete),
+    ("dk_files_commit", entry::dk_files_commit),
+    ("dk_files_pending", entry::dk_files_pending),
     ("dk_io_post", imp_io_post),
     ("dk_io_cancel", imp_io_cancel),
     ("dk_io_wake", imp_io_wake),
+    ("dk_helper_run", imp_helper_run),
+    ("dk_helper_wait", imp_helper_wait),
     ("dk_job_post", imp_job_post),
     ("dk_job_cancel", imp_job_cancel),
     ("dk_hash32_init", imp_hash32_init),
@@ -185,9 +189,13 @@ const _: dkrt_sdk::api::DkFilesWriteFn = entry::dk_files_write;
 const _: dkrt_sdk::api::DkFilesCloseFn = entry::dk_files_close;
 const _: dkrt_sdk::api::DkFilesAbortFn = entry::dk_files_abort;
 const _: dkrt_sdk::api::DkFilesDeleteFn = entry::dk_files_delete;
+const _: dkrt_sdk::api::DkFilesCommitFn = entry::dk_files_commit;
+const _: dkrt_sdk::api::DkFilesPendingFn = entry::dk_files_pending;
 const _: dkrt_sdk::api::DkIoPostFn = imp_io_post;
 const _: dkrt_sdk::api::DkIoCancelFn = imp_io_cancel;
 const _: dkrt_sdk::api::DkIoWakeFn = imp_io_wake;
+const _: dkrt_sdk::api::DkHelperRunFn = imp_helper_run;
+const _: dkrt_sdk::api::DkHelperWaitFn = imp_helper_wait;
 const _: dkrt_sdk::api::DkJobPostFn = imp_job_post;
 const _: dkrt_sdk::api::DkJobCancelFn = imp_job_cancel;
 const _: dkrt_sdk::api::DkHash32InitFn = imp_hash32_init;
@@ -320,6 +328,8 @@ unsafe extern "C" fn imp_intro_take(frame: Option<dkrt_sdk::api::IntroFrameFn>, 
 unsafe extern "C" fn imp_io_post(step: Option<dkrt_sdk::api::IoStepFn>, done: Option<dkrt_sdk::api::IoDoneFn>, arg: *mut u8) -> i32 { io::post(dlog::current_source(), step, done, arg) }
 unsafe extern "C" fn imp_io_cancel(id: i32) -> i32 { io::cancel(dlog::current_source(), id) }
 unsafe extern "C" fn imp_io_wake(id: i32) { io::wake(id) }
+unsafe extern "C" fn imp_helper_run(work: Option<dkrt_sdk::api::HelperFn>, arg: *mut u8) -> i32 { aux::module_run(core::mem::transmute::<Option<dkrt_sdk::api::HelperFn>, usize>(work), arg) }
+unsafe extern "C" fn imp_helper_wait() -> i32 { aux::module_wait() }
 unsafe extern "C" fn imp_hash32_init(state: *mut u8) { core::ptr::write(state as *mut hash32::Hash32, hash32::Hash32::new()) }
 unsafe extern "C" fn imp_hash32_update(state: *mut u8, p: *const u8, n: u32) { (*(state as *mut hash32::Hash32)).update(p, n) }
 unsafe extern "C" fn imp_hash32_finish(state: *mut u8) -> u32 { core::ptr::read(state as *const hash32::Hash32).finish() | 1 }

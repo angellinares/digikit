@@ -32,9 +32,13 @@
 // --speed MASK (4 bits, decimal or 0x): sets the four speed switches through usb-fast STATUS 'S' before the put (bit 0 hash once, bit 1 USB receive ring,
 // bit 2 read-back hash overlap, bit 3 large card commands; all on at boot); the run prints the resulting mask and the usb-fast STATUS words 18 (staging bytes)
 // and 19 (receive ring slots): the hardware A/B of docs/findings/126-usb-fast-transfer-ceilings.md.
+// The files go with the batch commit (runtime 0.8.3, usb-fast): the device verifies each file at END and names up to 16 of them in one table commit; `samples put`
+// sends COMMIT after the last file and reports the files as saved then (docs/plans/usb-fast-batch.md). A device without the batch
+// commit commits at END and says so (4-byte END reply).
 // link and MB/s of every file and of the run: the repeatable bench (docs/plans/usb-fast.md step 6): run it once with --bulk off and once with auto.
 import { spawn, spawnSync } from 'node:child_process';
 import { existsSync, mkdirSync, readFileSync, statSync, writeFileSync } from 'node:fs';
+import { readFile } from 'node:fs/promises';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 import {
@@ -405,37 +409,95 @@ if (SPANS) {
       let tVerify = 0;
       let count = 0;
       const t0 = performance.now();
-      for (const file of rest) {
+      let tCommit = 0;
+      /** The verify (or its skip) and the line of one file that the device has named in the store. */
+      const finish = async ({ prepared, n, prep, putMs, saved }) => {
+        // the bulk END of the Digitakt II +Drive and of a runtime with the READBACK capability compares a hash the device computed from the written
+        // file; the SysEx verify is skipped then (see skipVerifyAfterBulk)
+        const skip = skipVerifyAfterBulk(opts.verify, link(), kind, devInfo, isDt2);
+        const t = performance.now();
+        const v = skip
+          ? {
+              ok: true,
+              message:
+                opts.verify === 'never'
+                  ? 'verify skipped'
+                  : `device hash checked at END${saved ? ', saved by the batch commit' : ''}`,
+            }
+          : await backend.verify(opts.folder, prepared);
+        const ver = performance.now() - t;
+        tVerify += ver;
+        const s = putMs / 1000;
+        console.log(
+          `${v.ok ? 'ok  ' : 'FAIL'} ${kind === 'digikit' ? 'samples' : '+Drive'}/${opts.folder ? `${opts.folder}/` : ''}${prepared.name}  ${v.message}  ${n} bytes ${s.toFixed(2)} s ${(n / 1e6 / s).toFixed(2)} MB/s via ${link()} prep ${prep.toFixed(0)} ms put ${putMs.toFixed(0)} ms verify ${ver.toFixed(0)} ms`,
+        );
+        if (!v.ok) status = 1;
+      };
+      // files the device verified and holds pending: named by a reply that shows 0 pending, or by the COMMIT after the last file
+      let waiting = [];
+      const flush = async () => {
+        for (const w of waiting.splice(0)) await finish(w);
+      };
+      // The next file is read and prepared while this one is sent. The promise never rejects: a failure is a value that the next iteration reports on its file.
+      const readyFile = async (file) => {
         try {
           if (!statSync(file).isFile()) throw new Error('not a file');
-          let t = performance.now();
-          const prepared = prepareUpload(sample, path.basename(file), Uint8Array.from(readFileSync(file)));
-          const prep = performance.now() - t;
-          t = performance.now();
-          await backend.put(opts.folder, prepared, undefined, { exists: names.has(prepared.name), folderReady: true });
+          const t = performance.now();
+          const prepared = prepareUpload(sample, path.basename(file), Uint8Array.from(await readFile(file)));
+          return { prepared, prep: performance.now() - t };
+        } catch (error) {
+          return { error };
+        }
+      };
+      let ahead = rest.length > 0 ? readyFile(rest[0]) : undefined;
+      for (const [index, file] of rest.entries()) {
+        try {
+          const got = await ahead;
+          ahead = index + 1 < rest.length ? readyFile(rest[index + 1]) : undefined;
+          if (got.error) throw got.error;
+          const { prepared, prep } = got;
+          const t = performance.now();
+          const r = await backend.put(opts.folder, prepared, undefined, {
+            exists: names.has(prepared.name),
+            folderReady: true,
+            defer: backend.commit !== undefined,
+          });
           names.add(prepared.name);
           const putMs = performance.now() - t;
-          const s = putMs / 1000;
           const n = prepared.stored.length;
           total += n;
-          // the bulk END of the Digitakt II +Drive and of a runtime with the READBACK capability compares a hash the device computed from the written
-          // file; the SysEx verify is skipped then (see skipVerifyAfterBulk)
-          const skip = skipVerifyAfterBulk(opts.verify, link(), kind, devInfo, isDt2);
-          t = performance.now();
-          const v = skip
-            ? { ok: true, message: opts.verify === 'never' ? 'verify skipped' : 'device hash checked at END' }
-            : await backend.verify(opts.folder, prepared);
-          const ver = performance.now() - t;
           tPrep += prep;
           tPut += putMs;
-          tVerify += ver;
           count++;
-          console.log(
-            `${v.ok ? 'ok  ' : 'FAIL'} ${kind === 'digikit' ? 'samples' : '+Drive'}/${opts.folder ? `${opts.folder}/` : ''}${prepared.name}  ${v.message}  ${n} bytes ${s.toFixed(2)} s ${(n / 1e6 / s).toFixed(2)} MB/s via ${link()} prep ${prep.toFixed(0)} ms put ${putMs.toFixed(0)} ms verify ${ver.toFixed(0)} ms`,
-          );
-          if (!v.ok) status = 1;
+          const item = { prepared, n, prep, putMs, saved: r !== undefined };
+          if (r && r.pending > 0) {
+            console.log(`pend ${prepared.name}  ${r.pending} pending on the device`);
+            waiting.push(item);
+          } else {
+            await flush();
+            await finish(item);
+          }
         } catch (e) {
           console.error(`FAIL ${file}: ${e instanceof Error ? e.message : e}`);
+          status = 1;
+        }
+      }
+      if (waiting.length) {
+        const t = performance.now();
+        try {
+          const left = await backend.commit();
+          if (left > 0)
+            throw new Error(
+              `${left} files are still held back on the device (a file they replace is being read): not confirmed, run again`,
+            );
+          tCommit = performance.now() - t;
+          console.log(`commit ${waiting.length} files in ${tCommit.toFixed(0)} ms`);
+          await flush();
+        } catch (e) {
+          console.error(
+            `FAIL commit (${waiting.length} files not saved, send again): ${e instanceof Error ? e.message : e}`,
+          );
+          waiting = [];
           status = 1;
         }
       }
@@ -445,7 +507,7 @@ if (SPANS) {
       );
       if (speedMask !== undefined) console.log(await speedReport(holder.link.session));
       console.log(
-        `phases prep ${tPrep.toFixed(0)} ms put ${tPut.toFixed(0)} ms verify ${tVerify.toFixed(0)} ms, ${count} files ${(count / s).toFixed(2)} files/s`,
+        `phases prep ${tPrep.toFixed(0)} ms put ${tPut.toFixed(0)} ms commit ${tCommit.toFixed(0)} ms verify ${tVerify.toFixed(0)} ms, ${count} files ${(count / s).toFixed(2)} files/s`,
       );
     })();
   } finally {

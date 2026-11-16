@@ -71,6 +71,17 @@ _Static_assert(__builtin_offsetof(dk_file_entry, path) == 48, "dk_file_entry pat
  *   - dk_files_close writes the 4 bytes of the file hash `hash|1` to `hash_out` (may be NULL) before it checks `hash4`, so a module can report
  *     the hash on E_HASH. It returns E_LENGTH when fewer than `size` bytes were written. The session is closed whatever the result.
  *
+ * Deferred files (runtime 0.8.3): a file created with DK_FILE_DEFER is written, read back and hash-checked at dk_files_close as ever, but it is not
+ * named in the store table. It becomes a pending file: its extent is kept, the old table stays valid. dk_files_commit(files) names all pending files
+ * of the module in one table commit (one table write, one read-back, two header writes for any number of files); dk_files_pending(files) counts them.
+ * Both are I/O-step calls. A power cut loses only the pending files (nothing names their extents: the space is free after boot). Limits:
+ * DK_FILE_PENDING_MAX files and 16 MiB of pending data; the dk_files_create with DK_FILE_DEFER that would pass either one commits all pending files first (its error, or E_BUSY while some stay pending, is the create's result)
+ * (an error of that commit is its result; the files stay pending). The runtime commits pending files itself, in the I/O task: 1 s after the
+ * module's last file call, when the module's job ends, and when the module is unloaded. Pending files are never dropped. A pending file is not
+ * listed and cannot be read until it is committed. A DK_FILE_REPLACE of a pending path replaces the pending file; dk_files_delete of a pending path
+ * removes it; dk_files_create of a pending path without DK_FILE_REPLACE returns E_EXISTS. The DT2 samples root (+Drive) ignores DK_FILE_DEFER:
+ * its files are named at dk_files_close, dk_files_pending returns 0, and dk_files_commit finishes the adapter's deferred table rebuild.
+ *
  * Roots (above): DK_FILES_STORE on both devices. DK_FILES_SAMPLES: on the Digitone II the `samples/` folder of the store; on the
  * Digitakt II the stock +Drive, written through the firmware's own file code by the adapter core/plusdrive-write (E_CONTRACT when it is not
  * in the image). On the +Drive: `size` is the sample file's size without the 16 zero bytes that the firmware stores after every file (the
@@ -84,10 +95,14 @@ _Static_assert(__builtin_offsetof(dk_file_entry, path) == 48, "dk_file_entry pat
  * offset or length. */
 
 /* The handle takes dk_files_list, dk_files_poll and dk_files_cancel (listing) and dk_files_create, dk_files_write, dk_files_close, dk_files_abort and
-   dk_files_delete (writing) as the first argument. The runtime may ignore the handle in the write calls today; it names the owner. */
+   dk_files_delete (writing) as the first argument. dk_files_commit and dk_files_pending take it too. The runtime may ignore the handle in the write calls today; it names the owner. */
 #include <dk/core/status.h>
 
 #define DK_FILE_REPLACE 1u /* dk_files_create flag: replace an existing file atomically */
+/* dk_files_create flag: check the file at dk_files_close, name it in the store later (see "Deferred files") */
+#define DK_FILE_DEFER 2u
+/* pending files at most; with 16 MiB of pending data, the limit that makes dk_files_close commit them all */
+#define DK_FILE_PENDING_MAX 16u
 #define DK_FILE_E_BUSY DK_E_BUSY
 #define DK_FILE_E_EXISTS DK_E_EXISTS
 #define DK_FILE_E_CONTEXT DK_E_CONTEXT

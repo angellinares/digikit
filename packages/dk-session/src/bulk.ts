@@ -212,6 +212,7 @@ export class BulkFrames {
 const STATUS_NAMES = new Map<number, string>(Object.entries(BULK_STATUS).map(([n, c]) => [c, n]));
 export const E_BUSY = BULK_STATUS.L_E_BUSY;
 export const E_EXISTS = BULK_STATUS.L_E_EXISTS;
+export const E_PROTO = BULK_STATUS.E_PROTO;
 
 /** A device status other than 0 (`status` is the name: `E_HASH`, `L_E_EXISTS`). */
 export class BulkDeviceError extends DkError {
@@ -261,6 +262,17 @@ export interface BulkPutOptions {
   signal?: AbortSignal;
   /** The destination may exist: the device replaces it atomically at END (REPLACE flag of BEGIN); a failed upload keeps the old file. Clear: E_EXISTS. */
   replace?: boolean;
+  /**
+   * Ask the device to keep the file pending (BEGIN flag DEFER, runtime 0.8.3): END verifies it, a later COMMIT, the device's 1 s idle commit or the BEGIN of a file
+   * that would pass 16 files or 16 MiB names it in the store. `put` then returns `{ hash, pending }`.
+   */
+  defer?: boolean;
+}
+
+/** What `put` returns for a deferred file: the device's hash and the files still pending after this END (0: everything sent so far is committed; undefined: an old device, which committed at END). */
+export interface BulkPutResult {
+  hash: number;
+  pending: number | undefined;
 }
 
 const sleep = (ms: number) => new Promise<void>((r) => setTimeout(r, ms));
@@ -439,10 +451,12 @@ export class BulkSession {
    * gives E_EXISTS. Returns the device's hash (u32) from END. A failure or a cancel aborts the device's session; a hash that END returns and is not
    * `expected` throws (the file stays: the caller deletes it over SysEx).
    */
-  async put(root: number, path: string, bytes: Uint8Array, o: BulkPutOptions = {}): Promise<number> {
+  put(root: number, path: string, bytes: Uint8Array, o: BulkPutOptions & { defer: true }): Promise<BulkPutResult>;
+  put(root: number, path: string, bytes: Uint8Array, o?: BulkPutOptions): Promise<number>;
+  async put(root: number, path: string, bytes: Uint8Array, o: BulkPutOptions = {}): Promise<number | BulkPutResult> {
     const { expected, onProgress, signal } = o;
     const begin = concat(be32(root), text.encode(path), Uint8Array.of(0), be32(bytes.length), be32(expected ?? 0));
-    const flags = o.replace ? BULK_FLAG.REPLACE : 0;
+    const flags = (o.replace ? BULK_FLAG.REPLACE : 0) | (o.defer ? BULK_FLAG.DEFER : 0);
     try {
       await this.call(BULK_CMD.BEGIN, begin, flags);
     } catch (e) {
@@ -459,8 +473,11 @@ export class BulkSession {
       throw e;
     }
     let hash: number;
+    let pending: number | undefined;
     try {
-      hash = hashOf(await this.call(BULK_CMD.END));
+      const end = await this.call(BULK_CMD.END);
+      hash = hashOf(end);
+      pending = pendingOf(end, 4);
     } catch (e) {
       await this.abortSession().catch(() => {});
       throw e;
@@ -471,7 +488,24 @@ export class BulkSession {
         kind: 'verify',
         status: 'E_HASH',
       });
-    return hash;
+    return o.defer ? { hash, pending } : hash;
+  }
+
+  /**
+   * Name every pending file in one table commit (COMMIT). Returns the files still pending after it: 0 on success; more when the device kept some back (a
+   * file it replaces is being read: the device retries by itself). An old device answers E_PROTO: it committed at every END, so there is nothing to commit
+   * (returns 0). A device error (E_BUSY after the retries, E_FULL, E_WRITE) throws and the files stay pending on the device (it commits them itself after 1 s
+   * idle). `signal` ends the wait for the reply with a `cancelled` error; the reply is then owed and read or dropped by the next request.
+   */
+  async commit(signal?: AbortSignal): Promise<number> {
+    await this.resync();
+    for (let tries = 0; ; tries++) {
+      const r = await this.reply(BULK_CMD.COMMIT, await this.send(BULK_CMD.COMMIT), signal);
+      if (r.status === 0) return pendingOf(r.body, 0) ?? 0;
+      if (r.status === E_PROTO) return 0;
+      if (r.status !== E_BUSY || tries >= this.o.busyRetries) throw new BulkDeviceError(BULK_CMD.COMMIT, r.status);
+      await sleep(this.o.busyWaitMs);
+    }
   }
 
   private async abortSession(): Promise<void> {
@@ -526,4 +560,10 @@ function hashOf(body: Uint8Array): number {
   if (body.length < 4)
     throw new DkError({ error: `bulk: a reply of ${body.length} body bytes is not a hash`, kind: 'protocol' });
   return new DataView(body.buffer, body.byteOffset, 4).getUint32(0);
+}
+
+/** `pending u16` at `at` of a reply body (END: after the 4 hash bytes; COMMIT: first), or undefined when the body is too short (an old device). */
+function pendingOf(body: Uint8Array, at: number): number | undefined {
+  if (body.length < at + 2) return undefined;
+  return new DataView(body.buffer, body.byteOffset, body.length).getUint16(at);
 }

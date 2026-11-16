@@ -232,6 +232,14 @@ pub unsafe extern "C" fn dk_files_delete(_f: *mut u8, root: u32, path: *const u8
     store_writer::sdk_delete(root, path)
 }
 
+pub unsafe extern "C" fn dk_files_commit(_f: *mut u8) -> i32 {
+    store_writer::sdk_commit()
+}
+
+pub unsafe extern "C" fn dk_files_pending(_f: *mut u8) -> i32 {
+    store_writer::sdk_pending()
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;

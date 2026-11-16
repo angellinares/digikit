@@ -518,6 +518,10 @@ pub extern "C" fn dkpw_recover(_: *mut u32) -> i32 {
     -48
 }
 #[no_mangle]
+pub extern "C" fn dkpw_commit() -> i32 {
+    0
+}
+#[no_mangle]
 pub extern "C" fn dkpw_staging() -> *const u8 {
     b"/.dkstage\0".as_ptr()
 }

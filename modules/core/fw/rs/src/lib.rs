@@ -712,6 +712,12 @@ pub mod storage {
     }
 
     unsafe extern "C" {
+        /// Page allocation FUN_401581dc (DT2 1.17): allocates `pages` card pages for file pages [first_page, first_page + pages) of the inode, first fit from the bitmap start 0xa7a (hint 0), and adds one extent per allocation (FUN_40157c68, FUN_40155974); stops silently when no page is free. It does not write the inode back (inode.write does) and does not count free pages first, which file.reserve does (FUN_40155f84, bit by bit). Call under the filesystem mutex with an inode of inode.get. Pass hint 0 (finding 120, finding 134).
+        #[link_name = "cf.storage.fn.file.alloc_pages"]
+        pub fn file_alloc_pages(inode: *mut u8, first_page: u32, pages: u32, hint: u8);
+    }
+
+    unsafe extern "C" {
         /// Nonzero when any inode's bit is set in the open-file bitmap (finding 120).
         #[link_name = "cf.storage.fn.file.any_open"]
         pub fn file_any_open() -> i32;

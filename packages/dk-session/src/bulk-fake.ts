@@ -27,6 +27,17 @@ export class FakeBulkDevice implements BulkLink {
   busyBursts: [number, number] = [0, 0];
   private burstLeft = 0;
   corruptEndHash = false;
+  /**
+   * The batch commit of runtime 0.8.3: BEGIN's DEFER flag keeps the file pending (it is in `files` only after COMMIT, `idleCommit()` or `pendingMax`
+   * files), END replies with 8 bytes (`hash | pending u16 | reserved u16`) and COMMIT is known. Off (an old device): DEFER is ignored, END replies with 4
+   * bytes and COMMIT is E_PROTO.
+   */
+  batch = false;
+  /** Files that END verified and that no commit has named yet: path -> bytes. */
+  pending = new Map<string, Uint8Array>();
+  pendingMax = 16;
+  /** The status the next COMMIT answers (nothing is committed), then 0 again. */
+  commitError = 0;
   /** Requests of these commands are dropped: no effect, no reply. */
   mute = new Set<number>();
   /** Hold the replies back until `release()`. */
@@ -47,7 +58,14 @@ export class FakeBulkDevice implements BulkLink {
   badFrames = 0;
   private inflight = 0;
   private last = new Uint8Array();
-  private session: { path: string; size: number; hash: number; data: Uint8Array[]; got: number } | null = null;
+  private session: {
+    path: string;
+    size: number;
+    hash: number;
+    data: Uint8Array[];
+    got: number;
+    defer: boolean;
+  } | null = null;
   private partial: Uint8Array[] = [];
   private held: Uint8Array[] = [];
   private replies: Uint8Array[] = [];
@@ -64,6 +82,11 @@ export class FakeBulkDevice implements BulkLink {
   setNonce(n: Uint8Array) {
     if (n.length !== BULK_NONCE_LEN) throw new Error('nonce of 8 bytes');
     this.nonce = n.slice();
+  }
+  /** The runtime's own commit after 1 s without a file call: every pending file is named. */
+  idleCommit() {
+    for (const [p, d] of this.pending) this.files.set(p, d);
+    this.pending.clear();
   }
   release() {
     this.hold = false;
@@ -173,7 +196,14 @@ export class FakeBulkDevice implements BulkLink {
         if (nul < 0 || body.length !== nul + 9) return err(BULK_STATUS.E_MSG);
         const path = new TextDecoder().decode(body.subarray(4, nul));
         if (this.files.has(path) && !(flags & BULK_FLAG.REPLACE)) return err(BULK_STATUS.L_E_EXISTS);
-        this.session = { path, size: v.getUint32(nul + 1), hash: v.getUint32(nul + 5), data: [], got: 0 };
+        this.session = {
+          path,
+          size: v.getUint32(nul + 1),
+          hash: v.getUint32(nul + 5),
+          data: [],
+          got: 0,
+          defer: this.batch && (flags & BULK_FLAG.DEFER) !== 0,
+        };
         return bulkReply(cmd, seq, 0);
       }
       case BULK_CMD.DATA: {
@@ -214,10 +244,24 @@ export class FakeBulkDevice implements BulkLink {
         const h = hash4(data);
         if (s.hash !== 0 && s.hash !== h) return err(BULK_STATUS.E_HASH);
         this.last = data;
-        this.files.set(s.path, data); // the old file is replaced here, at END, never before
-        const b = new Uint8Array(4);
+        if (s.defer) {
+          this.pending.set(s.path, data);
+          if (this.pending.size >= this.pendingMax) this.idleCommit();
+        } else this.files.set(s.path, data); // the old file is replaced here, at END, never before
+        const b = new Uint8Array(this.batch ? 8 : 4);
         new DataView(b.buffer).setUint32(0, this.corruptEndHash ? (h ^ 2) >>> 0 : h);
+        if (this.batch) new DataView(b.buffer).setUint16(4, this.pending.size);
         return bulkReply(cmd, seq, 0, b);
+      }
+      case BULK_CMD.COMMIT: {
+        if (!this.batch) return err(BULK_STATUS.E_PROTO);
+        if (this.commitError) {
+          const e = this.commitError;
+          this.commitError = 0;
+          return err(e);
+        }
+        this.idleCommit();
+        return bulkReply(cmd, seq, 0, new Uint8Array(4));
       }
       case BULK_CMD.ABORT:
         this.session = null;

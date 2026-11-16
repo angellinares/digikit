@@ -60,6 +60,68 @@ describe('frames', () => {
   });
 });
 
+describe('BulkSession batch commit (DEFER, the 8-byte END and COMMIT)', () => {
+  test('DEFER is sent in BEGIN, put returns the hash and the files pending, COMMIT names them', async () => {
+    const dev = new FakeBulkDevice();
+    dev.batch = true;
+    const s = session(dev);
+    const a = bytes(3000);
+    const b = bytes(5000);
+    const ra = await s.put(1, 'a', a, { expected: hash(a), defer: true });
+    expect(ra).toEqual({ hash: hash(a), pending: 1 });
+    expect(dev.files.has('a')).toBe(false); // verified, not named yet
+    const rb = await s.put(1, 'b', b, { defer: true, replace: true });
+    expect(rb).toEqual({ hash: hash(b), pending: 2 });
+    const begins = dev.log.filter(([c]) => c === BULK_CMD.BEGIN).map(([, f]) => f);
+    expect(begins).toEqual([BULK_FLAG.DEFER, BULK_FLAG.DEFER | BULK_FLAG.REPLACE]);
+    expect(await s.commit()).toBe(0);
+    expect([...dev.files.keys()]).toEqual(['a', 'b']);
+    expect(dev.pending.size).toBe(0);
+  });
+
+  test('a limit of the device commits at END: the reply says pending 0', async () => {
+    const dev = new FakeBulkDevice();
+    dev.batch = true;
+    dev.pendingMax = 2;
+    const s = session(dev);
+    expect((await s.put(1, 'a', bytes(512), { defer: true })).pending).toBe(1);
+    expect((await s.put(1, 'b', bytes(512), { defer: true })).pending).toBe(0);
+    expect(dev.files.size).toBe(2);
+  });
+
+  test('without defer the flag stays clear and put returns the hash alone', async () => {
+    const dev = new FakeBulkDevice();
+    dev.batch = true;
+    const data = bytes(512);
+    expect(await session(dev).put(1, 'a', data)).toBe(hash(data));
+    expect(dev.log.find(([c]) => c === BULK_CMD.BEGIN)![1]).toBe(0);
+    expect(dev.files.has('a')).toBe(true);
+  });
+
+  test('an old device: the 4-byte END reads as committed (pending undefined), COMMIT is E_PROTO and reads as nothing to commit', async () => {
+    const dev = new FakeBulkDevice(); // batch off: DEFER ignored
+    const s = session(dev);
+    const data = bytes(1024);
+    const r = await s.put(1, 'a', data, { defer: true });
+    expect(r).toEqual({ hash: hash(data), pending: undefined });
+    expect(dev.files.has('a')).toBe(true);
+    expect(await s.commit()).toBe(0);
+    expect(dev.log.at(-1)![0]).toBe(BULK_CMD.COMMIT);
+  });
+
+  test('a COMMIT error is thrown with its status and the files stay pending on the device', async () => {
+    const dev = new FakeBulkDevice();
+    dev.batch = true;
+    const s = session(dev, { busyRetries: 0 });
+    await s.put(1, 'a', bytes(512), { defer: true });
+    dev.commitError = BULK_STATUS.E_WRITE;
+    await expect(s.commit()).rejects.toMatchObject({ code: BULK_STATUS.E_WRITE });
+    expect(dev.pending.size).toBe(1);
+    expect(await s.commit()).toBe(0); // the next one works
+    expect(dev.files.has('a')).toBe(true);
+  });
+});
+
 describe('BulkSession.put', () => {
   test('two DATA requests in flight, in order, and the device hash comes back', async () => {
     const dev = new FakeBulkDevice();
@@ -451,6 +513,37 @@ describe('openSamples with a bulk link', () => {
     const next = openSamples('digikit', { session: port as never, bulk: session(dev) });
     await next.put('', { ...prepared(), name: 'tom' }, undefined, { exists: false });
     expect(dev.files.has('tom')).toBe(true);
+  });
+
+  test('defer: put reports the pending files, commit names them; an old device and a failed link give no result', async () => {
+    const dev = new FakeBulkDevice();
+    dev.batch = true;
+    const backend = openSamples('digikit', { session: basePort() as never, bulk: session(dev) });
+    const f = prepared();
+    expect(await backend.put('d', f, undefined, { exists: false, defer: true })).toEqual({ pending: 1 });
+    expect(await backend.put('d', { ...f, name: 'snare' }, undefined, { exists: false, defer: true })).toEqual({
+      pending: 2,
+    });
+    expect(dev.files.size).toBe(0);
+    await backend.commit!();
+    expect([...dev.files.keys()]).toEqual(['d/kick', 'd/snare']);
+    // no defer asked: nothing reported
+    expect(await backend.put('d', { ...f, name: 'hat' }, undefined, { exists: false })).toBeUndefined();
+    // an old device ignores DEFER and sends 4 bytes: committed, no result
+    const old = new FakeBulkDevice();
+    const b2 = openSamples('digikit', { session: basePort() as never, bulk: session(old) });
+    expect(await b2.put('d', f, undefined, { exists: false, defer: true })).toBeUndefined();
+    expect(old.files.has('d/kick')).toBe(true);
+    // the link fails: SysEx takes the file (not deferred) and commit does nothing
+    const dead = new FakeBulkDevice();
+    dead.batch = true;
+    const port = basePort();
+    const b3 = openSamples('digikit', { session: port as never, bulk: session(dead) });
+    dead.mute.add(BULK_CMD.DATA);
+    expect(await b3.put('d', f, undefined, { exists: false, defer: true })).toBeUndefined();
+    expect(b3.bulkState).toBe('fallback');
+    await b3.commit!();
+    expect(dead.log.some(([c]) => c === BULK_CMD.COMMIT)).toBe(false);
   });
 
   test('a cancel reaches the bulk put and is not a fallback', async () => {

@@ -16,7 +16,7 @@
 //! commit, and the headers switch to it (B first, then A, `seq + 1`). Nothing in use is ever overwritten, so a power cut leaves the old store
 //! or the new one. The table is streamed through small buffers: no table is held whole in RAM, so a store holds as many entries as the card has
 //! room for.
-use crate::proto::{E_FULL, E_NOFILE, E_PATH, E_WRITE};
+use crate::proto::{E_FULL, E_MSG, E_NOFILE, E_PATH, E_WRITE};
 use crate::{E_BAD_STORE, E_NOT_FOUND, E_READ, OK};
 
 pub const MAGIC: u32 = 0x444b_5354; // "DKST"
@@ -743,8 +743,8 @@ pub mod directory;
 
 // ---- free space -------------------------------------------------------------------------------------------------------------
 
-/// Header A, the table and the tail, two extents of the caller (a file being written, the capacity knob) and every lease (`lease::MAX`).
-const FIXED_MAX: usize = 3 + 2 + lease::MAX;
+/// Header A, the table, header B, and the caller's extents: a capacity knob and a file being written, a pending file each (`MANY_MAX`), the leases.
+const FIXED_MAX: usize = 3 + 2 + MANY_MAX + lease::MAX;
 
 /// The extents that are not files: header A, the table, the tail and what the caller says is reserved (a file being uploaded), sorted by start.
 struct Fixed {
@@ -957,6 +957,9 @@ pub unsafe fn largest_gap(
 pub enum Edit {
     /// Add the entry at `*const u8` (256 bytes), or replace the one with its path.
     Insert(*const u8),
+    /// Add `.1` entries (256 bytes each, `.0` points at an array of `.1` entry pointers, at most `MANY_MAX`, in any order), or replace the ones
+    /// with their paths. One table, one read back, two header writes for all of them. The hint of `commit_at` does not apply.
+    InsertMany(*const *const u8, usize),
     /// Remove the entry with this NUL-terminated path.
     Remove(*const u8),
     /// Rename or move: remove the entry with the NUL-terminated path `.0` and add the entry at `.1` (256 bytes: the same entry with its new
@@ -965,6 +968,9 @@ pub enum Edit {
     /// An empty table.
     Clear,
 }
+
+/// The most entries of one `Edit::InsertMany`.
+pub const MANY_MAX: usize = 16;
 
 /// What a commit did.
 pub struct Committed {
@@ -1100,10 +1106,18 @@ pub unsafe fn commit_at(
     extra: &[(u32, u32)],
     at: Option<u32>,
 ) -> Result<Committed, i32> {
-    let need = match edit {
-        Edit::Insert(_) | Edit::Rename(..) => table_sectors(cur.count + 1),
-        Edit::Remove(_) => table_sectors(cur.count),
-        Edit::Clear => 0,
+    // if-chains, not `match`: a match over this many variants becomes a jump table, which is not ColdFire code (the runtime links this crate)
+    let need = if let Edit::InsertMany(_, n) = edit {
+        if n > MANY_MAX {
+            return Err(E_MSG);
+        }
+        table_sectors(cur.count + n as u32)
+    } else if matches!(edit, Edit::Insert(_) | Edit::Rename(..)) {
+        table_sectors(cur.count + 1)
+    } else if matches!(edit, Edit::Remove(_)) {
+        table_sectors(cur.count)
+    } else {
+        0
     };
     let mut start = 1u32;
     if need != 0 {
@@ -1134,20 +1148,58 @@ pub unsafe fn commit_at(
     let mut removed: Option<Entry> = None;
     // the entries the edit adds, in table order: each goes in before the first old entry it sorts before
     let null = core::ptr::null::<u8>();
-    let (adds, n_adds) = match edit {
-        Edit::Insert(ne) => ([ne, null], 1),
-        Edit::Rename(_, ne, keep) if keep.is_null() => ([ne, null], 1),
-        Edit::Rename(_, ne, keep) if before(keep, ne) => ([keep, ne], 2),
-        Edit::Rename(_, ne, keep) => ([ne, keep], 2),
-        _ => ([null, null], 0),
-    };
+    let mut adds = [null; MANY_MAX];
+    let mut n_adds = 0usize;
+    if let Edit::Insert(ne) = edit {
+        adds[0] = ne;
+        n_adds = 1;
+    } else if let Edit::InsertMany(list, n) = edit {
+        for (i, a) in adds.iter_mut().enumerate().take(n) {
+            *a = *list.add(i);
+        }
+        // insertion sort in table order
+        for i in 1..n {
+            let mut j = i;
+            while j > 0 && before(adds[j], adds[j - 1]) {
+                adds.swap(j, j - 1);
+                j -= 1;
+            }
+        }
+        n_adds = n;
+    } else if let Edit::Rename(_, ne, keep) = edit {
+        if keep.is_null() {
+            adds[0] = ne;
+            n_adds = 1;
+        } else if before(keep, ne) {
+            adds[0] = keep;
+            adds[1] = ne;
+            n_adds = 2;
+        } else {
+            adds[0] = ne;
+            adds[1] = keep;
+            n_adds = 2;
+        }
+    }
     let mut next = 0usize;
     let mut err = OK;
     if !matches!(edit, Edit::Clear) {
         let r = scan(io, lay, cur, buf_in, cap, |_, e| {
-            match edit {
-                Edit::Insert(ne) => {
-                    // a folder entry is for a folder with nothing in it: it goes when a file or folder is stored inside it
+            if let Edit::Rename(from, ne, _) = edit {
+                if cstr_eq(e, from) {
+                    removed = Some(entry_of(e));
+                    return true;
+                }
+                if *e.add(O_KIND) == KIND_DIR && relation(e, ne) == 2 {
+                    return true;
+                }
+            } else if let Edit::Remove(path) = edit {
+                if cstr_eq(e, path) {
+                    removed = Some(entry_of(e));
+                    return true;
+                }
+            } else {
+                // Insert and InsertMany. A folder entry is for a folder with nothing in it: it goes when a file or folder is stored inside it
+                for &ne in &adds[..n_adds] {
                     if *e.add(O_KIND) == KIND_DIR && relation(e, ne) == 2 {
                         return true;
                     }
@@ -1156,22 +1208,6 @@ pub unsafe fn commit_at(
                         return true;
                     }
                 }
-                Edit::Rename(from, ne, _) => {
-                    if cstr_eq(e, from) {
-                        removed = Some(entry_of(e));
-                        return true;
-                    }
-                    if *e.add(O_KIND) == KIND_DIR && relation(e, ne) == 2 {
-                        return true;
-                    }
-                }
-                Edit::Remove(path) => {
-                    if cstr_eq(e, path) {
-                        removed = Some(entry_of(e));
-                        return true;
-                    }
-                }
-                Edit::Clear => {}
             }
             while next < n_adds && before(adds[next], e) {
                 err = out.put(io, lay, adds[next]);
