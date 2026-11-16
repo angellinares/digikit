@@ -54,6 +54,7 @@ pub mod record;
 pub mod records_cli;
 pub mod register;
 pub mod sdkgen;
+pub mod svccheck;
 pub mod typed;
 pub mod uses;
 pub mod verify;

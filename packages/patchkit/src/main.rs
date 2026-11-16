@@ -74,6 +74,9 @@ const USAGE: &str = "usage: patchkit [--root DIR] COMMAND ...
   objdiff OLD.dko.json NEW.dko.json [--format text|json] [--strict] [--erase TYPE]... [--owners owners.toml]
                                          do two objects hold the same code up to names, order and addresses? (proof for moves of Rust items;
                                          docs/PATCHING.md); exit 1 and the differences when not
+  service-check DIR... [--sdk sdk/sdk.toml]
+                                         the structure check of a service crate (modules/core/services/NAME): layout, one exported entry,
+                                         declarations equal to the manifest in sdk.toml (`module:check service/NAME`)
   owners RUNTIME.dko.json [--owners modules/core/runtime/owners.toml] --out DIR
                                          one sha256 file per owner of the runtime object (docs/TESTING.md, Owner hashes)
   dko show FILE.dko.json [--relocs]      arch, toolchain record, sections, symbols and relocations of an object
@@ -284,6 +287,7 @@ fn run(a: Args) -> Result<()> {
         "owners" => {
             patchkit::owners::run(rest)?;
         }
+        "service-check" => patchkit::svccheck::run(rest)?,
         "objdiff" => {
             let code = patchkit::objdiff::run(rest)?;
             if code != 0 {

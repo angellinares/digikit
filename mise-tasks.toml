@@ -298,7 +298,7 @@ description = "Build or inspect a standalone +Drive image"
 
 ["module:new"]
 run = "uv run python -m tools.patchkit.pk_new"
-description = "Create a run-time module from a template in sdk/templates and build it: mise run module:new -- machine|fx|tool AUTHOR/NAME [--dir DIR] (docs/MODULE-AUTHORING.md)"
+description = "Create a run-time module from a template in sdk/templates and build it: mise run module:new -- machine|fx|tool AUTHOR/NAME [--dir DIR], or a service crate of the runtime: module:new -- service NAME (docs/MODULE-AUTHORING.md)"
 
 ["module:build"]
 run = "uv run python -m tools.patchkit.patchkit build"
@@ -306,7 +306,7 @@ description = "Compile module sources to objects (core/* modules: build/*.dko.js
 
 ["module:check"]
 run = "uv run python -m tools.patchkit.pk_modcheck"
-description = "Check one module: module:check ID [--device dt2|dn2] [--trace]. Machine/effect conformance and own Python tests, then any module-owned Nx test-device target; may build or emulate. Modules without tests retain source/size checks; not an all-module patched load proof. Size/fit follows only after all owned stages pass"
+description = "Check one module: module:check ID [--device dt2|dn2] [--trace]; a service crate: module:check service/NAME (structure check, then its host tests). Machine/effect conformance and own Python tests, then any module-owned Nx test-device target; may build or emulate. Modules without tests retain source/size checks; not an all-module patched load proof. Size/fit follows only after all owned stages pass"
 
 ["module:audit"]
 run = "sh tools/devtools/module_audit.sh"
