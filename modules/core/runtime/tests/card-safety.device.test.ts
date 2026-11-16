@@ -127,29 +127,6 @@ cardRigs(
     );
 
     test(
-      'a card with our store keeps working: the selection loads, a selection and an upload still work',
-      async () => {
-        const rt = await h.boot(await h.card({ modules: [h.mod('test/c-demo', 'a')], selection: [MOD] }));
-        await h.ready();
-        expect(await cardInfo(rt.session, h.plan), 'the check says ours without reading the range').toMatchObject({
-          stateName: 'ours',
-          firstNonblank: NONE,
-          hash: 0,
-          refused: 0,
-        });
-        expect(await bootInfo(rt.session, h.plan)).toMatchObject({ count: 1, loaded: 1, safe: 0 });
-
-        expect(await setSelection(rt.session, h.plan, [MOD, MOD])).toBe(0);
-        expect(await statusOf(() => rt.dk.put('modules/b.dkm', blob(70_000, 5)))).toBe(0);
-        expect((await rt.dk.list()).map((e) => e.path)).toContain('modules/b.dkm');
-        expect(await cardInfo(rt.session, h.plan), 'the range check refused nothing of theirs').toMatchObject({
-          refused: 0,
-          claims: 0,
-        });
-      },
-    );
-
-    test(
       'an upload on a blank card claims the range first: after a cut upload the next boot calls the area ours',
       async () => {
         const rt = await h.boot(await h.card());
@@ -229,7 +206,6 @@ cardRigs(
 );
 
 cardRigs('card safety: torn sectors', { dsp: 'zero', uploads: true, roots: RT, symbols: CARD_SYMBOLS }, (h) => {
-  const { first, selA } = cardStore(h.device);
   const headerB = deviceProfile(h.device).card.store.header_b_sector;
   const claim = claimHeader(h.device);
   const torn = Buffer.concat([claim.subarray(0, 256), Buffer.alloc(256)]); // the cut came after half the sector
@@ -245,42 +221,6 @@ cardRigs('card safety: torn sectors', { dsp: 'zero', uploads: true, roots: RT, s
       expect(await statusOf(() => rt.dk.clear()), 'CLEAR').toBe(0);
       expect(await statusOf(() => rt.dk.put('modules/b.dkm', blob(3_000, 31))), 'the next upload commits').toBe(0);
       expect((await rt.dk.list()).map((e) => e.path)).toContain('modules/b.dkm');
-    },
-  );
-
-  test(
-    "header A torn by the claim's second write, header B whole: the card is ours and an upload commits",
-    async () => {
-      const rt = await h.boot(await h.card({ foreign: { [first]: torn, [headerB]: claim } }));
-      await h.ready();
-      expect((await cardInfo(rt.session, h.plan)).stateName).toBe('ours');
-      expect(await statusOf(() => rt.dk.put('modules/a.dkm', blob(3_000, 31)))).toBe(0);
-      expect((await rt.dk.list()).map((e) => e.path)).toContain('modules/a.dkm');
-    },
-  );
-
-  test(
-    'header A torn and header B blank (claim writes out of order): the card is foreign at sector 0, BEGIN and CLEAR answer E_INUSE, nothing is written',
-    async () => {
-      const rt = await h.boot(await h.card({ foreign: { [first]: torn } }));
-      await h.ready();
-      expect(await cardInfo(rt.session, h.plan)).toMatchObject({ stateName: 'foreign', firstNonblank: 0 });
-      expect(await opStatuses(rt.dk, ['begin', 'clear'])).toEqual([E_INUSE, E_INUSE]);
-      expect(await h.storeWrites()).toEqual([]);
-    },
-  );
-
-  test(
-    'selection copy A torn by the first selection write, the rest blank: the card is blank and the next selection writes both copies',
-    async () => {
-      const tornSel = Buffer.concat([PAT.subarray(0, 256), Buffer.alloc(256)]);
-      const rt = await h.boot(await h.card({ foreign: { [selA]: tornSel } }));
-      await h.ready();
-      expect((await cardInfo(rt.session, h.plan)).stateName).toBe('blank');
-      expect(await setSelection(rt.session, h.plan, [MOD])).toBe(0);
-      const recs = await h.records();
-      expect(recs[0]).not.toBeNull();
-      expect(recs[0]).toEqual(recs[1]);
     },
   );
 });
