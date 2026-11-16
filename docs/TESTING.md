@@ -379,7 +379,7 @@ reuses a fixture before it adds one. Layers: **host** (Vitest or pytest, no devi
 | `sine` | The small dynamic machine of the SDK contract (pitched sine, one LEVEL parameter, both devices); the DSP source other fixtures share; pitch checks | host, assembly, rig, device |
 | `dyn-dn2` | A Digitone II machine with its own SYN page of four knobs on the DSP of `sine` | assembly, device |
 | `dyn-params` | Parameter rows of different ranges: registry rows, needs inference, capacity | host, device |
-| `dyn-fx-gain` | The effect contract: insert effect, GAIN knob, upload, persistence, kit save | host, assembly, device |
+| `dyn-fx-gain` | The effect contract: insert effect, GAIN knob, upload, persistence, kit save; the trace marks (`DK_TRACE_LOG`, `DK_STEP`) that exist only in a `--trace` build (zero-cost proof `trace.rs`); owns the gain DSP the wrappers share | host, assembly, device |
 | `dyn-fx-gain-b` | A second effect with the same gain under another module id (another effect id): two effects in one kit | host, device |
 | `dyn-fx-gain-bipolar` | A signed knob (BIAS, -64 to +63) and the routes master and send | device |
 | `dyn-fx-gain-both` | Routes: master and send allowed, default master (`dk_fx_routes`) | device |
@@ -410,7 +410,6 @@ reuses a fixture before it adds one. Layers: **host** (Vitest or pytest, no devi
 | `dsp-facts` | Probe: cycle counts, instruction semantics and core register values on the SHARC+ core, one framed word per block | host, device |
 | `sharc-probe` | Probe: RECIPS and RSQRTS over a fixed sequence, one framed word per block | host, device |
 | `step-beacon` | Probe: stores a call counter in the module step word on every call | device |
-| `trace-demo` | Trace marks (`DK_TRACE`, `DK_STEP`) that exist only in a `--trace` build | assembly |
 | `ui-demo` | The framework menu: SETTINGS > DIGIKIT with one row of each kind, text page, list, side panel | host, assembly |
 | `native-page` | Native callback page cycling, parameter edits, local zoom and clipped drawing | host |
 | `native-pages` | Replacement page zero, page one, action mapping, independent level access | none yet |

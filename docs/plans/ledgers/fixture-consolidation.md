@@ -28,3 +28,12 @@ The registry `fx` of `core/fx` refuses an `[[entry]]` row of every module except
 | `[[entry]] registry = "fx"` text in `modules/README.md`, `core/fx/README.md`, `core/fx/module.toml`, `pk_conform.py`, `spec.ts`, `typed.rs` comment | Describe the patch-time path | Rewritten for run-time effects only. |
 
 Test added: `packages/patchkit/tests/prims.rs` `a_patch_time_effect_row_of_any_module_but_core_dynfx_is_refused` (the real `core/fx` registry, a synthetic module with an `fx` entry, the registry's reason in the error).
+
+## Step 2: trace-demo is merged into dyn-fx-gain
+
+`trace-demo` was `dyn-fx-gain` plus `#include "dk_trace.inc"`, two `DK_STEP` lines in the DSP and one `DK_TRACE_LOG` in `module.c`. The marks now sit in the canonical sources of `dyn-fx-gain`. They expand to nothing in a build without `--trace`, so the packed bytes of `dyn-fx-gain` must not change (checked in phase 2 with `sdk_hashes`).
+
+| Deleted | Old assertion | New location |
+| --- | --- | --- |
+| Fixture `trace-demo` | `packages/patchkit/tests/trace.rs`: a build without `--trace` equals the build of the sources without the mark lines; no trace bit; with `--trace` the trace bit, `_dk_step` import and a longer file; the traced objects do not replace the plain ones in the cache | The same test on `test/dyn-fx-gain` (stripped copy of `module.toml`, `module_ids.h`, `module.c`, `dyn_fx_gain.s`). No assertion changed. |
+| same | `.agents/skills/digikit-module/SKILL.md:71` names the fixture | Names `dyn-fx-gain`. |
