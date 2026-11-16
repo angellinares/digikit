@@ -199,77 +199,8 @@ fn order_of(mods: &[Option<Keys>], order: &mut [u8; SEL_MAX], cyclic: &mut [bool
     }
 }
 
-// ---- the boot's use: the tables are copied while `assign::plan` reads each file once ---------------------------------------------
-
-use core::ptr::{addr_of, addr_of_mut};
-
 /// The most bytes of a header table the boot planner keeps (a module with eight machines, three effects and nine needs has about 260; a larger table is not planned and the loader decides).
 pub(crate) const TABLE_MAX: usize = 384;
-static mut TABLES: [[u8; TABLE_MAX]; SEL_MAX] = [[0; TABLE_MAX]; SEL_MAX];
-/// Bytes of the table kept for selection index `k`; 0: none (the file is missing, torn, of the old format or has a larger table).
-static mut TABLE_LEN: [usize; SEL_MAX] = [0; SEL_MAX];
-
-/// The DSP load of the accepted modules of the last plan: (load, largest per-voice cost). What `dkrt_capacity` reports as used and largest of `CAPK_DSP_COST`;
-/// the module set is fixed per session, so the plan is the load.
-static mut PLANNED_DSP: (u32, u32) = (0, 0);
-
-pub unsafe fn planned_dsp() -> (u32, u32) {
-    *addr_of!(PLANNED_DSP)
-}
-
-/// Forget the tables (the start of a boot's planning).
-pub unsafe fn reset() {
-    *addr_of_mut!(TABLE_LEN) = [0; SEL_MAX];
-    *addr_of_mut!(PLANNED_DSP) = (0, 0);
-}
-
-/// Keep the header table of the `.dkm` `file` (the whole file in the staging buffer) for selection index `k`.
-pub unsafe fn capture(k: usize, file: &[u8]) {
-    if k >= SEL_MAX || file.len() < dkneeds::HEADER as usize {
-        return;
-    }
-    let be = |at: usize| u32::from_be_bytes([file[at], file[at + 1], file[at + 2], file[at + 3]]) as usize;
-    let (off, len) = (be(dkneeds::keys::H_KEYS_OFF as usize), be(dkneeds::keys::H_KEYS_SIZE as usize));
-    if len == 0 || len > TABLE_MAX || off > file.len() || len > file.len() - off {
-        return;
-    }
-    core::ptr::copy_nonoverlapping(file.as_ptr().add(off), (addr_of_mut!(TABLES) as *mut u8).add(k * TABLE_MAX), len);
-    (*addr_of_mut!(TABLE_LEN))[k] = len;
-}
-
-/// Plan the selection `count` modules long from the tables `capture` kept.
-pub unsafe fn run(count: usize) -> Plan {
-    let mut caps = [DkrtCap { kind: 0, limit: 0, used: 0, largest: 0 }; CAP_MAX];
-    let k = crate::dkrt_capacity(caps.as_mut_ptr(), CAP_MAX as u32) as usize;
-    // the report counts the selection's paths as used from the start of the boot (`boot::selected`); the plan counts them one by one as it takes the modules
-    let mut c = 0;
-    while c < k {
-        if caps[c].kind == dkrt_sdk::proto::CAPK_SELECTION as u32 {
-            caps[c].used = 0;
-            caps[c].largest = caps[c].limit;
-        }
-        // the plan starts with nothing loaded (the report counts the plan's own result from its end)
-        if caps[c].kind == dkrt_sdk::proto::CAPK_DSP_COST as u32 {
-            caps[c].used = 0;
-            caps[c].largest = 0;
-        }
-        c += 1;
-    }
-    let tables = &*addr_of!(TABLES);
-    let lens = &*addr_of!(TABLE_LEN);
-    let mut mods: [Option<Keys>; SEL_MAX] = [None; SEL_MAX];
-    let mut i = 0;
-    while i < count.min(SEL_MAX) {
-        if lens[i] != 0 {
-            mods[i] = Keys::parse(&tables[i][..lens[i]]).ok();
-        }
-        i += 1;
-    }
-    let env = Env { services: crate::handlers::services(), runtime: dkrt_sdk::RUNTIME_VERSION, caps: &caps[..k] };
-    let p = plan(&env, &mods[..count.min(SEL_MAX)]);
-    *addr_of_mut!(PLANNED_DSP) = p.dsp_load;
-    p
-}
 
 /// The needs of a module, as the fit function counts them.
 fn needs_of_uses(t: &Keys) -> fit::Needs {

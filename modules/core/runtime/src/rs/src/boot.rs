@@ -178,18 +178,16 @@ pub unsafe extern "C" fn dkrt_boot() {
     }
     // The frames that carry DSP code do not flow yet (they start with the sound engine, later in the task), so a module's CF part
     // goes live now and its DSP part follows over the UI-loop passes (`LOADING` in the report until then).
-    loader::EARLY = true;
     // the type numbers of every machine of the selection, before the first load (reads the files; the staging buffer is free)
     assign::plan(&r);
     // the boot plan over the header tables that read gave: the order to load in, and a module the plan refuses is not loaded
-    let planned = crate::plan::run(r.count as usize);
+    let planned = loader::plan_selection(r.count as usize);
     let mut k = 0;
     while k < r.count as usize {
         states().planned(k, planned.verdicts[k]);
         k += 1;
     }
     loader::boot(&r, &planned);
-    loader::EARLY = false;
     crate::selection::BOOT_IDX = u32::MAX;
     // core/introblank: no module took the intro, so the black intro has nothing to wait for
     crate::intro::end_blank();
@@ -202,7 +200,7 @@ pub unsafe extern "C" fn dkrt_boot() {
 }
 
 /// The result `res` of the load of selection entry `k` (the file at `path`): the boot record, the log events and the name the LOADS report shows.
-pub unsafe fn report_module(k: usize, path: *const u8, res: i32) {
+pub unsafe fn report_module(k: usize, path: *const u8, res: i32, missing: &[u8; NEEDS_LEN]) {
     let b = info();
     st().last_result = res;
     b.results[k] = res;
@@ -229,8 +227,8 @@ pub unsafe fn report_module(k: usize, path: *const u8, res: i32) {
         BOOT_NAME[k][j] = *p.add(at + j);
         j += 1;
     }
-    if res == E_IMPORT && loader::MISSING[0] != 0 {
-        let m = loader::MISSING;
+    if res == E_IMPORT && missing[0] != 0 {
+        let m = *missing;
         b.needs[k] = m;
         dlog::ev(
             logk::MOD_NEEDS,
