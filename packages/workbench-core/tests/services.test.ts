@@ -19,7 +19,7 @@ const v = (major: number, minor: number) => (major << 16) | (minor << 8);
 const need = (name: string, min = 0, hard = true): Need => ({ hash32: nameHash(name), minVersion: min, hard });
 
 /** A file with a header, the role word and a header table of the given version behind it. */
-function build(opts: { version?: number; role?: number; needs?: Need[]; provides?: [number, number]; magic?: number }): Uint8Array {
+function build(opts: { version?: number; role?: number; needs?: Need[]; provides?: [number, number]; magic?: number; abi?: number; builtFor?: number }): Uint8Array {
   const entries: number[][] = [];
   const u32 = (n: number) => [(n >>> 24) & 255, (n >>> 16) & 255, (n >>> 8) & 255, n & 255];
   const u16 = (n: number) => [(n >>> 8) & 255, n & 255];
@@ -34,15 +34,17 @@ function build(opts: { version?: number; role?: number; needs?: Need[]; provides
   const table = [...u32(opts.magic ?? TABLE_MAGIC), ...u16(opts.version ?? 2), ...u16(entries.length), ...entries.flat()];
   const f = new Uint8Array(HEADER_BYTES + table.length);
   const d = new DataView(f.buffer);
+  d.setUint32(0x30, opts.builtFor ?? 0);
   d.setUint32(0x38, opts.role ?? 0);
+  d.setUint32(0x3c, opts.abi ?? 0);
   d.setUint32(0x90, HEADER_BYTES);
   d.setUint32(0x94, table.length);
   f.set(table, HEADER_BYTES);
   return f;
 }
 
-function svc(stem: string, version: number, needs: Need[] = []): ServiceFile {
-  const bytes = build({ role: 1, provides: [nameHash(stem), version], needs });
+function svc(stem: string, version: number, needs: Need[] = [], abi = 0, builtFor = 0): ServiceFile {
+  const bytes = build({ role: 1, provides: [nameHash(stem), version], needs, abi, builtFor });
   const s = serviceFileOf(stem, bytes, `h-${stem}`);
   assert.ok(s);
   return s;
@@ -154,12 +156,27 @@ test('an older minor or another major of a service is refused as version', () =>
   assert.equal(newerMajor.refused[0]!.kind, 'version');
 });
 
-test('a fingerprint of the runtime is accepted for now (R12-4 adds the comparison)', () => {
-  const fx = svc('fx', v(1, 0));
-  const rt: RuntimeIdentity = { version: v(0, 9), fingerprint: 'abcd' };
-  const r = resolveServices([{ id: 'a', needs: [need('fx')] }], [fx], rt, RUNTIME);
+test('a service built for another ABI fingerprint refuses that module only', () => {
+  const fx = svc('fx', v(1, 0), [], 0xaaaa, v(0, 5));
+  const lfo = svc('lfo', v(1, 0), [], 0xbbbb, v(0, 5));
+  const rt: RuntimeIdentity = { version: (0 << 16) | (5 << 8) | 2, fingerprint: 0xbbbb };
+  const r = resolveServices(
+    [
+      { id: 'a', needs: [need('fx')] },
+      { id: 'b', needs: [need('lfo')] },
+    ],
+    [fx, lfo],
+    rt,
+    RUNTIME,
+  );
+  assert.deepEqual(r.refused, [{ module: 'a', service: 'fx', kind: 'fingerprint', runtime: '0.5.2', builtFor: '0.5.0' }]);
+  assert.deepEqual(r.order, [lfo]);
+});
+
+test('a runtime that reports no fingerprint accepts every service', () => {
+  const fx = svc('fx', v(1, 0), [], 0xaaaa);
+  const r = resolveServices([{ id: 'a', needs: [need('fx')] }], [fx], RT, RUNTIME);
   assert.deepEqual(r.refused, []);
-  assert.deepEqual(r.byModule.get('a'), [fx]);
 });
 
 test('more than PROVIDER_MAX services refuse the modules that push it over', () => {

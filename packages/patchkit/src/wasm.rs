@@ -114,6 +114,47 @@ pub fn check_bundle(fw: &[u8], bundle: &[u8]) -> Result<String> {
     .to_string())
 }
 
+/// What `pk_bind` takes: the ports (for the firmware's hash and hook sites) and the `devices/fw/` declaration texts (the argument plan of each hook).
+/// No modules and no firmware: the page ships it beside the bundle (`apps/web/scripts/gen-modules.mjs`, `modules/bind.json`).
+#[derive(Deserialize)]
+struct BindBundle {
+    ports: Vec<String>,
+    fw: Vec<String>,
+}
+
+/// `bind::bind` for the page: the bound `.dks` and the report JSON (`bind::bind_json`). The file holds firmware bytes: it stays in the page.
+pub fn bind_bundle(dks: &[u8], stock: &[u8], bundle: &[u8]) -> Result<(Vec<u8>, String)> {
+    let b: BindBundle = serde_json::from_slice(bundle)?;
+    let reg = Registry::from_texts(b.ports.iter().map(|s| s.as_str()))?;
+    let decls: Vec<&str> = b.fw.iter().map(String::as_str).collect();
+    let (file, hooks) = crate::bind::bind(dks, stock, &reg, &decls)?;
+    Ok((file, crate::bind::bind_json(&hooks)))
+}
+
+/// Bind a service file to the user's stock image (`patchkit bind`): the bound file is in `pk_out_*`, the report JSON in `pk_plan_*`, or the
+/// reason in `pk_err_*` (1: no known stock image, a file that is no service, a hook that does not exist on this image).
+///
+/// # Safety
+/// The three ranges must be readable.
+#[unsafe(no_mangle)]
+pub unsafe extern "C" fn pk_bind(
+    dks: *const u8,
+    dks_len: usize,
+    stock: *const u8,
+    stock_len: usize,
+    bundle: *const u8,
+    bundle_len: usize,
+) -> i32 {
+    let (dks, stock, bundle) = unsafe {
+        (
+            slice(dks, dks_len),
+            slice(stock, stock_len),
+            slice(bundle, bundle_len),
+        )
+    };
+    set(bind_bundle(dks, stock, bundle))
+}
+
 /// What `pk_sharc_object` takes: the SHARC+ sources of one object as texts, the files their `#include "name"` lines name (the page has no
 /// directories: the keys are the names as written), and the build options (`#ifdef NAME`).
 #[derive(Deserialize)]

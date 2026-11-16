@@ -424,6 +424,25 @@ pub async fn patchkit_wasm() -> Result<tauri::ipc::Response, String> {
     .map_err(|e| e.to_string())?
 }
 
+/// The bind bundle of the site build, `apps/web/public/modules/bind.json` (`{ports, fw}`, written by `apps/web/scripts/gen-modules.mjs`): what `pk_bind` reads
+/// beside the user's stock image to bind a service file. It holds no firmware.
+#[tauri::command]
+pub async fn bind_bundle() -> Result<tauri::ipc::Response, String> {
+    tauri::async_runtime::spawn_blocking(|| {
+        let path = root()?.join("apps/web/public/modules/bind.json");
+        std::fs::read(&path)
+            .map(tauri::ipc::Response::new)
+            .map_err(|e| {
+                format!(
+                    "{}: {e} (build it: node apps/web/scripts/gen-modules.mjs)",
+                    path.display()
+                )
+            })
+    })
+    .await
+    .map_err(|e| e.to_string())?
+}
+
 /// The profile and address-lookup code of the Log pane: `apps/web/public/dkprof.wasm` (built by `mise run wasm:dkprof`), as raw bytes.
 #[tauri::command]
 pub async fn dkprof_wasm() -> Result<tauri::ipc::Response, String> {

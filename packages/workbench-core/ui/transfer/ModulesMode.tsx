@@ -326,7 +326,7 @@ export default function ModulesMode(props: { ctx: PageCtx; onFlash?: () => void 
                   <Show
                     when={
                       props.onFlash &&
-                      v().refusals?.some((r) => r.kind === 'fingerprint' || (r.kind === 'version' && r.service === 'runtime'))
+                      v().refusals?.some((r) => r.kind === 'fingerprint' || r.kind === 'no-stock' || (r.kind === 'version' && r.service === 'runtime'))
                     }
                   >
                     <button

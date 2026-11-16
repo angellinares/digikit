@@ -10,6 +10,7 @@ import {
 import type { FirmwareEnv } from '@digi/workbench-core/firmware/env.ts';
 import {
   install,
+  refreshServices,
   restartDevice,
   type InstallDeps,
   type LibraryModule,
@@ -50,6 +51,8 @@ export function createDesktopDefaultModules(app: () => TransferApp): NonNullable
       const s = await (where === 'emulator' ? target.emulatorSession() : target.session());
       const library = await loadLibrary(device);
       const deps = await installDeps(device);
+      // the flash may have changed the runtime: the services already on the card are bound and replaced first
+      if (deps && where === 'device') await connection.asked(() => refreshServices(s, deps));
       return connection.asked(() => installDefaults(sessionOps(s, library, deps), ids, progress, opts));
     },
   };

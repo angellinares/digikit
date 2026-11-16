@@ -116,6 +116,11 @@ export interface TransferEnv {
   library: TransferLibrary;
   /** The wasm files of the app (`patchkit.wasm`: its `pk_needs` tells what a .dkm takes of the device). */
   wasm: WasmSource;
+  /**
+   * The bind bundle (`{ports, fw}` as JSON: `modules/bind.json`, no modules and no firmware): what `pk_bind` needs besides the stock image to bind a
+   * service file. Without it the app installs no services.
+   */
+  bindBundle?(): Promise<Uint8Array>;
   /** The name of the device with this id (`dt2`: "Digitakt II"). */
   deviceName(device: string): Promise<string>;
   targets: TransferTargets;

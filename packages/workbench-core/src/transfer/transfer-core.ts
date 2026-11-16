@@ -110,6 +110,11 @@ export function serviceRefusalText(r: ServiceRefusal): string {
         `Nothing was uploaded for ${r.module}. Update the workbench, or flash a matching runtime from the Firmware page.`
       );
     }
+    case 'no-stock':
+      return (
+        `${r.module} not installed. It needs the ${r.service} service, and the workbench prepares services from your own firmware file. ` +
+        `Choose that file once on the Firmware page. Nothing was uploaded for ${r.module}.`
+      );
     default:
       return `${r.module} not installed. It needs the ${r.service} service, which this workbench does not have.`;
   }

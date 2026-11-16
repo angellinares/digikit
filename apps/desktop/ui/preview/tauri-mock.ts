@@ -30,6 +30,8 @@ export async function invoke<T>(cmd: string, args?: any, _options?: { headers?: 
       return (await firmware.midi.recv(Number(args?.timeoutMs))) as T;
     case 'patchkit_wasm':
       return (await firmware.patchkitWasm()) as T;
+    case 'bind_bundle':
+      return new TextEncoder().encode('{"ports":[],"fw":[]}').buffer as T;
     case 'firmware_prepare':
       return (await firmware.prepare(
         args as Uint8Array,

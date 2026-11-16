@@ -306,6 +306,7 @@ function nodeFirmware(root: string, outDir: string | undefined): FirmwareHost {
     prepare: unsupported('firmware.prepare'),
     save: (bytes, name) => saveTo(outDir, 'firmware.save', bytes, name),
     patchkitWasm: () => wasm('patchkit.wasm'),
+    bindBundle: () => wasm('modules/bind.json'),
     sampleWasm: () => wasm('dksample.wasm'),
     dkprofWasm: () => wasm('dkprof.wasm'),
   };

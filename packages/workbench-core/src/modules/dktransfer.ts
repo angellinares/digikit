@@ -27,6 +27,7 @@ import {
   readProvides,
   resolveServices,
   type Need,
+  type ResolvedServices,
   type RuntimeIdentity,
   type ServiceBinder,
   type ServiceFile,
@@ -86,8 +87,8 @@ export interface InstallDeps {
   /** The unbound `.dks` files of the workbench. */
   services: ServiceFile[];
   binder: ServiceBinder;
-  /** The hash of the user's firmware: with the unbound file hash it keys a bound file. */
-  firmwareHash: string;
+  /** The hash of the user's stock firmware: with the unbound file hash it keys a bound file. null: none is kept, so no file can be bound and a module that needs a service is refused (`no-stock`). */
+  firmwareHash: string | null;
   runtimeIdentity: (info: DkInfoFull) => RuntimeIdentity;
   /** The name hashes of the services the runtime itself provides (no `.dks` file). */
   runtimeServices: Set<number>;
@@ -468,12 +469,28 @@ export async function readStoreFile(s: DkSession, path: string, piece = 768): Pr
 
 /** One bound file of a service: bound once per firmware hash and unbound hash (`deps.cache`). */
 async function bindService(deps: InstallDeps, f: ServiceFile): Promise<Uint8Array> {
+  if (f.hooks === 0) return f.bytes; // no firmware site to copy: the file is finished as built
+  if (deps.firmwareHash === null) throw new Error(`${f.stem}: no stock firmware is kept to bind it to`);
   const key = `${deps.firmwareHash}:${f.hash}`;
   const hit = deps.cache?.get(key);
   if (hit) return hit;
   const bound = await deps.binder.bind(f.bytes, deps.firmwareHash);
   deps.cache?.set(key, bound);
   return bound;
+}
+
+/** Without a kept stock image a service that hooks the firmware cannot be bound: each module that needs one is refused (`no-stock`); a service with no hook installs as built. */
+function withoutStock(deps: InstallDeps, plan: ResolvedServices): ResolvedServices {
+  if (deps.firmwareHash !== null) return plan;
+  const refused = [...plan.refused];
+  const byModule = new Map<string, ServiceFile[]>();
+  for (const [module, files] of plan.byModule) {
+    const unbound = files.find((f) => f.hooks > 0);
+    if (unbound) refused.push({ module, service: unbound.stem, kind: 'no-stock' });
+    else byModule.set(module, files);
+  }
+  const kept = new Set([...byModule.values()].flat());
+  return { byModule, order: plan.order.filter((f) => kept.has(f)), refused };
 }
 
 /**
@@ -533,18 +550,30 @@ export async function buildView(s: DkSession, library: LibraryModule[], deps?: I
   let sv: ServiceView | undefined;
   let refused: ServiceRefusal[] = [];
   if (deps) {
+    // a stock image that cannot bind a service (not one patchkit knows) is the same as none kept: the rows show the unbound files
+    let d = deps;
     const bound: ServiceView['services'] = [];
-    for (const file of deps.services) {
-      const b = await bindService(deps, file);
-      bound.push({ file, bound: { size: b.length, hash: fileHashHex(b) }, needs: deps.needsOf?.(b) });
+    try {
+      for (const file of d.services) {
+        const b = await bindService(d, file);
+        bound.push({ file, bound: { size: b.length, hash: fileHashHex(b) }, needs: d.needsOf?.(b) });
+      }
+    } catch {
+      d = { ...d, firmwareHash: null };
+      bound.length = 0;
+      for (const file of d.services)
+        bound.push({ file, bound: { size: file.bytes.length, hash: file.hash }, needs: d.needsOf?.(file.bytes) });
     }
     const facts = hasCap(info, 'READ') ? await cardFacts(s, card, library, headers) : { needs: [], provides: {} };
     sv = { services: bound, card: facts.needs, provides: facts.provides };
-    refused = resolveServices(
-      library.map((m) => ({ id: m.id, needs: readNeeds(m.bytes) })),
-      deps.services,
-      deps.runtimeIdentity(info),
-      deps.runtimeServices,
+    refused = withoutStock(
+      d,
+      resolveServices(
+        library.map((m) => ({ id: m.id, needs: readNeeds(m.bytes) })),
+        d.services,
+        d.runtimeIdentity(info),
+        d.runtimeServices,
+      ),
     ).refused;
   }
   const merged = mergeView(library, card, loaded, cap, headers, states, sv);
@@ -627,11 +656,14 @@ export async function install(
   let order: ServiceFile[] = [];
   let refused: ServiceRefusal[] = [];
   if (deps) {
-    const plan = resolveServices(
-      ids.map((id) => ({ id, needs: readNeeds(by.get(id)!.bytes) })),
-      deps.services,
-      deps.runtimeIdentity(info),
-      deps.runtimeServices,
+    const plan = withoutStock(
+      deps,
+      resolveServices(
+        ids.map((id) => ({ id, needs: readNeeds(by.get(id)!.bytes) })),
+        deps.services,
+        deps.runtimeIdentity(info),
+        deps.runtimeServices,
+      ),
     );
     refused = plan.refused;
     for (const refusal of refused) emit({ event: 'refuse', refusal });
@@ -710,6 +742,38 @@ export async function install(
   return deps
     ? { uploaded, selected: [], restarted: false, refused }
     : { uploaded, selected: [], restarted: false };
+}
+
+/**
+ * The Flash job's share: each `.dks` on the card that the workbench has a file for is bound again and replaced when the card holds other bytes
+ * (a flashed runtime can carry another service ABI). A file the workbench has no service for stays, a failed upload or verify stops the run.
+ * Returns the paths replaced. A service that hooks the firmware is left alone without a kept stock image (`deps.firmwareHash` null).
+ */
+export async function refreshServices(s: DkSession, deps: InstallDeps, emit: Emit = () => {}): Promise<string[]> {
+  const info = await s.info();
+  requireRuntime(info);
+  const mine = new Map(deps.services.map((f) => [servicePath(f.stem), f]));
+  const replaced: string[] = [];
+  for (const c of await listServices(s, info)) {
+    const f = mine.get(c.path);
+    if (!f || (f.hooks > 0 && deps.firmwareHash === null)) continue;
+    const bytes = await bindService(deps, f);
+    const hash = fileHashHex(bytes);
+    if (c.size === bytes.length && c.hash === hash) continue;
+    emit({ event: 'upload', id: f.stem, kind: 'service', path: c.path, bytes: bytes.length });
+    await s.put(c.path, bytes, uploadProgress(emit, f.stem, bytes.length, 'service'));
+    if (hasCap(info, 'VERIFY')) {
+      const got = await s.verify(c.path);
+      emit({ event: 'verify', id: f.stem, kind: 'service', path: c.path, ok: got === hash });
+      if (got !== hash)
+        throw new DkError({
+          error: `${c.path}: the device reads back hash ${got.slice(0, 8)}, expected ${hash.slice(0, 8)}: the card did not keep the file`,
+          kind: 'verify',
+        });
+    }
+    replaced.push(c.path);
+  }
+  return replaced;
 }
 
 /** Whether the device answers READ (the headers of its card files can be read). */

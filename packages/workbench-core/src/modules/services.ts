@@ -1,13 +1,14 @@
 // Services (.dks files) as dependencies of modules (.dkm): read the NEEDS and PROVIDES of a header table, pick the services an
 // install needs (dependencies first), refuse a module whose services do not fit, and plan which files a delete takes with it.
 // Pure: no I/O. The runtime fingerprint and the binding of a service to the firmware arrive through seams (RuntimeIdentity, ServiceBinder).
-import { HEADER_BYTES, TABLE_MAGIC } from '@digi/dk-session';
+import { HEADER_BYTES, TABLE_MAGIC, fmtVersion } from '@digi/dk-session';
 import type { Needs } from './fit.ts';
 
 /** The most services one install set may hold. */
 export const PROVIDER_MAX = 6;
 
 const NEEDS_TAG = 1;
+const HOOKS_TAG = 6;
 const PROVIDES_TAG = 9;
 const ROLE_SERVICE = 1;
 
@@ -23,24 +24,30 @@ export interface ServiceFile {
   label: string;
   hash32: number;
   version: number;
+  /** The ABI fingerprint the service was built for (header word 0x3c); it must equal the runtime's `svc_abi`. */
+  abi: number;
+  /** The runtime version the file was built for (header word 0x30 without the trace bit 31), for the refusal text. */
+  builtFor: number;
   path: string;
   bytes: Uint8Array;
   file_size: number;
   hash: string;
   needs: Need[];
+  /** The firmware sites the service hooks (HOOKS items). A file with none (lfo) is finished as built: it needs no binding and no stock image. */
+  hooks: number;
 }
 
 export interface RuntimeIdentity {
   version: number;
-  /** null: not checked yet (accepted). */
-  fingerprint: string | null;
+  /** The runtime's service ABI fingerprint (INFO `svc_abi`); null when the runtime does not report it (not checked). */
+  fingerprint: number | null;
 }
 
 export interface ServiceBinder {
   bind(dks: Uint8Array, firmwareHash: string): Promise<Uint8Array>;
 }
 
-export type ServiceRefusalKind = 'missing' | 'version' | 'fingerprint' | 'unknown-hash' | 'too-many';
+export type ServiceRefusalKind = 'missing' | 'version' | 'fingerprint' | 'unknown-hash' | 'too-many' | 'no-stock';
 
 export interface ServiceRefusal {
   module: string;
@@ -125,11 +132,14 @@ export function serviceFileOf(stem: string, bytes: Uint8Array, hash: string): Se
     label: `${stem} service`,
     hash32: p.hash32,
     version: p.version,
+    abi: v.getUint32(0x3c),
+    builtFor: v.getUint32(0x30) & 0x7fffffff,
     path: `services/${stem}.dks`,
     bytes,
     file_size: bytes.length,
     hash,
     needs: readNeeds(bytes),
+    hooks: tableItems(bytes, HOOKS_TAG, 8).length,
   };
 }
 
@@ -148,12 +158,18 @@ function hex(h: number): string {
 
 /** The services each module needs (dependencies first), the install order of all of them, and the refusals.
  * A refused module is not in `byModule` and adds nothing to `order`; the others still resolve. */
+export interface ResolvedServices {
+  byModule: Map<string, ServiceFile[]>;
+  order: ServiceFile[];
+  refused: ServiceRefusal[];
+}
+
 export function resolveServices(
   mods: { id: string; needs: Need[] }[],
   set: ServiceFile[],
   rt: RuntimeIdentity,
   runtimeServices: Set<number>,
-): { byModule: Map<string, ServiceFile[]>; order: ServiceFile[]; refused: ServiceRefusal[] } {
+): ResolvedServices {
   const provider = new Map<number, ServiceFile>();
   for (const s of set) {
     const o = provider.get(s.hash32);
@@ -180,8 +196,14 @@ export function resolveServices(
         if (!s) return { module: id, service: hex(n.hash32), kind: 'unknown-hash' };
         if (!versionFits(s.version, n.minVersion))
           return { module: id, service: s.stem, kind: 'version', need: fmt(n.minVersion), have: fmt(s.version) };
-        // TODO(R12-4): a ServiceFile has no fingerprint yet, so with rt.fingerprint !== null there is nothing to compare:
-        // treat it as matching. R12-4 adds the fingerprint the service was built for and the 'fingerprint' refusal.
+        if (rt.fingerprint !== null && s.abi !== rt.fingerprint)
+          return {
+            module: id,
+            service: s.stem,
+            kind: 'fingerprint',
+            runtime: fmtVersion(rt.version),
+            builtFor: fmtVersion(s.builtFor),
+          };
         if (seen.has(s)) continue;
         seen.add(s);
         const r = visit(s.needs);
