@@ -1,4 +1,4 @@
-import { mkdirSync, mkdtempSync, readdirSync, rmSync, writeFileSync, existsSync } from 'node:fs';
+import { mkdirSync, mkdtempSync, readFileSync, readdirSync, rmSync, writeFileSync, existsSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { fileURLToPath } from 'node:url';
@@ -8,10 +8,16 @@ import { galleryGaps, read } from '../module-manifests.mjs';
 
 const repo = fileURLToPath(new URL('../../../', import.meta.url));
 
-// Modules whose gallery lacks a device until `module:check` regenerates it in the next device window. Remove an entry when it is fixed.
-const PENDING = new Map<string, string[]>([
-  ['fadedlimes/bd', ['dt2: machine bd is not listed in modules/machines/bd/build/gen/gallery.json']],
-]);
+// Modules whose gallery lacks a device until `module:check` regenerates it in the next device window: module id to its gaps, in the data file next to this test.
+// Remove an entry when it is fixed.
+const PENDING = new Map<string, string[]>(
+  Object.entries(
+    JSON.parse(readFileSync(join(import.meta.dirname, 'gallery-gaps-pending.json'), 'utf8')) as Record<
+      string,
+      string[]
+    >,
+  ),
+);
 
 function scratchGallery(gallery: unknown) {
   const dir = mkdtempSync(join(tmpdir(), 'gallery-gaps-'));

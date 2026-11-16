@@ -1,7 +1,6 @@
 // The services a module needs go on the card with it: the NEEDS of a packed .dkm name them, and the install step puts the bound file at services/<name>.dks before the
 // selection and the restart.
 import fs from 'node:fs';
-import os from 'node:os';
 import path from 'node:path';
 import { afterAll, expect, test, vi } from 'vitest';
 import type { DkSession } from '@digi/dk-session';
