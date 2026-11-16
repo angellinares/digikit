@@ -513,7 +513,7 @@ mod tests {
         assert!(!run(&fs, &["c0"]).truncated);
         // more distinct needs than the search list holds
         let want: Vec<u32> = (0..WANT_MAX as u32 + 1).collect();
-        let services = ServiceTable { rows: &ROWS, failed: 0, core: &REAL_CORE };
+        let services = ServiceTable::new(&ROWS_P.0, &REAL_CORE);
         let mut block = Block([0; 1024]);
         let mut out = Found::new();
         unsafe { find(&fs, &services, block.0.as_mut_ptr(), &want, &mut out) };
