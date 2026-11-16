@@ -81,3 +81,18 @@ One fault injector `test/dyn-crash` (id kept). Its store file `cfg/crash-after.b
 | `modules/tools/bootscreen/project.json`, `modules/core/runtime/tests/project.json` module lists | Name the old fixtures | Name `test/dyn-crash` (and `test/intro-ticks`). |
 
 Unchanged: `crash-capture.device.test.ts` (cfg modes 0 and 1: the crash record is asserted, so the fault is asserted) and `fault-trace.device.test.ts` (writes the cfg with mode 0; asserts the dk/fault record).
+
+## Step 6: lfo-shape-dup becomes a wrapper, native-pages is deleted
+
+| Deleted | Old assertion | New location |
+| --- | --- | --- |
+| `lfo-shape-dup/src/module.c` (a copy of `lfo-shape` with the ramp from 500 instead of -1000) | A second module with the shape id 7 loads as `E_PLAN_KEY` (`lfo.device.test.ts`, `refusal.device.test.ts`: the tests assert the error code and the names only) | `lfo-shape-dup` keeps its own `module.toml` (module name) and builds `../lfo-shape/src/module.c`. The ramp of the second module (500) is DROPPED: no test reads it. Not done: the alias (`pack-aliases`) the design called for; test-only projects reject aliases (`tools/nx/device-tests.mjs`, "needs explicit pack-aliases support"), so the toml-only wrapper is the fallback. |
+| Fixture `native-pages` (replacement page zero and page one, action mapping, independent level access) | No test used it ("none yet" in the fixture table) | DROPPED. Gap: nothing proves replacement native pages with a bound click on a fixture; `native-page` covers the callback page, and a screenshot of a real module would cover the rest. `docs/design/native-machine-pages.md` says so. |
+
+## Open gaps and points
+
+- `tb303.device.test.ts` stays the only device test of the machine gate delivery (`DK_MACHINE_GATE`): no fixture sets it. A fixture with a gate would let a fixture test replace the real-module test.
+- Rings A and C of the fx hook are not read by any test any more (step 1).
+- `dyn-dn2` on the Digitakt II: `[uses.dt2]` and the DT2 part of `build/gen/gallery.json` are derived by hand; `module:check` is the writer. The hint 7 and the knob script of `roundtrip.device.test.ts` for DT2 must be confirmed on a device run.
+- `lfo-shape-dup` is a wrapper, not an alias.
+- Not done (optional by decision): `dyn-fx-gain-bipolar` without routes, and `commit-demo` sharing a DSP.

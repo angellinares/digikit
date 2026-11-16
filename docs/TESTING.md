@@ -388,7 +388,7 @@ reuses a fixture before it adds one. Layers: **host** (Vitest or pytest, no devi
 | `svc-test` | The service fixture: a `.dks` of the test-only service `svc-test` with exports `dk_svctest_ping` and `dk_svctest_hits` and one hook | host, assembly, device |
 | `svc-test-user` | A module with a hard NEED on `svc-test` (the provider and NEED path of the loader) | host, assembly, device |
 | `lfo-shape` | A service-type module that emits one `lfo_shape` record (shape id 7) | assembly, device |
-| `lfo-shape-dup` | The same shape id as `lfo-shape`: only one of the two loads (refusal) | device |
+| `lfo-shape-dup` | The code of `lfo-shape` under another module name (same shape id): only one of the two loads (refusal) | device |
 | `entry-demo` | The module entry point: `dk_module` with `init`, `tick`, `fini`, `menu`, settings, log, time, an absent optional service | host, device |
 | `dyn-demo` | A raw module loaded from the card store with a counter in its `tick`: load, unload, store format, names | host, assembly, device |
 | `dyn-demo-stray` | The ColdFire memory audit: `dyn-demo` that writes one word outside its block | device |
@@ -409,7 +409,6 @@ reuses a fixture before it adds one. Layers: **host** (Vitest or pytest, no devi
 | `step-beacon` | Probe: stores a call counter in the module step word on every call | device |
 | `ui-demo` | The framework menu: SETTINGS > DIGIKIT with one row of each kind, text page, list, side panel | host, assembly |
 | `native-page` | Native callback page cycling, parameter edits, local zoom and clipped drawing | host |
-| `native-pages` | Replacement page zero, page one, action mapping, independent level access | none yet |
 | `usb-echo` | The bulk interface of `core/usb-bulk`: echo of every buffer on EP2 IN from an I/O job | host, device |
 | `input-probe` | The input adapter: SysEx commands press keys and turn encoders through `core/input` | device |
 | `svc-echo` | Service commands: `dk_host_register` and an echo of the request body | host, device |
