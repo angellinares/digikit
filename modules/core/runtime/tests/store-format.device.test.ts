@@ -2,6 +2,8 @@ import { createHash } from 'node:crypto';
 import fs from 'node:fs';
 import zlib from 'node:zlib';
 import { fileHashHex } from '@digi/dk-session';
+import { LOG_KIND, RUNTIME_SERVICE_NAMES } from '@digi/dk-session/gen_proto';
+import { resolveInputs } from '@digi/test-support';
 import type { PatchedSession } from '@digi/regression/support.ts';
 import { expect, test } from 'vitest';
 import {
@@ -16,11 +18,15 @@ import {
 import { CARD_SYMBOLS, cardRigs, RT } from '@digi/regression/runtime/card-rig.ts';
 import { CARD_TIMEOUT } from '@digi/regression/runtime/debug-kit.ts';
 import { cardStore, deviceProfile } from '@digi/regression/runtime/device-data.ts';
+import { FIRMWARE } from '@digi/regression/runtime/devices.ts';
+import { moduleArtifact } from '@digi/regression/runtime/install.ts';
 import { patchkit } from '@digi/regression/runtime/patchkit.ts';
+import { ofKind } from '@digi/regression/runtime/runtime-menu.ts';
 import { encodeSettings } from '@digi/regression/runtime/project-kit.ts';
 import { liveCheck as check } from '@digi/regression/runtime/artifacts.ts';
 import { installDefaults, type DefaultOps } from '../../../../packages/workbench-core/src/firmware/default-modules-core.ts';
-import { install, libraryModule } from '../../../../packages/workbench-core/src/modules/dktransfer.ts';
+import { deleteFiles, install, libraryModule } from '../../../../packages/workbench-core/src/modules/dktransfer.ts';
+import { nameHash, serviceFileOf, type ServiceBinder } from '../../../../packages/workbench-core/src/modules/services.ts';
 
 /**
  * The store's file hash (version 4: the +Drive content hash in the table's 32-byte slot) and what a store of another version is. Both devices.
@@ -28,6 +34,9 @@ import { install, libraryModule } from '../../../../packages/workbench-core/src/
  *  - The flash scenario: a card with a real version 3 store (the old header, a table with a SHA-256 slot, a module), a selection and a settings
  *    record. The new runtime boots, LIST is empty, the first upload makes a version 4 store, a restart loads the module from the kept selection,
  *    and the workbench's default-module install (`installDefaults`, the same TypeScript code) ends with the module loaded.
+ *  - Transfer installs services (docs/plans/runtime-and-services.md R12-7): `install` with service inputs uploads `services/svc-test.dks` (bound to the stock firmware
+ *    of the device) before the module that needs it, a second install skips both, the restart loads provider and module (the module's ping answers 42), and
+ *    `deleteFiles` of the module takes the unused `.dks` with it. The binder is `patchkit bind`: the same Rust code as the wasm `pk_bind` (apps/web/tests/bind.wasm.test.ts).
  * The END with a wrong hash is in upload.device.test.ts ("a wrong file hash: E_HASH").
  */
 
@@ -178,6 +187,65 @@ cardRigs(
         console.log(`store-format facts ${h.device}: ${JSON.stringify(facts)}`);
       },
       CARD_TIMEOUT * 2,
+    );
+
+    test(
+      'Transfer installs the service a module needs: bound, uploaded first, skipped the second time, loaded after a restart, deleted with its module',
+      async () => {
+        const user = h.mod('test/svc-test-user');
+        const debug = h.mod('digikit/debug');
+        const stock = resolveInputs(h.device, FIRMWARE[h.device]).syx;
+        const unbound = fs.readFileSync(moduleArtifact(h.device, 'test/svc-test'));
+        const service = serviceFileOf('svc-test', new Uint8Array(unbound), fileHashHex(unbound))!;
+        const out = `${h.artifacts}/transfer-services-${h.device}.dks`;
+        const binder: ServiceBinder = {
+          bind: async (dks) => {
+            const file = `${h.artifacts}/transfer-services-unbound-${h.device}.dks`;
+            fs.writeFileSync(file, dks);
+            await patchkit(['bind', file, '--firmware', stock, '-o', out]);
+            return new Uint8Array(fs.readFileSync(out));
+          },
+        };
+        const library = [(await libraryModule(fs.readFileSync(user.file)))!, (await libraryModule(fs.readFileSync(debug.file)))!];
+        let rt: PatchedSession = await h.load('transfer-services', { selection: [] });
+        const events: { event: string; kind?: string; path?: string; ok?: boolean }[] = [];
+        const deps = {
+          services: [service],
+          binder,
+          firmwareHash: 'stock',
+          runtimeIdentity: (info: { runtime: number; svc_abi: number | null }) => ({ version: info.runtime, fingerprint: info.svc_abi }),
+          runtimeServices: new Set(RUNTIME_SERVICE_NAMES.map(nameHash)),
+        };
+        const ids = library.map((m) => m.id);
+        const first = await h.usb(rt, (dk) => install(dk, ids, library, (e) => events.push(e), deps));
+        expect(first.refused ?? [], 'nothing is refused: the fingerprint of the .dks is the runtime\'s').toEqual([]);
+        const uploads = events.filter((e) => e.event === 'upload').map((e) => [e.kind ?? 'module', e.path]);
+        expect(uploads[0], 'the service goes first').toEqual(['service', 'services/svc-test.dks']);
+        expect(events.filter((e) => e.event === 'verify').every((e) => e.ok), 'every file verifies').toBe(true);
+        expect(
+          (await h.usb(rt, (dk) => dk.list())).map((e) => e.path).sort(),
+          'the card holds the service and both modules',
+        ).toEqual(['modules/debug.dkm', 'modules/svc-test-user.dkm', 'services/svc-test.dks'].sort());
+        const again: typeof events = [];
+        await h.usb(rt, (dk) => install(dk, ids, library, (e) => again.push(e), deps));
+        expect(again.filter((e) => e.event === 'skip').length, 'the second install sends nothing').toBe(3);
+
+        // the restart loads the provider and the module: the module's call of the provider answers 42
+        await h.usb(rt, (dk) => dk.select(['modules/debug.dkm', 'modules/svc-test-user.dkm']));
+        rt = await h.restart(rt);
+        const log = await h.usb(rt, (dk) => dk.readLog());
+        const ping = ofKind(log, LOG_KIND.MOD_LOG).filter((e) =>
+          String.fromCharCode(...e.args.slice(0, 4).flatMap((w) => [w >>> 24, (w >>> 16) & 255, (w >>> 8) & 255, w & 255]).filter(Boolean)).startsWith('svctest-ping'),
+        );
+        expect(ping.map((e) => e.args[4]), 'dk_svctest_ping() returned 42').toEqual([42]);
+
+        // delete: the module takes its unused service with it
+        const gone: { event: string; path?: string; why?: string }[] = [];
+        const deleted = await h.usb(rt, (dk) => deleteFiles(dk, ['modules/svc-test-user.dkm'], (e) => gone.push(e)));
+        expect(deleted.deleted.sort()).toEqual(['modules/svc-test-user.dkm', 'services/svc-test.dks']);
+        expect(gone.find((e) => e.path === 'services/svc-test.dks')?.why).toBe('unused-service');
+      },
+      CARD_TIMEOUT * 3,
     );
 
     test(

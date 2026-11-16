@@ -9,6 +9,8 @@ import type { PaneSelect } from '../../src/transfer/pane-select';
 import { dragKind, selectState, toggleAll } from '../../src/transfer/select-core';
 import { linkTag } from '../../src/transfer/link-core';
 import { deleteLabel, freeLine, writing, type RowTag } from '../../src/transfer/transfer-core';
+import { formatBytes } from '../../src/modules/backend';
+import type { ServiceRef } from '../../src/modules/services';
 
 /** What the page gives each mode: the one busy action, and the error line. */
 export interface PageCtx {
@@ -129,6 +131,8 @@ export interface ListRowProps {
   /** The size, right-aligned. */
   size?: string;
   status?: ChipStatus;
+  /** The phase of an install step (`service` or `module`), a column before the name. */
+  phase?: string;
   /** A small link-like button after the name ("Source"). */
   action?: { label: string; title: string; onClick: () => void };
 }
@@ -154,6 +158,9 @@ export function ListRow(props: ListRowProps): JSX.Element {
           props.folder.onOpen();
       }}
     >
+      <Show when={props.phase}>
+        <span class="phase">{props.phase}</span>
+      </Show>
       <Show when={props.check} fallback={<span class="tick" />}>
         {(c) => (
           <input
@@ -185,6 +192,33 @@ export function ListRow(props: ListRowProps): JSX.Element {
       <span class="size">{props.size ?? ''}</span>
     </li>
   );
+}
+
+/** A service under the module that needs it: read-only (no tick, no selection), its state as a tag. */
+export function ServiceSubRow(props: { service: ServiceRef; selected?: boolean }): JSX.Element {
+  const tag = (): RowTag => ({
+    text: props.service.state,
+    title: `${props.service.label} is installed with the module that needs it`,
+    tone: props.service.state === 'on device' ? 'ok' : props.service.state === 'differs' ? 'warn' : 'dim',
+  });
+  return (
+    <li class="sub" classList={{ sel: !!props.selected }}>
+      <span class="tree">└</span>
+      <span class="name">
+        <span class="nm" title={props.service.stem}>
+          {props.service.label}
+        </span>
+        <Tag tag={tag()} />
+      </span>
+      <span class="vers">{`${props.service.version >>> 16}.${(props.service.version >>> 8) & 0xff}`}</span>
+      <span class="size">{formatBytes(props.service.size)}</span>
+    </li>
+  );
+}
+
+/** The "installs with" line under a ticked module. */
+export function WithLine(props: { text: string }): JSX.Element {
+  return <li class="with">{props.text}</li>;
 }
 
 /** The first row of a list inside a folder: "↑ Up" goes to the parent. A file dropped on it goes into the parent (`dropPath`). */

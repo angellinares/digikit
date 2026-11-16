@@ -34,7 +34,7 @@ fn walk(dir: &Path, base: &Path, out: &mut Vec<LibFile>) -> std::io::Result<()> 
         let meta = entry.metadata()?;
         if meta.is_dir() {
             walk(&path, base, out)?;
-        } else if path.extension().is_some_and(|e| e == "dkm") {
+        } else if path.extension().is_some_and(|e| e == "dkm" || e == "dks") {
             let rel = path.strip_prefix(base).unwrap_or(&path);
             let rel = rel
                 .components()
@@ -50,7 +50,7 @@ fn walk(dir: &Path, base: &Path, out: &mut Vec<LibFile>) -> std::io::Result<()> 
     Ok(())
 }
 
-/// The `.dkm` files under the device's folder, by path. A missing folder is an empty library.
+/// The `.dkm` module files and the `.dks` service files (unbound) under the device's folder, by path. A missing folder is an empty library.
 pub fn scan(root: &Path, device: &str) -> Result<Vec<LibFile>, String> {
     let dir = device_dir(root, device)?;
     let mut out = vec![];
@@ -69,7 +69,7 @@ pub fn read(root: &Path, device: &str, rel: &str) -> Result<Vec<u8>, String> {
     if rel
         .split('/')
         .any(|p| p.is_empty() || p == "." || p == "..")
-        || !rel.ends_with(".dkm")
+        || !(rel.ends_with(".dkm") || rel.ends_with(".dks"))
     {
         return Err(format!("not a library file: {rel:?}"));
     }
@@ -172,6 +172,9 @@ fn read_ships(root: &Path, device: &str) -> Result<Vec<ShipRecord>, String> {
 pub fn read_maps(root: &Path, device: &str) -> Result<LibMaps, String> {
     let mut modules = vec![];
     for file in scan(root, device)? {
+        if !file.path.ends_with(".dkm") {
+            continue;
+        }
         let rel = map_rel(&file.path);
         let path = device_dir(root, device)?.join(&rel);
         match std::fs::read_to_string(&path) {
@@ -274,6 +277,49 @@ fn record(
     kept.insert(rel);
 }
 
+/// Where the built `.dks` services (unbound) of a device are, relative to the repository root: `dist/modules/<device>/<stem>.dks`.
+const SERVICES_DIST_DIR: &str = "dist/modules";
+
+/// Copy the unbound `.dks` files of `dist/modules/<device>/` into the device's library folder when their bytes changed (as for a `.dkm`).
+/// A missing source folder is no services. A failure goes to `report.failed`.
+fn copy_services(root: &Path, device: &str, dir: &Path, report: &mut LibBuildReport) {
+    let source = root.join(SERVICES_DIST_DIR).join(device);
+    let entries = match std::fs::read_dir(&source) {
+        Ok(entries) => entries,
+        Err(e) if e.kind() == std::io::ErrorKind::NotFound => return,
+        Err(e) => {
+            report.failed.push(LibFailure {
+                id: "services".to_string(),
+                error: format!("{}: {e}", source.display()),
+            });
+            return;
+        }
+    };
+    for entry in entries.flatten() {
+        let from = entry.path();
+        if !from.is_file() || from.extension().is_none_or(|e| e != "dks") {
+            continue;
+        }
+        let Some(name) = from.file_name() else {
+            continue;
+        };
+        let to = dir.join(name);
+        let result = std::fs::read(&from).and_then(|bytes| {
+            if std::fs::read(&to).ok().as_deref() == Some(bytes.as_slice()) {
+                return Ok(());
+            }
+            std::fs::create_dir_all(dir)?;
+            std::fs::write(&to, &bytes)
+        });
+        if let Err(e) = result {
+            report.failed.push(LibFailure {
+                id: name.to_string_lossy().into_owned(),
+                error: format!("{}: {e}", from.display()),
+            });
+        }
+    }
+}
+
 /// Build and pack every run-time module that builds for `device` into its library folder. A `.dkm` is written only when its bytes
 /// changed; a `.dkm` whose module did not pack this time is deleted. `patchkit::pack::pack_all` packs the candidates: one library for
 /// all of them, or one per module when that load fails, so one failure does not stop the others. A patch-only module is skipped.
@@ -297,8 +343,10 @@ fn build(root: &Path, device: &str) -> Result<LibBuildReport, String> {
     for (id, packed) in patchkit::pack::pack_all(root, &ids, device) {
         record(&dir, &id, packed, &mut report, &mut kept);
     }
+    copy_services(root, device, &dir, &mut report);
     for file in scan(root, device)? {
-        if !kept.contains(&file.path) {
+        // the `.dks` services are not packed here: only a `.dkm` whose module did not pack is removed
+        if file.path.ends_with(".dkm") && !kept.contains(&file.path) {
             let path = dir.join(&file.path);
             let _ = std::fs::remove_file(dir.join(map_rel(&file.path)));
             match std::fs::remove_file(&path) {
@@ -376,6 +424,25 @@ pub async fn patchkit_wasm() -> Result<tauri::ipc::Response, String> {
     .map_err(|e| e.to_string())?
 }
 
+/// The bind bundle of the site build, `apps/web/public/modules/bind.json` (`{ports, fw}`, written by `apps/web/scripts/gen-modules.mjs`): what `pk_bind` reads
+/// beside the user's stock image to bind a service file. It holds no firmware.
+#[tauri::command]
+pub async fn bind_bundle() -> Result<tauri::ipc::Response, String> {
+    tauri::async_runtime::spawn_blocking(|| {
+        let path = root()?.join("apps/web/public/modules/bind.json");
+        std::fs::read(&path)
+            .map(tauri::ipc::Response::new)
+            .map_err(|e| {
+                format!(
+                    "{}: {e} (build it: node apps/web/scripts/gen-modules.mjs)",
+                    path.display()
+                )
+            })
+    })
+    .await
+    .map_err(|e| e.to_string())?
+}
+
 /// The profile and address-lookup code of the Log pane: `apps/web/public/dkprof.wasm` (built by `mise run wasm:dkprof`), as raw bytes.
 #[tauri::command]
 pub async fn dkprof_wasm() -> Result<tauri::ipc::Response, String> {
@@ -440,14 +507,20 @@ mod tests {
     }
 
     #[test]
-    fn the_scan_lists_dkm_files_by_path_and_a_missing_folder_is_empty() {
+    fn the_scan_lists_dkm_and_dks_files_by_path_and_a_missing_folder_is_empty() {
         let root = library("scan");
+        let dir = root.join(LIBRARY_DIR).join("dt2");
+        std::fs::write(dir.join("fx.dks"), b"FXSV").unwrap();
         assert_eq!(
             scan(&root, "dt2").unwrap(),
             vec![
                 LibFile {
                     path: "acme/synth.dkm".into(),
                     size: 5
+                },
+                LibFile {
+                    path: "fx.dks".into(),
+                    size: 4
                 },
                 LibFile {
                     path: "test/sine.dkm".into(),
@@ -502,6 +575,38 @@ mod tests {
             )
             .is_err()
         );
+        let _ = std::fs::remove_dir_all(&root);
+    }
+
+    #[test]
+    fn the_services_of_dist_are_copied_into_the_library_when_changed() {
+        let root = library("services");
+        let dir = root.join(LIBRARY_DIR).join("dt2");
+        let dist = root.join(SERVICES_DIST_DIR).join("dt2");
+        std::fs::create_dir_all(&dist).unwrap();
+        std::fs::write(dist.join("fx.dks"), b"FXSV").unwrap();
+        std::fs::write(dist.join("notes.txt"), b"not a service").unwrap();
+        let mut report = LibBuildReport::default();
+        copy_services(&root, "dt2", &dir, &mut report);
+        assert_eq!(std::fs::read(dir.join("fx.dks")).unwrap(), b"FXSV");
+        // only `.dks` files are copied: the library's own notes.txt is untouched
+        assert_eq!(
+            std::fs::read(dir.join("notes.txt")).unwrap(),
+            b"not a module"
+        );
+        // a changed file is written again, the .dkm files stay as they are
+        std::fs::write(dist.join("fx.dks"), b"FXS2").unwrap();
+        copy_services(&root, "dt2", &dir, &mut report);
+        assert_eq!(std::fs::read(dir.join("fx.dks")).unwrap(), b"FXS2");
+        assert_eq!(std::fs::read(dir.join("acme/synth.dkm")).unwrap(), b"SYNTH");
+        // no source folder for another device: nothing copied, nothing failed
+        copy_services(
+            &root,
+            "dn2",
+            &root.join(LIBRARY_DIR).join("dn2"),
+            &mut report,
+        );
+        assert!(report.failed.is_empty());
         let _ = std::fs::remove_dir_all(&root);
     }
 

@@ -128,6 +128,7 @@ export function createDesktopEnv(host: Host, app: () => TransferApp): TransferEn
     },
     moduleFiles: (id) => MODULE_FILES[id],
     wasm: hostWasmSource(host),
+    bindBundle: async () => new Uint8Array(await host.firmware.bindBundle()),
     deviceName: async (device) => (await samples().deviceStorage(device)).name,
     // the Emulator target has its own bulk link (the daemon's usb.bulk.in/out), so the pill and the transfers there follow the same path as a device
     bulk: {

@@ -298,6 +298,14 @@ export function view(): TransferView {
     } as TransferRow;
     row.warnings = fitWarnings(row as { loaded: boolean; needs?: Needs }, cap);
     row.fits = row.warnings.length === 0;
+    // the preview's one module with two services, and one module that the service check refuses
+    if (m.id === 'pluck')
+      row.services = [
+        { stem: 'fx', label: 'fx service', version: 0x010200, state: 'not on device', size: 38.4 * KiB },
+        { stem: 'machines', label: 'machines service', version: 0x010200, state: 'on device', size: 61 * KiB },
+      ];
+    if (m.id === 'fm4')
+      row.service_refusal = { module: 'fm4', service: 'machines', kind: 'version', need: '1.3', have: '1.2' };
     return row;
   });
   const known = new Set(LIBRARY.map((m) => pathOf(m.id)));
@@ -322,6 +330,7 @@ export function view(): TransferView {
     capacity: cap,
     modules,
     card_only,
+    refusals: modules.flatMap((r) => (r.service_refusal ? [r.service_refusal] : [])),
   };
 }
 

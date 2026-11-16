@@ -91,7 +91,7 @@ description = "Build the dkbulk USB bulk bridge and uploader (packages/dkbulk) i
 ["wb:cli"]
 depends = ["dkmidi:build", "dkbulk:build"]
 run = "node tools/devtools/wb.mjs"
-description = "Workbench actions from the command line through the workbench's own code: mise run wb:cli -- samples put FILE... --folder F [--bulk auto|off|force] | samples ls | store put LOCAL REMOTE | store ls [PREFIX] | store rm REMOTE | info | ports"
+description = "Workbench actions from the command line through the workbench's own code: mise run wb:cli -- samples put FILE... --folder F [--bulk auto|off|force] | samples ls | store put LOCAL REMOTE | store ls [PREFIX] | store rm REMOTE | transfer install ID... [--stock STOCK.syx] | transfer delete PATH... | info | ports"
 
 ["bootscreen"]
 run = "node packages/dkbs/cli/bootscreen.mjs"

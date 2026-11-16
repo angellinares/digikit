@@ -1377,6 +1377,16 @@ fn rust_proto(sdk: &Sdk) -> String {
     s
 }
 
+/// The `[handle] services` that the runtime image provides itself: those that are not a `[[service]]` supplied by a `.dks` (no `rust`).
+fn runtime_service_names(sdk: &Sdk) -> Vec<&str> {
+    sdk.handle
+        .services
+        .iter()
+        .map(String::as_str)
+        .filter(|n| !sdk.service.iter().any(|d| d.name == *n && d.rust.is_none()))
+        .collect()
+}
+
 /// `packages/dk-session/src/gen_proto.ts`: the protocol numbers and status texts for the TypeScript client. Written as Prettier prints it
 /// (the web workspace is checked with `prettier --check`).
 fn ts_proto(sdk: &Sdk) -> String {
@@ -1393,6 +1403,26 @@ fn ts_proto(sdk: &Sdk) -> String {
         let _ = writeln!(s, "export const {n} = {v};");
     }
     let _ = writeln!(s, "export const H_ROLE = {};", header_const(sdk, "H_ROLE"));
+    s.push_str(
+        "\n/** The services the runtime image provides itself: the names of `[handle] services` that no `.dks` provider supplies (a `[[service]]` without `rust` and with no static row). A module's NEEDS may name them; every other name needs a `.dks`. */\n",
+    );
+    let names: Vec<String> = runtime_service_names(sdk)
+        .iter()
+        .map(|n| format!("'{n}'"))
+        .collect();
+    let one = format!(
+        "export const RUNTIME_SERVICE_NAMES = [{}];",
+        names.join(", ")
+    );
+    if one.chars().count() <= TS_WIDTH {
+        let _ = writeln!(s, "{one}");
+    } else {
+        s.push_str("export const RUNTIME_SERVICE_NAMES = [\n");
+        for n in &names {
+            let _ = writeln!(s, "  {n},");
+        }
+        s.push_str("];\n");
+    }
     s.push_str("\n/** The record kinds of a `.dkm` (`[records.kinds]`). */\nexport const RECORD_KIND = {\n");
     let mut kinds: Vec<_> = sdk.records.kinds.iter().collect();
     kinds.sort_by_key(|(_, k)| k.id);

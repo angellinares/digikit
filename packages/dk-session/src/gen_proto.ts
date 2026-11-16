@@ -29,6 +29,19 @@ export const MAX_VOICES = 8;
 export const MAX_FX = 4;
 export const H_ROLE = 56;
 
+/** The services the runtime image provides itself: the names of `[handle] services` that no `.dks` provider supplies (a `[[service]]` without `rust` and with no static row). A module's NEEDS may name them; every other name needs a `.dks`. */
+export const RUNTIME_SERVICE_NAMES = [
+  'runtime',
+  'samples',
+  'machines',
+  'fx',
+  'ui',
+  'input',
+  'usb_bulk',
+  'dsp_link',
+  'sdhc_large',
+];
+
 /** The record kinds of a `.dkm` (`[records.kinds]`). */
 export const RECORD_KIND = {
   PARAM: 1,

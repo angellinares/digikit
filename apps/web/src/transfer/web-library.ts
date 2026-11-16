@@ -26,6 +26,12 @@ export function parseIndex(text: string): ShippedModule[] {
   return j.modules;
 }
 
+/** The unbound `.dks` service files of the index, per device (an index without `services` has none). */
+export function parseServices(text: string): Record<string, ShippedFile[]> {
+  const j = JSON.parse(text) as { services?: Record<string, ShippedFile[]> };
+  return j.services ?? {};
+}
+
 export interface Fetchers {
   /** The bytes of a file under the site's modules folder (`dt2/<name>.dkm`, `index.json`). */
   bytes(path: string): Promise<Uint8Array>;
@@ -36,21 +42,27 @@ export interface Fetchers {
 const USER = 'added/';
 
 export function createWebLibrary(fetchers: Fetchers): { library: TransferLibrary; source: TransferSource } {
-  let index: Promise<ShippedModule[]> | undefined;
+  let index: Promise<{ modules: ShippedModule[]; services: Record<string, ShippedFile[]> }> | undefined;
   const shipped = () => {
-    index ??= fetchers.text('index.json').then(parseIndex, (e) => {
-      index = undefined; // tried again at the next read
-      throw e;
-    });
+    index ??= fetchers
+      .text('index.json')
+      .then((text) => ({ modules: parseIndex(text), services: parseServices(text) }))
+      .catch((e) => {
+        index = undefined; // tried again at the next read
+        throw e;
+      });
     return index;
   };
   // the modules of the last scan: `files` answers synchronously for the rows that are shown
   let known: ShippedModule[] = [];
+  let knownServices: ShippedFile[] = [];
   const added = new Map<string, { data: Uint8Array; id: string }>();
 
   const library: TransferLibrary = {
     async scan(device): Promise<LibraryFile[]> {
-      known = await shipped();
+      const shippedIndex = await shipped();
+      known = shippedIndex.modules;
+      knownServices = shippedIndex.services[device] ?? [];
       const mine = new Set([...added.values()].map((a) => a.id));
       const out: LibraryFile[] = [];
       for (const m of known) {
@@ -58,6 +70,8 @@ export function createWebLibrary(fetchers: Fetchers): { library: TransferLibrary
         // a file the user added with the same module id replaces the shipped one
         if (f && !mine.has(m.id)) out.push({ path: f.file, size: f.size });
       }
+      // the unbound .dks services the modules need: the backend binds them to the user's firmware
+      for (const f of knownServices) out.push({ path: f.file, size: f.size });
       for (const [name, a] of added) out.push({ path: USER + name, size: a.data.length });
       return out;
     },
@@ -67,7 +81,7 @@ export function createWebLibrary(fetchers: Fetchers): { library: TransferLibrary
         if (!a) throw new Error(`${path} is not in the list any more`);
         return a.data;
       }
-      const f = known.flatMap((m) => Object.values(m.devices)).find((x) => x.file === path);
+      const f = [...known.flatMap((m) => Object.values(m.devices)), ...knownServices].find((x) => x.file === path);
       const data = await fetchers.bytes(path);
       if (f && hexOf(new Uint8Array(await crypto.subtle.digest('SHA-256', data as BufferSource))) !== f.sha256)
         throw new Error(`${path} does not match modules/index.json: reload the page to get the current files`);

@@ -1,5 +1,5 @@
 export * from './dkupload-core.ts';
-export { H_ROLE, RECORD_KIND, TABLE_MAGIC, TABLE_VERSION } from './gen_proto.ts';
+export { H_ROLE, RECORD_KIND, RUNTIME_SERVICE_NAMES, TABLE_MAGIC, TABLE_VERSION } from './gen_proto.ts';
 export { EmuUsbTransport, EMU_RPC_CHUNK, type EmuRpcCall, type EmuUsbOptions } from './emu-usb-transport.ts';
 export { ProcessTransport } from './process-transport.ts';
 export * from './fault.ts';

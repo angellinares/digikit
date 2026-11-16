@@ -101,6 +101,7 @@ export function createFakeHost(replies: Record<string, Reply> = {}): FakeHost {
       prepare: leaf('firmware.prepare'),
       save: leaf('firmware.save'),
       patchkitWasm: leaf('firmware.patchkitWasm'),
+      bindBundle: leaf('firmware.bindBundle'),
       dkprofWasm: leaf('firmware.dkprofWasm'),
       sampleWasm: leaf('firmware.sampleWasm'),
     },
