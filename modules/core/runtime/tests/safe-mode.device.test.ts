@@ -54,6 +54,7 @@ cardRigs('safe mode', { dsp: 'sharc', full: true, relaxFs: true, roots: RT, symb
         reason: SAFE_COUNTER,
         counter: 2,
       });
+      expect(info.uiReached, 'the UI was reached in safe mode').toBe(1);
       expect(info.loaded, 'safe mode loaded no module').toBe(0);
       expect(info.allResults[0], 'and reported it').toBe(E_SAFE_MODE);
       expect(stateName(info.states[0]!), 'and skipped it').toBe('SKIPPED');

@@ -13,6 +13,8 @@
           "digikit/probe",
           "digikit/remote",
           "test/c-demo",
+          "test/commit-demo",
+          "test/dyn-dn2-pages",
           "test/dyn-fx-gain",
           "test/dyn-dn2",
           "test/sine",

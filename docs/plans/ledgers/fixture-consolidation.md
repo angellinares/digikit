@@ -27,6 +27,8 @@ The registry `fx` of `core/fx` refuses an `[[entry]]` row of every module except
 | same | Rings A (DAC) and C (USB) against the master | DROPPED. Only `fx_rings.py` and `pk_proof_fx.py` read rings A and C. Gap: nothing checks that the hook output reaches the DAC and USB rings; the hook changes only the master literal by design. One line in finding 55. |
 | `[[entry]] registry = "fx"` text in `modules/README.md`, `core/fx/README.md`, `core/fx/module.toml`, `pk_conform.py`, `spec.ts`, `typed.rs` comment | Describe the patch-time path | Rewritten for run-time effects only. |
 
+`tools/devtools/sdk_hashes.mjs` now packs service modules as `.dks` (needed to record the baseline).
+
 Test added: `packages/patchkit/tests/prims.rs` `a_patch_time_effect_row_of_any_module_but_core_dynfx_is_refused` (the real `core/fx` registry, a synthetic module with an `fx` entry, the registry's reason in the error).
 
 ## Step 2: trace-demo is merged into dyn-fx-gain
@@ -63,7 +65,7 @@ Canonical roles after the step: `dyn-fx-gain` route (master, master); `-both` (m
 | same | `dynreg`, `core/runtime-tests`, `debug` project module lists | `test/dyn-dn2` where `test/dyn-params` was. |
 | same | DT2 parameter ranges 1..126, 2..125, 4..123 of its four params | DROPPED: no test asserted them. |
 | same | `test_patchkit_registry.py` `test_pack_refuses_a_module_for_the_wrong_device` used `dyn-params` as the DT2-only module and `dyn-dn2` as the DN2-only one | Uses `dyn-dn2-pages` (DN2 only) and `dyn-dsp-hang` (DT2 only). |
-| `inferred-needs.device.test.ts` entries `digikit/freqshift`, `pluck`, `fadedlimes/analog`, `bd`, `pd` (5 boots per device, full tier) | The resources taken equal the needs inferred from the packed module, for a real module of each kind | DROPPED by decision. The fixtures cover each shape: `sine` and `dyn-dn2` (machine), `dyn-fx-gain` (effect), `c-demo` (raw ColdFire module); the debug modules stay. Gap: no service-type module (`svc-test`) and no module with `synth-decl` shape in that test; real DSP code sizes are no longer exercised. |
+| `inferred-needs.device.test.ts` entries `digikit/freqshift`, `pluck`, `fadedlimes/analog`, `bd`, `pd` (5 boots per device, full tier) | The resources taken equal the needs inferred from the packed module, for a real module of each kind | Replaced by decision: the five real modules are replaced by the fixtures `dyn-dn2-pages` (DN2 only) and `commit-demo`, which cover multi-page, multi-entry and effect-with-page shapes. The other fixtures cover the rest: `sine` and `dyn-dn2` (machine), `dyn-fx-gain` (effect), `c-demo` (raw ColdFire module); the debug modules stay. Gap: no service-type module (`svc-test`) and no module with `synth-decl` shape in that test; real DSP code sizes are no longer exercised. |
 
 ## Step 5: the fault fixtures are merged into dyn-crash
 
