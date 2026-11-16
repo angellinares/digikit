@@ -1,6 +1,6 @@
 import type { Device, Session, SessionOptions } from '@digi/test-support';
 import { describe, expect, test } from 'vitest';
-import { expectRuntimeBoot, withPatchedSession, type PatchedSession } from '../support.ts';
+import { expectRuntimeBoot, withPatchedSession, type TestRuntime } from '../support.ts';
 import { timePhase, timingContext } from '../timing.ts';
 import { liveArtifacts, record } from './artifacts.ts';
 import { FIRMWARE, FULL_TIER, liveOptions, selectDevices, skipEmptyHalf } from './devices.ts';
@@ -10,7 +10,7 @@ import { pollEmulated } from './waits.ts';
 /** One test per device, each on its own fresh runtime daemon that has passed `expectRuntimeBoot`. */
 export function runtimeTests(
   name: string,
-  body: (runtime: PatchedSession) => Promise<void>,
+  body: (runtime: TestRuntime) => Promise<void>,
   opts: {
     patchSet?: string;
     dsp?: SessionOptions['dsp'];

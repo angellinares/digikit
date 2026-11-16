@@ -1,18 +1,9 @@
 import path from 'node:path';
-import { encoder, type Session } from '@digi/test-support';
+import { encoder } from '@digi/test-support';
 import { expect, test } from 'vitest';
-import type { PatchedSession } from '@digi/regression/support.ts';
-import {
-  advance,
-  alignedCompare,
-  analysisJson,
-  bounded,
-  capture,
-  inspect,
-  readFloatWav,
-  withGainFxSession,
-} from '@digi/regression/runtime/fx-live.ts';
-import { tap, type FxProfile } from '@digi/regression/runtime/fx-session.ts';
+import type { TestRuntime } from '@digi/regression/support.ts';
+import { alignedCompare, analysisJson, bounded, capture, inspect, readFloatWav, withGainFxSession, REDRAW, SETTLE, type Rt } from '@digi/regression/runtime/fx-live.ts';
+import { type FxProfile } from '@digi/regression/runtime/fx-session.ts';
 import { soundImage } from '@digi/regression/runtime/fx-track-ui.ts';
 import { triggerFrame } from '@digi/regression/runtime/fixtures.ts';
 import { record } from '@digi/regression/runtime/artifacts.ts';
@@ -26,7 +17,8 @@ const FOLD = 5;
 const SINE_HINT = 7; // list position of the sine machine on DT2
 
 /** Turn ENC H until the shown curve is `want` (the knob step depends on the turn size, so close in on the value that the kit holds). */
-async function setType(session: Session, profile: FxProfile, want: number): Promise<number> {
+async function setType(rt: Rt, profile: FxProfile, want: number): Promise<number> {
+  const { session } = rt;
   const target = want * 512 + 128;
   for (let attempt = 0; attempt < 80; attempt++) {
     const value = (await soundImage(session, profile, 0))[SOUND_BASE + OVR_TYPE]!;
@@ -34,7 +26,7 @@ async function setType(session: Session, profile: FxProfile, want: number): Prom
     const error = target - value;
     const detents = Math.max(1, Math.min(16, Math.round(Math.abs(error) / 60)));
     await bounded(() => session.client.inputTurn(encoder('ENC H'), Math.sign(error) * detents));
-    await advance(session, 60);
+    await rt.ui.wait({ ms: 60, why: SETTLE });
   }
   throw new Error(`OVR TYPE did not reach curve ${want}`);
 }
@@ -52,7 +44,7 @@ describeOn('dt2', `DT2 ${FIRMWARE.dt2} core/overdrive OVR TYPE`, () => {
     );
     const trigger = triggerFrame('dt2');
     const files: Record<string, string> = {};
-    let previous: PatchedSession | undefined;
+    let previous: TestRuntime | undefined;
     for (const [tag, curve, amount] of [
       ['stock-high', 0, true],
       ['fold-high', FOLD, true],
@@ -64,15 +56,15 @@ describeOn('dt2', `DT2 ${FIRMWARE.dt2} core/overdrive OVR TYPE`, () => {
       const state = await inspect(runtime, plan, slots, false, artifacts, tag);
       rememberEpoch(state.epoch);
       const { session } = runtime;
-      await tap(session, 'FX', 300);
+      await runtime.ui.tap('FX', { until: { ms: 300, why: REDRAW } });
       // OVERDRIVE (ENC B) is a knob of 127 detents: 128 turns it fully up.
       if (amount) {
         for (let i = 0; i < 4; i++) {
           await bounded(() => session.client.inputTurn(encoder('ENC B'), 32));
-          await advance(session, 60);
+          await runtime.ui.wait({ ms: 60, why: SETTLE });
         }
       }
-      const shown = curve === 0 ? 0 : await setType(session, profile, curve);
+      const shown = curve === 0 ? 0 : await setType(runtime, profile, curve);
       record(artifacts, `${tag}-type`, { curve, shown });
       files[tag] = path.join(artifacts, `${tag}.wav`);
       await capture(runtime, files[tag]!, SINE_HINT, trigger);

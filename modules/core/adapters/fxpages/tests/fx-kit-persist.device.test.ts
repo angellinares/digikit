@@ -1,8 +1,8 @@
 import path from 'node:path';
 import type { DkSession } from '@digi/dk-session';
 import { describe, expect, test } from 'vitest';
-import type { PatchedSession } from '@digi/regression/support.ts';
-import { advance, analysisJson, bounded, frames, rows, rpc, word } from '@digi/regression/runtime/fx-live.ts';
+import { withWaitApi, type TestRuntime } from '@digi/regression/support.ts';
+import { analysisJson, bounded, frames, rows, rpc, word, REDRAW, SETTLE } from '@digi/regression/runtime/fx-live.ts';
 import { GAIN, SINE } from '@digi/regression/runtime/fixtures.ts';
 import { createFxKitUi, watchFxKitRows, type FxKitObservation } from '@digi/regression/runtime/fx-kit-ui.ts';
 import { knobFloat, mainPage, pageKit } from '@digi/regression/runtime/fx-pages-ui.ts';
@@ -10,7 +10,6 @@ import {
   inspectFxBoot,
   selectSine,
   shot,
-  tap,
   withPausedFxProtocol,
   withPreparedFxSession,
 } from '@digi/regression/runtime/fx-session.ts';
@@ -88,7 +87,7 @@ for (const device of DEVICES) {
 
     test('round-trips kit/project values and seeds defaults for absent or reordered effect IDs', async () => {
       const { fixture, plan, profile, artifacts } = context;
-      let runtime: PatchedSession = fixture.runtime;
+      let runtime: TestRuntime = fixture.runtime;
       const session = runtime.session;
       const fx = profile.fx;
       const count = fx.value_indices.length / 8;
@@ -97,7 +96,7 @@ for (const device of DEVICES) {
       const halfwords = async (base: number, n: number) =>
         Promise.all(Array.from({ length: n }, (_, i) => halfword(session, base + 2 * i)));
       const ids = () => halfwords(sym('fxp_ids'), count);
-      const kit = pageKit(session, profile);
+      const kit = pageKit(runtime, profile);
       const kitBase = async () => (await word(session, fx.kit_ptr)) + fx.array_off;
       const values = async () => {
         const base = await kitBase();
@@ -142,7 +141,7 @@ for (const device of DEVICES) {
         runtime.dk.cancelPending();
         const dk = emulatorDk(session);
         protocols.push(dk);
-        runtime = { session, dk, close: runtime.close };
+        runtime = withWaitApi({ session, dk, close: runtime.close });
         // Keep the original epoch for both barriers; neither silence nor a stale UI proves restart.
         await expectRuntimeUi(session, plan, artifacts, { afterEpoch: Number(epoch) });
         await bounded(() => session.client.guardSet(context.baseline('effects').guard));
@@ -150,7 +149,7 @@ for (const device of DEVICES) {
       };
       const pcm = new Map<string, string>();
       const note = async (tag: string) => {
-        await mainPage(session);
+        await mainPage(runtime);
         const file = path.join(artifacts, `${tag}.wav`);
         await trackNote(runtime, file, (await frames(session)) + 300);
         pcm.set(tag, file);
@@ -173,7 +172,7 @@ for (const device of DEVICES) {
       };
       const page = async (row: number, tag: string) => {
         await ui().fxPage(3 + row);
-        await advance(session, 600);
+        await runtime.ui.wait({ ms: 600, why: SETTLE });
         return shot(session, artifacts, tag);
       };
       try {
@@ -223,7 +222,7 @@ for (const device of DEVICES) {
             for (let row = 0; row < count; row++) await poke16(sym('fxp_ids') + row * 2, effectIds[row]!);
           }
           expect(await spare(await cell('fxp_save_dst'))).toEqual(Array(fx.store_halfwords).fill(0));
-          await mainPage(session);
+          await mainPage(runtime);
         }
         await note('default');
         const turned: number[] = [];
@@ -232,34 +231,34 @@ for (const device of DEVICES) {
           [1, 0x2800, 0x2000],
         ] as const) {
           await ui().fxPage(3 + row);
-          const rowKit = pageKit(session, profile, row);
+          const rowKit = pageKit(runtime, profile, row);
           turned.push(await rowKit.setRaw('ENC A', 0, gain), await rowKit.setRaw('LEVEL', 7, mix));
         }
         await kit.poke(32, 0x3000);
         const stockSaved = await stock();
-        await mainPage(session);
+        await mainPage(runtime);
         const saved = await values();
         expect([saved[0], saved[7], saved[8], saved[15]]).toEqual(turned);
         await note('turned');
         await ratio('default', 'turned', factor(saved) / factor(defaultValues));
         const wordsSaved = await rowWords();
         const hashes = [await page(0, 'fx-page4-turned'), await page(1, 'fx-page5-turned')];
-        await mainPage(session);
+        await mainPage(runtime);
         const firstKit = await word(session, fx.kit_ptr);
-        await tap(session, 'PTN', 800);
-        await tap(session, 'TRIG 2', 300);
+        await runtime.ui.tap('PTN', { until: { ms: 800, why: REDRAW } });
+        await runtime.ui.tap('TRIG 2', { until: { ms: 300, why: REDRAW } });
         let waited = 300;
         while ((await mark()) !== MARK && waited < 8000) {
-          await advance(session, 100);
+          await runtime.ui.wait({ ms: 100, why: SETTLE });
           waited += 100;
         }
         expect(await word(session, fx.kit_ptr), 'A02 owns another kit object').not.toBe(firstKit);
         expect(isDefault(await values(), defaultsAB)).toBe(true);
         expect(await mark()).toBe(MARK);
         expect((await values()).slice(0, 16)).not.toEqual(saved.slice(0, 16));
-        await advance(session, 1200);
-        await tap(session, 'PTN', 800);
-        await tap(session, 'TRIG 1', 1500);
+        await runtime.ui.wait({ ms: 1200, why: SETTLE });
+        await runtime.ui.tap('PTN', { until: { ms: 800, why: REDRAW } });
+        await runtime.ui.tap('TRIG 1', { until: { ms: 1500, why: REDRAW } });
         expect(await word(session, fx.kit_ptr), 'A01 retains its kit object').toBe(firstKit);
         expect((await values()).slice(0, 16)).toEqual(saved.slice(0, 16));
         const saves = await cell('fxp_nsave');
@@ -278,8 +277,8 @@ for (const device of DEVICES) {
           await kit.poke(fx.value_indices[row * 8 + 7]!, 0x7f00);
         }
         await kit.poke(32, 0x1000);
-        await advance(session, 300);
-        await mainPage(session);
+        await runtime.ui.wait({ ms: 300, why: SETTLE });
+        await mainPage(runtime);
         const changed = await values();
         for (const index of [0, 7, 8, 15]) expect(changed[index]).not.toBe(saved[index]);
         await note('changed');
@@ -298,7 +297,7 @@ for (const device of DEVICES) {
         expect(Math.abs(exact.shift!) / 2).toBeLessThanOrEqual(128);
         expect((await metrics('changed', 'loaded', 1, 'changed-v-loaded')).identical).toBe(false);
         expect([await page(0, 'fx-page4-loaded'), await page(1, 'fx-page5-loaded')]).toEqual(hashes);
-        await mainPage(session);
+        await mainPage(runtime);
         const stockLoaded = await ui().loadKit(1, 'k1b');
         const defaults = await values();
         expect(isDefault(defaults, defaultsAB)).toBe(true);
@@ -315,21 +314,21 @@ for (const device of DEVICES) {
           [15, 0x6000],
         ]);
         for (const [index, value] of projectValues) await kit.poke(fx.value_indices[index]!, value);
-        await advance(session, 300);
+        await runtime.ui.wait({ ms: 300, why: SETTLE });
         const projectWords = await rowWords();
         const beforeSave = await cell('fxp_nsave');
-        await tap(session, 'SETTINGS', 300, 'FUNC');
+        await runtime.ui.tap('SETTINGS', { until: { ms: 300, why: REDRAW }, held: 'FUNC' });
         await shot(session, artifacts, 'project-save-menu');
-        await tap(session, 'YES', 500);
-        await tap(session, 'YES', 500);
-        await advance(session, 3500);
+        await runtime.ui.tap('YES', { until: { ms: 500, why: REDRAW } });
+        await runtime.ui.tap('YES', { until: { ms: 500, why: REDRAW } });
+        await runtime.ui.wait({ ms: 3500, why: SETTLE });
         await shot(session, artifacts, 'project-saved');
         expect((await cell('fxp_nsave')) - beforeSave).toBeGreaterThanOrEqual(100);
         for (const [index, value] of projectValues)
           await kit.poke(fx.value_indices[index]!, 0x7f00 - Math.floor(value / 2));
-        await advance(session, 300);
-        await tap(session, 'SETTINGS', 300);
-        for (let i = 0; i < 3; i++) await tap(session, 'YES', 500);
+        await runtime.ui.wait({ ms: 300, why: SETTLE });
+        await runtime.ui.tap('SETTINGS', { until: { ms: 300, why: REDRAW } });
+        for (let i = 0; i < 3; i++) await runtime.ui.tap('YES', { until: { ms: 500, why: REDRAW } });
         const projectSeen = await watchFxKitRows(runtime, plan, profile, 'YES', 7000, 10);
         await shot(session, artifacts, 'project-loaded');
         const projectGot = await values();

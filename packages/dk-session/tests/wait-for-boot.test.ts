@@ -85,6 +85,60 @@ test('with the debug module the log shows the new boot: BOOT_START and no RESTAR
   assert.equal(polls, 2);
 });
 
+test('after the first round the log is read from the cursor, not from the start', async () => {
+  const dev = new Device();
+  dev.debug = true;
+  const s = new DkSession(dev, { timeoutMs: 200, retries: 0 });
+  await s.restart();
+  const froms: number[] = [];
+  const page = s.logPage.bind(s);
+  s.logPage = (from, quick) => {
+    froms.push(from);
+    return page(from, quick);
+  };
+  let polls = 0;
+  await s.waitForBoot(async () => {
+    polls++;
+    dev.rebooted = polls >= 4;
+  }, 5000);
+  assert.equal(froms[0], 0);
+  assert.ok(
+    froms.slice(1, -1).every((f) => f === 1),
+    `rounds after the first ask from the last event: ${froms}`,
+  );
+  assert.equal(froms[froms.length - 1], 0, 'a new boot is read from its start');
+});
+
+test('a refused restart in the log still ends the wait with refused', async () => {
+  class RefusedDevice extends Device {
+    send(msg: Uint8Array) {
+      if (msg[5] !== SERVICE_CMD.LOG) return super.send(msg);
+      const ev = [
+        ...be32(1),
+        ...be32(0),
+        LOG_KIND.UPLOAD >> 8,
+        LOG_KIND.UPLOAD & 255,
+        0,
+        1, // flags: the reply status is in argument 1
+        ...be32(GCMD.RESTART),
+        ...be32(5),
+        ...be32(0),
+        ...be32(0),
+        ...be32(0),
+      ];
+      this.queue.push(reply(msg[5]!, msg[6]!, 0, [...be32(1), ...be32(1), 1, ...ev]));
+    }
+  }
+  const dev = new RefusedDevice();
+  dev.debug = true;
+  const s = new DkSession(dev, { timeoutMs: 200, retries: 0 });
+  await s.restart();
+  await assert.rejects(
+    s.waitForBoot(async () => {}, 5000),
+    (e: unknown) => e instanceof DkError && e.kind === 'refused',
+  );
+});
+
 /** A device whose replies take `delayMs` of wall time; a receive that waits less gets nothing, as on a real transport. */
 class SlowDevice extends Device {
   delayMs = 0;

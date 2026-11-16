@@ -10,7 +10,7 @@ import { dn2Tests, type Dn2 } from './shot-dn2-support.ts';
 // Last: the pan phase leaves the track pan turned hard right, so no later phase may depend on the pan.
 
 dn2Tests('DN2 stereo audio: first note, retrigger, filter types, pan', 'shot-dn2-audio', ['a', 'r', 't', 's'], async (c: Dn2) => {
-  const { runtime, session, api, settle, mem, ui, log, phase, sym, dspWords, file, artifacts, expectNoNewFault } = c;
+  const { runtime, session, api, settle, mem, ui, turns, log, phase, sym, dspWords, file, artifacts, expectNoNewFault } = c;
 
   /** The stereo hooks' own counters (core/dsp-voice, dn2-stereo.md): stereo slots stamped in the last block, stamped slots a stage without a twin cleared, the
    * stamps of the 16 slots against the heartbeat, and the peak of each slot's R buffer. */
@@ -124,7 +124,7 @@ dn2Tests('DN2 stereo audio: first note, retrigger, filter types, pan', 'shot-dn2
       scan.push({ enc: 'default', ...(await rate(0.15 * RATE)) });
       for (const enc of ['ENC A', 'ENC B', 'ENC C', 'ENC D', 'ENC E', 'ENC F', 'ENC G', 'ENC H']) {
         for (const dir of [-1, 1]) {
-          await ui.burst(enc, 12, dir * 4);
+          await turns.burst(enc, 12, dir * 4);
           await ui.settle(50);
           const r = await rate((scan.length === 1 ? 0.3 : 0.15) * RATE); // the first row is the audio window, before the echo
           scan.push({ enc, dir, ...r });
@@ -165,12 +165,12 @@ dn2Tests('DN2 stereo audio: first note, retrigger, filter types, pan', 'shot-dn2
         const t0 = await clock();
         await until(clock, t0 + 0.9 * RATE);
         marks.base = await clock();
-        await ui.burst(enc, 40, -4);
+        await turns.burst(enc, 40, -4);
         await ui.settle(100);
         await until(clock, (await clock()) + 0.1 * RATE);
         marks.left = await clock();
         await until(clock, marks.left + 0.5 * RATE);
-        await ui.burst(enc, 40, 4);
+        await turns.burst(enc, 40, 4);
         await ui.settle(100);
         await until(clock, (await clock()) + 0.1 * RATE);
         marks.right = await clock();

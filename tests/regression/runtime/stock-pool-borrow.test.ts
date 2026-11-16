@@ -8,7 +8,8 @@ import { expect } from 'vitest';
 import type { PatchedSession } from '../support.ts';
 import { liveArtifacts, record } from './artifacts.ts';
 import { installModule, moduleArtifact } from './install.ts';
-import { memory, panel } from './panel.ts';
+import { memory } from './memory.ts';
+import { panelKeys } from './flows/panel-keys.ts';
 import { runtimeTests } from './ready.ts';
 import { expectPollEmulated } from './waits.ts';
 
@@ -167,7 +168,7 @@ runtimeTests(
     const out = path.join(repoRoot(), 'out/runs/stock-pool-borrow');
     mkdirSync(out, { recursive: true });
     await installModule(dk, 'test/stock-pool', moduleArtifact('dt2', 'test/stock-pool'));
-    const ui = panel(session);
+    const ui = panelKeys(runtime);
     const mod = moduleApi(runtime);
     const p = await pool(runtime);
 

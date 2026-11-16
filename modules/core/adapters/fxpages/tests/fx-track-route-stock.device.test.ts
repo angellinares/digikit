@@ -1,8 +1,8 @@
 import path from 'node:path';
 import { expect, test } from 'vitest';
-import { compare, word } from '@digi/regression/runtime/fx-live.ts';
+import { compare, word, REDRAW } from '@digi/regression/runtime/fx-live.ts';
 import { FX, SINE } from '@digi/regression/runtime/fixtures.ts';
-import { shot, tap, selectSine } from '@digi/regression/runtime/fx-session.ts';
+import { shot, selectSine } from '@digi/regression/runtime/fx-session.ts';
 import { trackNote } from '@digi/regression/runtime/fx-track-ui.ts';
 import { trackRouteSuite } from './fx-track-route-support.ts';
 
@@ -19,9 +19,9 @@ trackRouteSuite('stock', { initial: 'sine', presets: ['sine', 'master'], base: t
           expect(state.results).toEqual([0]);
           expect(await word(runtime.session, sym('fxp_send_count'))).toBe(0);
           await selectSine(runtime, context.profile);
-          await tap(runtime.session, 'FX', 400);
+          await runtime.ui.tap('FX', { until: { ms: 400, why: REDRAW } });
           expect(await shot(runtime.session, context.artifacts, 'stock-fx1')).toBe(base.hash);
-          await tap(runtime.session, 'NO', 300);
+          await runtime.ui.tap('NO', { until: { ms: 300, why: REDRAW } });
           const file = path.join(context.artifacts, 'stock.wav');
           await trackNote(runtime, file, triggerFrame);
           await capacity(runtime, 0);
@@ -39,7 +39,7 @@ trackRouteSuite('stock', { initial: 'sine', presets: ['sine', 'master'], base: t
           expect(row[0]).not.toBe(0xffffffff);
           expect(row.slice(18, 23)).toEqual([0, 0, 0, 0, 0]);
           await selectSine(runtime, context.profile);
-          await tap(runtime.session, 'FX', 400);
+          await runtime.ui.tap('FX', { until: { ms: 400, why: REDRAW } });
           expect(await shot(runtime.session, context.artifacts, 'master-fx1')).toBe(base.hash);
           await capacity(runtime, 0);
         }

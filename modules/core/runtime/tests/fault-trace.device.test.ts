@@ -1,70 +1,34 @@
 import fs from 'node:fs';
+import { button, emulatorClock, waitClock } from '@digi/test-support';
 import { decodeFault, readSettingsRecord, settingsValue } from '@digi/dk-session';
 import { CAP, CMD, LOG_KIND, SERVICE_CMD } from '@digi/dk-session/gen_proto';
-import { button, MS } from '@digi/test-support';
 import { expect } from 'vitest';
-import type { PatchedSession } from '@digi/regression/support.ts';
+import type { PatchedSession, TestRuntime } from '@digi/regression/support.ts';
+import { openSafeAbout } from '@digi/regression/runtime/flows/menu.ts';
 import { liveArtifacts } from '@digi/regression/runtime/artifacts.ts';
 import { DEBUG_MODULE, installWithDebug, moduleArtifact } from '@digi/regression/runtime/install.ts';
 import { BOOT_FIELDS, expectRuntimeReady, runtimeTests } from '@digi/regression/runtime/ready.ts';
 import {
-  openDigikitMenu,
-  readAboutRows,
   readCrashSeen,
   readSmallRing,
   RING_SYMBOLS,
 } from '@digi/regression/runtime/runtime-menu.ts';
 import { planSymbol, prepareRuntimePlan } from '@digi/regression/runtime/runtime-plan.ts';
-import { pollEmulated, waitEmulatedFrames, withEmulatedProbe } from '@digi/regression/runtime/waits.ts';
+import { pollEmulated, withEmulatedProbe } from '@digi/regression/runtime/waits.ts';
 
 const SOURCE_SHIFT = 8;
 /** The watch declares a stop after 4500 blocks (3 s) without a heartbeat; the daemon emulates the DSP far slower than 1500 blocks a second. */
 const BLOCKS_PAST_THE_LIMIT = 9000;
-/** The ABOUT walk holds each key this many emulated ms, timed by the daemon in ColdFire instructions like the stock tests. */
-const TAP_HOLD_MS = 100;
 
-/** Wait until the DSP has run `blocks` more frames (emulated time, not wall time). */
+/** Wait until the DSP has run `blocks` more frames (1500 a second of emulated time, not wall time). */
 async function waitFrames({ session }: PatchedSession, blocks: number): Promise<void> {
-  await waitEmulatedFrames(session, blocks);
+  await waitClock(emulatorClock(session), blocks / 1.5);
 }
 const SITE_VOICE = 1;
 const SITE_FX_SEND = 3;
 const STAGE_CALL = 4;
 const SAFE_DSP = 4;
 const SAFE_PANIC = 5;
-
-/** Press, hold and release a key, then let the UI settle, all in DSP blocks (emulated time): the daemon may run far slower than real time, and a wall-clock
- * settle would find the UI not yet done. `settleMs` is the milliseconds the other runtime tests wait; a block is 2/3 ms, and a third of the time suffices here. */
-function panelTap(runtime: PatchedSession) {
-  const { session } = runtime;
-  return async (name: string, settleMs = 1200) => {
-    const code = button(name);
-    await session.client.inputButton(code, true);
-    await waitFrames(runtime, 150);
-    await session.client.inputButton(code, false);
-    await waitFrames(runtime, Math.round(settleMs / 2));
-  };
-}
-
-/** The rows of the ABOUT page, opened through the panel like a user does. */
-async function aboutRows(runtime: PatchedSession, plan: Awaited<ReturnType<typeof prepareRuntimePlan>>) {
-  // keys held in emulated time by the daemon: wall-clock holds lost keys under gate load, and holds that end on a frame poll
-  // last up to a second, which the Digitakt II SETTINGS key ignored after the safe boot
-  const tap = async (name: string, settleMs = 1200) => {
-    await runtime.session.client.inputTap(button(name), TAP_HOLD_MS * MS);
-    await waitFrames(runtime, Math.round(settleMs * 1.5));
-  };
-  await openDigikitMenu(tap);
-  // in safe mode opening DIGIKIT shows a dialog that names the reason (NO closes it), and the first row is the SAFE notice: ABOUT is the second
-  await tap('NO', 1000);
-  // the cursor may rest below the first row after the dialog: go to the top, then to ABOUT
-  await tap('UP', 600);
-  await tap('UP', 600);
-  await tap('UP', 600);
-  await tap('DOWN');
-  await tap('YES', 3000);
-  return readAboutRows(runtime.session, plan);
-}
 
 /** Wait for the device to restart itself into safe mode (the hang record is written about 20 s after the DSP stopped). */
 async function waitForSafeMode({ session, dk }: PatchedSession): Promise<void> {
@@ -105,7 +69,7 @@ async function expectNoDebugModule(runtime: PatchedSession, plan: Awaited<Return
 }
 
 /** An effect on the send route stops the DSP: the next boot is safe mode, and ABOUT, dk/fault and the log name the module, the site and the step. */
-async function expectFxHang(runtime: PatchedSession): Promise<void> {
+async function expectFxHang(runtime: TestRuntime): Promise<void> {
   const { session, dk } = runtime;
   await expectRuntimeReady(session);
   const plan = await prepareRuntimePlan(session, liveArtifacts(session, 'fault-trace'), [
@@ -145,7 +109,7 @@ async function expectFxHang(runtime: PatchedSession): Promise<void> {
     'safe mode loads no module',
   ).toEqual([]);
 
-  const rows = await aboutRows(runtime, plan);
+  const rows = await openSafeAbout(runtime, plan);
   expect(rows).toEqual(
     expect.arrayContaining(['SAFE: DSP STOPPED', 'FAULT: DSP STOP', 'IN DYN-FX-HANG', 'FX SEND STEP 2']),
   );
@@ -154,19 +118,18 @@ async function expectFxHang(runtime: PatchedSession): Promise<void> {
 }
 
 /** A machine whose render never returns: the DT2 voice site. The machine is put on track 1 through the SRC list (the first run-time machine is the 8th row). */
-async function expectVoiceHang(runtime: PatchedSession): Promise<void> {
+async function expectVoiceHang(runtime: TestRuntime): Promise<void> {
   const { session, dk } = runtime;
   await expectRuntimeReady(session);
   const plan = await prepareRuntimePlan(session, liveArtifacts(session, 'fault-trace'), ['DKRT_BOOT']);
   await installWithDebug(runtime, 'test/dyn-dsp-hang');
-  const tap = panelTap(runtime);
-  await session.client.inputButton(button('FUNC'), true);
-  await tap('SRC', 1200);
-  await session.client.inputButton(button('FUNC'), false);
-  for (let i = 0; i < 12; i++) await tap('UP', 300);
-  for (let i = 0; i < 7; i++) await tap('DOWN', 300);
-  await tap('YES', 1200);
-  await tap('YES', 1200);
+  const { ui } = runtime;
+  // input order is the firmware's: each key ends when the firmware took it
+  await ui.tap('SRC', { held: 'FUNC', until: { drained: true } });
+  for (let i = 0; i < 12; i++) await ui.tap('UP', { until: { drained: true } });
+  for (let i = 0; i < 7; i++) await ui.tap('DOWN', { until: { drained: true } });
+  await ui.tap('YES', { until: { drained: true } });
+  await ui.tap('YES', { until: { drained: true } });
   await pollEmulated(
     session,
     async () =>
@@ -258,7 +221,7 @@ async function expectCpuCrashFault(runtime: PatchedSession): Promise<void> {
 }
 
 /** A panic of the runtime (CMD_FAULT, a failed bounds check) writes a panic record and resets: the next boot is safe mode and ABOUT, dk/fault and the log name it. */
-async function expectRuntimePanic(runtime: PatchedSession): Promise<void> {
+async function expectRuntimePanic(runtime: TestRuntime): Promise<void> {
   const { session, dk } = runtime;
   await expectRuntimeReady(session);
   const plan = await prepareRuntimePlan(session, liveArtifacts(session, 'fault-trace'), [
@@ -285,7 +248,7 @@ async function expectRuntimePanic(runtime: PatchedSession): Promise<void> {
   expect(log.filter((e) => e.kind === LOG_KIND.SAFE).map((e) => e.args[0])).toEqual([SAFE_PANIC]);
   expect((await readCrashSeen(session, plan)).panic, 'the boot found a panic record').toBe(1);
 
-  const rows = await aboutRows(runtime, plan);
+  const rows = await openSafeAbout(runtime, plan);
   expect(rows).toEqual(expect.arrayContaining(['SAFE: CPU PANIC', 'FAULT: CPU PANIC', 'IN RUNTIME']));
   for (const row of rows) expect(row.length, row).toBeLessThanOrEqual(22);
   await session.expectNoFault('runtime panic');
