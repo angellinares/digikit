@@ -135,12 +135,13 @@ export async function pollUntil<T>(
 export async function waitClock(clock: Clock, ms: number): Promise<void> {
   const start = await clock.now();
   let stalled = 0;
-  for (let now = start; now - start < ms; ) {
+  for (let now = start; now - start < ms;) {
     await clock.pause(Math.min(50, ms - (now - start)));
     const next = await clock.now();
     // A clock that does not move after its pause would loop for ever: fail with a message.
     stalled = next > now ? 0 : stalled + 1;
-    if (stalled >= 1000) throw new Error(`waitClock: the clock did not advance in 1000 pauses (${next - start} of ${ms} ms waited)`);
+    if (stalled >= 1000)
+      throw new Error(`waitClock: the clock did not advance in 1000 pauses (${next - start} of ${ms} ms waited)`);
     now = next;
   }
 }
