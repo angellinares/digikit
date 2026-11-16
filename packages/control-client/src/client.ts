@@ -9,6 +9,8 @@ import type {
   GuardSetParams,
   InputScheduleEvent,
   LedsResult,
+  PcProbeReport,
+  PcProbeSetParams,
   RunUntilParams,
   StatusResult,
   WatchdogResult,
@@ -214,6 +216,16 @@ export class Client {
   }
   guardClear(): Promise<unknown> {
     return this.call('guard.clear');
+  }
+  /** Set the ColdFire PC probe; kept for every runtime installed later, so set before `firmware.load` or `restart` for a probe from reset. */
+  pcProbeSet(params: PcProbeSetParams): Promise<{ probes: number }> {
+    return this.call('pc.probe.set', params);
+  }
+  pcProbeReport(): Promise<PcProbeReport> {
+    return this.call('pc.probe.report');
+  }
+  pcProbeClear(): Promise<unknown> {
+    return this.call('pc.probe.clear');
   }
   quit(): Promise<unknown> {
     return this.call('quit');

@@ -1,0 +1,141 @@
+{
+  "dt2-check1": {
+    "note": "Check 1. PC 0x40000410 is vector_32_handler (the task switch, `trap #0`) on both images. `frame` decodes the exception frame at SP: by_frame is the histogram by (vector, stacked IPL). The control is any entry with vector 191. DT2 1.17.",
+    "task_ptr": "0x47db3f64",
+    "keep": 8,
+    "probes": [
+      {
+        "pc": "0x40000410",
+        "label": "task_switch",
+        "frame": true,
+        "stack": 2
+      }
+    ]
+  },
+  "dn2-check1": {
+    "note": "Check 1. PC 0x40000410 is vector_32_handler (the task switch, `trap #0`) on both images. `frame` decodes the exception frame at SP: by_frame is the histogram by (vector, stacked IPL). The control is any entry with vector 191. DN2 1.12.",
+    "task_ptr": "0x4664bcdc",
+    "keep": 8,
+    "probes": [
+      {
+        "pc": "0x40000410",
+        "label": "task_switch",
+        "frame": true,
+        "stack": 2
+      }
+    ]
+  },
+  "dt2-check2": {
+    "note": "Check 2. Addresses are the hook sites of devices/ports/<device>.toml: dispatch, page_desc and value_class are function entries, clone.4 is its site, main_os_task is the main-OS entry. param_code is the enclosing function of the param_code hook site, probed at its entry (stack[0] is the caller's return address, stack[1..3] the arguments) and at the hook site. DT2 1.17.",
+    "task_ptr": "0x47db3f64",
+    "keep": 8,
+    "probes": [
+      {
+        "pc": "0x400337ba",
+        "label": "main_os_task"
+      },
+      {
+        "pc": "0x400c89a4",
+        "label": "machine.dispatch"
+      },
+      {
+        "pc": "0x4005c936",
+        "label": "machine.clone.4"
+      },
+      {
+        "pc": "0x400c898a",
+        "label": "page.page_desc"
+      },
+      {
+        "pc": "0x400c892e",
+        "label": "param.value_class"
+      },
+      {
+        "pc": "0x400da3a2",
+        "label": "param_code.entry",
+        "stack": 4
+      },
+      {
+        "pc": "0x400da3ac",
+        "label": "param_code.args_site"
+      },
+      {
+        "pc": "0x4005c8e0",
+        "label": "diag.keyboard_fn"
+      },
+      {
+        "pc": "0x4005dc58",
+        "label": "diag.keyboard_view_event"
+      },
+      {
+        "pc": "0x4005d5c8",
+        "label": "diag.keyboard_view_draw"
+      },
+      {
+        "pc": "0x40079226",
+        "label": "diag.trig_mode_menu_draw"
+      }
+    ]
+  },
+  "dn2-check2": {
+    "note": "Check 2. Addresses are the hook sites of devices/ports/<device>.toml: dispatch, page_desc and value_class are function entries, clone.4 is its site, main_os_task is the main-OS entry. param_code is the enclosing function of the param_code hook site, probed at its entry (stack[0] is the caller's return address, stack[1..3] the arguments) and at the hook site. DN2 1.12. The 5 UI sites are page.source_code, source_draw, source_key, source_turn and tab_label_test.",
+    "task_ptr": "0x4664bcdc",
+    "keep": 8,
+    "probes": [
+      {
+        "pc": "0x4002ed34",
+        "label": "main_os_task"
+      },
+      {
+        "pc": "0x400c25f2",
+        "label": "machine.dispatch"
+      },
+      {
+        "pc": "0x400c25d8",
+        "label": "page.page_desc"
+      },
+      {
+        "pc": "0x400c257c",
+        "label": "param.value_class"
+      },
+      {
+        "pc": "0x4001683a",
+        "label": "page.source_code"
+      },
+      {
+        "pc": "0x40018118",
+        "label": "page.source_draw"
+      },
+      {
+        "pc": "0x40016480",
+        "label": "page.source_key"
+      },
+      {
+        "pc": "0x4001704e",
+        "label": "page.source_turn"
+      },
+      {
+        "pc": "0x4006f4e8",
+        "label": "page.tab_label_test"
+      },
+      {
+        "pc": "0x400dc18e",
+        "label": "param_code.entry",
+        "stack": 4
+      },
+      {
+        "pc": "0x400dc196",
+        "label": "param_code.map_site"
+      },
+      {
+        "pc": "0x4003e69e",
+        "label": "diag.cmd7_c",
+        "stack": 3
+      },
+      {
+        "pc": "0x4006f5e4",
+        "label": "diag.fx_view_draw"
+      }
+    ]
+  }
+}

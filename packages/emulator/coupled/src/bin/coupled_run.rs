@@ -179,6 +179,9 @@ struct Args {
     trace: bool,
     /// `--guard FILE.json`: write-range guards (the `guard.set` shape), armed at scenario start.
     guard: Option<Value>,
+    /// `--pc-probe FILE[:NAME]`: the PC probe spec (`pc.probe.set` shape; NAME picks a member of the file). With
+    /// `--cold-base` and `--dsp zero` it is armed before the cold boot, so it sees the boot from reset.
+    pc_probe: Option<elektron_native_boot::PcProbeSpec>,
 }
 
 /// First 8 bytes of the SHA-256 of `bytes` as 16 hex digits.
@@ -550,6 +553,7 @@ fn parse_args_from(args: impl IntoIterator<Item = String>) -> Result<Args, Strin
         zero: false,
         trace: false,
         guard: None,
+        pc_probe: None,
     };
     let mut it = args.into_iter();
     while let Some(flag) = it.next() {
@@ -624,6 +628,26 @@ fn parse_args_from(args: impl IntoIterator<Item = String>) -> Result<Args, Strin
                 elektron_native_boot::parse_guard_spec(&spec)
                     .map_err(|e| format!("{path}: {e}"))?;
                 a.guard = Some(spec);
+            }
+            "--pc-probe" => {
+                let arg = value("--pc-probe")?;
+                let (path, name) = match arg.split_once(':') {
+                    Some((path, name)) => (path.to_owned(), Some(name.to_owned())),
+                    None => (arg, None),
+                };
+                let text = std::fs::read_to_string(&path).map_err(|e| format!("{path}: {e}"))?;
+                let mut doc: Value =
+                    serde_json::from_str(&text).map_err(|e| format!("{path}: {e}"))?;
+                if let Some(name) = name {
+                    doc = doc
+                        .get(&name)
+                        .cloned()
+                        .ok_or_else(|| format!("{path}: no entry {name}"))?;
+                }
+                a.pc_probe = Some(
+                    elektron_native_boot::parse_pc_probe_spec(&doc)
+                        .map_err(|e| format!("{path}: {e}"))?,
+                );
             }
             other => return Err(format!("unknown option {other}")),
         }
@@ -1043,9 +1067,13 @@ fn cold_zero_runtime(
     syx: &[u8],
     card: Option<emmc_card::Card>,
     base: &str,
+    pc_probe: Option<&elektron_native_boot::PcProbeSpec>,
 ) -> Result<CoupledRuntime, String> {
     let started = Instant::now();
     let mut rt = CoupledRuntime::new_patched(syx, card, base)?;
+    if let Some(spec) = pc_probe {
+        rt.set_pc_probe(spec);
+    }
     rt.enable_zero_dsp_timing()?;
     loop {
         let status = rt.step_chunk(STEP_CHUNK).status;
@@ -1165,7 +1193,7 @@ fn run_scenario(
         .map(elektron_native_boot::card_file::card_from_image)
         .transpose()?;
     let mut rt = match (&args.cold_base, args.zero) {
-        (Some(base), true) => cold_zero_runtime(syx, card, base)?,
+        (Some(base), true) => cold_zero_runtime(syx, card, base, args.pc_probe.as_ref())?,
         // The pair of `cold_sharc_boot` or of an earlier `--cold-save`.
         (Some(base), false) => CoupledRuntime::new_patched_audio(syx, card, base, &options)?,
         (None, _) => CoupledRuntime::new(syx, card, Some(&options))?,
@@ -1173,6 +1201,12 @@ fn run_scenario(
     if let Some(spec) = &args.guard {
         let (protect, allow_pc) = elektron_native_boot::parse_guard_spec(spec)?;
         rt.set_write_guards(protect, allow_pc);
+    }
+    // The zero-DSP cold boot armed the probe before the boot; every other start arms it here, at the ready point.
+    if let Some(spec) = &args.pc_probe
+        && !(args.zero && args.cold_base.is_some())
+    {
+        rt.set_pc_probe(spec);
     }
     if let Some(path) = wav {
         rt.capture_pcm(path)?;
@@ -1524,6 +1558,7 @@ fn run_scenario(
         "dsp_dump": dsp_dump,
         "gates": gates,
         "guard": guard,
+        "pc_probe": if args.pc_probe.is_some() { rt.pc_probe_report() } else { Value::Null },
         "midi": midi,
         "trace": if args.trace { Value::Array(trace) } else { Value::Null },
     }))

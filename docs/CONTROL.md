@@ -96,6 +96,7 @@ Wrapper is the `Emu` method in `tools/control/digi_client.py`. `hello` reports a
 | `dsp.peek` | `dsp_peek` | `call` |
 | `dsp.patch` | `patch` | `call` |
 | `guard.set`, `guard.report`, `guard.clear` | | `call` |
+| `pc.probe.set`, `pc.probe.report`, `pc.probe.clear` | `pcProbeSet`, `pcProbeReport`, `pcProbeClear` (control-client) | `call` |
 | `events.subscribe` | `events`, `subscribe`, `drain_events` | `events` |
 | `quit` | `quit` | `quit` |
 
@@ -202,6 +203,8 @@ compare the digests of a daemon built before the change with one built after.
 answers zeros, the ColdFire state restored from the snapshot (about 2.2x real time). `status.dsp` is `"zero"`,
 `"sharc"` or `"none"`. `run_until {frames|audio_s}` is refused (no DSP session); `elapsed`, `icount` and `step`
 work. No PCM is produced.
+
+`pc.probe.set {task_ptr?, keep?, probes: [{pc, label?, words?, stack?, frame?}]}` (or `{file, name?}`: the spec is a JSON file on the daemon's host, or its member `name`) sets the ColdFire PC probe; `pc.probe.report` returns the counts per (task, IPL) and the first hits per PC; `pc.probe.clear` forgets the hits. The spec is kept and armed in every runtime installed later, so set it before `firmware.load` or `restart`. A runtime that a cold boot worker builds and snapshots never sees it. Spec, report and the R12 checks: [INSTRUMENTATION.md](INSTRUMENTATION.md#pc-probe-coldfire).
 
 `guard.set {protect: [{lo, hi, label}], allow_pc: [{lo, hi}]}` arms write-range guards (addresses are integers or
 `"0x..."` strings, `hi` exclusive; an empty `protect` disarms). A ColdFire store (8, 16 or 32 bit) that overlaps a
