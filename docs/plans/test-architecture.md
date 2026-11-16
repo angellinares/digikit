@@ -182,6 +182,8 @@ Runs alongside R12.
 
 **Payoff.** Full tier about 2.4 h to about 1.5 h. R12 PR gate about 60 to about 25 min. Host-test-only PRs: 0 device tasks.
 
+**Step 3, harness events.** Tests wait on standard runtime events instead of polling status or returning early. First event: firmware ready. The platform adapter logs one record (`FW_READY`) on the first pass of the firmware UI loop after a boot (`cf.view.hook.ui_loop`), when the boot intro has ended and the stock MidiRpc service answers. `waitForBoot` and the install helpers wait for it with `events.until(..., { emulatedMs })`; the dk-session probe after `restart()` (PR for the storage DT2 race) stays as the fallback for a device without the runtime. Further events, each with a typed helper in `tests/regression/runtime/events.ts`: restart complete, card or store ready, safe mode entered, a module's DSP part loaded, provider installed (the MOD_LOAD provider marker), settings flushed. Proof rides with gate BC (the adapter is in the image). Cause found 2026-11-16: the first stock file RPC after a module install was lost because the firmware was still on its boot intro.
+
 ## Order
 
 - T1a after R2c merges.
