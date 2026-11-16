@@ -224,6 +224,12 @@ export class FxRig {
     return this.built.data[this.stateSymbol(i)]!;
   }
 
+  /** Set the first COUNT words of the state block of row I to WORD (before the first block): an effect must not depend on what the state held. */
+  fillState(i: number, word: number, count: number): void {
+    const base = nw(this.stateAddress(i));
+    for (let k = 0; k < count; k++) this.q.poke(base + k, word >>> 0);
+  }
+
   private stateSymbol(i: number): string {
     return this.rows[i]!.state || `_fx_auto_state${i}`;
   }

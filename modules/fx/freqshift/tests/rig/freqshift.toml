@@ -1,4 +1,4 @@
-# digikit/freqshift on the SHARC-only rig (replaces modules/fx/freqshift/tests/test_freqshift.py; the device proof stays freqshift.device.test.ts).
+# digikit/freqshift on the SHARC-only rig (replaces modules/fx/freqshift/tests/test_freqshift.py; the adapter legs are core/fxpages fx-bipolar, the device smoke is freqshift.device.test.ts until R12-5).
 # The tables ref/*.f32 are the inputs (numpy generators) and the output of the float32 model freqshift_ref.py that the Python tests compared the routine with
 # (tools/devtools/rig_refs.py). Effect cases run once: the Python tests run the effect behind the DT2 adapter only. Inputs are 64 floats a block, left then right.
 
@@ -463,3 +463,118 @@ equals = 989059184
 [[case.check]]
 kind = "peak"
 max = 0.8
+
+# The shifter's PCM oracles of the retired device test (a sine moved by the SHIFT word; the image down; level; no clip). SHIFT 40 is
+# 96.79035 Hz (the routine's mapping, `target_inc` of freqshift_ref.py). A tone of 440 Hz at 0.5 comes out at 536.79035 Hz (up) or 343.20965 Hz (down).
+
+[[case]]
+name = "a sine at 440 Hz moves up by the shift of 40: level, image and no clip"
+
+[case.input]
+kind = "sine"
+freq = 440.0
+amp = 0.5
+
+[[case.step]]
+params_f32 = [40.0]
+blocks = 1500
+
+[[case.check]]
+kind = "tone"
+freq = 536.79035
+amp = 0.5
+tol = 0.0025
+image_freq = 343.20965
+image_db_min = 40.0
+skip_blocks = 300
+
+[[case.check]]
+kind = "no-clip"
+limit = 1.0
+
+[[case.check]]
+kind = "peak"
+min = 0.45
+max = 0.55
+blocks = [300, 1500]
+
+[[case]]
+name = "a sine at 440 Hz moves down by the shift of -40: level, image and no clip"
+
+[case.input]
+kind = "sine"
+freq = 440.0
+amp = 0.5
+
+[[case.step]]
+params_f32 = [-40.0]
+blocks = 1500
+
+[[case.check]]
+kind = "tone"
+freq = 343.20965
+amp = 0.5
+tol = 0.0025
+image_freq = 536.79035
+image_db_min = 40.0
+skip_blocks = 300
+
+[[case.check]]
+kind = "no-clip"
+limit = 1.0
+
+[[case]]
+name = "the shift 0 keeps the tone at 440 Hz and its level"
+
+[case.input]
+kind = "sine"
+freq = 440.0
+amp = 0.5
+
+[[case.step]]
+params_f32 = [0.0]
+blocks = 1500
+
+[[case.check]]
+kind = "tone"
+freq = 440.0
+amp = 0.5
+tol = 0.0025
+skip_blocks = 300
+
+# The output does not depend on what the state held at the start: the same input after two different fills of the declared state
+# gives the same words (the pin is the hash of the output words; pending Em's review, like every new rig pin).
+
+[[case]]
+name = "state independence: the state starts at zero"
+state_fill = 0
+
+[case.input]
+kind = "table"
+file = "ref/mixed-in-3.f32"
+
+[[case.step]]
+params_f32 = [40.0]
+blocks = 36
+
+[[case.check]]
+kind = "same-as"
+channel = "both"
+sha256 = "b7f01e7360fd6fd87bcd64baa4b9641b53c636b8355e09760984099202b0b6d0"
+
+[[case]]
+name = "state independence: the state starts at one word of 1.0"
+state_fill = 0x3f800000
+
+[case.input]
+kind = "table"
+file = "ref/mixed-in-3.f32"
+
+[[case.step]]
+params_f32 = [40.0]
+blocks = 36
+
+[[case.check]]
+kind = "same-as"
+channel = "both"
+sha256 = "b7f01e7360fd6fd87bcd64baa4b9641b53c636b8355e09760984099202b0b6d0"

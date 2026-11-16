@@ -9,8 +9,8 @@ import {
   compare,
   dspWords,
   expectGainRow,
-  FREE_PC,
   frames,
+  inspect,
   rows,
   rpc,
   runFrames,
@@ -24,22 +24,15 @@ import { record } from '@digi/regression/runtime/artifacts.ts';
 import { DEVICES, FIRMWARE } from '@digi/regression/runtime/devices.ts';
 import { readSmallRing } from '@digi/regression/runtime/runtime-menu.ts';
 import { planSymbol } from '@digi/regression/runtime/runtime-plan.ts';
-import { emulatorDk } from '@digi/regression/runtime/waits.ts';
+import { bindBootClock, emulatorDk, waitForBootEmulated } from '@digi/regression/runtime/waits.ts';
 
 // The FX contract suite of core/dynfx on test/dyn-fx-gain, one case per concern on one image per device (docs/plans/test-architecture.md T2):
 //   1. plain image: the unhooked sine is the audible reference;
 //   2. hooked image, dry card: free rows are transparent;
 //   3. wet card: one effect loads, its row, PCM gain and call counter are exact; a protocol select and restart deselects it again;
 //   4. full card: effects beyond the free rows are refused, the loaded chain multiplies its gains.
+// R12-5 (fx.dks) adds the case without an fx service in the image beside these.
 // It replaces fx-chain.device.test.ts and fx-reuse.device.test.ts (ledger: docs/plans/ledgers/t2-fx-contract.md).
-
-/**
- * Pending case for R12-5 (fx.dks): the effect service is no longer in the image, so a card with an effect module and no fx service must keep
- * the stock FX pages and refuse the effect. Set to false in the R12-5 branch when `core/dynfx` and `core/fxpages` leave the image
- * (`FX_IMAGE_MODULES` below), and fill in the case.
- */
-const FX_SERVICE_IN_IMAGE = true;
-const FX_IMAGE_MODULES = ['core/dynfx', 'core/fxpages'];
 
 for (const device of DEVICES) {
   // These nested suites are ordered: the plain owned process closes before the hooked image starts.
@@ -90,7 +83,7 @@ for (const device of DEVICES) {
       const context = withPreparedFxSession(device, 'FX contract dry/wet/full', {
         image: {
           name: 'fx-chain',
-          modules: [...RT, ...FX_IMAGE_MODULES],
+          modules: [...RT, 'core/dynfx', 'core/fxpages'],
           inventory,
           symbols: [...symbols, 'fx.rows', '_dl_area', 'DKRT_TABLE_BAD', 'DKRT_LOG', 'DKRT_LOG_COUNT'],
           policy: 'default',
@@ -109,10 +102,9 @@ for (const device of DEVICES) {
       test('keeps free rows transparent, loads one effect exactly, deselects it, and refuses overflow without changing the full serial gain chain', async () => {
         const { fixture, plan, artifacts, rememberEpoch } = context;
         const dry = fixture.runtime;
-        const dryState = await inspectFxBoot(dry, plan, [SINE], artifacts, 'dry-boot');
+        // `inspect` (fx-live): module list, boot words, DKRT_ASSIGN, one type, no dk/fault, capacity, every free row FREE_PC, UI reached.
+        const dryState = await inspect(dry, plan, slots, false, artifacts, 'dry-boot');
         rememberEpoch(dryState.epoch);
-        expect(dryState.capacity.FX_SLOTS).toEqual({ limit: slots, used: 0, largest: 0 });
-        expect((await rows(dry.session, plan, slots)).map((row) => row[0])).toEqual(Array(slots).fill(FREE_PC));
         const dryPcm = await capture(dry, context, 'dry');
         expect(plainPcm, 'plain image reference ran before the hooked image').toBeDefined();
         await compare(plainPcm, dryPcm, 1, artifacts, 'plain-dry', true);
@@ -122,14 +114,13 @@ for (const device of DEVICES) {
         expect(wet.session).toBe(dry.session);
         expect(wet.epoch).toBeGreaterThan(dry.epoch);
         await expect(dry.dk.info()).rejects.toThrow();
-        const wetState = await inspectFxBoot(wet, plan, [SINE, GAIN], artifacts, 'wet-boot');
+        // Wet: the relocated DSP image against the independent oracle, dsp_len = needs, rows = 0, needs > 0, the exact row, free rows after it.
+        const wetState = await inspect(wet, plan, slots, true, artifacts, 'wet-boot');
         rememberEpoch(wetState.epoch);
-        expect(wetState.capacity.FX_SLOTS).toEqual({ limit: slots, used: 1, largest: 0 });
+        const wetOracle = wetState.oracle!;
         const card = wet.session.cardPath;
         if (!card) throw new Error('the FX contract requires the loaded card inventory');
         const seed = (index: number) => path.join(path.dirname(card), `seed/digikit/modules/m${index}.dkm`);
-        const wetOracle = await fxExpectations(seed(1), planSymbol(plan, '_dl_area') + wetState.modules[1]!.dsp_off);
-        record(artifacts, 'wet-oracle', wetOracle);
         const wetPcm = await capture(wet, context, 'wet');
         await compare(dryPcm, wetPcm, 0.5, artifacts, 'gain');
         const afterNote = await rows(wet.session, plan, slots);
@@ -152,14 +143,14 @@ for (const device of DEVICES) {
         await bounded(() => wet.dk.restart());
         wet.dk.cancelPending();
         const rebootDk = emulatorDk(wet.session);
+        bindBootClock(rebootDk, wet.session);
         const reboot = { session: wet.session, dk: rebootDk, close: wet.close };
         try {
+          // The boot wait counts emulated time (waitForBootEmulated), not wall time.
+          await waitForBootEmulated(rebootDk, { emulatedMs: 90_000 });
           await bounded(() => wet.session.client.guardSet(context.baseline('wet').guard));
-          const deselected = await inspectFxBoot(reboot, plan, [SINE], artifacts, 'deselected-boot', undefined, {
-            afterEpoch: Number(epoch),
-          });
+          const deselected = await inspect(reboot, plan, slots, false, artifacts, 'deselected-boot', Number(epoch));
           rememberEpoch(deselected.epoch);
-          expect(deselected.capacity.FX_SLOTS).toEqual({ limit: slots, used: 0, largest: 0 });
           const deselectedPcm = await capture(reboot, context, 'deselected');
           await compare(dryPcm, deselectedPcm, 1, artifacts, 'deselected', true);
         } finally {
@@ -206,13 +197,6 @@ for (const device of DEVICES) {
         // Retained tolerances: <=2 ULPs, <0.001 dB, and <=128 onset samples.
         await compare(dryPcm, fullPcm, 0.5 ** slots, artifacts, 'full');
       });
-    });
-
-    // R12-5 shape (see FX_SERVICE_IN_IMAGE): boot an image without the fx service on a card that selects the sine and the effect; expect
-    // the stock FX pages (the page count and the stock pixels of the plain image), the effect module REFUSED with its reason code in LOADS,
-    // no free row, and an audible, unchanged sine. The plain image above is the pixel and PCM reference.
-    test.skipIf(FX_SERVICE_IN_IMAGE)('without the fx service the stock FX pages stay and the effect is refused', () => {
-      throw new Error('pending R12-5: enable with the fx.dks branch');
     });
   });
 }

@@ -50,20 +50,20 @@ for (const device of DEVICES) {
       initial: 'dry',
       presets: {
         dry: { selection: ['modules/m0.dkm'] },
-        // The fixture starts on the master.
-        master: effectCard,
-        send: { ...effectCard, settings: [[ROUTE, '01']] },
-        other: { ...effectCard, settings: [[ROUTE, '01']] },
+        // The fixture starts on the send route; the master is stored.
+        master: { ...effectCard, settings: [[ROUTE, '00']] },
+        send: effectCard,
       },
       // The dry amplitude and the relative PCM comparisons below own audibility.
       requireAudible: false,
     });
 
-    test('keeps page metadata, signed value roundtrip, kit save and load, master gain law and send amounts across four clean cards', async () => {
+    test('keeps page metadata, signed value roundtrip, kit save and load, master gain law and send amounts across three clean cards', async () => {
       const { fixture, plan, profile, artifacts, slots, sendSlots } = context;
       const sym = (name: string) => planSymbol(plan, name);
       let runtime = fixture.runtime;
       const pcm: Record<string, string> = {};
+      let mixHalf = 0;
       const chain = () => rows(runtime.session, plan, slots);
       const row = async () => (await chain())[0]!;
       const words = async () => {
@@ -163,10 +163,6 @@ for (const device of DEVICES) {
         expect((await words())[1]).toBe(target ? bits(1) : 0);
         await shot(runtime.session, artifacts, tag);
       };
-      await endpoint(0x1000, -1, 0, 'gbp-page-mix-zero');
-      await mainPage(runtime.session);
-      await sound('b');
-      await endpoint(0x7000, 1, 0x7f00, 'gbp-page-mix-top');
       const bias: Record<string, number> = {};
       const turn = async (raw: number, tag: string) => {
         await ui.fxPage(3);
@@ -180,6 +176,19 @@ for (const device of DEVICES) {
       await turn(0x6800, 'up');
       await mainPage(runtime.session);
       await sound('c');
+      // MIX bypass after a nonzero bias: a MIX that fails to bypass shows as gain.
+      await endpoint(0x1000, -1, 0, 'gbp-page-mix-zero');
+      await mainPage(runtime.session);
+      await sound('b');
+      await endpoint(0x7000, 1, 0x7f00, 'gbp-page-mix-top');
+      await ui.fxPage(3);
+      const halfRaw = await kit.setRaw('LEVEL', 7, 0x4000);
+      await advance(runtime.session, 100);
+      mixHalf = floatWord((await row())[13]!);
+      expect(Math.abs(mixHalf - halfRaw / 0x7f00)).toBeLessThan(1e-4);
+      await mainPage(runtime.session);
+      await sound('h');
+      await endpoint(0x7000, 1, 0x7f00, 'gbp-page-mix-top-again');
       await turn(0x1800, 'down');
       await mainPage(runtime.session);
       await sound('d');
@@ -205,12 +214,14 @@ for (const device of DEVICES) {
 
       // The gain law on the master: the dry PCM of the first card, scaled. The value a case plays is the float word that the row holds.
       await compare(pcm.dry!, pcm.a!, 1, artifacts, 'bias-zero', true);
-      await compare(pcm.dry!, pcm.b!, 1, artifacts, 'mix-zero', true);
       await compare(pcm.dry!, pcm.c!, gainOf(bias.up!), artifacts, 'bias-up');
+      await compare(pcm.dry!, pcm.b!, 1, artifacts, 'mix-zero-after-bias', true);
+      // MIX blends the dry and the wet block: dry + mix * (wet - dry) = 1 + mix * (gain - 1).
+      await compare(pcm.dry!, pcm.h!, Math.fround(1 + mixHalf * (gainOf(bias.up!) - 1)), artifacts, 'mix-half');
       await compare(pcm.dry!, pcm.d!, gainOf(bias.down!), artifacts, 'bias-down');
       await compare(pcm.dry!, pcm.e!, gainOf(bias.down!), artifacts, 'bias-loaded');
 
-      // Send route: the amounts of track 1, the value word, the MIX word.
+      // Send route, the fixture's default route (no stored choice): the amounts of track 1, the value word, the MIX word.
       const send = await boot('send', [SINE, FX]);
       expect((await row()).slice(18, 23)).toEqual([1, 0, 0, 0, 0]);
       expect(await words()).toEqual([0, bits(1)]);
@@ -240,23 +251,21 @@ for (const device of DEVICES) {
       expect(Math.abs(floatWord((await row())[13]!) - half / 0x7f00)).toBeLessThan(1e-4);
       await noFault();
 
-      // Another track's amount does not reach the first track's row words.
-      await boot('other', [SINE, FX]);
-      await selectSine(runtime, profile);
-      ui = createFxKitUi(runtime, plan, profile, artifacts);
-      kit = pageKit(runtime.session, profile);
+      // Another track's amount does not reach the first track's row words, and the value of track 1 is not touched.
       await mainPage(runtime.session);
       await selectTrack(runtime.session, 2);
       await tap(runtime.session, 'FX', 400);
       await tap(runtime.session, 'FX', 400);
       await setAmount(runtime.session, profile, 'ENC A', 1, 100);
       await advance(runtime.session, 300);
-      expect(await amounts()).toEqual([0, 100, ...Array(14).fill(0)]);
+      expect(await amounts()).toEqual([40, 100, ...Array(14).fill(0)]);
       await selectTrack(runtime.session, 1);
       await ui.fxPage(3);
-      const otherRaw = await kit.setRaw('ENC A', 0, 0x6800);
+      const otherRaw = await kit.setRaw('ENC A', 0, 0x2800);
       await advance(runtime.session, 100);
       expect((await row())[4]).toBe(bits(biasFloat(otherRaw)));
+      expect(await amounts()).toEqual([40, 100, ...Array(14).fill(0)]);
+      await noFault();
     });
   });
 }

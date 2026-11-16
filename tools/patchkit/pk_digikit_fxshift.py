@@ -173,13 +173,19 @@ def analyze_pcm(
         not bool(scaled(raw_pcm["dry"], raw_pcm["send"], 1.0)["identical"]),
         "",
     )
+    ro = scaled(raw_pcm["dry"], raw_pcm["other"], 1.0)
+    check(
+        "other: the amount on track 2 only (silent) adds nothing to track 1: the PCM is the dry PCM bit for bit from the onset on, the shifter running on an empty bus",
+        bool(ro["identical"]) and abs(ro["shift"]) <= MAX_ONSET_SHIFT,
+        f"onset shift {ro['shift']}, max err {ro.get('max_abs_err')}",
+    )
 
 
 def pcm_report(request: dict[str, Any]) -> dict[str, Any]:
     """Analyze completed TS captures with the retained runner's assertions."""
     from tools.patchkit.hook_ab import read_wav
 
-    tags = ("dry", "a", "b", "c", "d", "e", "send", "half")
+    tags = ("dry", "a", "b", "c", "d", "e", "send", "half", "other")
     raw_pcm = {}
     pcm = {}
     for tag in tags:

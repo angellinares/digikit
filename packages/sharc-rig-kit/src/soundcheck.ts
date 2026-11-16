@@ -298,6 +298,8 @@ async function runFx(module: string, c: RigCase, dir: string, o: RunOptions): Pr
   const observe = c.observe === 'master' ? 'master' : 'scratch';
   const desc = rig.descWords(spec.desc);
   trace.desc = desc;
+  // `state_fill`: every word of the declared state starts with this value instead of the rig's poison
+  if (typeof c.state_fill === 'number') rig.fillState(0, c.state_fill, Math.floor(desc[3]! / 4));
   const total = steps.reduce((n, st) => n + (st.blocks ?? 1), 0);
   const rng = new PyRandom(Number(c.seed ?? 0xd1617));
   let faults = 0;
