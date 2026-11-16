@@ -660,6 +660,15 @@ pub fn limits_max_of(text: &str) -> Result<LimitsMax> {
 #[serde(deny_unknown_fields)]
 struct Load {
     status: BTreeMap<String, Status>,
+    /// The state of a module of the boot selection (`[load.state]`).
+    #[serde(default)]
+    state: BTreeMap<String, State>,
+}
+#[derive(Deserialize)]
+#[serde(deny_unknown_fields)]
+struct State {
+    code: u8,
+    text: String,
 }
 /// The sample pool numbers: `[sample]` of `sdk/sdk.toml`.
 #[derive(Deserialize)]
@@ -981,6 +990,17 @@ fn parse(text: &str) -> Result<Sdk> {
             ));
         }
     }
+    for (i, (n, s)) in sdk.load.state.iter().enumerate() {
+        if sdk
+            .load
+            .state
+            .iter()
+            .skip(i + 1)
+            .any(|(_, t)| t.code == s.code)
+        {
+            return Err(err!("{SOURCE}: load state code {} ({n}) twice", s.code));
+        }
+    }
     for (what, table) in [("protocol", &p.status), ("load", &sdk.load.status)] {
         for (i, (n, s)) in table.iter().enumerate() {
             if s.code >= 0 || (what == "protocol" && s.code < -128) {
@@ -1156,8 +1176,20 @@ fn rust(sdk: &Sdk) -> String {
     for (n, st) in by_code(&sdk.load.status) {
         let _ = writeln!(s, "    pub const {n}: i32 = {};", st.code);
     }
+    for (n, st) in by_value(&states_of(sdk)) {
+        let _ = writeln!(s, "    pub const STATE_{n}: u8 = {st};");
+    }
     s.push_str("}\n");
     s
+}
+
+/// The module states of `[load.state]`, name to code.
+fn states_of(sdk: &Sdk) -> BTreeMap<String, u8> {
+    sdk.load
+        .state
+        .iter()
+        .map(|(n, s)| (n.clone(), s.code))
+        .collect()
 }
 
 /// The sample pool layout (`[sample]`), for `gen_sdk.rs`: word offsets of `dk_sample_pool_entry` and of one control set.
@@ -1361,6 +1393,24 @@ fn ts_proto(sdk: &Sdk) -> String {
         }
         s.push_str("];\n\n");
     }
+    s.push_str("/** The state of a module of the boot selection (LOADS v2): [code, name, text] */\nexport const LOAD_STATE: [number, string, string][] = [\n");
+    let mut states: Vec<_> = sdk.load.state.iter().collect();
+    states.sort_by_key(|(_, st)| st.code);
+    for (n, st) in states {
+        let one = format!("  [{}, '{n}', {}],", st.code, ts_str(&st.text));
+        if one.chars().count() <= TS_WIDTH {
+            s.push_str(&one);
+            s.push('\n');
+        } else {
+            let _ = writeln!(
+                s,
+                "  [\n    {},\n    '{n}',\n    {},\n  ],",
+                st.code,
+                ts_str(&st.text)
+            );
+        }
+    }
+    s.push_str("];\n\n");
     s.push_str("export const CAP = {\n");
     for (n, bit) in by_value(&p.caps) {
         let _ = writeln!(s, "  {n}: {bit},");
@@ -1373,7 +1423,18 @@ fn ts_proto(sdk: &Sdk) -> String {
     for (n, k) in by_value(&kind_ids(sdk)) {
         let _ = writeln!(s, "  {n}: {k},");
     }
-    s.push_str("} as const;\n\n/** The `kind` of a LOG event. */\nexport const LOG_KIND = {\n");
+    s.push_str("} as const;\n\n/** What a person calls a capacity kind a fit looks at, by kind number. */\nexport const CAPACITY_LABELS: Record<number, string> = {\n");
+    let mut fit: Vec<_> = sdk.capacity.kinds.values().filter(|k| k.fit).collect();
+    fit.sort_by_key(|k| k.id);
+    for k in fit {
+        let _ = writeln!(
+            s,
+            "  {}: {},",
+            k.id,
+            ts_str(k.label.as_deref().unwrap_or(""))
+        );
+    }
+    s.push_str("};\n\n/** The `kind` of a LOG event. */\nexport const LOG_KIND = {\n");
     for k in &sdk.log.kind {
         let _ = writeln!(s, "  {}: {},", k.name, k.id);
     }
@@ -2758,6 +2819,8 @@ pub(crate) struct AbiInputs {
     pub(crate) codes: Vec<(String, i32, String)>,
     /// (name, kind) in kind order.
     pub(crate) kinds: Vec<(String, u8)>,
+    /// (name, code, text) of `[load.state]` in code order.
+    pub(crate) states: Vec<(String, u8, String)>,
     pub(crate) sel_max: u64,
 }
 
@@ -2773,6 +2836,16 @@ pub(crate) fn abi_inputs(text: &str) -> Result<AbiInputs> {
             .into_iter()
             .map(|(n, k)| (n.clone(), k))
             .collect(),
+        states: {
+            let mut v: Vec<_> = sdk
+                .load
+                .state
+                .iter()
+                .map(|(n, s)| (n.clone(), s.code, s.text.clone()))
+                .collect();
+            v.sort_by_key(|x| x.1);
+            v
+        },
         sel_max: sdk.limits.max.modules,
     })
 }

@@ -6,6 +6,7 @@ import { ringEvents } from '@digi/regression/runtime/runtime-menu.ts';
 import { planSymbol } from '@digi/regression/runtime/runtime-plan.ts';
 import { LOADED, type Geometry, type Want } from '@digi/regression/runtime/synth.ts';
 import { rootsOf } from '@digi/regression/runtime/image-roots.ts';
+import { stateName, statesFor } from '@digi/regression/runtime/load-states.ts';
 
 /** One module of a card in boot order: its file, the name it reports and the result the loader must give. */
 export interface Entry {
@@ -49,6 +50,13 @@ export async function expectBoot(
   expect(info.count, 'the boot saw every selected module').toBe(entries.length);
   entries.forEach((e, i) =>
     expect(resultOk(info.results[i]!, e.want), `${e.name}: result ${info.results[i]}, wanted ${e.want}`).toBe(true),
+  );
+  // the state follows the result: a loaded module is ACTIVE (or DSP_LOADING), a refused one FAILED (the loader's codes) or REFUSED (the plan's)
+  entries.forEach((e, i) =>
+    expect(
+      statesFor(e.want === LOADED ? null : e.want),
+      `${e.name}: state ${stateName(info.states[i]!)} for result ${info.results[i]}`,
+    ).toContain(stateName(info.states[i]!)),
   );
   const loaded = entries.filter((e) => e.want === LOADED).map((e) => e.name);
   expect(

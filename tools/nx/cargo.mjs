@@ -72,10 +72,31 @@ const CRATE_TARGETS = {
       parallelism: true,
       description:
         'Writes dist/bytes/core-objects.sha256: the hash of each committed core object without its source hash.',
-      inputs: ['{workspaceRoot}/tools/nx/device-bytes.mjs', { dependentTasksOutputFiles: '**/*', transitive: true }],
+      inputs: [
+        '{workspaceRoot}/tools/nx/device-bytes.mjs',
+        '{workspaceRoot}/tools/nx/object-hash.mjs',
+        { dependentTasksOutputFiles: '**/*', transitive: true },
+      ],
       dependsOn: [{ target: 'build-objects', projects: ['tag:acceptance-image'] }],
       outputs: ['{workspaceRoot}/dist/bytes/core-objects.sha256'],
       options: { command: 'node tools/nx/device-bytes.mjs', cwd: '.' },
+    },
+    'runtime-owners': {
+      executor: 'nx:run-commands',
+      cache: true,
+      parallelism: true,
+      description:
+        'Writes dist/bytes/owners/: one hash per owner of the runtime object (`patchkit owners`, modules/core/runtime/owners.toml), the shared set, the other runtime objects and the whole object.',
+      inputs: [
+        '{workspaceRoot}/tools/nx/runtime-owners.mjs',
+        '{workspaceRoot}/tools/nx/object-hash.mjs',
+        '{workspaceRoot}/modules/core/runtime/owners.toml',
+        '{workspaceRoot}/modules/core/runtime/build/*.dko.json',
+        { dependentTasksOutputFiles: 'dist/patchkit/patchkit', transitive: true },
+      ],
+      dependsOn: ['cli'],
+      outputs: ['{workspaceRoot}/dist/bytes/owners'],
+      options: { command: 'node tools/nx/runtime-owners.mjs', cwd: '.' },
     },
     'pack-verdicts': {
       executor: 'nx:run-commands',

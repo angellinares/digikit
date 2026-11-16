@@ -287,6 +287,14 @@ test('the tags: only what says something; the usual state has none', () => {
   assert.deepEqual(texts(deviceTags({ ...sine, on_card: 'yes', not_loaded: 'sine not loaded: arena full' })), [
     'not loaded',
   ]);
+  assert.deepEqual(
+    texts(deviceTags({ ...sine, on_card: 'yes', not_loaded: 'sine refused: no room', load_state: 'REFUSED' })),
+    ['refused'],
+  );
+  assert.deepEqual(
+    texts(deviceTags({ ...sine, on_card: 'yes', not_loaded: 'sine skipped: safe mode', load_state: 'SKIPPED' })),
+    ['skipped'],
+  );
   // no tag says "card"
   for (const r of [...view.modules, ...view.card_only])
     for (const on_card of ['yes', 'no', 'other version'] as const)

@@ -1,6 +1,6 @@
 //! The verdict of the boot planner (docs/plans/runtime-and-services.md R7), defined once: the planner (`plan.rs` of the runtime) returns one for each
-//! module of the selection, and the loader refuses a module before it loads when it is `Refused`. R11 ("boot plan, module states") builds the module
-//! states and their UI on this type; it does not add another verdict.
+//! module of the selection, and the loader refuses a module before it loads when it is `Refused`. R11 builds the module states (`state`) and their UI on this
+//! type; it does not add another verdict.
 use dkrt_sdk::*;
 
 /// Why the planner refused a module. `code` is the load status the module's result shows (`LOADS`, the boot info).
@@ -36,6 +36,24 @@ impl Reason {
             E_PLAN_KEY
         } else {
             E_PLAN_FIT
+        }
+    }
+}
+
+impl Reason {
+    /// The two words `LOADS` v2 and `DkrtBootInfo.detail` carry for a refused module (`[load.state]`): the kind (`UnownedKind`), the kind, slot or hook site
+    /// (`DuplicateOwner`), the kind and the key (`DuplicateKey`), the capacity kind (`Fit`); zeros when the code says it all.
+    pub fn detail(&self) -> [u32; 2] {
+        if let Reason::UnownedKind(k) = *self {
+            [k, 0]
+        } else if let Reason::DuplicateOwner(k) = *self {
+            [k, 0]
+        } else if let Reason::DuplicateKey(kind, key) = *self {
+            [kind, key]
+        } else if let Reason::Fit(c) = *self {
+            [c as u32, 0]
+        } else {
+            [0, 0]
         }
     }
 }

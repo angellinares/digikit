@@ -448,16 +448,18 @@ any stage -> FAILED(reason)
 safe mode -> SKIPPED
 ```
 
+**Built (R11, host side).** Every module of the selection has a state in `DkrtBootInfo.states` (`[load.state]` in `sdk/sdk.toml`: SELECTED, PLANNED, REFUSED, INIT, DSP_LOADING, ACTIVE, FAILED, SKIPPED). `dkrt_abi::state::BootStates` holds the transitions and ignores one that does not start from the state it needs; `classify(code)` gives the state a finished load leaves. `boot.rs` sets PLANNED or REFUSED from the planner's verdict, INIT before `loader::load`, ACTIVE, DSP_LOADING or FAILED from its result, and `note_result` ends DSP_LOADING. A refused module also keeps the planner's two detail words (`Reason::detail`: the kind, the slot or hook site, the key, or the capacity kind). Safe mode makes every module SKIPPED. The LOADS command answers version 2 with 56 bytes per module (result, state, detail words, needs, name); `dk-session` reads versions 1 and 2 (`parseLoads`), and `moduleReason` and `moduleStateText` are the one place of the texts that Transfer shows. The menu's BOOT page shows `REFUSED <reason>` and names the resource of a fit refusal. The device tests assert the state with the code; "DSP ready" stays with R12.
+
 - A provider must be ACTIVE before its dependents start. Provider DSP parts load asynchronously, so planning must order this.
 - The MODULES page and Transfer tab show the reason ("REFUSED: no FX slot, used by master-drive"). Device tests assert the state, not log text.
 - Proposal, not decided: an optional "DSP ready" call to the module.
-- Refusal fixtures: one must-fail and one must-pass `.dkm` per loader and packer error code. A test fails when a code has none.
+- Refusal fixtures: one must-fail and one must-pass proof per load status. `modules/core/runtime/tests/refusal/refusal-table.ts` has one row for every `[load.status]` name: a must-fail and a must-pass test, or the reason a module file cannot cause the code (`reserved`, `not-a-load`, `host`, `open`). A host test (`tests/regression/host/refusal-table.test.ts`) fails when a code has no row or a row names a test that is gone. `E_INIT` (patched `init` that returns -9) and `E_DECL_KIND` (a KINDS entry that `init` does not declare) have fixtures. Eight codes stay `open`, each with its reason: `E_READ` (no rig makes the firmware block read fail), `E_NO_REGISTRY` (needs an image without a registry), `E_REG_DEVICE` (needs a register section for the other device), `E_DSP_IMPORT` (no fixture imports a DSP symbol the image lacks), `E_SEL_WRITE` (needs a card that refuses writes), `E_CARD_BUSY` (needs a card transfer in flight), `E_BOOT_ONLY` (no module or host command loads after the boot hook), `E_TABLE` (needs a corrupted runtime table).
 - Ordered event tables: a runtime table per event (tick, key, encoder, project changed), with entries from records `{event, order, fn}`, sorted by order and then module id. For input, the first non-zero return wins and hides the event from stock. This generalises `dkm_menu` and slot 0. Slots 1-7 are bound but never called (`lib.rs:1155-1157`); delete or use them.
 - DSP stack guard: a guard word per module's DSP stack. On overrun, mute that voice or effect. Finer than today's DSP hang restart.
 - Unload at restart, built on `unload_rec`, using the same teardown as the failure path.
 - MISSING placeholder: a saved machine type or effect from an absent module keeps its id, shows MISSING and plays silence. Projects need this. First check statically what the firmware does with a type number whose row is empty.
 - Hot reload stays parked, archived at tag `digikit-hot-reload-v1`.
-- `MODULE-AUTHORING.md` gets the lifecycle section after this is built.
+- `MODULE-AUTHORING.md` section 9 describes the states and the refusal codes (R11); it gets the rest of the lifecycle (DSP ready, unload) with R12.
 
 ## 9. Storage and files
 
@@ -701,11 +703,43 @@ Prefixes: `S:` = branch `rt/r8-spike`; F131 = `S:docs/findings/131-r8-whole-path
 - Stay in the image: params and dynreg hooks with their row tables (fx uses them too); platform, ui, dsp-link, storage, usb, idle and sample-pool hooks; all patch-time `write` ops and `[[section]]` copies; `sound_load_type_bound` (F131:71-73).
 - Slots: a data word in the image, zero after reset. Fill after the provider commits and before dependents load, at IPL 7, one group at a time. Clear: write zero at IPL 7. Safe mode never fills. A data write has no I-cache risk on hardware (F131:26).
 
-**Transfer.**
+#### R12-7 Transfer installs services
 
-- The pane reads the hard NEEDS of each ticked module (as KEYS today, `dktransfer.ts:92-120`). Per need: bind the `.dks` for the user's firmware (cache key: firmware hash + object hash), upload the `.dks` first, then the modules, then VERIFY. The equal-hash skip applies. Fit counts providers (`transfer-core.ts:131-138`). All checks run before the first upload; a failure uploads nothing.
-- The `.dks` must match the device runtime fingerprint. A differing card `.dks` (older or newer) is replaced. If the workbench set lacks the needed service version, the install is refused with a reason naming the module.
-- Flash also replaces the `.dks` files on the card.
+Mockup: [docs/design/r12-7-transfer-mockup.html](../design/r12-7-transfer-mockup.html).
+
+**What the user sees.**
+
+- One Install button, no confirm. Under each ticked module, its services show as read-only sub rows (they cannot be unticked) with a tag: `not on device`, `on device` or `differs`. The module row shows `pluck installs with: fx service, machines service`.
+- Fit line: `Fits together: pluck and its 2 services. 1 service needs uploading (fx service).`
+- Progress rows, phase `service` then `module`: `Uploading services/fx.dks: 40%`, `Verified services/fx.dks on the card`, `services/machines.dks: already on the card, not uploaded`.
+- Refusal (red box, row tag `service mismatch`): `pluck not installed. It needs the machines service, and this workbench has no machines service for the runtime on your device (runtime 0.5.2, service built for 0.5.0). Nothing was uploaded. Update the workbench, or flash a matching runtime from the Firmware page.` Bar: `Install failed: no files uploaded`. Variants: `... needs the fx service, which this workbench does not have.` and `... needs fx service 1.3, the runtime has 1.2.`
+- On a service version mismatch with the device runtime, the pane also offers the Flash button (Flash = upload + flash).
+- Delete, one click: `Deleted modules/pluck.dkm`, `Deleted services/fx.dks (no module on the card needs it)`, `Kept services/machines.dks (shot needs it)`, `Restart the device to apply.` A needed `.dks` alone is refused: `machines service is needed by shot. Delete that module first (its services go with it).` Its row tag: `needed by shot`.
+- Flash is unchanged for the user; the `.dks` files are replaced in it.
+
+**Resolving needs.** Read the hard NEEDS of each ticked module (hashes, as KEYS today, `dktransfer.ts:92-120`). Map each hash to a service by `name_hash(stem)` over the workbench service set (fx, machines, lfo), transitively. A hash that is a static runtime row is not a service. An unknown hash is refused. Bind each `.dks` to the user's firmware (cache key: firmware hash + object hash). The `.dks` fingerprint must equal the device runtime fingerprint (from `info`); module vs service: same major, minor not older. A differing card `.dks` is replaced and shown as `differs`.
+
+**Order.**
+
+1. Check everything: modules in library, services resolve, fingerprints match, fit counts providers (`transfer-core.ts:131-138`), at most 6 providers. A failing module is named and skipped; the other ticked modules continue. Every check runs before any upload.
+2. Upload and verify each `.dks` in dependency order (equal-hash skip).
+3. Upload and verify each module. No restart.
+
+Flash adds the same `.dks` set to its job.
+
+**Failures.**
+
+- Check failure: refusal text for that module only; the card is unchanged by it. The other ticked modules install.
+- Upload or verify failure in step 2: stop, no module uploaded, existing error with the path.
+- Upload failure in step 3 after its services uploaded: as today; the services stay (harmless when unused). The next Install skips them by hash.
+- Stale unused `.dks` files are removed on the next Install.
+- Delete: plan before the first DELETE (list the card, read each `.dkm` NEEDS); a service is unused when no remaining `.dkm` needs it. A mid-way failure reports deleted and remaining files.
+
+**Code changes.**
+
+- `packages/workbench-core` `dktransfer.ts`: new `resolveServices` (needs to services, or a refusal naming module, service and versions); new `serviceFiles` (bind and cache); `install` runs the checks, then service uploads (event `upload` gains `kind: 'service'`), then modules, then removes stale unused `.dks`; `buildView` and `mergeView` nest service rows and list card `.dks` users; `deleteFiles` gets `planDelete`; the flash job adds the `.dks` set.
+- `transfer-core.ts`: `eventText`, `localTags`, `deviceTags` (new tags); `tickedFit` and `tickedLoad` count providers; new `installsWithLine` and `serviceRefusalText`; `startProgress` and `applyEvent` get service steps; `installModules` adds services.
+- Pane UI, shared by desktop and site: `ModulesMode.tsx` (Flash button on mismatch), `TransferParts.tsx` (sub rows), `transfer-page.css` (`li.sub`).
 
 **Uninstall.** File DELETE and restart; nothing unloads at run time (`ARCHITECTURE.md:191`). Removing a module also removes its now-unused `.dks` in the same click. A `.dks` is unused when no `.dkm` on the card hard-needs it. Deleting a needed `.dks` is refused in the pane, naming the modules. If it disappears anyway, the planner refuses dependents with E_MISSING.
 

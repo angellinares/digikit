@@ -157,6 +157,16 @@
 #define DKRT_E_PLAN_FIT (-78)            /* the boot plan refused the module: its uses do not fit what the earlier modules of the selection left */
 #define DKRT_E_DECL_KIND (-79)           /* a service declared a record kind that the header table does not carry, or with another length */
 
+/* Module states (DkrtBootInfo.states), from [load.state] of sdk/sdk.toml. */
+#define DKRT_STATE_SELECTED 0            /* in the selection, not planned yet */
+#define DKRT_STATE_PLANNED 1             /* the boot plan accepted it; it has not started */
+#define DKRT_STATE_REFUSED 2             /* the boot plan refused it before any of its code ran; the result code says why */
+#define DKRT_STATE_INIT 3                /* its code is loading and `init` is running */
+#define DKRT_STATE_DSP_LOADING 4         /* its ColdFire part is live and its DSP part is still going */
+#define DKRT_STATE_ACTIVE 5              /* loaded; its DSP part, if any, is in place */
+#define DKRT_STATE_FAILED 6              /* loading failed after the plan accepted it; the result code says why */
+#define DKRT_STATE_SKIPPED 7             /* not loaded on purpose: this boot is in safe mode */
+
 /* CAPACITY kinds (DkrtCap.kind), from [capacity.kinds] of sdk/sdk.toml. */
 #define DKRT_CAPK_MODULES 1
 #define DKRT_CAPK_SELECTION 2
@@ -295,6 +305,8 @@ typedef struct DkrtBootInfo {
     uint32_t dsp_wait;                           /* reserved (0): the boot does not wait for DSP code */
     uint32_t stable;                             /* 1 once the boot counter is back to 0: after STABLE_BLOCKS DSP blocks of UI loop in a normal boot, at the first UI-loop pass in a safe boot */
     uint8_t needs[DKRT_SEL_MAX][DKRT_NEEDS_LEN]; /* per selected module with result E_IMPORT: the first module its imports need that is not in the image, without the `core/` prefix (usb-bulk); empty otherwise */
+    uint8_t states[DKRT_SEL_MAX];                /* per selected module: its STATE_* ([load.state] of sdk/sdk.toml); a selection index at or above count is STATE_SELECTED */
+    uint32_t detail[DKRT_SEL_MAX][2];            /* per selected module with state STATE_REFUSED: what the plan refused on (E_PLAN_KIND the kind; E_PLAN_OWNER the kind, slot or hook site; E_PLAN_KEY the kind and the key; E_PLAN_FIT the CAPK_* kind); zeros otherwise */
 } DkrtBootInfo;
 
 /* dkrt_diag result (finding 46): what the debug log and the card check found. The caller owns the memory; the layout only grows at the end. */
@@ -444,7 +456,7 @@ _Static_assert(sizeof(DkrtSelection) == 456, "DkrtSelection size");
 _Static_assert(offsetof(DkrtSelection, count) == 0, "DkrtSelection.count");
 _Static_assert(offsetof(DkrtSelection, flags) == 4, "DkrtSelection.flags");
 _Static_assert(offsetof(DkrtSelection, paths) == 8, "DkrtSelection.paths");
-_Static_assert(sizeof(DkrtBootInfo) == 176, "DkrtBootInfo size");
+_Static_assert(sizeof(DkrtBootInfo) == 248, "DkrtBootInfo size");
 _Static_assert(offsetof(DkrtBootInfo, magic) == 0, "DkrtBootInfo.magic");
 _Static_assert(offsetof(DkrtBootInfo, version) == 4, "DkrtBootInfo.version");
 _Static_assert(offsetof(DkrtBootInfo, safe) == 8, "DkrtBootInfo.safe");
@@ -459,6 +471,8 @@ _Static_assert(offsetof(DkrtBootInfo, results) == 40, "DkrtBootInfo.results");
 _Static_assert(offsetof(DkrtBootInfo, dsp_wait) == 72, "DkrtBootInfo.dsp_wait");
 _Static_assert(offsetof(DkrtBootInfo, stable) == 76, "DkrtBootInfo.stable");
 _Static_assert(offsetof(DkrtBootInfo, needs) == 80, "DkrtBootInfo.needs");
+_Static_assert(offsetof(DkrtBootInfo, states) == 176, "DkrtBootInfo.states");
+_Static_assert(offsetof(DkrtBootInfo, detail) == 184, "DkrtBootInfo.detail");
 _Static_assert(sizeof(DkrtDiag) == 172, "DkrtDiag size");
 _Static_assert(offsetof(DkrtDiag, magic) == 0, "DkrtDiag.magic");
 _Static_assert(offsetof(DkrtDiag, version) == 4, "DkrtDiag.version");

@@ -33,7 +33,7 @@ export class FakeDevice implements DkTransport {
   free = 1 << 20; // INFO's u32 free_bytes
   storeKib: number | null = null; // CAPACITY's STORE limit in KiB (null: the entry is left out); 1024 KiB are used
   caps: number | null = null; // INFO's capability word (null: every capability)
-  loadFailures: { name: string; result: number; needs?: string }[] = []; // LOADS: the modules of the boot selection that failed
+  loadFailures: { name: string; result: number; needs?: string; state?: number; detail?: [number, number] }[] = []; // LOADS: the modules of the boot selection that did not load (state: [load.state], default FAILED; version 2 record)
   imageId: string | null = null; // INFO's image id as 16 hex digits (null: the runtime before 0.5.2, which sends none)
   arenaLimit = 1000; // CAPACITY's ARENA and DSP_AREA limits (bytes)
   dspLimit = 1000;
@@ -234,8 +234,15 @@ export class FakeDevice implements DkTransport {
         const fixed = (str: string, n: number) => Uint8Array.from({ length: n }, (_, i) => str.charCodeAt(i) || 0);
         return ok(
           concat(
-            [1, this.loadFailures.length],
-            ...this.loadFailures.flatMap((f) => [be32(f.result >>> 0), fixed(f.needs ?? '', 12), fixed(f.name, 28)]),
+            [2, this.loadFailures.length],
+            ...this.loadFailures.flatMap((f) => [
+              be32(f.result >>> 0),
+              [f.state ?? 6, 0, 0, 0],
+              be32(f.detail?.[0] ?? 0),
+              be32(f.detail?.[1] ?? 0),
+              fixed(f.needs ?? '', 12),
+              fixed(f.name, 28),
+            ]),
           ),
         );
       }

@@ -174,6 +174,18 @@ export const LOAD_STATUS: [number, string, string][] = [
   [-79, 'E_DECL_KIND', 'a service declared a record kind that the header table does not carry, or with another length'],
 ];
 
+/** The state of a module of the boot selection (LOADS v2): [code, name, text] */
+export const LOAD_STATE: [number, string, string][] = [
+  [0, 'SELECTED', 'in the selection, not planned yet'],
+  [1, 'PLANNED', 'the boot plan accepted it; it has not started'],
+  [2, 'REFUSED', 'the boot plan refused it before any of its code ran; the result code says why'],
+  [3, 'INIT', 'its code is loading and `init` is running'],
+  [4, 'DSP_LOADING', 'its ColdFire part is live and its DSP part is still going'],
+  [5, 'ACTIVE', 'loaded; its DSP part, if any, is in place'],
+  [6, 'FAILED', 'loading failed after the plan accepted it; the result code says why'],
+  [7, 'SKIPPED', 'not loaded on purpose: this boot is in safe mode'],
+];
+
 export const CAP = {
   LOG: 0,
   PEEK: 1,
@@ -225,6 +237,22 @@ export const CAPACITY_KINDS = {
   DSP_COST: 15,
   DSP_VOICES: 16,
 } as const;
+
+/** What a person calls a capacity kind a fit looks at, by kind number. */
+export const CAPACITY_LABELS: Record<number, string> = {
+  1: 'module records',
+  2: 'selection paths',
+  3: 'CPU memory',
+  4: 'file',
+  5: 'DSP memory',
+  6: 'machine rows',
+  7: 'voice rows',
+  8: 'parameter rows',
+  9: 'page rows',
+  10: 'effect slots',
+  15: 'DSP load',
+  16: 'DSP voices',
+};
 
 /** The `kind` of a LOG event. */
 export const LOG_KIND = {
