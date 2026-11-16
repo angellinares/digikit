@@ -2906,12 +2906,13 @@ pub(crate) fn abi_inputs(text: &str) -> Result<AbiInputs> {
 
 /// The files of `dkrt-abi` that a service file and the runtime share across the boundary (interfaces B and C), relative to the repository root. `gen_svc_abi.rs`
 /// itself and the other files of the crate are not in the list.
-pub const SVC_ABI_FILES: [&str; 5] = [
+pub const SVC_ABI_FILES: [&str; 6] = [
     "modules/core/runtime/abi/src/service.rs",
     "modules/core/runtime/abi/src/core_api.rs",
     "modules/core/runtime/abi/src/link.rs",
     "modules/core/runtime/abi/src/dsp.rs",
     "modules/core/runtime/abi/src/registry.rs",
+    "modules/core/runtime/abi/src/core_imports.rs",
 ];
 
 /// FNV-1a (32 bits) over each file as its name, a zero byte, its bytes and a zero byte, in the given order. Never 0 (0 means "no interface B or C" in the

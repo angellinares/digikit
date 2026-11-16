@@ -27,6 +27,11 @@ pub trait Images {
     unsafe fn free(&mut self, addr: u32);
     /// The address of the import `name` (NUL-terminated), 0 when the runtime has none (`import_addr`).
     unsafe fn import_addr(&mut self, name: *const u8) -> u32;
+    /// The address of the service-only import `name` (`SVC_IMPORTS`: the `dkc_*` of interface C, `dk_service_declare_row`, `dkc_panic`), 0 when there is none. The loader
+    /// asks only for a file of role 1, after `import_addr`.
+    unsafe fn svc_import_addr(&mut self, _name: *const u8) -> u32 {
+        0
+    }
     /// The module whose absence leaves the import `name` without an address (`import_needs`).
     unsafe fn import_needs(&mut self, name: *const u8) -> Option<&'static str>;
     /// The files of the store whose path starts with `prefix` (NUL-terminated), in path order, at most `max` into `out`: the count, or a negative code (`E_BUSY`).
@@ -74,6 +79,9 @@ impl Images for RealImages {
     }
     unsafe fn import_addr(&mut self, name: *const u8) -> u32 {
         crate::import_addr(name)
+    }
+    unsafe fn svc_import_addr(&mut self, name: *const u8) -> u32 {
+        crate::svc_imports::svc_import_addr(name)
     }
     unsafe fn import_needs(&mut self, name: *const u8) -> Option<&'static str> {
         crate::import_needs(name)

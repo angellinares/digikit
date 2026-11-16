@@ -599,6 +599,27 @@ unsafe fn declare(ctx: *mut u8, tag: u16, a: u32, b: u32, c: u32) -> i32 {
         _ => E_CONTEXT,
     }
 }
+/// `dk_service_declare_row` (a service file's `init`, `SVC_IMPORTS` only): the `ServiceRow` the file provides. One row per file; the commit hands it to the
+/// registry (`Registry::add`).
+#[cfg_attr(test, no_mangle)]
+pub unsafe extern "C" fn dk_service_declare_row(ctx: *mut u8, row: *const dkrt_abi::service::ServiceRow) -> i32 {
+    match active() {
+        Some(col) if crate::entry::is_ctx(ctx) => {
+            if row.is_null() || col.decl.row_ptr().is_some() {
+                col.fail(E_DECL_KIND);
+                return E_DECL_KIND;
+            }
+            if col.decl.n >= Declare::MAX || !col.room() {
+                col.fail(E_DECL_FULL);
+                return E_DECL_FULL;
+            }
+            col.decl.row(row);
+            OK
+        }
+        _ => E_CONTEXT,
+    }
+}
+#[cfg_attr(test, no_mangle)]
 pub unsafe extern "C" fn dk_service_declare_kind(ctx: *mut u8, kind: u32, len: u32, handler: *const u8) -> i32 {
     // a handler is an image address: the header table carries its offset in the image
     declare(ctx, Declare::KIND, kind, len, handler as usize as u32)
@@ -1277,7 +1298,8 @@ pub fn counts_of(c: &Collect, p: &Profile) -> (u32, u32, u32) {
 /// Whether what `init` declared (`dk_service_declare_*`, addresses in the loaded image at `base`) is what the header table carries (declare-check-commit):
 /// the same kinds with the same lengths and handlers, slots, hooks, exports and resources. A module that declares nothing and has no such entries passes.
 pub fn decl_matches(c: &Collect, keys: &KeysCopy, base: u32) -> bool {
-    let mut d = c.decl;
+    // the row is no entry of the table
+    let mut d = c.decl.without_row();
     let mut i = 0;
     while i < d.n {
         let DeclItem { tag, a, b, c: e } = d.items[i];

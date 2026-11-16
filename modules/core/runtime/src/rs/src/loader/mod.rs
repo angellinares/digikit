@@ -305,6 +305,10 @@ impl<P: Platform, M: Images, R: Registry> Loader<P, M, R> {
                 return E_FORMAT;
             }
             let mut a = self.m.import_addr(p);
+            if a == 0 && role == 1 {
+                // a service file also links the service-only imports (`SVC_IMPORTS`)
+                a = self.m.svc_import_addr(p);
+            }
             if a == 0 {
                 // the runtime's table has no such name: a loaded provider may export it
                 let n = cstr_len(p, dkneeds::CF_IMPORT_LEN as usize);

@@ -1,6 +1,7 @@
 //! dkrt-abi: the interfaces of the digikit runtime (docs/ARCHITECTURE.md, "Three interfaces") and the pure types and constants they share.
 //!
 //! - `core_api`: interface C, `CoreApi`: what a service calls in the core (parameter rows, the module table, settings, the log, jobs, the DSP link).
+//! - `core_imports`: interface C as the `dkc_*` imports of a service file (one macro list; `dkrt-svc-rt` and the runtime expand it).
 //! - `service`: interface B, `Service`, `ServiceRow` and `ServiceTable`: what the core calls on a service, with the context types of those calls.
 //! - `platform`: `Platform`, the interface to the device and the firmware under the core, with `DeviceProfile` (`profiles`: one generated constant per device file).
 //! - `plan`: `Verdict` and `Reason`, the boot planner's answer for a module (R7).
@@ -14,6 +15,7 @@
 #![deny(improper_ctypes, improper_ctypes_definitions)]
 
 pub mod core_api;
+pub mod core_imports;
 pub mod dsp;
 pub mod fw;
 pub mod gen_svc_abi;

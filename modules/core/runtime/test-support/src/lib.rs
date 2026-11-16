@@ -6,7 +6,7 @@ extern crate std;
 mod pool;
 mod storage;
 use core::cell::{Cell, RefCell};
-use dkrt_abi::core_api::CoreApi;
+use dkrt_abi::core_api::{CoreApi, SampleCore};
 use dkrt_abi::dsp::DspState;
 use dkrt_abi::fw::Fw;
 use dkrt_abi::link::{LinkResult, Owner, Sequence, Slot, Stream, Ticket};
@@ -222,11 +222,14 @@ impl FakeCore {
     }
 }
 
-impl CoreApi for FakeCore {
+impl SampleCore for FakeCore {
     type Host = FakeHost;
     fn host(&self) -> &FakeHost {
         &self.host
     }
+}
+
+impl CoreApi for FakeCore {
     unsafe fn dynreg(&self) -> *const u32 {
         if self.dynreg_table.is_empty() {
             core::ptr::null()

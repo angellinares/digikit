@@ -1,14 +1,14 @@
 //! `samples` service, handlers (interface B): the track-table part of the DSP section and the listing of a loaded module's tracks.
 //! It owns no record kind of the `register` section.
 use crate::{dsp, tracks};
-use dkrt_abi::core_api::CoreApi;
+use dkrt_abi::core_api::SampleCore;
 use dkrt_abi::dsp::{DspSec, Job};
 use dkrt_abi::service::{tick_phase, Claim, Service};
 
 /// The samples service.
 pub struct Samples;
 
-impl<C: CoreApi> Service<C> for Samples {
+impl<C: SampleCore> Service<C> for Samples {
     unsafe fn on_loaded(_core: &C, rec: usize) {
         tracks::ready(rec);
     }

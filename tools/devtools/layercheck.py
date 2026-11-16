@@ -775,7 +775,8 @@ def check_runtime_platform(root: Path) -> list[Violation]:
 SERVICE_CRATES = "modules/core/services"
 SERVICE_DEPS = {"dkrt-abi", "dkrt-sdk", "dkneeds"}
 SERVICE_DEV_DEPS = SERVICE_DEPS | {"dkrt-test-support"}
-SERVICE_CRATE_REF = re.compile(r"\bdkrt_svc_\w+")
+# `dkrt_svc_rt` is the support crate of a service file (modules/core/runtime/svc-rt), not a service
+SERVICE_CRATE_REF = re.compile(r"\bdkrt_svc_(?!rt\b)\w+")
 SERVICE_RUNTIME_FILES = ("handlers.rs", "gen_services.rs")
 # The services that are folders of the runtime crate (`services/NAME`): none since R12-1; every service is a crate (`modules/core/services/NAME`).
 RT_LOCAL_SERVICES: set[str] = set()

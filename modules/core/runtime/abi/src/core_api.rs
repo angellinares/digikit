@@ -9,7 +9,8 @@
 //! The DSP link belongs to the core (`link.rs` of the runtime crate): a service sets live values with `link_set` and sends owned streams with
 //! `link_submit` (types in `crate::link`). It never asks whether the link is busy.
 //!
-//! Platform facts: a service reads the few it needs through `CoreApi::host` (`platform::SampleHost`); the device profile comes with the device id.
+//! Platform facts: the samples service reads the few it needs through `SampleCore::host` (`platform::SampleHost`); `SampleCore` extends `CoreApi` and is not part
+//! of interface C of a `.dks` (no import carries a platform handle). The device profile comes with the device id.
 use crate::dsp::DspState;
 use crate::link::{LinkResult, Owner, Sequence, Slot, Stream, Ticket};
 use crate::platform::SampleHost;
@@ -22,13 +23,15 @@ pub const JOB_E_CANCELLED: i32 = -80;
 /// The flags of an info-level log record.
 pub const LOG_INFO: u16 = dkrt_sdk::logk::L_INFO << dkrt_sdk::logk::LEVEL_SHIFT;
 
-pub trait CoreApi {
-    // ---- the platform facts of the samples service -----------------------------------------------------------------------
+/// `CoreApi` with the platform facts the samples service reads. Only the in-crate samples service takes this bound; a service file has no such core.
+pub trait SampleCore: CoreApi {
     /// What this core's platform is: the real one in the runtime, a small fake in a host test.
     type Host: SampleHost;
-    /// The platform facts a service may read (`SampleHost`).
+    /// The platform facts the samples service may read (`SampleHost`).
     fn host(&self) -> &Self::Host;
+}
 
+pub trait CoreApi {
     // ---- the registry's rows ---------------------------------------------------------------------------------------------
     /// The words of `dynreg_info` (`registry::w`); null without a registry.
     unsafe fn dynreg(&self) -> *const u32;

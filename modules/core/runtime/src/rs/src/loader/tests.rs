@@ -51,6 +51,9 @@ struct FakeImages {
 /// The one import the fake runtime has.
 const KNOWN_IMPORT: &[u8] = b"dk_alloc\0";
 const KNOWN_ADDR: u32 = 0x4000;
+/// The one service-only import the fake runtime has.
+const SVC_IMPORT: &[u8] = b"dkc_device_id\0";
+const SVC_ADDR: u32 = 0x5000;
 
 impl Images for FakeImages {
     unsafe fn stage(&mut self, path: *const u8) -> Result<Staged, i32> {
@@ -68,6 +71,13 @@ impl Images for FakeImages {
     unsafe fn import_addr(&mut self, name: *const u8) -> u32 {
         if cstr_eq(name, KNOWN_IMPORT.as_ptr()) {
             KNOWN_ADDR
+        } else {
+            0
+        }
+    }
+    unsafe fn svc_import_addr(&mut self, name: *const u8) -> u32 {
+        if cstr_eq(name, SVC_IMPORT.as_ptr()) {
+            SVC_ADDR
         } else {
             0
         }
@@ -405,7 +415,11 @@ fn an_import_of_a_module_that_is_not_there_names_it_and_allocates_nothing() {
 
 /// A service file (role 1) of `table` (a v2 header table), with `dsp` as its DSP section size word.
 fn service_file(table: &dkneeds::keys::Table, dsp: u32) -> Vec<u8> {
-    let mut v = module_file();
+    service_file_of(module_file(), table, dsp)
+}
+
+/// `service_file` over the module file `v`.
+fn service_file_of(mut v: Vec<u8>, table: &dkneeds::keys::Table, dsp: u32) -> Vec<u8> {
     let keys_off = v.len() - 8;
     v.truncate(keys_off);
     let mut t = vec![0u8; dkneeds::keys::table_size(table)];
@@ -484,6 +498,33 @@ fn a_provider_loads_into_its_own_record_publishes_its_exports_and_installs_its_h
         assert!(l.p.calls.borrow().contains(&crate::fake_platform::Call::Mask), "the install runs under the mask");
         // the table copy stays for the record
         assert!(l.provs[1].block.is_some());
+    }
+}
+
+#[test]
+fn a_service_import_is_linked_for_a_service_file_only() {
+    let _g = LOCK.lock().unwrap_or_else(|e| e.into_inner());
+    unsafe {
+        // the word at 12 holds 4, plus the import
+        let bind = svc_bind(&STOCK);
+        let base = || {
+            let mut f = module_file_with(&[(12, 1 << 24)], &[b"dkc_device_id"]);
+            f[IMAGE_OFF + 15] = 4;
+            f
+        };
+        let mut svc = service_file_of(base(), &svc_table(&bind), 0);
+        seal(&mut svc);
+        let mut l = provider_loader(svc, svc_init());
+        assert_eq!(l.load_provider(PATH.as_ptr(), 0), OK);
+        let words = core::slice::from_raw_parts(l.m.live[0].1.as_ptr() as *const u8, 32);
+        assert_eq!(rd32(words.as_ptr().add(12)), SVC_ADDR + 4);
+        // a module has no such import: the name is unknown to it, and nothing is allocated
+        let mut f = base();
+        seal(&mut f);
+        let mut l = loader_of(Init::Ok, f);
+        assert_eq!(l.load(PATH.as_ptr()), E_IMPORT);
+        assert_eq!(l.m.allocs, 0);
+        assert_eq!(l.missing()[0], 0);
     }
 }
 

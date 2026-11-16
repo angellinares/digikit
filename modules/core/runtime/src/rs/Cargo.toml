@@ -21,6 +21,7 @@ dkfw = { path = "../../../fw/rs" }
 
 [dev-dependencies]
 dkrt-test-support = { path = "../../test-support" }
+dkrt-svc-rt = { path = "../../svc-rt" }
 
 # This crate sits inside the repository's cargo workspace but is built on its own (`patchkit build`).
 [workspace]

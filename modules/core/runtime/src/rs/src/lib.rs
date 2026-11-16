@@ -56,6 +56,7 @@ mod watch;
 mod worker;
 mod health;
 mod imports;
+mod svc_imports;
 mod mailbox;
 mod plan;
 mod platform;
@@ -129,6 +130,8 @@ mod fake_platform;
 mod spans_tests;
 #[cfg(test)]
 mod contract_tests;
+#[cfg(test)]
+mod svc_contract_tests;
 #[cfg(test)]
 mod fake_storage;
 

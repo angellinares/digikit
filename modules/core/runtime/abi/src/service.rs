@@ -19,8 +19,8 @@ use dkrt_sdk::*;
 
 /// The ABI fingerprint of interfaces B and C between the runtime and a service file (`dk_svc_abi`, header word 0x3c of a `.dks`).
 ///
-/// It is the hash of the bytes of the boundary files of this crate (`FILES_HASH`, written by `patchkit gen` over the
-/// files of `patchkit::sdkgen::SVC_ABI_FILES`) with the `size_of` of every `repr(C)` struct that crosses the boundary mixed in at compile time. The
+/// It is the hash of the bytes of the boundary files of this crate (`FILES_HASH`: `service.rs`, `core_api.rs`, `link.rs`, `dsp.rs`, `registry.rs` and
+/// `core_imports.rs`, written by `patchkit gen`) with the `size_of` of every `repr(C)` struct that crosses the boundary mixed in at compile time. The
 /// sizes make the value depend on the target: the runtime and a service file built for the same device have the same value, a host build another one
 /// (64-bit pointers). The runtime reports its value in INFO bytes 41 to 44 and the loader compares it with the word of a service file; 0 in the
 /// word means the file uses neither interface. The value is never 0.
@@ -191,6 +191,9 @@ impl Declare {
     pub const HOOK: u16 = 6;
     pub const EXPORT: u16 = 7;
     pub const RESOURCE: u16 = 8;
+    /// The `ServiceRow` a service file declares (`dk_service_declare_row`): the row's address, low word in `a` and (a 64-bit host) high word in `b`. The header
+    /// table has no such entry: the commit takes this item out before it compares the declarations with the table (`without_row`).
+    pub const ROW: u16 = 9;
 
     pub const fn new() -> Declare {
         Declare {
@@ -223,6 +226,37 @@ impl Declare {
     }
     pub fn resource(&mut self, id: u32, limit: u32) {
         self.add(Declare::RESOURCE, id, limit, 0);
+    }
+    /// The service file's row.
+    pub fn row(&mut self, row: *const ServiceRow) {
+        let at = row as usize as u64;
+        self.add(Declare::ROW, at as u32, (at >> 32) as u32, 0);
+    }
+    /// The row of the `ROW` item, if one was declared.
+    pub fn row_ptr(&self) -> Option<*const ServiceRow> {
+        let mut i = 0;
+        while i < self.n {
+            let DeclItem { tag, a, b, .. } = self.items[i];
+            if tag == Declare::ROW {
+                return Some((((b as u64) << 32 | a as u64) as usize) as *const ServiceRow);
+            }
+            i += 1;
+        }
+        None
+    }
+    /// The declarations without the `ROW` item: the items the header table can hold.
+    pub fn without_row(&self) -> Declare {
+        let mut d = Declare::new();
+        d.full = self.full;
+        let mut i = 0;
+        while i < self.n {
+            let it = self.items[i];
+            if it.tag != Declare::ROW {
+                d.add(it.tag, it.a, it.b, it.c);
+            }
+            i += 1;
+        }
+        d
     }
     /// Whether `other` holds the same items (in any order): what a module declared in `init` against what its header table says.
     pub fn same_as(&self, other: &Declare) -> bool {
@@ -1053,5 +1087,33 @@ impl ServiceTable {
             i += 1;
         }
         None
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn the_row_is_an_item_of_its_own_that_the_header_table_cannot_hold() {
+        let row = 0x1234usize as *const ServiceRow;
+        let mut d = Declare::new();
+        d.kind(90, 24);
+        assert_eq!(d.row_ptr(), None);
+        d.row(row);
+        assert_eq!(d.n, 2);
+        assert_eq!(d.row_ptr(), Some(row));
+        // without the row the declarations are the kind alone, and the original keeps its row
+        let kinds = d.without_row();
+        assert_eq!((kinds.n, kinds.row_ptr()), (1, None));
+        assert!(kinds.matches_kinds(&[(90, 24)]));
+        assert!(!d.matches_kinds(&[(90, 24)]));
+        assert_eq!(d.row_ptr(), Some(row));
+    }
+
+    #[test]
+    fn the_fingerprint_is_not_zero_and_depends_on_the_files_hash() {
+        assert_ne!(SVC_ABI, 0);
+        assert_ne!(crate::gen_svc_abi::FILES_HASH, 0);
     }
 }
