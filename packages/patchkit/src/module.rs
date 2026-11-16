@@ -469,6 +469,9 @@ pub struct RegistryDef {
     /// Field values of a gap row (the registry's field defaults fill the rest).
     #[serde(default)]
     pub gap: Option<BTreeMap<String, toml::Value>>,
+    /// The registry takes no entry from a patched-in module: its rows are made at run time. The text says why and is part of the error that a module with an entry gets.
+    #[serde(default)]
+    pub refuse_entries: Option<String>,
 }
 
 /// The parsed `index_table` of a registry: device -> numbers.

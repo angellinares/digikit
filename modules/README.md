@@ -295,6 +295,8 @@ every entry.
 patchkit defines `<reg>.first`, `<reg>.count`, `<reg>.entries`, `<reg>.rows`, `<reg>.row_size` and
 `<reg>.<id>.index` (= first + k, entries in canonical module order; with an `index_table` see below).
 
+**Refusing entries (`refuse_entries`).** A `[[registry]]` with `refuse_entries = "reason"` takes no `[[entry]]` from a patched-in module: patchkit stops with the reason and the module that adds one (`core/machines`: a machine is a run-time module).
+
 **Permanent numbers (`index_table`).** A project stores only a machine's type number, so the number must not depend
 on which other modules are selected. `core/machines` therefore ships `types.toml`:
 

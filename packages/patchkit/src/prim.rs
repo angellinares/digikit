@@ -548,6 +548,17 @@ pub fn collect<'a>(lib: &'a Library, order: &[String], dev: &str) -> Result<Acti
         r.live = r.entries.len();
     }
     for r in &act.regs {
+        if let Some(why) = &r.def.refuse_entries
+            && let Some(e) = r.entries.first()
+        {
+            return Err(err!(
+                "{}: registry {} takes no patch-time entry ({why}); {} adds `{}`",
+                r.owner.id(),
+                r.def.name,
+                e.owner.id(),
+                e.def.id
+            ));
+        }
         if r.entries.len() > r.def.max as usize {
             return Err(err!(
                 "registry {} is full: {} entries, at most {}",
