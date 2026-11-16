@@ -1453,6 +1453,20 @@
      "down": false
     }
    ]
+  },
+  {
+   "exact_events": true,
+   "name": "r12-param-code-dn2",
+   "description": "R12-0 (DN2): no input; boot a patched image from a card with a saved project and play 10 s. Run with --pc-probe tools/emulator/pc_probe_r12_param_code.json:dn2-param-code. Not a pin.",
+   "seconds": 10,
+   "events": []
+  },
+  {
+   "exact_events": true,
+   "name": "r12-param-code-dt2",
+   "description": "R12-0 (DT2): no input; boot a patched image from a card with a saved project and play 10 s. Run with --pc-probe tools/emulator/pc_probe_r12_param_code.json:dt2-param-code. Not a pin.",
+   "seconds": 10,
+   "events": []
   }
  ]
 }
