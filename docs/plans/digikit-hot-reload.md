@@ -69,7 +69,7 @@ Services and modules only declare hooks, slots and rows. Content modules do not 
 
 ## Rules for work before hot reload
 
-- Hook asm leaves only through the `dk_tail`, `dk_exit` and `dk_ret` imports: no raw `rts`, no `jmp` through table words.
+- Hook asm leaves only through the `dk_tail`, `dk_exit` and `dk_ret` imports: no raw `rts`, no `jmp` through table words. A hook that calls stock code and gets control back uses `dk_stock` (not an exit).
 - Keep the restore code.
 - No image or runtime word points into a `.dks`, except slots and the row table.
 - Bind-time addresses keep firmware addresses in the service's own data, and keep each site's stock bytes in BIND.
@@ -79,14 +79,45 @@ Services and modules only declare hooks, slots and rows. Content modules do not 
 
 | Stage | Content | Host tests | Device proof | Estimate | Payoff | Confidence |
 | --- | --- | --- | --- | --- | --- | --- |
-| S0 | Exit convention, with the bind-time addresses item | `objdiff` explained | PCM unchanged | 0.5 day | Hooks can be gated later without edits | High |
+| S0 | Exit convention, with the bind-time addresses item (B1, see below) | `objdiff` explained | PCM unchanged | about 2 days (with B1) | Hooks can be gated later without edits | High |
 | S1 | Code-only modules: revert parts of a12048c46; MIDI-command counter; masked span clock; live-set fit | Loader fakes for order and E_BUSY | 20 load and unload cycles with `DIGI_FLUSH_CHECK=1` | 2 days | First live unload | High |
 | S2 | Interrupt-slot service and row-table counter | Registry swap tests | DN2 frametype | 2 days | Interrupt services reload | High |
 | S3 | Gates for all ColdFire hooks and service replace | `FakePlatform` gate and counter tests | fx swap during a key loop | 4 days | Services replace live | Medium (hook cost not yet measured) |
 | S4 | Machine and fx modules: MISSING placeholder, whole-project scan, view rebuild, DSP grace wait | Fakes for scan and rebuild | Machine swap with a project open | 4 to 5 days | Content modules reload | Medium |
 | S5 | SHARC slots | Rig tests of the slot rules | DSP swap with a voice held | 2 days, after R12-8 | DSP code reloads | Medium |
 
-S3 starts with the hook-call ceiling and the paired A/B (`tools/devtools/coupled_ab.py`); stop if the cost is weak against the payoff.
+S3 starts with the hook-call ceiling and the paired A/B (`tools/devtools/coupled_ab.py`); stop if the cost is weak against the payoff. Two facts from the B1 design for S3: an exit that keeps the condition codes costs about 8 instructions in a gate stub, not 2 (use 8 in the ceiling, or a declared flag per exit); and the stock bytes of five sites cannot be copied as they are, because their displaced instructions branch (clone.5, srcpage, group, type_reader.load, filter_graph_test), so S3 needs a position-independent stock path made by bind for them.
+
+## B1 bind-time firmware addresses (design for S0)
+
+Services carry their own firmware addresses. `patchkit bind` resolves them from the names in `devices/fw/*.toml` and the anchors of the user's firmware in `devices/ports/`. Service source never holds a raw address: Rust names firmware symbols through the `dkfw` crate, assembler through `[object.externs]` aliases in the service `module.toml`; pack maps them to import names.
+
+Imports bind resolves (each name carries the hook's name hash, so S3 knows the counter):
+
+| Import | Reached by | Meaning | Keeps |
+| --- | --- | --- | --- |
+| `dk_tail_<hook>` | `jmp` | leave the hook: run the displaced instructions, continue behind the site | all registers, sp, condition codes |
+| `dk_exit_<hook>_<n>` | `jmp` | leave at the site end (n = 0) or declared exit n (`exits` of the hook in `devices/fw`); the hook redid the displaced instructions | all registers, sp, condition codes |
+| `dk_ret_<hook>` | `jmp` | leave as `rts` does | registers |
+| `dk_stock_<hook>` | `jsr` | call the stock path from inside the hook; control comes back; not an exit | - |
+| `dk_fw_<name>` | `jsr` or data word | a firmware address; never a hook exit | - |
+
+Rules: one exit per hook entry; exits use `jmp abs.l` only. `dk_fw_` and `dk_exit_` become absolute words with no relocation; the others are base-relative. A name for another device resolves to 0.
+
+Firmware identity: bind writes a table item `FW` (the first 8 bytes of the stock firmware's SHA-256) when it resolved a firmware reference. patchkit apply adds the image info entry `fw_id`. The loader compares them in the service check, before the stock-bytes check and before `init`: a mismatch is `E_HOOK_STOCK` (the existing text), BIND items without `FW` are `E_FORMAT`. A service without firmware references (`lfo.dks`) stays byte-identical.
+
+Image tables: `machines_info` and `fxpages_info` shrink to image-owned words (they cannot leave: the services still need values that exist only after patching). `machines_info` keeps the registry symbols, `mf_ensure`, the native page functions, the slot map and the page rows; `fxpages_info` keeps the params row indices and the send-slot limit (the target of `cap_send_slots`). All firmware function, site and data addresses leave both tables.
+
+Steps (one stack, device gate shared with RS-C when both are ready):
+
+| Step | Content | Estimate |
+| --- | --- | --- |
+| Bind resolver | pack extern mapping; `exits` in `devices/fw`; the resolver for the five import families; the `FW` item | 1 day |
+| Firmware identity check | `fw_id` info entry; the loader rules; host and assembly cases | a few hours |
+| Hook exits | about 30 machines and fx hook routines on both devices switch to the named exits, including the DN2 frametype interrupt routine | half a day |
+| Firmware addresses into the services | function, site and data addresses of both tables become `dk_fw_` imports; the tables shrink | with the steps above |
+
+Deferred: the fx device constants (struct offsets, value indices, stock parameter codes) stay in `fxpages_info` for now; they are profile numbers, not firmware addresses, and hot reload does not need them moved. Device proof: FX contract suite, fxpages tests, machine fixture suite, frametype slot (DN2), providers with a case for a file bound to another firmware, refusals, safe mode, gate-smoke, gate-pins; PCM pins unchanged. Risks: the import count of `machines.dks` (limit 64; count first) and the hand edits of the interrupt routine and of hooks whose exits keep live condition codes.
 
 ## Reuse from the archive (tag digikit-hot-reload-v1, revert of commit a12048c46 "digikit runtime: archive hot reload")
 
