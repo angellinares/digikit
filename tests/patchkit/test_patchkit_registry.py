@@ -31,9 +31,7 @@ def test_committed_objects_are_current_and_plain_coldfire():
 def test_pack_refuses_a_module_for_the_wrong_device(tmp_path):
     tools = pk_dkrt.Tools()
     # a Digitakt module (dyn-dsp-hang, ports dt2-1.17) is refused for the Digitone
-    for module, device, ports in (
-        ("test/dyn-dsp-hang", "dn2", "dt2-1.17"),
-    ):
+    for module, device, ports in (("test/dyn-dsp-hang", "dn2", "dt2-1.17"),):
         r = tools.run(
             tools.patchkit,
             "--root",
