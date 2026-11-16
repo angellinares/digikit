@@ -1,5 +1,6 @@
 import { expect } from 'vitest';
 import { fileHashHex } from '@digi/dk-session';
+import { pollEmulated } from '@digi/regression/runtime/waits.ts';
 import { LAYOUTS, PAGE, dn2Tests, physOf, plane, planePages, FOLDER, type Dn2 } from './shot-dn2-support.ts';
 
 // DN2 OS 1.12, store read leases (docs/plans/usb-fast.md step 1b): while the sample pool loads a store file, the runtime refuses to replace it, delete it or
@@ -20,13 +21,11 @@ dn2Tests('DN2 store lease: a file that the pool loads cannot be replaced or dele
     const p0 = await pool();
     expect(await api.select(file('q'), 0), 'select queues the load').toBe(0);
     // wait until pages flow: the load is running and holds its lease
-    let p = p0;
-    const t0 = Date.now();
-    while (p.pages - p0.pages < 8) {
-      if (Date.now() - t0 > 60_000) throw new Error('the load did not start');
-      p = await pool();
-      await new Promise((r) => setTimeout(r, 30));
-    }
+    await pollEmulated(c.session, pool, (v) => v.pages - p0.pages >= 8, {
+      emulatedMs: 60_000,
+      message: 'the load did not start',
+      intervalMs: 30,
+    });
     const refusals: Record<string, string | undefined> = {};
     const refused = async (name: string, op: () => Promise<unknown>) => {
       refusals[name] = await op().then(

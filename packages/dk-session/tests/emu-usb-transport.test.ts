@@ -1,6 +1,10 @@
 import assert from 'node:assert/strict';
-import { test } from 'vitest';
+import { afterEach, test, vi } from 'vitest';
 import { EmuUsbTransport, EMU_RPC_CHUNK, type EmuRpcCall } from '../src/index.ts';
+
+afterEach(() => {
+  vi.useRealTimers();
+});
 
 function adapter(replies: { hex?: string }[] = []) {
   const calls: { method: string; params?: Record<string, unknown> }[] = [];
@@ -46,8 +50,11 @@ test('timeout retains incomplete bytes for the next receive', async () => {
 
 test('empty polls wait on the wall clock and eventually time out', async () => {
   const { transport, calls } = adapter();
+  vi.useFakeTimers();
   const start = Date.now();
-  assert.equal(await transport.recv(15), null);
+  const pending = transport.recv(15);
+  await vi.advanceTimersByTimeAsync(100);
+  assert.equal(await pending, null);
   assert.ok(Date.now() - start >= 15);
   assert.ok(calls.length >= 2);
   assert.ok(calls.every(({ method }) => method === 'midi.usb.out'));
@@ -73,9 +80,9 @@ test('a paused daemon is stepped on an empty poll instead of waited for', async 
     return (method === 'midi.usb.out' ? (replies.shift() ?? {}) : {}) as T;
   };
   const transport = new EmuUsbTransport(call, { stepInstructions: 400_000, pollMs: 60_000 });
-  const start = Date.now();
+  // fake timers and no advance: a poll that waited pollMs would never finish
+  vi.useFakeTimers();
   assert.deepEqual(await transport.recv(5_000), Uint8Array.of(0xf0, 7, 0xf7));
-  assert.ok(Date.now() - start < 1_000, 'no wall-clock wait between polls');
   assert.deepEqual(
     calls.map((c) => c.method),
     ['midi.usb.out', 'step', 'midi.usb.out', 'step', 'midi.usb.out'],

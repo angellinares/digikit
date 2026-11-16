@@ -120,12 +120,16 @@ export function emulatedClockMs(status: { audio?: unknown; elapsed?: unknown }):
 
 /**
  * A watch on the emulated clock for a loop that waits on something else: each `tick()` reads the status and returns true once
- * `emulatedMs` of emulated time have passed since the first tick; it throws `message` when the clock stands still (and no load or restart moves) for `hangMs` of wall time.
+ * `emulatedMs` of emulated time have passed since the first tick; it throws `message` (a function is called on failure) when the clock stands still (and no load or restart moves) for `hangMs` of wall time.
  * The clock only counts forward: a reboot or snapshot restore lowers it and the next reading is the new start.
  */
 export function emulatedWatch(
   session: Pick<Session, 'status'>,
-  { emulatedMs, message, hangMs = CLOCK_STUCK_MS }: { emulatedMs: number; message: string; hangMs?: number },
+  {
+    emulatedMs,
+    message,
+    hangMs = CLOCK_STUCK_MS,
+  }: { emulatedMs: number; message: string | (() => string); hangMs?: number },
   detail: () => string = () => '',
 ): () => Promise<boolean> {
   let waited = 0;
@@ -153,7 +157,7 @@ export function emulatedWatch(
     } else if (Date.now() - lastAdvance >= hangMs) {
       const mode = (reply as { mode?: string }).mode;
       throw new Error(
-        `${message}: emulated clock stuck at ${now} ms (mode ${mode ?? 'unknown'})${describeRestart(reply)} for ${hangMs} ms${detail()}`,
+        `${typeof message === 'function' ? message() : message}: emulated clock stuck at ${now} ms (mode ${mode ?? 'unknown'})${describeRestart(reply)} for ${hangMs} ms${detail()}`,
       );
     }
     last = now;
@@ -162,7 +166,7 @@ export function emulatedWatch(
 }
 
 /**
- * Poll `read` until `done(value)` (`retry` also retries a failing `read`); fail with `message` and the last value after `emulatedMs` of emulated time.
+ * Poll `read` until `done(value)` (`retry` also retries a failing `read`); fail with `message` (a function is called on failure) and the last value after `emulatedMs` of emulated time.
  * A stuck or dead daemon is not this helper's job: the no-progress watchdog closes the session and `read` rejects.
  */
 export async function pollEmulated<T>(
@@ -175,7 +179,7 @@ export async function pollEmulated<T>(
     intervalMs = 200,
     retry = false,
     hangMs,
-  }: { emulatedMs: number; message: string; intervalMs?: number; retry?: boolean; hangMs?: number },
+  }: { emulatedMs: number; message: string | (() => string); intervalMs?: number; retry?: boolean; hangMs?: number },
 ): Promise<T> {
   let value: T | undefined;
   let failure: unknown;
@@ -198,7 +202,7 @@ export async function pollEmulated<T>(
     }
     if (expired) {
       throw new Error(
-        `${message}: not seen within ${emulatedMs} ms of emulated time (last: ${failure ? String(failure) : JSON.stringify(value)})`,
+        `${typeof message === 'function' ? message() : message}: not seen within ${emulatedMs} ms of emulated time (last: ${failure ? String(failure) : JSON.stringify(value)})`,
       );
     }
     // The clock starts at the first miss: a wait that is satisfied at once asks the daemon nothing more.
@@ -223,7 +227,7 @@ export async function expectPollEmulated<T>(
     emulatedMs = 30_000,
     message = 'poll',
     intervalMs = 200,
-  }: { emulatedMs?: number; message?: string; intervalMs?: number } = {},
+  }: { emulatedMs?: number; message?: string | (() => string); intervalMs?: number } = {},
 ): Promise<T> {
   return pollEmulated(
     session,

@@ -4,6 +4,7 @@ import path from 'node:path';
 import { repoRoot, resolveInputs } from '@digi/test-support';
 import { describe, expect, test } from 'vitest';
 import { withSession } from '../support.ts';
+import { expectPollEmulated } from './waits.ts';
 
 const binary = process.env.DIGI_DSP_PEEK_EMUD;
 const enabled = Boolean(binary);
@@ -101,9 +102,12 @@ describe.skipIf(!enabled)('DN2 1.12 exact cache-register observation', () => {
       expect(observed.cfg2).toEqual({ addr: 0x3e002, value: 0xf0 });
       await expect(rpc('dsp.peek_word', { addr: 0x1_0000_0000 })).rejects.toMatchObject({ code: -32602 });
       evidence.invalidAddressRejected = true;
-      await expect
-        .poll(async () => (await rpc<Status>('status')).dsp_frames, { timeout: 10000, interval: 50 })
-        .toBeGreaterThan(beforeFrame);
+      await expectPollEmulated(
+        session,
+        async () => (await rpc<Status>('status')).dsp_frames,
+        (value) => expect(value).toBeGreaterThan(beforeFrame),
+        { emulatedMs: 10_000, intervalMs: 50, message: 'the DSP frame count advances' },
+      );
       const afterWords = await words('after');
       evidence.afterWords = afterWords;
       expect(afterWords).toEqual(observed);

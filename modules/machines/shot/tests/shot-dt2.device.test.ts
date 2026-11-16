@@ -1,6 +1,5 @@
 import { readFileSync } from 'node:fs';
 import path from 'node:path';
-import { setTimeout as delay } from 'node:timers/promises';
 import { Sample, prepareUpload } from '@digi/dk-session/dksample';
 import { openSamples } from '@digi/dk-session/samples';
 import { button, repoRoot, type Session } from '@digi/test-support';
@@ -12,7 +11,7 @@ import { memory, panel } from '@digi/regression/runtime/panel.ts';
 import { runtimeTests } from '@digi/regression/runtime/ready.ts';
 import { planSymbol, prepareRuntimePlan } from '@digi/regression/runtime/runtime-plan.ts';
 import { expectedWindow, setSmp, trackApi as sharedTrackApi } from './shot-support.ts';
-import { expectPollEmulated } from '@digi/regression/runtime/waits.ts';
+import { emulatedClockMs, expectPollEmulated, pollEmulated } from '@digi/regression/runtime/waits.ts';
 
 // End to end, DT2 1.17: the device-neutral runtime (API 1.5 sample pool), core/sample-pool (the borrowed stock pool), machine contract 1.2
 // and digikit/shot playing a stereo sample that a fixture module added to the pool by path (docs/design/sample-api-1.5.md).
@@ -174,7 +173,7 @@ async function selectDynamicMachine({ session }: Pick<PatchedSession, 'session'>
   return page.sha256 ?? '';
 }
 
-function trackApi({ dk }: PatchedSession) {
+function trackApi({ dk, session }: PatchedSession) {
   /** `sample_pool_add` through test/track-select: the pool index, or a negative error code. */
   async function add(file: string) {
     const reply = await dk.request(0x3e, Buffer.concat([Buffer.from([HANDLE, 0x61]), Buffer.from(file)]));
@@ -204,17 +203,23 @@ function trackApi({ dk }: PatchedSession) {
     };
   }
   /** Poll until the track reaches a terminal state (ready or an error); every distinct observation is kept. */
-  async function settle(timeoutMs = 90_000, index = TRACK) {
+  async function settle(emulatedMs = 90_000, index = TRACK) {
     const seen: { t: number; state: number; token: number }[] = [];
-    const t0 = Date.now();
-    for (;;) {
-      const s = await status(index);
-      if (!seen.length || seen.at(-1)!.state !== s.state || seen.at(-1)!.token !== s.token)
-        seen.push({ t: Date.now() - t0, state: s.state, token: s.token });
-      if (s.state === 3 || s.state < 0) return { ...s, seen, ms: Date.now() - t0 };
-      if (Date.now() - t0 > timeoutMs) throw new Error(`pool entry ${index} did not settle: ${JSON.stringify(seen)}`);
-      await delay(50);
-    }
+    const t0 = emulatedClockMs(await session.status());
+    let ms = 0;
+    const s = await pollEmulated(
+      session,
+      async () => {
+        const s = await status(index);
+        ms = emulatedClockMs(await session.status()) - t0;
+        if (!seen.length || seen.at(-1)!.state !== s.state || seen.at(-1)!.token !== s.token)
+          seen.push({ t: ms, state: s.state, token: s.token });
+        return s;
+      },
+      (s) => s.state === 3 || s.state < 0,
+      { emulatedMs, message: () => `pool entry ${index} did not settle: ${JSON.stringify(seen)}`, intervalMs: 50 },
+    );
+    return { ...s, seen, ms };
   }
   return { add, clear, select, status, settle };
 }
@@ -403,22 +408,26 @@ runtimeTests(
       const noteReset = await captureNote(runtime, path.join(artifacts, 'reset.wav'), async (clock) => {
         resetAt = (await clock()) + RATE / 2;
         await until(clock, resetAt);
-        const t0 = Date.now();
+        const t0 = emulatedClockMs(await session.status());
         const reply = await dk.request(0x3a, Buffer.from([1]));
         expect(reply.status, 'stock-pool reload command').toBe(0);
         // The wipe comes about 1.5 s after the call; the track must leave the old binding, then be ready again.
-        for (;;) {
-          const s = await api.status();
-          const [rec, ctl] = [await dspWords(recAddr, 2), await dspWords(ctlAddr, 1)];
-          const last = timeline.at(-1);
-          if (!last || last.state !== s.state || last.ready !== rec[0] || last.token !== rec[1] || last.closed !== ctl[0])
-            timeline.push({ ms: Date.now() - t0, frame: (await clock()) - resetAt, state: s.state, ready: rec[0], token: rec[1], closed: ctl[0] });
-          if (!trace.length || trace.at(-1)!.state !== s.state || trace.at(-1)!.token !== s.token)
-            trace.push({ t: Date.now() - t0, state: s.state, token: s.token });
-          if (s.state === 3 && s.token !== before.token) break;
-          if (Date.now() - t0 > 120_000) throw new Error(`track did not reload: ${JSON.stringify(trace)}`);
-          await delay(50);
-        }
+        await pollEmulated(
+          session,
+          async () => {
+            const s = await api.status();
+            const [rec, ctl] = [await dspWords(recAddr, 2), await dspWords(ctlAddr, 1)];
+            const last = timeline.at(-1);
+            const ms = emulatedClockMs(await session.status()) - t0;
+            if (!last || last.state !== s.state || last.ready !== rec[0] || last.token !== rec[1] || last.closed !== ctl[0])
+              timeline.push({ ms, frame: (await clock()) - resetAt, state: s.state, ready: rec[0], token: rec[1], closed: ctl[0] });
+            if (!trace.length || trace.at(-1)!.state !== s.state || trace.at(-1)!.token !== s.token)
+              trace.push({ t: ms, state: s.state, token: s.token });
+            return s;
+          },
+          (s) => s.state === 3 && s.token !== before.token,
+          { emulatedMs: 120_000, message: () => `track did not reload: ${JSON.stringify(trace)}`, intervalMs: 50 },
+        );
         await until(clock, (await clock()) + RATE);
       });
       log.reset = { before, trace, frames: noteReset.l.length };

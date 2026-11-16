@@ -9,6 +9,7 @@ import { describeOn } from '@digi/regression/runtime/devices.ts';
 import { withSession } from '@digi/regression/support.ts';
 import type { RuntimePlan } from '@digi/regression/runtime/runtime-plan.ts';
 import { optInPatchkit } from '@digi/regression/runtime/patchkit.ts';
+import { expectPollEmulated } from '@digi/regression/runtime/waits.ts';
 
 const binary = process.env.DIGI_PATCHED_STARTUP_EMUD;
 const patchkit = optInPatchkit();
@@ -83,9 +84,12 @@ describeOn('dt2', 'DT2 1.17 changed-DSP startup and cached restore', () => {
       const frame = before.dsp_frames;
       if (typeof frame !== 'number' || !Number.isSafeInteger(frame))
         throw new Error('startup status must expose an integer DSP frame count');
-      await expect
-        .poll(async () => (await rpc<Status>('status')).dsp_frames, { timeout: 10000, interval: 50 })
-        .toBeGreaterThan(frame);
+      await expectPollEmulated(
+        session,
+        async () => (await rpc<Status>('status')).dsp_frames,
+        (value) => expect(value).toBeGreaterThan(frame),
+        { emulatedMs: 10_000, intervalMs: 50, message: 'the DSP frame count advances' },
+      );
       await bounded(session.expectNoFault(phase), 5000, 'no-fault check');
       evidence[`${phase}AfterStatus`] = await rpc<Status>('status');
     };
