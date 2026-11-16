@@ -525,4 +525,4 @@ Example and fixture: `tests/fixtures/modules/dyn-fx-gain`.
 The frameworks themselves are ordinary modules: `modules/core/adapters/machines/` (about 24 ColdFire anchors, six copied
 tables, the hooks in `src/cf/dt2/machines.s` and `src/cf/dn2/machines.s`), `modules/core/adapters/params/` and
 `modules/core/adapters/dsp-voice/`. Their routines are unit-tested on the emulated ColdFire core (`tools/patchkit/pk_cfunit.py`,
-`modules/core/adapters/machines/tests/test_pk_machines_fw.py`, `modules/core/adapters/params/tests/test_pk_params_fw.py`), and the proofs are `tools/patchkit/pk_proof_machines.py`. Contract and evidence: [finding 02](../docs/findings/02-machines-and-parameters.md).
+`modules/core/adapters/machines/tests/test_pk_machines_fw.py`, `modules/core/adapters/params/tests/test_pk_params_fw.py`), and the proofs are the `core/services/machines:bind` target and the machine fixture suite (`core/runtime-fixture-tests`). Contract and evidence: [finding 02](../docs/findings/02-machines-and-parameters.md).

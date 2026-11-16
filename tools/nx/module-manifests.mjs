@@ -43,3 +43,25 @@ export const manifestClosure = (byId, ids) => {
   return [...files].sort();
 };
 export const manifestArgs = (files) => files.map((file) => `--manifest ${file}`).join(' ');
+
+// Gaps between a module's manifest and its generated gallery (build/gen/gallery.json): a device of [targets], [module] ports or an
+// object's `devices` that a machine does not list, or lists with no parameter, has no knob slots there. `module:check` writes the
+// gallery, so a gap is fixed by running it again. Returns one message per gap; a module without machines or gallery has none.
+export const galleryGaps = (root, manifest) => {
+  const file = join(root, 'build/gen/gallery.json');
+  if (!manifest.machine?.length || !existsSync(file)) return [];
+  const gallery = JSON.parse(readFileSync(file, 'utf8'));
+  const fromPort = (t) => t.split('-')[0];
+  const wanted = new Set([
+    ...Object.keys(manifest.targets ?? {}).map(fromPort),
+    ...(manifest.module?.ports ?? []).map(fromPort),
+    ...(manifest.object ?? []).flatMap((o) => o.devices ?? []),
+  ]);
+  const gaps = [];
+  for (const m of gallery.machines ?? [])
+    for (const d of [...wanted].sort()) {
+      if (!m.devices?.[d]) gaps.push(`${d}: machine ${m.id} is not listed in ${file}`);
+      else if (!(gallery.params?.[d] ?? []).length) gaps.push(`${d}: machine ${m.id} has no parameter in ${file}`);
+    }
+  return gaps;
+};
