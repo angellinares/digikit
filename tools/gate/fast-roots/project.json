@@ -86,6 +86,8 @@
         "{workspaceRoot}/packages/emulator/sharc-stats/**/*",
         "{workspaceRoot}/packages/emulator/sharc-gen/**/*",
         "{workspaceRoot}/packages/emulator/sharc-fast-cl/**/*",
+        "!{workspaceRoot}/{packages,modules}/**/{tests.rs,tests_*.rs,*_tests.rs,fake_*.rs}",
+        "!{workspaceRoot}/{packages,modules}/**/tests/**/*.rs",
         "{workspaceRoot}/tests/scenarios/dn2.json",
         "{workspaceRoot}/tests/scenarios/dt2.json",
         "{workspaceRoot}/sdk/sdk.toml",
