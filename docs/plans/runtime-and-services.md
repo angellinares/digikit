@@ -684,7 +684,7 @@ Prefixes: `S:` = branch `rt/r8-spike`; F131 = `S:docs/findings/131-r8-whole-path
 **Format and registry.**
 
 - Table version follows content. A module without services keeps table v1 and stays byte-identical. Table v2 is used only with PROVIDES or BIND. Readers accept versions 1 and 2. `sdk.toml` `table_version` is the newest version.
-- A `.dks` is a `.dkm` with role word 1. The role word is a u32 at header 0x38 (0 module, 1 service). `H_RESERVED` is a u32 at 0x3c. Role 1 holds only for v2 with exactly one PROVIDES. Role 0 with PROVIDES, HOOKS or BIND, or a role above 1, gives E_FORMAT. The check reads the 64-byte head of `Storage::stat_head` (`modules/core/runtime/abi/src/storage.rs:68-77`), so a provider is checked before staging. Spike: `S:.../loader.rs` (H_ROLE), `S:.../provide.rs:46-56`.
+- A `.dks` is a `.dkm` with role word 1. The role word is a u32 at header 0x38 (0 module, 1 service). `H_RESERVED` is a u32 at 0x3c (R12-4 renames it H_SVC_ABI and fills it for services). Role 1 holds only for v2 with exactly one PROVIDES. Role 0 with PROVIDES, HOOKS or BIND, or a role above 1, gives E_FORMAT. The check reads the 64-byte head of `Storage::stat_head` (`modules/core/runtime/abi/src/storage.rs:68-77`), so a provider is checked before staging. Spike: `S:.../loader.rs` (H_ROLE), `S:.../provide.rs:46-56`.
 - Tags: PROVIDES is tag 9 (service hash, version; it points at `dk_module`). BIND is tag 10 (site hash, address, length, trampoline offset, stock bytes up to 64). v2 SLOTS items are 12 bytes: id, flags, entry word (v1 items stay id and flags, `packages/dkneeds/src/keys.rs:18`).
 - Need resolution: a hard need is met by the runtime (a static row, `HANDLE_SERVICES`, or "runtime") or by a planned PROVIDES. Module EXPORTS no longer meet a need. The `core/` prefix rule is gone. The static table is `modules/core/runtime/src/rs/src/plan.rs:46-65`.
 - Find: one listing of `services/` per boot. It matches `name_hash(stem)` for every unresolved hard need, transitively, up to `PROVIDER_MAX` = 6 providers. E_BUSY or a missing directory means nothing is found. NEEDS carries only a hash (`keys.rs:13`), so the runtime cannot build a path. Find captures the table without BIND (BIND is read at load, because the 384-byte TABLES copy cannot hold 12 BIND items with stock bytes). A stem is at most 50 bytes. Rejected: hex-hash file names (unreadable in Transfer), names in NEEDS (grows every module table). The spike resolves one provider per boot (`S:.../provider.rs`).
@@ -694,9 +694,13 @@ Prefixes: `S:` = branch `rt/r8-spike`; F131 = `S:docs/findings/131-r8-whole-path
 
 **ABI.**
 
-- Interface C (service to core): service-only named imports generated from one list in `sdk.toml`. A generated zero-size `ImportCore` implements `CoreApi`, so `Service<C: CoreApi>` code and FakeCore tests do not change (`service.rs:209`, `core_api.rs:24-130`, `services/fx/Cargo.toml:11-14`).
-- Interface B (core to service): a `.dks` exports only `dk_module` (section 5.12). For `role = "service"`, `dk_module_def` carries a pointer to the service's `ServiceRow` (the 22 pointers, `service.rs:314-335`); there is no second exported row symbol. `ServiceTable.rows` = static rows + loaded rows.
-- Version, `.dks` vs runtime: exact match of a generated fingerprint over the B and C lists. Module vs service: same major, minor not older. Rejected: a pointer struct passed at init (a second mechanism); exact runtime version only (a stale dev `.dks` would pass).
+- Interface C (service to core): named imports `dkc_*`, about 40, one per `CoreApi` method. They are C-shaped: pointers for `&'static mut`, pointer and length for slices, status plus out pointer for `Option`. One macro list in `dkrt-abi` (`core_imports.rs`) declares them. The list generates the service `extern` block and the runtime's second table `SVC_IMPORTS`, with const type checks as `imports.rs` does. A hand-written zero-size `ImportCore` in the new crate `dkrt-svc-rt` implements `CoreApi` over the imports. Only `.dks` wrappers link `dkrt-svc-rt`. `Service<C: CoreApi>` code, FakeCore and the service host tests do not change (`service.rs:209`, `core_api.rs:24-130`, `services/fx/Cargo.toml:11-14`). `type Host` and `host()` move to a sub-trait `SampleCore: CoreApi` (samples only). Rejected: rows in `sdk.toml` `[[import]]` (signature strings cannot express the types, and they would enter the public headers); a pointer table passed at init (a second mechanism); handles instead of `&'static mut`.
+- Interface B (core to service): one non-generic `#[repr(C)]` `ServiceRow`: kinds (pointer and count), name, and the 22 `unsafe extern "C" fn` thunks (`service.rs:314-335`). The first argument of each thunk is `core: *const c_void`. The const fn `ServiceRow::of::<S, C>()` builds a row with generic thunks. Static rows use `C = RealCore`, `.dks` rows use `ImportCore`, tests use FakeCore. `ServiceTable` is non-generic and `Copy`. It is a slice of row pointers over a runtime static `ROWS: [*const ServiceRow; STATIC + PROVIDER_MAX]`: static rows first, then loaded rows sorted by `[[service]]` ordinal. `failed` covers the static prefix, and `is_runtime_service` reads only the static prefix. Hand-over: a new service-only import `dk_service_declare_row(ctx, row)`, called in `init`. There is no change to `dk_module_def`, no `dk_service_def` and no format word. A C provider without a row (`svc-test`) stays valid. A `.dks` still exports only `dk_module` (section 5.12).
+- ABI safety: every boundary function is `extern "C"`. Shared structs are `repr(C)`: `ServiceRow`, `CheckCtx`, `ApplyCtx`, `Claim`, `RowWrite`, `GuardState`, the `Declare` item struct, `ApplyArgs`, `Job`, `DspSec`, `Slot`, `Ticket`, `Step`, `Sequence`. `Owner` and `LinkResult` are `repr(u8)`. `Stream` is `repr(C, u8)`. `#![deny(improper_ctypes, improper_ctypes_definitions)]` holds in `dkrt-abi` and `dkrt-svc-rt`.
+- Fingerprint, `.dks` vs runtime: an exact hash of the `dkrt-abi` boundary files (generated by `patchkit gen`), mixed with `size_of` of the shared structs. It is `dkrt_abi::SVC_ABI: u32`. In a `.dks` it is header word 0x3c (`H_RESERVED` becomes `H_SVC_ABI`). The packer copies it from the data symbol `dk_svc_abi`, which `dkrt-svc-rt` emits; 0 means the file uses no B or C. The runtime reports it in INFO bytes 41-44 with `CAP_SVC_ABI`. Hosts compare offset 60 with INFO (0 is skipped). The loader role check reads the 64-byte head: a non-zero word that differs gives E_SVC_ABI, and dependents get `NeedMissing`. `SVC_IMPORTS` is searched only for role 1 with a matching word. Module vs service: same major, minor not older. Rejected: exact runtime version only (a stale dev `.dks` would pass).
+- One owner per build: a service is either a static row or a `.dks`, never both.
+- Panic policy: a service panic is a runtime panic (crash capture, safe mode on the next boot). The `.dks` panic handler calls the import `dkc_panic`, which calls `fault::panic()`.
+- Needs from record kinds: patchkit adds a hard NEED on the owning service of each record kind in a module's KEYS (`[records.kinds] service`), only when that service has no static row. Modules stay byte-identical until their service moves.
 - Build: as the spike's Rust provider (`S:tests/fixtures/modules/hooktest-rs/module.toml`): crate and adapter objects, packed unbound, then `patchkit bind` against the user's firmware.
 
 **Hooks in scope.** 30 of 54 hooks, not 45: the runtime's own adapters stay in the image (section 3), and `samples` becomes `.dks` in a later item.
@@ -721,7 +725,7 @@ Goal: one Loader owns the module lifecycle, so R12-3 to R12-6 add service steps 
 **Seams.**
 
 - `Images` trait: stage, alloc and free, `enter_init` and `enter_fini`. It has a fake.
-- `Registry` trait (R12-4).
+- `Registry` trait (R12-4). `Registry::add` gets the service row from the init declaration (`dk_service_declare_row`) at commit. `abi_ok` reads the 64-byte head.
 - `Installer`: a concrete struct. Its fake is the `FakePlatform` call log. It becomes a trait only when R12-8 adds a second backend.
 - Exports table: publish, withdraw, resolve.
 
@@ -760,11 +764,32 @@ Estimate: about 2 agent days.
 
 **Patchkit and limits.** The patchkit `bind` command is ported onto the R12-2 `dkm.rs` (CLI; the wasm `pk_bind` comes in R12-7). Bound files are never committed. Limits come from `sdk.toml`: 24 BIND items per provider and 48 installed sites. `Declare::MAX` is raised for machines (21 hooks).
 
-**Scope limits.** A provider with a DSP section is refused until R12-8. Imports resolve to a loaded provider's EXPORTS.
+**Scope limits.** A provider with a DSP section is refused until R12-8. Import resolution for role 1: `IMPORTS`, then `SVC_IMPORTS`, then a loaded provider's EXPORTS.
 
 **Device proof.** One file in `core/runtime-tests`, on both devices: order provider, install, consumer; the site jumps to the trampoline; `dk_svctest_ping()` returns 42; safe boot gives stock bytes; E_HOOK_STOCK; E_PLAN_OWNER (moves from the host row to the device proof); `DIGI_FLUSH_CHECK=1`. Per-leaf `.dks` device inputs: `tools/nx/device-test-keys.mjs` needs a role set from `modules.mjs`.
 
 Estimate: about 2 agent days.
+
+#### R12-4 Service boundary and lfo.dks
+
+**Steps.**
+
+1. ABI shape (R12-4a): `repr(C)`, the C row, the non-generic table and the lint. No behaviour change. Objdiff explained. Check first that generic `extern "C"` thunks and `repr(C, u8)` work under `rustc_codegen_gcc`. This step lands before R12-3a.
+2. Fingerprint (`SVC_ABI`, `H_SVC_ABI`, INFO bytes 41-44, E_SVC_ABI).
+3. `core_imports.rs`, `SVC_IMPORTS`, `dkrt-svc-rt` and a contract test.
+4. `Registry` add and remove, `dk_service_declare_row`, role steps.
+5. `lfo.dks`: the wrapper crate `modules/core/services/lfo/dks/` (staticlib, own workspace, `panic=abort`). `dkrt_svc_rt::service!(Lfo, "lfo", KINDS_LFO)` emits `dk_module` (init declares the kind and the row), `dk_svc_abi` and the panic handler. `SHAPES` lives in bss. R12-4 removes `rust =` from the lfo `[[service]]` in the same PR, so the static row and the runtime dependency on `dkrt-svc-lfo` go. `lfo_tests` keep `dkrt-svc-lfo` as a dev-dependency through `Registry::add`. Add the record-kind NEED and the Nx inputs.
+6. Device proof: `core/runtime-lfo-tests` on both devices with `services/lfo.dks`. Refusals: a wrong ABI word, and no file.
+
+Order: R12-2, then R12-4 step 1, then R12-3a, then R12-3, then R12-4 steps 2-6, then R12-7 on main, then R12-5, then R12-6.
+
+**Size gates.** Step 1: DT2 runtime growth at most 1 KiB. The `lfo.dks` is about 1-1.5 KiB; stop above 2 KiB. The runtime may grow by about 2 KiB before fx and machines leave (a measured gate).
+
+**Scope guard.** No fx or machines move, no `samples.dks`, no unload, no Transfer, no hash-keyed table.
+
+**For R12-5 and R12-6.** `fx_entry` and `machine_types_of` become row methods. `param_get` and `param_set` become provider EXPORTS. `page_key` and `turn` become slots. `RuntimeFw` moves into `machines.dks`. The arena fit on DT2 is measured in R12-5.
+
+Estimate: about 3 agent days.
 
 #### R12-7 Transfer installs services
 
@@ -827,15 +852,16 @@ Flash adds the same `.dks` set to its job.
 | R12-0 PC probe and checks | probe (documented in INSTRUMENTATION.md), both checks. Done (finding 132) | none; validated by the runs | - |
 | R12-1 Service crates and template | move the `samples` and `lfo` services out of the runtime crate into their own crates; all four service crates (fx, machines, samples, lfo) use one template layout (`lib.rs`, `records.rs`, `slots.rs`, `dsp/`, `tests/`) with the single `dk_module` entry carrying the `ServiceRow`; `module:new service` (generates `modules/core/services/<name>/` with `module.toml` `role = "service"`); `module:check` structure check for services (the layout, exactly one exported entry `dk_module`, declarations equal to the manifest); no `.dks` format and no installer | every service has the same host tests behind FakeCore; structure check cases (wrong layout, second export, declaration differing from the manifest); object diff of the runtime (identical or explained) | one targeted device batch |
 | R12-2 Format v2 and provider slots | table version by content (v1 unchanged, v2 with PROVIDES/BIND), role word and `H_RESERVED`, tags 9 and 10, v2 SLOTS width, need resolution without module EXPORTS, Find, provider slots and owner rule, `[[service]]` without `rust`, `.dks` pack output; no new codes | dkneeds round trip; planner cases; Find cases; packed fixtures; `patchkit dkm-identity` | targeted subset on DT2 and DN2: gate-smoke, gate-pins, refusal, capacity, needs, one lfo test (boot unchanged for modules) |
+| R12-4a ABI shape | `repr(C)` shared structs, the C `ServiceRow` with `extern "C"` thunks, non-generic `ServiceTable` over `ROWS`, the `improper_ctypes` lint; no behaviour change; lands before R12-3a | objdiff of the runtime explained; DT2 growth at most 1 KiB; thunk check under `rustc_codegen_gcc` | representative subset |
 | R12-3a Loader structure | one `Loader` with `Images` and `Registry` seams, role steps table, `REC_MAX` record space, six migration steps; no behaviour change | each step: host tests and `patchkit objdiff` identical or explained; DT2 runtime text growth at most 1 KiB | representative subset once at the end (pluck or shot, refusal, safe-mode, boot-restart, needs, capacity, gate-smoke) |
 | R12-3 Installer and slots | boot order with providers, log-only reporting, all-or-nothing install under one IPL-7 mask, E_HOOK_STOCK, slot mechanism, `read_code` and `write_code`, patchkit bind; no live disarm | FakePlatform call order; pass 1 and pass 2 cases; restore | one file in `core/runtime-tests`: order, trampoline jump, `dk_svctest_ping()` = 42, safe mode, E_HOOK_STOCK, E_PLAN_OWNER, `DIGI_FLUSH_CHECK=1` |
-| R12-4 Service ABI fingerprint and `lfo.dks` | B row in `dk_module_def`, C imports, fingerprint; `lfo.dks` is the first service built as a `.dks` | lfo over FakeCore | core/runtime-lfo-tests |
+| R12-4 Service boundary and `lfo.dks` | steps 2-6: fingerprint, `core_imports` and `SVC_IMPORTS` with `dkrt-svc-rt`, `Registry` add and remove with `dk_service_declare_row`, the `lfo` wrapper (static row dropped, record-kind NEED), device proof; `lfo.dks` is the first service built as a `.dks` | lfo over FakeCore; import contract test; fingerprint cases | core/runtime-lfo-tests on both devices (refusals: wrong ABI word, no file) |
 | R12-5 `fx.dks` | fx crate + fxpages hooks | fx crate tests | digikit/freqshift; stock sites with no service |
 | R12-6 `machines.dks` | after R10 merges | machines crate tests | digikit/pluck, digikit/shot |
 | R12-7 Transfer installs services | mockup first | resolution behind fakes | transfer-live per device |
 | R12-8 SHARC stubs, dispatch in services | slice proof first: one stub, golden hashes at a zero slot, instruction-ratio A/B | - | - |
 
-Order: R10, R11, T1e step 3, then R12-1 to R12-8 (R12-0 any time; R12-7 Transfer may run in a UI lane after R12-2). `samples.dks` is a later item. Payoff high (done criteria 5-7 for fx and machines). Confidence: ColdFire medium-high (the spike ran on both devices in the emulator); R12-8 low-medium, with a separate go. Estimate 7-10 agent days without R12-8.
+Order: R10, R11, T1e step 3, then R12-1, R12-2, R12-4a, R12-3a, R12-3, R12-4 steps 2-6, R12-7 on main, R12-5, R12-6, R12-8 (R12-0 any time; R12-7 Transfer may run in a UI lane after R12-2). `samples.dks` is a later item. Payoff high (done criteria 5-7 for fx and machines). Confidence: ColdFire medium-high (the spike ran on both devices in the emulator); R12-8 low-medium, with a separate go. Estimate 10-13 agent days without R12-8 (R12-3a loader structure and the R12-4 boundary added).
 
 ## 14. Checks
 
