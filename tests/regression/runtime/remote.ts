@@ -2,12 +2,11 @@ import { execFile } from 'node:child_process';
 import path from 'node:path';
 import { promisify } from 'node:util';
 import type { DkSession } from '@digi/dk-session';
-import { button, emulatorClock, pollUntil, repoRoot, type Session } from '@digi/test-support';
+import { emulatorClock, pollUntil, remoteInput, repoRoot, waitClock, type Session } from '@digi/test-support';
 import { aggregate, type PatchedSession } from '../support.ts';
 import { liveArtifacts, record } from './artifacts.ts';
 import { installModule, moduleArtifact } from './install.ts';
 import { expectRuntimeUi } from './ready.ts';
-import { tap } from './waits.ts';
 import { prepareRuntimePlan, type RuntimePlan } from './runtime-plan.ts';
 
 const exec = promisify(execFile);
@@ -47,8 +46,9 @@ export async function installRemote({ session, dk }: PatchedSession): Promise<vo
 }
 
 export async function remoteTap(session: Session, dk: DkSession, name: string, settleMs = 1200): Promise<void> {
-  const code = button(name);
-  await tap(session, (down) => dk.remoteKey(code, down), 300, settleMs);
+  const clock = emulatorClock(session);
+  await remoteInput(dk, clock).tap(name, 300);
+  await waitClock(clock, settleMs);
 }
 
 /** Always release held remote inputs, including on navigation/assertion failure. */

@@ -11,7 +11,6 @@ import {
   repoRoot,
   withinRuntimeDeadline,
   type Device,
-  type Key,
   type RuntimeBaseline,
   type Session,
 } from '@digi/test-support';
@@ -25,7 +24,7 @@ import { FIRMWARE, claimRunDir } from './devices.ts';
 import { moduleArtifact } from './install.ts';
 import { expectRuntimeUi } from './ready.ts';
 import { pollEmulated } from './waits.ts';
-import { analysisJson, bounded, evidence, options, pickSine, word } from './fx-live.ts';
+import { analysisJson, bounded, evidence, options, pickSine, word, type Rt, type RtLike } from './fx-live.ts';
 import {
   planSymbol,
   prepareRuntimePlanListedOffline,
@@ -97,26 +96,11 @@ function uiOf(session: Session): Ui {
   return ui;
 }
 
-/**
- * Panel tap that releases a held chord key on failure. No page-change event exists and the fixtures run paused: the tap waits for
- * the firmware to take the input (`drained`), then `settleMs` of emulated time stays as the redraw settle (nothing observable).
- */
-export async function tap(session: Session, key: string, settleMs = 300, held?: string): Promise<void> {
-  const ui = uiOf(session);
-  const input = panelInput(session, emulatorClock(session));
-  try {
-    if (held) {
-      await bounded(() => input.button(held, true));
-      await ui.wait({ ms: 5, why: 'chord key registered before the tap' });
-    }
-    await bounded(() => ui.tap(key as Key, { until: { drained: true } }));
-  } finally {
-    if (held) {
-      await bounded(() => input.button(held, false));
-      await ui.wait({ ms: 5, why: 'chord key release registered' });
-    }
-  }
-  if (settleMs) await ui.wait({ ms: settleMs, why: 'firmware redraw after a panel tap (no page-change event)' });
+/** A runtime's panel parts over a bare session, for callers that still hold only a `Session`. */
+export function rtOf(target: RtLike): Rt {
+  if ('ui' in target && 'clock' in target) return target;
+  if ('session' in target) return rtOf(target.session);
+  return { session: target, ui: uiOf(target), clock: emulatorClock(target) };
 }
 
 /** Wait until the boot input has finished, so the run can pause. */
@@ -159,7 +143,7 @@ export async function readTextRows(session: Session, address: number, count: num
 
 /** Read protocol state while paused using the existing USB transport's legacy 400,000-instruction poll step. */
 export async function withPausedFxProtocol<T>(
-  runtime: PatchedSession,
+  runtime: Pick<PatchedSession, 'session'>,
   operation: (dk: DkSession) => Promise<T>,
 ): Promise<T> {
   const deadline = Date.now() + 30_000;
@@ -229,7 +213,8 @@ export async function inspectFxBoot(
 }
 
 /** DT2 retains the legacy selected-type readback and adjacent-list-position retries. */
-export async function selectSine(runtime: PatchedSession, profile: FxProfile): Promise<void> {
+export async function selectSine(target: RtLike, profile: FxProfile): Promise<void> {
+  const runtime = rtOf(target);
   const hint = runtime.session.options.device === 'dt2' ? 7 : 5;
   const sine = (await withPausedFxProtocol(runtime, (dk) => dk.modules())).find(
     (module) => module.name === 'test/sine',
@@ -240,7 +225,7 @@ export async function selectSine(runtime: PatchedSession, profile: FxProfile): P
   for (const downs of runtime.session.options.device === 'dt2'
     ? [hint, hint + 1, hint - 1, hint + 2, hint + 3]
     : [hint]) {
-    await pickSine(runtime.session, downs);
+    await pickSine(runtime, downs);
     if (runtime.session.options.device !== 'dt2') return;
     if ((((await word(runtime.session, profile.track_type_word)) >>> 8) & 0xff) === want) return;
   }

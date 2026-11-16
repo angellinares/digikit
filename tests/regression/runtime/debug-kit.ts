@@ -1,10 +1,9 @@
 import { asciiOf, be32, type DkLogEvent, type DkSession } from '@digi/dk-session';
 import { CMD, LOG_KIND } from '@digi/dk-session/gen_proto';
-import type { Session } from '@digi/test-support';
+import { emulatorClock, waitClock, type Session } from '@digi/test-support';
 import type { PatchedSession } from '../support.ts';
-import { advance, rpc, word } from './fx-live.ts';
+import { rpc, word } from './fx-live.ts';
 import { withPausedFxProtocol } from './fx-session.ts';
-import { waitEmulatedFrames } from './waits.ts';
 
 /**
  * Helpers only the debug, card, crash and safe-mode scenarios use (tests/regression/runtime/{debug-module,card-safety,safe-mode,crash-capture,debug-guard}).
@@ -74,9 +73,12 @@ export function crashRecord(events: DkLogEvent[]) {
 
 // ---- emulated time and keys --------------------------------------------------------------------------------------------------------
 
+/** DSP frames per emulated millisecond (1500 a second). */
+const FRAMES_PER_MS = 1.5;
+
 /** Wait until the DSP has run `blocks` more frames (emulated time, not wall time). */
 export function waitFrames({ session }: { session: Session }, blocks: number): Promise<void> {
-  return waitEmulatedFrames(session, blocks);
+  return waitClock(emulatorClock(session), Math.ceil(blocks / FRAMES_PER_MS));
 }
 
 export { openAbout } from './flows/menu.ts';
@@ -91,7 +93,7 @@ export async function pausedProtocol<T>(runtime: PatchedSession, op: (dk: DkSess
 export async function settleHang(session: Session, address: number, limitMs = 9000): Promise<boolean> {
   for (let i = 0; i < Math.floor(limitMs / 400); i++) {
     const before = await word(session, address);
-    await advance(session, 400);
+    await waitClock(emulatorClock(session), 400);
     if ((await word(session, address)) === before) return true;
   }
   return false;

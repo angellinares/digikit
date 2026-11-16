@@ -5,9 +5,9 @@ import { bootInfo } from '@digi/regression/runtime/card-kit.ts';
 import { cardRig, RT } from '@digi/regression/runtime/card-rig.ts';
 import { portFile } from '@digi/regression/runtime/device-data.ts';
 import { DEVICES, FIRMWARE } from '@digi/regression/runtime/devices.ts';
-import { advance, rpc } from '@digi/regression/runtime/fx-live.ts';
+import { rpc, SETTLE } from '@digi/regression/runtime/fx-live.ts';
 import { planSymbol } from '@digi/regression/runtime/runtime-plan.ts';
-import type { PatchedSession } from '@digi/regression/support.ts';
+import type { TestRuntime } from '@digi/regression/support.ts';
 import type { DkSession } from '@digi/dk-session';
 
 /**
@@ -56,26 +56,26 @@ for (const device of DEVICES) {
       expect(anchors.length, 'the port table anchor').toBe(1);
       return anchors[0]!.addr as number;
     };
-    const usb = <T>(rt: PatchedSession, run: (dk: DkSession) => Promise<T>) => kit.usb(rt, run);
-    const word = async (rt: PatchedSession, addr: number) => {
+    const usb = <T>(rt: TestRuntime, run: (dk: DkSession) => Promise<T>) => kit.usb(rt, run);
+    const word = async (rt: TestRuntime, addr: number) => {
       const w = await rt.session.client.memPeek(addr);
       expect(w, `guest word at ${addr.toString(16)}`).not.toBeNull();
       return w!;
     };
     /** The port table as the guest holds it: 7 entries of 10 words. */
-    const table = async (rt: PatchedSession) => {
+    const table = async (rt: TestRuntime) => {
       const base = tableBase();
       const words: number[] = [];
       for (let i = 0; i < TABLE_ENTRIES * ENTRY_WORDS; i++) words.push(await word(rt, base + 4 * i));
       return words;
     };
     const entry = (words: number[]) => words.slice(PORT_ENTRY * ENTRY_WORDS, (PORT_ENTRY + 1) * ENTRY_WORDS);
-    const bytesAt = async (rt: PatchedSession, addr: number, len: number) => {
+    const bytesAt = async (rt: TestRuntime, addr: number, len: number) => {
       const out = Buffer.alloc((len + 3) & ~3);
       for (let i = 0; i < out.length; i += 4) out.writeUInt32BE(await word(rt, addr + i), i);
       return out.subarray(0, len);
     };
-    const echoStatus = async (rt: PatchedSession) => {
+    const echoStatus = async (rt: TestRuntime) => {
       const r = await usb(rt, (dk) => dk.request(ECHO_CMD));
       expect(r.status).toBe(0);
       const b = Buffer.from(r.body);
@@ -97,28 +97,28 @@ for (const device of DEVICES) {
       return rt;
     };
     /** Run until the module's job has enabled the interface (usb_bulk_enable returned) and slept. */
-    const enabled = async (rt: PatchedSession) => {
+    const enabled = async (rt: TestRuntime) => {
       for (let i = 0; i < 100; i++) {
-        await advance(rt.session, 100);
+        await rt.ui.wait({ ms: 100, why: SETTLE });
         const s = await echoStatus(rt);
         if (s.steps >= 1) return s;
       }
       throw new Error('the module never ran its first step');
     };
     const connect = () => planSymbol(kit.plan, 'usb_bulk_connect');
-    const hold = async (rt: PatchedSession, mode: number) =>
+    const hold = async (rt: TestRuntime, mode: number) =>
       expect((await usb(rt, (dk) => dk.request(ECHO_CMD + 1, Buffer.from([mode])))).status, `hold ${mode}`).toBe(0);
     /** The receive slots of the block allocated last (the ring: 60 slots of 16 KiB when the heap gives a 1 MiB block). */
-    const slotsOf = (rt: PatchedSession) => word(rt, planSymbol(kit.plan, 'usb_bulk_last_slots'));
-    const poke = (rt: PatchedSession, name: string, value: number) => rpc(rt.session, 'mem.cf.poke', { addr: planSymbol(kit.plan, name), value });
+    const slotsOf = (rt: TestRuntime) => word(rt, planSymbol(kit.plan, 'usb_bulk_last_slots'));
+    const poke = (rt: TestRuntime, name: string, value: number) => rpc(rt.session, 'mem.cf.poke', { addr: planSymbol(kit.plan, name), value });
     const full = (state: number) => (state >>> 8) & 0xff;
     const txBusy = (state: number) => (state >>> 16) & 0xff;
     /** What the adapter queued on EP2 IN, until `want` bytes or `limitMs` of emulated time. */
-    const collect = async (rt: PatchedSession, want: number, limitMs = 60_000) => {
+    const collect = async (rt: TestRuntime, want: number, limitMs = 60_000) => {
       const got: Buffer[] = [];
       let have = 0;
       for (let t = 0; t < limitMs && have < want; t += 20) {
-        await advance(rt.session, 20);
+        await rt.ui.wait({ ms: 20, why: SETTLE });
         const r = await out(rt);
         noSysError(r);
         if (r.bytes > 0) {
@@ -129,16 +129,16 @@ for (const device of DEVICES) {
       return Buffer.concat(got);
     };
     /** The bus reset after the enumeration: the first connect callback. */
-    const enumerate = async (rt: PatchedSession) => {
+    const enumerate = async (rt: TestRuntime) => {
       await rpc(rt.session, 'usb.bulk.in', { connect: connect() });
-      await advance(rt.session, 50);
+      await rt.ui.wait({ ms: 50, why: SETTLE });
     };
-    const hostFile = (rt: PatchedSession, name: string, data: Buffer) => {
+    const hostFile = (rt: TestRuntime, name: string, data: Buffer) => {
       const file = path.join(rt.session.runDir, name);
       fs.writeFileSync(file, data);
       return file;
     };
-    const out = (rt: PatchedSession) =>
+    const out = (rt: TestRuntime) =>
       rpc<{ bytes: number; hex: string; status: { bulk_naks: number; bulk_out_zlps: number; usb_sys_error: string | null } }>(
         rt.session,
         'usb.bulk.out',
@@ -149,14 +149,14 @@ for (const device of DEVICES) {
       if (r.status.usb_sys_error !== null) throw new Error(`emulated USB controller system error: ${r.status.usb_sys_error}`);
     };
     /** Send a host message and collect what comes back until `want` bytes, in emulated time. */
-    const echo = async (rt: PatchedSession, data: Buffer, first: boolean, period?: number) => {
+    const echo = async (rt: TestRuntime, data: Buffer, first: boolean, period?: number) => {
       const file = path.join(rt.session.runDir, `bulk-${data.length}.bin`);
       fs.writeFileSync(file, data);
       await rpc(rt.session, 'usb.bulk.in', { file, ...(first ? { connect: connect() } : {}), ...(period ? { period } : {}) });
       const got: Buffer[] = [];
       let have = 0;
       for (let i = 0; i < 4000 && have < data.length; i++) {
-        await advance(rt.session, 20);
+        await rt.ui.wait({ ms: 20, why: SETTLE });
         const r = await out(rt);
         noSysError(r);
         if (r.bytes > 0) {
@@ -167,21 +167,21 @@ for (const device of DEVICES) {
       return Buffer.concat(got);
     };
     /** The echo module's DISABLE command (dk_usb_bulk_disable, the job stays asleep: the tick frees the buffers), and a run in emulated time. */
-    const sessionKit = (rt: PatchedSession) => {
+    const sessionKit = (rt: TestRuntime) => {
       const disable = async () => {
         const r = await usb(rt, (dk) => dk.request(ECHO_CMD + 3));
         expect(r.status, 'disable').toBe(0);
         expect(Buffer.from(r.body).readInt32BE(0), 'dk_usb_bulk_disable').toBe(0);
       };
       const run = async (ms: number) => {
-        for (let t = 0; t < ms; t += 1000) await advance(rt.session, Math.min(1000, ms - t));
+        for (let t = 0; t < ms; t += 1000) await rt.ui.wait({ ms: Math.min(1000, ms - t), why: SETTLE });
       };
       return { disable, run };
     };
 
     test('the module repoints port entry 2 and serves the 124-byte descriptor; unselected, the table is stock', async () => {
       const stockRt = await boot('stock', false);
-      await advance(stockRt.session, 500);
+      await stockRt.ui.wait({ ms: 500, why: SETTLE });
       const stock = await table(stockRt);
       expect(entry(stock).slice(0, 2), 'stock callbacks').toEqual([STOCK.connect, STOCK.disconnect]);
       expect(entry(stock)[4], 'stock descriptor length').toBe(STOCK.length);
@@ -238,7 +238,7 @@ for (const device of DEVICES) {
       let have = 0;
       const got: Buffer[] = [];
       for (let i = 0; i < 4000 && have < big.length; i++) {
-        await advance(rt.session, 20);
+        await rt.ui.wait({ ms: 20, why: SETTLE });
         const r = await out(rt);
         if (r.bytes > 0) {
           got.push(Buffer.from(r.hex, 'hex'));
@@ -260,7 +260,7 @@ for (const device of DEVICES) {
         // the connect callback again, as the firmware gets it after a bus reset or a resume: it cancels what was queued (the stock cancel path of
         // the engine runs our cancel callback for each buffer) and queues the buffers anew
         await rpc(rt.session, 'usb.bulk.in', { connect: connect() });
-        await advance(rt.session, 100);
+        await rt.ui.wait({ ms: 100, why: SETTLE });
         const s = await echoStatus(rt);
         expect(s.state >>> 24, `reset ${round + 1} changed the reset count`).toBe((epoch + 1) & 0xff);
         epoch = s.state >>> 24;
@@ -277,7 +277,7 @@ for (const device of DEVICES) {
       await enumerate(rt);
       const data = pattern(4096, 5);
       await rpc(rt.session, 'usb.bulk.in', { file: hostFile(rt, 'noz.bin', data), zlp: false });
-      await advance(rt.session, 300);
+      await rt.ui.wait({ ms: 300, why: SETTLE });
       expect((await out(rt)).bytes, 'nothing is echoed: the dTD holds eight full packets and is still open').toBe(0);
       const s = await echoStatus(rt);
       expect([s.taken, full(s.state)], 'no buffer was completed').toEqual([0, 0]);
@@ -301,7 +301,7 @@ for (const device of DEVICES) {
         const data = pattern(slots * 16_384, 20);
         const naks = (await out(rt)).status.bulk_naks;
         await rpc(rt.session, 'usb.bulk.in', { file: hostFile(rt, `cap-${tag}.bin`, data), period: 20_000 });
-        await advance(rt.session, 300);
+        await rt.ui.wait({ ms: 300, why: SETTLE });
         expect((await out(rt)).status.bulk_naks, `${tag}: the host is NAKed at the full ring (flow control)`).toBeGreaterThan(naks);
         const s = await echoStatus(rt);
         expect(full(s.state), `${tag}: one slot is held, the others are full: none was lost`).toBe(slots - 1);
@@ -312,29 +312,29 @@ for (const device of DEVICES) {
       // 1. a taken buffer and a partly filled dTD
       await hold(rt, 1);
       await rpc(rt.session, 'usb.bulk.in', { bytes: pattern(3000, 1).toString('hex') });
-      await advance(rt.session, 100);
+      await rt.ui.wait({ ms: 100, why: SETTLE });
       expect((await echoStatus(rt)).taken, 'the job holds a buffer').toBe(1);
       await rpc(rt.session, 'usb.bulk.in', { bytes: pattern(1024, 2).toString('hex'), zlp: false });
-      await advance(rt.session, 100); // the second dTD holds two packets and stays open
+      await rt.ui.wait({ ms: 100, why: SETTLE }); // the second dTD holds two packets and stays open
       const r0 = (await echoStatus(rt)).state >>> 24;
       await rpc(rt.session, 'usb.bulk.in', { connect: connect() });
-      await advance(rt.session, 100);
+      await rt.ui.wait({ ms: 100, why: SETTLE });
       let s = await echoStatus(rt);
       expect([s.state >>> 24, s.state & 2], 'reset counted, connected again').toEqual([(r0 + 1) & 0xff, 2]);
       expect(txBusy(s.state)).toBe(0);
       await capacity('after reset with a taken buffer');
       // 2. a send in flight (the job sent one piece of a buffer and holds the rest; the completion is far away)
-      await advance(rt.session, 500); // the completions of the last pieces
+      await rt.ui.wait({ ms: 500, why: SETTLE }); // the completions of the last pieces
       await out(rt);
       await hold(rt, 2);
       await rpc(rt.session, 'usb.bulk.in', { bytes: pattern(6000, 3).toString('hex'), period: 5_000_000 });
-      await advance(rt.session, 10);
+      await rt.ui.wait({ ms: 10, why: SETTLE });
       // no USB MIDI request here: it would queue behind the completion of the send and the emulator would run until that has happened
       const first = await out(rt);
       expect(first.bytes, 'one piece of the buffer is on EP2 IN and its completion is 5,000,000 instructions away').toBe(4096);
       const r1 = s.state >>> 24; // the reset count after the first reset
       await rpc(rt.session, 'usb.bulk.in', { connect: connect() });
-      await advance(rt.session, 100);
+      await rt.ui.wait({ ms: 100, why: SETTLE });
       s = await echoStatus(rt);
       expect([s.state >>> 24, txBusy(s.state), s.state & 2], 'reset: the slot is free, connected again').toEqual([(r1 + 1) & 0xff, 0, 2]);
       await capacity('after reset with a send in flight');
@@ -352,7 +352,7 @@ for (const device of DEVICES) {
       const reenable = async (want: number) => {
         expect((await usb(rt, (dk) => dk.request(ECHO_CMD + 2))).status, 'reenable').toBe(0);
         for (let i = 0; i < 100; i++) {
-          await advance(rt.session, 100);
+          await rt.ui.wait({ ms: 100, why: SETTLE });
           const s = await echoStatus(rt);
           if (s.enable === want) return s;
         }
@@ -390,7 +390,7 @@ for (const device of DEVICES) {
       const reenable = async () => {
         for (let i = 0; i < 100; i++) {
           expect((await usb(rt, (dk) => dk.request(ECHO_CMD + 2))).status, 'reenable').toBe(0);
-          await advance(rt.session, 100);
+          await rt.ui.wait({ ms: 100, why: SETTLE });
           const s = await echoStatus(rt);
           if (s.enable === 0) return s;
         }
@@ -417,7 +417,7 @@ for (const device of DEVICES) {
       for (const a of spots) for (let k = 0; k < 8; k++) await rpc(rt.session, 'mem.cf.poke', { addr: a + 4 * k, value: poison });
       const held = pattern(5000, 44);
       await rpc(rt.session, 'usb.bulk.in', { file: hostFile(rt, 'while-freed.bin', held) });
-      await advance(rt.session, 500);
+      await rt.ui.wait({ ms: 500, why: SETTLE });
       expect((await out(rt)).bytes, 'nothing is echoed while there are no buffers').toBe(0);
       expect(full(await state()), 'no buffer was filled').toBe(0);
       for (const a of spots) for (let k = 0; k < 8; k++) expect(await word(rt, a + 4 * k), `the freed block at ${(a + 4 * k).toString(16)} is untouched`).toBe(poison);
@@ -445,7 +445,7 @@ for (const device of DEVICES) {
       const reenable = async (want: number) => {
         expect((await usb(rt, (dk) => dk.request(ECHO_CMD + 2))).status, 'reenable').toBe(0);
         for (let i = 0; i < 100; i++) {
-          await advance(rt.session, 100);
+          await rt.ui.wait({ ms: 100, why: SETTLE });
           const s = await echoStatus(rt);
           if (s.enable === want) return s;
         }
@@ -485,7 +485,7 @@ for (const device of DEVICES) {
       const reenable = async () => {
         for (let i = 0; i < 100; i++) {
           expect((await usb(rt, (dk) => dk.request(ECHO_CMD + 2))).status, 'reenable').toBe(0);
-          await advance(rt.session, 100);
+          await rt.ui.wait({ ms: 100, why: SETTLE });
           const s = await echoStatus(rt);
           if (s.enable !== -53) return s;
         }
@@ -521,7 +521,7 @@ for (const device of DEVICES) {
       const refused = await reenable();
       expect([refused.enable, refused.state & LIVE, refused.state & NOMEM, full(refused.state)], 'no tier: E_NOMEM, not live, ST_NOMEM').toEqual([-8, 0, NOMEM, 0]);
       await rpc(rt.session, 'usb.bulk.in', { file: hostFile(rt, 'no-buffers.bin', pattern(5000, 1)) });
-      await advance(rt.session, 300);
+      await rt.ui.wait({ ms: 300, why: SETTLE });
       expect(full(await state()), 'nothing lands without buffers').toBe(0);
       await poke(rt, 'usb_bulk_tier_cap', 0);
       const back = await reenable();

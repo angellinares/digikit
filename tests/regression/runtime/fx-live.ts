@@ -6,17 +6,18 @@ import { promisify } from 'node:util';
 import { readSettingsRecordIfPresent, settingsValue, type DkModule } from '@digi/dk-session';
 import {
   button,
-  MS,
+  emulatorClock,
   repoRoot,
   type Session,
   runUntilFramesWithProgress,
   stepWithProgress,
+  waitClock,
   withinRuntimeDeadline,
   type Device,
   type RuntimeBaseline,
 } from '@digi/test-support';
 import { expect } from 'vitest';
-import { expectNoGuardHits, withReusablePatchedSession, type PatchedSession } from '../support.ts';
+import { expectNoGuardHits, withReusablePatchedSession, type PatchedSession, type TestRuntime } from '../support.ts';
 import { record } from './artifacts.ts';
 import { plusdriveBinary } from './card-kit.ts';
 import { cachedCard, cardKey, fileSha } from './card-cache.ts';
@@ -29,11 +30,19 @@ import { committedFxExpectations } from './pack-needs.ts';
 import { planSymbol, prepareRuntimePlanOffline, validateRuntimePlan, type RuntimePlan } from './runtime-plan.ts';
 import { runtimeSafety, runtimeWatchEnv } from './write-safety.ts';
 import { GAIN, SINE } from './fixtures.ts';
-import { drainInputs, tap } from './fx-session.ts';
+import { drainInputs, rtOf } from './fx-session.ts';
 import { pollEmulated } from './waits.ts';
 
 const exec = promisify(execFile);
 const root = repoRoot();
+/** What the panel helpers need of a runtime: the session, the wait API's `ui` and its clock. */
+export type Rt = Pick<TestRuntime, 'session' | 'ui' | 'clock'>;
+/** What `pickSine` and `selectSine` accept: a runtime, or (for callers that wait on no runtime events) a bare session. */
+export type RtLike = Rt | Pick<PatchedSession, 'session'> | Session;
+/** The reason of a fixed wait after a panel input: the firmware redraws, and no page-change event exists. */
+export const REDRAW = 'firmware redraw after a panel input (no page-change event)';
+/** The reason of a fixed wait for the firmware to act on its own (a timer, a retry, a save): nothing observable yet. */
+export const SETTLE = 'emulated time for the firmware to act (no observable state)';
 // core/fx's published registry row: modules/core/adapters/fx/module.toml.
 export const ROW_WORDS = 24;
 export const FREE_PC = 0xffffffff;
@@ -154,10 +163,6 @@ export async function frames(session: Session): Promise<number> {
   return frame;
 }
 
-export async function advance(session: Session, ms: number): Promise<void> {
-  await stepWithProgress(session.client, Math.floor(ms * MS));
-}
-
 /** Run to absolute DSP frame `target`; fails only when a half emulated second makes no progress for PROGRESS_HANG_S. */
 export async function runToFrame(session: Session, target: number): Promise<void> {
   await runUntilFramesWithProgress(session.client, () => frames(session), target);
@@ -170,24 +175,25 @@ export async function runFrames(session: Session, n: number): Promise<void> {
 
 /** Choose the original device list hint or a numeric override without asserting selected-track identity.
  * The BASIC chain uses selectSine for DT2 type readback; gain/deselect retains its audible-input contract. */
-export async function pickSine(session: Session, selection?: number, ups = 0): Promise<void> {
-  const hint = selection ?? (session.options.device === 'dt2' ? 7 : 5);
+export async function pickSine(target: RtLike, selection?: number, ups = 0): Promise<void> {
+  const rt = rtOf(target);
+  const hint = selection ?? (rt.session.options.device === 'dt2' ? 7 : 5);
   if (!Number.isInteger(hint) || hint < 0) throw new Error('FX input hint must be a nonnegative list position');
-  await tap(session, 'SRC', 0, 'FUNC');
-  await advance(session, 200);
+  await rt.ui.tap('SRC', { until: { drained: true }, held: 'FUNC' });
+  await rt.ui.wait({ ms: 200, why: REDRAW });
   // `ups` UP presses first: every try starts from the top of the list
   for (let i = 0; i < ups; i++) {
-    await tap(session, 'UP', 0);
-    await advance(session, 80);
+    await rt.ui.tap('UP', { until: { drained: true } });
+    await rt.ui.wait({ ms: 80, why: REDRAW });
   }
   for (let i = 0; i < hint; i++) {
-    await tap(session, 'DOWN', 0);
-    await advance(session, 80);
+    await rt.ui.tap('DOWN', { until: { drained: true } });
+    await rt.ui.wait({ ms: 80, why: REDRAW });
   }
-  await tap(session, 'YES', 0);
-  await advance(session, 300);
-  await tap(session, 'YES', 0);
-  await advance(session, 300);
+  await rt.ui.tap('YES', { until: { drained: true } });
+  await rt.ui.wait({ ms: 300, why: REDRAW });
+  await rt.ui.tap('YES', { until: { drained: true } });
+  await rt.ui.wait({ ms: 300, why: REDRAW });
 }
 
 export interface NoteOptions {
@@ -230,21 +236,21 @@ export async function captureNote(session: Session, opts: NoteOptions): Promise<
       await bounded(() => session.client.inputButton(button('TRIG 1'), false));
     }
   }
-  await advance(session, 50);
+  await waitClock(emulatorClock(session), 50); // the last frames of the note reach the capture
   await bounded(() => session.expectNoFault(tag));
 }
 
 /** Future-frame choice follows the legacy restarted-note path; boundary offset and 1500-frame hold are unchanged. */
 export async function capture(
-  runtime: PatchedSession,
+  runtime: RtLike,
   file: string,
   selection?: number,
   triggerFrame?: number,
 ): Promise<number> {
-  const { session } = runtime;
+  const { session } = rtOf(runtime);
   await rpc(session, 'run.mode', { mode: 'paused' });
   await rpc(session, 'pcm.tap', { action: 'start' });
-  await pickSine(session, selection);
+  await pickSine(runtime, selection);
   const current = await frames(session);
   const trig = triggerFrame ?? current + 300;
   record(path.dirname(file), `${path.basename(file, path.extname(file))}-timing`, {

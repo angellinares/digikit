@@ -7,7 +7,7 @@ import { repoRoot } from '@digi/test-support';
 import { expect, test } from 'vitest';
 import { overlayArgs, plusdriveBinary, pokeKnob, pokeWord, readSectors } from '@digi/regression/runtime/card-kit.ts';
 import { cardRigs, RT, type CardRig } from '@digi/regression/runtime/card-rig.ts';
-import { advance, word } from '@digi/regression/runtime/fx-live.ts';
+import { word, SETTLE } from '@digi/regression/runtime/fx-live.ts';
 import { overlayFile, overlayRecords } from '@digi/regression/runtime/write-safety.ts';
 
 /**
@@ -90,7 +90,7 @@ cardRigs('+Drive writes through core/plusdrive-write', { devices: ['dt2'] , dsp:
   /** Run the emulator until the job ends; the job's fields. */
   const finish = async (dk: DkSession) => {
     for (let i = 0; i < 400; i++) {
-      await advance(rig.session, 100);
+      await rig.runtime.ui.wait({ ms: 100, why: SETTLE });
       const b = Buffer.from((await dk.request(CMD + 1)).body);
       if (b[0] === 2) return { create: b.readInt32BE(1), close: b.readInt32BE(5), abort: b.readInt32BE(9), job: b.readInt32BE(13), devHash: b.subarray(21, 25).toString('hex'), written: b.readUInt32BE(29) };
     }
@@ -109,7 +109,7 @@ cardRigs('+Drive writes through core/plusdrive-write', { devices: ['dt2'] , dsp:
 
   test('a write lands at its destination with the firmware trailer and hash, creates the folders, leaves no staging file; E_EXISTS without REPLACE; REPLACE swaps; an abort leaves nothing; a delete removes the file', async () => {
     const dk = await rig.pausedBoot(await baseCard());
-    await advance(rig.session, 2000); // the boot recovery of the staging folder
+    await rig.runtime.ui.wait({ ms: 2000, why: SETTLE }); // the boot recovery of the staging folder
     const before = (await snapshot('pd0')).files;
     expect(before.get('Samples/old.bin')?.size, 'the seed file is there').toBeGreaterThan(0);
 
@@ -123,7 +123,7 @@ cardRigs('+Drive writes through core/plusdrive-write', { devices: ['dt2'] , dsp:
     expect(staged(s.files), 'the staging folder is empty').toEqual([]);
     // the folder stays for the upload session (a second file reuses it); the runtime removes the empty folder 2 s after the last session
     expect(noStagingFolder(s.files), 'the staging folder is still there right after the session').toBe(false);
-    await advance(rig.session, 3000);
+    await rig.runtime.ui.wait({ ms: 3000, why: SETTLE });
     s = await snapshot('pd1b');
     expect(noStagingFolder(s.files), 'and gone after the idle time: it exists only during an upload session').toBe(true);
     same(before, s.files, ['Samples/Kits/new.bin', 'Samples/Kits/']);
@@ -225,7 +225,7 @@ cardRigs('+Drive writes through core/plusdrive-write', { devices: ['dt2'] , dsp:
   };
   const bothHashes = async (knob: number) => {
     const dk = await rig.pausedBoot(await baseCard());
-    await advance(rig.session, 2000);
+    await rig.runtime.ui.wait({ ms: 2000, why: SETTLE });
     const initial = await hashTable();
     await pokeKnob(rig.session, rig.plan, 'DKRT_PD_CUT', knob);
     const a = pattern(70000); // two pages and a tail
@@ -246,7 +246,7 @@ cardRigs('+Drive writes through core/plusdrive-write', { devices: ['dt2'] , dsp:
     // the card as the three closes left it, before the end of the batch (the staging folder is still there)
     const writes = fsWrites(card);
     const during = await hashTable();
-    await advance(rig.session, IDLE_MS); // the runtime's idle point: the rebuild of the table (and the removal of the staging folder)
+    await rig.runtime.ui.wait({ ms: IDLE_MS, why: SETTLE }); // the runtime's idle point: the rebuild of the table (and the removal of the staging folder)
     return { writes, initial, during, table: await hashTable(), hashes: [a, b, c].map((d) => parseInt(slot4(d), 16)) };
   };
   // The runtime calls the adapter's recovery after 2 s without a write session (PD_STAGE_IDLE): the fast close rebuilds the RAM hash table then.
@@ -282,7 +282,7 @@ cardRigs('+Drive writes through core/plusdrive-write', { devices: ['dt2'] , dsp:
 
   test('an abort in the middle of a batch rebuilds the RAM hash table at once', async () => {
     const dk = await rig.pausedBoot(await baseCard());
-    await advance(rig.session, 2000);
+    await rig.runtime.ui.wait({ ms: 2000, why: SETTLE });
     const initial = await hashTable();
     const a = pattern(40000);
     const x = await run(dk, WRITE | SAMPLES, a.length, 'Samples/batch.bin');
@@ -308,7 +308,7 @@ cardRigs('+Drive writes through core/plusdrive-write', { devices: ['dt2'] , dsp:
   const FRAG_PAGES = 20; // more pieces than the 8 inline extents, which puts the extents into an index page
   const fragBig = async (knob: number) => {
     const dk = await rig.pausedBoot(await baseCard());
-    await advance(rig.session, 2000);
+    await rig.runtime.ui.wait({ ms: 2000, why: SETTLE });
     for (let w = FRAG_FIRST_WORD; w < FRAG_LAST_WORD; w++) {
       const kept = w < FRAG_USED_WORDS ? await word(rig.session, BITMAP + 4 * w) : 0;
       await pokeWord(rig.session, BITMAP + 4 * w, (kept | 0x55555555) >>> 0);
@@ -323,7 +323,7 @@ cardRigs('+Drive writes through core/plusdrive-write', { devices: ['dt2'] , dsp:
     const ids = fileOfSize(area, big.length + 16);
     expect(ids.length, 'one record of that size').toBe(1);
     const writes = fsWrites(out);
-    await advance(rig.session, IDLE_MS); // the batch ends: the table is rebuilt
+    await rig.runtime.ui.wait({ ms: IDLE_MS, why: SETTLE }); // the batch ends: the table is rebuilt
     return { card: out, writes, table: await hashTable(), extents: extentsOf(area, ids[0]!) };
   };
   test('the close hash on a fragmented file (several extents) leaves the card and the RAM hash table as the firmware\'s close hash does', async () => {
@@ -342,7 +342,7 @@ cardRigs('+Drive writes through core/plusdrive-write', { devices: ['dt2'] , dsp:
 
   test('a failure after the hash page was written puts the hash word back: nothing points at the deleted inode', async () => {
     const dk = await rig.pausedBoot(await baseCard());
-    await advance(rig.session, 2000);
+    await rig.runtime.ui.wait({ ms: 2000, why: SETTLE });
     const before = await snapshot('pdw0');
     const tableBefore = await hashTable();
     await pokeKnob(rig.session, rig.plan, 'DKRT_PD_CUT', 9); // the close fails right after the hash page write
@@ -364,7 +364,7 @@ cardRigs('+Drive writes through core/plusdrive-write', { devices: ['dt2'] , dsp:
 
   test('a wrong expected hash is refused and leaves the card\'s hash pages and the RAM hash table as they were', async () => {
     const dk = await rig.pausedBoot(await baseCard());
-    await advance(rig.session, 2000);
+    await rig.runtime.ui.wait({ ms: 2000, why: SETTLE });
     const before = await snapshot('pdm0');
     const tableBefore = await hashTable();
     const bad = await run(dk, 5 | SAMPLES, 40000, 'Samples/bad.bin'); // WRITE_BAD_HASH: two pages and a tail
@@ -397,7 +397,7 @@ cardRigs('+Drive writes through core/plusdrive-write', { devices: ['dt2'] , dsp:
 
   test('a destination that the stock firmware has open is E_FILE_IN_USE for a replace and a delete, and nothing changes', async () => {
     const dk = await rig.pausedBoot(await baseCard());
-    await advance(rig.session, 2000);
+    await rig.runtime.ui.wait({ ms: 2000, why: SETTLE });
     const before = (await snapshot('pdo0')).files;
     // the open-file bitmap (0x46f4ded0, one bit per inode id): every id below 2048 reads as open
     for (let i = 0; i < 64; i++) await pokeWord(rig.session, 0x46f4ded0 + i * 4, 0xffffffff);
@@ -433,7 +433,7 @@ cardRigs('+Drive writes through core/plusdrive-write', { devices: ['dt2'] , dsp:
     for (const [k, [label, step, replace, fresh]] of cuts.entries()) {
       const target = replace ? 'Samples/old.bin' : 'Samples/Cut/cut.bin';
       const dk = await rig.pausedBoot(await baseCard());
-      await advance(rig.session, 2000);
+      await rig.runtime.ui.wait({ ms: 2000, why: SETTLE });
       const before = (await snapshot(`pdc${k}a`)).files;
       await pokeKnob(rig.session, rig.plan, 'DKRT_PD_CUT', step);
       const r = await run(dk, WRITE | SAMPLES | (replace ? REPLACE : 0), data.length, target);
@@ -441,7 +441,7 @@ cardRigs('+Drive writes through core/plusdrive-write', { devices: ['dt2'] , dsp:
       const cut = (await snapshot(`pdc${k}b`)).card;
       // boot the card the cut left; the runtime's recovery runs in the UI loop
       const dk2 = await rig.pausedBoot(cut);
-      await advance(rig.session, 3000);
+      await rig.runtime.ui.wait({ ms: 3000, why: SETTLE });
       const s = await snapshot(`pdc${k}c`);
       const here = s.files.get(target);
       if (fresh) {
@@ -468,13 +468,13 @@ cardRigs('+Drive writes through core/plusdrive-write', { devices: ['dt2'] , dsp:
 
   test('a rename that fails after the destination was deleted is finished by the recovery without a reboot', async () => {
     const dk = await rig.pausedBoot(await baseCard());
-    await advance(rig.session, 2000);
+    await rig.runtime.ui.wait({ ms: 2000, why: SETTLE });
     const before = (await snapshot('pdr0')).files;
     const data = pattern(20000);
     await pokeKnob(rig.session, rig.plan, 'DKRT_PD_CUT', 7);
     const r = await run(dk, WRITE | REPLACE | SAMPLES, data.length, 'Samples/old.bin');
     expect(r.job, 'the caller is told: write error').toBe(-57);
-    await advance(rig.session, 3000); // the UI pass runs the recovery again
+    await rig.runtime.ui.wait({ ms: 3000, why: SETTLE }); // the UI pass runs the recovery again
     const s = await snapshot('pdr1');
     expect(s.files.get('Samples/old.bin'), 'the new file is at the destination').toEqual({ size: data.length + 16, hash: slot4(data) });
     expect((await cat(s.card, 'Samples/old.bin')).subarray(0, data.length)).toEqual(data);
@@ -489,13 +489,13 @@ cardRigs('+Drive writes through core/plusdrive-write', { devices: ['dt2'] , dsp:
 
   test('an unhashed file at the destination (a stock writer that died) is a file that exists: E_EXISTS without REPLACE, replaced through the journal with it', async () => {
     const dk = await rig.pausedBoot(await baseCard());
-    await advance(rig.session, 2000);
+    await rig.runtime.ui.wait({ ms: 2000, why: SETTLE });
     await pokeKnob(rig.session, rig.plan, 'DKRT_PD_CUT', 8);
     const r = await run(dk, WRITE | SAMPLES, 7000, 'Samples/unhashed.bin');
     expect(r.job).toBe(-57);
     const cut = (await snapshot('pdu0')).card;
     const dk2 = await rig.pausedBoot(cut);
-    await advance(rig.session, 3000);
+    await rig.runtime.ui.wait({ ms: 3000, why: SETTLE });
     const before = (await snapshot('pdu1')).files;
     expect(before.has('Samples/unhashed.bin'), 'the file is on the card').toBe(true);
     const ex = await run(dk2, WRITE | SAMPLES, 777, 'Samples/unhashed.bin');
@@ -513,7 +513,7 @@ cardRigs('+Drive writes through core/plusdrive-write', { devices: ['dt2'] , dsp:
     const foreign = pattern(100);
     const card = await baseCard({ [`${STAGING}/foreign.bin`]: foreign }, 'pd-foreign');
     const dk = await rig.pausedBoot(card);
-    await advance(rig.session, 3000); // the recovery
+    await rig.runtime.ui.wait({ ms: 3000, why: SETTLE }); // the recovery
     const before = (await snapshot('pdf0')).files;
     expect(before.has(`${STAGING}/foreign.bin`), 'recovery left it').toBe(true);
     const data = pattern(5000);
@@ -524,7 +524,7 @@ cardRigs('+Drive writes through core/plusdrive-write', { devices: ['dt2'] , dsp:
     expect(s.files.get('Samples/old.bin')).toEqual({ size: data.length + 16, hash: slot4(data) });
     same(before, s.files, ['Samples/old.bin']);
     const next = await rig.pausedBoot(await rig.after('pdf2'));
-    await advance(rig.session, 3000);
+    await rig.runtime.ui.wait({ ms: 3000, why: SETTLE });
     void next;
     const t = await snapshot('pdf3');
     expect(staged(t.files), 'a reboot does not touch it').toEqual([`${STAGING}/foreign.bin`]);

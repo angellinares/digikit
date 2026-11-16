@@ -16,8 +16,7 @@ import { Session } from '@digi/test-support';
 import { expect } from 'vitest';
 import { blob, listing, pokeWord, sha, statusOf, type Files } from '@digi/regression/runtime/card-kit.ts';
 import type { CardRig } from '@digi/regression/runtime/card-rig.ts';
-import { options, word } from '@digi/regression/runtime/fx-live.ts';
-import { tap } from '@digi/regression/runtime/fx-session.ts';
+import { options, word, REDRAW } from '@digi/regression/runtime/fx-live.ts';
 import { portFile } from '@digi/regression/runtime/device-data.ts';
 import { liveCheck as check } from '@digi/regression/runtime/artifacts.ts';
 import { FIRMWARE } from '@digi/regression/runtime/devices.ts';
@@ -643,6 +642,6 @@ uploadTests('upload-screenshot: the MidiRpc Screenshot equals the frame capture'
     );
   };
   await grab('main');
-  await tap(session, 'SETTINGS', 600);
+  await rig.runtime.ui.tap('SETTINGS', { until: { ms: 600, why: REDRAW } });
   await grab('after-settings-key');
 });

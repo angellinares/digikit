@@ -3,10 +3,9 @@ import path from 'node:path';
 import type { DkModule } from '@digi/dk-session';
 import { repoRoot, type Device, type Session } from '@digi/test-support';
 import { parse } from 'smol-toml';
-import { freeRegions } from '../support.ts';
-import { openDigikitMenu } from './runtime-menu.ts';
-import { advance, word } from './fx-live.ts';
-import { tap } from './fx-session.ts';
+import { freeRegions, type TestRuntime } from '../support.ts';
+import { openDigikitMenu } from './flows/menu.ts';
+import { REDRAW, SETTLE, word } from './fx-live.ts';
 import {
   buildPanelProject,
   loadPanelProject,
@@ -160,23 +159,18 @@ export function loadWatchEnv(guard: GuardPlan, holes: [number, number][]): Recor
 /** The UI for a bounded time: the DIGIKIT menu and its MODULES page (looked at, nothing ticked), the machines on their tracks with parameter
  * turns, a p-lock and a sound lock, one project save, an edit, a second save and a load. `sweep`: also choose each of the first entries of the machine list.
  * `health: false` when a guard hit is expected (the session counts it as a fault). */
-export async function driveAuditUi(
-  session: Session,
-  machines: PanelMachine[],
-  sweep = 0,
-  health = true,
-): Promise<void> {
-  const press = (key: string, ms = 300) => tap(session, key, ms);
-  await openDigikitMenu(press); // SETTINGS > DIGIKIT (the ninth row)
+export async function driveAuditUi(rt: TestRuntime, machines: PanelMachine[], sweep = 0, health = true): Promise<void> {
+  const press = (key: string, ms = 300) => rt.ui.tap(key, { until: { ms, why: REDRAW } });
+  await openDigikitMenu(rt); // SETTINGS > DIGIKIT (the ninth row)
   for (let i = 0; i < 3; i++) await press('DOWN', 200);
   await press('YES', 900); // MODULES
   for (const key of ['DOWN', 'DOWN', 'UP', 'NO', 'NO', 'NO']) await press(key, 300);
-  await savePanelProject(session);
-  await buildPanelProject(session, machines);
-  if (sweep) await sweepMachineList(session, sweep);
-  await savePanelProject(session);
-  await loadPanelProject(session, { health });
-  await advance(session, 1000);
+  await savePanelProject(rt);
+  await buildPanelProject(rt, machines);
+  if (sweep) await sweepMachineList(rt, sweep);
+  await savePanelProject(rt);
+  await loadPanelProject(rt, { health });
+  await rt.ui.wait({ ms: 1000, why: SETTLE });
 }
 
 // ---- module sets for `mise run module:audit` ------------------------------------------------------------------------------------------

@@ -1,13 +1,12 @@
-import type { PatchedSession } from '../support.ts';
-import { rows, word } from './fx-live.ts';
-import { readTextRows, withPausedFxProtocol, shot, tap } from './fx-session.ts';
+import { REDRAW, rows, word, type Rt } from './fx-live.ts';
+import { readTextRows, withPausedFxProtocol, shot } from './fx-session.ts';
 import { planSymbol, type RuntimePlan } from './runtime-plan.ts';
 
 export const MASTER = 1;
 export const SEND_ROUTE = 2;
 
 /** The MODULES route panel's published diagnostics and its real front-panel navigation. */
-export function routeUi(runtime: PatchedSession, plan: RuntimePlan, artifacts: string, slots: number) {
+export function routeUi(runtime: Rt, plan: RuntimePlan, artifacts: string, slots: number) {
   const { session } = runtime;
   const sym = (name: string) => planSymbol(plan, name);
   const cell = (name: string) => word(session, sym(name));
@@ -20,33 +19,33 @@ export function routeUi(runtime: PatchedSession, plan: RuntimePlan, artifacts: s
     return [title[0], text[0]];
   };
   const toModules = async () => {
-    await tap(session, 'NO', 400);
-    await tap(session, 'SETTINGS', 600);
-    for (let i = 0; i < 8; i++) await tap(session, 'DOWN', 200);
-    await tap(session, 'YES', 700);
-    for (let i = 0; i < 3; i++) await tap(session, 'DOWN', 200);
-    await tap(session, 'YES', 900);
+    await runtime.ui.tap('NO', { until: { ms: 400, why: REDRAW } });
+    await runtime.ui.tap('SETTINGS', { until: { ms: 600, why: REDRAW } });
+    for (let i = 0; i < 8; i++) await runtime.ui.tap('DOWN', { until: { ms: 200, why: REDRAW } });
+    await runtime.ui.tap('YES', { until: { ms: 700, why: REDRAW } });
+    for (let i = 0; i < 3; i++) await runtime.ui.tap('DOWN', { until: { ms: 200, why: REDRAW } });
+    await runtime.ui.tap('YES', { until: { ms: 900, why: REDRAW } });
   };
   const goto = async (row: number) => {
-    for (let i = 0; i < 5; i++) await tap(session, 'UP', 150);
-    for (let i = 0; i < row; i++) await tap(session, 'DOWN', 150);
+    for (let i = 0; i < 5; i++) await runtime.ui.tap('UP', { until: { ms: 150, why: REDRAW } });
+    for (let i = 0; i < row; i++) await runtime.ui.tap('DOWN', { until: { ms: 150, why: REDRAW } });
   };
   const panelRows = async () => readTextRows(session, sym('DK_PANEL'), await cell('DK_PANEL_N'), 24);
   const openPanel = async (row: number) => {
     await goto(row);
-    await tap(session, 'RIGHT', 400);
+    await runtime.ui.tap('RIGHT', { until: { ms: 400, why: REDRAW } });
     return panelRows();
   };
   const routeChoice = async (row: number) => {
     await openPanel(row);
-    await tap(session, 'DOWN', 250);
-    await tap(session, 'YES', 500);
+    await runtime.ui.tap('DOWN', { until: { ms: 250, why: REDRAW } });
+    await runtime.ui.tap('YES', { until: { ms: 500, why: REDRAW } });
     const count = await cell('DK_ROUTE_N');
     return bytes(await cell('DK_ROUTE_ITEM'), count);
   };
   const pick = async (index: number) => {
-    for (let i = 0; i < index; i++) await tap(session, 'DOWN', 250);
-    await tap(session, 'YES', 500);
+    for (let i = 0; i < index; i++) await runtime.ui.tap('DOWN', { until: { ms: 250, why: REDRAW } });
+    await runtime.ui.tap('YES', { until: { ms: 500, why: REDRAW } });
   };
   return {
     pending,
@@ -60,7 +59,7 @@ export function routeUi(runtime: PatchedSession, plan: RuntimePlan, artifacts: s
     routeChoice,
     pick,
     leaveMenu: async () => {
-      for (let i = 0; i < 3; i++) await tap(session, 'NO', 400);
+      for (let i = 0; i < 3; i++) await runtime.ui.tap('NO', { until: { ms: 400, why: REDRAW } });
     },
     routes: async (count: number) => (await rows(session, plan, slots)).slice(0, count).map((row) => row[18]),
     countCell: () => cell('fxp_send_count'),
@@ -79,8 +78,8 @@ export function routeUi(runtime: PatchedSession, plan: RuntimePlan, artifacts: s
       const count = await word(session, await word(session, base + 4 * 9));
       return Promise.all(Array.from({ length: count }, async (_, i) => (await word(session, list + 4 * i)) - first));
     },
-    openSendFx: () => tap(session, 'FX', 400, 'FUNC'),
-    pageDown: () => tap(session, 'DOWN', 300),
+    openSendFx: () => runtime.ui.tap('FX', { until: { ms: 400, why: REDRAW }, held: 'FUNC' }),
+    pageDown: () => runtime.ui.tap('DOWN', { until: { ms: 300, why: REDRAW } }),
     shot: (tag: string) => shot(session, artifacts, tag),
   };
 }
