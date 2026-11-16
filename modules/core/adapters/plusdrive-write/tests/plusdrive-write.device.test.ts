@@ -70,6 +70,10 @@ cardRigs('+Drive writes through core/plusdrive-write', { devices: ['dt2'] , dsp:
     'Samples/old.bin': pattern(5000),
     'Samples/Sub/deep.bin': pattern(1234),
   };
+  /** Let the boot recovery of the staging folder run. */
+  const settle = async () => {
+    await rig.runtime.ui.wait({ ms: 2000, why: SETTLE });
+  };
   const bases = new Map<string, string>();
   const baseCard = async (extra: Record<string, Buffer> = {}, name = 'pd-base') => {
     const known = bases.get(name);
@@ -121,11 +125,7 @@ cardRigs('+Drive writes through core/plusdrive-write', { devices: ['dt2'] , dsp:
     expect(s.files.get('Samples/Kits/new.bin'), 'size N+16, the hash of data + 16 zeros').toEqual({ size: big.length + 16, hash: slot4(big) });
     expect((await cat(s.card, 'Samples/Kits/new.bin')).subarray(0, big.length), 'the bytes').toEqual(big);
     expect(staged(s.files), 'the staging folder is empty').toEqual([]);
-    // the folder stays for the upload session (a second file reuses it); the runtime removes the empty folder 2 s after the last session
-    expect(noStagingFolder(s.files), 'the staging folder is still there right after the session').toBe(false);
-    await rig.runtime.ui.wait({ ms: 3000, why: SETTLE });
-    s = await snapshot('pd1b');
-    expect(noStagingFolder(s.files), 'and gone after the idle time: it exists only during an upload session').toBe(true);
+    expect(noStagingFolder(s.files), 'a new file is written at its name: no staging folder').toBe(true);
     same(before, s.files, ['Samples/Kits/new.bin', 'Samples/Kits/']);
 
     // no REPLACE: the existing file is E_EXISTS before any data is written
@@ -143,6 +143,11 @@ cardRigs('+Drive writes through core/plusdrive-write', { devices: ['dt2'] , dsp:
     expect(s.files.get('Samples/old.bin')).toEqual({ size: fresh.length + 16, hash: slot4(fresh) });
     expect((await cat(s.card, 'Samples/old.bin')).subarray(0, fresh.length)).toEqual(fresh);
     expect(staged(s.files)).toEqual([]);
+    // a replace is staged; the folder stays for the upload session (a second replace reuses it); the runtime removes the empty folder 2 s after the last session
+    expect(noStagingFolder(s.files), 'the staging folder is there right after the replace').toBe(false);
+    await rig.runtime.ui.wait({ ms: 3000, why: SETTLE });
+    s = await snapshot('pd3b');
+    expect(noStagingFolder(s.files), 'and gone after the idle time: it exists only during an upload session').toBe(true);
     same(before, s.files, ['Samples/old.bin', 'Samples/Kits/new.bin', 'Samples/Kits/']);
 
     // an abort (one chunk written, then file_abort) leaves nothing, for a new path and for a replace
@@ -297,7 +302,8 @@ cardRigs('+Drive writes through core/plusdrive-write', { devices: ['dt2'] , dsp:
   }, 1_800_000);
 
   // The only part of the fast close that differs from the stock read is the page to card mapping (file_page_find), and a file of one extent does
-  // not test it. The adapter reserves the whole file in one call; the firmware's allocator (FUN_40155974, FUN_4015583c) takes the first free run of
+  // not test it. The reserve is the cheaper one (`reserve_fast`: the page allocator without the free page count): its allocation of a file of 20 pieces
+  // gives more extents than the 8 of the inode (an extent index page). The adapter reserves the whole file in one call; the firmware's allocator (FUN_40155974, FUN_4015583c) takes the first free run of
   // that length, else the longest runs it finds, one extent each. So the free space is fragmented in RAM before the write: in the page occupancy
   // bitmap (0x46f39ca0, one bit per 32 KiB page, set = used) every even page from the first one after the seed files is marked used, so that every
   // free run is one page long. Both variants get the same bitmap.
@@ -326,7 +332,7 @@ cardRigs('+Drive writes through core/plusdrive-write', { devices: ['dt2'] , dsp:
     await rig.runtime.ui.wait({ ms: IDLE_MS, why: SETTLE }); // the batch ends: the table is rebuilt
     return { card: out, writes, table: await hashTable(), extents: extentsOf(area, ids[0]!) };
   };
-  test('the close hash on a fragmented file (several extents) leaves the card and the RAM hash table as the firmware\'s close hash does', async () => {
+  test('a file in fragmented free space (more than 8 extents, from the cheaper reserve) is read back in runs, hashed and stored as the firmware\'s close hash does', async () => {
     const fast = await fragBig(0);
     const slow = await fragBig(0x80);
     // the file is fragmented: the firmware's own extent count in the inode, read from the card
@@ -413,30 +419,27 @@ cardRigs('+Drive writes through core/plusdrive-write', { devices: ['dt2'] , dsp:
     expect([ok.close, ok.job], 'closed again: the replace works').toEqual([0, 0]);
   }, 1_800_000);
 
-  // A cut at each step of the write (the adapter stops dead, as a power cut would; DKRT_PD_CUT). After the reboot the destination holds the old
-  // file or the new one, whole, never nothing and never a partial file, the staging folder is cleaned, and no other file changed.
-  const cuts: [string, number, boolean, boolean][] = [
-    // [label, step, replace, new file at the destination afterwards]
-    ['mid-data of a new file', 1, false, false],
-    ['a new file hashed, before the rename', 2, false, false],
-    ['a new file renamed', 5, false, true],
-    ['mid-data of a replace', 1, true, false],
-    ['a replace hashed, before the journal', 2, true, false],
-    ['a replace with its journal written, before the delete', 3, true, false],
-    ['a replace between the delete of the destination and the rename', 4, true, true],
-    ['a replace renamed, before the journal is deleted', 5, true, true],
-    ['a new file under two names (a cut inside the rename, no journal)', 6, false, true],
-    ['a replace under two names (a cut inside the rename, with its journal)', 6, true, true],
+  // A cut at each step of a replace (the adapter stops dead, as a power cut would; DKRT_PD_CUT). After the reboot the destination holds the old
+  // file or the new one, whole, never nothing and never a partial file, the staging folder is cleaned, and no other file changed. A new file is
+  // written at its name, not staged: its cuts are in the direct-write test below.
+  const cuts: [string, number, boolean][] = [
+    // [label, step, new file at the destination afterwards]
+    ['mid-data of a replace', 1, false],
+    ['a replace hashed, before the journal', 2, false],
+    ['a replace with its journal written, before the delete', 3, false],
+    ['a replace between the delete of the destination and the rename', 4, true],
+    ['a replace renamed, before the journal is deleted', 5, true],
+    ['a replace under two names (a cut inside the rename, with its journal)', 6, true],
   ];
-  test('a power cut at any step leaves the old file or the new one, and the next boot cleans the staging folder', async () => {
+  test('a power cut at any step of a replace leaves the old file or the new one, and the next boot cleans the staging folder', async () => {
     const data = pattern(50000);
-    for (const [k, [label, step, replace, fresh]] of cuts.entries()) {
-      const target = replace ? 'Samples/old.bin' : 'Samples/Cut/cut.bin';
+    for (const [k, [label, step, fresh]] of cuts.entries()) {
+      const target = 'Samples/old.bin';
       const dk = await rig.pausedBoot(await baseCard());
       await rig.runtime.ui.wait({ ms: 2000, why: SETTLE });
       const before = (await snapshot(`pdc${k}a`)).files;
       await pokeKnob(rig.session, rig.plan, 'DKRT_PD_CUT', step);
-      const r = await run(dk, WRITE | SAMPLES | (replace ? REPLACE : 0), data.length, target);
+      const r = await run(dk, WRITE | SAMPLES | REPLACE, data.length, target);
       expect(r.job, `${label}: the job ends with a write error (the cut)`).toBe(-57);
       const cut = (await snapshot(`pdc${k}b`)).card;
       // boot the card the cut left; the runtime's recovery runs in the UI loop
@@ -447,14 +450,12 @@ cardRigs('+Drive writes through core/plusdrive-write', { devices: ['dt2'] , dsp:
       if (fresh) {
         expect(here, `${label}: the new file is at the destination`).toEqual({ size: data.length + 16, hash: slot4(data) });
         expect((await cat(s.card, target)).subarray(0, data.length)).toEqual(data);
-      } else if (replace) {
-        expect(here, `${label}: the old file is at the destination`).toEqual(before.get(target));
       } else {
-        expect(here, `${label}: nothing at the destination (a new file that never completed)`).toBeUndefined();
+        expect(here, `${label}: the old file is at the destination`).toEqual(before.get(target));
       }
       expect(staged(s.files), `${label}: the staging folder is empty`).toEqual([]);
       expect(noStagingFolder(s.files), `${label}: and removed`).toBe(true);
-      same(before, s.files, [target, 'Samples/Cut/']);
+      same(before, s.files, [target]);
       // the data of the destination is still allocated: another file is written and the destination reads as before
       const more = pattern(40000);
       const m = await run(dk2, WRITE | SAMPLES, more.length, 'Samples/after.bin');
@@ -528,5 +529,137 @@ cardRigs('+Drive writes through core/plusdrive-write', { devices: ['dt2'] , dsp:
     void next;
     const t = await snapshot('pdf3');
     expect(staged(t.files), 'a reboot does not touch it').toEqual([`${STAGING}/foreign.bin`]);
+  }, 1_800_000);
+  // ---- the write levers (finding 134): read-back in runs, the trailer in the last write, the cheaper reserve, new files at their name -------------
+  // None has a switch. The read-back in runs is compared with the firmware's own close hash (knob 0x80): the same files, bytes, sectors written and RAM
+  // hash table. The trailer in the last write has no other path to compare with, so every shape that decides where the trailer goes is checked by the
+  // bytes, the size and the hash of data and 16 zero bytes, which the close compares with the host's before it names anything. The shapes use the
+  // fixture's two ways of writing: WRITE (calls of 4096 bytes: the last data is split over many calls and the last call is at most 4096 bytes) and
+  // BIG_CALL (one call of 64 KiB, then the rest in one call that can cover a page boundary).
+  const shapes: [string, number, number, string][] = [
+    // [label, kind, data size, path]
+    ['two pages and a tail', WRITE, 70000, 'Samples/Kits/a.bin'],
+    ['under one page: the only write is the last one', WRITE, 5000, 'Samples/b.bin'],
+    ['data + 16 zeros is exactly one page', WRITE, 32752, 'Samples/c.bin'],
+    ['seven pages: read-back runs of 4 and 3 pages, a partial last page', WRITE, 6 * 32768 + 12345, 'Samples/Kits/d.bin'],
+    ['data + 16 zeros is four pages: one whole run', WRITE, 4 * 32768 - 16, 'Samples/e.bin'],
+    ['data is a whole number of pages: the trailer is a page of its own', WRITE, 2 * 32768, 'Samples/f.bin'],
+    ['data is a whole number of pages, the last call is a whole page', BIG_CALL, 3 * 32768, 'Samples/g.bin'],
+    ['the last page leaves 15 bytes: the trailer crosses into the next page', WRITE, 32768 - 15, 'Samples/h.bin'],
+    ['the last page leaves 1 byte: the trailer crosses into the next page', WRITE, 2 * 32768 - 1, 'Samples/i.bin'],
+    ['the last page leaves 5 bytes, the last call is one whole call', BIG_CALL, 65536 + 32768 - 5, 'Samples/j.bin'],
+    ['the last call covers a page boundary (whole pages and a tail of 100 bytes)', BIG_CALL, 65536 + 32768 + 100, 'Samples/k.bin'],
+    ['one byte in the last page, the last call is 1 byte', WRITE, 32768 + 1, 'Samples/l.bin'],
+  ];
+  const uploadShapes = async (knob: number, tag: string) => {
+    const dk = await rig.pausedBoot(await baseCard());
+    await settle();
+    await pokeKnob(rig.session, rig.plan, 'DKRT_PD_CUT', knob);
+    for (const [label, kind, size, p] of shapes) {
+      const d = pattern(size);
+      const x = await run(dk, kind | SAMPLES, d.length, p);
+      expect([x.close, x.job, x.devHash], `${label}: closed with the hash of data + 16 zeros`).toEqual([0, 0, slot4(d)]);
+    }
+    const card = await rig.after(tag);
+    const files = await drive(card);
+    for (const [label, , size, p] of shapes) {
+      const d = pattern(size);
+      expect(files.get(p), `${label}: size and hash`).toEqual({ size: d.length + 16, hash: slot4(d) });
+      const bytes = await cat(card, p);
+      expect(bytes.subarray(0, d.length), `${label}: bytes`).toEqual(d);
+      expect(bytes.subarray(d.length), `${label}: the 16 zero bytes of the trailer`).toEqual(Buffer.alloc(16));
+    }
+    const writes = fsWrites(card);
+    expect(noStagingFolder(files), 'new files are written at their name: no staging folder, no record').toBe(true);
+    await rig.runtime.ui.wait({ ms: IDLE_MS, why: SETTLE });
+    return { writes, table: await hashTable(), files: (await snapshot(`${tag}-idle`)).files };
+  };
+  test('read-back in runs, the trailer in the last write, the cheaper reserve and new files at their name end with the same bytes, hashes, sectors and hash table as the firmware close', async () => {
+    const fast = await uploadShapes(0, 'pdl-fast');
+    const slow = await uploadShapes(0x80, 'pdl-slow');
+    expect(fast.table, 'the RAM hash table after the rebuild').toEqual(slow.table);
+    expect([...fast.writes.keys()].sort((x, y) => x - y), 'the same sectors were written').toEqual([...slow.writes.keys()].sort((x, y) => x - y));
+    for (const [sector, data] of fast.writes) expect(data, `sector 0x${sector.toString(16)}`).toBe(slow.writes.get(sector));
+    expect(staged(fast.files), 'nothing is left in the staging folder').toEqual([]);
+    await rig.session.expectNoFault('write levers');
+  }, 3_600_000);
+
+  // A new file is written at its final name (direct write). There is no record and no boot cleanup: a cut between the creation and the close hash
+  // leaves that one file, without a hash, visible at its name; nothing else changes. The next upload of the path finds a file it must replace
+  // (without REPLACE the device says E_EXISTS) and replaces it through the staged write.
+  test('a power cut during a direct write leaves at most that one unhashed file and nothing else changed; the next upload replaces it; a cut after the hash leaves the whole file', async () => {
+    const data = pattern(50000);
+    for (const [k, [label, step, whole]] of ([['mid-data', 1, false], ['hashed, before the end of the call', 2, true]] as [string, number, boolean][]).entries()) {
+      const target = 'Samples/Cut/direct.bin';
+      const dk = await rig.pausedBoot(await baseCard());
+      await settle();
+      const before = (await snapshot(`pdx${k}a`)).files;
+      await pokeKnob(rig.session, rig.plan, 'DKRT_PD_CUT', step);
+      const r = await run(dk, WRITE | SAMPLES, data.length, target);
+      expect(r.job, `${label}: the job ends with a write error (the cut)`).toBe(-57);
+      const cut = await snapshot(`pdx${k}b`);
+      expect(cut.files.has(target), `${label}: the file is on the card at the cut`).toBe(true);
+      expect(staged(cut.files), `${label}: no record and no staged file`).toEqual([]);
+      expect(noStagingFolder(cut.files), `${label}: no staging folder`).toBe(true);
+      same(before, cut.files, [target, 'Samples/Cut/']);
+      const dk2 = await rig.pausedBoot(cut.card);
+      await rig.runtime.ui.wait({ ms: 3000, why: SETTLE }); // the runtime's recovery runs: it does not touch the file
+      const s = await snapshot(`pdx${k}c`);
+      expect(s.files.has(target), `${label}: the file is still there after the boot`).toBe(true);
+      if (whole) {
+        expect(s.files.get(target), `${label}: the file is whole`).toEqual({ size: data.length + 16, hash: slot4(data) });
+        expect((await cat(s.card, target)).subarray(0, data.length)).toEqual(data);
+      }
+      same(before, s.files, [target, 'Samples/Cut/']);
+      expect(noStagingFolder(s.files), `${label}: still no staging folder`).toBe(true);
+      // the path exists: without REPLACE the upload is refused, with REPLACE it replaces the partial file
+      const again = await run(dk2, WRITE | SAMPLES, data.length, target);
+      expect([again.create, again.job], `${label}: E_EXISTS without REPLACE`).toEqual([E_EXISTS, E_EXISTS]);
+      const fresh = pattern(30000);
+      const rep = await run(dk2, WRITE | REPLACE | SAMPLES, fresh.length, target);
+      expect([rep.close, rep.job], `${label}: replaced`).toEqual([0, 0]);
+      const t = await snapshot(`pdx${k}d`);
+      expect(t.files.get(target), `${label}: the new file is whole`).toEqual({ size: fresh.length + 16, hash: slot4(fresh) });
+      expect((await cat(t.card, target)).subarray(0, fresh.length)).toEqual(fresh);
+      same(before, t.files, [target, 'Samples/Cut/']);
+    }
+    await rig.session.expectNoFault('direct write cut');
+  }, 3_600_000);
+
+  test('a failed or aborted direct write deletes its file, and a folder it created stays', async () => {
+    const dk = await rig.pausedBoot(await baseCard());
+    await settle();
+    const before = (await snapshot('pda0')).files;
+    const bad = await run(dk, 5 | SAMPLES, 3000, 'Samples/New/bad.bin'); // WRITE_BAD_HASH
+    expect([bad.close, bad.job], 'E_HASH').toEqual([-56, -56]);
+    const ab = await run(dk, ABORT | SAMPLES, 20000, 'Samples/New/aborted.bin');
+    expect([ab.abort, ab.job]).toEqual([0, 0]);
+    const s = await snapshot('pda1');
+    expect(s.files.has('Samples/New/bad.bin') || s.files.has('Samples/New/aborted.bin'), 'no file is left').toBe(false);
+    expect(s.files.has('Samples/New/'), 'the folder that `parents` made stays').toBe(true);
+    expect(noStagingFolder(s.files)).toBe(true);
+    same(before, s.files, ['Samples/New/']);
+    await rig.session.expectNoFault('failed direct write');
+  }, 1_800_000);
+
+  test('a reserve that finds fewer free pages than the file needs falls back to the firmware\'s reserve: card full, nothing is left, and a smaller file still fits', async () => {
+    // Four pages stay free (2880 to 2883) and every other page of the bitmap is used.
+    const FREE_WORD = 90;
+    const big = pattern(4 * 32768); // four pages and the trailer: more than the card holds
+    const dk = await rig.pausedBoot(await baseCard());
+    await settle();
+    for (let w = 0; w < FRAG_LAST_WORD; w++) await pokeWord(rig.session, BITMAP + 4 * w, w === FREE_WORD ? 0xfffffff0 : 0xffffffff);
+    const before = (await snapshot('pdf-s0')).files;
+    const x = await run(dk, WRITE | SAMPLES, big.length, 'Samples/full.bin');
+    expect([x.create, x.job], 'E_FULL from the firmware reserve').toEqual([-52, -52]);
+    const s = await snapshot('pdf-s1');
+    expect(s.files.has('Samples/full.bin')).toBe(false);
+    expect(staged(s.files)).toEqual([]);
+    same(before, s.files, []);
+    // the pages the short allocation took are free again
+    const small = pattern(1000);
+    const ok = await run(dk, WRITE | SAMPLES, small.length, 'Samples/fits.bin');
+    expect([ok.close, ok.job, ok.devHash], 'a one-page file is written afterwards').toEqual([0, 0, slot4(small)]);
+    await rig.session.expectNoFault('short allocation');
   }, 1_800_000);
 });

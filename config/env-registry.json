@@ -17,6 +17,10 @@
    "owner": "ts:packages/test-support",
    "purpose": "Directory of shared content-named card images for device tests (default dist/session-cache/cards)"
   },
+  "DIGI_CARD_TRACE": {
+   "owner": "rust:packages/emulator",
+   "purpose": "1 logs one record per card command (CMD8, CMD12, CMD18, CMD23, CMD25) into the write-watch JSONL (tools/devtools/card_phases.py reads it)"
+  },
   "DIGI_CARD_IDENTITY": {
    "owner": "rust:packages/emulator",
    "purpose": "Selects the emulated card identity (a test sets small for a 1 MiB blank card)"

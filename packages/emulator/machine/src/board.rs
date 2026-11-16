@@ -31,6 +31,8 @@ const PAGE_COUNT: usize = 4096;
 const PAGE_MASK: u32 = PAGE_SIZE as u32 - 1;
 /// The console TX descriptor is a 4 KiB modulo ring. Keep host collection
 /// bounded even when a malformed descriptor requests a larger transfer.
+/// Bound of the card trace buffer between two drains.
+const CARD_TRACE_MAX: usize = 4096;
 const TX35_MAX_BYTES: usize = 4096;
 /// eDMA channel the DT2 firmware uses for DSPI1 RX (finding 04, transfer inventory).
 const DSPI1_RX_CHAN: usize = 14;
@@ -69,6 +71,14 @@ const _: () = {
     assert!(periph::spilink::DSP_SLOT >= end);
     assert!(esdhc::BASE >= end);
 };
+
+/// One card command seen by the card trace instrument. `bytes` is the DMA transfer length (0 for CMD12/CMD23).
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub struct CardOp {
+    pub cmd: u8,
+    pub arg: u32,
+    pub bytes: usize,
+}
 
 #[derive(Clone, Copy, Debug, Default, Eq, PartialEq)]
 pub struct SemaphoreAddresses {
@@ -194,6 +204,8 @@ pub struct Board {
     dma_written: Vec<(u32, usize)>,
     /// The engine of each `dma_written` entry (instruments only; drained with it).
     dma_sources: Vec<&'static str>,
+    /// Card trace instrument (`DIGI_CARD_TRACE`): one record per card command, until the runner drains them. `None` = off.
+    card_trace: Option<Vec<CardOp>>,
     last_error: Option<BoardWriteError>,
     /// Optional PIT/INTC facade in a stable allocation; ownership transfers by pointer.
     /// Its owned MMIO is never backed by sparse RAM.
@@ -464,6 +476,7 @@ impl Board {
             events: vec![],
             dma_written: vec![],
             dma_sources: vec![],
+            card_trace: None,
             last_error: None,
             time: None,
             forced_mmio: BTreeMap::new(),
@@ -901,6 +914,7 @@ impl Board {
     pub fn has_host_events(&self) -> bool {
         !self.events.is_empty()
             || !self.dma_written.is_empty()
+            || self.card_trace.as_ref().is_some_and(|t| !t.is_empty())
             || !self.uart_tx.is_empty()
             || self.dspi1_irq
             || self.midi_tx37_started != 0
@@ -984,6 +998,24 @@ impl Board {
     /// instruction fetch; successful DMA writes, including Device SSI RX, appear.
     pub fn take_dma_written_ranges(&mut self) -> Vec<(u32, usize)> {
         std::mem::take(&mut self.dma_written)
+    }
+    /// Start (or stop) the card trace: one `CardOp` per card command (CMD18/CMD25 data
+    /// transfers, CMD8, and CMD12/CMD23 from the eSDHC command decode). Off by default; no cost then.
+    pub fn set_card_trace(&mut self, on: bool) {
+        self.card_trace = on.then(Vec::new);
+        self.esdhc.set_cmd_trace(on);
+    }
+    /// The card commands since the last call, in order (empty when the trace is off).
+    pub fn take_card_trace(&mut self) -> Vec<CardOp> {
+        let Some(trace) = self.card_trace.as_mut() else {
+            return Vec::new();
+        };
+        for (cmd, arg) in self.esdhc.take_cmd_trace() {
+            if trace.len() < CARD_TRACE_MAX {
+                trace.push(CardOp { cmd, arg, bytes: 0 });
+            }
+        }
+        std::mem::take(trace)
     }
     /// The engine of each range the last `take_dma_written_ranges` returned,
     /// in order (take it second; for the write-watch). Machine consumes these
@@ -1294,6 +1326,23 @@ impl Board {
         let argument = self.esdhc.read(esdhc::BASE + esdhc::CMDARG, 4).unwrap_or(0);
         self.drain_esdhc_host_writes();
         let (base, len) = self.dma_window(command)?;
+        if self.card_trace.is_some() {
+            // Commands decoded before this transfer (CMD23) go first.
+            let before = self.esdhc.take_cmd_trace();
+            let trace = self.card_trace.as_mut().unwrap();
+            for (cmd, arg) in before {
+                if trace.len() < CARD_TRACE_MAX {
+                    trace.push(CardOp { cmd, arg, bytes: 0 });
+                }
+            }
+            if trace.len() < CARD_TRACE_MAX {
+                trace.push(CardOp {
+                    cmd: command,
+                    arg: argument,
+                    bytes: len,
+                });
+            }
+        }
         if command == 25 {
             for i in 0..len {
                 let address = base.checked_add(i as u32).ok_or(StorageDmaError::Dma(

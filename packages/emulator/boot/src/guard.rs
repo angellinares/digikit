@@ -148,6 +148,12 @@ impl WriteGuards {
         }
     }
 
+    pub(crate) fn note_card(&mut self, cmd: u8, arg: u32, bytes: usize, icount: u64) {
+        if let Some(w) = self.watch.as_mut() {
+            w.card(cmd, arg, bytes, icount);
+        }
+    }
+
     pub(crate) fn note_fetch(&mut self, pc: u32, len: u32, icount: u64) {
         if let Some(w) = self.watch.as_mut() {
             w.fetch(pc, len, icount);

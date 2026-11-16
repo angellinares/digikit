@@ -94,6 +94,14 @@ A commit (the end of an upload, a delete, a clear, a rename) streams the old tab
 table back and checks its CRC, and then writes header B and header A with `seq + 1`. Nothing in use is overwritten before the headers move, so a cut at any point leaves the old store or
 the new one, never a mix (`dkrt_sdk::store` tests cut a commit after every write). A file's data is written to its extent before the commit; an upload that is cut is a gap that nothing names.
 
+**Pending files and the batch commit** (runtime 0.8.3). A file written by an SDK module with `DK_FILE_DEFER` is read back and hash-checked at close but not named: its entry waits in the runtime's
+pending array (at most 16 files and 16 MiB; RAM only). The pending extents are kept out of every allocation and out of the free-space figure, like the extent of a file being written, and a BEGIN checks its path against the
+pending entries as against the table (a path of a pending file is `E_EXISTS` without REPLACE; a REPLACE or a delete of it drops the pending entry). One commit with `Edit::InsertMany` (up to `MANY_MAX` = 16 entries,
+sorted by first sector then path like the table; each entry replaces a stored entry of its path) names all of them: one table, one read-back, two header writes. A cut at any write of it leaves the old store or the new one with
+all the files (`dkrt_sdk::store` test `a_power_cut_in_a_batch_commit_leaves_the_old_store_or_the_new_one_with_all_files`); a cut before it loses only the pending files, whose extents nothing names, so the space is free again after boot.
+The runtime commits pending files in an I/O job, never in the UI task: before a deferred create that would pass 16 files or 16 MiB (its BEGIN returns the commit's error), 1 s after the owner's last file call, at the end of its job and at its unload. A SysEx MKDIR or RENAME
+commits them first, a CLEAR drops them. They are not listed and cannot be read until committed.
+
 **Both copies agree before space is reused.** After a cut between header B and header A the copies differ: A lags and still names the previous table. That is harmless while nothing is
 overwritten, but the next commit writes a table into free space, which may be exactly the sectors of that old table; if its header B then tears, the lagging A would be the only usable copy and
 name overwritten sectors. So BEGIN, DELETE and CLEAR first rewrite the copy that lost the `seq` comparison (missing, torn or different) from the winner, and refuse if that write fails

@@ -4129,6 +4129,7 @@
       "sig": "void (u8 *p)",
       "subsystem": "mem",
       "users": [
+        "core/plusdrive-write",
         "core/runtime"
       ],
       "was": [
@@ -4182,6 +4183,7 @@
       "subsystem": "mem",
       "users": [
         "core/digikit-menu",
+        "core/plusdrive-write",
         "core/runtime"
       ],
       "was": [
@@ -11335,6 +11337,42 @@
         }
       },
       "sig": "void (u32 kind, u32 a, u32 b)",
+      "subsystem": "storage",
+      "users": [
+        "core/plusdrive-write"
+      ],
+      "was": []
+    },
+    {
+      "at": {
+        "dt2-1.17": [
+          {
+            "addr": "0x401581dc",
+            "len": 4
+          }
+        ]
+      },
+      "bindings": {
+        "c": "dk_fw_storage_file_alloc_pages",
+        "rust": "dkfw::storage::file_alloc_pages"
+      },
+      "cpu": "cf",
+      "devices": [
+        "dt2"
+      ],
+      "doc": "Page allocation FUN_401581dc (DT2 1.17): allocates `pages` card pages for file pages [first_page, first_page + pages) of the inode, first fit from the bitmap start 0xa7a (hint 0), and adds one extent per allocation (FUN_40157c68, FUN_40155974); stops silently when no page is free. It does not write the inode back (inode.write does) and does not count free pages first, which file.reserve does (FUN_40155f84, bit by bit). Call under the filesystem mutex with an inode of inode.get. Pass hint 0 (finding 120, finding 134).",
+      "file": "devices/fw/storage.toml",
+      "kind": "fn",
+      "mark": "D",
+      "name": "cf.storage.fn.file.alloc_pages",
+      "rule": {
+        "dt2": {
+          "kind": "cf_func",
+          "len": 4,
+          "offset": 0
+        }
+      },
+      "sig": "void (u8 *inode, u32 first_page, u32 pages, u8 hint)",
       "subsystem": "storage",
       "users": [
         "core/plusdrive-write"
@@ -19642,7 +19680,7 @@
       "name": "samples"
     },
     {
-      "count": 47,
+      "count": 48,
       "cpu": "cf",
       "file": "devices/fw/storage.toml",
       "meaning": "block device reads and writes, the boot record",

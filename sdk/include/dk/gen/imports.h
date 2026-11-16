@@ -26,6 +26,7 @@ typedef struct dk_page_event dk_page_event;
 
 /* Callback types ([handle.callbacks]): `arg` is the user-data pointer the module gave with the callback. */
 typedef void dk_files_event_fn(uint32_t client, uint32_t request, int32_t state, void *arg);
+typedef void dk_helper_fn(void *arg);
 typedef int32_t dk_host_cmd_fn(uint32_t cmd, uint32_t seq, const void *body, uint32_t len, void *out);
 typedef void dk_intro_done_fn(void *arg);
 typedef const uint8_t *dk_intro_frame_fn(uint32_t tick, void *arg);
@@ -109,13 +110,13 @@ int32_t dk_files_poll(dk_files *f, uint32_t ticket, void *out, uint32_t capacity
 /* Invalidate the matching request, its results and its queued notification without waiting for active work or a callback. Context: ui. Since runtime 0.7.0. */
 int32_t dk_files_cancel(dk_files *f, uint32_t ticket);
 
-/* Open the one write session for the file `path` of `size` bytes under `root` (DK_FILES_STORE or DK_FILES_SAMPLES). `hash4`: NULL, or the expected file hash; dk_files_close then checks it. `flags`: 0 or DK_FILE_REPLACE (1). Returns a handle > 0 owned by this module, or a negative status (DK_E_BUSY: try again; DK_E_EXISTS, DK_E_FILE_IN_USE, DK_E_PATH, DK_E_FULL, DK_E_NOSTORE, DK_E_INUSE, DK_E_WRITE; DK_E_CONTEXT outside an I/O step). See <dk/platform/files.h>. Context: io-step. Since runtime 0.7.0. */
+/* Open the one write session for the file `path` of `size` bytes under `root` (DK_FILES_STORE or DK_FILES_SAMPLES). `hash4`: NULL, or the expected file hash; dk_files_close then checks it. `flags`: 0, DK_FILE_REPLACE (1) or DK_FILE_DEFER (2, a deferred file: dk_files_close checks it but names it in the store only at dk_files_commit or the runtime's own commit). Returns a handle > 0 owned by this module, or a negative status (DK_E_BUSY: try again; DK_E_EXISTS, DK_E_FILE_IN_USE, DK_E_PATH, DK_E_FULL, DK_E_NOSTORE, DK_E_INUSE, DK_E_WRITE; DK_E_CONTEXT outside an I/O step). See <dk/platform/files.h>. Context: io-step. Since runtime 0.7.0. */
 int32_t dk_files_create(dk_files *f, uint32_t root, const char *path, uint32_t size, const void *hash4, uint32_t flags);
 
 /* Write `len` bytes at `offset`, the next byte of the file. `buf` is 16-byte aligned; `len` a multiple of 512 except for the last piece (the tail sector is padded with zeros). Returns 0 or DK_E_STATE, DK_E_OFFSET, DK_E_LENGTH, DK_E_WRITE, DK_E_CONTRACT (unaligned buf), DK_E_BUSY (nothing was written: call again). Context: io-step. Since runtime 0.7.0. */
 int32_t dk_files_write(dk_files *f, int32_t h, uint32_t offset, const void *buf, uint32_t len);
 
-/* End the file. All `size` bytes must have been written (DK_E_LENGTH) and match `hash4` when it was given (DK_E_HASH); the table is committed (power-cut safe). `hash_out` (4 bytes, may be NULL) gets the file hash of the bytes written. The session is closed whatever the result, except for DK_E_BUSY (try again). Context: io-step. Since runtime 0.7.0. */
+/* End the file. All `size` bytes must have been written (DK_E_LENGTH) and match `hash4` when it was given (DK_E_HASH); the table is committed (power-cut safe), or, for a DK_FILE_DEFER file, the file becomes pending (see dk_files_commit; a dk_files_create with DK_FILE_DEFER that would pass DK_FILE_PENDING_MAX files or 16 MiB commits them first). `hash_out` (4 bytes, may be NULL) gets the file hash of the bytes written. The session is closed whatever the result, except for DK_E_BUSY (try again). Context: io-step. Since runtime 0.7.0. */
 int32_t dk_files_close(dk_files *f, int32_t h, void *hash_out);
 
 /* Drop the session and the partial file. Returns 0 or DK_E_STATE. Context: io-step. Since runtime 0.7.0. */
@@ -123,6 +124,12 @@ int32_t dk_files_abort(dk_files *f, int32_t h);
 
 /* Remove a file or folder entry. Returns 0, DK_E_NOFILE, DK_E_FILE_IN_USE (a reader still reads it: try again later), DK_E_BUSY or a path or store status. Context: io-step. Since runtime 0.7.0. */
 int32_t dk_files_delete(dk_files *f, uint32_t root, const char *path);
+
+/* Name all pending files of this module (closed with DK_FILE_DEFER) in the store in one table commit (power-cut safe). Returns 0 or a negative status (DK_E_BUSY: try again; DK_E_FILE_IN_USE, DK_E_FULL, DK_E_WRITE). The files stay pending after an error, and a pending file whose replaced file a reader still reads stays pending too (returns 0, the pending count says so; DK_E_FILE_IN_USE when none could commit). The runtime also commits them 1 s after the module's last file call, when its job ends or the module is unloaded. DK_E_CONTEXT outside an I/O step. See <dk/platform/files.h>. Context: io-step. Since runtime 0.8.3. */
+int32_t dk_files_commit(dk_files *f);
+
+/* The number of pending files of this module (closed with DK_FILE_DEFER, not yet named in the store). Always 0 for the DT2 samples root: its files are named at dk_files_close. DK_E_CONTEXT outside an I/O step. Context: io-step. Since runtime 0.8.3. */
+int32_t dk_files_pending(dk_files *f);
 
 /* Run `step(arg)` on the runtime's I/O task (<dk/platform/io.h>). The step may block and call dk_files_create, dk_files_write, dk_files_close, dk_files_abort and dk_files_delete. It returns DK_IO_MORE (run again), DK_IO_WAIT (sleep until dk_io_wake), 0 (done) or a negative error. `done(arg, status)` runs once in the UI task. Returns a job id > 0, DK_E_CONTRACT (no step) or DK_E_BUSY (8 jobs). Context: any. Since runtime 0.7.0. */
 int32_t dk_io_post(dk_io_step_fn *step, dk_io_done_fn *done, void *arg);
@@ -132,6 +139,12 @@ int32_t dk_io_cancel(int32_t id);
 
 /* Wake a job whose step returned DK_IO_WAIT. Callable from an interrupt handler, an adapter or any task. Unknown ids are ignored. Context: isr. Since runtime 0.7.0. */
 void dk_io_wake(int32_t id);
+
+/* Run `work(arg)` on the runtime's helper task (priority 3, 4 KiB stack) while the I/O step does something that blocks, such as dk_files_write; collect it with dk_helper_wait in the same step. `work` is pure compute: it calls no import, does not wait and keeps to the 4 KiB stack. One run at a time: DK_E_BUSY while a run (this module's, or the runtime's own close read-back hash, which never overlaps a step's own calls) is not collected; the caller then does the work itself. DK_E_NOT_FOUND: the kernel gave no task (same). DK_E_CONTRACT: no function. DK_E_CONTEXT outside an I/O step. A run the step leaves uncollected is collected when the step returns. See <dk/platform/io.h>. Context: io-step. Since runtime 0.8.3. */
+int32_t dk_helper_run(dk_helper_fn *work, void *arg);
+
+/* Wait until the run started by dk_helper_run has finished (the I/O task sleeps). Returns 0, DK_E_STATE when this module has no run, or DK_E_CONTEXT outside an I/O step. See <dk/platform/io.h>. Context: io-step. Since runtime 0.8.3. */
+int32_t dk_helper_wait(void);
 
 /* Run `step(arg)` on the background worker until it returns 0 or a negative error (DK_JOB_MORE: call again; <dk/platform/job.h>). `done(arg, status)` is called once in the UI task. Returns a job id > 0, DK_E_BUSY (8 jobs are queued) or DK_E_CONTRACT (no step). Context: ui. Since runtime 0.7.0. */
 int32_t dk_job_post(dk_job_step_fn *step, dk_job_done_fn *done, void *arg);

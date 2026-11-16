@@ -156,7 +156,7 @@ per-device data through anchors.
   reply:    magic 'DKB1' | cmd|0x40 | seq | status i16 | len u32 | body[len]
   ```
 
-  Commands: INFO, BEGIN (root, path, size, expected hash), DATA (offset, up to 64 KiB), END (returns the device's hash), ABORT; VERIFY (0x06) is reserved and
+  Commands: INFO, BEGIN (root, path, size, expected hash), DATA (offset, up to 64 KiB), END (returns the device's hash and the number of pending files), ABORT, COMMIT (0x07, batch commit below); VERIFY (0x06) is reserved and
   the module answers `E_PROTO` (the host verifies over SysEx, where both devices are CPU bound with tiny replies). Numbers and status codes in `sdk.toml [protocol]`, generated for C, Rust and TypeScript like the SysEx protocol.
   LIST, MKDIR, DELETE and everything else stay on SysEx.
 - **Framing on USB (host and device rules, `[protocol.bulk]` in sdk.toml).**
@@ -179,6 +179,18 @@ per-device data through anchors.
   `bulk_open(id)`; WebUSB: the devices of `getDevices()`), asks INFO and keeps only the one whose nonce matches; the others are closed. None matches (or
   SET_NONCE fails with E_PROTO: usb-fast not loaded): SysEx, with the reason logged. The host repeats the choice at every upload run while there is no bulk link
   or the last one failed, and a bulk failure in a run moves the rest of that run to SysEx.
+- **Batch commit** (runtime 0.8.3, [usb-fast-batch.md](usb-fast-batch.md) B). A table commit costs 95 ms plus 0.46 ms per stored file (finding 126), so a pack of many
+  small files pays it once per file. BEGIN flag `DEFER` (0x0002, beside REPLACE) creates the file with `DK_FILE_DEFER`: END still reads the file back and checks its
+  hash, but the file is only pending, named in no table. The END reply body is `hash4 | pending u16 | reserved u16` (an old device sends the 4 bytes: committed).
+  COMMIT (0x07) names all pending files in one table commit (`Edit::InsertMany`: one table write, one read-back, two header writes); the reply body is `pending u16 | reserved u16`
+  (an old device answers E_PROTO: nothing to commit). The runtime commits by itself, as an I/O job, before a deferred create that would pass 16 files or 16 MiB, 1 s after the owner's last file call,
+  at job end and at unload; pending files are never dropped. A power cut loses only the pending files. ABORT drops the open file only. The DT2 +Drive names its files at END
+  (`pending` is 0); COMMIT there runs the deferred hash-table rebuild. There is no switch for it.
+- **Copy/write overlap** (runtime 0.8.3, [usb-fast-batch.md](usb-fast-batch.md) E5). The copy from the receive buffers into the staging buffer and the card write ran one after the other on the I/O task
+  (9.8 MB: copy 0.71 s on the DN2 and 0.56 s on the DT2, write 0.71 s and 0.99 s). The SDK import pair `dk_helper_run(work, arg)` and `dk_helper_wait()` (I/O-step context, `<dk/platform/io.h>`) lets a step run one
+  pure-compute function on the runtime's helper task while `dk_files_write` blocks the I/O task on the card's semaphore. The helper is the one of the close read-back hash: one run at a time, `E_BUSY` while any run
+  is uncollected, `E_CONTEXT` outside a step, a run a step leaves behind is collected when it returns. usb-fast stages a file above 512 KiB in two halves of the 1 MiB reservation and copies the received frames
+  into the free half during the write of the full one. There is no switch for it. Hardware: 9.8 MB file DN2 3.67 → 4.37 MB/s, DT2 3.68 → 4.01 MB/s (finding 134).
 - **WebUSB access.** The page opens only devices it may already use (`navigator.usb.getDevices()`); `requestDevice` (the chooser, needs a click) is a
   separate explicit `requestAccess()`.
 - **Verification**: DN2: the store's running hash at close (`E_HASH`), then the SysEx VERIFY reads back (on by default; bulk VERIFY is reserved, not implemented). DT2: the firmware's close hash returned
@@ -201,6 +213,10 @@ per-device data through anchors.
   requests in flight. Used by the desktop app (Tauri command) and a CLI (`mise run` task, also the repeatable bench). The session layer gets a
   `BulkLink` (`write(bytes)`, `read(timeout)`) beside the SysEx-shaped DkTransport, and a samples backend that uses bulk when the interface is present
   and falls back to SysEx otherwise.
+- **Batch upload** (`uploadItems`, `apps/desktop/ui/src/samples-core.ts`, `wb.mjs samples put`): the files go with DEFER (`BulkSession.put({ defer })` returns the hash and the
+  pending count; `commit()` sends COMMIT). A file whose END reply shows files pending stays `verifying`, labelled "Saving…"; when a reply shows 0 pending, or the COMMIT after
+  the last file succeeds, the waiting files become `ok` (the device checked each at END, so there is no SysEx verify for them). A COMMIT error, or a bulk link that fell back to
+  SysEx while files waited, makes them `failed` ("not saved, send again"); the next run's skip of files the device holds (`sameOnDevice`) then sends only those. An old device (4-byte END) gets the files as before, each with its SysEx verify.
 - **Web**: a WebUSB `BulkLink` in `apps/web` (Chrome on macOS, Linux, ChromeOS). Claiming a vendor interface of a composite device whose other
   interfaces belong to the OS MIDI driver: **[O]** on macOS, prove early.
 - **Windows**: needs WinUSB binding (MS OS 2.0 descriptors through an EP0 hook, bcdUSB 0x0210). Not in v1; SysEx keeps working there.

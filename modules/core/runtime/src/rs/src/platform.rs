@@ -56,12 +56,13 @@ extern "C" {
     fn dkpw_abort();
     fn dkpw_delete();
     fn dkpw_recover();
+    fn dkpw_commit();
     fn dkpw_staging();
 }
 
 /// The version of the sample-pool adapter's plug-in point (`dkrt_pool.h`) and of the staged writer's (`dkrt_pdw.h`) the runtime speaks.
 pub const DKPOOL_VERSION: u32 = 1;
-pub const DKPW_VERSION: u32 = 1;
+pub const DKPW_VERSION: u32 = 2;
 
 /// The real platform: a zero-sized type, so a call through it costs what the direct call cost.
 pub struct RealPlatform;
@@ -374,6 +375,7 @@ impl StagedWriter for RealPlatform {
                     && core::hint::black_box(dkpw_abort as *const () as usize) != 0
                     && core::hint::black_box(dkpw_delete as *const () as usize) != 0
                     && core::hint::black_box(dkpw_recover as *const () as usize) != 0
+                    && core::hint::black_box(dkpw_commit as *const () as usize) != 0
                     && core::hint::black_box(dkpw_version as *const () as usize) != 0
                     && core::hint::black_box(dkpw_staging as *const () as usize) != 0;
                 write_volatile(addr_of_mut!(PD_STATE), if here && dkpw_version() == DKPW_VERSION { 1 } else { 2 });
