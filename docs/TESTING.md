@@ -397,9 +397,7 @@ reuses a fixture before it adds one. Layers: **host** (Vitest or pytest, no devi
 | `file-write-b` | A second copy of `file-write` under another name and command range (two modules writing) | device |
 | `settings-a` | The module settings API: put, get and remove through service commands, read in `init` | device |
 | `settings-b` | The same code as `settings-a` under another module name and command range (two modules, one key) | device |
-| `dyn-crash` | Crash capture: a CPU exception a configured number of blocks into the UI loop | device |
-| `dyn-fault` | Safe mode: `init` resets the machine | assembly, device |
-| `dyn-fault-late` | Safe mode: the machine stops some blocks after the first UI pass | assembly, device |
+| `dyn-crash` | The one fault injector, set by the store file `cfg/crash-after.bin` (delay, mode, place): a CPU exception, a reset or a hang a number of blocks into the UI loop (crash capture, safe mode), a reset in `init`, a fault in the boot animation callback (`bootscreen`); no file, no fault, so each test asserts the fault happened | assembly, device |
 | `dyn-dsp-hang` | A machine whose DSP routine never returns after a few blocks (fault trace) | device, rig |
 | `dyn-fx-hang` | A send effect whose process routine never returns (fault trace, log follow) | host, device, rig |
 | `dyn-fx-nan` | A send effect that outputs NaN: the fault count and the row switch-off after eight faults | device, rig |
@@ -415,7 +413,7 @@ reuses a fixture before it adds one. Layers: **host** (Vitest or pytest, no devi
 | `usb-echo` | The bulk interface of `core/usb-bulk`: echo of every buffer on EP2 IN from an I/O job | host, device |
 | `input-probe` | The input adapter: SysEx commands press keys and turn encoders through `core/input` | device |
 | `svc-echo` | Service commands: `dk_host_register` and an echo of the request body | host, device |
-| `intro-ticks`, `intro-fault`, `intro-reset` | The boot animation takes: tick hash, an illegal instruction in the frame function, a reset in the first tick | device |
+| `intro-ticks` | The boot animation takes: the tick hash (the faults in the frame function are `dyn-crash`, place 2) | device |
 | `card-info` | Read-only eMMC and eSDHC register diagnostic of the card tool | host |
 | `c-demo` | A C module that needs 64-bit division, remainder, multiplication and shifts (libgcc helpers); inferred needs | host, assembly, device |
 | `synth-decl` | The code of the synthetic capacity modules (`packages/patchkit/src/dkmsynth.rs`) | assembly |

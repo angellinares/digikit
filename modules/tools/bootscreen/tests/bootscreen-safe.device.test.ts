@@ -1,3 +1,4 @@
+import { be32 } from '@digi/dk-session';
 import { expect, test } from 'vitest';
 import { button } from '@digi/test-support';
 import { currentRecord } from '@digi/regression/runtime/card-kit.ts';
@@ -40,8 +41,10 @@ cardRigs(
     test(
       'a reset from the intro callback reaches safe mode on boot 3',
       async () => {
-        const reset = h.mod('test/intro-reset', 'intro-reset');
-        await h.boot(await h.card({ modules: [reset], selection: [reset.name] }));
+        const reset = h.mod('test/dyn-crash', 'intro-reset');
+        // delay 0, mode 2 (reset), place 2 (the intro frame callback); without the cfg file no boot resets and the counter assert below fails
+        const cfg = h.cfg('crash-after.bin', Buffer.concat([be32(0), Buffer.from([2, 2])]));
+        await h.boot(await h.card({ modules: [reset, cfg], selection: [reset.name] }));
         const info = await h.ready(true);
         console.log(`RESETCHAIN ${h.device} ${JSON.stringify(info)}`);
         expect(info, 'the third boot is safe mode by counter').toMatchObject({ safe: 1, reason: SAFE_COUNTER, counter: 2, loaded: 0 });

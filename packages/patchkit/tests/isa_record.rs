@@ -56,7 +56,7 @@ fn pack_size_summary_parts_sum_to_the_file() {
     let Some(lib) = Library::scan_repo_or_skip(&root()) else {
         return;
     };
-    let m = lib.get("test/dyn-fault").unwrap();
+    let m = lib.get("test/dyn-crash").unwrap();
     let o = m.objects.iter().find(|o| o.arch == "cf").unwrap();
     let f = dkm::pack(o, &opts()).unwrap();
     let d = dkm::Dkm::parse(&f).unwrap();
@@ -93,7 +93,7 @@ fn pack_refuses_a_tampered_object() {
     let Some(lib) = Library::scan_repo_or_skip(&root()) else {
         return;
     };
-    let m = lib.get("test/dyn-fault").unwrap();
+    let m = lib.get("test/dyn-crash").unwrap();
     let o = m.objects.iter().find(|o| o.arch == "cf").unwrap();
     assert!(dkm::pack(o, &opts()).is_ok());
     let mut t = o.clone();

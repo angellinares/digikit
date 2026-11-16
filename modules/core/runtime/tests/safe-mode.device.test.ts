@@ -22,6 +22,9 @@ const E_SAFE_MODE = -44;
 const SAFE_COUNTER = 1;
 const SAFE_KEY = 2;
 const SAFE_FLAG = 3;
+/** Modes of `test/dyn-crash` (`cfg/crash-after.bin`, byte 4). */
+const CRASH_HANG_UI = 3;
+const CRASH_RESET_IN_INIT = 4;
 /** Scenario safe-fault: the module that follows `fault` on the card of the safe-once flag. */
 const FLAG_MODULES: Record<Device, string[]> = { dt2: ['test/sine'], dn2: ['test/dyn-dn2'] };
 /** `cut-selection.toml`. */
@@ -39,9 +42,11 @@ cardRigs('safe mode', { dsp: 'sharc', full: true, relaxFs: true, roots: RT, symb
   test(
     'a module that resets the machine in its init: two boots never reach the UI loop, the third boots in safe mode',
     async () => {
-      const fault = h.mod('test/dyn-fault', 'fault');
+      const fault = h.mod('test/dyn-crash', 'fault');
+      const cfg = h.cfg('crash-after.bin', Buffer.concat([be32(0), Buffer.from([CRASH_RESET_IN_INIT])]));
       // Three boots of the fault card run inside this one reload; the no-progress watchdog sees each of them (`boot.icount`).
-      await h.boot(await h.card({ modules: [fault], selection: [fault.name] }));
+      // Without the cfg file the module never faults: the third boot would not be safe mode (the counter assert below).
+      await h.boot(await h.card({ modules: [fault, cfg], selection: [fault.name] }));
       const info = await h.ready(true);
       expect(info, 'the third boot is safe mode (counter 2)').toMatchObject({
         safe: 1,
@@ -75,8 +80,9 @@ cardRigs('safe mode', { dsp: 'sharc', full: true, relaxFs: true, roots: RT, symb
     test(
       `a module that hangs the UI task ${kind} in a session: the boot counter and the stable period`,
       async () => {
-        const mod = h.mod('test/dyn-fault-late', 'late');
-        const after = h.cfg('fault-after.bin', Buffer.concat([be32(LATE[kind]), Buffer.from([1])])); // hang
+        const mod = h.mod('test/dyn-crash', 'late');
+        // a missing cfg file would never hang: every boot asserts `hung` below
+        const after = h.cfg('crash-after.bin', Buffer.concat([be32(LATE[kind]), Buffer.from([CRASH_HANG_UI])]));
         let card = await h.card({ modules: [mod, after], selection: [mod.name], stableBlocks: LATE.stable });
         const ticks = planSymbol(h.plan, 'DKRT_STATE') + 8; // the runtime's UI-loop count
         const seen: { info: BootInfo; after: BootInfo; rec: ReturnType<typeof currentRecord>; hung: boolean }[] = [];

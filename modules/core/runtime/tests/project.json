@@ -101,7 +101,7 @@
       {
         "files": ["safe-mode.device.test.ts"],
         "tags": ["C:boot", "C:layout", "C:storage"],
-        "modules": ["test/c-demo", "test/dyn-dn2", "test/dyn-fault", "test/dyn-fault-late", "test/sine", "core/services/machines"],
+        "modules": ["test/c-demo", "test/dyn-dn2", "test/dyn-crash", "test/sine", "core/services/machines"],
         "plusdrive": true
       },
       {
