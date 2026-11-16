@@ -25,7 +25,8 @@
         ],
         "tags": ["C:loading", "S:machines"],
         "modules": [
-          "test/commit-demo"
+          "test/commit-demo",
+          "core/services/machines"
         ],
         "plusdrive": true
       }

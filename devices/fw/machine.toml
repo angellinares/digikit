@@ -115,105 +115,13 @@ users = ["core/machines"]
 doc = "DN2: returns the machine type of a sound (`mvs.b 0xde(A0),D0`); core/machines copies its 48 bytes as mf_reader_real for callers that want the real type."
 
 [[site]]
-name = "cf.machine.site.clone.0"
-was = ["cf.machines.clone.0"]
+name = "cf.machine.site.clone.5.alt"
 cpu = "cf"
 devices = ["dt2"]
-rule = { kind = "cf_func", hash = "cda6789150920d540acf061ca9321fd1", offset = 0xe0, len = 8 }
+rule = { kind = "cf_func", hash = "6e5398e048beea2451c38258daa7b651", offset = 0x53a, len = 2 }
 mark = "D"
-users = ["core/machines"]
-doc = "DT2 clone test `moveq #6,D1; cmp.l D0,D1; beq.w` on the type in d0 (type 6 = MANUAL SLICE); the hook also answers equal for an added clone of type 6."
-
-# the branch target of each clone test (the other destination of the routine; see mf_clone* in src/cf/dt2/machines.s)
-[[site]]
-name = "cf.machine.site.clone.0.alt"
-was = ["cf.machines.clone.0.alt"]
-cpu = "cf"
-devices = ["dt2"]
-rule = { kind = "cf_func", hash = "cda6789150920d540acf061ca9321fd1", offset = 0x1c8, len = 2 }
-mark = "D"
-users = ["core/machines"]
-doc = "Branch target of the clone.0 test; the clone hook jumps there when its answer is the other way."
-
-[[site]]
-name = "cf.machine.site.clone.1"
-was = ["cf.machines.clone.1"]
-cpu = "cf"
-devices = ["dt2"]
-rule = { kind = "cf_func", hash = "294532983de6494ff0bf7999b150febf", offset = 0xd6, len = 6 }
-mark = "D"
-users = ["core/machines"]
-doc = "DT2 clone test `moveq #6,D1; cmp.l D0,D1; bne.b` on the type in d0; the hook also answers equal for an added clone of type 6."
-
-[[site]]
-name = "cf.machine.site.clone.1.alt"
-was = ["cf.machines.clone.1.alt"]
-cpu = "cf"
-devices = ["dt2"]
-rule = { kind = "cf_func", hash = "294532983de6494ff0bf7999b150febf", offset = 0xfe, len = 2 }
-mark = "D"
-users = ["core/machines"]
-doc = "Branch target of the clone.1 test; the clone hook jumps there when its answer is the other way."
-
-[[site]]
-name = "cf.machine.site.clone.2"
-was = ["cf.machines.clone.2"]
-cpu = "cf"
-devices = ["dt2"]
-rule = { kind = "cf_func", hash = "f76a21ed019dd060daebc8df6133f886", offset = 0x10c, len = 8 }
-mark = "D"
-users = ["core/machines"]
-doc = "DT2 clone test `moveq #6,D1; cmp.l D0,D1; bne.w` on the type in d0; the hook also answers equal for an added clone of type 6."
-
-[[site]]
-name = "cf.machine.site.clone.2.alt"
-was = ["cf.machines.clone.2.alt"]
-cpu = "cf"
-devices = ["dt2"]
-rule = { kind = "cf_func", hash = "f76a21ed019dd060daebc8df6133f886", offset = 0x27e, len = 2 }
-mark = "D"
-users = ["core/machines"]
-doc = "Branch target of the clone.2 test; the clone hook jumps there when its answer is the other way."
-
-[[site]]
-name = "cf.machine.site.clone.3"
-was = ["cf.machines.clone.3"]
-cpu = "cf"
-devices = ["dt2"]
-rule = { kind = "cf_func", hash = "352d15c2c4edd7717e1afa1924e2754a", offset = 0x28c, len = 6 }
-mark = "D"
-users = ["core/machines"]
-doc = "DT2 clone test `addq.l #4,SP; cmp.l D0,D6; bne.b` (d6 holds 6, d0 the type); the hook also answers equal for an added clone of type 6."
-
-[[site]]
-name = "cf.machine.site.clone.3.alt"
-was = ["cf.machines.clone.3.alt"]
-cpu = "cf"
-devices = ["dt2"]
-rule = { kind = "cf_func", hash = "352d15c2c4edd7717e1afa1924e2754a", offset = 0x2b4, len = 2 }
-mark = "D"
-users = ["core/machines"]
-doc = "Branch target of the clone.3 test; the clone hook jumps there when its answer is the other way."
-
-[[site]]
-name = "cf.machine.site.clone.4"
-was = ["cf.machines.clone.4"]
-cpu = "cf"
-devices = ["dt2"]
-rule = { kind = "cf_func", hash = "7e07c7cb054799ae481616fec559037b", offset = 0x56, len = 6 }
-mark = "D"
-users = ["core/machines"]
-doc = "DT2 clone test `moveq #6,D0; cmp.l D2,D0; bne.b` on the type in d2; the hook also answers equal for an added clone of type 6."
-
-[[site]]
-name = "cf.machine.site.clone.4.alt"
-was = ["cf.machines.clone.4.alt"]
-cpu = "cf"
-devices = ["dt2"]
-rule = { kind = "cf_func", hash = "7e07c7cb054799ae481616fec559037b", offset = 0x70, len = 2 }
-mark = "D"
-users = ["core/machines"]
-doc = "Branch target of the clone.4 test; the clone hook jumps there when its answer is the other way."
+users = ["core/services/machines"]
+doc = "Branch target of the clone.5 test (`beq.w` at the end of the site); the machines service continues there when the masked type is 4."
 
 [[site]]
 name = "cf.machine.site.clone.5"
@@ -226,26 +134,6 @@ users = ["core/machines"]
 doc = "DT2: the first four instructions (12 bytes) of the masked test `(type & ~2) == 4` (d0 the type); the hook replaces an added type by its clone_of."
 
 [[site]]
-name = "cf.machine.site.clone.6"
-was = ["cf.machines.clone.6"]
-cpu = "cf"
-devices = ["dt2"]
-rule = { kind = "cf_func", hash = "e17112316e2cef97a3ebdd4ec57cc849", offset = 0xf0c, len = 12 }
-mark = "D"
-users = ["core/machines"]
-doc = "DT2 clone test in the frame builder `moveq #6,D1; mvs.b (0x990,A0),D0; cmp.l D0,D1; bne.w`; the hook also answers equal for an added clone of type 6."
-
-[[site]]
-name = "cf.machine.site.clone.6.alt"
-was = ["cf.machines.clone.6.alt"]
-cpu = "cf"
-devices = ["dt2"]
-rule = { kind = "cf_func", hash = "e17112316e2cef97a3ebdd4ec57cc849", offset = 0xfcc, len = 2 }
-mark = "D"
-users = ["core/machines"]
-doc = "Branch target of the clone.6 test; the clone hook jumps there when its answer is the other way."
-
-[[site]]
 name = "cf.machine.site.frametype"
 was = ["cf.machines.frametype"]
 cpu = "cf"
@@ -254,6 +142,15 @@ rule = { kind = "cf_func", hash = "f44b8037b4b199d47efc3899eb659b74", offset = 0
 mark = "D"
 users = ["core/machines"]
 doc = "DN2 frame builder load `move.b (0xd8c,A0),D0b; ext.w D0w` of the track's machine type into TX frame word 0x94+2t; the hook sends an added type as its clone_of."
+
+[[site]]
+name = "cf.machine.site.group.alt"
+cpu = "cf"
+devices = ["dn2"]
+rule = { kind = "cf_func", hash = "7f5f7446948bca2ab9bbdd15984287be", offset = 0x16, len = 2 }
+mark = "D"
+users = ["core/services/machines"]
+doc = "DN2: the target of the `bge.b` at the end of the group helper's site (types 0 to 3: group 1); the machines service continues there for an added type."
 
 [[site]]
 name = "cf.machine.site.group"
@@ -615,101 +512,34 @@ doc = "The jsr of the sort comparator's std::map insert (stack: map, begin, end;
 name = "cf.machine.hook.group"
 site = "cf.machine.site.group"
 cpu = "cf"
-mode = "before"
+mode = "replace"
 regs = { in = ["d0"], clobbers = ["d0", "d1", "ccr"] }   # d0 := 0 for an added type on purpose; d1 is set by the first displaced move
 devices = ["dn2"]
 mark = "D"
-users = ["core/machines"]
+users = ["core/services/machines"]
 doc = "Entry of the DN2 group helper (types 0..3 group 1, 4 group 2, other 0); the hook maps added types to 0 so they fall in group 1."
-
-# DT2 clone tests `type == 6`: each site is the whole stock test; the hook runs the test itself and continues at the site
-# end or at the `.alt` branch target.
-[[hook]]
-name = "cf.machine.hook.clone.0"
-site = "cf.machine.site.clone.0"
-cpu = "cf"
-mode = "replace"
-regs = { in = ["d0"], clobbers = ["d1", "ccr"] }   # exits: site+8 and cf.machine.site.clone.0.alt
-devices = ["dt2"]
-mark = "D"
-users = ["core/machines"]
-doc = "Clone test `moveq #6,D1; cmp.l D0,D1; beq.w T` on the type in d0; the hook also answers equal for an added clone of type 6."
-
-[[hook]]
-name = "cf.machine.hook.clone.1"
-site = "cf.machine.site.clone.1"
-cpu = "cf"
-mode = "replace"
-regs = { in = ["d0"], clobbers = ["d1", "ccr"] }   # exits: site+6 and cf.machine.site.clone.1.alt
-devices = ["dt2"]
-mark = "D"
-users = ["core/machines"]
-doc = "Clone test `moveq #6,D1; cmp.l D0,D1; bne.b U` on the type in d0; the hook also answers equal for an added clone of type 6."
-
-[[hook]]
-name = "cf.machine.hook.clone.2"
-site = "cf.machine.site.clone.2"
-cpu = "cf"
-mode = "replace"
-regs = { in = ["d0"], clobbers = ["d1", "ccr"] }   # exits: site+8 and cf.machine.site.clone.2.alt
-devices = ["dt2"]
-mark = "D"
-users = ["core/machines"]
-doc = "Clone test `moveq #6,D1; cmp.l D0,D1; bne.w U` on the type in d0; the hook also answers equal for an added clone of type 6."
-
-[[hook]]
-name = "cf.machine.hook.clone.3"
-site = "cf.machine.site.clone.3"
-cpu = "cf"
-mode = "replace"
-regs = { in = ["d0", "d6"], clobbers = ["ccr"] }   # the stock `addq.l #4,sp` is repeated; exits: site+6 and cf.machine.site.clone.3.alt
-devices = ["dt2"]
-mark = "D"
-users = ["core/machines"]
-doc = "Clone test `addq.l #4,SP; cmp.l D0,D6; bne.b U` (d6 holds 6, d0 the type); the hook also answers equal for an added clone of type 6."
-
-[[hook]]
-name = "cf.machine.hook.clone.4"
-site = "cf.machine.site.clone.4"
-cpu = "cf"
-mode = "replace"
-regs = { in = ["d2"], clobbers = ["d0", "ccr"] }   # exits: site+6 and cf.machine.site.clone.4.alt
-devices = ["dt2"]
-mark = "D"
-users = ["core/machines"]
-doc = "Clone test `moveq #6,D0; cmp.l D2,D0; bne.b U` on the type in d2; the hook also answers equal for an added clone of type 6."
 
 [[hook]]
 name = "cf.machine.hook.clone.5"
 site = "cf.machine.site.clone.5"
 cpu = "cf"
-mode = "before"
+mode = "replace"
 regs = { in = ["d0"], clobbers = ["d0", "ccr"] }   # d0 := clone_of for an added type on purpose
 devices = ["dt2"]
 mark = "D"
-users = ["core/machines"]
+users = ["core/services/machines"]
 doc = "First four instructions of the masked test `(type & ~2) == 4` (d0 the type); the hook replaces an added type by its clone_of."
-
-[[hook]]
-name = "cf.machine.hook.clone.6"
-site = "cf.machine.site.clone.6"
-cpu = "cf"
-mode = "replace"
-regs = { in = ["a0"], clobbers = ["d0", "d1", "ccr"] }   # exits: site+12 and cf.machine.site.clone.6.alt
-devices = ["dt2"]
-mark = "D"
-users = ["core/machines"]
-doc = "Clone test `moveq #6,D1; mvs.b (0x990,A0),D0; cmp.l D0,D1; bne.w U`; the hook also answers equal for an added clone of type 6."
 
 [[hook]]
 name = "cf.machine.hook.param_code.args"
 site = "cf.machine.site.param_code.args"
 cpu = "cf"
-mode = "before"
+mode = "replace"
+tail = true
 regs = { in = ["a0"], clobbers = ["d0", "ccr"] }   # rewrites 0x10(sp) for slots 29/30; second exit cf.machine.site.param_code.exit with d0 = the field
 devices = ["dt2"]
 mark = "D"
-users = ["core/machines"]
+users = ["core/services/machines"]
 doc = "Mid-function of the parameter code mapping FUN(index, type, filter) (a0 = index, d1 live; d0 and a1 reloaded here); the hook answers added types."
 
 [[hook]]
@@ -720,40 +550,43 @@ mode = "replace"
 regs = { in = ["a2"], clobbers = ["d0", "d1", "a0", "a1", "ccr"] }   # exits: site+8 and cf.machine.site.srcpage.alt
 devices = ["dt2"]
 mark = "D"
-users = ["core/machines"]
+users = ["core/services/machines"]
 doc = "First test of SourcePageView::vfunc_4 (a2 = view, d2 = draw context; d0, d1, a0, a1 free); the hook cuts the page vector to one page for an added type."
 
 [[hook]]
 name = "cf.machine.hook.type_page.count"
 site = "cf.machine.fn.type_page.count"
 cpu = "cf"
-mode = "before"
+mode = "replace"
+tail = true
 regs = { in = [], clobbers = ["d0", "d1", "a0", "a1", "ccr"] }   # own pages: rts with the count; else 4(sp) := clone_of
 devices = ["dn2"]
 mark = "D"
-users = ["core/machines"]
+users = ["core/services/machines"]
 doc = "Entry of the type -> page count function (type at 4(sp); d0, d1, a0, a1 free); the hook answers machines with own pages."
 
 [[hook]]
 name = "cf.machine.hook.type_page.desc"
 site = "cf.machine.site.type_page.desc"
 cpu = "cf"
-mode = "before"
+mode = "replace"
+tail = true
 regs = { in = [], clobbers = ["d0", "d1", "a0", "a1", "ccr"] }   # the rts path pops the d2 the stock code saved; else 8(sp) := clone_of
 devices = ["dn2"]
 mark = "D"
-users = ["core/machines"]
+users = ["core/services/machines"]
 doc = "Page descriptor function FUN(type, page) after the stock code saved d2 (type at 8(sp), page at 0xc(sp); d0, d1, a0, a1 free); the hook answers machines with own pages."
 
 [[hook]]
 name = "cf.machine.hook.param_code.map"
 site = "cf.machine.site.param_code.map"
 cpu = "cf"
-mode = "before"
+mode = "replace"
+tail = true
 regs = { in = ["a0"], clobbers = ["d0", "a1", "ccr"] }   # d1 (0x64) and a0 are set back; the rts path pops d2; else 0xc(sp) := clone_of
 devices = ["dn2"]
 mark = "D"
-users = ["core/machines"]
+users = ["core/services/machines"]
 doc = "Parameter code map FUN(slot, type, sub) after the stock code loaded a0 = slot and d1 = 0x64 (d0, a1 free); the hook answers machines with own pages."
 
 [[hook]]
@@ -761,10 +594,10 @@ name = "cf.machine.hook.frametype"
 site = "cf.machine.site.frametype"
 cpu = "cf"
 mode = "replace"
-regs = { in = ["a0"], clobbers = ["d0", "ccr"] }   # continues at site+6
+regs = { in = ["a0"], clobbers = ["d0", "a1", "ccr"] }   # continues at site+6
 devices = ["dn2"]
 mark = "D"
-users = ["core/machines"]
+users = ["core/services/machines"]
 doc = "Frame builder reads the track's machine type `move.b (0xd8c,A0),D0b; ext.w D0w` into TX frame word 0x94 + 2t (a0 = track); the hook sends an added type as its clone_of."
 
 [[hook]]
@@ -775,7 +608,7 @@ mode = "replace"
 regs = { in = ["a0"], clobbers = ["d0", "d1", "a0", "ccr"] }   # continues at the epilogue, site+8; a0 dead there is [O]
 devices = ["dn2"]
 mark = "D"
-users = ["core/machines"]
+users = ["core/services/machines"]
 doc = "Type reader FUN(track) `mvs.b (0xde,A0),D0` then bra.b to the epilogue (a0 = track); the hook returns clone_of for added types, except for the callers that want the real type."
 
 [[hook]]
@@ -786,7 +619,7 @@ mode = "replace"
 regs = { in = ["a0", "d2"], clobbers = ["d3", "ccr"] }   # the stock `move.l d2,-(sp)` is repeated; continues at site+6
 devices = ["dn2"]
 mark = "D"
-users = ["core/machines"]
+users = ["core/services/machines"]
 doc = "Owner test of SoundParameterSet::vfunc_21 `mvs.b (0xde,A0),D3; move.l D2,-(SP)` (a0 = sound, d3 = type); the hook makes a clone look like its original."
 
 # One site, two hook points: DT2 calls an absolute address (retargetable); DN2 calls through `jsr (A3)`, so the call and

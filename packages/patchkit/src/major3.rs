@@ -444,7 +444,21 @@ mod tests {
         );
         let off = u32::from_be_bytes(f[0x90..0x94].try_into().unwrap()) as usize;
         let size = u32::from_be_bytes(f[0x94..0x98].try_into().unwrap()) as usize;
-        assert_eq!(&f[off..off + size], &s.keys[..]);
+        // the packer adds the needs of the file: a hard need on the machines service (a file, R12-6) for the machine and page records of KEYS; the rest is the table of `sections`
+        let packed = dkneeds::keys::Keys::parse(&f[off..off + size]).unwrap();
+        let built = dkneeds::keys::Keys::parse(&s.keys).unwrap();
+        assert!(
+            packed
+                .key_groups()
+                .map(|(k, v)| (k, v.collect::<Vec<_>>()))
+                .eq(built.key_groups().map(|(k, v)| (k, v.collect::<Vec<_>>())))
+        );
+        assert!(packed.uses().eq(built.uses()));
+        let mach = dkneeds::keys::name_hash("machines");
+        assert!(
+            packed.needs().any(|n| n.service == mach && n.hard),
+            "a hard need on the machines service"
+        );
         let n = crate::dkm::needs(&f).unwrap();
         assert_eq!((n.machine_rows, n.param_rows, n.page_rows), (1, 4, 1));
         assert_eq!(n.voice_rows, 1);

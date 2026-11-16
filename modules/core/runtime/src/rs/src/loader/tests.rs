@@ -583,7 +583,8 @@ fn the_real_registry_puts_the_row_into_the_service_table_and_takes_it_out() {
     let _g = LOCK.lock().unwrap_or_else(|e| e.into_inner());
     unsafe {
         let mut r = RealRegistry;
-        let fixed = crate::gen_services::STATIC;
+        // the host tests of the runtime run with the machines row loaded (`svc_rows::test_machines`): the loaded rows start at one
+        let fixed = crate::gen_services::STATIC + 1;
         assert_eq!(services().rows.len(), fixed);
         assert_eq!(r.add(0, None), OK);
         assert_eq!(r.add(2, Some(&TEST_ROW)), OK);

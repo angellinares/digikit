@@ -17,7 +17,8 @@
           "test/commit-demo",
           "test/lfo-shape",
           "test/lfo-shape-dup",
-          "core/services/lfo"
+          "core/services/lfo",
+          "core/services/machines"
         ],
         "plusdrive": true,
         "tags": [

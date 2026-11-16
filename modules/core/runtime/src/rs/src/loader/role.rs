@@ -175,12 +175,23 @@ unsafe fn service_activate<P: Platform, M: Images, R: Registry>(l: &mut Loader<P
     }
     let mut binds = [NO_BIND; BIND_MAX];
     let nb = binds_of(&keys, &mut binds);
-    // the image has no slot word yet (R12-6): a provider that declares a slot is refused
-    if keys.count(tag::SLOTS) != 0 {
-        return E_FORMAT;
+    // the pointer slots the file fills: a SLOTS item is the name hash of a `[[slot]]` of an image adapter (the image's info table gives the address of its word) and the entry
+    // of this file. A slot the image does not have refuses the file, before anything is installed.
+    let mut slots = [(0u32, 0u32); dkneeds::SLOTS_MAX as usize];
+    let mut ns = 0;
+    for sl in keys.slots() {
+        if ns == slots.len() || sl.entry >= pr.image_size {
+            return E_FORMAT;
+        }
+        let at = l.p.info(sl.id);
+        if at.is_null() {
+            return E_FORMAT;
+        }
+        slots[ns] = (at as usize as u32, base.wrapping_add(sl.entry));
+        ns += 1;
     }
     // the hooks go in last: nothing after this can fail, so a live site is never taken down again
-    match l.installer.install(&l.p, rec as u8, &binds[..nb], base, pr.image_size, &[]) {
+    match l.installer.install(&l.p, rec as u8, &binds[..nb], base, pr.image_size, &slots[..ns]) {
         Ok(()) => OK,
         Err(e) => e,
     }

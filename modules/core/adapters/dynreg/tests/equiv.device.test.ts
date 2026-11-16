@@ -1,8 +1,8 @@
-import { defineEquiv, DT2_TRIG, type Equiv } from '@digi/regression/runtime/equiv.ts';
+import { defineEquiv, DT2_TRIG, PENDING_PCM, type Equiv } from '@digi/regression/runtime/equiv.ts';
 
 const SCENARIOS: Equiv[] = [
   {
-    // no PCM pin: the rows equal a boot of no module and the note of test/sine is audible
+    // the one exact full-firmware audio check of the DT2 run-time machine path (onset, level, mixer): the PCM pin is pending until gate BC measures it and Em approves it
     name: 'equiv-dt2-sine',
     device: 'dt2',
     modules: ['test/sine'],
@@ -10,6 +10,7 @@ const SCENARIOS: Equiv[] = [
     trigFrame: DT2_TRIG,
     voices: 1,
     ignoreRunMachines: ['Sine'],
+    pcmSha256: PENDING_PCM,
   },
   {
     name: 'equiv-dn2-set',

@@ -112,6 +112,16 @@ pub fn rows() -> &'static [*const ServiceRow] {
     }
 }
 
+/// Host tests of the runtime run with the machines service as a loaded file has it (the service is a `.dks` on the device): its row joins the table once, at the last
+/// provider record, the first time the services are asked for.
+#[cfg(test)]
+pub fn test_machines() {
+    static ONCE: std::sync::Once = std::sync::Once::new();
+    ONCE.call_once(|| unsafe {
+        add(crate::MAX_MODULES + PROVIDER_MAX - 1, crate::handlers::exports::machines_row());
+    });
+}
+
 /// The table of the services the core calls now (`handlers::services`): `base` with the live row list.
 pub fn table(base: ServiceTable) -> ServiceTable {
     ServiceTable { rows: rows(), ..base }

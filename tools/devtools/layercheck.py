@@ -706,9 +706,9 @@ RT_DEVICE_COMPARE = re.compile(
 )
 
 
-# The firmware hooks that the runtime module still patches in itself: the machine page hooks, which finding 128 keeps runtime-owned (with slots).
-# Every other hook (UI loop, main-OS task entry, MIDI receive) belongs to the platform adapter.
-RT_OWN_HOOKS = {"cf.page.hook.source_key", "cf.page.hook.source_turn"}
+# The firmware hooks that the runtime module patches in itself: none. Every hook (UI loop, main-OS task entry, MIDI receive) belongs to the platform adapter; the machine
+# page hooks are the machines service file's (modules/core/services/machines/dks).
+RT_OWN_HOOKS: set[str] = set()
 RT_MANIFEST = "modules/core/runtime/module.toml"
 
 

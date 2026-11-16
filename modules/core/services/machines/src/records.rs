@@ -51,6 +51,10 @@ const KNOBS: usize = limits::PAGE_KNOBS;
 pub struct Machines;
 
 impl<C: CoreApi> Service<C> for Machines {
+    unsafe fn machine_types_of(core: &C, owner: u8, out: &mut [u8; 8]) -> u32 {
+        types_of(core, owner, out) as u32
+    }
+
     unsafe fn declare(d: &mut Declare) {
         d.kind(KIND_PARAM, LEN_PARAM);
         d.kind(KIND_MACHINE, LEN_MACHINE);

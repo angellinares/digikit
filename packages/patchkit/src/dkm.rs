@@ -215,6 +215,7 @@ fn table_with_needs(
     provides: &[dkneeds::keys::Pair],
     exports_add: &[dkneeds::keys::Pair],
     hooks_add: &[dkneeds::keys::Pair],
+    slots_add: &[dkneeds::keys::Slot],
     kinds_add: &[dkneeds::keys::KindDecl],
 ) -> Result<Vec<u8>> {
     use dkneeds::keys::{Bind, KeyGroup, Keys, Pair, Table, write_table};
@@ -253,6 +254,7 @@ fn table_with_needs(
     }
     exports.extend_from_slice(exports_add);
     hooks.extend_from_slice(hooks_add);
+    slots.extend_from_slice(slots_add);
     kinds.extend_from_slice(kinds_add);
     provided.extend_from_slice(provides);
     let key_groups: Vec<KeyGroup> = groups
@@ -312,6 +314,9 @@ pub struct Provided {
     /// The hooks the service takes (`[[hook]]`): (hook name of the port, global function of the object that handles it). A `patchkit bind`
     /// of the file gives each a trampoline.
     pub hooks: Vec<(String, String)>,
+    /// The pointer slots the service fills (`[[fill]]`): (slot name of the image adapter, global function of the object whose address goes in the slot).
+    /// A `SLOTS` item of the table is the name hash and the entry offset.
+    pub fills: Vec<(String, String)>,
 }
 
 /// "1.2.3" -> 0x010203
@@ -575,8 +580,8 @@ fn pack_inner(
     }
 
     // the header table: the packer's uses and keys (none: a module that keeps nothing) and the needs of the imports the module links
-    let (provides, svc_exports, svc_hooks, svc_kinds) = match &o.service {
-        None => (vec![], vec![], vec![], vec![]),
+    let (provides, svc_exports, svc_hooks, svc_slots, svc_kinds) = match &o.service {
+        None => (vec![], vec![], vec![], vec![], vec![]),
         Some(s) => {
             let mut hk: Vec<dkneeds::keys::Pair> = vec![];
             for (hook, entry) in &s.hooks {
@@ -595,6 +600,22 @@ fn pack_inner(
                 hk.push(dkneeds::keys::Pair { a, b: at });
             }
             hk.sort_by_key(|p| p.a);
+            let mut sl: Vec<dkneeds::keys::Slot> = vec![];
+            for (slot, entry) in &s.fills {
+                let at = sym(entry)?.ok_or_else(|| {
+                    err!("the service fills {slot} with {entry}, which the object does not define")
+                })?;
+                let id = dkneeds::keys::name_hash(slot);
+                if sl.iter().any(|p| p.id == id) {
+                    return Err(err!("the service fills {slot} twice"));
+                }
+                sl.push(dkneeds::keys::Slot {
+                    id,
+                    flags: 0,
+                    entry: at,
+                });
+            }
+            sl.sort_by_key(|p| p.id);
             let mut ex: Vec<dkneeds::keys::Pair> = vec![];
             for n in &s.exports {
                 let at = sym(n)?.ok_or_else(|| {
@@ -614,6 +635,7 @@ fn pack_inner(
                 }],
                 ex,
                 hk,
+                sl,
                 service_kinds(&s.service, init.unwrap_or(0)),
             )
         }
@@ -624,6 +646,7 @@ fn pack_inner(
         &provides,
         &svc_exports,
         &svc_hooks,
+        &svc_slots,
         &svc_kinds,
     )?;
     emit(&EmitParts {
@@ -1071,6 +1094,7 @@ mod tests {
                 service: service.into(),
                 exports: vec![],
                 hooks: vec![],
+                fills: vec![],
             }),
             ..opts()
         };
@@ -1096,6 +1120,38 @@ mod tests {
         // a module that provides nothing has none either
         let d = Dkm::parse(&pack(&object(), &opts()).unwrap()).unwrap();
         assert_eq!(Keys::parse(&d.register).unwrap().kinds().count(), 0);
+    }
+
+    #[test]
+    fn a_service_file_that_fills_a_slot_has_a_slots_item_with_the_name_hash_and_the_entry_offset() {
+        use dkneeds::keys::Keys;
+        let o = object();
+        let opts = Options {
+            service: Some(Provided {
+                service: "svc-test".into(),
+                exports: vec![],
+                hooks: vec![],
+                fills: vec![("frametype".into(), "tick_fn".into())],
+            }),
+            ..opts()
+        };
+        let d = Dkm::parse(&pack(&o, &opts).unwrap()).unwrap();
+        let k = Keys::parse(&d.register).unwrap();
+        let slots: Vec<_> = k.slots().collect();
+        assert_eq!(slots.len(), 1);
+        assert_eq!(slots[0].id, dkneeds::keys::name_hash("frametype"));
+        assert_ne!(slots[0].entry, 0);
+        // a fill with a function the object does not define is refused, and one slot twice
+        let bad = Options {
+            service: Some(Provided {
+                service: "svc-test".into(),
+                exports: vec![],
+                hooks: vec![],
+                fills: vec![("frametype".into(), "no_such_function".into())],
+            }),
+            ..self::opts()
+        };
+        assert!(pack(&o, &bad).is_err());
     }
 
     /// The table of a module whose KEYS name the record kinds `kinds` (one key each), packed as a `.dkm`.
@@ -1130,16 +1186,16 @@ mod tests {
         let own: Vec<_> = needs.iter().filter(|n| n.service == lfo).collect();
         assert_eq!(own.len(), 1);
         assert!(own[0].hard);
-        // machines and effects are owned by services in the image: the table gets no need for them
+        // effects are owned by a service in the image (no need for them); machines and pages by the machines service file (a hard need on it)
+        let mach = dkneeds::keys::name_hash("machines");
         assert!(
-            needs_of_keys(&[
-                dkneeds::KIND_MACHINE,
-                dkneeds::KIND_EFFECT,
-                dkneeds::KIND_PAGE
-            ])
-            .iter()
-            .all(|n| n.service != lfo),
+            needs_of_keys(&[dkneeds::KIND_EFFECT])
+                .iter()
+                .all(|n| n.service != lfo && n.service != mach),
         );
+        let m = needs_of_keys(&[dkneeds::KIND_MACHINE, dkneeds::KIND_PAGE]);
+        assert!(m.iter().all(|n| n.service != lfo));
+        assert_eq!(m.iter().filter(|n| n.service == mach && n.hard).count(), 1);
         // the same kind twice is one need
         let twice = needs_of_keys(&[dkneeds::KIND_LFO_SHAPE, dkneeds::KIND_LFO_SHAPE]);
         assert_eq!(twice.iter().filter(|n| n.service == lfo).count(), 1);

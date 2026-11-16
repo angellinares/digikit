@@ -39,6 +39,9 @@ extern "C" {
     /// An import of every module (`dk_service_declare_hook` of sdk.toml): one hook site this service takes (the `name_hash` of the hook's name) and the function that
     /// runs there. The runtime compares it with the `HOOKS` of the header table at the commit and installs the site after `init`.
     fn dk_service_declare_hook(ctx: *mut u8, site: u32, entry: *const u8) -> i32;
+    /// An import of every module (`dk_service_declare_slot` of sdk.toml): one pointer slot of an image adapter this service fills (the `name_hash` of the slot's name) and the
+    /// function whose address the installer writes in it. The runtime compares it with the `SLOTS` of the header table.
+    fn dk_service_declare_slot(ctx: *mut u8, slot: u32, flags: u32, entry: *const u8) -> i32;
 }
 const _: dkrt_sdk::api::DkServiceDeclareHookFn = dk_service_declare_hook;
 
@@ -321,6 +324,35 @@ pub unsafe fn init_with_hooks(
     0
 }
 
+/// `init_with_hooks`, then one `dk_service_declare_slot` for each `(slot hash, entry, device)` of the running device (0: every device).
+///
+/// # Safety
+/// As `init_with_hooks`; each entry is the address of a function of the file.
+pub unsafe fn init_with_hooks_and_fills(
+    ctx: *mut u8,
+    row: &'static ServiceRow,
+    handler: *const u8,
+    setup: unsafe fn(&ImportCore) -> i32,
+    hooks: &[(u32, *const u8, u32)],
+    fills: &[(u32, *const u8, u32)],
+) -> i32 {
+    let r = init_with_hooks(ctx, row, handler, setup, hooks);
+    if r != 0 {
+        return r;
+    }
+    let device = ImportCore.device_id();
+    for &(slot, entry, only) in fills {
+        if only != 0 && only != device {
+            continue;
+        }
+        let r = dk_service_declare_slot(ctx, slot, 0, entry);
+        if r != 0 {
+            return r;
+        }
+    }
+    0
+}
+
 /// The device filter of one hook entry of `service!`: none (every device), `dt2` or `dn2`.
 #[doc(hidden)]
 #[macro_export]
@@ -351,6 +383,26 @@ macro_rules! service {
                 $crate::hook_device!($($dev)?),
             )),*];
             $crate::init_with_hooks(ctx, &DK_SVC_ROW, dk_svc_init as usize as *const u8, $setup, hooks)
+        }
+
+        $crate::service_glue!();
+    };
+    ($svc:ty, $name:literal, $kinds:expr, setup = $setup:expr, hooks = [$(($site:literal, $entry:path $(, $dev:ident)?)),* $(,)?], fills = [$(($slot:literal, $fill:path $(, $fdev:ident)?)),* $(,)?]) => {
+        static DK_SVC_ROW: $crate::dkrt_abi::service::ServiceRow =
+            $crate::dkrt_abi::service::ServiceRow::of::<$svc, $crate::ImportCore>($name, $kinds);
+
+        unsafe extern "C" fn dk_svc_init(ctx: *mut u8) -> i32 {
+            let hooks: &[(u32, *const u8, u32)] = &[$((
+                $crate::name_hash($site),
+                $entry as usize as *const u8,
+                $crate::hook_device!($($dev)?),
+            )),*];
+            let fills: &[(u32, *const u8, u32)] = &[$((
+                $crate::name_hash($slot),
+                $fill as usize as *const u8,
+                $crate::hook_device!($($fdev)?),
+            )),*];
+            $crate::init_with_hooks_and_fills(ctx, &DK_SVC_ROW, dk_svc_init as usize as *const u8, $setup, hooks, fills)
         }
 
         $crate::service_glue!();

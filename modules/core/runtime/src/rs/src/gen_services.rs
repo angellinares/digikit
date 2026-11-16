@@ -4,13 +4,12 @@ use crate::core_api::{RealCore, REAL_CORE};
 use dkrt_abi::service::{rows_with_tail, RowPtrs, ServiceRow, ServiceTable};
 
 /// The in-crate services in the order the core calls them (`[[service]]` of sdk/sdk.toml), each with the record kinds it owns.
-pub static SERVICES: [ServiceRow; 2] = [
+pub static SERVICES: [ServiceRow; 1] = [
     ServiceRow::of::<dkrt_svc_samples::records::Samples, RealCore>("samples", &dkrt_sdk::records::KINDS_SAMPLES),
-    ServiceRow::of::<dkrt_svc_machines::records::Machines, RealCore>("machines", &dkrt_sdk::records::KINDS_MACHINES),
 ];
 
 /// The number of in-crate services: the static prefix of the table.
-pub const STATIC: usize = 2;
+pub const STATIC: usize = 1;
 
 /// The name of every `[[service]]`, in file order: the ordinal of a service. The rows a `.dks` adds follow the in-crate rows sorted by it (`svc_rows.rs`).
 pub const ORDER: [&str; 5] = ["samples", "machines", "fx", "lfo", "svc-test"];
@@ -21,7 +20,7 @@ pub const ROWS_LEN: usize = STATIC + dkrt_sdk::PROVIDER_MAX;
 /// The row table: the in-crate rows first, then the loaded ones (written by `svc_rows.rs` only; the null tail is not part of any table).
 pub static mut ROWS: [*const ServiceRow; ROWS_LEN] = rows_with_tail(&SERVICES);
 
-static HEAD: RowPtrs<2> = RowPtrs::of(&SERVICES);
+static HEAD: RowPtrs<1> = RowPtrs::of(&SERVICES);
 
 /// The table of the in-crate rows alone (the declare check and `is_runtime_service`).
 pub const TABLE: ServiceTable = ServiceTable::new(&HEAD.0, &REAL_CORE);

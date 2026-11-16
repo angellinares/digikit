@@ -487,7 +487,7 @@ mise run patch:test -- --cell "dt2-1.17:core/fx"
 
 ## Worked example 2: `test/machine-clone` (a machine row on a framework)
 
-`tests/fixtures/modules/machine-clone/` adds one machine to the Digitakt II, a clone of MANUAL SLICE, with hand-written rows. It needs no code of its own:
+`tests/fixtures/modules/machine-clone/` adds one machine to the Digitakt II, a clone of SAMPLE (stock type 0) with the descriptor fields of MANUAL SLICE, written by hand. It needs no code of its own:
 `core/machines` does the firmware work, and the module only adds data.
 
 - **`requires = ["core/machines"]`** and `ports = ["dt2-1.17"]`. Patch it with both modules: `--modules core/machines,test/machine-clone`.

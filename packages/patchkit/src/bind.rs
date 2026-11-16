@@ -278,6 +278,9 @@ fn bind_raw(
     })
 }
 
+/// Replaces the references to the tails with base-relative relocations. `idle` are the name hashes of the hooks that the service lists for other devices: their tails
+/// are never entered on this firmware (`init` declares and the runtime installs only the hooks of the running device), so a reference to one resolves to the image offset 0.
+///
 /// Replaces the references to the tails with base-relative relocations. A relocation against an import named by [`tail_import`] becomes a
 /// base-relative one and its word (the addend) gets the tail's image offset added; the import is dropped from the list and the indices of the others move
 /// down. `tails` are (hook name, image offset of its tail). An import of the form of a tail reference that no bound hook owns is refused: such a file would
@@ -287,12 +290,14 @@ fn resolve_tail_refs(
     relocs: &mut [(u32, u32)],
     imports: &[String],
     tails: &[(&str, u32)],
+    idle: &[u32],
 ) -> Result<Vec<String>> {
+    let is_idle = |n: &str| idle.iter().any(|h| format!("dk_tail_{h:08x}") == n);
     let mut keep: Vec<String> = vec![];
     let mut new_index: Vec<Option<usize>> = vec![];
     for n in imports {
         if is_tail_import(n) {
-            if !tails.iter().any(|(h, _)| tail_import(h) == *n) {
+            if !tails.iter().any(|(h, _)| tail_import(h) == *n) && !is_idle(n) {
                 return Err(err!(
                     "{n}: the file refers to a tail that no hook of its HOOKS declares with `tail = true`"
                 ));
@@ -312,7 +317,10 @@ fn resolve_tail_refs(
             Some(j) => *k = 1 << 24 | j as u32,
             None => {
                 let name = &imports[i];
-                let (_, to) = tails.iter().find(|(h, _)| tail_import(h) == *name).unwrap();
+                let to = tails
+                    .iter()
+                    .find(|(h, _)| tail_import(h) == *name)
+                    .map_or(0, |(_, to)| *to);
                 let at = *off as usize;
                 let w = u32::from_be_bytes(image[at..at + 4].try_into().unwrap());
                 image[at..at + 4].copy_from_slice(&to.wrapping_add(w).to_be_bytes());
@@ -502,7 +510,12 @@ pub fn bind(
         .iter()
         .filter_map(|b| Some((b.hook.as_str(), b.tail_off?)))
         .collect();
-    let imports_kept = resolve_tail_refs(&mut image, &mut relocs, &dkm.imports, &tails)?;
+    let idle: Vec<u32> = hooks
+        .iter()
+        .filter(|h| !on_device.iter().any(|d| d.a == h.a))
+        .map(|h| h.a)
+        .collect();
+    let imports_kept = resolve_tail_refs(&mut image, &mut relocs, &dkm.imports, &tails, &idle)?;
     shift_bss_words(&mut image, &dkm, old)?;
     relocs.sort();
     let items: Vec<(u32, u32, u32, Vec<u8>)> = bound
@@ -820,6 +833,7 @@ mod tests {
                 service: "svc-test".into(),
                 exports: vec![],
                 hooks: vec![],
+                fills: vec![],
             }),
         };
         pack_keys(None, &table, &[], &o).unwrap()
@@ -943,15 +957,40 @@ mod tests {
             (8, 1 << 24 | 2),
             (12, 1 << 24 | 1),
         ];
-        let keep =
-            resolve_tail_refs(&mut image, &mut relocs, &imports, &[(a, 0x40), (b, 0x60)]).unwrap();
+        let keep = resolve_tail_refs(
+            &mut image,
+            &mut relocs,
+            &imports,
+            &[(a, 0x40), (b, 0x60)],
+            &[],
+        )
+        .unwrap();
         assert_eq!(keep, ["dk_log"]);
         assert_eq!(relocs, [(0, 1 << 24), (4, 0), (8, 0), (12, 0)]);
         let word = |at: usize| u32::from_be_bytes(image[at..at + 4].try_into().unwrap());
         assert_eq!((word(0), word(4), word(8), word(12)), (0, 0x42, 0x60, 0x40));
         // a tail reference of a hook that has no tail exit is refused
-        let e = resolve_tail_refs(&mut image, &mut relocs, &imports, &[(a, 0x40)]).unwrap_err();
+        let e =
+            resolve_tail_refs(&mut image, &mut relocs, &imports, &[(a, 0x40)], &[]).unwrap_err();
         assert!(e.0.contains("no hook of its HOOKS declares"), "{e}");
+        // the tail of a hook that is listed for another device resolves to offset 0 (never entered here)
+        let mut image = vec![0, 0, 0, 0, 0, 0, 0, 2, 0, 0, 0, 0, 0, 0, 0, 0];
+        let mut relocs = vec![
+            (0, 1 << 24),
+            (4, 1 << 24 | 1),
+            (8, 1 << 24 | 2),
+            (12, 1 << 24 | 1),
+        ];
+        resolve_tail_refs(
+            &mut image,
+            &mut relocs,
+            &imports,
+            &[(a, 0x40)],
+            &[name_hash(b)],
+        )
+        .unwrap();
+        assert_eq!(relocs, [(0, 1 << 24), (4, 0), (8, 0), (12, 0)]);
+        assert_eq!(u32::from_be_bytes(image[8..12].try_into().unwrap()), 0);
     }
 
     #[test]

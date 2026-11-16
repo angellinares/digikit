@@ -18,8 +18,6 @@ use dkrt_sdk::*;
 mod api;
 mod arena;
 pub mod core_api;
-#[cfg(not(test))]
-mod fw;
 mod native;
 pub mod assign;
 pub mod collect;
@@ -117,8 +115,6 @@ pub(crate) unsafe extern "C" fn debug_selected_params(out: *mut i16, n: u32) -> 
     track as i32
 }
 
-pub(crate) unsafe extern "C" fn imp_param_get(track: u32, word: u32) -> i32 { handlers::exports::param_get(track, word) }
-pub(crate) unsafe extern "C" fn imp_param_set(track: u32, word: u32, raw: i32) -> i32 { handlers::exports::param_set(track, word, raw) }
 
 
 #[cfg(test)]

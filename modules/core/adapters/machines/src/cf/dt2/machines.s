@@ -27,7 +27,6 @@
     .equ O_NAME,   56          | pointer to the display name (C string)
     .equ O_SNAME,  60          | pointer to the short label (C string)
     .equ ROWSIZE,  64
-    .equ SLICE,    6           | the stock type whose `type == 6` tests an added clone of it also passes
     .equ MAXN,     32          | registry max
     .equ REPSIZE,  48          | bytes per std::string representation in mf_strbuf
 
@@ -165,192 +164,10 @@ mf_rank:
     move.l  %d0,8(%sp)
     jmp     _mf_t_rank
 
-| mf_row: d0 = index k (< count) -> a0 = &machines.rows[k]. Preserves every other register (not the flags).
-mf_row:
-    move.l  %d1,-(%sp)
-    move.l  #ROWSIZE,%d1
-    muls.l  %d0,%d1
-    addi.l  #_mf_rows,%d1
-    movea.l %d1,%a0
-    move.l  (%sp)+,%d1
-    rts
-
-| ---- clone tests. `type == SLICE` must also be true for an added type whose clone_of is SLICE. Each site is the
-| whole stock test (a prefix, `cmp`, a conditional branch); the hook replaces it (displaced = "drop"): the routine
-| runs the stock prefix and compare, and takes the branch itself: equal -> `eq`, otherwise it asks whether the type
-| register holds an added type whose clone_of is SLICE (then equal) and goes to `eq` or `neq`. The two destinations
-| are the end of the site and the branch target (an anchor `cf.machines.clone.N.alt`). Registers and the stack come
-| out as the stock test leaves them (d0-d2 and a0 are saved around the lookup); the flags are not preserved on
-| the paths after the branch (every site was read: none reads them).
-    .macro CLONE_BODY treg, eq, neq
-    beq.w   6f
-    cmpi.l  #_mf_first,%d\treg
-    bcc.s   4f
-    jmp     \neq                        | a stock type other than SLICE: the stock answer
-4:
-    lea     -16(%sp),%sp
-    movem.l %d0-%d2/%a0,(%sp)
-    .if \treg < 3
-    move.l  (\treg * 4,%sp),%d0
-    .else
-    move.l  %d\treg,%d0
-    .endif
-    subi.l  #_mf_first,%d0
-    cmpi.l  #_mf_count,%d0
-    bcc.s   5f
-    bsr.w   mf_row
-    move.l  O_CLONE(%a0),%d1
-    cmpi.l  #SLICE,%d1
-    bne.s   5f
-    movem.l (%sp),%d0-%d2/%a0
-    lea     16(%sp),%sp
-6:  jmp     \eq
-5:  movem.l (%sp),%d0-%d2/%a0
-    lea     16(%sp),%sp
-    jmp     \neq
-    .endm
-
-| clone.0: moveq #6,D1; cmp.l D0,D1; beq.w T (equal -> T)
-    .globl mf_clone0
-mf_clone0:
-    moveq   #6,%d1
-    cmp.l   %d0,%d1
-    CLONE_BODY 0, _mf_c0a, _mf_c0 + 8
-| clone.1: moveq #6,D1; cmp.l D0,D1; bne.b U
-    .globl mf_clone1
-mf_clone1:
-    moveq   #6,%d1
-    cmp.l   %d0,%d1
-    CLONE_BODY 0, _mf_c1 + 6, _mf_c1a
-| clone.2: moveq #6,D1; cmp.l D0,D1; bne.w U
-    .globl mf_clone2
-mf_clone2:
-    moveq   #6,%d1
-    cmp.l   %d0,%d1
-    CLONE_BODY 0, _mf_c2 + 8, _mf_c2a
-| clone.3: addq.l #4,SP; cmp.l D0,D6; bne.b U (d6 holds SLICE)
-    .globl mf_clone3
-mf_clone3:
-    addq.l  #4,%sp
-    cmp.l   %d0,%d6
-    CLONE_BODY 0, _mf_c3 + 6, _mf_c3a
-| clone.4: moveq #6,D0; cmp.l D2,D0; bne.b U (the type is in d2)
-    .globl mf_clone4
-mf_clone4:
-    moveq   #6,%d0
-    cmp.l   %d2,%d0
-    CLONE_BODY 2, _mf_c4 + 6, _mf_c4a
-| clone.6: moveq #6,D1; mvs.b (0x990,A0),D0; cmp.l D0,D1; bne.w U
-    .globl mf_clone6
-mf_clone6:
-    moveq   #6,%d1
-    mvs.b   0x990(%a0),%d0
-    cmp.l   %d0,%d1
-    CLONE_BODY 0, _mf_c6 + 12, _mf_c6a
-
-| clone.5 is the masked test `(type & ~2) == 4` (types 4 and 6): d0 becomes the clone_of of an added type before the
-| stock mask. Site: the first four instructions of the test (d1 is set by them).
-    .globl mf_clone5
-mf_clone5:
-    lea     -8(%sp),%sp
-    movem.l %d1/%a0,(%sp)
-    move.l  %d0,%d1
-    subi.l  #_mf_first,%d0
-    cmpi.l  #_mf_count,%d0
-    bcc.s   1f
-    bsr.w   mf_row
-    move.l  O_CLONE(%a0),%d1
-1:  move.l  %d1,%d0
-    movem.l (%sp),%d1/%a0
-    lea     8(%sp),%sp
-    jmp     _mf_t_clone5
-
-| ---- type argument of the parameter mapping: `FUN(index, type, filter)` answers the parameter code of a (mirror
-| index 25..34, machine type) pair. For an added type: the slots with a descriptor field answer with the entry's
-| field, the two without (29, 30: MANUAL SLICE's Sample Bank / Slot rows, which the stock map holds for its owner
-| but no descriptor lists) answer as the clone does (the stack argument is replaced by the clone's type, then the
-| stock code runs); every other index runs the stock code. Site: `move.l 0x10(sp),D0; movea.l 0x14(sp),A1` in the
-| middle of the function; a0 = index, d1 live; d0, a1 are reloaded, d2 and a2 are saved by the function (they are
-| saved here too).
-    .globl mf_typearg
-mf_typearg:
-    move.l  0x10(%sp),%d0
-    subi.l  #_mf_first,%d0
-    cmpi.l  #_mf_count,%d0
-    bcc.s   9f
-    lea     -16(%sp),%sp
-    movem.l %d1-%d2/%a0/%a2,(%sp)
-    move.l  %a0,%d2
-    subi.l  #25,%d2
-    cmpi.l  #9,%d2
-    bhi.s   7f
-    lsl.l   #2,%d2
-    lea     mf_slotmap,%a2
-    move.l  (%a2,%d2.l),%d2
-    bmi.s   6f
-    bsr.w   mf_row
-    move.l  (%a0,%d2.l),%d0
-    movem.l (%sp),%d1-%d2/%a0/%a2
-    lea     16(%sp),%sp
-    jmp     _mf_x_typearg
-6:  bsr.w   mf_row
-    move.l  O_CLONE(%a0),%d0
-    movem.l (%sp),%d1-%d2/%a0/%a2
-    lea     16(%sp),%sp
-    move.l  %d0,0x10(%sp)
-    jmp     _mf_t_typearg
-7:  movem.l (%sp),%d1-%d2/%a0/%a2
-    lea     16(%sp),%sp
-9:  jmp     _mf_t_typearg
-
-| ---- SRC page count. The page list of a `ParameterPageView` is a vector of 4-byte entries at view+0x7c (begin) and view+0x80
-| (end), set at construction; the current page is view+0x90. `SourcePageView` has two entries (the knob page and the sample
-| view, for SAMPLE, WERP, STRETCH, REPITCH, SLICED SMP and MANUAL SLICE). The page dots (the shared `ParameterPageView::vfunc_4`
-| and `SourcePageView::vfunc_4`) and the page keys (`ParameterPageView::vfunc_2`, which flips only when the vector holds more
-| than one entry) read that vector; the sample view draws nothing for a type 7 or higher, whose knobs are its own (finding 50).
-| An added machine therefore has ONE SRC page: at the start of `SourcePageView::vfunc_4` the vector is cut to SRC_PAGES entries
-| and the page index is 0 when the track's type is an added one, and a stock type gets its two entries back. The key of the next
-| page then does nothing and no dots are drawn. SRC_PAGES is 1: the engine has only ten parameter slots (sound-array slots 25 to
-| 34) and the knob page reads eight of them, so a second knob page has no slots to show (docs/findings/50). Site (8 bytes, the
-| first test of the function): `tst.l 0x90(A2); beq.w T`; a2 = the view, d2 = the draw context. T (an anchor, `_mf_spa`) is the
-| knob-page branch; the stock path goes on at site + 8. `_mf_spt` is `FUN_4005f6bc` (the type as a signed long, -1 without a
-| track). d0, d1, a0, a1 are free at the site (the prologue saved d3 .. d7, a3 .. a6).
-    .equ    SRC_PAGES,  1
-    .equ    SRC_STOCK,  2           | entries of the stock vector
-    .globl mf_srcpage
-mf_srcpage:
-    move.l  %a2,-(%sp)
-    jsr     _mf_spt
-    addq.l  #4,%sp
-    cmpi.l  #_mf_first,%d0
-    blt.s   1f
-    move.l  #SRC_PAGES,-(%sp)
-    move.l  %d0,-(%sp)
-    jsr     mf_native_page_count
-    addq.l  #8,%sp
-    move.l  %d0,%d1
-    lsl.l   #2,%d1
-    add.l   0x7c(%a2),%d1
-    move.l  %d1,0x80(%a2)            | existing capacity is two entries; no allocation or vector growth
-    cmp.l   0x90(%a2),%d0
-    bhi.s   4f
-    clr.l   0x90(%a2)
-4:  jmp     _mf_spa
-1:  move.l  0x80(%a2),%d0           | any other type: the stock vector again if an added type cut it
-    sub.l   0x7c(%a2),%d0
-    subq.l  #4 * SRC_PAGES,%d0
-    bne.s   2f
-    move.l  0x7c(%a2),%d1
-    addi.l  #4 * SRC_STOCK,%d1
-    move.l  %d1,0x80(%a2)
-2:  tst.l   0x90(%a2)
-    beq.w   3f
-    jmp     _mf_sp + 8
-3:  jmp     _mf_spa
-
 | descriptor field offset of mirror index 25 .. 34 (-1: none)
     .section .rodata
     .balign 4
+    .globl mf_slotmap
 mf_slotmap:
     .long   8, 12, 16, 20, -1, -1, 24, 28, 32, 36
 
@@ -366,3 +183,23 @@ mf_strbuf:   .space REPSIZE * 2 * MAXN
     .globl mf_native_type
 mf_native_type:
     jmp     _mf_spt
+
+| ---- the table `machines_info` (an [[info]] of module.toml): what the service file `machines.dks` needs of the image and the firmware (modules/core/services/machines/dks/src/
+| image.rs has the layout; the word index is the byte offset / 4). Addresses only: the file's hooks continue in the stock code through the tails `patchkit bind` makes, or
+| through the exits below. 1 = the Digitakt II.
+    .section .rodata
+    .balign 4
+    .globl machines_info
+machines_info:
+    .long   0x4d414348, 1, 1                | magic MACH, version, device
+    .long   _mf_k_keydown, _mf_k_setvalue, _mf_k_viewtrack
+    .long   _mf_first, _mf_count, _mf_entries, _mf_rows
+    .long   mf_ensure
+    .long   mf_native_page_count, mf_native_descriptor, mf_native_code, mf_native_draw, mf_native_overlay
+    .long   _mf_spt, mf_slotmap, 0, 0       | current track type, the slot map, (page rows, page count: Digitone II)
+    .long   _mf_c5 + 12, _mf_c5a            | clone.5: not equal, equal
+    .long   _mf_x_typearg                   | the second exit of the parameter code
+    .long   _mf_sp + 8, _mf_spa             | SRC page: the stock path, the knob-page branch
+    .long   0, 0                            | group (Digitone II)
+    .long   0, 0, 0                         | frame type, type reader, owner test (Digitone II)
+    .space  4 * 9                           | the calls of the type reader (Digitone II)

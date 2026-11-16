@@ -585,6 +585,7 @@ doc = "Replace the stock boot animation. `frame(tick, arg)` returns the 1024-byt
 [[import]]
 name = "dk_param_get"
 service = "machines"
+provided = true
 since = "0.7.0"
 context = "ui"
 sig = "i32 (u32 track, u32 word)"
@@ -593,6 +594,7 @@ doc = "Raw value (unit * 256) of parameter word `word` of the calling module on 
 [[import]]
 name = "dk_param_set"
 service = "machines"
+provided = true
 since = "0.7.0"
 context = "ui"
 sig = "i32 (u32 track, u32 word, i32 raw)"
@@ -1655,7 +1657,6 @@ rust = "dkrt_svc_samples::records::Samples"
 
 [[service]]
 name = "machines"
-rust = "dkrt_svc_machines::records::Machines"
 
 [[service]]
 name = "fx"
