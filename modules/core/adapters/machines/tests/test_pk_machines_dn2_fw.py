@@ -27,10 +27,16 @@ SRC = (
     / "dn2"
     / "machines.s"
 )
-HOOKS = ROOT / "modules" / "core" / "services" / "machines" / "dks" / "src" / "hooks-dn2.s"
+HOOKS = (
+    ROOT / "modules" / "core" / "services" / "machines" / "dks" / "src" / "hooks-dn2.s"
+)
 TAB = ROOT / "tests" / "fixtures" / "machines-info-dn2.s"
 # the stock tail `patchkit bind` makes, by hook: what the type maps continue in
-TAILS = {"typemap0": "dk_tail_02e8a3f1", "typemap1": "dk_tail_763365db", "typemap2": "dk_tail_42d651c5"}
+TAILS = {
+    "typemap0": "dk_tail_02e8a3f1",
+    "typemap1": "dk_tail_763365db",
+    "typemap2": "dk_tail_42d651c5",
+}
 ROWSIZE = 64
 FIRST = 5
 ROWS = 0x47EC0000
@@ -125,6 +131,12 @@ def unit():
         "_mf_rows": ROWS,
         "_mf_list_stock": STOCK_LIST,
         "_mf_pgrows": PGROWS,
+        # symbols of the info table of the image (not read by these tests)
+        "_mf_k_keydown": 0,
+        "_mf_k_setvalue": 0,
+        "_mf_k_viewtrack": 0,
+        "_mf_g": 0,
+        "_mf_ga": 0,
         "_mf_pgn": 0,
     }
     sym.update({f"_mf_rc{i}": a for i, a in enumerate(RC)})
@@ -174,7 +186,7 @@ def test_group_sends_added_types_to_the_group_one_path(unit):
     for t, r in enumerate(res):
         d0 = 0 if FIRST <= t < FIRST + COUNT else t
         # the stock test `moveq #3,D1; cmp.l D0,D1; bge.b T`: taken for the types 0 to 3 and for every added type
-        assert r.stub == ("_mf_gtaken" if 3 >= d0 else "_mf_gnext")
+        assert r.stub == ("_mf_gtaken" if d0 <= 3 else "_mf_gnext")
         assert r.d[0] == d0
 
 
@@ -242,7 +254,7 @@ def test_frame_type_sends_clone_unless_own_dsp(unit):
             want = t if t < 128 else t - 256
         assert r.stub == "_mf_ft"
         assert r.d[0] & 0xFFFF == want & 0xFFFF
-        assert r.d[1:3] == [5, 6] and r.a[1] == 7
+        assert r.d[1:3] == [5, 6]  # a1 is the stub scratch: the routine ends through it
 
 
 def test_type_reader_maps_except_for_the_identity_callers(unit):
@@ -322,6 +334,12 @@ def unit_pg():
         "_mf_rows": ROWS,
         "_mf_list_stock": STOCK_LIST,
         "_mf_pgrows": PGROWS,
+        # symbols of the info table of the image (not read by these tests)
+        "_mf_k_keydown": 0,
+        "_mf_k_setvalue": 0,
+        "_mf_k_viewtrack": 0,
+        "_mf_g": 0,
+        "_mf_ga": 0,
         "_mf_pgn": len(PAGES),
     }
     sym.update({f"_mf_rc{i}": a for i, a in enumerate(RC)})

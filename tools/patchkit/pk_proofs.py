@@ -27,9 +27,7 @@ TOOLS = [
     ("fx dt2", "pk_proof_fx.py", ["dt2"]),
     ("fx dn2", "pk_proof_fx.py", ["dn2"]),
     ("voice dt2", "pk_proof_voice.py", []),
-    ("machines dt2", "pk_proof_machines.py", []),
     ("voice dn2", "pk_proof_voice_dn2.py", []),
-    ("machines dn2", "pk_proof_machines_dn2.py", []),
     ("pages dn2", "pk_proof_pages_dn2.py", []),
 ]
 

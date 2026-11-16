@@ -30,7 +30,9 @@ SRC = (
     / "machines.s"
 )
 # the hooks of the machines service file (the image keeps the table builder, dispatch, list entry and rank) and the table they read
-HOOKS = ROOT / "modules" / "core" / "services" / "machines" / "dks" / "src" / "hooks-dt2.s"
+HOOKS = (
+    ROOT / "modules" / "core" / "services" / "machines" / "dks" / "src" / "hooks-dt2.s"
+)
 TAB = ROOT / "tests" / "fixtures" / "machines-info-dt2.s"
 ROWSIZE = 64
 FIRST = 7
@@ -132,6 +134,12 @@ def unit():
             "_mf_rows": ROWS,
             "_mf_list_stock": STOCK_LIST,
             "_mf_spt": TYPE_FN,
+            # symbols of the info table of the image (not read by these tests)
+            "_mf_k_keydown": 0,
+            "_mf_k_setvalue": 0,
+            "_mf_k_viewtrack": 0,
+            "_mf_c5": 0,
+            "_mf_c5a": 0,
         },
         [
             "mf_srcpage",
@@ -263,6 +271,11 @@ def gap_unit():
             "_mf_rows": ROWS,
             "_mf_list_stock": STOCK_LIST,
             "_mf_spt": TYPE_FN,
+            "_mf_k_keydown": 0,
+            "_mf_k_setvalue": 0,
+            "_mf_k_viewtrack": 0,
+            "_mf_c5": 0,
+            "_mf_c5a": 0,
         },
         ["mf_list_entry", "mf_rank"],
     )
@@ -367,8 +380,12 @@ def test_masked_clone_test_maps_added_types_to_their_clone(unit):
     )
     for t, r in zip(ts, res, strict=True):
         want = ENTRIES[t - FIRST]["clone_of"] if FIRST <= t < FIRST + COUNT else t
-        assert r.stub == ("_mf_c5eq" if (want & ~2) == 4 else "_mf_c5ne") and r.d[0] == want
-        assert r.d[1] == 9 and r.d[3] == 33 and r.a[0] == 5
+        assert r.stub == ("_mf_c5eq" if (want & ~2) == 4 else "_mf_c5ne") and r.d[
+            0
+        ] == (want & ~2)
+        assert (
+            r.d[1] == 4 and r.d[3] == 33 and r.a[0] == 5
+        )  # d1 holds 4: the displaced `moveq #4,D1` of the stock test
 
 
 SLOTMAP = [8, 12, 16, 20, None, None, 24, 28, 32, 36]
