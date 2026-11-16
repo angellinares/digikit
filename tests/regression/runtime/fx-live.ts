@@ -30,15 +30,13 @@ import { committedFxExpectations } from './pack-needs.ts';
 import { planSymbol, prepareRuntimePlanOffline, validateRuntimePlan, type RuntimePlan } from './runtime-plan.ts';
 import { runtimeSafety, runtimeWatchEnv } from './write-safety.ts';
 import { GAIN, SINE } from './fixtures.ts';
-import { drainInputs, rtOf } from './fx-session.ts';
+import { drainInputs } from './fx-session.ts';
 import { pollEmulated } from './waits.ts';
 
 const exec = promisify(execFile);
 const root = repoRoot();
 /** What the panel helpers need of a runtime: the session, the wait API's `ui` and its clock. */
 export type Rt = Pick<TestRuntime, 'session' | 'ui' | 'clock'>;
-/** What `pickSine` and `selectSine` accept: a runtime, or (for callers that wait on no runtime events) a bare session. */
-export type RtLike = Rt | Pick<PatchedSession, 'session'> | Session;
 /** The reason of a fixed wait after a panel input: the firmware redraws, and no page-change event exists. */
 export const REDRAW = 'firmware redraw after a panel input (no page-change event)';
 /** The reason of a fixed wait for the firmware to act on its own (a timer, a retry, a save): nothing observable yet. */
@@ -175,8 +173,7 @@ export async function runFrames(session: Session, n: number): Promise<void> {
 
 /** Choose the original device list hint or a numeric override without asserting selected-track identity.
  * The BASIC chain uses selectSine for DT2 type readback; gain/deselect retains its audible-input contract. */
-export async function pickSine(target: RtLike, selection?: number, ups = 0): Promise<void> {
-  const rt = rtOf(target);
+export async function pickSine(rt: Rt, selection?: number, ups = 0): Promise<void> {
   const hint = selection ?? (rt.session.options.device === 'dt2' ? 7 : 5);
   if (!Number.isInteger(hint) || hint < 0) throw new Error('FX input hint must be a nonnegative list position');
   await rt.ui.tap('SRC', { until: { drained: true }, held: 'FUNC' });
@@ -241,13 +238,8 @@ export async function captureNote(session: Session, opts: NoteOptions): Promise<
 }
 
 /** Future-frame choice follows the legacy restarted-note path; boundary offset and 1500-frame hold are unchanged. */
-export async function capture(
-  runtime: RtLike,
-  file: string,
-  selection?: number,
-  triggerFrame?: number,
-): Promise<number> {
-  const { session } = rtOf(runtime);
+export async function capture(runtime: Rt, file: string, selection?: number, triggerFrame?: number): Promise<number> {
+  const { session } = runtime;
   await rpc(session, 'run.mode', { mode: 'paused' });
   await rpc(session, 'pcm.tap', { action: 'start' });
   await pickSine(runtime, selection);

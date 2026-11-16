@@ -5,18 +5,6 @@ import type { PatchedSession } from '../support.ts';
 import { record } from './artifacts.ts';
 import { planSymbol, type RuntimePlan } from './runtime-plan.ts';
 
-type Tap = (name: string, settleMs?: number) => Promise<void>;
-
-/** Known menu states, independent of the currently displayed parameter or encoder target. */
-export async function openDigikitMenu(tap: Tap, checkpoint?: (name: string) => Promise<void>): Promise<void> {
-  await tap('NO', 2000);
-  await tap('SETTINGS', 3000);
-  for (let i = 0; i < 8; i++) await tap('DOWN');
-  await checkpoint?.('settings-ninth-row');
-  await tap('YES', 3000);
-  await checkpoint?.('digikit-main');
-}
-
 /** fill_about publishes incrementally: the runtime row alone precedes BOOT and the final RAM row. */
 export const aboutIsComplete = (rows: string[]): boolean =>
   rows.some((row) => /^BOOT: \d+ OF \d+ OK$/.test(row)) && /^RAM KEPT: (YES|NO)$/.test(rows.at(-1) ?? '');

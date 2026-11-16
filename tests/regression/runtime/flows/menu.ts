@@ -93,7 +93,12 @@ export async function openRuntimeAbout(
     failed = false;
     return rows;
   } finally {
-    record(artifacts, 'about-before-open', { initialCount: initialCount ?? null, runtimeRow: runtimeRow ?? null, rows, expired: failed });
+    record(artifacts, 'about-before-open', {
+      initialCount: initialCount ?? null,
+      runtimeRow: runtimeRow ?? null,
+      rows,
+      expired: failed,
+    });
   }
 }
 

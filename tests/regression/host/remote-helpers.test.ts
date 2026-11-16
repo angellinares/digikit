@@ -2,7 +2,7 @@ import fs from 'node:fs';
 import { createHash } from 'node:crypto';
 import { beforeEach, expect, test, vi } from 'vitest';
 import type { DkSession } from '@digi/dk-session';
-import type { Session } from '@digi/test-support';
+import { emulatorClock, type Session } from '@digi/test-support';
 import { withWaitApi, type PatchedSession } from '../support.ts';
 
 const fake = vi.hoisted(() => ({
@@ -32,8 +32,8 @@ vi.mock('../../../packages/test-support/src/inputs.ts', async (original) => ({
   resolveInputs: () => ({ syx: '/stock.syx' }),
 }));
 import { expectRuntimeUi } from '../runtime/ready.ts';
-import { bindBootClock, pollEmulated, waitEmulated, waitForBootEmulated, withEmulatedProbe } from '../runtime/waits.ts';
-import { expectRemoteEnabled, installRemote, prepareRemote, remoteTap, withRemoteRelease } from '../runtime/remote.ts';
+import { bindBootClock, pollEmulated, waitForBootEmulated, withEmulatedProbe } from '../runtime/waits.ts';
+import { expectRemoteEnabled, installRemote, prepareRemote, withRemoteRelease } from '../runtime/remote.ts';
 import { prepareRuntimePlanModulesOffline } from '../runtime/runtime-plan-modules.ts';
 import {
   planSymbol,
@@ -42,7 +42,7 @@ import {
   type RuntimePlan,
 } from '../runtime/runtime-plan.ts';
 import { fakeClock } from './fake-status.ts';
-import { openDigikitMenu, readAboutRows, expectRuntimeAbout } from '../runtime/runtime-menu.ts';
+import { readAboutRows, expectRuntimeAbout } from '../runtime/runtime-menu.ts';
 import { openRuntimeAbout } from '../runtime/flows/menu.ts';
 
 const patchedSha256 = 'c'.repeat(64);
@@ -180,25 +180,16 @@ for (const stage of ['patch', 'install', 'plan'] as const) {
   });
 }
 
-test('failed KEY press still attempts key-up and overall release', async () => {
-  const dk = {
-    remoteKey: vi.fn().mockRejectedValueOnce(new Error('key failed')).mockResolvedValue(undefined),
-    remoteRelease: vi.fn(),
-  };
-  await expect(
-    withRemoteRelease(dk as unknown as DkSession, () => remoteTap(session, dk as unknown as DkSession, 'YES')),
-  ).rejects.toThrow('key failed');
-  expect(dk.remoteKey.mock.calls).toEqual([
-    [10, true],
-    [10, false],
-  ]);
-  expect(dk.remoteRelease).toHaveBeenCalledTimes(1);
-});
+/** A paused fake daemon whose emulated clock advances 100 ms on every read. */
+const releaseClock = () => {
+  const { status, step } = fakeClock({ msPerRead: 100 });
+  return emulatorClock({ status, client: { step } } as unknown as Pick<Session, 'status' | 'client'>);
+};
 
 test('navigation failure releases remote inputs; a hung release has a bounded deadline', async () => {
   const dk = { remoteRelease: vi.fn().mockResolvedValue(undefined) } as unknown as DkSession;
   await expect(
-    withRemoteRelease(dk, async () => {
+    withRemoteRelease(dk, releaseClock(), async () => {
       throw new Error('ABOUT missing');
     }),
   ).rejects.toThrow('ABOUT missing');
@@ -206,49 +197,15 @@ test('navigation failure releases remote inputs; a hung release has a bounded de
   const releaseError = new Error('release failed');
   vi.mocked(dk.remoteRelease).mockRejectedValueOnce(releaseError);
   await expect(
-    withRemoteRelease(dk, async () => {
+    withRemoteRelease(dk, releaseClock(), async () => {
       throw actionError;
     }),
   ).rejects.toMatchObject({
     name: 'AggregateError',
     errors: [actionError, releaseError],
   });
-  vi.useFakeTimers();
-  try {
-    vi.mocked(dk.remoteRelease).mockImplementation(() => new Promise(() => {}));
-    const result = expect(withRemoteRelease(dk, async () => {})).rejects.toThrow('remote release timed out');
-    await vi.advanceTimersByTimeAsync(5000);
-    await result;
-  } finally {
-    vi.useRealTimers();
-  }
-});
-
-/** A daemon whose DSP frame counter advances by `step` frames per status read (0: stuck). */
-function framesDaemon(step: number) {
-  let frames = 1000;
-  const status = vi.fn(async () => ({ audio: { frames: (frames += step) } }));
-  return { daemon: { ...session, status } as unknown as Session, status };
-}
-
-test('successful tap holds and settles in emulated time', async () => {
-  // 1500 frames per status read: the 300 ms hold (450 frames) and the 3000 ms settle (4500 frames).
-  const { daemon, status } = framesDaemon(1500);
-  const dk = { remoteKey: vi.fn().mockResolvedValue(undefined) } as unknown as DkSession;
-  await remoteTap(daemon, dk, 'SETTINGS', 3000);
-  expect(dk.remoteKey).toHaveBeenNthCalledWith(1, 8, true);
-  expect(dk.remoteKey).toHaveBeenNthCalledWith(2, 8, false);
-  // hold: start read + 1 poll; settle: start read + 3 polls
-  expect(status).toHaveBeenCalledTimes(6);
-});
-
-test('waitEmulated resolves once the frame counter has advanced by ms * 1.5 and throws when it is stuck', async () => {
-  const { daemon, status } = framesDaemon(100);
-  await waitEmulated(daemon, 1000);
-  // start read, then 1500 frames at 100 per read
-  expect(status).toHaveBeenCalledTimes(16);
-  const stuck = framesDaemon(0);
-  await expect(waitEmulated(stuck.daemon, 1000, { hangMs: 100 })).rejects.toThrow('stuck at 1000');
+  vi.mocked(dk.remoteRelease).mockImplementation(() => new Promise(() => {}));
+  await expect(withRemoteRelease(dk, releaseClock(), async () => {})).rejects.toThrow('remote release timed out');
 });
 
 test('pollEmulated fails after the emulated time, counts a lowered clock as a restart and can retry a failing read', async () => {
@@ -324,7 +281,6 @@ test('a halted DSP does not stop the emulated clock: the ColdFire instruction co
   await expect(
     pollEmulated(halted, async () => false, Boolean, { emulatedMs: 50, intervalMs: 1, hangMs: 40, message: 'm' }),
   ).rejects.toThrow('m: not seen within 50 ms of emulated time');
-  await expect(waitEmulated(make(), 100, { hangMs: 40 })).resolves.toBeUndefined();
   let waits = 0;
   const sleeps: number[] = [];
   const probeOpts: unknown[] = [];
@@ -353,20 +309,12 @@ test('installer failure still releases remote inputs without reaching scenario a
   dk.put.mockRejectedValueOnce(new Error('install failed'));
   const action = vi.fn();
   await expect(
-    withRemoteRelease(dk as unknown as DkSession, async () => {
+    withRemoteRelease(dk as unknown as DkSession, releaseClock(), async () => {
       await prepareRemote(runtime);
       action();
     }),
   ).rejects.toThrow('install failed');
   expect(action).not.toHaveBeenCalled();
-  expect(dk.remoteRelease).toHaveBeenCalledTimes(1);
-});
-
-test('key-up failure still reaches the overall remote release', async () => {
-  const dk = { remoteKey: vi.fn().mockRejectedValue(new Error('key failed')), remoteRelease: vi.fn() };
-  await expect(
-    withRemoteRelease(dk as unknown as DkSession, () => remoteTap(session, dk as unknown as DkSession, 'YES')),
-  ).rejects.toThrow('key failed');
   expect(dk.remoteRelease).toHaveBeenCalledTimes(1);
 });
 
@@ -417,19 +365,6 @@ test('negative setup installs natively on its own device-set daemon without patc
   expect(dk.put.mock.calls[0]?.[0]).toBe('modules/remote.dkm');
   expect(dk.verifyFile.mock.calls[0]?.[0]).toBe('modules/remote.dkm');
   expect(dk.select).toHaveBeenCalledExactlyOnceWith(['modules/remote.dkm']);
-});
-
-test('menu navigation uses named SETTINGS and DIGIKIT checkpoints', async () => {
-  const tap = vi.fn().mockResolvedValue(undefined);
-  const checkpoint = vi.fn().mockResolvedValue(undefined);
-  await openDigikitMenu(tap, checkpoint);
-  expect(tap.mock.calls).toEqual([
-    ['NO', 2000],
-    ['SETTINGS', 3000],
-    ...Array.from({ length: 8 }, () => ['DOWN']),
-    ['YES', 3000],
-  ]);
-  expect(checkpoint.mock.calls).toEqual([['settings-ninth-row'], ['digikit-main']]);
 });
 
 test('ABOUT reads are bounded and assert the live protocol runtime identity without a Python formatter', async () => {

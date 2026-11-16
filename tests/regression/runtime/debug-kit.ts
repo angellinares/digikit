@@ -81,8 +81,6 @@ export function waitFrames({ session }: { session: Session }, blocks: number): P
   return waitClock(emulatorClock(session), Math.ceil(blocks / FRAMES_PER_MS));
 }
 
-export { openAbout } from './flows/menu.ts';
-
 /** Pause the run and give `op` a protocol session that steps the emulator (the scenarios that press keys with stepped time). */
 export async function pausedProtocol<T>(runtime: PatchedSession, op: (dk: DkSession) => Promise<T>): Promise<T> {
   await rpc(runtime.session, 'run.mode', { mode: 'paused' });

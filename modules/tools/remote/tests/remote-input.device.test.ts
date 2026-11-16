@@ -17,7 +17,7 @@ import { openDigikitMenu, openRuntimeAbout } from '@digi/regression/runtime/flow
 /** KEY navigation opens semantic ABOUT content; TURN reports accepted signed deltas. */
 async function expectRemoteKeys(runtime: TestRuntime): Promise<void> {
   const { session, dk } = runtime;
-  await withRemoteRelease(dk, async () => {
+  await withRemoteRelease(dk, runtime.clock, async () => {
     const plan = await prepareRemote(runtime);
     let shots = 0;
     const shot = (name: string) => captureRemoteOled(session, `${String(++shots).padStart(2, '0')}-${name}`);
@@ -53,7 +53,7 @@ async function expectRemoteControl(runtime: PatchedSession): Promise<void> {
     return [reply.status, ...reply.body];
   };
   expect(await state()).toEqual([0, 1, 1, 30]);
-  await withRemoteRelease(dk, async () => {
+  await withRemoteRelease(dk, emulatorClock(session), async () => {
     expect([
       (await cmd(SERVICE_CMD.REMOTE_KEY, [2, 1])).status,
       (await cmd(SERVICE_CMD.REMOTE_KEY, [2, 0])).status,

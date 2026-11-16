@@ -2,7 +2,7 @@ import { execFile } from 'node:child_process';
 import path from 'node:path';
 import { promisify } from 'node:util';
 import type { DkSession } from '@digi/dk-session';
-import { emulatorClock, pollUntil, remoteInput, repoRoot, waitClock, type Session } from '@digi/test-support';
+import { emulatorClock, pollUntil, repoRoot, type Clock, type Session } from '@digi/test-support';
 import { aggregate, type PatchedSession } from '../support.ts';
 import { liveArtifacts, record } from './artifacts.ts';
 import { installModule, moduleArtifact } from './install.ts';
@@ -45,14 +45,8 @@ export async function installRemote({ session, dk }: PatchedSession): Promise<vo
   await installModule(dk, 'digikit/remote', moduleArtifact(session.options.device, 'digikit/remote'));
 }
 
-export async function remoteTap(session: Session, dk: DkSession, name: string, settleMs = 1200): Promise<void> {
-  const clock = emulatorClock(session);
-  await remoteInput(dk, clock).tap(name, 300);
-  await waitClock(clock, settleMs);
-}
-
 /** Always release held remote inputs, including on navigation/assertion failure. */
-export async function withRemoteRelease(dk: DkSession, action: () => Promise<void>): Promise<void> {
+export async function withRemoteRelease(dk: DkSession, clock: Clock, action: () => Promise<void>): Promise<void> {
   let actionFailed = false;
   let actionError: unknown;
   try {
@@ -61,19 +55,30 @@ export async function withRemoteRelease(dk: DkSession, action: () => Promise<voi
     actionFailed = true;
     actionError = error;
   }
-  let timer: ReturnType<typeof setTimeout> | undefined;
+  // The release is bounded in emulated time: a lost request ends the wait, a slow host does not.
+  let settled = false;
+  let releaseError: unknown;
+  let released = true;
+  void dk.remoteRelease().then(
+    () => {
+      settled = true;
+    },
+    (error) => {
+      released = false;
+      releaseError = error;
+      settled = true;
+    },
+  );
   try {
-    await Promise.race([
-      dk.remoteRelease(),
-      new Promise<never>((_resolve, reject) => {
-        timer = setTimeout(() => reject(new Error('remote release timed out')), 5000);
-      }),
-    ]);
+    await pollUntil(clock, async () => settled, Boolean, {
+      withinMs: 5000,
+      intervalMs: 50,
+      message: 'remote release timed out',
+    });
+    if (!released) throw releaseError;
   } catch (error) {
     if (actionFailed) throw aggregate([actionError, error], 'remote action and release failed');
     throw error;
-  } finally {
-    clearTimeout(timer);
   }
   if (actionFailed) throw actionError;
 }

@@ -1,6 +1,5 @@
 import { readFileSync } from 'node:fs';
-import { setTimeout as delay } from 'node:timers/promises';
-import { button, emulatorClock, scheduledTurns, waitClock, type Session } from '@digi/test-support';
+import { button, emulatorClock, pollUntil, scheduledTurns, waitClock, type Session } from '@digi/test-support';
 import { expect } from 'vitest';
 import type { PatchedSession, TestRuntime } from '@digi/regression/support.ts';
 import { record } from '@digi/regression/runtime/artifacts.ts';
@@ -156,7 +155,7 @@ export interface TrackStatus {
 
 /** The requests of test/track-select: add or clear (0x3e) and status (0x3f). `file` is the root-relative path of a listing row ("KICKS/K1").
  * The pool picks the entry (`sample_pool_add`: the first free index, or the entry that already holds the path). */
-export function trackApi({ dk }: Pick<PatchedSession, 'dk'>, handle = HANDLE) {
+export function trackApi({ dk, clock }: Pick<TestRuntime, 'dk' | 'clock'>, handle = HANDLE) {
   /** `sample_pool_add`: the pool index, or a negative error code. */
   async function add(file: string): Promise<number> {
     const reply = await dk.request(0x3e, Buffer.concat([Buffer.from([handle, 0x61]), Buffer.from(file)]));
@@ -189,19 +188,23 @@ export function trackApi({ dk }: Pick<PatchedSession, 'dk'>, handle = HANDLE) {
       token: b.length >= 20 ? b.readUInt32BE(16) : 0,
     };
   }
-  /** Poll until the track is ready or an error; every distinct observation is kept. `each` runs after every poll (sampling counters). */
+  /** Poll until the track is ready or an error (`timeoutMs` and `pollMs` are emulated time); every distinct observation is kept. `each` runs after every poll (sampling counters). */
   async function settle(track: number, timeoutMs = 120_000, each?: (s: TrackStatus) => Promise<void>, pollMs = 20) {
     const seen: { t: number; state: number; token: number }[] = [];
-    const t0 = Date.now();
-    for (;;) {
-      const s = await status(track);
-      if (each) await each(s);
-      if (!seen.length || seen.at(-1)!.state !== s.state || seen.at(-1)!.token !== s.token)
-        seen.push({ t: Date.now() - t0, state: s.state, token: s.token });
-      if (s.state === 3 || s.state < 0) return { ...s, seen, ms: Date.now() - t0 };
-      if (Date.now() - t0 > timeoutMs) throw new Error(`track ${track} did not settle: ${JSON.stringify(seen)}`);
-      await delay(pollMs);
-    }
+    const t0 = await clock.now();
+    const last = await pollUntil(
+      clock,
+      async () => {
+        const s = await status(track);
+        if (each) await each(s);
+        if (!seen.length || seen.at(-1)!.state !== s.state || seen.at(-1)!.token !== s.token)
+          seen.push({ t: (await clock.now()) - t0, state: s.state, token: s.token });
+        return s;
+      },
+      (s) => s.state === 3 || s.state < 0,
+      { withinMs: timeoutMs, intervalMs: pollMs, message: () => `track ${track} did not settle: ${JSON.stringify(seen)}` },
+    );
+    return { ...last, seen, ms: (await clock.now()) - t0 };
   }
   /** `sample_pool_peaks_window` request through test/track-select ('w'): the status of the request (0 = stored). */
   async function window(index: number, token: number, first: number, frames: number, columns: number): Promise<number> {

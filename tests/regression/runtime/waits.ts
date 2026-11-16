@@ -7,7 +7,6 @@ import {
   withinRuntimeDeadline as beforeReadinessDeadline,
   type Session,
 } from '@digi/test-support';
-import { timePhase } from '../timing.ts';
 
 /** The DSP frame counter advances 1500 frames per emulated second. */
 const FRAMES_PER_MS = 1.5;
@@ -25,35 +24,6 @@ const INSNS_PER_FRAME = 88_000;
 export function emulatedFrames(status: { audio?: unknown; elapsed?: unknown }): number {
   if (status.elapsed !== undefined && status.elapsed !== null) return Number(status.elapsed) / INSNS_PER_FRAME;
   return Number((status.audio as { frames?: number } | null | undefined)?.frames ?? 0);
-}
-
-/**
- * Wait until `frames` more frames of emulated time have passed (1500 a second); the clock is `emulatedFrames`.
- * Wall time only guards against a stuck daemon (paused or dead: neither the DSP nor the ColdFire advances).
- */
-export async function waitEmulatedFrames(session: Session, frames: number, { hangMs = 30_000 } = {}): Promise<void> {
-  let progress: string | undefined;
-  let restarting = false;
-  const read = async () => {
-    const status = await session.status();
-    const key = restartProgress(status);
-    restarting = progress !== undefined && key !== progress;
-    progress = key;
-    return emulatedFrames(status);
-  };
-  const start = await read();
-  const target = start + frames;
-  let seen = start;
-  let lastAdvance = Date.now();
-  while (seen < target) {
-    await delay(50);
-    const now = await read();
-    if (now > seen || restarting) lastAdvance = Date.now();
-    else if (Date.now() - lastAdvance >= hangMs) {
-      throw new Error(`emulated clock stuck at ${now} frames (started at ${start}, wanted ${target}) for ${hangMs} ms`);
-    }
-    seen = now;
-  }
 }
 
 /**
@@ -283,26 +253,5 @@ export function bootClockOf(dk: object): Pick<Session, 'status'> | undefined {
   return bootClocks.get(dk);
 }
 
-/** Wait for `ms` of emulated time (the daemon must run freely). */
-export function waitEmulated(session: Session, ms: number, opts: { hangMs?: number } = {}): Promise<void> {
-  return waitEmulatedFrames(session, Math.ceil(ms * FRAMES_PER_MS), opts);
-}
-
 /** Shared lifecycle deadline; preserve the existing readiness-helper export for its callers. */
 export { beforeReadinessDeadline, deadlineExpired };
-
-/** Press, hold, release (also when the press fails), then let the UI settle. */
-export async function tap(
-  session: Session,
-  send: (down: boolean) => Promise<unknown>,
-  holdMs: number,
-  settleMs = 1200,
-): Promise<void> {
-  try {
-    await send(true);
-    await waitEmulated(session, holdMs);
-  } finally {
-    await send(false);
-  }
-  await timePhase('settle.input', () => waitEmulated(session, settleMs));
-}

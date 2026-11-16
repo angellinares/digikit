@@ -4,27 +4,17 @@ import os from 'node:os';
 import path from 'node:path';
 import { promisify } from 'node:util';
 import { expect } from 'vitest';
-import { DkSession, EmuUsbTransport, type WaitRecord } from '@digi/dk-session';
-import {
-  emulatorClock,
-  panelInput,
-  repoRoot,
-  withinRuntimeDeadline,
-  type Device,
-  type RuntimeBaseline,
-  type Session,
-} from '@digi/test-support';
+import { DkSession, EmuUsbTransport } from '@digi/dk-session';
+import { repoRoot, withinRuntimeDeadline, type Device, type RuntimeBaseline, type Session } from '@digi/test-support';
 import { aggregate, withReusablePatchedSession, type PatchedSession } from '../support.ts';
 import { record } from './artifacts.ts';
-import { Ui } from './ui.ts';
-import { recordPhase } from '../timing.ts';
 import { cachedCard, cardKey, fileSha } from './card-cache.ts';
 import { plusdriveBinary } from './card-kit.ts';
 import { FIRMWARE, claimRunDir } from './devices.ts';
 import { moduleArtifact } from './install.ts';
 import { expectRuntimeUi } from './ready.ts';
 import { pollEmulated } from './waits.ts';
-import { analysisJson, bounded, evidence, options, pickSine, word, type Rt, type RtLike } from './fx-live.ts';
+import { analysisJson, bounded, evidence, options, pickSine, word, type Rt } from './fx-live.ts';
 import {
   planSymbol,
   prepareRuntimePlanListedOffline,
@@ -80,27 +70,6 @@ export interface PreparedFxSessionOptions {
   initial: string;
   presets: Record<string, FxCardPreset>;
   requireAudible?: boolean | ((runtime: PatchedSession) => boolean);
-}
-
-const uis = new WeakMap<Session, Ui>();
-/** The wait API's `Ui` over a bare session (fixtures here hold sessions, not runtimes); no runtime events are listened to. */
-function uiOf(session: Session): Ui {
-  let ui = uis.get(session);
-  if (!ui) {
-    const clock = emulatorClock(session);
-    const record = (r: WaitRecord) =>
-      recordPhase(`wait.${r.kind}`, r.wallMs, { what: r.what, clockMs: r.clockMs, ok: r.ok });
-    ui = new Ui(panelInput(session, clock), clock, () => undefined, record, session);
-    uis.set(session, ui);
-  }
-  return ui;
-}
-
-/** A runtime's panel parts over a bare session, for callers that still hold only a `Session`. */
-export function rtOf(target: RtLike): Rt {
-  if ('ui' in target && 'clock' in target) return target;
-  if ('session' in target) return rtOf(target.session);
-  return { session: target, ui: uiOf(target), clock: emulatorClock(target) };
 }
 
 /** Wait until the boot input has finished, so the run can pause. */
@@ -213,8 +182,7 @@ export async function inspectFxBoot(
 }
 
 /** DT2 retains the legacy selected-type readback and adjacent-list-position retries. */
-export async function selectSine(target: RtLike, profile: FxProfile): Promise<void> {
-  const runtime = rtOf(target);
+export async function selectSine(runtime: Rt, profile: FxProfile): Promise<void> {
   const hint = runtime.session.options.device === 'dt2' ? 7 : 5;
   const sine = (await withPausedFxProtocol(runtime, (dk) => dk.modules())).find(
     (module) => module.name === 'test/sine',

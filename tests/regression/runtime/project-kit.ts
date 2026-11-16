@@ -5,8 +5,7 @@ import { CMD, READ_MAX } from '@digi/dk-session/gen_proto';
 import { button, encoder, type Device, type Session } from '@digi/test-support';
 import { expect } from 'vitest';
 import { postRaw, readSectors } from './card-kit.ts';
-import { REDRAW, SETTLE, bounded, dspBytes, pickSine, word, type Rt, type RtLike } from './fx-live.ts';
-import { rtOf } from './fx-session.ts';
+import { REDRAW, SETTLE, bounded, dspBytes, pickSine, word, type Rt } from './fx-live.ts';
 import { planSymbol, type RuntimePlan } from './runtime-plan.ts';
 import { overlayRecords } from './write-safety.ts';
 
@@ -205,8 +204,7 @@ export async function selectDt2(rt: Rt, track: number, type: number, hint: numbe
 }
 
 /** Put the machine of type `type` on `track` from the list cursor where it stands (no UP presses, so the setup stays short): the position `hint` and its neighbours are tried until the track holds `type` (Python `select_type`). */
-export async function selectType(target: RtLike, track: number, type: number, hint: number): Promise<number> {
-  const rt = rtOf(target);
+export async function selectType(rt: Rt, track: number, type: number, hint: number): Promise<number> {
   const { session } = rt;
   const seen: [number, number][] = [];
   for (const downs of [hint, hint + 1, hint - 1, hint + 2, hint + 3]) {

@@ -3,7 +3,7 @@ import { createHash, randomUUID } from 'node:crypto';
 import fs from 'node:fs';
 import path from 'node:path';
 import { promisify } from 'node:util';
-import { repoRoot, resolveInputs } from '@digi/test-support';
+import { repoRoot, resolveInputs, withinRuntimeDeadline } from '@digi/test-support';
 import { expect, test } from 'vitest';
 import { describeOn } from '@digi/regression/runtime/devices.ts';
 import { withSession } from '@digi/regression/support.ts';
@@ -18,18 +18,11 @@ const root = repoRoot();
 const exec = promisify(execFile);
 const hash = (file: string) => createHash('sha256').update(fs.readFileSync(file)).digest('hex');
 
+/** Wall bound for a dead link or a hung owned daemon (RuntimeDeadlineError names no label, so the label prefixes the failure). */
 async function bounded<T>(operation: Promise<T>, ms: number, label: string): Promise<T> {
-  let timer: ReturnType<typeof setTimeout> | undefined;
-  try {
-    return await Promise.race([
-      operation,
-      new Promise<never>((_, reject) => {
-        timer = setTimeout(() => reject(new Error(`${label} exceeded ${ms} ms`)), ms);
-      }),
-    ]);
-  } finally {
-    clearTimeout(timer);
-  }
+  return withinRuntimeDeadline(Date.now() + ms, () => operation).catch((error) => {
+    throw new Error(`${label}: ${String(error)}`, { cause: error });
+  });
 }
 
 // The patched DSP is core/dsp-link (its ColdFire code changes MAIN) with core/fx. Opt in with immutable prebuilt daemon/patchkit binaries and existing stock
