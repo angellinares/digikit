@@ -18,13 +18,17 @@ pub struct Block {
     pub addr: u32,
 }
 
-/// Where a module's bytes come from and where they go: the file store, the arena and the calls into module code.
+/// Where a module's bytes come from and where they go: the file store, the runtime's import table, the arena and the calls into module code.
 pub trait Images {
     /// Read the file at the NUL-terminated store `path` into the staging buffer. Errors are the loader's result codes (`E_NOT_FOUND`, `E_SHA`, ...).
     unsafe fn stage(&mut self, path: *const u8) -> Result<Staged, i32>;
     /// A block of at least `n` bytes; `None` when none fits.
     unsafe fn alloc(&mut self, n: u32) -> Option<Block>;
     unsafe fn free(&mut self, addr: u32);
+    /// The address of the import `name` (NUL-terminated), 0 when the runtime has none (`import_addr`).
+    unsafe fn import_addr(&mut self, name: *const u8) -> u32;
+    /// The module whose absence leaves the import `name` without an address (`import_needs`).
+    unsafe fn import_needs(&mut self, name: *const u8) -> Option<&'static str>;
     /// Call `init` of module record `rec` (the address `init` in module memory) with its context; its result.
     unsafe fn enter_init(&mut self, rec: usize, init: u32, ctx: *const Ctx) -> i32;
     unsafe fn enter_fini(&mut self, rec: usize, fini: u32, ctx: *const Ctx);
@@ -62,6 +66,12 @@ impl Images for RealImages {
     }
     unsafe fn free(&mut self, addr: u32) {
         crate::arena::free(addr as *mut u8);
+    }
+    unsafe fn import_addr(&mut self, name: *const u8) -> u32 {
+        crate::import_addr(name)
+    }
+    unsafe fn import_needs(&mut self, name: *const u8) -> Option<&'static str> {
+        crate::import_needs(name)
     }
     unsafe fn enter_init(&mut self, rec: usize, init: u32, ctx: *const Ctx) -> i32 {
         let call: unsafe extern "C" fn(*const Ctx) -> i32 = core::mem::transmute(init as usize);

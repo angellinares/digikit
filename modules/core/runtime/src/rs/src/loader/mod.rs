@@ -8,7 +8,7 @@ use crate::plan::{self, Env, Plan, TABLE_MAX};
 use dkneeds::keys::Keys;
 use crate::platform::RealPlatform;
 use crate::selection::BOOT_IDX;
-use crate::{cstr_eq, cstr_len, import_addr, rd32, st, wr32, Module, MAX_MODULES};
+use crate::{cstr_eq, cstr_len, rd32, st, wr32, Module, MAX_MODULES};
 use core::ptr::{addr_of, addr_of_mut, read_volatile};
 use dkrt_abi::platform::Platform;
 use dkrt_sdk::*;
@@ -27,6 +27,8 @@ const H_DSP_SIZE: usize = dkneeds::H_DSP_SIZE as usize;
 
 mod image;
 mod seams;
+#[cfg(test)]
+mod tests;
 use image::in_file;
 pub use seams::{Images, RealImages, RealRegistry, Registry};
 #[cfg(test)]
@@ -212,10 +214,10 @@ impl<P: Platform, M: Images, R: Registry> Loader<P, M, R> {
             if cstr_len(p, dkneeds::CF_IMPORT_LEN as usize) == dkneeds::CF_IMPORT_LEN as usize {
                 return E_FORMAT;
             }
-            let a = import_addr(p);
+            let a = self.m.import_addr(p);
             if a == 0 {
                 // the first import that belongs to a module that is not in the image: the boot keeps its name (`MISSING`)
-                if let (Some(n), true) = (crate::import_needs(p), self.missing[0] == 0) {
+                if let (Some(n), true) = (self.m.import_needs(p), self.missing[0] == 0) {
                     let b = n.as_bytes();
                     let mut k = 0;
                     while k < b.len() && k < NEEDS_LEN {
