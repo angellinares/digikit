@@ -189,6 +189,14 @@ test('a service built for another ABI fingerprint refuses that module only', () 
   assert.deepEqual(r.order, [lfo]);
 });
 
+test('a service without a fingerprint (abi 0, a service in C) is accepted like the loader does', () => {
+  const c = svc('svc-test', v(1, 0), [], 0, v(0, 5));
+  const rt: RuntimeIdentity = { version: (0 << 16) | (5 << 8) | 2, fingerprint: 0xbbbb };
+  const r = resolveServices([{ id: 'a', needs: [need('svc-test')] }], [c], rt, RUNTIME);
+  assert.deepEqual(r.refused, []);
+  assert.deepEqual(r.order, [c]);
+});
+
 test('a runtime that reports no fingerprint accepts every service', () => {
   const fx = svc('fx', v(1, 0), [], 0xaaaa);
   const r = resolveServices([{ id: 'a', needs: [need('fx')] }], [fx], RT, RUNTIME);
