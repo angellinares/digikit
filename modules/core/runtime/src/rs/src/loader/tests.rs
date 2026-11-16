@@ -22,6 +22,7 @@ enum Ev {
     Fini(usize, u32),
     Add(usize),
     Remove(usize),
+    AbiOk(u32),
 }
 
 /// What the init of the module does.
@@ -110,13 +111,17 @@ impl Images for FakeImages {
 }
 
 struct FakeRegistry {
+    abi: bool,
     add_result: i32,
     log: Vec<Ev>,
+    asked: core::cell::RefCell<Vec<Ev>>,
 }
 
 impl Registry for FakeRegistry {
-    fn abi_ok(&self, _: u32) -> bool {
-        true
+    fn abi_ok(&self, fingerprint: u32) -> bool {
+        // `abi_ok` takes `&self`: the log is behind a cell
+        self.asked.borrow_mut().push(Ev::AbiOk(fingerprint));
+        self.abi
     }
     unsafe fn add(&mut self, rec: usize, row: Option<&dkrt_abi::service::ServiceRow>) -> i32 {
         assert!(row.is_none());
@@ -130,6 +135,21 @@ impl Registry for FakeRegistry {
 
 fn put(v: &mut [u8], off: u32, val: u32) {
     v[off as usize..off as usize + 4].copy_from_slice(&val.to_be_bytes());
+}
+
+/// Set the size field and the file hash after a change.
+fn seal(v: &mut [u8]) {
+    let n = v.len() as u32;
+    put(v, dkneeds::H_SIZE, n);
+    let mut sha = Sha::new();
+    let mut got = [0u8; 32];
+    unsafe {
+        sha.update(v.as_ptr(), dkneeds::H_SHA);
+        sha.update_zeros(32);
+        sha.update(v.as_ptr().add(dkneeds::H_SHA as usize + 32), n - (dkneeds::H_SHA + 32));
+        sha.finish(got.as_mut_ptr());
+    }
+    v[dkneeds::H_SHA as usize..dkneeds::H_SHA as usize + 32].copy_from_slice(&got);
 }
 
 /// A 32-byte image with `init` at 0 and `fini` at 4, an empty header table, the relocations `relocs` (offset, kind word) and the import names `imports`.
@@ -165,17 +185,7 @@ fn module_file_with(relocs: &[(u32, u32)], imports: &[&[u8]]) -> Vec<u8> {
     }
     put(&mut v, keys_off as u32, dkneeds::keys::MAGIC);
     put(&mut v, keys_off as u32 + 4, (dkneeds::keys::VERSION as u32) << 16);
-    let n = v.len() as u32;
-    put(&mut v, dkneeds::H_SIZE, n);
-    let mut sha = Sha::new();
-    let mut got = [0u8; 32];
-    unsafe {
-        sha.update(v.as_ptr(), dkneeds::H_SHA);
-        sha.update_zeros(32);
-        sha.update(v.as_ptr().add(dkneeds::H_SHA as usize + 32), n - (dkneeds::H_SHA + 32));
-        sha.finish(got.as_mut_ptr());
-    }
-    v[dkneeds::H_SHA as usize..dkneeds::H_SHA as usize + 32].copy_from_slice(&got);
+    seal(&mut v);
     v
 }
 
@@ -199,7 +209,7 @@ unsafe fn loader_of(init: Init, file: Vec<u8>) -> Fake {
     let mut files = BTreeMap::new();
     files.insert(PATH[..PATH.len() - 1].to_vec(), file);
     let imgs = FakeImages { files, staged: Vec::new(), live: Vec::new(), allocs: 0, fail_alloc: None, init, log: Vec::new() };
-    let reg = FakeRegistry { add_result: OK, log: Vec::new() };
+    let reg = FakeRegistry { abi: true, add_result: OK, log: Vec::new(), asked: Default::default() };
     let mut l = Loader::new(FakePlatform::new(profiles::DT2), imgs, reg);
     l.phase = Phase::Boot;
     l
@@ -333,15 +343,7 @@ fn relocations_name_the_block_or_an_import_of_the_runtime() {
         let mut file = module_file_with(&[(8, 0), (12, 1 << 24)], &[b"dk_alloc"]);
         file[IMAGE_OFF + 11] = 0x20;
         file[IMAGE_OFF + 15] = 4;
-        let n = file.len() as u32;
-        // the sha covers the image: seal again
-        let mut sha = Sha::new();
-        let mut got = [0u8; 32];
-        sha.update(file.as_ptr(), dkneeds::H_SHA);
-        sha.update_zeros(32);
-        sha.update(file.as_ptr().add(dkneeds::H_SHA as usize + 32), n - (dkneeds::H_SHA + 32));
-        sha.finish(got.as_mut_ptr());
-        file[dkneeds::H_SHA as usize..dkneeds::H_SHA as usize + 32].copy_from_slice(&got);
+        seal(&mut file);
         let mut l = loader_of(Init::Ok, file);
         assert_eq!(l.load(PATH.as_ptr()), OK);
         let mem = &l.m.live[0].1;
@@ -364,4 +366,39 @@ fn an_import_of_a_module_that_is_not_there_names_it_and_allocates_nothing() {
         assert_eq!(l.load(PATH.as_ptr()), E_IMPORT);
         assert_eq!(l.missing()[0], 0);
     }
+}
+
+#[test]
+fn a_service_file_runs_the_service_steps_and_a_module_runs_none() {
+    let _g = LOCK.lock().unwrap_or_else(|e| e.into_inner());
+    unsafe {
+        let mut svc = module_file();
+        put(&mut svc, dkneeds::H_ROLE, 1);
+        put(&mut svc, dkneeds::H_RESERVED, 0xabcd_0123);
+        seal(&mut svc);
+        let mut l = loader_of(Init::Ok, svc.clone());
+        assert_eq!(l.load(PATH.as_ptr()), OK);
+        assert_eq!(*l.r.asked.borrow(), vec![Ev::AbiOk(0xabcd_0123)]);
+        assert_eq!(l.roles[0], 1);
+        // an ABI the registry refuses stops the load before anything is allocated
+        let mut l = loader_of(Init::Ok, svc);
+        l.r.abi = false;
+        assert_eq!(l.load(PATH.as_ptr()), E_CONTRACT);
+        assert_eq!(l.m.allocs, 0);
+        assert!(l.r.log.is_empty());
+        // a module (role 0) asks nothing
+        let mut l = loader(Init::Ok);
+        assert_eq!(l.load(PATH.as_ptr()), OK);
+        assert!(l.r.asked.borrow().is_empty());
+        assert_eq!(l.roles[0], 0);
+    }
+}
+
+#[test]
+fn the_role_word_picks_the_steps() {
+    type Steps = RoleSteps<FakePlatform, FakeImages, FakeRegistry>;
+    assert!(Steps::of(1).check as usize == Steps::SERVICE.check as usize);
+    assert!(Steps::of(0).check as usize == Steps::MODULE.check as usize);
+    // a word that is neither is a module, as the loader always took it
+    assert!(Steps::of(7).check as usize == Steps::MODULE.check as usize);
 }

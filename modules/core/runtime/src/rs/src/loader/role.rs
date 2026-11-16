@@ -1,8 +1,60 @@
 //! The role of a `.dkm` or `.dks` file (docs/plans/runtime-and-services.md section 13.2): the role word of the header and what the header table may hold for it.
-//! Not wired into the boot yet (R12-3 loads the providers).
+//! `RoleSteps` are the steps that differ by role, chosen from the role word: a module has none, a service (`.dks`) has the stubs R12-3 and R12-4 fill.
+//! The service search (`discover.rs`) uses `role_of` and `role_ok`; the loader runs the steps.
 #![allow(dead_code)]
+use super::{Images, Loader, Registry};
 use dkneeds::keys::{tag, Keys};
-use dkrt_sdk::E_FORMAT;
+use dkrt_abi::platform::Platform;
+use dkrt_sdk::{E_CONTRACT, E_FORMAT, OK};
+
+/// The steps of one role. `check` runs after the header parse and before anything is allocated (`file` is the staged file); `activate` after the commit; `undo`
+/// when a later step fails or the record goes away. A step has what it needs in the Loader and its seams.
+pub struct RoleSteps<P: Platform, M: Images, R: Registry> {
+    pub check: unsafe fn(&mut Loader<P, M, R>, file: *const u8) -> i32,
+    pub activate: unsafe fn(&mut Loader<P, M, R>, rec: usize) -> i32,
+    pub undo: unsafe fn(&mut Loader<P, M, R>, rec: usize),
+}
+
+impl<P: Platform, M: Images, R: Registry> Clone for RoleSteps<P, M, R> {
+    fn clone(&self) -> Self {
+        *self
+    }
+}
+impl<P: Platform, M: Images, R: Registry> Copy for RoleSteps<P, M, R> {}
+
+impl<P: Platform, M: Images, R: Registry> RoleSteps<P, M, R> {
+    /// The steps of the role word `role`: 1 is a service; every other word is a module, as before the table (`role_ok` refuses another word in the search).
+    pub const fn of(role: u32) -> Self {
+        if role == 1 {
+            Self::SERVICE
+        } else {
+            Self::MODULE
+        }
+    }
+
+    /// A module has no step of its own.
+    pub const MODULE: Self = RoleSteps { check: no_check, activate: no_activate, undo: no_undo };
+
+    /// A service. The check asks the registry about the ABI fingerprint of header word 0x3c (R12-4 step 2 gives the refusal its own code); the other steps are stubs
+    /// until R12-3 (install the hooks) and R12-4 (publish the row).
+    pub const SERVICE: Self = RoleSteps { check: service_check, activate: no_activate, undo: no_undo };
+}
+
+unsafe fn no_check<P: Platform, M: Images, R: Registry>(_: &mut Loader<P, M, R>, _: *const u8) -> i32 {
+    OK
+}
+unsafe fn no_activate<P: Platform, M: Images, R: Registry>(_: &mut Loader<P, M, R>, _: usize) -> i32 {
+    OK
+}
+unsafe fn no_undo<P: Platform, M: Images, R: Registry>(_: &mut Loader<P, M, R>, _: usize) {}
+
+unsafe fn service_check<P: Platform, M: Images, R: Registry>(l: &mut Loader<P, M, R>, file: *const u8) -> i32 {
+    if l.r.abi_ok(crate::rd32(file.add(dkneeds::H_RESERVED as usize))) {
+        OK
+    } else {
+        E_CONTRACT
+    }
+}
 
 /// The role word of a file: 0 a module, 1 a service (`.dks`). `head` is the first 64 bytes of the file; the word is big endian, like every header field.
 pub fn role_of(head: &[u8; 64]) -> u32 {

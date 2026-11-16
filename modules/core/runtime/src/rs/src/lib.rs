@@ -58,8 +58,6 @@ mod health;
 mod imports;
 mod mailbox;
 mod plan;
-mod provide;
-mod find;
 mod platform;
 mod storage_adapter;
 mod safe_mode;

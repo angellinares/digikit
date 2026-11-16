@@ -2,10 +2,11 @@
 
 use crate::dsp;
 use crate::entry::Ctx;
-use crate::find::Found;
+use discover::Found;
 use crate::handlers::{services, ServiceTable};
 use crate::plan::{self, Env, Plan, TABLE_MAX};
 use dkneeds::keys::Keys;
+use role::RoleSteps;
 use crate::platform::RealPlatform;
 use crate::selection::BOOT_IDX;
 use crate::{cstr_eq, cstr_len, rd32, st, wr32, Module, MAX_MODULES};
@@ -25,8 +26,10 @@ const H_REG_SIZE: usize = dkneeds::H_REG_SIZE as usize;
 const H_DSP_OFF: usize = dkneeds::H_DSP_OFF as usize;
 const H_DSP_SIZE: usize = dkneeds::H_DSP_SIZE as usize;
 
+pub(crate) mod discover;
 mod image;
 mod records;
+pub(crate) mod role;
 mod seams;
 #[cfg(test)]
 mod tests;
@@ -56,6 +59,8 @@ pub struct Loader<P: Platform, M: Images, R: Registry> {
     m: M,
     r: R,
     phase: Phase,
+    /// The role word of each record's file (0 module, 1 service): which `RoleSteps` its undo uses.
+    roles: [u8; records::REC_MAX],
     /// The name of the missing module of the last load that failed with E_IMPORT (`import_needs`), NUL padded; empty when none. The boot clears it before
     /// each load and takes it after.
     missing: [u8; NEEDS_LEN],
@@ -139,6 +144,7 @@ impl<P: Platform, M: Images, R: Registry> Loader<P, M, R> {
             m,
             r,
             phase: Phase::Closed,
+            roles: [0; records::REC_MAX],
             missing: [0; NEEDS_LEN],
             tables: [[0; TABLE_MAX]; SEL_MAX],
             table_len: [0; SEL_MAX],
@@ -205,6 +211,13 @@ impl<P: Platform, M: Images, R: Registry> Loader<P, M, R> {
             Err(e) => return e,
         };
         let image::Head { needs, image_off, image_size, bss, reloc_off, reloc_n, import_off, import_n, init, fini, menu, tick } = head;
+        // the steps of the file's role
+        let role = rd32(f.add(dkneeds::H_ROLE as usize));
+        let steps = RoleSteps::<P, M, R>::of(role);
+        let r = (steps.check)(self, f);
+        if r != OK {
+            return r;
+        }
         let name = f.add(H_NAME);
         let total = image_size + bss;
         // imports: every name must be in the runtime's table
@@ -313,6 +326,7 @@ impl<P: Platform, M: Images, R: Registry> Loader<P, M, R> {
         self.p.flush(base, total);
 
         // ---- record, init, publish ----
+        self.roles[rec] = (role == 1) as u8;
         let m: &mut Module = records::module(rec);
         m.used = 1;
         i = 0;
@@ -340,7 +354,7 @@ impl<P: Platform, M: Images, R: Registry> Loader<P, M, R> {
             // the CF part goes live now (rows in place before the machine view is built); the DSP code and the voice rows follow
             // when the frames flow
             m.used = 1;
-            let r = self.complete(rec, &keys, initaddr, tickaddr, image_size);
+            let r = self.complete(rec, &keys, initaddr, tickaddr, image_size, steps);
             if r != OK {
                 if dsp::retained() { return E_BUSY; }
                 dsp::cancel(rec);
@@ -363,7 +377,7 @@ impl<P: Platform, M: Images, R: Registry> Loader<P, M, R> {
             });
             return LOADING;
         }
-        let r = self.complete(rec, &keys, initaddr, tickaddr, image_size);
+        let r = self.complete(rec, &keys, initaddr, tickaddr, image_size, steps);
         if r != OK {
             if dsp::retained() || !crate::files::retire(rec) || !retire_sdk(rec) { return E_BUSY; }
             self.m.free(base);
@@ -376,7 +390,7 @@ impl<P: Platform, M: Images, R: Registry> Loader<P, M, R> {
 
     /// The end of a load, shared by the immediate and the DSP path (both run in the boot hook; docs/plans/sdk.md 6.3): `init` runs first and its builder calls are collected; then the commit checks them, fills the
     /// voice rows' ranges, writes the registry rows and keeps the record block. Anything that fails undoes what `init` did and writes no row.
-    unsafe fn complete(&mut self, rec: usize, keys: &crate::collect::KeysCopy, init: u32, tick: u32, image_size: u32) -> i32 {
+    unsafe fn complete(&mut self, rec: usize, keys: &crate::collect::KeysCopy, init: u32, tick: u32, image_size: u32, steps: RoleSteps<P, M, R>) -> i32 {
         let s = st();
         crate::files::init_begin(rec);
         let blk = match self.m.alloc(core::mem::size_of::<crate::collect::Collect>() as u32) {
@@ -406,6 +420,10 @@ impl<P: Platform, M: Images, R: Registry> Loader<P, M, R> {
         if r != OK {
             return self.fail(rec, r);
         }
+        let r = (steps.activate)(self, rec);
+        if r != OK {
+            return self.fail(rec, r);
+        }
         if tick != 0 {
             crate::entry::publish_tick(rec, tick);
         }
@@ -425,6 +443,7 @@ impl<P: Platform, M: Images, R: Registry> Loader<P, M, R> {
         let held = !crate::files::retire(rec) | !retire_sdk(rec);
         crate::module_cmds::release_cmds(rec as u8 + 1);
         crate::dlog::release_sinks(rec);
+        (RoleSteps::<P, M, R>::of(self.roles[rec] as u32).undo)(self, rec);
         self.r.remove(rec);
         if !dsp::release(rec) || held {
             return E_BUSY;
@@ -615,6 +634,7 @@ impl<P: Platform, M: Images, R: Registry> Loader<P, M, R> {
         drop_tick_cb(m.base, m.size);
         crate::api::poll_drop_range(m.base, m.size);
         // the machine row first, then the DSP voice rows, then the range in the DSP area
+        (RoleSteps::<P, M, R>::of(self.roles[rec] as u32).undo)(self, rec);
         self.r.remove(rec);
         let committed = crate::collect::release(rec);
         if committed != 0 {

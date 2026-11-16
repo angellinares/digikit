@@ -291,10 +291,10 @@ mod service_fixtures {
     use super::*;
     use crate::core_api::{CoreApi, REAL_CORE};
     use crate::fake_storage::FakeStorage;
-    use crate::find::{find, Found};
+    use crate::loader::discover::{find, Found};
     use crate::handlers::ServiceTable;
     use crate::plan::{plan_with, Env};
-    use crate::provide::{role_of, role_ok};
+    use crate::loader::role::{role_of, role_ok};
     use dkneeds::keys::name_hash;
     use dkrt_abi::plan::{Reason, Verdict};
     use dkrt_abi::service::{Service, ServiceRow};

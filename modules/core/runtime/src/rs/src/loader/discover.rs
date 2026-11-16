@@ -8,7 +8,7 @@
 #![allow(dead_code)]
 use crate::handlers::ServiceTable;
 use crate::plan::{is_runtime_service, TABLE_MAX};
-use crate::provide::{role_of, role_ok};
+use super::role::{role_of, role_ok};
 use dkneeds::keys::{name_hash, tag, Keys};
 use dkrt_abi::storage::{DirEntry, EntryKind, ListStep, Storage, ROOT_STORE};
 use dkrt_sdk::PROVIDER_MAX;
