@@ -2388,9 +2388,15 @@ fn fast_mode1_write_that_enables_interrupts_matches_the_interpreter() {
         };
         let setup = move |e: &mut crate::Engine| {
             assert_eq!(e.set_option(9, 1), 0);
+            // The fast tier runs only when the memory model matches the generated core's.
+            assert_eq!(e.set_option(10, crate::gen_explicit_memory_model() as i64), 0);
             e.s.cfg.stack_model = true;
             e.s.cfg.bank_model = true;
             e.s.cfg.refresh();
+            // Interrupt entry reads SYSCTL for the vector table location; a named MMR
+            // keeps the value under either memory model.
+            e.s.named_mmrs = vec![0x30024];
+            e.s.set_mmr_windows();
             e.s.mmr_put(0x30024, V::c(4));
             // The vector of the latched source (SFT0, level 28): a spin. The
             // vector table holds one 48-bit instruction per 6 bytes.
@@ -2423,6 +2429,11 @@ fn fast_mode1_write_that_enables_interrupts_matches_the_interpreter() {
         let mut f = lp_engine(&code, &[0], true, &setup);
         assert_eq!(f.step(12), 12);
         let st = f.fast.as_ref().unwrap().fast_stats().unwrap();
+        assert!(
+            st.built + st.refused > 0,
+            "{name}: the fast tier did not run: {:?}",
+            st.reasons
+        );
         let refused = u64::from(name != "unchanged");
         assert_eq!(st.refused, refused, "{name}: {:?}", st.reasons);
     }
