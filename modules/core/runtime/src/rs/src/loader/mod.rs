@@ -28,6 +28,8 @@ const H_DSP_SIZE: usize = dkneeds::H_DSP_SIZE as usize;
 
 pub(crate) mod discover;
 mod image;
+#[allow(dead_code)]
+pub(crate) mod install;
 mod records;
 pub(crate) mod role;
 mod seams;
