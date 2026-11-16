@@ -132,6 +132,8 @@ Plugin sources are not inputs of module device targets. A `runtimeAcceptance` re
 - `mise run test` runs the gate targets against `DIGI_GATE_BASE` (default `main`): `nx affected` selects them, device and conformance targets included, through `node tools/nx/gate.mjs --tier merge`; the Nx launcher holds the shared benchlock and runs at nice 10.
 - `mise run test:full` runs every gate target on every project, plus `tier-sweep` and `dt2-tier-sweep`. Its device tests run as `test-device-all`. Run it once per batch of merges (for example at the end of a day) in a background lane, bisect a red batch among its merges, and run it after generated-core changes. A merge needs the affected gate (`mise run test`) plus `pnpm nx:pilot run-many -t lint,fmt-check,rust-fmt,typecheck,python-checks`.
 - Core-change policy: a change runs all device tests of the projects it edits. A device test file not listed in `metadata.mergeTests` of the owning project.json (paths relative to the project root; policy in `tools/nx/device-test-keys.mjs`) has a narrow `test-device` cache key: the project's production files (not tests/), the test's imports, the packs it loads, the tools it runs and, for a test-only project, `production` of its subject modules. A change that reaches it only through shared inputs (other core modules, SDK, device profiles, patchkit, the daemon) leaves the key unchanged, and Nx replays the last result. Loaded packs include the alias packs of the file's records. Files in `metadata.mergeTests`, `test-conformance` and `test-device-all` use the full inputs. `test-device-all` (per-file `test-device-all--<file>` for unlisted files) is the full-inputs twin; the `full` tier selects it instead of `test-device`. The twin also sets `DIGIKIT_TIER=full` in its task env, so `mise run test:full` runs the `full: true` tests of the card rig and the other harnesses.
+- Test-only Rust files (`tests.rs`, `tests_*.rs`, `*_tests.rs`, `fake_*.rs`, `tests/**/*.rs` under `packages/` and `modules/`) are no inputs of the gate roots, `digi-control:daemons` and `production`: they are `#[cfg(test)]` modules that a release build does not compile, so an edit selects the crate's `rust-tests`, format and clippy, not the device and gate suites. The release build still lists the files in its dependency file (rustc reads them), so `tools/devtools/emud_key.py` keeps them out of the daemon test key by name and fails `test-key` when one of them is not declared behind `cfg(test)`.
+- `mergeTests` holds the smoke set: tb303, fx-send, samples-live (DT2), samples-store-live (DN2), upload-depth, safe-mode, menu and shot (`shot-dt2`, `shot-dn2-audio`). Every other device test file has the narrow key.
 - Gate projects in `tools/gate/` carry their triggers as `{workspaceRoot}` inputs: `gate-smoke` (target `smoke`), `gate-card` (`card`), `gate-stock` (`stock`, cached), `gate-fx-dn2` (`fx`, `fx-no-aot`, `tier-quick`, `tier-sweep`), `gate-fx-dt2` (`fx-dt2`, `dt2-tier-quick`, `dt2-tier-sweep`), `gate-pins` (`pins`), `gate-dt2-tone` (`dt2-tone`) and `gate-rust-modules` (`rust-tests`). The Vitest suites behind `stock`, `fx` and `fx-dt2` are the `test:stock`, `test:fx` and `test:fx:dt2` scripts of `tests/regression`. `smoke` and `card` run through `tools/nx/daemon-env.mjs`, which sets `DIGI_EMUD_<DEV>` from `dist/daemons.json`, so they use the same content-keyed daemon as the Vitest device tests. Module projects with device tests depend on `regression` (harness), `digi-control` (daemons), `patchkit` (packs) and `devices`; shared SDK contract/compiler surfaces are explicit target inputs. Only modules with `test-conformance` also depend on `conformance`. `python-checks` and `python-tests` run on any change outside `docs/`.
 - The number of concurrent Nx tasks and Vitest workers comes from the machine budget; see "CPU budget of the gate".
 - A device or conformance file that fails only with a load symptom (boot timeout, lifecycle deadline, closed connection, remote release timeout) is rerun once by `tools/devtools/emu-slot.mjs`; the retry is printed in the task output and counted as `retried (n)` in the gate summary. Assertion failures and second failures fail the task.
@@ -141,6 +143,22 @@ Wait without polling: run a long command with a long tool timeout (up to 2 hours
 
 `uv run python -m tools.devtools.test_outcomes BEFORE.xml AFTER.xml --renames-from REF` compares
 outcomes and skip reasons test by test after moving tests.
+
+### Named device subset
+
+`mise run test:subset -- <tag...>` is the merge gate for a change that reaches device tests only through shared inputs (SDK, profiles, patchkit, another core module): instead of every device test it runs the tests of the named record tags. The tags are the vocabulary of `metadata.runtimeAcceptance` (`tools/nx/acceptance-tags.mjs`: `S:` services, `C:` areas, `A:` core modules, `M:` tool modules); several tags are a union. The command reads the Nx project graph, resolves each tagged file to its leaf targets `test-device--<file>--dt2` and `--dn2` (the devices the file runs on), and adds `gate-smoke:smoke` and `gate-pins:pins`. Without `--run` it prints them. With `--run` it runs them through `pnpm nx:pilot run-many` (cached, with the remote cache); `DIGI_EMU_SLOTS` and the other emulator settings pass through the environment. An unknown tag fails with the vocabulary.
+
+```text
+$ mise run test:subset -- S:lfo
+test:subset: S:lfo
+  core/runtime-refusal-tests refusal.device.test.ts: test-device--dt2 test-device--dn2
+  core/runtime-lfo-tests lfo.device.test.ts: test-device--dt2 test-device--dn2
+  gate-smoke: smoke
+  gate-pins: pins
+test:subset: pnpm nx:pilot run-many -t test-device--dt2,test-device--dn2,smoke,pins -p core/runtime-refusal-tests,core/runtime-lfo-tests,gate-smoke,gate-pins
+```
+
+The subset does not replace the static checks (`lint,fmt-check,rust-fmt,typecheck,python-checks`). The mapping from tags to targets has a host test (`tools/nx/tests/test-subset.test.ts`).
 
 ## Fast iteration: dk:dev and Reload
 
@@ -152,7 +170,7 @@ module set (`--stop` ends it), runs the key script from the main screen, and wri
 steps or inline text (`tap:KEY`, `wait:MS`, `turn:ENC A:BY`, `shot:NAME`, `*N` repeats). The workbench has the same call as the Reload
 modules button (⇧⌘R), with `build: true`: it builds the stale objects of the session's modules first (ColdFire and SHARC+; docs/CONTROL.md). `dk:dev` builds in its own step
 and reloads without `build`.
-Each device test run target (`test-device`, `test-device-all`, `test-device-full`, per file or single-file) is split into two cached tasks, `<target>--dt2` and `<target>--dn2`. The harness runs a file for one device when `DIGI_DEVICE` is `dt2` or `dn2`; the halves set it and list it as an input, so they run in parallel and a file's floor is its DN2 half. The target without the suffix is a no-op parent with the same inputs that runs both halves. `tests/regression:test-device` (stock oracles) is not split. While iterating, run one device with the half, e.g. `pnpm nx:pilot run <project>:test-device--<file>--dn2`, or with a Vitest name filter on a per-file or single-file target: `pnpm nx:pilot run <project>:test-device--<file> -- -t 'DN2 1.12'` (or `'DT2 1.17'`). The filter is part of the cache key, so a filtered result never stands in for a full one. It does not reach the files through the no-op `test-device` parent, and the ui-demo, ui-preview and conformance titles use lowercase device names.
+Each device test run target (`test-device`, `test-device-all`, `test-device-full`, per file or single-file) is split into two cached tasks, `<target>--dt2` and `<target>--dn2`. The harness runs a file for one device when `DIGI_DEVICE` is `dt2` or `dn2`; the halves set it and list it as an input, so they run in parallel and a file's floor is its DN2 half. The target without the suffix is a no-op parent with the same inputs that runs the halves that exist. A file has only the halves of the devices it runs on: they come from `devices` (`["dt2"]` or `["dn2"]`) on its `metadata.runtimeAcceptance` record, else from the `ports` of its module, else both (`fileDevices` in `tools/nx/device-tests.mjs`). A file that pins one device in its source (`devices: ['dt2']`, `describeOn('dn2', ...)`, `dn2Tests`) must declare it; `tools/nx/tests/device-halves.test.ts` checks this. `tests/regression:test-device` (stock oracles) is not split. While iterating, run one device with the half, e.g. `pnpm nx:pilot run <project>:test-device--<file>--dn2`, or with a Vitest name filter on a per-file or single-file target: `pnpm nx:pilot run <project>:test-device--<file> -- -t 'DN2 1.12'` (or `'DT2 1.17'`). The filter is part of the cache key, so a filtered result never stands in for a full one. It does not reach the files through the no-op `test-device` parent, and the ui-demo, ui-preview and conformance titles use lowercase device names.
 `--store ID,ID*,synth:NAME:BSS` boots the daemon on a card whose module store holds those modules (`*`: also in the saved selection; `synth:` needs BSS bytes of arena, so it never fits), which the MODULES list of `core/digikit-menu` needs; each list has its own kept daemon.
 
 For a no-argument DN2 preview, `mise run dk:menu` opens the real DIGIKIT menu in a visible browser faceplate;
@@ -795,7 +813,7 @@ never starves); otherwise it samples the idle cores twice, 1 s apart, and admits
 idle. The reserve is the efficiency-core count on Apple Silicon, else max(2, floor(cores/4)); `DIGI_EMU_RESERVE=N`
 sets it. After an admission the lock is kept for 3 s, so the next decision sees the new emulator's load. The log shows
 `emulator slot taken (M of ceiling, idle X.X cores), emulator slot waited N s`. With `DIGI_TRACE_DIR` set, it appends `wait` and `run` spans to `$DIGI_TRACE_DIR/slots-trace.json`. `DIGI_EMU_SLOTS=N` is a fixed count with no idle check, for an A/B.
-A waiting task prints one line and waits without a limit; a lock of a dead process is taken over. The wait is outside
+A waiting task prints one line and waits without a limit; a lock of a dead process is taken over. The admit lock is stale after 30 s (`ADMIT_MAX_MS`) even when its pid lives, so a holder that never releases it cannot stop every waiter. The wait is outside
 Vitest, so it does not count against test timeouts. The emulator gate targets are wrapped too (see the job rule below).
 
 Formatting an emulator crate or `dkneeds` changes the daemon key and the PGO key, so the PGO profile needs a retrain.
@@ -892,7 +910,7 @@ of its run directory, because `out/` is shared by all worktrees.
 Where the targets come from:
 - `tools/nx/modules.mjs` is the inference plugin that creates the targets.
 - `tools/nx/module-build.mjs` defines the build and pack targets.
-- `tools/nx/device-tests.mjs` defines the target shape: one target per test file, a DT2 half and a DN2 half, and a parent.
+- `tools/nx/device-tests.mjs` defines the target shape: one target per test file, a half for each device the file runs on, and a parent.
 - `tools/nx/device-test-keys.mjs` is the key policy.
 - `tools/nx/ts-imports.mjs` and `tools/nx/py-imports.mjs` compute import closures.
 

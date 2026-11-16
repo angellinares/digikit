@@ -138,6 +138,10 @@ description = "Default affected verification and merge gate against DIGI_GATE_BA
 run = "node tools/nx/gate.mjs --tier merge --explain"
 description = "Explain the default test selection; runs nothing. DIGI_GATE_BASE sets the shared comparison base"
 
+["test:subset"]
+run = "node tools/nx/test-subset.mjs"
+description = "Device tests of record tags (S:fx C:loading ...) plus gate-smoke and gate-pins: prints the Nx targets; add --run to run them (DIGI_EMU_SLOTS honoured). For a change that reaches device tests only through shared inputs"
+
 ["test:full"]
 run = "node tools/nx/gate.mjs --tier full"
 description = "Full gate: every gate target on every project, plus the tier sweeps; the Nx launcher sets the CPU budget, DIGI_BUDGET overrides it"

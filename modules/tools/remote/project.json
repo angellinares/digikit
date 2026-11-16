@@ -9,7 +9,6 @@
         "modules": [],
         "sources": ["tools/control/digi_client.py"]
       }
-    ],
-    "mergeTests": ["tests/remote-input.device.test.ts"]
+    ]
   }
 }
