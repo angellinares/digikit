@@ -18,7 +18,7 @@ blocks = 375
 
 [[case.check]]
 kind = "same-as"
-sha256 = "pending"
+sha256 = "e19439ebb963cb83cba8648741c24c013c95d3f8ca65b88393a9c4dbccc5ef4f"
 
 [[case.check]]
 kind = "peak"
@@ -39,7 +39,7 @@ blocks = 375
 
 [[case.check]]
 kind = "same-as"
-sha256 = "pending"
+sha256 = "f2c3d90f3742fa9a6045836375885b9c2f8c17edfa60ac00bbab2ecd7e6abeaf"
 
 [[case.check]]
 kind = "peak"

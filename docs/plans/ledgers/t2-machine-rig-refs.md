@@ -26,6 +26,25 @@ the machine's DSP output does not change; whether the firmware path adds anythin
 
 Pluck also keeps its model tables (`tests/rig/pluck.toml`); these are the older pins of the DSP against the float32 model, on DT2.
 
+## Pinned cases (written 2026-11-16 by `DIGI_RIG_PIN=1`, poisoned memory, friendly context, velocity 100, manifest-default parameters)
+
+| Module | Device | Note(s) | Blocks | sha256 | Peak |
+| --- | --- | --- | --- | --- | --- |
+| fadedlimes/analog | dt2 | 60 | 375 (0.25 s) | `e19439ebb963cb83cba8648741c24c013c95d3f8ca65b88393a9c4dbccc5ef4f` | 0.1938 |
+| fadedlimes/analog | dn2 | 60 | 375 (0.25 s) | `f2c3d90f3742fa9a6045836375885b9c2f8c17edfa60ac00bbab2ecd7e6abeaf` | 0.1938 |
+| fadedlimes/bd | dt2 | 60 | 375 (0.25 s) | `cb132603f4a8e9ab9c89b05b48a451f9f1a5ee664724c2a9246e8f2d4a3675e8` | 0.2756 |
+| fadedlimes/bd | dn2 | 60 | 375 (0.25 s) | `53b22b3a46fc2cef2588813985d6f69dff64410dc60f9141f019b3d104f79e39` | 0.2756 |
+| fadedlimes/pd | dt2 | 60 | 375 (0.25 s) | `61967e133943c4c20194877bfeec5b561b2edd0f2fb8bed908043c6520361118` | 0.1968 |
+| fadedlimes/pd | dn2 | 60 | 375 (0.25 s) | `d8d7e2bf3aaa872a52b31ef623d1f3b74475a99a2e4033c2a10d5cccef4928a4` | 0.1968 |
+| digikit/pluck | dt2 | 60, then 67 | 375 + 375 (0.5 s) | `65f2c9d932449430d967f2a748b888b5217c862d882db49b69ffbad1f85cfff8` | 0.8647 |
+| digikit/pluck | dn2 | 60, then 67 | 375 + 375 (0.5 s) | `7cb2a7f0b53d52be338b7823c0d2d3f15020227aefe5b2621f7e23e7d0e18a17` | 0.8647 |
+
+Peak: largest absolute output sample of the pinned signal (an independent rig run; the check requires at least 0.01, so every machine is audible). The peaks are the same on both devices while the hashes differ, to be looked at in review: the two devices differ in the trigger path, so a one-block shift would give this.
+
+What the old device pin covered that these cases do not: the track filter (analog, pd and bd run through the track's stock filter), the mixer and the output path (levels, pan, master), the stereo interleave of the PCM, the exact onset and trigger timing of the firmware, the real card load and boot of the module, and the real voice state at boot (`UNINIT` on analog and pd). They cover what the old pin could not tell apart from firmware effects: the machine's own DSP output alone, with poisoned state.
+
+Not pinned: no machine produced NaN or failed the finite rule under poison.
+
 ## Assertion ledger
 
 Each deleted test has the same assertions (`defineEquiv` in `tests/regression/runtime/equiv.ts`), except where noted.
