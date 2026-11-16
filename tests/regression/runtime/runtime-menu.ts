@@ -112,18 +112,41 @@ const E_MISSING = -73;
 /** `PROVIDER_IDX` of loader/mod.rs: the index of a MOD_LOAD event of a provider file (`services/<name>.dks`), which is no selection index. */
 const PROVIDER_INDEX = 0xffff_fffe;
 
+const E_DECL_KIND = -79;
+/** The tags of `Declare` (abi/service.rs) that a header table carries, as the header table's items are named. */
+const DECL_TAGS: Readonly<Record<number, string>> = {
+  4: 'KINDS',
+  5: 'SLOTS',
+  6: 'HOOKS',
+  7: 'EXPORTS',
+  8: 'RESOURCES',
+};
+
+/**
+ * One provider MOD_LOAD event as text: `provider fx.d res -7 E_IMPORT`; the name is the first four characters of the file name. An E_DECL_KIND refusal names the first
+ * item that `init` and the header table do not both hold: the event's service hash word is the item's first word and its base word the tag, plus 0x100 when only
+ * the header table has the item (loader/mod.rs `decl_diff`): `provider mach res -79 E_DECL_KIND (EXPORTS 946ae751 not declared)`.
+ */
+export function providerFailureLine(args: readonly number[]): string {
+  const res = args[1]! | 0;
+  let line = `provider ${asciiOf(args[2]!)} res ${res} ${LOAD_STATUS.find(([code]) => code === res)?.[1] ?? '?'}`;
+  const tag = (args[4] ?? 0) & 0xff;
+  if (res === E_DECL_KIND && tag !== 0) {
+    const item = `${DECL_TAGS[tag] ?? `tag ${tag}`} ${(args[3]! >>> 0).toString(16).padStart(8, '0')}`;
+    line += ` (${item} ${(args[4]! & 0x100) !== 0 ? 'not declared' : 'not in the header'})`;
+  }
+  return line;
+}
+
 /**
  * The load results of the provider files, from the error events of the runtime's small ring (the debug module is not needed), joined by `; `, each as
- * `provider fx.d res -7 E_IMPORT`; the name is the first four characters of the file name. Empty when no provider failed. A module refused with E_MISSING (-73)
+ * `providerFailureLine` gives it. Empty when no provider failed. A module refused with E_MISSING (-73)
  * only says that its provider did not load: this says why.
  */
 export async function providerFailures(session: Session, plan: RuntimePlan): Promise<string> {
   const lines = ofKind(await readSmallRing(session, plan), LOG_KIND.MOD_LOAD)
     .filter((e) => e.args[0] === PROVIDER_INDEX && (e.args[1]! | 0) < 0)
-    .map((e) => {
-      const res = e.args[1]! | 0;
-      return `provider ${asciiOf(e.args[2]!)} res ${res} ${LOAD_STATUS.find(([code]) => code === res)?.[1] ?? '?'}`;
-    });
+    .map((e) => providerFailureLine(e.args));
   return lines.join('; ');
 }
 

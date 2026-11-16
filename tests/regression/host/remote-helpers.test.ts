@@ -42,7 +42,7 @@ import {
   type RuntimePlan,
 } from '../runtime/runtime-plan.ts';
 import { fakeClock } from './fake-status.ts';
-import { readAboutRows, expectRuntimeAbout } from '../runtime/runtime-menu.ts';
+import { readAboutRows, expectRuntimeAbout, providerFailureLine } from '../runtime/runtime-menu.ts';
 import { openRuntimeAbout } from '../runtime/flows/menu.ts';
 
 const patchedSha256 = 'c'.repeat(64);
@@ -592,4 +592,14 @@ test('an emulated probe ends after its emulated bound, however slow the wall clo
   // a probe that answers (wall-slow, emulated-fast) is not cut: the bound is emulated time, not the reply's wall time
   const slow = await withEmulatedProbe(session, async () => 'answer', 60_000);
   expect(slow).toBe('answer');
+});
+
+test('a provider refused by the declare-check names the item that differs', () => {
+  const mach = 0x6d616368;
+  const index = 0xffff_fffe;
+  const e = (res: number, hash: number, base: number) => providerFailureLine([index, res >>> 0, mach, hash, base]);
+  expect(e(-79, 0x946ae751, 7 | 0x100)).toBe('provider mach res -79 E_DECL_KIND (EXPORTS 946ae751 not declared)');
+  expect(e(-79, 0x00000006, 4)).toBe('provider mach res -79 E_DECL_KIND (KINDS 00000006 not in the header)');
+  expect(e(-79, 0x12345678, 0)).toBe('provider mach res -79 E_DECL_KIND');
+  expect(e(-7, 0x12345678, 0)).toBe('provider mach res -7 E_IMPORT');
 });

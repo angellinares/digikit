@@ -8,17 +8,6 @@ import { galleryGaps, read } from '../module-manifests.mjs';
 
 const repo = fileURLToPath(new URL('../../../', import.meta.url));
 
-// Modules whose gallery lacks a device until `module:check` regenerates it in the next device window: module id to its gaps, in the data file next to this test.
-// Remove an entry when it is fixed.
-const PENDING = new Map<string, string[]>(
-  Object.entries(
-    JSON.parse(readFileSync(join(import.meta.dirname, 'gallery-gaps-pending.json'), 'utf8')) as Record<
-      string,
-      string[]
-    >,
-  ),
-);
-
 function scratchGallery(gallery: unknown) {
   const dir = mkdtempSync(join(tmpdir(), 'gallery-gaps-'));
   mkdirSync(join(dir, 'build/gen'), { recursive: true });
@@ -54,6 +43,9 @@ it('finds no gap when every device lists the machine with parameters', () => {
 
 it('lists every device of its manifest in the build/gen/gallery.json of each module', () => {
   const found: Record<string, string[]> = {};
+  // A module whose gallery lacks a device until `module:check` regenerates it in the next device window lists its gaps in `gallery-pending.json` in its own
+  // directory (a JSON array of the messages). Delete the file when the gallery is fixed.
+  const pending: Record<string, string[]> = {};
   const walk = (dir: string) => {
     for (const e of readdirSync(join(repo, dir), { withFileTypes: true })) {
       if (!e.isDirectory() || ['build', 'node_modules', 'src', 'tests'].includes(e.name)) continue;
@@ -62,10 +54,12 @@ it('lists every device of its manifest in the build/gen/gallery.json of each mod
         const manifest = read(repo, join(sub, 'module.toml'));
         const gaps = galleryGaps(join(repo, sub), manifest).map((g: string) => g.replace(repo, ''));
         if (gaps.length) found[manifest.module.id] = gaps;
+        const marker = join(repo, sub, 'gallery-pending.json');
+        if (existsSync(marker)) pending[manifest.module.id] = JSON.parse(readFileSync(marker, 'utf8')) as string[];
       }
       walk(sub);
     }
   };
   walk('modules');
-  expect(found).toEqual(Object.fromEntries(PENDING));
+  expect(found).toEqual(pending);
 });
