@@ -41,16 +41,37 @@ pub static mut DKRT_BOOT: DkrtBootInfo = DkrtBootInfo {
     dsp_wait: 0,
     stable: 0,
     needs: [[0; NEEDS_LEN]; SEL_MAX],
+    states: [STATE_SELECTED; SEL_MAX],
+    detail: [[0; 2]; SEL_MAX],
 };
 
 /// The file name of each module of this boot's selection (the part of its path after the last `/`, up to `NAME_LEN - 1` bytes, NUL padded): the LOADS
 /// command reports it with the result, and the record may change after the boot (a SELECT).
-pub const NAME_LEN: usize = 28;
+pub use dkrt_abi::state::NAME_LEN;
 static mut BOOT_NAME: [[u8; NAME_LEN]; SEL_MAX] = [[0; NAME_LEN]; SEL_MAX];
 
 /// The file name of module `k` of this boot's selection (NUL padded, `NAME_LEN` bytes).
 pub unsafe fn boot_name(k: usize) -> *const u8 {
     addr_of!(BOOT_NAME[k]) as *const u8
+}
+
+/// The states of this boot's modules (`dkrt_abi::state`): a view of `DKRT_BOOT.states` and `.detail`.
+pub fn states() -> dkrt_abi::state::BootStates<'static> {
+    let b = info();
+    dkrt_abi::state::BootStates { states: &mut b.states, detail: &mut b.detail }
+}
+
+/// The module records `LOADS` reports, as `dkrt_abi::state::LoadsView`.
+pub fn loads_view() -> dkrt_abi::state::LoadsView<'static> {
+    let b = info();
+    dkrt_abi::state::LoadsView {
+        count: b.count as usize,
+        results: &b.results,
+        states: &b.states,
+        detail: &b.detail,
+        needs: &b.needs,
+        names: unsafe { &*addr_of!(BOOT_NAME) },
+    }
 }
 
 /// Paths of the selection this boot loaded (for CAPACITY).
@@ -99,6 +120,7 @@ pub unsafe extern "C" fn dkrt_boot() {
     b.copy = copy;
     b.counter = r.boot_counter;
     b.count = r.count;
+    states().begin();
     REC = r;
     REC_VALID = valid;
     REC_COPY = copy;
@@ -145,6 +167,7 @@ pub unsafe extern "C" fn dkrt_boot() {
             b.results[k] = E_SAFE_MODE;
             k += 1;
         }
+        states().skip_all(r.count as usize);
         return;
     }
     // raise the counter before anything of a module runs; the first UI-loop pass clears it. On a card the runtime does not write there is no
@@ -160,13 +183,23 @@ pub unsafe extern "C" fn dkrt_boot() {
     assign::plan(&r);
     // the boot plan over the header tables that read gave: the order to load in, and a module the plan refuses is not loaded
     let planned = crate::plan::run(r.count as usize);
+    let mut k = 0;
+    while k < r.count as usize {
+        states().planned(k, planned.verdicts[k]);
+        k += 1;
+    }
     let mut pos = 0;
     while pos < r.count as usize {
         let k = planned.order[pos] as usize;
         crate::selection::BOOT_IDX = k as u32;
         loader::MISSING = [0; NEEDS_LEN];
         let res = match planned.verdicts[k] {
-            dkrt_abi::plan::Verdict::Accepted => loader::load(r.paths[k].as_ptr()),
+            dkrt_abi::plan::Verdict::Accepted => {
+                states().init(k);
+                let res = loader::load(r.paths[k].as_ptr());
+                states().finished(k, res);
+                res
+            }
             dkrt_abi::plan::Verdict::Refused(why) => why.code(),
         };
         st().last_result = res;
@@ -223,6 +256,7 @@ pub unsafe fn note_result(idx: u32, r: i32) {
     if (idx as usize) < SEL_MAX {
         let b = info();
         b.results[idx as usize] = r;
+        states().dsp_done(idx as usize, r);
         if r == OK {
             b.loaded += 1;
         }
@@ -247,5 +281,40 @@ pub unsafe fn boot_info(out: *mut DkrtBootInfo) {
         dsp_wait: b.dsp_wait,
         stable: b.stable,
         needs: b.needs,
+        states: b.states,
+        detail: b.detail,
     };
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::test_lock::LOCK;
+    use dkrt_abi::plan::{Reason, Verdict};
+
+    #[test]
+    fn the_boot_record_feeds_the_loads_reply_and_the_boot_info_copy() {
+        let _g = LOCK.lock().unwrap_or_else(|e| e.into_inner());
+        unsafe {
+            *info() = core::mem::zeroed();
+            info().count = 2;
+            states().begin();
+            states().planned(0, Verdict::Accepted);
+            states().init(0);
+            states().finished(0, OK);
+            states().planned(1, Verdict::Refused(Reason::DuplicateKey(7, 99)));
+            info().results[1] = E_PLAN_KEY;
+            BOOT_NAME[0][..5].copy_from_slice(b"a.dkm");
+            let mut out = [0u8; dkrt_abi::state::loads_len(SEL_MAX)];
+            let n = dkrt_abi::state::loads_v2(&loads_view(), &mut out);
+            assert_eq!(n, dkrt_abi::state::loads_len(2));
+            assert_eq!(out[..2], [2, 2]);
+            assert_eq!(out[2 + 4], STATE_ACTIVE);
+            let e1 = 2 + dkrt_abi::state::LOADS_ENTRY;
+            assert_eq!((out[e1 + 4], out[e1 + 11], out[e1 + 15]), (STATE_REFUSED, 7, 99));
+            let mut copy: DkrtBootInfo = core::mem::zeroed();
+            boot_info(&mut copy);
+            assert_eq!((copy.states[..2].to_vec(), copy.detail[1]), (vec![STATE_ACTIVE, STATE_REFUSED], [7, 99]));
+        }
+    }
 }

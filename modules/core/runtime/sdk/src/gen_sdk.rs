@@ -403,6 +403,14 @@ pub mod load {
     pub const E_PLAN_KEY: i32 = -77;
     pub const E_PLAN_FIT: i32 = -78;
     pub const E_DECL_KIND: i32 = -79;
+    pub const STATE_SELECTED: u8 = 0;
+    pub const STATE_PLANNED: u8 = 1;
+    pub const STATE_REFUSED: u8 = 2;
+    pub const STATE_INIT: u8 = 3;
+    pub const STATE_DSP_LOADING: u8 = 4;
+    pub const STATE_ACTIVE: u8 = 5;
+    pub const STATE_FAILED: u8 = 6;
+    pub const STATE_SKIPPED: u8 = 7;
 }
 
 /// The imports of a module (`[[import]]`) and the callback types they take (`[handle.callbacks]`).

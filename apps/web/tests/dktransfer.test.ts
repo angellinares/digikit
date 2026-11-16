@@ -245,6 +245,24 @@ test('free space above 4 GiB: INFO saturates at 2^32 - 1, CAPACITY STORE (KiB) d
   assert.equal((await buildView(s, [])).free_bytes, 4294967295);
 });
 
+test('LOADS version 2: a module the boot plan refused says what is full and is tagged refused', async () => {
+  const dev = new FakeDevice();
+  dev.files.set('modules/pluck.dkm', dkm('someone/pluck', { size: 900 }));
+  // state REFUSED (2), result E_PLAN_FIT (-78), detail: capacity kind 6 (machine rows)
+  dev.loadFailures = [{ name: 'pluck.dkm', result: -78, state: 2, detail: [6, 0] }];
+  const s = session(dev);
+  assert.deepEqual(await s.loadStates(), [
+    { index: 0, name: 'pluck.dkm', state: 'REFUSED', result: -78, detail: [6, 0] },
+  ]);
+  assert.deepEqual(await s.loadFailures(), [{ name: 'pluck.dkm', result: -78 }]);
+  const row = (await buildView(s, [])).card_only.find((r) => r.path === 'modules/pluck.dkm')!;
+  assert.equal(
+    row.not_loaded,
+    'pluck refused: no room: the machine rows that the earlier modules of the selection left is not enough',
+  );
+  assert.equal(row.load_state, 'REFUSED');
+});
+
 test('LOADS: the view says why a selected module is not loaded (the file name the runtime kept, the module it needs)', async () => {
   const dev = new FakeDevice();
   dev.files.set('modules/usb-fast.dkm', dkm('digikit/usb-fast', { size: 900 }));

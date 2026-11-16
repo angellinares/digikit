@@ -369,8 +369,12 @@ pub struct DkrtBootInfo {
     pub stable: u32,
     /// per selected module with result E_IMPORT: the first module its imports need that is not in the image, without the `core/` prefix (usb-bulk); empty otherwise
     pub needs: [[u8; NEEDS_LEN]; SEL_MAX],
+    /// per selected module: its STATE_* ([load.state] of sdk/sdk.toml); a selection index at or above count is STATE_SELECTED
+    pub states: [u8; SEL_MAX],
+    /// per selected module with state STATE_REFUSED: what the plan refused on (E_PLAN_KIND the kind; E_PLAN_OWNER the kind, slot or hook site; E_PLAN_KEY the kind and the key; E_PLAN_FIT the CAPK_* kind); zeros otherwise
+    pub detail: [[u32; 2]; SEL_MAX],
 }
-const _: () = assert!(size_of::<DkrtBootInfo>() == 176, "DkrtBootInfo size");
+const _: () = assert!(size_of::<DkrtBootInfo>() == 248, "DkrtBootInfo size");
 const _: () = assert!(offset_of!(DkrtBootInfo, magic) == 0, "DkrtBootInfo.magic");
 const _: () = assert!(offset_of!(DkrtBootInfo, version) == 4, "DkrtBootInfo.version");
 const _: () = assert!(offset_of!(DkrtBootInfo, safe) == 8, "DkrtBootInfo.safe");
@@ -385,6 +389,8 @@ const _: () = assert!(offset_of!(DkrtBootInfo, results) == 40, "DkrtBootInfo.res
 const _: () = assert!(offset_of!(DkrtBootInfo, dsp_wait) == 72, "DkrtBootInfo.dsp_wait");
 const _: () = assert!(offset_of!(DkrtBootInfo, stable) == 76, "DkrtBootInfo.stable");
 const _: () = assert!(offset_of!(DkrtBootInfo, needs) == 80, "DkrtBootInfo.needs");
+const _: () = assert!(offset_of!(DkrtBootInfo, states) == 176, "DkrtBootInfo.states");
+const _: () = assert!(offset_of!(DkrtBootInfo, detail) == 184, "DkrtBootInfo.detail");
 
 /// dkrt_diag result (finding 46): what the debug log and the card check found. The caller owns the memory; the layout only grows at the end.
 #[repr(C)]

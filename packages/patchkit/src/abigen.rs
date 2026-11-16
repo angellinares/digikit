@@ -375,6 +375,11 @@ fn c_header(abi: &Abi, lays: &[Layout], fns: &[(&FnToml, Sig)], inputs: &AbiInpu
         let d = format!("#define DKRT_{n} ({code})");
         let _ = writeln!(s, "{d:<40} /* {} */", c_text(text));
     }
+    s.push_str("\n/* Module states (DkrtBootInfo.states), from [load.state] of sdk/sdk.toml. */\n");
+    for (n, code, text) in &inputs.states {
+        let d = format!("#define DKRT_STATE_{n} {code}");
+        let _ = writeln!(s, "{d:<40} /* {} */", c_text(text));
+    }
     s.push_str("\n/* CAPACITY kinds (DkrtCap.kind), from [capacity.kinds] of sdk/sdk.toml. */\n");
     for (n, k) in &inputs.kinds {
         let _ = writeln!(s, "#define DKRT_CAPK_{n} {k}");

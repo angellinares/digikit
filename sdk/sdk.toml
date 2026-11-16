@@ -1490,7 +1490,7 @@ INFO = 0x01
 LIST = 0x02
 MODULES = 0x03      # the loaded modules with their ranges, types and faults
 CAPACITY = 0x04     # per resource: the limit, what is used and the largest free piece (kinds in [capacity.kinds])
-LOADS = 0x05        # what this boot's selection did, for a host without the debug module: u8 version (1), u8 n, then per module i32 result (OK, a negative E_*, or LOADING), needs[12] (with E_IMPORT: the missing module, e.g. usb-bulk) and name[28] (file name), NUL padded
+LOADS = 0x05        # what this boot's selection did, for a host without the debug module: u8 version (2), u8 n, then per module (56 bytes) i32 result (OK, a negative E_*, or LOADING), u8 state ([load.state]), 3 zero bytes, u32 detail[2] (what the plan refused on, by result: E_PLAN_KIND the kind, E_PLAN_OWNER the kind, slot or hook site, E_PLAN_KEY the kind and the key, E_PLAN_FIT the capacity kind and 0; else 0), needs[12] (with E_IMPORT: the missing module, e.g. usb-bulk) and name[28] (file name), NUL padded. Version 1 had 44 bytes per module without state, pad and detail
 BEGIN = 0x10
 DATA = 0x11
 END = 0x12
@@ -1865,6 +1865,16 @@ E_CARD_RO = { code = -47, text = "the card's store area is not ours and not blan
 E_CONTRACT = { code = -48, text = "the module needs another runtime version than this one (another major or minor, or a higher patch)" }
 E_TABLE = { code = -49, text = "the runtime's tables failed their check" }
 E_MISSING = { code = -73, text = "the service is not in the image (the module that provides it is not loaded)" }
+
+[load.state]        # the state of a module of the boot selection (LOADS v2, `DkrtBootInfo.states`); never renumber
+SELECTED = { code = 0, text = "in the selection, not planned yet" }
+PLANNED = { code = 1, text = "the boot plan accepted it; it has not started" }
+REFUSED = { code = 2, text = "the boot plan refused it before any of its code ran; the result code says why" }
+INIT = { code = 3, text = "its code is loading and `init` is running" }
+DSP_LOADING = { code = 4, text = "its ColdFire part is live and its DSP part is still going" }
+ACTIVE = { code = 5, text = "loaded; its DSP part, if any, is in place" }
+FAILED = { code = 6, text = "loading failed after the plan accepted it; the result code says why" }
+SKIPPED = { code = 7, text = "not loaded on purpose: this boot is in safe mode" }
 
 [sample]            # the sample pool contract (<dk/sample/pool.h>, dsp/sample/pool.inc); `patchkit gen` writes sdk/include/dk/gen/sample.h and sdk/dsp/contract/dk_sample_pool.inc (DK_SAMPLE_POOL_*) from it
 peak_bins = 512     # bins of sample_pool_peaks

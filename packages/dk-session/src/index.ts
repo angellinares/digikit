@@ -3,6 +3,7 @@ export { RECORD_KIND, TABLE_MAGIC, TABLE_VERSION } from './gen_proto.ts';
 export { EmuUsbTransport, EMU_RPC_CHUNK, type EmuRpcCall, type EmuUsbOptions } from './emu-usb-transport.ts';
 export { ProcessTransport } from './process-transport.ts';
 export * from './fault.ts';
+export * from './loads.ts';
 export * from './runtime-log.ts';
 export * from './bulk.ts';
 export { EmuBulkLink, EmuOutOnlyLink, type EmuBulkOptions } from './emu-bulk-link.ts';

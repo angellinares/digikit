@@ -102,34 +102,14 @@ pub(crate) unsafe fn cmd_modules(seq: u32, body: *const u8, blen: usize) -> i32 
     reply(CMD_MODULES, seq, OK, at)
 }
 
-/// LOADS: what this boot's selection did. Body: none. Reply: `u8 version` (1), `u8 n` (the modules of the selection, at most 8), then per module in selection
-/// order `i32 result` (`OK`, a negative `E_*`, or LOADING while its DSP part is going), `needs[12]` (with E_IMPORT: the module its imports need that is not
-/// in the image, without `core/`, NUL padded; else zeros) and `name[28]` (the file name of its path, NUL padded). The same data as the DIGIKIT menu's BOOT page,
-/// for a host that has no debug module to read the log from.
+/// LOADS: what this boot's selection did. Body: none. Reply (version 2, `dkrt_abi::state::loads_v2`): `u8 version` (2), `u8 n` (the modules of the selection, at
+/// most 8), then per module in selection order `i32 result` (`OK`, a negative `E_*`, or LOADING while its DSP part is going), `u8 state` (`[load.state]`),
+/// 3 zero bytes, `u32 detail[2]` (what the plan refused on), `needs[12]` (with E_IMPORT: the module its imports need that is not in the image, without `core/`,
+/// NUL padded; else zeros) and `name[28]` (the file name of its path, NUL padded). The same data as the DIGIKIT menu's BOOT page, for a host that has no debug
+/// module to read the log from.
 pub(crate) unsafe fn cmd_loads(seq: u32) -> i32 {
-    let b = boot::info();
-    let n = if b.count as usize > dkrt_sdk::SEL_MAX { dkrt_sdk::SEL_MAX } else { b.count as usize };
-    let rb = (addr_of_mut!(RBODY) as *mut u8).add(1);
-    *rb = 1;
-    *rb.add(1) = n as u8;
-    let mut at = 2usize;
-    let mut k = 0;
-    while k < n {
-        wr32(rb.add(at), b.results[k] as u32);
-        let mut i = 0;
-        while i < dkrt_sdk::NEEDS_LEN {
-            *rb.add(at + 4 + i) = b.needs[k][i];
-            i += 1;
-        }
-        let name = boot::boot_name(k);
-        i = 0;
-        while i < boot::NAME_LEN {
-            *rb.add(at + 16 + i) = *name.add(i);
-            i += 1;
-        }
-        at += 16 + boot::NAME_LEN;
-        k += 1;
-    }
+    let rb = core::slice::from_raw_parts_mut((addr_of_mut!(RBODY) as *mut u8).add(1), dkrt_abi::state::loads_len(dkrt_sdk::SEL_MAX));
+    let at = dkrt_abi::state::loads_v2(&boot::loads_view(), rb);
     reply(CMD_LOADS, seq, OK, at)
 }
 
