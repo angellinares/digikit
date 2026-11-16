@@ -743,6 +743,44 @@ runs no checks and writes the words hash of every `same-as` signal into its `sha
 Every machine case runs twice with all module state filled differently: the module's `.PKBSS` and the voice state blocks (the state array is a bss run in the rig's data layout) hold NaN words in the first run and a seeded integer pattern (`FILL_SEED`) in the second (`MachineRigOptions.poison` default true, `fillSeed`). The case fails with kind `initial state` when the two outputs differ in any sample: the output does not depend on the initial state, so a read of state the machine never wrote shows, float or integer, and a NaN output fails the finite rule. That is a machine bug to report, not a value to pin. The adapter's `note_on` clears the first `clear` bytes of the voice state, as on the device. `poison = false` on a case zeroes the memory, skips the second run and needs a `poison_reason`. A `MachineRig` refuses to open a machine whose device is missing from `build/gen/gallery.json` or has no parameter there (`galleryGaps`; `module:check` writes the gallery).
 The machine note pins of analog, bd, pd and pluck are `tests/rig/equiv-note.toml`: note 60, velocity 100, default parameters, 375 blocks (0.25 s) in a friendly context, one case per device (pluck adds a second note, 67, for 375 blocks).
 
+#### Classifying a changed pin (fingerprint, report, plots)
+
+The `sha256` of a `same-as` check stays the strict gate: bit-exact. Next to it each pinned case has a fingerprint in `tests/rig/fingerprint/<key>.json`
+(plain numbers: peak, onset sample, RMS per 32-sample block, 64 log-spaced band levels from 40 Hz to 22 kHz; no audio). `<key>` is
+`<module>.<device>.<case name>` in lower case (`rigKey` in `packages/sharc-rig-kit/src/fingerprint.ts`). Writing a pin (`DIGI_RIG_PIN=1`, above) writes the
+fingerprint and the local cache `out/rig/<key>/ref.f32` (the pinned output; not committed; `out/` is shared by the worktrees, so keys name module, device and case).
+
+When the hash differs, the failure message adds a one-line verdict from `classify`:
+
+```text
+[dn2] same-as: the words hash is f2c3d9..., the pin is 00c3d9...
+  real change: difference -13.7 dB re the signal, level -2.0 dB, onset 64 -> 64, moved blocks 2-374, moved bands 62-69 Hz -2.0 dB; 84-84 Hz -2.0 dB; 102-20942 Hz -2.0 dB
+```
+
+| Verdict | Meaning |
+| --- | --- |
+| `identical` | the output equals the cached output bit for bit |
+| `time-shift` | the output is the cached output shifted by k samples (cross-correlation, -256..256); says whether the overlap is bit-identical |
+| `rounding` | the difference is at or below -100 dB re the signal and the band spectrum is unchanged (0.05 dB) |
+| `real-change` | the difference, the level change, the onset and the blocks and bands that moved by more than 1 dB |
+| `fingerprint-only` | no cached output (a fresh checkout): the new fingerprint against the stored one; it cannot tell rounding from a phase change |
+
+The report writes `out/rig/<key>/out.wav`, `ref.wav` (when the cache exists) and `plot.png` (waveform of the output over the reference, the difference, the band spectra of both) for every pinned case and prints one line per case. It runs the cases and changes nothing in the repository:
+
+```sh
+DIGI_RIG_REPORT=1 pnpm exec vitest run --config vitest.host.config.ts --project module-rig modules/machines/analog/tests/
+# DIGI_RIG_REPORT_FILE=PATH appends the lines to PATH (default: the temp directory, rig-report.txt)
+```
+
+Real lines of the report (after `DIGI_RIG_PIN=1`, the cache holds the pinned output):
+
+```text
+fadedlimes-analog.dn2.note-60-at-the-default-parameters-is-pinned-dn2: pin matches; identical: the output equals the cached output bit for bit
+  .../out/rig/fadedlimes-analog.dn2.note-60-at-the-default-parameters-is-pinned-dn2/plot.png
+```
+
+On a fresh checkout there is no cache: the verdict is `fingerprint-only` (`envelope, bands and onset equal the pin` when nothing moved). A machine whose device is missing from `gallery.json` prints `not run: ...` (run `mise run module:check ID`).
+
 #### Adapter tests on the rig (`tests/*.rig.test.ts`)
 
 The tests of the SHARC adapters (`core/dsp-voice`, `core/fx`, `core/overdrive`, `core/sample-pool`) are Vitest files `modules/core/adapters/<name>/tests/<topic>.rig.test.ts`.

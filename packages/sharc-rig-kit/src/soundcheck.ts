@@ -26,6 +26,8 @@ import {
   wordsHash,
 } from './analysis.ts';
 import { signalBlock } from './checks.ts';
+import { classify, fingerprint, fingerprintFile, readFingerprint, readRef, rigKey, writeFingerprint, writeRef, cacheDir } from './fingerprint.ts';
+import { plotPng, writePng, writeWav } from './plot.ts';
 import { REC, RECORDS, f2w, nw } from './context.ts';
 import { PLANE_L, PLANE_R, TOKEN, publish, writePlanes } from './samplepool.ts';
 import { P0, FxRig } from './fx.ts';
@@ -374,7 +376,7 @@ function signal(t: Trace, c: Check): number[] {
 }
 
 /** The first message of a check that fails, or null. */
-export function evaluate(t: Trace, c: Check, dir: string): string | null {
+export function evaluate(t: Trace, c: Check, dir: string, key?: string): string | null {
   const x = (): number[] => signal(t, c);
   switch (c.kind) {
     case 'rms':
@@ -418,7 +420,10 @@ export function evaluate(t: Trace, c: Check, dir: string): string | null {
     }
     case 'same-as': {
       const h = wordsHash(x());
-      return h === String(c.sha256) ? null : `the words hash is ${h}, the pin is ${String(c.sha256)}`;
+      if (h === String(c.sha256)) return null;
+      const mismatch = `the words hash is ${h}, the pin is ${String(c.sha256)}`;
+      if (!key) return mismatch;
+      return `${mismatch}\n  ${classify(x(), readRef(key), readFingerprint(fingerprintFile(dir, key))).line}`;
     }
     case 'instructions': {
       const b =
@@ -594,7 +599,7 @@ export async function runRigFile(module: string, file: string, o: RunOptions = {
       for (const check of c.check ?? []) {
         let message: string | null;
         try {
-          message = evaluate(t, check, dir);
+          message = evaluate(t, check, dir, rigKey(module, String(device), c.name));
         } catch (e) {
           message = (e as Error).message;
         }
@@ -612,29 +617,75 @@ export async function runRigFile(module: string, file: string, o: RunOptions = {
  */
 export async function pinRigFile(module: string, file: string, o: RunOptions = {}): Promise<string[]> {
   const dir = path.dirname(file);
-  const hashes: string[] = [];
+  const hashes: (string | null)[] = [];
   const lines: string[] = [];
+  const errors: string[] = [];
   const isFx = fxSpec(module) !== null && !DEVICES.some((d) => machineSpec(module, d));
   for (const c of loadRigFile(file).case) {
     const pins = (c.check ?? []).filter((k) => k.kind === 'same-as');
     if (pins.length === 0) continue;
     const devices = (c.device ?? [...DEVICES]).filter((d): d is Device => (DEVICES as readonly string[]).includes(d));
     if (devices.length !== 1) throw new Error(`${c.name}: a case with a same-as check names exactly one device`);
-    const t = isFx ? await runFx(module, c, dir, o) : await runMachine(module, devices[0]!, c, dir, o);
-    if (t.failure !== null) throw new Error(`${c.name}: ${t.failure}`);
-    if (!isFx && c.poison !== false) {
-      const why = stateDependence(t, await runMachine(module, devices[0]!, c, dir, o, FILL_SEED));
-      if (why !== null) throw new Error(`${c.name}: ${why}`);
-    }
-    for (const k of pins) {
-      const h = wordsHash(signal(t, k));
-      hashes.push(h);
-      lines.push(`${c.name} [${devices[0]}] ${h}`);
+    try {
+      const t = isFx ? await runFx(module, c, dir, o) : await runMachine(module, devices[0]!, c, dir, o);
+      if (t.failure !== null) throw new Error(t.failure);
+      if (!isFx && c.poison !== false) {
+        const why = stateDependence(t, await runMachine(module, devices[0]!, c, dir, o, FILL_SEED));
+        if (why !== null) throw new Error(why);
+      }
+      for (const k of pins) {
+        const x = signal(t, k);
+        const h = wordsHash(x);
+        const key = rigKey(module, devices[0]!, c.name);
+        writeFingerprint(fingerprintFile(dir, key), fingerprint(x));
+        writeRef(key, x);
+        hashes.push(h);
+        lines.push(`${c.name} [${devices[0]}] ${h}`);
+      }
+    } catch (e) {
+      // the case keeps its pin line; the failure is reported after the others are written
+      for (let q = 0; q < pins.length; q++) hashes.push(null);
+      errors.push(`${c.name} [${devices[0]}]: ${(e as Error).message}`);
     }
   }
   let n = 0;
-  const text = readFileSync(file, 'utf8').replace(/^sha256 = ".*"$/gm, () => `sha256 = "${hashes[n++] ?? ''}"`);
+  const text = readFileSync(file, 'utf8').replace(/^sha256 = "(.*)"$/gm, (line) => {
+    const h = hashes[n++];
+    return h === null || h === undefined ? line : `sha256 = "${h}"`;
+  });
   if (n !== hashes.length) throw new Error(`${file} has ${n} sha256 lines for ${hashes.length} same-as checks`);
   writeFileSync(file, text);
+  if (errors.length) throw new Error(`not pinned:\n  ${errors.join('\n  ')}\n(pinned: ${lines.length})`);
+  return lines;
+}
+
+/**
+ * The report of a file: for every case with a `same-as` check, `out/rig/<key>/out.wav`, `ref.wav` (when the cache holds the pinned output) and `plot.png`,
+ * and one verdict line (`classify`). Runs the cases; changes nothing in the repository.
+ */
+export async function reportRigFile(module: string, file: string, o: RunOptions = {}): Promise<string[]> {
+  const dir = path.dirname(file);
+  const lines: string[] = [];
+  const isFx = fxSpec(module) !== null && !DEVICES.some((d) => machineSpec(module, d));
+  for (const c of loadRigFile(file).case) {
+    const pins = (c.check ?? []).filter((k) => k.kind === 'same-as');
+    if (pins.length === 0) continue;
+    const device = (c.device ?? [...DEVICES])[0] as Device;
+    const key = rigKey(module, device, c.name);
+    try {
+      const t = isFx ? await runFx(module, c, dir, o) : await runMachine(module, device, c, dir, o);
+      const x = signal(t, pins[0]!);
+      const ref = readRef(key);
+      const same = wordsHash(x) === String(pins[0]!.sha256);
+      const v = classify(x, ref, readFingerprint(fingerprintFile(dir, key)));
+      const out = cacheDir(key);
+      writeWav(path.join(out, 'out.wav'), x);
+      if (ref) writeWav(path.join(out, 'ref.wav'), ref);
+      writePng(path.join(out, 'plot.png'), plotPng(`${module} ${device} ${c.name}`, `${same ? 'PIN MATCHES' : 'PIN DIFFERS'}  ${v.line}`, x, ref));
+      lines.push(`${key}: ${same ? 'pin matches' : 'PIN DIFFERS'}; ${v.line}\n  ${path.join(out, 'plot.png')}`);
+    } catch (e) {
+      lines.push(`${key}: not run: ${(e as Error).message}`);
+    }
+  }
   return lines;
 }
