@@ -683,10 +683,14 @@ Prefixes: `S:` = branch `rt/r8-spike`; F131 = `S:docs/findings/131-r8-whole-path
 
 **Format and registry.**
 
-- A `.dks` is a `.dkm` with role word 1 at header 0x38 and header table v2. v2 adds PROVIDES (tag 9: service hash, version; it points at `dk_module`) and BIND (tag 10). SLOTS items gain an entry word (today id and flags only, `packages/dkneeds/src/keys.rs:18`). Spike: `S:.../loader.rs` (H_ROLE), `S:.../provide.rs:46-56` (role 0 with HOOKS or BIND is refused). The role word sits in the 64-byte head of `Storage::stat_head` (`modules/core/runtime/abi/src/storage.rs:68-77`), so a provider is checked before staging.
-- Find: one listing of `services/` per boot, matching `name_hash(stem)` for every unresolved hard need, transitively. NEEDS carries only a hash (`keys.rs:13`), so the runtime cannot build a path. The spike resolves one provider per boot (`S:.../provider.rs`). Rejected: hex-hash file names (unreadable in Transfer), names in NEEDS (grows every module table). If the boot listing is slow or returns E_BUSY, use hash-named paths.
-- Order and slots: planner dependency order. Providers get their own slots (`PROVIDER_MAX` 6), not one of the 8 module records (the spike uses `PLAN_MAX = SEL_MAX + 1`, so a provider takes a module record, F131:146). The `core/` prefix rule goes: a service is the runtime's if it has a row in the static table (`modules/core/runtime/src/rs/src/plan.rs:46-65`); any other hard need must be a planned PROVIDES. The planner captures tags up to PROVIDES. BIND is read at load, because the 384-byte TABLES copy cannot hold 12 BIND items with stock bytes.
-- Refusals: missing provider E_MISSING; too-old or other-major service E_CONTRACT (both exist, `abi/src/plan.rs:10-12`). New: E_SVC_ABI, E_HOOK_STOCK (the spike returns E_FORMAT). Two owners of a site or slot: E_PLAN_OWNER.
+- Table version follows content. A module without services keeps table v1 and stays byte-identical. Table v2 is used only with PROVIDES or BIND. Readers accept versions 1 and 2. `sdk.toml` `table_version` is the newest version.
+- A `.dks` is a `.dkm` with role word 1. The role word is a u32 at header 0x38 (0 module, 1 service). `H_RESERVED` is a u32 at 0x3c. Role 1 holds only for v2 with exactly one PROVIDES. Role 0 with PROVIDES, HOOKS or BIND, or a role above 1, gives E_FORMAT. The check reads the 64-byte head of `Storage::stat_head` (`modules/core/runtime/abi/src/storage.rs:68-77`), so a provider is checked before staging. Spike: `S:.../loader.rs` (H_ROLE), `S:.../provide.rs:46-56`.
+- Tags: PROVIDES is tag 9 (service hash, version; it points at `dk_module`). BIND is tag 10 (site hash, address, length, trampoline offset, stock bytes up to 64). v2 SLOTS items are 12 bytes: id, flags, entry word (v1 items stay id and flags, `packages/dkneeds/src/keys.rs:18`).
+- Need resolution: a hard need is met by the runtime (a static row, `HANDLE_SERVICES`, or "runtime") or by a planned PROVIDES. Module EXPORTS no longer meet a need. The `core/` prefix rule is gone. The static table is `modules/core/runtime/src/rs/src/plan.rs:46-65`.
+- Find: one listing of `services/` per boot. It matches `name_hash(stem)` for every unresolved hard need, transitively, up to `PROVIDER_MAX` = 6 providers. E_BUSY or a missing directory means nothing is found. NEEDS carries only a hash (`keys.rs:13`), so the runtime cannot build a path. Find captures the table without BIND (BIND is read at load, because the 384-byte TABLES copy cannot hold 12 BIND items with stock bytes). A stem is at most 50 bytes. Rejected: hex-hash file names (unreadable in Transfer), names in NEEDS (grows every module table). The spike resolves one provider per boot (`S:.../provider.rs`).
+- Provider slots and owners: providers have their own slots, separate from the 8 module records (the spike uses `PLAN_MAX = SEL_MAX + 1`, so a provider takes a module record, F131:146). A duplicate provider gives E_PLAN_OWNER. More than 6 providers give E_PLAN_FIT. Providers count in fit. A provider's KINDS, SLOTS and HOOKS join the owner check. Order is the planner's dependency order.
+- Refusals: missing provider E_MISSING; too-old or other-major service E_CONTRACT (both exist, `abi/src/plan.rs:10-12`). R12-2 adds no codes. E_HOOK_STOCK comes with R12-3 and E_SVC_ABI with R12-4. Boot is not wired to providers in R12-2.
+- Build and pack: `[[service]]` in `sdk.toml` without `rust =` means a `.dks` provides it. A test-only service `svc-test` (`test = true`) has the import `dk_svctest_ping` and the fixtures `test/svc-test` and `test/svc-test-user`. Services pack to `dist/modules/<dev>/<leaf>.dks`. Patchkit refuses a mismatched extension, a leaf that differs from the service name, and a leaf over 50 bytes. Readers show role 1 in the group `Services`. Host tests use the packed fixtures.
 
 **ABI.**
 
@@ -703,6 +707,65 @@ Prefixes: `S:` = branch `rt/r8-spike`; F131 = `S:docs/findings/131-r8-whole-path
 - Stay in the image: params and dynreg hooks with their row tables (fx uses them too); platform, ui, dsp-link, storage, usb, idle and sample-pool hooks; all patch-time `write` ops and `[[section]]` copies; `sound_load_type_bound` (F131:71-73).
 - Slots: a data word in the image, zero after reset. Fill after the provider commits and before dependents load, at IPL 7, one group at a time. Clear: write zero at IPL 7. Safe mode never fills. A data write has no I-cache risk on hardware (F131:26).
 
+#### R12-3a Loader structure
+
+Goal: one Loader owns the module lifecycle, so R12-3 to R12-6 add service steps without pipeline edits. No behaviour change.
+
+**Design.**
+
+- One `Loader<P: Platform, M: Images, R: Registry>` in runtime `src/loader/`. It is one zero-initialised static with `&mut self` methods. Wrappers keep the call sites.
+- Rule: anything module code can reach during init or fini stays outside the Loader. This covers the module records, the `DKRT_*` tables, `BOOT_IDX`, `CALLED_NEED`, `collect::ACTIVE`, `DKRT_BOOT` and the service rows. The Loader is their only writer.
+- Boot stages: discover, plan, load providers, settle, load modules, finish.
+- Per file: stage, check, place, init, commit, activate (with DSP). Each stage has an undo.
+
+**Seams.**
+
+- `Images` trait: stage, alloc and free, `enter_init` and `enter_fini`. It has a fake.
+- `Registry` trait (R12-4).
+- `Installer`: a concrete struct. Its fake is the `FakePlatform` call log. It becomes a trait only when R12-8 adds a second backend.
+- Exports table: publish, withdraw, resolve.
+
+**Role steps.** One table `RoleSteps { check, activate, undo }`, chosen from the role word. Modules have empty steps.
+
+**Record space.** `REC_MAX = MAX_MODULES + PROVIDER_MAX`. Provider records live in a new static beside `DKRT_PATHS`. The `DKRT_STATE` layout and `CAPK_MODULES` do not change.
+
+**Migration steps.**
+
+1. `git mv loader.rs loader/mod.rs`.
+2. Pure image parse.
+3. Boot split (`report_*` move to `boot.rs`).
+4. `Loader` struct and `Images`.
+5. Record accessor and `REC_MAX`.
+6. Role table; move `find.rs` and `provide.rs`.
+
+Each step has host tests and a `patchkit objdiff` that is identical or explained.
+
+**Size gate.** Stop if the DT2 runtime text grows by more than 1 KiB without an explanation.
+
+**Device subset.** Once at the end: a representative subset (pluck or shot, refusal, safe-mode, boot-restart, needs, capacity, gate-smoke).
+
+**Scope guard.** Not in scope: installer, linker and report traits; a DSP loader seam; unifying the undo paths; `Storage::read_all` staging; changes to `LOADS`, `DkrtBootInfo` or the state layout; run-time unload; the double file read.
+
+Estimate: about 2 agent days.
+
+#### R12-3 Installer and slots
+
+**Boot order.** Find runs only when a hard need is unresolved. Then `plan_with`, then providers in dependency order. Each provider's hooks are installed right after its init (install is the last step). Then settle, then modules. Safe mode does no Find, loads no providers, keeps stock sites and fills no slots.
+
+**Reporting.** Log-only: a `MOD_LOAD` provider marker with the service hash. `LOADS` and `DkrtBootInfo` do not change. Dependents of a failed provider are REFUSED with `Reason::NeedMissing(hash)` in the detail.
+
+**Install.** All-or-nothing per provider under one IPL-7 mask. Pass 1 checks every site before any write: length, trampoline inside the image, a second owner (E_PLAN_OWNER), and live bytes equal to stock (else the new E_HOOK_STOCK). Pass 2 writes the sites and flushes the covered lines. The stock check also runs before the provider's init. There is no live disarm, because install is the last step. The restore code is kept for hot reload and is host-tested. Run-time faults go to crash capture, and the next boot enters safe mode.
+
+**Slots.** The fill and clear mechanism sits behind the Platform trait, with host tests now. The first device proof comes in R12-6 (machines interrupt hooks). `Platform` gains `read_code` and `write_code`. `FakePlatform` logs the call order. The slot declare builder gains the entry word (`decl_matches` covers SLOTS).
+
+**Patchkit and limits.** The patchkit `bind` command is ported onto the R12-2 `dkm.rs` (CLI; the wasm `pk_bind` comes in R12-7). Bound files are never committed. Limits come from `sdk.toml`: 24 BIND items per provider and 48 installed sites. `Declare::MAX` is raised for machines (21 hooks).
+
+**Scope limits.** A provider with a DSP section is refused until R12-8. Imports resolve to a loaded provider's EXPORTS.
+
+**Device proof.** One file in `core/runtime-tests`, on both devices: order provider, install, consumer; the site jumps to the trampoline; `dk_svctest_ping()` returns 42; safe boot gives stock bytes; E_HOOK_STOCK; E_PLAN_OWNER (moves from the host row to the device proof); `DIGI_FLUSH_CHECK=1`. Per-leaf `.dks` device inputs: `tools/nx/device-test-keys.mjs` needs a role set from `modules.mjs`.
+
+Estimate: about 2 agent days.
+
 #### R12-7 Transfer installs services
 
 Mockup: [docs/design/r12-7-transfer-mockup.html](../design/r12-7-transfer-mockup.html).
@@ -713,7 +776,10 @@ Mockup: [docs/design/r12-7-transfer-mockup.html](../design/r12-7-transfer-mockup
 - Fit line: `Fits together: pluck and its 2 services. 1 service needs uploading (fx service).`
 - Progress rows, phase `service` then `module`: `Uploading services/fx.dks: 40%`, `Verified services/fx.dks on the card`, `services/machines.dks: already on the card, not uploaded`.
 - Refusal (red box, row tag `service mismatch`): `pluck not installed. It needs the machines service, and this workbench has no machines service for the runtime on your device (runtime 0.5.2, service built for 0.5.0). Nothing was uploaded. Update the workbench, or flash a matching runtime from the Firmware page.` Bar: `Install failed: no files uploaded`. Variants: `... needs the fx service, which this workbench does not have.` and `... needs fx service 1.3, the runtime has 1.2.`
-- On a service version mismatch with the device runtime, the pane also offers the Flash button (Flash = upload + flash).
+- On a service version mismatch with the device runtime, the refusal box also offers the Flash button. It opens the flash on the Firmware page (Flash = upload + flash).
+- Services transfer automatically as dependencies in the workbench and the web app. The site ships unbound `.dks` files. Binding happens on the user's machine at install.
+- Fit includes service capacity.
+- Device proof: extend `store-format.device.test.ts` (the TS path). The Python CLI stays modules-only.
 - Delete, one click: `Deleted modules/pluck.dkm`, `Deleted services/fx.dks (no module on the card needs it)`, `Kept services/machines.dks (shot needs it)`, `Restart the device to apply.` A needed `.dks` alone is refused: `machines service is needed by shot. Delete that module first (its services go with it).` Its row tag: `needed by shot`.
 - Flash is unchanged for the user; the `.dks` files are replaced in it.
 
@@ -721,7 +787,7 @@ Mockup: [docs/design/r12-7-transfer-mockup.html](../design/r12-7-transfer-mockup
 
 **Order.**
 
-1. Check everything: modules in library, services resolve, fingerprints match, fit counts providers (`transfer-core.ts:131-138`), at most 6 providers. A failing module is named and skipped; the other ticked modules continue. Every check runs before any upload.
+1. Check everything: modules in library, services resolve, fingerprints match, fit counts providers (`transfer-core.ts:131-138`), at most 6 providers. A failing module is named and skipped. One bad module never blocks the rest: the other ticked modules install. Every check runs before any upload.
 2. Upload and verify each `.dks` in dependency order (equal-hash skip).
 3. Upload and verify each module. No restart.
 
@@ -745,7 +811,7 @@ Flash adds the same `.dks` set to its job.
 
 **Unload rule.**
 
-- R12 frees no provider code at run time. A provider that fails after install is disarmed: slots cleared and direct sites restored at IPL 7 (`S:.../install.rs:109-123`), dependents failed first; memory is kept until restart.
+- R12 frees no provider code at run time. Install is the provider's last step and is all-or-nothing, so R12 has no live disarm. The restore code (`S:.../install.rs:109-123`) is kept for hot reload. Run-time faults go to crash capture, and the next boot enters safe mode. Memory is kept until restart.
 - Later (hot reload): interrupt-only code may be freed right after the IPL 7 group clear, only if check 1 gives 0. Task-reachable code needs an entry/exit counter and a trampoline outside the freed block.
 - The install record keeps the stock bytes and the stub shape is fixed now (image code), so hot reload stays possible. Nothing in R12 depends on freeing.
 
@@ -760,8 +826,9 @@ Flash adds the same `.dks` set to its job.
 | --- | --- | --- | --- |
 | R12-0 PC probe and checks | probe (documented in INSTRUMENTATION.md), both checks. Done (finding 132) | none; validated by the runs | - |
 | R12-1 Service crates and template | move the `samples` and `lfo` services out of the runtime crate into their own crates; all four service crates (fx, machines, samples, lfo) use one template layout (`lib.rs`, `records.rs`, `slots.rs`, `dsp/`, `tests/`) with the single `dk_module` entry carrying the `ServiceRow`; `module:new service` (generates `modules/core/services/<name>/` with `module.toml` `role = "service"`); `module:check` structure check for services (the layout, exactly one exported entry `dk_module`, declarations equal to the manifest); no `.dks` format and no installer | every service has the same host tests behind FakeCore; structure check cases (wrong layout, second export, declaration differing from the manifest); object diff of the runtime (identical or explained) | one targeted device batch |
-| R12-2 Format v2 and provider slots | table v2, role word, provider slots, multi-provider planner, new codes | dkneeds round trip; planner cases; `patchkit dkm-identity` | - |
-| R12-3 Installer and slots | spike installer merged; slot fill, clear, disarm | FakePlatform call order | spike test with a slot, safe mode, a second claimant, `DIGI_FLUSH_CHECK=1` |
+| R12-2 Format v2 and provider slots | table version by content (v1 unchanged, v2 with PROVIDES/BIND), role word and `H_RESERVED`, tags 9 and 10, v2 SLOTS width, need resolution without module EXPORTS, Find, provider slots and owner rule, `[[service]]` without `rust`, `.dks` pack output; no new codes | dkneeds round trip; planner cases; Find cases; packed fixtures; `patchkit dkm-identity` | targeted subset on DT2 and DN2: gate-smoke, gate-pins, refusal, capacity, needs, one lfo test (boot unchanged for modules) |
+| R12-3a Loader structure | one `Loader` with `Images` and `Registry` seams, role steps table, `REC_MAX` record space, six migration steps; no behaviour change | each step: host tests and `patchkit objdiff` identical or explained; DT2 runtime text growth at most 1 KiB | representative subset once at the end (pluck or shot, refusal, safe-mode, boot-restart, needs, capacity, gate-smoke) |
+| R12-3 Installer and slots | boot order with providers, log-only reporting, all-or-nothing install under one IPL-7 mask, E_HOOK_STOCK, slot mechanism, `read_code` and `write_code`, patchkit bind; no live disarm | FakePlatform call order; pass 1 and pass 2 cases; restore | one file in `core/runtime-tests`: order, trampoline jump, `dk_svctest_ping()` = 42, safe mode, E_HOOK_STOCK, E_PLAN_OWNER, `DIGI_FLUSH_CHECK=1` |
 | R12-4 Service ABI fingerprint and `lfo.dks` | B row in `dk_module_def`, C imports, fingerprint; `lfo.dks` is the first service built as a `.dks` | lfo over FakeCore | core/runtime-lfo-tests |
 | R12-5 `fx.dks` | fx crate + fxpages hooks | fx crate tests | digikit/freqshift; stock sites with no service |
 | R12-6 `machines.dks` | after R10 merges | machines crate tests | digikit/pluck, digikit/shot |
