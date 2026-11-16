@@ -1,12 +1,11 @@
 import fs from 'node:fs';
 import path from 'node:path';
 import { LOG_KIND } from '@digi/dk-session/gen_proto';
-import { button, MS, repoRoot, resolveInputs } from '@digi/test-support';
+import { button, emulatorClock, MS, repoRoot, resolveInputs, waitClock } from '@digi/test-support';
 import { expect, test } from 'vitest';
 import type { PatchedSession } from '@digi/regression/support.ts';
 import { CARD_SYMBOLS, cardRigs, RT, type CardRig } from '@digi/regression/runtime/card-rig.ts';
 import { FIRMWARE } from '@digi/regression/runtime/devices.ts';
-import { advance } from '@digi/regression/runtime/fx-live.ts';
 import { moduleArtifact } from '@digi/regression/runtime/install.ts';
 import { loadCode } from '@digi/regression/runtime/load-states.ts';
 import { patchkit } from '@digi/regression/runtime/patchkit.ts';
@@ -109,12 +108,12 @@ cardRigs('service providers', { dsp: 'zero', roots: RT, symbols: CARD_SYMBOLS },
 
     // the firmware builds the SETTINGS list at start, so the hook ran already; the tap runs it again
     const hits = async () => logged(await h.usb(rt, (dk) => dk.readLog()), 'svctest-hits');
-    await advance(rt.session, 1500);
+    await waitClock(emulatorClock(rt.session), 1500); // the hook's log line: no event marks it
     const before = await hits();
     expect(before.length, 'the user logged the count').toBeGreaterThan(0);
     expect(before.at(-1)!, 'the hook ran').toBeGreaterThanOrEqual(1);
     await rt.session.client.inputTap(button('SETTINGS'), 100 * MS);
-    await advance(rt.session, 3000);
+    await waitClock(emulatorClock(rt.session), 3000); // the SETTINGS rebuild after the tap: no event marks it
     const after = await hits();
     expect(after.at(-1)!, 'the count does not fall').toBeGreaterThanOrEqual(before.at(-1)!);
     expect(after.at(-1)!, 'the count is a count').toBeLessThan(1000);

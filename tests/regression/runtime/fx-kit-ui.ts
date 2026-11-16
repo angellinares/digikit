@@ -1,8 +1,7 @@
 import { button } from '@digi/test-support';
-import type { PatchedSession } from '../support.ts';
-import { advance, bounded, rows, word } from './fx-live.ts';
+import { REDRAW, SETTLE, bounded, rows, word, type Rt } from './fx-live.ts';
 import { openPages } from './fx-pages-ui.ts';
-import { shot, tap, type FxProfile } from './fx-session.ts';
+import { shot, type FxProfile } from './fx-session.ts';
 import { halfword, kitMenu, kitSlotOne } from './fx-track-ui.ts';
 import { planSymbol, type RuntimePlan } from './runtime-plan.ts';
 
@@ -10,7 +9,7 @@ export type FxKitObservation = [ms: number, row: number, p0: number, mix: number
 
 /** Legacy held-key load observation: sample every step, record each DSP row change. */
 export async function watchFxKitRows(
-  runtime: PatchedSession,
+  runtime: Rt,
   plan: RuntimePlan,
   profile: FxProfile,
   key: string,
@@ -26,7 +25,7 @@ export async function watchFxKitRows(
   try {
     await bounded(() => session.client.inputButton(button(key), true));
     for (let ms = 0; ms < totalMs; ms += step) {
-      await advance(session, step);
+      await runtime.ui.wait({ ms: step, why: SETTLE });
       await each?.();
       const now = await read();
       for (let row = 0; row < count; row++) {
@@ -43,32 +42,32 @@ export async function watchFxKitRows(
 }
 
 /** Shared firmware KIT menus, preserving the persistence runner's cursor resets and settling. */
-export function createFxKitUi(runtime: PatchedSession, plan: RuntimePlan, profile: FxProfile, artifacts: string) {
+export function createFxKitUi(runtime: Rt, plan: RuntimePlan, profile: FxProfile, artifacts: string) {
   const { session } = runtime;
   const cell = (name: string) => word(session, planSymbol(plan, name));
   const slot = async (n: number) => {
-    await kitSlotOne(session);
-    for (let i = 1; i < n; i++) await tap(session, 'DOWN', 80);
+    await kitSlotOne(runtime);
+    for (let i = 1; i < n; i++) await runtime.ui.tap('DOWN', { until: { ms: 80, why: REDRAW } });
   };
   return {
     async fxPage(page: number) {
-      await openPages(session);
-      for (let i = 0; i < 5; i++) await tap(session, 'UP', 80);
-      for (let i = 0; i < page; i++) await tap(session, 'DOWN', 300);
+      await openPages(runtime);
+      for (let i = 0; i < 5; i++) await runtime.ui.tap('UP', { until: { ms: 80, why: REDRAW } });
+      for (let i = 0; i < page; i++) await runtime.ui.tap('DOWN', { until: { ms: 300, why: REDRAW } });
     },
     async saveKit(n: number, tag: string) {
-      await kitMenu(session, 1);
-      await tap(session, 'YES', 600);
+      await kitMenu(runtime, 1);
+      await runtime.ui.tap('YES', { until: { ms: 600, why: REDRAW } });
       await slot(n);
       await shot(session, artifacts, `${tag}-save-slot`);
-      await tap(session, 'YES', 600);
-      await tap(session, 'YES', 1500);
+      await runtime.ui.tap('YES', { until: { ms: 600, why: REDRAW } });
+      await runtime.ui.tap('YES', { until: { ms: 1500, why: REDRAW } });
       await shot(session, artifacts, `${tag}-saved`);
-      await advance(session, 500);
+      await runtime.ui.wait({ ms: 500, why: SETTLE });
     },
     async loadKit(n: number, tag: string) {
-      await kitMenu(session, 0);
-      await tap(session, 'YES', 700);
+      await kitMenu(runtime, 0);
+      await runtime.ui.tap('YES', { until: { ms: 700, why: REDRAW } });
       await slot(n);
       await shot(session, artifacts, `${tag}-load-slot`);
       const file: number[] = [];

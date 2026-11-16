@@ -1,3 +1,4 @@
+import { emulatorClock, waitClock } from '@digi/test-support';
 import fs from 'node:fs';
 import path from 'node:path';
 import { fileHashHex, type DkLogEvent } from '@digi/dk-session';
@@ -7,7 +8,7 @@ import type { PatchedSession } from '@digi/regression/support.ts';
 import { liveArtifacts, record } from '@digi/regression/runtime/artifacts.ts';
 import { DEBUG_MODULE, installWithDebug } from '@digi/regression/runtime/install.ts';
 import { expectRuntimeReady } from '@digi/regression/runtime/ready.ts';
-import { pollEmulated, waitEmulated } from '@digi/regression/runtime/waits.ts';
+import { pollEmulated } from '@digi/regression/runtime/waits.ts';
 import type { RuntimeModule } from './manifests.ts';
 
 /** Real USB upload, persisted bytes, selected reboot, registration and fault acceptance.
@@ -90,7 +91,7 @@ export async function expectModuleLoad(
     // CF-only registration is already complete; UI and fault acceptance below still apply.
     if (module.dsp) {
       expect((await session.status()).dsp, 'DSP conformance remains coupled').toBe('sharc');
-      await waitEmulated(session, 2000);
+      await waitClock(emulatorClock(session), 2000); // DSP registrations run on the coupled DSP: no observable end
     } else {
       const status = await session.status();
       expect(status.dsp, 'CF-only conformance retains the zero SSI peer').toBe('zero');

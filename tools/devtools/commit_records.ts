@@ -12,10 +12,10 @@ import { spawn } from 'node:child_process';
 import fs from 'node:fs';
 import path from 'node:path';
 import { parseArgs } from 'node:util';
-import { DkSession, EmuUsbTransport } from '../../packages/dk-session/src/index.ts';
+import { DkSession, EmuUsbTransport, RuntimeEvents } from '../../packages/dk-session/src/index.ts';
 import { LOG_KIND } from '../../packages/dk-session/src/gen_proto.ts';
 import { committedRecords, type RecordsExec } from '../../packages/test-support/src/commit-records.ts';
-import { Events } from '../../packages/test-support/src/events.ts';
+import { emulatorClock } from '../../packages/test-support/src/emulated-clock.ts';
 import { repoRoot, type Device } from '../../packages/test-support/src/inputs.ts';
 import { Session } from '../../packages/test-support/src/session.ts';
 
@@ -61,8 +61,6 @@ const root = repoRoot();
 const binary = values.binary ?? process.env[`DIGI_EMUD_${device.toUpperCase()}`];
 if (!binary) throw new Error(`no daemon: pass --binary or set DIGI_EMUD_${device.toUpperCase()}`);
 const debugDkm = values['debug-dkm'] ?? path.join(root, 'dist/modules', device, 'debug.dkm');
-const commitKind = (LOG_KIND as Record<string, number>).MODULE_COMMIT;
-if (commitKind === undefined) throw new Error('the runtime has no MODULE_COMMIT log kind yet (S3 package B)');
 const samples = device === 'dt2' ? path.join(root, 'out/runs/patchkit/samples') : undefined;
 const runDir = fs.mkdtempSync(path.join(root, 'out', `commit-records-${process.pid}-`));
 
@@ -98,13 +96,13 @@ try {
   await dk.select(paths);
   await dk.restart();
   await dk.waitForBoot();
-  const events = new Events(dk, s, { bootStart: LOG_KIND.BOOT_START });
+  const events = new RuntimeEvents(dk, emulatorClock(s));
   await events.listen({ fromBoot: true });
   const modules = await dk.modules();
   const index = modules.find((m) => m.name === values.module)?.index;
   if (index === undefined) throw new Error(`${values.module} is not loaded: ${modules.map((m) => m.name).join(', ')}`);
-  const event = await events.until(commitKind, (e) => e.args[0] === index, {
-    emulatedMs: Number(values['emulated-ms']),
+  const event = await events.until('MODULE_COMMIT', (e) => e.args[0] === index, {
+    withinMs: Number(values['emulated-ms']),
   });
   const result = await committedRecords(event, (addr) => s.client.memPeek(addr), patchkitExec(values.patchkit));
   // the latch masks of the module's machines (the record block has no latched flag): one MODULE_LATCH event per machine that latches,

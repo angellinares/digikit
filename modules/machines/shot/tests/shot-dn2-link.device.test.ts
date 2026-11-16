@@ -1,6 +1,6 @@
 import { encoder } from '@digi/test-support';
 import { expect } from 'vitest';
-import { advance, bounded, rows, slotsFor, word } from '@digi/regression/runtime/fx-live.ts';
+import { bounded, rows, slotsFor, word, SETTLE } from '@digi/regression/runtime/fx-live.ts';
 import { effectPage, mainPage } from '@digi/regression/runtime/fx-pages-ui.ts';
 import { planSymbol, prepareRuntimePlan } from '@digi/regression/runtime/runtime-plan.ts';
 import { dn2Tests, type Dn2 } from './shot-dn2-support.ts';
@@ -28,7 +28,7 @@ dn2Tests(
   'shot-dn2-link',
   ['a'],
   async (c: Dn2) => {
-    const { session, api, settle, phase, rec, fixtures, file, artifacts, expectNoNewFault } = c;
+    const { runtime, session, api, settle, phase, rec, fixtures, file, artifacts, expectNoNewFault } = c;
     const plan = await prepareRuntimePlan(session, artifacts, ['fx.rows', 'DKRT_FXP']);
     const slots = slotsFor('dn2');
     const fxp = planSymbol(plan, 'DKRT_FXP');
@@ -36,7 +36,7 @@ dn2Tests(
     const burst = async (detents: number, events: number) => {
       for (let i = 0; i < events; i++) {
         await bounded(() => session.client.inputTurn(encoder('ENC A'), detents));
-        await advance(session, 2);
+        await runtime.ui.wait({ ms: 2, why: SETTLE });
       }
     };
 
@@ -44,13 +44,13 @@ dn2Tests(
       const before = await gain();
       expect(before, 'the gain effect row holds the default GAIN').toBe(GAIN_DEFAULT);
       const sentBefore = await word(session, fxp + FXP_SENT);
-      await effectPage(session);
+      await effectPage(runtime);
       // the load starts the track table writes; the turns go to the effect page meanwhile
       expect(await api.select(file('a'), 0), 'select queues').toBe(0);
       await burst(8, 20);
       expect((await settle(0)).state, 'the track reaches ready').toBe(3);
-      await advance(session, 300);
-      await mainPage(session);
+      await runtime.ui.wait({ ms: 300, why: SETTLE });
+      await mainPage(runtime);
       // the knob: the DSP row has the last value, a float above the default (clockwise turns)
       const after = await gain();
       expect(floatOf(after), 'p0 follows the turns').toBeGreaterThan(floatOf(GAIN_DEFAULT));

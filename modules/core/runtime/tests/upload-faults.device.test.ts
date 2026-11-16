@@ -4,15 +4,7 @@ import { isDeepStrictEqual } from 'node:util';
 import { expect } from 'vitest';
 import { blob, listing, pokeKnob, statusOf, type Files } from '@digi/regression/runtime/card-kit.ts';
 import type { CardRig } from '@digi/regression/runtime/card-rig.ts';
-import {
-  advance,
-  analysisJson,
-  frames,
-  pcmMatches,
-  peak,
-  playNote,
-  readFloatWav,
-} from '@digi/regression/runtime/fx-live.ts';
+import { analysisJson, frames, pcmMatches, peak, playNote, readFloatWav, SETTLE } from '@digi/regression/runtime/fx-live.ts';
 import { selectSine, type FxProfile } from '@digi/regression/runtime/fx-session.ts';
 import { liveCheck as check } from '@digi/regression/runtime/artifacts.ts';
 import { moduleArtifact } from '@digi/regression/runtime/install.ts';
@@ -220,8 +212,8 @@ uploadTests(
     const play = async (key: 'alone' | 'during') => {
       const dk = await rig.pausedBoot(card);
       for (let i = 0; i < 40 && !(await dk.modules()).some((m) => m.name === 'test/sine'); i++)
-        await advance(session, 250);
-      await selectSine({ session, dk, close: async () => {} }, profile);
+        await rig.runtime.ui.wait({ ms: 250, why: SETTLE });
+      await selectSine(rig.runtime, profile);
       // the later of the fixed frame and 300 frames of setup margin; the second run keeps the first run's frame if it can
       trigger = Math.max(trigger, (await frames(session)) + 300);
       const file = path.join(rig.artifacts, `${key}.wav`);

@@ -1,7 +1,7 @@
 import { hasCap, type DkSession } from '@digi/dk-session';
 import { describe, expect, test } from 'vitest';
 import { statusOf } from '@digi/regression/runtime/card-kit.ts';
-import { advance } from '@digi/regression/runtime/fx-live.ts';
+import { SETTLE } from '@digi/regression/runtime/fx-live.ts';
 import { DEVICES } from '@digi/regression/runtime/devices.ts';
 import {
   decodeSettings,
@@ -66,7 +66,7 @@ for (const device of DEVICES) {
         18 + (1 + ROUTE.length + 2 + 1) + (1 + SEND.length + 2 + 16),
       );
 
-      await advance(session, 1000);
+      await rt.ui.wait({ ms: 1000, why: SETTLE });
       expect(await written(), 'nothing is written in the first second').toEqual([]);
       let rec = await usb(settingsRecord);
       expect(
@@ -80,11 +80,11 @@ for (const device of DEVICES) {
 
       // a second change at about 1 s: the 2 s start again
       await mb.put(ROUTE, byte(0));
-      await advance(session, DELAY_MS - 500);
+      await rt.ui.wait({ ms: DELAY_MS - 500, why: SETTLE });
       expect(await written(), '1.5 s after the second change (2.5 s after the first) still nothing is written').toEqual(
         [],
       );
-      await advance(session, 1000);
+      await rt.ui.wait({ ms: 1000, why: SETTLE });
       expect(
         await written(),
         'about 2 s after the last change the record is written: settings copy A only (not B, not the selection, not the headers)',
@@ -114,7 +114,7 @@ for (const device of DEVICES) {
       // the next change goes to the other copy, A stays as it is
       const amounts2 = Buffer.alloc(16, 127);
       await mb.put(SEND, amounts2);
-      await advance(session, DELAY_MS + 500);
+      await rt.ui.wait({ ms: DELAY_MS + 500, why: SETTLE });
       const after2 = await left('m2');
       expect(await written(), 'the next change goes to both settings copies written once').toEqual(settingsArea);
       expect(sectorOf(after2, s.setA).equals(recA), 'copy A is byte for byte what it was').toBe(true);
@@ -142,7 +142,7 @@ for (const device of DEVICES) {
       await mb.put('fx/route/test/other', byte(1));
       await mb.remove(SEND);
       expect((await mb.get(SEND))[0], 'a removed key is gone at once').toBe(E_SET_NOKEY);
-      await advance(session, DELAY_MS + 500);
+      await rt.ui.wait({ ms: DELAY_MS + 500, why: SETTLE });
       const after3 = await left('m3');
       const ra = decodeSettings(sectorOf(after3, s.setA));
       expect(ra?.seq, 'after the restart the next write goes to copy A (seq 3)').toBe(3);

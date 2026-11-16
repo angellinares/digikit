@@ -1,9 +1,29 @@
 // MidiRpc waits in emulated time (an emulatedProbe) and in wall time (none), over a fake transport and a fake emulated clock.
 import assert from 'node:assert/strict';
-import { test } from 'vitest';
+import { afterEach, beforeEach, test, vi } from 'vitest';
 import { DkError, DkSession, rpcRequest, type EmulatedProbe } from '../src/index.ts';
 
 const CREATE_DIR = 0x11;
+
+// every timer and Date.now below is fake: time passes only when a test advances it, so host speed does not matter
+beforeEach(() => {
+  vi.useFakeTimers();
+});
+afterEach(() => {
+  vi.useRealTimers();
+});
+
+/** Advances fake time in small steps until `p` settles (bounded), and returns `p`. */
+async function settle<T>(p: Promise<T>): Promise<Promise<T>> {
+  let done = false;
+  p.then(
+    () => (done = true),
+    () => (done = true),
+  );
+  for (let i = 0; i < 5000 && !done; i++) await vi.advanceTimersByTimeAsync(20);
+  assert.ok(done, 'the call settled in fake time');
+  return p;
+}
 
 /** An emulated clock that runs 100 ms per 5 ms of wall time (a slow host), and the probe that ends in emulated time. */
 function fakeEmulator() {
@@ -54,7 +74,7 @@ test('an answer at emulated 5 s arrives although the wall timeout is far shorter
       { timeoutMs: 6000, emulatedProbe: emu.probe },
     );
     const t0 = Date.now();
-    const got = await dk.rpc(CREATE_DIR, Uint8Array.of(0), 6000);
+    const got = await settle(dk.rpc(CREATE_DIR, Uint8Array.of(0), 6000));
     assert.deepEqual([...got], [0]);
     assert.ok(Date.now() - t0 < 5000);
   } finally {
@@ -69,7 +89,7 @@ test('no answer within the emulated timeout fails with the usual timeout error',
       transport(() => false),
       { emulatedProbe: emu.probe },
     );
-    await assert.rejects(dk.rpc(CREATE_DIR, Uint8Array.of(0), 1000), (e: unknown) => {
+    await assert.rejects(settle(dk.rpc(CREATE_DIR, Uint8Array.of(0), 1000)), (e: unknown) => {
       assert.ok(e instanceof DkError);
       assert.equal(e.kind, 'timeout');
       assert.match(e.message, /no reply to MidiRpc 11 from the device/);
@@ -87,10 +107,10 @@ test('without an emulated clock the wait is wall time', async () => {
     // the clock passes 5 s of emulated time in about 250 ms of wall time, but the session does not use it
     const dk = new DkSession(transport(() => emu.clock.now >= 5000));
     const t0 = Date.now();
-    await assert.rejects(dk.rpc(CREATE_DIR, Uint8Array.of(0), 60), /no reply to MidiRpc 11 from the device/);
+    await assert.rejects(settle(dk.rpc(CREATE_DIR, Uint8Array.of(0), 60)), /no reply to MidiRpc 11 from the device/);
     assert.ok(Date.now() - t0 < 200);
     const dk2 = new DkSession(transport(() => true));
-    assert.deepEqual([...(await dk2.rpc(CREATE_DIR, Uint8Array.of(0), 500))], [0]);
+    assert.deepEqual([...(await settle(dk2.rpc(CREATE_DIR, Uint8Array.of(0), 500)))], [0]);
   } finally {
     emu.stop();
   }

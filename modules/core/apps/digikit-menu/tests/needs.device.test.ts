@@ -2,11 +2,9 @@ import { expect, test } from 'vitest';
 import { LOG_KIND } from '@digi/dk-session/gen_proto';
 import { loadFailureText, loadFailures } from '@digi/dk-session';
 import { cardRigs, RT } from '@digi/regression/runtime/card-rig.ts';
-import { advance } from '@digi/regression/runtime/fx-live.ts';
-import { tap } from '@digi/regression/runtime/fx-session.ts';
-import { openDigikitMenu, ofKind, readAboutRows, readSmallRing } from '@digi/regression/runtime/runtime-menu.ts';
+import { openDigikitMenu } from '@digi/regression/runtime/flows/menu.ts';
+import { ofKind, readAboutRows, readSmallRing } from '@digi/regression/runtime/runtime-menu.ts';
 import { planSymbol } from '@digi/regression/runtime/runtime-plan.ts';
-import { expectPollEmulated } from '@digi/regression/runtime/waits.ts';
 
 /**
  * A module whose imports belong to a module that is not in the image says which one (docs/plans/sdk-runtime-roadmap.md, "show why a module did not load").
@@ -15,7 +13,7 @@ import { expectPollEmulated } from '@digi/regression/runtime/waits.ts';
  * of the module's row in MODULES (the detail line of a row that shows a dash).
  */
 
-const SYMBOLS = ['DK_ABOUT', 'DK_ABOUT_N', 'DK_PANEL', 'DK_PANEL_N'];
+const SYMBOLS = ['DK_ABOUT', 'DK_ABOUT_N', 'DK_PANEL', 'DK_PANEL_N', 'DK_LOAD_N'];
 const BOOT_NEEDS_OFFSET = 80; // DkrtBootInfo.needs (modules/core/runtime/abi.toml)
 const NEEDS_LEN = 12;
 
@@ -49,17 +47,27 @@ cardRigs('a module that needs a missing module', { roots: [...RT, 'core/digikit-
     expect(await rig.usb(rt, (dk) => dk.loadFailures())).toEqual(failures);
 
     // SETTINGS > DIGIKIT > ABOUT (the first row): the BOOT lines
-    await openDigikitMenu(async (name, settle) => tap(session, name, Math.min(settle ?? 300, 800)));
-    await tap(session, 'YES', 1500);
-    await expectPollEmulated(session, async () => (await advance(session, 100), (await readAboutRows(session, rig.plan)).some((row) => row === '- NEEDS USB-BULK')), (value) => expect(value).toBe(true), { emulatedMs: 60000, intervalMs: 10 });
+    await openDigikitMenu(rt);
+    await rt.ui.tap('YES', {
+      until: {
+        state: () => readAboutRows(session, rig.plan).catch(() => [] as string[]),
+        done: (rows: string[]) => rows.some((row) => row === '- NEEDS USB-BULK'),
+        withinMs: 60_000,
+        what: 'BOOT page names the missing module',
+      },
+    });
     expect((await readAboutRows(session, rig.plan)).join('\n')).not.toContain('NO IMPORT');
 
     // BACK, then MODULES (the fourth row): RIGHT on the dashed row shows the detail line last in the side panel
-    await tap(session, 'NO', 800);
-    for (let i = 0; i < 3; i++) await tap(session, 'DOWN', 200);
-    await tap(session, 'YES', 1500);
-    await tap(session, 'RIGHT', 1000);
-    await expectPollEmulated(session, async () => (await advance(session, 100), await text('DK_PANEL', 2)), (value) => expect(value).toBe('NEEDS USB-BULK'), { emulatedMs: 60000, intervalMs: 10 });
+    const drained = { drained: true } as const;
+    await rt.ui.tap('NO', { until: drained });
+    for (let i = 0; i < 3; i++) await rt.ui.tap('DOWN', { until: drained });
+    await rt.ui.tap('YES', {
+      until: { state: () => peek(planSymbol(rig.plan, 'DK_LOAD_N')), done: (n) => n > 0, what: 'MODULES page rows' },
+    });
+    await rt.ui.tap('RIGHT', {
+      until: { state: () => text('DK_PANEL', 2), done: (t) => t === 'NEEDS USB-BULK', withinMs: 60_000, what: 'NEEDS row in the side panel' },
+    });
     await session.expectNoFault('usb-fast without core/usb-bulk');
   });
 });

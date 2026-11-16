@@ -4,7 +4,7 @@ import zlib from 'node:zlib';
 import type { DkSession } from '@digi/dk-session';
 import { describe, expect, test } from 'vitest';
 import { bootInfo, buildCard, E_NOSTORE, statusOf } from '@digi/regression/runtime/card-kit.ts';
-import { advance } from '@digi/regression/runtime/fx-live.ts';
+import { SETTLE } from '@digi/regression/runtime/fx-live.ts';
 import { DEVICES } from '@digi/regression/runtime/devices.ts';
 import { moduleArtifact } from '@digi/regression/runtime/install.ts';
 import { E_SET_OFF, sectorOf, settingsMailbox, settingsRecord } from '@digi/regression/runtime/project-kit.ts';
@@ -63,7 +63,7 @@ for (const device of DEVICES) {
         await statusOf(() => usb((dk) => dk.list())),
         'the store is not used either (LIST answers E_NOSTORE)',
       ).toBe(E_NOSTORE);
-      await advance(session, DELAY_MS + 500);
+      await rt.ui.wait({ ms: DELAY_MS + 500, why: SETTLE });
       const after = await kit.after('overlap', session.cardPath!);
       expect(await written(), 'nothing is written in the store range').toEqual([]);
       for (let k = 0; k < 4; k++)
@@ -105,7 +105,7 @@ for (const device of DEVICES) {
         'the store reports its file',
       ).toEqual([MODULE_PATH]);
       await settingsMailbox(session, kit.plan).put(ROUTE, byte(1));
-      await advance(session, DELAY_MS + 500);
+      await rt.ui.wait({ ms: DELAY_MS + 500, why: SETTLE });
       expect(
         (await written()).filter((x) => x !== s.selA && x !== s.selB),
         "a settings write goes to copy A only (besides the selection record's boot counter)",

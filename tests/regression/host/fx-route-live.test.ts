@@ -4,7 +4,7 @@ import path from 'node:path';
 import { afterEach, expect, test, vi } from 'vitest';
 import type { Session } from '@digi/test-support';
 import { DkSession } from '@digi/dk-session';
-import type { PatchedSession } from '../support.ts';
+import { withWaitApi, type PatchedSession } from '../support.ts';
 import type { RuntimePlan } from '../runtime/runtime-plan.ts';
 
 const fake = vi.hoisted(() => ({
@@ -21,7 +21,11 @@ const fake = vi.hoisted(() => ({
 vi.mock('node:child_process', () => ({
   execFile: Object.assign(vi.fn(), { [Symbol.for('nodejs.util.promisify.custom')]: fake.exec }),
 }));
-vi.mock('../support.ts', () => ({ withReusablePatchedSession: fake.fixture, expectNoGuardHits: fake.noGuardHits }));
+vi.mock('../support.ts', async (original) => ({
+  ...(await original<object>()),
+  withReusablePatchedSession: fake.fixture,
+  expectNoGuardHits: fake.noGuardHits,
+}));
 vi.mock('../runtime/runtime-plan.ts', async (original) => ({
   ...(await original<object>()),
   prepareRuntimePlanListedOffline: fake.prepare,
@@ -35,13 +39,8 @@ vi.mock('../runtime/fx-live.ts', async (original) => ({
 }));
 vi.mock('../runtime/ready.ts', async (original) => ({ ...(await original<object>()), expectRuntimeUi: fake.ready }));
 import { withRouteFxSession } from '../runtime/fx-route-live.ts';
-import {
-  withPreparedFxSession,
-  readTextRows,
-  tap,
-  inspectFxBoot,
-  withPausedFxProtocol,
-} from '../runtime/fx-session.ts';
+import { fakeClock } from './fake-status.ts';
+import { withPreparedFxSession, readTextRows, inspectFxBoot, withPausedFxProtocol } from '../runtime/fx-session.ts';
 
 const directories: string[] = [];
 afterEach(() => {
@@ -228,16 +227,19 @@ for (const image of ['routes', 'track', 'track-base', 'plain', 'kit'] as const) 
 }
 
 test('route diagnostic text decodes big endian words and panel chords release on failure', async () => {
+  const { status, step } = fakeClock();
   const session = {
+    status,
     client: {
       memPeek: vi.fn(async () => 0x41420000),
-      inputButton: vi.fn(),
+      inputButton: vi.fn(async () => {}),
       inputTap: vi.fn().mockRejectedValue(new Error('panel failure')),
-      step: vi.fn(),
+      step,
     },
   } as unknown as Session;
   expect(await readTextRows(session, 4096, 2, 4)).toEqual(['AB', 'AB']);
-  await expect(tap(session, 'YES', 0, 'FUNC')).rejects.toThrow('panel failure');
+  const rt = withWaitApi({ session, dk: {}, close: async () => {} } as unknown as PatchedSession);
+  await expect(rt.ui.tap('YES', { until: { drained: true }, held: 'FUNC' })).rejects.toThrow('panel failure');
   expect(session.client.inputButton).toHaveBeenLastCalledWith(expect.any(Number), false);
 });
 

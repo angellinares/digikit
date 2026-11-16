@@ -1,14 +1,15 @@
 import { expect } from 'vitest';
 import { liveArtifacts } from '@digi/regression/runtime/artifacts.ts';
 import { word } from '@digi/regression/runtime/fx-live.ts';
-import { readTextRows, tap } from '@digi/regression/runtime/fx-session.ts';
+import { readTextRows } from '@digi/regression/runtime/fx-session.ts';
 import { expectRuntimeUi, runtimeTests } from '@digi/regression/runtime/ready.ts';
-import { openDigikitMenu, openRuntimeAbout } from '@digi/regression/runtime/runtime-menu.ts';
+import { openDigikitMenu, openRuntimeAbout } from '@digi/regression/runtime/flows/menu.ts';
 import { planSymbol, prepareRuntimePlan } from '@digi/regression/runtime/runtime-plan.ts';
 
 runtimeTests(
   'empty-store DIGIKIT menu without DSP',
-  async ({ session, dk }) => {
+  async (rt) => {
+    const { session } = rt;
     const status = await session.status();
     expect(status.dsp).toBe('zero');
     expect(status.audio).toBeNull();
@@ -23,13 +24,16 @@ runtimeTests(
       'DK_MEM_N',
     ]);
     await expectRuntimeUi(session, plan, artifacts, { fresh: true });
-    const press = (key: string, settle?: number) => tap(session, key, settle);
+    const { ui } = rt;
+    const drained = { drained: true } as const;
+    const press = (key: string) => ui.tap(key, { until: drained });
+    const peek = (name: string) => () => word(session, planSymbol(plan, name));
 
-    await openDigikitMenu(press);
+    await openDigikitMenu(rt);
     await press('DOWN');
     await press('DOWN');
     await press('DOWN');
-    await press('YES', 800);
+    await ui.tap('YES', { until: { state: peek('DK_LOAD_N'), done: (n) => n === 1, what: 'MODULES page rows' } });
     expect(await word(session, planSymbol(plan, 'DK_LOAD_N'))).toBe(1);
     expect(await readTextRows(session, planSymbol(plan, 'DK_LOAD'), 1, 24)).toEqual(['NO STORE']);
 
@@ -37,7 +41,7 @@ runtimeTests(
     await press('UP');
     await press('UP');
     await press('UP');
-    const about = await openRuntimeAbout(press, session, dk, plan, artifacts);
+    const about = await openRuntimeAbout(rt, plan, artifacts);
     expect(about).toContain('BOOT: 0 OF 0 OK');
     await press('DOWN');
     await press('UP');
@@ -46,7 +50,8 @@ runtimeTests(
     await press('NO');
     await press('DOWN');
     await press('DOWN');
-    await press('YES', 600);
+    await ui.tap('YES', { until: { state: peek('DK_MEM_N'), done: (n) => n > 0, what: 'MEMORY page rows' } });
+    await ui.wait({ ms: 200, why: 'the count shows before the last MEMORY row is filled' });
     const count = await word(session, planSymbol(plan, 'DK_MEM_N'));
     expect(count).toBeGreaterThan(0);
     expect(count).toBeLessThanOrEqual(8);

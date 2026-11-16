@@ -119,6 +119,41 @@
       }
     },
     {
+      "files": [
+        "modules/**/tests/**/*.ts",
+        "tests/fixtures/**/tests/**/*.ts",
+        "tests/regression/runtime/flows/**/*.ts"
+      ],
+      "rules": {
+        "eslint/no-restricted-imports": [
+          "error",
+          {
+            "paths": [
+              {
+                "name": "node:timers",
+                "message": "Wait in emulated time: rt.ui / rt.listen / pollUntil (docs/plans/test-architecture.md T2 step 3)"
+              },
+              {
+                "name": "node:timers/promises",
+                "message": "Wait in emulated time: rt.ui / rt.listen / pollUntil (docs/plans/test-architecture.md T2 step 3)"
+              }
+            ]
+          }
+        ],
+        "eslint/no-restricted-globals": [
+          "error",
+          {
+            "name": "setTimeout",
+            "message": "Wait in emulated time: rt.ui / rt.listen / pollUntil (docs/plans/test-architecture.md T2 step 3)"
+          },
+          {
+            "name": "setInterval",
+            "message": "Wait in emulated time: rt.ui / rt.listen / pollUntil (docs/plans/test-architecture.md T2 step 3)"
+          }
+        ]
+      }
+    },
+    {
       "files": ["**/*.tsx"],
       "rules": {
         "eslint/no-unassigned-vars": "off"
