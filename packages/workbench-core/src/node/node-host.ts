@@ -146,7 +146,10 @@ function nodeLibrary(root: string): LibraryHost {
     },
     async read(device, rel) {
       const dir = deviceDir(device);
-      if (rel.split('/').some((p) => p === '' || p === '.' || p === '..') || !(rel.endsWith('.dkm') || rel.endsWith('.dks')))
+      if (
+        rel.split('/').some((p) => p === '' || p === '.' || p === '..') ||
+        !(rel.endsWith('.dkm') || rel.endsWith('.dks'))
+      )
         throw new Error(`not a library file: ${JSON.stringify(rel)}`);
       const base = rel.endsWith('.dks') ? path.join(root, 'dist/modules', device) : dir;
       return toBuffer(await readFile(path.join(base, rel)));

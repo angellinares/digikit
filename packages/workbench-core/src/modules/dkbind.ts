@@ -52,7 +52,9 @@ export class DkBind {
     try {
       if (this.x.pk_bind(m[0]![0], m[0]![1], m[1]![0], m[1]![1], m[2]![0], m[2]![1]) !== 0)
         throw new Error(this.text(this.x.pk_err_ptr(), this.x.pk_err_len()));
-      const file = new Uint8Array(this.x.memory.buffer.slice(this.x.pk_out_ptr(), this.x.pk_out_ptr() + this.x.pk_out_len()));
+      const file = new Uint8Array(
+        this.x.memory.buffer.slice(this.x.pk_out_ptr(), this.x.pk_out_ptr() + this.x.pk_out_len()),
+      );
       return { file, hooks: JSON.parse(this.text(this.x.pk_plan_ptr(), this.x.pk_plan_len())) as BoundHookReport[] };
     } finally {
       for (const [p, n] of m) this.x.pk_free(p!, n!);
@@ -78,7 +80,10 @@ export function createServiceBinder(make: () => Promise<DkBind>, stock: StockByt
         throw e;
       });
       const fw = await stock.bytesOf(firmwareHash);
-      if (!fw) throw new Error(`the stock firmware ${firmwareHash.slice(0, 8)} is not kept here: choose it on the Firmware page`);
+      if (!fw)
+        throw new Error(
+          `the stock firmware ${firmwareHash.slice(0, 8)} is not kept here: choose it on the Firmware page`,
+        );
       return (await binder).bind(dks, fw).file;
     },
   };

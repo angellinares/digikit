@@ -14,7 +14,12 @@ import { fileHashHex } from '../../packages/dk-session/src/index.ts';
 import { DkNeeds } from '../../packages/workbench-core/src/modules/dkneeds.ts';
 import { DkBind, createServiceBinder } from '../../packages/workbench-core/src/modules/dkbind.ts';
 import { RUNTIME_SERVICE_NAMES } from '../../packages/dk-session/src/gen_proto.ts';
-import { SERVICE_EXT, deleteFiles, install, libraryModule } from '../../packages/workbench-core/src/modules/dktransfer.ts';
+import {
+  SERVICE_EXT,
+  deleteFiles,
+  install,
+  libraryModule,
+} from '../../packages/workbench-core/src/modules/dktransfer.ts';
 import { nameHash, serviceFileOf } from '../../packages/workbench-core/src/modules/services.ts';
 import { eventText } from '../../packages/workbench-core/src/transfer/transfer-core.ts';
 
@@ -43,7 +48,8 @@ export async function transferCommand({ host, session, sub, rest, opts, fail }) 
     await deleteFiles(session, rest, emit);
     return 0;
   }
-  if (sub !== 'install' || rest.length === 0) fail('usage: wb transfer install ID... [--stock STOCK.syx] | wb transfer delete PATH...');
+  if (sub !== 'install' || rest.length === 0)
+    fail('usage: wb transfer install ID... [--stock STOCK.syx] | wb transfer delete PATH...');
   const info = await session.info();
   const wasm = new Uint8Array(await host.firmware.patchkitWasm());
   const needs = await DkNeeds.create(wasm);

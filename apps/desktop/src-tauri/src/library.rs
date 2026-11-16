@@ -590,14 +590,22 @@ mod tests {
         copy_services(&root, "dt2", &dir, &mut report);
         assert_eq!(std::fs::read(dir.join("fx.dks")).unwrap(), b"FXSV");
         // only `.dks` files are copied: the library's own notes.txt is untouched
-        assert_eq!(std::fs::read(dir.join("notes.txt")).unwrap(), b"not a module");
+        assert_eq!(
+            std::fs::read(dir.join("notes.txt")).unwrap(),
+            b"not a module"
+        );
         // a changed file is written again, the .dkm files stay as they are
         std::fs::write(dist.join("fx.dks"), b"FXS2").unwrap();
         copy_services(&root, "dt2", &dir, &mut report);
         assert_eq!(std::fs::read(dir.join("fx.dks")).unwrap(), b"FXS2");
         assert_eq!(std::fs::read(dir.join("acme/synth.dkm")).unwrap(), b"SYNTH");
         // no source folder for another device: nothing copied, nothing failed
-        copy_services(&root, "dn2", &root.join(LIBRARY_DIR).join("dn2"), &mut report);
+        copy_services(
+            &root,
+            "dn2",
+            &root.join(LIBRARY_DIR).join("dn2"),
+            &mut report,
+        );
         assert!(report.failed.is_empty());
         let _ = std::fs::remove_dir_all(&root);
     }

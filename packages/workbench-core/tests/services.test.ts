@@ -19,7 +19,15 @@ const v = (major: number, minor: number) => (major << 16) | (minor << 8);
 const need = (name: string, min = 0, hard = true): Need => ({ hash32: nameHash(name), minVersion: min, hard });
 
 /** A file with a header, the role word and a header table of the given version behind it. */
-function build(opts: { version?: number; role?: number; needs?: Need[]; provides?: [number, number]; magic?: number; abi?: number; builtFor?: number }): Uint8Array {
+function build(opts: {
+  version?: number;
+  role?: number;
+  needs?: Need[];
+  provides?: [number, number];
+  magic?: number;
+  abi?: number;
+  builtFor?: number;
+}): Uint8Array {
   const entries: number[][] = [];
   const u32 = (n: number) => [(n >>> 24) & 255, (n >>> 16) & 255, (n >>> 8) & 255, n & 255];
   const u16 = (n: number) => [(n >>> 8) & 255, n & 255];
@@ -30,8 +38,14 @@ function build(opts: { version?: number; role?: number; needs?: Need[]; provides
       ...u32(12 * opts.needs.length),
       ...opts.needs.flatMap((n) => [...u32(n.hash32), ...u32(n.minVersion), ...u32(n.hard ? 1 : 0)]),
     ]);
-  if (opts.provides) entries.push([...u16(9), ...u16(1), ...u32(8), ...u32(opts.provides[0]), ...u32(opts.provides[1])]);
-  const table = [...u32(opts.magic ?? TABLE_MAGIC), ...u16(opts.version ?? 2), ...u16(entries.length), ...entries.flat()];
+  if (opts.provides)
+    entries.push([...u16(9), ...u16(1), ...u32(8), ...u32(opts.provides[0]), ...u32(opts.provides[1])]);
+  const table = [
+    ...u32(opts.magic ?? TABLE_MAGIC),
+    ...u16(opts.version ?? 2),
+    ...u16(entries.length),
+    ...entries.flat(),
+  ];
   const f = new Uint8Array(HEADER_BYTES + table.length);
   const d = new DataView(f.buffer);
   d.setUint32(0x30, opts.builtFor ?? 0);
@@ -169,7 +183,9 @@ test('a service built for another ABI fingerprint refuses that module only', () 
     rt,
     RUNTIME,
   );
-  assert.deepEqual(r.refused, [{ module: 'a', service: 'fx', kind: 'fingerprint', runtime: '0.5.2', builtFor: '0.5.0' }]);
+  assert.deepEqual(r.refused, [
+    { module: 'a', service: 'fx', kind: 'fingerprint', runtime: '0.5.2', builtFor: '0.5.0' },
+  ]);
   assert.deepEqual(r.order, [lfo]);
 });
 

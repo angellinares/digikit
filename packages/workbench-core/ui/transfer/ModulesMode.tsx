@@ -326,7 +326,12 @@ export default function ModulesMode(props: { ctx: PageCtx; onFlash?: () => void 
                   <Show
                     when={
                       props.onFlash &&
-                      v().refusals?.some((r) => r.kind === 'fingerprint' || r.kind === 'no-stock' || (r.kind === 'version' && r.service === 'runtime'))
+                      v().refusals?.some(
+                        (r) =>
+                          r.kind === 'fingerprint' ||
+                          r.kind === 'no-stock' ||
+                          (r.kind === 'version' && r.service === 'runtime'),
+                      )
                     }
                   >
                     <button
@@ -341,9 +346,7 @@ export default function ModulesMode(props: { ctx: PageCtx; onFlash?: () => void 
                   </Show>
                 </div>
               </Show>
-              <Show when={fitLine(v(), ticks())}>
-                {(text) => <p class="fitline withservices">{text()}</p>}
-              </Show>
+              <Show when={fitLine(v(), ticks())}>{(text) => <p class="fitline withservices">{text()}</p>}</Show>
               <Show when={tickedFit(v(), ticks())}>
                 {(f) => (
                   <p
@@ -370,40 +373,40 @@ export default function ModulesMode(props: { ctx: PageCtx; onFlash?: () => void 
                         <For each={g.rows}>
                           {(r) => (
                             <>
-                            <ListRow
-                              rowKey={rowKey(r)}
-                              selected={ticks().has(rowKey(r)) || (!!filesId(r) && selectedId() === filesId(r))}
-                              onSelect={
-                                r.id
-                                  ? (e) => {
-                                      const f = filesId(r);
-                                      if (f) setSelectedId(f);
-                                      else {
-                                        setSelectedId(undefined);
-                                        lsel.click(rowKey(r), e);
+                              <ListRow
+                                rowKey={rowKey(r)}
+                                selected={ticks().has(rowKey(r)) || (!!filesId(r) && selectedId() === filesId(r))}
+                                onSelect={
+                                  r.id
+                                    ? (e) => {
+                                        const f = filesId(r);
+                                        if (f) setSelectedId(f);
+                                        else {
+                                          setSelectedId(undefined);
+                                          lsel.click(rowKey(r), e);
+                                        }
                                       }
-                                    }
-                                  : undefined
-                              }
-                              check={{
-                                label: `Install ${label(r)}`,
-                                checked: ticks().has(rowKey(r)),
-                                disabled: writing(busy()),
-                                onChange: () => lsel.tick(rowKey(r)),
-                              }}
-                              name={label(r)}
-                              title={r.id ?? r.path}
-                              tags={localTags(r)}
-                              version={r.version ?? ''}
-                              size={formatBytes(r.file_size)}
-                              action={sourceAction(r)}
-                            />
-                            <For each={r.services ?? []}>
-                              {(s) => <ServiceSubRow service={s} selected={ticks().has(rowKey(r))} />}
-                            </For>
-                            <Show when={ticks().has(rowKey(r)) && installsWithLine(r)}>
-                              {(text) => <WithLine text={text()} />}
-                            </Show>
+                                    : undefined
+                                }
+                                check={{
+                                  label: `Install ${label(r)}`,
+                                  checked: ticks().has(rowKey(r)),
+                                  disabled: writing(busy()),
+                                  onChange: () => lsel.tick(rowKey(r)),
+                                }}
+                                name={label(r)}
+                                title={r.id ?? r.path}
+                                tags={localTags(r)}
+                                version={r.version ?? ''}
+                                size={formatBytes(r.file_size)}
+                                action={sourceAction(r)}
+                              />
+                              <For each={r.services ?? []}>
+                                {(s) => <ServiceSubRow service={s} selected={ticks().has(rowKey(r))} />}
+                              </For>
+                              <Show when={ticks().has(rowKey(r)) && installsWithLine(r)}>
+                                {(text) => <WithLine text={text()} />}
+                              </Show>
                             </>
                           )}
                         </For>

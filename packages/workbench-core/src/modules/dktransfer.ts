@@ -105,6 +105,10 @@ export interface InstallDeps {
  */
 export interface TransferEvent {
   event: string;
+  /** Of a `refuse` event. */
+  refusal?: ServiceRefusal;
+  /** Of a `keep` event: the files on the card that need the service. */
+  by?: string[];
   [k: string]: unknown;
 }
 export type Emit = (e: TransferEvent) => void;
@@ -252,7 +256,11 @@ function neededBy(sv: ServiceView, path: string): string[] {
 }
 
 /** The services a module needs (hard needs, and the hard needs of those services), dependencies first, among the workbench's files. */
-function serviceRefs(m: LibraryModule, sv: ServiceView, card: Map<string, { size: number; hash: string }>): ServiceRef[] {
+function serviceRefs(
+  m: LibraryModule,
+  sv: ServiceView,
+  card: Map<string, { size: number; hash: string }>,
+): ServiceRef[] {
   const byHash = new Map(sv.services.map((x) => [x.file.hash32, x]));
   const out: ServiceRef[] = [];
   const seen = new Set<number>();
@@ -522,7 +530,8 @@ async function cardFacts(
     const isService = c.path.endsWith(SERVICE_EXT);
     if (!isService && !c.path.endsWith('.dkm')) continue;
     const m = mine.get(c.path);
-    let bytes: Uint8Array | null | undefined = m && m.file_size === c.size && m.hash === c.hash ? m.bytes : known[c.path];
+    let bytes: Uint8Array | null | undefined =
+      m && m.file_size === c.size && m.hash === c.hash ? m.bytes : known[c.path];
     if (bytes === undefined)
       bytes = await headerWithKeys(s, c.path).catch((e) => {
         if (e instanceof DkError && e.kind === 'device') return null;
@@ -732,9 +741,7 @@ export async function install(
   }
   if (deps && canReadHeaders(info)) await removeUnusedServices(s, info, library, emit);
   emit({ event: 'done', restarted: false, selected: [] });
-  return deps
-    ? { uploaded, selected: [], restarted: false, refused }
-    : { uploaded, selected: [], restarted: false };
+  return deps ? { uploaded, selected: [], restarted: false, refused } : { uploaded, selected: [], restarted: false };
 }
 
 /**
@@ -777,7 +784,12 @@ export async function refreshServices(
 }
 
 /** A `.dks` that no `.dkm` on the card hard-needs (directly or through another service) is not wanted any more: delete it. Nothing is deleted when a header cannot be read. */
-async function removeUnusedServices(s: DkSession, info: DkInfoFull, library: LibraryModule[], emit: Emit): Promise<void> {
+async function removeUnusedServices(
+  s: DkSession,
+  info: DkInfoFull,
+  library: LibraryModule[],
+  emit: Emit,
+): Promise<void> {
   const card = [...(await listModules(s, info)), ...(await listServices(s, info))];
   const facts = await cardFacts(s, card, library);
   const wanted = neededHashes(facts.needs, facts.provides);
@@ -793,10 +805,7 @@ async function removeUnusedServices(s: DkSession, info: DkInfoFull, library: Lib
 const canReadHeaders = (info: DkInfoFull): boolean => hasCap(info, 'READ');
 
 /** The service name hashes the files on the card hard-need: those of the `.dkm` files, and of the `.dks` files they need, and so on. */
-function neededHashes(
-  needs: { path: string; needs: Need[] }[],
-  provides: Record<string, number>,
-): Set<number> {
+function neededHashes(needs: { path: string; needs: Need[] }[], provides: Record<string, number>): Set<number> {
   const wanted = new Set<number>();
   const byHash = new Map(Object.entries(provides).map(([path, hash]) => [hash, path]));
   const queue = needs.filter((n) => n.path.endsWith('.dkm')).flatMap((n) => n.needs);

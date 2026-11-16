@@ -6,7 +6,13 @@ import { setFitReader } from '../modules/fit';
 import { RUNTIME_SERVICE_NAMES, fileHashHex, fmtVersion, storePath } from '@digi/dk-session';
 import type { DkInfoFull, DkSession } from '@digi/dk-session';
 import { NoRuntimeError, isCancelled, isTimeout } from '../modules/backend';
-import { nameHash, serviceFileOf, type RuntimeIdentity, type ServiceBinder, type ServiceFile } from '../modules/services';
+import {
+  nameHash,
+  serviceFileOf,
+  type RuntimeIdentity,
+  type ServiceBinder,
+  type ServiceFile,
+} from '../modules/services';
 import {
   SERVICE_EXT,
   buildView,

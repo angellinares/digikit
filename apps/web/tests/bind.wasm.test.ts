@@ -18,28 +18,31 @@ test('the bind bundle holds ports and firmware declarations, no firmware', () =>
   assert.ok(b.ports.length > 0 && b.fw.length > 0);
 });
 
-test.skipIf(!have)('svc-test.dks binds to each stock image: same service, more bytes, the same bytes again, no second bind', async () => {
-  const binder = await DkBind.create(readBytes(wasmPath), JSON.stringify(buildBindBundle(root)));
-  for (const dev of ['dt2', 'dn2'] as const) {
-    const unbound = readBytes(dks(dev));
-    const stock = new Uint8Array(readFileSync(images[dev]));
-    const a = binder.bind(unbound, stock);
-    const b = binder.bind(unbound, stock);
-    assert.equal(fileHashHex(a.file), fileHashHex(b.file), `${dev}: binding is deterministic`);
-    assert.ok(a.file.length > unbound.length, `${dev}: trampolines were added`);
-    assert.ok(a.hooks.length > 0, `${dev}: a hook was bound`);
-    const before = serviceFileOf('svc-test', unbound, 'h')!;
-    const after = serviceFileOf('svc-test', a.file, 'h')!;
-    assert.equal(after.hash32, nameHash('svc-test'));
-    assert.equal(after.version, before.version);
-    assert.equal(after.abi, before.abi, `${dev}: the ABI fingerprint survives binding`);
-    assert.deepEqual(readNeeds(a.file), readNeeds(unbound));
-    // a bound file is not bound again
-    assert.throws(() => binder.bind(a.file, stock), /already bound/);
-  }
-  // a file that is no stock image: patchkit's reason comes back
-  assert.throws(() => binder.bind(readBytes(dks('dt2')), new Uint8Array(64)), /.+/);
-});
+test.skipIf(!have)(
+  'svc-test.dks binds to each stock image: same service, more bytes, the same bytes again, no second bind',
+  async () => {
+    const binder = await DkBind.create(readBytes(wasmPath), JSON.stringify(buildBindBundle(root)));
+    for (const dev of ['dt2', 'dn2'] as const) {
+      const unbound = readBytes(dks(dev));
+      const stock = new Uint8Array(readFileSync(images[dev]));
+      const a = binder.bind(unbound, stock);
+      const b = binder.bind(unbound, stock);
+      assert.equal(fileHashHex(a.file), fileHashHex(b.file), `${dev}: binding is deterministic`);
+      assert.ok(a.file.length > unbound.length, `${dev}: trampolines were added`);
+      assert.ok(a.hooks.length > 0, `${dev}: a hook was bound`);
+      const before = serviceFileOf('svc-test', unbound, 'h')!;
+      const after = serviceFileOf('svc-test', a.file, 'h')!;
+      assert.equal(after.hash32, nameHash('svc-test'));
+      assert.equal(after.version, before.version);
+      assert.equal(after.abi, before.abi, `${dev}: the ABI fingerprint survives binding`);
+      assert.deepEqual(readNeeds(a.file), readNeeds(unbound));
+      // a bound file is not bound again
+      assert.throws(() => binder.bind(a.file, stock), /already bound/);
+    }
+    // a file that is no stock image: patchkit's reason comes back
+    assert.throws(() => binder.bind(readBytes(dks('dt2')), new Uint8Array(64)), /.+/);
+  },
+);
 
 test.skipIf(!haveWasmAndImages || !existsSync(join(root, 'dist', 'modules', 'dt2', 'lfo.dks')))(
   'lfo.dks hooks no firmware site: bind returns it as built',

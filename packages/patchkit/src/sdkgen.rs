@@ -1410,7 +1410,10 @@ fn ts_proto(sdk: &Sdk) -> String {
         .iter()
         .map(|n| format!("'{n}'"))
         .collect();
-    let one = format!("export const RUNTIME_SERVICE_NAMES = [{}];", names.join(", "));
+    let one = format!(
+        "export const RUNTIME_SERVICE_NAMES = [{}];",
+        names.join(", ")
+    );
     if one.chars().count() <= TS_WIDTH {
         let _ = writeln!(s, "{one}");
     } else {

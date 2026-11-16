@@ -410,7 +410,14 @@ function withTable(
     payload.forEach((w, i) => ev.setUint32(8 + i * 4, w));
     return e;
   };
-  if (needs.length) entries.push(entry(1, needs.length, needs.flatMap(([h, min, hard]) => [h, min, hard ? 1 : 0])));
+  if (needs.length)
+    entries.push(
+      entry(
+        1,
+        needs.length,
+        needs.flatMap(([h, min, hard]) => [h, min, hard ? 1 : 0]),
+      ),
+    );
   if (provides) entries.push(entry(9, 1, provides));
   let at = 0xa0;
   v.setUint32(at, 0x444b5442);
@@ -690,7 +697,10 @@ test('buildView with services: a library module lists its services with their st
   );
   assert.equal(rows['someone/pluck'].service_refusal?.module, 'someone/pluck');
   assert.equal(rows['someone/shot'].service_refusal, undefined);
-  assert.deepEqual(rows['someone/shot'].services?.map((r) => [r.stem, r.state]), [['fx', 'on device']]);
+  assert.deepEqual(
+    rows['someone/shot'].services?.map((r) => [r.stem, r.state]),
+    [['fx', 'on device']],
+  );
   assert.equal(view.refusals?.length, 1);
   const fxRow = view.card_only.find((r) => r.path === 'services/fx.dks')!;
   assert.deepEqual(fxRow.needed_by, ['modules/shot.dkm']);

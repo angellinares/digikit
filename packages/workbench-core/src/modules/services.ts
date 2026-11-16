@@ -268,8 +268,7 @@ export function planDelete(
   const remaining = modules.filter((m) => !chosen.has(m.path));
   const deleted = modules.filter((m) => chosen.has(m.path));
   const usedBy = new Map<string, string[]>();
-  for (const m of remaining)
-    for (const p of reach(m.needs)) usedBy.set(p, [...(usedBy.get(p) ?? []), m.path]);
+  for (const m of remaining) for (const p of reach(m.needs)) usedBy.set(p, [...(usedBy.get(p) ?? []), m.path]);
 
   const del = new Set<string>(paths.filter((p) => !isService(p)));
   const kept: { path: string; by: string[] }[] = [];

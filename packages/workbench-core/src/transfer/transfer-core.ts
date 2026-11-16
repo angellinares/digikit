@@ -130,7 +130,7 @@ export function deleteResultLines(events: TransferEvent[]): string[] {
   for (const e of events) {
     if (e.event === 'delete')
       lines.push(`Deleted ${e.path}${e.why === 'unused-service' ? ' (no module on the card needs it)' : ''}`);
-    else if (e.event === 'keep') lines.push(`Kept ${e.path} (${e.by.join(', ')} needs it)`);
+    else if (e.event === 'keep') lines.push(`Kept ${e.path} (${(e.by ?? []).join(', ')} needs it)`);
   }
   if (lines.length) lines.push('Restart the device to apply.');
   return lines;
@@ -151,13 +151,11 @@ export function eventText(e: TransferEvent): string {
     case 'progress':
       return `Uploading ${e.kind === 'service' ? (e.path ?? e.id) : e.id}`;
     case 'refuse':
-      return serviceRefusalText(e.refusal);
+      return serviceRefusalText(e.refusal!);
     case 'keep':
-      return `Kept ${e.path} (${e.by.join(', ')} needs it)`;
+      return `Kept ${e.path} (${(e.by ?? []).join(', ')} needs it)`;
     case 'delete':
-      return e.why === 'unused-service'
-        ? `Deleted ${e.path} (no module on the card needs it)`
-        : `Deleting ${e.path}`;
+      return e.why === 'unused-service' ? `Deleted ${e.path} (no module on the card needs it)` : `Deleting ${e.path}`;
     case 'verify':
       return e.ok ? `Verified ${e.path} on the card` : `Verify failed: ${e.path} differs on the card`;
     case 'restart':
@@ -234,7 +232,7 @@ export function fitLine(view: TransferView, ticks: Set<string>): string {
   const mods = view.modules.filter((r) => r.id && ticks.has(rowKey(r)) && !r.service_refusal);
   const who =
     mods.length === 1
-      ? `${mods[0].label ?? mods[0].name} and its ${plural(svs.length, 'service', 'services')}`
+      ? `${mods[0]!.label ?? mods[0]!.name} and its ${plural(svs.length, 'service', 'services')}`
       : `${mods.length} modules and their ${plural(svs.length, 'service', 'services')}`;
   const up = svs.filter((sv) => sv.state !== 'on device');
   const upText = up.length
@@ -364,7 +362,14 @@ export function startProgress(
 ): Progress {
   return {
     modules: [
-      ...services.map((sv): ModuleStep => ({ id: sv.id, kind: 'service', state: 'wait', path: sv.path, bytes: sv.bytes, sent: 0 })),
+      ...services.map((sv): ModuleStep => ({
+        id: sv.id,
+        kind: 'service',
+        state: 'wait',
+        path: sv.path,
+        bytes: sv.bytes,
+        sent: 0,
+      })),
       ...ids.map((id): ModuleStep => ({ id, state: 'wait', bytes: sizes[id] ?? 0, sent: 0 })),
     ],
     restart: restart ? 'wait' : 'none',
@@ -381,12 +386,15 @@ export function applyEvent(p: Progress, e: TransferEvent): Progress {
   if (e.event !== 'result') next.message = eventText(e);
   const service = 'kind' in e && e.kind === 'service';
   const mod = (id: unknown) =>
-    next.modules.find((m) => (m.kind === 'service') === service && (m.id === id || (service && m.path === (e as { path?: unknown }).path)));
+    next.modules.find(
+      (m) =>
+        (m.kind === 'service') === service && (m.id === id || (service && m.path === (e as { path?: unknown }).path)),
+    );
   switch (e.event) {
     case 'refuse': {
       // the module is not uploaded: it leaves the steps, the others go on
-      next.modules = next.modules.filter((m) => m.kind === 'service' || m.id !== e.refusal.module);
-      next.refused = [...(next.refused ?? []), e.refusal];
+      next.modules = next.modules.filter((m) => m.kind === 'service' || m.id !== e.refusal!.module);
+      next.refused = [...(next.refused ?? []), e.refusal!];
       break;
     }
     case 'build': {
@@ -464,8 +472,7 @@ export function progressFailed(p: Progress): boolean {
 }
 
 /** Was every ticked module refused (so that nothing was uploaded)? */
-export const allRefused = (p: Progress): boolean =>
-  !!p.refused?.length && !p.modules.some((m) => m.kind !== 'service');
+export const allRefused = (p: Progress): boolean => !!p.refused?.length && !p.modules.some((m) => m.kind !== 'service');
 
 /** The lines after an install that had refusals: each refused module named with its reason, then `x was installed.` for the others
  * (`ids`: the ticked module ids). Empty when nothing was refused. */
