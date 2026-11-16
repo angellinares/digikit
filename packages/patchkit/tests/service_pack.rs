@@ -200,3 +200,64 @@ fn a_service_with_an_unknown_service_or_a_foreign_export_is_refused() {
     }
     let _ = std::fs::remove_dir_all(&d);
 }
+
+/// The big-endian bytes of `word` occur in a section of the committed object `path` (a `.dko.json`).
+fn object_holds_word(path: &Path, word: u32) -> bool {
+    let v: serde_json::Value = serde_json::from_slice(&std::fs::read(path).unwrap()).unwrap();
+    let want: String = word
+        .to_be_bytes()
+        .iter()
+        .map(|b| format!("{b:02x}"))
+        .collect();
+    v["sections"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .any(|s| s["hex"].as_str().is_some_and(|h| h.contains(&want)))
+}
+
+#[test]
+fn lfo_packs_to_a_dks_that_owns_lfo_shape_and_its_users_need_it() {
+    if !toolchain() {
+        return;
+    }
+    let here = root();
+    let d = scratch("lfo");
+    let svc = packed(&here, "core/lfo", &d.join("lfo.dks"));
+    let dkm = Dkm::parse(&svc).unwrap();
+    assert_eq!(dkm.role, 1);
+    assert_eq!(&dkm.register[4..6], &2u16.to_be_bytes(), "table version 2");
+    let k = Keys::parse(&dkm.register).unwrap();
+    assert_eq!(
+        k.provides().collect::<Vec<_>>(),
+        vec![(name_hash("lfo"), dkm.version)]
+    );
+    // the kind and its handler (the glue declares init as the handler of every kind)
+    assert!(k.kinds().eq([dkneeds::keys::KindDecl {
+        kind: dkneeds::KIND_LFO_SHAPE,
+        len: dkneeds::LEN_LFO_SHAPE,
+        entry: dkm.init.unwrap(),
+    }]));
+    // the ABI word: set, and the value the runtime object carries (`dkrt_abi::SVC_ABI` of the ColdFire build, which the INFO reply reports)
+    let abi = u32::from_be_bytes(svc[dkneeds::H_SVC_ABI as usize..][..4].try_into().unwrap());
+    assert_ne!(abi, 0);
+    assert!(
+        object_holds_word(
+            &here.join("modules/core/runtime/build/runtime.dko.json"),
+            abi
+        ),
+        "H_SVC_ABI {abi:#x} is not the runtime's SVC_ABI: rebuild the objects (`patchkit build --tree modules/core`)"
+    );
+
+    // a module with an lfo_shape key needs the service; any other module of the tree needs no more than before
+    let user = packed(&here, "test/lfo-shape", &d.join("lfo-shape.dkm"));
+    let user = Dkm::parse(&user).unwrap();
+    let k = Keys::parse(&user.register).unwrap();
+    let lfo: Vec<_> = k
+        .needs()
+        .filter(|n| n.service == name_hash("lfo"))
+        .collect();
+    assert_eq!(lfo.len(), 1);
+    assert!(lfo[0].hard);
+    let _ = std::fs::remove_dir_all(&d);
+}

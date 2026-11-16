@@ -1656,7 +1656,6 @@ rust = "dkrt_svc_fx::records::Fx"
 
 [[service]]
 name = "lfo"
-rust = "dkrt_svc_lfo::records::Lfo"
 
 # A `[[service]]` without `rust` is provided by a `.dks` provider (a module with `role = "service"`), not by a runtime row: it is in no generated table.
 # `test = true`: a test-only service; it and its `[[import]]` rows (also `test = true`) are left out of the public SDK headers, docs and templates.
