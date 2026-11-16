@@ -107,7 +107,9 @@ try {
   if (index === undefined) {
     // the runtime's own load record says why (state, code and plan detail), without the debug module's log
     const states = (await dk.loadStates()).map((m) => `${stateModule(m)}: ${moduleStateText(m) ?? m.state}`).join('; ');
-    throw new Error(`${values.module} is not loaded: ${modules.map((m) => m.name).join(', ')} (load states: ${states})`);
+    throw new Error(
+      `${values.module} is not loaded: ${modules.map((m) => m.name).join(', ')} (load states: ${states})`,
+    );
   }
   const event = await events.until('MODULE_COMMIT', (e) => e.args[0] === index, {
     withinMs: Number(values['emulated-ms']),
