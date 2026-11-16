@@ -294,7 +294,7 @@ A hook's tail is firmware instructions copied from the image, so a finished `.dk
 
 Flow:
 
-1. We build unbound service objects and port data. They contain no firmware bytes.
+1. We build unbound service objects and port data. They contain no firmware bytes. A raw hook that continues in the stock code of its site refers to a tail symbol; the tail is made in step 2.
 2. The workbench binds them against the user's own firmware, the same flow as patching the image in the browser. It generates the tails and writes the finished `.dks`.
 3. The workbench uploads the runtime and the `.dks` set to the device.
 4. The user uploads modules. Services load only when a selected module needs them.
@@ -329,7 +329,7 @@ Readers: reviewers (CI output), the Transfer tab and menu (fit before restart), 
 
 ### 5.10 New firmware plug-in points
 
-A new plug-in point starts as an experimental `.dks` with its own hook table, and needs no change to the image. Modules import from it by name, and the report shows "experimental". It is not part of the default service set. When proven (two users, or Em's call), the mark comes off and module sources do not change. Only we build `.dks` files for now, because they carry firmware-level power. Whether third parties can write them is a later decision.
+A new plug-in point starts as an experimental `.dks` with its own hook table, and needs no change to the image, provided all its hooks have handlers or raw entries (BIND) and it needs no firmware data: service firmware data stays in image adapters for R12 (decision 1, below). Modules import from it by name, and the report shows "experimental". It is not part of the default service set. When proven (two users, or Em's call), the mark comes off and module sources do not change. Only we build `.dks` files for now, because they carry firmware-level power. Whether third parties can write them is a later decision.
 
 ### 5.11 Sink slots
 
@@ -343,6 +343,8 @@ A new plug-in point starts as an experimental `.dks` with its own hook table, an
 - With no sink set, a producer pays one word test per channel and calls nothing.
 
 Users: `digikit/debug` (`log`, later), `digikit/debug` (`span`, [profiling plan](profiling.md) section 7). The probe's per-block `dl_set_tick_cb` slot in dsp-link can follow the same rule later. Usage for a sink owner: [INSTRUMENTATION.md](../INSTRUMENTATION.md).
+
+**Decision 1 (R12): service firmware data stays in image adapters.** What a service needs about the firmware or the image (addresses, row indices, reserved rows, slot words) is a data table or slot of its image adapter, found by name hash (5.12 "Template"). So 5.10 (a plug-in point with no image change) holds only for a service whose hooks all have handlers or raw entries. A service that needs data, an interrupt stub or a reserved row has an adapter change, and the image is patched again. Revisit when the first service must ship without an image change; the options then are a data table in the `.dks` filled at bind from the user's firmware, or generated rows.
 
 ### 5.12 Service anatomy
 
@@ -365,7 +367,15 @@ The contract is the ABI in `sdk.toml`, so a Rust service uses the generated bind
 
 `check:layers` enforces that the rest of the runtime reaches a service only through these interfaces (added in R2c; [ARCHITECTURE.md](../ARCHITECTURE.md) says what it checks today).
 
-**Template.** A service is a crate `modules/core/services/<name>/` with `src/lib.rs`, `src/records.rs`, `src/slots.rs`, `src/dsp/` (when it has DSP parts) and `tests/` (host tests over `FakeCore`). R12-1 built the template (`sdk/templates/service`, `module:new -- service NAME`) and the structure check (`patchkit service-check`, run by `module:check -- service/NAME`: the layout, at most one exported symbol `dk_module`, declarations equal to `sdk.toml`); fx, machines, samples and lfo are crates in that layout. The `module.toml` (`role = "service"`), `adapter/` and the exported `dk_module` entry that carries the `ServiceRow` come with R12-3.
+**Template.** Every service has one shape (`sdk/templates/service`, `module:new -- service NAME`):
+
+- `modules/core/services/NAME/`: `Cargo.toml`, `src/{lib,records,slots}.rs`, `src/dsp/` (when it has DSP parts) and `tests/`. This is the neutral crate, host-tested over `FakeCore`. It exports only `dk_module` and `DKRT_*` symbols, has no assembler and names no firmware.
+- `dks/`: `module.toml` (id `core/services/NAME`, `role = "service"`), `src/lib.rs` (the `service!(...)` call and nothing else), `src/hooks.rs` (every hook as assembler) and `src/fw.rs` (firmware calls, when needed).
+- `modules/core/adapters/X` is the image half of a service: reserved rows, stubs, `[[slot]]` and `[[info]]`.
+
+One mechanism serves each concern. A hook site is entered through `BIND`, which `patchkit bind` writes: a handler trampoline, or the raw entry of a `replace` hook. An interrupt site is an image stub with a slot. Everything else a service needs about the device, the firmware or the image is a data table of its image adapter, found by name hash through `dkc_info`. The image has one export table, `dkrt_info_table` (`{magic "DKIT", count}`, then `{name hash, address}`), which holds the adapter data tables and the slot words. patchkit writes it from the `[[info]]` and `[[slot]]` entries of all image adapters and refuses a duplicate hash. `Platform::info` is the one lookup (`FakePlatform` gives it in host tests); `CoreApi::info` forwards to it. The runtime names no service and no adapter table.
+
+`patchkit service-check` (run by `module:check -- service/NAME`) enforces the shape: the `dks/` layout, the id and the role; `[[hook]]` entries equal to the `service!` hook list, per device; assembler only in `dks/src/hooks.rs`; firmware names (`cf.*`, `dkfw`) only under `dks/`. A failure blocks `module:check`. `check:layers` gives `modules/core/services` the role `service`. R12-1 built the template and the neutral-crate checks; fx, machines, samples and lfo are neutral crates. lfo is `core/services/lfo` with its `dks/`.
 
 ## 6. DSP
 
@@ -760,7 +770,7 @@ Estimate: about 2 agent days.
 
 **Install.** All-or-nothing per provider under one IPL-7 mask. Pass 1 checks every site before any write: length, trampoline inside the image, a second owner (E_PLAN_OWNER), and live bytes equal to stock (else the new E_HOOK_STOCK). Pass 2 writes the sites and flushes the covered lines. The stock check also runs before the provider's init. There is no live disarm, because install is the last step. The restore code is kept for hot reload and is host-tested. Run-time faults go to crash capture, and the next boot enters safe mode.
 
-**Slots.** The fill and clear mechanism sits behind the Platform trait, with host tests now. The first device proof comes in R12-6 (machines interrupt hooks). `Platform` gains `read_code` and `write_code`. `FakePlatform` logs the call order. The slot declare builder gains the entry word (`decl_matches` covers SLOTS).
+**Slots.** The fill and clear mechanism sits behind the Platform trait, with host tests now. The first device proof comes in R12-6 (machines interrupt hooks). `Platform` gains `read_code` and `write_code`. `FakePlatform` logs the call order. The slot declare builder gains the entry word (`decl_matches` covers SLOTS). The address of a slot word is an entry of the image's one table `dkrt_info_table` (name hash of the slot name, address of the word), found with `Platform::info`; there is no table per adapter. `slots_max` and `info_max` are limits of `sdk.toml`.
 
 **Patchkit and limits.** The patchkit `bind` command is ported onto the R12-2 `dkm.rs` (CLI; the wasm `pk_bind` comes in R12-7). Bound files are never committed. Limits come from `sdk.toml`: 24 BIND items per provider and 48 installed sites. `Declare::MAX` is raised for machines (21 hooks).
 
@@ -797,7 +807,7 @@ Estimate: about 3 agent days.
 
 - A wrapper crate with `service!(Fx, "fx", KINDS_FX)`. The fx `[[service]]` loses `rust =`. The runtime drops the dependency on `dkrt-svc-fx`.
 - The 9 fxpages hook bodies (asm, about 1.1 KB per device plus bss) move into `fx.dks` as `[[hook]]`s. All are task-level, so they install directly through BIND, with no slots.
-- The image keeps a data-only `fxpages_info` table: firmware data addresses and the `params.fp0` and `fs0` row indices, filled at patch time. `fx.dks` reads it through one generic core import, `dkc_info(name_hash) -> *const u32`, so the runtime stays free of fx knowledge. There are no bind-time externs. The asm jumps through the table.
+- The image keeps a data-only `fxpages_info` table: firmware data addresses and the `params.fp0` and `fs0` row indices, filled at patch time. `core/fxpages` declares it with `[[info]] name = "fxpages_info"`; patchkit puts its entry in `dkrt_info_table`. `fx.dks` reads it through one generic core import, `dkc_info(name_hash) -> *const u32` (`CoreApi::info`, behind `Platform::info`), so the runtime stays free of fx knowledge. There are no bind-time externs. The asm jumps through the table.
 - `fx_entry` becomes a row method. It answers "no fx" when the service is absent.
 - Kits loaded before the install get defaults (the adopt path).
 - Proof: the FX contract suite on `test/dyn-fx-gain`, plus a new bipolar fixture variant for the signed template of freqshift. `fx.dks` is on the card. A second case has no fx service and expects the stock FX pages. New fx host tests over FakeCore cover routes and fallback, send limit, send encoding, kit records and page rows.
@@ -810,7 +820,9 @@ Estimate: about 3 agent days.
 - 21 hooks. Direct install: the movable, boot-thread and first-fire hooks, and the page key and turn hooks that the runtime installs today. DT2 `clone.4` and the DN2 `dispatch` stay patched in the image.
 - DN2 `frametype` (frame interrupt, vector 191) gets an image stub and a slot. DT2 `clone.6` is decided by a PC probe: task level means direct install.
 - New patchkit op `op = "stub"` with `slot = NAME`. The site jumps to the stub. The stub loads the slot, tests it, branches to the stock tail when it is zero, and otherwise does `jmp (a0)`. It is built from `cf_site` and `cf_tail`. The 12-byte site of `clone.6` has a `bne.w` and needs a hand-written stock path.
-- Image adapter `[[slot]]`: a zero data word, plus an exported table of `{name hash, addr}` that the runtime reads. The installer writes base plus entry under IPL 7, then flushes the line.
+- Image adapter `[[slot]]`: a zero data word, and an entry `{name hash, address}` in the image's one table `dkrt_info_table`, which `Platform::info` searches. The installer writes base plus entry under IPL 7, then flushes the line.
+- Raw hooks keep no firmware bytes. A hook with no handler takes the whole control flow of its site (it answers for the caller or skips the stock path), so `patchkit bind` enters it at its own entry. When such a hook falls through to the displaced stock instructions, its declaration in `devices/fw/` has the exit `tail = true`. The asm refers to the tail by the import `dk_tail_<hash>`; `bind` generates the tail from the user's firmware, in the same code and with the same stock-bytes check (E_HOOK_STOCK) as a handler hook, and resolves the reference to it. An unbound `.dks` has no stock bytes (5.8).
+- One `.dks` serves both devices: `service!` lists hooks per device (`(name, entry)` for both, `(name, entry, dt2)` or `(name, entry, dn2)` for one) and `[[hook]]` has `devices`. `bind` binds the hooks of the firmware's device and writes only those into the bound file's `HOOKS`; `service-check` compares the two lists per device.
 - `machine_types_of` becomes a row method. `param_get` and `param_set` become provider EXPORTS.
 - Proof: the machine fixture suite (`test/sine`, `test/dyn-dn2`) with dynreg and equiv. The address-map check of pluck moves there. The first slot device proof is DN2 `frametype`. `shot` keeps pool, lease and picker.
 - Machine equiv moves to the rig: the rig references are new pins, reviewed once. Then the 8 analog, bd, pd and pluck pins go. The dynreg DN2 pin stays.
@@ -881,7 +893,7 @@ Flash adds the same `.dks` set to its job.
 | R12-3 Installer and slots | boot order with providers, log-only reporting, all-or-nothing install under one IPL-7 mask, E_HOOK_STOCK, slot mechanism, `read_code` and `write_code`, patchkit bind; no live disarm | FakePlatform call order; pass 1 and pass 2 cases; restore | one file in `core/runtime-tests`: order, trampoline jump, `dk_svctest_ping()` = 42, safe mode, E_HOOK_STOCK, E_PLAN_OWNER, `DIGI_FLUSH_CHECK=1` |
 | R12-4 Service boundary and `lfo.dks` | steps 2-6: fingerprint, `core_imports` and `SVC_IMPORTS` with `dkrt-svc-rt`, `Registry` add and remove with `dk_service_declare_row`, the `lfo` wrapper (static row dropped, record-kind NEED), device proof; `lfo.dks` is the first service built as a `.dks` | lfo over FakeCore; import contract test; fingerprint cases | core/runtime-lfo-tests on both devices (refusals: wrong ABI word, no file) |
 | R12-5 `fx.dks` | fx wrapper crate, 9 fxpages hooks by BIND, data-only `fxpages_info` with `dkc_info`, `fx_entry` row method | fx host tests over FakeCore (routes, send, kit records, page rows) | FX contract suite (`test/dyn-fx-gain` and a bipolar variant); no fx service gives stock FX pages |
-| R12-6 `machines.dks` | machines wrapper crate, 21 hooks, `op = "stub"` and `[[slot]]`, `RuntimeFw` moves in | machines crate tests | machine fixture suite (`test/sine`, `test/dyn-dn2`) with dynreg and equiv; first slot proof on DN2 `frametype`; shot |
+| R12-6 `machines.dks` | machines wrapper crate, 21 hooks (raw hooks with bind-made tails, per-device lists), `op = "stub"` and `[[slot]]`, `RuntimeFw` moves in | machines crate tests | machine fixture suite (`test/sine`, `test/dyn-dn2`) with dynreg and equiv; first slot proof on DN2 `frametype`; shot |
 | R12-7 Transfer installs services | mockup first | resolution behind fakes | transfer-live per device |
 | R12-8 SHARC stubs, dispatch in services | slice proof first: one stub, golden hashes at a zero slot, instruction-ratio A/B | - | - |
 

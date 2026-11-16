@@ -131,6 +131,12 @@ pub trait Platform: Tasking + SamplePool + StagedWriter + crate::storage::Storag
     /// Write back and invalidate both caches over a byte range (before running fresh code).
     fn flush(&self, start: u32, len: u32);
 
+    // ---- the image's info table ------------------------------------------------------------------------------------------
+    /// The entry `name_hash` of the image's one table `dkrt_info_table` (`dkneeds::keys::name_hash` of the name of an adapter's `[[info]]` or `[[slot]]`): the address
+    /// of an adapter's data table or of a slot word; null when the image has no such entry. The one lookup behind `CoreApi::info`: the runtime names no service and
+    /// no adapter table. A real platform searches the image's table with [`info_find`]; a fake gives its own.
+    unsafe fn info(&self, name_hash: u32) -> *const u32;
+
     // ---- code and slot words ---------------------------------------------------------------------------------------------
     /// Read `out.len()` bytes of code at the raw address `addr` (volatile byte copy).
     unsafe fn read_code(&self, addr: u32, out: &mut [u8]);
@@ -184,6 +190,34 @@ pub trait Platform: Tasking + SamplePool + StagedWriter + crate::storage::Storag
     }
 }
 
+/// "DKIT": the first word of the image's info table.
+pub const INFO_MAGIC: u32 = 0x444b_4954;
+
+/// The address that entry `hash` of the info table at `table` holds, or null: no table (null), another magic, a count over `dkneeds::INFO_MAX`, or no such entry.
+/// The table is big endian words (the image's data): `{magic "DKIT", count}`, then `{name hash, address}` per entry; `patchkit` writes it from the `[[info]]` and
+/// `[[slot]]` entries of the image adapters and refuses two entries with one hash.
+///
+/// # Safety
+/// `table` is null or the address of a readable table of its own count.
+pub unsafe fn info_find(table: *const u32, hash: u32) -> *const u32 {
+    use core::ptr::read_volatile;
+    if table.is_null() || read_volatile(table) != INFO_MAGIC {
+        return core::ptr::null();
+    }
+    let n = read_volatile(table.add(1));
+    if n > dkneeds::INFO_MAX {
+        return core::ptr::null();
+    }
+    let mut i = 0;
+    while i < n as usize {
+        if read_volatile(table.add(2 + 2 * i)) == hash {
+            return read_volatile(table.add(3 + 2 * i)) as usize as *const u32;
+        }
+        i += 1;
+    }
+    core::ptr::null()
+}
+
 /// Blocks from `start` to now, wrapping; `None` when the clock was or is not available.
 pub fn blocks_since<P: Platform>(p: &P, start: Option<u32>) -> Option<u32> {
     match (start, p.blocks()) {
@@ -198,4 +232,29 @@ pub fn locked<P: Platform, T>(p: &P, f: impl FnOnce() -> T) -> T {
     let r = f();
     p.irq_restore(sr);
     r
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    /// Entries are found by hash; a missing hash, another magic, no table and a count that is too big give null.
+    #[test]
+    fn the_info_table_is_searched_by_name_hash() {
+        let a = [7u32; 4];
+        let b = [9u32; 2];
+        // an address is 32 bits in the image; on the host compare the low word the table holds
+        let low = |p: &[u32]| p.as_ptr() as usize as u32;
+        let table = [INFO_MAGIC, 2, 0x1111, low(&a), 0x2222, low(&b)];
+        unsafe {
+            assert_eq!(info_find(table.as_ptr(), 0x1111) as usize as u32, low(&a));
+            assert_eq!(info_find(table.as_ptr(), 0x2222) as usize as u32, low(&b));
+            assert!(info_find(table.as_ptr(), 0x3333).is_null());
+            let other = [0x1234_5678u32, 1, 0x1111, 0];
+            assert!(info_find(other.as_ptr(), 0x1111).is_null());
+            assert!(info_find(core::ptr::null(), 0x1111).is_null());
+            let big = [INFO_MAGIC, dkneeds::INFO_MAX + 1];
+            assert!(info_find(big.as_ptr(), 0x1111).is_null());
+        }
+    }
 }

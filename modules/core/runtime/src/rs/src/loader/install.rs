@@ -230,6 +230,25 @@ mod tests {
         assert_eq!((ins.count(), f.depth.get()), (2, 0));
     }
 
+    /// A raw hook with a tail (`patchkit bind`): its BIND item holds the stock bytes of the site like any hook and its trampoline is the entry of the service's
+    /// asm, whose tail was made from the same stock. A firmware that differs from those bytes is refused before any write, and the stock one installs `jmp entry`.
+    #[test]
+    fn a_raw_hook_with_a_tail_is_refused_on_other_stock_and_installed_on_its_own() {
+        let stock = [0x70, 0x06, 0xb2, 0x80, 0x67, 0x00, 0x00, 0x20];
+        let bs = [BindRef { site: 0x1000_0000, addr: 0x1000_0000, len: 8, tramp: 0x80, stock: &stock }];
+        let f = fake(&bs);
+        let mut other = stock;
+        other[1] = 0x07;
+        f.put_code(0x1000_0000, &other);
+        let mut ins = Installer::new();
+        assert_eq!(unsafe { ins.install(&f, 0, &bs, BASE, SIZE, &[]) }, Err(E_HOOK_STOCK));
+        assert_eq!(*f.calls.borrow(), [Call::Mask, Call::Restore]);
+        assert_eq!(code(&f, 0x1000_0000, 8), other, "nothing was written");
+        f.put_code(0x1000_0000, &stock);
+        unsafe { ins.install(&f, 0, &bs, BASE, SIZE, &[]).unwrap() };
+        assert_eq!(code(&f, 0x1000_0000, 6), [0x4e, 0xf9, 0x41, 0x00, 0x00, 0x80]);
+    }
+
     #[test]
     fn a_stock_mismatch_writes_nothing() {
         let (sa, sb) = ([0xaa; 6], [0xbb; 6]);

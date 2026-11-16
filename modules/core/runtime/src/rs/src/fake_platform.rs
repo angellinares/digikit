@@ -50,6 +50,8 @@ pub struct FakePlatform {
     pub exc_hook: Cell<bool>,
     /// The `*_info` tables of the adapters, by name.
     pub info: RefCell<BTreeMap<&'static str, Vec<u8>>>,
+    /// The entries of the image's info table (`Platform::info`): name hash and the words at its address. Empty: the image has no table.
+    pub info_entries: RefCell<Vec<(u32, Vec<u32>)>>,
     pub pool: Cell<bool>,
     pub staged: Cell<bool>,
     pub worker: Cell<u32>,
@@ -105,6 +107,7 @@ impl FakePlatform {
             refuse_task: Cell::new(false),
             sems: RefCell::new(Vec::new()),
             code: RefCell::new(BTreeMap::new()),
+            info_entries: RefCell::new(Vec::new()),
             calls: RefCell::new(Vec::new()),
             storage,
         }
@@ -166,6 +169,9 @@ impl Platform for FakePlatform {
     unsafe fn write_code(&self, addr: u32, bytes: &[u8]) {
         self.calls.borrow_mut().push(Call::Write { addr, len: bytes.len() as u32 });
         self.put_code(addr, bytes);
+    }
+    unsafe fn info(&self, name_hash: u32) -> *const u32 {
+        self.info_entries.borrow().iter().find(|(h, _)| *h == name_hash).map_or(core::ptr::null(), |(_, w)| w.as_ptr())
     }
     unsafe fn write_word(&self, addr: u32, value: u32) {
         self.calls.borrow_mut().push(Call::Word { addr, value });
@@ -321,6 +327,20 @@ static mut BUF: [u8; 1024] = [0; 1024];
 
 unsafe fn write(p: &FakePlatform, sector: u32, sectors: u32) -> i32 {
     block_write_with(p, sector, sectors * 512, core::ptr::addr_of!(BUF) as *const u8)
+}
+
+/// The fake gives the entries of its info table by name hash, and null for a hash it has none for (the same answer as an image without the entry).
+#[test]
+fn the_fake_platform_serves_info_entries_by_name_hash() {
+    let f = FakePlatform::new(profiles::DT2);
+    unsafe {
+        assert!(f.info(0x1111).is_null());
+        f.info_entries.borrow_mut().push((0x1111, std::vec![5, 6]));
+        let p = f.info(0x1111);
+        assert!(!p.is_null());
+        assert_eq!((*p, *p.add(1)), (5, 6));
+        assert!(f.info(0x2222).is_null());
+    }
 }
 
 #[test]

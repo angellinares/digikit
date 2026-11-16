@@ -560,6 +560,9 @@ pub extern "C" fn midi_send(_: u32, _: *const u8, _: u32) {
 }
 #[no_mangle]
 pub extern "C" fn fxpages_info() {}
+/// The image's info table: a function here, not a table with the magic, so every lookup through the real platform is null.
+#[no_mangle]
+pub extern "C" fn dkrt_info_table() {}
 
 #[export_name = "cf.storage.fn.block.read"]
 pub extern "C" fn block_read(_: u32, _: u32, _: *mut u8) -> i32 {

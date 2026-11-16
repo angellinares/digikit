@@ -2,7 +2,8 @@
 //!
 //! - `ImportCore`: a zero-size `CoreApi` over the `dkc_*` imports of `dkrt_abi::core_imports`. A `Service<C: CoreApi>` runs over it unchanged; the static rows
 //!   of the runtime run the same code over `RealCore`, the host tests over `FakeCore`.
-//! - `service!`: the module record `dk_module` (its `init` declares the service's record kinds and its `ServiceRow`), the data word `dk_svc_abi` the packer
+//! - `service!`: the module record `dk_module` (its `init` declares the service's record kinds, its `ServiceRow` and, with `setup =` and `hooks =`, its hook sites:
+//!   `("cf.page.hook.page_desc", hooks::fxp_acc)` for every device, `(name, entry, dt2)` or `(name, entry, dn2)` for one; see `modules/README.md` "Services"), the data word `dk_svc_abi` the packer
 //!   copies to header word 0x3c, and the panic handler (the runtime's panic: crash capture, safe mode on the next boot).
 //!
 //! `#![no_std]`. The boundary is `extern "C"` with `repr(C)` types only (`improper_ctypes` is denied).
@@ -34,6 +35,31 @@ extern "C" {
     fn dk_service_declare_kind(ctx: *mut u8, kind: u32, len: u32, handler: *const u8) -> i32;
 }
 const _: dkrt_sdk::api::DkServiceDeclareKindFn = dk_service_declare_kind;
+extern "C" {
+    /// An import of every module (`dk_service_declare_hook` of sdk.toml): one hook site this service takes (the `name_hash` of the hook's name) and the function that
+    /// runs there. The runtime compares it with the `HOOKS` of the header table at the commit and installs the site after `init`.
+    fn dk_service_declare_hook(ctx: *mut u8, site: u32, entry: *const u8) -> i32;
+}
+const _: dkrt_sdk::api::DkServiceDeclareHookFn = dk_service_declare_hook;
+
+/// `name_hash` of a name (FNV-1a 32, as `dkneeds::keys::name_hash`): the identity of a hook site in `HOOKS`.
+pub const fn name_hash(s: &str) -> u32 {
+    let b = s.as_bytes();
+    let mut h: u32 = 0x811c_9dc5;
+    let mut i = 0;
+    while i < b.len() {
+        h ^= b[i] as u32;
+        h = h.wrapping_mul(0x0100_0193);
+        i += 1;
+    }
+    h
+}
+
+/// The `[digikit] id` of a device in the form `service!` takes for the device filter of a hook (`dt2`, `dn2`; no filter: 0, every device).
+#[doc(hidden)]
+pub const DEVICE_DT2: u32 = dkrt_abi::profiles::DT2.id;
+#[doc(hidden)]
+pub const DEVICE_DN2: u32 = dkrt_abi::profiles::DN2.id;
 
 use sys::*;
 
@@ -196,6 +222,9 @@ impl CoreApi for ImportCore {
     unsafe fn fx_info(&self) -> *const u32 {
         dkc_fx_info()
     }
+    unsafe fn info(&self, name_hash: u32) -> *const u32 {
+        dkc_info(name_hash)
+    }
     fn link_set(&self, slot: Slot, value: u32) {
         unsafe { dkc_link_set(&slot, value) }
     }
@@ -259,10 +288,73 @@ pub unsafe fn init(ctx: *mut u8, row: &'static ServiceRow, handler: *const u8) -
     dk_service_declare_row(ctx, row)
 }
 
+/// The `init` of `service!` with hooks: `setup` first (a status other than 0 refuses the file, nothing is declared), then the kinds and the row as `init`, then one
+/// `dk_service_declare_hook` for each `(site hash, entry, device)` that is for this device (`device` 0: every device). The first refusal is the result.
+///
+/// # Safety
+/// As `init`; each entry is the address of a function of the file.
+pub unsafe fn init_with_hooks(
+    ctx: *mut u8,
+    row: &'static ServiceRow,
+    handler: *const u8,
+    setup: unsafe fn(&ImportCore) -> i32,
+    hooks: &[(u32, *const u8, u32)],
+) -> i32 {
+    let r = setup(&ImportCore);
+    if r != 0 {
+        return r;
+    }
+    let r = init(ctx, row, handler);
+    if r != 0 {
+        return r;
+    }
+    let device = ImportCore.device_id();
+    for &(site, entry, only) in hooks {
+        if only != 0 && only != device {
+            continue;
+        }
+        let r = dk_service_declare_hook(ctx, site, entry);
+        if r != 0 {
+            return r;
+        }
+    }
+    0
+}
+
+/// The device filter of one hook entry of `service!`: none (every device), `dt2` or `dn2`.
+#[doc(hidden)]
+#[macro_export]
+macro_rules! hook_device {
+    () => {
+        0
+    };
+    (dt2) => {
+        $crate::DEVICE_DT2
+    };
+    (dn2) => {
+        $crate::DEVICE_DN2
+    };
+}
+
 /// The service file's glue: `service!(Lfo, "lfo", KINDS_LFO)` for `impl<C: CoreApi> Service<C> for Lfo`, the name of its `[[service]]` and the record kinds
 /// it owns (`&'static [(u32, u32)]`, as `dkrt_sdk::records::KINDS_*`). It emits `dk_module`, `dk_svc_abi` and (outside tests) the panic handler.
 #[macro_export]
 macro_rules! service {
+    ($svc:ty, $name:literal, $kinds:expr, setup = $setup:expr, hooks = [$(($site:literal, $entry:path $(, $dev:ident)?)),* $(,)?]) => {
+        static DK_SVC_ROW: $crate::dkrt_abi::service::ServiceRow =
+            $crate::dkrt_abi::service::ServiceRow::of::<$svc, $crate::ImportCore>($name, $kinds);
+
+        unsafe extern "C" fn dk_svc_init(ctx: *mut u8) -> i32 {
+            let hooks: &[(u32, *const u8, u32)] = &[$((
+                $crate::name_hash($site),
+                $entry as usize as *const u8,
+                $crate::hook_device!($($dev)?),
+            )),*];
+            $crate::init_with_hooks(ctx, &DK_SVC_ROW, dk_svc_init as usize as *const u8, $setup, hooks)
+        }
+
+        $crate::service_glue!();
+    };
     ($svc:ty, $name:literal, $kinds:expr) => {
         static DK_SVC_ROW: $crate::dkrt_abi::service::ServiceRow =
             $crate::dkrt_abi::service::ServiceRow::of::<$svc, $crate::ImportCore>($name, $kinds);
@@ -271,6 +363,15 @@ macro_rules! service {
             $crate::init(ctx, &DK_SVC_ROW, dk_svc_init as usize as *const u8)
         }
 
+        $crate::service_glue!();
+    };
+}
+
+/// What every service file has besides its `init`: `dk_module`, `dk_svc_abi` and the panic handler (used by `service!`).
+#[doc(hidden)]
+#[macro_export]
+macro_rules! service_glue {
+    () => {
         #[no_mangle]
         pub static dk_module: $crate::ModuleDef = $crate::ModuleDef {
             init: Some(dk_svc_init),

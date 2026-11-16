@@ -17,6 +17,8 @@ pub const TABLE_VERSION: u32 = 2;
 pub const PROVIDER_MAX: u32 = 6;
 pub const BIND_MAX: u32 = 24;
 pub const INSTALL_SITES: u32 = 48;
+pub const SLOTS_MAX: u32 = 16;
+pub const INFO_MAX: u32 = 64;
 pub const MAX_VOICES: u32 = 8;
 pub const MAX_FX: u32 = 4;
 

@@ -147,6 +147,10 @@ pub mod shims {
         REAL_CORE.fx_info()
     }
     #[cfg_attr(test, no_mangle)]
+    pub unsafe extern "C" fn dkc_info(name_hash: u32) -> *const u32 {
+        REAL_CORE.info(name_hash)
+    }
+    #[cfg_attr(test, no_mangle)]
     pub unsafe extern "C" fn dkc_link_set(slot: *const Slot, value: u32) {
         REAL_CORE.link_set(*slot, value)
     }

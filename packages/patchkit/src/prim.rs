@@ -125,7 +125,115 @@ pub fn validate_manifest(m: &Manifest) -> Result<()> {
                     ));
                 }
             }
+            "stub" => {
+                let hook = op.hook.as_deref();
+                let slot = op.slot.as_deref();
+                let (Some(_), Some(slot)) = (hook, slot) else {
+                    return Err(err!("{id}: stub needs hook and slot"));
+                };
+                match op.scratch.as_deref() {
+                    Some(r) => {
+                        parse_scratch(r).map_err(|e| err!("{id}: stub {slot}: {e}"))?;
+                    }
+                    None => {
+                        return Err(err!(
+                            "{id}: stub {slot} needs scratch (a register the hook's regs.clobbers lists)"
+                        ));
+                    }
+                }
+                if let Some(t) = &op.tail {
+                    expr::parse(t).map_err(|e| err!("{id}: stub {slot}: tail: {e}"))?;
+                }
+                let set = [
+                    ("to", op.to.is_some()),
+                    ("anchor", !op.anchor.is_empty()),
+                    ("anchors", op.anchors.is_some()),
+                    ("offset", op.offset != 0),
+                    ("displaced", op.displaced.is_some()),
+                    ("cpu", op.cpu.is_some()),
+                    ("value", op.value.is_some()),
+                    ("hex", op.hex.is_some()),
+                    ("width", op.width.is_some()),
+                ];
+                if let Some((field, _)) = set.iter().find(|(_, s)| *s) {
+                    return Err(err!(
+                        "{id}: a stub op names its hook and slot; {field} is not allowed"
+                    ));
+                }
+                // the slot is declared on every device the stub is active on
+                for d in crate::devdata::all() {
+                    if on(&op.devices, &d.short)
+                        && !m
+                            .slot
+                            .iter()
+                            .any(|s| on(&s.devices, &d.short) && s.name == slot)
+                    {
+                        return Err(err!(
+                            "{id}: stub uses slot {slot}, which is not declared with [[slot]] for {}",
+                            d.short
+                        ));
+                    }
+                }
+            }
             o => return Err(err!("{id}: unknown op {o}")),
+        }
+        if op.op != "stub" {
+            for (field, set) in [
+                ("slot", op.slot.is_some()),
+                ("scratch", op.scratch.is_some()),
+                ("tail", op.tail.is_some()),
+            ] {
+                if set {
+                    return Err(err!(
+                        "{id}: {field} belongs to op = \"stub\", not {}",
+                        op.op
+                    ));
+                }
+            }
+        }
+    }
+    for (i, sl) in m.slot.iter().enumerate() {
+        check_devices(id, &format!("slot {}", sl.name), &sl.devices)?;
+        if !ident_ok(&sl.name) {
+            return Err(err!("{id}: slot name {:?} is not [a-z][a-z0-9_]*", sl.name));
+        }
+        for o in &m.slot[..i] {
+            let clash = crate::devdata::all()
+                .iter()
+                .any(|d| on(&sl.devices, &d.short) && on(&o.devices, &d.short));
+            if o.name == sl.name && clash {
+                return Err(err!("{id}: slot {} is declared twice", sl.name));
+            }
+        }
+    }
+    for d in crate::devdata::all() {
+        let n = m.slot.iter().filter(|s| on(&s.devices, &d.short)).count();
+        if n > dkneeds::SLOTS_MAX as usize {
+            return Err(err!(
+                "{id}: {n} [[slot]] entries for {}, over the {} of `[limits.format] slots_max`",
+                d.short,
+                dkneeds::SLOTS_MAX
+            ));
+        }
+    }
+    for (i, inf) in m.info.iter().enumerate() {
+        check_devices(id, &format!("info {}", inf.name), &inf.devices)?;
+        if !ident_ok(&inf.name) {
+            return Err(err!(
+                "{id}: info name {:?} is not [a-z][a-z0-9_]*",
+                inf.name
+            ));
+        }
+        if let Some(t) = &inf.symbol {
+            expr::parse(t).map_err(|e| err!("{id}: info {}: symbol: {e}", inf.name))?;
+        }
+        for o in &m.info[..i] {
+            let clash = crate::devdata::all()
+                .iter()
+                .any(|d| on(&inf.devices, &d.short) && on(&o.devices, &d.short));
+            if o.name == inf.name && clash {
+                return Err(err!("{id}: info {} is declared twice", inf.name));
+            }
         }
     }
     for s in &m.section {
@@ -702,6 +810,9 @@ pub struct PlanHook {
     pub ret: u64,
     /// displaced instructions (ColdFire) with their original and re-encoded bytes
     pub displaced_insns: Vec<String>,
+    /// `op = "stub"`: the slot the stub at `to` loads
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub slot: Option<String>,
 }
 
 /// The values of one entry's fields (and `index`), as evaluated.
@@ -968,6 +1079,126 @@ pub fn cf_tail(s: &CfSite, base: u64, ret: u64) -> Result<Vec<u8>> {
     out.extend_from_slice(&CF_JMP_L.to_be_bytes());
     out.extend_from_slice(&(ret as u32).to_be_bytes());
     Ok(out)
+}
+
+// ---- pointer-slot stubs --------------------------------------------------------------------------------------
+
+/// Bytes of the stub prefix (load the slot, test it, branch to the handler); the stock path follows.
+pub const STUB_PREFIX_LEN: usize = 12;
+
+/// "DKIT": the first word of the image's info table (`dkrt_abi::platform::INFO_MAGIC`; the runtime reads the table with `info_find`).
+pub const INFO_TABLE_MAGIC: u32 = 0x444b_4954;
+
+/// A scratch register: 0..=7 `d0`..`d7`, 8..=14 `a0`..`a6`. `a7` is the stack pointer and is refused.
+pub fn parse_scratch(r: &str) -> Result<u8> {
+    let b = r.as_bytes();
+    if b.len() == 2 && b[1].is_ascii_digit() {
+        let n = b[1] - b'0';
+        match (b[0], n) {
+            (b'd', 0..=7) => return Ok(n),
+            (b'a', 0..=6) => return Ok(8 + n),
+            _ => {}
+        }
+    }
+    Err(err!("scratch {r:?} is not d0..d7 or a0..a6"))
+}
+
+/// The registers (0..=7 `d`, 8..=15 `a`) an effective address names.
+fn ea_regs(ea: &coldfire::Ea) -> Vec<u8> {
+    use coldfire::Ea;
+    match *ea {
+        Ea::Dn(n) => vec![n],
+        Ea::An(n) | Ea::Ind(n) | Ea::Post(n) | Ea::Pre(n) | Ea::Disp(n, _) => vec![8 + n],
+        Ea::Idx { an, xn, .. } => vec![8 + an, xn],
+        Ea::PcIdx { xn, .. } => vec![xn],
+        _ => vec![],
+    }
+}
+
+/// The first displaced instruction that reads `reg` before an instruction overwrites it. The stub clobbers `reg`, so a stock path that
+/// reads it would run on the slot address. Only a plain write (`move`, `movea`, `moveq`, `lea`, `clr`, `mvs`, `mvz` into `reg`) ends the
+/// search; a byte or word write leaves the upper bits of `reg` unchanged, which the hook's clobber list has to cover.
+pub fn scratch_read_by(insns: &[DispInsn], reg: u8) -> Option<&DispInsn> {
+    use coldfire::{Form, Operand};
+    for d in insns {
+        let ops = d.insn.operands();
+        let ops: Vec<&Operand> = ops.iter().filter(|o| !matches!(o, Operand::None)).collect();
+        let write_only = matches!(
+            d.insn.form,
+            Form::Move | Form::Movea | Form::Moveq | Form::Lea | Form::Clr | Form::Mvs | Form::Mvz
+        );
+        let dest_is_reg = |o: &Operand| {
+            matches!(o, Operand::Ea(coldfire::Ea::Dn(n)) if *n == reg)
+                || matches!(o, Operand::Ea(coldfire::Ea::An(n)) if 8 + *n == reg)
+        };
+        let last = ops.len().saturating_sub(1);
+        let mut written = false;
+        for (i, o) in ops.iter().enumerate() {
+            let mentions = match o {
+                Operand::Ea(ea) => ea_regs(ea).contains(&reg),
+                Operand::MacReg { r, .. } => *r == reg,
+                Operand::RegList(m) => *m & (1 << reg) != 0,
+                _ => false,
+            };
+            if !mentions {
+                continue;
+            }
+            if write_only && i == last && dest_is_reg(o) {
+                written = true;
+            } else {
+                return Some(d);
+            }
+        }
+        if written {
+            return None;
+        }
+    }
+    None
+}
+
+/// The stub prefix: load the slot word into `scratch`, run the handler when it is not zero, else fall through to the stock path.
+///
+/// Address register: `movea.l slot,aN; tst.l aN; beq.b +2; jmp (aN)`. Data register (flags come from the move): `move.l slot,dN; beq.b +4;
+/// move.l dN,-(sp); rts`. Both are 12 bytes and enter the handler with `scratch` = its address; the handler must not rely on `scratch`.
+pub fn stub_prefix(scratch: u8, slot_addr: u32) -> Vec<u8> {
+    let mut b: Vec<u16> = vec![];
+    if scratch < 8 {
+        b.push(0x2039 | (scratch as u16) << 9);
+    } else {
+        b.push(0x2079 | ((scratch - 8) as u16) << 9);
+    }
+    let mut out: Vec<u8> = vec![];
+    out.extend_from_slice(&b[0].to_be_bytes());
+    out.extend_from_slice(&slot_addr.to_be_bytes());
+    let rest: [u16; 3] = if scratch < 8 {
+        [0x6704, 0x2f00 | scratch as u16, 0x4e75]
+    } else {
+        let n = (scratch - 8) as u16;
+        [0x4a88 | n, 0x6702, 0x4ed0 | n]
+    };
+    for w in rest {
+        out.extend_from_slice(&w.to_be_bytes());
+    }
+    debug_assert_eq!(out.len(), STUB_PREFIX_LEN);
+    out
+}
+
+/// The image's one info table, `dkrt_info_table`: big endian `{magic "DKIT", count}`, then one `{name hash, address}` per entry (`entries` in order: the
+/// `[[slot]]` and `[[info]]` entries of all image adapters). `dkrt_abi::platform::info_find` searches it.
+pub fn build_info_table(entries: &[(u32, u32)]) -> Vec<u8> {
+    let mut out: Vec<u8> = vec![];
+    out.extend_from_slice(&INFO_TABLE_MAGIC.to_be_bytes());
+    out.extend_from_slice(&(entries.len() as u32).to_be_bytes());
+    for (hash, addr) in entries {
+        out.extend_from_slice(&hash.to_be_bytes());
+        out.extend_from_slice(&addr.to_be_bytes());
+    }
+    out
+}
+
+/// Size of the info table with `n` entries.
+pub fn info_table_len(n: usize) -> usize {
+    8 + 8 * n
 }
 
 /// The displaced instructions of a site as plan lines: address, bytes, instruction.

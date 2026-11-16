@@ -31,7 +31,7 @@ Rules:
             host tests (`tests.rs` or a `tests/` folder in the service) may name core modules: they drive the walkers and the planner over the service.
   service-crates
             A service crate (modules/core/services/NAME, linked into the runtime object) depends only on dkrt-abi, dkrt-sdk and dkneeds, and on
-            dkrt-test-support as a dev-dependency; it names no firmware crate and no device id, and has no path into the runtime crate. The runtime
+            dkrt-test-support as a dev-dependency; it names no firmware crate and no device id (only its `dks/` service file may name `dkfw`, in `dks/src/fw.rs`), and has no path into the runtime crate. The runtime
             names a service crate (`dkrt_svc_*`) only in `gen_services.rs` and `handlers.rs`. Final state (R12-1): no service is a folder of the
             runtime crate's `services/`; every service (fx, machines, samples, lfo) is a crate.
   platform  Inside the runtime crate, only `platform.rs` (the real platform, L1) and `fw.rs` at the crate's source root (the declared adapter of
@@ -75,6 +75,8 @@ FOLDER_ROLES = {
     "apps": "app",
     "runtime": "runtime",
     "expansion": "installer",
+    # a service file: modules/core/services/NAME/dks (the neutral crate above it is no module)
+    "services": "service",
 }
 # Content modules that patch the firmware themselves (they have [[op]] and anchor externs by design: patchkit's own
 # example of a hook). They are exempt from the objects and apps rules.
@@ -162,9 +164,9 @@ def check_roles(root: Path, mods: list[Module]) -> list[Violation]:
         r = rel(root, m.dir)
         parts = r.split("/")[2:]  # below modules/core
         want = FOLDER_ROLES.get(parts[0]) if parts else None
-        # the wrapper of a service crate that is also a service file: modules/core/services/NAME/dks
-        if parts[:1] == ["services"] and len(parts) == 3 and parts[2] == "dks":
-            want = "service"
+        # the `services` folder holds modules only as modules/core/services/NAME/dks (the service file of the crate NAME)
+        if parts[:1] == ["services"] and not (len(parts) == 3 and parts[2] == "dks"):
+            want = None
         where = f"{r}/module.toml:{line_of(m.text, 'category', 1)}"
         have = m.mod.get("role")
         if want is None:
@@ -865,7 +867,11 @@ def check_service_crates(root: Path) -> list[Violation]:
                 rust_without_comments(f.read_text(encoding="utf-8")).splitlines(), 1
             ):
                 where = f"{rel(root, f)}:{n}"
-                if RS_FW.search(line):
+                # the service file (`dks/`) is where a service names firmware (`dks/src/fw.rs`); the neutral crate does not
+                if (
+                    RS_FW.search(line)
+                    and "dks" not in f.relative_to(manifest.parent).parts
+                ):
                     out.append(
                         Violation(
                             where,

@@ -273,12 +273,13 @@ pnpm dev                                # the gallery at /patch: patch in the br
 4. Run it in the emulator: `mise run dk:run -- fx/NAME --emu`. An emulator must already run (`mise run workbench` or `mise run emu:serve`). It builds, packs, uploads, selects the module, restarts the guest and follows the log.
 5. Run it on the device: `mise run dk:run -- fx/NAME --port Digitakt`. The device needs the digikit runtime (version 0.1.0 or newer for the log levels): `mise run patch`, then `mise run patch:preflight` on the image before you flash it.
 
-**A service crate of the runtime** (`modules/core/services/NAME`, linked into the runtime object): `mise run module:new -- service NAME` writes the layout of
-`sdk/templates/service` (`Cargo.toml`, `src/lib.rs`, `records.rs`, `slots.rs`, `tests/records.rs`; add `src/dsp/` when the service has DSP parts) and prints the
-steps that register it (workspace member, runtime dependency, `[[service]]` row and `[records.kinds]` in `sdk/sdk.toml`, owner in `owners.toml`).
-`mise run module:check -- service/NAME` runs `patchkit service-check modules/core/services/NAME` (the layout; at most one exported symbol, `dk_module`; the record
-kinds that `Service::declare` makes equal to the `[records.kinds]` entries of the service in `sdk/sdk.toml`), then the crate's `rust-tests`. Example, run in the
-repository root:
+**A service** (`modules/core/services/NAME`): `mise run module:new -- service NAME` writes the layout of `sdk/templates/service`: the neutral crate
+(`Cargo.toml`, `src/lib.rs`, `records.rs`, `slots.rs`, `tests/records.rs`; add `src/dsp/` when the service has DSP parts) and the service file `dks/` (`module.toml` with
+id `core/services/NAME`, `src/lib.rs` with the `service!` call; add `src/hooks.rs` for hook assembler and `src/fw.rs` for firmware calls). It prints the steps that register it
+(workspace member, `[[service]]` row and `[records.kinds]` in `sdk/sdk.toml`). `mise run module:check -- service/NAME` runs `patchkit service-check modules/core/services/NAME`
+(the layout of both crates, the id and the role; the `[[hook]]` entries equal to the `service!` hooks per device; assembler only in `dks/src/hooks.rs`; firmware names only under `dks/`;
+at most one exported symbol, `dk_module`; the record kinds that `Service::declare` makes equal to the `[records.kinds]` entries of the service in `sdk/sdk.toml`), then the crate's
+`rust-tests`. Example, run in the repository root:
 
 ```text
 $ patchkit service-check modules/core/services/lfo modules/core/services/fx

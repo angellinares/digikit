@@ -7,7 +7,7 @@ use crate::apply::{HookSite, resolve_hook_site};
 use crate::dkm::{Dkm, EmitParts, FLAG_TRACE, ROLE_SERVICE, emit, max_file};
 use crate::error::*;
 use crate::firmware::Firmware;
-use crate::fwgen::{HandlerArg, HandlerPlan, handler_plan};
+use crate::fwgen::{HandlerArg, HandlerPlan, handler_plan, hook_has_handler, hook_has_tail};
 use crate::port::Registry;
 use crate::prim::{self, CF_JMP_L, CfSite, cf_tail};
 use dkneeds::keys::{
@@ -34,6 +34,22 @@ pub struct BoundHook {
     pub displaced: Vec<String>,
     /// Where the trampoline jumps back to.
     pub ret: u32,
+    /// A raw hook with a `tail` exit: the image offset of its generated tail (the displaced instructions, then `jmp.l ret`).
+    pub tail_off: Option<u32>,
+}
+
+/// The name of the undefined symbol with which the asm of a raw hook refers to the tail of `hook` (an exit `tail = true` in `devices/fw/`):
+/// `dk_tail_` and the `name_hash` of the hook name in 8 hex digits (an import name has at most 31 characters). `patchkit pack` keeps it as an import
+/// and `patchkit bind` replaces it with a base-relative relocation to the generated tail, so an unbound `.dks` holds no firmware bytes.
+pub fn tail_import(hook: &str) -> String {
+    format!("dk_tail_{:08x}", name_hash(hook))
+}
+
+/// Is `import` the tail reference of some hook (a name `tail_import` makes)?
+pub fn is_tail_import(import: &str) -> bool {
+    import
+        .strip_prefix("dk_tail_")
+        .is_some_and(|h| h.len() == 8 && h.bytes().all(|c| matches!(c, b'0'..=b'9' | b'a'..=b'f')))
 }
 
 fn put16(out: &mut Vec<u8>, w: u16) {
@@ -200,17 +216,129 @@ fn bind_site(
             vec![]
         },
         ret: to32(site.ret, "return address")?,
+        tail_off: None,
     })
 }
 
-/// The header table of `reg` with the `BIND` list `binds` (site hash, address, trampoline offset, stock bytes); every other list is kept.
-fn table_with_bind(reg: &[u8], binds: &[(u32, u32, u32, Vec<u8>)]) -> Result<Vec<u8>> {
+/// A hook with no `handler` (`devices/fw/`): its entry is a routine that takes the whole control flow of the site (it runs in place of the stock instructions and
+/// ends in the stock code by itself, as the effect pages' and machines' hooks do). The `BIND` item's trampoline is the entry itself and the runtime writes
+/// `jmp entry` at the site. Only `replace` hooks can be like this (a `before` hook would need the displaced instructions copied).
+///
+/// With `tail` (the declared exit `tail = true`) the displaced instructions of the site are appended to `image` as a tail, in the bytes of the user's firmware
+/// ([`cf_tail`], with the same check as a `before` trampoline that they do not depend on where they run), ending in `jmp.l` to the first instruction after the site.
+/// The asm of the entry reaches it through [`tail_import`], which `bind` resolves to the returned `tail_off`.
+fn bind_raw(
+    hook: &str,
+    site: &HookSite,
+    entry: u32,
+    tail: bool,
+    image: &mut Vec<u8>,
+) -> Result<BoundHook> {
+    if site.old.len() > BIND_STOCK_MAX {
+        return Err(err!(
+            "{hook}: the site has {} bytes, over the {BIND_STOCK_MAX} a BIND item holds",
+            site.old.len()
+        ));
+    }
+    if site.mode != "replace" {
+        return Err(err!(
+            "{hook}: a hook without a handler is entered directly and must have mode \"replace\" (it is {:?})",
+            site.mode
+        ));
+    }
+    let to32 = |v: u64, what: &str| {
+        u32::try_from(v).map_err(|_| err!("{hook}: {what} {v:#x} is not 32 bits"))
+    };
+    let ret = to32(site.ret, "return address")?;
+    let mut tail_off = None;
+    let mut displaced = vec![];
+    if tail {
+        let a = cf_tail(&site.cf, 0, ret as u64).map_err(|e| err!("{hook}: {e}"))?;
+        let b = cf_tail(&site.cf, 0x1000, ret as u64).map_err(|e| err!("{hook}: {e}"))?;
+        if a != b {
+            return Err(err!("PC-relative displaced instruction at {hook}"));
+        }
+        while image.len() % 4 != 0 {
+            image.push(0);
+        }
+        tail_off = Some(image.len() as u32);
+        image.extend(a);
+        displaced = prim::fmt_displaced(&site.cf);
+    }
+    Ok(BoundHook {
+        hook: hook.to_string(),
+        site_hash: name_hash(hook),
+        site_addr: to32(site.site, "site address")?,
+        site_len: site.site_len as u32,
+        stock: site.old.clone(),
+        tramp_off: entry,
+        displaced,
+        ret,
+        tail_off,
+    })
+}
+
+/// Replaces the references to the tails with base-relative relocations. A relocation against an import named by [`tail_import`] becomes a
+/// base-relative one and its word (the addend) gets the tail's image offset added; the import is dropped from the list and the indices of the others move
+/// down. `tails` are (hook name, image offset of its tail). An import of the form of a tail reference that no bound hook owns is refused: such a file would
+/// never load. Returns the imports that stay.
+fn resolve_tail_refs(
+    image: &mut [u8],
+    relocs: &mut [(u32, u32)],
+    imports: &[String],
+    tails: &[(&str, u32)],
+) -> Result<Vec<String>> {
+    let mut keep: Vec<String> = vec![];
+    let mut new_index: Vec<Option<usize>> = vec![];
+    for n in imports {
+        if is_tail_import(n) {
+            if !tails.iter().any(|(h, _)| tail_import(h) == *n) {
+                return Err(err!(
+                    "{n}: the file refers to a tail that no hook of its HOOKS declares with `tail = true`"
+                ));
+            }
+            new_index.push(None);
+        } else {
+            new_index.push(Some(keep.len()));
+            keep.push(n.clone());
+        }
+    }
+    for (off, k) in relocs.iter_mut() {
+        if *k >> 24 != 1 {
+            continue;
+        }
+        let i = (*k & 0x00ff_ffff) as usize;
+        match new_index.get(i).copied().flatten() {
+            Some(j) => *k = 1 << 24 | j as u32,
+            None => {
+                let name = &imports[i];
+                let (_, to) = tails.iter().find(|(h, _)| tail_import(h) == *name).unwrap();
+                let at = *off as usize;
+                let w = u32::from_be_bytes(image[at..at + 4].try_into().unwrap());
+                image[at..at + 4].copy_from_slice(&to.wrapping_add(w).to_be_bytes());
+                *k = 0;
+            }
+        }
+    }
+    Ok(keep)
+}
+
+/// The header table of `reg` with the `BIND` list `binds` (site hash, address, trampoline offset, stock bytes) and, when `hooks` is given, that `HOOKS` list
+/// (the hooks of this device); every other list is kept.
+fn table_with_bind(
+    reg: &[u8],
+    binds: &[(u32, u32, u32, Vec<u8>)],
+    hooks: Option<&[Pair]>,
+) -> Result<Vec<u8>> {
     let k = Keys::parse(reg).map_err(|e| err!("header table: {e:?}"))?;
     let needs: Vec<_> = k.needs().collect();
     let uses: Vec<_> = k.uses().collect();
     let kinds: Vec<_> = k.kinds().collect();
     let slots: Vec<_> = k.slots().collect();
-    let hooks: Vec<_> = k.hooks().collect();
+    let hooks: Vec<Pair> = match hooks {
+        Some(h) => h.to_vec(),
+        None => k.hooks().collect(),
+    };
     let exports: Vec<_> = k.exports().collect();
     let resources: Vec<_> = k.resources().collect();
     let provides: Vec<Pair> = k.provides().map(|(a, b)| Pair { a, b }).collect();
@@ -336,7 +464,23 @@ pub fn bind(
         .map(|(off, k)| (*off, k.map_or(0, |i| 1 << 24 | i as u32)))
         .collect();
     let mut bound = Vec::new();
+    // a service lists the hooks of every device in HOOKS; this device takes those its port declares, and the bound file lists only those (the hooks
+    // that `service!` declares at `init` on this device)
+    let mut on_device: Vec<Pair> = vec![];
     for h in &hooks {
+        if find_hook(port.hook.iter().map(|x| x.name.as_str()), h.a).is_err() {
+            continue;
+        }
+        on_device.push(*h);
+    }
+    if on_device.is_empty() {
+        return Err(err!(
+            "{}: none of its {} hooks is declared for {device} on this firmware",
+            dkm.name,
+            hooks.len()
+        ));
+    }
+    for h in &on_device {
         let name = find_hook(port.hook.iter().map(|x| x.name.as_str()), h.a)?;
         if h.b as usize >= dkm.image.len() {
             return Err(err!(
@@ -346,17 +490,27 @@ pub fn bind(
             ));
         }
         let site = resolve_hook_site(fw, reg, name)?;
-        let plan = handler_plan(decls, device, name)?;
-        bound.push(bind_site(name, &site, &plan, h.b, &mut image, &mut relocs)?);
+        if hook_has_handler(decls, device, name)? {
+            let plan = handler_plan(decls, device, name)?;
+            bound.push(bind_site(name, &site, &plan, h.b, &mut image, &mut relocs)?);
+        } else {
+            let tail = hook_has_tail(decls, device, name)?;
+            bound.push(bind_raw(name, &site, h.b, tail, &mut image)?);
+        }
     }
+    let tails: Vec<(&str, u32)> = bound
+        .iter()
+        .filter_map(|b| Some((b.hook.as_str(), b.tail_off?)))
+        .collect();
+    let imports_kept = resolve_tail_refs(&mut image, &mut relocs, &dkm.imports, &tails)?;
     shift_bss_words(&mut image, &dkm, old)?;
     relocs.sort();
     let items: Vec<(u32, u32, u32, Vec<u8>)> = bound
         .iter()
         .map(|b| (b.site_hash, b.site_addr, b.tramp_off, b.stock.clone()))
         .collect();
-    let table = table_with_bind(&dkm.register, &items)?;
-    let imports: Vec<&str> = dkm.imports.iter().map(String::as_str).collect();
+    let table = table_with_bind(&dkm.register, &items, Some(&on_device))?;
+    let imports: Vec<&str> = imports_kept.iter().map(String::as_str).collect();
     let file = emit(&EmitParts {
         name: &dkm.name,
         version: dkm.version,
@@ -390,6 +544,7 @@ pub fn bind_json(hooks: &[BoundHook]) -> String {
                 "tramp_off": h.tramp_off,
                 "displaced": h.displaced,
                 "ret": format!("{:#010x}", h.ret),
+                "tail_off": h.tail_off,
             })
         })
         .collect();
@@ -720,7 +875,7 @@ mod tests {
             (h, 0x400a_5eac, 0x30, stock.clone()),
             (h ^ 1, 0x400a_6000, 0x58, vec![9; BIND_STOCK_MAX]),
         ];
-        let t = table_with_bind(&dkm.register, &items).unwrap();
+        let t = table_with_bind(&dkm.register, &items, None).unwrap();
         let k = Keys::parse(&t).unwrap();
         assert_eq!(k.bind_count(), 2);
         let b = k.bind(0).unwrap();
@@ -740,6 +895,63 @@ mod tests {
             k.provides()
                 .eq(Keys::parse(&dkm.register).unwrap().provides())
         );
+    }
+
+    #[test]
+    fn a_raw_hook_with_a_tail_binds_to_the_stock_bytes_of_the_image() {
+        let site = site_of(&CODE, "replace").unwrap();
+        let mut image = vec![0x70, 0x00, 0x4e, 0x75, 0x4e, 0x71];
+        let h = bind_raw("x.hook", &site, 0x24, true, &mut image).unwrap();
+        // the entry stays the BIND trampoline; the tail is the displaced instructions as they were, then jmp.l ret
+        assert_eq!((h.tramp_off, h.tail_off), (0x24, Some(8)));
+        let mut want = CODE[..8].to_vec();
+        want.extend_from_slice(&[0x4e, 0xf9, 0x40, 0x00, 0x00, 0x08]);
+        assert_eq!(&image[8..], want);
+        assert_eq!(h.displaced.len(), 2);
+        // without a tail exit nothing is appended
+        let mut image = vec![0; 4];
+        let h = bind_raw("x.hook", &site, 0x24, false, &mut image).unwrap();
+        assert_eq!((image.len(), h.tail_off), (4, None));
+        // a PC-relative displaced instruction cannot be copied
+        let code = [0x66, 0x00, 0x00, 0x20, 0x4e, 0x71, 0x4e, 0x71, 0x4e, 0x71];
+        let site = site_of(&code, "replace").unwrap();
+        let e = bind_raw("x.hook", &site, 0, true, &mut vec![0; 4]).unwrap_err();
+        assert!(
+            e.0.contains("PC-relative displaced instruction at x.hook"),
+            "{e}"
+        );
+        // a hook that is not "replace" is not entered directly
+        let site = site_of(&CODE, "before").unwrap();
+        assert!(bind_raw("x.hook", &site, 0, false, &mut vec![]).is_err());
+    }
+
+    #[test]
+    fn tail_references_become_base_relative_relocations() {
+        let (a, b) = ("x.hook.a", "x.hook.b");
+        assert_eq!(tail_import(a).len(), 16);
+        assert!(
+            is_tail_import(&tail_import(a))
+                && !is_tail_import("dk_tail_xyz")
+                && !is_tail_import("dk_log")
+        );
+        // imports: the log function, the tail of a, the tail of b; words at 0 (log), 4 (a, addend 2), 8 (b), 12 (a)
+        let imports = vec!["dk_log".to_string(), tail_import(a), tail_import(b)];
+        let mut image = vec![0, 0, 0, 0, 0, 0, 0, 2, 0, 0, 0, 0, 0, 0, 0, 0];
+        let mut relocs = vec![
+            (0, 1 << 24),
+            (4, 1 << 24 | 1),
+            (8, 1 << 24 | 2),
+            (12, 1 << 24 | 1),
+        ];
+        let keep =
+            resolve_tail_refs(&mut image, &mut relocs, &imports, &[(a, 0x40), (b, 0x60)]).unwrap();
+        assert_eq!(keep, ["dk_log"]);
+        assert_eq!(relocs, [(0, 1 << 24), (4, 0), (8, 0), (12, 0)]);
+        let word = |at: usize| u32::from_be_bytes(image[at..at + 4].try_into().unwrap());
+        assert_eq!((word(0), word(4), word(8), word(12)), (0, 0x42, 0x60, 0x40));
+        // a tail reference of a hook that has no tail exit is refused
+        let e = resolve_tail_refs(&mut image, &mut relocs, &imports, &[(a, 0x40)]).unwrap_err();
+        assert!(e.0.contains("no hook of its HOOKS declares"), "{e}");
     }
 
     #[test]

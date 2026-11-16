@@ -3,7 +3,7 @@ name = "dkrt-svc-__KEBAB__"
 version = "0.1.0"
 edition = "2021"
 publish = false
-description = "The __NAME__ service of the digikit runtime, linked into the runtime object (interface B handlers over CoreApi)"
+description = "The __NAME__ service of the digikit runtime: a neutral crate (interface B handlers over CoreApi), host-tested over FakeCore, loaded as a service file (dks/)"
 
 [lib]
 path = "src/lib.rs"

@@ -31,7 +31,7 @@ This file says who owns which part of the repository and which moves are planned
 | Folder | Role | What |
 | --- | --- | --- |
 | `modules/core/runtime` | `runtime` | Loads `.dkm` modules, links their imports, owns store, selection and policy |
-| `modules/core/services/*` | none yet | Service crates linked into the runtime object (`fx`, `machines`, `samples`, `lfo`: crates `dkrt-svc-NAME`); one layout (`src/lib.rs`, `records.rs`, `slots.rs`, `dsp/` when the service has DSP parts, `tests/`; `module:new -- service NAME` makes it, `module:check service/NAME` checks it); they depend only on `dkrt-abi`, `dkrt-sdk` and `dkneeds` |
+| `modules/core/services/*` | `service` (the module is `NAME/dks`) | One folder per service (`fx`, `machines`, `samples`, `lfo`): the neutral crate `dkrt-svc-NAME` (`src/lib.rs`, `records.rs`, `slots.rs`, `dsp/` when the service has DSP parts, `tests/`; it depends only on `dkrt-abi`, `dkrt-sdk` and `dkneeds`) and the service file `dks/` (`module.toml` with id `core/services/NAME`, `src/lib.rs` with the `service!` call, `hooks.rs`, `fw.rs`); `module:new -- service NAME` makes it, `module:check service/NAME` checks it |
 | `modules/core/expansion` | `installer` | Reset-time installer of all patched-in code |
 | `modules/core/fw` | none | Generated firmware bindings (a library, not a module) |
 | `modules/core/adapters/*` | `adapter` | One adapter per firmware plug-in point: ui, input, fx, fxpages, dsp-voice, dsp-link, dyndsp, dynfx, dynreg, machines, params, overdrive, health |

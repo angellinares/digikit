@@ -1,0 +1,24 @@
+[module]
+id = "__ID__"
+version = "0.1.0"
+name = "__NAME__ service"
+category = "core"
+role = "service"
+service = "__NAME__"
+type = "raw"
+author = "digikit"
+status = "experimental"
+summary = "The __NAME__ service of the runtime as a service file"
+requires = []
+conflicts = []
+
+[targets]
+"dt2-1.17" = "experimental"
+"dn2-1.12" = "experimental"
+
+# Rust, built with rustc_codegen_gcc for -mcpu=54418 (`patchkit build`). Packed as a .dks (`patchkit pack __ID__`): the file is `__NAME__.dks`.
+# A service with hooks adds one [[hook]] (name, entry, optional devices) for each hook of the `service!` call; `patchkit service-check` compares the two per device.
+[[object]]
+path = "build/__NAME__.dko.json"
+sources = ["Cargo.toml"]
+place = "cf.expansion"

@@ -13,7 +13,7 @@ const A = 'test/lfo-shape';
 const B = 'test/lfo-shape-dup';
 /** The lfo service is a file of the card, `services/lfo.dks` (R12-4): the runtime finds it by its name when a selected module needs the service. It has no
  * hooks, so there is nothing to `patchkit bind` against the firmware: the packed file goes on the card as it is. */
-const SERVICE = 'core/lfo';
+const SERVICE = 'core/services/lfo';
 const SERVICE_PATH = 'services/lfo.dks';
 /** Header words of a `.dks` (packages/dkneeds/src/gen_limits.rs): the sha256 and the ABI fingerprint. */
 const H_SHA = 0x10;
