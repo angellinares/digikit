@@ -136,6 +136,7 @@ export const createNodesV2 = [
             twin: true,
             moduleId: m.id,
             services: serviceLeaves(byId),
+            projectDevices: devices,
             mergeTests: mergeTests(join(ctx.workspaceRoot, root)),
             base: ctx.workspaceRoot,
           }),

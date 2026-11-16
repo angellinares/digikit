@@ -5,6 +5,7 @@
     "runtimeAcceptance": [
       {
         "files": ["tests/shot-dt2.device.test.ts"],
+        "devices": ["dt2"],
         "tags": ["S:machines", "S:samples"],
         "modules": ["digikit/shot", "digikit/debug", "test/stock-pool", "test/track-select"],
         "plusdrive": true,
@@ -12,6 +13,7 @@
       },
       {
         "files": ["tests/shot-dn2-pool.device.test.ts"],
+        "devices": ["dn2"],
         "tags": ["S:machines", "S:samples"],
         "modules": ["digikit/shot", "digikit/debug", "test/track-select"],
         "plusdrive": true,
@@ -19,6 +21,7 @@
       },
       {
         "files": ["tests/shot-dn2-link.device.test.ts"],
+        "devices": ["dn2"],
         "tags": ["S:fx", "S:machines", "S:samples"],
         "modules": ["digikit/shot", "digikit/debug", "test/track-select", "test/dyn-fx-gain"],
         "plusdrive": true,
@@ -26,6 +29,7 @@
       },
       {
         "files": ["tests/shot-dn2-lease.device.test.ts"],
+        "devices": ["dn2"],
         "tags": ["S:machines", "S:samples"],
         "modules": ["digikit/shot", "digikit/debug", "test/track-select"],
         "plusdrive": true,
@@ -33,6 +37,7 @@
       },
       {
         "files": ["tests/shot-dn2-audio.device.test.ts"],
+        "devices": ["dn2"],
         "tags": ["C:dsp", "S:machines", "S:samples"],
         "modules": ["digikit/shot", "digikit/debug", "test/track-select"],
         "plusdrive": true,
@@ -40,6 +45,7 @@
       },
       {
         "files": ["tests/shot-dn2-supersede.device.test.ts"],
+        "devices": ["dn2"],
         "tags": ["M:digikit/remote", "S:machines", "S:samples"],
         "modules": ["digikit/shot", "digikit/debug", "digikit/remote", "test/track-select"],
         "plusdrive": true,
@@ -47,11 +53,13 @@
       },
       {
         "files": ["tests/shot-picker.device.test.ts"],
+        "devices": ["dt2"],
         "tags": ["S:machines", "S:samples"],
         "modules": ["digikit/shot", "digikit/debug", "test/stock-pool", "test/track-select"],
         "plusdrive": true,
         "dksampleWasm": true
       }
-    ]
+    ],
+    "mergeTests": ["tests/shot-dt2.device.test.ts", "tests/shot-dn2-audio.device.test.ts"]
   }
 }

@@ -10,7 +10,6 @@
         "tags": ["C:loading"],
         "modules": ["test/entry-demo"]
       }
-    ],
-    "mergeTests": ["entry.device.test.ts"]
+    ]
   }
 }

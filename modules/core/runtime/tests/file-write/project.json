@@ -30,10 +30,6 @@
         ],
         "plusdrive": true
       }
-    ],
-    "mergeTests": [
-      "file-write.device.test.ts",
-      "file-write-cut.device.test.ts"
     ]
   }
 }

@@ -13,7 +13,8 @@
 //
 // Lock rules are those of tests/regression/runtime/run-claim.ts: the lock file appears with the pid in it
 // (written aside, then linked into place). A dead pid is taken over by renaming the lock away first. An
-// unreadable lock counts as held until it is 10 minutes old. Release removes the lock only if it holds our pid.
+// unreadable lock counts as held until it is 10 minutes old. The admit lock is stale after ADMIT_MAX_MS even with a
+// live pid. Release removes the lock only if it holds our pid.
 import { spawn, spawnSync } from 'node:child_process';
 import { constants } from 'node:os';
 import fs from 'node:fs';
@@ -43,10 +44,24 @@ const lockText = (lock) => {
   }
 };
 
-// Whether the lock names a live process, or is too new to judge. A missing lock is not held.
-const held = (lock) => {
+// The admit lock is held for one decision plus RAMP_MS. Older than this, it is stale even if its pid lives:
+// a holder that never releases it would otherwise block every waiter of the machine.
+export const ADMIT_MAX_MS = 30_000;
+
+const ageMs = (lock) => {
+  try {
+    return Date.now() - fs.statSync(lock).mtimeMs;
+  } catch {
+    return 0;
+  }
+};
+
+// Whether the lock names a live process, or is too new to judge. A missing lock is not held. With `maxAgeMs`,
+// a lock older than that is not held, whatever its pid.
+const held = (lock, maxAgeMs) => {
   const text = lockText(lock);
   if (text === undefined) return false;
+  if (maxAgeMs !== undefined && ageMs(lock) > maxAgeMs) return false;
   const pid = Number.parseInt(text, 10);
   if (Number.isInteger(pid) && pid > 0) return alive(pid);
   try {
@@ -58,7 +73,7 @@ const held = (lock) => {
 
 let staleCount = 0;
 
-export const tryLock = (lock) => {
+export const tryLock = (lock, maxAgeMs) => {
   const tmp = `${lock}.${process.pid}.tmp`;
   fs.writeFileSync(tmp, String(process.pid));
   try {
@@ -69,7 +84,7 @@ export const tryLock = (lock) => {
       } catch (error) {
         if (error.code !== 'EEXIST') throw error;
       }
-      if (held(lock)) return false;
+      if (held(lock, maxAgeMs)) return false;
       const seen = lockText(lock);
       const away = `${lock}.stale-${process.pid}-${++staleCount}`;
       try {
@@ -138,7 +153,7 @@ export const acquire = async (dir, slots, live = true, log = (line) => console.e
     await sleep(POLL_MS);
   };
   for (;;) {
-    if (!tryLock(admit)) {
+    if (!tryLock(admit, ADMIT_MAX_MS)) {
       await wait(slotsInUse(dir, slots));
       continue;
     }

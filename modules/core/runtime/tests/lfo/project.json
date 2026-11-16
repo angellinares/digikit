@@ -10,7 +10,6 @@
         "tags": ["S:lfo"],
         "modules": ["digikit/debug", "test/lfo-shape", "test/lfo-shape-dup", "core/lfo"]
       }
-    ],
-    "mergeTests": ["lfo.device.test.ts"]
+    ]
   }
 }

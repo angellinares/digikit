@@ -3,8 +3,13 @@
 import assert from 'node:assert/strict';
 import { existsSync, readFileSync, readdirSync } from 'node:fs';
 import { dirname, join } from 'node:path';
-import { test } from 'vitest';
+import { test, vi } from 'vitest';
 import { haveWasmAndImages as need, images, py, root, wasmPath, workDir, writeBundle } from './support/patchkit-env.ts';
+
+// Most tests here run the patchkit command line with execFileSync (two full patches per image for core/fx).
+// Vitest checks the limit only after a synchronous call returns, so the project's 120 s limit failed a correct
+// test that took 408 s on a loaded machine. The limit fits that work.
+vi.setConfig({ testTimeout: 900_000 });
 
 type Registry = { name: string; entries: { id: string; index: number }[]; gaps?: number[]; count?: number };
 
