@@ -776,6 +776,8 @@ struct Actor {
     boot_resets: u32,
     /// CPU exceptions run the guest's handler (RPC `cpu.exceptions`), for every runtime installed from now on.
     deliver_exceptions: bool,
+    /// The PC probe (RPC `pc.probe.set`), armed in every runtime installed from now on, so it is active from reset.
+    pc_probe: Option<elektron_native_boot::PcProbeSpec>,
     /// The RAM range the model keeps across a soft reset (`keep_ram` of the device profile), as the guest left it, for the cold boot that follows.
     reset_ram: Option<Vec<u8>>,
 }
@@ -893,6 +895,7 @@ impl Actor {
             overlay_set_aside: false,
             boot_resets: 0,
             deliver_exceptions: false,
+            pc_probe: None,
             reset_ram: None,
         }
     }
@@ -1284,6 +1287,9 @@ impl Actor {
 
     fn install(&mut self, mut runtime: Runtime, error: Option<ReadError>) {
         runtime.set_deliver_exceptions(self.deliver_exceptions);
+        if let Some(spec) = &self.pc_probe {
+            runtime.set_pc_probe(spec);
+        }
         self.runtime = Some(runtime);
         self.overlay_set_aside = false;
         self.read_error = error;
@@ -2016,6 +2022,14 @@ impl Actor {
             "guard.set" => self.rpc_guard_set(&p).map(Some),
             "guard.report" => self
                 .with_runtime(|r| Ok(serde_json::to_value(r.guard_report()).unwrap_or(Value::Null)))
+                .map(Some),
+            "pc.probe.set" => self.rpc_pc_probe_set(&p).map(Some),
+            "pc.probe.report" => self.with_runtime(|r| Ok(r.pc_probe_report())).map(Some),
+            "pc.probe.clear" => self
+                .with_runtime(|r| {
+                    r.clear_pc_probe();
+                    Ok(json!({"cleared": true}))
+                })
                 .map(Some),
             "guard.clear" => self
                 .with_runtime(|r| {
@@ -2884,6 +2898,37 @@ impl Actor {
             Ok(())
         })?;
         Ok(json!({"protect": ranges, "allow_pc": allowed}))
+    }
+
+    /// `pc.probe.set {task_ptr?, keep?, probes: [{pc, label?, words?: [addr], stack?, frame?}]}` or `{file, name?}` (the spec is the
+    /// JSON file, or its member `name`): set the ColdFire PC probe
+    /// (docs/INSTRUMENTATION.md "PC probe"). The spec is kept and armed in every runtime installed later, so a probe set
+    /// before `firmware.load` or `restart` is active from reset; with a runtime loaded it is armed now too, and its hits
+    /// start from zero. Empty `probes` removes it.
+    fn rpc_pc_probe_set(&mut self, p: &Params) -> RpcResult {
+        let from_file = match p.opt_str("file")? {
+            Some(path) => {
+                let text = std::fs::read_to_string(path)
+                    .map_err(|e| RpcError::io(format!("pc.probe.set: {path}: {e}")))?;
+                let mut doc: Value = serde_json::from_str(&text)
+                    .map_err(|e| RpcError::bad_params(format!("pc.probe.set: {path}: {e}")))?;
+                if let Some(name) = p.opt_str("name")? {
+                    doc = doc.get(name).cloned().ok_or_else(|| {
+                        RpcError::bad_params(format!("pc.probe.set: no entry {name} in {path}"))
+                    })?;
+                }
+                Some(doc)
+            }
+            None => None,
+        };
+        let spec = elektron_native_boot::parse_pc_probe_spec(from_file.as_ref().unwrap_or(p.0))
+            .map_err(RpcError::bad_params)?;
+        let count = spec.probes.len();
+        if let Some(r) = self.runtime.as_mut() {
+            r.set_pc_probe(&spec);
+        }
+        self.pc_probe = Some(spec).filter(|s| !s.probes.is_empty());
+        Ok(json!({"probes": count}))
     }
 
     /// `flash.status`: what the guest wrote to the container area of the flash since the boot (the OS upgrade): `{erases, programs, bytes}`.

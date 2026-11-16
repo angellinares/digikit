@@ -374,6 +374,8 @@ pub struct Emulator {
     probe_hits: BTreeMap<u32, u64>,
     /// Host-requested instruction spans between two PCs (`add_span`).
     spans: crate::spans::Spans,
+    /// Host-requested PC probe (`set_pc_probe`). See `pcprobe.rs`.
+    pc_probe: crate::pcprobe::PcProbe,
     /// Late frame sends (`set_late_send`, off by default).
     late_send: Option<crate::late_send::LateSend>,
     /// The DSPI1 peer's IRQ1 (EPORT, INTC0 source 1) after a transfer; not saved.
@@ -768,6 +770,7 @@ impl Emulator {
             exec_ranges,
             probe_hits: BTreeMap::new(),
             spans: crate::spans::Spans::default(),
+            pc_probe: crate::pcprobe::PcProbe::default(),
             late_send: None,
             irq1_pending: false,
             deliver_exceptions: false,
@@ -985,6 +988,23 @@ impl Emulator {
     pub fn add_span(&mut self, name: &str, entry: u32, exit: u32) {
         self.spans.add(name, entry, exit);
         self.rebuild_watch();
+    }
+
+    /// Set (or, with no probes, remove) the PC probe: for each hit of a named PC, the instruction count, SR, SP, the
+    /// task word and chosen memory words (diagnostics; reads guest memory, changes no state). See `pcprobe.rs`.
+    pub fn set_pc_probe(&mut self, spec: &crate::pcprobe::PcProbeSpec) {
+        self.pc_probe.set(spec);
+        self.rebuild_watch();
+    }
+
+    /// The PC probe's counts and first hits.
+    pub fn pc_probe_report(&self) -> serde_json::Value {
+        self.pc_probe.report()
+    }
+
+    /// Forget the PC probe's hits and keep the probe.
+    pub fn clear_pc_probe(&mut self) {
+        self.pc_probe.clear();
     }
 
     /// Forget the passes recorded so far.
@@ -1856,6 +1876,7 @@ impl Emulator {
         pcs.extend(self.softfloat.entries());
         pcs.extend(self.probe_hits.keys().copied());
         pcs.extend(self.spans.pcs());
+        pcs.extend(self.pc_probe.pcs());
         if self.midi.usb.enabled {
             pcs.extend(
                 [
@@ -2470,6 +2491,16 @@ impl Emulator {
         }
         if !self.spans.is_empty() {
             self.spans.observe(pc, self.cpu.icount);
+        }
+        if !self.pc_probe.is_empty() {
+            let board = &mut self.bus.board;
+            self.pc_probe.observe(
+                pc,
+                self.cpu.icount,
+                self.cpu.sr,
+                self.cpu.a[7],
+                &mut |addr| board.read32(addr).ok(),
+            );
         }
         if let Some(hits) = self.probe_hits.get_mut(&pc) {
             *hits += 1;

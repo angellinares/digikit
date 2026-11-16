@@ -1,6 +1,7 @@
 import { readFileSync, writeFileSync } from 'node:fs';
 import { join } from 'node:path';
 import { Sample, prepareUpload } from '@digi/dk-session/dksample';
+import { TRAILER } from '@digi/dk-session/rpcfiles';
 import { repoRoot } from '@digi/test-support';
 import type { PatchedSession } from '@digi/regression/support.ts';
 import { timePhase } from '@digi/regression/timing.ts';
@@ -60,11 +61,12 @@ async function expectSamplesStore({ session }: PatchedSession): Promise<void> {
     );
     const listing = await dev.list('drums');
     check(
-      'the folder lists the file with the size sent',
+      'the folder lists the payload size and the stored size sent',
       listing.length === 1 &&
         listing[0]!.name === 'test' &&
         listing[0]!.kind === 'file' &&
-        listing[0]!.size === prep.stored.length,
+        listing[0]!.stored === prep.stored.length &&
+        listing[0]!.size === prep.stored.length - TRAILER.length,
       JSON.stringify(listing),
     );
     check(
@@ -122,7 +124,7 @@ async function expectSamplesStore({ session }: PatchedSession): Promise<void> {
     }
     check(
       'after the restart the file is still listed',
-      again?.length === 1 && again[0]!.name === 'test' && again[0]!.size === prep.stored.length,
+      again?.length === 1 && again[0]!.name === 'test' && again[0]!.stored === prep.stored.length && again[0]!.size === prep.stored.length - TRAILER.length,
       JSON.stringify(again),
     );
     const after = await dev.verify('drums', prep);

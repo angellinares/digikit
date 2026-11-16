@@ -9,6 +9,7 @@ app's `--scenario` mode and the browser parity check). One file per device:
   take `dn2.json` and `dn2-load.json`. A scenario name must not be in two files.
 - `dn2-machines.json` holds four audition scenarios (FM Tone, FM Drum, WaveTone, Swarmer): on the stock DN2 each picks the
   machine on track 1 and plays Trig 1 six times. Give it with `--scenarios`.
+- `r12-probe.json` holds the R12 deciding-check scenarios for both devices (`r12-check1-*`, `r12-check2-*`; `docs/INSTRUMENTATION.md`, "PC probe"). Give it with `--scenarios`. They are not pins.
 - `dt2.json` is passed with `--scenarios` (done for you by `--device dt2`).
 - DT2 FX sweeps live in `tests/regression/scenarios/dt2-trackfx.ts` and
   `tests/regression/scenarios/dt2-sendfx.ts`.

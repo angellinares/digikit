@@ -1,0 +1,1472 @@
+{
+ "scenarios": [
+  {
+   "exact_events": true,
+   "name": "r12-check1-dn2",
+   "description": "R12 check 1 (DN2): the dn2-rec-play inputs (NO, RECORD, trigs 1/5/9/13, RECORD, PLAY) and a MIDI DIN note, then play on to 30 s. Run with --pc-probe tools/emulator/pc_probe_r12.json:dn2-check1. Not a pin.",
+   "seconds": 30,
+   "events": [
+    {
+     "at_instr": 0,
+     "button": 12,
+     "down": true
+    },
+    {
+     "at_instr": 1000000,
+     "button": 12,
+     "down": false
+    },
+    {
+     "at_instr": 60000000,
+     "button": 19,
+     "down": true
+    },
+    {
+     "at_instr": 62000000,
+     "button": 19,
+     "down": false
+    },
+    {
+     "at_instr": 64000000,
+     "button": 25,
+     "down": true
+    },
+    {
+     "at_instr": 66000000,
+     "button": 25,
+     "down": false
+    },
+    {
+     "at_instr": 68000000,
+     "button": 29,
+     "down": true
+    },
+    {
+     "at_instr": 70000000,
+     "button": 29,
+     "down": false
+    },
+    {
+     "at_instr": 72000000,
+     "button": 33,
+     "down": true
+    },
+    {
+     "at_instr": 74000000,
+     "button": 33,
+     "down": false
+    },
+    {
+     "at_instr": 76000000,
+     "button": 37,
+     "down": true
+    },
+    {
+     "at_instr": 78000000,
+     "button": 37,
+     "down": false
+    },
+    {
+     "at_instr": 80000000,
+     "button": 19,
+     "down": true
+    },
+    {
+     "at_instr": 82000000,
+     "button": 19,
+     "down": false
+    },
+    {
+     "at_instr": 84000000,
+     "button": 20,
+     "down": true
+    },
+    {
+     "at_instr": 86000000,
+     "button": 20,
+     "down": false
+    },
+    {
+     "at_instr": 120000000,
+     "midi": [
+      144,
+      60,
+      100
+     ]
+    },
+    {
+     "at_instr": 600000000,
+     "midi": [
+      128,
+      60,
+      0
+     ]
+    }
+   ]
+  },
+  {
+   "exact_events": true,
+   "name": "r12-check2-dn2",
+   "description": "R12 check 2 (DN2): NO, SRC page, FUNC+SRC (machine list), NO, FX page, one knob turn (encoder A, 6 detents), RECORD, trig 1, RECORD, PLAY, then SRC page and two knob turns (encoders A and B), FUNC+SRC with DOWN, YES, YES (machine list: select the next machine), five times FUNC+DOWN (trig mode menu), DOWN (next trig mode), NO, KEYBOARD, PAGE twice, KEYBOARD; then FX, FUNC+FX, FX; 40 s. Run with --pc-probe tools/emulator/pc_probe_r12.json:dn2-check2. Not a pin.",
+   "seconds": 40,
+   "events": [
+    {
+     "at_instr": 0,
+     "button": 12,
+     "down": true
+    },
+    {
+     "at_instr": 1000000,
+     "button": 12,
+     "down": false
+    },
+    {
+     "at_instr": 60000000,
+     "button": 2,
+     "down": true
+    },
+    {
+     "at_instr": 62640000,
+     "button": 2,
+     "down": false
+    },
+    {
+     "at_instr": 100000000,
+     "button": 17,
+     "down": true
+    },
+    {
+     "at_instr": 100660000,
+     "button": 2,
+     "down": true
+    },
+    {
+     "at_instr": 103300000,
+     "button": 2,
+     "down": false
+    },
+    {
+     "at_instr": 103960000,
+     "button": 17,
+     "down": false
+    },
+    {
+     "at_instr": 160000000,
+     "button": 12,
+     "down": true
+    },
+    {
+     "at_instr": 161000000,
+     "button": 12,
+     "down": false
+    },
+    {
+     "at_instr": 200000000,
+     "button": 5,
+     "down": true
+    },
+    {
+     "at_instr": 202640000,
+     "button": 5,
+     "down": false
+    },
+    {
+     "at_instr": 240000000,
+     "turn": 1,
+     "detents": 6
+    },
+    {
+     "at_instr": 300000000,
+     "button": 19,
+     "down": true
+    },
+    {
+     "at_instr": 302000000,
+     "button": 19,
+     "down": false
+    },
+    {
+     "at_instr": 310000000,
+     "button": 25,
+     "down": true
+    },
+    {
+     "at_instr": 312000000,
+     "button": 25,
+     "down": false
+    },
+    {
+     "at_instr": 320000000,
+     "button": 19,
+     "down": true
+    },
+    {
+     "at_instr": 322000000,
+     "button": 19,
+     "down": false
+    },
+    {
+     "at_instr": 400000000,
+     "button": 20,
+     "down": true
+    },
+    {
+     "at_instr": 402000000,
+     "button": 20,
+     "down": false
+    },
+    {
+     "at_instr": 410000000,
+     "button": 2,
+     "down": true
+    },
+    {
+     "at_instr": 412640000,
+     "button": 2,
+     "down": false
+    },
+    {
+     "at_instr": 440000000,
+     "turn": 1,
+     "detents": 3
+    },
+    {
+     "at_instr": 450000000,
+     "turn": 2,
+     "detents": 3
+    },
+    {
+     "at_instr": 480000000,
+     "button": 17,
+     "down": true
+    },
+    {
+     "at_instr": 480660000,
+     "button": 2,
+     "down": true
+    },
+    {
+     "at_instr": 483300000,
+     "button": 2,
+     "down": false
+    },
+    {
+     "at_instr": 483960000,
+     "button": 17,
+     "down": false
+    },
+    {
+     "at_instr": 520000000,
+     "button": 14,
+     "down": true
+    },
+    {
+     "at_instr": 522640000,
+     "button": 14,
+     "down": false
+    },
+    {
+     "at_instr": 560000000,
+     "button": 10,
+     "down": true
+    },
+    {
+     "at_instr": 562640000,
+     "button": 10,
+     "down": false
+    },
+    {
+     "at_instr": 620000000,
+     "button": 10,
+     "down": true
+    },
+    {
+     "at_instr": 622640000,
+     "button": 10,
+     "down": false
+    },
+    {
+     "at_instr": 680000000,
+     "button": 17,
+     "down": true
+    },
+    {
+     "at_instr": 680660000,
+     "button": 14,
+     "down": true
+    },
+    {
+     "at_instr": 683300000,
+     "button": 14,
+     "down": false
+    },
+    {
+     "at_instr": 683960000,
+     "button": 17,
+     "down": false
+    },
+    {
+     "at_instr": 710000000,
+     "button": 14,
+     "down": true
+    },
+    {
+     "at_instr": 712640000,
+     "button": 14,
+     "down": false
+    },
+    {
+     "at_instr": 740000000,
+     "button": 12,
+     "down": true
+    },
+    {
+     "at_instr": 742640000,
+     "button": 12,
+     "down": false
+    },
+    {
+     "at_instr": 770000000,
+     "button": 18,
+     "down": true
+    },
+    {
+     "at_instr": 772640000,
+     "button": 18,
+     "down": false
+    },
+    {
+     "at_instr": 800000000,
+     "button": 22,
+     "down": true
+    },
+    {
+     "at_instr": 802640000,
+     "button": 22,
+     "down": false
+    },
+    {
+     "at_instr": 830000000,
+     "button": 22,
+     "down": true
+    },
+    {
+     "at_instr": 832640000,
+     "button": 22,
+     "down": false
+    },
+    {
+     "at_instr": 860000000,
+     "button": 18,
+     "down": true
+    },
+    {
+     "at_instr": 862640000,
+     "button": 18,
+     "down": false
+    },
+    {
+     "at_instr": 890000000,
+     "button": 17,
+     "down": true
+    },
+    {
+     "at_instr": 890660000,
+     "button": 14,
+     "down": true
+    },
+    {
+     "at_instr": 893300000,
+     "button": 14,
+     "down": false
+    },
+    {
+     "at_instr": 893960000,
+     "button": 17,
+     "down": false
+    },
+    {
+     "at_instr": 920000000,
+     "button": 14,
+     "down": true
+    },
+    {
+     "at_instr": 922640000,
+     "button": 14,
+     "down": false
+    },
+    {
+     "at_instr": 950000000,
+     "button": 12,
+     "down": true
+    },
+    {
+     "at_instr": 952640000,
+     "button": 12,
+     "down": false
+    },
+    {
+     "at_instr": 980000000,
+     "button": 18,
+     "down": true
+    },
+    {
+     "at_instr": 982640000,
+     "button": 18,
+     "down": false
+    },
+    {
+     "at_instr": 1010000000,
+     "button": 22,
+     "down": true
+    },
+    {
+     "at_instr": 1012640000,
+     "button": 22,
+     "down": false
+    },
+    {
+     "at_instr": 1040000000,
+     "button": 22,
+     "down": true
+    },
+    {
+     "at_instr": 1042640000,
+     "button": 22,
+     "down": false
+    },
+    {
+     "at_instr": 1070000000,
+     "button": 18,
+     "down": true
+    },
+    {
+     "at_instr": 1072640000,
+     "button": 18,
+     "down": false
+    },
+    {
+     "at_instr": 1100000000,
+     "button": 17,
+     "down": true
+    },
+    {
+     "at_instr": 1100660000,
+     "button": 14,
+     "down": true
+    },
+    {
+     "at_instr": 1103300000,
+     "button": 14,
+     "down": false
+    },
+    {
+     "at_instr": 1103960000,
+     "button": 17,
+     "down": false
+    },
+    {
+     "at_instr": 1130000000,
+     "button": 14,
+     "down": true
+    },
+    {
+     "at_instr": 1132640000,
+     "button": 14,
+     "down": false
+    },
+    {
+     "at_instr": 1160000000,
+     "button": 12,
+     "down": true
+    },
+    {
+     "at_instr": 1162640000,
+     "button": 12,
+     "down": false
+    },
+    {
+     "at_instr": 1190000000,
+     "button": 18,
+     "down": true
+    },
+    {
+     "at_instr": 1192640000,
+     "button": 18,
+     "down": false
+    },
+    {
+     "at_instr": 1220000000,
+     "button": 22,
+     "down": true
+    },
+    {
+     "at_instr": 1222640000,
+     "button": 22,
+     "down": false
+    },
+    {
+     "at_instr": 1250000000,
+     "button": 22,
+     "down": true
+    },
+    {
+     "at_instr": 1252640000,
+     "button": 22,
+     "down": false
+    },
+    {
+     "at_instr": 1280000000,
+     "button": 18,
+     "down": true
+    },
+    {
+     "at_instr": 1282640000,
+     "button": 18,
+     "down": false
+    },
+    {
+     "at_instr": 1310000000,
+     "button": 17,
+     "down": true
+    },
+    {
+     "at_instr": 1310660000,
+     "button": 14,
+     "down": true
+    },
+    {
+     "at_instr": 1313300000,
+     "button": 14,
+     "down": false
+    },
+    {
+     "at_instr": 1313960000,
+     "button": 17,
+     "down": false
+    },
+    {
+     "at_instr": 1340000000,
+     "button": 14,
+     "down": true
+    },
+    {
+     "at_instr": 1342640000,
+     "button": 14,
+     "down": false
+    },
+    {
+     "at_instr": 1370000000,
+     "button": 12,
+     "down": true
+    },
+    {
+     "at_instr": 1372640000,
+     "button": 12,
+     "down": false
+    },
+    {
+     "at_instr": 1400000000,
+     "button": 18,
+     "down": true
+    },
+    {
+     "at_instr": 1402640000,
+     "button": 18,
+     "down": false
+    },
+    {
+     "at_instr": 1430000000,
+     "button": 22,
+     "down": true
+    },
+    {
+     "at_instr": 1432640000,
+     "button": 22,
+     "down": false
+    },
+    {
+     "at_instr": 1460000000,
+     "button": 22,
+     "down": true
+    },
+    {
+     "at_instr": 1462640000,
+     "button": 22,
+     "down": false
+    },
+    {
+     "at_instr": 1490000000,
+     "button": 18,
+     "down": true
+    },
+    {
+     "at_instr": 1492640000,
+     "button": 18,
+     "down": false
+    },
+    {
+     "at_instr": 1520000000,
+     "button": 17,
+     "down": true
+    },
+    {
+     "at_instr": 1520660000,
+     "button": 14,
+     "down": true
+    },
+    {
+     "at_instr": 1523300000,
+     "button": 14,
+     "down": false
+    },
+    {
+     "at_instr": 1523960000,
+     "button": 17,
+     "down": false
+    },
+    {
+     "at_instr": 1550000000,
+     "button": 14,
+     "down": true
+    },
+    {
+     "at_instr": 1552640000,
+     "button": 14,
+     "down": false
+    },
+    {
+     "at_instr": 1580000000,
+     "button": 12,
+     "down": true
+    },
+    {
+     "at_instr": 1582640000,
+     "button": 12,
+     "down": false
+    },
+    {
+     "at_instr": 1610000000,
+     "button": 18,
+     "down": true
+    },
+    {
+     "at_instr": 1612640000,
+     "button": 18,
+     "down": false
+    },
+    {
+     "at_instr": 1640000000,
+     "button": 22,
+     "down": true
+    },
+    {
+     "at_instr": 1642640000,
+     "button": 22,
+     "down": false
+    },
+    {
+     "at_instr": 1670000000,
+     "button": 22,
+     "down": true
+    },
+    {
+     "at_instr": 1672640000,
+     "button": 22,
+     "down": false
+    },
+    {
+     "at_instr": 1700000000,
+     "button": 18,
+     "down": true
+    },
+    {
+     "at_instr": 1702640000,
+     "button": 18,
+     "down": false
+    },
+    {
+     "at_instr": 1730000000,
+     "button": 5,
+     "down": true
+    },
+    {
+     "at_instr": 1732640000,
+     "button": 5,
+     "down": false
+    },
+    {
+     "at_instr": 1760000000,
+     "button": 17,
+     "down": true
+    },
+    {
+     "at_instr": 1760660000,
+     "button": 5,
+     "down": true
+    },
+    {
+     "at_instr": 1763300000,
+     "button": 5,
+     "down": false
+    },
+    {
+     "at_instr": 1763960000,
+     "button": 17,
+     "down": false
+    },
+    {
+     "at_instr": 1800000000,
+     "button": 5,
+     "down": true
+    },
+    {
+     "at_instr": 1802640000,
+     "button": 5,
+     "down": false
+    }
+   ]
+  },
+  {
+   "exact_events": true,
+   "name": "r12-check1-dt2",
+   "description": "R12 check 1 (DT2): the dt2-rec-play inputs (NO, RECORD, trigs 1/5/9/13, RECORD, PLAY) and a MIDI DIN note, then play on to 30 s. Run with --pc-probe tools/emulator/pc_probe_r12.json:dt2-check1. Not a pin.",
+   "seconds": 30,
+   "events": [
+    {
+     "at_instr": 0,
+     "button": 12,
+     "down": true
+    },
+    {
+     "at_instr": 1000000,
+     "button": 12,
+     "down": false
+    },
+    {
+     "at_instr": 60000000,
+     "button": 19,
+     "down": true
+    },
+    {
+     "at_instr": 62000000,
+     "button": 19,
+     "down": false
+    },
+    {
+     "at_instr": 64000000,
+     "button": 25,
+     "down": true
+    },
+    {
+     "at_instr": 66000000,
+     "button": 25,
+     "down": false
+    },
+    {
+     "at_instr": 68000000,
+     "button": 29,
+     "down": true
+    },
+    {
+     "at_instr": 70000000,
+     "button": 29,
+     "down": false
+    },
+    {
+     "at_instr": 72000000,
+     "button": 33,
+     "down": true
+    },
+    {
+     "at_instr": 74000000,
+     "button": 33,
+     "down": false
+    },
+    {
+     "at_instr": 76000000,
+     "button": 37,
+     "down": true
+    },
+    {
+     "at_instr": 78000000,
+     "button": 37,
+     "down": false
+    },
+    {
+     "at_instr": 80000000,
+     "button": 19,
+     "down": true
+    },
+    {
+     "at_instr": 82000000,
+     "button": 19,
+     "down": false
+    },
+    {
+     "at_instr": 84000000,
+     "button": 20,
+     "down": true
+    },
+    {
+     "at_instr": 86000000,
+     "button": 20,
+     "down": false
+    },
+    {
+     "at_instr": 120000000,
+     "midi": [
+      144,
+      60,
+      100
+     ]
+    },
+    {
+     "at_instr": 600000000,
+     "midi": [
+      128,
+      60,
+      0
+     ]
+    }
+   ]
+  },
+  {
+   "exact_events": true,
+   "name": "r12-check2-dt2",
+   "description": "R12 check 2 (DT2): NO, SRC page, FUNC+SRC (machine list), NO, FX page, one knob turn (encoder A, 6 detents), RECORD, trig 1, RECORD, PLAY, then SRC page and two knob turns (encoders A and B), FUNC+SRC with DOWN, YES, YES (machine list: select the next machine), five times FUNC+DOWN (trig mode menu), DOWN (next trig mode), NO, KEYBOARD, PAGE twice, KEYBOARD; then FX, FUNC+FX, FX; 40 s. Run with --pc-probe tools/emulator/pc_probe_r12.json:dt2-check2. Not a pin.",
+   "seconds": 40,
+   "events": [
+    {
+     "at_instr": 0,
+     "button": 12,
+     "down": true
+    },
+    {
+     "at_instr": 1000000,
+     "button": 12,
+     "down": false
+    },
+    {
+     "at_instr": 60000000,
+     "button": 2,
+     "down": true
+    },
+    {
+     "at_instr": 62640000,
+     "button": 2,
+     "down": false
+    },
+    {
+     "at_instr": 100000000,
+     "button": 17,
+     "down": true
+    },
+    {
+     "at_instr": 100660000,
+     "button": 2,
+     "down": true
+    },
+    {
+     "at_instr": 103300000,
+     "button": 2,
+     "down": false
+    },
+    {
+     "at_instr": 103960000,
+     "button": 17,
+     "down": false
+    },
+    {
+     "at_instr": 160000000,
+     "button": 12,
+     "down": true
+    },
+    {
+     "at_instr": 161000000,
+     "button": 12,
+     "down": false
+    },
+    {
+     "at_instr": 200000000,
+     "button": 5,
+     "down": true
+    },
+    {
+     "at_instr": 202640000,
+     "button": 5,
+     "down": false
+    },
+    {
+     "at_instr": 240000000,
+     "turn": 1,
+     "detents": 6
+    },
+    {
+     "at_instr": 300000000,
+     "button": 19,
+     "down": true
+    },
+    {
+     "at_instr": 302000000,
+     "button": 19,
+     "down": false
+    },
+    {
+     "at_instr": 310000000,
+     "button": 25,
+     "down": true
+    },
+    {
+     "at_instr": 312000000,
+     "button": 25,
+     "down": false
+    },
+    {
+     "at_instr": 320000000,
+     "button": 19,
+     "down": true
+    },
+    {
+     "at_instr": 322000000,
+     "button": 19,
+     "down": false
+    },
+    {
+     "at_instr": 400000000,
+     "button": 20,
+     "down": true
+    },
+    {
+     "at_instr": 402000000,
+     "button": 20,
+     "down": false
+    },
+    {
+     "at_instr": 410000000,
+     "button": 2,
+     "down": true
+    },
+    {
+     "at_instr": 412640000,
+     "button": 2,
+     "down": false
+    },
+    {
+     "at_instr": 440000000,
+     "turn": 1,
+     "detents": 3
+    },
+    {
+     "at_instr": 450000000,
+     "turn": 2,
+     "detents": 3
+    },
+    {
+     "at_instr": 480000000,
+     "button": 17,
+     "down": true
+    },
+    {
+     "at_instr": 480660000,
+     "button": 2,
+     "down": true
+    },
+    {
+     "at_instr": 483300000,
+     "button": 2,
+     "down": false
+    },
+    {
+     "at_instr": 483960000,
+     "button": 17,
+     "down": false
+    },
+    {
+     "at_instr": 520000000,
+     "button": 14,
+     "down": true
+    },
+    {
+     "at_instr": 522640000,
+     "button": 14,
+     "down": false
+    },
+    {
+     "at_instr": 560000000,
+     "button": 10,
+     "down": true
+    },
+    {
+     "at_instr": 562640000,
+     "button": 10,
+     "down": false
+    },
+    {
+     "at_instr": 620000000,
+     "button": 10,
+     "down": true
+    },
+    {
+     "at_instr": 622640000,
+     "button": 10,
+     "down": false
+    },
+    {
+     "at_instr": 680000000,
+     "button": 17,
+     "down": true
+    },
+    {
+     "at_instr": 680660000,
+     "button": 14,
+     "down": true
+    },
+    {
+     "at_instr": 683300000,
+     "button": 14,
+     "down": false
+    },
+    {
+     "at_instr": 683960000,
+     "button": 17,
+     "down": false
+    },
+    {
+     "at_instr": 710000000,
+     "button": 14,
+     "down": true
+    },
+    {
+     "at_instr": 712640000,
+     "button": 14,
+     "down": false
+    },
+    {
+     "at_instr": 740000000,
+     "button": 12,
+     "down": true
+    },
+    {
+     "at_instr": 742640000,
+     "button": 12,
+     "down": false
+    },
+    {
+     "at_instr": 770000000,
+     "button": 18,
+     "down": true
+    },
+    {
+     "at_instr": 772640000,
+     "button": 18,
+     "down": false
+    },
+    {
+     "at_instr": 800000000,
+     "button": 22,
+     "down": true
+    },
+    {
+     "at_instr": 802640000,
+     "button": 22,
+     "down": false
+    },
+    {
+     "at_instr": 830000000,
+     "button": 22,
+     "down": true
+    },
+    {
+     "at_instr": 832640000,
+     "button": 22,
+     "down": false
+    },
+    {
+     "at_instr": 860000000,
+     "button": 18,
+     "down": true
+    },
+    {
+     "at_instr": 862640000,
+     "button": 18,
+     "down": false
+    },
+    {
+     "at_instr": 890000000,
+     "button": 17,
+     "down": true
+    },
+    {
+     "at_instr": 890660000,
+     "button": 14,
+     "down": true
+    },
+    {
+     "at_instr": 893300000,
+     "button": 14,
+     "down": false
+    },
+    {
+     "at_instr": 893960000,
+     "button": 17,
+     "down": false
+    },
+    {
+     "at_instr": 920000000,
+     "button": 14,
+     "down": true
+    },
+    {
+     "at_instr": 922640000,
+     "button": 14,
+     "down": false
+    },
+    {
+     "at_instr": 950000000,
+     "button": 12,
+     "down": true
+    },
+    {
+     "at_instr": 952640000,
+     "button": 12,
+     "down": false
+    },
+    {
+     "at_instr": 980000000,
+     "button": 18,
+     "down": true
+    },
+    {
+     "at_instr": 982640000,
+     "button": 18,
+     "down": false
+    },
+    {
+     "at_instr": 1010000000,
+     "button": 22,
+     "down": true
+    },
+    {
+     "at_instr": 1012640000,
+     "button": 22,
+     "down": false
+    },
+    {
+     "at_instr": 1040000000,
+     "button": 22,
+     "down": true
+    },
+    {
+     "at_instr": 1042640000,
+     "button": 22,
+     "down": false
+    },
+    {
+     "at_instr": 1070000000,
+     "button": 18,
+     "down": true
+    },
+    {
+     "at_instr": 1072640000,
+     "button": 18,
+     "down": false
+    },
+    {
+     "at_instr": 1100000000,
+     "button": 17,
+     "down": true
+    },
+    {
+     "at_instr": 1100660000,
+     "button": 14,
+     "down": true
+    },
+    {
+     "at_instr": 1103300000,
+     "button": 14,
+     "down": false
+    },
+    {
+     "at_instr": 1103960000,
+     "button": 17,
+     "down": false
+    },
+    {
+     "at_instr": 1130000000,
+     "button": 14,
+     "down": true
+    },
+    {
+     "at_instr": 1132640000,
+     "button": 14,
+     "down": false
+    },
+    {
+     "at_instr": 1160000000,
+     "button": 12,
+     "down": true
+    },
+    {
+     "at_instr": 1162640000,
+     "button": 12,
+     "down": false
+    },
+    {
+     "at_instr": 1190000000,
+     "button": 18,
+     "down": true
+    },
+    {
+     "at_instr": 1192640000,
+     "button": 18,
+     "down": false
+    },
+    {
+     "at_instr": 1220000000,
+     "button": 22,
+     "down": true
+    },
+    {
+     "at_instr": 1222640000,
+     "button": 22,
+     "down": false
+    },
+    {
+     "at_instr": 1250000000,
+     "button": 22,
+     "down": true
+    },
+    {
+     "at_instr": 1252640000,
+     "button": 22,
+     "down": false
+    },
+    {
+     "at_instr": 1280000000,
+     "button": 18,
+     "down": true
+    },
+    {
+     "at_instr": 1282640000,
+     "button": 18,
+     "down": false
+    },
+    {
+     "at_instr": 1310000000,
+     "button": 17,
+     "down": true
+    },
+    {
+     "at_instr": 1310660000,
+     "button": 14,
+     "down": true
+    },
+    {
+     "at_instr": 1313300000,
+     "button": 14,
+     "down": false
+    },
+    {
+     "at_instr": 1313960000,
+     "button": 17,
+     "down": false
+    },
+    {
+     "at_instr": 1340000000,
+     "button": 14,
+     "down": true
+    },
+    {
+     "at_instr": 1342640000,
+     "button": 14,
+     "down": false
+    },
+    {
+     "at_instr": 1370000000,
+     "button": 12,
+     "down": true
+    },
+    {
+     "at_instr": 1372640000,
+     "button": 12,
+     "down": false
+    },
+    {
+     "at_instr": 1400000000,
+     "button": 18,
+     "down": true
+    },
+    {
+     "at_instr": 1402640000,
+     "button": 18,
+     "down": false
+    },
+    {
+     "at_instr": 1430000000,
+     "button": 22,
+     "down": true
+    },
+    {
+     "at_instr": 1432640000,
+     "button": 22,
+     "down": false
+    },
+    {
+     "at_instr": 1460000000,
+     "button": 22,
+     "down": true
+    },
+    {
+     "at_instr": 1462640000,
+     "button": 22,
+     "down": false
+    },
+    {
+     "at_instr": 1490000000,
+     "button": 18,
+     "down": true
+    },
+    {
+     "at_instr": 1492640000,
+     "button": 18,
+     "down": false
+    },
+    {
+     "at_instr": 1520000000,
+     "button": 17,
+     "down": true
+    },
+    {
+     "at_instr": 1520660000,
+     "button": 14,
+     "down": true
+    },
+    {
+     "at_instr": 1523300000,
+     "button": 14,
+     "down": false
+    },
+    {
+     "at_instr": 1523960000,
+     "button": 17,
+     "down": false
+    },
+    {
+     "at_instr": 1550000000,
+     "button": 14,
+     "down": true
+    },
+    {
+     "at_instr": 1552640000,
+     "button": 14,
+     "down": false
+    },
+    {
+     "at_instr": 1580000000,
+     "button": 12,
+     "down": true
+    },
+    {
+     "at_instr": 1582640000,
+     "button": 12,
+     "down": false
+    },
+    {
+     "at_instr": 1610000000,
+     "button": 18,
+     "down": true
+    },
+    {
+     "at_instr": 1612640000,
+     "button": 18,
+     "down": false
+    },
+    {
+     "at_instr": 1640000000,
+     "button": 22,
+     "down": true
+    },
+    {
+     "at_instr": 1642640000,
+     "button": 22,
+     "down": false
+    },
+    {
+     "at_instr": 1670000000,
+     "button": 22,
+     "down": true
+    },
+    {
+     "at_instr": 1672640000,
+     "button": 22,
+     "down": false
+    },
+    {
+     "at_instr": 1700000000,
+     "button": 18,
+     "down": true
+    },
+    {
+     "at_instr": 1702640000,
+     "button": 18,
+     "down": false
+    },
+    {
+     "at_instr": 1730000000,
+     "button": 5,
+     "down": true
+    },
+    {
+     "at_instr": 1732640000,
+     "button": 5,
+     "down": false
+    },
+    {
+     "at_instr": 1760000000,
+     "button": 17,
+     "down": true
+    },
+    {
+     "at_instr": 1760660000,
+     "button": 5,
+     "down": true
+    },
+    {
+     "at_instr": 1763300000,
+     "button": 5,
+     "down": false
+    },
+    {
+     "at_instr": 1763960000,
+     "button": 17,
+     "down": false
+    },
+    {
+     "at_instr": 1800000000,
+     "button": 5,
+     "down": true
+    },
+    {
+     "at_instr": 1802640000,
+     "button": 5,
+     "down": false
+    }
+   ]
+  },
+  {
+   "exact_events": true,
+   "name": "r12-param-code-dn2",
+   "description": "R12-0 (DN2): no input; boot a patched image from a card with a saved project and play 10 s. Run with --pc-probe tools/emulator/pc_probe_r12_param_code.json:dn2-param-code. Not a pin.",
+   "seconds": 10,
+   "events": []
+  },
+  {
+   "exact_events": true,
+   "name": "r12-param-code-dt2",
+   "description": "R12-0 (DT2): no input; boot a patched image from a card with a saved project and play 10 s. Run with --pc-probe tools/emulator/pc_probe_r12_param_code.json:dt2-param-code. Not a pin.",
+   "seconds": 10,
+   "events": []
+  }
+ ]
+}

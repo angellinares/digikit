@@ -204,3 +204,44 @@ export interface GuardReport {
   total: number;
   hits: GuardHit[];
 }
+
+export interface PcProbeSpec {
+  /** The address of the current-task pointer word. */
+  task_ptr?: number | string;
+  /** Hits kept per PC (default 8); every hit is counted. */
+  keep?: number;
+  probes: {
+    pc: number | string;
+    label?: string;
+    /** Guest longs read at each kept hit. */
+    words?: (number | string)[];
+    /** Longs read from SP at each kept hit (up to 64). */
+    stack?: number;
+    /** Decode the exception frame at SP and count per (vector, stacked IPL). */
+    frame?: boolean;
+  }[];
+}
+/** Or a JSON file on the daemon's host, with `name` selecting one member. */
+export type PcProbeSetParams = PcProbeSpec | { file: string; name?: string };
+export interface PcProbeReport {
+  task_ptr: string | null;
+  keep: number;
+  probes: {
+    pc: string;
+    label: string;
+    count: number;
+    by_task_ipl: { task: string | null; ipl: number; count: number }[];
+    by_frame?: { vector: number; stacked_ipl: number; count: number }[];
+    hits: {
+      n: number;
+      icount: number;
+      sr: string;
+      ipl: number;
+      sp: string;
+      task: string | null;
+      words: (string | null)[];
+      stack: (string | null)[];
+      frame?: { long: string; vector: number; stacked_sr: string; stacked_ipl: number };
+    }[];
+  }[];
+}

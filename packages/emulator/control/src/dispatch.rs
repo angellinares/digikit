@@ -36,6 +36,9 @@ pub const METHODS: &[&str] = &[
     "guard.set",
     "guard.report",
     "guard.clear",
+    "pc.probe.set",
+    "pc.probe.report",
+    "pc.probe.clear",
     "events.subscribe",
     "quit",
 ];
