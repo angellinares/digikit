@@ -70,7 +70,8 @@ export function steppedClock(session: Pick<Session, 'status' | 'client'>): Clock
       return (await readClock(session)).ms;
     },
     async pause(ms) {
-      for (let left = Math.floor(ms * MS); left > 0;) {
+      // Round up: a positive wait steps at least one instruction (a float remainder like 1e-12 ms must not step none).
+      for (let left = Math.ceil(ms * MS); left > 0;) {
         const n = Math.min(left, SLICE_INSNS);
         await withinRuntimeDeadline(Date.now() + PROGRESS_HANG_S * 1000, () =>
           session.client.step(n, { timeout_wall_s: PROGRESS_HANG_S }),
@@ -133,8 +134,14 @@ export async function pollUntil<T>(
 /** Let `ms` of clock time pass (an explicit fixed wait): pause in steps of at most 50 ms until now - start >= ms. */
 export async function waitClock(clock: Clock, ms: number): Promise<void> {
   const start = await clock.now();
-  for (let now = start; now - start < ms; now = await clock.now()) {
+  let stalled = 0;
+  for (let now = start; now - start < ms; ) {
     await clock.pause(Math.min(50, ms - (now - start)));
+    const next = await clock.now();
+    // A clock that does not move after its pause would loop for ever: fail with a message.
+    stalled = next > now ? 0 : stalled + 1;
+    if (stalled >= 1000) throw new Error(`waitClock: the clock did not advance in 1000 pauses (${next - start} of ${ms} ms waited)`);
+    now = next;
   }
 }
 
