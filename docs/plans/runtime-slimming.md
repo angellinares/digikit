@@ -178,15 +178,15 @@ Own lane. It can run beside B1 bind-time firmware addresses: the only shared fil
 
 | Step | Content | Proof | Agent time |
 | --- | --- | --- | --- |
-| S0 tests first | Items 1, 2, 3, 6 (storage and samples parts) above | host | 0.5-1 day |
-| S1 tree moves | Files into the directories above, no code change | `objdiff` | 0.5 day |
-| S2a storage split | `layout`, `lock`, `card`; the cycles cut | `objdiff` explained, contract suite | 1 day |
-| S2b route and backends | `route.rs` as the one decision; `fwfs` and `plusdrive` backends; one lister | contract, route and lister tests | 1-1.5 days |
-| S2c read path | `dk_files_read` on `read_all`; `read_head` and `read_range` dropped | contract suite | 0.5 day |
-| S3 core imports for services | `module_of`, `storage_stat`, `storage_stat_head`, irq; `sample_pool_info`; pool event slots | service contract tests, adapter build | 1 day |
-| S4 samples.dks | Service wrapper, exports, worker job queue moved in (after B1's bind resolver), delete the samples glue in the core, `STATIC = 0`, order from the planner | samples tests over FakeCore, assembly cases | 1-1.5 days |
+| S0 tests first | Items 1, 2, 3, 6 (storage and samples parts) above | host | done (branch `rs/storage-tests`) |
+| S1 tree moves | Files into the directories above, no code change | `objdiff` | under 1 h |
+| S2a storage split | `layout`, `lock`, `card`; the cycles cut | `objdiff` explained, contract suite | 1 h |
+| S2b route and backends | `route.rs` as the one decision; `fwfs` and `plusdrive` backends; one lister | contract, route and lister tests | 1-2 h |
+| S2c read path | `dk_files_read` on `read_all`; `read_head` and `read_range` dropped | contract suite | under 1 h |
+| S3 core imports for services | `module_of`, `storage_stat`, `storage_stat_head`, irq; `sample_pool_info`; pool event slots | service contract tests, adapter build | 1 h |
+| S4 samples.dks | Service wrapper, exports, worker job queue moved in (after B1's bind resolver), delete the samples glue in the core, `STATIC = 0`, order from the planner | samples tests over FakeCore, assembly cases | 1-2 h |
 
-After S2, a `mise run dk:dev` boot on DN2 and DT2 checks the boot path (storage is on it). Device gate at the end of the stack: storage contract device cases, settings round trip, safe mode, upload, usb-fast upload (DN2), samples-live (DT2), samples-store-live (DN2), shot (pool, lease, picker), gate-smoke, gate-pins.
+After S2, a `mise run dk:dev` boot on DN2 and DT2 checks the boot path (storage is on it). Its device cases (storage contract device cases, settings round trip, safe mode, upload, usb-fast upload (DN2), samples-live (DT2), samples-store-live (DN2), shot (pool, lease, picker)) run in the one gate shared with B1 and RS-C.
 
 ### RS-C machines and fx leftovers out of the core
 
@@ -194,18 +194,18 @@ After B1 bind-time firmware addresses: the native page move uses the `machines_i
 
 | Step | Content | Proof | Agent time |
 | --- | --- | --- | --- |
-| C1 lifecycle hooks | `module_begin`, `module_commit`, `ModuleCommitCtx`; the loader calls them; no users yet | loader tests over fakes | 0.5 day |
-| C2 the move | Collect lowering, registry tables, params crate, sticky types, native pages into machines and fx; builder calls as exports; `dynreg_info` and `dynfx_info` | golden lowered bytes, assembly | 2.5-3 days |
-| C3 CoreApi split | Delete the methods and `dkc_*` shims; `dkrt_export`; `owned_ids`; invariants per service | host, service contract tests | 1 day |
-| C4 docs and layer rule | ARCHITECTURE.md; the layer rule that the core names no service | `mise run check:layers` | 0.5 day |
+| C1 lifecycle hooks | `module_begin`, `module_commit`, `ModuleCommitCtx`; the loader calls them; no users yet | loader tests over fakes | under 1 h |
+| C2 the move | Collect lowering, registry tables, params crate, sticky types, native pages into machines and fx; builder calls as exports; `dynreg_info` and `dynfx_info` | golden lowered bytes, assembly | 2-3 h |
+| C3 CoreApi split | Delete the methods and `dkc_*` shims; `dkrt_export`; `owned_ids`; invariants per service | host, service contract tests | 1 h |
+| C4 docs and layer rule | ARCHITECTURE.md; the layer rule that the core names no service | `mise run check:layers` | under 1 h |
 
-Device gate: shared with B1 bind-time firmware addresses when both are ready within about a day. Machine fixture suite (dynreg, equiv, round trip), FX contract suite, capacity commit, refusals, needs, providers, frametype slot (DN2), gate-smoke, gate-pins. `mise run test:full` runs once after this gate.
+Device gate: one gate for B1 bind-time firmware addresses, RS-S and RS-C together (the host layers, incl. the assembly tests that run each service's real declarations, catch wiring first; a failure is bisected over the stack's commits). Machine fixture suite (dynreg, equiv, round trip), FX contract suite, capacity commit, refusals, needs, providers, frametype slot (DN2), the storage and samples cases of RS-S, gate-smoke, gate-pins. `mise run test:full` runs once after this gate.
 
 R12-8 SHARC stubs follows RS-C; its SHARC slice proof can run beside RS-C.
 
 ## Payoff, confidence, cut line
 
-Total about 10-12 agent days and two device gates. Payoff: the core does what its name says; the "kind-free" layer rule becomes true and checked; storage loses its cycles and has one route decision; the generic module lifecycle is what hot reload needs. Confidence: storage high (card model and contract suite exist); `samples.dks` medium-high (the slot mechanism is proven by R12-6); the collect move medium (largest and most coupled). Cut line: if the golden lowered bytes do not match within a day, stop after C1 and do C2 after R12-8.
+Total about 1-1.5 days of agent work (measured pace: the RS-S tests took about 20 minutes, the B1 resolver about 35) and one device gate shared with B1; wall time is set by the device gate and reviews, not by coding. Payoff: the core does what its name says; the "kind-free" layer rule becomes true and checked; storage loses its cycles and has one route decision; the generic module lifecycle is what hot reload needs. Confidence: storage high (card model and contract suite exist); `samples.dks` medium-high (the slot mechanism is proven by R12-6); the collect move medium (largest and most coupled). Cut line: if the golden lowered bytes do not match within a day, stop after C1 and do C2 after R12-8.
 
 ## Fixtures
 
