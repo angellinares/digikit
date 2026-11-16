@@ -119,6 +119,19 @@ Steps (one stack, device gate shared with RS-C when both are ready):
 
 Deferred: the fx device constants (struct offsets, value indices, stock parameter codes) stay in `fxpages_info` for now; they are profile numbers, not firmware addresses, and hot reload does not need them moved. Device proof: FX contract suite, fxpages tests, machine fixture suite, frametype slot (DN2), providers with a case for a file bound to another firmware, refusals, safe mode, gate-smoke, gate-pins; PCM pins unchanged. Risks: the import count of `machines.dks` (limit 64; count first) and the hand edits of the interrupt routine and of hooks whose exits keep live condition codes.
 
+## Fixtures
+
+Each stage builds on canonical fixtures from `tests/fixtures/modules` (table in docs/TESTING.md). A v2 of a fixture is the same module name built in a temporary root with one changed constant (as `packages/patchkit/tests/trace.rs` builds `trace-demo`) or a byte-patched packed file (`refusal/dkm-patch.ts`), never a second fixture directory: the loader keys a module by its name.
+
+| Stage | Fixture |
+| --- | --- |
+| B1 / S0 exit convention | `svc-test` gains an assembler object with a second, raw hook that leaves through a named exit and reads one `dk_fw` firmware reference (a test site with an `exits` entry in `devices/fw/test.toml`); its C handler hook stays for the stock-bytes refusal tests. A file packed for DT2 and loaded on DN2 is the firmware identity refusal case. A neutral fill fixture needs a test `[[slot]]` in an image adapter (the only slot today is machines `frametype`). The service template shows the exit names. |
+| S1 code-only modules | `dyn-demo` (20 load and unload cycles) and `entry-demo` (init, tick, fini, a SysEx command in flight) with a v2 build |
+| S2 interrupt-slot service | the test slot from S0 with a v1 and v2 slot routine; DN2 `frametype` in `machines.dks` on the device |
+| S3 service replace | `svc-test` with `dk_svctest_ping` returning a data word, so a v2 returns another value; `svc-test-user` reads the hook hit counter during the swap |
+| S4 machine and fx modules | `test/sine` (level constant) and `dyn-fx-gain` (gain default) with v2 builds of distinguishable output; `dyn-dn2-pages` for a machine with two pages |
+| S5 SHARC slots | `step-beacon` (step word counter) with a v2 DSP constant, after R12-8 SHARC stubs |
+
 ## Reuse from the archive (tag digikit-hot-reload-v1, revert of commit a12048c46 "digikit runtime: archive hot reload")
 
 An earlier hot reload was built and proven on the emulator only, then archived. The new plan reuses:

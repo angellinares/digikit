@@ -207,6 +207,15 @@ R12-8 SHARC stubs follows RS-C; its SHARC slice proof can run beside RS-C.
 
 Total about 10-12 agent days and two device gates. Payoff: the core does what its name says; the "kind-free" layer rule becomes true and checked; storage loses its cycles and has one route decision; the generic module lifecycle is what hot reload needs. Confidence: storage high (card model and contract suite exist); `samples.dks` medium-high (the slot mechanism is proven by R12-6); the collect move medium (largest and most coupled). Cut line: if the golden lowered bytes do not match within a day, stop after C1 and do C2 after R12-8.
 
+## Fixtures
+
+Each stack updates its canonical fixtures (`tests/fixtures/modules`, the table in docs/TESTING.md) and the SDK templates in the same stack. A new fixture is made only when no existing one can be extended.
+
+| Stack | Fixture work |
+| --- | --- |
+| RS-S storage restructure and samples.dks | `track-select` opens its own sample pool, so a samples user runs without shot (zero DSP, assembly and device tests of `samples.dks`); `stock-pool` covers the DT2 firmware file system read route and `file-write` the +Drive write route on the device; the storage contract writer cases run on the host over the FakePlatform card. The service template follows the shape `samples.dks` settles on. |
+| RS-C machines and fx leftovers out of the core | `test/sine`, `test/dyn-dn2` and the `dyn-fx-gain` fixtures keep working with their builder calls resolved through the machines and fx service exports; an assembly case loads `dyn-fx-gain` without `fx.dks` and expects the refusal (the sine case exists); `commit-demo` (machine, effect, parameters, click action) is the source of the golden lowered records. The machine and fx templates need no change of source. |
+
 ## Risks
 
 - Readers of `DKRT_REG` (device tests round trip, capacity commit, boot restart, log names; `tools/patchkit/pk_dkrt_{machine,boot}.py`) break when the table moves into `machines.dks` memory. C2 adds one test-support resolver (record base plus the service symbol offset). `DKRT_DSP` stays in the core.
