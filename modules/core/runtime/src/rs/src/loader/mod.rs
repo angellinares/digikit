@@ -26,6 +26,7 @@ const H_DSP_OFF: usize = dkneeds::H_DSP_OFF as usize;
 const H_DSP_SIZE: usize = dkneeds::H_DSP_SIZE as usize;
 
 mod image;
+mod records;
 mod seams;
 #[cfg(test)]
 mod tests;
@@ -312,14 +313,14 @@ impl<P: Platform, M: Images, R: Registry> Loader<P, M, R> {
         self.p.flush(base, total);
 
         // ---- record, init, publish ----
-        let m: &mut Module = &mut s.modules[rec];
+        let m: &mut Module = records::module(rec);
         m.used = 1;
         i = 0;
         while i < dkneeds::NAME_LEN as usize {
             m.name[i] = *name.add(i);
             i += 1;
         }
-        let dst = &mut (*addr_of_mut!(crate::DKRT_PATHS))[rec];
+        let dst = records::path(rec);
         let plen = cstr_len(path, 63);
         i = 0;
         while i < 64 {
@@ -327,12 +328,12 @@ impl<P: Platform, M: Images, R: Registry> Loader<P, M, R> {
             i += 1;
         }
         m.version = rd32(f.add(H_VERSION));
-        (*addr_of_mut!(crate::DKRT_MODULE_RUNTIME))[rec] = needs & !crate::FLAG_TRACE;
+        records::set_runtime(rec, needs & !crate::FLAG_TRACE);
         m.base = base;
         m.size = total;
         m.fini = if fini == NONE { 0 } else { base + fini };
         crate::entry::bind(rec);
-        (*addr_of_mut!(crate::DKRT_MENUS))[rec] = if menu == NONE { 0 } else { base + menu };
+        records::set_menu(rec, if menu == NONE { 0 } else { base + menu });
         let initaddr = if init == NONE { 0 } else { base + init };
         let tickaddr = if tick == NONE { 0 } else { base + tick };
         if dsp_size != 0 {
@@ -408,7 +409,7 @@ impl<P: Platform, M: Images, R: Registry> Loader<P, M, R> {
         if tick != 0 {
             crate::entry::publish_tick(rec, tick);
         }
-        let m: &mut Module = &mut s.modules[rec];
+        let m: &mut Module = records::module(rec);
         m.used = 1;
         s.loads = s.loads.wrapping_add(1);
         crate::files::ready(rec);
@@ -436,7 +437,7 @@ impl<P: Platform, M: Images, R: Registry> Loader<P, M, R> {
     unsafe fn commit(&mut self, rec: usize, c: &crate::collect::Collect, keys: &crate::collect::KeysCopy, image_size: u32) -> i32 {
         use crate::collect as col;
         let owner = rec as u8 + 1;
-        let base = st().modules[rec].base;
+        let base = records::module(rec).base;
         // the declarations of a service module against its header table (declare-check-commit)
         if !col::decl_matches(c, keys, base) {
             return E_DECL_KIND;
@@ -596,8 +597,7 @@ impl<P: Platform, M: Images, R: Registry> Loader<P, M, R> {
         if !retire_sdk(rec) { return E_BUSY; }
         // an intro of this module that has not run `done` yet: `done` must not point into freed code
         crate::intro::discard(rec);
-        let s = st();
-        let m: &mut Module = &mut s.modules[rec];
+        let m: &mut Module = records::module(rec);
         // 1. clear the tick (one aligned store) so no new call starts; the UI task, where it runs, is this task
         crate::entry::stop_tick(rec);
         // DSP rows must be invalidated before fini can mutate/release module state.
@@ -623,7 +623,7 @@ impl<P: Platform, M: Images, R: Registry> Loader<P, M, R> {
         dsp::release_range(rec);
         self.m.free(m.base);
         m.used = 0;
-        (*addr_of_mut!(crate::DKRT_MENUS))[rec] = 0;
+        records::set_menu(rec, 0);
         crate::entry::unbind(rec);
         OK
     }
