@@ -154,9 +154,7 @@ def apply_plan(device: str, firmware: str, modules: list[str]) -> dict[str, Any]
 
 def main(argv: list[str]) -> int:
     ap = argparse.ArgumentParser(description=__doc__.splitlines()[0])
-    ap.add_argument(
-        "modules", nargs="*", help="ids under modules/, e.g. test/machine-clone"
-    )
+    ap.add_argument("modules", nargs="*", help="ids under modules/, e.g. core/machines")
     ap.add_argument("--device", default="dt2", choices=("dt2", "dn2"))
     ap.add_argument("--firmware", help="default: 1.17 (dt2), 1.12 (dn2)")
     ap.add_argument("--json", action="store_true", help="JSON only")

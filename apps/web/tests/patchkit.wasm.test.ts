@@ -11,8 +11,6 @@ import { haveWasmAndImages as need, images, py, root, wasmPath, workDir, writeBu
 // test that took 408 s on a loaded machine. The limit fits that work.
 vi.setConfig({ testTimeout: 900_000 });
 
-type Registry = { name: string; entries: { id: string; index: number }[]; gaps?: number[]; count?: number };
-
 /** The raw exports of patchkit.wasm (`pk_*`), with the helpers that pass bytes in and read results out. */
 async function load() {
   const { instance } = await WebAssembly.instantiate(new Uint8Array(readFileSync(wasmPath)), {});
