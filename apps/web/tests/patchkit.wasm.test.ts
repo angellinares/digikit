@@ -66,92 +66,99 @@ test.skipIf(!need)('wasm and CLI produce byte-identical output for core/fx', asy
   }
 });
 
-test.skipIf(!need)('wasm and CLI produce byte-identical output for the machine framework (two machines)', async () => {
-  const work = workDir('pk-wasm-');
-  const bundle = readFileSync(writeBundle(work));
-  const { x, put, get, text } = await load();
-  const mods = 'core/machines,test/machine-clone';
-  const fw = readFileSync(images.dt2);
-  const out = join(work, 'dt2-machines.syx');
-  const plan = join(work, 'dt2-machines.plan.json');
-  py('tools.patchkit.patchkit', 'patch', '--firmware', images.dt2, '--modules', mods, '-o', out, '--plan', plan);
-  const [fp, fl] = put(fw);
-  const [bp, bl] = put(bundle);
-  const [ip, il] = put(Buffer.from(mods));
-  assert.equal(x.pk_apply(fp, fl, bp, bl, ip, il), 0, text(x.pk_err_ptr, x.pk_err_len));
-  assert.ok(Buffer.from(get(x.pk_out_ptr, x.pk_out_len)).equals(readFileSync(out)), 'wasm and CLI output differ');
-  const report = JSON.parse(text(x.pk_plan_ptr, x.pk_plan_len));
-  const entries = (name: string) =>
-    (report.registries as Registry[]).find((r) => r.name === name)!.entries.map((e) => [e.id, e.index]);
-  assert.deepEqual(entries('machines'), [['xclone', 8]]); // Digitone II has core/machines, but XClone clones a Digitakt machine (SAMPLE, type 0)
-  const [dp, dl] = put(readFileSync(images.dn2));
-  const [mp, ml] = put(Buffer.from('core/machines,test/machine-clone'));
-  assert.equal(x.pk_apply(dp, dl, bp, bl, mp, ml), 1);
-  assert.match(
-    text(x.pk_err_ptr, x.pk_err_len),
-    /not compatible|outside the anchor|no registry|no number in the allocation table/,
-  );
-});
-
 test.skipIf(!need)(
-  'wasm and CLI produce byte-identical output for core/params and a machine on each device',
+  'wasm and CLI produce byte-identical output for core/machines and core/params on each device',
   async () => {
     const work = workDir('pk-wasm-');
     const bundle = readFileSync(writeBundle(work));
     const { x, put, get, text } = await load();
-    const mods = 'core/dsp-voice,core/machines,core/params,test/machine-clone';
-    const fw = readFileSync(images.dt2);
-    const out = join(work, 'dt2-clone.syx');
-    const plan = join(work, 'dt2-clone.plan.json');
-    py('tools.patchkit.patchkit', 'patch', '--firmware', images.dt2, '--modules', mods, '-o', out, '--plan', plan);
-    const [fp, fl] = put(fw);
-    const [bp, bl] = put(bundle);
-    const [ip, il] = put(Buffer.from(mods));
-    assert.equal(x.pk_apply(fp, fl, bp, bl, ip, il), 0, text(x.pk_err_ptr, x.pk_err_len));
-    assert.ok(Buffer.from(get(x.pk_out_ptr, x.pk_out_len)).equals(readFileSync(out)), 'wasm and CLI output differ');
-    const report = JSON.parse(text(x.pk_plan_ptr, x.pk_plan_len));
-    const entries = (name: string) =>
-      (report.registries as Registry[]).find((r) => r.name === name)!.entries.map((e) => [e.id, e.index]);
-    // the clone's permanent type number is 8; 7 is a gap row (not a machine)
-    assert.deepEqual(entries('machines'), [['xclone', 8]]);
-    assert.deepEqual((report.registries as Registry[]).find((r) => r.name === 'machines')!.gaps, [7]);
-    assert.deepEqual(entries('params'), []);
-    // the Digitone II machine with its own page and parameters: the same parity there
-    const modsDn2 = 'core/dsp-voice,core/machines,core/params,test/dn2-pages';
-    const outDn2 = join(work, 'dn2-pages.syx');
-    const planDn2 = join(work, 'dn2-pages.plan.json');
-    py(
-      'tools.patchkit.patchkit',
-      'patch',
-      '--firmware',
-      images.dn2,
-      '--modules',
-      modsDn2,
-      '-o',
-      outDn2,
-      '--plan',
-      planDn2,
-    );
-    const [dp, dl] = put(readFileSync(images.dn2));
-    const [mp, ml] = put(Buffer.from(modsDn2));
-    assert.equal(x.pk_apply(dp, dl, bp, bl, mp, ml), 0, text(x.pk_err_ptr, x.pk_err_len));
-    assert.ok(
-      Buffer.from(get(x.pk_out_ptr, x.pk_out_len)).equals(readFileSync(outDn2)),
-      'DN2: wasm and CLI output differ',
-    );
-    const reportDn2 = JSON.parse(text(x.pk_plan_ptr, x.pk_plan_len));
-    const entriesDn2 = (name: string) =>
-      (reportDn2.registries as Registry[]).find((r) => r.name === name)!.entries.map((e) => [e.id, e.index]);
-    assert.deepEqual(entriesDn2('machines'), [['pages', 6]]);
-    assert.deepEqual((reportDn2.registries as Registry[]).find((r) => r.name === 'machines')!.gaps, [5]);
-    assert.deepEqual(entriesDn2('params'), [
-      ['pg_alpha', 321],
-      ['pg_beta', 322],
-      ['pg_gamma', 323],
-      ['pg_delta', 324],
-      ['pg_eps', 325],
-      ['pg_zeta', 326],
-    ]);
+    const mods = 'core/machines,core/params';
+    for (const dev of ['dt2', 'dn2'] as const) {
+      const out = join(work, `${dev}-machines.syx`);
+      const plan = join(work, `${dev}-machines.plan.json`);
+      py('tools.patchkit.patchkit', 'patch', '--firmware', images[dev], '--modules', mods, '-o', out, '--plan', plan);
+      const [fp, fl] = put(readFileSync(images[dev]));
+      const [bp, bl] = put(bundle);
+      const [ip, il] = put(Buffer.from(mods));
+      assert.equal(x.pk_apply(fp, fl, bp, bl, ip, il), 0, text(x.pk_err_ptr, x.pk_err_len));
+      assert.ok(
+        Buffer.from(get(x.pk_out_ptr, x.pk_out_len)).equals(readFileSync(out)),
+        `${dev}: wasm and CLI output differ`,
+      );
+      const wasmPlan = text(x.pk_plan_ptr, x.pk_plan_len);
+      assert.equal(wasmPlan, readFileSync(plan, 'utf8'), `${dev}: plan.json differs`);
+      // no module adds rows at patch time: the registries exist and are empty
+      const registries = JSON.parse(wasmPlan).registries as Registry[];
+      for (const name of ['machines', 'params']) {
+        assert.deepEqual(
+          registries.find((r) => r.name === name)?.entries,
+          [],
+          `${dev}: ${name} has no patch-time rows`,
+        );
+      }
+    }
+  },
+);
+
+test.skipIf(!need)(
+  'wasm adds core/machines and core/params as requirements of core/dynreg like the CLI and the plan reserves the run-time rows',
+  async () => {
+    const work = workDir('pk-wasm-');
+    const { x, put, get, text } = await load();
+    const [bp, bl] = put(readFileSync(writeBundle(work)));
+    // the first parameter code and the reserved page rows differ by device (the machine rows are the types 16 to 23 on both)
+    const want = {
+      dt2: { gaps: [7, 8, 9, 10, 11, 12, 13, 14, 15], firstParam: 275, pages: 0 },
+      dn2: { gaps: [5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15], firstParam: 321, pages: 8 },
+    } as const;
+    for (const dev of ['dt2', 'dn2'] as const) {
+      const out = join(work, `${dev}-dynreg.syx`);
+      const plan = join(work, `${dev}-dynreg.plan.json`);
+      // the CLI prints what it added
+      const said = py(
+        'tools.patchkit.patchkit',
+        'patch',
+        '--firmware',
+        images[dev],
+        '--modules',
+        'core/dynreg',
+        '-o',
+        out,
+        '--plan',
+        plan,
+      );
+      assert.match(said, /added by requires: .*core\/machines/);
+      const [fp, fl] = put(readFileSync(images[dev]));
+      const [ip, il] = put(Buffer.from('core/dynreg'));
+      assert.equal(x.pk_apply(fp, fl, bp, bl, ip, il), 0, text(x.pk_err_ptr, x.pk_err_len));
+      assert.ok(
+        Buffer.from(get(x.pk_out_ptr, x.pk_out_len)).equals(readFileSync(out)),
+        `${dev}: wasm and CLI output differ`,
+      );
+      const wasmPlan = text(x.pk_plan_ptr, x.pk_plan_len);
+      assert.equal(wasmPlan, readFileSync(plan, 'utf8'), `${dev}: plan.json differs`);
+      const registries = JSON.parse(wasmPlan).registries as Registry[];
+      const find = (name: string) => registries.find((r) => r.name === name)!;
+      const machines = find('machines');
+      assert.deepEqual(
+        machines.entries.map((e) => [e.id, e.index]),
+        Array.from({ length: 8 }, (_, i) => [`dyn${16 + i}`, 16 + i]),
+        `${dev}: eight reserved run-time machine rows`,
+      );
+      assert.deepEqual(machines.gaps, want[dev].gaps, `${dev}: the rows between the stock and the run-time types`);
+      const params = find('params').entries;
+      assert.equal(params.length, 16, `${dev}: sixteen reserved parameter rows`);
+      assert.deepEqual(
+        [params[0]!.id, params[0]!.index],
+        ['dp0', want[dev].firstParam],
+        `${dev}: first reserved parameter code`,
+      );
+      assert.equal(
+        registries.find((r) => r.name === 'pages')?.entries.length ?? 0,
+        want[dev].pages,
+        `${dev}: reserved page rows`,
+      );
+    }
   },
 );
 
@@ -198,13 +205,13 @@ test.skipIf(!need)('wasm adds the requirements of the selection like the CLI', a
   const { x, put, get, text } = await load();
   const [bp, bl] = put(readFileSync(writeBundle(work)));
   for (const [dev, mod] of [
-    ['dt2', 'test/machine-clone'],
-    ['dn2', 'test/dn2-pages'],
+    ['dt2', 'test/fx-gain'],
+    ['dn2', 'test/fx-gain'],
   ] as const) {
     const out = join(work, `${dev}-machine-only.syx`);
     // the CLI prints what it added
     const said = py('tools.patchkit.patchkit', 'patch', '--firmware', images[dev], '--modules', mod, '-o', out);
-    assert.match(said, /added by requires: .*core\/machines/);
+    assert.match(said, /added by requires: .*core\/fx/);
     const [fp, fl] = put(readFileSync(images[dev]));
     const [ip, il] = put(Buffer.from(mod));
     assert.equal(x.pk_apply(fp, fl, bp, bl, ip, il), 0, text(x.pk_err_ptr, x.pk_err_len));

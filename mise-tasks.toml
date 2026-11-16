@@ -375,7 +375,7 @@ description = "Site-by-site account of a patch (disassembly before and after, al
 
 ["patch:mem"]
 run = "uv run python -m tools.patchkit.pk_mem"
-description = "Patch memory per region (size, used by each module, free; also the runtime's own bytes), refused when the modules do not fit: mise run patch:mem -- core/machines test/machine-clone [--device dt2|dn2] [--firmware VER] [--json]"
+description = "Patch memory per region (size, used by each module, free; also the runtime's own bytes), refused when the modules do not fit: mise run patch:mem -- core/machines core/params [--device dt2|dn2] [--firmware VER] [--json]"
 
 ["patch:test"]
 run = "uv run python -m tools.patchkit.pk_harness run"

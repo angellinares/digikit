@@ -16,7 +16,7 @@ gives it
     PASS/FAIL, and `out/summary.json`;
   * `verify-restore`: the boot cache gives the same state digest and PCM as a cold boot.
 
-    uv run python -m tools.patchkit.pk_proofkit verify-restore --device dt2 --fw 1.17 --mods core/machines,test/machine-clone
+    uv run python -m tools.patchkit.pk_proofkit verify-restore --device dt2 --fw 1.17 --mods core/machines,core/params
 
 Tool layout:
 

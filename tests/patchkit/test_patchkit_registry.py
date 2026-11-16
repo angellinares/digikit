@@ -30,31 +30,45 @@ def test_committed_objects_are_current_and_plain_coldfire():
 
 def test_pack_refuses_a_module_for_the_wrong_device(tmp_path):
     tools = pk_dkrt.Tools()
-    # a Digitakt II module has no page, and a Digitone II one is refused on the Digitakt
-    r = tools.run(
-        tools.patchkit,
-        "--root",
-        ROOT,
-        "pack",
-        "test/dyn-dn2",
-        "--device",
-        "dt2",
-        "-o",
-        tmp_path / "z.dkm",
-    )
-    assert r.returncode != 0
-    r = tools.run(
-        tools.patchkit,
-        "--root",
-        ROOT,
-        "pack",
-        "test/machine-clone",
-        "--device",
-        "dt2",
-        "-o",
-        tmp_path / "y.dkm",
-    )
-    assert r.returncode != 0
+    # a Digitone II module (dyn-dn2, ports dn2-1.12) is refused for the Digitakt, a Digitakt module (dyn-params, ports dt2-1.17) for the Digitone
+    for module, device, ports in (
+        ("test/dyn-dn2", "dt2", "dn2-1.12"),
+        ("test/dyn-params", "dn2", "dt2-1.17"),
+    ):
+        r = tools.run(
+            tools.patchkit,
+            "--root",
+            ROOT,
+            "pack",
+            module,
+            "--device",
+            device,
+            "-o",
+            tmp_path / "z.dkm",
+        )
+        assert r.returncode != 0
+        assert (
+            f"is not built for {device}: its ports are {ports}" in r.stdout + r.stderr
+        )
+
+
+def test_pack_refuses_a_patch_time_object(tmp_path):
+    # registry-demo is a patch-time module (it defines no dk_module): it cannot be packed as a .dkm for either device
+    tools = pk_dkrt.Tools()
+    for device in ("dt2", "dn2"):
+        r = tools.run(
+            tools.patchkit,
+            "--root",
+            ROOT,
+            "pack",
+            "test/registry-demo",
+            "--device",
+            device,
+            "-o",
+            tmp_path / "y.dkm",
+        )
+        assert r.returncode != 0
+        assert "defines no dk_module" in r.stdout + r.stderr
 
 
 def test_pack_of_a_builder_module_is_deterministic(tmp_path):

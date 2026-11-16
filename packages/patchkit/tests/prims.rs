@@ -1727,3 +1727,98 @@ fn a_stub_refuses_a_site_it_cannot_serve() {
     )]);
     run_on(DT2, &reg, &lib, &["t/p"]).unwrap();
 }
+
+// ---- a registry that refuses patch-time entries (refuse_entries) ----------------------------------------------------
+
+#[test]
+fn a_registry_that_refuses_entries_names_the_module_and_the_reason() {
+    need_image!(DT2);
+    let fw = module(
+        "r/fw",
+        "",
+        r#"
+[[registry]]
+name = "runtime_only"
+first = "image.u8(cf.main + 8) + 100"
+max = 6
+region = "cf.expansion"
+refuse_entries = "its rows are made at run time"
+[[registry.field]]
+name = "tag"
+kind = "u8"
+"#,
+        None,
+    );
+    let lib = library(vec![
+        fw,
+        module(
+            "r/a",
+            "requires = [\"r/fw\"]",
+            "[[entry]]\nregistry = \"runtime_only\"\nid = \"one\"\ntag = 1\n",
+            None,
+        ),
+    ]);
+    expect_err(
+        run(&lib, &["r/fw", "r/a"]),
+        "r/fw: registry runtime_only takes no patch-time entry (its rows are made at run time); r/a adds `one`",
+    );
+    // the framework alone is fine
+    assert!(run(&lib, &["r/fw"]).is_ok());
+}
+
+/// A framework whose registry refuses patch-time entries except from the modules named in `refuse_entries_except`.
+fn refusing_framework_except(allowed: &str) -> Module {
+    module(
+        "r/fw",
+        "",
+        &format!(
+            r#"
+[[registry]]
+name = "runtime_only"
+first = "image.u8(cf.main + 8) + 100"
+max = 6
+region = "cf.expansion"
+refuse_entries = "its rows are made at run time"
+refuse_entries_except = [{allowed}]
+[[registry.field]]
+name = "tag"
+kind = "u8"
+"#
+        ),
+        None,
+    )
+}
+
+fn entry_module(id: &str, entry: &str, tag: u8) -> Module {
+    module(
+        id,
+        "requires = [\"r/fw\"]",
+        &format!("[[entry]]\nregistry = \"runtime_only\"\nid = \"{entry}\"\ntag = {tag}\n"),
+        None,
+    )
+}
+
+#[test]
+fn an_allowed_owner_may_add_entries_to_a_registry_that_refuses_entries() {
+    need_image!(DT2);
+    let lib = library(vec![
+        refusing_framework_except("\"r/a\""),
+        entry_module("r/a", "one", 1),
+    ]);
+    assert!(run(&lib, &["r/fw", "r/a"]).is_ok());
+}
+
+#[test]
+fn another_owner_is_still_refused_when_an_allowed_owner_shares_the_registry() {
+    need_image!(DT2);
+    let lib = library(vec![
+        refusing_framework_except("\"r/a\""),
+        entry_module("r/a", "one", 1),
+        entry_module("r/b", "two", 2),
+    ]);
+    // r/a is allowed; r/b is named although r/a's entry comes first
+    expect_err(
+        run(&lib, &["r/fw", "r/a", "r/b"]),
+        "r/fw: registry runtime_only takes no patch-time entry (its rows are made at run time); r/b adds `two`",
+    );
+}

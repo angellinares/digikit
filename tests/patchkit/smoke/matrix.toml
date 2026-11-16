@@ -11,11 +11,6 @@ device = "dn2"
 firmware = "1.12"
 modules = []
 
-[[cell]]
-device = "dt2"
-firmware = "1.17"
-modules = ["core/machines", "test/machine-clone"]
-
 # Rust on the ColdFire (finding 26)
 [[cell]]
 device = "dt2"
@@ -32,17 +27,6 @@ modules = ["test/cf-demo"]
 device = "dn2"
 firmware = "1.12"
 modules = ["test/cf-demo"]
-
-[[cell]]
-device = "dn2"
-firmware = "1.12"
-modules = ["core/machines", "test/dn2-clone"]
-
-# The own-pages test machine.
-[[cell]]
-device = "dn2"
-firmware = "1.12"
-modules = ["core/machines", "core/params", "test/dn2-pages"]
 
 # SETTINGS > DIGIKIT (finding 28)
 [[cell]]

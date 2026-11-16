@@ -47,6 +47,10 @@ region = "cf.expansion"
 # table, never "the k-th selected machine". A number nobody selected is a gap row: a clone of type 0 that the machine
 # list does not show (position 0xffffffff) and nobody can pick; a stored project that names it plays as type 0.
 index_table = "types.toml"
+# A machine is a run-time module: machines.dks (R12-6) acts on its rows, and nothing loads that file for a patched-in row. patchkit refuses an [[entry]] of this registry.
+refuse_entries = "a machine is a run-time module (builder calls in init, packed as a .dkm); machines.dks needs a module that names the service"
+# core/dynreg may still reserve the rows that run-time machines fill.
+refuse_entries_except = ["core/dynreg"]
 
 [registry.gap]
 clone_of = 0

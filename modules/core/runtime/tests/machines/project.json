@@ -10,6 +10,27 @@
         "devices": ["dn2"],
         "tags": ["S:machines", "C:loading"],
         "modules": ["digikit/debug", "test/dyn-dn2", "core/services/machines"]
+      },
+      {
+        "files": ["machine-rows-dn2.device.test.ts"],
+        "devices": ["dn2"],
+        "tags": ["S:machines", "C:state"],
+        "modules": ["test/dyn-dn2", "core/services/machines"],
+        "plusdrive": true
+      },
+      {
+        "files": ["machine-pages-dn2.device.test.ts"],
+        "devices": ["dn2"],
+        "tags": ["S:machines", "C:state"],
+        "modules": ["test/dyn-dn2-pages", "core/services/machines"],
+        "plusdrive": true
+      },
+      {
+        "files": ["machine-rows-dt2.device.test.ts"],
+        "devices": ["dt2"],
+        "tags": ["S:machines", "C:state"],
+        "modules": ["test/sine", "core/services/machines"],
+        "plusdrive": true
       }
     ]
   }
