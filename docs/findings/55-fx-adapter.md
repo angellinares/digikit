@@ -37,7 +37,7 @@ stock** (also its master pair). So a master effect at H0 reaches the DAC and not
 
 ## The rings **[D]**
 
-At a block boundary (`tools/patchkit/fx_rings.py` has addresses and decoders; the half just rendered is `(flag & 1) ^ 1`):
+At a block boundary (the half just rendered is `(flag & 1) ^ 1`; these addresses were measured with a script that is deleted):
 
 | | DT2 | DN2 |
 | --- | --- | --- |
@@ -52,13 +52,15 @@ At a block boundary (`tools/patchkit/fx_rings.py` has addresses and decoders; th
 - Both formats agree with the master block within 1 LSB on both devices (an exact float32 model of the conversion). DN2 addresses were read from the block
   handler `0x1c9e76` (ring A `0x2c0478 + (flag << 8)`, ring C `0x2c08e8 + (flag << 11)`, the same offsets as DT2) and confirmed by the readings.
 
-## Proof **[D]** (`tools/patchkit/pk_proof_fx.py`, DT2 1.17 and DN2 1.12; 44 s and 56 s wall with the hook on `FUN_1c80f2`)
+## Proof **[D]** (measured once on DT2 1.17 and DN2 1.12, hook on `FUN_1c80f2`; the proof script is deleted)
 
-- Empty chain (image with `core/fx` alone): PCM bit-identical to stock (38,528 active samples on DT2, 61,814 on DN2); flag, master, ring A and ring C
-  bit-identical at the snapshot frame.
-- `test/fx-gain` (0.5): master exactly 0.5 x stock; ring A and the ring C master pair equal the conversions of that master (largest error 0.00 LSB on DT2, 0.48
-  on DN2); both are half of stock (within 2); ring C words 2 to 15 bit-identical to stock; PCM -6.0206 dB, largest error 0.5 ulp.
-- Gain word set to 1.0, and the row's `enabled` word cleared in mid-run (`dsp.patch`): master and both rings equal stock again after the fade.
+- Empty chain (image with `core/fx` alone): PCM was bit-identical to stock (38,528 active samples on DT2, 61,814 on DN2); flag, master, ring A and ring C
+  were bit-identical at the snapshot frame.
+- A 0.5 gain effect (then the patch-time fixture `fx-gain`): the master was exactly 0.5 x stock; ring A and the ring C master pair equalled the conversions of that master (largest error 0.00 LSB on DT2, 0.48
+  on DN2); both were half of stock (within 2); ring C words 2 to 15 were bit-identical to stock; PCM was -6.0206 dB, largest error 0.5 ulp.
+- With the gain word set to 1.0, and with the row's `enabled` word cleared in mid-run (`dsp.patch`), master and both rings equalled stock again after the fade.
+- Today the halving is checked with the run-time fixture `test/dyn-fx-gain` by `fx-contract.device.test.ts` (wet compare 0.5), and the fade by `tests/patchkit/test_fx.py`.
+- **[O]** Ring A and ring C (DAC and USB ring against the master) are no longer checked by any test (docs/plans/ledgers/fixture-consolidation.md).
 
 ## Costs **[D]**
 

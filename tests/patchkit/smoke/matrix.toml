@@ -50,13 +50,8 @@ device = "dn2"
 firmware = "1.12"
 modules = ["core/dsp-link"]
 
-# The effects adapter (finding 53, H1): an empty chain must change nothing visible; test/fx-gain (0.5) is in the chain of the second cell.
+# The effects adapter (finding 53, H1): an empty chain must change nothing visible.
 [[cell]]
 device = "dt2"
 firmware = "1.17"
 modules = ["core/fx"]
-
-[[cell]]
-device = "dt2"
-firmware = "1.17"
-modules = ["core/fx", "test/fx-gain"]

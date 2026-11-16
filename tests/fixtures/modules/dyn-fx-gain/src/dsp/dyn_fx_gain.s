@@ -1,13 +1,16 @@
 // test/dyn-fx-gain: the FX contract's smallest run-time effect (<dk/fx/fx.h>): out = in * p0, and one state word that counts the calls. The effect is
 // loaded at run time (a .dkm with a DSP section of version 4): the runtime places and relocates this object, reserves the state behind it and
-// publishes a free row of the chain with p0 = 0.5 (the DK_FX knob default).
+// publishes a free row of the chain with p0 = 0.5 (the DK_FX knob default). The trace marks (DK_STEP) exist only in a build made with --trace; this file is the subject of
+// packages/patchkit/tests/trace.rs, which proves that the marks cost nothing in a build without it.
 
 #include "dk_fx.inc"
+#include "dk_trace.inc"
 
 .SECTION/PM seg_pmco;
 .GLOBAL _dg_process;
 
 _dg_process:                              // R4 = state, R8 = dk_fx_in, R12 = the row's parameter words
+    DK_STEP(1, R0);                       // trace mark: the fault record says STEP 1 when the routine stops here
     I4 = R4;
     R0 = DM(0, I4);
     R0 = R0 + 1;
@@ -17,6 +20,7 @@ _dg_process:                              // R4 = state, R8 = dk_fx_in, R12 = th
     I1 = DM(DK_FX_IN_W_OUT, I2);
     I3 = R12;
     R2 = DM(0, I3);                       // p0: the gain
+    DK_STEP(2, R0);                       // trace mark: before the block loop
     LCNTR = DK_FX_BLOCK, DO _dg_loop UNTIL LCE;
         R0 = DM(I0, M6);
         F0 = F0 * F2;

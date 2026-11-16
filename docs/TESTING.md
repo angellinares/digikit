@@ -377,19 +377,18 @@ reuses a fixture before it adds one. Layers: **host** (Vitest or pytest, no devi
 | Fixture | Canonical subject for | Layers |
 | --- | --- | --- |
 | `sine` | The small dynamic machine of the SDK contract (pitched sine, one LEVEL parameter, both devices); the DSP source other fixtures share; pitch checks | host, assembly, rig, device |
-| `dyn-dn2` | A Digitone II machine with its own SYN page of four knobs on the DSP of `sine` | assembly, device |
-| `dyn-params` | Parameter rows of different ranges: registry rows, needs inference, capacity | host, device |
-| `dyn-fx-gain` | The effect contract: insert effect, GAIN knob, upload, persistence, kit save | host, assembly, device |
-| `dyn-fx-gain-b` | A second effect with the same gain under another module id (another effect id): two effects in one kit | host, device |
+| `dyn-dn2` | A machine with four parameters of different ranges on the DSP of `sine`, on both devices (Digitone II: its own SYN page of four knobs): registry rows, needs inference, capacity, project round trip | host, assembly, device |
+| `dyn-fx-gain` | The effect contract: insert effect, GAIN knob, upload, persistence, kit save; the trace marks (`DK_TRACE_LOG`, `DK_STEP`) that exist only in a `--trace` build (zero-cost proof `trace.rs`); owns the gain DSP the wrappers share | host, assembly, device |
+| `dyn-fx-gain-b` | A second effect with the same gain under another module id (another effect id) and other defaults (0.25, MIX 64): two effects in one kit; wrapper of the DSP of `dyn-fx-gain` | host, device |
 | `dyn-fx-gain-bipolar` | A signed knob (BIAS, -64 to +63) and the routes master and send | device |
-| `dyn-fx-gain-both` | Routes: master and send allowed, default master (`dk_fx_routes`) | device |
-| `dyn-fx-gain-send` | Routes: master and send allowed, default send; the FX ROUTES panel | assembly, device |
-| `dyn-fx-gain-sendonly` | Routes: send only | assembly, device |
+| `dyn-fx-gain-both` | Routes: master and send allowed, default master (`dk_fx_routes`); wrapper of the DSP of `dyn-fx-gain` | device |
+| `dyn-fx-gain-send` | Routes: master and send allowed, default send; the FX ROUTES panel; wrapper of the DSP of `dyn-fx-gain` | assembly, device |
+| `dyn-fx-gain-sendonly` | Routes: send only; wrapper of the DSP of `dyn-fx-gain` | assembly, device |
 | `commit-demo` | A multi-feature commit: a machine with three parameters (latched, click action) and an effect with routes; the golden lowered records; refusals | device, rig |
 | `svc-test` | The service fixture: a `.dks` of the test-only service `svc-test` with exports `dk_svctest_ping` and `dk_svctest_hits` and one hook | host, assembly, device |
 | `svc-test-user` | A module with a hard NEED on `svc-test` (the provider and NEED path of the loader) | host, assembly, device |
 | `lfo-shape` | A service-type module that emits one `lfo_shape` record (shape id 7) | assembly, device |
-| `lfo-shape-dup` | The same shape id as `lfo-shape`: only one of the two loads (refusal) | device |
+| `lfo-shape-dup` | The code of `lfo-shape` under another module name (same shape id): only one of the two loads (refusal) | device |
 | `entry-demo` | The module entry point: `dk_module` with `init`, `tick`, `fini`, `menu`, settings, log, time, an absent optional service | host, device |
 | `dyn-demo` | A raw module loaded from the card store with a counter in its `tick`: load, unload, store format, names | host, assembly, device |
 | `dyn-demo-stray` | The ColdFire memory audit: `dyn-demo` that writes one word outside its block | device |
@@ -398,34 +397,28 @@ reuses a fixture before it adds one. Layers: **host** (Vitest or pytest, no devi
 | `file-write-b` | A second copy of `file-write` under another name and command range (two modules writing) | device |
 | `settings-a` | The module settings API: put, get and remove through service commands, read in `init` | device |
 | `settings-b` | The same code as `settings-a` under another module name and command range (two modules, one key) | device |
-| `dyn-crash` | Crash capture: a CPU exception a configured number of blocks into the UI loop | device |
-| `dyn-fault` | Safe mode: `init` resets the machine | assembly, device |
-| `dyn-fault-late` | Safe mode: the machine stops some blocks after the first UI pass | assembly, device |
+| `dyn-crash` | The one fault injector, set by the store file `cfg/crash-after.bin` (delay, mode, place): a CPU exception, a reset or a hang a number of blocks into the UI loop (crash capture, safe mode), a reset in `init`, a fault in the boot animation callback (`bootscreen`); no file, no fault, so each test asserts the fault happened | assembly, device |
 | `dyn-dsp-hang` | A machine whose DSP routine never returns after a few blocks (fault trace) | device, rig |
 | `dyn-fx-hang` | A send effect whose process routine never returns (fault trace, log follow) | host, device, rig |
 | `dyn-fx-nan` | A send effect that outputs NaN: the fault count and the row switch-off after eight faults | device, rig |
 | `dyn-guard-nan` | A machine that outputs NaN while a voice is active: the voice guard of `core/dsp-voice` | host, device, rig |
-| `fx-nan` | The negative effect of the conformance suite: writes NaN into its output and must be rejected | rig |
 | `stock-pool` | Calls to the stock DT2 sample loader, reload and purge from the command task and the loader worker | host, device |
 | `track-select` | Adds a sample to the pool of another module's table through SysEx commands | host, device |
 | `dsp-facts` | Probe: cycle counts, instruction semantics and core register values on the SHARC+ core, one framed word per block | host, device |
 | `sharc-probe` | Probe: RECIPS and RSQRTS over a fixed sequence, one framed word per block | host, device |
 | `step-beacon` | Probe: stores a call counter in the module step word on every call | device |
-| `trace-demo` | Trace marks (`DK_TRACE`, `DK_STEP`) that exist only in a `--trace` build | assembly |
 | `ui-demo` | The framework menu: SETTINGS > DIGIKIT with one row of each kind, text page, list, side panel | host, assembly |
 | `native-page` | Native callback page cycling, parameter edits, local zoom and clipped drawing | host |
-| `native-pages` | Replacement page zero, page one, action mapping, independent level access | none yet |
 | `usb-echo` | The bulk interface of `core/usb-bulk`: echo of every buffer on EP2 IN from an I/O job | host, device |
 | `input-probe` | The input adapter: SysEx commands press keys and turn encoders through `core/input` | device |
 | `svc-echo` | Service commands: `dk_host_register` and an echo of the request body | host, device |
-| `intro-ticks`, `intro-fault`, `intro-reset` | The boot animation takes: tick hash, an illegal instruction in the frame function, a reset in the first tick | device |
+| `intro-ticks` | The boot animation takes: the tick hash (the faults in the frame function are `dyn-crash`, place 2) | device |
 | `card-info` | Read-only eMMC and eSDHC register diagnostic of the card tool | host |
 | `c-demo` | A C module that needs 64-bit division, remainder, multiplication and shifts (libgcc helpers); inferred needs | host, assembly, device |
 | `synth-decl` | The code of the synthetic capacity modules (`packages/patchkit/src/dkmsynth.rs`) | assembly |
 | `cf-demo` | *Patch-time.* Code, data and bss placed in `cf.expansion` | assembly, host |
 | `rust-demo` | *Patch-time.* A Rust crate in `cf.expansion` | assembly |
 | `registry-demo` | *Patch-time.* The generic primitives: a registry, a section copied from the image with appended rows, a counting hook | assembly, host |
-| `fx-gain` | *Patch-time.* The effect patched into the chain of `core/fx` (smoke matrix, rig) | assembly, host, rig |
 
 ## The gate
 
@@ -668,7 +661,7 @@ FX rules (the same kit files, `fx.ts` for the master chain): the hook returns
 within 200,000 instructions; registers the stock function expects are preserved; the core/fx fault
 count stays 0; the module stores only to its output block, data, bss and stack; the master stays finite
 within 8.0; the effect stays within `min(headroom) / 4` plus 900 for core/fx. Negative fixtures:
-`test/dyn-dsp-hang` (machine), `test/fx-nan` (effect). `DIGI_JOBS` sets the worker count.
+`test/dyn-dsp-hang` (machine), `test/dyn-fx-nan` (effect). `DIGI_JOBS` sets the worker count.
 A change in a machine or effect module, `core/dsp-voice`, `core/fx` or the kit selects the suite.
 
 ### SHARC-only rig (`sharc-rig`, T1g slice)

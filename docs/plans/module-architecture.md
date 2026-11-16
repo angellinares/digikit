@@ -177,7 +177,7 @@ SELECT writes the selection record and loads nothing; RESTART applies it at the 
   optional exports of `core/input` and `core/ui`, and the `Api` table. There is no import by firmware anchor or address.
 - SHARC link surface: names in the `dyndsp_info` export table only (`dsp.rs:600-611`); an unknown name is `E_DSP_IMPORT`.
 - **Not prevented:** a literal address cast in C or a literal address in assembly. The fixture `stock-pool` calls firmware functions at
-  fixed addresses (`stock_pool.c:38-47`); `dyn-fault` writes 0xEC090000. layercheck sees only undefined symbols, and a cast creates none.
+  fixed addresses (`stock_pool.c:38-47`); `dyn-crash` (mode 4, SOFTRST in init) writes 0xEC090000. layercheck sees only undefined symbols, and a cast creates none.
   Stray stores are found only at test time: `module:audit` (ColdFire) and the write-set checks of the conformance suites (SHARC,
   `tests/support/machine_rig.py`, `tests/support/fx_rig.py`).
 - Checks per type today: machine and fx run their conformance suites; service and raw get only the objects-against-sources check

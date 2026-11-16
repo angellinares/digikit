@@ -10,8 +10,8 @@ page count, descriptors and parameter slots unless they explicitly opt in.
 bindings. `DK_PAGE_PARAM(word, position)` reuses a declared word of that owner;
 `DK_PAGE_LOCAL(id, position)` declares UI-only state. Positions are encoders A–H,
 numbered 0–7. The neutral `test/native-page` fixture binds START at A, ZOOM at C,
-and END at H. Its ordinary declarative page is retained. The separate
-`test/native-pages` fixture proves replacement pages and action routing.
+and END at H. Its ordinary declarative page is retained. No fixture proves replacement
+pages and action routing yet.
 
 The runtime validates the version, owner, binding positions, existing PARAM
 references and callback offsets before publishing the page. It resolves PARAM

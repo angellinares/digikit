@@ -26,8 +26,7 @@ ports = ["dt2-1.17", "dn2-1.12"]
 # - `dynfx_info` is the table the runtime reads (core/runtime, optional link): the rows of the chain (= window 2), the index of the first free
 #   row, the number of free rows and the words of a row.
 #
-# The free rows are listed in the registry in module order after the rows of the modules that come before this one: a patched-in effect
-# comes first when it is selected too, and counts against the same slots (the registry's limit is `fx_slots`).
+# The free rows are listed in the registry in module order (the registry's limit is `fx_slots`); no other module adds a patch-time row.
 
 # The device id and the limits from the device files, written by `patchkit gen` (docs/design/device-data.md). `[[entry]]` rows below: one
 # for each effect slot of a device (tests/patchkit/test_limits.py checks the number against `[limits] fx_slots`).

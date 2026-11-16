@@ -20,7 +20,14 @@ import {
   type Rt,
 } from '@digi/regression/runtime/fx-live.ts';
 import { FIRMWARE, FULL_TIER, describeOn } from '@digi/regression/runtime/devices.ts';
-import { decodeTables, diffTables, dynType, selectType, voiceRows } from '@digi/regression/runtime/project-kit.ts';
+import {
+  decodeTables,
+  diffTables,
+  dynType,
+  FREE_TYPE,
+  selectType,
+  voiceRows,
+} from '@digi/regression/runtime/project-kit.ts';
 
 /**
  * A run-time module set against a boot of no module (port of tools/patchkit/pk_digikit_scen.py `run_equiv`).
@@ -56,7 +63,6 @@ export const PENDING_PCM = 'pending-approval';
 const PIN_SAMPLES = 24000; // interleaved samples a PCM pin covers from the onset (0.25 s of stereo)
 const PRESS_OFFSET = 44_000; // ColdFire instructions after the block boundary (a block is 88 000)
 const NOTE_FRAMES = 1500; // 1 s of audio, captured from the trig on
-const FREE_TYPE = 0xffff_ffff;
 const SYMBOLS = [
   'DKRT_BOOT',
   'DKRT_ASSIGN',

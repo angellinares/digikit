@@ -380,20 +380,6 @@ def test_the_cost_of_the_mix_per_active_row():
     assert one < 830 and zero < one and half < one + 420
 
 
-GAIN = ROOT / "tests/fixtures/modules/fx-gain/src/dsp/fx_gain.s"
-
-
-def test_the_fixture_test_fx_gain_halves_the_master_through_the_adapter():
-    rig = FxRig([Row("_fg_process", "_fg_state", desc="_fg_desc")], sources=(GAIN,))
-    rig.block(RAMP)
-    for _ in range(3):
-        b = rig.block(RAMP)
-        assert b.master == tuple(HALF)
-        assert b.ctx_bad == [] and b.regs_bad == []
-    assert rig.symbol_word("_fg_gain") == f2w(0.5)
-    assert rig.block(RAMP).instructions < 860
-
-
 # ---- patchkit: the hook on both devices ------------------------------------------------------------------------------------
 DT2_117 = config.stock("Digitakt_II_OS1.17.syx")
 DN2_112 = config.stock("Digitone_II_OS1.12.syx")
@@ -457,30 +443,25 @@ def test_the_hook_takes_the_first_instruction_of_a_function_between_master_and_p
 
 @needs_images
 @pytest.mark.parametrize("fw", [DT2_117, DN2_112], ids=["dt2-1.17", "dn2-1.12"])
-def test_the_fixture_puts_one_row_in_the_chain_on_both_devices(
+def test_core_dynfx_reserves_three_free_rows_in_the_chain_on_both_devices(
     patchkit, tmp_path: Path, fw
 ):
-    out = tmp_path / "fx-gain.syx"
-    plan_path = tmp_path / "fx-gain.plan.json"
+    out = tmp_path / "dynfx.syx"
+    plan_path = tmp_path / "dynfx.plan.json"
     patchkit(
         "apply",
         "--firmware",
         fw,
         "--modules",
-        "core/fx,test/fx-gain",
+        "core/fx,core/dynfx",
         "-o",
         out,
         "--plan",
         plan_path,
     )
-    plan = json.loads(plan_path.read_text())
-    sym = plan["symbols"]
-    assert sym["core/fx@0.1.0:fx.count"] == 1
+    sym = json.loads(plan_path.read_text())["symbols"]
+    assert sym["core/fx@0.1.0:fx.count"] == 3
     assert sym["core/fx@0.1.0:fx.row_size"] == 96
-    assert (
-        "test/fx-gain@0.1.0:_fg_process" in sym
-        and "test/fx-gain@0.1.0:_fg_state" in sym
-    )
 
 
 @needs_images

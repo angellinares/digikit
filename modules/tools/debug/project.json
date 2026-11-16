@@ -7,7 +7,7 @@
         "files": ["tests/debug-module.device.test.ts"],
         "devices": ["dt2"],
         "tags": ["M:digikit/debug"],
-        "modules": ["digikit/probe", "digikit/remote", "test/dyn-params", "core/services/machines"]
+        "modules": ["digikit/probe", "digikit/remote", "test/dyn-dn2", "core/services/machines"]
       }
     ]
   }

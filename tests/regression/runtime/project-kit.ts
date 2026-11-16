@@ -496,6 +496,9 @@ export function diffTables(a: Tables, b: Tables): string[] {
   return out;
 }
 
+/** The type word of a free voice row of the DSP registry. */
+export const FREE_TYPE = 0xffff_ffff;
+
 /** The (type, pc) words of the eight voice rows of the DSP registry; a row is 24 words, `first` comes from the dyndsp info (word 6). */
 export async function voiceRows(session: Session, plan: RuntimePlan): Promise<[number, number][]> {
   const rows = planSymbol(plan, 'voices.rows');

@@ -8,30 +8,26 @@ import { bootEntries, COUPLED_ROOTS, expectBoot, popcount, SYMBOLS, type Entry }
 
 /**
  * The needs that `patchkit needs` infers from a packed module's contents are what the runtime takes of each resource once the module is loaded:
- * the arena block, the DSP range, the voice, machine, parameter and page rows and the effect rows. Real modules of the repository and the fixtures
- * that stand for the other shapes of a module (a raw ColdFire module, a machine, an effect, a service). One boot per module: full tier.
+ * the arena block, the DSP range, the voice, machine, parameter and page rows and the effect rows. The shipped debug modules and the fixtures
+ * that stand for the other shapes of a module (a raw ColdFire module, a machine, an effect). One boot per module: full tier.
  */
 const INFERRED_NEEDS_MODULES = [
   'digikit/debug',
   'digikit/probe',
   'digikit/remote',
-  'digikit/freqshift',
-  'digikit/pluck',
-  'fadedlimes/analog',
-  'fadedlimes/bd',
-  'fadedlimes/pd',
   'test/c-demo',
-  'test/dyn-params',
+  'test/commit-demo',
+  'test/dyn-dn2',
+  'test/dyn-dn2-pages',
   'test/dyn-fx-gain',
   'test/sine',
 ];
-
-/** Modules with no Digitone II port. */
-const DT2_ONLY = ['test/dyn-params'];
+/** Fixtures that build for the Digitone II only. */
+const DN2_ONLY = new Set(['test/dyn-dn2-pages']);
 
 cardRigs('inferred needs', { dsp: 'sharc', roots: COUPLED_ROOTS, hold: true, full: true, symbols: SYMBOLS }, (rig) => {
-  for (const id of INFERRED_NEEDS_MODULES.filter((m) => !(rig.device === 'dn2' && DT2_ONLY.includes(m))))
-    test(
+  for (const id of INFERRED_NEEDS_MODULES)
+    test.skipIf(DN2_ONLY.has(id) && rig.device !== 'dn2')(
       `${id}: the resources taken are the needs inferred from its contents`,
       async () => {
         await rig.first();

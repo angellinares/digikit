@@ -68,7 +68,7 @@ Opt-in marks that compile to nothing without `--trace` (same objects, byte-ident
   `DK_TRACE` for C and SHARC+ sources and sets the trace bit in the `.dkm` header (`patchkit dkm-info` shows it).
 - You see it as ` TRACE` on the module's row in DIGIKIT, ABOUT, and as `STEP n` in the fault record (the core clears `_dk_step` before each call
   into a module). A traced module imports `_dk_step` from `core/dyndsp`: a runtime without it answers `DSP IMPORT`.
-- Do not ship a traced `.dkm`. The fixture is `tests/fixtures/modules/trace-demo`; the zero-cost proof is `packages/patchkit/tests/trace.rs`.
+- Do not ship a traced `.dkm`. The fixture is `tests/fixtures/modules/dyn-fx-gain`; the zero-cost proof is `packages/patchkit/tests/trace.rs`.
 
 ## Firmware functions for a core adapter
 

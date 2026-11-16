@@ -39,7 +39,7 @@ def packed(tmp_path_factory):
 
 
 @needs_selache
-@pytest.mark.parametrize("mod", ["core/dynfx", FX, "test/dyn-fx-gain-b"])
+@pytest.mark.parametrize("mod", ["core/dynfx", FX])
 def test_committed_objects_are_current(mod):
     front_end.build_module(modroots.module_dir(mod), check=True)
 
@@ -112,12 +112,6 @@ def test_the_effect_record_carries_the_id_the_kit_stores(packed, tmp_path):
     assert (
         effect_ids(renamed.read_bytes()) == [fnv_effect_id("other/name", "gain")] != ids
     )
-    other = tmp_path / "b.dkm"
-    tools.patchkit_run("pack", "test/dyn-fx-gain-b", "--device", "dt2", "-o", other)
-    assert effect_ids(other.read_bytes()) == [
-        fnv_effect_id("test/dyn-fx-gain-b", "gain")
-    ]
-    assert effect_ids(other.read_bytes()) != ids
 
 
 def test_the_inferred_needs_are_one_effect_slot_and_the_state_in_the_range(packed):

@@ -491,27 +491,13 @@ mise run patch:test -- --cell "dt2-1.17:core/fx"
 
 A machine is a run-time module, not a patch-time row: write it with the builder calls in `init` (`dk_module_ctx_add_machine`, `dk_machine_add_page`, `dk_page_add_param`; the fixtures `tests/fixtures/modules/sine` and `dyn-dn2` show them) and pack it as a `.dkm`. `machines.dks` on the card gives it its type, its page and its knobs. patchkit refuses an `[[entry]]` row of the `machines` registry in a patched-in module. The permanent numbers in `types.toml` are of the framework's own rows only. Device proof: `modules/core/runtime/tests/machines/`.
 
-### An effect: `[[entry]] registry = "fx"`
+### An effect: run-time module
 
-An effect module requires `core/fx` (the effects adapter, `modules/core/adapters/fx/`) and adds one row to its registry `fx`; the chain runs in module order, at most
-`DK_FX_MAX` (4) effects. The routine, its `dk_fx_desc` and its state block are symbols of the module's DSP object (`<dk/gen/fx.h>`,
-[docs/MODULE-AUTHORING.md](../docs/MODULE-AUTHORING.md), section 7.2):
-
-```toml
-[[entry]]
-registry = "fx"
-id = "gain"
-pc = "_fg_process"       # process(R4 = state, R8 = dk_fx_in, R12 = parameter words)
-desc = "_fg_desc"        # dk_fx_desc
-state = "_fg_state"      # .PKBSS _fg_state, <state_bytes>;
-```
-
-`tests/fixtures/modules/fx-gain` (0.5 gain) is the example and the fixture of `core/fx`'s tests; `fx-nan` is the negative one. An empty chain plays the stock audio.
-
-A run-time effect (`dynamic = true`, a `.dkm`) builds its effect in `init` with builder calls (`modules/fx/freqshift/src/module.c`, `[[fx]]` in `module.toml`)
-instead of the `[[entry]]` row. It takes one of the 3 free rows that `core/dynfx`
-reserves, and `core/fxpages` reserves the pages. Its manifest, pages and routes are in [docs/MODULE-AUTHORING.md](../docs/MODULE-AUTHORING.md),
-sections 5.4 and 7.2. The format is `docs/design/digikit-dkm.md`; the design of the pages is "Effect pages" in `docs/design/digikit-registry.md`.
+An effect is a run-time module (`dynamic = true`, a `.dkm`), like a machine. It builds its effect in `init` with builder calls (`dk_module_ctx_add_fx`, `dk_fx_routes`; `modules/fx/freqshift/src/module.c`, `[[fx]]` in `module.toml`)
+and takes one of the 3 free rows that `core/dynfx` reserves in the registry `fx` of `core/fx` (the effects adapter, `modules/core/adapters/fx/`); `core/fxpages` reserves the pages. The chain runs in module order, at most
+`DK_FX_MAX` (4) effects. patchkit refuses an `[[entry]] registry = "fx"` of any module except `core/dynfx`. The routine, its `dk_fx_desc` and its state block are symbols of the module's DSP object
+(`<dk/gen/fx.h>`, [docs/MODULE-AUTHORING.md](../docs/MODULE-AUTHORING.md), sections 5.4 and 7.2). An empty chain plays the stock audio.
+The format is `docs/design/digikit-dkm.md`; the design of the pages is "Effect pages" in `docs/design/digikit-registry.md`.
 Example and fixture: `tests/fixtures/modules/dyn-fx-gain`.
 
 The frameworks themselves are ordinary modules: `modules/core/adapters/machines/` (about 24 ColdFire anchors, six copied

@@ -39,12 +39,12 @@ interface Scenario {
   sets: Record<string, string[]>;
 }
 
-const SETS_DT2 = { A: ['test/dyn-params', 'test/sine'], B: ['test/sine'], A2: ['test/sine', 'test/dyn-params'] };
+const SETS_DT2 = { A: ['test/dyn-dn2', 'test/sine'], B: ['test/sine'], A2: ['test/sine', 'test/dyn-dn2'] };
 const DT2_MACHINES = [
-  { track: 1, machine: 'test/dyn-params:dynp', hint: 7 },
+  { track: 1, machine: 'test/dyn-dn2:dyn_pluck', hint: 7 },
   { track: 2, machine: 'test/sine:sine', hint: 8 },
 ];
-const DT2_TYPES = ['test/dyn-params:dynp', 'test/sine:sine'];
+const DT2_TYPES = ['test/dyn-dn2:dyn_pluck', 'test/sine:sine'];
 const LOCK_TURN = 11;
 const SOUND_LOCK_TURN = 2; // sine has one parameter (level)
 const SCENARIOS: Scenario[] = [

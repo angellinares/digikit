@@ -9,8 +9,7 @@ A framework module: it lets other modules process the final stereo block of the 
   Digitakt II `FUN_1c80f2`, Digitone II `FUN_1c244d`) is replaced by a jump into this module. The effect runs before the USB pack and the DAC converter, so it is in the USB main output and in the
   DAC. The track buses (per-track USB outputs) are not touched.
 - The chain: up to four effects, rows of the registry `fx` (module order). A row is 24 words: pc, desc, state, enabled, the eight parameter words p0 to p7
-  (`DK_FX_MAX_PARAMS`), then the adapter's own words (see `module.toml`). Patched-in effect modules add a row with `[[entry]] registry = "fx"`
-  (`pc`, `desc`, `state`). A row with pc `0xffffffff` is free and skipped: `core/dynfx` reserves such rows for effects that the digikit runtime loads at run time
+  (`DK_FX_MAX_PARAMS`), then the adapter's own words (see `module.toml`). An effect is a run-time module: no module adds a row with `[[entry]] registry = "fx"` (patchkit refuses it, except for `core/dynfx`). A row with pc `0xffffffff` is free and skipped: `core/dynfx` reserves such rows for effects that the digikit runtime loads at run time
   (a `.dkm` with a DSP section of version 4; `docs/design/digikit-dkm.md`); the runtime fills one through window 2 of `core/dsp-link`, the pc word last.
 - The send route (Digitakt II finding 62; Digitone II finding 67): a row with route 1 (word 18) does not process the master. A second hook, the first instruction of the master function (`FUN_1c207b`, before the master mixes the
   FX return), builds a send bus: the sum over the 16 tracks of the track's bus times its gain, gain = (amount byte / 127) squared, ramped over the block like the stock sends. The effect processes that bus (the same

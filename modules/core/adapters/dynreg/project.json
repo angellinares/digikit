@@ -6,7 +6,7 @@
       {
         "files": ["tests/roundtrip.device.test.ts"],
         "tags": ["A:core/dynreg", "C:state"],
-        "modules": ["test/dyn-dn2", "test/dyn-params", "test/sine", "core/services/machines"],
+        "modules": ["test/dyn-dn2", "test/sine", "core/services/machines"],
         "plusdrive": true
       },
       {

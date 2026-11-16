@@ -14,7 +14,7 @@ Related: `docs/plans/digikit-runtime.md` (Phase 11), `docs/design/digikit-dkm.md
 | content, patched in | `test/patched-pluck`, `test/xslice` | machine rows and a DSP routine, placed by patchkit | patched into the image |
 | content, run time | `digikit/pluck`, `test/dyn-xslice` | the same machine as a `.dkm` (`dynamic = true`) | `dkrt_load` at boot (`docs/design/digikit-runtime.md:161-183`) |
 | ColdFire tool | `test/c-demo`, `test/rust-demo` | the constant `dk_module` with `init`, `fini`, `tick`, `menu` (`docs/MODULES.md`) | `.dkm` |
-| fixture | `test/dyn-guard-nan`, `dyn-dsp-hang`, `dyn-fault`, `dyn-crash`, `twin-*`, `dn2-*` | framework tests, today beside real modules | both ways |
+| fixture | `test/dyn-guard-nan`, `dyn-dsp-hang`, `dyn-crash`, `twin-*`, `dn2-*` | framework tests, today beside real modules | both ways |
 
 `tests/fixtures/modules/` holds 23 directories; about 15 of them are fixtures, not modules (`ls tests/fixtures/modules`).
 
@@ -136,7 +136,7 @@ modules/
   core/<fw>/                 framework modules, as today (runtime, dynreg, dyndsp, dsp-link, machines, params, ...)
   core/adapter-machine/      the Machine adapter: src/dsp/dt2.s, src/dsp/dn2.s (from core/dsp-voice), generated profile constants
   digikit/pluck/            content: module.toml, src/dsp/pluck.s (one source), tests/, gallery/
-tests/fixtures/modules/      framework fixtures (dyn-guard-nan, dyn-dsp-hang, dyn-fault, dyn-crash, c-demo, ...), same layout, not selectable by name from `module:*`
+tests/fixtures/modules/      framework fixtures (dyn-guard-nan, dyn-dsp-hang, dyn-crash, c-demo, ...), same layout, not selectable by name from `module:*`
 devices/<dev>.toml           device profile; gains [adapter.*] and [limits] tables (sections 5, 6, 7)
 ```
 
