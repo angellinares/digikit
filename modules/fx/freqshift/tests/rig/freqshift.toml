@@ -1,4 +1,4 @@
-# digikit/freqshift on the SHARC-only rig (replaces modules/fx/freqshift/tests/test_freqshift.py; the adapter legs are core/fxpages fx-bipolar, the device smoke is freqshift.device.test.ts until R12-5).
+# digikit/freqshift on the SHARC-only rig (replaces modules/fx/freqshift/tests/test_freqshift.py; the adapter legs are core/fxpages fx-bipolar).
 # The tables ref/*.f32 are the inputs (numpy generators) and the output of the float32 model freqshift_ref.py that the Python tests compared the routine with
 # (tools/devtools/rig_refs.py). Effect cases run once: the Python tests run the effect behind the DT2 adapter only. Inputs are 64 floats a block, left then right.
 

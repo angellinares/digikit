@@ -22,7 +22,7 @@ The ledger estimate of the plan (about 92 to about 30 boots) needs the merges in
 
 ## F (freqshift) to B, the rig and the F smoke
 
-F is reduced to one master card (module loads, SHIFT word reaches the row, a note is audible, no fault). Every row below that says B is a move: the assertion is removed from F in the same change and exists in B. `pk_digikit_fxshift.py` and `test_fxshift_analysis.py` are unchanged: nothing calls them any more; they go in the deletion commit with F (R12-5).
+F is reduced to one master card (module loads, SHIFT word reaches the row, a note is audible, no fault). Every row below that says B is a move: the assertion is removed from F in the same change and exists in B. F, `pk_digikit_fxshift.py` and `test_fxshift_analysis.py` are deleted with R12-5 (commit "tests: freqshift device file goes with R12-5").
 
 | Old | Assertion | New |
 | --- | --- | --- |
