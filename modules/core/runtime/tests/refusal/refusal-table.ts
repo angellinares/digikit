@@ -36,6 +36,8 @@ const CLEANUP = 'modules/core/runtime/src/rs/src/cleanup_tests.rs';
 const CONTRACT = 'modules/core/runtime/src/rs/src/contract_tests.rs';
 const SAMPLES_RS = 'modules/core/runtime/sdk/src/sample_tracks/tests.rs';
 
+const PROVIDERS = 'modules/core/runtime/tests/services/providers.device.test.ts';
+const prov = (test: string): Proof => ({ file: PROVIDERS, test });
 const mine = (test: string): Proof => ({ file: REFUSAL, test });
 const loads = mine('the good module loads and is ACTIVE');
 
@@ -71,10 +73,11 @@ export const ROWS: Record<string, Row> = {
   E_FX_ID_DUP: { fail: { file: COMMIT, test: 'an effect id that a loaded module has is E_FX_ID_DUP' }, pass: { file: COMMIT, test: 'the commit logs its rows' } },
   E_DECL_FULL: { kind: 'host', reason: 'more builder calls than the record limit', covered: [{ file: COLLECT, test: 'E_DECL_FULL' }] },
   E_PLAN_KIND: { fail: mine('keys for a kind nobody owns are refused'), pass: loads },
-  E_PLAN_OWNER: { kind: 'host', reason: 'needs a module with a KINDS entry; packed fixtures get one with the .dks services (R12)', covered: [{ file: PLAN, test: 'a_kind_a_slot_or_a_hook_site_has_one_owner' }] },
+  E_PLAN_OWNER: { fail: prov('two providers of one service are E_PLAN_OWNER'), pass: prov('a provider installs its hook and the consumer calls it') },
   E_PLAN_KEY: { fail: mine('a second owner of one key is E_PLAN_KEY'), pass: mine('the first owner of the key loads') },
   E_PLAN_FIT: { fail: mine('uses over the capacity are refused'), pass: loads },
   E_DECL_KIND: { fail: mine('kinds in the header table that init does not declare are E_DECL_KIND'), pass: loads },
+  E_HOOK_STOCK: { fail: prov('a bound file whose stock bytes differ is E_HOOK_STOCK'), pass: prov('a provider installs its hook and the consumer calls it') },
   E_NO_DSP: { kind: 'host', reason: 'needs an image without the DSP loader', covered: [{ file: CLEANUP, test: 'E_NO_DSP' }] },
   E_DSP_FORMAT: { kind: 'host', reason: 'a malformed DSP section', covered: [{ file: CONTRACT, test: 'E_DSP_FORMAT' }] },
   E_DSP_IMPORT: { kind: 'open', reason: 'no fixture imports a DSP symbol the image lacks' },

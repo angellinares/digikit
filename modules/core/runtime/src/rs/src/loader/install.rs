@@ -11,9 +11,6 @@ use dkrt_sdk::*;
 /// Installed sites at most: machines 21 + fx 9 + margin.
 pub const SITES_MAX: usize = 48;
 
-/// TODO: this code comes from sdk.toml [load.status] in the run step (R12-3); until then it is a placeholder value.
-const E_HOOK_STOCK: i32 = -9999;
-
 /// `jmp.l` and `nop`, as big-endian words.
 const JMP_L: u16 = 0x4ef9;
 const NOP: u16 = 0x4e71;

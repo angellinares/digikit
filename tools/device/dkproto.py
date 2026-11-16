@@ -230,6 +230,10 @@ LOAD_STATUS: dict[int, tuple[str, str]] = {
         "E_DECL_KIND",
         "a service declared a record kind that the header table does not carry, or with another length",
     ),
+    -82: (
+        "E_HOOK_STOCK",
+        "a hook site of a service does not hold the stock bytes the bind recorded (another firmware, or a patched site): the service is refused before its init",
+    ),
 }
 
 CAP: dict[str, int] = {

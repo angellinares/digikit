@@ -1867,6 +1867,7 @@ E_PLAN_OWNER = { code = -76, text = "the boot plan refused the module: another m
 E_PLAN_KEY = { code = -77, text = "the boot plan refused the module: another module of the selection has the same key for a kind" }
 E_PLAN_FIT = { code = -78, text = "the boot plan refused the module: its uses do not fit what the earlier modules of the selection left" }
 E_DECL_KIND = { code = -79, text = "a service declared a record kind that the header table does not carry, or with another length" }
+E_HOOK_STOCK = { code = -82, text = "a hook site of a service does not hold the stock bytes the bind recorded (another firmware, or a patched site): the service is refused before its init" }
 E_NO_DSP = { code = -30, text = "DSP code in the file, no DSP loader in the image" }
 E_DSP_FORMAT = { code = -31, text = "the DSP section is malformed" }
 E_DSP_IMPORT = { code = -32, text = "a DSP symbol is not exported by the image" }

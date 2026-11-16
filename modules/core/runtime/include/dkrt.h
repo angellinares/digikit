@@ -156,6 +156,7 @@
 #define DKRT_E_PLAN_KEY (-77)            /* the boot plan refused the module: another module of the selection has the same key for a kind */
 #define DKRT_E_PLAN_FIT (-78)            /* the boot plan refused the module: its uses do not fit what the earlier modules of the selection left */
 #define DKRT_E_DECL_KIND (-79)           /* a service declared a record kind that the header table does not carry, or with another length */
+#define DKRT_E_HOOK_STOCK (-82)          /* a hook site of a service does not hold the stock bytes the bind recorded (another firmware, or a patched site): the service is refused before its init */
 
 /* Module states (DkrtBootInfo.states), from [load.state] of sdk/sdk.toml. */
 #define DKRT_STATE_SELECTED 0            /* in the selection, not planned yet */

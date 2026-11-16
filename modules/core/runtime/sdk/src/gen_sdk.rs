@@ -403,6 +403,7 @@ pub mod load {
     pub const E_PLAN_KEY: i32 = -77;
     pub const E_PLAN_FIT: i32 = -78;
     pub const E_DECL_KIND: i32 = -79;
+    pub const E_HOOK_STOCK: i32 = -82;
     pub const STATE_SELECTED: u8 = 0;
     pub const STATE_PLANNED: u8 = 1;
     pub const STATE_REFUSED: u8 = 2;
