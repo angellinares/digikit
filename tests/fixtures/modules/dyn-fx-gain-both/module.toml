@@ -6,7 +6,7 @@ category = "test"
 type = "fx"
 author = "digikit"
 status = "experimental"
-summary = "Test effect of the FX contract with route fields (route = master, routes = master and send): the same gain and the same page (tab GAN) as test/dyn-fx-gain, an insert that can be switched to a send; for the send-page scenario fx-route-dt2."
+summary = "Test effect of the FX contract with routes master and send, default master (`dk_fx_routes` in init): the same gain and the same page (tab GAN) as test/dyn-fx-gain, an insert that can be switched to a send; for the send-page scenario fx-route-dt2."
 dynamic = true
 ports = ["dt2-1.17", "dn2-1.12"]
 requires = []

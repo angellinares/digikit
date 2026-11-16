@@ -362,11 +362,70 @@ A module keeps its tests in its own folder, `modules/<kind>/<name>/tests/`. No l
 - `module:check ID`, `gate` and `test:changed` select them. A change in the module selects its tests and those of the modules that depend
   on it; a change only in `tests/` runs python-tests (and `host` for `.ts`), no Rust or web step.
 - A scenario that pins the PCM of a module lives with that module. A shared test needs "a module" only: it uses a fixture of
-  `tests/fixtures/modules` (`test/sine`, a dynamic machine on both devices; `test/dyn-fx-gain`, an effect; the table is in
-  docs/MODULE-AUTHORING.md), or a made-up id such as `acme/demo` when nothing is built. A list of all shipped modules is a scan of
+  `tests/fixtures/modules` (`test/sine`, a dynamic machine on both devices; `test/dyn-fx-gain`, an effect; the table is
+  [Fixture table](#fixture-table) below), or a made-up id such as `acme/demo` when nothing is built. A list of all shipped modules is a scan of
   `modules/{machines,fx,tools}/*/module.toml`, never a literal list.
 - `mise run check:layers` (rule `self-contained`): no tracked file outside a module's folder names its id or path. Docs, `*.md`, `.agents/`
   and the fixtures may. `host = true` in `[module]` exempts a module the workbench speaks to (the remote control service).
+
+### Fixture table
+
+`tests/fixtures/modules/<id>` holds the test modules (author `test`). Each is the one canonical subject of the cases in the second column; a new test
+reuses a fixture before it adds one. Layers: **host** (Vitest or pytest, no device), **assembly** (runtime assembly tests and patchkit Rust tests), **rig**
+(SHARC-only rig), **device** (emulator). A fixture marked *patch-time* is applied to the firmware by patchkit (`[[prim]]` or core patches), not loaded from the card.
+
+| Fixture | Canonical subject for | Layers |
+| --- | --- | --- |
+| `sine` | The small dynamic machine of the SDK contract (pitched sine, one LEVEL parameter, both devices); the DSP source other fixtures share; pitch checks | host, assembly, rig, device |
+| `dyn-dn2` | A Digitone II machine with its own SYN page of four knobs on the DSP of `sine` | assembly, device |
+| `dyn-params` | Parameter rows of different ranges: registry rows, needs inference, capacity | host, device |
+| `dyn-fx-gain` | The effect contract: insert effect, GAIN knob, upload, persistence, kit save | host, assembly, device |
+| `dyn-fx-gain-b` | A second effect with the same gain under another module id (another effect id): two effects in one kit | host, device |
+| `dyn-fx-gain-bipolar` | A signed knob (BIAS, -64 to +63) and the routes master and send | device |
+| `dyn-fx-gain-both` | Routes: master and send allowed, default master (`dk_fx_routes`) | device |
+| `dyn-fx-gain-send` | Routes: master and send allowed, default send; the FX ROUTES panel | assembly, device |
+| `dyn-fx-gain-sendonly` | Routes: send only | assembly, device |
+| `commit-demo` | A multi-feature commit: a machine with three parameters (latched, click action) and an effect with routes; the golden lowered records; refusals | device, rig |
+| `svc-test` | The service fixture: a `.dks` of the test-only service `svc-test` with exports `dk_svctest_ping` and `dk_svctest_hits` and one hook | host, assembly, device |
+| `svc-test-user` | A module with a hard NEED on `svc-test` (the provider and NEED path of the loader) | host, assembly, device |
+| `lfo-shape` | A service-type module that emits one `lfo_shape` record (shape id 7) | assembly, device |
+| `lfo-shape-dup` | The same shape id as `lfo-shape`: only one of the two loads (refusal) | device |
+| `entry-demo` | The module entry point: `dk_module` with `init`, `tick`, `fini`, `menu`, settings, log, time, an absent optional service | host, device |
+| `dyn-demo` | A raw module loaded from the card store with a counter in its `tick`: load, unload, store format, names | host, assembly, device |
+| `dyn-demo-stray` | The ColdFire memory audit: `dyn-demo` that writes one word outside its block | device |
+| `files-proof` | The public read-only listing boundary of the files API (deferred notifications, no tick) | host, device |
+| `file-write` | Store file writes from an I/O job (create, write, close, abort, delete, hash) started by service commands; cut and PlusDrive cases | host, device |
+| `file-write-b` | A second copy of `file-write` under another name and command range (two modules writing) | device |
+| `settings-a` | The module settings API: put, get and remove through service commands, read in `init` | device |
+| `settings-b` | The same code as `settings-a` under another module name and command range (two modules, one key) | device |
+| `dyn-crash` | Crash capture: a CPU exception a configured number of blocks into the UI loop | device |
+| `dyn-fault` | Safe mode: `init` resets the machine | assembly, device |
+| `dyn-fault-late` | Safe mode: the machine stops some blocks after the first UI pass | assembly, device |
+| `dyn-dsp-hang` | A machine whose DSP routine never returns after a few blocks (fault trace) | device, rig |
+| `dyn-fx-hang` | A send effect whose process routine never returns (fault trace, log follow) | host, device, rig |
+| `dyn-fx-nan` | A send effect that outputs NaN: the fault count and the row switch-off after eight faults | device, rig |
+| `dyn-guard-nan` | A machine that outputs NaN while a voice is active: the voice guard of `core/dsp-voice` | host, device, rig |
+| `fx-nan` | The negative effect of the conformance suite: writes NaN into its output and must be rejected | rig |
+| `stock-pool` | Calls to the stock DT2 sample loader, reload and purge from the command task and the loader worker | host, device |
+| `track-select` | Adds a sample to the pool of another module's table through SysEx commands | host, device |
+| `dsp-facts` | Probe: cycle counts, instruction semantics and core register values on the SHARC+ core, one framed word per block | host, device |
+| `sharc-probe` | Probe: RECIPS and RSQRTS over a fixed sequence, one framed word per block | host, device |
+| `step-beacon` | Probe: stores a call counter in the module step word on every call | device |
+| `trace-demo` | Trace marks (`DK_TRACE`, `DK_STEP`) that exist only in a `--trace` build | assembly |
+| `ui-demo` | The framework menu: SETTINGS > DIGIKIT with one row of each kind, text page, list, side panel | host, assembly |
+| `native-page` | Native callback page cycling, parameter edits, local zoom and clipped drawing | host |
+| `native-pages` | Replacement page zero, page one, action mapping, independent level access | none yet |
+| `usb-echo` | The bulk interface of `core/usb-bulk`: echo of every buffer on EP2 IN from an I/O job | host, device |
+| `input-probe` | The input adapter: SysEx commands press keys and turn encoders through `core/input` | device |
+| `svc-echo` | Service commands: `dk_host_register` and an echo of the request body | host, device |
+| `intro-ticks`, `intro-fault`, `intro-reset` | The boot animation takes: tick hash, an illegal instruction in the frame function, a reset in the first tick | device |
+| `card-info` | Read-only eMMC and eSDHC register diagnostic of the card tool | host |
+| `c-demo` | A C module that needs 64-bit division, remainder, multiplication and shifts (libgcc helpers); inferred needs | host, assembly, device |
+| `synth-decl` | The code of the synthetic capacity modules (`packages/patchkit/src/dkmsynth.rs`) | assembly |
+| `cf-demo` | *Patch-time.* Code, data and bss placed in `cf.expansion` | assembly, host |
+| `rust-demo` | *Patch-time.* A Rust crate in `cf.expansion` | assembly |
+| `registry-demo` | *Patch-time.* The generic primitives: a registry, a section copied from the image with appended rows, a counting hook | assembly, host |
+| `fx-gain` | *Patch-time.* The effect patched into the chain of `core/fx` (smoke matrix, rig) | assembly, host, rig |
 
 ## The gate
 

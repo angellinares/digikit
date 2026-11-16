@@ -66,6 +66,9 @@ def test_a_service_template_is_the_crate_layout_with_every_token_replaced(tmp_pa
     assert files == [
         "Cargo.toml",
         "README.md",
+        "dks/Cargo.toml",
+        "dks/module.toml",
+        "dks/src/lib.rs",
         "src/lib.rs",
         "src/records.rs",
         "src/slots.rs",

@@ -592,7 +592,7 @@ The template `src/dsp/NAME.s` shows all of this in about 90 lines. Read it first
   README what it means there.
 - Clamp the output to +-7.9. An input at the level bound times a filter's overshoot would otherwise refuse the block. Use an integer phase
   accumulator for anything that must not drift.
-- Fixtures: `tests/fixtures/modules/dyn-fx-gain` (insert), `dyn-fx-gain-send`, `dyn-fx-gain-both`, `dyn-fx-gain-sendonly`. A real effect with a
+- Fixtures: `dyn-fx-gain` (insert), `dyn-fx-gain-send`, `-both`, `-sendonly`, `-bipolar` ([fixture table](TESTING.md#fixture-table)). A real effect with a
   float32 reference model: `modules/fx/freqshift`.
 - The instruction budget of the conformance suite is `patchkit budget` (about 31,000 for the effect today, 900 for the adapter). Read it
   from the report in `dist/conformance-rig`. The worst call it measures is written as `dsp_cost_fx`.
@@ -755,7 +755,7 @@ A change in a module selects the module's own tests and those of the modules tha
 build. A PCM pin of a module stays in that module's `tests/scenarios`. Nothing outside the module folder names a user module: `mise run
 check:layers` (rule `self-contained`) fails on a module id or path in code or tests. Docs and `*.md` files may name modules. A module with
 `host = true` in `[module]` is exempt: the workbench speaks its protocol (the remote control service). Tests of shared tools use the fixtures in
-`tests/fixtures/modules` (`test/sine` is the small dynamic machine, `test/dyn-fx-gain` the effect), or a made-up id such as `acme/demo`.
+`tests/fixtures/modules` (`test/sine` is the small dynamic machine, `test/dyn-fx-gain` the effect; all fixtures are in the [fixture table](TESTING.md#fixture-table)), or a made-up id such as `acme/demo`.
 
 After the tests pass, `module:check` packs the module for each device. It prints a `size` line and two more lines, `needs` and `fits`.
 
