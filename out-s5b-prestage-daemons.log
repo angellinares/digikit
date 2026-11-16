@@ -1,0 +1,16 @@
+$ node tools/nx/nx.mjs run digi-control:daemons
+nx: budget 12: 24 Nx tasks, 1 vitest workers, 12 emulators, 6 script jobs, 12 cargo jobs, remote
+
+ NX   1 task: 1 succeeded
+
+
+Re-run with --output-style=static to inline logs.
+
+  Run duration:      1m 20s
+  Cache:             0/1 hit (0%)
+  Critical path:     1m 20s (1 task)
+  Recoverable time:  <1ms
+
+  Recommendations:
+    - Speed up or split the longest tasks on the critical path:
+        digi-control:daemons    1m 20s

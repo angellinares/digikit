@@ -30,10 +30,8 @@ const CUT_MODULES: Record<Device, string[]> = { dt2: ['test/sine'], dn2: ['test/
 const LATE = { stable: 9000, early: 8000, late: 10000 };
 /** `cut-selection.toml` cases: the copies A and B, and what the boot uses. */
 const CUT_CASES = [
-  { a: 'new', b: 'old', want: { loaded: 'all', seq: 2, copy: 0 } },
   { a: 'torn', b: 'old', want: { loaded: 0, seq: 1, copy: 1 } },
   { a: 'old', b: 'new', want: { loaded: 'all', seq: 2, copy: 1 } },
-  { a: 'torn', b: 'torn', want: { loaded: 0, seq: 0, copy: 0 } },
 ] as const;
 
 

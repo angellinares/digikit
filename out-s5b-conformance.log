@@ -1,0 +1,16 @@
+$ node tools/nx/nx.mjs run-many -t test-conformance
+nx: budget 12: 24 Nx tasks, 1 vitest workers, 12 emulators, 6 script jobs, 12 cargo jobs, remote
+
+ NX   51 tasks: 51 succeeded, 1 cached
+
+
+Re-run with --output-style=static to inline logs.
+
+  Run duration:      3m 43s
+  Cache:             1/51 hit (2%)
+  Critical path:     3m 42s (2 tasks)
+  Recoverable time:  <1ms
+
+  Recommendations:
+    - Speed up or split the longest tasks on the critical path:
+        fadedlimes/pd:test-conformance    3m 40s

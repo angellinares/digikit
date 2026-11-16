@@ -1,0 +1,186 @@
+[test:plan] $ node tools/nx/gate.mjs --tier merge --explain
+gate: PGO dn2: stale (sources, workspace); daemons use the stale profile, coupled-run builds plain
+gate: PGO dt2: stale (sources, workspace); daemons use the stale profile, coupled-run builds plain
+WARNING: PGO dn2 profile is stale (sources, workspace).
+  Affected: daemons use the stale profile; coupled-run builds without PGO (about 30% slower DSP).
+  Retrain: mise run perf:pgo:dn2
+WARNING: PGO dt2 profile is stale (sources, workspace).
+  Affected: daemons use the stale profile; coupled-run builds without PGO (about 30% slower DSP).
+  Retrain: mise run perf:pgo:dt2
+gate: affected over the tier targets
+gate: pnpm nx:pilot affected --base origin/main -t lint,fmt-check,rust-fmt,typecheck,test-host,test-wasm,check,build:ui,check:ui,rust-tests,catalog-check,objects-check,pack,test-device,test-conformance,stock,fx,fx-no-aot,fx-dt2,python-checks,python-tests,pins,fast-roots,tier-quick,dt2-tier-quick,card,smoke,dt2-tone --explain
+$ node tools/nx/nx.mjs affected --base origin/main -t lint,fmt-check,rust-fmt,typecheck,test-host,test-wasm,check,build:ui,check:ui,rust-tests,catalog-check,objects-check,pack,test-device,test-conformance,stock,fx,fx-no-aot,fx-dt2,python-checks,python-tests,pins,fast-roots,tier-quick,dt2-tier-quick,card,smoke,dt2-tone --explain
+
+ NX   132 out of 172 lint, fmt-check, rust-fmt, typecheck, test-host, test-wasm, check, build:ui, check:ui, rust-tests, catalog-check, objects-check, pack, test-device, test-conformance, stock, fx, fx-no-aot, fx-dt2, python-checks, python-tests, pins, fast-roots, tier-quick, dt2-tier-quick, card, smoke and dt2-tone tasks are affected
+
+Changing 38 files touches 1 fmt-check task, 1 rust-fmt task, 6 test-host tasks, 1 test-wasm task, 1 check task, 9 rust-tests tasks, 1 catalog-check task, 1 objects-check task, 50 pack tasks, 15 test-device tasks, 12 test-conformance tasks, 1 fx task, 1 fx-no-aot task, 1 fx-dt2 task, 1 python-checks task, 1 python-tests task, 1 pins task, 1 fast-roots task, 1 tier-quick task, 1 dt2-tier-quick task, 1 card task, 1 smoke task, 1 dt2-tone task and 65 tasks they depend on. Pass --verbose to list each with its reasons.
+
+  sdk/dsp/contract/call.inc and 3 other files:
+    - digikit/debug:pack
+    - digikit/freqshift:pack
+    - digikit/pluck:pack
+    - digikit/probe:pack
+    - fadedlimes/analog:pack
+    - and 37 more pack tasks and 2 tasks they depend on
+
+  sdk/sdk.toml:
+    - @digi/dk-session:test-host
+    - core/digikit-menu:test-device
+    - core/dynreg:test-device
+    - core/introblank:test-device
+    - core/runtime-capacity-tests:test-device
+    - and 6 more test-device tasks, 12 more test-conformance tasks, 1 more fx task, 1 more fx-no-aot task, 1 more fx-dt2 task, 1 more pins task, 1 more tier-quick task, 1 more dt2-tier-quick task, 1 more dt2-tone task and 14 tasks they depend on
+
+  modules/core/adapters/fx/build/fx-dsp.dko.json and modules/core/adapters/fx/src/dsp/fx.s:
+    - core/fx:test-device--fx-routes-panel
+    - core/fx:test-device--fx-routes-panel--dn2
+    - core/fx:test-device--fx-routes-panel--dt2
+    - core/fx:test-device--fx-routes-persist
+    - core/fx:test-device--fx-routes-persist--dn2
+    - and 7 more tasks the lint, fmt-check, rust-fmt, typecheck, test-host, test-wasm, check, build:ui, check:ui, rust-tests, catalog-check, objects-check, pack, test-device, test-conformance, stock, fx, fx-no-aot, fx-dt2, python-checks, python-tests, pins, fast-roots, tier-quick, dt2-tier-quick, card, smoke and dt2-tone tasks depend on
+
+  sdk/dsp/contract/call.inc and 5 other files:
+    - core/dynfx:test-device
+    - core/fxpages:test-device
+    - core/runtime-tests:test-device
+    - digikit/remote:pack
+    - digikit/remote:test-device
+    - and 5 more pack tasks and 2 tasks they depend on
+
+  packages/patchkit/src/build/mod.rs and 8 other files:
+    - core/digikit-menu:build-objects
+    - core/dynreg:build-objects
+    - core/health:build-objects
+    - core/input:build-objects
+    - core/introblank:build-objects
+    - and 6 more tasks the lint, fmt-check, rust-fmt, typecheck, test-host, test-wasm, check, build:ui, check:ui, rust-tests, catalog-check, objects-check, pack, test-device, test-conformance, stock, fx, fx-no-aot, fx-dt2, python-checks, python-tests, pins, fast-roots, tier-quick, dt2-tier-quick, card, smoke and dt2-tone tasks depend on
+
+  packages/dkprof/src/report.rs and 12 other files:
+    - @digi/web:check
+    - @digi/web:test-wasm
+    - digi-control:rust-tests
+    - digi-coupled:rust-tests
+    - digiemu-desktop:rust-tests
+    - and 1 more rust-tests task
+
+  packages/patchkit/src/build/mod.rs and 6 other files:
+    - core/dsp-link:build-objects
+    - core/expansion:build-objects
+    - core/machines:build-objects
+    - core/overdrive:build-objects
+    - core/params:build-objects
+    - and 1 more task the lint, fmt-check, rust-fmt, typecheck, test-host, test-wasm, check, build:ui, check:ui, rust-tests, catalog-check, objects-check, pack, test-device, test-conformance, stock, fx, fx-no-aot, fx-dt2, python-checks, python-tests, pins, fast-roots, tier-quick, dt2-tier-quick, card, smoke and dt2-tone tasks depend on
+
+  modules/core/adapters/fx/build/fx-dsp.dko.json and 6 other files:
+    - core/fx:test-device
+    - core/fx:test-device--fx-send
+    - core/fx:test-device--fx-send--dn2
+    - core/fx:test-device--fx-send--dt2
+
+  packages/dkprof/src/report.rs and 16 other files:
+    - regression:test-host
+    - digi-coupled:build
+    - digi-coupled:build-dt2
+    - patchkit:cli
+
+  modules/core/adapters/dsp-stereo-proof/build/stereo-proof-dsp.dko.json and 22 other files:
+    - tools:python-checks
+    - tools:python-tests
+
+  modules/core/adapters/dsp-voice/build/dsp-voice-dn2-dsp.dko.json and 15 other files:
+    - core/dynfx:build-objects
+    - core/fxpages:build-objects
+
+  packages/dkprof/src/report.rs and 9 other files:
+    - @digi/desktop:test-host
+    - dkprof:rust-tests
+
+  packages/patchkit/src/build/mod.rs and 13 other files:
+    - patchkit:rust-tests
+    - patchkit:wasm
+
+  sdk/dsp/contract/call.inc and 4 other files:
+    - digikit/shot:pack
+    - test/native-page:pack
+
+  .prettierignore and 9 other files:
+    - workspace:fmt-check
+
+  modules/core/adapters/dsp-stereo-proof/build/stereo-proof-dsp.dko.json and 11 other files:
+    - gate-fast-roots:fixtures
+
+  modules/core/adapters/dsp-stereo-proof/build/stereo-proof-dsp.dko.json and 12 other files:
+    - gate-fast-roots:fast-roots
+
+  modules/core/adapters/dsp-stereo-proof/build/stereo-proof-dsp.dko.json and 14 other files:
+    - patchkit:objects-check
+
+  modules/core/adapters/dsp-stereo-proof/build/stereo-proof-dsp.dko.json and 9 other files:
+    - gate-rust-modules:rust-tests
+
+  modules/core/adapters/dsp-voice/build/dsp-voice-dn2-dsp.dko.json and 11 other files:
+    - core/dsp-voice:build-objects
+
+  modules/core/adapters/dsp-voice/build/dsp-voice-dn2-dsp.dko.json and 12 other files:
+    - gate-smoke:smoke
+
+  modules/core/adapters/dsp-voice/build/dsp-voice-dn2-dsp.dko.json and 13 other files:
+    - core/dyndsp:build-objects
+
+  modules/core/adapters/fx/build/fx-dsp.dko.json and 5 other files:
+    - core/fx:pack-aliases
+
+  modules/core/adapters/fx/build/fx-dsp.dko.json and 8 other files:
+    - core/fx:build-objects
+
+  modules/core/adapters/sample-pool/build/sample-pool-dsp-dn2.dko.json:
+    - core/sample-pool:test-host
+
+  modules/core/adapters/sample-pool/build/sample-pool-dsp-dn2.dko.json and 9 other files:
+    - core/sample-pool:build-objects
+
+  packages/dkprof/src/report.rs and 14 other files:
+    - workspace:rust-fmt
+
+  packages/dksharc/README.md and 12 other files:
+    - dksharc:rust-tests
+
+  packages/dksharc/README.md and 13 other files:
+    - dkprof:wasm
+
+  packages/dksharc/README.md and 16 other files:
+    - digi-control:daemons
+
+  packages/dksharc/src/rules_table.rs and 8 other files:
+    - sdk:check-generated
+
+  packages/patchkit/src/build/mod.rs and 2 other files:
+    - patchkit:catalog-check
+
+  packages/patchkit/src/build/mod.rs and 3 other files:
+    - gate-card:card
+
+  sdk/include/dk/gen/fx.h and 2 other files:
+    - sdk:test-host
+
+  sdk/include/dk/gen/fx.h and sdk/include/dk/gen/machine.h:
+    - dkui-host:rust-tests
+
+  sdk/project.json:
+    - nx-tools:test-host
+
+Touching those tasks changes outputs read by 1 catalog-check task, 1 objects-check task, 50 pack tasks, 36 test-device tasks, 12 test-conformance tasks, 1 stock task, 1 fx task, 1 fx-no-aot task, 1 fx-dt2 task, 1 pins task, 1 fast-roots task, 1 tier-quick task, 1 dt2-tier-quick task, 1 card task, 1 smoke task, 1 dt2-tone task and 243 tasks they depend on. Pass --verbose to list each with its reasons.
+  - core/digikit-menu-zero-tests:test-device
+  - core/digikit-menu:test-device
+  - core/dynfx:test-device
+  - core/dynreg:test-device
+  - core/fx:test-device
+  - and 1 more catalog-check task, 1 more objects-check task, 50 more pack tasks, 31 more test-device tasks, 12 more test-conformance tasks, 1 more stock task, 1 more fx task, 1 more fx-no-aot task, 1 more fx-dt2 task, 1 more pins task, 1 more fast-roots task, 1 more tier-quick task, 1 more dt2-tier-quick task, 1 more card task, 1 more smoke task, 1 more dt2-tone task and 243 tasks they depend on
+
+gate: PGO status again, from the start of the gate:
+WARNING: PGO dn2 profile is stale (sources, workspace).
+  Affected: daemons use the stale profile; coupled-run builds without PGO (about 30% slower DSP).
+  Retrain: mise run perf:pgo:dn2
+WARNING: PGO dt2 profile is stale (sources, workspace).
+  Affected: daemons use the stale profile; coupled-run builds without PGO (about 30% slower DSP).
+  Retrain: mise run perf:pgo:dt2
