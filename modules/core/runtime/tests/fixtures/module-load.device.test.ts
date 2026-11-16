@@ -7,16 +7,16 @@ import { runtimeTests } from '@digi/regression/runtime/ready.ts';
 // Service registration is covered by core/runtime-service-tests with its zero-DSP fixture.
 // Machines are a service file (machines.dks, R12-6): the harness puts it on the card with the machine fixtures, so these loads go through it. `test/dyn-dn2` is the machine
 // with its own parameter pages and voice of the Digitone II.
-const fixtures: readonly (RuntimeModule & { devices: ('dt2' | 'dn2')[] })[] = [
-  { id: 'test/sine', type: 'machine', contract: 1, dsp: true, devices: ['dt2', 'dn2'] },
-  { id: 'test/dyn-dn2', type: 'machine', contract: 1, dsp: true, devices: ['dn2'] },
-  { id: 'test/dyn-fx-gain', type: 'fx', contract: 2, dsp: true, devices: ['dt2', 'dn2'] },
+const fixtures: readonly (RuntimeModule & { runOn: ('dt2' | 'dn2')[] })[] = [
+  { id: 'test/sine', type: 'machine', contract: 1, dsp: true, runOn: ['dt2', 'dn2'] },
+  { id: 'test/dyn-dn2', type: 'machine', contract: 1, dsp: true, runOn: ['dn2'] },
+  { id: 'test/dyn-fx-gain', type: 'fx', contract: 2, dsp: true, runOn: ['dt2', 'dn2'] },
 ];
 
 for (const fixture of fixtures) {
   runtimeTests(
     `loads and registers ${fixture.id} through USB without runtime faults`,
     (runtime) => expectModuleLoad(runtime, fixture, moduleArtifact(runtime.session.options.device, fixture.id)),
-    { dsp: 'sharc', devices: fixture.devices },
+    { dsp: 'sharc', devices: fixture.runOn },
   );
 }
