@@ -1011,7 +1011,7 @@ firmware, generated core or `out/` data.
 ### Owner hashes (`patchkit owners`)
 
 T1e keys a device test on the bytes of the service or area that it proves, not on the whole runtime. The runtime is one object, so
-`modules/core/runtime/owners.toml` maps the module path prefixes of its items to tags (`S:fx`, `C:storage`, ...) and lists the `shared`
+`modules/core/runtime/owners.toml` maps the module path prefixes of its items to tags (`S:machines`, `C:storage`, ...) and lists the `shared`
 set (the standard library, `dkrt_abi`, `dkrt_sdk`, the entry points, the platform and others). The longest prefix at a `::` boundary wins.
 A C symbol is shared. An anonymous constant (a string, a table) belongs to the owner of the items that use it when they have one owner,
 and is shared otherwise. The tags of a test are the `tags` of its `metadata.runtimeAcceptance` record (vocabulary and check:
@@ -1029,7 +1029,6 @@ C:state           23 items  c23cfcc4d10c01aa
 C:storage        108 items  1d186a24994f2818
 C:tick             1 items  182559b316337832
 C:transport       37 items  16a32570dac04169
-S:fx              42 items  9c8a45d2b5ad5ba9
 S:lfo             23 items  7239c5a2fb8f71e4
 S:machines        40 items  a809be9c324d5eca
 S:samples         56 items  b8727e23ad0bcdc8
@@ -1042,17 +1041,7 @@ The command writes `<tag>.sha256` for every tag and `shared.sha256` into `--out`
 A Rust item that no prefix matches is an error that lists the module paths (two components) with their item counts: add them to
 `owners.toml`; when unsure, add the path to `shared`.
 
-`objdiff --owners owners.toml OLD NEW` adds the owner of each differing item, so it shows why an owner hash changed:
-
-```text
-$ patchkit objdiff OLD.dko.json NEW.dko.json --owners modules/core/runtime/owners.toml
-differences: 1 (813 functions and 333 data objects match)
-differs   info::<RealCore>  [S:fx]
-            first difference at +0x3 (bytes); old, then new
-              +0x0000  598f         subq.l
-            - +0x0002  2ebc00000000 move.l  [reloc +0x2 fxpages_info+0]
-            + +0x0002  2e00         move.l
-```
+`objdiff --owners owners.toml OLD NEW` adds the owner of each differing item (`[C:storage]`, `[shared]`), so it shows why an owner hash changed.
 
 ### Daemon store
 

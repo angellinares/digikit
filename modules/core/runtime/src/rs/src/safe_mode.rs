@@ -48,6 +48,8 @@ pub unsafe fn ui_pass() {
         DKRT_UI_START.0 = now;
         UI_PASSES = 0;
         dlog::ev(logk::UI_FIRST, dlog::INFO, [now, b.safe, b.loaded, 0, 0]);
+        // The UI loop starts only after the boot intro: a host that waits for FW_READY may use the stock MidiRpc service from here on.
+        dlog::ev(logk::FW_READY, dlog::INFO, [now, 0, 0, 0, 0]);
     }
     UI_PASSES = UI_PASSES.wrapping_add(1);
     let elapsed = now.wrapping_sub(DKRT_UI_START.0);

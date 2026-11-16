@@ -40,9 +40,9 @@ pub unsafe fn check_declarations() -> u32 {
 /// The C-ABI entry points of the services that the core links into its own tables (interface A: the imports of `sdk.toml` and the events the adapters
 /// call). This is the one place where the core names a service function; the rest of the core calls `Services` or `CoreApi`.
 pub mod exports {
-    /// The effect list of DIGIKIT > FX ROUTES over the real core (the fx crate is generic over the core).
+    /// The effect list of DIGIKIT > FX ROUTES: the fx service's row method; without the service file (no fx) there is no effect.
     pub unsafe fn fx_entry(index: u32, out: &mut dkrt_sdk::DkrtFx) -> i32 {
-        dkrt_svc_fx::fxsend::fx_entry(&crate::core_api::REAL_CORE, index, out)
+        super::services().fx_entry(index, out)
     }
     /// `dk_param_get` over the real core and the real firmware page. (A host test of the runtime crate has no firmware: it never reaches it.)
     #[cfg(not(test))]
@@ -168,3 +168,5 @@ pub fn len(kind: u32) -> Option<u32> {
 pub(crate) mod tests;
 #[cfg(test)]
 mod lfo_tests;
+#[cfg(test)]
+pub(crate) mod fx_fixture;

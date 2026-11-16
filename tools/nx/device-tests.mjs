@@ -38,7 +38,10 @@ export const deviceTarget = (
   const dependsOn = ['patchkit:cli', 'digi-control:daemons', IMAGE_BUILD, DEVICE_BYTES, DEVICE_IMAGES, PACK_VERDICTS];
   if (uploadable) dependsOn.push('pack');
   for (const rec of recs) {
-    for (const id of rec.modules ?? []) dependsOn.push(`${id}:pack`);
+    for (const id of rec.modules ?? []) {
+      dependsOn.push(`${id}:pack`);
+      if (opts.bindable?.has(id)) dependsOn.push(`${id}:bind`); // a service with hooks: the bound file the tests copy to the card
+    }
     if (Object.keys(rec.aliases ?? {}).length) dependsOn.push('pack-aliases');
     if (rec.plusdrive) dependsOn.push('plusdrive-format:cli');
     if (rec.dksampleWasm) dependsOn.push('dksample:wasm');

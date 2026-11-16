@@ -93,26 +93,26 @@ host tests: their checks stay device tests until the logic is split out.
 
 | File (under modules/, tests/) | Tags |
 | --- | --- |
-| `core/adapters/dynfx/tests/fx-chain.device.test.ts` | A:core/dynfx, S:fx |
-| `core/adapters/dynfx/tests/fx-reuse.device.test.ts` | A:core/dynfx, S:fx |
+| `core/adapters/dynfx/tests/fx-chain.device.test.ts` | A:core/dynfx |
+| `core/adapters/dynfx/tests/fx-reuse.device.test.ts` | A:core/dynfx |
 | `core/adapters/dynreg/tests/equiv.device.test.ts` | A:core/dynreg, C:dsp, S:machines |
 | `core/adapters/dynreg/tests/roundtrip.device.test.ts` | A:core/dynreg, C:state |
-| `core/adapters/fx/tests/fx-routes-panel.device.test.ts` | A:core/fx, C:state, S:fx |
-| `core/adapters/fx/tests/fx-routes-persist.device.test.ts` | A:core/fx, C:state, S:fx |
-| `core/adapters/fx/tests/fx-send-dn2.device.test.ts` | A:core/fx, S:fx |
-| `core/adapters/fx/tests/fx-send.device.test.ts` | A:core/fx, S:fx |
+| `core/adapters/fx/tests/fx-routes-panel.device.test.ts` | A:core/fx, C:state |
+| `core/adapters/fx/tests/fx-routes-persist.device.test.ts` | A:core/fx, C:state |
+| `core/adapters/fx/tests/fx-send-dn2.device.test.ts` | A:core/fx |
+| `core/adapters/fx/tests/fx-send.device.test.ts` | A:core/fx |
 | `core/adapters/fx/tests/patched-dsp-startup.device.test.ts` | A:core/fx, C:boot, C:dsp |
-| `core/adapters/fxpages/tests/fx-kit-persist.device.test.ts` | A:core/fxpages, C:state, S:fx |
-| `core/adapters/fxpages/tests/fx-pages.device.test.ts` | A:core/fxpages, S:fx |
-| `core/adapters/fxpages/tests/fx-track-route-kit.device.test.ts` | A:core/fxpages, C:state, S:fx |
-| `core/adapters/fxpages/tests/fx-track-route-limit.device.test.ts` | A:core/fxpages, S:fx |
-| `core/adapters/fxpages/tests/fx-track-route-lock.device.test.ts` | A:core/fxpages, S:fx |
-| `core/adapters/fxpages/tests/fx-track-route-send.device.test.ts` | A:core/fxpages, S:fx |
-| `core/adapters/fxpages/tests/fx-track-route-stock.device.test.ts` | A:core/fxpages, S:fx |
+| `core/adapters/fxpages/tests/fx-kit-persist.device.test.ts` | A:core/fxpages, C:state |
+| `core/adapters/fxpages/tests/fx-pages.device.test.ts` | A:core/fxpages |
+| `core/adapters/fxpages/tests/fx-track-route-kit.device.test.ts` | A:core/fxpages, C:state |
+| `core/adapters/fxpages/tests/fx-track-route-limit.device.test.ts` | A:core/fxpages |
+| `core/adapters/fxpages/tests/fx-track-route-lock.device.test.ts` | A:core/fxpages |
+| `core/adapters/fxpages/tests/fx-track-route-send.device.test.ts` | A:core/fxpages |
+| `core/adapters/fxpages/tests/fx-track-route-stock.device.test.ts` | A:core/fxpages |
 | `core/adapters/input/tests/input-adapter.device.test.ts` | A:core/input |
 | `core/adapters/introblank/tests/introblank-rec.device.test.ts` | A:core/introblank, C:boot |
 | `core/adapters/introblank/tests/introblank.device.test.ts` | A:core/introblank, C:boot |
-| `core/adapters/overdrive/tests/overdrive-type.device.test.ts` | A:core/overdrive, S:fx |
+| `core/adapters/overdrive/tests/overdrive-type.device.test.ts` | A:core/overdrive |
 | `core/adapters/plusdrive-write/tests/plusdrive-write.device.test.ts` | A:core/plusdrive-write, C:storage |
 | `core/adapters/sdhc-large/tests/sdhc-large.device.test.ts` | A:core/sdhc-large, C:storage |
 | `core/adapters/usb-bulk-audio/tests/usb-bulk-audio.device.test.ts` | A:core/usb-bulk-audio, C:transport |
@@ -123,8 +123,8 @@ host tests: their checks stay device tests until the logic is split out.
 | `core/runtime/tests/addrmap.device.test.ts` | C:layout |
 | `core/runtime/tests/boot-restart.device.test.ts` | C:boot, C:dsp, C:loading |
 | `core/runtime/tests/capacity/capacity.device.test.ts` | C:loading |
-| `core/runtime/tests/capacity/commit.device.test.ts` | C:loading, S:fx, S:machines |
-| `core/runtime/tests/capacity/inferred/inferred-needs.device.test.ts` | C:loading, S:fx, S:machines |
+| `core/runtime/tests/capacity/commit.device.test.ts` | C:loading, S:machines |
+| `core/runtime/tests/capacity/inferred/inferred-needs.device.test.ts` | C:loading, S:machines |
 | `core/runtime/tests/card-safety.device.test.ts` | C:storage |
 | `core/runtime/tests/crash-capture.device.test.ts` | C:diagnostics, C:layout |
 | `core/runtime/tests/debug-guard.device.test.ts` | C:diagnostics, C:dsp, C:layout |
@@ -152,14 +152,14 @@ host tests: their checks stay device tests until the logic is split out.
 | `core/runtime/tests/upload-depth.device.test.ts` | C:transport |
 | `core/runtime/tests/upload-faults.device.test.ts` | C:layout, C:storage, C:transport |
 | `core/runtime/tests/upload.device.test.ts` | C:storage, C:transport |
-| `fx/freqshift/tests/freqshift.device.test.ts` | S:fx |
+| `fx/freqshift/tests/freqshift.device.test.ts` | A:core/fx |
 | `machines/analog/tests/equiv.device.test.ts` | C:dsp, S:machines |
 | `machines/bd/tests/equiv.device.test.ts` | C:dsp, S:machines |
 | `machines/pd/tests/equiv.device.test.ts` | C:dsp, S:machines |
 | `machines/pluck/tests/equiv.device.test.ts` | C:dsp, S:machines |
 | `machines/shot/tests/shot-dn2-audio.device.test.ts` | C:dsp, S:machines, S:samples |
 | `machines/shot/tests/shot-dn2-lease.device.test.ts` | S:machines, S:samples |
-| `machines/shot/tests/shot-dn2-link.device.test.ts` | S:fx, S:machines, S:samples |
+| `machines/shot/tests/shot-dn2-link.device.test.ts` | S:machines, S:samples |
 | `machines/shot/tests/shot-dn2-pool.device.test.ts` | S:machines, S:samples |
 | `machines/shot/tests/shot-dn2-supersede.device.test.ts` | M:digikit/remote, S:machines, S:samples |
 | `machines/shot/tests/shot-dt2.device.test.ts` | S:machines, S:samples |

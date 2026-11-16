@@ -221,14 +221,14 @@ export class RuntimeEvents {
   // typed waits over existing kinds (fields by name via runtimeEvent/fieldsOf):
   untilBoot(); untilUiFirst(opts?: { loaded?: number }); untilModLoad(name: string); untilModDsp(index: number);
   untilSafe(); untilSettingsWrite(); untilInputTaken(control: number, delta?: number);
-  untilFwReady();   // after gate BC
+  untilFwReady();   // FW_READY (kind 47); proof with gate BC
 }
 ```
 
 - `waitForBoot` keeps its signature (dktransfer uses it) and runs on `LogCursor`: no full-log read per round. The refused-restart check of `restarted()` stays.
 - `LogFollower` (desktop) moves to `LogCursor` in phase 4. Its "N events lost" note comes from `lost`.
 
-**FW_READY.** The platform adapter logs one record (`FW_READY`) on the first pass of the firmware UI loop after a boot (`cf.view.hook.ui_loop`), when the boot intro has ended and the stock MidiRpc service answers. `untilFwReady()` waits for it. Its proof rides with gate BC (the adapter is in the image). Cause found 2026-11-16: the first stock file RPC after a module install was lost because the firmware was still on its boot intro. Until FW_READY exists, the dk-session probe after `restart()` (`waitRpcService`) stays as the fallback; `untilFwReady()` then replaces it.
+**FW_READY.** The runtime logs one record (`FW_READY`, kind 47, info level, kept in the small ring) on the first pass of the firmware UI loop after a boot (`safe_mode::ui_pass`, next to `UI_FIRST`; the UI loop starts only after the boot intro), when the stock MidiRpc service answers. `untilFwReady()` waits for it, and `installModules` with the debug module in the list ends its boot wait on it. Its proof rides with gate BC. Cause found 2026-11-16: the first stock file RPC after a module install was lost because the firmware was still on its boot intro. Until FW_READY exists, the dk-session probe after `restart()` (`waitRpcService`) stays as the fallback; `untilFwReady()` then replaces it.
 
 **Layer 2, `@digi/test-support` (emulator-specific; no dk-session import).** New `src/emulated-clock.ts`: `freeClock(session)` (`now` = `status.elapsed`/132000; `pause` = real delay, throws when the clock and restart progress stand still for `hangMs`) and `steppedClock(session)` (`pause(ms)` = `client.step(ms*MS)` with progress). Both implement the `Clock` shape structurally. Moves here: `emulatedWatch`, `withEmulatedProbe`, `pollEmulated` (as `pollUntil(clock, read, done, opts)`), `restartProgress` use.
 

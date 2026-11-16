@@ -1,10 +1,12 @@
 import fs from 'node:fs';
 import path from 'node:path';
 import type { DkSession } from '@digi/dk-session';
-import { repoRoot, type Device } from '@digi/test-support';
+import { RuntimeEvents } from '@digi/dk-session';
+import { emulatorClock, repoRoot, type Device, type Session } from '@digi/test-support';
 import { expect } from 'vitest';
 import { type PatchedSession } from '../support.ts';
 import { timePhase } from '../timing.ts';
+import { boundService, neededServices, servicePath, SERVICE_MODULES } from './service-files.ts';
 import { bootClockOf, pollEmulated, waitForBootEmulated } from './waits.ts';
 
 /** Emulated milliseconds the boot-time loads of the installed modules may take after the boot is seen. */
@@ -23,8 +25,17 @@ export function moduleArtifact(device: Device, id: string): string {
 /** The debug module: the log (LOG, PEEK, LOGCFG) exists only while it is loaded, so a test that reads the log selects it next to the module it tests. */
 export const DEBUG_MODULE = 'digikit/debug';
 
-/** Native USB upload of prepared modules, one selection with all of them (in this order), one restart, then wait for their registration. */
-export async function installModules(dk: DkSession, modules: { id: string; artifact: string }[]): Promise<void> {
+/**
+ * Native USB upload of prepared modules, one selection with all of them (in this order), one restart, then wait for their registration.
+ * With `device`, the services that the modules need (`SERVICE_MODULES`: `fx.dks` for an effect) go on the card too, bound to the stock firmware (the Nx target
+ * `<service id>:bind`; the runtime finds them by name at boot). With `session` and the debug module in the list, the wait ends on the log's FW_READY: the boot intro
+ * is over and the stock MidiRpc service answers (without the log, the session's own probe before the first stock request covers it).
+ */
+export async function installModules(
+  dk: DkSession,
+  modules: { id: string; artifact: string }[],
+  { device, session }: { device?: Device; session?: Pick<Session, 'status' | 'client'> } = {},
+): Promise<void> {
   await timePhase(
     'module.install',
     async () => {
@@ -36,9 +47,28 @@ export async function installModules(dk: DkSession, modules: { id: string; artif
         expect(await dk.verifyFile(storePath, bytes), 'fresh card read matches prepared module bytes').toBe(true);
         paths.push(storePath);
       }
+      if (device) {
+        for (const name of neededServices(modules.map((m) => m.artifact))) {
+          const bound = fs.readFileSync(
+            await boundService(device, name, moduleArtifact(device, SERVICE_MODULES[name]!)),
+          );
+          await timePhase('service.upload', () => dk.put(servicePath(name), bound));
+          expect(
+            await dk.verifyFile(servicePath(name), bound),
+            `fresh card read matches the bound ${name} service`,
+          ).toBe(true);
+        }
+      }
       await dk.select(paths);
       await timePhase('protocol.restart', () => dk.restart());
       await timePhase('protocol.waitForBoot', () => waitForBootEmulated(dk));
+      if (session && modules.some((m) => m.id === DEBUG_MODULE)) {
+        await timePhase('boot.fwReady', async () => {
+          const events = new RuntimeEvents(dk, emulatorClock(session));
+          await events.listen({ fromBoot: true });
+          await events.untilFwReady();
+        });
+      }
       const want = modules.map((m) => m.id);
       const loaded = async () => (await dk.modules()).map((entry) => entry.name);
       const clock = bootClockOf(dk);
@@ -68,5 +98,6 @@ export function installWithDebug({ session, dk }: PatchedSession, ...ids: string
   return installModules(
     dk,
     [...new Set([DEBUG_MODULE, ...ids])].map((id) => ({ id, artifact: moduleArtifact(device, id) })),
+    { device, session },
   );
 }

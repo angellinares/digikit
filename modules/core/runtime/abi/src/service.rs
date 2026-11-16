@@ -49,6 +49,7 @@ const fn svc_abi() -> u32 {
         size_of::<crate::link::Step>(),
         size_of::<crate::link::Sequence>(),
         size_of::<crate::link::Stream>(),
+        size_of::<DkrtFx>(),
     ];
     let mut h = crate::gen_svc_abi::FILES_HASH;
     let mut i = 0;
@@ -356,6 +357,10 @@ pub trait Service<C: CoreApi> {
     unsafe fn on_loaded(core: &C, rec: usize) {}
     /// The service's work of one UI-loop pass in `phase` (`tick_phase`).
     unsafe fn tick(core: &C, phase: u32) {}
+    /// Effect `index` (0 ..) with a page, in row order, for DIGIKIT > FX ROUTES, into `out`: `OK`, or `E_NOT_FOUND` past the end (the default: this service has no effects).
+    unsafe fn fx_entry(core: &C, index: u32, out: &mut DkrtFx) -> i32 {
+        E_NOT_FOUND
+    }
 
     /// Did module `rec` claim a voice row for machine type `ty`?
     unsafe fn has_voice(core: &C, rec: usize, ty: u32) -> bool {
@@ -440,6 +445,7 @@ pub struct ServiceRow {
     guard_state: unsafe extern "C" fn(*const c_void, u32, *mut GuardState) -> bool,
     on_loaded: unsafe extern "C" fn(*const c_void, usize),
     tick: unsafe extern "C" fn(*const c_void, u32),
+    fx_entry: unsafe extern "C" fn(*const c_void, u32, *mut DkrtFx) -> i32,
     has_voice: unsafe extern "C" fn(*const c_void, usize, u32) -> bool,
     declare_voice:
         unsafe extern "C" fn(*const c_void, usize, u32, *const u32, u32, *mut i32) -> bool,
@@ -543,6 +549,13 @@ mod thunk {
     }
     pub unsafe extern "C" fn tick<C: CoreApi, S: Service<C>>(core: *const c_void, phase: u32) {
         S::tick(&*(core as *const C), phase)
+    }
+    pub unsafe extern "C" fn fx_entry<C: CoreApi, S: Service<C>>(
+        core: *const c_void,
+        index: u32,
+        out: *mut DkrtFx,
+    ) -> i32 {
+        S::fx_entry(&*(core as *const C), index, &mut *out)
     }
     pub unsafe extern "C" fn has_voice<C: CoreApi, S: Service<C>>(
         core: *const c_void,
@@ -684,6 +697,7 @@ impl ServiceRow {
             guard_state: thunk::guard_state::<C, S>,
             on_loaded: thunk::on_loaded::<C, S>,
             tick: thunk::tick::<C, S>,
+            fx_entry: thunk::fx_entry::<C, S>,
             has_voice: thunk::has_voice::<C, S>,
             declare_voice: thunk::declare_voice::<C, S>,
             declare_fx: thunk::declare_fx::<C, S>,
@@ -950,6 +964,18 @@ impl ServiceTable {
             (self.row(i).tick)(self.core, phase);
             i += 1;
         }
+    }
+    /// The `index`th effect with a page, from the first service that has one; `E_NOT_FOUND` when no service has effects (the fx service file is not loaded) or past the end.
+    #[inline]
+    pub unsafe fn fx_entry(&self, index: u32, out: &mut DkrtFx) -> i32 {
+        let mut i = 0;
+        while i < self.rows.len() {
+            if (self.row(i).fx_entry)(self.core, index, out) == OK {
+                return OK;
+            }
+            i += 1;
+        }
+        E_NOT_FOUND
     }
     #[inline]
     pub unsafe fn has_voice(&self, rec: usize, ty: u32) -> bool {

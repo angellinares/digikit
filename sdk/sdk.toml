@@ -1491,6 +1491,13 @@ id = 46
 name = "DSP_LINK"
 args = ["what", "a", "b", "c", "d"]
 
+# the firmware is ready for a host (info level, kept in the small ring; once per boot): logged by the first pass of the firmware's UI loop, which runs only after the boot intro
+# has ended, so the stock MidiRpc service answers from here on. A host waits on it instead of probing: `blocks` is the block counter of that pass.
+[[log.kind]]
+id = 47
+name = "FW_READY"
+args = ["blocks", "-", "-", "-", "-"]
+
 [spans]             # the owners of the runtime's profiling spans that are not modules (the debug module's span table, docs/plans/profiling.md section 7.2)
 phases = ["early", "late", "last"]   # the service tick phases, owner 0x100 | p, in the order of `tick_phase` (modules/core/runtime/abi/src/service.rs)
 polls = 4                            # the poll slots, owner 0x200 | i: POLLS of modules/core/runtime/src/rs/src/state.rs. A slot holds whichever function registered with `dkrt_poll_add`, so the host names a poll by the function at that slot (address map), not from this file
@@ -1652,7 +1659,6 @@ rust = "dkrt_svc_machines::records::Machines"
 
 [[service]]
 name = "fx"
-rust = "dkrt_svc_fx::records::Fx"
 
 [[service]]
 name = "lfo"

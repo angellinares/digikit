@@ -132,6 +132,11 @@ export const builtSourceExclusions = (root, base = '.') =>
 export const serviceLeaves = (byId) =>
   new Set([...byId].filter(([, { manifest }]) => manifest.role === 'service').map(([id]) => id.split('/').at(-1)));
 
+// A service that takes hooks is bound to the firmware before it goes on a card (target `bind`, module-build.mjs); `bindableIds`: the ids of those.
+export const isBindable = (manifest, hooks) => manifest.role === 'service' && (hooks?.length ?? 0) > 0;
+export const bindableIds = (byId) =>
+  new Set([...byId].filter(([, { manifest, hooks }]) => isBindable(manifest, hooks)).map(([id]) => id));
+
 // The cache inputs of one device test target, and whether its key holds the patchkit binary (`patchkitLive`).
 // `opts`: `narrow` selects the narrow input set; `moduleId` is the project's module id (its pack is loaded when
 // `uploadable`); `subjects` are the projects a test-only project tests; `services` is the set of service leaves

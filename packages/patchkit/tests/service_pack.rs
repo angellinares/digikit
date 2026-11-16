@@ -261,3 +261,64 @@ fn lfo_packs_to_a_dks_that_owns_lfo_shape_and_its_users_need_it() {
     assert!(lfo[0].hard);
     let _ = std::fs::remove_dir_all(&d);
 }
+
+#[test]
+fn fx_packs_to_a_dks_that_owns_effect_and_takes_nine_hooks_by_entry() {
+    if !toolchain() {
+        return;
+    }
+    let here = root();
+    let d = scratch("fx");
+    let svc = packed(&here, "core/services/fx", &d.join("fx.dks"));
+    let dkm = Dkm::parse(&svc).unwrap();
+    assert_eq!(dkm.role, 1);
+    let k = Keys::parse(&dkm.register).unwrap();
+    assert_eq!(
+        k.provides().collect::<Vec<_>>(),
+        vec![(name_hash("fx"), dkm.version)]
+    );
+    assert!(k.kinds().eq([dkneeds::keys::KindDecl {
+        kind: dkneeds::KIND_EFFECT,
+        len: dkneeds::LEN_EFFECT,
+        entry: dkm.init.unwrap(),
+    }]));
+    // the nine hooks of the effect pages, each by the offset of its entry in the image (a service with hooks is bound to the firmware before it is loaded)
+    let hooks: Vec<_> = k.hooks().collect();
+    assert_eq!(hooks.len(), 9);
+    for name in [
+        "cf.page.hook.page_desc",
+        "cf.page.hook.tab_label_test",
+        "cf.page.hook.filter_graph_test",
+        "cf.page.hook.fx_view_list.load",
+        "cf.page.hook.fx_array.load",
+        "cf.page.hook.fx_array.save",
+        "cf.page.hook.fx_array.init_exit",
+        "cf.page.hook.fx_key_list.load",
+        "cf.page.hook.sound_load_exit",
+    ] {
+        let h = hooks
+            .iter()
+            .find(|p| p.a == name_hash(name))
+            .unwrap_or_else(|| panic!("no HOOKS entry for {name}"));
+        assert!(
+            (h.b as usize) < dkm.image.len(),
+            "{name}: the entry is in the image"
+        );
+    }
+    let abi = u32::from_be_bytes(svc[dkneeds::H_SVC_ABI as usize..][..4].try_into().unwrap());
+    assert!(
+        object_holds_word(
+            &here.join("modules/core/runtime/build/runtime.dko.json"),
+            abi
+        ),
+        "H_SVC_ABI {abi:#x} is not the runtime's SVC_ABI: rebuild the objects (`patchkit build --tree modules/core`)"
+    );
+    // an effect module needs the service: its effect record is a kind of the fx service, which has no row in the runtime any more
+    let user = packed(&here, "test/dyn-fx-gain", &d.join("dyn-fx-gain.dkm"));
+    let user = Dkm::parse(&user).unwrap();
+    let k = Keys::parse(&user.register).unwrap();
+    let needs: Vec<_> = k.needs().filter(|n| n.service == name_hash("fx")).collect();
+    assert_eq!(needs.len(), 1);
+    assert!(needs[0].hard);
+    let _ = std::fs::remove_dir_all(&d);
+}

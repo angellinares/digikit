@@ -6238,7 +6238,7 @@
       },
       "subsystem": "page",
       "users": [
-        "core/fxpages"
+        "core/services/fx"
       ],
       "was": [
         "cf.fxpages.keystock",
@@ -6290,7 +6290,7 @@
       },
       "subsystem": "page",
       "users": [
-        "core/fxpages"
+        "core/services/fx"
       ],
       "was": [
         "cf.fxpages.stock",
@@ -6512,7 +6512,7 @@
       },
       "subsystem": "page",
       "users": [
-        "core/fxpages"
+        "core/services/fx"
       ],
       "was": [
         "cf.fxpages.acc",
@@ -6794,7 +6794,7 @@
       "site": "cf.page.site.filter_graph_test",
       "subsystem": "page",
       "users": [
-        "core/fxpages"
+        "core/services/fx"
       ],
       "was": []
     },
@@ -6842,7 +6842,7 @@
       "site": "cf.page.site.fx_array.init_exit",
       "subsystem": "page",
       "users": [
-        "core/fxpages"
+        "core/services/fx"
       ],
       "was": []
     },
@@ -6892,7 +6892,7 @@
       "site": "cf.page.site.fx_array.load",
       "subsystem": "page",
       "users": [
-        "core/fxpages"
+        "core/services/fx"
       ],
       "was": []
     },
@@ -6941,7 +6941,7 @@
       "site": "cf.page.site.fx_array.save",
       "subsystem": "page",
       "users": [
-        "core/fxpages"
+        "core/services/fx"
       ],
       "was": []
     },
@@ -6984,7 +6984,7 @@
       "site": "cf.page.site.fx_key_list.load",
       "subsystem": "page",
       "users": [
-        "core/fxpages"
+        "core/services/fx"
       ],
       "was": []
     },
@@ -7027,7 +7027,7 @@
       "site": "cf.page.site.fx_view_list.load",
       "subsystem": "page",
       "users": [
-        "core/fxpages"
+        "core/services/fx"
       ],
       "was": []
     },
@@ -7073,7 +7073,7 @@
       "site": "cf.page.fn.page_desc",
       "subsystem": "page",
       "users": [
-        "core/fxpages"
+        "core/services/fx"
       ],
       "was": []
     },
@@ -7117,7 +7117,7 @@
       "site": "cf.page.site.sound_load_exit",
       "subsystem": "page",
       "users": [
-        "core/fxpages"
+        "core/services/fx"
       ],
       "was": []
     },
@@ -7338,7 +7338,7 @@
       "site": "cf.page.site.tab_label_test",
       "subsystem": "page",
       "users": [
-        "core/fxpages"
+        "core/services/fx"
       ],
       "was": []
     },
@@ -7383,7 +7383,7 @@
       },
       "subsystem": "page",
       "users": [
-        "core/fxpages"
+        "core/services/fx"
       ],
       "was": [
         "cf.fxpages.graph",
@@ -7431,7 +7431,7 @@
       },
       "subsystem": "page",
       "users": [
-        "core/fxpages"
+        "core/services/fx"
       ],
       "was": [
         "cf.fxpages.init",
@@ -7479,7 +7479,7 @@
       },
       "subsystem": "page",
       "users": [
-        "core/fxpages"
+        "core/services/fx"
       ],
       "was": [
         "cf.fxpages.load",
@@ -7527,7 +7527,7 @@
       },
       "subsystem": "page",
       "users": [
-        "core/fxpages"
+        "core/services/fx"
       ],
       "was": [
         "cf.fxpages.save",
@@ -7575,7 +7575,7 @@
       },
       "subsystem": "page",
       "users": [
-        "core/fxpages"
+        "core/services/fx"
       ],
       "was": [
         "cf.fxpages.keylist",
@@ -7623,7 +7623,7 @@
       },
       "subsystem": "page",
       "users": [
-        "core/fxpages"
+        "core/services/fx"
       ],
       "was": [
         "cf.fxpages.stock_n",
@@ -7671,7 +7671,7 @@
       },
       "subsystem": "page",
       "users": [
-        "core/fxpages"
+        "core/services/fx"
       ],
       "was": [
         "cf.fxpages.list",
@@ -7719,7 +7719,7 @@
       },
       "subsystem": "page",
       "users": [
-        "core/fxpages"
+        "core/services/fx"
       ],
       "was": [
         "cf.fxpages.sound",
@@ -7767,7 +7767,7 @@
       },
       "subsystem": "page",
       "users": [
-        "core/fxpages"
+        "core/services/fx"
       ],
       "was": [
         "cf.fxpages.label",

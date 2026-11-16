@@ -32,7 +32,7 @@ Rules:
   service-crates
             A service crate (modules/core/services/NAME, linked into the runtime object) depends only on dkrt-abi, dkrt-sdk and dkneeds, and on
             dkrt-test-support as a dev-dependency; it names no firmware crate and no device id (only its `dks/` service file may name `dkfw`, in `dks/src/fw.rs`), and has no path into the runtime crate. The runtime
-            names a service crate (`dkrt_svc_*`) only in `gen_services.rs` and `handlers.rs`. Final state (R12-1): no service is a folder of the
+            names a service crate (`dkrt_svc_*`) only in `gen_services.rs`, `handlers.rs` and the host-test files under `handlers/`. Final state (R12-1): no service is a folder of the
             runtime crate's `services/`; every service (fx, machines, samples, lfo) is a crate.
   platform  Inside the runtime crate, only `platform.rs` (the real platform, L1) and `fw.rs` at the crate's source root (the declared adapter of
             `dkrt_abi::fw::Fw`: it must contain `impl Fw for`) name the firmware crate dkfw; the rest of the core and the services use the `Platform`
@@ -932,7 +932,7 @@ def check_service_crates(root: Path) -> list[Violation]:
                 )
     for f in sorted(src.rglob("*.rs")) if src.is_dir() else []:
         r = f.relative_to(src).as_posix()
-        if r in SERVICE_RUNTIME_FILES:
+        if r in SERVICE_RUNTIME_FILES or r.startswith("handlers/"):
             continue
         for n, line in enumerate(
             rust_without_comments(f.read_text(encoding="utf-8")).splitlines(), 1

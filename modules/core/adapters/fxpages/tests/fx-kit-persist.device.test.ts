@@ -17,7 +17,7 @@ import { halfword, trackNote } from '@digi/regression/runtime/fx-track-ui.ts';
 import { record } from '@digi/regression/runtime/artifacts.ts';
 import { DEVICES, FIRMWARE } from '@digi/regression/runtime/devices.ts';
 import { expectRuntimeUi } from '@digi/regression/runtime/ready.ts';
-import { planSymbol } from '@digi/regression/runtime/runtime-plan.ts';
+import { symbolsOf } from '@digi/regression/runtime/service-symbols.ts';
 import { emulatorDk } from '@digi/regression/runtime/waits.ts';
 
 const GAIN_B = 'test/dyn-fx-gain-b';
@@ -63,16 +63,7 @@ for (const device of DEVICES) {
         inventory: [SINE, GAIN, GAIN_B],
         symbols: [
           'DKRT_BOOT',
-          'DKRT_FXP',
           'fx.rows',
-          'fxp_ids',
-          'fxp_defs',
-          'fxp_ninit',
-          'fxp_nsave',
-          'fxp_nload',
-          'fxp_save_dst',
-          'fxp_load_src',
-          'fxp_last_save',
         ],
         policy: 'fx-kit',
       },
@@ -91,7 +82,8 @@ for (const device of DEVICES) {
       const session = runtime.session;
       const fx = profile.fx;
       const count = fx.value_indices.length / 8;
-      const sym = (name: string) => planSymbol(plan, name);
+      // the state of the hooks is in the fx service file: `symbolsOf` has its symbols after each boot (`inspectFxBoot`)
+      const sym = (name: string) => symbolsOf(runtime, plan)(name);
       const cell = (name: string) => word(session, sym(name));
       const halfwords = async (base: number, n: number) =>
         Promise.all(Array.from({ length: n }, (_, i) => halfword(session, base + 2 * i)));

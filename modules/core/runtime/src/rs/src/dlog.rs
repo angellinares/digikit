@@ -166,7 +166,7 @@ fn keeps(kind: u16, flags: u16) -> bool {
     if crate::boot::info().ui_reached == 0 {
         return true;
     }
-    kind == logk::SETTINGS_LOAD || (kind < 32 && (BOOT_KINDS >> kind) & 1 != 0)
+    kind == logk::SETTINGS_LOAD || kind == logk::FW_READY || (kind < 32 && (BOOT_KINDS >> kind) & 1 != 0)
 }
 
 /// Set (or, with 0, clear) the sink and its tick. The events of the small ring, oldest first, are handed to a new sink at once, so it starts with the boot.

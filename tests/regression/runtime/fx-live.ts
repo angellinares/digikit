@@ -23,6 +23,7 @@ import { plusdriveBinary } from './card-kit.ts';
 import { cachedCard, cardKey, fileSha } from './card-cache.ts';
 import { daemonBinary, FIRMWARE, claimRunDir } from './devices.ts';
 import { moduleArtifact } from './install.ts';
+import { boundService, neededServices, SERVICE_MODULES } from './service-files.ts';
 import { expectRuntimeUi } from './ready.ts';
 import { deviceProfile } from './device-data.ts';
 import type { FxExpectations } from './dkm-parse.ts';
@@ -78,9 +79,17 @@ async function baseline(
     }
   });
   const selection = ['modules/sine.dkm', ...(wet ? ['modules/dyn-fx-gain.dkm'] : [])];
+  // the services the gain effect needs (fx.dks), bound to the stock firmware, go to digikit/services
+  const services = await Promise.all(
+    neededServices(files.map((f) => f.file)).map(async (name) => ({
+      name: `${name}.dks`,
+      file: await boundService(device, name, moduleArtifact(device, SERVICE_MODULES[name]!)),
+    })),
+  );
   const key = cardKey(device, {
     kind: 'fx-live-reuse',
     modules: files.map((f) => ({ name: f.name, sha: fileSha(f.file) })),
+    services: services.map((f) => ({ name: f.name, sha: fileSha(f.file) })),
     selection,
   });
   const cardImage = await cachedCard(key, async (work) => {
@@ -89,6 +98,9 @@ async function baseline(
     const modules = path.join(seed, 'digikit', 'modules');
     fs.mkdirSync(modules, { recursive: true });
     for (const f of files) fs.copyFileSync(f.file, path.join(modules, f.name));
+    const serviceDir = path.join(seed, 'digikit', 'services');
+    fs.mkdirSync(serviceDir, { recursive: true });
+    for (const f of services) fs.copyFileSync(f.file, path.join(serviceDir, f.name));
     fs.writeFileSync(path.join(seed, 'digikit', 'selection.txt'), selection.join('\n') + '\n');
     const out = path.join(work, 'card', 'card.img');
     fs.mkdirSync(path.dirname(out), { recursive: true });

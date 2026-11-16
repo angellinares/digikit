@@ -29,9 +29,7 @@ export function withRouteFxSession(device: Device, scope: string, config: RouteF
         'fx.rows',
         '_dl_area',
         ...(config.image === 'track' || config.image === 'track-base' ? ['dynreg_info'] : []),
-        ...(config.image === 'track'
-          ? ['fxpages_info', 'fxp_send_row', 'fxp_send_count', 'fxp_nload', 'DKRT_FXS']
-          : []),
+        ...(config.image === 'track' ? ['fxpages_info'] : []),
         ...(config.image === 'routes'
           ? [
               'DK_FXR_PEND',
@@ -45,8 +43,6 @@ export function withRouteFxSession(device: Device, scope: string, config: RouteF
               'DK_PANEL_N',
               'DK_ROUTE_N',
               'DK_ROUTE_ITEM',
-              'fxp_send_count',
-              'DKRT_FXS',
               'fxpages_info',
             ]
           : []),

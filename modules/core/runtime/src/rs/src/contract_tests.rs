@@ -92,6 +92,8 @@ fn imports_of(f: &[u8]) -> Vec<String> {
 /// Run the runtime's check of the DSP section of `f` on a DSP of `device`: the result code and what the check found.
 fn check(f: &[u8], device: u32) -> (i32, Job) {
     let _lock = LOCK.lock().unwrap_or_else(|e| e.into_inner());
+    // an effect module's DSP section is checked by the fx service, a file of the card
+    let _fx = crate::handlers::fx_fixture::LoadedFx::new();
     let info = info_table(device, &imports_of(f));
     let mut job = Job::empty();
     let (off, size) = section(f);
