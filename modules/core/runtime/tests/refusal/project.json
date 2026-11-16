@@ -18,7 +18,11 @@
           "test/lfo-shape",
           "test/lfo-shape-dup"
         ],
-        "plusdrive": true
+        "plusdrive": true,
+        "tags": [
+          "C:loading",
+          "S:lfo"
+        ]
       }
     ]
   }
