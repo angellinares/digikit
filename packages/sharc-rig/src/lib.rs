@@ -9,13 +9,19 @@
 //! request  {"return_sw": 12120320,                          // pc a routine returns to (ends the call, not executed)
 //!           "breaks":    [12120064],                         // more pcs that end a call (not executed)
 //!           "watch":     [[11862016, 11862400]],             // optional: record the stores of instructions at these pcs
-//!           "code": [{"address": 671088640, "hex": "..."}],  // loader byte address, code in boot-stream order
+//!           "image":     "...",                              // optional: a DSP boot stream (the stock image) loaded first, hex
+//!           "code": [{"address": 671088640, "hex": "..."}],  // loader byte address, code in boot-stream order (over the image)
 //!           "ops": [ {"poke": [[word_address, word], ...]},  // DM writes, normal-word addresses
 //!                    {"call": {"pc": 1, "regs": {"R4": 5}, "max_steps": 400000,
-//!                              "reads": [[word_address, count]], "read_regs": ["I6"]}} ]}
+//!                              "reads": [[word_address, count]], "read_regs": ["I6"],
+//!                              "stock_reads": [[loader_byte_address, count]],   // optional: bytes of the image as loaded
+//!                              "breaks": [pc], "resume": true,                    // optional, see below
+//!                              "specials": {"MSF": ["mask", "bits"]}, "read_specials": ["MSF"]}} ]}
 //! response {"build": "...", "results": [{"instructions": n, "halt": "breakpoint", "final_pc": pc,
 //!                                        "regs": {"I6": v|null}, "reads": [[v|null, ...]],
 //!                                        "stores": [[pc, address, width], ...],
+//!                                        "stock": ["hex"|null, ...],   // only for a call with "stock_reads"
+//!                                        "specials": {"MSF": ["mask","bits"]|null},   // only for "read_specials"
 //!                                        "profile": [[pc, count], ...]}]}   // only for a call with "profile": true
 //! ```
 //!
@@ -28,6 +34,19 @@
 //! A call with `"profile": true` also answers `profile`: one `[pc, count]` row per pc the call executed, in pc order (the counts
 //! add up to `instructions`; no key without the option, and the loop only counts when it is on).
 //!
+//! `image` is a boot stream as the firmware keeps it (section 7 of an image): it is parsed by the boot crate's own
+//! `LoadedMemory::from_stream` (later blocks win, FILL blocks repeat their argument) and loaded before `code`, so the code
+//! is placed over the stock bytes as `CallSession(base_memory=...)` does. `stock_reads` answers bytes of that image as it
+//! was loaded (before any `code`, poke or store), `null` for a range the stream does not fully write.
+//!
+//! A call with `breaks` stops at those pcs and `return_sw` instead of the request's `breaks`. A call with `resume: true`
+//! continues from the pc the last call stopped at (no new call frame, the stacks and registers stay; `regs` are still
+//! set), as `Runner.run` does after a breakpoint.
+//!
+//! `specials` sets the 80-bit multiplier registers MRF, MRB, MSF, MSB before a call (`{"MSF": ["mask hex", "bits hex"]}`, every bit
+//! known when the mask is 2^80 - 1) and `read_specials: ["MSF"]` answers `specials`, the same pairs after the call (`null` for a
+//! register the core does not hold).
+//!
 //! `pokem` changes some bits of a word (a halfword or a byte lane of a frame word): a word that nothing wrote reads as 0, as
 //! `CallSession.peek(addr) or 0` does in the Python rigs.
 //!
@@ -38,10 +57,20 @@
 
 mod json;
 
+// The boot crate's stream reader, compiled in place (a dependency on the crate would change Cargo.lock, which is an
+// input of the device tests). `dsp_stream` uses `crate::dsp_patch`.
+#[allow(dead_code)]
+#[path = "../../emulator/boot/src/dsp_patch.rs"]
+mod dsp_patch;
+#[allow(dead_code)]
+#[path = "../../emulator/boot/src/dsp_stream.rs"]
+mod dsp_stream;
+
+use dsp_stream::LoadedMemory;
 use json::Json;
 use sharc_native::mem::Mem;
 use sharc_native::rt::bnd;
-use sharc_native::rt::{Int, V, VI};
+use sharc_native::rt::{Int, MR, Spec, V, VI};
 use sharc_native::{Engine, exec_insn, trap_name, vectors};
 
 /// Registers a fresh core holds (tools/sharc_dev/sharc_run.py `make_state`: every register 0, then these).
@@ -65,6 +94,16 @@ pub struct Call {
     pub read_regs: Vec<(String, usize)>,
     /// count the instructions executed at each pc (`CallResult::profile`)
     pub profile: bool,
+    /// (loader byte address, count) of the image bytes to answer (`CallResult::stock`)
+    pub stock_reads: Vec<(u32, u32)>,
+    /// pcs that end this call instead of the request's `breaks`
+    pub breaks: Option<Vec<u32>>,
+    /// continue from the pc the last call stopped at
+    pub resume: bool,
+    /// 80-bit multiplier registers set before the call: (slot, mask, bits) of MRF, MRB, MSF or MSB
+    pub specials: Vec<(usize, Int, Int)>,
+    /// multiplier registers answered after the call: (name, slot)
+    pub read_specials: Vec<(String, usize)>,
 }
 
 #[derive(Debug)]
@@ -81,6 +120,8 @@ pub struct Request {
     pub breaks: Vec<u32>,
     pub watch: Vec<(u32, u32)>,
     pub code: Vec<(u32, Vec<u8>)>,
+    /// a boot stream loaded before `code`
+    pub image: Option<Vec<u8>>,
     pub ops: Vec<Op>,
 }
 
@@ -94,12 +135,28 @@ pub struct CallResult {
     pub stores: Vec<(u32, u32, u32)>,
     /// (pc, instructions executed there) in pc order, for a call with `profile`; empty otherwise
     pub profile: Vec<(u32, u64)>,
+    /// the `stock_reads` of the call: the bytes, or None when the stream does not write all of them
+    pub stock: Vec<Option<Vec<u8>>>,
+    /// the `read_specials` of the call: (name, (mask, bits) when the register is known to the core)
+    pub specials: Vec<(String, Option<(Int, Int)>)>,
 }
 
 fn reg_code(name: &str) -> Result<usize, String> {
     (0..128)
         .find(|&c| vectors::ureg_name(c) == name)
         .ok_or_else(|| format!("unknown register {name}"))
+}
+
+/// The slot of a multiplier register in `St::special` (MRF, MRB, MSF, MSB follow each other).
+fn special_slot(name: &str) -> Result<usize, String> {
+    ["MRF", "MRB", "MSF", "MSB"]
+        .iter()
+        .position(|&n| n == name)
+        .ok_or_else(|| format!("{name} is not a multiplier register (MRF, MRB, MSF, MSB)"))
+}
+
+fn hex_int(v: &Json) -> Result<Int, String> {
+    Int::from_str_radix(v.str()?, 16).map_err(|_| "a multiplier word is a hex string".to_string())
 }
 
 fn hex_bytes(text: &str) -> Result<Vec<u8>, String> {
@@ -164,6 +221,37 @@ pub fn parse_ops(list: &Json) -> Result<Vec<Op>, String> {
                     reads.push((u32_of(&pair[0])?, u32_of(&pair[1])?));
                 }
             }
+            let mut specials = Vec::new();
+            if let Some(r) = c.get("specials") {
+                for (name, v) in r.obj()? {
+                    let pair = v.arr()?;
+                    if pair.len() != 2 {
+                        return Err("a multiplier register is [mask, bits] as hex strings".into());
+                    }
+                    specials.push((special_slot(name)?, hex_int(&pair[0])?, hex_int(&pair[1])?));
+                }
+            }
+            let mut read_specials = Vec::new();
+            if let Some(r) = c.get("read_specials") {
+                for n in r.arr()? {
+                    let n = n.str()?;
+                    read_specials.push((n.to_string(), special_slot(n)?));
+                }
+            }
+            let mut stock_reads = Vec::new();
+            if let Some(r) = c.get("stock_reads") {
+                for pair in r.arr()? {
+                    let pair = pair.arr()?;
+                    if pair.len() != 2 {
+                        return Err("a stock read is [loader_byte_address, count]".into());
+                    }
+                    stock_reads.push((u32_of(&pair[0])?, u32_of(&pair[1])?));
+                }
+            }
+            let breaks = match c.get("breaks") {
+                Some(b) => Some(b.arr()?.iter().map(u32_of).collect::<Result<_, _>>()?),
+                None => None,
+            };
             let mut read_regs = Vec::new();
             if let Some(r) = c.get("read_regs") {
                 for n in r.arr()? {
@@ -180,6 +268,15 @@ pub fn parse_ops(list: &Json) -> Result<Vec<Op>, String> {
                 profile: match c.get("profile") {
                     Some(Json::Bool(b)) => *b,
                     Some(_) => return Err("profile is true or false".into()),
+                    None => false,
+                },
+                stock_reads,
+                breaks,
+                specials,
+                read_specials,
+                resume: match c.get("resume") {
+                    Some(Json::Bool(b)) => *b,
+                    Some(_) => return Err("resume is true or false".into()),
                     None => false,
                 },
             }));
@@ -214,6 +311,10 @@ pub fn parse_request(text: &str) -> Result<Request, String> {
         let hex = seg.get("hex").ok_or("code segment has no hex")?.str()?;
         code.push((address, hex_bytes(hex)?));
     }
+    let image = match root.get("image") {
+        Some(i) => Some(hex_bytes(i.str()?)?),
+        None => None,
+    };
     let ops = match root.get("ops") {
         Some(o) => parse_ops(o)?,
         None => Vec::new(),
@@ -223,14 +324,22 @@ pub fn parse_request(text: &str) -> Result<Request, String> {
         breaks,
         watch,
         code,
+        image,
         ops,
     })
 }
 
 /// A core configured like the concrete Python core of `sharc_run.Runner` (no generated blocks, runtime decoding of the
 /// loaded code, every register 0, the core MMRs at their reset values).
-pub fn new_engine(code: &[(u32, Vec<u8>)]) -> Result<Engine, String> {
+pub fn new_engine(
+    image: Option<&LoadedMemory>,
+    stream: &[u8],
+    code: &[(u32, Vec<u8>)],
+) -> Result<Engine, String> {
     let mut mem = Mem::new();
+    if let Some(image) = image {
+        load_image(&mut mem, image, stream);
+    }
     for (address, bytes) in code {
         mem.load(*address, bytes);
     }
@@ -272,6 +381,58 @@ pub fn new_engine(code: &[(u32, Vec<u8>)]) -> Result<Engine, String> {
     Ok(e)
 }
 
+/// Load what `image` (parsed from `stream`) writes into the loader image: the runs of present bytes of every block.
+/// `LoadedMemory` has no iterator, so the block headers give the address ranges and `get` the bytes (later blocks win there).
+fn load_image(mem: &mut Mem, image: &LoadedMemory, stream: &[u8]) {
+    let mut ranges: Vec<(u32, u32)> = Vec::new();
+    let mut offset = 0usize;
+    while offset + 16 <= stream.len() {
+        let header = &stream[offset..offset + 16];
+        if !matches!(header[3], 0xad | 0xac | 0xab) || header.iter().fold(0, |x, b| x ^ b) != 0 {
+            break;
+        }
+        let word = |i: usize| u32::from_le_bytes(header[i * 4..i * 4 + 4].try_into().unwrap());
+        let (code, target, count) = (word(0), word(1), word(2));
+        let fill = code & (1 << 8) != 0;
+        let length = if fill { 0 } else { count as usize };
+        if offset + 16 + length > stream.len() {
+            break;
+        }
+        ranges.push((target, count));
+        offset += 16 + length;
+    }
+    ranges.sort_unstable();
+    let mut run: Vec<u8> = Vec::new();
+    let mut run_at = 0u32;
+    let mut done_to = 0u64; // bytes below this address are loaded already
+    for (target, count) in ranges {
+        let end = target as u64 + count as u64;
+        for a in (target as u64).max(done_to)..end {
+            match image.get(a as u32) {
+                Some(b) if !run.is_empty() && run_at as u64 + run.len() as u64 == a => run.push(b),
+                Some(b) => {
+                    if !run.is_empty() {
+                        mem.load(run_at, &run);
+                        run.clear();
+                    }
+                    run_at = a as u32;
+                    run.push(b);
+                }
+                None => {
+                    if !run.is_empty() {
+                        mem.load(run_at, &run);
+                        run.clear();
+                    }
+                }
+            }
+        }
+        done_to = done_to.max(end);
+    }
+    if !run.is_empty() {
+        mem.load(run_at, &run);
+    }
+}
+
 fn poke_word(e: &mut Engine, word_address: u32, word: u32) -> Result<(), String> {
     e.s.begin();
     let done = bnd::_dm_write(
@@ -302,18 +463,30 @@ fn peek_word(e: &Engine, word_address: u32) -> Option<u32> {
 
 /// Run one call. The loop is the interpreter's own (`decode_at`, then `exec_insn`, as `Engine::step` does for one
 /// instruction); it stops at the return point and the breaks before an instruction is decoded.
-pub fn run_call(e: &mut Engine, req: &Request, call: &Call) -> CallResult {
+pub fn run_call(
+    e: &mut Engine,
+    req: &Request,
+    stock: Option<&LoadedMemory>,
+    call: &Call,
+) -> CallResult {
     for &(code, value) in &call.regs {
         e.set_reg(code, V::c(value as Int));
     }
-    e.fresh_call(call.pc, Some(req.return_sw as Int));
+    for &(slot, mask, bits) in &call.specials {
+        e.s.special[slot] = Spec::M(MR::new(mask, bits));
+        e.s.special_present[slot] = true;
+    }
+    if !call.resume {
+        e.fresh_call(call.pc, Some(req.return_sw as Int));
+    }
+    let breaks = call.breaks.as_deref().unwrap_or(&req.breaks);
     let start = e.s.icount;
     let mut halt = String::from("max-steps");
     let mut stores = Vec::new();
     let mut profile: std::collections::BTreeMap<u32, u64> = Default::default();
     while e.s.icount - start < call.max_steps {
         let pc = e.s.pc_sw as u32;
-        if pc == req.return_sw || req.breaks.contains(&pc) {
+        if pc == req.return_sw || breaks.contains(&pc) {
             halt = "breakpoint".into();
             break;
         }
@@ -360,6 +533,27 @@ pub fn run_call(e: &mut Engine, req: &Request, call: &Call) -> CallResult {
             .collect(),
         stores,
         profile: profile.into_iter().collect(),
+        specials: call
+            .read_specials
+            .iter()
+            .map(|(n, slot)| {
+                let v = match (e.s.special_present[*slot], e.s.special[*slot]) {
+                    (true, Spec::M(m)) => Some((m.mask, m.bits)),
+                    _ => None,
+                };
+                (n.clone(), v)
+            })
+            .collect(),
+        stock: call
+            .stock_reads
+            .iter()
+            .map(|&(a, n)| {
+                let stock = stock?;
+                (0..n)
+                    .map(|k| stock.get(a.wrapping_add(k)))
+                    .collect::<Option<Vec<u8>>>()
+            })
+            .collect(),
     }
 }
 
@@ -384,14 +578,24 @@ fn note_stores(out: &mut Vec<(u32, u32, u32)>, pc: u32, bytes: impl Iterator<Ite
 pub struct Session {
     e: Engine,
     req: Request,
+    stock: Option<LoadedMemory>,
 }
 
 impl Session {
     /// The core of a request and the ops that the request carries.
     pub fn new(mut req: Request) -> Result<(Session, Vec<Op>), String> {
         let ops = std::mem::take(&mut req.ops);
-        let e = new_engine(&req.code)?;
-        Ok((Session { e, req }, ops))
+        let stock = req
+            .image
+            .as_deref()
+            .map(LoadedMemory::from_stream)
+            .transpose()?;
+        let e = new_engine(
+            stock.as_ref(),
+            req.image.as_deref().unwrap_or(&[]),
+            &req.code,
+        )?;
+        Ok((Session { e, req, stock }, ops))
     }
 
     /// Run the ops in order. A poke error ends the batch: the pokes before it stay.
@@ -410,7 +614,7 @@ impl Session {
                         poke_word(&mut self.e, a, (old & !mask) | (value & mask))?;
                     }
                 }
-                Op::Call(c) => out.push(run_call(&mut self.e, &self.req, c)),
+                Op::Call(c) => out.push(run_call(&mut self.e, &self.req, self.stock.as_ref(), c)),
             }
         }
         Ok(out)
@@ -432,6 +636,8 @@ fn results_json(results: Vec<CallResult>) -> Json {
             .into_iter()
             .map(|r| {
                 let profile = r.profile;
+                let stock = (!r.stock.is_empty()).then_some(r.stock);
+                let specials = r.specials;
                 let mut fields = vec![
                     ("instructions".into(), Json::Int(r.instructions as i64)),
                     ("halt".into(), Json::Str(r.halt)),
@@ -465,6 +671,40 @@ fn results_json(results: Vec<CallResult>) -> Json {
                         ),
                     ),
                 ];
+                if !specials.is_empty() {
+                    fields.push((
+                        "specials".into(),
+                        Json::Obj(
+                            specials
+                                .into_iter()
+                                .map(|(n, v)| {
+                                    let row = v.map_or(Json::Null, |(mask, bits)| {
+                                        Json::Arr(vec![
+                                            Json::Str(format!("{mask:x}")),
+                                            Json::Str(format!("{bits:x}")),
+                                        ])
+                                    });
+                                    (n, row)
+                                })
+                                .collect(),
+                        ),
+                    ));
+                }
+                if let Some(stock) = stock {
+                    fields.push((
+                        "stock".into(),
+                        Json::Arr(
+                            stock
+                                .into_iter()
+                                .map(|b| {
+                                    b.map_or(Json::Null, |b| {
+                                        Json::Str(b.iter().map(|x| format!("{x:02x}")).collect())
+                                    })
+                                })
+                                .collect(),
+                        ),
+                    ));
+                }
                 if !profile.is_empty() {
                     fields.push((
                         "profile".into(),
@@ -544,6 +784,7 @@ mod tests {
     use super::*;
 
     const BASE: u32 = 0xB9_0000;
+    const MR_ALL: Int = (1 << 80) - 1;
     const ALIAS: i64 = 0x2800_0000 + 2 * BASE as i64;
 
     fn request(ops: &str) -> String {
@@ -717,5 +958,149 @@ mod tests {
             "{}",
             replies[2]
         );
+    }
+
+    /// A boot-stream block (core 0 signature, XOR of the header zero) as the loader writes it.
+    fn stream_block(code: u32, target: u32, count: u32, argument: u32, payload: &[u8]) -> Vec<u8> {
+        let mut header = Vec::new();
+        for w in [code, target, count, argument] {
+            header.extend(w.to_le_bytes());
+        }
+        header[3] = 0xad;
+        header[2] = 0;
+        header[2] = header.iter().fold(0, |x, b| x ^ b);
+        header.extend_from_slice(payload);
+        header
+    }
+
+    fn hex(bytes: &[u8]) -> String {
+        bytes.iter().map(|b| format!("{b:02x}")).collect()
+    }
+
+    /// The image of the tests: the two instructions of `request` as a block, a FILL of DM words, and a later block that
+    /// overwrites the second instruction's first parcel.
+    fn image_request(extra: &str, ops: &str) -> String {
+        let mut stream = stream_block(
+            0,
+            ALIAS as u32,
+            8,
+            0,
+            &[0x81, 0x0f, 0x03, 0x00, 0x82, 0x0f, 0x04, 0x00],
+        );
+        stream.extend(stream_block(1 << 8, 0x2000_0000, 8, 0xaabbccdd, &[]));
+        format!(
+            r#"{{"return_sw": {ret}, "breaks": [], "image": "{img}", "code": [] {extra}, "ops": [{ops}]}}"#,
+            ret = BASE + 4,
+            img = hex(&stream)
+        )
+    }
+
+    #[test]
+    fn an_image_is_loaded_as_the_stock_memory_and_code_goes_over_it() {
+        let ops = format!(
+            r#"{{"call": {{"pc": {BASE}, "read_regs": ["R1", "R2"], "reads": [[536870912, 1], [536870916, 1]],
+               "stock_reads": [[{ALIAS}, 8], [536870912, 6], [536870920, 1], [{}, 1]]}}}}"#,
+            ALIAS - 1
+        );
+        let rs = call(&image_request("", &ops));
+        let r = &rs[0];
+        // the image's code runs; its FILL words read back (DM word at byte 0x20000000)
+        assert_eq!(r.halt, "breakpoint");
+        assert_eq!(
+            r.regs,
+            vec![("R1".to_string(), Some(3)), ("R2".to_string(), Some(4))]
+        );
+        // (an address this large is a byte address: a count steps by one byte, so the words are read one by one)
+        assert_eq!(
+            (r.reads[0][0], r.reads[1][0]),
+            (Some(0xaabbccdd), Some(0xaabbccdd))
+        );
+        // stock reads: the stream's bytes; FILL repeats its argument little endian; a byte it does not write is null
+        assert_eq!(
+            r.stock[0],
+            Some(vec![0x81, 0x0f, 0x03, 0x00, 0x82, 0x0f, 0x04, 0x00])
+        );
+        assert_eq!(r.stock[1], Some(vec![0xdd, 0xcc, 0xbb, 0xaa, 0xdd, 0xcc]));
+        assert_eq!(r.stock[2], None);
+        assert_eq!(r.stock[3], None);
+        // code over the image: R2 = 9 instead of 4; the stock read still shows the stream
+        let over = format!(r#", "code": [{{"address": {ALIAS}, "hex": "810f0300820f0900"}}]"#);
+        let text = image_request("", &ops).replace(r#", "code": []"#, &over[..over.len()]);
+        let r = &call(&text)[0];
+        assert_eq!(r.regs[1], ("R2".to_string(), Some(9)));
+        assert_eq!(
+            r.stock[0],
+            Some(vec![0x81, 0x0f, 0x03, 0x00, 0x82, 0x0f, 0x04, 0x00])
+        );
+    }
+
+    #[test]
+    fn stock_reads_without_an_image_are_null_and_a_bad_stream_is_an_error() {
+        let ops = format!(r#"{{"call": {{"pc": {BASE}, "stock_reads": [[{ALIAS}, 1]]}}}}"#);
+        assert_eq!(call(&request(&ops))[0].stock, vec![None]);
+        let bad = format!(r#"{{"return_sw": 1, "code": [], "image": "00112233", "ops": []}}"#);
+        assert!(run(parse_request(&bad).unwrap()).is_err());
+    }
+
+    #[test]
+    fn a_call_can_name_its_own_breaks_and_resume_from_where_the_last_one_stopped() {
+        let first = format!(
+            r#"{{"call": {{"pc": {BASE}, "breaks": [{}], "read_regs": ["R1", "R2"]}}}}"#,
+            BASE + 2
+        );
+        // R1 = 3 ran, R2 = 4 did not; the resumed call keeps the frame, runs R2 = 4 and ends at the return point
+        let second = r#"{"call": {"pc": 1, "resume": true, "breaks": [], "read_regs": ["R2"]}}"#;
+        let rs = call(&request(&format!("{first}, {second}")));
+        assert_eq!(
+            (rs[0].halt.as_str(), rs[0].instructions, rs[0].final_pc),
+            ("breakpoint", 1, BASE + 2)
+        );
+        assert_eq!(rs[0].regs[1], ("R2".to_string(), Some(0)));
+        assert_eq!(
+            (rs[1].halt.as_str(), rs[1].instructions, rs[1].final_pc),
+            ("breakpoint", 1, BASE + 4)
+        );
+        assert_eq!(rs[1].regs, vec![("R2".to_string(), Some(4))]);
+    }
+
+    #[test]
+    fn the_registers_of_the_rig_tests_read_back_as_they_were_set() {
+        let names = [
+            "S0", "S1", "S2", "S3", "S4", "S5", "S6", "S7", "S8", "S9", "S10", "S11", "S12", "S13",
+            "S14", "S15", "ASTATX", "ASTATY", "STKYX", "STKYY", "LCNTR", "PX1", "PX2", "MODE1",
+            "B0", "L3", "M5",
+        ];
+        let set: Vec<String> = names
+            .iter()
+            .enumerate()
+            .map(|(i, n)| format!(r#""{n}": {}"#, 0x3f01_0000u32 + 17 * i as u32))
+            .collect();
+        let read: Vec<String> = names.iter().map(|n| format!(r#""{n}""#)).collect();
+        let ops = format!(
+            r#"{{"call": {{"pc": {BASE}, "regs": {{{}}}, "read_regs": [{}]}}}}"#,
+            set.join(", "),
+            read.join(", ")
+        );
+        let r = &call(&request(&ops))[0];
+        assert_eq!(r.halt, "breakpoint");
+        for (i, (name, v)) in r.regs.iter().enumerate() {
+            assert_eq!(*v, Some(0x3f01_0000u32 + 17 * i as u32), "{name}");
+        }
+    }
+
+    #[test]
+    fn multiplier_registers_are_set_before_a_call_and_read_after_it() {
+        let ops = format!(
+            r#"{{"call": {{"pc": {BASE}, "specials": {{"MSF": ["ffffffffffffffffffff", "123456789abcdef01234"]}},
+               "read_specials": ["MSF", "MSB"]}}}}"#
+        );
+        let r = &call(&request(&ops))[0];
+        assert_eq!(
+            r.specials[0],
+            ("MSF".to_string(), Some((MR_ALL, 0x123456789abcdef01234)))
+        );
+        assert_eq!(r.specials[1].1, None);
+        let bad = request(r#"{"call": {"pc": 1, "read_specials": ["R1"]}}"#);
+        assert!(parse_request(&bad).unwrap_err().contains("multiplier"));
     }
 }

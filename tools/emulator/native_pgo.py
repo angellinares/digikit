@@ -447,6 +447,41 @@ def in_linked_worktree() -> bool:
     return bool(native_target().IS_WORKTREE)
 
 
+def train_command(device: str, set_current: bool = False) -> str:
+    """The ``train`` command line for DEVICE as a user types it."""
+    args = "" if device == "dn2" else f" --device {device}"
+    flag = " --set-current" if set_current else ""
+    return f"uv run python -m tools.emulator.native_pgo train{args}{flag}"
+
+
+def not_current_notice(device: str, key: str) -> str:
+    """The closing line of a lane training that left manifest.json unchanged."""
+    return (
+        f"WARNING: the {device} profile {key[:16]} is NOT current for the launcher "
+        "(manifest.json is unchanged, so a launcher build reports a stale profile "
+        f"and builds without PGO). To make it current, run: {train_command(device, True)}"
+    )
+
+
+def decide_set_current(
+    set_current: bool, at_main: bool, head: str | None, origin_main: str | None
+) -> bool:
+    """--set-current, or --set-current-at-main when HEAD is origin/main's commit."""
+    if set_current:
+        return True
+    return at_main and head is not None and head == origin_main
+
+
+def git_rev(ref: str) -> str | None:
+    done = subprocess.run(
+        ["git", "rev-parse", "--verify", "--quiet", ref],
+        cwd=ROOT,
+        capture_output=True,
+        text=True,
+    )
+    return done.stdout.strip() if done.returncode == 0 else None
+
+
 def save_manifest(
     device: str, manifest: dict[str, object], set_current: bool = False
 ) -> None:
@@ -468,6 +503,7 @@ def save_manifest(
             f"linked worktree: wrote by-key/{key[:16]}.json only; manifest.json "
             "is unchanged (--set-current overwrites it)"
         )
+        print(not_current_notice(device, key))
 
 
 def profdata_path(manifest: dict[str, object], device: str = "dn2") -> pathlib.Path:
@@ -2455,6 +2491,11 @@ def main(argv: list[str] | None = None) -> int:
         action="store_true",
         help="from a linked worktree: also overwrite the shared manifest.json (default: by-key only)",
     )
+    train.add_argument(
+        "--set-current-at-main",
+        action="store_true",
+        help="act as --set-current only when HEAD is origin/main's commit (mise run perf:pgo)",
+    )
     train.add_argument("--device", choices=["dn2", "dt2", BOTH], default="dn2")
     train.add_argument(
         "--variant", help="dt2, both: target-dir variant of the instrumented build"
@@ -2527,6 +2568,13 @@ def main(argv: list[str] | None = None) -> int:
             help=f"extra environment for the {side} binary (e.g. SHARC_FAST_AUTO=64,64)",
         )
     args = parser.parse_args(argv)
+    if args.command == "train":
+        args.set_current = decide_set_current(
+            args.set_current,
+            args.set_current_at_main,
+            git_rev("HEAD"),
+            git_rev("origin/main"),
+        )
     if args.command == "run":
         cmd_run(args)
     elif args.command == "train":

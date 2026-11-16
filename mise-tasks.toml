@@ -246,12 +246,12 @@ description = "Retrain the two-core PGO profile (the desktop build with both gen
 ["perf:pgo"]
 depends = ["workbench:inputs"]
 run = [
-  "uv run python -m tools.emulator.native_pgo train",
-  "uv run python -m tools.emulator.native_pgo train --device dt2",
-  "uv run python -m tools.emulator.native_pgo train --device both",
+  "uv run python -m tools.emulator.native_pgo train --set-current-at-main",
+  "uv run python -m tools.emulator.native_pgo train --device dt2 --set-current-at-main",
+  "uv run python -m tools.emulator.native_pgo train --device both --set-current-at-main",
   "uv run python -m tools.emulator.native_emu --build-only",
 ]
-description = "Retrain the DN2, DT2 and two-core PGO profiles, then rebuild the launcher with PGO. Run after core or engine changes, when `mise run workbench` reports a stale profile."
+description = "Retrain the DN2, DT2 and two-core PGO profiles, then rebuild the launcher with PGO. Run after core or engine changes, when `mise run workbench` reports a stale profile. In a lane the profiles become current for the launcher only when HEAD is origin/main's commit; otherwise they stay by-key and each training prints the `--set-current` command."
 
 ["perf:aot"]
 run = "uv run python -m tools.sharc_dev.aot_gen"
