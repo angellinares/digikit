@@ -18,10 +18,10 @@ conflicts = []
 
 # `patchkit pack test/dyn-fx-gain-b --device dt2 -o fx-gain-b.dkm` makes the .dkm. The digikit runtime sends the DSP object to the DSP and
 # publishes a free effect row of core/dynfx for the effect (state reserved behind the image, p0 at its default).
-# The effect is declared by builder calls in init (src/module.c). The id `gain` is what the keys hash; the DSP symbols start with `dgb`.
+# The effect is declared by builder calls in init (src/module.c). The id `gain` is what the keys hash. The DSP is the one of test/dyn-fx-gain (symbols start with `dg`); this module is a second effect identity.
 [[fx]]
 id = "gain"
-dsp = "dgb"
+dsp = "dg"
 
 [[object]]
 path = "build/dyn-fx-gain-b-cf.dko.json"
@@ -30,7 +30,7 @@ place = "cf.expansion"
 
 [[object]]
 path = "build/dyn-fx-gain-b-dsp.dko.json"
-sources = ["src/dsp/dyn_fx_gain_b.s"]
+sources = ["../dyn-fx-gain/src/dsp/dyn_fx_gain.s"]
 place = "dsp.l2"
 devices = ["dt2", "dn2"]
 

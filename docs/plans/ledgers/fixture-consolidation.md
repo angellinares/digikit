@@ -37,3 +37,15 @@ Test added: `packages/patchkit/tests/prims.rs` `a_patch_time_effect_row_of_any_m
 | --- | --- | --- |
 | Fixture `trace-demo` | `packages/patchkit/tests/trace.rs`: a build without `--trace` equals the build of the sources without the mark lines; no trace bit; with `--trace` the trace bit, `_dk_step` import and a longer file; the traced objects do not replace the plain ones in the cache | The same test on `test/dyn-fx-gain` (stripped copy of `module.toml`, `module_ids.h`, `module.c`, `dyn_fx_gain.s`). No assertion changed. |
 | same | `.agents/skills/digikit-module/SKILL.md:71` names the fixture | Names `dyn-fx-gain`. |
+
+## Step 3: one gain DSP for dyn-fx-gain and four wrappers
+
+The DSP sources of `dyn-fx-gain-b`, `-both`, `-send` and `-sendonly` were the DSP of `dyn-fx-gain` with another symbol prefix (`dgb`, `gbt`, `gs`, `gso`; checked by normalising the prefix: the four are identical to it, except the trace lines now in `dyn-fx-gain`). Each is now a wrapper: its own `module.toml` and `module.c` (module identity, tab name, defaults, routes), `sources = ["../dyn-fx-gain/src/dsp/dyn_fx_gain.s"]`, `dsp = "dg"`. Effect ids hash the module name and the effect id, so they do not move. `dyn-fx-gain-bipolar` keeps its own DSP (`F2 = F2 * (1/64) + 1.0`).
+
+| Deleted | Old assertion | New location |
+| --- | --- | --- |
+| `dyn_fx_gain_b.s`, `_both.s`, `_send.s`, `_sendonly.s` | The four DSP objects behave as `dyn-fx-gain` (out = in * p0, call counter in the state word) | The one source of `dyn-fx-gain`. Every test that loads a wrapper still runs its own module identity, defaults and routes. Packed bytes may change (symbol names, trace no-ops): listed in the phase 2 report. |
+
+Canonical roles after the step: `dyn-fx-gain` route (master, master); `-both` (master or send, default master); `-send` (master or send, default send); `-sendonly` (send); `-b` second effect id with other defaults and the tab GNB (`dk_fx_mix`, the kit persistence test).
+
+`modules/core/adapters/dynfx/tests/test_dyn_fx.py`: `test/dyn-fx-gain-b` leaves the parametrisation of `test_committed_objects_are_current` (it now builds the object of `dyn-fx-gain`, which is checked) and the `other` pack of `test_the_effect_record_carries_the_id_the_kit_stores` is dropped: the `--name other/name` case of the same test already proves that another module name gives another effect id.

@@ -380,11 +380,11 @@ reuses a fixture before it adds one. Layers: **host** (Vitest or pytest, no devi
 | `dyn-dn2` | A Digitone II machine with its own SYN page of four knobs on the DSP of `sine` | assembly, device |
 | `dyn-params` | Parameter rows of different ranges: registry rows, needs inference, capacity | host, device |
 | `dyn-fx-gain` | The effect contract: insert effect, GAIN knob, upload, persistence, kit save; the trace marks (`DK_TRACE_LOG`, `DK_STEP`) that exist only in a `--trace` build (zero-cost proof `trace.rs`); owns the gain DSP the wrappers share | host, assembly, device |
-| `dyn-fx-gain-b` | A second effect with the same gain under another module id (another effect id): two effects in one kit | host, device |
+| `dyn-fx-gain-b` | A second effect with the same gain under another module id (another effect id) and other defaults (0.25, MIX 64): two effects in one kit; wrapper of the DSP of `dyn-fx-gain` | host, device |
 | `dyn-fx-gain-bipolar` | A signed knob (BIAS, -64 to +63) and the routes master and send | device |
-| `dyn-fx-gain-both` | Routes: master and send allowed, default master (`dk_fx_routes`) | device |
-| `dyn-fx-gain-send` | Routes: master and send allowed, default send; the FX ROUTES panel | assembly, device |
-| `dyn-fx-gain-sendonly` | Routes: send only | assembly, device |
+| `dyn-fx-gain-both` | Routes: master and send allowed, default master (`dk_fx_routes`); wrapper of the DSP of `dyn-fx-gain` | device |
+| `dyn-fx-gain-send` | Routes: master and send allowed, default send; the FX ROUTES panel; wrapper of the DSP of `dyn-fx-gain` | assembly, device |
+| `dyn-fx-gain-sendonly` | Routes: send only; wrapper of the DSP of `dyn-fx-gain` | assembly, device |
 | `commit-demo` | A multi-feature commit: a machine with three parameters (latched, click action) and an effect with routes; the golden lowered records; refusals | device, rig |
 | `svc-test` | The service fixture: a `.dks` of the test-only service `svc-test` with exports `dk_svctest_ping` and `dk_svctest_hits` and one hook | host, assembly, device |
 | `svc-test-user` | A module with a hard NEED on `svc-test` (the provider and NEED path of the loader) | host, assembly, device |
