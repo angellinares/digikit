@@ -6,7 +6,7 @@
       {
         "files": ["tests/introblank.device.test.ts", "tests/introblank-rec.device.test.ts"],
         "tags": ["A:core/introblank", "C:boot"],
-        "modules": ["tools/bootscreen", "test/sine"],
+        "modules": ["tools/bootscreen", "test/sine", "core/services/machines"],
         "plusdrive": true
       }
     ]

@@ -7,7 +7,7 @@
         "files": ["tests/overdrive-type.device.test.ts"],
         "devices": ["dt2"],
         "tags": ["A:core/overdrive", "S:fx"],
-        "modules": ["test/dyn-fx-gain", "test/sine"],
+        "modules": ["test/dyn-fx-gain", "test/sine", "core/services/machines"],
         "sources": ["tools/patchkit/pk_digikit_fxroutes.py"],
         "plusdrive": true
       }

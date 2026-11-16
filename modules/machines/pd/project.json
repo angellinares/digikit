@@ -9,7 +9,8 @@
         ],
         "tags": ["C:dsp", "S:machines"],
         "modules": [
-          "fadedlimes/pd"
+          "fadedlimes/pd",
+          "core/services/machines"
         ],
         "plusdrive": true
       }

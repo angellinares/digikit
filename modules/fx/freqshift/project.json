@@ -6,7 +6,7 @@
       {
         "files": ["tests/freqshift.device.test.ts"],
         "tags": ["S:fx"],
-        "modules": ["test/sine", "digikit/freqshift"],
+        "modules": ["test/sine", "digikit/freqshift", "core/services/machines"],
         "sources": [
           "tools/patchkit/pk_digikit_fxshift.py",
           "tools/patchkit/pk_digikit_fxsend.py",

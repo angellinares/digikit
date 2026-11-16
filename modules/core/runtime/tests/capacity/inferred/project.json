@@ -20,7 +20,8 @@
           "test/c-demo",
           "test/dyn-fx-gain",
           "test/dyn-params",
-          "test/sine"
+          "test/sine",
+          "core/services/machines"
         ],
         "plusdrive": true
       }
