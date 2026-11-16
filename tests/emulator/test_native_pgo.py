@@ -270,3 +270,28 @@ def test_clean_refuses_a_state_dir_outside_the_pgo_root(pgo, tmp_path):
     age(old, 90)
     plan = native_pgo.plan_clean(other, 14, now=NOW, root=root)
     assert plan.items == [] and old.exists()
+
+
+def test_not_current_notice_names_the_command_per_device():
+    key = "ab" * 32
+    assert "NOT current" in native_pgo.not_current_notice("dn2", key)
+    assert native_pgo.not_current_notice("dn2", key).endswith(
+        "native_pgo train --set-current"
+    )
+    assert native_pgo.not_current_notice("both", key).endswith(
+        "native_pgo train --device both --set-current"
+    )
+
+
+@pytest.mark.parametrize(
+    ("set_current", "at_main", "head", "origin", "expected"),
+    [
+        (True, False, "a", "b", True),
+        (False, True, "a", "a", True),
+        (False, True, "a", "b", False),
+        (False, True, None, None, False),
+        (False, False, "a", "a", False),
+    ],
+)
+def test_decide_set_current(set_current, at_main, head, origin, expected):
+    assert native_pgo.decide_set_current(set_current, at_main, head, origin) is expected
