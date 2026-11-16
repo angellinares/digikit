@@ -129,6 +129,29 @@ def key_of(inputs: EmudInputs) -> str:
 # the daemon also reaches by another path stays. The store key (`key_of`) is not touched.
 TEST_KEY_EXCLUDED = ("packages/patchkit/", "out/")
 
+# Test-only Rust files. The release build lists them in its dependency file (rustc reads a `#[cfg(test)] mod x;` file), but their content is
+# not compiled, so an edit cannot change the binary: they stay out of the test key. `test_only_problems` checks that each one is declared
+# behind a cfg(test) attribute; the same patterns are the negative globs of `digi-control:daemons` in tools/nx/cargo.mjs.
+TEST_ONLY_RUST = re.compile(r"(^|/)(tests\.rs|tests_[^/]*\.rs|[^/]*_tests\.rs|fake_[^/]*\.rs)$|/tests/.*\.rs$")
+_MOD_DECL = r"((?:[ \t]*#\[[^\n]*\]\n)*)[ \t]*(?:pub(?:\([a-z]+\))? )?mod {};"
+
+
+def test_only_problems(names: Sequence[str], root: Path = ROOT) -> list[str]:
+    """The names that match TEST_ONLY_RUST and are not declared behind `#[cfg(test)]` (or `cfg(all(test, ...))`): a build that compiles
+    one of them in would make an excluded file change the binary. Files below a `tests/` directory (integration tests) are no modules and
+    pass. Empty: the exclusion is honest."""
+    bad = []
+    for name in names:
+        if not TEST_ONLY_RUST.search(name) or "/tests/" in name:
+            continue
+        path = root / name
+        pattern = re.compile(_MOD_DECL.format(re.escape(path.stem)))
+        parents = [*path.parent.glob("*.rs"), *path.parent.parent.glob("*.rs")]
+        decls = [m for p in parents if p != path for m in pattern.finditer(p.read_text())]
+        if not decls or any(not re.search(r"cfg\((all\()?test\b", m.group(1)) for m in decls):
+            bad.append(name)
+    return bad
+
 
 def patchkit_only_dirs(root: Path = ROOT) -> tuple[str, ...]:
     """Repository directories (with a trailing slash) of the workspace crates in the daemon's dependency closure that are reached only through
@@ -247,12 +270,15 @@ def test_key_of(
     patchkit_only: Sequence[str] = (),
 ) -> str:
     """The test key: see the comment above. NAMES are repository files (relative to ROOT)."""
+    if bad := test_only_problems(names, root):
+        raise SystemExit(f"test-only Rust files that are not behind cfg(test): {', '.join(bad)}")
     record = {
         "version": 2,
         "files": sorted(
             (name, sha256_file(root / name))
             for name in names
             if not name.startswith((*TEST_KEY_EXCLUDED, *patchkit_only))
+            and not TEST_ONLY_RUST.search(name)
         ),
         "closure": closure,
         "gen": {

@@ -80,7 +80,12 @@
         "env": "LC_ALL"
       }
     ],
-    "production": ["default", "!{projectRoot}/tests/**/*", "!{projectRoot}/**/*.md"]
+    "production": [
+      "default",
+      "!{projectRoot}/tests/**/*",
+      "!{projectRoot}/**/*.md",
+      "!{projectRoot}/**/{tests.rs,tests_*.rs,*_tests.rs,fake_*.rs}"
+    ]
   },
   "targetDefaults": {
     "typecheck": {

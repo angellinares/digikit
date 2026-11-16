@@ -25,7 +25,9 @@
       "{workspaceRoot}/devices/*.json",
       "{workspaceRoot}/devices/fw/**/*.toml",
       "{workspaceRoot}/devices/ports/**",
-      "{workspaceRoot}/tools/devtools/runtime_fixture.ts"
+      "{workspaceRoot}/tools/devtools/runtime_fixture.ts",
+      "!{workspaceRoot}/{packages,modules}/**/{tests.rs,tests_*.rs,*_tests.rs,fake_*.rs}",
+      "!{workspaceRoot}/{packages,modules}/**/tests/**/*.rs"
     ]
   },
   "targets": {
