@@ -79,7 +79,7 @@ Services and modules only declare hooks, slots and rows. Content modules do not 
 
 | Stage | Content | Host tests | Device proof | Estimate | Payoff | Confidence |
 | --- | --- | --- | --- | --- | --- | --- |
-| S0 | Exit convention, with the bind-time addresses item (B1, see below) | `objdiff` explained | PCM unchanged | about 2 days (with B1) | Hooks can be gated later without edits | High |
+| S0 | Exit convention, with the bind-time addresses item (B1, see below) | `objdiff` explained | PCM unchanged | a few hours (with B1) | Hooks can be gated later without edits | High |
 | S1 | Code-only modules: revert parts of a12048c46; MIDI-command counter; masked span clock; live-set fit | Loader fakes for order and E_BUSY | 20 load and unload cycles with `DIGI_FLUSH_CHECK=1` | 2 days | First live unload | High |
 | S2 | Interrupt-slot service and row-table counter | Registry swap tests | DN2 frametype | 2 days | Interrupt services reload | High |
 | S3 | Gates for all ColdFire hooks and service replace | `FakePlatform` gate and counter tests | fx swap during a key loop | 4 days | Services replace live | Medium (hook cost not yet measured) |
@@ -108,13 +108,13 @@ Firmware identity: bind writes a table item `FW` (the first 8 bytes of the stock
 
 Image tables: `machines_info` and `fxpages_info` shrink to image-owned words (they cannot leave: the services still need values that exist only after patching). `machines_info` keeps the registry symbols, `mf_ensure`, the native page functions, the slot map and the page rows; `fxpages_info` keeps the params row indices and the send-slot limit (the target of `cap_send_slots`). All firmware function, site and data addresses leave both tables.
 
-Steps (one stack, device gate shared with RS-C when both are ready):
+Steps (one stack; one device gate shared with RS-S and RS-C):
 
 | Step | Content | Estimate |
 | --- | --- | --- |
-| Bind resolver | pack extern mapping; `exits` in `devices/fw`; the resolver for the five import families; the `FW` item | 1 day |
-| Firmware identity check | `fw_id` info entry; the loader rules; host and assembly cases | a few hours |
-| Hook exits | about 30 machines and fx hook routines on both devices switch to the named exits, including the DN2 frametype interrupt routine | half a day |
+| Bind resolver | pack extern mapping; `exits` in `devices/fw`; the resolver for the five import families; the `FW` item | done (branch `b1/bind-resolver`) |
+| Firmware identity check | `fw_id` info entry; the loader rules; host and assembly cases | done (branch `b1/bind-resolver`) |
+| Hook exits | about 30 machines and fx hook routines on both devices switch to the named exits, including the DN2 frametype interrupt routine | 1-2 h |
 | Firmware addresses into the services | function, site and data addresses of both tables become `dk_fw_` imports; the tables shrink | with the steps above |
 
 Deferred: the fx device constants (struct offsets, value indices, stock parameter codes) stay in `fxpages_info` for now; they are profile numbers, not firmware addresses, and hot reload does not need them moved. Device proof: FX contract suite, fxpages tests, machine fixture suite, frametype slot (DN2), providers with a case for a file bound to another firmware, refusals, safe mode, gate-smoke, gate-pins; PCM pins unchanged. Risks: the import count of `machines.dks` (limit 64; count first) and the hand edits of the interrupt routine and of hooks whose exits keep live condition codes.
