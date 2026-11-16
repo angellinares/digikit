@@ -1,0 +1,24 @@
+{
+  "$schema": "../../../../../node_modules/nx/schemas/project-schema.json",
+  "name": "core/services/machines-device-tests",
+  "tags": ["test-only"],
+  "implicitDependencies": ["core/services/machines"],
+  "metadata": {
+    "runtimeAcceptance": [
+      {
+        "files": ["machines-dt2-clone.device.test.ts"],
+        "devices": ["dt2"],
+        "tags": ["S:machines", "C:state", "C:dsp"],
+        "modules": ["test/sine", "core/services/machines"],
+        "plusdrive": true
+      },
+      {
+        "files": ["machines-dn2-clone.device.test.ts", "machines-dn2-pages.device.test.ts"],
+        "devices": ["dn2"],
+        "tags": ["S:machines", "C:state"],
+        "modules": ["test/sine", "core/services/machines"],
+        "plusdrive": true
+      }
+    ]
+  }
+}
