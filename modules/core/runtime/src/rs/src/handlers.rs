@@ -47,12 +47,12 @@ pub mod exports {
     /// `dk_param_get` over the real core and the real firmware page. (A host test of the runtime crate has no firmware: it never reaches it.)
     #[cfg(not(test))]
     pub unsafe fn param_get(track: u32, word: u32) -> i32 {
-        dkrt_svc_machines::pageclick::param_get(&crate::core_api::REAL_CORE, &crate::fw::RuntimeFw, track, word)
+        dkrt_svc_machines::slots::param_get(&crate::core_api::REAL_CORE, &crate::fw::RuntimeFw, track, word)
     }
     /// `dk_param_set`, as `param_get`.
     #[cfg(not(test))]
     pub unsafe fn param_set(track: u32, word: u32, raw: i32) -> i32 {
-        dkrt_svc_machines::pageclick::param_set(&crate::core_api::REAL_CORE, &crate::fw::RuntimeFw, track, word, raw)
+        dkrt_svc_machines::slots::param_set(&crate::core_api::REAL_CORE, &crate::fw::RuntimeFw, track, word, raw)
     }
     #[cfg(test)]
     pub unsafe fn param_get(_: u32, _: u32) -> i32 {
@@ -79,7 +79,7 @@ pub mod exports {
 #[cfg(not(test))]
 #[no_mangle]
 pub unsafe extern "C" fn dkrt_page_key(view: *const u8, ev: *const u8) {
-    dkrt_svc_machines::pageclick::page_key(&crate::core_api::REAL_CORE, &crate::fw::RuntimeFw, view, ev)
+    dkrt_svc_machines::slots::page_key(&crate::core_api::REAL_CORE, &crate::fw::RuntimeFw, view, ev)
 }
 
 /// Hook at the entry of the machine page's turn handler (`dkrt_pageturn_hook`): the machines service sees the turn; the result is nonzero when a
@@ -87,7 +87,7 @@ pub unsafe extern "C" fn dkrt_page_key(view: *const u8, ev: *const u8) {
 #[cfg(not(test))]
 #[no_mangle]
 pub unsafe extern "C" fn dkrt_page_turn(view: *const u8, ev: *const u8) -> u32 {
-    dkrt_svc_machines::pageclick::page_turn(&crate::core_api::REAL_CORE, view, ev)
+    dkrt_svc_machines::slots::page_turn(&crate::core_api::REAL_CORE, view, ev)
 }
 
 /// The length of a record of `kind`; `E_FORMAT`-worthy kinds are `None`. For the builder lowering (`collect`).
