@@ -19,11 +19,15 @@ export const MAX_STATE_BYTES = 16777216;
 export const GRANULE = 64;
 export const DSP_SLACK = 8;
 export const ARENA_HDR = 16;
-export const COLLECT_BYTES = 7206;
+export const COLLECT_BYTES = 7486;
 export const TABLE_MAGIC = 1145787458;
-export const TABLE_VERSION = 1;
+export const TABLE_VERSION = 2;
+export const PROVIDER_MAX = 6;
+export const BIND_MAX = 24;
+export const INSTALL_SITES = 48;
 export const MAX_VOICES = 8;
 export const MAX_FX = 4;
+export const H_ROLE = 56;
 
 /** The record kinds of a `.dkm` (`[records.kinds]`). */
 export const RECORD_KIND = {
@@ -172,6 +176,16 @@ export const LOAD_STATUS: [number, string, string][] = [
     'the boot plan refused the module: its uses do not fit what the earlier modules of the selection left',
   ],
   [-79, 'E_DECL_KIND', 'a service declared a record kind that the header table does not carry, or with another length'],
+  [
+    -81,
+    'E_SVC_ABI',
+    "a service file was built for another runtime ABI (its header word H_SVC_ABI differs from the runtime's fingerprint)",
+  ],
+  [
+    -82,
+    'E_HOOK_STOCK',
+    'a hook site of a service does not hold the stock bytes the bind recorded (another firmware, or a patched site): the service is refused before its init',
+  ],
 ];
 
 /** The state of a module of the boot selection (LOADS v2): [code, name, text] */
@@ -203,6 +217,7 @@ export const CAP = {
   RENAME: 13,
   READBACK: 14,
   LOADS: 15,
+  SVC_ABI: 16,
 } as const;
 
 /** The command numbers a module may register: [first, last]. */

@@ -594,6 +594,8 @@ export interface DkInfoFull extends DkInfo {
   card_read_only: boolean;
   /** The id of the flashed image as 16 hex digits (runtime 0.5.2 and later; patchkit stamps it), or null when the reply has none. */
   image_id: string | null;
+  /** The runtime's ABI fingerprint for service files (`CAP_SVC_ABI`; the word a `.dks` carries at header 0x3c), or null when the runtime does not report it. */
+  svc_abi: number | null;
 }
 
 /** The LOGCFG state: the default log level, the level of each module record (0xff: the default), and whether the debug module is loaded (it always answers 1). */
@@ -1075,6 +1077,7 @@ export class DkSession {
     // appended by later runtimes: the log range (8 bytes), then the packed runtime version and the capability bits
     let caps: number | null = null;
     let imageId: string | null = null;
+    let svcAbi: number | null = null;
     if (b.length >= at + 9 + 8 + 8) {
       runtime = u32(b, at + 9 + 8);
       caps = u32(b, at + 9 + 12);
@@ -1082,6 +1085,9 @@ export class DkSession {
       if (b.length >= at + 9 + 16 + 8) {
         imageId = Array.from(b.subarray(at + 9 + 16, at + 9 + 24), (x) => x.toString(16).padStart(2, '0')).join('');
       }
+      // then the ABI fingerprint of service files (4 bytes), when the capability SVC_ABI is set
+      if (caps !== null && ((caps >>> GCAP.SVC_ABI) & 1) === 1 && b.length >= at + 9 + 24 + 4)
+        svcAbi = u32(b, at + 9 + 24);
     }
     return {
       protocol,
@@ -1089,6 +1095,7 @@ export class DkSession {
       runtime,
       caps,
       image_id: imageId,
+      svc_abi: svcAbi,
       port,
       free_bytes: free,
       max_chunk: maxChunk,

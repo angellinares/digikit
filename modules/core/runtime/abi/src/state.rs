@@ -226,7 +226,7 @@ mod tests {
         };
         b.begin();
         let cases = [
-            (Reason::NeedMissing, [0, 0]),
+            (Reason::NeedMissing(0x5eed), [0x5eed, 0]),
             (Reason::NeedVersion, [0, 0]),
             (Reason::UnownedKind(90), [90, 0]),
             (Reason::DuplicateOwner(7), [7, 0]),
@@ -308,7 +308,7 @@ mod tests {
         }
         // the plan's codes are a refusal only through the planner
         for r in [
-            Reason::NeedMissing,
+            Reason::NeedMissing(1),
             Reason::NeedVersion,
             Reason::UnownedKind(1),
             Reason::DuplicateOwner(1),

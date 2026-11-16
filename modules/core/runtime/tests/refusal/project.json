@@ -16,7 +16,8 @@
         "modules": [
           "test/commit-demo",
           "test/lfo-shape",
-          "test/lfo-shape-dup"
+          "test/lfo-shape-dup",
+          "core/lfo"
         ],
         "plusdrive": true,
         "tags": [

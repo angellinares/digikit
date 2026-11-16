@@ -19,11 +19,15 @@ MAX_STATE_BYTES = 16777216
 GRANULE = 64
 DSP_SLACK = 8
 ARENA_HDR = 16
-COLLECT_BYTES = 7206
+COLLECT_BYTES = 7486
 TABLE_MAGIC = 1145787458
-TABLE_VERSION = 1
+TABLE_VERSION = 2
+PROVIDER_MAX = 6
+BIND_MAX = 24
+INSTALL_SITES = 48
 MAX_VOICES = 8
 MAX_FX = 4
+H_ROLE = 56
 
 # the record kinds of a .dkm ([records.kinds])
 RECORD_KIND: dict[str, int] = {
@@ -228,6 +232,14 @@ LOAD_STATUS: dict[int, tuple[str, str]] = {
         "E_DECL_KIND",
         "a service declared a record kind that the header table does not carry, or with another length",
     ),
+    -81: (
+        "E_SVC_ABI",
+        "a service file was built for another runtime ABI (its header word H_SVC_ABI differs from the runtime's fingerprint)",
+    ),
+    -82: (
+        "E_HOOK_STOCK",
+        "a hook site of a service does not hold the stock bytes the bind recorded (another firmware, or a patched site): the service is refused before its init",
+    ),
 }
 
 CAP: dict[str, int] = {
@@ -247,6 +259,7 @@ CAP: dict[str, int] = {
     "RENAME": 13,
     "READBACK": 14,
     "LOADS": 15,
+    "SVC_ABI": 16,
 }
 
 RANGES: dict[str, tuple[int, int]] = {

@@ -36,6 +36,7 @@ pub fn differing_parts(a: &[u8], b: &[u8]) -> Result<Vec<&'static str>> {
         ("tick", a.tick == b.tick),
         ("name", a.name == b.name),
         ("version", a.version == b.version),
+        ("role", a.role == b.role),
     ] {
         if !same {
             d.push(name);
@@ -49,7 +50,7 @@ fn names(dir: &Path) -> Result<BTreeSet<String>> {
     for e in std::fs::read_dir(dir).map_err(|e| err!("{}: {e}", dir.display()))? {
         let e = e.map_err(|e| err!("{}: {e}", dir.display()))?;
         let n = e.file_name().to_string_lossy().into_owned();
-        if n.ends_with(".dkm") {
+        if n.ends_with(".dkm") || n.ends_with(".dks") {
             out.insert(n);
         }
     }
@@ -87,6 +88,7 @@ mod tests {
             trace: false,
             stereo: false,
             gate: false,
+            service: None,
         };
         crate::dkm::pack_keys(None, reg, dsp, &o).unwrap()
     }
