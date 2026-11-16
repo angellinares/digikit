@@ -20,6 +20,8 @@ export const DEVICE_BYTES = 'patchkit:device-bytes';
 export const DEVICE_IMAGES = 'patchkit:device-images';
 // Writes the `needs` verdict of the packs in tests/regression/runtime/needs-packs.json (tools/nx/pack-verdicts.mjs).
 export const PACK_VERDICTS = 'patchkit:pack-verdicts';
+// The host assembly tests of the runtime (modules/core/runtime): the seams between the real packed outputs. No device task starts while they fail.
+export const TEST_ASSEMBLY = 'core/runtime:test-assembly';
 // Device and conformance tasks run behind this wrapper: it takes one machine-wide emulator slot. It only schedules and is
 // no input: it cannot change a result, and Nx does not cache failures.
 export const EMU_SLOT = 'node tools/devtools/emu-slot.mjs --';
@@ -35,7 +37,15 @@ export const deviceTarget = (
   uploadable = false,
   opts = {},
 ) => {
-  const dependsOn = ['patchkit:cli', 'digi-control:daemons', IMAGE_BUILD, DEVICE_BYTES, DEVICE_IMAGES, PACK_VERDICTS];
+  const dependsOn = [
+    'patchkit:cli',
+    'digi-control:daemons',
+    IMAGE_BUILD,
+    DEVICE_BYTES,
+    DEVICE_IMAGES,
+    PACK_VERDICTS,
+    TEST_ASSEMBLY,
+  ];
   if (uploadable) dependsOn.push('pack');
   for (const rec of recs) {
     for (const id of rec.modules ?? []) {
@@ -216,7 +226,7 @@ export const conformanceTarget = (workspaceRoot, root, m, f, importInputs) => ({
     ...builtSourceExclusions(root, workspaceRoot),
     ...importInputs([...globSync('tests/conformance/**/*.device.test.ts', { cwd: workspaceRoot }), VITEST_SETUP]),
   ],
-  dependsOn: ['pack', 'digikit/debug:pack', 'digi-control:daemons', IMAGE_BUILD, DEVICE_BYTES],
+  dependsOn: ['pack', 'digikit/debug:pack', 'digi-control:daemons', IMAGE_BUILD, DEVICE_BYTES, TEST_ASSEMBLY],
   outputs: [],
   options: {
     command: `${EMU_SLOT} pnpm --filter @digi/regression test:conformance`,

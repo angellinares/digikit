@@ -41,6 +41,19 @@ const jobs = cells.flatMap((cell) => [
 rmSync(join(root, 'dist/bytes/images'), { recursive: true, force: true });
 for (const dev of new Set(cells.map((cell) => cell.dev)))
   mkdirSync(join(root, 'dist/bytes/images', dev), { recursive: true });
+/**
+ * `dist/bytes/images/<device>/set-<set>.info`: one line per entry of the image's info table (`dkrt_info_table`): name, name hash, kind (0 data table, 1 slot
+ * word), address and the words of a data entry, all but the name and kind in hex. The runtime's assembly test builds its `Platform::info` from it.
+ */
+const writeInfo = (dev, set, info) =>
+  writeFileSync(
+    join(root, 'dist/bytes/images', dev, `set-${set}.info`),
+    info
+      .map((e) =>
+        [e.name, e.hash.toString(16), e.kind, e.addr.toString(16), ...e.words.map((w) => w.toString(16))].join(' '),
+      )
+      .join('\n') + '\n',
+  );
 // The jobs only read; four at a time keep the machine usable. Lines keep the order of the jobs.
 const lines = Array.from({ length: jobs.length }, () => '');
 let next = 0;
@@ -70,6 +83,8 @@ try {
           addrmap,
         ];
         await run(pk, args, { cwd: root });
+        // The info table of a patch set's image, as text for the host assembly tests (modules/core/runtime, `test-assembly`)
+        if (!keep) writeInfo(cell.dev, label, JSON.parse(readFileSync(plan, 'utf8')).info ?? []);
         const sha = (file) => createHash('sha256').update(readFileSync(file)).digest('hex');
         lines[index] = `${cell.dev}-${cell.ver} ${label} image ${sha(out)} plan ${sha(plan)} addrmap ${sha(addrmap)}`;
       }

@@ -9,6 +9,9 @@ use dkrt_abi::profiles;
 use std::collections::BTreeMap;
 use std::vec::Vec;
 
+// the seams between the real packed artifacts (`core/runtime:test-assembly`)
+mod assembly_tests;
+
 const PATH: &[u8] = b"mods/a.dkm\0";
 const IMAGE_OFF: usize = 160;
 const FIRST_ADDR: u32 = 0x0010_0000;

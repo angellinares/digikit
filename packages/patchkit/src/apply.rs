@@ -51,6 +51,9 @@ pub struct Plan {
     /// P1: sections copied from the image
     #[serde(skip_serializing_if = "Vec::is_empty")]
     pub sections: Vec<prim::PlanSection>,
+    /// The entries of the image's info table (`dkrt_info_table`), with the words of each data entry as the image holds them
+    #[serde(skip_serializing_if = "Vec::is_empty")]
+    pub info: Vec<PlanInfo>,
     /// P4: hooks
     #[serde(skip_serializing_if = "Vec::is_empty")]
     pub hooks: Vec<prim::PlanHook>,
@@ -68,6 +71,20 @@ impl Plan {
             .collect()
     }
 }
+
+/// One entry of the image's info table (`prim::build_info_table`): `kind` is `prim::INFO_KIND_SLOT` or `prim::INFO_KIND_DATA`; `words` are up to
+/// `INFO_WORDS` big endian words at `addr` of a data entry (read from the placed object that holds it; empty when no placed object does).
+#[derive(Clone, Debug, Serialize)]
+pub struct PlanInfo {
+    pub name: String,
+    pub hash: u32,
+    pub addr: u64,
+    pub kind: u32,
+    pub words: Vec<u32>,
+}
+
+/// The most words of a data entry the plan records.
+const INFO_WORDS: usize = 16;
 
 #[derive(Clone, Debug, Serialize)]
 pub struct PlanBase {
@@ -432,6 +449,22 @@ struct Chunk {
     bss: u64,
     /// plan text: `object in <region>`, `section <name>`, ...
     what: String,
+}
+
+/// The words at `addr` in the ColdFire object of `chunks` that holds it (at most `INFO_WORDS`, to the end of the object's image); empty when none does.
+fn placed_words(chunks: &[Chunk], addr: u64) -> Vec<u32> {
+    let Some(c) = chunks
+        .iter()
+        .find(|c| c.cpu == CF && c.addr <= addr && addr < c.addr + c.image.len() as u64)
+    else {
+        return vec![];
+    };
+    let at = (addr - c.addr) as usize;
+    c.image[at..]
+        .chunks_exact(4)
+        .take(INFO_WORDS)
+        .map(|w| u32::from_be_bytes([w[0], w[1], w[2], w[3]]))
+        .collect()
 }
 
 /// An in-place change of firmware bytes.
@@ -1410,6 +1443,7 @@ pub fn apply_with(
     // Bytes of the primitives' memory: registry tables, copied sections with appended rows, hook tails.
     let mut plan_regs: Vec<prim::PlanRegistry> = vec![];
     let mut plan_secs: Vec<prim::PlanSection> = vec![];
+    let mut info_plan: Vec<PlanInfo> = vec![];
     {
         let anchor_fn = |n: &str| port.anchor(n).map(|a| anchor_value(a) as i64);
         let image_fn = |n: &str, off: i64, w: u8| image_read(&mem, port, n, off, w);
@@ -1538,6 +1572,7 @@ pub fn apply_with(
         }
         if let Some((addr, cpu)) = info_at {
             let mut entries: Vec<(u32, u32, u32)> = vec![];
+            let mut names: Vec<String> = vec![];
             for (si, (_, defs)) in slot_defs.iter().enumerate() {
                 for (i, d) in defs.iter().enumerate() {
                     entries.push((
@@ -1545,6 +1580,7 @@ pub fn apply_with(
                         (slot_at[si].0 + 4 * i as u64) as u32,
                         prim::INFO_KIND_SLOT,
                     ));
+                    names.push(d.name.clone());
                 }
             }
             for (m, inf) in &info_defs {
@@ -1559,6 +1595,21 @@ pub fn apply_with(
                     )
                 })?;
                 entries.push((dkneeds::keys::name_hash(&inf.name), v, prim::INFO_KIND_DATA));
+                names.push(inf.name.clone());
+            }
+            for ((hash, addr, kind), name) in entries.iter().zip(&names) {
+                let words = if *kind == prim::INFO_KIND_DATA {
+                    placed_words(&chunks, *addr as u64)
+                } else {
+                    vec![]
+                };
+                info_plan.push(PlanInfo {
+                    name: name.clone(),
+                    hash: *hash,
+                    addr: *addr as u64,
+                    kind: *kind,
+                    words,
+                });
             }
             let owner = slot_defs
                 .first()
@@ -1995,6 +2046,7 @@ pub fn apply_with(
         addr_entries,
         registries: plan_regs,
         sections: plan_secs,
+        info: info_plan,
         hooks: plan_hooks,
         record: rec,
         output: None,
