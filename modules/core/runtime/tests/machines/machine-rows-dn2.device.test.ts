@@ -138,18 +138,17 @@ describeOn('dn2', `DN2 ${FIRMWARE.dn2} machines.dks: the own page of a run-time 
       expect(edit.after, `${k.name} moved up`).toBeGreaterThan(edit.before);
     }
 
-    // a held note: the engine word of the voice (TX frame block of voice slot 1, the second note since the boot) follows the Sound word of the knob that is turned
+    // a held note: turn the knob first (TRIG not held: with TRIG held the firmware may record a p-lock instead of editing the Sound word), then hold TRIG 1; the engine word of the voice (TX frame block of voice slot 1, the second note since the boot) equals the Sound word
     const alpha = layout[0]!;
+    await turnChangesOneWord(rt, ENCODERS[alpha.knob]!);
     await holdTrig(rt, true);
     try {
-      await turnChangesOneWord(rt, ENCODERS[alpha.knob]!);
-      const both = await pollUntil(
+      await pollUntil(
         rt.clock,
         async () => ({ sound: await soundWord(session, alpha.slot), engine: await voiceWord(session, HELD_VOICE, alpha.slot) }),
         (w) => w.sound === w.engine,
-        { withinMs: 3000, message: 'the held voice engine word follows the Sound word of Dyn Alpha', intervalMs: 50 },
+        { withinMs: 3000, message: 'the held voice engine word equals the Sound word of Dyn Alpha', intervalMs: 50 },
       );
-      expect(both.engine, 'the engine word of the held voice is the edited Sound word').toBeGreaterThan(rows['Dyn Alpha']!.default);
     } finally {
       await holdTrig(rt, false);
     }

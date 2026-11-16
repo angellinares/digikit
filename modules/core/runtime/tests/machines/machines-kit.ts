@@ -38,7 +38,11 @@ export const dn2VoiceWordAddress = (voice: number, slot: number) => DN2_TX_FRAME
 export const voiceWord = (session: Session, voice: number, slot: number) => halfword(session, dn2VoiceWordAddress(voice, slot));
 
 /** Press or release TRIG 1 without a tap (a note sounds while it is down). */
-export const holdTrig = (rt: Rt, down: boolean) => bounded(() => rt.session.client.inputButton(button('TRIG 1'), down));
+export async function holdTrig(rt: Rt, down: boolean): Promise<void> {
+  await bounded(() => rt.session.client.inputButton(button('TRIG 1'), down));
+  // `Ui` has no button down/up call: the wait lets the key event drain so a key-up does not leak into the next phase
+  if (!down) await rt.ui.wait({ drained: true });
+}
 
 export const ENCODERS = ['ENC A', 'ENC B', 'ENC C', 'ENC D', 'ENC E', 'ENC F', 'ENC G', 'ENC H'] as const;
 
