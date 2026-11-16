@@ -96,9 +96,9 @@ Some services are provided by a patched-in module, not by the runtime: `core/ui`
 
 Today the `runtime`, `samples`, `machines` and `fx` imports resolve to code in the runtime image. The runtime's import table holds the imports without `requires`.
 
-### Registry: built (R7) and planned (R9 to R12)
+### Registry: built (R7 to R11, R12-1) and planned (R12)
 
-R7 is built: one generated table of record kinds, resources and in-crate services; `dk_record_add` for generic kinds; the header table with the R12 entries; a boot planner that returns one verdict for each module of the selection before anything loads; declare-check-commit for services ([runtime-and-services.md](plans/runtime-and-services.md) 4.1). What is planned: R9 to R12 move code out of the runtime into services (`.dks` files). The layers, the three interfaces and the rule that services do not call each other are in [ARCHITECTURE.md](ARCHITECTURE.md). The design:
+R7 is built: one generated table of record kinds, resources and services (crates in `modules/core/services`); `dk_record_add` for generic kinds; the header table with the R12 entries; a boot planner that returns one verdict for each module of the selection before anything loads; declare-check-commit for services ([runtime-and-services.md](plans/runtime-and-services.md) 4.1). What is planned: R12 packages the service crates as `.dks` files. The layers, the three interfaces and the rule that services do not call each other are in [ARCHITECTURE.md](ARCHITECTURE.md). The design:
 
 - A service declares its name, record kinds, resources, exports and hook table. The runtime fills a registry during boot planning, before any module code runs. There is no run-time registration call.
 - A service loads only when a selected module needs it. Load order follows dependencies.

@@ -11,7 +11,7 @@ hot reload is archived, `docs/plans/digikit-hot-reload.md`). The DIGIKIT menu ch
   (about 25 s); tests: `tests/patchkit/test_patchkit_dkrt.py`.
 - Try it by hand: `patchkit pack test/dyn-demo -o plus_drive/dt2/digikit/modules/dyn-demo.dkm`, patch with `--modules core/runtime`,
   boot with that `plus_drive/`; put `modules/dyn-demo.dkm` in `plus_drive/dt2/digikit/selection.txt` (or use DIGIKIT > MODULES), and the boot loads it.
-- Layout: `sdk/` is the crate both the runtime and modules use (the imports, result codes); `src/rs/` the runtime (`src/services/{machines,fx,samples}` hold the service code of the runtime crate, `params.rs` the kind-free parameter row writers, `dsp/` the DSP loader core); `src/rs/src/lib.rs` has the module list, the panic handler and the kind-specific parts that wait for the service moves;
+- Layout: `sdk/` is the crate both the runtime and modules use (the imports, result codes); `src/rs/` the runtime (the services are crates in `modules/core/services/NAME` (`machines`, `fx`, `samples`, `lfo`), linked into the runtime object; `params.rs` the kind-free parameter row writers, `dsp/` the DSP loader core); `src/rs/src/lib.rs` has the module list, the panic handler;
   `state.rs` (`State` and the `DKRT_*` statics), `platform.rs` (device, block read and write, MIDI send, helpers), `imports.rs` (the import table),
   `api.rs` (the C ABI), `health.rs`, `report.rs` (status, capacity, diag, debug imports), `tick.rs`, `mailbox.rs`; boot: `boot.rs`, `selection.rs`, `safe_mode.rs`;
   upload: `transport.rs`, `store_cmds.rs`, `admin_cmds.rs`, `module_cmds.rs`; `fault.rs` (crash, hang and panic records), `invariants.rs` (the module table check); `src/cf/tramp.s` the
