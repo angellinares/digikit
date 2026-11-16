@@ -2389,7 +2389,10 @@ fn fast_mode1_write_that_enables_interrupts_matches_the_interpreter() {
         let setup = move |e: &mut crate::Engine| {
             assert_eq!(e.set_option(9, 1), 0);
             // The fast tier runs only when the memory model matches the generated core's.
-            assert_eq!(e.set_option(10, crate::gen_explicit_memory_model() as i64), 0);
+            assert_eq!(
+                e.set_option(10, crate::gen_explicit_memory_model() as i64),
+                0
+            );
             e.s.cfg.stack_model = true;
             e.s.cfg.bank_model = true;
             e.s.cfg.refresh();
