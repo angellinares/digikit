@@ -1122,6 +1122,38 @@ mod tests {
         assert_eq!(Keys::parse(&d.register).unwrap().kinds().count(), 0);
     }
 
+    #[test]
+    fn a_service_file_that_fills_a_slot_has_a_slots_item_with_the_name_hash_and_the_entry_offset() {
+        use dkneeds::keys::Keys;
+        let o = object();
+        let opts = Options {
+            service: Some(Provided {
+                service: "svc-test".into(),
+                exports: vec![],
+                hooks: vec![],
+                fills: vec![("frametype".into(), "tick_fn".into())],
+            }),
+            ..opts()
+        };
+        let d = Dkm::parse(&pack(&o, &opts).unwrap()).unwrap();
+        let k = Keys::parse(&d.register).unwrap();
+        let slots: Vec<_> = k.slots().collect();
+        assert_eq!(slots.len(), 1);
+        assert_eq!(slots[0].id, dkneeds::keys::name_hash("frametype"));
+        assert_ne!(slots[0].entry, 0);
+        // a fill with a function the object does not define is refused, and one slot twice
+        let bad = Options {
+            service: Some(Provided {
+                service: "svc-test".into(),
+                exports: vec![],
+                hooks: vec![],
+                fills: vec![("frametype".into(), "no_such_function".into())],
+            }),
+            ..self::opts()
+        };
+        assert!(pack(&o, &bad).is_err());
+    }
+
     /// The table of a module whose KEYS name the record kinds `kinds` (one key each), packed as a `.dkm`.
     fn needs_of_keys(kinds: &[u32]) -> Vec<dkneeds::keys::Need> {
         use dkneeds::keys::{KeyGroup, Keys, Table, table_size, write_table};
@@ -1154,16 +1186,16 @@ mod tests {
         let own: Vec<_> = needs.iter().filter(|n| n.service == lfo).collect();
         assert_eq!(own.len(), 1);
         assert!(own[0].hard);
-        // machines and effects are owned by services in the image: the table gets no need for them
+        // effects are owned by a service in the image (no need for them); machines and pages by the machines service file (a hard need on it)
+        let mach = dkneeds::keys::name_hash("machines");
         assert!(
-            needs_of_keys(&[
-                dkneeds::KIND_MACHINE,
-                dkneeds::KIND_EFFECT,
-                dkneeds::KIND_PAGE
-            ])
-            .iter()
-            .all(|n| n.service != lfo),
+            needs_of_keys(&[dkneeds::KIND_EFFECT])
+                .iter()
+                .all(|n| n.service != lfo && n.service != mach),
         );
+        let m = needs_of_keys(&[dkneeds::KIND_MACHINE, dkneeds::KIND_PAGE]);
+        assert!(m.iter().all(|n| n.service != lfo));
+        assert_eq!(m.iter().filter(|n| n.service == mach && n.hard).count(), 1);
         // the same kind twice is one need
         let twice = needs_of_keys(&[dkneeds::KIND_LFO_SHAPE, dkneeds::KIND_LFO_SHAPE]);
         assert_eq!(twice.iter().filter(|n| n.service == lfo).count(), 1);
