@@ -25,8 +25,12 @@ import SidePanels from '../src/SidePanels';
 import TitleBar from '../src/TitleBar';
 import { setLocalFolder } from '../src/samples-state';
 import TransferPage from '@digi/workbench-core/ui/transfer/TransferPage.tsx';
+import FilesPage from '@digi/workbench-core/ui/files/FilesPage.tsx';
+import { demoStore } from '@digi/workbench-core/target-ops/fake-store.ts';
+import { demoLibrary } from './files-mock';
 import { deviceFromName, bootingStatus, booting as startBoot, loadFailure } from '../src/boot-core';
 import { cardDevice, reloadCard } from './card-mock';
+import CardPanel from '../src/CardPanel';
 import { installRemoteMock, testPattern } from './remote-mock';
 import { queryFrame } from './frame-from-png';
 import { createLogFollow } from '../src/log-follow';
@@ -39,7 +43,7 @@ const host = createTauriHost();
 const apps = createDesktopApps(host);
 bindSimApp(apps.app);
 
-// ?page=transfer (default) | remote | emulator | firmware (state: fwdev, fwstate, fwos; see firmware-mock.ts): the Emulator page shows the faceplate only (the real one needs the emulator) with the same
+// ?page=transfer (default) | files | remote | emulator | firmware (state: fwdev, fwstate, fwos; see firmware-mock.ts): the Emulator page shows the faceplate only (the real one needs the emulator) with the same
 // markup as ../src/Console.tsx, to put its screen next to the Remote page's.
 const page = new URLSearchParams(location.search).get('page') ?? 'transfer';
 if (page === 'remote') installRemoteMock();
@@ -65,8 +69,6 @@ const emulatorFaceplate = () =>
         host={host}
         visible
         active={false}
-        card
-        reload={reloadCard}
         metrics={
           <div class="card-body metrics">
             <p class="poll">1 s poll</p>
@@ -92,8 +94,6 @@ const emulatorFaceplate = () =>
       <SidePanels
         host={host}
         visible
-        card
-        reload={reloadCard}
         metrics={
           // the Metrics tab of ../src/Console.tsx with the values of a running DN2
           <div class="card-body metrics">
@@ -175,6 +175,10 @@ const firmware = createFirmwareApp(
   apps.app,
 );
 
+const filesStore = demoStore();
+// ?page=files&card=dn2|dt2 shows the emulator card-folder strip (preview/card-mock.ts) above the tree
+const showCard = new URLSearchParams(location.search).has('card');
+
 installNativeFeel();
 installTooltips();
 apps.app.state.setMode(sim.mode);
@@ -198,6 +202,9 @@ render(
             <span class="side-group">Device</span>
             <button type="button" class={page === 'transfer' ? 'side on' : 'side'}>
               <span>Transfer</span>
+            </button>
+            <button type="button" class={page === 'files' ? 'side on' : 'side'}>
+              <span>Files</span>
             </button>
             <button type="button" class={page === 'remote' ? 'side on' : 'side'}>
               <span>Remote</span>
@@ -297,6 +304,13 @@ render(
               </div>
             ) : page === 'firmware' ? (
               <FirmwarePage />
+            ) : page === 'files' ? (
+              <FilesPage
+                store={filesStore}
+                library={() => demoLibrary(filesStore)}
+                save={async (name) => `/tmp/${name}`}
+                extra={showCard ? <CardPanel host={host} reload={reloadCard} /> : undefined}
+              />
             ) : (
               <TransferPage />
             )}

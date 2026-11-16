@@ -1,4 +1,4 @@
-// The right-hand column of the Emulator and Remote pages (SidePanels.tsx): which tab it shows (Card, Memory, Metrics) and whether it is open or
+// The right-hand column of the Emulator and Remote pages (SidePanels.tsx): which tab it shows (Memory, Metrics, Profile) and whether it is open or
 // folded to a rail. Both choices are kept in the profile's storage; a page that lacks the chosen tab (Remote has Memory only) shows its first one.
 import { createSignal, type Accessor } from 'solid-js';
 import { localStorageKeyValue } from '@digi/workbench-core/storage.ts';
@@ -32,7 +32,7 @@ function persisted<T>(
 export const [inspectorTab, setInspectorTab] = persisted<InspectorTab>(
   'digikit.inspectorTab',
   (s) => ((TABS as string[]).includes(s) ? (s as InspectorTab) : undefined),
-  () => 'card',
+  () => 'memory',
 );
 export const [inspectorOpen, setInspectorOpen] = persisted<boolean>(
   'digikit.inspector',

@@ -135,6 +135,10 @@ export interface ListRowProps {
   phase?: string;
   /** A small link-like button after the name ("Source"). */
   action?: { label: string; title: string; onClick: () => void };
+  /** The tree depth (the Files page): a spacer of 14px per level before the tick. */
+  indent?: number;
+  /** A folder of a tree: the open/close button before the name. */
+  twisty?: { open: boolean; onToggle: () => void };
 }
 
 /** The folder of the device that a drag is over (a folder row, or the Up row), or undefined; the row shows it as the drop target. */
@@ -161,6 +165,9 @@ export function ListRow(props: ListRowProps): JSX.Element {
       <Show when={props.phase}>
         <span class="phase">{props.phase}</span>
       </Show>
+      <Show when={props.indent !== undefined}>
+        <span class="indent" style={{ width: `${(props.indent ?? 0) * 14}px` }} />
+      </Show>
       <Show when={props.check} fallback={<span class="tick" />}>
         {(c) => (
           <input
@@ -173,6 +180,24 @@ export function ListRow(props: ListRowProps): JSX.Element {
         )}
       </Show>
       <span class="name">
+        <Show when={props.indent !== undefined}>
+          <Show when={props.twisty} fallback={<span class="twisty" />}>
+            {(t) => (
+              <button
+                type="button"
+                class="twisty"
+                aria-expanded={t().open}
+                aria-label={t().open ? 'Close folder' : 'Open folder'}
+                onClick={(e) => {
+                  e.stopPropagation();
+                  t().onToggle();
+                }}
+              >
+                {t().open ? '▾' : '▸'}
+              </button>
+            )}
+          </Show>
+        </Show>
         <span class="nm" classList={{ dir: !!props.folder }} title={props.title}>
           {props.folder ? `${props.name}/` : props.name}
         </span>

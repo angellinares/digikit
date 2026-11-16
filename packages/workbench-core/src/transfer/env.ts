@@ -137,7 +137,7 @@ export interface TransferEnv {
   /** Only the desktop app has these; the pane shows a part only when it is given. */
   extras?: {
     samples?: SamplesSlot;
-    /** A job ended (the Card panel reads the folder now and again after its quiet period). */
+    /** A job ended (the Files page and its card-folder strip read the folder now and again after its quiet period). */
     onJobEnd?(): void;
     /** Reload the emulator with the digikit runtime (the desktop): offered next to an "emulator runs without the runtime" error. */
     reloadWithRuntime?: () => void;

@@ -4,7 +4,6 @@ import assert from 'node:assert/strict';
 import { sourceKind, type Prepared } from '@digi/dk-session/dksample';
 import type { SampleEntry } from '@digi/dk-session/samples';
 import { test } from 'vitest';
-import { fileGroups, nameInGroup } from '../src/card-core.ts';
 import {
   applyUpload,
   confirmDeleteLabel,
@@ -372,32 +371,6 @@ test('a real failure and a cancel in one run is still a failure', async () => {
   u = applyUpload(u, { event: 'cancelled', folder: 'drums', name: 'two', message: 'cancelled while sending' });
   assert.match(uploadFailure(u, {}) ?? '', /^Uploading failed: not a usable WAV/);
   assert.equal(uploadCancelled(u, {}), undefined);
-});
-
-test('the Card panel groups the store files by top folder', () => {
-  const card = {
-    folder: 'x',
-    continuous: true,
-    last_sync: null,
-    error: null,
-    files: [
-      { path: 'samples/drums/kick', bytes: 300, hash: 'c' },
-      { path: 'modules/pluck.dkm', bytes: 100, hash: 'a' },
-      { path: 'samples/snare', bytes: 50, hash: 'b' },
-      { path: 'top.bin', bytes: 1, hash: 'd' },
-    ],
-  };
-  const g = fileGroups(card);
-  assert.deepEqual(
-    g.map((x) => [x.folder, x.files.length, x.bytes]),
-    [
-      ['', 1, 1],
-      ['modules', 1, 100],
-      ['samples', 2, 350],
-    ],
-  );
-  assert.equal(nameInGroup('samples/drums/kick', 'samples'), 'drums/kick');
-  assert.equal(nameInGroup('top.bin', ''), 'top.bin');
 });
 
 test('the local list: folders first, then files by name, then the added files; folders have no kind tag; the selection takes folders too', () => {

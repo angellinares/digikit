@@ -1,16 +1,8 @@
 import type { CardFolder } from '../src/card-core.ts';
-// The pure logic of the desktop Card panel (apps/desktop/ui/src/card-core.ts).
+// The pure logic of the emulator card-folder strip (apps/desktop/ui/src/card-core.ts).
 import assert from 'node:assert/strict';
 import { test } from 'vitest';
-import {
-  agoText,
-  canUseDefault,
-  fileRows,
-  folderNotice,
-  pickStart,
-  shortFolder,
-  statusText,
-} from '../src/card-core.ts';
+import { agoText, canUseDefault, folderNotice, pickStart, shortFolder, statusText } from '../src/card-core.ts';
 
 const card = (extra: Partial<CardFolder> = {}): CardFolder => ({
   folder: '/Users/em/src/digi/digitakt2/plus_drive/dt2',
@@ -46,14 +38,10 @@ test('the status line: last sync, pending changes, an error, no mirror', () => {
   assert.equal(statusText(card({ continuous: false }), now), 'The card is not mirrored to a folder.');
 });
 
-test('the folder and the files', () => {
+test('the shortened folder path', () => {
   assert.equal(shortFolder('/Users/em/src/digi/digitakt2/plus_drive/dt2'), '…/plus_drive/dt2');
   assert.equal(shortFolder('plus_drive/dn2'), 'plus_drive/dn2');
   assert.equal(shortFolder(null), '');
-  assert.deepEqual(
-    fileRows(card()).map((f) => f.path),
-    ['modules/pluck.dkm', 'modules/sine.dkm'],
-  );
 });
 
 const DT2 = '/Users/em/src/digi/digitakt2/plus_drive/dt2';

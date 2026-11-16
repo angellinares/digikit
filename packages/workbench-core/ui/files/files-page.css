@@ -1,0 +1,162 @@
+/* The Files page (FilesPage.tsx): the usage bar, the tree and the info pane. It reuses the Transfer page tokens and row styles. */
+.files-page {
+  --fp-modules: var(--amber);
+  --fp-services: #6cb6ff;
+  --fp-data: #c792ea;
+  --fp-samples: var(--ok);
+  --fp-other: var(--ink-3);
+  --fp-free: var(--tp-track);
+}
+.files-page .facts {
+  margin: 0;
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 6px;
+  font-size: 12px;
+  color: var(--ink-3, #868b94);
+}
+.files-page .usagebox {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+.files-page .usage {
+  display: flex;
+  height: 14px;
+  overflow: hidden;
+  border: 1px solid var(--tp-border);
+  border-radius: 3px;
+}
+.files-page .seg {
+  flex: 0 1 auto;
+  min-width: 2px;
+}
+.files-page .seg-modules {
+  background: var(--fp-modules);
+}
+.files-page .seg-services {
+  background: var(--fp-services);
+}
+.files-page .seg-data {
+  background: var(--fp-data);
+}
+.files-page .seg-samples {
+  background: var(--fp-samples);
+}
+.files-page .seg-other {
+  background: var(--fp-other);
+}
+.files-page .seg-free {
+  background: var(--fp-free);
+}
+.files-page .seg-overhead {
+  background: repeating-linear-gradient(135deg, var(--line-2) 0 4px, var(--tp-track) 4px 8px);
+}
+.files-page .legend {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: flex;
+  flex-wrap: wrap;
+  gap: 2px 16px;
+  font-size: 11.5px;
+  color: var(--ink-2, #a9adb4);
+}
+.files-page .legend li {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+}
+.files-page .legend .sw {
+  display: inline-block;
+  width: 10px;
+  height: 10px;
+  border-radius: 2px;
+}
+.files-page .body {
+  flex: 1;
+  min-height: 0;
+  display: grid;
+  grid-template-columns: 1fr minmax(300px, 360px);
+  gap: 16px;
+}
+.files-page .treebox {
+  min-width: 0;
+  min-height: 0;
+  overflow: auto;
+  padding-bottom: 16px;
+}
+.files-page .tree {
+  outline: none;
+}
+.files-page .tree:not(:focus-within) li.sel {
+  background: rgba(255, 255, 255, 0.08);
+}
+.files-page .info {
+  min-width: 0;
+  min-height: 0;
+  overflow: auto;
+  padding: 0 0 16px 16px;
+  border-left: 1px solid var(--line, #24262b);
+}
+.files-page .info dl {
+  display: grid;
+  grid-template-columns: max-content 1fr;
+  gap: 4px 12px;
+  margin: 0;
+  font-size: 12px;
+}
+.files-page .info dt {
+  color: var(--ink-3, #868b94);
+}
+.files-page .info dd {
+  margin: 0;
+  min-width: 0;
+  font-family: var(--font-mono);
+  overflow-wrap: anywhere;
+}
+.files-page .info dd.plain {
+  font-family: inherit;
+}
+.files-page .info .hash {
+  word-break: break-all;
+}
+.files-page .info .acts {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+  margin-top: 12px;
+}
+.files-page .info .hex {
+  margin: 8px 0 0;
+  padding: 8px 10px;
+  overflow-x: auto;
+  border-radius: 8px;
+  background: var(--tp-inset);
+  color: var(--ink-2, #a9adb4);
+  font-family: var(--font-mono);
+  font-size: 11px;
+  line-height: 1.4;
+}
+@media (max-width: 900px) {
+  .files-page .body {
+    grid-template-columns: 1fr;
+    grid-auto-rows: min-content;
+    overflow: auto;
+  }
+  .files-page .treebox {
+    overflow: visible;
+  }
+  .files-page .info {
+    padding: 12px 0 16px;
+    border-left: 0;
+    border-top: 1px solid var(--line, #24262b);
+    overflow: visible;
+  }
+}
+
+/* the tree has no tick column: the twisty and the indent start the row */
+.files-page .tree .tick {
+  display: none;
+}
