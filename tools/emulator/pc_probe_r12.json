@@ -58,6 +58,22 @@
       {
         "pc": "0x400da3ac",
         "label": "param_code.args_site"
+      },
+      {
+        "pc": "0x4005c8e0",
+        "label": "diag.keyboard_fn"
+      },
+      {
+        "pc": "0x4005dc58",
+        "label": "diag.keyboard_view_event"
+      },
+      {
+        "pc": "0x4005d5c8",
+        "label": "diag.keyboard_view_draw"
+      },
+      {
+        "pc": "0x40079226",
+        "label": "diag.trig_mode_menu_draw"
       }
     ]
   },
@@ -110,6 +126,15 @@
       {
         "pc": "0x400dc196",
         "label": "param_code.map_site"
+      },
+      {
+        "pc": "0x4003e69e",
+        "label": "diag.cmd7_c",
+        "stack": 3
+      },
+      {
+        "pc": "0x4006f5e4",
+        "label": "diag.fx_view_draw"
       }
     ]
   }

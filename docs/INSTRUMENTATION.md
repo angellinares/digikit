@@ -269,7 +269,7 @@ $DN2 --syx $N --dsp zero --cold-base $(shasum -a 256 $N | cut -d' ' -f1) $SC --s
 
 Each run boots the stock image from reset with SSI paced (about 850 million instructions to ready), then plays its scenario.
 Estimate, not measured: a zero-DSP run is about 2.2 times real time, so a run takes 1 to 2 minutes (the boot about 15 s, check 1
-about 15 s of play, check 2 about 6 s), and the build of `coupled-run` comes first when it is not built. A probe on a PC
+about 15 s of play, check 2 about 14 s of play, 30 to 40 s wall), and the build of `coupled-run` comes first when it is not built. A probe on a PC
 that is hit about 1,500 times per second (check 1) costs one observed-PC call per hit and keeps the fast paths. Read the result in `pc_probe` of each report:
 
 - Check 1: `probes[0].by_frame` is the histogram by (vector, stacked IPL). Controls: `count` above 0, and vector 191 present.
@@ -281,7 +281,7 @@ that is hit about 1,500 times per second (check 1) costs one observed-PC call pe
 
 Scenario limits against the design text: the scenarios drive the panel and MIDI DIN. USB MIDI and a card load after ready are
 not scenario events, so check 1 has the MIDI DIN note and the card of the boot only (add `--card-image FILE` for a card).
-Check 2 uses FUNC+SRC for the machine list; on a device where that is not the list, the SRC page and the hooks of the list
+Check 2 uses FUNC+SRC for the machine list and FUNC+FX for the FX view (the FX key alone does not open it on DN2); on a device where that is not the list, the SRC page and the hooks of the list
 still fire from the page, and the report shows which probes had no hit.
 
 ## Instruction spans (ColdFire)
