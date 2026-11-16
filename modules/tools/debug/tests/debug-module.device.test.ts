@@ -1,7 +1,7 @@
 import { be32, eventLine, hasCap, moduleNames, runtimeEvent, type DkLogEvent } from '@digi/dk-session';
 import { CMD, LOG_KIND, SERVICE_CMD } from '@digi/dk-session/gen_proto';
 import { expect } from 'vitest';
-import type { PatchedSession } from '@digi/regression/support.ts';
+import type { PatchedSession, TestRuntime } from '@digi/regression/support.ts';
 import { waitFrames } from '@digi/regression/runtime/debug-kit.ts';
 import { listenEvents } from '@digi/regression/runtime/events.ts';
 import { panel } from '@digi/regression/runtime/panel.ts';
@@ -11,7 +11,6 @@ import { DEBUG_MODULE, installModules, installWithDebug, moduleArtifact } from '
 import { expectRuntimeReady, runtimeTests } from '@digi/regression/runtime/ready.ts';
 import { ofKind, readSmallRing, RING_SYMBOLS } from '@digi/regression/runtime/runtime-menu.ts';
 import { planSymbol, prepareRuntimePlan } from '@digi/regression/runtime/runtime-plan.ts';
-import { tap } from '@digi/regression/runtime/fx-session.ts';
 import { expectPollEmulated } from '@digi/regression/runtime/waits.ts';
 
 const text = (words: number[]) =>
@@ -325,19 +324,30 @@ async function expectProfileSpans(runtime: PatchedSession): Promise<void> {
 
 /** The DIGIKIT menu's HEALTH page registers a poll function (`dkrt_poll_add`) while it is open. The menu is patched into the image, so PROFILE_STATE names
  * the runtime as the owner (0xff) and the function lies in the code the patchkit placed for core/digikit-menu. */
-async function expectPollOwner(runtime: PatchedSession): Promise<void> {
+async function expectPollOwner(runtime: TestRuntime): Promise<void> {
   const { session, dk } = runtime;
   await expectRuntimeReady(session);
   const plan = await prepareRuntimePlan(session, liveArtifacts(session, 'debug-poll-owner'), []);
   await installWithDebug(runtime);
   expect((await dk.profileAll()).polls.filter(Boolean), 'no poll before the page is open').toEqual([]);
   // NO leaves any popup, SETTINGS, eight rows down is DIGIKIT, YES opens it, DOWN is HEALTH, YES opens it
-  await tap(session, 'NO', 600);
-  await tap(session, 'SETTINGS', 800);
-  for (let i = 0; i < 8; i++) await tap(session, 'DOWN', 300);
-  await tap(session, 'YES', 800);
-  await tap(session, 'DOWN', 300);
-  await tap(session, 'YES', 800);
+  const { ui } = runtime;
+  const drained = { drained: true } as const;
+  await ui.tap('NO', { until: drained });
+  await ui.wait({ ms: 600, why: 'the popup closes; no state row' });
+  await ui.tap('SETTINGS', { until: drained });
+  await ui.wait({ ms: 800, why: 'the SETTINGS page has no state row' });
+  for (let i = 0; i < 8; i++) await ui.tap('DOWN', { until: drained });
+  await ui.tap('YES', { until: drained });
+  await ui.wait({ ms: 800, why: 'the DIGIKIT page has no state row' });
+  await ui.tap('DOWN', { until: drained });
+  await ui.tap('YES', {
+    until: {
+      state: async () => (await dk.profileAll()).polls.filter(Boolean).length,
+      done: (n) => n > 0,
+      what: 'the HEALTH page registers its poll',
+    },
+  });
   const polls = (await dk.profileAll()).polls.flatMap((p, slot) => (p ? [{ slot, ...p }] : []));
   console.log('poll slots', JSON.stringify(polls.map((p) => ({ ...p, fn: p.fn.toString(16) }))));
   expect(polls.length, 'the HEALTH page registered a poll').toBeGreaterThan(0);

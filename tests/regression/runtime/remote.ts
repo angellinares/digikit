@@ -2,13 +2,12 @@ import { execFile } from 'node:child_process';
 import path from 'node:path';
 import { promisify } from 'node:util';
 import type { DkSession } from '@digi/dk-session';
-import { button, repoRoot, type Session } from '@digi/test-support';
-import { expect } from 'vitest';
+import { button, emulatorClock, pollUntil, repoRoot, type Session } from '@digi/test-support';
 import { aggregate, type PatchedSession } from '../support.ts';
 import { liveArtifacts, record } from './artifacts.ts';
 import { installModule, moduleArtifact } from './install.ts';
 import { expectRuntimeUi } from './ready.ts';
-import { beforeReadinessDeadline, deadlineExpired, tap } from './waits.ts';
+import { tap } from './waits.ts';
 import { prepareRuntimePlan, type RuntimePlan } from './runtime-plan.ts';
 
 const exec = promisify(execFile);
@@ -25,27 +24,20 @@ export async function prepareRemote(runtime: PatchedSession): Promise<RuntimePla
   return plan;
 }
 
-/** Registration is retained by installRemote; command readiness is a separate bounded observation. */
+/** Registration is retained by installRemote; command readiness is a separate bounded observation (emulated time). */
 export async function expectRemoteEnabled(session: Session, dk: DkSession, timeout = 10_000): Promise<void> {
-  const deadline = Date.now() + timeout;
   let state: Awaited<ReturnType<DkSession['remoteState']>> | undefined;
-  let failure: unknown;
+  let failed = true;
   try {
-    await expect
-      .poll(async () => (state = await beforeReadinessDeadline(deadline, () => dk.remoteState())).enabled, {
-        timeout,
-        interval: 500,
-        message: 'installed remote module enables its commands',
-      })
-      .toBe(true);
-  } catch (error) {
-    failure = error;
-    throw error;
+    await pollUntil(
+      emulatorClock(session),
+      async () => (state = await dk.remoteState()),
+      (v) => v.enabled,
+      { withinMs: timeout, intervalMs: 500, message: 'installed remote module enables its commands' },
+    );
+    failed = false;
   } finally {
-    record(liveArtifacts(session, 'remote-input'), 'remote-readiness', {
-      state: state ?? null,
-      expired: deadlineExpired(deadline, failure),
-    });
+    record(liveArtifacts(session, 'remote-input'), 'remote-readiness', { state: state ?? null, expired: failed });
   }
 }
 

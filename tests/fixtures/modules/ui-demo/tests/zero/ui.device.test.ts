@@ -9,7 +9,7 @@ import { DEVICES, liveOptions } from '@digi/regression/runtime/devices.ts';
 import { advance, word } from '@digi/regression/runtime/fx-live.ts';
 import { shot, tap } from '@digi/regression/runtime/fx-session.ts';
 import { expectRuntimeUi } from '@digi/regression/runtime/ready.ts';
-import { openDigikitMenu } from '@digi/regression/runtime/runtime-menu.ts';
+import { openDigikitMenu } from '@digi/regression/runtime/flows/menu.ts';
 import {
   planSymbol,
   validateRuntimePlan,
@@ -72,7 +72,7 @@ for (const device of DEVICES) {
           row += row < target ? 1 : -1;
         }
       };
-      await openDigikitMenu(press);
+      await openDigikitMenu(fixture.runtime);
       const initial = await frame('menu');
       const events = await read('dk_demo_events_n');
       await press('YES');
