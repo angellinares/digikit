@@ -162,6 +162,9 @@ def check_roles(root: Path, mods: list[Module]) -> list[Violation]:
         r = rel(root, m.dir)
         parts = r.split("/")[2:]  # below modules/core
         want = FOLDER_ROLES.get(parts[0]) if parts else None
+        # the wrapper of a service crate that is also a service file: modules/core/services/NAME/dks
+        if parts[:1] == ["services"] and len(parts) == 3 and parts[2] == "dks":
+            want = "service"
         where = f"{r}/module.toml:{line_of(m.text, 'category', 1)}"
         have = m.mod.get("role")
         if want is None:

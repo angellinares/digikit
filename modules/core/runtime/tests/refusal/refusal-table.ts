@@ -33,7 +33,7 @@ const CAP_RS = 'modules/core/runtime/sdk/src/capacity/tests.rs';
 const STORE_RS = 'modules/core/runtime/sdk/src/store/tests.rs';
 const CLEANUP = 'modules/core/runtime/src/rs/src/cleanup_tests.rs';
 const CONTRACT = 'modules/core/runtime/src/rs/src/contract_tests.rs';
-const LOADER = 'modules/core/runtime/src/rs/src/loader/tests.rs';
+const LFO_DEVICE = 'modules/core/runtime/tests/lfo/lfo.device.test.ts';
 const SAMPLES_RS = 'modules/core/runtime/sdk/src/sample_tracks/tests.rs';
 
 const PROVIDERS = 'modules/core/runtime/tests/services/providers.device.test.ts';
@@ -97,5 +97,5 @@ export const ROWS: Record<string, Row> = {
   E_CONTRACT: { fail: mine('a module that needs a newer runtime is E_CONTRACT'), pass: loads },
   E_TABLE: { kind: 'open', reason: 'the runtime tables fail their check: needs a corrupted table' },
   E_MISSING: { fail: mine('a hard need nobody provides is E_MISSING'), pass: loads },
-  E_SVC_ABI: { kind: 'open', reason: 'needs a .dks with another ABI word; the device proof is R12-4 step 6 (core/runtime-lfo-tests)', covered: [{ file: LOADER, test: 'a_service_file_of_another_abi_is_e_svc_abi' }] },
+  E_SVC_ABI: { fail: { file: LFO_DEVICE, test: 'another ABI' }, pass: { file: LFO_DEVICE, test: 'a fixture loads and unloads' } },
 };

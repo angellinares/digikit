@@ -70,7 +70,7 @@ pub mod exports {
     pub(crate) use dkrt_svc_machines::nativepage::PageSet;
     /// The shapes of the lfo service, for the runtime's own tests of the record path.
     #[cfg(test)]
-    pub(crate) use dkrt_svc_lfo::records::{owner_of, shape, used, MAX_SHAPES, SAMPLES};
+    pub(crate) use dkrt_svc_lfo::records::{owner_of, shape, used, Lfo, MAX_SHAPES, SAMPLES};
 
     // ---- the sample pool (interface A: the imports of sdk.toml over the samples service) ----------------------------------------
     // The handle a module holds is its client number (`entry`); each call resolves it inside the service. The service is generic over the core: these wrappers

@@ -53,6 +53,7 @@ test('a module-file fixture is never marked reserved or not-a-load for a code a 
     'E_DECL_KIND',
     'E_CONTRACT',
     'E_MISSING',
+    'E_SVC_ABI',
     'E_DSP_NOSPACE',
     'E_DSP_ROWS',
     'E_SAFE_MODE',
@@ -75,7 +76,6 @@ test('the open rows are the known gaps', () => {
       'E_READ',
       'E_REG_DEVICE',
       'E_SEL_WRITE',
-      'E_SVC_ABI',
       'E_TABLE',
     ].sort(),
   );

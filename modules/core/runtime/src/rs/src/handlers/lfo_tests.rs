@@ -1,6 +1,6 @@
 //! Host tests of the `lfo` service through the runtime (the crate `dkrt-svc-lfo` has its own over `FakeCore`): the proof that a kind the registry, the collector, the loader, dkneeds and patchkit do not name works end to end
 //! (R7): a fixture's record goes through `dk_record_add`'s collector, the `register` section, the registry walkers and the planner.
-use super::exports::{owner_of, shape, used, MAX_SHAPES, SAMPLES};
+use super::exports::{owner_of, shape, used, Lfo, MAX_SHAPES, SAMPLES};
 use crate::collect::{self, Collect, KeysCopy, Plan, Profile};
 use super::tests::LOCK;
 use crate::plan::{self, Env};
@@ -12,7 +12,6 @@ use dkrt_abi::plan::{Reason, Verdict};
 use dkrt_abi::service::ServiceRow;
 use dkrt_sdk::proto::*;
 use dkrt_sdk::records::{KIND_LFO_SHAPE, KINDS_LFO, LEN_LFO_SHAPE};
-use dkrt_svc_lfo::records::Lfo;
 use dkrt_sdk::*;
 use std::vec;
 use std::vec::Vec;

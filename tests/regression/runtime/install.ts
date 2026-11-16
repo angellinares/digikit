@@ -10,7 +10,7 @@ import { bootClockOf, pollEmulated, waitForBootEmulated } from './waits.ts';
 /** Emulated milliseconds the boot-time loads of the installed modules may take after the boot is seen. */
 const MODULES_LOADED_EMULATED_MS = 30_000;
 
-/** Prepared separately with patchkit pack; acceptance never builds a toolchain, module or daemon. */
+/** Prepared separately with patchkit pack; acceptance never builds a toolchain, module or daemon. A service (`role = "service"`) is a `.dks`, any other module a `.dkm`. */
 export function moduleArtifact(device: Device, id: string): string {
   const directory = process.env.DIGI_RUNTIME_MODULES ?? path.join(repoRoot(), 'dist/modules');
   const leaf = path.join(directory, device, id.split('/').at(-1)!);
