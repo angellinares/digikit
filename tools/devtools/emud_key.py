@@ -132,7 +132,9 @@ TEST_KEY_EXCLUDED = ("packages/patchkit/", "out/")
 # Test-only Rust files. The release build lists them in its dependency file (rustc reads a `#[cfg(test)] mod x;` file), but their content is
 # not compiled, so an edit cannot change the binary: they stay out of the test key. `test_only_problems` checks that each one is declared
 # behind a cfg(test) attribute; the same patterns are the negative globs of `digi-control:daemons` in tools/nx/cargo.mjs.
-TEST_ONLY_RUST = re.compile(r"(^|/)(tests\.rs|tests_[^/]*\.rs|[^/]*_tests\.rs|fake_[^/]*\.rs)$|/tests/.*\.rs$")
+TEST_ONLY_RUST = re.compile(
+    r"(^|/)(tests\.rs|tests_[^/]*\.rs|[^/]*_tests\.rs|fake_[^/]*\.rs)$|/tests/.*\.rs$"
+)
 _MOD_DECL = r"((?:[ \t]*#\[[^\n]*\]\n)*)[ \t]*(?:pub(?:\([a-z]+\))? )?mod {};"
 
 
@@ -147,8 +149,12 @@ def test_only_problems(names: Sequence[str], root: Path = ROOT) -> list[str]:
         path = root / name
         pattern = re.compile(_MOD_DECL.format(re.escape(path.stem)))
         parents = [*path.parent.glob("*.rs"), *path.parent.parent.glob("*.rs")]
-        decls = [m for p in parents if p != path for m in pattern.finditer(p.read_text())]
-        if not decls or any(not re.search(r"cfg\((all\()?test\b", m.group(1)) for m in decls):
+        decls = [
+            m for p in parents if p != path for m in pattern.finditer(p.read_text())
+        ]
+        if not decls or any(
+            not re.search(r"cfg\((all\()?test\b", m.group(1)) for m in decls
+        ):
             bad.append(name)
     return bad
 
@@ -271,7 +277,9 @@ def test_key_of(
 ) -> str:
     """The test key: see the comment above. NAMES are repository files (relative to ROOT)."""
     if bad := test_only_problems(names, root):
-        raise SystemExit(f"test-only Rust files that are not behind cfg(test): {', '.join(bad)}")
+        raise SystemExit(
+            f"test-only Rust files that are not behind cfg(test): {', '.join(bad)}"
+        )
     record = {
         "version": 2,
         "files": sorted(
