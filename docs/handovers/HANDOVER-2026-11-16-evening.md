@@ -1,8 +1,8 @@
-# Handover 2026-11-16 evening: structure first, R11 and R12-1 built, R12-0 probe
+# Handover 2026-11-16 evening: structure first, R11 and R12-1 merged, R12-0 probe done
 
 Start from docs/plans/sdk-runtime-roadmap.md, then this file and the morning file HANDOVER-2026-11-16.md. Results are in the plans, findings, ledgers and PRs; this file holds state and next steps.
 
-## Merged 2026-11-16 (PRs 512-538)
+## Merged 2026-11-16 (PRs 512-545)
 
 | PR | Item |
 | --- | --- |
@@ -29,35 +29,34 @@ Start from docs/plans/sdk-runtime-roadmap.md, then this file and the morning fil
 | 536 | shadow replay on the rig; T1i rig read hook item |
 | 537 | T1e runtime-owners producer and owners fix |
 | 538 | nx-tools test fix |
+| 540 | native_pgo lane message |
+| 541 | R12-7 Transfer installs services: design and mockup (`docs/design/r12-7-transfer-mockup.html`) |
+| 542 | R11 boot plan, module states, refusal fixtures (DONE) |
+| 543 | R12-0 PC probe and finding 132 (DONE) |
+| 544 | samples-store-live checks the payload size and the stored size (follow-up to 523) |
+| 545 | R12-1 service crates and template (DONE) |
 
 ## Order now (agreed)
 
-1. R11 boot plan and module states (proven alone).
-2. R12-1 service crates and template.
-3. R12-2 to R12-8 `.dks` steps.
-4. P8c dispatcher spans at the interface-B boundary.
-5. P8d DSP stats window.
-6. P9 device calibration.
-7. R14 dsp-voice adapter cost.
+1. R12-2 to R12-8 `.dks` steps (R12-0, R12-1 and R12-7 design are done).
+2. P8c dispatcher spans at the interface-B boundary.
+3. P8d DSP stats window.
+4. P9 device calibration.
+5. R14 dsp-voice adapter cost.
 
-T1e step 3 owner keys were measured (fx 38 -> 34 files, storage 38 -> 31, shared 38 -> 77) and are held until after R12. Reference branch: `test/t1e-step3-keys`.
+T1e step 3 owner keys were measured (fx 38 -> 34 files, storage 38 -> 31, shared 38 -> 77) and are held until after R12.
 
-## Branches built, not merged
+## Branches
 
-| Branch | Lane | State | Next |
-| --- | --- | --- | --- |
-| `rt/r11-boot-states` | sdk-ui | R11 boot plan and module states. Host green after fixing a double lock in `cleanup_tests` and adding refusal-test tags. | Device proof: refusal tests on both devices, capacity, safe-mode, needs, boot-restart, gate-smoke, gate-pins. Then merge. |
-| `rt/r12-1-service-crates` | docs-design | R12-1 service crates and template: `samples` and `lfo` crates, template, structure check `patchkit service-check` (run through `module:check -- service/NAME`), FakeCore tests. R11 merged in. Host green. It is slightly more than a move (Em accepted): samples inlining, `peakwin::Window` keeps its core pointer (+8 bytes bss), text +0.15%. | After R11 merges: device batch of samples, lfo, fx, machines tagged tests and gate-smoke. Then merge. |
-| `tools/r12-0-pc-probe` | sdk-gen | R12-0 PC probe tool and check results (below). | Write the finding, land the probe. |
+No unmerged branches from this session remain. Reference branch kept: `test/t1e-step3-keys`.
 
-## R12-0 PC probe results
+## R12-0 PC probe results (finding 132)
 
-- Check 1 (task switches from interrupts): no task switch happens from an interrupt handler at IPL >= 2. Switches entered from an interrupt are vector 205 from IPL 0 (the design's vector 191 was wrong). Trap #0 switches from tasks with interrupts masked exist (about 8,000 per run).
-- Decision (Em): interrupt-only service code uses load-test-jump stubs and can be unloaded after masking and clearing the slot. Task-reachable code needs the entry/exit counter for hot reload.
-- Check 2 (first fire of vtable-only hooks): DT2 dispatch, page_desc, value_class and DN2 source_key, source_code, source_draw first fire after main-OS entry, in one task at IPL 0, so direct install works.
-- param_code also runs before main-OS entry, in the boot project decode loop (DT2 FUN_400e64dc, DN2 FUN_400e7eb0). Finding 131 says the boot decode passes -1 (stock path). A run with a saved project using pluck is in progress to check that no digikit type reaches stock code.
-- DT2 clone.4, DN2 dispatch, source_turn and tab_label_test were not reached yet. The scenario rerun is in progress.
-- A finding is to be written with the final results.
+- Interrupt-only service code uses load-test-jump stubs and can be unloaded after masking and clearing the slot.
+- Task-reachable code needs the entry/exit counter for hot reload.
+- Dispatch (DT2), page_desc, value_class and the DN2 SRC and tab hooks install directly.
+- DT2 clone.4 and DN2 dispatch stay patched.
+- param_code direct install is confirmed with a saved digikit project.
 
 ## Other findings today
 
@@ -69,13 +68,8 @@ T1e step 3 owner keys were measured (fx 38 -> 34 files, storage 38 -> 31, shared
 
 ## Next
 
-1. R11 device proof, then merge.
-2. R12-1 device batch, then merge.
-3. R12-0 finding, and land the probe.
-4. Full tier on a quiet machine (now includes the 9 formerly skipped tests).
-5. R12-2 format v2 and provider slots.
-
-Design waiting for Em: R12-7 Transfer installs services mockup (in progress).
+1. Full tier on a quiet machine. The coordinator runs `DIGI_GUARD=off mise -C <lane at origin/main> run test:full` with nothing else running. It now also runs the 9 `full: true` tests that were skipped before PR 529: debug-module, crash-capture, memaudit, safe-mode, debug-guard, upload, upload-faults, dynreg roundtrip, pluck equiv. Triage any red result before fixing.
+2. R12-2 format v2 and provider slots (runtime-and-services 13.2), then R12-3 installer and slots through R12-8 SHARC stubs. P8c dispatcher spans follow after R12.
 
 Still open from the morning file: the 8 failed full-tier tasks, the storage device test timeout under load, the PGO retrain, dsp-facts hardware run (needs Em's go).
 
@@ -86,7 +80,8 @@ Still open from the morning file: the 8 failed full-tier tasks, the storage devi
 - Run `patchkit:objects-check` after any change to module source files, even test-only code.
 - Fast-forward the main worktree after merges.
 - Name items with id and description.
+- A change to what the device reports needs the device test that reads it before merge (PR 523 changed the samples payload size; PR 544 fixed the test that read it).
 
 ## Lanes
 
-sdk-ui (R11), docs-design (R12-1), sdk-gen (R12-0 probe), t1-tests (pgo message fix), docs-handover (this file). Free: sdk-fixtures, sdk-design, docs-plans. Em removes merged branches and lanes.
+docs-handover (this file). Other lanes are free. Em removes merged branches and lanes.

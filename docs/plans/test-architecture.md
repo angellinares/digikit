@@ -4,6 +4,8 @@ Roadmap item T1 in [sdk-runtime-roadmap.md](sdk-runtime-roadmap.md). Related: [t
 
 Layers and fakes now exist (runtime layers in [ARCHITECTURE.md](../ARCHITECTURE.md); `FakeCore` and `FakeService` from R2c; `FakePlatform` from R3). Test selection can follow them.
 
+Principle: every item leaves its test area in pyramid shape. Host tests per layer run behind fakes, the SHARC-only rig covers DSP, and device tests exist only at real boundaries. Each PR is proven with a representative device subset (one test per touched service plus smoke), and the full tier per batch is the complete proof. After R12 each service's device tests key on its `.dks` file's bytes plus the core; the tests stay in the repo with their service.
+
 ## Goal
 
 - A change runs only the tests that its code can affect.
