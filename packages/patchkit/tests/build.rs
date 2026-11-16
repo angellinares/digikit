@@ -914,7 +914,11 @@ fn every_service_and_the_runtime_object_is_built_from_the_abi_boundary_files() {
             .collect();
         for f in patchkit::sdkgen::SVC_ABI_FILES {
             let f = std::fs::canonicalize(r.join(f)).unwrap();
-            assert!(files.contains(&f), "{m}: the source hash does not read {}", f.display());
+            assert!(
+                files.contains(&f),
+                "{m}: the source hash does not read {}",
+                f.display()
+            );
         }
     }
     // (the runtime module also has assembly objects, whose hash needs the toolchain: `objects-check` covers them)
@@ -924,7 +928,10 @@ fn every_service_and_the_runtime_object_is_built_from_the_abi_boundary_files() {
         "modules/core/services/lfo/dks",
     ] {
         for (object, current) in build::module_status(&r, &r.join(dir)).unwrap() {
-            assert!(current, "{dir}/{object} is older than its sources: patchkit build {dir}");
+            assert!(
+                current,
+                "{dir}/{object} is older than its sources: patchkit build {dir}"
+            );
         }
     }
 }

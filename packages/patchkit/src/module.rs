@@ -220,17 +220,26 @@ impl Manifest {
             }
             hooks.push((h.name.clone(), h.entry.clone(), h.devices.clone()));
         }
-        let mut fills: Vec<(String, String)> = vec![];
+        let mut fills: Vec<(String, String, Vec<String>)> = vec![];
         for f in &self.fills {
             if f.slot.is_empty() || f.entry.is_empty() {
                 return Err(err!(
                     "{id}: [[fill]] needs a `slot` and an `entry`, both not empty"
                 ));
             }
-            if fills.iter().any(|(n, _)| *n == f.slot) {
+            if fills.iter().any(|(n, _, _)| *n == f.slot) {
                 return Err(err!("{id}: [[fill]] {:?} is declared twice", f.slot));
             }
-            fills.push((f.slot.clone(), f.entry.clone()));
+            for d in &f.devices {
+                if crate::devdata::by_short(d).is_none() {
+                    return Err(err!(
+                        "{id}: [[fill]] {:?}: device {d:?} is not one of {}",
+                        f.slot,
+                        crate::devdata::short_list()
+                    ));
+                }
+            }
+            fills.push((f.slot.clone(), f.entry.clone(), f.devices.clone()));
         }
         if fills.len() > dkneeds::SLOTS_MAX as usize {
             return Err(err!(
@@ -266,6 +275,9 @@ pub struct ExportDef {
 pub struct ServiceFill {
     pub slot: String,
     pub entry: String,
+    /// The devices the fill is for (`dt2`, `dn2`); empty: every device. Needed when the slot is limited to some devices (`devices` of its `[[slot]]`).
+    #[serde(default)]
+    pub devices: Vec<String>,
 }
 
 /// An entry of `[[hook]]` of a service: the hook of the port files (`devices/ports/`) and the global function of the object that handles it.

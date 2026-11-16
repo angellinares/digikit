@@ -92,6 +92,7 @@ devices = ["dn2"]
 [[fill]]
 slot = "frametype"
 entry = "mf_frametype"
+devices = ["dn2"]
 
 # Rust and assembler (the assembler is in `src/hooks.rs`), built with rustc_codegen_gcc for -mcpu=54418 (`patchkit build`). Packed as a .dks (`patchkit pack core/services/machines`): the file is `machines.dks`.
 [[object]]

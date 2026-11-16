@@ -118,6 +118,10 @@ pub fn pack_module(lib: &Library, id: &str, o: &PackOptions) -> Result<Packed> {
         gate: false,
         service: crate::module::service_of(m)?,
     };
+    // a fill for a slot that only some devices have is left out of the file of the others
+    if let Some(dev) = &o.device {
+        opts.service = opts.service.take().map(|s| s.for_device(dev));
+    }
     // a run-time module declares in `init`: `[[machine]]`/`[[fx]]` in module.toml; the table at 0x90 is the keys table
     let mut dsp: Vec<u8> = vec![];
     let mut dsp_obj = None;

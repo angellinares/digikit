@@ -340,8 +340,18 @@ pub struct Provided {
     /// ([`hook_device_mask`]).
     pub hooks: Vec<(String, String, Vec<String>)>,
     /// The pointer slots the service fills (`[[fill]]`): (slot name of the image adapter, global function of the object whose address goes in the slot).
-    /// A `SLOTS` item of the table is the name hash and the entry offset.
-    pub fills: Vec<(String, String)>,
+    /// A `SLOTS` item of the table is the name hash and the entry offset. The third item lists the devices the fill is for (empty: every device); [`Provided::for_device`]
+    /// drops the others, because a slot that the image of another device lacks is an unknown slot to the loader.
+    pub fills: Vec<(String, String, Vec<String>)>,
+}
+
+impl Provided {
+    /// The service as packed for `device`: the fills limited to other devices are left out.
+    pub fn for_device(mut self, device: &str) -> Provided {
+        self.fills
+            .retain(|(_, _, devs)| devs.is_empty() || devs.iter().any(|d| d == device));
+        self
+    }
 }
 
 /// "1.2.3" -> 0x010203
@@ -634,7 +644,7 @@ fn pack_inner(
             }
             hk.sort_by_key(|p| p.a);
             let mut sl: Vec<dkneeds::keys::Slot> = vec![];
-            for (slot, entry) in &s.fills {
+            for (slot, entry, _) in &s.fills {
                 let at = sym(entry)?.ok_or_else(|| {
                     err!("the service fills {slot} with {entry}, which the object does not define")
                 })?;
@@ -1164,7 +1174,7 @@ mod tests {
                 service: "svc-test".into(),
                 exports: vec![],
                 hooks: vec![],
-                fills: vec![("frametype".into(), "tick_fn".into())],
+                fills: vec![("frametype".into(), "tick_fn".into(), vec![])],
             }),
             ..opts()
         };
@@ -1180,11 +1190,35 @@ mod tests {
                 service: "svc-test".into(),
                 exports: vec![],
                 hooks: vec![],
-                fills: vec![("frametype".into(), "no_such_function".into())],
+                fills: vec![("frametype".into(), "no_such_function".into(), vec![])],
             }),
             ..self::opts()
         };
         assert!(pack(&o, &bad).is_err());
+    }
+
+    #[test]
+    fn a_fill_limited_to_a_device_is_in_the_pack_for_that_device_only() {
+        use dkneeds::keys::Keys;
+        let o = object();
+        let slots_for = |device: &str| {
+            let opts = Options {
+                service: Some(
+                    Provided {
+                        service: "svc-test".into(),
+                        exports: vec![],
+                        hooks: vec![],
+                        fills: vec![("frametype".into(), "tick_fn".into(), vec!["dn2".into()])],
+                    }
+                    .for_device(device),
+                ),
+                ..opts()
+            };
+            let d = Dkm::parse(&pack(&o, &opts).unwrap()).unwrap();
+            Keys::parse(&d.register).unwrap().slots().count()
+        };
+        assert_eq!(slots_for("dt2"), 0);
+        assert_eq!(slots_for("dn2"), 1);
     }
 
     /// The table of a module whose KEYS name the record kinds `kinds` (one key each), packed as a `.dkm`.
