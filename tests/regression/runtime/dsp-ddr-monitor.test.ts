@@ -4,6 +4,7 @@ import path from 'node:path';
 import { repoRoot, resolveInputs } from '@digi/test-support';
 import { describe, expect, test } from 'vitest';
 import { withSession } from '../support.ts';
+import { expectPollEmulated } from './waits.ts';
 
 const binary = process.env.DIGI_DDR_MONITOR_EMUD;
 const enabled = Boolean(binary);
@@ -123,9 +124,12 @@ for (const device of ['dn2', 'dt2'] as const) {
         const stockStart = await monitor({ action: 'arm', ...stockRange });
         const status = await rpc<{ dsp_frames: number }>('status');
         await rpc('run.mode', { mode: 'free' });
-        await expect
-          .poll(async () => (await rpc<{ dsp_frames: number }>('status')).dsp_frames, { timeout: 10000, interval: 50 })
-          .toBeGreaterThan(status.dsp_frames);
+        await expectPollEmulated(
+          session,
+          async () => (await rpc<{ dsp_frames: number }>('status')).dsp_frames,
+          (value) => expect(value).toBeGreaterThan(status.dsp_frames),
+          { emulatedMs: 10_000, intervalMs: 50, message: 'the DSP frame count advances' },
+        );
         await rpc('run.mode', { mode: 'paused' });
         const stockEnd = await monitor();
         expect(stockEnd.dsp_icount).toBeGreaterThan(stockStart.dsp_icount);

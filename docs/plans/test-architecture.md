@@ -182,7 +182,135 @@ Runs alongside R12.
 
 **Payoff.** Full tier about 2.4 h to about 1.5 h. R12 PR gate about 60 to about 25 min. Host-test-only PRs: 0 device tasks.
 
-**Step 3, harness events.** Tests wait on standard runtime events instead of polling status or returning early. First event: firmware ready. The platform adapter logs one record (`FW_READY`) on the first pass of the firmware UI loop after a boot (`cf.view.hook.ui_loop`), when the boot intro has ended and the stock MidiRpc service answers. `waitForBoot` and the install helpers wait for it with `events.until(..., { emulatedMs })`; the dk-session probe after `restart()` (PR for the storage DT2 race) stays as the fallback for a device without the runtime. Further events, each with a typed helper in `tests/regression/runtime/events.ts`: restart complete, card or store ready, safe mode entered, a module's DSP part loaded, provider installed (the MOD_LOAD provider marker), settings flushed. Proof rides with gate BC (the adapter is in the image). Cause found 2026-11-16: the first stock file RPC after a module install was lost because the firmware was still on its boot intro.
+**Step 3, one API for waits, inputs and runtime events.**
+
+Goal: every device-test wait and input goes through one API with one contract: an action plus a completion condition. A slow or flaky wait is then found in one place, a new event wait is added in one place, and every wait reports what it waited on.
+
+**Today.**
+
+- Five tap helpers with different holds, settles and clocks: `waits.ts tap` (1200 ms), `fx-session.ts tap` (300 ms, stepped), `panel.ts` (80 ms, free run), `debug-kit.ts` local tap (1200), `memaudit-kit.ts press`, `remoteTap`; local copies in fault-trace, input-adapter, remote-input; `Session.press` (stock only).
+- `openDigikitMenu` (about 21 s emulated of fixed settles) plus inline copies in debug-module, fx-routes-ui, upload, project-kit, fx-kit-persist, fx-track-route-lock, roundtrip.
+- Three log cursors with different rules: `Events` (test-support), `waitForBoot`/`restarted()` (dk-session, reads the whole log each 500 ms round), `LogFollower` (desktop; misses a restart when the new log is at least as long as the old position).
+- Two clock modes: free run (poll `status.elapsed`) and stepped (`advance` = `client.step`, fx-session fixtures).
+- Wall-clock deciders in about 10 places.
+
+**Layer 1, `@digi/dk-session` (device-agnostic: tests, workbench, desktop, CLI).** New `src/runtime-events.ts`:
+
+```ts
+/** Time for waits. `now` in ms; `pause` lets time pass and throws when it cannot (a stuck emulator). */
+export interface Clock { now(): Promise<number>; pause(ms: number): Promise<void>; }
+export const wallClock: Clock;
+
+/** What a wait reports (the harness turns it into a timing record). */
+export interface WaitRecord { kind: 'event' | 'state' | 'time'; what: string; clockMs: number; wallMs: number; ok: boolean; }
+
+/** One cursor over LOG pages. Rules: a new boot when the anchor event is gone or differs, a BOOT_START follows it, or newest
+ *  drops below the cursor; a gap (oldest > cursor) is reported as `lost`. */
+export class LogCursor {
+  constructor(src: Pick<DkSession, 'logPage'>);
+  fromNewest(): Promise<void>; fromBoot(): void;
+  read(): Promise<{ events: DkLogEvent[]; newBoot: boolean; lost: number }>;
+  readonly boots: number;
+}
+
+export class RuntimeEvents {
+  constructor(dk: DkSession, clock: Clock, opts?: { pollMs?: number; onWait?: (r: WaitRecord) => void; debugModules?: string[] });
+  listen(opts?: { fromBoot?: boolean }): Promise<void>;          // sets LOGCFG levels as Events does today
+  /** Next event of `kind` (a LOG_KINDS name) matching `match`; a gap throws; fails after `withinMs` of clock time. */
+  until(kind: LogKindName, match?: (e: RuntimeEvent) => boolean, opts?: { withinMs?: number }): Promise<RuntimeEvent>;
+  // typed waits over existing kinds (fields by name via runtimeEvent/fieldsOf):
+  untilBoot(); untilUiFirst(opts?: { loaded?: number }); untilModLoad(name: string); untilModDsp(index: number);
+  untilSafe(); untilSettingsWrite(); untilInputTaken(control: number, delta?: number);
+  untilFwReady();   // after gate BC
+}
+```
+
+- `waitForBoot` keeps its signature (dktransfer uses it) and runs on `LogCursor`: no full-log read per round. The refused-restart check of `restarted()` stays.
+- `LogFollower` (desktop) moves to `LogCursor` in phase 4. Its "N events lost" note comes from `lost`.
+
+**FW_READY.** The platform adapter logs one record (`FW_READY`) on the first pass of the firmware UI loop after a boot (`cf.view.hook.ui_loop`), when the boot intro has ended and the stock MidiRpc service answers. `untilFwReady()` waits for it. Its proof rides with gate BC (the adapter is in the image). Cause found 2026-11-16: the first stock file RPC after a module install was lost because the firmware was still on its boot intro. Until FW_READY exists, the dk-session probe after `restart()` (`waitRpcService`) stays as the fallback; `untilFwReady()` then replaces it.
+
+**Layer 2, `@digi/test-support` (emulator-specific; no dk-session import).** New `src/emulated-clock.ts`: `freeClock(session)` (`now` = `status.elapsed`/132000; `pause` = real delay, throws when the clock and restart progress stand still for `hangMs`) and `steppedClock(session)` (`pause(ms)` = `client.step(ms*MS)` with progress). Both implement the `Clock` shape structurally. Moves here: `emulatedWatch`, `withEmulatedProbe`, `pollEmulated` (as `pollUntil(clock, read, done, opts)`), `restartProgress` use.
+
+New `src/input.ts`:
+
+```ts
+export interface Input {
+  button(key: Key, down: boolean): Promise<void>;
+  tap(key: Key, holdMs: number): Promise<void>;     // returns after release
+  turn(encoder: Key, detents: number): Promise<void>;
+}
+export function panelInput(session): Input;          // daemon inputButton/inputTap/inputTurn (release_at)
+export function probeInput(dk): Input;               // request 0x38 (input-adapter's probe source)
+export function remoteInput(dk): Input;              // digikit/remote, also on hardware
+```
+
+`panel.ts burst`/`turnTo` (scheduled input) become `panelInput` extras.
+
+**Layer 3, harness (`tests/regression/runtime`).** `RuntimeCase` gains `clock`, `events`, `ui`, `install`:
+
+```ts
+interface RuntimeCase extends PatchedSession {
+  epoch: number;
+  clock: Clock;                    // free, or stepped for fx-session fixtures
+  events: RuntimeEvents;           // lazy; clear error when digikit/debug is not loaded
+  ui: Ui;                          // panelInput by default
+  install(...ids: string[]): Promise<void>;   // with debug: waits on untilUiFirst after the new boot
+}
+```
+
+New `ui.ts`:
+
+```ts
+type Until =
+  | { event: LogKindName; match?: (e: RuntimeEvent) => boolean; withinMs?: number }
+  | { state: () => Promise<T>; done: (v: T) => boolean; withinMs?: number }
+  | { drained: true }                      // cf.input_pending == 0 && scheduled_inputs == 0
+  | { ms: number; why: string };           // explicit fixed wait, counted
+class Ui {
+  constructor(input: Input, clock: Clock, events: () => RuntimeEvents, record: (r: WaitRecord) => void);
+  tap(key: Key, opts: { until: Until; holdMs?: number; held?: Key }): Promise<void>;
+  turn(encoder: Key, detents: number, opts: { until: Until }): Promise<void>;
+  with(input: Input): Ui;                  // the same UI over remote or probe input
+}
+```
+
+`until` is required: no default settle. Every wait writes a `runtime-phase` record with its kind, emulated ms and wall ms, and the session context gains `dsp` (sharc or zero). That is the instrumentation step: no separate timing work.
+
+New `flows/`: `flows/menu.ts` (`openDigikitMenu(rt)`, `openAbout(rt)`, `openRuntimeAbout(rt)`, safe-mode menu), later `flows/fx.ts`, `flows/project.ts`. Flows take `rt` and use only `rt.ui` and `rt.events`. Each step ends on a state read (`DK_ABOUT_N`, `DK_LOAD_N`, `DK_PANEL_N`, `DK_ROUTE_N`, ...) or `drained`. A time wait needs a reason.
+
+Deleted at the end: `waits.ts tap`, `fx-session.ts tap/advance` (stepped clock), `panel.ts` (Ui), `debug-kit` local tap, `memaudit-kit press`, `remoteTap`, the local copies, `test-support/events.ts` (`Events`), `runtime/events.ts` (`listenEvents`). `waits.ts` keeps thin re-exports only while callers move.
+
+**Real devices (later, not built now).** `DkSession` plus this API is the entry point for device tests on the emulator and, later, on real hardware. Keep that possible:
+
+- Device-agnostic parts live in dk-session: `LogCursor`, `RuntimeEvents`, `Clock`, `wallClock`. They never read daemon status.
+- Emulator-only parts live in test-support: `freeClock`, `steppedClock`, `panelInput`. A hardware run would build `rt` with `wallClock` and `remoteInput` (digikit/remote works on hardware) instead. The same flows and `until` conditions apply.
+- `Until` conditions use events and protocol state reads (`dk.*`), so they hold on hardware. A `state` read through daemon `memPeek` is emulator-only. Flows prefer a protocol read (debug module PEEK) where one exists.
+- Timing records keep `clockMs` (emulated or wall) separate from `wallMs`, so emulator and hardware runs compare.
+
+**Lint.** None during the migration. The final step adds one oxlint rule with no exemptions: no `setTimeout`, `setInterval` or `node:timers` imports in `modules/**/tests/**`, `tests/fixtures/**/tests/**` and `tests/regression/runtime/flows/**`. A file that still violates it then is migrated, not exempted.
+
+**Phases and file owners** (one lane, disjoint files, coders edit, one runner checks).
+
+| Phase | Stream | Owns | Gate |
+|---|---|---|---|
+| 0 | C: wall-clock fixes with today's `pollEmulated` | shot-dn2-supersede, shot-dn2-lease, shot-dt2, samples-store-live, patched-dsp-startup, dsp-cache-registers, dsp-ddr-monitor, remote.ts `expectRemoteEnabled`, runtime-menu.ts deadlines, install.ts:51; dk-session host tests rpc-emulated-wait, emu-usb-transport | host tests + device subset of those files |
+| 1 | A: dk-session | runtime-events.ts (new), dkupload-core.ts waitForBoot, wait-for-boot.test.ts, runtime-events.test.ts | dk-session host tests, workbench-core host tests |
+| 1 | B: test-support | emulated-clock.ts, input.ts (new) + host tests | test-support host tests |
+| 2 | core (serial) | support.ts, ui.ts (new), install.ts, waits.ts, flows/menu.ts | device subset: gate-smoke, gate-pins, one test per fixture kind |
+| 3 | Menu | runtime-menu.ts, debug-kit.ts, memaudit-kit.ts, needs, fits, menu, debug-module, input-adapter, fault-trace | subset of those files |
+| 3 | FX | fx-session.ts, fx-live.ts, fx-*-ui.ts, project-kit.ts, fxpages + fx-routes + roundtrip + upload tests | subset |
+| 3 | Shot/remote/other | panel.ts callers (shot x4, tb303, native-page, stock-*), remote.ts, remote-input, ui-demo | subset |
+| 4 | Desktop | log-follow-core.ts + tests (parallel with 3) | desktop test-host, check:ui, one log-pane screenshot |
+| end | | delete old helpers and `Events`; add the oxlint rule | `mise run test:full` in the batch lane |
+
+**Follow-up: rename device tests to emulator tests.** `*.device.test.ts` and `test-device*` targets run on the emulator, not on hardware. A separate codemod PR after this step renames them to `*.emu.test.ts` and `test-emu*` (with `runtimeAcceptance`/`mergeTests` metadata, `tools/nx/device-inputs.mjs`, gate tooling, AGENTS.md and TESTING.md). "Hardware test" stays free for real devices.
+
+**Payoff and confidence.**
+
+- Correctness: removes wall-clock deciders and the boot-intro race path. High confidence.
+- Speed: menu flows and fixed settles. The new wait records measure the real gain per file. Expected low single-digit percent of device wall. The large levers (cold reloads about 42%, install restarts about 17%) are separate work.
+- Estimate: phase 0 2 h; phase 1 half a day in parallel; phase 2 half a day; phase 3 one day in parallel; phase 4 2 h.
 
 ## Order
 

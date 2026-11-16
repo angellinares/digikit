@@ -3,7 +3,7 @@ import { bootInfo } from '@digi/regression/runtime/card-kit.ts';
 import { cardRig, RT } from '@digi/regression/runtime/card-rig.ts';
 import { portFile } from '@digi/regression/runtime/device-data.ts';
 import { DEVICES, FIRMWARE } from '@digi/regression/runtime/devices.ts';
-import { advance, rpc } from '@digi/regression/runtime/fx-live.ts';
+import { rpc, SETTLE } from '@digi/regression/runtime/fx-live.ts';
 import { planSymbol } from '@digi/regression/runtime/runtime-plan.ts';
 
 /**
@@ -49,7 +49,7 @@ for (const device of DEVICES) {
       // a menu-style change of the mode to USB AUDIO/MIDI: the active port and the firmware's pointer to its table entry
       await rpc(rt.session, 'mem.cf.poke', { addr: portAddr - 4, value: table + 5 * 0x28 });
       await rpc(rt.session, 'mem.cf.poke', { addr: portAddr, value: 5 });
-      await advance(rt.session, 2500);
+      await rt.ui.wait({ ms: 2500, why: SETTLE });
 
       expect(await word(planSymbol(kit.plan, 'usb_bulk_audio_state')), 'ua_prepare accepted the stock descriptor').toBe(1);
       const e5 = table + 5 * 0x28;
@@ -71,14 +71,14 @@ for (const device of DEVICES) {
       // the bus reset: the stock connect enables EP2 TX (audio feedback); the second connect and its disconnect must leave that half as it is
       const connect = () => rpc(rt.session, 'usb.bulk.in', { connect: planSymbol(kit.plan, 'ua_connect') });
       await connect();
-      await advance(rt.session, 50);
+      await rt.ui.wait({ ms: 50, why: SETTLE });
       const first = await rt.session.client.memPeek(ENDPTCTRL2);
       if (first === null) {
         console.log('ENDPTCTRL2 is not readable through mem.cf.peek: the feedback endpoint check is skipped');
       } else {
         expect(first & FEEDBACK_TX, 'EP2 TX iso is enabled after the connect').toBe(FEEDBACK_TX);
         await connect();
-        await advance(rt.session, 50);
+        await rt.ui.wait({ ms: 50, why: SETTLE });
         expect((await word(ENDPTCTRL2)) >>> 16, 'the TX half is unchanged by a second connect').toBe(first >>> 16);
       }
       await rt.session.expectNoFault('usb-bulk-audio');

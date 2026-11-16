@@ -1,7 +1,7 @@
 import { describe, expect, test } from 'vitest';
 import { cardInfo } from '@digi/regression/runtime/card-kit.ts';
 import type { CardSpec } from '@digi/regression/runtime/card-rig.ts';
-import { advance } from '@digi/regression/runtime/fx-live.ts';
+import { SETTLE } from '@digi/regression/runtime/fx-live.ts';
 import { DEVICES } from '@digi/regression/runtime/devices.ts';
 import {
   decodeSettings,
@@ -25,7 +25,7 @@ for (const device of DEVICES) {
       const { session } = rt;
       const ci = await cardInfo(session, kit.plan);
       await settingsMailbox(session, kit.plan).put(ROUTE, byte(1));
-      await advance(session, DELAY_MS + 500);
+      await rt.ui.wait({ ms: DELAY_MS + 500, why: SETTLE });
       const w = await written();
       const ci2 = await cardInfo(session, kit.plan);
       expect([ci.stateName, ci2.stateName, ci2.claims]).toEqual(['blank', 'ours', 1]);
@@ -90,7 +90,7 @@ for (const device of DEVICES) {
         const [n, v] = await mb.get('k');
         expect([n, v.toString()], 'get gives its value').toEqual(want.value);
         await mb.put('k2', text('new'));
-        await advance(session, DELAY_MS + 500);
+        await rt.ui.wait({ ms: DELAY_MS + 500, why: SETTLE });
         const after = await kit.after(`copies-${want.name}`, session.cardPath!);
         const [target, keep] = want.next === 0 ? [s.setA, s.setB] : [s.setB, s.setA];
         const rec = decodeSettings(sectorOf(after, target));

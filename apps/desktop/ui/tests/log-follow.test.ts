@@ -208,6 +208,18 @@ test('the emulator says "the emulator restarted"', async () => {
   assert.ok(t.texts().some((x) => x.startsWith('the emulator restarted: the log starts again')));
 });
 
+test('a restart is found when the new log is as long as the old position', async () => {
+  const d = new Device();
+  d.ring = [ev(1, 'MENU'), ev(2, 'MENU'), ev(3, 'MENU')];
+  const t = setup(d);
+  await t.follower.tick();
+  // the device booted again and logged more events than we had read: the old rule (newest < seen) saw no restart
+  d.ring = [ev(1, 'BOOT_START'), ...[2, 3, 4, 5].map((n) => ev(n, 'MENU', [n]))];
+  await t.follower.tick();
+  assert.ok(t.texts().includes('the device restarted: the log starts again (was at 3, now 5)'));
+  assert.equal(t.entries.filter((e) => e.rt?.event?.kind === 'BOOT_START').length, 1);
+});
+
 test('a device that does not answer for 5 s is noted once, polled every 5 s, and noted again when it answers', async () => {
   const d = new Device();
   d.ring = [ev(1, 'MENU')];

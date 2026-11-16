@@ -2,12 +2,11 @@ import { readFileSync } from 'node:fs';
 import path from 'node:path';
 import { button } from '@digi/test-support';
 import { expect } from 'vitest';
-import type { PatchedSession } from '@digi/regression/support.ts';
+import type { TestRuntime } from '@digi/regression/support.ts';
 import { liveArtifacts } from '@digi/regression/runtime/artifacts.ts';
 import { installWithDebug } from '@digi/regression/runtime/install.ts';
-import { panel } from '@digi/regression/runtime/panel.ts';
+import { panelKeys } from '@digi/regression/runtime/flows/panel-keys.ts';
 import { runtimeTests } from '@digi/regression/runtime/ready.ts';
-import { waitEmulated } from '@digi/regression/runtime/waits.ts';
 
 // DT2 1.17: tom/tb303 (machine contract 1.6, DK_MACHINE_GATE) loads, plays one note on track 1 and ends it after the note-off.
 // The audio is the coupled PCM of the stock chain (pcm.tap, 48 kHz stereo float).
@@ -19,8 +18,9 @@ const TAIL_MS = 3000;
 const SILENT_AFTER_MS = 2500;
 
 /** The dynamic machine is the only one on the card: row 7 of the DT2 machine list, on the selected track (TRIG 1). */
-async function selectDynamicMachine({ session }: Pick<PatchedSession, 'session'>): Promise<void> {
-  const ui = panel(session);
+async function selectDynamicMachine(runtime: Pick<TestRuntime, "session" | "ui">): Promise<void> {
+  const { session } = runtime;
+  const ui = panelKeys(runtime);
   await ui.tap('NO');
   await session.client.inputButton(button('FUNC'), true);
   try {
@@ -70,14 +70,14 @@ runtimeTests(
     const file = path.join(artifacts, 'tb303-note.wav');
     await session.client.call('pcm.tap', { action: 'start' });
     await session.client.call('pcm.tap', { action: 'capture', path: file });
-    await waitEmulated(session, 300);
+    await runtime.ui.wait({ ms: 300, why: 'capture lead-in: the assertions index the capture from the press at 300 ms' });
     await session.client.inputButton(button('TRIG 1'), true);
     try {
-      await waitEmulated(session, HOLD_MS);
+      await runtime.ui.wait({ ms: HOLD_MS, why: 'the held note: the audible window the assertions measure' });
     } finally {
       await session.client.inputButton(button('TRIG 1'), false);
     }
-    await waitEmulated(session, TAIL_MS);
+    await runtime.ui.wait({ ms: TAIL_MS, why: 'the note tail after the release: the silence window the assertions measure' });
     await session.client.call('pcm.tap', { action: 'capture_stop' });
     await session.expectNoFault('tb303 note');
 

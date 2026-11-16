@@ -4,7 +4,7 @@ import { be32, type DkSession } from '@digi/dk-session';
 import { describe, expect, test } from 'vitest';
 import { blob, listing, pokeKnob, sha, type Files } from '@digi/regression/runtime/card-kit.ts';
 import { cardRig, RT, type CardRig } from '@digi/regression/runtime/card-rig.ts';
-import { advance, word } from '@digi/regression/runtime/fx-live.ts';
+import { word, SETTLE } from '@digi/regression/runtime/fx-live.ts';
 import { planSymbol } from '@digi/regression/runtime/runtime-plan.ts';
 import { DEVICES, FIRMWARE } from '@digi/regression/runtime/devices.ts';
 import { deviceListing } from '@digi/regression/runtime/upload-kit.ts';
@@ -39,7 +39,7 @@ async function runJob(rig: CardRig, dk: DkSession, size: number, file: string, k
   const r = await dk.request(CMD, Buffer.concat([Buffer.from([kind]), be32(size), cstr(file)]));
   expect(r.status, 'the job is queued').toBe(0);
   for (let i = 0; i < 200; i++) {
-    await advance(rig.session, 100);
+    await rig.runtime.ui.wait({ ms: 100, why: SETTLE });
     const b = Buffer.from((await dk.request(CMD + 1)).body);
     if (b[0] === 2) return { job: b.readInt32BE(13), close: b.readInt32BE(5) };
   }

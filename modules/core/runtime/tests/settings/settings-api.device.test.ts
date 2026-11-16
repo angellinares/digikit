@@ -1,10 +1,10 @@
 import type { DkSession } from '@digi/dk-session';
 import { describe, expect, test } from 'vitest';
 import { bootInfo, statusOf } from '@digi/regression/runtime/card-kit.ts';
-import type { PatchedSession } from '@digi/regression/support.ts';
+import type { TestRuntime } from '@digi/regression/support.ts';
 import { cardRig, RT } from '@digi/regression/runtime/card-rig.ts';
 import { cardStore } from '@digi/regression/runtime/device-data.ts';
-import { advance } from '@digi/regression/runtime/fx-live.ts';
+import { SETTLE } from '@digi/regression/runtime/fx-live.ts';
 import { DEVICES, FIRMWARE } from '@digi/regression/runtime/devices.ts';
 import {
   decodeSettings,
@@ -45,7 +45,7 @@ for (const device of DEVICES) {
 
     /** One request of a fixture module: queued by the service command, run by `tick`, then read back. */
     async function call(
-      rt: PatchedSession,
+      rt: TestRuntime,
       module: typeof A | typeof B,
       op: number,
       key: string,
@@ -54,14 +54,14 @@ for (const device of DEVICES) {
       const usb = <T>(run: (dk: DkSession) => Promise<T>) => kit.usb(rt, run);
       const body = Buffer.concat([Buffer.from([op, key.length]), text(key), value]);
       expect((await usb((dk) => dk.request(CMD[module], body))).status, 'the request is queued').toBe(0);
-      await advance(rt.session, 200); // tick runs about 120 times a second
+      await rt.ui.wait({ ms: 200, why: SETTLE }); // tick runs about 120 times a second
       const r = await usb((dk) => dk.request(CMD[module] + 1));
       const b = Buffer.from(r.body);
       expect(b[0], 'tick ran the request').toBe(0);
       const rc = b.readInt32BE(1);
       return { rc, initRc: b.readInt32BE(5), init: b.subarray(9, 25), val: b.subarray(25, 25 + Math.max(rc, 0)) };
     }
-    const record = async (rt: PatchedSession) =>
+    const record = async (rt: TestRuntime) =>
       settingsMap(decodeSettings((await kit.usb(rt, settingsRecord)).raw));
 
     test('a value put through the API is on the card after a restart and is read in init', async () => {
@@ -75,7 +75,7 @@ for (const device of DEVICES) {
       expect((await call(rt, A, PUT, 'boot', text('xyz'))).rc, 'put').toBe(0);
       expect((await call(rt, A, GET, 'boot')).val, 'get gives the value back').toEqual(text('xyz'));
       expect(await record(rt), 'the stored key has the module name in front').toEqual({ [`${A}/boot`]: hex('xyz') });
-      await advance(rt.session, DELAY_MS + 500);
+      await rt.ui.wait({ ms: DELAY_MS + 500, why: SETTLE });
       const reboot = await kit.restart(rt);
       const again = await call(reboot, A, GET, 'boot');
       expect(again.initRc, 'init read 3 bytes').toBe(3);
@@ -96,7 +96,7 @@ for (const device of DEVICES) {
       expect((await call(rt, B, REMOVE, 'k')).rc, 'remove').toBe(0);
       expect(await record(rt), 'removing B leaves the key of A').toEqual({ [`${A}/k`]: hex('A1') });
       expect((await call(rt, B, GET, 'k')).rc).toBe(E_SET_NOKEY);
-      await advance(rt.session, DELAY_MS + 500);
+      await rt.ui.wait({ ms: DELAY_MS + 500, why: SETTLE });
       kit.allowStoreWrites(await kit.storeWrites());
     });
 
@@ -108,7 +108,7 @@ for (const device of DEVICES) {
         expect((await call(rt, A, GET, key)).rc, `get ${JSON.stringify(key)}`).toBe(E_SET_KEY);
         expect((await call(rt, A, REMOVE, key)).rc, `remove ${JSON.stringify(key)}`).toBe(E_SET_KEY);
       }
-      await advance(rt.session, DELAY_MS + 500);
+      await rt.ui.wait({ ms: DELAY_MS + 500, why: SETTLE });
       expect(
         (await kit.storeWrites()).filter((x) => x !== s.selA && x !== s.selB),
         'no store sector is written besides the selection record (boot counter)',

@@ -5,15 +5,7 @@ import path from 'node:path';
 import { promisify } from 'node:util';
 import { expect } from 'vitest';
 import { DkSession, EmuUsbTransport } from '@digi/dk-session';
-import {
-  button,
-  MS,
-  repoRoot,
-  withinRuntimeDeadline,
-  type Device,
-  type RuntimeBaseline,
-  type Session,
-} from '@digi/test-support';
+import { repoRoot, withinRuntimeDeadline, type Device, type RuntimeBaseline, type Session } from '@digi/test-support';
 import { aggregate, withReusablePatchedSession, type PatchedSession } from '../support.ts';
 import { record } from './artifacts.ts';
 import { cachedCard, cardKey, fileSha } from './card-cache.ts';
@@ -22,7 +14,7 @@ import { FIRMWARE, claimRunDir } from './devices.ts';
 import { moduleArtifact } from './install.ts';
 import { expectRuntimeUi } from './ready.ts';
 import { pollEmulated } from './waits.ts';
-import { advance, analysisJson, bounded, evidence, options, pickSine, word } from './fx-live.ts';
+import { analysisJson, bounded, evidence, options, pickSine, word, type Rt } from './fx-live.ts';
 import {
   planSymbol,
   prepareRuntimePlanListedOffline,
@@ -80,24 +72,6 @@ export interface PreparedFxSessionOptions {
   requireAudible?: boolean | ((runtime: PatchedSession) => boolean);
 }
 
-/** Legacy bounded panel tap, including release of every held chord key on failure. */
-export async function tap(session: Session, key: string, settleMs = 300, held?: string): Promise<void> {
-  try {
-    if (held) {
-      await bounded(() => session.client.inputButton(button(held), true));
-      await advance(session, 5);
-    }
-    await bounded(() => session.client.inputTap(button(key), 20 * MS));
-    await advance(session, 25);
-  } finally {
-    if (held) {
-      await bounded(() => session.client.inputButton(button(held), false));
-      await advance(session, 5);
-    }
-  }
-  if (settleMs) await advance(session, settleMs);
-}
-
 /** Wait until the boot input has finished, so the run can pause. */
 export async function drainInputs(session: Session, emulatedMs = 30_000): Promise<void> {
   await pollEmulated(
@@ -138,7 +112,7 @@ export async function readTextRows(session: Session, address: number, count: num
 
 /** Read protocol state while paused using the existing USB transport's legacy 400,000-instruction poll step. */
 export async function withPausedFxProtocol<T>(
-  runtime: PatchedSession,
+  runtime: Pick<PatchedSession, 'session'>,
   operation: (dk: DkSession) => Promise<T>,
 ): Promise<T> {
   const deadline = Date.now() + 30_000;
@@ -208,7 +182,7 @@ export async function inspectFxBoot(
 }
 
 /** DT2 retains the legacy selected-type readback and adjacent-list-position retries. */
-export async function selectSine(runtime: PatchedSession, profile: FxProfile): Promise<void> {
+export async function selectSine(runtime: Rt, profile: FxProfile): Promise<void> {
   const hint = runtime.session.options.device === 'dt2' ? 7 : 5;
   const sine = (await withPausedFxProtocol(runtime, (dk) => dk.modules())).find(
     (module) => module.name === 'test/sine',
@@ -219,7 +193,7 @@ export async function selectSine(runtime: PatchedSession, profile: FxProfile): P
   for (const downs of runtime.session.options.device === 'dt2'
     ? [hint, hint + 1, hint - 1, hint + 2, hint + 3]
     : [hint]) {
-    await pickSine(runtime.session, downs);
+    await pickSine(runtime, downs);
     if (runtime.session.options.device !== 'dt2') return;
     if ((((await word(runtime.session, profile.track_type_word)) >>> 8) & 0xff) === want) return;
   }

@@ -1,7 +1,7 @@
 import path from 'node:path';
 import { button } from '@digi/test-support';
 import { expect, test } from 'vitest';
-import type { PatchedSession } from '@digi/regression/support.ts';
+import { withWaitApi, type PatchedSession } from '@digi/regression/support.ts';
 import {
   analysisJson,
   bounded,
@@ -43,7 +43,7 @@ async function captureSend(
   const trigger = (down: boolean) => bounded(() => session.client.inputButton(button('TRIG 1'), down));
   await rpc(session, 'run.mode', { mode: 'paused' });
   await rpc(session, 'pcm.tap', { action: 'start' });
-  await pickSine(session, sineHint);
+  await pickSine(withWaitApi(runtime), sineHint);
   const current = await frames(session);
   const trig = fixedTrigger ?? current + 300;
   record(artifacts, `${tag}-trigger-frame`, { current, triggerFrame: trig });

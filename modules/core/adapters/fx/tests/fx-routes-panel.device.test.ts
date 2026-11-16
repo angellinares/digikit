@@ -1,9 +1,10 @@
 import { describe, expect, test } from 'vitest';
+import { REDRAW } from '@digi/regression/runtime/fx-live.ts';
 import { record } from '@digi/regression/runtime/artifacts.ts';
 import { DEVICES, FIRMWARE } from '@digi/regression/runtime/devices.ts';
 import { GAIN, SINE } from '@digi/regression/runtime/fixtures.ts';
 import { withRouteFxSession } from '@digi/regression/runtime/fx-route-live.ts';
-import { inspectFxBoot, tap } from '@digi/regression/runtime/fx-session.ts';
+import { inspectFxBoot } from '@digi/regression/runtime/fx-session.ts';
 import { MASTER, routeUi, SEND_ROUTE } from '@digi/regression/runtime/fx-routes-ui.ts';
 
 const SEND = 'test/dyn-fx-gain-send';
@@ -80,35 +81,35 @@ for (const device of DEVICES) {
       await ui.leaveMenu();
       await ui.toModules();
       expect(await ui.openPanel(0)).toEqual(['UNLOAD', 'INFO']);
-      await tap(runtime.session, 'NO', 300);
+      await runtime.ui.tap('NO', { until: { ms: 300, why: REDRAW } });
       expect(await ui.openPanel(1)).toEqual(['UNLOAD', 'ROUTE...', 'INFO']);
-      await tap(runtime.session, 'NO', 300);
+      await runtime.ui.tap('NO', { until: { ms: 300, why: REDRAW } });
       expect((await ui.pending()).slice(0, 2)).toEqual([MASTER, SEND_ROUTE]);
       const popups = await ui.popups();
       expect(await ui.routeChoice(1)).toEqual([MASTER]);
       await ui.shot('step4-master-only');
       await ui.pick(0);
-      await tap(runtime.session, 'NO', 500);
+      await runtime.ui.tap('NO', { until: { ms: 500, why: REDRAW } });
       expect((await ui.pending()).slice(0, 2)).toEqual([MASTER, SEND_ROUTE]);
       expect(await ui.popups()).toBe(popups);
-      await tap(runtime.session, 'YES', 900);
+      await runtime.ui.tap('YES', { until: { ms: 900, why: REDRAW } });
       expect(await ui.routeChoice(2)).toEqual([SEND_ROUTE, MASTER]);
       await ui.shot('step4-route-choice');
       await ui.pick(1);
       expect((await ui.pending()).slice(0, 2)).toEqual([MASTER, MASTER]);
       expect(await ui.applies()).toBe(0);
-      await tap(runtime.session, 'NO', 700);
+      await runtime.ui.tap('NO', { until: { ms: 700, why: REDRAW } });
       await ui.shot('step4-apply-question');
       expect(await ui.popups()).toBe(popups + 1);
       expect(await ui.popup()).toEqual(['APPLY & RESTART?', '1 CHANGE']);
-      await tap(runtime.session, 'NO', 700);
+      await runtime.ui.tap('NO', { until: { ms: 700, why: REDRAW } });
       expect((await ui.pending()).slice(0, 2)).toEqual([MASTER, SEND_ROUTE]);
-      await tap(runtime.session, 'YES', 900);
+      await runtime.ui.tap('YES', { until: { ms: 900, why: REDRAW } });
       await ui.routeChoice(2);
       await ui.pick(1);
       await ui.routeChoice(2);
       await ui.pick(0);
-      await tap(runtime.session, 'NO', 500);
+      await runtime.ui.tap('NO', { until: { ms: 500, why: REDRAW } });
       expect((await ui.pending()).slice(0, 2)).toEqual([MASTER, SEND_ROUTE]);
       expect(await ui.popups()).toBe(popups + 1);
 
@@ -121,7 +122,7 @@ for (const device of DEVICES) {
       expect(await ui.routeChoice(3)).toEqual([SEND_ROUTE]);
       await ui.shot('step4-send-only');
       await ui.pick(0);
-      await tap(runtime.session, 'NO', 500);
+      await runtime.ui.tap('NO', { until: { ms: 500, why: REDRAW } });
       expect((await ui.pending()).slice(0, 2)).toEqual([SEND_ROUTE, MASTER]);
       expect(await ui.popups()).toBe(sendOnlyPopups);
 
@@ -154,7 +155,7 @@ for (const device of DEVICES) {
         ...fullPending.slice(1, -1),
         SEND_ROUTE,
       ]);
-      await tap(runtime.session, 'NO', 700);
+      await runtime.ui.tap('NO', { until: { ms: 700, why: REDRAW } });
       expect(await ui.popup()).toEqual(['APPLY & RESTART?', '2 CHANGES']);
     });
   });

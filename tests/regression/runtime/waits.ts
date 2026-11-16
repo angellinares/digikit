@@ -7,7 +7,6 @@ import {
   withinRuntimeDeadline as beforeReadinessDeadline,
   type Session,
 } from '@digi/test-support';
-import { timePhase } from '../timing.ts';
 
 /** The DSP frame counter advances 1500 frames per emulated second. */
 const FRAMES_PER_MS = 1.5;
@@ -25,35 +24,6 @@ const INSNS_PER_FRAME = 88_000;
 export function emulatedFrames(status: { audio?: unknown; elapsed?: unknown }): number {
   if (status.elapsed !== undefined && status.elapsed !== null) return Number(status.elapsed) / INSNS_PER_FRAME;
   return Number((status.audio as { frames?: number } | null | undefined)?.frames ?? 0);
-}
-
-/**
- * Wait until `frames` more frames of emulated time have passed (1500 a second); the clock is `emulatedFrames`.
- * Wall time only guards against a stuck daemon (paused or dead: neither the DSP nor the ColdFire advances).
- */
-export async function waitEmulatedFrames(session: Session, frames: number, { hangMs = 30_000 } = {}): Promise<void> {
-  let progress: string | undefined;
-  let restarting = false;
-  const read = async () => {
-    const status = await session.status();
-    const key = restartProgress(status);
-    restarting = progress !== undefined && key !== progress;
-    progress = key;
-    return emulatedFrames(status);
-  };
-  const start = await read();
-  const target = start + frames;
-  let seen = start;
-  let lastAdvance = Date.now();
-  while (seen < target) {
-    await delay(50);
-    const now = await read();
-    if (now > seen || restarting) lastAdvance = Date.now();
-    else if (Date.now() - lastAdvance >= hangMs) {
-      throw new Error(`emulated clock stuck at ${now} frames (started at ${start}, wanted ${target}) for ${hangMs} ms`);
-    }
-    seen = now;
-  }
 }
 
 /**
@@ -120,12 +90,16 @@ export function emulatedClockMs(status: { audio?: unknown; elapsed?: unknown }):
 
 /**
  * A watch on the emulated clock for a loop that waits on something else: each `tick()` reads the status and returns true once
- * `emulatedMs` of emulated time have passed since the first tick; it throws `message` when the clock stands still (and no load or restart moves) for `hangMs` of wall time.
+ * `emulatedMs` of emulated time have passed since the first tick; it throws `message` (a function is called on failure) when the clock stands still (and no load or restart moves) for `hangMs` of wall time.
  * The clock only counts forward: a reboot or snapshot restore lowers it and the next reading is the new start.
  */
 export function emulatedWatch(
   session: Pick<Session, 'status'>,
-  { emulatedMs, message, hangMs = CLOCK_STUCK_MS }: { emulatedMs: number; message: string; hangMs?: number },
+  {
+    emulatedMs,
+    message,
+    hangMs = CLOCK_STUCK_MS,
+  }: { emulatedMs: number; message: string | (() => string); hangMs?: number },
   detail: () => string = () => '',
 ): () => Promise<boolean> {
   let waited = 0;
@@ -153,7 +127,7 @@ export function emulatedWatch(
     } else if (Date.now() - lastAdvance >= hangMs) {
       const mode = (reply as { mode?: string }).mode;
       throw new Error(
-        `${message}: emulated clock stuck at ${now} ms (mode ${mode ?? 'unknown'})${describeRestart(reply)} for ${hangMs} ms${detail()}`,
+        `${typeof message === 'function' ? message() : message}: emulated clock stuck at ${now} ms (mode ${mode ?? 'unknown'})${describeRestart(reply)} for ${hangMs} ms${detail()}`,
       );
     }
     last = now;
@@ -162,7 +136,7 @@ export function emulatedWatch(
 }
 
 /**
- * Poll `read` until `done(value)` (`retry` also retries a failing `read`); fail with `message` and the last value after `emulatedMs` of emulated time.
+ * Poll `read` until `done(value)` (`retry` also retries a failing `read`); fail with `message` (a function is called on failure) and the last value after `emulatedMs` of emulated time.
  * A stuck or dead daemon is not this helper's job: the no-progress watchdog closes the session and `read` rejects.
  */
 export async function pollEmulated<T>(
@@ -175,7 +149,7 @@ export async function pollEmulated<T>(
     intervalMs = 200,
     retry = false,
     hangMs,
-  }: { emulatedMs: number; message: string; intervalMs?: number; retry?: boolean; hangMs?: number },
+  }: { emulatedMs: number; message: string | (() => string); intervalMs?: number; retry?: boolean; hangMs?: number },
 ): Promise<T> {
   let value: T | undefined;
   let failure: unknown;
@@ -198,7 +172,7 @@ export async function pollEmulated<T>(
     }
     if (expired) {
       throw new Error(
-        `${message}: not seen within ${emulatedMs} ms of emulated time (last: ${failure ? String(failure) : JSON.stringify(value)})`,
+        `${typeof message === 'function' ? message() : message}: not seen within ${emulatedMs} ms of emulated time (last: ${failure ? String(failure) : JSON.stringify(value)})`,
       );
     }
     // The clock starts at the first miss: a wait that is satisfied at once asks the daemon nothing more.
@@ -223,7 +197,7 @@ export async function expectPollEmulated<T>(
     emulatedMs = 30_000,
     message = 'poll',
     intervalMs = 200,
-  }: { emulatedMs?: number; message?: string; intervalMs?: number } = {},
+  }: { emulatedMs?: number; message?: string | (() => string); intervalMs?: number } = {},
 ): Promise<T> {
   return pollEmulated(
     session,
@@ -279,26 +253,5 @@ export function bootClockOf(dk: object): Pick<Session, 'status'> | undefined {
   return bootClocks.get(dk);
 }
 
-/** Wait for `ms` of emulated time (the daemon must run freely). */
-export function waitEmulated(session: Session, ms: number, opts: { hangMs?: number } = {}): Promise<void> {
-  return waitEmulatedFrames(session, Math.ceil(ms * FRAMES_PER_MS), opts);
-}
-
 /** Shared lifecycle deadline; preserve the existing readiness-helper export for its callers. */
 export { beforeReadinessDeadline, deadlineExpired };
-
-/** Press, hold, release (also when the press fails), then let the UI settle. */
-export async function tap(
-  session: Session,
-  send: (down: boolean) => Promise<unknown>,
-  holdMs: number,
-  settleMs = 1200,
-): Promise<void> {
-  try {
-    await send(true);
-    await waitEmulated(session, holdMs);
-  } finally {
-    await send(false);
-  }
-  await timePhase('settle.input', () => waitEmulated(session, settleMs));
-}
