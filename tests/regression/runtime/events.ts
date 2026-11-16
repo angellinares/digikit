@@ -5,6 +5,7 @@ import type { PatchedSession } from '../support.ts';
 /**
  * Listen to the runtime log of a booted session: the cursor starts at its newest event and `digikit/remote` and `digikit/debug` log at debug
  * level (3). Needs `digikit/debug` loaded (installWithDebug). Wait with `events.until(kind, predicate, { emulatedMs })`; `LOG_KIND` has the kinds.
+ * New code uses `rt.listen()` (RuntimeEvents) instead.
  * `fromBoot: true` starts at the first event of this boot, to wait on an event a module logs by itself right after boot.
  */
 export async function listenEvents(

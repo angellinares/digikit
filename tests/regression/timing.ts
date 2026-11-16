@@ -7,6 +7,7 @@ export interface TimingContext {
   detail?: string;
   device?: string;
   session?: string;
+  dsp?: string;
 }
 
 const spans = new AsyncLocalStorage<TimingContext & { span: string }>();

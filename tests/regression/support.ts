@@ -2,8 +2,11 @@ import fs from 'node:fs';
 import { randomUUID } from 'node:crypto';
 import path from 'node:path';
 import { afterAll, afterEach, beforeAll, beforeEach, expect } from 'vitest';
-import { DkSession, EmuUsbTransport } from '@digi/dk-session';
+import { DkSession, EmuUsbTransport, RuntimeEvents, type Clock, type WaitRecord } from '@digi/dk-session';
 import {
+  freeClock,
+  panelInput,
+  steppedClock,
   Session,
   withinRuntimeDeadline,
   type Device,
@@ -13,6 +16,7 @@ import {
 import { fileTemp } from './file-temp.ts';
 import { portFile } from './runtime/device-data.ts';
 import { daemonBinary } from './runtime/devices.ts';
+import { Ui } from './runtime/ui.ts';
 import { bindBootClock, emulatorDk, pollEmulated, withEmulatedProbe } from './runtime/waits.ts';
 import type { RunDirClaim } from './runtime/run-claim.ts';
 import { recordPhase, setTimingContext, timePhase, timingContext } from './timing.ts';
@@ -61,11 +65,45 @@ export interface PatchedSession {
   close(): Promise<void>;
 }
 
+export interface WaitApi {
+  /** Emulated time for waits: `freeClock`, or `steppedClock` where the fixture asks for it. */
+  readonly clock: Clock;
+  /** Listens to the runtime log (see `RuntimeEvents.listen`) and makes it the events of `ui`. */
+  listen(opts?: { fromBoot?: boolean }): Promise<RuntimeEvents>;
+  /** Panel inputs and the waits after them. */
+  readonly ui: Ui;
+}
+
+export type TestRuntime = PatchedSession & WaitApi;
+
+/** A wait turned into a timing record. */
+const recordWait = (r: WaitRecord): void => {
+  recordPhase(`wait.${r.kind}`, r.wallMs, { what: r.what, clockMs: r.clockMs, ok: r.ok });
+};
+
+/** A patched session with the clock, `listen` and `ui` added (also for one built by hand). */
+export function withWaitApi(ps: PatchedSession, clockMode: 'free' | 'stepped' = 'free'): TestRuntime {
+  const { session, dk } = ps;
+  const clock = clockMode === 'stepped' ? steppedClock(session) : freeClock(session);
+  let current: RuntimeEvents | undefined;
+  return {
+    ...ps,
+    clock,
+    async listen(opts) {
+      const events = new RuntimeEvents(dk, clock, { onWait: recordWait });
+      await events.listen(opts);
+      current = events;
+      return events;
+    },
+    ui: new Ui(panelInput(session, clock), clock, () => current, recordWait, session),
+  };
+}
+
 /** A fresh runtime daemon; protocol cancellation precedes daemon shutdown. No remote module is assumed installed. */
 export async function startPatchedSession(
   opts: Omit<SessionOptions, 'runtime' | 'dsp'> & { patchSet?: string; dsp?: SessionOptions['dsp'] },
   scope = 'patched runtime',
-): Promise<PatchedSession> {
+): Promise<TestRuntime> {
   const context = { scope, device: opts.device, session: randomUUID() };
   // The watchdog starts with the daemon, so it covers the load inside `Session.start`.
   let watchdog: Watchdog | undefined;
@@ -84,12 +122,12 @@ export async function startPatchedSession(
       }),
     context,
   );
-  setTimingContext(session, context);
+  setTimingContext(session, { ...context, dsp: session.dsp });
   try {
     const dk = emulatorDk(session);
     bindBootClock(dk, session);
     let closing: Promise<void> | undefined;
-    return {
+    return withWaitApi({
       session,
       dk,
       close() {
@@ -103,7 +141,7 @@ export async function startPatchedSession(
           context,
         ));
       },
-    };
+    });
   } catch (err) {
     watchdog?.stop();
     session.keepDiagnostics();
@@ -155,9 +193,9 @@ export function withPatchedSession(
   opts: Omit<SessionOptions, 'runtime' | 'dsp'> & { patchSet?: string; dsp?: SessionOptions['dsp'] },
   scope?: string,
 ): {
-  readonly runtime: PatchedSession;
+  readonly runtime: TestRuntime;
 } {
-  let runtime: PatchedSession | undefined;
+  let runtime: TestRuntime | undefined;
   beforeAll(async () => {
     runtime = await startPatchedSession(opts, scope);
   });
@@ -175,7 +213,7 @@ export function withPatchedSession(
   };
 }
 
-export interface RuntimeCase extends PatchedSession {
+export interface RuntimeCase extends TestRuntime {
   readonly epoch: number;
 }
 
@@ -184,6 +222,8 @@ export function withReusablePatchedSession(
   opts: Omit<SessionOptions, 'runtime' | 'dsp'> & {
     patchSet?: string;
     dsp?: 'zero' | 'sharc' | 'cold';
+    /** Clock of `runtime.clock`, `listen` and `ui`: 'free' (default) or 'stepped' (paused daemon). */
+    clock?: 'free' | 'stepped';
     /** Called when the daemon starts: a persistent run dir for it (see `claimRunDir`), or undefined for a fresh temporary one. */
     runDirClaim?: () => RunDirClaim | undefined;
   },
@@ -217,7 +257,7 @@ export function withReusablePatchedSession(
     for (const dir of lifecycle.tempDirs?.() ?? []) if (dir) fileTemp(dir, failed);
   };
   const loadCase = async (next: RuntimeBaseline): Promise<RuntimeCase> => {
-    const context = { scope, device: opts.device, session: randomUUID() };
+    const context = { scope, device: opts.device, session: randomUUID(), dsp: session!.dsp };
     setTimingContext(session!, context);
     const epoch = await timePhase(
       'session.baseline-reload',
@@ -256,14 +296,19 @@ export function withReusablePatchedSession(
     };
     invalidate = invalidateCase;
     runtime = {
-      session: session!,
-      dk,
+      ...withWaitApi(
+        {
+          session: session!,
+          dk,
+          close: async () => {
+            if (!active) throw new Error('runtime case is no longer active');
+            invalidateCase();
+            await session!.close();
+          },
+        },
+        opts.clock,
+      ),
       epoch,
-      close: async () => {
-        if (!active) throw new Error('runtime case is no longer active');
-        invalidateCase();
-        await session!.close();
-      },
     };
     return runtime;
   };
@@ -305,7 +350,7 @@ export function withReusablePatchedSession(
     }
   };
   beforeAll(async () => {
-    const { runDirClaim, ...sessionOptions } = opts;
+    const { runDirClaim, clock: _clock, ...sessionOptions } = opts;
     claim = runDirClaim?.();
     try {
       session = await Session.start({
