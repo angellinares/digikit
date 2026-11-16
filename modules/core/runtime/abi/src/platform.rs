@@ -81,6 +81,41 @@ pub trait StagedWriter {
     fn present(&self) -> bool;
 }
 
+/// The platform facts the samples service reads, and nothing more: whether the pool adapter is in the image, where the sample files are, and the
+/// interrupt mask around a pool table change. Every `Platform` is one (`impl` below); a host test of a service gives a smaller fake. The method
+/// names differ from those of `Platform` so a type that is both has no ambiguous call.
+pub trait SampleHost {
+    /// The storage the sample files are read from.
+    type Store: crate::storage::Storage;
+    fn store(&self) -> &Self::Store;
+    /// Is a sample-pool adapter of the right version in the image?
+    fn pool_present(&self) -> bool;
+    /// The samples are files of the digikit store, not the firmware's folder filesystem (`Platform::samples_in_store`).
+    fn files_in_store(&self) -> bool;
+    /// Mask interrupts; the old status register (`Platform::irq_mask`).
+    fn mask_irq(&self) -> u32;
+    fn restore_irq(&self, sr: u32);
+}
+
+impl<P: Platform> SampleHost for P {
+    type Store = P;
+    fn store(&self) -> &P {
+        self
+    }
+    fn pool_present(&self) -> bool {
+        SamplePool::present(self)
+    }
+    fn files_in_store(&self) -> bool {
+        self.samples_in_store()
+    }
+    fn mask_irq(&self) -> u32 {
+        self.irq_mask()
+    }
+    fn restore_irq(&self, sr: u32) {
+        self.irq_restore(sr)
+    }
+}
+
 pub trait Platform: Tasking + SamplePool + StagedWriter + crate::storage::Storage {
     // ---- who the device is -----------------------------------------------------------------------------------------------
     fn profile(&self) -> DeviceProfile;

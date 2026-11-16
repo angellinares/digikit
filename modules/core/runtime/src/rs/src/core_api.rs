@@ -36,6 +36,10 @@ pub struct RealCore;
 pub const REAL_CORE: RealCore = RealCore;
 
 impl CoreApi for RealCore {
+    type Host = crate::platform::RealPlatform;
+    fn host(&self) -> &crate::platform::RealPlatform {
+        &PLATFORM
+    }
     unsafe fn dynreg(&self) -> *const u32 {
         registry::info()
     }

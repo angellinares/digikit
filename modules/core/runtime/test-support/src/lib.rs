@@ -3,11 +3,14 @@
 //! `FakeCore` implements `CoreApi` (interface C) and records the calls a service makes. Its link is the real queue (`dkrt-link`) over a model of
 //! `core/dsp-link`. It lives in a crate of its own, below the services and the runtime, so a service crate tests against it without naming the runtime.
 extern crate std;
+mod pool;
+mod storage;
 use core::cell::{Cell, RefCell};
 use dkrt_abi::core_api::CoreApi;
 use dkrt_abi::dsp::DspState;
 use dkrt_abi::fw::Fw;
 use dkrt_abi::link::{LinkResult, Owner, Sequence, Slot, Stream, Ticket};
+use dkrt_abi::platform::SampleHost;
 use dkrt_abi::registry::RegState;
 use dkrt_link::fake::{link, FakeLink};
 use dkrt_link::Link;
@@ -15,6 +18,7 @@ use dkrt_sdk::api::{JobDoneFn, JobStepFn};
 use std::boxed::Box;
 use std::string::String;
 use std::vec::Vec;
+pub use storage::FakeStorage;
 
 /// One call the service made, in order.
 #[derive(Clone, Debug, PartialEq)]
@@ -67,6 +71,64 @@ pub enum Call {
     NativeTurn,
 }
 
+/// The platform facts of a `FakeCore` (`SampleHost`): the sample files in a `FakeStorage`, whether the pool adapter is in the image and whether the
+/// samples are files of the store (a DN2) or of the firmware's file system (a DT2). The interrupt mask is a counter: `masked` says how many masks are open.
+pub struct FakeHost {
+    pub storage: FakeStorage,
+    pub pool: Cell<bool>,
+    pub in_store: Cell<bool>,
+    pub masked: Cell<u32>,
+}
+
+impl FakeHost {
+    pub fn new() -> Self {
+        FakeHost {
+            storage: FakeStorage::new(),
+            pool: Cell::new(true),
+            in_store: Cell::new(false),
+            masked: Cell::new(0),
+        }
+    }
+}
+
+impl Default for FakeHost {
+    fn default() -> Self {
+        Self::new()
+    }
+}
+
+impl SampleHost for FakeHost {
+    type Store = FakeStorage;
+    fn store(&self) -> &FakeStorage {
+        &self.storage
+    }
+    fn pool_present(&self) -> bool {
+        self.pool.get()
+    }
+    fn files_in_store(&self) -> bool {
+        self.in_store.get()
+    }
+    fn mask_irq(&self) -> u32 {
+        self.masked.set(self.masked.get() + 1);
+        0x2700
+    }
+    fn restore_irq(&self, _sr: u32) {
+        self.masked.set(self.masked.get() - 1);
+    }
+}
+
+/// A job a service posted to the fake core's queue (`FakeCore::job_pump`).
+struct FakeJob {
+    id: u32,
+    owner: u8,
+    step: Option<JobStepFn>,
+    done: Option<JobDoneFn>,
+    ctx: *mut u8,
+    cancelled: bool,
+    /// The status the last step ended with: `done` is called with it at the next pass.
+    ended: Option<i32>,
+}
+
 /// A core that records what services ask of it. Its link is the real queue over a model of `core/dsp-link` (`link::fake::FakeLink`): the tests read the
 /// wire from `link.borrow().t.wire` and let the model's time pass with `pump`. `fx_table` is the words of `dynfx_info` the fake hands out (first row 0).
 pub struct FakeCore {
@@ -85,6 +147,10 @@ pub struct FakeCore {
     pub native_available: bool,
     pub native_status: i32,
     pub native_consumes: u32,
+    /// The platform facts (`CoreApi::host`).
+    pub host: FakeHost,
+    jobs: RefCell<Vec<FakeJob>>,
+    next_job: Cell<u32>,
     reg: *mut RegState,
     dsp: *mut DspState,
 }
@@ -108,6 +174,9 @@ impl FakeCore {
             native_available: true,
             native_status: 0,
             native_consumes: 0,
+            host: FakeHost::new(),
+            jobs: RefCell::new(Vec::new()),
+            next_job: Cell::new(0),
             reg,
             dsp,
         }
@@ -115,12 +184,49 @@ impl FakeCore {
     pub fn calls(&self) -> Vec<Call> {
         self.calls.borrow().clone()
     }
+    /// One UI pass and one worker step, as the runtime's job queue runs them: a job whose last step ended, or that was cancelled, gets its `done` (status
+    /// or `JOB_E_CANCELLED`) and leaves the queue; then the first job left runs one step (it stays while the step returns 1). A `done` may post a job.
+    pub unsafe fn job_pump(&self) {
+        let ended: Vec<FakeJob> = {
+            let mut jobs = self.jobs.borrow_mut();
+            let (out, keep): (Vec<FakeJob>, Vec<FakeJob>) = jobs
+                .drain(..)
+                .partition(|j| j.ended.is_some() || j.cancelled);
+            *jobs = keep;
+            out
+        };
+        for j in ended {
+            if let Some(done) = j.done {
+                done(
+                    j.ctx,
+                    j.ended.unwrap_or(dkrt_abi::core_api::JOB_E_CANCELLED),
+                );
+            }
+        }
+        let first = self.jobs.borrow().first().map(|j| (j.id, j.step, j.ctx));
+        if let Some((id, Some(step), ctx)) = first {
+            let r = step(ctx);
+            if r != 1 {
+                if let Some(j) = self.jobs.borrow_mut().iter_mut().find(|j| j.id == id) {
+                    j.ended = Some(r);
+                }
+            }
+        }
+    }
+    /// The jobs still queued.
+    pub fn jobs_queued(&self) -> usize {
+        self.jobs.borrow().len()
+    }
     fn rec(&self, c: Call) {
         self.calls.borrow_mut().push(c);
     }
 }
 
 impl CoreApi for FakeCore {
+    type Host = FakeHost;
+    fn host(&self) -> &FakeHost {
+        &self.host
+    }
     unsafe fn dynreg(&self) -> *const u32 {
         if self.dynreg_table.is_empty() {
             core::ptr::null()
@@ -226,16 +332,38 @@ impl CoreApi for FakeCore {
     unsafe fn job_post(
         &self,
         owner: u8,
-        _s: Option<JobStepFn>,
-        _d: Option<JobDoneFn>,
-        _c: *mut u8,
+        step: Option<JobStepFn>,
+        done: Option<JobDoneFn>,
+        ctx: *mut u8,
     ) -> i32 {
         self.rec(Call::JobPost { owner });
-        1
+        let id = self.next_job.get() + 1;
+        self.next_job.set(id);
+        self.jobs.borrow_mut().push(FakeJob {
+            id,
+            owner,
+            step,
+            done,
+            ctx,
+            cancelled: false,
+            ended: None,
+        });
+        id as i32
     }
     unsafe fn job_cancel(&self, owner: u8, id: u32) -> i32 {
         self.rec(Call::JobCancel { owner, id });
-        0
+        match self
+            .jobs
+            .borrow_mut()
+            .iter_mut()
+            .find(|j| j.id == id && j.owner == owner)
+        {
+            Some(j) => {
+                j.cancelled = true;
+                0
+            }
+            None => 0,
+        }
     }
     fn native_available(&self, _kind: u32) -> bool {
         self.native_available

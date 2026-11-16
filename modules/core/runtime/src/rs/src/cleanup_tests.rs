@@ -478,28 +478,6 @@ pub extern "C" fn dl_diag(_: *mut u32, _: u32) -> i32 {
     0
 }
 
-// The sample backing plug-in point, absent in this host fixture (version 0 is refused).
-#[no_mangle]
-pub extern "C" fn dkpool_version() -> u32 {
-    0
-}
-#[no_mangle]
-pub extern "C" fn dkpool_load(_: u32, _: *const u8, _: *const u8, _: *mut u8) -> i32 {
-    -48
-}
-#[no_mangle]
-pub extern "C" fn dkpool_release(_: *const u8) {}
-#[no_mangle]
-pub extern "C" fn dkpool_check(_: *const u8) -> i32 {
-    -15
-}
-#[no_mangle]
-pub extern "C" fn dkpool_free_frames() -> u32 {
-    0
-}
-#[no_mangle]
-pub extern "C" fn dkpool_tick() {}
-
 // core/sdhc-large, absent in this host fixture.
 #[no_mangle]
 pub extern "C" fn sdhc_large_range(_: u32, _: u32) {}
@@ -538,11 +516,6 @@ pub extern "C" fn dkpw_recover(_: *mut u32) -> i32 {
 #[no_mangle]
 pub extern "C" fn dkpw_staging() -> *const u8 {
     b"/.dkstage\0".as_ptr()
-}
-
-#[no_mangle]
-pub extern "C" fn dkpool_cancel(_: u32) {
-    panic!("host cleanup tests have no pending sample-pool requests")
 }
 
 // No firmware file systems or DSP tick callback are installed in this host fixture.
