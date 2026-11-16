@@ -41,19 +41,22 @@ impl Fw for TableFw {
     }
     fn page_value(&self, view: usize, code: u32) -> i32 {
         unsafe {
-            let f: unsafe extern "C" fn(usize, u32, i32) -> i32 = core::mem::transmute(vcall(view, VT_PAGE_VALUE));
+            let f: unsafe extern "C" fn(usize, u32, i32) -> i32 =
+                core::mem::transmute(vcall(view, VT_PAGE_VALUE));
             f(view, code, -1)
         }
     }
     fn object(&self, view: usize, code: u32, track: u32) -> usize {
         unsafe {
-            let f: unsafe extern "C" fn(usize, u32, u32) -> usize = core::mem::transmute(vcall(view, VT_PAGE_OBJECT));
+            let f: unsafe extern "C" fn(usize, u32, u32) -> usize =
+                core::mem::transmute(vcall(view, VT_PAGE_OBJECT));
             f(view, code, track)
         }
     }
     fn object_value(&self, obj: usize, code: u32) -> i32 {
         unsafe {
-            let f: unsafe extern "C" fn(usize, u32) -> i32 = core::mem::transmute(vcall(obj, VT_OBJECT_VALUE));
+            let f: unsafe extern "C" fn(usize, u32) -> i32 =
+                core::mem::transmute(vcall(obj, VT_OBJECT_VALUE));
             f(obj, code)
         }
     }
@@ -63,7 +66,8 @@ impl Fw for TableFw {
             return;
         }
         unsafe {
-            let f: unsafe extern "C" fn(*const u8, u32, i32, u32, u32, u32, u32) -> u32 = core::mem::transmute(f);
+            let f: unsafe extern "C" fn(*const u8, u32, i32, u32, u32, u32, u32) -> u32 =
+                core::mem::transmute(f);
             f(obj as *const u8, code, raw, track, 1, 1, 1);
         }
     }
@@ -79,7 +83,8 @@ impl Fw for TableFw {
     }
     fn param_code(&self, view: usize, enc: u32) -> i32 {
         unsafe {
-            let f: unsafe extern "C" fn(usize, u32) -> i32 = core::mem::transmute(vcall(view, VT_PARAM_CODE));
+            let f: unsafe extern "C" fn(usize, u32) -> i32 =
+                core::mem::transmute(vcall(view, VT_PARAM_CODE));
             f(view, enc)
         }
     }

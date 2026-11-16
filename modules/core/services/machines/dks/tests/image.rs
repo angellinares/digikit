@@ -42,15 +42,27 @@ fn the_table_is_copied_with_the_magic_last_and_every_word_in() {
 fn an_image_without_the_table_another_device_or_no_registry_is_refused() {
     let mut dst = [0u32; WORDS];
     let none = core_with(None, 2);
-    assert_eq!(unsafe { bind_table(&none, dst.as_mut_ptr()) }, dkrt_sdk::E_NO_REGISTRY);
+    assert_eq!(
+        unsafe { bind_table(&none, dst.as_mut_ptr()) },
+        dkrt_sdk::E_NO_REGISTRY
+    );
     let other = core_with(Some(table(1)), 2);
-    assert_eq!(unsafe { bind_table(&other, dst.as_mut_ptr()) }, dkrt_sdk::E_NO_REGISTRY);
+    assert_eq!(
+        unsafe { bind_table(&other, dst.as_mut_ptr()) },
+        dkrt_sdk::E_NO_REGISTRY
+    );
     let mut bare = table(2);
     bare[w::ROWS] = 0;
-    assert_eq!(unsafe { bind_table(&core_with(Some(bare), 2), dst.as_mut_ptr()) }, dkrt_sdk::E_NO_REGISTRY);
+    assert_eq!(
+        unsafe { bind_table(&core_with(Some(bare), 2), dst.as_mut_ptr()) },
+        dkrt_sdk::E_NO_REGISTRY
+    );
     let mut old = table(2);
     old[w::VERSION] = VERSION + 1;
-    assert_eq!(unsafe { bind_table(&core_with(Some(old), 2), dst.as_mut_ptr()) }, dkrt_sdk::E_NO_REGISTRY);
+    assert_eq!(
+        unsafe { bind_table(&core_with(Some(old), 2), dst.as_mut_ptr()) },
+        dkrt_sdk::E_NO_REGISTRY
+    );
     assert_eq!(dst, [0u32; WORDS], "nothing is written for a refused table");
 }
 
@@ -62,18 +74,31 @@ fn equates(text: &str) -> Vec<(String, usize)> {
             let rest = l.strip_prefix(".equ")?.trim();
             let (name, value) = rest.split_once(',')?;
             let name = name.trim();
-            name.starts_with("T_").then(|| (name.to_string(), value.split('|').next().unwrap().trim().parse().unwrap()))
+            name.starts_with("T_").then(|| {
+                (
+                    name.to_string(),
+                    value.split('|').next().unwrap().trim().parse().unwrap(),
+                )
+            })
         })
         .collect()
 }
 
 #[test]
 fn the_offsets_the_assembler_names_are_the_word_indexes_of_the_table() {
-    for file in [include_str!("../src/hooks-common.s"), include_str!("../src/hooks-dt2.s"), include_str!("../src/hooks-dn2.s")] {
+    for file in [
+        include_str!("../src/hooks-common.s"),
+        include_str!("../src/hooks-dt2.s"),
+        include_str!("../src/hooks-dn2.s"),
+    ] {
         let eq = equates(file);
         assert!(!eq.is_empty());
         for (name, at) in eq {
-            let index = ASM_OFFSETS.iter().find(|(n, _)| *n == name).unwrap_or_else(|| panic!("{name} is not in ASM_OFFSETS")).1;
+            let index = ASM_OFFSETS
+                .iter()
+                .find(|(n, _)| *n == name)
+                .unwrap_or_else(|| panic!("{name} is not in ASM_OFFSETS"))
+                .1;
             assert_eq!(at, 4 * index, "{name}");
         }
     }
@@ -92,13 +117,26 @@ fn the_tail_a_hook_names_is_the_hash_of_its_hook() {
         "cf.page.hook.source_key",
         "cf.page.hook.source_turn",
     ];
-    let all = [include_str!("../src/hooks-common.s"), include_str!("../src/hooks-dt2.s"), include_str!("../src/hooks-dn2.s")].concat();
+    let all = [
+        include_str!("../src/hooks-common.s"),
+        include_str!("../src/hooks-dt2.s"),
+        include_str!("../src/hooks-dn2.s"),
+    ]
+    .concat();
     for h in hooks {
         let tail = format!("dk_tail_{:08x}", name_hash(h));
         assert!(all.contains(&tail), "{h}: the assembler has no {tail}");
     }
     for (i, _) in all.match_indices("dk_tail_") {
         let t = &all[i..i + 16];
-        assert!(hooks.iter().any(|h| t == format!("dk_tail_{:08x}", name_hash(h))), "{t} is the tail of no hook");
+        if !t[8..].bytes().all(|c| c.is_ascii_hexdigit()) {
+            continue; // prose: `dk_tail_<hash of the hook>`
+        }
+        assert!(
+            hooks
+                .iter()
+                .any(|h| t == format!("dk_tail_{:08x}", name_hash(h))),
+            "{t} is the tail of no hook"
+        );
     }
 }

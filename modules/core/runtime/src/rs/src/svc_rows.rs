@@ -118,8 +118,7 @@ pub fn rows() -> &'static [*const ServiceRow] {
 pub fn test_machines() {
     static ONCE: std::sync::Once = std::sync::Once::new();
     ONCE.call_once(|| unsafe {
-        static ROW: ServiceRow = ServiceRow::of::<dkrt_svc_machines::records::Machines, crate::core_api::RealCore>("machines", &dkrt_sdk::records::KINDS_MACHINES);
-        add(crate::MAX_MODULES + PROVIDER_MAX - 1, &ROW);
+        add(crate::MAX_MODULES + PROVIDER_MAX - 1, crate::handlers::exports::machines_row());
     });
 }
 

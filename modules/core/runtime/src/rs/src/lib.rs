@@ -18,7 +18,6 @@ use dkrt_sdk::*;
 mod api;
 mod arena;
 pub mod core_api;
-#[cfg(not(test))]
 mod native;
 pub mod assign;
 pub mod collect;

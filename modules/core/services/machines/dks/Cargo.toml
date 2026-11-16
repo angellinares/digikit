@@ -7,6 +7,8 @@ description = "The machines service as a service file (.dks): the crate dkrt-svc
 
 [lib]
 crate-type = ["staticlib"]
+# the library holds assembler for the ColdFire: the host tests are the integration tests in tests/ (they include image.rs by path)
+test = false
 
 [dependencies]
 dkrt-abi = { path = "../../../runtime/abi" }

@@ -382,5 +382,8 @@ fn the_machine_types_are_a_row_method_of_the_service() {
     let n = unsafe { <Machines as Service<FakeCore>>::machine_types_of(&core, 2, &mut out) };
     assert_eq!(n, 1);
     assert_eq!(out[0], dkrt_sdk::device::DYN_TYPE_FIRST as u8 + 3);
-    assert_eq!(unsafe { <Machines as Service<FakeCore>>::machine_types_of(&core, 5, &mut out) }, 0);
+    assert_eq!(
+        unsafe { <Machines as Service<FakeCore>>::machine_types_of(&core, 5, &mut out) },
+        0
+    );
 }

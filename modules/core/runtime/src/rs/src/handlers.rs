@@ -46,6 +46,15 @@ pub mod exports {
     pub unsafe fn fx_entry(index: u32, out: &mut dkrt_sdk::DkrtFx) -> i32 {
         dkrt_svc_fx::fxsend::fx_entry(&crate::core_api::REAL_CORE, index, out)
     }
+    /// Host tests only: the page set of the machines service, and its row as a loaded service file has it (`svc_rows::test_machines`).
+    #[cfg(test)]
+    pub(crate) use dkrt_svc_machines::nativepage::PageSet;
+    #[cfg(test)]
+    pub(crate) fn machines_row() -> &'static dkrt_abi::service::ServiceRow {
+        static ROW: dkrt_abi::service::ServiceRow =
+            dkrt_abi::service::ServiceRow::of::<dkrt_svc_machines::records::Machines, crate::core_api::RealCore>("machines", &dkrt_sdk::records::KINDS_MACHINES);
+        &ROW
+    }
     /// The machine type numbers of the machine rows module `owner` filled (`module_cmds`: the module list); returns how many.
     pub fn machine_types_of(owner: u8, out: &mut [u8; 8]) -> usize {
         unsafe { super::services().machine_types_of(owner, out) }

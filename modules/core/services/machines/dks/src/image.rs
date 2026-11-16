@@ -6,9 +6,9 @@
 //!
 //! The words are big endian in the image (ColdFire is big endian, so a read of the word is the value).
 use core::ptr::{read_volatile, write_volatile};
-use dkrt_svc_rt::name_hash;
 use dkrt_abi::core_api::CoreApi;
 use dkrt_sdk::{E_NO_REGISTRY, OK};
+use dkrt_svc_rt::name_hash;
 
 /// `MACH`.
 pub const MAGIC: u32 = 0x4d41_4348;

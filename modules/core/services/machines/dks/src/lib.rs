@@ -2,6 +2,7 @@
 //! the click flow's firmware calls and the exports `dk_param_get` and `dk_param_set` (`fw.rs`); the image table `machines_info` is bound by `image::setup`
 //! (docs/plans/runtime-and-services.md section 13.2, R12-6).
 #![no_std]
+#![feature(asm_experimental_arch)]
 
 use dkrt_sdk::records::KINDS_MACHINES;
 use dkrt_svc_machines::records::Machines;
