@@ -142,7 +142,7 @@ each has a module docstring with its full command line.
 | --- | --- |
 | `tools/emulator/native_emu.py` | `mise run workbench` (`-- --build-only` builds only), `emu:serve`: build the desktop emulator once and run it (`--plus-drive DIR` or `--samples DIR`; default `plus_drive/<device>/`, `--dsp-patch FILE`, `--cf-only`, `--daemon`). |
 | `tools/emulator/native_target.py` | Pick the cargo target dir for a generated core (`prod`, `nogen`, `generic`, `g-<hash>`). |
-| `tools/emulator/native_pgo.py` | Profile-guided optimisation of the desktop build (`mise run perf:pgo`; `bench-bins`). |
+| `tools/emulator/native_pgo.py` | Profile-guided optimisation of the desktop build (`mise run perf:pgo`; `bench-bins`). In a linked worktree `train` writes `by-key/<key>.json` only and prints a final `WARNING ... NOT current` line with the `train [--device D] --set-current` command; the launcher build reads `manifest.json` and builds without PGO until it is current. `mise run perf:pgo` passes `--set-current-at-main`, which sets it current only when HEAD equals origin/main's commit. |
 | `tools/nx/wasm.mjs` | `mise run web:wasm`: build the browser cores. |
 | `tools/nx/nx.mjs` | `pnpm nx:pilot`: the one Nx launcher. Computes the CPU budget, takes the shared benchlock for task runs. |
 | `tools/nx/gate.mjs` | `mise run test`, `test:plan`, `test:changed`, `test:full`: target lists are `TIERS`. |
