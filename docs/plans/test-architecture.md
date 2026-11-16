@@ -304,6 +304,8 @@ Deleted at the end: `waits.ts tap`, `fx-session.ts tap/advance` (stepped clock),
 | 4 | Desktop | log-follow-core.ts + tests (parallel with 3) | desktop test-host, check:ui, one log-pane screenshot |
 | end | | delete old helpers and `Events`; add the oxlint rule | `mise run test:full` in the batch lane |
 
+**Follow-up: rename device tests to emulator tests.** `*.device.test.ts` and `test-device*` targets run on the emulator, not on hardware. A separate codemod PR after this step renames them to `*.emu.test.ts` and `test-emu*` (with `runtimeAcceptance`/`mergeTests` metadata, `tools/nx/device-inputs.mjs`, gate tooling, AGENTS.md and TESTING.md). "Hardware test" stays free for real devices.
+
 **Payoff and confidence.**
 
 - Correctness: removes wall-clock deciders and the boot-intro race path. High confidence.
