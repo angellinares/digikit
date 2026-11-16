@@ -259,6 +259,32 @@ function deviceFile(short: string): Toml {
 }
 
 /** The spec of module MID on DEVICE, or null when the module is no machine with a DSP object for that device. */
+/**
+ * Problems of a machine module's `build/gen/gallery.json` for a device, as `device: text` lines. A device of `[targets]` or `ports` of
+ * module.toml (or of an object's `devices`) that a machine of the gallery does not list, or lists with no parameter, has no knob slots
+ * there: the rig would run it with every parameter word at 0. `module:check` writes the gallery, so the fix is to run it again.
+ */
+export function galleryGaps(mid: string): string[] {
+  const moddir = moduleDir(mid);
+  const man = manifest(moddir);
+  if (!entryRow(man)) return [];
+  const gallery = readGallery(moddir, mid, '`patchkit gen`');
+  const fromPort = (t: string) => t.split('-')[0]!;
+  const wanted = new Set<string>([
+    ...Object.keys((man.targets ?? {}) as Toml).map(fromPort),
+    ...((man.module?.ports ?? []) as string[]).map(fromPort),
+    ...((man.object ?? []) as Toml[]).flatMap((o) => (o.devices ?? []) as string[]),
+  ]);
+  const out: string[] = [];
+  for (const m of (gallery.machines ?? []) as Toml[])
+    for (const d of [...wanted].sort()) {
+      const dev = m.devices?.[d];
+      if (!dev) out.push(`${d}: machine ${m.id} is not listed in build/gen/gallery.json`);
+      else if (!(gallery.params?.[d] ?? []).length) out.push(`${d}: machine ${m.id} has no parameter in build/gen/gallery.json`);
+    }
+  return out;
+}
+
 export function machineSpec(mid: string, device: Device): MachineSpec | null {
   if (mid.split('/')[0] === 'core') return null; // the framework renders no machine of its own
   const variant = NEGATIVE_VARIANTS[mid];
