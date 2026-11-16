@@ -195,6 +195,29 @@ hook = "dsp.fx.hook.entry"   # core/fx
 to = "_fx_entry"
 ```
 
+`op = "stub"`: a hook site that jumps through a pointer slot, for a handler that a service writes later (zero slot = stock;
+details in [docs/PATCHING.md](../docs/PATCHING.md) "Pointer-slot stubs").
+
+| Key | Meaning |
+|---|---|
+| `hook` | the declared hook (its site and offset; `mode` is ignored, `retarget` is refused) |
+| `slot` | a `[[slot]]` of the module, active on the same devices |
+| `scratch` | `d0`..`d7`, `a0`..`a6`: the register the stub overwrites; it must be in the hook's `regs.clobbers` |
+| `tail` | optional: expression of a hand-written stock path, for a site patchkit cannot re-encode |
+
+```toml
+[[slot]]
+name = "frame_type"
+devices = ["dn2"]
+
+[[op]]
+op = "stub"
+hook = "cf.machine.hook.frametype"
+slot = "frame_type"
+scratch = "d0"
+devices = ["dn2"]
+```
+
 On ColdFire a hook needs a site of whole instructions; `jmp.l` is 6 bytes and the rest is padded with NOPs. PC-relative
 operands in displaced instructions are re-encoded as absolute, except `(d8,PC,Xn)`, which is refused. A SHARC+ hook is
 one 48-bit jump at a parcel-aligned offset; keep it out of delayed-branch slots and loop ends.

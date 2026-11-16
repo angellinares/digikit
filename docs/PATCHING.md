@@ -352,6 +352,21 @@ The manifest has `[module]`, `[targets]`, `[[object]]`, `[[op]]`, `[[claim]]`, `
   (`hook = "<hook name>"`, `to = "<symbol>"`). Mode `before` copies the displaced instructions to a tail
   (`hook.<site>[.<offset>].tail`; PC-relative forms are re-encoded or refused) so that the routine can run them and
   return (`.return`). Mode `replace` drops them. Mode `retarget` rewrites the target of an existing call.
+- **Pointer-slot stubs.** A `[[slot]] name = "frame_type"` reserves a 4-byte word, zero at build, in the module's
+  `cf.expansion` data (`place =` changes the region), and `<module id>.slots` is the address of a table the runtime reads:
+  `{magic 0x534c5401, count}`, then per slot `{FNV-1a name hash, word address}` (all big endian), then the words.
+  `slot.<name>` is the address of one word. An `op = "stub"` (`hook`, `slot`, `scratch`, optional `tail`) puts a `jmp.l`
+  at the hook site that enters a generated stub in `hook.<site>[.<offset>].tail`. The stub loads the slot into `scratch`;
+  a zero slot runs the displaced instructions (re-encoded like a `before` hook) and jumps back to `.return`, so the image
+  behaves as stock; a non-zero slot is jumped to. Use it for interrupt-level sites that a service loaded later has to
+  serve (the service writes its handler address into the slot, and clears it to go back to stock). The hook's `mode` is
+  ignored; `retarget` hooks are refused. `scratch` (required) is `d0`..`d7` or `a0`..`a6`: pick a register of the hook's
+  `regs.clobbers` in `devices/fw/` (the stub also changes the condition codes, so `ccr` must be listed). patchkit refuses a
+  register that a displaced instruction reads before it writes it. The handler is entered with `scratch` holding its own
+  address. Address registers use `movea.l slot,aN; tst.l aN; beq.b +2; jmp (aN)`; data registers use `move.l slot,dN;
+  beq.b +4; move.l dN,-(sp); rts` (12 bytes each). A site whose displaced code patchkit cannot re-encode (a `(d8,PC,Xn)`
+  operand) is refused with the site named; `tail = "<symbol>"` gives a hand-written stock path (`jmp.l` there) and the
+  displaced instructions are dropped.
 - **Sections copied from the image.** `[[section]]` copies bytes of the user's image at patch time (a stock table),
   may append one row per registry entry, and places the result. This is how a framework extends a firmware table
   without storing it.
