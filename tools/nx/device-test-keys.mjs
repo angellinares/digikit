@@ -128,9 +128,14 @@ export const builtSourceExclusions = (root, base = '.') =>
     .filter((dir) => existsSync(join(base, root, dir)) && !root.includes('/tests'))
     .map((dir) => `!{projectRoot}/${dir}/**/*`);
 
+// The leaves of the modules with role "service": they pack to `.dks`, every other module to `.dkm`. `byId`: id -> { manifest }.
+export const serviceLeaves = (byId) =>
+  new Set([...byId].filter(([, { manifest }]) => manifest.role === 'service').map(([id]) => id.split('/').at(-1)));
+
 // The cache inputs of one device test target, and whether its key holds the patchkit binary (`patchkitLive`).
 // `opts`: `narrow` selects the narrow input set; `moduleId` is the project's module id (its pack is loaded when
-// `uploadable`); `subjects` are the projects a test-only project tests.
+// `uploadable`); `subjects` are the projects a test-only project tests; `services` is the set of service leaves
+// (`serviceLeaves`): a narrow key follows the `.dks` pack of those, the `.dkm` pack of every other leaf.
 export const deviceInputs = (
   root,
   tests,
@@ -182,7 +187,7 @@ export const deviceInputs = (
               ].map((id) => id.split('/').at(-1)),
             ),
           ].map((leaf) => ({
-            dependentTasksOutputFiles: `dist/modules/*/${leaf}.dkm`,
+            dependentTasksOutputFiles: `dist/modules/*/${leaf}.${opts.services?.has(leaf) ? 'dks' : 'dkm'}`,
             transitive: true,
           })),
           // tools the test runs directly

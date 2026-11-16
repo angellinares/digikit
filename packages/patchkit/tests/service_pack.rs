@@ -118,9 +118,16 @@ fn a_service_packs_to_a_dks_with_provides_and_exports_and_a_user_has_a_hard_need
     let k = Keys::parse(&dkm.register).unwrap();
     let needs: Vec<_> = k.needs().collect();
     // the service of the test imports, and the runtime's own service (dk_log of `init`)
-    let need = needs.iter().find(|n| n.service == name_hash("svc-test")).expect("a need of svc-test");
+    let need = needs
+        .iter()
+        .find(|n| n.service == name_hash("svc-test"))
+        .expect("a need of svc-test");
     assert!(need.hard);
-    assert!(needs.iter().all(|n| n.service == name_hash("svc-test") || n.service == name_hash("runtime")));
+    assert!(
+        needs
+            .iter()
+            .all(|n| n.service == name_hash("svc-test") || n.service == name_hash("runtime"))
+    );
     assert_eq!(k.provides().count(), 0);
 
     let _ = std::fs::remove_dir_all(&d);

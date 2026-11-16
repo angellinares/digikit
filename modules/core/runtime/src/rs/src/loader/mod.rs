@@ -864,7 +864,8 @@ impl<P: Platform, M: Images, R: Registry> Loader<P, M, R> {
                 }
             };
             self.loaded[j] = res == OK;
-            crate::boot::report_provider(self.found.path(j), res, hashes[j]);
+            let base = if res == OK { records::module(MAX_MODULES + j).base } else { 0 };
+            crate::boot::report_provider(self.found.path(j), res, hashes[j], base);
         }
         crate::selection::BOOT_IDX = u32::MAX;
         self.phase = Phase::Closed;

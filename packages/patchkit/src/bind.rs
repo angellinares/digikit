@@ -727,23 +727,38 @@ mod tests {
         assert!(k.bind(2).is_none());
         // the other lists stay
         assert!(k.hooks().eq(hooks.iter().copied()));
-        assert!(k.provides().eq(Keys::parse(&dkm.register).unwrap().provides()));
+        assert!(
+            k.provides()
+                .eq(Keys::parse(&dkm.register).unwrap().provides())
+        );
     }
 
     #[test]
     fn the_output_is_refused_in_the_source_tree_outside_dist_and_out() {
         let root = Path::new("/src/digikit");
         assert!(output_allowed(root, Path::new("/src/digikit/dist/svc.dks")));
-        assert!(output_allowed(root, Path::new("/src/digikit/out/a/svc.dks")));
+        assert!(output_allowed(
+            root,
+            Path::new("/src/digikit/out/a/svc.dks")
+        ));
         assert!(output_allowed(root, Path::new("/tmp/svc.dks")));
         assert!(!output_allowed(root, Path::new("/src/digikit/svc.dks")));
-        assert!(!output_allowed(root, Path::new("/src/digikit/modules/svc.dks")));
-        assert!(!output_allowed(root, Path::new("/src/digikit/distant/svc.dks")));
+        assert!(!output_allowed(
+            root,
+            Path::new("/src/digikit/modules/svc.dks")
+        ));
+        assert!(!output_allowed(
+            root,
+            Path::new("/src/digikit/distant/svc.dks")
+        ));
         // `..` does not get around the rule
         assert!(!output_allowed(
             root,
             Path::new("/src/digikit/dist/../modules/svc.dks")
         ));
-        assert!(!output_allowed(root, Path::new("/src/digikit/dist/../../digikit/x")));
+        assert!(!output_allowed(
+            root,
+            Path::new("/src/digikit/dist/../../digikit/x")
+        ));
     }
 }

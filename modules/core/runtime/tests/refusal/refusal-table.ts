@@ -29,7 +29,6 @@ const COMMIT = 'modules/core/runtime/tests/capacity/commit.device.test.ts';
 const NEEDS = 'modules/core/apps/digikit-menu/tests/needs.device.test.ts';
 const SAFE = 'modules/core/runtime/tests/safe-mode.device.test.ts';
 const COLLECT = 'modules/core/runtime/src/rs/src/collect/tests.rs';
-const PLAN = 'modules/core/runtime/src/rs/src/plan.rs';
 const CAP_RS = 'modules/core/runtime/sdk/src/capacity/tests.rs';
 const STORE_RS = 'modules/core/runtime/sdk/src/store/tests.rs';
 const CLEANUP = 'modules/core/runtime/src/rs/src/cleanup_tests.rs';
@@ -73,7 +72,7 @@ export const ROWS: Record<string, Row> = {
   E_FX_ID_DUP: { fail: { file: COMMIT, test: 'an effect id that a loaded module has is E_FX_ID_DUP' }, pass: { file: COMMIT, test: 'the commit logs its rows' } },
   E_DECL_FULL: { kind: 'host', reason: 'more builder calls than the record limit', covered: [{ file: COLLECT, test: 'E_DECL_FULL' }] },
   E_PLAN_KIND: { fail: mine('keys for a kind nobody owns are refused'), pass: loads },
-  E_PLAN_OWNER: { fail: prov('two providers of one service are E_PLAN_OWNER'), pass: prov('a provider installs its hook and the consumer calls it') },
+  E_PLAN_OWNER: { fail: prov('two providers of one hook site are E_PLAN_OWNER'), pass: prov('a provider installs its hook and the consumer calls it') },
   E_PLAN_KEY: { fail: mine('a second owner of one key is E_PLAN_KEY'), pass: mine('the first owner of the key loads') },
   E_PLAN_FIT: { fail: mine('uses over the capacity are refused'), pass: loads },
   E_DECL_KIND: { fail: mine('kinds in the header table that init does not declare are E_DECL_KIND'), pass: loads },

@@ -13,7 +13,9 @@ const MODULES_LOADED_EMULATED_MS = 30_000;
 /** Prepared separately with patchkit pack; acceptance never builds a toolchain, module or daemon. */
 export function moduleArtifact(device: Device, id: string): string {
   const directory = process.env.DIGI_RUNTIME_MODULES ?? path.join(repoRoot(), 'dist/modules');
-  const artifact = path.join(directory, device, `${id.split('/').at(-1)}.dkm`);
+  const leaf = path.join(directory, device, id.split('/').at(-1)!);
+  // a service (role 1) packs to a .dks, every other module to a .dkm
+  const artifact = fs.existsSync(`${leaf}.dkm`) || !fs.existsSync(`${leaf}.dks`) ? `${leaf}.dkm` : `${leaf}.dks`;
   if (!fs.existsSync(artifact)) throw new Error(`missing ${artifact}: run nx run ${id}:pack`);
   return artifact;
 }

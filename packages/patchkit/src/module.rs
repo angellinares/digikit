@@ -138,8 +138,7 @@ impl Manifest {
     pub fn provided_service(&self) -> Result<Option<crate::dkm::Provided>> {
         let id = &self.module.id;
         if self.module.role != Some(ModuleRole::Service) {
-            if self.module.service.is_some() || !self.exports.is_empty() || !self.hooks.is_empty()
-            {
+            if self.module.service.is_some() || !self.exports.is_empty() || !self.hooks.is_empty() {
                 return Err(err!(
                     "{id}: `service` in [module], [[export]] and [[hook]] belong to a module with `role = \"service\"`"
                 ));

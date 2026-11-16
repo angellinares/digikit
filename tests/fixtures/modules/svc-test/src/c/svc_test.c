@@ -45,13 +45,15 @@ static uint32_t name_hash(const char *s)
 
 static int32_t init(dk_module_ctx *ctx)
 {
-    int32_t r = dk_service_declare_hook(ctx, name_hash("cf.menu.hook.settings_list.tail"), (const void *)svc_test_settings_tail);
+    int32_t r = dk_service_declare_hook(ctx, name_hash("cf.menu.hook.settings_list.tail"),
+                                        (const void *)svc_test_settings_tail);
     if (r != 0)
         return r;
     r = dk_service_declare_export(ctx, name_hash("dk_svctest_ping"), (const void *)dk_svctest_ping);
     if (r != 0)
         return r;
-    return dk_service_declare_export(ctx, name_hash("dk_svctest_hits"), (const void *)dk_svctest_hits);
+    return dk_service_declare_export(ctx, name_hash("dk_svctest_hits"),
+                                     (const void *)dk_svctest_hits);
 }
 
 const dk_module_def dk_module = {.init = init};

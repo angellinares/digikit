@@ -244,10 +244,10 @@ pub unsafe fn report_module(k: usize, path: *const u8, res: i32, missing: &[u8; 
     }
 }
 
-/// The result `res` of the load of the provider file at the store path `path` (`services/<name>.dks`) that provides the service `hash`: log only. The event is
-/// `MOD_LOAD` with the provider index (`loader::PROVIDER_IDX`, not a selection index) and the service hash as the last word; the boot record and `LOADS` do not
-/// change.
-pub unsafe fn report_provider(path: &[u8], res: i32, hash: u32) {
+/// The result `res` of the load of the provider file at the store path `path` (`services/<name>.dks`) that provides the service `hash`, loaded at `base` (0 when
+/// it did not load): log only. The event is `MOD_LOAD` with the provider index (`loader::PROVIDER_IDX`, not a selection index), the result, the first four
+/// characters of the file name, the service hash and the base; the boot record and `LOADS` do not change.
+pub unsafe fn report_provider(path: &[u8], res: i32, hash: u32, base: u32) {
     let mut at = 0;
     let mut i = 0;
     while i < path.len() {
@@ -256,9 +256,9 @@ pub unsafe fn report_provider(path: &[u8], res: i32, hash: u32) {
         }
         i += 1;
     }
-    let mut name = [0u8; 8];
+    let mut name = [0u8; 4];
     let mut j = 0;
-    while j < 8 && at + j < path.len() {
+    while j < 4 && at + j < path.len() {
         name[j] = path[at + j];
         j += 1;
     }
@@ -266,7 +266,7 @@ pub unsafe fn report_provider(path: &[u8], res: i32, hash: u32) {
     dlog::ev(
         logk::MOD_LOAD,
         bad,
-        [loader::PROVIDER_IDX, res as u32, dlog::word_of(name.as_ptr(), 0, 8), dlog::word_of(name.as_ptr(), 4, 8), hash],
+        [loader::PROVIDER_IDX, res as u32, dlog::word_of(name.as_ptr(), 0, 4), hash, base],
     );
 }
 

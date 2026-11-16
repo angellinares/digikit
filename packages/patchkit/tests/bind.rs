@@ -5,8 +5,8 @@
 
 use dkneeds::keys::{Keys, name_hash};
 use patchkit::apply::{self, Options};
-use patchkit::dko::{Dko, DkoReloc, DkoSection, DkoSymbol, FORMAT};
 use patchkit::dkm::{Dkm, ROLE_SERVICE};
+use patchkit::dko::{Dko, DkoReloc, DkoSection, DkoSymbol, FORMAT};
 use patchkit::error::hex;
 use patchkit::firmware::Firmware;
 use patchkit::module::{Library, Module};
@@ -156,7 +156,10 @@ fn a_missing_static_or_repeated_handler_and_a_hook_without_the_role_are_refused(
         .replace("role = \"service\"\n", "")
         .replace("service = \"svc-test\"\n", "");
     let e = pack_with(&plain, "dt2").unwrap_err().to_string();
-    assert!(e.contains("belong to a module with `role = \"service\"`"), "{e}");
+    assert!(
+        e.contains("belong to a module with `role = \"service\"`"),
+        "{e}"
+    );
 }
 
 /// A ColdFire object with `rts; rts` and the global symbols `_f` (0) and `_g` (2), for the apply side.
@@ -203,9 +206,12 @@ fn check(img: &str, device: &str, site: u64, ret: u64) {
     assert_eq!(item.tramp, b.tramp_off);
     assert_eq!(item.stock, &b.stock[..]);
     assert!((item.tramp as usize) < dkm.image.len());
-    assert!(k.hooks().eq(Keys::parse(&Dkm::parse(&dks).unwrap().register)
-        .unwrap()
-        .hooks()));
+    assert!(
+        k.hooks()
+            .eq(Keys::parse(&Dkm::parse(&dks).unwrap().register)
+                .unwrap()
+                .hooks())
+    );
     // binding twice is refused
     let e = patchkit::bind::bind(&file, &raw, &reg, &decls).unwrap_err();
     assert!(e.0.contains("already bound"), "{e}");
