@@ -5,6 +5,8 @@ import { MS, PROGRESS_HANG_S, withinRuntimeDeadline, type Session } from './sess
 export interface Clock {
   now(): Promise<number>;
   pause(ms: number): Promise<void>;
+  /** What the emulator reports (mode, CPU state, phase, error, PC): added to the message of a stuck clock. */
+  describe?(): Promise<string>;
 }
 
 /** Real-time wait through the global timer (vitest fake timers replace it; `node:timers/promises` they do not). */
@@ -100,7 +102,7 @@ export async function pollUntil<T>(
   },
 ): Promise<T> {
   const { withinMs, message, intervalMs = 200, retry = false, onWait, hangMs = stuckMs() } = opts;
-  const stuck = stuckGuard(typeof message === 'string' ? message : 'poll', hangMs);
+  const stuck = stuckGuard(typeof message === 'string' ? message : 'poll', hangMs, clock);
   const wallStart = Date.now();
   let start: number | undefined;
   let clockMs = 0;
@@ -121,7 +123,7 @@ export async function pollUntil<T>(
       failure = error;
     }
     clockMs = await clock.now();
-    stuck(clockMs);
+    await stuck(clockMs);
     // A clock that drops (reboot, restore) starts the count again.
     if (start === undefined || clockMs < start) start = clockMs;
     onWait?.({ kind: 'state', what, clockMs: clockMs - start, wallMs: Date.now() - wallStart, ok: false });
@@ -138,14 +140,18 @@ export async function pollUntil<T>(
 const stuckMs = () => Number(process.env.DIGI_CLOCK_STUCK_MS ?? 60_000);
 
 /** Throws when the clock `now` did not move for `hangMs` of wall time: a wait on a clock that never moves would end only at the test timeout. */
-function stuckGuard(what: string, hangMs: number) {
+function stuckGuard(what: string, hangMs: number, clock: Clock) {
   let last: number | undefined;
   let lastAdvance = Date.now();
-  return (now: number) => {
+  return async (now: number) => {
     if (last === undefined || now !== last) lastAdvance = Date.now();
     last = now;
-    if (Date.now() - lastAdvance >= hangMs)
-      throw new Error(`${what}: emulated clock stuck at ${now} ms for ${hangMs} ms (a halted or stopped guest?)`);
+    if (Date.now() - lastAdvance >= hangMs) {
+      const detail = await clock.describe?.().catch((e: unknown) => `status failed: ${String(e)}`);
+      throw new Error(
+        `${what}: emulated clock stuck at ${now} ms for ${hangMs} ms (a halted or stopped guest?)${detail ? ` ${detail}` : ''}`,
+      );
+    }
   };
 }
 
@@ -156,10 +162,10 @@ export async function waitClock(
   { hangMs = stuckMs() }: { hangMs?: number } = {},
 ): Promise<void> {
   const start = await clock.now();
-  const stuck = stuckGuard(`wait of ${ms} ms`, hangMs);
+  const stuck = stuckGuard(`wait of ${ms} ms`, hangMs, clock);
   for (let now = start; now - start < ms; now = await clock.now()) {
     await clock.pause(Math.min(50, ms - (now - start)));
-    stuck(await clock.now());
+    await stuck(await clock.now());
   }
 }
 
@@ -175,6 +181,12 @@ export function emulatorClock(session: Pick<Session, 'status' | 'client'>, opts:
     pause: async (ms) => {
       const status = (await session.status()) as { mode?: string };
       return status.mode === 'paused' ? stepped.pause(ms) : free.pause(ms);
+    },
+    describe: async () => {
+      const st = (await session.status()) as { mode?: string; epoch?: number; cf?: Record<string, unknown> };
+      const cf = st.cf ?? {};
+      const hex = (v: unknown) => (typeof v === 'number' ? `0x${v.toString(16)}` : String(v));
+      return `[mode ${st.mode}, epoch ${st.epoch}, cpu_state ${cf.cpu_state}, phase ${cf.phase}, error ${JSON.stringify(cf.error)}, pc ${hex(cf.pc)}, icount ${cf.icount}, guard_hits ${cf.guard_hits}]`;
     },
   };
 }
