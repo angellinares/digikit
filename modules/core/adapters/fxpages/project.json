@@ -6,7 +6,7 @@
       {
         "files": ["tests/fx-bipolar.device.test.ts"],
         "tags": ["A:core/fxpages", "C:state"],
-        "modules": ["test/dyn-fx-gain-bipolar", "test/sine"],
+        "modules": ["test/dyn-fx-gain-bipolar", "test/sine", "core/services/machines", "core/services/fx"],
         "sources": [
           "tools/patchkit/hook_ab.py",
           "tools/patchkit/pk_digikit_fxroute.py",

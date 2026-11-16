@@ -9,7 +9,7 @@ import { inspectFxBoot, selectSine, shot, withPreparedFxSession } from '@digi/re
 import { selectTrack, setAmount } from '@digi/regression/runtime/fx-track-ui.ts';
 import { record } from '@digi/regression/runtime/artifacts.ts';
 import { DEVICES, FIRMWARE } from '@digi/regression/runtime/devices.ts';
-import { planSymbol } from '@digi/regression/runtime/runtime-plan.ts';
+import { symbolsOf } from '@digi/regression/runtime/service-symbols.ts';
 
 // The signed value template of core/fxpages on test/dyn-fx-gain-bipolar: a BIAS knob from -64 to +63 (default 0) whose float p0 gives the
 // gain 1 + p0 / 64. This replaces the adapter legs of the frequency shifter test (docs/plans/ledgers/t2-fx-contract.md); the frequency shift
@@ -35,14 +35,8 @@ for (const device of DEVICES) {
         symbols: [
           'DKRT_BOOT',
           'fx.rows',
-          'fxp_count',
-          'fxp_list_buf',
-          'fxp_rows',
           'params.fp0.index',
           'pf_table',
-          'fxp_send_count',
-          'fxp_nload',
-          'fxp_load_src',
         ],
         // The kit library and the runtime settings are written, as in the route and kit tests.
         policy: 'fx-routes',
@@ -60,7 +54,8 @@ for (const device of DEVICES) {
 
     test('keeps page metadata, signed value roundtrip, kit save and load, master gain law and send amounts across three clean cards', async () => {
       const { fixture, plan, profile, artifacts, slots, sendSlots } = context;
-      const sym = (name: string) => planSymbol(plan, name);
+      // the page state (`fxp_*`) is in the fx service file: `symbolsOf` has its symbols after each boot (`inspectFxBoot`); the other names are the image's
+      const sym = (name: string) => symbolsOf(runtime, plan)(name);
       let runtime = fixture.runtime;
       const pcm: Record<string, string> = {};
       let mixHalf = 0;
