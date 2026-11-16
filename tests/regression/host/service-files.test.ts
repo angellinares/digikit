@@ -1,5 +1,6 @@
 // The services a module needs go on the card with it: the NEEDS of a packed .dkm name them, and the install step puts the bound file at services/<name>.dks before the
 // selection and the restart.
+import { createHash } from 'node:crypto';
 import fs from 'node:fs';
 import path from 'node:path';
 import { afterAll, expect, test, vi } from 'vitest';
@@ -32,6 +33,10 @@ fs.writeFileSync(path.join(dir, 'dist/modules/dt2/fx.dks'), 'packed');
 // the file the Nx target `core/services/fx:bind` wrote
 fs.mkdirSync(path.join(dir, 'dist/svc-bound/dt2'), { recursive: true });
 fs.writeFileSync(path.join(dir, 'dist/svc-bound/dt2/fx.dks'), 'bound');
+const sha = (text: string) => createHash('sha256').update(text).digest('hex');
+// the sidecar `patchkit bind` writes: what the bound file was made from (the stock image of this test does not exist, so only the packed file is compared)
+const sidecar = path.join(dir, 'dist/svc-bound/dt2/fx.src.json');
+fs.writeFileSync(sidecar, JSON.stringify({ unbound_sha256: sha('packed'), firmware_sha256: 'x' }));
 afterAll(() => fs.rmSync(dir, { recursive: true, force: true }));
 
 /** A packed .dkm reduced to its header pair and a header table whose NEEDS entry holds `hashes` (hard needs). */
@@ -94,17 +99,21 @@ test('install puts the bound service on the card before the selection and the re
   expect(order).toEqual(['put modules/dyn-fx-gain.dkm', 'select', 'restart', 'boot']);
 });
 
-test('a bound file older than the packed service is refused with the Nx target to run', async () => {
+test('a bound file made from other bytes than the packed service is refused with the Nx target to run, whatever the mtimes say', async () => {
   const packed = path.join(dir, 'dist/modules/dt2/fx.dks');
   const bound = path.join(dir, 'dist/svc-bound/dt2/fx.dks');
+  // a cache restore gives the bound file a new mtime: only the content says it is current
   const now = Date.now() / 1000;
-  fs.utimesSync(bound, now - 100, now - 100);
-  fs.utimesSync(packed, now, now);
-  await expect(boundService('dt2', 'fx', packed)).rejects.toThrow(
-    /older than .*fx\.dks: run nx run core\/services\/fx:bind/,
-  );
   fs.utimesSync(bound, now + 10, now + 10);
+  fs.utimesSync(packed, now, now);
   await expect(boundService('dt2', 'fx', packed)).resolves.toBe(bound);
+  fs.writeFileSync(sidecar, JSON.stringify({ unbound_sha256: sha('an older pack'), firmware_sha256: 'x' }));
+  await expect(boundService('dt2', 'fx', packed)).rejects.toThrow(
+    /was bound from another fx\.dks: run nx run core\/services\/fx:bind/,
+  );
+  fs.rmSync(sidecar);
+  await expect(boundService('dt2', 'fx', packed)).rejects.toThrow(/no \.src\.json sidecar .*: run nx run/);
+  fs.writeFileSync(sidecar, JSON.stringify({ unbound_sha256: sha('packed'), firmware_sha256: 'x' }));
 });
 
 test('service symbols come from the address map that bind wrote, never from the unbound pack', () => {

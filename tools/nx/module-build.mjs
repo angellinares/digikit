@@ -117,6 +117,8 @@ const STOCK_FIRMWARE = { dt2: 'firmware/Digitakt_II_OS1.17.syx', dn2: 'firmware/
 
 /** The bound file of a service with hooks, `dist/svc-bound/<device>/<leaf>.dks` (never committed: it holds firmware bytes). */
 export const boundOut = (dev, m) => `dist/svc-bound/${dev}/${m.id.split('/').at(-1)}.dks`;
+/** What the bound file was made from (`patchkit bind` writes it beside the file): the sha256 of the unbound `.dks` and of the firmware image. */
+export const boundSource = (dev, m) => boundOut(dev, m).replace(/\.dks$/, '.src.json');
 
 /** The address map of the bound file (the packed map moved by what bind appended), written by `patchkit bind --addrmap`. */
 export const boundMap = (dev, m) => boundOut(dev, m).replace(/\.dks$/, '.addrmap.json');
@@ -128,13 +130,19 @@ export const bindTarget = (workspaceRoot, m, devices) => {
   return {
     executor: 'nx:run-commands',
     cache: true,
-    inputs: ds.flatMap((d) => [
-      `{workspaceRoot}/${packOut(d, m)}`,
-      `{workspaceRoot}/${packMap(d, m)}`,
-      `{workspaceRoot}/${STOCK_FIRMWARE[d]}`,
-    ]),
+    inputs: ds
+      .flatMap((d) => [
+        `{workspaceRoot}/${packOut(d, m)}`,
+        `{workspaceRoot}/${packMap(d, m)}`,
+        `{workspaceRoot}/${STOCK_FIRMWARE[d]}`,
+      ])
+      .concat([{ input: 'production', projects: ['patchkit'] }]), // the tool too: what bind writes (the .dks, its map and its .src.json sidecar) depends on it
     dependsOn: ['patchkit:cli', 'pack'],
-    outputs: ds.flatMap((d) => [`{workspaceRoot}/${boundOut(d, m)}`, `{workspaceRoot}/${boundMap(d, m)}`]),
+    outputs: ds.flatMap((d) => [
+      `{workspaceRoot}/${boundOut(d, m)}`,
+      `{workspaceRoot}/${boundMap(d, m)}`,
+      `{workspaceRoot}/${boundSource(d, m)}`,
+    ]),
     options: {
       // a device whose firmware file is not here writes nothing (its tests are skipped without the image)
       commands: ds.map(

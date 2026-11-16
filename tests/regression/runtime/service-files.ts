@@ -1,3 +1,4 @@
+import { createHash } from 'node:crypto';
 import fs from 'node:fs';
 import path from 'node:path';
 import { repoRoot, resolveInputs, type Device } from '@digi/test-support';
@@ -32,13 +33,22 @@ export async function boundService(device: Device, name: string, moduleFile: str
   const out = boundPath(device, name);
   const rerun = `run nx run ${SERVICE_MODULES[name]}:bind`;
   if (!fs.existsSync(out)) throw new Error(`missing ${out}: ${rerun} (it binds ${moduleFile} to the stock firmware)`);
-  // an older bound file was made from other bytes: the Nx target is keyed on both, a copy left in dist/ is not
-  const age = fs.statSync(out).mtimeMs;
-  const inputs = [moduleFile, resolveInputs(device, FIRMWARE[device]).syx];
-  for (const input of inputs)
-    if (fs.existsSync(input) && fs.statSync(input).mtimeMs > age)
-      throw new Error(`${out} is older than ${input}: ${rerun}`);
+  // the sidecar of `patchkit bind` names what the file was bound from: a copy left in dist/ from other bytes is stale (mtimes say nothing under an Nx cache restore)
+  const stale = staleBinding(out, moduleFile, resolveInputs(device, FIRMWARE[device]).syx);
+  if (stale) throw new Error(`${out} ${stale}: ${rerun}`);
   return out;
+}
+
+const sha256 = (file: string) => createHash('sha256').update(fs.readFileSync(file)).digest('hex');
+
+/** Why the bound file `out` does not match the current packed `.dks` and firmware image (its `.src.json` sidecar), or undefined when it does. */
+export function staleBinding(out: string, moduleFile: string, firmware: string): string | undefined {
+  const sidecar = out.replace(/\.dks$/, '.src.json');
+  if (!fs.existsSync(sidecar)) return 'has no .src.json sidecar (bound by an older patchkit)';
+  const src = JSON.parse(fs.readFileSync(sidecar, 'utf8')) as { unbound_sha256?: string; firmware_sha256?: string };
+  if (src.unbound_sha256 !== sha256(moduleFile)) return `was bound from another ${path.basename(moduleFile)}`;
+  if (fs.existsSync(firmware) && src.firmware_sha256 !== sha256(firmware)) return 'was bound to another firmware image';
+  return undefined;
 }
 
 /** The bound service file `dist/svc-bound/<device>/<name>.dks` (the Nx target `bind` writes it). */

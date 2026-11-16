@@ -671,6 +671,17 @@ plan.json {}",
                 std::fs::create_dir_all(d).map_err(|e| Error(format!("{}: {e}", d.display())))?;
             }
             write(&out, &file)?;
+            // the sidecar `<name>.src.json`: what the bound file was made from (the unbound file and the firmware image, by sha256), so a harness can tell a stale copy by content
+            let sidecar = out.trim_end_matches(".dks").to_string() + ".src.json";
+            write(
+                &sidecar,
+                format!(
+                    "{{\"unbound_sha256\":\"{}\",\"firmware_sha256\":\"{}\"}}\n",
+                    sha256_hex(&dks),
+                    sha256_hex(&read(&fwp)?)
+                )
+                .as_bytes(),
+            )?;
             // the address map of the packed file (`--addrmap`), moved by what bind appended, is written beside the bound file
             if let Some(m) = flag(rest, "--addrmap") {
                 let old = patchkit::dkm::Dkm::parse(&dks)?.image.len();
